@@ -1,0 +1,799 @@
+import Std
+import CompCert4Lean.Foundation.Logic
+
+/-!
+# Rocq numerical standard-library facade
+
+This module is the checked definition-translation surface for the numerical
+parts of the Rocq standard library used by CompCert and Flocq.  The binary
+positive and signed integer representations are source-shaped; arithmetic is
+performed through Lean's checked `Nat`/`Int` primitives and converted back to
+the source representation.  In particular, `Z.div`/`Z.modulo` use Euclidean
+division while `Z.quot` uses truncating division, matching the two operations
+used by CompCert.
+-/
+
+namespace CompCert4Lean.Foundation.Numbers
+namespace Rocq.Coq
+
+abbrev comparison := _root_.CompCert4Lean.Foundation.Logic.Rocq.Coq.Init.Datatypes.comparison
+abbrev Lt : comparison := _root_.CompCert4Lean.Foundation.Logic.Rocq.Coq.Init.Datatypes.comparison.Lt
+abbrev Eq : comparison := _root_.CompCert4Lean.Foundation.Logic.Rocq.Coq.Init.Datatypes.comparison.Eq
+abbrev Gt : comparison := _root_.CompCert4Lean.Foundation.Logic.Rocq.Coq.Init.Datatypes.comparison.Gt
+abbrev CompOpp := _root_.CompCert4Lean.Foundation.Logic.Rocq.Coq.Init.Datatypes.CompOpp
+
+namespace Support
+abbrev Sumbool := _root_.CompCert4Lean.Foundation.Logic.Support.Sumbool
+abbrev Sumor := _root_.CompCert4Lean.Foundation.Logic.Support.Sumor
+end Support
+
+instance : DecidableEq comparison := fun a b =>
+  match a, b with
+  | .Lt, .Lt => isTrue rfl
+  | .Lt, .Eq => isFalse (by intro h; cases h)
+  | .Lt, .Gt => isFalse (by intro h; cases h)
+  | .Eq, .Lt => isFalse (by intro h; cases h)
+  | .Eq, .Eq => isTrue rfl
+  | .Eq, .Gt => isFalse (by intro h; cases h)
+  | .Gt, .Lt => isFalse (by intro h; cases h)
+  | .Gt, .Eq => isFalse (by intro h; cases h)
+  | .Gt, .Gt => isTrue rfl
+
+namespace Numbers.BinNums
+
+inductive positive : Type where
+  | xH : positive
+  | xI : positive → positive
+  | xO : positive → positive
+deriving DecidableEq
+
+inductive N : Type where
+  | N0 : N
+  | Npos : positive → N
+deriving DecidableEq
+
+inductive Z : Type where
+  | Z0 : Z
+  | Zpos : positive → Z
+  | Zneg : positive → Z
+deriving DecidableEq
+
+end Numbers.BinNums
+
+abbrev positive := Numbers.BinNums.positive
+abbrev N := Numbers.BinNums.N
+abbrev Z := Numbers.BinNums.Z
+abbrev xH : positive := Numbers.BinNums.positive.xH
+abbrev xI : positive → positive := Numbers.BinNums.positive.xI
+abbrev xO : positive → positive := Numbers.BinNums.positive.xO
+abbrev Z0 : Z := Numbers.BinNums.Z.Z0
+abbrev Zneg : positive → Z := Numbers.BinNums.Z.Zneg
+abbrev Zpos : positive → Z := Numbers.BinNums.Z.Zpos
+abbrev le := _root_.Nat.le
+abbrev lt := _root_.Nat.lt
+abbrev orb := _root_.Bool.or
+
+inductive BoolSpec (A B : Prop) : Bool → Prop where
+  | of_true (h : A) : BoolSpec A B true
+  | of_false (h : B) : BoolSpec A B false
+
+namespace Numbers.BinNums
+
+abbrev xH : positive := positive.xH
+abbrev xI : positive → positive := positive.xI
+abbrev xO : positive → positive := positive.xO
+abbrev Z0 : Z := Numbers.BinNums.Z.Z0
+abbrev Zneg : positive → Z := Numbers.BinNums.Z.Zneg
+abbrev Zpos : positive → Z := Numbers.BinNums.Z.Zpos
+
+end Numbers.BinNums
+
+private def posToNat : positive → Nat
+  | .xH => 1
+  | .xI p => 2 * posToNat p + 1
+  | .xO p => 2 * posToNat p
+
+private def collectBits : Nat → Nat → List Bool
+  | 0, _ => []
+  | fuel + 1, n =>
+      if n < 2 then []
+      else (n % 2 = 1) :: collectBits fuel (n / 2)
+
+private def foldBits : List Bool → positive
+  | [] => .xH
+  | b :: bs =>
+      let p := foldBits bs
+      if b then .xI p else .xO p
+
+private def posOfNat (n : Nat) : positive := foldBits (collectBits n n)
+
+private def comparisonOfNat (a b : Nat) : comparison :=
+  if a < b then .Lt else if a = b then .Eq else .Gt
+
+private def comparisonOfInt (a b : Int) : comparison :=
+  if a < b then .Lt else if a = b then .Eq else .Gt
+
+private def intOfZ : Z → Int
+  | .Z0 => 0
+  | .Zpos p => Int.ofNat (posToNat p)
+  | .Zneg p => -Int.ofNat (posToNat p)
+
+private def zOfInt : Int → Z
+  | .ofNat 0 => .Z0
+  | .ofNat (n + 1) => .Zpos (posOfNat (n + 1))
+  | .negSucc n => .Zneg (posOfNat (n + 1))
+
+private def natIter {α : Type} (f : α → α) : Nat → α → α
+  | 0, x => x
+  | n + 1, x => natIter f n (f x)
+
+private def zNonneg (z : Z) : Bool := 0 ≤ intOfZ z
+
+namespace Arith.Compare_dec
+
+def le_gt_dec (n m : Nat) : Support.Sumbool (n ≤ m) (m < n) := by
+  by_cases h : n ≤ m
+  · exact .left h
+  · exact .right (Nat.lt_of_not_ge h)
+
+end Arith.Compare_dec
+
+namespace Arith.Peano_dec
+
+abbrev eq_nat_dec (n m : Nat) : Support.Sumbool (n = m) (¬ n = m) :=
+  if h : n = m then .left h else .right h
+
+end Arith.Peano_dec
+
+namespace Arith.PeanoNat.Nat
+
+def eqb (n m : Nat) : Bool := decide (n = m)
+def lt (n m : Nat) : Prop := n < m
+def max (n m : Nat) : Nat := _root_.Nat.max n m
+
+end Arith.PeanoNat.Nat
+
+namespace Init.Peano
+
+def ge (n m : Nat) : Prop := m ≤ n
+def lt (n m : Nat) : Prop := n < m
+
+end Init.Peano
+
+namespace NArith.BinNat.N
+
+def eq_dec (n m : N) : Support.Sumbool (n = m) (¬ n = m) := by
+  cases n with
+  | N0 =>
+      cases m with
+      | N0 => exact .left rfl
+      | Npos p => exact .right (by intro h; cases h)
+  | Npos p =>
+      cases m with
+      | N0 => exact .right (by intro h; cases h)
+      | Npos q =>
+          by_cases h : p = q
+          · exact .left (by cases h; rfl)
+          · exact .right (by intro h'; cases h'; exact h rfl)
+
+def to_nat : N → Nat
+  | .N0 => 0
+  | .Npos p => posToNat p
+
+end NArith.BinNat.N
+
+namespace N
+abbrev to_nat := NArith.BinNat.N.to_nat
+end N
+
+namespace PArith.BinPos
+
+namespace Pos
+
+def to_nat (p : positive) : Nat := posToNat p
+abbrev nat_of_P := to_nat
+
+def add (p q : positive) : positive := posOfNat (posToNat p + posToNat q)
+def succ : positive → positive
+  | .xH => .xO .xH
+  | .xI p => .xO (succ p)
+  | .xO p => .xI p
+def pred_double : positive → positive
+  | .xH => .xH
+  | .xI p => .xI (.xO p)
+  | .xO p => .xI (pred_double p)
+def pred : positive → positive
+  | .xH => .xH
+  | .xI p => .xO p
+  | .xO p => pred_double p
+def sub (p q : positive) : positive := posOfNat (posToNat p - posToNat q)
+def of_nat (n : Nat) : positive := posOfNat n
+def compare (p q : positive) : comparison := comparisonOfNat (posToNat p) (posToNat q)
+def compare_cont (c : comparison) (p q : positive) : comparison :=
+  match c with
+  | .Eq => compare p q
+  | .Lt => if compare p q = .Eq then .Lt else compare p q
+  | .Gt => if compare p q = .Eq then .Gt else compare p q
+def eqb (p q : positive) : Bool := decide (p = q)
+def le (p q : positive) : Prop := posToNat p ≤ posToNat q
+def lt (p q : positive) : Prop := posToNat p < posToNat q
+def leb (p q : positive) : Bool := if posToNat p ≤ posToNat q then true else false
+def lor (p q : positive) : positive := posOfNat (Nat.lor (posToNat p) (posToNat q))
+def max (p q : positive) : positive := if posToNat p ≤ posToNat q then q else p
+def mul (p q : positive) : positive := posOfNat (posToNat p * posToNat q)
+def iter {A : Type} (f : A → A) (x : A) (p : positive) : A := natIter f (posToNat p) x
+
+private theorem succ_pred_double (p : positive) : succ (pred_double p) = .xO p := by
+  induction p with
+  | xH => rfl
+  | xI q ih => rfl
+  | xO q ih => simp [pred_double, succ, ih]
+
+private theorem succ_pred_nonH (p : positive) (h : p ≠ .xH) : succ (pred p) = p := by
+  cases p with
+  | xH => contradiction
+  | xI q => rfl
+  | xO q => simpa [pred] using succ_pred_double q
+
+private theorem posToNat_pred_double_lt (p : positive) :
+    posToNat (pred_double p) < 2 * posToNat p := by
+  induction p with
+  | xH => simp [pred_double, posToNat]
+  | xI q ih => simp [pred_double, posToNat]; omega
+  | xO q ih =>
+      simp [pred_double, posToNat]
+      omega
+
+private theorem posToNat_pred_lt (p : positive) (h : p ≠ .xH) :
+    posToNat (pred p) < posToNat p := by
+  cases p with
+  | xH => contradiction
+  | xI q => simp [pred, posToNat]
+  | xO q =>
+      simpa [pred, posToNat] using posToNat_pred_double_lt q
+
+def peano_ind (P : positive → Prop) (a : P .xH)
+    (f : ∀ p, P p → P (succ p)) : ∀ p, P p := by
+  let rec go (p : positive) : P p :=
+    if h : p = .xH then by
+      simpa [h] using a
+    else
+      have hp : P (pred p) := go (pred p)
+      have hs : P (succ (pred p)) := f (pred p) hp
+      by simpa [succ_pred_nonH p h] using hs
+  termination_by posToNat p
+  decreasing_by exact posToNat_pred_lt _ h
+  exact go
+def shiftl_nat (p : positive) (n : Nat) : positive := posOfNat (posToNat p * 2 ^ n)
+def shiftr_nat (p : positive) (n : Nat) : positive := posOfNat (posToNat p / 2 ^ n)
+def size (p : positive) : positive := posOfNat (Nat.log2 (posToNat p) + 1)
+
+def eq_dec (p q : positive) : Support.Sumbool (p = q) (¬ p = q) := by
+  by_cases h : p = q
+  · exact .left h
+  · exact .right h
+
+end Pos
+
+end PArith.BinPos
+
+abbrev PArith.BinPos.nat_of_P := PArith.BinPos.Pos.to_nat
+abbrev PArith.BinPos.Pcompare_antisym : Prop :=
+  ∀ (p q : positive) (c : comparison),
+    CompOpp (PArith.BinPos.Pos.compare_cont c p q) = PArith.BinPos.Pos.compare_cont (CompOpp c) q p
+abbrev PArith.Pnat.lt_O_nat_of_P : Prop := ∀ p : positive, 0 < PArith.BinPos.Pos.to_nat p
+
+namespace ZArith.BinInt
+
+namespace Z
+
+abbrev Z0 : _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z :=
+  _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.Numbers.BinNums.Z.Z0
+abbrev Zpos : positive → _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z :=
+  _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.Numbers.BinNums.Z.Zpos
+abbrev Zneg : positive → _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z :=
+  _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.Numbers.BinNums.Z.Zneg
+
+def abs (z : _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z) :=
+  zOfInt (Int.natAbs (intOfZ z))
+def abs_nat (z : _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z) : Nat := Int.toNat (intOfZ (abs z))
+def add (x y : _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z) := zOfInt (intOfZ x + intOfZ y)
+def sub (x y : _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z) := zOfInt (intOfZ x - intOfZ y)
+def mul (x y : _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z) := zOfInt (intOfZ x * intOfZ y)
+def opp (x : _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z) := zOfInt (-intOfZ x)
+abbrev neg := opp
+def compare (x y : _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z) := comparisonOfInt (intOfZ x) (intOfZ y)
+def le (x y : _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z) : Prop := intOfZ x ≤ intOfZ y
+def lt (x y : _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z) : Prop := intOfZ x < intOfZ y
+def ge (x y : _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z) : Prop := intOfZ y ≤ intOfZ x
+abbrev gt (x y : _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z) : Prop := lt y x
+def geb (x y : _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z) : Bool := if intOfZ y ≤ intOfZ x then true else false
+def gtb (x y : _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z) : Bool := if intOfZ y < intOfZ x then true else false
+def leb (x y : _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z) : Bool := if intOfZ x ≤ intOfZ y then true else false
+def ltb (x y : _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z) : Bool := if intOfZ x < intOfZ y then true else false
+def max (x y : _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z) := if intOfZ x ≤ intOfZ y then y else x
+def min (x y : _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z) := if intOfZ x ≤ intOfZ y then x else y
+def eqb (x y : _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z) : Bool := decide (x = y)
+
+private def zDivEucl (a b : Int) : Int :=
+  if b = 0 then 0
+  else if 0 < b then Int.ediv a b
+  else
+    let d := -b
+    let q := Int.ediv a d
+    let r := Int.emod a d
+    if r = 0 then -q else -(q + 1)
+
+private def zModEucl (a b : Int) : Int :=
+  if b = 0 then a
+  else if 0 < b then Int.emod a b
+  else
+    let d := -b
+    let r := Int.emod a d
+    if r = 0 then 0 else r - d
+
+def div (x y : _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z) := zOfInt (zDivEucl (intOfZ x) (intOfZ y))
+def modulo (x y : _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z) := zOfInt (zModEucl (intOfZ x) (intOfZ y))
+def quot (x y : _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z) := zOfInt (Int.tdiv (intOfZ x) (intOfZ y))
+def div_eucl (x y : _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z) := (div x y, modulo x y)
+def div2 (x : _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z) := div x (Zpos (.xO .xH))
+def divide (a b : _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z) : Prop := ∃ k, b = mul a k
+def double (x : _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z) := mul (Zpos (.xO .xH)) x
+def even (x : _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z) : Bool := decide (Int.natAbs (intOfZ x) % 2 = 0)
+def odd (x : _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z) : Bool := !even x
+def of_N : N → _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z
+  | .N0 => Z0
+  | .Npos p => Zpos p
+def of_nat (n : Nat) := zOfInt (Int.ofNat n)
+def to_nat (z : _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z) : Nat := Int.toNat (intOfZ z)
+def to_pos (z : _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z) : positive := PArith.BinPos.Pos.of_nat (to_nat z)
+abbrev pos := Zpos
+def pred (z : _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z) := sub z (Zpos .xH)
+def succ (z : _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z) := add z (Zpos .xH)
+def succ_double (z : _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z) := succ (double z)
+def shiftl (x n : _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z) :=
+  if 0 ≤ intOfZ n then zOfInt (intOfZ x * Int.pow 2 (Int.toNat (intOfZ n))) else zOfInt (Int.ediv (intOfZ x) (Int.pow 2 (Int.toNat (-intOfZ n))))
+def shiftr (x n : _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z) :=
+  if 0 ≤ intOfZ n then zOfInt (Int.ediv (intOfZ x) (Int.pow 2 (Int.toNat (intOfZ n)))) else zOfInt (intOfZ x * Int.pow 2 (Int.toNat (-intOfZ n)))
+def log2 (x : _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z) := zOfInt (Int.ofNat (Nat.log2 (Int.toNat (intOfZ x))))
+def pow (x n : _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z) :=
+  if intOfZ n < 0 then Z0
+  else zOfInt (Int.pow (intOfZ x) (Int.toNat (intOfZ n)))
+def pow_pos (x : _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z) (n : positive) := zOfInt (Int.pow (intOfZ x) (PArith.BinPos.Pos.to_nat n))
+def iter (n : _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z) {α : Type} (f : α → α) (x : α) := natIter f (Int.toNat (intOfZ n)) x
+def testbit (x n : _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z) : Bool :=
+  match n with
+  | .Zneg _ => false
+  | .Z0 => odd x
+  | .Zpos p =>
+      match x with
+      | .Z0 => false
+      | .Zpos q => Nat.testBit (posToNat q) (posToNat p)
+      | .Zneg q => !(Nat.testBit (posToNat q - 1) (posToNat p))
+def sqrtrem (x : _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z) :=
+  let n := Int.toNat (intOfZ x)
+  let s := Nat.sqrt n
+  (zOfInt (Int.ofNat s), zOfInt (Int.ofNat (n - s * s)))
+def eq_dec (x y : _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z) : Support.Sumbool (x = y) (¬ x = y) := by
+  by_cases h : x = y
+  · exact .left h
+  · exact .right h
+
+end Z
+
+abbrev Z_of_nat := Z.of_nat
+
+abbrev Zmult_0_l (n : Z) : Prop := Z.mul Z0 n = Z0
+abbrev Zmult_1_l (n : Z) : Prop := Z.mul (Zpos .xH) n = n
+abbrev Zmult_1_r (n : Z) : Prop := Z.mul n (Zpos .xH) = n
+abbrev Zmult := Z.mul
+abbrev Zmult_comm (n m : Z) : Prop := Z.mul n m = Z.mul m n
+abbrev Zmult_plus_distr_l (n m p : Z) : Prop := Z.mul (Z.add n m) p = Z.add (Z.mul n p) (Z.mul m p)
+abbrev Zmult_plus_distr_r (n m p : Z) : Prop := Z.mul n (Z.add m p) = Z.add (Z.mul n m) (Z.mul n p)
+abbrev Zopp_plus_distr (n m : Z) : Prop := Z.opp (Z.add n m) = Z.add (Z.opp n) (Z.opp m)
+abbrev Zplus_0_r (n : Z) : Prop := Z.add n Z0 = n
+abbrev Zplus := Z.add
+abbrev Zplus_assoc (n m p : Z) : Prop := Z.add n (Z.add m p) = Z.add (Z.add n m) p
+abbrev Zplus_comm (n m : Z) : Prop := Z.add n m = Z.add m n
+abbrev Zplus_opp_l (n : Z) : Prop := Z.add (Z.opp n) n = Z0
+abbrev Zplus_opp_r (n : Z) : Prop := Z.add n (Z.opp n) = Z0
+abbrev Zpos_xI (p : positive) : Prop :=
+  Zpos (.xI p) = Z.add (Z.mul (Zpos (.xO .xH)) (Zpos p)) (Zpos .xH)
+abbrev Zpos_xO (p : positive) : Prop :=
+  Zpos (.xO p) = Z.mul (Zpos (.xO .xH)) (Zpos p)
+
+end ZArith.BinInt
+
+namespace ZArith.ZArith_dec
+
+def Z_dec : Type :=
+  ∀ n m : Z, Support.Sumor (Support.Sumbool (ZArith.BinInt.Z.lt n m) (ZArith.BinInt.Z.lt m n)) (n = m)
+def Z_le_dec (x y : Z) : Support.Sumbool (ZArith.BinInt.Z.le x y) (¬ ZArith.BinInt.Z.le x y) := by
+  exact if h : intOfZ x ≤ intOfZ y then
+    .left (show ZArith.BinInt.Z.le x y from h)
+  else
+    .right (show ¬ ZArith.BinInt.Z.le x y from h)
+def Z_le_gt_dec (x y : Z) : Support.Sumbool (ZArith.BinInt.Z.le x y) (ZArith.BinInt.Z.lt y x) := by
+  exact if h : intOfZ x ≤ intOfZ y then
+    .left (show ZArith.BinInt.Z.le x y from h)
+  else
+    .right (show ZArith.BinInt.Z.lt y x from Int.lt_of_not_ge h)
+def Z_lt_dec (x y : Z) : Support.Sumbool (ZArith.BinInt.Z.lt x y) (¬ ZArith.BinInt.Z.lt x y) := by
+  exact if h : intOfZ x < intOfZ y then
+    .left (show ZArith.BinInt.Z.lt x y from h)
+  else
+    .right (show ¬ ZArith.BinInt.Z.lt x y from h)
+
+end ZArith.ZArith_dec
+
+namespace ZArith.Zbool
+
+def Zeq_bool (x y : Z) : Bool := decide (x = y)
+abbrev Zle_bool := ZArith.BinInt.Z.leb
+abbrev Zle_bool_refl (x : Z) : Prop := Zle_bool x x = true
+abbrev Zlt_bool := ZArith.BinInt.Z.ltb
+
+end ZArith.Zbool
+
+namespace ZArith.Zcompare
+
+abbrev Zcompare_Eq_iff_eq (x y : Z) : Prop := ZArith.BinInt.Z.compare x y = .Eq ↔ x = y
+
+end ZArith.Zcompare
+
+namespace ZArith.Zabs
+
+abbrev inj_Zabs_nat (n : Z) : Prop :=
+  ZArith.BinInt.Z.of_nat (ZArith.BinInt.Z.abs_nat n) = ZArith.BinInt.Z.abs n
+abbrev Zabs_nat_Z_of_nat (n : Nat) : Prop := ZArith.BinInt.Z.abs_nat (ZArith.BinInt.Z.of_nat n) = n
+abbrev Zabs_non_eq (n : Z) : Prop :=
+  ZArith.BinInt.Z.le n Z0 → ZArith.BinInt.Z.abs n = ZArith.BinInt.Z.opp n
+abbrev Zabs_Zmult (n m : Z) : Prop := ZArith.BinInt.Z.abs (ZArith.BinInt.Z.mul n m) = ZArith.BinInt.Z.mul (ZArith.BinInt.Z.abs n) (ZArith.BinInt.Z.abs m)
+abbrev Zabs_Zopp (n : Z) : Prop := ZArith.BinInt.Z.abs (ZArith.BinInt.Z.opp n) = ZArith.BinInt.Z.abs n
+
+end ZArith.Zabs
+
+namespace ZArith.Zdiv
+
+abbrev Zmod := ZArith.BinInt.Z.modulo
+def Remainder (r b : Z) : Prop := ZArith.BinInt.Z.le Z0 r ∧ ZArith.BinInt.Z.lt r b
+
+end ZArith.Zdiv
+
+namespace ZArith.Zmax
+
+abbrev Zmax_right (n m : Z) (_ : ZArith.BinInt.Z.le n m) : Prop :=
+  ZArith.BinInt.Z.max n m = m
+
+end ZArith.Zmax
+
+namespace ZArith.Znat
+
+abbrev inj_S (n : Nat) : Prop := ZArith.BinInt.Z.of_nat (n + 1) = ZArith.BinInt.Z.succ (ZArith.BinInt.Z.of_nat n)
+
+end ZArith.Znat
+
+namespace ZArith.Zorder
+
+abbrev Zeq_le (n m : Z) (h : n = m) : Prop := ZArith.BinInt.Z.le n m
+abbrev Zle_antisym (n m : Z) (h₁ : ZArith.BinInt.Z.le n m) (h₂ : ZArith.BinInt.Z.le m n) : Prop := n = m
+abbrev Zle_or_lt (n m : Z) : Prop := ZArith.BinInt.Z.le n m ∨ ZArith.BinInt.Z.lt m n
+abbrev Zle_pred (n : Z) : Prop := ZArith.BinInt.Z.le (ZArith.BinInt.Z.pred n) n
+abbrev Zle_succ (n : Z) : Prop := ZArith.BinInt.Z.le n (ZArith.BinInt.Z.succ n)
+abbrev Zlt_le_weak (n m : Z) : Prop := ZArith.BinInt.Z.lt n m → ZArith.BinInt.Z.le n m
+abbrev Zlt_lt_succ (n m : Z) : Prop := ZArith.BinInt.Z.lt n m → ZArith.BinInt.Z.lt n (ZArith.BinInt.Z.succ m)
+abbrev Zlt_pred (n : Z) : Prop := ZArith.BinInt.Z.lt (ZArith.BinInt.Z.pred n) n
+abbrev Zlt_succ (n : Z) : Prop := ZArith.BinInt.Z.lt n (ZArith.BinInt.Z.succ n)
+abbrev Zmult_le_0_compat (n m : Z) : Prop :=
+  ZArith.BinInt.Z.le Z0 n → ZArith.BinInt.Z.le Z0 m →
+    ZArith.BinInt.Z.le Z0 (ZArith.BinInt.Z.mul n m)
+abbrev Zmult_lt_0_compat (n m : Z) : Prop :=
+  ZArith.BinInt.Z.lt Z0 n → ZArith.BinInt.Z.lt Z0 m →
+    ZArith.BinInt.Z.lt Z0 (ZArith.BinInt.Z.mul n m)
+abbrev Zplus_le_0_compat (n m : Z) : Prop :=
+  ZArith.BinInt.Z.le Z0 n → ZArith.BinInt.Z.le Z0 m →
+    ZArith.BinInt.Z.le Z0 (ZArith.BinInt.Z.add n m)
+abbrev Zplus_le_compat (n m p q : Z) : Prop :=
+  ZArith.BinInt.Z.le n m → ZArith.BinInt.Z.le p q →
+    ZArith.BinInt.Z.le (ZArith.BinInt.Z.add n p) (ZArith.BinInt.Z.add m q)
+
+end ZArith.Zorder
+
+namespace ZArith.Zpow_def
+
+abbrev Zpower := ZArith.BinInt.Z.pow
+abbrev Zpower_pos := ZArith.BinInt.Z.pow_pos
+
+end ZArith.Zpow_def
+
+namespace ZArith.Zpower
+
+def shift_pos (p q : positive) : positive := PArith.BinPos.Pos.shiftl_nat q (PArith.BinPos.Pos.to_nat p)
+def two_p (x : Z) : Z := ZArith.BinInt.Z.pow (Zpos (.xO .xH)) x
+def two_power_nat (n : Nat) : Z := ZArith.BinInt.Z.pow (Zpos (.xO .xH)) (ZArith.BinInt.Z.of_nat n)
+def two_power_pos (p : positive) : Z := ZArith.BinInt.Z.pow_pos (Zpos (.xO .xH)) p
+def Zpower_nat (x : Z) (n : Nat) : Z := ZArith.BinInt.Z.pow x (ZArith.BinInt.Z.of_nat n)
+
+end ZArith.Zpower
+
+abbrev Zeq_bool := ZArith.Zbool.Zeq_bool
+abbrev nat_rect := _root_.CompCert4Lean.Foundation.Logic.Rocq.Coq.Init.Datatypes.nat_rect
+abbrev n_to_nat := NArith.BinNat.N.to_nat
+abbrev shift_pos := ZArith.Zpower.shift_pos
+abbrev two_p := ZArith.Zpower.two_p
+abbrev two_power_nat := ZArith.Zpower.two_power_nat
+abbrev two_power_pos := ZArith.Zpower.two_power_pos
+abbrev Zpower_nat := ZArith.Zpower.Zpower_nat
+
+namespace ZArith.Zquot
+
+end ZArith.Zquot
+
+/-! The remaining theorem-shaped provider APIs are exact source proposition
+    descriptors.  Their proof bodies belong to the later proof-migration
+    phase. -/
+
+namespace _StatementDescriptors
+
+end _StatementDescriptors
+
+def Arith.PeanoNat.Nat.add_0_rStatement := ∀ n : Nat, ((Nat.add n 0) = n)
+def Arith.PeanoNat.Nat.add_lt_mono_rStatement := ∀ n m p : Nat, Iff (Arith.PeanoNat.Nat.lt n m) (Arith.PeanoNat.Nat.lt (Nat.add n p) (Nat.add m p))
+def Arith.PeanoNat.Nat.eqb_eqStatement := ∀ n m : Nat, Iff (((Arith.PeanoNat.Nat.eqb n m) = true)) ((n = m))
+def Arith.PeanoNat.Nat.eqb_reflStatement := ∀ x : Nat, ((Arith.PeanoNat.Nat.eqb x x) = true)
+def Arith.PeanoNat.Nat.lt_0_succStatement := ∀ n : Nat, Arith.PeanoNat.Nat.lt 0 (Nat.succ n)
+def Arith.PeanoNat.Nat.sub_addStatement := ∀ (n m : Nat) (_ : le n m), ((Nat.add (Nat.sub m n) n) = m)
+def Init.Peano.le_0_nStatement := ∀ n : Nat, le 0 n
+def Init.Peano.le_n_SStatement := ∀ (n m : Nat) (_ : le n m), le (Nat.succ n) (Nat.succ m)
+def Init.Peano.plus_n_SmStatement := ∀ n m : Nat, ((Nat.succ (Nat.add n m)) = (Nat.add n (Nat.succ m)))
+def PArith.BinPos.Pos.add_1_rStatement := ∀ p : positive, ((PArith.BinPos.Pos.add p xH) = (PArith.BinPos.Pos.succ p))
+def PArith.BinPos.Pos.compare_antisymStatement := ∀ p q : positive, ((PArith.BinPos.Pos.compare q p) = (CompOpp (PArith.BinPos.Pos.compare p q)))
+def PArith.BinPos.Pos.compare_eq_iffStatement := ∀ p q : positive, Iff (((PArith.BinPos.Pos.compare p q) = Eq)) ((p = q))
+def PArith.BinPos.Pos.compare_gt_iffStatement := ∀ x y : positive, Iff (((PArith.BinPos.Pos.compare x y) = Gt)) (PArith.BinPos.Pos.lt y x)
+def PArith.BinPos.Pos.compare_reflStatement := ∀ x : positive, ((PArith.BinPos.Pos.compare x x) = Eq)
+def PArith.BinPos.Pos.eqb_eqStatement := ∀ p q : positive, Iff (((PArith.BinPos.Pos.eqb p q) = true)) ((p = q))
+def PArith.BinPos.Pos.iter_succStatement := ∀ (p : positive) (A : Type) (f : ∀ _ : A, A) (x : A), ((@PArith.BinPos.Pos.iter A f x (PArith.BinPos.Pos.succ p)) = (f (@PArith.BinPos.Pos.iter A f x p)))
+def PArith.BinPos.Pos.le_reflStatement := ∀ p : positive, PArith.BinPos.Pos.le p p
+def PArith.BinPos.Pos.le_transStatement := ∀ (n m p : positive) (_ : PArith.BinPos.Pos.le n m) (_ : PArith.BinPos.Pos.le m p), PArith.BinPos.Pos.le n p
+def PArith.BinPos.Pos.leb_leStatement := ∀ p q : positive, Iff (((PArith.BinPos.Pos.leb p q) = true)) (PArith.BinPos.Pos.le p q)
+def PArith.BinPos.Pos.leb_reflStatement := ∀ x : positive, ((PArith.BinPos.Pos.leb x x) = true)
+def PArith.BinPos.Pos.lt_irreflStatement := ∀ x : positive, Not (PArith.BinPos.Pos.lt x x)
+def PArith.BinPos.Pos.lt_le_inclStatement := ∀ (p q : positive) (_ : PArith.BinPos.Pos.lt p q), PArith.BinPos.Pos.le p q
+def PArith.BinPos.Pos.lt_le_transStatement := ∀ (n m p : positive) (_ : PArith.BinPos.Pos.lt n m) (_ : PArith.BinPos.Pos.le m p), PArith.BinPos.Pos.lt n p
+def PArith.BinPos.Pos.lt_succ_rStatement := ∀ p q : positive, Iff (PArith.BinPos.Pos.lt p (PArith.BinPos.Pos.succ q)) (PArith.BinPos.Pos.le p q)
+def PArith.BinPos.Pos.lt_transStatement := ∀ (n m p : positive) (_ : PArith.BinPos.Pos.lt n m) (_ : PArith.BinPos.Pos.lt m p), PArith.BinPos.Pos.lt n p
+def PArith.BinPos.Pos.mul_commStatement := ∀ p q : positive, ((PArith.BinPos.Pos.mul p q) = (PArith.BinPos.Pos.mul q p))
+def PArith.BinPos.Pos.pred_double_succStatement := ∀ p : positive, ((PArith.BinPos.Pos.pred_double (PArith.BinPos.Pos.succ p)) = (xI p))
+def PArith.BinPos.Pos.succ_pred_orStatement := ∀ p : positive, Or ((p = xH)) (((PArith.BinPos.Pos.succ (PArith.BinPos.Pos.pred p)) = p))
+def PArith.BinPos.Pplus_one_succ_lStatement := ∀ p : positive, ((PArith.BinPos.Pos.succ p) = (PArith.BinPos.Pos.add xH p))
+def PArith.Pnat.nat_of_P_lt_Lt_compare_morphismStatement := ∀ (p q : positive) (_ : ((PArith.BinPos.Pos.compare_cont Eq p q) = Lt)), lt (PArith.BinPos.Pos.to_nat p) (PArith.BinPos.Pos.to_nat q)
+def PArith.Pnat.Pos2Nat.idStatement := ∀ p : positive, ((PArith.BinPos.Pos.of_nat (PArith.BinPos.Pos.to_nat p)) = p)
+def PArith.Pnat.Pos2Nat.inj_xIStatement := ∀ p : positive, ((PArith.BinPos.Pos.to_nat (xI p)) = (Nat.succ (Nat.mul (Nat.succ (Nat.succ 0)) (PArith.BinPos.Pos.to_nat p))))
+def PArith.Pnat.Pos2Nat.inj_xOStatement := ∀ p : positive, ((PArith.BinPos.Pos.to_nat (xO p)) = (Nat.mul (Nat.succ (Nat.succ 0)) (PArith.BinPos.Pos.to_nat p)))
+def ZArith.auxiliary.Zle_leftStatement := ∀ (n m : Z) (_ : ZArith.BinInt.Z.le n m), ZArith.BinInt.Z.le Z0 (ZArith.BinInt.Z.add m (ZArith.BinInt.Z.opp n))
+def ZArith.BinInt.Pos2Z.inj_subStatement := ∀ (p q : positive) (_ : PArith.BinPos.Pos.lt p q), ((Zpos (PArith.BinPos.Pos.sub q p)) = (ZArith.BinInt.Z.sub (Zpos q) (Zpos p)))
+def ZArith.BinInt.Z.abs_eqStatement := ∀ (n : Z) (_ : ZArith.BinInt.Z.le Z0 n), ((ZArith.BinInt.Z.abs n) = n)
+def ZArith.BinInt.Z.abs_mulStatement := ∀ n m : Z, ((ZArith.BinInt.Z.abs (ZArith.BinInt.Z.mul n m)) = (ZArith.BinInt.Z.mul (ZArith.BinInt.Z.abs n) (ZArith.BinInt.Z.abs m)))
+def ZArith.BinInt.Z.abs_neqStatement := ∀ (n : Z) (_ : ZArith.BinInt.Z.le n Z0), ((ZArith.BinInt.Z.abs n) = (ZArith.BinInt.Z.opp n))
+def ZArith.BinInt.Z.abs_oppStatement := ∀ n : Z, ((ZArith.BinInt.Z.abs (ZArith.BinInt.Z.opp n)) = (ZArith.BinInt.Z.abs n))
+def ZArith.BinInt.Z.add_0_lStatement := ∀ n : Z, ((ZArith.BinInt.Z.add Z0 n) = n)
+def ZArith.BinInt.Z.add_0_rStatement := ∀ n : Z, ((ZArith.BinInt.Z.add n Z0) = n)
+def ZArith.BinInt.Z.add_assocStatement := ∀ n m p : Z, ((ZArith.BinInt.Z.add n (ZArith.BinInt.Z.add m p)) = (ZArith.BinInt.Z.add (ZArith.BinInt.Z.add n m) p))
+def ZArith.BinInt.Z.add_commStatement := ∀ n m : Z, ((ZArith.BinInt.Z.add n m) = (ZArith.BinInt.Z.add m n))
+def ZArith.BinInt.Z.bits_inj'Statement := ∀ (a b : Z) (_ : ∀ (n : Z) (_ : ZArith.BinInt.Z.le Z0 n), ((ZArith.BinInt.Z.testbit a n) = (ZArith.BinInt.Z.testbit b n))), (a = b)
+def ZArith.BinInt.Z.compare_antisymStatement := ∀ n m : Z, ((ZArith.BinInt.Z.compare m n) = (CompOpp (ZArith.BinInt.Z.compare n m)))
+def ZArith.BinInt.Z.compare_eq_iffStatement := ∀ n m : Z, Iff (((ZArith.BinInt.Z.compare n m) = Eq)) ((n = m))
+def ZArith.BinInt.Z.compare_eqStatement := ∀ (x y : Z) (_ : ((ZArith.BinInt.Z.compare x y) = Eq)), (x = y)
+def ZArith.BinInt.Z.compare_gt_iffStatement := ∀ x y : Z, Iff (((ZArith.BinInt.Z.compare x y) = Gt)) (ZArith.BinInt.Z.lt y x)
+def ZArith.BinInt.Z.div_divStatement := ∀ (a b c : Z) (_ : Not ((b = Z0))) (_ : ZArith.BinInt.Z.lt Z0 c), ((ZArith.BinInt.Z.div (ZArith.BinInt.Z.div a b) c) = (ZArith.BinInt.Z.div a (ZArith.BinInt.Z.mul b c)))
+def ZArith.BinInt.Z.div_le_monoStatement := ∀ (a b c : Z) (_ : ZArith.BinInt.Z.lt Z0 c) (_ : ZArith.BinInt.Z.le a b), ZArith.BinInt.Z.le (ZArith.BinInt.Z.div a c) (ZArith.BinInt.Z.div b c)
+def ZArith.BinInt.Z.div_modStatement := ∀ (a b : Z) (_ : Not ((b = Z0))), (a = (ZArith.BinInt.Z.add (ZArith.BinInt.Z.mul b (ZArith.BinInt.Z.div a b)) (ZArith.BinInt.Z.modulo a b)))
+def ZArith.BinInt.Z.div_smallStatement := ∀ (a b : Z) (_ : And (ZArith.BinInt.Z.le Z0 a) (ZArith.BinInt.Z.lt a b)), ((ZArith.BinInt.Z.div a b) = Z0)
+def ZArith.BinInt.Z.divide_0_rStatement := ∀ n : Z, ZArith.BinInt.Z.divide n Z0
+def ZArith.BinInt.Z.divide_1_lStatement := ∀ n : Z, ZArith.BinInt.Z.divide (Zpos xH) n
+def ZArith.BinInt.Z.divide_add_rStatement := ∀ (n m p : Z) (_ : ZArith.BinInt.Z.divide n m) (_ : ZArith.BinInt.Z.divide n p), ZArith.BinInt.Z.divide n (ZArith.BinInt.Z.add m p)
+def ZArith.BinInt.Z.divide_factor_rStatement := ∀ n m : Z, ZArith.BinInt.Z.divide n (ZArith.BinInt.Z.mul m n)
+def ZArith.BinInt.Z.divide_mul_lStatement := ∀ (n m p : Z) (_ : ZArith.BinInt.Z.divide n m), ZArith.BinInt.Z.divide n (ZArith.BinInt.Z.mul m p)
+def ZArith.BinInt.Z.divide_reflStatement := ∀ n : Z, ZArith.BinInt.Z.divide n n
+def ZArith.BinInt.Z.divide_transStatement := ∀ (n m p : Z) (_ : ZArith.BinInt.Z.divide n m) (_ : ZArith.BinInt.Z.divide m p), ZArith.BinInt.Z.divide n p
+def ZArith.BinInt.Z.double_specStatement := ∀ n : Z, ((ZArith.BinInt.Z.double n) = (ZArith.BinInt.Z.mul (Zpos (xO xH)) n))
+def ZArith.BinInt.Z.eqb_eqStatement := ∀ n m : Z, Iff (((ZArith.BinInt.Z.eqb n m) = true)) ((n = m))
+def ZArith.BinInt.Z.even_addStatement := ∀ n m : Z, ((ZArith.BinInt.Z.even (ZArith.BinInt.Z.add n m)) = (Logic.Rocq.Coq.Bool.Bool.eqb (ZArith.BinInt.Z.even n) (ZArith.BinInt.Z.even m)))
+def ZArith.BinInt.Z.even_mulStatement := ∀ n m : Z, ((ZArith.BinInt.Z.even (ZArith.BinInt.Z.mul n m)) = (orb (ZArith.BinInt.Z.even n) (ZArith.BinInt.Z.even m)))
+def ZArith.BinInt.Z.even_oppStatement := ∀ n : Z, ((ZArith.BinInt.Z.even (ZArith.BinInt.Z.opp n)) = (ZArith.BinInt.Z.even n))
+def ZArith.BinInt.Z.even_powStatement := ∀ (a b : Z) (_ : ZArith.BinInt.Z.lt Z0 b), ((ZArith.BinInt.Z.even (ZArith.BinInt.Z.pow a b)) = (ZArith.BinInt.Z.even a))
+def ZArith.BinInt.Z.ge_leStatement := ∀ (n m : Z) (_ : ZArith.BinInt.Z.ge n m), ZArith.BinInt.Z.le m n
+def ZArith.BinInt.Z.geb_leStatement := ∀ n m : Z, Iff (((ZArith.BinInt.Z.geb n m) = true)) (ZArith.BinInt.Z.le m n)
+def ZArith.BinInt.Z.gt_ltStatement := ∀ (n m : Z) (_ : ZArith.BinInt.Z.gt n m), ZArith.BinInt.Z.lt m n
+def ZArith.BinInt.Z.gtb_ltStatement := ∀ n m : Z, Iff (((ZArith.BinInt.Z.gtb n m) = true)) (ZArith.BinInt.Z.lt m n)
+def ZArith.BinInt.Z.le_0_subStatement := ∀ n m : Z, Iff (ZArith.BinInt.Z.le Z0 (ZArith.BinInt.Z.sub m n)) (ZArith.BinInt.Z.le n m)
+def ZArith.BinInt.Z.le_geStatement := ∀ (n m : Z) (_ : ZArith.BinInt.Z.le n m), ZArith.BinInt.Z.ge m n
+def ZArith.BinInt.Z.le_lt_transStatement := ∀ (n m p : Z) (_ : ZArith.BinInt.Z.le n m) (_ : ZArith.BinInt.Z.lt m p), ZArith.BinInt.Z.lt n p
+def ZArith.BinInt.Z.le_max_lStatement := ∀ n m : Z, ZArith.BinInt.Z.le n (ZArith.BinInt.Z.max n m)
+def ZArith.BinInt.Z.le_max_rStatement := ∀ n m : Z, ZArith.BinInt.Z.le m (ZArith.BinInt.Z.max n m)
+def ZArith.BinInt.Z.le_min_lStatement := ∀ n m : Z, ZArith.BinInt.Z.le (ZArith.BinInt.Z.min n m) n
+def ZArith.BinInt.Z.le_min_rStatement := ∀ n m : Z, ZArith.BinInt.Z.le (ZArith.BinInt.Z.min n m) m
+def ZArith.BinInt.Z.le_reflStatement := ∀ n : Z, ZArith.BinInt.Z.le n n
+def ZArith.BinInt.Z.le_transStatement := ∀ (n m p : Z) (_ : ZArith.BinInt.Z.le n m) (_ : ZArith.BinInt.Z.le m p), ZArith.BinInt.Z.le n p
+def ZArith.BinInt.Z.leb_gtStatement := ∀ x y : Z, Iff (((ZArith.BinInt.Z.leb x y) = false)) (ZArith.BinInt.Z.lt y x)
+def ZArith.BinInt.Z.leb_leStatement := ∀ n m : Z, Iff (((ZArith.BinInt.Z.leb n m) = true)) (ZArith.BinInt.Z.le n m)
+def ZArith.BinInt.Z.lt_gtStatement := ∀ (n m : Z) (_ : ZArith.BinInt.Z.lt n m), ZArith.BinInt.Z.gt m n
+def ZArith.BinInt.Z.lt_irreflStatement := ∀ x : Z, Not (ZArith.BinInt.Z.lt x x)
+def ZArith.BinInt.Z.lt_le_predStatement := ∀ n m : Z, Iff (ZArith.BinInt.Z.lt n m) (ZArith.BinInt.Z.le n (ZArith.BinInt.Z.pred m))
+def ZArith.BinInt.Z.lt_le_transStatement := ∀ (n m p : Z) (_ : ZArith.BinInt.Z.lt n m) (_ : ZArith.BinInt.Z.le m p), ZArith.BinInt.Z.lt n p
+def ZArith.BinInt.Z.lt_pred_lStatement := ∀ n : Z, ZArith.BinInt.Z.lt (ZArith.BinInt.Z.pred n) n
+def ZArith.BinInt.Z.lt_pred_leStatement := ∀ n m : Z, Iff (ZArith.BinInt.Z.lt (ZArith.BinInt.Z.pred n) m) (ZArith.BinInt.Z.le n m)
+def ZArith.BinInt.Z.lt_sub_0Statement := ∀ n m : Z, Iff (ZArith.BinInt.Z.lt (ZArith.BinInt.Z.sub n m) Z0) (ZArith.BinInt.Z.lt n m)
+def ZArith.BinInt.Z.lt_succ_rStatement := ∀ n m : Z, Iff (ZArith.BinInt.Z.lt n (ZArith.BinInt.Z.succ m)) (ZArith.BinInt.Z.le n m)
+def ZArith.BinInt.Z.ltb_ltStatement := ∀ n m : Z, Iff (((ZArith.BinInt.Z.ltb n m) = true)) (ZArith.BinInt.Z.lt n m)
+def ZArith.BinInt.Z.ltb_specStatement :=
+  ∀ x y : Z, BoolSpec (ZArith.BinInt.Z.lt x y) (ZArith.BinInt.Z.le y x) (ZArith.BinInt.Z.ltb x y)
+def ZArith.BinInt.Z.max_case_strongStatement := ∀ (n m : Z) (P : ∀ _ : Z, Type) (_ : ∀ _ : ZArith.BinInt.Z.le m n, P n) (_ : ∀ _ : ZArith.BinInt.Z.le n m, P m), P (ZArith.BinInt.Z.max n m)
+def ZArith.BinInt.Z.max_caseStatement := ∀ (n m : Z) (P : ∀ _ : Z, Type) (_ : P n) (_ : P m), P (ZArith.BinInt.Z.max n m)
+def ZArith.BinInt.Z.max_commStatement := ∀ n m : Z, ((ZArith.BinInt.Z.max n m) = (ZArith.BinInt.Z.max m n))
+def ZArith.BinInt.Z.max_l_iffStatement := ∀ n m : Z, Iff (((ZArith.BinInt.Z.max n m) = n)) (ZArith.BinInt.Z.le m n)
+def ZArith.BinInt.Z.max_lStatement := ∀ (n m : Z) (_ : ZArith.BinInt.Z.le m n), ((ZArith.BinInt.Z.max n m) = n)
+def ZArith.BinInt.Z.max_lubStatement := ∀ (n m p : Z) (_ : ZArith.BinInt.Z.le n p) (_ : ZArith.BinInt.Z.le m p), ZArith.BinInt.Z.le (ZArith.BinInt.Z.max n m) p
+def ZArith.BinInt.Z.max_rStatement := ∀ (n m : Z) (_ : ZArith.BinInt.Z.le n m), ((ZArith.BinInt.Z.max n m) = m)
+def ZArith.BinInt.Z.min_caseStatement := ∀ (n m : Z) (P : ∀ _ : Z, Type) (_ : P n) (_ : P m), P (ZArith.BinInt.Z.min n m)
+def ZArith.BinInt.Z.min_lStatement := ∀ (n m : Z) (_ : ZArith.BinInt.Z.le n m), ((ZArith.BinInt.Z.min n m) = n)
+def ZArith.BinInt.Z.min_rStatement := ∀ (n m : Z) (_ : ZArith.BinInt.Z.le m n), ((ZArith.BinInt.Z.min n m) = m)
+def ZArith.BinInt.Z.mod_smallStatement := ∀ (a b : Z) (_ : And (ZArith.BinInt.Z.le Z0 a) (ZArith.BinInt.Z.lt a b)), ((ZArith.BinInt.Z.modulo a b) = a)
+def ZArith.BinInt.Z.mul_0_rStatement := ∀ n : Z, ((ZArith.BinInt.Z.mul n Z0) = Z0)
+def ZArith.BinInt.Z.mul_assocStatement := ∀ n m p : Z, ((ZArith.BinInt.Z.mul n (ZArith.BinInt.Z.mul m p)) = (ZArith.BinInt.Z.mul (ZArith.BinInt.Z.mul n m) p))
+def ZArith.BinInt.Z.mul_commStatement := ∀ n m : Z, ((ZArith.BinInt.Z.mul n m) = (ZArith.BinInt.Z.mul m n))
+def ZArith.BinInt.Z.mul_divide_mono_lStatement := ∀ (n m p : Z) (_ : ZArith.BinInt.Z.divide n m), ZArith.BinInt.Z.divide (ZArith.BinInt.Z.mul p n) (ZArith.BinInt.Z.mul p m)
+def ZArith.BinInt.Z.mul_le_mono_nonneg_lStatement := ∀ (n m p : Z) (_ : ZArith.BinInt.Z.le Z0 p) (_ : ZArith.BinInt.Z.le n m), ZArith.BinInt.Z.le (ZArith.BinInt.Z.mul p n) (ZArith.BinInt.Z.mul p m)
+def ZArith.BinInt.Z.mul_le_mono_nonneg_rStatement := ∀ (n m p : Z) (_ : ZArith.BinInt.Z.le Z0 p) (_ : ZArith.BinInt.Z.le n m), ZArith.BinInt.Z.le (ZArith.BinInt.Z.mul n p) (ZArith.BinInt.Z.mul m p)
+def ZArith.BinInt.Z.mul_le_mono_nonpos_lStatement := ∀ (n m p : Z) (_ : ZArith.BinInt.Z.le p Z0) (_ : ZArith.BinInt.Z.le n m), ZArith.BinInt.Z.le (ZArith.BinInt.Z.mul p m) (ZArith.BinInt.Z.mul p n)
+def ZArith.BinInt.Z.mul_nonneg_nonnegStatement := ∀ (n m : Z) (_ : ZArith.BinInt.Z.le Z0 n) (_ : ZArith.BinInt.Z.le Z0 m), ZArith.BinInt.Z.le Z0 (ZArith.BinInt.Z.mul n m)
+def ZArith.BinInt.Z.mul_pos_posStatement := ∀ (n m : Z) (_ : ZArith.BinInt.Z.lt Z0 n) (_ : ZArith.BinInt.Z.lt Z0 m), ZArith.BinInt.Z.lt Z0 (ZArith.BinInt.Z.mul n m)
+def ZArith.BinInt.Z.opp_injStatement := ∀ (n m : Z) (_ : ((ZArith.BinInt.Z.opp n) = (ZArith.BinInt.Z.opp m))), (n = m)
+def ZArith.BinInt.Z.opp_involutiveStatement := ∀ n : Z, ((ZArith.BinInt.Z.opp (ZArith.BinInt.Z.opp n)) = n)
+def ZArith.BinInt.Z.pred_succStatement := ∀ n : Z, ((ZArith.BinInt.Z.pred (ZArith.BinInt.Z.succ n)) = n)
+def ZArith.BinInt.Z.quot_1_rStatement := ∀ a : Z, ((ZArith.BinInt.Z.quot a (Zpos xH)) = a)
+def ZArith.BinInt.Z.quot_opp_lStatement := ∀ (a b : Z) (_ : Not ((b = Z0))), ((ZArith.BinInt.Z.quot (ZArith.BinInt.Z.opp a) b) = (ZArith.BinInt.Z.opp (ZArith.BinInt.Z.quot a b)))
+def ZArith.BinInt.Z.shiftl_0_rStatement := ∀ a : Z, ((ZArith.BinInt.Z.shiftl a Z0) = a)
+def ZArith.BinInt.Z.shiftl_mul_pow2Statement := ∀ (a n : Z) (_ : ZArith.BinInt.Z.le Z0 n), ((ZArith.BinInt.Z.shiftl a n) = (ZArith.BinInt.Z.mul a (ZArith.BinInt.Z.pow (Zpos (xO xH)) n)))
+def ZArith.BinInt.Z.shiftl_spec_highStatement := ∀ (a n m : Z) (_ : ZArith.BinInt.Z.le Z0 m) (_ : ZArith.BinInt.Z.le n m), ((ZArith.BinInt.Z.testbit (ZArith.BinInt.Z.shiftl a n) m) = (ZArith.BinInt.Z.testbit a (ZArith.BinInt.Z.sub m n)))
+def ZArith.BinInt.Z.shiftl_spec_lowStatement := ∀ (a n m : Z) (_ : ZArith.BinInt.Z.lt m n), ((ZArith.BinInt.Z.testbit (ZArith.BinInt.Z.shiftl a n) m) = false)
+def ZArith.BinInt.Z.shiftr_0_rStatement := ∀ a : Z, ((ZArith.BinInt.Z.shiftr a Z0) = a)
+def ZArith.BinInt.Z.shiftr_specStatement := ∀ (a n m : Z) (_ : ZArith.BinInt.Z.le Z0 m), ((ZArith.BinInt.Z.testbit (ZArith.BinInt.Z.shiftr a n) m) = (ZArith.BinInt.Z.testbit a (ZArith.BinInt.Z.add m n)))
+def ZArith.BinInt.Z.sqrtrem_specStatement :=
+  ∀ n : Z, ZArith.BinInt.Z.le Z0 n →
+    let sr := ZArith.BinInt.Z.sqrtrem n
+    n = ZArith.BinInt.Z.add (ZArith.BinInt.Z.mul sr.1 sr.1) sr.2 ∧
+      ZArith.BinInt.Z.le Z0 sr.2 ∧
+      ZArith.BinInt.Z.le sr.2 (ZArith.BinInt.Z.mul (Zpos (xO xH)) sr.1)
+def ZArith.BinInt.Z.succ_double_specStatement := ∀ n : Z, ((ZArith.BinInt.Z.succ_double n) = (ZArith.BinInt.Z.add (ZArith.BinInt.Z.mul (Zpos (xO xH)) n) (Zpos xH)))
+def ZArith.BinInt.Z.testbit_0_lStatement := ∀ n : Z, ((ZArith.BinInt.Z.testbit Z0 n) = false)
+def ZArith.BinInt.Z.testbit_even_0Statement := ∀ a : Z, ((ZArith.BinInt.Z.testbit (ZArith.BinInt.Z.mul (Zpos (xO xH)) a) Z0) = false)
+def ZArith.BinInt.Z.testbit_even_succStatement := ∀ (a n : Z) (_ : ZArith.BinInt.Z.le Z0 n), ((ZArith.BinInt.Z.testbit (ZArith.BinInt.Z.mul (Zpos (xO xH)) a) (ZArith.BinInt.Z.succ n)) = (ZArith.BinInt.Z.testbit a n))
+def ZArith.BinInt.Z.testbit_odd_0Statement := ∀ a : Z, ((ZArith.BinInt.Z.testbit (ZArith.BinInt.Z.add (ZArith.BinInt.Z.mul (Zpos (xO xH)) a) (Zpos xH)) Z0) = true)
+def ZArith.BinInt.Z.testbit_odd_succStatement := ∀ (a n : Z) (_ : ZArith.BinInt.Z.le Z0 n), ((ZArith.BinInt.Z.testbit (ZArith.BinInt.Z.add (ZArith.BinInt.Z.mul (Zpos (xO xH)) a) (Zpos xH)) (ZArith.BinInt.Z.succ n)) = (ZArith.BinInt.Z.testbit a n))
+def ZArith.BinInt.Z2Pos.idStatement := ∀ (x : Z) (_ : ZArith.BinInt.Z.lt Z0 x), ((Zpos (ZArith.BinInt.Z.to_pos x)) = x)
+def ZArith.BinInt.Zopp_mult_distr_lStatement := ∀ n m : Z, ((ZArith.BinInt.Z.opp (ZArith.BinInt.Z.mul n m)) = (ZArith.BinInt.Z.mul (ZArith.BinInt.Z.opp n) m))
+def ZArith.BinInt.Zplus_diag_eq_mult_2Statement := ∀ n : Z, ((ZArith.BinInt.Z.add n n) = (ZArith.BinInt.Z.mul n (Zpos (xO xH))))
+def ZArith.BinInt.Zpred_succStatement := ∀ n : Z, (n = (ZArith.BinInt.Z.pred (ZArith.BinInt.Z.succ n)))
+def ZArith.BinInt.Zsucc_predStatement := ∀ n : Z, (n = (ZArith.BinInt.Z.succ (ZArith.BinInt.Z.pred n)))
+def ZArith.ZArith_dec.Z_decStatement := ∀ n m : Z, Support.Sumor (Support.Sumbool (ZArith.BinInt.Z.lt n m) (ZArith.BinInt.Z.gt n m)) ((n = m))
+def ZArith.ZArith_dec.Z_lt_le_decStatement := ∀ x y : Z, Support.Sumbool (ZArith.BinInt.Z.lt x y) (ZArith.BinInt.Z.le y x)
+def ZArith.Zbool.Zeq_bool_eqStatement := ∀ (x y : Z) (_ : ((Zeq_bool x y) = true)), (x = y)
+def ZArith.Zbool.Zeq_is_eq_boolStatement := ∀ x y : Z, Iff ((x = y)) (((Zeq_bool x y) = true))
+def ZArith.Zbool.Zle_bool_imp_leStatement := ∀ (n m : Z) (_ : ((ZArith.BinInt.Z.leb n m) = true)), ZArith.BinInt.Z.le n m
+def ZArith.Zbool.Zle_casesStatement :=
+  ∀ n m : Z, match ZArith.BinInt.Z.leb n m with
+    | true => ZArith.BinInt.Z.le n m
+    | false => ZArith.BinInt.Z.gt n m
+def ZArith.Zbool.Zle_is_le_boolStatement := ∀ n m : Z, Iff (ZArith.BinInt.Z.le n m) (((ZArith.BinInt.Z.leb n m) = true))
+def ZArith.Zbool.Zlt_casesStatement :=
+  ∀ n m : Z, match ZArith.BinInt.Z.ltb n m with
+    | true => ZArith.BinInt.Z.lt n m
+    | false => ZArith.BinInt.Z.ge n m
+def ZArith.Zbool.Zlt_is_lt_boolStatement := ∀ n m : Z, Iff (ZArith.BinInt.Z.lt n m) (((ZArith.BinInt.Z.ltb n m) = true))
+def ZArith.Zcompare.Zcompare_antisymStatement := ∀ n m : Z, ((CompOpp (ZArith.BinInt.Z.compare n m)) = (ZArith.BinInt.Z.compare m n))
+def ZArith.Zcompare.Zgt_compareStatement :=
+  ∀ (n m : Z) (_ : ZArith.BinInt.Z.gt n m),
+    match ZArith.BinInt.Z.compare n m with
+    | .Eq => False
+    | .Lt => False
+    | .Gt => True
+def ZArith.Zcompare.Zlt_compareStatement :=
+  ∀ (n m : Z) (_ : ZArith.BinInt.Z.lt n m),
+    match ZArith.BinInt.Z.compare n m with
+    | .Eq => False
+    | .Lt => True
+    | .Gt => False
+def ZArith.Zdiv.Z_div_mod_eq_fullStatement := ∀ a b : Z, (a = (ZArith.BinInt.Z.add (ZArith.BinInt.Z.mul b (ZArith.BinInt.Z.div a b)) (ZArith.BinInt.Z.modulo a b)))
+def ZArith.Zdiv.Z_div_modStatement :=
+  ∀ (a b : Z) (_ : ZArith.BinInt.Z.gt b Z0),
+    let qr := ZArith.BinInt.Z.div_eucl a b
+    a = ZArith.BinInt.Z.add (ZArith.BinInt.Z.mul b qr.1) qr.2 ∧
+      ZArith.BinInt.Z.le Z0 qr.2 ∧ ZArith.BinInt.Z.lt qr.2 b
+def ZArith.Zdiv.Z_div_plus_full_lStatement := ∀ (a b c : Z) (_ : Not ((b = Z0))), ((ZArith.BinInt.Z.div (ZArith.BinInt.Z.add (ZArith.BinInt.Z.mul a b) c) b) = (ZArith.BinInt.Z.add a (ZArith.BinInt.Z.div c b)))
+def ZArith.Zdiv.Z_div_plusStatement := ∀ (a b c : Z) (_ : ZArith.BinInt.Z.gt c Z0), ((ZArith.BinInt.Z.div (ZArith.BinInt.Z.add a (ZArith.BinInt.Z.mul b c)) c) = (ZArith.BinInt.Z.add (ZArith.BinInt.Z.div a c) b))
+def ZArith.Zdiv.Z_mod_ltStatement := ∀ (a b : Z) (_ : ZArith.BinInt.Z.gt b Z0), And (ZArith.BinInt.Z.le Z0 (ZArith.BinInt.Z.modulo a b)) (ZArith.BinInt.Z.lt (ZArith.BinInt.Z.modulo a b) b)
+def ZArith.Zdiv.Z_mod_plus_fullStatement := ∀ a b c : Z, ((ZArith.BinInt.Z.modulo (ZArith.BinInt.Z.add a (ZArith.BinInt.Z.mul b c)) c) = (ZArith.BinInt.Z.modulo a c))
+def ZArith.Zdiv.Z_mod_plusStatement := ∀ (a b c : Z) (_ : ZArith.BinInt.Z.gt c Z0), ((ZArith.BinInt.Z.modulo (ZArith.BinInt.Z.add a (ZArith.BinInt.Z.mul b c)) c) = (ZArith.BinInt.Z.modulo a c))
+def ZArith.Zdiv.Zdiv_0_lStatement := ∀ a : Z, ((ZArith.BinInt.Z.div Z0 a) = Z0)
+def ZArith.Zdiv.Zdiv_1_rStatement := ∀ a : Z, ((ZArith.BinInt.Z.div a (Zpos xH)) = a)
+def ZArith.Zdiv.Zdiv_smallStatement := ∀ (a b : Z) (_ : And (ZArith.BinInt.Z.le Z0 a) (ZArith.BinInt.Z.lt a b)), ((ZArith.BinInt.Z.div a b) = Z0)
+def ZArith.Zdiv.Zdiv_unique_fullStatement :=
+  ∀ (a b q r : Z) (_ : ZArith.Zdiv.Remainder r b)
+    (_ : a = ZArith.BinInt.Z.add (ZArith.BinInt.Z.mul b q) r),
+    q = ZArith.BinInt.Z.div a b
+def ZArith.Zdiv.Zdiv2_divStatement := ∀ a : Z, ((ZArith.BinInt.Z.div2 a) = (ZArith.BinInt.Z.div a (Zpos (xO xH))))
+def ZArith.Zdiv.Zmod_0_lStatement := ∀ a : Z, ((ZArith.BinInt.Z.modulo Z0 a) = Z0)
+def ZArith.Zdiv.Zmod_1_rStatement := ∀ a : Z, ((ZArith.BinInt.Z.modulo a (Zpos xH)) = Z0)
+def ZArith.Zdiv.Zmod_opp_oppStatement := ∀ a b : Z, ((ZArith.BinInt.Z.modulo (ZArith.BinInt.Z.opp a) (ZArith.BinInt.Z.opp b)) = (ZArith.BinInt.Z.opp (ZArith.BinInt.Z.modulo a b)))
+def ZArith.Zdiv.Zmod_smallStatement := ∀ (a n : Z) (_ : And (ZArith.BinInt.Z.le Z0 a) (ZArith.BinInt.Z.lt a n)), ((ZArith.BinInt.Z.modulo a n) = a)
+def ZArith.Zeven.Zdiv2_odd_eqnStatement :=
+  ∀ n : Z,
+    n = ZArith.BinInt.Z.add
+      (ZArith.BinInt.Z.mul (Zpos (xO xH)) (ZArith.BinInt.Z.div2 n))
+      (if ZArith.BinInt.Z.odd n then Zpos xH else Z0)
+def ZArith.Zmax.Zmax_leftStatement := ∀ (n m : Z) (_ : ZArith.BinInt.Z.ge n m), ((ZArith.BinInt.Z.max n m) = n)
+def ZArith.Zmax.Zmax_specStatement := ∀ x y : Z, Or (And (ZArith.BinInt.Z.ge x y) (((ZArith.BinInt.Z.max x y) = x))) (And (ZArith.BinInt.Z.lt x y) (((ZArith.BinInt.Z.max x y) = y)))
+def ZArith.Zmin.Zmin_specStatement := ∀ x y : Z, Or (And (ZArith.BinInt.Z.le x y) (((ZArith.BinInt.Z.min x y) = x))) (And (ZArith.BinInt.Z.gt x y) (((ZArith.BinInt.Z.min x y) = y)))
+def ZArith.Zmisc.iter_nat_of_ZStatement := ∀ (n : Z) (A : Type) (f : ∀ _ : A, A) (x : A) (_ : ZArith.BinInt.Z.le Z0 n), ((@ZArith.BinInt.Z.iter n A f x) = (nat_rect (fun _ : Nat => A) x (fun _ : Nat => f) (ZArith.BinInt.Z.abs_nat n)))
+def ZArith.Znat.N_nat_ZStatement := ∀ n : N, ((ZArith.BinInt.Z.of_nat (N.to_nat n)) = (ZArith.BinInt.Z.of_N n))
+def ZArith.Znat.Nat2Z.idStatement := ∀ n : Nat, ((ZArith.BinInt.Z.to_nat (ZArith.BinInt.Z.of_nat n)) = n)
+def ZArith.Znat.Nat2Z.inj_addStatement := ∀ n m : Nat, ((ZArith.BinInt.Z.of_nat (Nat.add n m)) = (ZArith.BinInt.Z.add (ZArith.BinInt.Z.of_nat n) (ZArith.BinInt.Z.of_nat m)))
+def ZArith.Znat.Nat2Z.inj_succStatement := ∀ n : Nat, ((ZArith.BinInt.Z.of_nat (Nat.succ n)) = (ZArith.BinInt.Z.succ (ZArith.BinInt.Z.of_nat n)))
+def ZArith.Znat.Nat2Z.injStatement := ∀ (n m : Nat) (_ : ((ZArith.BinInt.Z.of_nat n) = (ZArith.BinInt.Z.of_nat m))), (n = m)
+def ZArith.Znat.positive_nat_ZStatement := ∀ p : positive, ((ZArith.BinInt.Z.of_nat (PArith.BinPos.Pos.to_nat p)) = (Zpos p))
+def ZArith.Znat.Z2Nat.idStatement := ∀ (n : Z) (_ : ZArith.BinInt.Z.le Z0 n), ((ZArith.BinInt.Z.of_nat (ZArith.BinInt.Z.to_nat n)) = n)
+def ZArith.Znat.Z2Nat.inj_addStatement := ∀ (n m : Z) (_ : ZArith.BinInt.Z.le Z0 n) (_ : ZArith.BinInt.Z.le Z0 m), ((ZArith.BinInt.Z.to_nat (ZArith.BinInt.Z.add n m)) = (Nat.add (ZArith.BinInt.Z.to_nat n) (ZArith.BinInt.Z.to_nat m)))
+def ZArith.Znat.Z2Nat.inj_subStatement := ∀ (n m : Z) (_ : ZArith.BinInt.Z.le Z0 m), ((ZArith.BinInt.Z.to_nat (ZArith.BinInt.Z.sub n m)) = (Nat.sub (ZArith.BinInt.Z.to_nat n) (ZArith.BinInt.Z.to_nat m)))
+def ZArith.Znat.Zabs2Nat.abs_nat_nonnegStatement := ∀ (n : Z) (_ : ZArith.BinInt.Z.le Z0 n), ((ZArith.BinInt.Z.abs_nat n) = (ZArith.BinInt.Z.to_nat n))
+def ZArith.Znat.Zabs2Nat.id_absStatement := ∀ n : Z, ((ZArith.BinInt.Z.of_nat (ZArith.BinInt.Z.abs_nat n)) = (ZArith.BinInt.Z.abs n))
+def ZArith.Znumtheory.Zdivide_boundsStatement := ∀ (a b : Z) (_ : ZArith.BinInt.Z.divide a b) (_ : Not ((b = Z0))), ZArith.BinInt.Z.le (ZArith.BinInt.Z.abs a) (ZArith.BinInt.Z.abs b)
+def ZArith.Znumtheory.Zdivide_decStatement := ∀ a b : Z, Support.Sumbool (ZArith.BinInt.Z.divide a b) (Not (ZArith.BinInt.Z.divide a b))
+def ZArith.Znumtheory.Zmod_divideStatement := ∀ (a b : Z) (_ : Not ((b = Z0))) (_ : ((ZArith.BinInt.Z.modulo a b) = Z0)), ZArith.BinInt.Z.divide b a
+def ZArith.Zorder.Zge_transStatement := ∀ (n m p : Z) (_ : ZArith.BinInt.Z.ge n m) (_ : ZArith.BinInt.Z.ge m p), ZArith.BinInt.Z.ge n p
+def ZArith.Zorder.Zle_0_minus_leStatement := ∀ (n m : Z) (_ : ZArith.BinInt.Z.le Z0 (ZArith.BinInt.Z.sub n m)), ZArith.BinInt.Z.le m n
+def ZArith.Zorder.Zle_0_natStatement := ∀ n : Nat, ZArith.BinInt.Z.le Z0 (ZArith.BinInt.Z.of_nat n)
+def ZArith.Zorder.Zle_lt_or_eqStatement := ∀ (n m : Z) (_ : ZArith.BinInt.Z.le n m), Or (ZArith.BinInt.Z.lt n m) ((n = m))
+def ZArith.Zorder.Zle_lt_succStatement := ∀ (n m : Z) (_ : ZArith.BinInt.Z.le n m), ZArith.BinInt.Z.lt n (ZArith.BinInt.Z.succ m)
+def ZArith.Zorder.Zle_minus_le_0Statement := ∀ (n m : Z) (_ : ZArith.BinInt.Z.le m n), ZArith.BinInt.Z.le Z0 (ZArith.BinInt.Z.sub n m)
+def ZArith.Zorder.Zle_not_gtStatement := ∀ (n m : Z) (_ : ZArith.BinInt.Z.le n m), Not (ZArith.BinInt.Z.gt n m)
+def ZArith.Zorder.Zle_succ_leStatement := ∀ (n m : Z) (_ : ZArith.BinInt.Z.le (ZArith.BinInt.Z.succ n) m), ZArith.BinInt.Z.le n m
+def ZArith.Zorder.Zlt_0_le_0_predStatement := ∀ (n : Z) (_ : ZArith.BinInt.Z.lt Z0 n), ZArith.BinInt.Z.le Z0 (ZArith.BinInt.Z.pred n)
+def ZArith.Zorder.Zlt_le_succStatement := ∀ (n m : Z) (_ : ZArith.BinInt.Z.lt n m), ZArith.BinInt.Z.le (ZArith.BinInt.Z.succ n) m
+def ZArith.Zorder.Zlt_not_leStatement := ∀ (n m : Z) (_ : ZArith.BinInt.Z.lt n m), Not (ZArith.BinInt.Z.le m n)
+def ZArith.Zorder.Zlt_succ_leStatement := ∀ (n m : Z) (_ : ZArith.BinInt.Z.lt n (ZArith.BinInt.Z.succ m)), ZArith.BinInt.Z.le n m
+def ZArith.Zorder.Zlt_succ_predStatement := ∀ (n m : Z) (_ : ZArith.BinInt.Z.lt (ZArith.BinInt.Z.succ n) m), ZArith.BinInt.Z.lt n (ZArith.BinInt.Z.pred m)
+def ZArith.Zorder.Zmult_ge_compat_rStatement := ∀ (n m p : Z) (_ : ZArith.BinInt.Z.ge n m) (_ : ZArith.BinInt.Z.ge p Z0), ZArith.BinInt.Z.ge (ZArith.BinInt.Z.mul n p) (ZArith.BinInt.Z.mul m p)
+def ZArith.Zorder.Zmult_le_0_reg_rStatement := ∀ (n m : Z) (_ : ZArith.BinInt.Z.gt n Z0) (_ : ZArith.BinInt.Z.le Z0 (ZArith.BinInt.Z.mul m n)), ZArith.BinInt.Z.le Z0 m
+def ZArith.Zorder.Zmult_le_compat_lStatement := ∀ (n m p : Z) (_ : ZArith.BinInt.Z.le n m) (_ : ZArith.BinInt.Z.le Z0 p), ZArith.BinInt.Z.le (ZArith.BinInt.Z.mul p n) (ZArith.BinInt.Z.mul p m)
+def ZArith.Zorder.Zmult_le_compat_rStatement := ∀ (n m p : Z) (_ : ZArith.BinInt.Z.le n m) (_ : ZArith.BinInt.Z.le Z0 p), ZArith.BinInt.Z.le (ZArith.BinInt.Z.mul n p) (ZArith.BinInt.Z.mul m p)
+def ZArith.Zorder.Zmult_le_compatStatement := ∀ (n m p q : Z) (_ : ZArith.BinInt.Z.le n p) (_ : ZArith.BinInt.Z.le m q) (_ : ZArith.BinInt.Z.le Z0 n) (_ : ZArith.BinInt.Z.le Z0 m), ZArith.BinInt.Z.le (ZArith.BinInt.Z.mul n m) (ZArith.BinInt.Z.mul p q)
+def ZArith.Zorder.Zmult_le_reg_rStatement := ∀ (n m p : Z) (_ : ZArith.BinInt.Z.gt p Z0) (_ : ZArith.BinInt.Z.le (ZArith.BinInt.Z.mul n p) (ZArith.BinInt.Z.mul m p)), ZArith.BinInt.Z.le n m
+def ZArith.Zorder.Zmult_lt_compat_lStatement := ∀ (n m p : Z) (_ : ZArith.BinInt.Z.lt Z0 p) (_ : ZArith.BinInt.Z.lt n m), ZArith.BinInt.Z.lt (ZArith.BinInt.Z.mul p n) (ZArith.BinInt.Z.mul p m)
+def ZArith.Zorder.Zmult_lt_compat_rStatement := ∀ (n m p : Z) (_ : ZArith.BinInt.Z.lt Z0 p) (_ : ZArith.BinInt.Z.lt n m), ZArith.BinInt.Z.lt (ZArith.BinInt.Z.mul n p) (ZArith.BinInt.Z.mul m p)
+def ZArith.Zorder.Zmult_lt_compat2Statement := ∀ (n m p q : Z) (_ : And (ZArith.BinInt.Z.lt Z0 n) (ZArith.BinInt.Z.le n p)) (_ : And (ZArith.BinInt.Z.lt Z0 m) (ZArith.BinInt.Z.lt m q)), ZArith.BinInt.Z.lt (ZArith.BinInt.Z.mul n m) (ZArith.BinInt.Z.mul p q)
+def ZArith.Zorder.Zmult_lt_reg_rStatement := ∀ (n m p : Z) (_ : ZArith.BinInt.Z.lt Z0 p) (_ : ZArith.BinInt.Z.lt (ZArith.BinInt.Z.mul n p) (ZArith.BinInt.Z.mul m p)), ZArith.BinInt.Z.lt n m
+def ZArith.Zorder.Znot_ge_ltStatement := ∀ (n m : Z) (_ : Not (ZArith.BinInt.Z.ge n m)), ZArith.BinInt.Z.lt n m
+def ZArith.Zorder.Znot_gt_leStatement := ∀ (n m : Z) (_ : Not (ZArith.BinInt.Z.gt n m)), ZArith.BinInt.Z.le n m
+def ZArith.Zorder.Znot_le_gtStatement := ∀ (n m : Z) (_ : Not (ZArith.BinInt.Z.le n m)), ZArith.BinInt.Z.gt n m
+def ZArith.Zorder.Zplus_le_compat_rStatement := ∀ (n m p : Z) (_ : ZArith.BinInt.Z.le n m), ZArith.BinInt.Z.le (ZArith.BinInt.Z.add n p) (ZArith.BinInt.Z.add m p)
+def ZArith.Zorder.Zplus_le_reg_rStatement := ∀ (n m p : Z) (_ : ZArith.BinInt.Z.le (ZArith.BinInt.Z.add n p) (ZArith.BinInt.Z.add m p)), ZArith.BinInt.Z.le n m
+def ZArith.Zorder.Zplus_lt_compat_lStatement := ∀ (n m p : Z) (_ : ZArith.BinInt.Z.lt n m), ZArith.BinInt.Z.lt (ZArith.BinInt.Z.add p n) (ZArith.BinInt.Z.add p m)
+def ZArith.Zorder.Zplus_lt_compat_rStatement := ∀ (n m p : Z) (_ : ZArith.BinInt.Z.lt n m), ZArith.BinInt.Z.lt (ZArith.BinInt.Z.add n p) (ZArith.BinInt.Z.add m p)
+def ZArith.Zorder.Zplus_lt_reg_lStatement := ∀ (n m p : Z) (_ : ZArith.BinInt.Z.lt (ZArith.BinInt.Z.add p n) (ZArith.BinInt.Z.add p m)), ZArith.BinInt.Z.lt n m
+def ZArith.Zorder.Zplus_lt_reg_rStatement := ∀ (n m p : Z) (_ : ZArith.BinInt.Z.lt (ZArith.BinInt.Z.add n p) (ZArith.BinInt.Z.add m p)), ZArith.BinInt.Z.lt n m
+def ZArith.Zpower.shift_pos_correctStatement := ∀ p x : positive, ((Zpos (shift_pos p x)) = (ZArith.BinInt.Z.mul (ZArith.BinInt.Z.pow_pos (Zpos (xO xH)) p) (Zpos x)))
+def ZArith.Zpower.two_p_gt_ZEROStatement := ∀ (x : Z) (_ : ZArith.BinInt.Z.le Z0 x), ZArith.BinInt.Z.gt (two_p x) Z0
+def ZArith.Zpower.two_p_is_expStatement := ∀ (x y : Z) (_ : ZArith.BinInt.Z.le Z0 x) (_ : ZArith.BinInt.Z.le Z0 y), ((two_p (ZArith.BinInt.Z.add x y)) = (ZArith.BinInt.Z.mul (two_p x) (two_p y)))
+def ZArith.Zpower.two_p_SStatement := ∀ (x : Z) (_ : ZArith.BinInt.Z.le Z0 x), ((two_p (ZArith.BinInt.Z.succ x)) = (ZArith.BinInt.Z.mul (Zpos (xO xH)) (two_p x)))
+def ZArith.Zpower.two_power_nat_equivStatement := ∀ n : Nat, ((two_power_nat n) = (ZArith.BinInt.Z.pow (Zpos (xO xH)) (ZArith.BinInt.Z.of_nat n)))
+def ZArith.Zpower.two_power_nat_SStatement := ∀ n : Nat, ((two_power_nat (Nat.succ n)) = (ZArith.BinInt.Z.mul (Zpos (xO xH)) (two_power_nat n)))
+def ZArith.Zpower.two_power_pos_is_expStatement := ∀ x y : positive, ((two_power_pos (PArith.BinPos.Pos.add x y)) = (ZArith.BinInt.Z.mul (two_power_pos x) (two_power_pos y)))
+def ZArith.Zpower.two_power_pos_natStatement := ∀ p : positive, ((two_power_pos p) = (two_power_nat (PArith.BinPos.Pos.to_nat p)))
+def ZArith.Zpower.Zpower_expStatement := ∀ (x n m : Z) (_ : ZArith.BinInt.Z.ge n Z0) (_ : ZArith.BinInt.Z.ge m Z0), ((ZArith.BinInt.Z.pow x (ZArith.BinInt.Z.add n m)) = (ZArith.BinInt.Z.mul (ZArith.BinInt.Z.pow x n) (ZArith.BinInt.Z.pow x m)))
+def ZArith.Zpower.Zpower_nat_is_expStatement := ∀ (n m : Nat) (z : Z), ((Zpower_nat z (Nat.add n m)) = (ZArith.BinInt.Z.mul (Zpower_nat z n) (Zpower_nat z m)))
+def ZArith.Zpower.Zpower_nat_ZStatement := ∀ (z : Z) (n : Nat), ((Zpower_nat z n) = (ZArith.BinInt.Z.pow z (ZArith.BinInt.Z.of_nat n)))
+def ZArith.Zpower.Zpower_pos_natStatement := ∀ (z : Z) (p : positive), ((ZArith.BinInt.Z.pow_pos z p) = (Zpower_nat z (PArith.BinPos.Pos.to_nat p)))
+def ZArith.Zquot.Zquot_Zdiv_posStatement := ∀ (a b : Z) (_ : ZArith.BinInt.Z.le Z0 a) (_ : ZArith.BinInt.Z.le Z0 b), ((ZArith.BinInt.Z.quot a b) = (ZArith.BinInt.Z.div a b))
+end Rocq.Coq
+end CompCert4Lean.Foundation.Numbers
