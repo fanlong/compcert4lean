@@ -1,0 +1,568 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "definition-worker-result.schema.json",
+  "title": "CompCert4Lean definition worker result",
+  "description": "Receipt returned by a definition-translation worker to the coordinator.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "receipt_version",
+    "packet_id",
+    "work_unit_id",
+    "role",
+    "attempt",
+    "model",
+    "reasoning_effort",
+    "baseline",
+    "packet_hash",
+    "bundle_hash",
+    "prompt_hash",
+    "schema_hash",
+    "completion_status",
+    "changed_files",
+    "candidate_commit",
+    "candidate_diff_hash",
+    "declaration_outcomes",
+    "generated_surface_outcomes",
+    "external_api_outcomes",
+    "commands",
+    "consulted_resources",
+    "decision_acknowledgements",
+    "trust_relevant_declarations",
+    "discrepancies",
+    "requested_context",
+    "proposed_next_action"
+  ],
+  "properties": {
+    "receipt_version": {
+      "const": "1.0.0"
+    },
+    "packet_id": {
+      "$ref": "#/$defs/nonEmptyString"
+    },
+    "work_unit_id": {
+      "$ref": "#/$defs/nonEmptyString"
+    },
+    "role": {
+      "$ref": "#/$defs/nonEmptyString"
+    },
+    "attempt": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "model": {
+      "$ref": "#/$defs/nonEmptyString"
+    },
+    "reasoning_effort": {
+      "$ref": "#/$defs/nonEmptyString"
+    },
+    "baseline": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "compcert_commit",
+        "compcert4lean_commit",
+        "lean_toolchain"
+      ],
+      "properties": {
+        "compcert_commit": {
+          "const": "7b1f02b09954b9b916eb2a91d283c9b5355bf172"
+        },
+        "compcert4lean_commit": {
+          "$ref": "#/$defs/gitObjectId"
+        },
+        "lean_toolchain": {
+          "const": "leanprover/lean4:v4.33.0"
+        }
+      }
+    },
+    "packet_hash": {
+      "$ref": "#/$defs/sha256"
+    },
+    "bundle_hash": {
+      "$ref": "#/$defs/sha256"
+    },
+    "prompt_hash": {
+      "$ref": "#/$defs/sha256"
+    },
+    "schema_hash": {
+      "$ref": "#/$defs/sha256"
+    },
+    "completion_status": {
+      "enum": [
+        "candidate_ready",
+        "needs_repair",
+        "escalated"
+      ]
+    },
+    "changed_files": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/relativeFilePath"
+      },
+      "uniqueItems": true
+    },
+    "candidate_commit": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/gitObjectId"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "candidate_diff_hash": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/sha256"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "declaration_outcomes": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/declarationOutcome"
+      }
+    },
+    "generated_surface_outcomes": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/generatedSurfaceOutcome"
+      }
+    },
+    "external_api_outcomes": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/externalApiOutcome"
+      }
+    },
+    "commands": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/commandResult"
+      }
+    },
+    "consulted_resources": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/consultedResource"
+      }
+    },
+    "decision_acknowledgements": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/decisionAcknowledgement"
+      }
+    },
+    "trust_relevant_declarations": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/trustRelevantDeclaration"
+      }
+    },
+    "discrepancies": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/discrepancy"
+      }
+    },
+    "requested_context": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/contextRequest"
+      }
+    },
+    "proposed_next_action": {
+      "$ref": "#/$defs/nextAction"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "completion_status": {
+            "const": "candidate_ready"
+          }
+        },
+        "required": [
+          "completion_status"
+        ]
+      },
+      "then": {
+        "anyOf": [
+          {
+            "properties": {
+              "candidate_commit": {
+                "$ref": "#/$defs/gitObjectId"
+              }
+            }
+          },
+          {
+            "properties": {
+              "candidate_diff_hash": {
+                "$ref": "#/$defs/sha256"
+              }
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "$defs": {
+    "nonEmptyString": {
+      "type": "string",
+      "minLength": 1
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^(sha256:)?[0-9a-f]{64}$"
+    },
+    "gitObjectId": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$"
+    },
+    "relativeFilePath": {
+      "type": "string",
+      "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))(?!.*(?:^|/)\\.(?:/|$))(?!.*//)(?!.*\\\\)[A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+)*$"
+    },
+    "relativeDirectory": {
+      "type": "string",
+      "pattern": "^(?:\\.|(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))(?!.*//)(?!.*\\\\)[A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+)*)$"
+    },
+    "leanIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "fully_qualified_name",
+        "declaration_kind",
+        "type_descriptor"
+      ],
+      "properties": {
+        "fully_qualified_name": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "declaration_kind": {
+          "enum": [
+            "abbrev",
+            "class",
+            "definition",
+            "inductive",
+            "instance",
+            "opaque",
+            "structure",
+            "theorem"
+          ]
+        },
+        "type_descriptor": {
+          "$ref": "#/$defs/nonEmptyString"
+        }
+      }
+    },
+    "declarationOutcome": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source_name",
+        "mapped_name",
+        "canonical_provider",
+        "outcome",
+        "lean_identity",
+        "notes"
+      ],
+      "properties": {
+        "source_name": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "mapped_name": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "canonical_provider": {
+          "$ref": "#/$defs/relativeFilePath"
+        },
+        "outcome": {
+          "enum": [
+            "translated",
+            "reused_existing",
+            "exact_statement_descriptor",
+            "blocked",
+            "not_applicable",
+            "failed"
+          ]
+        },
+        "lean_identity": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/leanIdentity"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "notes": {
+          "type": "string"
+        }
+      }
+    },
+    "generatedSurfaceOutcome": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "surface",
+        "outcome",
+        "files",
+        "details"
+      ],
+      "properties": {
+        "surface": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "outcome": {
+          "enum": [
+            "unchanged",
+            "updated",
+            "not_applicable",
+            "blocked",
+            "failed"
+          ]
+        },
+        "files": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/relativeFilePath"
+          },
+          "uniqueItems": true
+        },
+        "details": {
+          "type": "string"
+        }
+      }
+    },
+    "externalApiOutcome": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "api",
+        "outcome",
+        "details"
+      ],
+      "properties": {
+        "api": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "outcome": {
+          "enum": [
+            "preserved",
+            "extended",
+            "changed",
+            "not_applicable",
+            "blocked"
+          ]
+        },
+        "details": {
+          "type": "string"
+        }
+      }
+    },
+    "commandResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "command",
+        "cwd",
+        "purpose",
+        "exit_status"
+      ],
+      "properties": {
+        "command": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "cwd": {
+          "$ref": "#/$defs/relativeDirectory"
+        },
+        "purpose": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "exit_status": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 255
+        }
+      }
+    },
+    "consultedResource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "identifier",
+        "content_hash",
+        "purpose"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "packet",
+            "bundle",
+            "prompt",
+            "schema",
+            "source",
+            "target",
+            "decision",
+            "other"
+          ]
+        },
+        "identifier": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "content_hash": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/sha256"
+            },
+            {
+              "$ref": "#/$defs/gitObjectId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "purpose": {
+          "$ref": "#/$defs/nonEmptyString"
+        }
+      }
+    },
+    "decisionAcknowledgement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "decision_id",
+        "acknowledged",
+        "summary"
+      ],
+      "properties": {
+        "decision_id": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "acknowledged": {
+          "const": true
+        },
+        "summary": {
+          "$ref": "#/$defs/nonEmptyString"
+        }
+      }
+    },
+    "trustRelevantDeclaration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "lean_name",
+        "category",
+        "outcome",
+        "details"
+      ],
+      "properties": {
+        "lean_name": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "category": {
+          "enum": [
+            "assumption",
+            "evaluation",
+            "foreign_interface",
+            "safety",
+            "termination",
+            "other"
+          ]
+        },
+        "outcome": {
+          "enum": [
+            "clean",
+            "requires_review",
+            "blocked"
+          ]
+        },
+        "details": {
+          "type": "string"
+        }
+      }
+    },
+    "discrepancy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "expected",
+        "observed",
+        "impact",
+        "blocking"
+      ],
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "expected": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "observed": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "impact": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "blocking": {
+          "type": "boolean"
+        }
+      }
+    },
+    "contextRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "request",
+        "reason",
+        "blocking"
+      ],
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "request": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "reason": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "blocking": {
+          "type": "boolean"
+        }
+      }
+    },
+    "nextAction": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "action",
+        "owner",
+        "rationale"
+      ],
+      "properties": {
+        "action": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "owner": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "rationale": {
+          "$ref": "#/$defs/nonEmptyString"
+        }
+      }
+    }
+  }
+}

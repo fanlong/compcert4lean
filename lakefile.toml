@@ -1,0 +1,6 @@
+name = "compcert4lean"
+version = "0.1.0"
+defaultTargets = ["CompCert4Lean"]
+
+[[lean_lib]]
+name = "CompCert4Lean"
