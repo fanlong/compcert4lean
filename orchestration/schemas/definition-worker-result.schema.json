@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "definition-worker-result.schema.json",
   "title": "CompCert4Lean definition worker result",
-  "description": "Receipt returned by a definition-translation worker to the coordinator.",
+  "description": "Canonical receipt assembled by the coordinator from deterministic campaign evidence and a compact worker delta.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -94,6 +94,12 @@
         "needs_repair",
         "escalated"
       ]
+    },
+    "worker_summary": {
+      "$ref": "#/$defs/nonEmptyString"
+    },
+    "worker_delta_hash": {
+      "$ref": "#/$defs/sha256"
     },
     "changed_files": {
       "type": "array",

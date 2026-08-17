@@ -25,5 +25,9 @@
 ## Verification and handoff
 
 - Run the packet's narrow build command.
-- Return the required structured worker result, including discrepancies,
-  requested context, and the proposed next action.
+- Return only the compact structured worker delta. Do not reproduce packet or
+  Git identities, hashes, changed-file lists, command records, or one outcome
+  per action; the coordinator derives those fields mechanically.
+- Include declaration/surface exceptions, consulted mandatory decision IDs,
+  trust concerns, discrepancies, requested context, and the proposed next
+  action. Empty exception arrays are normal.
