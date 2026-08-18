@@ -572,7 +572,6 @@ def addl_assocStatement : Prop := True
 def addl_permutStatement : Prop := True
 def addl_permut_4Statement : Prop := True
 def addl_lessdefStatement : Prop := True
-def addl_injectStatement : Prop := True
 def andl_commutStatement : Prop := True
 def andl_assocStatement : Prop := True
 def orl_commutStatement : Prop := True
@@ -628,7 +627,6 @@ def shrxl_shrl_2Statement : Prop := True
 def subl_addl_lStatement : Prop := True
 def subl_addl_oppStatement : Prop := True
 def subl_addl_rStatement : Prop := True
-def subl_injectStatement : Prop := True
 def zero_ext_andStatement : Prop := True
 
 inductive lessdef : val → val → Prop where
@@ -648,6 +646,59 @@ inductive inject (mi : meminj) : val → val → Prop where
   | inject_single (f : CCFloat32) : inject mi (Vsingle f) (Vsingle f)
   | inject_ptr {b1 b2 : block} {ofs1 ofs2 : Ptrofs} {delta : Z} : mi b1 = some (b2, delta) → ofs2 = Ptrofs.add ofs1 (Ptrofs.repr delta) → inject mi (Vptr b1 ofs1) (Vptr b2 ofs2)
   | val_inject_undef (v : val) : inject mi Vundef v
+
+def addl_injectStatement : Prop :=
+  ∀ (f : meminj) v1 v1' v2 v2',
+    inject f v1 v1' →
+    inject f v2 v2' →
+    inject f (addl v1 v2) (addl v1' v2')
+
+theorem addl_inject : addl_injectStatement := by
+  intro f v1 v1' v2 v2' h1 h2
+  cases h1 <;> cases h2 <;>
+    simp [addl, Archi.ptr64, CompCert4Lean.X86_64.Archi.ptr64] <;>
+    constructor <;>
+    try assumption
+  all_goals
+    subst_vars
+    rw [Ptrofs.add_assoc_proof_api, Ptrofs.add_assoc_proof_api]
+    congr 1
+    exact Ptrofs.add_commut_proof_api _ _
+
+def subl_injectStatement : Prop :=
+  ∀ (f : meminj) v1 v1' v2 v2',
+    inject f v1 v1' →
+    inject f v2 v2' →
+    inject f (subl v1 v2) (subl v1' v2')
+
+theorem subl_inject : subl_injectStatement := by
+  intro f v1 v1' v2 v2' h1 h2
+  cases h1 <;> cases h2 <;>
+    simp [subl, Archi.ptr64, CompCert4Lean.X86_64.Archi.ptr64] <;>
+    try constructor <;>
+    try assumption
+  case inject_ptr.inject_long.a =>
+    subst_vars
+    exact Ptrofs.sub_add_l_proof_api _ _ _
+  case inject_ptr.inject_ptr =>
+    rename_i srcB1 dstB1 srcOfs1 dstOfs1 delta1 map1 ofsEq1
+      srcB2 dstB2 srcOfs2 dstOfs2 delta2 map2 ofsEq2
+    by_cases hsrc : srcB1 = srcB2
+    · subst srcB2
+      have hpair : (dstB1, delta1) = (dstB2, delta2) :=
+        Option.some.inj (map1.symm.trans map2)
+      have hdst : dstB1 = dstB2 := congrArg Prod.fst hpair
+      have hdelta : delta1 = delta2 := congrArg Prod.snd hpair
+      subst dstB2
+      subst delta2
+      simp only [eqBool]
+      simp
+      rw [ofsEq1, ofsEq2, Ptrofs.sub_shifted_proof_api]
+      exact inject.inject_long _
+    · have hsrcEq : eqBool srcB1 srcB2 = false := by
+        simp [eqBool, hsrc]
+      rw [hsrcEq]
+      exact inject.val_inject_undef _
 
 inductive inject_list (mi : meminj) : List val → List val → Prop where
   | inject_list_nil : inject_list mi [] []
