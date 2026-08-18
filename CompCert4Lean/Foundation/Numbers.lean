@@ -88,7 +88,7 @@ abbrev Zpos : positive → Z := Numbers.BinNums.Z.Zpos
 
 end Numbers.BinNums
 
-private def posToNat : positive → Nat
+def posToNat : positive → Nat
   | .xH => 1
   | .xI p => 2 * posToNat p + 1
   | .xO p => 2 * posToNat p
@@ -105,7 +105,79 @@ private def foldBits : List Bool → positive
       let p := foldBits bs
       if b then .xI p else .xO p
 
-private def posOfNat (n : Nat) : positive := foldBits (collectBits n n)
+def posOfNat (n : Nat) : positive := foldBits (collectBits n n)
+
+private theorem posToNat_foldBits_collectBits
+    (fuel n : Nat) (hn : 0 < n) (hpow : n < 2 ^ fuel) :
+    posToNat (foldBits (collectBits fuel n)) = n := by
+  induction fuel generalizing n with
+  | zero => omega
+  | succ fuel ih =>
+      by_cases hsmall : n < 2
+      · have hn1 : n = 1 := by omega
+        simp [collectBits, foldBits, posToNat, hn1]
+      · have hn2 : 2 ≤ n := by omega
+        have hqpos : 0 < n / 2 := Nat.div_pos (by omega) (by omega)
+        have hqpow : n / 2 < 2 ^ fuel := by
+          apply (Nat.div_lt_iff_lt_mul (by omega)).2
+          simpa [Nat.pow_succ, Nat.mul_comm] using hpow
+        have hi := ih (n / 2) hqpos hqpow
+        by_cases hbit : n % 2 = 1
+        · simp [collectBits, foldBits, posToNat, hsmall, hbit, hi]
+          omega
+        · have hmod : n % 2 = 0 := by
+            have hlt : n % 2 < 2 := Nat.mod_lt _ (by omega)
+            omega
+          simp [collectBits, foldBits, posToNat, hsmall, hmod, hi]
+          omega
+
+theorem posToNat_posOfNat {n : Nat} (hn : 0 < n) : posToNat (posOfNat n) = n := by
+  exact posToNat_foldBits_collectBits n n hn (Nat.lt_pow_self (by omega))
+
+theorem posToNat_positive (p : positive) : 0 < posToNat p := by
+  induction p <;> simp [posToNat] <;> omega
+
+theorem posToNat_injective : Function.Injective posToNat := by
+  intro p
+  induction p with
+  | xH =>
+      intro q h
+      cases q with
+      | xH => rfl
+      | xI q =>
+          simp [posToNat] at h
+          have := posToNat_positive q
+          omega
+      | xO q =>
+          simp [posToNat] at h
+          have := posToNat_positive q
+          omega
+  | xI p ih =>
+      intro q h
+      cases q with
+      | xH =>
+          simp [posToNat] at h
+          have := posToNat_positive p
+          omega
+      | xI q =>
+          have hq : posToNat p = posToNat q := by simp [posToNat] at h ⊢; omega
+          exact congrArg Numbers.BinNums.positive.xI (ih hq)
+      | xO q => simp [posToNat] at h; omega
+  | xO p ih =>
+      intro q h
+      cases q with
+      | xH =>
+          simp [posToNat] at h
+          have := posToNat_positive p
+          omega
+      | xI q => simp [posToNat] at h; omega
+      | xO q =>
+          have hq : posToNat p = posToNat q := by simp [posToNat] at h ⊢; omega
+          exact congrArg Numbers.BinNums.positive.xO (ih hq)
+
+theorem posOfNat_posToNat (p : positive) : posOfNat (posToNat p) = p := by
+  apply posToNat_injective
+  simpa using posToNat_posOfNat (posToNat_positive p)
 
 private def comparisonOfNat (a b : Nat) : comparison :=
   if a < b then .Lt else if a = b then .Eq else .Gt
@@ -113,15 +185,57 @@ private def comparisonOfNat (a b : Nat) : comparison :=
 private def comparisonOfInt (a b : Int) : comparison :=
   if a < b then .Lt else if a = b then .Eq else .Gt
 
-private def intOfZ : Z → Int
+def intOfZ : Z → Int
   | .Z0 => 0
   | .Zpos p => Int.ofNat (posToNat p)
   | .Zneg p => -Int.ofNat (posToNat p)
 
-private def zOfInt : Int → Z
+def zOfInt : Int → Z
   | .ofNat 0 => .Z0
   | .ofNat (n + 1) => .Zpos (posOfNat (n + 1))
   | .negSucc n => .Zneg (posOfNat (n + 1))
+
+theorem intOfZ_zOfInt (i : Int) : intOfZ (zOfInt i) = i := by
+  cases i with
+  | ofNat n =>
+      cases n with
+      | zero => rfl
+      | succ n =>
+          change Int.ofNat (posToNat (posOfNat (n + 1))) = Int.ofNat (n + 1)
+          rw [posToNat_posOfNat (by omega)]
+  | negSucc n =>
+      change -Int.ofNat (posToNat (posOfNat (n + 1))) = Int.negSucc n
+      rw [posToNat_posOfNat (by omega)]
+      rfl
+
+theorem zOfInt_intOfZ (z : Z) : zOfInt (intOfZ z) = z := by
+  cases z with
+  | Z0 => rfl
+  | Zpos p =>
+      have hp := posToNat_positive p
+      cases h : posToNat p with
+      | zero => omega
+      | succ n =>
+          change zOfInt (Int.ofNat (posToNat p)) = .Zpos p
+          rw [h]
+          change Numbers.BinNums.Z.Zpos (posOfNat (n + 1)) = Numbers.BinNums.Z.Zpos p
+          exact congrArg Numbers.BinNums.Z.Zpos (by simpa [h] using posOfNat_posToNat p)
+  | Zneg p =>
+      have hp := posToNat_positive p
+      cases h : posToNat p with
+      | zero => omega
+      | succ n =>
+          change zOfInt (-Int.ofNat (posToNat p)) = .Zneg p
+          rw [h]
+          change Numbers.BinNums.Z.Zneg (posOfNat (n + 1)) = Numbers.BinNums.Z.Zneg p
+          exact congrArg Numbers.BinNums.Z.Zneg (by simpa [h] using posOfNat_posToNat p)
+
+theorem intOfZ_injective : Function.Injective intOfZ := by
+  intro x y h
+  calc
+    x = zOfInt (intOfZ x) := (zOfInt_intOfZ x).symm
+    _ = zOfInt (intOfZ y) := congrArg zOfInt h
+    _ = y := zOfInt_intOfZ y
 
 private def natIter {α : Type} (f : α → α) : Nat → α → α
   | 0, x => x
@@ -283,6 +397,14 @@ abbrev PArith.BinPos.Pcompare_antisym : Prop :=
     CompOpp (PArith.BinPos.Pos.compare_cont c p q) = PArith.BinPos.Pos.compare_cont (CompOpp c) q p
 abbrev PArith.Pnat.lt_O_nat_of_P : Prop := ∀ p : positive, 0 < PArith.BinPos.Pos.to_nat p
 
+namespace PArith.Pnat.Pos2Nat
+
+theorem id (p : positive) :
+    PArith.BinPos.Pos.of_nat (PArith.BinPos.Pos.to_nat p) = p :=
+  posOfNat_posToNat p
+
+end PArith.Pnat.Pos2Nat
+
 namespace ZArith.BinInt
 
 namespace Z
@@ -332,6 +454,21 @@ private def zModEucl (a b : Int) : Int :=
     let r := Int.emod a d
     if r = 0 then 0 else r - d
 
+private theorem zModEucl_add_mul (a b c : Int) :
+    zModEucl (a + b * c) c = zModEucl a c := by
+  by_cases hc0 : c = 0
+  · simp [zModEucl, hc0]
+  by_cases hcpos : 0 < c
+  · unfold zModEucl
+    simp only [hc0, hcpos, if_false, if_true]
+    exact Int.add_mul_emod_self_right a b c
+  · have hcneg : c < 0 := by omega
+    have hr : (a + b * c) % (-c) = a % (-c) := by
+      simpa [Int.mul_neg] using Int.add_neg_mul_emod_self_right a b (-c)
+    unfold zModEucl
+    simp only [hc0, hcpos, if_false]
+    exact congrArg (fun r : Int => if r = 0 then 0 else r - (-c)) hr
+
 def div (x y : _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z) := zOfInt (zDivEucl (intOfZ x) (intOfZ y))
 def modulo (x y : _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z) := zOfInt (zModEucl (intOfZ x) (intOfZ y))
 def quot (x y : _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z) := zOfInt (Int.tdiv (intOfZ x) (intOfZ y))
@@ -378,6 +515,36 @@ def eq_dec (x y : _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z) : Support.
   by_cases h : x = y
   · exact .left h
   · exact .right h
+
+theorem modulo_add_mul
+    (a b c : _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z) :
+    modulo (add a (mul b c)) c = modulo a c := by
+  apply intOfZ_injective
+  simp only [modulo, add, mul, intOfZ_zOfInt]
+  exact zModEucl_add_mul (intOfZ a) (intOfZ b) (intOfZ c)
+
+theorem modulo_range
+    (a b : _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z)
+    (hb : gt b Z0) : le Z0 (modulo a b) ∧ lt (modulo a b) b := by
+  change 0 < intOfZ b at hb
+  change 0 ≤ intOfZ (modulo a b) ∧ intOfZ (modulo a b) < intOfZ b
+  simp only [modulo, intOfZ_zOfInt]
+  unfold zModEucl
+  have hb0 : intOfZ b ≠ 0 := Int.ne_of_gt hb
+  simp only [hb, hb0, if_false, if_true]
+  exact ⟨Int.emod_nonneg _ hb0, Int.emod_lt_of_pos _ hb⟩
+
+theorem mod_small (a b : _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z)
+    (h : le Z0 a ∧ lt a b) : modulo a b = a := by
+  change 0 ≤ intOfZ a ∧ intOfZ a < intOfZ b at h
+  have hb : 0 < intOfZ b := Int.lt_of_le_of_lt h.1 h.2
+  have hb0 : intOfZ b ≠ 0 := Int.ne_of_gt hb
+  apply intOfZ_injective
+  change intOfZ (zOfInt (zModEucl (intOfZ a) (intOfZ b))) = intOfZ a
+  rw [intOfZ_zOfInt]
+  unfold zModEucl
+  simp only [hb, hb0, if_false, if_true]
+  exact Int.emod_eq_of_lt h.1 h.2
 
 end Z
 
@@ -458,6 +625,28 @@ namespace ZArith.Zdiv
 abbrev Zmod := ZArith.BinInt.Z.modulo
 def Remainder (r b : Z) : Prop := ZArith.BinInt.Z.le Z0 r ∧ ZArith.BinInt.Z.lt r b
 
+theorem Z_mod_plus_full (a b c : Z) :
+    ZArith.BinInt.Z.modulo
+      (ZArith.BinInt.Z.add a (ZArith.BinInt.Z.mul b c)) c =
+      ZArith.BinInt.Z.modulo a c :=
+  ZArith.BinInt.Z.modulo_add_mul a b c
+
+theorem Z_mod_plus (a b c : Z) (_ : ZArith.BinInt.Z.gt c Z0) :
+    ZArith.BinInt.Z.modulo
+      (ZArith.BinInt.Z.add a (ZArith.BinInt.Z.mul b c)) c =
+      ZArith.BinInt.Z.modulo a c :=
+  ZArith.BinInt.Z.modulo_add_mul a b c
+
+theorem Z_mod_lt (a b : Z) (hb : ZArith.BinInt.Z.gt b Z0) :
+    ZArith.BinInt.Z.le Z0 (ZArith.BinInt.Z.modulo a b) ∧
+      ZArith.BinInt.Z.lt (ZArith.BinInt.Z.modulo a b) b :=
+  ZArith.BinInt.Z.modulo_range a b hb
+
+theorem Zmod_small (a b : Z)
+    (h : ZArith.BinInt.Z.le Z0 a ∧ ZArith.BinInt.Z.lt a b) :
+    ZArith.BinInt.Z.modulo a b = a :=
+  ZArith.BinInt.Z.mod_small a b h
+
 end ZArith.Zdiv
 
 namespace ZArith.Zmax
@@ -470,6 +659,31 @@ end ZArith.Zmax
 namespace ZArith.Znat
 
 abbrev inj_S (n : Nat) : Prop := ZArith.BinInt.Z.of_nat (n + 1) = ZArith.BinInt.Z.succ (ZArith.BinInt.Z.of_nat n)
+
+theorem positive_nat_Z (p : positive) :
+    ZArith.BinInt.Z.of_nat (PArith.BinPos.Pos.to_nat p) = Zpos p := by
+  change zOfInt (Int.ofNat (posToNat p)) = Zpos p
+  simpa [intOfZ] using zOfInt_intOfZ (Zpos p)
+
+namespace Nat2Z
+
+theorem id (n : Nat) :
+    ZArith.BinInt.Z.to_nat (ZArith.BinInt.Z.of_nat n) = n := by
+  simp [ZArith.BinInt.Z.to_nat, ZArith.BinInt.Z.of_nat, intOfZ_zOfInt]
+
+end Nat2Z
+
+namespace Z2Nat
+
+theorem id (z : Z) (hz : ZArith.BinInt.Z.le Z0 z) :
+    ZArith.BinInt.Z.of_nat (ZArith.BinInt.Z.to_nat z) = z := by
+  change 0 ≤ intOfZ z at hz
+  change zOfInt (Int.ofNat (Int.toNat (intOfZ z))) = z
+  have hcast : Int.ofNat (Int.toNat (intOfZ z)) = intOfZ z := Int.toNat_of_nonneg hz
+  rw [hcast]
+  exact zOfInt_intOfZ z
+
+end Z2Nat
 
 end ZArith.Znat
 
