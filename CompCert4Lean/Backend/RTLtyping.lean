@@ -1,0 +1,546 @@
+import CompCert4Lean.Backend.Conventions
+import CompCert4Lean.Backend.RTL
+import CompCert4Lean.Common.Unityping
+
+/-!
+# RTL type checking
+
+Definition-bearing translation of CompCert's `backend/RTLtyping.v`.
+Proofs assigned to later migration are represented by exact proposition
+descriptors.
+
+The integrated calling-convention API carries the immutable compiler
+configuration explicitly, so it is threaded through the typing judgments and
+the inference functions that check tail calls.
+-/
+
+namespace CompCert4Lean.Backend.RTLtyping
+
+open CompCert4Lean.Foundation.Logic
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Errors
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.ExternalCalls
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Unityping
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.Backend.Conventions
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.X86.Op
+
+private abbrev CompilerConfig := CompCert4Lean.Config.CompilerConfig
+private abbrev Sumbool := CompCert4Lean.Foundation.Logic.Support.Sumbool
+private abbrev RocqString :=
+  CompCert4Lean.Foundation.RocqString.Rocq.Coq.Strings.String.string
+
+private def rocqStringOfBytes : List UInt8 → RocqString
+  | [] => .EmptyString
+  | byte :: rest => .String byte (rocqStringOfBytes rest)
+
+private def badSuccessorText : RocqString :=
+  rocqStringOfBytes [98, 97, 100, 32, 115, 117, 99, 99, 101, 115, 115, 111, 114, 32]
+
+private def unexpectedTypeText : RocqString :=
+  rocqStringOfBytes [117, 110, 101, 120, 112, 101, 99, 116, 101, 100, 32, 116, 121, 112, 101]
+
+private def builtinArityMismatchText : RocqString :=
+  rocqStringOfBytes
+    [98, 117, 105, 108, 116, 105, 110, 32, 97, 114, 105, 116, 121, 32, 109,
+      105, 115, 109, 97, 116, 99, 104]
+
+private def illFormedMoveText : RocqString :=
+  rocqStringOfBytes
+    [105, 108, 108, 45, 102, 111, 114, 109, 101, 100, 32, 109, 111, 118, 101]
+
+private def tailcallNotPossibleText : RocqString :=
+  rocqStringOfBytes
+    [116, 97, 105, 108, 99, 97, 108, 108, 32, 110, 111, 116, 32, 112, 111,
+      115, 115, 105, 98, 108, 101]
+
+private def badTailcallReturnText : RocqString :=
+  rocqStringOfBytes
+    [98, 97, 100, 32, 114, 101, 116, 117, 114, 110, 32, 116, 121, 112, 101,
+      32, 105, 110, 32, 116, 97, 105, 108, 99, 97, 108, 108]
+
+private def jumptableTooBigText : RocqString :=
+  rocqStringOfBytes
+    [106, 117, 109, 112, 116, 97, 98, 108, 101, 32, 116, 111, 111, 32, 98,
+      105, 103]
+
+private def badReturnText : RocqString :=
+  rocqStringOfBytes [98, 97, 100, 32, 114, 101, 116, 117, 114, 110]
+
+private def atPCText : RocqString :=
+  rocqStringOfBytes [65, 116, 32, 80, 67, 32]
+
+private def colonSpaceText : RocqString :=
+  rocqStringOfBytes [58, 32]
+
+private def duplicateParametersText : RocqString :=
+  rocqStringOfBytes
+    [100, 117, 112, 108, 105, 99, 97, 116, 101, 32, 112, 97, 114, 97, 109,
+      101, 116, 101, 114, 115]
+
+private def typEq (x y : typ) : Sumbool (x = y) (x ≠ y) := by
+  by_cases h : x = y
+  · exact .left h
+  · exact .right h
+
+private def rtlTypeAlgebra : TYPE_ALGEBRA where
+  t := typ
+  eq := typEq
+  default := Tint
+
+private abbrev InferEnv := UniSolver.typenv rtlTypeAlgebra
+private abbrev TypeAssign := UniSolver.typassign rtlTypeAlgebra
+
+/-! ## Typing judgments -/
+
+def regenv : Type := reg → typ
+
+def valid_successor (f : function) (s : node) : Prop :=
+  ∃ i, PTree.get s f.fn_code = some i
+
+def type_of_builtin_arg (env : regenv) : builtin_arg reg → typ
+  | .BA r => env r
+  | .BA_int _ => Tint
+  | .BA_long _ => Tlong
+  | .BA_float _ => Tfloat
+  | .BA_single _ => Tsingle
+  | .BA_loadstack chunk _ => type_of_chunk chunk
+  | .BA_addrstack _ => Tptr
+  | .BA_loadglobal chunk _ _ => type_of_chunk chunk
+  | .BA_addrglobal _ _ => Tptr
+  | .BA_splitlong _ _ => Tlong
+  | .BA_addptr _ _ => Tptr
+
+def type_of_builtin_res (env : regenv) : builtin_res reg → typ
+  | .BR r => env r
+  | _ => Tint
+
+def wt_instr (cfg : CompilerConfig) (f : function) (env : regenv) :
+    instruction → Prop
+  | .Inop s => valid_successor f s
+  | .Iop op args res s =>
+      (op = Omove ∧
+        ∃ r1, args = [r1] ∧ env res = env r1 ∧ valid_successor f s) ∨
+        (op ≠ Omove ∧
+          List.map env args = (type_of_operation op).1 ∧
+          env res = (type_of_operation op).2 ∧
+          valid_successor f s)
+  | .Iload chunk addr args dst s =>
+      List.map env args = type_of_addressing addr ∧
+        env dst = type_of_chunk chunk ∧ valid_successor f s
+  | .Istore chunk addr args src s =>
+      List.map env args = type_of_addressing addr ∧
+        env src = type_of_chunk chunk ∧ valid_successor f s
+  | .Icall sg ros args res s =>
+      (match ros with
+        | .inl r => env r = Tptr
+        | .inr _ => True) ∧
+      List.map env args = proj_sig_args sg ∧
+      env res = proj_sig_res sg ∧
+      valid_successor f s
+  | .Itailcall sg ros args =>
+      (match ros with
+        | .inl r => env r = Tptr
+        | .inr _ => True) ∧
+      List.map env args = proj_sig_args sg ∧
+      sg.sig_res = f.fn_sig.sig_res ∧
+      tailcall_possible cfg sg
+  | .Ibuiltin ef args res s =>
+      (match ef with
+        | .EF_annot _ _ _ | .EF_debug _ _ _ => True
+        | _ => List.map (type_of_builtin_arg env) args = proj_sig_args (ef_sig ef)) ∧
+      type_of_builtin_res env res = proj_sig_res (ef_sig ef) ∧
+      valid_successor f s
+  | .Icond cond args s1 s2 =>
+      List.map env args = type_of_condition cond ∧
+        valid_successor f s1 ∧ valid_successor f s2
+  | .Ijumptable arg tbl =>
+      env arg = Tint ∧
+        (∀ s, s ∈ tbl → valid_successor f s) ∧
+        ZArith.BinInt.Z.le
+          (ZArith.BinInt.Z.mul (list_length_z tbl) (ZArith.BinInt.Z.of_nat 4))
+          Int.max_unsigned
+  | .Ireturn none => f.fn_sig.sig_res = Xvoid
+  | .Ireturn (some arg) =>
+      f.fn_sig.sig_res ≠ Xvoid ∧
+        env arg = proj_sig_res f.fn_sig ∧
+        ∃ ty, env arg = ty
+
+def wt_Iop (cfg : CompilerConfig) (f : function) (env : regenv)
+    (op : operation) (args : List reg) (res : reg) (s : node)
+    (hop : op ≠ Omove)
+    (hargs : List.map env args = (type_of_operation op).1)
+    (hres : env res = (type_of_operation op).2)
+    (hsucc : valid_successor f s) :
+    wt_instr cfg f env (Iop op args res s) :=
+  Or.inr ⟨hop, hargs, hres, hsucc⟩
+
+def wt_function (cfg : CompilerConfig) (f : function) (env : regenv) : Prop :=
+  List.map env f.fn_params = proj_sig_args f.fn_sig ∧
+    list_norepet f.fn_params ∧
+    (∀ pc instr, PTree.get pc f.fn_code = some instr → wt_instr cfg f env instr) ∧
+    valid_successor f f.fn_entrypoint
+
+def wt_instrs {cfg : CompilerConfig} {f : function} {env : regenv}
+    (h : wt_function cfg f env) :
+    ∀ pc instr, PTree.get pc f.fn_code = some instr → wt_instr cfg f env instr :=
+  h.2.2.1
+
+def wt_fundef (cfg : CompilerConfig) : fundef → Prop
+  | .External _ => True
+  | .Internal f => ∃ env, wt_function cfg f env
+
+def wt_program (cfg : CompilerConfig) (p : program) : Prop :=
+  ∀ i fd, (i, Gfun fd) ∈ p.prog_defs → wt_fundef cfg fd
+
+/-! ## Type inference -/
+
+def check_successor (f : function) (s : node) : res Unit :=
+  match PTree.get s f.fn_code with
+  | none => Error (MSG badSuccessorText :: POS s :: [])
+  | some _ => OK ()
+
+def check_successors (f : function) : List node → res Unit
+  | [] => OK ()
+  | s :: rest =>
+      match check_successor f s with
+      | Error message => Error message
+      | OK _ => check_successors f rest
+
+def type_ros (e : InferEnv) : Sum reg ident → res InferEnv
+  | .inl r => UniSolver.set rtlTypeAlgebra e r Tptr
+  | .inr _ => OK e
+
+def is_move : operation → Bool
+  | .Omove => true
+  | _ => false
+
+def type_expect (e : InferEnv) (t1 t2 : typ) : res InferEnv :=
+  match typEq t1 t2 with
+  | .left _ => OK e
+  | .right _ => Error (msg unexpectedTypeText)
+
+def type_builtin_arg (e : InferEnv) (a : builtin_arg reg) (ty : typ) :
+    res InferEnv :=
+  match a with
+  | .BA r => UniSolver.set rtlTypeAlgebra e r ty
+  | .BA_int _ => type_expect e ty Tint
+  | .BA_long _ => type_expect e ty Tlong
+  | .BA_float _ => type_expect e ty Tfloat
+  | .BA_single _ => type_expect e ty Tsingle
+  | .BA_loadstack chunk _ => type_expect e ty (type_of_chunk chunk)
+  | .BA_addrstack _ => type_expect e ty Tptr
+  | .BA_loadglobal chunk _ _ => type_expect e ty (type_of_chunk chunk)
+  | .BA_addrglobal _ _ => type_expect e ty Tptr
+  | .BA_splitlong _ _ => type_expect e ty Tlong
+  | .BA_addptr _ _ => type_expect e ty Tptr
+
+def type_builtin_args : InferEnv → List (builtin_arg reg) → List typ → res InferEnv
+  | e, [], [] => OK e
+  | e, a :: args, ty :: tys =>
+      match type_builtin_arg e a ty with
+      | Error message => Error message
+      | OK e1 => type_builtin_args e1 args tys
+  | _, _, _ => Error (msg builtinArityMismatchText)
+
+def type_builtin_res (e : InferEnv) (a : builtin_res reg) (ty : typ) :
+    res InferEnv :=
+  match a with
+  | .BR r => UniSolver.set rtlTypeAlgebra e r ty
+  | _ => type_expect e ty Tint
+
+def type_instr (cfg : CompilerConfig) (f : function) (e : InferEnv) :
+    instruction → res InferEnv
+  | .Inop s =>
+      match check_successor f s with
+      | Error message => Error message
+      | OK _ => OK e
+  | .Iop op args res s =>
+      match check_successor f s with
+      | Error message => Error message
+      | OK _ =>
+          if is_move op then
+            match args with
+            | [arg] =>
+                match UniSolver.move rtlTypeAlgebra e res arg with
+                | Error message => Error message
+                | OK (_, e') => OK e'
+            | _ => Error (msg illFormedMoveText)
+          else
+            let (targs, tres) := type_of_operation op
+            match UniSolver.set_list rtlTypeAlgebra e args targs with
+            | Error message => Error message
+            | OK e1 => UniSolver.set rtlTypeAlgebra e1 res tres
+  | .Iload chunk addr args dst s =>
+      match check_successor f s with
+      | Error message => Error message
+      | OK _ =>
+          match UniSolver.set_list rtlTypeAlgebra e args (type_of_addressing addr) with
+          | Error message => Error message
+          | OK e1 => UniSolver.set rtlTypeAlgebra e1 dst (type_of_chunk chunk)
+  | .Istore chunk addr args src s =>
+      match check_successor f s with
+      | Error message => Error message
+      | OK _ =>
+          match UniSolver.set_list rtlTypeAlgebra e args (type_of_addressing addr) with
+          | Error message => Error message
+          | OK e1 => UniSolver.set rtlTypeAlgebra e1 src (type_of_chunk chunk)
+  | .Icall sg ros args res s =>
+      match check_successor f s with
+      | Error message => Error message
+      | OK _ =>
+          match type_ros e ros with
+          | Error message => Error message
+          | OK e1 =>
+              match UniSolver.set_list rtlTypeAlgebra e1 args (proj_sig_args sg) with
+              | Error message => Error message
+              | OK e2 => UniSolver.set rtlTypeAlgebra e2 res (proj_sig_res sg)
+  | .Itailcall sg ros args =>
+      match type_ros e ros with
+      | Error message => Error message
+      | OK e1 =>
+          match UniSolver.set_list rtlTypeAlgebra e1 args (proj_sig_args sg) with
+          | Error message => Error message
+          | OK e2 =>
+              if sg.sig_res = f.fn_sig.sig_res then
+                if tailcall_is_possible cfg sg then OK e2
+                else Error (msg tailcallNotPossibleText)
+              else Error (msg badTailcallReturnText)
+  | .Ibuiltin ef args res s =>
+      let sg := ef_sig ef
+      match check_successor f s with
+      | Error message => Error message
+      | OK _ =>
+          match (match ef with
+            | .EF_annot _ _ _ | .EF_debug _ _ _ => OK e
+            | _ => type_builtin_args e args (proj_sig_args sg)) with
+          | Error message => Error message
+          | OK e1 => type_builtin_res e1 res (proj_sig_res sg)
+  | .Icond cond args s1 s2 =>
+      match check_successor f s1 with
+      | Error message => Error message
+      | OK _ =>
+          match check_successor f s2 with
+          | Error message => Error message
+          | OK _ => UniSolver.set_list rtlTypeAlgebra e args (type_of_condition cond)
+  | .Ijumptable arg tbl =>
+      match check_successors f tbl with
+      | Error message => Error message
+      | OK _ =>
+          match UniSolver.set rtlTypeAlgebra e arg Tint with
+          | Error message => Error message
+          | OK e1 =>
+              match zle
+                  (ZArith.BinInt.Z.mul
+                    (list_length_z tbl) (ZArith.BinInt.Z.of_nat 4))
+                  Int.max_unsigned with
+              | .left _ => OK e1
+              | .right _ => Error (msg jumptableTooBigText)
+  | .Ireturn none =>
+      if f.fn_sig.sig_res = Xvoid then OK e else Error (msg badReturnText)
+  | .Ireturn (some r) =>
+      if f.fn_sig.sig_res = Xvoid then Error (msg badReturnText)
+      else UniSolver.set rtlTypeAlgebra e r (proj_sig_res f.fn_sig)
+
+def type_code (cfg : CompilerConfig) (f : function) (e : InferEnv) :
+    res InferEnv :=
+  PTree.fold
+    (fun re pc instr =>
+      match re with
+      | Error _ => re
+      | OK env =>
+          match type_instr cfg f env instr with
+          | Error message => Error (MSG atPCText :: POS pc :: MSG colonSpaceText :: message)
+          | OK env' => OK env')
+    f.fn_code (OK e)
+
+def check_params_norepet (params : List reg) : res Unit :=
+  if params.Nodup then OK () else Error (msg duplicateParametersText)
+
+def type_function (cfg : CompilerConfig) (f : function) : res regenv :=
+  match type_code cfg f (UniSolver.initial rtlTypeAlgebra) with
+  | Error message => Error message
+  | OK e1 =>
+      match UniSolver.set_list rtlTypeAlgebra e1 f.fn_params (proj_sig_args f.fn_sig) with
+      | Error message => Error message
+      | OK e2 =>
+          match UniSolver.solve rtlTypeAlgebra e2 with
+          | Error message => Error message
+          | OK te =>
+              match check_params_norepet f.fn_params with
+              | Error message => Error message
+              | OK _ =>
+                  match check_successor f f.fn_entrypoint with
+                  | Error message => Error message
+                  | OK _ => OK te
+
+/-! ## Exact statement descriptors for later inference proofs -/
+
+def type_ros_soundStatement : Prop :=
+  ∀ (e : InferEnv) (ros : Sum reg ident) (e' : InferEnv) (te : TypeAssign),
+    type_ros e ros = OK e' →
+      UniSolver.satisf rtlTypeAlgebra te e' →
+        match ros with
+        | .inl r => te r = Tptr
+        | .inr _ => True
+
+def check_successors_soundStatement : Prop :=
+  ∀ (f : function) (sl : List node) (x : Unit),
+    check_successors f sl = OK x →
+      ∀ s, s ∈ sl → valid_successor f s
+
+def type_expect_soundStatement : Prop :=
+  ∀ (e : InferEnv) (ty1 ty2 : typ) (e' : InferEnv),
+    type_expect e ty1 ty2 = OK e' → ty1 = ty2
+
+def type_builtin_arg_soundStatement : Prop :=
+  ∀ (e : InferEnv) (a : builtin_arg reg) (ty : typ)
+    (e' : InferEnv) (te : TypeAssign),
+    type_builtin_arg e a ty = OK e' →
+      UniSolver.satisf rtlTypeAlgebra te e' →
+        type_of_builtin_arg te a = ty
+
+def type_builtin_args_soundStatement : Prop :=
+  ∀ (al : List (builtin_arg reg)) (tyl : List typ)
+    (e e' : InferEnv) (te : TypeAssign),
+    type_builtin_args e al tyl = OK e' →
+      UniSolver.satisf rtlTypeAlgebra te e' →
+        List.map (type_of_builtin_arg te) al = tyl
+
+def type_builtin_res_soundStatement : Prop :=
+  ∀ (e : InferEnv) (a : builtin_res reg) (ty : typ)
+    (e' : InferEnv) (te : TypeAssign),
+    type_builtin_res e a ty = OK e' →
+      UniSolver.satisf rtlTypeAlgebra te e' →
+        type_of_builtin_res te a = ty
+
+def type_instr_incrStatement : Prop :=
+  ∀ (cfg : CompilerConfig) (f : function) (e : InferEnv) (i : instruction)
+    (e' : InferEnv) (te : TypeAssign),
+    type_instr cfg f e i = OK e' →
+      UniSolver.satisf rtlTypeAlgebra te e' →
+        UniSolver.satisf rtlTypeAlgebra te e
+
+def type_instr_soundStatement : Prop :=
+  ∀ (cfg : CompilerConfig) (f : function) (e : InferEnv) (i : instruction)
+    (e' : InferEnv) (te : TypeAssign),
+    type_instr cfg f e i = OK e' →
+      UniSolver.satisf rtlTypeAlgebra te e' → wt_instr cfg f te i
+
+def type_code_soundStatement : Prop :=
+  ∀ (cfg : CompilerConfig) (f : function) (pc : node) (i : instruction)
+    (e e' : InferEnv) (te : TypeAssign),
+    type_code cfg f e = OK e' →
+      PTree.get pc f.fn_code = some i →
+        UniSolver.satisf rtlTypeAlgebra te e' → wt_instr cfg f te i
+
+def type_function_correctStatement : Prop :=
+  ∀ (cfg : CompilerConfig) (f : function) (env : regenv),
+    type_function cfg f = OK env → wt_function cfg f env
+
+/-! ## Type preservation invariants -/
+
+def wt_regset (env : regenv) (rs : regset) : Prop :=
+  ∀ r, Val.has_type (Regmap.get r rs) (env r)
+
+def wt_regset_assignStatement : Prop :=
+  ∀ (env : regenv) (rs : regset) (v : val) (r : reg),
+    wt_regset env rs →
+      Val.has_type v (env r) → wt_regset env (Regmap.set r v rs)
+
+def wt_regset_listStatement : Prop :=
+  ∀ (env : regenv) (rs : regset),
+    wt_regset env rs →
+      ∀ rl, Val.has_type_list
+        (List.map (fun r => Regmap.get r rs) rl) (List.map env rl)
+
+def wt_regset_setresStatement : Prop :=
+  ∀ (env : regenv) (rs : regset) (v : val) (res : builtin_res reg),
+    wt_regset env rs →
+      Val.has_type v (type_of_builtin_res env res) →
+        wt_regset env (regmap_setres res v rs)
+
+def wt_init_regsStatement : Prop :=
+  ∀ (env : regenv) (rl : List reg) (args : List val),
+    Val.has_type_list args (List.map env rl) →
+      wt_regset env (init_regs args rl)
+
+def wt_exec_IopStatement : Prop :=
+  ∀ (cfg : CompilerConfig) (ge : genv) (env : regenv) (f : function)
+    (sp : val) (op : operation) (args : List reg) (res : reg) (s : node)
+    (rs : regset) (m : mem) (v : val),
+    wt_instr cfg f env (Iop op args res s) →
+      eval_operation ge sp op (List.map (fun r => Regmap.get r rs) args) m = some v →
+        wt_regset env rs → wt_regset env (Regmap.set res v rs)
+
+def wt_exec_IloadStatement : Prop :=
+  ∀ (cfg : CompilerConfig) (env : regenv) (f : function)
+    (chunk : memory_chunk) (addr : addressing) (args : List reg)
+    (dst : reg) (s : node) (m : mem) (a v : val) (rs : regset),
+    wt_instr cfg f env (Iload chunk addr args dst s) →
+      Mem.loadv chunk m a = some v →
+        wt_regset env rs → wt_regset env (Regmap.set dst v rs)
+
+def wt_exec_IbuiltinStatement : Prop :=
+  ∀ (cfg : CompilerConfig) (xi : ExternalCalls) (env : regenv) (f : function)
+    (ef : external_function) (ge : genv) (args : List (builtin_arg reg))
+    (res : builtin_res reg) (s : node) (vargs : List val) (m : mem)
+    (t : trace) (vres : val) (m' : mem) (rs : regset),
+    wt_instr cfg f env (Ibuiltin ef args res s) →
+      external_call xi ef (Genv.to_senv ge) vargs m t vres m' →
+        wt_regset env rs → wt_regset env (regmap_setres res vres rs)
+
+def wt_instr_atStatement : Prop :=
+  ∀ (cfg : CompilerConfig) (f : function) (env : regenv)
+    (pc : node) (i : instruction),
+    wt_function cfg f env →
+      PTree.get pc f.fn_code = some i → wt_instr cfg f env i
+
+def wt_stackframes (cfg : CompilerConfig) : List stackframe → signature → Prop
+  | [], sg => sg.sig_res = Xint
+  | .Stackframe res f _ _ rs :: rest, sg =>
+      ∃ env,
+        wt_function cfg f env ∧
+          wt_regset env rs ∧
+          env res = proj_sig_res sg ∧
+          wt_stackframes cfg rest f.fn_sig
+
+def wt_state (cfg : CompilerConfig) : state → Prop
+  | .State stack f _ _ rs _ =>
+      ∃ env,
+        wt_stackframes cfg stack f.fn_sig ∧
+          wt_function cfg f env ∧ wt_regset env rs
+  | .Callstate stack fd args _ =>
+      wt_stackframes cfg stack (funsig fd) ∧
+        wt_fundef cfg fd ∧
+        Val.has_type_list args (proj_sig_args (funsig fd))
+  | .Returnstate stack v _ =>
+      ∃ sg,
+        wt_stackframes cfg stack sg ∧ Val.has_type v (proj_sig_res sg)
+
+def wt_stackframes_change_sigStatement : Prop :=
+  ∀ (cfg : CompilerConfig) (s : List stackframe) (sg1 sg2 : signature),
+    sg1.sig_res = sg2.sig_res →
+      wt_stackframes cfg s sg1 → wt_stackframes cfg s sg2
+
+def subject_reductionStatement : Prop :=
+  ∀ (cfg : CompilerConfig) (xi : ExternalCalls) (p : program),
+    wt_program cfg p →
+      ∀ (st1 : state) (t : trace) (st2 : state),
+        step xi (Genv.globalenv p) st1 t st2 →
+          wt_state cfg st1 → wt_state cfg st2
+
+def wt_initial_stateStatement : Prop :=
+  ∀ (cfg : CompilerConfig) (p : program),
+    wt_program cfg p → ∀ s, initial_state p s → wt_state cfg s
+
+end CompCert4Lean.Backend.RTLtyping
