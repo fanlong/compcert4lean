@@ -135,7 +135,7 @@ class Prec_lt_emax (prec emax : Z) : Prop where
 
 abbrev prec_lt_emax (prec emax : Z) [h : Prec_lt_emax prec emax] : Zlt prec emax := h.prec_lt_emax
 
-variable {prec emax : Z} [Core.FLX.Prec_gt_0 prec] [Prec_lt_emax prec emax]
+variable {prec emax : Z}
 
 abbrev emin : Z := emin0 prec emax
 abbrev fexp : Z → Z := fexp0 prec emax
@@ -143,26 +143,30 @@ abbrev canonical_mantissa : positive → Z → Bool := canonical_mantissa0 prec 
 abbrev bounded : positive → Z → Bool := bounded0 prec emax
 abbrev valid_binary : spec_float → Bool := valid_binary0 prec emax
 
-inductive binary_float where
+inductive binary_float (prec emax : Z) where
   | B754_zero (s : Bool)
   | B754_infinity (s : Bool)
   | B754_nan
-  | B754_finite (s : Bool) (m : positive) (e : Z) : bounded m e = true → binary_float
+  | B754_finite (s : Bool) (m : positive) (e : Z) :
+      bounded0 prec emax m e = true → binary_float prec emax
 
-abbrev B754_zero (s : Bool) : binary_float := binary_float.B754_zero s
-abbrev B754_infinity (s : Bool) : binary_float := binary_float.B754_infinity s
-abbrev B754_nan : binary_float := binary_float.B754_nan
-abbrev B754_finite (s : Bool) (m : positive) (e : Z) (h : bounded0 prec emax m e = true) : binary_float :=
+abbrev B754_zero {prec emax : Z} (s : Bool) : binary_float prec emax :=
+  binary_float.B754_zero s
+abbrev B754_infinity {prec emax : Z} (s : Bool) : binary_float prec emax :=
+  binary_float.B754_infinity s
+abbrev B754_nan {prec emax : Z} : binary_float prec emax := binary_float.B754_nan
+abbrev B754_finite {prec emax : Z} (s : Bool) (m : positive) (e : Z)
+    (h : bounded0 prec emax m e = true) : binary_float prec emax :=
   binary_float.B754_finite s m e h
 
-def SF2B (x : spec_float) : valid_binary0 prec emax x = true → binary_float :=
+def SF2B (x : spec_float) : valid_binary0 prec emax x = true → binary_float prec emax :=
   match x with
   | .S754_finite s m e => fun h => binary_float.B754_finite s m e h
   | .S754_infinity s => fun _ => .B754_infinity s
   | .S754_zero s => fun _ => .B754_zero s
   | .S754_nan => fun _ => .B754_nan
 
-private def sf2bTotal (x : spec_float) : binary_float :=
+private def sf2bTotal (x : spec_float) : binary_float prec emax :=
   match x with
   | .S754_zero s => .B754_zero s
   | .S754_infinity s => .B754_infinity s
@@ -172,19 +176,19 @@ private def sf2bTotal (x : spec_float) : binary_float :=
       | true => .B754_finite s m e h
       | false => .B754_nan
 
-def B2SF (x : binary_float) : spec_float :=
+def B2SF (x : binary_float prec emax) : spec_float :=
   match x with
   | .B754_finite s m e _ => .S754_finite s m e
   | .B754_infinity s => .S754_infinity s
   | .B754_zero s => .S754_zero s
   | .B754_nan => .S754_nan
 
-def B2R (f : binary_float) : R :=
+def B2R (f : binary_float prec emax) : R :=
   match f with
   | .B754_finite s m e _ => F2R (Float radix2 (cond_Zopp s (Zpos m)) e)
   | _ => R0
 
-def Bsign (x : binary_float) : Bool :=
+def Bsign (x : binary_float prec emax) : Bool :=
   match x with
   | .B754_nan => false
   | .B754_zero s => s
@@ -198,7 +202,7 @@ def sign_SF (x : spec_float) : Bool :=
   | .S754_infinity s => s
   | .S754_finite s _ _ => s
 
-def is_finite (x : binary_float) : Bool :=
+def is_finite (x : binary_float prec emax) : Bool :=
   match x with
   | .B754_finite _ _ _ _ | .B754_zero _ => true
   | _ => false
@@ -208,7 +212,7 @@ def is_finite_SF (x : spec_float) : Bool :=
   | .S754_finite _ _ _ | .S754_zero _ => true
   | _ => false
 
-def is_nan (x : binary_float) : Bool :=
+def is_nan (x : binary_float prec emax) : Bool :=
   match x with
   | .B754_nan => true
   | _ => false
@@ -218,14 +222,14 @@ def is_nan_SF (x : spec_float) : Bool :=
   | .S754_nan => true
   | _ => false
 
-def Bopp (x : binary_float) : binary_float :=
+def Bopp (x : binary_float prec emax) : binary_float prec emax :=
   match x with
   | .B754_nan => x
   | .B754_infinity s => .B754_infinity (!s)
   | .B754_finite s m e h => .B754_finite (!s) m e h
   | .B754_zero s => .B754_zero (!s)
 
-def Bcompare (f1 f2 : binary_float) : Option comparison :=
+def Bcompare (f1 f2 : binary_float prec emax) : Option comparison :=
   SFcompare (B2SF f1) (B2SF f2)
 
 inductive mode where
@@ -251,7 +255,7 @@ def round_mode (m : mode) : R → Z :=
 
 def choice_mode (m : mode) (sx : Bool) (mx : Z) (lx : location) : Z :=
   match m with
-  | mode.mode_NE => cond_incr (round_N (!((match mx with | .Z0 => true | .Zpos _ => false | .Zneg _ => false))) lx) mx
+  | mode.mode_NE => cond_incr (round_N (!Zeven mx) lx) mx
   | mode.mode_ZR => mx
   | mode.mode_DN => cond_incr (round_sign_DN sx lx) mx
   | mode.mode_UP => cond_incr (round_sign_UP sx lx) mx
@@ -293,7 +297,8 @@ def binary_round (m : mode) (sx : Bool) (mx : positive) (ex : Z) : spec_float :=
   let (mz, ez) := shl_align_fexp (prec := prec) (emax := emax) mx ex
   binary_round_aux (prec := prec) (emax := emax) m sx (Zpos mz) ez loc_Exact
 
-def binary_normalize (m : mode) (x : Z) (e : Z) (szero : Bool) : binary_float :=
+def binary_normalize [Core.FLX.Prec_gt_0 prec] [Prec_lt_emax prec emax]
+    (m : mode) (x : Z) (e : Z) (szero : Bool) : binary_float prec emax :=
   match x with
   | .Z0 => .B754_zero szero
   | .Zpos p => sf2bTotal (prec := prec) (emax := emax) (binary_round (prec := prec) (emax := emax) m false p e)
@@ -305,7 +310,8 @@ def Fplus_naive (sx : Bool) (mx : positive) (ex : Z)
   let m2 := shl_align my ey ez
   Zadd (cond_Zopp sx (Zpos m1.1)) (cond_Zopp sy (Zpos m2.1))
 
-def Bmult (m : mode) (x y : binary_float) : binary_float :=
+def Bmult [Core.FLX.Prec_gt_0 prec] [Prec_lt_emax prec emax]
+    (m : mode) (x y : binary_float prec emax) : binary_float prec emax :=
   match x, y with
   | .B754_nan, _ | _, .B754_nan => .B754_nan
   | .B754_infinity sx, .B754_infinity sy => .B754_infinity (sx ^^ sy)
@@ -319,7 +325,8 @@ def Bmult (m : mode) (x y : binary_float) : binary_float :=
       sf2bTotal (prec := prec) (emax := emax) (binary_round_aux (prec := prec) (emax := emax) m (sx ^^ sy)
         (Zmul (Zpos mx) (Zpos my)) (Zadd ex ey) loc_Exact)
 
-def Bplus (m : mode) (x y : binary_float) : binary_float :=
+def Bplus [Core.FLX.Prec_gt_0 prec] [Prec_lt_emax prec emax]
+    (m : mode) (x y : binary_float prec emax) : binary_float prec emax :=
   match x, y with
   | .B754_nan, _ | _, .B754_nan => .B754_nan
   | .B754_infinity sx, .B754_infinity sy => if sx == sy then x else .B754_nan
@@ -334,7 +341,8 @@ def Bplus (m : mode) (x y : binary_float) : binary_float :=
       binary_normalize (prec := prec) (emax := emax) m (Fplus_naive sx mx ex sy my ey ez) ez
         (match m with | mode.mode_DN => true | _ => false)
 
-def Bminus (m : mode) (x y : binary_float) : binary_float :=
+def Bminus [Core.FLX.Prec_gt_0 prec] [Prec_lt_emax prec emax]
+    (m : mode) (x y : binary_float prec emax) : binary_float prec emax :=
   match x, y with
   | .B754_nan, _ | _, .B754_nan => .B754_nan
   | .B754_infinity sx, .B754_infinity sy => if sx == !sy then x else .B754_nan
@@ -349,7 +357,8 @@ def Bminus (m : mode) (x y : binary_float) : binary_float :=
       binary_normalize (prec := prec) (emax := emax) m (Fplus_naive sx mx ex (!sy) my ey ez) ez
         (match m with | mode.mode_DN => true | _ => false)
 
-def Bdiv (m : mode) (x y : binary_float) : binary_float :=
+def Bdiv [Core.FLX.Prec_gt_0 prec] [Prec_lt_emax prec emax]
+    (m : mode) (x y : binary_float prec emax) : binary_float prec emax :=
   match x, y with
   | .B754_nan, _ | _, .B754_nan => .B754_nan
   | .B754_infinity _, .B754_infinity _ => .B754_nan
@@ -364,7 +373,8 @@ def Bdiv (m : mode) (x y : binary_float) : binary_float :=
       let (pair, lz) := SFdiv_core_binary prec emax (Zpos mx) ex (Zpos my) ey
       sf2bTotal (prec := prec) (emax := emax) (binary_round_aux (prec := prec) (emax := emax) m (sx ^^ sy) pair.1 pair.2 lz)
 
-def Bsqrt (m : mode) (x : binary_float) : binary_float :=
+def Bsqrt [Core.FLX.Prec_gt_0 prec] [Prec_lt_emax prec emax]
+    (m : mode) (x : binary_float prec emax) : binary_float prec emax :=
   match x with
   | .B754_nan => .B754_nan
   | .B754_infinity false => x
@@ -378,7 +388,7 @@ def Bsqrt (m : mode) (x : binary_float) : binary_float :=
 def valid_rnd_round_mode : Prop := ∀ m : mode, Valid_rnd (round_mode m)
 
 def B2R_BoppStatement : Prop :=
-  ∀ x : binary_float, B2R (Bopp x) = Ropp (B2R x)
+  ∀ x : binary_float prec emax, B2R (Bopp x) = Ropp (B2R x)
 
 def B2R_SF2BStatement : Prop :=
   ∀ (x : spec_float)
@@ -391,24 +401,24 @@ def B2SF_SF2BStatement : Prop :=
     B2SF (SF2B (prec := prec) (emax := emax) x Hx) = x
 
 def B2SF_injStatement : Prop :=
-  ∀ x y : binary_float, B2SF x = B2SF y → x = y
+  ∀ x y : binary_float prec emax, B2SF x = B2SF y → x = y
 
 def Bcompare_correctStatement : Prop :=
-  ∀ (f1 f2 : binary_float),
+  ∀ (f1 f2 : binary_float prec emax),
     is_finite f1 = true →
     is_finite f2 = true →
     Bcompare f1 f2 =
       some (Rcompare (B2R f1) (B2R f2))
 
 def Bcompare_swapStatement : Prop :=
-  ∀ (x y : binary_float),
+  ∀ (x y : binary_float prec emax),
     Bcompare y x =
       match Bcompare x y with
       | some c => some (_root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.CompOpp c)
       | none => none
 
-def Bdiv_correctStatement : Prop :=
-  ∀ (m : mode) (x y : binary_float),
+def Bdiv_correctStatement [Core.FLX.Prec_gt_0 prec] [Prec_lt_emax prec emax] : Prop :=
+  ∀ (m : mode) (x y : binary_float prec emax),
     B2R y ≠ R0 →
     if Rlt_bool (Rabs (round radix2 (fexp (prec := prec) (emax := emax))
       (round_mode m) (B2R x / B2R y)))
@@ -422,7 +432,7 @@ def Bdiv_correctStatement : Prop :=
       B2SF (Bdiv (prec := prec) (emax := emax) m x y) =
         binary_overflow (prec := prec) (emax := emax) m (Bsign x ^^ Bsign y)
 
-def Bdiv_correct_auxStatement : Prop :=
+def Bdiv_correct_auxStatement [Core.FLX.Prec_gt_0 prec] [Prec_lt_emax prec emax] : Prop :=
   ∀ (m : mode) (sx : Bool) (mx : positive) (ex : Z)
     (sy : Bool) (my : positive) (ey : Z),
     let x := F2R (Float radix2 (cond_Zopp sx (Zpos mx)) ex)
@@ -439,8 +449,8 @@ def Bdiv_correct_auxStatement : Prop :=
     else
       z = binary_overflow (prec := prec) (emax := emax) m (sx ^^ sy)
 
-def Bminus_correctStatement : Prop :=
-  ∀ (m : mode) (x y : binary_float),
+def Bminus_correctStatement [Core.FLX.Prec_gt_0 prec] [Prec_lt_emax prec emax] : Prop :=
+  ∀ (m : mode) (x y : binary_float prec emax),
     is_finite x = true →
     is_finite y = true →
     if Rlt_bool (Rabs (round radix2 (fexp (prec := prec) (emax := emax))
@@ -462,8 +472,8 @@ def Bminus_correctStatement : Prop :=
         binary_overflow (prec := prec) (emax := emax) m (Bsign x) ∧
       Bsign x = !Bsign y
 
-def Bmult_correctStatement : Prop :=
-  ∀ (m : mode) (x y : binary_float),
+def Bmult_correctStatement [Core.FLX.Prec_gt_0 prec] [Prec_lt_emax prec emax] : Prop :=
+  ∀ (m : mode) (x y : binary_float prec emax),
     if Rlt_bool (Rabs (round radix2 (fexp (prec := prec) (emax := emax))
       (round_mode m) (B2R x * B2R y)))
         (bpow radix2 emax) then
@@ -476,7 +486,7 @@ def Bmult_correctStatement : Prop :=
       B2SF (Bmult (prec := prec) (emax := emax) m x y) =
         binary_overflow (prec := prec) (emax := emax) m (Bsign x ^^ Bsign y)
 
-def Bmult_correct_auxStatement : Prop :=
+def Bmult_correct_auxStatement [Core.FLX.Prec_gt_0 prec] [Prec_lt_emax prec emax] : Prop :=
   ∀ (m : mode) (sx : Bool) (mx : positive) (ex : Z)
     (_Hx : bounded (prec := prec) (emax := emax) mx ex = true) (sy : Bool)
     (my : positive) (ey : Z) (_Hy : bounded (prec := prec) (emax := emax) my ey = true),
@@ -494,8 +504,8 @@ def Bmult_correct_auxStatement : Prop :=
     else
       z = binary_overflow (prec := prec) (emax := emax) m (sx ^^ sy)
 
-def Bplus_correctStatement : Prop :=
-  ∀ (m : mode) (x y : binary_float),
+def Bplus_correctStatement [Core.FLX.Prec_gt_0 prec] [Prec_lt_emax prec emax] : Prop :=
+  ∀ (m : mode) (x y : binary_float prec emax),
     is_finite x = true →
     is_finite y = true →
     if Rlt_bool (Rabs (round radix2 (fexp (prec := prec) (emax := emax))
@@ -517,14 +527,14 @@ def Bplus_correctStatement : Prop :=
         binary_overflow (prec := prec) (emax := emax) m (Bsign x) ∧ Bsign x = Bsign y
 
 def Bsign_BoppStatement : Prop :=
-  ∀ x : binary_float, is_nan x = false → Bsign (Bopp x) = !Bsign x
+  ∀ x : binary_float prec emax, is_nan x = false → Bsign (Bopp x) = !Bsign x
 
 def Bsign_SF2BStatement : Prop :=
   ∀ (x : spec_float)
     (H : valid_binary (prec := prec) (emax := emax) x = true),
     Bsign (SF2B (prec := prec) (emax := emax) x H) = sign_SF x
 
-def Bsqrt_correct_auxStatement : Prop :=
+def Bsqrt_correct_auxStatement [Core.FLX.Prec_gt_0 prec] [Prec_lt_emax prec emax] : Prop :=
   ∀ (m : mode) (mx : positive) (ex : Z)
     (_Hx : bounded (prec := prec) (emax := emax) mx ex = true),
     let x := F2R (Float radix2 (Zpos mx) ex)
@@ -544,9 +554,10 @@ def Fplus_naive_correctStatement : Prop :=
     F2R (Float radix2 (Fplus_naive sx mx ex sy my ey ez) ez) = x + y
 
 def abs_B2R_lt_emaxStatement : Prop :=
-  ∀ x : binary_float, Rlt (Rabs (B2R x)) (bpow radix2 emax)
+  ∀ x : binary_float prec emax, Rlt (Rabs (B2R x)) (bpow radix2 emax)
 
-def binary_fit_aux_correctStatement : Prop :=
+def binary_fit_aux_correctStatement [Core.FLX.Prec_gt_0 prec]
+    [Prec_lt_emax prec emax] : Prop :=
   ∀ (m : mode) (sx : Bool) (mx : positive) (ex : Z),
     canonical_mantissa (prec := prec) (emax := emax) mx ex = true →
     let x := SF2R radix2 (S754_finite sx mx ex)
@@ -557,7 +568,8 @@ def binary_fit_aux_correctStatement : Prop :=
     else
       z = binary_overflow (prec := prec) (emax := emax) m sx
 
-def binary_normalize_correctStatement : Prop :=
+def binary_normalize_correctStatement [Core.FLX.Prec_gt_0 prec]
+    [Prec_lt_emax prec emax] : Prop :=
   ∀ (m : mode) (mx ex : Z) (szero : Bool),
     let x := F2R (Float radix2 mx ex)
     let z := binary_normalize (prec := prec) (emax := emax) m mx ex szero
@@ -573,12 +585,14 @@ def binary_normalize_correctStatement : Prop :=
     else
       B2SF z = binary_overflow (prec := prec) (emax := emax) m (Rlt_bool x R0)
 
-def binary_overflow_correctStatement : Prop :=
+def binary_overflow_correctStatement [Core.FLX.Prec_gt_0 prec]
+    [Prec_lt_emax prec emax] : Prop :=
   ∀ (m : mode) (s : Bool),
     valid_binary (prec := prec) (emax := emax)
       (binary_overflow (prec := prec) (emax := emax) m s) = true
 
-def binary_round_aux_correctStatement : Prop :=
+def binary_round_aux_correctStatement [Core.FLX.Prec_gt_0 prec]
+    [Prec_lt_emax prec emax] : Prop :=
   ∀ (m : mode) (x : R) (mx : positive) (ex : Z) (lx : location),
     inbetween_float radix2 (Zpos mx) ex (Rabs x) lx →
     Zle ex ((fexp (prec := prec) (emax := emax))
@@ -592,7 +606,8 @@ def binary_round_aux_correctStatement : Prop :=
     else
       z = binary_overflow (prec := prec) (emax := emax) m (Rlt_bool x R0)
 
-def binary_round_aux_correct'Statement : Prop :=
+def binary_round_aux_correct'Statement [Core.FLX.Prec_gt_0 prec]
+    [Prec_lt_emax prec emax] : Prop :=
   ∀ (m : mode) (x : R) (mx ex : Z) (lx : location),
     x ≠ R0 →
     inbetween_float radix2 mx ex (Rabs x) lx →
@@ -606,7 +621,8 @@ def binary_round_aux_correct'Statement : Prop :=
     else
       z = binary_overflow (prec := prec) (emax := emax) m (Rlt_bool x R0)
 
-def binary_round_correctStatement : Prop :=
+def binary_round_correctStatement [Core.FLX.Prec_gt_0 prec]
+    [Prec_lt_emax prec emax] : Prop :=
   ∀ (m : mode) (sx : Bool) (mx : positive) (ex : Z),
     let z := binary_round (prec := prec) (emax := emax) m sx mx ex
     valid_binary (prec := prec) (emax := emax) z = true ∧
@@ -618,7 +634,8 @@ def binary_round_correctStatement : Prop :=
     else
       z = binary_overflow (prec := prec) (emax := emax) m sx
 
-def bounded_canonical_lt_emaxStatement : Prop :=
+def bounded_canonical_lt_emaxStatement [Core.FLX.Prec_gt_0 prec]
+    [Prec_lt_emax prec emax] : Prop :=
   ∀ (mx : positive) (ex : Z),
     canonical radix2 (fexp (prec := prec) (emax := emax)) (Float radix2 (Zpos mx) ex) →
     Rlt (F2R (Float radix2 (Zpos mx) ex)) (bpow radix2 emax) →
@@ -641,11 +658,11 @@ def canonical_canonical_mantissaStatement : Prop :=
     canonical radix2 (fexp (prec := prec) (emax := emax))
       (Float radix2 (cond_Zopp sx (Zpos mx)) ex)
 
-def fexp_emaxStatement : Prop :=
+def fexp_emaxStatement [Core.FLX.Prec_gt_0 prec] [Prec_lt_emax prec emax] : Prop :=
   fexp (prec := prec) (emax := emax) emax = Zsub emax prec
 
 def generic_format_B2RStatement : Prop :=
-  ∀ x : binary_float,
+  ∀ x : binary_float prec emax,
     generic_format radix2 (fexp (prec := prec) (emax := emax)) (B2R x)
 
 def inbetween_shrStatement : Prop :=
@@ -663,7 +680,7 @@ def inbetween_shr_1Statement : Prop :=
       (loc_of_shr_record (shr_1 mrs))
 
 def is_finite_BoppStatement : Prop :=
-  ∀ x : binary_float, is_finite (Bopp x) = is_finite x
+  ∀ x : binary_float prec emax, is_finite (Bopp x) = is_finite x
 
 def is_finite_SF2BStatement : Prop :=
   ∀ (x : spec_float)
@@ -671,9 +688,10 @@ def is_finite_SF2BStatement : Prop :=
     is_finite (SF2B (prec := prec) (emax := emax) x Hx) = is_finite_SF x
 
 def is_nan_SF_B2SFStatement : Prop :=
-  ∀ x : binary_float, is_nan_SF (B2SF x) = is_nan x
+  ∀ x : binary_float prec emax, is_nan_SF (B2SF x) = is_nan x
 
-def is_nan_binary_normalizeStatement : Prop :=
+def is_nan_binary_normalizeStatement [Core.FLX.Prec_gt_0 prec]
+    [Prec_lt_emax prec emax] : Prop :=
   ∀ (m : mode) (mx ex : Z) (szero : Bool),
     is_nan (binary_normalize (prec := prec) (emax := emax) m mx ex szero) = false
 
@@ -683,10 +701,10 @@ def is_nan_binary_overflowStatement : Prop :=
 
 def le_shr1_leStatement : Prop :=
   ∀ mrs : shr_record,
-    Zle Z0 (shr_m mrs) ∧
-    (Zle Z0 (shr_m (shr_1 mrs)) ∧
+    Zle Z0 (shr_m mrs) →
+    Zle Z0 (shr_m (shr_1 mrs)) ∧
       Zle (Zmul Ztwo (shr_m (shr_1 mrs))) (shr_m mrs) ∧
-      Zlt (shr_m mrs) (Zmul Ztwo (Zadd (shr_m (shr_1 mrs)) Zone)))
+      Zlt (shr_m mrs) (Zmul Ztwo (Zadd (shr_m (shr_1 mrs)) Zone))
 
 def loc_of_shr_record_of_locStatement : Prop :=
   ∀ (m : Z) (l : location), loc_of_shr_record (shr_record_of_loc m l) = l
@@ -710,7 +728,7 @@ def shl_align_fexp_correctStatement : Prop :=
     Zle ex' ((fexp (prec := prec) (emax := emax))
       (Zadd (Zdigits radix2 (Zpos mx')) ex'))
 
-def shr_fexp_truncateStatement : Prop :=
+def shr_fexp_truncateStatement [Core.FLX.Prec_gt_0 prec] : Prop :=
   ∀ (m e : Z) (l : location),
     Zle Z0 m →
     shr_fexp (prec := prec) (emax := emax) m e l =
@@ -729,7 +747,7 @@ def shr_natStatement : Prop :=
         (_root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.to_nat n) mrs,
         Zadd e n)
 
-def sign_plus_overflowStatement : Prop :=
+def sign_plus_overflowStatement [Core.FLX.Prec_gt_0 prec] : Prop :=
   ∀ (m : mode) (sx : Bool) (mx : positive) (ex : Z)
     (sy : Bool) (my : positive) (ey : Z),
     bounded (prec := prec) (emax := emax) mx ex = true →
