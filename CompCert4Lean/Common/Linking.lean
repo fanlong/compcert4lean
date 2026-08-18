@@ -28,6 +28,60 @@ class Linker (A : Type) where
 
 export Linker (link linkorder linkorder_refl linkorder_trans link_linkorder)
 
+def link_fundef {F : Type} (fd1 fd2 : fundef F) : Option (fundef F) :=
+  match fd1, fd2 with
+  | .Internal _, .Internal _ => none
+  | .External ef1, .External ef2 =>
+      match external_function_eq ef1 ef2 with
+      | .left _ => some (.External ef1)
+      | .right _ => none
+  | .Internal f, .External (.EF_external _ _) => some (.Internal f)
+  | .External (.EF_external _ _), .Internal f => some (.Internal f)
+  | _, _ => none
+
+inductive linkorder_fundef {F : Type} : fundef F → fundef F → Prop where
+  | linkorder_fundef_refl (fd : fundef F) : linkorder_fundef fd fd
+  | linkorder_fundef_ext_int (f : F)
+      (id : CompCert4Lean.Foundation.RocqString.Rocq.Coq.Strings.String.string)
+      (sg : signature) :
+      linkorder_fundef (.External (.EF_external id sg)) (.Internal f)
+
+export linkorder_fundef (linkorder_fundef_refl linkorder_fundef_ext_int)
+
+instance Linker_fundef (F : Type) : Linker (fundef F) where
+  link := link_fundef
+  linkorder := linkorder_fundef
+  linkorder_refl := linkorder_fundef_refl
+  linkorder_trans := by
+    intro x y z hxy hyz
+    cases hxy <;> cases hyz <;> constructor
+  link_linkorder := by
+    intro x y z h
+    cases x with
+    | Internal f1 =>
+        cases y with
+        | Internal f2 => simp [link_fundef] at h
+        | External ef =>
+            cases ef <;> simp [link_fundef] at h
+            case EF_external id sg =>
+              subst z
+              exact ⟨linkorder_fundef_refl _, linkorder_fundef_ext_int f1 id sg⟩
+    | External ef1 =>
+        cases y with
+        | Internal f2 =>
+            cases ef1 <;> simp [link_fundef] at h
+            case EF_external id sg =>
+              subst z
+              exact ⟨linkorder_fundef_ext_int f2 id sg, linkorder_fundef_refl _⟩
+        | External ef2 =>
+            cases hEq : external_function_eq ef1 ef2 with
+            | left heq =>
+                simp [link_fundef, hEq] at h
+                subst ef2
+                subst z
+                exact ⟨linkorder_fundef_refl _, linkorder_fundef_refl _⟩
+            | right _ => simp [link_fundef, hEq] at h
+
 private inductive LinkClosure {A : Type} (op : A → A → Option A) : A → A → Prop where
   | refl (x : A) : LinkClosure op x x
   | left {x y z : A} : op x y = some z → LinkClosure op x z
@@ -124,6 +178,13 @@ instance Linker_vardef (V : Type) [LV : Linker V] : Linker (globvar V) where
           exact ⟨⟨hx, hix, rfl, rfl⟩,
             ⟨hy, hiy, hflags.1.symm, hflags.2.symm⟩⟩
         · contradiction
+
+instance Linker_unit : Linker Unit where
+  link := fun _ _ => some ()
+  linkorder := fun _ _ => True
+  linkorder_refl := by simp
+  linkorder_trans := by simp
+  link_linkorder := by simp
 
 def link_def {F V : Type} [LF : Linker F] [LV : Linker V]
     (gd1 gd2 : globdef F V) : Option (globdef F V) :=
