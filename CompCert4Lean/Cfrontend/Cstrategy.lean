@@ -1,0 +1,655 @@
+import CompCert4Lean.Cfrontend.Csem
+
+/-!
+# Deterministic evaluation strategy for CompCert C
+
+Definition-bearing translation of the required surface of CompCert's
+`cfrontend/Cstrategy.v`.  The integrated semantics makes the external-call
+environment explicit, so the strategy carries the same `ExternalCalls`
+parameter as `Csem`.
+-/
+
+namespace CompCert4Lean.Cfrontend.Cstrategy
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.ExternalCalls
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Smallstep
+open CompCert4Lean.Cfrontend.Cop
+open CompCert4Lean.Cfrontend.Csyntax
+open CompCert4Lean.Cfrontend.Ctypes
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.Lib.Maps
+
+private abbrev block := CompCert4Lean.Common.Values.block
+private abbrev val := CompCert4Lean.Common.Values.val
+private abbrev mem := CompCert4Lean.Common.Memory.Mem.mem
+private abbrev trace := CompCert4Lean.Common.Events.trace
+private abbrev event := CompCert4Lean.Common.Events.event
+private abbrev ptrofs := CompCert4Lean.Lib.Integers.ptrofs
+private abbrev int := CompCert4Lean.Lib.Integers.int
+private abbrev type := CompCert4Lean.Cfrontend.Ctypes.type
+private abbrev bitfield := CompCert4Lean.Cfrontend.Ctypes.bitfield
+private abbrev composite := CompCert4Lean.Cfrontend.Ctypes.composite
+private abbrev expr := CompCert4Lean.Cfrontend.Csyntax.expr
+private abbrev exprlist := CompCert4Lean.Cfrontend.Csyntax.exprlist
+private abbrev function := CompCert4Lean.Cfrontend.Csyntax.function
+private abbrev fundef := CompCert4Lean.Cfrontend.Csyntax.fundef
+private abbrev program := CompCert4Lean.Cfrontend.Csyntax.program
+private abbrev genv := CompCert4Lean.Cfrontend.Csem.genv
+private abbrev env := CompCert4Lean.Cfrontend.Csem.env
+private abbrev state := CompCert4Lean.Cfrontend.Csem.state
+private abbrev cont := CompCert4Lean.Cfrontend.Csem.cont
+private abbrev kind := CompCert4Lean.Cfrontend.Csem.kind
+private abbrev ExternalCalls := CompCert4Lean.Common.ExternalCalls.ExternalCalls
+
+/-! ## Strategy definitions -/
+
+def simple : expr → Bool
+  | .Eloc _ _ _ _ => true
+  | .Evar _ _ => true
+  | .Ederef r _ => simple r
+  | .Efield r _ _ => simple r
+  | .Eval _ _ => true
+  | .Evalof l _ => simple l && !type_is_volatile (typeof l)
+  | .Eaddrof l _ => simple l
+  | .Eunop _ r _ => simple r
+  | .Ebinop _ r1 r2 _ => simple r1 && simple r2
+  | .Ecast r _ => simple r
+  | .Eseqand _ _ _ => false
+  | .Eseqor _ _ _ => false
+  | .Econdition _ _ _ _ => false
+  | .Esizeof _ _ => true
+  | .Ealignof _ _ => true
+  | .Eassign _ _ _ => false
+  | .Eassignop _ _ _ _ _ => false
+  | .Epostincr _ _ _ => false
+  | .Ecomma _ _ _ => false
+  | .Ecall _ _ _ => false
+  | .Ebuiltin _ _ _ _ => false
+  | .Eparen _ _ _ => false
+
+def simplelist : exprlist → Bool
+  | .Enil => true
+  | .Econs r rl => simple r && simplelist rl
+
+mutual
+  inductive eval_simple_lvalue (ge : genv) (e : env) (m : mem) :
+      expr → block → ptrofs → bitfield → Prop where
+    | esl_var_local {x ty b} :
+        PTree.get x e = some (b, ty) →
+        eval_simple_lvalue ge e m (.Evar x ty) b Ptrofs.zero .Full
+    | esl_var_global {x ty b} :
+        PTree.get x e = none →
+        Genv.find_symbol ge.genv_genv x = some b →
+        eval_simple_lvalue ge e m (.Evar x ty) b Ptrofs.zero .Full
+    | esl_field_struct {r f ty b ofs id co a delta bf} :
+        eval_simple_rvalue ge e m r (.Vptr b ofs) →
+        typeof r = .Tstruct id a →
+        PTree.get id ge.genv_cenv = some co →
+        field_offset ge.genv_cenv f co.co_members = .OK (delta, bf) →
+        eval_simple_lvalue ge e m (.Efield r f ty) b
+          (Ptrofs.add ofs (Ptrofs.repr delta)) bf
+    | esl_field_union {r f ty b ofs id co a delta bf} :
+        eval_simple_rvalue ge e m r (.Vptr b ofs) →
+        typeof r = .Tunion id a →
+        union_field_offset ge.genv_cenv f co.co_members = .OK (delta, bf) →
+        PTree.get id ge.genv_cenv = some co →
+        eval_simple_lvalue ge e m (.Efield r f ty) b
+          (Ptrofs.add ofs (Ptrofs.repr delta)) bf
+
+  inductive eval_simple_rvalue (ge : genv) (e : env) (m : mem) :
+      expr → val → Prop where
+end
+
+export eval_simple_lvalue
+  (esl_var_local esl_var_global esl_field_struct esl_field_union)
+
+inductive eval_simple_list (ge : genv) (e : env) (m : mem) :
+    exprlist → List type → List val → Prop where
+
+mutual
+  inductive leftcontext : kind → kind → (expr → expr) → Prop where
+
+  inductive leftcontextlist : kind → (expr → exprlist) → Prop where
+end
+
+private def classifyFunAs (tyf : type) (tyargs : List type) (tyres : type)
+    (cconv : calling_convention) : Prop :=
+  tyf = .Tfunction tyargs tyres cconv ∨
+    ∃ a, tyf = .Tpointer (.Tfunction tyargs tyres cconv) a
+
+inductive estep (xi : ExternalCalls) (ge : genv) : state → trace → state → Prop where
+  | step_expr {f r k e m v ty} :
+      eval_simple_rvalue ge e m r v →
+      (match r with | .Eval _ _ => False | _ => True) →
+      ty = typeof r →
+      estep xi ge (.ExprState f r k e m) E0
+        (.ExprState f (.Eval v ty) k e m)
+  | step_rvalof_volatile {f C l ty k e m b ofs bf t v} :
+      leftcontext .RV .RV C →
+      eval_simple_lvalue ge e m l b ofs bf →
+      Csem.deref_loc ge ty m b ofs bf t v →
+      ty = typeof l →
+      type_is_volatile ty = true →
+      estep xi ge (.ExprState f (C (.Evalof l ty)) k e m) t
+        (.ExprState f (C (.Eval v ty)) k e m)
+  | step_seqand_true {f C r1 r2 ty k e m v} :
+      leftcontext .RV .RV C →
+      eval_simple_rvalue ge e m r1 v →
+      bool_val v (typeof r1) m = some true →
+      estep xi ge (.ExprState f (C (.Eseqand r1 r2 ty)) k e m) E0
+        (.ExprState f (C (.Eparen r2 type_bool ty)) k e m)
+  | step_seqand_false {f C r1 r2 ty k e m v} :
+      leftcontext .RV .RV C →
+      eval_simple_rvalue ge e m r1 v →
+      bool_val v (typeof r1) m = some false →
+      estep xi ge (.ExprState f (C (.Eseqand r1 r2 ty)) k e m) E0
+        (.ExprState f (C (.Eval (.Vint Int.zero) ty)) k e m)
+  | step_seqor_true {f C r1 r2 ty k e m v} :
+      leftcontext .RV .RV C →
+      eval_simple_rvalue ge e m r1 v →
+      bool_val v (typeof r1) m = some true →
+      estep xi ge (.ExprState f (C (.Eseqor r1 r2 ty)) k e m) E0
+        (.ExprState f (C (.Eval (.Vint Int.one) ty)) k e m)
+  | step_seqor_false {f C r1 r2 ty k e m v} :
+      leftcontext .RV .RV C →
+      eval_simple_rvalue ge e m r1 v →
+      bool_val v (typeof r1) m = some false →
+      estep xi ge (.ExprState f (C (.Eseqor r1 r2 ty)) k e m) E0
+        (.ExprState f (C (.Eparen r2 type_bool ty)) k e m)
+  | step_condition {f C r1 r2 r3 ty k e m v b} :
+      leftcontext .RV .RV C →
+      eval_simple_rvalue ge e m r1 v →
+      bool_val v (typeof r1) m = some b →
+      estep xi ge (.ExprState f (C (.Econdition r1 r2 r3 ty)) k e m) E0
+        (.ExprState f (C (.Eparen (if b then r2 else r3) ty ty)) k e m)
+  | step_assign {f C l r ty k e m b ofs bf v v1 t m' v'} :
+      leftcontext .RV .RV C →
+      eval_simple_lvalue ge e m l b ofs bf →
+      eval_simple_rvalue ge e m r v →
+      sem_cast v (typeof r) (typeof l) m = some v1 →
+      Csem.assign_loc ge (typeof l) m b ofs bf v1 t m' v' →
+      ty = typeof l →
+      estep xi ge (.ExprState f (C (.Eassign l r ty)) k e m) t
+        (.ExprState f (C (.Eval v' ty)) k e m')
+  | step_assignop {f C op l r tyres ty k e m b ofs bf v1 v2 v3 v4 t1 t2 m' v' t} :
+      leftcontext .RV .RV C →
+      eval_simple_lvalue ge e m l b ofs bf →
+      Csem.deref_loc ge (typeof l) m b ofs bf t1 v1 →
+      eval_simple_rvalue ge e m r v2 →
+      sem_binary_operation ge.genv_cenv op v1 (typeof l) v2 (typeof r) m = some v3 →
+      sem_cast v3 tyres (typeof l) m = some v4 →
+      Csem.assign_loc ge (typeof l) m b ofs bf v4 t2 m' v' →
+      ty = typeof l →
+      t = Eapp t1 t2 →
+      estep xi ge (.ExprState f (C (.Eassignop op l r tyres ty)) k e m) t
+        (.ExprState f (C (.Eval v' ty)) k e m')
+  | step_assignop_stuck {f C op l r tyres ty k e m b ofs bf v1 v2 t} :
+      leftcontext .RV .RV C →
+      eval_simple_lvalue ge e m l b ofs bf →
+      Csem.deref_loc ge (typeof l) m b ofs bf t v1 →
+      eval_simple_rvalue ge e m r v2 →
+      (match sem_binary_operation ge.genv_cenv op v1 (typeof l) v2 (typeof r) m with
+       | none => True
+       | some v3 =>
+           match sem_cast v3 tyres (typeof l) m with
+           | none => True
+           | some v4 => ∀ t2 m' v', ¬ Csem.assign_loc ge (typeof l) m b ofs bf v4 t2 m' v') →
+      ty = typeof l →
+      estep xi ge (.ExprState f (C (.Eassignop op l r tyres ty)) k e m) t .Stuckstate
+  | step_postincr {f C id l ty k e m b ofs bf v1 v2 v3 t1 t2 m' v' t} :
+      leftcontext .RV .RV C →
+      eval_simple_lvalue ge e m l b ofs bf →
+      Csem.deref_loc ge ty m b ofs bf t1 v1 →
+      sem_incrdecr ge.genv_cenv id v1 ty m = some v2 →
+      sem_cast v2 (incrdecr_type ty) ty m = some v3 →
+      Csem.assign_loc ge ty m b ofs bf v3 t2 m' v' →
+      ty = typeof l →
+      t = Eapp t1 t2 →
+      estep xi ge (.ExprState f (C (.Epostincr id l ty)) k e m) t
+        (.ExprState f (C (.Eval v1 ty)) k e m')
+  | step_postincr_stuck {f C id l ty k e m b ofs bf v1 t} :
+      leftcontext .RV .RV C →
+      eval_simple_lvalue ge e m l b ofs bf →
+      Csem.deref_loc ge ty m b ofs bf t v1 →
+      (match sem_incrdecr ge.genv_cenv id v1 ty m with
+       | none => True
+       | some v2 =>
+           match sem_cast v2 (incrdecr_type ty) ty m with
+           | none => True
+           | some v3 => ∀ t2 m' v', ¬ Csem.assign_loc ge (typeof l) m b ofs bf v3 t2 m' v') →
+      ty = typeof l →
+      estep xi ge (.ExprState f (C (.Epostincr id l ty)) k e m) t .Stuckstate
+  | step_comma {f C r1 r2 ty k e m v} :
+      leftcontext .RV .RV C →
+      eval_simple_rvalue ge e m r1 v →
+      ty = typeof r2 →
+      estep xi ge (.ExprState f (C (.Ecomma r1 r2 ty)) k e m) E0
+        (.ExprState f (C r2) k e m)
+  | step_paren {f C r tycast ty k e m v1 v} :
+      leftcontext .RV .RV C →
+      eval_simple_rvalue ge e m r v1 →
+      sem_cast v1 (typeof r) tycast m = some v →
+      estep xi ge (.ExprState f (C (.Eparen r tycast ty)) k e m) E0
+        (.ExprState f (C (.Eval v ty)) k e m)
+  | step_call {f C rf rargs ty k e m targs tres cconv vf vargs fd} :
+      leftcontext .RV .RV C →
+      classifyFunAs (typeof rf) targs tres cconv →
+      eval_simple_rvalue ge e m rf vf →
+      eval_simple_list ge e m rargs targs vargs →
+      Genv.find_funct ge.genv_genv vf = some fd →
+      Csyntax.type_of_fundef fd = .Tfunction targs tres cconv →
+      estep xi ge (.ExprState f (C (.Ecall rf rargs ty)) k e m) E0
+        (.Callstate fd vargs (.Kcall f e C ty k) m)
+  | step_builtin {f C ef tyargs rargs ty k e m vargs t vres m'} :
+      leftcontext .RV .RV C →
+      eval_simple_list ge e m rargs tyargs vargs →
+      external_call xi ef (Genv.to_senv ge.genv_genv) vargs m t vres m' →
+      estep xi ge (.ExprState f (C (.Ebuiltin ef tyargs rargs ty)) k e m) t
+        (.ExprState f (C (.Eval vres ty)) k e m')
+
+export estep
+  (step_expr step_rvalof_volatile step_seqand_true step_seqand_false
+    step_seqor_true step_seqor_false step_condition step_assign step_assignop
+    step_assignop_stuck step_postincr step_postincr_stuck step_comma step_paren
+    step_call step_builtin)
+
+open CompCert4Lean.Cfrontend.Csem
+
+def step (xi : ExternalCalls) (ge : genv) (S : state) (t : trace) (S' : state) : Prop :=
+  estep xi ge S t S' ∨ Csem.sstep xi ge S t S'
+
+def safe (xi : ExternalCalls) (ge : genv) (s : state) : Prop :=
+  ∀ s', star (Csem.step xi) ge s E0 s' →
+    (∃ r, Csem.final_state s' r) ∨
+    (∃ t s'', Csem.step xi ge s' t s'')
+
+def expr_kind : expr → kind
+  | .Eloc _ _ _ _ => .LV
+  | .Evar _ _ => .LV
+  | .Ederef _ _ => .LV
+  | .Efield _ _ _ => .LV
+  | _ => .RV
+
+def exprlist_all_values : exprlist → Prop
+  | .Enil => True
+  | .Econs (.Eval _ _) rl => exprlist_all_values rl
+  | .Econs _ _ => False
+
+def invert_expr_prop (xi : ExternalCalls) (ge : genv) (e : env)
+    (a : expr) (m : mem) : Prop :=
+  match a with
+  | .Eloc _ _ _ _ => False
+  | .Evar x ty =>
+      ∃ b, PTree.get x e = some (b, ty) ∨
+        (PTree.get x e = none ∧ Genv.find_symbol ge.genv_genv x = some b)
+  | .Ederef (.Eval v _) _ => ∃ b ofs, v = .Vptr b ofs
+  | .Eaddrof (.Eloc _ _ bf _) _ => bf = .Full
+  | .Efield (.Eval v ty1) f _ =>
+      ∃ b ofs, v = .Vptr b ofs ∧
+        match ty1 with
+        | .Tstruct id _ =>
+            ∃ co delta bf, PTree.get id ge.genv_cenv = some co ∧
+              field_offset ge.genv_cenv f co.co_members = .OK (delta, bf)
+        | .Tunion id _ =>
+            ∃ co delta bf, PTree.get id ge.genv_cenv = some co ∧
+              union_field_offset ge.genv_cenv f co.co_members = .OK (delta, bf)
+        | _ => False
+  | .Eval _ _ => False
+  | .Evalof (.Eloc b ofs bf ty') ty =>
+      ty' = ty ∧ ∃ t v, deref_loc ge ty m b ofs bf t v
+  | .Eunop op (.Eval v1 ty1) _ =>
+      ∃ v, sem_unary_operation op v1 ty1 m = some v
+  | .Ebinop op (.Eval v1 ty1) (.Eval v2 ty2) _ =>
+      ∃ v, sem_binary_operation ge.genv_cenv op v1 ty1 v2 ty2 m = some v
+  | .Ecast (.Eval v1 ty1) ty => ∃ v, sem_cast v1 ty1 ty m = some v
+  | .Eseqand (.Eval v1 ty1) _ _ => ∃ b, bool_val v1 ty1 m = some b
+  | .Eseqor (.Eval v1 ty1) _ _ => ∃ b, bool_val v1 ty1 m = some b
+  | .Econdition (.Eval v1 ty1) _ _ _ => ∃ b, bool_val v1 ty1 m = some b
+  | .Eassign (.Eloc b ofs bf ty1) (.Eval v2 ty2) ty =>
+      ∃ v m' v' t, ty = ty1 ∧
+        sem_cast v2 ty2 ty1 m = some v ∧
+        assign_loc ge ty1 m b ofs bf v t m' v'
+  | .Eassignop _ (.Eloc b ofs bf ty1) (.Eval _ _) _ ty =>
+      ∃ t v1, ty = ty1 ∧ deref_loc ge ty1 m b ofs bf t v1
+  | .Epostincr _ (.Eloc b ofs bf ty1) ty =>
+      ∃ t v1, ty = ty1 ∧ deref_loc ge ty m b ofs bf t v1
+  | .Ecomma (.Eval _ _) r2 ty => typeof r2 = ty
+  | .Eparen (.Eval v1 ty1) ty2 _ => ∃ v, sem_cast v1 ty1 ty2 m = some v
+  | .Ecall (.Eval vf tyf) rargs _ =>
+      exprlist_all_values rargs →
+      ∃ tyargs tyres cconv fd vl,
+        classifyFunAs tyf tyargs tyres cconv ∧
+        Genv.find_funct ge.genv_genv vf = some fd ∧
+        cast_arguments m rargs tyargs vl ∧
+        type_of_fundef fd = .Tfunction tyargs tyres cconv
+  | .Ebuiltin ef tyargs rargs _ =>
+      exprlist_all_values rargs →
+      ∃ vargs t vres m',
+        cast_arguments m rargs tyargs vargs ∧
+        external_call xi ef (Genv.to_senv ge.genv_genv) vargs m t vres m'
+  | _ => True
+
+def rval_list : List val → exprlist → exprlist
+  | v :: vl, .Econs r rl => .Econs (.Eval v (typeof r)) (rval_list vl rl)
+  | _, _ => .Enil
+
+inductive eval_simple_list' (ge : genv) (e : env) (m : mem) :
+    exprlist → List val → Prop where
+
+def exprlist_app : exprlist → exprlist → exprlist
+  | .Enil, rl2 => rl2
+  | .Econs r rl1, rl2 => .Econs r (exprlist_app rl1 rl2)
+
+inductive contextlist' : (exprlist → expr) → Prop where
+  | contextlist'_call {r1 rl0 ty C} :
+      context .RV .RV C →
+      contextlist' (fun rl => C (.Ecall r1 (exprlist_app rl0 rl) ty))
+  | contextlist'_builtin {ef tyargs rl0 ty C} :
+      context .RV .RV C →
+      contextlist' (fun rl => C (.Ebuiltin ef tyargs (exprlist_app rl0 rl) ty))
+
+export contextlist' (contextlist'_call contextlist'_builtin)
+
+def simple_side_effect : expr → Prop
+  | .Evalof l _ => simple l = true ∧ type_is_volatile (typeof l) = true
+  | .Eseqand r1 _ _ => simple r1 = true
+  | .Eseqor r1 _ _ => simple r1 = true
+  | .Econdition r1 _ _ _ => simple r1 = true
+  | .Eassign l r _ => simple l = true ∧ simple r = true
+  | .Eassignop _ l r _ _ => simple l = true ∧ simple r = true
+  | .Epostincr _ l _ => simple l = true
+  | .Ecomma r1 _ _ => simple r1 = true
+  | .Ecall r rl _ => simple r = true ∧ simplelist rl = true
+  | .Ebuiltin _ _ rl _ => simplelist rl = true
+  | .Eparen r _ _ => simple r = true
+  | _ => False
+
+def semantics (xi : ExternalCalls) (p : program) :
+    CompCert4Lean.Common.Smallstep.semantics :=
+  { state := state
+    genvtype := genv
+    step := step xi
+    initial_state := Csem.initial_state p
+    final_state := Csem.final_state
+    globalenv := Csem.globalenv p
+    symbolenv := Genv.to_senv (Csem.globalenv p).genv_genv }
+
+/-! ## Exact statement descriptors for later proof migration -/
+
+def leftcontext_contextStatement : Prop :=
+  ∀ k1 k2 C, leftcontext k1 k2 C → context k1 k2 C
+
+def context_composeStatement : Prop :=
+  ∀ k2 k3 C2, context k2 k3 C2 →
+    ∀ k1 C1, context k1 k2 C1 →
+      context k1 k3 (fun x => C2 (C1 x))
+
+def safe_stepsStatement : Prop :=
+  ∀ (xi : ExternalCalls) (ge : genv) s s',
+    safe xi ge s → star (Csem.step xi) ge s E0 s' → safe xi ge s'
+
+def safe_imm_safeStatement : Prop :=
+  ∀ (xi : ExternalCalls) (ge : genv) f C a k e m K,
+    safe xi ge (.ExprState f (C a) k e m) →
+    context K .RV C →
+    imm_safe xi ge e K a m
+
+def lred_kindStatement : Prop :=
+  ∀ (ge : genv) e a m a' m',
+    lred ge e a m a' m' → expr_kind a = .LV
+
+def rred_kindStatement : Prop :=
+  ∀ (xi : ExternalCalls) (ge : genv) e a m t a' m',
+    rred xi ge e a m t a' m' → expr_kind a = .RV
+
+def callred_kindStatement : Prop :=
+  ∀ (ge : genv) a m fd args ty,
+    callred ge a m fd args ty → expr_kind a = .RV
+
+def context_kindStatement : Prop :=
+  ∀ a fromKind to C, context fromKind to C →
+    expr_kind a = fromKind → expr_kind (C a) = to
+
+def imm_safe_kindStatement : Prop :=
+  ∀ (xi : ExternalCalls) (ge : genv) e k a m,
+    imm_safe xi ge e k a m → expr_kind a = k
+
+def safe_expr_kindStatement : Prop :=
+  ∀ (xi : ExternalCalls) (ge : genv) fromKind C f a k e m,
+    context fromKind .RV C →
+    safe xi ge (.ExprState f (C a) k e m) →
+    expr_kind a = fromKind
+
+def lred_invertStatement : Prop :=
+  ∀ (xi : ExternalCalls) (ge : genv) (e : env) l m l' m',
+    lred ge e l m l' m' → invert_expr_prop xi ge e l m
+
+def rred_invertStatement : Prop :=
+  ∀ (xi : ExternalCalls) (ge : genv) (e : env) r m t r' m',
+    rred xi ge e r m t r' m' → invert_expr_prop xi ge e r m
+
+def callred_invertStatement : Prop :=
+  ∀ (xi : ExternalCalls) (ge : genv) (e : env) r fd args ty m,
+    callred ge r m fd args ty → invert_expr_prop xi ge e r m
+
+def invert_expr_contextStatement : Prop :=
+  ∀ (xi : ExternalCalls) (ge : genv) (e : env),
+    (∀ fromKind to C, context fromKind to C →
+      ∀ a m, invert_expr_prop xi ge e a m →
+        invert_expr_prop xi ge e (C a) m) ∧
+    (∀ fromKind C, contextlist fromKind C →
+      ∀ a m, invert_expr_prop xi ge e a m →
+        ¬ exprlist_all_values (C a))
+
+def imm_safe_invStatement : Prop :=
+  ∀ (xi : ExternalCalls) (ge : genv) (e : env) k a m,
+    imm_safe xi ge e k a m →
+    match a with
+    | .Eloc _ _ _ _ => True
+    | .Eval _ _ => True
+    | _ => invert_expr_prop xi ge e a m
+
+def safe_invStatement : Prop :=
+  ∀ (xi : ExternalCalls) (ge : genv) (e : env) k C f a K m,
+    safe xi ge (.ExprState f (C a) K e m) →
+    context k .RV C →
+    match a with
+    | .Eloc _ _ _ _ => True
+    | .Eval _ _ => True
+    | _ => invert_expr_prop xi ge e a m
+
+def eval_simple_stepsStatement : Prop :=
+  ∀ (xi : ExternalCalls) (ge : genv) (f : function) (k : cont) (e : env) (m : mem),
+    (∀ a v, eval_simple_rvalue ge e m a v →
+      ∀ C, context .RV .RV C →
+        star (Csem.step xi) ge (.ExprState f (C a) k e m) E0
+          (.ExprState f (C (.Eval v (typeof a))) k e m)) ∧
+    (∀ a b ofs bf, eval_simple_lvalue ge e m a b ofs bf →
+      ∀ C, context .LV .RV C →
+        star (Csem.step xi) ge (.ExprState f (C a) k e m) E0
+          (.ExprState f (C (.Eloc b ofs bf (typeof a))) k e m))
+
+def eval_simple_rvalue_stepsStatement : Prop :=
+  ∀ (xi : ExternalCalls) (ge : genv) (f : function) (k : cont) (e : env) (m : mem)
+      a v,
+    eval_simple_rvalue ge e m a v →
+    ∀ C, context .RV .RV C →
+      star (Csem.step xi) ge (.ExprState f (C a) k e m) E0
+        (.ExprState f (C (.Eval v (typeof a))) k e m)
+
+def eval_simple_lvalue_stepsStatement : Prop :=
+  ∀ (xi : ExternalCalls) (ge : genv) (f : function) (k : cont) (e : env) (m : mem)
+      a b ofs bf,
+    eval_simple_lvalue ge e m a b ofs bf →
+    ∀ C, context .LV .RV C →
+      star (Csem.step xi) ge (.ExprState f (C a) k e m) E0
+        (.ExprState f (C (.Eloc b ofs bf (typeof a))) k e m)
+
+def eval_simple_rvalue_safeStatement : Prop :=
+  ∀ (xi : ExternalCalls) (ge : genv) (f : function) (k : cont) (e : env) (m : mem)
+      C a v,
+    eval_simple_rvalue ge e m a v →
+    context .RV .RV C →
+    safe xi ge (.ExprState f (C a) k e m) →
+    safe xi ge (.ExprState f (C (.Eval v (typeof a))) k e m)
+
+def eval_simple_lvalue_safeStatement : Prop :=
+  ∀ (xi : ExternalCalls) (ge : genv) (f : function) (k : cont) (e : env) (m : mem)
+      C a b ofs bf,
+    eval_simple_lvalue ge e m a b ofs bf →
+    context .LV .RV C →
+    safe xi ge (.ExprState f (C a) k e m) →
+    safe xi ge (.ExprState f (C (.Eloc b ofs bf (typeof a))) k e m)
+
+def simple_can_evalStatement : Prop :=
+  ∀ (xi : ExternalCalls) (ge : genv) (f : function) (k : cont) (e : env) (m : mem)
+      a fromKind C,
+    simple a = true →
+    context fromKind .RV C →
+    safe xi ge (.ExprState f (C a) k e m) →
+    match fromKind with
+    | .LV => ∃ b ofs bf, eval_simple_lvalue ge e m a b ofs bf
+    | .RV => ∃ v, eval_simple_rvalue ge e m a v
+
+def simple_can_eval_rvalStatement : Prop :=
+  ∀ (xi : ExternalCalls) (ge : genv) (f : function) (k : cont) (e : env) (m : mem)
+      r C,
+    simple r = true →
+    context .RV .RV C →
+    safe xi ge (.ExprState f (C r) k e m) →
+    ∃ v, eval_simple_rvalue ge e m r v ∧
+      safe xi ge (.ExprState f (C (.Eval v (typeof r))) k e m)
+
+def simple_can_eval_lvalStatement : Prop :=
+  ∀ (xi : ExternalCalls) (ge : genv) (f : function) (k : cont) (e : env) (m : mem)
+      l C,
+    simple l = true →
+    context .LV .RV C →
+    safe xi ge (.ExprState f (C l) k e m) →
+    ∃ b ofs bf, eval_simple_lvalue ge e m l b ofs bf ∧
+      safe xi ge (.ExprState f (C (.Eloc b ofs bf (typeof l))) k e m)
+
+def eval_simple_list_impliesStatement : Prop :=
+  ∀ (ge : genv) (e : env) (m : mem) rl tyl vl,
+    eval_simple_list ge e m rl tyl vl →
+    ∃ vl', cast_arguments m (rval_list vl' rl) tyl vl ∧
+      eval_simple_list' ge e m rl vl'
+
+def can_eval_simple_listStatement : Prop :=
+  ∀ (ge : genv) (e : env) (m : mem) rl vl,
+    eval_simple_list' ge e m rl vl →
+    ∀ tyl vl', cast_arguments m (rval_list vl rl) tyl vl' →
+      eval_simple_list ge e m rl tyl vl'
+
+def exprlist_app_assocStatement : Prop :=
+  ∀ rl2 rl3 rl1,
+    exprlist_app (exprlist_app rl1 rl2) rl3 =
+      exprlist_app rl1 (exprlist_app rl2 rl3)
+
+def exprlist_app_contextStatement : Prop :=
+  ∀ rl1 rl2, contextlist .RV (fun x => exprlist_app rl1 (.Econs x rl2))
+
+def contextlist'_headStatement : Prop :=
+  ∀ rl C, contextlist' C → context .RV .RV (fun x => C (.Econs x rl))
+
+def contextlist'_tailStatement : Prop :=
+  ∀ r1 C, contextlist' C → contextlist' (fun x => C (.Econs r1 x))
+
+def eval_simple_list_stepsStatement : Prop :=
+  ∀ (xi : ExternalCalls) (ge : genv) (f : function) (k : cont) (e : env) (m : mem)
+      rl vl,
+    eval_simple_list' ge e m rl vl →
+    ∀ C, contextlist' C →
+      star (Csem.step xi) ge (.ExprState f (C rl) k e m) E0
+        (.ExprState f (C (rval_list vl rl)) k e m)
+
+def simple_list_can_evalStatement : Prop :=
+  ∀ (xi : ExternalCalls) (ge : genv) (f : function) (k : cont) (e : env) (m : mem)
+      rl C,
+    simplelist rl = true →
+    contextlist' C →
+    safe xi ge (.ExprState f (C rl) k e m) →
+    ∃ vl, eval_simple_list' ge e m rl vl
+
+def rval_list_all_valuesStatement : Prop :=
+  ∀ vl rl, exprlist_all_values (rval_list vl rl)
+
+def decompose_exprStatement : Prop :=
+  ∀ (xi : ExternalCalls) (ge : genv) (f : function) (k : cont) (e : env) (m : mem),
+    (∀ a fromKind C, context fromKind .RV C →
+      safe xi ge (.ExprState f (C a) k e m) →
+      simple a = true ∨
+        ∃ C' a', a = C' a' ∧ simple_side_effect a' ∧ leftcontext .RV fromKind C') ∧
+    (∀ rl C, contextlist' C →
+      safe xi ge (.ExprState f (C rl) k e m) →
+      simplelist rl = true ∨
+        ∃ C' a', rl = C' a' ∧ simple_side_effect a' ∧ leftcontextlist .RV C')
+
+def decompose_topexprStatement : Prop :=
+  ∀ (xi : ExternalCalls) (ge : genv) (f : function) (k : cont) (e : env) (m : mem) a,
+    safe xi ge (.ExprState f a k e m) →
+    simple a = true ∨
+      ∃ C a', a = C a' ∧ simple_side_effect a' ∧ leftcontext .RV .RV C
+
+def estep_simulationStatement : Prop :=
+  ∀ (xi : ExternalCalls) (ge : genv) S t S',
+    estep xi ge S t S' → plus (Csem.step xi) ge S t S'
+
+def can_estepStatement : Prop :=
+  ∀ (xi : ExternalCalls) (ge : genv) f a k e m,
+    safe xi ge (.ExprState f a k e m) →
+    (match a with | .Eval _ _ => False | _ => True) →
+    ∃ t S, estep xi ge (.ExprState f a k e m) t S
+
+def step_simulationStatement : Prop :=
+  ∀ (xi : ExternalCalls) (ge : genv) S1 t S2,
+    step xi ge S1 t S2 → plus (Csem.step xi) ge S1 t S2
+
+def progressStatement : Prop :=
+  ∀ (xi : ExternalCalls) (ge : genv) S,
+    safe xi ge S →
+    (∃ r, Csem.final_state S r) ∨
+    (∃ t S', step xi ge S t S')
+
+def deref_loc_traceStatement : Prop :=
+  ∀ (ge : genv) ty m b ofs bf t v,
+    deref_loc ge ty m b ofs bf t v →
+    match t with
+    | [] => True
+    | [_] => True
+    | _ => False
+
+def deref_loc_receptiveStatement : Prop :=
+  ∀ (ge : genv) ty m b ofs bf ev1 t1 v ev2,
+    deref_loc ge ty m b ofs bf (ev1 :: t1) v →
+    match_traces (Genv.to_senv ge.genv_genv) [ev1] [ev2] →
+    t1 = [] ∧ ∃ v', deref_loc ge ty m b ofs bf [ev2] v'
+
+def assign_loc_traceStatement : Prop :=
+  ∀ (ge : genv) ty m b ofs bf t v m' v',
+    assign_loc ge ty m b ofs bf v t m' v' →
+    match t with
+    | [] => True
+    | [ev] => output_event ev
+    | _ => False
+
+def assign_loc_receptiveStatement : Prop :=
+  ∀ (ge : genv) ty m b ofs bf ev1 t1 v m' v' ev2,
+    assign_loc ge ty m b ofs bf v (ev1 :: t1) m' v' →
+    match_traces (Genv.to_senv ge.genv_genv) [ev1] [ev2] →
+    ev1 :: t1 = [ev2]
+
+def semantics_strongly_receptiveStatement : Prop :=
+  ∀ (xi : ExternalCalls) (p : program), strongly_receptive (semantics xi p)
+
+def strategy_simulationStatement : Prop :=
+  ∀ (xi : ExternalCalls) (p : program),
+    backward_simulation (Csem.semantics xi p) (semantics xi p)
+
+end CompCert4Lean.Cfrontend.Cstrategy
