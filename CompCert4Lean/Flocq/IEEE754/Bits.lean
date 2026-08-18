@@ -37,7 +37,7 @@ abbrev emax (ew : Z) : Z := Zpower Ztwo (Zsub ew Zone)
 abbrev emin (mw ew : Z) : Z :=
   BinarySingleNaN.emin0 (prec mw) (emax ew)
 
-abbrev binary_float (_mw _ew : Z) : Type := Binary.binary_float
+abbrev binary_float (mw ew : Z) : Type := Binary.binary_float (prec mw) (emax ew)
 
 def join_bits (mw ew : Z) (s : Bool) (m e : Z) : Z :=
   Zadd (Zshiftl (Zadd (if s then Zpower Ztwo ew else Z0) e) mw) m
