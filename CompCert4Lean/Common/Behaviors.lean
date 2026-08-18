@@ -1,0 +1,598 @@
+import CompCert4Lean.Common.Smallstep
+
+/-!
+# Whole-program behaviors
+
+Definition-bearing translation of CompCert's `common/Behaviors.v`.  Proofs
+assigned to later proof migration are represented by transparent proposition
+descriptors with the source quantifier order.
+-/
+
+namespace CompCert4Lean.Common.Behaviors
+
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.Smallstep
+open CompCert4Lean.Lib.Integers
+
+private abbrev Step (L : semantics) := step L (globalenv L)
+private abbrev Star (L : semantics) := star (step L) (globalenv L)
+private abbrev Plus (L : semantics) := plus (step L) (globalenv L)
+private abbrev Nostep (L : semantics) := nostep (step L) (globalenv L)
+private abbrev Forever (L : semantics) := forever (step L) (globalenv L)
+private abbrev ForeverSilent (L : semantics) :=
+  forever_silent (step L) (globalenv L)
+private abbrev ForeverReactive (L : semantics) :=
+  forever_reactive (step L) (globalenv L)
+
+/-! ## Behaviors for program executions -/
+
+inductive program_behavior : Type where
+  | Terminates : trace → int → program_behavior
+  | Diverges : trace → program_behavior
+  | Reacts : traceinf → program_behavior
+  | Goes_wrong : trace → program_behavior
+
+abbrev Terminates (t : trace) (r : int) : program_behavior :=
+  program_behavior.Terminates t r
+
+abbrev Diverges (t : trace) : program_behavior :=
+  program_behavior.Diverges t
+
+abbrev Reacts (T : traceinf) : program_behavior :=
+  program_behavior.Reacts T
+
+abbrev Goes_wrong (t : trace) : program_behavior :=
+  program_behavior.Goes_wrong t
+
+private def programBehaviorElim {motive : program_behavior → Sort u}
+    (hTerminates : ∀ t r, motive (Terminates t r))
+    (hDiverges : ∀ t, motive (Diverges t))
+    (hReacts : ∀ T, motive (Reacts T))
+    (hGoesWrong : ∀ t, motive (Goes_wrong t)) :
+    ∀ beh, motive beh
+  | .Terminates t r => hTerminates t r
+  | .Diverges t => hDiverges t
+  | .Reacts T => hReacts T
+  | .Goes_wrong t => hGoesWrong t
+
+abbrev program_behavior_ind := @programBehaviorElim
+abbrev program_behavior_rec := @programBehaviorElim
+abbrev program_behavior_rect := @programBehaviorElim
+abbrev program_behavior_sind := @programBehaviorElim
+
+def not_wrong (beh : program_behavior) : Prop :=
+  match beh with
+  | .Terminates _ _ => True
+  | .Diverges _ => True
+  | .Reacts _ => True
+  | .Goes_wrong _ => False
+
+def behavior_app (t : trace) (beh : program_behavior) : program_behavior :=
+  match beh with
+  | .Terminates t1 r => Terminates (Eapp t t1) r
+  | .Diverges t1 => Diverges (Eapp t t1)
+  | .Reacts T => Reacts (Eappinf t T)
+  | .Goes_wrong t1 => Goes_wrong (Eapp t t1)
+
+def behavior_app_assocStatement : Prop :=
+  ∀ (t1 t2 : trace) (beh : program_behavior),
+    behavior_app (Eapp t1 t2) beh =
+      behavior_app t1 (behavior_app t2 beh)
+
+def behavior_app_E0Statement : Prop :=
+  ∀ beh : program_behavior, behavior_app E0 beh = beh
+
+def behavior_prefix (t : trace) (beh : program_behavior) : Prop :=
+  ∃ beh', beh = behavior_app t beh'
+
+def behavior_improves (beh1 beh2 : program_behavior) : Prop :=
+  beh1 = beh2 ∨
+    ∃ t, beh1 = Goes_wrong t ∧ behavior_prefix t beh2
+
+def behavior_improves_reflStatement : Prop :=
+  ∀ beh : program_behavior, behavior_improves beh beh
+
+def behavior_improves_transStatement : Prop :=
+  ∀ beh1 beh2 beh3 : program_behavior,
+    behavior_improves beh1 beh2 →
+    behavior_improves beh2 beh3 →
+    behavior_improves beh1 beh3
+
+def behavior_improves_botStatement : Prop :=
+  ∀ beh : program_behavior, behavior_improves (Goes_wrong E0) beh
+
+def behavior_improves_appStatement : Prop :=
+  ∀ (t : trace) (beh1 beh2 : program_behavior),
+    behavior_improves beh1 beh2 →
+    behavior_improves (behavior_app t beh1) (behavior_app t beh2)
+
+/-! ## Associating behaviors to programs -/
+
+inductive state_behaves (L : semantics) (s : state L) :
+    program_behavior → Prop where
+  | state_terminates (t : trace) (s' : state L) (r : int)
+      (hstar : Star L s t s')
+      (hfinal : final_state L s' r) :
+      state_behaves L s (Terminates t r)
+  | state_diverges (t : trace) (s' : state L)
+      (hstar : Star L s t s')
+      (hforever : ForeverSilent L s') :
+      state_behaves L s (Diverges t)
+  | state_reacts (T : traceinf)
+      (hforever : ForeverReactive L s T) :
+      state_behaves L s (Reacts T)
+  | state_goes_wrong (t : trace) (s' : state L)
+      (hstar : Star L s t s')
+      (hnostep : Nostep L s')
+      (hnofinal : ∀ r, ¬ final_state L s' r) :
+      state_behaves L s (Goes_wrong t)
+
+abbrev state_terminates {L : semantics} (s : state L)
+    (t : trace) (s' : state L) (r : int)
+    (hstar : Star L s t s') (hfinal : final_state L s' r) :
+    state_behaves L s (Terminates t r) :=
+  state_behaves.state_terminates t s' r hstar hfinal
+
+abbrev state_diverges {L : semantics} (s : state L)
+    (t : trace) (s' : state L) (hstar : Star L s t s')
+    (hforever : ForeverSilent L s') : state_behaves L s (Diverges t) :=
+  state_behaves.state_diverges t s' hstar hforever
+
+abbrev state_reacts {L : semantics} (s : state L) (T : traceinf)
+    (hforever : ForeverReactive L s T) : state_behaves L s (Reacts T) :=
+  state_behaves.state_reacts T hforever
+
+abbrev state_goes_wrong {L : semantics} (s : state L)
+    (t : trace) (s' : state L) (hstar : Star L s t s')
+    (hnostep : Nostep L s') (hnofinal : ∀ r, ¬ final_state L s' r) :
+    state_behaves L s (Goes_wrong t) :=
+  state_behaves.state_goes_wrong t s' hstar hnostep hnofinal
+
+abbrev state_behaves_ind := @state_behaves.rec
+abbrev state_behaves_sind := @state_behaves.rec
+
+inductive program_behaves (L : semantics) : program_behavior → Prop where
+  | program_runs (s : state L) (beh : program_behavior)
+      (hinit : initial_state L s) (hbehaves : state_behaves L s beh) :
+      program_behaves L beh
+  | program_goes_initially_wrong
+      (hnoinit : ∀ s, ¬ initial_state L s) :
+      program_behaves L (Goes_wrong E0)
+
+abbrev program_runs {L : semantics} (s : state L) (beh : program_behavior)
+    (hinit : initial_state L s) (hbehaves : state_behaves L s beh) :
+    program_behaves L beh :=
+  program_behaves.program_runs s beh hinit hbehaves
+
+abbrev program_goes_initially_wrong {L : semantics}
+    (hnoinit : ∀ s, ¬ initial_state L s) :
+    program_behaves L (Goes_wrong E0) :=
+  program_behaves.program_goes_initially_wrong hnoinit
+
+abbrev program_behaves_ind := @program_behaves.rec
+abbrev program_behaves_sind := @program_behaves.rec
+
+def state_behaves_appStatement : Prop :=
+  ∀ (L : semantics) (s1 : state L) (t : trace) (s2 : state L)
+    (beh : program_behavior),
+    Star L s1 t s2 → state_behaves L s2 beh →
+    state_behaves L s1 (behavior_app t beh)
+
+/-! ## Existence of behaviors -/
+
+private theorem eappNilLeft (t : trace) : Eapp E0 t = t := by
+  rfl
+
+private theorem eappAssoc (t1 t2 t3 : trace) :
+    Eapp (Eapp t1 t2) t3 = Eapp t1 (Eapp t2 t3) := by
+  induction t1 with
+  | nil => rfl
+  | cons ev t ih =>
+      change ev :: Eapp (Eapp t t2) t3 = ev :: Eapp t (Eapp t2 t3)
+      exact congrArg (List.cons ev) ih
+
+private theorem starAppend {genv state : Type}
+    {step : genv → state → trace → state → Prop} {ge : genv}
+    {s1 s2 s3 : state} {t1 t2 : trace}
+    (h12 : star step ge s1 t1 s2) (h23 : star step ge s2 t2 s3) :
+    star step ge s1 (Eapp t1 t2) s3 := by
+  induction h12 generalizing s3 t2 with
+  | star_refl s =>
+      rw [eappNilLeft]
+      exact h23
+  | star_step s1 u s2 v s3 t hstep hstar htrace ih =>
+      apply star_step
+      · exact hstep
+      · exact ih h23
+      · rw [htrace]
+        exact eappAssoc u v t2
+
+private structure ReactiveCursor (L : semantics) (s0 : state L) where
+  current : state L
+  history : trace
+  reachable : Star L s0 history current
+
+private noncomputable def chooseReactiveStep
+    (L : semantics) (s0 : state L)
+    (reacts : ∀ (s1 : state L) (t1 : trace),
+      Star L s0 t1 s1 →
+      ∃ (s2 : state L) (t2 : trace), Star L s1 t2 s2 ∧ t2 ≠ E0)
+    (cursor : ReactiveCursor L s0) :
+    Σ s2 : state L, {t2 : trace // Star L cursor.current t2 s2 ∧ t2 ≠ E0} := by
+  classical
+  let s2 := Classical.choose (reacts cursor.current cursor.history cursor.reachable)
+  have hs2 : ∃ t2, Star L cursor.current t2 s2 ∧ t2 ≠ E0 :=
+    Classical.choose_spec (reacts cursor.current cursor.history cursor.reachable)
+  let t2 := Classical.choose hs2
+  have ht2 : Star L cursor.current t2 s2 ∧ t2 ≠ E0 :=
+    Classical.choose_spec hs2
+  exact ⟨s2, ⟨t2, ht2⟩⟩
+
+private noncomputable def nextReactiveCursor
+    (L : semantics) (s0 : state L)
+    (reacts : ∀ (s1 : state L) (t1 : trace),
+      Star L s0 t1 s1 →
+      ∃ (s2 : state L) (t2 : trace), Star L s1 t2 s2 ∧ t2 ≠ E0)
+    (cursor : ReactiveCursor L s0) : ReactiveCursor L s0 :=
+  let selected := chooseReactiveStep L s0 reacts cursor
+  { current := selected.1
+    history := Eapp cursor.history selected.2.1
+    reachable := starAppend cursor.reachable selected.2.2.1 }
+
+private noncomputable def reactiveCursorAt
+    (L : semantics) (s0 : state L)
+    (reacts : ∀ (s1 : state L) (t1 : trace),
+      Star L s0 t1 s1 →
+      ∃ (s2 : state L) (t2 : trace), Star L s1 t2 s2 ∧ t2 ≠ E0)
+    (initial : ReactiveCursor L s0) : Nat → ReactiveCursor L s0
+  | 0 => initial
+  | n + 1 => nextReactiveCursor L s0 reacts
+      (reactiveCursorAt L s0 reacts initial n)
+
+def reacts'Statement : Type 1 :=
+  ∀ (L : semantics) (s0 : state L),
+    (∀ (s1 : state L) (t1 : trace),
+      Star L s0 t1 s1 →
+      ∃ (s2 : state L) (t2 : trace), Star L s1 t2 s2 ∧ t2 ≠ E0) →
+    ∀ (s1 : state L) (t1 : trace),
+      Star L s0 t1 s1 →
+      Σ s2 : state L, {t2 : trace // Star L s1 t2 s2 ∧ t2 ≠ E0}
+
+noncomputable def build_traceinf'
+    (L : semantics) (s0 : state L)
+    (reacts : ∀ (s1 : state L) (t1 : trace),
+      Star L s0 t1 s1 →
+      ∃ (s2 : state L) (t2 : trace), Star L s1 t2 s2 ∧ t2 ≠ E0)
+    (s1 : state L) (t1 : trace) (ST : Star L s0 t1 s1) : traceinf' :=
+  fun n =>
+    let cursor := reactiveCursorAt L s0 reacts ⟨s1, t1, ST⟩ n
+    let selected := chooseReactiveStep L s0 reacts cursor
+    NonemptyTrace.ofTrace selected.2.1 selected.2.2.2
+
+def reacts_forever_reactive_recStatement : Prop :=
+  ∀ (L : semantics) (s0 : state L)
+    (reacts : ∀ (s1 : state L) (t1 : trace),
+      Star L s0 t1 s1 →
+      ∃ (s2 : state L) (t2 : trace), Star L s1 t2 s2 ∧ t2 ≠ E0)
+    (s1 : state L) (t1 : trace) (ST : Star L s0 t1 s1),
+    ForeverReactive L s1
+      (traceinf_of_traceinf' (build_traceinf' L s0 reacts s1 t1 ST))
+
+def reacts_forever_reactiveStatement : Prop :=
+  ∀ (L : semantics) (s0 : state L),
+    (∀ (s1 : state L) (t1 : trace),
+      Star L s0 t1 s1 →
+      ∃ (s2 : state L) (t2 : trace), Star L s1 t2 s2 ∧ t2 ≠ E0) →
+    ∃ T : traceinf, ForeverReactive L s0 T
+
+def diverges_forever_silentStatement : Prop :=
+  ∀ (L : semantics) (s0 : state L),
+    (∀ (s1 : state L) (t1 : trace),
+      Star L s0 t1 s1 → ∃ s2 : state L, Step L s1 E0 s2) →
+    ForeverSilent L s0
+
+def state_behaves_existsStatement : Prop :=
+  ∀ (L : semantics) (s : state L),
+    ∃ beh : program_behavior, state_behaves L s beh
+
+def program_behaves_existsStatement : Prop :=
+  ∀ L : semantics, ∃ beh : program_behavior, program_behaves L beh
+
+/-! ## Forward simulations and program behaviors -/
+
+def forward_simulation_state_behavesStatement : Prop :=
+  ∀ (L1 L2 : semantics) (index : Type) (order : index → index → Prop)
+    (match_states : index → state L1 → state L2 → Prop),
+    fsim_properties L1 L2 index order match_states →
+    ∀ (i : index) (s1 : state L1) (s2 : state L2)
+      (beh1 : program_behavior),
+      match_states i s1 s2 → state_behaves L1 s1 beh1 →
+      ∃ beh2 : program_behavior,
+        state_behaves L2 s2 beh2 ∧ behavior_improves beh1 beh2
+
+def forward_simulation_behavior_improvesStatement : Prop :=
+  ∀ L1 L2 : semantics,
+    forward_simulation L1 L2 →
+    ∀ beh1 : program_behavior,
+      program_behaves L1 beh1 →
+      ∃ beh2 : program_behavior,
+        program_behaves L2 beh2 ∧ behavior_improves beh1 beh2
+
+def forward_simulation_same_safe_behaviorStatement : Prop :=
+  ∀ L1 L2 : semantics,
+    forward_simulation L1 L2 →
+    ∀ beh : program_behavior,
+      program_behaves L1 beh → not_wrong beh → program_behaves L2 beh
+
+/-! ## Backward simulations and program behaviors -/
+
+def safe_along_behavior (L1 : semantics) (s : state L1)
+    (b : program_behavior) : Prop :=
+  ∀ (t1 : trace) (s' : state L1) (b2 : program_behavior),
+    Star L1 s t1 s' → b = behavior_app t1 b2 →
+    (∃ r, final_state L1 s' r) ∨
+      (∃ (t2 : trace) (s'' : state L1), Step L1 s' t2 s'')
+
+def safe_along_safeStatement : Prop :=
+  ∀ (L1 : semantics) (s : state L1) (b : program_behavior),
+    safe_along_behavior L1 s b → safe L1 s
+
+def star_safe_alongStatement : Prop :=
+  ∀ (L1 : semantics) (s : state L1) (b : program_behavior)
+    (t1 : trace) (s' : state L1) (b2 : program_behavior),
+    safe_along_behavior L1 s b → Star L1 s t1 s' →
+    b = behavior_app t1 b2 → safe_along_behavior L1 s' b2
+
+def not_safe_along_behaviorStatement : Prop :=
+  ∀ (L1 : semantics) (s : state L1) (b : program_behavior),
+    ¬ safe_along_behavior L1 s b →
+    ∃ (t : trace) (s' : state L1),
+      behavior_prefix t b ∧ Star L1 s t s' ∧ Nostep L1 s' ∧
+        (∀ r, ¬ final_state L1 s' r)
+
+def backward_simulation_starStatement : Prop :=
+  ∀ (L1 L2 : semantics) (index : Type) (order : index → index → Prop)
+    (match_states : index → state L1 → state L2 → Prop),
+    bsim_properties L1 L2 index order match_states →
+    ∀ (s2 : state L2) (t : trace) (s2' : state L2),
+      Star L2 s2 t s2' →
+      ∀ (i : index) (s1 : state L1) (b : program_behavior),
+        match_states i s1 s2 →
+        safe_along_behavior L1 s1 (behavior_app t b) →
+        ∃ (i' : index) (s1' : state L1),
+          Star L1 s1 t s1' ∧ match_states i' s1' s2'
+
+def backward_simulation_forever_silentStatement : Prop :=
+  ∀ (L1 L2 : semantics) (index : Type) (order : index → index → Prop)
+    (match_states : index → state L1 → state L2 → Prop),
+    bsim_properties L1 L2 index order match_states →
+    ∀ (i : index) (s1 : state L1) (s2 : state L2),
+      ForeverSilent L2 s2 → match_states i s1 s2 → safe L1 s1 →
+      ForeverSilent L1 s1
+
+def backward_simulation_forever_reactiveStatement : Prop :=
+  ∀ (L1 L2 : semantics) (index : Type) (order : index → index → Prop)
+    (match_states : index → state L1 → state L2 → Prop),
+    bsim_properties L1 L2 index order match_states →
+    ∀ (i : index) (s1 : state L1) (s2 : state L2) (T : traceinf),
+      ForeverReactive L2 s2 T → match_states i s1 s2 →
+      safe_along_behavior L1 s1 (Reacts T) → ForeverReactive L1 s1 T
+
+def backward_simulation_state_behavesStatement : Prop :=
+  ∀ (L1 L2 : semantics) (index : Type) (order : index → index → Prop)
+    (match_states : index → state L1 → state L2 → Prop),
+    bsim_properties L1 L2 index order match_states →
+    ∀ (i : index) (s1 : state L1) (s2 : state L2)
+      (beh2 : program_behavior),
+      match_states i s1 s2 → state_behaves L2 s2 beh2 →
+      ∃ beh1 : program_behavior,
+        state_behaves L1 s1 beh1 ∧ behavior_improves beh1 beh2
+
+def backward_simulation_behavior_improvesStatement : Prop :=
+  ∀ L1 L2 : semantics,
+    backward_simulation L1 L2 →
+    ∀ beh2 : program_behavior,
+      program_behaves L2 beh2 →
+      ∃ beh1 : program_behavior,
+        program_behaves L1 beh1 ∧ behavior_improves beh1 beh2
+
+def backward_simulation_same_safe_behaviorStatement : Prop :=
+  ∀ L1 L2 : semantics,
+    backward_simulation L1 L2 →
+    (∀ beh : program_behavior, program_behaves L1 beh → not_wrong beh) →
+    ∀ beh : program_behavior,
+      program_behaves L2 beh → program_behaves L1 beh
+
+/-! ## Program behaviors for the atomic construction -/
+
+def atomic_finishStatement : Prop :=
+  ∀ (L : semantics) (s : state L) (t : trace),
+    output_trace t → Star (atomic L) (t, s) t (E0, s)
+
+def step_atomic_plusStatement : Prop :=
+  ∀ L : semantics,
+    well_behaved_traces L →
+    ∀ (s1 : state L) (t : trace) (s2 : state L),
+      Step L s1 t s2 → Plus (atomic L) (E0, s1) t (E0, s2)
+
+def star_atomic_starStatement : Prop :=
+  ∀ L : semantics,
+    well_behaved_traces L →
+    ∀ (s1 : state L) (t : trace) (s2 : state L),
+      Star L s1 t s2 → Star (atomic L) (E0, s1) t (E0, s2)
+
+def atomic_forward_simulationStatement : Prop :=
+  ∀ L : semantics,
+    well_behaved_traces L → forward_simulation L (atomic L)
+
+def atomic_star_star_genStatement : Prop :=
+  ∀ (L : semantics) (ts1 : state (atomic L)) (t : trace)
+    (ts2 : state (atomic L)),
+    Star (atomic L) ts1 t ts2 →
+    ∃ t' : trace,
+      Star L ts1.2 t' ts2.2 ∧ Eapp ts1.1 t' = Eapp t ts2.1
+
+def atomic_star_starStatement : Prop :=
+  ∀ (L : semantics) (s1 : state L) (t : trace) (s2 : state L),
+    Star (atomic L) (E0, s1) t (E0, s2) → Star L s1 t s2
+
+def atomic_forever_silent_forever_silentStatement : Prop :=
+  ∀ (L : semantics) (s : state (atomic L)),
+    ForeverSilent (atomic L) s → ForeverSilent L s.2
+
+def star_atomic_output_traceStatement : Prop :=
+  ∀ L : semantics,
+    well_behaved_traces L →
+    ∀ (s : state L) (t t' : trace) (s' : state L),
+      Star (atomic L) (E0, s) t (t', s') → output_trace t'
+
+def atomic_forever_reactive_forever_reactiveStatement : Prop :=
+  ∀ L : semantics,
+    well_behaved_traces L →
+    ∀ (s : state L) (T : traceinf),
+      ForeverReactive (atomic L) (E0, s) T → ForeverReactive L s T
+
+def atomic_behaviorsStatement : Prop :=
+  ∀ L : semantics,
+    well_behaved_traces L →
+    ∀ beh : program_behavior,
+      program_behaves L beh ↔ program_behaves (atomic L) beh
+
+/-! ## Infinite reduction sequences -/
+
+inductive tstate {genv state : Type}
+    (step : genv → state → trace → state → Prop) (ge : genv) : Type where
+  | ST (s : state) (T : traceinf) (F : forever step ge s T) :
+      tstate step ge
+
+abbrev ST {genv state : Type}
+    (step : genv → state → trace → state → Prop) (ge : genv)
+    (s : state) (T : traceinf) (F : forever step ge s T) : tstate step ge :=
+  tstate.ST s T F
+
+private def tstateElim {genv state : Type}
+    {step : genv → state → trace → state → Prop} {ge : genv}
+    {motive : tstate step ge → Sort u}
+    (hST : ∀ s T F, motive (.ST s T F)) :
+    ∀ S, motive S
+  | .ST s T F => hST s T F
+
+abbrev tstate_ind := @tstateElim
+abbrev tstate_rec := @tstateElim
+abbrev tstate_rect := @tstateElim
+abbrev tstate_sind := @tstateElim
+
+def state_of_tstate {genv state : Type}
+    {step : genv → state → trace → state → Prop} {ge : genv}
+    (S : tstate step ge) : state :=
+  match S with
+  | .ST s _ _ => s
+
+def traceinf_of_tstate {genv state : Type}
+    {step : genv → state → trace → state → Prop} {ge : genv}
+    (S : tstate step ge) : traceinf :=
+  match S with
+  | .ST _ T _ => T
+
+inductive tstep {genv state : Type}
+    (step : genv → state → trace → state → Prop) (ge : genv) :
+    trace → tstate step ge → tstate step ge → Prop where
+  | tstep_intro (s1 : state) (t : trace) (T : traceinf) (s2 : state)
+      (S : step ge s1 t s2) (F : forever step ge s2 T) :
+      tstep step ge t
+        (.ST s1 (Eappinf t T) (forever_intro s1 t s2 T S F))
+        (.ST s2 T F)
+
+abbrev tstep_intro := @tstep.tstep_intro
+abbrev tstep_ind := @tstep.rec
+abbrev tstep_sind := @tstep.rec
+
+inductive tsteps {genv state : Type}
+    (step : genv → state → trace → state → Prop) (ge : genv) :
+    tstate step ge → tstate step ge → Prop where
+  | tsteps_refl (S : tstate step ge) : tsteps step ge S S
+  | tsteps_left (t : trace) (S1 S2 S3 : tstate step ge)
+      (hstep : tstep step ge t S1 S2) (hsteps : tsteps step ge S2 S3) :
+      tsteps step ge S1 S3
+
+abbrev tsteps_refl := @tsteps.tsteps_refl
+abbrev tsteps_left := @tsteps.tsteps_left
+abbrev tsteps_ind := @tsteps.rec
+abbrev tsteps_sind := @tsteps.rec
+
+private def treactive {genv state : Type}
+    (step : genv → state → trace → state → Prop) (ge : genv)
+    (S : tstate step ge) : Prop :=
+  ∀ S1, tsteps step ge S S1 →
+    ∃ (S2 S3 : tstate step ge) (t : trace),
+      tsteps step ge S1 S2 ∧ tstep step ge t S2 S3 ∧ t ≠ E0
+
+private def tsilent {genv state : Type}
+    (step : genv → state → trace → state → Prop) (ge : genv)
+    (S : tstate step ge) : Prop :=
+  ∀ (S1 : tstate step ge) (t : trace) (S2 : tstate step ge),
+    tsteps step ge S S1 → tstep step ge t S1 S2 → t = E0
+
+def tsteps_transStatement : Prop :=
+  ∀ (genv state : Type)
+    (step : genv → state → trace → state → Prop) (ge : genv)
+    (S1 S2 : tstate step ge),
+    tsteps step ge S1 S2 →
+    ∀ S3 : tstate step ge,
+      tsteps step ge S2 S3 → tsteps step ge S1 S3
+
+def treactive_or_tsilentStatement : Prop :=
+  ∀ (genv state : Type)
+    (step : genv → state → trace → state → Prop) (ge : genv)
+    (S : tstate step ge),
+    treactive step ge S ∨
+      ∃ S' : tstate step ge, tsteps step ge S S' ∧ tsilent step ge S'
+
+def tsteps_starStatement : Prop :=
+  ∀ (genv state : Type)
+    (step : genv → state → trace → state → Prop) (ge : genv)
+    (S1 S2 : tstate step ge),
+    tsteps step ge S1 S2 →
+    ∃ t : trace,
+      star step ge (state_of_tstate S1) t (state_of_tstate S2) ∧
+        traceinf_of_tstate S1 = Eappinf t (traceinf_of_tstate S2)
+
+def tsilent_forever_silentStatement : Prop :=
+  ∀ (genv state : Type)
+    (step : genv → state → trace → state → Prop) (ge : genv)
+    (S : tstate step ge),
+    tsilent step ge S → forever_silent step ge (state_of_tstate S)
+
+def treactive_forever_reactiveStatement : Prop :=
+  ∀ (genv state : Type)
+    (step : genv → state → trace → state → Prop) (ge : genv)
+    (S : tstate step ge),
+    treactive step ge S →
+    forever_reactive step ge (state_of_tstate S) (traceinf_of_tstate S)
+
+def forever_silent_or_reactiveStatement : Prop :=
+  ∀ (genv state : Type)
+    (step : genv → state → trace → state → Prop) (ge : genv)
+    (s : state) (T : traceinf),
+    forever step ge s T →
+    forever_reactive step ge s T ∨
+      ∃ (t : trace) (s' : state) (T' : traceinf),
+        star step ge s t s' ∧ forever_silent step ge s' ∧ T = Eappinf t T'
+
+/-! ## Big-step semantics and program behaviors -/
+
+def behavior_bigstep_terminatesStatement : Prop :=
+  ∀ (B : bigstep_semantics) (L : semantics),
+    bigstep_sound B L →
+    ∀ (t : trace) (r : int),
+      bigstep_terminates B t r → program_behaves L (Terminates t r)
+
+def behavior_bigstep_divergesStatement : Prop :=
+  ∀ (B : bigstep_semantics) (L : semantics),
+    bigstep_sound B L →
+    ∀ T : traceinf,
+      bigstep_diverges B T →
+      program_behaves L (Reacts T) ∨
+        ∃ t : trace, program_behaves L (Diverges t) ∧ traceinf_prefix t T
+
+end CompCert4Lean.Common.Behaviors
