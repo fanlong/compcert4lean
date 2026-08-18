@@ -465,10 +465,299 @@ end PMap
 namespace ZIndexed
 
 def t : Type := Z
+
+def index : t → positive
+  | .Z0 => .xH
+  | .Zpos p => .xO p
+  | .Zneg p => .xI p
+
+theorem index_inj (x y : t) (h : index x = index y) : x = y := by
+  cases x with
+  | Z0 =>
+      cases y with
+      | Z0 => rfl
+      | Zpos _ => cases h
+      | Zneg _ => cases h
+  | Zpos p =>
+      cases y with
+      | Z0 => cases h
+      | Zpos _ => cases h; rfl
+      | Zneg _ => cases h
+  | Zneg p =>
+      cases y with
+      | Z0 => cases h
+      | Zpos _ => cases h
+      | Zneg _ => cases h; rfl
+
 def eq (x y : t) : CompCert4Lean.Foundation.Logic.Support.Sumbool (x = y) (x ≠ y) := by
   change Z at x y
   exact if h : x = y then .left h else .right h
 
 end ZIndexed
+
+namespace ZMap
+
+def ZMap : Type := Unit
+
+abbrev elt : Type := ZIndexed.t
+abbrev t (A : Type) : Type := PMap.t A
+
+def elt_eq (x y : elt) :
+    CompCert4Lean.Foundation.Logic.Support.Sumbool (x = y) (x ≠ y) :=
+  ZIndexed.eq x y
+
+abbrev init {A : Type} (x : A) : t A := PMap.init x
+abbrev get {A : Type} (i : elt) (m : t A) : A := PMap.get (ZIndexed.index i) m
+abbrev set {A : Type} (i : elt) (x : A) (m : t A) : t A :=
+  PMap.set (ZIndexed.index i) x m
+
+def map {A B : Type} (f : A → B) (m : t A) : t B :=
+  (f m.1, PTree.map1 f m.2)
+
+def gi : Prop := ∀ (A : Type) (x : A) (i : elt), get i (init x) = x
+def gss : Prop := ∀ (A : Type) (i : elt) (x : A) (m : t A), get i (set i x m) = x
+def gso : Prop := ∀ (A : Type) (i j : elt) (x : A) (m : t A),
+  i ≠ j → get i (set j x m) = get i m
+def gsspec : Prop := ∀ (A : Type) (i j : elt) (x : A) (m : t A),
+  get i (set j x m) = match elt_eq i j with | .left _ => x | .right _ => get i m
+def gmap : Prop := ∀ (A B : Type) (f : A → B) (i : elt) (m : t A),
+  get i (map f m) = f (get i m)
+def set2 : Prop := ∀ (A : Type) (i : elt) (x y : A) (m : t A),
+  set i y (set i x m) = set i y m
+
+end ZMap
+
+namespace NMap
+
+def NMap : Type := Unit
+
+abbrev elt : Type := N
+abbrev t (A : Type) : Type := PMap.t A
+
+private def index : elt → positive
+  | .N0 => .xH
+  | .Npos p => .xO p
+
+def elt_eq (x y : elt) :
+    CompCert4Lean.Foundation.Logic.Support.Sumbool (x = y) (x ≠ y) := by
+  by_cases h : x = y
+  · exact .left h
+  · exact .right h
+
+abbrev init {A : Type} (x : A) : t A := PMap.init x
+abbrev get {A : Type} (i : elt) (m : t A) : A := PMap.get (index i) m
+abbrev set {A : Type} (i : elt) (x : A) (m : t A) : t A := PMap.set (index i) x m
+
+def map {A B : Type} (f : A → B) (m : t A) : t B :=
+  (f m.1, PTree.map1 f m.2)
+
+def gi : Prop := ∀ (A : Type) (x : A) (i : elt), get i (init x) = x
+def gss : Prop := ∀ (A : Type) (i : elt) (x : A) (m : t A), get i (set i x m) = x
+def gso : Prop := ∀ (A : Type) (i j : elt) (x : A) (m : t A),
+  i ≠ j → get i (set j x m) = get i m
+def gsspec : Prop := ∀ (A : Type) (i j : elt) (x : A) (m : t A),
+  get i (set j x m) = match elt_eq i j with | .left _ => x | .right _ => get i m
+def gmap : Prop := ∀ (A B : Type) (f : A → B) (i : elt) (m : t A),
+  get i (map f m) = f (get i m)
+def set2 : Prop := ∀ (A : Type) (i : elt) (x y : A) (m : t A),
+  set i y (set i x m) = set i y m
+
+end NMap
+
+namespace ZTree
+
+def ZTree : Type := Unit
+
+abbrev elt : Type := ZIndexed.t
+abbrev t (A : Type) : Type := PTree.t A
+
+def elt_eq (x y : elt) :
+    CompCert4Lean.Foundation.Logic.Support.Sumbool (x = y) (x ≠ y) :=
+  ZIndexed.eq x y
+
+abbrev empty (A : Type) : t A := PTree.empty A
+abbrev get {A : Type} (i : elt) (m : t A) : Option A := PTree.get (ZIndexed.index i) m
+abbrev set {A : Type} (i : elt) (x : A) (m : t A) : t A :=
+  PTree.set (ZIndexed.index i) x m
+abbrev remove {A : Type} (i : elt) (m : t A) : t A := PTree.remove (ZIndexed.index i) m
+
+def gempty : Prop := ∀ (A : Type) (i : elt), get i (empty A) = none
+def gss : Prop := ∀ (A : Type) (i : elt) (x : A) (m : t A), get i (set i x m) = some x
+def gso : Prop := ∀ (A : Type) (i j : elt) (x : A) (m : t A),
+  i ≠ j → get i (set j x m) = get i m
+def gsspec : Prop := ∀ (A : Type) (i j : elt) (x : A) (m : t A),
+  get i (set j x m) = match elt_eq i j with | .left _ => some x | .right _ => get i m
+def grs : Prop := ∀ (A : Type) (i : elt) (m : t A), get i (remove i m) = none
+def gro : Prop := ∀ (A : Type) (i j : elt) (m : t A),
+  i ≠ j → get i (remove j m) = get i m
+def grspec : Prop := ∀ (A : Type) (i j : elt) (m : t A),
+  get i (remove j m) = match elt_eq i j with | .left _ => none | .right _ => get i m
+
+private def beq' {A : Type} (beqA : A → A → Bool) : PTree.tree' A → PTree.tree' A → Bool
+  | .Node001 r₁, .Node001 r₂ => beq' beqA r₁ r₂
+  | .Node010 x₁, .Node010 x₂ => beqA x₁ x₂
+  | .Node011 x₁ r₁, .Node011 x₂ r₂ => beqA x₁ x₂ && beq' beqA r₁ r₂
+  | .Node100 l₁, .Node100 l₂ => beq' beqA l₁ l₂
+  | .Node101 l₁ r₁, .Node101 l₂ r₂ => beq' beqA l₁ l₂ && beq' beqA r₁ r₂
+  | .Node110 l₁ x₁, .Node110 l₂ x₂ => beqA x₁ x₂ && beq' beqA l₁ l₂
+  | .Node111 l₁ x₁ r₁, .Node111 l₂ x₂ r₂ =>
+      beqA x₁ x₂ && beq' beqA l₁ l₂ && beq' beqA r₁ r₂
+  | _, _ => false
+
+def beq {A : Type} (beqA : A → A → Bool) : t A → t A → Bool
+  | .Empty, .Empty => true
+  | .Nodes m₁, .Nodes m₂ => beq' beqA m₁ m₂
+  | _, _ => false
+
+def beq_sound : Prop := ∀ (A : Type) (eqA : A → A → Bool) (t₁ t₂ : t A),
+  beq eqA t₁ t₂ = true → ∀ x : elt,
+    match get x t₁, get x t₂ with
+    | none, none => True
+    | some y₁, some y₂ => eqA y₁ y₂ = true
+    | _, _ => False
+
+abbrev combine {A B C : Type} (f : Option A → Option B → Option C)
+    (m₁ : t A) (m₂ : t B) : t C := PTree.combine f m₁ m₂
+
+def gcombine : Prop := ∀ (A B C : Type) (f : Option A → Option B → Option C),
+  f none none = none → ∀ (m₁ : t A) (m₂ : t B) (i : elt),
+    get i (combine f m₁ m₂) = f (get i m₁) (get i m₂)
+
+end ZTree
+
+namespace PTree_Properties
+
+def PTree_Properties : Type := Unit
+
+def fold_ind_aux : Type 1 :=
+  ∀ (V A : Type) (f : A → PTree.elt → V → A)
+    (P : PTree.t V → A → Type) (init : A) (mFinal : PTree.t V),
+    (∀ m, (∀ k, PTree.get k m = none) → P m init) →
+    (∀ m a k v, PTree.get k m = some v → PTree.get k mFinal = some v →
+      P (PTree.remove k m) a → P m (f a k v)) →
+    ∀ l : List (PTree.elt × V),
+      (∀ k v, (k, v) ∈ l → PTree.get k mFinal = some v) →
+      PTree.list_norepet (l.map Prod.fst) →
+      ∀ m, (∀ k v, (k, v) ∈ l ↔ PTree.get k m = some v) →
+        P m (List.foldr (fun p a => f a p.1 p.2) init l)
+
+def fold_ind : Type 1 :=
+  ∀ (V A : Type) (f : A → PTree.elt → V → A)
+    (P : PTree.t V → A → Type) (init : A) (mFinal : PTree.t V),
+    (∀ m, (∀ k, PTree.get k m = none) → P m init) →
+    (∀ m a k v, PTree.get k m = some v → PTree.get k mFinal = some v →
+      P (PTree.remove k m) a → P m (f a k v)) →
+    P mFinal (PTree.fold f mFinal init)
+
+def fold_rec : Prop :=
+  ∀ (V A : Type) (f : A → PTree.elt → V → A)
+    (P : PTree.t V → A → Prop) (init : A) (mFinal : PTree.t V),
+    (∀ m m' a, (∀ x, PTree.get x m = PTree.get x m') → P m a → P m' a) →
+    P (PTree.empty V) init →
+    (∀ m a k v, PTree.get k m = none → PTree.get k mFinal = some v →
+      P m a → P (PTree.set k v m) (f a k v)) →
+    P mFinal (PTree.fold f mFinal init)
+
+def cardinal {V : Type} (m : PTree.t V) : Nat := (PTree.elements m).length
+
+def cardinal_remove : Prop := ∀ (V : Type) (x : PTree.elt) (m : PTree.t V) (y : V),
+  PTree.get x m = some y → cardinal (PTree.remove x m) < cardinal m
+def cardinal_set : Prop := ∀ (V : Type) (x : PTree.elt) (m : PTree.t V) (y : V),
+  PTree.get x m = none → cardinal m < cardinal (PTree.set x y m)
+
+def for_all {A : Type} (m : PTree.t A) (f : PTree.elt → A → Bool) : Bool :=
+  PTree.fold (fun b x a => b && f x a) m true
+
+def for_all_correct : Prop := ∀ (A : Type) (m : PTree.t A) (f : PTree.elt → A → Bool),
+  for_all m f = true ↔ ∀ x a, PTree.get x m = some a → f x a = true
+
+def exists_ {A : Type} (m : PTree.t A) (f : PTree.elt → A → Bool) : Bool :=
+  PTree.fold (fun b x a => b || f x a) m false
+
+def exists_correct : Prop := ∀ (A : Type) (m : PTree.t A) (f : PTree.elt → A → Bool),
+  exists_ m f = true ↔ ∃ x a, PTree.get x m = some a ∧ f x a = true
+def exists_for_all : Prop := ∀ (A : Type) (m : PTree.t A) (f : PTree.elt → A → Bool),
+  exists_ m f = Bool.not (for_all m (fun x a => Bool.not (f x a)))
+def for_all_exists : Prop := ∀ (A : Type) (m : PTree.t A) (f : PTree.elt → A → Bool),
+  for_all m f = Bool.not (exists_ m (fun x a => Bool.not (f x a)))
+def for_all_false : Prop := ∀ (A : Type) (m : PTree.t A) (f : PTree.elt → A → Bool),
+  for_all m f = false ↔ ∃ x a, PTree.get x m = some a ∧ f x a = false
+def exists_false : Prop := ∀ (A : Type) (m : PTree.t A) (f : PTree.elt → A → Bool),
+  exists_ m f = false ↔ ∀ x a, PTree.get x m = some a → f x a = false
+
+def beq_false : Prop := ∀ (A : Type) (beqA : A → A → Bool) (m₁ m₂ : PTree.t A),
+  ZTree.beq beqA m₁ m₂ = false ↔ ∃ x : PTree.elt,
+    match PTree.get x m₁, PTree.get x m₂ with
+    | none, none => False
+    | some a₁, some a₂ => beqA a₁ a₂ = false
+    | _, _ => True
+
+def Equal {A : Type} (eqA : A → A → Prop) (_eqAeq : Equivalence eqA)
+    (m₁ m₂ : PTree.t A) : Prop :=
+  ∀ x, match PTree.get x m₁, PTree.get x m₂ with
+    | none, none => True
+    | some a₁, some a₂ => eqA a₁ a₂
+    | _, _ => False
+
+def Equal_refl : Prop := ∀ (A : Type) (eqA : A → A → Prop) (eqAeq : Equivalence eqA)
+  (m : PTree.t A), Equal eqA eqAeq m m
+def Equal_sym : Prop := ∀ (A : Type) (eqA : A → A → Prop) (eqAeq : Equivalence eqA)
+  (m₁ m₂ : PTree.t A), Equal eqA eqAeq m₁ m₂ → Equal eqA eqAeq m₂ m₁
+def Equal_trans : Prop := ∀ (A : Type) (eqA : A → A → Prop) (eqAeq : Equivalence eqA)
+  (m₁ m₂ m₃ : PTree.t A), Equal eqA eqAeq m₁ m₂ → Equal eqA eqAeq m₂ m₃ →
+    Equal eqA eqAeq m₁ m₃
+def Equal_Equivalence : Prop := ∀ (A : Type) (eqA : A → A → Prop) (eqAeq : Equivalence eqA),
+  Equivalence (Equal eqA eqAeq)
+
+def Equal_dec_obligation_1 : Prop :=
+  ∀ (A : Type) (eqA : A → A → Prop) (eqAeq : Equivalence eqA)
+    (eqAdec : ∀ a₁ a₂, CompCert4Lean.Foundation.Logic.Support.Sumbool (eqA a₁ a₂) (¬ eqA a₁ a₂))
+    (m₁ m₂ : PTree.t A),
+    ZTree.beq (fun a₁ a₂ => proj_sumbool (eqAdec a₁ a₂)) m₁ m₂ = true →
+      Equal eqA eqAeq m₁ m₂
+def Equal_dec_obligation_2 : Prop :=
+  ∀ (A : Type) (eqA : A → A → Prop) (eqAeq : Equivalence eqA)
+    (eqAdec : ∀ a₁ a₂, CompCert4Lean.Foundation.Logic.Support.Sumbool (eqA a₁ a₂) (¬ eqA a₁ a₂))
+    (m₁ m₂ : PTree.t A),
+    ZTree.beq (fun a₁ a₂ => proj_sumbool (eqAdec a₁ a₂)) m₁ m₂ = false →
+      ¬ Equal eqA eqAeq m₁ m₂
+
+def Equal_dec : Type 1 :=
+  ∀ (A : Type) (eqA : A → A → Prop) (eqAeq : Equivalence eqA),
+    (∀ a₁ a₂, CompCert4Lean.Foundation.Logic.Support.Sumbool (eqA a₁ a₂) (¬ eqA a₁ a₂)) →
+    ∀ m₁ m₂ : PTree.t A,
+      CompCert4Lean.Foundation.Logic.Support.Sumbool
+        (Equal eqA eqAeq m₁ m₂) (¬ Equal eqA eqAeq m₁ m₂)
+
+def Equal_EqDec : Type 1 :=
+  ∀ (A : Type) (eqA : A → A → Prop) (eqAeq : Equivalence eqA),
+    (∀ a₁ a₂, CompCert4Lean.Foundation.Logic.Support.Sumbool (eqA a₁ a₂) (¬ eqA a₁ a₂)) →
+    ∀ m₁ m₂ : PTree.t A,
+      CompCert4Lean.Foundation.Logic.Support.Sumbool
+        (Equal eqA eqAeq m₁ m₂) (¬ Equal eqA eqAeq m₁ m₂)
+
+def of_list {A : Type} (l : List (PTree.elt × A)) : PTree.t A :=
+  List.foldl (fun m kv => PTree.set kv.1 kv.2 m) (PTree.empty A) l
+
+def in_of_list : Prop := ∀ (A : Type) (l : List (PTree.elt × A)) (k : PTree.elt) (v : A),
+  PTree.get k (of_list l) = some v → (k, v) ∈ l
+def of_list_dom : Prop := ∀ (A : Type) (l : List (PTree.elt × A)) (k : PTree.elt),
+  k ∈ l.map Prod.fst → ∃ v, PTree.get k (of_list l) = some v
+def of_list_unchanged : Prop := ∀ (A : Type) (k : PTree.elt) (l : List (PTree.elt × A))
+  (m : PTree.t A), k ∉ l.map Prod.fst →
+    PTree.get k (List.foldl (fun m₀ kv => PTree.set kv.1 kv.2 m₀) m l) = PTree.get k m
+def of_list_unique : Prop := ∀ (A : Type) (k : PTree.elt) (v : A)
+  (l₁ l₂ : List (PTree.elt × A)), k ∉ l₂.map Prod.fst →
+    PTree.get k (of_list (l₁ ++ (k, v) :: l₂)) = some v
+def of_list_norepet : Prop := ∀ (A : Type) (l : List (PTree.elt × A)) (k : PTree.elt) (v : A),
+  PTree.list_norepet (l.map Prod.fst) → (k, v) ∈ l → PTree.get k (of_list l) = some v
+def of_list_elements : Prop := ∀ (A : Type) (m : PTree.t A) (k : PTree.elt),
+  PTree.get k (of_list (PTree.elements m)) = PTree.get k m
+def of_list_related : Prop := ∀ (A B : Type) (R : A → B → Prop) (k : PTree.elt)
+  (l₁ : List (PTree.elt × A)) (l₂ : List (PTree.elt × B)),
+  PTree.list_forall2 (fun ka kb => ka.1 = kb.1 ∧ R ka.2 kb.2) l₁ l₂ →
+    PTree.option_rel R (PTree.get k (of_list l₁)) (PTree.get k (of_list l₂))
+
+end PTree_Properties
 
 end CompCert4Lean.Lib.Maps
