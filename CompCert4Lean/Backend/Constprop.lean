@@ -1,0 +1,215 @@
+import CompCert4Lean.Config
+import CompCert4Lean.Driver.Compopts
+import CompCert4Lean.Backend.RTL
+import CompCert4Lean.Backend.Registers
+import CompCert4Lean.Backend.ValueAnalysis
+import CompCert4Lean.Backend.ValueDomain
+import CompCert4Lean.Common.AST
+import CompCert4Lean.Common.Builtins
+import CompCert4Lean.Lib.Coqlib
+import CompCert4Lean.Lib.Integers
+import CompCert4Lean.Lib.Maps
+import CompCert4Lean.X86.ConstpropOp
+import CompCert4Lean.X86.Machregs
+import CompCert4Lean.X86.ValueAOp
+
+/-!
+# Constant propagation
+
+Definition-bearing translation of CompCert's `backend/Constprop.v`.
+-/
+
+namespace CompCert4Lean.Backend.Constprop
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Backend.ValueAnalysis
+open CompCert4Lean.Backend.ValueDomain
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Builtins
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.X86.ConstpropOp
+open CompCert4Lean.X86.Machregs
+open CompCert4Lean.X86.Op
+
+private abbrev CompilerConfig := CompCert4Lean.Config.CompilerConfig
+private abbrev reg := CompCert4Lean.Backend.Registers.reg
+private abbrev node := CompCert4Lean.Backend.RTL.node
+private abbrev function := CompCert4Lean.Backend.RTL.function
+private abbrev instruction := CompCert4Lean.Backend.RTL.instruction
+private abbrev fundef := CompCert4Lean.Backend.RTL.fundef
+private abbrev program := CompCert4Lean.Backend.RTL.program
+private abbrev aenv := CompCert4Lean.Backend.ValueDomain.aenv
+private abbrev aval := CompCert4Lean.Backend.ValueDomain.aval
+private abbrev romem := CompCert4Lean.Backend.ValueDomain.romem
+
+private def constpropConfig : CompilerConfig :=
+  CompCert4Lean.Config.pinnedLinuxX86_64 false 0 false false false false false
+
+private def relocationContext : CompCert4Lean.X86.SelectOp.RelocationContext :=
+  { pic := false
+    pie := false
+    common := false
+    facts := fun _ => none }
+
+def transf_ros (ae : aenv) (ros : Sum reg ident) : Sum reg ident :=
+  match ros with
+  | .inl r =>
+      match areg ae r with
+      | Ptr (Gl symb ofs) =>
+          if Ptrofs.eq ofs Ptrofs.zero then .inr symb else ros
+      | _ => ros
+  | .inr _ => ros
+
+def successor_rec (n : Nat) (f : function) (ae : aenv) (pc : node) : node :=
+  match n with
+  | 0 => pc
+  | n' + 1 =>
+      match PTree.get pc f.fn_code with
+      | some (Inop s) => successor_rec n' f ae s
+      | some (Icond cond args s1 s2) =>
+          match resolve_branch
+              (CompCert4Lean.X86.ValueAOp.eval_static_condition constpropConfig cond
+                (aregs ae args)) with
+          | some b => successor_rec n' f ae (if b then s1 else s2)
+          | none => pc
+      | _ => pc
+
+def num_iter : Nat := 10
+
+def successor (f : function) (ae : aenv) (pc : node) : node :=
+  successor_rec num_iter f ae pc
+
+def builtin_arg_reduction (ae : aenv) : builtin_arg reg → builtin_arg reg
+  | .BA r =>
+      match areg ae r with
+      | I n => .BA_int n
+      | L n => .BA_long n
+      | F n => if CompCert4Lean.Driver.Compopts.generate_float_constants constpropConfig
+        then .BA_float n else .BA r
+      | FS n => if CompCert4Lean.Driver.Compopts.generate_float_constants constpropConfig
+        then .BA_single n else .BA r
+      | _ => .BA r
+  | .BA_splitlong hi lo =>
+      match builtin_arg_reduction ae hi, builtin_arg_reduction ae lo with
+      | .BA_int nhi, .BA_int nlo =>
+          .BA_long (CompCert4Lean.Lib.Integers.Int64.ofwords nhi nlo)
+      | hi', lo' => .BA_splitlong hi' lo'
+  | .BA_addptr a1 a2 =>
+      .BA_addptr (builtin_arg_reduction ae a1) (builtin_arg_reduction ae a2)
+  | a => a
+
+def builtin_arg_strength_reduction
+    (ae : aenv) (a : builtin_arg reg) (c : builtin_arg_constraint) : builtin_arg reg :=
+  let a' := builtin_arg_reduction ae a
+  if builtin_arg_ok a' c then a' else a
+
+def builtin_args_strength_reduction
+    (ae : aenv) : List (builtin_arg reg) → List builtin_arg_constraint →
+      List (builtin_arg reg)
+  | [], _ => []
+  | a :: al, cl =>
+      builtin_arg_strength_reduction ae a (cl.headD OK_default) ::
+        builtin_args_strength_reduction ae al cl.tail
+
+def debug_strength_reduction (ae : aenv) : List (builtin_arg reg) → List (builtin_arg reg)
+  | [] => []
+  | a :: al =>
+      let a' := builtin_arg_reduction ae a
+      let al' := a :: debug_strength_reduction ae al
+      match a, a' with
+      | .BA _, .BA_int _ => a' :: al'
+      | .BA _, .BA_long _ => a' :: al'
+      | .BA _, .BA_float _ => a' :: al'
+      | .BA _, .BA_single _ => a' :: al'
+      | _, _ => al'
+
+def builtin_strength_reduction
+    (ae : aenv) (ef : external_function) (al : List (builtin_arg reg)) :
+      List (builtin_arg reg) :=
+  match ef with
+  | .EF_debug _ _ _ => debug_strength_reduction ae al
+  | _ => builtin_args_strength_reduction ae al (builtin_constraints ef)
+
+def transf_instr (f : function) (an : PMap.t VA.t) (rm : romem)
+    (pc : node) (instr : instruction) : instruction :=
+  match PMap.get pc an with
+  | .Bot => instr
+  | .State ae am =>
+      match instr with
+      | Iop op args res s =>
+          let aargs := aregs ae args
+          let a := CompCert4Lean.X86.ValueAOp.eval_static_operation constpropConfig op aargs
+          let s' := successor f (AE.set res a ae) s
+          match const_for_result relocationContext a with
+          | some cop => Iop cop [] res s'
+          | none =>
+              let (op', args') := op_strength_reduction op args aargs
+              Iop op' args' res s'
+      | Iload chunk addr args dst s =>
+          let aargs := aregs ae args
+          let a := loadv constpropConfig chunk rm am
+            (CompCert4Lean.X86.ValueAOp.eval_static_addressing addr aargs)
+          match const_for_result relocationContext a with
+          | some cop => Iop cop [] dst s
+          | none =>
+              let (addr', args') := addr_strength_reduction addr args aargs
+              Iload chunk addr' args' dst s
+      | Istore chunk addr args src s =>
+          let aargs := aregs ae args
+          let (addr', args') := addr_strength_reduction addr args aargs
+          Istore chunk addr' args' src s
+      | Icall sig ros args res s =>
+          Icall sig (transf_ros ae ros) args res s
+      | Itailcall sig ros args =>
+          Itailcall sig (transf_ros ae ros) args
+      | Ibuiltin ef args res s =>
+          let dfl := Ibuiltin ef (builtin_strength_reduction ae ef args) res s
+          match ef, res with
+          | .EF_builtin name sg, .BR rd =>
+              match lookup_builtin_function name sg with
+              | some bf =>
+                  match eval_static_builtin_function ae am rm bf args with
+                  | some a =>
+                      match const_for_result relocationContext a with
+                      | some cop => Iop cop [] rd s
+                      | none => dfl
+                  | none => dfl
+              | none => dfl
+          | _, _ => dfl
+      | Icond cond args s1 s2 =>
+          let aargs := aregs ae args
+          match resolve_branch
+              (CompCert4Lean.X86.ValueAOp.eval_static_condition constpropConfig cond aargs) with
+          | some b => if b then Inop s1 else Inop s2
+          | none =>
+              let (cond', args') := cond_strength_reduction cond args aargs
+              Icond cond' args' s1 s2
+      | Ijumptable arg tbl =>
+          match areg ae arg with
+          | I n =>
+              match list_nth_z tbl (CompCert4Lean.Lib.Integers.Int.unsigned n) with
+              | some s => Inop s
+              | none => instr
+          | _ => instr
+      | _ => instr
+
+def transf_function (rm : romem) (f : function) : function :=
+  let an := CompCert4Lean.Backend.ValueAnalysis.analyze rm f
+  { fn_sig := f.fn_sig
+    fn_params := f.fn_params
+    fn_stacksize := f.fn_stacksize
+    fn_code := PTree.map (transf_instr f an rm) f.fn_code
+    fn_entrypoint := f.fn_entrypoint }
+
+def transf_fundef (rm : romem) (fd : fundef) : fundef :=
+  CompCert4Lean.Common.AST.transf_fundef (transf_function rm) fd
+
+def transf_program (p : program) : program :=
+  let rm := CompCert4Lean.Backend.ValueAnalysis.romem_for p
+  CompCert4Lean.Common.AST.transform_program (transf_fundef rm) p
+
+end CompCert4Lean.Backend.Constprop
