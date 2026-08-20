@@ -47,6 +47,8 @@ private abbrev zOdd : Z → Bool :=
   CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.odd
 private abbrev zTestbit : Z → Z → Bool :=
   CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.testbit
+private abbrev zLog2 : Z → Z :=
+  CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.log2
 private def zIter {A : Type} (n : Z) (f : A → A) (x : A) : A :=
   CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.iter n f x
 private abbrev zShiftl : Z → Z → Z :=
@@ -115,6 +117,18 @@ def Z_one_bits : Nat → Z → Z → List Z
 def powerserie : List Z → Z
   | [] => zZero
   | x :: xs => zAdd (zTwoP x) (powerserie xs)
+
+/-! ## Recognition of powers of two -/
+
+def P_is_power2 : positive → Bool
+  | .xH => true
+  | .xO q => P_is_power2 q
+  | .xI _ => false
+
+def Z_is_power2 : Z → Option Z
+  | .Z0 => none
+  | x@(.Zpos p) => if P_is_power2 p then some (zLog2 x) else none
+  | .Zneg _ => none
 
 /-! ## Size of integers -/
 

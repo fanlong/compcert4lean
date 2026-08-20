@@ -324,6 +324,11 @@ def shrx : int → int → int := WordCore.shrx
 def testbit : int → Z → Bool := WordCore.testbit
 def eqm : Z → Z → Prop := WordCore.eqm wordsize
 
+def is_power2 (x : int) : Option int :=
+  match CompCert4Lean.Lib.Zbits.Z_is_power2 (unsigned x) with
+  | some i => some (repr i)
+  | none => none
+
 def zero_ext (n : Z) (x : int) : int :=
   repr (ZArith.BinInt.Z.modulo (unsigned x) (two_p n))
 
@@ -490,6 +495,11 @@ def ror : int → int → int := WordCore.ror
 def shrx : int → int → int := WordCore.shrx
 def testbit : int → Z → Bool := WordCore.testbit
 def eqm : Z → Z → Prop := WordCore.eqm wordsize
+
+def is_power2 (x : int) : Option int :=
+  match CompCert4Lean.Lib.Zbits.Z_is_power2 (unsigned x) with
+  | some i => some (repr i)
+  | none => none
 
 def iwordsize' : Int.int := Int.repr zwordsize
 
