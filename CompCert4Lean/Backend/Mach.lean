@@ -271,19 +271,30 @@ def parent_ra : List stackframe → val
 
 /-! ## Transition semantics -/
 
-inductive step (cfg : CompilerConfig) (xi : ExternalCalls) (ge : genv) :
+inductive step (cfg : CompilerConfig) (xi : ExternalCalls)
+    (return_address_offset : function → code → Ptrofs → Prop) (ge : genv) :
     state → trace → state → Prop where
   | exec_Mlabel
       (s : List stackframe) (f : block) (sp : val) (lbl : label) (c : code)
       (rs : regset) (m : mem) :
-      step cfg xi ge (State s f sp (.Mlabel lbl :: c) rs m) E0
+      step cfg xi return_address_offset ge
+        (State s f sp (.Mlabel lbl :: c) rs m) E0
         (State s f sp c rs m)
   | exec_Mgetstack
       (s : List stackframe) (f : block) (sp : val) (ofs : Ptrofs) (ty : typ)
       (dst : mreg) (c : code) (rs : regset) (m : mem) (v : val)
       (hload : load_stack m sp ty ofs = some v) :
-      step cfg xi ge (State s f sp (.Mgetstack ofs ty dst :: c) rs m) E0
+      step cfg xi return_address_offset ge
+        (State s f sp (.Mgetstack ofs ty dst :: c) rs m) E0
         (State s f sp c (Regmap.set dst v rs) m)
+  | exec_Msetstack
+      (s : List stackframe) (f : block) (sp : val) (src : mreg) (ofs : Ptrofs)
+      (ty : typ) (c : code) (rs : regset) (m m' : mem) (rs' : regset)
+      (hstore : store_stack m sp ty ofs (rs src) = some m')
+      (hrs : rs' = undef_regs (destroyed_by_setstack ty) rs) :
+      step cfg xi return_address_offset ge
+        (State s f sp (.Msetstack src ofs ty :: c) rs m) E0
+        (State s f sp c rs' m')
   | exec_Mgetparam
       (s : List stackframe) (fb : block) (f : function) (sp : val)
       (ofs : Ptrofs) (ty : typ)
@@ -292,15 +303,83 @@ inductive step (cfg : CompilerConfig) (xi : ExternalCalls) (ge : genv) :
       (hlink : load_stack m sp Tptr f.fn_link_ofs = some (parent_sp s))
       (hload : load_stack m (parent_sp s) ty ofs = some v)
       (hrs : rs' = Regmap.set dst v (Regmap.set temp_for_parent_frame Vundef rs)) :
-      step cfg xi ge (State s fb sp (.Mgetparam ofs ty dst :: c) rs m) E0
+      step cfg xi return_address_offset ge
+        (State s fb sp (.Mgetparam ofs ty dst :: c) rs m) E0
         (State s fb sp c rs' m)
+  | exec_Mop
+      (s : List stackframe) (f : block) (sp : val) (op : operation)
+      (args : List mreg) (res : mreg) (c : code) (rs : regset) (m : mem)
+      (v : val) (rs' : regset)
+      (heval : eval_operation ge sp op (args.map rs) m = some v)
+      (hrs : rs' = Regmap.set res v (undef_regs (destroyed_by_op op) rs)) :
+      step cfg xi return_address_offset ge
+        (State s f sp (.Mop op args res :: c) rs m) E0
+        (State s f sp c rs' m)
+  | exec_Mload
+      (s : List stackframe) (f : block) (sp : val) (chunk : memory_chunk)
+      (addr : addressing) (args : List mreg) (dst : mreg) (c : code)
+      (rs : regset) (m : mem) (a v : val) (rs' : regset)
+      (haddr : eval_addressing ge sp addr (args.map rs) = some a)
+      (hload : Mem.loadv chunk m a = some v)
+      (hrs : rs' = Regmap.set dst v
+        (undef_regs (destroyed_by_load chunk addr) rs)) :
+      step cfg xi return_address_offset ge
+        (State s f sp (.Mload chunk addr args dst :: c) rs m) E0
+        (State s f sp c rs' m)
+  | exec_Mstore
+      (s : List stackframe) (f : block) (sp : val) (chunk : memory_chunk)
+      (addr : addressing) (args : List mreg) (src : mreg) (c : code)
+      (rs : regset) (m m' : mem) (a : val) (rs' : regset)
+      (haddr : eval_addressing ge sp addr (args.map rs) = some a)
+      (hstore : Mem.storev chunk m a (rs src) = some m')
+      (hrs : rs' = undef_regs (destroyed_by_store chunk addr) rs) :
+      step cfg xi return_address_offset ge
+        (State s f sp (.Mstore chunk addr args src :: c) rs m) E0
+        (State s f sp c rs' m')
+  | exec_Mcall
+      (s : List stackframe) (fb : block) (sp : val) (sig : signature)
+      (ros : Sum mreg ident) (c : code) (rs : regset) (m : mem)
+      (f : function) (f' : block) (ra : Ptrofs)
+      (hfind : find_function_ptr ge ros rs = some f')
+      (hfun : Genv.find_funct_ptr ge fb = some (.Internal f))
+      (hra : return_address_offset f c ra) :
+      step cfg xi return_address_offset ge
+        (State s fb sp (.Mcall sig ros :: c) rs m) E0
+        (Callstate (.Stackframe fb sp (.Vptr fb ra) c :: s) f' rs m)
+  | exec_Mtailcall
+      (s : List stackframe) (fb stk : block) (soff : Ptrofs) (sig : signature)
+      (ros : Sum mreg ident) (c : code) (rs : regset) (m : mem)
+      (f : function) (f' : block) (m' : mem)
+      (hfind : find_function_ptr ge ros rs = some f')
+      (hfun : Genv.find_funct_ptr ge fb = some (.Internal f))
+      (hlink : load_stack m (.Vptr stk soff) Tptr f.fn_link_ofs =
+        some (parent_sp s))
+      (hretaddr : load_stack m (.Vptr stk soff) Tptr f.fn_retaddr_ofs =
+        some (parent_ra s))
+      (hfree : Mem.free m stk z0 f.fn_stacksize = some m') :
+      step cfg xi return_address_offset ge
+        (State s fb (.Vptr stk soff) (.Mtailcall sig ros :: c) rs m) E0
+        (Callstate s f' rs m')
+  | exec_Mbuiltin
+      (s : List stackframe) (f : block) (sp : val) (rs : regset) (m : mem)
+      (ef : external_function) (args : List (builtin_arg mreg))
+      (res : builtin_res mreg) (b : code) (vargs : List val) (t : trace)
+      (vres : val) (rs' : regset) (m' : mem)
+      (hargs : eval_builtin_args (Genv.to_senv ge) rs sp m args vargs)
+      (hcall : external_call xi ef (Genv.to_senv ge) vargs m t vres m')
+      (hrs : rs' = set_res res vres
+        (undef_regs (destroyed_by_builtin ef) rs)) :
+      step cfg xi return_address_offset ge
+        (State s f sp (.Mbuiltin ef args res :: b) rs m) t
+        (State s f sp b rs' m')
   | exec_Mgoto
       (s : List stackframe) (fb : block) (f : function) (sp : val)
       (lbl : label) (c : code)
       (rs : regset) (m : mem) (c' : code)
       (hfun : Genv.find_funct_ptr ge fb = some (.Internal f))
       (hfind : find_label lbl f.fn_code = some c') :
-      step cfg xi ge (State s fb sp (.Mgoto lbl :: c) rs m) E0
+      step cfg xi return_address_offset ge
+        (State s fb sp (.Mgoto lbl :: c) rs m) E0
         (State s fb sp c' rs m)
   | exec_Mcond_true
       (s : List stackframe) (fb : block) (f : function) (sp : val)
@@ -311,7 +390,8 @@ inductive step (cfg : CompilerConfig) (xi : ExternalCalls) (ge : genv) :
       (hfun : Genv.find_funct_ptr ge fb = some (.Internal f))
       (hfind : find_label lbl f.fn_code = some c')
       (hrs : rs' = undef_regs (destroyed_by_cond cond) rs) :
-      step cfg xi ge (State s fb sp (.Mcond cond args lbl :: c) rs m) E0
+      step cfg xi return_address_offset ge
+        (State s fb sp (.Mcond cond args lbl :: c) rs m) E0
         (State s fb sp c' rs' m)
   | exec_Mcond_false
       (s : List stackframe) (f : block) (sp : val) (cond : condition)
@@ -319,7 +399,8 @@ inductive step (cfg : CompilerConfig) (xi : ExternalCalls) (ge : genv) :
       (rs' : regset)
       (heval : eval_condition cond (args.map rs) m = some false)
       (hrs : rs' = undef_regs (destroyed_by_cond cond) rs) :
-      step cfg xi ge (State s f sp (.Mcond cond args lbl :: c) rs m) E0
+      step cfg xi return_address_offset ge
+        (State s f sp (.Mcond cond args lbl :: c) rs m) E0
         (State s f sp c rs' m)
   | exec_Mjumptable
       (s : List stackframe) (fb : block) (f : function) (sp : val) (arg : mreg)
@@ -330,8 +411,33 @@ inductive step (cfg : CompilerConfig) (xi : ExternalCalls) (ge : genv) :
       (hfun : Genv.find_funct_ptr ge fb = some (.Internal f))
       (hfind : find_label lbl f.fn_code = some c')
       (hrs : rs' = undef_regs destroyed_by_jumptable rs) :
-      step cfg xi ge (State s fb sp (.Mjumptable arg tbl :: c) rs m) E0
+      step cfg xi return_address_offset ge
+        (State s fb sp (.Mjumptable arg tbl :: c) rs m) E0
         (State s fb sp c' rs' m)
+  | exec_Mreturn
+      (s : List stackframe) (fb stk : block) (soff : Ptrofs) (c : code)
+      (rs : regset) (m : mem) (f : function) (m' : mem)
+      (hfun : Genv.find_funct_ptr ge fb = some (.Internal f))
+      (hlink : load_stack m (.Vptr stk soff) Tptr f.fn_link_ofs =
+        some (parent_sp s))
+      (hretaddr : load_stack m (.Vptr stk soff) Tptr f.fn_retaddr_ofs =
+        some (parent_ra s))
+      (hfree : Mem.free m stk z0 f.fn_stacksize = some m') :
+      step cfg xi return_address_offset ge
+        (State s fb (.Vptr stk soff) (.Mreturn :: c) rs m) E0
+        (Returnstate s rs m')
+  | exec_function_internal
+      (s : List stackframe) (fb : block) (rs : regset) (m : mem)
+      (f : function) (m1 m2 m3 : mem) (stk : block) (rs' : regset)
+      (hfun : Genv.find_funct_ptr ge fb = some (.Internal f))
+      (halloc : Mem.alloc m z0 f.fn_stacksize = (m1, stk))
+      (hlink : store_stack m1 (.Vptr stk Ptrofs.zero) Tptr f.fn_link_ofs
+        (parent_sp s) = some m2)
+      (hretaddr : store_stack m2 (.Vptr stk Ptrofs.zero) Tptr f.fn_retaddr_ofs
+        (parent_ra s) = some m3)
+      (hrs : rs' = undef_regs destroyed_at_function_entry rs) :
+      step cfg xi return_address_offset ge (Callstate s fb rs m) E0
+        (State s fb (.Vptr stk Ptrofs.zero) f.fn_code rs' m3)
   | exec_function_external
       (s : List stackframe) (fb : block) (rs : regset) (m : mem)
       (t : trace) (rs' : regset) (ef : external_function) (args : List val)
@@ -341,16 +447,20 @@ inductive step (cfg : CompilerConfig) (xi : ExternalCalls) (ge : genv) :
       (hcall : external_call xi ef (Genv.to_senv ge) args m t res m')
       (hrs : rs' = set_pair (CompCert4Lean.X86.Conventions1.loc_result (ef_sig ef))
         res (undef_caller_save_regs cfg rs)) :
-      step cfg xi ge (Callstate s fb rs m) t (Returnstate s rs' m')
+      step cfg xi return_address_offset ge (Callstate s fb rs m) t
+        (Returnstate s rs' m')
   | exec_return
       (s : List stackframe) (f : block) (sp : val) (ra : val) (c : code)
       (rs : regset) (m : mem) :
-      step cfg xi ge (Returnstate (.Stackframe f sp ra c :: s) rs m) E0
+      step cfg xi return_address_offset ge
+        (Returnstate (.Stackframe f sp ra c :: s) rs m) E0
         (State s f sp c rs m)
 
 export step
-  (exec_Mlabel exec_Mgetstack exec_Mgetparam exec_Mgoto exec_Mcond_true
-    exec_Mcond_false exec_Mjumptable exec_function_external exec_return)
+  (exec_Mlabel exec_Mgetstack exec_Msetstack exec_Mgetparam exec_Mop exec_Mload
+    exec_Mstore exec_Mcall exec_Mtailcall exec_Mbuiltin exec_Mgoto exec_Mcond_true
+    exec_Mcond_false exec_Mjumptable exec_Mreturn exec_function_internal
+    exec_function_external exec_return)
 
 /-! ## Whole-program predicates -/
 
@@ -368,8 +478,10 @@ inductive final_state : state → int → Prop where
       (hval : rs r = Vint retcode) :
       final_state (Returnstate [] rs m) retcode
 
-def semantics (cfg : CompilerConfig) (xi : ExternalCalls) (p : program) :
+def semantics (cfg : CompilerConfig) (xi : ExternalCalls)
+    (return_address_offset : function → code → Ptrofs → Prop) (p : program) :
     CompCert4Lean.Common.Smallstep.semantics :=
-  Semantics (step cfg xi) (initial_state p) final_state (Genv.globalenv p)
+  Semantics (step cfg xi return_address_offset) (initial_state p) final_state
+    (Genv.globalenv p)
 
 end CompCert4Lean.Backend.Mach

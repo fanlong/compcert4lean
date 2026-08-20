@@ -273,7 +273,7 @@ def find_label_goto_labelStatement : Prop :=
 def return_address_existsStatement : Prop :=
   ∀ (f : MachFunction) (sg : signature) (ros : Sum Mreg ident) (c : MachCode),
     is_tail (.Mcall sg ros :: c) f.fn_code →
-    ∃ ra, return_address_offset f c ra
+    ∃ ra, CompCert4Lean.Backend.Asmgenproof0.return_address_offset f c ra
 
 def exec_straight_stepsStatement : Prop :=
   ∀ (prog : MachProgram) (tprog : AsmProgram), match_prog prog tprog →
@@ -321,7 +321,9 @@ def step_simulationStatement : Prop :=
   ∀ (cfg : CompilerConfig) (xi : ExternalCalls)
     (prog : MachProgram) (tprog : AsmProgram), match_prog prog tprog →
     ∀ (S1 : MachState) (t : trace) (S2 : MachState),
-      CompCert4Lean.Backend.Mach.step cfg xi (Genv.globalenv prog) S1 t S2 →
+      CompCert4Lean.Backend.Mach.step cfg xi
+        CompCert4Lean.Backend.Asmgenproof0.return_address_offset
+        (Genv.globalenv prog) S1 t S2 →
       ∀ S1', match_states (Genv.globalenv prog) S1 S1' →
         (∃ S2',
           plus asmStep (Genv.globalenv tprog) S1' t S2' ∧
@@ -346,7 +348,8 @@ def transf_program_correctStatement : Prop :=
   ∀ (cfg : CompilerConfig) (xi : ExternalCalls)
     (prog : MachProgram) (tprog : AsmProgram), match_prog prog tprog →
     forward_simulation
-      (CompCert4Lean.Backend.Mach.semantics cfg xi prog)
+      (CompCert4Lean.Backend.Mach.semantics cfg xi
+        CompCert4Lean.Backend.Asmgenproof0.return_address_offset prog)
       (CompCert4Lean.X86.Asm.semantics tprog)
 
 end CompCert4Lean.X86.Asmgenproof
