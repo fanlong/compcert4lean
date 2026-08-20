@@ -174,11 +174,30 @@ abbrev GT {X : Type} {lt eq : X → X → Prop} {x y : X}
     (h : lt y x) : Compare lt eq x y :=
   Compare.gt h
 
-namespace OrderedType
+/- `OrderedType.v` gives its legacy module type the same name as the file.
+   Keep the record name distinct from this namespace, and expose the
+   source-facing name as a reducible alias below. -/
+structure OrderedTypeSpec where
+  t : Type
+  eq : t → t → Prop
+  lt : t → t → Prop
+  eq_refl : ∀ x : t, eq x x
+  eq_sym : ∀ x y : t, eq x y → eq y x
+  eq_trans : ∀ x y z : t, eq x y → eq y z → eq x z
+  lt_trans : ∀ x y z : t, lt x y → lt y z → lt x z
+  lt_not_eq : ∀ x y : t, lt x y → ¬ eq x y
+  compare : ∀ x y : t, Compare lt eq x y
+  eq_dec : ∀ x y : t,
+    _root_.CompCert4Lean.Foundation.Logic.Support.Sumbool
+      (eq x y) (¬ eq x y)
 
-def ImportMarker : Type := Unit
+/- `CompCert4Lean.Lib.FSetAVLplus.OrderedType` is currently a consumer-local
+   record using `elt`, Lean's `Decidable`, and no `compare` field.  Its later
+   migration should make that name an alias of this provider, update the
+   projections, and supply the proof-carrying comparison rather than retain a
+   duplicate record. -/
+abbrev OrderedType := OrderedTypeSpec
 
-end OrderedType
 end Structures.OrderedType
 
 end Rocq.Coq
