@@ -62,6 +62,75 @@ abbrev t_trans (A : Type) (R : A → A → Prop) (x y z : A)
 
 end Relations.Relation_Operators
 
+namespace Sorting.Sorted
+
+inductive HdRel {A : Type} (R : A → A → Prop) (a : A) : List A → Prop where
+  | nil : HdRel R a []
+  | cons (b : A) (l : List A) : R a b → HdRel R a (b :: l)
+
+abbrev HdRel_nil {A : Type} (R : A → A → Prop) (a : A) : HdRel R a [] :=
+  HdRel.nil
+
+abbrev HdRel_cons {A : Type} (R : A → A → Prop) (a b : A) (l : List A)
+    (rel : R a b) : HdRel R a (b :: l) :=
+  HdRel.cons b l rel
+
+def HdRel_ind {A : Type} {R : A → A → Prop} {a : A}
+    (P : List A → Prop)
+    (nilCase : P [])
+    (consCase : ∀ (b : A) (l : List A), R a b → P (b :: l))
+    {l : List A} (hdRel : HdRel R a l) : P l := by
+  cases hdRel with
+  | nil => exact nilCase
+  | cons b l rel => exact consCase b l rel
+
+inductive Sorted {A : Type} (R : A → A → Prop) : List A → Prop where
+  | nil : Sorted R []
+  | cons {a : A} {l : List A} :
+      Sorted R l → HdRel R a l → Sorted R (a :: l)
+
+abbrev Sorted_nil {A : Type} (R : A → A → Prop) : Sorted R [] :=
+  Sorted.nil
+
+abbrev Sorted_cons {A : Type} {R : A → A → Prop} {a : A} {l : List A}
+    (sorted : Sorted R l) (hdRel : HdRel R a l) : Sorted R (a :: l) :=
+  Sorted.cons sorted hdRel
+
+def Sorted_ind {A : Type} {R : A → A → Prop}
+    (P : List A → Prop)
+    (nilCase : P [])
+    (consCase : ∀ (a : A) (l : List A),
+      Sorted R l → P l → HdRel R a l → P (a :: l))
+    {l : List A} (sorted : Sorted R l) : P l := by
+  induction sorted with
+  | nil => exact nilCase
+  | @cons a l sorted hdRel ih => exact consCase a l sorted ih hdRel
+
+theorem HdRel_inv {A : Type} {R : A → A → Prop}
+    {a b : A} {l : List A} (hdRel : HdRel R a (b :: l)) : R a b := by
+  cases hdRel with
+  | cons _ _ rel => exact rel
+
+theorem Sorted_inv {A : Type} {R : A → A → Prop}
+    {a : A} {l : List A} (sorted : Sorted R (a :: l)) :
+    Sorted R l ∧ HdRel R a l := by
+  cases sorted with
+  | cons sorted hdRel => exact ⟨sorted, hdRel⟩
+
+noncomputable opaque Sorted_rect {A : Type} {R : A → A → Prop}
+    (P : List A → Type)
+    (nilCase : P [])
+    (consCase : ∀ (a : A) (l : List A),
+      Sorted R l → P l → HdRel R a l → P (a :: l))
+    {l : List A} (sorted : Sorted R l) : P l := by
+  induction l with
+  | nil => exact nilCase
+  | cons a l ih =>
+      exact consCase a l (Sorted_inv sorted).1 (ih (Sorted_inv sorted).1)
+        (Sorted_inv sorted).2
+
+end Sorting.Sorted
+
 namespace Sorting.Permutation
 
 abbrev Permutation {A : Type} (l l' : List A) : Prop :=

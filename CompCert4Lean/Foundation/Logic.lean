@@ -563,6 +563,29 @@ def InA {A : Type} (eqA : A → A → Prop) (x : A) (l : _root_.List A) : Prop :
 theorem InA_alt {A : Type} (eqA : A → A → Prop) (x : A) (l : _root_.List A) :
     InA eqA x l ↔ ∃ y, eqA x y ∧ Rocq.Coq.Lists.List.In y l := Iff.rfl
 
+inductive NoDupA {A : Type} (eqA : A → A → Prop) : _root_.List A → Prop where
+  | nil : NoDupA eqA []
+  | cons {x : A} {l : _root_.List A} :
+      (¬ InA eqA x l) → NoDupA eqA l → NoDupA eqA (x :: l)
+
+abbrev NoDupA_nil {A : Type} (eqA : A → A → Prop) : NoDupA eqA [] :=
+  NoDupA.nil
+
+abbrev NoDupA_cons {A : Type} {eqA : A → A → Prop}
+    {x : A} {l : _root_.List A}
+    (notIn : ¬ InA eqA x l) (noDup : NoDupA eqA l) : NoDupA eqA (x :: l) :=
+  NoDupA.cons notIn noDup
+
+def NoDupA_ind {A : Type} {eqA : A → A → Prop}
+    {P : _root_.List A → Prop}
+    (nilCase : P [])
+    (consCase : ∀ (x : A) (l : _root_.List A),
+      (¬ InA eqA x l) → NoDupA eqA l → P l → P (x :: l))
+    {l : _root_.List A} (noDup : NoDupA eqA l) : P l := by
+  induction noDup with
+  | nil => exact nilCase
+  | @cons x l notIn noDup ih => exact consCase x l notIn noDup ih
+
 end Rocq.Coq.Lists.SetoidList
 
 namespace Rocq.Coq.Logic.Classical_Pred_Type
