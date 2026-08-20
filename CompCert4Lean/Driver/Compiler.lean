@@ -127,15 +127,10 @@ private def bindRes {A B : Type} (x : Res A) (f : A → Res B) : Res B :=
   | .Error message => .Error message
   | .OK value => f value
 
-private def inliningConfig (cfg : CompilerConfig) : Inlining.InliningConfig :=
-  { enabled := cfg.options.optimTailcalls
-    functionsCalledOnce := true
-    inlineStatus := fun _ => .noSpecifier
-    isStatic := fun _ => true }
-
 /-! ## Executable pass pipelines -/
 
 def transf_rtl_program (cfg : CompilerConfig)
+    (inlineCfg : Inlining.InliningConfig)
     (oracle : Allocation.RegallocOracle) (f : RTL.program) : Res Asm.program :=
   let p0 : Res RTL.program := .OK f
   let p1 := mapRes p0 (print (print_RTL (ZArith.BinInt.Z.of_nat 0)))
@@ -143,7 +138,7 @@ def transf_rtl_program (cfg : CompilerConfig)
     (total_if (fun _ => Compopts.optim_tailcalls cfg)
       (time (ofString "Tail calls") (Tailcall.transf_program cfg)))
   let p3 := mapRes p2 (print (print_RTL (ZArith.BinInt.Z.of_nat 1)))
-  let p4 := bindRes p3 (time (ofString "Inlining") (Inlining.transf_program (inliningConfig cfg)))
+  let p4 := bindRes p3 (time (ofString "Inlining") (Inlining.transf_program inlineCfg))
   let p5 := mapRes p4 (print (print_RTL (ZArith.BinInt.Z.of_nat 2)))
   let p6 := mapRes p5 (time (ofString "Renumbering") Renumber.transf_program)
   let p7 := mapRes p6 (print (print_RTL (ZArith.BinInt.Z.of_nat 3)))
@@ -178,27 +173,30 @@ def transf_rtl_program (cfg : CompilerConfig)
   bindRes p25 (time (ofString "Asm generation") Asmgen.transf_program)
 
 def transf_cminor_program (cfg : CompilerConfig)
+    (inlineCfg : Inlining.InliningConfig)
     (oracle : Allocation.RegallocOracle) (p : Cminor.program) : Res Asm.program :=
   let p0 : Res Cminor.program := .OK p
   let p1 := mapRes p0 (print print_Cminor)
   let p2 := bindRes p1 (time (ofString "Instruction selection") Selection.sel_program)
   let p3 := bindRes p2 (time (ofString "RTL generation") RTLgen.transl_program)
-  bindRes p3 (transf_rtl_program cfg oracle)
+  bindRes p3 (transf_rtl_program cfg inlineCfg oracle)
 
 def transf_clight_program (cfg : CompilerConfig)
+    (inlineCfg : Inlining.InliningConfig)
     (oracle : Allocation.RegallocOracle) (p : Clight.program) : Res Asm.program :=
   let p0 : Res Clight.program := .OK p
   let p1 := mapRes p0 (print print_Clight)
   let p2 := bindRes p1 (time (ofString "Simplification of locals") (SimplLocals.transf_program cfg))
   let p3 := bindRes p2 (time (ofString "C#minor generation") Cshmgen.transl_program)
   let p4 := bindRes p3 (time (ofString "Cminor generation") Cminorgen.transl_program)
-  bindRes p4 (transf_cminor_program cfg oracle)
+  bindRes p4 (transf_cminor_program cfg inlineCfg oracle)
 
 def transf_c_program (cfg : CompilerConfig)
+    (inlineCfg : Inlining.InliningConfig)
     (oracle : Allocation.RegallocOracle) (ctx : SimplExpr.FreshIdentContext)
     (p : Csyntax.program) : Res CompCert4Lean.X86.Asm.program :=
   let p1 := SimplExpr.transl_program ctx p
-  bindRes p1 (transf_clight_program cfg oracle)
+  bindRes p1 (transf_clight_program cfg inlineCfg oracle)
 
 /-! ## Relational compiler surface -/
 
@@ -206,6 +204,7 @@ def transf_c_program (cfg : CompilerConfig)
    relation.  The individual simulation proofs remain statement descriptors in
    the later proof-migration phase. -/
 def CompCert's_passes (cfg : CompilerConfig)
+    (inlineCfg : Inlining.InliningConfig)
     (oracle : Allocation.RegallocOracle)
     (p : Csyntax.program) (tp : Asm.program) : Prop :=
   ∃ p1 : Clight.program,
@@ -236,7 +235,7 @@ def CompCert's_passes (cfg : CompilerConfig)
     RTLgenproof.match_prog p5 p6 ∧
     match_if (fun _ => Compopts.optim_tailcalls cfg)
       (Tailcallproof.match_prog cfg) p6 p7 ∧
-    Inliningproof.match_prog (inliningConfig cfg) p7 p8 ∧
+    Inliningproof.match_prog inlineCfg p7 p8 ∧
     Renumberproof.match_prog p8 p9 ∧
     match_if (fun _ => Compopts.optim_constprop cfg)
       Constpropproof.match_prog p9 p10 ∧
@@ -256,9 +255,10 @@ def CompCert's_passes (cfg : CompilerConfig)
     Stackingproof.match_prog cfg p19 p20 ∧
     Asmgenproof.match_prog p20 tp
 
-def match_prog (cfg : CompilerConfig) (oracle : Allocation.RegallocOracle)
+def match_prog (cfg : CompilerConfig) (inlineCfg : Inlining.InliningConfig)
+    (oracle : Allocation.RegallocOracle)
     (p : Csyntax.program) (tp : Asm.program) : Prop :=
-  CompCert's_passes cfg oracle p tp
+  CompCert's_passes cfg inlineCfg oracle p tp
 
 /-! ## Exact statement descriptors for the later proof phase -/
 
@@ -284,10 +284,11 @@ def partial_if_matchStatement : Prop :=
     rel prog tprog
 
 def transf_c_program_matchStatement : Prop :=
-  ∀ (cfg : CompilerConfig) (oracle : Allocation.RegallocOracle)
+  ∀ (cfg : CompilerConfig) (inlineCfg : Inlining.InliningConfig)
+    (oracle : Allocation.RegallocOracle)
     (ctx : SimplExpr.FreshIdentContext) (p : Csyntax.program) (tp : Asm.program),
-    transf_c_program cfg oracle ctx p = .OK tp →
-    match_prog cfg oracle p tp
+    transf_c_program cfg inlineCfg oracle ctx p = .OK tp →
+    match_prog cfg inlineCfg oracle p tp
 
 def forward_simulation_identityStatement : Prop :=
   ∀ (sem : semantics), forward_simulation sem sem
@@ -300,24 +301,27 @@ def match_if_simulationStatement : Prop :=
     forward_simulation (sem prog) (sem tprog)
 
 def cstrategy_semantic_preservationStatement : Prop :=
-  ∀ (cfg : CompilerConfig) (oracle : Allocation.RegallocOracle) (xi : ExternalCalls)
+  ∀ (cfg : CompilerConfig) (inlineCfg : Inlining.InliningConfig)
+    (oracle : Allocation.RegallocOracle) (xi : ExternalCalls)
     (p : Csyntax.program) (tp : Asm.program),
-    match_prog cfg oracle p tp →
+    match_prog cfg inlineCfg oracle p tp →
     forward_simulation (Cstrategy.semantics xi p) (Asm.semantics tp) ∧
     backward_simulation
       (atomic (Cstrategy.semantics xi p)) (Asm.semantics tp)
 
 def c_semantic_preservationStatement : Prop :=
-  ∀ (cfg : CompilerConfig) (oracle : Allocation.RegallocOracle) (xi : ExternalCalls)
+  ∀ (cfg : CompilerConfig) (inlineCfg : Inlining.InliningConfig)
+    (oracle : Allocation.RegallocOracle) (xi : ExternalCalls)
     (p : Csyntax.program) (tp : Asm.program),
-    match_prog cfg oracle p tp →
+    match_prog cfg inlineCfg oracle p tp →
     backward_simulation (Csem.semantics xi p) (Asm.semantics tp)
 
 def transf_c_program_correctStatement : Prop :=
-  ∀ (cfg : CompilerConfig) (oracle : Allocation.RegallocOracle)
+  ∀ (cfg : CompilerConfig) (inlineCfg : Inlining.InliningConfig)
+    (oracle : Allocation.RegallocOracle)
     (ctx : SimplExpr.FreshIdentContext) (xi : ExternalCalls)
     (p : Csyntax.program) (tp : Asm.program),
-    transf_c_program cfg oracle ctx p = .OK tp →
+    transf_c_program cfg inlineCfg oracle ctx p = .OK tp →
     backward_simulation (Csem.semantics xi p) (Asm.semantics tp)
 
 end CompCert4Lean.Driver.Compiler
