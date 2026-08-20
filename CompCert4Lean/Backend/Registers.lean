@@ -431,6 +431,313 @@ def compare : Type :=
 
 end Regset
 
+/-! ## Canonical source-shaped facts for `FSetFacts.Facts(Regset)`
+
+The Coq backend instantiates `FSetFacts.Facts` for both `Labelset` and
+`Nodeset`.  This provider is shared by those consumers: executable members
+remain owned by `Regset`, while every fact below is the exact proposition or
+type descriptor supplied by the source functor.  Morphism declarations are
+written in their expanded form, and the otherwise-empty Coq relation record is
+kept distinct from the preorder record.
+-/
+
+namespace RegsetFacts
+
+def RegsetFacts : Type := Unit
+
+def eqb (x y : Regset.elt) : Bool := decide (x = y)
+
+def existsb (f : Regset.elt → Bool) (s : List Regset.elt) : Bool :=
+  s.any f
+
+def forallb (f : Regset.elt → Bool) (s : List Regset.elt) : Bool :=
+  s.all f
+
+def CompatBool (f : Regset.elt → Bool) : Prop :=
+  ∀ x y, x = y → f x = f y
+
+structure PreOrder {α : Type} (r : α → α → Prop) : Prop where
+  reflexive : ∀ s, r s s
+  transitive : ∀ s s' s'', r s s' → r s' s'' → r s s''
+
+structure RewriteRelation {α : Type} (r : α → α → Prop) : Prop where
+
+def E_ST : Prop := Equivalence (fun x y : Regset.elt => x = y)
+
+def Equal_ST : Prop := Equivalence Regset.Equal
+
+def In_eq_iff : Prop :=
+  ∀ s x y, x = y → (Regset.In x s ↔ Regset.In y s)
+
+def mem_iff : Prop :=
+  ∀ s x, Regset.In x s ↔ Regset.mem x s = true
+
+def not_mem_iff : Prop :=
+  ∀ s x, ¬ Regset.In x s ↔ Regset.mem x s = false
+
+def equal_iff : Prop :=
+  ∀ s s', Regset.Equal s s' ↔ Regset.equal s s' = true
+
+def subset_iff : Prop :=
+  ∀ s s', Regset.Subset s s' ↔ Regset.subset s s' = true
+
+def empty_iff : Prop :=
+  ∀ x, Regset.In x Regset.empty ↔ False
+
+def is_empty_iff : Prop :=
+  ∀ s, Regset.Empty s ↔ Regset.is_empty s = true
+
+def singleton_iff : Prop :=
+  ∀ x y, Regset.In y (Regset.singleton x) ↔ x = y
+
+def add_iff : Prop :=
+  ∀ s x y, Regset.In y (Regset.add x s) ↔ x = y ∨ Regset.In y s
+
+def add_neq_iff : Prop :=
+  ∀ s x y, x ≠ y →
+    (Regset.In y (Regset.add x s) ↔ Regset.In y s)
+
+def remove_iff : Prop :=
+  ∀ s x y, Regset.In y (Regset.remove x s) ↔
+    Regset.In y s ∧ ¬ x = y
+
+def remove_neq_iff : Prop :=
+  ∀ s x y, x ≠ y →
+    (Regset.In y (Regset.remove x s) ↔ Regset.In y s)
+
+def union_iff : Prop :=
+  ∀ s s' x, Regset.In x (Regset.union s s') ↔
+    Regset.In x s ∨ Regset.In x s'
+
+def inter_iff : Prop :=
+  ∀ s s' x, Regset.In x (Regset.inter s s') ↔
+    Regset.In x s ∧ Regset.In x s'
+
+def diff_iff : Prop :=
+  ∀ s s' x, Regset.In x (Regset.diff s s') ↔
+    Regset.In x s ∧ ¬ Regset.In x s'
+
+def filter_iff : Prop :=
+  ∀ s x f, CompatBool f →
+    (Regset.In x (Regset.filter f s) ↔
+      Regset.In x s ∧ f x = true)
+
+def for_all_iff : Prop :=
+  ∀ s f, CompatBool f →
+    (Regset.For_all (fun x => f x = true) s ↔
+      Regset.for_all f s = true)
+
+def exists_iff : Prop :=
+  ∀ s f, CompatBool f →
+    (Regset.Exists (fun x => f x = true) s ↔
+      Regset.exists_ f s = true)
+
+def elements_iff : Prop :=
+  ∀ s x, Regset.In x s ↔
+    CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.SetoidList.InA
+      (fun x y : Regset.elt => x = y) x (Regset.elements s)
+
+def mem_b : Prop :=
+  ∀ s x y, x = y → Regset.mem x s = Regset.mem y s
+
+def empty_b : Prop :=
+  ∀ y, Regset.mem y Regset.empty = false
+
+def add_b : Prop :=
+  ∀ s x y, Regset.mem y (Regset.add x s) =
+    (eqb x y || Regset.mem y s)
+
+def add_neq_b : Prop :=
+  ∀ s x y, x ≠ y → Regset.mem y (Regset.add x s) = Regset.mem y s
+
+def remove_b : Prop :=
+  ∀ s x y, Regset.mem y (Regset.remove x s) =
+    (Regset.mem y s && !(eqb x y))
+
+def remove_neq_b : Prop :=
+  ∀ s x y, x ≠ y → Regset.mem y (Regset.remove x s) = Regset.mem y s
+
+def singleton_b : Prop :=
+  ∀ x y, Regset.mem y (Regset.singleton x) = eqb x y
+
+def union_b : Prop :=
+  ∀ s s' x, Regset.mem x (Regset.union s s') =
+    (Regset.mem x s || Regset.mem x s')
+
+def inter_b : Prop :=
+  ∀ s s' x, Regset.mem x (Regset.inter s s') =
+    (Regset.mem x s && Regset.mem x s')
+
+def diff_b : Prop :=
+  ∀ s s' x, Regset.mem x (Regset.diff s s') =
+    (Regset.mem x s && !(Regset.mem x s'))
+
+def elements_b : Prop :=
+  ∀ s x, Regset.mem x s = existsb (eqb x) (Regset.elements s)
+
+def filter_b : Prop :=
+  ∀ s x f, CompatBool f →
+    Regset.mem x (Regset.filter f s) = Regset.mem x s && f x
+
+def for_all_b : Prop :=
+  ∀ s f, CompatBool f →
+    Regset.for_all f s = forallb f (Regset.elements s)
+
+def exists_b : Prop :=
+  ∀ s f, CompatBool f →
+    Regset.exists_ f s = existsb f (Regset.elements s)
+
+def In_m : Prop :=
+  ∀ x y, x = y → ∀ s s', Regset.Equal s s' →
+    (Regset.In x s → Regset.In y s') ∧
+    (Regset.In y s' → Regset.In x s)
+
+def In_s_m : Prop :=
+  ∀ x y, x = y → ∀ s s', Regset.Subset s s' →
+    (Regset.In x s → Regset.In y s')
+
+def Empty_m : Prop :=
+  ∀ s s', Regset.Equal s s' →
+    (Regset.Empty s → Regset.Empty s') ∧
+    (Regset.Empty s' → Regset.Empty s)
+
+def Empty_s_m : Prop :=
+  ∀ s s', Regset.Subset s' s →
+    (Regset.Empty s → Regset.Empty s')
+
+def Empty_s_m_Proper : Prop :=
+  ∀ s s', Regset.Subset s' s →
+    Regset.Empty s → Regset.Empty s'
+
+def Subset_m : Prop :=
+  ∀ s s', Regset.Equal s s' → ∀ s'' s''', Regset.Equal s'' s''' →
+    (Regset.Subset s s'' → Regset.Subset s' s''') ∧
+    (Regset.Subset s' s''' → Regset.Subset s s'')
+
+def Subset_refl : Prop :=
+  ∀ s, Regset.Subset s s
+
+def Subset_trans : Prop :=
+  ∀ s s' s'', Regset.Subset s s' → Regset.Subset s' s'' →
+    Regset.Subset s s''
+
+def SubsetSetoid : Prop := PreOrder Regset.Subset
+
+def SubsetSetoid_Reflexive : Prop :=
+  ∀ s, Regset.Subset s s
+
+def SubsetSetoid_Transitive : Prop :=
+  ∀ s s' s'', Regset.Subset s s' → Regset.Subset s' s'' →
+    Regset.Subset s s''
+
+def SubsetSetoid_relation : Prop := RewriteRelation Regset.Subset
+
+def add_m : Prop :=
+  ∀ x y, x = y → ∀ s s', Regset.Equal s s' → ∀ a,
+    (Regset.In a (Regset.add x s) → Regset.In a (Regset.add y s')) ∧
+    (Regset.In a (Regset.add y s') → Regset.In a (Regset.add x s))
+
+def add_s_m : Prop :=
+  ∀ x y, x = y → ∀ s s', Regset.Subset s s' →
+    Regset.Subset (Regset.add x s) (Regset.add y s')
+
+def add_s_m_Proper : Prop :=
+  ∀ x y, x = y → ∀ s s', Regset.Subset s s' →
+    Regset.Subset (Regset.add x s) (Regset.add y s')
+
+def remove_m : Prop :=
+  ∀ x y, x = y → ∀ s s', Regset.Equal s s' → ∀ a,
+    (Regset.In a (Regset.remove x s) → Regset.In a (Regset.remove y s')) ∧
+    (Regset.In a (Regset.remove y s') → Regset.In a (Regset.remove x s))
+
+def remove_s_m : Prop :=
+  ∀ x y, x = y → ∀ s s', Regset.Subset s s' →
+    Regset.Subset (Regset.remove x s) (Regset.remove y s')
+
+def remove_s_m_Proper : Prop :=
+  ∀ x y, x = y → ∀ s s', Regset.Subset s s' →
+    Regset.Subset (Regset.remove x s) (Regset.remove y s')
+
+def union_m : Prop :=
+  ∀ s s', Regset.Equal s s' → ∀ s'' s''', Regset.Equal s'' s''' → ∀ a,
+    (Regset.In a (Regset.union s s'') →
+      Regset.In a (Regset.union s' s''')) ∧
+    (Regset.In a (Regset.union s' s''') →
+      Regset.In a (Regset.union s s''))
+
+def union_s_m : Prop :=
+  ∀ s s', Regset.Subset s s' → ∀ s'' s''', Regset.Subset s'' s''' →
+    Regset.Subset (Regset.union s s'') (Regset.union s' s''')
+
+def union_s_m_Proper : Prop :=
+  ∀ s s', Regset.Subset s s' → ∀ s'' s''', Regset.Subset s'' s''' →
+    Regset.Subset (Regset.union s s'') (Regset.union s' s''')
+
+def inter_m : Prop :=
+  ∀ s s', Regset.Equal s s' → ∀ s'' s''', Regset.Equal s'' s''' → ∀ a,
+    (Regset.In a (Regset.inter s s'') →
+      Regset.In a (Regset.inter s' s''')) ∧
+    (Regset.In a (Regset.inter s' s''') →
+      Regset.In a (Regset.inter s s''))
+
+def inter_s_m : Prop :=
+  ∀ s s', Regset.Subset s s' → ∀ s'' s''', Regset.Subset s'' s''' →
+    Regset.Subset (Regset.inter s s'') (Regset.inter s' s''')
+
+def inter_s_m_Proper : Prop :=
+  ∀ s s', Regset.Subset s s' → ∀ s'' s''', Regset.Subset s'' s''' →
+    Regset.Subset (Regset.inter s s'') (Regset.inter s' s''')
+
+def diff_m : Prop :=
+  ∀ s s', Regset.Equal s s' → ∀ s'' s''', Regset.Equal s'' s''' → ∀ a,
+    (Regset.In a (Regset.diff s s'') →
+      Regset.In a (Regset.diff s' s''')) ∧
+    (Regset.In a (Regset.diff s' s''') →
+      Regset.In a (Regset.diff s s''))
+
+def diff_s_m : Prop :=
+  ∀ s s', Regset.Subset s s' → ∀ s'' s''', Regset.Subset s''' s'' →
+    Regset.Subset (Regset.diff s s'') (Regset.diff s' s''')
+
+def diff_s_m_Proper : Prop :=
+  ∀ s s', Regset.Subset s s' → ∀ s'' s''', Regset.Subset s''' s'' →
+    Regset.Subset (Regset.diff s s'') (Regset.diff s' s''')
+
+def singleton_m : Prop :=
+  ∀ x y, x = y → ∀ a,
+    (Regset.In a (Regset.singleton x) → Regset.In a (Regset.singleton y)) ∧
+    (Regset.In a (Regset.singleton y) → Regset.In a (Regset.singleton x))
+
+def is_empty_m : Prop :=
+  ∀ s s', Regset.Equal s s' → Regset.is_empty s = Regset.is_empty s'
+
+def mem_m : Prop :=
+  ∀ x y, x = y → ∀ s s', Regset.Equal s s' →
+    Regset.mem x s = Regset.mem y s'
+
+def equal_m : Prop :=
+  ∀ s s', Regset.Equal s s' → ∀ s'' s''', Regset.Equal s'' s''' →
+    Regset.equal s s'' = Regset.equal s' s'''
+
+def subset_m : Prop :=
+  ∀ s s', Regset.Equal s s' → ∀ s'' s''', Regset.Equal s'' s''' →
+    Regset.subset s s'' = Regset.subset s' s'''
+
+def filter_equal : Prop :=
+  ∀ f, CompatBool f → ∀ s s', Regset.Equal s s' →
+    Regset.Equal (Regset.filter f s) (Regset.filter f s')
+
+def filter_ext : Prop :=
+  ∀ f f', CompatBool f → (∀ x, f x = f' x) → ∀ s s',
+    Regset.Equal s s' →
+    Regset.Equal (Regset.filter f s) (Regset.filter f' s')
+
+def filter_subset : Prop :=
+  ∀ f, CompatBool f → ∀ s s', Regset.Subset s s' →
+    Regset.Subset (Regset.filter f s) (Regset.filter f s')
+
+end RegsetFacts
+
 def regmap_optget {A : Type}
     (or : Option reg) (dfl : A) (rs : Regmap.t A) : A :=
   match or with
