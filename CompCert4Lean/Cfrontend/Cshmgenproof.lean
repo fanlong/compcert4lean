@@ -73,7 +73,6 @@ private abbrev CGenv := CompCert4Lean.Cfrontend.Clight.genv
 private abbrev TGenv := CompCert4Lean.Cfrontend.Csharpminor.genv
 private abbrev CLabel := CompCert4Lean.Cfrontend.Clight.label
 private abbrev Res := CompCert4Lean.Common.Errors.res
-private abbrev LinkOrder := fun (_ _ : CProgram) => True
 private abbrev CCInt := CompCert4Lean.Lib.Integers.int
 private abbrev CCInt64 := CompCert4Lean.Lib.Integers.int64
 private abbrev CCFloat := CompCert4Lean.Lib.Floats.float
@@ -106,10 +105,21 @@ def match_fundef (p : CProgram) : CFundef → TFundef → Prop
 def match_varinfo (_v : CType) (_tv : Unit) : Prop := True
 
 def match_prog (p : CProgram) (tp : TProgram) : Prop :=
-  match_program_gen (C := Unit) (F1 := Ctypes.fundef CFunction)
-    (V1 := CType) (F2 := TFundef) (V2 := Unit)
-    (fun _ f tf => match_fundef p f tf) match_varinfo ()
-    (Ctypes.program_of_program p) tp
+  list_forall2
+      (fun idg tidg =>
+        idg.1 = tidg.1 ∧
+          match idg.2, tidg.2 with
+          | .Gfun f, .Gfun tf =>
+              ∃ cu, Ctypes.linkorder_program cu p ∧ match_fundef cu f tf
+          | .Gvar v, .Gvar tv =>
+              match_varinfo v.gvar_info tv.gvar_info ∧
+                v.gvar_init = tv.gvar_init ∧
+                v.gvar_readonly = tv.gvar_readonly ∧
+                v.gvar_volatile = tv.gvar_volatile
+          | _, _ => False)
+      (Ctypes.program_of_program p).prog_defs tp.prog_defs ∧
+    tp.prog_main = (Ctypes.program_of_program p).prog_main ∧
+    tp.prog_public = (Ctypes.program_of_program p).prog_public
 
 /-! ## Constructor correctness specifications -/
 
@@ -182,7 +192,7 @@ inductive match_cont (prog : CProgram) (tprog : TProgram) :
   | match_Kcall (ce : composite_env) (tyret : CType) (nbrk ncnt nbrk' ncnt' : Nat)
       (f : CFunction) (e : CEnv) (k : CCont) (id : Option ident)
       (tf : TFunction) (te : TEnv) (le : CTempEnv) (tk : TCont) (cu : CProgram) :
-      LinkOrder cu prog →
+      Ctypes.linkorder_program cu prog →
       transl_function cu.prog_comp_env f = .OK tf →
       match_env prog e te →
       match_cont prog tprog cu.prog_comp_env f.fn_return nbrk' ncnt' k tk →
@@ -192,7 +202,7 @@ inductive match_cont (prog : CProgram) (tprog : TProgram) :
       (nbrk ncnt nbrk' ncnt' : Nat) (f : CFunction) (e : CEnv) (k : CCont)
       (id : ident) (a : TExpr) (tf : TFunction) (te : TEnv)
       (le : CTempEnv) (tk : TCont) (cu : CProgram) :
-      LinkOrder cu prog →
+      Ctypes.linkorder_program cu prog →
       transl_function cu.prog_comp_env f = .OK tf →
       match_env prog e te →
       match_cont prog tprog cu.prog_comp_env f.fn_return nbrk' ncnt' k tk →
@@ -207,7 +217,7 @@ inductive match_states (prog : CProgram) (tprog : TProgram) : CState → TState 
   | match_state (f : CFunction) (nbrk ncnt : Nat) (s : CStmt) (k : CCont)
       (e : CEnv) (le : CTempEnv) (m : mem) (tf : TFunction) (ts : TStmt)
       (tk : TCont) (te : TEnv) (ts' : TStmt) (tk' : TCont) (cu : CProgram) :
-      LinkOrder cu prog →
+      Ctypes.linkorder_program cu prog →
       transl_function cu.prog_comp_env f = .OK tf →
       transl_statement cu.prog_comp_env f.fn_return nbrk ncnt s = .OK ts →
       match_transl ts tk ts' tk' →
@@ -217,7 +227,7 @@ inductive match_states (prog : CProgram) (tprog : TProgram) : CState → TState 
   | match_callstate (fd : CFundef) (args : List val) (k : CCont) (m : mem)
       (tfd : TFundef) (tk : TCont) (targs : List CType) (tres : CType)
       (cconv : calling_convention) (cu : CProgram) (ce : composite_env) :
-      LinkOrder cu prog →
+      Ctypes.linkorder_program cu prog →
       match_fundef cu fd tfd →
       match_cont prog tprog ce tres 0 0 k tk →
       Clight.is_call_cont k →
@@ -246,7 +256,7 @@ def create_undef_temps_matchStatement : Prop :=
 
 def field_offset_stableStatement : Prop :=
   ∀ (cunit prog : CProgram) id co f,
-    LinkOrder cunit prog →
+    Ctypes.linkorder_program cunit prog →
     PTree.get id cunit.prog_comp_env = some co →
     PTree.get id prog.prog_comp_env = some co ∧
       Ctypes.field_offset prog.prog_comp_env f co.co_members =
@@ -266,14 +276,14 @@ def function_ptr_translatedStatement : Prop :=
     ∀ b f, Genv.find_funct_ptr (Clight.globalenv prog).genv_genv b = some f →
       ∃ cu tf,
         Genv.find_funct_ptr (Genv.globalenv tprog) b = some tf ∧
-        match_fundef cu f tf ∧ LinkOrder cu prog
+        match_fundef cu f tf ∧ Ctypes.linkorder_program cu prog
 
 def functions_translatedStatement : Prop :=
   ∀ prog tprog, match_prog prog tprog →
     ∀ v f, Genv.find_funct (Clight.globalenv prog).genv_genv v = some f →
       ∃ cu tf,
         Genv.find_funct (Genv.globalenv tprog) v = some tf ∧
-        match_fundef cu f tf ∧ LinkOrder cu prog
+        match_fundef cu f tf ∧ Ctypes.linkorder_program cu prog
 
 def int_ltu_trueStatement : Prop :=
   ∀ x : Z, 0 ≤ x → x < CompCert4Lean.Lib.Integers.Int.zwordsize →
@@ -288,6 +298,7 @@ def make_absfloat_correctStatement : Prop :=
 
 def make_add_correctStatement : Prop :=
   ∀ (ge : TGenv) (cunit prog : CProgram),
+    Ctypes.linkorder_program cunit prog →
     binary_constructor_correct ge (make_add cunit.prog_comp_env)
       (sem_add prog.prog_comp_env)
 
@@ -369,6 +380,7 @@ def make_memcpy_correctStatement : Prop :=
   ∀ (xi : CompCert4Lean.Common.ExternalCalls.ExternalCalls)
     (ge : TGenv) (cunit prog : CProgram)
     (f : TFunction) dst src ty k e le m b ofs v m' s,
+    Ctypes.linkorder_program cunit prog →
     eval_expr ge e le m dst (.Vptr b ofs) →
     eval_expr ge e le m src v →
     Clight.assign_loc prog.prog_comp_env ty m b ofs .Full v m' →
@@ -459,6 +471,7 @@ def make_store_correctStatement : Prop :=
   ∀ (xi : CompCert4Lean.Common.ExternalCalls.ExternalCalls)
     (ge : TGenv) (cunit prog : CProgram)
     addr ty bf rhs code e le m b ofs v m' f k,
+    Ctypes.linkorder_program cunit prog →
     make_store cunit.prog_comp_env addr ty bf rhs = .OK code →
     eval_expr ge e le m addr (.Vptr b ofs) →
     eval_expr ge e le m rhs v →
@@ -468,6 +481,7 @@ def make_store_correctStatement : Prop :=
 
 def make_sub_correctStatement : Prop :=
   ∀ (ge : TGenv) (cunit prog : CProgram),
+    Ctypes.linkorder_program cunit prog →
     binary_constructor_correct ge (make_sub cunit.prog_comp_env)
       (sem_sub prog.prog_comp_env)
 
@@ -490,7 +504,7 @@ def match_cont_is_call_contStatement : Prop :=
 
 def match_env_alloc_variablesStatement : Prop :=
   ∀ (prog cunit : CProgram) e1 m1 vars e2 m2 tvars te1,
-    LinkOrder cunit prog →
+    Ctypes.linkorder_program cunit prog →
     Clight.alloc_variables (Clight.globalenv prog) e1 m1 vars e2 m2 →
     CompCert4Lean.Common.Errors.mmap (transl_var cunit.prog_comp_env) vars = .OK tvars →
     match_env prog e1 te1 →
@@ -520,7 +534,7 @@ def match_env_same_blocksStatement : Prop :=
 
 def match_states_skipStatement : Prop :=
   ∀ (prog : CProgram) (tprog : TProgram) f e le te nbrk ncnt k tf tk m cu,
-    LinkOrder cu prog →
+    Ctypes.linkorder_program cu prog →
     transl_function cu.prog_comp_env f = .OK tf →
     match_env prog e te →
     match_cont prog tprog cu.prog_comp_env f.fn_return nbrk ncnt k tk →
@@ -567,22 +581,24 @@ def transf_program_matchStatement : Prop :=
 
 def transl_alignofStatement : Prop :=
   ∀ (cunit prog : CProgram) t al,
-    LinkOrder cunit prog →
+    Ctypes.linkorder_program cunit prog →
     Cshmgen.alignof cunit.prog_comp_env t = .OK al →
     al = Ctypes.alignof prog.prog_comp_env t
 
 def transl_alignof_blockcopyStatement : Prop :=
   ∀ (cunit prog : CProgram) t sz,
-    LinkOrder cunit prog →
+    Ctypes.linkorder_program cunit prog →
     Cshmgen.sizeof cunit.prog_comp_env t = .OK sz →
     sz = Ctypes.sizeof prog.prog_comp_env t ∧
       alignof_blockcopy cunit.prog_comp_env t =
         alignof_blockcopy prog.prog_comp_env t
 
 def transl_arglist_correctStatement : Prop :=
-  ∀ (xi : CompCert4Lean.Common.ExternalCalls.ExternalCalls)
-    (prog cunit : CProgram) (tprog : TProgram) (e : CEnv) (le : CTempEnv)
+  ∀ (prog cunit : CProgram) (tprog : TProgram) (e : CEnv) (le : CTempEnv)
     (m : mem) (te : TEnv) (al : List CExpr) (tyl : List CType) (vl : List val),
+    match_prog prog tprog →
+    Ctypes.linkorder_program cunit prog →
+    match_env prog e te →
     Clight.eval_exprlist (Clight.globalenv prog) e le m al tyl vl →
     ∀ tal, transl_arglist cunit.prog_comp_env al tyl = .OK tal →
       Csharpminor.eval_exprlist (Genv.globalenv tprog) te le m tal vl
@@ -594,6 +610,7 @@ def transl_arglist_typedStatement : Prop :=
 
 def transl_binop_correctStatement : Prop :=
   ∀ (ge : TGenv) (cunit prog : CProgram) op a tya b tyb c va vb v e le m,
+    Ctypes.linkorder_program cunit prog →
     transl_binop cunit.prog_comp_env op a tya b tyb = .OK c →
     sem_binary_operation prog.prog_comp_env op va tya vb tyb m = some v →
     eval_expr ge e le m a va → eval_expr ge e le m b vb →
@@ -603,13 +620,16 @@ def transl_expr_correctStatement : Prop :=
   ∀ (prog cunit : CProgram) (tprog : TProgram) (e : CEnv) (te : TEnv)
     (le : CTempEnv) (m : mem) (a : CExpr) (v : val),
     match_prog prog tprog →
+    Ctypes.linkorder_program cunit prog →
+    match_env prog e te →
     Clight.eval_expr (Clight.globalenv prog) e le m a v →
     ∀ ta, transl_expr cunit.prog_comp_env a = .OK ta →
       Csharpminor.eval_expr (Genv.globalenv tprog) te le m ta v
 
 def transl_expr_lvalueStatement : Prop :=
-  ∀ (prog cunit : CProgram) (e : CEnv) (te : TEnv)
-    (le : CTempEnv) (m : mem) a loc ofs bf ta,
+  ∀ (prog cunit : CProgram) (e : CEnv) (le : CTempEnv) (m : mem)
+    a loc ofs bf ta,
+    Ctypes.linkorder_program cunit prog →
     Clight.eval_lvalue (Clight.globalenv prog) e le m a loc ofs bf →
     transl_expr cunit.prog_comp_env a = .OK ta →
     ∃ tb, transl_lvalue cunit.prog_comp_env a = .OK (tb, bf) ∧
@@ -619,6 +639,8 @@ def transl_expr_lvalue_correctStatement : Prop :=
   ∀ (prog cunit : CProgram) (tprog : TProgram) (e : CEnv) (te : TEnv)
     (le : CTempEnv) (m : mem),
     match_prog prog tprog →
+    Ctypes.linkorder_program cunit prog →
+    match_env prog e te →
     (∀ a v, Clight.eval_expr (Clight.globalenv prog) e le m a v →
       ∀ ta, transl_expr cunit.prog_comp_env a = .OK ta →
         Csharpminor.eval_expr (Genv.globalenv tprog) te le m ta v) ∧
@@ -679,6 +701,8 @@ def transl_lvalue_correctStatement : Prop :=
   ∀ (prog cunit : CProgram) (tprog : TProgram) (e : CEnv) (te : TEnv)
     (le : CTempEnv) (m : mem) a b ofs bf,
     match_prog prog tprog →
+    Ctypes.linkorder_program cunit prog →
+    match_env prog e te →
     Clight.eval_lvalue (Clight.globalenv prog) e le m a b ofs bf →
     ∀ ta bf', transl_lvalue cunit.prog_comp_env a = .OK (ta, bf') →
       bf = bf' ∧ Csharpminor.eval_expr (Genv.globalenv tprog) te le m ta
@@ -692,7 +716,7 @@ def transl_program_correctStatement : Prop :=
 
 def transl_sizeofStatement : Prop :=
   ∀ (cunit prog : CProgram) t sz,
-    LinkOrder cunit prog →
+    Ctypes.linkorder_program cunit prog →
     Cshmgen.sizeof cunit.prog_comp_env t = .OK sz →
     sz = Ctypes.sizeof prog.prog_comp_env t
 
@@ -723,7 +747,7 @@ def typlist_of_arglist_eqStatement : Prop :=
 
 def union_field_offset_stableStatement : Prop :=
   ∀ (cunit prog : CProgram) id co f,
-    LinkOrder cunit prog →
+    Ctypes.linkorder_program cunit prog →
     PTree.get id cunit.prog_comp_env = some co →
     PTree.get id prog.prog_comp_env = some co ∧
       Ctypes.union_field_offset prog.prog_comp_env f co.co_members =

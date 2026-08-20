@@ -76,15 +76,25 @@ def tr_if (ce : composite_env) (r : cexpr) (s1 s2 s : Clight.statement) : Prop :
     tr_top ce ge e le m .For_val r sl a tmps ∧
       s = SimplExpr.makeseq (sl ++ [makeif a s1 s2])
 
-/-! The Ctypes linker surface is outside the selected prerequisite API.  The
-    executable matching relation therefore carries the source compilation
-    environment directly, as does `SimplExprspec.tr_fundef`. -/
 def match_prog (p : cprogram) (tp : tprogram) : Prop :=
-  @CompCert4Lean.Common.Linking.match_program_gen
-      Unit Csyntax.fundef Ctypes.type Clight.fundef Ctypes.type
-      CompCert4Lean.Common.Linking.Linker_unit
-      (fun _ f tf => tr_fundef p f tf) Eq ()
-      (Ctypes.program_of_program p) (Ctypes.program_of_program tp) ∧
+  (list_forall2
+      (fun idg tidg =>
+        idg.1 = tidg.1 ∧
+          match idg.2, tidg.2 with
+          | .Gfun f, .Gfun tf =>
+              ∃ cu, Ctypes.linkorder_program cu p ∧ tr_fundef cu f tf
+          | .Gvar v, .Gvar tv =>
+              v.gvar_info = tv.gvar_info ∧
+                v.gvar_init = tv.gvar_init ∧
+                v.gvar_readonly = tv.gvar_readonly ∧
+                v.gvar_volatile = tv.gvar_volatile
+          | _, _ => False)
+      (Ctypes.program_of_program p).prog_defs
+      (Ctypes.program_of_program tp).prog_defs ∧
+    (Ctypes.program_of_program tp).prog_main =
+      (Ctypes.program_of_program p).prog_main ∧
+    (Ctypes.program_of_program tp).prog_public =
+      (Ctypes.program_of_program p).prog_public) ∧
     tp.prog_types = p.prog_types
 
 def Kseqlist : List Clight.statement → Clight.cont → Clight.cont
@@ -166,12 +176,13 @@ mutual
         (le : ttemp_env) (sl : List Clight.statement) (tk : tcont)
         (a : Clight.expr) (dest : destination) (tmps : List ident)
         (cu : cprogram) (ce : composite_env)
-        (hcu : cu = prog) (htrf : tr_function ce f tf)
+        (hlink : Ctypes.linkorder_program cu prog)
+        (htrf : tr_function cu.prog_comp_env f tf)
         (hctx : leftcontext .RV .RV C)
-        (htr : ∀ v m, tr_top ce (Clight.globalenv tprog) e
+        (htr : ∀ v m, tr_top cu.prog_comp_env (Clight.globalenv tprog) e
           (Clight.set_opttemp optid v le) m dest
           (C (.Eval v ty)) sl a tmps)
-        (hmc : match_cont_exp prog tprog ce dest a k tk) :
+        (hmc : match_cont_exp prog tprog cu.prog_comp_env dest a k tk) :
         match_cont prog tprog ce (.Kcall f e C ty k)
           (.Kcall optid tf e le (Kseqlist sl tk))
 
@@ -204,7 +215,7 @@ mutual
         (hr : tr_if ce r .Sskip .Sbreak s') (hs : tr_stmt ce s ts)
         (hk : match_cont prog tprog ce k tk) :
         match_cont_exp prog tprog ce .For_val a (.Kdowhile2 r s k)
-          (.Kseq (makeif a .Sskip .Sbreak) (.Kseq ts (.Kloop2 ts s' tk)))
+          (.Kseq (makeif a .Sskip .Sbreak) (.Kloop2 ts s' tk))
     | match_Kfor2 (ce : composite_env) (r : cexpr) (s3 s : cstatement)
         (k : ccont) (s' : Clight.statement) (a : Clight.expr)
         (ts3 ts : Clight.statement) (tk : tcont)
@@ -231,7 +242,8 @@ inductive match_states (prog : cprogram) (tprog : tprogram) :
       (m : mem) (tf : tfunction) (sl : List Clight.statement) (tk : tcont)
       (le : ttemp_env) (dest : destination) (a : Clight.expr)
       (tmps : List ident) (cu : cprogram)
-      (hcu : cu = prog) (htrf : tr_function cu.prog_comp_env f tf)
+      (hlink : Ctypes.linkorder_program cu prog)
+      (htrf : tr_function cu.prog_comp_env f tf)
       (htr : tr_top cu.prog_comp_env (Clight.globalenv tprog) e le m dest r sl a tmps)
       (hmc : match_cont_exp prog tprog cu.prog_comp_env dest a k tk) :
       match_states prog tprog (.ExprState f r k e m)
@@ -239,13 +251,15 @@ inductive match_states (prog : cprogram) (tprog : tprogram) :
   | match_regularstates (f : cfunction) (s : cstatement) (k : ccont)
       (e : cenv) (m : mem) (tf : tfunction) (ts : Clight.statement)
       (tk : tcont) (le : ttemp_env) (cu : cprogram)
-      (hcu : cu = prog) (htrf : tr_function cu.prog_comp_env f tf)
+      (hlink : Ctypes.linkorder_program cu prog)
+      (htrf : tr_function cu.prog_comp_env f tf)
       (htr : tr_stmt cu.prog_comp_env s ts)
       (hmc : match_cont prog tprog cu.prog_comp_env k tk) :
       match_states prog tprog (.State f s k e m)
         (.State tf ts tk e le m)
   | match_callstates (fd : cfundef) (args : List val) (k : ccont) (m : mem)
-      (tfd : tfundef) (tk : tcont) (cu : cprogram) (hcu : cu = prog)
+      (tfd : tfundef) (tk : tcont) (cu : cprogram)
+      (hlink : Ctypes.linkorder_program cu prog)
       (htr : tr_fundef cu fd tfd)
       (hmc : ∀ ce, match_cont prog tprog ce k tk) :
       match_states prog tprog (.Callstate fd args k m)
@@ -283,14 +297,14 @@ def function_ptr_translatedStatement : Prop :=
     Genv.find_funct_ptr (Csem.globalenv p).genv_genv b = some f →
       ∃ cu tf,
         Genv.find_funct_ptr (Clight.globalenv tp).genv_genv b = some tf ∧
-          tr_fundef cu f tf ∧ cu = p
+          tr_fundef cu f tf ∧ Ctypes.linkorder_program cu p
 
 def functions_translatedStatement : Prop :=
   ∀ p tp, match_prog p tp → ∀ v f,
     Genv.find_funct (Csem.globalenv p).genv_genv v = some f →
       ∃ cu tf,
         Genv.find_funct (Clight.globalenv tp).genv_genv v = some tf ∧
-          tr_fundef cu f tf ∧ cu = p
+          tr_fundef cu f tf ∧ Ctypes.linkorder_program cu p
 def type_of_fundef_preservedStatement : Prop :=
   ∀ cu f tf, tr_fundef cu f tf → Clight.type_of_fundef tf = Csyntax.type_of_fundef f
 def function_return_preservedStatement : Prop :=
@@ -492,24 +506,160 @@ def step_make_assignStatement : Prop :=
       t (Clight.State f .Sskip k e le m')
 def Kseqlist_appStatement : Prop :=
   ∀ sl1 sl2 k, Kseqlist (sl1 ++ sl2) k = Kseqlist sl1 (Kseqlist sl2 k)
-def push_seqStatement : Prop := True
-def step_tr_rvalofStatement : Prop := True
-def match_cont_call_contStatement : Prop := True
-def match_cont_is_call_contStatement : Prop := True
-def tr_select_switchStatement : Prop := True
-def tr_seq_of_labeled_statementStatement : Prop := True
-def tr_find_labelStatement : Prop := True
-def leftcontext_sizeStatement : Prop := True
-def tr_val_genStatement : Prop := True
-def estep_simulationStatement : Prop := True
-def tr_top_val_for_val_invStatement : Prop := True
-def alloc_variables_preservedStatement : Prop := True
-def bind_parameters_preservedStatement : Prop := True
-def blocks_of_env_preservedStatement : Prop := True
-def sstep_simulationStatement : Prop := True
-def simulationStatement : Prop := True
-def transl_initial_statesStatement : Prop := True
-def transl_final_statesStatement : Prop := True
-def transl_program_correctStatement : Prop := True
+
+def push_seqStatement : Prop :=
+  ∀ (xi : ExternalCalls) (tp : tprogram) f sl k e le m,
+    star (Clight.step1 xi) (Clight.globalenv tp)
+      (.State f (SimplExpr.makeseq sl) k e le m) E0
+      (.State f .Sskip (Kseqlist sl k) e le m)
+
+def step_tr_rvalofStatement : Prop :=
+  ∀ (xi : ExternalCalls) (p : cprogram) (tp : tprogram),
+    match_prog p tp →
+    ∀ (cu : cprogram), Ctypes.linkorder_program cu p →
+    ∀ ty m b ofs bf t v e le a sl a' tmp f k,
+      Csem.deref_loc (Csem.globalenv p) ty m b ofs bf t v →
+      Clight.eval_lvalue (Clight.globalenv tp) e le m a b ofs bf →
+      tr_rvalof cu.prog_comp_env ty a sl a' tmp →
+      Clight.typeof a = ty →
+      ∃ le',
+        star (Clight.step1 xi) (Clight.globalenv tp)
+          (.State f .Sskip (Kseqlist sl k) e le m) t
+          (.State f .Sskip k e le' m) ∧
+        Clight.eval_expr (Clight.globalenv tp) e le' m a' v ∧
+        Clight.typeof a' = Clight.typeof a ∧
+        ∀ x, x ∉ tmp → PTree.get x le' = PTree.get x le
+
+def match_cont_call_contStatement : Prop :=
+  ∀ (p : cprogram) (tp : tprogram) ce k tk,
+    match_cont p tp ce k tk →
+    ∀ ce', match_cont p tp ce' (Csem.call_cont k) (Clight.call_cont tk)
+
+def match_cont_is_call_contStatement : Prop :=
+  ∀ (p : cprogram) (tp : tprogram) ce k tk,
+    match_cont p tp ce k tk → Csem.is_call_cont k →
+    ∀ ce', match_cont p tp ce' k tk
+
+def tr_select_switchStatement : Prop :=
+  ∀ ce n ls tls, tr_lblstmts ce ls tls →
+    tr_lblstmts ce (Csem.select_switch n ls) (Clight.select_switch n tls)
+
+def tr_seq_of_labeled_statementStatement : Prop :=
+  ∀ ce ls tls, tr_lblstmts ce ls tls →
+    tr_stmt ce (Csem.seq_of_labeled_statement ls)
+      (Clight.seq_of_labeled_statement tls)
+
+def tr_find_labelStatement : Prop :=
+  ∀ (p : cprogram) (tp : tprogram) lbl ce s k ts tk,
+    tr_stmt ce s ts → match_cont p tp ce k tk →
+    match Csem.find_label lbl s k with
+    | none => Clight.find_label lbl ts tk = none
+    | some (s', k') =>
+        ∃ ts' tk', Clight.find_label lbl ts tk = some (ts', tk') ∧
+          tr_stmt ce s' ts' ∧ match_cont p tp ce k' tk'
+
+private def csemFindLabelLs (lbl : ident) :
+    clabeled_statements → ccont → Option (cstatement × ccont)
+  | .LSnil, _ => none
+  | .LScons _ s rest, k =>
+      match Csem.find_label lbl s (.Kseq (Csem.seq_of_labeled_statement rest) k) with
+      | some sk => some sk
+      | none => csemFindLabelLs lbl rest k
+
+def tr_find_label_lsStatement : Prop :=
+  ∀ (p : cprogram) (tp : tprogram) lbl ce s k ts tk,
+    tr_lblstmts ce s ts → match_cont p tp ce k tk →
+    match csemFindLabelLs lbl s k with
+    | none => Clight.findLabelCases lbl ts tk = none
+    | some (s', k') =>
+        ∃ ts' tk', Clight.findLabelCases lbl ts tk = some (ts', tk') ∧
+          tr_stmt ce s' ts' ∧ match_cont p tp ce k' tk'
+
+def leftcontext_sizeStatement : Prop :=
+  ∀ kfrom kto C, leftcontext kfrom kto C →
+    ∀ e1 e2, esize e1 < esize e2 → esize (C e1) < esize (C e2)
+
+def leftcontextlist_sizeStatement : Prop :=
+  ∀ kfrom C, leftcontextlist kfrom C →
+    ∀ e1 e2, esize e1 < esize e2 →
+      esize.esizeList (C e1) < esize.esizeList (C e2)
+
+def tr_val_genStatement : Prop :=
+  ∀ ce le dst v ty a tmp,
+    Clight.typeof a = ty →
+    (∀ tge e le' m,
+      (∀ id, id ∈ tmp → PTree.get id le' = PTree.get id le) →
+      Clight.eval_expr tge e le' m a v) →
+    tr_expr ce le dst (.Eval v ty) (SimplExprspec.final dst a) a tmp
+
+def estep_simulationStatement : Prop :=
+  ∀ (xi : ExternalCalls) (p : cprogram) (tp : tprogram),
+    match_prog p tp →
+    ∀ S1 t S2, Cstrategy.estep xi (Csem.globalenv p) S1 t S2 →
+    ∀ S1', match_states p tp S1 S1' →
+      ∃ S2',
+        (plus (Clight.step1 xi) (Clight.globalenv tp) S1' t S2' ∨
+          (star (Clight.step1 xi) (Clight.globalenv tp) S1' t S2' ∧
+            measure S2 < measure S1)) ∧
+        match_states p tp S2 S2'
+
+def tr_top_val_for_val_invStatement : Prop :=
+  ∀ (tp : tprogram) ce e le m v ty sl a tmps,
+    tr_top ce (Clight.globalenv tp) e le m .For_val (.Eval v ty) sl a tmps →
+    sl = [] ∧ Clight.typeof a = ty ∧
+      Clight.eval_expr (Clight.globalenv tp) e le m a v
+
+def alloc_variables_preservedStatement : Prop :=
+  ∀ (p : cprogram) (tp : tprogram), match_prog p tp →
+    ∀ e m params e' m',
+      Csem.alloc_variables (Csem.globalenv p) e m params e' m' →
+      Clight.alloc_variables (Clight.globalenv tp) e m params e' m'
+
+def bind_parameters_preservedStatement : Prop :=
+  ∀ (p : cprogram) (tp : tprogram), match_prog p tp →
+    ∀ e m params args m',
+      Csem.bind_parameters (Csem.globalenv p) e m params args m' →
+      Clight.bind_parameters (Clight.globalenv tp) e m params args m'
+
+def blocks_of_env_preservedStatement : Prop :=
+  ∀ (p : cprogram) (tp : tprogram), match_prog p tp →
+    ∀ e, Clight.blocks_of_env (Clight.globalenv tp) e =
+      Csem.blocks_of_env (Csem.globalenv p) e
+
+def sstep_simulationStatement : Prop :=
+  ∀ (xi : ExternalCalls) (p : cprogram) (tp : tprogram),
+    match_prog p tp →
+    ∀ S1 t S2, Csem.sstep xi (Csem.globalenv p) S1 t S2 →
+    ∀ S1', match_states p tp S1 S1' →
+      ∃ S2',
+        (plus (Clight.step1 xi) (Clight.globalenv tp) S1' t S2' ∨
+          (star (Clight.step1 xi) (Clight.globalenv tp) S1' t S2' ∧
+            measure S2 < measure S1)) ∧
+        match_states p tp S2 S2'
+
+def simulationStatement : Prop :=
+  ∀ (xi : ExternalCalls) (p : cprogram) (tp : tprogram),
+    match_prog p tp →
+    ∀ S1 t S2, Cstrategy.step xi (Csem.globalenv p) S1 t S2 →
+    ∀ S1', match_states p tp S1 S1' →
+      ∃ S2',
+        (plus (Clight.step1 xi) (Clight.globalenv tp) S1' t S2' ∨
+          (star (Clight.step1 xi) (Clight.globalenv tp) S1' t S2' ∧
+            measure S2 < measure S1)) ∧
+        match_states p tp S2 S2'
+
+def transl_initial_statesStatement : Prop :=
+  ∀ (p : cprogram) (tp : tprogram), match_prog p tp →
+    ∀ S, Csem.initial_state p S →
+      ∃ S', Clight.initial_state tp S' ∧ match_states p tp S S'
+
+def transl_final_statesStatement : Prop :=
+  ∀ (p : cprogram) (tp : tprogram) S S' r,
+    match_states p tp S S' → Csem.final_state S r → Clight.final_state S' r
+
+def transl_program_correctStatement : Prop :=
+  ∀ (xi : ExternalCalls) (p : cprogram) (tp : tprogram),
+    match_prog p tp →
+    forward_simulation (Cstrategy.semantics xi p) (Clight.semantics1 xi tp)
 
 end CompCert4Lean.Cfrontend.SimplExprproof
