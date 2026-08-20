@@ -138,6 +138,10 @@ import CompCert4Lean.Lib.BoolEqual
 import CompCert4Lean.Lib.Coqlib
 import CompCert4Lean.Lib.Decidableplus
 import CompCert4Lean.Lib.FSetAVLplus
+import CompCert4Lean.Lib.FSetDecide
+import CompCert4Lean.Lib.FSetFacts
+import CompCert4Lean.Lib.FSetInterface
+import CompCert4Lean.Lib.FSetProperties
 import CompCert4Lean.Lib.Floats
 import CompCert4Lean.Lib.Floats.Model
 import CompCert4Lean.Lib.Floats.Sqrt
@@ -149,6 +153,8 @@ import CompCert4Lean.Lib.IntvSets
 import CompCert4Lean.Lib.Iteration
 import CompCert4Lean.Lib.Lattice
 import CompCert4Lean.Lib.Maps
+import CompCert4Lean.Lib.MSetAVL
+import CompCert4Lean.Lib.MSetGenTree
 import CompCert4Lean.Lib.Ordered
 import CompCert4Lean.Lib.Postorder
 import CompCert4Lean.Lib.UnionFind
