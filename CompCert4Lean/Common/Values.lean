@@ -320,14 +320,18 @@ def has_rettype (v : val) (r : xtype) : Prop :=
   | _, Vundef => True
   | _, _ => False
 
-def has_subtypeStatement : Prop := True
-def has_proj_xtypeStatement : Prop := True
-def has_inj_typeStatement : Prop := True
+def has_subtypeStatement : Prop :=
+  ∀ ty1 ty2 v,
+    subtype ty1 ty2 = true → has_type v ty1 → has_type v ty2
+
+def has_proj_xtypeStatement : Prop :=
+  ∀ v t, has_rettype v t → has_type v (proj_xtype t)
+
+def has_inj_typeStatement : Prop :=
+  ∀ v t, has_type v t → has_rettype v (inj_type t)
 
 inductive bool_of_val : val → Bool → Prop where
   | bool_of_val_int (n : CCInt) : bool_of_val (Vint n) (!(Int.eq n Int.zero))
-
-def bool_of_val_of_optboolStatement : Prop := True
 
 def neg (v : val) : val := match v with | Vint n => Vint (Int.neg n) | _ => Vundef
 def negf (v : val) : val := match v with | Vfloat f => Vfloat (Float.neg f) | _ => Vundef
@@ -536,99 +540,6 @@ def load_result (chunk : memory_chunk) (v : val) : val :=
   | Many64, _ => v
   | _, _ => Vundef
 
-def norm_bool_casesStatement : Prop := True
-def norm_bool_idemStatement : Prop := True
-def norm_bool_is_lessdefStatement : Prop := True
-def norm_bool_lessdefStatement : Prop := True
-def load_result_xtypeStatement : Prop := True
-def load_result_typeStatement : Prop := True
-def load_result_sameStatement : Prop := True
-def load_result_lessdefStatement : Prop := True
-def load_result_injectStatement : Prop := True
-def add_commutStatement : Prop := True
-def add_assocStatement : Prop := True
-def add_permutStatement : Prop := True
-def add_permut_4Statement : Prop := True
-def add_lessdefStatement : Prop := True
-def add_injectStatement : Prop := True
-def sub_add_oppStatement : Prop := True
-def sub_add_lStatement : Prop := True
-def sub_add_rStatement : Prop := True
-def sub_injectStatement : Prop := True
-def mul_commutStatement : Prop := True
-def mul_add_distr_lStatement : Prop := True
-def mul_add_distr_rStatement : Prop := True
-def mul_pow2Statement : Prop := True
-def and_commutStatement : Prop := True
-def and_assocStatement : Prop := True
-def or_commutStatement : Prop := True
-def or_assocStatement : Prop := True
-def xor_commutStatement : Prop := True
-def xor_assocStatement : Prop := True
-def not_xorStatement : Prop := True
-def shl_mulStatement : Prop := True
-def addl_commutStatement : Prop := True
-def addl_assocStatement : Prop := True
-def addl_permutStatement : Prop := True
-def addl_permut_4Statement : Prop := True
-def addl_lessdefStatement : Prop := True
-def andl_commutStatement : Prop := True
-def andl_assocStatement : Prop := True
-def orl_commutStatement : Prop := True
-def orl_assocStatement : Prop := True
-def xorl_commutStatement : Prop := True
-def xorl_assocStatement : Prop := True
-def notl_xorlStatement : Prop := True
-def divs_pow2Statement : Prop := True
-def divs_oneStatement : Prop := True
-def divu_pow2Statement : Prop := True
-def divu_oneStatement : Prop := True
-def divls_pow2Statement : Prop := True
-def divlu_pow2Statement : Prop := True
-def modlu_pow2Statement : Prop := True
-def mods_divsStatement : Prop := True
-def modu_pow2Statement : Prop := True
-def negate_cmp_boolStatement : Prop := True
-def negate_cmpu_boolStatement : Prop := True
-def negate_cmpl_boolStatement : Prop := True
-def negate_cmplu_boolStatement : Prop := True
-def swap_cmp_boolStatement : Prop := True
-def swap_cmpu_boolStatement : Prop := True
-def swap_cmpl_boolStatement : Prop := True
-def swap_cmplu_boolStatement : Prop := True
-def cmpu_bool_lessdefStatement : Prop := True
-def cmplu_bool_lessdefStatement : Prop := True
-def cmpu_bool_injectStatement : Prop := True
-def cmplu_bool_injectStatement : Prop := True
-def offset_ptr_injectStatement : Prop := True
-def normalize_typeStatement : Prop := True
-def normalize_idemStatement : Prop := True
-def normalize_lessdefStatement : Prop := True
-def normalize_injectStatement : Prop := True
-def lessdef_normalizeStatement : Prop := True
-def select_injectStatement : Prop := True
-def of_optbool_lessdefStatement : Prop := True
-def longofwords_lessdefStatement : Prop := True
-def longofwords_injectStatement : Prop := True
-def loword_lessdefStatement : Prop := True
-def loword_injectStatement : Prop := True
-def hiword_lessdefStatement : Prop := True
-def hiword_injectStatement : Prop := True
-def has_argtype_lessdefStatement : Prop := True
-def has_argtype_injectStatement : Prop := True
-def has_argtype_list_lessdefStatement : Prop := True
-def has_argtype_list_injectStatement : Prop := True
-def lessdef_sameStatement : Prop := True
-def lessdef_transStatement : Prop := True
-def lessdef_list_transStatement : Prop := True
-def mull_commutStatement : Prop := True
-def shrx_shrStatement : Prop := True
-def shrxl_shrl_2Statement : Prop := True
-def subl_addl_lStatement : Prop := True
-def subl_addl_oppStatement : Prop := True
-def subl_addl_rStatement : Prop := True
-def zero_ext_andStatement : Prop := True
-
 inductive lessdef : val → val → Prop where
   | lessdef_refl (v : val) : lessdef v v
   | lessdef_undef (v : val) : lessdef Vundef v
@@ -704,17 +615,469 @@ inductive inject_list (mi : meminj) : List val → List val → Prop where
   | inject_list_nil : inject_list mi [] []
   | inject_list_cons : inject mi v1 v2 → inject_list mi vl1 vl2 → inject_list mi (v1 :: vl1) (v2 :: vl2)
 
+def bool_of_val_of_optboolStatement : Prop :=
+  ∀ ob b, bool_of_val (of_optbool ob) b → ob = some b
+
+def norm_bool_casesStatement : Prop :=
+  ∀ v, norm_bool v = Vundef ∨ norm_bool v = Vfalse ∨ norm_bool v = Vtrue
+
+def norm_bool_idemStatement : Prop :=
+  ∀ v, norm_bool (norm_bool v) = norm_bool v
+
+def norm_bool_is_lessdefStatement : Prop :=
+  ∀ v, lessdef (norm_bool v) v
+
+def norm_bool_lessdefStatement : Prop :=
+  ∀ v1 v2, lessdef v1 v2 → lessdef (norm_bool v1) (norm_bool v2)
+
+def load_result_xtypeStatement : Prop :=
+  ∀ chunk v, has_rettype (load_result chunk v) (xtype_of_chunk chunk)
+
+def load_result_typeStatement : Prop :=
+  ∀ chunk v, has_type (load_result chunk v) (type_of_chunk chunk)
+
+def load_result_sameStatement : Prop :=
+  ∀ v ty, has_type v ty → load_result (chunk_of_type ty) v = v
+
+def load_result_lessdefStatement : Prop :=
+  ∀ chunk v1 v2,
+    lessdef v1 v2 → lessdef (load_result chunk v1) (load_result chunk v2)
+
+def load_result_injectStatement : Prop :=
+  ∀ (f : meminj) chunk v1 v2,
+    inject f v1 v2 → inject f (load_result chunk v1) (load_result chunk v2)
+
+def add_commutStatement : Prop :=
+  ∀ x y, add x y = add y x
+
+def add_assocStatement : Prop :=
+  ∀ x y z, add (add x y) z = add x (add y z)
+
+def add_permutStatement : Prop :=
+  ∀ x y z, add x (add y z) = add y (add x z)
+
+def add_permut_4Statement : Prop :=
+  ∀ x y z t, add (add x y) (add z t) = add (add x z) (add y t)
+
+def add_lessdefStatement : Prop :=
+  ∀ v1 v1' v2 v2',
+    lessdef v1 v1' → lessdef v2 v2' → lessdef (add v1 v2) (add v1' v2')
+
+def add_injectStatement : Prop :=
+  ∀ (f : meminj) v1 v1' v2 v2',
+    inject f v1 v1' →
+    inject f v2 v2' →
+    inject f (add v1 v2) (add v1' v2')
+
+def sub_add_oppStatement : Prop :=
+  ∀ x y, sub x (Vint y) = add x (Vint (Int.neg y))
+
+def sub_add_lStatement : Prop :=
+  ∀ v1 v2 i, sub (add v1 (Vint i)) v2 = add (sub v1 v2) (Vint i)
+
+def sub_add_rStatement : Prop :=
+  ∀ v1 v2 i,
+    sub v1 (add v2 (Vint i)) = add (sub v1 v2) (Vint (Int.neg i))
+
+def sub_injectStatement : Prop :=
+  ∀ (f : meminj) v1 v1' v2 v2',
+    inject f v1 v1' →
+    inject f v2 v2' →
+    inject f (sub v1 v2) (sub v1' v2')
+
+def mul_commutStatement : Prop :=
+  ∀ x y, mul x y = mul y x
+
+def mul_add_distr_lStatement : Prop :=
+  ∀ x y z, mul (add x y) z = add (mul x z) (mul y z)
+
+def mul_add_distr_rStatement : Prop :=
+  ∀ x y z, mul x (add y z) = add (mul x y) (mul x z)
+
+def mul_pow2Statement : Prop :=
+  ∀ x n logn,
+    Int.is_power2 n = some logn →
+    mul x (Vint n) = shl x (Vint logn)
+
+def and_commutStatement : Prop :=
+  ∀ x y, and x y = and y x
+
+def and_assocStatement : Prop :=
+  ∀ x y z, and (and x y) z = and x (and y z)
+
+def or_commutStatement : Prop :=
+  ∀ x y, or x y = or y x
+
+def or_assocStatement : Prop :=
+  ∀ x y z, or (or x y) z = or x (or y z)
+
+def xor_commutStatement : Prop :=
+  ∀ x y, xor x y = xor y x
+
+def xor_assocStatement : Prop :=
+  ∀ x y z, xor (xor x y) z = xor x (xor y z)
+
+def not_xorStatement : Prop :=
+  ∀ x, notint x = xor x (Vint Int.mone)
+
+def shl_mulStatement : Prop :=
+  ∀ x y, mul x (shl Vone y) = shl x y
+
+def addl_commutStatement : Prop :=
+  ∀ x y, addl x y = addl y x
+
+def addl_assocStatement : Prop :=
+  ∀ x y z, addl (addl x y) z = addl x (addl y z)
+
+def addl_permutStatement : Prop :=
+  ∀ x y z, addl x (addl y z) = addl y (addl x z)
+
+def addl_permut_4Statement : Prop :=
+  ∀ x y z t, addl (addl x y) (addl z t) = addl (addl x z) (addl y t)
+
+def addl_lessdefStatement : Prop :=
+  ∀ v1 v1' v2 v2',
+    lessdef v1 v1' → lessdef v2 v2' → lessdef (addl v1 v2) (addl v1' v2')
+
+def andl_commutStatement : Prop :=
+  ∀ x y, andl x y = andl y x
+
+def andl_assocStatement : Prop :=
+  ∀ x y z, andl (andl x y) z = andl x (andl y z)
+
+def orl_commutStatement : Prop :=
+  ∀ x y, orl x y = orl y x
+
+def orl_assocStatement : Prop :=
+  ∀ x y z, orl (orl x y) z = orl x (orl y z)
+
+def xorl_commutStatement : Prop :=
+  ∀ x y, xorl x y = xorl y x
+
+def xorl_assocStatement : Prop :=
+  ∀ x y z, xorl (xorl x y) z = xorl x (xorl y z)
+
+def notl_xorlStatement : Prop :=
+  ∀ x, notl x = xorl x (Vlong Int64.mone)
+
+def divs_pow2Statement : Prop :=
+  ∀ x n logn y,
+    Int.is_power2 n = some logn →
+    Int.ltu logn (Int.repr (zOfNat 31)) = true →
+    divs x (Vint n) = some y →
+    shrx x (Vint logn) = some y
+
+def divs_oneStatement : Prop :=
+  ∀ s, divs (Vint s) (Vint Int.one) = some (Vint s)
+
+def divu_pow2Statement : Prop :=
+  ∀ x n logn y,
+    Int.is_power2 n = some logn →
+    divu x (Vint n) = some y →
+    shru x (Vint logn) = y
+
+def divu_oneStatement : Prop :=
+  ∀ s, divu (Vint s) (Vint Int.one) = some (Vint s)
+
+def divls_pow2Statement : Prop :=
+  ∀ x n logn y,
+    Int64.is_power2' n = some logn →
+    Int.ltu logn (Int.repr (zOfNat 63)) = true →
+    divls x (Vlong n) = some y →
+    shrxl x (Vint logn) = some y
+
+def divlu_pow2Statement : Prop :=
+  ∀ x n logn y,
+    Int64.is_power2' n = some logn →
+    divlu x (Vlong n) = some y →
+    shrlu x (Vint logn) = y
+
+def modlu_pow2Statement : Prop :=
+  ∀ x n logn y,
+    Int64.is_power2 n = some logn →
+    modlu x (Vlong n) = some y →
+    andl x (Vlong (Int64.sub n Int64.one)) = y
+
+def mods_divsStatement : Prop :=
+  ∀ x y z,
+    mods x y = some z → ∃ v, divs x y = some v ∧ z = sub x (mul v y)
+
+def modu_pow2Statement : Prop :=
+  ∀ x n logn y,
+    Int.is_power2 n = some logn →
+    modu x (Vint n) = some y →
+    and x (Vint (Int.sub n Int.one)) = y
+
+def negate_cmp_boolStatement : Prop :=
+  ∀ c x y,
+    cmp_bool (negate_comparison c) x y =
+      CompCert4Lean.Lib.Coqlib.option_map Bool.not (cmp_bool c x y)
+
+def negate_cmpu_boolStatement : Prop :=
+  ∀ valid_ptr c x y,
+    cmpu_bool valid_ptr (negate_comparison c) x y =
+      CompCert4Lean.Lib.Coqlib.option_map Bool.not (cmpu_bool valid_ptr c x y)
+
+def negate_cmpl_boolStatement : Prop :=
+  ∀ c x y,
+    cmpl_bool (negate_comparison c) x y =
+      CompCert4Lean.Lib.Coqlib.option_map Bool.not (cmpl_bool c x y)
+
+def negate_cmplu_boolStatement : Prop :=
+  ∀ valid_ptr c x y,
+    cmplu_bool valid_ptr (negate_comparison c) x y =
+      CompCert4Lean.Lib.Coqlib.option_map Bool.not (cmplu_bool valid_ptr c x y)
+
+def swap_cmp_boolStatement : Prop :=
+  ∀ c x y, cmp_bool (swap_comparison c) x y = cmp_bool c y x
+
+def swap_cmpu_boolStatement : Prop :=
+  ∀ valid_ptr c x y,
+    cmpu_bool valid_ptr (swap_comparison c) x y = cmpu_bool valid_ptr c y x
+
+def swap_cmpl_boolStatement : Prop :=
+  ∀ c x y, cmpl_bool (swap_comparison c) x y = cmpl_bool c y x
+
+def swap_cmplu_boolStatement : Prop :=
+  ∀ valid_ptr c x y,
+    cmplu_bool valid_ptr (swap_comparison c) x y = cmplu_bool valid_ptr c y x
+
+def cmpu_bool_lessdefStatement : Prop :=
+  ∀ (valid_ptr valid_ptr' : block → Z → Bool) c v1 v1' v2 v2' b,
+    (∀ b ofs, valid_ptr b ofs = true → valid_ptr' b ofs = true) →
+    lessdef v1 v1' →
+    lessdef v2 v2' →
+    cmpu_bool valid_ptr c v1 v2 = some b →
+    cmpu_bool valid_ptr' c v1' v2' = some b
+
+def cmplu_bool_lessdefStatement : Prop :=
+  ∀ (valid_ptr valid_ptr' : block → Z → Bool) c v1 v1' v2 v2' b,
+    (∀ b ofs, valid_ptr b ofs = true → valid_ptr' b ofs = true) →
+    lessdef v1 v1' →
+    lessdef v2 v2' →
+    cmplu_bool valid_ptr c v1 v2 = some b →
+    cmplu_bool valid_ptr' c v1' v2' = some b
+
+def cmpu_bool_injectStatement : Prop :=
+  ∀ (f : meminj) (valid_ptr1 valid_ptr2 : block → Z → Bool),
+    let weak_valid_ptr1 := fun (b : block) (ofs : Z) =>
+      valid_ptr1 b ofs || valid_ptr1 b (zSub ofs z1)
+    let weak_valid_ptr2 := fun (b : block) (ofs : Z) =>
+      valid_ptr2 b ofs || valid_ptr2 b (zSub ofs z1)
+    (∀ (b1 : block) (ofs : Ptrofs) (b2 : block) (delta : Z),
+      f b1 = some (b2, delta) →
+      valid_ptr1 b1 (Ptrofs.unsigned ofs) = true →
+      valid_ptr2 b2 (Ptrofs.unsigned (Ptrofs.add ofs (Ptrofs.repr delta))) = true) →
+    (∀ (b1 : block) (ofs : Ptrofs) (b2 : block) (delta : Z),
+      f b1 = some (b2, delta) →
+      weak_valid_ptr1 b1 (Ptrofs.unsigned ofs) = true →
+      weak_valid_ptr2 b2 (Ptrofs.unsigned (Ptrofs.add ofs (Ptrofs.repr delta))) = true) →
+    (∀ (b1 : block) (ofs : Ptrofs) (b2 : block) (delta : Z),
+      f b1 = some (b2, delta) →
+      weak_valid_ptr1 b1 (Ptrofs.unsigned ofs) = true →
+      zLe z0 (zAdd (Ptrofs.unsigned ofs) (Ptrofs.unsigned (Ptrofs.repr delta))) ∧
+      zLe (zAdd (Ptrofs.unsigned ofs) (Ptrofs.unsigned (Ptrofs.repr delta)))
+        Ptrofs.max_unsigned) →
+    (∀ (b1 : block) (ofs1 : Ptrofs) (b2 : block) (ofs2 : Ptrofs)
+        (b1' : block) (delta1 : Z) (b2' : block) (delta2 : Z),
+      b1 ≠ b2 →
+      valid_ptr1 b1 (Ptrofs.unsigned ofs1) = true →
+      valid_ptr1 b2 (Ptrofs.unsigned ofs2) = true →
+      f b1 = some (b1', delta1) →
+      f b2 = some (b2', delta2) →
+      b1' ≠ b2' ∨
+      Ptrofs.unsigned (Ptrofs.add ofs1 (Ptrofs.repr delta1)) ≠
+        Ptrofs.unsigned (Ptrofs.add ofs2 (Ptrofs.repr delta2))) →
+    ∀ c v1 v2 v1' v2' b,
+      inject f v1 v1' →
+      inject f v2 v2' →
+      cmpu_bool valid_ptr1 c v1 v2 = some b →
+      cmpu_bool valid_ptr2 c v1' v2' = some b
+
+def cmplu_bool_injectStatement : Prop :=
+  ∀ (f : meminj) (valid_ptr1 valid_ptr2 : block → Z → Bool),
+    let weak_valid_ptr1 := fun (b : block) (ofs : Z) =>
+      valid_ptr1 b ofs || valid_ptr1 b (zSub ofs z1)
+    let weak_valid_ptr2 := fun (b : block) (ofs : Z) =>
+      valid_ptr2 b ofs || valid_ptr2 b (zSub ofs z1)
+    (∀ (b1 : block) (ofs : Ptrofs) (b2 : block) (delta : Z),
+      f b1 = some (b2, delta) →
+      valid_ptr1 b1 (Ptrofs.unsigned ofs) = true →
+      valid_ptr2 b2 (Ptrofs.unsigned (Ptrofs.add ofs (Ptrofs.repr delta))) = true) →
+    (∀ (b1 : block) (ofs : Ptrofs) (b2 : block) (delta : Z),
+      f b1 = some (b2, delta) →
+      weak_valid_ptr1 b1 (Ptrofs.unsigned ofs) = true →
+      weak_valid_ptr2 b2 (Ptrofs.unsigned (Ptrofs.add ofs (Ptrofs.repr delta))) = true) →
+    (∀ (b1 : block) (ofs : Ptrofs) (b2 : block) (delta : Z),
+      f b1 = some (b2, delta) →
+      weak_valid_ptr1 b1 (Ptrofs.unsigned ofs) = true →
+      zLe z0 (zAdd (Ptrofs.unsigned ofs) (Ptrofs.unsigned (Ptrofs.repr delta))) ∧
+      zLe (zAdd (Ptrofs.unsigned ofs) (Ptrofs.unsigned (Ptrofs.repr delta)))
+        Ptrofs.max_unsigned) →
+    (∀ (b1 : block) (ofs1 : Ptrofs) (b2 : block) (ofs2 : Ptrofs)
+        (b1' : block) (delta1 : Z) (b2' : block) (delta2 : Z),
+      b1 ≠ b2 →
+      valid_ptr1 b1 (Ptrofs.unsigned ofs1) = true →
+      valid_ptr1 b2 (Ptrofs.unsigned ofs2) = true →
+      f b1 = some (b1', delta1) →
+      f b2 = some (b2', delta2) →
+      b1' ≠ b2' ∨
+      Ptrofs.unsigned (Ptrofs.add ofs1 (Ptrofs.repr delta1)) ≠
+        Ptrofs.unsigned (Ptrofs.add ofs2 (Ptrofs.repr delta2))) →
+    ∀ c v1 v2 v1' v2' b,
+      inject f v1 v1' →
+      inject f v2 v2' →
+      cmplu_bool valid_ptr1 c v1 v2 = some b →
+      cmplu_bool valid_ptr2 c v1' v2' = some b
+
+def offset_ptr_injectStatement : Prop :=
+  ∀ (f : meminj) v v' ofs,
+    inject f v v' → inject f (offset_ptr v ofs) (offset_ptr v' ofs)
+
+def normalize_typeStatement : Prop :=
+  ∀ v ty, has_type (normalize v ty) ty
+
+def normalize_idemStatement : Prop :=
+  ∀ v ty, has_type v ty → normalize v ty = v
+
+def normalize_lessdefStatement : Prop :=
+  ∀ v v' ty, lessdef v v' → lessdef (normalize v ty) (normalize v' ty)
+
+def normalize_injectStatement : Prop :=
+  ∀ (f : meminj) v v' ty,
+    inject f v v' → inject f (normalize v ty) (normalize v' ty)
+
+def lessdef_normalizeStatement : Prop :=
+  ∀ v ty, lessdef (normalize v ty) v
+
+def select_injectStatement : Prop :=
+  ∀ (f : meminj) (ob ob' : Option Bool) v1 v1' v2 v2' ty,
+    (ob = none ∨ ob = ob') →
+    inject f v1 v1' →
+    inject f v2 v2' →
+    inject f (select ob v1 v2 ty) (select ob' v1' v2' ty)
+
+def of_optbool_lessdefStatement : Prop :=
+  ∀ (ob ob' : Option Bool),
+    (∀ b, ob = some b → ob' = some b) →
+    lessdef (of_optbool ob) (of_optbool ob')
+
+def longofwords_lessdefStatement : Prop :=
+  ∀ v1 v2 v1' v2',
+    lessdef v1 v1' →
+    lessdef v2 v2' →
+    lessdef (longofwords v1 v2) (longofwords v1' v2')
+
+def longofwords_injectStatement : Prop :=
+  ∀ (f : meminj) v1 v2 v1' v2',
+    inject f v1 v1' →
+    inject f v2 v2' →
+    inject f (longofwords v1 v2) (longofwords v1' v2')
+
+def loword_lessdefStatement : Prop :=
+  ∀ v v', lessdef v v' → lessdef (loword v) (loword v')
+
+def loword_injectStatement : Prop :=
+  ∀ (f : meminj) v v', inject f v v' → inject f (loword v) (loword v')
+
+def hiword_lessdefStatement : Prop :=
+  ∀ v v', lessdef v v' → lessdef (hiword v) (hiword v')
+
+def hiword_injectStatement : Prop :=
+  ∀ (f : meminj) v v', inject f v v' → inject f (hiword v) (hiword v')
+
+def has_argtype_lessdefStatement : Prop :=
+  ∀ v r v', has_argtype v r → lessdef v v' → has_argtype v' r
+
+def has_argtype_injectStatement : Prop :=
+  ∀ (f : meminj) v r v', has_argtype v r → inject f v v' → has_argtype v' r
+
+def has_argtype_list_lessdefStatement : Prop :=
+  ∀ vl rl vl',
+    has_argtype_list vl rl → lessdef_list vl vl' → has_argtype_list vl' rl
+
+def has_argtype_list_injectStatement : Prop :=
+  ∀ (f : meminj) vl rl vl',
+    has_argtype_list vl rl → inject_list f vl vl' → has_argtype_list vl' rl
+
+def lessdef_sameStatement : Prop :=
+  ∀ v1 v2, v1 = v2 → lessdef v1 v2
+
+def lessdef_transStatement : Prop :=
+  ∀ v1 v2 v3, lessdef v1 v2 → lessdef v2 v3 → lessdef v1 v3
+
+def lessdef_list_transStatement : Prop :=
+  ∀ vl1 vl2,
+    lessdef_list vl1 vl2 → ∀ vl3, lessdef_list vl2 vl3 → lessdef_list vl1 vl3
+
+def mull_commutStatement : Prop :=
+  ∀ x y, mull x y = mull y x
+
+def shrx_shrStatement : Prop :=
+  ∀ x y z,
+    shrx x y = some z →
+    ∃ p q,
+      x = Vint p ∧
+      y = Vint q ∧
+      z = shr
+        (if Int.lt p Int.zero then
+          add x (Vint (Int.sub (Int.shl Int.one q) Int.one))
+        else x)
+        (Vint q)
+
+def shrxl_shrl_2Statement : Prop :=
+  ∀ n x z,
+    shrxl x (Vint n) = some z →
+    z = if Int.eq n Int.zero then x else
+      shrl
+        (addl x
+          (shrlu (shrl x (Vint (Int.repr (zOfNat 63))))
+            (Vint (Int.sub (Int.repr (zOfNat 64)) n))))
+        (Vint n)
+
+def subl_addl_lStatement : Prop :=
+  ∀ v1 v2 i, subl (addl v1 (Vlong i)) v2 = addl (subl v1 v2) (Vlong i)
+
+def subl_addl_oppStatement : Prop :=
+  ∀ x y, subl x (Vlong y) = addl x (Vlong (Int64.neg y))
+
+def subl_addl_rStatement : Prop :=
+  ∀ v1 v2 i,
+    subl v1 (addl v2 (Vlong i)) = addl (subl v1 v2) (Vlong (Int64.neg i))
+
+def zero_ext_andStatement : Prop :=
+  ∀ n v,
+    zLe z0 n → zero_ext n v = and v (Vint (Int.repr (zSub (zTwoP n) z1)))
+
 def inject_incr (f1 f2 : meminj) : Prop := ∀ b b' delta, f1 b = some (b', delta) → f2 b = some (b', delta)
 def inject_id : meminj := fun b => some (b, z0)
 
 end Val
 
-def inject_incr_reflStatement : Prop := True
-def inject_incr_transStatement : Prop := True
-def val_inject_incrStatement : Prop := True
-def val_inject_list_incrStatement : Prop := True
-def val_inject_lessdefStatement : Prop := True
-def val_inject_list_lessdefStatement : Prop := True
-def val_inject_idStatement : Prop := True
+def inject_incr_reflStatement : Prop :=
+  ∀ f : Val.meminj, Val.inject_incr f f
+
+def inject_incr_transStatement : Prop :=
+  ∀ f1 f2 f3,
+    Val.inject_incr f1 f2 → Val.inject_incr f2 f3 → Val.inject_incr f1 f3
+
+def val_inject_incrStatement : Prop :=
+  ∀ f1 f2 v v',
+    Val.inject_incr f1 f2 → Val.inject f1 v v' → Val.inject f2 v v'
+
+def val_inject_list_incrStatement : Prop :=
+  ∀ f1 f2 vl vl',
+    Val.inject_incr f1 f2 → Val.inject_list f1 vl vl' → Val.inject_list f2 vl vl'
+
+def val_inject_lessdefStatement : Prop :=
+  ∀ v1 v2,
+    Val.lessdef v1 v2 ↔ Val.inject (fun b => some (b, z0)) v1 v2
+
+def val_inject_list_lessdefStatement : Prop :=
+  ∀ vl1 vl2,
+    Val.lessdef_list vl1 vl2 ↔ Val.inject_list (fun b => some (b, z0)) vl1 vl2
+
+def val_inject_idStatement : Prop :=
+  ∀ v1 v2, Val.inject Val.inject_id v1 v2 ↔ Val.lessdef v1 v2
 
 end CompCert4Lean.Common.Values
