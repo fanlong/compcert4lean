@@ -48,35 +48,6 @@ private def needednessAnalysisFailedText : RocqString :=
   bytesToString [78, 101, 101, 100, 101, 100, 110, 101, 115, 115, 32, 97,
     110, 97, 108, 121, 115, 105, 115, 32, 102, 97, 105, 108, 101, 100]
 
-/-! The source solver's generated lattice is not a public provider surface.
-    These adapters retain its map shape while using the executable domain API
-    exposed by `NeedDomain`. -/
-
-private def nval_beq (x y : nval) : Bool :=
-  match x, y with
-  | Nothing, Nothing => true
-  | nval.I a, nval.I b => CompCert4Lean.Lib.Integers.Int.eq a b
-  | nval.L a, nval.L b => CompCert4Lean.Lib.Integers.Int64.eq a b
-  | nval.All, nval.All => true
-  | _, _ => false
-
-private def nenv_lub (x y : nenv) : nenv :=
-  (nlub x.1 y.1,
-    PTree.combine
-      (fun a b =>
-        match a, b with
-        | some u, some v => some (nlub u v)
-        | some u, none => some (nlub u y.1)
-        | none, some v => some (nlub x.1 v)
-        | none, none => none)
-      x.2 y.2)
-
-private def nenv_beq (x y : nenv) : Bool :=
-  nval_beq x.1 y.1 && ZTree.beq nval_beq x.2 y.2
-
-private def nenv_eq (x y : nenv) : Prop :=
-  ∀ r, PMap.get r x = PMap.get r y
-
 private def nmem_lub (x y : nmem) : nmem :=
   match x, y with
   | NMemDead, z => z
@@ -90,13 +61,13 @@ private def nmem_beq (x y : nmem) : Bool :=
   | _, _ => false
 
 private def na_lub (x y : NA.t) : NA.t :=
-  (nenv_lub x.1 y.1, nmem_lub x.2 y.2)
+  (NE.lub x.1 y.1, nmem_lub x.2 y.2)
 
 private def na_beq (x y : NA.t) : Bool :=
-  nenv_beq x.1 y.1 && nmem_beq x.2 y.2
+  NE.beq x.1 y.1 && nmem_beq x.2 y.2
 
 private def na_eq (x y : NA.t) : Prop :=
-  nenv_eq x.1 y.1 ∧ x.2 = y.2
+  NE.eq x.1 y.1 ∧ x.2 = y.2
 
 private def na_lattice : SemiLattice :=
   { t := NA.t
@@ -107,10 +78,10 @@ private def na_lattice : SemiLattice :=
     ge := NA.ge }
 
 def add_need_all (r : reg) (ne : nenv) : nenv :=
-  Regmap.set r All ne
+  NE.set r All ne
 
 def add_need (r : reg) (nv : nval) (ne : nenv) : nenv :=
-  Regmap.set r (nlub nv (Regmap.get r ne)) ne
+  NE.set r (nlub nv (NE.get r ne)) ne
 
 def add_needs_all : List reg → nenv → nenv
   | [], ne => ne
@@ -132,7 +103,7 @@ def add_opt_need_all (or : Option reg) (ne : nenv) : nenv :=
   | none => ne
 
 def kill (r : reg) (ne : nenv) : nenv :=
-  Regmap.set r Nothing ne
+  NE.set r Nothing ne
 
 def is_dead (v : nval) : Bool :=
   match v with
@@ -160,19 +131,19 @@ def transfer_builtin_arg (nv : nval) (na : NA.t) (a : builtin_arg reg) : NA.t :=
 def transfer_builtin_args (na : NA.t) (al : List (builtin_arg reg)) : NA.t :=
   al.foldl (fun acc a => transfer_builtin_arg All acc a) na
 
-def kill_builtin_res (res : builtin_res reg) (ne : nenv) : nenv :=
+def kill_builtin_res (res : builtin_res reg) (ne : NE.t) : NE.t :=
   match res with
   | .BR r => kill r ne
   | _ => ne
 
-def builtin_res_dead (res : builtin_res reg) (ne : nenv) : Bool :=
+def builtin_res_dead (res : builtin_res reg) (ne : NE.t) : Bool :=
   match res with
   | .BR r => is_dead (nreg ne r)
   | _ => false
 
 def transfer_builtin (app : VA.t) (ef : external_function)
     (args : List (builtin_arg reg)) (res : builtin_res reg)
-    (ne : nenv) (nm : nmem) : NA.t :=
+    (ne : NE.t) (nm : nmem) : NA.t :=
   match ef, args with
   | .EF_vload chunk, a1 :: [] =>
       transfer_builtin_arg All
@@ -232,7 +203,7 @@ def transfer (f : function) (dm : defmap) (approx : PMap.t VA.t)
           if is_dead nres then after
           else (add_needs_all args (add_ros_need_all ros (kill res ne)), nm)
   | some (.Itailcall _ ros args) =>
-      (add_needs_all args (add_ros_need_all ros (PMap.init Nothing)),
+      (add_needs_all args (add_ros_need_all ros NE.bot),
         nmem_dead_stack f.fn_stacksize)
   | some (.Ibuiltin ef args res _) => transfer_builtin (PMap.get pc approx) ef args res ne nm
   | some (.Icond cond args s1 s2) =>

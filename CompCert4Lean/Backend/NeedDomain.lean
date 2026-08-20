@@ -26,6 +26,7 @@ open CompCert4Lean.Foundation.Numbers.Rocq.Coq
 open CompCert4Lean.Backend.Registers
 open CompCert4Lean.Backend.RTL
 open CompCert4Lean.Backend.ValueDomain
+open CompCert4Lean.X86.Op
 open CompCert4Lean.Common.AST
 open CompCert4Lean.Common.Globalenvs
 open CompCert4Lean.Common.Memdata
@@ -35,6 +36,7 @@ open CompCert4Lean.Lib.Coqlib
 open CompCert4Lean.Lib.IntvSets
 open CompCert4Lean.Lib.Integers
 open CompCert4Lean.Lib.Maps
+open CompCert4Lean.Lib.Zbits
 
 private abbrev int := CompCert4Lean.Lib.Integers.int
 private abbrev int64 := CompCert4Lean.Lib.Integers.int64
@@ -319,7 +321,7 @@ def default (x : nval) : nval :=
 def andimm_redundant (x : nval) (n : int) : Bool :=
   match x with
   | Nothing => true
-  | I m => decide (Int.and m n = Int.zero)
+  | I m => decide (Int.and m (Int.not n) = Int.zero)
   | _ => false
 
 def orimm_redundant (x : nval) (n : int) : Bool :=
@@ -352,15 +354,108 @@ def orlimm_redundant (x : nval) (n : int64) : Bool :=
   | L m => decide (Int64.and m n = Int64.zero)
   | _ => false
 
-def nenv : Type := PMap.t nval
-private def nenv_bot : nenv := PMap.init Nothing
-private def nenv_get (r : reg) (ne : nenv) : nval := PMap.get r ne
-private def nenv_set (r : reg) (v : nval) (ne : nenv) : nenv := PMap.set r v ne
+namespace NVal
 
-def nreg (ne : nenv) (r : reg) : nval := nenv_get r ne
+def t : Type := nval
+def eq (x y : t) : Prop := x = y
+def beq : t → t → Bool
+  | Nothing, Nothing => true
+  | I m, I n => Int.eq m n
+  | L m, L n => Int64.eq m n
+  | All, All => true
+  | _, _ => false
+def ge : t → t → Prop := nge
+def bot : t := Nothing
+def lub : t → t → t := nlub
+
+def eq_refl : Prop := ∀ x, eq x x
+def eq_sym : Prop := ∀ x y, eq x y → eq y x
+def eq_trans : Prop := ∀ x y z, eq x y → eq y z → eq x z
+def beq_correct : Prop := ∀ x y, beq x y = true → eq x y
+def ge_refl : Prop := ∀ x y, eq x y → ge x y
+def ge_trans : Prop := ∀ x y z, ge x y → ge y z → ge x z
+def ge_bot : Prop := ∀ x, ge x bot
+def ge_lub_left : Prop := ∀ x y, ge (lub x y) x
+def ge_lub_right : Prop := ∀ x y, ge (lub x y) y
+
+end NVal
+
+namespace NE
+
+def t : Type := PTree.t NVal.t
+
+def get (p : positive) (x : t) : NVal.t :=
+  match PTree.get p x with
+  | none => NVal.bot
+  | some v => v
+
+def set (p : positive) (v : NVal.t) (x : t) : t :=
+  if NVal.beq v NVal.bot then PTree.remove p x else PTree.set p v x
+
+def eq (x y : t) : Prop := ∀ p, NVal.eq (get p x) (get p y)
+
+private def treeBeq : PTree.tree' NVal.t → PTree.tree' NVal.t → Bool
+  | .Node001 r₁, .Node001 r₂ => treeBeq r₁ r₂
+  | .Node010 x₁, .Node010 x₂ => NVal.beq x₁ x₂
+  | .Node011 x₁ r₁, .Node011 x₂ r₂ => NVal.beq x₁ x₂ && treeBeq r₁ r₂
+  | .Node100 l₁, .Node100 l₂ => treeBeq l₁ l₂
+  | .Node101 l₁ r₁, .Node101 l₂ r₂ => treeBeq l₁ l₂ && treeBeq r₁ r₂
+  | .Node110 l₁ x₁, .Node110 l₂ x₂ => NVal.beq x₁ x₂ && treeBeq l₁ l₂
+  | .Node111 l₁ x₁ r₁, .Node111 l₂ x₂ r₂ =>
+      NVal.beq x₁ x₂ && treeBeq l₁ l₂ && treeBeq r₁ r₂
+  | _, _ => false
+
+def beq : t → t → Bool
+  | .Empty, .Empty => true
+  | .Nodes m₁, .Nodes m₂ => treeBeq m₁ m₂
+  | _, _ => false
+
+def ge (x y : t) : Prop := ∀ p, NVal.ge (get p x) (get p y)
+
+def bot : t := PTree.empty _
+
+def lub (x y : t) : t :=
+  PTree.combine
+    (fun a b =>
+      match a, b with
+      | some u, some v => some (NVal.lub u v)
+      | none, _ => b
+      | _, none => a)
+    x y
+
+def gsspec : Prop :=
+  ∀ p v x q,
+    NVal.eq (get q (set p v x))
+      (match peq q p with | .left _ => v | .right _ => get q x)
+
+def eq_refl : Prop := ∀ x, eq x x
+
+def eq_sym : Prop := ∀ x y, eq x y → eq y x
+
+def eq_trans : Prop := ∀ x y z, eq x y → eq y z → eq x z
+
+def beq_correct : Prop := ∀ x y, beq x y = true → eq x y
+
+def ge_refl : Prop := ∀ x y, eq x y → ge x y
+
+def ge_trans : Prop := ∀ x y z, ge x y → ge y z → ge x z
+
+def get_bot : Prop := ∀ p, get p bot = NVal.bot
+
+def ge_bot : Prop := ∀ x, ge x bot
+
+def ge_lub_left : Prop := ∀ x y, ge (lub x y) x
+
+def ge_lub_right : Prop := ∀ x y, ge (lub x y) y
+
+end NE
+
+def nenv : Type := NE.t
+
+def nreg (ne : nenv) (r : reg) : nval := NE.get r ne
 
 def eagree (e1 e2 : regset) (ne : nenv) : Prop :=
-  ∀ r, vagree (Regmap.get r e1) (Regmap.get r e2) (nenv_get r ne)
+  ∀ r, vagree (Regmap.get r e1) (Regmap.get r e2) (NE.get r ne)
 
 inductive nmem : Type where
   | NMemDead
@@ -427,113 +522,447 @@ def nmem_dead_stack (sz : Z) : nmem := NMem (ISet.interval z0 sz) (PTree.empty _
 namespace NA
 def t : Type := nenv × nmem
 def ge (x y : t) : Prop :=
-  (∀ r, nge (PMap.get r x.1) (PMap.get r y.1)) ∧
+  (∀ r, nge (NE.get r x.1) (NE.get r y.1)) ∧
   (∀ ge sp b ofs, nlive ge sp y.2 b ofs → nlive ge sp x.2 b ofs)
-def bot : t := (nenv_bot, NMemDead)
+def bot : t := (NE.bot, NMemDead)
 end NA
 
-/-! Deferred theorem surfaces. -/
+/-! Exact source-shaped theorem surfaces. -/
 
-def add_soundStatement : Prop := True
-def addl_soundStatement : Prop := True
-def and_soundStatement : Prop := True
-def andimm_redundant_soundStatement : Prop := True
-def andimm_soundStatement : Prop := True
-def andl_soundStatement : Prop := True
-def andlimm_redundant_soundStatement : Prop := True
-def andlimm_soundStatement : Prop := True
-def complete_mask64_idemStatement : Prop := True
-def complete_mask_idemStatement : Prop := True
-def default_needs_of_condition_soundStatement : Prop := True
-def default_needs_of_operation_soundStatement : Prop := True
-def eagree_geStatement : Prop := True
-def eagree_updateStatement : Prop := True
-def eagree_update_deadStatement : Prop := True
-def eq_same_bitsStatement : Prop := True
-def eq_same_bits64Statement : Prop := True
-def eqmod_iagreeStatement : Prop := True
-def eqmod_lagreeStatement : Prop := True
-def hiword_soundStatement : Prop := True
-def iagree_andStatement : Prop := True
-def iagree_and_eqStatement : Prop := True
-def iagree_bitwise_binopStatement : Prop := True
-def iagree_eqmodStatement : Prop := True
-def iagree_moneStatement : Prop := True
-def iagree_notStatement : Prop := True
-def iagree_not'Statement : Prop := True
-def iagree_orStatement : Prop := True
-def iagree_rolStatement : Prop := True
-def iagree_rorStatement : Prop := True
-def iagree_shlStatement : Prop := True
-def iagree_shrStatement : Prop := True
-def iagree_shr_1Statement : Prop := True
-def iagree_shruStatement : Prop := True
-def iagree_zeroStatement : Prop := True
-def incl_nmem_addStatement : Prop := True
-def lagree_andStatement : Prop := True
-def lagree_and_eqStatement : Prop := True
-def lagree_bitwise_binopStatement : Prop := True
-def lagree_eqmodStatement : Prop := True
-def lagree_moneStatement : Prop := True
-def lagree_notStatement : Prop := True
-def lagree_not'Statement : Prop := True
-def lagree_orStatement : Prop := True
-def lagree_rolStatement : Prop := True
-def lagree_rorStatement : Prop := True
-def lagree_shlStatement : Prop := True
-def lagree_shrStatement : Prop := True
-def lagree_shr_1Statement : Prop := True
-def lagree_shruStatement : Prop := True
-def lessdef_vagreeStatement : Prop := True
-def lessdef_vagree_listStatement : Prop := True
-def longofint_soundStatement : Prop := True
-def longofintu_soundStatement : Prop := True
-def loword_soundStatement : Prop := True
-def makelong_soundStatement : Prop := True
-def maskzero_soundStatement : Prop := True
-def modarith_idemStatement : Prop := True
-def mul_soundStatement : Prop := True
-def mull_soundStatement : Prop := True
-def neg_soundStatement : Prop := True
-def negl_soundStatement : Prop := True
-def nge_agreeStatement : Prop := True
-def nge_lub_lStatement : Prop := True
-def nge_lub_rStatement : Prop := True
-def nlive_addStatement : Prop := True
-def nlive_allStatement : Prop := True
-def nlive_containsStatement : Prop := True
-def nlive_dead_stackStatement : Prop := True
-def nlive_removeStatement : Prop := True
-def normalize_soundStatement : Prop := True
-def notint_soundStatement : Prop := True
-def notl_soundStatement : Prop := True
-def or_soundStatement : Prop := True
-def orimm_redundant_soundStatement : Prop := True
-def orimm_soundStatement : Prop := True
-def orl_soundStatement : Prop := True
-def orlimm_redundant_soundStatement : Prop := True
-def orlimm_soundStatement : Prop := True
-def ror_soundStatement : Prop := True
-def rorl_soundStatement : Prop := True
-def select_soundStatement : Prop := True
-def shlimm_soundStatement : Prop := True
-def shllimm_soundStatement : Prop := True
-def shrimm_soundStatement : Prop := True
-def shrlimm_soundStatement : Prop := True
-def shrluimm_soundStatement : Prop := True
-def shruimm_soundStatement : Prop := True
-def sign_ext_redundant_soundStatement : Prop := True
-def sign_ext_soundStatement : Prop := True
-def store_argument_load_resultStatement : Prop := True
-def store_argument_soundStatement : Prop := True
-def vagree_bitwise64_binopStatement : Prop := True
-def vagree_bitwise_binopStatement : Prop := True
-def vagree_lessdefStatement : Prop := True
-def vagree_lessdef_listStatement : Prop := True
-def vagree_sameStatement : Prop := True
-def xor_soundStatement : Prop := True
-def xorl_soundStatement : Prop := True
-def zero_ext_redundant_soundStatement : Prop := True
-def zero_ext_soundStatement : Prop := True
+def add_soundStatement : Prop :=
+  ∀ v1 w1 v2 w2 x,
+    vagree v1 w1 (modarith x) → vagree v2 w2 (modarith x) →
+    vagree (Val.add v1 v2) (Val.add w1 w2) x
+
+def addl_soundStatement : Prop :=
+  ∀ v1 w1 v2 w2 x,
+    vagree v1 w1 (modarith x) → vagree v2 w2 (modarith x) →
+    vagree (Val.addl v1 v2) (Val.addl w1 w2) x
+
+def and_soundStatement : Prop :=
+  ∀ v1 w1 v2 w2 x,
+    vagree v1 w1 (bitwise x) → vagree v2 w2 (bitwise x) →
+    vagree (Val.and v1 v2) (Val.and w1 w2) x
+
+def andimm_redundant_soundStatement : Prop :=
+  ∀ v w x n,
+    andimm_redundant x n = true → vagree v w (andimm x n) →
+    vagree (Val.and v (Vint n)) w x
+
+def andimm_soundStatement : Prop :=
+  ∀ v w x n,
+    vagree v w (andimm x n) →
+    vagree (Val.and v (Vint n)) (Val.and w (Vint n)) x
+
+def andl_soundStatement : Prop :=
+  ∀ v1 w1 v2 w2 x,
+    vagree v1 w1 (bitwise x) → vagree v2 w2 (bitwise x) →
+    vagree (Val.andl v1 v2) (Val.andl w1 w2) x
+
+def andlimm_redundant_soundStatement : Prop :=
+  ∀ v w x n,
+    andlimm_redundant x n = true → vagree v w (andlimm x n) →
+    vagree (Val.andl v (Vlong n)) w x
+
+def andlimm_soundStatement : Prop :=
+  ∀ v w x n,
+    vagree v w (andlimm x n) →
+    vagree (Val.andl v (Vlong n)) (Val.andl w (Vlong n)) x
+
+def complete_mask64_idemStatement : Prop :=
+  ∀ m, complete_mask64 (complete_mask64 m) = complete_mask64 m
+
+def complete_mask_idemStatement : Prop :=
+  ∀ m, complete_mask (complete_mask m) = complete_mask m
+
+def default_needs_of_condition_soundStatement : Prop :=
+  ∀ (m1 m2 : mem),
+    (∀ b ofs k p, Mem.perm m1 b ofs k p → Mem.perm m2 b ofs k p) →
+    ∀ cond args1 b args2,
+      eval_condition cond args1 m1 = some b →
+      vagree_list args1 args2 [] →
+      eval_condition cond args2 m2 = some b
+
+def default_needs_of_operation_soundStatement : Prop :=
+  ∀ (ge : genv) (sp : block) (m1 m2 : mem),
+    (∀ b ofs k p, Mem.perm m1 b ofs k p → Mem.perm m2 b ofs k p) →
+    ∀ op args1 v1 args2 nv,
+      eval_operation ge (Vptr sp Ptrofs.zero) op args1 m1 = some v1 →
+      (vagree_list args1 args2 [] ∨
+       vagree_list args1 args2 (default nv :: []) ∨
+       vagree_list args1 args2 (default nv :: default nv :: []) ∨
+       vagree_list args1 args2 (default nv :: default nv :: default nv :: [])) →
+      nv ≠ Nothing →
+      ∃ v2, eval_operation ge (Vptr sp Ptrofs.zero) op args2 m2 = some v2 ∧
+        vagree v1 v2 nv
+
+def eagree_geStatement : Prop :=
+  ∀ e1 e2 ne ne', eagree e1 e2 ne → NE.ge ne ne' → eagree e1 e2 ne'
+
+def eagree_updateStatement : Prop :=
+  ∀ e1 e2 ne v1 v2 r,
+    vagree v1 v2 (nreg ne r) →
+    eagree e1 e2 (NE.set r Nothing ne) →
+    eagree (Regmap.set r v1 e1) (Regmap.set r v2 e2) ne
+
+def eagree_update_deadStatement : Prop :=
+  ∀ e1 e2 ne v1 r,
+    nreg ne r = Nothing → eagree e1 e2 ne →
+    eagree (Regmap.set r v1 e1) e2 ne
+
+def eq_same_bitsStatement : Prop :=
+  ∀ i x y, x = y → Int.testbit x i = Int.testbit y i
+
+def eq_same_bits64Statement : Prop :=
+  ∀ i x y, x = y → Int64.testbit x i = Int64.testbit y i
+
+def eqmod_iagreeStatement : Prop :=
+  ∀ m x y, eqmod (two_p (intSize m)) x y → iagree (Int.repr x) (Int.repr y) m
+
+def eqmod_lagreeStatement : Prop :=
+  ∀ m x y, eqmod (two_p (int64Size m)) x y →
+    lagree (Int64.repr x) (Int64.repr y) m
+
+def hiword_soundStatement : Prop :=
+  ∀ v w x, vagree v w (hiword x) →
+    vagree (Val.hiword v) (Val.hiword w) x
+
+def iagree_andStatement : Prop :=
+  ∀ x y n m, iagree x y (Int.and m n) →
+    iagree (Int.and x n) (Int.and y n) m
+
+def iagree_and_eqStatement : Prop :=
+  ∀ x y mask, iagree x y mask ↔ Int.and x mask = Int.and y mask
+
+def iagree_bitwise_binopStatement : Prop :=
+  ∀ (sem : Bool → Bool → Bool) (f : int → int → int),
+    (∀ x y i, (ZArith.BinInt.Z.le z0 i ∧ ZArith.BinInt.Z.lt i Int.zwordsize) →
+      Int.testbit (f x y) i = sem (Int.testbit x i) (Int.testbit y i)) →
+    ∀ x1 x2 y1 y2 m,
+      iagree x1 y1 m → iagree x2 y2 m → iagree (f x1 x2) (f y1 y2) m
+
+def iagree_eqmodStatement : Prop :=
+  ∀ x y m, iagree x y (complete_mask m) →
+    eqmod (two_p (intSize m)) (Int.unsigned x) (Int.unsigned y)
+
+def iagree_moneStatement : Prop :=
+  ∀ p q, iagree p q Int.mone → p = q
+
+def iagree_notStatement : Prop :=
+  ∀ x y m, iagree x y m → iagree (Int.not x) (Int.not y) m
+
+def iagree_not'Statement : Prop :=
+  ∀ x y m, iagree (Int.not x) (Int.not y) m → iagree x y m
+
+def iagree_orStatement : Prop :=
+  ∀ x y n m, iagree x y (Int.and m (Int.not n)) →
+    iagree (Int.or x n) (Int.or y n) m
+
+def iagree_rolStatement : Prop :=
+  ∀ p q m amount, iagree p q (Int.ror m amount) →
+    iagree (Int.rol p amount) (Int.rol q amount) m
+
+def iagree_rorStatement : Prop :=
+  ∀ p q m amount, iagree p q (Int.rol m amount) →
+    iagree (Int.ror p amount) (Int.ror q amount) m
+
+def iagree_shlStatement : Prop :=
+  ∀ x y m n, iagree x y (Int.shru m n) →
+    iagree (Int.shl x n) (Int.shl y n) m
+
+def iagree_shrStatement : Prop :=
+  ∀ x y m n,
+    iagree x y (Int.or (Int.shl m n) (Int.repr Int.min_signed)) →
+    iagree (Int.shr x n) (Int.shr y n) m
+
+def iagree_shr_1Statement : Prop :=
+  ∀ x y m n, Int.shru (Int.shl m n) n = m →
+    iagree x y (Int.shl m n) → iagree (Int.shr x n) (Int.shr y n) m
+
+def iagree_shruStatement : Prop :=
+  ∀ x y m n, iagree x y (Int.shl m n) →
+    iagree (Int.shru x n) (Int.shru y n) m
+
+def iagree_zeroStatement : Prop := ∀ p q, iagree p q Int.zero
+
+def incl_nmem_addStatement : Prop :=
+  ∀ (ge : genv) (sp : block) nm b i p sz,
+    nlive ge sp nm b i → nlive ge sp (nmem_add nm p sz) b i
+
+def lagree_andStatement : Prop :=
+  ∀ x y n m, lagree x y (Int64.and m n) →
+    lagree (Int64.and x n) (Int64.and y n) m
+
+def lagree_and_eqStatement : Prop :=
+  ∀ x y mask, lagree x y mask ↔ Int64.and x mask = Int64.and y mask
+
+def lagree_bitwise_binopStatement : Prop :=
+  ∀ (sem : Bool → Bool → Bool) (f : int64 → int64 → int64),
+    (∀ x y i, (ZArith.BinInt.Z.le z0 i ∧ ZArith.BinInt.Z.lt i Int64.zwordsize) →
+      Int64.testbit (f x y) i = sem (Int64.testbit x i) (Int64.testbit y i)) →
+    ∀ x1 x2 y1 y2 m,
+      lagree x1 y1 m → lagree x2 y2 m → lagree (f x1 x2) (f y1 y2) m
+
+def lagree_eqmodStatement : Prop :=
+  ∀ x y m, lagree x y (complete_mask64 m) →
+    eqmod (two_p (int64Size m)) (Int64.unsigned x) (Int64.unsigned y)
+
+def lagree_moneStatement : Prop :=
+  ∀ p q, lagree p q Int64.mone → p = q
+
+def lagree_notStatement : Prop :=
+  ∀ x y m, lagree x y m → lagree (Int64.not x) (Int64.not y) m
+
+def lagree_not'Statement : Prop :=
+  ∀ x y m, lagree (Int64.not x) (Int64.not y) m → lagree x y m
+
+def lagree_orStatement : Prop :=
+  ∀ x y n m, lagree x y (Int64.and m (Int64.not n)) →
+    lagree (Int64.or x n) (Int64.or y n) m
+
+def lagree_rolStatement : Prop :=
+  ∀ p q m amount, lagree p q (Int64.ror m amount) →
+    lagree (Int64.rol p amount) (Int64.rol q amount) m
+
+def lagree_rorStatement : Prop :=
+  ∀ p q m amount, lagree p q (Int64.rol' m amount) →
+    lagree (Int64.ror' p amount) (Int64.ror' q amount) m
+
+def lagree_shlStatement : Prop :=
+  ∀ x y m n, lagree x y (Int64.shru' m n) →
+    lagree (Int64.shl' x n) (Int64.shl' y n) m
+
+def lagree_shrStatement : Prop :=
+  ∀ x y m n,
+    lagree x y (Int64.or (Int64.shl' m n) (Int64.repr Int64.min_signed)) →
+    lagree (Int64.shr' x n) (Int64.shr' y n) m
+
+def lagree_shr_1Statement : Prop :=
+  ∀ x y m n, Int64.shru' (Int64.shl' m n) n = m →
+    lagree x y (Int64.shl' m n) → lagree (Int64.shr' x n) (Int64.shr' y n) m
+
+def lagree_shruStatement : Prop :=
+  ∀ x y m n, lagree x y (Int64.shl' m n) →
+    lagree (Int64.shru' x n) (Int64.shru' y n) m
+
+def lessdef_vagreeStatement : Prop :=
+  ∀ v w, vagree v w All → Val.lessdef v w
+
+def lessdef_vagree_listStatement : Prop :=
+  ∀ vl1 vl2, vagree_list vl1 vl2 [] → Val.lessdef_list vl1 vl2
+
+def longofint_soundStatement : Prop :=
+  ∀ v w x, vagree v w (longofint x) →
+    vagree (Val.longofint v) (Val.longofint w) x
+
+def longofintu_soundStatement : Prop :=
+  ∀ v w x, vagree v w (longofintu x) →
+    vagree (Val.longofintu v) (Val.longofintu w) x
+
+def loword_soundStatement : Prop :=
+  ∀ v w x, vagree v w (loword x) →
+    vagree (Val.loword v) (Val.loword w) x
+
+def makelong_soundStatement : Prop :=
+  ∀ v1 w1 v2 w2 x,
+    vagree v1 w1 (makelong_hi x) → vagree v2 w2 (makelong_lo x) →
+    vagree (Val.longofwords v1 v2) (Val.longofwords w1 w2) x
+
+def maskzero_soundStatement : Prop :=
+  ∀ v w n b, vagree v w (maskzero n) →
+    Val.maskzero_bool v n = some b → Val.maskzero_bool w n = some b
+
+def modarith_idemStatement : Prop := ∀ nv, modarith (modarith nv) = modarith nv
+
+def mul_soundStatement : Prop :=
+  ∀ v1 w1 v2 w2 x,
+    vagree v1 w1 (modarith x) → vagree v2 w2 (modarith x) →
+    vagree (Val.mul v1 v2) (Val.mul w1 w2) x
+
+def mull_soundStatement : Prop :=
+  ∀ v1 w1 v2 w2 x,
+    vagree v1 w1 (modarith x) → vagree v2 w2 (modarith x) →
+    vagree (Val.mull v1 v2) (Val.mull w1 w2) x
+
+def neg_soundStatement : Prop :=
+  ∀ v w x, vagree v w (modarith x) → vagree (Val.neg v) (Val.neg w) x
+
+def negl_soundStatement : Prop :=
+  ∀ v w x, vagree v w (modarith x) → vagree (Val.negl v) (Val.negl w) x
+
+def nge_agreeStatement : Prop :=
+  ∀ v w x y, nge x y → vagree v w x → vagree v w y
+
+def nge_lub_lStatement : Prop := ∀ x y, nge (nlub x y) x
+
+def nge_lub_rStatement : Prop := ∀ x y, nge (nlub x y) y
+
+def nlive_addStatement : Prop :=
+  ∀ (ge : genv) (sp : block) bc b ofs p nm sz i,
+    genv_match bc ge → bc sp = BCstack → pmatch bc b ofs p →
+    (ZArith.BinInt.Z.le (Ptrofs.unsigned ofs) i ∧
+      ZArith.BinInt.Z.lt i (ZArith.BinInt.Z.add (Ptrofs.unsigned ofs) sz)) →
+    nlive ge sp (nmem_add nm p sz) b i
+
+def nlive_allStatement : Prop :=
+  ∀ (ge : genv) (sp b : block) ofs, nlive ge sp nmem_all b ofs
+
+def nlive_containsStatement : Prop :=
+  ∀ (ge : genv) (sp : block) bc b ofs p nm sz i,
+    genv_match bc ge → bc sp = BCstack → pmatch bc b ofs p →
+    nmem_contains nm p sz = false →
+    (ZArith.BinInt.Z.le (Ptrofs.unsigned ofs) i ∧
+      ZArith.BinInt.Z.lt i (ZArith.BinInt.Z.add (Ptrofs.unsigned ofs) sz)) →
+    ¬ nlive ge sp nm b i
+
+def nlive_dead_stackStatement : Prop :=
+  ∀ (ge : genv) (sp : block) sz b' i,
+    b' ≠ sp ∨ ¬ (ZArith.BinInt.Z.le z0 i ∧ ZArith.BinInt.Z.lt i sz) →
+    nlive ge sp (nmem_dead_stack sz) b' i
+
+def nlive_removeStatement : Prop :=
+  ∀ (ge : genv) (sp : block) bc b ofs p nm sz b' i,
+    genv_match bc ge → bc sp = BCstack → pmatch bc b ofs p →
+    nlive ge sp nm b' i →
+    b' ≠ b ∨ ZArith.BinInt.Z.lt i (Ptrofs.unsigned ofs) ∨
+      ZArith.BinInt.Z.le (ZArith.BinInt.Z.add (Ptrofs.unsigned ofs) sz) i →
+    nlive ge sp (nmem_remove nm p sz) b' i
+
+def normalize_soundStatement : Prop :=
+  ∀ v w x ty, vagree v w x →
+    vagree (Val.normalize v ty) (Val.normalize w ty) x
+
+def notint_soundStatement : Prop :=
+  ∀ v w x, vagree v w (bitwise x) →
+    vagree (Val.notint v) (Val.notint w) x
+
+def notl_soundStatement : Prop :=
+  ∀ v w x, vagree v w (bitwise x) →
+    vagree (Val.notl v) (Val.notl w) x
+
+def or_soundStatement : Prop :=
+  ∀ v1 w1 v2 w2 x,
+    vagree v1 w1 (bitwise x) → vagree v2 w2 (bitwise x) →
+    vagree (Val.or v1 v2) (Val.or w1 w2) x
+
+def orimm_redundant_soundStatement : Prop :=
+  ∀ v w x n, orimm_redundant x n = true → vagree v w (orimm x n) →
+    vagree (Val.or v (Vint n)) w x
+
+def orimm_soundStatement : Prop :=
+  ∀ v w x n, vagree v w (orimm x n) →
+    vagree (Val.or v (Vint n)) (Val.or w (Vint n)) x
+
+def orl_soundStatement : Prop :=
+  ∀ v1 w1 v2 w2 x,
+    vagree v1 w1 (bitwise x) → vagree v2 w2 (bitwise x) →
+    vagree (Val.orl v1 v2) (Val.orl w1 w2) x
+
+def orlimm_redundant_soundStatement : Prop :=
+  ∀ v w x n, orlimm_redundant x n = true → vagree v w (orlimm x n) →
+    vagree (Val.orl v (Vlong n)) w x
+
+def orlimm_soundStatement : Prop :=
+  ∀ v w x n, vagree v w (orlimm x n) →
+    vagree (Val.orl v (Vlong n)) (Val.orl w (Vlong n)) x
+
+def ror_soundStatement : Prop :=
+  ∀ v w x n, vagree v w (ror x n) →
+    vagree (Val.ror v (Vint n)) (Val.ror w (Vint n)) x
+
+def rorl_soundStatement : Prop :=
+  ∀ v w x n, vagree v w (rorl x n) →
+    vagree (Val.rorl v (Vint n)) (Val.rorl w (Vint n)) x
+
+def select_soundStatement : Prop :=
+  ∀ ob v1 v2 w1 w2 ty x,
+    vagree v1 w1 x → vagree v2 w2 x →
+    vagree (Val.select ob v1 v2 ty) (Val.select ob w1 w2 ty) x
+
+def shlimm_soundStatement : Prop :=
+  ∀ v w x n, vagree v w (shlimm x n) →
+    vagree (Val.shl v (Vint n)) (Val.shl w (Vint n)) x
+
+def shllimm_soundStatement : Prop :=
+  ∀ v w x n, vagree v w (shllimm x n) →
+    vagree (Val.shll v (Vint n)) (Val.shll w (Vint n)) x
+
+def shrimm_soundStatement : Prop :=
+  ∀ v w x n, vagree v w (shrimm x n) →
+    vagree (Val.shr v (Vint n)) (Val.shr w (Vint n)) x
+
+def shrlimm_soundStatement : Prop :=
+  ∀ v w x n, vagree v w (shrlimm x n) →
+    vagree (Val.shrl v (Vint n)) (Val.shrl w (Vint n)) x
+
+def shrluimm_soundStatement : Prop :=
+  ∀ v w x n, vagree v w (shrluimm x n) →
+    vagree (Val.shrlu v (Vint n)) (Val.shrlu w (Vint n)) x
+
+def shruimm_soundStatement : Prop :=
+  ∀ v w x n, vagree v w (shruimm x n) →
+    vagree (Val.shru v (Vint n)) (Val.shru w (Vint n)) x
+
+def sign_ext_redundant_soundStatement : Prop :=
+  ∀ v w x n, sign_ext_redundant n x = true → vagree v w (sign_ext n x) →
+    ZArith.BinInt.Z.lt z0 n → vagree (Val.sign_ext n v) w x
+
+def sign_ext_soundStatement : Prop :=
+  ∀ v w x n, vagree v w (sign_ext n x) →
+    ZArith.BinInt.Z.lt z0 n → vagree (Val.sign_ext n v) (Val.sign_ext n w) x
+
+def store_argument_load_resultStatement : Prop :=
+  ∀ chunk v w, vagree v w (store_argument chunk) →
+    Val.lessdef (Val.load_result chunk v) (Val.load_result chunk w)
+
+def store_argument_soundStatement : Prop :=
+  ∀ chunk v w, vagree v w (store_argument chunk) →
+    list_forall2 memval_lessdef (encode_val chunk v) (encode_val chunk w)
+
+def vagree_bitwise64_binopStatement : Prop :=
+  ∀ (f : int64 → int64 → int64),
+    (∀ p1 p2 q1 q2 m, lagree p1 q1 m → lagree p2 q2 m →
+      lagree (f p1 p2) (f q1 q2) m) →
+    ∀ v1 w1 v2 w2 x,
+      vagree v1 w1 (bitwise x) → vagree v2 w2 (bitwise x) →
+      vagree
+        (match v1, v2 with | Vlong i1, Vlong i2 => Vlong (f i1 i2) | _, _ => Vundef)
+        (match w1, w2 with | Vlong i1, Vlong i2 => Vlong (f i1 i2) | _, _ => Vundef) x
+
+def vagree_bitwise_binopStatement : Prop :=
+  ∀ (f : int → int → int),
+    (∀ p1 p2 q1 q2 m, iagree p1 q1 m → iagree p2 q2 m →
+      iagree (f p1 p2) (f q1 q2) m) →
+    ∀ v1 w1 v2 w2 x,
+      vagree v1 w1 (bitwise x) → vagree v2 w2 (bitwise x) →
+      vagree
+        (match v1, v2 with | Vint i1, Vint i2 => Vint (f i1 i2) | _, _ => Vundef)
+        (match w1, w2 with | Vint i1, Vint i2 => Vint (f i1 i2) | _, _ => Vundef) x
+
+def vagree_lessdefStatement : Prop :=
+  ∀ v w x, Val.lessdef v w → vagree v w x
+
+def vagree_lessdef_listStatement : Prop :=
+  ∀ vl1 vl2, Val.lessdef_list vl1 vl2 → ∀ nvl, vagree_list vl1 vl2 nvl
+
+def vagree_sameStatement : Prop := ∀ v x, vagree v v x
+
+def xor_soundStatement : Prop :=
+  ∀ v1 w1 v2 w2 x,
+    vagree v1 w1 (bitwise x) → vagree v2 w2 (bitwise x) →
+    vagree (Val.xor v1 v2) (Val.xor w1 w2) x
+
+def xorl_soundStatement : Prop :=
+  ∀ v1 w1 v2 w2 x,
+    vagree v1 w1 (bitwise x) → vagree v2 w2 (bitwise x) →
+    vagree (Val.xorl v1 v2) (Val.xorl w1 w2) x
+
+def zero_ext_redundant_soundStatement : Prop :=
+  ∀ v w x n, zero_ext_redundant n x = true → vagree v w (zero_ext n x) →
+    ZArith.BinInt.Z.le z0 n → vagree (Val.zero_ext n v) w x
+
+def zero_ext_soundStatement : Prop :=
+  ∀ v w x n, vagree v w (zero_ext n x) →
+    ZArith.BinInt.Z.le z0 n → vagree (Val.zero_ext n v) (Val.zero_ext n w) x
 
 end CompCert4Lean.Backend.NeedDomain
