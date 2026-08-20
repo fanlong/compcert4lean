@@ -1481,20 +1481,20 @@ def add_equations : List reg → List mreg → eqs → Option eqs
         (add_equation { ekind := Full, ereg := r, eloc := R m } e)
   | _, _, _ => none
 
-private def addEquationsArgs :
+def add_equations_args :
     List reg → List typ → List (rpair loc) → eqs → Option eqs
   | [], [], [], e => some e
   | r :: rs, _ty :: tys, .One l :: ls, e =>
-      addEquationsArgs rs tys ls
+      add_equations_args rs tys ls
         (add_equation { ekind := Full, ereg := r, eloc := l } e)
   | r :: rs, Tlong :: tys, .Twolong hi lo :: ls, e =>
       if CompCert4Lean.X86_64.Archi.ptr64 then none
-      else addEquationsArgs rs tys ls
+      else add_equations_args rs tys ls
         (add_equation { ekind := Low, ereg := r, eloc := lo }
           (add_equation { ekind := High, ereg := r, eloc := hi } e))
   | _, _, _, _ => none
 
-private def addEquationsRes (r : reg) (ty : typ) (p : rpair mreg)
+def add_equations_res (r : reg) (ty : typ) (p : rpair mreg)
     (e : eqs) : Option eqs :=
   match p, ty with
   | .One mr, _ => some (add_equation { ekind := Full, ereg := r, eloc := R mr } e)
@@ -1504,7 +1504,7 @@ private def addEquationsRes (r : reg) (ty : typ) (p : rpair mreg)
         (add_equation { ekind := High, ereg := r, eloc := R hi } e))
   | _, _ => none
 
-private def removeEquationsRes (r : reg) (p : rpair mreg)
+def remove_equations_res (r : reg) (p : rpair mreg)
     (e : eqs) : Option eqs :=
   match p with
   | .One mr => some (remove_equation { ekind := Full, ereg := r, eloc := R mr } e)
@@ -1786,7 +1786,7 @@ def transfer_aux (cfg : CompilerConfig) (f : RTL.function) (env : regenv)
       match track_moves env mv2 e with
       | none => none
       | some e1 =>
-          match removeEquationsRes res res' e1 with
+          match remove_equations_res res res' e1 with
           | none => none
           | some e2 =>
               let resultRegs := regs_of_rpair res'
@@ -1795,7 +1795,7 @@ def transfer_aux (cfg : CompilerConfig) (f : RTL.function) (env : regenv)
                 match add_equation_ros ros ros' e2 with
                 | none => none
                 | some e3 =>
-                    match addEquationsArgs args (proj_sig_args sg) args' e3 with
+                    match add_equations_args args (proj_sig_args sg) args' e3 with
                     | none => none
                     | some e4 => track_moves env mv1 e4
               else none
@@ -1807,7 +1807,7 @@ def transfer_aux (cfg : CompilerConfig) (f : RTL.function) (env : regenv)
         match add_equation_ros ros ros' empty_eqs with
         | none => none
         | some e1 =>
-            match addEquationsArgs args (proj_sig_args sg) args' e1 with
+            match add_equations_args args (proj_sig_args sg) args' e1 with
             | none => none
             | some e2 => track_moves env mv1 e2
       else none
@@ -1844,7 +1844,7 @@ def transfer_aux (cfg : CompilerConfig) (f : RTL.function) (env : regenv)
       else none
   | BSreturn none mv => track_moves env mv empty_eqs
   | BSreturn (some arg) mv =>
-      match addEquationsRes arg (proj_sig_res f.fn_sig)
+      match add_equations_res arg (proj_sig_res f.fn_sig)
           (CompCert4Lean.X86.Conventions1.loc_result f.fn_sig) empty_eqs with
       | none => none
       | some e1 => track_moves env mv e1
@@ -1964,11 +1964,11 @@ def analyze (cfg : CompilerConfig) (f : RTL.function) (env : regenv)
   Backward_Dataflow_Solver.fixpoint_allnodes analysisLattice NodeSetBackward
     bsh successors_block_shape (transfer cfg f env bsh)
 
-private def compatEntry : List reg → List (rpair loc) → eqs → Bool
+def compat_entry : List reg → List (rpair loc) → eqs → Bool
   | [], [], _ => true
-  | r :: rs, .One l :: ls, e => compat_left r l e && compatEntry rs ls e
+  | r :: rs, .One l :: ls, e => compat_left r l e && compat_entry rs ls e
   | r :: rs, .Twolong hi lo :: ls, e =>
-      compat_left2 r hi lo e && compatEntry rs ls e
+      compat_left2 r hi lo e && compat_entry rs ls e
   | _, _, _ => false
 
 def check_entrypoints_aux (cfg : CompilerConfig) (rtl : RTL.function)
@@ -1979,7 +1979,7 @@ def check_entrypoints_aux (cfg : CompilerConfig) (rtl : RTL.function)
       match track_moves env mv e1 with
       | none => none
       | some e2 =>
-          if compatEntry rtl.fn_params
+          if compat_entry rtl.fn_params
                 (CompCert4Lean.Backend.Conventions.loc_parameters cfg rtl.fn_sig) e2 &&
               can_undef destroyed_at_function_entry e2 &&
               boolOfSumbool (zeq rtl.fn_stacksize ltl.fn_stacksize) &&
