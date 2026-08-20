@@ -39,15 +39,32 @@ def height {α : Type} : tree α → Nat
   | .Leaf => 0
   | .Node h _ _ _ => h
 
-/- The source carries AVL ordering evidence.  The evidence is intentionally
-   a proposition here; constructing a set still requires it, while the
-   interval definitions themselves remain executable. -/
-def bst {α : Type} (_ : tree α) : Prop := True
-
 def In (X : OrderedType) (x : X.elt) : tree X.elt → Prop
   | .Leaf => False
   | .Node _ left value right =>
       X.eq x value ∨ In X x left ∨ In X x right
+
+/- The invariant called `bst` by the source does not include AVL balance:
+   it says recursively that the left and right subtrees are search trees and
+   that all their elements are respectively below and above the root. -/
+def lt_tree (X : OrderedType) (x : X.elt) (s : tree X.elt) : Prop :=
+  ∀ y, In X y s → X.lt y x
+
+def gt_tree (X : OrderedType) (x : X.elt) (s : tree X.elt) : Prop :=
+  ∀ y, In X y s → X.lt x y
+
+inductive bst (X : OrderedType) : tree X.elt → Prop where
+  | BSLeaf : bst X .Leaf
+  | BSNode (c : Nat) (x : X.elt) (l r : tree X.elt) :
+      bst X l → bst X r → lt_tree X x l → gt_tree X x r →
+        bst X (.Node c l x r)
+
+private theorem bst_node_inv {X : OrderedType} {c : Nat} {x : X.elt}
+    {l r : tree X.elt} (h : bst X (.Node c l x r)) :
+    bst X l ∧ bst X r ∧ lt_tree X x l ∧ gt_tree X x r := by
+  cases h with
+  | BSNode _ _ _ _ left_bst right_bst left_lt right_gt =>
+      exact ⟨left_bst, right_bst, left_lt, right_gt⟩
 
 def join {α : Type} (left : tree α) (value : α) (right : tree α) : tree α :=
   .Node (height left + height right + 1) left value right
@@ -58,11 +75,75 @@ def concat {α : Type} : tree α → tree α → tree α
   | .Node _ left₁ value right₁, right₂ =>
       join left₁ value (concat right₁ right₂)
 
+private theorem join_bst {X : OrderedType} {left right : tree X.elt}
+    {value : X.elt} (left_bst : bst X left) (right_bst : bst X right)
+    (left_lt : ∀ x, In X x left → X.lt x value)
+    (right_gt : ∀ x, In X x right → X.lt value x) :
+    bst X (join left value right) := by
+  exact .BSNode _ _ _ _ left_bst right_bst left_lt right_gt
+
+private theorem in_concat_iff {X : OrderedType} (x : X.elt) :
+    ∀ left right,
+      In X x (concat left right) ↔ In X x left ∨ In X x right := by
+  intro left
+  induction left with
+  | Leaf =>
+      intro right
+      simp [concat, In]
+  | Node height left value right _ right_ih =>
+      intro other
+      cases other with
+      | Leaf => simp [concat, In]
+      | Node other_height other_left other_value other_right =>
+          simp only [concat, join, In]
+          rw [right_ih]
+          constructor
+          · intro h
+            rcases h with h | h | h | h
+            · exact Or.inl (Or.inl h)
+            · exact Or.inl (Or.inr (Or.inl h))
+            · exact Or.inl (Or.inr (Or.inr h))
+            · exact Or.inr h
+          · intro h
+            rcases h with (h | h | h) | h
+            · exact Or.inl h
+            · exact Or.inr (Or.inl h)
+            · exact Or.inr (Or.inr (Or.inl h))
+            · exact Or.inr (Or.inr (Or.inr h))
+
+private theorem concat_bst (X : OrderedType) :
+    ∀ left right,
+      bst X left → bst X right →
+      (∀ x y, In X x left → In X y right → X.lt x y) →
+      bst X (concat left right) := by
+  intro left
+  induction left with
+  | Leaf =>
+      intro right _ right_bst _
+      simpa [concat] using right_bst
+  | Node height left value right _ right_ih =>
+      intro other tree_bst other_bst between
+      cases other with
+      | Leaf => simpa [concat] using tree_bst
+      | Node other_height other_left other_value other_right =>
+          cases tree_bst with
+          | BSNode _ _ _ _ left_bst right_bst left_lt right_gt =>
+              apply join_bst left_bst
+              · apply right_ih _ right_bst other_bst
+                intro x y hx hy
+                exact between x y (Or.inr (Or.inr hx)) hy
+              · exact left_lt
+              · intro y hy
+                rcases (in_concat_iff y right
+                  (.Node other_height other_left other_value other_right)).mp hy with hy | hy
+                · exact right_gt y hy
+                · exact between value y (Or.inl (X.eq_refl value)) hy
+
 end Raw
 
 structure Set (X : OrderedType) where
   this : Raw.tree X.elt
-  is_ok : Raw.bst this
+  is_ok : Raw.bst X this
 
 abbrev t (X : OrderedType) := Set X
 
@@ -106,7 +187,7 @@ def raw_mem_between_2Statement : Prop :=
   ∀ (X : OrderedType) (above_low_bound below_high_bound : X.elt → Bool),
     AboveMonotone above_low_bound → BelowMonotone below_high_bound →
     ∀ (x : X.elt) (m : Raw.tree X.elt),
-      Raw.bst m → Raw.In X x m → above_low_bound x = true →
+      Raw.bst X m → Raw.In X x m → above_low_bound x = true →
         below_high_bound x = true →
           raw_mem_between above_low_bound below_high_bound m = true
 
@@ -143,9 +224,57 @@ def raw_elements_between {X : OrderedType}
       else
         raw_elements_between above_low_bound below_high_bound right
 
+private theorem in_raw_elements_between {X : OrderedType}
+    (above_low_bound below_high_bound : X.elt → Bool) (x : X.elt) :
+    ∀ m,
+      Raw.In X x (raw_elements_between above_low_bound below_high_bound m) →
+        Raw.In X x m := by
+  intro m
+  induction m with
+  | Leaf => simp [raw_elements_between, Raw.In]
+  | Node height left value right left_ih right_ih =>
+      intro h
+      rw [raw_elements_between] at h
+      split at h
+      next =>
+        split at h
+        next =>
+          rcases h with h | h | h
+          · exact Or.inl h
+          · exact Or.inr (Or.inl (left_ih h))
+          · exact Or.inr (Or.inr (right_ih h))
+        next => exact Or.inr (Or.inl (left_ih h))
+      next => exact Or.inr (Or.inr (right_ih h))
+
+private theorem raw_elements_between_bst {X : OrderedType}
+    (above_low_bound below_high_bound : X.elt → Bool) :
+    ∀ m, Raw.bst X m →
+      Raw.bst X (raw_elements_between above_low_bound below_high_bound m) := by
+  intro m
+  induction m with
+  | Leaf => simp [raw_elements_between]
+  | Node height left value right left_ih right_ih =>
+      intro h
+      rcases Raw.bst_node_inv h with ⟨left_bst, right_bst, left_lt, right_gt⟩
+      rw [raw_elements_between]
+      split
+      next =>
+        split
+        next =>
+          apply Raw.join_bst (left_ih left_bst) (right_ih right_bst)
+          · intro x hx
+            exact left_lt x
+              (in_raw_elements_between above_low_bound below_high_bound x left hx)
+          · intro x hx
+            exact right_gt x
+              (in_raw_elements_between above_low_bound below_high_bound x right hx)
+        next => exact left_ih left_bst
+      next => exact right_ih right_bst
+
 def elements_between {X : OrderedType}
     (above_low_bound below_high_bound : X.elt → Bool) (s : t X) : t X :=
-  ⟨raw_elements_between above_low_bound below_high_bound s.this, trivial⟩
+  ⟨raw_elements_between above_low_bound below_high_bound s.this,
+    raw_elements_between_bst above_low_bound below_high_bound s.this s.is_ok⟩
 
 def In_raw_elements_between_1Statement : Prop :=
   ∀ (X : OrderedType) (above_low_bound below_high_bound : X.elt → Bool)
@@ -156,8 +285,8 @@ def In_raw_elements_between_1Statement : Prop :=
 def raw_elements_between_okStatement : Prop :=
   ∀ (X : OrderedType) (above_low_bound below_high_bound : X.elt → Bool)
     (m : Raw.tree X.elt),
-    Raw.bst m →
-      Raw.bst (raw_elements_between above_low_bound below_high_bound m)
+    Raw.bst X m →
+      Raw.bst X (raw_elements_between above_low_bound below_high_bound m)
 
 def In_raw_elements_between_2Statement : Prop :=
   ∀ (X : OrderedType) (above_low_bound below_high_bound : X.elt → Bool),
@@ -170,7 +299,7 @@ def In_raw_elements_between_3Statement : Prop :=
   ∀ (X : OrderedType) (above_low_bound below_high_bound : X.elt → Bool),
     AboveMonotone above_low_bound → BelowMonotone below_high_bound →
     ∀ (x : X.elt) (m : Raw.tree X.elt),
-      Raw.bst m → Raw.In X x m → above_low_bound x = true →
+      Raw.bst X m → Raw.In X x m → above_low_bound x = true →
         below_high_bound x = true →
           Raw.In X x (raw_elements_between above_low_bound below_high_bound m)
 
@@ -212,14 +341,14 @@ def raw_for_all_between_1Statement : Prop :=
     PredCompat pred → AboveMonotone above_low_bound →
     BelowMonotone below_high_bound →
     ∀ (x : X.elt) (m : Raw.tree X.elt),
-      Raw.bst m → raw_for_all_between pred above_low_bound below_high_bound m = true →
+      Raw.bst X m → raw_for_all_between pred above_low_bound below_high_bound m = true →
       Raw.In X x m → above_low_bound x = true → below_high_bound x = true →
         pred x = true
 
 def raw_for_all_between_2Statement : Prop :=
   ∀ (X : OrderedType) (pred above_low_bound below_high_bound : X.elt → Bool)
     (m : Raw.tree X.elt),
-    Raw.bst m →
+    Raw.bst X m →
       (∀ x, Raw.In X x m → above_low_bound x = true →
         below_high_bound x = true → pred x = true) →
         raw_for_all_between pred above_low_bound below_high_bound m = true
@@ -258,10 +387,138 @@ def raw_partition_between {X : OrderedType}
           raw_partition_between above_low_bound below_high_bound right
         (right₁, Raw.join left value right₂)
 
+private theorem raw_partition_between_subset {X : OrderedType}
+    (above_low_bound below_high_bound : X.elt → Bool) :
+    ∀ m,
+      (∀ x, Raw.In X x
+          (raw_partition_between above_low_bound below_high_bound m).1 →
+        Raw.In X x m) ∧
+      (∀ x, Raw.In X x
+          (raw_partition_between above_low_bound below_high_bound m).2 →
+        Raw.In X x m) := by
+  intro m
+  induction m with
+  | Leaf => simp [raw_partition_between, Raw.In]
+  | Node height left value right left_ih right_ih =>
+      rw [raw_partition_between]
+      split
+      next =>
+        split
+        next =>
+          cases left_eq : raw_partition_between above_low_bound below_high_bound left with
+          | mk left₁ left₂ =>
+            cases right_eq : raw_partition_between above_low_bound below_high_bound right with
+            | mk right₁ right₂ =>
+              rw [left_eq] at left_ih
+              rw [right_eq] at right_ih
+              constructor
+              · intro x hx
+                rcases hx with hx | hx | hx
+                · exact Or.inl hx
+                · exact Or.inr (Or.inl (left_ih.1 x hx))
+                · exact Or.inr (Or.inr (right_ih.1 x hx))
+              · intro x hx
+                rcases (Raw.in_concat_iff x left₂ right₂).mp hx with hx | hx
+                · exact Or.inr (Or.inl (left_ih.2 x hx))
+                · exact Or.inr (Or.inr (right_ih.2 x hx))
+        next =>
+          cases left_eq : raw_partition_between above_low_bound below_high_bound left with
+          | mk left₁ left₂ =>
+            rw [left_eq] at left_ih
+            constructor
+            · intro x hx
+              exact Or.inr (Or.inl (left_ih.1 x hx))
+            · intro x hx
+              rcases hx with hx | hx | hx
+              · exact Or.inl hx
+              · exact Or.inr (Or.inl (left_ih.2 x hx))
+              · exact Or.inr (Or.inr hx)
+      next =>
+        cases right_eq : raw_partition_between above_low_bound below_high_bound right with
+        | mk right₁ right₂ =>
+          rw [right_eq] at right_ih
+          constructor
+          · intro x hx
+            exact Or.inr (Or.inr (right_ih.1 x hx))
+          · intro x hx
+            rcases hx with hx | hx | hx
+            · exact Or.inl hx
+            · exact Or.inr (Or.inl hx)
+            · exact Or.inr (Or.inr (right_ih.2 x hx))
+
+private theorem raw_partition_between_bst {X : OrderedType}
+    (above_low_bound below_high_bound : X.elt → Bool) :
+    ∀ m, Raw.bst X m →
+      Raw.bst X (raw_partition_between above_low_bound below_high_bound m).1 ∧
+        Raw.bst X (raw_partition_between above_low_bound below_high_bound m).2 := by
+  intro m
+  induction m with
+  | Leaf => simp [raw_partition_between]
+  | Node height left value right left_ih right_ih =>
+      intro tree_bst
+      rcases Raw.bst_node_inv tree_bst with
+        ⟨left_bst, right_bst, left_lt, right_gt⟩
+      rw [raw_partition_between]
+      split
+      next =>
+        split
+        next =>
+          cases left_eq : raw_partition_between above_low_bound below_high_bound left with
+          | mk left₁ left₂ =>
+            cases right_eq : raw_partition_between above_low_bound below_high_bound right with
+            | mk right₁ right₂ =>
+              have left_parts := left_ih left_bst
+              have right_parts := right_ih right_bst
+              have left_subset :=
+                raw_partition_between_subset above_low_bound below_high_bound left
+              have right_subset :=
+                raw_partition_between_subset above_low_bound below_high_bound right
+              rw [left_eq] at left_parts left_subset
+              rw [right_eq] at right_parts right_subset
+              constructor
+              · apply Raw.join_bst left_parts.1 right_parts.1
+                · intro x hx
+                  exact left_lt x (left_subset.1 x hx)
+                · intro x hx
+                  exact right_gt x (right_subset.1 x hx)
+              · apply Raw.concat_bst X left₂ right₂ left_parts.2 right_parts.2
+                intro x y hx hy
+                exact X.lt_trans
+                  (left_lt x (left_subset.2 x hx))
+                  (right_gt y (right_subset.2 y hy))
+        next =>
+          cases left_eq : raw_partition_between above_low_bound below_high_bound left with
+          | mk left₁ left₂ =>
+            have left_parts := left_ih left_bst
+            have left_subset :=
+              raw_partition_between_subset above_low_bound below_high_bound left
+            rw [left_eq] at left_parts left_subset
+            constructor
+            · exact left_parts.1
+            · apply Raw.join_bst left_parts.2 right_bst
+              · intro x hx
+                exact left_lt x (left_subset.2 x hx)
+              · exact right_gt
+      next =>
+        cases right_eq : raw_partition_between above_low_bound below_high_bound right with
+        | mk right₁ right₂ =>
+          have right_parts := right_ih right_bst
+          have right_subset :=
+            raw_partition_between_subset above_low_bound below_high_bound right
+          rw [right_eq] at right_parts right_subset
+          constructor
+          · exact right_parts.1
+          · apply Raw.join_bst left_bst right_parts.2
+            · exact left_lt
+            · intro x hx
+              exact right_gt x (right_subset.2 x hx)
+
 def partition_between {X : OrderedType}
     (above_low_bound below_high_bound : X.elt → Bool) (s : t X) : t X × t X :=
   let p := raw_partition_between above_low_bound below_high_bound s.this
-  (⟨p.1, trivial⟩, ⟨p.2, trivial⟩)
+  let p_bst := raw_partition_between_bst
+    above_low_bound below_high_bound s.this s.is_ok
+  (⟨p.1, p_bst.1⟩, ⟨p.2, p_bst.2⟩)
 
 def In_raw_partition_between_1Statement : Prop :=
   ∀ (X : OrderedType) (above_low_bound below_high_bound : X.elt → Bool)
@@ -278,9 +535,9 @@ def In_raw_partition_between_2Statement : Prop :=
 def raw_partition_between_okStatement : Prop :=
   ∀ (X : OrderedType) (above_low_bound below_high_bound : X.elt → Bool)
     (m : Raw.tree X.elt),
-    Raw.bst m →
-      Raw.bst (raw_partition_between above_low_bound below_high_bound m).1 ∧
-        Raw.bst (raw_partition_between above_low_bound below_high_bound m).2
+    Raw.bst X m →
+      Raw.bst X (raw_partition_between above_low_bound below_high_bound m).1 ∧
+        Raw.bst X (raw_partition_between above_low_bound below_high_bound m).2
 
 def In_raw_partition_between_3Statement : Prop :=
   ∀ (X : OrderedType) (above_low_bound below_high_bound : X.elt → Bool),
@@ -293,7 +550,7 @@ def In_raw_partition_between_4Statement : Prop :=
   ∀ (X : OrderedType) (above_low_bound below_high_bound : X.elt → Bool),
     AboveMonotone above_low_bound → BelowMonotone below_high_bound →
     ∀ (x : X.elt) (m : Raw.tree X.elt),
-      Raw.bst m →
+      Raw.bst X m →
       Raw.In X x (raw_partition_between above_low_bound below_high_bound m).2 →
         above_low_bound x = false ∨ below_high_bound x = false
 
@@ -301,7 +558,7 @@ def In_raw_partition_between_5Statement : Prop :=
   ∀ (X : OrderedType) (above_low_bound below_high_bound : X.elt → Bool),
     AboveMonotone above_low_bound → BelowMonotone below_high_bound →
     ∀ (x : X.elt) (m : Raw.tree X.elt),
-      Raw.bst m → Raw.In X x m → above_low_bound x = true →
+      Raw.bst X m → Raw.In X x m → above_low_bound x = true →
         below_high_bound x = true →
           Raw.In X x (raw_partition_between above_low_bound below_high_bound m).1
 
@@ -309,7 +566,7 @@ def In_raw_partition_between_6Statement : Prop :=
   ∀ (X : OrderedType) (above_low_bound below_high_bound : X.elt → Bool),
     AboveMonotone above_low_bound → BelowMonotone below_high_bound →
     ∀ (x : X.elt) (m : Raw.tree X.elt),
-      Raw.bst m → Raw.In X x m →
+      Raw.bst X m → Raw.In X x m →
         (above_low_bound x = false ∨ below_high_bound x = false) →
           Raw.In X x (raw_partition_between above_low_bound below_high_bound m).2
 
