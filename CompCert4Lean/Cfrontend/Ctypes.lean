@@ -1,6 +1,7 @@
 import CompCert4Lean.Foundation.RocqStdlib
 import CompCert4Lean.Common.AST
 import CompCert4Lean.Common.Errors
+import CompCert4Lean.Common.Linking
 import CompCert4Lean.Lib.Coqlib
 import CompCert4Lean.Lib.Maps
 import CompCert4Lean.X86_64.Archi
@@ -1133,5 +1134,95 @@ export program (prog_defs prog_public prog_main prog_types prog_comp_env prog_co
 
 def program_of_program {F : Type} (p : program F) : AST.program (fundef F) type :=
   { prog_defs := p.prog_defs, prog_public := p.prog_public, prog_main := p.prog_main }
+
+/-! ## Separate compilation and linking -/
+
+private noncomputable instance typeDecidableEq : DecidableEq type :=
+  Classical.typeDecidableEq type
+
+noncomputable instance Linker_types : CompCert4Lean.Common.Linking.Linker type where
+  link := fun t1 t2 => if t1 = t2 then some t1 else none
+  linkorder := Eq
+  linkorder_refl := fun _ => rfl
+  linkorder_trans := by
+    intro x y z hxy hyz
+    exact hxy.trans hyz
+  link_linkorder := by
+    intro x y z h
+    by_cases hxy : x = y
+    · subst y
+      simp only [↓reduceIte] at h
+      cases h
+      exact ⟨rfl, rfl⟩
+    · simp only [hxy, ↓reduceIte] at h
+      cases h
+
+noncomputable def link_fundef {F : Type} (fd1 fd2 : fundef F) : Option (fundef F) :=
+  match fd1, fd2 with
+  | .Internal _, .Internal _ => none
+  | .External ef1 args1 result1 cc1, .External ef2 args2 result2 cc2 =>
+      if ef1 = ef2 ∧ args1 = args2 ∧ result1 = result2 ∧ cc1 = cc2 then
+        some (.External ef1 args1 result1 cc1)
+      else
+        none
+  | .Internal f, .External (.EF_external _ _) _ _ _ => some (.Internal f)
+  | .External (.EF_external _ _) _ _ _, .Internal f => some (.Internal f)
+  | _, _ => none
+
+inductive linkorder_fundef {F : Type} : fundef F → fundef F → Prop where
+  | linkorder_fundef_refl (fd : fundef F) : linkorder_fundef fd fd
+  | linkorder_fundef_ext_int (f : F) (id : RocqString) (sg : signature)
+      (args : List type) (result : type) (cc : calling_convention) :
+      linkorder_fundef (.External (.EF_external id sg) args result cc) (.Internal f)
+
+export linkorder_fundef (linkorder_fundef_refl linkorder_fundef_ext_int)
+
+noncomputable instance Linker_fundef (F : Type) :
+    CompCert4Lean.Common.Linking.Linker (fundef F) where
+  link := link_fundef
+  linkorder := linkorder_fundef
+  linkorder_refl := linkorder_fundef.linkorder_fundef_refl
+  linkorder_trans := by
+    intro x y z hxy hyz
+    cases hxy <;> cases hyz <;> constructor
+  link_linkorder := by
+    intro x y z h
+    cases x with
+    | Internal f1 =>
+        cases y with
+        | Internal f2 => simp [link_fundef] at h
+        | External ef args result cc =>
+            cases ef <;> simp [link_fundef] at h
+            case EF_external id sg =>
+              subst z
+              exact ⟨linkorder_fundef.linkorder_fundef_refl _,
+                linkorder_fundef.linkorder_fundef_ext_int f1 id sg args result cc⟩
+    | External ef1 args1 result1 cc1 =>
+        cases y with
+        | Internal f2 =>
+            cases ef1 <;> simp [link_fundef] at h
+            case EF_external id sg =>
+              subst z
+              exact ⟨linkorder_fundef.linkorder_fundef_ext_int f2 id sg args1 result1 cc1,
+                linkorder_fundef.linkorder_fundef_refl _⟩
+        | External ef2 args2 result2 cc2 =>
+            by_cases heq : ef1 = ef2 ∧ args1 = args2 ∧ result1 = result2 ∧ cc1 = cc2
+            · rcases heq with ⟨hef, hargs, hresult, hcc⟩
+              subst ef2
+              subst args2
+              subst result2
+              subst cc2
+              simp only [link_fundef, and_self, if_true] at h
+              cases Option.some.inj h
+              exact ⟨linkorder_fundef.linkorder_fundef_refl _,
+                linkorder_fundef.linkorder_fundef_refl _⟩
+            · simp only [link_fundef, heq, ↓reduceIte] at h
+              cases h
+
+def linkorder_program {F : Type} (p1 p2 : program F) : Prop :=
+  CompCert4Lean.Common.Linking.linkorder
+      (program_of_program p1) (program_of_program p2) ∧
+    ∀ id co, PTree.get id p1.prog_comp_env = some co →
+      PTree.get id p2.prog_comp_env = some co
 
 end CompCert4Lean.Cfrontend.Ctypes
