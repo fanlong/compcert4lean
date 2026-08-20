@@ -98,63 +98,213 @@ def lt (s s' : t) : Prop := s.length < s'.length
 def min_elt : t → Option elt | [] => none | x :: _ => some x
 def max_elt : t → Option elt | [] => none | x :: xs => some (xs.foldl (fun a y => if mem y [a] then a else y) x)
 
-private def generatedProp : Prop := True
-abbrev In_1 := generatedProp
-abbrev eq_refl := generatedProp
-abbrev eq_sym := generatedProp
-abbrev eq_trans := generatedProp
-abbrev mem_1 := generatedProp
-abbrev mem_2 := generatedProp
-abbrev equal_1 := generatedProp
-abbrev equal_2 := generatedProp
-abbrev subset_1 := generatedProp
-abbrev subset_2 := generatedProp
-abbrev empty_1 := generatedProp
-abbrev is_empty_1 := generatedProp
-abbrev is_empty_2 := generatedProp
-abbrev add_1 := generatedProp
-abbrev add_2 := generatedProp
-abbrev add_3 := generatedProp
-abbrev remove_1 := generatedProp
-abbrev remove_2 := generatedProp
-abbrev remove_3 := generatedProp
-abbrev union_1 := generatedProp
-abbrev union_2 := generatedProp
-abbrev union_3 := generatedProp
-abbrev inter_1 := generatedProp
-abbrev inter_2 := generatedProp
-abbrev inter_3 := generatedProp
-abbrev diff_1 := generatedProp
-abbrev diff_2 := generatedProp
-abbrev diff_3 := generatedProp
-abbrev singleton_1 := generatedProp
-abbrev singleton_2 := generatedProp
-abbrev fold_1 := generatedProp
-abbrev cardinal_1 := generatedProp
-abbrev filter_1 := generatedProp
-abbrev filter_2 := generatedProp
-abbrev filter_3 := generatedProp
-abbrev for_all_1 := generatedProp
-abbrev for_all_2 := generatedProp
-abbrev exists_1 := generatedProp
-abbrev exists_2 := generatedProp
-abbrev partition_1 := generatedProp
-abbrev partition_2 := generatedProp
-abbrev choose_1 := generatedProp
-abbrev choose_2 := generatedProp
-abbrev elements_1 := generatedProp
-abbrev elements_2 := generatedProp
-abbrev elements_3w := generatedProp
-abbrev min_elt_1 := generatedProp
-abbrev min_elt_2 := generatedProp
-abbrev min_elt_3 := generatedProp
-abbrev max_elt_1 := generatedProp
-abbrev max_elt_2 := generatedProp
-abbrev max_elt_3 := generatedProp
-abbrev elements_3 := generatedProp
-abbrev choose_3 := generatedProp
-abbrev lt_trans := generatedProp
-abbrev lt_not_eq := generatedProp
+private def CompatBool (R : elt → elt → Prop) (f : elt → Bool) : Prop :=
+  ∀ x y, R x y → f x = f y
+
+private inductive NoDupA (R : elt → elt → Prop) : List elt → Prop where
+  | nil : NoDupA R []
+  | cons (x : elt) (xs : List elt) :
+      (∀ y, y ∈ xs → ¬ R x y) → NoDupA R xs → NoDupA R (x :: xs)
+
+private inductive HeadRel (R : elt → elt → Prop) (x : elt) : List elt → Prop where
+  | nil : HeadRel R x []
+  | cons (y : elt) (ys : List elt) : R x y → HeadRel R x (y :: ys)
+
+private inductive Sorted (R : elt → elt → Prop) : List elt → Prop where
+  | nil : Sorted R []
+  | cons (x : elt) (xs : List elt) :
+      Sorted R xs → HeadRel R x xs → Sorted R (x :: xs)
+
+def In_1 : Prop :=
+  ∀ (s : t) (x y : elt), x = y → In x s → In y s
+
+def eq_refl : Prop :=
+  ∀ s : t, eq s s
+
+def eq_sym : Prop :=
+  ∀ s s' : t, eq s s' → eq s' s
+
+def eq_trans : Prop :=
+  ∀ s s' s'' : t, eq s s' → eq s' s'' → eq s s''
+
+def mem_1 : Prop :=
+  ∀ (s : t) (x : elt), In x s → mem x s = true
+
+def mem_2 : Prop :=
+  ∀ (s : t) (x : elt), mem x s = true → In x s
+
+def equal_1 : Prop :=
+  ∀ s s' : t, Equal s s' → equal s s' = true
+
+def equal_2 : Prop :=
+  ∀ s s' : t, equal s s' = true → Equal s s'
+
+def subset_1 : Prop :=
+  ∀ s s' : t, Subset s s' → subset s s' = true
+
+def subset_2 : Prop :=
+  ∀ s s' : t, subset s s' = true → Subset s s'
+
+def empty_1 : Prop :=
+  Empty empty
+
+def is_empty_1 : Prop :=
+  ∀ s : t, Empty s → is_empty s = true
+
+def is_empty_2 : Prop :=
+  ∀ s : t, is_empty s = true → Empty s
+
+def add_1 : Prop :=
+  ∀ (s : t) (x y : elt), x = y → In y (add x s)
+
+def add_2 : Prop :=
+  ∀ (s : t) (x y : elt), In y s → In y (add x s)
+
+def add_3 : Prop :=
+  ∀ (s : t) (x y : elt), x ≠ y → In y (add x s) → In y s
+
+def remove_1 : Prop :=
+  ∀ (s : t) (x y : elt), x = y → ¬ In y (remove x s)
+
+def remove_2 : Prop :=
+  ∀ (s : t) (x y : elt), x ≠ y → In y s → In y (remove x s)
+
+def remove_3 : Prop :=
+  ∀ (s : t) (x y : elt), In y (remove x s) → In y s
+
+def union_1 : Prop :=
+  ∀ (s s' : t) (x : elt), In x (union s s') → In x s ∨ In x s'
+
+def union_2 : Prop :=
+  ∀ (s s' : t) (x : elt), In x s → In x (union s s')
+
+def union_3 : Prop :=
+  ∀ (s s' : t) (x : elt), In x s' → In x (union s s')
+
+def inter_1 : Prop :=
+  ∀ (s s' : t) (x : elt), In x (inter s s') → In x s
+
+def inter_2 : Prop :=
+  ∀ (s s' : t) (x : elt), In x (inter s s') → In x s'
+
+def inter_3 : Prop :=
+  ∀ (s s' : t) (x : elt), In x s → In x s' → In x (inter s s')
+
+def diff_1 : Prop :=
+  ∀ (s s' : t) (x : elt), In x (diff s s') → In x s
+
+def diff_2 : Prop :=
+  ∀ (s s' : t) (x : elt), In x (diff s s') → ¬ In x s'
+
+def diff_3 : Prop :=
+  ∀ (s s' : t) (x : elt), In x s → ¬ In x s' → In x (diff s s')
+
+def singleton_1 : Prop :=
+  ∀ x y : elt, In y (singleton x) → x = y
+
+def singleton_2 : Prop :=
+  ∀ x y : elt, x = y → In y (singleton x)
+
+def fold_1 : Prop :=
+  ∀ (s : t) (A : Type) (i : A) (f : elt → A → A),
+    fold f s i = List.foldl (fun a e => f e a) i (elements s)
+
+def cardinal_1 : Prop :=
+  ∀ s : t, cardinal s = (elements s).length
+
+def filter_1 : Prop :=
+  ∀ (s : t) (x : elt) (f : elt → Bool),
+    CompatBool (fun x y => x = y) f → In x (filter f s) → In x s
+
+def filter_2 : Prop :=
+  ∀ (s : t) (x : elt) (f : elt → Bool),
+    CompatBool (fun x y => x = y) f → In x (filter f s) → f x = true
+
+def filter_3 : Prop :=
+  ∀ (s : t) (x : elt) (f : elt → Bool),
+    CompatBool (fun x y => x = y) f → In x s → f x = true →
+      In x (filter f s)
+
+def for_all_1 : Prop :=
+  ∀ (s : t) (f : elt → Bool),
+    CompatBool (fun x y => x = y) f →
+      For_all (fun x => f x = true) s → for_all f s = true
+
+def for_all_2 : Prop :=
+  ∀ (s : t) (f : elt → Bool),
+    CompatBool (fun x y => x = y) f → for_all f s = true →
+      For_all (fun x => f x = true) s
+
+def exists_1 : Prop :=
+  ∀ (s : t) (f : elt → Bool),
+    CompatBool (fun x y => x = y) f →
+      Exists (fun x => f x = true) s → exists_ f s = true
+
+def exists_2 : Prop :=
+  ∀ (s : t) (f : elt → Bool),
+    CompatBool (fun x y => x = y) f → exists_ f s = true →
+      Exists (fun x => f x = true) s
+
+def partition_1 : Prop :=
+  ∀ (s : t) (f : elt → Bool),
+    CompatBool (fun x y => x = y) f →
+      Equal (partition f s).1 (filter f s)
+
+def partition_2 : Prop :=
+  ∀ (s : t) (f : elt → Bool),
+    CompatBool (fun x y => x = y) f →
+      Equal (partition f s).2 (filter (fun x => !(f x)) s)
+
+def choose_1 : Prop :=
+  ∀ (s : t) (x : elt), choose s = some x → In x s
+
+def choose_2 : Prop :=
+  ∀ s : t, choose s = none → Empty s
+
+def elements_1 : Prop :=
+  ∀ (s : t) (x : elt), In x s →
+    CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.SetoidList.InA
+      (fun x y : elt => x = y) x (elements s)
+
+def elements_2 : Prop :=
+  ∀ (s : t) (x : elt),
+    CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.SetoidList.InA
+      (fun x y : elt => x = y) x (elements s) → In x s
+
+def elements_3w : Prop :=
+  ∀ s : t, NoDupA (fun x y : elt => x = y) (elements s)
+
+def min_elt_1 : Prop :=
+  ∀ (s : t) (x : elt), min_elt s = some x → In x s
+
+def min_elt_2 : Prop :=
+  ∀ (s : t) (x y : elt), min_elt s = some x → In y s → ¬ RegOrd.lt y x
+
+def min_elt_3 : Prop :=
+  ∀ s : t, min_elt s = none → Empty s
+
+def max_elt_1 : Prop :=
+  ∀ (s : t) (x : elt), max_elt s = some x → In x s
+
+def max_elt_2 : Prop :=
+  ∀ (s : t) (x y : elt), max_elt s = some x → In y s → ¬ RegOrd.lt x y
+
+def max_elt_3 : Prop :=
+  ∀ s : t, max_elt s = none → Empty s
+
+def elements_3 : Prop :=
+  ∀ s : t, Sorted RegOrd.lt (elements s)
+
+def choose_3 : Prop :=
+  ∀ (s s' : t) (x y : elt),
+    choose s = some x → choose s' = some y → Equal s s' → x = y
+
+def lt_trans : Prop :=
+  ∀ s s' s'' : t, lt s s' → lt s' s'' → lt s s''
+
+def lt_not_eq : Prop :=
+  ∀ s s' : t, lt s s' → ¬ eq s s'
+
 abbrev compare := Unit
 
 end RegSetLocal
