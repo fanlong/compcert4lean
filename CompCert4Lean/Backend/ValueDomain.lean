@@ -1422,7 +1422,8 @@ def get (p : positive) : t → aval
 def set (p : positive) (v : aval) : t → t
   | .Bot => .Bot
   | .Top_except values =>
-      if v = Vtop then .Top_except (PTree.remove p values)
+      if v = Vbot then .Bot
+      else if v = Vtop then .Top_except (PTree.remove p values)
       else .Top_except (PTree.set p v values)
 
 def eq (x y : t) : Prop := ∀ p, get p x = get p y
@@ -1437,19 +1438,32 @@ def ge (x y : t) : Prop := ∀ p, vge (get p x) (get p y)
 def bot : t := .Bot
 def top : t := .Top_except (PTree.empty aval)
 
-def opt_lub (cfg : CompilerConfig) (x y : Option aval) : Option aval :=
-  match x, y with
-  | some v, some w =>
-      let z := vlub cfg v w
-      if z = Vtop then none else some z
-  | _, _ => none
+def LM : Type := PTree.t aval
+
+namespace LM
+
+def combine (f : Option aval → Option aval → Option aval)
+    (t1 t2 : LM) : LM :=
+  PTree.combine f t1 t2
+
+end LM
+
+def opt_lub (cfg : CompilerConfig) (x y : aval) : Option aval :=
+  let z := vlub cfg x y
+  if z = Vtop then none else some z
 
 def lub (cfg : CompilerConfig) (x y : t) : t :=
   match x, y with
   | .Bot, _ => y
   | _, .Bot => x
   | .Top_except t1, .Top_except t2 =>
-      .Top_except (PTree.combine (opt_lub cfg) t1 t2)
+      .Top_except
+        (LM.combine
+          (fun a b =>
+            match a, b with
+            | some u, some v => opt_lub cfg u v
+            | _, _ => none)
+          t1 t2)
 
 end AE
 
@@ -1493,22 +1507,55 @@ namespace AE
 
 def AE : Type := Unit
 abbrev Bot : t' := .Bot
-def LM : Type := Unit
-private def generatedProp : Prop := True
-abbrev eq_refl := generatedProp
-abbrev eq_sym := generatedProp
-abbrev eq_trans := generatedProp
-abbrev beq_correct := generatedProp
-abbrev ge_refl := generatedProp
-abbrev ge_trans := generatedProp
-abbrev get_bot := generatedProp
-abbrev ge_bot := generatedProp
-abbrev get_top := generatedProp
-abbrev ge_top := generatedProp
-abbrev gsspec := generatedProp
-abbrev gcombine_top := generatedProp
-abbrev ge_lub_left := generatedProp
-abbrev ge_lub_right := generatedProp
+
+def eq_refl : Prop :=
+  ∀ x, eq x x
+
+def eq_sym : Prop :=
+  ∀ x y, eq x y → eq y x
+
+def eq_trans : Prop :=
+  ∀ x y z, eq x y → eq y z → eq x z
+
+def beq_correct : Prop :=
+  ∀ x y, beq x y = true → eq x y
+
+def ge_refl : Prop :=
+  ∀ x y, eq x y → ge x y
+
+def ge_trans : Prop :=
+  ∀ x y z, ge x y → ge y z → ge x z
+
+def get_bot : Prop :=
+  ∀ p, get p bot = Vbot
+
+def ge_bot : Prop :=
+  ∀ x, ge x bot
+
+def get_top : Prop :=
+  ∀ p, get p top = Vtop
+
+def ge_top : Prop :=
+  ∀ x, ge top x
+
+def gsspec : Prop :=
+  ∀ p v x q,
+    x ≠ Bot → v ≠ Vbot →
+    get q (set p v x) = if q = p then v else get q x
+
+def gcombine_top : Prop :=
+  ∀ (f : Option aval → Option aval → Option aval) (t1 t2 : LM) p,
+    f none none = none →
+    get p (.Top_except (LM.combine f t1 t2)) =
+      match f (PTree.get p t1) (PTree.get p t2) with
+      | some x => x
+      | none => Vtop
+
+def ge_lub_left : Prop :=
+  ∀ cfg x y, ge (lub cfg x y) x
+
+def ge_lub_right : Prop :=
+  ∀ cfg x y, ge (lub cfg x y) y
 
 end AE
 
