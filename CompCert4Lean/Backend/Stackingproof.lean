@@ -1,5 +1,9 @@
 import CompCert4Lean.Foundation.RocqStdlib
 import CompCert4Lean.Backend.Stacking
+import CompCert4Lean.Backend.Lineartyping
+import CompCert4Lean.Common.Events
+import CompCert4Lean.Common.ExternalCalls
+import CompCert4Lean.Common.Globalenvs
 import CompCert4Lean.Common.Separation
 import CompCert4Lean.Common.Linking
 
@@ -18,25 +22,161 @@ open CompCert4Lean.Foundation.Numbers.Rocq.Coq
 open CompCert4Lean.Backend.Bounds
 open CompCert4Lean.Backend.Conventions
 open CompCert4Lean.Backend.Linear
+open CompCert4Lean.Backend.Lineartyping
 open CompCert4Lean.Backend.LTL
 open CompCert4Lean.Backend.Locations
 open CompCert4Lean.Backend.Mach
 open CompCert4Lean.Backend.Stacking
 open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.ExternalCalls
+open CompCert4Lean.Common.Globalenvs
 open CompCert4Lean.Common.Linking
+open CompCert4Lean.Common.Memdata
 open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Memtype
 open CompCert4Lean.Common.Separation
 open CompCert4Lean.Common.Smallstep
 open CompCert4Lean.Common.Values
 open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Integers
 open CompCert4Lean.X86.Conventions1
 open CompCert4Lean.X86.Machregs
+open CompCert4Lean.X86.Op
 open CompCert4Lean.X86.Stacklayout
 
 private abbrev CompilerConfig := CompCert4Lean.Config.CompilerConfig
 private abbrev Z := CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z
 private abbrev meminj := CompCert4Lean.Common.Values.Val.meminj
 private abbrev locset := CompCert4Lean.Backend.Linear.locset
+private abbrev mem := CompCert4Lean.Common.Memory.mem
+private abbrev z0 : Z := .Z0
+private abbrev z4 : Z := ZArith.BinInt.Z.of_nat 4
+private abbrev z8 : Z := ZArith.BinInt.Z.of_nat 8
+private abbrev zAdd := ZArith.BinInt.Z.add
+private abbrev zMul := ZArith.BinInt.Z.mul
+private abbrev zLe := ZArith.BinInt.Z.le
+private abbrev zLt := ZArith.BinInt.Z.lt
+private abbrev zDivide := ZArith.BinInt.Z.divide
+
+private theorem validBlockOfPerm {m : mem} {b : block} {ofs : Z}
+    {k : CompCert4Lean.Common.Memtype.perm_kind}
+    {p : CompCert4Lean.Common.Memtype.permission} (h : Mem.perm m b ofs k p) :
+    Mem.valid_block m b := by
+  by_cases hb : Mem.valid_block m b
+  · exact hb
+  · have hn := m.nextblock_noaccess b ofs k hb
+    have : False := by simpa [Mem.perm, Mem.perm_order', hn] using h
+    exact this.elim
+
+private theorem locationChunkSize (ty : typ) :
+    intOfZ (size_chunk (chunk_of_type ty)) =
+      4 * intOfZ (CompCert4Lean.Backend.Locations.typesize ty) := by
+  cases ty <;> rfl
+
+private theorem locationAddrNonneg (pos ofs : Z)
+    (hpos : zLe z0 pos) (hofs : zLe z0 ofs) :
+    zLe z0 (zAdd pos (zMul z4 ofs)) := by
+  unfold zLe ZArith.BinInt.Z.le at hpos hofs ⊢
+  unfold zAdd ZArith.BinInt.Z.add
+  unfold zMul ZArith.BinInt.Z.mul
+  repeat rw [intOfZ_zOfInt]
+  have hz0 : intOfZ z0 = 0 := rfl
+  have hz4 : intOfZ z4 = 4 := rfl
+  rw [hz0] at hpos hofs ⊢
+  rw [hz4]
+  omega
+
+private theorem locationAddrMax (pos bound ofs : Z) (ty : typ)
+    (hover : zLe (zAdd pos (zMul z4 bound)) Ptrofs.modulus)
+    (hbound : zLe
+      (zAdd ofs (CompCert4Lean.Backend.Locations.typesize ty)) bound) :
+    zLe (zAdd pos (zMul z4 ofs)) Ptrofs.max_unsigned := by
+  change intOfZ (zAdd pos (zMul z4 ofs)) ≤
+    intOfZ (ZArith.BinInt.Z.sub Ptrofs.modulus (ZArith.BinInt.Z.of_nat 1))
+  unfold ZArith.BinInt.Z.sub
+  rw [intOfZ_zOfInt]
+  change intOfZ (zAdd pos (zMul z4 ofs)) ≤ intOfZ Ptrofs.modulus - 1
+  unfold zLe ZArith.BinInt.Z.le at hover hbound
+  unfold zAdd ZArith.BinInt.Z.add at hover hbound ⊢
+  unfold zMul ZArith.BinInt.Z.mul at hover ⊢
+  rw [intOfZ_zOfInt] at hover hbound ⊢
+  rw [intOfZ_zOfInt] at hover ⊢
+  have hz1 : intOfZ (ZArith.BinInt.Z.of_nat 1) = 1 := rfl
+  have hz2 : intOfZ (ZArith.BinInt.Z.of_nat 2) = 2 := rfl
+  have hz4 : intOfZ z4 = 4 := rfl
+  rw [hz4] at hover ⊢
+  cases ty <;>
+    simp only [CompCert4Lean.Backend.Locations.typesize] at hbound
+  all_goals first | rw [hz1] at hbound | rw [hz2] at hbound
+  all_goals omega
+
+private theorem locationChunkRange (pos bound ofs i : Z) (ty : typ)
+    (hofs : zLe z0 ofs)
+    (hbound : zLe
+      (zAdd ofs (CompCert4Lean.Backend.Locations.typesize ty)) bound)
+    (hi : zLe (zAdd pos (zMul z4 ofs)) i ∧
+      zLt i (zAdd (zAdd pos (zMul z4 ofs))
+        (size_chunk (chunk_of_type ty)))) :
+    zLe pos i ∧ zLt i (zAdd pos (zMul z4 bound)) := by
+  rcases hi with ⟨hlo, hhi⟩
+  have hz0 : intOfZ z0 = 0 := rfl
+  have hz4 : intOfZ z4 = 4 := rfl
+  constructor
+  · unfold zLe ZArith.BinInt.Z.le at hlo ⊢
+    unfold zAdd ZArith.BinInt.Z.add at hlo
+    unfold zMul ZArith.BinInt.Z.mul at hlo
+    repeat rw [intOfZ_zOfInt] at hlo
+    rw [hz4] at hlo
+    unfold zLe ZArith.BinInt.Z.le at hofs
+    rw [hz0] at hofs
+    omega
+  · unfold zLt ZArith.BinInt.Z.lt at hhi ⊢
+    unfold zAdd ZArith.BinInt.Z.add at hhi ⊢
+    unfold zMul ZArith.BinInt.Z.mul at hhi ⊢
+    repeat rw [intOfZ_zOfInt] at hhi ⊢
+    rw [hz4] at hhi ⊢
+    rw [locationChunkSize ty] at hhi
+    repeat rw [intOfZ_zOfInt] at hhi
+    unfold zLe ZArith.BinInt.Z.le at hbound
+    unfold zAdd ZArith.BinInt.Z.add at hbound
+    rw [intOfZ_zOfInt] at hbound
+    omega
+
+private theorem locationAligned (pos ofs : Z) (ty : typ)
+    (hpos : zDivide z8 pos)
+    (hofs : zDivide (CompCert4Lean.Backend.Locations.typealign ty) ofs) :
+    zDivide (align_chunk (chunk_of_type ty)) (zAdd pos (zMul z4 ofs)) := by
+  rcases hpos with ⟨k, hk⟩
+  rcases hofs with ⟨q, hq⟩
+  have hk' := congrArg intOfZ hk
+  unfold ZArith.BinInt.Z.mul at hk'
+  rw [intOfZ_zOfInt] at hk'
+  change intOfZ pos = 8 * intOfZ k at hk'
+  have hz2 : intOfZ (ZArith.BinInt.Z.of_nat 2) = 2 := rfl
+  have hz4 : intOfZ z4 = 4 := rfl
+  have hz8 : intOfZ z8 = 8 := rfl
+  cases ty
+  case Tlong =>
+    change zDivide z8 _
+    change ofs = zMul (ZArith.BinInt.Z.of_nat 2) q at hq
+    have hq' := congrArg intOfZ hq
+    unfold zMul ZArith.BinInt.Z.mul at hq'
+    rw [intOfZ_zOfInt, hz2] at hq'
+    refine ⟨zAdd k q, ?_⟩
+    apply intOfZ_injective
+    unfold zAdd zMul ZArith.BinInt.Z.add ZArith.BinInt.Z.mul
+    repeat rw [intOfZ_zOfInt]
+    rw [hz4, hz8]
+    omega
+  all_goals
+    change zDivide z4 _
+    refine ⟨zAdd (zMul (ZArith.BinInt.Z.of_nat 2) k) ofs, ?_⟩
+    apply intOfZ_injective
+    unfold zAdd zMul ZArith.BinInt.Z.add ZArith.BinInt.Z.mul
+    repeat rw [intOfZ_zOfInt]
+    rw [hz2, hz4]
+    omega
 
 /-! Program matching -/
 
@@ -46,20 +186,69 @@ def match_prog (cfg : CompilerConfig) (p : Linear.program) (tp : Mach.program) :
     (fun _ f tf => transf_fundef cfg f = .OK tf)
     (fun x y : Unit => x = y) p tp
 
-/-! Memory assertions used by the frame relation.  The footprint carrier is
-kept explicit so the later proof phase can refine the predicate without
-changing any public identity. -/
+/-! Memory assertions used by the frame relation. -/
 
 def contains_locations (j : meminj) (sp : block) (pos bound : Z)
     (sl : slot) (ls : locset) : massert :=
-  { m_pred := fun _ => True
-    m_footprint := fun _ _ => False
+  { m_pred := fun m =>
+      zDivide z8 pos ∧ zLe z0 pos ∧
+      zLe (zAdd pos (zMul z4 bound)) Ptrofs.modulus ∧
+      Mem.range_perm m sp pos (zAdd pos (zMul z4 bound)) Cur Freeable ∧
+      ∀ ofs ty, zLe z0 ofs →
+        zLe (zAdd ofs (CompCert4Lean.Backend.Locations.typesize ty)) bound →
+        zDivide (CompCert4Lean.Backend.Locations.typealign ty) ofs →
+        ∃ v,
+          Mem.load (chunk_of_type ty) m sp (zAdd pos (zMul z4 ofs)) = some v ∧
+          Val.inject j (ls (S sl ofs ty)) v
+    m_footprint := fun b ofs =>
+      b = sp ∧ zLe pos ofs ∧ zLt ofs (zAdd pos (zMul z4 bound))
     m_invar := by
-      intro _ _ h _
-      exact h
+      intro m m' h hunch
+      rcases h with ⟨hdiv, hpos, hover, hperm, hload⟩
+      refine ⟨hdiv, hpos, hover, ?_, ?_⟩
+      · intro ofs hofs
+        have hp := hperm ofs hofs
+        have hb := validBlockOfPerm hp
+        exact (hunch.unchanged_on_perm sp ofs Cur Freeable
+          ⟨rfl, hofs.1, hofs.2⟩ hb).mp hp
+      · intro ofs ty hofs hbound halign
+        rcases hload ofs ty hofs hbound halign with ⟨v, hv, hinj⟩
+        let addr := zAdd pos (zMul z4 ofs)
+        let spec : val → Prop := fun v' => Val.inject j (ls (S sl ofs ty)) v'
+        have haddr0 : zLe z0 addr := locationAddrNonneg pos ofs hpos hofs
+        have haddrmax : zLe addr Ptrofs.max_unsigned :=
+          locationAddrMax pos bound ofs ty hover hbound
+        have hvalid : Mem.valid_access m (chunk_of_type ty) sp addr Freeable := by
+          refine ⟨?_, ?_⟩
+          · intro i hi
+            exact hperm i (locationChunkRange pos bound ofs i ty hofs hbound hi)
+          · exact locationAligned pos ofs ty hdiv halign
+        have hc : (contains (chunk_of_type ty) sp addr spec).m_pred m :=
+          ⟨haddr0, haddrmax, hvalid, v, hv, hinj⟩
+        have hunch' : Mem.unchanged_on
+            (contains (chunk_of_type ty) sp addr spec).m_footprint m m' := by
+          exact {
+            unchanged_on_nextblock := hunch.unchanged_on_nextblock
+            unchanged_on_perm := by
+              intro b i k p hi hb
+              exact hunch.unchanged_on_perm b i k p (by
+                rcases hi with ⟨rfl, hlo, hhi⟩
+                exact ⟨rfl, locationChunkRange pos bound ofs i ty hofs hbound
+                  ⟨hlo, hhi⟩⟩) hb
+            unchanged_on_contents := by
+              intro b i hi hp
+              exact hunch.unchanged_on_contents b i (by
+                rcases hi with ⟨rfl, hlo, hhi⟩
+                exact ⟨rfl, locationChunkRange pos bound ofs i ty hofs hbound
+                  ⟨hlo, hhi⟩⟩) hp
+          }
+        rcases (contains (chunk_of_type ty) sp addr spec).m_invar m m' hc hunch' with
+          ⟨_, _, _, v', hv', hinj'⟩
+        exact ⟨v', hv', hinj'⟩
     m_valid := by
-      intro _ _ _ _ h
-      exact False.elim h }
+      intro m b ofs h hfoot
+      rcases hfoot with ⟨rfl, hlo, hhi⟩
+      exact validBlockOfPerm (h.2.2.2.1 ofs ⟨hlo, hhi⟩) }
 
 def contains_callee_saves (j : meminj) (sp : block) (pos : Z)
     (rl : List mreg) (ls : locset) : massert :=
@@ -69,7 +258,9 @@ def contains_callee_saves (j : meminj) (sp : block) (pos : Z)
       let ty := mreg_type r
       let sz := CompCert4Lean.Common.AST.typesize ty
       let pos' := align pos sz
-      sepconj (pure True)
+      sepconj
+        (contains (chunk_of_type ty) sp pos'
+          (fun v => Val.inject j (ls (R r)) v))
         (contains_callee_saves j sp (ZArith.BinInt.Z.add pos' sz) rs ls)
 
 /-! Frame assertions.  The configuration and source function are explicit in
@@ -117,138 +308,825 @@ def agree_unused (cfg : CompilerConfig) (b : bounds cfg) (j : meminj)
 def no_callee_saves (cfg : CompilerConfig) (l : List mreg) : Prop :=
   List.any l (fun r => is_callee_save cfg r) = false
 
-/-! Call-stack and state relations.  Their generated constructors are owned by
-this module; constructor premises are intentionally left for proof migration.
--/
+/-! Call-stack and state relations. -/
 
-def stack_contents (cfg : CompilerConfig) (f : Linear.function)
-    (j : meminj) (cs : List Linear.stackframe)
+def stack_contents (cfg : CompilerConfig) (j : meminj) (cs : List Linear.stackframe)
     (cs' : List Mach.stackframe) : massert :=
-  pure True
+  match cs, cs' with
+  | [], [] => pure True
+  | Linear.Stackframe f _ ls _ :: cs,
+      Mach.Stackframe _ (Vptr sp' _) _ _ :: cs' =>
+      sepconj
+        (frame_contents cfg f j sp' ls (Linear.parent_locset cs)
+          (Mach.parent_sp cs') (Mach.parent_ra cs'))
+        (stack_contents cfg j cs cs')
+  | _, _ => pure False
 
-inductive match_stacks (cfg : CompilerConfig) (j : meminj) :
+inductive match_stacks (cfg : CompilerConfig) (tprog : Mach.program) (j : meminj) :
     List Linear.stackframe → List Mach.stackframe → signature → Prop where
-  | match_stacks_empty (sg : signature) :
-      match_stacks cfg j [] [] sg
-  | match_stacks_cons {cs : List Linear.stackframe} {cs' : List Mach.stackframe}
-      {sg : signature} :
-      match_stacks cfg j cs cs' sg
+  | match_stacks_empty (sg : signature)
+      (htail : tailcall_possible cfg sg) :
+      match_stacks cfg tprog j [] [] sg
+  | match_stacks_cons (f : Linear.function) (sp : block) (ls : locset)
+      (c : Linear.code) (cs : List Linear.stackframe) (fb sp' : block)
+      (ra : val) (c' : Mach.code) (cs' : List Mach.stackframe)
+      (sg : signature) (trf : Mach.function)
+      (htail : is_tail c f.fn_code)
+      (hfind : Genv.find_funct_ptr (Genv.globalenv tprog) fb = some (.Internal trf))
+      (htransf : transf_function cfg f = .OK trf)
+      (hcode : transl_code cfg (make_env cfg (function_bounds cfg f)) c = c')
+      (hinj : j sp = some (sp', (make_env cfg (function_bounds cfg f)).fe_stack_data))
+      (hra : Val.has_type ra Tptr)
+      (hlocs : agree_locs cfg f (function_bounds cfg f) ls
+        (Linear.parent_locset cs))
+      (hargs : ∀ ofs ty,
+        S Outgoing ofs ty ∈ regs_of_rpairs (loc_arguments cfg sg) →
+          slot_within_bounds (function_bounds cfg f) Outgoing ofs ty)
+      (hstacks : match_stacks cfg tprog j cs cs' f.fn_sig) :
+      match_stacks cfg tprog j
+        (Linear.Stackframe f (Vptr sp Ptrofs.zero) ls c :: cs)
+        (Mach.Stackframe fb (Vptr sp' Ptrofs.zero) ra c' :: cs') sg
 
-inductive match_states (cfg : CompilerConfig) :
+inductive match_states (cfg : CompilerConfig)
+    (prog : Linear.program) (tprog : Mach.program) :
     Linear.state → Mach.state → Prop where
-  | match_states_intro {s : Linear.state} {t : Mach.state} :
-      match_states cfg s t
-  | match_states_call {s : Linear.state} {t : Mach.state} :
-      match_states cfg s t
-  | match_states_return {s : Linear.state} {t : Mach.state} :
-      match_states cfg s t
+  | match_states_intro (cs : List Linear.stackframe) (f : Linear.function)
+      (sp : block) (c : Linear.code) (ls : locset) (m : mem)
+      (cs' : List Mach.stackframe) (fb sp' : block) (rs : regset) (m' : mem)
+      (j : meminj) (tf : Mach.function)
+      (hstacks : match_stacks cfg tprog j cs cs' f.fn_sig)
+      (htransf : transf_function cfg f = .OK tf)
+      (hfind : Genv.find_funct_ptr (Genv.globalenv tprog) fb = some (.Internal tf))
+      (hregs : agree_regs j ls rs)
+      (hlocs : agree_locs cfg f (function_bounds cfg f) ls
+        (Linear.parent_locset cs))
+      (hinj : j sp = some (sp', (make_env cfg (function_bounds cfg f)).fe_stack_data))
+      (htail : is_tail c f.fn_code)
+      (hsep : (sepconj
+        (frame_contents cfg f j sp' ls (Linear.parent_locset cs)
+          (Mach.parent_sp cs') (Mach.parent_ra cs'))
+        (sepconj (stack_contents cfg j cs cs')
+          (sepconj (minjection j m)
+            (globalenv_inject (Genv.globalenv prog) j)))).m_pred m') :
+      match_states cfg prog tprog
+        (Linear.State cs f (Vptr sp Ptrofs.zero) c ls m)
+        (Mach.State cs' fb (Vptr sp' Ptrofs.zero)
+          (transl_code cfg (make_env cfg (function_bounds cfg f)) c) rs m')
+  | match_states_call (cs : List Linear.stackframe) (f : Linear.fundef)
+      (ls : locset) (m : mem) (cs' : List Mach.stackframe) (fb : block)
+      (rs : regset) (m' : mem) (j : meminj) (tf : Mach.fundef)
+      (hstacks : match_stacks cfg tprog j cs cs' (Linear.funsig f))
+      (htransf : transf_fundef cfg f = .OK tf)
+      (hfind : Genv.find_funct_ptr (Genv.globalenv tprog) fb = some tf)
+      (hregs : agree_regs j ls rs)
+      (hsep : (sepconj (stack_contents cfg j cs cs')
+        (sepconj (minjection j m)
+          (globalenv_inject (Genv.globalenv prog) j))).m_pred m') :
+      match_states cfg prog tprog
+        (Linear.Callstate cs f ls m) (Mach.Callstate cs' fb rs m')
+  | match_states_return (cs : List Linear.stackframe) (ls : locset) (m : mem)
+      (cs' : List Mach.stackframe) (rs : regset) (m' : mem) (j : meminj)
+      (sg : signature)
+      (hstacks : match_stacks cfg tprog j cs cs' sg)
+      (hregs : agree_regs j ls rs)
+      (hsep : (sepconj (stack_contents cfg j cs cs')
+        (sepconj (minjection j m)
+          (globalenv_inject (Genv.globalenv prog) j))).m_pred m') :
+      match_states cfg prog tprog
+        (Linear.Returnstate cs ls m) (Mach.Returnstate cs' rs m')
 
 export match_states (match_states_intro match_states_call match_states_return)
 
 /-! Exact declaration identities reserved for later proof migration. -/
 
-def LTL_undef_regs_othersStatement : Prop := True
-def LTL_undef_regs_sameStatement : Prop := True
-def LTL_undef_regs_slotStatement : Prop := True
-def agree_locs_returnStatement : Prop := True
-def agree_locs_set_regStatement : Prop := True
-def agree_locs_set_resStatement : Prop := True
-def agree_locs_set_slotStatement : Prop := True
-def agree_locs_undef_locsStatement : Prop := True
-def agree_locs_undef_locs_1Statement : Prop := True
-def agree_locs_undef_regsStatement : Prop := True
-def agree_regStatement : Prop := True
-def agree_reglistStatement : Prop := True
-def agree_regs_call_regsStatement : Prop := True
-def agree_regs_inject_incrStatement : Prop := True
-def agree_regs_set_pairStatement : Prop := True
-def agree_regs_set_regStatement : Prop := True
-def agree_regs_set_resStatement : Prop := True
-def agree_regs_set_slotStatement : Prop := True
-def agree_regs_undef_caller_save_regsStatement : Prop := True
-def agree_regs_undef_regsStatement : Prop := True
-def align_type_chunkStatement : Prop := True
-def caller_save_reg_within_boundsStatement : Prop := True
-def contains_callee_saves_extenStatement : Prop := True
-def contains_callee_saves_incrStatement : Prop := True
-def contains_get_stackStatement : Prop := True
-def contains_locations_extenStatement : Prop := True
-def contains_locations_incrStatement : Prop := True
-def contains_set_stackStatement : Prop := True
-def destroyed_at_function_entry_caller_saveStatement : Prop := True
-def destroyed_by_cond_caller_saveStatement : Prop := True
-def destroyed_by_jumptable_caller_saveStatement : Prop := True
-def destroyed_by_load_caller_saveStatement : Prop := True
-def destroyed_by_op_caller_saveStatement : Prop := True
-def destroyed_by_setstack_caller_saveStatement : Prop := True
-def destroyed_by_setstack_function_entryStatement : Prop := True
-def destroyed_by_store_caller_saveStatement : Prop := True
-def find_function_translatedStatement : Prop := True
-def find_label_restore_callee_saveStatement : Prop := True
-def find_label_save_callee_saveStatement : Prop := True
-def find_label_tailStatement : Prop := True
-def find_label_transl_codeStatement : Prop := True
-def frame_contents_extenStatement : Prop := True
-def frame_contents_incrStatement : Prop := True
-def frame_get_localStatement : Prop := True
-def frame_get_outgoingStatement : Prop := True
-def frame_get_parentStatement : Prop := True
-def frame_set_localStatement : Prop := True
-def frame_set_outgoingStatement : Prop := True
-def frame_set_regStatement : Prop := True
-def frame_set_resStatement : Prop := True
-def frame_undef_regsStatement : Prop := True
-def function_epilogue_correctStatement : Prop := True
-def function_prologue_correctStatement : Prop := True
-def function_ptr_translatedStatement : Prop := True
-def get_locationStatement : Prop := True
-def hasvalue_get_stackStatement : Prop := True
-def initial_locationsStatement : Prop := True
-def is_tail_restore_callee_saveStatement : Prop := True
-def is_tail_save_callee_saveStatement : Prop := True
-def is_tail_transf_functionStatement : Prop := True
-def is_tail_transl_codeStatement : Prop := True
-def is_tail_transl_instrStatement : Prop := True
-def load_result_injectStatement : Prop := True
-def match_stacks_change_meminjStatement : Prop := True
-def match_stacks_change_sigStatement : Prop := True
-def match_stacks_type_retaddrStatement : Prop := True
-def match_stacks_type_spStatement : Prop := True
-def restore_callee_save_correctStatement : Prop := True
-def restore_callee_save_rec_correctStatement : Prop := True
-def save_callee_save_correctStatement : Prop := True
-def save_callee_save_rec_correctStatement : Prop := True
-def senv_preservedStatement : Prop := True
-def set_locationStatement : Prop := True
-def simplify_load_correctStatement : Prop := True
-def simplify_load_destroyedStatement : Prop := True
-def simplify_store_correctStatement : Prop := True
-def simplify_store_destroyedStatement : Prop := True
-def size_no_overflowStatement : Prop := True
-def size_type_chunkStatement : Prop := True
-def slot_outgoing_argument_validStatement : Prop := True
-def stack_contents_change_meminjStatement : Prop := True
-def symbols_preservedStatement : Prop := True
-def transf_final_statesStatement : Prop := True
-def transf_initial_statesStatement : Prop := True
-def transf_program_correctStatement : Prop := True
-def transf_program_matchStatement : Prop := True
-def transf_step_correctStatement : Prop := True
-def transl_builtin_arg_correctStatement : Prop := True
-def transl_builtin_args_correctStatement : Prop := True
-def transl_code_eqStatement : Prop := True
-def transl_destroyed_by_loadStatement : Prop := True
-def transl_destroyed_by_opStatement : Prop := True
-def transl_destroyed_by_storeStatement : Prop := True
-def transl_external_argumentStatement : Prop := True
-def transl_external_argument_2Statement : Prop := True
-def transl_external_argumentsStatement : Prop := True
-def transl_external_arguments_recStatement : Prop := True
-def transl_find_labelStatement : Prop := True
-def typesize_typesizeStatement : Prop := True
-def undef_regs_typeStatement : Prop := True
-def unfold_transf_functionStatement : Prop := True
-def valid_access_locationStatement : Prop := True
-def wt_progStatement : Prop := True
+def LTL_undef_regs_othersStatement : Prop :=
+  ∀ r rl ls, r ∉ rl → LTL.undef_regs rl ls (R r) = ls (R r)
+
+def LTL_undef_regs_sameStatement : Prop :=
+  ∀ r rl ls, r ∈ rl → LTL.undef_regs rl ls (R r) = Vundef
+
+def LTL_undef_regs_slotStatement : Prop :=
+  ∀ sl ofs ty rl ls,
+    LTL.undef_regs rl ls (S sl ofs ty) = ls (S sl ofs ty)
+
+def agree_locs_returnStatement : Prop :=
+  ∀ cfg f ls ls0 ls',
+    agree_locs cfg f (function_bounds cfg f) ls ls0 →
+    agree_callee_save cfg ls' ls →
+    agree_locs cfg f (function_bounds cfg f) ls' ls0
+
+def agree_locs_set_regStatement : Prop :=
+  ∀ cfg f ls ls0 r v,
+    agree_locs cfg f (function_bounds cfg f) ls ls0 →
+    mreg_within_bounds cfg (function_bounds cfg f) r →
+    agree_locs cfg f (function_bounds cfg f) (Locmap.set (R r) v ls) ls0
+
+def agree_locs_set_pairStatement : Prop :=
+  ∀ cfg f ls0 p v ls,
+    agree_locs cfg f (function_bounds cfg f) ls ls0 →
+    forall_rpair (fun r => is_callee_save cfg r = false) p →
+    agree_locs cfg f (function_bounds cfg f) (Locmap.setpair p v ls) ls0
+
+def agree_locs_set_resStatement : Prop :=
+  ∀ cfg f ls0 res v ls,
+    agree_locs cfg f (function_bounds cfg f) ls ls0 →
+    (∀ r, r ∈ params_of_builtin_res res →
+      mreg_within_bounds cfg (function_bounds cfg f) r) →
+    agree_locs cfg f (function_bounds cfg f) (Locmap.setres res v ls) ls0
+
+def agree_locs_set_slotStatement : Prop :=
+  ∀ cfg f ls ls0 sl ofs ty v,
+    agree_locs cfg f (function_bounds cfg f) ls ls0 →
+    slot_writable sl = true →
+    agree_locs cfg f (function_bounds cfg f)
+      (Locmap.set (S sl ofs ty) v ls) ls0
+
+def agree_locs_undef_locsStatement : Prop :=
+  ∀ cfg f ls0 regs ls,
+    agree_locs cfg f (function_bounds cfg f) ls ls0 →
+    List.any regs (is_callee_save cfg) = false →
+    agree_locs cfg f (function_bounds cfg f) (LTL.undef_regs regs ls) ls0
+
+def agree_locs_undef_locs_1Statement : Prop :=
+  ∀ cfg f ls0 regs ls,
+    agree_locs cfg f (function_bounds cfg f) ls ls0 →
+    (∀ r, r ∈ regs → is_callee_save cfg r = false) →
+    agree_locs cfg f (function_bounds cfg f) (LTL.undef_regs regs ls) ls0
+
+def agree_locs_undef_regsStatement : Prop :=
+  ∀ cfg f ls0 regs ls,
+    agree_locs cfg f (function_bounds cfg f) ls ls0 →
+    (∀ r, r ∈ regs →
+      mreg_within_bounds cfg (function_bounds cfg f) r) →
+    agree_locs cfg f (function_bounds cfg f) (LTL.undef_regs regs ls) ls0
+
+def agree_regStatement : Prop :=
+  ∀ j ls rs r, agree_regs j ls rs → Val.inject j (ls (R r)) (rs r)
+
+def agree_reglistStatement : Prop :=
+  ∀ j ls rs rl, agree_regs j ls rs →
+    Val.inject_list j (LTL.reglist ls rl) (rl.map rs)
+
+def agree_regs_call_regsStatement : Prop :=
+  ∀ j ls rs, agree_regs j ls rs → agree_regs j (LTL.call_regs ls) rs
+
+def agree_regs_extenStatement : Prop :=
+  ∀ j ls rs ls' rs',
+    agree_regs j ls rs →
+    (∀ r, ls' (R r) = Vundef ∨
+      (ls' (R r) = ls (R r) ∧ rs' r = rs r)) →
+    agree_regs j ls' rs'
+
+def agree_regs_inject_incrStatement : Prop :=
+  ∀ j ls rs j', agree_regs j ls rs → Val.inject_incr j j' →
+    agree_regs j' ls rs
+
+def agree_regs_set_pairStatement : Prop :=
+  ∀ j p v v' ls rs, agree_regs j ls rs → Val.inject j v v' →
+    agree_regs j (Locmap.setpair p v ls) (Mach.set_pair p v' rs)
+
+def agree_regs_set_regStatement : Prop :=
+  ∀ j ls rs r v v', agree_regs j ls rs → Val.inject j v v' →
+    agree_regs j (Locmap.set (R r) v ls) (Mach.Regmap.set r v' rs)
+
+def agree_regs_set_resStatement : Prop :=
+  ∀ j res v v' ls rs, agree_regs j ls rs → Val.inject j v v' →
+    agree_regs j (Locmap.setres res v ls) (Mach.set_res res v' rs)
+
+def agree_regs_set_slotStatement : Prop :=
+  ∀ j ls rs sl ofs ty v, agree_regs j ls rs →
+    agree_regs j (Locmap.set (S sl ofs ty) v ls) rs
+
+def agree_regs_undef_caller_save_regsStatement : Prop :=
+  ∀ cfg j ls rs, agree_regs j ls rs →
+    agree_regs j (LTL.undef_caller_save_regs cfg ls)
+      (Mach.undef_caller_save_regs cfg rs)
+
+def agree_regs_undef_regsStatement : Prop :=
+  ∀ j rl ls rs, agree_regs j ls rs →
+    agree_regs j (LTL.undef_regs rl ls) (Mach.undef_regs rl rs)
+
+def align_type_chunkStatement : Prop :=
+  ∀ ty, align_chunk (chunk_of_type ty) =
+    zMul z4 (CompCert4Lean.Backend.Locations.typealign ty)
+
+def bound_stack_data_stacksizeStatement : Prop :=
+  ∀ cfg f,
+    zLe f.fn_stacksize (function_bounds cfg f).bound_stack_data
+
+def caller_save_reg_within_boundsStatement : Prop :=
+  ∀ cfg f r, is_callee_save cfg r = false →
+    mreg_within_bounds cfg (function_bounds cfg f) r
+
+def contains_callee_saves_extenStatement : Prop :=
+  ∀ j sp ls ls' rl pos,
+    (∀ r, r ∈ rl → ls' (R r) = ls (R r)) →
+    massert_eqv (contains_callee_saves j sp pos rl ls)
+      (contains_callee_saves j sp pos rl ls')
+
+def contains_callee_saves_incrStatement : Prop :=
+  ∀ j j' sp ls, Val.inject_incr j j' → ∀ rl pos,
+    massert_imp (contains_callee_saves j sp pos rl ls)
+      (contains_callee_saves j' sp pos rl ls)
+
+def contains_get_stackStatement : Prop :=
+  ∀ (spec : val → Prop) m ty sp ofs,
+    (contains (chunk_of_type ty) sp ofs spec).m_pred m →
+    ∃ v, Mach.load_stack m (Vptr sp Ptrofs.zero) ty (Ptrofs.repr ofs) = some v ∧
+      spec v
+
+def contains_locations_extenStatement : Prop :=
+  ∀ ls ls' j sp pos bound sl,
+    (∀ ofs ty, Val.lessdef (ls' (S sl ofs ty)) (ls (S sl ofs ty))) →
+    massert_imp (contains_locations j sp pos bound sl ls)
+      (contains_locations j sp pos bound sl ls')
+
+def contains_locations_incrStatement : Prop :=
+  ∀ j j' sp pos bound sl ls, Val.inject_incr j j' →
+    massert_imp (contains_locations j sp pos bound sl ls)
+      (contains_locations j' sp pos bound sl ls)
+
+def contains_set_stackStatement : Prop :=
+  ∀ (spec : val → Prop) v (spec1 : val → Prop) m ty sp ofs P,
+    (sepconj (contains (chunk_of_type ty) sp ofs spec1) P).m_pred m →
+    spec (Val.load_result (chunk_of_type ty) v) →
+    ∃ m', Mach.store_stack m (Vptr sp Ptrofs.zero) ty (Ptrofs.repr ofs) v = some m' ∧
+      (sepconj (contains (chunk_of_type ty) sp ofs spec) P).m_pred m'
+
+def destroyed_at_function_entry_caller_saveStatement : Prop :=
+  ∀ cfg, no_callee_saves cfg destroyed_at_function_entry
+
+def destroyed_by_cond_caller_saveStatement : Prop :=
+  ∀ cfg cond, no_callee_saves cfg (destroyed_by_cond cond)
+
+def destroyed_by_jumptable_caller_saveStatement : Prop :=
+  ∀ cfg, no_callee_saves cfg destroyed_by_jumptable
+
+def destroyed_by_load_caller_saveStatement : Prop :=
+  ∀ cfg chunk addr, no_callee_saves cfg (destroyed_by_load chunk addr)
+
+def destroyed_by_op_caller_saveStatement : Prop :=
+  ∀ cfg op, no_callee_saves cfg (destroyed_by_op op)
+
+def destroyed_by_setstack_caller_saveStatement : Prop :=
+  ∀ cfg ty, no_callee_saves cfg (destroyed_by_setstack ty)
+
+def destroyed_by_setstack_function_entryStatement : Prop :=
+  ∀ ty r, r ∈ destroyed_by_setstack ty → r ∈ destroyed_at_function_entry
+
+def destroyed_by_store_caller_saveStatement : Prop :=
+  ∀ cfg chunk addr, no_callee_saves cfg (destroyed_by_store chunk addr)
+def find_function_translatedStatement : Prop :=
+  ∀ cfg (prog : Linear.program) (tprog : Mach.program),
+    match_prog cfg prog tprog → ∀ j ls rs m ros f,
+    agree_regs j ls rs →
+    (globalenv_inject (Genv.globalenv prog) j).m_pred m →
+    Linear.find_function (Genv.globalenv prog) ros ls = some f →
+    ∃ bf tf,
+      Mach.find_function_ptr (Genv.globalenv tprog) ros rs = some bf ∧
+      Genv.find_funct_ptr (Genv.globalenv tprog) bf = some tf ∧
+      transf_fundef cfg f = .OK tf
+
+def find_label_restore_callee_saveStatement : Prop :=
+  ∀ lbl l ofs k,
+    Mach.find_label lbl (restore_callee_save_rec l ofs k) = Mach.find_label lbl k
+
+def find_label_save_callee_saveStatement : Prop :=
+  ∀ lbl l ofs k,
+    Mach.find_label lbl (save_callee_save_rec l ofs k) = Mach.find_label lbl k
+
+def find_label_tailStatement : Prop :=
+  ∀ lbl c c', Linear.find_label lbl c = some c' → is_tail c' c
+
+def find_label_transl_codeStatement : Prop :=
+  ∀ cfg fe lbl c,
+    Mach.find_label lbl (transl_code cfg fe c) =
+      Option.map (transl_code cfg fe) (Linear.find_label lbl c)
+
+def frame_contents_extenStatement : Prop :=
+  ∀ cfg f ls ls0 ls' ls0' j sp parent retaddr P m,
+    (∀ ofs ty, Val.lessdef (ls' (S Local ofs ty)) (ls (S Local ofs ty))) →
+    (∀ ofs ty, Val.lessdef (ls' (S Outgoing ofs ty)) (ls (S Outgoing ofs ty))) →
+    (∀ r, r ∈ (function_bounds cfg f).used_callee_save →
+      ls0' (R r) = ls0 (R r)) →
+    (sepconj (frame_contents cfg f j sp ls ls0 parent retaddr) P).m_pred m →
+    (sepconj (frame_contents cfg f j sp ls' ls0' parent retaddr) P).m_pred m
+
+def frame_contents_incrStatement : Prop :=
+  ∀ cfg f j sp ls ls0 parent retaddr m P j',
+    (sepconj (frame_contents cfg f j sp ls ls0 parent retaddr) P).m_pred m →
+    Val.inject_incr j j' →
+    (sepconj (frame_contents cfg f j' sp ls ls0 parent retaddr) P).m_pred m
+
+def frame_get_localStatement : Prop :=
+  ∀ cfg f ofs ty j sp ls ls0 parent retaddr m P,
+    (sepconj (frame_contents cfg f j sp ls ls0 parent retaddr) P).m_pred m →
+    slot_within_bounds (function_bounds cfg f) Local ofs ty →
+    slot_valid cfg f Local ofs ty = true →
+    ∃ v,
+      Mach.load_stack m (Vptr sp Ptrofs.zero) ty
+        (Ptrofs.repr (offset_local (make_env cfg (function_bounds cfg f)) ofs)) = some v ∧
+      Val.inject j (ls (S Local ofs ty)) v
+
+def frame_get_outgoingStatement : Prop :=
+  ∀ cfg f ofs ty j sp ls ls0 parent retaddr m P,
+    (sepconj (frame_contents cfg f j sp ls ls0 parent retaddr) P).m_pred m →
+    slot_within_bounds (function_bounds cfg f) Outgoing ofs ty →
+    slot_valid cfg f Outgoing ofs ty = true →
+    ∃ v,
+      Mach.load_stack m (Vptr sp Ptrofs.zero) ty
+        (Ptrofs.repr (offset_arg cfg ofs)) = some v ∧
+      Val.inject j (ls (S Outgoing ofs ty)) v
+
+def frame_get_parentStatement : Prop :=
+  ∀ cfg f j sp ls ls0 parent retaddr m P,
+    (sepconj (frame_contents cfg f j sp ls ls0 parent retaddr) P).m_pred m →
+    Mach.load_stack m (Vptr sp Ptrofs.zero) Tptr
+      (Ptrofs.repr (make_env cfg (function_bounds cfg f)).fe_ofs_link) = some parent
+
+def frame_get_retaddrStatement : Prop :=
+  ∀ cfg f j sp ls ls0 parent retaddr m P,
+    (sepconj (frame_contents cfg f j sp ls ls0 parent retaddr) P).m_pred m →
+    Mach.load_stack m (Vptr sp Ptrofs.zero) Tptr
+      (Ptrofs.repr (make_env cfg (function_bounds cfg f)).fe_ofs_retaddr) = some retaddr
+
+def frame_set_localStatement : Prop :=
+  ∀ cfg f ofs ty v v' j sp ls ls0 parent retaddr m P,
+    (sepconj (frame_contents cfg f j sp ls ls0 parent retaddr) P).m_pred m →
+    slot_within_bounds (function_bounds cfg f) Local ofs ty →
+    slot_valid cfg f Local ofs ty = true → Val.inject j v v' →
+    ∃ m',
+      Mach.store_stack m (Vptr sp Ptrofs.zero) ty
+        (Ptrofs.repr (offset_local (make_env cfg (function_bounds cfg f)) ofs)) v' = some m' ∧
+      (sepconj (frame_contents cfg f j sp
+        (Locmap.set (S Local ofs ty) v ls) ls0 parent retaddr) P).m_pred m'
+
+def frame_set_outgoingStatement : Prop :=
+  ∀ cfg f ofs ty v v' j sp ls ls0 parent retaddr m P,
+    (sepconj (frame_contents cfg f j sp ls ls0 parent retaddr) P).m_pred m →
+    slot_within_bounds (function_bounds cfg f) Outgoing ofs ty →
+    slot_valid cfg f Outgoing ofs ty = true → Val.inject j v v' →
+    ∃ m',
+      Mach.store_stack m (Vptr sp Ptrofs.zero) ty
+        (Ptrofs.repr (offset_arg cfg ofs)) v' = some m' ∧
+      (sepconj (frame_contents cfg f j sp
+        (Locmap.set (S Outgoing ofs ty) v ls) ls0 parent retaddr) P).m_pred m'
+
+def frame_set_regStatement : Prop :=
+  ∀ cfg f r v j sp ls ls0 parent retaddr m P,
+    (sepconj (frame_contents cfg f j sp ls ls0 parent retaddr) P).m_pred m →
+    (sepconj (frame_contents cfg f j sp
+      (Locmap.set (R r) v ls) ls0 parent retaddr) P).m_pred m
+
+def frame_set_regpairStatement : Prop :=
+  ∀ cfg f j sp ls0 parent retaddr m P p v ls,
+    (sepconj (frame_contents cfg f j sp ls ls0 parent retaddr) P).m_pred m →
+    (sepconj (frame_contents cfg f j sp
+      (Locmap.setpair p v ls) ls0 parent retaddr) P).m_pred m
+
+def frame_set_resStatement : Prop :=
+  ∀ cfg f j sp ls0 parent retaddr m P res v ls,
+    (sepconj (frame_contents cfg f j sp ls ls0 parent retaddr) P).m_pred m →
+    (sepconj (frame_contents cfg f j sp
+      (Locmap.setres res v ls) ls0 parent retaddr) P).m_pred m
+
+def frame_undef_regsStatement : Prop :=
+  ∀ cfg f j sp ls ls0 parent retaddr m P rl,
+    (sepconj (frame_contents cfg f j sp ls ls0 parent retaddr) P).m_pred m →
+    (sepconj (frame_contents cfg f j sp
+      (LTL.undef_regs rl ls) ls0 parent retaddr) P).m_pred m
+def function_epilogue_correctStatement : Prop :=
+  ∀ cfg xi (return_address_offset : Mach.function → Mach.code → ptrofs → Prop)
+    (tprog : Mach.program) (f : Linear.function) (tf : Mach.function),
+    transf_function cfg f = .OK tf →
+    ∀ m' j sp' ls ls0 pa ra P m rs sp m1 k cs fb,
+    (sepconj (frame_contents cfg f j sp' ls ls0 pa ra)
+      (sepconj (minjection j m) P)).m_pred m' →
+    agree_regs j ls rs →
+    agree_locs cfg f (function_bounds cfg f) ls ls0 →
+    j sp = some (sp', (make_env cfg (function_bounds cfg f)).fe_stack_data) →
+    Mem.free m sp z0 f.fn_stacksize = some m1 →
+    ∃ rs1 m1',
+      Mach.load_stack m' (Vptr sp' Ptrofs.zero) Tptr tf.fn_link_ofs = some pa ∧
+      Mach.load_stack m' (Vptr sp' Ptrofs.zero) Tptr tf.fn_retaddr_ofs = some ra ∧
+      Mem.free m' sp' z0 tf.fn_stacksize = some m1' ∧
+      star (Mach.step cfg xi return_address_offset) (Genv.globalenv tprog)
+        (Mach.State cs fb (Vptr sp' Ptrofs.zero)
+          (restore_callee_save (make_env cfg (function_bounds cfg f)) k) rs m')
+        E0 (Mach.State cs fb (Vptr sp' Ptrofs.zero) k rs1 m') ∧
+      agree_regs j (LTL.return_regs cfg ls0 ls) rs1 ∧
+      agree_callee_save cfg (LTL.return_regs cfg ls0 ls) ls0 ∧
+      (sepconj (minjection j m1) P).m_pred m1'
+
+def function_prologue_correctStatement : Prop :=
+  ∀ cfg xi (return_address_offset : Mach.function → Mach.code → ptrofs → Prop)
+    (prog : Linear.program) (tprog : Mach.program)
+    (f : Linear.function) (tf : Mach.function),
+    transf_function cfg f = .OK tf →
+    ∀ j ls ls0 ls1 rs rs1 m1 m1' m2 sp parent ra cs fb k P,
+    agree_regs j ls rs →
+    agree_callee_save cfg ls ls0 →
+    agree_outgoing_arguments cfg f.fn_sig ls ls0 →
+    (∀ r, Val.has_type (ls (R r)) (mreg_type r)) →
+    ls1 = LTL.undef_regs destroyed_at_function_entry (LTL.call_regs ls) →
+    rs1 = Mach.undef_regs destroyed_at_function_entry rs →
+    Mem.alloc m1 z0 f.fn_stacksize = (m2, sp) →
+    Val.has_type parent Tptr → Val.has_type ra Tptr →
+    (sepconj (minjection j m1)
+      (sepconj (globalenv_inject (Genv.globalenv prog) j) P)).m_pred m1' →
+    ∃ j' rs' m2' sp' m3' m4' m5',
+      Mem.alloc m1' z0 tf.fn_stacksize = (m2', sp') ∧
+      Mach.store_stack m2' (Vptr sp' Ptrofs.zero) Tptr tf.fn_link_ofs parent =
+        some m3' ∧
+      Mach.store_stack m3' (Vptr sp' Ptrofs.zero) Tptr tf.fn_retaddr_ofs ra =
+        some m4' ∧
+      star (Mach.step cfg xi return_address_offset) (Genv.globalenv tprog)
+        (Mach.State cs fb (Vptr sp' Ptrofs.zero)
+          (save_callee_save (make_env cfg (function_bounds cfg f)) k) rs1 m4')
+        E0 (Mach.State cs fb (Vptr sp' Ptrofs.zero) k rs' m5') ∧
+      agree_regs j' ls1 rs' ∧
+      agree_locs cfg f (function_bounds cfg f) ls1 ls0 ∧
+      (sepconj (frame_contents cfg f j' sp' ls1 ls0 parent ra)
+        (sepconj (minjection j' m2)
+          (sepconj (globalenv_inject (Genv.globalenv prog) j') P))).m_pred m5' ∧
+      j' sp = some (sp', (make_env cfg (function_bounds cfg f)).fe_stack_data) ∧
+      Val.inject_incr j j'
+def functions_translatedStatement : Prop :=
+  ∀ cfg (prog : Linear.program) (tprog : Mach.program),
+    match_prog cfg prog tprog → ∀ v f,
+    Genv.find_funct (Genv.globalenv prog) v = some f →
+    ∃ tf,
+      Genv.find_funct (Genv.globalenv tprog) v = some tf ∧
+      transf_fundef cfg f = .OK tf
+def function_ptr_translatedStatement : Prop :=
+  ∀ cfg (prog : Linear.program) (tprog : Mach.program),
+    match_prog cfg prog tprog → ∀ b f,
+    Genv.find_funct_ptr (Genv.globalenv prog) b = some f →
+    ∃ tf, Genv.find_funct_ptr (Genv.globalenv tprog) b = some tf ∧
+      transf_fundef cfg f = .OK tf
+
+def get_locationStatement : Prop :=
+  ∀ m j sp pos bound sl ls ofs ty,
+    (contains_locations j sp pos bound sl ls).m_pred m →
+    zLe z0 ofs →
+    zLe (zAdd ofs (CompCert4Lean.Backend.Locations.typesize ty)) bound →
+    zDivide (CompCert4Lean.Backend.Locations.typealign ty) ofs →
+    ∃ v,
+      Mach.load_stack m (Vptr sp Ptrofs.zero) ty
+        (Ptrofs.repr (zAdd pos (zMul z4 ofs))) = some v ∧
+      Val.inject j (ls (S sl ofs ty)) v
+
+def hasvalue_get_stackStatement : Prop :=
+  ∀ ty m sp ofs v,
+    (hasvalue (chunk_of_type ty) sp ofs v).m_pred m →
+    Mach.load_stack m (Vptr sp Ptrofs.zero) ty (Ptrofs.repr ofs) = some v
+
+def initial_locationsStatement : Prop :=
+  ∀ j sp pos bound P sl ls m,
+    (sepconj (range sp pos (zAdd pos (zMul z4 bound))) P).m_pred m →
+    zDivide z8 pos →
+    (∀ ofs ty, ls (S sl ofs ty) = Vundef) →
+    (sepconj (contains_locations j sp pos bound sl ls) P).m_pred m
+
+def is_tail_restore_callee_saveStatement : Prop :=
+  ∀ l ofs k, is_tail k (restore_callee_save_rec l ofs k)
+
+def is_tail_save_callee_saveStatement : Prop :=
+  ∀ l ofs k, is_tail k (save_callee_save_rec l ofs k)
+
+def is_tail_transf_functionStatement : Prop :=
+  ∀ cfg f tf c, transf_function cfg f = .OK tf →
+    is_tail c f.fn_code →
+    is_tail (transl_code cfg (make_env cfg (function_bounds cfg f)) c) tf.fn_code
+
+def is_tail_transl_codeStatement : Prop :=
+  ∀ cfg fe c1 c2, is_tail c1 c2 →
+    is_tail (transl_code cfg fe c1) (transl_code cfg fe c2)
+
+def is_tail_transl_instrStatement : Prop :=
+  ∀ cfg fe i k, is_tail k (transl_instr cfg fe i k)
+
+def load_result_injectStatement : Prop :=
+  ∀ j ty v v', Val.inject j v v' → Val.has_type v ty →
+    Val.inject j v (Val.load_result (chunk_of_type ty) v')
+
+def match_stacks_change_meminjStatement : Prop :=
+  ∀ cfg tprog j j', Val.inject_incr j j' → ∀ cs cs' sg,
+    match_stacks cfg tprog j cs cs' sg →
+    match_stacks cfg tprog j' cs cs' sg
+
+def match_stacks_change_sigStatement : Prop :=
+  ∀ cfg tprog sg1 j cs cs' sg,
+    match_stacks cfg tprog j cs cs' sg → tailcall_possible cfg sg1 →
+    match_stacks cfg tprog j cs cs' sg1
+
+def match_stacks_type_retaddrStatement : Prop :=
+  ∀ cfg tprog j cs cs' sg,
+    match_stacks cfg tprog j cs cs' sg → Val.has_type (Mach.parent_ra cs') Tptr
+
+def match_stacks_type_spStatement : Prop :=
+  ∀ cfg tprog j cs cs' sg,
+    match_stacks cfg tprog j cs cs' sg → Val.has_type (Mach.parent_sp cs') Tptr
+def restore_callee_save_correctStatement : Prop :=
+  ∀ cfg xi (return_address_offset : Mach.function → Mach.code → ptrofs → Prop)
+    (tprog : Mach.program) (f : Linear.function)
+    m j sp ls ls0 pa ra P rs k cs fb,
+    (sepconj (frame_contents cfg f j sp ls ls0 pa ra) P).m_pred m →
+    agree_unused cfg (function_bounds cfg f) j ls0 rs →
+    ∃ rs',
+      star (Mach.step cfg xi return_address_offset) (Genv.globalenv tprog)
+        (Mach.State cs fb (Vptr sp Ptrofs.zero)
+          (restore_callee_save (make_env cfg (function_bounds cfg f)) k) rs m)
+        E0 (Mach.State cs fb (Vptr sp Ptrofs.zero) k rs' m) ∧
+      (∀ r, is_callee_save cfg r = true → Val.inject j (ls0 (R r)) (rs' r)) ∧
+      (∀ r, is_callee_save cfg r = false → rs' r = rs r)
+
+def restore_callee_save_rec_correctStatement : Prop :=
+  ∀ cfg xi (return_address_offset : Mach.function → Mach.code → ptrofs → Prop)
+    (tprog : Mach.program) (f : Linear.function)
+    j cs fb sp ls0 m l ofs rs k,
+    (contains_callee_saves j sp ofs l ls0).m_pred m →
+    agree_unused cfg (function_bounds cfg f) j ls0 rs →
+    (∀ r, r ∈ l → mreg_within_bounds cfg (function_bounds cfg f) r) →
+    ∃ rs',
+      star (Mach.step cfg xi return_address_offset) (Genv.globalenv tprog)
+        (Mach.State cs fb (Vptr sp Ptrofs.zero)
+          (restore_callee_save_rec l ofs k) rs m)
+        E0 (Mach.State cs fb (Vptr sp Ptrofs.zero) k rs' m) ∧
+      (∀ r, r ∈ l → Val.inject j (ls0 (R r)) (rs' r)) ∧
+      (∀ r, r ∉ l → rs' r = rs r) ∧
+      agree_unused cfg (function_bounds cfg f) j ls0 rs'
+
+def save_callee_save_correctStatement : Prop :=
+  ∀ cfg xi (return_address_offset : Mach.function → Mach.code → ptrofs → Prop)
+    (tprog : Mach.program) (f : Linear.function)
+    j ls ls0 rs sp cs fb k m P,
+    (sepconj
+      (range sp (make_env cfg (function_bounds cfg f)).fe_ofs_callee_save
+        (size_callee_save_area cfg (function_bounds cfg f)
+          (make_env cfg (function_bounds cfg f)).fe_ofs_callee_save)) P).m_pred m →
+    (∀ r, Val.has_type (ls (R r)) (mreg_type r)) →
+    agree_callee_save cfg ls ls0 → agree_regs j ls rs →
+    let ls1 := LTL.undef_regs destroyed_at_function_entry (LTL.call_regs ls)
+    let rs1 := Mach.undef_regs destroyed_at_function_entry rs
+    ∃ rs' m',
+      star (Mach.step cfg xi return_address_offset) (Genv.globalenv tprog)
+        (Mach.State cs fb (Vptr sp Ptrofs.zero)
+          (save_callee_save (make_env cfg (function_bounds cfg f)) k) rs1 m)
+        E0 (Mach.State cs fb (Vptr sp Ptrofs.zero) k rs' m') ∧
+      (sepconj (contains_callee_saves j sp
+        (make_env cfg (function_bounds cfg f)).fe_ofs_callee_save
+        (function_bounds cfg f).used_callee_save ls0) P).m_pred m' ∧
+      (∀ ofs k p, Mem.perm m sp ofs k p → Mem.perm m' sp ofs k p) ∧
+      agree_regs j ls1 rs'
+
+def save_callee_save_rec_correctStatement : Prop :=
+  ∀ cfg xi (return_address_offset : Mach.function → Mach.code → ptrofs → Prop)
+    (tprog : Mach.program) j cs fb sp ls,
+    (∀ ty r, r ∈ destroyed_by_setstack ty → ls (R r) = Vundef) →
+    (∀ r, Val.has_type (ls (R r)) (mreg_type r)) →
+    ∀ k l pos rs m P,
+    (∀ r, r ∈ l → is_callee_save cfg r = true) →
+    (sepconj (range sp pos (size_callee_save_area_rec l pos)) P).m_pred m →
+    agree_regs j ls rs →
+    ∃ rs' m',
+      star (Mach.step cfg xi return_address_offset) (Genv.globalenv tprog)
+        (Mach.State cs fb (Vptr sp Ptrofs.zero)
+          (save_callee_save_rec l pos k) rs m)
+        E0 (Mach.State cs fb (Vptr sp Ptrofs.zero) k rs' m') ∧
+      (sepconj (contains_callee_saves j sp pos l ls) P).m_pred m' ∧
+      (∀ ofs k p, Mem.perm m sp ofs k p → Mem.perm m' sp ofs k p) ∧
+      agree_regs j ls rs'
+def senv_preservedStatement : Prop :=
+  ∀ cfg (prog : Linear.program) (tprog : Mach.program),
+    match_prog cfg prog tprog →
+    Senv.equiv (Genv.to_senv (Genv.globalenv prog))
+      (Genv.to_senv (Genv.globalenv tprog))
+
+def set_locationStatement : Prop :=
+  ∀ m j sp pos bound sl ls P ofs ty v v',
+    (sepconj (contains_locations j sp pos bound sl ls) P).m_pred m →
+    zLe z0 ofs →
+    zLe (zAdd ofs (CompCert4Lean.Backend.Locations.typesize ty)) bound →
+    zDivide (CompCert4Lean.Backend.Locations.typealign ty) ofs →
+    Val.inject j v v' →
+    ∃ m',
+      Mach.store_stack m (Vptr sp Ptrofs.zero) ty
+        (Ptrofs.repr (zAdd pos (zMul z4 ofs))) v' = some m' ∧
+      (sepconj (contains_locations j sp pos bound sl
+        (Locmap.set (S sl ofs ty) v ls)) P).m_pred m'
+
+def sig_preservedStatement : Prop :=
+  ∀ cfg (f : Linear.fundef) (tf : Mach.fundef),
+    Stacking.transf_fundef cfg f = .OK tf →
+    (match tf with
+      | .Internal tf => tf.fn_sig
+      | .External ef => ef_sig ef) = Linear.funsig f
+
+def simplify_load_correctStatement : Prop :=
+  ∀ chunk m a v, Mem.loadv chunk m a = some v →
+    ∃ v', Mem.loadv (simplify_load chunk) m a = some v' ∧ Val.lessdef v v'
+
+def simplify_load_destroyedStatement : Prop :=
+  ∀ chunk addr,
+    destroyed_by_load (simplify_load chunk) addr = destroyed_by_load chunk addr
+
+def simplify_store_correctStatement : Prop :=
+  ∀ chunk m a v m', Mem.storev chunk m a v = some m' →
+    Mem.storev (simplify_store chunk) m a v = some m'
+
+def simplify_store_destroyedStatement : Prop :=
+  ∀ chunk addr,
+    destroyed_by_store (simplify_store chunk) addr = destroyed_by_store chunk addr
+
+def size_no_overflowStatement : Prop :=
+  ∀ cfg f tf, transf_function cfg f = .OK tf →
+    zLe (make_env cfg (function_bounds cfg f)).fe_size Ptrofs.max_unsigned
+
+def size_type_chunkStatement : Prop :=
+  ∀ ty, size_chunk (chunk_of_type ty) = CompCert4Lean.Common.AST.typesize ty
+
+def slot_outgoing_argument_validStatement : Prop :=
+  ∀ cfg f ofs ty sg,
+    S Outgoing ofs ty ∈ regs_of_rpairs (loc_arguments cfg sg) →
+    slot_valid cfg f Outgoing ofs ty = true
+
+def stack_contents_change_meminjStatement : Prop :=
+  ∀ cfg m j j', Val.inject_incr j j' → ∀ cs cs' P,
+    (sepconj (stack_contents cfg j cs cs') P).m_pred m →
+    (sepconj (stack_contents cfg j' cs cs') P).m_pred m
+
+def symbols_preservedStatement : Prop :=
+  ∀ cfg (prog : Linear.program) (tprog : Mach.program),
+    match_prog cfg prog tprog → ∀ s,
+    Genv.find_symbol (Genv.globalenv tprog) s =
+      Genv.find_symbol (Genv.globalenv prog) s
+def transf_final_statesStatement : Prop :=
+  ∀ cfg (prog : Linear.program) (tprog : Mach.program) st1 st2 r,
+    match_states cfg prog tprog st1 st2 → Linear.final_state st1 r →
+    Mach.final_state st2 r
+
+def transf_initial_statesStatement : Prop :=
+  ∀ cfg (prog : Linear.program) (tprog : Mach.program),
+    match_prog cfg prog tprog → ∀ st1,
+    Linear.initial_state prog st1 →
+    ∃ st2, Mach.initial_state tprog st2 ∧ match_states cfg prog tprog st1 st2
+
+def transf_function_well_typedStatement : Prop :=
+  ∀ cfg f tf, transf_function cfg f = .OK tf → wt_function cfg f = true
+
+def transf_program_correctStatement : Prop :=
+  ∀ cfg xi (return_address_offset : Mach.function → Mach.code → ptrofs → Prop)
+    (prog : Linear.program) (tprog : Mach.program),
+    (∀ f sg ros c, is_tail (.Mcall sg ros :: c) f.fn_code →
+      ∃ ofs, return_address_offset f c ofs) →
+    match_prog cfg prog tprog →
+    forward_simulation (Linear.semantics cfg xi prog)
+      (Mach.semantics cfg xi return_address_offset tprog)
+def transf_program_matchStatement : Prop :=
+  ∀ cfg p tp, transf_program cfg p = .OK tp → match_prog cfg p tp
+def transf_step_correctStatement : Prop :=
+  ∀ cfg xi (return_address_offset : Mach.function → Mach.code → ptrofs → Prop)
+    (prog : Linear.program) (tprog : Mach.program),
+    (∀ f sg ros c, is_tail (.Mcall sg ros :: c) f.fn_code →
+      ∃ ofs, return_address_offset f c ofs) →
+    match_prog cfg prog tprog → ∀ s1 t s2,
+    Linear.step cfg xi (Genv.globalenv prog) s1 t s2 →
+    wt_state cfg s1 → ∀ s1', match_states cfg prog tprog s1 s1' →
+    ∃ s2',
+      plus (Mach.step cfg xi return_address_offset) (Genv.globalenv tprog) s1' t s2' ∧
+      match_states cfg prog tprog s2 s2'
+
+def transl_builtin_arg_correctStatement : Prop :=
+  ∀ cfg (prog : Linear.program) (f : Linear.function),
+    ∀ j m m' ls ls0 rs sp sp' parent retaddr a v,
+    j sp = some (sp', (make_env cfg (function_bounds cfg f)).fe_stack_data) →
+    agree_regs j ls rs →
+    (sepconj (frame_contents cfg f j sp' ls ls0 parent retaddr)
+      (sepconj (minjection j m)
+        (globalenv_inject (Genv.globalenv prog) j))).m_pred m' →
+    eval_builtin_arg (Genv.to_senv (Genv.globalenv prog)) ls
+      (Vptr sp Ptrofs.zero) m a v →
+    (∀ l, l ∈ params_of_builtin_arg a → loc_valid cfg f l = true) →
+    (∀ sl ofs ty, S sl ofs ty ∈ params_of_builtin_arg a →
+      slot_within_bounds (function_bounds cfg f) sl ofs ty) →
+    ∃ v',
+      eval_builtin_arg (Genv.to_senv (Genv.globalenv prog)) rs
+        (Vptr sp' Ptrofs.zero) m'
+        (transl_builtin_arg (make_env cfg (function_bounds cfg f)) a) v' ∧
+      Val.inject j v v'
+
+def transl_builtin_args_correctStatement : Prop :=
+  ∀ cfg (prog : Linear.program) (f : Linear.function),
+    ∀ j m m' ls ls0 rs sp sp' parent retaddr al vl,
+    j sp = some (sp', (make_env cfg (function_bounds cfg f)).fe_stack_data) →
+    agree_regs j ls rs →
+    (sepconj (frame_contents cfg f j sp' ls ls0 parent retaddr)
+      (sepconj (minjection j m)
+        (globalenv_inject (Genv.globalenv prog) j))).m_pred m' →
+    eval_builtin_args (Genv.to_senv (Genv.globalenv prog)) ls
+      (Vptr sp Ptrofs.zero) m al vl →
+    (∀ l, l ∈ params_of_builtin_args al → loc_valid cfg f l = true) →
+    (∀ sl ofs ty, S sl ofs ty ∈ params_of_builtin_args al →
+      slot_within_bounds (function_bounds cfg f) sl ofs ty) →
+    ∃ vl',
+      eval_builtin_args (Genv.to_senv (Genv.globalenv prog)) rs
+        (Vptr sp' Ptrofs.zero) m'
+        (al.map (transl_builtin_arg (make_env cfg (function_bounds cfg f)))) vl' ∧
+      Val.inject_list j vl vl'
+def transl_code_eqStatement : Prop :=
+  ∀ cfg fe i c,
+    transl_code cfg fe (i :: c) = transl_instr cfg fe i (transl_code cfg fe c)
+
+def transl_destroyed_by_loadStatement : Prop :=
+  ∀ chunk addr fe,
+    destroyed_by_load chunk (transl_addr fe addr) = destroyed_by_load chunk addr
+
+def transl_destroyed_by_opStatement : Prop :=
+  ∀ op fe, destroyed_by_op (transl_op fe op) = destroyed_by_op op
+
+def transl_destroyed_by_storeStatement : Prop :=
+  ∀ chunk addr fe,
+    destroyed_by_store chunk (transl_addr fe addr) = destroyed_by_store chunk addr
+def transl_external_argumentStatement : Prop :=
+  ∀ cfg (tprog : Mach.program) j cs cs' sg ls rs m',
+    match_stacks cfg tprog j cs cs' sg →
+    agree_regs j ls rs →
+    agree_callee_save cfg ls (Linear.parent_locset cs) →
+    agree_outgoing_arguments cfg sg ls (Linear.parent_locset cs) →
+    (stack_contents cfg j cs cs').m_pred m' → ∀ l,
+    l ∈ regs_of_rpairs (loc_arguments cfg sg) →
+    ∃ v, Mach.extcall_arg cfg rs m' (Mach.parent_sp cs') l v ∧
+      Val.inject j (ls l) v
+
+def transl_external_argument_2Statement : Prop :=
+  ∀ cfg (tprog : Mach.program) j cs cs' sg ls rs m',
+    match_stacks cfg tprog j cs cs' sg →
+    agree_regs j ls rs →
+    agree_callee_save cfg ls (Linear.parent_locset cs) →
+    agree_outgoing_arguments cfg sg ls (Linear.parent_locset cs) →
+    (stack_contents cfg j cs cs').m_pred m' → ∀ p,
+    p ∈ loc_arguments cfg sg →
+    ∃ v, Mach.extcall_arg_pair cfg rs m' (Mach.parent_sp cs') p v ∧
+      Val.inject j (Locmap.getpair p ls) v
+
+def transl_external_argumentsStatement : Prop :=
+  ∀ cfg (tprog : Mach.program) j cs cs' sg ls rs m',
+    match_stacks cfg tprog j cs cs' sg →
+    agree_regs j ls rs →
+    agree_callee_save cfg ls (Linear.parent_locset cs) →
+    agree_outgoing_arguments cfg sg ls (Linear.parent_locset cs) →
+    (stack_contents cfg j cs cs').m_pred m' →
+    ∃ vl, Mach.extcall_arguments cfg rs m' (Mach.parent_sp cs') sg vl ∧
+      Val.inject_list j ((loc_arguments cfg sg).map (fun p => Locmap.getpair p ls)) vl
+
+def transl_external_arguments_recStatement : Prop :=
+  ∀ cfg (tprog : Mach.program) j cs cs' sg ls rs m',
+    match_stacks cfg tprog j cs cs' sg →
+    agree_regs j ls rs →
+    agree_callee_save cfg ls (Linear.parent_locset cs) →
+    agree_outgoing_arguments cfg sg ls (Linear.parent_locset cs) →
+    (stack_contents cfg j cs cs').m_pred m' → ∀ locs,
+    (∀ p, p ∈ locs → p ∈ loc_arguments cfg sg) →
+    ∃ vl,
+      list_forall2 (Mach.extcall_arg_pair cfg rs m' (Mach.parent_sp cs')) locs vl ∧
+      Val.inject_list j (locs.map (fun p => Locmap.getpair p ls)) vl
+def transl_find_labelStatement : Prop :=
+  ∀ cfg f tf lbl c, transf_function cfg f = .OK tf →
+    Linear.find_label lbl f.fn_code = some c →
+    Mach.find_label lbl tf.fn_code =
+      some (transl_code cfg (make_env cfg (function_bounds cfg f)) c)
+
+def typesize_typesizeStatement : Prop :=
+  ∀ ty, CompCert4Lean.Common.AST.typesize ty =
+    zMul z4 (CompCert4Lean.Backend.Locations.typesize ty)
+
+def undef_regs_typeStatement : Prop :=
+  ∀ ty l rl ls, Val.has_type (ls l) ty →
+    Val.has_type (LTL.undef_regs rl ls l) ty
+
+def unfold_transf_functionStatement : Prop :=
+  ∀ cfg f tf, transf_function cfg f = .OK tf →
+    tf = {
+      fn_sig := f.fn_sig
+      fn_code := transl_body cfg f (make_env cfg (function_bounds cfg f))
+      fn_stacksize := (make_env cfg (function_bounds cfg f)).fe_size
+      fn_link_ofs := Ptrofs.repr (make_env cfg (function_bounds cfg f)).fe_ofs_link
+      fn_retaddr_ofs := Ptrofs.repr
+        (make_env cfg (function_bounds cfg f)).fe_ofs_retaddr }
+
+def valid_access_locationStatement : Prop :=
+  ∀ m sp pos bound ofs ty p,
+    zDivide z8 pos →
+    Mem.range_perm m sp pos (zAdd pos (zMul z4 bound)) Cur Freeable →
+    zLe z0 ofs →
+    zLe (zAdd ofs (CompCert4Lean.Backend.Locations.typesize ty)) bound →
+    zDivide (CompCert4Lean.Backend.Locations.typealign ty) ofs →
+    Mem.valid_access m (chunk_of_type ty) sp (zAdd pos (zMul z4 ofs)) p
+
+def wt_progStatement : Prop :=
+  ∀ cfg (prog : Linear.program) (tprog : Mach.program),
+    match_prog cfg prog tprog → ∀ i fd,
+    (i, .Gfun fd) ∈ prog.prog_defs → wt_fundef cfg fd
 
 end CompCert4Lean.Backend.Stackingproof
