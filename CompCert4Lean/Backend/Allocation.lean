@@ -40,10 +40,6 @@ open CompCert4Lean.X86.Op
 
 private abbrev CompilerConfig := CompCert4Lean.Config.CompilerConfig
 private abbrev regenv := CompCert4Lean.Backend.RTLtyping.regenv
-private abbrev OrderedCompare {X : Type} (lt eq : X → X → Prop) (x y : X) :=
-  CompCert4Lean.Foundation.Ordered.Rocq.Coq.Structures.OrderedType.Compare
-    lt eq x y
-
 private def boolOfSumbool {P Q : Prop} : Sumbool P Q → Bool
   | .left _ => true
   | .right _ => false
@@ -408,10 +404,13 @@ namespace IndexedEqKind
 
 abbrev t := equation_kind
 
-private def index : t → positive
+def index : t → positive
   | .Full => PArith.BinPos.Pos.of_nat 1
   | .Low => PArith.BinPos.Pos.of_nat 2
   | .High => PArith.BinPos.Pos.of_nat 3
+
+theorem index_inj (x y : t) : index x = index y → x = y := by
+  cases x <;> cases y <;> decide
 
 def eq (x y : t) : Sumbool (x = y) (x ≠ y) := by
   exact match (inferInstance : Decidable (x = y)) with
@@ -422,18 +421,26 @@ end IndexedEqKind
 
 namespace OrderedEqKind
 
-def OrderedEqKind : Type := Unit
 abbrev t := equation_kind
 def eq (x y : t) : Prop := x = y
 def lt (x y : t) : Prop := Plt (IndexedEqKind.index x) (IndexedEqKind.index y)
-def eq_dec := IndexedEqKind.eq
-def eq_refl : Prop := ∀ x : t, eq x x
-def eq_sym : Prop := ∀ x y : t, eq x y → eq y x
-def eq_trans : Prop := ∀ x y z : t, eq x y → eq y z → eq x z
-def lt_trans : Prop := ∀ x y z : t, lt x y → lt y z → lt x z
-def lt_not_eq : Prop := ∀ x y : t, lt x y → ¬ eq x y
 
-def compare (x y : t) : OrderedCompare lt eq x y := by
+theorem eq_refl (x : t) : eq x x := rfl
+
+theorem eq_sym (x y : t) : eq x y → eq y x := Eq.symm
+
+theorem eq_trans (x y z : t) : eq x y → eq y z → eq x z := Eq.trans
+
+theorem lt_trans (x y z : t) : lt x y → lt y z → lt x z := Nat.lt_trans
+
+theorem lt_not_eq (x y : t) (hlt : lt x y) : ¬ eq x y := by
+  intro hxy
+  subst y
+  exact Nat.lt_irrefl _ hlt
+
+def compare (x y : t) :
+    CompCert4Lean.Foundation.Ordered.Rocq.Coq.Structures.OrderedType.Compare
+      lt eq x y := by
   cases x <;> cases y
   · exact .eq rfl
   · exact .lt (by
@@ -463,7 +470,118 @@ def compare (x y : t) : OrderedCompare lt eq x y := by
       decide)
   · exact .eq rfl
 
+def eq_dec := IndexedEqKind.eq
+
+def OrderedEqKind :
+    CompCert4Lean.Foundation.Ordered.Rocq.Coq.Structures.OrderedType.OrderedType where
+  t := t
+  eq := eq
+  lt := lt
+  eq_refl := eq_refl
+  eq_sym := eq_sym
+  eq_trans := eq_trans
+  lt_trans := lt_trans
+  lt_not_eq := lt_not_eq
+  compare := compare
+  eq_dec := eq_dec
+
 end OrderedEqKind
+
+private theorem positiveLtTrans {x y z : positive} :
+    Plt x y → Plt y z → Plt x z :=
+  Nat.lt_trans
+
+private theorem positiveLtIrrefl (x : positive) : ¬ Plt x x :=
+  Nat.lt_irrefl _
+
+private def comparePositive (x y : positive) :
+    CompCert4Lean.Foundation.Ordered.Rocq.Coq.Structures.OrderedType.Compare
+      Plt (fun a b => a = b) x y := by
+  cases plt x y with
+  | left hlt => exact .lt hlt
+  | right hlt =>
+      cases peq x y with
+      | left heq => exact .eq heq
+      | right heq =>
+          refine .gt ?_
+          change PArith.BinPos.Pos.to_nat y < PArith.BinPos.Pos.to_nat x
+          change ¬ PArith.BinPos.Pos.to_nat x < PArith.BinPos.Pos.to_nat y at hlt
+          have hnatne :
+              PArith.BinPos.Pos.to_nat x ≠ PArith.BinPos.Pos.to_nat y := by
+            intro h
+            exact heq (posToNat_injective h)
+          omega
+
+private theorem orderedSlotLtTrans (x y z : slot) :
+    Locations.OrderedSlot.lt x y → Locations.OrderedSlot.lt y z →
+      Locations.OrderedSlot.lt x z := by
+  cases x <;> cases y <;> cases z <;>
+    simp_all [Locations.OrderedSlot.lt, Plt, PArith.BinPos.Pos.lt] <;> omega
+
+private theorem orderedSlotLtIrrefl (x : slot) :
+    ¬ Locations.OrderedSlot.lt x x := by
+  cases x <;> simp [Locations.OrderedSlot.lt, Plt, PArith.BinPos.Pos.lt]
+
+private theorem orderedTypLtTrans (x y z : typ) :
+    Locations.OrderedTyp.lt x y → Locations.OrderedTyp.lt y z →
+      Locations.OrderedTyp.lt x z := by
+  cases x <;> cases y <;> cases z <;>
+    simp_all [Locations.OrderedTyp.lt, Plt, PArith.BinPos.Pos.lt] <;> omega
+
+private theorem orderedTypLtIrrefl (x : typ) :
+    ¬ Locations.OrderedTyp.lt x x := by
+  cases x <;> simp [Locations.OrderedTyp.lt, Plt, PArith.BinPos.Pos.lt]
+
+private theorem orderedLocLtTrans (x y z : loc) :
+    Locations.OrderedLoc.lt x y → Locations.OrderedLoc.lt y z →
+      Locations.OrderedLoc.lt x z := by
+  intro hxy hyz
+  cases x with
+  | R rx =>
+      cases y with
+      | R ry =>
+          cases z with
+          | R rz => exact positiveLtTrans hxy hyz
+          | S _ _ _ => trivial
+      | S _ _ _ =>
+          cases z with
+          | R _ => contradiction
+          | S _ _ _ => trivial
+  | S sx ox tx =>
+      cases y with
+      | R _ => contradiction
+      | S sy oy ty =>
+          cases z with
+          | R _ => contradiction
+          | S sz oz tz =>
+              rcases hxy with hsxy | ⟨hesxy, hoxy | ⟨heoxy, htxy⟩⟩
+              · rcases hyz with hsyz | ⟨hesyz, _⟩
+                · exact Or.inl (orderedSlotLtTrans _ _ _ hsxy hsyz)
+                · exact Or.inl (by simpa [hesyz] using hsxy)
+              · rcases hyz with hsyz | ⟨hesyz, hosyz | ⟨heoyz, _⟩⟩
+                · exact Or.inl (by simpa [hesxy] using hsyz)
+                · exact Or.inr ⟨hesxy.trans hesyz, Or.inl (Int.lt_trans hoxy hosyz)⟩
+                · exact Or.inr ⟨hesxy.trans hesyz, Or.inl (by
+                    simpa [heoyz] using hoxy)⟩
+              · rcases hyz with hsyz | ⟨hesyz, hosyz | ⟨heoyz, htyz⟩⟩
+                · exact Or.inl (by simpa [hesxy] using hsyz)
+                · exact Or.inr ⟨hesxy.trans hesyz, Or.inl (by
+                    simpa [heoxy] using hosyz)⟩
+                · exact Or.inr ⟨hesxy.trans hesyz, Or.inr
+                    ⟨heoxy.trans heoyz, orderedTypLtTrans _ _ _ htxy htyz⟩⟩
+
+private theorem orderedLocLtIrrefl (x : loc) :
+    ¬ Locations.OrderedLoc.lt x x := by
+  intro h
+  cases x with
+  | R r =>
+      exact positiveLtIrrefl
+        (CompCert4Lean.X86.Machregs.IndexedMreg.index r) h
+  | S s o t =>
+      rcases h with hs | ⟨_, ho | ⟨_, ht⟩⟩
+      · exact orderedSlotLtIrrefl s hs
+      · exact Int.lt_irrefl _ ho
+      · exact orderedTypLtIrrefl t ht
 
 namespace OrderedEquation
 
@@ -475,10 +593,75 @@ def lt (x y : t) : Prop :=
       (Locations.OrderedLoc.lt x.eloc y.eloc ∨
         (x.eloc = y.eloc ∧ OrderedEqKind.lt x.ekind y.ekind)))
 
+theorem eq_refl (x : t) : eq x x := rfl
+
+theorem eq_sym (x y : t) : eq x y → eq y x := Eq.symm
+
+theorem eq_trans (x y z : t) : eq x y → eq y z → eq x z := Eq.trans
+
+theorem lt_trans (x y z : t) (hxy : lt x y) (hyz : lt y z) : lt x z := by
+  rcases hxy with hrxy | ⟨herxy, hlxy | ⟨helxy, hkxy⟩⟩
+  · rcases hyz with hryz | ⟨heryz, _⟩
+    · exact Or.inl (positiveLtTrans hrxy hryz)
+    · exact Or.inl (by simpa [heryz] using hrxy)
+  · rcases hyz with hryz | ⟨heryz, hlryz | ⟨helryz, _⟩⟩
+    · exact Or.inl (by simpa [herxy] using hryz)
+    · exact Or.inr ⟨herxy.trans heryz,
+        Or.inl (orderedLocLtTrans _ _ _ hlxy hlryz)⟩
+    · exact Or.inr ⟨herxy.trans heryz, Or.inl (by
+        simpa [helryz] using hlxy)⟩
+  · rcases hyz with hryz | ⟨heryz, hlryz | ⟨helryz, hkryz⟩⟩
+    · exact Or.inl (by simpa [herxy] using hryz)
+    · exact Or.inr ⟨herxy.trans heryz, Or.inl (by
+        simpa [helxy] using hlryz)⟩
+    · exact Or.inr ⟨herxy.trans heryz, Or.inr
+        ⟨helxy.trans helryz, OrderedEqKind.lt_trans _ _ _ hkxy hkryz⟩⟩
+
+theorem lt_not_eq (x y : t) (hlt : lt x y) : ¬ eq x y := by
+  intro hxy
+  subst y
+  rcases hlt with hr | ⟨_, hl | ⟨_, hk⟩⟩
+  · exact positiveLtIrrefl x.ereg hr
+  · exact orderedLocLtIrrefl x.eloc hl
+  · exact OrderedEqKind.lt_not_eq _ _ hk rfl
+
+def compare (x y : t) :
+    CompCert4Lean.Foundation.Ordered.Rocq.Coq.Structures.OrderedType.Compare
+      lt eq x y := by
+  cases comparePositive x.ereg y.ereg with
+  | lt hr => exact .lt (Or.inl hr)
+  | gt hr => exact .gt (Or.inl hr)
+  | eq her =>
+      cases Locations.OrderedLoc.compare x.eloc y.eloc with
+      | lt hl => exact .lt (Or.inr ⟨her, Or.inl hl⟩)
+      | gt hl => exact .gt (Or.inr ⟨her.symm, Or.inl hl⟩)
+      | eq hel =>
+          cases OrderedEqKind.compare x.ekind y.ekind with
+          | lt hk => exact .lt (Or.inr ⟨her, Or.inr ⟨hel, hk⟩⟩)
+          | gt hk => exact .gt (Or.inr ⟨her.symm, Or.inr ⟨hel.symm, hk⟩⟩)
+          | eq hek =>
+              cases x
+              cases y
+              subst_vars
+              exact .eq rfl
+
 def eq_dec (x y : t) : Sumbool (x = y) (x ≠ y) := by
   exact match (inferInstance : Decidable (x = y)) with
     | .isTrue h => .left h
     | .isFalse h => .right h
+
+def OrderedEquation :
+    CompCert4Lean.Foundation.Ordered.Rocq.Coq.Structures.OrderedType.OrderedType where
+  t := t
+  eq := eq
+  lt := lt
+  eq_refl := eq_refl
+  eq_sym := eq_sym
+  eq_trans := eq_trans
+  lt_trans := lt_trans
+  lt_not_eq := lt_not_eq
+  compare := compare
+  eq_dec := eq_dec
 
 end OrderedEquation
 
@@ -492,222 +675,700 @@ def lt (x y : t) : Prop :=
       (Plt x.ereg y.ereg ∨
         (x.ereg = y.ereg ∧ OrderedEqKind.lt x.ekind y.ekind)))
 
+theorem eq_refl (x : t) : eq x x := rfl
+
+theorem eq_sym (x y : t) : eq x y → eq y x := Eq.symm
+
+theorem eq_trans (x y z : t) : eq x y → eq y z → eq x z := Eq.trans
+
+theorem lt_trans (x y z : t) (hxy : lt x y) (hyz : lt y z) : lt x z := by
+  rcases hxy with hlxy | ⟨helxy, hrxy | ⟨herxy, hkxy⟩⟩
+  · rcases hyz with hlryz | ⟨helryz, _⟩
+    · exact Or.inl (orderedLocLtTrans _ _ _ hlxy hlryz)
+    · exact Or.inl (by simpa [helryz] using hlxy)
+  · rcases hyz with hlryz | ⟨helryz, hryz | ⟨heryz, _⟩⟩
+    · exact Or.inl (by simpa [helxy] using hlryz)
+    · exact Or.inr ⟨helxy.trans helryz,
+        Or.inl (positiveLtTrans hrxy hryz)⟩
+    · exact Or.inr ⟨helxy.trans helryz, Or.inl (by
+        simpa [heryz] using hrxy)⟩
+  · rcases hyz with hlryz | ⟨helryz, hryz | ⟨heryz, hkryz⟩⟩
+    · exact Or.inl (by simpa [helxy] using hlryz)
+    · exact Or.inr ⟨helxy.trans helryz, Or.inl (by
+        simpa [herxy] using hryz)⟩
+    · exact Or.inr ⟨helxy.trans helryz, Or.inr
+        ⟨herxy.trans heryz, OrderedEqKind.lt_trans _ _ _ hkxy hkryz⟩⟩
+
+theorem lt_not_eq (x y : t) (hlt : lt x y) : ¬ eq x y := by
+  intro hxy
+  subst y
+  rcases hlt with hl | ⟨_, hr | ⟨_, hk⟩⟩
+  · exact orderedLocLtIrrefl x.eloc hl
+  · exact positiveLtIrrefl x.ereg hr
+  · exact OrderedEqKind.lt_not_eq _ _ hk rfl
+
+def compare (x y : t) :
+    CompCert4Lean.Foundation.Ordered.Rocq.Coq.Structures.OrderedType.Compare
+      lt eq x y := by
+  cases Locations.OrderedLoc.compare x.eloc y.eloc with
+  | lt hl => exact .lt (Or.inl hl)
+  | gt hl => exact .gt (Or.inl hl)
+  | eq hel =>
+      cases comparePositive x.ereg y.ereg with
+      | lt hr => exact .lt (Or.inr ⟨hel, Or.inl hr⟩)
+      | gt hr => exact .gt (Or.inr ⟨hel.symm, Or.inl hr⟩)
+      | eq her =>
+          cases OrderedEqKind.compare x.ekind y.ekind with
+          | lt hk => exact .lt (Or.inr ⟨hel, Or.inr ⟨her, hk⟩⟩)
+          | gt hk => exact .gt (Or.inr ⟨hel.symm, Or.inr ⟨her.symm, hk⟩⟩)
+          | eq hek =>
+              cases x
+              cases y
+              subst_vars
+              exact .eq rfl
+
+def eq_dec := OrderedEquation.eq_dec
+
+def OrderedEquation' :
+    CompCert4Lean.Foundation.Ordered.Rocq.Coq.Structures.OrderedType.OrderedType where
+  t := t
+  eq := eq
+  lt := lt
+  eq_refl := eq_refl
+  eq_sym := eq_sym
+  eq_trans := eq_trans
+  lt_trans := lt_trans
+  lt_not_eq := lt_not_eq
+  compare := compare
+  eq_dec := eq_dec
+
 end «OrderedEquation'»
 
-private def equationEq (x y : equation) : Bool :=
-  boolOfSumbool (OrderedEquation.eq_dec x y)
+/-! ## The two source `FSetAVLplus.Make` applications -/
 
-/-!
-The integrated finite-set facade exposes the interval algorithms used by this
-module.  This static application keeps the source functor's observable set
-surface in a canonical list representation; all operations preserve duplicate
-freedom, and interval operations inspect the complete set.
--/
+open CompCert4Lean.Lib.FSetAVLplus
 
 namespace EqSet
 
-def E : Type := Unit
-def MSet : Type := Unit
-def MF : Type := Unit
-def Raw : Type := Unit
-def «X'» : Type := Unit
-def EqSet : Type := Unit
-abbrev elt := equation
-abbrev t := List elt
+abbrev E := OrderedEquation.OrderedEquation
+abbrev «X'» := E
+abbrev MSet := Make.MSet E
+abbrev Raw : Type := Make.Raw.tree E
+abbrev EqSet : Type := Make.t E
+abbrev t := Make.t E
+abbrev elt := Make.elt E
 
-def In (x : elt) (s : t) : Prop := x ∈ s
-def Equal (s s' : t) : Prop := ∀ x, In x s ↔ In x s'
-def Subset (s s' : t) : Prop := ∀ x, In x s → In x s'
-def Empty (s : t) : Prop := ∀ x, ¬ In x s
-def For_all (p : elt → Prop) (s : t) : Prop := ∀ x, In x s → p x
-def Exists (p : elt → Prop) (s : t) : Prop := ∃ x, In x s ∧ p x
+namespace MSet
 
-def empty : t := []
+abbrev Mkt := @Make.MSet.Mkt E
+abbrev this := @Make.MSet.this E
+abbrev is_ok := @Make.MSet.is_ok E
 
-def mem (x : elt) : t → Bool
-  | [] => false
-  | y :: ys => if equationEq x y then true else mem x ys
+end MSet
 
-def add (x : elt) (s : t) : t :=
-  if mem x s then s else x :: s
+namespace Raw
 
-def remove (x : elt) : t → t
-  | [] => []
-  | y :: ys => if equationEq x y then ys else y :: remove x ys
+abbrev tree := Make.Raw.tree E
+abbrev t := tree
+abbrev IsOk (s : tree) : Prop := Make.Raw.IsOk s
+abbrev Ok (s : tree) : Prop := Make.Raw.Ok s
+abbrev Leaf : tree := Make.Raw.Leaf
+abbrev Node := @Make.Raw.Node E
+abbrev empty : tree := Make.Raw.empty
+abbrev singleton := @Make.Raw.singleton E
+export CompCert4Lean.Lib.FSetAVLplus.Make.Raw
+  (is_empty mem min_elt max_elt choose fold elements_aux elements
+   rev_elements_aux rev_elements cardinal maxdepth mindepth for_all exists_
+   compare equal subset subsetl subsetr ltb_tree gtb_tree isok In InT IsRoot
+   InLeft InRight Equal Subset Empty For_all Exists lt_tree gt_tree bst InA
+   NoDupA Sorted RespectsEq enumeration End More cons compare_more compare_cont
+   compare_end flatten_e eq lt CompSpec CompareSpec CompEq CompLt CompGt Cmp
+   height create assert_false bal add join remove_min merge remove concat triple
+   split inter diff union filter partition singleton_spec create_spec create_bst
+   singleton_bst bal_spec bal_bst add_spec add_bst join_spec join_bst
+   remove_min_spec remove_min_bst_gt remove_min_bst remove_min_ok
+   remove_min_gt_tree merge_spec merge_bst concat_spec concat_bst remove_spec
+   remove_bst split_left_spec split_right_spec split_in_spec split_bst
+   split_membership_spec union_spec union_bst inter_spec_bst inter_spec inter_bst
+   diff_spec_bst diff_spec diff_bst filter_weak_spec filter_spec filter_bst
+   partition_fst partition_snd partition_bst ltb_tree_iff gtb_tree_iff isok_iff
+   In_1 In_node_iff In_leaf_iff lt_leaf gt_leaf lt_tree_node gt_tree_node
+   lt_tree_not_in gt_tree_not_in lt_tree_trans gt_tree_trans empty_spec empty_ok
+   is_empty_spec mem_spec min_elt_spec1 min_elt_spec2 min_elt_spec3
+   max_elt_spec1 max_elt_spec2 max_elt_spec3 choose_spec1 choose_spec2
+   choose_spec3 elements_spec1' elements_spec1 elements_spec2' elements_spec2
+   elements_spec2w elements_aux_cardinal elements_cardinal cardinal_spec
+   elements_app elements_node rev_elements_app rev_elements_node rev_elements_rev
+   sorted_app_inv elements_sort_ok for_all_spec exists_spec fold_spec' fold_spec
+   subsetl_spec subsetr_spec subset_spec eq_Leq eq_equiv lt_strorder lt_compat
+   flatten_e_elements cons_1 compare_end_Cmp compare_more_Cmp compare_cont_Cmp
+   compare_Cmp compare_spec equal_spec mindepth_maxdepth maxdepth_cardinal
+   mindepth_cardinal maxdepth_log_cardinal mindepth_log_cardinal join_ok
+   concat_ok)
 
-def singleton (x : elt) : t := [x]
+end Raw
 
-def fold {A : Type} (f : elt → A → A) (s : t) (init : A) : A :=
-  s.foldl (fun a x => f x a) init
+abbrev In := @Make.In E
+abbrev Equal := @Make.Equal E
+abbrev Subset := @Make.Subset E
+abbrev Empty := @Make.Empty E
+abbrev For_all := @Make.For_all E
+abbrev Exists := @Make.Exists E
+abbrev eq := @Make.eq E
+abbrev lt := @Make.lt E
+abbrev empty : t := Make.empty
+abbrev is_empty := @Make.is_empty E
+abbrev mem := @Make.mem E
+abbrev add := @Make.add E
+abbrev singleton := @Make.singleton E
+abbrev remove := @Make.remove E
+abbrev union := @Make.union E
+abbrev inter := @Make.inter E
+abbrev diff := @Make.diff E
+abbrev equal := @Make.equal E
+abbrev subset := @Make.subset E
+abbrev fold := @Make.fold E
+abbrev for_all := @Make.for_all E
+abbrev exists_ := @Make.exists_ E
+abbrev filter := @Make.filter E
+abbrev partition := @Make.partition E
+abbrev cardinal := @Make.cardinal E
+abbrev elements := @Make.elements E
+abbrev choose := @Make.choose E
+abbrev min_elt := @Make.min_elt E
+abbrev max_elt := @Make.max_elt E
+abbrev eq_dec := @Make.eq_dec E
+abbrev compare := @Make.compare E
+abbrev In_1 := @Make.In_1 E
+abbrev eq_refl := @Make.eq_refl E
+abbrev eq_sym := @Make.eq_sym E
+abbrev eq_trans := @Make.eq_trans E
+abbrev mem_1 := @Make.mem_1 E
+abbrev mem_2 := @Make.mem_2 E
+abbrev equal_1 := @Make.equal_1 E
+abbrev equal_2 := @Make.equal_2 E
+abbrev subset_1 := @Make.subset_1 E
+abbrev subset_2 := @Make.subset_2 E
+abbrev empty_1 := @Make.empty_1 E
+abbrev is_empty_1 := @Make.is_empty_1 E
+abbrev is_empty_2 := @Make.is_empty_2 E
+abbrev add_1 := @Make.add_1 E
+abbrev add_2 := @Make.add_2 E
+abbrev add_3 := @Make.add_3 E
+abbrev remove_1 := @Make.remove_1 E
+abbrev remove_2 := @Make.remove_2 E
+abbrev remove_3 := @Make.remove_3 E
+abbrev singleton_1 := @Make.singleton_1 E
+abbrev singleton_2 := @Make.singleton_2 E
+abbrev union_1 := @Make.union_1 E
+abbrev union_2 := @Make.union_2 E
+abbrev union_3 := @Make.union_3 E
+abbrev inter_1 := @Make.inter_1 E
+abbrev inter_2 := @Make.inter_2 E
+abbrev inter_3 := @Make.inter_3 E
+abbrev diff_1 := @Make.diff_1 E
+abbrev diff_2 := @Make.diff_2 E
+abbrev diff_3 := @Make.diff_3 E
+abbrev fold_1 := @Make.fold_1 E
+abbrev cardinal_1 := @Make.cardinal_1 E
+abbrev filter_1 := @Make.filter_1 E
+abbrev filter_2 := @Make.filter_2 E
+abbrev filter_3 := @Make.filter_3 E
+abbrev for_all_1 := @Make.for_all_1 E
+abbrev for_all_2 := @Make.for_all_2 E
+abbrev exists_1 := @Make.exists_1 E
+abbrev exists_2 := @Make.exists_2 E
+abbrev partition_1 := @Make.partition_1 E
+abbrev partition_2 := @Make.partition_2 E
+abbrev elements_1 := @Make.elements_1 E
+abbrev elements_2 := @Make.elements_2 E
+abbrev elements_3w := @Make.elements_3w E
+abbrev choose_1 := @Make.choose_1 E
+abbrev choose_2 := @Make.choose_2 E
+abbrev lt_trans := @Make.lt_trans E
+abbrev lt_not_eq := @Make.lt_not_eq E
+abbrev elements_3 := @Make.elements_3 E
+abbrev min_elt_1 := @Make.min_elt_1 E
+abbrev min_elt_2 := @Make.min_elt_2 E
+abbrev min_elt_3 := @Make.min_elt_3 E
+abbrev max_elt_1 := @Make.max_elt_1 E
+abbrev max_elt_2 := @Make.max_elt_2 E
+abbrev max_elt_3 := @Make.max_elt_3 E
+abbrev choose_3 := @Make.choose_3 E
+abbrev MF := Make.MF E
+private abbrev AboveMonotone := @Make.AboveMonotone E
+private abbrev BelowMonotone := @Make.BelowMonotone E
+private abbrev PredCompat := @Make.PredCompat E
+abbrev raw_mem_between := @Make.raw_mem_between E
+abbrev mem_between := @Make.mem_between E
+abbrev raw_elements_between := @Make.raw_elements_between E
+abbrev elements_between := @Make.elements_between E
+abbrev raw_for_all_between := @Make.raw_for_all_between E
+abbrev for_all_between := @Make.for_all_between E
+abbrev raw_partition_between := @Make.raw_partition_between E
+abbrev partition_between := @Make.partition_between E
 
-def filter (p : elt → Bool) (s : t) : t := s.filter p
-def for_all (p : elt → Bool) (s : t) : Bool := s.all p
-def exists_ (p : elt → Bool) (s : t) : Bool := s.any p
-def is_empty (s : t) : Bool := s.isEmpty
+def raw_mem_between_1 : Prop :=
+  ∀ (above below : elt → Bool) (m : Raw.tree),
+    raw_mem_between above below m = true →
+      ∃ x, Raw.InT x m ∧ above x = true ∧ below x = true
 
-def subset (s s' : t) : Bool := s.all (fun x => mem x s')
-def equal (s s' : t) : Bool := subset s s' && subset s' s
+def raw_mem_between_2 : Prop :=
+  ∀ (above below : elt → Bool),
+    AboveMonotone above → BelowMonotone below →
+    ∀ (x : elt) (m : Raw.tree), Raw.bst m → Raw.InT x m →
+      above x = true → below x = true → raw_mem_between above below m = true
 
-def union (s s' : t) : t := s.foldl (fun out x => add x out) s'
-def inter (s s' : t) : t := s.filter (fun x => mem x s')
-def diff (s s' : t) : t := s.filter (fun x => !(mem x s'))
+def mem_between_1 : Prop :=
+  ∀ (above below : elt → Bool) (s : t),
+    mem_between above below s = true →
+      ∃ x, In x s ∧ above x = true ∧ below x = true
 
-def elements (s : t) : List elt := s
-def cardinal (s : t) : Nat := s.length
-def choose (s : t) : Option elt := s.head?
-def min_elt (s : t) : Option elt := s.head?
-def max_elt (s : t) : Option elt := s.reverse.head?
-def partition (p : elt → Bool) (s : t) : t × t := (s.filter p, s.filter (!p ·))
+def mem_between_2 : Prop :=
+  ∀ (above below : elt → Bool),
+    AboveMonotone above → BelowMonotone below →
+    ∀ (x : elt) (s : t), In x s → above x = true → below x = true →
+      mem_between above below s = true
 
-def raw_mem_between (above below : elt → Bool) (s : t) : Bool :=
-  s.any (fun x => above x && below x)
-def mem_between := raw_mem_between
+def In_raw_elements_between_1 : Prop :=
+  ∀ (above below : elt → Bool) (x : elt) (m : Raw.tree),
+    Raw.InT x (raw_elements_between above below m) → Raw.InT x m
 
-def raw_elements_between (above below : elt → Bool) (s : t) : t :=
-  s.filter (fun x => above x && below x)
-def elements_between := raw_elements_between
+def raw_elements_between_ok : Prop :=
+  ∀ (above below : elt → Bool) (m : Raw.tree),
+    Raw.bst m → Raw.bst (raw_elements_between above below m)
 
-def raw_for_all_between (p above below : elt → Bool) (s : t) : Bool :=
-  s.all (fun x => !(above x && below x) || p x)
-def for_all_between := raw_for_all_between
+def In_raw_elements_between_2 : Prop :=
+  ∀ (above below : elt → Bool),
+    AboveMonotone above → BelowMonotone below →
+    ∀ (x : elt) (m : Raw.tree),
+      Raw.InT x (raw_elements_between above below m) →
+        above x = true ∧ below x = true
 
-def raw_partition_between (above below : elt → Bool) (s : t) : t × t :=
-  partition (fun x => above x && below x) s
-def partition_between := raw_partition_between
+def In_raw_elements_between_3 : Prop :=
+  ∀ (above below : elt → Bool),
+    AboveMonotone above → BelowMonotone below →
+    ∀ (x : elt) (m : Raw.tree), Raw.bst m → Raw.InT x m →
+      above x = true → below x = true →
+        Raw.InT x (raw_elements_between above below m)
 
-def eq (s s' : t) : Prop := s = s'
-def lt (s s' : t) : Prop := s.length < s'.length
+def elements_between_iff : Prop :=
+  ∀ (above below : elt → Bool),
+    AboveMonotone above → BelowMonotone below →
+    ∀ (x : elt) (s : t),
+      In x (elements_between above below s) ↔
+        In x s ∧ above x = true ∧ below x = true
 
-def eq_dec (s s' : t) : Sumbool (eq s s') (¬ eq s s') := by
-  exact match (inferInstance : Decidable (s = s')) with
-    | .isTrue h => .left h
-    | .isFalse h => .right h
+def raw_for_all_between_1 : Prop :=
+  ∀ (pred above below : elt → Bool),
+    PredCompat pred → AboveMonotone above → BelowMonotone below →
+    ∀ (x : elt) (m : Raw.tree), Raw.bst m →
+      raw_for_all_between pred above below m = true → Raw.InT x m →
+      above x = true → below x = true → pred x = true
 
-def compare (s s' : t) : Ordering :=
-  if equal s s' then .eq else if s.length < s'.length then .lt else .gt
+def raw_for_all_between_2 : Prop :=
+  ∀ (pred above below : elt → Bool) (m : Raw.tree), Raw.bst m →
+    (∀ x, Raw.InT x m → above x = true → below x = true → pred x = true) →
+      raw_for_all_between pred above below m = true
 
-/-! Generated proof-valued members retained as proposition descriptors. -/
+def for_all_between_iff : Prop :=
+  ∀ (pred above below : elt → Bool),
+    PredCompat pred → AboveMonotone above → BelowMonotone below →
+    ∀ s : t, for_all_between pred above below s = true ↔
+      ∀ x, In x s → above x = true → below x = true → pred x = true
 
-def In_1 : Prop := ∀ x : elt, ∀ s : t, In x s → In x s
-def empty_1 : Prop := ∀ x : elt, ¬ In x empty
-def add_1 : Prop := ∀ x : elt, ∀ s : t, In x (add x s)
-def add_2 : Prop := ∀ x y : elt, ∀ s : t, In y s → In y (add x s)
-def add_3 : Prop := ∀ x y : elt, ∀ s : t, x ≠ y → In y (add x s) → In y s
-def remove_1 : Prop := ∀ x : elt, ∀ s : t, ¬ In x (remove x s)
-def remove_2 : Prop := ∀ x y : elt, ∀ s : t, x ≠ y → In y s → In y (remove x s)
-def remove_3 : Prop := ∀ x y : elt, ∀ s : t, In y (remove x s) → In y s
-def singleton_1 : Prop := ∀ x : elt, In x (singleton x)
-def singleton_2 : Prop := ∀ x y : elt, In y (singleton x) → x = y
-def fold_1 : Prop := True
-def filter_1 : Prop := True
-def filter_2 : Prop := True
-def filter_3 : Prop := True
-def for_all_1 : Prop := True
-def for_all_2 : Prop := True
-def exists_1 : Prop := True
-def exists_2 : Prop := True
-def is_empty_1 : Prop := True
-def is_empty_2 : Prop := True
-def subset_1 : Prop := ∀ s s' : t, subset s s' = true → Subset s s'
-def subset_2 : Prop := True
-def equal_1 : Prop := ∀ s s' : t, equal s s' = true → Equal s s'
-def equal_2 : Prop := True
-def eq_refl : Prop := ∀ s : t, eq s s
-def eq_sym : Prop := ∀ s s' : t, eq s s' → eq s' s
-def eq_trans : Prop := ∀ s s' s'' : t, eq s s' → eq s' s'' → eq s s''
-def lt_trans : Prop := ∀ s s' s'' : t, lt s s' → lt s' s'' → lt s s''
-def lt_not_eq : Prop := ∀ s s' : t, lt s s' → ¬ eq s s'
-def union_1 : Prop := True
-def union_2 : Prop := ∀ x : elt, ∀ s s' : t, In x s → In x (union s s')
-def union_3 : Prop := ∀ x : elt, ∀ s s' : t, In x s' → In x (union s s')
-def inter_1 : Prop := True
-def inter_2 : Prop := True
-def inter_3 : Prop := True
-def diff_1 : Prop := True
-def diff_2 : Prop := True
-def diff_3 : Prop := True
-def elements_1 : Prop := True
-def elements_2 : Prop := True
-def elements_3 : Prop := True
-def elements_3w : Prop := True
-def cardinal_1 : Prop := True
-def choose_1 : Prop := True
-def choose_2 : Prop := True
-def choose_3 : Prop := True
-def min_elt_1 : Prop := True
-def min_elt_2 : Prop := True
-def min_elt_3 : Prop := True
-def max_elt_1 : Prop := True
-def max_elt_2 : Prop := True
-def max_elt_3 : Prop := True
-def mem_1 : Prop := ∀ x : elt, ∀ s : t, mem x s = true → In x s
-def mem_2 : Prop := ∀ x : elt, ∀ s : t, In x s → mem x s = true
-def raw_mem_between_1 : Prop := True
-def raw_mem_between_2 : Prop := True
-def mem_between_1 : Prop := True
-def mem_between_2 : Prop := True
-def In_raw_elements_between_1 : Prop := True
-def In_raw_elements_between_2 : Prop := True
-def In_raw_elements_between_3 : Prop := True
-def raw_elements_between_ok : Prop := True
-def elements_between_iff : Prop := True
-def raw_for_all_between_1 : Prop := True
-def raw_for_all_between_2 : Prop := True
-def for_all_between_iff : Prop := True
-def In_raw_partition_between_1 : Prop := True
-def In_raw_partition_between_2 : Prop := True
-def In_raw_partition_between_3 : Prop := True
-def In_raw_partition_between_4 : Prop := True
-def In_raw_partition_between_5 : Prop := True
-def In_raw_partition_between_6 : Prop := True
-def raw_partition_between_ok : Prop := True
-def partition_between_iff_1 : Prop := True
-def partition_between_iff_2 : Prop := True
-def partition_1 : Prop := True
-def partition_2 : Prop := True
+def In_raw_partition_between_1 : Prop :=
+  ∀ (above below : elt → Bool) (x : elt) (m : Raw.tree),
+    Raw.InT x (raw_partition_between above below m).1 → Raw.InT x m
+
+def In_raw_partition_between_2 : Prop :=
+  ∀ (above below : elt → Bool) (x : elt) (m : Raw.tree),
+    Raw.InT x (raw_partition_between above below m).2 → Raw.InT x m
+
+def raw_partition_between_ok : Prop :=
+  ∀ (above below : elt → Bool) (m : Raw.tree), Raw.bst m →
+    Raw.bst (raw_partition_between above below m).1 ∧
+      Raw.bst (raw_partition_between above below m).2
+
+def In_raw_partition_between_3 : Prop :=
+  ∀ (above below : elt → Bool),
+    AboveMonotone above → BelowMonotone below →
+    ∀ (x : elt) (m : Raw.tree),
+      Raw.InT x (raw_partition_between above below m).1 →
+        above x = true ∧ below x = true
+
+def In_raw_partition_between_4 : Prop :=
+  ∀ (above below : elt → Bool),
+    AboveMonotone above → BelowMonotone below →
+    ∀ (x : elt) (m : Raw.tree), Raw.bst m →
+      Raw.InT x (raw_partition_between above below m).2 →
+        above x = false ∨ below x = false
+
+def In_raw_partition_between_5 : Prop :=
+  ∀ (above below : elt → Bool),
+    AboveMonotone above → BelowMonotone below →
+    ∀ (x : elt) (m : Raw.tree), Raw.bst m → Raw.InT x m →
+      above x = true → below x = true →
+        Raw.InT x (raw_partition_between above below m).1
+
+def In_raw_partition_between_6 : Prop :=
+  ∀ (above below : elt → Bool),
+    AboveMonotone above → BelowMonotone below →
+    ∀ (x : elt) (m : Raw.tree), Raw.bst m → Raw.InT x m →
+      (above x = false ∨ below x = false) →
+        Raw.InT x (raw_partition_between above below m).2
+
+def partition_between_iff_1 : Prop :=
+  ∀ (above below : elt → Bool),
+    AboveMonotone above → BelowMonotone below →
+    ∀ (x : elt) (s : t),
+      In x (partition_between above below s).1 ↔
+        In x s ∧ above x = true ∧ below x = true
+
+def partition_between_iff_2 : Prop :=
+  ∀ (above below : elt → Bool),
+    AboveMonotone above → BelowMonotone below →
+    ∀ (x : elt) (s : t),
+      In x (partition_between above below s).2 ↔
+        In x s ∧ (above x = false ∨ below x = false)
 
 end EqSet
 
 namespace EqSet2
 
-def EqSet2 : Type := Unit
-export EqSet
-  (E Empty Equal Exists For_all In In_1 In_raw_elements_between_1
-   In_raw_elements_between_2 In_raw_elements_between_3
-   In_raw_partition_between_1 In_raw_partition_between_2
-   In_raw_partition_between_3 In_raw_partition_between_4
-   In_raw_partition_between_5 In_raw_partition_between_6 MF MSet Raw Subset
-   «X'» add add_1 add_2 add_3 cardinal cardinal_1 choose choose_1 choose_2
-   choose_3 compare diff diff_1 diff_2 diff_3 elements elements_1 elements_2
-   elements_3 elements_3w elements_between elements_between_iff elt empty
-   empty_1 eq eq_dec eq_refl eq_sym eq_trans equal equal_1 equal_2 exists_
-   exists_1 exists_2 filter filter_1 filter_2 filter_3 fold fold_1 for_all
-   for_all_1 for_all_2 for_all_between for_all_between_iff inter inter_1
-   inter_2 inter_3 is_empty is_empty_1 is_empty_2 lt lt_not_eq lt_trans
-   max_elt max_elt_1 max_elt_2 max_elt_3 mem mem_1 mem_2 mem_between
-   mem_between_1 mem_between_2 min_elt min_elt_1 min_elt_2 min_elt_3
-   partition partition_1 partition_2 partition_between partition_between_iff_1
-   partition_between_iff_2 raw_elements_between raw_elements_between_ok
-   raw_for_all_between raw_for_all_between_1 raw_for_all_between_2
-   raw_mem_between raw_mem_between_1 raw_mem_between_2 raw_partition_between
-   raw_partition_between_ok remove remove_1 remove_2 remove_3 singleton
-   singleton_1 singleton_2 subset subset_1 subset_2 t union union_1 union_2
-   union_3)
+abbrev E := OrderedEquation'.OrderedEquation'
+abbrev «X'» := E
+abbrev MSet := Make.MSet E
+abbrev Raw : Type := Make.Raw.tree E
+abbrev EqSet2 : Type := Make.t E
+abbrev t := Make.t E
+abbrev elt := Make.elt E
+
+namespace MSet
+
+abbrev Mkt := @Make.MSet.Mkt E
+abbrev this := @Make.MSet.this E
+abbrev is_ok := @Make.MSet.is_ok E
+
+end MSet
+
+namespace Raw
+
+abbrev tree := Make.Raw.tree E
+abbrev t := tree
+abbrev IsOk (s : tree) : Prop := Make.Raw.IsOk s
+abbrev Ok (s : tree) : Prop := Make.Raw.Ok s
+abbrev Leaf : tree := Make.Raw.Leaf
+abbrev Node := @Make.Raw.Node E
+abbrev empty : tree := Make.Raw.empty
+abbrev singleton := @Make.Raw.singleton E
+export CompCert4Lean.Lib.FSetAVLplus.Make.Raw
+  (is_empty mem min_elt max_elt choose fold elements_aux elements
+   rev_elements_aux rev_elements cardinal maxdepth mindepth for_all exists_
+   compare equal subset subsetl subsetr ltb_tree gtb_tree isok In InT IsRoot
+   InLeft InRight Equal Subset Empty For_all Exists lt_tree gt_tree bst InA
+   NoDupA Sorted RespectsEq enumeration End More cons compare_more compare_cont
+   compare_end flatten_e eq lt CompSpec CompareSpec CompEq CompLt CompGt Cmp
+   height create assert_false bal add join remove_min merge remove concat triple
+   split inter diff union filter partition singleton_spec create_spec create_bst
+   singleton_bst bal_spec bal_bst add_spec add_bst join_spec join_bst
+   remove_min_spec remove_min_bst_gt remove_min_bst remove_min_ok
+   remove_min_gt_tree merge_spec merge_bst concat_spec concat_bst remove_spec
+   remove_bst split_left_spec split_right_spec split_in_spec split_bst
+   split_membership_spec union_spec union_bst inter_spec_bst inter_spec inter_bst
+   diff_spec_bst diff_spec diff_bst filter_weak_spec filter_spec filter_bst
+   partition_fst partition_snd partition_bst ltb_tree_iff gtb_tree_iff isok_iff
+   In_1 In_node_iff In_leaf_iff lt_leaf gt_leaf lt_tree_node gt_tree_node
+   lt_tree_not_in gt_tree_not_in lt_tree_trans gt_tree_trans empty_spec empty_ok
+   is_empty_spec mem_spec min_elt_spec1 min_elt_spec2 min_elt_spec3
+   max_elt_spec1 max_elt_spec2 max_elt_spec3 choose_spec1 choose_spec2
+   choose_spec3 elements_spec1' elements_spec1 elements_spec2' elements_spec2
+   elements_spec2w elements_aux_cardinal elements_cardinal cardinal_spec
+   elements_app elements_node rev_elements_app rev_elements_node rev_elements_rev
+   sorted_app_inv elements_sort_ok for_all_spec exists_spec fold_spec' fold_spec
+   subsetl_spec subsetr_spec subset_spec eq_Leq eq_equiv lt_strorder lt_compat
+   flatten_e_elements cons_1 compare_end_Cmp compare_more_Cmp compare_cont_Cmp
+   compare_Cmp compare_spec equal_spec mindepth_maxdepth maxdepth_cardinal
+   mindepth_cardinal maxdepth_log_cardinal mindepth_log_cardinal join_ok
+   concat_ok)
+
+end Raw
+
+abbrev In := @Make.In E
+abbrev Equal := @Make.Equal E
+abbrev Subset := @Make.Subset E
+abbrev Empty := @Make.Empty E
+abbrev For_all := @Make.For_all E
+abbrev Exists := @Make.Exists E
+abbrev eq := @Make.eq E
+abbrev lt := @Make.lt E
+abbrev empty : t := Make.empty
+abbrev is_empty := @Make.is_empty E
+abbrev mem := @Make.mem E
+abbrev add := @Make.add E
+abbrev singleton := @Make.singleton E
+abbrev remove := @Make.remove E
+abbrev union := @Make.union E
+abbrev inter := @Make.inter E
+abbrev diff := @Make.diff E
+abbrev equal := @Make.equal E
+abbrev subset := @Make.subset E
+abbrev fold := @Make.fold E
+abbrev for_all := @Make.for_all E
+abbrev exists_ := @Make.exists_ E
+abbrev filter := @Make.filter E
+abbrev partition := @Make.partition E
+abbrev cardinal := @Make.cardinal E
+abbrev elements := @Make.elements E
+abbrev choose := @Make.choose E
+abbrev min_elt := @Make.min_elt E
+abbrev max_elt := @Make.max_elt E
+abbrev eq_dec := @Make.eq_dec E
+abbrev compare := @Make.compare E
+abbrev In_1 := @Make.In_1 E
+abbrev eq_refl := @Make.eq_refl E
+abbrev eq_sym := @Make.eq_sym E
+abbrev eq_trans := @Make.eq_trans E
+abbrev mem_1 := @Make.mem_1 E
+abbrev mem_2 := @Make.mem_2 E
+abbrev equal_1 := @Make.equal_1 E
+abbrev equal_2 := @Make.equal_2 E
+abbrev subset_1 := @Make.subset_1 E
+abbrev subset_2 := @Make.subset_2 E
+abbrev empty_1 := @Make.empty_1 E
+abbrev is_empty_1 := @Make.is_empty_1 E
+abbrev is_empty_2 := @Make.is_empty_2 E
+abbrev add_1 := @Make.add_1 E
+abbrev add_2 := @Make.add_2 E
+abbrev add_3 := @Make.add_3 E
+abbrev remove_1 := @Make.remove_1 E
+abbrev remove_2 := @Make.remove_2 E
+abbrev remove_3 := @Make.remove_3 E
+abbrev singleton_1 := @Make.singleton_1 E
+abbrev singleton_2 := @Make.singleton_2 E
+abbrev union_1 := @Make.union_1 E
+abbrev union_2 := @Make.union_2 E
+abbrev union_3 := @Make.union_3 E
+abbrev inter_1 := @Make.inter_1 E
+abbrev inter_2 := @Make.inter_2 E
+abbrev inter_3 := @Make.inter_3 E
+abbrev diff_1 := @Make.diff_1 E
+abbrev diff_2 := @Make.diff_2 E
+abbrev diff_3 := @Make.diff_3 E
+abbrev fold_1 := @Make.fold_1 E
+abbrev cardinal_1 := @Make.cardinal_1 E
+abbrev filter_1 := @Make.filter_1 E
+abbrev filter_2 := @Make.filter_2 E
+abbrev filter_3 := @Make.filter_3 E
+abbrev for_all_1 := @Make.for_all_1 E
+abbrev for_all_2 := @Make.for_all_2 E
+abbrev exists_1 := @Make.exists_1 E
+abbrev exists_2 := @Make.exists_2 E
+abbrev partition_1 := @Make.partition_1 E
+abbrev partition_2 := @Make.partition_2 E
+abbrev elements_1 := @Make.elements_1 E
+abbrev elements_2 := @Make.elements_2 E
+abbrev elements_3w := @Make.elements_3w E
+abbrev choose_1 := @Make.choose_1 E
+abbrev choose_2 := @Make.choose_2 E
+abbrev lt_trans := @Make.lt_trans E
+abbrev lt_not_eq := @Make.lt_not_eq E
+abbrev elements_3 := @Make.elements_3 E
+abbrev min_elt_1 := @Make.min_elt_1 E
+abbrev min_elt_2 := @Make.min_elt_2 E
+abbrev min_elt_3 := @Make.min_elt_3 E
+abbrev max_elt_1 := @Make.max_elt_1 E
+abbrev max_elt_2 := @Make.max_elt_2 E
+abbrev max_elt_3 := @Make.max_elt_3 E
+abbrev choose_3 := @Make.choose_3 E
+abbrev MF := Make.MF E
+private abbrev AboveMonotone := @Make.AboveMonotone E
+private abbrev BelowMonotone := @Make.BelowMonotone E
+private abbrev PredCompat := @Make.PredCompat E
+abbrev raw_mem_between := @Make.raw_mem_between E
+abbrev mem_between := @Make.mem_between E
+abbrev raw_elements_between := @Make.raw_elements_between E
+abbrev elements_between := @Make.elements_between E
+abbrev raw_for_all_between := @Make.raw_for_all_between E
+abbrev for_all_between := @Make.for_all_between E
+abbrev raw_partition_between := @Make.raw_partition_between E
+abbrev partition_between := @Make.partition_between E
+
+def raw_mem_between_1 : Prop :=
+  ∀ (above below : elt → Bool) (m : Raw.tree),
+    raw_mem_between above below m = true →
+      ∃ x, Raw.InT x m ∧ above x = true ∧ below x = true
+
+def raw_mem_between_2 : Prop :=
+  ∀ (above below : elt → Bool),
+    AboveMonotone above → BelowMonotone below →
+    ∀ (x : elt) (m : Raw.tree), Raw.bst m → Raw.InT x m →
+      above x = true → below x = true → raw_mem_between above below m = true
+
+def mem_between_1 : Prop :=
+  ∀ (above below : elt → Bool) (s : t),
+    mem_between above below s = true →
+      ∃ x, In x s ∧ above x = true ∧ below x = true
+
+def mem_between_2 : Prop :=
+  ∀ (above below : elt → Bool),
+    AboveMonotone above → BelowMonotone below →
+    ∀ (x : elt) (s : t), In x s → above x = true → below x = true →
+      mem_between above below s = true
+
+def In_raw_elements_between_1 : Prop :=
+  ∀ (above below : elt → Bool) (x : elt) (m : Raw.tree),
+    Raw.InT x (raw_elements_between above below m) → Raw.InT x m
+
+def raw_elements_between_ok : Prop :=
+  ∀ (above below : elt → Bool) (m : Raw.tree),
+    Raw.bst m → Raw.bst (raw_elements_between above below m)
+
+def In_raw_elements_between_2 : Prop :=
+  ∀ (above below : elt → Bool),
+    AboveMonotone above → BelowMonotone below →
+    ∀ (x : elt) (m : Raw.tree),
+      Raw.InT x (raw_elements_between above below m) →
+        above x = true ∧ below x = true
+
+def In_raw_elements_between_3 : Prop :=
+  ∀ (above below : elt → Bool),
+    AboveMonotone above → BelowMonotone below →
+    ∀ (x : elt) (m : Raw.tree), Raw.bst m → Raw.InT x m →
+      above x = true → below x = true →
+        Raw.InT x (raw_elements_between above below m)
+
+def elements_between_iff : Prop :=
+  ∀ (above below : elt → Bool),
+    AboveMonotone above → BelowMonotone below →
+    ∀ (x : elt) (s : t),
+      In x (elements_between above below s) ↔
+        In x s ∧ above x = true ∧ below x = true
+
+def raw_for_all_between_1 : Prop :=
+  ∀ (pred above below : elt → Bool),
+    PredCompat pred → AboveMonotone above → BelowMonotone below →
+    ∀ (x : elt) (m : Raw.tree), Raw.bst m →
+      raw_for_all_between pred above below m = true → Raw.InT x m →
+      above x = true → below x = true → pred x = true
+
+def raw_for_all_between_2 : Prop :=
+  ∀ (pred above below : elt → Bool) (m : Raw.tree), Raw.bst m →
+    (∀ x, Raw.InT x m → above x = true → below x = true → pred x = true) →
+      raw_for_all_between pred above below m = true
+
+def for_all_between_iff : Prop :=
+  ∀ (pred above below : elt → Bool),
+    PredCompat pred → AboveMonotone above → BelowMonotone below →
+    ∀ s : t, for_all_between pred above below s = true ↔
+      ∀ x, In x s → above x = true → below x = true → pred x = true
+
+def In_raw_partition_between_1 : Prop :=
+  ∀ (above below : elt → Bool) (x : elt) (m : Raw.tree),
+    Raw.InT x (raw_partition_between above below m).1 → Raw.InT x m
+
+def In_raw_partition_between_2 : Prop :=
+  ∀ (above below : elt → Bool) (x : elt) (m : Raw.tree),
+    Raw.InT x (raw_partition_between above below m).2 → Raw.InT x m
+
+def raw_partition_between_ok : Prop :=
+  ∀ (above below : elt → Bool) (m : Raw.tree), Raw.bst m →
+    Raw.bst (raw_partition_between above below m).1 ∧
+      Raw.bst (raw_partition_between above below m).2
+
+def In_raw_partition_between_3 : Prop :=
+  ∀ (above below : elt → Bool),
+    AboveMonotone above → BelowMonotone below →
+    ∀ (x : elt) (m : Raw.tree),
+      Raw.InT x (raw_partition_between above below m).1 →
+        above x = true ∧ below x = true
+
+def In_raw_partition_between_4 : Prop :=
+  ∀ (above below : elt → Bool),
+    AboveMonotone above → BelowMonotone below →
+    ∀ (x : elt) (m : Raw.tree), Raw.bst m →
+      Raw.InT x (raw_partition_between above below m).2 →
+        above x = false ∨ below x = false
+
+def In_raw_partition_between_5 : Prop :=
+  ∀ (above below : elt → Bool),
+    AboveMonotone above → BelowMonotone below →
+    ∀ (x : elt) (m : Raw.tree), Raw.bst m → Raw.InT x m →
+      above x = true → below x = true →
+        Raw.InT x (raw_partition_between above below m).1
+
+def In_raw_partition_between_6 : Prop :=
+  ∀ (above below : elt → Bool),
+    AboveMonotone above → BelowMonotone below →
+    ∀ (x : elt) (m : Raw.tree), Raw.bst m → Raw.InT x m →
+      (above x = false ∨ below x = false) →
+        Raw.InT x (raw_partition_between above below m).2
+
+def partition_between_iff_1 : Prop :=
+  ∀ (above below : elt → Bool),
+    AboveMonotone above → BelowMonotone below →
+    ∀ (x : elt) (s : t),
+      In x (partition_between above below s).1 ↔
+        In x s ∧ above x = true ∧ below x = true
+
+def partition_between_iff_2 : Prop :=
+  ∀ (above below : elt → Bool),
+    AboveMonotone above → BelowMonotone below →
+    ∀ (x : elt) (s : t),
+      In x (partition_between above below s).2 ↔
+        In x s ∧ (above x = false ∨ below x = false)
 
 end EqSet2
 
-def eqs : Type := EqSet.t
+structure eqs : Type where
+  eqs1 : EqSet.t
+  eqs2 : EqSet2.t
+  eqs_same : ∀ q, EqSet2.In q eqs2 ↔ EqSet.In q eqs1
 
-def eqs1 (e : eqs) : EqSet.t := e
-def eqs2 (e : eqs) : EqSet2.t := e
-def eqs_same (e : eqs) (q : equation) :
-    EqSet2.In q (eqs2 e) ↔ EqSet.In q (eqs1 e) := Iff.rfl
+abbrev mkeqs := eqs.mk
+abbrev eqs1 := eqs.eqs1
+abbrev eqs2 := eqs.eqs2
+abbrev eqs_same := eqs.eqs_same
 
-def empty_eqs : eqs := EqSet.empty
+instance : Coe eqs EqSet.t := ⟨eqs.eqs1⟩
 
-def add_equation (q : equation) (e : eqs) : eqs := EqSet.add q e
+def empty_eqs : eqs :=
+  mkeqs EqSet.empty EqSet2.empty (fun q => by
+    constructor
+    · exact fun h => False.elim (EqSet2.empty_1 q h)
+    · exact fun h => False.elim (EqSet.empty_1 q h))
 
-def remove_equation (q : equation) (e : eqs) : eqs := EqSet.remove q e
+def add_equation (q : equation) (e : eqs) : eqs :=
+  mkeqs (EqSet.add q e.eqs1) (EqSet2.add q e.eqs2) (fun q' => by
+    constructor
+    · intro h
+      cases OrderedEquation'.eq_dec q q' with
+      | left heq => exact EqSet.add_1 e.eqs1 q q' heq
+      | right hne =>
+          exact EqSet.add_2 e.eqs1 q q'
+            ((e.eqs_same q').mp (EqSet2.add_3 e.eqs2 q q' hne h))
+    · intro h
+      cases OrderedEquation.eq_dec q q' with
+      | left heq => exact EqSet2.add_1 e.eqs2 q q' heq
+      | right hne =>
+          exact EqSet2.add_2 e.eqs2 q q'
+            ((e.eqs_same q').mpr (EqSet.add_3 e.eqs1 q q' hne h)))
+
+def remove_equation (q : equation) (e : eqs) : eqs :=
+  mkeqs (EqSet.remove q e.eqs1) (EqSet2.remove q e.eqs2) (fun q' => by
+    constructor
+    · intro h
+      cases OrderedEquation'.eq_dec q q' with
+      | left heq => exact False.elim (EqSet2.remove_1 e.eqs2 q q' heq h)
+      | right hne =>
+          exact EqSet.remove_2 e.eqs1 q q' hne
+            ((e.eqs_same q').mp (EqSet2.remove_3 e.eqs2 q q' h))
+    · intro h
+      cases OrderedEquation.eq_dec q q' with
+      | left heq => exact False.elim (EqSet.remove_1 e.eqs1 q q' heq h)
+      | right hne =>
+          exact EqSet2.remove_2 e.eqs2 q q' hne
+            ((e.eqs_same q').mpr (EqSet.remove_3 e.eqs1 q q' h)))
 
 def select_reg_l (r : reg) (q : equation) : Bool :=
   PArith.BinPos.Pos.leb r q.ereg
@@ -1220,7 +1881,18 @@ private def analysisBeq (x y : res eqs) : Bool :=
 
 private def analysisLub (x y : res eqs) : res eqs :=
   match x, y with
-  | OK a, OK b => OK (EqSet.union a b)
+  | OK a, OK b =>
+      OK (mkeqs (EqSet.union a.eqs1 b.eqs1) (EqSet2.union a.eqs2 b.eqs2)
+        (fun q => by
+          constructor
+          · intro h
+            rcases EqSet2.union_1 a.eqs2 b.eqs2 q h with h | h
+            · exact EqSet.union_2 a.eqs1 b.eqs1 q ((a.eqs_same q).mp h)
+            · exact EqSet.union_3 a.eqs1 b.eqs1 q ((b.eqs_same q).mp h)
+          · intro h
+            rcases EqSet.union_1 a.eqs1 b.eqs1 q h with h | h
+            · exact EqSet2.union_2 a.eqs2 b.eqs2 q ((a.eqs_same q).mpr h)
+            · exact EqSet2.union_3 a.eqs2 b.eqs2 q ((b.eqs_same q).mpr h)))
   | OK _, Error m => Error m
   | Error m, _ => Error m
 
