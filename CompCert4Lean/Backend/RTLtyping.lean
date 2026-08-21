@@ -190,10 +190,20 @@ def wt_function (cfg : CompilerConfig) (f : function) (env : regenv) : Prop :=
     (∀ pc instr, PTree.get pc f.fn_code = some instr → wt_instr cfg f env instr) ∧
     valid_successor f f.fn_entrypoint
 
+def wt_params {cfg : CompilerConfig} {f : function} {env : regenv}
+    (h : wt_function cfg f env) :
+    List.map env f.fn_params = proj_sig_args f.fn_sig := h.1
+
+def wt_norepet {cfg : CompilerConfig} {f : function} {env : regenv}
+    (h : wt_function cfg f env) : list_norepet f.fn_params := h.2.1
+
 def wt_instrs {cfg : CompilerConfig} {f : function} {env : regenv}
     (h : wt_function cfg f env) :
     ∀ pc instr, PTree.get pc f.fn_code = some instr → wt_instr cfg f env instr :=
   h.2.2.1
+
+def wt_entrypoint {cfg : CompilerConfig} {f : function} {env : regenv}
+    (h : wt_function cfg f env) : valid_successor f f.fn_entrypoint := h.2.2.2
 
 def wt_fundef (cfg : CompilerConfig) : fundef → Prop
   | .External _ => True

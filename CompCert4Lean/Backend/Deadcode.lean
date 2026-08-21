@@ -37,6 +37,7 @@ open CompCert4Lean.X86.Op
 private abbrev int := CompCert4Lean.Lib.Integers.int
 private abbrev int64 := CompCert4Lean.Lib.Integers.int64
 private abbrev reg := CompCert4Lean.Backend.Registers.reg
+private abbrev CompilerConfig := CompCert4Lean.Config.CompilerConfig
 private abbrev RocqString :=
   CompCert4Lean.Foundation.RocqString.Rocq.Coq.Strings.String.string
 
@@ -48,33 +49,12 @@ private def needednessAnalysisFailedText : RocqString :=
   bytesToString [78, 101, 101, 100, 101, 100, 110, 101, 115, 115, 32, 97,
     110, 97, 108, 121, 115, 105, 115, 32, 102, 97, 105, 108, 101, 100]
 
-private def nmem_lub (x y : nmem) : nmem :=
-  match x, y with
-  | NMemDead, z => z
-  | z, NMemDead => z
-  | NMem stk gl, NMem _ _ => NMem stk gl
-
-private def nmem_beq (x y : nmem) : Bool :=
-  match x, y with
-  | NMemDead, NMemDead => true
-  | NMem _ _, NMem _ _ => true
-  | _, _ => false
-
-private def na_lub (x y : NA.t) : NA.t :=
-  (NE.lub x.1 y.1, nmem_lub x.2 y.2)
-
-private def na_beq (x y : NA.t) : Bool :=
-  NE.beq x.1 y.1 && nmem_beq x.2 y.2
-
-private def na_eq (x y : NA.t) : Prop :=
-  NE.eq x.1 y.1 ∧ x.2 = y.2
-
 private def na_lattice : SemiLattice :=
   { t := NA.t
     bot := NA.bot
-    lub := na_lub
-    beq := na_beq
-    eq := na_eq
+    lub := NA.lub
+    beq := NA.beq
+    eq := NA.eq
     ge := NA.ge }
 
 def add_need_all (r : reg) (ne : nenv) : nenv :=
@@ -141,21 +121,23 @@ def builtin_res_dead (res : builtin_res reg) (ne : NE.t) : Bool :=
   | .BR r => is_dead (nreg ne r)
   | _ => false
 
-def transfer_builtin (app : VA.t) (ef : external_function)
+def transfer_builtin (cfg : CompilerConfig) (app : VA.t) (ef : external_function)
     (args : List (builtin_arg reg)) (res : builtin_res reg)
     (ne : NE.t) (nm : nmem) : NA.t :=
   match ef, args with
   | .EF_vload chunk, a1 :: [] =>
       transfer_builtin_arg All
-        (kill_builtin_res res ne, nmem_add nm (aaddr_arg app a1) (size_chunk chunk)) a1
+        (kill_builtin_res res ne,
+          nmem_add nm (aaddr_arg cfg app a1) (size_chunk chunk)) a1
   | .EF_vstore chunk, a1 :: a2 :: [] =>
       transfer_builtin_arg All
         (transfer_builtin_arg (store_argument chunk) (kill_builtin_res res ne, nm) a2) a1
   | .EF_memcpy sz _, dst :: src :: [] =>
-      if nmem_contains nm (aaddr_arg app dst) sz then
+      if nmem_contains nm (aaddr_arg cfg app dst) sz then
         transfer_builtin_args
           (kill_builtin_res res ne,
-            nmem_add (nmem_remove nm (aaddr_arg app dst) sz) (aaddr_arg app src) sz) args
+            nmem_add (nmem_remove nm (aaddr_arg cfg app dst) sz)
+              (aaddr_arg cfg app src) sz) args
       else
         (ne, nm)
   | .EF_annot _ _ _, _ =>
@@ -171,7 +153,8 @@ def transfer_builtin (app : VA.t) (ef : external_function)
       | none => transfer_builtin_args (kill_builtin_res res ne, nmem_all) args
   | _, _ => transfer_builtin_args (kill_builtin_res res ne, nmem_all) args
 
-def transfer (f : function) (dm : defmap) (approx : PMap.t VA.t)
+def transfer (cfg : CompilerConfig) (f : function) (dm : defmap)
+    (approx : PMap.t VA.t)
     (pc : node) (after : NA.t) : NA.t :=
   let (ne, nm) := after
   match PTree.get pc f.fn_code with
@@ -188,9 +171,10 @@ def transfer (f : function) (dm : defmap) (approx : PMap.t VA.t)
       else if is_int_zero ndst then (kill dst ne, nm)
       else
         (add_needs_all args (kill dst ne),
-          nmem_add nm (aaddressing (PMap.get pc approx) addr args) (size_chunk chunk))
+          nmem_add nm (aaddressing cfg (PMap.get pc approx) addr args)
+            (size_chunk chunk))
   | some (.Istore chunk addr args src _) =>
-      let p := aaddressing (PMap.get pc approx) addr args
+      let p := aaddressing cfg (PMap.get pc approx) addr args
       if nmem_contains nm p (size_chunk chunk) then
         (add_needs_all args (add_need src (store_argument chunk) ne),
           nmem_remove nm p (size_chunk chunk))
@@ -205,7 +189,8 @@ def transfer (f : function) (dm : defmap) (approx : PMap.t VA.t)
   | some (.Itailcall _ ros args) =>
       (add_needs_all args (add_ros_need_all ros NE.bot),
         nmem_dead_stack f.fn_stacksize)
-  | some (.Ibuiltin ef args res _) => transfer_builtin (PMap.get pc approx) ef args res ne nm
+  | some (.Ibuiltin ef args res _) =>
+      transfer_builtin cfg (PMap.get pc approx) ef args res ne nm
   | some (.Icond cond args s1 s2) =>
       match peq s1 s2 with
       | .left _ => after
@@ -214,11 +199,13 @@ def transfer (f : function) (dm : defmap) (approx : PMap.t VA.t)
   | some (.Ireturn optarg) =>
       (add_opt_need_all optarg ne, nmem_dead_stack f.fn_stacksize)
 
-def analyze (f : function) (dm : defmap) (approx : PMap.t VA.t) : Option (PMap.t NA.t) :=
+def analyze (cfg : CompilerConfig) (f : function) (dm : defmap)
+    (approx : PMap.t VA.t) : Option (PMap.t NA.t) :=
   Backward_Dataflow_Solver.fixpoint na_lattice NodeSetBackward f.fn_code
-    successors_instr (transfer f dm approx)
+    successors_instr (transfer cfg f dm approx)
 
-def transf_instr (dm : defmap) (approx : PMap.t VA.t) (an : PMap.t NA.t)
+def transf_instr (cfg : CompilerConfig) (dm : defmap) (approx : PMap.t VA.t)
+    (an : PMap.t NA.t)
     (pc : node) (instr : instruction) : instruction :=
   match instr with
   | .Iop op args res s =>
@@ -239,7 +226,7 @@ def transf_instr (dm : defmap) (approx : PMap.t VA.t) (an : PMap.t NA.t)
         .Iop (.Ointconst CompCert4Lean.Lib.Integers.Int.zero) [] dst s
       else instr
   | .Istore chunk addr args src s =>
-      let p := aaddressing (PMap.get pc approx) addr args
+      let p := aaddressing cfg (PMap.get pc approx) addr args
       if nmem_contains (PMap.get pc an).2 p (size_chunk chunk) then instr else .Inop s
   | .Icall sig ros args res s =>
       match is_known_runtime_function dm ros with
@@ -248,7 +235,8 @@ def transf_instr (dm : defmap) (approx : PMap.t VA.t) (an : PMap.t NA.t)
           let nres := nreg (PMap.get pc an).1 res
           if is_dead nres then .Inop s else instr
   | .Ibuiltin (.EF_memcpy sz _) (dst :: src :: []) res s =>
-      if nmem_contains (PMap.get pc an).2 (aaddr_arg (PMap.get pc approx) dst) sz
+      if nmem_contains (PMap.get pc an).2
+          (aaddr_arg cfg (PMap.get pc approx) dst) sz
       then instr else .Inop s
   | .Ibuiltin (.EF_builtin name sg) args res s =>
       match lookup_builtin_function name sg, builtin_res_dead res (PMap.get pc an).1 with
@@ -260,23 +248,26 @@ def transf_instr (dm : defmap) (approx : PMap.t VA.t) (an : PMap.t NA.t)
       | .right _ => instr
   | _ => instr
 
-def transf_function (dm : defmap) (rm : romem) (f : function) : res function :=
-  let approx := ValueAnalysis.analyze rm f
-  match analyze f dm approx with
+def transf_function (cfg : CompilerConfig) (dm : defmap) (rm : romem)
+    (f : function) : res function :=
+  let approx := ValueAnalysis.analyze cfg rm f
+  match analyze cfg f dm approx with
   | some an =>
       OK
         { fn_sig := f.fn_sig
           fn_params := f.fn_params
           fn_stacksize := f.fn_stacksize
-          fn_code := PTree.map (transf_instr dm approx an) f.fn_code
+          fn_code := PTree.map (transf_instr cfg dm approx an) f.fn_code
           fn_entrypoint := f.fn_entrypoint }
   | none => Error (msg needednessAnalysisFailedText)
 
-def transf_fundef (dm : defmap) (rm : romem) (fd : fundef) : res fundef :=
-  CompCert4Lean.Common.AST.transf_partial_fundef (transf_function dm rm) fd
+def transf_fundef (cfg : CompilerConfig) (dm : defmap) (rm : romem)
+    (fd : fundef) : res fundef :=
+  CompCert4Lean.Common.AST.transf_partial_fundef
+    (transf_function cfg dm rm) fd
 
-def transf_program (p : program) : res program :=
+def transf_program (cfg : CompilerConfig) (p : program) : res program :=
   CompCert4Lean.Common.AST.transform_partial_program
-    (transf_fundef (prog_defmap p) (romem_for p)) p
+    (transf_fundef cfg (prog_defmap p) (romem_for cfg p)) p
 
 end CompCert4Lean.Backend.Deadcode

@@ -68,6 +68,7 @@ private abbrev state := CompCert4Lean.Backend.RTL.state
 private abbrev stackframe := CompCert4Lean.Backend.RTL.stackframe
 private abbrev Res := CompCert4Lean.Common.Errors.res
 private abbrev memval := CompCert4Lean.Common.Memdata.memval
+private abbrev CompilerConfig := CompCert4Lean.Config.CompilerConfig
 private abbrev z0 : Z := .Z0
 private abbrev zAdd := ZArith.BinInt.Z.add
 private abbrev zSub := ZArith.BinInt.Z.sub
@@ -75,10 +76,11 @@ private abbrev zLe := ZArith.BinInt.Z.le
 private abbrev zToNat := ZArith.BinInt.Z.to_nat
 private abbrev zDivide := ZArith.BinInt.Z.divide
 
-def match_prog (prog tprog : program) : Prop :=
+def match_prog (cfg : CompilerConfig) (prog tprog : program) : Prop :=
   @match_program fundef Unit fundef Unit
     (Linker_fundef function) Linker_unit
-    (fun p f tf => transf_fundef (prog_defmap p) (romem_for p) f = OK tf)
+    (fun p f tf =>
+      transf_fundef cfg (prog_defmap p) (romem_for cfg p) f = OK tf)
     (fun x y : Unit => x = y) prog tprog
 
 def valu_agree (valu1 valu2 : valuation) (upto : valnum) : Prop :=
@@ -95,51 +97,53 @@ def transf_function' (f : function) (cu : program)
 def regs_lessdef (rs1 rs2 : regset) : Prop :=
   ∀ r, Val.lessdef (Regmap.get r rs1) (Regmap.get r rs2)
 
-def analyze (cu : program) (f : function) :=
-  CSE.analyze f (prog_defmap cu) (vanalyze (romem_for cu) f)
+def analyze (cfg : CompilerConfig) (cu : program) (f : function) :=
+  CSE.analyze cfg f (prog_defmap cu) (vanalyze cfg (romem_for cfg cu) f)
 
-inductive match_stackframes (prog : program) : List stackframe → List stackframe → Prop where
-  | nil : match_stackframes prog [] []
+inductive match_stackframes (cfg : CompilerConfig) (prog : program) :
+    List stackframe → List stackframe → Prop where
+  | nil : match_stackframes cfg prog [] []
   | match_stackframes_cons (res : reg) (sp : val) (pc : node) (rs : regset)
       (f : function) (s : List stackframe) (rs' : regset) (s' : List stackframe)
       (cu : program) (approx : PMap.t numbering)
       (link : linkorder cu prog)
-      (analyze : analyze cu f = some approx)
+      (analyze : analyze cfg cu f = some approx)
       (sat : ∀ v m, ∃ valu,
         numbering_holds valu (Genv.globalenv prog) sp
           (Regmap.set res v rs) m (PMap.get pc approx))
       (rld : regs_lessdef rs rs')
-      (stacks : match_stackframes prog s s') :
-      match_stackframes prog
+      (stacks : match_stackframes cfg prog s s') :
+      match_stackframes cfg prog
         (Stackframe res f sp pc rs :: s)
         (Stackframe res (transf_function' f cu approx) sp pc rs' :: s')
 
-inductive match_states (prog : program) : state → state → Prop where
+inductive match_states (cfg : CompilerConfig) (prog : program) :
+    state → state → Prop where
   | intro (s : List stackframe) (sp : val) (pc : node) (rs : regset) (m : mem)
       (s' : List stackframe) (rs' : regset) (m' : mem) (f : function)
       (cu : program) (approx : PMap.t numbering)
       (link : linkorder cu prog)
-      (analyze : analyze cu f = some approx)
+      (analyze : analyze cfg cu f = some approx)
       (sat : ∃ valu,
         numbering_holds valu (Genv.globalenv prog) sp rs m
           (approx!!pc))
       (rld : regs_lessdef rs rs')
       (mext : Mem.extends m m')
-      (stacks : match_stackframes prog s s') :
-      match_states prog (State s f sp pc rs m)
+      (stacks : match_stackframes cfg prog s s') :
+      match_states cfg prog (State s f sp pc rs m)
         (State s' (transf_function' f cu approx) sp pc rs' m')
   | call (s : List stackframe) (f tf : fundef) (args : List val) (m : mem)
       (s' : List stackframe) (args' : List val) (m' : mem) (cu : program)
       (link : linkorder cu prog)
-      (stacks : match_stackframes prog s s')
-      (tfd : transf_fundef (prog_defmap cu) (romem_for cu) f = OK tf)
+      (stacks : match_stackframes cfg prog s s')
+      (tfd : transf_fundef cfg (prog_defmap cu) (romem_for cfg cu) f = OK tf)
       (args_lessdef : Val.lessdef_list args args')
       (mext : Mem.extends m m') :
-      match_states prog (Callstate s f args m) (Callstate s' tf args' m')
+      match_states cfg prog (Callstate s f args m) (Callstate s' tf args' m')
   | return (s s' : List stackframe) (v v' : val) (m m' : mem)
-      (stacks : match_stackframes prog s s') (res : Val.lessdef v v')
+      (stacks : match_stackframes cfg prog s s') (res : Val.lessdef v v')
       (mext : Mem.extends m m') :
-      match_states prog (Returnstate s v m) (Returnstate s' v' m')
+      match_states cfg prog (Returnstate s v m) (Returnstate s' v' m')
 
 def eventually (prog : program)
     (xi : CompCert4Lean.Common.ExternalCalls.ExternalCalls) (n : Nat) (s : state)
@@ -152,9 +156,11 @@ export match_stackframes (match_stackframes_cons)
 
 /-! Exact statement descriptors for the later proof-migration phase. -/
 
+variable (cfg : CompilerConfig)
+
 def transf_program_matchStatement : Prop :=
   ∀ (prog tprog : program),
-    CSE.transf_program prog = OK tprog → match_prog prog tprog
+    CSE.transf_program cfg prog = OK tprog → match_prog cfg prog tprog
 
 def wf_equation_incrStatement : Prop :=
   ∀ (next1 next2 : valnum) (e : equation),
@@ -408,7 +414,7 @@ def kill_loads_after_store_holdsStatement : Prop :=
     genv_match bc ge → bc sp = BCstack → ematch bc rs ae →
     approx = VA.State ae am →
     numbering_holds valu ge (Vptr sp Ptrofs.zero) rs m'
-      (kill_loads_after_store approx n chunk addr args)
+      (kill_loads_after_store cfg approx n chunk addr args)
 
 def kill_cheap_computations_holdStatement : Prop :=
   ∀ (valu : valuation) (ge : genv) (sp : val) (rs : regset) (m : mem)
@@ -434,7 +440,7 @@ def add_store_result_holdStatement : Prop :=
     approx = VA.State ae am →
     ∃ valu2,
       numbering_holds valu2 ge (Vptr sp Ptrofs.zero) rs m'
-        (add_store_result approx n chunk addr args src)
+        (add_store_result cfg approx n chunk addr args src)
 
 def kill_loads_after_storebytes_holdsStatement : Prop :=
   ∀ (valu : valuation) (ge : genv) (sp : block) (rs : regset) (m m' : mem)
@@ -510,7 +516,7 @@ def transfer_builtin_holdsStatement : Prop :=
     ∃ valu',
       numbering_holds valu' ge (Vptr sp Ptrofs.zero)
         (regmap_setres res vres rs) m'
-        (transfer f dm vapprox pc n)
+        (transfer cfg f dm vapprox pc n)
 
 def reduce_rec_soundStatement : Prop :=
   ∀ (A : Type)
@@ -596,52 +602,52 @@ def analysis_correct_1Statement : Prop :=
   ∀ (ge : genv) (sp : val) (rs : regset) (m : mem) (f : function)
     (dm : defmap) (vapprox : PMap.t VA.t) (approx : PMap.t numbering)
     (pc pc' : node) (i : instruction),
-    CSE.analyze f dm vapprox = some approx →
+    CSE.analyze cfg f dm vapprox = some approx →
     PTree.get pc f.fn_code = some i →
     pc' ∈ successors_instr i →
     (∃ valu, numbering_holds valu ge sp rs m
-      (transfer f dm vapprox pc (PMap.get pc approx))) →
+      (transfer cfg f dm vapprox pc (PMap.get pc approx))) →
     ∃ valu, numbering_holds valu ge sp rs m (PMap.get pc' approx)
 
 def analysis_correct_entryStatement : Prop :=
   ∀ (ge : genv) (sp : val) (rs : regset) (m : mem) (f : function)
     (dm : defmap) (vapprox : PMap.t VA.t) (approx : PMap.t numbering),
-    CSE.analyze f dm vapprox = some approx →
+    CSE.analyze cfg f dm vapprox = some approx →
     ∃ valu, numbering_holds valu ge sp rs m
       (PMap.get f.fn_entrypoint approx)
 
 def symbols_preservedStatement : Prop :=
-  ∀ (prog tprog : program), match_prog prog tprog →
+  ∀ (prog tprog : program), match_prog cfg prog tprog →
     ∀ id : ident,
       Genv.find_symbol (Genv.globalenv tprog) id =
         Genv.find_symbol (Genv.globalenv prog) id
 
 def senv_preservedStatement : Prop :=
-  ∀ (prog tprog : program), match_prog prog tprog →
+  ∀ (prog tprog : program), match_prog cfg prog tprog →
     Senv.equiv (Genv.to_senv (Genv.globalenv prog))
       (Genv.to_senv (Genv.globalenv tprog))
 
 def functions_translatedStatement : Prop :=
-  ∀ (prog tprog : program), match_prog prog tprog →
+  ∀ (prog tprog : program), match_prog cfg prog tprog →
     ∀ (v : val) (f : fundef),
       Genv.find_funct (Genv.globalenv prog) v = some f →
       ∃ cu tf,
         Genv.find_funct (Genv.globalenv tprog) v = some tf ∧
-        transf_fundef (prog_defmap cu) (romem_for cu) f = OK tf ∧
+        transf_fundef cfg (prog_defmap cu) (romem_for cfg cu) f = OK tf ∧
         linkorder cu prog
 
 def funct_ptr_translatedStatement : Prop :=
-  ∀ (prog tprog : program), match_prog prog tprog →
+  ∀ (prog tprog : program), match_prog cfg prog tprog →
     ∀ (b : block) (f : fundef),
       Genv.find_funct_ptr (Genv.globalenv prog) b = some f →
       ∃ cu tf,
         Genv.find_funct_ptr (Genv.globalenv tprog) b = some tf ∧
-        transf_fundef (prog_defmap cu) (romem_for cu) f = OK tf ∧
+        transf_fundef cfg (prog_defmap cu) (romem_for cfg cu) f = OK tf ∧
         linkorder cu prog
 
 def sig_preservedStatement : Prop :=
   ∀ (dm : defmap) (rm : romem) (f tf : fundef),
-    transf_fundef dm rm f = OK tf → funsig tf = funsig f
+    transf_fundef cfg dm rm f = OK tf → funsig tf = funsig f
 
 def regs_lessdef_regsStatement : Prop :=
   ∀ (rs1 rs2 : regset), regs_lessdef rs1 rs2 →
@@ -661,40 +667,40 @@ def init_regs_lessdefStatement : Prop :=
     regs_lessdef (init_regs vl1 rl) (init_regs vl2 rl)
 
 def find_function_translatedStatement : Prop :=
-  ∀ (prog tprog : program), match_prog prog tprog →
+  ∀ (prog tprog : program), match_prog cfg prog tprog →
     ∀ (ros : Sum reg ident) (rs rs' : regset) (fd : fundef),
       find_function (Genv.globalenv prog) ros rs = some fd →
       regs_lessdef rs rs' →
       ∃ cu tfd,
         find_function (Genv.globalenv tprog) ros rs' = some tfd ∧
-        transf_fundef (prog_defmap cu) (romem_for cu) fd = OK tfd ∧
+        transf_fundef cfg (prog_defmap cu) (romem_for cfg cu) fd = OK tfd ∧
         linkorder cu prog
 
 def transf_step_correctStatement : Prop :=
   ∀ (xi : CompCert4Lean.Common.ExternalCalls.ExternalCalls)
-    (prog tprog : program), match_prog prog tprog →
+    (prog tprog : program), match_prog cfg prog tprog →
     ∀ (s1 s2 : state) (t : trace),
       RTL.step xi (Genv.globalenv prog) s1 t s2 →
-      ∀ s1', match_states prog s1 s1' → sound_state prog s1 →
+      ∀ s1', match_states cfg prog s1 s1' → sound_state cfg prog s1 →
         (∃ s2',
           RTL.step xi (Genv.globalenv tprog) s1' t s2' ∧
-          match_states prog s2 s2') ∨
+          match_states cfg prog s2 s2') ∨
         (∃ s2' n,
           plus (RTL.step xi) (Genv.globalenv tprog) s1' t s2' ∧
-          eventually prog xi n s2 (fun s3 => match_states prog s3 s2'))
+          eventually prog xi n s2 (fun s3 => match_states cfg prog s3 s2'))
 
 def transf_initial_statesStatement : Prop :=
-  ∀ (prog tprog : program), match_prog prog tprog →
+  ∀ (prog tprog : program), match_prog cfg prog tprog →
     ∀ st1, RTL.initial_state prog st1 →
-      ∃ st2, RTL.initial_state tprog st2 ∧ match_states prog st1 st2
+      ∃ st2, RTL.initial_state tprog st2 ∧ match_states cfg prog st1 st2
 
 def transf_final_statesStatement : Prop :=
   ∀ (prog : program) (st1 st2 : state) (r : int),
-    match_states prog st1 st2 → RTL.final_state st1 r → RTL.final_state st2 r
+    match_states cfg prog st1 st2 → RTL.final_state st1 r → RTL.final_state st2 r
 
 def transf_program_correctStatement : Prop :=
   ∀ (xi : CompCert4Lean.Common.ExternalCalls.ExternalCalls)
-    (prog tprog : program), match_prog prog tprog →
+    (prog tprog : program), match_prog cfg prog tprog →
     forward_simulation (RTL.semantics xi prog) (RTL.semantics xi tprog)
 
 end CompCert4Lean.Backend.CSEproof

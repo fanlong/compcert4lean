@@ -87,22 +87,16 @@ private def badSwitchIntText : RocqString :=
 private def badSwitchLongText : RocqString :=
   bytesToString [98, 97, 100, 32, 115, 119, 105, 116, 99, 104, 32, 40, 108, 111, 110, 103, 41]
 
-private def defaultRelocationContext : RelocationContext :=
-  { pic := false, pie := false, common := false, facts := fun _ => none }
-
-private def selectionConfig : CompilerConfig :=
-  CompCert4Lean.Config.pinnedLinuxX86_64 false 0 false false false false false
-
 /-! Condition conversion support (the source keeps these outside the mapped roots). -/
 
-private def condexpr_of_expr : CminorSel.expr → condexpr
+def condexpr_of_expr : CminorSel.expr → condexpr
   | CminorSel.expr.Eop (X86.Op.operation.Ocmp c) el => .CEcond c el
   | CminorSel.expr.Econdition a b c => .CEcondition a (condexpr_of_expr b) (condexpr_of_expr c)
   | CminorSel.expr.Elet a b => .CElet a (condexpr_of_expr b)
   | e => .CEcond (Ccompuimm .Cne (CompCert4Lean.Lib.Integers.Int.zero))
       (CminorSel.exprlist.Econs e CminorSel.exprlist.Enil)
 
-private def condition_of_expr : CminorSel.expr → condition × exprlist
+def condition_of_expr : CminorSel.expr → condition × exprlist
   | CminorSel.expr.Eop (X86.Op.operation.Ocmp c) el => (c, el)
   | e => (Ccompuimm .Cne (CompCert4Lean.Lib.Integers.Int.zero),
       CminorSel.exprlist.Econs e CminorSel.exprlist.Enil)
@@ -113,22 +107,21 @@ private def divf (e1 e2 : CminorSel.expr) : CminorSel.expr :=
 private def divfs (e1 e2 : CminorSel.expr) : CminorSel.expr :=
   .Eop (.Odivfs) (.Econs e1 (.Econs e2 .Enil))
 
-/-! Pure switch proposal used by the definition-level pass. -/
+/-! Extracted host callbacks used by instruction selection. -/
 
-private def normalizeSwitch : table → List (Z × Nat)
-  | [] => []
-  | (key, act) :: rest => (key, act) :: normalizeSwitch rest
+abbrev CompileSwitchOracle := Z → Nat → table → comptree
+abbrev IfConversionHeuristic :=
+  ident → Cminor.expr → Cminor.expr → Cminor.expr → typ → CminorSel.stmt → Bool
 
-private def compileSwitchTree (default : Nat) : List (Z × Nat) → comptree
-  | [] => .CTaction default
-  | [(key, act)] => .CTifeq key act (.CTaction default)
-  | (key, act) :: rest => .CTifeq key act (compileSwitchTree default rest)
+structure SelectionOracle where
+  compileSwitch : CompileSwitchOracle
+  ifConversionHeuristic : IfConversionHeuristic
 
-private def compile_switch (_modulus : Z) (default : Nat) (cases : table) : comptree :=
-  compileSwitchTree default (normalizeSwitch cases)
+def compile_switch (oracle : SelectionOracle) : CompileSwitchOracle :=
+  oracle.compileSwitch
 
-private def if_conversion_heuristic (_id : ident) (_cond ifso ifnot : Cminor.expr)
-    (_ty : typ) (_kont : CminorSel.stmt) : Bool := true
+def if_conversion_heuristic (oracle : SelectionOracle) : IfConversionHeuristic :=
+  oracle.ifConversionHeuristic
 
 /-! Conversion of loads and stores. -/
 
@@ -146,13 +139,13 @@ def globdef := CompCert4Lean.Common.AST.globdef Cminor.fundef Unit
 variable (defmap : PTree.t globdef)
 variable [hf : helper_functions]
 
-def sel_constant (cst : Cminor.constant) : CminorSel.expr :=
+def sel_constant (cfg : CompilerConfig) (cst : Cminor.constant) : CminorSel.expr :=
   match cst with
   | .Ointconst n => .Eop (.Ointconst n) .Enil
   | .Ofloatconst f => .Eop (.Ofloatconst f) .Enil
   | .Osingleconst f => .Eop (.Osingleconst f) .Enil
   | .Olongconst n => longconst n
-  | .Oaddrsymbol id ofs => addrsymbol defaultRelocationContext id ofs
+  | .Oaddrsymbol id ofs => addrsymbol cfg.relocation id ofs
   | .Oaddrstack ofs => addrstack ofs
 
 def sel_unop (op : Cminor.unary_operation) (arg : CminorSel.expr) : CminorSel.expr :=
@@ -191,15 +184,16 @@ def sel_unop (op : Cminor.unary_operation) (arg : CminorSel.expr) : CminorSel.ex
   | .Osingleoflong => singleoflong arg
   | .Osingleoflongu => singleoflongu arg
 
-def sel_binop (op : Cminor.binary_operation) (arg1 arg2 : CminorSel.expr) : CminorSel.expr :=
+def sel_binop (cfg : CompilerConfig) (op : Cminor.binary_operation)
+    (arg1 arg2 : CminorSel.expr) : CminorSel.expr :=
   match op with
   | .Oadd => add arg1 arg2
   | .Osub => sub arg1 arg2
   | .Omul => mul arg1 arg2
-  | .Odiv => divs selectionConfig arg1 arg2
-  | .Odivu => divu selectionConfig arg1 arg2
-  | .Omod => mods selectionConfig arg1 arg2
-  | .Omodu => modu selectionConfig arg1 arg2
+  | .Odiv => divs cfg arg1 arg2
+  | .Odivu => divu cfg arg1 arg2
+  | .Omod => mods cfg arg1 arg2
+  | .Omodu => modu cfg arg1 arg2
   | .Oand => and arg1 arg2
   | .Oor => or arg1 arg2
   | .Oxor => xor arg1 arg2
@@ -217,10 +211,10 @@ def sel_binop (op : Cminor.binary_operation) (arg1 arg2 : CminorSel.expr) : Cmin
   | .Oaddl => addl arg1 arg2
   | .Osubl => subl arg1 arg2
   | .Omull => mull arg1 arg2
-  | .Odivl => divls selectionConfig arg1 arg2
-  | .Odivlu => divlu selectionConfig arg1 arg2
-  | .Omodl => modls selectionConfig arg1 arg2
-  | .Omodlu => modlu selectionConfig arg1 arg2
+  | .Odivl => divls cfg arg1 arg2
+  | .Odivlu => divlu cfg arg1 arg2
+  | .Omodl => modls cfg arg1 arg2
+  | .Omodlu => modlu cfg arg1 arg2
   | .Oandl => andl arg1 arg2
   | .Oorl => orl arg1 arg2
   | .Oxorl => xorl arg1 arg2
@@ -239,22 +233,23 @@ def sel_select (ty : typ) (cnd ifso ifnot : CminorSel.expr) : CminorSel.expr :=
   if select_supported ty then select ty cond args ifso ifnot
   else .Econdition (condexpr_of_expr cnd) ifso ifnot
 
-def sel_expr : Cminor.expr → CminorSel.expr
+def sel_expr (cfg : CompilerConfig) : Cminor.expr → CminorSel.expr
   | .Evar id => .Evar id
-  | .Econst cst => sel_constant cst
-  | .Eunop op arg => sel_unop op (sel_expr arg)
-  | .Ebinop op arg1 arg2 => sel_binop op (sel_expr arg1) (sel_expr arg2)
-  | .Eload chunk addr => load chunk (sel_expr addr)
+  | .Econst cst => sel_constant cfg cst
+  | .Eunop op arg => sel_unop op (sel_expr cfg arg)
+  | .Ebinop op arg1 arg2 => sel_binop cfg op (sel_expr cfg arg1) (sel_expr cfg arg2)
+  | .Eload chunk addr => load chunk (sel_expr cfg addr)
 
-def sel_exprlist : List Cminor.expr → exprlist
+def sel_exprlist (cfg : CompilerConfig) : List Cminor.expr → exprlist
   | [] => .Enil
-  | a :: rest => .Econs (sel_expr a) (sel_exprlist rest)
+  | a :: rest => .Econs (sel_expr cfg a) (sel_exprlist cfg rest)
 
-def sel_select_expr (ty : typ) (arg1 arg2 arg3 : Cminor.expr) : CminorSel.expr :=
-  let (cond, args) := condition_of_expr (sel_expr arg1)
-  select ty cond args (sel_expr arg2) (sel_expr arg3)
+def sel_select_expr (cfg : CompilerConfig) (ty : typ)
+    (arg1 arg2 arg3 : Cminor.expr) : CminorSel.expr :=
+  let (cond, args) := condition_of_expr (sel_expr cfg arg1)
+  select ty cond args (sel_expr cfg arg2) (sel_expr cfg arg3)
 
-private def sel_known_builtin (bf : builtin_function) (args : exprlist) : Option CminorSel.expr :=
+def sel_known_builtin (bf : builtin_function) (args : exprlist) : Option CminorSel.expr :=
   match bf, args with
   | .BI_platform b, _ => platform_builtin b args
   | .BI_standard (.BI_select ty), .Econs a1 (.Econs a2 (.Econs a3 .Enil)) =>
@@ -284,15 +279,18 @@ def classify_call (e : Cminor.expr) : call_kind :=
       | some (.Gfun (.External ef)) => if ef_inline ef then .Call_builtin ef else .Call_imm id
       | _ => .Call_imm id
 
-def sel_builtin_arg (e : Cminor.expr) (c : builtin_arg_constraint) : builtin_arg CminorSel.expr :=
-  let e' := sel_expr e
+def sel_builtin_arg (cfg : CompilerConfig) (e : Cminor.expr)
+    (c : builtin_arg_constraint) : builtin_arg CminorSel.expr :=
+  let e' := sel_expr cfg e
   let ba := builtin_arg e'
   if builtin_arg_ok ba c then ba else .BA e'
 
-def sel_builtin_args : List Cminor.expr → List builtin_arg_constraint → List (builtin_arg CminorSel.expr)
+def sel_builtin_args (cfg : CompilerConfig) :
+    List Cminor.expr → List builtin_arg_constraint → List (builtin_arg CminorSel.expr)
   | [], _ => []
   | e :: rest, constraints =>
-      sel_builtin_arg e (constraints.headD .OK_default) :: sel_builtin_args rest constraints.tail
+      sel_builtin_arg cfg e (constraints.headD .OK_default) ::
+        sel_builtin_args cfg rest constraints.tail
 
 def sel_builtin_res (optid : Option ident) : builtin_res ident :=
   match optid with
@@ -301,11 +299,11 @@ def sel_builtin_res (optid : Option ident) : builtin_res ident :=
 
 def Sno_op : CminorSel.stmt := .Sseq .Sskip .Sskip
 
-def sel_builtin_default (optid : Option ident) (ef : external_function)
+def sel_builtin_default (cfg : CompilerConfig) (optid : Option ident) (ef : external_function)
     (args : List Cminor.expr) : CminorSel.stmt :=
-  .Sbuiltin (sel_builtin_res optid) ef (sel_builtin_args args (builtin_constraints ef))
+  .Sbuiltin (sel_builtin_res optid) ef (sel_builtin_args cfg args (builtin_constraints ef))
 
-def sel_builtin (optid : Option ident) (ef : external_function)
+def sel_builtin (cfg : CompilerConfig) (optid : Option ident) (ef : external_function)
     (args : List Cminor.expr) : CminorSel.stmt :=
   match ef with
   | .EF_builtin name sg =>
@@ -313,12 +311,12 @@ def sel_builtin (optid : Option ident) (ef : external_function)
       | some bf =>
           match optid with
           | some id =>
-              match sel_known_builtin bf (sel_exprlist args) with
+              match sel_known_builtin bf (sel_exprlist cfg args) with
               | some a => .Sassign id a
-              | none => sel_builtin_default optid ef args
+              | none => sel_builtin_default cfg optid ef args
           | none => Sno_op
-      | none => sel_builtin_default optid ef args
-  | _ => sel_builtin_default optid ef args
+      | none => sel_builtin_default cfg optid ef args
+  | _ => sel_builtin_default cfg optid ef args
 
 def sel_switch (make_cmp_eq : CminorSel.expr → Z → CminorSel.expr)
     (make_cmp_ltu : CminorSel.expr → Z → CminorSel.expr)
@@ -376,80 +374,89 @@ def classify_stmt : Cminor.stmt → stmt_class
       | _, _ => .SCother
   | _ => .SCother
 
-def if_conversion_base (ki : known_idents) (env : typenv)
+def if_conversion_base (cfg : CompilerConfig) (oracle : SelectionOracle)
+    (ki : known_idents) (env : typenv)
     (cond : Cminor.expr) (id : ident) (ifso ifnot : Cminor.expr)
     (kont : CminorSel.stmt) : Option CminorSel.stmt :=
   let ty := env id
   if select_supported ty && is_known ki id && safe_expr ki ifso && safe_expr ki ifnot &&
-      if_conversion_heuristic id cond ifso ifnot ty kont then
-    some (.Sassign id (sel_select_expr ty cond ifso ifnot))
+      if_conversion_heuristic oracle id cond ifso ifnot ty kont then
+    some (.Sassign id (sel_select_expr cfg ty cond ifso ifnot))
   else none
 
-def if_conversion (ki : known_idents) (env : typenv) (cond : Cminor.expr)
+def if_conversion (cfg : CompilerConfig) (oracle : SelectionOracle)
+    (ki : known_idents) (env : typenv)
+    (cond : Cminor.expr)
     (ifso ifnot : Cminor.stmt) (kont : CminorSel.stmt) : Option CminorSel.stmt :=
   match classify_stmt ifso, classify_stmt ifnot with
-  | .SCskip, .SCassign id a => if_conversion_base ki env cond id (.Evar id) a kont
-  | .SCassign id a, .SCskip => if_conversion_base ki env cond id a (.Evar id) kont
+  | .SCskip, .SCassign id a =>
+      if_conversion_base cfg oracle ki env cond id (.Evar id) a kont
+  | .SCassign id a, .SCskip =>
+      if_conversion_base cfg oracle ki env cond id a (.Evar id) kont
   | .SCassign id1 a1, .SCassign id2 a2 =>
       match ident_eq id1 id2 with
-      | .left _ => if_conversion_base ki env cond id1 a1 a2 kont
+      | .left _ => if_conversion_base cfg oracle ki env cond id1 a1 a2 kont
       | .right _ => none
   | _, _ => none
 
-def sel_stmt (defmap : PTree.t globdef) (ki : known_idents) (env : typenv)
+def sel_stmt (cfg : CompilerConfig) (oracle : SelectionOracle)
+    (defmap : PTree.t globdef)
+    (ki : known_idents) (env : typenv)
     : Cminor.stmt → CminorSel.stmt → res CminorSel.stmt
   | .Sskip, _ => .OK .Sskip
-  | .Sassign id e, _ => .OK (.Sassign id (sel_expr e))
+  | .Sassign id e, _ => .OK (.Sassign id (sel_expr cfg e))
   | .Sstore chunk addr rhs, _ =>
-      let (mode, args) := CompCert4Lean.X86.SelectOp.addressing chunk (sel_expr addr)
-      .OK (.Sstore chunk mode args (sel_expr rhs))
+      let (mode, args) := CompCert4Lean.X86.SelectOp.addressing chunk (sel_expr cfg addr)
+      .OK (.Sstore chunk mode args (sel_expr cfg rhs))
   | .Scall optid sg fn args, _ =>
       .OK (match classify_call defmap fn with
-      | Call_default => .Scall optid sg (.inl (sel_expr fn)) (sel_exprlist args)
-      | Call_imm id => .Scall optid sg (.inr id) (sel_exprlist args)
-      | Call_builtin ef => sel_builtin optid ef args)
-  | .Sbuiltin optid ef args, _ => .OK (sel_builtin optid ef args)
+      | Call_default => .Scall optid sg (.inl (sel_expr cfg fn)) (sel_exprlist cfg args)
+      | Call_imm id => .Scall optid sg (.inr id) (sel_exprlist cfg args)
+      | Call_builtin ef => sel_builtin cfg optid ef args)
+  | .Sbuiltin optid ef args, _ => .OK (sel_builtin cfg optid ef args)
   | .Stailcall sg fn args, _ =>
       .OK (match classify_call defmap fn with
-      | Call_imm id => .Stailcall sg (.inr id) (sel_exprlist args)
-      | _ => .Stailcall sg (.inl (sel_expr fn)) (sel_exprlist args))
+      | Call_imm id => .Stailcall sg (.inr id) (sel_exprlist cfg args)
+      | _ => .Stailcall sg (.inl (sel_expr cfg fn)) (sel_exprlist cfg args))
   | .Sseq s1 s2, k =>
-      match sel_stmt defmap ki env s2 k with
+      match sel_stmt cfg oracle defmap ki env s2 k with
       | .Error msg => .Error msg
       | .OK s2' =>
-          match sel_stmt defmap ki env s1 s2' with
+          match sel_stmt cfg oracle defmap ki env s1 s2' with
           | .Error msg => .Error msg
           | .OK s1' => .OK (.Sseq s1' s2')
   | .Sifthenelse e ifso ifnot, k =>
-      match if_conversion ki env e ifso ifnot k with
+      match if_conversion cfg oracle ki env e ifso ifnot k with
       | some s => .OK s
       | none =>
-          match sel_stmt defmap ki env ifso k, sel_stmt defmap ki env ifnot k with
-          | .OK ifso', .OK ifnot' => .OK (.Sifthenelse (condexpr_of_expr (sel_expr e)) ifso' ifnot')
+          match sel_stmt cfg oracle defmap ki env ifso k,
+              sel_stmt cfg oracle defmap ki env ifnot k with
+          | .OK ifso', .OK ifnot' =>
+              .OK (.Sifthenelse (condexpr_of_expr (sel_expr cfg e)) ifso' ifnot')
           | .Error msg, _ | _, .Error msg => .Error msg
   | .Sloop body, _ =>
-      match sel_stmt defmap ki env body .Sskip with
+      match sel_stmt cfg oracle defmap ki env body .Sskip with
       | .OK body' => .OK (.Sloop body')
       | .Error msg => .Error msg
   | .Sblock body, k =>
-      match sel_stmt defmap ki env body k with
+      match sel_stmt cfg oracle defmap ki env body k with
       | .OK body' => .OK (.Sblock body')
       | .Error msg => .Error msg
   | .Sexit n, _ => .OK (.Sexit n)
   | .Sswitch false e cases dfl, _ =>
-      let t := compile_switch Int.modulus dfl cases
+      let t := compile_switch oracle Int.modulus dfl cases
       if validate_switch Int.modulus dfl cases t then
-        .OK (.Sswitch (.XElet (sel_expr e) (sel_switch_int 0 t)))
+        .OK (.Sswitch (.XElet (sel_expr cfg e) (sel_switch_int 0 t)))
       else .Error (msg badSwitchIntText)
   | .Sswitch true e cases dfl, _ =>
-      let t := compile_switch Int64.modulus dfl cases
+      let t := compile_switch oracle Int64.modulus dfl cases
       if validate_switch Int64.modulus dfl cases t then
-        .OK (.Sswitch (.XElet (sel_expr e) (sel_switch_long 0 t)))
+        .OK (.Sswitch (.XElet (sel_expr cfg e) (sel_switch_long 0 t)))
       else .Error (msg badSwitchLongText)
   | .Sreturn none, _ => .OK (.Sreturn none)
-  | .Sreturn (some e), _ => .OK (.Sreturn (some (sel_expr e)))
+  | .Sreturn (some e), _ => .OK (.Sreturn (some (sel_expr cfg e)))
   | .Slabel lbl body, k =>
-      match sel_stmt defmap ki env body k with
+      match sel_stmt cfg oracle defmap ki env body k with
       | .OK body' => .OK (.Slabel lbl body')
       | .Error msg => .Error msg
   | .Sgoto lbl, _ => .OK (.Sgoto lbl)
@@ -460,22 +467,24 @@ def known_id (f : Cminor.function) : known_idents :=
   let add (ki : known_idents) (id : ident) := PTree.set id () ki
   f.fn_vars.foldl add (f.fn_params.foldl add (PTree.empty Unit))
 
-def sel_function (dm : PTree.t globdef) (hf : helper_functions)
+def sel_function (cfg : CompilerConfig) (oracle : SelectionOracle)
+    (dm : PTree.t globdef) (hf : helper_functions)
     (f : Cminor.function) : res CminorSel.function :=
   letI : helper_functions := hf
   let ki := known_id f
   match type_function f with
   | .Error msg => .Error msg
   | .OK env =>
-      match sel_stmt dm ki env f.fn_body .Sskip with
+      match sel_stmt cfg oracle dm ki env f.fn_body .Sskip with
       | .Error msg => .Error msg
       | .OK body' =>
           .OK { fn_sig := f.fn_sig, fn_params := f.fn_params, fn_vars := f.fn_vars,
                 fn_stackspace := f.fn_stackspace, fn_body := body' }
 
-def sel_fundef (dm : PTree.t globdef) (hf : helper_functions)
+def sel_fundef (cfg : CompilerConfig) (oracle : SelectionOracle)
+    (dm : PTree.t globdef) (hf : helper_functions)
     (f : Cminor.fundef) : res CminorSel.fundef :=
-  transf_partial_fundef (sel_function dm hf) f
+  transf_partial_fundef (sel_function cfg oracle dm hf) f
 
 def globdef_of_interest (gd : globdef) : Bool :=
   match gd with
@@ -551,10 +560,11 @@ def get_helpers (defmap : PTree.t globdef) : res helper_functions :=
                                       i64_sdiv, i64_udiv, i64_smod, i64_umod, i64_shl, i64_shr,
                                       i64_sar, i64_umulh, i64_smulh }
 
-def sel_program (p : Cminor.program) : res CminorSel.program :=
+def sel_program (cfg : CompilerConfig) (oracle : SelectionOracle)
+    (p : Cminor.program) : res CminorSel.program :=
   let dm := prog_defmap p
   match get_helpers dm with
   | .Error msg => .Error msg
-  | .OK hf => transform_partial_program (sel_fundef dm hf) p
+  | .OK hf => transform_partial_program (sel_fundef cfg oracle dm hf) p
 
 end CompCert4Lean.Backend.Selection

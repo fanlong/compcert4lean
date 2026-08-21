@@ -60,8 +60,7 @@ structure radix where
   radix_val : Z
   radix_prop : Zle_bool Ztwo radix_val = true
 
-abbrev radix_val (r : radix) : Z := r.radix_val
-abbrev radix_prop (r : radix) : Zle_bool Ztwo (radix_val r) = true := r.radix_prop
+export radix (radix_val radix_prop)
 
 instance : Coe radix Z := ⟨radix.radix_val⟩
 

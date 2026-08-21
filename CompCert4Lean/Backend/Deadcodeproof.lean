@@ -69,6 +69,7 @@ private abbrev regset := CompCert4Lean.Backend.RTL.regset
 private abbrev node := CompCert4Lean.Backend.RTL.node
 private abbrev instruction := CompCert4Lean.Backend.RTL.instruction
 private abbrev trace := CompCert4Lean.Common.Events.trace
+private abbrev CompilerConfig := CompCert4Lean.Config.CompilerConfig
 private abbrev zAdd := ZArith.BinInt.Z.add
 private abbrev zLe := ZArith.BinInt.Z.le
 private abbrev zLt := ZArith.BinInt.Z.lt
@@ -76,12 +77,12 @@ private abbrev zOfNat := ZArith.BinInt.Z.of_nat
 
 /-! ## Program matching and memory agreement -/
 
-def match_prog (prog tprog : program) : Prop :=
+def match_prog (cfg : CompilerConfig) (prog tprog : program) : Prop :=
   @match_program fundef Unit fundef Unit
     (Linker_fundef function) Linker_unit
     (fun cu f tf =>
       CompCert4Lean.Backend.Deadcode.transf_fundef
-        (prog_defmap cu) (romem_for cu) f = .OK tf)
+        cfg (prog_defmap cu) (romem_for cfg cu) f = .OK tf)
     (fun x y : Unit => x = y) prog tprog
 
 abbrev locset := block → Z → Prop
@@ -103,42 +104,44 @@ export magree (ma_perm ma_perm_inv ma_memval ma_nextblock)
 
 /-! ## Static-analysis and state relations -/
 
-def vanalyze (cu : program) (f : function) : PMap.t VA.t :=
-  ValueAnalysis.analyze (romem_for cu) f
+def vanalyze (cfg : CompilerConfig) (cu : program) (f : function) : PMap.t VA.t :=
+  ValueAnalysis.analyze cfg (romem_for cfg cu) f
 
-inductive match_stackframes (prog : program) : stackframe → stackframe → Prop where
+inductive match_stackframes (cfg : CompilerConfig) (prog : program) :
+    stackframe → stackframe → Prop where
   | match_stackframes_intro
       (res : reg) (f : function) (sp : block) (pc : node)
       (e : regset) (tf : function) (te : regset) (cu : program)
       (an : PMap.t NA.t)
       (hlink : linkorder cu prog)
       (hfun : CompCert4Lean.Backend.Deadcode.transf_function
-        (prog_defmap cu) (romem_for cu) f = .OK tf)
+        cfg (prog_defmap cu) (romem_for cfg cu) f = .OK tf)
       (han : CompCert4Lean.Backend.Deadcode.analyze
-        f (prog_defmap cu) (vanalyze cu f) = some an)
+        cfg f (prog_defmap cu) (vanalyze cfg cu f) = some an)
       (hres : ∀ v tv, Val.lessdef v tv →
         eagree
           (Regmap.set res v e) (Regmap.set res tv te)
           (CompCert4Lean.Backend.Deadcode.transfer
-            f (prog_defmap cu) (vanalyze cu f) pc (PMap.get pc an)).1) :
-      match_stackframes prog
+            cfg f (prog_defmap cu) (vanalyze cfg cu f) pc (PMap.get pc an)).1) :
+      match_stackframes cfg prog
         (Stackframe res f (Vptr sp Ptrofs.zero) pc e)
         (Stackframe res tf (Vptr sp Ptrofs.zero) pc te)
 
 export match_stackframes (match_stackframes_intro)
 
-inductive match_states (prog : program) : state → state → Prop where
+inductive match_states (cfg : CompilerConfig) (prog : program) :
+    state → state → Prop where
   | match_call_states
       (s : List stackframe) (f : fundef) (args : List val) (m : mem)
       (ts : List stackframe) (tf : fundef) (targs : List val) (tm : mem)
       (cu : program)
-      (hstacks : list_forall2 (match_stackframes prog) s ts)
+      (hstacks : list_forall2 (match_stackframes cfg prog) s ts)
       (hlink : linkorder cu prog)
       (hfun : CompCert4Lean.Backend.Deadcode.transf_fundef
-        (prog_defmap cu) (romem_for cu) f = .OK tf)
+        cfg (prog_defmap cu) (romem_for cfg cu) f = .OK tf)
       (hargs : Val.lessdef_list args targs)
       (hmem : Mem.extends m tm) :
-      match_states prog
+      match_states cfg prog
         (Callstate s f args m)
         (Callstate ts tf targs tm)
 
@@ -155,10 +158,12 @@ def eventually (prog : program) (xi : ExternalCalls) (n : Nat)
 
 /-! ## Exact statement descriptors for later proof migration -/
 
+variable (cfg : CompilerConfig)
+
 def transf_program_matchStatement : Prop :=
   ∀ (p tp : program),
-    CompCert4Lean.Backend.Deadcode.transf_program p = .OK tp →
-      match_prog p tp
+    CompCert4Lean.Backend.Deadcode.transf_program cfg p = .OK tp →
+      match_prog cfg p tp
 
 def magree_monotoneStatement : Prop :=
   ∀ m1 m2 (P Q : locset), magree m1 m2 P →
@@ -262,91 +267,91 @@ def eagree_init_regsStatement : Prop :=
     eagree (init_regs vl1 rl) (init_regs vl2 rl) ne
 
 def symbols_preservedStatement : Prop :=
-  ∀ (prog tprog : program), match_prog prog tprog → ∀ id,
+  ∀ (prog tprog : program), match_prog cfg prog tprog → ∀ id,
     Genv.find_symbol (Genv.globalenv tprog) id =
       Genv.find_symbol (Genv.globalenv prog) id
 
 def senv_preservedStatement : Prop :=
-  ∀ (prog tprog : program), match_prog prog tprog →
+  ∀ (prog tprog : program), match_prog cfg prog tprog →
     Senv.equiv (Genv.to_senv (Genv.globalenv prog))
       (Genv.to_senv (Genv.globalenv tprog))
 
 def functions_translatedStatement : Prop :=
-  ∀ (prog tprog : program), match_prog prog tprog →
+  ∀ (prog tprog : program), match_prog cfg prog tprog →
     ∀ (v : val) (f : fundef),
       Genv.find_funct (Genv.globalenv prog) v = some f →
       ∃ cu tf,
         Genv.find_funct (Genv.globalenv tprog) v = some tf ∧
         CompCert4Lean.Backend.Deadcode.transf_fundef
-          (prog_defmap cu) (romem_for cu) f = .OK tf ∧
+          cfg (prog_defmap cu) (romem_for cfg cu) f = .OK tf ∧
         linkorder cu prog
 
 def function_ptr_translatedStatement : Prop :=
-  ∀ (prog tprog : program), match_prog prog tprog →
+  ∀ (prog tprog : program), match_prog cfg prog tprog →
     ∀ (b : block) (f : fundef),
       Genv.find_funct_ptr (Genv.globalenv prog) b = some f →
       ∃ cu tf,
         Genv.find_funct_ptr (Genv.globalenv tprog) b = some tf ∧
         CompCert4Lean.Backend.Deadcode.transf_fundef
-          (prog_defmap cu) (romem_for cu) f = .OK tf ∧
+          cfg (prog_defmap cu) (romem_for cfg cu) f = .OK tf ∧
         linkorder cu prog
 
 def sig_function_translatedStatement : Prop :=
   ∀ dm rm f tf,
-    CompCert4Lean.Backend.Deadcode.transf_fundef dm rm f = .OK tf →
+    CompCert4Lean.Backend.Deadcode.transf_fundef cfg dm rm f = .OK tf →
       RTL.funsig tf = RTL.funsig f
 
 def stacksize_translatedStatement : Prop :=
   ∀ dm rm f tf,
-    CompCert4Lean.Backend.Deadcode.transf_function dm rm f = .OK tf →
+    CompCert4Lean.Backend.Deadcode.transf_function cfg dm rm f = .OK tf →
       tf.fn_stacksize = f.fn_stacksize
 
 def transf_function_atStatement : Prop :=
   ∀ cu f tf an pc instr,
     CompCert4Lean.Backend.Deadcode.transf_function
-      (prog_defmap cu) (romem_for cu) f = .OK tf →
+      cfg (prog_defmap cu) (romem_for cfg cu) f = .OK tf →
     CompCert4Lean.Backend.Deadcode.analyze
-      f (prog_defmap cu) (vanalyze cu f) = some an →
+      cfg f (prog_defmap cu) (vanalyze cfg cu f) = some an →
     PTree.get pc f.fn_code = some instr →
     PTree.get pc tf.fn_code = some
       (CompCert4Lean.Backend.Deadcode.transf_instr
-        (prog_defmap cu) (vanalyze cu f) an pc instr)
+        cfg (prog_defmap cu) (vanalyze cfg cu f) an pc instr)
 def is_int_zero_soundStatement : Prop :=
   ∀ nv, CompCert4Lean.Backend.Deadcode.is_int_zero nv = true →
     nv = CompCert4Lean.Backend.NeedDomain.nval.I CompCert4Lean.Lib.Integers.Int.zero
 def find_function_translatedStatement : Prop :=
-  ∀ (prog tprog : program), match_prog prog tprog →
+  ∀ (prog tprog : program), match_prog cfg prog tprog →
     ∀ (ros : Sum reg ident) (rs trs : regset) (fd : fundef) ne,
       RTL.find_function (Genv.globalenv prog) ros rs = some fd →
       eagree rs trs (add_ros_need_all ros ne) →
       ∃ cu tfd,
         RTL.find_function (Genv.globalenv tprog) ros trs = some tfd ∧
         CompCert4Lean.Backend.Deadcode.transf_fundef
-          (prog_defmap cu) (romem_for cu) fd = .OK tfd ∧
+          cfg (prog_defmap cu) (romem_for cfg cu) fd = .OK tfd ∧
         linkorder cu prog
 def analyze_successorsStatement : Prop :=
   ∀ cu f an pc instr pc',
     CompCert4Lean.Backend.Deadcode.analyze
-      f (prog_defmap cu) (vanalyze cu f) = some an →
+      cfg f (prog_defmap cu) (vanalyze cfg cu f) = some an →
     PTree.get pc f.fn_code = some instr →
     pc' ∈ RTL.successors_instr instr →
     NA.ge (PMap.get pc an)
       (CompCert4Lean.Backend.Deadcode.transfer
-        f (prog_defmap cu) (vanalyze cu f) pc' (PMap.get pc' an))
+        cfg f (prog_defmap cu) (vanalyze cfg cu f) pc' (PMap.get pc' an))
 def match_succ_statesStatement : Prop :=
   ∀ (prog : program) s f sp pc e m ts tf te tm an pc' cu instr ne nm,
     linkorder cu prog →
-    list_forall2 (match_stackframes prog) s ts →
+    list_forall2 (match_stackframes cfg prog) s ts →
     CompCert4Lean.Backend.Deadcode.transf_function
-      (prog_defmap cu) (romem_for cu) f = .OK tf →
+      cfg (prog_defmap cu) (romem_for cfg cu) f = .OK tf →
     CompCert4Lean.Backend.Deadcode.analyze
-      f (prog_defmap cu) (vanalyze cu f) = some an →
+      cfg f (prog_defmap cu) (vanalyze cfg cu f) = some an →
     PTree.get pc f.fn_code = some instr →
     pc' ∈ RTL.successors_instr instr →
     PMap.get pc an = (ne, nm) →
     eagree e te ne →
     magree m tm (fun b ofs => nlive (Genv.globalenv prog) sp nm b ofs) →
-    match_states prog
+    match_states cfg prog
       (State s f (Vptr sp Ptrofs.zero) pc' e m)
       (State ts tf (Vptr sp Ptrofs.zero) pc' te tm)
 def eagree_set_resStatement : Prop :=
@@ -445,28 +450,28 @@ def transf_external_callStatement : Prop :=
 def step_simulationStatement : Prop :=
   ∀ (prog tprog : program) (xi : ExternalCalls) S1 t S2,
     RTL.step xi (Genv.globalenv prog) S1 t S2 →
-    ∀ S1', match_states prog S1 S1' →
-      sound_state prog S1 →
+    ∀ S1', match_states cfg prog S1 S1' →
+      sound_state cfg prog S1 →
       (∃ S2',
         RTL.step xi (Genv.globalenv tprog) S1' t S2' ∧
-          match_states prog S2 S2') ∨
+          match_states cfg prog S2 S2') ∨
       (∃ S2' n,
         plus (RTL.step xi) (Genv.globalenv tprog) S1' t S2' ∧
-          eventually prog xi n S2 (fun S3 => match_states prog S3 S2'))
+          eventually prog xi n S2 (fun S3 => match_states cfg prog S3 S2'))
 
 def transf_initial_statesStatement : Prop :=
-  ∀ (prog tprog : program), match_prog prog tprog →
+  ∀ (prog tprog : program), match_prog cfg prog tprog →
     ∀ st1, RTL.initial_state prog st1 →
-      ∃ st2, RTL.initial_state tprog st2 ∧ match_states prog st1 st2
+      ∃ st2, RTL.initial_state tprog st2 ∧ match_states cfg prog st1 st2
 
 def transf_final_statesStatement : Prop :=
   ∀ (prog : program) st1 st2 r,
-    match_states prog st1 st2 →
+    match_states cfg prog st1 st2 →
     RTL.final_state st1 r → RTL.final_state st2 r
 
 def transf_program_correctStatement : Prop :=
   ∀ (prog tprog : program) (xi : ExternalCalls),
-    match_prog prog tprog →
+    match_prog cfg prog tprog →
     forward_simulation (RTL.semantics xi prog) (RTL.semantics xi tprog)
 
 end CompCert4Lean.Backend.Deadcodeproof

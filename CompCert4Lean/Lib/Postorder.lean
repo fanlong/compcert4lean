@@ -43,12 +43,7 @@ structure state where
   map : PTree.t positive
   next : positive
 
-/-! Source record projections are flattened into the module namespace. -/
-
-def gr (s : state) : graph := s.gr
-def wrk (s : state) : List (node × List node) := s.wrk
-def map (s : state) : PTree.t positive := s.map
-def next (s : state) : positive := s.next
+export state (gr wrk map next)
 
 def init_state (g : graph) (root : node) : state :=
   match PTree.get root g with

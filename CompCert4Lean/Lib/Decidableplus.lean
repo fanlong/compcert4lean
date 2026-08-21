@@ -155,28 +155,24 @@ def Decidable_exists_in_list {A : Type} (l : List A) (P : A → Prop)
             | inr htail => exact hnl ⟨x, htail, hpx⟩)
 
 class Finite (T : Type) where
-  elements : List T
-  elements_spec : ∀ x : T, In x elements
+  Finite_elements : List T
+  Finite_elements_spec : ∀ x : T, In x Finite_elements
 
-def Finite_elements {T : Type} (fT : Finite T) : List T := fT.elements
-
-def Finite_elements_spec {T : Type} (fT : Finite T) :
-    ∀ x : T, In x (Finite_elements fT) :=
-  fT.elements_spec
+export Finite (Finite_elements Finite_elements_spec)
 
 def Decidable_forall {T : Type} (fT : Finite T) (P : T → Prop)
     (dP : ∀ x : T, _root_.Decidable (P x)) :
     _root_.Decidable (∀ x : T, P x) :=
-  match Decidable_forall_in_list (Finite_elements fT) P dP with
+  match Decidable_forall_in_list (Finite.Finite_elements (self := fT)) P dP with
   | .isTrue h =>
-      .isTrue (by intro x; exact h x (Finite_elements_spec fT x))
+      .isTrue (by intro x; exact h x (Finite.Finite_elements_spec (self := fT) x))
   | .isFalse h =>
       .isFalse (by intro hall; apply h; intro x _; exact hall x)
 
 def Decidable_exists {T : Type} (fT : Finite T) (P : T → Prop)
     (dP : ∀ x : T, _root_.Decidable (P x)) :
     _root_.Decidable (∃ x : T, P x) :=
-  match Decidable_exists_in_list (Finite_elements fT) P dP with
+  match Decidable_exists_in_list (Finite.Finite_elements (self := fT)) P dP with
   | .isTrue h =>
       .isTrue (by
         rcases h with ⟨x, _, hpx⟩
@@ -184,11 +180,11 @@ def Decidable_exists {T : Type} (fT : Finite T) (P : T → Prop)
   | .isFalse h =>
       .isFalse (by
         rintro ⟨x, hpx⟩
-        exact h ⟨x, Finite_elements_spec fT x, hpx⟩)
+        exact h ⟨x, Finite.Finite_elements_spec (self := fT) x, hpx⟩)
 
 instance Finite_bool : Finite Bool where
-  elements := [false, true]
-  elements_spec := by
+  Finite_elements := [false, true]
+  Finite_elements_spec := by
     intro x
     cases x with
     | false => exact _root_.List.Mem.head _
@@ -196,28 +192,30 @@ instance Finite_bool : Finite Bool where
 
 instance Finite_pair {A B : Type} [fA : Finite A] [fB : Finite B] :
     Finite (A × B) where
-  elements :=
+  Finite_elements :=
     CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.List.list_prod
-      (Finite_elements fA) (Finite_elements fB)
-  elements_spec := by
+      (Finite.Finite_elements (self := fA)) (Finite.Finite_elements (self := fB))
+  Finite_elements_spec := by
     intro x
     rcases x with ⟨a, b⟩
     exact
       CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.List.in_prod
-        (Finite_elements fA) (Finite_elements fB) a b
-        (Finite_elements_spec fA a) (Finite_elements_spec fB b)
+        (Finite.Finite_elements (self := fA)) (Finite.Finite_elements (self := fB)) a b
+        (Finite.Finite_elements_spec (self := fA) a)
+        (Finite.Finite_elements_spec (self := fB) b)
 
 instance Finite_option {A : Type} [fA : Finite A] : Finite (Option A) where
-  elements :=
+  Finite_elements :=
     none :: CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.List.map
-      some (Finite_elements fA)
-  elements_spec := by
+      some (Finite.Finite_elements (self := fA))
+  Finite_elements_spec := by
     intro x
     cases x with
     | none => exact _root_.List.Mem.head _
     | some a =>
         exact _root_.List.Mem.tail none
           (CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.List.in_map
-            some (Finite_elements fA) a (Finite_elements_spec fA a))
+            some (Finite.Finite_elements (self := fA)) a
+            (Finite.Finite_elements_spec (self := fA) a))
 
 end CompCert4Lean.Lib.Decidableplus

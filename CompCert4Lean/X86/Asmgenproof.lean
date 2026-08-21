@@ -65,8 +65,9 @@ private abbrev Extcond := CompCert4Lean.X86.Asmgen.extcond
 private abbrev CompilerConfig := CompCert4Lean.Config.CompilerConfig
 private abbrev ExternalCalls := CompCert4Lean.Common.ExternalCalls.ExternalCalls
 
-private def asmStep : AsmGenv → AsmState → trace → AsmState → Prop :=
-  fun _ s t s' => CompCert4Lean.X86.Asm.step s t s'
+private def asmStep (cfg : CompilerConfig) (xi : ExternalCalls) :
+    AsmGenv → AsmState → trace → AsmState → Prop :=
+  CompCert4Lean.X86.Asm.step cfg xi
 
 /-! ## Program matching -/
 
@@ -159,13 +160,15 @@ def transf_function_no_overflowStatement : Prop :=
     ZArith.BinInt.Z.le (list_length_z tf.fn_code) Ptrofs.max_unsigned
 
 def exec_straight_execStatement : Prop :=
-  ∀ (prog : MachProgram) (tprog : AsmProgram), match_prog prog tprog →
+  ∀ (cfg : CompilerConfig) (xi : ExternalCalls)
+    (prog : MachProgram) (tprog : AsmProgram), match_prog prog tprog →
     ∀ (fb : Block) (f : MachFunction) (c : MachCode) (ep : Bool)
       (tf : AsmFunction) (tc c' : AsmCode) (rs : AsmRegset) (m : Mem)
       (rs' : AsmRegset) (m' : Mem),
       transl_code_at_pc (Genv.globalenv prog) (rs .PC) fb f c ep tf tc →
       exec_straight (Genv.globalenv tprog) tf tc rs m c' rs' m' →
-      plus asmStep (Genv.globalenv tprog) (.State rs m) E0 (.State rs' m')
+      plus (asmStep cfg xi) (Genv.globalenv tprog)
+        (.State rs m) E0 (.State rs' m')
 
 def exec_straight_atStatement : Prop :=
   ∀ (prog : MachProgram) (tprog : AsmProgram), match_prog prog tprog →
@@ -276,7 +279,8 @@ def return_address_existsStatement : Prop :=
     ∃ ra, CompCert4Lean.Backend.Asmgenproof0.return_address_offset f c ra
 
 def exec_straight_stepsStatement : Prop :=
-  ∀ (prog : MachProgram) (tprog : AsmProgram), match_prog prog tprog →
+  ∀ (cfg : CompilerConfig) (xi : ExternalCalls)
+    (prog : MachProgram) (tprog : AsmProgram), match_prog prog tprog →
     ∀ (s : List MachStackframe) (fb : Block) (f : MachFunction)
       (rs1 : AsmRegset) (i : MachInstruction) (c : MachCode) (ep : Bool)
       (tf : AsmFunction) (tc : AsmCode) (m1' m2 m2' : Mem)
@@ -292,11 +296,12 @@ def exec_straight_stepsStatement : Prop :=
           (CompCert4Lean.X86.Asmgen.it1_is_parent ep i = true →
             rs2 (.IR .RAX) = parent_sp s)) →
       ∃ st',
-        plus asmStep (Genv.globalenv tprog) (.State rs1 m1') E0 st' ∧
+        plus (asmStep cfg xi) (Genv.globalenv tprog) (.State rs1 m1') E0 st' ∧
         match_states (Genv.globalenv prog) (.State s fb sp c ms2 m2) st'
 
 def exec_straight_steps_gotoStatement : Prop :=
-  ∀ (prog : MachProgram) (tprog : AsmProgram), match_prog prog tprog →
+  ∀ (cfg : CompilerConfig) (xi : ExternalCalls)
+    (prog : MachProgram) (tprog : AsmProgram), match_prog prog tprog →
     ∀ (s : List MachStackframe) (fb : Block) (f : MachFunction)
       (rs1 : AsmRegset) (i : MachInstruction) (c : MachCode) (ep : Bool)
       (tf : AsmFunction) (tc : AsmCode) (m1' m2 m2' : Mem)
@@ -314,7 +319,7 @@ def exec_straight_steps_gotoStatement : Prop :=
           CompCert4Lean.X86.Asm.exec_instr (Genv.globalenv tprog) tf jmp rs2 m2' =
             CompCert4Lean.X86.Asm.goto_label (Genv.globalenv tprog) tf lbl rs2 m2') →
       ∃ st',
-        plus asmStep (Genv.globalenv tprog) (.State rs1 m1') E0 st' ∧
+        plus (asmStep cfg xi) (Genv.globalenv tprog) (.State rs1 m1') E0 st' ∧
         match_states (Genv.globalenv prog) (.State s fb sp c' ms2 m2) st'
 
 def step_simulationStatement : Prop :=
@@ -326,7 +331,7 @@ def step_simulationStatement : Prop :=
         (Genv.globalenv prog) S1 t S2 →
       ∀ S1', match_states (Genv.globalenv prog) S1 S1' →
         (∃ S2',
-          plus asmStep (Genv.globalenv tprog) S1' t S2' ∧
+          plus (asmStep cfg xi) (Genv.globalenv tprog) S1' t S2' ∧
             match_states (Genv.globalenv prog) S2 S2') ∨
         (measure S2 < measure S1 ∧ t = E0 ∧
           match_states (Genv.globalenv prog) S2 S1')
@@ -350,6 +355,6 @@ def transf_program_correctStatement : Prop :=
     forward_simulation
       (CompCert4Lean.Backend.Mach.semantics cfg xi
         CompCert4Lean.Backend.Asmgenproof0.return_address_offset prog)
-      (CompCert4Lean.X86.Asm.semantics tprog)
+      (CompCert4Lean.X86.Asm.semantics cfg xi tprog)
 
 end CompCert4Lean.X86.Asmgenproof

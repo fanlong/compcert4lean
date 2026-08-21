@@ -220,19 +220,6 @@ def record_conds_1_correctStatement : Prop :=
       (∃ f', branch_map_correct_2 fn
         (record_conds_1 (c, u)).1 (record_conds_1 (c, u)).2.1 f')
 
-private def recordCondsFuel (fuel : Nat) (cu : code × U.t) : U.t :=
-  match fuel with
-  | 0 => cu.2
-  | n + 1 =>
-      let result := record_conds_1 cu
-      if result.2.2 then
-        recordCondsFuel n (result.1, result.2.1)
-      else
-        cu.2
-
-private def record_conds (cu : code × U.t) : U.t :=
-  recordCondsFuel (PTree_Properties.cardinal cu.1 + 1) cu
-
 def record_conds_correctStatement : Prop :=
   ∀ (fn : function) (cu : code × U.t),
     (∃ f, branch_map_correct_2 fn cu.1 cu.2 f) →

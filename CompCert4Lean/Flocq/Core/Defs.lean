@@ -23,8 +23,7 @@ structure float (beta : radix) where
   Fnum : Z
   Fexp : Z
 
-abbrev Fnum {beta : radix} (f : float beta) : Z := f.Fnum
-abbrev Fexp {beta : radix} (f : float beta) : Z := f.Fexp
+export float (Fnum Fexp)
 
 def F2R {beta : radix} (f : float beta) : R :=
   Rmult (IZR (Fnum f)) (bpow beta (Fexp f))

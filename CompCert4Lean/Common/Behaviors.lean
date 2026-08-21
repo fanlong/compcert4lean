@@ -32,17 +32,7 @@ inductive program_behavior : Type where
   | Reacts : traceinf → program_behavior
   | Goes_wrong : trace → program_behavior
 
-abbrev Terminates (t : trace) (r : int) : program_behavior :=
-  program_behavior.Terminates t r
-
-abbrev Diverges (t : trace) : program_behavior :=
-  program_behavior.Diverges t
-
-abbrev Reacts (T : traceinf) : program_behavior :=
-  program_behavior.Reacts T
-
-abbrev Goes_wrong (t : trace) : program_behavior :=
-  program_behavior.Goes_wrong t
+export program_behavior (Terminates Diverges Reacts Goes_wrong)
 
 private def programBehaviorElim {motive : program_behavior → Sort u}
     (hTerminates : ∀ t r, motive (Terminates t r))
@@ -465,10 +455,7 @@ inductive tstate {genv state : Type}
   | ST (s : state) (T : traceinf) (F : forever step ge s T) :
       tstate step ge
 
-abbrev ST {genv state : Type}
-    (step : genv → state → trace → state → Prop) (ge : genv)
-    (s : state) (T : traceinf) (F : forever step ge s T) : tstate step ge :=
-  tstate.ST s T F
+export tstate (ST)
 
 private def tstateElim {genv state : Type}
     {step : genv → state → trace → state → Prop} {ge : genv}

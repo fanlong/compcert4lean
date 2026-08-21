@@ -430,6 +430,8 @@ export bounds (used_callee_save bound_local bound_outgoing bound_stack_data)
 def bound_local_pos (cfg : CompilerConfig) (b : bounds cfg) : Prop := zGe b.bound_local z0
 def bound_outgoing_pos (cfg : CompilerConfig) (b : bounds cfg) : Prop := zGe b.bound_outgoing z0
 def bound_stack_data_pos (cfg : CompilerConfig) (b : bounds cfg) : Prop := zGe b.bound_stack_data z0
+def used_callee_save_norepet (cfg : CompilerConfig) (b : bounds cfg) : Prop :=
+  list_norepet b.used_callee_save
 def used_callee_save_prop (cfg : CompilerConfig) (b : bounds cfg) : Prop :=
   ∀ r, r ∈ b.used_callee_save → is_callee_save cfg r = true
 

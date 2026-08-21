@@ -69,10 +69,10 @@ structure valid_used_set (p : program) (u : IS.t) : Prop where
       IS.In id' u
   used_main : IS.In p.prog_main u
   used_public : ∀ id, id ∈ p.prog_public → IS.In id u
-  defined_names : ∀ id,
+  used_defined : ∀ id,
     IS.In id u → id ∈ prog_defs_names p ∨ id = p.prog_main
 
-export valid_used_set (used_closed used_main used_public)
+export valid_used_set (used_closed used_main used_public used_defined)
 
 def match_prog (p tp : program) : Prop :=
   ∃ u : IS.t, valid_used_set p u ∧ match_prog_1 u p tp

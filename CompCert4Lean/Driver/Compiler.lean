@@ -144,7 +144,7 @@ def transf_rtl_program (cfg : CompilerConfig)
   let p7 := mapRes p6 (print (print_RTL (ZArith.BinInt.Z.of_nat 3)))
   let p8 := mapRes p7
     (total_if (fun _ => Compopts.optim_constprop cfg)
-      (time (ofString "Constant propagation") Constprop.transf_program))
+      (time (ofString "Constant propagation") (Constprop.transf_program cfg)))
   let p9 := mapRes p8 (print (print_RTL (ZArith.BinInt.Z.of_nat 4)))
   let p10 := mapRes p9
     (total_if (fun _ => Compopts.optim_constprop cfg)
@@ -152,11 +152,11 @@ def transf_rtl_program (cfg : CompilerConfig)
   let p11 := mapRes p10 (print (print_RTL (ZArith.BinInt.Z.of_nat 5)))
   let p12 := bindRes p11
     (partial_if (fun _ => Compopts.optim_CSE cfg)
-      (time (ofString "CSE") CSE.transf_program))
+      (time (ofString "CSE") (CSE.transf_program cfg)))
   let p13 := mapRes p12 (print (print_RTL (ZArith.BinInt.Z.of_nat 6)))
   let p14 := bindRes p13
     (partial_if (fun _ => Compopts.optim_redundancy cfg)
-      (time (ofString "Redundancy elimination") Deadcode.transf_program))
+      (time (ofString "Redundancy elimination") (Deadcode.transf_program cfg)))
   let p15 := mapRes p14 (print (print_RTL (ZArith.BinInt.Z.of_nat 7)))
   let p16 := bindRes p15 (time (ofString "Unused globals") Unusedglob.transform_program)
   let p17 := mapRes p16 (print (print_RTL (ZArith.BinInt.Z.of_nat 8)))
@@ -173,30 +173,34 @@ def transf_rtl_program (cfg : CompilerConfig)
   bindRes p25 (time (ofString "Asm generation") Asmgen.transf_program)
 
 def transf_cminor_program (cfg : CompilerConfig)
+    (selectionOracle : Selection.SelectionOracle)
     (inlineCfg : Inlining.InliningConfig)
-    (oracle : Allocation.RegallocOracle) (p : Cminor.program) : Res Asm.program :=
+    (regallocOracle : Allocation.RegallocOracle) (p : Cminor.program) : Res Asm.program :=
   let p0 : Res Cminor.program := .OK p
   let p1 := mapRes p0 (print print_Cminor)
-  let p2 := bindRes p1 (time (ofString "Instruction selection") Selection.sel_program)
+  let p2 := bindRes p1
+    (time (ofString "Instruction selection") (Selection.sel_program cfg selectionOracle))
   let p3 := bindRes p2 (time (ofString "RTL generation") RTLgen.transl_program)
-  bindRes p3 (transf_rtl_program cfg inlineCfg oracle)
+  bindRes p3 (transf_rtl_program cfg inlineCfg regallocOracle)
 
 def transf_clight_program (cfg : CompilerConfig)
+    (selectionOracle : Selection.SelectionOracle)
     (inlineCfg : Inlining.InliningConfig)
-    (oracle : Allocation.RegallocOracle) (p : Clight.program) : Res Asm.program :=
+    (regallocOracle : Allocation.RegallocOracle) (p : Clight.program) : Res Asm.program :=
   let p0 : Res Clight.program := .OK p
   let p1 := mapRes p0 (print print_Clight)
   let p2 := bindRes p1 (time (ofString "Simplification of locals") (SimplLocals.transf_program cfg))
   let p3 := bindRes p2 (time (ofString "C#minor generation") Cshmgen.transl_program)
   let p4 := bindRes p3 (time (ofString "Cminor generation") Cminorgen.transl_program)
-  bindRes p4 (transf_cminor_program cfg inlineCfg oracle)
+  bindRes p4 (transf_cminor_program cfg selectionOracle inlineCfg regallocOracle)
 
 def transf_c_program (cfg : CompilerConfig)
+    (selectionOracle : Selection.SelectionOracle)
     (inlineCfg : Inlining.InliningConfig)
-    (oracle : Allocation.RegallocOracle) (ctx : SimplExpr.FreshIdentContext)
+    (regallocOracle : Allocation.RegallocOracle) (ctx : SimplExpr.FreshIdentContext)
     (p : Csyntax.program) : Res CompCert4Lean.X86.Asm.program :=
   let p1 := SimplExpr.transl_program ctx p
-  bindRes p1 (transf_clight_program cfg inlineCfg oracle)
+  bindRes p1 (transf_clight_program cfg selectionOracle inlineCfg regallocOracle)
 
 /-! ## Relational compiler surface -/
 
@@ -204,8 +208,9 @@ def transf_c_program (cfg : CompilerConfig)
    relation.  The individual simulation proofs remain statement descriptors in
    the later proof-migration phase. -/
 def CompCert's_passes (cfg : CompilerConfig)
+    (selectionOracle : Selection.SelectionOracle)
     (inlineCfg : Inlining.InliningConfig)
-    (oracle : Allocation.RegallocOracle)
+    (regallocOracle : Allocation.RegallocOracle)
     (p : Csyntax.program) (tp : Asm.program) : Prop :=
   ∃ p1 : Clight.program,
   ∃ p2 : Clight.program,
@@ -231,22 +236,22 @@ def CompCert's_passes (cfg : CompilerConfig)
     SimplLocalsproof.match_prog cfg p1 p2 ∧
     Cshmgenproof.match_prog p2 p3 ∧
     Cminorgenproof.match_prog p3 p4 ∧
-    Selectionproof.match_prog p4 p5 ∧
+    Selectionproof.match_prog cfg selectionOracle p4 p5 ∧
     RTLgenproof.match_prog p5 p6 ∧
     match_if (fun _ => Compopts.optim_tailcalls cfg)
       (Tailcallproof.match_prog cfg) p6 p7 ∧
     Inliningproof.match_prog inlineCfg p7 p8 ∧
     Renumberproof.match_prog p8 p9 ∧
     match_if (fun _ => Compopts.optim_constprop cfg)
-      Constpropproof.match_prog p9 p10 ∧
+      (Constpropproof.match_prog cfg) p9 p10 ∧
     match_if (fun _ => Compopts.optim_constprop cfg)
       Renumberproof.match_prog p10 p11 ∧
     match_if (fun _ => Compopts.optim_CSE cfg)
-      CSEproof.match_prog p11 p12 ∧
+      (CSEproof.match_prog cfg) p11 p12 ∧
     match_if (fun _ => Compopts.optim_redundancy cfg)
-      Deadcodeproof.match_prog p12 p13 ∧
+      (Deadcodeproof.match_prog cfg) p12 p13 ∧
     Unusedglobproof.match_prog p13 p14 ∧
-    Allocproof.match_prog cfg oracle p14 p15 ∧
+    Allocproof.match_prog cfg regallocOracle p14 p15 ∧
     Tunnelingproof.match_prog p15 p16 ∧
     Linearizeproof.match_prog p16 p17 ∧
     CleanupLabelsproof.match_prog p17 p18 ∧
@@ -255,10 +260,10 @@ def CompCert's_passes (cfg : CompilerConfig)
     Stackingproof.match_prog cfg p19 p20 ∧
     Asmgenproof.match_prog p20 tp
 
-def match_prog (cfg : CompilerConfig) (inlineCfg : Inlining.InliningConfig)
-    (oracle : Allocation.RegallocOracle)
+def match_prog (cfg : CompilerConfig) (selectionOracle : Selection.SelectionOracle)
+    (inlineCfg : Inlining.InliningConfig) (regallocOracle : Allocation.RegallocOracle)
     (p : Csyntax.program) (tp : Asm.program) : Prop :=
-  CompCert's_passes cfg inlineCfg oracle p tp
+  CompCert's_passes cfg selectionOracle inlineCfg regallocOracle p tp
 
 /-! ## Exact statement descriptors for the later proof phase -/
 
@@ -284,11 +289,11 @@ def partial_if_matchStatement : Prop :=
     rel prog tprog
 
 def transf_c_program_matchStatement : Prop :=
-  ∀ (cfg : CompilerConfig) (inlineCfg : Inlining.InliningConfig)
-    (oracle : Allocation.RegallocOracle)
+  ∀ (cfg : CompilerConfig) (selectionOracle : Selection.SelectionOracle)
+    (inlineCfg : Inlining.InliningConfig) (regallocOracle : Allocation.RegallocOracle)
     (ctx : SimplExpr.FreshIdentContext) (p : Csyntax.program) (tp : Asm.program),
-    transf_c_program cfg inlineCfg oracle ctx p = .OK tp →
-    match_prog cfg inlineCfg oracle p tp
+    transf_c_program cfg selectionOracle inlineCfg regallocOracle ctx p = .OK tp →
+    match_prog cfg selectionOracle inlineCfg regallocOracle p tp
 
 def forward_simulation_identityStatement : Prop :=
   ∀ (sem : semantics), forward_simulation sem sem
@@ -301,27 +306,29 @@ def match_if_simulationStatement : Prop :=
     forward_simulation (sem prog) (sem tprog)
 
 def cstrategy_semantic_preservationStatement : Prop :=
-  ∀ (cfg : CompilerConfig) (inlineCfg : Inlining.InliningConfig)
-    (oracle : Allocation.RegallocOracle) (xi : ExternalCalls)
+  ∀ (cfg : CompilerConfig) (selectionOracle : Selection.SelectionOracle)
+    (inlineCfg : Inlining.InliningConfig) (regallocOracle : Allocation.RegallocOracle)
+    (xi : ExternalCalls)
     (p : Csyntax.program) (tp : Asm.program),
-    match_prog cfg inlineCfg oracle p tp →
-    forward_simulation (Cstrategy.semantics xi p) (Asm.semantics tp) ∧
+    match_prog cfg selectionOracle inlineCfg regallocOracle p tp →
+    forward_simulation (Cstrategy.semantics xi p) (Asm.semantics cfg xi tp) ∧
     backward_simulation
-      (atomic (Cstrategy.semantics xi p)) (Asm.semantics tp)
+      (atomic (Cstrategy.semantics xi p)) (Asm.semantics cfg xi tp)
 
 def c_semantic_preservationStatement : Prop :=
-  ∀ (cfg : CompilerConfig) (inlineCfg : Inlining.InliningConfig)
-    (oracle : Allocation.RegallocOracle) (xi : ExternalCalls)
+  ∀ (cfg : CompilerConfig) (selectionOracle : Selection.SelectionOracle)
+    (inlineCfg : Inlining.InliningConfig) (regallocOracle : Allocation.RegallocOracle)
+    (xi : ExternalCalls)
     (p : Csyntax.program) (tp : Asm.program),
-    match_prog cfg inlineCfg oracle p tp →
-    backward_simulation (Csem.semantics xi p) (Asm.semantics tp)
+    match_prog cfg selectionOracle inlineCfg regallocOracle p tp →
+    backward_simulation (Csem.semantics xi p) (Asm.semantics cfg xi tp)
 
 def transf_c_program_correctStatement : Prop :=
-  ∀ (cfg : CompilerConfig) (inlineCfg : Inlining.InliningConfig)
-    (oracle : Allocation.RegallocOracle)
+  ∀ (cfg : CompilerConfig) (selectionOracle : Selection.SelectionOracle)
+    (inlineCfg : Inlining.InliningConfig) (regallocOracle : Allocation.RegallocOracle)
     (ctx : SimplExpr.FreshIdentContext) (xi : ExternalCalls)
     (p : Csyntax.program) (tp : Asm.program),
-    transf_c_program cfg inlineCfg oracle ctx p = .OK tp →
-    backward_simulation (Csem.semantics xi p) (Asm.semantics tp)
+    transf_c_program cfg selectionOracle inlineCfg regallocOracle ctx p = .OK tp →
+    backward_simulation (Csem.semantics xi p) (Asm.semantics cfg xi tp)
 
 end CompCert4Lean.Driver.Compiler

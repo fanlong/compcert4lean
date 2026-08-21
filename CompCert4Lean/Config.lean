@@ -25,9 +25,28 @@ structure CompilerOptions where
   optimRedundancy : Bool
   debug : Bool
 
+inductive StorageClass where
+  | storageDefault
+  | storageExtern
+  | storageStatic
+deriving DecidableEq
+
+structure SymbolLinkageFacts where
+  storage : StorageClass
+  definedHere : Bool
+  size : Option _root_.Int64
+
+structure RelocationContext where
+  pic : Bool
+  pie : Bool
+  common : Bool
+  facts : CompCert4Lean.Foundation.Numbers.Rocq.Coq.positive →
+    Option SymbolLinkageFacts
+
 structure CompilerConfig where
   options : CompilerOptions
   x86_64ABI : X86_64ABI
+  relocation : RelocationContext
 
 /--
 Construct the immutable configuration snapshot for the pinned standard Linux
@@ -53,6 +72,11 @@ def pinnedLinuxX86_64
         optimCSE := optimCSE
         optimRedundancy := optimRedundancy
         debug := debug }
-    x86_64ABI := .systemV }
+    x86_64ABI := .systemV
+    relocation :=
+      { pic := false
+        pie := false
+        common := false
+        facts := fun _ => none } }
 
 end CompCert4Lean.Config

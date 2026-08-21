@@ -89,11 +89,6 @@ structure numbering : Type where
 
 export numbering (num_next num_eqs num_reg num_val)
 
-def num_next (n : numbering) : valnum := n.num_next
-def num_eqs (n : numbering) : List equation := n.num_eqs
-def num_reg (n : numbering) : PTree.t valnum := n.num_reg
-def num_val (n : numbering) : PMap.t (List reg) := n.num_val
-
 def empty_numbering : numbering :=
   { num_next := .xH
     num_eqs := []
@@ -122,6 +117,9 @@ def wf_numbering (n : numbering) : Prop :=
 
 def wf_num_eqs {n : numbering} (h : wf_numbering n) :
     ∀ e, In e n.num_eqs → wf_equation n.num_next e := h.1
+
+def wf_num_reg {n : numbering} (h : wf_numbering n) :
+    ∀ r v, PTree.get r n.num_reg = some v → Plt v n.num_next := h.2.1
 
 def wf_num_val {n : numbering} (h : wf_numbering n) :
     ∀ r v, In r (PMap.get v n.num_val) → PTree.get r n.num_reg = some v := h.2.2
@@ -186,6 +184,10 @@ def numbering_holds (valu : valuation) (ge : genv) (sp : val)
   wf_numbering n ∧
   (∀ e, In e n.num_eqs → equation_holds valu ge sp m e) ∧
   (∀ r v, PTree.get r n.num_reg = some v → Regmap.get r rs = valu v)
+
+def num_holds_wf {valu : valuation} {ge : genv} {sp : val} {rs : regset}
+    {m : mem} {n : numbering} (h : numbering_holds valu ge sp rs m n) :
+    wf_numbering n := h.1
 
 def num_holds_eq {valu : valuation} {ge : genv} {sp : val} {rs : regset}
     {m : mem} {n : numbering} (h : numbering_holds valu ge sp rs m n) :

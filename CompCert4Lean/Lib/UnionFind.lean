@@ -90,13 +90,15 @@ structure UNIONFIND where
 private def UFOrder (M : MAP) (m : M.t M.elt) (a a' : M.elt) : Prop :=
   M.get a' m = some a
 
-structure UF (M : MAP) where
-  m : M.t M.elt
-  mwf : WellFounded (UFOrder M m)
-
 namespace UF
 
 variable (M : MAP)
+
+structure unionfind (M : MAP) where
+  m : M.t M.elt
+  mwf : WellFounded (UFOrder M m)
+
+export unionfind (m mwf)
 
 abbrev elt : Type := M.elt
 
@@ -105,9 +107,7 @@ def elt_eq : DecidableEq (elt M) := M.elt_eq
 abbrev order (m : M.t (elt M)) (a a' : elt M) : Prop :=
   UFOrder M m a a'
 
-abbrev unionfind (M : MAP) : Type := UF M
-
-abbrev t : Type := UF M
+abbrev t : Type := unionfind M
 
 def getlink (m : M.t (elt M)) (a : elt M) :
     Sumor (Subtype (fun a' => M.get a m = some a')) (M.get a m = none) :=

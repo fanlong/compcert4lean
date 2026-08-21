@@ -40,8 +40,7 @@ inductive heap (E : OrderedType) : Type where
   | Empty : heap E
   | Node (l : heap E) (x : E.t) (r : heap E) : heap E
 
-abbrev Empty : heap E := heap.Empty
-abbrev Node (l : heap E) (x : E.t) (r : heap E) : heap E := heap.Node l x r
+export heap (Empty Node)
 
 def partition (pivot : E.t) : heap E → heap E × heap E
   | .Empty => (.Empty, .Empty)
@@ -255,7 +254,7 @@ variable (E : OrderedType)
 
 def t : Type := { h : R.heap E // R.bst E h }
 
-def empty : t E := ⟨R.Empty E, trivial⟩
+def empty : t E := ⟨@R.Empty E, trivial⟩
 
 def insert (x : E.t) (h : t E) : t E :=
   let raw := R.insert E x h.1
@@ -379,7 +378,7 @@ def deleteMax (h : t) : t := SplayHeapSet.deleteMax positiveOrder h
 def In (x : positive) (h : t) : Prop := SplayHeapSet.In positiveOrder x h
 
 def empty_obligation_1 : Prop :=
-  SplayHeapSet.R.bst positiveOrder (SplayHeapSet.R.Empty positiveOrder)
+  SplayHeapSet.R.bst positiveOrder (@SplayHeapSet.R.Empty positiveOrder)
 def insert_obligation_1 : Prop :=
   ∀ (x : positive) (h : t),
     SplayHeapSet.R.bst positiveOrder (SplayHeapSet.R.insert positiveOrder x h.1)

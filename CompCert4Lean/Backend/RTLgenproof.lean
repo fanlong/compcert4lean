@@ -45,6 +45,16 @@ structure map_wf (m : mapping) : Prop where
   mapWfDisjoint : ∀ id r,
     PTree.get id m.map_vars = some r → r ∈ m.map_letvars → False
 
+def map_wf_inj {m : mapping} (h : map_wf m) :
+    ∀ id1 id2 r,
+      PTree.get id1 m.map_vars = some r →
+      PTree.get id2 m.map_vars = some r → id1 = id2 :=
+  h.mapWfInjective
+
+def map_wf_disj {m : mapping} (h : map_wf m) :
+    ∀ id r, PTree.get id m.map_vars = some r → r ∈ m.map_letvars → False :=
+  h.mapWfDisjoint
+
 structure match_env (map : mapping) (e : CompCert4Lean.Backend.Cminor.env)
     (le : letenv) (rs : regset) : Prop where
   me_vars : ∀ id v,
@@ -226,7 +236,7 @@ inductive match_states : CminorSel.state → RTL.state → Prop where
   | matchStateReturn (v tv : val) (k : cont) (m tm : mem)
       (cs : List RTL.stackframe) (hs : match_stacks k cs)
       (ld : Val.lessdef v tv) (mext : Mem.extends m tm) :
-      match_states (.returnState v k m) (RTL.Returnstate cs tv tm)
+      match_states (.Returnstate v k m) (RTL.Returnstate cs tv tm)
 
 /-! ## Exact statement descriptors -/
 

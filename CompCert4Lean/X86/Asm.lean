@@ -42,6 +42,7 @@ private abbrev signature := CompCert4Lean.Common.AST.signature
 private abbrev external_function := CompCert4Lean.Common.AST.external_function
 private abbrev trace := CompCert4Lean.Common.Events.trace
 private abbrev CompilerConfig := CompCert4Lean.Config.CompilerConfig
+private abbrev ExternalCalls := CompCert4Lean.Common.ExternalCalls.ExternalCalls
 
 private abbrev z0 : Z := .Z0
 private abbrev z1 : Z := ZArith.BinInt.Z.of_nat 1
@@ -927,9 +928,8 @@ def preg_of (r : mreg) : preg :=
   | .X12 => .FR .XMM12 | .X13 => .FR .XMM13 | .X14 => .FR .XMM14 | .X15 => .FR .XMM15
   | .FP0 => .ST0
 
-def undef_caller_save_regs (rs : regset) : regset :=
+def undef_caller_save_regs (cfg : CompilerConfig) (rs : regset) : regset :=
   fun r =>
-    let cfg := CompCert4Lean.Config.pinnedLinuxX86_64 false 0 false false false false false
     let saved := List.map preg_of
       (List.filter (fun mr => CompCert4Lean.X86.Conventions1.is_callee_save cfg mr)
         CompCert4Lean.X86.Machregs.all_mregs)
@@ -940,38 +940,39 @@ def undef_caller_save_regs (rs : regset) : regset :=
         | .left _ => Pregmap.get r rs
         | .right _ => Vundef
 
-inductive extcall_arg (rs : regset) (m : mem) : loc → val → Prop where
-  | extcall_arg_reg (r : mreg) : extcall_arg rs m (.R r) (Pregmap.get (preg_of r) rs)
+inductive extcall_arg (cfg : CompilerConfig) (rs : regset) (m : mem) : loc → val → Prop where
+  | extcall_arg_reg (r : mreg) :
+      extcall_arg cfg rs m (.R r) (Pregmap.get (preg_of r) rs)
   | extcall_arg_stack (ofs : Z) (ty : typ) (bofs : Z) (v : val)
       (hb : bofs = zAdd
-        (CompCert4Lean.X86.Stacklayout.fe_ofs_arg
-          (CompCert4Lean.Config.pinnedLinuxX86_64 false 0 false false false false false))
+        (CompCert4Lean.X86.Stacklayout.fe_ofs_arg cfg)
         (zMul (zOfNat 4) ofs))
       (hv : Mem.loadv (chunk_of_type ty) m
         (Val.offset_ptr (Pregmap.get (.IR .RSP) rs) (CompCert4Lean.Lib.Integers.Ptrofs.repr bofs)) = some v) :
-      extcall_arg rs m (.S Outgoing ofs ty) v
+      extcall_arg cfg rs m (.S Outgoing ofs ty) v
 
 export extcall_arg (extcall_arg_reg extcall_arg_stack)
 
-inductive extcall_arg_pair (rs : regset) (m : mem) : rpair loc → val → Prop where
-  | extcall_arg_one (l : loc) (v : val) : extcall_arg rs m l v → extcall_arg_pair rs m (.One l) v
+inductive extcall_arg_pair (cfg : CompilerConfig) (rs : regset) (m : mem) : rpair loc → val → Prop where
+  | extcall_arg_one (l : loc) (v : val) :
+      extcall_arg cfg rs m l v → extcall_arg_pair cfg rs m (.One l) v
   | extcall_arg_twolong (hi lo : loc) (vhi vlo : val) :
-      extcall_arg rs m hi vhi → extcall_arg rs m lo vlo →
-      extcall_arg_pair rs m (.Twolong hi lo) (Val.longofwords vhi vlo)
+      extcall_arg cfg rs m hi vhi → extcall_arg cfg rs m lo vlo →
+      extcall_arg_pair cfg rs m (.Twolong hi lo) (Val.longofwords vhi vlo)
 
 export extcall_arg_pair (extcall_arg_one extcall_arg_twolong)
 
-def extcall_arguments (rs : regset) (m : mem) (sg : signature) (args : List val) : Prop :=
-  CompCert4Lean.Lib.Coqlib.list_forall2 (extcall_arg_pair rs m)
-    (CompCert4Lean.X86.Conventions1.loc_arguments
-      (CompCert4Lean.Config.pinnedLinuxX86_64 false 0 false false false false false) sg) args
+def extcall_arguments (cfg : CompilerConfig) (rs : regset) (m : mem)
+    (sg : signature) (args : List val) : Prop :=
+  CompCert4Lean.Lib.Coqlib.list_forall2 (extcall_arg_pair cfg rs m)
+    (CompCert4Lean.X86.Conventions1.loc_arguments cfg sg) args
 
 def loc_external_result (sg : signature) : rpair preg :=
   map_rpair preg_of (CompCert4Lean.X86.Conventions1.loc_result sg)
 
 def extcall_arguments_determStatement : Prop :=
-  ∀ rs m sg args1 args2, extcall_arguments rs m sg args1 →
-    extcall_arguments rs m sg args2 → args1 = args2
+  ∀ cfg rs m sg args1 args2, extcall_arguments cfg rs m sg args1 →
+    extcall_arguments cfg rs m sg args2 → args1 = args2
 
 def extcall_arguments_determ := extcall_arguments_determStatement
 
@@ -989,16 +990,40 @@ def initial_regset (p : program) : regset :=
           CompCert4Lean.Lib.Integers.Ptrofs.zero)
         (Pregmap.init Vundef)))
 
-inductive step : state → trace → state → Prop where
-  | exec_step_internal (ge : genv) (b : block) (ofs : ptrofs) (f : function)
+inductive step (cfg : CompilerConfig) (xi : ExternalCalls) (ge : genv) :
+    state → trace → state → Prop where
+  | exec_step_internal (b : block) (ofs : ptrofs) (f : function)
       (i : instruction) (rs : regset) (m : mem) (rs' : regset) (m' : mem)
       (hpc : Pregmap.get .PC rs = .Vptr b ofs)
       (hf : Genv.find_funct_ptr ge b = some (Internal f))
       (hi : find_instr (CompCert4Lean.Lib.Integers.Ptrofs.unsigned ofs) f.fn_code = some i)
       (he : exec_instr ge f i rs m = .Next rs' m') :
-      step (.State rs m) E0 (.State rs' m')
-  | exec_step_builtin (ge : genv) (s s' : state) (t : trace) : step s t s'
-  | exec_step_external (ge : genv) (s s' : state) (t : trace) : step s t s'
+      step cfg xi ge (.State rs m) E0 (.State rs' m')
+  | exec_step_builtin (b : block) (ofs : ptrofs) (f : function)
+      (ef : external_function) (args : List (builtin_arg preg))
+      (res : builtin_res preg) (rs : regset) (m : mem) (vargs : List val)
+      (t : trace) (vres : val) (rs' : regset) (m' : mem)
+      (hpc : Pregmap.get .PC rs = .Vptr b ofs)
+      (hf : Genv.find_funct_ptr ge b = some (Internal f))
+      (hi : find_instr (CompCert4Lean.Lib.Integers.Ptrofs.unsigned ofs) f.fn_code =
+        some (.Pbuiltin ef args res))
+      (hargs : eval_builtin_args (Genv.to_senv ge)
+        (fun r => Pregmap.get r rs) (Pregmap.get (.IR .RSP) rs) m args vargs)
+      (hcall : external_call xi ef (Genv.to_senv ge) vargs m t vres m')
+      (hrs : rs' = nextinstr_nf
+        (set_res res vres
+          (undef_regs (List.map preg_of (destroyed_by_builtin ef)) rs))) :
+      step cfg xi ge (.State rs m) t (.State rs' m')
+  | exec_step_external (b : block) (ef : external_function) (args : List val)
+      (res : val) (rs : regset) (m : mem) (t : trace) (rs' : regset) (m' : mem)
+      (hpc : Pregmap.get .PC rs = .Vptr b CompCert4Lean.Lib.Integers.Ptrofs.zero)
+      (hf : Genv.find_funct_ptr ge b = some (External ef))
+      (hargs : extcall_arguments cfg rs m (ef_sig ef) args)
+      (hcall : external_call xi ef (Genv.to_senv ge) args m t res m')
+      (hrs : rs' = Pregmap.set .PC (Pregmap.get .RA rs)
+        (set_pair (loc_external_result (ef_sig ef)) res
+          (undef_caller_save_regs cfg rs))) :
+      step cfg xi ge (.State rs m) t (.State rs' m')
 
 export step (exec_step_internal exec_step_builtin exec_step_external)
 
@@ -1017,13 +1042,13 @@ inductive final_state : state → int → Prop where
 
 export final_state (final_state_intro)
 
-def semantics (p : program) :=
-  Semantics (fun _ s t s' => step s t s')
+def semantics (cfg : CompilerConfig) (xi : ExternalCalls) (p : program) :=
+  Semantics (step cfg xi)
     (CompCert4Lean.X86.Asm.initial_state p) final_state
     (CompCert4Lean.Common.Globalenvs.Genv.globalenv p)
 
 def semantics_determinateStatement : Prop :=
-  ∀ p, determinate (semantics p)
+  ∀ cfg xi p, determinate (semantics cfg xi p)
 
 def semantics_determinate := semantics_determinateStatement
 

@@ -65,6 +65,7 @@ private abbrev instruction := CompCert4Lean.Backend.RTL.instruction
 private abbrev defmap := CompCert4Lean.Backend.RTL.defmap
 private abbrev program := CompCert4Lean.Backend.RTL.program
 private abbrev romem := CompCert4Lean.Backend.ValueDomain.romem
+private abbrev CompilerConfig := CompCert4Lean.Config.CompilerConfig
 private abbrev Res := CompCert4Lean.Common.Errors.res
 private abbrev RocqString :=
   CompCert4Lean.Foundation.RocqString.Rocq.Coq.Strings.String.string
@@ -84,140 +85,6 @@ private def zleBool (x y : Z) : Bool :=
 
 private def cseFailureText : RocqString :=
   bytesToString [67, 83, 69, 32, 102, 97, 105, 108, 117, 114, 101]
-
-/-! The source CombineOp module keeps these helpers in a section parameterized
-by the value-number lookup.  They are private adapters here because the
-corresponding proof module deliberately does not export them. -/
-
-private def combine_compimm_ne_0 (get : valnum → Option rhs) (x : valnum) :
-    Option (condition × List valnum) :=
-  match get x with
-  | some (.Op (.Ocmp c) ys) => some (c, ys)
-  | some (.Op (.Oandimm n) ys) => some (.Cmasknotzero n, ys)
-  | some (.Op (.Oxorimm n) ys) => some (.Ccompimm .Cne n, ys)
-  | _ => none
-
-private def combine_compimm_eq_0 (get : valnum → Option rhs) (x : valnum) :
-    Option (condition × List valnum) :=
-  match get x with
-  | some (.Op (.Ocmp c) ys) => some (negate_condition c, ys)
-  | some (.Op (.Oandimm n) ys) => some (.Cmaskzero n, ys)
-  | some (.Op (.Oxorimm n) ys) => some (.Ccompimm .Ceq n, ys)
-  | _ => none
-
-private def combine_compimm_eq_1 (get : valnum → Option rhs) (x : valnum) :
-    Option (condition × List valnum) :=
-  match get x with
-  | some (.Op (.Ocmp c) ys) => some (c, ys)
-  | _ => none
-
-private def combine_compimm_ne_1 (get : valnum → Option rhs) (x : valnum) :
-    Option (condition × List valnum) :=
-  match get x with
-  | some (.Op (.Ocmp c) ys) => some (negate_condition c, ys)
-  | _ => none
-
-private def combine_cond (get : valnum → Option rhs) (cond : condition)
-    (args : List valnum) : Option (condition × List valnum) :=
-  match cond, args with
-  | .Ccompimm .Cne n, [x] =>
-      if n = Int.zero then combine_compimm_ne_0 get x
-      else if n = Int.one then combine_compimm_ne_1 get x
-      else none
-  | .Ccompimm .Ceq n, [x] =>
-      if n = Int.zero then combine_compimm_eq_0 get x
-      else if n = Int.one then combine_compimm_eq_1 get x
-      else none
-  | .Ccompuimm .Cne n, [x] =>
-      if n = Int.zero then combine_compimm_ne_0 get x
-      else if n = Int.one then combine_compimm_ne_1 get x
-      else none
-  | .Ccompuimm .Ceq n, [x] =>
-      if n = Int.zero then combine_compimm_eq_0 get x
-      else if n = Int.one then combine_compimm_eq_1 get x
-      else none
-  | _, _ => none
-
-private def combine_addr_32 (get : valnum → Option rhs) (addr : addressing)
-    (args : List valnum) : Option (addressing × List valnum) :=
-  match addr, args with
-  | .Aindexed n, [x] =>
-      match get x with
-      | some (.Op (.Olea a) ys) =>
-          match offset_addressing a n with
-          | some a' => some (a', ys)
-          | none => none
-      | _ => none
-  | _, _ => none
-
-private def combine_addr_64 (get : valnum → Option rhs) (addr : addressing)
-    (args : List valnum) : Option (addressing × List valnum) :=
-  match addr, args with
-  | .Aindexed n, [x] =>
-      match get x with
-      | some (.Op (.Oleal a) ys) =>
-          match offset_addressing a n with
-          | some a' => some (a', ys)
-          | none => none
-      | _ => none
-  | _, _ => none
-
-private def combine_op (get : valnum → Option rhs) (op : operation)
-    (args : List valnum) : Option (operation × List valnum) :=
-  match op, args with
-  | .Olea addr, _ =>
-      match combine_addr_32 get addr args with
-      | some (addr', args') => some (.Olea addr', args')
-      | none => none
-  | .Oleal addr, _ =>
-      match combine_addr_64 get addr args with
-      | some (addr', args') => some (.Oleal addr', args')
-      | none => none
-  | .Oandimm n, [x] =>
-      match get x with
-      | some (.Op (.Oandimm m) ys) => some (.Oandimm (Int.and m n), ys)
-      | _ => none
-  | .Oorimm n, [x] =>
-      match get x with
-      | some (.Op (.Oorimm m) ys) => some (.Oorimm (Int.or m n), ys)
-      | _ => none
-  | .Oxorimm n, [x] =>
-      match get x with
-      | some (.Op (.Oxorimm m) ys) => some (.Oxorimm (Int.xor m n), ys)
-      | _ => none
-  | .Oandlimm n, [x] =>
-      match get x with
-      | some (.Op (.Oandlimm m) ys) =>
-          some (.Oandlimm (CompCert4Lean.Lib.Integers.Int64.and m n), ys)
-      | _ => none
-  | .Oorlimm n, [x] =>
-      match get x with
-      | some (.Op (.Oorlimm m) ys) =>
-          some (.Oorlimm (CompCert4Lean.Lib.Integers.Int64.or m n), ys)
-      | _ => none
-  | .Oxorlimm n, [x] =>
-      match get x with
-      | some (.Op (.Oxorlimm m) ys) =>
-          some (.Oxorlimm (CompCert4Lean.Lib.Integers.Int64.xor m n), ys)
-      | _ => none
-  | .Ocmp cond, _ =>
-      match CompCert4Lean.X86.CombineOp.combine_cond' cond args with
-      | some b => some ((if b then .Ointconst Int.one else .Ointconst Int.zero), [])
-      | none =>
-          match combine_cond get cond args with
-          | some (cond', args') => some (.Ocmp cond', args')
-          | none => none
-  | .Osel cond ty, x :: y :: rest =>
-      match CompCert4Lean.X86.CombineOp.combine_cond' cond rest with
-      | some b => some (.Omove, [(if b then x else y)])
-      | none =>
-          match eq_valnum x y with
-          | .left _ => some (.Omove, [x])
-          | .right _ =>
-              match combine_cond get cond rest with
-              | some (cond', args') => some (.Osel cond' ty, x :: y :: args')
-              | none => none
-  | _, _ => none
 
 def valnum_reg (n : numbering) (r : reg) : numbering × valnum :=
   match PTree.get r n.num_reg with
@@ -381,9 +248,9 @@ def filter_after_store (n : numbering) (p : aptr) (sz : Z) : rhs → Bool
   | .Load chunk _ _ q => !pdisjoint q (size_chunk chunk) p sz
   | .Builtin _ args => builtin_args_depends_on_memory args
 
-def kill_loads_after_store (app : VA.t) (n : numbering)
+def kill_loads_after_store (cfg : CompilerConfig) (app : VA.t) (n : numbering)
     (chunk : memory_chunk) (addr : addressing) (args : List reg) : numbering :=
-  let p := aaddressing app addr args
+  let p := aaddressing cfg app addr args
   kill_equations (filter_after_store n p (size_chunk chunk)) n
 
 def filter_cheap : rhs → Bool
@@ -402,14 +269,15 @@ def store_normalized_range : memory_chunk → aval
   | .Mint16unsigned => Uns Ptop (ZArith.BinInt.Z.of_nat 16)
   | _ => Vtop
 
-def add_store_result (app : VA.t) (n : numbering) (chunk : memory_chunk)
+def add_store_result (cfg : CompilerConfig) (app : VA.t) (n : numbering)
+    (chunk : memory_chunk)
     (addr : addressing) (rargs : List reg) (rsrc : reg) : numbering :=
   if vincl (avalue app rsrc) (store_normalized_range chunk) then
     let (n1, vsrc) := valnum_reg n rsrc
     let (n2, vargs) := valnum_regs n1 rargs
     { num_next := n2.num_next
       num_eqs := .Eq vsrc false
-          (.Load chunk addr vargs (aaddressing app addr rargs)) :: n2.num_eqs
+          (.Load chunk addr vargs (aaddressing cfg app addr rargs)) :: n2.num_eqs
       num_reg := n2.num_reg
       num_val := n2.num_val }
   else n
@@ -533,7 +401,8 @@ def fixpoint_invariant : Prop :=
 
 end Solver
 
-def transfer (f : function) (dm : defmap) (approx : PMap.t VA.t)
+def transfer (cfg : CompilerConfig) (f : function) (dm : defmap)
+    (approx : PMap.t VA.t)
     (pc : node) (before : numbering) : numbering :=
   match PTree.get pc f.fn_code with
   | none => before
@@ -542,11 +411,12 @@ def transfer (f : function) (dm : defmap) (approx : PMap.t VA.t)
       | .Inop _ => before
       | .Iop op args res _ => add_op before res op args
       | .Iload chunk addr args dst _ =>
-          add_load before dst chunk addr args (aaddressing (PMap.get pc approx) addr args)
+          add_load before dst chunk addr args
+            (aaddressing cfg (PMap.get pc approx) addr args)
       | .Istore chunk addr args src _ =>
           let app := PMap.get pc approx
-          let n := kill_loads_after_store app before chunk addr args
-          add_store_result app n chunk addr args src
+          let n := kill_loads_after_store cfg app before chunk addr args
+          add_store_result cfg app n chunk addr args src
       | .Icall _ ros args res _ =>
           match is_known_runtime_function dm ros with
           | none => empty_numbering
@@ -567,8 +437,8 @@ def transfer (f : function) (dm : defmap) (approx : PMap.t VA.t)
               match args with
               | dst :: src :: [] =>
                   let app := PMap.get pc approx
-                  let adst := aaddr_arg app dst
-                  let asrc := aaddr_arg app src
+                  let adst := aaddr_arg cfg app dst
+                  let asrc := aaddr_arg cfg app src
                   let n := kill_loads_after_storebytes before adst sz
                   set_res_unknown (add_memcpy before n asrc adst sz) res
               | _ => empty_numbering
@@ -578,9 +448,10 @@ def transfer (f : function) (dm : defmap) (approx : PMap.t VA.t)
       | .Ijumptable _ _ => before
       | .Ireturn _ => before
 
-def analyze (f : function) (dm : defmap) (approx : PMap.t VA.t) : Option (PMap.t numbering) :=
+def analyze (cfg : CompilerConfig) (f : function) (dm : defmap)
+    (approx : PMap.t VA.t) : Option (PMap.t numbering) :=
   BBlock_solver.fixpoint numberingSolver f.fn_code successors_instr
-    (transfer f dm approx) f.fn_entrypoint
+    (transfer cfg f dm approx) f.fn_entrypoint
 
 def transf_instr (dm : defmap) (n : numbering) (instr : instruction) : instruction :=
   match instr with
@@ -590,7 +461,8 @@ def transf_instr (dm : defmap) (n : numbering) (instr : instruction) : instructi
         match find_rhs n1 (.Op op vl) with
         | some r => .Iop .Omove [r] res s
         | none =>
-            let (op', args') := reduce (combine_op) n1 op args vl
+            let (op', args') :=
+              reduce CompCert4Lean.X86.CombineOp.combine_op n1 op args vl
             .Iop op' args' res s
   | .Iload chunk addr args dst s =>
       let (n1, vl) := valnum_regs n args
@@ -624,7 +496,8 @@ def transf_instr (dm : defmap) (n : numbering) (instr : instruction) : instructi
       match CompCert4Lean.X86.CombineOp.combine_cond' cond vl with
       | some b => .Inop (if b then s1 else s2)
       | none =>
-          let (cond', args') := reduce (combine_cond) n1 cond args vl
+          let (cond', args') :=
+            reduce CompCert4Lean.X86.CombineOp.combine_cond n1 cond args vl
           .Icond cond' args' s1 s2
   | _ => instr
 
@@ -632,11 +505,12 @@ def transf_code (dm : defmap) (approxs : PMap.t numbering)
     (instrs : code) : code :=
   PTree.map (fun pc instr => transf_instr dm (PMap.get pc approxs) instr) instrs
 
-def vanalyze := ValueAnalysis.analyze
+def vanalyze (cfg : CompilerConfig) := ValueAnalysis.analyze cfg
 
-def transf_function (dm : defmap) (rm : romem) (f : function) : Res function :=
-  let approx := vanalyze rm f
-  match analyze f dm approx with
+def transf_function (cfg : CompilerConfig) (dm : defmap) (rm : romem)
+    (f : function) : Res function :=
+  let approx := vanalyze cfg rm f
+  match analyze cfg f dm approx with
   | none => Error (msg cseFailureText)
   | some approxs =>
       OK { fn_sig := f.fn_sig
@@ -645,10 +519,12 @@ def transf_function (dm : defmap) (rm : romem) (f : function) : Res function :=
            fn_code := transf_code dm approxs f.fn_code
            fn_entrypoint := f.fn_entrypoint }
 
-def transf_fundef (dm : defmap) (rm : romem) (f : fundef) : Res fundef :=
-  transf_partial_fundef (transf_function dm rm) f
+def transf_fundef (cfg : CompilerConfig) (dm : defmap) (rm : romem)
+    (f : fundef) : Res fundef :=
+  transf_partial_fundef (transf_function cfg dm rm) f
 
-def transf_program (p : program) : Res program :=
-  transform_partial_program (transf_fundef (prog_defmap p) (romem_for p)) p
+def transf_program (cfg : CompilerConfig) (p : program) : Res program :=
+  transform_partial_program
+    (transf_fundef cfg (prog_defmap p) (romem_for cfg p)) p
 
 end CompCert4Lean.Backend.CSE

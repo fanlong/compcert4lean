@@ -519,12 +519,35 @@ def nmem_contains (nm : nmem) (p : aptr) (sz : Z) : Bool :=
 
 def nmem_dead_stack (sz : Z) : nmem := NMem (ISet.interval z0 sz) (PTree.empty _)
 
+def nmem_lub : nmem → nmem → nmem
+  | NMemDead, nm => nm
+  | nm, NMemDead => nm
+  | NMem stk1 gl1, NMem stk2 gl2 =>
+      NMem (ISet.inter stk1 stk2)
+        (PTree.combine
+          (fun o1 o2 =>
+            match o1, o2 with
+            | some iv1, some iv2 => some (ISet.inter iv1 iv2)
+            | _, _ => none)
+          gl1 gl2)
+
+def nmem_beq : nmem → nmem → Bool
+  | NMemDead, NMemDead => true
+  | NMem stk1 gl1, NMem stk2 gl2 =>
+      ISet.beq stk1 stk2 && ZTree.beq ISet.beq gl1 gl2
+  | _, _ => false
+
 namespace NA
 def t : Type := nenv × nmem
+def eq (x y : t) : Prop :=
+  NE.eq x.1 y.1 ∧
+    ∀ ge sp b ofs, nlive ge sp x.2 b ofs ↔ nlive ge sp y.2 b ofs
+def beq (x y : t) : Bool := NE.beq x.1 y.1 && nmem_beq x.2 y.2
 def ge (x y : t) : Prop :=
   (∀ r, nge (NE.get r x.1) (NE.get r y.1)) ∧
   (∀ ge sp b ofs, nlive ge sp y.2 b ofs → nlive ge sp x.2 b ofs)
 def bot : t := (NE.bot, NMemDead)
+def lub (x y : t) : t := (NE.lub x.1 y.1, nmem_lub x.2 y.2)
 end NA
 
 /-! Exact source-shaped theorem surfaces. -/

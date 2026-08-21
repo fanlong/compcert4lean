@@ -110,17 +110,27 @@ namespace Senv
 structure t : Type where
   find_symbol : ident → Option block
   public_symbol : ident → Bool
+  invert_symbol : block → Option ident
   block_is_volatile : block → Bool
-  nextblock_internal : block
+  nextblock : block
   find_symbol_injective :
     ∀ id1 id2 b, find_symbol id1 = some b → find_symbol id2 = some b → id1 = id2
   public_symbol_exists :
     ∀ id, public_symbol id = true → ∃ b, find_symbol id = some b
   find_symbol_below :
-    ∀ id b, find_symbol id = some b → Plt b nextblock_internal
+    ∀ id b, find_symbol id = some b → Plt b nextblock
 
-export t (find_symbol public_symbol block_is_volatile find_symbol_injective
-  public_symbol_exists find_symbol_below)
+export t (find_symbol public_symbol invert_symbol block_is_volatile nextblock
+  find_symbol_injective public_symbol_exists find_symbol_below)
+
+def invert_find_symbol (ge : t) : Prop :=
+  ∀ id b, ge.invert_symbol b = some id → ge.find_symbol id = some b
+
+def find_invert_symbol (ge : t) : Prop :=
+  ∀ id b, ge.find_symbol id = some b → ge.invert_symbol b = some id
+
+def block_is_volatile_below (ge : t) : Prop :=
+  ∀ b, ge.block_is_volatile b = true → Plt b ge.nextblock
 
 def symbol_address (ge : t) (id : ident) (ofs : ptrofs) : val :=
   match ge.find_symbol id with
@@ -282,8 +292,9 @@ def advance_next {F V : Type} (gl : List (ident × globdef F V)) (x : positive) 
 def to_senv {F V : Type} (ge : t F V) : Senv.t :=
   { find_symbol := find_symbol ge
     public_symbol := public_symbol ge
+    invert_symbol := invert_symbol ge
     block_is_volatile := block_is_volatile ge
-    nextblock_internal := ge.genv_next
+    nextblock := ge.genv_next
     find_symbol_injective := ge.genv_vars_inj
     public_symbol_exists := by
       intro id h
@@ -302,7 +313,7 @@ private def storeZerosNat : Nat → mem → block → Z → Option mem
       | none => none
       | some m' => storeZerosNat n m' b (zAdd p z1)
 
-private def storeZeros (m : mem) (b : block) (p n : Z) : Option mem :=
+def store_zeros (m : mem) (b : block) (p n : Z) : Option mem :=
   storeZerosNat (zToNat n) m b p
 
 def store_init_data {F V : Type} (ge : t F V) (m : mem) (b : block)
@@ -343,7 +354,7 @@ def alloc_global {F V : Type} (ge : t F V) (m : mem)
       let init := v.gvar_init
       let sz := init_data_list_size init
       let (m1, b) := Mem.alloc m z0 sz
-      match storeZeros m1 b z0 sz with
+      match store_zeros m1 b z0 sz with
       | none => none
       | some m2 =>
           match store_init_data_list ge m2 b z0 init with
@@ -465,11 +476,11 @@ def init_data_list_aligned : Z → List init_data → Prop
 
 structure match_genvs {A B V W : Type} (R : globdef A V → globdef B W → Prop)
     (ge1 : t A V) (ge2 : t B W) : Prop where
-  mge_next_internal : ge2.genv_next = ge1.genv_next
-  mge_symb_internal : ∀ id, PTree.get id ge2.genv_symb = PTree.get id ge1.genv_symb
+  mge_next : ge2.genv_next = ge1.genv_next
+  mge_symb : ∀ id, PTree.get id ge2.genv_symb = PTree.get id ge1.genv_symb
   mge_defs : ∀ b, option_rel R (PTree.get b ge1.genv_defs) (PTree.get b ge2.genv_defs)
 
-export match_genvs (mge_defs)
+export match_genvs (mge_next mge_symb mge_defs)
 
 /-! ## Exact statement descriptors for later proof migration -/
 
@@ -581,7 +592,7 @@ def block_is_volatile_belowStatement : Prop :=
 
 def store_zeros_nextblockStatement : Prop :=
   ∀ (m : mem) (b : block) (p n : Z) (m' : mem),
-    storeZeros m b p n = some m' → m'.nextblock = m.nextblock
+    store_zeros m b p n = some m' → m'.nextblock = m.nextblock
 
 def store_init_data_list_nextblockStatement : Prop :=
   ∀ (F V : Type) (ge : t F V) (idl : List init_data) (b : block)
@@ -599,7 +610,7 @@ def alloc_globals_nextblockStatement : Prop :=
 def store_zeros_permStatement : Prop :=
   ∀ (k : perm_kind) (prm : permission) (b' : block) (q : Z)
     (m : mem) (b : block) (p n : Z) (m' : mem),
-    storeZeros m b p n = some m' →
+    store_zeros m b p n = some m' →
       (Mem.perm m b' q k prm ↔ Mem.perm m' b' q k prm)
 
 def store_init_data_permStatement : Prop :=
@@ -617,7 +628,7 @@ def store_init_data_list_permStatement : Prop :=
 
 def store_zeros_unchangedStatement : Prop :=
   ∀ (P : block → Z → Prop) (m : mem) (b : block) (p n : Z) (m' : mem),
-    storeZeros m b p n = some m' →
+    store_zeros m b p n = some m' →
     (∀ i, zLe p i ∧ zLt i (zAdd p n) → ¬ P b i) →
     Mem.unchanged_on P m m'
 
@@ -637,7 +648,7 @@ def store_init_data_list_unchangedStatement : Prop :=
 
 def store_zeros_loadbytesStatement : Prop :=
   ∀ (m : mem) (b : block) (p n : Z) (m' : mem),
-    storeZeros m b p n = some m' → readbytes_as_zero m' b p n
+    store_zeros m b p n = some m' → readbytes_as_zero m' b p n
 
 def init_data_size_addrofStatement : Prop :=
   ∀ (id : ident) (ofs : ptrofs), init_data_size (Init_addrof id ofs) = size_chunk Mptr
@@ -665,7 +676,7 @@ def read_as_zero_unchangedStatement : Prop :=
 
 def store_zeros_read_as_zeroStatement : Prop :=
   ∀ (m : mem) (b : block) (p n : Z) (m' : mem),
-    storeZeros m b p n = some m' → read_as_zero m' b p n
+    store_zeros m b p n = some m' → read_as_zero m' b p n
 
 def store_init_data_list_charactStatement : Prop :=
   ∀ (F V : Type) (ge : t F V) (b : block) (il : List init_data)
@@ -742,7 +753,7 @@ def init_mem_characterizationStatement : Prop :=
 def store_zeros_neutralStatement : Prop :=
   ∀ (thr : block) (m : mem) (b : block) (p n : Z) (m' : mem),
     Mem.inject_neutral thr m → Plt b thr →
-    storeZeros m b p n = some m' → Mem.inject_neutral thr m'
+    store_zeros m b p n = some m' → Mem.inject_neutral thr m'
 
 def store_init_data_neutralStatement : Prop :=
   ∀ (F V : Type) (ge : t F V) (thr : block) (m : mem) (b : block)
@@ -801,7 +812,7 @@ def init_mem_inversionStatement : Prop :=
 def store_zeros_existsStatement : Prop :=
   ∀ (m : mem) (b : block) (p n : Z),
     Mem.range_perm m b p (zAdd p n) Cur Writable →
-      ∃ m', storeZeros m b p n = some m'
+      ∃ m', store_zeros m b p n = some m'
 
 def store_init_data_existsStatement : Prop :=
   ∀ (F V : Type) (ge : t F V) (m : mem) (b : block) (p : Z) (i : init_data),
@@ -996,5 +1007,9 @@ def init_mem_transfStatement : Prop :=
     ∀ m, init_mem p = some m → init_mem tp = some m
 
 end Genv
+
+/- `store_zeros` is module-level in the Rocq source.  Keep the implementation in
+   `Genv`, where the translated consumers live, and expose the exact source path. -/
+abbrev store_zeros := Genv.store_zeros
 
 end CompCert4Lean.Common.Globalenvs

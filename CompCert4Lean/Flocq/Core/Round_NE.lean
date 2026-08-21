@@ -36,6 +36,8 @@ class Exists_NE (beta : radix) (fexp : Z → Z) : Prop where
         (Zlt (fexp e) e → Zlt (fexp (Zadd e Zone)) e) ∧
           (Zle e (fexp e) → fexp (Zadd (fexp e) Zone) = fexp e)
 
+export Exists_NE (exists_NE)
+
 /-! Exact source proposition descriptors for later proof migration. -/
 
 def round_NE_oppStatement : Prop :=

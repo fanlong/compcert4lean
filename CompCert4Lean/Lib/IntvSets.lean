@@ -20,6 +20,7 @@ namespace R
 inductive t : Type where
   | Nil
   | Cons (lo hi : Z) (tail : t)
+deriving DecidableEq
 
 def In (x : Z) : t → Prop
   | .Nil => False
@@ -296,6 +297,27 @@ def remove (l h : Z) (s : t) : t :=
       exact hlt) s.2⟩
   else
     s
+
+private def addIntersections (l h : Z) : R.t → t → t
+  | .Nil, acc => acc
+  | .Cons l' h' tail, acc =>
+      addIntersections l h tail
+        (add (ZArith.BinInt.Z.max l l') (ZArith.BinInt.Z.min h h') acc)
+
+private def interRaw : R.t → t → t
+  | .Nil, _ => empty
+  | .Cons l h tail, other =>
+      addIntersections l h other.1 (interRaw tail other)
+
+def inter (s1 s2 : t) : t := interRaw s1.1 s2
+
+private def rawBeq : R.t → R.t → Bool
+  | .Nil, .Nil => true
+  | .Cons l1 h1 t1, .Cons l2 h2 t2 =>
+      decide (l1 = l2) && decide (h1 = h2) && rawBeq t1 t2
+  | _, _ => false
+
+def beq (s1 s2 : t) : Bool := rawBeq s1.1 s2.1
 
 def contains (l h : Z) (s : t) : Bool :=
   if ZArith.BinInt.Z.ltb l h then

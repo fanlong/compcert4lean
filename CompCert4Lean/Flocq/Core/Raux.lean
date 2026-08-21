@@ -115,7 +115,7 @@ structure mag_prop (r : radix) (x : R) where
 instance {r : radix} {x : R} (m : mag_prop r x) : CoeDep (mag_prop r x) m Z :=
   ⟨m.mag_val⟩
 
-abbrev mag_val {r : radix} {x : R} (m : mag_prop r x) : Z := m.mag_val
+export mag_prop (mag_val)
 
 def mag (r : radix) (x : R) : mag_prop r x :=
   { mag_val := Z0 }

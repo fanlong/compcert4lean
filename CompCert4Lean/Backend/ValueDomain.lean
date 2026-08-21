@@ -235,14 +235,14 @@ def block_class_eq (x y : block_class) : Sumbool (x = y) (x ≠ y) := by
   exact if h : x = y then .left h else .right h
 
 structure block_classification : Type where
-  classify : block → block_class
-  bc_stack : ∀ b1 b2, classify b1 = BCstack → classify b2 = BCstack → b1 = b2
-  bc_glob : ∀ b1 b2 id, classify b1 = BCglob id → classify b2 = BCglob id → b1 = b2
+  bc_img : block → block_class
+  bc_stack : ∀ b1 b2, bc_img b1 = BCstack → bc_img b2 = BCstack → b1 = b2
+  bc_glob : ∀ b1 b2 id, bc_img b1 = BCglob id → bc_img b2 = BCglob id → b1 = b2
 
-export block_classification (bc_stack bc_glob)
+export block_classification (bc_img bc_stack bc_glob)
 
 instance : CoeFun block_classification (fun _ => block → block_class) :=
-  ⟨block_classification.classify⟩
+  ⟨block_classification.bc_img⟩
 
 def bc_below (bc : block_classification) (bound : block) : Prop :=
   ∀ b, bc b ≠ BCinvalid → Plt b bound
@@ -1188,7 +1188,7 @@ private def eraseDown (lo : Z) : Nat → Z → ZTree.t acontent → ZTree.t acon
   | 0, _, c => c
   | n + 1, hi, c => eraseDown lo n (zSub hi z1) (ZTree.remove hi c)
 
-private def eraseAfter (lo hi : Z) (c : ZTree.t acontent) : ZTree.t acontent :=
+def inval_after (lo hi : Z) (c : ZTree.t acontent) : ZTree.t acontent :=
   if zle lo hi then eraseDown lo (zToNat (zAdd (zSub hi lo) z1)) hi c else c
 
 def inval_if (hi lo : Z) (c : ZTree.t acontent) : ZTree.t acontent :=
@@ -1201,14 +1201,14 @@ private def eraseUp (hi : Z) : Nat → Z → ZTree.t acontent → ZTree.t aconte
   | 0, _, c => c
   | n + 1, lo, c => eraseUp hi n (zAdd lo z1) (inval_if hi lo c)
 
-private def eraseBefore (hi lo : Z) (c : ZTree.t acontent) : ZTree.t acontent :=
+def inval_before (hi lo : Z) (c : ZTree.t acontent) : ZTree.t acontent :=
   if zlt lo hi then eraseUp hi (zToNat (zSub hi lo)) lo c else c
 
 def ablock_store (chunk : memory_chunk) (ab : ablock) (i : Z) (av : aval) : ablock :=
   { ab_contents :=
       ZTree.set i (ACval chunk av)
-        (eraseBefore i (zSub i (zOfNat 7))
-          (eraseAfter (zAdd i z1) (zSub (zAdd i (size_chunk chunk)) z1) ab.ab_contents))
+        (inval_before i (zSub i (zOfNat 7))
+          (inval_after (zAdd i z1) (zSub (zAdd i (size_chunk chunk)) z1) ab.ab_contents))
     ab_summary := vplub av ab.ab_summary }
 
 def ablock_store_anywhere (_chunk : memory_chunk) (ab : ablock) (av : aval) : ablock :=
@@ -1218,8 +1218,8 @@ def ablock_loadbytes (ab : ablock) : aptr := ab.ab_summary
 
 def ablock_storebytes (ab : ablock) (p : aptr) (ofs sz : Z) : ablock :=
   { ab_contents :=
-      eraseBefore ofs (zSub ofs (zOfNat 7))
-        (eraseAfter ofs (zSub (zAdd ofs sz) z1) ab.ab_contents)
+      inval_before ofs (zSub ofs (zOfNat 7))
+        (inval_after ofs (zSub (zAdd ofs sz) z1) ab.ab_contents)
     ab_summary := plub p ab.ab_summary }
 
 def ablock_storebytes_anywhere (ab : ablock) (p : aptr) : ablock :=
@@ -1246,6 +1246,10 @@ def combine_acontents (cfg : CompilerConfig)
 def blub (cfg : CompilerConfig) (ab1 ab2 : ablock) : ablock :=
   { ab_contents := ZTree.combine (combine_acontents cfg) ab1.ab_contents ab2.ab_contents
     ab_summary := plub ab1.ab_summary ab2.ab_summary }
+
+def bbeq (ab1 ab2 : ablock) : Bool :=
+  decide (ab1.ab_summary = ab2.ab_summary) &&
+    ZTree.beq (fun c1 c2 => decide (c1 = c2)) ab1.ab_contents ab2.ab_contents
 
 def romem : Type := PTree.t ablock
 
@@ -1381,6 +1385,12 @@ def mlub (cfg : CompilerConfig) (m1 m2 : amem) : amem :=
     am_nonstack := plub m1.am_nonstack m2.am_nonstack
     am_top := plub m1.am_top m2.am_top }
 
+def mbeq (m1 m2 : amem) : Bool :=
+  decide (m1.am_top = m2.am_top) &&
+    decide (m1.am_nonstack = m2.am_nonstack) &&
+    bbeq m1.am_stack m2.am_stack &&
+    ZTree.beq bbeq m1.am_glob m2.am_glob
+
 def pdisjoint (p1 : aptr) (sz1 : Z) (p2 : aptr) (sz2 : Z) : Bool :=
   match p1, p2 with
   | Pbot, _ | _, Pbot => true
@@ -1492,12 +1502,34 @@ inductive t' : Type where
 
 abbrev t : Type := t'
 
+def eq (x y : t) : Prop :=
+  match x, y with
+  | .Bot, .Bot => True
+  | .State ae1 am1, .State ae2 am2 =>
+      AE.eq ae1 ae2 ∧ ∀ bc m, mmatch bc m am1 ↔ mmatch bc m am2
+  | _, _ => False
+
+def beq (x y : t) : Bool :=
+  match x, y with
+  | .Bot, .Bot => true
+  | .State ae1 am1, .State ae2 am2 => AE.beq ae1 ae2 && mbeq am1 am2
+  | _, _ => false
+
 def ge (x y : t) : Prop :=
   match x, y with
   | _, .Bot => True
   | .Bot, .State _ _ => False
   | .State ae1 am1, .State ae2 am2 =>
       AE.ge ae1 ae2 ∧ ∀ bc m, mmatch bc m am2 → mmatch bc m am1
+
+def bot : t := .Bot
+
+def lub (cfg : CompilerConfig) (x y : t) : t :=
+  match x, y with
+  | .Bot, _ => y
+  | _, .Bot => x
+  | .State ae1 am1, .State ae2 am2 =>
+      .State (AE.lub cfg ae1 ae2) (mlub cfg am1 am2)
 
 end VA
 
@@ -1561,17 +1593,12 @@ end AE
 
 namespace VA
 
-abbrev Bot : t' := .Bot
-abbrev State (ae : aenv) (am : amem) : t' := .State ae am
+export t' (Bot State)
 
 end VA
 
-abbrev ab_contents := ablock.ab_contents
-abbrev ab_summary := ablock.ab_summary
-abbrev am_glob := amem.am_glob
-abbrev am_nonstack := amem.am_nonstack
-abbrev am_stack := amem.am_stack
-abbrev am_top := amem.am_top
+export ablock (ab_contents ab_summary)
+export amem (am_glob am_nonstack am_stack am_top)
 def mmatch_below (bc : block_classification) (m : mem) (_am : amem) : Prop :=
   bc_below bc m.nextblock
 def mmatch_glob (bc : block_classification) (m : mem) (am : amem) : Prop :=
@@ -1986,20 +2013,20 @@ def ablock_store_anywhere_soundStatement : Prop :=
     bmatch bc m' b' (ablock_store_anywhere chunk ab av)
 
 def inval_after_outsideStatement : Prop :=
-  ∀ i lo hi c, (zLt i lo ∨ zLt hi i) → ZTree.get i (eraseAfter lo hi c) = ZTree.get i c
+  ∀ i lo hi c, (zLt i lo ∨ zLt hi i) → ZTree.get i (inval_after lo hi c) = ZTree.get i c
 
 def inval_after_contentsStatement : Prop :=
   ∀ chunk av i lo hi c,
-    ZTree.get i (eraseAfter lo hi c) = some (ACval chunk av) →
+    ZTree.get i (inval_after lo hi c) = some (ACval chunk av) →
     ZTree.get i c = some (ACval chunk av) ∧ (zLt i lo ∨ zLt hi i)
 
 def inval_before_outsideStatement : Prop :=
-  ∀ i hi lo c, (zLt i lo ∨ zLe hi i) → ZTree.get i (eraseBefore hi lo c) = ZTree.get i c
+  ∀ i hi lo c, (zLt i lo ∨ zLe hi i) → ZTree.get i (inval_before hi lo c) = ZTree.get i c
 
 def inval_before_contents_1Statement : Prop :=
   ∀ i chunk av lo hi c,
     (zLe lo i ∧ zLt i hi) →
-    ZTree.get i (eraseBefore hi lo c) = some (ACval chunk av) →
+    ZTree.get i (inval_before hi lo c) = some (ACval chunk av) →
     ZTree.get i c = some (ACval chunk av) ∧ zLe (zAdd i (size_chunk chunk)) hi
 
 def max_size_chunkStatement : Prop :=
@@ -2007,7 +2034,7 @@ def max_size_chunkStatement : Prop :=
 
 def inval_before_contentsStatement : Prop :=
   ∀ i c chunk' av' j,
-    ZTree.get j (eraseBefore i (zSub i (zOfNat 7)) c) = some (ACval chunk' av') →
+    ZTree.get j (inval_before i (zSub i (zOfNat 7)) c) = some (ACval chunk' av') →
     ZTree.get j c = some (ACval chunk' av') ∧
       (zLe (zAdd j (size_chunk chunk')) i ∨ zLe i j)
 

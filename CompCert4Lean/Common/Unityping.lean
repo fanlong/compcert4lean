@@ -46,10 +46,7 @@ structure typenv : Type where
   te_typ : PTree.t T.t
   te_equ : List constraint
 
-/-! Source record projections are flattened into the module namespace. -/
-
-def te_typ {T : TYPE_ALGEBRA} (e : typenv T) : PTree.t T.t := e.te_typ
-def te_equ {T : TYPE_ALGEBRA} (e : typenv T) : List constraint := e.te_equ
+export typenv (te_typ te_equ)
 
 def initial : typenv T :=
   { te_typ := PTree.empty T.t

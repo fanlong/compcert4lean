@@ -193,7 +193,7 @@ def eval_simpl_expr : expr → Option val
             CompCert4Lean.Common.Memory.Mem.empty
   | _ => none
 
-private def makeIf (a : expr) (s1 s2 : statement) : statement :=
+def makeif (a : expr) (s1 s2 : statement) : statement :=
   match eval_simpl_expr a with
   | some v =>
       match CompCert4Lean.Cfrontend.Cop.bool_val v
@@ -408,18 +408,18 @@ mutual
             let sd := .SDbase type_bool ty t
             let (sl2, _) ← transl_expr ce (.For_set sd) r2
             pure
-              (sl1 ++ [makeIf a1 (makeseq sl2)
+              (sl1 ++ [makeif a1 (makeseq sl2)
                 (.Sset t (.Econst_int CompCert4Lean.Lib.Integers.Int.zero ty))],
                .Etempvar t ty)
         | .For_effects => do
             let (sl2, _) ← transl_expr ce .For_effects r2
-            pure (sl1 ++ [makeIf a1 (makeseq sl2) .Sskip], dummy_expr)
+            pure (sl1 ++ [makeif a1 (makeseq sl2) .Sskip], dummy_expr)
         | .For_set sd => do
             let t ← temp_for_sd ty sd
             let sd' := .SDcons type_bool ty t sd
             let (sl2, _) ← transl_expr ce (.For_set sd') r2
             pure
-              (sl1 ++ [makeIf a1 (makeseq sl2)
+              (sl1 ++ [makeif a1 (makeseq sl2)
                 (makeseq (do_set sd (.Econst_int CompCert4Lean.Lib.Integers.Int.zero ty)))],
                dummy_expr)
     | .Eseqor r1 r2 ty => do
@@ -430,19 +430,19 @@ mutual
             let sd := .SDbase type_bool ty t
             let (sl2, _) ← transl_expr ce (.For_set sd) r2
             pure
-              (sl1 ++ [makeIf a1
+              (sl1 ++ [makeif a1
                 (.Sset t (.Econst_int CompCert4Lean.Lib.Integers.Int.one ty))
                 (makeseq sl2)],
                .Etempvar t ty)
         | .For_effects => do
             let (sl2, _) ← transl_expr ce .For_effects r2
-            pure (sl1 ++ [makeIf a1 .Sskip (makeseq sl2)], dummy_expr)
+            pure (sl1 ++ [makeif a1 .Sskip (makeseq sl2)], dummy_expr)
         | .For_set sd => do
             let t ← temp_for_sd ty sd
             let sd' := .SDcons type_bool ty t sd
             let (sl2, _) ← transl_expr ce (.For_set sd') r2
             pure
-              (sl1 ++ [makeIf a1
+              (sl1 ++ [makeif a1
                 (makeseq (do_set sd (.Econst_int CompCert4Lean.Lib.Integers.Int.one ty)))
                 (makeseq sl2)],
                dummy_expr)
@@ -454,17 +454,17 @@ mutual
             let sd := .SDbase ty ty t
             let (sl2, _) ← transl_expr ce (.For_set sd) r2
             let (sl3, _) ← transl_expr ce (.For_set sd) r3
-            pure (sl1 ++ [makeIf a1 (makeseq sl2) (makeseq sl3)], .Etempvar t ty)
+            pure (sl1 ++ [makeif a1 (makeseq sl2) (makeseq sl3)], .Etempvar t ty)
         | .For_effects => do
             let (sl2, _) ← transl_expr ce .For_effects r2
             let (sl3, _) ← transl_expr ce .For_effects r3
-            pure (sl1 ++ [makeIf a1 (makeseq sl2) (makeseq sl3)], dummy_expr)
+            pure (sl1 ++ [makeif a1 (makeseq sl2) (makeseq sl3)], dummy_expr)
         | .For_set sd => do
             let t ← temp_for_sd ty sd
             let sd' := .SDcons ty ty t sd
             let (sl2, _) ← transl_expr ce (.For_set sd') r2
             let (sl3, _) ← transl_expr ce (.For_set sd') r3
-            pure (sl1 ++ [makeIf a1 (makeseq sl2) (makeseq sl3)], dummy_expr)
+            pure (sl1 ++ [makeif a1 (makeseq sl2) (makeseq sl3)], dummy_expr)
     | .Eassign l1 r2 _ => do
         let (sl1, a1) ← transl_expr ce .For_val l1
         let (sl2, a2) ← transl_expr ce .For_val r2
@@ -562,7 +562,7 @@ def transl_expr_stmt (ce : composite_env)
 def transl_if (ce : composite_env) (r : CompCert4Lean.Cfrontend.Csyntax.expr)
     (s1 s2 : statement) : mon statement := do
   let (sl, a) ← transl_expr ce .For_val r
-  pure (makeseq (sl ++ [makeIf a s1 s2]))
+  pure (makeseq (sl ++ [makeif a s1 s2]))
 
 /-! ## Translation of statements -/
 

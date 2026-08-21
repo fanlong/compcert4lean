@@ -96,22 +96,9 @@ private def intCmpu (c : comparison) (x y : CCInt) : Bool :=
 
 /-! ## Explicit relocation service -/
 
-inductive StorageClass : Type where
-  | storageDefault
-  | storageExtern
-  | storageStatic
-deriving DecidableEq
-
-structure SymbolLinkageFacts : Type where
-  storage : StorageClass
-  definedHere : Bool
-  size : Option _root_.Int64
-
-structure RelocationContext : Type where
-  pic : Bool
-  pie : Bool
-  common : Bool
-  facts : ident -> Option SymbolLinkageFacts
+abbrev StorageClass := CompCert4Lean.Config.StorageClass
+abbrev SymbolLinkageFacts := CompCert4Lean.Config.SymbolLinkageFacts
+abbrev RelocationContext := CompCert4Lean.Config.RelocationContext
 
 private def symbolIsStatic : Option SymbolLinkageFacts -> Bool
   | some facts => facts.storage == .storageStatic

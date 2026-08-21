@@ -1326,9 +1326,7 @@ structure eqs : Type where
   eqs_same : ∀ q, EqSet2.In q eqs2 ↔ EqSet.In q eqs1
 
 abbrev mkeqs := eqs.mk
-abbrev eqs1 := eqs.eqs1
-abbrev eqs2 := eqs.eqs2
-abbrev eqs_same := eqs.eqs_same
+export eqs (eqs1 eqs2 eqs_same)
 
 instance : Coe eqs EqSet.t := ⟨eqs.eqs1⟩
 

@@ -36,6 +36,7 @@ private abbrev comparison := CompCert4Lean.Lib.Integers.comparison
 private abbrev typ := CompCert4Lean.Common.AST.typ
 private abbrev ident := CompCert4Lean.Common.AST.ident
 private abbrev RelocationContext := CompCert4Lean.X86.SelectOp.RelocationContext
+private abbrev CompilerConfig := CompCert4Lean.Config.CompilerConfig
 private abbrev Z := CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z
 
 private abbrev zOfNat := ZArith.BinInt.Z.of_nat
@@ -51,30 +52,18 @@ private def intIsPower2 (x : int) : Option int :=
   | [i] => some (CompCert4Lean.Lib.Integers.Int.repr i)
   | _ => none
 
-private def defaultConfig : CompCert4Lean.Config.CompilerConfig :=
-  { options :=
-      { optimForSize := false
-        propagateFloatConstants := false
-        generateFloatConstants := false
-        vaStrict := false
-        optimTailcalls := false
-        optimConstprop := false
-        optimCSE := false
-        optimRedundancy := false
-        debug := false }
-    x86_64ABI := .systemV }
-
 def Olea_ptr (a : addressing) : operation :=
   if CompCert4Lean.X86_64.Archi.ptr64 then Oleal a else Olea a
 
-def const_for_result (ctx : RelocationContext) (a : aval) : Option operation :=
+def const_for_result (cfg : CompilerConfig) (ctx : RelocationContext)
+    (a : aval) : Option operation :=
   match a with
   | I n | IU n => some (Ointconst n)
   | L n => if CompCert4Lean.X86_64.Archi.ptr64 then some (Olongconst n) else none
   | F n => if CompCert4Lean.Driver.Compopts.generate_float_constants
-      defaultConfig then some (Ofloatconst n) else none
+      cfg then some (Ofloatconst n) else none
   | FS n => if CompCert4Lean.Driver.Compopts.generate_float_constants
-      defaultConfig then some (Osingleconst n) else none
+      cfg then some (Osingleconst n) else none
   | Ptr (Gl id ofs) =>
       if CompCert4Lean.X86.SelectOp.symbol_is_relocatable ctx id then
         if CompCert4Lean.Lib.Integers.Ptrofs.eq ofs
@@ -189,9 +178,9 @@ def make_cmp (c : condition) (args : List reg) (vl : List aval) : operation × L
       make_cmp_imm_ne (.Ccompuimm .Cne n) [r1] [v1] n r1 v1
   | .make_cmp_default c args vl => make_cmp_base c args vl
 
-def make_select (c : condition) (ty : typ) (r1 r2 : reg)
+def make_select (cfg : CompilerConfig) (c : condition) (ty : typ) (r1 r2 : reg)
     (args : List reg) (vl : List aval) : operation × List reg :=
-  match resolve_branch (CompCert4Lean.X86.ValueAOp.eval_static_condition defaultConfig c vl) with
+  match resolve_branch (CompCert4Lean.X86.ValueAOp.eval_static_condition cfg c vl) with
   | some b => (Omove, [if b then r1 else r2])
   | none =>
       let (c', args') := cond_strength_reduction c args vl
@@ -674,7 +663,8 @@ def op_strength_reduction_match (op : operation) (args : List reg) (vl : List av
   | Omulfs, [r1, r2], [FS n1, v2] => .op_strength_reduction_case44 r1 r2 n1 v2
   | op, args, vl => .op_strength_reduction_default op args vl
 
-def op_strength_reduction (op : operation) (args : List reg) (vl : List aval) :
+def op_strength_reduction (cfg : CompilerConfig) (op : operation)
+    (args : List reg) (vl : List aval) :
     operation × List reg :=
   match op_strength_reduction_match op args vl with
   | .op_strength_reduction_case1 r1 v1 => make_cast8signed r1 v1
@@ -721,7 +711,7 @@ def op_strength_reduction (op : operation) (args : List reg) (vl : List aval) :
       (Oleal addr', args')
   | .op_strength_reduction_case39 c args vl => make_cmp c args vl
   | .op_strength_reduction_case40 c ty r1 r2 args _ _ vl =>
-      make_select c ty r1 r2 args vl
+      make_select cfg c ty r1 r2 args vl
   | .op_strength_reduction_case41 r1 r2 _ n2 => make_mulfimm n2 r1 r1 r2
   | .op_strength_reduction_case42 r1 r2 n1 _ => make_mulfimm n1 r2 r1 r2
   | .op_strength_reduction_case43 r1 r2 _ n2 => make_mulfsimm n2 r1 r1 r2

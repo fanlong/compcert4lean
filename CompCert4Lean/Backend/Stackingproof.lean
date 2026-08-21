@@ -299,7 +299,7 @@ structure agree_locs (cfg : CompilerConfig) (f : Linear.function)
       S Incoming ofs ty ∈ regs_of_rpairs (loc_parameters cfg f.fn_sig) →
       ls (S Incoming ofs ty) = ls0 (S Outgoing ofs ty)
 
-export agree_locs (agree_incoming)
+export agree_locs (agree_unused_reg agree_incoming)
 
 def agree_unused (cfg : CompilerConfig) (b : bounds cfg) (j : meminj)
     (ls0 : locset) (rs : regset) : Prop :=

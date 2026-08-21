@@ -51,6 +51,7 @@ private abbrev ptrofs := CompCert4Lean.Lib.Integers.ptrofs
 private abbrev float := CompCert4Lean.Lib.Floats.float
 private abbrev float32 := CompCert4Lean.Lib.Floats.float32
 private abbrev Z := CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z
+private abbrev CompilerConfig := CompCert4Lean.Config.CompilerConfig
 private abbrev RelocationContext := CompCert4Lean.X86.SelectOp.RelocationContext
 
 private def reg_values (e : regset) (args : List reg) : List val :=
@@ -62,11 +63,11 @@ def eval_Olea_ptrStatement : Prop :=
       eval_addressing ge (.Vptr sp Ptrofs.zero) a el
 
 def const_for_result_correctStatement : Prop :=
-  ∀ (bc : block_classification) (ge : genv),
+  ∀ (cfg : CompilerConfig) (bc : block_classification) (ge : genv),
     genv_match bc ge →
     ∀ (sp : block), bc sp = BCstack →
     ∀ (m : mem) (ctx : RelocationContext) (a : aval) (op : operation) (v : val),
-      const_for_result ctx a = some op →
+      const_for_result cfg ctx a = some op →
       vmatch bc v a →
       ∃ v',
         eval_operation ge (.Vptr sp Ptrofs.zero) op [] m = some v' ∧
@@ -170,12 +171,13 @@ def make_cmp_correctStatement : Prop :=
         Val.lessdef (Val.of_optbool (eval_condition c (reg_values e args) m)) v
 
 def make_select_correctStatement : Prop :=
-  ∀ (bc : block_classification) (ge : genv) (sp : block) (ae : AE.t)
+  ∀ (cfg : CompilerConfig) (bc : block_classification) (ge : genv)
+    (sp : block) (ae : AE.t)
     (e : regset) (m : mem),
     ematch bc e ae →
     ∀ (c : condition) (ty : typ) (r1 r2 : reg) (args : List reg) (vl : List aval),
       vl = args.map (fun r => AE.get r ae) →
-      let (op', args') := make_select c ty r1 r2 args vl
+      let (op', args') := make_select cfg c ty r1 r2 args vl
       ∃ v,
         eval_operation ge (.Vptr sp Ptrofs.zero) op' (reg_values e args') m = some v ∧
         Val.lessdef (Val.select (eval_condition c (reg_values e args) m)
@@ -441,7 +443,7 @@ def make_cast16unsigned_correctStatement : Prop :=
       Val.lessdef (Val.zero_ext (ZArith.BinInt.Z.of_nat 16) (Regmap.get r e)) v
 
 def op_strength_reduction_correctStatement : Prop :=
-  ∀ (bc : block_classification) (ge : genv),
+  ∀ (cfg : CompilerConfig) (bc : block_classification) (ge : genv),
     genv_match bc ge →
     ∀ (sp : block), bc sp = BCstack →
     ∀ (ae : AE.t) (e : regset) (m : mem),
@@ -449,7 +451,7 @@ def op_strength_reduction_correctStatement : Prop :=
       ∀ (op : operation) (args : List reg) (vl : List aval) (v : val),
         vl = args.map (fun r => AE.get r ae) →
         eval_operation ge (.Vptr sp Ptrofs.zero) op (reg_values e args) m = some v →
-        let (op', args') := op_strength_reduction op args vl
+        let (op', args') := op_strength_reduction cfg op args vl
         ∃ w,
           eval_operation ge (.Vptr sp Ptrofs.zero) op' (reg_values e args') m = some w ∧
           Val.lessdef v w

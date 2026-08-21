@@ -50,33 +50,26 @@ def val_opt_inject (j : meminj) (ov ov' : Option val) : Prop :=
   | some _, none => False
 
 structure builtin_sem (tret : xtype) : Type where
-  run : List val → Option val
-  wellTyped : ∀ vl, val_opt_has_rettype (run vl) tret
-  injectionCompatible : ∀ j vl vl',
-    Val.inject_list j vl vl' → val_opt_inject j (run vl) (run vl')
+  bs_sem : List val → Option val
+  bs_well_typed : ∀ vl, val_opt_has_rettype (bs_sem vl) tret
+  bs_inject : ∀ j vl vl',
+    Val.inject_list j vl vl' → val_opt_inject j (bs_sem vl) (bs_sem vl')
+
+export builtin_sem (bs_sem bs_well_typed bs_inject)
 
 instance (tret : xtype) : CoeFun (builtin_sem tret) (fun _ => List val → Option val) :=
-  ⟨builtin_sem.run⟩
-
-def bs_well_typed {tret : xtype} (b : builtin_sem tret) :
-    ∀ vl, val_opt_has_rettype (b vl) tret :=
-  b.wellTyped
-
-def bs_inject {tret : xtype} (b : builtin_sem tret) :
-    ∀ j vl vl', Val.inject_list j vl vl' →
-      val_opt_inject j (b vl) (b vl') :=
-  b.injectionCompatible
+  ⟨builtin_sem.bs_sem⟩
 
 def mkbuiltin_v1t
     (tret : xtype) (f : val → val)
     (WT : ∀ v1, Val.has_rettype (f v1) tret)
     (INJ : ∀ j v1 v1', Val.inject j v1 v1' → Val.inject j (f v1) (f v1')) :
     builtin_sem tret where
-  run := fun vl =>
+  bs_sem := fun vl =>
     match vl with
     | [v1] => some (f v1)
     | _ => none
-  wellTyped := by
+  bs_well_typed := by
     intro vl
     cases vl with
     | nil => trivial
@@ -84,7 +77,7 @@ def mkbuiltin_v1t
         cases tail with
         | nil => exact WT v1
         | cons _ _ => trivial
-  injectionCompatible := by
+  bs_inject := by
     intro j vl vl' h
     cases h with
     | inject_list_nil => trivial
@@ -99,11 +92,11 @@ def mkbuiltin_v2t
     (INJ : ∀ j v1 v1' v2 v2',
       Val.inject j v1 v1' → Val.inject j v2 v2' →
       Val.inject j (f v1 v2) (f v1' v2')) : builtin_sem tret where
-  run := fun vl =>
+  bs_sem := fun vl =>
     match vl with
     | [v1, v2] => some (f v1 v2)
     | _ => none
-  wellTyped := by
+  bs_well_typed := by
     intro vl
     cases vl with
     | nil => trivial
@@ -114,7 +107,7 @@ def mkbuiltin_v2t
             cases tail with
             | nil => exact WT v1 v2
             | cons _ _ => trivial
-  injectionCompatible := by
+  bs_inject := by
     intro j vl vl' h
     cases h with
     | inject_list_nil => trivial
@@ -131,11 +124,11 @@ def mkbuiltin_v1p
     (WT : ∀ v1, val_opt_has_rettype (f v1) tret)
     (INJ : ∀ j v1 v1', Val.inject j v1 v1' →
       val_opt_inject j (f v1) (f v1')) : builtin_sem tret where
-  run := fun vl =>
+  bs_sem := fun vl =>
     match vl with
     | [v1] => f v1
     | _ => none
-  wellTyped := by
+  bs_well_typed := by
     intro vl
     cases vl with
     | nil => trivial
@@ -143,7 +136,7 @@ def mkbuiltin_v1p
         cases tail with
         | nil => exact WT v1
         | cons _ _ => trivial
-  injectionCompatible := by
+  bs_inject := by
     intro j vl vl' h
     cases h with
     | inject_list_nil => trivial
@@ -158,11 +151,11 @@ def mkbuiltin_v2p
     (INJ : ∀ j v1 v1' v2 v2',
       Val.inject j v1 v1' → Val.inject j v2 v2' →
       val_opt_inject j (f v1 v2) (f v1' v2')) : builtin_sem tret where
-  run := fun vl =>
+  bs_sem := fun vl =>
     match vl with
     | [v1, v2] => f v1 v2
     | _ => none
-  wellTyped := by
+  bs_well_typed := by
     intro vl
     cases vl with
     | nil => trivial
@@ -173,7 +166,7 @@ def mkbuiltin_v2p
             cases tail with
             | nil => exact WT v1 v2
             | cons _ _ => trivial
-  injectionCompatible := by
+  bs_inject := by
     intro j vl vl' h
     cases h with
     | inject_list_nil => trivial
@@ -758,12 +751,12 @@ private def normalizeInject (j : meminj) (t : typ) (v v' : val)
     | apply Val.inject.inject_ptr <;> assumption
 
 private def selectBuiltin (t : typ) : builtin_sem (inj_type t) where
-  run := fun vargs =>
+  bs_sem := fun vargs =>
     match vargs with
     | [Vint n, v1, v2] =>
         some (Val.normalize (if CompCert4Lean.Lib.Integers.Int.eq n intZero then v2 else v1) t)
     | _ => none
-  wellTyped := by
+  bs_well_typed := by
     intro vargs
     cases vargs with
     | nil => trivial
@@ -783,7 +776,7 @@ private def selectBuiltin (t : typ) : builtin_sem (inj_type t) where
               split
               · exact normalizeWellTyped t v2
               · exact normalizeWellTyped t v1
-  injectionCompatible := by
+  bs_inject := by
     intro j vargs vargs' h
     cases h with
     | inject_list_nil => trivial
@@ -805,9 +798,9 @@ private def selectBuiltin (t : typ) : builtin_sem (inj_type t) where
               · exact normalizeInject j t _ _ h1
 
 private def unreachableBuiltin : builtin_sem Xvoid where
-  run := fun _ => none
-  wellTyped := by intro _; trivial
-  injectionCompatible := by intro _ _ _ _; trivial
+  bs_sem := fun _ => none
+  bs_well_typed := by intro _; trivial
+  bs_inject := by intro _ _ _ _; trivial
 
 def standard_builtin_sem (b : standard_builtin) :
     builtin_sem (standard_builtin_sig b).sig_res :=

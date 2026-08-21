@@ -1097,6 +1097,20 @@ def co_consistent_complete (env : composite_env) (co : composite)
     (h : composite_consistent env co) : complete_members env co.co_members = true :=
   h.1
 
+def co_consistent_alignof (env : composite_env) (co : composite)
+    (h : composite_consistent env co) :
+    co.co_alignof = align_attr co.co_attr (alignof_composite env co.co_members) :=
+  h.2.1
+
+def co_consistent_sizeof (env : composite_env) (co : composite)
+    (h : composite_consistent env co) :
+    co.co_sizeof = align (sizeof_composite env co.co_su co.co_members) co.co_alignof :=
+  h.2.2.1
+
+def co_consistent_rank (env : composite_env) (co : composite)
+    (h : composite_consistent env co) :
+    co.co_rank = rank_members env co.co_members := h.2.2.2
+
 def composite_env_consistent (env : composite_env) : Prop :=
   forall id co, PTree.get id env = some co -> composite_consistent env co
 

@@ -137,14 +137,14 @@ inductive match_var (f : meminj) (sp : block) :
 
 structure match_env (f : meminj) (cenv : compilenv) (e : CS.env)
     (sp lo hi : block) : Prop where
-  vars : ∀ id, match_var f sp (PTree.get id e) (PTree.get id cenv)
+  me_vars : ∀ id, match_var f sp (PTree.get id e) (PTree.get id cenv)
   me_low_high : Ple lo hi
   me_bounded : ∀ id b sz, PTree.get id e = some (b, sz) → Ple lo b ∧ Plt b hi
   me_inv : ∀ b delta, f b = some (sp, delta) →
     ∃ id sz, PTree.get id e = some (b, sz)
-  incr : ∀ b tb delta, f b = some (tb, delta) → Plt b lo → Plt tb sp
+  me_incr : ∀ b tb delta, f b = some (tb, delta) → Plt b lo → Plt tb sp
 
-export match_env (me_low_high me_bounded me_inv)
+export match_env (me_vars me_low_high me_bounded me_inv me_incr)
 
 def match_bounds (e : CS.env) (m : mem) : Prop :=
   ∀ id b sz ofs p,

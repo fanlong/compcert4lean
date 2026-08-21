@@ -42,7 +42,13 @@ private abbrev add := CompCert4Lean.Lib.Integers.Int.add
 private abbrev sub := CompCert4Lean.Lib.Integers.Int.sub
 private abbrev mul := CompCert4Lean.Lib.Integers.Int.mul
 private abbrev divs := CompCert4Lean.Lib.Integers.Int.divs
+private abbrev mods := CompCert4Lean.Lib.Integers.Int.mods
 private abbrev divu := CompCert4Lean.Lib.Integers.Int.divu
+private abbrev modu := CompCert4Lean.Lib.Integers.Int.modu
+private abbrev negative := CompCert4Lean.Lib.Integers.Int.negative
+private abbrev add_carry := CompCert4Lean.Lib.Integers.Int.add_carry
+private abbrev sub_overflow := CompCert4Lean.Lib.Integers.Int.sub_overflow
+private abbrev min_signed := CompCert4Lean.Lib.Integers.Int.min_signed
 private abbrev and := CompCert4Lean.Lib.Integers.Int.and
 private abbrev or := CompCert4Lean.Lib.Integers.Int.or
 private abbrev xor := CompCert4Lean.Lib.Integers.Int.xor
@@ -72,7 +78,13 @@ private abbrev add := CompCert4Lean.Lib.Integers.Int64.add
 private abbrev sub := CompCert4Lean.Lib.Integers.Int64.sub
 private abbrev mul := CompCert4Lean.Lib.Integers.Int64.mul
 private abbrev divs := CompCert4Lean.Lib.Integers.Int64.divs
+private abbrev mods := CompCert4Lean.Lib.Integers.Int64.mods
 private abbrev divu := CompCert4Lean.Lib.Integers.Int64.divu
+private abbrev modu := CompCert4Lean.Lib.Integers.Int64.modu
+private abbrev negative := CompCert4Lean.Lib.Integers.Int64.negative
+private abbrev add_carry := CompCert4Lean.Lib.Integers.Int64.add_carry
+private abbrev sub_overflow := CompCert4Lean.Lib.Integers.Int64.sub_overflow
+private abbrev min_signed := CompCert4Lean.Lib.Integers.Int64.min_signed
 private abbrev and := CompCert4Lean.Lib.Integers.Int64.and
 private abbrev or := CompCert4Lean.Lib.Integers.Int64.or
 private abbrev xor := CompCert4Lean.Lib.Integers.Int64.xor
@@ -176,13 +188,6 @@ private def intMulhs (x y : CCInt) : CCInt := Int.mul x y
 private def intMulhu (x y : CCInt) : CCInt := Int.mul x y
 private def int64Mulhs (x y : CCInt64) : CCInt64 := Int64.mul x y
 private def int64Mulhu (x y : CCInt64) : CCInt64 := Int64.mul x y
-private def intNegative (x : CCInt) : CCInt := if Int.lt x Int.zero then Int.one else Int.zero
-private def int64Negative (x : CCInt64) : CCInt :=
-  Int.repr (Int64.unsigned (if Int64.lt x Int64.zero then Int64.one else Int64.zero))
-private def intAddCarry (x y c : CCInt) : CCInt := Int.add (Int.add x y) c
-private def int64AddCarry (x y c : CCInt64) : CCInt64 := Int64.add (Int64.add x y) c
-private def intSubOverflow (x y c : CCInt) : CCInt := Int.sub (Int.sub x y) c
-private def int64SubOverflow (x y c : CCInt64) : CCInt64 := Int64.sub (Int64.sub x y) c
 private def intShrCarry (x y : CCInt) : CCInt := Int.shr x y
 private def int64ShrCarry (x : CCInt64) (y : CCInt) : CCInt64 := Int64.shr' x y
 private def intRolm (x amount mask : CCInt) : CCInt := Int.or (Int.rol x amount) mask
@@ -378,11 +383,19 @@ def mulhu (v1 v2 : val) : val := match v1, v2 with | Vint n1, Vint n2 => Vint (i
 
 def divs (v1 v2 : val) : Option val :=
   match v1, v2 with
-  | Vint n1, Vint n2 => if Int.eq n2 Int.zero then none else some (Vint (Int.divs n1 n2))
+  | Vint n1, Vint n2 =>
+      if Int.eq n2 Int.zero ||
+          (Int.eq n1 (Int.repr Int.min_signed) && Int.eq n2 Int.mone)
+      then none
+      else some (Vint (Int.divs n1 n2))
   | _, _ => none
 def mods (v1 v2 : val) : Option val :=
   match v1, v2 with
-  | Vint n1, Vint n2 => if Int.eq n2 Int.zero then none else some (Vint (Int.sub n1 (Int.mul (Int.divs n1 n2) n2)))
+  | Vint n1, Vint n2 =>
+      if Int.eq n2 Int.zero ||
+          (Int.eq n1 (Int.repr Int.min_signed) && Int.eq n2 Int.mone)
+      then none
+      else some (Vint (Int.mods n1 n2))
   | _, _ => none
 def divu (v1 v2 : val) : Option val :=
   match v1, v2 with
@@ -390,11 +403,15 @@ def divu (v1 v2 : val) : Option val :=
   | _, _ => none
 def modu (v1 v2 : val) : Option val :=
   match v1, v2 with
-  | Vint n1, Vint n2 => if Int.eq n2 Int.zero then none else some (Vint (Int.sub n1 (Int.mul (Int.divu n1 n2) n2)))
+  | Vint n1, Vint n2 => if Int.eq n2 Int.zero then none else some (Vint (Int.modu n1 n2))
   | _, _ => none
 
-def sub_overflow (v1 v2 : val) : val := match v1, v2 with | Vint n1, Vint n2 => Vint (intSubOverflow n1 n2 Int.zero) | _, _ => Vundef
-def negative (v : val) : val := match v with | Vint n => Vint (intNegative n) | _ => Vundef
+def add_carry (v1 v2 cin : val) : val :=
+  match v1, v2, cin with
+  | Vint n1, Vint n2, Vint c => Vint (Int.add_carry n1 n2 c)
+  | _, _, _ => Vundef
+def sub_overflow (v1 v2 : val) : val := match v1, v2 with | Vint n1, Vint n2 => Vint (Int.sub_overflow n1 n2 Int.zero) | _, _ => Vundef
+def negative (v : val) : val := match v with | Vint n => Vint (Int.negative n) | _ => Vundef
 def and (v1 v2 : val) : val := match v1, v2 with | Vint n1, Vint n2 => Vint (Int.and n1 n2) | _, _ => Vundef
 def or (v1 v2 : val) : val := match v1, v2 with | Vint n1, Vint n2 => Vint (Int.or n1 n2) | _, _ => Vundef
 def xor (v1 v2 : val) : val := match v1, v2 with | Vint n1, Vint n2 => Vint (Int.xor n1 n2) | _, _ => Vundef
@@ -446,12 +463,13 @@ def mull (v1 v2 : val) : val := match v1, v2 with | Vlong n1, Vlong n2 => Vlong 
 def mull' (v1 v2 : val) : val := match v1, v2 with | Vint n1, Vint n2 => Vlong (Int64.mul' n1 n2) | _, _ => Vundef
 def mullhs (v1 v2 : val) : val := match v1, v2 with | Vlong n1, Vlong n2 => Vlong (int64Mulhs n1 n2) | _, _ => Vundef
 def mullhu (v1 v2 : val) : val := match v1, v2 with | Vlong n1, Vlong n2 => Vlong (int64Mulhu n1 n2) | _, _ => Vundef
-def divls (v1 v2 : val) : Option val := match v1, v2 with | Vlong n1, Vlong n2 => if Int64.eq n2 Int64.zero then none else some (Vlong (Int64.divs n1 n2)) | _, _ => none
-def modls (v1 v2 : val) : Option val := match v1, v2 with | Vlong n1, Vlong n2 => if Int64.eq n2 Int64.zero then none else some (Vlong (Int64.sub n1 (Int64.mul (Int64.divs n1 n2) n2))) | _, _ => none
+def divls (v1 v2 : val) : Option val := match v1, v2 with | Vlong n1, Vlong n2 => if Int64.eq n2 Int64.zero || (Int64.eq n1 (Int64.repr Int64.min_signed) && Int64.eq n2 Int64.mone) then none else some (Vlong (Int64.divs n1 n2)) | _, _ => none
+def modls (v1 v2 : val) : Option val := match v1, v2 with | Vlong n1, Vlong n2 => if Int64.eq n2 Int64.zero || (Int64.eq n1 (Int64.repr Int64.min_signed) && Int64.eq n2 Int64.mone) then none else some (Vlong (Int64.mods n1 n2)) | _, _ => none
 def divlu (v1 v2 : val) : Option val := match v1, v2 with | Vlong n1, Vlong n2 => if Int64.eq n2 Int64.zero then none else some (Vlong (Int64.divu n1 n2)) | _, _ => none
-def modlu (v1 v2 : val) : Option val := match v1, v2 with | Vlong n1, Vlong n2 => if Int64.eq n2 Int64.zero then none else some (Vlong (Int64.sub n1 (Int64.mul (Int64.divu n1 n2) n2))) | _, _ => none
-def subl_overflow (v1 v2 : val) : val := match v1, v2 with | Vlong n1, Vlong n2 => Vint (Int.repr (Int64.unsigned (int64SubOverflow n1 n2 Int64.zero))) | _, _ => Vundef
-def negativel (v : val) : val := match v with | Vlong n => Vint (int64Negative n) | _ => Vundef
+def modlu (v1 v2 : val) : Option val := match v1, v2 with | Vlong n1, Vlong n2 => if Int64.eq n2 Int64.zero then none else some (Vlong (Int64.modu n1 n2)) | _, _ => none
+def addl_carry (v1 v2 cin : val) : val := match v1, v2, cin with | Vlong n1, Vlong n2, Vlong c => Vlong (Int64.add_carry n1 n2 c) | _, _, _ => Vundef
+def subl_overflow (v1 v2 : val) : val := match v1, v2 with | Vlong n1, Vlong n2 => Vint (Int.repr (Int64.unsigned (Int64.sub_overflow n1 n2 Int64.zero))) | _, _ => Vundef
+def negativel (v : val) : val := match v with | Vlong n => Vint (Int.repr (Int64.unsigned (Int64.negative n))) | _ => Vundef
 def andl (v1 v2 : val) : val := match v1, v2 with | Vlong n1, Vlong n2 => Vlong (Int64.and n1 n2) | _, _ => Vundef
 def orl (v1 v2 : val) : val := match v1, v2 with | Vlong n1, Vlong n2 => Vlong (Int64.or n1 n2) | _, _ => Vundef
 def xorl (v1 v2 : val) : val := match v1, v2 with | Vlong n1, Vlong n2 => Vlong (Int64.xor n1 n2) | _, _ => Vundef
@@ -1053,6 +1071,10 @@ def inject_incr (f1 f2 : meminj) : Prop := ∀ b b' delta, f1 b = some (b', delt
 def inject_id : meminj := fun b => some (b, z0)
 
 end Val
+
+abbrev meminj := Val.meminj
+abbrev inject_incr := Val.inject_incr
+abbrev inject_id := Val.inject_id
 
 def inject_incr_reflStatement : Prop :=
   ∀ f : Val.meminj, Val.inject_incr f f

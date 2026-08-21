@@ -206,7 +206,7 @@ private def recordCondsFuel : Nat → code × U.t → U.t
         cu.2
 
 /-- Iterate conditional-branch recording until the pass reports no change. -/
-private def record_conds (cu : code × U.t) : U.t :=
+def record_conds (cu : code × U.t) : U.t :=
   recordCondsFuel (PTree_Properties.cardinal cu.1 + 1) cu
 
 def record_gotos (f : function) : U.t :=

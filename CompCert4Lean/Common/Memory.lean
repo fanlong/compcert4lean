@@ -135,6 +135,8 @@ structure mem' : Type where
 
 abbrev mem := mem'
 
+export mem' (mem_contents mem_access nextblock access_max nextblock_noaccess contents_default)
+
 def valid_block (m : mem) (b : block) : Prop :=
   Plt b m.nextblock
 
@@ -433,6 +435,10 @@ structure mem_inj (f : meminj) (m1 m2 : mem) : Prop where
       (ZMap.get ofs (PMap.get b1 m1.mem_contents))
       (ZMap.get (zAdd ofs delta) (PMap.get b2 m2.mem_contents))
 
+abbrev mi_perm := @mem_inj.mi_perm
+abbrev mi_align := @mem_inj.mi_align
+abbrev mi_memval := @mem_inj.mi_memval
+
 def meminj_no_overlap (f : meminj) (m : mem) : Prop :=
   ∀ b1 b1' delta1 b2 b2' delta2 ofs1 ofs2,
     b1 ≠ b2 →
@@ -451,6 +457,8 @@ structure extends' (m1 m2 : mem) : Prop where
   mext_perm_inv : ∀ b ofs k p,
     perm m2 b ofs k p →
     perm m1 b ofs k p ∨ ¬ perm m1 b ofs Max Memtype.Nonempty
+
+export extends' (mext_next mext_inj mext_perm_inv)
 
 abbrev «extends» := extends'
 
@@ -472,7 +480,15 @@ structure inject' (f : meminj) (m1 m2 : mem) : Prop where
     perm m2 b2 (zAdd ofs delta) k p →
     perm m1 b1 ofs k p ∨ ¬ perm m1 b1 ofs Max Memtype.Nonempty
 
+export inject' (mi_perm_inv)
+
 abbrev inject := inject'
+
+abbrev mi_inj := @inject'.mi_inj
+abbrev mi_freeblocks := @inject'.mi_freeblocks
+abbrev mi_mappedblocks := @inject'.mi_mappedblocks
+abbrev mi_no_overlap := @inject'.mi_no_overlap
+abbrev mi_representable := @inject'.mi_representable
 
 def flat_inj (thr : block) : meminj :=
   fun b =>
@@ -492,6 +508,10 @@ structure unchanged_on (P : block → Z → Prop) (m_before m_after : mem) : Pro
     P b ofs → perm m_before b ofs Cur Readable →
       ZMap.get ofs (PMap.get b m_after.mem_contents) =
         ZMap.get ofs (PMap.get b m_before.mem_contents)
+
+abbrev unchanged_on_nextblock := @unchanged_on.unchanged_on_nextblock
+abbrev unchanged_on_perm := @unchanged_on.unchanged_on_perm
+abbrev unchanged_on_contents := @unchanged_on.unchanged_on_contents
 
 /-! ## Exact statement descriptors for later proof migration -/
 

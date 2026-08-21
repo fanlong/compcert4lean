@@ -53,8 +53,6 @@ private instance rtlProgramLinker :
     CompCert4Lean.Backend.RTL.fundef Unit
 
 private abbrev CompilerConfig := CompCert4Lean.Config.CompilerConfig
-private abbrev analysisConfig : CompilerConfig :=
-  CompCert4Lean.Config.pinnedLinuxX86_64 false 0 false false false false false
 private abbrev int := CompCert4Lean.Lib.Integers.int
 private abbrev int64 := CompCert4Lean.Lib.Integers.int64
 private abbrev float := CompCert4Lean.Lib.Floats.float
@@ -87,43 +85,14 @@ private def boolOfSumbool {P Q : Prop} :
 
 private def boolEq {A : Type} [DecidableEq A] (x y : A) : Bool := decide (x = y)
 
-private def store_zeros_nat : Nat → mem → block → Z → Option mem
-  | 0, m, _, _ => some m
-  | n + 1, m, b, p =>
-      match Mem.store Mint8unsigned m b p Vzero with
-      | none => none
-      | some m' => store_zeros_nat n m' b (zAdd p (zOfNat 1))
-
-private def store_zeros (m : mem) (b : block) (p n : Z) : Option mem :=
-  store_zeros_nat (zToNat n) m b p
-
 /-! ## Dataflow lattice adapter (the source functor is not a public surface). -/
-
-private def va_lub (cfg : CompilerConfig) : VA.t → VA.t → VA.t
-  | .Bot, y => y
-  | x, .Bot => x
-  | .State ae1 am1, .State ae2 am2 =>
-      .State (AE.lub cfg ae1 ae2) (mlub cfg am1 am2)
-
-private def va_eq (x y : VA.t) : Prop :=
-  match x, y with
-  | .Bot, .Bot => True
-  | .State ae1 am1, .State ae2 am2 =>
-      AE.eq ae1 ae2 ∧ am1 = am2
-  | _, _ => False
-
-private def va_beq (x y : VA.t) : Bool :=
-  match x, y with
-  | .Bot, .Bot => true
-  | .State _ _, .State _ _ => true
-  | _, _ => false
 
 private def va_lat (cfg : CompilerConfig) : SemiLattice :=
   { t := VA.t
-    bot := VA.Bot
-    lub := va_lub cfg
-    beq := va_beq
-    eq := va_eq
+    bot := VA.bot
+    lub := VA.lub cfg
+    beq := VA.beq
+    eq := VA.eq
     ge := VA.ge }
 
 /-! ## Executable analysis definitions -/
@@ -151,20 +120,22 @@ def transfer_call (ae : aenv) (am : amem) (args : List reg) (res : reg) : VA.t :
   let (av, am') := analyze_call am (aregs ae args)
   VA.State (AE.set res av ae) am'
 
-def abuiltin_arg (ae : aenv) (am : amem) (rm : romem) : builtin_arg reg → aval
+def abuiltin_arg (cfg : CompilerConfig) (ae : aenv) (am : amem)
+    (rm : romem) : builtin_arg reg → aval
   | .BA r => areg ae r
   | .BA_int n => I n
   | .BA_long n => L n
   | .BA_float n => F n
   | .BA_single n => FS n
-  | .BA_loadstack chunk ofs => loadv analysisConfig chunk rm am (Ptr (Stk ofs))
+  | .BA_loadstack chunk ofs => loadv cfg chunk rm am (Ptr (Stk ofs))
   | .BA_addrstack ofs => Ptr (Stk ofs)
-  | .BA_loadglobal chunk id ofs => loadv analysisConfig chunk rm am (Ptr (Gl id ofs))
+  | .BA_loadglobal chunk id ofs => loadv cfg chunk rm am (Ptr (Gl id ofs))
   | .BA_addrglobal id ofs => Ptr (Gl id ofs)
-  | .BA_splitlong hi lo => longofwords (abuiltin_arg ae am rm hi) (abuiltin_arg ae am rm lo)
+  | .BA_splitlong hi lo =>
+      longofwords (abuiltin_arg cfg ae am rm hi) (abuiltin_arg cfg ae am rm lo)
   | .BA_addptr ba1 ba2 =>
-      let v1 := abuiltin_arg ae am rm ba1
-      let v2 := abuiltin_arg ae am rm ba2
+      let v1 := abuiltin_arg cfg ae am rm ba1
+      let v2 := abuiltin_arg cfg ae am rm ba2
       if CompCert4Lean.X86_64.Archi.ptr64 then addl v1 v2 else add v1 v2
 
 def set_builtin_res (br : builtin_res reg) (av : aval) (ae : aenv) : aenv :=
@@ -172,79 +143,83 @@ def set_builtin_res (br : builtin_res reg) (av : aval) (ae : aenv) : aenv :=
   | .BR r => AE.set r av ae
   | _ => ae
 
-def transfer_builtin_default (ae : aenv) (am : amem) (rm : romem)
+def transfer_builtin_default (cfg : CompilerConfig) (ae : aenv) (am : amem) (rm : romem)
     (args : List (builtin_arg reg)) (res : builtin_res reg) : VA.t :=
-  let (av, am') := analyze_call am (args.map (abuiltin_arg ae am rm))
+  let (av, am') := analyze_call am (args.map (abuiltin_arg cfg ae am rm))
   VA.State (set_builtin_res res av ae) am'
 
-def eval_static_builtin_function (ae : aenv) (am : amem) (rm : romem)
+def eval_static_builtin_function (cfg : CompilerConfig) (ae : aenv) (am : amem) (rm : romem)
     (bf : builtin_function) (args : List (builtin_arg reg)) : Option aval :=
-  match builtin_function_sem bf (List.map val_of_aval (args.map (abuiltin_arg ae am rm))) with
+  match builtin_function_sem bf
+      (List.map val_of_aval (args.map (abuiltin_arg cfg ae am rm))) with
   | some v => aval_of_val v
   | none => none
 
-def transfer_builtin (ae : aenv) (am : amem) (rm : romem) (ef : external_function)
+def transfer_builtin (cfg : CompilerConfig) (ae : aenv) (am : amem)
+    (rm : romem) (ef : external_function)
     (args : List (builtin_arg reg)) (res : builtin_res reg) : VA.t :=
   match ef, args with
   | .EF_vload chunk, addr :: [] =>
-      let aaddr := abuiltin_arg ae am rm addr
-      let a := if CompCert4Lean.Driver.Compopts.va_strict analysisConfig
-        then vlub analysisConfig (loadv analysisConfig chunk rm am aaddr)
+      let aaddr := abuiltin_arg cfg ae am rm addr
+      let a := if CompCert4Lean.Driver.Compopts.va_strict cfg
+        then vlub cfg (loadv cfg chunk rm am aaddr)
           (vnormalize chunk (Ifptr Glob))
         else vnormalize chunk Vtop
       VA.State (set_builtin_res res a ae) am
   | .EF_vstore chunk, addr :: v :: [] =>
-      let aaddr := abuiltin_arg ae am rm addr
-      let av := abuiltin_arg ae am rm v
-      let am' := storev analysisConfig chunk am aaddr av
-      VA.State (set_builtin_res res ntop ae) (mlub analysisConfig am am')
+      let aaddr := abuiltin_arg cfg ae am rm addr
+      let av := abuiltin_arg cfg ae am rm v
+      let am' := storev cfg chunk am aaddr av
+      VA.State (set_builtin_res res ntop ae) (mlub cfg am am')
   | .EF_memcpy sz al, dst :: src :: [] =>
-      let adst := abuiltin_arg ae am rm dst
-      let asrc := abuiltin_arg ae am rm src
-      let p := loadbytes analysisConfig am rm (aptr_of_aval analysisConfig asrc)
-      let am' := storebytes am (aptr_of_aval analysisConfig adst) sz p
+      let adst := abuiltin_arg cfg ae am rm dst
+      let asrc := abuiltin_arg cfg ae am rm src
+      let p := loadbytes cfg am rm (aptr_of_aval cfg asrc)
+      let am' := storebytes am (aptr_of_aval cfg adst) sz p
       VA.State (set_builtin_res res ntop ae) am'
   | .EF_annot _ _ _, _ =>
       VA.State (set_builtin_res res ntop ae) am
   | .EF_debug _ _ _, _ =>
       VA.State (set_builtin_res res ntop ae) am
   | .EF_annot_val _ _ _, v :: [] =>
-      VA.State (set_builtin_res res (abuiltin_arg ae am rm v) ae) am
+      VA.State (set_builtin_res res (abuiltin_arg cfg ae am rm v) ae) am
   | .EF_builtin name sg, _ =>
       match lookup_builtin_function name sg with
       | some bf =>
-          match eval_static_builtin_function ae am rm bf args with
+          match eval_static_builtin_function cfg ae am rm bf args with
           | some av => VA.State (set_builtin_res res av ae) am
-          | none => transfer_builtin_default ae am rm args res
-      | none => transfer_builtin_default ae am rm args res
-  | _, _ => transfer_builtin_default ae am rm args res
+          | none => transfer_builtin_default cfg ae am rm args res
+      | none => transfer_builtin_default cfg ae am rm args res
+  | _, _ => transfer_builtin_default cfg ae am rm args res
 
-def transfer (f : function) (rm : romem) (pc : node) (ae : aenv) (am : amem) : VA.t :=
+def transfer (cfg : CompilerConfig) (f : function) (rm : romem)
+    (pc : node) (ae : aenv) (am : amem) : VA.t :=
   match PTree.get pc f.fn_code with
   | none => VA.Bot
   | some (.Inop _) => VA.State ae am
   | some (.Iop op args res _) =>
-      VA.State (AE.set res (CompCert4Lean.X86.ValueAOp.eval_static_operation analysisConfig op
+      VA.State (AE.set res (CompCert4Lean.X86.ValueAOp.eval_static_operation cfg op
         (aregs ae args)) ae) am
   | some (.Iload chunk addr args dst _) =>
-      VA.State (AE.set dst (loadv analysisConfig chunk rm am
+      VA.State (AE.set dst (loadv cfg chunk rm am
         (CompCert4Lean.X86.ValueAOp.eval_static_addressing addr (aregs ae args))) ae) am
   | some (.Istore chunk addr args src _) =>
-      VA.State ae (storev analysisConfig chunk am
+      VA.State ae (storev cfg chunk am
         (CompCert4Lean.X86.ValueAOp.eval_static_addressing addr (aregs ae args)) (areg ae src))
   | some (.Icall _ _ args res _) => transfer_call ae am args res
   | some (.Itailcall _ _ _) => VA.Bot
-  | some (.Ibuiltin ef args res _) => transfer_builtin ae am rm ef args res
+  | some (.Ibuiltin ef args res _) => transfer_builtin cfg ae am rm ef args res
   | some (.Icond _ _ _ _) => VA.State ae am
   | some (.Ijumptable _ _) => VA.State ae am
   | some (.Ireturn _) => VA.Bot
 
-def transfer' (f : function) (lastuses : PTree.t (List reg)) (rm : romem)
+def transfer' (cfg : CompilerConfig) (f : function)
+    (lastuses : PTree.t (List reg)) (rm : romem)
     (pc : node) (before : VA.t) : VA.t :=
   match before with
   | .Bot => .Bot
   | .State ae am =>
-      match transfer f rm pc ae am with
+      match transfer cfg f rm pc ae am with
       | .Bot => .Bot
       | .State ae' am' =>
           let ae'' := match PTree.get pc lastuses with
@@ -258,29 +233,31 @@ def mfunction_entry : amem :=
     am_nonstack := Nonstack
     am_top := Nonstack }
 
-def analyze (rm : romem) (f : function) : PMap.t VA.t :=
+def analyze (cfg : CompilerConfig) (rm : romem) (f : function) : PMap.t VA.t :=
   let lu := Liveness.last_uses f
   let entry := VA.State (einit_regs f.fn_params f.fn_sig.sig_args) mfunction_entry
-  match Dataflow_Solver.fixpoint (va_lat analysisConfig) NodeSetForward f.fn_code
-      successors_instr (fun pc before => transfer' f lu rm pc before) f.fn_entrypoint entry with
+  match Dataflow_Solver.fixpoint (va_lat cfg) NodeSetForward f.fn_code
+      successors_instr (fun pc before => transfer' cfg f lu rm pc before)
+      f.fn_entrypoint entry with
   | none => PMap.init (VA.State AE.top mtop)
   | some res => res
 
-def store_init_data (ab : ablock) (p : Z) : init_data → ablock
+def store_init_data (cfg : CompilerConfig) (ab : ablock) (p : Z) : init_data → ablock
   | .Init_int8 n => ablock_store .Mint8unsigned ab p (I n)
   | .Init_int16 n => ablock_store .Mint16unsigned ab p (I n)
   | .Init_int32 n => ablock_store .Mint32 ab p (I n)
   | .Init_int64 n => ablock_store .Mint64 ab p (L n)
   | .Init_float32 n => ablock_store .Mfloat32 ab p
-      (if CompCert4Lean.Driver.Compopts.propagate_float_constants analysisConfig then FS n else ntop)
+      (if CompCert4Lean.Driver.Compopts.propagate_float_constants cfg then FS n else ntop)
   | .Init_float64 n => ablock_store .Mfloat64 ab p
-      (if CompCert4Lean.Driver.Compopts.propagate_float_constants analysisConfig then F n else ntop)
+      (if CompCert4Lean.Driver.Compopts.propagate_float_constants cfg then F n else ntop)
   | .Init_addrof symb ofs => ablock_store Mptr ab p (Ptr (Gl symb ofs))
   | .Init_space _ => ab
 
-def store_init_data_list (ab : ablock) (p : Z) : List init_data → ablock
+def store_init_data_list (cfg : CompilerConfig) (ab : ablock) (p : Z) :
+    List init_data → ablock
   | [] => ab
-  | id :: ids => store_init_data_list (store_init_data ab p id)
+  | id :: ids => store_init_data_list cfg (store_init_data cfg ab p id)
       (zAdd p (init_data_size id)) ids
 
 def definitive_initializer : List init_data → Bool
@@ -288,45 +265,49 @@ def definitive_initializer : List init_data → Bool
   | [.Init_space _] => false
   | _ => true
 
-def alloc_global (rm : romem) (idg : ident × globdef fundef Unit) : romem :=
+def alloc_global (cfg : CompilerConfig) (rm : romem)
+    (idg : ident × globdef fundef Unit) : romem :=
   match idg with
   | (id, .Gfun _) => PTree.remove id rm
   | (id, .Gvar v) =>
       if v.gvar_readonly && !v.gvar_volatile && definitive_initializer v.gvar_init then
-        PTree.set id (store_init_data_list (ablock_init Pbot) z0 v.gvar_init) rm
+        PTree.set id (store_init_data_list cfg (ablock_init Pbot) z0 v.gvar_init) rm
       else PTree.remove id rm
 
-def romem_for (p : program) : romem :=
-  p.prog_defs.foldl (fun rm idg => alloc_global rm idg) (PTree.empty ablock)
+def romem_for (cfg : CompilerConfig) (p : program) : romem :=
+  p.prog_defs.foldl (fun rm idg => alloc_global cfg rm idg) (PTree.empty ablock)
 
 def bc_nostack (bc : block_classification) : Prop := ∀ b, bc b ≠ BCstack
 
-def initial_mem_match (bc : block_classification) (m : mem) (g : genv) : Prop :=
+def initial_mem_match (cfg : CompilerConfig) (bc : block_classification)
+    (m : mem) (g : genv) : Prop :=
   ∀ id b v,
     Genv.find_symbol g id = some b →
     Genv.find_var_info g b = some v →
     v.gvar_volatile = false → v.gvar_readonly = true →
-    bmatch bc m b (store_init_data_list (ablock_init Pbot) z0 v.gvar_init)
+    bmatch bc m b (store_init_data_list cfg (ablock_init Pbot) z0 v.gvar_init)
 
-def romem_consistent (defmap : PTree.t (globdef fundef Unit)) (rm : romem) : Prop :=
+def romem_consistent (cfg : CompilerConfig)
+    (defmap : PTree.t (globdef fundef Unit)) (rm : romem) : Prop :=
   ∀ id ab, PTree.get id rm = some ab →
     ∃ v,
       PTree.get id defmap = some (.Gvar v) ∧
       v.gvar_readonly = true ∧ v.gvar_volatile = false ∧
       definitive_initializer v.gvar_init = true ∧
-      ab = store_init_data_list (ablock_init Pbot) z0 v.gvar_init
+      ab = store_init_data_list cfg (ablock_init Pbot) z0 v.gvar_init
 
 /-! ## Generated invariant carriers and constructors -/
 
-inductive sound_stack (prog : CompCert4Lean.Backend.RTL.program) :
+inductive sound_stack (cfg : CompilerConfig)
+    (prog : CompCert4Lean.Backend.RTL.program) :
     block_classification → List stackframe → mem → block → Prop where
   | sound_stack_nil (bc : block_classification) (m : mem) (bound : block) :
-      sound_stack prog bc [] m bound
+      sound_stack cfg prog bc [] m bound
   | sound_stack_public_call
       (bc : block_classification) (res : reg) (f : function) (sp : block)
       (pc : node) (e : regset) (stk : List stackframe) (m : mem) (bound : block)
       (bc' : block_classification) (bound' : block) (ae : aenv)
-      (STK : sound_stack prog bc' stk m sp)
+      (STK : sound_stack cfg prog bc' stk m sp)
       (INCR : Ple bound' bound)
       (BELOW : bc_below bc' bound')
       (SP : bc sp = BCother)
@@ -334,15 +315,16 @@ inductive sound_stack (prog : CompCert4Lean.Backend.RTL.program) :
       (SAME : ∀ b, Plt b bound' → b ≠ sp → bc b = bc' b)
       (ge : CompCert4Lean.Backend.RTL.genv)
       (GE : genv_match bc' ge)
-      (AN : VA.ge (PMap.get pc (analyze (romem_for prog) f))
+      (AN : VA.ge (PMap.get pc (analyze cfg (romem_for cfg prog) f))
         (VA.State (AE.set res Vtop ae) mafter_public_call))
       (EM : ematch bc' e ae) :
-      sound_stack prog bc (Stackframe res f (Vptr sp Ptrofs.zero) pc e :: stk) m bound
+      sound_stack cfg prog bc
+        (Stackframe res f (Vptr sp Ptrofs.zero) pc e :: stk) m bound
   | sound_stack_private_call
       (bc : block_classification) (res : reg) (f : function) (sp : block)
       (pc : node) (e : regset) (stk : List stackframe) (m : mem) (bound : block)
       (bc' : block_classification) (bound' : block) (ae : aenv) (am : amem)
-      (STK : sound_stack prog bc' stk m sp)
+      (STK : sound_stack cfg prog bc' stk m sp)
       (INCR : Ple bound' bound)
       (BELOW : bc_below bc' bound')
       (SP : bc sp = BCinvalid)
@@ -350,73 +332,77 @@ inductive sound_stack (prog : CompCert4Lean.Backend.RTL.program) :
       (SAME : ∀ b, Plt b bound' → b ≠ sp → bc b = bc' b)
       (ge : CompCert4Lean.Backend.RTL.genv)
       (GE : genv_match bc' ge)
-      (AN : VA.ge (PMap.get pc (analyze (romem_for prog) f))
+      (AN : VA.ge (PMap.get pc (analyze cfg (romem_for cfg prog) f))
         (VA.State (AE.set res (Ifptr Nonstack) ae) (mafter_private_call am)))
       (EM : ematch bc' e ae)
       (CONTENTS : bmatch bc' m sp am.am_stack) :
-      sound_stack prog bc (Stackframe res f (Vptr sp Ptrofs.zero) pc e :: stk) m bound
+      sound_stack cfg prog bc
+        (Stackframe res f (Vptr sp Ptrofs.zero) pc e :: stk) m bound
 
 export sound_stack (sound_stack_nil sound_stack_public_call sound_stack_private_call)
 
-inductive sound_state_base (prog : CompCert4Lean.Backend.RTL.program) : state → Prop where
+inductive sound_state_base (cfg : CompilerConfig)
+    (prog : CompCert4Lean.Backend.RTL.program) : state → Prop where
   | sound_regular_state
       (s : List stackframe) (f : function) (sp : block) (pc : node)
       (e : regset) (m : mem) (ae : aenv) (am : amem) (bc : block_classification)
       (ge : CompCert4Lean.Backend.RTL.genv)
-      (STK : sound_stack prog bc s m sp)
-      (AN : PMap.get pc (analyze (romem_for prog) f) = VA.State ae am)
+      (STK : sound_stack cfg prog bc s m sp)
+      (AN : PMap.get pc (analyze cfg (romem_for cfg prog) f) = VA.State ae am)
       (EM : ematch bc e ae)
-      (RO : romatch bc m (romem_for prog))
+      (RO : romatch bc m (romem_for cfg prog))
       (MM : mmatch bc m am)
       (GE : genv_match bc ge)
       (SP : bc sp = BCstack) :
-      sound_state_base prog (State s f (Vptr sp Ptrofs.zero) pc e m)
+      sound_state_base cfg prog (State s f (Vptr sp Ptrofs.zero) pc e m)
   | sound_call_state
       (s : List stackframe) (fd : fundef) (args : List val) (m : mem)
       (bc : block_classification)
       (ge : CompCert4Lean.Backend.RTL.genv)
-      (STK : sound_stack prog bc s m m.nextblock)
+      (STK : sound_stack cfg prog bc s m m.nextblock)
       (ARGS : ∀ v, v ∈ args → vmatch bc v Vtop)
-      (RO : romatch bc m (romem_for prog))
+      (RO : romatch bc m (romem_for cfg prog))
       (MM : mmatch bc m mtop)
       (GE : genv_match bc ge)
       (NOSTK : bc_nostack bc) :
-      sound_state_base prog (Callstate s fd args m)
+      sound_state_base cfg prog (Callstate s fd args m)
   | sound_return_state
       (s : List stackframe) (v : val) (m : mem) (bc : block_classification)
       (ge : genv)
-      (STK : sound_stack prog bc s m m.nextblock)
+      (STK : sound_stack cfg prog bc s m m.nextblock)
       (RES : vmatch bc v Vtop)
-      (RO : romatch bc m (romem_for prog))
+      (RO : romatch bc m (romem_for cfg prog))
       (MM : mmatch bc m mtop)
       (GE : genv_match bc ge)
       (NOSTK : bc_nostack bc) :
-      sound_state_base prog (Returnstate s v m)
+      sound_state_base cfg prog (Returnstate s v m)
 
 export sound_state_base (sound_regular_state sound_call_state sound_return_state)
 
-inductive sound_state (prog : CompCert4Lean.Backend.RTL.program) : state → Prop where
+inductive sound_state (cfg : CompilerConfig)
+    (prog : CompCert4Lean.Backend.RTL.program) : state → Prop where
   | sound_state_intro (st : state)
-      (H : ∀ cunit, linkorder cunit prog → sound_state_base cunit st) :
-      sound_state prog st
+      (H : ∀ cunit, linkorder cunit prog → sound_state_base cfg cunit st) :
+      sound_state cfg prog st
 
 def avalue (a : VA.t) (r : reg) : aval :=
   match a with
   | .Bot => Vbot
   | .State ae _ => AE.get r ae
 
-def aaddressing (a : VA.t) (addr : CompCert4Lean.X86.Op.addressing) (args : List reg) : aptr :=
+def aaddressing (cfg : CompilerConfig) (a : VA.t)
+    (addr : CompCert4Lean.X86.Op.addressing) (args : List reg) : aptr :=
   match a with
   | .Bot => Pbot
-  | .State ae _ => aptr_of_aval analysisConfig
+  | .State ae _ => aptr_of_aval cfg
       (CompCert4Lean.X86.ValueAOp.eval_static_addressing addr (aregs ae args))
 
-def aaddr_arg (a : VA.t) (ba : builtin_arg reg) : aptr :=
+def aaddr_arg (cfg : CompilerConfig) (a : VA.t) (ba : builtin_arg reg) : aptr :=
   match a with
   | .Bot => Pbot
   | .State ae _ =>
       match ba with
-      | .BA r => aptr_of_aval analysisConfig (AE.get r ae)
+      | .BA r => aptr_of_aval cfg (AE.get r ae)
       | .BA_addrstack ofs => Stk ofs
       | .BA_addrglobal id ofs => Gl id ofs
       | _ => Ptop
@@ -424,35 +410,37 @@ def aaddr_arg (a : VA.t) (ba : builtin_arg reg) : aptr :=
 /-! ## Later-proof statement descriptors -/
 
 def analyze_entrypointStatement : Prop :=
-  ∀ (rm : romem) (f : function) (vl : List val) (m : mem)
+  ∀ (cfg : CompilerConfig) (rm : romem) (f : function) (vl : List val) (m : mem)
     (bc : block_classification),
     (∀ v, v ∈ vl → vmatch bc v (Ifptr Nonstack)) →
     Val.has_argtype_list vl f.fn_sig.sig_args →
     mmatch bc m mfunction_entry →
     ∃ ae am,
-      PMap.get f.fn_entrypoint (analyze rm f) = VA.State ae am ∧
+      PMap.get f.fn_entrypoint (analyze cfg rm f) = VA.State ae am ∧
       ematch bc (init_regs vl f.fn_params) ae ∧ mmatch bc m am
 
 def analyze_successorStatement : Prop :=
-  ∀ (f : function) (n : node) (ae : aenv) (am : amem) (instr : instruction)
+  ∀ (cfg : CompilerConfig) (f : function) (n : node)
+    (ae : aenv) (am : amem) (instr : instruction)
     (s : node) (rm : romem) (ae' : aenv) (am' : amem),
-    PMap.get n (analyze rm f) = VA.State ae am →
+    PMap.get n (analyze cfg rm f) = VA.State ae am →
     PTree.get n f.fn_code = some instr →
     s ∈ successors_instr instr →
-    transfer f rm n ae am = VA.State ae' am' →
-    VA.ge (PMap.get s (analyze rm f)) (transfer f rm n ae am)
+    transfer cfg f rm n ae am = VA.State ae' am' →
+    VA.ge (PMap.get s (analyze cfg rm f)) (transfer cfg f rm n ae am)
 
 def analyze_succStatement : Prop :=
-  ∀ (e : regset) (m : mem) (rm : romem) (f : function) (n : node)
+  ∀ (cfg : CompilerConfig) (e : regset) (m : mem) (rm : romem)
+    (f : function) (n : node)
     (ae : aenv) (am : amem) (instr : instruction) (s : node)
     (ae' : aenv) (am' : amem) (bc : block_classification),
-    PMap.get n (analyze rm f) = VA.State ae am →
+    PMap.get n (analyze cfg rm f) = VA.State ae am →
     PTree.get n f.fn_code = some instr →
     s ∈ successors_instr instr →
-    transfer f rm n ae am = VA.State ae' am' →
+    transfer cfg f rm n ae am = VA.State ae' am' →
     ematch bc e ae' → mmatch bc m am' →
     ∃ ae'' am'',
-      PMap.get s (analyze rm f) = VA.State ae'' am'' ∧
+      PMap.get s (analyze cfg rm f) = VA.State ae'' am'' ∧
       ematch bc e ae'' ∧ mmatch bc m am''
 
 def areg_soundStatement : Prop :=
@@ -463,7 +451,8 @@ def aregs_soundStatement : Prop :=
     list_forall2 (vmatch bc) (rl.map (fun r => Regmap.get r e)) (aregs ae rl)
 
 def abuiltin_arg_soundStatement : Prop :=
-  ∀ (bc : block_classification) (ge : genv) (rs : regset) (sp : block)
+  ∀ (cfg : CompilerConfig) (bc : block_classification) (ge : genv)
+    (rs : regset) (sp : block)
     (m : mem) (ae : aenv) (rm : romem) (am : amem),
     ematch bc rs ae →
     romatch bc m rm →
@@ -473,10 +462,11 @@ def abuiltin_arg_soundStatement : Prop :=
     ∀ (a : builtin_arg reg) (v : val),
       eval_builtin_arg (Genv.to_senv ge) (fun r => Regmap.get r rs)
         (Vptr sp Ptrofs.zero) m a v →
-      vmatch bc v (abuiltin_arg ae am rm a)
+      vmatch bc v (abuiltin_arg cfg ae am rm a)
 
 def abuiltin_args_soundStatement : Prop :=
-  ∀ (bc : block_classification) (ge : genv) (rs : regset) (sp : block)
+  ∀ (cfg : CompilerConfig) (bc : block_classification) (ge : genv)
+    (rs : regset) (sp : block)
     (m : mem) (ae : aenv) (rm : romem) (am : amem),
     ematch bc rs ae →
     romatch bc m rm →
@@ -486,12 +476,13 @@ def abuiltin_args_soundStatement : Prop :=
     ∀ (al : List (builtin_arg reg)) (vl : List val),
       eval_builtin_args (Genv.to_senv ge) (fun r => Regmap.get r rs)
         (Vptr sp Ptrofs.zero) m al vl →
-      list_forall2 (vmatch bc) vl (al.map (abuiltin_arg ae am rm))
+      list_forall2 (vmatch bc) vl (al.map (abuiltin_arg cfg ae am rm))
 def set_builtin_res_soundStatement : Prop :=
   ∀ bc rs ae v av res, ematch bc rs ae → vmatch bc v av →
     ematch bc (regmap_setres res v rs) (set_builtin_res res av ae)
 def eval_static_builtin_function_soundStatement : Prop :=
-  ∀ (bc : block_classification) (ge : genv) (rs : regset) (sp : block)
+  ∀ (cfg : CompilerConfig) (bc : block_classification) (ge : genv)
+    (rs : regset) (sp : block)
     (m : mem) (ae : aenv) (rm : romem) (am : amem)
     (bf : builtin_function) (al : List (builtin_arg reg)) (vl : List val)
     (v : val) (va : aval),
@@ -502,7 +493,7 @@ def eval_static_builtin_function_soundStatement : Prop :=
     bc sp = BCstack →
     eval_builtin_args (Genv.to_senv ge) (fun r => Regmap.get r rs)
       (Vptr sp Ptrofs.zero) m al vl →
-    eval_static_builtin_function ae am rm bf al = some va →
+    eval_static_builtin_function cfg ae am rm bf al = some va →
     builtin_function_sem bf vl = some v →
     vmatch bc v va
 
@@ -637,96 +628,104 @@ def external_call_matchStatement : Prop :=
         Mem.loadbytes m' b ofs n = Mem.loadbytes m b ofs n)
 
 def sound_stack_extStatement : Prop :=
-  ∀ (prog : program) (m' : mem) (bc : block_classification)
+  ∀ (cfg : CompilerConfig) (prog : program) (m' : mem) (bc : block_classification)
     (stk : List stackframe) (m : mem) (bound : block),
-    sound_stack prog bc stk m bound →
+    sound_stack cfg prog bc stk m bound →
     (∀ b ofs n bytes, Plt b bound → bc b = BCinvalid → zLe z0 n →
       Mem.loadbytes m' b ofs n = some bytes →
       Mem.loadbytes m b ofs n = some bytes) →
-    sound_stack prog bc stk m' bound
+    sound_stack cfg prog bc stk m' bound
 
 def sound_stack_invStatement : Prop :=
-  ∀ (prog : program) (m' : mem) (bc : block_classification)
+  ∀ (cfg : CompilerConfig) (prog : program) (m' : mem) (bc : block_classification)
     (stk : List stackframe) (m : mem) (bound : block),
-    sound_stack prog bc stk m bound →
+    sound_stack cfg prog bc stk m bound →
     (∀ b ofs n, Plt b bound → bc b = BCinvalid → zLe z0 n →
       Mem.loadbytes m' b ofs n = Mem.loadbytes m b ofs n) →
-    sound_stack prog bc stk m' bound
+    sound_stack cfg prog bc stk m' bound
 
 def sound_stack_storevStatement : Prop :=
-  ∀ (prog : program) (chunk : memory_chunk) (m : mem) (addr v : val)
+  ∀ (cfg : CompilerConfig) (prog : program) (chunk : memory_chunk)
+    (m : mem) (addr v : val)
     (m' : mem) (bc : block_classification) (aaddr : aval)
     (stk : List stackframe) (bound : block),
     Mem.storev chunk m addr v = some m' →
     vmatch bc addr aaddr →
-    sound_stack prog bc stk m bound →
-    sound_stack prog bc stk m' bound
+    sound_stack cfg prog bc stk m bound →
+    sound_stack cfg prog bc stk m' bound
 
 def sound_stack_storebytesStatement : Prop :=
-  ∀ (prog : program) (m : mem) (b : block) (ofs : ptrofs)
+  ∀ (cfg : CompilerConfig) (prog : program) (m : mem) (b : block)
+    (ofs : ptrofs)
     (bytes : List memval) (m' : mem) (bc : block_classification)
     (aaddr : aval) (stk : List stackframe) (bound : block),
     Mem.storebytes m b (Ptrofs.unsigned ofs) bytes = some m' →
     vmatch bc (Vptr b ofs) aaddr →
-    sound_stack prog bc stk m bound →
-    sound_stack prog bc stk m' bound
+    sound_stack cfg prog bc stk m bound →
+    sound_stack cfg prog bc stk m' bound
 
 def sound_stack_freeStatement : Prop :=
-  ∀ (prog : program) (m : mem) (b : block) (lo hi : Z) (m' : mem)
+  ∀ (cfg : CompilerConfig) (prog : program) (m : mem) (b : block)
+    (lo hi : Z) (m' : mem)
     (bc : block_classification) (stk : List stackframe) (bound : block),
     Mem.free m b lo hi = some m' →
-    sound_stack prog bc stk m bound →
-    sound_stack prog bc stk m' bound
+    sound_stack cfg prog bc stk m bound →
+    sound_stack cfg prog bc stk m' bound
 
 def sound_stack_new_boundStatement : Prop :=
-  ∀ (prog : program) (bc : block_classification) (stk : List stackframe)
+  ∀ (cfg : CompilerConfig) (prog : program) (bc : block_classification)
+    (stk : List stackframe)
     (m : mem) (bound bound' : block),
-    sound_stack prog bc stk m bound →
+    sound_stack cfg prog bc stk m bound →
     Ple bound bound' →
-    sound_stack prog bc stk m bound'
+    sound_stack cfg prog bc stk m bound'
 
 def sound_stack_extenStatement : Prop :=
-  ∀ (prog : program) (bc : block_classification) (stk : List stackframe)
+  ∀ (cfg : CompilerConfig) (prog : program) (bc : block_classification)
+    (stk : List stackframe)
     (m : mem) (bound : block) (bc1 : block_classification),
-    sound_stack prog bc stk m bound →
+    sound_stack cfg prog bc stk m bound →
     (∀ b, Plt b bound → bc1 b = bc b) →
-    sound_stack prog bc1 stk m bound
+    sound_stack cfg prog bc1 stk m bound
 
 def sound_succ_stateStatement : Prop :=
-  ∀ (prog : program) (rm : romem) (bc : block_classification) (pc : node)
+  ∀ (cfg : CompilerConfig) (prog : program) (rm : romem)
+    (bc : block_classification) (pc : node)
     (ae : aenv) (am : amem) (instr : instruction) (ae' : aenv) (am' : amem)
     (s : List stackframe) (f : function) (sp pc' : node) (e' : regset)
     (m' : mem),
-    PMap.get pc (analyze rm f) = VA.State ae am →
+    PMap.get pc (analyze cfg rm f) = VA.State ae am →
     PTree.get pc f.fn_code = some instr →
     pc' ∈ successors_instr instr →
-    transfer f rm pc ae am = VA.State ae' am' →
+    transfer cfg f rm pc ae am = VA.State ae' am' →
     ematch bc e' ae' →
     mmatch bc m' am' →
     romatch bc m' rm →
     bc sp = BCstack →
-    sound_stack prog bc s m' sp →
-    sound_state_base prog (State s f (Vptr sp Ptrofs.zero) pc' e' m')
+    sound_stack cfg prog bc s m' sp →
+    sound_state_base cfg prog (State s f (Vptr sp Ptrofs.zero) pc' e' m')
 
 def sound_step_baseStatement : Prop :=
-  ∀ (prog : program) (xi : CompCert4Lean.Common.ExternalCalls.ExternalCalls)
+  ∀ (cfg : CompilerConfig) (prog : program)
+    (xi : CompCert4Lean.Common.ExternalCalls.ExternalCalls)
     (ge : genv) (st st' : state) (t : trace),
     RTL.step xi ge st t st' →
-    sound_state_base prog st →
-    sound_state_base prog st'
+    sound_state_base cfg prog st →
+    sound_state_base cfg prog st'
 
 def sound_stepStatement : Prop :=
-  ∀ (prog : program) (xi : CompCert4Lean.Common.ExternalCalls.ExternalCalls)
+  ∀ (cfg : CompilerConfig) (prog : program)
+    (xi : CompCert4Lean.Common.ExternalCalls.ExternalCalls)
     (st st' : state) (t : trace),
     RTL.step xi (Genv.globalenv prog) st t st' →
-    sound_state prog st →
-    sound_state prog st'
+    sound_state cfg prog st →
+    sound_state cfg prog st'
 
 def sound_state_invStatement : Prop :=
-  ∀ (prog cunit : program) (st : state),
-    sound_state prog st →
+  ∀ (cfg : CompilerConfig) (prog cunit : program) (st : state),
+    sound_state cfg prog st →
     linkorder cunit prog →
-    sound_state_base cunit st
+    sound_state_base cfg cunit st
 
 def initial_block_classificationStatement : Prop :=
   ∀ (prog : program) (m : mem),
@@ -739,28 +738,30 @@ def initial_block_classificationStatement : Prop :=
         Genv.find_symbol (Genv.globalenv prog) id = some b) ∧
       (∀ b, Mem.valid_block m b → bc b ≠ BCinvalid)
 def store_init_data_summaryStatement : Prop :=
-  ∀ (ab : ablock) (p : Z) (id : init_data),
+  ∀ (cfg : CompilerConfig) (ab : ablock) (p : Z) (id : init_data),
     pge Glob ab.ab_summary →
-    pge Glob (store_init_data ab p id).ab_summary
+    pge Glob (store_init_data cfg ab p id).ab_summary
 def store_init_data_list_summaryStatement : Prop :=
-  ∀ (idl : List init_data) (ab : ablock) (p : Z),
+  ∀ (cfg : CompilerConfig) (idl : List init_data) (ab : ablock) (p : Z),
     pge Glob ab.ab_summary →
-    pge Glob (store_init_data_list ab p idl).ab_summary
+    pge Glob (store_init_data_list cfg ab p idl).ab_summary
 def store_init_data_soundStatement : Prop :=
-  ∀ (prog : program) (bc : block_classification) (m : mem) (b : block)
+  ∀ (cfg : CompilerConfig) (prog : program) (bc : block_classification)
+    (m : mem) (b : block)
     (p : Z) (id : init_data) (m' : mem) (ab : ablock),
     genv_match bc (Genv.globalenv prog) →
     Genv.store_init_data (Genv.globalenv prog) m b p id = some m' →
     bmatch bc m b ab →
-    bmatch bc m' b (store_init_data ab p id)
+    bmatch bc m' b (store_init_data cfg ab p id)
 
 def store_init_data_list_soundStatement : Prop :=
-  ∀ (prog : program) (bc : block_classification) (idl : List init_data)
+  ∀ (cfg : CompilerConfig) (prog : program) (bc : block_classification)
+    (idl : List init_data)
     (m : mem) (b : block) (p : Z) (m' : mem) (ab : ablock),
     genv_match bc (Genv.globalenv prog) →
     Genv.store_init_data_list (Genv.globalenv prog) m b p idl = some m' →
     bmatch bc m b ab →
-    bmatch bc m' b (store_init_data_list ab p idl)
+    bmatch bc m' b (store_init_data_list cfg ab p idl)
 
 def store_init_data_otherStatement : Prop :=
   ∀ (prog : program) (bc : block_classification) (m : mem) (b b' : block)
@@ -794,64 +795,68 @@ def store_zeros_otherStatement : Prop :=
     bmatch bc m b' ab →
     bmatch bc m' b' ab
 def initial_mem_matchesStatement : Prop :=
-  ∀ (prog : program) (m : mem),
+  ∀ (cfg : CompilerConfig) (prog : program) (m : mem),
     Genv.init_mem prog = some m →
     ∃ bc,
       genv_match bc (Genv.globalenv prog) ∧
       bc_below bc m.nextblock ∧
       bc_nostack bc ∧
-      (∀ cunit, linkorder cunit prog → romatch bc m (romem_for cunit)) ∧
+      (∀ cunit, linkorder cunit prog → romatch bc m (romem_for cfg cunit)) ∧
       (∀ b, Mem.valid_block m b → bc b ≠ BCinvalid)
 
 def alloc_global_matchStatement : Prop :=
-  ∀ (prog : program) (bc : block_classification) (m m' : mem)
+  ∀ (cfg : CompilerConfig) (prog : program) (bc : block_classification) (m m' : mem)
     (g : genv) (idg : ident × globdef fundef Unit),
     genv_match bc (Genv.globalenv prog) →
     g.genv_next = m.nextblock →
-    initial_mem_match bc m g →
+    initial_mem_match cfg bc m g →
     Genv.alloc_global (Genv.globalenv prog) m idg = some m' →
-    initial_mem_match bc m' (Genv.add_global g idg)
+    initial_mem_match cfg bc m' (Genv.add_global g idg)
 
 def alloc_globals_matchStatement : Prop :=
-  ∀ (prog : program) (bc : block_classification) (gl : List (ident × globdef fundef Unit))
+  ∀ (cfg : CompilerConfig) (prog : program) (bc : block_classification)
+    (gl : List (ident × globdef fundef Unit))
     (m m' : mem) (g : genv),
     genv_match bc (Genv.globalenv prog) →
     g.genv_next = m.nextblock →
-    initial_mem_match bc m g →
+    initial_mem_match cfg bc m g →
     Genv.alloc_globals (Genv.globalenv prog) m gl = some m' →
-    initial_mem_match bc m' (Genv.add_globals g gl)
+    initial_mem_match cfg bc m' (Genv.add_globals g gl)
 def romem_for_consistentStatement : Prop :=
-  ∀ (cunit : program), romem_consistent (prog_defmap cunit) (romem_for cunit)
+  ∀ (cfg : CompilerConfig) (cunit : program),
+    romem_consistent cfg (prog_defmap cunit) (romem_for cfg cunit)
 def romem_for_consistent_2Statement : Prop :=
-  ∀ (prog cunit : program),
+  ∀ (cfg : CompilerConfig) (prog cunit : program),
     linkorder cunit prog →
-    romem_consistent (prog_defmap prog) (romem_for cunit)
+    romem_consistent cfg (prog_defmap prog) (romem_for cfg cunit)
 def alloc_global_consistentStatement : Prop :=
-  ∀ (dm : PTree.t (globdef fundef Unit)) (rm : romem)
+  ∀ (cfg : CompilerConfig) (dm : PTree.t (globdef fundef Unit)) (rm : romem)
     (idg : ident × globdef fundef Unit),
-    romem_consistent dm rm →
-    romem_consistent (PTree.set idg.1 idg.2 dm) (alloc_global rm idg)
+    romem_consistent cfg dm rm →
+    romem_consistent cfg (PTree.set idg.1 idg.2 dm) (alloc_global cfg rm idg)
 
 def sound_initialStatement : Prop :=
-  ∀ (prog : program) (st : state),
+  ∀ (cfg : CompilerConfig) (prog : program) (st : state),
     RTL.initial_state prog st →
-    sound_state prog st
+    sound_state cfg prog st
 
 def aaddressing_soundStatement : Prop :=
-  ∀ (cunit prog : program) (s : List stackframe) (f : function)
+  ∀ (cfg : CompilerConfig) (cunit prog : program) (s : List stackframe) (f : function)
     (sp : block) (pc : node) (e : regset) (m : mem)
     (addr : addressing) (args : List reg) (b : block) (ofs : ptrofs),
-    sound_state prog (State s f (Vptr sp Ptrofs.zero) pc e m) →
+    sound_state cfg prog (State s f (Vptr sp Ptrofs.zero) pc e m) →
     linkorder cunit prog →
     CompCert4Lean.X86.Op.eval_addressing (Genv.globalenv prog) (Vptr sp Ptrofs.zero) addr
       (args.map (fun r => Regmap.get r e)) = some (Vptr b ofs) →
     ∃ bc,
-      pmatch bc b ofs (aaddressing (PMap.get pc (analyze (romem_for cunit) f)) addr args) ∧
+      pmatch bc b ofs
+        (aaddressing cfg (PMap.get pc (analyze cfg (romem_for cfg cunit) f)) addr args) ∧
       genv_match bc (Genv.globalenv prog) ∧
       bc sp = BCstack
 
 def aaddr_arg_sound_1Statement : Prop :=
-  ∀ (bc : block_classification) (rs : regset) (ae : aenv) (m : mem)
+  ∀ (cfg : CompilerConfig) (bc : block_classification) (rs : regset)
+    (ae : aenv) (m : mem)
     (rm : romem) (am : amem) (ge : genv) (sp : block)
     (a : builtin_arg reg) (b : block) (ofs : ptrofs),
     ematch bc rs ae →
@@ -861,18 +866,19 @@ def aaddr_arg_sound_1Statement : Prop :=
     bc sp = BCstack →
     eval_builtin_arg (Genv.to_senv ge) (fun r => Regmap.get r rs)
       (Vptr sp Ptrofs.zero) m a (Vptr b ofs) →
-    pmatch bc b ofs (aaddr_arg (VA.State ae am) a)
+    pmatch bc b ofs (aaddr_arg cfg (VA.State ae am) a)
 
 def aaddr_arg_soundStatement : Prop :=
-  ∀ (cunit prog : program) (s : List stackframe) (f : function)
+  ∀ (cfg : CompilerConfig) (cunit prog : program) (s : List stackframe) (f : function)
     (sp : block) (pc : node) (e : regset) (m : mem)
     (a : builtin_arg reg) (b : block) (ofs : ptrofs),
-    sound_state prog (State s f (Vptr sp Ptrofs.zero) pc e m) →
+    sound_state cfg prog (State s f (Vptr sp Ptrofs.zero) pc e m) →
     linkorder cunit prog →
     eval_builtin_arg (Genv.to_senv (Genv.globalenv prog))
       (fun r => Regmap.get r e) (Vptr sp Ptrofs.zero) m a (Vptr b ofs) →
     ∃ bc,
-      pmatch bc b ofs (aaddr_arg (PMap.get pc (analyze (romem_for cunit) f)) a) ∧
+      pmatch bc b ofs
+        (aaddr_arg cfg (PMap.get pc (analyze cfg (romem_for cfg cunit) f)) a) ∧
       genv_match bc (Genv.globalenv prog) ∧
       bc sp = BCstack
 

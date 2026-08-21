@@ -53,6 +53,8 @@ private abbrev Globdef := CompCert4Lean.Common.AST.globdef CminorFundef Unit
 private abbrev Env := CompCert4Lean.Backend.Cminor.env
 private abbrev HelperFunctions := CompCert4Lean.Backend.SplitLong.helper_functions
 private abbrev KnownIdents := CompCert4Lean.Backend.Cminortyping.known_idents
+private abbrev CompilerConfig := CompCert4Lean.Config.CompilerConfig
+private abbrev SelectionOracle := CompCert4Lean.Backend.Selection.SelectionOracle
 private abbrev RocqString :=
   CompCert4Lean.Foundation.RocqString.Rocq.Coq.Strings.String.string
 private abbrev zle := ZArith.BinInt.Z.le
@@ -65,18 +67,20 @@ private instance cminorProgramLinker : Linker CminorProgram :=
 
 /-! Relational specification of instruction selection. -/
 
-def match_fundef (cunit : CminorProgram) (f : CminorFundef)
+def match_fundef (cfg : CompilerConfig) (oracle : SelectionOracle)
+    (cunit : CminorProgram) (f : CminorFundef)
     (tf : CminorSelFundef) : Prop :=
   ∃ hf : HelperFunctions,
     CompCert4Lean.Backend.SplitLongproof.helper_functions_declared cunit hf ∧
-    sel_fundef (prog_defmap cunit) hf f = .OK tf
+    sel_fundef cfg oracle (prog_defmap cunit) hf f = .OK tf
 
-def match_prog (p : CminorProgram) (tp : CminorSelProgram) : Prop :=
+def match_prog (cfg : CompilerConfig) (oracle : SelectionOracle) (p : CminorProgram)
+    (tp : CminorSelProgram) : Prop :=
   @CompCert4Lean.Common.Linking.match_program
     CminorFundef Unit CminorSelFundef Unit
     (CompCert4Lean.Common.Linking.Linker_fundef Cminor.function)
     CompCert4Lean.Common.Linking.Linker_unit
-    (fun cu f tf => match_fundef cu f tf) Eq p tp
+    (fun cu f tf => match_fundef cfg oracle cu f tf) Eq p tp
 
 /-! Local environment less-definedness. -/
 
@@ -103,41 +107,50 @@ def eventually (prog : CminorProgram) (xi : ExternalCalls) (n : Nat) (s : Cminor
 source-facing API and are intentionally retained. -/
 
 mutual
-inductive match_cont (prog : CminorProgram) : CminorProgram → HelperFunctions → KnownIdents → typenv →
+inductive match_cont (cfg : CompilerConfig) (oracle : SelectionOracle)
+    (prog : CminorProgram) :
+    CminorProgram → HelperFunctions → KnownIdents → typenv →
     Cminor.cont → CminorSel.cont → Prop
   | match_cont_seq (cunit : CminorProgram) (hf : HelperFunctions)
       (ki : KnownIdents) (env : typenv) (s : Cminor.stmt) (kont : CminorSel.stmt)
       (s' : CminorSel.stmt) (k : Cminor.cont) (k' : CminorSel.cont)
-      (hsel : sel_stmt (prog_defmap cunit) ki env s kont = .OK s')
-      (hcont : match_cont prog cunit hf ki env k k') :
-      match_cont prog cunit hf ki env (Cminor.Kseq s k) (CminorSel.Kseq s' k')
+      (hsel : sel_stmt cfg oracle (prog_defmap cunit) ki env s kont = .OK s')
+      (hcont : match_cont cfg oracle prog cunit hf ki env k k') :
+      match_cont cfg oracle prog cunit hf ki env
+        (Cminor.Kseq s k) (CminorSel.Kseq s' k')
   | match_cont_block (cunit : CminorProgram) (hf : HelperFunctions)
       (ki : KnownIdents) (env : typenv) (k : Cminor.cont) (k' : CminorSel.cont)
-      (hcont : match_cont prog cunit hf ki env k k') :
-      match_cont prog cunit hf ki env (Cminor.Kblock k) (CminorSel.Kblock k')
+      (hcont : match_cont cfg oracle prog cunit hf ki env k k') :
+      match_cont cfg oracle prog cunit hf ki env
+        (Cminor.Kblock k) (CminorSel.Kblock k')
   | match_cont_other (cunit : CminorProgram) (hf : HelperFunctions)
       (ki : KnownIdents) (env : typenv) (k : Cminor.cont) (k' : CminorSel.cont)
-      (hcall : match_call_cont prog k k') :
-      match_cont prog cunit hf ki env k k'
+      (hcall : match_call_cont cfg oracle prog k k') :
+      match_cont cfg oracle prog cunit hf ki env k k'
 
-inductive match_call_cont (prog : CminorProgram) : Cminor.cont → CminorSel.cont → Prop where
+inductive match_call_cont (cfg : CompilerConfig) (oracle : SelectionOracle)
+    (prog : CminorProgram) :
+    Cminor.cont → CminorSel.cont → Prop where
   | match_cont_stop :
-      match_call_cont prog Cminor.Kstop CminorSel.Kstop
+      match_call_cont cfg oracle prog Cminor.Kstop CminorSel.Kstop
   | match_cont_call (cunit : CminorProgram) (hf : HelperFunctions)
       (env : typenv) (id : Option ident) (f : Cminor.function) (sp : val)
       (e : Env) (k : Cminor.cont) (f' : CminorSel.function)
       (e' : Env) (k' : CminorSel.cont)
       (hlink : linkorder cunit prog)
       (hhf : CompCert4Lean.Backend.SplitLongproof.helper_functions_declared cunit hf)
-      (hsel : sel_function (prog_defmap cunit) hf f = .OK f')
+      (hsel : sel_function cfg oracle (prog_defmap cunit) hf f = .OK f')
       (hty : type_function f = .OK env)
-      (hcont : match_cont prog cunit hf (CompCert4Lean.Backend.Selection.known_id f) env k k')
+      (hcont : match_cont cfg oracle prog cunit hf
+        (CompCert4Lean.Backend.Selection.known_id f) env k k')
       (hld : env_lessdef e e') :
-      match_call_cont prog (Cminor.Kcall id f sp e k)
+      match_call_cont cfg oracle prog (Cminor.Kcall id f sp e k)
         (CminorSel.Kcall id f' sp e' k')
 end
 
-inductive match_states (prog : CminorProgram) : Cminor.state → CminorSel.state → Prop where
+inductive match_states (cfg : CompilerConfig) (oracle : SelectionOracle)
+    (prog : CminorProgram) :
+    Cminor.state → CminorSel.state → Prop where
   | match_state (cunit : CminorProgram) (hf : HelperFunctions)
       (f : Cminor.function) (f' : CminorSel.function)
       (s : Cminor.stmt) (kont : Cminor.cont) (k : CminorSel.stmt)
@@ -145,27 +158,29 @@ inductive match_states (prog : CminorProgram) : Cminor.state → CminorSel.state
       (e : Env) (m : mem) (e' : Env) (m' : mem) (env : typenv)
       (hlink : linkorder cunit prog)
       (hhf : CompCert4Lean.Backend.SplitLongproof.helper_functions_declared cunit hf)
-      (hsel : sel_function (prog_defmap cunit) hf f = .OK f')
+      (hsel : sel_function cfg oracle (prog_defmap cunit) hf f = .OK f')
       (hty : type_function f = .OK env)
-      (hstmt : sel_stmt (prog_defmap cunit) (CompCert4Lean.Backend.Selection.known_id f) env s k = .OK s')
-      (hcont : match_cont prog cunit hf (CompCert4Lean.Backend.Selection.known_id f) env kont k')
+      (hstmt : sel_stmt cfg oracle (prog_defmap cunit)
+        (CompCert4Lean.Backend.Selection.known_id f) env s k = .OK s')
+      (hcont : match_cont cfg oracle prog cunit hf
+        (CompCert4Lean.Backend.Selection.known_id f) env kont k')
       (hld : env_lessdef e e') (hme : Mem.extends m m') :
-      match_states prog (Cminor.State f s kont sp e m)
+      match_states cfg oracle prog (Cminor.State f s kont sp e m)
         (CminorSel.State f' s' k' sp e' m')
   | match_callstate (cunit : CminorProgram) (f : CminorFundef)
       (f' : CminorSelFundef) (args args' : List val)
       (k : Cminor.cont) (k' : CminorSel.cont) (m m' : mem)
-      (hlink : linkorder cunit prog) (hfun : match_fundef cunit f f')
-      (hcont : match_call_cont prog k k')
+      (hlink : linkorder cunit prog) (hfun : match_fundef cfg oracle cunit f f')
+      (hcont : match_call_cont cfg oracle prog k k')
       (hld : Val.lessdef_list args args') (hme : Mem.extends m m') :
-      match_states prog (Cminor.Callstate f args k m)
+      match_states cfg oracle prog (Cminor.Callstate f args k m)
         (CminorSel.Callstate f' args' k' m')
   | match_returnstate (v v' : val) (k : Cminor.cont) (k' : CminorSel.cont)
       (m m' : mem)
-      (hcont : match_call_cont prog k k')
+      (hcont : match_call_cont cfg oracle prog k k')
       (hld : Val.lessdef v v') (hme : Mem.extends m m') :
-      match_states prog (Cminor.Returnstate v k m)
-        (.returnState v' k' m')
+      match_states cfg oracle prog (Cminor.Returnstate v k m)
+        (.Returnstate v' k' m')
   | match_builtin_1 (cunit : CminorProgram) (hf : HelperFunctions)
       (ef : external_function) (args : List val) (optid : Option ident)
       (f : Cminor.function) (sp : val) (e : Env) (k : Cminor.cont)
@@ -173,27 +188,29 @@ inductive match_states (prog : CminorProgram) : Cminor.state → CminorSel.state
       (e' : Env) (k' : CminorSel.cont) (m' : mem) (env : typenv)
       (hlink : linkorder cunit prog)
       (hhf : CompCert4Lean.Backend.SplitLongproof.helper_functions_declared cunit hf)
-      (hsel : sel_function (prog_defmap cunit) hf f = .OK f')
+      (hsel : sel_function cfg oracle (prog_defmap cunit) hf f = .OK f')
       (hty : type_function f = .OK env)
-      (hcont : match_cont prog cunit hf (CompCert4Lean.Backend.Selection.known_id f) env k k')
+      (hcont : match_cont cfg oracle prog cunit hf
+        (CompCert4Lean.Backend.Selection.known_id f) env k k')
       (heval : Cminor.eval_exprlist (Genv.globalenv prog) sp e m al args)
       (hld : env_lessdef e e') (hme : Mem.extends m m') :
-      match_states prog
+      match_states cfg oracle prog
         (Cminor.Callstate (.External ef) args (Cminor.Kcall optid f sp e k) m)
-        (CminorSel.State f' (sel_builtin optid ef al) k' sp e' m')
+        (CminorSel.State f' (sel_builtin cfg optid ef al) k' sp e' m')
   | match_builtin_2 (cunit : CminorProgram) (hf : HelperFunctions)
       (v v' : val) (optid : Option ident) (f : Cminor.function) (sp : val)
       (e : Env) (k : Cminor.cont) (m : mem) (f' : CminorSel.function)
       (e' : Env) (m' : mem) (k' : CminorSel.cont) (env : typenv)
       (hlink : linkorder cunit prog)
       (hhf : CompCert4Lean.Backend.SplitLongproof.helper_functions_declared cunit hf)
-      (hsel : sel_function (prog_defmap cunit) hf f = .OK f')
+      (hsel : sel_function cfg oracle (prog_defmap cunit) hf f = .OK f')
       (hty : type_function f = .OK env)
-      (hcont : match_cont prog cunit hf (CompCert4Lean.Backend.Selection.known_id f) env k k')
+      (hcont : match_cont cfg oracle prog cunit hf
+        (CompCert4Lean.Backend.Selection.known_id f) env k k')
       (hld : Val.lessdef v v')
       (hlde : env_lessdef (Cminor.set_optvar optid v e) e')
       (hme : Mem.extends m m') :
-      match_states prog
+      match_states cfg oracle prog
         (Cminor.Returnstate v (Cminor.Kcall optid f sp e k) m)
         (CminorSel.State f' CminorSel.Sskip k' sp e' m')
 
@@ -216,26 +233,7 @@ def nolabel' (s : CminorSel.stmt) : Prop :=
 
 /-! Exact source declaration descriptors for later proof migration. -/
 
-private def sel_known_builtin (bf : builtin_function) (args : CminorSel.exprlist) :
-    Option CminorSel.expr :=
-  match bf, args with
-  | .BI_platform b, _ => CompCert4Lean.X86.SelectOp.platform_builtin b args
-  | .BI_standard (.BI_select ty), .Econs a1 (.Econs a2 (.Econs a3 .Enil)) =>
-      some (sel_select ty a1 a2 a3)
-  | .BI_standard .BI_fabs, .Econs a1 .Enil => some (absf a1)
-  | .BI_standard .BI_fabsf, .Econs a1 .Enil => some (absfs a1)
-  | _, _ => none
-
-private def condexpr_of_expr : CminorSel.expr → CminorSel.condexpr
-  | CminorSel.expr.Eop (X86.Op.operation.Ocmp c) el => .CEcond c el
-  | CminorSel.expr.Econdition a b c =>
-      .CEcondition a (condexpr_of_expr b) (condexpr_of_expr c)
-  | CminorSel.expr.Elet a b => .CElet a (condexpr_of_expr b)
-  | e => .CEcond (Ccompuimm .Cne Int.zero) (.Econs e .Enil)
-
-private def condition_of_expr : CminorSel.expr → X86.Op.condition × CminorSel.exprlist
-  | CminorSel.expr.Eop (X86.Op.operation.Ocmp c) el => (c, el)
-  | e => (Ccompuimm .Cne Int.zero, .Econs e .Enil)
+variable (cfg : CompilerConfig) (oracle : SelectionOracle)
 
 def record_globdefs_soundStatement : Prop :=
   ∀ (dm : PTree.t Globdef) (id : ident) (gd : Globdef),
@@ -258,7 +256,7 @@ def get_helpers_correctStatement : Prop :=
 
 def transf_program_matchStatement : Prop :=
   ∀ (p : CminorProgram) (tp : CminorSelProgram),
-    sel_program p = .OK tp → match_prog p tp
+    sel_program cfg oracle p = .OK tp → match_prog cfg oracle p tp
 
 def helper_functions_declared_linkorderStatement : Prop :=
   ∀ (p p' : CminorProgram) (hf : HelperFunctions),
@@ -268,52 +266,52 @@ def helper_functions_declared_linkorderStatement : Prop :=
 
 def wt_progStatement : Prop :=
   ∀ (prog : CminorProgram) (tprog : CminorSelProgram),
-    match_prog prog tprog → wt_program prog
+    match_prog cfg oracle prog tprog → wt_program prog
 
 def symbols_preservedStatement : Prop :=
   ∀ (prog : CminorProgram) (tprog : CminorSelProgram),
-    match_prog prog tprog →
+    match_prog cfg oracle prog tprog →
       ∀ s : ident,
         Genv.find_symbol (Genv.globalenv tprog) s =
           Genv.find_symbol (Genv.globalenv prog) s
 
 def senv_preservedStatement : Prop :=
   ∀ (prog : CminorProgram) (tprog : CminorSelProgram),
-    match_prog prog tprog →
+    match_prog cfg oracle prog tprog →
       Senv.equiv (Genv.to_senv (Genv.globalenv prog))
         (Genv.to_senv (Genv.globalenv tprog))
 
 def function_ptr_translatedStatement : Prop :=
   ∀ (prog : CminorProgram) (tprog : CminorSelProgram),
-    match_prog prog tprog →
+    match_prog cfg oracle prog tprog →
       ∀ (b : block) (f : CminorFundef),
         Genv.find_funct_ptr (Genv.globalenv prog) b = some f →
           ∃ (cu : CminorProgram) (tf : CminorSelFundef),
             Genv.find_funct_ptr (Genv.globalenv tprog) b = some tf ∧
-            match_fundef cu f tf ∧ linkorder cu prog
+            match_fundef cfg oracle cu f tf ∧ linkorder cu prog
 
 def functions_translatedStatement : Prop :=
   ∀ (prog : CminorProgram) (tprog : CminorSelProgram),
-    match_prog prog tprog →
+    match_prog cfg oracle prog tprog →
       ∀ (v v' : val) (f : CminorFundef),
         Genv.find_funct (Genv.globalenv prog) v = some f →
         Val.lessdef v v' →
           ∃ (cu : CminorProgram) (tf : CminorSelFundef),
             Genv.find_funct (Genv.globalenv tprog) v' = some tf ∧
-            match_fundef cu f tf ∧ linkorder cu prog
+            match_fundef cfg oracle cu f tf ∧ linkorder cu prog
 
 def sig_function_translatedStatement : Prop :=
   ∀ (cu : CminorProgram) (f : CminorFundef) (tf : CminorSelFundef),
-    match_fundef cu f tf → CminorSel.funsig tf = Cminor.funsig f
+    match_fundef cfg oracle cu f tf → CminorSel.funsig tf = Cminor.funsig f
 
 def stackspace_function_translatedStatement : Prop :=
   ∀ (dm : PTree.t Globdef) (hf : HelperFunctions)
     (f : Cminor.function) (tf : CminorSel.function),
-    sel_function dm hf f = .OK tf → tf.fn_stackspace = f.fn_stackspace
+    sel_function cfg oracle dm hf f = .OK tf → tf.fn_stackspace = f.fn_stackspace
 
 def helper_functions_preservedStatement : Prop :=
   ∀ (prog : CminorProgram) (tprog : CminorSelProgram),
-    match_prog prog tprog →
+    match_prog cfg oracle prog tprog →
       ∀ hf : HelperFunctions,
         CompCert4Lean.Backend.SplitLongproof.helper_functions_declared prog hf →
           CompCert4Lean.Backend.SplitLongproof.helper_functions_declared tprog hf
@@ -357,7 +355,7 @@ def eval_storeStatement : Prop :=
 
 def eval_sel_unopStatement : Prop :=
   ∀ (xi : ExternalCalls) (prog : CminorProgram) (tprog : CminorSelProgram),
-    match_prog prog tprog →
+    match_prog cfg oracle prog tprog →
     ∀ (cunit : CminorProgram) (hf : HelperFunctions),
       linkorder cunit prog →
       CompCert4Lean.Backend.SplitLongproof.helper_functions_declared cunit hf →
@@ -371,7 +369,7 @@ def eval_sel_unopStatement : Prop :=
 
 def eval_sel_binopStatement : Prop :=
   ∀ (xi : ExternalCalls) (prog : CminorProgram) (tprog : CminorSelProgram),
-    match_prog prog tprog →
+    match_prog cfg oracle prog tprog →
     ∀ (cunit : CminorProgram) (hf : HelperFunctions),
       linkorder cunit prog →
       CompCert4Lean.Backend.SplitLongproof.helper_functions_declared cunit hf →
@@ -383,7 +381,7 @@ def eval_sel_binopStatement : Prop :=
         Cminor.eval_binop op v1 v2 m = some v →
           ∃ v',
             CminorSel.eval_expr xi (Genv.globalenv tprog) sp e m le
-              (sel_binop op a1 a2) v' ∧ Val.lessdef v v'
+              (sel_binop cfg op a1 a2) v' ∧ Val.lessdef v v'
 
 def eval_sel_selectStatement : Prop :=
   ∀ (xi : ExternalCalls) (tprog : CminorSelProgram) (sp : val) (e : Env) (m : mem)
@@ -552,7 +550,7 @@ def set_locals_lessdefStatement : Prop :=
 
 def sel_expr_correctStatement : Prop :=
   ∀ (xi : ExternalCalls) (prog : CminorProgram) (tprog : CminorSelProgram),
-    match_prog prog tprog →
+    match_prog cfg oracle prog tprog →
     ∀ (cunit : CminorProgram) (hf : HelperFunctions),
       linkorder cunit prog →
       CompCert4Lean.Backend.SplitLongproof.helper_functions_declared cunit hf →
@@ -561,12 +559,13 @@ def sel_expr_correctStatement : Prop :=
         ∀ (e' : Env) (le : CminorSel.letenv) (m' : mem),
           env_lessdef e e' → Mem.extends m m' →
             ∃ v',
-              CminorSel.eval_expr xi (Genv.globalenv tprog) sp e' m' le (sel_expr a) v' ∧
+              CminorSel.eval_expr xi (Genv.globalenv tprog) sp e' m' le
+                (sel_expr cfg a) v' ∧
               Val.lessdef v v'
 
 def sel_exprlist_correctStatement : Prop :=
   ∀ (xi : ExternalCalls) (prog : CminorProgram) (tprog : CminorSelProgram),
-    match_prog prog tprog →
+    match_prog cfg oracle prog tprog →
     ∀ (cunit : CminorProgram) (hf : HelperFunctions),
       linkorder cunit prog →
       CompCert4Lean.Backend.SplitLongproof.helper_functions_declared cunit hf →
@@ -576,11 +575,11 @@ def sel_exprlist_correctStatement : Prop :=
           env_lessdef e e' → Mem.extends m m' →
             ∃ v',
               CminorSel.eval_exprlist xi (Genv.globalenv tprog) sp e' m' le
-                (sel_exprlist a) v' ∧ Val.lessdef_list v v'
+                (sel_exprlist cfg a) v' ∧ Val.lessdef_list v v'
 
 def sel_select_expr_correctStatement : Prop :=
   ∀ (xi : ExternalCalls) (prog : CminorProgram) (tprog : CminorSelProgram),
-    match_prog prog tprog →
+    match_prog cfg oracle prog tprog →
     ∀ (cunit : CminorProgram) (hf : HelperFunctions),
       linkorder cunit prog →
       CompCert4Lean.Backend.SplitLongproof.helper_functions_declared cunit hf →
@@ -594,12 +593,12 @@ def sel_select_expr_correctStatement : Prop :=
         Val.bool_of_val vcond b → env_lessdef e e' → Mem.extends m m' →
           ∃ v',
             CminorSel.eval_expr xi (Genv.globalenv tprog) sp e' m' le
-              (sel_select_expr ty cond a1 a2) v' ∧
+              (sel_select_expr cfg ty cond a1 a2) v' ∧
             Val.lessdef (Val.select (some b) v1 v2 ty) v'
 
 def sel_builtin_arg_correctStatement : Prop :=
   ∀ (xi : ExternalCalls) (prog : CminorProgram) (tprog : CminorSelProgram),
-    match_prog prog tprog →
+    match_prog cfg oracle prog tprog →
     ∀ (cunit : CminorProgram) (hf : HelperFunctions),
       linkorder cunit prog →
       CompCert4Lean.Backend.SplitLongproof.helper_functions_declared cunit hf →
@@ -609,11 +608,11 @@ def sel_builtin_arg_correctStatement : Prop :=
         Cminor.eval_expr (Genv.globalenv prog) sp e m a v →
           ∃ v',
             CminorSel.eval_builtin_arg xi (Genv.globalenv tprog) sp e' m'
-              (sel_builtin_arg a c) v' ∧ Val.lessdef v v'
+              (sel_builtin_arg cfg a c) v' ∧ Val.lessdef v v'
 
 def sel_builtin_args_correctStatement : Prop :=
   ∀ (xi : ExternalCalls) (prog : CminorProgram) (tprog : CminorSelProgram),
-    match_prog prog tprog →
+    match_prog cfg oracle prog tprog →
     ∀ (cunit : CminorProgram) (hf : HelperFunctions),
       linkorder cunit prog →
       CompCert4Lean.Backend.SplitLongproof.helper_functions_declared cunit hf →
@@ -625,7 +624,7 @@ def sel_builtin_args_correctStatement : Prop :=
             ∃ vl',
               list_forall2
                 (CminorSel.eval_builtin_arg xi (Genv.globalenv tprog) sp e' m')
-                (sel_builtin_args al cl) vl' ∧ Val.lessdef_list vl vl'
+                (sel_builtin_args cfg al cl) vl' ∧ Val.lessdef_list vl vl'
 
 def sel_builtin_res_correctStatement : Prop :=
   ∀ (oid : Option ident) (v : val) (e : Env) (v' : val) (e' : Env),
@@ -635,7 +634,7 @@ def sel_builtin_res_correctStatement : Prop :=
 
 def sel_builtin_default_correctStatement : Prop :=
   ∀ (xi : ExternalCalls) (prog : CminorProgram) (tprog : CminorSelProgram),
-    match_prog prog tprog →
+    match_prog cfg oracle prog tprog →
     ∀ (cunit : CminorProgram) (hf : HelperFunctions),
       linkorder cunit prog →
       CompCert4Lean.Backend.SplitLongproof.helper_functions_declared cunit hf →
@@ -648,13 +647,13 @@ def sel_builtin_default_correctStatement : Prop :=
         env_lessdef e1 e1' → Mem.extends m1 m1' →
           ∃ e2' m2',
             plus (CminorSel.step xi) (Genv.globalenv tprog)
-              (CminorSel.State f (sel_builtin_default optid ef al) k sp e1' m1') t
+              (CminorSel.State f (sel_builtin_default cfg optid ef al) k sp e1' m1') t
               (CminorSel.State f CminorSel.Sskip k sp e2' m2') ∧
             env_lessdef (Cminor.set_optvar optid v e1) e2' ∧ Mem.extends m2 m2'
 
 def sel_builtin_correctStatement : Prop :=
   ∀ (xi : ExternalCalls) (prog : CminorProgram) (tprog : CminorSelProgram),
-    match_prog prog tprog →
+    match_prog cfg oracle prog tprog →
     ∀ (cunit : CminorProgram) (hf : HelperFunctions),
       linkorder cunit prog →
       CompCert4Lean.Backend.SplitLongproof.helper_functions_declared cunit hf →
@@ -667,7 +666,7 @@ def sel_builtin_correctStatement : Prop :=
         env_lessdef e1 e1' → Mem.extends m1 m1' →
           ∃ e2' m2',
             plus (CminorSel.step xi) (Genv.globalenv tprog)
-              (CminorSel.State f (sel_builtin optid ef al) k sp e1' m1') t
+              (CminorSel.State f (sel_builtin cfg optid ef al) k sp e1' m1') t
               (CminorSel.State f CminorSel.Sskip k sp e2' m2') ∧
             env_lessdef (Cminor.set_optvar optid v e1) e2' ∧ Mem.extends m2 m2'
 
@@ -702,7 +701,7 @@ def classify_stmt_wtStatement : Prop :=
 
 def if_conversion_base_correctStatement : Prop :=
   ∀ (xi : ExternalCalls) (prog : CminorProgram) (tprog : CminorSelProgram),
-    match_prog prog tprog →
+    match_prog cfg oracle prog tprog →
     ∀ (cunit : CminorProgram) (hf : HelperFunctions),
       linkorder cunit prog →
       CompCert4Lean.Backend.SplitLongproof.helper_functions_declared cunit hf →
@@ -710,7 +709,7 @@ def if_conversion_base_correctStatement : Prop :=
         (ifso ifnot : Cminor.expr) (kont s : CminorSel.stmt) (e : Env)
         (ty : typ) (vb : val) (b : Bool) (sp : val) (m : mem)
         (tf : CminorSel.function) (tk : CminorSel.cont) (e' : Env) (m' : mem),
-        if_conversion_base (Selection.known_id f) env cond id ifso ifnot kont = some s →
+        if_conversion_base cfg oracle (Selection.known_id f) env cond id ifso ifnot kont = some s →
         def_env f e → wt_env env e → env id = ty → wt_expr env ifso ty →
         wt_expr env ifnot ty →
         Cminor.eval_expr (Genv.globalenv prog) sp e m cond vb →
@@ -725,7 +724,7 @@ def if_conversion_base_correctStatement : Prop :=
 
 def if_conversion_correctStatement : Prop :=
   ∀ (xi : ExternalCalls) (prog : CminorProgram) (tprog : CminorSelProgram),
-    match_prog prog tprog →
+    match_prog cfg oracle prog tprog →
     ∀ (cunit : CminorProgram) (hf : HelperFunctions),
       linkorder cunit prog →
       CompCert4Lean.Backend.SplitLongproof.helper_functions_declared cunit hf →
@@ -733,7 +732,7 @@ def if_conversion_correctStatement : Prop :=
         (ifso ifnot : Cminor.stmt) (kont s : CminorSel.stmt) (vb : val) (b : Bool)
         (k : Cminor.cont) (f' : CminorSel.function) (k' : CminorSel.cont)
         (sp : val) (e : Env) (m : mem) (e' : Env) (m' : mem),
-        if_conversion (Selection.known_id f) env cond ifso ifnot kont = some s →
+        if_conversion cfg oracle (Selection.known_id f) env cond ifso ifnot kont = some s →
         def_env f e → wt_env env e → wt_stmt env tyret ifso → wt_stmt env tyret ifnot →
         Cminor.eval_expr (Genv.globalenv prog) sp e m cond vb →
         Val.bool_of_val vb b → env_lessdef e e' → Mem.extends m m' →
@@ -752,23 +751,23 @@ def match_states_skipStatement : Prop :=
     (env : typenv),
     linkorder cunit prog →
     CompCert4Lean.Backend.SplitLongproof.helper_functions_declared cunit hf →
-    sel_function (prog_defmap cunit) hf f = .OK f' → type_function f = .OK env →
-    match_cont prog cunit hf (Selection.known_id f) env k k' → env_lessdef e e' →
+    sel_function cfg oracle (prog_defmap cunit) hf f = .OK f' → type_function f = .OK env →
+    match_cont cfg oracle prog cunit hf (Selection.known_id f) env k k' → env_lessdef e e' →
     Mem.extends m m' →
-      match_states prog (Cminor.State f Cminor.Sskip k sp e m)
+      match_states cfg oracle prog (Cminor.State f Cminor.Sskip k sp e m)
         (CminorSel.State f' CminorSel.Sskip k' sp e' m')
 
 def call_cont_commutStatement : Prop :=
   ∀ (prog : CminorProgram) (cunit : CminorProgram) (hf : HelperFunctions)
     (ki : KnownIdents) (env : typenv) (k : Cminor.cont) (k' : CminorSel.cont),
-    match_cont prog cunit hf ki env k k' →
-      match_call_cont prog (Cminor.call_cont k) (CminorSel.call_cont k')
+    match_cont cfg oracle prog cunit hf ki env k k' →
+      match_call_cont cfg oracle prog (Cminor.call_cont k) (CminorSel.call_cont k')
 
 def match_is_call_contStatement : Prop :=
   ∀ (prog : CminorProgram) (cunit : CminorProgram) (hf : typenv)
     (ki : HelperFunctions) (env : KnownIdents) (k : Cminor.cont) (k' : CminorSel.cont),
-    match_cont prog cunit ki env hf k k' → Cminor.is_call_cont k →
-      match_call_cont prog k k' ∧ CminorSel.is_call_cont k'
+    match_cont cfg oracle prog cunit ki env hf k k' → Cminor.is_call_cont k →
+      match_call_cont cfg oracle prog k k' ∧ CminorSel.is_call_cont k'
 
 def classify_stmt_nolabelStatement : Prop :=
   ∀ (s : Cminor.stmt), classify_stmt s ≠ SCother → nolabel s
@@ -776,29 +775,30 @@ def classify_stmt_nolabelStatement : Prop :=
 def if_conversion_base_nolabelStatement : Prop :=
   ∀ (hf : HelperFunctions) (ki : KnownIdents) (env : typenv) (a : Cminor.expr)
     (id : ident) (a1 a2 : Cminor.expr) (kont s : CminorSel.stmt),
-    if_conversion_base ki env a id a1 a2 kont = some s → nolabel' s
+    if_conversion_base cfg oracle ki env a id a1 a2 kont = some s → nolabel' s
 
 def if_conversion_nolabelStatement : Prop :=
   ∀ (hf : HelperFunctions) (ki : KnownIdents) (env : typenv) (a : Cminor.expr)
     (s1 s2 : Cminor.stmt) (kont s : CminorSel.stmt),
-    if_conversion ki env a s1 s2 kont = some s → nolabel s1 ∧ nolabel s2 ∧ nolabel' s
+    if_conversion cfg oracle ki env a s1 s2 kont = some s →
+      nolabel s1 ∧ nolabel s2 ∧ nolabel' s
 
 def sel_builtin_nolabelStatement : Prop :=
   ∀ (hf : HelperFunctions) (optid : Option ident) (ef : external_function)
-    (args : List Cminor.expr), nolabel' (sel_builtin optid ef args)
+    (args : List Cminor.expr), nolabel' (sel_builtin cfg optid ef args)
 
 def find_label_commutStatement : Prop :=
   ∀ (prog : CminorProgram) (cunit : CminorProgram) (hf : HelperFunctions)
     (ki : KnownIdents) (env : typenv) (lbl : ident) (s : Cminor.stmt)
     (kont : CminorSel.stmt) (k : Cminor.cont) (s' : CminorSel.stmt) (k' : CminorSel.cont),
-    match_cont prog cunit hf ki env k k' →
-    sel_stmt (prog_defmap cunit) ki env s kont = .OK s' →
+    match_cont cfg oracle prog cunit hf ki env k k' →
+    sel_stmt cfg oracle (prog_defmap cunit) ki env s kont = .OK s' →
     match Cminor.find_label lbl s k with
     | some (s1, k1) =>
         match CminorSel.find_label lbl s' k' with
         | some (s1', k1') =>
-            ∃ kont1, sel_stmt (prog_defmap cunit) ki env s1 kont1 = .OK s1' ∧
-              match_cont prog cunit hf ki env k1 k1'
+            ∃ kont1, sel_stmt cfg oracle (prog_defmap cunit) ki env s1 kont1 = .OK s1' ∧
+              match_cont cfg oracle prog cunit hf ki env k1 k1'
         | none => False
     | none =>
         match CminorSel.find_label lbl s' k' with
@@ -807,29 +807,29 @@ def find_label_commutStatement : Prop :=
 
 def sel_step_correctStatement : Prop :=
   ∀ (xi : ExternalCalls) (prog : CminorProgram) (tprog : CminorSelProgram),
-    match_prog prog tprog →
+    match_prog cfg oracle prog tprog →
     ∀ (s1 : Cminor.state) (t : trace) (s2 : Cminor.state),
       Cminor.step xi (Genv.globalenv prog) s1 t s2 →
-      ∀ t1 : CminorSel.state, match_states prog s1 t1 → wt_state s1 →
+      ∀ t1 : CminorSel.state, match_states cfg oracle prog s1 t1 → wt_state s1 →
         (∃ t2, plus (CminorSel.step xi) (Genv.globalenv tprog) t1 t t2 ∧
-          match_states prog s2 t2) ∨
-        (measure s2 < measure s1 ∧ t = E0 ∧ match_states prog s2 t1) ∨
+          match_states cfg oracle prog s2 t2) ∨
+        (measure s2 < measure s1 ∧ t = E0 ∧ match_states cfg oracle prog s2 t1) ∨
         (∃ t2 n, CminorSel.step xi (Genv.globalenv tprog) t1 t t2 ∧
-          eventually prog xi n s2 (fun s3 => match_states prog s3 t2))
+          eventually prog xi n s2 (fun s3 => match_states cfg oracle prog s3 t2))
 
 def sel_initial_statesStatement : Prop :=
   ∀ (prog : CminorProgram) (tprog : CminorSelProgram),
-    match_prog prog tprog →
+    match_prog cfg oracle prog tprog →
       ∀ s, Cminor.initial_state prog s →
-        ∃ r, CminorSel.initial_state tprog r ∧ match_states prog s r
+        ∃ r, CminorSel.initial_state tprog r ∧ match_states cfg oracle prog s r
 
 def sel_final_statesStatement : Prop :=
   ∀ (prog : CminorProgram) (s : Cminor.state) (r : CminorSel.state) (v : int),
-    match_states prog s r → Cminor.final_state s v → CminorSel.final_state r v
+    match_states cfg oracle prog s r → Cminor.final_state s v → CminorSel.final_state r v
 
 def transf_program_correctStatement : Prop :=
   ∀ (xi : ExternalCalls) (prog : CminorProgram) (tprog : CminorSelProgram),
-    match_prog prog tprog →
+    match_prog cfg oracle prog tprog →
       forward_simulation (Cminor.semantics xi prog) (CminorSel.semantics xi tprog)
 
 end CompCert4Lean.Backend.Selectionproof

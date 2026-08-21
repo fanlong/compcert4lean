@@ -136,9 +136,9 @@ inductive state : Type where
       (stackPointer : val) (locals : env) (memory : mem)
   | Callstate (callee : fundef) (args : List val) (continuation : cont)
       (memory : mem)
-  | returnState (result : val) (continuation : cont) (memory : mem)
+  | Returnstate (result : val) (continuation : cont) (memory : mem)
 
-export state (State Callstate)
+export state (State Callstate Returnstate)
 
 mutual
   inductive eval_expr (xi : ExternalCalls) (ge : genv) (sp : val) (e : env)
@@ -441,7 +441,7 @@ inductive step (xi : ExternalCalls) (ge : genv) : state → trace → state → 
       (hcall : is_call_cont k)
       (hfree : Mem.free m sp z0 f.fn_stackspace = some m') :
       step xi ge (.State f .Sskip k (.Vptr sp Ptrofs.zero) e m) E0
-        (.returnState Vundef k m')
+        (.Returnstate Vundef k m')
   | assign (f : function) (id : ident) (a : expr) (k : cont) (sp : val)
       (e : env) (m : mem) (v : val)
       (heval : eval_expr xi ge sp e m [] a v) :
@@ -518,13 +518,13 @@ inductive step (xi : ExternalCalls) (ge : genv) : state → trace → state → 
   | returnNone (f : function) (k : cont) (sp : block) (e : env) (m m' : mem)
       (hfree : Mem.free m sp z0 f.fn_stackspace = some m') :
       step xi ge (.State f (.Sreturn none) k (.Vptr sp Ptrofs.zero) e m) E0
-        (.returnState Vundef (call_cont k) m')
+        (.Returnstate Vundef (call_cont k) m')
   | returnSome (f : function) (a : expr) (k : cont) (sp : block) (e : env)
       (m : mem) (v : val) (m' : mem)
       (heval : eval_expr xi ge (.Vptr sp Ptrofs.zero) e m [] a v)
       (hfree : Mem.free m sp z0 f.fn_stackspace = some m') :
       step xi ge (.State f (.Sreturn (some a)) k (.Vptr sp Ptrofs.zero) e m) E0
-        (.returnState v (call_cont k) m')
+        (.Returnstate v (call_cont k) m')
   | label (f : function) (lbl : ident) (s : stmt) (k : cont) (sp : val)
       (e : env) (m : mem) :
       step xi ge (.State f (.Slabel lbl s) k sp e m) E0
@@ -546,10 +546,10 @@ inductive step (xi : ExternalCalls) (ge : genv) : state → trace → state → 
       (m : mem) (t : trace) (v : val) (m' : mem)
       (hext : external_call xi ef (Genv.to_senv ge) vargs m t v m') :
       step xi ge (.Callstate (.External ef) vargs k m) t
-        (.returnState v k m')
+        (.Returnstate v k m')
   | returnToCaller (v : val) (optid : Option ident) (f : function) (sp : val)
       (e : env) (k : cont) (m : mem) :
-      step xi ge (.returnState v (.Kcall optid f sp e k) m) E0
+      step xi ge (.Returnstate v (.Kcall optid f sp e k) m) E0
         (.State f .Sskip k sp
           (CompCert4Lean.Backend.Cminor.set_optvar optid v e) m)
 
@@ -565,7 +565,7 @@ inductive initial_state (p : program) : state → Prop where
 
 inductive final_state : state → CCInt → Prop where
   | intro (r : CCInt) (m : mem) :
-      final_state (.returnState (.Vint r) .Kstop m) r
+      final_state (.Returnstate (.Vint r) .Kstop m) r
 
 def semantics (xi : ExternalCalls) (p : program) :
     CompCert4Lean.Common.Smallstep.semantics :=

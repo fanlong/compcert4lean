@@ -37,6 +37,7 @@ private abbrev Block := CompCert4Lean.Common.Values.block
 private abbrev Loc := CompCert4Lean.Backend.Locations.loc
 private abbrev Signature := CompCert4Lean.Common.AST.signature
 private abbrev CompilerConfig := CompCert4Lean.Config.CompilerConfig
+private abbrev ExternalCalls := CompCert4Lean.Common.ExternalCalls.ExternalCalls
 private abbrev MachCode := CompCert4Lean.Backend.Mach.code
 private abbrev MachFunction := CompCert4Lean.Backend.Mach.function
 private abbrev MachInstruction := CompCert4Lean.Backend.Mach.instruction
@@ -53,8 +54,9 @@ private abbrev Ptrofs := CompCert4Lean.Lib.Integers.Ptrofs.int
 private abbrev asmSP : Preg := .IR CompCert4Lean.X86.Asm.SP
 private abbrev asmPC : Preg := .PC
 
-private def asmStep : AsmGenv → AsmState → trace → AsmState → Prop :=
-  fun _ s t s' => CompCert4Lean.X86.Asm.step s t s'
+private def asmStep (cfg : CompilerConfig) (xi : ExternalCalls) :
+    AsmGenv → AsmState → trace → AsmState → Prop :=
+  CompCert4Lean.X86.Asm.step cfg xi
 
 /-! Agreement between machine and processor register states. -/
 
@@ -68,6 +70,11 @@ def agree_sp (ms : MachRegset) (sp : Val) (rs : AsmRegset)
 
 def agree_sp_def (ms : MachRegset) (sp : Val) (rs : AsmRegset)
     (h : agree ms sp rs) : sp ≠ Vundef := h.2.1
+
+def agree_mregs (ms : MachRegset) (sp : Val) (rs : AsmRegset)
+    (h : agree ms sp rs) :
+    ∀ r : Mreg, Val.lessdef (ms r) (rs (CompCert4Lean.X86.Asm.preg_of r)) :=
+  h.2.2
 
 /-! The suffix relation used for generated assembly code. -/
 
@@ -217,7 +224,7 @@ def agree_undef_caller_save_regsStatement : Prop :=
   ∀ (cfg : CompilerConfig) (ms : MachRegset) (sp : Val) (rs : AsmRegset),
     agree ms sp rs →
       agree (CompCert4Lean.Backend.Mach.undef_caller_save_regs cfg ms) sp
-        (CompCert4Lean.X86.Asm.undef_caller_save_regs rs)
+        (CompCert4Lean.X86.Asm.undef_caller_save_regs cfg rs)
 
 def agree_undef_nondata_regsStatement : Prop :=
   ∀ (ms : MachRegset) (sp : Val) (rl : List Preg) (rs : AsmRegset),
@@ -290,7 +297,8 @@ def code_tail_uniqueStatement : Prop :=
     code_tail pos fn c → code_tail pos' fn c → pos = pos'
 
 def exec_straight_steps_1Statement : Prop :=
-  ∀ (ge : AsmGenv) (fn : AsmFunction) (c : AsmCode) (rs : AsmRegset)
+  ∀ (cfg : CompilerConfig) (xi : ExternalCalls) (ge : AsmGenv)
+    (fn : AsmFunction) (c : AsmCode) (rs : AsmRegset)
     (m : Mem) (c' : AsmCode) (rs' : AsmRegset) (m' : Mem),
     exec_straight ge fn c rs m c' rs' m' →
     ZArith.BinInt.Z.le (list_length_z fn.fn_code)
@@ -299,7 +307,7 @@ def exec_straight_steps_1Statement : Prop :=
       rs asmPC = Vptr b ofs →
       Genv.find_funct_ptr ge b = some (Internal fn) →
       code_tail (CompCert4Lean.Lib.Integers.Ptrofs.unsigned ofs) fn.fn_code c →
-      plus asmStep ge (.State rs m) E0 (.State rs' m')
+      plus (asmStep cfg xi) ge (.State rs m) E0 (.State rs' m')
 
 def exec_straight_steps_2Statement : Prop :=
   ∀ (ge : AsmGenv) (fn : AsmFunction) (c : AsmCode) (rs : AsmRegset)
@@ -351,14 +359,14 @@ def extcall_arg_matchStatement : Prop :=
     (m m' : Mem) (l : Loc) (v : Val),
     agree ms sp rs → Mem.extends m m' →
     CompCert4Lean.Backend.Mach.extcall_arg cfg ms m sp l v →
-    ∃ v', CompCert4Lean.X86.Asm.extcall_arg rs m' l v' ∧ Val.lessdef v v'
+    ∃ v', CompCert4Lean.X86.Asm.extcall_arg cfg rs m' l v' ∧ Val.lessdef v v'
 
 def extcall_arg_pair_matchStatement : Prop :=
   ∀ (cfg : CompilerConfig) (ms : MachRegset) (sp : Val) (rs : AsmRegset)
     (m m' : Mem) (p : rpair Loc) (v : Val),
     agree ms sp rs → Mem.extends m m' →
     CompCert4Lean.Backend.Mach.extcall_arg_pair cfg ms m sp p v →
-    ∃ v', CompCert4Lean.X86.Asm.extcall_arg_pair rs m' p v' ∧ Val.lessdef v v'
+    ∃ v', CompCert4Lean.X86.Asm.extcall_arg_pair cfg rs m' p v' ∧ Val.lessdef v v'
 
 def extcall_args_matchStatement : Prop :=
   ∀ (cfg : CompilerConfig) (ms : MachRegset) (sp : Val) (rs : AsmRegset)
@@ -367,7 +375,7 @@ def extcall_args_matchStatement : Prop :=
     ∀ (ll : List (rpair Loc)) (vl : List Val),
       list_forall2 (CompCert4Lean.Backend.Mach.extcall_arg_pair cfg ms m sp) ll vl →
       ∃ vl',
-        list_forall2 (CompCert4Lean.X86.Asm.extcall_arg_pair rs m') ll vl' ∧
+        list_forall2 (CompCert4Lean.X86.Asm.extcall_arg_pair cfg rs m') ll vl' ∧
         Val.lessdef_list vl vl'
 
 def extcall_arguments_matchStatement : Prop :=
@@ -376,7 +384,7 @@ def extcall_arguments_matchStatement : Prop :=
     agree ms sp rs → Mem.extends m m' →
     CompCert4Lean.Backend.Mach.extcall_arguments cfg ms m sp sg args →
     ∃ args',
-      CompCert4Lean.X86.Asm.extcall_arguments rs m' sg args' ∧
+      CompCert4Lean.X86.Asm.extcall_arguments cfg rs m' sg args' ∧
       Val.lessdef_list args args'
 
 def find_instr_tailStatement : Prop :=

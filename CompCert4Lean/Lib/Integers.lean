@@ -23,6 +23,7 @@ private abbrev zSub := ZArith.BinInt.Z.sub
 private abbrev zMul := ZArith.BinInt.Z.mul
 private abbrev zOpp := ZArith.BinInt.Z.opp
 private abbrev zDiv := ZArith.BinInt.Z.div
+private abbrev zMod := ZArith.BinInt.Z.modulo
 private abbrev zQuot := ZArith.BinInt.Z.quot
 private abbrev zShiftl := ZArith.BinInt.Z.shiftl
 private abbrev zShiftr := ZArith.BinInt.Z.shiftr
@@ -54,12 +55,7 @@ inductive comparison : Type where
   | Cge
 deriving DecidableEq
 
-abbrev Ceq : comparison := .Ceq
-abbrev Cne : comparison := .Cne
-abbrev Clt : comparison := .Clt
-abbrev Cle : comparison := .Cle
-abbrev Cgt : comparison := .Cgt
-abbrev Cge : comparison := .Cge
+export comparison (Ceq Cne Clt Cle Cgt Cge)
 
 def negate_comparison : comparison → comparison
   | .Ceq => .Cne
@@ -195,8 +191,27 @@ def mul {bits : Nat} (x y : Word bits) : Word bits :=
   repr bits (zMul (unsigned x) (unsigned y))
 def divs {bits : Nat} (x y : Word bits) : Word bits :=
   repr bits (zQuot (signed x) (signed y))
+def mods {bits : Nat} (x y : Word bits) : Word bits :=
+  repr bits (zSub (signed x) (zMul (zQuot (signed x) (signed y)) (signed y)))
 def divu {bits : Nat} (x y : Word bits) : Word bits :=
   repr bits (zDiv (unsigned x) (unsigned y))
+def modu {bits : Nat} (x y : Word bits) : Word bits :=
+  repr bits (zMod (unsigned x) (unsigned y))
+
+def negative {bits : Nat} (x : Word bits) : Word bits :=
+  if lt x (zero bits) then one bits else zero bits
+
+def add_carry {bits : Nat} (x y cin : Word bits) : Word bits :=
+  let sum := zAdd (zAdd (unsigned x) (unsigned y)) (unsigned cin)
+  zltSelect sum (zTwoPowerNat bits) (zero bits) (one bits)
+
+def sub_overflow {bits : Nat} (x y bin : Word bits) : Word bits :=
+  let difference := zSub (zSub (signed x) (signed y)) (signed bin)
+  let halfModulus := zTwoPowerNat (bits - 1)
+  let minSigned := zOpp halfModulus
+  let maxSigned := zSub halfModulus zOne
+  zltSelect difference minSigned (one bits)
+    (zltSelect maxSigned difference (one bits) (zero bits))
 
 def and {bits : Nat} (x y : Word bits) : Word bits :=
   Fin.ofNat (2 ^ bits) (Nat.land x.val y.val)
@@ -310,7 +325,12 @@ def add : int → int → int := WordCore.add
 def sub : int → int → int := WordCore.sub
 def mul : int → int → int := WordCore.mul
 def divs : int → int → int := WordCore.divs
+def mods : int → int → int := WordCore.mods
 def divu : int → int → int := WordCore.divu
+def modu : int → int → int := WordCore.modu
+def negative : int → int := WordCore.negative
+def add_carry : int → int → int → int := WordCore.add_carry
+def sub_overflow : int → int → int → int := WordCore.sub_overflow
 def and : int → int → int := WordCore.and
 def or : int → int → int := WordCore.or
 def xor : int → int → int := WordCore.xor
@@ -482,7 +502,12 @@ def add : int → int → int := WordCore.add
 def sub : int → int → int := WordCore.sub
 def mul : int → int → int := WordCore.mul
 def divs : int → int → int := WordCore.divs
+def mods : int → int → int := WordCore.mods
 def divu : int → int → int := WordCore.divu
+def modu : int → int → int := WordCore.modu
+def negative : int → int := WordCore.negative
+def add_carry : int → int → int → int := WordCore.add_carry
+def sub_overflow : int → int → int → int := WordCore.sub_overflow
 def and : int → int → int := WordCore.and
 def or : int → int → int := WordCore.or
 def xor : int → int → int := WordCore.xor

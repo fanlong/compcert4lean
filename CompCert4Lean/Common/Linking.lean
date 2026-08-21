@@ -427,6 +427,14 @@ def TransfLink {A B : Type} [LA : Linker A] [LB : Linker B]
     transf p1 tp1 → transf p2 tp2 →
     ∃ tp, LB.link tp1 tp2 = some tp ∧ transf p tp
 
+def transf_link {A B : Type} [LA : Linker A] [LB : Linker B]
+    (transf : A → B → Prop) (h : TransfLink transf) :
+    ∀ (p1 p2 : A) (tp1 tp2 : B) (p : A),
+      LA.link p1 p2 = some p →
+      transf p1 tp1 → transf p2 tp2 →
+      ∃ tp, LB.link tp1 tp2 = some tp ∧ transf p tp :=
+  h
+
 structure Language where
   lang_prog : Type
   lang_link : Linker lang_prog

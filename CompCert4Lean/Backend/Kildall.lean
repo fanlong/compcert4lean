@@ -37,6 +37,17 @@ structure SemiLattice where
   eq : t → t → Prop
   ge : t → t → Prop
 
+structure SemiLatticeLaws (L : SemiLattice) : Prop where
+  eq_refl : ∀ x, L.eq x x
+  eq_sym : ∀ x y, L.eq x y → L.eq y x
+  eq_trans : ∀ x y z, L.eq x y → L.eq y z → L.eq x z
+  beq_correct : ∀ x y, L.beq x y = true → L.eq x y
+  ge_refl : ∀ x y, L.eq x y → L.ge x y
+  ge_trans : ∀ x y z, L.ge x y → L.ge y z → L.ge x z
+  ge_bot : ∀ x, L.ge x L.bot
+  ge_lub_left : ∀ x y, L.ge (L.lub x y) x
+  ge_lub_right : ∀ x y, L.ge (L.lub x y) y
+
 structure NodeSetOps where
   t : Type
   empty : t
@@ -45,10 +56,23 @@ structure NodeSetOps where
   all_nodes : {A : Type} → PTreeT A → t
   In : positive → t → Prop
 
+structure NodeSetLaws (NS : NodeSetOps) : Prop where
+  empty_spec : ∀ n, ¬ NS.In n NS.empty
+  add_spec : ∀ n n' s, NS.In n' (NS.add n s) ↔ n = n' ∨ NS.In n' s
+  pick_none : ∀ s n, NS.pick s = none → ¬ NS.In n s
+  pick_some : ∀ s n s', NS.pick s = some (n, s') →
+    ∀ n', NS.In n' s ↔ n = n' ∨ NS.In n' s'
+  all_nodes_spec : ∀ {A : Type} (code : PTreeT A) n instr,
+    PTree.get n code = some instr → NS.In n (NS.all_nodes code)
+
 structure OrderedTop where
   t : Type
   ge : t → t → Prop
   top : t
+
+structure OrderedTopLaws (L : OrderedTop) : Prop where
+  top_ge : ∀ x, L.ge L.top x
+  refl_ge : ∀ x, L.ge x x
 
 abbrev «DATAFLOW_SOLVER.L» := SemiLattice
 abbrev «BACKWARD_DATAFLOW_SOLVER.L» := SemiLattice
@@ -56,6 +80,7 @@ abbrev «BBLOCK_SOLVER.L» := OrderedTop
 
 structure DATAFLOW_SOLVER where
   L : SemiLattice
+  L_laws : SemiLatticeLaws L
   fixpoint : {A : Type} → PTreeT A → (A → List positive) →
     (positive → L.t → L.t) → positive → L.t → Option (PMapT L.t)
   fixpoint_solution :
@@ -93,6 +118,7 @@ structure NODE_SET where
 
 structure BACKWARD_DATAFLOW_SOLVER where
   L : SemiLattice
+  L_laws : SemiLatticeLaws L
   fixpoint : {A : Type} → PTreeT A → (A → List positive) →
     (positive → L.t → L.t) → Option (PMapT L.t)
   fixpoint_solution :
@@ -162,12 +188,7 @@ structure state (LAT : SemiLattice) (NS : NodeSetOps) where
   worklist : NS.t
   visited : positive → Prop
 
-def aval {LAT : SemiLattice} {NS : NodeSetOps}
-    (s : state LAT NS) : PTreeT LAT.t := s.aval
-def worklist {LAT : SemiLattice} {NS : NodeSetOps}
-    (s : state LAT NS) : NS.t := s.worklist
-def visited {LAT : SemiLattice} {NS : NodeSetOps}
-    (s : state LAT NS) : positive → Prop := s.visited
+export state (aval worklist visited)
 
 def abstr_value {LAT : SemiLattice} {NS : NodeSetOps}
     (n : positive) (s : state LAT NS) : LAT.t :=
@@ -363,6 +384,7 @@ end Backward_Dataflow_Solver
 
 structure BBLOCK_SOLVER where
   L : OrderedTop
+  L_laws : OrderedTopLaws L
   fixpoint : {A : Type} → PTreeT A → (A → List positive) →
     (positive → L.t → L.t) → positive → Option (PMapT L.t)
   fixpoint_solution :
@@ -393,8 +415,7 @@ structure state (LAT : OrderedTop) where
   aval : result LAT
   worklist : List positive
 
-def aval {LAT : OrderedTop} (s : state LAT) : result LAT := s.aval
-def worklist {LAT : OrderedTop} (s : state LAT) : List positive := s.worklist
+export state (aval worklist)
 
 def propagate_successors {LAT : OrderedTop}
     (bb : bbmap) (l : LAT.t) : List positive → state LAT → state LAT
@@ -522,17 +543,21 @@ def reachable_rightStatement : Prop :=
 
 namespace Dataflow_Solver
 def optge_reflStatement : Prop :=
-  ∀ {LAT : SemiLattice} (ol : Option LAT.t), optge LAT ol ol
+  ∀ {LAT : SemiLattice} (_LATlaws : SemiLatticeLaws LAT)
+    (ol : Option LAT.t), optge LAT ol ol
 def optge_transStatement : Prop :=
-  ∀ {LAT : SemiLattice} (ol1 ol2 ol3 : Option LAT.t),
+  ∀ {LAT : SemiLattice} (_LATlaws : SemiLatticeLaws LAT)
+    (ol1 ol2 ol3 : Option LAT.t),
     optge LAT ol1 ol2 → optge LAT ol2 ol3 → optge LAT ol1 ol3
 def optge_abstr_valueStatement : Prop :=
   ∀ {LAT : SemiLattice} {NS : NodeSetOps}
+    (_LATlaws : SemiLatticeLaws LAT) (_NSlaws : NodeSetLaws NS)
     (n : positive) (st st' : state LAT NS),
     optge LAT (PTree.get n st.aval) (PTree.get n st'.aval) →
     LAT.ge (abstr_value n st) (abstr_value n st')
 def propagate_succ_charactStatement : Prop :=
   ∀ {LAT : SemiLattice} {NS : NodeSetOps}
+    (_LATlaws : SemiLatticeLaws LAT) (_NSlaws : NodeSetLaws NS)
     (st : state LAT NS) (out : LAT.t) (n : positive),
     let st' := propagate_succ st out n
     optge LAT (PTree.get n st'.aval) (some out) ∧
@@ -547,6 +572,7 @@ def propagate_succ_charactStatement : Prop :=
       st'.visited n')
 def propagate_succ_list_charactStatement : Prop :=
   ∀ {LAT : SemiLattice} {NS : NodeSetOps}
+    (_LATlaws : SemiLatticeLaws LAT) (_NSlaws : NodeSetLaws NS)
     (out : LAT.t) (l : List positive) (st : state LAT NS),
     let st' := propagate_succ_list st out l
     (∀ n, n ∈ l → optge LAT (PTree.get n st'.aval) (some out)) ∧
@@ -561,6 +587,7 @@ def propagate_succ_list_charactStatement : Prop :=
       st'.visited n')
 def fixpoint_from_charactStatement : Prop :=
   ∀ {A : Type} {LAT : SemiLattice} {NS : NodeSetOps}
+    (_LATlaws : SemiLatticeLaws LAT) (_NSlaws : NodeSetLaws NS)
     (code : PTreeT A) (successors : A → List positive)
     (transf : positive → LAT.t → LAT.t) (start : state LAT NS)
     (res : PMapT LAT.t), fixpoint_from code successors transf start = some res →
@@ -568,6 +595,7 @@ def fixpoint_from_charactStatement : Prop :=
       NS.pick st.worklist = none ∧ res = (LAT.bot, st.aval)
 def step_incrStatement : Prop :=
   ∀ {A : Type} {LAT : SemiLattice} {NS : NodeSetOps}
+    (_LATlaws : SemiLatticeLaws LAT) (_NSlaws : NodeSetLaws NS)
     (code : PTreeT A) (successors : A → List positive)
     (transf : positive → LAT.t → LAT.t) (n : positive)
     (s1 s2 : state LAT NS), step code successors transf s1 = Sum.inr s2 →
@@ -575,6 +603,7 @@ def step_incrStatement : Prop :=
       (s1.visited n → s2.visited n)
 def steps_incrStatement : Prop :=
   ∀ {A : Type} {LAT : SemiLattice} {NS : NodeSetOps}
+    (_LATlaws : SemiLatticeLaws LAT) (_NSlaws : NodeSetLaws NS)
     (code : PTreeT A) (successors : A → List positive)
     (transf : positive → LAT.t → LAT.t) (n : positive)
     (s1 s2 : state LAT NS), steps code successors transf s1 s2 →
@@ -582,6 +611,7 @@ def steps_incrStatement : Prop :=
       (s1.visited n → s2.visited n)
 def step_state_goodStatement : Prop :=
   ∀ {A : Type} {LAT : SemiLattice} {NS : NodeSetOps}
+    (_LATlaws : SemiLatticeLaws LAT) (_NSlaws : NodeSetLaws NS)
     (code : PTreeT A) (successors : A → List positive)
     (transf : positive → LAT.t → LAT.t) (st : state LAT NS)
     (pc : positive) (rem : NS.t) (instr : A),
@@ -593,6 +623,7 @@ def step_state_goodStatement : Prop :=
         (transf pc (abstr_value pc st)) (successors instr))
 def step_state_good_2Statement : Prop :=
   ∀ {A : Type} {LAT : SemiLattice} {NS : NodeSetOps}
+    (_LATlaws : SemiLatticeLaws LAT) (_NSlaws : NodeSetLaws NS)
     (code : PTreeT A) (successors : A → List positive)
     (transf : positive → LAT.t → LAT.t) (st : state LAT NS)
     (pc : positive) (rem : NS.t), good_state code successors transf st →
@@ -601,33 +632,39 @@ def step_state_good_2Statement : Prop :=
       { aval := st.aval, worklist := rem, visited := st.visited }
 def steps_state_goodStatement : Prop :=
   ∀ {A : Type} {LAT : SemiLattice} {NS : NodeSetOps}
+    (_LATlaws : SemiLatticeLaws LAT) (_NSlaws : NodeSetLaws NS)
     (code : PTreeT A) (successors : A → List positive)
     (transf : positive → LAT.t → LAT.t) (st1 st2 : state LAT NS),
     steps code successors transf st1 st2 → good_state code successors transf st1 →
     good_state code successors transf st2
 def start_state_goodStatement : Prop :=
   ∀ {A : Type} {LAT : SemiLattice} {NS : NodeSetOps}
+    (_LATlaws : SemiLatticeLaws LAT) (_NSlaws : NodeSetLaws NS)
     (code : PTreeT A) (successors : A → List positive)
     (transf : positive → LAT.t → LAT.t) (enode : positive) (eval : LAT.t),
     good_state code successors transf (@start_state LAT NS enode eval)
 def start_state_nodeset_goodStatement : Prop :=
   ∀ {A : Type} {LAT : SemiLattice} (NS : NodeSetOps)
+    (_LATlaws : SemiLatticeLaws LAT) (_NSlaws : NodeSetLaws NS)
     (code : PTreeT A) (successors : A → List positive)
     (transf : positive → LAT.t → LAT.t) (enodes : NS.t),
     good_state code successors transf (start_state_nodeset NS enodes)
 def start_state_allnodes_goodStatement : Prop :=
   ∀ {A : Type} {LAT : SemiLattice} (NS : NodeSetOps)
+    (_LATlaws : SemiLatticeLaws LAT) (_NSlaws : NodeSetLaws NS)
     (code : PTreeT A) (successors : A → List positive)
     (transf : positive → LAT.t → LAT.t),
     good_state code successors transf (start_state_allnodes NS code)
 def reachable_visitedStatement : Prop :=
   ∀ {A : Type} {LAT : SemiLattice} {NS : NodeSetOps}
+    (_LATlaws : SemiLatticeLaws LAT) (_NSlaws : NodeSetLaws NS)
     (code : PTreeT A) (successors : A → List positive)
     (transf : positive → LAT.t → LAT.t) (st : state LAT NS),
     good_state code successors transf st → NS.pick st.worklist = none →
     ∀ p q, reachable code successors p q → st.visited p → st.visited q
 def fixpoint_solutionStatement : Prop :=
   ∀ {A : Type} (LAT : SemiLattice) (NS : NodeSetOps)
+    (_LATlaws : SemiLatticeLaws LAT) (_NSlaws : NodeSetLaws NS)
     (code : PTreeT A) (successors : A → List positive)
     (transf : positive → LAT.t → LAT.t) (ep : positive) (ev : LAT.t)
     (res : PMapT LAT.t) (n : positive) (instr : A) (s : positive),
@@ -637,12 +674,14 @@ def fixpoint_solutionStatement : Prop :=
     LAT.ge (PMap.get s res) (transf n (PMap.get n res))
 def fixpoint_entryStatement : Prop :=
   ∀ {A : Type} (LAT : SemiLattice) (NS : NodeSetOps)
+    (_LATlaws : SemiLatticeLaws LAT) (_NSlaws : NodeSetLaws NS)
     (code : PTreeT A) (successors : A → List positive)
     (transf : positive → LAT.t → LAT.t) (ep : positive) (ev : LAT.t)
     (res : PMapT LAT.t), fixpoint LAT NS code successors transf ep ev = some res →
     LAT.ge (PMap.get ep res) ev
 def fixpoint_allnodes_solutionStatement : Prop :=
   ∀ {A : Type} (LAT : SemiLattice) (NS : NodeSetOps)
+    (_LATlaws : SemiLatticeLaws LAT) (_NSlaws : NodeSetLaws NS)
     (code : PTreeT A) (successors : A → List positive)
     (transf : positive → LAT.t → LAT.t) (res : PMapT LAT.t)
     (n : positive) (instr : A) (s : positive),
@@ -651,6 +690,7 @@ def fixpoint_allnodes_solutionStatement : Prop :=
     LAT.ge (PMap.get s res) (transf n (PMap.get n res))
 def fixpoint_nodeset_solutionStatement : Prop :=
   ∀ {A : Type} (LAT : SemiLattice) (NS : NodeSetOps)
+    (_LATlaws : SemiLatticeLaws LAT) (_NSlaws : NodeSetLaws NS)
     (code : PTreeT A) (successors : A → List positive)
     (transf : positive → LAT.t → LAT.t) (enodes : NS.t)
     (res : PMapT LAT.t) (e n : positive) (instr : A) (s : positive),
@@ -660,6 +700,7 @@ def fixpoint_nodeset_solutionStatement : Prop :=
     LAT.ge (PMap.get s res) (transf n (PMap.get n res))
 def fixpoint_invariantStatement : Prop :=
   ∀ {A : Type} (LAT : SemiLattice) (NS : NodeSetOps)
+    (_LATlaws : SemiLatticeLaws LAT) (_NSlaws : NodeSetLaws NS)
     (code : PTreeT A) (successors : A → List positive)
     (transf : positive → LAT.t → LAT.t) (ep : positive) (ev : LAT.t)
     (P : LAT.t → Prop), P LAT.bot →
@@ -692,22 +733,26 @@ def reachable_predecessorsStatement : Prop :=
 namespace Backward_Dataflow_Solver
 def exit_points_charactStatement : Prop :=
   ∀ {A : Type} (NS : NodeSetOps) (code : PTreeT A)
+    (_NSlaws : NodeSetLaws NS)
     (successors : A → List positive) (n : positive),
     NS.In n (exit_points NS code successors) ↔
       ∃ i, PTree.get n code = some i ∧ sequential_node code successors n i = false
 def reachable_exit_pointsStatement : Prop :=
   ∀ {A : Type} (NS : NodeSetOps) (code : PTreeT A)
+    (_NSlaws : NodeSetLaws NS)
     (successors : A → List positive) (pc : positive) (i : A),
     PTree.get pc code = some i →
     ∃ x, NS.In x (exit_points NS code successors) ∧ reachable code successors pc x
 def reachable_exit_points_predecessorStatement : Prop :=
   ∀ {A : Type} (NS : NodeSetOps) (code : PTreeT A)
+    (_NSlaws : NodeSetLaws NS)
     (successors : A → List positive) (pc : positive) (i : A),
     PTree.get pc code = some i →
     ∃ x, NS.In x (exit_points NS code successors) ∧
       reachable (make_predecessors code successors) (fun l => l) x pc
 def fixpoint_solutionStatement : Prop :=
   ∀ {A : Type} (LAT : SemiLattice) (NS : NodeSetOps)
+    (_LATlaws : SemiLatticeLaws LAT) (_NSlaws : NodeSetLaws NS)
     (code : PTreeT A) (successors : A → List positive)
     (transf : positive → LAT.t → LAT.t) (res : PMapT LAT.t)
     (n : positive) (instr : A) (s : positive),
@@ -717,6 +762,7 @@ def fixpoint_solutionStatement : Prop :=
     LAT.ge (PMap.get n res) (transf s (PMap.get s res))
 def fixpoint_allnodes_solutionStatement : Prop :=
   ∀ {A : Type} (LAT : SemiLattice) (NS : NodeSetOps)
+    (_LATlaws : SemiLatticeLaws LAT) (_NSlaws : NodeSetLaws NS)
     (code : PTreeT A) (successors : A → List positive)
     (transf : positive → LAT.t → LAT.t) (res : PMapT LAT.t)
     (n : positive) (instr : A) (s : positive),
@@ -744,17 +790,20 @@ def no_self_loopStatement : Prop :=
     PTree.get n code = some instr → n ∈ successors instr →
     basic_block_map entrypoint code successors n = true
 def propagate_successors_charact1Statement : Prop :=
-  ∀ {LAT : OrderedTop} (bb : bbmap) (succs : List positive)
+  ∀ {LAT : OrderedTop} (_LATlaws : OrderedTopLaws LAT)
+    (bb : bbmap) (succs : List positive)
     (l : LAT.t) (st : state LAT) (n : positive),
     n ∈ st.worklist → n ∈ (propagate_successors bb l succs st).worklist
 def propagate_successors_charact2Statement : Prop :=
-  ∀ {LAT : OrderedTop} (bb : bbmap) (succs : List positive)
+  ∀ {LAT : OrderedTop} (_LATlaws : OrderedTopLaws LAT)
+    (bb : bbmap) (succs : List positive)
     (l : LAT.t) (st : state LAT) (n : positive),
     let st' := propagate_successors bb l succs st
     (n ∈ succs → bb n = false → n ∈ st'.worklist ∧ PMap.get n st'.aval = l) ∧
     (n ∉ succs ∨ bb n = true → PMap.get n st'.aval = PMap.get n st.aval)
 def propagate_successors_invariantStatement : Prop :=
   ∀ {A : Type} {LAT : OrderedTop} (entrypoint : positive)
+    (_LATlaws : OrderedTopLaws LAT)
     (code : PTreeT A) (successors : A → List positive)
     (transf : positive → LAT.t → LAT.t) (pc : positive) (instr : A)
     (res : result LAT) (rem : List positive), PTree.get pc code = some instr →
@@ -766,6 +815,7 @@ def propagate_successors_invariantStatement : Prop :=
         { aval := res, worklist := rem })
 def propagate_successors_invariant_2Statement : Prop :=
   ∀ {A : Type} {LAT : OrderedTop} (entrypoint : positive)
+    (_LATlaws : OrderedTopLaws LAT)
     (code : PTreeT A) (successors : A → List positive)
     (transf : positive → LAT.t → LAT.t) (pc : positive)
     (res : result LAT) (rem : List positive), PTree.get pc code = none →
@@ -775,6 +825,7 @@ def propagate_successors_invariant_2Statement : Prop :=
       { aval := res, worklist := rem }
 def initial_state_invariantStatement : Prop :=
   ∀ {A : Type} (LAT : OrderedTop) (entrypoint : positive)
+    (_LATlaws : OrderedTopLaws LAT)
     (code : PTreeT A) (successors : A → List positive)
     (transf : positive → LAT.t → LAT.t),
     let bb := basic_block_map entrypoint code successors
@@ -782,6 +833,7 @@ def initial_state_invariantStatement : Prop :=
       { aval := PMap.init LAT.top, worklist := basic_block_list bb code }
 def analyze_invariantStatement : Prop :=
   ∀ {A : Type} (LAT : OrderedTop) (entrypoint : positive)
+    (_LATlaws : OrderedTopLaws LAT)
     (code : PTreeT A) (successors : A → List positive)
     (transf : positive → LAT.t → LAT.t) (res : result LAT),
     fixpoint LAT code successors transf entrypoint = some res →
@@ -789,6 +841,7 @@ def analyze_invariantStatement : Prop :=
       { aval := res, worklist := [] }
 def fixpoint_solutionStatement : Prop :=
   ∀ {A : Type} (LAT : OrderedTop) (entrypoint : positive)
+    (_LATlaws : OrderedTopLaws LAT)
     (code : PTreeT A) (successors : A → List positive)
     (transf : positive → LAT.t → LAT.t) (res : result LAT)
     (n : positive) (instr : A) (s : positive),
@@ -797,15 +850,18 @@ def fixpoint_solutionStatement : Prop :=
     LAT.ge (PMap.get s res) (transf n (PMap.get n res))
 def fixpoint_entryStatement : Prop :=
   ∀ {A : Type} (LAT : OrderedTop) (entrypoint : positive)
+    (_LATlaws : OrderedTopLaws LAT)
     (code : PTreeT A) (successors : A → List positive)
     (transf : positive → LAT.t → LAT.t) (res : result LAT),
     fixpoint LAT code successors transf entrypoint = some res →
     PMap.get entrypoint res = LAT.top
 def propagate_successors_PStatement : Prop :=
-  ∀ {LAT : OrderedTop} (P : LAT.t → Prop) (bb : bbmap) (l : LAT.t),
+  ∀ {LAT : OrderedTop} (_LATlaws : OrderedTopLaws LAT)
+    (P : LAT.t → Prop) (bb : bbmap) (l : LAT.t),
     P l → ∀ succs st, Pstate P st → Pstate P (propagate_successors bb l succs st)
 def fixpoint_invariantStatement : Prop :=
   ∀ {A : Type} (LAT : OrderedTop) (entrypoint : positive)
+    (_LATlaws : OrderedTopLaws LAT)
     (code : PTreeT A) (successors : A → List positive)
     (transf : positive → LAT.t → LAT.t) (P : LAT.t → Prop),
     P LAT.top →
