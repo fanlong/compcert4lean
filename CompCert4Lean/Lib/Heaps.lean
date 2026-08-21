@@ -16,16 +16,8 @@ open CompCert4Lean.Foundation.Numbers.Rocq.Coq
 open CompCert4Lean.Foundation.Ordered.Rocq.Coq.Structures.OrderedType
 open CompCert4Lean.Lib.Coqlib
 
-structure OrderedType where
-  t : Type
-  eq : t → t → Prop
-  lt : t → t → Prop
-  compare : ∀ x y, Compare lt eq x y
-  eq_refl : ∀ x, eq x x
-  eq_sym : ∀ {x y}, eq x y → eq y x
-  eq_trans : ∀ {x y z}, eq x y → eq y z → eq x z
-  lt_trans : ∀ {x y z}, lt x y → lt y z → lt x z
-  lt_not_eq : ∀ {x y}, lt x y → ¬ eq x y
+abbrev OrderedType :=
+  CompCert4Lean.Foundation.Ordered.Rocq.Coq.Structures.OrderedType.OrderedType
 
 def SplayHeapSet : Type := Unit
 def «SplayHeapSet.R» : Type := Unit
@@ -129,10 +121,10 @@ def le (x y : E.t) : Prop := E.eq x y ∨ E.lt x y
 private def ltDecidable (x y : E.t) : Decidable (E.lt x y) :=
   match E.compare x y with
   | .lt h => isTrue h
-  | .eq h => isFalse (fun hlt => E.lt_not_eq hlt h)
+  | .eq h => isFalse (fun hlt => E.lt_not_eq _ _ hlt h)
   | .gt h =>
       isFalse (fun hlt =>
-        E.lt_not_eq (E.lt_trans hlt h) (E.eq_refl x))
+        E.lt_not_eq _ _ (E.lt_trans _ _ _ hlt h) (E.eq_refl x))
 
 private def ltHeapDecidable : ∀ h x, Decidable (lt_heap E h x)
   | .Empty, _ => isTrue trivial
@@ -356,10 +348,14 @@ private def positiveOrder : OrderedType :=
             exact positiveNat_injective h.symm
           exact .gt (Nat.lt_of_le_of_ne hle hne)
     eq_refl := fun _ => rfl
-    eq_sym := fun h => h.symm
-    eq_trans := fun h₁ h₂ => h₁.trans h₂
+    eq_sym := by intro x y h; exact h.symm
+    eq_trans := by intro x y z h₁ h₂; exact h₁.trans h₂
     lt_trans := by intro x y z hxy hyz; exact Nat.lt_trans hxy hyz
-    lt_not_eq := by intro x y hxy heq; cases heq; exact Nat.lt_irrefl _ hxy }
+    lt_not_eq := by intro x y hxy heq; cases heq; exact Nat.lt_irrefl _ hxy
+    eq_dec := fun x y => by
+      by_cases h : x = y
+      · exact .left h
+      · exact .right h }
 
 def PHeap : Type := Unit
 

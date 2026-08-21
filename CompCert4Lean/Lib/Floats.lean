@@ -402,6 +402,9 @@ def abs_nan (f : float32) : float32 :=
 def cons_pl (x : float32) (l : List (Bool × positive)) : List (Bool × positive) :=
   if isNaN32 x then (sign32 x, payload32 x) :: l else l
 
+def unop_nan (x : float32) : float32 :=
+  quiet_nan_32 (Archi.choose_nan_32 (cons_pl x []))
+
 def binop_nan (x y : float32) : float32 :=
   quiet_nan_32 (Archi.choose_nan_32 (cons_pl x (cons_pl y [])))
 
@@ -417,6 +420,14 @@ def neg (x : float32) : float32 :=
 
 def abs (x : float32) : float32 :=
   ⟨x.bits.and (BitVec.ofNat 32 (2 ^ 31 - 1))⟩
+
+def sqrt (x : float32) : float32 :=
+  if isNaN32 x then
+    unop_nan x
+  else
+    let r : float32 :=
+      ⟨Sqrt.rawSqrt _root_.Float.Model.Format.binary32 x.bits⟩
+    if isNaN32 r then default_nan_32 else r
 
 private def finishBinary (x y r : float32) : float32 :=
   if isNaN32 x || isNaN32 y then binop_nan x y

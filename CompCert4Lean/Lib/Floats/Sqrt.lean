@@ -45,6 +45,16 @@ def rawSqrt (spec : Format) (x : FloatExec.Raw spec) : FloatExec.Raw spec :=
     Float.Model.UnpackedFloat.pack spec
       (unpackedSqrt spec (Float.Model.UnpackedFloat.unpack spec x))
 
+/-! Public fixed-width endpoints.  The provider contract exposes these names
+for downstream float operations; the raw-word implementation remains the
+single canonical computation for both formats. -/
+
+def float32_sqrt (x : UInt32) : UInt32 :=
+  UInt32.ofBitVec (rawSqrt Float.Model.Format.binary32 x.toBitVec)
+
+def float64_sqrt (x : UInt64) : UInt64 :=
+  UInt64.ofBitVec (rawSqrt Float.Model.Format.binary64 x.toBitVec)
+
 def rawSqrt_eq_modelStatement : Prop :=
   (∀ x : FloatExec.Raw Float.Model.Format.binary32,
     rawSqrt Float.Model.Format.binary32 x =
@@ -61,11 +71,15 @@ def rawSqrt_eq_modelStatement : Prop :=
       else
         Float.Model.UnpackedFloat.pack Float.Model.Format.binary64
           (unpackedSqrt Float.Model.Format.binary64
-            (Float.Model.UnpackedFloat.unpack Float.Model.Format.binary64 x))))
+          (Float.Model.UnpackedFloat.unpack Float.Model.Format.binary64 x))))
+
+/- The source theorem identities remain available as exact proposition aliases;
+proof discharge belongs to the later proof-grinding phase. -/
+abbrev rawSqrt_eq_model : Prop := rawSqrt_eq_modelStatement
 
 def float32_sqrt_correctStatement : Prop :=
   ∀ x : UInt32,
-    UInt32.ofBitVec (rawSqrt Float.Model.Format.binary32 x.toBitVec) =
+    float32_sqrt x =
       UInt32.ofBitVec
         (if rawIsNaN Float.Model.Format.binary32 x.toBitVec then
           quietNaN Float.Model.Format.binary32 x.toBitVec
@@ -74,9 +88,11 @@ def float32_sqrt_correctStatement : Prop :=
             (unpackedSqrt Float.Model.Format.binary32
               (Float.Model.UnpackedFloat.unpack Float.Model.Format.binary32 x.toBitVec)))
 
+abbrev float32_sqrt_correct : Prop := float32_sqrt_correctStatement
+
 def float64_sqrt_correctStatement : Prop :=
   ∀ x : UInt64,
-    UInt64.ofBitVec (rawSqrt Float.Model.Format.binary64 x.toBitVec) =
+    float64_sqrt x =
       UInt64.ofBitVec
         (if rawIsNaN Float.Model.Format.binary64 x.toBitVec then
           quietNaN Float.Model.Format.binary64 x.toBitVec
@@ -84,6 +100,8 @@ def float64_sqrt_correctStatement : Prop :=
           Float.Model.UnpackedFloat.pack Float.Model.Format.binary64
             (unpackedSqrt Float.Model.Format.binary64
               (Float.Model.UnpackedFloat.unpack Float.Model.Format.binary64 x.toBitVec)))
+
+abbrev float64_sqrt_correct : Prop := float64_sqrt_correctStatement
 
 end Sqrt
 
