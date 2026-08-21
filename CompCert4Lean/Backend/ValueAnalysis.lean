@@ -87,13 +87,16 @@ private def boolEq {A : Type} [DecidableEq A] (x y : A) : Bool := decide (x = y)
 
 /-! ## Dataflow lattice adapter (the source functor is not a public surface). -/
 
-private def va_lat (cfg : CompilerConfig) : SemiLattice :=
+def va_lat (cfg : CompilerConfig) : SemiLattice :=
   { t := VA.t
     bot := VA.bot
     lub := VA.lub cfg
     beq := VA.beq
     eq := VA.eq
     ge := VA.ge }
+
+def solver_law_obligation (cfg : CompilerConfig) : Prop :=
+  SemiLatticeLaws (va_lat cfg) ∧ NodeSetForward.law_obligation
 
 /-! ## Executable analysis definitions -/
 

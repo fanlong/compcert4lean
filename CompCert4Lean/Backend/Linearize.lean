@@ -299,6 +299,10 @@ namespace DS
 
 def L : CompCert4Lean.Backend.Kildall.SemiLattice := booleanLattice
 
+def law_obligation : Prop :=
+  CompCert4Lean.Backend.Kildall.SemiLatticeLaws L ∧
+    CompCert4Lean.Backend.Kildall.NodeSetForward.law_obligation
+
 def DS : Type :=
   CompCert4Lean.Backend.Kildall.Dataflow_Solver L
     CompCert4Lean.Backend.Kildall.NodeSetForward

@@ -147,6 +147,9 @@ namespace DS
 def L : SemiLattice :=
   RegsetLat.semiLattice
 
+def law_obligation : Prop :=
+  SemiLatticeLaws L ∧ NodeSetBackward.law_obligation
+
 def DS : Type :=
   Backward_Dataflow_Solver.DS L NodeSetBackward
 

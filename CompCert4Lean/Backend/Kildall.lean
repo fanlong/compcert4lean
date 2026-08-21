@@ -504,6 +504,7 @@ def pick (s : t) : Option (positive × t) :=
 def all_nodes {A : Type} (code : PTreeT A) : t :=
   PTree.fold (fun s pc _ => PHeap.insert pc s) code PHeap.empty
 def In (n : positive) (s : t) : Prop := PHeap.In n s
+def law_obligation : Prop := NodeSetLaws NodeSetForward
 end NodeSetForward
 
 def NodeSetBackward : NodeSetOps :=
@@ -528,6 +529,7 @@ def pick (s : t) : Option (positive × t) :=
 def all_nodes {A : Type} (code : PTreeT A) : t :=
   PTree.fold (fun s pc _ => PHeap.insert pc s) code PHeap.empty
 def In (n : positive) (s : t) : Prop := PHeap.In n s
+def law_obligation : Prop := NodeSetLaws NodeSetBackward
 end NodeSetBackward
 
 def reachable_transStatement : Prop :=

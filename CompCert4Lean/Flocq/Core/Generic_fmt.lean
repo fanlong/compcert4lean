@@ -46,6 +46,7 @@ abbrev Rminus := Raux.Rminus
 abbrev Rmult := Raux.Rmult
 abbrev Rdiv := Raux.Rdiv
 abbrev Rabs := Raux.Rabs
+abbrev Rmin := Raux.Rmin
 abbrev Rlt := Raux.Rlt
 abbrev Rle := Raux.Rle
 abbrev Rcompare := Raux.Rcompare
@@ -59,6 +60,8 @@ abbrev Zaway := Raux.Zaway
 abbrev Znearest_choice := Zaux.Zle_bool
 abbrev Rnd_DN_pt := Defs.Rnd_DN_pt
 abbrev Rnd_UP_pt := Defs.Rnd_UP_pt
+abbrev Rnd_N_pt := Defs.Rnd_N_pt
+abbrev satisfies_any := Round_pred.satisfies_any
 
 class Valid_exp (fexp : Z → Z) : Prop where
   valid_exp : ∀ k : Z,
@@ -107,6 +110,10 @@ def Znearest (choice : Z → Bool) (x : R) : Z :=
 abbrev ZnearestA (x : R) : Z := Znearest (fun m => Zle_bool Z0 m) x
 
 def valid_rnd_N : Prop := Valid_rnd (Znearest (fun m => Zle_bool Z0 m))
+
+/- The source global instance is retained as an explicit definition-phase
+   obligation.  Its proof uses the floor laws discharged in the proof phase. -/
+def valid_rnd_DN : Prop := Valid_rnd Zfloor
 
 /-! Generated and directly implemented surfaces. -/
 
@@ -357,5 +364,126 @@ def scaled_mantissa_oppStatement : Prop :=
 def valid_exp_large'Statement : Prop :=
   ∀ fexp, Valid_exp fexp → ∀ k l,
     Zlt (fexp k) k → Zle l k → Zlt (fexp l) k
+
+def abs_round_ge_genericStatement : Prop :=
+  ∀ (beta : radix) (fexp : Z → Z) (rnd : R → Z),
+    Valid_exp fexp → Valid_rnd rnd →
+      ∀ x y, generic_format beta fexp x →
+        Rle x (Rabs y) → Rle x (Rabs (round beta fexp rnd y))
+
+def abs_round_le_genericStatement : Prop :=
+  ∀ (beta : radix) (fexp : Z → Z) (rnd : R → Z),
+    Valid_exp fexp → Valid_rnd rnd →
+      ∀ x y, generic_format beta fexp y →
+        Rle (Rabs x) y → Rle (Rabs (round beta fexp rnd x)) y
+
+def canonical_0Statement : Prop :=
+  ∀ (beta : radix) (fexp : Z → Z), Valid_exp fexp →
+    canonical beta fexp (Float beta Z0 (cexp beta fexp R0))
+
+def canonical_absStatement : Prop :=
+  ∀ (beta : radix) (fexp : Z → Z) (m e : Z),
+    Valid_exp fexp → canonical beta fexp (Float beta m e) →
+      canonical beta fexp (Float beta (Zabs m) e)
+
+def canonical_generic_formatStatement : Prop :=
+  ∀ (beta : radix) (fexp : Z → Z), Valid_exp fexp → ∀ x,
+    generic_format beta fexp x →
+      ∃ f : float beta, x = F2R f ∧ canonical beta fexp f
+
+def canonical_oppStatement : Prop :=
+  ∀ (beta : radix) (fexp : Z → Z) (m e : Z),
+    Valid_exp fexp → canonical beta fexp (Float beta m e) →
+      canonical beta fexp (Float beta (Zopp m) e)
+
+def cexp_DNStatement : Prop :=
+  ∀ (beta : radix) (fexp : Z → Z), Valid_exp fexp → ∀ x,
+    Rlt R0 (round beta fexp Zfloor x) →
+      cexp beta fexp (round beta fexp Zfloor x) = cexp beta fexp x
+
+def exp_small_round_0Statement : Prop :=
+  ∀ (beta : radix) (fexp : Z → Z) (rnd : R → Z),
+    Valid_exp fexp → Valid_rnd rnd → ∀ x ex,
+      (Rle (bpow beta (Zsub ex Zone)) (Rabs x) ∧
+        Rlt (Rabs x) (bpow beta ex)) →
+      round beta fexp rnd x = R0 → Zle ex (fexp ex)
+
+def exp_small_round_0_posStatement : Prop :=
+  ∀ (beta : radix) (fexp : Z → Z), Valid_exp fexp → ∀ x ex,
+    (Rle (bpow beta (Zsub ex Zone)) x ∧ Rlt x (bpow beta ex)) →
+    round beta fexp Zfloor x = R0 → Zle ex (fexp ex)
+
+def generic_format_F2R'Statement : Prop :=
+  ∀ (beta : radix) (fexp : Z → Z), Valid_exp fexp →
+    ∀ (x : R) (f : float beta), F2R f = x →
+      (x ≠ R0 → Zle (cexp beta fexp x) (Fexp f)) →
+      generic_format beta fexp x
+
+def generic_format_satisfies_anyStatement : Prop :=
+  ∀ (beta : radix) (fexp : Z → Z), Valid_exp fexp →
+    satisfies_any (generic_format beta fexp)
+
+def mag_DNStatement : Prop :=
+  ∀ (beta : radix) (fexp : Z → Z), Valid_exp fexp → ∀ x,
+    Rlt R0 (round beta fexp Zfloor x) →
+      (mag beta (round beta fexp Zfloor x) : Z) = (mag beta x : Z)
+
+def mantissa_DN_small_posStatement : Prop :=
+  ∀ (beta : radix) (fexp : Z → Z) (x : R) (ex : Z),
+    Valid_exp fexp →
+      (Rle (bpow beta (Zsub ex Zone)) x ∧ Rlt x (bpow beta ex)) →
+      Zle ex (fexp ex) →
+      Zfloor (Rmult x (bpow beta (Zopp (fexp ex)))) = Z0
+
+def mantissa_UP_small_posStatement : Prop :=
+  ∀ (beta : radix) (fexp : Z → Z) (x : R) (ex : Z),
+    Valid_exp fexp →
+      (Rle (bpow beta (Zsub ex Zone)) x ∧ Rlt x (bpow beta ex)) →
+      Zle ex (fexp ex) →
+      Zceil (Rmult x (bpow beta (Zopp (fexp ex)))) = Zone
+
+def round_DN_UP_ltStatement : Prop :=
+  ∀ (beta : radix) (fexp : Z → Z), Valid_exp fexp → ∀ x,
+    ¬ generic_format beta fexp x →
+      Rlt (round beta fexp Zfloor x) x ∧
+        Rlt x (round beta fexp Zceil x)
+
+def round_DN_small_posStatement : Prop :=
+  ∀ (beta : radix) (fexp : Z → Z) (x : R) (ex : Z),
+    Valid_exp fexp →
+      (Rle (bpow beta (Zsub ex Zone)) x ∧ Rlt x (bpow beta ex)) →
+      Zle ex (fexp ex) → round beta fexp Zfloor x = R0
+
+def round_N_oppStatement : Prop :=
+  ∀ (beta : radix) (fexp : Z → Z) (choice : Z → Bool),
+    Valid_exp fexp → ∀ x,
+      round beta fexp (Znearest choice) (Ropp x) =
+        Ropp (round beta fexp
+          (Znearest (fun t => Bool.not (choice (Zopp (Zadd t Zone))))) x)
+
+def round_N_ptStatement : Prop :=
+  ∀ (beta : radix) (fexp : Z → Z), Valid_exp fexp → ∀ x,
+    Rnd_N_pt (generic_format beta fexp) x
+      (round beta fexp (Znearest (fun m => Zle_bool Z0 m)) x)
+
+def round_UP_small_posStatement : Prop :=
+  ∀ (beta : radix) (fexp : Z → Z) (x : R) (ex : Z),
+    Valid_exp fexp →
+      (Rle (bpow beta (Zsub ex Zone)) x ∧ Rlt x (bpow beta ex)) →
+      Zle ex (fexp ex) →
+      round beta fexp Zceil x = bpow beta (fexp ex)
+
+def round_abs_absStatement : Prop :=
+  ∀ (beta : radix) (fexp : Z → Z) (P : R → R → Prop),
+    (∀ (rnd : R → Z), Valid_rnd rnd → ∀ x, Rle R0 x →
+      P x (round beta fexp rnd x)) →
+    ∀ (rnd : R → Z), Valid_rnd rnd → ∀ x,
+      P (Rabs x) (Rabs (round beta fexp rnd x))
+
+def round_oppStatement : Prop :=
+  ∀ (beta : radix) (fexp : Z → Z) (rnd : R → Z),
+    Valid_exp fexp → Valid_rnd rnd → ∀ x,
+      round beta fexp rnd (Ropp x) =
+        Ropp (round beta fexp (Zrnd_opp rnd) x)
 
 end CompCert4Lean.Flocq.Core.Generic_fmt

@@ -200,4 +200,8 @@ def iter_pos_natStatement : Prop :=
     iter_pos f p x = iter_nat f
       (CompCert4Lean.Foundation.Numbers.Rocq.Coq.PArith.BinPos.Pos.to_nat p) x
 
+def Zeven_Zpower_oddStatement : Prop :=
+  ∀ (b e : Z), Zle Z0 e → Zeven b = false →
+    Zeven (Zpower b e) = false
+
 end CompCert4Lean.Flocq.Core.Zaux

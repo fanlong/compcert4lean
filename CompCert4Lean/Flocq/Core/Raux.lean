@@ -46,6 +46,7 @@ abbrev Rlt := CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.Rlt
 abbrev Rle := CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.Rle
 abbrev Rge := CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.Rge
 abbrev Rgt := CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.Rgt
+abbrev Rmin := CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.Rmin
 abbrev Rsqr := CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.Rsqr
 abbrev sqrt := CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.sqrt
 abbrev exp := CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.exp
@@ -438,5 +439,29 @@ def cond_Ropp_mult_lStatement : Prop :=
 
 def sqrt_ge_0Statement : Prop :=
   ∀ x : R, Rle R0 (sqrt x)
+
+def Req_bool_falseStatement : Prop :=
+  ∀ x y : R, x ≠ y → Req_bool x y = false
+
+def Req_bool_trueStatement : Prop :=
+  ∀ x y : R, x = y → Req_bool x y = true
+
+def Rmin_compareStatement : Prop :=
+  ∀ x y : R,
+    Rmin x y = match Rcompare x y with
+      | .Lt => x
+      | .Eq => x
+      | .Gt => y
+
+def Rmult_min_distr_rStatement : Prop :=
+  ∀ (r r1 r2 : R),
+    Rle R0 r →
+      Rmult (Rmin r1 r2) r = Rmin (Rmult r1 r) (Rmult r2 r)
+
+def Rmult_neq_compat_rStatement : Prop :=
+  ∀ (r1 r2 r3 : R), r1 ≠ R0 → r2 ≠ r3 → Rmult r2 r1 ≠ Rmult r3 r1
+
+def bpow_injStatement : Prop :=
+  ∀ (r : radix) (e1 e2 : Z), bpow r e1 = bpow r e2 → e1 = e2
 
 end CompCert4Lean.Flocq.Core.Raux

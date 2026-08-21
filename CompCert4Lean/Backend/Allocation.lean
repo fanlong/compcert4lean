@@ -1907,6 +1907,9 @@ namespace DS
 
 def L : SemiLattice := analysisLattice
 
+def law_obligation : Prop :=
+  SemiLatticeLaws L ∧ NodeSetBackward.law_obligation
+
 def DS : Type :=
   Backward_Dataflow_Solver.DS L NodeSetBackward
 

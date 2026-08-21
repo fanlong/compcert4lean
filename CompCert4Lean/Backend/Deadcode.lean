@@ -49,13 +49,16 @@ private def needednessAnalysisFailedText : RocqString :=
   bytesToString [78, 101, 101, 100, 101, 100, 110, 101, 115, 115, 32, 97,
     110, 97, 108, 121, 115, 105, 115, 32, 102, 97, 105, 108, 101, 100]
 
-private def na_lattice : SemiLattice :=
+def na_lattice : SemiLattice :=
   { t := NA.t
     bot := NA.bot
     lub := NA.lub
     beq := NA.beq
     eq := NA.eq
     ge := NA.ge }
+
+def solver_law_obligation : Prop :=
+  SemiLatticeLaws na_lattice ∧ NodeSetBackward.law_obligation
 
 def add_need_all (r : reg) (ne : nenv) : nenv :=
   NE.set r All ne

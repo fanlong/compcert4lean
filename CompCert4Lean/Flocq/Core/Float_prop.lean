@@ -208,4 +208,10 @@ def mag_F2R_bounds_ZdigitsStatement : Prop :=
         Rlt x (F2R (Float beta (Zadd m Zone) e))) →
         (mag beta x : Z) = Zadd (Zdigits beta m) e
 
+def bpow_le_F2R_m1Statement : Prop :=
+  ∀ (beta : radix) (m e1 e2 : Z),
+    Zlt Zone m →
+      Rlt (bpow beta e2) (F2R (Float beta m e1)) →
+        Rle (bpow beta e2) (F2R (Float beta (Zsub m Zone) e1))
+
 end CompCert4Lean.Flocq.Core.Float_prop

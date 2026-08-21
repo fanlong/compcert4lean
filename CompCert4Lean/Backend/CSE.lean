@@ -359,6 +359,8 @@ namespace Solver
 
 def L : OrderedTop := numberingSolver
 
+def law_obligation : Prop := OrderedTopLaws L
+
 def Solver : Type :=
   BBlock_solver L
 

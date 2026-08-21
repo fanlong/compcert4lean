@@ -1,5 +1,6 @@
 import CompCert4Lean.Flocq.Core.Generic_fmt
 import CompCert4Lean.Flocq.Core.FLX
+import CompCert4Lean.Flocq.Core.Ulp
 
 /-!
 # Floating-point format with gradual underflow
@@ -32,6 +33,8 @@ abbrev Prec_gt_0 := CompCert4Lean.Flocq.Core.FLX.Prec_gt_0
 abbrev Valid_exp := CompCert4Lean.Flocq.Core.Generic_fmt.Valid_exp
 abbrev Monotone_exp := CompCert4Lean.Flocq.Core.Generic_fmt.Monotone_exp
 abbrev generic_format := CompCert4Lean.Flocq.Core.Generic_fmt.generic_format
+abbrev bpow := CompCert4Lean.Flocq.Core.Raux.bpow
+abbrev Rlt := CompCert4Lean.Flocq.Core.Raux.Rlt
 
 inductive FLT_format (beta : radix) (emin prec : Z) [Prec_gt_0 prec] (x : R) : Prop where
   | mk (f : float beta) :
@@ -62,5 +65,19 @@ instance FLT_exp_monotone (emin prec : Z) [Prec_gt_0 prec] : Monotone_exp (FLT_e
 def generic_format_FLTStatement : Prop :=
   ∀ (beta : radix) (emin prec : Z) [Prec_gt_0 prec] (x : R),
     FLT_format beta emin prec x → generic_format beta (FLT_exp emin prec) x
+
+def generic_format_FLT_bpowStatement : Prop :=
+  ∀ (beta : radix) (emin prec e : Z) [Prec_gt_0 prec],
+    Zle emin e → generic_format beta (FLT_exp emin prec) (bpow beta e)
+
+def ulp_FLT_0Statement : Prop :=
+  ∀ (beta : radix) (emin prec : Z) [Prec_gt_0 prec],
+    CompCert4Lean.Flocq.Core.Ulp.ulp beta (FLT_exp emin prec) (CompCert4Lean.Flocq.Core.Raux.R0) =
+      bpow beta emin
+
+def ulp_FLT_smallStatement : Prop :=
+  ∀ (beta : radix) (emin prec : Z) [Prec_gt_0 prec] (x : R),
+    Rlt (CompCert4Lean.Flocq.Core.Raux.Rabs x) (bpow beta (Zadd emin prec)) →
+      CompCert4Lean.Flocq.Core.Ulp.ulp beta (FLT_exp emin prec) x = bpow beta emin
 
 end CompCert4Lean.Flocq.Core.FLT

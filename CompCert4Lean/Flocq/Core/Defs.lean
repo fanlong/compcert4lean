@@ -18,6 +18,8 @@ abbrev IZR := CompCert4Lean.Flocq.Core.Raux.IZR
 abbrev bpow := CompCert4Lean.Flocq.Core.Raux.bpow
 abbrev Rmult := CompCert4Lean.Flocq.Core.Raux.Rmult
 abbrev Rle := CompCert4Lean.Flocq.Core.Raux.Rle
+abbrev Rabs := CompCert4Lean.Flocq.Core.Raux.Rabs
+abbrev Rminus := CompCert4Lean.Flocq.Core.Raux.Rminus
 
 structure float (beta : radix) where
   Fnum : Z
@@ -36,5 +38,8 @@ def Rnd_DN_pt (F : R → Prop) (x f : R) : Prop :=
 
 def Rnd_UP_pt (F : R → Prop) (x f : R) : Prop :=
   F f ∧ Rle x f ∧ ∀ g : R, F g → Rle x g → Rle f g
+
+def Rnd_N_pt (F : R → Prop) (x f : R) : Prop :=
+  F f ∧ ∀ g : R, F g → Rle (Rabs (Rminus f x)) (Rabs (Rminus g x))
 
 end CompCert4Lean.Flocq.Core.Defs
