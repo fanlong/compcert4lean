@@ -196,18 +196,184 @@ def record_conds_1 (cu : code × U.t) : code × U.t × Bool :=
   let (c, u) := cu
   PTree.fold record_cond c (c, u, false)
 
-private def recordCondsFuel : Nat → code × U.t → U.t
-  | 0, cu => cu.2
-  | fuel + 1, cu =>
+private def measure_state (cu : code × U.t) : Nat :=
+  PTree_Properties.cardinal cu.1
+
+private def recordCondsRel (s' s : code × U.t) : Prop :=
+  measure_state s' < measure_state s
+
+private def recordCondsTerminationStatement : Prop :=
+  ∀ (cu : code × U.t),
+    (record_conds_1 cu).2.2 = true →
+      measure_state ((record_conds_1 cu).1, (record_conds_1 cu).2.1) <
+        measure_state cu
+
+private theorem recordCondsTermination : recordCondsTerminationStatement := by
+  intro cu
+  rcases cu with ⟨c0, u0⟩
+  let P : code → (code × U.t × Bool) → Prop := fun c s =>
+    (∀ pc, PTree.get pc c = none → PTree.get pc s.1 = PTree.get pc c0) ∧
+      (PTree_Properties.cardinal s.1 + (if s.2.2 then 1 else 0) ≤
+        PTree_Properties.cardinal c0)
+  have hfold : P c0 (PTree.fold record_cond c0 (c0, u0, false)) := by
+    apply PTree_Properties.fold_rec_proof
+    · intro m m' a hget hP
+      refine ⟨?_, hP.2⟩
+      intro pc hnone
+      exact hP.1 pc (by
+        rw [hget pc]
+        exact hnone)
+    · constructor
+      · intro pc hnone
+        simpa [PTree.get] using hnone
+      · simp [PTree_Properties.cardinal, PTree.elements, PTree.xelements]
+    · intro m a k b hnone hsome hP
+      rcases a with ⟨c, u, changed⟩
+      change PTree.tree bblock at c
+      unfold P at hP ⊢
+      change
+        (∀ pc, PTree.get pc m = none → PTree.get pc c = PTree.get pc c0) ∧
+          (PTree_Properties.cardinal c + (if changed = true then 1 else 0) ≤
+            PTree_Properties.cardinal c0) at hP
+      have hset_none :
+          ∀ pc v, PTree.get pc (PTree.set k v m) = none →
+            PTree.get pc m = none := by
+        intro pc v hpc
+        have hset := PTree.getSet_equation (A := bblock) pc k v m
+        rw [hset] at hpc
+        split at hpc <;> simp_all
+      have hpreserve :
+          ∀ pc, PTree.get pc (PTree.set k b m) = none →
+            PTree.get pc c = PTree.get pc c0 := by
+        intro pc hpc
+        exact hP.1 pc (hset_none pc b hpc)
+      cases b with
+      | nil =>
+          simp [record_cond]
+          exact ⟨hpreserve, hP.2⟩
+      | cons instr tail =>
+          cases instr with
+          | Lop op args res =>
+              simp [record_cond]
+              exact ⟨hpreserve, hP.2⟩
+          | Lload chunk addr args dst =>
+              simp [record_cond]
+              exact ⟨hpreserve, hP.2⟩
+          | Lgetstack sl ofs ty dst =>
+              simp [record_cond]
+              exact ⟨hpreserve, hP.2⟩
+          | Lsetstack src sl ofs ty =>
+              simp [record_cond]
+              exact ⟨hpreserve, hP.2⟩
+          | Lstore chunk addr args src =>
+              simp [record_cond]
+              exact ⟨hpreserve, hP.2⟩
+          | Lcall sig ros =>
+              simp [record_cond]
+              exact ⟨hpreserve, hP.2⟩
+          | Ltailcall sig ros =>
+              simp [record_cond]
+              exact ⟨hpreserve, hP.2⟩
+          | Lbuiltin ef args res =>
+              simp [record_cond]
+              exact ⟨hpreserve, hP.2⟩
+          | Lbranch succ =>
+              simp [record_cond]
+              exact ⟨hpreserve, hP.2⟩
+          | Lcond cond args s1 s2 =>
+              unfold record_cond
+              cases hpeq : peq (U.repr u s1) (U.repr u s2) with
+              | right hneq =>
+                  simp [hpeq]
+                  exact ⟨hpreserve, hP.2⟩
+              | left heq =>
+                  simp [hpeq]
+                  let block : bblock := Lcond cond args s1 s2 :: tail
+                  have hsome_block : PTree.get k c0 = some block := by
+                    simpa [block] using hsome
+                  have hcode : PTree.get k c = some block := by
+                    rw [hP.1 k hnone]
+                    exact hsome_block
+                  have hcard := PTree_Properties.cardinal_remove_proof
+                    (V := bblock) k c block hcode
+                  refine ⟨?_, ?_⟩
+                  · intro pc hpc
+                    let block : bblock := Lcond cond args s1 s2 :: tail
+                    have hpc_block : PTree.get pc (PTree.set k block m) = none := by
+                      simpa [block] using hpc
+                    have hpc_ne : pc ≠ k := by
+                      intro heqpc
+                      subst pc
+                      have hset := PTree.getSet_equation (A := bblock) k k block m
+                      rw [hset] at hpc_block
+                      simp at hpc_block
+                    have hpc' : PTree.get pc m = none :=
+                      hset_none pc block hpc_block
+                    have hremove := @PTree.getRemove_equation bblock pc k c
+                    calc
+                      PTree.get pc (PTree.remove k c) = PTree.get pc c := by
+                        rw [hremove]
+                        simp [hpc_ne]
+                      _ = PTree.get pc c0 := hP.1 pc hpc'
+                  · omega
+          | Ljumptable arg tbl =>
+              simp [record_cond]
+              exact ⟨hpreserve, hP.2⟩
+          | Lreturn =>
+              simp [record_cond]
+              exact ⟨hpreserve, hP.2⟩
+  intro hchanged
+  let c0tree : PTree.tree bblock := c0
+  have hchanged' :
+      (PTree.fold record_cond c0tree (c0tree, u0, false)).2.2 = true := by
+    simpa [record_conds_1, c0tree] using hchanged
+  have hbound :
+      PTree_Properties.cardinal
+          (PTree.fold record_cond c0tree (c0tree, u0, false)).1 +
+        (if (PTree.fold record_cond c0tree (c0tree, u0, false)).2.2 = true then 1 else 0) ≤
+      PTree_Properties.cardinal c0tree := by
+    simpa [c0tree, Prod.fst, Prod.snd] using hfold.2
+  simp [hchanged'] at hbound
+  change PTree_Properties.cardinal
+      (PTree.fold record_cond c0tree (c0tree, u0, false)).1 <
+    PTree_Properties.cardinal c0tree
+  omega
+
+private theorem recordCondsRel_wf : WellFounded recordCondsRel := by
+  exact InvImage.wf measure_state Nat.lt_wfRel.wf
+
+private def recordCondsWF
+    (cu : code × U.t)
+    (rec : ∀ cu', recordCondsRel cu' cu → U.t) : U.t :=
+  let result := record_conds_1 cu
+  if h : result.2.2 then
+    rec (result.1, result.2.1)
+      (recordCondsTermination (cu := cu) h)
+  else
+    cu.2
+
+private def recordCondsCore (cu : code × U.t) : U.t :=
+  WellFounded.fix recordCondsRel_wf (fun cu rec => recordCondsWF cu rec) cu
+
+private theorem recordCondsCore_equation (cu : code × U.t) :
+    recordCondsCore cu =
       let result := record_conds_1 cu
       if result.2.2 then
-        recordCondsFuel fuel (result.1, result.2.1)
+        recordCondsCore (result.1, result.2.1)
       else
-        cu.2
+        cu.2 := by
+  unfold recordCondsCore
+  rw [WellFounded.fix_eq]
+  simp [recordCondsWF]
 
-/-- Iterate conditional-branch recording until the pass reports no change. -/
 def record_conds (cu : code × U.t) : U.t :=
-  recordCondsFuel (PTree_Properties.cardinal cu.1 + 1) cu
+  recordCondsCore cu
+
+def record_conds_equationStatement : Prop :=
+  ∀ (cu : code × U.t),
+    record_conds cu =
+      let result := record_conds_1 cu
+      if result.2.2 then record_conds (result.1, result.2.1) else cu.2
 
 def record_gotos (f : function) : U.t :=
   record_conds (f.fn_code, record_branches f)
