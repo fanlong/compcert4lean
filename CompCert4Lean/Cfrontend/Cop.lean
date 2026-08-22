@@ -34,6 +34,7 @@ private abbrev Ptrofs := CompCert4Lean.Lib.Integers.ptrofs
 private abbrev CCFloat := CompCert4Lean.Lib.Floats.float
 private abbrev CCFloat32 := CompCert4Lean.Lib.Floats.float32
 private abbrev val := CompCert4Lean.Common.Values.val
+private abbrev block := CompCert4Lean.Common.Values.block
 private abbrev mem := CompCert4Lean.Common.Memory.Mem.mem
 private abbrev meminj := CompCert4Lean.Common.Values.Val.meminj
 private abbrev ident := CompCert4Lean.Common.AST.ident
@@ -580,16 +581,16 @@ def sem_binarith
           | .bin_case_l sg => match v1', v2' with | .Vlong n1, .Vlong n2 => sem_long sg n1 n2 | _, _ => none
           | .bin_default => none
 
-private inductive classify_add_cases_internal : Type where
+inductive classify_add_cases : Type where
   | add_case_pi (ty : type) (si : signedness)
   | add_case_pl (ty : type)
   | add_case_ip (si : signedness) (ty : type)
   | add_case_lp (ty : type)
   | add_default
 
-export classify_add_cases_internal (add_case_pi add_case_pl add_case_ip add_case_lp add_default)
+export classify_add_cases (add_case_pi add_case_pl add_case_ip add_case_lp add_default)
 
-def classify_add (ty1 ty2 : type) : classify_add_cases_internal :=
+def classify_add (ty1 ty2 : type) : classify_add_cases :=
   match typeconv ty1, typeconv ty2 with
   | .Tpointer ty _, .Tint _ si _ => .add_case_pi ty si
   | .Tpointer ty _, .Tlong _ _ => .add_case_pl ty
@@ -640,15 +641,15 @@ def sem_add (cenv : composite_env) (v1 : val) (t1 : type) (v2 : val) (t2 : type)
         (fun n1 n2 => some (.Vsingle (Float32.add n1 n2)))
         v1 t1 v2 t2 m
 
-private inductive classify_sub_cases_internal : Type where
+inductive classify_sub_cases : Type where
   | sub_case_pi (ty : type) (si : signedness)
   | sub_case_pp (ty : type)
   | sub_case_pl (ty : type)
   | sub_default
 
-export classify_sub_cases_internal (sub_case_pi sub_case_pp sub_case_pl sub_default)
+export classify_sub_cases (sub_case_pi sub_case_pp sub_case_pl sub_default)
 
-def classify_sub (ty1 ty2 : type) : classify_sub_cases_internal :=
+def classify_sub (ty1 ty2 : type) : classify_sub_cases :=
   match typeconv ty1, typeconv ty2 with
   | .Tpointer ty _, .Tint _ si _ => .sub_case_pi ty si
   | .Tpointer ty _, .Tpointer _ _ => .sub_case_pp ty
@@ -734,16 +735,16 @@ def sem_or (v1 : val) (t1 : type) (v2 : val) (t2 : type) (m : mem) : Option val 
 def sem_xor (v1 : val) (t1 : type) (v2 : val) (t2 : type) (m : mem) : Option val :=
   sem_binarith (fun _ n1 n2 => some (.Vint (Int.xor n1 n2))) (fun _ n1 n2 => some (.Vlong (Int64.xor n1 n2))) (fun _ _ => none) (fun _ _ => none) v1 t1 v2 t2 m
 
-private inductive classify_shift_cases_internal : Type where
+inductive classify_shift_cases : Type where
   | shift_case_ii (s : signedness)
   | shift_case_ll (s : signedness)
   | shift_case_il (s : signedness)
   | shift_case_li (s : signedness)
   | shift_default
 
-export classify_shift_cases_internal (shift_case_ii shift_case_ll shift_case_il shift_case_li shift_default)
+export classify_shift_cases (shift_case_ii shift_case_ll shift_case_il shift_case_li shift_default)
 
-def classify_shift (ty1 ty2 : type) : classify_shift_cases_internal :=
+def classify_shift (ty1 ty2 : type) : classify_shift_cases :=
   match typeconv ty1, typeconv ty2 with
   | .Tint .I32 .Unsigned _, .Tint _ _ _ => .shift_case_ii .Unsigned
   | .Tint _ _ _, .Tint _ _ _ => .shift_case_ii .Signed
@@ -781,7 +782,7 @@ def sem_shr (v1 : val) (t1 : type) (v2 : val) (t2 : type) : Option val :=
     (fun sg n1 n2 => match sg with | .Signed => Int64.shr n1 n2 | .Unsigned => Int64.shru n1 n2)
     v1 t1 v2 t2
 
-private inductive classify_cmp_cases_internal : Type where
+inductive classify_cmp_cases : Type where
   | cmp_case_pp
   | cmp_case_pi (si : signedness)
   | cmp_case_ip (si : signedness)
@@ -789,9 +790,9 @@ private inductive classify_cmp_cases_internal : Type where
   | cmp_case_lp
   | cmp_default
 
-export classify_cmp_cases_internal (cmp_case_pp cmp_case_pi cmp_case_ip cmp_case_pl cmp_case_lp cmp_default)
+export classify_cmp_cases (cmp_case_pp cmp_case_pi cmp_case_ip cmp_case_pl cmp_case_lp cmp_default)
 
-def classify_cmp (ty1 ty2 : type) : classify_cmp_cases_internal :=
+def classify_cmp (ty1 ty2 : type) : classify_cmp_cases :=
   match typeconv ty1, typeconv ty2 with
   | .Tpointer _ _, .Tpointer _ _ => .cmp_case_pp
   | .Tpointer _ _, .Tint _ si _ => .cmp_case_pi si
@@ -833,26 +834,26 @@ def sem_cmp (c : comparison) (v1 : val) (t1 : type) (v2 : val) (t2 : type) (m : 
         (fun n1 n2 => some (Val.of_bool (Float.cmp c n1 n2)))
         (fun n1 n2 => some (Val.of_bool (Float32.cmp c n1 n2))) v1 t1 v2 t2 m
 
-private inductive classify_fun_cases_internal : Type where
+inductive classify_fun_cases : Type where
   | fun_case_f (targs : List type) (tres : type) (cc : calling_convention)
   | fun_default
 
-export classify_fun_cases_internal (fun_case_f fun_default)
+export classify_fun_cases (fun_case_f fun_default)
 
-def classify_fun (ty : type) : classify_fun_cases_internal :=
+def classify_fun (ty : type) : classify_fun_cases :=
   match ty with
   | .Tfunction args res cc => .fun_case_f args res cc
   | .Tpointer (.Tfunction args res cc) _ => .fun_case_f args res cc
   | _ => .fun_default
 
-private inductive classify_switch_cases_internal : Type where
+inductive classify_switch_cases : Type where
   | switch_case_i
   | switch_case_l
   | switch_default
 
-export classify_switch_cases_internal (switch_case_i switch_case_l switch_default)
+export classify_switch_cases (switch_case_i switch_case_l switch_default)
 
-def classify_switch (ty : type) : classify_switch_cases_internal :=
+def classify_switch (ty : type) : classify_switch_cases :=
   match ty with
   | .Tint _ _ _ => .switch_case_i
   | .Tlong _ _ => .switch_case_l
@@ -928,31 +929,35 @@ def bitfield_extract (sz : intsize) (sg : signedness) (pos width : Z) (c : CCInt
 def bitfield_normalize (sz : intsize) (sg : signedness) (width : Z) (n : CCInt) : CCInt :=
   if intsizeEq sz .IBool || signednessEq sg .Unsigned then Int.zero_ext width n else Int.sign_ext width n
 
-def load_bitfield : type → intsize → signedness → Z → Z → mem → val → val → Prop :=
-  fun ty sz sg pos width m addr result =>
-    match ty, result with
-    | .Tint sz1 sg1 _attr, .Vint resultInt =>
-        ∃ c,
-          zLe z0 pos ∧ zLt z0 width ∧ zLe width (bitsize_intsize sz) ∧
-          zLe (zAdd pos width) (bitsize_carrier sz) ∧
-          sg1 = (if zltBool width (bitsize_intsize sz) then .Signed else sg) ∧
-          Mem.loadv (chunk_for_carrier sz) m addr = some (.Vint c) ∧
-          resultInt = bitfield_extract sz sg pos width c
-    | _, _ => False
+inductive load_bitfield : type → intsize → signedness → Z → Z → mem → val → val → Prop where
+  | load_bitfield_intro
+      (sz : intsize) (sg1 : signedness) (attr : attr) (sg : signedness)
+      (pos width : Z) (m : mem) (addr : val) (c : CCInt)
+      (hpos : zLe z0 pos)
+      (hwidth : zLt z0 width ∧ zLe width (bitsize_intsize sz))
+      (hcarrier : zLe (zAdd pos width) (bitsize_carrier sz))
+      (hsg : sg1 = (if zltBool width (bitsize_intsize sz) then .Signed else sg))
+      (hload : Mem.loadv (chunk_for_carrier sz) m addr = some (.Vint c)) :
+      load_bitfield (.Tint sz sg1 attr) sz sg pos width m addr
+        (.Vint (bitfield_extract sz sg pos width c))
 
-def store_bitfield : type → intsize → signedness → Z → Z → mem → val → val → mem → val → Prop :=
-  fun ty sz sg pos width m addr value m' result =>
-    match ty, value, result with
-    | .Tint sz1 sg1 _attr, .Vint n, .Vint resultInt =>
-        ∃ c,
-          zLe z0 pos ∧ zLt z0 width ∧ zLe width (bitsize_intsize sz) ∧
-          zLe (zAdd pos width) (bitsize_carrier sz) ∧
-          sg1 = (if zltBool width (bitsize_intsize sz) then .Signed else sg) ∧
-          Mem.loadv (chunk_for_carrier sz) m addr = some (.Vint c) ∧
-          Mem.storev (chunk_for_carrier sz) m addr
-            (.Vint (Int.bitfield_insert (first_bit sz pos width) width c n)) = some m' ∧
-          resultInt = bitfield_normalize sz sg width n
-    | _, _, _ => False
+export load_bitfield (load_bitfield_intro)
+
+inductive store_bitfield : type → intsize → signedness → Z → Z → mem → val → val → mem → val → Prop where
+  | store_bitfield_intro
+      (sz : intsize) (sg1 : signedness) (attr : attr) (sg : signedness)
+      (pos width : Z) (m : mem) (addr : val) (c n : CCInt) (m' : mem)
+      (hpos : zLe z0 pos)
+      (hwidth : zLt z0 width ∧ zLe width (bitsize_intsize sz))
+      (hcarrier : zLe (zAdd pos width) (bitsize_carrier sz))
+      (hsg : sg1 = (if zltBool width (bitsize_intsize sz) then .Signed else sg))
+      (hload : Mem.loadv (chunk_for_carrier sz) m addr = some (.Vint c))
+      (hstore : Mem.storev (chunk_for_carrier sz) m addr
+        (.Vint (Int.bitfield_insert (first_bit sz pos width) width c n)) = some m') :
+      store_bitfield (.Tint sz sg1 attr) sz sg pos width m addr (.Vint n)
+        m' (.Vint (bitfield_normalize sz sg width n))
+
+export store_bitfield (store_bitfield_intro)
 
 /-! ## Compatibility with extensions and injections -/
 
@@ -963,84 +968,109 @@ def optval_self_injects (ov : Option val) : Prop :=
 
 /-! ## Properties of casted values -/
 
-def val_casted (v : val) (ty : type) : Prop :=
-  match v, ty with
-  | .Vint n, .Tint sz si _ => cast_int_int sz si n = n
-  | .Vfloat _, .Tfloat .F64 _ => True
-  | .Vsingle _, .Tfloat .F32 _ => True
-  | .Vlong _, .Tlong _ _ => True
-  | .Vptr _ _, .Tpointer _ _ => True
-  | .Vint _, .Tpointer _ _ => CompCert4Lean.X86_64.Archi.ptr64 = false
-  | .Vptr _ _, .Tint .I32 _ _ => CompCert4Lean.X86_64.Archi.ptr64 = false
-  | .Vlong _, .Tpointer _ _ => CompCert4Lean.X86_64.Archi.ptr64 = true
-  | .Vptr _ _, .Tlong _ _ => CompCert4Lean.X86_64.Archi.ptr64 = true
-  | .Vptr _ _, .Tstruct _ _ => True
-  | .Vptr _ _, .Tunion _ _ => True
-  | _, .Tvoid => True
-  | _, _ => False
+inductive val_casted : val → type → Prop where
+  | val_casted_int
+      (sz : intsize) (si : signedness) (attr : attr) (n : CCInt)
+      (hcast : cast_int_int sz si n = n) :
+      val_casted (.Vint n) (.Tint sz si attr)
+  | val_casted_float
+      (attr : attr) (n : CCFloat) :
+      val_casted (.Vfloat n) (.Tfloat .F64 attr)
+  | val_casted_single
+      (attr : attr) (n : CCFloat32) :
+      val_casted (.Vsingle n) (.Tfloat .F32 attr)
+  | val_casted_long
+      (si : signedness) (attr : attr) (n : CCInt64) :
+      val_casted (.Vlong n) (.Tlong si attr)
+  | val_casted_ptr_ptr
+      (b : block) (ofs : Ptrofs) (ty : type) (attr : attr) :
+      val_casted (.Vptr b ofs) (.Tpointer ty attr)
+  | val_casted_int_ptr
+      (n : CCInt) (ty : type) (attr : attr)
+      (hptr64 : CompCert4Lean.X86_64.Archi.ptr64 = false) :
+      val_casted (.Vint n) (.Tpointer ty attr)
+  | val_casted_ptr_int
+      (b : block) (ofs : Ptrofs) (si : signedness) (attr : attr)
+      (hptr64 : CompCert4Lean.X86_64.Archi.ptr64 = false) :
+      val_casted (.Vptr b ofs) (.Tint .I32 si attr)
+  | val_casted_long_ptr
+      (n : CCInt64) (ty : type) (attr : attr)
+      (hptr64 : CompCert4Lean.X86_64.Archi.ptr64 = true) :
+      val_casted (.Vlong n) (.Tpointer ty attr)
+  | val_casted_ptr_long
+      (b : block) (ofs : Ptrofs) (si : signedness) (attr : attr)
+      (hptr64 : CompCert4Lean.X86_64.Archi.ptr64 = true) :
+      val_casted (.Vptr b ofs) (.Tlong si attr)
+  | val_casted_struct
+      (id : ident) (attr : attr) (b : block) (ofs : Ptrofs) :
+      val_casted (.Vptr b ofs) (.Tstruct id attr)
+  | val_casted_union
+      (id : ident) (attr : attr) (b : block) (ofs : Ptrofs) :
+      val_casted (.Vptr b ofs) (.Tunion id attr)
+  | val_casted_void
+      (v : val) :
+      val_casted v .Tvoid
+
+export val_casted (val_casted_int val_casted_float val_casted_single val_casted_long
+  val_casted_ptr_ptr val_casted_int_ptr val_casted_ptr_int val_casted_long_ptr
+  val_casted_ptr_long val_casted_struct val_casted_union val_casted_void)
 
 /-! Later-proof exact statement descriptors. -/
 
 def sem_cast_injStatement : Prop :=
-  ∀ (f : meminj) (m m' : mem) v1 ty1 ty v tv1,
-    sem_cast v1 ty1 ty m = some v →
-    Val.inject f v1 tv1 →
-    (∀ b1 ofs b2 delta,
-      f b1 = some (b2, delta) →
-      Mem.valid_pointer m b1 (Ptrofs.unsigned ofs) = true →
-      Mem.valid_pointer m' b2 (Ptrofs.unsigned (Ptrofs.add ofs (Ptrofs.repr delta))) = true) →
+  ∀ (f : meminj) (m m' : mem),
     (∀ b1 ofs b2 delta,
       f b1 = some (b2, delta) →
       Mem.weak_valid_pointer m b1 (Ptrofs.unsigned ofs) = true →
       Mem.weak_valid_pointer m' b2 (Ptrofs.unsigned (Ptrofs.add ofs (Ptrofs.repr delta))) = true) →
-    (∀ b1 ofs b2 delta,
-      f b1 = some (b2, delta) →
-      Mem.weak_valid_pointer m b1 (Ptrofs.unsigned ofs) = true →
-      zLe z0 (zAdd (Ptrofs.unsigned ofs) (Ptrofs.unsigned (Ptrofs.repr delta))) ∧
-      zLe (zAdd (Ptrofs.unsigned ofs) (Ptrofs.unsigned (Ptrofs.repr delta))) Ptrofs.max_unsigned) →
-    ∃ tv, sem_cast tv1 ty1 ty m' = some tv ∧ Val.inject f v tv
+    ∀ v1 ty1 ty v tv1,
+      sem_cast v1 ty1 ty m = some v →
+      Val.inject f v1 tv1 →
+      ∃ tv, sem_cast tv1 ty1 ty m' = some tv ∧ Val.inject f v tv
 
 def bool_val_injStatement : Prop :=
-  ∀ (f : meminj) (m m' : mem) v ty b tv,
-    bool_val v ty m = some b →
-    Val.inject f v tv →
+  ∀ (f : meminj) (m m' : mem),
     (∀ b1 ofs b2 delta,
       f b1 = some (b2, delta) →
       Mem.weak_valid_pointer m b1 (Ptrofs.unsigned ofs) = true →
       Mem.weak_valid_pointer m' b2 (Ptrofs.unsigned (Ptrofs.add ofs (Ptrofs.repr delta))) = true) →
-    bool_val tv ty m' = some b
+    ∀ v ty b tv,
+      bool_val v ty m = some b →
+      Val.inject f v tv →
+      bool_val tv ty m' = some b
 
 def sem_unary_operation_injStatement : Prop :=
-  ∀ (f : meminj) (m m' : mem) op v1 ty v tv1,
-    sem_unary_operation op v1 ty m = some v →
-    Val.inject f v1 tv1 →
+  ∀ (f : meminj) (m m' : mem),
     (∀ b1 ofs b2 delta,
       f b1 = some (b2, delta) →
       Mem.weak_valid_pointer m b1 (Ptrofs.unsigned ofs) = true →
       Mem.weak_valid_pointer m' b2 (Ptrofs.unsigned (Ptrofs.add ofs (Ptrofs.repr delta))) = true) →
-    ∃ tv, sem_unary_operation op tv1 ty m' = some tv ∧ Val.inject f v tv
+    ∀ op v1 ty v tv1,
+      sem_unary_operation op v1 ty m = some v →
+      Val.inject f v1 tv1 →
+      ∃ tv, sem_unary_operation op tv1 ty m' = some tv ∧ Val.inject f v tv
 
 def sem_binarith_injectStatement : Prop :=
-  ∀ (f : meminj) (m m' : mem)
-    (sem_int : signedness → CCInt → CCInt → Option val)
-    (sem_long : signedness → CCInt64 → CCInt64 → Option val)
-    (sem_float : CCFloat → CCFloat → Option val)
-    (sem_single : CCFloat32 → CCFloat32 → Option val)
-    v1 t1 v2 t2 v v1' v2',
-    sem_binarith sem_int sem_long sem_float sem_single v1 t1 v2 t2 m = some v →
-    Val.inject f v1 v1' → Val.inject f v2 v2' →
-    (∀ sg n1 n2, optval_self_injects (sem_int sg n1 n2)) →
-    (∀ sg n1 n2, optval_self_injects (sem_long sg n1 n2)) →
-    (∀ n1 n2, optval_self_injects (sem_float n1 n2)) →
-    (∀ n1 n2, optval_self_injects (sem_single n1 n2)) →
+  ∀ (f : meminj) (m m' : mem),
     (∀ b1 ofs b2 delta,
       f b1 = some (b2, delta) →
       Mem.weak_valid_pointer m b1 (Ptrofs.unsigned ofs) = true →
       Mem.weak_valid_pointer m' b2 (Ptrofs.unsigned (Ptrofs.add ofs (Ptrofs.repr delta))) = true) →
-    ∃ v', sem_binarith sem_int sem_long sem_float sem_single v1' t1 v2' t2 m' = some v' ∧ Val.inject f v v'
+    ∀ (sem_int : signedness → CCInt → CCInt → Option val)
+      (sem_long : signedness → CCInt64 → CCInt64 → Option val)
+      (sem_float : CCFloat → CCFloat → Option val)
+      (sem_single : CCFloat32 → CCFloat32 → Option val)
+      v1 t1 v2 t2 v v1' v2',
+      sem_binarith sem_int sem_long sem_float sem_single v1 t1 v2 t2 m = some v →
+      Val.inject f v1 v1' → Val.inject f v2 v2' →
+      (∀ sg n1 n2, optval_self_injects (sem_int sg n1 n2)) →
+      (∀ sg n1 n2, optval_self_injects (sem_long sg n1 n2)) →
+      (∀ n1 n2, optval_self_injects (sem_float n1 n2)) →
+      (∀ n1 n2, optval_self_injects (sem_single n1 n2)) →
+      ∃ v', sem_binarith sem_int sem_long sem_float sem_single v1' t1 v2' t2 m' = some v' ∧ Val.inject f v v'
 
 def sem_shift_injectStatement : Prop :=
-  ∀ (f : meminj) (m m' : mem)
+  ∀ (f : meminj)
     (sem_int : signedness → CCInt → CCInt → CCInt)
     (sem_long : signedness → CCInt64 → CCInt64 → CCInt64)
     v1 t1 v2 t2 v v1' v2',
@@ -1049,19 +1079,36 @@ def sem_shift_injectStatement : Prop :=
     ∃ v', sem_shift sem_int sem_long v1' t1 v2' t2 = some v' ∧ Val.inject f v v'
 
 def sem_cmp_ptr_injStatement : Prop :=
-  ∀ (f : meminj) (m m' : mem) c v1 v2 v tv1 tv2,
-    cmp_ptr m c v1 v2 = some v →
-    Val.inject f v1 tv1 → Val.inject f v2 tv2 →
+  ∀ (f : meminj) (m m' : mem),
     (∀ b1 ofs b2 delta,
       f b1 = some (b2, delta) →
       Mem.valid_pointer m b1 (Ptrofs.unsigned ofs) = true →
       Mem.valid_pointer m' b2 (Ptrofs.unsigned (Ptrofs.add ofs (Ptrofs.repr delta))) = true) →
+    (∀ b1 ofs b2 delta,
+      f b1 = some (b2, delta) →
+      Mem.weak_valid_pointer m b1 (Ptrofs.unsigned ofs) = true →
+      Mem.weak_valid_pointer m' b2 (Ptrofs.unsigned (Ptrofs.add ofs (Ptrofs.repr delta))) = true) →
+    (∀ b1 ofs b2 delta,
+      f b1 = some (b2, delta) →
+      Mem.weak_valid_pointer m b1 (Ptrofs.unsigned ofs) = true →
+      zLe z0 (zAdd (Ptrofs.unsigned ofs) (Ptrofs.unsigned (Ptrofs.repr delta))) ∧
+      zLe (zAdd (Ptrofs.unsigned ofs) (Ptrofs.unsigned (Ptrofs.repr delta))) Ptrofs.max_unsigned) →
+    (∀ (b1 : block) (ofs1 : Ptrofs) (b2 : block) (ofs2 : Ptrofs)
+      (b1' : block) (delta1 : Z) (b2' : block) (delta2 : Z),
+      b1 ≠ b2 →
+      Mem.valid_pointer m b1 (Ptrofs.unsigned ofs1) = true →
+      Mem.valid_pointer m b2 (Ptrofs.unsigned ofs2) = true →
+      f b1 = some (b1', delta1) → f b2 = some (b2', delta2) →
+      b1' ≠ b2' ∨
+      Ptrofs.unsigned (Ptrofs.add ofs1 (Ptrofs.repr delta1)) ≠
+        Ptrofs.unsigned (Ptrofs.add ofs2 (Ptrofs.repr delta2))) →
+    ∀ c v1 v2 v tv1 tv2,
+    cmp_ptr m c v1 v2 = some v →
+    Val.inject f v1 tv1 → Val.inject f v2 tv2 →
     ∃ tv, cmp_ptr m' c tv1 tv2 = some tv ∧ Val.inject f v tv
 
 def sem_cmp_injStatement : Prop :=
-  ∀ (f : meminj) (m m' : mem) cmp v1 tv1 ty1 v2 tv2 ty2 v,
-    sem_cmp cmp v1 ty1 v2 ty2 m = some v →
-    Val.inject f v1 tv1 → Val.inject f v2 tv2 →
+  ∀ (f : meminj) (m m'),
     (∀ b1 ofs b2 delta,
       f b1 = some (b2, delta) →
       Mem.valid_pointer m b1 (Ptrofs.unsigned ofs) = true →
@@ -1075,7 +1122,8 @@ def sem_cmp_injStatement : Prop :=
       Mem.weak_valid_pointer m b1 (Ptrofs.unsigned ofs) = true →
       zLe z0 (zAdd (Ptrofs.unsigned ofs) (Ptrofs.unsigned (Ptrofs.repr delta))) ∧
       zLe (zAdd (Ptrofs.unsigned ofs) (Ptrofs.unsigned (Ptrofs.repr delta))) Ptrofs.max_unsigned) →
-    (∀ b1 ofs1 b2 ofs2 b1' delta1 b2' delta2,
+    (∀ (b1 : block) (ofs1 : Ptrofs) (b2 : block) (ofs2 : Ptrofs)
+      (b1' : block) (delta1 : Z) (b2' : block) (delta2 : Z),
       b1 ≠ b2 →
       Mem.valid_pointer m b1 (Ptrofs.unsigned ofs1) = true →
       Mem.valid_pointer m b2 (Ptrofs.unsigned ofs2) = true →
@@ -1083,12 +1131,13 @@ def sem_cmp_injStatement : Prop :=
       b1' ≠ b2' ∨
       Ptrofs.unsigned (Ptrofs.add ofs1 (Ptrofs.repr delta1)) ≠
         Ptrofs.unsigned (Ptrofs.add ofs2 (Ptrofs.repr delta2))) →
+    ∀ cmp v1 tv1 ty1 v2 tv2 ty2 v,
+    sem_cmp cmp v1 ty1 v2 ty2 m = some v →
+    Val.inject f v1 tv1 → Val.inject f v2 tv2 →
     ∃ tv, sem_cmp cmp tv1 ty1 tv2 ty2 m' = some tv ∧ Val.inject f v tv
 
 def sem_binary_operation_injStatement : Prop :=
-  ∀ (f : meminj) (m m' : mem) cenv op v1 ty1 v2 ty2 v tv1 tv2,
-    sem_binary_operation cenv op v1 ty1 v2 ty2 m = some v →
-    Val.inject f v1 tv1 → Val.inject f v2 tv2 →
+  ∀ (f : meminj) (m m'),
     (∀ b1 ofs b2 delta,
       f b1 = some (b2, delta) →
       Mem.valid_pointer m b1 (Ptrofs.unsigned ofs) = true →
@@ -1102,7 +1151,8 @@ def sem_binary_operation_injStatement : Prop :=
       Mem.weak_valid_pointer m b1 (Ptrofs.unsigned ofs) = true →
       zLe z0 (zAdd (Ptrofs.unsigned ofs) (Ptrofs.unsigned (Ptrofs.repr delta))) ∧
       zLe (zAdd (Ptrofs.unsigned ofs) (Ptrofs.unsigned (Ptrofs.repr delta))) Ptrofs.max_unsigned) →
-    (∀ b1 ofs1 b2 ofs2 b1' delta1 b2' delta2,
+    (∀ (b1 : block) (ofs1 : Ptrofs) (b2 : block) (ofs2 : Ptrofs)
+      (b1' : block) (delta1 : Z) (b2' : block) (delta2 : Z),
       b1 ≠ b2 →
       Mem.valid_pointer m b1 (Ptrofs.unsigned ofs1) = true →
       Mem.valid_pointer m b2 (Ptrofs.unsigned ofs2) = true →
@@ -1110,10 +1160,14 @@ def sem_binary_operation_injStatement : Prop :=
       b1' ≠ b2' ∨
       Ptrofs.unsigned (Ptrofs.add ofs1 (Ptrofs.repr delta1)) ≠
         Ptrofs.unsigned (Ptrofs.add ofs2 (Ptrofs.repr delta2))) →
+    ∀ cenv op v1 ty1 v2 ty2 v tv1 tv2,
+    sem_binary_operation cenv op v1 ty1 v2 ty2 m = some v →
+    Val.inject f v1 tv1 → Val.inject f v2 tv2 →
     ∃ tv, sem_binary_operation cenv op tv1 ty1 tv2 ty2 m' = some tv ∧ Val.inject f v tv
 
 def sem_cast_injectStatement : Prop :=
-  ∀ (f : meminj) (m m' : mem) v1 ty1 ty tv1 tm v,
+  ∀ (f : meminj) (v1 : val) (ty1 ty : type) (m : mem)
+    (v tv1 : val) (tm : mem),
     sem_cast v1 ty1 ty m = some v →
     Val.inject f v1 tv1 →
     Mem.inject f m tm →
