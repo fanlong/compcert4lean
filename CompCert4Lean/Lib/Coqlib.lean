@@ -400,9 +400,8 @@ inductive list_forall2 {A B : Type} (P : A → B → Prop) : List A → List B �
   | cons {a1 : A} {al : List A} {b1 : B} {bl : List B} :
       P a1 b1 → list_forall2 P al bl → list_forall2 P (a1 :: al) (b1 :: bl)
 
-abbrev list_forall2_nil {A B : Type} {P : A → B → Prop} :
-    list_forall2 P [] [] :=
-  list_forall2.nil
+open list_forall2 renaming nil → list_forall2_nil
+export _root_ (list_forall2_nil)
 
 def list_forall2_appStatement : Prop :=
   ∀ (A B : Type) (P : A → B → Prop)
@@ -477,15 +476,8 @@ inductive lex_ord {A B : Type} (ordA : A → A → Prop) (ordB : B → B → Pro
   | right {a : A} {b1 b2 : B} :
       ordB b1 b2 → lex_ord ordA ordB (a, b1) (a, b2)
 
-abbrev lex_ord_left {A B : Type} {ordA : A → A → Prop} {ordB : B → B → Prop}
-    {a1 a2 : A} {b1 b2 : B} (h : ordA a1 a2) :
-    lex_ord ordA ordB (a1, b1) (a2, b2) :=
-  lex_ord.left h
-
-abbrev lex_ord_right {A B : Type} {ordA : A → A → Prop} {ordB : B → B → Prop}
-    {a : A} {b1 b2 : B} (h : ordB b1 b2) :
-    lex_ord ordA ordB (a, b1) (a, b2) :=
-  lex_ord.right h
+open lex_ord renaming left → lex_ord_left, right → lex_ord_right
+export _root_ (lex_ord_left lex_ord_right)
 
 def wf_lex_ordStatement : Prop :=
   ∀ (A B : Type) (ordA : A → A → Prop) (ordB : B → B → Prop),
