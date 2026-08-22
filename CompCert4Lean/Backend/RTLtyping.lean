@@ -124,90 +124,124 @@ def type_of_builtin_res (env : regenv) : builtin_res reg → typ
   | .BR r => env r
   | _ => Tint
 
-def wt_instr (cfg : CompilerConfig) (f : function) (env : regenv) :
-    instruction → Prop
-  | .Inop s => valid_successor f s
-  | .Iop op args res s =>
-      (op = Omove ∧
-        ∃ r1, args = [r1] ∧ env res = env r1 ∧ valid_successor f s) ∨
-        (op ≠ Omove ∧
-          List.map env args = (type_of_operation op).1 ∧
-          env res = (type_of_operation op).2 ∧
-          valid_successor f s)
-  | .Iload chunk addr args dst s =>
-      List.map env args = type_of_addressing addr ∧
-        env dst = type_of_chunk chunk ∧ valid_successor f s
-  | .Istore chunk addr args src s =>
-      List.map env args = type_of_addressing addr ∧
-        env src = type_of_chunk chunk ∧ valid_successor f s
-  | .Icall sg ros args res s =>
-      (match ros with
+inductive wt_instr (cfg : CompilerConfig) (f : function) (env : regenv) :
+    instruction → Prop where
+  | wt_Inop (s : node)
+      (hsucc : valid_successor f s) :
+      wt_instr cfg f env (Inop s)
+  | wt_Iopmove (r1 r : reg) (s : node)
+      (hty : env r = env r1)
+      (hsucc : valid_successor f s) :
+      wt_instr cfg f env (Iop Omove [r1] r s)
+  | wt_Iop (op : operation) (args : List reg) (res : reg) (s : node)
+      (hop : op ≠ Omove)
+      (hargs : List.map env args = (type_of_operation op).1)
+      (hres : env res = (type_of_operation op).2)
+      (hsucc : valid_successor f s) :
+      wt_instr cfg f env (Iop op args res s)
+  | wt_Iload (chunk : memory_chunk) (addr : addressing) (args : List reg)
+      (dst : reg) (s : node)
+      (hargs : List.map env args = type_of_addressing addr)
+      (hdst : env dst = type_of_chunk chunk)
+      (hsucc : valid_successor f s) :
+      wt_instr cfg f env (Iload chunk addr args dst s)
+  | wt_Istore (chunk : memory_chunk) (addr : addressing) (args : List reg)
+      (src : reg) (s : node)
+      (hargs : List.map env args = type_of_addressing addr)
+      (hsrc : env src = type_of_chunk chunk)
+      (hsucc : valid_successor f s) :
+      wt_instr cfg f env (Istore chunk addr args src s)
+  | wt_Icall (sg : signature) (ros : Sum reg ident) (args : List reg)
+      (res : reg) (s : node)
+      (hros : match ros with
         | .inl r => env r = Tptr
-        | .inr _ => True) ∧
-      List.map env args = proj_sig_args sg ∧
-      env res = proj_sig_res sg ∧
-      valid_successor f s
-  | .Itailcall sg ros args =>
-      (match ros with
+        | .inr _ => True)
+      (hargs : List.map env args = proj_sig_args sg)
+      (hres : env res = proj_sig_res sg)
+      (hsucc : valid_successor f s) :
+      wt_instr cfg f env (Icall sg ros args res s)
+  | wt_Itailcall (sg : signature) (ros : Sum reg ident) (args : List reg)
+      (hros : match ros with
         | .inl r => env r = Tptr
-        | .inr _ => True) ∧
-      List.map env args = proj_sig_args sg ∧
-      sg.sig_res = f.fn_sig.sig_res ∧
-      tailcall_possible cfg sg
-  | .Ibuiltin ef args res s =>
-      (match ef with
+        | .inr _ => True)
+      (hargs : List.map env args = proj_sig_args sg)
+      (hres : sg.sig_res = f.fn_sig.sig_res)
+      (hpossible : tailcall_possible cfg sg) :
+      wt_instr cfg f env (Itailcall sg ros args)
+  | wt_Ibuiltin (ef : external_function) (args : List (builtin_arg reg))
+      (res : builtin_res reg) (s : node)
+      (hargs : match ef with
         | .EF_annot _ _ _ | .EF_debug _ _ _ => True
-        | _ => List.map (type_of_builtin_arg env) args = proj_sig_args (ef_sig ef)) ∧
-      type_of_builtin_res env res = proj_sig_res (ef_sig ef) ∧
-      valid_successor f s
-  | .Icond cond args s1 s2 =>
-      List.map env args = type_of_condition cond ∧
-        valid_successor f s1 ∧ valid_successor f s2
-  | .Ijumptable arg tbl =>
-      env arg = Tint ∧
-        (∀ s, s ∈ tbl → valid_successor f s) ∧
-        ZArith.BinInt.Z.le
-          (ZArith.BinInt.Z.mul (list_length_z tbl) (ZArith.BinInt.Z.of_nat 4))
-          Int.max_unsigned
-  | .Ireturn none => f.fn_sig.sig_res = Xvoid
-  | .Ireturn (some arg) =>
-      f.fn_sig.sig_res ≠ Xvoid ∧
-        env arg = proj_sig_res f.fn_sig ∧
-        ∃ ty, env arg = ty
+        | _ => List.map (type_of_builtin_arg env) args = proj_sig_args (ef_sig ef))
+      (hres : type_of_builtin_res env res = proj_sig_res (ef_sig ef))
+      (hsucc : valid_successor f s) :
+      wt_instr cfg f env (Ibuiltin ef args res s)
+  | wt_Icond (cond : condition) (args : List reg) (s1 s2 : node)
+      (hargs : List.map env args = type_of_condition cond)
+      (hsucc1 : valid_successor f s1)
+      (hsucc2 : valid_successor f s2) :
+      wt_instr cfg f env (Icond cond args s1 s2)
+  | wt_Ijumptable (arg : reg) (tbl : List node)
+      (harg : env arg = Tint)
+      (hsucc : ∀ s, s ∈ tbl → valid_successor f s)
+      (hsize : ZArith.BinInt.Z.le
+        (ZArith.BinInt.Z.mul (list_length_z tbl) (ZArith.BinInt.Z.of_nat 4))
+        Int.max_unsigned) :
+      wt_instr cfg f env (Ijumptable arg tbl)
+  | wt_Ireturn_none
+      (hres : f.fn_sig.sig_res = Xvoid) :
+      wt_instr cfg f env (Ireturn none)
+  | wt_Ireturn_some (arg : reg) (ty : typ)
+      (hres : f.fn_sig.sig_res ≠ Xvoid)
+      (harg : env arg = proj_sig_res f.fn_sig)
+      (hty : env arg = ty) :
+      wt_instr cfg f env (Ireturn (some arg))
 
-def wt_Iop (cfg : CompilerConfig) (f : function) (env : regenv)
-    (op : operation) (args : List reg) (res : reg) (s : node)
-    (hop : op ≠ Omove)
-    (hargs : List.map env args = (type_of_operation op).1)
-    (hres : env res = (type_of_operation op).2)
-    (hsucc : valid_successor f s) :
-    wt_instr cfg f env (Iop op args res s) :=
-  Or.inr ⟨hop, hargs, hres, hsucc⟩
+export wt_instr
+  (wt_Inop wt_Iopmove wt_Iop wt_Iload wt_Istore wt_Icall wt_Itailcall
+   wt_Ibuiltin wt_Icond wt_Ijumptable wt_Ireturn_none wt_Ireturn_some)
 
-def wt_function (cfg : CompilerConfig) (f : function) (env : regenv) : Prop :=
-  List.map env f.fn_params = proj_sig_args f.fn_sig ∧
-    list_norepet f.fn_params ∧
-    (∀ pc instr, PTree.get pc f.fn_code = some instr → wt_instr cfg f env instr) ∧
-    valid_successor f f.fn_entrypoint
+structure wt_function (cfg : CompilerConfig) (f : function) (env : regenv) : Prop where
+  wt_params : List.map env f.fn_params = proj_sig_args f.fn_sig
+  wt_norepet : list_norepet f.fn_params
+  wt_instrs :
+    ∀ pc instr, PTree.get pc f.fn_code = some instr → wt_instr cfg f env instr
+  wt_entrypoint : valid_successor f f.fn_entrypoint
+
+def mk_wt_function (cfg : CompilerConfig) (f : function) (env : regenv)
+    (hparams : List.map env f.fn_params = proj_sig_args f.fn_sig)
+    (hnorepet : list_norepet f.fn_params)
+    (hinstrs :
+      ∀ pc instr, PTree.get pc f.fn_code = some instr → wt_instr cfg f env instr)
+    (hentrypoint : valid_successor f f.fn_entrypoint) : wt_function cfg f env :=
+  { wt_params := hparams
+    wt_norepet := hnorepet
+    wt_instrs := hinstrs
+    wt_entrypoint := hentrypoint }
 
 def wt_params {cfg : CompilerConfig} {f : function} {env : regenv}
     (h : wt_function cfg f env) :
-    List.map env f.fn_params = proj_sig_args f.fn_sig := h.1
+    List.map env f.fn_params = proj_sig_args f.fn_sig := h.wt_params
 
 def wt_norepet {cfg : CompilerConfig} {f : function} {env : regenv}
-    (h : wt_function cfg f env) : list_norepet f.fn_params := h.2.1
+    (h : wt_function cfg f env) : list_norepet f.fn_params := h.wt_norepet
 
 def wt_instrs {cfg : CompilerConfig} {f : function} {env : regenv}
     (h : wt_function cfg f env) :
     ∀ pc instr, PTree.get pc f.fn_code = some instr → wt_instr cfg f env instr :=
-  h.2.2.1
+  h.wt_instrs
 
 def wt_entrypoint {cfg : CompilerConfig} {f : function} {env : regenv}
-    (h : wt_function cfg f env) : valid_successor f f.fn_entrypoint := h.2.2.2
+    (h : wt_function cfg f env) : valid_successor f f.fn_entrypoint := h.wt_entrypoint
 
-def wt_fundef (cfg : CompilerConfig) : fundef → Prop
-  | .External _ => True
-  | .Internal f => ∃ env, wt_function cfg f env
+inductive wt_fundef (cfg : CompilerConfig) : fundef → Prop where
+  | wt_fundef_external (ef : external_function) :
+      wt_fundef cfg (.External ef)
+  | wt_function_internal (f : function) (env : regenv)
+      (hwt : wt_function cfg f env) :
+      wt_fundef cfg (.Internal f)
+
+export wt_fundef (wt_fundef_external wt_function_internal)
 
 def wt_program (cfg : CompilerConfig) (p : program) : Prop :=
   ∀ i fd, (i, Gfun fd) ∈ p.prog_defs → wt_fundef cfg fd
@@ -515,27 +549,39 @@ def wt_instr_atStatement : Prop :=
     wt_function cfg f env →
       PTree.get pc f.fn_code = some i → wt_instr cfg f env i
 
-def wt_stackframes (cfg : CompilerConfig) : List stackframe → signature → Prop
-  | [], sg => sg.sig_res = Xint
-  | .Stackframe res f _ _ rs :: rest, sg =>
-      ∃ env,
-        wt_function cfg f env ∧
-          wt_regset env rs ∧
-          env res = proj_sig_res sg ∧
-          wt_stackframes cfg rest f.fn_sig
+inductive wt_stackframes (cfg : CompilerConfig) :
+    List stackframe → signature → Prop where
+  | wt_stackframes_nil (sg : signature)
+      (hres : sg.sig_res = Xint) :
+      wt_stackframes cfg [] sg
+  | wt_stackframes_cons (s : List stackframe) (res : reg) (f : function)
+      (sp : val) (pc : node) (rs : regset) (env : regenv) (sg : signature)
+      (hfunction : wt_function cfg f env)
+      (hregset : wt_regset env rs)
+      (hres : env res = proj_sig_res sg)
+      (hstack : wt_stackframes cfg s f.fn_sig) :
+      wt_stackframes cfg (Stackframe res f sp pc rs :: s) sg
 
-def wt_state (cfg : CompilerConfig) : state → Prop
-  | .State stack f _ _ rs _ =>
-      ∃ env,
-        wt_stackframes cfg stack f.fn_sig ∧
-          wt_function cfg f env ∧ wt_regset env rs
-  | .Callstate stack fd args _ =>
-      wt_stackframes cfg stack (funsig fd) ∧
-        wt_fundef cfg fd ∧
-        Val.has_type_list args (proj_sig_args (funsig fd))
-  | .Returnstate stack v _ =>
-      ∃ sg,
-        wt_stackframes cfg stack sg ∧ Val.has_type v (proj_sig_res sg)
+export wt_stackframes (wt_stackframes_nil wt_stackframes_cons)
+
+inductive wt_state (cfg : CompilerConfig) : state → Prop where
+  | wt_state_intro (s : List stackframe) (f : function) (sp : val)
+      (pc : node) (rs : regset) (m : mem) (env : regenv)
+      (WT_STK : wt_stackframes cfg s f.fn_sig)
+      (WT_FN : wt_function cfg f env)
+      (WT_RS : wt_regset env rs) :
+      wt_state cfg (State s f sp pc rs m)
+  | wt_state_call (s : List stackframe) (fd : fundef) (args : List val) (m : mem)
+      (hstack : wt_stackframes cfg s (funsig fd))
+      (hfunction : wt_fundef cfg fd)
+      (hargs : Val.has_type_list args (proj_sig_args (funsig fd))) :
+      wt_state cfg (Callstate s fd args m)
+  | wt_state_return (s : List stackframe) (v : val) (m : mem) (sg : signature)
+      (hstack : wt_stackframes cfg s sg)
+      (hres : Val.has_type v (proj_sig_res sg)) :
+      wt_state cfg (Returnstate s v m)
+
+export wt_state (wt_state_intro wt_state_call wt_state_return)
 
 def wt_stackframes_change_sigStatement : Prop :=
   ∀ (cfg : CompilerConfig) (s : List stackframe) (sg1 sg2 : signature),

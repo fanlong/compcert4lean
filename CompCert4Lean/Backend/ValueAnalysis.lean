@@ -302,90 +302,88 @@ def romem_consistent (cfg : CompilerConfig)
 /-! ## Generated invariant carriers and constructors -/
 
 inductive sound_stack (cfg : CompilerConfig)
-    (prog : CompCert4Lean.Backend.RTL.program) :
+    (prog : CompCert4Lean.Backend.RTL.program)
+    (ge : CompCert4Lean.Backend.RTL.genv) :
     block_classification → List stackframe → mem → block → Prop where
   | sound_stack_nil (bc : block_classification) (m : mem) (bound : block) :
-      sound_stack cfg prog bc [] m bound
+      sound_stack cfg prog ge bc [] m bound
   | sound_stack_public_call
       (bc : block_classification) (res : reg) (f : function) (sp : block)
       (pc : node) (e : regset) (stk : List stackframe) (m : mem) (bound : block)
       (bc' : block_classification) (bound' : block) (ae : aenv)
-      (STK : sound_stack cfg prog bc' stk m sp)
+      (STK : sound_stack cfg prog ge bc' stk m sp)
       (INCR : Ple bound' bound)
       (BELOW : bc_below bc' bound')
       (SP : bc sp = BCother)
       (SP' : bc' sp = BCstack)
       (SAME : ∀ b, Plt b bound' → b ≠ sp → bc b = bc' b)
-      (ge : CompCert4Lean.Backend.RTL.genv)
       (GE : genv_match bc' ge)
       (AN : VA.ge (PMap.get pc (analyze cfg (romem_for cfg prog) f))
         (VA.State (AE.set res Vtop ae) mafter_public_call))
       (EM : ematch bc' e ae) :
-      sound_stack cfg prog bc
+      sound_stack cfg prog ge bc
         (Stackframe res f (Vptr sp Ptrofs.zero) pc e :: stk) m bound
   | sound_stack_private_call
       (bc : block_classification) (res : reg) (f : function) (sp : block)
       (pc : node) (e : regset) (stk : List stackframe) (m : mem) (bound : block)
       (bc' : block_classification) (bound' : block) (ae : aenv) (am : amem)
-      (STK : sound_stack cfg prog bc' stk m sp)
+      (STK : sound_stack cfg prog ge bc' stk m sp)
       (INCR : Ple bound' bound)
       (BELOW : bc_below bc' bound')
       (SP : bc sp = BCinvalid)
       (SP' : bc' sp = BCstack)
       (SAME : ∀ b, Plt b bound' → b ≠ sp → bc b = bc' b)
-      (ge : CompCert4Lean.Backend.RTL.genv)
       (GE : genv_match bc' ge)
       (AN : VA.ge (PMap.get pc (analyze cfg (romem_for cfg prog) f))
         (VA.State (AE.set res (Ifptr Nonstack) ae) (mafter_private_call am)))
       (EM : ematch bc' e ae)
       (CONTENTS : bmatch bc' m sp am.am_stack) :
-      sound_stack cfg prog bc
+      sound_stack cfg prog ge bc
         (Stackframe res f (Vptr sp Ptrofs.zero) pc e :: stk) m bound
 
 export sound_stack (sound_stack_nil sound_stack_public_call sound_stack_private_call)
 
 inductive sound_state_base (cfg : CompilerConfig)
-    (prog : CompCert4Lean.Backend.RTL.program) : state → Prop where
+    (prog : CompCert4Lean.Backend.RTL.program)
+    (ge : CompCert4Lean.Backend.RTL.genv) : state → Prop where
   | sound_regular_state
       (s : List stackframe) (f : function) (sp : block) (pc : node)
       (e : regset) (m : mem) (ae : aenv) (am : amem) (bc : block_classification)
-      (ge : CompCert4Lean.Backend.RTL.genv)
-      (STK : sound_stack cfg prog bc s m sp)
+      (STK : sound_stack cfg prog ge bc s m sp)
       (AN : PMap.get pc (analyze cfg (romem_for cfg prog) f) = VA.State ae am)
       (EM : ematch bc e ae)
       (RO : romatch bc m (romem_for cfg prog))
       (MM : mmatch bc m am)
       (GE : genv_match bc ge)
       (SP : bc sp = BCstack) :
-      sound_state_base cfg prog (State s f (Vptr sp Ptrofs.zero) pc e m)
+      sound_state_base cfg prog ge (State s f (Vptr sp Ptrofs.zero) pc e m)
   | sound_call_state
       (s : List stackframe) (fd : fundef) (args : List val) (m : mem)
       (bc : block_classification)
-      (ge : CompCert4Lean.Backend.RTL.genv)
-      (STK : sound_stack cfg prog bc s m m.nextblock)
+      (STK : sound_stack cfg prog ge bc s m m.nextblock)
       (ARGS : ∀ v, v ∈ args → vmatch bc v Vtop)
       (RO : romatch bc m (romem_for cfg prog))
       (MM : mmatch bc m mtop)
       (GE : genv_match bc ge)
       (NOSTK : bc_nostack bc) :
-      sound_state_base cfg prog (Callstate s fd args m)
+      sound_state_base cfg prog ge (Callstate s fd args m)
   | sound_return_state
       (s : List stackframe) (v : val) (m : mem) (bc : block_classification)
-      (ge : genv)
-      (STK : sound_stack cfg prog bc s m m.nextblock)
+      (STK : sound_stack cfg prog ge bc s m m.nextblock)
       (RES : vmatch bc v Vtop)
       (RO : romatch bc m (romem_for cfg prog))
       (MM : mmatch bc m mtop)
       (GE : genv_match bc ge)
       (NOSTK : bc_nostack bc) :
-      sound_state_base cfg prog (Returnstate s v m)
+      sound_state_base cfg prog ge (Returnstate s v m)
 
 export sound_state_base (sound_regular_state sound_call_state sound_return_state)
 
 inductive sound_state (cfg : CompilerConfig)
     (prog : CompCert4Lean.Backend.RTL.program) : state → Prop where
   | sound_state_intro (st : state)
-      (H : ∀ cunit, linkorder cunit prog → sound_state_base cfg cunit st) :
+      (H : ∀ cunit, linkorder cunit prog →
+        sound_state_base cfg cunit (Genv.globalenv prog) st) :
       sound_state cfg prog st
 
 def avalue (a : VA.t) (r : reg) : aval :=
@@ -631,68 +629,68 @@ def external_call_matchStatement : Prop :=
         Mem.loadbytes m' b ofs n = Mem.loadbytes m b ofs n)
 
 def sound_stack_extStatement : Prop :=
-  ∀ (cfg : CompilerConfig) (prog : program) (m' : mem) (bc : block_classification)
+  ∀ (cfg : CompilerConfig) (prog : program) (ge : genv) (m' : mem) (bc : block_classification)
     (stk : List stackframe) (m : mem) (bound : block),
-    sound_stack cfg prog bc stk m bound →
+    sound_stack cfg prog ge bc stk m bound →
     (∀ b ofs n bytes, Plt b bound → bc b = BCinvalid → zLe z0 n →
       Mem.loadbytes m' b ofs n = some bytes →
       Mem.loadbytes m b ofs n = some bytes) →
-    sound_stack cfg prog bc stk m' bound
+    sound_stack cfg prog ge bc stk m' bound
 
 def sound_stack_invStatement : Prop :=
-  ∀ (cfg : CompilerConfig) (prog : program) (m' : mem) (bc : block_classification)
+  ∀ (cfg : CompilerConfig) (prog : program) (ge : genv) (m' : mem) (bc : block_classification)
     (stk : List stackframe) (m : mem) (bound : block),
-    sound_stack cfg prog bc stk m bound →
+    sound_stack cfg prog ge bc stk m bound →
     (∀ b ofs n, Plt b bound → bc b = BCinvalid → zLe z0 n →
       Mem.loadbytes m' b ofs n = Mem.loadbytes m b ofs n) →
-    sound_stack cfg prog bc stk m' bound
+    sound_stack cfg prog ge bc stk m' bound
 
 def sound_stack_storevStatement : Prop :=
-  ∀ (cfg : CompilerConfig) (prog : program) (chunk : memory_chunk)
+  ∀ (cfg : CompilerConfig) (prog : program) (ge : genv) (chunk : memory_chunk)
     (m : mem) (addr v : val)
     (m' : mem) (bc : block_classification) (aaddr : aval)
     (stk : List stackframe) (bound : block),
     Mem.storev chunk m addr v = some m' →
     vmatch bc addr aaddr →
-    sound_stack cfg prog bc stk m bound →
-    sound_stack cfg prog bc stk m' bound
+    sound_stack cfg prog ge bc stk m bound →
+    sound_stack cfg prog ge bc stk m' bound
 
 def sound_stack_storebytesStatement : Prop :=
-  ∀ (cfg : CompilerConfig) (prog : program) (m : mem) (b : block)
+  ∀ (cfg : CompilerConfig) (prog : program) (ge : genv) (m : mem) (b : block)
     (ofs : ptrofs)
     (bytes : List memval) (m' : mem) (bc : block_classification)
     (aaddr : aval) (stk : List stackframe) (bound : block),
     Mem.storebytes m b (Ptrofs.unsigned ofs) bytes = some m' →
     vmatch bc (Vptr b ofs) aaddr →
-    sound_stack cfg prog bc stk m bound →
-    sound_stack cfg prog bc stk m' bound
+    sound_stack cfg prog ge bc stk m bound →
+    sound_stack cfg prog ge bc stk m' bound
 
 def sound_stack_freeStatement : Prop :=
-  ∀ (cfg : CompilerConfig) (prog : program) (m : mem) (b : block)
+  ∀ (cfg : CompilerConfig) (prog : program) (ge : genv) (m : mem) (b : block)
     (lo hi : Z) (m' : mem)
     (bc : block_classification) (stk : List stackframe) (bound : block),
     Mem.free m b lo hi = some m' →
-    sound_stack cfg prog bc stk m bound →
-    sound_stack cfg prog bc stk m' bound
+    sound_stack cfg prog ge bc stk m bound →
+    sound_stack cfg prog ge bc stk m' bound
 
 def sound_stack_new_boundStatement : Prop :=
-  ∀ (cfg : CompilerConfig) (prog : program) (bc : block_classification)
+  ∀ (cfg : CompilerConfig) (prog : program) (ge : genv) (bc : block_classification)
     (stk : List stackframe)
     (m : mem) (bound bound' : block),
-    sound_stack cfg prog bc stk m bound →
+    sound_stack cfg prog ge bc stk m bound →
     Ple bound bound' →
-    sound_stack cfg prog bc stk m bound'
+    sound_stack cfg prog ge bc stk m bound'
 
 def sound_stack_extenStatement : Prop :=
-  ∀ (cfg : CompilerConfig) (prog : program) (bc : block_classification)
+  ∀ (cfg : CompilerConfig) (prog : program) (ge : genv) (bc : block_classification)
     (stk : List stackframe)
     (m : mem) (bound : block) (bc1 : block_classification),
-    sound_stack cfg prog bc stk m bound →
+    sound_stack cfg prog ge bc stk m bound →
     (∀ b, Plt b bound → bc1 b = bc b) →
-    sound_stack cfg prog bc1 stk m bound
+    sound_stack cfg prog ge bc1 stk m bound
 
 def sound_succ_stateStatement : Prop :=
-  ∀ (cfg : CompilerConfig) (prog : program) (rm : romem)
+  ∀ (cfg : CompilerConfig) (prog : program) (ge : genv) (rm : romem)
     (bc : block_classification) (pc : node)
     (ae : aenv) (am : amem) (instr : instruction) (ae' : aenv) (am' : amem)
     (s : List stackframe) (f : function) (sp pc' : node) (e' : regset)
@@ -704,17 +702,18 @@ def sound_succ_stateStatement : Prop :=
     ematch bc e' ae' →
     mmatch bc m' am' →
     romatch bc m' rm →
+    genv_match bc ge →
     bc sp = BCstack →
-    sound_stack cfg prog bc s m' sp →
-    sound_state_base cfg prog (State s f (Vptr sp Ptrofs.zero) pc' e' m')
+    sound_stack cfg prog ge bc s m' sp →
+    sound_state_base cfg prog ge (State s f (Vptr sp Ptrofs.zero) pc' e' m')
 
 def sound_step_baseStatement : Prop :=
   ∀ (cfg : CompilerConfig) (prog : program)
     (xi : CompCert4Lean.Common.ExternalCalls.ExternalCalls)
     (ge : genv) (st st' : state) (t : trace),
     RTL.step xi ge st t st' →
-    sound_state_base cfg prog st →
-    sound_state_base cfg prog st'
+    sound_state_base cfg prog ge st →
+    sound_state_base cfg prog ge st'
 
 def sound_stepStatement : Prop :=
   ∀ (cfg : CompilerConfig) (prog : program)
@@ -728,7 +727,7 @@ def sound_state_invStatement : Prop :=
   ∀ (cfg : CompilerConfig) (prog cunit : program) (st : state),
     sound_state cfg prog st →
     linkorder cunit prog →
-    sound_state_base cfg cunit st
+    sound_state_base cfg cunit (Genv.globalenv prog) st
 
 def initial_block_classificationStatement : Prop :=
   ∀ (prog : program) (m : mem),

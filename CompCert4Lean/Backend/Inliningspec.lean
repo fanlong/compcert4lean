@@ -63,59 +63,97 @@ def context_stack_call (ctx1 ctx2 : context) : Prop :=
 def context_stack_tailcall (ctx1 : context) (f : function) (ctx2 : context) : Prop :=
   ctx2.dstk = align ctx1.dstk (min_alignment f.fn_stacksize)
 
-inductive tr_funbody (fenv : funenv) (stacksize : Z) : context → function → code → Prop where
+mutual
+  inductive tr_instr (fenv : funenv) (stacksize : Z) :
+      context → node → instruction → code → Prop where
+    | tr_nop : ∀ ctx pc c s,
+        PTree.get (spc ctx pc) c = some (Inop (spc ctx s)) →
+        tr_instr fenv stacksize ctx pc (Inop s) c
+    | tr_op : ∀ ctx pc c op args res s,
+        Ple res ctx.mreg →
+        PTree.get (spc ctx pc) c =
+          some (Iop (sop ctx op) (sregs ctx args) (sreg ctx res) (spc ctx s)) →
+        tr_instr fenv stacksize ctx pc (Iop op args res s) c
+    | tr_load : ∀ ctx pc c chunk addr args res s,
+        Ple res ctx.mreg →
+        PTree.get (spc ctx pc) c =
+          some (Iload chunk (saddr ctx addr) (sregs ctx args) (sreg ctx res) (spc ctx s)) →
+        tr_instr fenv stacksize ctx pc (Iload chunk addr args res s) c
+    | tr_store : ∀ ctx pc c chunk addr args src s,
+        PTree.get (spc ctx pc) c =
+          some (Istore chunk (saddr ctx addr) (sregs ctx args) (sreg ctx src) (spc ctx s)) →
+        tr_instr fenv stacksize ctx pc (Istore chunk addr args src s) c
+    | tr_call : ∀ ctx pc c sg ros args res s,
+        Ple res ctx.mreg →
+        PTree.get (spc ctx pc) c =
+          some (Icall sg (sros ctx ros) (sregs ctx args) (sreg ctx res) (spc ctx s)) →
+        tr_instr fenv stacksize ctx pc (Icall sg ros args res s) c
+    | tr_call_inlined : ∀ ctx pc sg id args res s c f pc1 ctx',
+        Ple res ctx.mreg →
+        PTree.get id fenv = some f →
+        PTree.get (spc ctx pc) c = some (Inop pc1) →
+        tr_moves c pc1 (sregs ctx args) (sregs ctx' f.fn_params)
+          (spc ctx' f.fn_entrypoint) →
+        tr_funbody fenv stacksize ctx' f c →
+        ctx'.retinfo = some (spc ctx s, sreg ctx res) →
+        context_below ctx ctx' →
+        context_stack_call ctx ctx' →
+        tr_instr fenv stacksize ctx pc (Icall sg (.inr id) args res s) c
+    | tr_tailcall : ∀ ctx pc c sg ros args,
+        PTree.get (spc ctx pc) c = some (Itailcall sg (sros ctx ros) (sregs ctx args)) →
+        ctx.retinfo = none →
+        tr_instr fenv stacksize ctx pc (Itailcall sg ros args) c
+    | tr_tailcall_call : ∀ ctx pc c sg ros args res s,
+        PTree.get (spc ctx pc) c =
+          some (Icall sg (sros ctx ros) (sregs ctx args) res s) →
+        ctx.retinfo = some (s, res) →
+        tr_instr fenv stacksize ctx pc (Itailcall sg ros args) c
+    | tr_tailcall_inlined : ∀ ctx pc sg id args c f pc1 ctx',
+        PTree.get id fenv = some f →
+        PTree.get (spc ctx pc) c = some (Inop pc1) →
+        tr_moves c pc1 (sregs ctx args) (sregs ctx' f.fn_params)
+          (spc ctx' f.fn_entrypoint) →
+        tr_funbody fenv stacksize ctx' f c →
+        ctx'.retinfo = ctx.retinfo →
+        context_below ctx ctx' →
+        context_stack_tailcall ctx f ctx' →
+        tr_instr fenv stacksize ctx pc (Itailcall sg (.inr id) args) c
+    | tr_builtin : ∀ ctx pc c ef args res s,
+        (match res with
+         | BR r => Ple r ctx.mreg
+         | _ => True) →
+        PTree.get (spc ctx pc) c =
+          some (Ibuiltin ef (args.map (sbuiltinarg ctx)) (sbuiltinres ctx res) (spc ctx s)) →
+        tr_instr fenv stacksize ctx pc (Ibuiltin ef args res s) c
+    | tr_cond : ∀ ctx pc cond args s1 s2 c,
+        PTree.get (spc ctx pc) c =
+          some (Icond cond (sregs ctx args) (spc ctx s1) (spc ctx s2)) →
+        tr_instr fenv stacksize ctx pc (Icond cond args s1 s2) c
+    | tr_jumptable : ∀ ctx pc r tbl c,
+        PTree.get (spc ctx pc) c =
+          some (Ijumptable (sreg ctx r) (tbl.map (spc ctx))) →
+        tr_instr fenv stacksize ctx pc (Ijumptable r tbl) c
+    | tr_return : ∀ ctx pc or c,
+        PTree.get (spc ctx pc) c = some (Ireturn (option_map (sreg ctx) or)) →
+        ctx.retinfo = none →
+        tr_instr fenv stacksize ctx pc (Ireturn or) c
+    | tr_return_inlined : ∀ ctx pc or c rinfo,
+        PTree.get (spc ctx pc) c = some (inline_return ctx or rinfo) →
+        ctx.retinfo = some rinfo →
+        tr_instr fenv stacksize ctx pc (Ireturn or) c
 
-inductive tr_instr (fenv : funenv) (stacksize : Z) : context → node → instruction → code → Prop where
-  | tr_call : ∀ ctx pc c sg ros args res s,
-      Ple res ctx.mreg →
-      PTree.get (spc ctx pc) c =
-        some (Icall sg (sros ctx ros) (sregs ctx args) (sreg ctx res) (spc ctx s)) →
-      tr_instr fenv stacksize ctx pc (Icall sg ros args res s) c
-  | tr_call_inlined : ∀ ctx pc sg id args res s c f pc1 ctx',
-      Ple res ctx.mreg →
-      PTree.get id fenv = some f →
-      PTree.get (spc ctx pc) c = some (Inop pc1) →
-      tr_moves c pc1 (sregs ctx args) (sregs ctx' f.fn_params)
-        (spc ctx' f.fn_entrypoint) →
-      tr_funbody fenv f.fn_stacksize ctx' f c →
-      ctx'.retinfo = some (spc ctx s, sreg ctx res) →
-      context_below ctx ctx' →
-      context_stack_call ctx ctx' →
-      tr_instr fenv stacksize ctx pc (Icall sg (.inr id) args res s) c
-  | tr_tailcall : ∀ ctx pc c sg ros args,
-      PTree.get (spc ctx pc) c = some (Itailcall sg (sros ctx ros) (sregs ctx args)) →
-      ctx.retinfo = none →
-      tr_instr fenv stacksize ctx pc (Itailcall sg ros args) c
-  | tr_tailcall_call : ∀ ctx pc c sg ros args res s,
-      PTree.get (spc ctx pc) c =
-        some (Icall sg (sros ctx ros) (sregs ctx args) res s) →
-      ctx.retinfo = some (s, res) →
-      tr_instr fenv stacksize ctx pc (Itailcall sg ros args) c
-  | tr_tailcall_inlined : ∀ ctx pc sg id args c f pc1 ctx',
-      PTree.get id fenv = some f →
-      PTree.get (spc ctx pc) c = some (Inop pc1) →
-      tr_moves c pc1 (sregs ctx args) (sregs ctx' f.fn_params)
-        (spc ctx' f.fn_entrypoint) →
-      tr_funbody fenv f.fn_stacksize ctx' f c →
-      ctx'.retinfo = ctx.retinfo →
-      context_below ctx ctx' →
-      context_stack_tailcall ctx f ctx' →
-      tr_instr fenv stacksize ctx pc (Itailcall sg (.inr id) args) c
-  | tr_builtin : ∀ ctx pc c ef args res s,
-      (match res with
-       | BR r => Ple r ctx.mreg
-       | _ => True) →
-      PTree.get (spc ctx pc) c =
-        some (Ibuiltin ef (args.map (sbuiltinarg ctx)) (sbuiltinres ctx res) (spc ctx s)) →
-      tr_instr fenv stacksize ctx pc (Ibuiltin ef args res s) c
-  | tr_return : ∀ ctx pc or c,
-      PTree.get (spc ctx pc) c = some (Ireturn (option_map (sreg ctx) or)) →
-      ctx.retinfo = none →
-      tr_instr fenv stacksize ctx pc (Ireturn or) c
-  | tr_return_inlined : ∀ ctx pc or c rinfo,
-      PTree.get (spc ctx pc) c = some (inline_return ctx or rinfo) →
-      ctx.retinfo = some rinfo →
-      tr_instr fenv stacksize ctx pc (Ireturn or) c
+  inductive tr_funbody (fenv : funenv) (stacksize : Z) :
+      context → function → code → Prop where
+    | tr_funbody_intro : ∀ ctx f c,
+        (∀ r, r ∈ f.fn_params → Ple r ctx.mreg) →
+        (∀ pc i, PTree.get pc f.fn_code = some i →
+          tr_instr fenv stacksize ctx pc i c) →
+        ctx.mstk = ZArith.BinInt.Z.max f.fn_stacksize Z0 →
+        ZArith.BinInt.Z.divide (min_alignment f.fn_stacksize) ctx.dstk →
+        zGe ctx.dstk Z0 →
+        zLe (zAdd ctx.dstk ctx.mstk) stacksize →
+        tr_funbody fenv stacksize ctx f c
+end
 
 def fenv_agree (fenv : funenv) (fe : funenv) : Prop :=
   ∀ id f, PTree.get id fe = some f → PTree.get id fenv = some f
@@ -133,19 +171,28 @@ inductive tr_function : program → function → function → Prop where
     zLt f'.fn_stacksize Ptrofs.max_unsigned →
     tr_function p f f'
 
-export tr_instr (tr_builtin tr_call tr_call_inlined tr_return tr_return_inlined
-  tr_tailcall tr_tailcall_call tr_tailcall_inlined)
+export tr_instr (tr_builtin tr_call tr_call_inlined tr_cond tr_jumptable tr_load
+  tr_nop tr_op tr_return tr_return_inlined tr_store tr_tailcall tr_tailcall_call
+  tr_tailcall_inlined)
+export tr_funbody (tr_funbody_intro)
 export tr_function (tr_function_intro)
 export tr_moves (tr_moves_cons tr_moves_nil)
 
 abbrev tr_builtin := @tr_instr.tr_builtin
 abbrev tr_call := @tr_instr.tr_call
 abbrev tr_call_inlined := @tr_instr.tr_call_inlined
+abbrev tr_cond := @tr_instr.tr_cond
+abbrev tr_funbody_intro := @tr_funbody.tr_funbody_intro
 abbrev tr_function_intro := @tr_function.tr_function_intro
+abbrev tr_jumptable := @tr_instr.tr_jumptable
+abbrev tr_load := @tr_instr.tr_load
 abbrev tr_moves_cons := @tr_moves.tr_moves_cons
 abbrev tr_moves_nil := @tr_moves.tr_moves_nil
+abbrev tr_nop := @tr_instr.tr_nop
+abbrev tr_op := @tr_instr.tr_op
 abbrev tr_return := @tr_instr.tr_return
 abbrev tr_return_inlined := @tr_instr.tr_return_inlined
+abbrev tr_store := @tr_instr.tr_store
 abbrev tr_tailcall := @tr_instr.tr_tailcall
 abbrev tr_tailcall_call := @tr_instr.tr_tailcall_call
 abbrev tr_tailcall_inlined := @tr_instr.tr_tailcall_inlined

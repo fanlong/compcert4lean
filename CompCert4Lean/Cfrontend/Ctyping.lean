@@ -4,9 +4,8 @@ import CompCert4Lean.Cfrontend.Cop
 # CompCert C typing predicates
 
 Definition-bearing translation of the selected declarations from
-`cfrontend/Ctyping.v`.  The source `wt_val` constructors are represented by
-their exact, non-recursive proposition, and proofs assigned to the later proof
-phase are recorded as exact proposition descriptors.
+`cfrontend/Ctyping.v`.  Proofs assigned to the later proof phase are recorded
+as exact proposition descriptors.
 -/
 
 namespace CompCert4Lean.Cfrontend.Ctyping
@@ -34,24 +33,50 @@ def wt_int (n : CCInt) (sz : intsize) (sg : signedness) : Prop :=
       cast_int_int .I16 .Signed n = n
   | .I32, _ => True
 
-def wt_val (v : val) (ty : type) : Prop :=
-  match v, ty with
-  | _, .Tvoid => True
-  | .Vundef, _ => True
-  | .Vint n, .Tint sz sg _ => wt_int n sz sg
-  | .Vptr _ _, .Tint .I32 _ _ => CompCert4Lean.X86_64.Archi.ptr64 = false
-  | .Vlong _, .Tlong _ _ => True
-  | .Vptr _ _, .Tlong _ _ => CompCert4Lean.X86_64.Archi.ptr64 = true
-  | .Vfloat _, .Tfloat .F64 _ => True
-  | .Vsingle _, .Tfloat .F32 _ => True
-  | .Vptr _ _, .Tpointer _ _ => True
-  | .Vint _, .Tpointer _ _ => CompCert4Lean.X86_64.Archi.ptr64 = false
-  | .Vlong _, .Tpointer _ _ => CompCert4Lean.X86_64.Archi.ptr64 = true
-  | .Vptr _ _, .Tarray _ _ _ => True
-  | .Vptr _ _, .Tfunction _ _ _ => True
-  | .Vptr _ _, .Tstruct _ _ => True
-  | .Vptr _ _, .Tunion _ _ => True
-  | _, _ => False
+inductive wt_val : val → type → Prop where
+  | wt_val_int (n : CCInt) (sz : intsize) (sg : signedness) (a : attr)
+      (hwt : wt_int n sz sg) :
+      wt_val (.Vint n) (.Tint sz sg a)
+  | wt_val_ptr_int (b : block) (ofs : CompCert4Lean.Lib.Integers.Ptrofs.int)
+      (sg : signedness) (a : attr)
+      (hptr64 : CompCert4Lean.X86_64.Archi.ptr64 = false) :
+      wt_val (.Vptr b ofs) (.Tint .I32 sg a)
+  | wt_val_long (n : CompCert4Lean.Lib.Integers.int64) (sg : signedness) (a : attr) :
+      wt_val (.Vlong n) (.Tlong sg a)
+  | wt_val_ptr_long (b : block) (ofs : CompCert4Lean.Lib.Integers.Ptrofs.int)
+      (sg : signedness) (a : attr)
+      (hptr64 : CompCert4Lean.X86_64.Archi.ptr64 = true) :
+      wt_val (.Vptr b ofs) (.Tlong sg a)
+  | wt_val_float (f : CompCert4Lean.Lib.Floats.float) (a : attr) :
+      wt_val (.Vfloat f) (.Tfloat .F64 a)
+  | wt_val_single (f : CompCert4Lean.Lib.Floats.float32) (a : attr) :
+      wt_val (.Vsingle f) (.Tfloat .F32 a)
+  | wt_val_pointer (b : block) (ofs : CompCert4Lean.Lib.Integers.Ptrofs.int)
+      (ty : type) (a : attr) :
+      wt_val (.Vptr b ofs) (.Tpointer ty a)
+  | wt_val_int_pointer (n : CCInt) (ty : type) (a : attr)
+      (hptr64 : CompCert4Lean.X86_64.Archi.ptr64 = false) :
+      wt_val (.Vint n) (.Tpointer ty a)
+  | wt_val_long_pointer (n : CompCert4Lean.Lib.Integers.int64) (ty : type) (a : attr)
+      (hptr64 : CompCert4Lean.X86_64.Archi.ptr64 = true) :
+      wt_val (.Vlong n) (.Tpointer ty a)
+  | wt_val_array (b : block) (ofs : CompCert4Lean.Lib.Integers.Ptrofs.int)
+      (ty : type) (sz : Z) (a : attr) :
+      wt_val (.Vptr b ofs) (.Tarray ty sz a)
+  | wt_val_function (b : block) (ofs : CompCert4Lean.Lib.Integers.Ptrofs.int)
+      (tyargs : List type) (tyres : type)
+      (cc : CompCert4Lean.Common.AST.calling_convention) :
+      wt_val (.Vptr b ofs) (.Tfunction tyargs tyres cc)
+  | wt_val_struct (b : block) (ofs : CompCert4Lean.Lib.Integers.Ptrofs.int)
+      (id : CompCert4Lean.Common.AST.ident) (a : attr) :
+      wt_val (.Vptr b ofs) (.Tstruct id a)
+  | wt_val_union (b : block) (ofs : CompCert4Lean.Lib.Integers.Ptrofs.int)
+      (id : CompCert4Lean.Common.AST.ident) (a : attr) :
+      wt_val (.Vptr b ofs) (.Tunion id a)
+  | wt_val_undef (ty : type) :
+      wt_val .Vundef ty
+  | wt_val_void (v : val) :
+      wt_val v .Tvoid
 
 def pres_cast_int_intStatement : Prop :=
   ∀ (sz : intsize) (sg : signedness) (n : CCInt),
