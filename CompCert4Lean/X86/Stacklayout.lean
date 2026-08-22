@@ -1,5 +1,5 @@
 import CompCert4Lean.Config
-import CompCert4Lean.Foundation.RocqStdlib
+import CompCert4Lean.Foundation.Numbers
 import CompCert4Lean.Backend.Bounds
 import CompCert4Lean.Common.Memdata
 import CompCert4Lean.Common.Separation

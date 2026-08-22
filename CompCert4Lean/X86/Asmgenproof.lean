@@ -7,7 +7,8 @@ import CompCert4Lean.Common.Linking
 import CompCert4Lean.Common.Memory
 import CompCert4Lean.Common.Smallstep
 import CompCert4Lean.Common.Values
-import CompCert4Lean.Foundation.RocqStdlib
+import CompCert4Lean.Foundation.Logic
+import CompCert4Lean.Foundation.Numbers
 import CompCert4Lean.X86.Asm
 import CompCert4Lean.X86.Asmgen
 

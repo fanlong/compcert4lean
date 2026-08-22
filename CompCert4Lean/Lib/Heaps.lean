@@ -1,4 +1,6 @@
-import CompCert4Lean.Foundation.RocqStdlib
+import CompCert4Lean.Foundation.Logic
+import CompCert4Lean.Foundation.Numbers
+import CompCert4Lean.Foundation.Ordered
 import CompCert4Lean.Lib.Coqlib
 import CompCert4Lean.Lib.Ordered
 

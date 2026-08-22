@@ -1,4 +1,5 @@
-import CompCert4Lean.Foundation.RocqStdlib
+import CompCert4Lean.Foundation.Logic
+import CompCert4Lean.Foundation.Numbers
 import CompCert4Lean.Common.AST
 import CompCert4Lean.Common.Events
 import CompCert4Lean.Common.Values

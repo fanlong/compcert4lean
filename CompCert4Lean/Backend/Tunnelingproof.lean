@@ -1,4 +1,5 @@
-import CompCert4Lean.Foundation.RocqStdlib
+import CompCert4Lean.Foundation.Logic
+import CompCert4Lean.Foundation.Numbers
 import CompCert4Lean.Backend.Tunneling
 import CompCert4Lean.Common.Linking
 import CompCert4Lean.Common.Smallstep

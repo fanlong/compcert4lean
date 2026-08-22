@@ -1,4 +1,7 @@
-import CompCert4Lean.Foundation.RocqStdlib
+import CompCert4Lean.Foundation.Logic
+import CompCert4Lean.Foundation.Numbers
+import CompCert4Lean.Foundation.Ordered
+import CompCert4Lean.Foundation.RocqString
 import CompCert4Lean.Common.AST
 import CompCert4Lean.Common.Errors
 import CompCert4Lean.Common.Linking

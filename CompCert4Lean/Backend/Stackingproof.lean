@@ -1,4 +1,5 @@
-import CompCert4Lean.Foundation.RocqStdlib
+import CompCert4Lean.Foundation.Logic
+import CompCert4Lean.Foundation.Numbers
 import CompCert4Lean.Backend.Stacking
 import CompCert4Lean.Backend.Lineartyping
 import CompCert4Lean.Common.Events

@@ -1,4 +1,5 @@
-import CompCert4Lean.Foundation.RocqStdlib
+import CompCert4Lean.Foundation.Logic
+import CompCert4Lean.Foundation.Numbers
 import CompCert4Lean.Config
 import CompCert4Lean.Backend.Locations
 import CompCert4Lean.X86.Conventions1

@@ -1,6 +1,8 @@
 import CompCert4Lean.Backend.Inlining
 import CompCert4Lean.Common.Linking
-import CompCert4Lean.Foundation.RocqStdlib
+import CompCert4Lean.Foundation.Logic
+import CompCert4Lean.Foundation.Numbers
+import CompCert4Lean.Foundation.Recursion
 
 /-!
 # Relational specification of RTL function inlining

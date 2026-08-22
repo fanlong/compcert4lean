@@ -5,7 +5,8 @@ import CompCert4Lean.Common.Linking
 import CompCert4Lean.Common.Memory
 import CompCert4Lean.Common.Smallstep
 import CompCert4Lean.Common.Values
-import CompCert4Lean.Foundation.RocqStdlib
+import CompCert4Lean.Foundation.Logic
+import CompCert4Lean.Foundation.Numbers
 
 /-!
 # Correctness surface for code linearization

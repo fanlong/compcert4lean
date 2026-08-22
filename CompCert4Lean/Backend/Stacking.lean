@@ -1,5 +1,7 @@
 import CompCert4Lean.Config
-import CompCert4Lean.Foundation.RocqStdlib
+import CompCert4Lean.Foundation.Logic
+import CompCert4Lean.Foundation.Numbers
+import CompCert4Lean.Foundation.RocqString
 import CompCert4Lean.Backend.Bounds
 import CompCert4Lean.Backend.Lineartyping
 import CompCert4Lean.Backend.Linear
