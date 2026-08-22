@@ -76,24 +76,33 @@ def Eappinf : trace → traceinf → traceinf
 
 /-! ## Translation between semantic values and event values -/
 
-def eventval_match (ge : Senv.t) (ev : eventval) (ty : typ) (v : val) : Prop :=
-  (∃ i, ev = EVint i ∧ ty = Tint ∧ v = Vint i) ∨
-  (∃ i, ev = EVlong i ∧ ty = Tlong ∧ v = Vlong i) ∨
-  (∃ f, ev = EVfloat f ∧ ty = Tfloat ∧ v = Vfloat f) ∨
-  (∃ f, ev = EVsingle f ∧ ty = Tsingle ∧ v = Vsingle f) ∨
-  (∃ id b ofs,
-    Senv.public_symbol ge id = true ∧
-    Senv.find_symbol ge id = some b ∧
-    ev = EVptr_global id ofs ∧
-    ty = Tptr ∧
-    v = Vptr b ofs)
+inductive eventval_match (ge : Senv.t) : eventval → typ → val → Prop where
+  | ev_match_int (i : CCInt) :
+      eventval_match ge (EVint i) Tint (Vint i)
+  | ev_match_long (i : CCInt64) :
+      eventval_match ge (EVlong i) Tlong (Vlong i)
+  | ev_match_float (f : CCFloat) :
+      eventval_match ge (EVfloat f) Tfloat (Vfloat f)
+  | ev_match_single (f : CCFloat32) :
+      eventval_match ge (EVsingle f) Tsingle (Vsingle f)
+  | ev_match_ptr (id : ident) (b : block) (ofs : Ptrofs)
+      (public_symbol : Senv.public_symbol ge id = true)
+      (find_symbol : Senv.find_symbol ge id = some b) :
+      eventval_match ge (EVptr_global id ofs) Tptr (Vptr b ofs)
 
-def eventval_list_match (ge : Senv.t) :
-    List eventval → List typ → List val → Prop
-  | [], [], [] => True
-  | ev :: evl, ty :: tyl, v :: vl =>
-      eventval_match ge ev ty v ∧ eventval_list_match ge evl tyl vl
-  | _, _, _ => False
+export eventval_match
+  (ev_match_int ev_match_long ev_match_float ev_match_single ev_match_ptr)
+
+inductive eventval_list_match (ge : Senv.t) :
+    List eventval → List typ → List val → Prop where
+  | evl_match_nil : eventval_list_match ge [] [] []
+  | evl_match_cons (ev1 : eventval) (evl : List eventval)
+      (ty1 : typ) (tyl : List typ) (v1 : val) (vl : List val)
+      (head : eventval_match ge ev1 ty1 v1)
+      (tail : eventval_list_match ge evl tyl vl) :
+      eventval_list_match ge (ev1 :: evl) (ty1 :: tyl) (v1 :: vl)
+
+export eventval_list_match (evl_match_nil evl_match_cons)
 
 def eventval_valid (ge : Senv.t) (ev : eventval) : Prop :=
   match ev with
@@ -130,26 +139,29 @@ def symbols_inject (f : meminj) (ge1 ge2 : Senv.t) : Prop :=
 
 /-! ## Matching traces -/
 
-def match_traces (ge : Senv.t) (t1 t2 : trace) : Prop :=
-  (t1 = [] ∧ t2 = []) ∨
-  (∃ id args res1 res2,
-    eventval_valid ge res1 ∧
-    eventval_valid ge res2 ∧
-    eventval_type res1 = eventval_type res2 ∧
-    t1 = [Event_syscall id args res1] ∧
-    t2 = [Event_syscall id args res2]) ∨
-  (∃ chunk id ofs res1 res2,
-    eventval_valid ge res1 ∧
-    eventval_valid ge res2 ∧
-    eventval_type res1 = eventval_type res2 ∧
-    t1 = [Event_vload chunk id ofs res1] ∧
-    t2 = [Event_vload chunk id ofs res2]) ∨
-  (∃ chunk id ofs arg,
-    t1 = [Event_vstore chunk id ofs arg] ∧
-    t2 = [Event_vstore chunk id ofs arg]) ∨
-  (∃ id args,
-    t1 = [Event_annot id args] ∧
-    t2 = [Event_annot id args])
+inductive match_traces (ge : Senv.t) : trace → trace → Prop where
+  | match_traces_E0 : match_traces ge [] []
+  | match_traces_syscall (id : RocqString) (args : List eventval)
+      (res1 res2 : eventval)
+      (valid1 : eventval_valid ge res1)
+      (valid2 : eventval_valid ge res2)
+      (same_type : eventval_type res1 = eventval_type res2) :
+      match_traces ge [Event_syscall id args res1] [Event_syscall id args res2]
+  | match_traces_vload (chunk : memory_chunk) (id : ident) (ofs : Ptrofs)
+      (res1 res2 : eventval)
+      (valid1 : eventval_valid ge res1)
+      (valid2 : eventval_valid ge res2)
+      (same_type : eventval_type res1 = eventval_type res2) :
+      match_traces ge [Event_vload chunk id ofs res1] [Event_vload chunk id ofs res2]
+  | match_traces_vstore (chunk : memory_chunk) (id : ident) (ofs : Ptrofs)
+      (arg : eventval) :
+      match_traces ge [Event_vstore chunk id ofs arg] [Event_vstore chunk id ofs arg]
+  | match_traces_annot (id : RocqString) (args : List eventval) :
+      match_traces ge [Event_annot id args] [Event_annot id args]
+
+export match_traces
+  (match_traces_E0 match_traces_syscall match_traces_vload
+    match_traces_vstore match_traces_annot)
 
 /-! ## External-call semantics -/
 

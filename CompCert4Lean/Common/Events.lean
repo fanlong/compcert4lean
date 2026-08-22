@@ -246,29 +246,39 @@ def output_trace : trace → Prop
 
 /-! ## Volatile memory accesses -/
 
-def volatile_load (ge : Senv.t) (chunk : memory_chunk) (m : mem)
-    (b : block) (ofs : PtrofsT) (t : trace) (v : val) : Prop :=
-  (∃ id ev raw,
-    Senv.block_is_volatile ge b = true ∧
-    Senv.find_symbol ge id = some b ∧
-    eventval_match ge ev (type_of_chunk chunk) raw ∧
-    t = [Event_vload chunk id ofs ev] ∧
-    v = Val.load_result chunk raw) ∨
-  (Senv.block_is_volatile ge b = false ∧
-    Mem.load chunk m b (Ptrofs.unsigned ofs) = some v ∧
-    t = E0)
+inductive volatile_load (ge : Senv.t) :
+    memory_chunk → mem → block → PtrofsT → trace → val → Prop where
+  | volatile_load_vol (chunk : memory_chunk) (m : mem) (b : block)
+      (ofs : PtrofsT) (id : ident) (ev : eventval) (v : val)
+      (is_volatile : Senv.block_is_volatile ge b = true)
+      (find_symbol : Senv.find_symbol ge id = some b)
+      (eventval_matches : eventval_match ge ev (type_of_chunk chunk) v) :
+      volatile_load ge chunk m b ofs [Event_vload chunk id ofs ev]
+        (Val.load_result chunk v)
+  | volatile_load_nonvol (chunk : memory_chunk) (m : mem) (b : block)
+      (ofs : PtrofsT) (v : val)
+      (not_volatile : Senv.block_is_volatile ge b = false)
+      (load : Mem.load chunk m b (Ptrofs.unsigned ofs) = some v) :
+      volatile_load ge chunk m b ofs E0 v
 
-def volatile_store (ge : Senv.t) (chunk : memory_chunk) (m : mem)
-    (b : block) (ofs : PtrofsT) (v : val) (t : trace) (m' : mem) : Prop :=
-  (∃ id ev,
-    Senv.block_is_volatile ge b = true ∧
-    Senv.find_symbol ge id = some b ∧
-    eventval_match ge ev (type_of_chunk chunk) (Val.load_result chunk v) ∧
-    t = [Event_vstore chunk id ofs ev] ∧
-    m' = m) ∨
-  (Senv.block_is_volatile ge b = false ∧
-    Mem.store chunk m b (Ptrofs.unsigned ofs) v = some m' ∧
-    t = E0)
+export volatile_load (volatile_load_vol volatile_load_nonvol)
+
+inductive volatile_store (ge : Senv.t) :
+    memory_chunk → mem → block → PtrofsT → val → trace → mem → Prop where
+  | volatile_store_vol (chunk : memory_chunk) (m : mem) (b : block)
+      (ofs : PtrofsT) (id : ident) (ev : eventval) (v : val)
+      (is_volatile : Senv.block_is_volatile ge b = true)
+      (find_symbol : Senv.find_symbol ge id = some b)
+      (eventval_matches :
+        eventval_match ge ev (type_of_chunk chunk) (Val.load_result chunk v)) :
+      volatile_store ge chunk m b ofs v [Event_vstore chunk id ofs ev] m
+  | volatile_store_nonvol (chunk : memory_chunk) (m : mem) (b : block)
+      (ofs : PtrofsT) (v : val) (m' : mem)
+      (not_volatile : Senv.block_is_volatile ge b = false)
+      (store : Mem.store chunk m b (Ptrofs.unsigned ofs) v = some m') :
+      volatile_store ge chunk m b ofs v E0 m'
+
+export volatile_store (volatile_store_vol volatile_store_nonvol)
 
 def loc_not_writable (m : mem) (b : block) (ofs : Z) : Prop :=
   ¬ Mem.perm m b ofs Max Writable
