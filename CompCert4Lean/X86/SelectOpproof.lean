@@ -153,7 +153,9 @@ def eval_same_exprStatement : Prop :=
       a1 = a2 ∧ v1 = v2
 
 def int_add_sub_eqStatement : Prop :=
-  ∀ (x y z : CCInt), Int.add x y = z → Int.sub z x = y
+  ∀ (x y z : CCInt),
+    CompCert4Lean.Lib.Integers.Int.add x y = z →
+      CompCert4Lean.Lib.Integers.Int.sub z x = y
 
 def eval_orStatement : Prop :=
   ∀ (xi : ExternalCalls) (ge : genv) (sp : val) (e : env) (m : mem),

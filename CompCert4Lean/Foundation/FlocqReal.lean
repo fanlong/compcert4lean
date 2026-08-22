@@ -90,9 +90,17 @@ def ln (_ : R) : R := R0
 def powerRZ (x : R) (n : Z) : R :=
   match n with
   | .Z0 => ⟨1⟩
-  | .Zpos _ => x
-  | .Zneg _ => Rinv x
-def up (x : R) : Z := _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat (Rat.ceil x.value).toNat
+  | .Zpos p => ⟨Rat.pow x.value
+      (_root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.PArith.BinPos.Pos.to_nat p)⟩
+  | .Zneg p => ⟨1 / Rat.pow x.value
+      (_root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.PArith.BinPos.Pos.to_nat p)⟩
+
+private def strictCeil (q : Rat) : Int :=
+  let c := Rat.ceil q
+  if Rat.ofInt c = q then c + 1 else c
+
+def up (x : R) : Z :=
+  _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt (strictCeil x.value)
 
 abbrev Sumbool (A B : Prop) := _root_.CompCert4Lean.Foundation.Logic.Support.Sumbool A B
 abbrev Sumor (A : Type) (B : Prop) := _root_.CompCert4Lean.Foundation.Logic.Support.Sumor A B

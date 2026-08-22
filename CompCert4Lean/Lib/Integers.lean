@@ -6,10 +6,9 @@ import CompCert4Lean.X86_64.Archi
 # Fixed-width CompCert integers
 
 This file provides the definition-translation surface selected from
-`compcert.lib.Integers`.  Fixed-width values are represented by `Fin (2^n)`;
-the source's proof-carrying range invariant is therefore enforced by the Lean
-type.  Proofs assigned to the later proof-migration phase are recorded as
-transparent proposition descriptors.
+`compcert.lib.Integers`.  Fixed-width values retain the source's proof-carrying
+record carrier (`intval` together with `intrange`).  The executable bitvector
+operations use the normalized natural-number view of that carrier.
 -/
 
 namespace CompCert4Lean.Lib.Integers
@@ -75,7 +74,42 @@ def swap_comparison : comparison → comparison
 
 namespace WordCore
 
-abbrev Word (bits : Nat) := Fin (2 ^ bits)
+private theorem twoPowerNat_eq_zOfNat_twoPow (bits : Nat) :
+    zTwoPowerNat bits = zOfNat (2 ^ bits) := by
+  change CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.pow
+      (Zpos (.xO .xH))
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat bits) =
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat (2 ^ bits)
+  unfold CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.pow
+  rw [show CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat bits =
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt (Int.ofNat bits) by rfl]
+  rw [CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+  have hnonneg : ¬Int.ofNat bits < 0 :=
+    Int.not_lt.mpr (Int.natCast_nonneg bits)
+  rw [if_neg hnonneg]
+  simp only [Int.ofNat_eq_natCast, Int.toNat_natCast]
+  apply CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective
+  rw [CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt,
+    show CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat
+        (2 ^ bits) =
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt (Int.ofNat (2 ^ bits)) by rfl,
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+  change (2 : Int) ^ bits = Int.ofNat (2 ^ bits)
+  exact (Int.natCast_pow 2 bits).symm
+
+structure Word (bits : Nat) where
+  mkint ::
+  intval : Z
+  intrange : zLt (zOpp zOne) intval ∧ zLt intval (zTwoPowerNat bits)
+deriving DecidableEq
+
+theorem ext {bits : Nat} {x y : Word bits} (h : x.intval = y.intval) : x = y := by
+  cases x with
+  | mkint xv xh =>
+    cases y with
+    | mkint yv yh =>
+      cases h
+      rfl
 
 private def positiveToNat : positive → Nat
   | .xH => 1
@@ -89,6 +123,44 @@ private theorem positiveToNat_eq_posToNat (p : positive) :
   | xI p ih => simp [positiveToNat, CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat, ih]
   | xO p ih => simp [positiveToNat, CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat, ih]
 
+@[simp] private theorem zToNat_zOfNat (n : Nat) : zToNat (zOfNat n) = n := by
+  exact CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.Znat.Nat2Z.id n
+
+def Word.val {bits : Nat} (x : Word bits) : Nat := zToNat x.intval
+
+private abbrev natVal {bits : Nat} (x : Word bits) : Nat := Word.val x
+
+private theorem intval_eq_zOfNat_val {bits : Nat} (x : Word bits) :
+    x.intval = zOfNat x.val := by
+  have hx : zLe zZero x.intval := by
+    have h := x.intrange.1
+    change (-1 : Int) <
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ x.intval at h
+    change 0 ≤ CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ x.intval
+    omega
+  exact (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.Znat.Z2Nat.id
+    x.intval hx).symm
+
+theorem ext_of_val_eq {bits : Nat} {x y : Word bits} (h : x.val = y.val) : x = y := by
+  apply ext
+  rw [intval_eq_zOfNat_val x, intval_eq_zOfNat_val y, h]
+
+private theorem val_lt {bits : Nat} (x : Word bits) : x.val < 2 ^ bits := by
+  have h := x.intrange.2
+  rw [twoPowerNat_eq_zOfNat_twoPow] at h
+  rw [intval_eq_zOfNat_val x] at h
+  change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt (Int.ofNat x.val)) <
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt (Int.ofNat (2 ^ bits))) at h
+  rw [CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt,
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt] at h
+  exact Int.ofNat_lt.mp h
+
+/-- Computational finite residue view used at the bitvector boundary. -/
+def Word.toFin {bits : Nat} (x : Word bits) : Fin (2 ^ bits) :=
+  ⟨x.val, val_lt x⟩
+
 private def residue (bits : Nat) : Z → Nat
   | .Z0 => 0
   | .Zpos p => positiveToNat p % (2 ^ bits)
@@ -96,6 +168,52 @@ private def residue (bits : Nat) : Z → Nat
       let modulus := 2 ^ bits
       let r := positiveToNat p % modulus
       if r = 0 then 0 else modulus - r
+
+private theorem residue_range (bits : Nat) (x : Z) :
+    residue bits x < 2 ^ bits := by
+  cases x with
+  | Z0 => exact Nat.two_pow_pos bits
+  | Zpos p => exact Nat.mod_lt _ (Nat.two_pow_pos bits)
+  | Zneg p =>
+      dsimp [residue]
+      split <;> omega
+
+private theorem repr_intrange (bits : Nat) (x : Z) :
+    zLt (zOpp zOne) (zOfNat (residue bits x)) ∧
+      zLt (zOfNat (residue bits x)) (zTwoPowerNat bits) := by
+  have hr := residue_range bits x
+  constructor
+  · have hnonneg : (0 : Int) ≤ Int.ofNat (residue bits x) :=
+      Int.natCast_nonneg _
+    have h : (-1 : Int) < Int.ofNat (residue bits x) := by omega
+    have hneg : zOpp zOne = CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt (-1) := by rfl
+    have hn : zOfNat (residue bits x) =
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt
+          (Int.ofNat (residue bits x)) := by rfl
+    rw [hneg, hn]
+    change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt (-1)) <
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt
+          (Int.ofNat (residue bits x)))
+    simpa only [CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt] using h
+  · have h : Int.ofNat (residue bits x) < Int.ofNat (2 ^ bits) :=
+      Int.ofNat_lt.mpr hr
+    have hn : zOfNat (residue bits x) =
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt
+          (Int.ofNat (residue bits x)) := by rfl
+    have hm : zTwoPowerNat bits =
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt
+          (Int.ofNat (2 ^ bits)) := by
+      rw [twoPowerNat_eq_zOfNat_twoPow]
+      rfl
+    rw [hn, hm]
+    change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt
+          (Int.ofNat (residue bits x))) <
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt (Int.ofNat (2 ^ bits)))
+    simpa only [CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt] using h
 
 private theorem residue_zOfNat (bits n : Nat) :
     residue bits (CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt (Int.ofNat n)) =
@@ -159,10 +277,23 @@ private theorem residue_zOfInt (bits : Nat) (i : Int) :
       exact nat_sub_of_eq_sub hbridge hmodnatlt
 
 def repr (bits : Nat) (x : Z) : Word bits :=
-  Fin.ofNat (2 ^ bits) (residue bits x)
+  Word.mkint (zOfNat (residue bits x)) (repr_intrange bits x)
+
+/-- Re-embed a finite residue into the source-shaped proof-carrying carrier. -/
+def Word.ofFin {bits : Nat} (x : Fin (2 ^ bits)) : Word bits :=
+  repr bits (zOfNat x.val)
+
+@[simp] private theorem val_repr_residue (bits : Nat) (x : Z) :
+    (repr bits x).val = residue bits x := by
+  exact zToNat_zOfNat (residue bits x)
 
 def unsigned {bits : Nat} (x : Word bits) : Z :=
-  zOfNat x.val
+  x.intval
+
+private theorem val_repr (bits : Nat) (i : Int) :
+    (repr bits (CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt i)).val =
+      Int.toNat (i % ((2 ^ bits : Nat) : Int)) := by
+  rw [val_repr_residue, residue_zOfInt]
 
 def signed {bits : Nat} (x : Word bits) : Z :=
   let modulus := zTwoPowerNat bits
@@ -175,7 +306,7 @@ def one (bits : Nat) : Word bits := repr bits zOne
 def mone (bits : Nat) : Word bits := repr bits (zOpp zOne)
 def iwordsize (bits : Nat) : Word bits := repr bits (zOfNat bits)
 
-def eq {bits : Nat} (x y : Word bits) : Bool := decide (x = y)
+def eq {bits : Nat} (x y : Word bits) : Bool := decide (x.intval = y.intval)
 def lt {bits : Nat} (x y : Word bits) : Bool :=
   zltSelect (signed x) (signed y) true false
 def ltu {bits : Nat} (x y : Word bits) : Bool :=
@@ -185,8 +316,74 @@ def neg {bits : Nat} (x : Word bits) : Word bits :=
   repr bits (zOpp (unsigned x))
 def add {bits : Nat} (x y : Word bits) : Word bits :=
   repr bits (zAdd (unsigned x) (unsigned y))
+
+private theorem add_val {bits : Nat} (x y : Word bits) :
+    (add x y).val = (x.val + y.val) % (2 ^ bits) := by
+  rw [add, val_repr_residue]
+  simp only [unsigned]
+  rw [intval_eq_zOfNat_val x, intval_eq_zOfNat_val y]
+  simp only [zAdd, zOfNat,
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add,
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat,
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+  have hadd :
+      Int.ofNat x.val + Int.ofNat y.val = Int.ofNat (x.val + y.val) := by
+    rfl
+  rw [hadd]
+  rw [residue_zOfNat]
+
+private theorem add_val_int {bits : Nat} (x y : Word bits) :
+    Int.ofNat (add x y).val =
+      (Int.ofNat x.val + Int.ofNat y.val) % Int.ofNat (2 ^ bits) := by
+  rw [add_val]
+  simp only [Int.ofNat_eq_natCast, Int.natCast_emod, Int.natCast_add]
+
 def sub {bits : Nat} (x y : Word bits) : Word bits :=
   repr bits (zSub (unsigned x) (unsigned y))
+
+private theorem sub_val {bits : Nat} (x y : Word bits) :
+    (sub x y).val = (2 ^ bits - y.val + x.val) % (2 ^ bits) := by
+  rw [sub, val_repr_residue]
+  simp only [unsigned]
+  rw [intval_eq_zOfNat_val x, intval_eq_zOfNat_val y]
+  simp only [zSub, zOfNat,
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.sub,
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat,
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+  rw [residue_zOfInt]
+  have hmpos : (0 : Int) < ((2 ^ bits : Nat) : Int) :=
+    Int.natCast_pos.mpr (Nat.two_pow_pos bits)
+  have hnonneg :
+      0 ≤ ((x.val : Int) - (y.val : Int)) % ((2 ^ bits : Nat) : Int) :=
+    Int.emod_nonneg _ (Int.ne_of_gt hmpos)
+  have hlt :
+      ((x.val : Int) - (y.val : Int)) % ((2 ^ bits : Nat) : Int) <
+        ((2 ^ bits : Nat) : Int) :=
+    Int.emod_lt_of_pos _ hmpos
+  apply Int.ofNat.inj
+  simp only [Int.ofNat_eq_natCast]
+  rw [Int.toNat_of_nonneg hnonneg, Int.natCast_emod]
+  have hinside :
+      (((2 ^ bits - y.val + x.val : Nat) : Int)) =
+        ((x.val : Int) - (y.val : Int)) + ((2 ^ bits : Nat) : Int) := by
+    rw [Int.natCast_add, Int.ofNat_sub (Nat.le_of_lt (val_lt y))]
+    omega
+  rw [hinside, Int.add_emod_right]
+
+private theorem sub_val_int {bits : Nat} (x y : Word bits) :
+    Int.ofNat (sub x y).val =
+      (Int.ofNat x.val - Int.ofNat y.val) % Int.ofNat (2 ^ bits) := by
+  rw [sub, val_repr_residue]
+  simp only [unsigned]
+  rw [intval_eq_zOfNat_val x, intval_eq_zOfNat_val y]
+  simp only [zSub, zOfNat,
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.sub,
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat,
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+  rw [residue_zOfInt]
+  apply Int.toNat_of_nonneg
+  exact Int.emod_nonneg _ (Int.ne_of_gt (Int.natCast_pos.mpr (Nat.two_pow_pos bits)))
+
 def mul {bits : Nat} (x y : Word bits) : Word bits :=
   repr bits (zMul (unsigned x) (unsigned y))
 def divs {bits : Nat} (x y : Word bits) : Word bits :=
@@ -214,13 +411,13 @@ def sub_overflow {bits : Nat} (x y bin : Word bits) : Word bits :=
     (zltSelect maxSigned difference (one bits) (zero bits))
 
 def and {bits : Nat} (x y : Word bits) : Word bits :=
-  Fin.ofNat (2 ^ bits) (Nat.land x.val y.val)
+  repr bits (zOfNat (Nat.land (natVal x) (natVal y)))
 def or {bits : Nat} (x y : Word bits) : Word bits :=
-  Fin.ofNat (2 ^ bits) (Nat.lor x.val y.val)
+  repr bits (zOfNat (Nat.lor (natVal x) (natVal y)))
 def xor {bits : Nat} (x y : Word bits) : Word bits :=
-  Fin.ofNat (2 ^ bits) (Nat.xor x.val y.val)
+  repr bits (zOfNat (Nat.xor (natVal x) (natVal y)))
 def not {bits : Nat} (x : Word bits) : Word bits :=
-  Fin.ofNat (2 ^ bits) (Nat.xor x.val (2 ^ bits - 1))
+  repr bits (zOfNat (Nat.xor (natVal x) (2 ^ bits - 1)))
 
 def shl {bits : Nat} (x y : Word bits) : Word bits :=
   repr bits (zShiftl (unsigned x) (unsigned y))
@@ -230,75 +427,100 @@ def shr {bits : Nat} (x y : Word bits) : Word bits :=
   repr bits (zShiftr (signed x) (unsigned y))
 
 def rol {bits : Nat} (x y : Word bits) : Word bits :=
-  let amount := if bits = 0 then 0 else y.val % bits
-  Fin.ofNat (2 ^ bits)
-    (Nat.lor (Nat.shiftLeft x.val amount) (Nat.shiftRight x.val (bits - amount)))
+  let amount := if bits = 0 then 0 else natVal y % bits
+  repr bits (zOfNat
+    (Nat.lor (Nat.shiftLeft (natVal x) amount)
+      (Nat.shiftRight (natVal x) (bits - amount))))
 
 def ror {bits : Nat} (x y : Word bits) : Word bits :=
-  let amount := if bits = 0 then 0 else y.val % bits
-  Fin.ofNat (2 ^ bits)
-    (Nat.lor (Nat.shiftRight x.val amount) (Nat.shiftLeft x.val (bits - amount)))
+  let amount := if bits = 0 then 0 else natVal y % bits
+  repr bits (zOfNat
+    (Nat.lor (Nat.shiftRight (natVal x) amount)
+      (Nat.shiftLeft (natVal x) (bits - amount))))
 
 def shrx {bits : Nat} (x y : Word bits) : Word bits :=
   divs x (shl (one bits) y)
 
+def zero_ext {bits : Nat} (n : Z) (x : Word bits) : Word bits :=
+  repr bits (zMod (unsigned x) (zTwoP n))
+
 def testbit {bits : Nat} (x : Word bits) : Z → Bool
   | .Zneg _ => false
-  | .Z0 => Nat.testBit x.val 0
-  | .Zpos p => Nat.testBit x.val (positiveToNat p)
+  | .Z0 => Nat.testBit (natVal x) 0
+  | .Zpos p => Nat.testBit (natVal x) (positiveToNat p)
 
 def eqm (bits : Nat) (x y : Z) : Prop :=
   CompCert4Lean.Lib.Zbits.eqmod (zTwoPowerNat bits) x y
 
-private theorem add_eq_finAdd {bits : Nat} (x y : Word bits) :
-    add x y = x + y := by
-  apply Fin.ext
-  simp only [add, repr, unsigned, zAdd, zOfNat,
-    CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add,
-    CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat,
-    CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
-  change (Fin.ofNat (2 ^ bits)
-      (residue bits (CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt
-        (Int.ofNat (x.val + y.val))))).val = (x + y).val
-  rw [residue_zOfNat]
-  simp [Fin.val_add]
+/--
+The concrete member correspondence for a source application of `Make`.
+Its dependent carrier fields retain the generated constructor, projections,
+and exact `intrange` proposition; the remaining fields identify the selected
+executable surface shared by the four owned applications.
+-/
+structure GeneratedApplication where
+  wordsize : Nat
+  modulus : Z
+  int : Type
+  mkint : (intval : Z) →
+    zLt (zOpp zOne) intval ∧ zLt intval (zTwoPowerNat wordsize) → int
+  intval : int → Z
+  intrange : ∀ x : int,
+    zLt (zOpp zOne) (intval x) ∧ zLt (intval x) (zTwoPowerNat wordsize)
+  repr : Z → int
+  unsigned : int → Z
+  signed : int → Z
+  zero : int
+  one : int
+  eq : int → int → Bool
+  lt : int → int → Bool
+  ltu : int → int → Bool
+  neg : int → int
+  add : int → int → int
+  sub : int → int → int
+  mul : int → int → int
+  divs : int → int → int
+  divu : int → int → int
+  and : int → int → int
+  or : int → int → int
+  xor : int → int → int
+  shl : int → int → int
+  shru : int → int → int
+  shr : int → int → int
+  zero_ext : Z → int → int
 
-private theorem sub_eq_finSub {bits : Nat} (x y : Word bits) :
-    sub x y = x - y := by
-  apply Fin.ext
-  simp only [sub, repr, unsigned, zSub, zOfNat,
-    CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.sub,
-    CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat,
-    CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
-  rw [residue_zOfInt]
-  simp only [Fin.val_sub, Int.ofNat_eq_natCast]
-  have hmpos : (0 : Int) < ((2 ^ bits : Nat) : Int) :=
-    Int.natCast_pos.mpr (Nat.two_pow_pos bits)
-  have hnonneg :
-      0 ≤ ((x.val : Int) - (y.val : Int)) % ((2 ^ bits : Nat) : Int) :=
-    Int.emod_nonneg _ (Int.ne_of_gt hmpos)
-  have hlt :
-      ((x.val : Int) - (y.val : Int)) % ((2 ^ bits : Nat) : Int) <
-        ((2 ^ bits : Nat) : Int) :=
-    Int.emod_lt_of_pos _ hmpos
-  change Int.toNat (((x.val : Int) - (y.val : Int)) % ((2 ^ bits : Nat) : Int)) %
-      (2 ^ bits) = (2 ^ bits - y.val + x.val) % (2 ^ bits)
-  rw [Nat.mod_eq_of_lt ((Int.toNat_lt hnonneg).mpr hlt)]
-  apply Int.ofNat.inj
-  simp only [Int.ofNat_eq_natCast]
-  rw [Int.toNat_of_nonneg hnonneg, Int.natCast_emod]
-  have hinside :
-      (((2 ^ bits - y.val + x.val : Nat) : Int)) =
-        ((x.val : Int) - (y.val : Int)) + ((2 ^ bits : Nat) : Int) := by
-    rw [Int.natCast_add, Int.ofNat_sub (Nat.le_of_lt y.isLt)]
-    omega
-  rw [hinside, Int.add_emod_right]
+def makeGeneratedApplication (bits : Nat) : GeneratedApplication where
+  wordsize := bits
+  modulus := zTwoPowerNat bits
+  int := Word bits
+  mkint := fun intval intrange => Word.mkint intval intrange
+  intval := Word.intval
+  intrange := Word.intrange
+  repr := repr bits
+  unsigned := unsigned
+  signed := signed
+  zero := zero bits
+  one := one bits
+  eq := eq
+  lt := lt
+  ltu := ltu
+  neg := neg
+  add := add
+  sub := sub
+  mul := mul
+  divs := divs
+  divu := divu
+  and := and
+  or := or
+  xor := xor
+  shl := shl
+  shru := shru
+  shr := shr
+  zero_ext := zero_ext
 
 end WordCore
 
 namespace Int
-
-def GeneratedApplicationMarker : Type := Unit
 
 def wordsize : Nat := 32
 def zwordsize : Z := zOfNat wordsize
@@ -311,6 +533,8 @@ def min_signed : Z := zOpp half_modulus
 abbrev int := WordCore.Word wordsize
 
 def repr (x : Z) : int := WordCore.repr wordsize x
+def ofFin (x : Fin (2 ^ wordsize)) : int := WordCore.Word.ofFin x
+def toFin (x : int) : Fin (2 ^ wordsize) := x.toFin
 def unsigned (x : int) : Z := WordCore.unsigned x
 def signed (x : int) : Z := WordCore.signed x
 def zero : int := WordCore.zero wordsize
@@ -350,7 +574,7 @@ def is_power2 (x : int) : Option int :=
   | none => none
 
 def zero_ext (n : Z) (x : int) : int :=
-  repr (ZArith.BinInt.Z.modulo (unsigned x) (two_p n))
+  WordCore.zero_ext n x
 
 private theorem zero_ext_modulo (n : Z) (x : int) (hn : zLe zZero n) :
     ZArith.BinInt.Z.modulo (unsigned x) (two_p n) =
@@ -386,9 +610,11 @@ private theorem zero_ext_modulo (n : Z) (x : int) (hn : zLe zZero n) :
       unsigned x =
         ZArith.BinInt.Z.add
           (CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt (Int.ofNat r))
-          (ZArith.BinInt.Z.mul
+            (ZArith.BinInt.Z.mul
             (CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt (Int.ofNat q))
             (two_p n)) := by
+    change x.intval = _
+    rw [WordCore.intval_eq_zOfNat_val x]
     apply CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective
     simp only [unsigned, WordCore.unsigned, zOfNat,
       ZArith.BinInt.Z.of_nat, ZArith.BinInt.Z.add, ZArith.BinInt.Z.mul,
@@ -417,19 +643,21 @@ private theorem zero_ext_modulo (n : Z) (x : int) (hn : zLe zZero n) :
 private theorem zero_ext_val (n : Z) (x : int) (hn : zLe zZero n) :
     (zero_ext n x).val =
       (x.val % (2 ^ zToNat n)) % (2 ^ wordsize) := by
-  rw [zero_ext, zero_ext_modulo n x hn]
-  simp only [repr, WordCore.repr]
-  rw [WordCore.residue_zOfInt]
+  unfold zero_ext WordCore.zero_ext
+  change (repr (ZArith.BinInt.Z.modulo (unsigned x) (two_p n))).val =
+    (x.val % (2 ^ zToNat n)) % (2 ^ wordsize)
+  rw [zero_ext_modulo n x hn]
+  simp only [repr]
+  rw [WordCore.val_repr]
   change Int.toNat
-      (Int.ofNat (x.val % (2 ^ zToNat n)) % ((2 ^ wordsize : Nat) : Int)) %
-        (2 ^ wordsize) = (x.val % (2 ^ zToNat n)) % (2 ^ wordsize)
+      (Int.ofNat (x.val % (2 ^ zToNat n)) % ((2 ^ wordsize : Nat) : Int)) =
+        (x.val % (2 ^ zToNat n)) % (2 ^ wordsize)
   have hbridge := Int.emod_natAbs_of_nonneg
     (x := ((x.val % (2 ^ zToNat n) : Nat) : Int)) (n := 2 ^ wordsize)
     (Int.natCast_nonneg _)
   simp only [Int.natAbs_natCast] at hbridge
   simp only [Int.ofNat_eq_natCast]
   rw [← hbridge]
-  simp
 
 private theorem nested_power_mod_idem (a k w : Nat) :
     ((((a % (2 ^ k)) % (2 ^ w)) % (2 ^ k)) % (2 ^ w)) =
@@ -451,19 +679,32 @@ private theorem nested_power_mod_idem (a k w : Nat) :
 
 theorem zero_ext_idem_proof_api (n : Z) (x : int) (hn : zLe zZero n) :
     zero_ext n (zero_ext n x) = zero_ext n x := by
-  apply Fin.ext
+  apply WordCore.ext_of_val_eq
   rw [zero_ext_val n (zero_ext n x) hn, zero_ext_val n x hn]
   exact nested_power_mod_idem x.val (zToNat n) wordsize
+
+/-- `GENAPP-COMPCERT-LIB-INTEGERS-3562-ASSIGNMENT`: `Make(Wordsize_32)`. -/
+def generatedApplication : WordCore.GeneratedApplication :=
+  WordCore.makeGeneratedApplication wordsize
+
+theorem generatedApplication_zero_ext_idem
+    (n : Z) (x : generatedApplication.int) (hn : zLe zZero n) :
+    generatedApplication.zero_ext n (generatedApplication.zero_ext n x) =
+      generatedApplication.zero_ext n x := by
+  change zero_ext n (zero_ext n x) = zero_ext n x
+  exact zero_ext_idem_proof_api n x hn
 
 end Int
 
 namespace Byte
 
-def GeneratedApplicationMarker : Type := Unit
-
 def wordsize : Nat := 8
 abbrev int := WordCore.Word wordsize
 def repr (x : Z) : int := WordCore.repr wordsize x
+
+/-- `GENAPP-COMPCERT-LIB-INTEGERS-3582-ASSIGNMENT`: `Make(Wordsize_8)`. -/
+def generatedApplication : WordCore.GeneratedApplication :=
+  WordCore.makeGeneratedApplication wordsize
 
 end Byte
 
@@ -474,8 +715,6 @@ def int_wordsize_divides_modulusStatement : Prop :=
   zDivide (zOfNat Int.wordsize) Int.modulus
 
 namespace Int64
-
-def GeneratedApplicationMarker : Type := Unit
 
 def wordsize : Nat := 64
 def zwordsize : Z := zOfNat wordsize
@@ -488,6 +727,8 @@ def min_signed : Z := zOpp half_modulus
 abbrev int := WordCore.Word wordsize
 
 def repr (x : Z) : int := WordCore.repr wordsize x
+def ofFin (x : Fin (2 ^ wordsize)) : int := WordCore.Word.ofFin x
+def toFin (x : int) : Fin (2 ^ wordsize) := x.toFin
 def unsigned (x : int) : Z := WordCore.unsigned x
 def signed (x : int) : Z := WordCore.signed x
 def zero : int := WordCore.zero wordsize
@@ -838,6 +1079,10 @@ def decompose_leStatement : Prop :=
     !(lt (ofwords yh yl) (ofwords xh xl)) =
       (if Int.eq xh yh then !(Int.ltu yl xl) else Int.lt xh yh)
 
+/-- `GENAPP-COMPCERT-LIB-INTEGERS-3598-INCLUDE`: `Include Make(Wordsize_64)`. -/
+def generatedApplication : WordCore.GeneratedApplication :=
+  WordCore.makeGeneratedApplication wordsize
+
 end Int64
 
 abbrev int64 := Int64.int
@@ -850,8 +1095,6 @@ def wordsize : Nat :=
 end Wordsize_Ptrofs
 
 namespace Ptrofs
-
-def GeneratedApplicationMarker : Type := Unit
 
 def wordsize : Nat := Wordsize_Ptrofs.wordsize
 def zwordsize : Z := zOfNat wordsize
@@ -886,28 +1129,73 @@ def shr : int → int → int := WordCore.shr
 def testbit : int → Z → Bool := WordCore.testbit
 def eqm : Z → Z → Prop := WordCore.eqm wordsize
 
+/-- `GENAPP-COMPCERT-LIB-INTEGERS-4725-INCLUDE`: `Include Make(Wordsize_Ptrofs)`. -/
+def generatedApplication : WordCore.GeneratedApplication :=
+  WordCore.makeGeneratedApplication wordsize
+
 theorem add_commut_proof_api (x y : int) : add x y = add y x := by
-  simp only [add, WordCore.add_eq_finAdd]
-  apply Fin.ext
-  simp [Fin.val_add, Nat.add_comm]
+  change WordCore.add x y = WordCore.add y x
+  apply WordCore.ext_of_val_eq
+  rw [WordCore.add_val, WordCore.add_val, Nat.add_comm]
 
 theorem add_assoc_proof_api (x y z : int) :
     add (add x y) z = add x (add y z) := by
-  simp only [add, WordCore.add_eq_finAdd]
-  apply Fin.ext
-  change ((x.val + y.val) % (2 ^ wordsize) + z.val) % (2 ^ wordsize) =
-    (x.val + (y.val + z.val) % (2 ^ wordsize)) % (2 ^ wordsize)
+  change WordCore.add (WordCore.add x y) z = WordCore.add x (WordCore.add y z)
+  apply WordCore.ext_of_val_eq
+  rw [WordCore.add_val, WordCore.add_val, WordCore.add_val, WordCore.add_val]
   rw [Nat.mod_add_mod, Nat.add_mod_mod, Nat.add_assoc]
 
 theorem sub_add_l_proof_api (x y z : int) :
     sub (add x y) z = add (sub x z) y := by
-  simp only [add, sub, WordCore.add_eq_finAdd, WordCore.sub_eq_finSub]
-  grind
+  change WordCore.sub (WordCore.add x y) z = WordCore.add (WordCore.sub x z) y
+  apply WordCore.ext_of_val_eq
+  apply Int.ofNat.inj
+  rw [WordCore.sub_val_int, WordCore.add_val_int, WordCore.add_val_int,
+    WordCore.sub_val_int]
+  simp only [Int.emod_sub_emod, Int.sub_emod_emod, Int.emod_add_emod,
+    Int.add_emod_emod]
+  congr 1
+  omega
 
 theorem sub_shifted_proof_api (x y z : int) :
     sub (add x z) (add y z) = sub x y := by
-  simp only [add, sub, WordCore.add_eq_finAdd, WordCore.sub_eq_finSub]
-  grind
+  change WordCore.sub (WordCore.add x z) (WordCore.add y z) = WordCore.sub x y
+  apply WordCore.ext_of_val_eq
+  apply Int.ofNat.inj
+  rw [WordCore.sub_val_int, WordCore.add_val_int, WordCore.add_val_int,
+    WordCore.sub_val_int]
+  simp only [Int.emod_sub_emod, Int.sub_emod_emod, Int.emod_add_emod,
+    Int.add_emod_emod]
+  congr 1
+  omega
+
+theorem generatedApplication_add_commut
+    (x y : generatedApplication.int) :
+    generatedApplication.add x y = generatedApplication.add y x := by
+  change add x y = add y x
+  exact add_commut_proof_api x y
+
+theorem generatedApplication_add_assoc
+    (x y z : generatedApplication.int) :
+    generatedApplication.add (generatedApplication.add x y) z =
+      generatedApplication.add x (generatedApplication.add y z) := by
+  change add (add x y) z = add x (add y z)
+  exact add_assoc_proof_api x y z
+
+theorem generatedApplication_sub_add_l
+    (x y z : generatedApplication.int) :
+    generatedApplication.sub (generatedApplication.add x y) z =
+      generatedApplication.add (generatedApplication.sub x z) y := by
+  change sub (add x y) z = add (sub x z) y
+  exact sub_add_l_proof_api x y z
+
+theorem generatedApplication_sub_shifted
+    (x y z : generatedApplication.int) :
+    generatedApplication.sub (generatedApplication.add x z)
+        (generatedApplication.add y z) =
+      generatedApplication.sub x y := by
+  change sub (add x z) (add y z) = sub x y
+  exact sub_shifted_proof_api x y z
 
 def to_int (x : int) : Int.int := Int.repr (unsigned x)
 def to_int64 (x : int) : Int64.int := Int64.repr (unsigned x)

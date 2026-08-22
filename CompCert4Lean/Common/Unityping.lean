@@ -115,22 +115,299 @@ def satisf (te : typassign T) (e : typenv T) : Prop :=
   (∀ x ty, PTree.get x (te_typ e) = some ty → te x = ty) ∧
     (∀ x y, (x, y) ∈ te_equ e → te x = te y)
 
-/-!
-The source uses a measure-recursive fixpoint.  This checked implementation
-uses the same one-pass iteration and a structurally recursive fuel argument;
-the fuel is the number of pending equality constraints plus one.
--/
+theorem length_move (T : TYPE_ALGEBRA) (e : typenv T) (r1 r2 : positive)
+    (changed : Bool) (e' : typenv T) :
+    move T e r1 r2 = OK (changed, e') →
+      (te_equ e').length + (if changed then 1 else 0) ≤ Nat.succ (te_equ e).length := by
+  intro h
+  unfold move at h
+  split at h
+  · rcases h with ⟨rfl, rfl⟩
+    simp
+  · split at h <;> try split at h
+    all_goals rcases h with ⟨rfl, rfl⟩ <;> simp_all [List.length] <;> omega
 
-private def solve_constraints_fuel : Nat → typenv T → res (typenv T)
-  | 0, e => OK e
-  | fuel + 1, e =>
-      match solve_rec T { te_typ := te_typ e, te_equ := [] } false (te_equ e) with
-      | Error message => Error message
-      | OK (e', false) => OK e
-      | OK (e', true) => solve_constraints_fuel fuel e'
+theorem length_solve_rec (T : TYPE_ALGEBRA) (q : List constraint) (e : typenv T)
+    (ch : Bool) (e' : typenv T) (ch' : Bool) :
+    solve_rec T e ch q = OK (e', ch') →
+      (te_equ e').length + (if ch' && negb ch then 1 else 0) ≤
+        (te_equ e).length + q.length := by
+  induction q generalizing e ch e' ch' with
+  | nil =>
+      intro h
+      simp [solve_rec] at h
+      rcases h with ⟨rfl, rfl⟩
+      cases ch <;> simp [List.length, negb]
+  | cons a q ih =>
+      rcases a with ⟨r1, r2⟩
+      simp only [solve_rec]
+      split
+      · intro h
+        cases h
+      · intro h
+        rename_i _ changed1 e1 hmove
+        have hrec := ih (e := e1) (ch := ch || changed1)
+          (e' := e') (ch' := ch') h
+        have hmove_len := length_move T e r1 r2 changed1 e1 hmove
+        cases ch <;> cases changed1 <;> cases ch' <;>
+          simp [negb, List.length] at hrec hmove_len ⊢ <;> omega
+
+/-! The source uses a measure-recursive fixpoint. -/
+
+def solve_constraints_F (step : typenv T → res (typenv T)) (e : typenv T) :
+    res (typenv T) :=
+  match solve_rec T { te_typ := te_typ e, te_equ := [] } false (te_equ e) with
+  | Error message => Error message
+  | OK (_e', false) => OK e
+  | OK (e', true) => step e'
 
 def solve_constraints (e : typenv T) : res (typenv T) :=
-  solve_constraints_fuel T ((te_equ e).length + 1) e
+  match _hrec : solve_rec T { te_typ := te_typ e, te_equ := [] } false (te_equ e) with
+  | Error message => Error message
+  | OK (_e', false) => OK e
+  | OK (e', true) => solve_constraints e'
+termination_by weight_typenv T e
+decreasing_by
+  have hlen := length_solve_rec T (te_equ e) { te_typ := te_typ e, te_equ := [] }
+    false e' true ‹solve_rec T { te_typ := te_typ e, te_equ := [] } false (te_equ e) =
+      OK (e', true)›
+  simp [weight_typenv, negb] at hlen ⊢
+  omega
+
+theorem solve_constraints_equation (T : TYPE_ALGEBRA) (e : typenv T) :
+    solve_constraints T e =
+      match solve_rec T { te_typ := te_typ e, te_equ := [] } false (te_equ e) with
+      | OK (e', true) => solve_constraints T e'
+      | OK (_e', false) => OK e
+      | Error message => Error message := by
+  rw [solve_constraints.eq_1]
+  cases h : solve_rec T { te_typ := te_typ e, te_equ := [] } false (te_equ e) with
+  | Error message => rfl
+  | OK value =>
+      cases value with
+      | mk e' changed => cases changed <;> rfl
+
+def solve_constraints_iter (step :
+    ((typenv T → res (typenv T)) → typenv T → res (typenv T))) :
+    Nat → (typenv T → res (typenv T)) → typenv T → res (typenv T)
+  | 0, fallback, e => fallback e
+  | n + 1, fallback, e => step (solve_constraints_iter step n fallback) e
+
+/-! These are the source-generated `Function` interfaces.  The executable
+    equation and graph are present above/below; the opaque proof fields keep
+    their exact propositions for the later proof-grinding phase. -/
+
+theorem solve_constraints_tcc (T : TYPE_ALGEBRA) (e : typenv T)
+    (p : typenv T × Bool) (e' : typenv T) (b : Bool) :
+    b = true → p = (e', true) →
+      solve_rec T { te_typ := te_typ e, te_equ := [] } false (te_equ e) =
+        OK (e', true) →
+      weight_typenv T e' < weight_typenv T e := by
+  intro _ _ hrec
+  have hlen := length_solve_rec T (te_equ e) { te_typ := te_typ e, te_equ := [] }
+    false e' true hrec
+  simp [weight_typenv, negb] at hlen ⊢
+  omega
+
+theorem solve_constraints_terminate (T : TYPE_ALGEBRA) (e : typenv T) :
+    ∃ v : res (typenv T), ∃ p : Nat, ∀ k : Nat, p < k →
+      ∀ fallback : typenv T → res (typenv T),
+        solve_constraints_iter (T := T) (solve_constraints_F T) k fallback e = v := by
+  cases hrec : solve_rec T { te_typ := te_typ e, te_equ := [] } false (te_equ e) with
+  | Error message =>
+      refine ⟨Error message, 0, ?_⟩
+      intro k hk fallback
+      cases k with
+      | zero => omega
+      | succ n => simp [solve_constraints_iter, solve_constraints_F, hrec]
+  | OK value =>
+      rcases value with ⟨e', changed⟩
+      cases changed with
+      | false =>
+          refine ⟨OK e, 0, ?_⟩
+          intro k hk fallback
+          cases k with
+          | zero => omega
+          | succ n => simp [solve_constraints_iter, solve_constraints_F, hrec]
+      | true =>
+          obtain ⟨v, p, ih⟩ := solve_constraints_terminate T e'
+          refine ⟨v, p + 1, ?_⟩
+          intro k hk fallback
+          cases k with
+          | zero => omega
+          | succ n =>
+              simp [solve_constraints_iter, solve_constraints_F, hrec]
+              exact ih n (by omega) fallback
+termination_by weight_typenv T e
+decreasing_by exact solve_constraints_tcc T e (e', true) e' true rfl rfl hrec
+
+inductive R_solve_constraints (T : TYPE_ALGEBRA) :
+    typenv T → res (typenv T) → Type where
+  | R_solve_constraints_0 (e e' : typenv T) :
+      solve_rec T { te_typ := te_typ e, te_equ := [] } false (te_equ e) =
+        OK (e', false) →
+      R_solve_constraints T e (OK e)
+  | R_solve_constraints_1 (e e' : typenv T)
+      (h : solve_rec T { te_typ := te_typ e, te_equ := [] } false (te_equ e) =
+        OK (e', true)) (r : res (typenv T)) :
+      R_solve_constraints T e' r →
+      R_solve_constraints T e r
+  | R_solve_constraints_2 (e : typenv T) (message : errmsg) :
+      solve_rec T { te_typ := te_typ e, te_equ := [] } false (te_equ e) =
+        Error message →
+      R_solve_constraints T e (Error message)
+
+abbrev R_solve_constraints_0 := @R_solve_constraints.R_solve_constraints_0
+abbrev R_solve_constraints_1 := @R_solve_constraints.R_solve_constraints_1
+abbrev R_solve_constraints_2 := @R_solve_constraints.R_solve_constraints_2
+
+noncomputable def R_solve_constraints_rect (T : TYPE_ALGEBRA)
+    (P : ∀ (e : typenv T) (r : res (typenv T)),
+      R_solve_constraints T e r → Type)
+    (hfalse : ∀ (e e' : typenv T)
+      (h : solve_rec T { te_typ := te_typ e, te_equ := [] } false (te_equ e) =
+        OK (e', false)),
+      P e (OK e) (R_solve_constraints_0 e e' h))
+    (htrue : ∀ (e e' : typenv T)
+      (h : solve_rec T { te_typ := te_typ e, te_equ := [] } false (te_equ e) =
+        OK (e', true)) (r : res (typenv T))
+      (graph : R_solve_constraints T e' r),
+      P e' r graph → P e r (R_solve_constraints_1 e e' h r graph))
+    (herror : ∀ (e : typenv T) (message : errmsg)
+      (h : solve_rec T { te_typ := te_typ e, te_equ := [] } false (te_equ e) =
+        Error message),
+      P e (Error message) (R_solve_constraints_2 e message h))
+    (e : typenv T) (r : res (typenv T))
+    (graph : R_solve_constraints T e r) : P e r graph := by
+  induction graph with
+  | R_solve_constraints_0 e e' h => exact hfalse e e' h
+  | R_solve_constraints_1 e e' h r graph ih => exact htrue e e' h r graph ih
+  | R_solve_constraints_2 e message h => exact herror e message h
+
+noncomputable abbrev R_solve_constraints_rec := R_solve_constraints_rect
+
+theorem R_solve_constraints_ind (T : TYPE_ALGEBRA)
+    (P : ∀ (e : typenv T) (r : res (typenv T)),
+      R_solve_constraints T e r → Prop)
+    (hfalse : ∀ (e e' : typenv T)
+      (h : solve_rec T { te_typ := te_typ e, te_equ := [] } false (te_equ e) =
+        OK (e', false)),
+      P e (OK e) (R_solve_constraints_0 e e' h))
+    (htrue : ∀ (e e' : typenv T)
+      (h : solve_rec T { te_typ := te_typ e, te_equ := [] } false (te_equ e) =
+        OK (e', true)) (r : res (typenv T))
+      (graph : R_solve_constraints T e' r),
+      P e' r graph → P e r (R_solve_constraints_1 e e' h r graph))
+    (herror : ∀ (e : typenv T) (message : errmsg)
+      (h : solve_rec T { te_typ := te_typ e, te_equ := [] } false (te_equ e) =
+        Error message),
+      P e (Error message) (R_solve_constraints_2 e message h))
+    (e : typenv T) (r : res (typenv T))
+    (graph : R_solve_constraints T e r) : P e r graph := by
+  induction graph with
+  | R_solve_constraints_0 e e' h => exact hfalse e e' h
+  | R_solve_constraints_1 e e' h r graph ih => exact htrue e e' h r graph ih
+  | R_solve_constraints_2 e message h => exact herror e message h
+
+theorem R_solve_constraints_sind (T : TYPE_ALGEBRA)
+    (P : ∀ (e : typenv T) (r : res (typenv T)),
+      R_solve_constraints T e r → Prop)
+    (hfalse : ∀ (e e' : typenv T)
+      (h : solve_rec T { te_typ := te_typ e, te_equ := [] } false (te_equ e) =
+        OK (e', false)),
+      P e (OK e) (R_solve_constraints_0 e e' h))
+    (htrue : ∀ (e e' : typenv T)
+      (h : solve_rec T { te_typ := te_typ e, te_equ := [] } false (te_equ e) =
+        OK (e', true)) (r : res (typenv T))
+      (graph : R_solve_constraints T e' r),
+      P e' r graph → P e r (R_solve_constraints_1 e e' h r graph))
+    (herror : ∀ (e : typenv T) (message : errmsg)
+      (h : solve_rec T { te_typ := te_typ e, te_equ := [] } false (te_equ e) =
+        Error message),
+      P e (Error message) (R_solve_constraints_2 e message h))
+    (e : typenv T) (r : res (typenv T))
+    (graph : R_solve_constraints T e r) : P e r graph :=
+  R_solve_constraints_ind T P hfalse htrue herror e r graph
+
+noncomputable def solve_constraints_rect (T : TYPE_ALGEBRA)
+    (P : typenv T → res (typenv T) → Type)
+    (hfalse : ∀ (e e' : typenv T),
+      solve_rec T { te_typ := te_typ e, te_equ := [] } false (te_equ e) =
+        OK (e', false) → P e (OK e))
+    (htrue : ∀ (e e' : typenv T),
+      solve_rec T { te_typ := te_typ e, te_equ := [] } false (te_equ e) =
+        OK (e', true) → P e' (solve_constraints T e') →
+          P e (solve_constraints T e'))
+    (herror : ∀ (e : typenv T) (message : errmsg),
+      solve_rec T { te_typ := te_typ e, te_equ := [] } false (te_equ e) =
+        Error message → P e (Error message))
+    (e : typenv T) : P e (solve_constraints T e) := by
+  rw [solve_constraints_equation]
+  split
+  · rename_i e' hrec
+    exact htrue e e' hrec (solve_constraints_rect T P hfalse htrue herror e')
+  · rename_i e' hrec
+    exact hfalse e e' hrec
+  · rename_i message hrec
+    exact herror e message hrec
+termination_by weight_typenv T e
+decreasing_by
+  rename_i next _hbranch heq
+  apply solve_constraints_tcc T e (next, true) next true rfl rfl
+  assumption
+
+noncomputable abbrev solve_constraints_rec := solve_constraints_rect
+
+theorem solve_constraints_ind (T : TYPE_ALGEBRA)
+    (P : typenv T → res (typenv T) → Prop)
+    (hfalse : ∀ (e e' : typenv T),
+      solve_rec T { te_typ := te_typ e, te_equ := [] } false (te_equ e) =
+        OK (e', false) → P e (OK e))
+    (htrue : ∀ (e e' : typenv T),
+      solve_rec T { te_typ := te_typ e, te_equ := [] } false (te_equ e) =
+        OK (e', true) → P e' (solve_constraints T e') →
+          P e (solve_constraints T e'))
+    (herror : ∀ (e : typenv T) (message : errmsg),
+      solve_rec T { te_typ := te_typ e, te_equ := [] } false (te_equ e) =
+        Error message → P e (Error message))
+    (e : typenv T) : P e (solve_constraints T e) := by
+  rw [solve_constraints_equation]
+  split
+  · rename_i e' hrec
+    exact htrue e e' hrec (solve_constraints_ind T P hfalse htrue herror e')
+  · rename_i e' hrec
+    exact hfalse e e' hrec
+  · rename_i message hrec
+    exact herror e message hrec
+termination_by weight_typenv T e
+decreasing_by
+  rename_i next _hbranch heq
+  apply solve_constraints_tcc T e (next, true) next true rfl rfl
+  assumption
+
+noncomputable def R_solve_constraints_correct (T : TYPE_ALGEBRA) (e : typenv T)
+    (r : res (typenv T)) (hresult : r = solve_constraints T e) :
+    R_solve_constraints T e r := by
+  subst r
+  apply solve_constraints_rect T (fun e r => R_solve_constraints T e r)
+  · intro e e' hrec
+    exact R_solve_constraints_0 e e' hrec
+  · intro e e' hrec ih
+    exact R_solve_constraints_1 e e' hrec _ ih
+  · intro e message hrec
+    exact R_solve_constraints_2 e message hrec
+
+theorem R_solve_constraints_complete (T : TYPE_ALGEBRA) (e : typenv T)
+    (r : res (typenv T)) (hgraph : R_solve_constraints T e r) :
+    r = solve_constraints T e := by
+  induction hgraph with
+  | R_solve_constraints_0 e e' hrec =>
+      rw [solve_constraints_equation, hrec]
+  | R_solve_constraints_1 e e' hrec r _ ih =>
+      rw [solve_constraints_equation, hrec]
+      exact ih
+  | R_solve_constraints_2 e message hrec =>
+      rw [solve_constraints_equation, hrec]
 
 def solve (e : typenv T) : res (typassign T) :=
   match solve_constraints T e with

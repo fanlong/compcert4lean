@@ -418,11 +418,12 @@ structure state (LAT : OrderedTop) where
 export state (aval worklist)
 
 def propagate_successors {LAT : OrderedTop}
-    (bb : bbmap) (l : LAT.t) : List positive → state LAT → state LAT
-  | [], st => st
-  | s1 :: sl, st =>
-      if bb s1 then propagate_successors bb l sl st
-      else propagate_successors bb l sl
+    (bb : bbmap) (succs : List positive) (l : LAT.t) (st : state LAT) : state LAT :=
+  match succs with
+  | [] => st
+  | s1 :: sl =>
+      if bb s1 then propagate_successors bb sl l st
+      else propagate_successors bb sl l
         { aval := PMap.set s1 l st.aval, worklist := s1 :: st.worklist }
 
 def step {A : Type} {LAT : OrderedTop}
@@ -435,11 +436,11 @@ def step {A : Type} {LAT : OrderedTop}
       match PTree.get pc code with
       | none => Sum.inr { aval := st.aval, worklist := rem }
       | some instr =>
-          Sum.inr (propagate_successors bb (transf pc (PMap.get pc st.aval))
-            (successors instr) { aval := st.aval, worklist := rem })
+          Sum.inr (propagate_successors bb (successors instr)
+            (transf pc (PMap.get pc st.aval)) { aval := st.aval, worklist := rem })
 
-def is_basic_block_head (entrypoint pc : positive)
-    (preds : PTreeT (List positive)) : Bool :=
+def is_basic_block_head (entrypoint : positive)
+    (preds : PTreeT (List positive)) (pc : positive) : Bool :=
   if _h : pc = entrypoint then true else
     match successors_list preds pc with
     | [] => false
@@ -448,8 +449,8 @@ def is_basic_block_head (entrypoint pc : positive)
 
 def basic_block_map {A : Type} (entrypoint : positive)
     (code : PTreeT A) (successors : A → List positive) : bbmap :=
-  fun pc => is_basic_block_head entrypoint pc
-    (make_predecessors code successors)
+  fun pc => is_basic_block_head entrypoint
+    (make_predecessors code successors) pc
 
 def basic_block_list {A : Type} (bb : bbmap) (code : PTreeT A) : List positive :=
   PTree.fold (fun l pc _ => if bb pc then pc :: l else l) code []
@@ -795,12 +796,12 @@ def propagate_successors_charact1Statement : Prop :=
   ∀ {LAT : OrderedTop} (_LATlaws : OrderedTopLaws LAT)
     (bb : bbmap) (succs : List positive)
     (l : LAT.t) (st : state LAT) (n : positive),
-    n ∈ st.worklist → n ∈ (propagate_successors bb l succs st).worklist
+    n ∈ st.worklist → n ∈ (propagate_successors bb succs l st).worklist
 def propagate_successors_charact2Statement : Prop :=
   ∀ {LAT : OrderedTop} (_LATlaws : OrderedTopLaws LAT)
     (bb : bbmap) (succs : List positive)
     (l : LAT.t) (st : state LAT) (n : positive),
-    let st' := propagate_successors bb l succs st
+    let st' := propagate_successors bb succs l st
     (n ∈ succs → bb n = false → n ∈ st'.worklist ∧ PMap.get n st'.aval = l) ∧
     (n ∉ succs ∨ bb n = true → PMap.get n st'.aval = PMap.get n st.aval)
 def propagate_successors_invariantStatement : Prop :=
@@ -813,7 +814,7 @@ def propagate_successors_invariantStatement : Prop :=
       { aval := res, worklist := pc :: rem } →
     state_invariant entrypoint code successors transf
       (propagate_successors (basic_block_map entrypoint code successors)
-        (transf pc (PMap.get pc res)) (successors instr)
+        (successors instr) (transf pc (PMap.get pc res))
         { aval := res, worklist := rem })
 def propagate_successors_invariant_2Statement : Prop :=
   ∀ {A : Type} {LAT : OrderedTop} (entrypoint : positive)
@@ -860,7 +861,7 @@ def fixpoint_entryStatement : Prop :=
 def propagate_successors_PStatement : Prop :=
   ∀ {LAT : OrderedTop} (_LATlaws : OrderedTopLaws LAT)
     (P : LAT.t → Prop) (bb : bbmap) (l : LAT.t),
-    P l → ∀ succs st, Pstate P st → Pstate P (propagate_successors bb l succs st)
+    P l → ∀ succs st, Pstate P st → Pstate P (propagate_successors bb succs l st)
 def fixpoint_invariantStatement : Prop :=
   ∀ {A : Type} (LAT : OrderedTop) (entrypoint : positive)
     (_LATlaws : OrderedTopLaws LAT)

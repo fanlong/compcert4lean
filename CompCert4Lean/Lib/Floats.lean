@@ -323,10 +323,10 @@ def of_longu (n : Integers.Int64.int) : float :=
   encode64 (IEEE754_extra.BofZ (prec := z53) (emax := z1024) (Integers.Int64.unsigned n))
 
 def to_bits (f : float) : Integers.Int64.int :=
-  f.bits.toFin
+  Integers.Int64.ofFin f.bits.toFin
 
 def of_bits (b : Integers.Int64.int) : float :=
-  ⟨BitVec.ofFin b⟩
+  ⟨BitVec.ofFin (Integers.Int64.toFin b)⟩
 
 def exact_inverse (f : float) : Option float :=
   (IEEE754_extra.Bexact_inverse (prec := z53) (emax := z1024) (decode64 f)).map encode64
@@ -495,10 +495,10 @@ def of_longu (n : Integers.Int64.int) : float32 :=
   encode32 (IEEE754_extra.BofZ (prec := z24) (emax := z128) (Integers.Int64.unsigned n))
 
 def to_bits (f : float32) : Integers.Int.int :=
-  f.bits.toFin
+  Integers.Int.ofFin f.bits.toFin
 
 def of_bits (b : Integers.Int.int) : float32 :=
-  ⟨BitVec.ofFin b⟩
+  ⟨BitVec.ofFin (Integers.Int.toFin b)⟩
 
 def exact_inverse (f : float32) : Option float32 :=
   (IEEE754_extra.Bexact_inverse (prec := z24) (emax := z128) (decode32 f)).map encode32
