@@ -361,8 +361,8 @@ def L : OrderedTop := numberingSolver
 
 def law_obligation : Prop := OrderedTopLaws L
 
-def Solver : Type :=
-  BBlock_solver L
+def Solver : Type 1 :=
+  { solver : BBLOCK_SOLVER // solver.L = L ∧ law_obligation }
 
 def fixpoint {A : Type} (code : PTree.t A)
     (successors : A -> List positive)
@@ -370,7 +370,7 @@ def fixpoint {A : Type} (code : PTree.t A)
     (entrypoint : positive) : Option (PMap.t L.t) :=
   BBlock_solver.fixpoint L code successors transf entrypoint
 
-def fixpoint_solution : Prop :=
+def fixpoint_solution (_laws : law_obligation) : Prop :=
   ∀ (A : Type) (code : PTree.t A)
     (successors : A -> List positive)
     (transf : positive -> L.t -> L.t)
@@ -381,7 +381,7 @@ def fixpoint_solution : Prop :=
     s ∈ successors instr ->
     L.ge (PMap.get s res) (transf n (PMap.get n res))
 
-def fixpoint_entry : Prop :=
+def fixpoint_entry (_laws : law_obligation) : Prop :=
   ∀ (A : Type) (code : PTree.t A)
     (successors : A -> List positive)
     (transf : positive -> L.t -> L.t)
@@ -389,7 +389,7 @@ def fixpoint_entry : Prop :=
     fixpoint code successors transf entrypoint = some res ->
     PMap.get entrypoint res = L.top
 
-def fixpoint_invariant : Prop :=
+def fixpoint_invariant (_laws : law_obligation) : Prop :=
   ∀ (A : Type) (code : PTree.t A)
     (successors : A -> List positive)
     (transf : positive -> L.t -> L.t)
