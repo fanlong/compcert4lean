@@ -76,8 +76,17 @@ def Zrnd_odd (x : R) : Z :=
   else
     Zfloor x
 
-def valid_rnd_odd : Prop :=
+class Valid_rnd_odd_Certificate : Prop where
+  odd : CompCert4Lean.Flocq.Core.Generic_fmt.Valid_rnd Zrnd_odd
+
+def valid_rnd_oddStatement : Prop :=
   CompCert4Lean.Flocq.Core.Generic_fmt.Valid_rnd Zrnd_odd
+
+/- The proof phase constructs the mandatory certificate.  This adapter then
+   restores the source Global Instance without a hidden or fabricated proof. -/
+instance valid_rnd_odd [certificate : Valid_rnd_odd_Certificate] :
+    CompCert4Lean.Flocq.Core.Generic_fmt.Valid_rnd Zrnd_odd :=
+  certificate.odd
 
 def Rnd_odd_pt (beta : radix) (fexp : Z → Z) (x f : R) : Prop :=
   generic_format beta fexp f ∧
