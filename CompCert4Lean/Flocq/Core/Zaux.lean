@@ -68,19 +68,49 @@ def radix2 : radix :=
   { radix_val := Ztwo
     radix_prop := by decide }
 
-def Zeq_bool_prop (x y : Z) : Bool → Prop :=
-  CompCert4Lean.Foundation.Numbers.Rocq.Coq.BoolSpec (x = y) (¬ x = y)
+inductive Zeq_bool_prop (x y : Z) : Bool → Prop where
+  | Zeq_bool_true_ : x = y → Zeq_bool_prop x y true
+  | Zeq_bool_false_ : x ≠ y → Zeq_bool_prop x y false
 
-def Zle_bool_prop (x y : Z) : Bool → Prop :=
-  CompCert4Lean.Foundation.Numbers.Rocq.Coq.BoolSpec (Zle x y) (Zlt y x)
+abbrev Zeq_bool_true_ (x y : Z) (h : x = y) : Zeq_bool_prop x y true :=
+  Zeq_bool_prop.Zeq_bool_true_ h
 
-def Zlt_bool_prop (x y : Z) : Bool → Prop :=
-  CompCert4Lean.Foundation.Numbers.Rocq.Coq.BoolSpec (Zlt x y) (Zle y x)
+abbrev Zeq_bool_false_ (x y : Z) (h : x ≠ y) : Zeq_bool_prop x y false :=
+  Zeq_bool_prop.Zeq_bool_false_ h
 
-def Zcompare_prop (x y : Z) : comparison → Prop
-  | .Lt => Zlt x y
-  | .Eq => x = y
-  | .Gt => Zlt y x
+inductive Zle_bool_prop (x y : Z) : Bool → Prop where
+  | Zle_bool_true_ : Zle x y → Zle_bool_prop x y true
+  | Zle_bool_false_ : Zlt y x → Zle_bool_prop x y false
+
+abbrev Zle_bool_true_ (x y : Z) (h : Zle x y) : Zle_bool_prop x y true :=
+  Zle_bool_prop.Zle_bool_true_ h
+
+abbrev Zle_bool_false_ (x y : Z) (h : Zlt y x) : Zle_bool_prop x y false :=
+  Zle_bool_prop.Zle_bool_false_ h
+
+inductive Zlt_bool_prop (x y : Z) : Bool → Prop where
+  | Zlt_bool_true_ : Zlt x y → Zlt_bool_prop x y true
+  | Zlt_bool_false_ : Zle y x → Zlt_bool_prop x y false
+
+abbrev Zlt_bool_true_ (x y : Z) (h : Zlt x y) : Zlt_bool_prop x y true :=
+  Zlt_bool_prop.Zlt_bool_true_ h
+
+abbrev Zlt_bool_false_ (x y : Z) (h : Zle y x) : Zlt_bool_prop x y false :=
+  Zlt_bool_prop.Zlt_bool_false_ h
+
+inductive Zcompare_prop (x y : Z) : comparison → Prop where
+  | Zcompare_Lt_ : Zlt x y → Zcompare_prop x y Lt
+  | Zcompare_Eq_ : x = y → Zcompare_prop x y Eq
+  | Zcompare_Gt_ : Zlt y x → Zcompare_prop x y Gt
+
+abbrev Zcompare_Lt_ (x y : Z) (h : Zlt x y) : Zcompare_prop x y Lt :=
+  Zcompare_prop.Zcompare_Lt_ h
+
+abbrev Zcompare_Eq_ (x y : Z) (h : x = y) : Zcompare_prop x y Eq :=
+  Zcompare_prop.Zcompare_Eq_ h
+
+abbrev Zcompare_Gt_ (x y : Z) (h : Zlt y x) : Zcompare_prop x y Gt :=
+  Zcompare_prop.Zcompare_Gt_ h
 
 def iter_nat {A : Type} (f : A → A) : Nat → A → A
   | 0, x => x

@@ -34,40 +34,42 @@ structure UNIONFIND where
   t : Type
   repr : t → elt → elt
   repr_canonical : ∀ uf a, repr uf (repr uf a) = repr uf a
-  sameclass : t → elt → elt → Prop
-  sameclass_refl : ∀ uf a, sameclass uf a a
-  sameclass_sym : ∀ uf a b, sameclass uf a b → sameclass uf b a
+  sameclass_refl : ∀ uf a, repr uf a = repr uf a
+  sameclass_sym : ∀ uf a b, repr uf a = repr uf b → repr uf b = repr uf a
   sameclass_trans : ∀ uf a b c,
-    sameclass uf a b → sameclass uf b c → sameclass uf a c
-  sameclass_repr : ∀ uf a, sameclass uf a (repr uf a)
+    repr uf a = repr uf b → repr uf b = repr uf c → repr uf a = repr uf c
+  sameclass_repr : ∀ uf a, repr uf a = repr uf (repr uf a)
   empty : t
   repr_empty : ∀ a, repr empty a = a
-  sameclass_empty : ∀ a b, sameclass empty a b → a = b
+  sameclass_empty : ∀ a b, repr empty a = repr empty b → a = b
   find : t → elt → elt × t
   find_repr : ∀ uf a, (find uf a).1 = repr uf a
   find_unchanged : ∀ uf a x, repr (find uf a).2 x = repr uf x
   sameclass_find_1 : ∀ uf a x y,
-    sameclass (find uf a).2 x y ↔ sameclass uf x y
-  sameclass_find_2 : ∀ uf a, sameclass uf a (find uf a).1
-  sameclass_find_3 : ∀ uf a, sameclass (find uf a).2 a (find uf a).1
+    repr (find uf a).2 x = repr (find uf a).2 y ↔ repr uf x = repr uf y
+  sameclass_find_2 : ∀ uf a, repr uf a = repr uf (find uf a).1
+  sameclass_find_3 : ∀ uf a,
+    repr (find uf a).2 a = repr (find uf a).2 (find uf a).1
   union : t → elt → elt → t
   repr_union_1 : ∀ uf a b x, repr uf x ≠ repr uf a →
     repr (union uf a b) x = repr uf x
   repr_union_2 : ∀ uf a b x, repr uf x = repr uf a →
     repr (union uf a b) x = repr uf b
   repr_union_3 : ∀ uf a b, repr (union uf a b) b = repr uf b
-  sameclass_union_1 : ∀ uf a b, sameclass (union uf a b) a b
-  sameclass_union_2 : ∀ uf a b x y, sameclass uf x y →
-    sameclass (union uf a b) x y
+  sameclass_union_1 : ∀ uf a b,
+    repr (union uf a b) a = repr (union uf a b) b
+  sameclass_union_2 : ∀ uf a b x y,
+    repr uf x = repr uf y → repr (union uf a b) x = repr (union uf a b) y
   sameclass_union_3 : ∀ uf a b x y,
-    sameclass (union uf a b) x y →
-      sameclass uf x y ∨
-      (sameclass uf x a ∧ sameclass uf y b) ∨
-      (sameclass uf x b ∧ sameclass uf y a)
+    repr (union uf a b) x = repr (union uf a b) y →
+      repr uf x = repr uf y ∨
+      (repr uf x = repr uf a ∧ repr uf y = repr uf b) ∨
+      (repr uf x = repr uf b ∧ repr uf y = repr uf a)
   merge : t → elt → elt → t
   repr_merge : ∀ uf a b x, repr (merge uf a b) x = repr (union uf a b) x
   sameclass_merge : ∀ uf a b x y,
-    sameclass (merge uf a b) x y ↔ sameclass (union uf a b) x y
+    repr (merge uf a b) x = repr (merge uf a b) y ↔
+      repr (union uf a b) x = repr (union uf a b) y
   path_ord : t → elt → elt → Prop
   path_ord_wellfounded : ∀ uf, WellFounded (path_ord uf)
   path_ord_canonical : ∀ uf x y, repr uf x = x → ¬ path_ord uf y x
@@ -89,6 +91,13 @@ structure UNIONFIND where
 
 private def UFOrder (M : MAP) (m : M.t M.elt) (a a' : M.elt) : Prop :=
   M.get a' m = some a
+
+namespace UNIONFIND
+
+def sameclass (U : UNIONFIND) (uf : U.t) (a b : U.elt) : Prop :=
+  U.repr uf a = U.repr uf b
+
+end UNIONFIND
 
 namespace UF
 
@@ -124,6 +133,38 @@ def F_repr (uf : t M) (a : elt M)
 def repr (uf : t M) (a : elt M) : elt M :=
   WellFounded.fix uf.mwf (F_repr M uf) a
 
+private theorem repr_unroll_calc (uf : t M) (a : elt M) :
+    repr M uf a = match M.get a uf.m with
+      | some a' => repr M uf a'
+      | none => a := by
+  unfold repr
+  rw [WellFounded.fix_eq]
+  cases h : getlink M uf.m a with
+  | inleft h' =>
+      cases h' with
+      | mk a' ha =>
+          simp [F_repr, h, ha]
+  | inright hnone =>
+      simp [F_repr, h, hnone]
+
+private theorem repr_none_calc (uf : t M) (a : elt M)
+    (h : M.get a uf.m = none) : repr M uf a = a := by
+  rw [repr_unroll_calc M uf a, h]
+
+private theorem repr_some_calc (uf : t M) (a a' : elt M)
+    (h : M.get a uf.m = some a') : repr M uf a = repr M uf a' := by
+  rw [repr_unroll_calc M uf a, h]
+
+private theorem repr_res_none_calc (uf : t M) (a : elt M) :
+    M.get (repr M uf a) uf.m = none := by
+  apply uf.mwf.induction a
+  intro x ih
+  rw [repr_unroll_calc M uf x]
+  cases h : M.get x uf.m with
+  | none => simpa [h]
+  | some y =>
+      simpa [h] using ih y h
+
 def sameclass (uf : t M) (a b : elt M) : Prop :=
   repr M uf a = repr M uf b
 
@@ -138,11 +179,100 @@ def empty : t M :=
       rw [M.gempty] at h
       cases h }
 
-def identify (uf : t M) (a b : elt M) : t M := uf
+private theorem identify_order (uf : t M) (a b : elt M)
+    (ha : M.get a uf.m = none) (x y : elt M) :
+  order M (M.set a b uf.m) y x ↔
+    order M uf.m y x ∨ (x = a ∧ y = b) := by
+  change M.get x (M.set a b uf.m) = some y ↔
+    M.get x uf.m = some y ∨ (x = a ∧ y = b)
+  rw [M.gsspec]
+  by_cases hxa : x = a
+  · subst x
+    simp only [dif_pos rfl]
+    constructor
+    · intro h
+      have hyb : y = b := by simpa using h.symm
+      exact Or.inr ⟨by simp, hyb⟩
+    · intro h
+      rcases h with h | ⟨_, h⟩
+      · rw [ha] at h
+        cases h
+      · simpa [h]
+  · simp [hxa]
 
-def union (uf : t M) (_a _b : elt M) : t M := uf
+private def identify_Acc_b (uf : t M) (a b : elt M) (x : elt M)
+    (ha : M.get a uf.m = none) (hneq : repr M uf x ≠ a) :
+    _root_.Acc (order M (M.set a b uf.m)) x :=
+  by
+    refine (_root_.WellFounded.induction uf.mwf
+      (C := fun x => repr M uf x ≠ a →
+        _root_.Acc (order M (M.set a b uf.m)) x) x ?_) hneq
+    intro x ih hneq
+    apply Acc.intro x
+    intro y hxy
+    rw [identify_order M uf a b ha x y] at hxy
+    cases hxy with
+    | inl hxy =>
+        apply ih y hxy
+        intro hya
+        apply hneq
+        exact (repr_some_calc M uf x y hxy).trans hya
+    | inr hxy =>
+        rcases hxy with ⟨hxa, hyb⟩
+        subst x
+        subst y
+        exact False.elim (hneq (repr_none_calc M uf a ha))
 
-def merge (uf : t M) (_a _b : elt M) : t M := uf
+private def identify_Acc (uf : t M) (a b : elt M) (x : elt M)
+    (ha : M.get a uf.m = none) (hneq : repr M uf b ≠ a) :
+    _root_.Acc (order M (M.set a b uf.m)) x :=
+  by
+    apply _root_.WellFounded.induction uf.mwf
+      (C := fun _x => _root_.Acc (order M (M.set a b uf.m)) _x) x
+    intro x ih
+    apply Acc.intro x
+    intro y hxy
+    rw [identify_order M uf a b ha x y] at hxy
+    cases hxy with
+    | inl hxy => exact ih y hxy
+    | inr hxy =>
+        rcases hxy with ⟨hxa, hyb⟩
+        subst x
+        subst y
+        exact identify_Acc_b M uf a b b ha hneq
+
+private def identify_wf (uf : t M) (a b : elt M)
+    (ha : M.get a uf.m = none) (hneq : repr M uf b ≠ a) :
+    WellFounded (order M (M.set a b uf.m)) := by
+  apply _root_.WellFounded.intro
+  intro x
+  exact identify_Acc M uf a b x ha hneq
+
+def identify (uf : t M) (a b : elt M) : t M :=
+  if ha : M.get a uf.m = none then
+    if hneq : repr M uf b ≠ a then
+      { m := M.set a b uf.m
+        mwf := identify_wf M uf a b ha hneq }
+    else
+      uf
+  else
+    uf
+
+def union (uf : t M) (a b : elt M) : t M :=
+  let a' := repr M uf a
+  let b' := repr M uf b
+  if h : a' = b' then
+    uf
+  else
+    identify M uf a' b'
+
+def merge (uf : t M) (a b : elt M) : t M :=
+  let a' := repr M uf a
+  let b' := repr M uf b
+  if h : a' = b' then
+    uf
+  else
+    identify M uf a' b
 
 def path_ord (uf : t M) : elt M → elt M → Prop := order M uf.m
 
@@ -155,10 +285,61 @@ def F_pathlen (uf : t M) (a : elt M)
 def pathlen (uf : t M) (a : elt M) : Nat :=
   WellFounded.fix uf.mwf (F_pathlen M uf) a
 
-def compress (uf : t M) (_a _b : elt M) : t M := uf
+private def compress_Acc (uf : t M) (a b : elt M) (x : elt M)
+    (hneq : a ≠ b) (hrepr : repr M uf a = b) :
+    _root_.Acc (order M (M.set a b uf.m)) x :=
+  by
+    apply _root_.WellFounded.induction uf.mwf
+      (C := fun _x => _root_.Acc (order M (M.set a b uf.m)) _x) x
+    intro x ih
+    apply Acc.intro x
+    intro y hxy
+    change M.get x (M.set a b uf.m) = some y at hxy
+    rw [M.gsspec] at hxy
+    by_cases hxa : x = a
+    · subst x
+      simp at hxy
+      subst y
+      apply Acc.intro b
+      intro z hzb
+      change M.get b (M.set a b uf.m) = some z at hzb
+      rw [M.gsspec] at hzb
+      by_cases hba : b = a
+      · exact False.elim (hneq hba.symm)
+      · simp [hba] at hzb
+        have hnone := repr_res_none_calc M uf a
+        rw [hrepr] at hnone
+        rw [hzb] at hnone
+        cases hnone
+    · have hxy' : M.get x uf.m = some y := by simpa [hxa] using hxy
+      exact ih y (show UFOrder M uf.m y x from hxy')
+
+private def compress_wf (uf : t M) (a b : elt M)
+    (hneq : a ≠ b) (hrepr : repr M uf a = b) :
+    WellFounded (order M (M.set a b uf.m)) := by
+  apply _root_.WellFounded.intro
+  intro x
+  exact compress_Acc M uf a b x hneq hrepr
+
+def compress (uf : t M) (a b : elt M) : t M :=
+  if hneq : a ≠ b then
+    if hrepr : repr M uf a = b then
+      { m := M.set a b uf.m
+        mwf := compress_wf M uf a b hneq hrepr }
+    else
+      uf
+  else
+    uf
 
 def find_x (uf : t M) (a : elt M) : elt M × t M :=
-  (repr M uf a, uf)
+  WellFounded.fix uf.mwf
+    (fun x rec =>
+      match getlink M uf.m x with
+      | .inleft h =>
+          let r : elt M × t M := rec h.1 h.2
+          (r.1, compress M r.2 x r.1)
+      | .inright _ => (x, uf))
+    a
 
 def find (uf : t M) (a : elt M) : elt M × t M := find_x M uf a
 

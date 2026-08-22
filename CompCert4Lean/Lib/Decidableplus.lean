@@ -83,29 +83,45 @@ def Decidable_eq_positive (x y : positive) : _root_.Decidable (x = y) :=
 def Decidable_eq_Z (x y : Z) : _root_.Decidable (x = y) :=
   if h : x = y then .isTrue h else .isFalse h
 
-def Decidable_le_Z (x y : Z) :
+instance Decidable_le_Z (x y : Z) :
     _root_.Decidable (ZArith.BinInt.Z.le x y) :=
   decidableOfSumbool (ZArith.ZArith_dec.Z_le_dec x y)
 
-def Decidable_lt_Z (x y : Z) :
+instance Decidable_lt_Z (x y : Z) :
     _root_.Decidable (ZArith.BinInt.Z.lt x y) :=
   decidableOfSumbool (ZArith.ZArith_dec.Z_lt_dec x y)
 
-def Decidable_ge_Z (x y : Z) :
+instance Decidable_ge_Z (x y : Z) :
     _root_.Decidable (ZArith.BinInt.Z.ge x y) :=
   decidableOfSumbool (ZArith.ZArith_dec.Z_le_dec y x)
 
-def Decidable_gt_Z (x y : Z) :
+instance Decidable_gt_Z (x y : Z) :
     _root_.Decidable (ZArith.BinInt.Z.gt x y) :=
   decidableOfSumbool (ZArith.ZArith_dec.Z_lt_dec y x)
 
-noncomputable def Decidable_divides (x y : Z) :
-    _root_.Decidable (ZArith.BinInt.Z.divide x y) := by
-  classical
-  exact Classical.propDecidable _
+instance Decidable_divides (x y : Z) :
+    _root_.Decidable (ZArith.BinInt.Z.divide x y) :=
+  if h : intOfZ x ∣ intOfZ y then
+    .isTrue (by
+      rcases h with ⟨k, hk⟩
+      refine ⟨zOfInt k, ?_⟩
+      apply intOfZ_injective
+      calc
+        intOfZ y = intOfZ x * k := hk
+        _ = intOfZ (ZArith.BinInt.Z.mul x (zOfInt k)) := by
+          simp only [ZArith.BinInt.Z.mul, intOfZ_zOfInt])
+  else
+    .isFalse (by
+      rintro ⟨k, hk⟩
+      apply h
+      refine ⟨intOfZ k, ?_⟩
+      calc
+        intOfZ y = intOfZ (ZArith.BinInt.Z.mul x k) := congrArg intOfZ hk
+        _ = intOfZ x * intOfZ k := by
+          simp only [ZArith.BinInt.Z.mul, intOfZ_zOfInt])
 
-def Decidable_forall_in_list {A : Type} (l : List A) (P : A → Prop)
-    (dP : ∀ x : A, _root_.Decidable (P x)) :
+instance Decidable_forall_in_list {A : Type} (l : List A) (P : A → Prop)
+    [dP : ∀ x : A, _root_.Decidable (P x)] :
     _root_.Decidable (∀ x : A, In x l → P x) :=
   match l with
   | [] =>
@@ -113,7 +129,7 @@ def Decidable_forall_in_list {A : Type} (l : List A) (P : A → Prop)
         intro x hx
         exact (_root_.List.not_mem_nil hx).elim)
   | a :: l =>
-      match dP a, Decidable_forall_in_list l P dP with
+      match dP a, Decidable_forall_in_list (dP := dP) l P with
       | .isTrue ha, .isTrue hl =>
           .isTrue (by
             intro x hx
@@ -131,8 +147,8 @@ def Decidable_forall_in_list {A : Type} (l : List A) (P : A → Prop)
             intro x hx
             exact h x (_root_.List.Mem.tail a hx))
 
-def Decidable_exists_in_list {A : Type} (l : List A) (P : A → Prop)
-    (dP : ∀ x : A, _root_.Decidable (P x)) :
+instance Decidable_exists_in_list {A : Type} (l : List A) (P : A → Prop)
+    [dP : ∀ x : A, _root_.Decidable (P x)] :
     _root_.Decidable (∃ x : A, In x l ∧ P x) :=
   match l with
   | [] =>
@@ -140,7 +156,7 @@ def Decidable_exists_in_list {A : Type} (l : List A) (P : A → Prop)
         rintro ⟨x, hx, _⟩
         exact (_root_.List.not_mem_nil hx).elim)
   | a :: l =>
-      match dP a, Decidable_exists_in_list l P dP with
+      match dP a, Decidable_exists_in_list (dP := dP) l P with
       | .isTrue ha, _ =>
           .isTrue ⟨a, _root_.List.Mem.head l, ha⟩
       | .isFalse hna, .isTrue hl =>
@@ -160,19 +176,21 @@ class Finite (T : Type) where
 
 export Finite (Finite_elements Finite_elements_spec)
 
-def Decidable_forall {T : Type} (fT : Finite T) (P : T → Prop)
-    (dP : ∀ x : T, _root_.Decidable (P x)) :
+instance Decidable_forall {T : Type} [fT : Finite T] (P : T → Prop)
+    [dP : ∀ x : T, _root_.Decidable (P x)] :
     _root_.Decidable (∀ x : T, P x) :=
-  match Decidable_forall_in_list (Finite.Finite_elements (self := fT)) P dP with
+  match Decidable_forall_in_list (dP := dP)
+      (Finite.Finite_elements (self := fT)) P with
   | .isTrue h =>
       .isTrue (by intro x; exact h x (Finite.Finite_elements_spec (self := fT) x))
   | .isFalse h =>
       .isFalse (by intro hall; apply h; intro x _; exact hall x)
 
-def Decidable_exists {T : Type} (fT : Finite T) (P : T → Prop)
-    (dP : ∀ x : T, _root_.Decidable (P x)) :
+instance Decidable_exists {T : Type} [fT : Finite T] (P : T → Prop)
+    [dP : ∀ x : T, _root_.Decidable (P x)] :
     _root_.Decidable (∃ x : T, P x) :=
-  match Decidable_exists_in_list (Finite.Finite_elements (self := fT)) P dP with
+  match Decidable_exists_in_list (dP := dP)
+      (Finite.Finite_elements (self := fT)) P with
   | .isTrue h =>
       .isTrue (by
         rcases h with ⟨x, _, hpx⟩
