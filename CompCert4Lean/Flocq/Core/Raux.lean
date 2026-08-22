@@ -61,40 +61,119 @@ abbrev Rone : R := ⟨1⟩
 abbrev Rtwo : R := ⟨2⟩
 abbrev Rhalf : R := Rdiv Rone Rtwo
 
-def Rcompare (x y : R) : comparison :=
-  if _hxy : x.value < y.value then Lt else if _hEq : x = y then Eq else Gt
+private structure FirstNat (P : Nat → Prop) where
+  val : Nat
+  property : P val
+  minimal : ∀ k, k < val → ¬ P k
 
-def Rcompare_prop (x y : R) : comparison → Prop
-  | .Lt => Rlt x y
-  | .Eq => x = y
-  | .Gt => Rlt y x
+private def firstNat (P : Nat → Prop) [DecidablePred P] :
+    ∀ bound, P bound → FirstNat P
+  | 0, h => ⟨0, h, by omega⟩
+  | bound + 1, h =>
+      if h0 : P 0 then
+        ⟨0, h0, by omega⟩
+      else
+        let next := firstNat (fun k => P (k + 1)) bound h
+        ⟨next.val + 1, next.property, by
+          intro k hk
+          cases k with
+          | zero => simpa using h0
+          | succ k =>
+              exact next.minimal k (by omega)⟩
+
+private def radixNat (r : radix) : Nat :=
+  Int.toNat (CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ r.radix_val)
+
+private theorem radixNat_ge_two (r : radix) : 2 ≤ radixNat r := by
+  have hr := r.radix_prop
+  change (if (2 : Int) ≤ CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ r.radix_val
+    then true else false) = true at hr
+  have hbase : (2 : Int) ≤ CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ r.radix_val := by
+    simpa using hr
+  simp [radixNat]
+  omega
+
+private def highMagnitude (b n d : Nat) (hb : 1 < b) (hd : 0 < d) :
+    FirstNat (fun k => n < d * b ^ k) :=
+  firstNat (fun k => n < d * b ^ k) n <|
+    Nat.lt_of_lt_of_le (Nat.lt_pow_self hb) (Nat.le_mul_of_pos_left _ hd)
+
+private def lowMagnitude (b n d : Nat) (hb : 1 < b) (hn : 0 < n) :
+    FirstNat (fun k => d ≤ n * b ^ (k + 1)) :=
+  firstNat (fun k => d ≤ n * b ^ (k + 1)) d <|
+    Nat.le_trans (Nat.le_of_lt (Nat.lt_pow_self hb)) <|
+      Nat.le_trans (Nat.le_of_lt (Nat.pow_lt_pow_succ hb))
+        (Nat.le_mul_of_pos_left _ hn)
+
+private theorem orderedReal_ext {x y : R} (h : x.value = y.value) : x = y := by
+  cases x
+  cases y
+  cases h
+  rfl
+
+private theorem Rabs_value_eq_abs (x : R) : (Rabs x).value = x.value.abs := by
+  change (CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.Rabs x).value = x.value.abs
+  unfold CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.Rabs
+  simp only [CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.R0,
+    CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.Ropp]
+  unfold Rat.abs
+  by_cases h : x.value < 0
+  · simp [h, Rat.not_le.mpr h]
+  · simp [h, Rat.not_lt.mp h]
+
+private theorem Rabs_value_ne_zero (x : R) (hx : x ≠ R0) : (Rabs x).value ≠ 0 := by
+  rw [Rabs_value_eq_abs]
+  intro h
+  apply hx
+  apply orderedReal_ext
+  change x.value = (0 : Rat)
+  exact Rat.abs_eq_zero_iff.mp h
+
+def Rcompare (x y : R) : comparison :=
+  let order :
+      CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.Rdefinitions.total_order_T x y :=
+    if hxy : x.value < y.value then
+      .inleft (.left hxy)
+    else if heq : x.value = y.value then
+      .inleft (.right (orderedReal_ext heq))
+    else
+      .inright (Rat.lt_of_le_of_ne (Rat.not_lt.mp hxy) (fun hyx => heq hyx.symm))
+  match order with
+  | .inleft (.left _) => Lt
+  | .inleft (.right _) => Eq
+  | .inright _ => Gt
+
+inductive Rcompare_prop (x y : R) : comparison → Prop where
+  | Rcompare_Lt_ : Rlt x y → Rcompare_prop x y Lt
+  | Rcompare_Eq_ : x = y → Rcompare_prop x y Eq
+  | Rcompare_Gt_ : Rlt y x → Rcompare_prop x y Gt
 
 def Rle_bool (x y : R) : Bool :=
   match Rcompare x y with
   | .Gt => false
   | _ => true
 
-def Rle_bool_prop (x y : R) : Bool → Prop
-  | true => Rle x y
-  | false => Rlt y x
+inductive Rle_bool_prop (x y : R) : Bool → Prop where
+  | Rle_bool_true_ : Rle x y → Rle_bool_prop x y true
+  | Rle_bool_false_ : Rlt y x → Rle_bool_prop x y false
 
 def Rlt_bool (x y : R) : Bool :=
   match Rcompare x y with
   | .Lt => true
   | _ => false
 
-def Rlt_bool_prop (x y : R) : Bool → Prop
-  | true => Rlt x y
-  | false => Rle y x
+inductive Rlt_bool_prop (x y : R) : Bool → Prop where
+  | Rlt_bool_true_ : Rlt x y → Rlt_bool_prop x y true
+  | Rlt_bool_false_ : Rle y x → Rlt_bool_prop x y false
 
 def Req_bool (x y : R) : Bool :=
   match Rcompare x y with
   | .Eq => true
   | _ => false
 
-def Req_bool_prop (x y : R) : Bool → Prop
-  | true => x = y
-  | false => x ≠ y
+inductive Req_bool_prop (x y : R) : Bool → Prop where
+  | Req_bool_true_ : x = y → Req_bool_prop x y true
+  | Req_bool_false_ : x ≠ y → Req_bool_prop x y false
 
 def Zfloor (x : R) : Z := Zsub (up x) (Zpos xH)
 
@@ -110,8 +189,164 @@ def bpow (r : radix) (e : Z) : R :=
   | .Zneg p => Rinv (IZR (Zpower_pos r p))
   | .Z0 => ⟨1⟩
 
+private theorem IZR_value (z : Z) :
+    (IZR z).value = Rat.ofInt (CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ z) := by
+  cases z <;> rfl
+
+private theorem bpow_value (r : radix) (e : Z) :
+    (bpow r e).value =
+      Rat.ofInt (CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ r.radix_val) ^
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ e) := by
+  cases e with
+  | Z0 =>
+      change (1 : Rat) =
+        Rat.ofInt (CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ r.radix_val) ^ (0 : Int)
+      exact (Rat.zpow_zero _).symm
+  | Zpos p =>
+      change (IZR (Zpower_pos r p)).value =
+        Rat.ofInt (CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ r.radix_val) ^
+          (Int.ofNat (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p))
+      rw [IZR_value]
+      simp only [Zpower_pos,
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.pow_pos,
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+      exact (Rat.intCast_pow _ _).trans (Rat.zpow_natCast _ _).symm
+  | Zneg p =>
+      change 1 / (IZR (Zpower_pos r p)).value =
+        Rat.ofInt (CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ r.radix_val) ^
+          (-(Int.ofNat (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p)))
+      rw [IZR_value]
+      simp only [Zpower_pos,
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.pow_pos,
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+      calc
+        1 / Rat.ofInt
+            (Int.pow (CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ r.radix_val)
+              (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p)) =
+            (Rat.ofInt
+              (Int.pow (CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ r.radix_val)
+                (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p)))⁻¹ := by
+                  simp [Rat.div_def]
+        _ = (Rat.ofInt (CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ r.radix_val) ^
+              (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p))⁻¹ := by
+                exact congrArg Inv.inv (Rat.intCast_pow _ _)
+        _ = (Rat.ofInt (CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ r.radix_val) ^
+              (Int.ofNat (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p)))⁻¹ := by
+                exact congrArg Inv.inv (Rat.zpow_natCast _ _).symm
+        _ = Rat.ofInt (CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ r.radix_val) ^
+              (-(Int.ofNat (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p))) :=
+                (Rat.zpow_neg _ _).symm
+
+private theorem radixRat_eq (r : radix) :
+    Rat.ofInt (CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ r.radix_val) =
+      (radixNat r : Rat) := by
+  have hnonneg : 0 ≤ CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ r.radix_val := by
+    have := radixNat_ge_two r
+    have hr := r.radix_prop
+    change (if (2 : Int) ≤ CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ r.radix_val
+      then true else false) = true at hr
+    simpa using (show (0 : Int) ≤
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ r.radix_val by
+        have : (2 : Int) ≤ CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ r.radix_val := by
+          simpa using hr
+        omega)
+  change Rat.ofInt (CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ r.radix_val) =
+    Rat.ofInt (Int.ofNat (radixNat r))
+  congr 1
+  exact (Int.toNat_of_nonneg hnonneg).symm
+
+private theorem bpow_zOfInt_value (r : radix) (i : Int) :
+    (bpow r (CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt i)).value =
+      (radixNat r : Rat) ^ i := by
+  rw [bpow_value, CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt, radixRat_eq]
+
+private theorem zsub_zOfInt_one (i : Int) :
+    Zsub (CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt i) (Zpos xH) =
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt (i - 1) := by
+  change CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt i) - 1) =
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt (i - 1)
+  rw [CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+
+private theorem neg_ofNat_sub_one (n : Nat) :
+    -(Int.ofNat n) - 1 = -(Int.ofNat (n + 1)) := by
+  have hadd : Int.ofNat (n + 1) = Int.ofNat n + 1 := by
+    exact (Int.ofNat_add_ofNat n 1).symm
+  rw [hadd]
+  omega
+
+private theorem natPow_le_rat_iff (a : Rat) (ha : 0 ≤ a) (b k : Nat) :
+    (b : Rat) ^ k ≤ a ↔ b ^ k * a.den ≤ a.num.natAbs := by
+  rw [Rat.le_iff]
+  simp only [Rat.num_pow, Rat.den_pow, Rat.num_natCast, Rat.den_natCast,
+    Int.natCast_pow, Nat.one_pow]
+  have hnum : (a.num.natAbs : Int) = a.num :=
+    Int.natAbs_of_nonneg (Rat.num_nonneg.mpr ha)
+  rw [← hnum]
+  norm_cast
+  simp
+
+private theorem rat_lt_natPow_iff (a : Rat) (ha : 0 ≤ a) (b k : Nat) :
+    a < (b : Rat) ^ k ↔ a.num.natAbs < a.den * b ^ k := by
+  rw [Rat.lt_iff]
+  simp only [Rat.num_pow, Rat.den_pow, Rat.num_natCast, Rat.den_natCast,
+    Int.natCast_pow, Nat.one_pow]
+  have hnum : (a.num.natAbs : Int) = a.num :=
+    Int.natAbs_of_nonneg (Rat.num_nonneg.mpr ha)
+  rw [← hnum]
+  norm_cast
+  simp [Nat.mul_comm]
+
+private theorem invNatPow_le_rat_iff (a : Rat) (ha : 0 ≤ a) (b k : Nat)
+    (hb : 0 < b) :
+    (b : Rat) ^ (-(Int.ofNat k)) ≤ a ↔ a.den ≤ a.num.natAbs * b ^ k := by
+  rw [Rat.zpow_neg]
+  change ((b : Rat) ^ k)⁻¹ ≤ a ↔ a.den ≤ a.num.natAbs * b ^ k
+  rw [Rat.le_iff]
+  have hpow : 0 < b ^ k := Nat.pow_pos hb
+  have hbne : b ≠ 0 := Nat.ne_of_gt hb
+  have hpowNatNe : b ^ k ≠ 0 := Nat.ne_of_gt hpow
+  have hpowInt : 0 < (b ^ k : Int) := by exact_mod_cast hpow
+  have hpowNe : (b ^ k : Int) ≠ 0 := Int.ne_of_gt hpowInt
+  have hnum : (a.num.natAbs : Int) = a.num :=
+    Int.natAbs_of_nonneg (Rat.num_nonneg.mpr ha)
+  simp only [Rat.num_inv, Rat.den_inv, Rat.num_pow, Rat.den_pow,
+    Rat.num_natCast, Rat.den_natCast, Int.natCast_pow, Nat.one_pow]
+  rw [Int.sign_eq_one_of_pos hpowInt]
+  simp only [if_neg hpowNe, Int.natAbs_of_nonneg (Int.le_of_lt hpowInt),
+    Int.one_mul, Int.natCast_one]
+  rw [← hnum]
+  norm_cast
+  simp [hbne]
+
+private theorem rat_lt_invNatPow_iff (a : Rat) (ha : 0 ≤ a) (b k : Nat)
+    (hb : 0 < b) :
+    a < (b : Rat) ^ (-(Int.ofNat k)) ↔ a.num.natAbs * b ^ k < a.den := by
+  rw [Rat.zpow_neg]
+  change a < ((b : Rat) ^ k)⁻¹ ↔ a.num.natAbs * b ^ k < a.den
+  rw [Rat.lt_iff]
+  have hpow : 0 < b ^ k := Nat.pow_pos hb
+  have hbne : b ≠ 0 := Nat.ne_of_gt hb
+  have hpowNatNe : b ^ k ≠ 0 := Nat.ne_of_gt hpow
+  have hpowInt : 0 < (b ^ k : Int) := by exact_mod_cast hpow
+  have hpowNe : (b ^ k : Int) ≠ 0 := Int.ne_of_gt hpowInt
+  have hnum : (a.num.natAbs : Int) = a.num :=
+    Int.natAbs_of_nonneg (Rat.num_nonneg.mpr ha)
+  simp only [Rat.num_inv, Rat.den_inv, Rat.num_pow, Rat.den_pow,
+    Rat.num_natCast, Rat.den_natCast, Int.natCast_pow, Nat.one_pow]
+  rw [Int.sign_eq_one_of_pos hpowInt]
+  simp only [if_neg hpowNe, Int.natAbs_of_nonneg (Int.le_of_lt hpowInt),
+    Int.one_mul, Int.natCast_one]
+  rw [← hnum]
+  norm_cast
+  simp [hbne]
+
 structure mag_prop (r : radix) (x : R) where
   mag_val : Z
+  mag_bound : x ≠ R0 →
+    Rle (bpow r (Zsub mag_val (Zpos xH))) (Rabs x) ∧
+      Rlt (Rabs x) (bpow r mag_val)
 
 instance {r : radix} {x : R} (m : mag_prop r x) : CoeDep (mag_prop r x) m Z :=
   ⟨m.mag_val⟩
@@ -119,7 +354,84 @@ instance {r : radix} {x : R} (m : mag_prop r x) : CoeDep (mag_prop r x) m Z :=
 export mag_prop (mag_val)
 
 def mag (r : radix) (x : R) : mag_prop r x :=
-  { mag_val := Z0 }
+  let a := (Rabs x).value
+  if hx0 : x = R0 then
+    { mag_val := Z0
+      mag_bound := by intro hx; exact (hx hx0).elim }
+  else
+    have ha : 0 ≤ a := by
+      dsimp [a]
+      rw [Rabs_value_eq_abs]
+      exact Rat.abs_nonneg
+    have hane : a ≠ 0 := by
+      dsimp [a]
+      exact Rabs_value_ne_zero x hx0
+    have hn : 0 < a.num.natAbs := Int.natAbs_pos.mpr <| by
+      intro hnum
+      apply hane
+      exact Rat.num_eq_zero.mp hnum
+    let b := radixNat r
+    have hb : 1 < b := by
+      dsimp [b]
+      have := radixNat_ge_two r
+      omega
+    if hlarge : a.den ≤ a.num.natAbs then
+      let q := highMagnitude b a.num.natAbs a.den hb a.den_pos
+      { mag_val := CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt (Int.ofNat q.val)
+        mag_bound := by
+          intro _
+          have hkpos : 0 < q.val := by
+            apply Nat.pos_of_ne_zero
+            intro hk0
+            have hp := q.property
+            simp [hk0] at hp
+            omega
+          have hlower : a.den * b ^ (q.val - 1) ≤ a.num.natAbs :=
+            Nat.le_of_not_gt (q.minimal (q.val - 1) (by omega))
+          constructor
+          · change (bpow r (Zsub
+                (CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt (Int.ofNat q.val))
+                (Zpos xH))).value ≤ a
+            rw [zsub_zOfInt_one, bpow_zOfInt_value]
+            have hi : Int.ofNat q.val - 1 = Int.ofNat (q.val - 1) := by
+              symm
+              exact Int.ofNat_sub (by omega : 1 ≤ q.val)
+            rw [hi]
+            change (b : Rat) ^ (q.val - 1) ≤ a
+            exact (natPow_le_rat_iff a ha b (q.val - 1)).2 (by
+              simpa [Nat.mul_comm] using hlower)
+          · change a < (bpow r
+                (CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt (Int.ofNat q.val))).value
+            rw [bpow_zOfInt_value]
+            change a < (b : Rat) ^ q.val
+            exact (rat_lt_natPow_iff a ha b q.val).2 q.property }
+    else
+      let q := lowMagnitude b a.num.natAbs a.den hb hn
+      { mag_val := CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt (-(Int.ofNat q.val))
+        mag_bound := by
+          intro _
+          have hsmall : a.num.natAbs < a.den := Nat.lt_of_not_ge hlarge
+          have hupper : a.num.natAbs * b ^ q.val < a.den := by
+            cases hq : q.val with
+            | zero => simpa [hq] using hsmall
+            | succ k =>
+                have hm := q.minimal k (by omega)
+                have hm' : ¬a.den ≤ a.num.natAbs * b ^ (k + 1) := by
+                  simpa [hq] using hm
+                simpa [hq] using Nat.lt_of_not_ge hm'
+          constructor
+          · change (bpow r (Zsub
+                (CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt (-(Int.ofNat q.val)))
+                (Zpos xH))).value ≤ a
+            rw [zsub_zOfInt_one, bpow_zOfInt_value]
+            have hi : -(Int.ofNat q.val) - 1 = -(Int.ofNat (q.val + 1)) :=
+              neg_ofNat_sub_one q.val
+            rw [hi]
+            exact (invNatPow_le_rat_iff a ha b (q.val + 1) (by omega)).2 q.property
+          · change a < (bpow r
+                (CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt (-(Int.ofNat q.val)))).value
+            rw [bpow_zOfInt_value]
+            exact (rat_lt_invNatPow_iff a ha b q.val (by omega)).2 hupper }
 
 def cond_Ropp (b : Bool) (m : R) : R := if b then Ropp m else m
 
