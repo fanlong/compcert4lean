@@ -141,27 +141,39 @@ def link_vardef {V : Type} [LV : Linker V]
           else
             none
 
-def linkorder_vardef {V : Type} [LV : Linker V]
-    (v1 v2 : globvar V) : Prop :=
-  LV.linkorder v1.gvar_info v2.gvar_info ∧
-    initializerLinker.linkorder v1.gvar_init v2.gvar_init ∧
-    v1.gvar_readonly = v2.gvar_readonly ∧
-    v1.gvar_volatile = v2.gvar_volatile
+inductive linkorder_vardef {V : Type} [LV : Linker V] :
+    globvar V → globvar V → Prop where
+  | linkorder_vardef_intro (info1 info2 : V)
+      (i1 i2 : List init_data) (ro vo : Bool) :
+      LV.linkorder info1 info2 →
+      initializerLinker.linkorder i1 i2 →
+      linkorder_vardef
+        { gvar_info := info1
+          gvar_init := i1
+          gvar_readonly := ro
+          gvar_volatile := vo }
+        { gvar_info := info2
+          gvar_init := i2
+          gvar_readonly := ro
+          gvar_volatile := vo }
+
+export linkorder_vardef (linkorder_vardef_intro)
 
 instance Linker_vardef (V : Type) [LV : Linker V] : Linker (globvar V) where
   link := link_vardef
   linkorder := linkorder_vardef
   linkorder_refl := by
     intro v
-    exact ⟨LV.linkorder_refl _, initializerLinker.linkorder_refl _, rfl, rfl⟩
+    exact linkorder_vardef_intro _ _ _ _ _ _ (LV.linkorder_refl _) (initializerLinker.linkorder_refl _)
   linkorder_trans := by
     intro x y z hxy hyz
-    exact ⟨
-      LV.linkorder_trans _ _ _ hxy.1 hyz.1,
-      initializerLinker.linkorder_trans _ _ _ hxy.2.1 hyz.2.1,
-      hxy.2.2.1.trans hyz.2.2.1,
-      hxy.2.2.2.trans hyz.2.2.2
-    ⟩
+    cases hxy with
+    | linkorder_vardef_intro xinfo yinfo xinit yinit ro vo hinfo hinit =>
+        cases hyz with
+        | linkorder_vardef_intro _ zinfo _ zinit _ _ hinfo' hinit' =>
+            exact linkorder_vardef_intro _ _ _ _ _ _
+              (LV.linkorder_trans _ _ _ hinfo hinfo')
+              (initializerLinker.linkorder_trans _ _ _ hinit hinit')
   link_linkorder := by
     intro x y z h
     rcases x with ⟨xinfo, xinit, xro, xvo⟩
@@ -173,10 +185,13 @@ instance Linker_vardef (V : Type) [LV : Linker V] : Linker (globvar V) where
       · contradiction
       · split at h <;> rename_i hflags
         · cases h
+          rcases hflags with ⟨rfl, rfl⟩
           rcases LV.link_linkorder _ _ _ hinfo with ⟨hx, hy⟩
           rcases initializerLinker.link_linkorder _ _ _ hinit with ⟨hix, hiy⟩
-          exact ⟨⟨hx, hix, rfl, rfl⟩,
-            ⟨hy, hiy, hflags.1.symm, hflags.2.symm⟩⟩
+          exact ⟨
+            linkorder_vardef_intro _ _ _ _ _ _ hx hix,
+            linkorder_vardef_intro _ _ _ _ _ _ hy hiy
+          ⟩
         · contradiction
 
 instance Linker_unit : Linker Unit where
@@ -199,12 +214,16 @@ def link_def {F V : Type} [LF : Linker F] [LV : Linker V]
       | none => none
   | _, _ => none
 
-def linkorder_def {F V : Type} [LF : Linker F] [LV : Linker V]
-    (gd1 gd2 : globdef F V) : Prop :=
-  match gd1, gd2 with
-  | .Gfun f1, .Gfun f2 => LF.linkorder f1 f2
-  | .Gvar v1, .Gvar v2 => linkorder_vardef v1 v2
-  | _, _ => False
+inductive linkorder_def {F V : Type} [LF : Linker F] [LV : Linker V] :
+    globdef F V → globdef F V → Prop where
+  | linkorder_def_fun (fd1 fd2 : F) :
+      linkorder fd1 fd2 →
+      linkorder_def (.Gfun fd1) (.Gfun fd2)
+  | linkorder_def_var (v1 v2 : globvar V) :
+      linkorder v1 v2 →
+      linkorder_def (.Gvar v1) (.Gvar v2)
+
+export linkorder_def (linkorder_def_fun linkorder_def_var)
 
 instance Linker_def (F V : Type) [LF : Linker F] [LV : Linker V] :
     Linker (globdef F V) where
@@ -213,14 +232,19 @@ instance Linker_def (F V : Type) [LF : Linker F] [LV : Linker V] :
   linkorder_refl := by
     intro gd
     cases gd with
-    | Gfun f => exact LF.linkorder_refl f
-    | Gvar v => exact (Linker_vardef V).linkorder_refl v
+    | Gfun f => exact linkorder_def_fun _ _ (LF.linkorder_refl f)
+    | Gvar v => exact linkorder_def_var _ _ ((Linker_vardef V).linkorder_refl v)
   linkorder_trans := by
     intro x y z hxy hyz
-    cases x <;> cases y <;> cases z <;> simp only [linkorder_def] at hxy hyz ⊢
-      <;> try contradiction
-    · exact LF.linkorder_trans _ _ _ hxy hyz
-    · exact (Linker_vardef V).linkorder_trans _ _ _ hxy hyz
+    cases hxy with
+    | linkorder_def_fun x y hxy =>
+        cases hyz with
+        | linkorder_def_fun _ z hyz =>
+            exact linkorder_def_fun _ _ (LF.linkorder_trans _ _ _ hxy hyz)
+    | linkorder_def_var x y hxy =>
+        cases hyz with
+        | linkorder_def_var _ z hyz =>
+            exact linkorder_def_var _ _ ((Linker_vardef V).linkorder_trans _ _ _ hxy hyz)
   link_linkorder := by
     intro x y z h
     cases x with
@@ -232,7 +256,8 @@ instance Linker_def (F V : Type) [LF : Linker F] [LV : Linker V] :
             | some f =>
                 simp [link_def, hf] at h
                 subst z
-                exact LF.link_linkorder _ _ _ hf
+                rcases LF.link_linkorder _ _ _ hf with ⟨hx, hy⟩
+                exact ⟨linkorder_def_fun _ _ hx, linkorder_def_fun _ _ hy⟩
         | Gvar _ => simp [link_def] at h
     | Gvar v1 =>
         cases y with
@@ -243,7 +268,8 @@ instance Linker_def (F V : Type) [LF : Linker F] [LV : Linker V] :
             | some v =>
                 simp [link_def, hv] at h
                 subst z
-                exact (Linker_vardef V).link_linkorder _ _ _ hv
+                rcases (Linker_vardef V).link_linkorder _ _ _ hv with ⟨hx, hy⟩
+                exact ⟨linkorder_def_var _ _ hx, linkorder_def_var _ _ hy⟩
 
 /-! ## Linking compilation units -/
 
@@ -337,14 +363,18 @@ private def matchGlobvar {V1 V2 : Type} (match_varinfo : V1 → V2 → Prop)
     v1.gvar_readonly = v2.gvar_readonly ∧
     v1.gvar_volatile = v2.gvar_volatile
 
-def match_globdef {C F1 V1 F2 V2 : Type} [LC : Linker C]
+inductive match_globdef {C F1 V1 F2 V2 : Type} [LC : Linker C]
     (match_fundef : C → F1 → F2 → Prop) (match_varinfo : V1 → V2 → Prop)
-    (ctx : C) (gd1 : globdef F1 V1) (gd2 : globdef F2 V2) : Prop :=
-  match gd1, gd2 with
-  | .Gfun f1, .Gfun f2 =>
-      ∃ ctx', LC.linkorder ctx' ctx ∧ match_fundef ctx' f1 f2
-  | .Gvar v1, .Gvar v2 => matchGlobvar match_varinfo v1 v2
-  | _, _ => False
+    (ctx : C) : globdef F1 V1 → globdef F2 V2 → Prop where
+  | match_globdef_fun (ctx' : C) (f1 : F1) (f2 : F2) :
+      LC.linkorder ctx' ctx →
+      match_fundef ctx' f1 f2 →
+      match_globdef match_fundef match_varinfo ctx (.Gfun f1) (.Gfun f2)
+  | match_globdef_var (v1 : globvar V1) (v2 : globvar V2) :
+      matchGlobvar match_varinfo v1 v2 →
+      match_globdef match_fundef match_varinfo ctx (.Gvar v1) (.Gvar v2)
+
+export match_globdef (match_globdef_fun match_globdef_var)
 
 def match_ident_globdef {C F1 V1 F2 V2 : Type} [LC : Linker C]
     (match_fundef : C → F1 → F2 → Prop) (match_varinfo : V1 → V2 → Prop)
@@ -420,20 +450,15 @@ def match_transform_programStatement : Prop :=
 
 /-! ## Linking-compatible transformations and pass composition -/
 
-def TransfLink {A B : Type} [LA : Linker A] [LB : Linker B]
-    (transf : A → B → Prop) : Prop :=
-  ∀ (p1 p2 : A) (tp1 tp2 : B) (p : A),
-    LA.link p1 p2 = some p →
-    transf p1 tp1 → transf p2 tp2 →
-    ∃ tp, LB.link tp1 tp2 = some tp ∧ transf p tp
-
-def transf_link {A B : Type} [LA : Linker A] [LB : Linker B]
-    (transf : A → B → Prop) (h : TransfLink transf) :
+class TransfLink {A B : Type} [LA : Linker A] [LB : Linker B]
+    (transf : A → B → Prop) : Prop where
+  transf_link :
     ∀ (p1 p2 : A) (tp1 tp2 : B) (p : A),
       LA.link p1 p2 = some p →
       transf p1 tp1 → transf p2 tp2 →
-      ∃ tp, LB.link tp1 tp2 = some tp ∧ transf p tp :=
-  h
+      ∃ tp, LB.link tp1 tp2 = some tp ∧ transf p tp
+
+export TransfLink (transf_link)
 
 structure Language where
   lang_prog : Type
@@ -450,22 +475,27 @@ export Pass (pass_match pass_match_link)
 
 def pass_identity (l : Language) : Pass l l where
   pass_match := Eq
-  pass_match_link := by
-    intro p1 p2 tp1 tp2 p h hp1 hp2
-    subst tp1
-    subst tp2
-    exact ⟨p, h, rfl⟩
+  pass_match_link := @TransfLink.mk l.lang_prog l.lang_prog l.lang_link l.lang_link Eq (by
+      intro p1 p2 tp1 tp2 p h hp1 hp2
+      subst tp1
+      subst tp2
+      exact ⟨p, h, rfl⟩
+    )
 
 def pass_compose {l1 l2 l3 : Language} (pass : Pass l1 l2) (pass' : Pass l2 l3) :
     Pass l1 l3 where
   pass_match := fun p1 p3 => ∃ p2, pass.pass_match p1 p2 ∧ pass'.pass_match p2 p3
-  pass_match_link := by
-    intro p1 p2 tp1 tp2 p h h1 h2
-    rcases h1 with ⟨ip1, hp1, htp1⟩
-    rcases h2 with ⟨ip2, hp2, htp2⟩
-    rcases pass.pass_match_link p1 p2 ip1 ip2 p h hp1 hp2 with ⟨ip, hip, hmip⟩
-    rcases pass'.pass_match_link ip1 ip2 tp1 tp2 ip hip htp1 htp2 with ⟨tp, htp, hmtp⟩
-    exact ⟨tp, htp, ip, hmip, hmtp⟩
+  pass_match_link := @TransfLink.mk l1.lang_prog l3.lang_prog l1.lang_link l3.lang_link
+    (fun p1 p3 => ∃ p2, pass.pass_match p1 p2 ∧ pass'.pass_match p2 p3) (by
+      intro p1 p2 tp1 tp2 p h h1 h2
+      rcases h1 with ⟨ip1, hp1, htp1⟩
+      rcases h2 with ⟨ip2, hp2, htp2⟩
+      rcases pass.pass_match_link.transf_link p1 p2 ip1 ip2 p h hp1 hp2 with
+        ⟨ip, hip, hmip⟩
+      rcases pass'.pass_match_link.transf_link ip1 ip2 tp1 tp2 ip hip htp1 htp2 with
+        ⟨tp, htp, hmtp⟩
+      exact ⟨tp, htp, ip, hmip, hmtp⟩
+    )
 
 inductive Passes : Language → Language → Type 1 where
   | pass_nil (l : Language) : Passes l l

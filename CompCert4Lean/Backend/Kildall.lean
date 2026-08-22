@@ -150,16 +150,7 @@ inductive reachable {A : Type} (code : PTreeT A)
       (hreach : reachable code successors n2 n3) :
       reachable code successors n1 n3
 
-abbrev reachable_refl {A : Type} (code : PTreeT A)
-    (successors : A → List positive) (n : positive) :
-    reachable code successors n n :=
-  reachable.reachable_refl n
-abbrev reachable_left {A : Type} (code : PTreeT A)
-    (successors : A → List positive) (n1 n2 n3 : positive) (i : A)
-    (hcode : PTree.get n1 code = some i) (hsucc : n2 ∈ successors i)
-    (hreach : reachable code successors n2 n3) :
-    reachable code successors n1 n3 :=
-  reachable.reachable_left n1 n2 n3 i hcode hsucc hreach
+export reachable (reachable_refl reachable_left)
 
 def reachable_ind {A : Type} (code : PTreeT A)
     (successors : A → List positive) (P : positive → positive → Prop)
@@ -274,11 +265,7 @@ inductive optge (LAT : SemiLattice) : Option LAT.t → Option LAT.t → Prop whe
   | optge_some {l l' : LAT.t} : LAT.ge l l' → optge LAT (some l) (some l')
   | optge_none (ol : Option LAT.t) : optge LAT ol none
 
-abbrev optge_some (LAT : SemiLattice) {l l' : LAT.t}
-    (h : LAT.ge l l') : optge LAT (some l) (some l') :=
-  optge.optge_some h
-abbrev optge_none (LAT : SemiLattice) (ol : Option LAT.t) : optge LAT ol none :=
-  optge.optge_none ol
+export optge (optge_some optge_none)
 
 inductive steps {A : Type} {LAT : SemiLattice} {NS : NodeSetOps}
     (code : PTreeT A) (successors : A → List positive)
@@ -290,16 +277,7 @@ inductive steps {A : Type} {LAT : SemiLattice} {NS : NodeSetOps}
       step code successors transf s2 = Sum.inr s3 →
       steps code successors transf s1 s3
 
-abbrev steps_base {A : Type} {LAT : SemiLattice} {NS : NodeSetOps}
-    (code : PTreeT A) (successors : A → List positive)
-    (transf : positive → LAT.t → LAT.t) (s : state LAT NS) :
-    steps code successors transf s s := steps.steps_base s
-abbrev steps_right {A : Type} {LAT : SemiLattice} {NS : NodeSetOps}
-    (code : PTreeT A) (successors : A → List positive)
-    (transf : positive → LAT.t → LAT.t) (s1 s2 s3 : state LAT NS)
-    (hsteps : steps code successors transf s1 s2)
-    (hstep : step code successors transf s2 = Sum.inr s3) :
-    steps code successors transf s1 s3 := steps.steps_right s1 s2 s3 hsteps hstep
+export steps (steps_base steps_right)
 
 def steps_ind : Type := Unit
 
@@ -313,14 +291,7 @@ structure good_state {A : Type} {LAT : SemiLattice} {NS : NodeSetOps}
           (some (transf n (abstr_value n st)))
   gs_defined : ∀ n v, PTree.get n st.aval = some v → st.visited n
 
-def gs_stable {A : Type} {LAT : SemiLattice} {NS : NodeSetOps}
-    {code : PTreeT A} {successors : A → List positive}
-    {transf : positive → LAT.t → LAT.t} {st : state LAT NS}
-    (h : good_state code successors transf st) := h.gs_stable
-def gs_defined {A : Type} {LAT : SemiLattice} {NS : NodeSetOps}
-    {code : PTreeT A} {successors : A → List positive}
-    {transf : positive → LAT.t → LAT.t} {st : state LAT NS}
-    (h : good_state code successors transf st) := h.gs_defined
+export good_state (gs_stable gs_defined)
 
 end Dataflow_Solver
 
