@@ -79,12 +79,8 @@ inductive BoolSpec (A B : Prop) : Bool → Prop where
 
 namespace Numbers.BinNums
 
-abbrev xH : positive := positive.xH
-abbrev xI : positive → positive := positive.xI
-abbrev xO : positive → positive := positive.xO
-abbrev Z0 : Z := Numbers.BinNums.Z.Z0
-abbrev Zneg : positive → Z := Numbers.BinNums.Z.Zneg
-abbrev Zpos : positive → Z := Numbers.BinNums.Z.Zpos
+export positive (xH xI xO)
+export Z (Z0 Zneg Zpos)
 
 end Numbers.BinNums
 
