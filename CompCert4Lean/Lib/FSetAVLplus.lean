@@ -154,21 +154,21 @@ def compare (s s' : t X) :
         rw [hcmp] at hspec
         cases hspec with
         | CompEq h => exact h
-      exact CompCert4Lean.Foundation.Ordered.Rocq.Coq.Structures.OrderedType.Compare.eq heq
+      exact CompCert4Lean.Foundation.Ordered.Rocq.Coq.Structures.OrderedType.Compare.EQ heq
   | .Lt =>
       have hlt : lt s s' := by
         have hspec := Raw.compare_spec s.this s'.this s.is_ok.ok s'.is_ok.ok
         rw [hcmp] at hspec
         cases hspec with
         | CompLt h => exact h
-      exact CompCert4Lean.Foundation.Ordered.Rocq.Coq.Structures.OrderedType.Compare.lt hlt
+      exact CompCert4Lean.Foundation.Ordered.Rocq.Coq.Structures.OrderedType.Compare.LT hlt
   | .Gt =>
       have hgt : lt s' s := by
         have hspec := Raw.compare_spec s.this s'.this s.is_ok.ok s'.is_ok.ok
         rw [hcmp] at hspec
         cases hspec with
         | CompGt h => exact h
-      exact CompCert4Lean.Foundation.Ordered.Rocq.Coq.Structures.OrderedType.Compare.gt hgt
+      exact CompCert4Lean.Foundation.Ordered.Rocq.Coq.Structures.OrderedType.Compare.GT hgt
 
 theorem In_1 (s : t X) (x y : X.t) (hxy : X.eq x y) :
     In x s → In y s :=

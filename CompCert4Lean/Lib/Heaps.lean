@@ -40,57 +40,57 @@ def partition (pivot : E.t) : heap E → heap E × heap E
   | .Empty => (.Empty, .Empty)
   | .Node a x b =>
       match E.compare x pivot with
-      | .eq _ => (a, b)
-      | .lt _ =>
+      | .EQ _ => (a, b)
+      | .LT _ =>
           match b with
           | .Empty => (.Node a x b, .Empty)
           | .Node b1 y b2 =>
               match E.compare y pivot with
-              | .eq _ => (.Node a x b1, b2)
-              | .lt _ =>
+              | .EQ _ => (.Node a x b1, b2)
+              | .LT _ =>
                   let (small, big) := partition pivot b2
                   (.Node (.Node a x b1) y small, big)
-              | .gt _ =>
+              | .GT _ =>
                   let (small, big) := partition pivot b1
                   (.Node a x small, .Node big y b2)
-      | .gt _ =>
+      | .GT _ =>
           match a with
           | .Empty => (.Empty, .Node a x b)
           | .Node a1 y a2 =>
               match E.compare y pivot with
-              | .eq _ => (a1, .Node a2 x b)
-              | .lt _ =>
+              | .EQ _ => (a1, .Node a2 x b)
+              | .LT _ =>
                   let (small, big) := partition pivot a2
                   (.Node a1 y small, .Node big x b)
-              | .gt _ =>
+              | .GT _ =>
                   let (small, big) := partition pivot a1
                   (small, .Node big y (.Node a2 x b))
 
 private theorem partitionEq (pivot : E.t) (a : heap E) (x : E.t)
     (b : heap E) {heq : E.eq x pivot}
-    (hcmp : E.compare x pivot = .eq heq) :
+    (hcmp : E.compare x pivot = .EQ heq) :
     partition E pivot (.Node a x b) = (a, b) := by
   rw [partition.eq_def]
   simp only [hcmp]
 
 private theorem partitionLtEmpty (pivot : E.t) (a : heap E) (x : E.t)
-    {hlt : E.lt x pivot} (hcmp : E.compare x pivot = .lt hlt) :
+    {hlt : E.lt x pivot} (hcmp : E.compare x pivot = .LT hlt) :
     partition E pivot (.Node a x .Empty) = (.Node a x .Empty, .Empty) := by
   rw [partition.eq_def]
   simp only [hcmp]
 
 private theorem partitionLtEq (pivot : E.t) (a : heap E) (x : E.t)
     (b1 : heap E) (y : E.t) (b2 : heap E) {hlt : E.lt x pivot}
-    {heq : E.eq y pivot} (hcmp : E.compare x pivot = .lt hlt)
-    (hycmp : E.compare y pivot = .eq heq) :
+    {heq : E.eq y pivot} (hcmp : E.compare x pivot = .LT hlt)
+    (hycmp : E.compare y pivot = .EQ heq) :
     partition E pivot (.Node a x (.Node b1 y b2)) = (.Node a x b1, b2) := by
   rw [partition.eq_def]
   simp only [hcmp, hycmp]
 
 private theorem partitionLtLt (pivot : E.t) (a : heap E) (x : E.t)
     (b1 : heap E) (y : E.t) (b2 : heap E) {hltx : E.lt x pivot}
-    {hlty : E.lt y pivot} (hcmp : E.compare x pivot = .lt hltx)
-    (hycmp : E.compare y pivot = .lt hlty) :
+    {hlty : E.lt y pivot} (hcmp : E.compare x pivot = .LT hltx)
+    (hycmp : E.compare y pivot = .LT hlty) :
     partition E pivot (.Node a x (.Node b1 y b2)) =
       let p := partition E pivot b2
       (.Node (.Node a x b1) y p.1, p.2) := by
@@ -99,8 +99,8 @@ private theorem partitionLtLt (pivot : E.t) (a : heap E) (x : E.t)
 
 private theorem partitionLtGt (pivot : E.t) (a : heap E) (x : E.t)
     (b1 : heap E) (y : E.t) (b2 : heap E) {hlt : E.lt x pivot}
-    {hgt : E.lt pivot y} (hcmp : E.compare x pivot = .lt hlt)
-    (hycmp : E.compare y pivot = .gt hgt) :
+    {hgt : E.lt pivot y} (hcmp : E.compare x pivot = .LT hlt)
+    (hycmp : E.compare y pivot = .GT hgt) :
     partition E pivot (.Node a x (.Node b1 y b2)) =
       let p := partition E pivot b1
       (.Node a x p.1, .Node p.2 y b2) := by
@@ -108,15 +108,15 @@ private theorem partitionLtGt (pivot : E.t) (a : heap E) (x : E.t)
   simp only [hcmp, hycmp]
 
 private theorem partitionGtEmpty (pivot : E.t) (x : E.t) (b : heap E)
-    {hgt : E.lt pivot x} (hcmp : E.compare x pivot = .gt hgt) :
+    {hgt : E.lt pivot x} (hcmp : E.compare x pivot = .GT hgt) :
     partition E pivot (.Node .Empty x b) = (.Empty, .Node .Empty x b) := by
   rw [partition.eq_def]
   simp only [hcmp]
 
 private theorem partitionGtEq (pivot : E.t) (a1 : heap E) (y : E.t)
     (a2 : heap E) (x : E.t) (b : heap E) {hgt : E.lt pivot x}
-    {heq : E.eq y pivot} (hcmp : E.compare x pivot = .gt hgt)
-    (hycmp : E.compare y pivot = .eq heq) :
+    {heq : E.eq y pivot} (hcmp : E.compare x pivot = .GT hgt)
+    (hycmp : E.compare y pivot = .EQ heq) :
     partition E pivot (.Node (.Node a1 y a2) x b) =
       (a1, .Node a2 x b) := by
   rw [partition.eq_def]
@@ -124,8 +124,8 @@ private theorem partitionGtEq (pivot : E.t) (a1 : heap E) (y : E.t)
 
 private theorem partitionGtLt (pivot : E.t) (a1 : heap E) (y : E.t)
     (a2 : heap E) (x : E.t) (b : heap E) {hgt : E.lt pivot x}
-    {hlt : E.lt y pivot} (hcmp : E.compare x pivot = .gt hgt)
-    (hycmp : E.compare y pivot = .lt hlt) :
+    {hlt : E.lt y pivot} (hcmp : E.compare x pivot = .GT hgt)
+    (hycmp : E.compare y pivot = .LT hlt) :
     partition E pivot (.Node (.Node a1 y a2) x b) =
       let p := partition E pivot a2
       (.Node a1 y p.1, .Node p.2 x b) := by
@@ -134,8 +134,8 @@ private theorem partitionGtLt (pivot : E.t) (a1 : heap E) (y : E.t)
 
 private theorem partitionGtGt (pivot : E.t) (a1 : heap E) (y : E.t)
     (a2 : heap E) (x : E.t) (b : heap E) {hgtx : E.lt pivot x}
-    {hgty : E.lt pivot y} (hcmp : E.compare x pivot = .gt hgtx)
-    (hycmp : E.compare y pivot = .gt hgty) :
+    {hgty : E.lt pivot y} (hcmp : E.compare x pivot = .GT hgtx)
+    (hycmp : E.compare y pivot = .GT hgty) :
     partition E pivot (.Node (.Node a1 y a2) x b) =
       let p := partition E pivot a1
       (p.1, .Node p.2 y (.Node a2 x b)) := by
@@ -200,11 +200,11 @@ private theorem leLtTrans {x y z : E.t} (hxy : le E x y)
     (hyz : E.lt y z) : E.lt x z := by
   rcases hxy with hxy | hxy
   · cases E.compare x z with
-    | lt hxz => exact hxz
-    | eq hxz =>
+    | LT hxz => exact hxz
+    | EQ hxz =>
         exact False.elim
           (E.lt_not_eq y z hyz (E.eq_trans y x z (E.eq_sym x y hxy) hxz))
-    | gt hzx =>
+    | GT hzx =>
         exact False.elim
           (E.lt_not_eq y x (E.lt_trans y z x hyz hzx) (E.eq_sym x y hxy))
   · exact E.lt_trans x y z hxy hyz
@@ -213,11 +213,11 @@ private theorem ltLeTrans {x y z : E.t} (hxy : E.lt x y)
     (hyz : le E y z) : E.lt x z := by
   rcases hyz with hyz | hyz
   · cases E.compare x z with
-    | lt hxz => exact hxz
-    | eq hxz =>
+    | LT hxz => exact hxz
+    | EQ hxz =>
         exact False.elim
           (E.lt_not_eq x y hxy (E.eq_trans x z y hxz (E.eq_sym y z hyz)))
-    | gt hzx =>
+    | GT hzx =>
         exact False.elim
           (E.lt_not_eq z y (E.lt_trans z x y hzx hxy) (E.eq_sym y z hyz))
   · exact E.lt_trans x y z hxy hyz
@@ -243,21 +243,21 @@ private theorem partitionLtProof (x pivot : E.t) :
   | .Empty, _ => ⟨trivial, trivial⟩
   | .Node a y b, hlt => by
       cases hcmp : E.compare y pivot with
-      | eq _ =>
+      | EQ _ =>
           simpa only [partitionEq E pivot a y b hcmp, lt_heap] using
             And.intro hlt.1 hlt.2.2
-      | lt _ =>
+      | LT _ =>
           cases b with
           | Empty =>
               simpa only [partitionLtEmpty E pivot a y hcmp, lt_heap] using
                 And.intro hlt trivial
           | Node b1 z b2 =>
               cases hzcmp : E.compare z pivot with
-              | eq _ =>
+              | EQ _ =>
                   simpa only [partitionLtEq E pivot a y b1 z b2 hcmp hzcmp,
                     lt_heap] using
                     And.intro ⟨hlt.1, hlt.2.1, hlt.2.2.1⟩ hlt.2.2.2.2
-              | lt _ =>
+              | LT _ =>
                   have ih := partitionLtProof x pivot b2 hlt.2.2.2.2
                   cases hp : partition E pivot b2 with
                   | mk small big =>
@@ -268,7 +268,7 @@ private theorem partitionLtProof (x pivot : E.t) :
                           ⟨⟨hlt.1, hlt.2.1, hlt.2.2.1⟩,
                             hlt.2.2.2.1, ih.1⟩
                           ih.2
-              | gt _ =>
+              | GT _ =>
                   have ih := partitionLtProof x pivot b1 hlt.2.2.1
                   cases hp : partition E pivot b1 with
                   | mk small big =>
@@ -277,18 +277,18 @@ private theorem partitionLtProof (x pivot : E.t) :
                         hp, lt_heap] using
                         And.intro ⟨hlt.1, hlt.2.1, ih.1⟩
                           ⟨ih.2, hlt.2.2.2.1, hlt.2.2.2.2⟩
-      | gt _ =>
+      | GT _ =>
           cases a with
           | Empty =>
               simpa only [partitionGtEmpty E pivot y b hcmp, lt_heap] using
                 And.intro trivial hlt
           | Node a1 z a2 =>
               cases hzcmp : E.compare z pivot with
-              | eq _ =>
+              | EQ _ =>
                   simpa only [partitionGtEq E pivot a1 z a2 y b hcmp hzcmp,
                     lt_heap] using
                     And.intro hlt.1.1 ⟨hlt.1.2.2, hlt.2.1, hlt.2.2⟩
-              | lt _ =>
+              | LT _ =>
                   have ih := partitionLtProof x pivot a2 hlt.1.2.2
                   cases hp : partition E pivot a2 with
                   | mk small big =>
@@ -297,7 +297,7 @@ private theorem partitionLtProof (x pivot : E.t) :
                         hp, lt_heap] using
                         And.intro ⟨hlt.1.1, hlt.1.2.1, ih.1⟩
                           ⟨ih.2, hlt.2.1, hlt.2.2⟩
-              | gt _ =>
+              | GT _ =>
                   have ih := partitionLtProof x pivot a1 hlt.1.1
                   cases hp : partition E pivot a1 with
                   | mk small big =>
@@ -315,21 +315,21 @@ private theorem partitionGtProof (x pivot : E.t) :
   | .Empty, _ => ⟨trivial, trivial⟩
   | .Node a y b, hgt => by
       cases hcmp : E.compare y pivot with
-      | eq _ =>
+      | EQ _ =>
           simpa only [partitionEq E pivot a y b hcmp, gt_heap] using
             And.intro hgt.1 hgt.2.2
-      | lt _ =>
+      | LT _ =>
           cases b with
           | Empty =>
               simpa only [partitionLtEmpty E pivot a y hcmp, gt_heap] using
                 And.intro hgt trivial
           | Node b1 z b2 =>
               cases hzcmp : E.compare z pivot with
-              | eq _ =>
+              | EQ _ =>
                   simpa only [partitionLtEq E pivot a y b1 z b2 hcmp hzcmp,
                     gt_heap] using
                     And.intro ⟨hgt.1, hgt.2.1, hgt.2.2.1⟩ hgt.2.2.2.2
-              | lt _ =>
+              | LT _ =>
                   have ih := partitionGtProof x pivot b2 hgt.2.2.2.2
                   cases hp : partition E pivot b2 with
                   | mk small big =>
@@ -340,7 +340,7 @@ private theorem partitionGtProof (x pivot : E.t) :
                           ⟨⟨hgt.1, hgt.2.1, hgt.2.2.1⟩,
                             hgt.2.2.2.1, ih.1⟩
                           ih.2
-              | gt _ =>
+              | GT _ =>
                   have ih := partitionGtProof x pivot b1 hgt.2.2.1
                   cases hp : partition E pivot b1 with
                   | mk small big =>
@@ -349,18 +349,18 @@ private theorem partitionGtProof (x pivot : E.t) :
                         hp, gt_heap] using
                         And.intro ⟨hgt.1, hgt.2.1, ih.1⟩
                           ⟨ih.2, hgt.2.2.2.1, hgt.2.2.2.2⟩
-      | gt _ =>
+      | GT _ =>
           cases a with
           | Empty =>
               simpa only [partitionGtEmpty E pivot y b hcmp, gt_heap] using
                 And.intro trivial hgt
           | Node a1 z a2 =>
               cases hzcmp : E.compare z pivot with
-              | eq _ =>
+              | EQ _ =>
                   simpa only [partitionGtEq E pivot a1 z a2 y b hcmp hzcmp,
                     gt_heap] using
                     And.intro hgt.1.1 ⟨hgt.1.2.2, hgt.2.1, hgt.2.2⟩
-              | lt _ =>
+              | LT _ =>
                   have ih := partitionGtProof x pivot a2 hgt.1.2.2
                   cases hp : partition E pivot a2 with
                   | mk small big =>
@@ -369,7 +369,7 @@ private theorem partitionGtProof (x pivot : E.t) :
                         hp, gt_heap] using
                         And.intro ⟨hgt.1.1, hgt.1.2.1, ih.1⟩
                           ⟨ih.2, hgt.2.1, hgt.2.2⟩
-              | gt _ =>
+              | GT _ =>
                   have ih := partitionGtProof x pivot a1 hgt.1.1
                   cases hp : partition E pivot a1 with
                   | mk small big =>
@@ -387,12 +387,12 @@ private theorem partitionSplitProof (pivot : E.t) :
   | .Empty, _ => ⟨trivial, trivial⟩
   | .Node a x b, hbst => by
       cases hcmp : E.compare x pivot with
-      | eq hxp =>
+      | EQ hxp =>
           simpa only [partitionEq E pivot a x b hcmp, lt_heap, gt_heap] using
             And.intro
               (ltHeapTrans E (Or.inl hxp) a hbst.2.2.1)
               (gtHeapTrans E (Or.inl (E.eq_sym x pivot hxp)) b hbst.2.2.2)
-      | lt hxp =>
+      | LT hxp =>
           cases b with
           | Empty =>
               simpa only [partitionLtEmpty E pivot a x hcmp, lt_heap, gt_heap]
@@ -402,7 +402,7 @@ private theorem partitionSplitProof (pivot : E.t) :
                   trivial
           | Node b1 y b2 =>
               cases hycmp : E.compare y pivot with
-              | eq hyp =>
+              | EQ hyp =>
                   simpa only [partitionLtEq E pivot a x b1 y b2 hcmp hycmp,
                     lt_heap, gt_heap] using
                     And.intro
@@ -410,7 +410,7 @@ private theorem partitionSplitProof (pivot : E.t) :
                         ltHeapTrans E (Or.inl hyp) b1 hbst.2.1.2.2.1⟩
                       (gtHeapTrans E (Or.inl (E.eq_sym y pivot hyp)) b2
                         hbst.2.1.2.2.2)
-              | lt hyp =>
+              | LT hyp =>
                   have ih := partitionSplitProof pivot b2 hbst.2.1.2.1
                   cases hp : partition E pivot b2 with
                   | mk small big =>
@@ -422,7 +422,7 @@ private theorem partitionSplitProof (pivot : E.t) :
                               ltHeapTrans E (Or.inr hyp) b1 hbst.2.1.2.2.1⟩,
                             hyp, ih.1⟩
                           ih.2
-              | gt hyp =>
+              | GT hyp =>
                   have ih := partitionSplitProof pivot b1 hbst.2.1.1
                   cases hp : partition E pivot b1 with
                   | mk small big =>
@@ -433,7 +433,7 @@ private theorem partitionSplitProof (pivot : E.t) :
                           ⟨ltHeapTrans E (Or.inr hxp) a hbst.2.2.1, hxp, ih.1⟩
                           ⟨ih.2, hyp,
                             gtHeapTrans E (Or.inr hyp) b2 hbst.2.1.2.2.2⟩
-      | gt hxp =>
+      | GT hxp =>
           cases a with
           | Empty =>
               simpa only [partitionGtEmpty E pivot x b hcmp, lt_heap, gt_heap]
@@ -443,7 +443,7 @@ private theorem partitionSplitProof (pivot : E.t) :
                     gtHeapTrans E (Or.inr hxp) b hbst.2.2.2⟩
           | Node a1 y a2 =>
               cases hycmp : E.compare y pivot with
-              | eq hyp =>
+              | EQ hyp =>
                   simpa only [partitionGtEq E pivot a1 y a2 x b hcmp hycmp,
                     lt_heap, gt_heap] using
                     And.intro
@@ -451,7 +451,7 @@ private theorem partitionSplitProof (pivot : E.t) :
                       ⟨gtHeapTrans E (Or.inl (E.eq_sym y pivot hyp)) a2
                           hbst.1.2.2.2,
                         hxp, gtHeapTrans E (Or.inr hxp) b hbst.2.2.2⟩
-              | lt hyp =>
+              | LT hyp =>
                   have ih := partitionSplitProof pivot a2 hbst.1.2.1
                   cases hp : partition E pivot a2 with
                   | mk small big =>
@@ -462,7 +462,7 @@ private theorem partitionSplitProof (pivot : E.t) :
                           ⟨ltHeapTrans E (Or.inr hyp) a1 hbst.1.2.2.1, hyp, ih.1⟩
                           ⟨ih.2, hxp,
                             gtHeapTrans E (Or.inr hxp) b hbst.2.2.2⟩
-              | gt hyp =>
+              | GT hyp =>
                   have ih := partitionSplitProof pivot a1 hbst.1.1
                   cases hp : partition E pivot a1 with
                   | mk small big =>
@@ -480,23 +480,23 @@ private theorem partitionBstProof (pivot : E.t) :
   | .Empty, _ => ⟨trivial, trivial⟩
   | .Node a x b, hbst => by
       cases hcmp : E.compare x pivot with
-      | eq _ =>
+      | EQ _ =>
           simpa only [partitionEq E pivot a x b hcmp, bst] using
             And.intro hbst.1 hbst.2.1
-      | lt _ =>
+      | LT _ =>
           cases b with
           | Empty =>
               simpa only [partitionLtEmpty E pivot a x hcmp, bst] using
                 And.intro hbst trivial
           | Node b1 y b2 =>
               cases hycmp : E.compare y pivot with
-              | eq _ =>
+              | EQ _ =>
                   simpa only [partitionLtEq E pivot a x b1 y b2 hcmp hycmp,
                     bst] using
                     And.intro
                       ⟨hbst.1, hbst.2.1.1, hbst.2.2.1, hbst.2.2.2.1⟩
                       hbst.2.1.2.1
-              | lt _ =>
+              | LT _ =>
                   have ih := partitionBstProof pivot b2 hbst.2.1.2.1
                   have hgt := partitionGtProof E y pivot b2 hbst.2.1.2.2.2
                   cases hp : partition E pivot b2 with
@@ -513,7 +513,7 @@ private theorem partitionBstProof (pivot : E.t) :
                               hbst.2.2.2.2.1, hbst.2.1.2.2.1⟩,
                             hgt.1⟩
                           ih.2
-              | gt _ =>
+              | GT _ =>
                   have ih := partitionBstProof pivot b1 hbst.2.1.1
                   have hgt := partitionGtProof E x pivot b1 hbst.2.2.2.1
                   have hlt := partitionLtProof E y pivot b1 hbst.2.1.2.2.1
@@ -525,19 +525,19 @@ private theorem partitionBstProof (pivot : E.t) :
                         And.intro
                           ⟨hbst.1, ih.1, hbst.2.2.1, hgt.1⟩
                           ⟨ih.2, hbst.2.1.2.1, hlt.2, hbst.2.1.2.2.2⟩
-      | gt _ =>
+      | GT _ =>
           cases a with
           | Empty =>
               simpa only [partitionGtEmpty E pivot x b hcmp, bst] using
                 And.intro trivial hbst
           | Node a1 y a2 =>
               cases hycmp : E.compare y pivot with
-              | eq _ =>
+              | EQ _ =>
                   simpa only [partitionGtEq E pivot a1 y a2 x b hcmp hycmp,
                     bst] using
                     And.intro hbst.1.1
                       ⟨hbst.1.2.1, hbst.2.1, hbst.2.2.1.2.2, hbst.2.2.2⟩
-              | lt _ =>
+              | LT _ =>
                   have ih := partitionBstProof pivot a2 hbst.1.2.1
                   have hgt := partitionGtProof E y pivot a2 hbst.1.2.2.2
                   have hlt := partitionLtProof E x pivot a2 hbst.2.2.1.2.2
@@ -549,7 +549,7 @@ private theorem partitionBstProof (pivot : E.t) :
                         And.intro
                           ⟨hbst.1.1, ih.1, hbst.1.2.2.1, hgt.1⟩
                           ⟨ih.2, hbst.2.1, hlt.2, hbst.2.2.2⟩
-              | gt _ =>
+              | GT _ =>
                   have ih := partitionBstProof pivot a1 hbst.1.1
                   have hlt := partitionLtProof E y pivot a1 hbst.1.2.2.1
                   cases hp : partition E pivot a1 with
@@ -824,16 +824,16 @@ private def positiveOrder : OrderedType :=
     lt := fun x y => positiveNat x < positiveNat y
     compare := fun x y => by
       by_cases hxy : positiveNat x < positiveNat y
-      · exact .lt hxy
+      · exact .LT hxy
       · by_cases heq : x = y
-        · exact .eq heq
+        · exact .EQ heq
         · have hle : positiveNat y ≤ positiveNat x :=
             Nat.le_of_not_gt hxy
           have hne : positiveNat y ≠ positiveNat x := by
             intro h
             apply heq
             exact positiveNat_injective h.symm
-          exact .gt (Nat.lt_of_le_of_ne hle hne)
+          exact .GT (Nat.lt_of_le_of_ne hle hne)
     eq_refl := fun _ => rfl
     eq_sym := by intro x y h; exact h.symm
     eq_trans := by intro x y z h₁ h₂; exact h₁.trans h₂

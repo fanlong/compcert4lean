@@ -301,12 +301,12 @@ def lt_not_eq : Prop :=
 def compare (x y : t) : OrderedCompare lt eq x y := by
   cases x <;> cases y <;>
     first
-    | exact .lt (by
+    | exact .LT (by
         unfold lt pLt CompCert4Lean.Lib.Coqlib.Plt
           PArith.BinPos.Pos.lt index
         decide)
-    | exact .eq rfl
-    | exact .gt (by
+    | exact .EQ rfl
+    | exact .GT (by
         unfold lt pLt CompCert4Lean.Lib.Coqlib.Plt
           PArith.BinPos.Pos.lt index
         decide)
@@ -352,12 +352,12 @@ def lt_not_eq : Prop :=
 def compare (x y : t) : OrderedCompare lt eq x y := by
   cases x <;> cases y <;>
     first
-    | exact .lt (by
+    | exact .LT (by
         unfold lt pLt CompCert4Lean.Lib.Coqlib.Plt
           PArith.BinPos.Pos.lt index
         decide)
-    | exact .eq rfl
-    | exact .gt (by
+    | exact .EQ rfl
+    | exact .GT (by
         unfold lt pLt CompCert4Lean.Lib.Coqlib.Plt
           PArith.BinPos.Pos.lt index
         decide)
@@ -403,12 +403,12 @@ private def compareMreg (x y : mreg) :
       (fun a b => a = b) x y := by
   cases x <;> cases y <;>
     first
-    | exact .lt (by
+    | exact .LT (by
         unfold pLt CompCert4Lean.Lib.Coqlib.Plt
           PArith.BinPos.Pos.lt IndexedMreg.index
         decide)
-    | exact .eq rfl
-    | exact .gt (by
+    | exact .EQ rfl
+    | exact .GT (by
         unfold pLt CompCert4Lean.Lib.Coqlib.Plt
           PArith.BinPos.Pos.lt IndexedMreg.index
         decide)
@@ -416,13 +416,13 @@ private def compareMreg (x y : mreg) :
 private def compareZ (x y : Z) :
     OrderedCompare zLt (fun a b => a = b) x y := by
   cases CompCert4Lean.Lib.Coqlib.zlt x y with
-  | left hlt => exact .lt hlt
+  | left hlt => exact .LT hlt
   | right hlt =>
       cases CompCert4Lean.Lib.Coqlib.zeq x y with
-      | left heq => exact .eq heq
+      | left heq => exact .EQ heq
       | right heq =>
           refine
-            CompCert4Lean.Foundation.Ordered.Rocq.Coq.Structures.OrderedType.Compare.gt ?_
+            CompCert4Lean.Foundation.Ordered.Rocq.Coq.Structures.OrderedType.Compare.GT ?_
           change intOfZ y ≤ intOfZ x at hlt
           change intOfZ y < intOfZ x
           have hne : intOfZ x ≠ intOfZ y := by
@@ -436,32 +436,32 @@ def compare (x y : t) : OrderedCompare lt eq x y := by
       cases y with
       | R r2 =>
           cases compareMreg r1 r2 with
-          | lt h => exact .lt h
-          | eq h => exact .eq (congrArg R h)
-          | gt h => exact .gt h
-      | S _ _ _ => exact .lt trivial
+          | LT h => exact .LT h
+          | EQ h => exact .EQ (congrArg R h)
+          | GT h => exact .GT h
+      | S _ _ _ => exact .LT trivial
   | S sl1 ofs1 ty1 =>
       cases y with
-      | R _ => exact .gt trivial
+      | R _ => exact .GT trivial
       | S sl2 ofs2 ty2 =>
           cases OrderedSlot.compare sl1 sl2 with
-          | lt h => exact .lt (Or.inl h)
-          | gt h => exact .gt (Or.inl h)
-          | eq hsl =>
+          | LT h => exact .LT (Or.inl h)
+          | GT h => exact .GT (Or.inl h)
+          | EQ hsl =>
               cases compareZ ofs1 ofs2 with
-              | lt h => exact .lt (Or.inr ⟨hsl, Or.inl h⟩)
-              | gt h => exact .gt (Or.inr ⟨hsl.symm, Or.inl h⟩)
-              | eq hofs =>
+              | LT h => exact .LT (Or.inr ⟨hsl, Or.inl h⟩)
+              | GT h => exact .GT (Or.inr ⟨hsl.symm, Or.inl h⟩)
+              | EQ hofs =>
                   cases OrderedTyp.compare ty1 ty2 with
-                  | lt h =>
-                      exact .lt (Or.inr ⟨hsl, Or.inr ⟨hofs, h⟩⟩)
-                  | gt h =>
-                      exact .gt (Or.inr ⟨hsl.symm, Or.inr ⟨hofs.symm, h⟩⟩)
-                  | eq hty =>
+                  | LT h =>
+                      exact .LT (Or.inr ⟨hsl, Or.inr ⟨hofs, h⟩⟩)
+                  | GT h =>
+                      exact .GT (Or.inr ⟨hsl.symm, Or.inr ⟨hofs.symm, h⟩⟩)
+                  | EQ hty =>
                       subst sl2
                       subst ofs2
                       subst ty2
-                      exact .eq rfl
+                      exact .EQ rfl
 
 def diff_low_bound : loc → loc
   | l@(.R _) => l

@@ -162,9 +162,9 @@ def add (x : X.t) : tree X → tree X
   | .Leaf => singleton x
   | .Node h left y right =>
       match X.compare x y with
-      | .lt _ => bal (add x left) y right
-      | .eq _ => .Node h left y right
-      | .gt _ => bal left y (add x right)
+      | .LT _ => bal (add x left) y right
+      | .EQ _ => .Node h left y right
+      | .GT _ => bal left y (add x right)
 
 /- Rocq accepts the structurally nested recursion in `join`.  Lean records the
    same calls with the well-founded measure `sizeOf left + sizeOf right`; this
@@ -202,9 +202,9 @@ def remove (x : X.t) : tree X → tree X
   | .Leaf => .Leaf
   | .Node _ left y right =>
       match X.compare x y with
-      | .lt _ => bal (remove x left) y right
-      | .eq _ => merge left right
-      | .gt _ => bal left y (remove x right)
+      | .LT _ => bal (remove x left) y right
+      | .EQ _ => merge left right
+      | .GT _ => bal left y (remove x right)
 
 def concat (s₁ s₂ : tree X) : tree X :=
   match s₁, s₂ with
@@ -223,11 +223,11 @@ def split (x : X.t) : tree X → triple X
   | .Leaf => ⟨.Leaf, false, .Leaf⟩
   | .Node _ left y right =>
       match X.compare x y with
-      | .lt _ =>
+      | .LT _ =>
           let result := split x left
           ⟨result.t_left, result.t_in, join result.t_right y right⟩
-      | .eq _ => ⟨left, true, right⟩
-      | .gt _ =>
+      | .EQ _ => ⟨left, true, right⟩
+      | .GT _ =>
           let result := split x right
           ⟨join left y result.t_left, result.t_in, result.t_right⟩
 
@@ -458,18 +458,18 @@ theorem add_spec (s : tree X) (x y : X.t) :
   | Node h left value right ihl ihr =>
       simp only [add]
       cases X.compare x value with
-      | lt hlt =>
+      | LT hlt =>
           rw [bal_spec, ihl]
           simp only [In, CompCert4Lean.Lib.MSetGenTree.tree.in_node]
           simp only [or_assoc, or_left_comm, or_comm]
-      | eq heq =>
+      | EQ heq =>
           simp only [In, CompCert4Lean.Lib.MSetGenTree.tree.in_node]
           constructor
           · exact Or.inr
           · rintro (hyx | hy)
             · exact Or.inl (X.eq_trans y x value hyx heq)
             · exact hy
-      | gt hgt =>
+      | GT hgt =>
           rw [bal_spec, ihr]
           simp only [In, CompCert4Lean.Lib.MSetGenTree.tree.in_node]
           simp only [or_assoc, or_left_comm, or_comm]
@@ -480,7 +480,7 @@ theorem add_bst {s : tree X} (hs : bst s) (x : X.t) : bst (add x s) := by
   | BSNode info value left right hleft hright hlt hgt ihl ihr =>
       simp only [add]
       cases X.compare x value with
-      | lt hx =>
+      | LT hx =>
           apply bal_bst ihl hright
           · intro y hy
             rcases (add_spec left x y).mp hy with hyx | hy
@@ -488,8 +488,8 @@ theorem add_bst {s : tree X} (hs : bst s) (x : X.t) : bst (add x s) := by
                 (X.eq_sym y x hyx) hx
             · exact hlt y hy
           · exact hgt
-      | eq _ => exact .BSNode _ _ _ _ hleft hright hlt hgt
-      | gt hx =>
+      | EQ _ => exact .BSNode _ _ _ _ hleft hright hlt hgt
+      | GT hx =>
           apply bal_bst hleft ihr
           · exact hlt
           · intro y hy
@@ -767,7 +767,7 @@ theorem remove_spec {s : tree X} (hs : bst s) (x y : X.t) :
   | BSNode info value left right hleft hright hlt hgt ihl ihr =>
       simp only [remove]
       cases X.compare x value with
-      | eq hx =>
+      | EQ hx =>
           rw [merge_spec]
           simp only [In, CompCert4Lean.Lib.MSetGenTree.tree.in_node]
           constructor
@@ -793,7 +793,7 @@ theorem remove_spec {s : tree X} (hs : bst s) (x y : X.t) :
               exact X.eq_trans y value x hyroot (X.eq_sym x value hx)
             · exact Or.inl hyleft
             · exact Or.inr hyright
-      | lt hx =>
+      | LT hx =>
           rw [bal_spec]
           simp only [In, CompCert4Lean.Lib.MSetGenTree.tree.in_node]
           constructor
@@ -817,7 +817,7 @@ theorem remove_spec {s : tree X} (hs : bst s) (x y : X.t) :
             · exact Or.inl hyroot
             · exact Or.inr (Or.inl (ihl.mpr ⟨hyleft, hne⟩))
             · exact Or.inr (Or.inr hyright)
-      | gt hx =>
+      | GT hx =>
           rw [bal_spec]
           simp only [In, CompCert4Lean.Lib.MSetGenTree.tree.in_node]
           constructor
@@ -848,16 +848,16 @@ theorem remove_bst {s : tree X} (hs : bst s) (x : X.t) : bst (remove x s) := by
   | BSNode info value left right hleft hright hlt hgt ihl ihr =>
       simp only [remove]
       cases X.compare x value with
-      | eq _ =>
+      | EQ _ =>
           apply merge_bst left right hleft hright
           intro y₁ y₂ hy₁ hy₂
           exact X.lt_trans y₁ value y₂ (hlt y₁ hy₁) (hgt y₂ hy₂)
-      | lt _ =>
+      | LT _ =>
           apply bal_bst ihl hright
           · intro y hy
             exact hlt y ((remove_spec hleft x y).mp hy).1
           · exact hgt
-      | gt _ =>
+      | GT _ =>
           apply bal_bst hleft ihr
           · exact hlt
           · intro y hy
@@ -870,7 +870,7 @@ theorem split_left_spec {s : tree X} (hs : bst s) (x y : X.t) :
   | BSNode info value left right hleft hright hlt hgt ihl ihr =>
       simp only [split]
       cases X.compare x value with
-      | lt hx =>
+      | LT hx =>
           simp only [triple.t_left]
           rw [ihl]
           simp only [In, CompCert4Lean.Lib.MSetGenTree.tree.in_node]
@@ -888,7 +888,7 @@ theorem split_left_spec {s : tree X} (hs : bst s) (x y : X.t) :
             · have hxy := X.lt_trans x value y hx (hgt y hyright)
               exact False.elim
                 (CompCert4Lean.Lib.MSetGenTree.tree.lt_asymm hxy hyx)
-      | eq hx =>
+      | EQ hx =>
           simp only [triple.t_left]
           simp only [In, CompCert4Lean.Lib.MSetGenTree.tree.in_node]
           constructor
@@ -906,7 +906,7 @@ theorem split_left_spec {s : tree X} (hs : bst s) (x y : X.t) :
                   (X.eq_sym x value hx) (hgt y hyright)
               exact False.elim
                 (CompCert4Lean.Lib.MSetGenTree.tree.lt_asymm hxy hyx)
-      | gt hx =>
+      | GT hx =>
           simp only [triple.t_left]
           rw [join_spec, ihr]
           simp only [In, CompCert4Lean.Lib.MSetGenTree.tree.in_node]
@@ -932,7 +932,7 @@ theorem split_right_spec {s : tree X} (hs : bst s) (x y : X.t) :
   | BSNode info value left right hleft hright hlt hgt ihl ihr =>
       simp only [split]
       cases X.compare x value with
-      | lt hx =>
+      | LT hx =>
           simp only [triple.t_right]
           rw [join_spec, ihl]
           simp only [In, CompCert4Lean.Lib.MSetGenTree.tree.in_node]
@@ -950,7 +950,7 @@ theorem split_right_spec {s : tree X} (hs : bst s) (x y : X.t) :
             · exact Or.inl hyroot
             · exact Or.inr (Or.inl ⟨hyleft, hxy⟩)
             · exact Or.inr (Or.inr hyright)
-      | eq hx =>
+      | EQ hx =>
           simp only [triple.t_right]
           simp only [In, CompCert4Lean.Lib.MSetGenTree.tree.in_node]
           constructor
@@ -968,7 +968,7 @@ theorem split_right_spec {s : tree X} (hs : bst s) (x y : X.t) :
               exact False.elim
                 (CompCert4Lean.Lib.MSetGenTree.tree.lt_asymm hxy hyx)
             · exact hyright
-      | gt hx =>
+      | GT hx =>
           simp only [triple.t_right]
           rw [ihr]
           simp only [In, CompCert4Lean.Lib.MSetGenTree.tree.in_node]
@@ -994,7 +994,7 @@ theorem split_in_spec {s : tree X} (hs : bst s) (x : X.t) :
   | BSNode info value left right hleft hright hlt hgt ihl ihr =>
       simp only [split]
       cases X.compare x value with
-      | lt hx =>
+      | LT hx =>
           simp only [triple.t_in, ihl]
           simp only [In, CompCert4Lean.Lib.MSetGenTree.tree.in_node]
           constructor
@@ -1005,8 +1005,8 @@ theorem split_in_spec {s : tree X} (hs : bst s) (x : X.t) :
             · exact hyleft
             · exact False.elim
                 (CompCert4Lean.Lib.MSetGenTree.tree.lt_asymm hx (hgt x hyright))
-      | eq hx => simp [In, CompCert4Lean.Lib.MSetGenTree.tree.in_node, hx]
-      | gt hx =>
+      | EQ hx => simp [In, CompCert4Lean.Lib.MSetGenTree.tree.in_node, hx]
+      | GT hx =>
           simp only [triple.t_in, ihr]
           simp only [In, CompCert4Lean.Lib.MSetGenTree.tree.in_node]
           constructor
@@ -1026,7 +1026,7 @@ theorem split_bst {s : tree X} (hs : bst s) (x : X.t) :
   | BSNode info value left right hleft hright hlt hgt ihl ihr =>
       simp only [split]
       cases X.compare x value with
-      | lt hx =>
+      | LT hx =>
           simp only [triple.t_left, triple.t_right]
           constructor
           · exact ihl.1
@@ -1034,8 +1034,8 @@ theorem split_bst {s : tree X} (hs : bst s) (x : X.t) :
             · intro y hy
               exact hlt y ((split_right_spec hleft x y).mp hy).1
             · exact hgt
-      | eq _ => exact ⟨hleft, hright⟩
-      | gt hx =>
+      | EQ _ => exact ⟨hleft, hright⟩
+      | GT hx =>
           simp only [triple.t_left, triple.t_right]
           constructor
           · apply join_bst left value (split x right).t_left hleft ihr.1
@@ -1052,12 +1052,12 @@ theorem split_membership_spec {s : tree X} (hs : bst s) (x y : X.t) :
   constructor
   · intro hy
     cases X.compare y x with
-    | lt hyx => exact Or.inl ((split_left_spec hs x y).mpr ⟨hy, hyx⟩)
-    | eq hyx =>
+    | LT hyx => exact Or.inl ((split_left_spec hs x y).mpr ⟨hy, hyx⟩)
+    | EQ hyx =>
         have hx : In x s :=
           CompCert4Lean.Lib.MSetGenTree.tree.in_of_eq hyx hy
         exact Or.inr (Or.inl ⟨hyx, (split_in_spec hs x).mpr hx⟩)
-    | gt hxy => exact Or.inr (Or.inr ((split_right_spec hs x y).mpr ⟨hy, hxy⟩))
+    | GT hxy => exact Or.inr (Or.inr ((split_right_spec hs x y).mpr ⟨hy, hxy⟩))
   · intro hy
     rcases hy with hleft | ⟨hyx, hpresent⟩ | hright
     · exact (split_left_spec hs x y).mp hleft |>.1
@@ -1096,12 +1096,12 @@ theorem union_spec {s₁ s₂ : tree X} (h₁ : bst s₁) (h₂ : bst s₂) (y :
               · exact Or.inr (Or.inl (Or.inl hyleft))
               · exact Or.inr (Or.inr (Or.inl hyright))
             · cases X.compare y value with
-              | lt hyvalue =>
+              | LT hyvalue =>
                   exact Or.inr (Or.inl (Or.inr
                     ((split_left_spec h₂ value y).mpr
                       ⟨(CompCert4Lean.Lib.MSetGenTree.tree.in_node).mpr hy₂, hyvalue⟩)))
-              | eq hyvalue => exact Or.inl hyvalue
-              | gt hvaluey =>
+              | EQ hyvalue => exact Or.inl hyvalue
+              | GT hvaluey =>
                   exact Or.inr (Or.inr (Or.inr
                     ((split_right_spec h₂ value y).mpr
                       ⟨(CompCert4Lean.Lib.MSetGenTree.tree.in_node).mpr hy₂, hvaluey⟩)))

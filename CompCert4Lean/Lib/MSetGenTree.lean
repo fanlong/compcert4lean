@@ -56,9 +56,9 @@ def mem (x : X.t) : tree X Info → Bool
   | .Leaf => false
   | .Node _ left value right =>
       match X.compare x value with
-      | .lt _ => mem x left
-      | .eq _ => true
-      | .gt _ => mem x right
+      | .LT _ => mem x left
+      | .EQ _ => true
+      | .GT _ => mem x right
 
 def min_elt : tree X Info → Option X.t
   | .Leaf => none
@@ -128,9 +128,9 @@ def compare_more (x₁ : X.t)
   | .End => .Gt
   | .More x₂ right₂ e₂ =>
       match X.compare x₁ x₂ with
-      | .eq _ => cont (cons right₂ e₂)
-      | .lt _ => .Lt
-      | .gt _ => .Gt
+      | .EQ _ => cont (cons right₂ e₂)
+      | .LT _ => .Lt
+      | .GT _ => .Gt
 
 def compare_cont (s₁ : tree X Info)
     (cont : enumeration X Info → comparison)
@@ -157,27 +157,27 @@ def subsetl (subsetLeft : tree X Info → Bool) (x₁ : X.t) :
   | .Leaf => false
   | s₂@(.Node _ left₂ x₂ right₂) =>
       match X.compare x₁ x₂ with
-      | .eq _ => subsetLeft left₂
-      | .lt _ => subsetl subsetLeft x₁ left₂
-      | .gt _ => mem x₁ right₂ && subsetLeft s₂
+      | .EQ _ => subsetLeft left₂
+      | .LT _ => subsetl subsetLeft x₁ left₂
+      | .GT _ => mem x₁ right₂ && subsetLeft s₂
 
 def subsetr (subsetRight : tree X Info → Bool) (x₁ : X.t) :
     tree X Info → Bool
   | .Leaf => false
   | s₂@(.Node _ left₂ x₂ right₂) =>
       match X.compare x₁ x₂ with
-      | .eq _ => subsetRight right₂
-      | .lt _ => mem x₁ left₂ && subsetRight s₂
-      | .gt _ => subsetr subsetRight x₁ right₂
+      | .EQ _ => subsetRight right₂
+      | .LT _ => mem x₁ left₂ && subsetRight s₂
+      | .GT _ => subsetr subsetRight x₁ right₂
 
 def subset : tree X Info → tree X Info → Bool
   | .Leaf, _ => true
   | .Node _ _ _ _, .Leaf => false
   | s₁@(.Node _ left₁ x₁ right₁), s₂@(.Node _ left₂ x₂ right₂) =>
       match X.compare x₁ x₂ with
-      | .eq _ => subset left₁ left₂ && subset right₁ right₂
-      | .lt _ => subsetl (subset left₁) x₁ left₂ && subset right₁ s₂
-      | .gt _ => subsetr (subset right₁) x₁ right₂ && subset left₁ s₂
+      | .EQ _ => subset left₁ left₂ && subset right₁ right₂
+      | .LT _ => subsetl (subset left₁) x₁ left₂ && subset right₁ s₂
+      | .GT _ => subsetr (subset right₁) x₁ right₂ && subset left₁ s₂
 
 inductive InT (x : X.t) : tree X Info → Prop where
   | IsRoot (info : Info) (left right : tree X Info) (value : X.t) :
@@ -222,14 +222,14 @@ def ltb_tree (x : X.t) : tree X Info → Bool
   | .Leaf => true
   | .Node _ left y right =>
       match X.compare x y with
-      | .gt _ => ltb_tree x left && ltb_tree x right
+      | .GT _ => ltb_tree x left && ltb_tree x right
       | _ => false
 
 def gtb_tree (x : X.t) : tree X Info → Bool
   | .Leaf => true
   | .Node _ left y right =>
       match X.compare x y with
-      | .lt _ => gtb_tree x left && gtb_tree x right
+      | .LT _ => gtb_tree x left && gtb_tree x right
       | _ => false
 
 def isok : tree X Info → Bool
@@ -257,22 +257,22 @@ theorem lt_asymm {x y : X.t} (hxy : X.lt x y) : ¬ X.lt y x := by
 theorem lt_of_eq_of_lt {x y z : X.t}
     (hxy : X.eq x y) (hxz : X.lt x z) : X.lt y z := by
   cases X.compare y z with
-  | lt h => exact h
-  | eq h =>
+  | LT h => exact h
+  | EQ h =>
       exact False.elim (X.lt_not_eq x z hxz (X.eq_trans x y z hxy h))
-  | gt h =>
+  | GT h =>
       exact False.elim
         (X.lt_not_eq x y (X.lt_trans x z y hxz h) hxy)
 
 theorem lt_of_lt_of_eq {x y z : X.t}
     (hxy : X.lt x y) (hyz : X.eq y z) : X.lt x z := by
   cases X.compare x z with
-  | lt h => exact h
-  | eq h =>
+  | LT h => exact h
+  | EQ h =>
       have hxz : X.eq x z := h
       have hxy' : X.eq x y := X.eq_trans x z y hxz (X.eq_sym y z hyz)
       exact False.elim (X.lt_not_eq x y hxy hxy')
-  | gt h =>
+  | GT h =>
       have hyx : X.lt y x := lt_of_eq_of_lt (X.eq_sym y z hyz) h
       exact False.elim (lt_asymm hxy hyx)
 
@@ -407,7 +407,7 @@ theorem mem_spec {s : tree X Info} (hs : bst s) (x : X.t) :
   | BSNode info value left right hl hr hlt hgt ihl ihr =>
       simp only [mem]
       cases hcmp : X.compare x value with
-      | lt hx =>
+      | LT hx =>
           rw [ihl, in_node]
           constructor
           · exact fun h => Or.inr (Or.inl h)
@@ -416,8 +416,8 @@ theorem mem_spec {s : tree X Info} (hs : bst s) (x : X.t) :
             · exact False.elim (X.lt_not_eq x value hx heq)
             · exact hleft
             · exact False.elim (lt_asymm hx (hgt x hright))
-      | eq heq => simp [in_node, heq]
-      | gt hx =>
+      | EQ heq => simp [in_node, heq]
+      | GT hx =>
           rw [ihr, in_node]
           constructor
           · exact fun h => Or.inr (Or.inr h)
@@ -814,15 +814,15 @@ theorem ltb_tree_iff (x : X.t) (s : tree X Info) :
   | Node info left y right ihl ihr =>
       rw [lt_tree_node_iff]
       cases hcmp : X.compare x y with
-      | lt hxy =>
+      | LT hxy =>
           simp only [ltb_tree, hcmp, Bool.false_eq_true, iff_false]
           rintro ⟨hyx, _, _⟩
           exact lt_asymm hxy hyx
-      | eq hxy =>
+      | EQ hxy =>
           simp only [ltb_tree, hcmp, Bool.false_eq_true, iff_false]
           rintro ⟨hyx, _, _⟩
           exact X.lt_not_eq y x hyx (X.eq_sym x y hxy)
-      | gt hyx =>
+      | GT hyx =>
           simp only [ltb_tree, hcmp, Bool.and_eq_true, ← ihl, ← ihr]
           constructor
           · rintro ⟨_, hl, hr⟩; exact ⟨hl, hr⟩
@@ -838,16 +838,16 @@ theorem gtb_tree_iff (x : X.t) (s : tree X Info) :
   | Node info left y right ihl ihr =>
       rw [gt_tree_node_iff]
       cases hcmp : X.compare x y with
-      | lt hxy =>
+      | LT hxy =>
           simp only [gtb_tree, hcmp, Bool.and_eq_true, ← ihl, ← ihr]
           constructor
           · rintro ⟨_, hl, hr⟩; exact ⟨hl, hr⟩
           · rintro ⟨hl, hr⟩; exact ⟨hxy, hl, hr⟩
-      | eq hxy =>
+      | EQ hxy =>
           simp only [gtb_tree, hcmp, Bool.false_eq_true, iff_false]
           rintro ⟨hxy', _, _⟩
           exact X.lt_not_eq x y hxy' hxy
-      | gt hyx =>
+      | GT hyx =>
           simp only [gtb_tree, hcmp, Bool.false_eq_true, iff_false]
           rintro ⟨hxy, _, _⟩
           exact lt_asymm hxy hyx
@@ -934,9 +934,9 @@ theorem choose_spec3 {s s' : tree X Info} {x x' : X.t}
   have hnotx'x : ¬ X.lt x' x :=
     min_elt_spec2 hs hx ((heq x').mpr (min_elt_spec1 hx'))
   cases X.compare x x' with
-  | lt h => exact False.elim (hnotxx' h)
-  | eq h => exact h
-  | gt h => exact False.elim (hnotx'x h)
+  | LT h => exact False.elim (hnotxx' h)
+  | EQ h => exact h
+  | GT h => exact False.elim (hnotx'x h)
 
 theorem cardinal_spec (s : tree X Info) (_hs : bst s) :
     cardinal s = (elements s).length :=
@@ -1031,7 +1031,7 @@ theorem subsetl_spec (subsetLeft : tree X Info → Bool)
   | BSNode info₂ x₂ left₂ right₂ hleft₂ hright₂ hlt₂ hgt₂ ihl ihr =>
       rcases bst_node_inv h₁ with ⟨hleft₁, _, hlt₁, _⟩
       cases hcmp : X.compare x₁ x₂ with
-      | eq heq =>
+      | EQ heq =>
           simp only [subsetl, hcmp]
           rw [hsubset left₂ hleft₂]
           constructor
@@ -1051,7 +1051,7 @@ theorem subsetl_spec (subsetLeft : tree X Info → Bool)
             exact in_left_of_lt_root
               (.BSNode info₂ x₂ left₂ right₂ hleft₂ hright₂ hlt₂ hgt₂)
               hain hax₂
-      | lt hx₁x₂ =>
+      | LT hx₁x₂ =>
           simp only [subsetl, hcmp]
           rw [ihl]
           constructor
@@ -1069,7 +1069,7 @@ theorem subsetl_spec (subsetLeft : tree X Info → Bool)
             exact in_left_of_lt_root
               (.BSNode info₂ x₂ left₂ right₂ hleft₂ hright₂ hlt₂ hgt₂)
               hain hax₂
-      | gt hx₂x₁ =>
+      | GT hx₂x₁ =>
           simp only [subsetl, hcmp, Bool.and_eq_true]
           rw [mem_spec hright₂, hsubset _
             (.BSNode info₂ x₂ left₂ right₂
@@ -1109,7 +1109,7 @@ theorem subsetr_spec (subsetRight : tree X Info → Bool)
   | BSNode info₂ x₂ left₂ right₂ hleft₂ hright₂ hlt₂ hgt₂ ihl ihr =>
       rcases bst_node_inv h₁ with ⟨_, hright₁, _, hgt₁⟩
       cases hcmp : X.compare x₁ x₂ with
-      | eq heq =>
+      | EQ heq =>
           simp only [subsetr, hcmp]
           rw [hsubset right₂ hright₂]
           constructor
@@ -1129,7 +1129,7 @@ theorem subsetr_spec (subsetRight : tree X Info → Bool)
             exact in_right_of_gt_root
               (.BSNode info₂ x₂ left₂ right₂ hleft₂ hright₂ hlt₂ hgt₂)
               hain hx₂a
-      | lt hx₁x₂ =>
+      | LT hx₁x₂ =>
           simp only [subsetr, hcmp, Bool.and_eq_true]
           rw [mem_spec hleft₂, hsubset _
             (.BSNode info₂ x₂ left₂ right₂
@@ -1151,7 +1151,7 @@ theorem subsetr_spec (subsetRight : tree X Info → Bool)
                   hleft₂ hright₂ hlt₂ hgt₂) hx hx₁x₂
             · intro a ha
               exact hsub a (.InRight info₁ .Leaf right₁ x₁ ha)
-      | gt hx₂x₁ =>
+      | GT hx₂x₁ =>
           simp only [subsetr, hcmp]
           rw [ihr]
           constructor
@@ -1194,7 +1194,7 @@ theorem subset_spec (s₁ s₂ : tree X Info) (h₁ : bst s₁) (h₂ : bst s₂
           have hbst₂ : bst hs₂ :=
             .BSNode info₂ x₂ left₂ right₂ hleft₂ hright₂ hlt₂ hgt₂
           cases hcmp : X.compare x₁ x₂ with
-          | eq heq =>
+          | EQ heq =>
               simp only [subset, hcmp, Bool.and_eq_true]
               rw [ihl left₂ hleft₂, ihr right₂ hright₂]
               constructor
@@ -1217,7 +1217,7 @@ theorem subset_spec (s₁ s₂ : tree X Info) (h₁ : bst s₁) (h₂ : bst s₂
                   have hain := hsub a (.InRight info₁ left₁ right₁ x₁ ha)
                   exact in_right_of_gt_root hbst₂ hain
                     (lt_of_eq_of_lt heq (hgt₁ a ha))
-          | lt hx₁x₂ =>
+          | LT hx₁x₂ =>
               simp only [subset, hcmp, Bool.and_eq_true]
               rw [subsetl_spec (subset left₁) left₁ x₁ info₁ left₂
                 (.BSNode info₁ x₁ left₁ .Leaf hleft₁ .BSLeaf hlt₁ (gt_leaf x₁))
@@ -1253,7 +1253,7 @@ theorem subset_spec (s₁ s₂ : tree X Info) (h₁ : bst s₁) (h₂ : bst s₂
                   exact in_left_of_lt_root hbst₂ hain hax₂
                 · intro a ha
                   exact hsub a (.InRight info₁ left₁ right₁ x₁ ha)
-          | gt hx₂x₁ =>
+          | GT hx₂x₁ =>
               simp only [subset, hcmp, Bool.and_eq_true]
               rw [subsetr_spec (subset right₁) right₁ x₁ info₁ right₂
                 (.BSNode info₁ x₁ .Leaf right₁ .BSLeaf hright₁ (lt_leaf x₁) hgt₁)
@@ -1396,10 +1396,10 @@ theorem compare_more_Cmp (x₁ : X.t) (cont : enumeration X Info → comparison)
       (x₁ :: l) (flatten_e (.More x₂ right₂ e₂)) := by
   simp only [compare_more, flatten_e]
   cases X.compare x₁ x₂ with
-  | eq heq => exact L.cons_CompSpec heq h
-  | lt hlt => exact .CompLt (.lt_cons_lt x₁ x₂ l
+  | EQ heq => exact L.cons_CompSpec heq h
+  | LT hlt => exact .CompLt (.lt_cons_lt x₁ x₂ l
       (elements right₂ ++ flatten_e e₂) hlt)
-  | gt hgt => exact .CompGt (.lt_cons_lt x₂ x₁
+  | GT hgt => exact .CompGt (.lt_cons_lt x₂ x₁
       (elements right₂ ++ flatten_e e₂) l hgt)
 
 theorem compare_cont_Cmp (s₁ : tree X Info)
@@ -1580,9 +1580,9 @@ theorem sorted_extensional_eqList {l₁ l₂ : List X.t}
             ((heq y).mpr ((inA_cons y y ys).mpr (Or.inl (X.eq_refl y))))
           have hxy : X.eq x y := by
             cases X.compare x y with
-            | lt h => exact False.elim (hnotxy h)
-            | eq h => exact h
-            | gt h => exact False.elim (hnotyx h)
+            | LT h => exact False.elim (hnotxy h)
+            | EQ h => exact h
+            | GT h => exact False.elim (hnotyx h)
           have hi₁ :=
             CompCert4Lean.Foundation.Ordered.Rocq.Coq.Sorting.Sorted.Sorted_inv hs₁
           have hi₂ :=

@@ -15,28 +15,27 @@ namespace Rocq.Coq
 
 namespace Classes.DecidableClass
 
-abbrev Decidable (P : Prop) := _root_.Decidable P
+class Decidable (P : Prop) where
+  Decidable_witness : Bool
+  Decidable_spec : Decidable_witness = true ↔ P
 
-def Decidable_witness {P : Prop} (H : Decidable P) : Bool :=
-  match H with
-  | .isTrue _ => true
-  | .isFalse _ => false
+export Decidable (Decidable_witness Decidable_spec)
 
 def Decidable_complete_altStatement : Prop :=
   ∀ (P : Prop) (H : Decidable P),
-    Decidable_witness H = false → ¬ P
+    @Decidable_witness P H = false → ¬ P
 
 def Decidable_completeStatement : Prop :=
   ∀ (P : Prop) (H : Decidable P),
-    P → Decidable_witness H = true
+    P → @Decidable_witness P H = true
 
 def Decidable_sound_altStatement : Prop :=
   ∀ (P : Prop) (H : Decidable P),
-    (¬ P) → Decidable_witness H = false
+    (¬ P) → @Decidable_witness P H = false
 
 def Decidable_soundStatement : Prop :=
   ∀ (P : Prop) (H : Decidable P),
-    Decidable_witness H = true → P
+    @Decidable_witness P H = true → P
 
 end Classes.DecidableClass
 
@@ -48,17 +47,12 @@ end FSets.FSetAVL.Make
 
 namespace Relations.Relation_Operators
 
-abbrev clos_trans (A : Type) (R : A → A → Prop) (x y : A) : Prop :=
-  Relation.TransGen R x y
+inductive clos_trans (A : Type) (R : A → A → Prop) : A → A → Prop where
+  | t_step (x y : A) : R x y → clos_trans A R x y
+  | t_trans (x y z : A) :
+      clos_trans A R x y → clos_trans A R y z → clos_trans A R x z
 
-abbrev t_step (A : Type) (R : A → A → Prop) (x y : A)
-    (h : R x y) : clos_trans A R x y :=
-  Relation.TransGen.single h
-
-abbrev t_trans (A : Type) (R : A → A → Prop) (x y z : A)
-    (hxy : clos_trans A R x y) (hyz : clos_trans A R y z) :
-    clos_trans A R x z :=
-  Relation.TransGen.trans hxy hyz
+export clos_trans (t_step t_trans)
 
 end Relations.Relation_Operators
 
@@ -133,8 +127,16 @@ end Sorting.Sorted
 
 namespace Sorting.Permutation
 
-abbrev Permutation {A : Type} (l l' : List A) : Prop :=
-  List.Perm l l'
+inductive Permutation {A : Type} : List A → List A → Prop where
+  | perm_nil : Permutation [] []
+  | perm_skip (x : A) {l l' : List A} :
+      Permutation l l' → Permutation (x :: l) (x :: l')
+  | perm_swap (x y : A) (l : List A) :
+      Permutation (y :: x :: l) (x :: y :: l)
+  | perm_trans {l l' l'' : List A} :
+      Permutation l l' → Permutation l' l'' → Permutation l l''
+
+export Permutation (perm_nil perm_skip perm_swap perm_trans)
 
 def Permutation_inStatement : Prop :=
   ∀ {A : Type} {l l' : List A} (x : A),
@@ -158,21 +160,11 @@ end Sorting.Permutation
 namespace Structures.OrderedType
 
 inductive Compare {X : Type} (lt eq : X → X → Prop) (x y : X) : Type where
-  | lt (h : lt x y)
-  | eq (h : eq x y)
-  | gt (h : lt y x)
+  | LT (h : lt x y)
+  | EQ (h : eq x y)
+  | GT (h : lt y x)
 
-abbrev LT {X : Type} {lt eq : X → X → Prop} {x y : X}
-    (h : lt x y) : Compare lt eq x y :=
-  Compare.lt h
-
-abbrev EQ {X : Type} {lt eq : X → X → Prop} {x y : X}
-    (h : eq x y) : Compare lt eq x y :=
-  Compare.eq h
-
-abbrev GT {X : Type} {lt eq : X → X → Prop} {x y : X}
-    (h : lt y x) : Compare lt eq x y :=
-  Compare.gt h
+export Compare (LT EQ GT)
 
 /- `OrderedType.v` gives its legacy module type the same name as the file.
    Keep the canonical source-facing record at that exact identity so provider

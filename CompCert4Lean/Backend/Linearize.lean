@@ -48,12 +48,12 @@ private abbrev Compare {X : Type} (lt eq : X → X → Prop) (x y : X) :=
 private def comparePositive (x y : OrderedPositive.t) :
     Compare OrderedPositive.lt OrderedPositive.eq x y := by
   cases CompCert4Lean.Lib.Coqlib.plt x y with
-  | left hlt => exact .lt hlt
+  | left hlt => exact .LT hlt
   | right hlt =>
     cases CompCert4Lean.Lib.Coqlib.peq x y with
-    | left heq => exact .eq heq
+    | left heq => exact .EQ heq
     | right heq =>
-      refine .gt ?_
+      refine .GT ?_
       change PArith.BinPos.Pos.to_nat y < PArith.BinPos.Pos.to_nat x
       change ¬ PArith.BinPos.Pos.to_nat x < PArith.BinPos.Pos.to_nat y at hlt
       have hne :

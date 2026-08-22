@@ -444,33 +444,33 @@ def compare (x y : t) :
     CompCert4Lean.Foundation.Ordered.Rocq.Coq.Structures.OrderedType.Compare
       lt eq x y := by
   cases x <;> cases y
-  · exact .eq rfl
-  · exact .lt (by
+  · exact .EQ rfl
+  · exact .LT (by
       unfold lt IndexedEqKind.index CompCert4Lean.Lib.Coqlib.Plt
         PArith.BinPos.Pos.lt
       decide)
-  · exact .lt (by
+  · exact .LT (by
       unfold lt IndexedEqKind.index CompCert4Lean.Lib.Coqlib.Plt
         PArith.BinPos.Pos.lt
       decide)
-  · exact .gt (by
+  · exact .GT (by
       unfold lt IndexedEqKind.index CompCert4Lean.Lib.Coqlib.Plt
         PArith.BinPos.Pos.lt
       decide)
-  · exact .eq rfl
-  · exact .lt (by
+  · exact .EQ rfl
+  · exact .LT (by
       unfold lt IndexedEqKind.index CompCert4Lean.Lib.Coqlib.Plt
         PArith.BinPos.Pos.lt
       decide)
-  · exact .gt (by
+  · exact .GT (by
       unfold lt IndexedEqKind.index CompCert4Lean.Lib.Coqlib.Plt
         PArith.BinPos.Pos.lt
       decide)
-  · exact .gt (by
+  · exact .GT (by
       unfold lt IndexedEqKind.index CompCert4Lean.Lib.Coqlib.Plt
         PArith.BinPos.Pos.lt
       decide)
-  · exact .eq rfl
+  · exact .EQ rfl
 
 def eq_dec := IndexedEqKind.eq
 
@@ -500,12 +500,12 @@ private def comparePositive (x y : positive) :
     CompCert4Lean.Foundation.Ordered.Rocq.Coq.Structures.OrderedType.Compare
       Plt (fun a b => a = b) x y := by
   cases plt x y with
-  | left hlt => exact .lt hlt
+  | left hlt => exact .LT hlt
   | right hlt =>
       cases peq x y with
-      | left heq => exact .eq heq
+      | left heq => exact .EQ heq
       | right heq =>
-          refine .gt ?_
+          refine .GT ?_
           change PArith.BinPos.Pos.to_nat y < PArith.BinPos.Pos.to_nat x
           change ¬ PArith.BinPos.Pos.to_nat x < PArith.BinPos.Pos.to_nat y at hlt
           have hnatne :
@@ -631,21 +631,21 @@ def compare (x y : t) :
     CompCert4Lean.Foundation.Ordered.Rocq.Coq.Structures.OrderedType.Compare
       lt eq x y := by
   cases comparePositive x.ereg y.ereg with
-  | lt hr => exact .lt (Or.inl hr)
-  | gt hr => exact .gt (Or.inl hr)
-  | eq her =>
+  | LT hr => exact .LT (Or.inl hr)
+  | GT hr => exact .GT (Or.inl hr)
+  | EQ her =>
       cases Locations.OrderedLoc.compare x.eloc y.eloc with
-      | lt hl => exact .lt (Or.inr ⟨her, Or.inl hl⟩)
-      | gt hl => exact .gt (Or.inr ⟨her.symm, Or.inl hl⟩)
-      | eq hel =>
+      | LT hl => exact .LT (Or.inr ⟨her, Or.inl hl⟩)
+      | GT hl => exact .GT (Or.inr ⟨her.symm, Or.inl hl⟩)
+      | EQ hel =>
           cases OrderedEqKind.compare x.ekind y.ekind with
-          | lt hk => exact .lt (Or.inr ⟨her, Or.inr ⟨hel, hk⟩⟩)
-          | gt hk => exact .gt (Or.inr ⟨her.symm, Or.inr ⟨hel.symm, hk⟩⟩)
-          | eq hek =>
+          | LT hk => exact .LT (Or.inr ⟨her, Or.inr ⟨hel, hk⟩⟩)
+          | GT hk => exact .GT (Or.inr ⟨her.symm, Or.inr ⟨hel.symm, hk⟩⟩)
+          | EQ hek =>
               cases x
               cases y
               subst_vars
-              exact .eq rfl
+              exact .EQ rfl
 
 def eq_dec (x y : t) : Sumbool (x = y) (x ≠ y) := by
   exact match (inferInstance : Decidable (x = y)) with
@@ -713,21 +713,21 @@ def compare (x y : t) :
     CompCert4Lean.Foundation.Ordered.Rocq.Coq.Structures.OrderedType.Compare
       lt eq x y := by
   cases Locations.OrderedLoc.compare x.eloc y.eloc with
-  | lt hl => exact .lt (Or.inl hl)
-  | gt hl => exact .gt (Or.inl hl)
-  | eq hel =>
+  | LT hl => exact .LT (Or.inl hl)
+  | GT hl => exact .GT (Or.inl hl)
+  | EQ hel =>
       cases comparePositive x.ereg y.ereg with
-      | lt hr => exact .lt (Or.inr ⟨hel, Or.inl hr⟩)
-      | gt hr => exact .gt (Or.inr ⟨hel.symm, Or.inl hr⟩)
-      | eq her =>
+      | LT hr => exact .LT (Or.inr ⟨hel, Or.inl hr⟩)
+      | GT hr => exact .GT (Or.inr ⟨hel.symm, Or.inl hr⟩)
+      | EQ her =>
           cases OrderedEqKind.compare x.ekind y.ekind with
-          | lt hk => exact .lt (Or.inr ⟨hel, Or.inr ⟨her, hk⟩⟩)
-          | gt hk => exact .gt (Or.inr ⟨hel.symm, Or.inr ⟨her.symm, hk⟩⟩)
-          | eq hek =>
+          | LT hk => exact .LT (Or.inr ⟨hel, Or.inr ⟨her, hk⟩⟩)
+          | GT hk => exact .GT (Or.inr ⟨hel.symm, Or.inr ⟨her.symm, hk⟩⟩)
+          | EQ hek =>
               cases x
               cases y
               subst_vars
-              exact .eq rfl
+              exact .EQ rfl
 
 def eq_dec := OrderedEquation.eq_dec
 
@@ -1383,14 +1383,14 @@ def select_loc_l (l : loc) : equation → Bool :=
   let lb := Locations.OrderedLoc.diff_low_bound l
   fun q =>
     match Locations.OrderedLoc.compare q.eloc lb with
-    | .lt _ => false
+    | .LT _ => false
     | _ => true
 
 def select_loc_h (l : loc) : equation → Bool :=
   let lh := Locations.OrderedLoc.diff_high_bound l
   fun q =>
     match Locations.OrderedLoc.compare q.eloc lh with
-    | .gt _ => false
+    | .GT _ => false
     | _ => true
 
 def loc_unconstrained (l : loc) (e : eqs) : Bool :=
