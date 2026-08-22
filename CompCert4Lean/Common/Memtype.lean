@@ -16,8 +16,13 @@ inductive permission : Type where
 
 export permission (Freeable Writable Readable Nonempty)
 
-def perm_order (p q : permission) : Prop :=
-  p = q ∨ p = Freeable ∨ (p = Writable ∧ q = Readable) ∨ q = Nonempty
+inductive perm_order : permission → permission → Prop where
+  | perm_refl (p : permission) : perm_order p p
+  | perm_F_any (p : permission) : perm_order Freeable p
+  | perm_W_R : perm_order Writable Readable
+  | perm_any_N (p : permission) : perm_order p Nonempty
+
+export perm_order (perm_refl perm_F_any perm_W_R perm_any_N)
 
 def perm_order_transStatement : Prop :=
   ∀ p1 p2 p3, perm_order p1 p2 → perm_order p2 p3 → perm_order p1 p3

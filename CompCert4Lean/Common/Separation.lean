@@ -83,7 +83,7 @@ private theorem permMaxNonemptyOfPerm {m : mem} {b : block} {ofs : Z}
           rw [hx] at h
           change Memtype.perm_order actual p at h
           change Memtype.perm_order actual Nonempty
-          cases actual <;> cases p <;> simp [Memtype.perm_order] at h ⊢
+          exact perm_any_N actual
   | Cur =>
       have hmax := m.access_max b ofs
       unfold Mem.perm Mem.perm_order' at h ⊢
@@ -94,13 +94,7 @@ private theorem permMaxNonemptyOfPerm {m : mem} {b : block} {ofs : Z}
           | some actual => simp [Mem.perm_order'', hx, hy] at hmax
       | some maxp =>
           change Memtype.perm_order maxp Nonempty
-          cases hy : (PMap.get b m.mem_access) ofs Cur with
-          | none => simp [hy] at h
-          | some curp =>
-            rw [hy] at h
-            rw [hx, hy] at hmax
-            cases maxp <;> cases curp <;> cases p <;>
-                simp [Mem.perm_order'', Memtype.perm_order] at hmax h ⊢
+          exact perm_any_N maxp
 
 private theorem accessFreeableOfPerm {m : mem} {b : block} {ofs : Z}
     {k : perm_kind} (h : Mem.perm m b ofs k Freeable) :
@@ -110,14 +104,14 @@ private theorem accessFreeableOfPerm {m : mem} {b : block} {ofs : Z}
   | none => simp [hx] at h
   | some p =>
       rw [hx] at h
-      cases p <;> simp [Memtype.perm_order] at h ⊢
+      cases h <;> rfl
 
 private theorem permReadableOfFreeable {m : mem} {b : block} {ofs : Z}
     {k : perm_kind} (h : Mem.perm m b ofs k Freeable) :
     Mem.perm m b ofs k Readable := by
   unfold Mem.perm
   rw [accessFreeableOfPerm h]
-  simp [Mem.perm_order', Memtype.perm_order]
+  exact perm_F_any Readable
 
 private def permissionRank : permission → Nat
   | Freeable => 3

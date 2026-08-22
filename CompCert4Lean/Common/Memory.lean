@@ -224,7 +224,9 @@ def alloc (m : mem) (lo hi : Z) : mem × block :=
         · subst b
           rw [pmapGetSetSame]
           simp only [newAccess]
-          split <;> simp [perm_order'', perm_order]
+          split
+          · exact perm_refl Freeable
+          · trivial
         · rw [pmapGetSetOther _ _ _ _ h]
           exact m.access_max b ofs
       nextblock_noaccess := by
@@ -392,7 +394,8 @@ def drop_perm (m : mem) (b : block) (lo hi : Z) (p : permission) : Option mem :=
               generalize hmax : oldAccess ofs Max = maxPerm
               generalize hcur : oldAccess ofs Cur = curPerm
               cases maxPerm <;> cases curPerm <;>
-                simp_all [perm_order'', perm_order]
+                simp_all [perm_order'']
+              exact perm_refl p
             · exact m.access_max b ofs
           · rw [pmapGetSetOther _ _ _ _ h]
             exact m.access_max b' ofs
