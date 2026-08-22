@@ -224,6 +224,13 @@ def star_starNStatement : Prop :=
     (ge : genv) (s : state) (t : trace) (s' : state),
     star step ge s t s' → ∃ n, starN step ge n s t s'
 
+/-!
+Lean has no primitive coinductive relation.  Each relation below is the union
+of all post-fixed points of its source constructor functor, hence the greatest
+fixed point.  The source-named introduction operations supply folding, and the
+`casesOn` operations supply the corresponding one-layer elimination behavior.
+-/
+
 def forever {genv state : Type}
     (step : genv → state → trace → state → Prop)
     (ge : genv) (s : state) (T : traceinf) : Prop :=
@@ -234,7 +241,7 @@ def forever {genv state : Type}
 
 def forever_intro {genv state : Type}
     {step : genv → state → trace → state → Prop} {ge : genv}
-    (s1 : state) (t : trace) (s2 : state) (T : traceinf)
+    (s1 : state) (t : trace) {s2 : state} {T : traceinf}
     (hstep : step ge s1 t s2) (hforever : forever step ge s2 T) :
     forever step ge s1 (Eappinf t T) := by
   rcases hforever with ⟨R, htail, hclosed⟩
@@ -248,6 +255,18 @@ def forever_intro {genv state : Type}
   · rcases hclosed s T' h with ⟨u, s', U, hs, hR, hT⟩
     exact ⟨u, s', U, hs, Or.inr hR, hT⟩
 
+def forever_casesOn {genv state : Type}
+    {step : genv → state → trace → state → Prop} {ge : genv}
+    (motive : state → traceinf → Prop)
+    (hintro : ∀ (s1 : state) (t : trace) {s2 : state} {T : traceinf},
+      step ge s1 t s2 → forever step ge s2 T →
+        motive s1 (Eappinf t T))
+    {s : state} {T : traceinf} (h : forever step ge s T) : motive s T := by
+  rcases h with ⟨R, hR, hclosed⟩
+  rcases hclosed s T hR with ⟨t, s2, T2, hstep, htail, htrace⟩
+  rw [htrace]
+  exact hintro s t hstep ⟨R, htail, hclosed⟩
+
 def forever_silent {genv state : Type}
     (step : genv → state → trace → state → Prop)
     (ge : genv) (s : state) : Prop :=
@@ -256,7 +275,7 @@ def forever_silent {genv state : Type}
 
 def forever_silent_intro {genv state : Type}
     {step : genv → state → trace → state → Prop} {ge : genv}
-    (s1 s2 : state) (hstep : step ge s1 E0 s2)
+    (s1 : state) {s2 : state} (hstep : step ge s1 E0 s2)
     (hforever : forever_silent step ge s2) : forever_silent step ge s1 := by
   rcases hforever with ⟨R, htail, hclosed⟩
   let R' : state → Prop := fun s => s = s1 ∨ R s
@@ -266,6 +285,16 @@ def forever_silent_intro {genv state : Type}
   · exact ⟨s2, hstep, Or.inr htail⟩
   · rcases hclosed s h with ⟨s', hs, hR⟩
     exact ⟨s', hs, Or.inr hR⟩
+
+def forever_silent_casesOn {genv state : Type}
+    {step : genv → state → trace → state → Prop} {ge : genv}
+    (motive : state → Prop)
+    (hintro : ∀ (s1 : state) {s2 : state},
+      step ge s1 E0 s2 → forever_silent step ge s2 → motive s1)
+    {s : state} (h : forever_silent step ge s) : motive s := by
+  rcases h with ⟨R, hR, hclosed⟩
+  rcases hclosed s hR with ⟨s2, hstep, htail⟩
+  exact hintro s hstep ⟨R, htail, hclosed⟩
 
 def forever_silent_N {genv state : Type}
     (step : genv → state → trace → state → Prop)
@@ -279,7 +308,7 @@ def forever_silent_N {genv state : Type}
 def forever_silent_N_star {genv state A : Type}
     {step : genv → state → trace → state → Prop}
     {order : A → A → Prop} {ge : genv}
-    (s1 s2 : state) (a1 a2 : A) (hstar : star step ge s1 E0 s2)
+    {s1 s2 : state} (a1 : A) {a2 : A} (hstar : star step ge s1 E0 s2)
     (horder : order a2 a1) (hforever : forever_silent_N step order ge a2 s2) :
     forever_silent_N step order ge a1 s1 := by
   rcases hforever with ⟨R, htail, hclosed⟩
@@ -298,7 +327,7 @@ def forever_silent_N_star {genv state A : Type}
 def forever_silent_N_plus {genv state A : Type}
     {step : genv → state → trace → state → Prop}
     {order : A → A → Prop} {ge : genv}
-    (s1 s2 : state) (a1 a2 : A) (hplus : plus step ge s1 E0 s2)
+    {s1 s2 : state} (a1 : A) {a2 : A} (hplus : plus step ge s1 E0 s2)
     (hforever : forever_silent_N step order ge a2 s2) :
     forever_silent_N step order ge a1 s1 := by
   rcases hforever with ⟨R, htail, hclosed⟩
@@ -313,6 +342,25 @@ def forever_silent_N_plus {genv state A : Type}
       exact Or.inl ⟨s', a', hs, ho, Or.inr hR⟩
     · rcases h with ⟨s', a', hs, hR⟩
       exact Or.inr ⟨s', a', hs, Or.inr hR⟩
+
+def forever_silent_N_casesOn {genv state A : Type}
+    {step : genv → state → trace → state → Prop}
+    {order : A → A → Prop} {ge : genv}
+    (motive : A → state → Prop)
+    (hstar : ∀ (s1 s2 : state) (a1 a2 : A),
+      star step ge s1 E0 s2 → order a2 a1 →
+        forever_silent_N step order ge a2 s2 → motive a1 s1)
+    (hplus : ∀ (s1 s2 : state) (a1 a2 : A),
+      plus step ge s1 E0 s2 →
+        forever_silent_N step order ge a2 s2 → motive a1 s1)
+    {a : A} {s : state} (h : forever_silent_N step order ge a s) :
+    motive a s := by
+  rcases h with ⟨R, hR, hclosed⟩
+  rcases hclosed a s hR with h | h
+  · rcases h with ⟨s2, a2, hs, ho, htail⟩
+    exact hstar s s2 a a2 hs ho ⟨R, htail, hclosed⟩
+  · rcases h with ⟨s2, a2, hp, htail⟩
+    exact hplus s s2 a a2 hp ⟨R, htail, hclosed⟩
 
 def forever_silent_N_invStatement : Prop :=
   ∀ (genv state : Type)
@@ -342,7 +390,7 @@ def forever_reactive {genv state : Type}
 
 def forever_reactive_intro {genv state : Type}
     {step : genv → state → trace → state → Prop} {ge : genv}
-    (s1 s2 : state) (t : trace) (T : traceinf)
+    {s1 s2 : state} {t : trace} {T : traceinf}
     (hstar : star step ge s1 t s2) (hnonempty : t ≠ E0)
     (hforever : forever_reactive step ge s2 T) :
     forever_reactive step ge s1 (Eappinf t T) := by
@@ -357,6 +405,19 @@ def forever_reactive_intro {genv state : Type}
   · rcases hclosed s T' h with ⟨s', u, U, hs, hu, hR, hT⟩
     exact ⟨s', u, U, hs, hu, Or.inr hR, hT⟩
 
+def forever_reactive_casesOn {genv state : Type}
+    {step : genv → state → trace → state → Prop} {ge : genv}
+    (motive : state → traceinf → Prop)
+    (hintro : ∀ (s1 s2 : state) (t : trace) (T : traceinf),
+      star step ge s1 t s2 → t ≠ E0 → forever_reactive step ge s2 T →
+        motive s1 (Eappinf t T))
+    {s : state} {T : traceinf} (h : forever_reactive step ge s T) :
+    motive s T := by
+  rcases h with ⟨R, hR, hclosed⟩
+  rcases hclosed s T hR with ⟨s2, t, T2, hstar, hnonempty, htail, htrace⟩
+  rw [htrace]
+  exact hintro s s2 t T2 hstar hnonempty ⟨R, htail, hclosed⟩
+
 def star_forever_reactiveStatement : Prop :=
   ∀ (genv state : Type)
     (step : genv → state → trace → state → Prop)
@@ -368,33 +429,19 @@ inductive eventually {genv state : Type}
     (step : genv → state → trace → state → Prop)
     (final_state : state → int → Prop) (ge : genv) :
     Nat → state → (state → Prop) → Prop where
-  | now (s : state) (P : state → Prop) (h : P s) :
+  | eventually_now (s : state) (P : state → Prop) (h : P s) :
       eventually step final_state ge 0 s P
-  | later (n : Nat) (s : state) (P : state → Prop)
+  -- Lean rejects the source conjunction here as a non-uniform nested
+  -- occurrence of `eventually`; keep the canonical constructor identity while
+  -- the exact premise-shape exception is escalated.
+  | eventually_later {n : Nat} (s : state) {P : state → Prop}
       (hfinal : ∀ r, ¬ final_state s r)
       (htrace : ∀ t s', step ge s t s' → t = E0)
       (hnext : ∀ t s', step ge s t s' →
         eventually step final_state ge n s' P) :
-      eventually step final_state ge (n + 1) s P
+      eventually step final_state ge (Nat.succ n) s P
 
-def eventually_now {genv state : Type}
-    {step : genv → state → trace → state → Prop}
-    {final_state : state → int → Prop} {ge : genv}
-    (s : state) (P : state → Prop) (h : P s) :
-    eventually step final_state ge 0 s P :=
-  .now s P h
-
-def eventually_later {genv state : Type}
-    {step : genv → state → trace → state → Prop}
-    {final_state : state → int → Prop} {ge : genv}
-    (n : Nat) (s : state) (P : state → Prop)
-    (hfinal : ∀ r, ¬ final_state s r)
-    (hlater : ∀ t s', step ge s t s' →
-      t = E0 ∧ eventually step final_state ge n s' P) :
-    eventually step final_state ge (n + 1) s P :=
-  .later n s P hfinal
-    (fun t s' h => (hlater t s' h).1)
-    (fun t s' h => (hlater t s' h).2)
+export eventually (eventually_now eventually_later)
 
 def eventually_transStatement : Prop :=
   ∀ (genv state : Type)
@@ -476,7 +523,7 @@ export fsim_properties
     fsim_simulation fsim_public_preserved)
 
 inductive forward_simulation (L1 L2 : semantics) : Prop where
-  | Forward_simulation (index : Type) (order : index → index → Prop)
+  | Forward_simulation {index : Type} (order : index → index → Prop)
       (match_states : index → state L1 → state L2 → Prop)
       (props : fsim_properties L1 L2 index order match_states) :
       forward_simulation L1 L2
@@ -783,7 +830,7 @@ export bsim_properties
     bsim_match_final_states bsim_progress bsim_simulation bsim_public_preserved)
 
 inductive backward_simulation (L1 L2 : semantics) : Prop where
-  | Backward_simulation (index : Type) (order : index → index → Prop)
+  | Backward_simulation {index : Type} (order : index → index → Prop)
       (match_states : index → state L1 → state L2 → Prop)
       (props : bsim_properties L1 L2 index order match_states) :
       backward_simulation L1 L2
@@ -981,13 +1028,13 @@ def f2b_determinacy_starStatement : Prop :=
         star (step L2) (globalenv L2) s t s3 →
         star (step L2) (globalenv L2) s1 t s3
 
-inductive f2bIndex : Type where
+inductive f2b_index : Type where
   | F2BI_before (n : Nat)
   | F2BI_after (n : Nat)
 
-export f2bIndex (F2BI_before F2BI_after)
+export f2b_index (F2BI_before F2BI_after)
 
-inductive f2b_order : f2bIndex → f2bIndex → Prop where
+inductive f2b_order : f2b_index → f2b_index → Prop where
   | before (n n' : Nat) (h : n' < n) :
       f2b_order (F2BI_before n') (F2BI_before n)
   | after (n n' : Nat) (h : n' < n) :
@@ -1000,7 +1047,7 @@ def wf_f2b_orderStatement : Prop :=
 
 inductive f2b_match_states (L1 L2 : semantics) {index : Type}
     (match_states : index → state L1 → state L2 → Prop) :
-    f2bIndex → state L1 → state L2 → Prop where
+    f2b_index → state L1 → state L2 → Prop where
   | at (i : index) (s1 : state L1) (s2 : state L2)
       (hmatch : match_states i s1 s2) :
       f2b_match_states L1 L2 match_states (F2BI_after 0) s1 s2

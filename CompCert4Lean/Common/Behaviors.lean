@@ -487,7 +487,7 @@ inductive tstep {genv state : Type}
   | tstep_intro (s1 : state) (t : trace) (T : traceinf) (s2 : state)
       (S : step ge s1 t s2) (F : forever step ge s2 T) :
       tstep step ge t
-        (.ST s1 (Eappinf t T) (forever_intro s1 t s2 T S F))
+        (.ST s1 (Eappinf t T) (forever_intro s1 t S F))
         (.ST s2 T F)
 
 abbrev tstep_intro := @tstep.tstep_intro
