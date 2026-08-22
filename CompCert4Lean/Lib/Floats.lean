@@ -540,4 +540,30 @@ def to_longu_doubleStatement : Prop :=
 
 end Float32
 
+namespace Sqrt
+
+/-! The selected fixed-width correspondence obligations deliberately name the
+actual public facades.  Their right-hand sides therefore retain both observable
+parts of CompCert's unary square-root policy: input NaNs are handled by
+`Float.unop_nan` / `Float32.unop_nan`, and NaNs produced by the model result are
+normalized to `default_nan_64` / `default_nan_32`. -/
+
+def float32_sqrt_correctStatement : Prop :=
+  ∀ x : UInt32,
+    float32_sqrt x =
+      UInt32.ofBitVec
+        (Float32.sqrt (⟨x.toBitVec⟩ : float32)).bits
+
+abbrev float32_sqrt_correct : Prop := float32_sqrt_correctStatement
+
+def float64_sqrt_correctStatement : Prop :=
+  ∀ x : UInt64,
+    float64_sqrt x =
+      UInt64.ofBitVec
+        (Float.sqrt (⟨x.toBitVec⟩ : float)).bits
+
+abbrev float64_sqrt_correct : Prop := float64_sqrt_correctStatement
+
+end Sqrt
+
 end CompCert4Lean.Lib.Floats

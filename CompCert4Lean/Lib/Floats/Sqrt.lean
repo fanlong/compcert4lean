@@ -9,7 +9,8 @@ raw words are unpacked into Lean's checked `Float.Model.UnpackedFloat`, the
 nearest-even square root is computed there, and the result is packed again.
 NaN inputs are handled before unpacking so that CompCert's unary-operation
 sign, payload, and quieting behavior remains observable at the raw-word
-boundary.
+boundary.  NaNs produced by invalid non-NaN inputs are normalized afterward
+to CompCert's architecture-default negative quiet NaN.
 -/
 
 namespace CompCert4Lean.Lib.Floats
@@ -38,12 +39,18 @@ private def quietNaN (spec : Format) (x : FloatExec.Raw spec) : FloatExec.Raw sp
     1#_ <<< (spec.mantissaBitsWithoutImplicit - 1)
   x ||| quietMask
 
+private def defaultNaN (spec : Format) : FloatExec.Raw spec :=
+  let signMask : BitVec spec.numBits :=
+    1#_ <<< (spec.numBits - 1)
+  Float.Model.UnpackedFloat.packedNaN spec ||| signMask
+
 def rawSqrt (spec : Format) (x : FloatExec.Raw spec) : FloatExec.Raw spec :=
   if rawIsNaN spec x then
     quietNaN spec x
   else
-    Float.Model.UnpackedFloat.pack spec
+    let r := Float.Model.UnpackedFloat.pack spec
       (unpackedSqrt spec (Float.Model.UnpackedFloat.unpack spec x))
+    if rawIsNaN spec r then defaultNaN spec else r
 
 /-! Public fixed-width endpoints.  The provider contract exposes these names
 for downstream float operations; the raw-word implementation remains the
@@ -61,47 +68,29 @@ def rawSqrt_eq_modelStatement : Prop :=
       (if rawIsNaN Float.Model.Format.binary32 x then
         quietNaN Float.Model.Format.binary32 x
       else
-        Float.Model.UnpackedFloat.pack Float.Model.Format.binary32
+        let r := Float.Model.UnpackedFloat.pack Float.Model.Format.binary32
           (unpackedSqrt Float.Model.Format.binary32
-            (Float.Model.UnpackedFloat.unpack Float.Model.Format.binary32 x)))) ∧
+            (Float.Model.UnpackedFloat.unpack Float.Model.Format.binary32 x))
+        if rawIsNaN Float.Model.Format.binary32 r then
+          defaultNaN Float.Model.Format.binary32
+        else r)) ∧
   (∀ x : FloatExec.Raw Float.Model.Format.binary64,
     rawSqrt Float.Model.Format.binary64 x =
       (if rawIsNaN Float.Model.Format.binary64 x then
         quietNaN Float.Model.Format.binary64 x
       else
-        Float.Model.UnpackedFloat.pack Float.Model.Format.binary64
+        let r := Float.Model.UnpackedFloat.pack Float.Model.Format.binary64
           (unpackedSqrt Float.Model.Format.binary64
-          (Float.Model.UnpackedFloat.unpack Float.Model.Format.binary64 x))))
+            (Float.Model.UnpackedFloat.unpack Float.Model.Format.binary64 x))
+        if rawIsNaN Float.Model.Format.binary64 r then
+          defaultNaN Float.Model.Format.binary64
+        else r))
 
-/- The source theorem identities remain available as exact proposition aliases;
-proof discharge belongs to the later proof-grinding phase. -/
+/- The raw-model theorem identity remains available as an exact proposition
+alias; proof discharge belongs to the later proof-grinding phase.  The two
+public-facade correspondence descriptors are declared in `Floats.lean`, after
+the public `Float.sqrt` and `Float32.sqrt` endpoints are available. -/
 abbrev rawSqrt_eq_model : Prop := rawSqrt_eq_modelStatement
-
-def float32_sqrt_correctStatement : Prop :=
-  ∀ x : UInt32,
-    float32_sqrt x =
-      UInt32.ofBitVec
-        (if rawIsNaN Float.Model.Format.binary32 x.toBitVec then
-          quietNaN Float.Model.Format.binary32 x.toBitVec
-        else
-          Float.Model.UnpackedFloat.pack Float.Model.Format.binary32
-            (unpackedSqrt Float.Model.Format.binary32
-              (Float.Model.UnpackedFloat.unpack Float.Model.Format.binary32 x.toBitVec)))
-
-abbrev float32_sqrt_correct : Prop := float32_sqrt_correctStatement
-
-def float64_sqrt_correctStatement : Prop :=
-  ∀ x : UInt64,
-    float64_sqrt x =
-      UInt64.ofBitVec
-        (if rawIsNaN Float.Model.Format.binary64 x.toBitVec then
-          quietNaN Float.Model.Format.binary64 x.toBitVec
-        else
-          Float.Model.UnpackedFloat.pack Float.Model.Format.binary64
-            (unpackedSqrt Float.Model.Format.binary64
-              (Float.Model.UnpackedFloat.unpack Float.Model.Format.binary64 x.toBitVec)))
-
-abbrev float64_sqrt_correct : Prop := float64_sqrt_correctStatement
 
 end Sqrt
 
