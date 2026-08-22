@@ -1,6 +1,5 @@
 import CompCert4Lean.Config
 import CompCert4Lean.Driver.Compopts
-import CompCert4Lean.Driver.Diagnostics
 import CompCert4Lean.Foundation.Numbers
 import CompCert4Lean.Common.AST
 import CompCert4Lean.Common.Errors
@@ -131,7 +130,9 @@ private def bindRes {A B : Type} (x : Res A) (f : A → Res B) : Res B :=
 
 def transf_rtl_program (cfg : CompilerConfig)
     (inlineCfg : Inlining.InliningConfig)
-    (oracle : Allocation.RegallocOracle) (f : RTL.program) : Res Asm.program :=
+    (oracle : Allocation.RegallocOracle)
+    (enumerationService : Linearize.EnumerationService)
+    (f : RTL.program) : Res Asm.program :=
   let p0 : Res RTL.program := .OK f
   let p1 := mapRes p0 (print (print_RTL (ZArith.BinInt.Z.of_nat 0)))
   let p2 := mapRes p1
@@ -163,7 +164,9 @@ def transf_rtl_program (cfg : CompilerConfig)
   let p18 := bindRes p17 (time (ofString "Register allocation") (Allocation.transf_program cfg oracle))
   let p19 := mapRes p18 (print print_LTL)
   let p20 := mapRes p19 (time (ofString "Branch tunneling") Tunneling.tunnel_program)
-  let p21 := bindRes p20 (time (ofString "CFG linearization") Linearize.transf_program)
+  let p21 := bindRes p20
+    (time (ofString "CFG linearization")
+      (Linearize.transf_program enumerationService))
   let p22 := mapRes p21 (time (ofString "Label cleanup") CleanupLabels.transf_program)
   let p23 := bindRes p22
     (partial_if (fun _ => Compopts.debug cfg)
@@ -175,32 +178,43 @@ def transf_rtl_program (cfg : CompilerConfig)
 def transf_cminor_program (cfg : CompilerConfig)
     (selectionOracle : Selection.SelectionOracle)
     (inlineCfg : Inlining.InliningConfig)
-    (regallocOracle : Allocation.RegallocOracle) (p : Cminor.program) : Res Asm.program :=
+    (regallocOracle : Allocation.RegallocOracle)
+    (enumerationService : Linearize.EnumerationService)
+    (p : Cminor.program) : Res Asm.program :=
   let p0 : Res Cminor.program := .OK p
   let p1 := mapRes p0 (print print_Cminor)
   let p2 := bindRes p1
     (time (ofString "Instruction selection") (Selection.sel_program cfg selectionOracle))
   let p3 := bindRes p2 (time (ofString "RTL generation") RTLgen.transl_program)
-  bindRes p3 (transf_rtl_program cfg inlineCfg regallocOracle)
+  bindRes p3
+    (transf_rtl_program cfg inlineCfg regallocOracle enumerationService)
 
 def transf_clight_program (cfg : CompilerConfig)
     (selectionOracle : Selection.SelectionOracle)
     (inlineCfg : Inlining.InliningConfig)
-    (regallocOracle : Allocation.RegallocOracle) (p : Clight.program) : Res Asm.program :=
+    (regallocOracle : Allocation.RegallocOracle)
+    (enumerationService : Linearize.EnumerationService)
+    (p : Clight.program) : Res Asm.program :=
   let p0 : Res Clight.program := .OK p
   let p1 := mapRes p0 (print print_Clight)
   let p2 := bindRes p1 (time (ofString "Simplification of locals") (SimplLocals.transf_program cfg))
   let p3 := bindRes p2 (time (ofString "C#minor generation") Cshmgen.transl_program)
   let p4 := bindRes p3 (time (ofString "Cminor generation") Cminorgen.transl_program)
-  bindRes p4 (transf_cminor_program cfg selectionOracle inlineCfg regallocOracle)
+  bindRes p4
+    (transf_cminor_program cfg selectionOracle inlineCfg regallocOracle
+      enumerationService)
 
 def transf_c_program (cfg : CompilerConfig)
     (selectionOracle : Selection.SelectionOracle)
     (inlineCfg : Inlining.InliningConfig)
-    (regallocOracle : Allocation.RegallocOracle) (ctx : SimplExpr.FreshIdentContext)
+    (regallocOracle : Allocation.RegallocOracle)
+    (enumerationService : Linearize.EnumerationService)
+    (ctx : SimplExpr.FreshIdentContext)
     (p : Csyntax.program) : Res CompCert4Lean.X86.Asm.program :=
   let p1 := SimplExpr.transl_program ctx p
-  bindRes p1 (transf_clight_program cfg selectionOracle inlineCfg regallocOracle)
+  bindRes p1
+    (transf_clight_program cfg selectionOracle inlineCfg regallocOracle
+      enumerationService)
 
 /-! ## Relational compiler surface -/
 
@@ -211,6 +225,7 @@ def CompCert's_passes (cfg : CompilerConfig)
     (selectionOracle : Selection.SelectionOracle)
     (inlineCfg : Inlining.InliningConfig)
     (regallocOracle : Allocation.RegallocOracle)
+    (enumerationService : Linearize.EnumerationService)
     (p : Csyntax.program) (tp : Asm.program) : Prop :=
   ∃ p1 : Clight.program,
   ∃ p2 : Clight.program,
@@ -253,7 +268,7 @@ def CompCert's_passes (cfg : CompilerConfig)
     Unusedglobproof.match_prog p13 p14 ∧
     Allocproof.match_prog cfg regallocOracle p14 p15 ∧
     Tunnelingproof.match_prog p15 p16 ∧
-    Linearizeproof.match_prog p16 p17 ∧
+    Linearizeproof.match_prog enumerationService p16 p17 ∧
     CleanupLabelsproof.match_prog p17 p18 ∧
     match_if (fun _ => Compopts.debug cfg)
       (Debugvarproof.match_prog cfg) p18 p19 ∧
@@ -262,8 +277,10 @@ def CompCert's_passes (cfg : CompilerConfig)
 
 def match_prog (cfg : CompilerConfig) (selectionOracle : Selection.SelectionOracle)
     (inlineCfg : Inlining.InliningConfig) (regallocOracle : Allocation.RegallocOracle)
+    (enumerationService : Linearize.EnumerationService)
     (p : Csyntax.program) (tp : Asm.program) : Prop :=
-  CompCert's_passes cfg selectionOracle inlineCfg regallocOracle p tp
+  CompCert's_passes cfg selectionOracle inlineCfg regallocOracle
+    enumerationService p tp
 
 /-! ## Exact statement descriptors for the later proof phase -/
 
@@ -291,9 +308,12 @@ def partial_if_matchStatement : Prop :=
 def transf_c_program_matchStatement : Prop :=
   ∀ (cfg : CompilerConfig) (selectionOracle : Selection.SelectionOracle)
     (inlineCfg : Inlining.InliningConfig) (regallocOracle : Allocation.RegallocOracle)
+    (enumerationService : Linearize.EnumerationService)
     (ctx : SimplExpr.FreshIdentContext) (p : Csyntax.program) (tp : Asm.program),
-    transf_c_program cfg selectionOracle inlineCfg regallocOracle ctx p = .OK tp →
-    match_prog cfg selectionOracle inlineCfg regallocOracle p tp
+    transf_c_program cfg selectionOracle inlineCfg regallocOracle
+      enumerationService ctx p = .OK tp →
+    match_prog cfg selectionOracle inlineCfg regallocOracle
+      enumerationService p tp
 
 def forward_simulation_identityStatement : Prop :=
   ∀ (sem : semantics), forward_simulation sem sem
@@ -308,9 +328,11 @@ def match_if_simulationStatement : Prop :=
 def cstrategy_semantic_preservationStatement : Prop :=
   ∀ (cfg : CompilerConfig) (selectionOracle : Selection.SelectionOracle)
     (inlineCfg : Inlining.InliningConfig) (regallocOracle : Allocation.RegallocOracle)
+    (enumerationService : Linearize.EnumerationService)
     (xi : ExternalCalls)
     (p : Csyntax.program) (tp : Asm.program),
-    match_prog cfg selectionOracle inlineCfg regallocOracle p tp →
+    match_prog cfg selectionOracle inlineCfg regallocOracle
+      enumerationService p tp →
     forward_simulation (Cstrategy.semantics xi p) (Asm.semantics cfg xi tp) ∧
     backward_simulation
       (atomic (Cstrategy.semantics xi p)) (Asm.semantics cfg xi tp)
@@ -318,17 +340,21 @@ def cstrategy_semantic_preservationStatement : Prop :=
 def c_semantic_preservationStatement : Prop :=
   ∀ (cfg : CompilerConfig) (selectionOracle : Selection.SelectionOracle)
     (inlineCfg : Inlining.InliningConfig) (regallocOracle : Allocation.RegallocOracle)
+    (enumerationService : Linearize.EnumerationService)
     (xi : ExternalCalls)
     (p : Csyntax.program) (tp : Asm.program),
-    match_prog cfg selectionOracle inlineCfg regallocOracle p tp →
+    match_prog cfg selectionOracle inlineCfg regallocOracle
+      enumerationService p tp →
     backward_simulation (Csem.semantics xi p) (Asm.semantics cfg xi tp)
 
 def transf_c_program_correctStatement : Prop :=
   ∀ (cfg : CompilerConfig) (selectionOracle : Selection.SelectionOracle)
     (inlineCfg : Inlining.InliningConfig) (regallocOracle : Allocation.RegallocOracle)
+    (enumerationService : Linearize.EnumerationService)
     (ctx : SimplExpr.FreshIdentContext) (xi : ExternalCalls)
     (p : Csyntax.program) (tp : Asm.program),
-    transf_c_program cfg selectionOracle inlineCfg regallocOracle ctx p = .OK tp →
+    transf_c_program cfg selectionOracle inlineCfg regallocOracle
+      enumerationService ctx p = .OK tp →
     backward_simulation (Csem.semantics xi p) (Asm.semantics cfg xi tp)
 
 end CompCert4Lean.Driver.Compiler
