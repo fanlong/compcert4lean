@@ -191,6 +191,12 @@ structure OrderedType where
     _root_.CompCert4Lean.Foundation.Logic.Support.Sumbool
       (eq x y) (¬ eq x y)
 
+namespace OrderedType
+
+def ImportMarker : Type := Unit
+
+end OrderedType
+
 /- Compatibility spelling retained for already-authored provider clients. -/
 abbrev OrderedTypeSpec := OrderedType
 

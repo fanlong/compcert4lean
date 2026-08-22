@@ -1087,29 +1087,41 @@ def union_field_offset_stableStatement : Prop :=
     forall f ms, complete_members env ms = true ->
       union_field_offset env' f ms = union_field_offset env f ms
 
-def composite_consistent (env : composite_env) (co : composite) : Prop :=
-  complete_members env co.co_members = true ∧
-    co.co_alignof = align_attr co.co_attr (alignof_composite env co.co_members) ∧
-    co.co_sizeof = align (sizeof_composite env co.co_su co.co_members) co.co_alignof ∧
-    co.co_rank = rank_members env co.co_members
+structure composite_consistent (env : composite_env) (co : composite) : Prop where
+  co_consistent_complete : complete_members env co.co_members = true
+  co_consistent_alignof :
+    co.co_alignof = align_attr co.co_attr (alignof_composite env co.co_members)
+  co_consistent_sizeof :
+    co.co_sizeof = align (sizeof_composite env co.co_su co.co_members) co.co_alignof
+  co_consistent_rank : co.co_rank = rank_members env co.co_members
+
+def Build_composite_consistent (env : composite_env) (co : composite)
+    (h_complete : complete_members env co.co_members = true)
+    (h_alignof : co.co_alignof = align_attr co.co_attr (alignof_composite env co.co_members))
+    (h_sizeof : co.co_sizeof = align (sizeof_composite env co.co_su co.co_members) co.co_alignof)
+    (h_rank : co.co_rank = rank_members env co.co_members) : composite_consistent env co :=
+  { co_consistent_complete := h_complete
+    co_consistent_alignof := h_alignof
+    co_consistent_sizeof := h_sizeof
+    co_consistent_rank := h_rank }
 
 def co_consistent_complete (env : composite_env) (co : composite)
     (h : composite_consistent env co) : complete_members env co.co_members = true :=
-  h.1
+  h.co_consistent_complete
 
 def co_consistent_alignof (env : composite_env) (co : composite)
     (h : composite_consistent env co) :
     co.co_alignof = align_attr co.co_attr (alignof_composite env co.co_members) :=
-  h.2.1
+  h.co_consistent_alignof
 
 def co_consistent_sizeof (env : composite_env) (co : composite)
     (h : composite_consistent env co) :
     co.co_sizeof = align (sizeof_composite env co.co_su co.co_members) co.co_alignof :=
-  h.2.2.1
+  h.co_consistent_sizeof
 
 def co_consistent_rank (env : composite_env) (co : composite)
     (h : composite_consistent env co) :
-    co.co_rank = rank_members env co.co_members := h.2.2.2
+    co.co_rank = rank_members env co.co_members := h.co_consistent_rank
 
 def composite_env_consistent (env : composite_env) : Prop :=
   forall id co, PTree.get id env = some co -> composite_consistent env co
