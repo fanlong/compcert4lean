@@ -74,13 +74,14 @@ inductive spec_float where
   | S754_finite (s : Bool) (m : positive) (e : Z)
 deriving DecidableEq
 
+export spec_float (S754_zero S754_infinity S754_nan S754_finite)
+
 inductive location where
   | loc_Exact
   | loc_Inexact (c : comparison)
 deriving DecidableEq
 
-@[match_pattern] abbrev loc_Exact : location := location.loc_Exact
-@[match_pattern] abbrev loc_Inexact (c : comparison) : location := location.loc_Inexact c
+export location (loc_Exact loc_Inexact)
 
 structure shr_record where
   shr_m : Z
@@ -88,14 +89,7 @@ structure shr_record where
   shr_s : Bool
 deriving DecidableEq
 
-abbrev shr_m (mrs : shr_record) : Z := mrs.shr_m
-abbrev shr_r (mrs : shr_record) : Bool := mrs.shr_r
-
-@[match_pattern] abbrev S754_zero (s : Bool) : spec_float := spec_float.S754_zero s
-@[match_pattern] abbrev S754_infinity (s : Bool) : spec_float := spec_float.S754_infinity s
-@[match_pattern] abbrev S754_nan : spec_float := spec_float.S754_nan
-@[match_pattern] abbrev S754_finite (s : Bool) (m : positive) (e : Z) : spec_float :=
-  spec_float.S754_finite s m e
+export shr_record (shr_m shr_r)
 
 /-! Pinned Float.Model entry points used by the executable provider. -/
 abbrev Format := Float.Model.Format
@@ -144,12 +138,10 @@ def valid_binary (prec emax : Z) (x : spec_float) : Bool :=
 def cond_Zopp (b : Bool) (m : Z) : Z :=
   if b then zopp m else m
 
-private def natIter {A : Type} (f : A → A) : Nat → A → A
-  | 0, x => x
-  | n + 1, x => natIter f n (f x)
-
-def iter_pos {A : Type} (f : A → A) (n : positive) (x : A) : A :=
-  natIter f (posToNat n) x
+def iter_pos {A : Type} (f : A → A) : positive → A → A
+  | .xI n', x => iter_pos f n' (iter_pos f n' (f x))
+  | .xO n', x => iter_pos f n' (iter_pos f n' x)
+  | .xH, x => f x
 
 def shr_1 (mrs : shr_record) : shr_record :=
   let s := mrs.shr_r || mrs.shr_s
