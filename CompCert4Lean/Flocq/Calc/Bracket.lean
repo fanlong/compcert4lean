@@ -55,13 +55,14 @@ abbrev Float (beta : radix) (m e : Z) : CompCert4Lean.Flocq.Core.Float_prop.floa
 abbrev F2R {beta : radix} (f : CompCert4Lean.Flocq.Core.Float_prop.float beta) : R :=
   CompCert4Lean.Flocq.Core.Float_prop.F2R f
 
-def inbetween (d u x : R) : location → Prop
-  | .loc_Exact => x = d
-  | .loc_Inexact l =>
-      Rlt d x ∧ Rlt x u ∧ Rcompare x (Rdiv (Rplus d u) Rtwo) = l
+inductive inbetween (d u x : R) : location → Prop where
+  | inbetween_Exact (h : x = d) : inbetween d u x loc_Exact
+  | inbetween_Inexact (l : comparison)
+      (h_bounds : Rlt d x ∧ Rlt x u)
+      (h_middle : Rcompare x (Rdiv (Rplus d u) Rtwo) = l) :
+      inbetween d u x (loc_Inexact l)
 
-/- The source constructor is a generated public surface owned by `inbetween`. -/
-def inbetween_Exact (d u x : R) (h : x = d) : inbetween d u x loc_Exact := h
+export inbetween (inbetween_Exact inbetween_Inexact)
 
 def new_location_even (nb_steps k : Z) (l : location) : location :=
   if Zeq_bool k Z0 then
