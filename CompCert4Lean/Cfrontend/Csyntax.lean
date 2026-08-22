@@ -119,6 +119,9 @@ structure function : Type where
 
 export function (fn_return fn_callconv fn_params fn_vars fn_body)
 
+def var_names (vars : List (ident × type)) : List ident :=
+  vars.map Prod.fst
+
 def fundef : Type :=
   CompCert4Lean.Cfrontend.Ctypes.fundef function
 

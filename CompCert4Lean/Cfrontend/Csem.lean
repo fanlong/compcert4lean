@@ -473,9 +473,6 @@ inductive estep (xi : ExternalCalls) (ge : genv) : state → trace → state →
 
 export estep (step_lred step_rred step_call step_stuck)
 
-private def variableNames (vars : List (ident × type)) : List ident :=
-  vars.map Prod.fst
-
 inductive sstep (xi : ExternalCalls) (ge : genv) : state → trace → state → Prop where
   | do₁ {f x k e m} :
       sstep xi ge (.State f (.Sdo x) k e m) E0 (.ExprState f x (.Kdo k) e m)
@@ -586,7 +583,7 @@ inductive sstep (xi : ExternalCalls) (ge : genv) : state → trace → state →
       find_label lbl f.fn_body (call_cont k) = some (s', k') →
       sstep xi ge (.State f (.Sgoto lbl) k e m) E0 (.State f s' k' e m)
   | internalFunction {f vargs k m e m1 m2} :
-      list_norepet (variableNames f.fn_params ++ variableNames f.fn_vars) →
+      list_norepet (var_names f.fn_params ++ var_names f.fn_vars) →
       alloc_variables ge emptyEnv m (f.fn_params ++ f.fn_vars) e m1 →
       bind_parameters ge e m1 f.fn_params vargs m2 →
       sstep xi ge (.Callstate (.Internal f) vargs k m) E0 (.State f f.fn_body k e m2)
