@@ -140,6 +140,9 @@ def attr_eqStatement :=
 def type_eqStatement :=
   forall t1 t2 : type, Sumbool (t1 = t2) (t1 ≠ t2)
 
+def typelist_eqStatement :=
+  forall tyl1 tyl2 : List type, Sumbool (tyl1 = tyl2) (tyl1 ≠ tyl2)
+
 def attr_of_type : type -> attr
   | .Tvoid => noattr
   | .Tint _ _ a => a
@@ -1097,6 +1100,9 @@ structure composite_consistent (env : composite_env) (co : composite) : Prop whe
     co.co_sizeof = align (sizeof_composite env co.co_su co.co_members) co.co_alignof
   co_consistent_rank : co.co_rank = rank_members env co.co_members
 
+export composite_consistent (co_consistent_complete co_consistent_alignof
+  co_consistent_sizeof co_consistent_rank)
+
 def Build_composite_consistent (env : composite_env) (co : composite)
     (h_complete : complete_members env co.co_members = true)
     (h_alignof : co.co_alignof = align_attr co.co_attr (alignof_composite env co.co_members))
@@ -1106,24 +1112,6 @@ def Build_composite_consistent (env : composite_env) (co : composite)
     co_consistent_alignof := h_alignof
     co_consistent_sizeof := h_sizeof
     co_consistent_rank := h_rank }
-
-def co_consistent_complete (env : composite_env) (co : composite)
-    (h : composite_consistent env co) : complete_members env co.co_members = true :=
-  h.co_consistent_complete
-
-def co_consistent_alignof (env : composite_env) (co : composite)
-    (h : composite_consistent env co) :
-    co.co_alignof = align_attr co.co_attr (alignof_composite env co.co_members) :=
-  h.co_consistent_alignof
-
-def co_consistent_sizeof (env : composite_env) (co : composite)
-    (h : composite_consistent env co) :
-    co.co_sizeof = align (sizeof_composite env co.co_su co.co_members) co.co_alignof :=
-  h.co_consistent_sizeof
-
-def co_consistent_rank (env : composite_env) (co : composite)
-    (h : composite_consistent env co) :
-    co.co_rank = rank_members env co.co_members := h.co_consistent_rank
 
 def composite_env_consistent (env : composite_env) : Prop :=
   forall id co, PTree.get id env = some co -> composite_consistent env co

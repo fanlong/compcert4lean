@@ -115,22 +115,20 @@ structure t : Type where
   nextblock : block
   find_symbol_injective :
     ∀ id1 id2 b, find_symbol id1 = some b → find_symbol id2 = some b → id1 = id2
+  invert_find_symbol :
+    ∀ id b, invert_symbol b = some id → find_symbol id = some b
+  find_invert_symbol :
+    ∀ id b, find_symbol id = some b → invert_symbol b = some id
   public_symbol_exists :
     ∀ id, public_symbol id = true → ∃ b, find_symbol id = some b
   find_symbol_below :
     ∀ id b, find_symbol id = some b → Plt b nextblock
+  block_is_volatile_below :
+    ∀ b, block_is_volatile b = true → Plt b nextblock
 
 export t (find_symbol public_symbol invert_symbol block_is_volatile nextblock
-  find_symbol_injective public_symbol_exists find_symbol_below)
-
-def invert_find_symbol (ge : t) : Prop :=
-  ∀ id b, ge.invert_symbol b = some id → ge.find_symbol id = some b
-
-def find_invert_symbol (ge : t) : Prop :=
-  ∀ id b, ge.find_symbol id = some b → ge.invert_symbol b = some id
-
-def block_is_volatile_below (ge : t) : Prop :=
-  ∀ b, ge.block_is_volatile b = true → Plt b ge.nextblock
+  find_symbol_injective invert_find_symbol find_invert_symbol public_symbol_exists
+  find_symbol_below block_is_volatile_below)
 
 def symbol_address (ge : t) (id : ident) (ofs : ptrofs) : val :=
   match ge.find_symbol id with
@@ -202,6 +200,113 @@ def block_is_volatile {F V : Type} (ge : t F V) (b : block) : Bool :=
   match find_var_info ge b with
   | none => false
   | some gv => gv.gvar_volatile
+
+private theorem invertFindSymbolProof {F V : Type} (ge : t F V) :
+    ∀ id b, invert_symbol ge b = some id → find_symbol ge id = some b := by
+  intro id b hinvert
+  have hfold :
+      ∀ id',
+        PTree.fold
+            (fun result id' b' =>
+              match eq_block b b' with
+              | .left _ => some id'
+              | .right _ => result)
+            ge.genv_symb (none : Option ident) = some id' →
+          PTree.get id' ge.genv_symb = some b := by
+    let P : PTree.t block → Option ident → Prop := fun m result =>
+      ∀ id', result = some id' → PTree.get id' m = some b
+    have hp :
+        P ge.genv_symb
+          (PTree.fold
+            (fun result id' b' =>
+              match eq_block b b' with
+              | .left _ => some id'
+              | .right _ => result)
+            ge.genv_symb (none : Option ident)) := by
+      apply PTree_Properties.fold_rec_proof
+      · intro m m' result hget hP id' hresult
+        rw [← hget id']
+        exact hP id' hresult
+      · intro id' hresult
+        cases hresult
+      · intro m result k v hk _ hP id' hresult
+        cases heq : eq_block b v with
+        | left hbv =>
+            have hki : (show ident from k) = id' :=
+              Option.some.inj (by simpa [heq] using hresult)
+            subst id'
+            simpa [hbv] using ptreeGetSetSame k v m
+        | right hbv =>
+            have hresult' : result = some id' := by simpa [heq] using hresult
+            have hgetb := hP id' hresult'
+            have hik : id' ≠ k := by
+              intro hik
+              subst id'
+              rw [hk] at hgetb
+              cases hgetb
+            exact (ptreeGetSetOther id' k v m hik).trans hgetb
+    exact hp
+  exact hfold id hinvert
+
+private theorem findInvertSymbolProof {F V : Type} (ge : t F V) :
+    ∀ id b, find_symbol ge id = some b → invert_symbol ge b = some id := by
+  intro id b hfind
+  have hfind' : PTree.get id ge.genv_symb = some b := hfind
+  have hexists :
+      ∃ id',
+        PTree.fold
+            (fun result id' b' =>
+              match eq_block b b' with
+              | .left _ => some id'
+              | .right _ => result)
+            ge.genv_symb (none : Option ident) = some id' := by
+    let P : PTree.t block → Option ident → Prop := fun m result =>
+      PTree.get id m = some b → ∃ id', result = some id'
+    have hp :
+        P ge.genv_symb
+          (PTree.fold
+            (fun result id' b' =>
+              match eq_block b b' with
+              | .left _ => some id'
+              | .right _ => result)
+            ge.genv_symb (none : Option ident)) := by
+      apply PTree_Properties.fold_rec_proof
+      · intro m m' result hget hP htarget
+        apply hP
+        rw [hget id]
+        exact htarget
+      · intro htarget
+        cases htarget
+      · intro m result k v hk _ hP htarget
+        cases heq : eq_block b v with
+        | left _ => exact ⟨k, by simp⟩
+        | right hbv =>
+            have hik : id ≠ k := by
+              intro hik
+              subst k
+              have hvb : v = b := Option.some.inj ((ptreeGetSetSame id v m).symm.trans htarget)
+              exact hbv hvb.symm
+            have htarget' : PTree.get id m = some b :=
+              (ptreeGetSetOther id k v m hik).symm.trans htarget
+            rcases hP htarget' with ⟨id', hresult⟩
+            exact ⟨id', by simpa [heq] using hresult⟩
+    exact hp hfind'
+  rcases hexists with ⟨id', hinvert⟩
+  have hback : find_symbol ge id' = some b :=
+    invertFindSymbolProof ge id' b (by simpa [invert_symbol] using hinvert)
+  have hid : id = id' := ge.genv_vars_inj id id' b hfind hback
+  simpa [invert_symbol, hid] using hinvert
+
+private theorem blockIsVolatileBelowProof {F V : Type} (ge : t F V) :
+    ∀ b, block_is_volatile ge b = true → Plt b ge.genv_next := by
+  intro b hvolatile
+  unfold block_is_volatile find_var_info find_def at hvolatile
+  cases hdef : PTree.get b ge.genv_defs with
+  | none => simp [hdef] at hvolatile
+  | some gd =>
+      cases gd with
+      | Gfun f => simp [hdef] at hvolatile
+      | Gvar gv => exact ge.genv_defs_range b (Gvar gv) hdef
 
 def add_global {F V : Type} (ge : t F V) (idg : ident × globdef F V) : t F V :=
   let id := idg.1
@@ -296,6 +401,8 @@ def to_senv {F V : Type} (ge : t F V) : Senv.t :=
     block_is_volatile := block_is_volatile ge
     nextblock := ge.genv_next
     find_symbol_injective := ge.genv_vars_inj
+    invert_find_symbol := invertFindSymbolProof ge
+    find_invert_symbol := findInvertSymbolProof ge
     public_symbol_exists := by
       intro id h
       unfold public_symbol at h
@@ -304,7 +411,8 @@ def to_senv {F V : Type} (ge : t F V) : Senv.t :=
       | some b => exact ⟨b, rfl⟩
     find_symbol_below := by
       intro id b h
-      exact ge.genv_symb_range id b h }
+      exact ge.genv_symb_range id b h
+    block_is_volatile_below := blockIsVolatileBelowProof ge }
 
 private def storeZerosNat : Nat → mem → block → Z → Option mem
   | 0, m, _, _ => some m
