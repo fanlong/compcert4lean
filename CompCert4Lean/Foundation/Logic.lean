@@ -181,6 +181,16 @@ end Rocq.Coq.Init.Datatypes
 
 namespace Rocq.Coq.Init.Logic
 
+/-! The source `or_introl` identity is a constructor of Rocq's `or`
+    proposition.  Keep the carrier explicit so the exported source name is
+    resolved as a constructor rather than as a proposition-valued definition. -/
+
+inductive or (A B : Prop) : Prop where
+  | or_introl (h : A) : or A B
+  | or_intror (h : B) : or A B
+
+export or (or_introl or_intror)
+
 def False_ind (P : Prop) (h : False) : P := False.elim h
 
 theorem eq_sym {A : Type} {x y : A} (h : x = y) : y = x := h.symm
@@ -207,8 +217,6 @@ theorem not_eq_sym {A : Type} {x y : A} (h : ¬ x = y) : ¬ y = x := by
   intro h'
   exact h h'.symm
 
-def or_introl {A B : Prop} (h : A) : A ∨ B := Or.inl h
-
 theorem proj1 {A B : Prop} (h : A ∧ B) : A := h.1
 
 theorem proj2 {A B : Prop} (h : A ∧ B) : B := h.2
@@ -233,24 +241,37 @@ end Rocq.Coq.Init.Nat
 
 namespace Rocq.Coq.Init.Specif
 
-def exist {A : Type} (P : A → Prop) (x : A) (h : P x) : Subtype P := ⟨x, h⟩
+/-! These are the selected source carriers whose constructor names are part of
+    the promised compatibility surface.  Their shapes follow Rocq's `sig`,
+    `sig2`, and `sigT` declarations directly. -/
 
-def exist2 {A : Type} (P Q : A → Prop) (x : A) (hp : P x) (hq : Q x) :
-    Subtype (fun y => P y ∧ Q y) := ⟨x, hp, hq⟩
+inductive sig {A : Type} (P : A → Prop) : Type where
+  | exist (x : A) (h : P x) : sig P
 
-def existT {A : Type} (P : A → Type) (x : A) (h : P x) : Sigma P := ⟨x, h⟩
+inductive sig2 {A : Type} (P Q : A → Prop) : Type where
+  | exist2 (x : A) (hp : P x) (hq : Q x) : sig2 P Q
 
-def inleft {A : Type} {B : Prop} (a : A) : Support.Sumor A B := .inleft a
+inductive sigT {A : Type} (P : A → Type) : Type where
+  | existT (x : A) (h : P x) : sigT P
 
-def inright {A : Type} {B : Prop} (h : B) : Support.Sumor A B := .inright h
+export sig (exist)
+export sig2 (exist2)
+export sigT (existT)
 
-def left {A B : Prop} (h : A) : Support.Sumbool A B := .left h
+/-! `sumbool` and `sumor` retain the canonical support carriers used by the
+    rest of the migration.  Exporting their constructors gives the promised
+    Rocq source names without introducing a second carrier provider. -/
 
-def proj1_sig {A : Type} {P : A → Prop} (e : Subtype P) : A := e.1
+export Support.Sumbool (left right)
+export Support.Sumor (inleft inright)
 
-def proj2_sig {A : Type} {P : A → Prop} (e : Subtype P) : P e.1 := e.2
+def proj1_sig {A : Type} {P : A → Prop} (e : sig P) : A :=
+  match e with
+  | .exist x _ => x
 
-def right {A B : Prop} (h : B) : Support.Sumbool A B := .right h
+def proj2_sig {A : Type} {P : A → Prop} (e : sig P) : P (proj1_sig e) :=
+  match e with
+  | .exist _ h => h
 
 end Rocq.Coq.Init.Specif
 
