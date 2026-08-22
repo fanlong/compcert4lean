@@ -548,6 +548,10 @@ def neg : int → int := WordCore.neg
 def add : int → int → int := WordCore.add
 def sub : int → int → int := WordCore.sub
 def mul : int → int → int := WordCore.mul
+def mulhs (x y : int) : int :=
+  repr (zDiv (zMul (signed x) (signed y)) modulus)
+def mulhu (x y : int) : int :=
+  repr (zDiv (zMul (unsigned x) (unsigned y)) modulus)
 def divs : int → int → int := WordCore.divs
 def mods : int → int → int := WordCore.mods
 def divu : int → int → int := WordCore.divu
@@ -742,6 +746,10 @@ def neg : int → int := WordCore.neg
 def add : int → int → int := WordCore.add
 def sub : int → int → int := WordCore.sub
 def mul : int → int → int := WordCore.mul
+def mulhs (x y : int) : int :=
+  repr (zDiv (zMul (signed x) (signed y)) modulus)
+def mulhu (x y : int) : int :=
+  repr (zDiv (zMul (unsigned x) (unsigned y)) modulus)
 def divs : int → int → int := WordCore.divs
 def mods : int → int → int := WordCore.mods
 def divu : int → int → int := WordCore.divu
