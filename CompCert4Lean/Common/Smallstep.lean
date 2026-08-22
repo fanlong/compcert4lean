@@ -225,35 +225,24 @@ def star_starNStatement : Prop :=
     star step ge s t s' → ∃ n, starN step ge n s t s'
 
 /-!
-Lean has no primitive coinductive relation.  Each relation below is the union
-of all post-fixed points of its source constructor functor, hence the greatest
-fixed point.  The source-named introduction operations supply folding, and the
-`casesOn` operations supply the corresponding one-layer elimination behavior.
+Lean 4.33 provides checked coinductive predicates.  The declarations below
+therefore use the native greatest-fixed-point encoding, while the transparent
+aliases retain the source-facing implicit argument surface used by consumers.
 -/
 
-def forever {genv state : Type}
+coinductive forever {genv state : Type}
     (step : genv → state → trace → state → Prop)
-    (ge : genv) (s : state) (T : traceinf) : Prop :=
-  ∃ R : state → traceinf → Prop,
-    R s T ∧
-    ∀ s1 T1, R s1 T1 →
-      ∃ t s2 T2, step ge s1 t s2 ∧ R s2 T2 ∧ T1 = Eappinf t T2
+    (ge : genv) : state → traceinf → Prop where
+  | forever_intro (s1 : state) (t : trace) {s2 : state} {T : traceinf}
+      (hstep : step ge s1 t s2) (hforever : forever step ge s2 T) :
+      forever step ge s1 (Eappinf t T)
 
-def forever_intro {genv state : Type}
+abbrev forever_intro {genv state : Type}
     {step : genv → state → trace → state → Prop} {ge : genv}
     (s1 : state) (t : trace) {s2 : state} {T : traceinf}
     (hstep : step ge s1 t s2) (hforever : forever step ge s2 T) :
-    forever step ge s1 (Eappinf t T) := by
-  rcases hforever with ⟨R, htail, hclosed⟩
-  let R' : state → traceinf → Prop :=
-    fun s T' => (s = s1 ∧ T' = Eappinf t T) ∨ R s T'
-  refine ⟨R', Or.inl ⟨rfl, rfl⟩, ?_⟩
-  intro s T' h
-  rcases h with h | h
-  · rcases h with ⟨rfl, rfl⟩
-    exact ⟨t, s2, T, hstep, Or.inr htail, rfl⟩
-  · rcases hclosed s T' h with ⟨u, s', U, hs, hR, hT⟩
-    exact ⟨u, s', U, hs, Or.inr hR, hT⟩
+    forever step ge s1 (Eappinf t T) :=
+  @forever.forever_intro genv state step ge s1 t s2 T hstep hforever
 
 def forever_casesOn {genv state : Type}
     {step : genv → state → trace → state → Prop} {ge : genv}
@@ -262,29 +251,21 @@ def forever_casesOn {genv state : Type}
       step ge s1 t s2 → forever step ge s2 T →
         motive s1 (Eappinf t T))
     {s : state} {T : traceinf} (h : forever step ge s T) : motive s T := by
-  rcases h with ⟨R, hR, hclosed⟩
-  rcases hclosed s T hR with ⟨t, s2, T2, hstep, htail, htrace⟩
-  rw [htrace]
-  exact hintro s t hstep ⟨R, htail, hclosed⟩
+  exact forever.casesOn step ge (motive := fun s T _ => motive s T) h
+    (fun s t s2 T hstep htail => hintro s t hstep htail)
 
-def forever_silent {genv state : Type}
+coinductive forever_silent {genv state : Type}
     (step : genv → state → trace → state → Prop)
-    (ge : genv) (s : state) : Prop :=
-  ∃ R : state → Prop,
-    R s ∧ ∀ s1, R s1 → ∃ s2, step ge s1 E0 s2 ∧ R s2
+    (ge : genv) : state → Prop where
+  | forever_silent_intro (s1 : state) {s2 : state}
+      (hstep : step ge s1 E0 s2) (hforever : forever_silent step ge s2) :
+      forever_silent step ge s1
 
-def forever_silent_intro {genv state : Type}
+abbrev forever_silent_intro {genv state : Type}
     {step : genv → state → trace → state → Prop} {ge : genv}
     (s1 : state) {s2 : state} (hstep : step ge s1 E0 s2)
-    (hforever : forever_silent step ge s2) : forever_silent step ge s1 := by
-  rcases hforever with ⟨R, htail, hclosed⟩
-  let R' : state → Prop := fun s => s = s1 ∨ R s
-  refine ⟨R', Or.inl rfl, ?_⟩
-  intro s h
-  rcases h with rfl | h
-  · exact ⟨s2, hstep, Or.inr htail⟩
-  · rcases hclosed s h with ⟨s', hs, hR⟩
-    exact ⟨s', hs, Or.inr hR⟩
+    (hforever : forever_silent step ge s2) : forever_silent step ge s1 :=
+  @forever_silent.forever_silent_intro genv state step ge s1 s2 hstep hforever
 
 def forever_silent_casesOn {genv state : Type}
     {step : genv → state → trace → state → Prop} {ge : genv}
@@ -292,56 +273,38 @@ def forever_silent_casesOn {genv state : Type}
     (hintro : ∀ (s1 : state) {s2 : state},
       step ge s1 E0 s2 → forever_silent step ge s2 → motive s1)
     {s : state} (h : forever_silent step ge s) : motive s := by
-  rcases h with ⟨R, hR, hclosed⟩
-  rcases hclosed s hR with ⟨s2, hstep, htail⟩
-  exact hintro s hstep ⟨R, htail, hclosed⟩
+  exact forever_silent.casesOn step ge (motive := fun s _ => motive s) h
+    (fun s s2 hstep htail => hintro s hstep htail)
 
-def forever_silent_N {genv state : Type}
+coinductive forever_silent_N {genv state : Type}
     (step : genv → state → trace → state → Prop)
-    {A : Type} (order : A → A → Prop) (ge : genv) (a : A) (s : state) : Prop :=
-  ∃ R : A → state → Prop,
-    R a s ∧
-    ∀ a1 s1, R a1 s1 →
-      (∃ s2 a2, star step ge s1 E0 s2 ∧ order a2 a1 ∧ R a2 s2) ∨
-      (∃ s2 a2, plus step ge s1 E0 s2 ∧ R a2 s2)
+    {A : Type} (order : A → A → Prop) (ge : genv) : A → state → Prop where
+  | forever_silent_N_star (s1 s2 : state) (a1 a2 : A)
+      (hstar : star step ge s1 E0 s2) (horder : order a2 a1)
+      (hforever : forever_silent_N step order ge a2 s2) :
+      forever_silent_N step order ge a1 s1
+  | forever_silent_N_plus (s1 s2 : state) (a1 a2 : A)
+      (hplus : plus step ge s1 E0 s2)
+      (hforever : forever_silent_N step order ge a2 s2) :
+      forever_silent_N step order ge a1 s1
 
-def forever_silent_N_star {genv state A : Type}
+abbrev forever_silent_N_star {genv state A : Type}
     {step : genv → state → trace → state → Prop}
     {order : A → A → Prop} {ge : genv}
     {s1 s2 : state} (a1 : A) {a2 : A} (hstar : star step ge s1 E0 s2)
     (horder : order a2 a1) (hforever : forever_silent_N step order ge a2 s2) :
-    forever_silent_N step order ge a1 s1 := by
-  rcases hforever with ⟨R, htail, hclosed⟩
-  let R' : A → state → Prop := fun a s => (a = a1 ∧ s = s1) ∨ R a s
-  refine ⟨R', Or.inl ⟨rfl, rfl⟩, ?_⟩
-  intro a s h
-  rcases h with h | h
-  · rcases h with ⟨rfl, rfl⟩
-    exact Or.inl ⟨s2, a2, hstar, horder, Or.inr htail⟩
-  · rcases hclosed a s h with h | h
-    · rcases h with ⟨s', a', hs, ho, hR⟩
-      exact Or.inl ⟨s', a', hs, ho, Or.inr hR⟩
-    · rcases h with ⟨s', a', hs, hR⟩
-      exact Or.inr ⟨s', a', hs, Or.inr hR⟩
+    forever_silent_N step order ge a1 s1 :=
+  @forever_silent_N.forever_silent_N_star genv state step A order ge s1 s2 a1 a2
+    hstar horder hforever
 
-def forever_silent_N_plus {genv state A : Type}
+abbrev forever_silent_N_plus {genv state A : Type}
     {step : genv → state → trace → state → Prop}
     {order : A → A → Prop} {ge : genv}
     {s1 s2 : state} (a1 : A) {a2 : A} (hplus : plus step ge s1 E0 s2)
     (hforever : forever_silent_N step order ge a2 s2) :
-    forever_silent_N step order ge a1 s1 := by
-  rcases hforever with ⟨R, htail, hclosed⟩
-  let R' : A → state → Prop := fun a s => (a = a1 ∧ s = s1) ∨ R a s
-  refine ⟨R', Or.inl ⟨rfl, rfl⟩, ?_⟩
-  intro a s h
-  rcases h with h | h
-  · rcases h with ⟨rfl, rfl⟩
-    exact Or.inr ⟨s2, a2, hplus, Or.inr htail⟩
-  · rcases hclosed a s h with h | h
-    · rcases h with ⟨s', a', hs, ho, hR⟩
-      exact Or.inl ⟨s', a', hs, ho, Or.inr hR⟩
-    · rcases h with ⟨s', a', hs, hR⟩
-      exact Or.inr ⟨s', a', hs, Or.inr hR⟩
+    forever_silent_N step order ge a1 s1 :=
+  @forever_silent_N.forever_silent_N_plus genv state step A order ge s1 s2 a1 a2
+    hplus hforever
 
 def forever_silent_N_casesOn {genv state A : Type}
     {step : genv → state → trace → state → Prop}
@@ -355,12 +318,10 @@ def forever_silent_N_casesOn {genv state A : Type}
         forever_silent_N step order ge a2 s2 → motive a1 s1)
     {a : A} {s : state} (h : forever_silent_N step order ge a s) :
     motive a s := by
-  rcases h with ⟨R, hR, hclosed⟩
-  rcases hclosed a s hR with h | h
-  · rcases h with ⟨s2, a2, hs, ho, htail⟩
-    exact hstar s s2 a a2 hs ho ⟨R, htail, hclosed⟩
-  · rcases h with ⟨s2, a2, hp, htail⟩
-    exact hplus s s2 a a2 hp ⟨R, htail, hclosed⟩
+  exact forever_silent_N.casesOn step order ge
+    (motive := fun a s _ => motive a s) h
+    (fun s1 s2 a1 a2 hstar' horder htail => hstar s1 s2 a1 a2 hstar' horder htail)
+    (fun s1 s2 a1 a2 hplus' htail => hplus s1 s2 a1 a2 hplus' htail)
 
 def forever_silent_N_invStatement : Prop :=
   ∀ (genv state : Type)
@@ -379,31 +340,22 @@ def forever_silent_N_foreverStatement : Prop :=
     ∀ (ge : genv) (a : A) (s : state),
       forever_silent_N step order ge a s → forever_silent step ge s
 
-def forever_reactive {genv state : Type}
+coinductive forever_reactive {genv state : Type}
     (step : genv → state → trace → state → Prop)
-    (ge : genv) (s : state) (T : traceinf) : Prop :=
-  ∃ R : state → traceinf → Prop,
-    R s T ∧
-    ∀ s1 T1, R s1 T1 →
-      ∃ s2 t T2, star step ge s1 t s2 ∧ t ≠ E0 ∧
-        R s2 T2 ∧ T1 = Eappinf t T2
+    (ge : genv) : state → traceinf → Prop where
+  | forever_reactive_intro (s1 s2 : state) (t : trace) {T : traceinf}
+      (hstar : star step ge s1 t s2) (hnonempty : t ≠ E0)
+      (hforever : forever_reactive step ge s2 T) :
+      forever_reactive step ge s1 (Eappinf t T)
 
-def forever_reactive_intro {genv state : Type}
+abbrev forever_reactive_intro {genv state : Type}
     {step : genv → state → trace → state → Prop} {ge : genv}
     {s1 s2 : state} {t : trace} {T : traceinf}
     (hstar : star step ge s1 t s2) (hnonempty : t ≠ E0)
     (hforever : forever_reactive step ge s2 T) :
-    forever_reactive step ge s1 (Eappinf t T) := by
-  rcases hforever with ⟨R, htail, hclosed⟩
-  let R' : state → traceinf → Prop :=
-    fun s T' => (s = s1 ∧ T' = Eappinf t T) ∨ R s T'
-  refine ⟨R', Or.inl ⟨rfl, rfl⟩, ?_⟩
-  intro s T' h
-  rcases h with h | h
-  · rcases h with ⟨rfl, rfl⟩
-    exact ⟨s2, t, T, hstar, hnonempty, Or.inr htail, rfl⟩
-  · rcases hclosed s T' h with ⟨s', u, U, hs, hu, hR, hT⟩
-    exact ⟨s', u, U, hs, hu, Or.inr hR, hT⟩
+    forever_reactive step ge s1 (Eappinf t T) :=
+  @forever_reactive.forever_reactive_intro genv state step ge s1 s2 t T
+    hstar hnonempty hforever
 
 def forever_reactive_casesOn {genv state : Type}
     {step : genv → state → trace → state → Prop} {ge : genv}
@@ -413,10 +365,8 @@ def forever_reactive_casesOn {genv state : Type}
         motive s1 (Eappinf t T))
     {s : state} {T : traceinf} (h : forever_reactive step ge s T) :
     motive s T := by
-  rcases h with ⟨R, hR, hclosed⟩
-  rcases hclosed s T hR with ⟨s2, t, T2, hstar, hnonempty, htail, htrace⟩
-  rw [htrace]
-  exact hintro s s2 t T2 hstar hnonempty ⟨R, htail, hclosed⟩
+  exact forever_reactive.casesOn step ge (motive := fun s T _ => motive s T) h
+    (fun s1 s2 t T hstar hnonempty htail => hintro s1 s2 t T hstar hnonempty htail)
 
 def star_forever_reactiveStatement : Prop :=
   ∀ (genv state : Type)

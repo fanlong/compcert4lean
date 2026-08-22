@@ -42,9 +42,7 @@ inductive FIX_format (beta : radix) (emin : Z) (x : R) : Prop where
   | FIX_spec (f : float beta) :
       x = F2R f → Fexp f = emin → FIX_format beta emin x
 
-def FIX_spec {beta : radix} {emin : Z} {x : R} (f : float beta)
-    (hx : x = F2R f) (he : Fexp f = emin) : FIX_format beta emin x :=
-  .FIX_spec f hx he
+export FIX_format (FIX_spec)
 
 def FIX_exp (emin : Z) (e : Z) : Z := emin
 
@@ -93,12 +91,6 @@ def round_FIX_IZRStatement : Prop :=
     round radix2 (FIX_exp Z0) f x = IZR (f x)
 
 def FIX_format_ind (beta : radix) (emin : Z) (x : R) (P : Prop)
-    (step : ∀ (f : float beta), x = F2R f → Fexp f = emin → P)
-    (h : FIX_format beta emin x) : P :=
-  match h with
-  | .FIX_spec f hxf hfe => step f hxf hfe
-
-def FIX_format_sind (beta : radix) (emin : Z) (x : R) (P : Prop)
     (step : ∀ (f : float beta), x = F2R f → Fexp f = emin → P)
     (h : FIX_format beta emin x) : P :=
   match h with
