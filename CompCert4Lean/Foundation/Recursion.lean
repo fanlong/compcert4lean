@@ -14,20 +14,39 @@ namespace Rocq.Coq
 
 namespace Init.Wf
 
-abbrev Acc {A : Type} (R : A → A → Prop) (x : A) : Prop :=
-  _root_.Acc R x
+/-! The source accessibility predicate is a carrier in its own right.  Keep
+    the relation as an explicit parameter and expose the source constructor
+    name, rather than abbreviating Lean's similarly shaped primitive. -/
 
-abbrev Acc_intro {A : Type} {R : A → A → Prop} (x : A)
-    (h : ∀ y : A, R y x → Acc R y) : Acc R x :=
-  _root_.Acc.intro x h
+inductive Acc {A : Type} (R : A → A → Prop) : A → Prop where
+  | Acc_intro (x : A) (h : ∀ y : A, R y x → Acc R y) : Acc R x
+
+export Acc (Acc_intro)
 
 abbrev well_founded {A : Type} (R : A → A → Prop) : Prop :=
-  _root_.WellFounded R
+  ∀ a : A, Acc R a
+
+private theorem toLeanAcc {A : Type} {R : A → A → Prop} {x : A}
+    (h : Acc R x) : _root_.Acc R x := by
+  induction h with
+  | Acc_intro x h ih =>
+      exact _root_.Acc.intro x (fun y hy => ih y hy)
+
+private theorem sourceAccOfLean {A : Type} {R : A → A → Prop} {x : A}
+    (h : _root_.Acc R x) : Acc R x := by
+  induction h with
+  | intro x h ih =>
+      exact Acc.Acc_intro x (fun y hy => ih y hy)
+
+instance {A : Type} {R : A → A → Prop} :
+    Coe (_root_.WellFounded R) (well_founded R) where
+  coe h x := sourceAccOfLean (h.apply x)
 
 def Fix {A : Type} {R : A → A → Prop}
     (Rwf : well_founded R) (P : A → Type)
     (F : ∀ x : A, (∀ y : A, R y x → P y) → P x) (x : A) : P x :=
-  _root_.WellFounded.fix Rwf F x
+  _root_.WellFounded.fix
+    (⟨fun a => toLeanAcc (Rwf a)⟩ : _root_.WellFounded R) F x
 
 def Fix_eqStatement :=
   ∀ {A : Type} {R : A → A → Prop}
