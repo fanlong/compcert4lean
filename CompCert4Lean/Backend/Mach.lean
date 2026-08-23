@@ -178,6 +178,10 @@ def undef_regs_sameStatement : Prop :=
   ∀ (r : mreg) (rl : List mreg) (rs : regset),
     r ∈ rl → undef_regs rl rs r = Vundef
 
+def undef_regs_other : Prop := undef_regs_otherStatement
+
+def undef_regs_same : Prop := undef_regs_sameStatement
+
 def undef_caller_save_regs (cfg : CompilerConfig) (rs : regset) : regset :=
   fun r => if CompCert4Lean.X86.Conventions1.is_callee_save cfg r then rs r else Vundef
 
@@ -207,6 +211,8 @@ def is_label (lbl : label) (instr : instruction) : Bool :=
 def is_label_correctStatement : Prop :=
   ∀ (lbl : label) (instr : instruction),
     if is_label lbl instr then instr = .Mlabel lbl else instr ≠ .Mlabel lbl
+
+def is_label_correct : Prop := is_label_correctStatement
 
 def find_label (lbl : label) (c : code) : Option code :=
   match c with

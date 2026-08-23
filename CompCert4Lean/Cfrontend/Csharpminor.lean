@@ -201,20 +201,20 @@ mutual
         | none => find_label lbl s2 k
     | .Sloop s, k => find_label lbl s (.Kseq (.Sloop s) k)
     | .Sblock s, k => find_label lbl s (.Kblock k)
-    | .Sswitch _ _ cases, k => findLabelLs lbl cases k
+    | .Sswitch _ _ cases, k => find_label_ls lbl cases k
     | .Slabel lbl' s, k =>
         match ident_eq lbl lbl' with
         | .left _ => some (s, k)
         | .right _ => find_label lbl s k
     | _, _ => none
 
-  private def findLabelLs (lbl : label) :
+  def find_label_ls (lbl : label) :
       lbl_stmt → cont → Option (stmt × cont)
     | .LSnil, _ => none
     | .LScons _ s remaining, k =>
         match find_label lbl s (.Kseq (seq_of_lbl_stmt remaining) k) with
         | some sk => some sk
-        | none => findLabelLs lbl remaining k
+        | none => find_label_ls lbl remaining k
 end
 
 def eval_constant : constant → Option val
@@ -222,6 +222,8 @@ def eval_constant : constant → Option val
   | .Ofloatconst n => some (.Vfloat n)
   | .Osingleconst n => some (.Vsingle n)
   | .Olongconst n => some (.Vlong n)
+
+def eval_unop := CompCert4Lean.Backend.Cminor.eval_unop
 
 def eval_binop := CompCert4Lean.Backend.Cminor.eval_binop
 
@@ -233,6 +235,8 @@ inductive alloc_variables : env → mem → List (ident × Z) → env → mem �
       (halloc : Mem.alloc m z0 size = (m1, b1))
       (hvars : alloc_variables (PTree.set id (b1, size) e) m1 vars e2 m2) :
       alloc_variables e m ((id, size) :: vars) e2 m2
+
+export alloc_variables (alloc_variables_nil alloc_variables_cons)
 
 def block_of_binding (binding : ident × (block × Z)) : block × Z × Z :=
   let (_, b, size) := binding
@@ -265,7 +269,7 @@ inductive eval_expr (ge : genv) (e : env) (le : temp_env) (m : mem) :
       eval_expr ge e le m (.Econst cst) v
   | eval_Eunop (op : unary_operation) (a1 : expr) (v1 v : val)
       (ha1 : eval_expr ge e le m a1 v1)
-      (hop : CompCert4Lean.Backend.Cminor.eval_unop op v1 = some v) :
+      (hop : eval_unop op v1 = some v) :
       eval_expr ge e le m (.Eunop op a1) v
   | eval_Ebinop (op : binary_operation) (a1 a2 : expr) (v1 v2 v : val)
       (ha1 : eval_expr ge e le m a1 v1)
@@ -277,7 +281,7 @@ inductive eval_expr (ge : genv) (e : env) (le : temp_env) (m : mem) :
       (hload : Mem.loadv chunk m vaddr = some v) :
       eval_expr ge e le m (.Eload chunk address) v
 
-export eval_expr (eval_Ebinop eval_Eload)
+export eval_expr (eval_Evar eval_Eaddrof eval_Econst eval_Eunop eval_Ebinop eval_Eload)
 
 inductive eval_exprlist (ge : genv) (e : env) (le : temp_env) (m : mem) :
     List expr → List val → Prop where
@@ -286,6 +290,8 @@ inductive eval_exprlist (ge : genv) (e : env) (le : temp_env) (m : mem) :
       (ha1 : eval_expr ge e le m a1 v1)
       (hal : eval_exprlist ge e le m al vl) :
       eval_exprlist ge e le m (a1 :: al) (v1 :: vl)
+
+export eval_exprlist (eval_Enil eval_Econs)
 
 inductive step (xi : ExternalCalls) (ge : genv) : state → trace → state → Prop where
   | step_skip_seq (f : function) (s : stmt) (k : cont) (e : env)
@@ -409,8 +415,11 @@ inductive step (xi : ExternalCalls) (ge : genv) : state → trace → state → 
         (.State f .Sskip k e
           (CompCert4Lean.Backend.Cminor.set_optvar optid v le) m)
 
-export step (step_skip_seq step_skip_call step_call step_seq step_ifthenelse
-  step_internal_function)
+export step (step_skip_seq step_skip_block step_skip_call step_set step_store
+  step_call step_builtin step_seq step_ifthenelse step_loop step_block
+  step_exit_seq step_exit_block_0 step_exit_block_S step_switch step_return_0
+  step_return_1 step_label step_goto step_internal_function
+  step_external_function step_return)
 
 inductive initial_state (p : program) : state → Prop where
   | initial_state_intro (b : block) (f : fundef) (m0 : mem)
@@ -420,9 +429,13 @@ inductive initial_state (p : program) : state → Prop where
       (hsig : funsig f = signature_main) :
       initial_state p (.Callstate f [] .Kstop m0)
 
+export initial_state (initial_state_intro)
+
 inductive final_state : state → CCInt → Prop where
   | final_state_intro (r : CCInt) (m : mem) :
       final_state (.Returnstate (.Vint r) .Kstop m) r
+
+export final_state (final_state_intro)
 
 def semantics (xi : ExternalCalls) (p : program) :
     CompCert4Lean.Common.Smallstep.semantics :=
