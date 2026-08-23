@@ -97,11 +97,7 @@ def binary_float_of_bits (mw ew : Z)
     (_Hmw : Zlt Z0 mw) (_Hew : Zlt Z0 ew)
     (_Hmax : Zlt (prec mw) (emax ew))
     (x : Z) : binary_float mw ew :=
-  let y := binary_float_of_bits_aux mw ew x
-  if h : Binary.valid_binary (prec := prec mw) (emax := emax ew) y = true then
-    Binary.FF2B y h
-  else
-    Binary.B754_zero false
+  Binary.FF2B (binary_float_of_bits_aux mw ew x)
 
 /-! Exact source proposition descriptors for later proof migration. -/
 

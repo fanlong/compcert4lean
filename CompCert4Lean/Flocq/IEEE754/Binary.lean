@@ -147,6 +147,9 @@ def valid_binary (x : full_float) : Bool :=
   | .F754_nan _ pl => nan_pl (prec := prec) pl
   | _ => true
 
+def FF2BObligation (x : full_float) : Prop :=
+  valid_binary (prec := prec) (emax := emax) x = true
+
 inductive binary_float (prec emax : Z) where
   | B754_zero (s : Bool)
   | B754_infinity (s : Bool)
@@ -168,13 +171,12 @@ def B2BSN (x : binary_float prec emax) : BinarySingleNaN.binary_float prec emax 
   | .B754_nan _ _ => BinarySingleNaN.B754_nan
   | .B754_finite s m e => BinarySingleNaN.B754_finite s m e
 
-def FF2B (x : full_float) :
-    valid_binary (prec := prec) (emax := emax) x = true → binary_float prec emax :=
+def FF2B (x : full_float) : binary_float prec emax :=
   match x with
-  | .F754_finite s m e => fun _ => .B754_finite s m e
-  | .F754_infinity s => fun _ => B754_infinity s
-  | .F754_zero s => fun _ => B754_zero s
-  | .F754_nan s pl => fun _ => .B754_nan s pl
+  | .F754_finite s m e => .B754_finite s m e
+  | .F754_infinity s => B754_infinity s
+  | .F754_zero s => B754_zero s
+  | .F754_nan s pl => .B754_nan s pl
 
 def B2FF (x : binary_float prec emax) : full_float :=
   match x with
@@ -370,8 +372,9 @@ def B2BSN_BSN2B'Statement : Prop :=
     B2BSN (BSN2B' x Nx) = x
 
 def B2FF_FF2BStatement : Prop :=
-  ∀ (x : full_float)
-    (Hx : valid_binary (prec := prec) (emax := emax) x = true), B2FF (FF2B x Hx) = x
+  ∀ (x : full_float) (_Hx : FF2BObligation (prec := prec) (emax := emax) x),
+    B2FF (prec := prec) (emax := emax)
+      (FF2B (prec := prec) (emax := emax) x) = x
 
 def B2FF_injStatement : Prop :=
   ∀ x y : binary_float prec emax,
