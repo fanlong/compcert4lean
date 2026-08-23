@@ -59,13 +59,16 @@ def eq_list_valnum (x y : List valnum) : Sumbool (x = y) (x ≠ y) :=
 
 /- Equality of right-hand sides, ignoring the region carried by loads. -/
 
-def rhs_compat (r1 r2 : rhs) : Prop :=
-  match r1, r2 with
-  | Op op1 vl1, Op op2 vl2 => op1 = op2 ∧ vl1 = vl2
-  | Load chunk1 addr1 vl1 _, Load chunk2 addr2 vl2 _ =>
-      chunk1 = chunk2 ∧ addr1 = addr2 ∧ vl1 = vl2
-  | Builtin bf1 args1, Builtin bf2 args2 => bf1 = bf2 ∧ args1 = args2
-  | _, _ => False
+inductive rhs_compat : rhs → rhs → Prop where
+  | rhs_compat_op (op : operation) (vl : List valnum) :
+      rhs_compat (Op op vl) (Op op vl)
+  | rhs_compat_load (chunk : memory_chunk) (addr : addressing) (vl : List valnum)
+      (p1 p2 : aptr) :
+      rhs_compat (Load chunk addr vl p1) (Load chunk addr vl p2)
+  | rhs_compat_builtin (bf : builtin_function) (args : List (builtin_arg valnum)) :
+      rhs_compat (Builtin bf args) (Builtin bf args)
+
+export rhs_compat (rhs_compat_op rhs_compat_load rhs_compat_builtin)
 
 def compat_rhs (r1 r2 : rhs) : Bool :=
   match r1, r2 with
@@ -108,94 +111,74 @@ def wf_equation (next : valnum) (e : equation) : Prop :=
   match e with
   | Eq l _ r => Plt l next ∧ wf_rhs next r
 
-/- The reverse-map consistency field is retained in the parent proposition;
-   only the packet-owned generated projections are exposed below. -/
-def wf_numbering (n : numbering) : Prop :=
-  (∀ e, In e n.num_eqs → wf_equation n.num_next e) ∧
-  (∀ r v, PTree.get r n.num_reg = some v → Plt v n.num_next) ∧
-  (∀ r v, In r (PMap.get v n.num_val) → PTree.get r n.num_reg = some v)
+/- A numbering is well formed if all value numbers mentioned are below
+   [num_next], and the reverse map is consistent with the direct map. -/
+structure wf_numbering (n : numbering) : Prop where
+  wf_num_eqs : ∀ e, In e n.num_eqs → wf_equation n.num_next e
+  wf_num_reg : ∀ r v, PTree.get r n.num_reg = some v → Plt v n.num_next
+  wf_num_val : ∀ r v, In r (PMap.get v n.num_val) → PTree.get r n.num_reg = some v
 
-def wf_num_eqs {n : numbering} (h : wf_numbering n) :
-    ∀ e, In e n.num_eqs → wf_equation n.num_next e := h.1
-
-def wf_num_reg {n : numbering} (h : wf_numbering n) :
-    ∀ r v, PTree.get r n.num_reg = some v → Plt v n.num_next := h.2.1
-
-def wf_num_val {n : numbering} (h : wf_numbering n) :
-    ∀ r v, In r (PMap.get v n.num_val) → PTree.get r n.num_reg = some v := h.2.2
+export wf_numbering (wf_num_eqs wf_num_reg wf_num_val)
 
 def valuation : Type := valnum → val
 
-def rhs_eval_to (valu : valuation) (ge : genv) (sp : val) (m : mem)
-    (r : rhs) (v : val) : Prop :=
-  match r with
-  | Op op vl => eval_operation ge sp op (List.map valu vl) m = some v
-  | Load chunk addr vl _ =>
-      ∃ a, eval_addressing ge sp addr (List.map valu vl) = some a ∧
-        Mem.loadv chunk m a = some v
-  | Builtin bf args =>
-      ∃ vargs, eval_builtin_args (Genv.to_senv ge) valu sp m args vargs ∧
-        builtin_function_sem bf vargs = some v
+inductive rhs_eval_to (valu : valuation) (ge : genv) (sp : val) (m : mem) :
+    rhs → val → Prop where
+  | op_eval_to (op : operation) (vl : List valnum) (v : val) :
+      eval_operation ge sp op (List.map valu vl) m = some v →
+      rhs_eval_to valu ge sp m (Op op vl) v
+  | load_eval_to (chunk : memory_chunk) (addr : addressing) (vl : List valnum)
+      (a v : val) (p : aptr) :
+      eval_addressing ge sp addr (List.map valu vl) = some a →
+      Mem.loadv chunk m a = some v →
+      rhs_eval_to valu ge sp m (Load chunk addr vl p) v
+  | builtin_eval_to (bf : builtin_function) (args : List (builtin_arg valnum))
+      (vargs : List val) (v : val) :
+      eval_builtin_args (Genv.to_senv ge) valu sp m args vargs →
+      builtin_function_sem bf vargs = some v →
+      rhs_eval_to valu ge sp m (Builtin bf args) v
 
-def load_eval_to (valu : valuation) (ge : genv) (sp : val) (m : mem)
-    (chunk : memory_chunk) (addr : addressing) (vl : List valnum)
-    (a v : val) (p : aptr)
-    (haddr : eval_addressing ge sp addr (List.map valu vl) = some a)
-    (hload : Mem.loadv chunk m a = some v) :
-    rhs_eval_to valu ge sp m (Load chunk addr vl p) v :=
-  ⟨a, haddr, hload⟩
+export rhs_eval_to (op_eval_to load_eval_to builtin_eval_to)
 
-def rhs_valid (valu : valuation) (ge : genv) (sp : val) (r : rhs) : Prop :=
-  match r with
-  | Op _ _ => True
-  | Load chunk addr vl p =>
-      ∃ spb b ofs bc,
-        sp = Vptr spb Ptrofs.zero ∧
-        eval_addressing ge (Vptr spb Ptrofs.zero) addr (List.map valu vl) =
-          some (Vptr b ofs) ∧
-        pmatch bc b ofs p ∧ genv_match bc ge ∧ bc spb = BCstack
-  | Builtin _ _ => True
+inductive rhs_valid (valu : valuation) (ge : genv) : val → rhs → Prop where
+  | op_valid (sp : val) (op : operation) (vl : List valnum) :
+      rhs_valid valu ge sp (Op op vl)
+  | load_valid (sp : block) (chunk : memory_chunk) (addr : addressing)
+      (vl : List valnum) (p : aptr) (b : block) (ofs : ptrofs)
+      (bc : block_classification) :
+      eval_addressing ge (Vptr sp Ptrofs.zero) addr (List.map valu vl) =
+        some (Vptr b ofs) →
+      pmatch bc b ofs p →
+      genv_match bc ge →
+      bc sp = BCstack →
+      rhs_valid valu ge (Vptr sp Ptrofs.zero) (Load chunk addr vl p)
+  | builtin_valid (sp : val) (bf : builtin_function)
+      (args : List (builtin_arg valnum)) :
+      rhs_valid valu ge sp (Builtin bf args)
 
-def equation_holds (valu : valuation) (ge : genv) (sp : val) (m : mem)
-    (e : equation) : Prop :=
-  match e with
-  | Eq l true r => rhs_eval_to valu ge sp m r (valu l) ∧ rhs_valid valu ge sp r
-  | Eq l false r =>
-      ∃ v, rhs_eval_to valu ge sp m r v ∧ Val.lessdef v (valu l) ∧
-        rhs_valid valu ge sp r
+export rhs_valid (op_valid load_valid builtin_valid)
 
-def eq_holds_strict (valu : valuation) (ge : genv) (sp : val) (m : mem)
-    (l : valnum) (r : rhs)
-    (hev : rhs_eval_to valu ge sp m r (valu l))
-    (hvalid : rhs_valid valu ge sp r) :
-    equation_holds valu ge sp m (Eq l true r) :=
-  ⟨hev, hvalid⟩
+inductive equation_holds (valu : valuation) (ge : genv) (sp : val) (m : mem) :
+    equation → Prop where
+  | eq_holds_strict (l : valnum) (r : rhs) :
+      rhs_eval_to valu ge sp m r (valu l) →
+      rhs_valid valu ge sp r →
+      equation_holds valu ge sp m (Eq l true r)
+  | eq_holds_lessdef (l : valnum) (r : rhs) (v : val) :
+      rhs_eval_to valu ge sp m r v →
+      Val.lessdef v (valu l) →
+      rhs_valid valu ge sp r →
+      equation_holds valu ge sp m (Eq l false r)
 
-def eq_holds_lessdef (valu : valuation) (ge : genv) (sp : val) (m : mem)
-    (l : valnum) (r : rhs) (v : val)
-    (hev : rhs_eval_to valu ge sp m r v)
-    (hlessdef : Val.lessdef v (valu l))
-    (hvalid : rhs_valid valu ge sp r) :
-    equation_holds valu ge sp m (Eq l false r) :=
-  ⟨v, hev, hlessdef, hvalid⟩
+export equation_holds (eq_holds_strict eq_holds_lessdef)
 
-def numbering_holds (valu : valuation) (ge : genv) (sp : val)
-    (rs : regset) (m : mem) (n : numbering) : Prop :=
-  wf_numbering n ∧
-  (∀ e, In e n.num_eqs → equation_holds valu ge sp m e) ∧
-  (∀ r v, PTree.get r n.num_reg = some v → Regmap.get r rs = valu v)
+structure numbering_holds (valu : valuation) (ge : genv) (sp : val)
+    (rs : regset) (m : mem) (n : numbering) : Prop where
+  num_holds_wf : wf_numbering n
+  num_holds_eq : ∀ e, In e n.num_eqs → equation_holds valu ge sp m e
+  num_holds_reg : ∀ r v, PTree.get r n.num_reg = some v → Regmap.get r rs = valu v
 
-def num_holds_wf {valu : valuation} {ge : genv} {sp : val} {rs : regset}
-    {m : mem} {n : numbering} (h : numbering_holds valu ge sp rs m n) :
-    wf_numbering n := h.1
-
-def num_holds_eq {valu : valuation} {ge : genv} {sp : val} {rs : regset}
-    {m : mem} {n : numbering} (h : numbering_holds valu ge sp rs m n) :
-    ∀ e, In e n.num_eqs → equation_holds valu ge sp m e := h.2.1
-
-def num_holds_reg {valu : valuation} {ge : genv} {sp : val} {rs : regset}
-    {m : mem} {n : numbering} (h : numbering_holds valu ge sp rs m n) :
-    ∀ r v, PTree.get r n.num_reg = some v → Regmap.get r rs = valu v := h.2.2
+export numbering_holds (num_holds_wf num_holds_eq num_holds_reg)
 
 def combine_comparison (c : comparison) (x y : valnum) : Option Bool :=
   match eq_valnum x y with

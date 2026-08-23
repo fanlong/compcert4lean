@@ -16,7 +16,6 @@ abbrev Zlt := CompCert4Lean.Flocq.Core.Zaux.Zlt
 class Prec_gt_0 (prec : Z) : Prop where
   prec_gt_0 : Zlt Z0 prec
 
-abbrev prec_gt_0 (prec : Z) [h : Prec_gt_0 prec] : Zlt Z0 prec :=
-  h.prec_gt_0
+export Prec_gt_0 (prec_gt_0)
 
 end CompCert4Lean.Flocq.Core.FLX
