@@ -1599,16 +1599,7 @@ end VA
 
 export ablock (ab_contents ab_summary)
 export amem (am_glob am_nonstack am_stack am_top)
-def mmatch_below (bc : block_classification) (m : mem) (_am : amem) : Prop :=
-  bc_below bc m.nextblock
-def mmatch_glob (bc : block_classification) (m : mem) (am : amem) : Prop :=
-  ∀ id ab b, bc b = BCglob id → PTree.get id am.am_glob = some ab → bmatch bc m b ab
-def mmatch_nonstack (bc : block_classification) (m : mem) (am : amem) : Prop :=
-  ∀ b, bc b ≠ BCstack → bc b ≠ BCinvalid → smatch bc m b am.am_nonstack
-def mmatch_stack (bc : block_classification) (m : mem) (am : amem) : Prop :=
-  ∀ b, bc b = BCstack → bmatch bc m b am.am_stack
-def mmatch_top (bc : block_classification) (m : mem) (am : amem) : Prop :=
-  ∀ b, bc b ≠ BCinvalid → smatch bc m b am.am_top
+export mmatch (mmatch_stack mmatch_glob mmatch_nonstack mmatch_top mmatch_below)
 
 export pge (pge_top pge_refl)
 export vge (vge_uns_iu vge_uns_uns)

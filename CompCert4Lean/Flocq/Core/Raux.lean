@@ -10,7 +10,19 @@ source-shaped proposition descriptors for later proof migration.
 
 namespace CompCert4Lean.Flocq.Core.Raux
 
-abbrev R := CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.R
+/-!
+The executable surface is deliberately carried by the checked rational
+carrier.  The exact surface below is parameterised by an injected context;
+there is no ambient exact-real instance.
+-/
+abbrev RuntimeReal := CompCert4Lean.Foundation.FlocqReal.RuntimeReal
+abbrev RuntimeCarrier := CompCert4Lean.Foundation.FlocqReal.RuntimeCarrier
+abbrev ExactRealSpec := CompCert4Lean.Foundation.FlocqReal.ExactRealSpec
+abbrev ExactRealContext := CompCert4Lean.Foundation.FlocqReal.ExactRealContext
+abbrev ExactRealCertificate := CompCert4Lean.Foundation.FlocqReal.ExactRealCertificate
+abbrev RuntimeExactAdapter := CompCert4Lean.Foundation.FlocqReal.RuntimeExactAdapter
+
+abbrev R := RuntimeReal
 abbrev Z := CompCert4Lean.Flocq.Core.Zaux.Z
 abbrev positive := CompCert4Lean.Flocq.Core.Zaux.positive
 abbrev comparison := CompCert4Lean.Flocq.Core.Zaux.comparison
@@ -62,6 +74,131 @@ abbrev Sumor := CompCert4Lean.Foundation.Logic.Support.Sumor
 abbrev Rone : R := ⟨1⟩
 abbrev Rtwo : R := ⟨2⟩
 abbrev Rhalf : R := Rdiv Rone Rtwo
+
+/-! Exact specification-facing operations.  These are adapters over the
+injected `ExactRealContext`; none of the operations below falls back to the
+rational/runtime compatibility definitions above. -/
+namespace Exact
+
+abbrev Context := ExactRealContext
+abbrev Spec := ExactRealSpec
+abbrev R (ctx : Context) := ctx.spec.carrier
+abbrev Z := CompCert4Lean.Flocq.Core.Raux.Z
+
+def IZR (ctx : Context) (z : Z) : R ctx :=
+  CompCert4Lean.Foundation.FlocqReal.ExactReal.IZR ctx.spec z
+def R0 (ctx : Context) : R ctx :=
+  CompCert4Lean.Foundation.FlocqReal.ExactReal.R0 ctx.spec
+def Rone (ctx : Context) : R ctx :=
+  CompCert4Lean.Foundation.FlocqReal.ExactReal.Rone ctx.spec
+def Ropp (ctx : Context) (x : R ctx) : R ctx :=
+  CompCert4Lean.Foundation.FlocqReal.ExactReal.Ropp ctx.spec x
+def Rplus (ctx : Context) (x y : R ctx) : R ctx :=
+  CompCert4Lean.Foundation.FlocqReal.ExactReal.Rplus ctx.spec x y
+def Rminus (ctx : Context) (x y : R ctx) : R ctx :=
+  CompCert4Lean.Foundation.FlocqReal.ExactReal.Rminus ctx.spec x y
+def Rmult (ctx : Context) (x y : R ctx) : R ctx :=
+  CompCert4Lean.Foundation.FlocqReal.ExactReal.Rmult ctx.spec x y
+def Rinv (ctx : Context) (x : R ctx) : R ctx :=
+  CompCert4Lean.Foundation.FlocqReal.ExactReal.Rinv ctx.spec x
+def Rdiv (ctx : Context) (x y : R ctx) : R ctx :=
+  CompCert4Lean.Foundation.FlocqReal.ExactReal.Rdiv ctx.spec x y
+def Rlt (ctx : Context) (x y : R ctx) : Prop :=
+  CompCert4Lean.Foundation.FlocqReal.ExactReal.Rlt ctx.spec x y
+def Rle (ctx : Context) (x y : R ctx) : Prop :=
+  CompCert4Lean.Foundation.FlocqReal.ExactReal.Rle ctx.spec x y
+def Rge (ctx : Context) (x y : R ctx) : Prop := Rle ctx y x
+def Rgt (ctx : Context) (x y : R ctx) : Prop := Rlt ctx y x
+def Rabs (ctx : Context) (x : R ctx) : R ctx :=
+  CompCert4Lean.Foundation.FlocqReal.ExactReal.Rabs ctx.spec x
+def Rmin (ctx : Context) (x y : R ctx) : R ctx :=
+  CompCert4Lean.Foundation.FlocqReal.ExactReal.Rmin ctx.spec x y
+def Rsqr (ctx : Context) (x : R ctx) : R ctx := Rmult ctx x x
+def sqrt (ctx : Context) (x : R ctx) : R ctx :=
+  CompCert4Lean.Foundation.FlocqReal.ExactReal.sqrt ctx.spec x
+def exp (ctx : Context) (x : R ctx) : R ctx :=
+  CompCert4Lean.Foundation.FlocqReal.ExactReal.exp ctx.spec x
+def ln (ctx : Context) (x : R ctx) : R ctx :=
+  CompCert4Lean.Foundation.FlocqReal.ExactReal.ln ctx.spec x
+def powerRZ (ctx : Context) (x : R ctx) (z : Z) : R ctx :=
+  CompCert4Lean.Foundation.FlocqReal.ExactReal.powerRZ ctx.spec x z
+def up (ctx : Context) (x : R ctx) : Z :=
+  CompCert4Lean.Foundation.FlocqReal.ExactReal.up ctx.spec x
+def Rtwo (ctx : Context) : R ctx := Rplus ctx (Rone ctx) (Rone ctx)
+def Rhalf (ctx : Context) : R ctx := Rdiv ctx (Rone ctx) (Rtwo ctx)
+def cond_Ropp (ctx : Context) (b : Bool) (m : R ctx) : R ctx :=
+  if b then Ropp ctx m else m
+
+noncomputable def Rcompare (ctx : Context) (x y : R ctx) : comparison := by
+  classical
+  if hxy : Rlt ctx x y then
+    exact Lt
+  else if heq : x = y then
+    exact Eq
+  else
+    exact Gt
+
+inductive Rcompare_prop (ctx : Context) (x y : R ctx) : comparison → Prop where
+  | Rcompare_Lt_ : Rlt ctx x y → Rcompare_prop ctx x y Lt
+  | Rcompare_Eq_ : x = y → Rcompare_prop ctx x y Eq
+  | Rcompare_Gt_ : Rlt ctx y x → Rcompare_prop ctx x y Gt
+
+inductive Rle_bool_prop (ctx : Context) (x y : R ctx) : Bool → Prop where
+  | Rle_bool_true_ : Rle ctx x y → Rle_bool_prop ctx x y true
+  | Rle_bool_false_ : Rlt ctx y x → Rle_bool_prop ctx x y false
+
+inductive Rlt_bool_prop (ctx : Context) (x y : R ctx) : Bool → Prop where
+  | Rlt_bool_true_ : Rlt ctx x y → Rlt_bool_prop ctx x y true
+  | Rlt_bool_false_ : Rle ctx y x → Rlt_bool_prop ctx x y false
+
+inductive Req_bool_prop (ctx : Context) (x y : R ctx) : Bool → Prop where
+  | Req_bool_true_ : x = y → Req_bool_prop ctx x y true
+  | Req_bool_false_ : x ≠ y → Req_bool_prop ctx x y false
+
+noncomputable def Rle_bool (ctx : Context) (x y : R ctx) : Bool :=
+  match Rcompare ctx x y with
+  | .Gt => false
+  | _ => true
+
+noncomputable def Rlt_bool (ctx : Context) (x y : R ctx) : Bool :=
+  match Rcompare ctx x y with
+  | .Lt => true
+  | _ => false
+
+noncomputable def Req_bool (ctx : Context) (x y : R ctx) : Bool :=
+  match Rcompare ctx x y with
+  | .Eq => true
+  | _ => false
+
+def Zfloor (ctx : Context) (x : R ctx) : Z := Zsub (up ctx x) (Zpos xH)
+def Zceil (ctx : Context) (x : R ctx) : Z := Zopp (Zfloor ctx (Ropp ctx x))
+noncomputable def Ztrunc (ctx : Context) (x : R ctx) : Z :=
+  if Rlt_bool ctx x (R0 ctx) then Zceil ctx x else Zfloor ctx x
+noncomputable def Zaway (ctx : Context) (x : R ctx) : Z :=
+  if Rlt_bool ctx x (R0 ctx) then Zfloor ctx x else Zceil ctx x
+
+def bpow (ctx : Context) (r : radix) (e : Z) : R ctx :=
+  match e with
+  | .Zpos p => IZR ctx (Zpower_pos r p)
+  | .Zneg p => Rinv ctx (IZR ctx (Zpower_pos r p))
+  | .Z0 => Rone ctx
+
+/- The executable magnitude algorithm remains runtime-only.  An exact theorem
+   consumer supplies its source-shaped magnitude witness explicitly, together
+   with the invariant that later proof grinding must discharge. -/
+structure MagnitudeValue (ctx : Context) (r : radix) (x : R ctx) where
+  mag_val : Z
+  mag_bound : x ≠ R0 ctx →
+    Rle ctx (bpow ctx r (Zsub mag_val (Zpos xH))) (Rabs ctx x) ∧
+      Rlt ctx (Rabs ctx x) (bpow ctx r mag_val)
+
+structure Magnitude (ctx : Context) where
+  value : ∀ (r : radix) (x : R ctx), MagnitudeValue ctx r x
+
+abbrev mag (m : Magnitude ctx) (r : radix) (x : R ctx) : MagnitudeValue ctx r x :=
+  m.value r x
+
+end Exact
 
 private structure FirstNat (P : Nat → Prop) where
   val : Nat
@@ -439,6 +576,52 @@ def cond_Ropp (b : Bool) (m : R) : R := if b then Ropp m else m
 
 /-! Exact source proposition descriptors for later proof migration. -/
 
+section ExactStatements
+
+variable (ctx : ExactRealContext)
+variable (m : Exact.Magnitude ctx)
+
+local notation "R" => Exact.R ctx
+local notation "IZR" => Exact.IZR ctx
+local notation "R0" => Exact.R0 ctx
+local notation "Rone" => Exact.Rone ctx
+local notation "Rtwo" => Exact.Rtwo ctx
+local notation "Rhalf" => Exact.Rhalf ctx
+local notation "Ropp" => Exact.Ropp ctx
+local notation "Rplus" => Exact.Rplus ctx
+local notation "Rminus" => Exact.Rminus ctx
+local notation "Rmult" => Exact.Rmult ctx
+local notation "Rdiv" => Exact.Rdiv ctx
+local notation "Rinv" => Exact.Rinv ctx
+local notation "Rlt" => Exact.Rlt ctx
+local notation "Rle" => Exact.Rle ctx
+local notation "Rge" => Exact.Rge ctx
+local notation "Rgt" => Exact.Rgt ctx
+local notation "Rabs" => Exact.Rabs ctx
+local notation "Rmin" => Exact.Rmin ctx
+local notation "Rsqr" => Exact.Rsqr ctx
+local notation "sqrt" => Exact.sqrt ctx
+local notation "exp" => Exact.exp ctx
+local notation "ln" => Exact.ln ctx
+local notation "powerRZ" => Exact.powerRZ ctx
+local notation "up" => Exact.up ctx
+local notation "cond_Ropp" => Exact.cond_Ropp ctx
+local notation "Rcompare" => Exact.Rcompare ctx
+local notation "Rcompare_prop" => Exact.Rcompare_prop ctx
+local notation "Rle_bool" => Exact.Rle_bool ctx
+local notation "Rle_bool_prop" => Exact.Rle_bool_prop ctx
+local notation "Rlt_bool" => Exact.Rlt_bool ctx
+local notation "Rlt_bool_prop" => Exact.Rlt_bool_prop ctx
+local notation "Req_bool" => Exact.Req_bool ctx
+local notation "Req_bool_prop" => Exact.Req_bool_prop ctx
+local notation "Zfloor" => Exact.Zfloor ctx
+local notation "Zceil" => Exact.Zceil ctx
+local notation "Ztrunc" => Exact.Ztrunc ctx
+local notation "Zaway" => Exact.Zaway ctx
+local notation "bpow" => Exact.bpow ctx
+local notation "mag" => Exact.mag m
+local notation "mag_val" => Exact.MagnitudeValue.mag_val
+
 def IZR_Zpower_posStatement : Prop :=
   ∀ (n : Z) (m : positive),
     IZR (Zpower_pos n m) = powerRZ (IZR n) (Zpos m)
@@ -777,5 +960,7 @@ def Rmult_neq_compat_rStatement : Prop :=
 
 def bpow_injStatement : Prop :=
   ∀ (r : radix) (e1 e2 : Z), bpow r e1 = bpow r e2 → e1 = e2
+
+end ExactStatements
 
 end CompCert4Lean.Flocq.Core.Raux

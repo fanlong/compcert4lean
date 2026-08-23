@@ -61,21 +61,14 @@ private def asmStep (cfg : CompilerConfig) (xi : ExternalCalls) :
 
 /-! Agreement between machine and processor register states. -/
 
-def agree (ms : MachRegset) (sp : Val) (rs : AsmRegset) : Prop :=
-  rs asmSP = sp ∧
-    sp ≠ Vundef ∧
+structure agree (ms : MachRegset) (sp : Val) (rs : AsmRegset) : Prop where
+  mkagree ::
+  agree_sp : rs asmSP = sp
+  agree_sp_def : sp ≠ Vundef
+  agree_mregs :
     ∀ r : Mreg, Val.lessdef (ms r) (rs (CompCert4Lean.X86.Asm.preg_of r))
 
-def agree_sp (ms : MachRegset) (sp : Val) (rs : AsmRegset)
-    (h : agree ms sp rs) : rs asmSP = sp := h.1
-
-def agree_sp_def (ms : MachRegset) (sp : Val) (rs : AsmRegset)
-    (h : agree ms sp rs) : sp ≠ Vundef := h.2.1
-
-def agree_mregs (ms : MachRegset) (sp : Val) (rs : AsmRegset)
-    (h : agree ms sp rs) :
-    ∀ r : Mreg, Val.lessdef (ms r) (rs (CompCert4Lean.X86.Asm.preg_of r)) :=
-  h.2.2
+export agree (mkagree agree_sp agree_sp_def agree_mregs)
 
 /-! The suffix relation used for generated assembly code. -/
 
@@ -120,16 +113,20 @@ inductive transl_code_at_pc (ge : MachGenv) :
         tf.fn_code tc) :
       transl_code_at_pc ge (Vptr b ofs) b f c ep tf tc
 
-/-! The stack relation is written as a recursive source-facing predicate so
-    excluded generated constructor identities are not reintroduced. -/
+/-! Properties of the Mach call stack. -/
 
-def match_stack (ge : MachGenv) : List Mach.stackframe → Prop
-  | [] => True
-  | Mach.Stackframe fb sp ra c :: s =>
-      (∃ f, Genv.find_funct_ptr ge fb = some (Internal f) ∧
-        ∃ tf tc,
-          transl_code_at_pc ge ra fb f c false tf tc ∧ sp ≠ Vundef) ∧
-      match_stack ge s
+inductive match_stack (ge : MachGenv) : List Mach.stackframe → Prop where
+  | match_stack_nil : match_stack ge []
+  | match_stack_cons (fb : Block) (sp ra : Val) (c : MachCode)
+      (s : List Mach.stackframe) (f : MachFunction) (tf : AsmFunction)
+      (tc : AsmCode)
+      (hfind : Genv.find_funct_ptr ge fb = some (Internal f))
+      (hatpc : transl_code_at_pc ge ra fb f c false tf tc)
+      (hsp : sp ≠ Vundef)
+      (hstacks : match_stack ge s) :
+      match_stack ge (Mach.Stackframe fb sp ra c :: s)
+
+export match_stack (match_stack_nil match_stack_cons)
 
 /-! Executable source-shaped helpers. -/
 

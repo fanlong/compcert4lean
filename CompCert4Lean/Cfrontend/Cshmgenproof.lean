@@ -96,12 +96,16 @@ local instance : LT Z := ⟨ZArith.BinInt.Z.lt⟩
 
 /-! ## Program matching -/
 
-def match_fundef (p : CProgram) : CFundef → TFundef → Prop
-  | .Internal f, .Internal tf =>
-      transl_function p.prog_comp_env f = .OK tf
-  | .External ef args res cc, .External ef' =>
-      ef = ef' ∧ CompCert4Lean.Common.AST.ef_sig ef = signature_of_type args res cc
-  | _, _ => False
+inductive match_fundef (p : CProgram) : CFundef → TFundef → Prop where
+  | match_fundef_internal (f : CFunction) (tf : TFunction) :
+      transl_function p.prog_comp_env f = .OK tf →
+      match_fundef p (.Internal f) (.Internal tf)
+  | match_fundef_external (ef : external_function) (args : List CType)
+      (res : CType) (cc : calling_convention) :
+      CompCert4Lean.Common.AST.ef_sig ef = signature_of_type args res cc →
+      match_fundef p (.External ef args res cc) (.External ef)
+
+export match_fundef (match_fundef_internal match_fundef_external)
 
 def match_varinfo (_v : CType) (_tv : Unit) : Prop := True
 

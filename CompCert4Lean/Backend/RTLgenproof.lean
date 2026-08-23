@@ -39,21 +39,13 @@ open CompCert4Lean.Lib.Maps
 /-! ## Compilation-environment matching -/
 
 structure map_wf (m : mapping) : Prop where
-  mapWfInjective : ∀ id1 id2 r,
+  map_wf_inj : ∀ id1 id2 r,
     PTree.get id1 m.map_vars = some r →
     PTree.get id2 m.map_vars = some r → id1 = id2
-  mapWfDisjoint : ∀ id r,
+  map_wf_disj : ∀ id r,
     PTree.get id m.map_vars = some r → r ∈ m.map_letvars → False
 
-def map_wf_inj {m : mapping} (h : map_wf m) :
-    ∀ id1 id2 r,
-      PTree.get id1 m.map_vars = some r →
-      PTree.get id2 m.map_vars = some r → id1 = id2 :=
-  h.mapWfInjective
-
-def map_wf_disj {m : mapping} (h : map_wf m) :
-    ∀ id r, PTree.get id m.map_vars = some r → r ∈ m.map_letvars → False :=
-  h.mapWfDisjoint
+export map_wf (map_wf_inj map_wf_disj)
 
 structure match_env (map : mapping) (e : CompCert4Lean.Backend.Cminor.env)
     (le : letenv) (rs : regset) : Prop where
@@ -165,12 +157,16 @@ def lt_state (s1 s2 : CminorSel.state) : Prop :=
 
 /-! ## Continuations and state matching -/
 
-private inductive trFunSupport (tf : RTL.function) (map : mapping)
+inductive tr_fun (tf : RTL.function) (map : mapping)
     (f : CminorSel.function) (ngoto : labelmap) (nret : node)
     (rret : Option reg) : Prop where
-  | intro :
-      tr_stmt tf.fn_code map f.fn_body nret nret [] ngoto nret rret →
-      trFunSupport tf map f ngoto nret rret
+  | tr_fun_intro (nentry : node) (r : reg)
+      (hret : rret = ret_reg f.fn_sig r)
+      (hstmt : tr_stmt tf.fn_code map f.fn_body nentry nret [] ngoto nret rret)
+      (hstack : tf.fn_stacksize = f.fn_stackspace) :
+      tr_fun tf map f ngoto nret rret
+
+export tr_fun (tr_fun_intro)
 
 mutual
   inductive tr_cont : RTL.code → mapping → CminorSel.cont → node → List node →
@@ -206,7 +202,7 @@ mutual
         (r : reg) (tf : RTL.function) (n : node) (rs : regset)
         (cs : List RTL.stackframe) (map : mapping) (nexits : List node)
         (ngoto : labelmap) (nret : node) (rret : Option reg)
-        (mwf : map_wf map) (tfrel : trFunSupport tf map f ngoto nret rret)
+        (mwf : map_wf map) (tfrel : tr_fun tf map f ngoto nret rret)
         (me : match_env map e [] rs)
         (rok : reg_map_ok map r optid)
         (tc : tr_cont tf.fn_code map k n nexits ngoto nret rret cs) :
@@ -222,7 +218,7 @@ inductive match_states : CminorSel.state → RTL.state → Prop where
       (nret : node) (rret : Option reg)
       (mwf : map_wf map)
       (ts : tr_stmt tf.fn_code map s ns ncont nexits ngoto nret rret)
-      (tfrel : trFunSupport tf map f ngoto nret rret)
+      (tfrel : tr_fun tf map f ngoto nret rret)
       (tc : tr_cont tf.fn_code map k ncont nexits ngoto nret rret cs)
       (me : match_env map e [] rs) (mext : Mem.extends m tm) :
       match_states (.State f s k sp e m) (RTL.State cs tf sp ns rs tm)
