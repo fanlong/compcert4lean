@@ -352,14 +352,14 @@ inductive eval_exitexpr (xi : ExternalCalls) (ge : genv) (sp : val) (e : env)
 
 export eval_exitexpr (eval_XEcondition)
 
-private inductive evalExprOrSymbol (xi : ExternalCalls) (ge : genv) (sp : val)
+inductive eval_expr_or_symbol (xi : ExternalCalls) (ge : genv) (sp : val)
     (e : env) (m : mem) : letenv → Sum expr ident → val → Prop where
   | expression (le : letenv) (a : expr) (v : val)
       (heval : eval_expr xi ge sp e m le a v) :
-      evalExprOrSymbol xi ge sp e m le (.inl a) v
+      eval_expr_or_symbol xi ge sp e m le (.inl a) v
   | symbol (le : letenv) (id : ident) (b : block)
       (hfind : Genv.find_symbol ge id = some b) :
-      evalExprOrSymbol xi ge sp e m le (.inr id) (.Vptr b Ptrofs.zero)
+      eval_expr_or_symbol xi ge sp e m le (.inr id) (.Vptr b Ptrofs.zero)
 
 inductive eval_builtin_arg (xi : ExternalCalls) (ge : genv) (sp : val)
     (e : env) (m : mem) : builtin_arg expr → val → Prop where
@@ -460,7 +460,7 @@ inductive step (xi : ExternalCalls) (ge : genv) : state → trace → state → 
   | call (f : function) (optid : Option ident) (sig : signature)
       (a : Sum expr ident) (bl : exprlist) (k : cont) (sp : val) (e : env)
       (m : mem) (vf : val) (vargs : List val) (fd : fundef)
-      (hcallee : evalExprOrSymbol xi ge sp e m [] a vf)
+      (hcallee : eval_expr_or_symbol xi ge sp e m [] a vf)
       (hargs : eval_exprlist xi ge sp e m [] bl vargs)
       (hfind : Genv.find_funct ge vf = some fd)
       (hsig : funsig fd = sig) :
@@ -469,7 +469,7 @@ inductive step (xi : ExternalCalls) (ge : genv) : state → trace → state → 
   | tailcall (f : function) (sig : signature) (a : Sum expr ident)
       (bl : exprlist) (k : cont) (sp : block) (e : env) (m : mem) (vf : val)
       (vargs : List val) (fd : fundef) (m' : mem)
-      (hcallee : evalExprOrSymbol xi ge (.Vptr sp Ptrofs.zero) e m [] a vf)
+      (hcallee : eval_expr_or_symbol xi ge (.Vptr sp Ptrofs.zero) e m [] a vf)
       (hargs : eval_exprlist xi ge (.Vptr sp Ptrofs.zero) e m [] bl vargs)
       (hfind : Genv.find_funct ge vf = some fd)
       (hsig : funsig fd = sig)
