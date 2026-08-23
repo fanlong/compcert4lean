@@ -262,7 +262,7 @@ def transl_find_labelStatement : Prop :=
         CompCert4Lean.X86.Asmgen.transl_code f c false = .OK tc
 
 def find_label_goto_labelStatement : Prop :=
-  ∀ (prog : MachProgram) (tge : AsmGenv) (f : MachFunction) (tf : AsmFunction)
+  ∀ (prog : MachProgram) (f : MachFunction) (tf : AsmFunction)
     (lbl : positive) (rs : AsmRegset) (m : Mem) (c' : MachCode)
     (b : Block) (ofs : PtrofsInt),
     Genv.find_funct_ptr (Genv.globalenv prog) b = some (.Internal f) →
@@ -270,7 +270,7 @@ def find_label_goto_labelStatement : Prop :=
     rs .PC = .Vptr b ofs →
     CompCert4Lean.Backend.Mach.find_label lbl f.fn_code = some c' →
     ∃ tc' rs',
-      CompCert4Lean.X86.Asm.goto_label tge tf lbl rs m = .Next rs' m ∧
+      CompCert4Lean.X86.Asm.goto_label tf lbl rs m = .Next rs' m ∧
       transl_code_at_pc (Genv.globalenv prog) (rs' .PC) b f c' false tf tc' ∧
       (∀ r, r ≠ .PC → rs' r = rs r)
 
@@ -318,7 +318,7 @@ def exec_straight_steps_gotoStatement : Prop :=
           exec_straight (Genv.globalenv tprog) tf c'' rs1 m1' (jmp :: k') rs2 m2' ∧
           CompCert4Lean.Backend.Asmgenproof0.agree ms2 sp rs2 ∧
           CompCert4Lean.X86.Asm.exec_instr (Genv.globalenv tprog) tf jmp rs2 m2' =
-            CompCert4Lean.X86.Asm.goto_label (Genv.globalenv tprog) tf lbl rs2 m2') →
+            CompCert4Lean.X86.Asm.goto_label tf lbl rs2 m2') →
       ∃ st',
         plus (asmStep cfg xi) (Genv.globalenv tprog) (.State rs1 m1') E0 st' ∧
         match_states (Genv.globalenv prog) (.State s fb sp c' ms2 m2) st'

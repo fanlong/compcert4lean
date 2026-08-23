@@ -422,21 +422,25 @@ mutual
         match find_label lbl body (.Kloop1 body iter k) with
         | some result => some result
         | none => find_label lbl iter (.Kloop2 body iter k)
-    | .Sswitch _ cases, k => findLabelCases lbl cases (.Kswitch k)
+    | .Sswitch _ cases, k => find_label_ls lbl cases (.Kswitch k)
     | .Slabel lbl' body, k =>
         match ident_eq lbl lbl' with
         | .left _ => some (body, k)
         | .right _ => find_label lbl body k
     | _, _ => none
 
-  def findLabelCases (lbl : label) :
+  def find_label_ls (lbl : label) :
       labeled_statements → cont → Option (statement × cont)
     | .LSnil, _ => none
     | .LScons _ stmt rest, k =>
         match find_label lbl stmt (.Kseq (seq_of_labeled_statement rest) k) with
         | some result => some result
-        | none => findLabelCases lbl rest k
+        | none => find_label_ls lbl rest k
 end
+
+/-! Compatibility name for the existing proof packet; `find_label_ls` is the
+    canonical source-shaped declaration. -/
+abbrev findLabelCases := find_label_ls
 
 /-! ## Transition semantics -/
 

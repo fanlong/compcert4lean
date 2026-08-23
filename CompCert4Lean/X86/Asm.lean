@@ -505,7 +505,7 @@ def nextinstr (rs : regset) : regset :=
 def nextinstr_nf (rs : regset) : regset :=
   nextinstr (undef_regs [.CR .ZF, .CR .CF, .CR .PF, .CR .SF, .CR .OF] rs)
 
-def goto_label (_ge : genv) (f : function) (lbl : label) (rs : regset) (m : mem) : outcome :=
+def goto_label (f : function) (lbl : label) (rs : regset) (m : mem) : outcome :=
   match label_pos lbl z0 f.fn_code with
   | none => .Stuck
   | some pos =>
@@ -847,23 +847,23 @@ def exec_instr (ge : genv) (f : function) (i : instruction)
       (compare_floats32 (Pregmap.get (.FR r1) rs) (Pregmap.get (.FR r2) rs) rs)) m
   | .Pxorps_f rd => .Next (nextinstr_nf (Pregmap.set (.FR rd)
       (.Vsingle CompCert4Lean.Lib.Floats.Float32.zero) rs)) m
-  | .Pjmp_l l => goto_label ge f l rs m
+  | .Pjmp_l l => goto_label f l rs m
   | .Pjmp_s symb _ => .Next (Pregmap.set .PC
       (Genv.symbol_address ge symb CompCert4Lean.Lib.Integers.Ptrofs.zero) rs) m
   | .Pjmp_r r _ => .Next (Pregmap.set .PC (Pregmap.get (.IR r) rs) rs) m
   | .Pjcc c l => match eval_testcond c rs with
-      | some true => goto_label ge f l rs m
+      | some true => goto_label f l rs m
       | some false => .Next (nextinstr rs) m
       | none => .Stuck
   | .Pjcc2 c1 c2 l => match eval_testcond c1 rs, eval_testcond c2 rs with
-      | some true, some true => goto_label ge f l rs m
+      | some true, some true => goto_label f l rs m
       | some _, some _ => .Next (nextinstr rs) m
       | _, _ => .Stuck
   | .Pjmptbl r tbl => match Pregmap.get (.IR r) rs with
       | .Vint n => match CompCert4Lean.Lib.Coqlib.list_nth_z tbl
           (CompCert4Lean.Lib.Integers.Int.unsigned n) with
           | none => .Stuck
-          | some l => goto_label ge f l
+          | some l => goto_label f l
               (Pregmap.set (.IR .RAX) Vundef (Pregmap.set (.IR .RDX) Vundef rs)) m
       | _ => .Stuck
   | .Pcall_s symb _ => .Next

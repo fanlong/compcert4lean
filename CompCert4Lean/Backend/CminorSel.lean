@@ -354,12 +354,14 @@ export eval_exitexpr (eval_XEcondition)
 
 inductive eval_expr_or_symbol (xi : ExternalCalls) (ge : genv) (sp : val)
     (e : env) (m : mem) : letenv → Sum expr ident → val → Prop where
-  | expression (le : letenv) (a : expr) (v : val)
+  | eval_eos_e (le : letenv) (a : expr) (v : val)
       (heval : eval_expr xi ge sp e m le a v) :
       eval_expr_or_symbol xi ge sp e m le (.inl a) v
-  | symbol (le : letenv) (id : ident) (b : block)
+  | eval_eos_s (le : letenv) (id : ident) (b : block)
       (hfind : Genv.find_symbol ge id = some b) :
       eval_expr_or_symbol xi ge sp e m le (.inr id) (.Vptr b Ptrofs.zero)
+
+export eval_expr_or_symbol (eval_eos_e eval_eos_s)
 
 inductive eval_builtin_arg (xi : ExternalCalls) (ge : genv) (sp : val)
     (e : env) (m : mem) : builtin_arg expr → val → Prop where
