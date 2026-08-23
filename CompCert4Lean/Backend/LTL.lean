@@ -147,6 +147,28 @@ def parent_locset : List stackframe → locset
 
 inductive step (cfg : CompilerConfig) (xi : ExternalCalls) (ge : genv) :
     state → trace → state → Prop where
+  | exec_start_block
+      (s : List stackframe) (f : function) (sp : val) (pc : node)
+      (rs : locset) (m : mem) (bb : bblock)
+      (hcode : PTree.get pc f.fn_code = some bb) :
+      step cfg xi ge (State s f sp pc rs m) E0
+        (Block s f sp bb rs m)
+  | exec_Lgetstack
+      (s : List stackframe) (f : function) (sp : val) (sl : slot)
+      (ofs : Z) (ty : typ) (dst : mreg) (bb : bblock)
+      (rs : locset) (m : mem) (rs' : locset)
+      (hrs : rs' = Locmap.set (R dst) (rs (S sl ofs ty))
+        (undef_regs (destroyed_by_getstack sl) rs)) :
+      step cfg xi ge (Block s f sp (Lgetstack sl ofs ty dst :: bb) rs m) E0
+        (Block s f sp bb rs' m)
+  | exec_Lsetstack
+      (s : List stackframe) (f : function) (sp : val) (src : mreg)
+      (sl : slot) (ofs : Z) (ty : typ) (bb : bblock)
+      (rs : locset) (m : mem) (rs' : locset)
+      (hrs : rs' = Locmap.set (S sl ofs ty) (rs (R src))
+        (undef_regs (destroyed_by_setstack ty) rs)) :
+      step cfg xi ge (Block s f sp (Lsetstack src sl ofs ty :: bb) rs m) E0
+        (Block s f sp bb rs' m)
   | exec_Lop
       (s : List stackframe) (f : function) (sp : val) (op : operation)
       (args : List mreg) (res : mreg) (bb : bblock) (rs : locset) (m : mem)
@@ -259,8 +281,9 @@ inductive step (cfg : CompilerConfig) (xi : ExternalCalls) (ge : genv) :
         (Block s f sp bb rs m)
 
 export step
-  (exec_Lop exec_Lload exec_Lstore exec_Lcall exec_Ltailcall exec_Lbuiltin
-    exec_Lbranch exec_Lcond exec_Ljumptable exec_Lreturn
+  (exec_start_block exec_Lgetstack exec_Lsetstack exec_Lop exec_Lload
+    exec_Lstore exec_Lcall exec_Ltailcall exec_Lbuiltin exec_Lbranch exec_Lcond
+    exec_Ljumptable exec_Lreturn
     exec_function_internal exec_function_external exec_return)
 
 inductive initial_state (p : program) : state → Prop where

@@ -396,13 +396,17 @@ def is_call_cont : cont → Prop
   | .Kcall _ _ _ _ _ => True
   | _ => False
 
-inductive machine_state : Type where
+inductive state : Type where
   | State (f : function) (s : statement) (k : cont) (e : env)
       (le : temp_env) (m : mem)
   | Callstate (fd : fundef) (args : List val) (k : cont) (m : mem)
   | Returnstate (result : val) (k : cont) (m : mem)
 
-export machine_state (State Callstate Returnstate)
+export state (State Callstate Returnstate)
+
+/-! `machine_state` is retained as a compatibility alias for existing proof
+    consumers; `state` is the canonical source-shaped carrier. -/
+abbrev machine_state : Type := state
 
 mutual
   def find_label (lbl : label) : statement → cont → Option (statement × cont)
@@ -438,8 +442,8 @@ end
 
 inductive step (xi : ExternalCalls) (ge : genv)
     (function_entry : function → List val → mem → env → temp_env → mem → Prop) :
-    machine_state → trace → machine_state → Prop where
-  | assign (f : function) (a1 a2 : expr) (k : cont) (e : env)
+    state → trace → state → Prop where
+  | step_assign (f : function) (a1 a2 : expr) (k : cont) (e : env)
       (le : temp_env) (m : mem) (loc : block) (ofs : ptrofs) (bf : bitfield)
       (v2 v : val) (m' : mem)
       (hlvalue : eval_lvalue ge e le m a1 loc ofs bf)
@@ -457,13 +461,7 @@ inductive step (xi : ExternalCalls) (ge : genv)
       (k : cont) (e : env) (le : temp_env) (m : mem) (argTypes : List type)
       (resultType : type) (cc : calling_convention) (vf : val) (vargs : List val)
       (fd : fundef)
-      (hclassify :
-        match typeof a with
-        | .Tfunction args result cc' =>
-            args = argTypes ∧ result = resultType ∧ cc' = cc
-        | .Tpointer (.Tfunction args result cc') _ =>
-            args = argTypes ∧ result = resultType ∧ cc' = cc
-        | _ => False)
+      (hclassify : classify_fun (typeof a) = .fun_case_f argTypes resultType cc)
       (hfn : eval_expr ge e le m a vf)
       (hargs : eval_exprlist ge e le m args argTypes vargs)
       (hfind : Genv.find_funct ge.genv_genv vf = some fd)
@@ -477,7 +475,7 @@ inductive step (xi : ExternalCalls) (ge : genv)
       (hcall : external_call xi ef (Genv.to_senv ge.genv_genv) vargs m t vres m') :
       step xi ge function_entry (.State f (.Sbuiltin result ef argTypes args) k e le m) t
         (.State f .Sskip k e (set_opttemp result vres le) m')
-  | sequence (f : function) (s1 s2 : statement) (k : cont) (e : env)
+  | step_seq (f : function) (s1 s2 : statement) (k : cont) (e : env)
       (le : temp_env) (m : mem) :
       step xi ge function_entry (.State f (.Ssequence s1 s2) k e le m) E0
         (.State f s1 (.Kseq s2 k) e le m)
@@ -485,11 +483,11 @@ inductive step (xi : ExternalCalls) (ge : genv)
       (le : temp_env) (m : mem) :
       step xi ge function_entry (.State f .Sskip (.Kseq s k) e le m) E0
         (.State f s k e le m)
-  | continue_sequence (f : function) (s : statement) (k : cont) (e : env)
+  | step_continue_seq (f : function) (s : statement) (k : cont) (e : env)
       (le : temp_env) (m : mem) :
       step xi ge function_entry (.State f .Scontinue (.Kseq s k) e le m) E0
         (.State f .Scontinue k e le m)
-  | break_sequence (f : function) (s : statement) (k : cont) (e : env)
+  | step_break_seq (f : function) (s : statement) (k : cont) (e : env)
       (le : temp_env) (m : mem) :
       step xi ge function_entry (.State f .Sbreak (.Kseq s k) e le m) E0
         (.State f .Sbreak k e le m)
@@ -520,11 +518,11 @@ inductive step (xi : ExternalCalls) (ge : genv)
       (le : temp_env) (m : mem) :
       step xi ge function_entry (.State f .Sbreak (.Kloop2 body iter k) e le m) E0
         (.State f .Sskip k e le m)
-  | return_none (f : function) (k : cont) (e : env) (le : temp_env)
+  | step_return_0 (f : function) (k : cont) (e : env) (le : temp_env)
       (m m' : mem) (hfree : Mem.free_list m (blocks_of_env ge e) = some m') :
       step xi ge function_entry (.State f (.Sreturn none) k e le m) E0
         (.Returnstate .Vundef (call_cont k) m')
-  | return_some (f : function) (a : expr) (k : cont) (e : env)
+  | step_return_1 (f : function) (a : expr) (k : cont) (e : env)
       (le : temp_env) (m : mem) (v v' : val) (m' : mem)
       (heval : eval_expr ge e le m a v)
       (hcast : sem_cast v (typeof a) f.fn_return m = some v')
@@ -536,7 +534,7 @@ inductive step (xi : ExternalCalls) (ge : genv)
       (hfree : Mem.free_list m (blocks_of_env ge e) = some m') :
       step xi ge function_entry (.State f .Sskip k e le m) E0
         (.Returnstate .Vundef k m')
-  | switch (f : function) (a : expr) (cases : labeled_statements) (k : cont)
+  | step_switch (f : function) (a : expr) (cases : labeled_statements) (k : cont)
       (e : env) (le : temp_env) (m : mem) (v : val) (n : Z)
       (heval : eval_expr ge e le m a v)
       (harg : sem_switch_arg v (typeof a) = some n) :
@@ -550,11 +548,11 @@ inductive step (xi : ExternalCalls) (ge : genv)
       (m : mem) :
       step xi ge function_entry (.State f .Scontinue (.Kswitch k) e le m) E0
         (.State f .Scontinue k e le m)
-  | label_statement (f : function) (lbl : label) (s : statement) (k : cont) (e : env)
+  | step_label (f : function) (lbl : label) (s : statement) (k : cont) (e : env)
       (le : temp_env) (m : mem) :
       step xi ge function_entry (.State f (.Slabel lbl s) k e le m) E0
         (.State f s k e le m)
-  | goto_label (f : function) (lbl : label) (k : cont) (e : env)
+  | step_goto (f : function) (lbl : label) (k : cont) (e : env)
       (le : temp_env) (m : mem) (s' : statement) (k' : cont)
       (hfind : find_label lbl f.fn_body (call_cont k) = some (s', k')) :
       step xi ge function_entry (.State f (.Sgoto lbl) k e le m) E0
@@ -564,26 +562,28 @@ inductive step (xi : ExternalCalls) (ge : genv)
       (hentry : function_entry f vargs m e le m1) :
       step xi ge function_entry (.Callstate (.Internal f) vargs k m) E0
         (.State f f.fn_body k e le m1)
-  | external_function (ef : external_function) (argTypes : List type)
+  | step_external_function (ef : external_function) (argTypes : List type)
       (resultType : type) (cc : calling_convention) (vargs : List val) (k : cont)
       (m : mem) (vres : val) (t : trace) (m' : mem)
       (hcall : external_call xi ef (Genv.to_senv ge.genv_genv) vargs m t vres m') :
       step xi ge function_entry
         (.Callstate (.External ef argTypes resultType cc) vargs k m) t
         (.Returnstate vres k m')
-  | return_from_call (v : val) (result : Option ident) (f : function) (e : env)
+  | step_returnstate (v : val) (result : Option ident) (f : function) (e : env)
       (le : temp_env) (k : cont) (m : mem) :
       step xi ge function_entry (.Returnstate v (.Kcall result f e le k) m) E0
         (.State f .Sskip k e (set_opttemp result v le) m)
 
-export step (step_set step_call step_builtin step_ifthenelse step_loop
+export step (step_assign step_set step_call step_builtin step_seq step_skip_seq
+  step_continue_seq step_break_seq step_ifthenelse step_loop
   step_skip_or_continue_loop1 step_break_loop1 step_skip_loop2 step_break_loop2
-  step_skip_seq step_skip_call step_skip_break_switch step_continue_switch
-  step_internal_function)
+  step_return_0 step_return_1 step_skip_call step_switch step_skip_break_switch
+  step_continue_switch step_label step_goto step_internal_function
+  step_external_function step_returnstate)
 
 /-! ## Whole-program semantics -/
 
-inductive initial_state (p : program) : machine_state → Prop where
+inductive initial_state (p : program) : state → Prop where
   | intro (b : block) (f : fundef) (m0 : mem)
       (hmem : Genv.init_mem (program_of_program p) = some m0)
       (hsymbol : Genv.find_symbol (Genv.globalenv (program_of_program p)) p.prog_main = some b)
@@ -591,7 +591,7 @@ inductive initial_state (p : program) : machine_state → Prop where
       (htype : type_of_fundef f = .Tfunction [] type_int32s cc_default) :
       initial_state p (.Callstate f [] .Kstop m0)
 
-inductive final_state : machine_state → int → Prop where
+inductive final_state : state → int → Prop where
   | intro (result : int) (m : mem) :
       final_state (.Returnstate (.Vint result) .Kstop m) result
 
@@ -606,7 +606,7 @@ inductive function_entry1 (ge : genv) (f : function) (vargs : List val)
       function_entry1 ge f vargs m e le m'
 
 def step1 (xi : ExternalCalls) (ge : genv) :
-    machine_state → trace → machine_state → Prop :=
+    state → trace → state → Prop :=
   step xi ge (function_entry1 ge)
 
 inductive function_entry2 (ge : genv) (f : function) (vargs : List val)
@@ -621,13 +621,13 @@ inductive function_entry2 (ge : genv) (f : function) (vargs : List val)
       function_entry2 ge f vargs m e le m'
 
 def step2 (xi : ExternalCalls) (ge : genv) :
-    machine_state → trace → machine_state → Prop :=
+    state → trace → state → Prop :=
   step xi ge (function_entry2 ge)
 
 def semantics1 (xi : ExternalCalls) (p : program) :
     CompCert4Lean.Common.Smallstep.semantics :=
   let ge := globalenv p
-  { state := machine_state
+  { state := state
     genvtype := genv
     step := step1 xi
     initial_state := initial_state p
@@ -638,7 +638,7 @@ def semantics1 (xi : ExternalCalls) (p : program) :
 def semantics2 (xi : ExternalCalls) (p : program) :
     CompCert4Lean.Common.Smallstep.semantics :=
   let ge := globalenv p
-  { state := machine_state
+  { state := state
     genvtype := genv
     step := step2 xi
     initial_state := initial_state p
