@@ -87,35 +87,39 @@ def reach_succStatement : Prop :=
     reach f pc →
     reach f s
 
-private inductive matchFrame : stackframe → stackframe → Prop where
-  | intro (res : reg) (f : function) (sp : val) (pc : node) (rs : regset)
+inductive match_frames : stackframe → stackframe → Prop where
+  | match_frames_intro (res : reg) (f : function) (sp : val) (pc : node) (rs : regset)
       (hreach : reach f pc) :
-      matchFrame
+      match_frames
         (Stackframe res f sp pc rs)
         (Stackframe res (CompCert4Lean.Backend.Renumber.transf_function f) sp
           (CompCert4Lean.Backend.Renumber.renum_pc (pnum f) pc) rs)
 
+export match_frames (match_frames_intro)
+
 inductive match_states : state → state → Prop where
-  | regular (stk : List stackframe) (f : function) (sp : val) (pc : node)
+  | match_regular_states (stk : List stackframe) (f : function) (sp : val) (pc : node)
       (rs : regset) (m : mem) (stk' : List stackframe)
-      (stacks : list_forall2 matchFrame stk stk')
+      (stacks : list_forall2 match_frames stk stk')
       (hreach : reach f pc) :
       match_states
         (State stk f sp pc rs m)
         (State stk' (CompCert4Lean.Backend.Renumber.transf_function f) sp
           (CompCert4Lean.Backend.Renumber.renum_pc (pnum f) pc) rs m)
-  | call (stk : List stackframe) (f : fundef) (args : List val) (m : mem)
+  | match_callstates (stk : List stackframe) (f : fundef) (args : List val) (m : mem)
       (stk' : List stackframe)
-      (stacks : list_forall2 matchFrame stk stk') :
+      (stacks : list_forall2 match_frames stk stk') :
       match_states
         (Callstate stk f args m)
         (Callstate stk' (CompCert4Lean.Backend.Renumber.transf_fundef f) args m)
-  | return (stk : List stackframe) (v : val) (m : mem)
+  | match_returnstates (stk : List stackframe) (v : val) (m : mem)
       (stk' : List stackframe)
-      (stacks : list_forall2 matchFrame stk stk') :
+      (stacks : list_forall2 match_frames stk stk') :
       match_states
         (Returnstate stk v m)
         (Returnstate stk' v m)
+
+export match_states (match_regular_states match_callstates match_returnstates)
 
 def step_simulationStatement : Prop :=
   ∀ (xi : ExternalCalls) (prog tprog : program), match_prog prog tprog →

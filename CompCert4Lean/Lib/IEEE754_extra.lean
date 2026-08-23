@@ -183,10 +183,10 @@ def BofZ_plusStatement : Prop :=
 
 def ZofB (f : binary_float prec emax) : Option Z :=
   match f with
-  | .B754_finite s m (.Zpos e) _ =>
+  | .B754_finite s m (.Zpos e) =>
       some (Zmul (Zaux.cond_Zopp s (Zpos m)) (Zpower_pos Ztwo e))
-  | .B754_finite s m .Z0 _ => some (Zaux.cond_Zopp s (Zpos m))
-  | .B754_finite s m (.Zneg e) _ =>
+  | .B754_finite s m .Z0 => some (Zaux.cond_Zopp s (Zpos m))
+  | .B754_finite s m (.Zneg e) =>
       some (Zaux.cond_Zopp s (Zdiv (Zpos m) (Zpower_pos Ztwo e)))
   | .B754_zero _ => some Z0
   | _ => none
@@ -297,7 +297,7 @@ def bounded_Bexact_inverseStatement : Prop :=
 
 def Bexact_inverse (f : binary_float prec emax) : Option (binary_float prec emax) :=
   match f with
-  | .B754_finite s m e _ =>
+  | .B754_finite s m e =>
       if _hm : m = Bexact_inverse_mantissa (prec := prec) then
         let e' := Zsub (Zopp e) (Zmul (Zsub prec Zone) Ztwo)
         match _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.ZArith_dec.Z_le_dec
@@ -307,7 +307,7 @@ def Bexact_inverse (f : binary_float prec emax) : Option (binary_float prec emax
                 e' emax with
             | .left _ =>
                 match hbounded : Binary.bounded (prec := prec) (emax := emax) m e' with
-                | true => some (Binary.B754_finite s m e' hbounded)
+                | true => some (Binary.B754_finite s m e')
                 | false => none
             | .right _ => none
         | .right _ => none
@@ -345,10 +345,10 @@ def Bconv
       { x : binary_float prec2 emax2 // Binary.is_nan x = true })
     (md : mode) (f : binary_float prec1 emax1) : binary_float prec2 emax2 :=
   match f with
-  | .B754_nan _ _ _ => Binary.build_nan (conv_nan f)
+  | .B754_nan _ _ => Binary.build_nan (conv_nan f)
   | .B754_infinity s => Binary.B754_infinity s
   | .B754_zero s => Binary.B754_zero s
-  | .B754_finite s m e _ =>
+  | .B754_finite s m e =>
       Binary.binary_normalize md (Zaux.cond_Zopp s (Zpos m)) e s
 
 def Bconv_correctStatement : Prop :=

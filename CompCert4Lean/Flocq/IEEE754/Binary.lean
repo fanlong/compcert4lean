@@ -92,32 +92,29 @@ abbrev cond_Zopp := BinarySingleNaN.cond_Zopp
 variable {prec emax : Z} [Core.FLX.Prec_gt_0 prec]
   [BinarySingleNaN.Prec_lt_emax prec emax]
 
-private inductive full_float_carrier where
+inductive full_float where
   | F754_zero (s : Bool)
   | F754_infinity (s : Bool)
   | F754_nan (s : Bool) (m : positive)
   | F754_finite (s : Bool) (m : positive) (e : Z)
 
-abbrev F754_zero (s : Bool) : full_float_carrier := full_float_carrier.F754_zero s
-abbrev F754_infinity (s : Bool) : full_float_carrier := full_float_carrier.F754_infinity s
-abbrev F754_nan (s : Bool) (m : positive) : full_float_carrier := full_float_carrier.F754_nan s m
-abbrev F754_finite (s : Bool) (m : positive) (e : Z) : full_float_carrier := full_float_carrier.F754_finite s m e
+export full_float (F754_zero F754_infinity F754_nan F754_finite)
 
-def FF2SF (x : full_float_carrier) : spec_float :=
+def FF2SF (x : full_float) : spec_float :=
   match x with
   | .F754_zero s => S754_zero s
   | .F754_infinity s => S754_infinity s
   | .F754_nan _ _ => S754_nan
   | .F754_finite s m e => S754_finite s m e
 
-def SF2FF (x : spec_float) : full_float_carrier :=
+def SF2FF (x : spec_float) : full_float :=
   match x with
   | .S754_zero s => F754_zero s
   | .S754_infinity s => F754_infinity s
   | .S754_nan => F754_nan false .xH
   | .S754_finite s m e => F754_finite s m e
 
-def is_nan_FF (f : full_float_carrier) : Bool :=
+def is_nan_FF (f : full_float) : Bool :=
   match f with
   | .F754_nan _ _ => true
   | _ => false
@@ -125,18 +122,26 @@ def is_nan_FF (f : full_float_carrier) : Bool :=
 abbrev emin : Z := emin0 prec emax
 abbrev fexp : Z → Z := fexp0 prec emax
 
-/- The source records this as an instance.  The facade's arithmetic provider
-   already exposes the same format function; retain the named surface here.
-   The proposition is consumed by later proof migration rather than by the
-   executable wrappers in this packet. -/
-def fexp_correct : Prop := Valid_exp (fexp (prec := prec) (emax := emax))
+/- The source records this as a global instance.  DMC-003 keeps the exact
+   proposition in a mandatory proof-phase certificate; executable definitions
+   do not synthesize or carry a proof value. -/
+class FexpCorrectCertificate (prec emax : Z)
+    [Core.FLX.Prec_gt_0 prec] [BinarySingleNaN.Prec_lt_emax prec emax] : Prop where
+  valid : Valid_exp (fexp (prec := prec) (emax := emax))
+
+def fexp_correctStatement : Prop :=
+  Valid_exp (fexp (prec := prec) (emax := emax))
+
+instance fexp_correct [certificate : FexpCorrectCertificate prec emax] :
+    Valid_exp (fexp (prec := prec) (emax := emax)) :=
+  certificate.valid
 
 abbrev bounded : positive → Z → Bool := bounded0 prec emax
 
 def nan_pl (pl : positive) : Bool :=
   Zlt_bool (Zpos (BinarySingleNaN.digits2_pos pl)) prec
 
-def valid_binary (x : full_float_carrier) : Bool :=
+def valid_binary (x : full_float) : Bool :=
   match x with
   | .F754_finite _ m e => bounded (prec := prec) (emax := emax) m e
   | .F754_nan _ pl => nan_pl (prec := prec) pl
@@ -145,90 +150,92 @@ def valid_binary (x : full_float_carrier) : Bool :=
 inductive binary_float (prec emax : Z) where
   | B754_zero (s : Bool)
   | B754_infinity (s : Bool)
-  | B754_nan (s : Bool) (pl : positive) :
-      nan_pl (prec := prec) pl = true → binary_float prec emax
-  | B754_finite (s : Bool) (m : positive) (e : Z) :
-      bounded (prec := prec) (emax := emax) m e = true → binary_float prec emax
+  | B754_nan (s : Bool) (pl : positive)
+  | B754_finite (s : Bool) (m : positive) (e : Z)
 
-abbrev B754_zero {prec emax : Z} (s : Bool) : binary_float prec emax :=
-  binary_float.B754_zero s
-abbrev B754_infinity {prec emax : Z} (s : Bool) : binary_float prec emax :=
-  binary_float.B754_infinity s
-abbrev B754_nan {prec emax : Z} (s : Bool) (pl : positive)
-    (h : nan_pl (prec := prec) pl = true) : binary_float prec emax :=
-  @binary_float.B754_nan prec emax s pl h
-abbrev B754_finite {prec emax : Z} (s : Bool) (m : positive) (e : Z)
-    (h : bounded (prec := prec) (emax := emax) m e = true) : binary_float prec emax :=
-  @binary_float.B754_finite prec emax s m e h
+export binary_float (B754_zero B754_infinity B754_nan B754_finite)
+
+def B754_nanObligation (pl : positive) : Prop :=
+  nan_pl (prec := prec) pl = true
+
+def B754_finiteObligation (m : positive) (e : Z) : Prop :=
+  bounded (prec := prec) (emax := emax) m e = true
 
 def B2BSN (x : binary_float prec emax) : BinarySingleNaN.binary_float prec emax :=
   match x with
   | .B754_zero s => BinarySingleNaN.B754_zero s
   | .B754_infinity s => BinarySingleNaN.B754_infinity s
-  | .B754_nan _ _ _ => BinarySingleNaN.B754_nan
-  | .B754_finite s m e h => BinarySingleNaN.B754_finite s m e h
+  | .B754_nan _ _ => BinarySingleNaN.B754_nan
+  | .B754_finite s m e => BinarySingleNaN.B754_finite s m e
 
-def FF2B (x : full_float_carrier) :
+def FF2B (x : full_float) :
     valid_binary (prec := prec) (emax := emax) x = true → binary_float prec emax :=
   match x with
-  | .F754_finite s m e => fun h => B754_finite s m e h
+  | .F754_finite s m e => fun _ => .B754_finite s m e
   | .F754_infinity s => fun _ => B754_infinity s
   | .F754_zero s => fun _ => B754_zero s
-  | .F754_nan s pl => fun h => B754_nan s pl h
+  | .F754_nan s pl => fun _ => .B754_nan s pl
 
-def B2FF (x : binary_float prec emax) : full_float_carrier :=
+def B2FF (x : binary_float prec emax) : full_float :=
   match x with
-  | .B754_finite s m e _ => F754_finite s m e
+  | .B754_finite s m e => F754_finite s m e
   | .B754_infinity s => F754_infinity s
   | .B754_zero s => F754_zero s
-  | .B754_nan s pl _ => F754_nan s pl
+  | .B754_nan s pl => F754_nan s pl
+
+def BinaryFloatCertificate (x : binary_float prec emax) : Prop :=
+  valid_binary (prec := prec) (emax := emax) (B2FF x) = true
+
+abbrev CertifiedBinaryFloat (prec emax : Z)
+    [Core.FLX.Prec_gt_0 prec] [BinarySingleNaN.Prec_lt_emax prec emax] :=
+  { x : binary_float prec emax // BinaryFloatCertificate x }
 
 def B2R (f : binary_float prec emax) : R :=
   match f with
-  | .B754_finite s m e _ => F2R (Float radix2 (cond_Zopp s (Zpos m)) e)
+  | .B754_finite s m e => F2R (Float radix2 (cond_Zopp s (Zpos m)) e)
   | _ => R0
 
 def B2SF (x : binary_float prec emax) : spec_float :=
   match x with
-  | .B754_finite s m e _ => S754_finite s m e
+  | .B754_finite s m e => S754_finite s m e
   | .B754_infinity s => S754_infinity s
   | .B754_zero s => S754_zero s
-  | .B754_nan _ _ _ => S754_nan
+  | .B754_nan _ _ => S754_nan
 
 def is_finite_strict (f : binary_float prec emax) : Bool :=
   match f with
-  | .B754_finite _ _ _ _ => true
+  | .B754_finite _ _ _ => true
   | _ => false
 
 def Bsign (x : binary_float prec emax) : Bool :=
   match x with
-  | .B754_nan s _ _ => s
+  | .B754_nan s _ => s
   | .B754_zero s => s
   | .B754_infinity s => s
-  | .B754_finite s _ _ _ => s
+  | .B754_finite s _ _ => s
 
 def is_finite (f : binary_float prec emax) : Bool :=
   match f with
-  | .B754_finite _ _ _ _ | .B754_zero _ => true
+  | .B754_finite _ _ _ | .B754_zero _ => true
   | _ => false
 
 def is_nan (f : binary_float prec emax) : Bool :=
   match f with
-  | .B754_nan _ _ _ => true
+  | .B754_nan _ _ => true
   | _ => false
 
 def get_nan_pl (x : binary_float prec emax) : positive :=
   match x with
-  | .B754_nan _ pl _ => pl
+  | .B754_nan _ pl => pl
   | _ => .xH
 
 def build_nan (x : { x : binary_float prec emax // is_nan x = true }) :
     binary_float prec emax :=
   match x with
-  | ⟨.B754_nan s pl h, _⟩ => B754_nan s pl h
+  | ⟨.B754_nan s pl, _⟩ => .B754_nan s pl
   | ⟨.B754_zero _, hx⟩ => nomatch hx
   | ⟨.B754_infinity _, hx⟩ => nomatch hx
-  | ⟨.B754_finite _ _ _ _, hx⟩ => nomatch hx
+  | ⟨.B754_finite _ _ _, hx⟩ => nomatch hx
 
 def BSN2B (nan : { x : binary_float prec emax // is_nan x = true })
     (x : BinarySingleNaN.binary_float prec emax) : binary_float prec emax :=
@@ -236,7 +243,7 @@ def BSN2B (nan : { x : binary_float prec emax // is_nan x = true })
   | .B754_nan => build_nan nan
   | .B754_zero s => B754_zero s
   | .B754_infinity s => B754_infinity s
-  | .B754_finite s m e h => B754_finite s m e h
+  | .B754_finite s m e => .B754_finite s m e
 
 def BSN2B' (x : BinarySingleNaN.binary_float prec emax)
     : BinarySingleNaN.is_nan x = false → binary_float prec emax :=
@@ -244,30 +251,30 @@ def BSN2B' (x : BinarySingleNaN.binary_float prec emax)
   | .B754_zero s => fun _ => B754_zero s
   | .B754_infinity s => fun _ => B754_infinity s
   | .B754_nan => fun h => nomatch h
-  | .B754_finite s m e h => fun _ => B754_finite s m e h
+  | .B754_finite s m e => fun _ => .B754_finite s m e
 
 def Bopp (opp_nan : binary_float prec emax →
       { x : binary_float prec emax // is_nan x = true })
     (x : binary_float prec emax) : binary_float prec emax :=
   match x with
-  | .B754_nan s pl h => build_nan (opp_nan (.B754_nan s pl h))
+  | .B754_nan s pl => build_nan (opp_nan (.B754_nan s pl))
   | .B754_infinity s => B754_infinity (!s)
-  | .B754_finite s m e h => B754_finite (!s) m e h
+  | .B754_finite s m e => .B754_finite (!s) m e
   | .B754_zero s => B754_zero (!s)
 
 def Babs (abs_nan : binary_float prec emax →
       { x : binary_float prec emax // is_nan x = true })
     (x : binary_float prec emax) : binary_float prec emax :=
   match x with
-  | .B754_nan s pl h => build_nan (abs_nan (.B754_nan s pl h))
+  | .B754_nan s pl => build_nan (abs_nan (.B754_nan s pl))
   | .B754_infinity _ => B754_infinity false
-  | .B754_finite _ m e h => B754_finite false m e h
+  | .B754_finite _ m e => .B754_finite false m e
   | .B754_zero _ => B754_zero false
 
 def Bcompare (f1 f2 : binary_float prec emax) : Option comparison :=
   BinarySingleNaN.Bcompare (B2BSN f1) (B2BSN f2)
 
-def binary_overflow (m : BinarySingleNaN.mode) (s : Bool) : full_float_carrier :=
+def binary_overflow (m : BinarySingleNaN.mode) (s : Bool) : full_float :=
   SF2FF (BinarySingleNaN.binary_overflow (prec := prec) (emax := emax) m s)
 
 def Bmult (mult_nan : binary_float prec emax → binary_float prec emax →
@@ -281,7 +288,7 @@ def binary_normalize (m : BinarySingleNaN.mode) (x e : Z) (szero : Bool) :
   match BinarySingleNaN.binary_normalize (prec := prec) (emax := emax) m x e szero with
   | .B754_zero s => B754_zero s
   | .B754_infinity s => B754_infinity s
-  | .B754_finite s m e h => B754_finite s m e h
+  | .B754_finite s m e => .B754_finite s m e
   | .B754_nan => B754_zero szero
 
 def Bplus (plus_nan : binary_float prec emax → binary_float prec emax →
@@ -308,77 +315,147 @@ def Bsqrt (sqrt_nan : binary_float prec emax →
   BSN2B (sqrt_nan x)
     (BinarySingleNaN.Bsqrt (prec := prec) (emax := emax) m (B2BSN x))
 
+/-!
+Exact theorem-facing interpretation selected by RPR-007.  The executable
+definitions above remain on the rational runtime carrier.  This namespace is
+only a transparent Binary-specific adapter over `BinarySingleNaN.Exact`.
+-/
+abbrev ExactRealContext := BinarySingleNaN.Exact.Context
+
+namespace Exact
+
+abbrev Context := ExactRealContext
+abbrev Magnitude (ctx : Context) := BinarySingleNaN.Exact.Magnitude ctx
+abbrev R (ctx : Context) := BinarySingleNaN.Exact.R ctx
+abbrev R0 (ctx : Context) := BinarySingleNaN.Exact.R0 ctx
+abbrev Ropp (ctx : Context) := BinarySingleNaN.Exact.Ropp ctx
+abbrev Rplus (ctx : Context) := BinarySingleNaN.Exact.Rplus ctx
+abbrev Rminus (ctx : Context) := BinarySingleNaN.Exact.Rminus ctx
+abbrev Rmult (ctx : Context) := BinarySingleNaN.Exact.Rmult ctx
+abbrev Rdiv (ctx : Context) := BinarySingleNaN.Exact.Rdiv ctx
+abbrev Rabs (ctx : Context) := BinarySingleNaN.Exact.Rabs ctx
+abbrev Rlt (ctx : Context) := BinarySingleNaN.Exact.Rlt ctx
+abbrev Rle (ctx : Context) := BinarySingleNaN.Exact.Rle ctx
+noncomputable abbrev Rcompare (ctx : Context) := BinarySingleNaN.Exact.Rcompare ctx
+noncomputable abbrev Rlt_bool (ctx : Context) := BinarySingleNaN.Exact.Rlt_bool ctx
+abbrev bpow (ctx : Context) := BinarySingleNaN.Exact.bpow ctx
+abbrev F2R (ctx : Context) {beta : radix} (f : float beta) : R ctx :=
+  BinarySingleNaN.Exact.F2R ctx f
+abbrev cexp {ctx : Context} (magnitude : Magnitude ctx) :=
+  BinarySingleNaN.Exact.cexp magnitude
+abbrev canonical {ctx : Context} (magnitude : Magnitude ctx) :=
+  BinarySingleNaN.Exact.canonical magnitude
+abbrev generic_format {ctx : Context} (magnitude : Magnitude ctx) :=
+  BinarySingleNaN.Exact.generic_format magnitude
+abbrev round {ctx : Context} (magnitude : Magnitude ctx) :=
+  BinarySingleNaN.Exact.round magnitude
+noncomputable abbrev round_mode (ctx : Context) := BinarySingleNaN.Exact.round_mode ctx
+
+def B2R (ctx : Context) (f : binary_float prec emax) : R ctx :=
+  BinarySingleNaN.Exact.B2R ctx (B2BSN f)
+
+end Exact
+
 def B2BSN_BSN2BStatement : Prop :=
   ∀ (nan : { x : binary_float prec emax // is_nan x = true })
     (x : BinarySingleNaN.binary_float prec emax),
+    BinaryFloatCertificate nan.1 →
+    BinarySingleNaN.BinaryFloatCertificate x →
     B2BSN (BSN2B nan x) = x
 
 def B2BSN_BSN2B'Statement : Prop :=
   ∀ (x : BinarySingleNaN.binary_float prec emax)
     (Nx : BinarySingleNaN.is_nan x = false),
+    BinarySingleNaN.BinaryFloatCertificate x →
     B2BSN (BSN2B' x Nx) = x
 
 def B2FF_FF2BStatement : Prop :=
-  ∀ (x : full_float_carrier)
+  ∀ (x : full_float)
     (Hx : valid_binary (prec := prec) (emax := emax) x = true), B2FF (FF2B x Hx) = x
 
 def B2FF_injStatement : Prop :=
-  ∀ x y : binary_float prec emax, B2FF x = B2FF y → x = y
-
-def B2R_B2BSNStatement : Prop :=
-  ∀ x : binary_float prec emax, BinarySingleNaN.B2R (B2BSN x) = B2R x
-
-def B2R_Bsign_injStatement : Prop :=
-  ∀ x y : binary_float prec emax, is_finite x = true → is_finite y = true →
-    B2R x = B2R y → Bsign x = Bsign y → x = y
-
-def B2R_build_nanStatement : Prop :=
-  ∀ x : { x : binary_float prec emax // is_nan x = true }, B2R (build_nan x) = R0
-
-def B2R_injStatement : Prop :=
   ∀ x y : binary_float prec emax,
+    BinaryFloatCertificate x → BinaryFloatCertificate y →
+      B2FF x = B2FF y → x = y
+
+def B2R_B2BSNStatement (ctx : ExactRealContext) : Prop :=
+  ∀ x : binary_float prec emax,
+    BinaryFloatCertificate x →
+      BinarySingleNaN.Exact.B2R ctx (B2BSN x) = Exact.B2R ctx x
+
+def B2R_Bsign_injStatement (ctx : ExactRealContext) : Prop :=
+  ∀ x y : binary_float prec emax,
+    BinaryFloatCertificate x → BinaryFloatCertificate y →
+    is_finite x = true → is_finite y = true →
+    Exact.B2R ctx x = Exact.B2R ctx y → Bsign x = Bsign y → x = y
+
+def B2R_build_nanStatement (ctx : ExactRealContext) : Prop :=
+  ∀ x : { x : binary_float prec emax // is_nan x = true },
+    BinaryFloatCertificate x.1 → Exact.B2R ctx (build_nan x) = Exact.R0 ctx
+
+def B2R_injStatement (ctx : ExactRealContext) : Prop :=
+  ∀ x y : binary_float prec emax,
+    BinaryFloatCertificate x → BinaryFloatCertificate y →
     is_finite_strict x = true → is_finite_strict y = true →
-    B2R x = B2R y → x = y
+    Exact.B2R ctx x = Exact.B2R ctx y → x = y
 
 def B2SF_B2BSNStatement : Prop :=
-  ∀ x : binary_float prec emax, BinarySingleNaN.B2SF (B2BSN x) = B2SF x
+  ∀ x : binary_float prec emax, BinaryFloatCertificate x →
+    BinarySingleNaN.B2SF (B2BSN x) = B2SF x
 
-def Bcompare_correctStatement : Prop :=
-  ∀ f1 f2 : binary_float prec emax, is_finite f1 = true → is_finite f2 = true →
-    Bcompare f1 f2 = some (Rcompare (B2R f1) (B2R f2))
+def Bcompare_correctStatement (ctx : ExactRealContext) : Prop :=
+  ∀ f1 f2 : binary_float prec emax,
+    BinaryFloatCertificate f1 → BinaryFloatCertificate f2 →
+    is_finite f1 = true → is_finite f2 = true →
+    Bcompare f1 f2 = some (Exact.Rcompare ctx (Exact.B2R ctx f1) (Exact.B2R ctx f2))
 
 def Bcompare_swapStatement : Prop :=
   ∀ x y : binary_float prec emax,
+    BinaryFloatCertificate x → BinaryFloatCertificate y →
     Bcompare y x = match Bcompare x y with
       | some c => some (_root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.CompOpp c)
       | none => none
 
-def Bdiv_correctStatement : Prop :=
+def Bdiv_correctStatement (ctx : ExactRealContext)
+    (magnitude : Exact.Magnitude ctx) : Prop :=
   ∀ (div_nan : binary_float prec emax → binary_float prec emax →
       { x : binary_float prec emax // is_nan x = true })
-    (m : BinarySingleNaN.mode) (x y : binary_float prec emax), B2R y ≠ R0 →
-    if Rlt_bool (Rabs (round radix2 (fexp (prec := prec) (emax := emax))
-      (BinarySingleNaN.round_mode m) (B2R x / B2R y))) (bpow radix2 emax) then
-      B2R (Bdiv (prec := prec) (emax := emax) div_nan m x y) = round radix2 (fexp (prec := prec) (emax := emax))
-        (BinarySingleNaN.round_mode m) (B2R x / B2R y) ∧
+    (m : BinarySingleNaN.mode) (x y : binary_float prec emax),
+    BinaryFloatCertificate x → BinaryFloatCertificate y →
+    Exact.B2R ctx y ≠ Exact.R0 ctx →
+    if Exact.Rlt_bool ctx
+      (Exact.Rabs ctx (Exact.round magnitude radix2 (fexp (prec := prec) (emax := emax))
+        (Exact.round_mode ctx m) (Exact.Rdiv ctx (Exact.B2R ctx x) (Exact.B2R ctx y))))
+      (Exact.bpow ctx radix2 emax) then
+      Exact.B2R ctx (Bdiv (prec := prec) (emax := emax) div_nan m x y) =
+        Exact.round magnitude radix2 (fexp (prec := prec) (emax := emax))
+          (Exact.round_mode ctx m) (Exact.Rdiv ctx (Exact.B2R ctx x) (Exact.B2R ctx y)) ∧
       is_finite (Bdiv (prec := prec) (emax := emax) div_nan m x y) = is_finite x ∧
       (is_nan (Bdiv (prec := prec) (emax := emax) div_nan m x y) = false →
         Bsign (Bdiv (prec := prec) (emax := emax) div_nan m x y) = (Bsign x ^^ Bsign y))
     else B2FF (Bdiv (prec := prec) (emax := emax) div_nan m x y) =
       binary_overflow (prec := prec) (emax := emax) m (Bsign x ^^ Bsign y)
 
-def Bminus_correctStatement : Prop :=
+def Bminus_correctStatement (ctx : ExactRealContext)
+    (magnitude : Exact.Magnitude ctx) : Prop :=
   ∀ (minus_nan : binary_float prec emax → binary_float prec emax →
       { x : binary_float prec emax // is_nan x = true })
     (m : BinarySingleNaN.mode) (x y : binary_float prec emax),
+    BinaryFloatCertificate x → BinaryFloatCertificate y →
     is_finite x = true → is_finite y = true →
-    if Rlt_bool (Rabs (round radix2 (fexp (prec := prec) (emax := emax))
-      (BinarySingleNaN.round_mode m) (B2R x - B2R y))) (bpow radix2 emax) then
-      B2R (Bminus (prec := prec) (emax := emax) minus_nan m x y) = round radix2 (fexp (prec := prec) (emax := emax))
-        (BinarySingleNaN.round_mode m) (B2R x - B2R y) ∧
+    if Exact.Rlt_bool ctx
+      (Exact.Rabs ctx (Exact.round magnitude radix2 (fexp (prec := prec) (emax := emax))
+        (Exact.round_mode ctx m)
+        (Exact.Rminus ctx (Exact.B2R ctx x) (Exact.B2R ctx y))))
+      (Exact.bpow ctx radix2 emax) then
+      Exact.B2R ctx (Bminus (prec := prec) (emax := emax) minus_nan m x y) =
+        Exact.round magnitude radix2 (fexp (prec := prec) (emax := emax))
+          (Exact.round_mode ctx m)
+          (Exact.Rminus ctx (Exact.B2R ctx x) (Exact.B2R ctx y)) ∧
       is_finite (Bminus (prec := prec) (emax := emax) minus_nan m x y) = true ∧
       Bsign (Bminus (prec := prec) (emax := emax) minus_nan m x y) =
-        (match Rcompare (B2R x - B2R y) R0 with
+        (match Exact.Rcompare ctx
+          (Exact.Rminus ctx (Exact.B2R ctx x) (Exact.B2R ctx y)) (Exact.R0 ctx) with
         | .Eq => match m with
           | .mode_DN => Bsign x || (!Bsign y)
           | _ => Bsign x && (!Bsign y)
@@ -388,32 +465,47 @@ def Bminus_correctStatement : Prop :=
       binary_overflow (prec := prec) (emax := emax) m (Bsign x) ∧
       Bsign x = !Bsign y
 
-def Bmult_correctStatement : Prop :=
+def Bmult_correctStatement (ctx : ExactRealContext)
+    (magnitude : Exact.Magnitude ctx) : Prop :=
   ∀ (mult_nan : binary_float prec emax → binary_float prec emax →
       { x : binary_float prec emax // is_nan x = true })
     (m : BinarySingleNaN.mode) (x y : binary_float prec emax),
-    if Rlt_bool (Rabs (round radix2 (fexp (prec := prec) (emax := emax))
-      (BinarySingleNaN.round_mode m) (B2R x * B2R y))) (bpow radix2 emax) then
-      B2R (Bmult (prec := prec) (emax := emax) mult_nan m x y) = round radix2 (fexp (prec := prec) (emax := emax))
-        (BinarySingleNaN.round_mode m) (B2R x * B2R y) ∧
+    BinaryFloatCertificate x → BinaryFloatCertificate y →
+    if Exact.Rlt_bool ctx
+      (Exact.Rabs ctx (Exact.round magnitude radix2 (fexp (prec := prec) (emax := emax))
+        (Exact.round_mode ctx m)
+        (Exact.Rmult ctx (Exact.B2R ctx x) (Exact.B2R ctx y))))
+      (Exact.bpow ctx radix2 emax) then
+      Exact.B2R ctx (Bmult (prec := prec) (emax := emax) mult_nan m x y) =
+        Exact.round magnitude radix2 (fexp (prec := prec) (emax := emax))
+          (Exact.round_mode ctx m)
+          (Exact.Rmult ctx (Exact.B2R ctx x) (Exact.B2R ctx y)) ∧
       is_finite (Bmult (prec := prec) (emax := emax) mult_nan m x y) = (is_finite x && is_finite y) ∧
       (is_nan (Bmult (prec := prec) (emax := emax) mult_nan m x y) = false →
         Bsign (Bmult (prec := prec) (emax := emax) mult_nan m x y) = (Bsign x ^^ Bsign y))
     else B2FF (Bmult (prec := prec) (emax := emax) mult_nan m x y) =
       binary_overflow (prec := prec) (emax := emax) m (Bsign x ^^ Bsign y)
 
-def Bplus_correctStatement : Prop :=
+def Bplus_correctStatement (ctx : ExactRealContext)
+    (magnitude : Exact.Magnitude ctx) : Prop :=
   ∀ (plus_nan : binary_float prec emax → binary_float prec emax →
       { x : binary_float prec emax // is_nan x = true })
     (m : BinarySingleNaN.mode) (x y : binary_float prec emax),
+    BinaryFloatCertificate x → BinaryFloatCertificate y →
     is_finite x = true → is_finite y = true →
-    if Rlt_bool (Rabs (round radix2 (fexp (prec := prec) (emax := emax))
-      (BinarySingleNaN.round_mode m) (B2R x + B2R y))) (bpow radix2 emax) then
-      B2R (Bplus (prec := prec) (emax := emax) plus_nan m x y) = round radix2 (fexp (prec := prec) (emax := emax))
-        (BinarySingleNaN.round_mode m) (B2R x + B2R y) ∧
+    if Exact.Rlt_bool ctx
+      (Exact.Rabs ctx (Exact.round magnitude radix2 (fexp (prec := prec) (emax := emax))
+        (Exact.round_mode ctx m)
+        (Exact.Rplus ctx (Exact.B2R ctx x) (Exact.B2R ctx y))))
+      (Exact.bpow ctx radix2 emax) then
+      Exact.B2R ctx (Bplus (prec := prec) (emax := emax) plus_nan m x y) =
+        Exact.round magnitude radix2 (fexp (prec := prec) (emax := emax))
+          (Exact.round_mode ctx m)
+          (Exact.Rplus ctx (Exact.B2R ctx x) (Exact.B2R ctx y)) ∧
       is_finite (Bplus (prec := prec) (emax := emax) plus_nan m x y) = true ∧
       Bsign (Bplus (prec := prec) (emax := emax) plus_nan m x y) =
-        (match Rcompare (B2R x + B2R y) R0 with
+        (match Exact.Rcompare ctx
+          (Exact.Rplus ctx (Exact.B2R ctx x) (Exact.B2R ctx y)) (Exact.R0 ctx) with
         | .Eq => match m with
           | .mode_DN => Bsign x || Bsign y
           | _ => Bsign x && Bsign y
@@ -424,60 +516,76 @@ def Bplus_correctStatement : Prop :=
 
 def Bsign_B2BSNStatement : Prop :=
   ∀ x : binary_float prec emax,
+    BinaryFloatCertificate x →
     is_nan x = false → BinarySingleNaN.Bsign (B2BSN x) = Bsign x
 
 def FF2SF_B2FFStatement : Prop :=
-  ∀ x : binary_float prec emax, FF2SF (B2FF x) = B2SF x
+  ∀ x : binary_float prec emax, BinaryFloatCertificate x →
+    FF2SF (B2FF x) = B2SF x
 
 def SF2FF_FF2SFStatement : Prop :=
-  ∀ x : full_float_carrier, is_nan_FF x = false → SF2FF (FF2SF x) = x
+  ∀ x : full_float, is_nan_FF x = false → SF2FF (FF2SF x) = x
 
-def binary_normalize_correctStatement : Prop :=
+def binary_normalize_correctStatement (ctx : ExactRealContext)
+    (magnitude : Exact.Magnitude ctx) : Prop :=
   ∀ (m : BinarySingleNaN.mode) (mx ex : Z) (szero : Bool),
-    if Rlt_bool (Rabs (round radix2 (fexp (prec := prec) (emax := emax))
-      (BinarySingleNaN.round_mode m) (F2R (Float radix2 mx ex)))) (bpow radix2 emax) then
-      B2R (binary_normalize (prec := prec) (emax := emax) m mx ex szero) = round radix2 (fexp (prec := prec) (emax := emax))
-        (BinarySingleNaN.round_mode m) (F2R (Float radix2 mx ex)) ∧
+    let x := Exact.F2R ctx (Float radix2 mx ex)
+    let z := binary_normalize (prec := prec) (emax := emax) m mx ex szero
+    if Exact.Rlt_bool ctx
+      (Exact.Rabs ctx (Exact.round magnitude radix2 (fexp (prec := prec) (emax := emax))
+        (Exact.round_mode ctx m) x))
+      (Exact.bpow ctx radix2 emax) then
+      Exact.B2R ctx z = Exact.round magnitude radix2 (fexp (prec := prec) (emax := emax))
+        (Exact.round_mode ctx m) x ∧
       is_finite (binary_normalize (prec := prec) (emax := emax) m mx ex szero) = true ∧
-      Bsign (binary_normalize (prec := prec) (emax := emax) m mx ex szero) =
-        (match Rcompare (F2R (Float radix2 mx ex)) R0 with
+      Bsign z =
+        (match Exact.Rcompare ctx x (Exact.R0 ctx) with
         | .Eq => szero
         | .Lt => true
         | .Gt => false)
     else B2FF (binary_normalize (prec := prec) (emax := emax) m mx ex szero) =
       binary_overflow (prec := prec) (emax := emax) m
-        (Rlt_bool (F2R (Float radix2 mx ex)) R0)
+        (Exact.Rlt_bool ctx x (Exact.R0 ctx))
 
-def bounded_canonical_lt_emaxStatement : Prop :=
+def bounded_canonical_lt_emaxStatement (ctx : ExactRealContext)
+    (magnitude : Exact.Magnitude ctx) : Prop :=
   ∀ (mx : positive) (ex : Z),
-    canonical radix2 (fexp (prec := prec) (emax := emax)) (Float radix2 (Zpos mx) ex) →
-    Rlt (F2R (Float radix2 (Zpos mx) ex)) (bpow radix2 emax) →
+    Exact.canonical magnitude radix2 (fexp (prec := prec) (emax := emax))
+      (Float radix2 (Zpos mx) ex) →
+    Exact.Rlt ctx (Exact.F2R ctx (Float radix2 (Zpos mx) ex))
+      (Exact.bpow ctx radix2 emax) →
     bounded (prec := prec) (emax := emax) mx ex = true
 
-def bounded_lt_emaxStatement : Prop :=
+def bounded_lt_emaxStatement (ctx : ExactRealContext) : Prop :=
   ∀ (mx : positive) (ex : Z), bounded (prec := prec) (emax := emax) mx ex = true →
-    Rlt (F2R (Float radix2 (Zpos mx) ex)) (bpow radix2 emax)
+    Exact.Rlt ctx (Exact.F2R ctx (Float radix2 (Zpos mx) ex))
+      (Exact.bpow ctx radix2 emax)
 
 def eq_binary_overflow_FF2SFStatement : Prop :=
-  ∀ (x : full_float_carrier) (m : BinarySingleNaN.mode) (s : Bool),
+  ∀ (x : full_float) (m : BinarySingleNaN.mode) (s : Bool),
     FF2SF x = BinarySingleNaN.binary_overflow (prec := prec) (emax := emax) m s →
     x = binary_overflow (prec := prec) (emax := emax) m s
 
-def generic_format_B2RStatement : Prop :=
-  ∀ x : binary_float prec emax,
-    generic_format radix2 (fexp (prec := prec) (emax := emax)) (B2R x)
+def generic_format_B2RStatement (ctx : ExactRealContext)
+    (magnitude : Exact.Magnitude ctx) : Prop :=
+  ∀ x : binary_float prec emax, BinaryFloatCertificate x →
+    Exact.generic_format magnitude radix2 (fexp (prec := prec) (emax := emax))
+      (Exact.B2R ctx x)
 
 def is_finite_B2BSNStatement : Prop :=
-  ∀ x : binary_float prec emax, BinarySingleNaN.is_finite (B2BSN x) = is_finite x
+  ∀ x : binary_float prec emax, BinaryFloatCertificate x →
+    BinarySingleNaN.is_finite (B2BSN x) = is_finite x
 
 def is_finite_build_nanStatement : Prop :=
   ∀ x : { x : binary_float prec emax // is_nan x = true },
+    BinaryFloatCertificate x.1 →
     is_finite (build_nan x) = false
 
 def is_nan_FF2SFStatement : Prop :=
-  ∀ x : full_float_carrier, BinarySingleNaN.is_nan_SF (FF2SF x) = is_nan_FF x
+  ∀ x : full_float, BinarySingleNaN.is_nan_SF (FF2SF x) = is_nan_FF x
 
 def is_nan_build_nanStatement : Prop :=
-  ∀ x : { x : binary_float prec emax // is_nan x = true }, is_nan (build_nan x) = true
+  ∀ x : { x : binary_float prec emax // is_nan x = true },
+    BinaryFloatCertificate x.1 → is_nan (build_nan x) = true
 
 end CompCert4Lean.Flocq.IEEE754.Binary

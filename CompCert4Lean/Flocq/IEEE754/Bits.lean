@@ -52,9 +52,9 @@ def bits_of_binary_float (mw ew : Z) (x : binary_float mw ew) : Z :=
   | .B754_zero sx => join_bits mw ew sx Z0 Z0
   | .B754_infinity sx =>
       join_bits mw ew sx Z0 (Zsub (Zpower Ztwo ew) Zone)
-  | .B754_nan sx plx _ =>
+  | .B754_nan sx plx =>
       join_bits mw ew sx (Zpos plx) (Zsub (Zpower Ztwo ew) Zone)
-  | .B754_finite sx mx ex _ =>
+  | .B754_finite sx mx ex =>
       let m := Zsub (Zpos mx) (Zpower Ztwo mw)
       if Zle_bool Z0 m then
         join_bits mw ew sx m (Zadd (Zsub ex (emin mw ew)) Zone)
@@ -67,9 +67,9 @@ def split_bits_of_binary_float (mw ew : Z)
   | .B754_zero sx => ((sx, Z0), Z0)
   | .B754_infinity sx =>
       ((sx, Z0), Zsub (Zpower Ztwo ew) Zone)
-  | .B754_nan sx plx _ =>
+  | .B754_nan sx plx =>
       ((sx, Zpos plx), Zsub (Zpower Ztwo ew) Zone)
-  | .B754_finite sx mx ex _ =>
+  | .B754_finite sx mx ex =>
       let m := Zsub (Zpos mx) (Zpower Ztwo mw)
       if Zle_bool Z0 m then
         ((sx, m), Zadd (Zsub ex (emin mw ew)) Zone)

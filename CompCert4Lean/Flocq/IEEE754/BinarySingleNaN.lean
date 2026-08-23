@@ -133,7 +133,7 @@ def SF2R (beta : radix) (x : spec_float) : R :=
 class Prec_lt_emax (prec emax : Z) : Prop where
   prec_lt_emax : Zlt prec emax
 
-abbrev prec_lt_emax (prec emax : Z) [h : Prec_lt_emax prec emax] : Zlt prec emax := h.prec_lt_emax
+export Prec_lt_emax (prec_lt_emax)
 
 variable {prec emax : Z}
 
@@ -147,45 +147,51 @@ inductive binary_float (prec emax : Z) where
   | B754_zero (s : Bool)
   | B754_infinity (s : Bool)
   | B754_nan
-  | B754_finite (s : Bool) (m : positive) (e : Z) :
-      bounded0 prec emax m e = true → binary_float prec emax
+  | B754_finite (s : Bool) (m : positive) (e : Z)
 
-abbrev B754_zero {prec emax : Z} (s : Bool) : binary_float prec emax :=
-  binary_float.B754_zero s
-abbrev B754_infinity {prec emax : Z} (s : Bool) : binary_float prec emax :=
-  binary_float.B754_infinity s
-abbrev B754_nan {prec emax : Z} : binary_float prec emax := binary_float.B754_nan
-abbrev B754_finite {prec emax : Z} (s : Bool) (m : positive) (e : Z)
-    (h : bounded0 prec emax m e = true) : binary_float prec emax :=
-  binary_float.B754_finite s m e h
+export binary_float (B754_zero B754_infinity B754_nan B754_finite)
 
-def SF2B (x : spec_float) : valid_binary0 prec emax x = true → binary_float prec emax :=
+def SF2B (x : spec_float) : binary_float prec emax :=
   match x with
-  | .S754_finite s m e => fun h => binary_float.B754_finite s m e h
-  | .S754_infinity s => fun _ => .B754_infinity s
-  | .S754_zero s => fun _ => .B754_zero s
-  | .S754_nan => fun _ => .B754_nan
-
-private def sf2bTotal (x : spec_float) : binary_float prec emax :=
-  match x with
-  | .S754_zero s => .B754_zero s
+  | .S754_finite s m e => .B754_finite s m e
   | .S754_infinity s => .B754_infinity s
+  | .S754_zero s => .B754_zero s
   | .S754_nan => .B754_nan
-  | .S754_finite s m e =>
-      match h : bounded0 prec emax m e with
-      | true => .B754_finite s m e h
-      | false => .B754_nan
 
 def B2SF (x : binary_float prec emax) : spec_float :=
   match x with
-  | .B754_finite s m e _ => .S754_finite s m e
+  | .B754_finite s m e => .S754_finite s m e
   | .B754_infinity s => .S754_infinity s
   | .B754_zero s => .S754_zero s
   | .B754_nan => .S754_nan
 
+/-!
+`B754_finiteObligation` is the exact proof-only field detached from the Rocq
+`B754_finite` constructor.  `BinaryFloatCertificate` is the certified view of
+the proof-erased executable carrier, and `SF2BObligation` records the exact
+source premise of `SF2B`.  These propositions are theorem-facing only; runtime
+construction never consumes a proof value.
+-/
+def B754_finiteObligation (m : positive) (e : Z) : Prop :=
+  bounded0 prec emax m e = true
+
+def BinaryFloatCertificate (x : binary_float prec emax) : Prop :=
+  valid_binary0 prec emax (B2SF x) = true
+
+abbrev CertifiedBinaryFloat (prec emax : Z) :=
+  { x : binary_float prec emax // BinaryFloatCertificate x }
+
+def SF2BObligation (x : spec_float) : Prop :=
+  valid_binary0 prec emax x = true
+
+def SF2BCertificateStatement : Prop :=
+  ∀ x : spec_float,
+    SF2BObligation (prec := prec) (emax := emax) x →
+      BinaryFloatCertificate (SF2B (prec := prec) (emax := emax) x)
+
 def B2R (f : binary_float prec emax) : R :=
   match f with
-  | .B754_finite s m e _ => F2R (Float radix2 (cond_Zopp s (Zpos m)) e)
+  | .B754_finite s m e => F2R (Float radix2 (cond_Zopp s (Zpos m)) e)
   | _ => R0
 
 def Bsign (x : binary_float prec emax) : Bool :=
@@ -193,7 +199,7 @@ def Bsign (x : binary_float prec emax) : Bool :=
   | .B754_nan => false
   | .B754_zero s => s
   | .B754_infinity s => s
-  | .B754_finite s _ _ _ => s
+  | .B754_finite s _ _ => s
 
 def sign_SF (x : spec_float) : Bool :=
   match x with
@@ -204,7 +210,7 @@ def sign_SF (x : spec_float) : Bool :=
 
 def is_finite (x : binary_float prec emax) : Bool :=
   match x with
-  | .B754_finite _ _ _ _ | .B754_zero _ => true
+  | .B754_finite _ _ _ | .B754_zero _ => true
   | _ => false
 
 def is_finite_SF (x : spec_float) : Bool :=
@@ -226,7 +232,7 @@ def Bopp (x : binary_float prec emax) : binary_float prec emax :=
   match x with
   | .B754_nan => x
   | .B754_infinity s => .B754_infinity (!s)
-  | .B754_finite s m e h => .B754_finite (!s) m e h
+  | .B754_finite s m e => .B754_finite (!s) m e
   | .B754_zero s => .B754_zero (!s)
 
 def Bcompare (f1 f2 : binary_float prec emax) : Option comparison :=
@@ -239,11 +245,7 @@ inductive mode where
   | mode_UP
   | mode_NA
 
-abbrev mode_DN : mode := mode.mode_DN
-abbrev mode_NA : mode := mode.mode_NA
-abbrev mode_NE : mode := mode.mode_NE
-abbrev mode_UP : mode := mode.mode_UP
-abbrev mode_ZR : mode := mode.mode_ZR
+export mode (mode_NE mode_ZR mode_DN mode_UP mode_NA)
 
 def round_mode (m : mode) : R → Z :=
   match m with
@@ -297,12 +299,49 @@ def binary_round (m : mode) (sx : Bool) (mx : positive) (ex : Z) : spec_float :=
   let (mz, ez) := shl_align_fexp (prec := prec) (emax := emax) mx ex
   binary_round_aux (prec := prec) (emax := emax) m sx (Zpos mz) ez loc_Exact
 
+/-!
+The source constructs the finite results below with `SF2B`, feeding it the
+validity component of the corresponding correctness lemma.  DMC-003 detaches
+those proof terms from executable construction.  This theorem-facing companion
+surface preserves the exact four propositions and their proof ownership; it is
+never an argument to a runtime operation.
+-/
+structure ConstructionObligations (prec emax : Z)
+    [Core.FLX.Prec_gt_0 prec] [Prec_lt_emax prec emax] : Prop where
+  binary_round_correct_validity :
+    ∀ (m : mode) (sx : Bool) (mx : positive) (ex : Z),
+      valid_binary0 prec emax (binary_round (prec := prec) (emax := emax) m sx mx ex) = true
+  Bmult_correct_aux_validity :
+    ∀ (m : mode) (sx : Bool) (mx : positive) (ex : Z)
+      (_Hx : bounded0 prec emax mx ex = true) (sy : Bool)
+      (my : positive) (ey : Z) (_Hy : bounded0 prec emax my ey = true),
+      valid_binary0 prec emax
+        (binary_round_aux (prec := prec) (emax := emax) m (sx ^^ sy)
+          (Zpos (_root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.PArith.BinPos.Pos.mul mx my))
+          (Zadd ex ey) loc_Exact) = true
+  Bdiv_correct_aux_validity :
+    ∀ (m : mode) (sx : Bool) (mx : positive) (ex : Z)
+      (sy : Bool) (my : positive) (ey : Z),
+      let (pair, lz) := SFdiv_core_binary prec emax (Zpos mx) ex (Zpos my) ey
+      valid_binary0 prec emax
+        (binary_round_aux (prec := prec) (emax := emax) m (sx ^^ sy)
+          pair.1 pair.2 lz) = true
+  Bsqrt_correct_aux_validity :
+    ∀ (m : mode) (mx : positive) (ex : Z)
+      (_Hx : bounded0 prec emax mx ex = true),
+      let (pair, lz) := SFsqrt_core_binary prec emax (Zpos mx) ex
+      valid_binary0 prec emax
+        (binary_round_aux (prec := prec) (emax := emax) m false
+          pair.1 pair.2 lz) = true
+
 def binary_normalize [Core.FLX.Prec_gt_0 prec] [Prec_lt_emax prec emax]
     (m : mode) (x : Z) (e : Z) (szero : Bool) : binary_float prec emax :=
   match x with
   | .Z0 => .B754_zero szero
-  | .Zpos p => sf2bTotal (prec := prec) (emax := emax) (binary_round (prec := prec) (emax := emax) m false p e)
-  | .Zneg p => sf2bTotal (prec := prec) (emax := emax) (binary_round (prec := prec) (emax := emax) m true p e)
+  | .Zpos p => SF2B (prec := prec) (emax := emax)
+      (binary_round (prec := prec) (emax := emax) m false p e)
+  | .Zneg p => SF2B (prec := prec) (emax := emax)
+      (binary_round (prec := prec) (emax := emax) m true p e)
 
 def Fplus_naive (sx : Bool) (mx : positive) (ex : Z)
     (sy : Bool) (my : positive) (ey ez : Z) : Z :=
@@ -315,15 +354,17 @@ def Bmult [Core.FLX.Prec_gt_0 prec] [Prec_lt_emax prec emax]
   match x, y with
   | .B754_nan, _ | _, .B754_nan => .B754_nan
   | .B754_infinity sx, .B754_infinity sy => .B754_infinity (sx ^^ sy)
-  | .B754_infinity sx, .B754_finite sy _ _ _ => .B754_infinity (sx ^^ sy)
-  | .B754_finite sx _ _ _, .B754_infinity sy => .B754_infinity (sx ^^ sy)
+  | .B754_infinity sx, .B754_finite sy _ _ => .B754_infinity (sx ^^ sy)
+  | .B754_finite sx _ _, .B754_infinity sy => .B754_infinity (sx ^^ sy)
   | .B754_infinity _, .B754_zero _ | .B754_zero _, .B754_infinity _ => .B754_nan
-  | .B754_finite sx _ _ _, .B754_zero sy => .B754_zero (sx ^^ sy)
-  | .B754_zero sx, .B754_finite sy _ _ _ => .B754_zero (sx ^^ sy)
+  | .B754_finite sx _ _, .B754_zero sy => .B754_zero (sx ^^ sy)
+  | .B754_zero sx, .B754_finite sy _ _ => .B754_zero (sx ^^ sy)
   | .B754_zero sx, .B754_zero sy => .B754_zero (sx ^^ sy)
-  | .B754_finite sx mx ex _, .B754_finite sy my ey _ =>
-      sf2bTotal (prec := prec) (emax := emax) (binary_round_aux (prec := prec) (emax := emax) m (sx ^^ sy)
-        (Zmul (Zpos mx) (Zpos my)) (Zadd ex ey) loc_Exact)
+  | .B754_finite sx mx ex, .B754_finite sy my ey =>
+      SF2B (prec := prec) (emax := emax)
+        (binary_round_aux (prec := prec) (emax := emax) m (sx ^^ sy)
+          (Zpos (_root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.PArith.BinPos.Pos.mul mx my))
+          (Zadd ex ey) loc_Exact)
 
 def Bplus [Core.FLX.Prec_gt_0 prec] [Prec_lt_emax prec emax]
     (m : mode) (x y : binary_float prec emax) : binary_float prec emax :=
@@ -336,9 +377,10 @@ def Bplus [Core.FLX.Prec_gt_0 prec] [Prec_lt_emax prec emax]
       if sx == sy then x else .B754_zero (match m with | .mode_DN => true | _ => false)
   | .B754_zero _, y => y
   | x, .B754_zero _ => x
-  | .B754_finite sx mx ex _, .B754_finite sy my ey _ =>
+  | .B754_finite sx mx ex, .B754_finite sy my ey =>
       let ez := _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.min ex ey
-      binary_normalize (prec := prec) (emax := emax) m (Fplus_naive sx mx ex sy my ey ez) ez
+      binary_normalize (prec := prec) (emax := emax) m
+        (Fplus_naive sx mx ex sy my ey ez) ez
         (match m with | mode.mode_DN => true | _ => false)
 
 def Bminus [Core.FLX.Prec_gt_0 prec] [Prec_lt_emax prec emax]
@@ -350,11 +392,12 @@ def Bminus [Core.FLX.Prec_gt_0 prec] [Prec_lt_emax prec emax]
   | _, .B754_infinity sy => .B754_infinity (!sy)
   | .B754_zero sx, .B754_zero sy =>
       if sx == !sy then x else .B754_zero (match m with | .mode_DN => true | _ => false)
-  | .B754_zero _, .B754_finite sy my ey h => .B754_finite (!sy) my ey h
+  | .B754_zero _, .B754_finite sy my ey => .B754_finite (!sy) my ey
   | x, .B754_zero _ => x
-  | .B754_finite sx mx ex _, .B754_finite sy my ey _ =>
+  | .B754_finite sx mx ex, .B754_finite sy my ey =>
       let ez := _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.min ex ey
-      binary_normalize (prec := prec) (emax := emax) m (Fplus_naive sx mx ex (!sy) my ey ez) ez
+      binary_normalize (prec := prec) (emax := emax) m
+        (Fplus_naive sx mx ex (!sy) my ey ez) ez
         (match m with | mode.mode_DN => true | _ => false)
 
 def Bdiv [Core.FLX.Prec_gt_0 prec] [Prec_lt_emax prec emax]
@@ -362,16 +405,19 @@ def Bdiv [Core.FLX.Prec_gt_0 prec] [Prec_lt_emax prec emax]
   match x, y with
   | .B754_nan, _ | _, .B754_nan => .B754_nan
   | .B754_infinity _, .B754_infinity _ => .B754_nan
-  | .B754_infinity sx, .B754_finite sy _ _ _ => .B754_infinity (sx ^^ sy)
-  | .B754_finite sx _ _ _, .B754_infinity sy => .B754_zero (sx ^^ sy)
+  | .B754_infinity sx, .B754_finite sy _ _ => .B754_infinity (sx ^^ sy)
+  | .B754_finite sx _ _, .B754_infinity sy => .B754_zero (sx ^^ sy)
   | .B754_infinity sx, .B754_zero sy => .B754_infinity (sx ^^ sy)
   | .B754_zero sx, .B754_infinity sy => .B754_zero (sx ^^ sy)
-  | .B754_finite sx _ _ _, .B754_zero sy => .B754_infinity (sx ^^ sy)
-  | .B754_zero sx, .B754_finite sy _ _ _ => .B754_zero (sx ^^ sy)
+  | .B754_finite sx _ _, .B754_zero sy => .B754_infinity (sx ^^ sy)
+  | .B754_zero sx, .B754_finite sy _ _ => .B754_zero (sx ^^ sy)
   | .B754_zero _, .B754_zero _ => .B754_nan
-  | .B754_finite sx mx ex _, .B754_finite sy my ey _ =>
-      let (pair, lz) := SFdiv_core_binary prec emax (Zpos mx) ex (Zpos my) ey
-      sf2bTotal (prec := prec) (emax := emax) (binary_round_aux (prec := prec) (emax := emax) m (sx ^^ sy) pair.1 pair.2 lz)
+  | .B754_finite sx mx ex, .B754_finite sy my ey =>
+      match SFdiv_core_binary prec emax (Zpos mx) ex (Zpos my) ey with
+      | (pair, lz) =>
+          SF2B (prec := prec) (emax := emax)
+            (binary_round_aux (prec := prec) (emax := emax) m (sx ^^ sy)
+              pair.1 pair.2 lz)
 
 def Bsqrt [Core.FLX.Prec_gt_0 prec] [Prec_lt_emax prec emax]
     (m : mode) (x : binary_float prec emax) : binary_float prec emax :=
@@ -379,88 +425,237 @@ def Bsqrt [Core.FLX.Prec_gt_0 prec] [Prec_lt_emax prec emax]
   | .B754_nan => .B754_nan
   | .B754_infinity false => x
   | .B754_infinity true => .B754_nan
-  | .B754_finite true _ _ _ => .B754_nan
+  | .B754_finite true _ _ => .B754_nan
   | .B754_zero _ => x
-  | .B754_finite false mx ex h =>
-      let (pair, lz) := SFsqrt_core_binary prec emax (Zpos mx) ex
-      sf2bTotal (prec := prec) (emax := emax) (binary_round_aux (prec := prec) (emax := emax) m false pair.1 pair.2 lz)
+  | .B754_finite false mx ex =>
+      match SFsqrt_core_binary prec emax (Zpos mx) ex with
+      | (pair, lz) =>
+          SF2B (prec := prec) (emax := emax)
+            (binary_round_aux (prec := prec) (emax := emax) m false pair.1 pair.2 lz)
 
-def valid_rnd_round_mode : Prop := ∀ m : mode, Valid_rnd (round_mode m)
+/-!
+Exact theorem-facing interpretation selected by RPR-007.  The executable
+definitions above remain on the rational runtime carrier.  Everything below
+is parameterized by the canonical exact-real context and, where `mag`/`cexp`
+is involved, by an explicit exact magnitude provider.
+-/
+abbrev ExactRealContext := Raux.ExactRealContext
 
-def B2R_BoppStatement : Prop :=
-  ∀ x : binary_float prec emax, B2R (Bopp x) = Ropp (B2R x)
+namespace Exact
 
-def B2R_SF2BStatement : Prop :=
+abbrev Context := ExactRealContext
+abbrev Magnitude (ctx : Context) := Raux.Exact.Magnitude ctx
+abbrev R (ctx : Context) := Raux.Exact.R ctx
+
+def IZR (ctx : Context) : Z → R ctx := Raux.Exact.IZR ctx
+def R0 (ctx : Context) : R ctx := Raux.Exact.R0 ctx
+def Ropp (ctx : Context) : R ctx → R ctx := Raux.Exact.Ropp ctx
+def Rplus (ctx : Context) : R ctx → R ctx → R ctx := Raux.Exact.Rplus ctx
+def Rminus (ctx : Context) : R ctx → R ctx → R ctx := Raux.Exact.Rminus ctx
+def Rmult (ctx : Context) : R ctx → R ctx → R ctx := Raux.Exact.Rmult ctx
+def Rdiv (ctx : Context) : R ctx → R ctx → R ctx := Raux.Exact.Rdiv ctx
+def Rabs (ctx : Context) : R ctx → R ctx := Raux.Exact.Rabs ctx
+def Rlt (ctx : Context) : R ctx → R ctx → Prop := Raux.Exact.Rlt ctx
+def Rle (ctx : Context) : R ctx → R ctx → Prop := Raux.Exact.Rle ctx
+noncomputable def Rcompare (ctx : Context) : R ctx → R ctx → comparison :=
+  Raux.Exact.Rcompare ctx
+noncomputable def Rlt_bool (ctx : Context) : R ctx → R ctx → Bool :=
+  Raux.Exact.Rlt_bool ctx
+def bpow (ctx : Context) : radix → Z → R ctx := Raux.Exact.bpow ctx
+def sqrt (ctx : Context) : R ctx → R ctx := Raux.Exact.sqrt ctx
+def Zfloor (ctx : Context) : R ctx → Z := Raux.Exact.Zfloor ctx
+def Zceil (ctx : Context) : R ctx → Z := Raux.Exact.Zceil ctx
+noncomputable def Ztrunc (ctx : Context) : R ctx → Z := Raux.Exact.Ztrunc ctx
+
+def F2R (ctx : Context) {beta : radix} (f : float beta) : R ctx :=
+  Rmult ctx (IZR ctx (Fnum f)) (bpow ctx beta (Fexp f))
+
+def SF2R (ctx : Context) (beta : radix) (x : spec_float) : R ctx :=
+  match x with
+  | .S754_finite s m e => F2R ctx (Float beta (cond_Zopp s (Zpos m)) e)
+  | _ => R0 ctx
+
+def B2R (ctx : Context) (f : binary_float prec emax) : R ctx :=
+  match f with
+  | .B754_finite s m e => F2R ctx (Float radix2 (cond_Zopp s (Zpos m)) e)
+  | _ => R0 ctx
+
+def mag (magnitude : Magnitude ctx) (beta : radix) (x : R ctx) : Z :=
+  (Raux.Exact.mag magnitude beta x).mag_val
+
+def cexp (magnitude : Magnitude ctx) (beta : radix) (fexp : Z → Z)
+    (x : R ctx) : Z :=
+  fexp (mag magnitude beta x)
+
+def canonical (magnitude : Magnitude ctx) (beta : radix) (fexp : Z → Z)
+    (f : float beta) : Prop :=
+  Fexp f = cexp magnitude beta fexp (F2R ctx f)
+
+def scaled_mantissa (magnitude : Magnitude ctx) (beta : radix) (fexp : Z → Z)
+    (x : R ctx) : R ctx :=
+  Rmult ctx x (bpow ctx beta (Zopp (cexp magnitude beta fexp x)))
+
+def generic_format (magnitude : Magnitude ctx) (beta : radix) (fexp : Z → Z)
+    (x : R ctx) : Prop :=
+  x = F2R ctx
+    (Float beta (Ztrunc ctx (scaled_mantissa magnitude beta fexp x))
+      (cexp magnitude beta fexp x))
+
+def round (magnitude : Magnitude ctx) (beta : radix) (fexp : Z → Z)
+    (rnd : R ctx → Z) (x : R ctx) : R ctx :=
+  F2R ctx
+    (Float beta (rnd (scaled_mantissa magnitude beta fexp x))
+      (cexp magnitude beta fexp x))
+
+noncomputable def Znearest (ctx : Context) (choice : Z → Bool) (x : R ctx) : Z :=
+  match Rcompare ctx (Rminus ctx x (IZR ctx (Zfloor ctx x)))
+      (Rdiv ctx (Raux.Exact.Rone ctx) (Raux.Exact.Rtwo ctx)) with
+  | .Lt => Zfloor ctx x
+  | .Eq => if choice (Zfloor ctx x) then Zceil ctx x else Zfloor ctx x
+  | .Gt => Zceil ctx x
+
+noncomputable def ZnearestA (ctx : Context) (x : R ctx) : Z :=
+  Znearest ctx (fun m => Zle_bool Z0 m) x
+
+noncomputable def ZnearestE (ctx : Context) (x : R ctx) : Z :=
+  Znearest ctx (fun m => Bool.not (Zeven m)) x
+
+noncomputable def round_mode (ctx : Context) (m : mode) : R ctx → Z :=
+  match m with
+  | mode.mode_NE => ZnearestE ctx
+  | mode.mode_ZR => Ztrunc ctx
+  | mode.mode_DN => Zfloor ctx
+  | mode.mode_UP => Zceil ctx
+  | mode.mode_NA => ZnearestA ctx
+
+structure Valid_rnd (ctx : Context) (rnd : R ctx → Z) : Prop where
+  Zrnd_le : ∀ x y : R ctx, Rle ctx x y → Zle (rnd x) (rnd y)
+  Zrnd_IZR : ∀ n : Z, rnd (IZR ctx n) = n
+
+inductive inbetween (ctx : Context) (d u x : R ctx) : location → Prop where
+  | inbetween_Exact (h : x = d) : inbetween ctx d u x loc_Exact
+  | inbetween_Inexact (l : comparison)
+      (h_bounds : Rlt ctx d x ∧ Rlt ctx x u)
+      (h_middle : Rcompare ctx x
+        (Rdiv ctx (Rplus ctx d u) (Raux.Exact.Rtwo ctx)) = l) :
+      inbetween ctx d u x (loc_Inexact l)
+
+def inbetween_float (ctx : Context) (beta : radix) (m e : Z)
+    (x : R ctx) (l : location) : Prop :=
+  inbetween ctx (F2R ctx (Float beta m e))
+    (F2R ctx (Float beta (Zadd m Zone) e)) x l
+
+end Exact
+
+def valid_rnd_round_mode (ctx : ExactRealContext) : Prop :=
+  ∀ m : mode, Exact.Valid_rnd ctx (Exact.round_mode ctx m)
+
+def B2R_BoppStatement (ctx : ExactRealContext) : Prop :=
+  ∀ x : binary_float prec emax,
+    BinaryFloatCertificate x →
+    Exact.B2R ctx (Bopp x) = Exact.Ropp ctx (Exact.B2R ctx x)
+
+def B2R_SF2BStatement (ctx : ExactRealContext) : Prop :=
   ∀ (x : spec_float)
     (Hx : valid_binary (prec := prec) (emax := emax) x = true),
-    B2R (SF2B (prec := prec) (emax := emax) x Hx) = SF2R radix2 x
+    Exact.B2R ctx (SF2B (prec := prec) (emax := emax) x) =
+      Exact.SF2R ctx radix2 x
 
 def B2SF_SF2BStatement : Prop :=
   ∀ (x : spec_float)
     (Hx : valid_binary (prec := prec) (emax := emax) x = true),
-    B2SF (SF2B (prec := prec) (emax := emax) x Hx) = x
+    B2SF (SF2B (prec := prec) (emax := emax) x) = x
 
 def B2SF_injStatement : Prop :=
-  ∀ x y : binary_float prec emax, B2SF x = B2SF y → x = y
+  ∀ x y : binary_float prec emax,
+    BinaryFloatCertificate x → BinaryFloatCertificate y →
+      B2SF x = B2SF y → x = y
 
-def Bcompare_correctStatement : Prop :=
+def Bcompare_correctStatement (ctx : ExactRealContext) : Prop :=
   ∀ (f1 f2 : binary_float prec emax),
+    BinaryFloatCertificate f1 →
+    BinaryFloatCertificate f2 →
     is_finite f1 = true →
     is_finite f2 = true →
     Bcompare f1 f2 =
-      some (Rcompare (B2R f1) (B2R f2))
+      some (Exact.Rcompare ctx (Exact.B2R ctx f1) (Exact.B2R ctx f2))
 
 def Bcompare_swapStatement : Prop :=
   ∀ (x y : binary_float prec emax),
+    BinaryFloatCertificate x →
+    BinaryFloatCertificate y →
     Bcompare y x =
       match Bcompare x y with
       | some c => some (_root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.CompOpp c)
       | none => none
 
-def Bdiv_correctStatement [Core.FLX.Prec_gt_0 prec] [Prec_lt_emax prec emax] : Prop :=
+def Bdiv_correctStatement (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx)
+    [Core.FLX.Prec_gt_0 prec] [Prec_lt_emax prec emax] : Prop :=
   ∀ (m : mode) (x y : binary_float prec emax),
-    B2R y ≠ R0 →
-    if Rlt_bool (Rabs (round radix2 (fexp (prec := prec) (emax := emax))
-      (round_mode m) (B2R x / B2R y)))
-        (bpow radix2 emax) then
-      B2R (Bdiv (prec := prec) (emax := emax) m x y) =
-        round radix2 (fexp (prec := prec) (emax := emax)) (round_mode m) (B2R x / B2R y) ∧
+    BinaryFloatCertificate x →
+    BinaryFloatCertificate y →
+    Exact.B2R ctx y ≠ Exact.R0 ctx →
+    if Exact.Rlt_bool ctx
+        (Exact.Rabs ctx
+          (Exact.round magnitude radix2 (fexp (prec := prec) (emax := emax))
+            (Exact.round_mode ctx m)
+            (Exact.Rdiv ctx (Exact.B2R ctx x) (Exact.B2R ctx y))))
+        (Exact.bpow ctx radix2 emax) then
+      Exact.B2R ctx (Bdiv (prec := prec) (emax := emax) m x y) =
+        Exact.round magnitude radix2 (fexp (prec := prec) (emax := emax))
+          (Exact.round_mode ctx m)
+          (Exact.Rdiv ctx (Exact.B2R ctx x) (Exact.B2R ctx y)) ∧
       is_finite (Bdiv (prec := prec) (emax := emax) m x y) = is_finite x ∧
       (is_nan (Bdiv (prec := prec) (emax := emax) m x y) = false →
-        Bsign (Bdiv (prec := prec) (emax := emax) m x y) = (Bsign x ^^ Bsign y))
+        Bsign (Bdiv (prec := prec) (emax := emax) m x y) =
+          (Bsign x ^^ Bsign y))
     else
       B2SF (Bdiv (prec := prec) (emax := emax) m x y) =
         binary_overflow (prec := prec) (emax := emax) m (Bsign x ^^ Bsign y)
 
-def Bdiv_correct_auxStatement [Core.FLX.Prec_gt_0 prec] [Prec_lt_emax prec emax] : Prop :=
+def Bdiv_correct_auxStatement (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx)
+    [Core.FLX.Prec_gt_0 prec] [Prec_lt_emax prec emax] : Prop :=
   ∀ (m : mode) (sx : Bool) (mx : positive) (ex : Z)
     (sy : Bool) (my : positive) (ey : Z),
-    let x := F2R (Float radix2 (cond_Zopp sx (Zpos mx)) ex)
-    let y := F2R (Float radix2 (cond_Zopp sy (Zpos my)) ey)
+    let x := Exact.F2R ctx (Float radix2 (cond_Zopp sx (Zpos mx)) ex)
+    let y := Exact.F2R ctx (Float radix2 (cond_Zopp sy (Zpos my)) ey)
     let z :=
       let (pair, lz) := SFdiv_core_binary prec emax (Zpos mx) ex (Zpos my) ey
       binary_round_aux (prec := prec) (emax := emax) m (sx ^^ sy) pair.1 pair.2 lz
     valid_binary (prec := prec) (emax := emax) z = true ∧
-    if Rlt_bool (Rabs (round radix2 (fexp (prec := prec) (emax := emax))
-      (round_mode m) (x / y)))
-        (bpow radix2 emax) then
-      SF2R radix2 z = round radix2 (fexp (prec := prec) (emax := emax)) (round_mode m) (x / y) ∧
+    if Exact.Rlt_bool ctx
+        (Exact.Rabs ctx
+          (Exact.round magnitude radix2 (fexp (prec := prec) (emax := emax))
+            (Exact.round_mode ctx m) (Exact.Rdiv ctx x y)))
+        (Exact.bpow ctx radix2 emax) then
+      Exact.SF2R ctx radix2 z =
+        Exact.round magnitude radix2 (fexp (prec := prec) (emax := emax))
+          (Exact.round_mode ctx m) (Exact.Rdiv ctx x y) ∧
       is_finite_SF z = true ∧ sign_SF z = (sx ^^ sy)
     else
       z = binary_overflow (prec := prec) (emax := emax) m (sx ^^ sy)
 
-def Bminus_correctStatement [Core.FLX.Prec_gt_0 prec] [Prec_lt_emax prec emax] : Prop :=
+def Bminus_correctStatement (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx)
+    [Core.FLX.Prec_gt_0 prec] [Prec_lt_emax prec emax] : Prop :=
   ∀ (m : mode) (x y : binary_float prec emax),
+    BinaryFloatCertificate x →
+    BinaryFloatCertificate y →
     is_finite x = true →
     is_finite y = true →
-    if Rlt_bool (Rabs (round radix2 (fexp (prec := prec) (emax := emax))
-      (round_mode m) (B2R x - B2R y)))
-        (bpow radix2 emax) then
-      B2R (Bminus (prec := prec) (emax := emax) m x y) =
-        round radix2 (fexp (prec := prec) (emax := emax)) (round_mode m) (B2R x - B2R y) ∧
+    if Exact.Rlt_bool ctx
+        (Exact.Rabs ctx
+          (Exact.round magnitude radix2 (fexp (prec := prec) (emax := emax))
+            (Exact.round_mode ctx m)
+            (Exact.Rminus ctx (Exact.B2R ctx x) (Exact.B2R ctx y))))
+        (Exact.bpow ctx radix2 emax) then
+      Exact.B2R ctx (Bminus (prec := prec) (emax := emax) m x y) =
+        Exact.round magnitude radix2 (fexp (prec := prec) (emax := emax))
+          (Exact.round_mode ctx m)
+          (Exact.Rminus ctx (Exact.B2R ctx x) (Exact.B2R ctx y)) ∧
       is_finite (Bminus (prec := prec) (emax := emax) m x y) = true ∧
       Bsign (Bminus (prec := prec) (emax := emax) m x y) =
-        (match Rcompare (B2R x - B2R y) R0 with
+        (match Exact.Rcompare ctx
+          (Exact.Rminus ctx (Exact.B2R ctx x) (Exact.B2R ctx y)) (Exact.R0 ctx) with
         | .Eq =>
             (match m with
             | mode.mode_DN => (Bsign x || (!Bsign y))
@@ -472,50 +667,74 @@ def Bminus_correctStatement [Core.FLX.Prec_gt_0 prec] [Prec_lt_emax prec emax] :
         binary_overflow (prec := prec) (emax := emax) m (Bsign x) ∧
       Bsign x = !Bsign y
 
-def Bmult_correctStatement [Core.FLX.Prec_gt_0 prec] [Prec_lt_emax prec emax] : Prop :=
+def Bmult_correctStatement (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx)
+    [Core.FLX.Prec_gt_0 prec] [Prec_lt_emax prec emax] : Prop :=
   ∀ (m : mode) (x y : binary_float prec emax),
-    if Rlt_bool (Rabs (round radix2 (fexp (prec := prec) (emax := emax))
-      (round_mode m) (B2R x * B2R y)))
-        (bpow radix2 emax) then
-      B2R (Bmult (prec := prec) (emax := emax) m x y) =
-        round radix2 (fexp (prec := prec) (emax := emax)) (round_mode m) (B2R x * B2R y) ∧
-      is_finite (Bmult (prec := prec) (emax := emax) m x y) = (is_finite x && is_finite y) ∧
+    BinaryFloatCertificate x →
+    BinaryFloatCertificate y →
+    if Exact.Rlt_bool ctx
+        (Exact.Rabs ctx
+          (Exact.round magnitude radix2 (fexp (prec := prec) (emax := emax))
+            (Exact.round_mode ctx m)
+            (Exact.Rmult ctx (Exact.B2R ctx x) (Exact.B2R ctx y))))
+        (Exact.bpow ctx radix2 emax) then
+      Exact.B2R ctx (Bmult (prec := prec) (emax := emax) m x y) =
+        Exact.round magnitude radix2 (fexp (prec := prec) (emax := emax))
+          (Exact.round_mode ctx m)
+          (Exact.Rmult ctx (Exact.B2R ctx x) (Exact.B2R ctx y)) ∧
+      is_finite (Bmult (prec := prec) (emax := emax) m x y) =
+        (is_finite x && is_finite y) ∧
       (is_nan (Bmult (prec := prec) (emax := emax) m x y) = false →
-        Bsign (Bmult (prec := prec) (emax := emax) m x y) = (Bsign x ^^ Bsign y))
+        Bsign (Bmult (prec := prec) (emax := emax) m x y) =
+          (Bsign x ^^ Bsign y))
     else
       B2SF (Bmult (prec := prec) (emax := emax) m x y) =
         binary_overflow (prec := prec) (emax := emax) m (Bsign x ^^ Bsign y)
 
-def Bmult_correct_auxStatement [Core.FLX.Prec_gt_0 prec] [Prec_lt_emax prec emax] : Prop :=
+def Bmult_correct_auxStatement (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx)
+    [Core.FLX.Prec_gt_0 prec] [Prec_lt_emax prec emax] : Prop :=
   ∀ (m : mode) (sx : Bool) (mx : positive) (ex : Z)
     (_Hx : bounded (prec := prec) (emax := emax) mx ex = true) (sy : Bool)
     (my : positive) (ey : Z) (_Hy : bounded (prec := prec) (emax := emax) my ey = true),
-    let x := F2R (Float radix2 (cond_Zopp sx (Zpos mx)) ex)
-    let y := F2R (Float radix2 (cond_Zopp sy (Zpos my)) ey)
+    let x := Exact.F2R ctx (Float radix2 (cond_Zopp sx (Zpos mx)) ex)
+    let y := Exact.F2R ctx (Float radix2 (cond_Zopp sy (Zpos my)) ey)
     let z := binary_round_aux (prec := prec) (emax := emax) m (sx ^^ sy)
       (Zpos (_root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.PArith.BinPos.Pos.mul mx my))
       (Zadd ex ey) loc_Exact
     valid_binary (prec := prec) (emax := emax) z = true ∧
-    if Rlt_bool (Rabs (round radix2 (fexp (prec := prec) (emax := emax))
-      (round_mode m) (x * y)))
-        (bpow radix2 emax) then
-      SF2R radix2 z = round radix2 (fexp (prec := prec) (emax := emax)) (round_mode m) (x * y) ∧
+    if Exact.Rlt_bool ctx
+        (Exact.Rabs ctx
+          (Exact.round magnitude radix2 (fexp (prec := prec) (emax := emax))
+            (Exact.round_mode ctx m) (Exact.Rmult ctx x y)))
+        (Exact.bpow ctx radix2 emax) then
+      Exact.SF2R ctx radix2 z =
+        Exact.round magnitude radix2 (fexp (prec := prec) (emax := emax))
+          (Exact.round_mode ctx m) (Exact.Rmult ctx x y) ∧
       is_finite_SF z = true ∧ sign_SF z = (sx ^^ sy)
     else
       z = binary_overflow (prec := prec) (emax := emax) m (sx ^^ sy)
 
-def Bplus_correctStatement [Core.FLX.Prec_gt_0 prec] [Prec_lt_emax prec emax] : Prop :=
+def Bplus_correctStatement (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx)
+    [Core.FLX.Prec_gt_0 prec] [Prec_lt_emax prec emax] : Prop :=
   ∀ (m : mode) (x y : binary_float prec emax),
+    BinaryFloatCertificate x →
+    BinaryFloatCertificate y →
     is_finite x = true →
     is_finite y = true →
-    if Rlt_bool (Rabs (round radix2 (fexp (prec := prec) (emax := emax))
-      (round_mode m) (B2R x + B2R y)))
-        (bpow radix2 emax) then
-      B2R (Bplus (prec := prec) (emax := emax) m x y) =
-        round radix2 (fexp (prec := prec) (emax := emax)) (round_mode m) (B2R x + B2R y) ∧
+    if Exact.Rlt_bool ctx
+        (Exact.Rabs ctx
+          (Exact.round magnitude radix2 (fexp (prec := prec) (emax := emax))
+            (Exact.round_mode ctx m)
+            (Exact.Rplus ctx (Exact.B2R ctx x) (Exact.B2R ctx y))))
+        (Exact.bpow ctx radix2 emax) then
+      Exact.B2R ctx (Bplus (prec := prec) (emax := emax) m x y) =
+        Exact.round magnitude radix2 (fexp (prec := prec) (emax := emax))
+          (Exact.round_mode ctx m)
+          (Exact.Rplus ctx (Exact.B2R ctx x) (Exact.B2R ctx y)) ∧
       is_finite (Bplus (prec := prec) (emax := emax) m x y) = true ∧
       Bsign (Bplus (prec := prec) (emax := emax) m x y) =
-        (match Rcompare (B2R x + B2R y) R0 with
+        (match Exact.Rcompare ctx
+          (Exact.Rplus ctx (Exact.B2R ctx x) (Exact.B2R ctx y)) (Exact.R0 ctx) with
         | .Eq =>
             (match m with
             | mode.mode_DN => (Bsign x || Bsign y)
@@ -527,63 +746,78 @@ def Bplus_correctStatement [Core.FLX.Prec_gt_0 prec] [Prec_lt_emax prec emax] : 
         binary_overflow (prec := prec) (emax := emax) m (Bsign x) ∧ Bsign x = Bsign y
 
 def Bsign_BoppStatement : Prop :=
-  ∀ x : binary_float prec emax, is_nan x = false → Bsign (Bopp x) = !Bsign x
+  ∀ x : binary_float prec emax,
+    BinaryFloatCertificate x → is_nan x = false → Bsign (Bopp x) = !Bsign x
 
 def Bsign_SF2BStatement : Prop :=
   ∀ (x : spec_float)
     (H : valid_binary (prec := prec) (emax := emax) x = true),
-    Bsign (SF2B (prec := prec) (emax := emax) x H) = sign_SF x
+    Bsign (SF2B (prec := prec) (emax := emax) x) = sign_SF x
 
-def Bsqrt_correct_auxStatement [Core.FLX.Prec_gt_0 prec] [Prec_lt_emax prec emax] : Prop :=
+def Bsqrt_correct_auxStatement (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx)
+    [Core.FLX.Prec_gt_0 prec] [Prec_lt_emax prec emax] : Prop :=
   ∀ (m : mode) (mx : positive) (ex : Z)
     (_Hx : bounded (prec := prec) (emax := emax) mx ex = true),
-    let x := F2R (Float radix2 (Zpos mx) ex)
+    let x := Exact.F2R ctx (Float radix2 (Zpos mx) ex)
     let z :=
       let (pair, lz) := SFsqrt_core_binary prec emax (Zpos mx) ex
       binary_round_aux (prec := prec) (emax := emax) m false pair.1 pair.2 lz
     valid_binary (prec := prec) (emax := emax) z = true ∧
-    SF2R radix2 z = round radix2 (fexp (prec := prec) (emax := emax)) (round_mode m) (sqrt x) ∧
+    Exact.SF2R ctx radix2 z =
+      Exact.round magnitude radix2 (fexp (prec := prec) (emax := emax))
+        (Exact.round_mode ctx m) (Exact.sqrt ctx x) ∧
     is_finite_SF z = true ∧ sign_SF z = false
 
-def Fplus_naive_correctStatement : Prop :=
+def Fplus_naive_correctStatement (ctx : ExactRealContext) : Prop :=
   ∀ (sx : Bool) (mx : positive) (ex : Z)
     (sy : Bool) (my : positive) (ey ez : Z),
     Zle ez ex → Zle ez ey →
-    let x := F2R (Float radix2 (cond_Zopp sx (Zpos mx)) ex)
-    let y := F2R (Float radix2 (cond_Zopp sy (Zpos my)) ey)
-    F2R (Float radix2 (Fplus_naive sx mx ex sy my ey ez) ez) = x + y
+    let x := Exact.F2R ctx (Float radix2 (cond_Zopp sx (Zpos mx)) ex)
+    let y := Exact.F2R ctx (Float radix2 (cond_Zopp sy (Zpos my)) ey)
+    Exact.F2R ctx (Float radix2 (Fplus_naive sx mx ex sy my ey ez) ez) =
+      Exact.Rplus ctx x y
 
-def abs_B2R_lt_emaxStatement : Prop :=
-  ∀ x : binary_float prec emax, Rlt (Rabs (B2R x)) (bpow radix2 emax)
+def abs_B2R_lt_emaxStatement (ctx : ExactRealContext) : Prop :=
+  ∀ x : binary_float prec emax,
+    BinaryFloatCertificate x →
+    Exact.Rlt ctx (Exact.Rabs ctx (Exact.B2R ctx x)) (Exact.bpow ctx radix2 emax)
 
-def binary_fit_aux_correctStatement [Core.FLX.Prec_gt_0 prec]
+def binary_fit_aux_correctStatement (ctx : ExactRealContext)
+    [Core.FLX.Prec_gt_0 prec]
     [Prec_lt_emax prec emax] : Prop :=
   ∀ (m : mode) (sx : Bool) (mx : positive) (ex : Z),
     canonical_mantissa (prec := prec) (emax := emax) mx ex = true →
-    let x := SF2R radix2 (S754_finite sx mx ex)
+    let x := Exact.SF2R ctx radix2 (S754_finite sx mx ex)
     let z := binary_fit_aux (prec := prec) (emax := emax) m sx mx ex
     valid_binary (prec := prec) (emax := emax) z = true ∧
-    if Rlt_bool (Rabs x) (bpow radix2 emax) then
-      SF2R radix2 z = x ∧ is_finite_SF z = true ∧ sign_SF z = sx
+    if Exact.Rlt_bool ctx (Exact.Rabs ctx x) (Exact.bpow ctx radix2 emax) then
+      Exact.SF2R ctx radix2 z = x ∧ is_finite_SF z = true ∧ sign_SF z = sx
     else
       z = binary_overflow (prec := prec) (emax := emax) m sx
 
-def binary_normalize_correctStatement [Core.FLX.Prec_gt_0 prec]
+def binary_normalize_correctStatement (ctx : ExactRealContext)
+    (magnitude : Exact.Magnitude ctx) [Core.FLX.Prec_gt_0 prec]
     [Prec_lt_emax prec emax] : Prop :=
   ∀ (m : mode) (mx ex : Z) (szero : Bool),
-    let x := F2R (Float radix2 mx ex)
+    let x := Exact.F2R ctx (Float radix2 mx ex)
     let z := binary_normalize (prec := prec) (emax := emax) m mx ex szero
-    if Rlt_bool (Rabs (round radix2 (fexp (prec := prec) (emax := emax)) (round_mode m) x))
-      (bpow radix2 emax) then
-      B2R z = round radix2 (fexp (prec := prec) (emax := emax)) (round_mode m) x ∧
+    if Exact.Rlt_bool ctx
+      (Exact.Rabs ctx
+        (Exact.round magnitude radix2 (fexp (prec := prec) (emax := emax))
+          (Exact.round_mode ctx m) x))
+      (Exact.bpow ctx radix2 emax) then
+      Exact.B2R ctx z =
+        Exact.round magnitude radix2 (fexp (prec := prec) (emax := emax))
+          (Exact.round_mode ctx m) x ∧
       is_finite z = true ∧
       Bsign z =
-        (match Rcompare x R0 with
+        (match Exact.Rcompare ctx x (Exact.R0 ctx) with
         | .Eq => szero
         | .Lt => true
         | .Gt => false)
     else
-      B2SF z = binary_overflow (prec := prec) (emax := emax) m (Rlt_bool x R0)
+      B2SF z = binary_overflow (prec := prec) (emax := emax) m
+        (Exact.Rlt_bool ctx x (Exact.R0 ctx))
 
 def binary_overflow_correctStatement [Core.FLX.Prec_gt_0 prec]
     [Prec_lt_emax prec emax] : Prop :=
@@ -591,104 +825,137 @@ def binary_overflow_correctStatement [Core.FLX.Prec_gt_0 prec]
     valid_binary (prec := prec) (emax := emax)
       (binary_overflow (prec := prec) (emax := emax) m s) = true
 
-def binary_round_aux_correctStatement [Core.FLX.Prec_gt_0 prec]
+def binary_round_aux_correctStatement (ctx : ExactRealContext)
+    (magnitude : Exact.Magnitude ctx) [Core.FLX.Prec_gt_0 prec]
     [Prec_lt_emax prec emax] : Prop :=
-  ∀ (m : mode) (x : R) (mx : positive) (ex : Z) (lx : location),
-    inbetween_float radix2 (Zpos mx) ex (Rabs x) lx →
+  ∀ (m : mode) (x : Exact.R ctx) (mx : positive) (ex : Z) (lx : location),
+    Exact.inbetween_float ctx radix2 (Zpos mx) ex (Exact.Rabs ctx x) lx →
     Zle ex ((fexp (prec := prec) (emax := emax))
       (Zadd (Zdigits radix2 (Zpos mx)) ex)) →
-    let z := binary_round_aux (prec := prec) (emax := emax) m (Rlt_bool x R0) (Zpos mx) ex lx
+    let z := binary_round_aux (prec := prec) (emax := emax) m
+      (Exact.Rlt_bool ctx x (Exact.R0 ctx)) (Zpos mx) ex lx
     valid_binary (prec := prec) (emax := emax) z = true ∧
-    if Rlt_bool (Rabs (round radix2 (fexp (prec := prec) (emax := emax)) (round_mode m) x))
-      (bpow radix2 emax) then
-      SF2R radix2 z = round radix2 (fexp (prec := prec) (emax := emax)) (round_mode m) x ∧
-      is_finite_SF z = true ∧ sign_SF z = Rlt_bool x R0
+    if Exact.Rlt_bool ctx
+      (Exact.Rabs ctx
+        (Exact.round magnitude radix2 (fexp (prec := prec) (emax := emax))
+          (Exact.round_mode ctx m) x))
+      (Exact.bpow ctx radix2 emax) then
+      Exact.SF2R ctx radix2 z =
+        Exact.round magnitude radix2 (fexp (prec := prec) (emax := emax))
+          (Exact.round_mode ctx m) x ∧
+      is_finite_SF z = true ∧ sign_SF z = Exact.Rlt_bool ctx x (Exact.R0 ctx)
     else
-      z = binary_overflow (prec := prec) (emax := emax) m (Rlt_bool x R0)
+      z = binary_overflow (prec := prec) (emax := emax) m
+        (Exact.Rlt_bool ctx x (Exact.R0 ctx))
 
-def binary_round_aux_correct'Statement [Core.FLX.Prec_gt_0 prec]
+def binary_round_aux_correct'Statement (ctx : ExactRealContext)
+    (magnitude : Exact.Magnitude ctx) [Core.FLX.Prec_gt_0 prec]
     [Prec_lt_emax prec emax] : Prop :=
-  ∀ (m : mode) (x : R) (mx ex : Z) (lx : location),
-    x ≠ R0 →
-    inbetween_float radix2 mx ex (Rabs x) lx →
-    Zle ex (cexp radix2 (fexp (prec := prec) (emax := emax)) x) →
-    let z := binary_round_aux (prec := prec) (emax := emax) m (Rlt_bool x R0) mx ex lx
+  ∀ (m : mode) (x : Exact.R ctx) (mx ex : Z) (lx : location),
+    x ≠ Exact.R0 ctx →
+    Exact.inbetween_float ctx radix2 mx ex (Exact.Rabs ctx x) lx →
+    Zle ex (Exact.cexp magnitude radix2 (fexp (prec := prec) (emax := emax)) x) →
+    let z := binary_round_aux (prec := prec) (emax := emax) m
+      (Exact.Rlt_bool ctx x (Exact.R0 ctx)) mx ex lx
     valid_binary (prec := prec) (emax := emax) z = true ∧
-    if Rlt_bool (Rabs (round radix2 (fexp (prec := prec) (emax := emax)) (round_mode m) x))
-      (bpow radix2 emax) then
-      SF2R radix2 z = round radix2 (fexp (prec := prec) (emax := emax)) (round_mode m) x ∧
-      is_finite_SF z = true ∧ sign_SF z = Rlt_bool x R0
+    if Exact.Rlt_bool ctx
+      (Exact.Rabs ctx
+        (Exact.round magnitude radix2 (fexp (prec := prec) (emax := emax))
+          (Exact.round_mode ctx m) x))
+      (Exact.bpow ctx radix2 emax) then
+      Exact.SF2R ctx radix2 z =
+        Exact.round magnitude radix2 (fexp (prec := prec) (emax := emax))
+          (Exact.round_mode ctx m) x ∧
+      is_finite_SF z = true ∧ sign_SF z = Exact.Rlt_bool ctx x (Exact.R0 ctx)
     else
-      z = binary_overflow (prec := prec) (emax := emax) m (Rlt_bool x R0)
+      z = binary_overflow (prec := prec) (emax := emax) m
+        (Exact.Rlt_bool ctx x (Exact.R0 ctx))
 
-def binary_round_correctStatement [Core.FLX.Prec_gt_0 prec]
+def binary_round_correctStatement (ctx : ExactRealContext)
+    (magnitude : Exact.Magnitude ctx) [Core.FLX.Prec_gt_0 prec]
     [Prec_lt_emax prec emax] : Prop :=
   ∀ (m : mode) (sx : Bool) (mx : positive) (ex : Z),
     let z := binary_round (prec := prec) (emax := emax) m sx mx ex
     valid_binary (prec := prec) (emax := emax) z = true ∧
-    let x := F2R (Float radix2 (cond_Zopp sx (Zpos mx)) ex)
-    if Rlt_bool (Rabs (round radix2 (fexp (prec := prec) (emax := emax)) (round_mode m) x))
-      (bpow radix2 emax) then
-      SF2R radix2 z = round radix2 (fexp (prec := prec) (emax := emax)) (round_mode m) x ∧
+    let x := Exact.F2R ctx (Float radix2 (cond_Zopp sx (Zpos mx)) ex)
+    if Exact.Rlt_bool ctx
+      (Exact.Rabs ctx
+        (Exact.round magnitude radix2 (fexp (prec := prec) (emax := emax))
+          (Exact.round_mode ctx m) x))
+      (Exact.bpow ctx radix2 emax) then
+      Exact.SF2R ctx radix2 z =
+        Exact.round magnitude radix2 (fexp (prec := prec) (emax := emax))
+          (Exact.round_mode ctx m) x ∧
       is_finite_SF z = true ∧ sign_SF z = sx
     else
       z = binary_overflow (prec := prec) (emax := emax) m sx
 
-def bounded_canonical_lt_emaxStatement [Core.FLX.Prec_gt_0 prec]
+def bounded_canonical_lt_emaxStatement (ctx : ExactRealContext)
+    (magnitude : Exact.Magnitude ctx) [Core.FLX.Prec_gt_0 prec]
     [Prec_lt_emax prec emax] : Prop :=
   ∀ (mx : positive) (ex : Z),
-    canonical radix2 (fexp (prec := prec) (emax := emax)) (Float radix2 (Zpos mx) ex) →
-    Rlt (F2R (Float radix2 (Zpos mx) ex)) (bpow radix2 emax) →
+    Exact.canonical magnitude radix2 (fexp (prec := prec) (emax := emax))
+      (Float radix2 (Zpos mx) ex) →
+    Exact.Rlt ctx (Exact.F2R ctx (Float radix2 (Zpos mx) ex))
+      (Exact.bpow ctx radix2 emax) →
     bounded (prec := prec) (emax := emax) mx ex = true
 
-def bounded_lt_emaxStatement : Prop :=
+def bounded_lt_emaxStatement (ctx : ExactRealContext) : Prop :=
   ∀ (mx : positive) (ex : Z),
     bounded (prec := prec) (emax := emax) mx ex = true →
-    Rlt (F2R (Float radix2 (Zpos mx) ex)) (bpow radix2 emax)
+    Exact.Rlt ctx (Exact.F2R ctx (Float radix2 (Zpos mx) ex))
+      (Exact.bpow ctx radix2 emax)
 
-def canonical_boundedStatement : Prop :=
+def canonical_boundedStatement (ctx : ExactRealContext)
+    (magnitude : Exact.Magnitude ctx) : Prop :=
   ∀ (sx : Bool) (mx : positive) (ex : Z),
     bounded (prec := prec) (emax := emax) mx ex = true →
-    canonical radix2 (fexp (prec := prec) (emax := emax))
+    Exact.canonical magnitude radix2 (fexp (prec := prec) (emax := emax))
       (Float radix2 (cond_Zopp sx (Zpos mx)) ex)
 
-def canonical_canonical_mantissaStatement : Prop :=
+def canonical_canonical_mantissaStatement (ctx : ExactRealContext)
+    (magnitude : Exact.Magnitude ctx) : Prop :=
   ∀ (sx : Bool) (mx : positive) (ex : Z),
     canonical_mantissa (prec := prec) (emax := emax) mx ex = true →
-    canonical radix2 (fexp (prec := prec) (emax := emax))
+    Exact.canonical magnitude radix2 (fexp (prec := prec) (emax := emax))
       (Float radix2 (cond_Zopp sx (Zpos mx)) ex)
 
 def fexp_emaxStatement [Core.FLX.Prec_gt_0 prec] [Prec_lt_emax prec emax] : Prop :=
   fexp (prec := prec) (emax := emax) emax = Zsub emax prec
 
-def generic_format_B2RStatement : Prop :=
+def generic_format_B2RStatement (ctx : ExactRealContext)
+    (magnitude : Exact.Magnitude ctx) : Prop :=
   ∀ x : binary_float prec emax,
-    generic_format radix2 (fexp (prec := prec) (emax := emax)) (B2R x)
+    BinaryFloatCertificate x →
+    Exact.generic_format magnitude radix2 (fexp (prec := prec) (emax := emax))
+      (Exact.B2R ctx x)
 
-def inbetween_shrStatement : Prop :=
-  ∀ (x : R) (m e : Z) (l : location) (n : Z),
+def inbetween_shrStatement (ctx : ExactRealContext) : Prop :=
+  ∀ (x : Exact.R ctx) (m e : Z) (l : location) (n : Z),
     Zle Z0 m →
-    inbetween_float radix2 m e x l →
+    Exact.inbetween_float ctx radix2 m e x l →
     let (mrs, e') := shr (shr_record_of_loc m l) e n
-    inbetween_float radix2 (shr_m mrs) e' x (loc_of_shr_record mrs)
+    Exact.inbetween_float ctx radix2 (shr_m mrs) e' x (loc_of_shr_record mrs)
 
-def inbetween_shr_1Statement : Prop :=
-  ∀ (x : R) (mrs : shr_record) (e : Z),
+def inbetween_shr_1Statement (ctx : ExactRealContext) : Prop :=
+  ∀ (x : Exact.R ctx) (mrs : shr_record) (e : Z),
     Zle Z0 (shr_m mrs) →
-    inbetween_float radix2 (shr_m mrs) e x (loc_of_shr_record mrs) →
-    inbetween_float radix2 (shr_m (shr_1 mrs)) (Zadd e Zone) x
+    Exact.inbetween_float ctx radix2 (shr_m mrs) e x (loc_of_shr_record mrs) →
+    Exact.inbetween_float ctx radix2 (shr_m (shr_1 mrs)) (Zadd e Zone) x
       (loc_of_shr_record (shr_1 mrs))
 
 def is_finite_BoppStatement : Prop :=
-  ∀ x : binary_float prec emax, is_finite (Bopp x) = is_finite x
+  ∀ x : binary_float prec emax,
+    BinaryFloatCertificate x → is_finite (Bopp x) = is_finite x
 
 def is_finite_SF2BStatement : Prop :=
   ∀ (x : spec_float)
     (Hx : valid_binary (prec := prec) (emax := emax) x = true),
-    is_finite (SF2B (prec := prec) (emax := emax) x Hx) = is_finite_SF x
+    is_finite (SF2B (prec := prec) (emax := emax) x) = is_finite_SF x
 
 def is_nan_SF_B2SFStatement : Prop :=
-  ∀ x : binary_float prec emax, is_nan_SF (B2SF x) = is_nan x
+  ∀ x : binary_float prec emax,
+    BinaryFloatCertificate x → is_nan_SF (B2SF x) = is_nan x
 
 def is_nan_binary_normalizeStatement [Core.FLX.Prec_gt_0 prec]
     [Prec_lt_emax prec emax] : Prop :=
@@ -709,22 +976,25 @@ def le_shr1_leStatement : Prop :=
 def loc_of_shr_record_of_locStatement : Prop :=
   ∀ (m : Z) (l : location), loc_of_shr_record (shr_record_of_loc m l) = l
 
-def shl_align_correctStatement : Prop :=
+def shl_align_correctStatement (ctx : ExactRealContext) : Prop :=
   ∀ (mx : positive) (ex e : Z),
     let (mx', ex') := shl_align mx ex e
-    F2R (Float radix2 (Zpos mx) ex) = F2R (Float radix2 (Zpos mx') ex') ∧
+    Exact.F2R ctx (Float radix2 (Zpos mx) ex) =
+      Exact.F2R ctx (Float radix2 (Zpos mx') ex') ∧
     Zle ex' e
 
-def shl_align_correct'Statement : Prop :=
+def shl_align_correct'Statement (ctx : ExactRealContext) : Prop :=
   ∀ (mx : positive) (ex e : Z),
     Zle e ex →
     let (mx', ex') := shl_align mx ex e
-    F2R (Float radix2 (Zpos mx') e) = F2R (Float radix2 (Zpos mx) ex) ∧ ex' = e
+    Exact.F2R ctx (Float radix2 (Zpos mx') e) =
+      Exact.F2R ctx (Float radix2 (Zpos mx) ex) ∧ ex' = e
 
-def shl_align_fexp_correctStatement : Prop :=
+def shl_align_fexp_correctStatement (ctx : ExactRealContext) : Prop :=
   ∀ (mx : positive) (ex : Z),
     let (mx', ex') := shl_align_fexp (prec := prec) (emax := emax) mx ex
-    F2R (Float radix2 (Zpos mx) ex) = F2R (Float radix2 (Zpos mx') ex') ∧
+    Exact.F2R ctx (Float radix2 (Zpos mx) ex) =
+      Exact.F2R ctx (Float radix2 (Zpos mx') ex') ∧
     Zle ex' ((fexp (prec := prec) (emax := emax))
       (Zadd (Zdigits radix2 (Zpos mx')) ex'))
 
@@ -747,15 +1017,19 @@ def shr_natStatement : Prop :=
         (_root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.to_nat n) mrs,
         Zadd e n)
 
-def sign_plus_overflowStatement [Core.FLX.Prec_gt_0 prec] : Prop :=
+def sign_plus_overflowStatement (ctx : ExactRealContext)
+    (magnitude : Exact.Magnitude ctx) [Core.FLX.Prec_gt_0 prec] : Prop :=
   ∀ (m : mode) (sx : Bool) (mx : positive) (ex : Z)
     (sy : Bool) (my : positive) (ey : Z),
     bounded (prec := prec) (emax := emax) mx ex = true →
     bounded (prec := prec) (emax := emax) my ey = true →
-    let z := F2R (Float radix2 (cond_Zopp sx (Zpos mx)) ex) +
-      F2R (Float radix2 (cond_Zopp sy (Zpos my)) ey)
-    Rle (bpow radix2 emax)
-      (Rabs (round radix2 (fexp (prec := prec) (emax := emax)) (round_mode m) z)) →
-    sx = Rlt_bool z R0 ∧ sx = sy
+    let z := Exact.Rplus ctx
+      (Exact.F2R ctx (Float radix2 (cond_Zopp sx (Zpos mx)) ex))
+      (Exact.F2R ctx (Float radix2 (cond_Zopp sy (Zpos my)) ey))
+    Exact.Rle ctx (Exact.bpow ctx radix2 emax)
+      (Exact.Rabs ctx
+        (Exact.round magnitude radix2 (fexp (prec := prec) (emax := emax))
+          (Exact.round_mode ctx m) z)) →
+    sx = Exact.Rlt_bool ctx z (Exact.R0 ctx) ∧ sx = sy
 
 end CompCert4Lean.Flocq.IEEE754.BinarySingleNaN

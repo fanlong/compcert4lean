@@ -63,6 +63,37 @@ def Decidable_implies (P Q : Prop) (dP : _root_.Decidable P)
   | .isTrue hp, .isFalse hnq => .isFalse (fun h => hnq (h hp))
   | .isFalse hnp, _ => .isTrue (fun hp => (hnp hp).elim)
 
+/- Lean cannot register the five source-named declarations directly: their
+   source-shaped explicit dP/dQ arguments do not occur in the result and are
+   not instance-implicit, so instance synthesis cannot infer them.  These
+   low-priority adapters are the minimal compatibility endpoints; each only
+   applies its source-named implementation, and Lean's core logical decisions
+   retain priority. -/
+
+instance (priority := 900) instDecidable_not (P : Prop)
+    [dP : _root_.Decidable P] : _root_.Decidable (¬ P) :=
+  Decidable_not P dP
+
+instance (priority := 900) instDecidable_equiv (P Q : Prop)
+    [dP : _root_.Decidable P] [dQ : _root_.Decidable Q] :
+    _root_.Decidable (P ↔ Q) :=
+  Decidable_equiv P Q dP dQ
+
+instance (priority := 900) instDecidable_and (P Q : Prop)
+    [dP : _root_.Decidable P] [dQ : _root_.Decidable Q] :
+    _root_.Decidable (P ∧ Q) :=
+  Decidable_and P Q dP dQ
+
+instance (priority := 900) instDecidable_or (P Q : Prop)
+    [dP : _root_.Decidable P] [dQ : _root_.Decidable Q] :
+    _root_.Decidable (P ∨ Q) :=
+  Decidable_or P Q dP dQ
+
+instance (priority := 900) instDecidable_implies (P Q : Prop)
+    [dP : _root_.Decidable P] [dQ : _root_.Decidable Q] :
+    _root_.Decidable (P → Q) :=
+  Decidable_implies P Q dP dQ
+
 def Decidable_eq {A : Type}
     (eqdec : ∀ (x y : A),
       CompCert4Lean.Foundation.Logic.Support.Sumbool (x = y) (¬ x = y))
@@ -71,56 +102,124 @@ def Decidable_eq {A : Type}
   | .left h => .isTrue h
   | .right h => .isFalse h
 
-def Decidable_eq_bool (x y : Bool) : _root_.Decidable (x = y) :=
+instance (priority := 900) Decidable_eq_bool (x y : Bool) :
+    _root_.Decidable (x = y) :=
   if h : x = y then .isTrue h else .isFalse h
 
-def Decidable_eq_nat (x y : Nat) : _root_.Decidable (x = y) :=
+instance (priority := 900) Decidable_eq_nat (x y : Nat) :
+    _root_.Decidable (x = y) :=
   if h : x = y then .isTrue h else .isFalse h
 
-def Decidable_eq_positive (x y : positive) : _root_.Decidable (x = y) :=
+instance (priority := 900) Decidable_eq_positive (x y : positive) :
+    _root_.Decidable (x = y) :=
   if h : x = y then .isTrue h else .isFalse h
 
-def Decidable_eq_Z (x y : Z) : _root_.Decidable (x = y) :=
+instance (priority := 900) Decidable_eq_Z (x y : Z) :
+    _root_.Decidable (x = y) :=
   if h : x = y then .isTrue h else .isFalse h
 
-instance Decidable_le_Z (x y : Z) :
+/- The source divisibility decision reflects the equality
+   [y = (y / x) * x].  The small integer lemma below exposes the one
+   arithmetic fact needed to discharge the checked branches without using a
+   proposition-level divisibility decider. -/
+
+private theorem zdiv_eucl_mul_of_dvd (a b : Int) (h : b ∣ a) :
+    (if b = 0 then 0 else if 0 < b then Int.ediv a b else
+      let d := -b
+      let q := Int.ediv a d
+      let r := Int.emod a d
+      if r = 0 then -q else -(q + 1)) * b = a := by
+  by_cases hb0 : b = 0
+  · subst b
+    rcases h with ⟨k, hk⟩
+    simp at hk
+    subst a
+    rfl
+  · by_cases hbpos : 0 < b
+    · simp only [if_neg hb0, if_pos hbpos]
+      exact Int.ediv_mul_cancel h
+    · have hbneg : b < 0 := by omega
+      rcases h with ⟨k, hk⟩
+      have hdvd : -b ∣ a := by
+        refine ⟨-k, ?_⟩
+        calc
+          a = b * k := hk
+          _ = (-b) * (-k) := (Int.neg_mul_neg b k).symm
+      have hdmod : Int.emod a (-b) = 0 := Int.emod_eq_zero_of_dvd hdvd
+      have hmul : Int.ediv a (-b) * (-b) = a := Int.ediv_mul_cancel hdvd
+      simp only [if_neg hb0, if_neg hbpos, hdmod, if_pos]
+      calc
+        -(Int.ediv a (-b)) * b = -(Int.ediv a (-b) * b) := Int.neg_mul _ _
+        _ = Int.ediv a (-b) * (-b) := (Int.mul_neg _ _).symm
+        _ = a := hmul
+
+private theorem intOfZ_div_mul_of_dvd (x y : Z) (h : intOfZ x ∣ intOfZ y) :
+    intOfZ (ZArith.BinInt.Z.mul (ZArith.BinInt.Z.div y x) x) = intOfZ y := by
+  simp only [ZArith.BinInt.Z.mul, ZArith.BinInt.Z.div, intOfZ_zOfInt]
+  change
+    (if intOfZ x = 0 then 0 else
+      if 0 < intOfZ x then Int.ediv (intOfZ y) (intOfZ x) else
+        let d := -intOfZ x
+        let q := Int.ediv (intOfZ y) d
+        let r := Int.emod (intOfZ y) d
+        if r = 0 then -q else -(q + 1)) * intOfZ x = intOfZ y
+  exact zdiv_eucl_mul_of_dvd _ _ h
+
+private theorem divide_of_eqb_true (x y : Z)
+    (h : ZArith.BinInt.Z.eqb y
+      (ZArith.BinInt.Z.mul (ZArith.BinInt.Z.div y x) x) = true) :
+    ZArith.BinInt.Z.divide x y := by
+  have hy : y = ZArith.BinInt.Z.mul (ZArith.BinInt.Z.div y x) x :=
+    @of_decide_eq_true _
+      (Numbers.BinNums.instDecidableEqZ _ _) h
+  refine ⟨ZArith.BinInt.Z.div y x, ?_⟩
+  calc
+    y = ZArith.BinInt.Z.mul (ZArith.BinInt.Z.div y x) x := hy
+    _ = ZArith.BinInt.Z.mul x (ZArith.BinInt.Z.div y x) := by
+      simp only [ZArith.BinInt.Z.mul]
+      exact congrArg zOfInt (Int.mul_comm _ _)
+
+private theorem eqb_true_of_divide (x y : Z)
+    (h : ZArith.BinInt.Z.divide x y) :
+    ZArith.BinInt.Z.eqb y
+      (ZArith.BinInt.Z.mul (ZArith.BinInt.Z.div y x) x) = true := by
+  rcases h with ⟨k, hk⟩
+  have hInt : intOfZ x ∣ intOfZ y := by
+    refine ⟨intOfZ k, ?_⟩
+    calc
+      intOfZ y = intOfZ (ZArith.BinInt.Z.mul x k) := congrArg intOfZ hk
+      _ = intOfZ x * intOfZ k := by
+        simp only [ZArith.BinInt.Z.mul, intOfZ_zOfInt]
+  have hmul : ZArith.BinInt.Z.mul (ZArith.BinInt.Z.div y x) x = y := by
+    apply intOfZ_injective
+    exact intOfZ_div_mul_of_dvd x y hInt
+  exact @decide_eq_true _ (Numbers.BinNums.instDecidableEqZ _ _) hmul.symm
+
+instance (priority := 1001) Decidable_le_Z (x y : Z) :
     _root_.Decidable (ZArith.BinInt.Z.le x y) :=
   decidableOfSumbool (ZArith.ZArith_dec.Z_le_dec x y)
 
-instance Decidable_lt_Z (x y : Z) :
+instance (priority := 1001) Decidable_lt_Z (x y : Z) :
     _root_.Decidable (ZArith.BinInt.Z.lt x y) :=
   decidableOfSumbool (ZArith.ZArith_dec.Z_lt_dec x y)
 
-instance Decidable_ge_Z (x y : Z) :
+instance (priority := 1000) Decidable_ge_Z (x y : Z) :
     _root_.Decidable (ZArith.BinInt.Z.ge x y) :=
   decidableOfSumbool (ZArith.ZArith_dec.Z_le_dec y x)
 
-instance Decidable_gt_Z (x y : Z) :
+instance (priority := 1000) Decidable_gt_Z (x y : Z) :
     _root_.Decidable (ZArith.BinInt.Z.gt x y) :=
   decidableOfSumbool (ZArith.ZArith_dec.Z_lt_dec y x)
 
 instance Decidable_divides (x y : Z) :
     _root_.Decidable (ZArith.BinInt.Z.divide x y) :=
-  if h : intOfZ x ∣ intOfZ y then
-    .isTrue (by
-      rcases h with ⟨k, hk⟩
-      refine ⟨zOfInt k, ?_⟩
-      apply intOfZ_injective
-      calc
-        intOfZ y = intOfZ x * k := hk
-        _ = intOfZ (ZArith.BinInt.Z.mul x (zOfInt k)) := by
-          simp only [ZArith.BinInt.Z.mul, intOfZ_zOfInt])
+  if h : ZArith.BinInt.Z.eqb y
+      (ZArith.BinInt.Z.mul (ZArith.BinInt.Z.div y x) x) = true then
+    .isTrue (divide_of_eqb_true x y h)
   else
-    .isFalse (by
-      rintro ⟨k, hk⟩
-      apply h
-      refine ⟨intOfZ k, ?_⟩
-      calc
-        intOfZ y = intOfZ (ZArith.BinInt.Z.mul x k) := congrArg intOfZ hk
-        _ = intOfZ x * intOfZ k := by
-          simp only [ZArith.BinInt.Z.mul, intOfZ_zOfInt])
+    .isFalse (fun hdiv => h (eqb_true_of_divide x y hdiv))
 
-instance Decidable_forall_in_list {A : Type} (l : List A) (P : A → Prop)
+instance (priority := 1002) Decidable_forall_in_list {A : Type} (l : List A) (P : A → Prop)
     [dP : ∀ x : A, _root_.Decidable (P x)] :
     _root_.Decidable (∀ x : A, In x l → P x) :=
   match l with
@@ -147,7 +246,7 @@ instance Decidable_forall_in_list {A : Type} (l : List A) (P : A → Prop)
             intro x hx
             exact h x (_root_.List.Mem.tail a hx))
 
-instance Decidable_exists_in_list {A : Type} (l : List A) (P : A → Prop)
+instance (priority := 1002) Decidable_exists_in_list {A : Type} (l : List A) (P : A → Prop)
     [dP : ∀ x : A, _root_.Decidable (P x)] :
     _root_.Decidable (∃ x : A, In x l ∧ P x) :=
   match l with
@@ -176,7 +275,7 @@ class Finite (T : Type) where
 
 export Finite (Finite_elements Finite_elements_spec)
 
-instance Decidable_forall {T : Type} [fT : Finite T] (P : T → Prop)
+instance (priority := 1001) Decidable_forall {T : Type} [fT : Finite T] (P : T → Prop)
     [dP : ∀ x : T, _root_.Decidable (P x)] :
     _root_.Decidable (∀ x : T, P x) :=
   match Decidable_forall_in_list (dP := dP)
@@ -186,7 +285,7 @@ instance Decidable_forall {T : Type} [fT : Finite T] (P : T → Prop)
   | .isFalse h =>
       .isFalse (by intro hall; apply h; intro x _; exact hall x)
 
-instance Decidable_exists {T : Type} [fT : Finite T] (P : T → Prop)
+instance (priority := 1001) Decidable_exists {T : Type} [fT : Finite T] (P : T → Prop)
     [dP : ∀ x : T, _root_.Decidable (P x)] :
     _root_.Decidable (∃ x : T, P x) :=
   match Decidable_exists_in_list (dP := dP)

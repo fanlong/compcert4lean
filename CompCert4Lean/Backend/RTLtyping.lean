@@ -202,37 +202,14 @@ export wt_instr
    wt_Ibuiltin wt_Icond wt_Ijumptable wt_Ireturn_none wt_Ireturn_some)
 
 structure wt_function (cfg : CompilerConfig) (f : function) (env : regenv) : Prop where
+  mk_wt_function ::
   wt_params : List.map env f.fn_params = proj_sig_args f.fn_sig
   wt_norepet : list_norepet f.fn_params
   wt_instrs :
     ∀ pc instr, PTree.get pc f.fn_code = some instr → wt_instr cfg f env instr
   wt_entrypoint : valid_successor f f.fn_entrypoint
 
-def mk_wt_function (cfg : CompilerConfig) (f : function) (env : regenv)
-    (hparams : List.map env f.fn_params = proj_sig_args f.fn_sig)
-    (hnorepet : list_norepet f.fn_params)
-    (hinstrs :
-      ∀ pc instr, PTree.get pc f.fn_code = some instr → wt_instr cfg f env instr)
-    (hentrypoint : valid_successor f f.fn_entrypoint) : wt_function cfg f env :=
-  { wt_params := hparams
-    wt_norepet := hnorepet
-    wt_instrs := hinstrs
-    wt_entrypoint := hentrypoint }
-
-def wt_params {cfg : CompilerConfig} {f : function} {env : regenv}
-    (h : wt_function cfg f env) :
-    List.map env f.fn_params = proj_sig_args f.fn_sig := h.wt_params
-
-def wt_norepet {cfg : CompilerConfig} {f : function} {env : regenv}
-    (h : wt_function cfg f env) : list_norepet f.fn_params := h.wt_norepet
-
-def wt_instrs {cfg : CompilerConfig} {f : function} {env : regenv}
-    (h : wt_function cfg f env) :
-    ∀ pc instr, PTree.get pc f.fn_code = some instr → wt_instr cfg f env instr :=
-  h.wt_instrs
-
-def wt_entrypoint {cfg : CompilerConfig} {f : function} {env : regenv}
-    (h : wt_function cfg f env) : valid_successor f f.fn_entrypoint := h.wt_entrypoint
+export wt_function (mk_wt_function wt_params wt_norepet wt_instrs wt_entrypoint)
 
 inductive wt_fundef (cfg : CompilerConfig) : fundef → Prop where
   | wt_fundef_external (ef : external_function) :

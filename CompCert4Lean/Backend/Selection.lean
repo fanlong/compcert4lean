@@ -103,12 +103,6 @@ def condition_of_expr : CminorSel.expr → condition × exprlist
   | e => (Ccompuimm .Cne (CompCert4Lean.Lib.Integers.Int.zero),
       CminorSel.exprlist.Econs e CminorSel.exprlist.Enil)
 
-private def divf (e1 e2 : CminorSel.expr) : CminorSel.expr :=
-  .Eop (.Odivf) (.Econs e1 (.Econs e2 .Enil))
-
-private def divfs (e1 e2 : CminorSel.expr) : CminorSel.expr :=
-  .Eop (.Odivfs) (.Econs e1 (.Econs e2 .Enil))
-
 /-! Extracted host callbacks used by instruction selection. -/
 
 abbrev CompileSwitchOracle := Z → Nat → table → comptree
@@ -205,11 +199,11 @@ def sel_binop (cfg : CompilerConfig) (op : Cminor.binary_operation)
   | .Oaddf => addf arg1 arg2
   | .Osubf => subf arg1 arg2
   | .Omulf => mulf arg1 arg2
-  | .Odivf => divf arg1 arg2
+  | .Odivf => CompCert4Lean.Backend.SelectDiv.divf arg1 arg2
   | .Oaddfs => addfs arg1 arg2
   | .Osubfs => subfs arg1 arg2
   | .Omulfs => mulfs arg1 arg2
-  | .Odivfs => divfs arg1 arg2
+  | .Odivfs => CompCert4Lean.Backend.SelectDiv.divfs arg1 arg2
   | .Oaddl => addl arg1 arg2
   | .Osubl => subl arg1 arg2
   | .Omull => mull arg1 arg2
