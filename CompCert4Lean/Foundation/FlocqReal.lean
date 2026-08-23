@@ -3,16 +3,17 @@ import CompCert4Lean.Foundation.Numbers
 import CompCert4Lean.Foundation.Ordered
 
 /-!
-# Flocq real and exact-rational specification facade
+# Flocq runtime carrier and exact-real specification boundary
 
-This module provides the project-owned exact-rational real surface selected by
-the Gate 2 feasibility decision.  Later theorem migration consumes the
-source-shaped statement descriptors below; no theorem proof is asserted here.
+This module owns the checked rational/runtime carrier and the explicit exact
+specification boundary selected by RPR-007.  The source-shaped statement
+descriptors below remain proof obligations; no theorem proof or exact carrier
+implementation is asserted here.
 -/
 
 namespace CompCert4Lean.Foundation.FlocqReal
 
-/-- Exact-rational ordered carrier used by the bounded Flocq theorem cone. -/
+/-- Rational/runtime carrier used by the executable Flocq staging layer. -/
 structure OrderedReal where
   value : Rat
 deriving DecidableEq, Repr
@@ -32,6 +33,190 @@ instance : LT OrderedReal := ⟨fun x y => x.value < y.value⟩
 instance : LE OrderedReal := ⟨fun x y => x.value ≤ y.value⟩
 
 end OrderedReal
+
+abbrev RuntimeReal := OrderedReal
+abbrev RuntimeCarrier := RuntimeReal
+
+/-!
+The exact Flocq theorem surface is an interface, rather than a rational
+implementation. In particular, `sqrt`, `exp`, and `ln` are supplied by an
+injected specification carrier and are never defined by runtime placeholders.
+-/
+
+abbrev SourceZ := _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z
+
+/-- Operations of one exact-real specification carrier. -/
+structure ExactRealSpec where
+  carrier : Type
+  ofZ : SourceZ → carrier
+  zero : carrier
+  one : carrier
+  neg : carrier → carrier
+  add : carrier → carrier → carrier
+  sub : carrier → carrier → carrier
+  mul : carrier → carrier → carrier
+  inv : carrier → carrier
+  div : carrier → carrier → carrier
+  lt : carrier → carrier → Prop
+  le : carrier → carrier → Prop
+  abs : carrier → carrier
+  min : carrier → carrier → carrier
+  sqrt : carrier → carrier
+  exp : carrier → carrier
+  ln : carrier → carrier
+  powerRZ : carrier → SourceZ → carrier
+  up : carrier → SourceZ
+
+abbrev ExactRealCarrier (spec : ExactRealSpec) := spec.carrier
+
+namespace ExactReal
+
+abbrev R (spec : ExactRealSpec) := spec.carrier
+abbrev Z := SourceZ
+
+def IZR (spec : ExactRealSpec) : Z → spec.carrier := spec.ofZ
+def R0 (spec : ExactRealSpec) : spec.carrier := spec.zero
+def Rone (spec : ExactRealSpec) : spec.carrier := spec.one
+def Ropp (spec : ExactRealSpec) : spec.carrier → spec.carrier := spec.neg
+def Rplus (spec : ExactRealSpec) : spec.carrier → spec.carrier → spec.carrier := spec.add
+def Rminus (spec : ExactRealSpec) : spec.carrier → spec.carrier → spec.carrier := spec.sub
+def Rmult (spec : ExactRealSpec) : spec.carrier → spec.carrier → spec.carrier := spec.mul
+def Rinv (spec : ExactRealSpec) : spec.carrier → spec.carrier := spec.inv
+def Rdiv (spec : ExactRealSpec) : spec.carrier → spec.carrier → spec.carrier := spec.div
+def Rlt (spec : ExactRealSpec) : spec.carrier → spec.carrier → Prop := spec.lt
+def Rle (spec : ExactRealSpec) : spec.carrier → spec.carrier → Prop := spec.le
+def Rge (spec : ExactRealSpec) : spec.carrier → spec.carrier → Prop := fun x y => spec.le y x
+def Rgt (spec : ExactRealSpec) : spec.carrier → spec.carrier → Prop := fun x y => spec.lt y x
+def Rabs (spec : ExactRealSpec) : spec.carrier → spec.carrier := spec.abs
+def Rmin (spec : ExactRealSpec) : spec.carrier → spec.carrier → spec.carrier := spec.min
+def Rsqr (spec : ExactRealSpec) : spec.carrier → spec.carrier := fun x => spec.mul x x
+def sqrt (spec : ExactRealSpec) : spec.carrier → spec.carrier := spec.sqrt
+def Rsqrt (spec : ExactRealSpec) : spec.carrier → spec.carrier := spec.sqrt
+def exp (spec : ExactRealSpec) : spec.carrier → spec.carrier := spec.exp
+def ln (spec : ExactRealSpec) : spec.carrier → spec.carrier := spec.ln
+def powerRZ (spec : ExactRealSpec) : spec.carrier → Z → spec.carrier := spec.powerRZ
+def up (spec : ExactRealSpec) : spec.carrier → Z := spec.up
+
+end ExactReal
+
+/-- Ordered-field laws required of an exact Flocq specification carrier. -/
+structure OrderedFieldCertificate (spec : ExactRealSpec) : Prop where
+  zero_ne_one : spec.zero ≠ spec.one
+  add_zero : ∀ x, spec.add x spec.zero = x
+  zero_add : ∀ x, spec.add spec.zero x = x
+  add_assoc : ∀ x y z, spec.add (spec.add x y) z = spec.add x (spec.add y z)
+  add_comm : ∀ x y, spec.add x y = spec.add y x
+  neg_add_cancel : ∀ x, spec.add (spec.neg x) x = spec.zero
+  mul_one : ∀ x, spec.mul x spec.one = x
+  one_mul : ∀ x, spec.mul spec.one x = x
+  mul_assoc : ∀ x y z, spec.mul (spec.mul x y) z = spec.mul x (spec.mul y z)
+  mul_comm : ∀ x y, spec.mul x y = spec.mul y x
+  mul_zero : ∀ x, spec.mul x spec.zero = spec.zero
+  zero_mul : ∀ x, spec.mul spec.zero x = spec.zero
+  left_distrib : ∀ x y z,
+    spec.mul x (spec.add y z) = spec.add (spec.mul x y) (spec.mul x z)
+  inv_mul_cancel : ∀ x, x ≠ spec.zero → spec.mul (spec.inv x) x = spec.one
+  div_eq_mul_inv : ∀ x y, spec.div x y = spec.mul x (spec.inv y)
+  le_refl : ∀ x, spec.le x x
+  le_trans : ∀ x y z, spec.le x y → spec.le y z → spec.le x z
+  le_antisymm : ∀ x y, spec.le x y → spec.le y x → x = y
+  lt_irrefl : ∀ x, ¬ spec.lt x x
+  lt_trans : ∀ x y z, spec.lt x y → spec.lt y z → spec.lt x z
+  lt_iff_le_not_le : ∀ x y, spec.lt x y ↔ spec.le x y ∧ ¬ spec.le y x
+
+/-- Exact square-root laws required by Flocq theorem consumers. -/
+structure SqrtCertificate (spec : ExactRealSpec) : Prop where
+  nonnegative : ∀ x, spec.le spec.zero (spec.sqrt x)
+  sqr : ∀ x, spec.le spec.zero x → spec.mul (spec.sqrt x) (spec.sqrt x) = x
+  monotone : ∀ x y, spec.le spec.zero x → spec.le x y → spec.le (spec.sqrt x) (spec.sqrt y)
+  sqrt_sqr : ∀ x, spec.le spec.zero x → spec.sqrt (spec.mul x x) = x
+
+/-- Exact exponential laws required by Flocq theorem consumers. -/
+structure ExpCertificate (spec : ExactRealSpec) : Prop where
+  zero : spec.exp spec.zero = spec.one
+  add : ∀ x y, spec.exp (spec.add x y) = spec.mul (spec.exp x) (spec.exp y)
+  strict_monotone : ∀ x y, spec.lt x y → spec.lt (spec.exp x) (spec.exp y)
+  positive : ∀ x, spec.lt spec.zero (spec.exp x)
+
+/-- Exact logarithm laws required by Flocq theorem consumers. -/
+structure LnCertificate (spec : ExactRealSpec) : Prop where
+  exp_ln : ∀ x, spec.lt spec.zero x → spec.exp (spec.ln x) = x
+  ln_exp : ∀ x, spec.ln (spec.exp x) = x
+  one : spec.ln spec.one = spec.zero
+
+/-- Mandatory proof owner for the exact-real specification boundary. -/
+structure ExactRealCertificate (spec : ExactRealSpec) : Prop where
+  orderedField : OrderedFieldCertificate spec
+  sqrt : SqrtCertificate spec
+  exp : ExpCertificate spec
+  ln : LnCertificate spec
+
+/-!
+The adapter is a relation from the checked runtime carrier into the selected
+exact carrier. Its closure and preservation fields are intentionally proof
+obligations; no default adapter or certificate is provided here.
+-/
+structure RuntimeExactAdapter (spec : ExactRealSpec) : Type where
+  represented : RuntimeReal → Prop
+  embed : (x : RuntimeReal) → represented x → spec.carrier
+  runtime_ofZ : SourceZ → RuntimeReal
+  ofZ_represents : ∀ z, represented (runtime_ofZ z)
+  ofZ_preserved : ∀ z,
+    embed (runtime_ofZ z) (ofZ_represents z) = spec.ofZ z
+  runtime_zero : RuntimeReal
+  zero_represents : represented runtime_zero
+  zero_preserved : embed runtime_zero zero_represents = spec.zero
+  runtime_one : RuntimeReal
+  one_represents : represented runtime_one
+  one_preserved : embed runtime_one one_represents = spec.one
+  neg_closed : ∀ x, represented x → represented ⟨-x.value⟩
+  neg_preserved : ∀ x (hx : represented x),
+    embed ⟨-x.value⟩ (neg_closed x hx) = spec.neg (embed x hx)
+  add_closed : ∀ x, represented x → ∀ y, represented y → represented ⟨x.value + y.value⟩
+  add_preserved : ∀ x (hx : represented x) y (hy : represented y),
+    embed ⟨x.value + y.value⟩ (add_closed x hx y hy) =
+      spec.add (embed x hx) (embed y hy)
+  sub_closed : ∀ x, represented x → ∀ y, represented y → represented ⟨x.value - y.value⟩
+  sub_preserved : ∀ x (hx : represented x) y (hy : represented y),
+    embed ⟨x.value - y.value⟩ (sub_closed x hx y hy) =
+      spec.sub (embed x hx) (embed y hy)
+  mul_closed : ∀ x, represented x → ∀ y, represented y → represented ⟨x.value * y.value⟩
+  mul_preserved : ∀ x (hx : represented x) y (hy : represented y),
+    embed ⟨x.value * y.value⟩ (mul_closed x hx y hy) =
+      spec.mul (embed x hx) (embed y hy)
+  inv_closed : ∀ x, represented x → represented ⟨1 / x.value⟩
+  inv_preserved : ∀ x (hx : represented x),
+    embed ⟨1 / x.value⟩ (inv_closed x hx) = spec.inv (embed x hx)
+  div_closed : ∀ x, represented x → ∀ y, represented y → represented ⟨x.value / y.value⟩
+  div_preserved : ∀ x (hx : represented x) y (hy : represented y),
+    embed ⟨x.value / y.value⟩ (div_closed x hx y hy) =
+      spec.div (embed x hx) (embed y hy)
+  abs_closed : ∀ x, represented x → represented ⟨if x.value < 0 then -x.value else x.value⟩
+  abs_preserved : ∀ x (hx : represented x),
+    embed ⟨if x.value < 0 then -x.value else x.value⟩ (abs_closed x hx) =
+      spec.abs (embed x hx)
+  min_closed : ∀ x, represented x → ∀ y, represented y →
+    represented ⟨if x.value ≤ y.value then x.value else y.value⟩
+  min_preserved : ∀ x (hx : represented x) y (hy : represented y),
+    embed ⟨if x.value ≤ y.value then x.value else y.value⟩ (min_closed x hx y hy) =
+      spec.min (embed x hx) (embed y hy)
+  runtime_powerRZ : RuntimeReal → SourceZ → RuntimeReal
+  powerRZ_closed : ∀ x, represented x → ∀ z, represented (runtime_powerRZ x z)
+  powerRZ_preserved : ∀ x (hx : represented x) z,
+    embed (runtime_powerRZ x z) (powerRZ_closed x hx z) = spec.powerRZ (embed x hx) z
+  lt_preserved : ∀ x (hx : represented x) y (hy : represented y),
+    spec.lt (embed x hx) (embed y hy) ↔ x.value < y.value
+  le_preserved : ∀ x (hx : represented x) y (hy : represented y),
+    spec.le (embed x hx) (embed y hy) ↔ x.value ≤ y.value
+  runtime_up : RuntimeReal → SourceZ
+  up_preserved : ∀ x (hx : represented x),
+    spec.up (embed x hx) = runtime_up x
+
+/-- Explicit bundle threaded by theorem-facing Flocq consumers. -/
+structure ExactRealContext where
+  spec : ExactRealSpec
+  certificate : ExactRealCertificate spec
+  adapter : RuntimeExactAdapter spec
 
 abbrev RealValue := OrderedReal
 abbrev F2RRat := Rat
@@ -83,10 +268,16 @@ def Rgt (x y : R) : Prop := Rlt y x
 def Rsqr (x : R) : R := Rmult x x
 def Rabs (x : R) : R := if x.value < R0.value then Ropp x else x
 def Rmin (x y : R) : R := if x.value ≤ y.value then x else y
+namespace Runtime
 def sqrt (x : R) : R := if R0.value ≤ x.value then x else R0
 def Rsqrt (x : R) : R := sqrt x
 def exp (_ : R) : R := ⟨1⟩
 def ln (_ : R) : R := R0
+end Runtime
+abbrev sqrt := Runtime.sqrt
+abbrev Rsqrt := Runtime.Rsqrt
+abbrev exp := Runtime.exp
+abbrev ln := Runtime.ln
 def powerRZ (x : R) (n : Z) : R :=
   match n with
   | .Z0 => ⟨1⟩
@@ -140,7 +331,7 @@ def total_order_T (r1 r2 : R) : Type := Sumor (Sumbool (Rlt r1 r2) (Eq r1 r2)) (
 end Rdefinitions
 
 namespace R_sqrt
-def sqrt : R → R := _root_.CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.sqrt
+def sqrt : R → R := _root_.CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.Runtime.sqrt
 end R_sqrt
 
 namespace Raxioms
@@ -178,11 +369,11 @@ def Rsqr : R → R := _root_.CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.R
 end RIneq
 
 namespace Rpower
-def ln : R → R := _root_.CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.ln
+def ln : R → R := _root_.CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.Runtime.ln
 end Rpower
 
 namespace Rtrigo_def
-def exp : R → R := _root_.CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.exp
+def exp : R → R := _root_.CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.Runtime.exp
 end Rtrigo_def
 
 end Rocq.Coq.Reals

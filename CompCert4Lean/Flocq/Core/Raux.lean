@@ -48,9 +48,11 @@ abbrev Rge := CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.Rge
 abbrev Rgt := CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.Rgt
 abbrev Rmin := CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.Rmin
 abbrev Rsqr := CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.Rsqr
-abbrev sqrt := CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.sqrt
-abbrev exp := CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.exp
-abbrev ln := CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.ln
+/- Runtime-only compatibility operations. Exact theorem consumers must use an
+   explicit `Foundation.FlocqReal.ExactRealSpec` and certificate. -/
+abbrev sqrt := CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.Runtime.sqrt
+abbrev exp := CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.Runtime.exp
+abbrev ln := CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.Runtime.ln
 abbrev powerRZ := CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.powerRZ
 abbrev up := CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.up
 abbrev radix := CompCert4Lean.Flocq.Core.Zaux.radix
