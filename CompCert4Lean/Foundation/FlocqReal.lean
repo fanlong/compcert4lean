@@ -195,6 +195,8 @@ structure ExactRealSourceLaws (spec : ExactRealSpec) : Prop where
 /-- Mandatory proof owner for the exact-real specification boundary. -/
 structure ExactRealCertificate (spec : ExactRealSpec) : Prop where
   orderedField : OrderedFieldCertificate spec
+  /-- Source `Rdefinitions.total_order_T` trichotomy for exact comparisons. -/
+  total_order : ∀ x y, (spec.lt x y ∨ x = y) ∨ spec.lt y x
   sqrt : SqrtCertificate spec
   exp : ExpCertificate spec
   ln : LnCertificate spec
@@ -266,6 +268,29 @@ structure ExactRealContext where
   spec : ExactRealSpec
   certificate : ExactRealCertificate spec
   adapter : RuntimeExactAdapter spec
+
+namespace ExactReal
+
+/-- Canonical source-shaped total-order witness for an exact-real context. -/
+noncomputable def total_order_T (ctx : ExactRealContext) (x y : ctx.spec.carrier) :
+    _root_.CompCert4Lean.Foundation.Logic.Support.Sumor
+      (_root_.CompCert4Lean.Foundation.Logic.Support.Sumbool
+        (ctx.spec.lt x y) (x = y))
+      (ctx.spec.lt y x) := by
+  classical
+  by_cases hlt : ctx.spec.lt x y
+  · exact .inleft (.left hlt)
+  by_cases heq : x = y
+  · exact .inleft (.right heq)
+  · have hyx : ctx.spec.lt y x := by
+      rcases ctx.certificate.total_order x y with hxy | hyx
+      · rcases hxy with hlt' | heq'
+        · exact (hlt hlt').elim
+        · exact (heq heq').elim
+      · exact hyx
+    exact .inright hyx
+
+end ExactReal
 
 /-! Proof-bearing source carrier used by `Rsqrt` and related theorem surfaces.
 The value and its nonnegativity proposition are retained even though proof

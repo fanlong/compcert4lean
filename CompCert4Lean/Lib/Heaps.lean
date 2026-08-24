@@ -734,54 +734,49 @@ end R
 
 variable (E : OrderedType)
 
-/- The executable carrier is the raw heap.  The source subtype's `bst`
-   field is proof-only; its obligations are recorded below instead of being
-   threaded through runtime heap operations. -/
-def t : Type := R.heap E
+def t : Type := {h : R.heap E // R.bst E h}
 
-def empty : t E := @R.Empty E
+def empty : t E := ⟨.Empty, trivial⟩
 
 def insert (x : E.t) (h : t E) : t E :=
-  R.insert E x h
+  ⟨R.insert E x h.1, R.insertBstProof E x h.1 h.2⟩
 
-def findMin (h : t E) : Option E.t := R.findMin E h
+def findMin (h : t E) : Option E.t := R.findMin E h.1
 
 def deleteMin (h : t E) : t E :=
-  R.deleteMin E h
+  ⟨R.deleteMin E h.1, R.deleteMinBstProof E h.1 h.2⟩
 
-def findMax (h : t E) : Option E.t := R.findMax E h
+def findMax (h : t E) : Option E.t := R.findMax E h.1
 
 def deleteMax (h : t E) : t E :=
-  R.deleteMax E h
+  ⟨R.deleteMax E h.1, R.deleteMaxBstProof E h.1 h.2⟩
 
-def In (x : E.t) (h : t E) : Prop := R.In E x h
+def In (x : E.t) (h : t E) : Prop := R.In E x h.1
 
 def In_emptyStatement : Prop := ∀ x, ¬ In E x (empty E)
 
 def In_insertStatement : Prop :=
-  ∀ x h y, R.bst E h →
+  ∀ x h y,
     (In E y (insert E x h) ↔ E.eq y x ∨ In E y h)
 
 def findMin_emptyStatement : Prop :=
-  ∀ h y, findMin E h = none → R.bst E h → ¬ In E y h
+  ∀ h y, findMin E h = none → ¬ In E y h
 
 def findMin_minStatement : Prop :=
-  ∀ h x y, findMin E h = some x → R.bst E h →
-    In E y h → E.eq x y ∨ E.lt x y
+  ∀ h x y, findMin E h = some x → In E y h → E.eq x y ∨ E.lt x y
 
 def In_deleteMinStatement : Prop :=
-  ∀ h x y, findMin E h = some x → R.bst E h →
+  ∀ h x y, findMin E h = some x →
     (In E y h ↔ E.eq y x ∨ In E y (deleteMin E h))
 
 def findMax_emptyStatement : Prop :=
-  ∀ h y, findMax E h = none → R.bst E h → ¬ In E y h
+  ∀ h y, findMax E h = none → ¬ In E y h
 
 def findMax_maxStatement : Prop :=
-  ∀ h x y, findMax E h = some x → R.bst E h →
-    In E y h → E.eq y x ∨ E.lt y x
+  ∀ h x y, findMax E h = some x → In E y h → E.eq y x ∨ E.lt y x
 
 def In_deleteMaxStatement : Prop :=
-  ∀ h x y, findMax E h = some x → R.bst E h →
+  ∀ h x y, findMax E h = some x →
     (In E y h ↔ E.eq y x ∨ In E y (deleteMax E h))
 
 end SplayHeapSet
@@ -870,16 +865,16 @@ def empty_obligation_1 : Prop :=
   SplayHeapSet.R.bst positiveOrder (@SplayHeapSet.R.Empty positiveOrder)
 def insert_obligation_1 : Prop :=
   ∀ (x : positive) (h : t),
-    SplayHeapSet.R.bst positiveOrder h →
-    SplayHeapSet.R.bst positiveOrder (SplayHeapSet.R.insert positiveOrder x h)
+    SplayHeapSet.R.bst positiveOrder
+      (SplayHeapSet.R.insert positiveOrder x h.1)
 def deleteMin_obligation_1 : Prop :=
   ∀ h : t,
-    SplayHeapSet.R.bst positiveOrder h →
-    SplayHeapSet.R.bst positiveOrder (SplayHeapSet.R.deleteMin positiveOrder h)
+    SplayHeapSet.R.bst positiveOrder
+      (SplayHeapSet.R.deleteMin positiveOrder h.1)
 def deleteMax_obligation_1 : Prop :=
   ∀ h : t,
-    SplayHeapSet.R.bst positiveOrder h →
-    SplayHeapSet.R.bst positiveOrder (SplayHeapSet.R.deleteMax positiveOrder h)
+    SplayHeapSet.R.bst positiveOrder
+      (SplayHeapSet.R.deleteMax positiveOrder h.1)
 
 def In_empty : Prop := SplayHeapSet.In_emptyStatement positiveOrder
 def In_insert : Prop := SplayHeapSet.In_insertStatement positiveOrder

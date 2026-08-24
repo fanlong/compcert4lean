@@ -617,6 +617,104 @@ def cmpu (c : comparison) (x y : int) : Bool :=
   | .Cgt => ltu y x
   | .Cge => !(ltu x y)
 
+/-! Selected generated members of `Make(Wordsize_32)` retain their exact
+    source propositions here; proof discharge remains a later phase. -/
+def add_unsigned : Prop :=
+  ∀ x y : int, add x y = repr (zAdd (unsigned x) (unsigned y))
+
+def bits_above : Prop :=
+  ∀ (x : int) (i : Z), zLe zwordsize i → testbit x i = false
+
+def bits_and : Prop :=
+  ∀ (x y : int) (i : Z), zLe zZero i ∧ zLt i zwordsize →
+    testbit (and x y) i = (testbit x i && testbit y i)
+
+def bits_or : Prop :=
+  ∀ (x y : int) (i : Z), zLe zZero i ∧ zLt i zwordsize →
+    testbit (or x y) i = (testbit x i || testbit y i)
+
+def bits_shl : Prop :=
+  ∀ (x y : int) (i : Z), zLe zZero i ∧ zLt i zwordsize →
+    testbit (shl x y) i =
+      zltSelect i (unsigned y) false (testbit x (zSub i (unsigned y)))
+
+def bits_shr : Prop :=
+  ∀ (x y : int) (i : Z), zLe zZero i ∧ zLt i zwordsize →
+    testbit (shr x y) i =
+      testbit x (zltSelect (zAdd i (unsigned y)) zwordsize
+        (zAdd i (unsigned y)) (zSub zwordsize zOne))
+
+def bits_shru : Prop :=
+  ∀ (x y : int) (i : Z), zLe zZero i ∧ zLt i zwordsize →
+    testbit (shru x y) i =
+      zltSelect (zAdd i (unsigned y)) zwordsize
+        (testbit x (zAdd i (unsigned y))) false
+
+def bits_xor : Prop :=
+  ∀ (x y : int) (i : Z), zLe zZero i ∧ zLt i zwordsize →
+    testbit (xor x y) i = Bool.xor (testbit x i) (testbit y i)
+
+def bits_zero : Prop := ∀ i : Z, testbit zero i = false
+
+def eq_signed : Prop :=
+  ∀ x y : int,
+    eq x y = sumboolSelect (CompCert4Lean.Lib.Coqlib.zeq (signed x) (signed y))
+      true false
+
+def eq_sym : Prop := ∀ x y : int, eq x y = eq y x
+
+def eqm_add : Prop :=
+  ∀ a b c d : Z, eqm a b → eqm c d → eqm (zAdd a c) (zAdd b d)
+
+def eqm_refl : Prop := ∀ x : Z, eqm x x
+
+def eqm_signed_unsigned : Prop :=
+  ∀ x : int, eqm (signed x) (unsigned x)
+
+def eqm_sym : Prop := ∀ x y : Z, eqm x y → eqm y x
+
+def eqm_unsigned_repr : Prop :=
+  ∀ z : Z, eqm z (unsigned (repr z))
+
+def eqm_unsigned_repr_l : Prop :=
+  ∀ a b : Z, eqm a b → eqm (unsigned (repr a)) b
+
+def ltu_inv : Prop :=
+  ∀ x y : int, ltu x y = true →
+    zLe zZero (unsigned x) ∧ zLt (unsigned x) (unsigned y)
+
+def modulus_pos : Prop := zLt zZero modulus
+
+def repr_unsigned : Prop := ∀ i : int, repr (unsigned i) = i
+
+def same_bits_eq : Prop :=
+  ∀ x y : int,
+    (∀ i : Z, zLe zZero i ∧ zLt i zwordsize → testbit x i = testbit y i) →
+      x = y
+
+def signed_range : Prop :=
+  ∀ i : int, zLe min_signed (signed i) ∧ zLe (signed i) max_signed
+
+def testbit_repr : Prop :=
+  ∀ x i : Z, zLe zZero i ∧ zLt i zwordsize →
+    testbit (repr x) i = zTestbit x i
+
+def unsigned_range : Prop :=
+  ∀ i : int, zLe zZero (unsigned i) ∧ zLt (unsigned i) modulus
+
+def unsigned_range_2 : Prop :=
+  ∀ i : int, zLe zZero (unsigned i) ∧ zLe (unsigned i) max_unsigned
+
+def unsigned_repr : Prop :=
+  ∀ z : Z, zLe zZero z ∧ zLe z max_unsigned → unsigned (repr z) = z
+
+def unsigned_repr_eq : Prop :=
+  ∀ x : Z, unsigned (repr x) = zMod x modulus
+
+def unsigned_repr_wordsize : Prop := unsigned iwordsize = zwordsize
+
+def wordsize_max_unsigned : Prop := zLe zwordsize max_unsigned
+
 private theorem zero_ext_modulo (n : Z) (x : int) (hn : zLe zZero n) :
     ZArith.BinInt.Z.modulo (unsigned x) (two_p n) =
       CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt
@@ -857,6 +955,117 @@ def ofwords (hi lo : Int.int) : int :=
 
 def mul' (x y : Int.int) : int :=
   repr (zMul (Int.unsigned x) (Int.unsigned y))
+
+/-! Selected generated members of `Include Make(Wordsize_64)` retain their
+    exact source propositions; proof discharge remains a later phase. -/
+def bits_above : Prop :=
+  ∀ (x : int) (i : Z), zLe zwordsize i → testbit x i = false
+
+def bits_and : Prop :=
+  ∀ (x y : int) (i : Z), zLe zZero i ∧ zLt i zwordsize →
+    testbit (and x y) i = (testbit x i && testbit y i)
+
+def bits_or : Prop :=
+  ∀ (x y : int) (i : Z), zLe zZero i ∧ zLt i zwordsize →
+    testbit (or x y) i = (testbit x i || testbit y i)
+
+def bits_shl : Prop :=
+  ∀ (x y : int) (i : Z), zLe zZero i ∧ zLt i zwordsize →
+    testbit (shl x y) i =
+      zltSelect i (unsigned y) false (testbit x (zSub i (unsigned y)))
+
+def bits_shru : Prop :=
+  ∀ (x y : int) (i : Z), zLe zZero i ∧ zLt i zwordsize →
+    testbit (shru x y) i =
+      zltSelect (zAdd i (unsigned y)) zwordsize
+        (testbit x (zAdd i (unsigned y))) false
+
+def bits_signed : Prop :=
+  ∀ (x : int) (i : Z), zLe zZero i →
+    zTestbit (signed x) i =
+      testbit x (zltSelect i zwordsize i (zSub zwordsize zOne))
+
+def bits_xor : Prop :=
+  ∀ (x y : int) (i : Z), zLe zZero i ∧ zLt i zwordsize →
+    testbit (xor x y) i = Bool.xor (testbit x i) (testbit y i)
+
+def eqm_add : Prop :=
+  ∀ a b c d : Z, eqm a b → eqm c d → eqm (zAdd a c) (zAdd b d)
+
+def eqm_mult : Prop :=
+  ∀ a b c d : Z, eqm a c → eqm b d → eqm (zMul a b) (zMul c d)
+
+def eqm_refl : Prop := ∀ x : Z, eqm x x
+
+def eqm_samerepr : Prop :=
+  ∀ x y : Z, eqm x y → repr x = repr y
+
+def eqm_sym : Prop := ∀ x y : Z, eqm x y → eqm y x
+
+def eqm_unsigned_repr : Prop :=
+  ∀ z : Z, eqm z (unsigned (repr z))
+
+def eqm_unsigned_repr_l : Prop :=
+  ∀ a b : Z, eqm a b → eqm (unsigned (repr a)) b
+
+def mul_commut : Prop := ∀ x y : int, mul x y = mul y x
+
+def mul_one : Prop := ∀ x : int, mul x one = x
+
+def or_ror : Prop :=
+  ∀ x y z : int, ltu y iwordsize = true → ltu z iwordsize = true →
+    add y z = iwordsize → ror x z = or (shl x y) (shru x z)
+
+def repr_unsigned : Prop := ∀ i : int, repr (unsigned i) = i
+
+def same_bits_eq : Prop :=
+  ∀ x y : int,
+    (∀ i : Z, zLe zZero i ∧ zLt i zwordsize → testbit x i = testbit y i) →
+      x = y
+
+def shifted_or_is_add : Prop :=
+  ∀ (x y : int) (n : Z), zLe zZero n ∧ zLt n zwordsize →
+    zLt (unsigned y) (zTwoP n) →
+      or (shl x (repr n)) y =
+        repr (zAdd (zMul (unsigned x) (zTwoP n)) (unsigned y))
+
+def shl_shl : Prop :=
+  ∀ x y z : int, ltu y iwordsize = true → ltu z iwordsize = true →
+    ltu (add y z) iwordsize = true → shl (shl x y) z = shl x (add y z)
+
+def shr_shr : Prop :=
+  ∀ x y z : int, ltu y iwordsize = true → ltu z iwordsize = true →
+    ltu (add y z) iwordsize = true → shr (shr x y) z = shr x (add y z)
+
+def shru_shru : Prop :=
+  ∀ x y z : int, ltu y iwordsize = true → ltu z iwordsize = true →
+    ltu (add y z) iwordsize = true → shru (shru x y) z = shru x (add y z)
+
+def shrx_shr_2 : Prop :=
+  ∀ x y : int,
+    ltu y (repr (zSub zwordsize zOne)) = true →
+      shrx x y =
+        shr (add x (shru (shr x (repr (zSub zwordsize zOne)))
+          (sub iwordsize y))) y
+
+def shrx_zero : Prop :=
+  ∀ x : int, zLt zOne zwordsize → shrx x zero = x
+
+def signed_repr : Prop :=
+  ∀ z : Z, zLe min_signed z ∧ zLe z max_signed → signed (repr z) = z
+
+def testbit_repr : Prop :=
+  ∀ x i : Z, zLe zZero i ∧ zLt i zwordsize →
+    testbit (repr x) i = zTestbit x i
+
+def unsigned_range : Prop :=
+  ∀ i : int, zLe zZero (unsigned i) ∧ zLt (unsigned i) modulus
+
+def unsigned_repr : Prop :=
+  ∀ z : Z, zLe zZero z ∧ zLe z max_unsigned → unsigned (repr z) = z
+
+def unsigned_repr_eq : Prop :=
+  ∀ x : Z, unsigned (repr x) = zMod x modulus
 
 /-! ## Exact statement descriptors for the deferred Int64 proofs -/
 
@@ -1112,7 +1321,7 @@ def decompose_ltuStatement : Prop :=
 
 def decompose_leuStatement : Prop :=
   ∀ xh xl yh yl : Int.int,
-    !(ltu (ofwords yh yl) (ofwords xh xl)) =
+    (! (ltu (ofwords yh yl) (ofwords xh xl))) =
       (if Int.eq xh yh then !(Int.ltu yl xl) else Int.ltu xh yh)
 
 def decompose_ltStatement : Prop :=
@@ -1122,7 +1331,7 @@ def decompose_ltStatement : Prop :=
 
 def decompose_leStatement : Prop :=
   ∀ xh xl yh yl : Int.int,
-    !(lt (ofwords yh yl) (ofwords xh xl)) =
+    (! (lt (ofwords yh yl) (ofwords xh xl))) =
       (if Int.eq xh yh then !(Int.ltu yl xl) else Int.lt xh yh)
 
 /-- `GENAPP-COMPCERT-LIB-INTEGERS-3598-INCLUDE`: `Include Make(Wordsize_64)`. -/
@@ -1175,6 +1384,14 @@ def shr : int → int → int := WordCore.shr
 def sign_ext (n : Z) (x : int) : int := WordCore.sign_ext n x
 def testbit : int → Z → Bool := WordCore.testbit
 def eqm : Z → Z → Prop := WordCore.eqm wordsize
+
+/-! Selected generated members of `Include Make(Wordsize_Ptrofs)` retain their
+    exact source propositions; proof discharge remains a later phase. -/
+def eqm_repr_eq : Prop :=
+  ∀ (x : Z) (y : int), eqm x (unsigned y) → repr x = y
+
+def unsigned_repr_eq : Prop :=
+  ∀ x : Z, unsigned (repr x) = zMod x modulus
 
 /-- `GENAPP-COMPCERT-LIB-INTEGERS-4725-INCLUDE`: `Include Make(Wordsize_Ptrofs)`. -/
 def generatedApplication : WordCore.GeneratedApplication :=

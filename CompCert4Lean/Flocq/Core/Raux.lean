@@ -129,14 +129,11 @@ def Rhalf (ctx : Context) : R ctx := Rdiv ctx (Rone ctx) (Rtwo ctx)
 def cond_Ropp (ctx : Context) (b : Bool) (m : R ctx) : R ctx :=
   if b then Ropp ctx m else m
 
-noncomputable def Rcompare (ctx : Context) (x y : R ctx) : comparison := by
-  classical
-  if hxy : Rlt ctx x y then
-    exact Lt
-  else if heq : x = y then
-    exact Eq
-  else
-    exact Gt
+noncomputable def Rcompare (ctx : Context) (x y : R ctx) : comparison :=
+  match CompCert4Lean.Foundation.FlocqReal.ExactReal.total_order_T ctx x y with
+  | .inleft (.left _) => Lt
+  | .inleft (.right _) => Eq
+  | .inright _ => Gt
 
 inductive Rcompare_prop (ctx : Context) (x y : R ctx) : comparison → Prop where
   | Rcompare_Lt_ : Rlt ctx x y → Rcompare_prop ctx x y Lt
@@ -495,7 +492,7 @@ export mag_prop (mag_val)
 def mag (r : radix) (x : R) : mag_prop r x :=
   let a := (Rabs x).value
   if hx0 : x = R0 then
-    { mag_val := Z0
+    { mag_val := Zpos xH
       mag_bound := by intro hx; exact (hx hx0).elim }
   else
     have ha : 0 ≤ a := by

@@ -354,7 +354,8 @@ theorem transition_decreases : transition_decreasesStatement := by
 
 def postorder (g : graph) (root : node) : PTree.t positive :=
   CompCert4Lean.Lib.Iteration.WfIter.iterate
-    transition lt_state lt_state_wf transition_decreases (init_state g root)
+    state (PTree.t positive) transition lt_state lt_state_wf
+      transition_decreases (init_state g root)
 
 inductive reachable (g : graph) (root : positive) : positive → Prop where
   | reachable_root : reachable g root root

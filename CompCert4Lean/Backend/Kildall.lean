@@ -225,7 +225,8 @@ def fixpoint_from {A : Type} {LAT : SemiLattice} {NS : NodeSetOps}
     (code : PTreeT A) (successors : A → List positive)
     (transf : positive → LAT.t → LAT.t)
     (start : state LAT NS) : Option (PMapT LAT.t) :=
-  CompCert4Lean.Lib.Iteration.PrimIter.iterate (step code successors transf) start
+  CompCert4Lean.Lib.Iteration.PrimIter.iterate (state LAT NS) (PMapT LAT.t)
+    (step code successors transf) start
 
 def start_state {LAT : SemiLattice} {NS : NodeSetOps}
     (enode : positive) (eval : LAT.t) : state LAT NS :=
@@ -432,7 +433,8 @@ def fixpoint {A : Type} (LAT : OrderedTop)
     (transf : positive → LAT.t → LAT.t)
     (entrypoint : positive) : Option (result LAT) :=
   let bb := basic_block_map entrypoint code successors
-  CompCert4Lean.Lib.Iteration.PrimIter.iterate (step code successors transf bb)
+  CompCert4Lean.Lib.Iteration.PrimIter.iterate (state LAT) (result LAT)
+    (step code successors transf bb)
     { aval := PMap.init LAT.top, worklist := basic_block_list bb code }
 
 def predecessors {A : Type} (code : PTreeT A)

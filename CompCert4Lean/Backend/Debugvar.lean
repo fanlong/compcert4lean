@@ -330,7 +330,8 @@ def ana_iter (cfg : CompilerConfig) (c : code) (lm : labelmap) : Sum labelmap la
   if lm'.2 then .inr lm' else .inl lm'
 
 def ana_function (cfg : CompilerConfig) (f : function) : Option labelmap :=
-  CompCert4Lean.Lib.Iteration.PrimIter.iterate (ana_iter cfg f.fn_code)
+  CompCert4Lean.Lib.Iteration.PrimIter.iterate labelmap labelmap
+    (ana_iter cfg f.fn_code)
     (PTree.empty _, false)
 
 /-! ## Code transformation -/

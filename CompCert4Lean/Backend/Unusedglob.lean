@@ -345,7 +345,7 @@ def iter_step (pm : prog_map) (w : workset) : Sum IS.t workset :=
         { w_seen := w.w_seen, w_todo := remaining })
 
 def used_globals (p : program) (pm : prog_map) : Option IS.t :=
-  PrimIter.iterate (iter_step pm) (initial_workset p)
+  PrimIter.iterate workset IS.t (iter_step pm) (initial_workset p)
 
 /-! ## Filtering global definitions -/
 
