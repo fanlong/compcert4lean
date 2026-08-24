@@ -495,24 +495,6 @@ def standard_builtin_sig : standard_builtin → signature
   | BI_i64_stod | BI_i64_utod => mkSignature [Xlong] Xfloat
   | BI_i64_stof | BI_i64_utof => mkSignature [Xlong] Xsingle
 
-private abbrev zMul := ZArith.BinInt.Z.mul
-private abbrev zDiv := ZArith.BinInt.Z.div
-private abbrev zQuot := ZArith.BinInt.Z.quot
-
-private def int64Mulhu (x y : CCInt64) : CCInt64 :=
-  CompCert4Lean.Lib.Integers.Int64.repr
-    (zDiv
-      (zMul (CompCert4Lean.Lib.Integers.Int64.unsigned x)
-        (CompCert4Lean.Lib.Integers.Int64.unsigned y))
-      CompCert4Lean.Lib.Integers.Int64.modulus)
-
-private def int64Mulhs (x y : CCInt64) : CCInt64 :=
-  CompCert4Lean.Lib.Integers.Int64.repr
-    (zQuot
-      (zMul (CompCert4Lean.Lib.Integers.Int64.signed x)
-        (CompCert4Lean.Lib.Integers.Int64.signed y))
-      CompCert4Lean.Lib.Integers.Int64.modulus)
-
 private def byteSwap32 (n : CCInt) : CCInt :=
   CompCert4Lean.Lib.Integers.Int.repr
     (CompCert4Lean.Common.Memdata.decode_int
@@ -631,11 +613,23 @@ private def ptrofsSubCancel
   exact CompCert4Lean.Lib.Integers.Ptrofs.sub_shifted_proof_api a b c
 
 private def divlsBuiltin : builtin_sem Xlong :=
-  mkbuiltin_n2pInternal Tlong Tlong Xlong (fun n1 n2 =>
-    if CompCert4Lean.Lib.Integers.Int64.eq n2 CompCert4Lean.Lib.Integers.Int64.zero then
-      none
-    else
-      some (CompCert4Lean.Lib.Integers.Int64.divs n1 n2))
+  longBinaryPartial Val.divls
+    (by
+      intro v1 v2
+      cases v1 <;> cases v2
+      all_goals simp only [Val.divls]
+      all_goals try trivial
+      case Vlong.Vlong =>
+        split <;> trivial)
+    (by
+      intro j v1 v1' v2 v2' h1 h2
+      cases h1 <;> cases h2
+      all_goals simp only [Val.divls]
+      all_goals try trivial
+      case inject_long.inject_long =>
+        split
+        · trivial
+        · exact Val.inject.inject_long _)
 
 private def divluBuiltin : builtin_sem Xlong :=
   mkbuiltin_n2pInternal Tlong Tlong Xlong (fun n1 n2 =>
@@ -645,13 +639,23 @@ private def divluBuiltin : builtin_sem Xlong :=
       some (CompCert4Lean.Lib.Integers.Int64.divu n1 n2))
 
 private def modlsBuiltin : builtin_sem Xlong :=
-  mkbuiltin_n2pInternal Tlong Tlong Xlong (fun n1 n2 =>
-    if CompCert4Lean.Lib.Integers.Int64.eq n2 CompCert4Lean.Lib.Integers.Int64.zero then
-      none
-    else
-      some (CompCert4Lean.Lib.Integers.Int64.sub n1
-        (CompCert4Lean.Lib.Integers.Int64.mul
-          (CompCert4Lean.Lib.Integers.Int64.divs n1 n2) n2)))
+  longBinaryPartial Val.modls
+    (by
+      intro v1 v2
+      cases v1 <;> cases v2
+      all_goals simp only [Val.modls]
+      all_goals try trivial
+      case Vlong.Vlong =>
+        split <;> trivial)
+    (by
+      intro j v1 v1' v2 v2' h1 h2
+      cases h1 <;> cases h2
+      all_goals simp only [Val.modls]
+      all_goals try trivial
+      case inject_long.inject_long =>
+        split
+        · trivial
+        · exact Val.inject.inject_long _)
 
 private def modluBuiltin : builtin_sem Xlong :=
   mkbuiltin_n2pInternal Tlong Tlong Xlong (fun n1 n2 =>
@@ -796,7 +800,14 @@ private def unreachableBuiltin : builtin_sem Xvoid where
   bs_well_typed := by intro _; trivial
   bs_inject := by intro _ _ _ _; trivial
 
-def standard_builtin_sem (b : standard_builtin) :
+def standard_builtin_sem
+    [binary64_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)]
+    (b : standard_builtin) :
     builtin_sem (standard_builtin_sig b).sig_res :=
   match b with
   | BI_select t => selectBuiltin t
@@ -811,8 +822,8 @@ def standard_builtin_sem (b : standard_builtin) :
   | BI_i32_bswap => mkbuiltin_n1t Tint Xint byteSwap32
   | BI_i64_bswap => mkbuiltin_n1t Tlong Xlong byteSwap64
   | BI_unreachable => unreachableBuiltin
-  | BI_i64_umulh => mkbuiltin_n2t Tlong Tlong Xlong int64Mulhu
-  | BI_i64_smulh => mkbuiltin_n2t Tlong Tlong Xlong int64Mulhs
+  | BI_i64_umulh => mkbuiltin_n2t Tlong Tlong Xlong CompCert4Lean.Lib.Integers.Int64.mulhu
+  | BI_i64_smulh => mkbuiltin_n2t Tlong Tlong Xlong CompCert4Lean.Lib.Integers.Int64.mulhs
   | BI_i64_sdiv => divlsBuiltin
   | BI_i64_udiv => divluBuiltin
   | BI_i64_smod => modlsBuiltin
@@ -822,9 +833,9 @@ def standard_builtin_sem (b : standard_builtin) :
   | BI_i64_sar => shrlBuiltin
   | BI_i64_dtos => mkbuiltin_n1p Tfloat Xlong CompCert4Lean.Lib.Floats.Float.to_long
   | BI_i64_dtou => mkbuiltin_n1p Tfloat Xlong CompCert4Lean.Lib.Floats.Float.to_longu
-  | BI_i64_stod => mkbuiltin_n1t Tlong Xfloat CompCert4Lean.Lib.Floats.Float.of_long
-  | BI_i64_utod => mkbuiltin_n1t Tlong Xfloat CompCert4Lean.Lib.Floats.Float.of_longu
-  | BI_i64_stof => mkbuiltin_n1t Tlong Xsingle CompCert4Lean.Lib.Floats.Float32.of_long
-  | BI_i64_utof => mkbuiltin_n1t Tlong Xsingle CompCert4Lean.Lib.Floats.Float32.of_longu
+  | BI_i64_stod => mkbuiltin_n1t Tlong Xfloat (fun n => CompCert4Lean.Lib.Floats.Float.of_long n)
+  | BI_i64_utod => mkbuiltin_n1t Tlong Xfloat (fun n => CompCert4Lean.Lib.Floats.Float.of_longu n)
+  | BI_i64_stof => mkbuiltin_n1t Tlong Xsingle (fun n => CompCert4Lean.Lib.Floats.Float32.of_long n)
+  | BI_i64_utof => mkbuiltin_n1t Tlong Xsingle (fun n => CompCert4Lean.Lib.Floats.Float32.of_longu n)
 
 end CompCert4Lean.Common.Builtins0
