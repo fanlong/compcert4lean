@@ -85,50 +85,51 @@ def match_prog (cfg : CompilerConfig) (p tp : program) : Prop :=
 private abbrev sourceGenv (p : program) : genv := Genv.globalenv p
 private abbrev targetGenv (p : program) : genv := Genv.globalenv p
 
-/--
-Internal carrier for the stack relation needed by the assigned state relation.
-Only the packet-owned source-named tail constructor is exported.
--/
-inductive matchStackframes (cfg : CompilerConfig) :
+inductive match_stackframes (cfg : CompilerConfig) :
     List stackframe → List stackframe → Prop where
-  | nil : matchStackframes cfg [] []
-  | normal {stk stk' res sp pc rs rs' f} :
-      matchStackframes cfg stk stk' →
-      regs_lessdef rs rs' →
-      matchStackframes cfg
+  | match_stackframes_nil : match_stackframes cfg [] []
+  | match_stackframes_normal
+      (stk stk' : List stackframe) (res : reg) (sp : block) (pc : node)
+      (rs rs' : regset) (f : function)
+      (hstack : match_stackframes cfg stk stk')
+      (hrld : regs_lessdef rs rs') :
+      match_stackframes cfg
         (Stackframe res f (Vptr sp Ptrofs.zero) pc rs :: stk)
         (Stackframe res (transf_function cfg f) (Vptr sp Ptrofs.zero) pc rs' :: stk')
-  | match_stackframes_tail {stk stk' res sp pc rs f} :
-      matchStackframes cfg stk stk' →
-      is_return_spec f pc res →
-      f.fn_stacksize = .Z0 →
-      matchStackframes cfg
+  | match_stackframes_tail
+      (stk stk' : List stackframe) (res : reg) (sp : block) (pc : node)
+      (rs : regset) (f : function)
+      (hstack : match_stackframes cfg stk stk')
+      (hreturn : is_return_spec f pc res)
+      (hstacksize : f.fn_stacksize = .Z0) :
+      match_stackframes cfg
         (Stackframe res f (Vptr sp Ptrofs.zero) pc rs :: stk) stk'
 
-export matchStackframes (match_stackframes_tail)
+export match_stackframes
+  (match_stackframes_nil match_stackframes_normal match_stackframes_tail)
 
 inductive match_states (cfg : CompilerConfig) : state → state → Prop where
   | normal {s sp pc rs m s' rs' m' f} :
-      matchStackframes cfg s s' →
+      match_stackframes cfg s s' →
       regs_lessdef rs rs' →
       Mem.extends m m' →
       match_states cfg
         (State s f (Vptr sp Ptrofs.zero) pc rs m)
         (State s' (transf_function cfg f) (Vptr sp Ptrofs.zero) pc rs' m')
   | call {s f args m s' args' m'} :
-      matchStackframes cfg s s' →
+      match_stackframes cfg s s' →
       Val.lessdef_list args args' →
       Mem.extends m m' →
       match_states cfg
         (Callstate s f args m)
         (Callstate s' (transf_fundef cfg f) args' m')
   | return {s v m s' v' m'} :
-      matchStackframes cfg s s' →
+      match_stackframes cfg s s' →
       Val.lessdef v v' →
       Mem.extends m m' →
       match_states cfg (Returnstate s v m) (Returnstate s' v' m')
   | interm {s sp pc rs m s' m' f r v'} :
-      matchStackframes cfg s s' →
+      match_stackframes cfg s s' →
       Mem.extends m m' →
       is_return_spec f pc r →
       f.fn_stacksize = .Z0 →
