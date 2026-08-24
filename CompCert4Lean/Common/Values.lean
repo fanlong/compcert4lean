@@ -173,13 +173,9 @@ private def boolOfSumbool {P Q : Prop} (d : Sumbool P Q) : Bool :=
 
 private def eqBool {A : Type} [DecidableEq A] (x y : A) : Bool := decide (x = y)
 
-private def intZeroExt (n : Z) (x : CCInt) : CCInt :=
-  Int.repr (zMod (Int.unsigned x) (zTwoP n))
+private abbrev intZeroExt := CompCert4Lean.Lib.Integers.Int.zero_ext
 
 private abbrev intSignExt := CompCert4Lean.Lib.Integers.Int.sign_ext
-
-private def int64ZeroExt (n : Z) (x : CCInt64) : CCInt64 :=
-  Int64.repr (zMod (Int64.unsigned x) (zTwoP n))
 
 private abbrev int64SignExt := CompCert4Lean.Lib.Integers.Int64.sign_ext
 
@@ -215,7 +211,7 @@ private def int64Cmpu (c : comparison) (x y : CCInt64) : Bool :=
   cmpWord c (Int64.eq x y) (Int64.ltu x y) (Int64.ltu y x)
 
 private def ptCmp (c : comparison) (x y : Ptrofs) : Bool :=
-  cmpWord c (Ptrofs.eq x y) (Ptrofs.lt x y) (Ptrofs.lt y x)
+  cmpWord c (Ptrofs.eq x y) (Ptrofs.ltu x y) (Ptrofs.ltu y x)
 
 def block : Type := positive
 
@@ -345,12 +341,28 @@ def absfs (v : val) : val := match v with | Vsingle f => Vsingle (Float32.abs f)
 def maketotal (ov : Option val) : val := match ov with | some v => v | none => Vundef
 def intoffloat (v : val) : Option val := match v with | Vfloat f => (Float.to_int f).map Vint | _ => none
 def intuoffloat (v : val) : Option val := match v with | Vfloat f => (Float.to_intu f).map Vint | _ => none
-def floatofint (v : val) : Option val := match v with | Vint n => some (Vfloat (Float.of_int n)) | _ => none
-def floatofintu (v : val) : Option val := match v with | Vint n => some (Vfloat (Float.of_intu n)) | _ => none
+def floatofint (v : val)
+    [binary64_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (zOfNat 53) (zOfNat 1024)] : Option val :=
+  match v with | Vint n => some (Vfloat (Float.of_int n)) | _ => none
+def floatofintu (v : val)
+    [binary64_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (zOfNat 53) (zOfNat 1024)] : Option val :=
+  match v with | Vint n => some (Vfloat (Float.of_intu n)) | _ => none
 def intofsingle (v : val) : Option val := match v with | Vsingle f => (Float32.to_int f).map Vint | _ => none
 def intuofsingle (v : val) : Option val := match v with | Vsingle f => (Float32.to_intu f).map Vint | _ => none
-def singleofint (v : val) : Option val := match v with | Vint n => some (Vsingle (Float32.of_int n)) | _ => none
-def singleofintu (v : val) : Option val := match v with | Vint n => some (Vsingle (Float32.of_intu n)) | _ => none
+def singleofint (v : val)
+    [binary32_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (zOfNat 24) (zOfNat 128)] : Option val :=
+  match v with | Vint n => some (Vsingle (Float32.of_int n)) | _ => none
+def singleofintu (v : val)
+    [binary32_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (zOfNat 24) (zOfNat 128)] : Option val :=
+  match v with | Vint n => some (Vsingle (Float32.of_intu n)) | _ => none
 def negint (v : val) : val := match v with | Vint n => Vint (Int.neg n) | _ => Vundef
 def notint (v : val) : val := match v with | Vint n => Vint (Int.not n) | _ => Vundef
 def of_bool (b : Bool) : val := if b then Vtrue else Vfalse
@@ -441,10 +453,26 @@ def longoffloat (v : val) : Option val := match v with | Vfloat f => (Float.to_l
 def longuoffloat (v : val) : Option val := match v with | Vfloat f => (Float.to_longu f).map Vlong | _ => none
 def longofsingle (v : val) : Option val := match v with | Vsingle f => (Float32.to_long f).map Vlong | _ => none
 def longuofsingle (v : val) : Option val := match v with | Vsingle f => (Float32.to_longu f).map Vlong | _ => none
-def floatoflong (v : val) : Option val := match v with | Vlong n => some (Vfloat (Float.of_long n)) | _ => none
-def floatoflongu (v : val) : Option val := match v with | Vlong n => some (Vfloat (Float.of_longu n)) | _ => none
-def singleoflong (v : val) : Option val := match v with | Vlong n => some (Vsingle (Float32.of_long n)) | _ => none
-def singleoflongu (v : val) : Option val := match v with | Vlong n => some (Vsingle (Float32.of_longu n)) | _ => none
+def floatoflong (v : val)
+    [binary64_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (zOfNat 53) (zOfNat 1024)] : Option val :=
+  match v with | Vlong n => some (Vfloat (Float.of_long n)) | _ => none
+def floatoflongu (v : val)
+    [binary64_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (zOfNat 53) (zOfNat 1024)] : Option val :=
+  match v with | Vlong n => some (Vfloat (Float.of_longu n)) | _ => none
+def singleoflong (v : val)
+    [binary32_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (zOfNat 24) (zOfNat 128)] : Option val :=
+  match v with | Vlong n => some (Vsingle (Float32.of_long n)) | _ => none
+def singleoflongu (v : val)
+    [binary32_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (zOfNat 24) (zOfNat 128)] : Option val :=
+  match v with | Vlong n => some (Vsingle (Float32.of_longu n)) | _ => none
 
 def addl (v1 v2 : val) : val :=
   match v1, v2 with
