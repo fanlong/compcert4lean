@@ -1,5 +1,7 @@
 import CompCert4Lean.Common.Values
+import CompCert4Lean.Lib.FSetAVLplus
 import CompCert4Lean.Lib.Maps
+import CompCert4Lean.Lib.Ordered
 
 /-!
 # Pseudo-registers and register states
@@ -83,168 +85,138 @@ end Regmap
 
 namespace Regset
 
-abbrev elt : Type := reg
-abbrev t : Type := List elt
-abbrev Regset : Type := t
+/-! Specialized generated application: FSetAVL.Make(OrderedPositive). -/
 
-def «X'» : Type := Unit
+open CompCert4Lean.Lib.FSetAVLplus
+open CompCert4Lean.Lib.Ordered
+
+private abbrev OrderedType :=
+  CompCert4Lean.Foundation.Ordered.Rocq.Coq.Structures.OrderedType.OrderedType
+private abbrev Compare {X : Type} (lt eq : X → X → Prop) (x y : X) :=
+  CompCert4Lean.Foundation.Ordered.Rocq.Coq.Structures.OrderedType.Compare
+    lt eq x y
+
+private def comparePositive (x y : OrderedPositive.t) :
+    Compare OrderedPositive.lt OrderedPositive.eq x y := by
+  cases CompCert4Lean.Lib.Coqlib.plt x y with
+  | left hlt => exact .LT hlt
+  | right hlt =>
+    cases CompCert4Lean.Lib.Coqlib.peq x y with
+    | left heq => exact .EQ heq
+    | right heq =>
+      refine .GT ?_
+      change PArith.BinPos.Pos.to_nat y < PArith.BinPos.Pos.to_nat x
+      change ¬ PArith.BinPos.Pos.to_nat x < PArith.BinPos.Pos.to_nat y at hlt
+      have hne :
+          PArith.BinPos.Pos.to_nat x ≠ PArith.BinPos.Pos.to_nat y := by
+        intro h
+        exact heq (posToNat_injective h)
+      omega
+
+def EOrder : OrderedType where
+  t := OrderedPositive.t
+  eq := OrderedPositive.eq
+  lt := OrderedPositive.lt
+  eq_refl := fun _ => rfl
+  eq_sym := by intro x y h; exact h.symm
+  eq_trans := by intro x y z hxy hyz; exact hxy.trans hyz
+  lt_trans := by intro x y z hxy hyz; exact Nat.lt_trans hxy hyz
+  lt_not_eq := by
+    intro x y hxy heq
+    cases heq
+    exact Nat.lt_irrefl _ hxy
+  compare := comparePositive
+  eq_dec := CompCert4Lean.Lib.Coqlib.peq
+
+/- Consumer-facing element-module type; EOrder is the canonical OrderedType value. -/
+abbrev E : Type := EOrder.t
+
+abbrev «X'» : Type := E
 
 namespace X'
 
-abbrev t : Type := elt
-def eq (x y : t) : Prop := x = y
-def lt (x y : t) : Prop := CompCert4Lean.Lib.Coqlib.Plt x y
+abbrev orderedType : OrderedType := EOrder
+abbrev t : Type := E
+abbrev eq : t → t → Prop := EOrder.eq
+abbrev lt : t → t → Prop := EOrder.lt
 
 end X'
 
-def MSet : Type := Unit
+abbrev MSet : Type := Make.MSet EOrder
 
 namespace MSet
+
+abbrev Mkt (this : Make.Raw.tree EOrder) (is_ok : Make.Raw.Ok this) : MSet :=
+  @Make.MSet.Mkt EOrder this is_ok
+abbrev this : MSet → Make.Raw.tree EOrder := @Make.MSet.this EOrder
+abbrev is_ok (self : MSet) : Make.Raw.Ok (@Make.MSet.this EOrder self) :=
+  @Make.MSet.is_ok EOrder self
+
 end MSet
 
-def MF : Type := Unit
+abbrev MFType := CompCert4Lean.Lib.FSetFacts.WFacts_fun
+  (CompCert4Lean.Lib.FSetInterface.OrderedType.toDecidableType EOrder)
+  (Make.toSfun EOrder).toWSfun
+def MFProvider : MFType := Make.MF EOrder
+/- The generated facts record lives one universe above the legacy module alias;
+   retain its exact provider alongside a universe-0 carrier for consumers. -/
+abbrev MF : Type := PLift (Nonempty MFType)
 
 namespace MF
+abbrev provider : MFType := MFProvider
 end MF
 
-def E : Type := Unit
-
 namespace E
+abbrev orderedType : OrderedType := EOrder
+abbrev t : Type := E
+abbrev eq : t → t → Prop := EOrder.eq
+abbrev lt : t → t → Prop := EOrder.lt
+abbrev compare := EOrder.compare
+abbrev eq_dec := EOrder.eq_dec
 end E
 
-def In (x : elt) (s : t) : Prop := x ∈ s
+abbrev elt : Type := Make.elt EOrder
+abbrev t : Type := Make.t EOrder
+abbrev Regset : Type := t
 
-def Equal (s s' : t) : Prop :=
-  ∀ x, In x s ↔ In x s'
+abbrev In : elt → t → Prop := Make.In (X := EOrder)
+abbrev Equal : t → t → Prop := Make.Equal (X := EOrder)
+abbrev Subset : t → t → Prop := Make.Subset (X := EOrder)
+abbrev Empty : t → Prop := Make.Empty (X := EOrder)
+abbrev For_all : (elt → Prop) → t → Prop := Make.For_all (X := EOrder)
+abbrev Exists : (elt → Prop) → t → Prop := Make.Exists (X := EOrder)
 
-def Subset (s s' : t) : Prop :=
-  ∀ x, In x s → In x s'
+abbrev empty : t := Make.empty (X := EOrder)
+abbrev is_empty : t → Bool := Make.is_empty (X := EOrder)
+abbrev mem : elt → t → Bool := Make.mem (X := EOrder)
+abbrev add : elt → t → t := Make.add (X := EOrder)
+abbrev singleton : elt → t := Make.singleton (X := EOrder)
+abbrev remove : elt → t → t := Make.remove (X := EOrder)
+abbrev union : t → t → t := Make.union (X := EOrder)
+abbrev inter : t → t → t := Make.inter (X := EOrder)
+abbrev diff : t → t → t := Make.diff (X := EOrder)
+abbrev eq : t → t → Prop := Make.eq (X := EOrder)
+abbrev eq_dec := Make.eq_dec (X := EOrder)
+abbrev equal : t → t → Bool := Make.equal (X := EOrder)
+abbrev subset : t → t → Bool := Make.subset (X := EOrder)
+abbrev fold {A : Type} (f : elt → A → A) (s : t) (i : A) : A :=
+  Make.fold (X := EOrder) f s i
+abbrev for_all : (elt → Bool) → t → Bool := Make.for_all (X := EOrder)
+abbrev exists_ : (elt → Bool) → t → Bool := Make.exists_ (X := EOrder)
+abbrev filter : (elt → Bool) → t → t := Make.filter (X := EOrder)
+abbrev partition : (elt → Bool) → t → t × t := Make.partition (X := EOrder)
+abbrev cardinal : t → Nat := Make.cardinal (X := EOrder)
+abbrev elements : t → List elt := Make.elements (X := EOrder)
+abbrev choose : t → Option elt := Make.choose (X := EOrder)
+abbrev lt : t → t → Prop := Make.lt (X := EOrder)
+abbrev min_elt : t → Option elt := Make.min_elt (X := EOrder)
+abbrev max_elt : t → Option elt := Make.max_elt (X := EOrder)
 
-def Empty (s : t) : Prop :=
-  ∀ x, ¬ In x s
-
-def For_all (P : elt → Prop) (s : t) : Prop :=
-  ∀ x, In x s → P x
-
-def Exists (P : elt → Prop) (s : t) : Prop :=
-  ∃ x, In x s ∧ P x
-
-def empty : t := []
-
-def is_empty : t → Bool
-  | [] => true
-  | _ :: _ => false
-
-def mem : elt → t → Bool
-  | _, [] => false
-  | x, y :: ys =>
-      match Reg.eq x y with
-      | .left _ => true
-      | .right _ => mem x ys
-
-def add : elt → t → t
-  | x, [] => [x]
-  | x, y :: ys =>
-      match PArith.BinPos.Pos.compare x y with
-      | .Lt => x :: y :: ys
-      | .Eq => y :: ys
-      | .Gt => y :: add x ys
-
-def singleton (x : elt) : t := [x]
-
-def remove : elt → t → t
-  | _, [] => []
-  | x, y :: ys =>
-      match PArith.BinPos.Pos.compare x y with
-      | .Lt => y :: ys
-      | .Eq => ys
-      | .Gt => y :: remove x ys
-
-def union (s s' : t) : t :=
-  s.foldr add s'
-
-def inter (s s' : t) : t :=
-  s.filter (fun x => mem x s')
-
-def diff (s s' : t) : t :=
-  s.filter (fun x => !(mem x s'))
-
-def eq (s s' : t) : Prop :=
-  s = s'
-
-private def listEq : (s s' : t) →
-    CompCert4Lean.Foundation.Logic.Support.Sumbool (s = s') (s ≠ s')
-  | [], [] => .left rfl
-  | [], _ :: _ => .right (by intro h; cases h)
-  | _ :: _, [] => .right (by intro h; cases h)
-  | x :: xs, y :: ys =>
-      match Reg.eq x y with
-      | .left hxy =>
-          match listEq xs ys with
-          | .left hxs => .left (by cases hxy; cases hxs; rfl)
-          | .right hxs => .right (by intro h; cases h; exact hxs rfl)
-      | .right hxy => .right (by intro h; cases h; exact hxy rfl)
-
-def eq_dec (s s' : t) :
-    CompCert4Lean.Foundation.Logic.Support.Sumbool (eq s s') (¬ eq s s') :=
-  listEq s s'
-
-def equal (s s' : t) : Bool :=
-  match eq_dec s s' with
-  | .left _ => true
-  | .right _ => false
-
-def subset (s s' : t) : Bool :=
-  s.all (fun x => mem x s')
-
-def fold {A : Type} (f : elt → A → A) (s : t) (i : A) : A :=
-  s.foldl (fun a e => f e a) i
-
-def for_all (f : elt → Bool) (s : t) : Bool :=
-  s.all f
-
-def exists_ (f : elt → Bool) (s : t) : Bool :=
-  s.any f
-
-def filter (f : elt → Bool) (s : t) : t :=
-  s.filter f
-
-private def partitionAux (f : elt → Bool) : t → t × t
-  | [] => ([], [])
-  | x :: xs =>
-      let rest := partitionAux f xs
-      if f x then (x :: rest.1, rest.2) else (rest.1, x :: rest.2)
-
-def partition (f : elt → Bool) (s : t) : t × t :=
-  partitionAux f s
-
-def cardinal (s : t) : Nat :=
-  s.length
-
-def elements (s : t) : List elt :=
-  s
-
-def choose : t → Option elt
-  | [] => none
-  | x :: _ => some x
-
-def lt (s s' : t) : Prop :=
-  s.length < s'.length
-
-def min_elt : t → Option elt
-  | [] => none
-  | x :: _ => some x
-
-def max_elt : t → Option elt
-  | [] => none
-  | [x] => some x
-  | _ :: xs => max_elt xs
-
-private def CompatBool (f : elt → Bool) : Prop :=
-  ∀ x y, x = y → f x = f y
+private abbrev CompatBool (f : elt → Bool) : Prop :=
+  CompCert4Lean.Lib.FSetInterface.compat_bool EOrder.eq f
 
 def In_1 : Prop :=
-  ∀ (s : t) (x y : elt), x = y → In x s → In y s
+  ∀ (s : t) (x y : elt), EOrder.eq x y → In x s → In y s
 
 def eq_refl : Prop :=
   ∀ s : t, eq s s
@@ -283,19 +255,19 @@ def is_empty_2 : Prop :=
   ∀ s : t, is_empty s = true → Empty s
 
 def add_1 : Prop :=
-  ∀ (s : t) (x y : elt), x = y → In y (add x s)
+  ∀ (s : t) (x y : elt), EOrder.eq x y → In y (add x s)
 
 def add_2 : Prop :=
   ∀ (s : t) (x y : elt), In y s → In y (add x s)
 
 def add_3 : Prop :=
-  ∀ (s : t) (x y : elt), x ≠ y → In y (add x s) → In y s
+  ∀ (s : t) (x y : elt), ¬ EOrder.eq x y → In y (add x s) → In y s
 
 def remove_1 : Prop :=
-  ∀ (s : t) (x y : elt), x = y → ¬ In y (remove x s)
+  ∀ (s : t) (x y : elt), EOrder.eq x y → ¬ In y (remove x s)
 
 def remove_2 : Prop :=
-  ∀ (s : t) (x y : elt), x ≠ y → In y s → In y (remove x s)
+  ∀ (s : t) (x y : elt), ¬ EOrder.eq x y → In y s → In y (remove x s)
 
 def remove_3 : Prop :=
   ∀ (s : t) (x y : elt), In y (remove x s) → In y s
@@ -328,10 +300,10 @@ def diff_3 : Prop :=
   ∀ (s s' : t) (x : elt), In x s → ¬ In x s' → In x (diff s s')
 
 def singleton_1 : Prop :=
-  ∀ x y : elt, In y (singleton x) → x = y
+  ∀ x y : elt, In y (singleton x) → EOrder.eq x y
 
 def singleton_2 : Prop :=
-  ∀ x y : elt, x = y → In y (singleton x)
+  ∀ x y : elt, EOrder.eq x y → In y (singleton x)
 
 def fold_1 : Prop :=
   ∀ (s : t) (A : Type) (i : A) (f : elt → A → A),
@@ -358,7 +330,8 @@ def for_all_1 : Prop :=
 
 def for_all_2 : Prop :=
   ∀ (s : t) (f : elt → Bool),
-    CompatBool f → for_all f s = true → For_all (fun x => f x = true) s
+    CompatBool f → for_all f s = true →
+      For_all (fun x => f x = true) s
 
 def exists_1 : Prop :=
   ∀ (s : t) (f : elt → Bool),
@@ -366,7 +339,8 @@ def exists_1 : Prop :=
 
 def exists_2 : Prop :=
   ∀ (s : t) (f : elt → Bool),
-    CompatBool f → exists_ f s = true → Exists (fun x => f x = true) s
+    CompatBool f → exists_ f s = true →
+      Exists (fun x => f x = true) s
 
 def partition_1 : Prop :=
   ∀ (s : t) (f : elt → Bool),
@@ -374,49 +348,50 @@ def partition_1 : Prop :=
 
 def partition_2 : Prop :=
   ∀ (s : t) (f : elt → Bool),
-    CompatBool f → Equal (partition f s).2 (filter (fun x => !(f x)) s)
+    CompatBool f →
+      Equal (partition f s).2 (filter (fun x => !(f x)) s)
 
 def choose_1 : Prop :=
   ∀ (s : t) (x : elt), choose s = some x → In x s
 
 def choose_2 : Prop :=
-  ∀ s : t, choose s = none → Empty s
+  ∀ (s : t), choose s = none → Empty s
 
 def elements_1 : Prop :=
-  ∀ (s : t) (x : elt), In x s → x ∈ elements s
+  ∀ (s : t) (x : elt), In x s →
+    CompCert4Lean.Lib.FSetInterface.InA EOrder.eq x (elements s)
 
 def elements_2 : Prop :=
-  ∀ (s : t) (x : elt), x ∈ elements s → In x s
+  ∀ (s : t) (x : elt),
+    CompCert4Lean.Lib.FSetInterface.InA EOrder.eq x (elements s) → In x s
 
 def elements_3w : Prop :=
-  ∀ s : t, (elements s).Nodup
+  ∀ s : t, CompCert4Lean.Lib.FSetInterface.NoDupA EOrder.eq (elements s)
 
 def min_elt_1 : Prop :=
   ∀ (s : t) (x : elt), min_elt s = some x → In x s
 
 def min_elt_2 : Prop :=
-  ∀ (s : t) (x y : elt),
-    min_elt s = some x → In y s → ¬ CompCert4Lean.Lib.Coqlib.Plt y x
+  ∀ (s : t) (x y : elt), min_elt s = some x → In y s → ¬ EOrder.lt y x
 
 def min_elt_3 : Prop :=
-  ∀ s : t, min_elt s = none → Empty s
+  ∀ (s : t), min_elt s = none → Empty s
 
 def max_elt_1 : Prop :=
   ∀ (s : t) (x : elt), max_elt s = some x → In x s
 
 def max_elt_2 : Prop :=
-  ∀ (s : t) (x y : elt),
-    max_elt s = some x → In y s → ¬ CompCert4Lean.Lib.Coqlib.Plt x y
+  ∀ (s : t) (x y : elt), max_elt s = some x → In y s → ¬ EOrder.lt x y
 
 def max_elt_3 : Prop :=
-  ∀ s : t, max_elt s = none → Empty s
+  ∀ (s : t), max_elt s = none → Empty s
 
 def elements_3 : Prop :=
-  ∀ s : t, (elements s).Pairwise CompCert4Lean.Lib.Coqlib.Plt
+  ∀ s : t, CompCert4Lean.Lib.FSetInterface.sort EOrder.lt (elements s)
 
 def choose_3 : Prop :=
   ∀ (s s' : t) (x y : elt),
-    choose s = some x → choose s' = some y → Equal s s' → x = y
+    choose s = some x → choose s' = some y → Equal s s' → EOrder.eq x y
 
 def lt_trans : Prop :=
   ∀ s s' s'' : t, lt s s' → lt s' s'' → lt s s''
@@ -424,10 +399,9 @@ def lt_trans : Prop :=
 def lt_not_eq : Prop :=
   ∀ s s' : t, lt s s' → ¬ eq s s'
 
+/- The generated comparison member is retained as its exact type descriptor. -/
 def compare : Type :=
-  ∀ s s' : t,
-    CompCert4Lean.Foundation.Ordered.Rocq.Coq.Structures.OrderedType.Compare
-      lt eq s s'
+  ∀ s s' : t, CompCert4Lean.Lib.FSetInterface.Compare lt eq s s'
 
 end Regset
 
@@ -443,9 +417,12 @@ kept distinct from the preorder record.
 
 namespace RegsetFacts
 
-def RegsetFacts : Type := Unit
+abbrev RegsetFacts := Regset.MFType
 
-def eqb (x y : Regset.elt) : Bool := decide (x = y)
+def eqb (x y : Regset.elt) : Bool :=
+  match Regset.E.eq_dec x y with
+  | .left _ => true
+  | .right _ => false
 
 def existsb (f : Regset.elt → Bool) (s : List Regset.elt) : Bool :=
   s.any f
