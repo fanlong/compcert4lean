@@ -169,8 +169,7 @@ inductive tr_function : program → function → function → Prop where
     f'.fn_sig = f.fn_sig →
     f'.fn_params = sregs ctx f.fn_params →
     f'.fn_entrypoint = spc ctx f.fn_entrypoint →
-    zLe Z0 f'.fn_stacksize →
-    zLt f'.fn_stacksize Ptrofs.max_unsigned →
+    (zLe Z0 f'.fn_stacksize ∧ zLt f'.fn_stacksize Ptrofs.max_unsigned) →
     tr_function p f f'
 
 export tr_instr (tr_builtin tr_call tr_call_inlined tr_cond tr_jumptable tr_load
