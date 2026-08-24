@@ -50,6 +50,8 @@ private abbrev zLt := ZArith.BinInt.Z.lt
 private abbrev zLe := ZArith.BinInt.Z.le
 private abbrev zGt := ZArith.BinInt.Z.gt
 private abbrev comparison := CompCert4Lean.Lib.Integers.comparison
+private abbrev BinaryNormalizeCertificate :=
+  CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
 
 private def zltBool (x y : Z) : Bool :=
   match zlt x y with
@@ -88,16 +90,16 @@ private abbrev shru := CompCert4Lean.Lib.Integers.Int.shru
 private abbrev shr := CompCert4Lean.Lib.Integers.Int.shr
 private def modu (x y : CCInt) : CCInt := Int.sub x (Int.mul (Int.divu x y) y)
 private def mods (x y : CCInt) : CCInt := Int.sub x (Int.mul (Int.divs x y) y)
-private def zero_ext (n : Z) (x : CCInt) : CCInt :=
-  Int.repr (ZArith.BinInt.Z.modulo (Int.unsigned x) (ZArith.Zpower.two_p n))
+private abbrev zero_ext := CompCert4Lean.Lib.Integers.Int.zero_ext
 private abbrev sign_ext := CompCert4Lean.Lib.Integers.Int.sign_ext
 private def unsigned_bitfield_extract (pos width : Z) (c : CCInt) : CCInt :=
-  Int.zero_ext width (Int.shr c (Int.repr pos))
+  Int.zero_ext width (Int.shru c (Int.repr pos))
 private def signed_bitfield_extract (pos width : Z) (c : CCInt) : CCInt :=
-  Int.sign_ext width (Int.shr c (Int.repr pos))
+  Int.sign_ext width (Int.shru c (Int.repr pos))
 private def bitfield_insert (pos width : Z) (c n : CCInt) : CCInt :=
-  Int.or (Int.and c (Int.not (Int.shl (Int.one) (Int.repr width))))
-    (Int.shl (Int.zero_ext width n) (Int.repr pos))
+  let mask := Int.shl (Int.repr (zSub (ZArith.Zpower.two_p width) z1)) (Int.repr pos)
+  Int.or (Int.shl (Int.zero_ext width n) (Int.repr pos))
+    (Int.and c (Int.not mask))
 private def cmpWord (c : comparison) (eqv ltv gtv : Bool) : Bool :=
   match c with
   | .Ceq => eqv
@@ -328,20 +330,24 @@ def cast_int_int (sz : intsize) (sg : signedness) (i : CCInt) : CCInt :=
   | .I32, _ => i
   | .IBool, _ => if boolEqInt i Int.zero then Int.zero else Int.one
 
-def cast_int_float (si : signedness) (i : CCInt) : CCFloat :=
+def cast_int_float
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    (si : signedness) (i : CCInt) : CCFloat :=
   match si with
-  | .Signed => Float.of_int i
-  | .Unsigned => Float.of_intu i
+  | .Signed => Float.of_int (certificate := binary64_certificate) i
+  | .Unsigned => Float.of_intu (certificate := binary64_certificate) i
 
 def cast_float_int (si : signedness) (f : CCFloat) : Option CCInt :=
   match si with
   | .Signed => Float.to_int f
   | .Unsigned => Float.to_intu f
 
-def cast_int_single (si : signedness) (i : CCInt) : CCFloat32 :=
+def cast_int_single
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (si : signedness) (i : CCInt) : CCFloat32 :=
   match si with
-  | .Signed => Float32.of_int i
-  | .Unsigned => Float32.of_intu i
+  | .Signed => Float32.of_int (certificate := binary32_certificate) i
+  | .Unsigned => Float32.of_intu (certificate := binary32_certificate) i
 
 def cast_single_int (si : signedness) (f : CCFloat32) : Option CCInt :=
   match si with
@@ -353,15 +359,19 @@ def cast_int_long (si : signedness) (i : CCInt) : CCInt64 :=
   | .Signed => Int64.repr (Int.signed i)
   | .Unsigned => Int64.repr (Int.unsigned i)
 
-def cast_long_float (si : signedness) (i : CCInt64) : CCFloat :=
+def cast_long_float
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    (si : signedness) (i : CCInt64) : CCFloat :=
   match si with
-  | .Signed => Float.of_long i
-  | .Unsigned => Float.of_longu i
+  | .Signed => Float.of_long (certificate := binary64_certificate) i
+  | .Unsigned => Float.of_longu (certificate := binary64_certificate) i
 
-def cast_long_single (si : signedness) (i : CCInt64) : CCFloat32 :=
+def cast_long_single
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (si : signedness) (i : CCInt64) : CCFloat32 :=
   match si with
-  | .Signed => Float32.of_long i
-  | .Unsigned => Float32.of_longu i
+  | .Signed => Float32.of_long (certificate := binary32_certificate) i
+  | .Unsigned => Float32.of_longu (certificate := binary32_certificate) i
 
 def cast_float_long (si : signedness) (f : CCFloat) : Option CCInt64 :=
   match si with
@@ -373,7 +383,10 @@ def cast_single_long (si : signedness) (f : CCFloat32) : Option CCInt64 :=
   | .Signed => Float32.to_long f
   | .Unsigned => Float32.to_longu f
 
-def sem_cast (v : val) (t1 t2 : type) (m : mem) : Option val :=
+def sem_cast
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (v : val) (t1 t2 : type) (m : mem) : Option val :=
   match classify_cast t1 t2 with
   | .cast_case_pointer =>
       match v with
@@ -387,8 +400,8 @@ def sem_cast (v : val) (t1 t2 : type) (m : mem) : Option val :=
   | .cast_case_s2s => match v with | .Vsingle f => some (.Vsingle f) | _ => none
   | .cast_case_s2f => match v with | .Vsingle f => some (.Vfloat (Float.of_single f)) | _ => none
   | .cast_case_f2s => match v with | .Vfloat f => some (.Vsingle (Float.to_single f)) | _ => none
-  | .cast_case_i2f si1 => match v with | .Vint i => some (.Vfloat (cast_int_float si1 i)) | _ => none
-  | .cast_case_i2s si1 => match v with | .Vint i => some (.Vsingle (cast_int_single si1 i)) | _ => none
+  | .cast_case_i2f si1 => match v with | .Vint i => some (.Vfloat (cast_int_float (binary64_certificate := binary64_certificate) si1 i)) | _ => none
+  | .cast_case_i2s si1 => match v with | .Vint i => some (.Vsingle (cast_int_single (binary32_certificate := binary32_certificate) si1 i)) | _ => none
   | .cast_case_f2i sz2 si2 =>
       match v with
       | .Vfloat f => (cast_float_int si2 f).map (fun i => .Vint (cast_int_int sz2 si2 i))
@@ -418,8 +431,8 @@ def sem_cast (v : val) (t1 t2 : type) (m : mem) : Option val :=
   | .cast_case_l2l => match v with | .Vlong n => some (.Vlong n) | _ => none
   | .cast_case_i2l si => match v with | .Vint n => some (.Vlong (cast_int_long si n)) | _ => none
   | .cast_case_l2i sz si => match v with | .Vlong n => some (.Vint (cast_int_int sz si (Int.repr (Int64.unsigned n)))) | _ => none
-  | .cast_case_l2f si1 => match v with | .Vlong i => some (.Vfloat (cast_long_float si1 i)) | _ => none
-  | .cast_case_l2s si1 => match v with | .Vlong i => some (.Vsingle (cast_long_single si1 i)) | _ => none
+  | .cast_case_l2f si1 => match v with | .Vlong i => some (.Vfloat (cast_long_float (binary64_certificate := binary64_certificate) si1 i)) | _ => none
+  | .cast_case_l2s si1 => match v with | .Vlong i => some (.Vsingle (cast_long_single (binary32_certificate := binary32_certificate) si1 i)) | _ => none
   | .cast_case_f2l si2 => match v with | .Vfloat f => (cast_float_long si2 f).map .Vlong | _ => none
   | .cast_case_s2l si2 => match v with | .Vsingle f => (cast_single_long si2 f).map .Vlong | _ => none
   | .cast_case_struct id1 id2 => match v with | .Vptr _ _ => if identEq id1 id2 then some v else none | _ => none
@@ -490,12 +503,14 @@ def sem_neg (v : val) (ty : type) : Option val :=
   | .neg_case_l _ => match v with | .Vlong n => some (.Vlong (Int64.neg n)) | _ => none
   | .neg_default => none
 
-def sem_absfloat (v : val) (ty : type) : Option val :=
+def sem_absfloat
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    (v : val) (ty : type) : Option val :=
   match classify_neg ty with
-  | .neg_case_i sg => match v with | .Vint n => some (.Vfloat (Float.abs (cast_int_float sg n))) | _ => none
+  | .neg_case_i sg => match v with | .Vint n => some (.Vfloat (Float.abs (cast_int_float (binary64_certificate := binary64_certificate) sg n))) | _ => none
   | .neg_case_f => match v with | .Vfloat f => some (.Vfloat (Float.abs f)) | _ => none
   | .neg_case_s => match v with | .Vsingle f => some (.Vfloat (Float.abs (Float.of_single f))) | _ => none
-  | .neg_case_l sg => match v with | .Vlong n => some (.Vfloat (Float.abs (cast_long_float sg n))) | _ => none
+  | .neg_case_l sg => match v with | .Vlong n => some (.Vfloat (Float.abs (cast_long_float (binary64_certificate := binary64_certificate) sg n))) | _ => none
   | .neg_default => none
 
 inductive classify_notint_cases : Type where
@@ -559,6 +574,8 @@ def binarith_type (c : binarith_cases) : type :=
   | .bin_default => .Tvoid
 
 def sem_binarith
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
     (sem_int : signedness → CCInt → CCInt → Option val)
     (sem_long : signedness → CCInt64 → CCInt64 → Option val)
     (sem_float : CCFloat → CCFloat → Option val)
@@ -566,10 +583,12 @@ def sem_binarith
     (v1 : val) (t1 : type) (v2 : val) (t2 : type) (m : mem) : Option val :=
   let c := classify_binarith t1 t2
   let t := binarith_type c
-  match sem_cast v1 t1 t m with
+  match sem_cast (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) v1 t1 t m with
   | none => none
   | some v1' =>
-      match sem_cast v2 t2 t m with
+      match sem_cast (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate) v2 t2 t m with
       | none => none
       | some v2' =>
           match c with
@@ -625,14 +644,18 @@ def sem_add_ptr_long (cenv : composite_env) (ty : type) (v1 v2 : val) : Option v
       if CompCert4Lean.X86_64.Archi.ptr64 then some (.Vlong (Int64.add n1 (Int64.mul (Int64.repr (sizeof cenv ty)) n2))) else none
   | _, _ => none
 
-def sem_add (cenv : composite_env) (v1 : val) (t1 : type) (v2 : val) (t2 : type) (m : mem) : Option val :=
+def sem_add
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (cenv : composite_env) (v1 : val) (t1 : type) (v2 : val) (t2 : type) (m : mem) : Option val :=
   match classify_add t1 t2 with
   | .add_case_pi ty si => sem_add_ptr_int cenv ty si v1 v2
   | .add_case_pl ty => sem_add_ptr_long cenv ty v1 v2
   | .add_case_ip si ty => sem_add_ptr_int cenv ty si v2 v1
   | .add_case_lp ty => sem_add_ptr_long cenv ty v2 v1
   | .add_default =>
-      sem_binarith
+      sem_binarith (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
         (fun _ n1 n2 => some (.Vint (Int.add n1 n2)))
         (fun _ n1 n2 => some (.Vlong (Int64.add n1 n2)))
         (fun n1 n2 => some (.Vfloat (Float.add n1 n2)))
@@ -654,7 +677,10 @@ def classify_sub (ty1 ty2 : type) : classify_sub_cases :=
   | .Tpointer ty _, .Tlong _ _ => .sub_case_pl ty
   | _, _ => .sub_default
 
-def sem_sub (cenv : composite_env) (v1 : val) (t1 : type) (v2 : val) (t2 : type) (m : mem) : Option val :=
+def sem_sub
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (cenv : composite_env) (v1 : val) (t1 : type) (v2 : val) (t2 : type) (m : mem) : Option val :=
   match classify_sub t1 t2 with
   | .sub_case_pi ty si =>
       match v1, v2 with
@@ -689,22 +715,31 @@ def sem_sub (cenv : composite_env) (v1 : val) (t1 : type) (v2 : val) (t2 : type)
           else none
       | _, _ => none
   | .sub_default =>
-      sem_binarith
+      sem_binarith (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
         (fun _ n1 n2 => some (.Vint (Int.sub n1 n2)))
         (fun _ n1 n2 => some (.Vlong (Int64.sub n1 n2)))
         (fun n1 n2 => some (.Vfloat (Float.sub n1 n2)))
         (fun n1 n2 => some (.Vsingle (Float32.sub n1 n2)))
         v1 t1 v2 t2 m
 
-def sem_mul (v1 : val) (t1 : type) (v2 : val) (t2 : type) (m : mem) : Option val :=
-  sem_binarith
+def sem_mul
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (v1 : val) (t1 : type) (v2 : val) (t2 : type) (m : mem) : Option val :=
+  sem_binarith (binary64_certificate := binary64_certificate)
+    (binary32_certificate := binary32_certificate)
     (fun _ n1 n2 => some (.Vint (Int.mul n1 n2)))
     (fun _ n1 n2 => some (.Vlong (Int64.mul n1 n2)))
     (fun n1 n2 => some (.Vfloat (Float.mul n1 n2)))
     (fun n1 n2 => some (.Vsingle (Float32.mul n1 n2))) v1 t1 v2 t2 m
 
-def sem_div (v1 : val) (t1 : type) (v2 : val) (t2 : type) (m : mem) : Option val :=
-  sem_binarith
+def sem_div
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (v1 : val) (t1 : type) (v2 : val) (t2 : type) (m : mem) : Option val :=
+  sem_binarith (binary64_certificate := binary64_certificate)
+    (binary32_certificate := binary32_certificate)
     (fun sg n1 n2 => match sg with
       | .Signed => if boolEqInt n2 Int.zero || (boolEqInt n1 (Int.repr Int.min_signed) && boolEqInt n2 Int.mone) then none else some (.Vint (Int.divs n1 n2))
       | .Unsigned => if boolEqInt n2 Int.zero then none else some (.Vint (Int.divu n1 n2)))
@@ -714,8 +749,12 @@ def sem_div (v1 : val) (t1 : type) (v2 : val) (t2 : type) (m : mem) : Option val
     (fun n1 n2 => some (.Vfloat (Float.div n1 n2)))
     (fun n1 n2 => some (.Vsingle (Float32.div n1 n2))) v1 t1 v2 t2 m
 
-def sem_mod (v1 : val) (t1 : type) (v2 : val) (t2 : type) (m : mem) : Option val :=
-  sem_binarith
+def sem_mod
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (v1 : val) (t1 : type) (v2 : val) (t2 : type) (m : mem) : Option val :=
+  sem_binarith (binary64_certificate := binary64_certificate)
+    (binary32_certificate := binary32_certificate)
     (fun sg n1 n2 => match sg with
       | .Signed => if boolEqInt n2 Int.zero || (boolEqInt n1 (Int.repr Int.min_signed) && boolEqInt n2 Int.mone) then none else some (.Vint (Int.mods n1 n2))
       | .Unsigned => if boolEqInt n2 Int.zero then none else some (.Vint (Int.modu n1 n2)))
@@ -724,14 +763,26 @@ def sem_mod (v1 : val) (t1 : type) (v2 : val) (t2 : type) (m : mem) : Option val
       | .Unsigned => if boolEqInt64 n2 Int64.zero then none else some (.Vlong (Int64.modu n1 n2)))
     (fun _ _ => none) (fun _ _ => none) v1 t1 v2 t2 m
 
-def sem_and (v1 : val) (t1 : type) (v2 : val) (t2 : type) (m : mem) : Option val :=
-  sem_binarith (fun _ n1 n2 => some (.Vint (Int.and n1 n2))) (fun _ n1 n2 => some (.Vlong (Int64.and n1 n2))) (fun _ _ => none) (fun _ _ => none) v1 t1 v2 t2 m
+def sem_and
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (v1 : val) (t1 : type) (v2 : val) (t2 : type) (m : mem) : Option val :=
+  sem_binarith (binary64_certificate := binary64_certificate)
+    (binary32_certificate := binary32_certificate) (fun _ n1 n2 => some (.Vint (Int.and n1 n2))) (fun _ n1 n2 => some (.Vlong (Int64.and n1 n2))) (fun _ _ => none) (fun _ _ => none) v1 t1 v2 t2 m
 
-def sem_or (v1 : val) (t1 : type) (v2 : val) (t2 : type) (m : mem) : Option val :=
-  sem_binarith (fun _ n1 n2 => some (.Vint (Int.or n1 n2))) (fun _ n1 n2 => some (.Vlong (Int64.or n1 n2))) (fun _ _ => none) (fun _ _ => none) v1 t1 v2 t2 m
+def sem_or
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (v1 : val) (t1 : type) (v2 : val) (t2 : type) (m : mem) : Option val :=
+  sem_binarith (binary64_certificate := binary64_certificate)
+    (binary32_certificate := binary32_certificate) (fun _ n1 n2 => some (.Vint (Int.or n1 n2))) (fun _ n1 n2 => some (.Vlong (Int64.or n1 n2))) (fun _ _ => none) (fun _ _ => none) v1 t1 v2 t2 m
 
-def sem_xor (v1 : val) (t1 : type) (v2 : val) (t2 : type) (m : mem) : Option val :=
-  sem_binarith (fun _ n1 n2 => some (.Vint (Int.xor n1 n2))) (fun _ n1 n2 => some (.Vlong (Int64.xor n1 n2))) (fun _ _ => none) (fun _ _ => none) v1 t1 v2 t2 m
+def sem_xor
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (v1 : val) (t1 : type) (v2 : val) (t2 : type) (m : mem) : Option val :=
+  sem_binarith (binary64_certificate := binary64_certificate)
+    (binary32_certificate := binary32_certificate) (fun _ n1 n2 => some (.Vint (Int.xor n1 n2))) (fun _ n1 n2 => some (.Vlong (Int64.xor n1 n2))) (fun _ _ => none) (fun _ _ => none) v1 t1 v2 t2 m
 
 inductive classify_shift_cases : Type where
   | shift_case_ii (s : signedness)
@@ -802,7 +853,10 @@ def classify_cmp (ty1 ty2 : type) : classify_cmp_cases :=
 def cmp_ptr (m : mem) (c : comparison) (v1 v2 : val) : Option val :=
   ((if CompCert4Lean.X86_64.Archi.ptr64 then Val.cmplu_bool (Mem.valid_pointer m) c v1 v2 else Val.cmpu_bool (Mem.valid_pointer m) c v1 v2).map Val.of_bool)
 
-def sem_cmp (c : comparison) (v1 : val) (t1 : type) (v2 : val) (t2 : type) (m : mem) : Option val :=
+def sem_cmp
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (c : comparison) (v1 : val) (t1 : type) (v2 : val) (t2 : type) (m : mem) : Option val :=
   match classify_cmp t1 t2 with
   | .cmp_case_pp => cmp_ptr m c v1 v2
   | .cmp_case_pi si =>
@@ -826,7 +880,8 @@ def sem_cmp (c : comparison) (v1 : val) (t1 : type) (v2 : val) (t2 : type) (m : 
       | .Vptr _ _ => if CompCert4Lean.X86_64.Archi.ptr64 then cmp_ptr m c v1 v2 else none
       | _ => none
   | .cmp_default =>
-      sem_binarith
+      sem_binarith (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
         (fun sg n1 n2 => some (Val.of_bool (match sg with | .Signed => Int.cmp c n1 n2 | .Unsigned => Int.cmpu c n1 n2)))
         (fun sg n1 n2 => some (Val.of_bool (match sg with | .Signed => Int64.cmp c n1 n2 | .Unsigned => Int64.cmpu c n1 n2)))
         (fun n1 n2 => some (Val.of_bool (Float.cmp c n1 n2)))
@@ -863,38 +918,61 @@ def sem_switch_arg (v : val) (ty : type) : Option Z :=
   | .switch_case_l => match v with | .Vlong n => some (Int64.unsigned n) | _ => none
   | .switch_default => none
 
-def sem_unary_operation (op : unary_operation) (v : val) (ty : type) (m : mem) : Option val :=
+def sem_unary_operation
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    (op : unary_operation) (v : val) (ty : type) (m : mem) : Option val :=
   match op with
   | .Onotbool => sem_notbool v ty m
   | .Onotint => sem_notint v ty
   | .Oneg => sem_neg v ty
-  | .Oabsfloat => sem_absfloat v ty
+  | .Oabsfloat => sem_absfloat (binary64_certificate := binary64_certificate) v ty
 
 def sem_binary_operation
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
     (cenv : composite_env) (op : binary_operation)
     (v1 : val) (t1 : type) (v2 : val) (t2 : type) (m : mem) : Option val :=
   match op with
-  | .Oadd => sem_add cenv v1 t1 v2 t2 m
-  | .Osub => sem_sub cenv v1 t1 v2 t2 m
-  | .Omul => sem_mul v1 t1 v2 t2 m
-  | .Odiv => sem_div v1 t1 v2 t2 m
-  | .Omod => sem_mod v1 t1 v2 t2 m
-  | .Oand => sem_and v1 t1 v2 t2 m
-  | .Oor => sem_or v1 t1 v2 t2 m
-  | .Oxor => sem_xor v1 t1 v2 t2 m
+  | .Oadd => sem_add (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) cenv v1 t1 v2 t2 m
+  | .Osub => sem_sub (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) cenv v1 t1 v2 t2 m
+  | .Omul => sem_mul (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) v1 t1 v2 t2 m
+  | .Odiv => sem_div (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) v1 t1 v2 t2 m
+  | .Omod => sem_mod (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) v1 t1 v2 t2 m
+  | .Oand => sem_and (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) v1 t1 v2 t2 m
+  | .Oor => sem_or (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) v1 t1 v2 t2 m
+  | .Oxor => sem_xor (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) v1 t1 v2 t2 m
   | .Oshl => sem_shl v1 t1 v2 t2
   | .Oshr => sem_shr v1 t1 v2 t2
-  | .Oeq => sem_cmp Ceq v1 t1 v2 t2 m
-  | .One => sem_cmp Cne v1 t1 v2 t2 m
-  | .Olt => sem_cmp Clt v1 t1 v2 t2 m
-  | .Ogt => sem_cmp Cgt v1 t1 v2 t2 m
-  | .Ole => sem_cmp Cle v1 t1 v2 t2 m
-  | .Oge => sem_cmp Cge v1 t1 v2 t2 m
+  | .Oeq => sem_cmp (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) Ceq v1 t1 v2 t2 m
+  | .One => sem_cmp (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) Cne v1 t1 v2 t2 m
+  | .Olt => sem_cmp (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) Clt v1 t1 v2 t2 m
+  | .Ogt => sem_cmp (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) Cgt v1 t1 v2 t2 m
+  | .Ole => sem_cmp (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) Cle v1 t1 v2 t2 m
+  | .Oge => sem_cmp (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) Cge v1 t1 v2 t2 m
 
-def sem_incrdecr (cenv : composite_env) (id : incr_or_decr) (v : val) (ty : type) (m : mem) : Option val :=
+def sem_incrdecr
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (cenv : composite_env) (id : incr_or_decr) (v : val) (ty : type) (m : mem) : Option val :=
   match id with
-  | .Incr => sem_add cenv v ty (.Vint Int.one) type_int32s m
-  | .Decr => sem_sub cenv v ty (.Vint Int.one) type_int32s m
+  | .Incr => sem_add (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) cenv v ty (.Vint Int.one) type_int32s m
+  | .Decr => sem_sub (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) cenv v ty (.Vint Int.one) type_int32s m
 
 def incrdecr_type (ty : type) : type :=
   match typeconv ty with
@@ -1015,7 +1093,9 @@ export val_casted (val_casted_int val_casted_float val_casted_single val_casted_
 
 /-! Later-proof exact statement descriptors. -/
 
-def sem_cast_injStatement : Prop :=
+def sem_cast_injStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (f : meminj) (m m' : mem),
     (∀ b1 ofs b2 delta,
       f b1 = some (b2, delta) →
@@ -1037,7 +1117,8 @@ def bool_val_injStatement : Prop :=
       Val.inject f v tv →
       bool_val tv ty m' = some b
 
-def sem_unary_operation_injStatement : Prop :=
+def sem_unary_operation_injStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)] : Prop :=
   ∀ (f : meminj) (m m' : mem),
     (∀ b1 ofs b2 delta,
       f b1 = some (b2, delta) →
@@ -1048,7 +1129,9 @@ def sem_unary_operation_injStatement : Prop :=
       Val.inject f v1 tv1 →
       ∃ tv, sem_unary_operation op tv1 ty m' = some tv ∧ Val.inject f v tv
 
-def sem_binarith_injectStatement : Prop :=
+def sem_binarith_injectStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (f : meminj) (m m' : mem),
     (∀ b1 ofs b2 delta,
       f b1 = some (b2, delta) →
@@ -1105,7 +1188,9 @@ def sem_cmp_ptr_injStatement : Prop :=
     Val.inject f v1 tv1 → Val.inject f v2 tv2 →
     ∃ tv, cmp_ptr m' c tv1 tv2 = some tv ∧ Val.inject f v tv
 
-def sem_cmp_injStatement : Prop :=
+def sem_cmp_injStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (f : meminj) (m m'),
     (∀ b1 ofs b2 delta,
       f b1 = some (b2, delta) →
@@ -1134,7 +1219,9 @@ def sem_cmp_injStatement : Prop :=
     Val.inject f v1 tv1 → Val.inject f v2 tv2 →
     ∃ tv, sem_cmp cmp tv1 ty1 tv2 ty2 m' = some tv ∧ Val.inject f v tv
 
-def sem_binary_operation_injStatement : Prop :=
+def sem_binary_operation_injStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (f : meminj) (m m'),
     (∀ b1 ofs b2 delta,
       f b1 = some (b2, delta) →
@@ -1163,7 +1250,9 @@ def sem_binary_operation_injStatement : Prop :=
     Val.inject f v1 tv1 → Val.inject f v2 tv2 →
     ∃ tv, sem_binary_operation cenv op tv1 ty1 tv2 ty2 m' = some tv ∧ Val.inject f v tv
 
-def sem_cast_injectStatement : Prop :=
+def sem_cast_injectStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (f : meminj) (v1 : val) (ty1 ty : type) (m : mem)
     (v tv1 : val) (tm : mem),
     sem_cast v1 ty1 ty m = some v →
@@ -1171,14 +1260,17 @@ def sem_cast_injectStatement : Prop :=
     Mem.inject f m tm →
     ∃ tv, sem_cast tv1 ty1 ty tm = some tv ∧ Val.inject f v tv
 
-def sem_unary_operation_injectStatement : Prop :=
+def sem_unary_operation_injectStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)] : Prop :=
   ∀ (f : meminj) (m m' : mem) op v1 ty1 v tv1,
     sem_unary_operation op v1 ty1 m = some v →
     Val.inject f v1 tv1 →
     Mem.inject f m m' →
     ∃ tv, sem_unary_operation op tv1 ty1 m' = some tv ∧ Val.inject f v tv
 
-def sem_binary_operation_injectStatement : Prop :=
+def sem_binary_operation_injectStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (f : meminj) (m m' : mem) cenv op v1 ty1 v2 ty2 v tv1 tv2,
     sem_binary_operation cenv op v1 ty1 v2 ty2 m = some v →
     Val.inject f v1 tv1 → Val.inject f v2 tv2 →
@@ -1189,13 +1281,19 @@ def bool_val_injectStatement : Prop :=
   ∀ (f : meminj) (m m' : mem) v ty b tv,
     bool_val v ty m = some b → Val.inject f v tv → Mem.inject f m m' → bool_val tv ty m' = some b
 
-def cast_val_is_castedStatement : Prop :=
+def cast_val_is_castedStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ v ty ty' v' m, sem_cast v ty ty' m = some v' → val_casted v' ty'
 
-def cast_val_castedStatement : Prop :=
+def cast_val_castedStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ v ty m, val_casted v ty → sem_cast v ty ty m = some v
 
-def cast_idempotentStatement : Prop :=
+def cast_idempotentStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ v ty ty' v' m, sem_cast v ty ty' m = some v' → sem_cast v' ty' ty' m = some v'
 
 def val_casted_has_argtypeStatement : Prop :=
