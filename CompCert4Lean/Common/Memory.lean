@@ -40,6 +40,13 @@ private abbrev zDivide := ZArith.BinInt.Z.divide
 private abbrev posSucc := PArith.BinPos.Pos.succ
 private abbrev posLt := PArith.BinPos.Pos.lt
 
+private theorem intOfZ_add_one (x : Z) :
+    intOfZ (zAdd x z1) = intOfZ x + 1 := by
+  change intOfZ (ZArith.BinInt.Z.add x z1) = intOfZ x + 1
+  change intOfZ (zOfInt (intOfZ x + intOfZ z1)) = intOfZ x + 1
+  rw [intOfZ_zOfInt]
+  rfl
+
 private def boolOfSumbool {P Q : Prop} (d : Sumbool P Q) : Bool :=
   match d with
   | .left _ => true
@@ -117,6 +124,25 @@ def perm_order' (po : Option permission) (p : permission) : Prop :=
   | some p' => perm_order p' p
   | none => False
 
+def perm_order_dec : ∀ p1 p2, Sumbool (perm_order p1 p2) (¬ perm_order p1 p2)
+  | Freeable, p => .left (perm_F_any p)
+  | Writable, Freeable => .right (by intro h; cases h)
+  | Writable, Writable => .left (perm_refl Writable)
+  | Writable, Readable => .left perm_W_R
+  | Writable, Memtype.Nonempty => .left (perm_any_N Writable)
+  | Readable, Freeable => .right (by intro h; cases h)
+  | Readable, Writable => .right (by intro h; cases h)
+  | Readable, Readable => .left (perm_refl Readable)
+  | Readable, Memtype.Nonempty => .left (perm_any_N Readable)
+  | Memtype.Nonempty, Freeable => .right (by intro h; cases h)
+  | Memtype.Nonempty, Writable => .right (by intro h; cases h)
+  | Memtype.Nonempty, Readable => .right (by intro h; cases h)
+  | Memtype.Nonempty, Memtype.Nonempty => .left (perm_refl Memtype.Nonempty)
+
+def perm_order'_dec : ∀ op p, Sumbool (perm_order' op p) (¬ perm_order' op p)
+  | some p', p => perm_order_dec p' p
+  | none, _ => .right (by intro h; exact h)
+
 def perm_order'' (po1 po2 : Option permission) : Prop :=
   match po1, po2 with
   | some p1, some p2 => perm_order p1 p2
@@ -143,50 +169,157 @@ def valid_block (m : mem) (b : block) : Prop :=
 def perm (m : mem) (b : block) (ofs : Z) (k : perm_kind) (p : permission) : Prop :=
   perm_order' ((PMap.get b m.mem_access) ofs k) p
 
+def perm_dec : ∀ m b ofs k p, Sumbool (perm m b ofs k p) (¬ perm m b ofs k p)
+  | m, b, ofs, k, p => perm_order'_dec ((PMap.get b m.mem_access) ofs k) p
+
 def range_perm (m : mem) (b : block) (lo hi : Z) (k : perm_kind)
     (p : permission) : Prop :=
   ∀ ofs, zLe lo ofs ∧ zLt ofs hi → perm m b ofs k p
+
+private theorem range_perm_vacuous (m : mem) (b : block) (lo hi : Z)
+    (k : perm_kind) (p : permission) (hge : zLe hi lo) :
+    range_perm m b lo hi k p := by
+  intro ofs hof
+  change intOfZ hi ≤ intOfZ lo at hge
+  change intOfZ lo ≤ intOfZ ofs ∧ intOfZ ofs < intOfZ hi at hof
+  exfalso
+  omega
+
+private theorem zToNat_sub_succ (lo hi : Z) (hlt : zLt lo hi) :
+    zToNat (zSub hi (zAdd lo z1)) + 1 = zToNat (zSub hi lo) := by
+  change intOfZ lo < intOfZ hi at hlt
+  have hsub_next : intOfZ (zSub hi (zAdd lo z1)) =
+      intOfZ hi - (intOfZ lo + 1) := by
+    change intOfZ (zOfInt (intOfZ hi - intOfZ (zAdd lo z1))) =
+      intOfZ hi - (intOfZ lo + 1)
+    rw [intOfZ_zOfInt, intOfZ_add_one]
+  have hsub : intOfZ (zSub hi lo) = intOfZ hi - intOfZ lo := by
+    change intOfZ (zOfInt (intOfZ hi - intOfZ lo)) = intOfZ hi - intOfZ lo
+    rw [intOfZ_zOfInt]
+  change Int.toNat (intOfZ (zSub hi (zAdd lo z1))) + 1 =
+    Int.toNat (intOfZ (zSub hi lo))
+  rw [hsub_next, hsub]
+  have hnonneg_next : 0 ≤ intOfZ hi - (intOfZ lo + 1) := by omega
+  have hnonneg : 0 ≤ intOfZ hi - intOfZ lo := by omega
+  have hn1 := Int.toNat_of_nonneg hnonneg_next
+  have hn2 := Int.toNat_of_nonneg hnonneg
+  change Int.toNat (intOfZ hi - (intOfZ lo + 1)) + 1 =
+    Int.toNat (intOfZ hi - intOfZ lo)
+  have hcast1 : (↑(Int.toNat (intOfZ hi - (intOfZ lo + 1))) : Int) =
+      intOfZ hi - (intOfZ lo + 1) := hn1
+  have hcast2 : (↑(Int.toNat (intOfZ hi - intOfZ lo)) : Int) =
+      intOfZ hi - intOfZ lo := hn2
+  omega
+
+private def range_perm_dec_aux (m : mem) (b : block) (hi : Z) (k : perm_kind)
+    (p : permission) (lo : Z) : (fuel : Nat) →
+      zToNat (zSub hi lo) = fuel →
+      Sumbool (range_perm m b lo hi k p) (¬ range_perm m b lo hi k p)
+  | 0, hfuel =>
+      match zlt lo hi with
+      | .left hlt =>
+          False.elim (by
+            have hsub : intOfZ (zSub hi lo) = intOfZ hi - intOfZ lo := by
+              change intOfZ (zOfInt (intOfZ hi - intOfZ lo)) = intOfZ hi - intOfZ lo
+              rw [intOfZ_zOfInt]
+            change Int.toNat (intOfZ (zSub hi lo)) = 0 at hfuel
+            rw [hsub] at hfuel
+            change intOfZ lo < intOfZ hi at hlt
+            have hnonneg : 0 ≤ intOfZ hi - intOfZ lo := by omega
+            have hcast := Int.toNat_of_nonneg hnonneg
+            change Int.toNat (intOfZ hi - intOfZ lo) = 0 at hfuel
+            omega)
+      | .right hge => .left (range_perm_vacuous m b lo hi k p hge)
+  | n + 1, hfuel =>
+      match zlt lo hi with
+      | .right hge => .left (range_perm_vacuous m b lo hi k p hge)
+      | .left hlt =>
+          match perm_dec m b lo k p with
+          | .right hn =>
+              .right (by
+                intro hr
+                apply hn
+                exact hr lo ⟨by change intOfZ lo ≤ intOfZ lo; omega, hlt⟩)
+          | .left hp =>
+              have hnext : zToNat (zSub hi (zAdd lo z1)) = n := by
+                have hs := zToNat_sub_succ lo hi hlt
+                omega
+              match range_perm_dec_aux m b hi k p (zAdd lo z1) n hnext with
+              | .left hr =>
+                  .left (by
+                    intro ofs hof
+                    change intOfZ lo ≤ intOfZ ofs ∧ intOfZ ofs < intOfZ hi at hof
+                    rcases hof with ⟨hoflo, hofhi⟩
+                    by_cases heq : ofs = lo
+                    · subst ofs
+                      exact hp
+                    · apply hr ofs
+                      constructor
+                      · change intOfZ (zAdd lo z1) ≤ intOfZ ofs
+                        rw [intOfZ_add_one]
+                        change intOfZ lo ≤ intOfZ ofs at hoflo
+                        have hne : intOfZ ofs ≠ intOfZ lo := by
+                          intro h
+                          apply heq
+                          exact intOfZ_injective h
+                        omega
+                      · exact hofhi)
+              | .right hn =>
+                  .right (by
+                    intro hr
+                    apply hn
+                    intro ofs hof
+                    rcases hof with ⟨hoflo, hofhi⟩
+                    change intOfZ (zAdd lo z1) ≤ intOfZ ofs at hoflo
+                    rw [intOfZ_add_one] at hoflo
+                    change intOfZ ofs < intOfZ hi at hofhi
+                    apply hr ofs
+                    constructor
+                    · change intOfZ lo ≤ intOfZ ofs
+                      omega
+                    · exact hofhi)
+
+def range_perm_dec : ∀ m b lo hi k p,
+    Sumbool (range_perm m b lo hi k p) (¬ range_perm m b lo hi k p) :=
+  fun m b lo hi k p => range_perm_dec_aux m b hi k p lo (zToNat (zSub hi lo)) rfl
 
 def valid_access (m : mem) (chunk : memory_chunk) (b : block) (ofs : Z)
     (p : permission) : Prop :=
   range_perm m b ofs (zAdd ofs (size_chunk chunk)) Cur p ∧
     zDivide (align_chunk chunk) ofs
 
-private def permissionRank : permission → Nat
-  | Freeable => 3
-  | Writable => 2
-  | Readable => 1
-  | Memtype.Nonempty => 0
+private def zdivide_dec (a b : Z) : Sumbool (zDivide a b) (¬ zDivide a b) := by
+  by_cases h : intOfZ b % intOfZ a = 0
+  · left
+    refine ⟨zOfInt (intOfZ b / intOfZ a), ?_⟩
+    apply intOfZ_injective
+    change intOfZ b = intOfZ
+      (zOfInt (intOfZ a * intOfZ (zOfInt (intOfZ b / intOfZ a))))
+    rw [intOfZ_zOfInt, intOfZ_zOfInt]
+    exact (Int.mul_ediv_cancel_of_emod_eq_zero h).symm
+  · right
+    intro hd
+    apply h
+    apply (Int.dvd_iff_emod_eq_zero).mp
+    rcases hd with ⟨q, hq⟩
+    refine ⟨intOfZ q, ?_⟩
+    have hq' := congrArg intOfZ hq
+    change intOfZ b = intOfZ (zOfInt (intOfZ a * intOfZ q)) at hq'
+    rw [intOfZ_zOfInt] at hq'
+    exact hq'
 
-private def permOrderBool (actual required : permission) : Bool :=
-  decide (permissionRank required ≤ permissionRank actual)
-
-private def permBool (m : mem) (b : block) (ofs : Z) (k : perm_kind)
-    (p : permission) : Bool :=
-  match (PMap.get b m.mem_access) ofs k with
-  | none => false
-  | some actual => permOrderBool actual p
-
-private def rangePermLoop (m : mem) (b : block) (lo : Z) (k : perm_kind)
-    (p : permission) : Nat → Bool
-  | 0 => true
-  | n + 1 =>
-      permBool m b lo k p && rangePermLoop m b (zAdd lo z1) k p n
-
-private def rangePermBool (m : mem) (b : block) (lo hi : Z) (k : perm_kind)
-    (p : permission) : Bool :=
-  rangePermLoop m b lo k p (zToNat (zSub hi lo))
-
-private def alignedBool (alignment ofs : Z) : Bool :=
-  ZArith.BinInt.Z.eqb (ZArith.BinInt.Z.modulo ofs alignment) z0
-
-private def validAccessBool (m : mem) (chunk : memory_chunk) (b : block) (ofs : Z)
-    (p : permission) : Bool :=
-  rangePermBool m b ofs (zAdd ofs (size_chunk chunk)) Cur p &&
-    alignedBool (align_chunk chunk) ofs
+def valid_access_dec : ∀ m chunk b ofs p,
+    Sumbool (valid_access m chunk b ofs p) (¬ valid_access m chunk b ofs p) :=
+  fun m chunk b ofs p =>
+    match range_perm_dec m b ofs (zAdd ofs (size_chunk chunk)) Cur p with
+    | .right hn => .right (by intro h; exact hn h.1)
+    | .left hr =>
+        match zdivide_dec (align_chunk chunk) ofs with
+        | .left hd => .left ⟨hr, hd⟩
+        | .right hd => .right (by intro h; exact hd h.2)
 
 def valid_pointer (m : mem) (b : block) (ofs : Z) : Bool :=
-  permBool m b ofs Cur Nonempty
+  boolOfSumbool (perm_dec m b ofs Cur Nonempty)
 
 def weak_valid_pointer (m : mem) (b : block) (ofs : Z) : Bool :=
   valid_pointer m b ofs || valid_pointer m b (zSub ofs z1)
@@ -281,7 +414,10 @@ def unchecked_free (m : mem) (b : block) (lo hi : Z) : mem :=
     contents_default := m.contents_default }
 
 def free (m : mem) (b : block) (lo hi : Z) : Option mem :=
-  if rangePermBool m b lo hi Cur Freeable then some (unchecked_free m b lo hi) else none
+  if boolOfSumbool (range_perm_dec m b lo hi Cur Freeable) then
+    some (unchecked_free m b lo hi)
+  else
+    none
 
 def free_list : mem → List (block × Z × Z) → Option mem
   | m, [] => some m
@@ -295,7 +431,7 @@ def getN : Nat → Z → ZMap.t memval → List memval
   | n + 1, p, c => ZMap.get p c :: getN n (zAdd p z1) c
 
 def load (chunk : memory_chunk) (m : mem) (b : block) (ofs : Z) : Option val :=
-  if validAccessBool m chunk b ofs Readable then
+  if boolOfSumbool (valid_access_dec m chunk b ofs Readable) then
     some (decode_val chunk (getN (size_chunk_nat chunk) ofs (PMap.get b m.mem_contents)))
   else
     none
@@ -306,7 +442,7 @@ def loadv (chunk : memory_chunk) (m : mem) (addr : val) : Option val :=
   | _ => none
 
 def loadbytes (m : mem) (b : block) (ofs n : Z) : Option (List memval) :=
-  if rangePermBool m b ofs (zAdd ofs n) Cur Readable then
+  if boolOfSumbool (range_perm_dec m b ofs (zAdd ofs n) Cur Readable) then
     some (getN (zToNat n) ofs (PMap.get b m.mem_contents))
   else
     none
@@ -323,7 +459,7 @@ private theorem setNDefault (vl : List memval) (p : Z) (c : ZMap.t memval) :
       simpa [setN, ZMap.set, PMap.set] using ih (zAdd p z1) (ZMap.set p v c)
 
 def store (chunk : memory_chunk) (m : mem) (b : block) (ofs : Z) (v : val) : Option mem :=
-  if validAccessBool m chunk b ofs Writable then
+  if boolOfSumbool (valid_access_dec m chunk b ofs Writable) then
     let contents := setN (encode_val chunk v) ofs (PMap.get b m.mem_contents)
     some
       { mem_contents := PMap.set b contents m.mem_contents
@@ -348,7 +484,7 @@ def storev (chunk : memory_chunk) (m : mem) (addr v : val) : Option mem :=
   | _ => none
 
 def storebytes (m : mem) (b : block) (ofs : Z) (bytes : List memval) : Option mem :=
-  if rangePermBool m b ofs (zAdd ofs (zOfNat bytes.length)) Cur Writable then
+  if boolOfSumbool (range_perm_dec m b ofs (zAdd ofs (zOfNat bytes.length)) Cur Writable) then
     let contents := setN bytes ofs (PMap.get b m.mem_contents)
     some
       { mem_contents := PMap.set b contents m.mem_contents
@@ -368,7 +504,7 @@ def storebytes (m : mem) (b : block) (ofs : Z) (bytes : List memval) : Option me
     none
 
 def drop_perm (m : mem) (b : block) (lo hi : Z) (p : permission) : Option mem :=
-  if rangePermBool m b lo hi Cur Freeable then
+  if boolOfSumbool (range_perm_dec m b lo hi Cur Freeable) then
     let oldAccess := PMap.get b m.mem_access
     let newAccess : Z → perm_kind → Option permission :=
       fun ofs k =>
@@ -540,15 +676,6 @@ def perm_maxStatement : Prop :=
 def perm_valid_blockStatement : Prop :=
   ∀ m b ofs k p, perm m b ofs k p → valid_block m b
 
-def perm_order_decStatement :=
-  ∀ p1 p2, Sumbool (perm_order p1 p2) (¬ perm_order p1 p2)
-
-def perm_order'_decStatement :=
-  ∀ op p, Sumbool (perm_order' op p) (¬ perm_order' op p)
-
-def perm_decStatement :=
-  ∀ m b ofs k p, Sumbool (perm m b ofs k p) (¬ perm m b ofs k p)
-
 def range_perm_impliesStatement : Prop :=
   ∀ m b lo hi k p1 p2,
     range_perm m b lo hi k p1 → perm_order p1 p2 → range_perm m b lo hi k p2
@@ -556,10 +683,6 @@ def range_perm_impliesStatement : Prop :=
 def range_perm_maxStatement : Prop :=
   ∀ m b lo hi k p,
     range_perm m b lo hi k p → range_perm m b lo hi Max p
-
-def range_perm_decStatement :=
-  ∀ m b lo hi k p,
-    Sumbool (range_perm m b lo hi k p) (¬ range_perm m b lo hi k p)
 
 def valid_access_impliesStatement : Prop :=
   ∀ m chunk b ofs p1 p2,
@@ -571,10 +694,6 @@ def valid_access_compatStatement : Prop :=
     zLe (align_chunk chunk2) (align_chunk chunk1) →
     valid_access m chunk1 b ofs p →
     valid_access m chunk2 b ofs p
-
-def valid_access_decStatement :=
-  ∀ m chunk b ofs p,
-    Sumbool (valid_access m chunk b ofs p) (¬ valid_access m chunk b ofs p)
 
 def valid_pointer_nonempty_permStatement : Prop :=
   ∀ m b ofs,
