@@ -39,6 +39,32 @@ abbrev Rle := CompCert4Lean.Flocq.Core.Raux.Rle
 abbrev bpow (beta : radix) (e : Z) : R :=
   CompCert4Lean.Flocq.Core.Raux.bpow beta e
 
+abbrev ExactRealContext :=
+  CompCert4Lean.Flocq.Core.Generic_fmt.ExactRealContext
+abbrev ExactMagnitude (ctx : ExactRealContext) :=
+  CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Magnitude ctx
+abbrev ExactR (ctx : ExactRealContext) :=
+  CompCert4Lean.Flocq.Core.Generic_fmt.Exact.R ctx
+
+section ExactSpecification
+
+variable (ctx : ExactRealContext) (magnitude : ExactMagnitude ctx)
+
+local notation "R" => ExactR ctx
+local notation "R0" => CompCert4Lean.Flocq.Core.Generic_fmt.Exact.R0 ctx
+local notation "Rone" => CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Rone ctx
+local notation "Rplus" => CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Rplus ctx
+local notation "Rminus" => CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Rminus ctx
+local notation "Rmult" => CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Rmult ctx
+local notation "Rabs" => CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Rabs ctx
+local notation "Rlt" => CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Rlt ctx
+local notation "Rle" => CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Rle ctx
+local notation "bpow" => CompCert4Lean.Flocq.Core.Generic_fmt.Exact.bpow ctx
+local notation "round" =>
+  CompCert4Lean.Flocq.Core.Generic_fmt.Exact.round ctx magnitude
+local notation "Valid_rnd" =>
+  CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Valid_rnd ctx
+
 def relative_error_lt_conversionStatement : Prop :=
   ∀ (beta : radix) (fexp : Z → Z) (rnd : R → Z),
     Valid_rnd rnd →
@@ -94,5 +120,7 @@ def relative_error_FLT_exStatement : Prop :=
                 Rlt (Rabs eps) (bpow beta (Zadd (Zopp prec) Zone)) ∧
                   round beta (FLT_exp emin prec) rnd x =
                     Rmult x (Rplus Rone eps)
+
+end ExactSpecification
 
 end CompCert4Lean.Flocq.Prop.Relative

@@ -6,17 +6,16 @@ import CompCert4Lean.Flocq.Core.Round_NE
 /-!
 # Rounding to odd
 
-This module carries the executable definitions selected from
-`Flocq.Prop.Round_odd`.  Proof-bearing source declarations are represented by
-exact source-shaped proposition descriptors for the later proof-migration
-phase.
+The executable definitions in this module retain the checked runtime carrier
+only at the RPR-007 compatibility boundary.  All source propositions and
+statement descriptors below use the canonical explicit exact-real context.
+Proof-bearing source declarations remain descriptors for the later proof phase.
 -/
 
 namespace CompCert4Lean.Flocq.Prop.Round_odd
 
 open CompCert4Lean.Flocq.Core
 
-abbrev R := CompCert4Lean.Flocq.Core.Generic_fmt.R
 abbrev Z := CompCert4Lean.Flocq.Core.Generic_fmt.Z
 abbrev radix := CompCert4Lean.Flocq.Core.Generic_fmt.radix
 abbrev float := CompCert4Lean.Flocq.Core.Generic_fmt.float
@@ -26,18 +25,6 @@ abbrev Fnum {beta : radix} (f : float beta) : Z :=
   CompCert4Lean.Flocq.Core.Generic_fmt.Fnum f
 abbrev Fexp {beta : radix} (f : float beta) : Z :=
   CompCert4Lean.Flocq.Core.Generic_fmt.Fexp f
-abbrev F2R {beta : radix} (f : float beta) : R :=
-  CompCert4Lean.Flocq.Core.Generic_fmt.F2R f
-
-abbrev IZR := CompCert4Lean.Flocq.Core.Generic_fmt.IZR
-abbrev R0 : R := CompCert4Lean.Flocq.Core.Generic_fmt.R0
-abbrev Rtwo : R := CompCert4Lean.Flocq.Core.Generic_fmt.Rtwo
-abbrev Ropp := CompCert4Lean.Flocq.Core.Generic_fmt.Ropp
-abbrev Rplus := CompCert4Lean.Flocq.Core.Generic_fmt.Rplus
-abbrev Rmult := CompCert4Lean.Flocq.Core.Generic_fmt.Rmult
-abbrev Rdiv := CompCert4Lean.Flocq.Core.Generic_fmt.Rdiv
-abbrev Rlt := CompCert4Lean.Flocq.Core.Generic_fmt.Rlt
-abbrev Rle := CompCert4Lean.Flocq.Core.Generic_fmt.Rle
 
 abbrev Zone : Z := CompCert4Lean.Flocq.Core.Generic_fmt.Zone
 abbrev Ztwo : Z := CompCert4Lean.Flocq.Core.Zaux.Ztwo
@@ -49,24 +36,153 @@ abbrev Zle := CompCert4Lean.Flocq.Core.Generic_fmt.Zle
 abbrev Zlt := CompCert4Lean.Flocq.Core.Generic_fmt.Zlt
 abbrev radix_val := CompCert4Lean.Flocq.Core.Zaux.radix_val
 
+abbrev Valid_exp := CompCert4Lean.Flocq.Core.Generic_fmt.Valid_exp
+abbrev Exists_NE := CompCert4Lean.Flocq.Core.Round_NE.Exists_NE
+abbrev FLT_exp := CompCert4Lean.Flocq.Core.FLT.FLT_exp
+
+/- The source notation is function-valued: fexpe k is the function
+   FLT_exp (emin-k) (prec+k), not its value at k. -/
+abbrev fexpe (emin prec k : Z) : Z → Z :=
+  FLT_exp (Zsub emin k) (Zadd prec k)
+
+abbrev ExactRealContext :=
+  CompCert4Lean.Flocq.Core.Generic_fmt.ExactRealContext
+
+abbrev ExactR (ctx : ExactRealContext) :=
+  CompCert4Lean.Flocq.Core.Generic_fmt.Exact.R ctx
+abbrev R (ctx : ExactRealContext) := ExactR ctx
+abbrev ExactMagnitude (ctx : ExactRealContext) :=
+  CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Magnitude ctx
+abbrev F2R (ctx : ExactRealContext) {beta : radix} (f : float beta) : ExactR ctx :=
+  CompCert4Lean.Flocq.Core.Generic_fmt.Exact.F2R ctx f
+abbrev IZR (ctx : ExactRealContext) :=
+  CompCert4Lean.Flocq.Core.Generic_fmt.Exact.IZR ctx
+abbrev R0 (ctx : ExactRealContext) :=
+  CompCert4Lean.Flocq.Core.Generic_fmt.Exact.R0 ctx
+abbrev Rtwo (ctx : ExactRealContext) :=
+  CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Rtwo ctx
+abbrev Ropp (ctx : ExactRealContext) :=
+  CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Ropp ctx
+abbrev Rplus (ctx : ExactRealContext) :=
+  CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Rplus ctx
+abbrev Rmult (ctx : ExactRealContext) :=
+  CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Rmult ctx
+abbrev Rdiv (ctx : ExactRealContext) :=
+  CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Rdiv ctx
+abbrev Rlt (ctx : ExactRealContext) :=
+  CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Rlt ctx
+abbrev Rle (ctx : ExactRealContext) :=
+  CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Rle ctx
+abbrev Zfloor (ctx : ExactRealContext) :=
+  CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zfloor ctx
+abbrev Zceil (ctx : ExactRealContext) :=
+  CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zceil ctx
+abbrev bpow (ctx : ExactRealContext) (beta : radix) (e : Z) : ExactR ctx :=
+  CompCert4Lean.Flocq.Core.Generic_fmt.Exact.bpow ctx beta e
+abbrev mag (ctx : ExactRealContext) (magnitude : ExactMagnitude ctx)
+    (beta : radix) (x : ExactR ctx) : Z :=
+  CompCert4Lean.Flocq.Core.Generic_fmt.Exact.mag magnitude beta x
+abbrev mag_val (ctx : ExactRealContext) (magnitude : ExactMagnitude ctx)
+    (beta : radix) (x : ExactR ctx) : Z :=
+  mag ctx magnitude beta x
+abbrev canonical (ctx : ExactRealContext) (magnitude : ExactMagnitude ctx)
+    (beta : radix) (fexp : Z → Z) (f : float beta) : Prop :=
+  CompCert4Lean.Flocq.Core.Generic_fmt.Exact.canonical ctx magnitude beta fexp f
+abbrev cexp (ctx : ExactRealContext) (magnitude : ExactMagnitude ctx)
+    (beta : radix) (fexp : Z → Z) (x : ExactR ctx) : Z :=
+  CompCert4Lean.Flocq.Core.Generic_fmt.Exact.cexp ctx magnitude beta fexp x
+abbrev generic_format (ctx : ExactRealContext) (magnitude : ExactMagnitude ctx)
+    (beta : radix) (fexp : Z → Z) (x : ExactR ctx) : Prop :=
+  CompCert4Lean.Flocq.Core.Generic_fmt.Exact.generic_format ctx magnitude beta fexp x
+abbrev round (ctx : ExactRealContext) (magnitude : ExactMagnitude ctx)
+    (beta : radix) (fexp : Z → Z) (rnd : ExactR ctx → Z) (x : ExactR ctx) : ExactR ctx :=
+  CompCert4Lean.Flocq.Core.Generic_fmt.Exact.round ctx magnitude beta fexp rnd x
+noncomputable abbrev Znearest (ctx : ExactRealContext) (choice : Z → Bool) : ExactR ctx → Z :=
+  CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Znearest ctx choice
+abbrev Valid_rnd (ctx : ExactRealContext) (rnd : ExactR ctx → Z) : Prop :=
+  CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Valid_rnd ctx rnd
+abbrev Rnd_DN_pt (ctx : ExactRealContext) (F : ExactR ctx → Prop)
+    (x f : ExactR ctx) : Prop :=
+  CompCert4Lean.Flocq.Core.Defs.Exact.Rnd_DN_pt ctx F x f
+abbrev Rnd_UP_pt (ctx : ExactRealContext) (F : ExactR ctx → Prop)
+    (x f : ExactR ctx) : Prop :=
+  CompCert4Lean.Flocq.Core.Defs.Exact.Rnd_UP_pt ctx F x f
+abbrev round_pred_monotone (ctx : ExactRealContext)
+    (P : ExactR ctx → ExactR ctx → Prop) : Prop :=
+  CompCert4Lean.Flocq.Core.Defs.Exact.round_pred_monotone ctx P
+
+noncomputable def Zrnd_odd (ctx : ExactRealContext) (x : ExactR ctx) : Z := by
+  classical
+  exact if x = IZR ctx (Zfloor ctx x) then
+    Zfloor ctx x
+  else if Zeven (Zfloor ctx x) then
+    Zceil ctx x
+  else
+    Zfloor ctx x
+
+class Valid_rnd_odd_Certificate (ctx : ExactRealContext) : Prop where
+  odd : Valid_rnd ctx (Zrnd_odd ctx)
+
+/- The proof phase constructs the mandatory exact certificate. -/
+instance valid_rnd_odd (ctx : ExactRealContext)
+    [certificate : Valid_rnd_odd_Certificate ctx] :
+    Valid_rnd ctx (Zrnd_odd ctx) :=
+  certificate.odd
+
+def Rnd_odd_pt (ctx : ExactRealContext) (magnitude : ExactMagnitude ctx)
+    (beta : radix) (fexp : Z → Z) (x f : R ctx) : Prop :=
+  generic_format ctx magnitude beta fexp f ∧
+    (f = x ∨
+      ((Rnd_DN_pt ctx (generic_format ctx magnitude beta fexp) x f ∨
+          Rnd_UP_pt ctx (generic_format ctx magnitude beta fexp) x f) ∧
+        ∃ g : float beta,
+          f = F2R ctx g ∧
+            canonical ctx magnitude beta fexp g ∧ Zeven (Fnum g) = false))
+
+def Rnd_odd (ctx : ExactRealContext) (magnitude : ExactMagnitude ctx)
+    (beta : radix) (fexp : Z → Z) (rnd : R ctx → R ctx) : Prop :=
+  ∀ x : R ctx, Rnd_odd_pt ctx magnitude beta fexp x (rnd x)
+
+abbrev format (ctx : ExactRealContext) (magnitude : ExactMagnitude ctx)
+    (beta : radix) (emin prec : Z) : R ctx → Prop :=
+  generic_format ctx magnitude beta (FLT_exp emin prec)
+
+noncomputable abbrev round_flt (ctx : ExactRealContext) (magnitude : ExactMagnitude ctx)
+    (beta : radix) (emin prec : Z) (choice : Z → Bool) (x : R ctx) : R ctx :=
+  round ctx magnitude beta (FLT_exp emin prec) (Znearest ctx choice) x
+
+abbrev cexp_flt (ctx : ExactRealContext) (magnitude : ExactMagnitude ctx)
+    (beta : radix) (emin prec : Z) (x : R ctx) : Z :=
+  cexp ctx magnitude beta (FLT_exp emin prec) x
+
+namespace Runtime
+
+abbrev R := CompCert4Lean.Flocq.Core.Generic_fmt.R
+abbrev F2R {beta : radix} (f : float beta) : R :=
+  CompCert4Lean.Flocq.Core.Generic_fmt.F2R f
+abbrev IZR := CompCert4Lean.Flocq.Core.Generic_fmt.IZR
+abbrev R0 : R := CompCert4Lean.Flocq.Core.Generic_fmt.R0
+abbrev Rtwo : R := CompCert4Lean.Flocq.Core.Generic_fmt.Rtwo
+abbrev Ropp := CompCert4Lean.Flocq.Core.Generic_fmt.Ropp
+abbrev Rplus := CompCert4Lean.Flocq.Core.Generic_fmt.Rplus
+abbrev Rmult := CompCert4Lean.Flocq.Core.Generic_fmt.Rmult
+abbrev Rdiv := CompCert4Lean.Flocq.Core.Generic_fmt.Rdiv
+abbrev Rlt := CompCert4Lean.Flocq.Core.Generic_fmt.Rlt
+abbrev Rle := CompCert4Lean.Flocq.Core.Generic_fmt.Rle
 abbrev Zfloor := CompCert4Lean.Flocq.Core.Generic_fmt.Zfloor
 abbrev Zceil := CompCert4Lean.Flocq.Core.Generic_fmt.Zceil
 abbrev bpow := CompCert4Lean.Flocq.Core.Generic_fmt.bpow
 abbrev mag := CompCert4Lean.Flocq.Core.Generic_fmt.mag
 abbrev mag_val (beta : radix) (x : R) : Z :=
   CompCert4Lean.Flocq.Core.Raux.mag_val (mag beta x)
-
-abbrev Valid_exp := CompCert4Lean.Flocq.Core.Generic_fmt.Valid_exp
-abbrev Exists_NE := CompCert4Lean.Flocq.Core.Round_NE.Exists_NE
 abbrev generic_format := CompCert4Lean.Flocq.Core.Generic_fmt.generic_format
 abbrev canonical := CompCert4Lean.Flocq.Core.Generic_fmt.canonical
 abbrev cexp := CompCert4Lean.Flocq.Core.Generic_fmt.cexp
 abbrev round := CompCert4Lean.Flocq.Core.Generic_fmt.round
 abbrev Znearest := CompCert4Lean.Flocq.Core.Generic_fmt.Znearest
+abbrev Valid_rnd := CompCert4Lean.Flocq.Core.Generic_fmt.Valid_rnd
 abbrev Rnd_DN_pt := CompCert4Lean.Flocq.Core.Generic_fmt.Rnd_DN_pt
 abbrev Rnd_UP_pt := CompCert4Lean.Flocq.Core.Generic_fmt.Rnd_UP_pt
-abbrev round_pred_monotone := CompCert4Lean.Flocq.Core.Defs.round_pred_monotone
-abbrev FLT_exp := CompCert4Lean.Flocq.Core.FLT.FLT_exp
 
 def Zrnd_odd (x : R) : Z :=
   if x = IZR (Zfloor x) then
@@ -77,15 +193,10 @@ def Zrnd_odd (x : R) : Z :=
     Zfloor x
 
 class Valid_rnd_odd_Certificate : Prop where
-  odd : CompCert4Lean.Flocq.Core.Generic_fmt.Valid_rnd Zrnd_odd
+  odd : Valid_rnd Zrnd_odd
 
-def valid_rnd_oddStatement : Prop :=
-  CompCert4Lean.Flocq.Core.Generic_fmt.Valid_rnd Zrnd_odd
-
-/- The proof phase constructs the mandatory certificate.  This adapter then
-   restores the source Global Instance without a hidden or fabricated proof. -/
 instance valid_rnd_odd [certificate : Valid_rnd_odd_Certificate] :
-    CompCert4Lean.Flocq.Core.Generic_fmt.Valid_rnd Zrnd_odd :=
+    Valid_rnd Zrnd_odd :=
   certificate.odd
 
 def Rnd_odd_pt (beta : radix) (fexp : Z → Z) (x f : R) : Prop :=
@@ -101,18 +212,59 @@ def Rnd_odd (beta : radix) (fexp : Z → Z) (rnd : R → R) : Prop :=
 
 abbrev format (beta : radix) (emin prec : Z) : R → Prop :=
   generic_format beta (FLT_exp emin prec)
-
 abbrev round_flt (beta : radix) (emin prec : Z) (choice : Z → Bool) (x : R) : R :=
   round beta (FLT_exp emin prec) (Znearest choice) x
-
 abbrev cexp_flt (beta : radix) (emin prec : Z) (x : R) : Z :=
   cexp beta (FLT_exp emin prec) x
 
-abbrev fexpe (emin prec k : Z) : Z :=
-  FLT_exp (Zsub emin k) (Zadd prec k) k
+end Runtime
+
+def valid_rnd_oddStatement (ctx : ExactRealContext) : Prop :=
+  Valid_rnd ctx (Zrnd_odd ctx)
+
+section ExactSpecification
+
+variable (ctx : ExactRealContext) (magnitude : ExactMagnitude ctx)
+
+local notation "R" => R ctx
+local notation "F2R" => F2R ctx
+local notation "IZR" => IZR ctx
+local notation "R0" => R0 ctx
+local notation "Rtwo" => Rtwo ctx
+local notation "Ropp" => Ropp ctx
+local notation "Rplus" => Rplus ctx
+local notation "Rmult" => Rmult ctx
+local notation "Rdiv" => Rdiv ctx
+local notation "Rlt" => Rlt ctx
+local notation "Rle" => Rle ctx
+local notation "Zfloor" => Zfloor ctx
+local notation "Zceil" => Zceil ctx
+local notation "bpow" => bpow ctx
+local notation "mag_val" => mag_val ctx magnitude
+local notation "mag" => mag ctx magnitude
+local notation "generic_format" => generic_format ctx magnitude
+local notation "canonical" => canonical ctx magnitude
+local notation "cexp" => cexp ctx magnitude
+local notation "round" => round ctx magnitude
+local notation "Znearest" => Znearest ctx
+local notation "Rnd_DN_pt" => Rnd_DN_pt ctx
+local notation "Rnd_UP_pt" => Rnd_UP_pt ctx
+local notation "Rnd_odd_pt" => Rnd_odd_pt ctx magnitude
+local notation "round_pred_monotone" => round_pred_monotone ctx
+local notation "Valid_rnd" =>
+  CompCert4Lean.Flocq.Prop.Round_odd.Valid_rnd ctx
+local notation "odd_rnd" =>
+  CompCert4Lean.Flocq.Prop.Round_odd.Valid_rnd ctx
+    (CompCert4Lean.Flocq.Prop.Round_odd.Zrnd_odd ctx)
+local notation "down_rnd" =>
+  CompCert4Lean.Flocq.Prop.Round_odd.Valid_rnd ctx
+    (CompCert4Lean.Flocq.Prop.Round_odd.Zfloor ctx)
+local notation "up_rnd" =>
+  CompCert4Lean.Flocq.Prop.Round_odd.Valid_rnd ctx
+    (CompCert4Lean.Flocq.Prop.Round_odd.Zceil ctx)
 
 def Zrnd_odd_ZoddStatement : Prop :=
-  ∀ x : R, x ≠ IZR (Zfloor x) → Zeven (Zrnd_odd x) = false
+  ∀ x : R, x ≠ IZR (Zfloor x) → Zeven (Zrnd_odd ctx x) = false
 
 def Zfloor_plusStatement : Prop :=
   ∀ (n : Z) (y : R),
@@ -129,7 +281,8 @@ def Zrnd_odd_plusStatement : Prop :=
   ∀ (x y : R),
     x = IZR (Zfloor x) →
       Zeven (Zfloor x) = true →
-        IZR (Zrnd_odd (Rplus x y)) = Rplus x (IZR (Zrnd_odd y))
+        IZR (Zrnd_odd ctx (Rplus x y)) =
+          Rplus x (IZR (Zrnd_odd ctx y))
 
 def Rnd_odd_pt_opp_invStatement : Prop :=
   ∀ (beta : radix) (fexp : Z → Z) (x f : R),
@@ -137,14 +290,17 @@ def Rnd_odd_pt_opp_invStatement : Prop :=
       Rnd_odd_pt beta fexp x f
 
 def round_odd_oppStatement : Prop :=
-  ∀ (beta : radix) (fexp : Z → Z) (x : R),
-    round beta fexp Zrnd_odd (Ropp x) =
-      Ropp (round beta fexp Zrnd_odd x)
+  odd_rnd →
+    ∀ (beta : radix) (fexp : Z → Z) (x : R),
+      round beta fexp (Zrnd_odd ctx) (Ropp x) =
+        Ropp (round beta fexp (Zrnd_odd ctx) x)
 
 def round_odd_ptStatement : Prop :=
   ∀ (beta : radix) (fexp : Z → Z),
-    Valid_exp fexp → Exists_NE beta fexp →
-      ∀ x : R, Rnd_odd_pt beta fexp x (round beta fexp Zrnd_odd x)
+    Valid_exp fexp → Exists_NE beta fexp → odd_rnd →
+      ∀ x : R,
+        Rnd_odd_pt beta fexp x
+          (round beta fexp (Zrnd_odd ctx) x)
 
 def Rnd_odd_pt_uniqueStatement : Prop :=
   ∀ (beta : radix) (fexp : Z → Z),
@@ -173,13 +329,13 @@ def exists_even_fexp_ltStatement : Prop :=
           F2R f = x ∧ canonical beta c f ∧ Zeven (Fnum f) = true
 
 def d_eqStatement : Prop :=
-  ∀ (beta : radix) (fexp : Z → Z), Valid_exp fexp →
+  ∀ (beta : radix) (fexp : Z → Z), Valid_exp fexp → down_rnd →
     ∀ (x : R) (d : float beta),
       Rnd_DN_pt (generic_format beta fexp) x (F2R d) →
         F2R d = round beta fexp Zfloor x
 
 def u_eqStatement : Prop :=
-  ∀ (beta : radix) (fexp : Z → Z), Valid_exp fexp →
+  ∀ (beta : radix) (fexp : Z → Z), Valid_exp fexp → up_rnd →
     ∀ (x : R) (u : float beta),
       Rnd_UP_pt (generic_format beta fexp) x (F2R u) →
         F2R u = round beta fexp Zceil x
@@ -341,14 +497,16 @@ def round_N_odd_posStatement : Prop :=
       Valid_exp fexp → Exists_NE beta fexp →
         Valid_exp fexpe → Exists_NE beta fexpe →
           (∀ e : Z, Zle (fexpe e) (Zsub (fexp e) Ztwo)) →
-            ∀ (choice : Z → Bool) (x : R) (d u : float beta),
-              Rnd_DN_pt (generic_format beta fexp) x (F2R d) →
-                canonical beta fexp d →
-                  Rnd_UP_pt (generic_format beta fexp) x (F2R u) →
-                    canonical beta fexp u → Rlt R0 x →
-                      round beta fexp (Znearest choice)
-                          (round beta fexpe Zrnd_odd x) =
-                        round beta fexp (Znearest choice) x
+            ∀ (choice : Z → Bool),
+              Valid_rnd (Znearest choice) → odd_rnd →
+                ∀ (x : R) (d u : float beta),
+                  Rnd_DN_pt (generic_format beta fexp) x (F2R d) →
+                    canonical beta fexp d →
+                      Rnd_UP_pt (generic_format beta fexp) x (F2R u) →
+                        canonical beta fexp u → Rlt R0 x →
+                          round beta fexp (Znearest choice)
+                              (round beta fexpe (Zrnd_odd ctx) x) =
+                            round beta fexp (Znearest choice) x
 
 def round_N_oddStatement : Prop :=
   ∀ (beta : radix), Zeven (radix_val beta) = true →
@@ -356,32 +514,37 @@ def round_N_oddStatement : Prop :=
       Valid_exp fexp → Exists_NE beta fexp →
         Valid_exp fexpe → Exists_NE beta fexpe →
           (∀ e : Z, Zle (fexpe e) (Zsub (fexp e) Ztwo)) →
-            ∀ x : R,
-              round beta fexp (Znearest choice)
-                  (round beta fexpe Zrnd_odd x) =
-                round beta fexp (Znearest choice) x
+            Valid_rnd (Znearest choice) → odd_rnd →
+              ∀ x : R,
+                round beta fexp (Znearest choice)
+                    (round beta fexpe (Zrnd_odd ctx) x) =
+                  round beta fexp (Znearest choice) x
 
 def Zrnd_odd_plus'Statement : Prop :=
   ∀ (beta : radix), Zeven (radix_val beta) = true →
     ∀ (x y : R),
       (∃ (n e : Z),
         x = Rmult (IZR n) (bpow beta e) ∧ Zle Zone e) →
-          IZR (Zrnd_odd (Rplus x y)) = Rplus x (IZR (Zrnd_odd y))
+          IZR (Zrnd_odd ctx (Rplus x y)) =
+            Rplus x (IZR (Zrnd_odd ctx y))
 
 def mag_round_oddStatement : Prop :=
   ∀ (beta : radix), Zeven (radix_val beta) = true →
-    ∀ (emin prec : Z), Zlt Zone prec →
+    ∀ (emin prec : Z), Zlt Zone prec → odd_rnd →
       ∀ x : R,
         Zlt emin (mag_val beta x) →
-          mag_val beta (round beta (FLT_exp emin prec) Zrnd_odd x) =
+          mag_val beta
+              (round beta (FLT_exp emin prec) (Zrnd_odd ctx) x) =
             mag_val beta x
 
 def fexp_round_oddStatement : Prop :=
   ∀ (beta : radix), Zeven (radix_val beta) = true →
-    ∀ (emin prec : Z), Zlt Zone prec →
+    ∀ (emin prec : Z), Zlt Zone prec → odd_rnd →
       ∀ x : R,
         cexp beta (FLT_exp emin prec)
-            (round beta (FLT_exp emin prec) Zrnd_odd x) =
+            (round beta (FLT_exp emin prec) (Zrnd_odd ctx) x) =
           cexp beta (FLT_exp emin prec) x
+
+end ExactSpecification
 
 end CompCert4Lean.Flocq.Prop.Round_odd

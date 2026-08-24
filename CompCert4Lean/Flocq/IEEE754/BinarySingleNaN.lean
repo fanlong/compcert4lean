@@ -113,7 +113,6 @@ abbrev Fmult {beta : radix} (f1 f2 : float beta) : float beta :=
 abbrev shl_align := Lib.Floats.Model.Rocq.Coq.Floats.SpecFloat.shl_align
 abbrev shr_fexp0 := Lib.Floats.Model.Rocq.Coq.Floats.SpecFloat.shr_fexp
 abbrev new_location := Calc.Bracket.new_location
-abbrev inbetween_float := Calc.Bracket.inbetween_float
 abbrev truncate := Calc.Round.truncate
 abbrev cond_incr := Calc.Round.cond_incr
 abbrev round_sign_DN := Calc.Round.round_sign_DN
@@ -532,19 +531,6 @@ structure Valid_rnd (ctx : Context) (rnd : R ctx → Z) : Prop where
   Zrnd_le : ∀ x y : R ctx, Rle ctx x y → Zle (rnd x) (rnd y)
   Zrnd_IZR : ∀ n : Z, rnd (IZR ctx n) = n
 
-inductive inbetween (ctx : Context) (d u x : R ctx) : location → Prop where
-  | inbetween_Exact (h : x = d) : inbetween ctx d u x loc_Exact
-  | inbetween_Inexact (l : comparison)
-      (h_bounds : Rlt ctx d x ∧ Rlt ctx x u)
-      (h_middle : Rcompare ctx x
-        (Rdiv ctx (Rplus ctx d u) (Raux.Exact.Rtwo ctx)) = l) :
-      inbetween ctx d u x (loc_Inexact l)
-
-def inbetween_float (ctx : Context) (beta : radix) (m e : Z)
-    (x : R ctx) (l : location) : Prop :=
-  inbetween ctx (F2R ctx (Float beta m e))
-    (F2R ctx (Float beta (Zadd m Zone) e)) x l
-
 end Exact
 
 def valid_rnd_round_mode (ctx : ExactRealContext) : Prop :=
@@ -829,7 +815,8 @@ def binary_round_aux_correctStatement (ctx : ExactRealContext)
     (magnitude : Exact.Magnitude ctx) [Core.FLX.Prec_gt_0 prec]
     [Prec_lt_emax prec emax] : Prop :=
   ∀ (m : mode) (x : Exact.R ctx) (mx : positive) (ex : Z) (lx : location),
-    Exact.inbetween_float ctx radix2 (Zpos mx) ex (Exact.Rabs ctx x) lx →
+    CompCert4Lean.Flocq.Calc.Bracket.inbetween_float ctx radix2 (Zpos mx) ex
+      (Exact.Rabs ctx x) lx →
     Zle ex ((fexp (prec := prec) (emax := emax))
       (Zadd (Zdigits radix2 (Zpos mx)) ex)) →
     let z := binary_round_aux (prec := prec) (emax := emax) m
@@ -853,7 +840,8 @@ def binary_round_aux_correct'Statement (ctx : ExactRealContext)
     [Prec_lt_emax prec emax] : Prop :=
   ∀ (m : mode) (x : Exact.R ctx) (mx ex : Z) (lx : location),
     x ≠ Exact.R0 ctx →
-    Exact.inbetween_float ctx radix2 mx ex (Exact.Rabs ctx x) lx →
+    CompCert4Lean.Flocq.Calc.Bracket.inbetween_float ctx radix2 mx ex
+      (Exact.Rabs ctx x) lx →
     Zle ex (Exact.cexp magnitude radix2 (fexp (prec := prec) (emax := emax)) x) →
     let z := binary_round_aux (prec := prec) (emax := emax) m
       (Exact.Rlt_bool ctx x (Exact.R0 ctx)) mx ex lx
@@ -933,16 +921,18 @@ def generic_format_B2RStatement (ctx : ExactRealContext)
 def inbetween_shrStatement (ctx : ExactRealContext) : Prop :=
   ∀ (x : Exact.R ctx) (m e : Z) (l : location) (n : Z),
     Zle Z0 m →
-    Exact.inbetween_float ctx radix2 m e x l →
+    CompCert4Lean.Flocq.Calc.Bracket.inbetween_float ctx radix2 m e x l →
     let (mrs, e') := shr (shr_record_of_loc m l) e n
-    Exact.inbetween_float ctx radix2 (shr_m mrs) e' x (loc_of_shr_record mrs)
+    CompCert4Lean.Flocq.Calc.Bracket.inbetween_float ctx radix2 (shr_m mrs) e' x
+      (loc_of_shr_record mrs)
 
 def inbetween_shr_1Statement (ctx : ExactRealContext) : Prop :=
   ∀ (x : Exact.R ctx) (mrs : shr_record) (e : Z),
     Zle Z0 (shr_m mrs) →
-    Exact.inbetween_float ctx radix2 (shr_m mrs) e x (loc_of_shr_record mrs) →
-    Exact.inbetween_float ctx radix2 (shr_m (shr_1 mrs)) (Zadd e Zone) x
-      (loc_of_shr_record (shr_1 mrs))
+    CompCert4Lean.Flocq.Calc.Bracket.inbetween_float ctx radix2 (shr_m mrs) e x
+      (loc_of_shr_record mrs) →
+    CompCert4Lean.Flocq.Calc.Bracket.inbetween_float ctx radix2 (shr_m (shr_1 mrs))
+      (Zadd e Zone) x (loc_of_shr_record (shr_1 mrs))
 
 def is_finite_BoppStatement : Prop :=
   ∀ x : binary_float prec emax,
