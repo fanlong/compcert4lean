@@ -44,13 +44,68 @@ private def typEq (x y : typ) : Sumbool (x = y) (x ≠ y) := by
   · exact .left h
   · exact .right h
 
-private def cminorTypeAlgebra : TYPE_ALGEBRA where
-  t := typ
-  eq := typEq
-  default := Tint
+namespace RTLtypes
 
-private abbrev InferEnv := UniSolver.typenv cminorTypeAlgebra
-private abbrev TypeAssign := UniSolver.typassign cminorTypeAlgebra
+abbrev t : Type := typ
+def eq (x y : t) : Sumbool (x = y) (x ≠ y) := typEq x y
+def default : t := Tint
+
+def algebra : TYPE_ALGEBRA where
+  t := t
+  eq := eq
+  default := default
+
+end RTLtypes
+
+private abbrev cminorTypeAlgebra : TYPE_ALGEBRA := RTLtypes.algebra
+
+/-! Canonical generated surface for `Unityping.UniSolver(RTLtypes)`.  Only
+the members consumed by the frozen Cminortyping source are promoted; unused
+generic generated proof machinery remains deferred under DMC-006. -/
+namespace S
+
+abbrev typenv : Type := UniSolver.typenv cminorTypeAlgebra
+abbrev typassign : Type := UniSolver.typassign cminorTypeAlgebra
+
+def initial : typenv := UniSolver.initial cminorTypeAlgebra
+
+def set (e : typenv) (x : positive) (ty : RTLtypes.t) : res typenv :=
+  UniSolver.set cminorTypeAlgebra e x ty
+
+def set_list (e : typenv) (xs : List positive)
+    (tys : List RTLtypes.t) : res typenv :=
+  UniSolver.set_list cminorTypeAlgebra e xs tys
+
+def move (e : typenv) (r1 r2 : positive) : res (Bool × typenv) :=
+  UniSolver.move cminorTypeAlgebra e r1 r2
+
+def solve (e : typenv) : res typassign :=
+  UniSolver.solve cminorTypeAlgebra e
+
+def satisf (te : typassign) (e : typenv) : Prop :=
+  UniSolver.satisf cminorTypeAlgebra te e
+
+def set_sound : Prop :=
+  ∀ (te : typassign) (x : positive) (ty : RTLtypes.t) (e e' : typenv),
+    set e x ty = OK e' → satisf te e' → te x = ty
+
+def set_list_sound : Prop :=
+  ∀ (te : typassign) (xs : List positive) (tys : List RTLtypes.t)
+    (e e' : typenv), set_list e xs tys = OK e' →
+    satisf te e' → List.map te xs = tys
+
+def move_sound : Prop :=
+  ∀ (te : typassign) (e : typenv) (r1 r2 : positive)
+    (e' : typenv) (changed : Bool), move e r1 r2 = OK (changed, e') →
+    satisf te e' → te r1 = te r2
+
+def solve_sound : Prop :=
+  ∀ (e : typenv) (te : typassign), solve e = OK te → satisf te e
+
+end S
+
+private abbrev InferEnv := S.typenv
+private abbrev TypeAssign := S.typassign
 
 /-! ## Type inference -/
 
@@ -100,7 +155,7 @@ def expect (e : InferEnv) (t1 t2 : typ) : res InferEnv :=
   | .right _ => Error (msg typeMismatchText)
 
 def type_expr : InferEnv → expr → typ → res InferEnv
-  | e, .Evar id, t => UniSolver.set cminorTypeAlgebra e id t
+  | e, .Evar id, t => S.set e id t
   | e, .Econst c, t => expect e (type_constant c) t
   | e, .Eunop op a1, t =>
       let (targ1, tres) := type_unop op
@@ -131,15 +186,15 @@ def type_exprlist : InferEnv → List expr → List typ → res InferEnv
 def type_assign (e : InferEnv) (id : ident) (a : expr) : res InferEnv :=
   match a with
   | .Evar id' =>
-      match UniSolver.move cminorTypeAlgebra e id id' with
+      match S.move e id id' with
       | Error message => Error message
       | OK (_, e1) => OK e1
-  | .Econst c => UniSolver.set cminorTypeAlgebra e id (type_constant c)
+  | .Econst c => S.set e id (type_constant c)
   | .Eunop op a1 =>
       let (targ1, tres) := type_unop op
       match type_expr e a1 targ1 with
       | Error message => Error message
-      | OK e1 => UniSolver.set cminorTypeAlgebra e1 id tres
+      | OK e1 => S.set e1 id tres
   | .Ebinop op a1 a2 =>
       let ((targ1, targ2), tres) := type_binop op
       match type_expr e a1 targ1 with
@@ -147,16 +202,16 @@ def type_assign (e : InferEnv) (id : ident) (a : expr) : res InferEnv :=
       | OK e1 =>
           match type_expr e1 a2 targ2 with
           | Error message => Error message
-          | OK e2 => UniSolver.set cminorTypeAlgebra e2 id tres
+          | OK e2 => S.set e2 id tres
   | .Eload chunk a1 =>
       match type_expr e a1 Tptr with
       | Error message => Error message
-      | OK e1 => UniSolver.set cminorTypeAlgebra e1 id (type_of_chunk chunk)
+      | OK e1 => S.set e1 id (type_of_chunk chunk)
 
 def opt_set (e : InferEnv) (optid : Option ident) (ty : typ) : res InferEnv :=
   match optid with
   | none => OK e
-  | some id => UniSolver.set cminorTypeAlgebra e id ty
+  | some id => S.set e id ty
 
 def type_stmt (tret : xtype) : InferEnv → stmt → res InferEnv
   | e, .Sskip => OK e
@@ -208,13 +263,13 @@ def type_stmt (tret : xtype) : InferEnv → stmt → res InferEnv
 def typenv := ident → typ
 
 def type_function (f : function) : res typenv :=
-  match UniSolver.set_list cminorTypeAlgebra (UniSolver.initial cminorTypeAlgebra)
+  match S.set_list S.initial
       f.fn_params (proj_sig_args f.fn_sig) with
   | Error message => Error message
   | OK e1 =>
       match type_stmt f.fn_sig.sig_res e1 f.fn_body with
       | Error message => Error message
-      | OK e2 => UniSolver.solve cminorTypeAlgebra e2
+      | OK e2 => S.solve e2
 
 /-! ## Relational specification -/
 
@@ -337,29 +392,29 @@ def expect_soundStatement : Prop :=
 def type_expr_soundStatement : Prop :=
   ∀ (te : typenv) (a : expr) (t : typ) (e e' : InferEnv),
     type_expr e a t = OK e' →
-      UniSolver.satisf cminorTypeAlgebra te e' → wt_expr te a t
+      S.satisf te e' → wt_expr te a t
 
 def type_exprlist_soundStatement : Prop :=
   ∀ (te : typenv) (al : List expr) (tl : List typ) (e e' : InferEnv),
     type_exprlist e al tl = OK e' →
-      UniSolver.satisf cminorTypeAlgebra te e' →
+      S.satisf te e' →
         list_forall2 (wt_expr te) al tl
 
 def type_assign_soundStatement : Prop :=
   ∀ (te : typenv) (id : ident) (a : expr) (e e' : InferEnv),
     type_assign e id a = OK e' →
-      UniSolver.satisf cminorTypeAlgebra te e' → wt_expr te a (te id)
+      S.satisf te e' → wt_expr te a (te id)
 
 def opt_set_soundStatement : Prop :=
   ∀ (te : typenv) (optid : Option ident) (sg : signature) (e e' : InferEnv),
     opt_set e optid (proj_sig_res sg) = OK e' →
-      UniSolver.satisf cminorTypeAlgebra te e' →
+      S.satisf te e' →
         wt_opt_assign te optid sg.sig_res
 
 def type_stmt_soundStatement : Prop :=
   ∀ (te : typenv) (tret : xtype) (s : stmt) (e e' : InferEnv),
     type_stmt tret e s = OK e' →
-      UniSolver.satisf cminorTypeAlgebra te e' → wt_stmt te tret s
+      S.satisf te e' → wt_stmt te tret s
 
 def type_function_soundStatement : Prop :=
   ∀ (f : function) (env : typenv),

@@ -583,7 +583,8 @@ abbrev steps {A : Type} (code : PTree.t A)
     (transf : positive → L.t → L.t) : state → state → Prop :=
   CompCert4Lean.Backend.Kildall.Dataflow_Solver.steps code successors transf
 
-def steps_ind : Type := Unit
+abbrev steps_ind :=
+  @CompCert4Lean.Backend.Kildall.Dataflow_Solver.steps.rec
 
 def fixpoint_from_charact : Prop :=
   ∀ (A : Type) (code : PTree.t A)

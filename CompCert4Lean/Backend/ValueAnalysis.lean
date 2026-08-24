@@ -98,6 +98,126 @@ def va_lat (cfg : CompilerConfig) : SemiLattice :=
 def solver_law_obligation (cfg : CompilerConfig) : Prop :=
   SemiLatticeLaws (va_lat cfg) ∧ NodeSetForward.law_obligation
 
+/-! Canonical generated surface for
+`Kildall.Dataflow_Solver(VA)(NodeSetForward)`.  The accepted compiler
+configuration adaptation is explicit on the specialized lattice. -/
+namespace DS
+
+def L (cfg : CompilerConfig) : SemiLattice := va_lat cfg
+
+def law_obligation (cfg : CompilerConfig) : Prop :=
+  SemiLatticeLaws (L cfg) ∧ NodeSetForward.law_obligation
+
+abbrev state (cfg : CompilerConfig) : Type :=
+  Dataflow_Solver.state (LAT := L cfg) (NS := NodeSetForward)
+
+def aval (cfg : CompilerConfig) (s : state cfg) : PTree.t (L cfg).t := s.aval
+def worklist (cfg : CompilerConfig) (s : state cfg) : NodeSetForward.t := s.worklist
+def visited (cfg : CompilerConfig) (s : state cfg) : positive → Prop := s.visited
+
+def abstr_value (cfg : CompilerConfig) (n : positive) (s : state cfg) : (L cfg).t :=
+  Dataflow_Solver.abstr_value n s
+
+def propagate_succ (cfg : CompilerConfig) (s : state cfg)
+    (out : (L cfg).t) (n : positive) : state cfg :=
+  Dataflow_Solver.propagate_succ s out n
+
+def propagate_succ_list (cfg : CompilerConfig) (s : state cfg)
+    (out : (L cfg).t) (nodes : List positive) : state cfg :=
+  Dataflow_Solver.propagate_succ_list s out nodes
+
+def step (cfg : CompilerConfig) {A : Type} (code : PTree.t A)
+    (successors : A → List positive) (transf : positive → (L cfg).t → (L cfg).t)
+    (s : state cfg) : Sum (PMap.t (L cfg).t) (state cfg) :=
+  Dataflow_Solver.step code successors transf s
+
+def fixpoint_from (cfg : CompilerConfig) {A : Type} (code : PTree.t A)
+    (successors : A → List positive) (transf : positive → (L cfg).t → (L cfg).t)
+    (start : state cfg) : Option (PMap.t (L cfg).t) :=
+  Dataflow_Solver.fixpoint_from code successors transf start
+
+def start_state (cfg : CompilerConfig) (enode : positive)
+    (eval : (L cfg).t) : state cfg :=
+  Dataflow_Solver.start_state (NS := NodeSetForward) enode eval
+
+def fixpoint (cfg : CompilerConfig) {A : Type} (code : PTree.t A)
+    (successors : A → List positive) (transf : positive → (L cfg).t → (L cfg).t)
+    (enode : positive) (eval : (L cfg).t) : Option (PMap.t (L cfg).t) :=
+  Dataflow_Solver.fixpoint (L cfg) NodeSetForward code successors transf enode eval
+
+def start_state_nodeset (cfg : CompilerConfig) (enodes : NodeSetForward.t) : state cfg :=
+  Dataflow_Solver.start_state_nodeset NodeSetForward enodes
+
+def fixpoint_nodeset (cfg : CompilerConfig) {A : Type} (code : PTree.t A)
+    (successors : A → List positive) (transf : positive → (L cfg).t → (L cfg).t)
+    (enodes : NodeSetForward.t) : Option (PMap.t (L cfg).t) :=
+  Dataflow_Solver.fixpoint_nodeset (L cfg) NodeSetForward code successors transf enodes
+
+def start_state_allnodes (cfg : CompilerConfig) {A : Type}
+    (code : PTree.t A) : state cfg :=
+  Dataflow_Solver.start_state_allnodes NodeSetForward code
+
+def fixpoint_allnodes (cfg : CompilerConfig) {A : Type} (code : PTree.t A)
+    (successors : A → List positive) (transf : positive → (L cfg).t → (L cfg).t) :
+    Option (PMap.t (L cfg).t) :=
+  Dataflow_Solver.fixpoint_allnodes (L cfg) NodeSetForward code successors transf
+
+abbrev optge (cfg : CompilerConfig) := Dataflow_Solver.optge (L cfg)
+abbrev steps (cfg : CompilerConfig) {A : Type} (code : PTree.t A)
+    (successors : A → List positive)
+    (transf : positive → (L cfg).t → (L cfg).t) :=
+  Dataflow_Solver.steps (LAT := L cfg) (NS := NodeSetForward)
+    code successors transf
+abbrev good_state (cfg : CompilerConfig) {A : Type} (code : PTree.t A)
+    (successors : A → List positive)
+    (transf : positive → (L cfg).t → (L cfg).t) (st : state cfg) :=
+  Dataflow_Solver.good_state code successors transf st
+
+def fixpoint_solution (_laws : law_obligation cfg) : Prop :=
+  ∀ (A : Type) (code : PTree.t A) (successors : A → List positive)
+    (transf : positive → (L cfg).t → (L cfg).t) (ep : positive)
+    (ev : (L cfg).t) (res : PMap.t (L cfg).t) (n : positive)
+    (instr : A) (s : positive),
+    fixpoint cfg code successors transf ep ev = some res →
+    PTree.get n code = some instr → s ∈ successors instr →
+    (∀ n, (L cfg).eq (transf n (L cfg).bot) (L cfg).bot) →
+    (L cfg).ge (PMap.get s res) (transf n (PMap.get n res))
+
+def fixpoint_entry (_laws : law_obligation cfg) : Prop :=
+  ∀ (A : Type) (code : PTree.t A) (successors : A → List positive)
+    (transf : positive → (L cfg).t → (L cfg).t) (ep : positive)
+    (ev : (L cfg).t) (res : PMap.t (L cfg).t),
+    fixpoint cfg code successors transf ep ev = some res →
+    (L cfg).ge (PMap.get ep res) ev
+
+def fixpoint_allnodes_solution (_laws : law_obligation cfg) : Prop :=
+  ∀ (A : Type) (code : PTree.t A) (successors : A → List positive)
+    (transf : positive → (L cfg).t → (L cfg).t) (res : PMap.t (L cfg).t)
+    (n : positive) (instr : A) (s : positive),
+    fixpoint_allnodes cfg code successors transf = some res →
+    PTree.get n code = some instr → s ∈ successors instr →
+    (L cfg).ge (PMap.get s res) (transf n (PMap.get n res))
+
+def fixpoint_nodeset_solution (_laws : law_obligation cfg) : Prop :=
+  ∀ (A : Type) (code : PTree.t A) (successors : A → List positive)
+    (transf : positive → (L cfg).t → (L cfg).t) (enodes : NodeSetForward.t)
+    (res : PMap.t (L cfg).t) (e n : positive) (instr : A) (s : positive),
+    fixpoint_nodeset cfg code successors transf enodes = some res →
+    NodeSetForward.In e enodes → reachable code successors e n →
+    PTree.get n code = some instr → s ∈ successors instr →
+    (L cfg).ge (PMap.get s res) (transf n (PMap.get n res))
+
+def fixpoint_invariant (_laws : law_obligation cfg) : Prop :=
+  ∀ (A : Type) (code : PTree.t A) (successors : A → List positive)
+    (transf : positive → (L cfg).t → (L cfg).t) (ep : positive)
+    (ev : (L cfg).t) (P : (L cfg).t → Prop), P (L cfg).bot →
+    (∀ x y, P x → P y → P ((L cfg).lub x y)) →
+    (∀ pc instr x, PTree.get pc code = some instr → P x → P (transf pc x)) →
+    P ev → ∀ res pc, fixpoint cfg code successors transf ep ev = some res →
+    P (PMap.get pc res)
+
+end DS
+
 /-! ## Executable analysis definitions -/
 
 def areg (ae : aenv) (r : reg) : aval := AE.get r ae
@@ -239,7 +359,7 @@ def mfunction_entry : amem :=
 def analyze (cfg : CompilerConfig) (rm : romem) (f : function) : PMap.t VA.t :=
   let lu := Liveness.last_uses f
   let entry := VA.State (einit_regs f.fn_params f.fn_sig.sig_args) mfunction_entry
-  match Dataflow_Solver.fixpoint (va_lat cfg) NodeSetForward f.fn_code
+  match DS.fixpoint cfg f.fn_code
       successors_instr (fun pc before => transfer' cfg f lu rm pc before)
       f.fn_entrypoint entry with
   | none => PMap.init (VA.State AE.top mtop)

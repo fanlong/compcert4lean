@@ -28,6 +28,7 @@ private abbrev zShiftl := ZArith.BinInt.Z.shiftl
 private abbrev zShiftr := ZArith.BinInt.Z.shiftr
 private abbrev zLe := ZArith.BinInt.Z.le
 private abbrev zLt := ZArith.BinInt.Z.lt
+private abbrev zLtb := ZArith.BinInt.Z.ltb
 private abbrev zDivide := ZArith.BinInt.Z.divide
 private abbrev zOfNat := ZArith.BinInt.Z.of_nat
 private abbrev zToNat := ZArith.BinInt.Z.to_nat
@@ -444,6 +445,14 @@ def shrx {bits : Nat} (x y : Word bits) : Word bits :=
 def zero_ext {bits : Nat} (n : Z) (x : Word bits) : Word bits :=
   repr bits (zMod (unsigned x) (zTwoP n))
 
+def sign_ext {bits : Nat} (n : Z) (x : Word bits) : Word bits :=
+  let modulus := zTwoP n
+  let residue := zMod (unsigned x) modulus
+  if zLtb residue (zTwoP (zSub n zOne)) then
+    repr bits residue
+  else
+    repr bits (zSub residue modulus)
+
 def testbit {bits : Nat} (x : Word bits) : Z → Bool
   | .Zneg _ => false
   | .Z0 => Nat.testBit (natVal x) 0
@@ -488,6 +497,7 @@ structure GeneratedApplication where
   shru : int → int → int
   shr : int → int → int
   zero_ext : Z → int → int
+  sign_ext : Z → int → int
 
 def makeGeneratedApplication (bits : Nat) : GeneratedApplication where
   wordsize := bits
@@ -517,6 +527,7 @@ def makeGeneratedApplication (bits : Nat) : GeneratedApplication where
   shru := shru
   shr := shr
   zero_ext := zero_ext
+  sign_ext := sign_ext
 
 end WordCore
 
@@ -542,6 +553,9 @@ def one : int := WordCore.one wordsize
 def mone : int := WordCore.mone wordsize
 def iwordsize : int := WordCore.iwordsize wordsize
 def eq : int → int → Bool := WordCore.eq
+def eq_dec (x y : int) :
+    CompCert4Lean.Foundation.Logic.Support.Sumbool (x = y) (x ≠ y) :=
+  if h : x = y then .left h else .right h
 def lt : int → int → Bool := WordCore.lt
 def ltu : int → int → Bool := WordCore.ltu
 def neg : int → int := WordCore.neg
@@ -566,6 +580,7 @@ def not : int → int := WordCore.not
 def shl : int → int → int := WordCore.shl
 def shru : int → int → int := WordCore.shru
 def shr : int → int → int := WordCore.shr
+def sign_ext (n : Z) (x : int) : int := WordCore.sign_ext n x
 def rol : int → int → int := WordCore.rol
 def ror : int → int → int := WordCore.ror
 def shrx : int → int → int := WordCore.shrx
@@ -579,6 +594,28 @@ def is_power2 (x : int) : Option int :=
 
 def zero_ext (n : Z) (x : int) : int :=
   WordCore.zero_ext n x
+
+def one_bits (x : int) : List int :=
+  List.map repr
+    (CompCert4Lean.Lib.Zbits.Z_one_bits wordsize (unsigned x) zZero)
+
+def cmp (c : comparison) (x y : int) : Bool :=
+  match c with
+  | .Ceq => eq x y
+  | .Cne => !(eq x y)
+  | .Clt => lt x y
+  | .Cle => !(lt y x)
+  | .Cgt => lt y x
+  | .Cge => !(lt x y)
+
+def cmpu (c : comparison) (x y : int) : Bool :=
+  match c with
+  | .Ceq => eq x y
+  | .Cne => !(eq x y)
+  | .Clt => ltu x y
+  | .Cle => !(ltu y x)
+  | .Cgt => ltu y x
+  | .Cge => !(ltu x y)
 
 private theorem zero_ext_modulo (n : Z) (x : int) (hn : zLe zZero n) :
     ZArith.BinInt.Z.modulo (unsigned x) (two_p n) =
@@ -764,6 +801,7 @@ def not : int → int := WordCore.not
 def shl : int → int → int := WordCore.shl
 def shru : int → int → int := WordCore.shru
 def shr : int → int → int := WordCore.shr
+def sign_ext (n : Z) (x : int) : int := WordCore.sign_ext n x
 def rol : int → int → int := WordCore.rol
 def ror : int → int → int := WordCore.ror
 def shrx : int → int → int := WordCore.shrx
@@ -1134,6 +1172,7 @@ def xor : int → int → int := WordCore.xor
 def shl : int → int → int := WordCore.shl
 def shru : int → int → int := WordCore.shru
 def shr : int → int → int := WordCore.shr
+def sign_ext (n : Z) (x : int) : int := WordCore.sign_ext n x
 def testbit : int → Z → Bool := WordCore.testbit
 def eqm : Z → Z → Prop := WordCore.eqm wordsize
 

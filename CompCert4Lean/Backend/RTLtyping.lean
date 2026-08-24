@@ -92,13 +92,92 @@ private def typEq (x y : typ) : Sumbool (x = y) (x ≠ y) := by
   · exact .left h
   · exact .right h
 
-private def rtlTypeAlgebra : TYPE_ALGEBRA where
-  t := typ
-  eq := typEq
-  default := Tint
+namespace RTLtypes
 
-private abbrev InferEnv := UniSolver.typenv rtlTypeAlgebra
-private abbrev TypeAssign := UniSolver.typassign rtlTypeAlgebra
+abbrev t : Type := typ
+def eq (x y : t) : Sumbool (x = y) (x ≠ y) := typEq x y
+def default : t := Tint
+
+def algebra : TYPE_ALGEBRA where
+  t := t
+  eq := eq
+  default := default
+
+end RTLtypes
+
+private abbrev rtlTypeAlgebra : TYPE_ALGEBRA := RTLtypes.algebra
+
+/-! Canonical generated surface for `Unityping.UniSolver(RTLtypes)`.  Only
+the generated members consumed by the frozen RTLtyping source are promoted;
+unreferenced generic recursion helpers remain deferred under DMC-006. -/
+namespace S
+
+abbrev typenv : Type :=
+  CompCert4Lean.Common.Unityping.UniSolver.typenv rtlTypeAlgebra
+abbrev typassign : Type :=
+  CompCert4Lean.Common.Unityping.UniSolver.typassign rtlTypeAlgebra
+
+def initial : typenv :=
+  CompCert4Lean.Common.Unityping.UniSolver.initial rtlTypeAlgebra
+
+def set (e : typenv) (x : positive) (ty : RTLtypes.t) : res typenv :=
+  CompCert4Lean.Common.Unityping.UniSolver.set rtlTypeAlgebra e x ty
+
+def set_list (e : typenv) (xs : List positive)
+    (tys : List RTLtypes.t) : res typenv :=
+  CompCert4Lean.Common.Unityping.UniSolver.set_list rtlTypeAlgebra e xs tys
+
+def move (e : typenv) (r1 r2 : positive) : res (Bool × typenv) :=
+  CompCert4Lean.Common.Unityping.UniSolver.move rtlTypeAlgebra e r1 r2
+
+def solve (e : typenv) : res typassign :=
+  CompCert4Lean.Common.Unityping.UniSolver.solve rtlTypeAlgebra e
+
+def satisf (te : typassign) (e : typenv) : Prop :=
+  CompCert4Lean.Common.Unityping.UniSolver.satisf rtlTypeAlgebra te e
+
+def satisf_initial : Prop := ∀ te : typassign, satisf te initial
+
+def set_sound : Prop :=
+  ∀ (te : typassign) (x : positive) (ty : RTLtypes.t) (e e' : typenv),
+    set e x ty = OK e' → satisf te e' → te x = ty
+
+def set_complete : Prop :=
+  ∀ (te : typassign) (e : typenv) (x : positive) (ty : RTLtypes.t),
+    satisf te e → te x = ty →
+      ∃ e', set e x ty = OK e' ∧ satisf te e'
+
+def set_list_sound : Prop :=
+  ∀ (te : typassign) (xs : List positive) (tys : List RTLtypes.t)
+    (e e' : typenv), set_list e xs tys = OK e' →
+    satisf te e' → List.map te xs = tys
+
+def set_list_complete : Prop :=
+  ∀ (te : typassign) (xs : List positive) (tys : List RTLtypes.t) (e : typenv),
+    satisf te e → List.map te xs = tys →
+      ∃ e', set_list e xs tys = OK e' ∧ satisf te e'
+
+def move_sound : Prop :=
+  ∀ (te : typassign) (e : typenv) (r1 r2 : positive)
+    (e' : typenv) (changed : Bool), move e r1 r2 = OK (changed, e') →
+    satisf te e' → te r1 = te r2
+
+def move_complete : Prop :=
+  ∀ (te : typassign) (e : typenv) (r1 r2 : positive),
+    satisf te e → te r1 = te r2 →
+      ∃ changed e', move e r1 r2 = OK (changed, e') ∧ satisf te e'
+
+def solve_sound : Prop :=
+  ∀ (e : typenv) (te : typassign), solve e = OK te → satisf te e
+
+def solve_complete : Prop :=
+  ∀ (te : typassign) (e : typenv), satisf te e →
+    ∃ te', solve e = OK te'
+
+end S
+
+private abbrev InferEnv := S.typenv
+private abbrev TypeAssign := S.typassign
 
 /-! ## Typing judgments -/
 
@@ -238,7 +317,7 @@ def check_successors (f : function) : List node → res Unit
       | OK _ => check_successors f rest
 
 def type_ros (e : InferEnv) : Sum reg ident → res InferEnv
-  | .inl r => UniSolver.set rtlTypeAlgebra e r Tptr
+  | .inl r => S.set e r Tptr
   | .inr _ => OK e
 
 def is_move : operation → Bool
@@ -253,7 +332,7 @@ def type_expect (e : InferEnv) (t1 t2 : typ) : res InferEnv :=
 def type_builtin_arg (e : InferEnv) (a : builtin_arg reg) (ty : typ) :
     res InferEnv :=
   match a with
-  | .BA r => UniSolver.set rtlTypeAlgebra e r ty
+  | .BA r => S.set e r ty
   | .BA_int _ => type_expect e ty Tint
   | .BA_long _ => type_expect e ty Tlong
   | .BA_float _ => type_expect e ty Tfloat
@@ -276,7 +355,7 @@ def type_builtin_args : InferEnv → List (builtin_arg reg) → List typ → res
 def type_builtin_res (e : InferEnv) (a : builtin_res reg) (ty : typ) :
     res InferEnv :=
   match a with
-  | .BR r => UniSolver.set rtlTypeAlgebra e r ty
+  | .BR r => S.set e r ty
   | _ => type_expect e ty Tint
 
 def type_instr (cfg : CompilerConfig) (f : function) (e : InferEnv) :
@@ -292,29 +371,29 @@ def type_instr (cfg : CompilerConfig) (f : function) (e : InferEnv) :
           if is_move op then
             match args with
             | [arg] =>
-                match UniSolver.move rtlTypeAlgebra e res arg with
+                match S.move e res arg with
                 | Error message => Error message
                 | OK (_, e') => OK e'
             | _ => Error (msg illFormedMoveText)
           else
             let (targs, tres) := type_of_operation op
-            match UniSolver.set_list rtlTypeAlgebra e args targs with
+            match S.set_list e args targs with
             | Error message => Error message
-            | OK e1 => UniSolver.set rtlTypeAlgebra e1 res tres
+            | OK e1 => S.set e1 res tres
   | .Iload chunk addr args dst s =>
       match check_successor f s with
       | Error message => Error message
       | OK _ =>
-          match UniSolver.set_list rtlTypeAlgebra e args (type_of_addressing addr) with
+          match S.set_list e args (type_of_addressing addr) with
           | Error message => Error message
-          | OK e1 => UniSolver.set rtlTypeAlgebra e1 dst (type_of_chunk chunk)
+          | OK e1 => S.set e1 dst (type_of_chunk chunk)
   | .Istore chunk addr args src s =>
       match check_successor f s with
       | Error message => Error message
       | OK _ =>
-          match UniSolver.set_list rtlTypeAlgebra e args (type_of_addressing addr) with
+          match S.set_list e args (type_of_addressing addr) with
           | Error message => Error message
-          | OK e1 => UniSolver.set rtlTypeAlgebra e1 src (type_of_chunk chunk)
+          | OK e1 => S.set e1 src (type_of_chunk chunk)
   | .Icall sg ros args res s =>
       match check_successor f s with
       | Error message => Error message
@@ -322,14 +401,14 @@ def type_instr (cfg : CompilerConfig) (f : function) (e : InferEnv) :
           match type_ros e ros with
           | Error message => Error message
           | OK e1 =>
-              match UniSolver.set_list rtlTypeAlgebra e1 args (proj_sig_args sg) with
+              match S.set_list e1 args (proj_sig_args sg) with
               | Error message => Error message
-              | OK e2 => UniSolver.set rtlTypeAlgebra e2 res (proj_sig_res sg)
+              | OK e2 => S.set e2 res (proj_sig_res sg)
   | .Itailcall sg ros args =>
       match type_ros e ros with
       | Error message => Error message
       | OK e1 =>
-          match UniSolver.set_list rtlTypeAlgebra e1 args (proj_sig_args sg) with
+          match S.set_list e1 args (proj_sig_args sg) with
           | Error message => Error message
           | OK e2 =>
               if sg.sig_res = f.fn_sig.sig_res then
@@ -352,12 +431,12 @@ def type_instr (cfg : CompilerConfig) (f : function) (e : InferEnv) :
       | OK _ =>
           match check_successor f s2 with
           | Error message => Error message
-          | OK _ => UniSolver.set_list rtlTypeAlgebra e args (type_of_condition cond)
+          | OK _ => S.set_list e args (type_of_condition cond)
   | .Ijumptable arg tbl =>
       match check_successors f tbl with
       | Error message => Error message
       | OK _ =>
-          match UniSolver.set rtlTypeAlgebra e arg Tint with
+          match S.set e arg Tint with
           | Error message => Error message
           | OK e1 =>
               match zle
@@ -370,7 +449,7 @@ def type_instr (cfg : CompilerConfig) (f : function) (e : InferEnv) :
       if f.fn_sig.sig_res = Xvoid then OK e else Error (msg badReturnText)
   | .Ireturn (some r) =>
       if f.fn_sig.sig_res = Xvoid then Error (msg badReturnText)
-      else UniSolver.set rtlTypeAlgebra e r (proj_sig_res f.fn_sig)
+      else S.set e r (proj_sig_res f.fn_sig)
 
 def type_code (cfg : CompilerConfig) (f : function) (e : InferEnv) :
     res InferEnv :=
@@ -385,16 +464,18 @@ def type_code (cfg : CompilerConfig) (f : function) (e : InferEnv) :
     f.fn_code (OK e)
 
 def check_params_norepet (params : List reg) : res Unit :=
-  if params.Nodup then OK () else Error (msg duplicateParametersText)
+  match CompCert4Lean.Lib.Coqlib.list_norepet_dec Reg.eq params with
+  | .left _ => OK ()
+  | .right _ => Error (msg duplicateParametersText)
 
 def type_function (cfg : CompilerConfig) (f : function) : res regenv :=
-  match type_code cfg f (UniSolver.initial rtlTypeAlgebra) with
+  match type_code cfg f (S.initial) with
   | Error message => Error message
   | OK e1 =>
-      match UniSolver.set_list rtlTypeAlgebra e1 f.fn_params (proj_sig_args f.fn_sig) with
+      match S.set_list e1 f.fn_params (proj_sig_args f.fn_sig) with
       | Error message => Error message
       | OK e2 =>
-          match UniSolver.solve rtlTypeAlgebra e2 with
+          match S.solve e2 with
           | Error message => Error message
           | OK te =>
               match check_params_norepet f.fn_params with
@@ -409,7 +490,7 @@ def type_function (cfg : CompilerConfig) (f : function) : res regenv :=
 def type_ros_soundStatement : Prop :=
   ∀ (e : InferEnv) (ros : Sum reg ident) (e' : InferEnv) (te : TypeAssign),
     type_ros e ros = OK e' →
-      UniSolver.satisf rtlTypeAlgebra te e' →
+      S.satisf te e' →
         match ros with
         | .inl r => te r = Tptr
         | .inr _ => True
@@ -427,42 +508,42 @@ def type_builtin_arg_soundStatement : Prop :=
   ∀ (e : InferEnv) (a : builtin_arg reg) (ty : typ)
     (e' : InferEnv) (te : TypeAssign),
     type_builtin_arg e a ty = OK e' →
-      UniSolver.satisf rtlTypeAlgebra te e' →
+      S.satisf te e' →
         type_of_builtin_arg te a = ty
 
 def type_builtin_args_soundStatement : Prop :=
   ∀ (al : List (builtin_arg reg)) (tyl : List typ)
     (e e' : InferEnv) (te : TypeAssign),
     type_builtin_args e al tyl = OK e' →
-      UniSolver.satisf rtlTypeAlgebra te e' →
+      S.satisf te e' →
         List.map (type_of_builtin_arg te) al = tyl
 
 def type_builtin_res_soundStatement : Prop :=
   ∀ (e : InferEnv) (a : builtin_res reg) (ty : typ)
     (e' : InferEnv) (te : TypeAssign),
     type_builtin_res e a ty = OK e' →
-      UniSolver.satisf rtlTypeAlgebra te e' →
+      S.satisf te e' →
         type_of_builtin_res te a = ty
 
 def type_instr_incrStatement : Prop :=
   ∀ (cfg : CompilerConfig) (f : function) (e : InferEnv) (i : instruction)
     (e' : InferEnv) (te : TypeAssign),
     type_instr cfg f e i = OK e' →
-      UniSolver.satisf rtlTypeAlgebra te e' →
-        UniSolver.satisf rtlTypeAlgebra te e
+      S.satisf te e' →
+        S.satisf te e
 
 def type_instr_soundStatement : Prop :=
   ∀ (cfg : CompilerConfig) (f : function) (e : InferEnv) (i : instruction)
     (e' : InferEnv) (te : TypeAssign),
     type_instr cfg f e i = OK e' →
-      UniSolver.satisf rtlTypeAlgebra te e' → wt_instr cfg f te i
+      S.satisf te e' → wt_instr cfg f te i
 
 def type_code_soundStatement : Prop :=
   ∀ (cfg : CompilerConfig) (f : function) (pc : node) (i : instruction)
     (e e' : InferEnv) (te : TypeAssign),
     type_code cfg f e = OK e' →
       PTree.get pc f.fn_code = some i →
-        UniSolver.satisf rtlTypeAlgebra te e' → wt_instr cfg f te i
+        S.satisf te e' → wt_instr cfg f te i
 
 def type_function_correctStatement : Prop :=
   ∀ (cfg : CompilerConfig) (f : function) (env : regenv),

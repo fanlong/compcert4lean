@@ -30,6 +30,9 @@ export float (Fnum Fexp)
 def F2R {beta : radix} (f : float beta) : R :=
   Rmult (IZR (Fnum f)) (bpow beta (Fexp f))
 
+def round_pred_total (P : R → R → Prop) : Prop :=
+  ∀ x, ∃ f, P x f
+
 def round_pred_monotone (P : R → R → Prop) : Prop :=
   ∀ x y f g, P x f → P y g → Rle x y → Rle f g
 

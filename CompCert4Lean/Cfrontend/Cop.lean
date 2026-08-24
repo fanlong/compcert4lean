@@ -90,10 +90,7 @@ private def modu (x y : CCInt) : CCInt := Int.sub x (Int.mul (Int.divu x y) y)
 private def mods (x y : CCInt) : CCInt := Int.sub x (Int.mul (Int.divs x y) y)
 private def zero_ext (n : Z) (x : CCInt) : CCInt :=
   Int.repr (ZArith.BinInt.Z.modulo (Int.unsigned x) (ZArith.Zpower.two_p n))
-private def sign_ext (n : Z) (x : CCInt) : CCInt :=
-  let modulus := ZArith.Zpower.two_p n
-  let residue := ZArith.BinInt.Z.modulo (Int.unsigned x) modulus
-  if zltBool (ZArith.Zpower.two_p (zSub n z1)) residue then Int.repr (zSub residue modulus) else Int.repr residue
+private abbrev sign_ext := CompCert4Lean.Lib.Integers.Int.sign_ext
 private def unsigned_bitfield_extract (pos width : Z) (c : CCInt) : CCInt :=
   Int.zero_ext width (Int.shr c (Int.repr pos))
 private def signed_bitfield_extract (pos width : Z) (c : CCInt) : CCInt :=

@@ -67,12 +67,6 @@ private abbrev ident := CompCert4Lean.Common.AST.ident
 private abbrev Included {A : Type} (xs ys : List A) : Prop :=
   CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.List.incl xs ys
 
-def tr_if (ce : composite_env) (r : cexpr) (s1 s2 s : Clight.statement) : Prop :=
-  ∃ (ge : Clight.genv) (e : Clight.env) (le : Clight.temp_env) (m : mem)
-    (sl : List Clight.statement) (a : Clight.expr) (tmps : List ident),
-    tr_top ce ge e le m .For_val r sl a tmps ∧
-      s = SimplExpr.makeseq (sl ++ [makeif a s1 s2])
-
 def match_prog (p : cprogram) (tp : tprogram) : Prop :=
   (list_forall2
       (fun idg tidg =>

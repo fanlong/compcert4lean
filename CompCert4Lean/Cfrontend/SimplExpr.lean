@@ -205,25 +205,13 @@ def makeif (a : expr) (s1 s2 : statement) : statement :=
       | none => .Sifthenelse a s1 s2
   | none => .Sifthenelse a s1 s2
 
-mutual
-  private def typeEq : type → type → Bool
-    | .Tvoid, .Tvoid => true
-    | .Tint sz1 sg1 a1, .Tint sz2 sg2 a2 => sz1 == sz2 && sg1 == sg2 && a1 == a2
-    | .Tlong sg1 a1, .Tlong sg2 a2 => sg1 == sg2 && a1 == a2
-    | .Tfloat sz1 a1, .Tfloat sz2 a2 => sz1 == sz2 && a1 == a2
-    | .Tpointer t1 a1, .Tpointer t2 a2 => typeEq t1 t2 && a1 == a2
-    | .Tarray t1 n1 a1, .Tarray t2 n2 a2 => typeEq t1 t2 && n1 == n2 && a1 == a2
-    | .Tfunction args1 res1 cc1, .Tfunction args2 res2 cc2 =>
-        typeListEq args1 args2 && typeEq res1 res2 && cc1 == cc2
-    | .Tstruct id1 a1, .Tstruct id2 a2 => id1 == id2 && a1 == a2
-    | .Tunion id1 a1, .Tunion id2 a2 => id1 == id2 && a1 == a2
-    | _, _ => false
+private def typeEq (t1 t2 : type) : Bool :=
+  CompCert4Lean.Lib.Coqlib.proj_sumbool
+    (CompCert4Lean.Cfrontend.Ctypes.type_eq t1 t2)
 
-  private def typeListEq : List type → List type → Bool
-    | [], [] => true
-    | t1 :: ts1, t2 :: ts2 => typeEq t1 t2 && typeListEq ts1 ts2
-    | _, _ => false
-end
+private def typeListEq (ts1 ts2 : List type) : Bool :=
+  CompCert4Lean.Lib.Coqlib.proj_sumbool
+    (CompCert4Lean.Cfrontend.Ctypes.typelist_eq ts1 ts2)
 
 def Ederef' (a : expr) (t : type) : expr :=
   match a with

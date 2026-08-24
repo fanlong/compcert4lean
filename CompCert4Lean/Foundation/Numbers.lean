@@ -419,7 +419,10 @@ def add (x y : _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z) := zOfInt (in
 def sub (x y : _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z) := zOfInt (intOfZ x - intOfZ y)
 def mul (x y : _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z) := zOfInt (intOfZ x * intOfZ y)
 def opp (x : _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z) := zOfInt (-intOfZ x)
-abbrev neg := opp
+/- The Rocq `Z.neg` name is the negative constructor, not integer
+   opposition.  Keep opposition under its source name `Z.opp` and reserve
+   `Z.neg` for the constructor-shaped `positive -> Z` API. -/
+abbrev neg := Zneg
 def compare (x y : _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z) := comparisonOfInt (intOfZ x) (intOfZ y)
 def le (x y : _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z) : Prop := intOfZ x ≤ intOfZ y
 def lt (x y : _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z) : Prop := intOfZ x < intOfZ y
@@ -569,8 +572,23 @@ end ZArith.BinInt
 
 namespace ZArith.ZArith_dec
 
-def Z_dec : Type :=
-  ∀ n m : Z, Support.Sumor (Support.Sumbool (ZArith.BinInt.Z.lt n m) (ZArith.BinInt.Z.lt m n)) (n = m)
+def Z_dec (n m : Z) :
+    _root_.CompCert4Lean.Foundation.Logic.Support.Sumor
+      (_root_.CompCert4Lean.Foundation.Logic.Support.Sumbool
+        (ZArith.BinInt.Z.lt n m) (ZArith.BinInt.Z.lt m n))
+      (n = m) := by
+  if hnm : intOfZ n < intOfZ m then
+    exact .inleft (.left (show ZArith.BinInt.Z.lt n m from hnm))
+  else if hmn : intOfZ m < intOfZ n then
+    exact .inleft (.right (show ZArith.BinInt.Z.lt m n from hmn))
+  else
+    exact .inright (intOfZ_injective
+      (Int.le_antisymm (Int.le_of_not_gt hmn) (Int.le_of_not_gt hnm)))
+
+def Z_dec_type : Type :=
+  ∀ n m : Z, Support.Sumor
+    (Support.Sumbool (ZArith.BinInt.Z.lt n m) (ZArith.BinInt.Z.lt m n))
+    (n = m)
 def Z_le_dec (x y : Z) : Support.Sumbool (ZArith.BinInt.Z.le x y) (¬ ZArith.BinInt.Z.le x y) := by
   exact if h : intOfZ x ≤ intOfZ y then
     .left (show ZArith.BinInt.Z.le x y from h)

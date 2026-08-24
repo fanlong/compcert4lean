@@ -67,13 +67,24 @@ private theorem getSet (A : Type) (x y : positive) (v : A)
 
 private def adapter : CompCert4Lean.Lib.UnionFind.MAP where
   elt := positive
-  elt_eq := inferInstance
+  elt_eq := PTree.elt_eq
   t := PTree.t
-  empty := PTree.empty
-  get := PTree.get
-  set := PTree.set
-  gempty := fun x => getEmpty _ x
-  gsspec := fun x y v m => getSet _ x y v m
+  empty := fun A => PTree.empty A
+  get := fun _ => PTree.get
+  set := fun _ => PTree.set
+  gempty := fun A x => getEmpty A x
+  gsspec := by
+    intro A x y v m
+    rw [getSet]
+    cases hxy : PTree.elt_eq x y with
+    | left h =>
+        by_cases heq : x = y
+        · simp [heq]
+        · exact (heq h).elim
+    | right h =>
+        by_cases heq : x = y
+        · exact (h heq).elim
+        · simp [heq]
 
 end PTreeMap
 

@@ -176,18 +176,12 @@ private def eqBool {A : Type} [DecidableEq A] (x y : A) : Bool := decide (x = y)
 private def intZeroExt (n : Z) (x : CCInt) : CCInt :=
   Int.repr (zMod (Int.unsigned x) (zTwoP n))
 
-private def intSignExt (n : Z) (x : CCInt) : CCInt :=
-  let modulus := zTwoP n
-  let residue := zMod (Int.unsigned x) modulus
-  if zLtb (zTwoP (zSub n z1)) residue then Int.repr (zSub residue modulus) else Int.repr residue
+private abbrev intSignExt := CompCert4Lean.Lib.Integers.Int.sign_ext
 
 private def int64ZeroExt (n : Z) (x : CCInt64) : CCInt64 :=
   Int64.repr (zMod (Int64.unsigned x) (zTwoP n))
 
-private def int64SignExt (n : Z) (x : CCInt64) : CCInt64 :=
-  let modulus := zTwoP n
-  let residue := zMod (Int64.unsigned x) modulus
-  if zLtb (zTwoP (zSub n z1)) residue then Int64.repr (zSub residue modulus) else Int64.repr residue
+private abbrev int64SignExt := CompCert4Lean.Lib.Integers.Int64.sign_ext
 
 private def intMulhs (x y : CCInt) : CCInt := Int.mulhs x y
 private def intMulhu (x y : CCInt) : CCInt := Int.mulhu x y

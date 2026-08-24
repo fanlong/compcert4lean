@@ -50,6 +50,7 @@ private abbrev mone := CompCert4Lean.Lib.Integers.Int.mone
 private abbrev wordsize := CompCert4Lean.Lib.Integers.Int.wordsize
 private abbrev iwordsize := CompCert4Lean.Lib.Integers.Int.iwordsize
 private abbrev eq := CompCert4Lean.Lib.Integers.Int.eq
+private abbrev eq_dec := CompCert4Lean.Lib.Integers.Int.eq_dec
 private abbrev ltu := CompCert4Lean.Lib.Integers.Int.ltu
 private abbrev neg := CompCert4Lean.Lib.Integers.Int.neg
 private abbrev add := CompCert4Lean.Lib.Integers.Int.add
@@ -63,36 +64,17 @@ private abbrev shru := CompCert4Lean.Lib.Integers.Int.shru
 private abbrev shr := CompCert4Lean.Lib.Integers.Int.shr
 private abbrev zero_ext := CompCert4Lean.Lib.Integers.Int.zero_ext
 
-private def sign_ext (n : Z) (x : CCInt) : CCInt :=
-  let modulus := ZArith.Zpower.two_p n
-  let residue := ZArith.BinInt.Z.modulo (unsigned x) modulus
-  if zltBool (ZArith.Zpower.two_p (zSub n (ZArith.BinInt.Z.of_nat 1))) residue then
-    repr (zSub residue modulus)
-  else
-    repr residue
+private abbrev sign_ext := CompCert4Lean.Lib.Integers.Int.sign_ext
+private abbrev one_bits := CompCert4Lean.Lib.Integers.Int.one_bits
+private abbrev cmp := CompCert4Lean.Lib.Integers.Int.cmp
+private abbrev cmpu := CompCert4Lean.Lib.Integers.Int.cmpu
 
 end Int
 
-private def intOneBits (x : CCInt) : List CCInt :=
-  List.map Int.repr
-    (CompCert4Lean.Lib.Zbits.Z_one_bits Int.wordsize (Int.unsigned x) z0)
-
-private def zCmp (c : comparison) (x y : Z) : Bool :=
-  let x' := CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ x
-  let y' := CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ y
-  match c with
-  | .Ceq => decide (x' = y')
-  | .Cne => decide (x' != y')
-  | .Clt => decide (x' < y')
-  | .Cle => decide (x' <= y')
-  | .Cgt => decide (x' > y')
-  | .Cge => decide (x' >= y')
-
-private def intCmp (c : comparison) (x y : CCInt) : Bool :=
-  zCmp c (Int.signed x) (Int.signed y)
-
-private def intCmpu (c : comparison) (x y : CCInt) : Bool :=
-  zCmp c (Int.unsigned x) (Int.unsigned y)
+private def intEqDecBool (x y : CCInt) : Bool :=
+  match Int.eq_dec x y with
+  | .left _ => true
+  | .right _ => false
 
 /-! ## Explicit relocation service -/
 
@@ -392,7 +374,7 @@ def shrimm (e1 : expr) (n : CCInt) : expr :=
     | .shrimm_default e1 => Eop (Oshrimm n) (Econs e1 Enil)
 
 def mulimm_base (n1 : CCInt) (e2 : expr) : expr :=
-  match intOneBits n1 with
+  match Int.one_bits n1 with
   | [i] => shlimm e2 i
   | [i, j] =>
       Elet e2 (add (shlimm (Eletvar 0) i) (shlimm (Eletvar 0) j))
@@ -695,18 +677,18 @@ def compimm (default : comparison -> CCInt -> condition)
   | .compimm_case1 c n1 =>
       Eop (Ointconst (if sem c n1 n2 then Int.one else Int.zero)) Enil
   | .compimm_case2 cond el =>
-      if Int.eq n2 Int.zero then Eop (Ocmp (negate_condition cond)) el
-      else if Int.eq n2 Int.one then Eop (Ocmp cond) el
+      if intEqDecBool n2 Int.zero then Eop (Ocmp (negate_condition cond)) el
+      else if intEqDecBool n2 Int.one then Eop (Ocmp cond) el
       else Eop (Ointconst Int.zero) Enil
   | .compimm_case3 cond el =>
-      if Int.eq n2 Int.zero then Eop (Ocmp cond) el
-      else if Int.eq n2 Int.one then Eop (Ocmp (negate_condition cond)) el
+      if intEqDecBool n2 Int.zero then Eop (Ocmp cond) el
+      else if intEqDecBool n2 Int.one then Eop (Ocmp (negate_condition cond)) el
       else Eop (Ointconst Int.one) Enil
   | .compimm_case4 n1 t1 =>
-      if Int.eq n2 Int.zero then Eop (Ocmp (Cmaskzero n1)) (Econs t1 Enil)
+      if intEqDecBool n2 Int.zero then Eop (Ocmp (Cmaskzero n1)) (Econs t1 Enil)
       else Eop (Ocmp (default c n2)) (Econs e1 Enil)
   | .compimm_case5 n1 t1 =>
-      if Int.eq n2 Int.zero then Eop (Ocmp (Cmasknotzero n1)) (Econs t1 Enil)
+      if intEqDecBool n2 Int.zero then Eop (Ocmp (Cmasknotzero n1)) (Econs t1 Enil)
       else Eop (Ocmp (default c n2)) (Econs e1 Enil)
   | .compimm_default c e1 => Eop (Ocmp (default c n2)) (Econs e1 Enil)
 
@@ -725,8 +707,8 @@ def comp_match (e1 e2 : expr) : comp_cases :=
 
 def comp (c : comparison) (e1 e2 : expr) : expr :=
   match comp_match e1 e2 with
-  | .comp_case1 n1 t2 => compimm Ccompimm intCmp (swap_comparison c) t2 n1
-  | .comp_case2 t1 n2 => compimm Ccompimm intCmp c t1 n2
+  | .comp_case1 n1 t2 => compimm Ccompimm Int.cmp (swap_comparison c) t2 n1
+  | .comp_case2 t1 n2 => compimm Ccompimm Int.cmp c t1 n2
   | .comp_default e1 e2 => Eop (Ocmp (Ccomp c)) (Econs e1 (Econs e2 Enil))
 
 inductive compu_cases : Type where
@@ -744,8 +726,8 @@ def compu_match (e1 e2 : expr) : compu_cases :=
 
 def compu (c : comparison) (e1 e2 : expr) : expr :=
   match compu_match e1 e2 with
-  | .compu_case1 n1 t2 => compimm Ccompuimm intCmpu (swap_comparison c) t2 n1
-  | .compu_case2 t1 n2 => compimm Ccompuimm intCmpu c t1 n2
+  | .compu_case1 n1 t2 => compimm Ccompuimm Int.cmpu (swap_comparison c) t2 n1
+  | .compu_case2 t1 n2 => compimm Ccompuimm Int.cmpu c t1 n2
   | .compu_default e1 e2 => Eop (Ocmp (Ccompu c)) (Econs e1 (Econs e2 Enil))
 
 def compf (c : comparison) (e1 e2 : expr) : expr :=

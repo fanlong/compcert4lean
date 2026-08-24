@@ -88,13 +88,7 @@ private def sumboolBool {P Q : Prop} (d : Sumbool P Q) : Bool :=
 private def intZeroExt (n : Z) (x : CCInt.int) : CCInt.int :=
   CCInt.repr (zMod (CCInt.unsigned x) (zTwoP n))
 
-private def intSignExt (n : Z) (x : CCInt.int) : CCInt.int :=
-  let modulus := zTwoP n
-  let residue := zMod (CCInt.unsigned x) modulus
-  if ZArith.BinInt.Z.ltb residue (zTwoP (zSub n z1)) then
-    CCInt.repr residue
-  else
-    CCInt.repr (zSub residue modulus)
+private abbrev intSignExt := CompCert4Lean.Lib.Integers.Int.sign_ext
 
 /-! ## Memory chunks -/
 

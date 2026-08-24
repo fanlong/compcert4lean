@@ -75,15 +75,6 @@ def tr_is_bitfield_access (ce : composite_env) (l : expr) (bf : bitfield) : Prop
         | _ => False
   | _ => bf = .Full
 
-private def specMakeIf (a : expr) (s1 s2 : statement) : statement :=
-  match CompCert4Lean.Cfrontend.SimplExpr.eval_simpl_expr a with
-  | some v =>
-      match CompCert4Lean.Cfrontend.Cop.bool_val v
-          (CompCert4Lean.Cfrontend.Clight.typeof a) Mem.empty with
-      | some b => if b then s1 else s2
-      | none => .Sifthenelse a s1 s2
-  | none => .Sifthenelse a s1 s2
-
 inductive tr_rvalof (ce : composite_env) :
     type → expr → List statement → expr → List ident → Prop where
   | tr_rvalof_nonvol (ty : type) (a : expr) (tmp : List ident)
@@ -191,7 +182,7 @@ mutual
         (hdisjoint : Disjoint tmp1 tmp2) (hincl1 : Included tmp1 tmp)
         (hincl2 : Included tmp2 tmp) (htmp : t ∈ tmp) :
         tr_expr ce le .For_val (.Eseqand e1 e2 ty)
-          (sl1 ++ [specMakeIf a1
+          (sl1 ++ [CompCert4Lean.Cfrontend.SimplExpr.makeif a1
             (CompCert4Lean.Cfrontend.SimplExpr.makeseq sl2)
             (.Sset t (.Econst_int CompCert4Lean.Lib.Integers.Int.zero ty))])
           (.Etempvar t ty) tmp
@@ -203,7 +194,7 @@ mutual
         (hdisjoint : Disjoint tmp1 tmp2) (hincl1 : Included tmp1 tmp)
         (hincl2 : Included tmp2 tmp) :
         tr_expr ce le .For_effects (.Eseqand e1 e2 ty)
-          (sl1 ++ [specMakeIf a1
+          (sl1 ++ [CompCert4Lean.Cfrontend.SimplExpr.makeif a1
             (CompCert4Lean.Cfrontend.SimplExpr.makeseq sl2) .Sskip]) any tmp
     | tr_seqand_set (le : temp_env) (sd : set_destination) (e1 e2 : cexpr)
         (ty : type) (sl1 : List statement) (a1 : expr) (tmp1 : List ident)
@@ -215,7 +206,7 @@ mutual
         (hdisjoint : Disjoint tmp1 tmp2) (hincl1 : Included tmp1 tmp)
         (hincl2 : Included tmp2 tmp) (htmp : t ∈ tmp) :
         tr_expr ce le (.For_set sd) (.Eseqand e1 e2 ty)
-          (sl1 ++ [specMakeIf a1
+          (sl1 ++ [CompCert4Lean.Cfrontend.SimplExpr.makeif a1
             (CompCert4Lean.Cfrontend.SimplExpr.makeseq sl2)
             (CompCert4Lean.Cfrontend.SimplExpr.makeseq
               (CompCert4Lean.Cfrontend.SimplExpr.do_set sd
@@ -229,7 +220,7 @@ mutual
         (hdisjoint : Disjoint tmp1 tmp2) (hincl1 : Included tmp1 tmp)
         (hincl2 : Included tmp2 tmp) (htmp : t ∈ tmp) :
         tr_expr ce le .For_val (.Eseqor e1 e2 ty)
-          (sl1 ++ [specMakeIf a1
+          (sl1 ++ [CompCert4Lean.Cfrontend.SimplExpr.makeif a1
             (.Sset t (.Econst_int CompCert4Lean.Lib.Integers.Int.one ty))
             (CompCert4Lean.Cfrontend.SimplExpr.makeseq sl2)])
           (.Etempvar t ty) tmp
@@ -241,7 +232,7 @@ mutual
         (hdisjoint : Disjoint tmp1 tmp2) (hincl1 : Included tmp1 tmp)
         (hincl2 : Included tmp2 tmp) :
         tr_expr ce le .For_effects (.Eseqor e1 e2 ty)
-          (sl1 ++ [specMakeIf a1 .Sskip
+          (sl1 ++ [CompCert4Lean.Cfrontend.SimplExpr.makeif a1 .Sskip
             (CompCert4Lean.Cfrontend.SimplExpr.makeseq sl2)]) any tmp
     | tr_seqor_set (le : temp_env) (sd : set_destination) (e1 e2 : cexpr)
         (ty : type) (sl1 : List statement) (a1 : expr) (tmp1 : List ident)
@@ -253,7 +244,7 @@ mutual
         (hdisjoint : Disjoint tmp1 tmp2) (hincl1 : Included tmp1 tmp)
         (hincl2 : Included tmp2 tmp) (htmp : t ∈ tmp) :
         tr_expr ce le (.For_set sd) (.Eseqor e1 e2 ty)
-          (sl1 ++ [specMakeIf a1
+          (sl1 ++ [CompCert4Lean.Cfrontend.SimplExpr.makeif a1
             (CompCert4Lean.Cfrontend.SimplExpr.makeseq
               (CompCert4Lean.Cfrontend.SimplExpr.do_set sd
                 (.Econst_int CompCert4Lean.Lib.Integers.Int.one ty)))
@@ -269,7 +260,7 @@ mutual
         (hincl1 : Included tmp1 tmp) (hincl2 : Included tmp2 tmp)
         (hincl3 : Included tmp3 tmp) (htmp : t ∈ tmp) :
         tr_expr ce le .For_val (.Econdition e1 e2 e3 ty)
-          (sl1 ++ [specMakeIf a1
+          (sl1 ++ [CompCert4Lean.Cfrontend.SimplExpr.makeif a1
             (CompCert4Lean.Cfrontend.SimplExpr.makeseq sl2)
             (CompCert4Lean.Cfrontend.SimplExpr.makeseq sl3)])
           (.Etempvar t ty) tmp
@@ -284,7 +275,7 @@ mutual
         (hincl1 : Included tmp1 tmp) (hincl2 : Included tmp2 tmp)
         (hincl3 : Included tmp3 tmp) :
         tr_expr ce le .For_effects (.Econdition e1 e2 e3 ty)
-          (sl1 ++ [specMakeIf a1
+          (sl1 ++ [CompCert4Lean.Cfrontend.SimplExpr.makeif a1
             (CompCert4Lean.Cfrontend.SimplExpr.makeseq sl2)
             (CompCert4Lean.Cfrontend.SimplExpr.makeseq sl3)]) any tmp
     | tr_condition_set (le : temp_env) (sd : set_destination) (t : ident)
@@ -299,7 +290,7 @@ mutual
         (hincl1 : Included tmp1 tmp) (hincl2 : Included tmp2 tmp)
         (hincl3 : Included tmp3 tmp) (htmp : t ∈ tmp) :
         tr_expr ce le (.For_set sd) (.Econdition e1 e2 e3 ty)
-          (sl1 ++ [specMakeIf a1
+          (sl1 ++ [CompCert4Lean.Cfrontend.SimplExpr.makeif a1
             (CompCert4Lean.Cfrontend.SimplExpr.makeseq sl2)
             (CompCert4Lean.Cfrontend.SimplExpr.makeseq sl3)]) any tmp
     | tr_assign_effects (le : temp_env) (e1 e2 : cexpr) (ty : type)
@@ -532,61 +523,67 @@ export tr_top (tr_top_val_val tr_top_base)
 abbrev tr_top_val_val := @tr_top.tr_top_val_val
 abbrev tr_top_base := @tr_top.tr_top_base
 
-private inductive TrExpressionCore (ce : composite_env) :
+inductive tr_expression (ce : composite_env) :
     cexpr → statement → expr → Prop where
-  | intro (r : cexpr) (sl : List statement) (a : expr) (tmps : List ident)
-      (h : ∀ (ge : genv) (e : env) (le : temp_env) (m : mem),
-        tr_top ce ge e le m .For_val r sl a tmps) :
-      TrExpressionCore ce r (CompCert4Lean.Cfrontend.SimplExpr.makeseq sl) a
-
-private inductive TrExprStmtCore (ce : composite_env) : cexpr → statement → Prop where
-  | intro (r : cexpr) (sl : List statement) (a : expr) (tmps : List ident)
-      (h : ∀ (ge : genv) (e : env) (le : temp_env) (m : mem),
-        tr_top ce ge e le m .For_effects r sl a tmps) :
-      TrExprStmtCore ce r (CompCert4Lean.Cfrontend.SimplExpr.makeseq sl)
-
-private inductive TrIfCore (ce : composite_env) :
-    cexpr → statement → statement → statement → Prop where
-  | intro (r : cexpr) (s1 s2 : statement) (sl : List statement) (a : expr)
+  | tr_expression_intro (r : cexpr) (sl : List statement) (a : expr)
       (tmps : List ident)
       (h : ∀ (ge : genv) (e : env) (le : temp_env) (m : mem),
         tr_top ce ge e le m .For_val r sl a tmps) :
-      TrIfCore ce r s1 s2
+      tr_expression ce r (CompCert4Lean.Cfrontend.SimplExpr.makeseq sl) a
+
+inductive tr_expr_stmt (ce : composite_env) : cexpr → statement → Prop where
+  | tr_expr_stmt_intro (r : cexpr) (sl : List statement) (a : expr)
+      (tmps : List ident)
+      (h : ∀ (ge : genv) (e : env) (le : temp_env) (m : mem),
+        tr_top ce ge e le m .For_effects r sl a tmps) :
+      tr_expr_stmt ce r (CompCert4Lean.Cfrontend.SimplExpr.makeseq sl)
+
+inductive tr_if (ce : composite_env) :
+    cexpr → statement → statement → statement → Prop where
+  | tr_if_intro (r : cexpr) (s1 s2 : statement) (sl : List statement)
+      (a : expr) (tmps : List ident)
+      (h : ∀ (ge : genv) (e : env) (le : temp_env) (m : mem),
+        tr_top ce ge e le m .For_val r sl a tmps) :
+      tr_if ce r s1 s2
         (CompCert4Lean.Cfrontend.SimplExpr.makeseq
-          (sl ++ [specMakeIf a s1 s2]))
+          (sl ++ [CompCert4Lean.Cfrontend.SimplExpr.makeif a s1 s2]))
+
+export tr_expression (tr_expression_intro)
+export tr_expr_stmt (tr_expr_stmt_intro)
+export tr_if (tr_if_intro)
 
 mutual
   inductive tr_stmt (ce : composite_env) :
       cstatement → statement → Prop where
     | tr_skip : tr_stmt ce .Sskip .Sskip
-    | tr_do (r : cexpr) (s : statement) (h : TrExprStmtCore ce r s) :
+    | tr_do (r : cexpr) (s : statement) (h : tr_expr_stmt ce r s) :
         tr_stmt ce (.Sdo r) s
     | tr_seq (s1 s2 : cstatement) (ts1 ts2 : statement)
         (h1 : tr_stmt ce s1 ts1) (h2 : tr_stmt ce s2 ts2) :
         tr_stmt ce (.Ssequence s1 s2) (.Ssequence ts1 ts2)
     | tr_ifthenelse_empty (r : cexpr) (s' : statement) (a : expr)
-        (h : TrExpressionCore ce r s' a) :
+        (h : tr_expression ce r s' a) :
         tr_stmt ce (.Sifthenelse r .Sskip .Sskip) (.Ssequence s' .Sskip)
     | tr_ifthenelse (r : cexpr) (s1 s2 : cstatement) (s' : statement)
-        (a : expr) (ts1 ts2 : statement) (hr : TrExpressionCore ce r s' a)
+        (a : expr) (ts1 ts2 : statement) (hr : tr_expression ce r s' a)
         (h1 : tr_stmt ce s1 ts1) (h2 : tr_stmt ce s2 ts2) :
         tr_stmt ce (.Sifthenelse r s1 s2)
           (.Ssequence s' (.Sifthenelse a ts1 ts2))
     | tr_while (r : cexpr) (s1 : cstatement) (s' ts1 : statement)
-        (hr : TrIfCore ce r .Sskip .Sbreak s') (h1 : tr_stmt ce s1 ts1) :
+        (hr : tr_if ce r .Sskip .Sbreak s') (h1 : tr_stmt ce s1 ts1) :
         tr_stmt ce (.Swhile r s1)
           (.Sloop (.Ssequence s' ts1) .Sskip)
     | tr_dowhile (r : cexpr) (s1 : cstatement) (s' ts1 : statement)
-        (hr : TrIfCore ce r .Sskip .Sbreak s') (h1 : tr_stmt ce s1 ts1) :
+        (hr : tr_if ce r .Sskip .Sbreak s') (h1 : tr_stmt ce s1 ts1) :
         tr_stmt ce (.Sdowhile r s1) (.Sloop ts1 s')
     | tr_for_1 (r : cexpr) (s3 s4 : cstatement) (s' ts3 ts4 : statement)
-        (hr : TrIfCore ce r .Sskip .Sbreak s') (h3 : tr_stmt ce s3 ts3)
+        (hr : tr_if ce r .Sskip .Sbreak s') (h3 : tr_stmt ce s3 ts3)
         (h4 : tr_stmt ce s4 ts4) :
         tr_stmt ce (.Sfor .Sskip r s3 s4)
           (.Sloop (.Ssequence s' ts4) ts3)
     | tr_for_2 (s1 : cstatement) (r : cexpr) (s3 s4 : cstatement)
         (s' ts1 ts3 ts4 : statement)
-        (hr : TrIfCore ce r .Sskip .Sbreak s') (hnot : s1 ≠ .Sskip)
+        (hr : tr_if ce r .Sskip .Sbreak s') (hnot : s1 ≠ .Sskip)
         (h1 : tr_stmt ce s1 ts1)
         (h3 : tr_stmt ce s3 ts3) (h4 : tr_stmt ce s4 ts4) :
         tr_stmt ce (.Sfor s1 r s3 s4)
@@ -595,10 +592,10 @@ mutual
     | tr_continue : tr_stmt ce .Scontinue .Scontinue
     | tr_return_none : tr_stmt ce (.Sreturn none) (.Sreturn none)
     | tr_return_some (r : cexpr) (s' : statement) (a : expr)
-        (h : TrExpressionCore ce r s' a) :
+        (h : tr_expression ce r s' a) :
         tr_stmt ce (.Sreturn (some r)) (.Ssequence s' (.Sreturn (some a)))
     | tr_switch (r : cexpr) (ls : clabeled_statements) (s' : statement)
-        (a : expr) (tls : labeled_statements) (hr : TrExpressionCore ce r s' a)
+        (a : expr) (tls : labeled_statements) (hr : tr_expression ce r s' a)
         (hls : tr_lblstmts ce ls tls) :
         tr_stmt ce (.Sswitch r ls) (.Ssequence s' (.Sswitch a tls))
     | tr_label (lbl : ident) (s : cstatement) (ts : statement)

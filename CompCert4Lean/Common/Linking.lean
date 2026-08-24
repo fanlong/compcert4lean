@@ -82,53 +82,160 @@ instance Linker_fundef (F : Type) : Linker (fundef F) where
                 exact ⟨linkorder_fundef_refl _, linkorder_fundef_refl _⟩
             | right _ => simp [link_fundef, hEq] at h
 
-private inductive LinkClosure {A : Type} (op : A → A → Option A) : A → A → Prop where
-  | refl (x : A) : LinkClosure op x x
-  | left {x y z : A} : op x y = some z → LinkClosure op x z
-  | right {x y z : A} : op x y = some z → LinkClosure op y z
-  | trans {x y z : A} : LinkClosure op x y → LinkClosure op y z → LinkClosure op x z
+inductive init_class : List init_data → Type where
+  | Init_extern : init_class []
+  | Init_common (size : Z) : init_class [Init_space size]
+  | Init_definitive (il : List init_data) : init_class il
 
-private inductive InitClassification where
-  | external
-  | common (size : Z)
-  | definitive
+export init_class (Init_extern Init_common Init_definitive)
 
-private def classifyInit : List init_data → InitClassification
-  | [] => .external
-  | [Init_space size] => .common size
-  | _ => .definitive
+def classify_init : (i : List init_data) → init_class i
+  | [] => .Init_extern
+  | [Init_space size] => .Init_common size
+  | i => .Init_definitive i
 
-private def initializerLink (i1 i2 : List init_data) : Option (List init_data) :=
-  match classifyInit i1, classifyInit i2 with
-  | .external, _ => some i2
-  | _, .external => some i1
-  | .common size1, _ =>
+def link_varinit (i1 i2 : List init_data) : Option (List init_data) :=
+  match classify_init i1, classify_init i2 with
+  | .Init_extern, _ => some i2
+  | _, .Init_extern => some i1
+  | .Init_common size1, _ =>
       match zeq size1 (init_data_list_size i2) with
       | .left _ => some i2
       | .right _ => none
-  | _, .common size2 =>
+  | _, .Init_common size2 =>
       match zeq size2 (init_data_list_size i1) with
       | .left _ => some i1
       | .right _ => none
   | _, _ => none
 
-private def initializerLinker : Linker (List init_data) where
-  link := initializerLink
-  linkorder := LinkClosure initializerLink
-  linkorder_refl := LinkClosure.refl
+inductive linkorder_varinit : List init_data → List init_data → Prop where
+  | linkorder_varinit_refl (il : List init_data) : linkorder_varinit il il
+  | linkorder_varinit_extern (il : List init_data) : linkorder_varinit [] il
+  | linkorder_varinit_common (size : Z) (il : List init_data) :
+      il ≠ [] → init_data_list_size il = size →
+      linkorder_varinit [Init_space size] il
+
+export linkorder_varinit
+  (linkorder_varinit_refl linkorder_varinit_extern linkorder_varinit_common)
+
+private theorem init_data_size_nonneg (i : init_data) :
+    0 ≤ CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+      (init_data_size i) := by
+  cases i with
+  | Init_space size =>
+      simp [init_data_size,
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.max]
+      split <;>
+        simp_all [CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ] <;> omega
+  | Init_addrof symbol offset =>
+      simp [init_data_size]
+      split <;>
+        simp [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat,
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+  | _ =>
+      simp [init_data_size,
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat,
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+
+private theorem init_data_list_size_nonneg (il : List init_data) :
+    0 ≤ CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+      (init_data_list_size il) := by
+  induction il with
+  | nil => simp [init_data_list_size,
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ]
+  | cons i il ih =>
+      have hi := init_data_size_nonneg i
+      simpa [init_data_list_size,
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add,
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt] using
+        Int.add_nonneg hi ih
+
+private theorem zmax_zero_of_nonneg (z : Z)
+    (h : 0 ≤ CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ z) :
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.max z .Z0 = z := by
+  unfold CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.max
+  split
+  · cases z with
+    | Z0 => rfl
+    | Zpos p =>
+        have hp := CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat_positive p
+        simp_all [CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ]
+    | Zneg p =>
+        have hp := CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat_positive p
+        simp_all [CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ]
+  · rfl
+
+instance Linker_varinit : Linker (List init_data) where
+  link := link_varinit
+  linkorder := linkorder_varinit
+  linkorder_refl := linkorder_varinit_refl
   linkorder_trans := by
     intro x y z hxy hyz
-    exact LinkClosure.trans hxy hyz
+    cases hxy with
+    | linkorder_varinit_refl _ => exact hyz
+    | linkorder_varinit_extern _ => exact linkorder_varinit_extern _
+    | linkorder_varinit_common size _ hne hsize =>
+        cases hyz with
+        | linkorder_varinit_refl _ =>
+            exact linkorder_varinit_common size _ hne hsize
+        | linkorder_varinit_extern _ => exact (hne rfl).elim
+        | linkorder_varinit_common size' _ hne' hsize' =>
+            have hsame : size' = size := by
+              have hnonneg := init_data_list_size_nonneg z
+              rw [hsize'] at hnonneg
+              have hnormalized : init_data_list_size [Init_space size'] = size' := by
+                change
+                  CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add
+                    (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.max
+                      size' .Z0) .Z0 = size'
+                rw [zmax_zero_of_nonneg size' hnonneg]
+                apply CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective
+                simp only [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add,
+                  CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+                change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ size' + 0 =
+                  CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ size'
+                exact Int.add_zero _
+              exact hnormalized.symm.trans hsize
+            exact linkorder_varinit_common size _ hne' (hsize'.trans hsame)
   link_linkorder := by
     intro x y z h
-    exact ⟨LinkClosure.left h, LinkClosure.right h⟩
+    cases hx : classify_init x <;> cases hy : classify_init y
+    all_goals simp only [link_varinit, hx, hy] at h
+    all_goals try { cases h }
+    all_goals try {
+      cases h
+      exact ⟨linkorder_varinit_extern _, linkorder_varinit_refl _⟩ }
+    all_goals try {
+      cases h
+      exact ⟨linkorder_varinit_refl _, linkorder_varinit_extern _⟩ }
+    all_goals
+      split at h <;> try { cases h }
+      rename_i heq
+      cases h
+      constructor
+      · first
+        | exact linkorder_varinit_refl _
+        | apply linkorder_varinit_common
+          · intro hnil
+            subst_vars
+            simp [classify_init] at *
+          · symm
+            assumption
+      · first
+        | exact linkorder_varinit_refl _
+        | apply linkorder_varinit_common
+          · intro hnil
+            subst_vars
+            simp [classify_init] at *
+          · symm
+            assumption
 
 def link_vardef {V : Type} [LV : Linker V]
     (v1 v2 : globvar V) : Option (globvar V) :=
   match LV.link v1.gvar_info v2.gvar_info with
   | none => none
   | some info =>
-      match initializerLinker.link v1.gvar_init v2.gvar_init with
+      match link_varinit v1.gvar_init v2.gvar_init with
       | none => none
       | some init =>
           if h : v1.gvar_readonly = v2.gvar_readonly ∧
@@ -146,7 +253,7 @@ inductive linkorder_vardef {V : Type} [LV : Linker V] :
   | linkorder_vardef_intro (info1 info2 : V)
       (i1 i2 : List init_data) (ro vo : Bool) :
       LV.linkorder info1 info2 →
-      initializerLinker.linkorder i1 i2 →
+      linkorder_varinit i1 i2 →
       linkorder_vardef
         { gvar_info := info1
           gvar_init := i1
@@ -164,7 +271,8 @@ instance Linker_vardef (V : Type) [LV : Linker V] : Linker (globvar V) where
   linkorder := linkorder_vardef
   linkorder_refl := by
     intro v
-    exact linkorder_vardef_intro _ _ _ _ _ _ (LV.linkorder_refl _) (initializerLinker.linkorder_refl _)
+    exact linkorder_vardef_intro _ _ _ _ _ _ (LV.linkorder_refl _)
+      (linkorder_varinit_refl _)
   linkorder_trans := by
     intro x y z hxy hyz
     cases hxy with
@@ -173,7 +281,8 @@ instance Linker_vardef (V : Type) [LV : Linker V] : Linker (globvar V) where
         | linkorder_vardef_intro _ zinfo _ zinit _ _ hinfo' hinit' =>
             exact linkorder_vardef_intro _ _ _ _ _ _
               (LV.linkorder_trans _ _ _ hinfo hinfo')
-              (initializerLinker.linkorder_trans _ _ _ hinit hinit')
+              ((Linker_varinit).linkorder_trans _ _ _ (show linkorder_varinit _ _ from hinit)
+                (show linkorder_varinit _ _ from hinit'))
   link_linkorder := by
     intro x y z h
     rcases x with ⟨xinfo, xinit, xro, xvo⟩
@@ -187,7 +296,7 @@ instance Linker_vardef (V : Type) [LV : Linker V] : Linker (globvar V) where
         · cases h
           rcases hflags with ⟨rfl, rfl⟩
           rcases LV.link_linkorder _ _ _ hinfo with ⟨hx, hy⟩
-          rcases initializerLinker.link_linkorder _ _ _ hinit with ⟨hix, hiy⟩
+          rcases (Linker_varinit).link_linkorder _ _ _ hinit with ⟨hix, hiy⟩
           exact ⟨
             linkorder_vardef_intro _ _ _ _ _ _ hx hix,
             linkorder_vardef_intro _ _ _ _ _ _ hy hiy
@@ -271,11 +380,18 @@ instance Linker_def (F V : Type) [LF : Linker F] [LV : Linker V] :
                 rcases (Linker_vardef V).link_linkorder _ _ _ hv with ⟨hx, hy⟩
                 exact ⟨linkorder_def_var _ _ hx, linkorder_def_var _ _ hy⟩
 
-/-! ## Linking compilation units -/
+def linkorder_program {F V : Type} [LF : Linker F] [LV : Linker V]
+    (p1 p2 : program F V) : Prop :=
+  p1.prog_main = p2.prog_main ∧
+    incl p1.prog_public p2.prog_public ∧
+    ∀ id gd1,
+      CompCert4Lean.Lib.Maps.PTree.get id (prog_defmap p1) = some gd1 →
+        ∃ gd2,
+          CompCert4Lean.Lib.Maps.PTree.get id (prog_defmap p2) = some gd2 ∧
+          linkorder gd1 gd2 ∧
+          (id ∉ p2.prog_public → gd2 = gd1)
 
-private def ptreeForall {A : Type} (m : CompCert4Lean.Lib.Maps.PTree.t A)
-    (pred : ident → A → Bool) : Bool :=
-  (CompCert4Lean.Lib.Maps.PTree.elements m).all (fun entry => pred entry.1 entry.2)
+/-! ## Linking compilation units -/
 
 def link_prog_check {F V : Type} [LF : Linker F] [LV : Linker V]
     (p1 p2 : program F V) (x : ident) (gd1 : globdef F V) : Bool :=
@@ -301,7 +417,8 @@ def link_prog {F V : Type} [LF : Linker F] [LV : Linker V]
   match ident_eq p1.prog_main p2.prog_main with
   | .right _ => none
   | .left _ =>
-      if ptreeForall (prog_defmap p1) (link_prog_check p1 p2) then
+      if CompCert4Lean.Lib.Maps.PTree_Properties.for_all
+          (prog_defmap p1) (link_prog_check p1 p2) then
         some
           { prog_main := p1.prog_main
             prog_public := p1.prog_public ++ p2.prog_public
@@ -326,7 +443,36 @@ def link_prog_invStatement : Prop :=
           prog_public := p1.prog_public ++ p2.prog_public
           prog_defs :=
             CompCert4Lean.Lib.Maps.PTree.elements
-              (CompCert4Lean.Lib.Maps.PTree.combine link_prog_merge (prog_defmap p1) (prog_defmap p2)) }
+                (CompCert4Lean.Lib.Maps.PTree.combine link_prog_merge (prog_defmap p1) (prog_defmap p2)) }
+
+theorem link_prog_inv_proof : link_prog_invStatement := by
+  intro F V LF LV p1 p2 p hlink
+  cases hmain : ident_eq p1.prog_main p2.prog_main with
+  | right hne => simp [link_prog, hmain] at hlink
+  | left heq =>
+      cases hall : CompCert4Lean.Lib.Maps.PTree_Properties.for_all
+          (prog_defmap p1) (link_prog_check p1 p2) with
+      | false => simp [link_prog, hmain, hall] at hlink
+      | true =>
+          simp [link_prog, hmain, hall] at hlink
+          subst p
+          refine ⟨heq, ?_, rfl⟩
+          intro id gd1 gd2 hget1 hget2
+          have hcheck :=
+            (CompCert4Lean.Lib.Maps.PTree_Properties.for_all_correct_proof
+              (globdef F V) (prog_defmap p1) (link_prog_check p1 p2)).mp hall
+              id gd1 hget1
+          unfold link_prog_check at hcheck
+          rw [hget2] at hcheck
+          cases hpub1 : in_dec peq id p1.prog_public with
+          | right hnot1 => simp [hpub1] at hcheck
+          | left hmem1 =>
+              cases hpub2 : in_dec peq id p2.prog_public with
+              | right hnot2 => simp [hpub1, hpub2] at hcheck
+              | left hmem2 =>
+                  cases hdef : link_def gd1 gd2 with
+                  | none => simp [hpub1, hpub2, hdef] at hcheck
+                  | some gd => exact ⟨hmem1, hmem2, gd, rfl⟩
 
 def prog_defmap_elementsStatement : Prop :=
   ∀ {F V : Type} (m : CompCert4Lean.Lib.Maps.PTree.t (globdef F V)) (pub : List ident)
@@ -335,17 +481,96 @@ def prog_defmap_elementsStatement : Prop :=
       (prog_defmap { prog_defs := CompCert4Lean.Lib.Maps.PTree.elements m, prog_public := pub, prog_main := mn }) =
         CompCert4Lean.Lib.Maps.PTree.get x m
 
+theorem prog_defmap_elements_proof : prog_defmap_elementsStatement := by
+  intro F V m pub mn x
+  change CompCert4Lean.Lib.Maps.PTree.get x
+      (CompCert4Lean.Lib.Maps.PTree_Properties.of_list
+        (CompCert4Lean.Lib.Maps.PTree.elements m)) =
+    CompCert4Lean.Lib.Maps.PTree.get x m
+  exact CompCert4Lean.Lib.Maps.PTree_Properties.of_list_elements_proof (globdef F V) m x
+
 instance Linker_prog (F V : Type) [LF : Linker F] [LV : Linker V] :
     Linker (program F V) where
   link := link_prog
-  linkorder := LinkClosure link_prog
-  linkorder_refl := LinkClosure.refl
+  linkorder := linkorder_program
+  linkorder_refl := by
+    intro p
+    refine ⟨rfl, incl_refl _, ?_⟩
+    intro id gd hget
+    exact ⟨gd, hget, (Linker_def F V).linkorder_refl gd, fun _ => rfl⟩
   linkorder_trans := by
-    intro x y z hxy hyz
-    exact LinkClosure.trans hxy hyz
+    intro p1 p2 p3 h12 h23
+    rcases h12 with ⟨hmain12, hpub12, hdefs12⟩
+    rcases h23 with ⟨hmain23, hpub23, hdefs23⟩
+    refine ⟨hmain12.trans hmain23, incl_tran hpub12 hpub23, ?_⟩
+    intro id gd1 hget1
+    rcases hdefs12 id gd1 hget1 with ⟨gd2, hget2, horder12, hstatic2⟩
+    rcases hdefs23 id gd2 hget2 with ⟨gd3, hget3, horder23, hstatic3⟩
+    refine ⟨gd3, hget3, (Linker_def F V).linkorder_trans _ _ _ horder12 horder23, ?_⟩
+    intro hnot3
+    exact (hstatic3 hnot3).trans (hstatic2 (fun hmem2 => hnot3 (hpub23 hmem2)))
   link_linkorder := by
-    intro x y z h
-    exact ⟨LinkClosure.left h, LinkClosure.right h⟩
+    intro p1 p2 p hlink
+    rcases link_prog_inv_proof p1 p2 p hlink with ⟨hmain, hcompatible, rfl⟩
+    constructor
+    · refine ⟨rfl, ?_, ?_⟩
+      · intro id hmem
+        exact List.mem_append_left _ hmem
+      · intro id gd1 hget1
+        cases hget2 : CompCert4Lean.Lib.Maps.PTree.get id (prog_defmap p2) with
+        | none =>
+            refine ⟨gd1, ?_, (Linker_def F V).linkorder_refl gd1, fun _ => rfl⟩
+            rw [prog_defmap_elements_proof
+              (F := F) (V := V)
+              (m := CompCert4Lean.Lib.Maps.PTree.combine
+                (link_prog_merge (F := F) (V := V)) (prog_defmap p1) (prog_defmap p2))
+              (pub := p1.prog_public ++ p2.prog_public) (mn := p1.prog_main) (x := id)]
+            rw [CompCert4Lean.Lib.Maps.PTree.gcombine_proof
+              (f := link_prog_merge (F := F) (V := V)) (by rfl)]
+            simp [hget1, hget2, link_prog_merge]
+        | some gd2 =>
+            rcases hcompatible id gd1 gd2 hget1 hget2 with
+              ⟨hpub1, _, gd, hgd⟩
+            refine ⟨gd, ?_, (Linker_def F V).link_linkorder _ _ _ hgd |>.1, ?_⟩
+            · rw [prog_defmap_elements_proof
+                (F := F) (V := V)
+                (m := CompCert4Lean.Lib.Maps.PTree.combine
+                  (link_prog_merge (F := F) (V := V)) (prog_defmap p1) (prog_defmap p2))
+                (pub := p1.prog_public ++ p2.prog_public) (mn := p1.prog_main) (x := id)]
+              rw [CompCert4Lean.Lib.Maps.PTree.gcombine_proof
+                (f := link_prog_merge (F := F) (V := V)) (by rfl)]
+              simp [hget1, hget2, link_prog_merge, hgd]
+            · intro hnot
+              exact (hnot (List.mem_append_left _ hpub1)).elim
+    · refine ⟨hmain.symm, ?_, ?_⟩
+      · intro id hmem
+        exact List.mem_append_right _ hmem
+      · intro id gd2 hget2
+        cases hget1 : CompCert4Lean.Lib.Maps.PTree.get id (prog_defmap p1) with
+        | none =>
+            refine ⟨gd2, ?_, (Linker_def F V).linkorder_refl gd2, fun _ => rfl⟩
+            rw [prog_defmap_elements_proof
+              (F := F) (V := V)
+              (m := CompCert4Lean.Lib.Maps.PTree.combine
+                (link_prog_merge (F := F) (V := V)) (prog_defmap p1) (prog_defmap p2))
+              (pub := p1.prog_public ++ p2.prog_public) (mn := p1.prog_main) (x := id)]
+            rw [CompCert4Lean.Lib.Maps.PTree.gcombine_proof
+              (f := link_prog_merge (F := F) (V := V)) (by rfl)]
+            simp [hget1, hget2, link_prog_merge]
+        | some gd1 =>
+            rcases hcompatible id gd1 gd2 hget1 hget2 with
+              ⟨_, hpub2, gd, hgd⟩
+            refine ⟨gd, ?_, (Linker_def F V).link_linkorder _ _ _ hgd |>.2, ?_⟩
+            · rw [prog_defmap_elements_proof
+                (F := F) (V := V)
+                (m := CompCert4Lean.Lib.Maps.PTree.combine
+                  (link_prog_merge (F := F) (V := V)) (prog_defmap p1) (prog_defmap p2))
+                (pub := p1.prog_public ++ p2.prog_public) (mn := p1.prog_main) (x := id)]
+              rw [CompCert4Lean.Lib.Maps.PTree.gcombine_proof
+                (f := link_prog_merge (F := F) (V := V)) (by rfl)]
+              simp [hget1, hget2, link_prog_merge, hgd]
+            · intro hnot
+              exact (hnot (List.mem_append_right _ hpub2)).elim
 
 def prog_defmap_linkorderStatement : Prop :=
   ∀ {F V : Type} [LF : Linker F] [LV : Linker V]
@@ -354,14 +579,26 @@ def prog_defmap_linkorderStatement : Prop :=
     CompCert4Lean.Lib.Maps.PTree.get id (prog_defmap p1) = some gd1 →
     ∃ gd2, CompCert4Lean.Lib.Maps.PTree.get id (prog_defmap p2) = some gd2 ∧ linkorder gd1 gd2
 
+theorem prog_defmap_linkorder_proof : prog_defmap_linkorderStatement := by
+  intro F V LF LV p1 p2 id gd1 horder hget
+  change linkorder_program p1 p2 at horder
+  rcases horder.2.2 id gd1 hget with ⟨gd2, hget2, hgd, _⟩
+  exact ⟨gd2, hget2, hgd⟩
+
 /-! ## Matching between programs -/
 
-private def matchGlobvar {V1 V2 : Type} (match_varinfo : V1 → V2 → Prop)
-    (v1 : globvar V1) (v2 : globvar V2) : Prop :=
-  match_varinfo v1.gvar_info v2.gvar_info ∧
-    v1.gvar_init = v2.gvar_init ∧
-    v1.gvar_readonly = v2.gvar_readonly ∧
-    v1.gvar_volatile = v2.gvar_volatile
+inductive match_globvar {V1 V2 : Type} (match_varinfo : V1 → V2 → Prop) :
+    globvar V1 → globvar V2 → Prop where
+  | match_globvar_intro (info1 : V1) (info2 : V2) (init : List init_data)
+      (readonly volatile : Bool) :
+      match_varinfo info1 info2 →
+      match_globvar match_varinfo
+        { gvar_info := info1, gvar_init := init,
+          gvar_readonly := readonly, gvar_volatile := volatile }
+        { gvar_info := info2, gvar_init := init,
+          gvar_readonly := readonly, gvar_volatile := volatile }
+
+export match_globvar (match_globvar_intro)
 
 inductive match_globdef {C F1 V1 F2 V2 : Type} [LC : Linker C]
     (match_fundef : C → F1 → F2 → Prop) (match_varinfo : V1 → V2 → Prop)
@@ -371,7 +608,7 @@ inductive match_globdef {C F1 V1 F2 V2 : Type} [LC : Linker C]
       match_fundef ctx' f1 f2 →
       match_globdef match_fundef match_varinfo ctx (.Gfun f1) (.Gfun f2)
   | match_globdef_var (v1 : globvar V1) (v2 : globvar V2) :
-      matchGlobvar match_varinfo v1 v2 →
+      match_globvar match_varinfo v1 v2 →
       match_globdef match_fundef match_varinfo ctx (.Gvar v1) (.Gvar v2)
 
 export match_globdef (match_globdef_fun match_globdef_var)

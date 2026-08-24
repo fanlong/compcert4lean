@@ -165,55 +165,54 @@ def tree_rec {A B : Type} (emptyCase : B)
 def tree_rec2' {A B C : Type} (base : C) (base1 : tree B → C) (base2 : tree A → C)
     (nodes : tree A → Option A → tree A → tree B → Option B → tree B → C → C → C) :
     tree' A → tree' B → C
-  | .Node001 l1, .Node001 l2 => nodes .Empty none (.Nodes l1) .Empty none (.Nodes l2)
-      (tree_rec2' base base1 base2 nodes l1 l2) base
-  | .Node001 l1, .Node010 x2 => nodes .Empty none (.Nodes l1) .Empty (some x2) .Empty (base2 (.Nodes l1)) base
-  | .Node001 l1, .Node011 x2 r2 => nodes .Empty none (.Nodes l1) .Empty (some x2) (.Nodes r2) (base2 (.Nodes l1)) (tree_rec2' base base1 base2 nodes l1 r2)
+  | .Node001 l1, .Node001 l2 => nodes .Empty none (.Nodes l1) .Empty none (.Nodes l2) (base) (tree_rec2' base base1 base2 nodes l1 l2)
+  | .Node001 l1, .Node010 x2 => nodes .Empty none (.Nodes l1) .Empty (some x2) .Empty (base) (base2 (.Nodes l1))
+  | .Node001 l1, .Node011 x2 r2 => nodes .Empty none (.Nodes l1) .Empty (some x2) (.Nodes r2) (base) (tree_rec2' base base1 base2 nodes l1 r2)
   | .Node001 l1, .Node100 l2 => nodes .Empty none (.Nodes l1) (.Nodes l2) none .Empty (base1 (.Nodes l2)) (base2 (.Nodes l1))
   | .Node001 l1, .Node101 l2 r2 => nodes .Empty none (.Nodes l1) (.Nodes l2) none (.Nodes r2) (base1 (.Nodes l2)) (tree_rec2' base base1 base2 nodes l1 r2)
   | .Node001 l1, .Node110 l2 x2 => nodes .Empty none (.Nodes l1) (.Nodes l2) (some x2) .Empty (base1 (.Nodes l2)) (base2 (.Nodes l1))
   | .Node001 l1, .Node111 l2 x2 r2 => nodes .Empty none (.Nodes l1) (.Nodes l2) (some x2) (.Nodes r2) (base1 (.Nodes l2)) (tree_rec2' base base1 base2 nodes l1 r2)
-  | .Node010 x1, .Node001 l2 => nodes .Empty (some x1) .Empty .Empty none (.Nodes l2) base (base1 (.Nodes l2))
-  | .Node010 x1, .Node010 x2 => nodes .Empty (some x1) .Empty .Empty (some x2) .Empty base base
-  | .Node010 x1, .Node011 x2 r2 => nodes .Empty (some x1) .Empty .Empty (some x2) (.Nodes r2) base (base1 (.Nodes r2))
-  | .Node010 x1, .Node100 l2 => nodes .Empty (some x1) .Empty (.Nodes l2) none .Empty base (base2 .Empty)
-  | .Node010 x1, .Node101 l2 r2 => nodes .Empty (some x1) .Empty (.Nodes l2) none (.Nodes r2) base (base2 .Empty)
-  | .Node010 x1, .Node110 l2 x2 => nodes .Empty (some x1) .Empty (.Nodes l2) (some x2) .Empty base (base2 .Empty)
-  | .Node010 x1, .Node111 l2 x2 r2 => nodes .Empty (some x1) .Empty (.Nodes l2) (some x2) (.Nodes r2) base (base2 .Empty)
-  | .Node011 x1 r1, .Node001 l2 => nodes .Empty (some x1) (.Nodes r1) .Empty none (.Nodes l2) (tree_rec2' base base1 base2 nodes r1 l2) (base1 (.Nodes l2))
-  | .Node011 x1 r1, .Node010 x2 => nodes .Empty (some x1) (.Nodes r1) .Empty (some x2) .Empty (tree_rec2' base base1 base2 nodes r1 (.Node010 x2)) base
-  | .Node011 x1 r1, .Node011 x2 r2 => nodes .Empty (some x1) (.Nodes r1) .Empty (some x2) (.Nodes r2) (tree_rec2' base base1 base2 nodes r1 r2) base
-  | .Node011 x1 r1, .Node100 l2 => nodes .Empty (some x1) (.Nodes r1) (.Nodes l2) none .Empty (base1 (.Nodes l2)) (base2 .Empty)
+  | .Node010 x1, .Node001 l2 => nodes .Empty (some x1) .Empty .Empty none (.Nodes l2) (base) (base1 (.Nodes l2))
+  | .Node010 x1, .Node010 x2 => nodes .Empty (some x1) .Empty .Empty (some x2) .Empty (base) (base)
+  | .Node010 x1, .Node011 x2 r2 => nodes .Empty (some x1) .Empty .Empty (some x2) (.Nodes r2) (base) (base1 (.Nodes r2))
+  | .Node010 x1, .Node100 l2 => nodes .Empty (some x1) .Empty (.Nodes l2) none .Empty (base1 (.Nodes l2)) (base)
+  | .Node010 x1, .Node101 l2 r2 => nodes .Empty (some x1) .Empty (.Nodes l2) none (.Nodes r2) (base1 (.Nodes l2)) (base1 (.Nodes r2))
+  | .Node010 x1, .Node110 l2 x2 => nodes .Empty (some x1) .Empty (.Nodes l2) (some x2) .Empty (base1 (.Nodes l2)) (base)
+  | .Node010 x1, .Node111 l2 x2 r2 => nodes .Empty (some x1) .Empty (.Nodes l2) (some x2) (.Nodes r2) (base1 (.Nodes l2)) (base1 (.Nodes r2))
+  | .Node011 x1 r1, .Node001 l2 => nodes .Empty (some x1) (.Nodes r1) .Empty none (.Nodes l2) (base) (tree_rec2' base base1 base2 nodes r1 l2)
+  | .Node011 x1 r1, .Node010 x2 => nodes .Empty (some x1) (.Nodes r1) .Empty (some x2) .Empty (base) (base2 (.Nodes r1))
+  | .Node011 x1 r1, .Node011 x2 r2 => nodes .Empty (some x1) (.Nodes r1) .Empty (some x2) (.Nodes r2) (base) (tree_rec2' base base1 base2 nodes r1 r2)
+  | .Node011 x1 r1, .Node100 l2 => nodes .Empty (some x1) (.Nodes r1) (.Nodes l2) none .Empty (base1 (.Nodes l2)) (base2 (.Nodes r1))
   | .Node011 x1 r1, .Node101 l2 r2 => nodes .Empty (some x1) (.Nodes r1) (.Nodes l2) none (.Nodes r2) (base1 (.Nodes l2)) (tree_rec2' base base1 base2 nodes r1 r2)
-  | .Node011 x1 r1, .Node110 l2 x2 => nodes .Empty (some x1) (.Nodes r1) (.Nodes l2) (some x2) .Empty (base1 (.Nodes l2)) (base2 .Empty)
+  | .Node011 x1 r1, .Node110 l2 x2 => nodes .Empty (some x1) (.Nodes r1) (.Nodes l2) (some x2) .Empty (base1 (.Nodes l2)) (base2 (.Nodes r1))
   | .Node011 x1 r1, .Node111 l2 x2 r2 => nodes .Empty (some x1) (.Nodes r1) (.Nodes l2) (some x2) (.Nodes r2) (base1 (.Nodes l2)) (tree_rec2' base base1 base2 nodes r1 r2)
   | .Node100 l1, .Node001 l2 => nodes (.Nodes l1) none .Empty .Empty none (.Nodes l2) (base2 (.Nodes l1)) (base1 (.Nodes l2))
-  | .Node100 l1, .Node010 x2 => nodes (.Nodes l1) none .Empty .Empty (some x2) .Empty (base2 (.Nodes l1)) base
-  | .Node100 l1, .Node011 x2 r2 => nodes (.Nodes l1) none .Empty .Empty (some x2) (.Nodes r2) (base2 (.Nodes l1)) (tree_rec2' base base1 base2 nodes l1 r2)
-  | .Node100 l1, .Node100 l2 => nodes (.Nodes l1) none .Empty (.Nodes l2) none .Empty (base2 (.Nodes l1)) (base1 (.Nodes l2))
-  | .Node100 l1, .Node101 l2 r2 => nodes (.Nodes l1) none .Empty (.Nodes l2) none (.Nodes r2) (base2 (.Nodes l1)) (tree_rec2' base base1 base2 nodes l1 r2)
-  | .Node100 l1, .Node110 l2 x2 => nodes (.Nodes l1) none .Empty (.Nodes l2) (some x2) .Empty (base2 (.Nodes l1)) (base1 (.Nodes l2))
-  | .Node100 l1, .Node111 l2 x2 r2 => nodes (.Nodes l1) none .Empty (.Nodes l2) (some x2) (.Nodes r2) (base2 (.Nodes l1)) (tree_rec2' base base1 base2 nodes l1 r2)
-  | .Node101 l1 r1, .Node001 l2 => nodes (.Nodes l1) none (.Nodes r1) .Empty none (.Nodes l2) (tree_rec2' base base1 base2 nodes l1 l2) (base1 (.Nodes l2))
-  | .Node101 l1 r1, .Node010 x2 => nodes (.Nodes l1) none (.Nodes r1) .Empty (some x2) .Empty (tree_rec2' base base1 base2 nodes l1 (.Node010 x2)) base
-  | .Node101 l1 r1, .Node011 x2 r2 => nodes (.Nodes l1) none (.Nodes r1) .Empty (some x2) (.Nodes r2) (tree_rec2' base base1 base2 nodes l1 (.Node011 x2 r2)) (tree_rec2' base base1 base2 nodes r1 r2)
+  | .Node100 l1, .Node010 x2 => nodes (.Nodes l1) none .Empty .Empty (some x2) .Empty (base2 (.Nodes l1)) (base)
+  | .Node100 l1, .Node011 x2 r2 => nodes (.Nodes l1) none .Empty .Empty (some x2) (.Nodes r2) (base2 (.Nodes l1)) (base1 (.Nodes r2))
+  | .Node100 l1, .Node100 l2 => nodes (.Nodes l1) none .Empty (.Nodes l2) none .Empty (tree_rec2' base base1 base2 nodes l1 l2) (base)
+  | .Node100 l1, .Node101 l2 r2 => nodes (.Nodes l1) none .Empty (.Nodes l2) none (.Nodes r2) (tree_rec2' base base1 base2 nodes l1 l2) (base1 (.Nodes r2))
+  | .Node100 l1, .Node110 l2 x2 => nodes (.Nodes l1) none .Empty (.Nodes l2) (some x2) .Empty (tree_rec2' base base1 base2 nodes l1 l2) (base)
+  | .Node100 l1, .Node111 l2 x2 r2 => nodes (.Nodes l1) none .Empty (.Nodes l2) (some x2) (.Nodes r2) (tree_rec2' base base1 base2 nodes l1 l2) (base1 (.Nodes r2))
+  | .Node101 l1 r1, .Node001 l2 => nodes (.Nodes l1) none (.Nodes r1) .Empty none (.Nodes l2) (base2 (.Nodes l1)) (tree_rec2' base base1 base2 nodes r1 l2)
+  | .Node101 l1 r1, .Node010 x2 => nodes (.Nodes l1) none (.Nodes r1) .Empty (some x2) .Empty (base2 (.Nodes l1)) (base2 (.Nodes r1))
+  | .Node101 l1 r1, .Node011 x2 r2 => nodes (.Nodes l1) none (.Nodes r1) .Empty (some x2) (.Nodes r2) (base2 (.Nodes l1)) (tree_rec2' base base1 base2 nodes r1 r2)
   | .Node101 l1 r1, .Node100 l2 => nodes (.Nodes l1) none (.Nodes r1) (.Nodes l2) none .Empty (tree_rec2' base base1 base2 nodes l1 l2) (base2 (.Nodes r1))
   | .Node101 l1 r1, .Node101 l2 r2 => nodes (.Nodes l1) none (.Nodes r1) (.Nodes l2) none (.Nodes r2) (tree_rec2' base base1 base2 nodes l1 l2) (tree_rec2' base base1 base2 nodes r1 r2)
   | .Node101 l1 r1, .Node110 l2 x2 => nodes (.Nodes l1) none (.Nodes r1) (.Nodes l2) (some x2) .Empty (tree_rec2' base base1 base2 nodes l1 l2) (base2 (.Nodes r1))
   | .Node101 l1 r1, .Node111 l2 x2 r2 => nodes (.Nodes l1) none (.Nodes r1) (.Nodes l2) (some x2) (.Nodes r2) (tree_rec2' base base1 base2 nodes l1 l2) (tree_rec2' base base1 base2 nodes r1 r2)
   | .Node110 l1 x1, .Node001 l2 => nodes (.Nodes l1) (some x1) .Empty .Empty none (.Nodes l2) (base2 (.Nodes l1)) (base1 (.Nodes l2))
-  | .Node110 l1 x1, .Node010 x2 => nodes (.Nodes l1) (some x1) .Empty .Empty (some x2) .Empty (base2 (.Nodes l1)) base
-  | .Node110 l1 x1, .Node011 x2 r2 => nodes (.Nodes l1) (some x1) .Empty .Empty (some x2) (.Nodes r2) (base2 (.Nodes l1)) (tree_rec2' base base1 base2 nodes (.Node110 l1 x1) r2)
-  | .Node110 l1 x1, .Node100 l2 => nodes (.Nodes l1) (some x1) .Empty (.Nodes l2) none .Empty (base2 (.Nodes l1)) (base1 (.Nodes l2))
-  | .Node110 l1 x1, .Node101 l2 r2 => nodes (.Nodes l1) (some x1) .Empty (.Nodes l2) none (.Nodes r2) (base2 (.Nodes l1)) (tree_rec2' base base1 base2 nodes (.Node110 l1 x1) r2)
-  | .Node110 l1 x1, .Node110 l2 x2 => nodes (.Nodes l1) (some x1) .Empty (.Nodes l2) (some x2) .Empty (base2 (.Nodes l1)) (base1 (.Nodes l2))
-  | .Node110 l1 x1, .Node111 l2 x2 r2 => nodes (.Nodes l1) (some x1) .Empty (.Nodes l2) (some x2) (.Nodes r2) (base2 (.Nodes l1)) (tree_rec2' base base1 base2 nodes (.Node110 l1 x1) r2)
-  | .Node111 l1 x1 r1, .Node001 l2 => nodes (.Nodes l1) (some x1) (.Nodes r1) .Empty none (.Nodes l2) (tree_rec2' base base1 base2 nodes l1 l2) (tree_rec2' base base1 base2 nodes r1 l2)
-  | .Node111 l1 x1 r1, .Node010 x2 => nodes (.Nodes l1) (some x1) (.Nodes r1) .Empty (some x2) .Empty (tree_rec2' base base1 base2 nodes l1 (.Node010 x2)) (tree_rec2' base base1 base2 nodes r1 (.Node010 x2))
-  | .Node111 l1 x1 r1, .Node011 x2 r2 => nodes (.Nodes l1) (some x1) (.Nodes r1) .Empty (some x2) (.Nodes r2) (tree_rec2' base base1 base2 nodes l1 (.Node011 x2 r2)) (tree_rec2' base base1 base2 nodes r1 r2)
-  | .Node111 l1 x1 r1, .Node100 l2 => nodes (.Nodes l1) (some x1) (.Nodes r1) (.Nodes l2) none .Empty (tree_rec2' base base1 base2 nodes l1 l2) (tree_rec2' base base1 base2 nodes r1 (.Node100 l2))
+  | .Node110 l1 x1, .Node010 x2 => nodes (.Nodes l1) (some x1) .Empty .Empty (some x2) .Empty (base2 (.Nodes l1)) (base)
+  | .Node110 l1 x1, .Node011 x2 r2 => nodes (.Nodes l1) (some x1) .Empty .Empty (some x2) (.Nodes r2) (base2 (.Nodes l1)) (base1 (.Nodes r2))
+  | .Node110 l1 x1, .Node100 l2 => nodes (.Nodes l1) (some x1) .Empty (.Nodes l2) none .Empty (tree_rec2' base base1 base2 nodes l1 l2) (base)
+  | .Node110 l1 x1, .Node101 l2 r2 => nodes (.Nodes l1) (some x1) .Empty (.Nodes l2) none (.Nodes r2) (tree_rec2' base base1 base2 nodes l1 l2) (base1 (.Nodes r2))
+  | .Node110 l1 x1, .Node110 l2 x2 => nodes (.Nodes l1) (some x1) .Empty (.Nodes l2) (some x2) .Empty (tree_rec2' base base1 base2 nodes l1 l2) (base)
+  | .Node110 l1 x1, .Node111 l2 x2 r2 => nodes (.Nodes l1) (some x1) .Empty (.Nodes l2) (some x2) (.Nodes r2) (tree_rec2' base base1 base2 nodes l1 l2) (base1 (.Nodes r2))
+  | .Node111 l1 x1 r1, .Node001 l2 => nodes (.Nodes l1) (some x1) (.Nodes r1) .Empty none (.Nodes l2) (base2 (.Nodes l1)) (tree_rec2' base base1 base2 nodes r1 l2)
+  | .Node111 l1 x1 r1, .Node010 x2 => nodes (.Nodes l1) (some x1) (.Nodes r1) .Empty (some x2) .Empty (base2 (.Nodes l1)) (base2 (.Nodes r1))
+  | .Node111 l1 x1 r1, .Node011 x2 r2 => nodes (.Nodes l1) (some x1) (.Nodes r1) .Empty (some x2) (.Nodes r2) (base2 (.Nodes l1)) (tree_rec2' base base1 base2 nodes r1 r2)
+  | .Node111 l1 x1 r1, .Node100 l2 => nodes (.Nodes l1) (some x1) (.Nodes r1) (.Nodes l2) none .Empty (tree_rec2' base base1 base2 nodes l1 l2) (base2 (.Nodes r1))
   | .Node111 l1 x1 r1, .Node101 l2 r2 => nodes (.Nodes l1) (some x1) (.Nodes r1) (.Nodes l2) none (.Nodes r2) (tree_rec2' base base1 base2 nodes l1 l2) (tree_rec2' base base1 base2 nodes r1 r2)
-  | .Node111 l1 x1 r1, .Node110 l2 x2 => nodes (.Nodes l1) (some x1) (.Nodes r1) (.Nodes l2) (some x2) .Empty (tree_rec2' base base1 base2 nodes l1 l2) (tree_rec2' base base1 base2 nodes r1 (.Node110 l2 x2))
+  | .Node111 l1 x1 r1, .Node110 l2 x2 => nodes (.Nodes l1) (some x1) (.Nodes r1) (.Nodes l2) (some x2) .Empty (tree_rec2' base base1 base2 nodes l1 l2) (base2 (.Nodes r1))
   | .Node111 l1 x1 r1, .Node111 l2 x2 r2 => nodes (.Nodes l1) (some x1) (.Nodes r1) (.Nodes l2) (some x2) (.Nodes r2) (tree_rec2' base base1 base2 nodes l1 l2) (tree_rec2' base base1 base2 nodes r1 r2)
 
 def tree_rec2 {A B C : Type} (base : C) (base1 : tree B → C) (base2 : tree A → C)
@@ -286,6 +285,31 @@ def map_filter1_nonopt {A B : Type} (f : A → Option B) (m : tree A) : tree B :
 def map_filter1 {A B : Type} (f : A → Option B) (m : tree A) : tree B :=
   map_filter1_nonopt f m
 
+def beq' {A : Type} (beqA : A → A → Bool) : tree' A → tree' A → Bool
+  | .Node001 r₁, .Node001 r₂ => beq' beqA r₁ r₂
+  | .Node010 x₁, .Node010 x₂ => beqA x₁ x₂
+  | .Node011 x₁ r₁, .Node011 x₂ r₂ => beqA x₁ x₂ && beq' beqA r₁ r₂
+  | .Node100 l₁, .Node100 l₂ => beq' beqA l₁ l₂
+  | .Node101 l₁ r₁, .Node101 l₂ r₂ => beq' beqA l₁ l₂ && beq' beqA r₁ r₂
+  | .Node110 l₁ x₁, .Node110 l₂ x₂ => beqA x₁ x₂ && beq' beqA l₁ l₂
+  | .Node111 l₁ x₁ r₁, .Node111 l₂ x₂ r₂ =>
+      beqA x₁ x₂ && beq' beqA l₁ l₂ && beq' beqA r₁ r₂
+  | _, _ => false
+
+def beq {A : Type} (beqA : A → A → Bool) : t A → t A → Bool
+  | .Empty, .Empty => true
+  | .Nodes m₁, .Nodes m₂ => beq' beqA m₁ m₂
+  | _, _ => false
+
+def beq_correct : Prop :=
+  ∀ (A : Type) (beqA : A → A → Bool) (m₁ m₂ : t A),
+    beq beqA m₁ m₂ = true ↔
+      ∀ x : elt,
+        match get x m₁, get x m₂ with
+        | none, none => True
+        | some y₁, some y₂ => beqA y₁ y₂ = true
+        | _, _ => False
+
 def combineOpt {A B C : Type} (f : Option A → Option B → Option C)
     (o1 : Option A) (o2 : Option B) : Option C :=
   match o1, o2 with
@@ -335,15 +359,14 @@ def fold {A B : Type} (f : B → positive → A → B) (m : tree A) (v : B) : B 
   | .Empty => v
   | .Nodes m' => fold' f .xH m' v
 
-def option_rel {A B : Type} (R : A → B → Prop) : Option A → Option B → Prop
-  | none, none => True
-  | some a, some b => R a b
-  | _, _ => False
-
-def list_norepet {A : Type} (l : List A) : Prop := l.Nodup
-inductive list_forall2 {A B : Type} (R : A → B → Prop) : List A → List B → Prop where
-  | nil : list_forall2 R [] []
-  | cons {a : A} {b : B} {as bs : List _} : R a b → list_forall2 R as bs → list_forall2 R (a :: as) (b :: bs)
+/-! These relations are owned by `Lib.Coqlib`.  Keep source-qualified
+    compatibility names here without introducing duplicate providers. -/
+abbrev option_rel {A B : Type} (R : A → B → Prop) : Option A → Option B → Prop :=
+  CompCert4Lean.Lib.Coqlib.option_rel R
+abbrev list_norepet {A : Type} (l : List A) : Prop :=
+  CompCert4Lean.Lib.Coqlib.list_norepet l
+abbrev list_forall2 {A B : Type} (R : A → B → Prop) : List A → List B → Prop :=
+  CompCert4Lean.Lib.Coqlib.list_forall2 R
 
 def gemptyStatement : Prop := ∀ (A : Type) (i : positive), get i (empty A) = none
 def gss0Statement : Prop := ∀ {A : Type} (p : positive) (x : A), get' p (set0 p x) = some x
@@ -405,11 +428,14 @@ def gmap1Statement : Prop := ∀ {A B : Type} (f : A → B) (i : elt) (m : t A),
 def gmap_filter1Statement : Prop := ∀ {A B : Type} (f : A → Option B) (m : tree A) (i : positive),
   get i (map_filter1 f m) = match get i m with | none => none | some a => f a
 def gcombine_lStatement : Prop := ∀ {A B C : Type} (f : Option A → Option B → Option C)
-  (m : tree A) (i : positive), get i (map_filter1 (fun a => f (some a) none) m) = f (get i m) none
+  (f_none_none : f none none = none) (m : tree A) (i : positive),
+  get i (map_filter1 (fun a => f (some a) none) m) = f (get i m) none
 def gcombine_rStatement : Prop := ∀ {A B C : Type} (f : Option A → Option B → Option C)
-  (m : tree B) (i : positive), get i (map_filter1 (fun b => f none (some b)) m) = f none (get i m)
+  (f_none_none : f none none = none) (m : tree B) (i : positive),
+  get i (map_filter1 (fun b => f none (some b)) m) = f none (get i m)
 def gcombineStatement : Prop := ∀ {A B C : Type} (f : Option A → Option B → Option C)
-  (m1 : t A) (m2 : t B) (i : positive), get i (combine f m1 m2) = f (get i m1) (get i m2)
+  (f_none_none : f none none = none) (m1 : t A) (m2 : t B) (i : positive),
+  get i (combine f m1 m2) = f (get i m1) (get i m2)
 
 def xelements'_appendStatement : Prop := ∀ (A : Type) (m : tree' A) (i : positive) (k1 k2 : List (positive × A)),
   xelements' m i (k1 ++ k2) = xelements' m i k1 ++ k2
@@ -503,6 +529,98 @@ private theorem getNodes_equation {A : Type} (i : positive) (m : tree' A) :
 
 private theorem getEmpty_equation {A : Type} (i : positive) :
     get i (Empty : tree A) = none := rfl
+
+theorem unroll_tree_rec2_NE_proof : unroll_tree_rec2_NEStatement := by
+  intro A B C base base1 base2 nodes l1 o1 r1 hne
+  cases l1 <;> cases o1 <;> cases r1 <;>
+    simp_all [not_trivially_empty, Node, tree_rec2, tree_rec2']
+
+theorem unroll_tree_rec2_EN_proof : unroll_tree_rec2_ENStatement := by
+  intro A B C base base1 base2 nodes l2 o2 r2 hne
+  cases l2 <;> cases o2 <;> cases r2 <;>
+    simp_all [not_trivially_empty, Node, tree_rec2, tree_rec2']
+
+theorem unroll_tree_rec2_NN_proof : unroll_tree_rec2_NNStatement := by
+  intro A B C base base1 base2 nodes l1 o1 r1 l2 o2 r2 hne1 hne2
+  cases l1 <;> cases o1 <;> cases r1 <;>
+    cases l2 <;> cases o2 <;> cases r2 <;>
+      simp_all [not_trivially_empty, Node, tree_rec2, tree_rec2']
+
+private theorem get_map_filter1_nodes_proof {A B : Type} (f : A → Option B)
+    (m : tree' A) (i : positive) :
+    get i (map_filter1 f (.Nodes m)) = Option.bind (get' i m) f := by
+  induction m generalizing i <;> cases i <;>
+    simp_all [map_filter1, map_filter1_nonopt, tree_rec, tree_rec', get',
+      getNode_equation, getNodes_equation, getEmpty_equation, Option.bind]
+
+private theorem get_map_filter1_proof {A B : Type} (f : A → Option B)
+    (m : tree A) (i : positive) :
+    get i (map_filter1 f m) = Option.bind (get i m) f := by
+  cases m with
+  | Empty => rfl
+  | Nodes m => exact get_map_filter1_nodes_proof f m i
+
+theorem gcombine_l_proof : gcombine_lStatement := by
+  intro A B C f hnone m i
+  rw [get_map_filter1_proof]
+  cases hget : get i m <;> simp [Option.bind, hget, hnone]
+
+theorem gcombine_r_proof : gcombine_rStatement := by
+  intro A B C f hnone m i
+  rw [get_map_filter1_proof]
+  cases hget : get i m <;> simp [Option.bind, hget, hnone]
+
+theorem gcombine_proof : gcombineStatement := by
+  intro A B C f hnone m1
+  have hm1 : PLift (∀ (m2 : t B) (i : positive),
+      get i (combine f m1 m2) = f (get i m1) (get i m2)) := by
+    refine tree_ind
+      (P := fun m1 => PLift (∀ (m2 : t B) (i : positive),
+        get i (combine f m1 m2) = f (get i m1) (get i m2))) ?_ ?_ m1
+    · refine ⟨?_⟩
+      intro m2
+      have hm2 : PLift (∀ i : positive,
+          get i (combine f Empty m2) = f (get i Empty) (get i m2)) := by
+        refine tree_ind
+          (P := fun m2 => PLift (∀ i : positive,
+            get i (combine f Empty m2) = f (get i Empty) (get i m2))) ?_ ?_ m2
+        · refine ⟨?_⟩
+          intro i
+          simpa [combine, tree_rec2, get] using hnone.symm
+        · intro l2 _ o2 r2 _ hne2
+          refine ⟨?_⟩
+          intro i
+          unfold combine
+          rw [unroll_tree_rec2_EN_proof _ _ _ _ _ _ _ hne2]
+          simpa [get] using gcombine_r_proof f hnone (Node l2 o2 r2) i
+      exact hm2.down
+    · intro l1 il o1 r1 ir hne1
+      refine ⟨?_⟩
+      intro m2
+      have hm2 : PLift (∀ i : positive,
+          get i (combine f (Node l1 o1 r1) m2) =
+            f (get i (Node l1 o1 r1)) (get i m2)) := by
+        refine tree_ind
+          (P := fun m2 => PLift (∀ i : positive,
+            get i (combine f (Node l1 o1 r1) m2) =
+              f (get i (Node l1 o1 r1)) (get i m2))) ?_ ?_ m2
+        · refine ⟨?_⟩
+          intro i
+          unfold combine
+          rw [unroll_tree_rec2_NE_proof _ _ _ _ _ _ _ hne1]
+          simpa [get] using gcombine_l_proof f hnone (Node l1 o1 r1) i
+        · intro l2 _ o2 r2 _ hne2
+          refine ⟨?_⟩
+          intro i
+          unfold combine
+          rw [unroll_tree_rec2_NN_proof _ _ _ _ _ _ _ _ _ _ hne1 hne2]
+          rw [getNode_equation, getNode_equation, getNode_equation]
+          cases i with
+          | xH => cases o1 <;> cases o2 <;> simp [combineOpt, hnone]
+          | xO i => simpa [combine] using il.down l2 i
+          | xI i => simpa [combine] using ir.down r2 i
+      exact hm2.down
+  exact hm1.down
 
 theorem gNode_proof : gNodeStatement := by
   intro A i l o r
@@ -1035,11 +1153,16 @@ def get {A : Type} (i : positive) (m : t A) : A :=
   | none => m.1
 def set {A : Type} (i : positive) (x : A) (m : t A) : t A := (m.1, PTree.set i x m.2)
 
+def map {A B : Type} (f : A → B) (m : t A) : t B :=
+  (f m.1, PTree.map1 f m.2)
+
 def giStatement : Prop := ∀ (A : Type) (i : positive) (x : A), get i (init x) = x
 def gssStatement : Prop := ∀ (A : Type) (i : positive) (x : A) (m : t A), get i (set i x m) = x
 def gsoStatement : Prop := ∀ (A : Type) (i j : positive) (x : A) (m : t A), i ≠ j → get i (set j x m) = get i m
 def gsspecStatement : Prop := ∀ (A : Type) (i j : positive) (x : A) (m : t A),
   get i (set j x m) = match peq i j with | .left _ => x | .right _ => get i m
+def gmap : Prop := ∀ (A B : Type) (f : A → B) (i : positive) (m : t A),
+  get i (map f m) = f (get i m)
 def set2Statement : Prop := ∀ (A : Type) (i : elt) (x y : A) (m : t A),
   set i y (set i x m) = set i y m
 
@@ -1095,7 +1218,7 @@ abbrev set {A : Type} (i : elt) (x : A) (m : t A) : t A :=
   PMap.set (ZIndexed.index i) x m
 
 def map {A B : Type} (f : A → B) (m : t A) : t B :=
-  (f m.1, PTree.map1 f m.2)
+  PMap.map f m
 
 def gi : Prop := ∀ (A : Type) (x : A) (i : elt), get i (init x) = x
 def gss : Prop := ∀ (A : Type) (i : elt) (x : A) (m : t A), get i (set i x m) = x
@@ -1110,29 +1233,60 @@ def set2 : Prop := ∀ (A : Type) (i : elt) (x y : A) (m : t A),
 
 end ZMap
 
+namespace NIndexed
+
+def t : Type := N
+
+def index : t → positive
+  | .N0 => .xH
+  | .Npos p => .xO p
+
+theorem index_inj (x y : t) (h : index x = index y) : x = y := by
+  cases x with
+  | N0 =>
+      cases y with
+      | N0 => rfl
+      | Npos _ => cases h
+  | Npos p =>
+      cases y with
+      | N0 => cases h
+      | Npos _ => cases h; rfl
+
+def eq (x y : t) :
+    CompCert4Lean.Foundation.Logic.Support.Sumbool (x = y) (x ≠ y) := by
+  cases x with
+  | N0 =>
+      cases y with
+      | N0 => exact .left rfl
+      | Npos p => exact .right (by intro h; cases h)
+  | Npos p =>
+      cases y with
+      | N0 => exact .right (by intro h; cases h)
+      | Npos q =>
+          match peq p q with
+          | .left h => exact .left (by cases h; rfl)
+          | .right h => exact .right (by intro hn; cases hn; exact h rfl)
+
+end NIndexed
+
 namespace NMap
 
 def NMap : Type := Unit
 
-abbrev elt : Type := N
+abbrev elt : Type := NIndexed.t
 abbrev t (A : Type) : Type := PMap.t A
 
-private def index : elt → positive
-  | .N0 => .xH
-  | .Npos p => .xO p
-
 def elt_eq (x y : elt) :
-    CompCert4Lean.Foundation.Logic.Support.Sumbool (x = y) (x ≠ y) := by
-  by_cases h : x = y
-  · exact .left h
-  · exact .right h
+    CompCert4Lean.Foundation.Logic.Support.Sumbool (x = y) (x ≠ y) :=
+  NIndexed.eq x y
 
 abbrev init {A : Type} (x : A) : t A := PMap.init x
-abbrev get {A : Type} (i : elt) (m : t A) : A := PMap.get (index i) m
-abbrev set {A : Type} (i : elt) (x : A) (m : t A) : t A := PMap.set (index i) x m
+abbrev get {A : Type} (i : elt) (m : t A) : A := PMap.get (NIndexed.index i) m
+abbrev set {A : Type} (i : elt) (x : A) (m : t A) : t A :=
+  PMap.set (NIndexed.index i) x m
 
 def map {A B : Type} (f : A → B) (m : t A) : t B :=
-  (f m.1, PTree.map1 f m.2)
+  PMap.map f m
 
 def gi : Prop := ∀ (A : Type) (x : A) (i : elt), get i (init x) = x
 def gss : Prop := ∀ (A : Type) (i : elt) (x : A) (m : t A), get i (set i x m) = x
@@ -1176,21 +1330,11 @@ def gro : Prop := ∀ (A : Type) (i j : elt) (m : t A),
 def grspec : Prop := ∀ (A : Type) (i j : elt) (m : t A),
   get i (remove j m) = match elt_eq i j with | .left _ => none | .right _ => get i m
 
-private def beq' {A : Type} (beqA : A → A → Bool) : PTree.tree' A → PTree.tree' A → Bool
-  | .Node001 r₁, .Node001 r₂ => beq' beqA r₁ r₂
-  | .Node010 x₁, .Node010 x₂ => beqA x₁ x₂
-  | .Node011 x₁ r₁, .Node011 x₂ r₂ => beqA x₁ x₂ && beq' beqA r₁ r₂
-  | .Node100 l₁, .Node100 l₂ => beq' beqA l₁ l₂
-  | .Node101 l₁ r₁, .Node101 l₂ r₂ => beq' beqA l₁ l₂ && beq' beqA r₁ r₂
-  | .Node110 l₁ x₁, .Node110 l₂ x₂ => beqA x₁ x₂ && beq' beqA l₁ l₂
-  | .Node111 l₁ x₁ r₁, .Node111 l₂ x₂ r₂ =>
-      beqA x₁ x₂ && beq' beqA l₁ l₂ && beq' beqA r₁ r₂
-  | _, _ => false
+private abbrev beq' {A : Type} (beqA : A → A → Bool) :=
+  PTree.beq' beqA
 
-def beq {A : Type} (beqA : A → A → Bool) : t A → t A → Bool
-  | .Empty, .Empty => true
-  | .Nodes m₁, .Nodes m₂ => beq' beqA m₁ m₂
-  | _, _ => false
+abbrev beq {A : Type} (beqA : A → A → Bool) : t A → t A → Bool :=
+  PTree.beq beqA
 
 def beq_sound : Prop := ∀ (A : Type) (eqA : A → A → Bool) (t₁ t₂ : t A),
   beq eqA t₁ t₂ = true → ∀ x : elt,
@@ -1324,6 +1468,44 @@ def for_all {A : Type} (m : PTree.t A) (f : PTree.elt → A → Bool) : Bool :=
 def for_all_correct : Prop := ∀ (A : Type) (m : PTree.t A) (f : PTree.elt → A → Bool),
   for_all m f = true ↔ ∀ x a, PTree.get x m = some a → f x a = true
 
+private theorem foldl_and_true {A : Type} (f : positive → A → Bool) :
+    ∀ (l : List (positive × A)) (acc : Bool),
+      List.foldl (fun b p => b && f p.1 p.2) acc l = true ↔
+        acc = true ∧ ∀ p ∈ l, f p.1 p.2 = true := by
+  intro l
+  induction l with
+  | nil => intro acc; simp
+  | cons p l ih =>
+      intro acc
+      simp only [List.foldl, ih, Bool.and_eq_true, List.mem_cons]
+      constructor
+      · rintro ⟨⟨hacc, hp⟩, htail⟩
+        exact ⟨hacc, by
+          intro q hq
+          rcases hq with rfl | hq
+          · exact hp
+          · exact htail q hq⟩
+      · rintro ⟨hacc, hall⟩
+        exact ⟨⟨hacc, hall p (by simp)⟩, by
+          intro q hq
+          exact hall q (by simp [hq])⟩
+
+theorem for_all_correct_proof : for_all_correct := by
+  intro A m f
+  change positive → A → Bool at f
+  rw [show for_all m f =
+      List.foldl (fun b p => b && f p.1 p.2) true (PTree.elements m) by
+        simpa [for_all, PTree.fold_specStatement] using
+          PTree.fold_spec_proof A Bool (fun b x a => b && f x a) true m]
+  rw [foldl_and_true]
+  simp only [Bool.true_eq, true_and]
+  constructor
+  · intro hall x a hget
+    exact hall (x, a) (PTree.elements_correct_proof A m x a hget)
+  · intro h p hp
+    rcases p with ⟨x, a⟩
+    exact h x a (PTree.elements_complete_proof A m x a hp)
+
 def exists_ {A : Type} (m : PTree.t A) (f : PTree.elt → A → Bool) : Bool :=
   PTree.fold (fun b x a => b || f x a) m false
 
@@ -1339,7 +1521,7 @@ def exists_false : Prop := ∀ (A : Type) (m : PTree.t A) (f : PTree.elt → A �
   exists_ m f = false ↔ ∀ x a, PTree.get x m = some a → f x a = false
 
 def beq_false : Prop := ∀ (A : Type) (beqA : A → A → Bool) (m₁ m₂ : PTree.t A),
-  ZTree.beq beqA m₁ m₂ = false ↔ ∃ x : PTree.elt,
+  PTree.beq beqA m₁ m₂ = false ↔ ∃ x : PTree.elt,
     match PTree.get x m₁, PTree.get x m₂ with
     | none, none => False
     | some a₁, some a₂ => beqA a₁ a₂ = false
@@ -1351,6 +1533,318 @@ def Equal {A : Type} (eqA : A → A → Prop) (_eqAeq : Equivalence eqA)
     | none, none => True
     | some a₁, some a₂ => eqA a₁ a₂
     | _, _ => False
+
+private theorem proj_sumbool_true {P Q : Prop}
+    (d : CompCert4Lean.Foundation.Logic.Support.Sumbool P Q)
+    (h : proj_sumbool d = true) : P := by
+  cases d with
+  | left hp => exact hp
+  | right hq => simp [proj_sumbool] at h
+
+private theorem proj_sumbool_false {P Q : Prop}
+    (d : CompCert4Lean.Foundation.Logic.Support.Sumbool P Q)
+    (h : proj_sumbool d = false) : Q := by
+  cases d with
+  | left hp => simp [proj_sumbool] at h
+  | right hq => exact hq
+
+private theorem proj_sumbool_of_true {P : Prop}
+    (d : CompCert4Lean.Foundation.Logic.Support.Sumbool P (¬ P))
+    (h : P) : proj_sumbool d = true := by
+  cases d with
+  | left hp => rfl
+  | right hq => exact (hq h).elim
+
+private theorem bool_and_true {a b : Bool} (h : a && b = true) :
+    a = true ∧ b = true := by
+  cases a <;> cases b <;> simp_all
+
+private def beq_opt {A : Type} (beqA : A → A → Bool) :
+    Option A → Option A → Bool
+  | none, none => true
+  | some a₁, some a₂ => beqA a₁ a₂
+  | _, _ => false
+
+private theorem beq_node {A : Type} (beqA : A → A → Bool)
+    (l₁ : PTree.t A) (o₁ : Option A) (r₁ : PTree.t A)
+    (l₂ : PTree.t A) (o₂ : Option A) (r₂ : PTree.t A)
+    (h₁ : PTree.not_trivially_empty l₁ o₁ r₁)
+    (h₂ : PTree.not_trivially_empty l₂ o₂ r₂) :
+    PTree.beq beqA (PTree.Node l₁ o₁ r₁) (PTree.Node l₂ o₂ r₂) =
+      ((PTree.beq beqA l₁ l₂ && beq_opt beqA o₁ o₂) &&
+        PTree.beq beqA r₁ r₂) := by
+  cases l₁ <;> cases o₁ <;> cases r₁ <;>
+    cases l₂ <;> cases o₂ <;> cases r₂ <;>
+      simp_all [PTree.Node, PTree.not_trivially_empty, PTree.beq,
+        PTree.beq', beq_opt, Bool.and_assoc, Bool.and_left_comm,
+        Bool.and_comm]
+
+private theorem tree'_witness {A : Type} :
+    ∀ m : PTree.tree' A, ∃ p v, PTree.get' p m = some v := by
+  intro m
+  induction m with
+  | Node001 r ih =>
+      rcases ih with ⟨p, v, hv⟩
+      exact ⟨.xI p, v, by simpa [PTree.get'] using hv⟩
+  | Node010 x => exact ⟨.xH, x, by simp [PTree.get']⟩
+  | Node011 x r ih => exact ⟨.xH, x, by simp [PTree.get']⟩
+  | Node100 l ih =>
+      rcases ih with ⟨p, v, hv⟩
+      exact ⟨.xO p, v, by simpa [PTree.get'] using hv⟩
+  | Node101 l r ihl ihr =>
+      rcases ihl with ⟨p, v, hv⟩
+      exact ⟨.xO p, v, by simpa [PTree.get'] using hv⟩
+  | Node110 l x ih =>
+      rcases ih with ⟨p, v, hv⟩
+      exact ⟨.xO p, v, by simpa [PTree.get'] using hv⟩
+  | Node111 l x r ihl ihr => exact ⟨.xH, x, by simp [PTree.get']⟩
+
+private theorem node_not_empty {A : Type} (l : PTree.t A) (o : Option A)
+    (r : PTree.t A) (h : PTree.not_trivially_empty l o r) :
+    PTree.Node l o r ≠ .Empty := by
+  intro hn
+  cases l <;> cases o <;> cases r <;>
+    simp_all [PTree.Node, PTree.not_trivially_empty]
+
+private theorem node_witness {A : Type} (l : PTree.t A) (o : Option A)
+    (r : PTree.t A) (h : PTree.not_trivially_empty l o r) :
+    ∃ p v, PTree.get p (PTree.Node l o r) = some v := by
+  have hne := node_not_empty l o r h
+  cases hnode : PTree.Node l o r with
+  | Empty => exact (hne hnode).elim
+  | Nodes m =>
+      rcases tree'_witness m with ⟨p, v, hv⟩
+      exact ⟨p, v, by simpa [hnode, PTree.get] using hv⟩
+
+private theorem get_node_at {A : Type} (i : positive) (l : PTree.t A)
+    (o : Option A) (r : PTree.t A) :
+    PTree.get i (PTree.Node l o r) =
+      match i with
+      | .xH => o
+      | .xO p => PTree.get p l
+      | .xI p => PTree.get p r := by
+  cases i <;> cases l <;> cases o <;> cases r <;> rfl
+
+private theorem extensional_beq_true {A : Type} (beqA : A → A → Bool) :
+    ∀ (m₁ m₂ : PTree.t A),
+      (∀ x, beq_opt beqA (PTree.get x m₁) (PTree.get x m₂) = true) →
+        PTree.beq beqA m₁ m₂ = true := by
+  intro m₁
+  have hP : PLift (∀ m₂ : PTree.t A,
+      (∀ x, beq_opt beqA (PTree.get x m₁) (PTree.get x m₂) = true) →
+        PTree.beq beqA m₁ m₂ = true) := by
+    refine PTree.tree_ind
+        (P := fun m₁ => PLift (∀ m₂ : PTree.t A,
+          (∀ x, beq_opt beqA (PTree.get x m₁) (PTree.get x m₂) = true) →
+            PTree.beq beqA m₁ m₂ = true)) ?_ ?_ m₁
+    · refine ⟨?_⟩
+      intro m₂ H
+      cases m₂ with
+      | Empty => rfl
+      | Nodes m₂ =>
+          rcases tree'_witness m₂ with ⟨p, v, hv⟩
+          have hx := H p
+          have hfalse : False := by
+            simp only [PTree.get] at hx
+            rw [hv] at hx
+            simpa [PTree.get, beq_opt] using hx
+          exact hfalse.elim
+    · intro l il o r ir hne
+      refine ⟨?_⟩
+      intro m₂
+      have hP₂ : PLift (
+          (∀ x, beq_opt beqA (PTree.get x (PTree.Node l o r))
+              (PTree.get x m₂) = true) →
+            PTree.beq beqA (PTree.Node l o r) m₂ = true) := by
+        refine PTree.tree_ind
+            (P := fun m₂ => PLift (
+              (∀ x, beq_opt beqA (PTree.get x (PTree.Node l o r))
+                  (PTree.get x m₂) = true) →
+                PTree.beq beqA (PTree.Node l o r) m₂ = true)) ?_ ?_ m₂
+        · refine ⟨?_⟩
+          intro H
+          rcases node_witness l o r hne with ⟨p, v, hv⟩
+          have hx := H p
+          have hfalse : False := by
+            rw [hv] at hx
+            simpa [PTree.get, beq_opt] using hx
+          exact hfalse.elim
+        · intro l₂ il₂ o₂ r₂ ir₂ hne₂
+          refine ⟨?_⟩
+          intro H
+          have hleft : ∀ p,
+              beq_opt beqA (PTree.get p l) (PTree.get p l₂) = true := by
+            intro p
+            have hx := H (.xO p)
+            rw [get_node_at (.xO p) l o r,
+              get_node_at (.xO p) l₂ o₂ r₂] at hx
+            simpa [beq_opt] using hx
+          have hroot : beq_opt beqA o o₂ = true := by
+            have hx := H .xH
+            rw [get_node_at .xH l o r,
+              get_node_at .xH l₂ o₂ r₂] at hx
+            simpa [beq_opt] using hx
+          have hright : ∀ p,
+              beq_opt beqA (PTree.get p r) (PTree.get p r₂) = true := by
+            intro p
+            have hx := H (.xI p)
+            rw [get_node_at (.xI p) l o r,
+              get_node_at (.xI p) l₂ o₂ r₂] at hx
+            simpa [beq_opt] using hx
+          have hleft_beq := PLift.down il l₂ hleft
+          have hright_beq := PLift.down ir r₂ hright
+          rw [beq_node beqA l o r l₂ o₂ r₂ hne hne₂]
+          simp [hleft_beq, hroot, hright_beq]
+      exact PLift.down hP₂
+  exact PLift.down hP
+
+private theorem equal_beq_true {A : Type}
+    (eqA : A → A → Prop) (eqAeq : Equivalence eqA)
+    (eqAdec : ∀ a₁ a₂,
+      CompCert4Lean.Foundation.Logic.Support.Sumbool (eqA a₁ a₂) (¬ eqA a₁ a₂)) :
+    ∀ (m₁ m₂ : PTree.t A),
+      Equal eqA eqAeq m₁ m₂ →
+        PTree.beq (fun a₁ a₂ => proj_sumbool (eqAdec a₁ a₂)) m₁ m₂ = true := by
+  intro m₁ m₂ hEq
+  apply extensional_beq_true
+  intro x
+  cases h₁ : PTree.get x m₁ with
+  | none =>
+      cases h₂ : PTree.get x m₂ with
+      | none => simp [beq_opt, h₁, h₂]
+      | some a₂ =>
+          have hfalse : False := by
+            simpa [Equal, h₁, h₂] using hEq x
+          exact hfalse.elim
+  | some a₁ =>
+      cases h₂ : PTree.get x m₂ with
+      | none =>
+          have hfalse : False := by
+            simpa [Equal, h₁, h₂] using hEq x
+          exact hfalse.elim
+      | some a₂ =>
+          have hea : eqA a₁ a₂ := by
+            simpa [Equal, h₁, h₂] using hEq x
+          have hb := proj_sumbool_of_true (eqAdec a₁ a₂) hea
+          simp [beq_opt, h₁, h₂, hb]
+
+
+private theorem beq_true_equal {A : Type}
+    (eqA : A → A → Prop) (eqAeq : Equivalence eqA)
+    (eqAdec : ∀ a₁ a₂,
+      CompCert4Lean.Foundation.Logic.Support.Sumbool (eqA a₁ a₂) (¬ eqA a₁ a₂)) :
+    ∀ (m₁ m₂ : PTree.t A),
+      PTree.beq (fun a₁ a₂ => proj_sumbool (eqAdec a₁ a₂)) m₁ m₂ = true →
+        Equal eqA eqAeq m₁ m₂ := by
+  intro m₁ m₂ h
+  cases m₁ with
+  | Empty =>
+      cases m₂ with
+      | Empty => intro x; simp [Equal, PTree.get]
+      | Nodes m₂ => simp [PTree.beq] at h
+  | Nodes m₁ =>
+      cases m₂ with
+      | Empty => simp [PTree.beq] at h
+      | Nodes m₂ =>
+          induction m₁ generalizing m₂ with
+          | Node001 r ih =>
+              cases m₂ with
+              | Node001 r₂ =>
+                  simp only [PTree.beq, PTree.beq', Bool.true_eq] at h
+                  intro x
+                  cases x with
+                  | xH => simp [Equal, PTree.get, PTree.get']
+                  | xO q => simp [Equal, PTree.get, PTree.get']
+                  | xI q => simpa [Equal, PTree.get, PTree.get'] using ih r₂ h q
+              | _ => simp [PTree.beq, PTree.beq'] at h
+          | Node010 x₁ =>
+              cases m₂ with
+              | Node010 x₂ =>
+                  have hx : eqA x₁ x₂ := proj_sumbool_true (eqAdec x₁ x₂) (by simpa [PTree.beq, PTree.beq'] using h)
+                  intro x
+                  cases x with
+                  | xH => simpa [Equal, PTree.get, PTree.get'] using hx
+                  | xO q => simp [Equal, PTree.get, PTree.get']
+                  | xI q => simp [Equal, PTree.get, PTree.get']
+              | _ => simp [PTree.beq, PTree.beq'] at h
+          | Node011 x₁ r ih =>
+              cases m₂ with
+              | Node011 x₂ r₂ =>
+                  have hparts := bool_and_true (by simpa [PTree.beq, PTree.beq'] using h)
+                  have hx : eqA x₁ x₂ := proj_sumbool_true (eqAdec x₁ x₂) hparts.1
+                  have hr : PTree.beq (fun a₁ a₂ => proj_sumbool (eqAdec a₁ a₂)) (.Nodes r) (.Nodes r₂) = true := by
+                    simpa [PTree.beq, PTree.beq'] using hparts.2
+                  intro x
+                  cases x with
+                  | xH => simpa [Equal, PTree.get, PTree.get'] using hx
+                  | xO q => simp [Equal, PTree.get, PTree.get']
+                  | xI q => simpa [Equal, PTree.get, PTree.get'] using ih r₂ hr q
+              | _ => simp [PTree.beq, PTree.beq'] at h
+          | Node100 l ih =>
+              cases m₂ with
+              | Node100 l₂ =>
+                  intro x
+                  have hl : PTree.beq (fun a₁ a₂ => proj_sumbool (eqAdec a₁ a₂)) (.Nodes l) (.Nodes l₂) = true := by simpa [PTree.beq, PTree.beq'] using h
+                  cases x with
+                  | xH => simp [Equal, PTree.get, PTree.get']
+                  | xO q => simpa [Equal, PTree.get, PTree.get'] using ih l₂ hl q
+                  | xI q => simp [Equal, PTree.get, PTree.get']
+              | _ => simp [PTree.beq, PTree.beq'] at h
+          | Node101 l r ihl ihr =>
+              cases m₂ with
+              | Node101 l₂ r₂ =>
+                  have hparts := bool_and_true (by simpa [PTree.beq, PTree.beq'] using h)
+                  have hl : PTree.beq (fun a₁ a₂ => proj_sumbool (eqAdec a₁ a₂)) (.Nodes l) (.Nodes l₂) = true := by simpa [PTree.beq, PTree.beq'] using hparts.1
+                  have hr : PTree.beq (fun a₁ a₂ => proj_sumbool (eqAdec a₁ a₂)) (.Nodes r) (.Nodes r₂) = true := by simpa [PTree.beq, PTree.beq'] using hparts.2
+                  intro x
+                  cases x with
+                  | xH => simp [Equal, PTree.get, PTree.get']
+                  | xO q => simpa [Equal, PTree.get, PTree.get'] using ihl l₂ hl q
+                  | xI q => simpa [Equal, PTree.get, PTree.get'] using ihr r₂ hr q
+              | _ => simp [PTree.beq, PTree.beq'] at h
+          | Node110 l x₁ ih =>
+              cases m₂ with
+              | Node110 l₂ x₂ =>
+                  have hparts := bool_and_true (by simpa [PTree.beq, PTree.beq'] using h)
+                  have hx : eqA x₁ x₂ := proj_sumbool_true (eqAdec x₁ x₂) hparts.1
+                  have hl : PTree.beq (fun a₁ a₂ => proj_sumbool (eqAdec a₁ a₂)) (.Nodes l) (.Nodes l₂) = true := by simpa [PTree.beq, PTree.beq'] using hparts.2
+                  intro x
+                  cases x with
+                  | xH => simpa [Equal, PTree.get, PTree.get'] using hx
+                  | xO q => simpa [Equal, PTree.get, PTree.get'] using ih l₂ hl q
+                  | xI q => simp [Equal, PTree.get, PTree.get']
+              | _ => simp [PTree.beq, PTree.beq'] at h
+          | Node111 l x₁ r ihl ihr =>
+              cases m₂ with
+              | Node111 l₂ x₂ r₂ =>
+                  have hbool :
+                      (proj_sumbool (eqAdec x₁ x₂) &&
+                        PTree.beq' (fun a₁ a₂ => proj_sumbool (eqAdec a₁ a₂)) l l₂) &&
+                        PTree.beq' (fun a₁ a₂ => proj_sumbool (eqAdec a₁ a₂)) r r₂ = true := by
+                    simpa [PTree.beq, PTree.beq'] using h
+                  have hparts₁ := bool_and_true hbool
+                  have hleft :
+                      (proj_sumbool (eqAdec x₁ x₂) &&
+                        PTree.beq' (fun a₁ a₂ => proj_sumbool (eqAdec a₁ a₂)) l l₂) = true :=
+                    hparts₁.1
+                  have hparts₂ :
+                      proj_sumbool (eqAdec x₁ x₂) = true ∧
+                        PTree.beq' (fun a₁ a₂ => proj_sumbool (eqAdec a₁ a₂)) l l₂ = true := by
+                    cases h₁ : proj_sumbool (eqAdec x₁ x₂) with
+                    | false => simp [h₁] at hleft
+                    | true =>
+                        cases h₂ : PTree.beq' (fun a₁ a₂ => proj_sumbool (eqAdec a₁ a₂)) l l₂ with
+                        | false => simp [h₁, h₂] at hleft
+                        | true => exact ⟨rfl, rfl⟩
+                  have hx : eqA x₁ x₂ := proj_sumbool_true (eqAdec x₁ x₂) hparts₂.1
+                  have hl : PTree.beq (fun a₁ a₂ => proj_sumbool (eqAdec a₁ a₂)) (.Nodes l) (.Nodes l₂) = true := by simpa [PTree.beq, PTree.beq'] using hparts₂.2
+                  have hr : PTree.beq (fun a₁ a₂ => proj_sumbool (eqAdec a₁ a₂)) (.Nodes r) (.Nodes r₂) = true := by simpa [PTree.beq, PTree.beq'] using hparts₁.2
+                  intro x
+                  cases x with
+                  | xH => simpa [Equal, PTree.get, PTree.get'] using hx
+                  | xO q => simpa [Equal, PTree.get, PTree.get'] using ihl l₂ hl q
+                  | xI q => simpa [Equal, PTree.get, PTree.get'] using ihr r₂ hr q
+              | _ => simp [PTree.beq, PTree.beq'] at h
 
 def Equal_refl : Prop := ∀ (A : Type) (eqA : A → A → Prop) (eqAeq : Equivalence eqA)
   (m : PTree.t A), Equal eqA eqAeq m m
@@ -1366,28 +1860,41 @@ def Equal_dec_obligation_1 : Prop :=
   ∀ (A : Type) (eqA : A → A → Prop) (eqAeq : Equivalence eqA)
     (eqAdec : ∀ a₁ a₂, CompCert4Lean.Foundation.Logic.Support.Sumbool (eqA a₁ a₂) (¬ eqA a₁ a₂))
     (m₁ m₂ : PTree.t A),
-    ZTree.beq (fun a₁ a₂ => proj_sumbool (eqAdec a₁ a₂)) m₁ m₂ = true →
+    PTree.beq (fun a₁ a₂ => proj_sumbool (eqAdec a₁ a₂)) m₁ m₂ = true →
       Equal eqA eqAeq m₁ m₂
 def Equal_dec_obligation_2 : Prop :=
   ∀ (A : Type) (eqA : A → A → Prop) (eqAeq : Equivalence eqA)
     (eqAdec : ∀ a₁ a₂, CompCert4Lean.Foundation.Logic.Support.Sumbool (eqA a₁ a₂) (¬ eqA a₁ a₂))
     (m₁ m₂ : PTree.t A),
-    ZTree.beq (fun a₁ a₂ => proj_sumbool (eqAdec a₁ a₂)) m₁ m₂ = false →
+    PTree.beq (fun a₁ a₂ => proj_sumbool (eqAdec a₁ a₂)) m₁ m₂ = false →
       ¬ Equal eqA eqAeq m₁ m₂
 
-def Equal_dec : Type 1 :=
-  ∀ (A : Type) (eqA : A → A → Prop) (eqAeq : Equivalence eqA),
-    (∀ a₁ a₂, CompCert4Lean.Foundation.Logic.Support.Sumbool (eqA a₁ a₂) (¬ eqA a₁ a₂)) →
-    ∀ m₁ m₂ : PTree.t A,
-      CompCert4Lean.Foundation.Logic.Support.Sumbool
-        (Equal eqA eqAeq m₁ m₂) (¬ Equal eqA eqAeq m₁ m₂)
+def Equal_dec :
+    ∀ (A : Type) (eqA : A → A → Prop) (eqAeq : Equivalence eqA),
+      (∀ a₁ a₂,
+        CompCert4Lean.Foundation.Logic.Support.Sumbool
+          (eqA a₁ a₂) (¬ eqA a₁ a₂)) →
+      ∀ m₁ m₂ : PTree.t A,
+        CompCert4Lean.Foundation.Logic.Support.Sumbool
+          (Equal eqA eqAeq m₁ m₂) (¬ Equal eqA eqAeq m₁ m₂) := by
+  intro A eqA eqAeq eqAdec m₁ m₂
+  cases h : PTree.beq (fun a₁ a₂ => proj_sumbool (eqAdec a₁ a₂)) m₁ m₂ with
+  | true => exact .left (beq_true_equal eqA eqAeq eqAdec m₁ m₂ h)
+  | false =>
+      exact .right (by
+          intro hEq
+          have hb := equal_beq_true eqA eqAeq eqAdec m₁ m₂ hEq
+          simp [h] at hb)
 
-def Equal_EqDec : Type 1 :=
-  ∀ (A : Type) (eqA : A → A → Prop) (eqAeq : Equivalence eqA),
-    (∀ a₁ a₂, CompCert4Lean.Foundation.Logic.Support.Sumbool (eqA a₁ a₂) (¬ eqA a₁ a₂)) →
-    ∀ m₁ m₂ : PTree.t A,
-      CompCert4Lean.Foundation.Logic.Support.Sumbool
-        (Equal eqA eqAeq m₁ m₂) (¬ Equal eqA eqAeq m₁ m₂)
+def Equal_EqDec :
+    ∀ (A : Type) (eqA : A → A → Prop) (eqAeq : Equivalence eqA),
+      (∀ a₁ a₂,
+        CompCert4Lean.Foundation.Logic.Support.Sumbool
+          (eqA a₁ a₂) (¬ eqA a₁ a₂)) →
+      ∀ m₁ m₂ : PTree.t A,
+        CompCert4Lean.Foundation.Logic.Support.Sumbool
+          (Equal eqA eqAeq m₁ m₂) (¬ Equal eqA eqAeq m₁ m₂) :=
+  Equal_dec
 
 def of_list {A : Type} (l : List (PTree.elt × A)) : PTree.t A :=
   List.foldl (fun m kv => PTree.set kv.1 kv.2 m) (PTree.empty A) l

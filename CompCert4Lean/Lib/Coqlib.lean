@@ -340,6 +340,58 @@ def list_disjoint_symStatement : Prop :=
   ∀ (A : Type) (l1 l2 : List A),
     list_disjoint l1 l2 → list_disjoint l2 l1
 
+private def list_mem_dec {A : Type}
+    (eqA : ∀ x y : A,
+      CompCert4Lean.Foundation.Logic.Support.Sumbool (x = y) (x ≠ y))
+    (x : A) : (l : List A) →
+      CompCert4Lean.Foundation.Logic.Support.Sumbool (x ∈ l) (¬ x ∈ l)
+  | [] => .right (by simp)
+  | y :: ys =>
+      match eqA x y with
+      | .left h => .left (by subst y; simp)
+      | .right hxy =>
+          match list_mem_dec eqA x ys with
+          | .left h => .left (by simp [h])
+          | .right h => .right (by
+              intro hx
+              simp only [List.mem_cons] at hx
+              cases hx with
+              | inl h => exact hxy h
+              | inr h' => exact h h')
+
+def list_disjoint_dec {A : Type}
+    (eqA : ∀ x y : A,
+      CompCert4Lean.Foundation.Logic.Support.Sumbool (x = y) (x ≠ y))
+    (l1 l2 : List A) :
+      CompCert4Lean.Foundation.Logic.Support.Sumbool
+        (list_disjoint l1 l2) (¬ list_disjoint l1 l2) :=
+  match l1 with
+  | [] => .left (by
+      intro x y hx
+      cases hx)
+  | x :: xs =>
+      match list_mem_dec eqA x l2 with
+      | .left hxy => .right (by
+          intro hdisj
+          exact hdisj x x (by simp) hxy rfl)
+      | .right hxy =>
+          match list_disjoint_dec eqA xs l2 with
+          | .left htail => .left (by
+              intro a b ha hb
+              simp only [List.mem_cons] at ha
+              cases ha with
+              | inl h =>
+                  subst a
+                  intro hab
+                  apply hxy
+                  simpa [hab] using hb
+              | inr h => exact htail a b h hb)
+          | .right htail => .right (by
+              intro hdisj
+              apply htail
+              intro a b ha hb hab
+              exact hdisj a b (by simp [ha]) hb hab)
+
 def list_disjoint_decStatement :=
   ∀ (A : Type)
     (eqA : ∀ x y : A,
@@ -360,6 +412,28 @@ def list_norepet_decStatement :=
     (l : List A),
     CompCert4Lean.Foundation.Logic.Support.Sumbool
       (list_norepet l) (¬ list_norepet l)
+
+def list_norepet_dec {A : Type}
+    (eqA : ∀ x y : A,
+      CompCert4Lean.Foundation.Logic.Support.Sumbool (x = y) (x ≠ y))
+    (l : List A) :
+      CompCert4Lean.Foundation.Logic.Support.Sumbool
+        (list_norepet l) (¬ list_norepet l) :=
+  match l with
+  | [] => .left list_norepet.nil
+  | x :: xs =>
+      match list_mem_dec eqA x xs with
+      | .left hmem => .right (by
+          intro hnr
+          cases hnr with
+          | cons hnot _ => exact hnot hmem)
+      | .right hmem =>
+          match list_norepet_dec eqA xs with
+          | .left htail => .left (.cons hmem htail)
+          | .right htail => .right (by
+              intro hnr
+              cases hnr with
+              | cons _ h => exact htail h)
 
 def list_norepet_append_commutStatement : Prop :=
   ∀ (A : Type) (a b : List A),

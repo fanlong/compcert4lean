@@ -28,7 +28,8 @@ inductive satisfies_any (F : R → Prop) : Prop where
   | mk :
       F R0 →
       (∀ x : R, F x → F (Ropp x)) →
-      (∀ x : R, ∃ f : R, CompCert4Lean.Flocq.Core.Defs.Rnd_DN_pt F x f) →
+      CompCert4Lean.Flocq.Core.Defs.round_pred_total
+        (CompCert4Lean.Flocq.Core.Defs.Rnd_DN_pt F) →
       satisfies_any F
 
 def Rnd_DN_UP_pt_splitStatement : Prop :=

@@ -656,7 +656,9 @@ def add_lifted (cenv : compilenv) (vars₁ vars₂ : List (ident × type)) :
   vars₁.filter (fun idType => VSet.mem idType.1 cenv) ++ vars₂
 
 private def listDisjoint (left right : List ident) : Bool :=
-  left.all fun x => !(right.any fun y => decide (x = y))
+  CompCert4Lean.Lib.Coqlib.proj_sumbool
+    (CompCert4Lean.Lib.Coqlib.list_disjoint_dec
+      CompCert4Lean.Common.AST.ident_eq left right)
 
 def transf_function (cfg : CompilerConfig) (f : function) : Res function :=
   let cenv := cenv_for f

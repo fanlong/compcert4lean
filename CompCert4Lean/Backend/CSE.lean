@@ -454,7 +454,7 @@ def transfer (cfg : CompilerConfig) (f : function) (dm : defmap)
 
 def analyze (cfg : CompilerConfig) (f : function) (dm : defmap)
     (approx : PMap.t VA.t) : Option (PMap.t numbering) :=
-  BBlock_solver.fixpoint numberingSolver f.fn_code successors_instr
+  Solver.fixpoint f.fn_code successors_instr
     (transfer cfg f dm approx) f.fn_entrypoint
 
 def transf_instr (dm : defmap) (n : numbering) (instr : instruction) : instruction :=

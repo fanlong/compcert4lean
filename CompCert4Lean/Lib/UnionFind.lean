@@ -17,20 +17,51 @@ open CompCert4Lean.Foundation.Recursion.Rocq.Coq.Init.Wf
 
 structure MAP where
   elt : Type
-  elt_eq : DecidableEq elt
+  elt_eq : ∀ x y : elt, Sumbool (x = y) (x ≠ y)
   t : Type → Type
   empty : (A : Type) → t A
-  get : {A : Type} → elt → t A → Option A
-  set : {A : Type} → elt → A → t A → t A
-  gempty : {A : Type} → (x : elt) → get x (empty A) = none
-  gsspec : {A : Type} → (x y : elt) → (v : A) → (m : t A) →
-    get x (set y v m) = if h : x = y then some v else get x m
+  get : (A : Type) → elt → t A → Option A
+  set : (A : Type) → elt → A → t A → t A
+  gempty : (A : Type) → (x : elt) → get A x (empty A) = none
+  gsspec : (A : Type) → (x y : elt) → (v : A) → (m : t A) →
+    get A x (set A y v m) =
+      match elt_eq x y with
+      | .left _ => some v
+      | .right _ => get A x m
 
-private instance (M : MAP) : DecidableEq M.elt := M.elt_eq
+private def decidableEqOfSumbool {A : Type}
+    (eqDec : ∀ x y : A, Sumbool (x = y) (x ≠ y)) : DecidableEq A :=
+  fun x y =>
+    match eqDec x y with
+    | .left h => .isTrue h
+    | .right h => .isFalse h
+
+private instance (M : MAP) : DecidableEq M.elt :=
+  decidableEqOfSumbool M.elt_eq
+
+private abbrev mapGet (M : MAP) {A : Type} : M.elt → M.t A → Option A :=
+  M.get A
+
+private abbrev mapSet (M : MAP) {A : Type} : M.elt → A → M.t A → M.t A :=
+  M.set A
+
+private theorem mapGet_empty (M : MAP) {A : Type} (x : M.elt) :
+    mapGet M x (M.empty A) = none := M.gempty A x
+
+private theorem mapGet_set (M : MAP) {A : Type} (x y : M.elt)
+    (v : A) (m : M.t A) :
+    mapGet M x (mapSet M y v m) =
+      if h : x = y then some v else mapGet M x m := by
+  change M.get A x (M.set A y v m) =
+    if h : x = y then some v else M.get A x m
+  rw [M.gsspec]
+  cases hxy : M.elt_eq x y with
+  | left h => simp [h]
+  | right h => simp [h]
 
 structure UNIONFIND where
   elt : Type
-  elt_eq : DecidableEq elt
+  elt_eq : ∀ x y : elt, Sumbool (x = y) (x ≠ y)
   t : Type
   repr : t → elt → elt
   repr_canonical : ∀ uf a, repr uf (repr uf a) = repr uf a
@@ -81,16 +112,18 @@ structure UNIONFIND where
   pathlen_zero : ∀ uf a, repr uf a = a ↔ pathlen uf a = 0
   pathlen_merge : ∀ uf a b x,
     pathlen (merge uf a b) x =
-      if h : repr uf a = repr uf b then pathlen uf x
-      else if h' : repr uf x = repr uf a then
-        pathlen uf x + pathlen uf b + 1
-      else pathlen uf x
+      match elt_eq (repr uf a) (repr uf b) with
+      | .left _ => pathlen uf x
+      | .right _ =>
+          match elt_eq (repr uf x) (repr uf a) with
+          | .left _ => pathlen uf x + pathlen uf b + 1
+          | .right _ => pathlen uf x
   pathlen_gt_merge : ∀ uf a b x y,
     repr uf x = repr uf y → pathlen uf x > pathlen uf y →
       pathlen (merge uf a b) x > pathlen (merge uf a b) y
 
 private def UFOrder (M : MAP) (m : M.t M.elt) (a a' : M.elt) : Prop :=
-  M.get a' m = some a
+  mapGet M a' m = some a
 
 namespace UNIONFIND
 
@@ -111,7 +144,7 @@ export unionfind (m mwf)
 
 abbrev elt : Type := M.elt
 
-def elt_eq : DecidableEq (elt M) := M.elt_eq
+def elt_eq (x y : elt M) : Sumbool (x = y) (x ≠ y) := M.elt_eq x y
 
 abbrev order (m : M.t (elt M)) (a a' : elt M) : Prop :=
   UFOrder M m a a'
@@ -119,8 +152,8 @@ abbrev order (m : M.t (elt M)) (a a' : elt M) : Prop :=
 abbrev t : Type := unionfind M
 
 def getlink (m : M.t (elt M)) (a : elt M) :
-    Sumor (Subtype (fun a' => M.get a m = some a')) (M.get a m = none) :=
-  match M.get a m with
+    Sumor (Subtype (fun a' => mapGet M a m = some a')) (mapGet M a m = none) :=
+  match mapGet M a m with
   | some a' => .inleft ⟨a', rfl⟩
   | none => .inright rfl
 
@@ -134,7 +167,7 @@ def repr (uf : t M) (a : elt M) : elt M :=
   WellFounded.fix uf.mwf (F_repr M uf) a
 
 private theorem repr_unroll_calc (uf : t M) (a : elt M) :
-    repr M uf a = match M.get a uf.m with
+    repr M uf a = match mapGet M a uf.m with
       | some a' => repr M uf a'
       | none => a := by
   unfold repr
@@ -148,22 +181,33 @@ private theorem repr_unroll_calc (uf : t M) (a : elt M) :
       simp [F_repr, h, hnone]
 
 private theorem repr_none_calc (uf : t M) (a : elt M)
-    (h : M.get a uf.m = none) : repr M uf a = a := by
+    (h : mapGet M a uf.m = none) : repr M uf a = a := by
   rw [repr_unroll_calc M uf a, h]
 
 private theorem repr_some_calc (uf : t M) (a a' : elt M)
-    (h : M.get a uf.m = some a') : repr M uf a = repr M uf a' := by
+    (h : mapGet M a uf.m = some a') : repr M uf a = repr M uf a' := by
   rw [repr_unroll_calc M uf a, h]
 
 private theorem repr_res_none_calc (uf : t M) (a : elt M) :
-    M.get (repr M uf a) uf.m = none := by
+    mapGet M (repr M uf a) uf.m = none := by
   apply uf.mwf.induction a
   intro x ih
   rw [repr_unroll_calc M uf x]
-  cases h : M.get x uf.m with
+  cases h : mapGet M x uf.m with
   | none => simpa [h]
   | some y =>
       simpa [h] using ih y h
+
+private theorem repr_canonical_calc (uf : t M) (a : elt M) :
+    repr M uf (repr M uf a) = repr M uf a :=
+  repr_none_calc M uf (repr M uf a) (repr_res_none_calc M uf a)
+
+private theorem repr_some_diff_calc (uf : t M) (a a' : elt M)
+    (h : mapGet M a uf.m = some a') : a ≠ repr M uf a' := by
+  intro ha
+  have hnone := repr_res_none_calc M uf a'
+  rw [← ha, h] at hnone
+  cases hnone
 
 def sameclass (uf : t M) (a b : elt M) : Prop :=
   repr M uf a = repr M uf b
@@ -175,17 +219,17 @@ def empty : t M :=
       intro x
       apply _root_.Acc.intro x
       intro y h
-      change M.get x (M.empty (elt M)) = some y at h
-      rw [M.gempty] at h
+      change mapGet M x (M.empty (elt M)) = some y at h
+      rw [mapGet_empty] at h
       cases h }
 
 private theorem identify_order (uf : t M) (a b : elt M)
-    (ha : M.get a uf.m = none) (x y : elt M) :
-  order M (M.set a b uf.m) y x ↔
+    (ha : mapGet M a uf.m = none) (x y : elt M) :
+  order M (mapSet M a b uf.m) y x ↔
     order M uf.m y x ∨ (x = a ∧ y = b) := by
-  change M.get x (M.set a b uf.m) = some y ↔
-    M.get x uf.m = some y ∨ (x = a ∧ y = b)
-  rw [M.gsspec]
+  change mapGet M x (mapSet M a b uf.m) = some y ↔
+    mapGet M x uf.m = some y ∨ (x = a ∧ y = b)
+  rw [mapGet_set]
   by_cases hxa : x = a
   · subst x
     simp only [dif_pos rfl]
@@ -201,12 +245,12 @@ private theorem identify_order (uf : t M) (a b : elt M)
   · simp [hxa]
 
 private def identify_Acc_b (uf : t M) (a b : elt M) (x : elt M)
-    (ha : M.get a uf.m = none) (hneq : repr M uf x ≠ a) :
-    _root_.Acc (order M (M.set a b uf.m)) x :=
+    (ha : mapGet M a uf.m = none) (hneq : repr M uf x ≠ a) :
+    _root_.Acc (order M (mapSet M a b uf.m)) x :=
   by
     refine (_root_.WellFounded.induction uf.mwf
       (C := fun x => repr M uf x ≠ a →
-        _root_.Acc (order M (M.set a b uf.m)) x) x ?_) hneq
+        _root_.Acc (order M (mapSet M a b uf.m)) x) x ?_) hneq
     intro x ih hneq
     apply Acc.intro x
     intro y hxy
@@ -224,11 +268,11 @@ private def identify_Acc_b (uf : t M) (a b : elt M) (x : elt M)
         exact False.elim (hneq (repr_none_calc M uf a ha))
 
 private def identify_Acc (uf : t M) (a b : elt M) (x : elt M)
-    (ha : M.get a uf.m = none) (hneq : repr M uf b ≠ a) :
-    _root_.Acc (order M (M.set a b uf.m)) x :=
+    (ha : mapGet M a uf.m = none) (hneq : repr M uf b ≠ a) :
+    _root_.Acc (order M (mapSet M a b uf.m)) x :=
   by
     apply _root_.WellFounded.induction uf.mwf
-      (C := fun _x => _root_.Acc (order M (M.set a b uf.m)) _x) x
+      (C := fun _x => _root_.Acc (order M (mapSet M a b uf.m)) _x) x
     intro x ih
     apply Acc.intro x
     intro y hxy
@@ -242,21 +286,17 @@ private def identify_Acc (uf : t M) (a b : elt M) (x : elt M)
         exact identify_Acc_b M uf a b b ha hneq
 
 private def identify_wf (uf : t M) (a b : elt M)
-    (ha : M.get a uf.m = none) (hneq : repr M uf b ≠ a) :
-    WellFounded (order M (M.set a b uf.m)) := by
+    (ha : mapGet M a uf.m = none) (hneq : repr M uf b ≠ a) :
+    WellFounded (order M (mapSet M a b uf.m)) := by
   apply _root_.WellFounded.intro
   intro x
   exact identify_Acc M uf a b x ha hneq
 
-def identify (uf : t M) (a b : elt M) : t M :=
-  if ha : M.get a uf.m = none then
-    if hneq : repr M uf b ≠ a then
-      { m := M.set a b uf.m
-        mwf := identify_wf M uf a b ha hneq }
-    else
-      uf
-  else
-    uf
+def identify (uf : t M) (a b : elt M)
+    (a_canon : mapGet M a uf.m = none)
+    (not_same_class : repr M uf b ≠ a) : t M :=
+  { m := mapSet M a b uf.m
+    mwf := identify_wf M uf a b a_canon not_same_class }
 
 def union (uf : t M) (a b : elt M) : t M :=
   let a' := repr M uf a
@@ -265,6 +305,13 @@ def union (uf : t M) (a b : elt M) : t M :=
     uf
   else
     identify M uf a' b'
+      (by simpa [a'] using repr_res_none_calc M uf a)
+      (by
+        intro hrepr
+        apply h
+        calc
+          a' = repr M uf b' := hrepr.symm
+          _ = b' := by simpa [b'] using repr_canonical_calc M uf b)
 
 def merge (uf : t M) (a b : elt M) : t M :=
   let a' := repr M uf a
@@ -273,6 +320,10 @@ def merge (uf : t M) (a b : elt M) : t M :=
     uf
   else
     identify M uf a' b
+      (by simpa [a'] using repr_res_none_calc M uf a)
+      (by
+        intro hba
+        exact h (by simpa [a', b'] using hba.symm))
 
 def path_ord (uf : t M) : elt M → elt M → Prop := order M uf.m
 
@@ -287,23 +338,23 @@ def pathlen (uf : t M) (a : elt M) : Nat :=
 
 private def compress_Acc (uf : t M) (a b : elt M) (x : elt M)
     (hneq : a ≠ b) (hrepr : repr M uf a = b) :
-    _root_.Acc (order M (M.set a b uf.m)) x :=
+    _root_.Acc (order M (mapSet M a b uf.m)) x :=
   by
     apply _root_.WellFounded.induction uf.mwf
-      (C := fun _x => _root_.Acc (order M (M.set a b uf.m)) _x) x
+      (C := fun _x => _root_.Acc (order M (mapSet M a b uf.m)) _x) x
     intro x ih
     apply Acc.intro x
     intro y hxy
-    change M.get x (M.set a b uf.m) = some y at hxy
-    rw [M.gsspec] at hxy
+    change mapGet M x (mapSet M a b uf.m) = some y at hxy
+    rw [mapGet_set] at hxy
     by_cases hxa : x = a
     · subst x
       simp at hxy
       subst y
       apply Acc.intro b
       intro z hzb
-      change M.get b (M.set a b uf.m) = some z at hzb
-      rw [M.gsspec] at hzb
+      change mapGet M b (mapSet M a b uf.m) = some z at hzb
+      rw [mapGet_set] at hzb
       by_cases hba : b = a
       · exact False.elim (hneq hba.symm)
       · simp [hba] at hzb
@@ -311,35 +362,122 @@ private def compress_Acc (uf : t M) (a b : elt M) (x : elt M)
         rw [hrepr] at hnone
         rw [hzb] at hnone
         cases hnone
-    · have hxy' : M.get x uf.m = some y := by simpa [hxa] using hxy
+    · have hxy' : mapGet M x uf.m = some y := by simpa [hxa] using hxy
       exact ih y (show UFOrder M uf.m y x from hxy')
 
 private def compress_wf (uf : t M) (a b : elt M)
     (hneq : a ≠ b) (hrepr : repr M uf a = b) :
-    WellFounded (order M (M.set a b uf.m)) := by
+    WellFounded (order M (mapSet M a b uf.m)) := by
   apply _root_.WellFounded.intro
   intro x
   exact compress_Acc M uf a b x hneq hrepr
 
-def compress (uf : t M) (a b : elt M) : t M :=
-  if hneq : a ≠ b then
-    if hrepr : repr M uf a = b then
-      { m := M.set a b uf.m
-        mwf := compress_wf M uf a b hneq hrepr }
-    else
-      uf
-  else
-    uf
+def compress (uf : t M) (a b : elt M)
+    (a_diff_b : a ≠ b) (a_repr_b : repr M uf a = b) : t M :=
+  { m := mapSet M a b uf.m
+    mwf := compress_wf M uf a b a_diff_b a_repr_b }
+
+private theorem repr_compress_calc (uf : t M) (a b : elt M)
+    (a_diff_b : a ≠ b) (a_repr_b : repr M uf a = b) (x : elt M) :
+    repr M (compress M uf a b a_diff_b a_repr_b) x = repr M uf x := by
+  apply (compress M uf a b a_diff_b a_repr_b).mwf.induction x
+  intro x ih
+  rw [repr_unroll_calc M (compress M uf a b a_diff_b a_repr_b) x]
+  cases hget : mapGet M x (compress M uf a b a_diff_b a_repr_b).m with
+  | some y =>
+      simp only
+      rw [ih y hget]
+      change mapGet M x (mapSet M a b uf.m) = some y at hget
+      rw [mapGet_set] at hget
+      by_cases hxa : x = a
+      · subst x
+        simp at hget
+        subst y
+        rw [← a_repr_b]
+        exact repr_canonical_calc M uf a
+      · have hxy : mapGet M x uf.m = some y := by simpa [hxa] using hget
+        exact (repr_some_calc M uf x y hxy).symm
+  | none =>
+      simp only
+      change mapGet M x (mapSet M a b uf.m) = none at hget
+      rw [mapGet_set] at hget
+      by_cases hxa : x = a
+      · subst x
+        simp at hget
+      · have hxnone : mapGet M x uf.m = none := by simpa [hxa] using hget
+        exact (repr_none_calc M uf x hxnone).symm
+
+private structure FindResult (uf : t M) (a : elt M) where
+  value : elt M × t M
+  fst_repr : value.1 = repr M uf a
+  repr_unchanged : ∀ x, repr M value.2 x = repr M uf x
+
+private def F_find (uf : t M) (a : elt M)
+    (rec : ∀ b, UFOrder M uf.m b a → FindResult M uf b) : FindResult M uf a :=
+  match hget : mapGet M a uf.m with
+  | some a' =>
+      let r := rec a' hget
+      let b := r.value.1
+      let uf' := r.value.2
+      have a_diff_b : a ≠ b := by
+        intro hab
+        exact repr_some_diff_calc M uf a a' hget (hab.trans r.fst_repr)
+      have a_repr_b : repr M uf' a = b := by
+        calc
+          repr M uf' a = repr M uf a := r.repr_unchanged a
+          _ = repr M uf a' := repr_some_calc M uf a a' hget
+          _ = b := r.fst_repr.symm
+      { value := (b, compress M uf' a b a_diff_b a_repr_b)
+        fst_repr := r.fst_repr.trans (repr_some_calc M uf a a' hget).symm
+        repr_unchanged := fun x =>
+          (repr_compress_calc M uf' a b a_diff_b a_repr_b x).trans
+            (r.repr_unchanged x) }
+  | none =>
+      { value := (a, uf)
+        fst_repr := (repr_none_calc M uf a hget).symm
+        repr_unchanged := fun _ => rfl }
+
+private def find_x_certified (uf : t M) (a : elt M) : FindResult M uf a :=
+  WellFounded.fix uf.mwf (F_find M uf) a
 
 def find_x (uf : t M) (a : elt M) : elt M × t M :=
-  WellFounded.fix uf.mwf
-    (fun x rec =>
-      match getlink M uf.m x with
-      | .inleft h =>
-          let r : elt M × t M := rec h.1 h.2
-          (r.1, compress M r.2 x r.1)
-      | .inright _ => (x, uf))
-    a
+  (find_x_certified M uf a).value
+
+def find_xCertificate (uf : t M) (a : elt M) (r : elt M × t M) : Prop :=
+  r.1 = repr M uf a ∧ ∀ x, repr M r.2 x = repr M uf x
+
+def find_xCertificateStatement : Prop :=
+  ∀ (uf : t M) (a : elt M), find_xCertificate M uf a (find_x M uf a)
+
+/-! Stable companion identities for the six obligations generated by Rocq's
+`Program Fixpoint find_x`.  DMC-003 Option A keeps these propositions detached
+from the executable pair while preserving the exact invariant boundary. -/
+def find_x_obligation_1Statement : Prop :=
+  ∀ (uf : t M) (a a' : elt M),
+    some a' = mapGet M a uf.m → order M uf.m a' a
+
+def find_x_obligation_2Statement : Prop :=
+  ∀ (uf : t M) (a a' : elt M), some a' = mapGet M a uf.m →
+    ∀ r : elt M × t M, find_xCertificate M uf a' r → a ≠ r.1
+
+def find_x_obligation_3Statement : Prop :=
+  ∀ (uf : t M) (a a' : elt M), some a' = mapGet M a uf.m →
+    ∀ r : elt M × t M, find_xCertificate M uf a' r →
+      repr M r.2 a = r.1
+
+def find_x_obligation_4Statement : Prop :=
+  ∀ (uf : t M) (a a' : elt M), some a' = mapGet M a uf.m →
+    ∀ (r : elt M × t M), find_xCertificate M uf a' r →
+    ∀ (a_diff_b : a ≠ r.1) (a_repr_b : repr M r.2 a = r.1),
+      find_xCertificate M uf a
+        (r.1, compress M r.2 a r.1 a_diff_b a_repr_b)
+
+def find_x_obligation_5Statement : Prop :=
+  ∀ (uf : t M) (a : elt M), none = mapGet M a uf.m →
+    find_xCertificate M uf a (a, uf)
+
+def find_x_obligation_6Statement : Prop :=
+  ∀ (uf : t M), WellFounded (order M uf.m)
 
 def find (uf : t M) (a : elt M) : elt M × t M := find_x M uf a
 
@@ -349,26 +487,26 @@ def union_not_same_classStatement : Prop :=
 
 def repr_unrollStatement : Prop :=
   ∀ (uf : t M) (a : elt M),
-    repr M uf a = match M.get a uf.m with
+    repr M uf a = match mapGet M a uf.m with
       | some a' => repr M uf a'
       | none => a
 
 def repr_noneStatement : Prop :=
-  ∀ (uf : t M) (a : elt M), M.get a uf.m = none → repr M uf a = a
+  ∀ (uf : t M) (a : elt M), mapGet M a uf.m = none → repr M uf a = a
 
 def repr_someStatement : Prop :=
   ∀ (uf : t M) (a a' : elt M),
-    M.get a uf.m = some a' → repr M uf a = repr M uf a'
+    mapGet M a uf.m = some a' → repr M uf a = repr M uf a'
 
 def repr_res_noneStatement : Prop :=
-  ∀ (uf : t M) (a : elt M), M.get (repr M uf a) uf.m = none
+  ∀ (uf : t M) (a : elt M), mapGet M (repr M uf a) uf.m = none
 
 def repr_canonicalStatement : Prop :=
   ∀ (uf : t M) (a : elt M), repr M uf (repr M uf a) = repr M uf a
 
 def repr_some_diffStatement : Prop :=
   ∀ (uf : t M) (a a' : elt M),
-    M.get a uf.m = some a' → a ≠ repr M uf a'
+    mapGet M a uf.m = some a' → a ≠ repr M uf a'
 
 def repr_emptyStatement : Prop :=
   ∀ (a : elt M), repr M (empty M) a = a
@@ -390,12 +528,18 @@ def sameclass_emptyStatement : Prop :=
   ∀ (a b : elt M), sameclass M (empty M) a b → a = b
 
 def repr_identify_1Statement : Prop :=
-  ∀ (uf : t M) (a b x : elt M), repr M uf x ≠ a →
-    repr M (identify M uf a b) x = repr M uf x
+  ∀ (uf : t M) (a b : elt M)
+    (a_canon : mapGet M a uf.m = none)
+    (not_same_class : repr M uf b ≠ a) (x : elt M),
+    repr M uf x ≠ a →
+      repr M (identify M uf a b a_canon not_same_class) x = repr M uf x
 
 def repr_identify_2Statement : Prop :=
-  ∀ (uf : t M) (a b x : elt M), repr M uf x = a →
-    repr M (identify M uf a b) x = repr M uf b
+  ∀ (uf : t M) (a b : elt M)
+    (a_canon : mapGet M a uf.m = none)
+    (not_same_class : repr M uf b ≠ a) (x : elt M),
+    repr M uf x = a →
+      repr M (identify M uf a b a_canon not_same_class) x = repr M uf b
 
 def repr_union_1Statement : Prop :=
   ∀ (uf : t M) (a b x : elt M), repr M uf x ≠ repr M uf a →
@@ -446,22 +590,21 @@ def path_ord_merge_2Statement : Prop :=
 
 def pathlen_unrollStatement : Prop :=
   ∀ (uf : t M) (a : elt M),
-    pathlen M uf a = match M.get a uf.m with
+    pathlen M uf a = match mapGet M a uf.m with
       | some a' => Nat.succ (pathlen M uf a')
       | none => 0
 
 def pathlen_noneStatement : Prop :=
-  ∀ (uf : t M) (a : elt M), M.get a uf.m = none → pathlen M uf a = 0
+  ∀ (uf : t M) (a : elt M), mapGet M a uf.m = none → pathlen M uf a = 0
 
 def pathlen_someStatement : Prop :=
-  ∀ (uf : t M) (a a' : elt M), M.get a uf.m = some a' →
+  ∀ (uf : t M) (a a' : elt M), mapGet M a uf.m = some a' →
     pathlen M uf a = Nat.succ (pathlen M uf a')
 
 def pathlen_zeroStatement : Prop :=
   ∀ (uf : t M) (a : elt M), repr M uf a = a ↔ pathlen M uf a = 0
 
 def pathlen_mergeStatement : Prop := by
-  letI : DecidableEq (elt M) := M.elt_eq
   exact ∀ (uf : t M) (a b x : elt M),
     pathlen M (merge M uf a b) x =
       if h : repr M uf a = repr M uf b then pathlen M uf x
@@ -475,19 +618,24 @@ def pathlen_gt_mergeStatement : Prop :=
       pathlen M (merge M uf a b) x > pathlen M (merge M uf a b) y
 
 def repr_compressStatement : Prop :=
-  ∀ (uf : t M) (a b x : elt M), repr M (compress M uf a b) x = repr M uf x
+  ∀ (uf : t M) (a b : elt M)
+    (a_diff_b : a ≠ b) (a_repr_b : repr M uf a = b) (x : elt M),
+    repr M (compress M uf a b a_diff_b a_repr_b) x = repr M uf x
 
 def compress_orderStatement : Prop :=
   ∀ (uf : t M) (a b : elt M),
-    ∀ x y, order M (M.set a b uf.m) y x →
+    ∀ x y, order M (mapSet M a b uf.m) y x →
       order M uf.m y x ∨ (x = a ∧ y = b)
 
 def compress_AccStatement : Prop :=
-  ∀ (uf : t M) (a b : elt M), ∀ x,
-    _root_.Acc (order M uf.m) x → _root_.Acc (order M (M.set a b uf.m)) x
+  ∀ (uf : t M) (a b : elt M)
+    (a_diff_b : a ≠ b) (a_repr_b : repr M uf a = b), ∀ x,
+    _root_.Acc (order M uf.m) x → _root_.Acc (order M (mapSet M a b uf.m)) x
 
 def compress_wfStatement : Prop :=
-  ∀ (uf : t M) (a b : elt M), WellFounded (order M (M.set a b uf.m))
+  ∀ (uf : t M) (a b : elt M)
+    (a_diff_b : a ≠ b) (a_repr_b : repr M uf a = b),
+    WellFounded (order M (mapSet M a b uf.m))
 
 def find_reprStatement : Prop :=
   ∀ (uf : t M) (a : elt M), (find M uf a).1 = repr M uf a
@@ -507,20 +655,29 @@ def sameclass_find_3Statement : Prop :=
     sameclass M (find M uf a).2 a (find M uf a).1
 
 def identify_orderStatement : Prop :=
-  ∀ (uf : t M) (a b : elt M), ∀ x y,
-    order M (M.set a b uf.m) y x ↔ order M uf.m y x ∨ (x = a ∧ y = b)
+  ∀ (uf : t M) (a b : elt M)
+    (a_canon : mapGet M a uf.m = none)
+    (not_same_class : repr M uf b ≠ a), ∀ x y,
+    order M (mapSet M a b uf.m) y x ↔ order M uf.m y x ∨ (x = a ∧ y = b)
 
 def identify_Acc_bStatement : Prop :=
-  ∀ (uf : t M) (a b : elt M) (x : elt M),
+  ∀ (uf : t M) (a b : elt M)
+    (a_canon : mapGet M a uf.m = none)
+    (not_same_class : repr M uf b ≠ a) (x : elt M),
     _root_.Acc (order M uf.m) x → repr M uf x ≠ a →
-      _root_.Acc (order M (M.set a b uf.m)) x
+      _root_.Acc (order M (mapSet M a b uf.m)) x
 
 def identify_AccStatement : Prop :=
-  ∀ (uf : t M) (a b : elt M) (x : elt M),
-    _root_.Acc (order M uf.m) x → _root_.Acc (order M (M.set a b uf.m)) x
+  ∀ (uf : t M) (a b : elt M)
+    (a_canon : mapGet M a uf.m = none)
+    (not_same_class : repr M uf b ≠ a) (x : elt M),
+    _root_.Acc (order M uf.m) x → _root_.Acc (order M (mapSet M a b uf.m)) x
 
 def identify_wfStatement : Prop :=
-  ∀ (uf : t M) (a b : elt M), WellFounded (order M (M.set a b uf.m))
+  ∀ (uf : t M) (a b : elt M)
+    (a_canon : mapGet M a uf.m = none)
+    (not_same_class : repr M uf b ≠ a),
+    WellFounded (order M (mapSet M a b uf.m))
 
 def wf_emptyStatement : Prop :=
   WellFounded (order M (M.empty (elt M)))

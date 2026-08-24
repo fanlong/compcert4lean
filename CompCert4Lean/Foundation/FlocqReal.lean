@@ -144,12 +144,61 @@ structure LnCertificate (spec : ExactRealSpec) : Prop where
   ln_exp : ∀ x, spec.ln (spec.exp x) = x
   one : spec.ln spec.one = spec.zero
 
+/-! Source-named laws that are consumed across the selected Flocq provider
+surface.  These are obligations, not proof shortcuts: proof grinding supplies
+their terms after definition migration, but the exact propositions and their
+ownership remain part of the canonical context now. -/
+structure ExactRealSourceLaws (spec : ExactRealSpec) : Prop where
+  ofZ_zero : spec.ofZ
+      (_root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.Z0) = spec.zero
+  ofZ_one : spec.ofZ
+      (_root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.Zpos
+        _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.xH) = spec.one
+  ofZ_add : ∀ x y,
+    spec.ofZ (_root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add x y) =
+      spec.add (spec.ofZ x) (spec.ofZ y)
+  ofZ_neg : ∀ x,
+    spec.ofZ (_root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.opp x) =
+      spec.neg (spec.ofZ x)
+  sqrt_mult : ∀ x y,
+    spec.le spec.zero x → spec.le spec.zero y →
+      spec.sqrt (spec.mul x y) = spec.mul (spec.sqrt x) (spec.sqrt y)
+  sqrt_strict_positive : ∀ x,
+    spec.lt spec.zero x → spec.lt spec.zero (spec.sqrt x)
+  exp_opp : ∀ x,
+    spec.exp (spec.neg x) = spec.inv (spec.exp x)
+  min_left : ∀ x y, spec.le (spec.min x y) x
+  min_right : ∀ x y, spec.le (spec.min x y) y
+  min_eq_left : ∀ x y, spec.le x y → spec.min x y = x
+  min_eq_right : ∀ x y, spec.le y x → spec.min x y = y
+  powerRZ_zero : ∀ x,
+    spec.powerRZ x (_root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.Z0) = spec.one
+  powerRZ_add : ∀ x z1 z2,
+    x ≠ spec.zero →
+      spec.powerRZ x
+          (_root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add z1 z2) =
+        spec.mul (spec.powerRZ x z1) (spec.powerRZ x z2)
+  up_gt : ∀ x,
+    spec.lt x (spec.ofZ (spec.up x))
+  up_gap : ∀ x,
+    spec.le
+      (spec.sub (spec.ofZ (spec.up x)) x)
+      (spec.ofZ (_root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.Zpos
+        _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.xH))
+  completeness :
+    ∀ (E : spec.carrier → Prop),
+      (∃ m, ∀ x, E x → spec.le x m) →
+      (∃ x, E x) →
+      ∃ m, (∀ x, E x → spec.le x m) ∧
+        ∀ b, (∀ x, E x → spec.le x b) → spec.le m b
+
 /-- Mandatory proof owner for the exact-real specification boundary. -/
 structure ExactRealCertificate (spec : ExactRealSpec) : Prop where
   orderedField : OrderedFieldCertificate spec
   sqrt : SqrtCertificate spec
   exp : ExpCertificate spec
   ln : LnCertificate spec
+  sourceLaws : ExactRealSourceLaws spec
 
 /-!
 The adapter is a relation from the checked runtime carrier into the selected
@@ -217,6 +266,13 @@ structure ExactRealContext where
   spec : ExactRealSpec
   certificate : ExactRealCertificate spec
   adapter : RuntimeExactAdapter spec
+
+/-! Proof-bearing source carrier used by `Rsqrt` and related theorem surfaces.
+The value and its nonnegativity proposition are retained even though proof
+construction is deferred to the proof-grinding phase. -/
+structure ExactNonnegReal (ctx : ExactRealContext) where
+  nonneg : ctx.spec.carrier
+  cond_nonneg : ctx.spec.le ctx.spec.zero nonneg
 
 abbrev RealValue := OrderedReal
 abbrev F2RRat := Rat
@@ -331,7 +387,8 @@ def total_order_T (r1 r2 : R) : Type := Sumor (Sumbool (Rlt r1 r2) (Eq r1 r2)) (
 end Rdefinitions
 
 namespace R_sqrt
-def sqrt : R → R := _root_.CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.Runtime.sqrt
+def sqrt (ctx : ExactRealContext) (x : ctx.spec.carrier) : ctx.spec.carrier :=
+  ExactReal.sqrt ctx.spec x
 end R_sqrt
 
 namespace Raxioms
@@ -350,7 +407,8 @@ def powerRZ : R → Z → R := _root_.CompCert4Lean.Foundation.FlocqReal.Rocq.Co
 end Rfunctions
 
 namespace RIneq
-abbrev IZR_neq (z1 z2 : Z) : Prop := Not (Eq (IZR z1) (IZR z2))
+def IZR_neq (ctx : ExactRealContext) (z1 z2 : Z) (h : z1 ≠ z2) : Prop :=
+  Not (Eq (ExactReal.IZR ctx.spec z1) (ExactReal.IZR ctx.spec z2))
 def Req_dec_T (r1 r2 : R) : Sumbool (Eq r1 r2) (Not (Eq r1 r2)) :=
   if h : r1 = r2 then .left h else .right h
 abbrev Req_EM_T := Req_dec_T
@@ -360,7 +418,10 @@ def Rle_Rinv_depr (x y : R) (hx : Rlt (IZR Z0) x) (hy : Rlt (IZR Z0) y) (hxy : R
   Rle (Rinv y) (Rinv x)
 abbrev Rle_Rinv := Rle_Rinv_depr
 def Rlt_0_minus (a b : R) : Prop := Rlt (IZR Z0) (Rminus a b)
-abbrev Rlt_Rminus (a b : R) : Prop := Rlt (Rminus a b) (IZR Z0)
+def Rlt_Rminus (ctx : ExactRealContext) (a b : ctx.spec.carrier)
+    (_h : ExactReal.Rlt ctx.spec a b) : Prop :=
+  ExactReal.Rlt ctx.spec (ExactReal.R0 ctx.spec)
+    (ExactReal.Rminus ctx.spec b a)
 def Ropp_inv_permute_depr (r : R) (h : Not (Eq r (IZR Z0))) : Prop :=
   Eq (Ropp (Rinv r)) (Rinv (Ropp r))
 abbrev Ropp_inv_permute := Ropp_inv_permute_depr
@@ -369,16 +430,61 @@ def Rsqr : R → R := _root_.CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.R
 end RIneq
 
 namespace Rpower
-def ln : R → R := _root_.CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.Runtime.ln
+def ln (ctx : ExactRealContext) (x : ctx.spec.carrier) : ctx.spec.carrier :=
+  ExactReal.ln ctx.spec x
 end Rpower
 
 namespace Rtrigo_def
-def exp : R → R := _root_.CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.Runtime.exp
+def exp (ctx : ExactRealContext) (x : ctx.spec.carrier) : ctx.spec.carrier :=
+  ExactReal.exp ctx.spec x
 end Rtrigo_def
 
 end Rocq.Coq.Reals
 
 namespace Rocq.Coq.Reals
+
+/-! The source theorem descriptors below are parameterised by the exact-real
+    context.  The runtime aliases above remain available for executable
+    staging, but theorem-facing identities must not silently quantify over the
+    rational compatibility carrier. -/
+section ExactStatements
+
+variable (ctx : ExactRealContext)
+
+local notation "R" => ctx.spec.carrier
+local notation "IZR" => ExactReal.IZR ctx.spec
+local notation "INR" => fun n : Nat => ExactReal.IZR ctx.spec (Z.of_nat n)
+local notation "R0" => ExactReal.R0 ctx.spec
+local notation "Ropp" => ExactReal.Ropp ctx.spec
+local notation "Rplus" => ExactReal.Rplus ctx.spec
+local notation "Rminus" => ExactReal.Rminus ctx.spec
+local notation "Rmult" => ExactReal.Rmult ctx.spec
+local notation "Rinv" => ExactReal.Rinv ctx.spec
+local notation "Rle" => ExactReal.Rle ctx.spec
+local notation "Rlt" => ExactReal.Rlt ctx.spec
+local notation "Rge" => ExactReal.Rge ctx.spec
+local notation "Rgt" => ExactReal.Rgt ctx.spec
+local notation "Rabs" => ExactReal.Rabs ctx.spec
+local notation "Rmin" => ExactReal.Rmin ctx.spec
+local notation "Rsqr" => ExactReal.Rsqr ctx.spec
+local notation "sqrt" => ExactReal.sqrt ctx.spec
+local notation "exp" => ExactReal.exp ctx.spec
+local notation "ln" => ExactReal.ln ctx.spec
+local notation "powerRZ" => ExactReal.powerRZ ctx.spec
+local notation "up" => ExactReal.up ctx.spec
+
+private def exactIsUpperBound (E : R → Prop) (m : R) : Prop :=
+  ∀ x, E x → Rle x m
+
+private def exactBound (E : R → Prop) : Prop :=
+  ∃ m, exactIsUpperBound (ctx := ctx) E m
+
+private def exactIsLub (E : R → Prop) (m : R) : Prop :=
+  exactIsUpperBound (ctx := ctx) E m ∧
+    ∀ b, exactIsUpperBound (ctx := ctx) E b → Rle m b
+
+local notation "bound" => exactBound (ctx := ctx)
+local notation "is_lub" => exactIsLub (ctx := ctx)
 
 namespace DiscrR
 
@@ -587,7 +693,10 @@ end Rpower
 
 namespace Rsqrt_def
 
-def Rsqrt_positivityStatement : Prop := ∀ x : nonnegreal, Rle (IZR Z0) (Rsqrt x)
+def Rsqrt_positivityStatement : Prop :=
+  ∀ (ctx : ExactRealContext) (x : ExactNonnegReal ctx),
+    ExactReal.Rle ctx.spec (ExactReal.R0 ctx.spec)
+      (ExactReal.sqrt ctx.spec x.nonneg)
 
 end Rsqrt_def
 
@@ -597,5 +706,6 @@ def exp_0Statement : Prop := Eq (exp (IZR Z0)) (IZR (Zpos xH))
 
 end Rtrigo_def
 
+end ExactStatements
 end Rocq.Coq.Reals
 end CompCert4Lean.Foundation.FlocqReal

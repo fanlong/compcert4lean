@@ -60,6 +60,43 @@ def na_lattice : SemiLattice :=
 def solver_law_obligation : Prop :=
   SemiLatticeLaws na_lattice ∧ NodeSetBackward.law_obligation
 
+/-! Canonical generated surface for
+`Kildall.Backward_Dataflow_Solver(NA)(NodeSetBackward)`. -/
+namespace DS
+
+def L : SemiLattice := na_lattice
+
+def law_obligation : Prop :=
+  SemiLatticeLaws L ∧ NodeSetBackward.law_obligation
+
+def fixpoint {A : Type} (code : PTree.t A) (successors : A → List positive)
+    (transf : positive → L.t → L.t) : Option (PMap.t L.t) :=
+  Backward_Dataflow_Solver.fixpoint L NodeSetBackward code successors transf
+
+def fixpoint_solution (_laws : law_obligation) : Prop :=
+  ∀ (A : Type) (code : PTree.t A) (successors : A → List positive)
+    (transf : positive → L.t → L.t) (res : PMap.t L.t)
+    (n : positive) (instr : A) (s : positive),
+    fixpoint code successors transf = some res →
+    PTree.get n code = some instr → s ∈ successors instr →
+    (∀ n a, PTree.get n code = none → L.eq (transf n a) L.bot) →
+    L.ge (PMap.get n res) (transf s (PMap.get s res))
+
+def fixpoint_allnodes {A : Type} (code : PTree.t A)
+    (successors : A → List positive)
+    (transf : positive → L.t → L.t) : Option (PMap.t L.t) :=
+  Backward_Dataflow_Solver.fixpoint_allnodes L NodeSetBackward code successors transf
+
+def fixpoint_allnodes_solution (_laws : law_obligation) : Prop :=
+  ∀ (A : Type) (code : PTree.t A) (successors : A → List positive)
+    (transf : positive → L.t → L.t) (res : PMap.t L.t)
+    (n : positive) (instr : A) (s : positive),
+    fixpoint_allnodes code successors transf = some res →
+    PTree.get n code = some instr → s ∈ successors instr →
+    L.ge (PMap.get n res) (transf s (PMap.get s res))
+
+end DS
+
 def add_need_all (r : reg) (ne : nenv) : nenv :=
   NE.set r All ne
 
@@ -204,8 +241,7 @@ def transfer (cfg : CompilerConfig) (f : function) (dm : defmap)
 
 def analyze (cfg : CompilerConfig) (f : function) (dm : defmap)
     (approx : PMap.t VA.t) : Option (PMap.t NA.t) :=
-  Backward_Dataflow_Solver.fixpoint na_lattice NodeSetBackward f.fn_code
-    successors_instr (transfer cfg f dm approx)
+  DS.fixpoint f.fn_code successors_instr (transfer cfg f dm approx)
 
 def transf_instr (cfg : CompilerConfig) (dm : defmap) (approx : PMap.t VA.t)
     (an : PMap.t NA.t)

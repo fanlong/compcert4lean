@@ -189,13 +189,7 @@ private abbrev zTwoP := two_p
 private def intZeroExt (n : Z) (x : CCInt) : CCInt :=
   intRepr (zMod (intUnsigned x) (zTwoP n))
 
-private def intSignExt (n : Z) (x : CCInt) : CCInt :=
-  let modulus := zTwoP n
-  let residue := zMod (intUnsigned x) modulus
-  if ZArith.BinInt.Z.ltb (zTwoP (zSub n z1)) residue then
-    intRepr (zSub residue modulus)
-  else
-    intRepr residue
+private abbrev intSignExt := CompCert4Lean.Lib.Integers.Int.sign_ext
 
 def valty : typ → Type
   | Tint => CCInt

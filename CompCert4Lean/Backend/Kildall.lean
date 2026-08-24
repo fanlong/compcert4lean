@@ -153,12 +153,14 @@ inductive reachable {A : Type} (code : PTreeT A)
 export reachable (reachable_refl reachable_left)
 
 def reachable_ind {A : Type} (code : PTreeT A)
-    (successors : A → List positive) (P : positive → positive → Prop)
-    (hrefl : ∀ n, P n n)
-    (hleft : ∀ n1 n2 n3 i, PTree.get n1 code = some i →
-      n2 ∈ successors i → reachable code successors n2 n3 → P n2 n3 →
-      P n1 n3) :
-    ∀ n1 n2, reachable code successors n1 n2 → P n1 n2 := by
+    (successors : A → List positive)
+    (P : ∀ n1 n2, reachable code successors n1 n2 → Prop)
+    (hrefl : ∀ n, P n n (reachable_refl n))
+    (hleft : ∀ n1 n2 n3 i (hcode : PTree.get n1 code = some i)
+      (hsucc : n2 ∈ successors i) (hreach : reachable code successors n2 n3),
+      P n2 n3 hreach →
+      P n1 n3 (reachable_left n1 n2 n3 i hcode hsucc hreach)) :
+    ∀ n1 n2 (h : reachable code successors n1 n2), P n1 n2 h := by
   intro n1 n2 h
   induction h with
   | reachable_refl n => exact hrefl n
@@ -279,7 +281,7 @@ inductive steps {A : Type} {LAT : SemiLattice} {NS : NodeSetOps}
 
 export steps (steps_base steps_right)
 
-def steps_ind : Type := Unit
+abbrev steps_ind := @steps.rec
 
 structure good_state {A : Type} {LAT : SemiLattice} {NS : NodeSetOps}
     (code : PTreeT A) (successors : A → List positive)

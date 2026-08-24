@@ -125,8 +125,173 @@ inductive type : Type where
 
 export type (Tvoid Tint Tlong Tfloat Tpointer Tarray Tfunction Tstruct Tunion)
 
+private instance identDecidableEq : DecidableEq ident := inferInstance
+
+mutual
+  private def typeDecEq : (t1 t2 : type) → Decidable (t1 = t2)
+    | .Tvoid, t2 =>
+        match t2 with
+        | .Tvoid => isTrue rfl
+        | .Tint _ _ _ | .Tlong _ _ | .Tfloat _ _ | .Tpointer _ _ | .Tarray _ _ _ |
+          .Tfunction _ _ _ | .Tstruct _ _ | .Tunion _ _ =>
+            isFalse (by intro h; cases h)
+    | .Tint s1 sg1 a1, t2 =>
+        match t2 with
+        | .Tint s2 sg2 a2 =>
+            if hs : s1 = s2 then
+              if hsg : sg1 = sg2 then
+                if ha : a1 = a2 then
+                  isTrue (by cases hs; cases hsg; cases ha; rfl)
+                else
+                  isFalse (by intro h; cases h; exact ha rfl)
+              else
+                isFalse (by intro h; cases h; exact hsg rfl)
+            else
+              isFalse (by intro h; cases h; exact hs rfl)
+        | .Tvoid | .Tlong _ _ | .Tfloat _ _ | .Tpointer _ _ | .Tarray _ _ _ |
+          .Tfunction _ _ _ | .Tstruct _ _ | .Tunion _ _ =>
+            isFalse (by intro h; cases h)
+    | .Tlong sg1 a1, t2 =>
+        match t2 with
+        | .Tlong sg2 a2 =>
+            if hsg : sg1 = sg2 then
+              if ha : a1 = a2 then
+                isTrue (by cases hsg; cases ha; rfl)
+              else
+                isFalse (by intro h; cases h; exact ha rfl)
+            else
+              isFalse (by intro h; cases h; exact hsg rfl)
+        | .Tvoid | .Tint _ _ _ | .Tfloat _ _ | .Tpointer _ _ | .Tarray _ _ _ |
+          .Tfunction _ _ _ | .Tstruct _ _ | .Tunion _ _ =>
+            isFalse (by intro h; cases h)
+    | .Tfloat s1 a1, t2 =>
+        match t2 with
+        | .Tfloat s2 a2 =>
+            if hs : s1 = s2 then
+              if ha : a1 = a2 then
+                isTrue (by cases hs; cases ha; rfl)
+              else
+                isFalse (by intro h; cases h; exact ha rfl)
+            else
+              isFalse (by intro h; cases h; exact hs rfl)
+        | .Tvoid | .Tint _ _ _ | .Tlong _ _ | .Tpointer _ _ | .Tarray _ _ _ |
+          .Tfunction _ _ _ | .Tstruct _ _ | .Tunion _ _ =>
+            isFalse (by intro h; cases h)
+    | .Tpointer t1 a1, t2 =>
+        match t2 with
+        | .Tpointer t2 a2 =>
+            match typeDecEq t1 t2 with
+            | isTrue ht =>
+                if ha : a1 = a2 then
+                  isTrue (by cases ht; cases ha; rfl)
+                else
+                  isFalse (by intro h; cases h; exact ha rfl)
+            | isFalse ht => isFalse (by intro h; cases h; exact ht rfl)
+        | .Tvoid | .Tint _ _ _ | .Tlong _ _ | .Tfloat _ _ | .Tarray _ _ _ |
+          .Tfunction _ _ _ | .Tstruct _ _ | .Tunion _ _ =>
+            isFalse (by intro h; cases h)
+    | .Tarray t1 n1 a1, t2 =>
+        match t2 with
+        | .Tarray t2 n2 a2 =>
+            match typeDecEq t1 t2 with
+            | isTrue ht =>
+                if hn : n1 = n2 then
+                  if ha : a1 = a2 then
+                    isTrue (by cases ht; cases hn; cases ha; rfl)
+                  else
+                    isFalse (by intro h; cases h; exact ha rfl)
+                else
+                  isFalse (by intro h; cases h; exact hn rfl)
+            | isFalse ht => isFalse (by intro h; cases h; exact ht rfl)
+        | .Tvoid | .Tint _ _ _ | .Tlong _ _ | .Tfloat _ _ | .Tpointer _ _ |
+          .Tfunction _ _ _ | .Tstruct _ _ | .Tunion _ _ =>
+            isFalse (by intro h; cases h)
+    | .Tfunction args1 res1 cc1, t2 =>
+        match t2 with
+        | .Tfunction args2 res2 cc2 =>
+            match typeListDecEq args1 args2 with
+            | isTrue hargs =>
+                match typeDecEq res1 res2 with
+                | isTrue hres =>
+                    if hcc : cc1 = cc2 then
+                      isTrue (by cases hargs; cases hres; cases hcc; rfl)
+                    else
+                      isFalse (by intro h; cases h; exact hcc rfl)
+                | isFalse hres => isFalse (by intro h; cases h; exact hres rfl)
+            | isFalse hargs => isFalse (by intro h; cases h; exact hargs rfl)
+        | .Tvoid | .Tint _ _ _ | .Tlong _ _ | .Tfloat _ _ | .Tpointer _ _ |
+          .Tarray _ _ _ | .Tstruct _ _ | .Tunion _ _ =>
+            isFalse (by intro h; cases h)
+    | .Tstruct id1 a1, t2 =>
+        match t2 with
+        | .Tstruct id2 a2 =>
+            if hid : id1 = id2 then
+              if ha : a1 = a2 then
+                isTrue (by cases hid; cases ha; rfl)
+              else
+                isFalse (by intro h; cases h; exact ha rfl)
+            else
+              isFalse (by intro h; cases h; exact hid rfl)
+        | .Tvoid | .Tint _ _ _ | .Tlong _ _ | .Tfloat _ _ | .Tpointer _ _ |
+          .Tarray _ _ _ | .Tfunction _ _ _ | .Tunion _ _ =>
+            isFalse (by intro h; cases h)
+    | .Tunion id1 a1, t2 =>
+        match t2 with
+        | .Tunion id2 a2 =>
+            if hid : id1 = id2 then
+              if ha : a1 = a2 then
+                isTrue (by cases hid; cases ha; rfl)
+              else
+                isFalse (by intro h; cases h; exact ha rfl)
+            else
+              isFalse (by intro h; cases h; exact hid rfl)
+        | .Tvoid | .Tint _ _ _ | .Tlong _ _ | .Tfloat _ _ | .Tpointer _ _ |
+          .Tarray _ _ _ | .Tfunction _ _ _ | .Tstruct _ _ =>
+            isFalse (by intro h; cases h)
+
+  private def typeListDecEq : (xs ys : List type) → Decidable (xs = ys)
+    | [], [] => isTrue rfl
+    | [], _ :: _ => isFalse (by intro h; cases h)
+    | _ :: _, [] => isFalse (by intro h; cases h)
+    | x :: xs, y :: ys =>
+        match typeDecEq x y with
+        | isTrue hxy =>
+            match typeListDecEq xs ys with
+            | isTrue hrest => isTrue (by cases hxy; cases hrest; rfl)
+            | isFalse hrest => isFalse (by intro h; cases h; exact hrest rfl)
+        | isFalse hxy => isFalse (by intro h; cases h; exact hxy rfl)
+end
+
+private instance typeDecidableEq : DecidableEq type := typeDecEq
+private instance typeListDecidableEq : DecidableEq (List type) := typeListDecEq
+
 def intsize_eqStatement :=
   forall s1 s2 : intsize, Sumbool (s1 = s2) (s1 ≠ s2)
+
+private def decEqSumbool {A : Type} [DecidableEq A] (x y : A) :
+    Sumbool (x = y) (x ≠ y) := by
+  by_cases h : x = y
+  · exact .left h
+  · exact .right h
+
+def intsize_eq (s1 s2 : intsize) : Sumbool (s1 = s2) (s1 ≠ s2) :=
+  decEqSumbool s1 s2
+
+def signedness_eq (s1 s2 : signedness) : Sumbool (s1 = s2) (s1 ≠ s2) :=
+  decEqSumbool s1 s2
+
+def floatsize_eq (s1 s2 : floatsize) : Sumbool (s1 = s2) (s1 ≠ s2) :=
+  decEqSumbool s1 s2
+
+def attr_eq (a1 a2 : attr) : Sumbool (a1 = a2) (a1 ≠ a2) :=
+  decEqSumbool a1 a2
+
+def type_eq (t1 t2 : type) : Sumbool (t1 = t2) (t1 ≠ t2) :=
+  decEqSumbool t1 t2
+
+def typelist_eq (tyl1 tyl2 : List type) :
+    Sumbool (tyl1 = tyl2) (tyl1 ≠ tyl2) :=
+  decEqSumbool tyl1 tyl2
 
 def signedness_eqStatement :=
   forall s1 s2 : signedness, Sumbool (s1 = s2) (s1 ≠ s2)
@@ -1152,9 +1317,6 @@ def program_of_program {F : Type} (p : program F) : AST.program (fundef F) type 
   { prog_defs := p.prog_defs, prog_public := p.prog_public, prog_main := p.prog_main }
 
 /-! ## Separate compilation and linking -/
-
-private noncomputable instance typeDecidableEq : DecidableEq type :=
-  Classical.typeDecidableEq type
 
 noncomputable instance Linker_types : CompCert4Lean.Common.Linking.Linker type where
   link := fun t1 t2 => if t1 = t2 then some t1 else none
