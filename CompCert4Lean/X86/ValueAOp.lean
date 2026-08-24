@@ -215,12 +215,11 @@ def eval_static_operation (cfg : CompilerConfig) (op : operation)
   | _, _ => Vbot
 
 def eval_static_condition_soundStatement : Prop :=
-  ∀ (cfg : CompilerConfig) (bc : block_classification) (ge : genv),
-    genv_match bc ge → ∀ (sp : block), bc sp = BCstack →
-    ∀ (cond : condition) (vargs : List val) (m : mem) (aargs : List aval),
-      list_forall2 (vmatch bc) vargs aargs →
-      cmatch (eval_condition cond vargs m)
-        (eval_static_condition cfg cond aargs)
+  ∀ (cfg : CompilerConfig) (bc : block_classification)
+    (cond : condition) (vargs : List val) (m : mem) (aargs : List aval),
+    list_forall2 (vmatch bc) vargs aargs →
+    cmatch (eval_condition cond vargs m)
+      (eval_static_condition cfg cond aargs)
 
 def symbol_address_soundStatement : Prop :=
   ∀ (bc : block_classification) (ge : genv),
