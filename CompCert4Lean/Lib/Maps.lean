@@ -310,6 +310,16 @@ def beq_correct : Prop :=
         | some y₁, some y₂ => beqA y₁ y₂ = true
         | _, _ => False
 
+def beq_correct_boolStatement : Prop :=
+  ∀ (A : Type) (beqA : A → A → Bool) (m₁ m₂ : t A),
+    beq beqA m₁ m₂ = true ↔
+      ∀ x : elt,
+        (match get x m₁, get x m₂ with
+        | none, none => true
+        | some y₁, some y₂ => beqA y₁ y₂
+        | _, _ => false
+        ) = true
+
 def combineOpt {A B C : Type} (f : Option A → Option B → Option C)
     (o1 : Option A) (o2 : Option B) : Option C :=
   match o1, o2 with

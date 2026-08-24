@@ -251,6 +251,25 @@ def contains_locations (j : meminj) (sp : block) (pos bound : Z)
       rcases hfoot with ⟨rfl, hlo, hhi⟩
       exact validBlockOfPerm (h.2.2.2.1 ofs ⟨hlo, hhi⟩) }
 
+/-! Rocq `Program` obligations retained as exact proposition surfaces.  The
+executable assertion above owns the carrier; these names keep its two
+generated proof duties available to the later proof phase. -/
+
+def contains_locations_obligation_1Statement : Prop :=
+  ∀ (return_address_offset : Mach.function → Mach.code → ptrofs → Prop)
+    (tprog : Mach.program) j sp pos bound sl ls m m',
+    (contains_locations j sp pos bound sl ls).m_pred m →
+    Mem.unchanged_on
+      (fun b ofs =>
+        b = sp ∧ zLe pos ofs ∧ zLt ofs (zAdd pos (zMul z4 bound))) m m' →
+    (contains_locations j sp pos bound sl ls).m_pred m'
+
+def contains_locations_obligation_2Statement : Prop :=
+  ∀ j sp pos bound sl ls m b ofs,
+    (contains_locations j sp pos bound sl ls).m_pred m →
+    (contains_locations j sp pos bound sl ls).m_footprint b ofs →
+    Mem.valid_block m b
+
 def contains_callee_saves (j : meminj) (sp : block) (pos : Z)
     (rl : List mreg) (ls : locset) : massert :=
   match rl with
@@ -302,6 +321,18 @@ structure agree_locs (cfg : CompilerConfig) (f : Linear.function)
 
 export agree_locs (agree_unused_reg agree_incoming)
 
+/-! Stable top-level identity for Rocq's record constructor. -/
+
+abbrev mk_agree_locs (f : Linear.function) (ls ls0 : locset)
+    {cfg : CompilerConfig} {b : bounds cfg}
+    (agree_unused_reg : ∀ r, ¬ mreg_within_bounds cfg b r →
+      ls (R r) = ls0 (R r))
+    (agree_incoming : ∀ ofs ty,
+      S Incoming ofs ty ∈ regs_of_rpairs (loc_parameters cfg f.fn_sig) →
+      ls (S Incoming ofs ty) = ls0 (S Outgoing ofs ty)) :
+    agree_locs cfg f b ls ls0 :=
+  @agree_locs.mk cfg f b ls ls0 agree_unused_reg agree_incoming
+
 def agree_unused (cfg : CompilerConfig) (b : bounds cfg) (j : meminj)
     (ls0 : locset) (rs : regset) : Prop :=
   ∀ r, ¬ mreg_within_bounds cfg b r → Val.inject j (ls0 (R r)) (rs r)
@@ -347,6 +378,35 @@ inductive match_stacks (cfg : CompilerConfig) (tprog : Mach.program) (j : meminj
       match_stacks cfg tprog j
         (Linear.Stackframe f (Vptr sp Ptrofs.zero) ls c :: cs)
         (Mach.Stackframe fb (Vptr sp' Ptrofs.zero) ra c' :: cs') sg
+
+/-! Stable top-level identities for the two source constructors. -/
+
+abbrev match_stacks_empty {cfg : CompilerConfig} {tprog : Mach.program}
+    {j : meminj} (sg : signature) (htail : tailcall_possible cfg sg) :
+    match_stacks cfg tprog j [] [] sg :=
+  @match_stacks.match_stacks_empty cfg tprog j sg htail
+
+abbrev match_stacks_cons {cfg : CompilerConfig} {tprog : Mach.program}
+    {j : meminj} (f : Linear.function) (sp : block) (ls : locset)
+    (c : Linear.code) (cs : List Linear.stackframe) (fb sp' : block)
+    (ra : val) (c' : Mach.code) (cs' : List Mach.stackframe)
+    (sg : signature) (trf : Mach.function)
+    (htail : is_tail c f.fn_code)
+    (hfind : Genv.find_funct_ptr (Genv.globalenv tprog) fb = some (.Internal trf))
+    (htransf : transf_function cfg f = .OK trf)
+    (hcode : transl_code cfg (make_env cfg (function_bounds cfg f)) c = c')
+    (hinj : j sp = some (sp', (make_env cfg (function_bounds cfg f)).fe_stack_data))
+    (hra : Val.has_type ra Tptr)
+    (hlocs : agree_locs cfg f (function_bounds cfg f) ls (Linear.parent_locset cs))
+    (hargs : ∀ ofs ty,
+      S Outgoing ofs ty ∈ regs_of_rpairs (loc_arguments cfg sg) →
+        slot_within_bounds (function_bounds cfg f) Outgoing ofs ty)
+    (hstacks : match_stacks cfg tprog j cs cs' f.fn_sig) :
+    match_stacks cfg tprog j
+      (Linear.Stackframe f (Vptr sp Ptrofs.zero) ls c :: cs)
+      (Mach.Stackframe fb (Vptr sp' Ptrofs.zero) ra c' :: cs') sg :=
+  @match_stacks.match_stacks_cons cfg tprog j f sp ls c cs fb sp' ra c' cs' sg trf
+    htail hfind htransf hcode hinj hra hlocs hargs hstacks
 
 inductive match_states (cfg : CompilerConfig)
     (prog : Linear.program) (tprog : Mach.program) :

@@ -39,22 +39,24 @@ open CompCert4Lean.Lib.Maps
 /-! ## Compilation-environment matching -/
 
 structure map_wf (m : mapping) : Prop where
+  mk_map_wf ::
   map_wf_inj : ∀ id1 id2 r,
     PTree.get id1 m.map_vars = some r →
     PTree.get id2 m.map_vars = some r → id1 = id2
   map_wf_disj : ∀ id r,
     PTree.get id m.map_vars = some r → r ∈ m.map_letvars → False
 
-export map_wf (map_wf_inj map_wf_disj)
+export map_wf (mk_map_wf map_wf_inj map_wf_disj)
 
 structure match_env (map : mapping) (e : CompCert4Lean.Backend.Cminor.env)
     (le : letenv) (rs : regset) : Prop where
+  mk_match_env ::
   me_vars : ∀ id v,
     PTree.get id e = some v →
     ∃ r, PTree.get id map.map_vars = some r ∧ Val.lessdef v (Regmap.get r rs)
   me_letvars : Val.lessdef_list le (map.map_letvars.map (fun r => Regmap.get r rs))
 
-export match_env (me_vars me_letvars)
+export match_env (mk_match_env me_vars me_letvars)
 
 /-! ## Program matching -/
 
@@ -171,23 +173,23 @@ export tr_fun (tr_fun_intro)
 mutual
   inductive tr_cont : RTL.code → mapping → CminorSel.cont → node → List node →
       labelmap → node → Option reg → List RTL.stackframe → Prop where
-    | trContSeq (c : RTL.code) (map : mapping) (s : stmt) (k : cont)
+    | tr_Kseq (c : RTL.code) (map : mapping) (s : stmt) (k : cont)
         (nd : node) (nexits : List node) (ngoto : labelmap) (nret : node)
         (rret : Option reg) (cs : List RTL.stackframe) (n : node)
         (hstmt : tr_stmt c map s nd n nexits ngoto nret rret)
         (hk : tr_cont c map k n nexits ngoto nret rret cs) :
         tr_cont c map (.Kseq s k) nd nexits ngoto nret rret cs
-    | trContBlock (c : RTL.code) (map : mapping) (k : cont) (nd : node)
+    | tr_Kblock (c : RTL.code) (map : mapping) (k : cont) (nd : node)
         (nexits : List node) (ngoto : labelmap) (nret : node)
         (rret : Option reg) (cs : List RTL.stackframe)
         (hk : tr_cont c map k nd nexits ngoto nret rret cs) :
         tr_cont c map (.Kblock k) nd (nd :: nexits) ngoto nret rret cs
-    | trContStop (c : RTL.code) (map : mapping) (ngoto : labelmap) (nret : node)
+    | tr_Kstop (c : RTL.code) (map : mapping) (ngoto : labelmap) (nret : node)
         (rret : Option reg) (cs : List RTL.stackframe)
         (hcode : PTree.get nret c = some (.Ireturn rret))
         (hs : match_stacks .Kstop cs) :
         tr_cont c map .Kstop nret [] ngoto nret rret cs
-    | trContCall (c : RTL.code) (map : mapping) (optid : Option ident)
+    | tr_Kcall (c : RTL.code) (map : mapping) (optid : Option ident)
         (f : CminorSel.function) (sp : val) (e : CompCert4Lean.Backend.Cminor.env)
         (k : cont) (ngoto : labelmap) (nret : node) (rret : Option reg)
         (cs : List RTL.stackframe)
@@ -196,8 +198,8 @@ mutual
         tr_cont c map (.Kcall optid f sp e k) nret [] ngoto nret rret cs
 
   inductive match_stacks : CminorSel.cont → List RTL.stackframe → Prop where
-    | matchStacksStop : match_stacks .Kstop []
-    | matchStacksCall (optid : Option ident) (f : CminorSel.function)
+    | match_stacks_stop : match_stacks .Kstop []
+    | match_stacks_call (optid : Option ident) (f : CminorSel.function)
         (sp : val) (e : CompCert4Lean.Backend.Cminor.env) (k : cont)
         (r : reg) (tf : RTL.function) (n : node) (rs : regset)
         (cs : List RTL.stackframe) (map : mapping) (nexits : List node)
@@ -210,8 +212,11 @@ mutual
           (RTL.Stackframe r tf sp n rs :: cs)
 end
 
+export tr_cont (tr_Kseq tr_Kblock tr_Kstop tr_Kcall)
+export match_stacks (match_stacks_stop match_stacks_call)
+
 inductive match_states : CminorSel.state → RTL.state → Prop where
-  | matchStateState (f : CminorSel.function) (s : stmt) (k : cont) (sp : val)
+  | match_state (f : CminorSel.function) (s : stmt) (k : cont) (sp : val)
       (e : CompCert4Lean.Backend.Cminor.env) (m tm : mem)
       (cs : List RTL.stackframe) (tf : RTL.function) (ns : node) (rs : regset)
       (map : mapping) (ncont : node) (nexits : List node) (ngoto : labelmap)
@@ -222,17 +227,19 @@ inductive match_states : CminorSel.state → RTL.state → Prop where
       (tc : tr_cont tf.fn_code map k ncont nexits ngoto nret rret cs)
       (me : match_env map e [] rs) (mext : Mem.extends m tm) :
       match_states (.State f s k sp e m) (RTL.State cs tf sp ns rs tm)
-  | matchStateCall (f : CminorSel.fundef) (args targs : List val)
+  | match_callstate (f : CminorSel.fundef) (args targs : List val)
       (k : cont) (m tm : mem) (cs : List RTL.stackframe)
       (tf : RTL.fundef)
       (htrans : RTLgen.transl_fundef f = .OK tf)
       (hs : match_stacks k cs) (ld : Val.lessdef_list args targs)
       (mext : Mem.extends m tm) :
       match_states (.Callstate f args k m) (RTL.Callstate cs tf targs tm)
-  | matchStateReturn (v tv : val) (k : cont) (m tm : mem)
+  | match_returnstate (v tv : val) (k : cont) (m tm : mem)
       (cs : List RTL.stackframe) (hs : match_stacks k cs)
       (ld : Val.lessdef v tv) (mext : Mem.extends m tm) :
       match_states (.Returnstate v k m) (RTL.Returnstate cs tv tm)
+
+export match_states (match_state match_callstate match_returnstate)
 
 /-! ## Exact statement descriptors -/
 

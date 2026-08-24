@@ -122,18 +122,19 @@ def addrstack (ofs : Ptrofs) : expr :=
 
 /-! ## Integer logical negation -/
 
-inductive notint_cases : Type where
-  | notint_case1 (n : CCInt)
-  | notint_case2 (n : CCInt) (e1 : expr)
-  | notint_default (e : expr)
+inductive notint_cases : expr -> Type where
+  | notint_case1 (n : CCInt) : notint_cases (Eop (Ointconst n) Enil)
+  | notint_case2 (n : CCInt) (e1 : expr) :
+      notint_cases (Eop (Oxorimm n) (Econs e1 Enil))
+  | notint_default (e : expr) : notint_cases e
 
 export notint_cases (notint_case1 notint_case2 notint_default)
 
-def notint_match (e : expr) : notint_cases :=
-  match e with
+def notint_match (e : expr) : notint_cases e :=
+  (match e with
   | Eop (Ointconst n) Enil => .notint_case1 n
   | Eop (Oxorimm n) (Econs e1 Enil) => .notint_case2 n e1
-  | _ => .notint_default e
+  | e => .notint_default e : notint_cases e)
 
 def notint (e : expr) : expr :=
   match notint_match e with
@@ -143,18 +144,19 @@ def notint (e : expr) : expr :=
 
 /-! ## Integer addition and pointer addition -/
 
-inductive addimm_cases : Type where
-  | addimm_case1 (m : CCInt)
-  | addimm_case2 (addr : addressing) (args : exprlist)
-  | addimm_default (e : expr)
+inductive addimm_cases : expr -> Type where
+  | addimm_case1 (m : CCInt) : addimm_cases (Eop (Ointconst m) Enil)
+  | addimm_case2 (addr : addressing) (args : exprlist) :
+      addimm_cases (Eop (Olea addr) args)
+  | addimm_default (e : expr) : addimm_cases e
 
 export addimm_cases (addimm_case1 addimm_case2 addimm_default)
 
-def addimm_match (e : expr) : addimm_cases :=
-  match e with
+def addimm_match (e : expr) : addimm_cases e :=
+  (match e with
   | Eop (Ointconst m) Enil => .addimm_case1 m
   | Eop (Olea addr) args => .addimm_case2 addr args
-  | _ => .addimm_default e
+  | e => .addimm_default e : addimm_cases e)
 
 def addimm (n : CCInt) (e : expr) : expr :=
   if Int.eq n Int.zero then e
@@ -165,27 +167,47 @@ def addimm (n : CCInt) (e : expr) : expr :=
         Eop (Olea (offset_addressing_total addr (Int.signed n))) args
     | .addimm_default e => Eop (Olea (Aindexed (Int.signed n))) (Econs e Enil)
 
-inductive add_cases : Type where
-  | add_case1 (n1 : CCInt) (t2 : expr)
-  | add_case2 (t1 : expr) (n2 : CCInt)
-  | add_case3 (n1 : Z) (t1 : expr) (n2 : Z) (t2 : expr)
-  | add_case4 (n1 : Z) (t1 : expr) (sc n2 : Z) (t2 : expr)
-  | add_case5 (sc n1 : Z) (t1 : expr) (n2 : Z) (t2 : expr)
-  | add_case6 (n1 : Z) (t1 : expr) (id : ident) (ofs : Ptrofs)
-  | add_case7 (id : ident) (ofs : Ptrofs) (n2 : Z) (t2 : expr)
-  | add_case8 (sc n1 : Z) (t1 : expr) (id : ident) (ofs : Ptrofs)
-  | add_case9 (id : ident) (ofs : Ptrofs) (sc n2 : Z) (t2 : expr)
-  | add_case10 (sc n : Z) (t1 t2 : expr)
-  | add_case11 (t1 : expr) (sc n : Z) (t2 : expr)
-  | add_case12 (n : Z) (t1 t2 : expr)
-  | add_case13 (t1 : expr) (n : Z) (t2 : expr)
-  | add_default (e1 e2 : expr)
+inductive add_cases : expr -> expr -> Type where
+  | add_case1 (n1 : CCInt) (t2 : expr) :
+      add_cases (Eop (Ointconst n1) Enil) t2
+  | add_case2 (t1 : expr) (n2 : CCInt) :
+      add_cases t1 (Eop (Ointconst n2) Enil)
+  | add_case3 (n1 : Z) (t1 : expr) (n2 : Z) (t2 : expr) :
+      add_cases (Eop (Olea (Aindexed n1)) (Econs t1 Enil))
+        (Eop (Olea (Aindexed n2)) (Econs t2 Enil))
+  | add_case4 (n1 : Z) (t1 : expr) (sc n2 : Z) (t2 : expr) :
+      add_cases (Eop (Olea (Aindexed n1)) (Econs t1 Enil))
+        (Eop (Olea (Ascaled sc n2)) (Econs t2 Enil))
+  | add_case5 (sc n1 : Z) (t1 : expr) (n2 : Z) (t2 : expr) :
+      add_cases (Eop (Olea (Ascaled sc n1)) (Econs t1 Enil))
+        (Eop (Olea (Aindexed n2)) (Econs t2 Enil))
+  | add_case6 (n1 : Z) (t1 : expr) (id : ident) (ofs : Ptrofs) :
+      add_cases (Eop (Olea (Aindexed n1)) (Econs t1 Enil))
+        (Eop (Olea (Aglobal id ofs)) Enil)
+  | add_case7 (id : ident) (ofs : Ptrofs) (n2 : Z) (t2 : expr) :
+      add_cases (Eop (Olea (Aglobal id ofs)) Enil)
+        (Eop (Olea (Aindexed n2)) (Econs t2 Enil))
+  | add_case8 (sc n1 : Z) (t1 : expr) (id : ident) (ofs : Ptrofs) :
+      add_cases (Eop (Olea (Ascaled sc n1)) (Econs t1 Enil))
+        (Eop (Olea (Aglobal id ofs)) Enil)
+  | add_case9 (id : ident) (ofs : Ptrofs) (sc n2 : Z) (t2 : expr) :
+      add_cases (Eop (Olea (Aglobal id ofs)) Enil)
+        (Eop (Olea (Ascaled sc n2)) (Econs t2 Enil))
+  | add_case10 (sc n : Z) (t1 t2 : expr) :
+      add_cases (Eop (Olea (Ascaled sc n)) (Econs t1 Enil)) t2
+  | add_case11 (t1 : expr) (sc n : Z) (t2 : expr) :
+      add_cases t1 (Eop (Olea (Ascaled sc n)) (Econs t2 Enil))
+  | add_case12 (n : Z) (t1 t2 : expr) :
+      add_cases (Eop (Olea (Aindexed n)) (Econs t1 Enil)) t2
+  | add_case13 (t1 : expr) (n : Z) (t2 : expr) :
+      add_cases t1 (Eop (Olea (Aindexed n)) (Econs t2 Enil))
+  | add_default (e1 e2 : expr) : add_cases e1 e2
 
 export add_cases (add_case1 add_case2 add_case3 add_case4 add_case5 add_case6
   add_case7 add_case8 add_case9 add_case10 add_case11 add_case12 add_case13 add_default)
 
-def add_match (e1 e2 : expr) : add_cases :=
-  match e1, e2 with
+def add_match (e1 e2 : expr) : add_cases e1 e2 :=
+  (match e1, e2 with
   | Eop (Ointconst n1) Enil, t2 => .add_case1 n1 t2
   | t1, Eop (Ointconst n2) Enil => .add_case2 t1 n2
   | Eop (Olea (Aindexed n1)) (Econs t1 Enil),
@@ -206,7 +228,7 @@ def add_match (e1 e2 : expr) : add_cases :=
   | t1, Eop (Olea (Ascaled sc n)) (Econs t2 Enil) => .add_case11 t1 sc n t2
   | Eop (Olea (Aindexed n)) (Econs t1 Enil), t2 => .add_case12 n t1 t2
   | t1, Eop (Olea (Aindexed n)) (Econs t2 Enil) => .add_case13 t1 n t2
-  | _, _ => .add_default e1 e2
+  | e1, e2 => .add_default e1 e2 : add_cases e1 e2)
 
 def add (e1 e2 : expr) : expr :=
   match add_match e1 e2 with
@@ -236,39 +258,44 @@ def add (e1 e2 : expr) : expr :=
 
 /-! ## Opposite and subtraction -/
 
-inductive negint_cases : Type where
-  | negint_case1 (n : CCInt)
-  | negint_default (e : expr)
+inductive negint_cases : expr -> Type where
+  | negint_case1 (n : CCInt) : negint_cases (Eop (Ointconst n) Enil)
+  | negint_default (e : expr) : negint_cases e
 
 export negint_cases (negint_case1 negint_default)
 
-def negint_match (e : expr) : negint_cases :=
-  match e with
+def negint_match (e : expr) : negint_cases e :=
+  (match e with
   | Eop (Ointconst n) Enil => .negint_case1 n
-  | _ => .negint_default e
+  | e => .negint_default e : negint_cases e)
 
 def negint (e : expr) : expr :=
   match negint_match e with
   | .negint_case1 n => Eop (Ointconst (Int.neg n)) Enil
   | .negint_default e => Eop Oneg (Econs e Enil)
 
-inductive sub_cases : Type where
-  | sub_case1 (t1 : expr) (n2 : CCInt)
-  | sub_case2 (n1 : Z) (t1 : expr) (n2 : Z) (t2 : expr)
-  | sub_case3 (n1 : Z) (t1 t2 : expr)
-  | sub_case4 (t1 : expr) (n2 : Z) (t2 : expr)
-  | sub_default (e1 e2 : expr)
+inductive sub_cases : expr -> expr -> Type where
+  | sub_case1 (t1 : expr) (n2 : CCInt) :
+      sub_cases t1 (Eop (Ointconst n2) Enil)
+  | sub_case2 (n1 : Z) (t1 : expr) (n2 : Z) (t2 : expr) :
+      sub_cases (Eop (Olea (Aindexed n1)) (Econs t1 Enil))
+        (Eop (Olea (Aindexed n2)) (Econs t2 Enil))
+  | sub_case3 (n1 : Z) (t1 t2 : expr) :
+      sub_cases (Eop (Olea (Aindexed n1)) (Econs t1 Enil)) t2
+  | sub_case4 (t1 : expr) (n2 : Z) (t2 : expr) :
+      sub_cases t1 (Eop (Olea (Aindexed n2)) (Econs t2 Enil))
+  | sub_default (e1 e2 : expr) : sub_cases e1 e2
 
 export sub_cases (sub_case1 sub_case2 sub_case3 sub_case4 sub_default)
 
-def sub_match (e1 e2 : expr) : sub_cases :=
-  match e1, e2 with
+def sub_match (e1 e2 : expr) : sub_cases e1 e2 :=
+  (match e1, e2 with
   | t1, Eop (Ointconst n2) Enil => .sub_case1 t1 n2
   | Eop (Olea (Aindexed n1)) (Econs t1 Enil),
       Eop (Olea (Aindexed n2)) (Econs t2 Enil) => .sub_case2 n1 t1 n2 t2
   | Eop (Olea (Aindexed n1)) (Econs t1 Enil), t2 => .sub_case3 n1 t1 t2
   | t1, Eop (Olea (Aindexed n2)) (Econs t2 Enil) => .sub_case4 t1 n2 t2
-  | _, _ => .sub_default e1 e2
+  | e1, e2 => .sub_default e1 e2 : sub_cases e1 e2)
 
 def sub (e1 e2 : expr) : expr :=
   match sub_match e1 e2 with
@@ -288,20 +315,22 @@ def shift_is_scale (n : CCInt) : Bool :=
     Int.eq n (Int.repr (ZArith.BinInt.Z.of_nat 2)) ||
     Int.eq n (Int.repr (ZArith.BinInt.Z.of_nat 3))
 
-inductive shlimm_cases : Type where
-  | shlimm_case1 (n1 : CCInt)
-  | shlimm_case2 (n1 : CCInt) (t1 : expr)
-  | shlimm_case3 (n1 : Z) (t1 : expr)
-  | shlimm_default (e1 : expr)
+inductive shlimm_cases : expr -> Type where
+  | shlimm_case1 (n1 : CCInt) : shlimm_cases (Eop (Ointconst n1) Enil)
+  | shlimm_case2 (n1 : CCInt) (t1 : expr) :
+      shlimm_cases (Eop (Oshlimm n1) (Econs t1 Enil))
+  | shlimm_case3 (n1 : Z) (t1 : expr) :
+      shlimm_cases (Eop (Olea (Aindexed n1)) (Econs t1 Enil))
+  | shlimm_default (e1 : expr) : shlimm_cases e1
 
 export shlimm_cases (shlimm_case1 shlimm_case2 shlimm_case3 shlimm_default)
 
-def shlimm_match (e1 : expr) : shlimm_cases :=
-  match e1 with
+def shlimm_match (e1 : expr) : shlimm_cases e1 :=
+  (match e1 with
   | Eop (Ointconst n1) Enil => .shlimm_case1 n1
   | Eop (Oshlimm n1) (Econs t1 Enil) => .shlimm_case2 n1 t1
   | Eop (Olea (Aindexed n1)) (Econs t1 Enil) => .shlimm_case3 n1 t1
-  | _ => .shlimm_default e1
+  | e1 => .shlimm_default e1 : shlimm_cases e1)
 
 def shlimm (e1 : expr) (n : CCInt) : expr :=
   if Int.eq n Int.zero then e1
@@ -312,29 +341,31 @@ def shlimm (e1 : expr) (n : CCInt) : expr :=
     | .shlimm_case2 n1 t1 =>
         if Int.ltu (Int.add n n1) Int.iwordsize then
           Eop (Oshlimm (Int.add n n1)) (Econs t1 Enil)
-        else Eop (Oshlimm n) (Econs e1 Enil)
+        else Eop (Oshlimm n) (Econs (Eop (Oshlimm n1) (Econs t1 Enil)) Enil)
     | .shlimm_case3 n1 t1 =>
         if shift_is_scale n then
           Eop (Olea (Ascaled (Int.unsigned (Int.shl Int.one n))
             (Int.unsigned (Int.shl (Int.repr n1) n)))) (Econs t1 Enil)
-        else Eop (Oshlimm n) (Econs e1 Enil)
+        else Eop (Oshlimm n)
+          (Econs (Eop (Olea (Aindexed n1)) (Econs t1 Enil)) Enil)
     | .shlimm_default e1 =>
         if shift_is_scale n then
           Eop (Olea (Ascaled (Int.unsigned (Int.shl Int.one n)) z0)) (Econs e1 Enil)
         else Eop (Oshlimm n) (Econs e1 Enil)
 
-inductive shruimm_cases : Type where
-  | shruimm_case1 (n1 : CCInt)
-  | shruimm_case2 (n1 : CCInt) (t1 : expr)
-  | shruimm_default (e1 : expr)
+inductive shruimm_cases : expr -> Type where
+  | shruimm_case1 (n1 : CCInt) : shruimm_cases (Eop (Ointconst n1) Enil)
+  | shruimm_case2 (n1 : CCInt) (t1 : expr) :
+      shruimm_cases (Eop (Oshruimm n1) (Econs t1 Enil))
+  | shruimm_default (e1 : expr) : shruimm_cases e1
 
 export shruimm_cases (shruimm_case1 shruimm_case2 shruimm_default)
 
-def shruimm_match (e1 : expr) : shruimm_cases :=
-  match e1 with
+def shruimm_match (e1 : expr) : shruimm_cases e1 :=
+  (match e1 with
   | Eop (Ointconst n1) Enil => .shruimm_case1 n1
   | Eop (Oshruimm n1) (Econs t1 Enil) => .shruimm_case2 n1 t1
-  | _ => .shruimm_default e1
+  | e1 => .shruimm_default e1 : shruimm_cases e1)
 
 def shruimm (e1 : expr) (n : CCInt) : expr :=
   if Int.eq n Int.zero then e1
@@ -345,21 +376,22 @@ def shruimm (e1 : expr) (n : CCInt) : expr :=
     | .shruimm_case2 n1 t1 =>
         if Int.ltu (Int.add n n1) Int.iwordsize then
           Eop (Oshruimm (Int.add n n1)) (Econs t1 Enil)
-        else Eop (Oshruimm n) (Econs e1 Enil)
+        else Eop (Oshruimm n) (Econs (Eop (Oshruimm n1) (Econs t1 Enil)) Enil)
     | .shruimm_default e1 => Eop (Oshruimm n) (Econs e1 Enil)
 
-inductive shrimm_cases : Type where
-  | shrimm_case1 (n1 : CCInt)
-  | shrimm_case2 (n1 : CCInt) (t1 : expr)
-  | shrimm_default (e1 : expr)
+inductive shrimm_cases : expr -> Type where
+  | shrimm_case1 (n1 : CCInt) : shrimm_cases (Eop (Ointconst n1) Enil)
+  | shrimm_case2 (n1 : CCInt) (t1 : expr) :
+      shrimm_cases (Eop (Oshrimm n1) (Econs t1 Enil))
+  | shrimm_default (e1 : expr) : shrimm_cases e1
 
 export shrimm_cases (shrimm_case1 shrimm_case2 shrimm_default)
 
-def shrimm_match (e1 : expr) : shrimm_cases :=
-  match e1 with
+def shrimm_match (e1 : expr) : shrimm_cases e1 :=
+  (match e1 with
   | Eop (Ointconst n1) Enil => .shrimm_case1 n1
   | Eop (Oshrimm n1) (Econs t1 Enil) => .shrimm_case2 n1 t1
-  | _ => .shrimm_default e1
+  | e1 => .shrimm_default e1 : shrimm_cases e1)
 
 def shrimm (e1 : expr) (n : CCInt) : expr :=
   if Int.eq n Int.zero then e1
@@ -370,7 +402,7 @@ def shrimm (e1 : expr) (n : CCInt) : expr :=
     | .shrimm_case2 n1 t1 =>
         if Int.ltu (Int.add n n1) Int.iwordsize then
           Eop (Oshrimm (Int.add n n1)) (Econs t1 Enil)
-        else Eop (Oshrimm n) (Econs e1 Enil)
+        else Eop (Oshrimm n) (Econs (Eop (Oshrimm n1) (Econs t1 Enil)) Enil)
     | .shrimm_default e1 => Eop (Oshrimm n) (Econs e1 Enil)
 
 def mulimm_base (n1 : CCInt) (e2 : expr) : expr :=
@@ -380,18 +412,19 @@ def mulimm_base (n1 : CCInt) (e2 : expr) : expr :=
       Elet e2 (add (shlimm (Eletvar 0) i) (shlimm (Eletvar 0) j))
   | _ => Eop (Omulimm n1) (Econs e2 Enil)
 
-inductive mulimm_cases : Type where
-  | mulimm_case1 (n2 : CCInt)
-  | mulimm_case2 (n2 : Z) (t2 : expr)
-  | mulimm_default (e2 : expr)
+inductive mulimm_cases : expr -> Type where
+  | mulimm_case1 (n2 : CCInt) : mulimm_cases (Eop (Ointconst n2) Enil)
+  | mulimm_case2 (n2 : Z) (t2 : expr) :
+      mulimm_cases (Eop (Olea (Aindexed n2)) (Econs t2 Enil))
+  | mulimm_default (e2 : expr) : mulimm_cases e2
 
 export mulimm_cases (mulimm_case1 mulimm_case2 mulimm_default)
 
-def mulimm_match (e2 : expr) : mulimm_cases :=
-  match e2 with
+def mulimm_match (e2 : expr) : mulimm_cases e2 :=
+  (match e2 with
   | Eop (Ointconst n2) Enil => .mulimm_case1 n2
   | Eop (Olea (Aindexed n2)) (Econs t2 Enil) => .mulimm_case2 n2 t2
-  | _ => .mulimm_default e2
+  | e2 => .mulimm_default e2 : mulimm_cases e2)
 
 def mulimm (n1 : CCInt) (e2 : expr) : expr :=
   if Int.eq n1 Int.zero then Eop (Ointconst Int.zero) Enil
@@ -402,18 +435,20 @@ def mulimm (n1 : CCInt) (e2 : expr) : expr :=
     | .mulimm_case2 n2 t2 => addimm (Int.mul n1 (Int.repr n2)) (mulimm_base n1 t2)
     | .mulimm_default e2 => mulimm_base n1 e2
 
-inductive mul_cases : Type where
-  | mul_case1 (n1 : CCInt) (t2 : expr)
-  | mul_case2 (t1 : expr) (n2 : CCInt)
-  | mul_default (e1 e2 : expr)
+inductive mul_cases : expr -> expr -> Type where
+  | mul_case1 (n1 : CCInt) (t2 : expr) :
+      mul_cases (Eop (Ointconst n1) Enil) t2
+  | mul_case2 (t1 : expr) (n2 : CCInt) :
+      mul_cases t1 (Eop (Ointconst n2) Enil)
+  | mul_default (e1 e2 : expr) : mul_cases e1 e2
 
 export mul_cases (mul_case1 mul_case2 mul_default)
 
-def mul_match (e1 e2 : expr) : mul_cases :=
-  match e1, e2 with
+def mul_match (e1 e2 : expr) : mul_cases e1 e2 :=
+  (match e1, e2 with
   | Eop (Ointconst n1) Enil, t2 => .mul_case1 n1 t2
   | t1, Eop (Ointconst n2) Enil => .mul_case2 t1 n2
-  | _, _ => .mul_default e1 e2
+  | e1, e2 => .mul_default e1 e2 : mul_cases e1 e2)
 
 def mul (e1 e2 : expr) : expr :=
   match mul_match e1 e2 with
@@ -426,22 +461,25 @@ def mulhu (e1 e2 : expr) : expr := Eop Omulhu (Econs e1 (Econs e2 Enil))
 
 /-! ## Bitwise operations -/
 
-inductive andimm_cases : Type where
-  | andimm_case1 (n2 : CCInt)
-  | andimm_case2 (n2 : CCInt) (t2 : expr)
-  | andimm_case3 (t2 : expr)
-  | andimm_case4 (t2 : expr)
-  | andimm_default (e2 : expr)
+inductive andimm_cases : expr -> Type where
+  | andimm_case1 (n2 : CCInt) : andimm_cases (Eop (Ointconst n2) Enil)
+  | andimm_case2 (n2 : CCInt) (t2 : expr) :
+      andimm_cases (Eop (Oandimm n2) (Econs t2 Enil))
+  | andimm_case3 (t2 : expr) :
+      andimm_cases (Eop Ocast8unsigned (Econs t2 Enil))
+  | andimm_case4 (t2 : expr) :
+      andimm_cases (Eop Ocast16unsigned (Econs t2 Enil))
+  | andimm_default (e2 : expr) : andimm_cases e2
 
 export andimm_cases (andimm_case1 andimm_case2 andimm_case3 andimm_case4 andimm_default)
 
-def andimm_match (e2 : expr) : andimm_cases :=
-  match e2 with
+def andimm_match (e2 : expr) : andimm_cases e2 :=
+  (match e2 with
   | Eop (Ointconst n2) Enil => .andimm_case1 n2
   | Eop (Oandimm n2) (Econs t2 Enil) => .andimm_case2 n2 t2
   | Eop Ocast8unsigned (Econs t2 Enil) => .andimm_case3 t2
   | Eop Ocast16unsigned (Econs t2 Enil) => .andimm_case4 t2
-  | _ => .andimm_default e2
+  | e2 => .andimm_default e2 : andimm_cases e2)
 
 def andimm (n1 : CCInt) (e2 : expr) : expr :=
   if Int.eq n1 Int.zero then Eop (Ointconst Int.zero) Enil
@@ -454,18 +492,20 @@ def andimm (n1 : CCInt) (e2 : expr) : expr :=
     | .andimm_case4 t2 => Eop (Oandimm (Int.and n1 (Int.repr z65535))) (Econs t2 Enil)
     | .andimm_default e2 => Eop (Oandimm n1) (Econs e2 Enil)
 
-inductive and_cases : Type where
-  | and_case1 (n1 : CCInt) (t2 : expr)
-  | and_case2 (t1 : expr) (n2 : CCInt)
-  | and_default (e1 e2 : expr)
+inductive and_cases : expr -> expr -> Type where
+  | and_case1 (n1 : CCInt) (t2 : expr) :
+      and_cases (Eop (Ointconst n1) Enil) t2
+  | and_case2 (t1 : expr) (n2 : CCInt) :
+      and_cases t1 (Eop (Ointconst n2) Enil)
+  | and_default (e1 e2 : expr) : and_cases e1 e2
 
 export and_cases (and_case1 and_case2 and_default)
 
-def and_match (e1 e2 : expr) : and_cases :=
-  match e1, e2 with
+def and_match (e1 e2 : expr) : and_cases e1 e2 :=
+  (match e1, e2 with
   | Eop (Ointconst n1) Enil, t2 => .and_case1 n1 t2
   | t1, Eop (Ointconst n2) Enil => .and_case2 t1 n2
-  | _, _ => .and_default e1 e2
+  | e1, e2 => .and_default e1 e2 : and_cases e1 e2)
 
 def and (e1 e2 : expr) : expr :=
   match and_match e1 e2 with
@@ -473,18 +513,19 @@ def and (e1 e2 : expr) : expr :=
   | .and_case2 t1 n2 => andimm n2 t1
   | .and_default e1 e2 => Eop Oand (Econs e1 (Econs e2 Enil))
 
-inductive orimm_cases : Type where
-  | orimm_case1 (n2 : CCInt)
-  | orimm_case2 (n2 : CCInt) (t2 : expr)
-  | orimm_default (e2 : expr)
+inductive orimm_cases : expr -> Type where
+  | orimm_case1 (n2 : CCInt) : orimm_cases (Eop (Ointconst n2) Enil)
+  | orimm_case2 (n2 : CCInt) (t2 : expr) :
+      orimm_cases (Eop (Oorimm n2) (Econs t2 Enil))
+  | orimm_default (e2 : expr) : orimm_cases e2
 
 export orimm_cases (orimm_case1 orimm_case2 orimm_default)
 
-def orimm_match (e2 : expr) : orimm_cases :=
-  match e2 with
+def orimm_match (e2 : expr) : orimm_cases e2 :=
+  (match e2 with
   | Eop (Ointconst n2) Enil => .orimm_case1 n2
   | Eop (Oorimm n2) (Econs t2 Enil) => .orimm_case2 n2 t2
-  | _ => .orimm_default e2
+  | e2 => .orimm_default e2 : orimm_cases e2)
 
 def orimm (n1 : CCInt) (e2 : expr) : expr :=
   if Int.eq n1 Int.zero then e2
@@ -500,24 +541,30 @@ def same_expr_pure (e1 e2 : expr) : Bool :=
   | Evar v1, Evar v2 => decide (v1 = v2)
   | _, _ => false
 
-inductive or_cases : Type where
-  | or_case1 (n1 : CCInt) (t2 : expr)
-  | or_case2 (t1 : expr) (n2 : CCInt)
-  | or_case3 (n1 : CCInt) (t1 : expr) (n2 : CCInt) (t2 : expr)
-  | or_case4 (n2 : CCInt) (t2 : expr) (n1 : CCInt) (t1 : expr)
-  | or_default (e1 e2 : expr)
+inductive or_cases : expr -> expr -> Type where
+  | or_case1 (n1 : CCInt) (t2 : expr) :
+      or_cases (Eop (Ointconst n1) Enil) t2
+  | or_case2 (t1 : expr) (n2 : CCInt) :
+      or_cases t1 (Eop (Ointconst n2) Enil)
+  | or_case3 (n1 : CCInt) (t1 : expr) (n2 : CCInt) (t2 : expr) :
+      or_cases (Eop (Oshlimm n1) (Econs t1 Enil))
+        (Eop (Oshruimm n2) (Econs t2 Enil))
+  | or_case4 (n2 : CCInt) (t2 : expr) (n1 : CCInt) (t1 : expr) :
+      or_cases (Eop (Oshruimm n2) (Econs t2 Enil))
+        (Eop (Oshlimm n1) (Econs t1 Enil))
+  | or_default (e1 e2 : expr) : or_cases e1 e2
 
 export or_cases (or_case1 or_case2 or_case3 or_case4 or_default)
 
-def or_match (e1 e2 : expr) : or_cases :=
-  match e1, e2 with
+def or_match (e1 e2 : expr) : or_cases e1 e2 :=
+  (match e1, e2 with
   | Eop (Ointconst n1) Enil, t2 => .or_case1 n1 t2
   | t1, Eop (Ointconst n2) Enil => .or_case2 t1 n2
   | Eop (Oshlimm n1) (Econs t1 Enil), Eop (Oshruimm n2) (Econs t2 Enil) =>
       .or_case3 n1 t1 n2 t2
   | Eop (Oshruimm n2) (Econs t2 Enil), Eop (Oshlimm n1) (Econs t1 Enil) =>
       .or_case4 n2 t2 n1 t1
-  | _, _ => .or_default e1 e2
+  | e1, e2 => .or_default e1 e2 : or_cases e1 e2)
 
 def or (e1 e2 : expr) : expr :=
   match or_match e1 e2 with
@@ -527,28 +574,33 @@ def or (e1 e2 : expr) : expr :=
       if Int.eq (Int.add n1 n2) Int.iwordsize then
         if same_expr_pure t1 t2 then Eop (Ororimm n2) (Econs t1 Enil)
         else Eop (Oshldimm n1) (Econs t1 (Econs t2 Enil))
-      else Eop Oor (Econs e1 (Econs e2 Enil))
+      else Eop Oor
+        (Econs (Eop (Oshlimm n1) (Econs t1 Enil))
+          (Econs (Eop (Oshruimm n2) (Econs t2 Enil)) Enil))
   | .or_case4 n2 t2 n1 t1 =>
       if Int.eq (Int.add n1 n2) Int.iwordsize then
         if same_expr_pure t1 t2 then Eop (Ororimm n2) (Econs t1 Enil)
         else Eop (Oshldimm n1) (Econs t1 (Econs t2 Enil))
-      else Eop Oor (Econs e1 (Econs e2 Enil))
+      else Eop Oor
+        (Econs (Eop (Oshruimm n2) (Econs t2 Enil))
+          (Econs (Eop (Oshlimm n1) (Econs t1 Enil)) Enil))
   | .or_default e1 e2 => Eop Oor (Econs e1 (Econs e2 Enil))
 
-inductive xorimm_cases : Type where
-  | xorimm_case1 (n2 : CCInt)
-  | xorimm_case2 (n2 : CCInt) (t2 : expr)
-  | xorimm_case3 (t2 : expr)
-  | xorimm_default (e2 : expr)
+inductive xorimm_cases : expr -> Type where
+  | xorimm_case1 (n2 : CCInt) : xorimm_cases (Eop (Ointconst n2) Enil)
+  | xorimm_case2 (n2 : CCInt) (t2 : expr) :
+      xorimm_cases (Eop (Oxorimm n2) (Econs t2 Enil))
+  | xorimm_case3 (t2 : expr) : xorimm_cases (Eop Onot (Econs t2 Enil))
+  | xorimm_default (e2 : expr) : xorimm_cases e2
 
 export xorimm_cases (xorimm_case1 xorimm_case2 xorimm_case3 xorimm_default)
 
-def xorimm_match (e2 : expr) : xorimm_cases :=
-  match e2 with
+def xorimm_match (e2 : expr) : xorimm_cases e2 :=
+  (match e2 with
   | Eop (Ointconst n2) Enil => .xorimm_case1 n2
   | Eop (Oxorimm n2) (Econs t2 Enil) => .xorimm_case2 n2 t2
   | Eop Onot (Econs t2 Enil) => .xorimm_case3 t2
-  | _ => .xorimm_default e2
+  | e2 => .xorimm_default e2 : xorimm_cases e2)
 
 def xorimm (n1 : CCInt) (e2 : expr) : expr :=
   if Int.eq n1 Int.zero then e2
@@ -559,18 +611,20 @@ def xorimm (n1 : CCInt) (e2 : expr) : expr :=
     | .xorimm_case3 t2 => Eop (Oxorimm (Int.not n1)) (Econs t2 Enil)
     | .xorimm_default e2 => Eop (Oxorimm n1) (Econs e2 Enil)
 
-inductive xor_cases : Type where
-  | xor_case1 (n1 : CCInt) (t2 : expr)
-  | xor_case2 (t1 : expr) (n2 : CCInt)
-  | xor_default (e1 e2 : expr)
+inductive xor_cases : expr -> expr -> Type where
+  | xor_case1 (n1 : CCInt) (t2 : expr) :
+      xor_cases (Eop (Ointconst n1) Enil) t2
+  | xor_case2 (t1 : expr) (n2 : CCInt) :
+      xor_cases t1 (Eop (Ointconst n2) Enil)
+  | xor_default (e1 e2 : expr) : xor_cases e1 e2
 
 export xor_cases (xor_case1 xor_case2 xor_default)
 
-def xor_match (e1 e2 : expr) : xor_cases :=
-  match e1, e2 with
+def xor_match (e1 e2 : expr) : xor_cases e1 e2 :=
+  (match e1, e2 with
   | Eop (Ointconst n1) Enil, t2 => .xor_case1 n1 t2
   | t1, Eop (Ointconst n2) Enil => .xor_case2 t1 n2
-  | _, _ => .xor_default e1 e2
+  | e1, e2 => .xor_default e1 e2 : xor_cases e1 e2)
 
 def xor (e1 e2 : expr) : expr :=
   match xor_match e1 e2 with
@@ -588,48 +642,48 @@ def mods_base (e1 e2 : expr) : expr := Eop Omod (Econs e1 (Econs e2 Enil))
 def shrximm (e1 : expr) (n2 : CCInt) : expr :=
   if Int.eq n2 Int.zero then e1 else Eop (Oshrximm n2) (Econs e1 Enil)
 
-inductive shl_cases : Type where
-  | shl_case1 (n2 : CCInt)
-  | shl_default (e2 : expr)
+inductive shl_cases : expr -> Type where
+  | shl_case1 (n2 : CCInt) : shl_cases (Eop (Ointconst n2) Enil)
+  | shl_default (e2 : expr) : shl_cases e2
 
 export shl_cases (shl_case1 shl_default)
 
-def shl_match (e2 : expr) : shl_cases :=
-  match e2 with
+def shl_match (e2 : expr) : shl_cases e2 :=
+  (match e2 with
   | Eop (Ointconst n2) Enil => .shl_case1 n2
-  | _ => .shl_default e2
+  | e2 => .shl_default e2 : shl_cases e2)
 
 def shl (e1 e2 : expr) : expr :=
   match shl_match e2 with
   | .shl_case1 n2 => shlimm e1 n2
   | .shl_default e2 => Eop Oshl (Econs e1 (Econs e2 Enil))
 
-inductive shr_cases : Type where
-  | shr_case1 (n2 : CCInt)
-  | shr_default (e2 : expr)
+inductive shr_cases : expr -> Type where
+  | shr_case1 (n2 : CCInt) : shr_cases (Eop (Ointconst n2) Enil)
+  | shr_default (e2 : expr) : shr_cases e2
 
 export shr_cases (shr_case1 shr_default)
 
-def shr_match (e2 : expr) : shr_cases :=
-  match e2 with
+def shr_match (e2 : expr) : shr_cases e2 :=
+  (match e2 with
   | Eop (Ointconst n2) Enil => .shr_case1 n2
-  | _ => .shr_default e2
+  | e2 => .shr_default e2 : shr_cases e2)
 
 def shr (e1 e2 : expr) : expr :=
   match shr_match e2 with
   | .shr_case1 n2 => shrimm e1 n2
   | .shr_default e2 => Eop Oshr (Econs e1 (Econs e2 Enil))
 
-inductive shru_cases : Type where
-  | shru_case1 (n2 : CCInt)
-  | shru_default (e2 : expr)
+inductive shru_cases : expr -> Type where
+  | shru_case1 (n2 : CCInt) : shru_cases (Eop (Ointconst n2) Enil)
+  | shru_default (e2 : expr) : shru_cases e2
 
 export shru_cases (shru_case1 shru_default)
 
-def shru_match (e2 : expr) : shru_cases :=
-  match e2 with
+def shru_match (e2 : expr) : shru_cases e2 :=
+  (match e2 with
   | Eop (Ointconst n2) Enil => .shru_case1 n2
-  | _ => .shru_default e2
+  | e2 => .shru_default e2 : shru_cases e2)
 
 def shru (e1 e2 : expr) : expr :=
   match shru_match e2 with
@@ -650,25 +704,30 @@ def mulfs (e1 e2 : expr) : expr := Eop Omulfs (Econs e1 (Econs e2 Enil))
 
 /-! ## Comparisons -/
 
-inductive compimm_cases : Type where
-  | compimm_case1 (c : comparison) (n1 : CCInt)
-  | compimm_case2 (cond : condition) (el : exprlist)
-  | compimm_case3 (cond : condition) (el : exprlist)
-  | compimm_case4 (n1 : CCInt) (t1 : expr)
-  | compimm_case5 (n1 : CCInt) (t1 : expr)
-  | compimm_default (c : comparison) (e1 : expr)
+inductive compimm_cases : comparison -> expr -> Type where
+  | compimm_case1 (c : comparison) (n1 : CCInt) :
+      compimm_cases c (Eop (Ointconst n1) Enil)
+  | compimm_case2 (cond : condition) (el : exprlist) :
+      compimm_cases .Ceq (Eop (Ocmp cond) el)
+  | compimm_case3 (cond : condition) (el : exprlist) :
+      compimm_cases .Cne (Eop (Ocmp cond) el)
+  | compimm_case4 (n1 : CCInt) (t1 : expr) :
+      compimm_cases .Ceq (Eop (Oandimm n1) (Econs t1 Enil))
+  | compimm_case5 (n1 : CCInt) (t1 : expr) :
+      compimm_cases .Cne (Eop (Oandimm n1) (Econs t1 Enil))
+  | compimm_default (c : comparison) (e1 : expr) : compimm_cases c e1
 
 export compimm_cases (compimm_case1 compimm_case2 compimm_case3 compimm_case4
   compimm_case5 compimm_default)
 
-def compimm_match (c : comparison) (e1 : expr) : compimm_cases :=
-  match c, e1 with
+def compimm_match (c : comparison) (e1 : expr) : compimm_cases c e1 :=
+  (match c, e1 with
   | c, Eop (Ointconst n1) Enil => .compimm_case1 c n1
   | .Ceq, Eop (Ocmp cond) el => .compimm_case2 cond el
   | .Cne, Eop (Ocmp cond) el => .compimm_case3 cond el
   | .Ceq, Eop (Oandimm n1) (Econs t1 Enil) => .compimm_case4 n1 t1
   | .Cne, Eop (Oandimm n1) (Econs t1 Enil) => .compimm_case5 n1 t1
-  | _, _ => .compimm_default c e1
+  | c, e1 => .compimm_default c e1 : compimm_cases c e1)
 
 def compimm (default : comparison -> CCInt -> condition)
     (sem : comparison -> CCInt -> CCInt -> Bool) (c : comparison)
@@ -686,24 +745,28 @@ def compimm (default : comparison -> CCInt -> condition)
       else Eop (Ointconst Int.one) Enil
   | .compimm_case4 n1 t1 =>
       if intEqDecBool n2 Int.zero then Eop (Ocmp (Cmaskzero n1)) (Econs t1 Enil)
-      else Eop (Ocmp (default c n2)) (Econs e1 Enil)
+      else Eop (Ocmp (default .Ceq n2))
+        (Econs (Eop (Oandimm n1) (Econs t1 Enil)) Enil)
   | .compimm_case5 n1 t1 =>
       if intEqDecBool n2 Int.zero then Eop (Ocmp (Cmasknotzero n1)) (Econs t1 Enil)
-      else Eop (Ocmp (default c n2)) (Econs e1 Enil)
+      else Eop (Ocmp (default .Cne n2))
+        (Econs (Eop (Oandimm n1) (Econs t1 Enil)) Enil)
   | .compimm_default c e1 => Eop (Ocmp (default c n2)) (Econs e1 Enil)
 
-inductive comp_cases : Type where
-  | comp_case1 (n1 : CCInt) (t2 : expr)
-  | comp_case2 (t1 : expr) (n2 : CCInt)
-  | comp_default (e1 e2 : expr)
+inductive comp_cases : expr -> expr -> Type where
+  | comp_case1 (n1 : CCInt) (t2 : expr) :
+      comp_cases (Eop (Ointconst n1) Enil) t2
+  | comp_case2 (t1 : expr) (n2 : CCInt) :
+      comp_cases t1 (Eop (Ointconst n2) Enil)
+  | comp_default (e1 e2 : expr) : comp_cases e1 e2
 
 export comp_cases (comp_case1 comp_case2 comp_default)
 
-def comp_match (e1 e2 : expr) : comp_cases :=
-  match e1, e2 with
+def comp_match (e1 e2 : expr) : comp_cases e1 e2 :=
+  (match e1, e2 with
   | Eop (Ointconst n1) Enil, t2 => .comp_case1 n1 t2
   | t1, Eop (Ointconst n2) Enil => .comp_case2 t1 n2
-  | _, _ => .comp_default e1 e2
+  | e1, e2 => .comp_default e1 e2 : comp_cases e1 e2)
 
 def comp (c : comparison) (e1 e2 : expr) : expr :=
   match comp_match e1 e2 with
@@ -711,18 +774,20 @@ def comp (c : comparison) (e1 e2 : expr) : expr :=
   | .comp_case2 t1 n2 => compimm Ccompimm Int.cmp c t1 n2
   | .comp_default e1 e2 => Eop (Ocmp (Ccomp c)) (Econs e1 (Econs e2 Enil))
 
-inductive compu_cases : Type where
-  | compu_case1 (n1 : CCInt) (t2 : expr)
-  | compu_case2 (t1 : expr) (n2 : CCInt)
-  | compu_default (e1 e2 : expr)
+inductive compu_cases : expr -> expr -> Type where
+  | compu_case1 (n1 : CCInt) (t2 : expr) :
+      compu_cases (Eop (Ointconst n1) Enil) t2
+  | compu_case2 (t1 : expr) (n2 : CCInt) :
+      compu_cases t1 (Eop (Ointconst n2) Enil)
+  | compu_default (e1 e2 : expr) : compu_cases e1 e2
 
 export compu_cases (compu_case1 compu_case2 compu_default)
 
-def compu_match (e1 e2 : expr) : compu_cases :=
-  match e1, e2 with
+def compu_match (e1 e2 : expr) : compu_cases e1 e2 :=
+  (match e1, e2 with
   | Eop (Ointconst n1) Enil, t2 => .compu_case1 n1 t2
   | t1, Eop (Ointconst n2) Enil => .compu_case2 t1 n2
-  | _, _ => .compu_default e1 e2
+  | e1, e2 => .compu_default e1 e2 : compu_cases e1 e2)
 
 def compu (c : comparison) (e1 e2 : expr) : expr :=
   match compu_match e1 e2 with
@@ -738,18 +803,20 @@ def compfs (c : comparison) (e1 e2 : expr) : expr :=
 
 /-! ## Integer conversions and selection -/
 
-inductive cast8unsigned_cases : Type where
-  | cast8unsigned_case1 (n : CCInt)
-  | cast8unsigned_case2 (n : CCInt) (t : expr)
-  | cast8unsigned_default (e : expr)
+inductive cast8unsigned_cases : expr -> Type where
+  | cast8unsigned_case1 (n : CCInt) :
+      cast8unsigned_cases (Eop (Ointconst n) Enil)
+  | cast8unsigned_case2 (n : CCInt) (t : expr) :
+      cast8unsigned_cases (Eop (Oandimm n) (Econs t Enil))
+  | cast8unsigned_default (e : expr) : cast8unsigned_cases e
 
 export cast8unsigned_cases (cast8unsigned_case1 cast8unsigned_case2 cast8unsigned_default)
 
-def cast8unsigned_match (e : expr) : cast8unsigned_cases :=
-  match e with
+def cast8unsigned_match (e : expr) : cast8unsigned_cases e :=
+  (match e with
   | Eop (Ointconst n) Enil => .cast8unsigned_case1 n
   | Eop (Oandimm n) (Econs t Enil) => .cast8unsigned_case2 n t
-  | _ => .cast8unsigned_default e
+  | e => .cast8unsigned_default e : cast8unsigned_cases e)
 
 def cast8unsigned (e : expr) : expr :=
   match cast8unsigned_match e with
@@ -757,34 +824,36 @@ def cast8unsigned (e : expr) : expr :=
   | .cast8unsigned_case2 n t => andimm (Int.and (Int.repr z255) n) t
   | .cast8unsigned_default e => Eop Ocast8unsigned (Econs e Enil)
 
-inductive cast8signed_cases : Type where
-  | cast8signed_case1 (n : CCInt)
-  | cast8signed_default (e : expr)
+inductive cast8signed_cases : expr -> Type where
+  | cast8signed_case1 (n : CCInt) : cast8signed_cases (Eop (Ointconst n) Enil)
+  | cast8signed_default (e : expr) : cast8signed_cases e
 
 export cast8signed_cases (cast8signed_case1 cast8signed_default)
 
-def cast8signed_match (e : expr) : cast8signed_cases :=
-  match e with
+def cast8signed_match (e : expr) : cast8signed_cases e :=
+  (match e with
   | Eop (Ointconst n) Enil => .cast8signed_case1 n
-  | _ => .cast8signed_default e
+  | e => .cast8signed_default e : cast8signed_cases e)
 
 def cast8signed (e : expr) : expr :=
   match cast8signed_match e with
   | .cast8signed_case1 n => Eop (Ointconst (Int.sign_ext z8 n)) Enil
   | .cast8signed_default e => Eop Ocast8signed (Econs e Enil)
 
-inductive cast16unsigned_cases : Type where
-  | cast16unsigned_case1 (n : CCInt)
-  | cast16unsigned_case2 (n : CCInt) (t : expr)
-  | cast16unsigned_default (e : expr)
+inductive cast16unsigned_cases : expr -> Type where
+  | cast16unsigned_case1 (n : CCInt) :
+      cast16unsigned_cases (Eop (Ointconst n) Enil)
+  | cast16unsigned_case2 (n : CCInt) (t : expr) :
+      cast16unsigned_cases (Eop (Oandimm n) (Econs t Enil))
+  | cast16unsigned_default (e : expr) : cast16unsigned_cases e
 
 export cast16unsigned_cases (cast16unsigned_case1 cast16unsigned_case2 cast16unsigned_default)
 
-def cast16unsigned_match (e : expr) : cast16unsigned_cases :=
-  match e with
+def cast16unsigned_match (e : expr) : cast16unsigned_cases e :=
+  (match e with
   | Eop (Ointconst n) Enil => .cast16unsigned_case1 n
   | Eop (Oandimm n) (Econs t Enil) => .cast16unsigned_case2 n t
-  | _ => .cast16unsigned_default e
+  | e => .cast16unsigned_default e : cast16unsigned_cases e)
 
 def cast16unsigned (e : expr) : expr :=
   match cast16unsigned_match e with
@@ -792,16 +861,16 @@ def cast16unsigned (e : expr) : expr :=
   | .cast16unsigned_case2 n t => andimm (Int.and (Int.repr z65535) n) t
   | .cast16unsigned_default e => Eop Ocast16unsigned (Econs e Enil)
 
-inductive cast16signed_cases : Type where
-  | cast16signed_case1 (n : CCInt)
-  | cast16signed_default (e : expr)
+inductive cast16signed_cases : expr -> Type where
+  | cast16signed_case1 (n : CCInt) : cast16signed_cases (Eop (Ointconst n) Enil)
+  | cast16signed_default (e : expr) : cast16signed_cases e
 
 export cast16signed_cases (cast16signed_case1 cast16signed_default)
 
-def cast16signed_match (e : expr) : cast16signed_cases :=
-  match e with
+def cast16signed_match (e : expr) : cast16signed_cases e :=
+  (match e with
   | Eop (Ointconst n) Enil => .cast16signed_case1 n
-  | _ => .cast16signed_default e
+  | e => .cast16signed_default e : cast16signed_cases e)
 
 def cast16signed (e : expr) : expr :=
   match cast16signed_match e with
@@ -831,16 +900,16 @@ def singleoffloat (e : expr) : expr := Eop Osingleoffloat (Econs e Enil)
 def floatofsingle (e : expr) : expr := Eop Ofloatofsingle (Econs e Enil)
 def intoffloat (e : expr) : expr := Eop Ointoffloat (Econs e Enil)
 
-inductive floatofint_cases : Type where
-  | floatofint_case1 (n : CCInt)
-  | floatofint_default (e : expr)
+inductive floatofint_cases : expr -> Type where
+  | floatofint_case1 (n : CCInt) : floatofint_cases (Eop (Ointconst n) Enil)
+  | floatofint_default (e : expr) : floatofint_cases e
 
 export floatofint_cases (floatofint_case1 floatofint_default)
 
-def floatofint_match (e : expr) : floatofint_cases :=
-  match e with
+def floatofint_match (e : expr) : floatofint_cases e :=
+  (match e with
   | Eop (Ointconst n) Enil => .floatofint_case1 n
-  | _ => .floatofint_default e
+  | e => .floatofint_default e : floatofint_cases e)
 
 def floatofint (e : expr) : expr :=
   match floatofint_match e with
@@ -859,16 +928,16 @@ def intuoffloat (e : expr) : expr :=
   else
     Eop Olowlong (Econs (Eop Olongoffloat (Econs e Enil)) Enil)
 
-inductive floatofintu_cases : Type where
-  | floatofintu_case1 (n : CCInt)
-  | floatofintu_default (e : expr)
+inductive floatofintu_cases : expr -> Type where
+  | floatofintu_case1 (n : CCInt) : floatofintu_cases (Eop (Ointconst n) Enil)
+  | floatofintu_default (e : expr) : floatofintu_cases e
 
 export floatofintu_cases (floatofintu_case1 floatofintu_default)
 
-def floatofintu_match (e : expr) : floatofintu_cases :=
-  match e with
+def floatofintu_match (e : expr) : floatofintu_cases e :=
+  (match e with
   | Eop (Ointconst n) Enil => .floatofintu_case1 n
-  | _ => .floatofintu_default e
+  | e => .floatofintu_default e : floatofintu_cases e)
 
 def floatofintu (e : expr) : expr :=
   match floatofintu_match e with
@@ -887,16 +956,16 @@ def floatofintu (e : expr) : expr :=
 
 def intofsingle (e : expr) : expr := Eop Ointofsingle (Econs e Enil)
 
-inductive singleofint_cases : Type where
-  | singleofint_case1 (n : CCInt)
-  | singleofint_default (e : expr)
+inductive singleofint_cases : expr -> Type where
+  | singleofint_case1 (n : CCInt) : singleofint_cases (Eop (Ointconst n) Enil)
+  | singleofint_default (e : expr) : singleofint_cases e
 
 export singleofint_cases (singleofint_case1 singleofint_default)
 
-def singleofint_match (e : expr) : singleofint_cases :=
-  match e with
+def singleofint_match (e : expr) : singleofint_cases e :=
+  (match e with
   | Eop (Ointconst n) Enil => .singleofint_case1 n
-  | _ => .singleofint_default e
+  | e => .singleofint_default e : singleofint_cases e)
 
 def singleofint (e : expr) : expr :=
   match singleofint_match e with
@@ -905,16 +974,16 @@ def singleofint (e : expr) : expr :=
 
 def intuofsingle (e : expr) : expr := intuoffloat (floatofsingle e)
 
-inductive singleofintu_cases : Type where
-  | singleofintu_case1 (n : CCInt)
-  | singleofintu_default (e : expr)
+inductive singleofintu_cases : expr -> Type where
+  | singleofintu_case1 (n : CCInt) : singleofintu_cases (Eop (Ointconst n) Enil)
+  | singleofintu_default (e : expr) : singleofintu_cases e
 
 export singleofintu_cases (singleofintu_case1 singleofintu_default)
 
-def singleofintu_match (e : expr) : singleofintu_cases :=
-  match e with
+def singleofintu_match (e : expr) : singleofintu_cases e :=
+  (match e with
   | Eop (Ointconst n) Enil => .singleofintu_case1 n
-  | _ => .singleofintu_default e
+  | e => .singleofintu_default e : singleofintu_cases e)
 
 def singleofintu (e : expr) : expr :=
   match singleofintu_match e with
@@ -923,48 +992,55 @@ def singleofintu (e : expr) : expr :=
 
 /-! ## Addressing modes -/
 
-inductive addressing_cases : Type where
-  | addressing_case1 (addr : addressing) (args : exprlist)
-  | addressing_case2 (addr : addressing) (args : exprlist)
-  | addressing_default (e : expr)
+inductive addressing_cases : expr -> Type where
+  | addressing_case1 (addr : addressing) (args : exprlist) :
+      addressing_cases (Eop (Olea addr) args)
+  | addressing_case2 (addr : addressing) (args : exprlist) :
+      addressing_cases (Eop (Oleal addr) args)
+  | addressing_default (e : expr) : addressing_cases e
 
 export addressing_cases (addressing_case1 addressing_case2 addressing_default)
 
-def addressing_match (e : expr) : addressing_cases :=
-  match e with
+def addressing_match (e : expr) : addressing_cases e :=
+  (match e with
   | Eop (Olea addr) args => .addressing_case1 addr args
   | Eop (Oleal addr) args => .addressing_case2 addr args
-  | _ => .addressing_default e
+  | e => .addressing_default e : addressing_cases e)
 
 def addressing (_chunk : memory_chunk) (e : expr) : addressing × exprlist :=
   match addressing_match e with
   | .addressing_case1 addr args =>
       if !CompCert4Lean.X86_64.Archi.ptr64 && addressing_valid addr then
         (addr, args)
-      else (Aindexed z0, Econs e Enil)
+      else (Aindexed z0, Econs (Eop (Olea addr) args) Enil)
   | .addressing_case2 addr args =>
       if CompCert4Lean.X86_64.Archi.ptr64 && addressing_valid addr then
         (addr, args)
-      else (Aindexed z0, Econs e Enil)
+      else (Aindexed z0, Econs (Eop (Oleal addr) args) Enil)
   | .addressing_default e => (Aindexed z0, Econs e Enil)
 
 /-! ## Builtin arguments -/
 
-inductive builtin_arg_addr_cases : Type where
-  | builtin_arg_addr_case1 (n : Z) (e1 : expr)
-  | builtin_arg_addr_case2 (id : ident) (ofs : Ptrofs)
-  | builtin_arg_addr_case3 (ofs : Ptrofs)
-  | builtin_arg_addr_default (addr : op_addressing) (el : exprlist)
+inductive builtin_arg_addr_cases : op_addressing -> exprlist -> Type where
+  | builtin_arg_addr_case1 (n : Z) (e1 : expr) :
+      builtin_arg_addr_cases (Aindexed n) (Econs e1 Enil)
+  | builtin_arg_addr_case2 (id : ident) (ofs : Ptrofs) :
+      builtin_arg_addr_cases (Aglobal id ofs) Enil
+  | builtin_arg_addr_case3 (ofs : Ptrofs) :
+      builtin_arg_addr_cases (Ainstack ofs) Enil
+  | builtin_arg_addr_default (addr : op_addressing) (el : exprlist) :
+      builtin_arg_addr_cases addr el
 
 export builtin_arg_addr_cases (builtin_arg_addr_case1 builtin_arg_addr_case2
   builtin_arg_addr_case3 builtin_arg_addr_default)
 
-def builtin_arg_addr_match (addr : op_addressing) (el : exprlist) : builtin_arg_addr_cases :=
-  match addr, el with
+def builtin_arg_addr_match (addr : op_addressing) (el : exprlist) :
+    builtin_arg_addr_cases addr el :=
+  (match addr, el with
   | Aindexed n, Econs e1 Enil => .builtin_arg_addr_case1 n e1
   | Aglobal id ofs, Enil => .builtin_arg_addr_case2 id ofs
   | Ainstack ofs, Enil => .builtin_arg_addr_case3 ofs
-  | _, _ => .builtin_arg_addr_default addr el
+  | addr, el => .builtin_arg_addr_default addr el : builtin_arg_addr_cases addr el)
 
 def builtin_arg_addr (addr : op_addressing) (el : exprlist) : builtin_arg expr :=
   match builtin_arg_addr_match addr el with
@@ -976,23 +1052,30 @@ def builtin_arg_addr (addr : op_addressing) (el : exprlist) : builtin_arg expr :
   | .builtin_arg_addr_case3 ofs => BA_addrstack ofs
   | .builtin_arg_addr_default addr el => BA (Eop (Olea_ptr addr) el)
 
-inductive builtin_arg_cases : Type where
-  | builtin_arg_case1 (n : CCInt)
-  | builtin_arg_case2 (n : CCInt64)
-  | builtin_arg_case3 (addr : op_addressing) (el : exprlist)
-  | builtin_arg_case4 (addr : op_addressing) (el : exprlist)
-  | builtin_arg_case5 (h l : CCInt)
-  | builtin_arg_case6 (h l : expr)
-  | builtin_arg_case7 (chunk : memory_chunk) (id : ident) (ofs : Ptrofs)
-  | builtin_arg_case8 (chunk : memory_chunk) (ofs : Ptrofs)
-  | builtin_arg_default (e : expr)
+inductive builtin_arg_cases : expr -> Type where
+  | builtin_arg_case1 (n : CCInt) : builtin_arg_cases (Eop (Ointconst n) Enil)
+  | builtin_arg_case2 (n : CCInt64) : builtin_arg_cases (Eop (Olongconst n) Enil)
+  | builtin_arg_case3 (addr : op_addressing) (el : exprlist) :
+      builtin_arg_cases (Eop (Olea addr) el)
+  | builtin_arg_case4 (addr : op_addressing) (el : exprlist) :
+      builtin_arg_cases (Eop (Oleal addr) el)
+  | builtin_arg_case5 (h l : CCInt) :
+      builtin_arg_cases (Eop Omakelong
+        (Econs (Eop (Ointconst h) Enil) (Econs (Eop (Ointconst l) Enil) Enil)))
+  | builtin_arg_case6 (h l : expr) :
+      builtin_arg_cases (Eop Omakelong (Econs h (Econs l Enil)))
+  | builtin_arg_case7 (chunk : memory_chunk) (id : ident) (ofs : Ptrofs) :
+      builtin_arg_cases (Eload chunk (Aglobal id ofs) Enil)
+  | builtin_arg_case8 (chunk : memory_chunk) (ofs : Ptrofs) :
+      builtin_arg_cases (Eload chunk (Ainstack ofs) Enil)
+  | builtin_arg_default (e : expr) : builtin_arg_cases e
 
 export builtin_arg_cases (builtin_arg_case1 builtin_arg_case2 builtin_arg_case3
   builtin_arg_case4 builtin_arg_case5 builtin_arg_case6 builtin_arg_case7
   builtin_arg_case8 builtin_arg_default)
 
-def builtin_arg_match (e : expr) : builtin_arg_cases :=
-  match e with
+def builtin_arg_match (e : expr) : builtin_arg_cases e :=
+  (match e with
   | Eop (Ointconst n) Enil => .builtin_arg_case1 n
   | Eop (Olongconst n) Enil => .builtin_arg_case2 n
   | Eop (Olea addr) el => .builtin_arg_case3 addr el
@@ -1003,16 +1086,18 @@ def builtin_arg_match (e : expr) : builtin_arg_cases :=
   | Eop Omakelong (Econs h (Econs l Enil)) => .builtin_arg_case6 h l
   | Eload chunk (Aglobal id ofs) Enil => .builtin_arg_case7 chunk id ofs
   | Eload chunk (Ainstack ofs) Enil => .builtin_arg_case8 chunk ofs
-  | _ => .builtin_arg_default e
+  | e => .builtin_arg_default e : builtin_arg_cases e)
 
 def builtin_arg (e : expr) : builtin_arg expr :=
   match builtin_arg_match e with
   | .builtin_arg_case1 n => BA_int n
   | .builtin_arg_case2 n => BA_long n
   | .builtin_arg_case3 addr el =>
-      if CompCert4Lean.X86_64.Archi.ptr64 then BA e else builtin_arg_addr addr el
+      if CompCert4Lean.X86_64.Archi.ptr64 then BA (Eop (Olea addr) el)
+      else builtin_arg_addr addr el
   | .builtin_arg_case4 addr el =>
-      if CompCert4Lean.X86_64.Archi.ptr64 then builtin_arg_addr addr el else BA e
+      if CompCert4Lean.X86_64.Archi.ptr64 then builtin_arg_addr addr el
+      else BA (Eop (Oleal addr) el)
   | .builtin_arg_case5 h l => BA_long (Int64.ofwords h l)
   | .builtin_arg_case6 h l => BA_splitlong (BA h) (BA l)
   | .builtin_arg_case7 chunk id ofs => BA_loadglobal chunk id ofs

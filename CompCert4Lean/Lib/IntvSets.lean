@@ -258,11 +258,253 @@ private theorem removeOk (L H : Z) (hLH : ZArith.BinInt.Z.lt L H) :
                 below tail_ok
             · exact ih
 
+private def length : t → Nat
+  | .Nil => 0
+  | .Cons _ _ tail => length tail + 1
+
+def inter (s1 s2 : t) : t :=
+  match s1, s2 with
+  | .Nil, _ => .Nil
+  | _, .Nil => .Nil
+  | .Cons l1 h1 s1', .Cons l2 h2 s2' =>
+      if ZArith.BinInt.Z.leb h1 l2 then
+        inter s1' (.Cons l2 h2 s2')
+      else if ZArith.BinInt.Z.leb h2 l1 then
+        inter (.Cons l1 h1 s1') s2'
+      else if ZArith.BinInt.Z.leb l1 l2 then
+        if ZArith.BinInt.Z.leb h2 h1 then
+          .Cons l2 h2 (inter (.Cons l1 h1 s1') s2')
+        else
+          .Cons l2 h1 (inter s1' (.Cons l2 h2 s2'))
+      else if ZArith.BinInt.Z.leb h1 h2 then
+        .Cons l1 h1 (inter s1' (.Cons l2 h2 s2'))
+      else
+        .Cons l1 h2 (inter (.Cons l1 h1 s1') s2')
+termination_by length s1 + length s2
+decreasing_by all_goals simp_all [length]
+
+private theorem inInter (x : Z) (s1 s2 : t) (hs1 : ok s1) (hs2 : ok s2) :
+    In x (inter s1 s2) ↔ In x s1 ∧ In x s2 := by
+  induction hs1 generalizing s2 with
+  | ok_nil => simp [inter, In]
+  | ok_cons l1 h1 t1 bounds1 below1 tailOk1 ih1 =>
+      induction hs2 with
+      | ok_nil => simp [inter, In]
+      | ok_cons l2 h2 t2 bounds2 below2 tailOk2 ih2 =>
+          have ok1 : ok (.Cons l1 h1 t1) :=
+            .ok_cons l1 h1 t1 bounds1 below1 tailOk1
+          have ok2 : ok (.Cons l2 h2 t2) :=
+            .ok_cons l2 h2 t2 bounds2 below2 tailOk2
+          simp only [inter]
+          split <;> rename_i h12
+          · rw [ih1 _ ok2]
+            simp only [In]
+            constructor
+            · rintro ⟨hx1, hx2⟩
+              exact ⟨Or.inr hx1, hx2⟩
+            · rintro ⟨hx1 | hx1, hx2⟩
+              · rcases hx2 with hx2 | hx2
+                · simp [ZArith.BinInt.Z.leb, ZArith.BinInt.Z.le,
+                    ZArith.BinInt.Z.lt] at h12 hx1 hx2
+                  omega
+                · have := below2 x hx2
+                  simp [ZArith.BinInt.Z.leb, ZArith.BinInt.Z.le,
+                    ZArith.BinInt.Z.lt] at h12 bounds2 hx1 this
+                  omega
+              · exact ⟨hx1, hx2⟩
+          · split <;> rename_i h21
+            · rw [ih2]
+              simp only [In]
+              constructor
+              · rintro ⟨hx1, hx2⟩
+                exact ⟨hx1, Or.inr hx2⟩
+              · rintro ⟨hx1, hx2 | hx2⟩
+                · rcases hx1 with hx1 | hx1
+                  · simp [ZArith.BinInt.Z.leb, ZArith.BinInt.Z.le,
+                      ZArith.BinInt.Z.lt] at h21 hx1 hx2
+                    omega
+                  · have := below1 x hx1
+                    simp [ZArith.BinInt.Z.leb, ZArith.BinInt.Z.le,
+                      ZArith.BinInt.Z.lt] at h21 bounds1 hx2 this
+                    omega
+                · exact ⟨hx1, hx2⟩
+            · split <;> rename_i hlo
+              · split <;> rename_i hhi
+                · simp only [In]
+                  rw [ih2]
+                  constructor
+                  · rintro (hx | ⟨hx1, hx2⟩)
+                    · constructor
+                      · left
+                        simp [ZArith.BinInt.Z.leb, ZArith.BinInt.Z.le,
+                          ZArith.BinInt.Z.lt] at hlo hhi hx ⊢
+                        omega
+                      · exact Or.inl hx
+                    · exact ⟨hx1, Or.inr hx2⟩
+                  · rintro ⟨hx1, hx2 | hx2⟩
+                    · exact Or.inl hx2
+                    · exact Or.inr ⟨hx1, hx2⟩
+                · simp only [In]
+                  rw [ih1 _ ok2]
+                  constructor
+                  · rintro (hx | ⟨hx1, hx2⟩)
+                    · constructor
+                      · exact Or.inl ⟨by
+                          simp [ZArith.BinInt.Z.leb, ZArith.BinInt.Z.le,
+                            ZArith.BinInt.Z.lt] at hlo hx ⊢
+                          omega, hx.2⟩
+                      · exact Or.inl ⟨hx.1, by
+                          simp [ZArith.BinInt.Z.leb, ZArith.BinInt.Z.le,
+                            ZArith.BinInt.Z.lt] at hhi hx ⊢
+                          omega⟩
+                    · exact ⟨Or.inr hx1, hx2⟩
+                  · rintro ⟨hx1 | hx1, hx2⟩
+                    · rcases hx2 with hx2 | hx2
+                      · exact Or.inl ⟨hx2.1, hx1.2⟩
+                      · have hb := below2 x hx2
+                        exfalso
+                        simp [ZArith.BinInt.Z.leb, ZArith.BinInt.Z.le,
+                          ZArith.BinInt.Z.lt] at hhi hx1 hb
+                        omega
+                    · exact Or.inr ⟨hx1, hx2⟩
+              · split <;> rename_i hhi
+                · simp only [In]
+                  rw [ih1 _ ok2]
+                  constructor
+                  · rintro (hx | ⟨hx1, hx2⟩)
+                    · constructor
+                      · exact Or.inl hx
+                      · exact Or.inl ⟨by
+                          simp [ZArith.BinInt.Z.leb, ZArith.BinInt.Z.le,
+                            ZArith.BinInt.Z.lt] at hlo hx ⊢
+                          omega, by
+                          simp [ZArith.BinInt.Z.leb, ZArith.BinInt.Z.le,
+                            ZArith.BinInt.Z.lt] at hhi hx ⊢
+                          omega⟩
+                    · exact ⟨Or.inr hx1, hx2⟩
+                  · rintro ⟨hx1, hx2 | hx2⟩
+                    · rcases hx1 with hx1 | hx1
+                      · exact Or.inl hx1
+                      · exact Or.inr ⟨hx1, Or.inl hx2⟩
+                    · rcases hx1 with hx1 | hx1
+                      · have hb := below2 x hx2
+                        exfalso
+                        simp [ZArith.BinInt.Z.leb, ZArith.BinInt.Z.le,
+                          ZArith.BinInt.Z.lt] at hhi hx1 hb
+                        omega
+                      · exact Or.inr ⟨hx1, Or.inr hx2⟩
+                · simp only [In]
+                  rw [ih2]
+                  constructor
+                  · rintro (hx | ⟨hx1, hx2⟩)
+                    · constructor
+                      · exact Or.inl ⟨hx.1, by
+                          simp [ZArith.BinInt.Z.leb, ZArith.BinInt.Z.le,
+                            ZArith.BinInt.Z.lt] at hhi hx ⊢
+                          omega⟩
+                      · exact Or.inl ⟨by
+                          simp [ZArith.BinInt.Z.leb, ZArith.BinInt.Z.le,
+                            ZArith.BinInt.Z.lt] at hlo hx ⊢
+                          omega, hx.2⟩
+                    · exact ⟨hx1, Or.inr hx2⟩
+                  · rintro ⟨hx1, hx2 | hx2⟩
+                    · rcases hx1 with hx1 | hx1
+                      · exact Or.inl ⟨hx1.1, hx2.2⟩
+                      · have hb := below1 x hx1
+                        exfalso
+                        simp [ZArith.BinInt.Z.leb, ZArith.BinInt.Z.le,
+                          ZArith.BinInt.Z.lt] at hhi hx2 hb
+                        omega
+                    · exact Or.inr ⟨hx1, hx2⟩
+
+private theorem interOk (s1 s2 : t) (hs1 : ok s1) (hs2 : ok s2) :
+    ok (inter s1 s2) := by
+  induction hs1 generalizing s2 with
+  | ok_nil => simp [inter]; exact .ok_nil
+  | ok_cons l1 h1 t1 bounds1 below1 tailOk1 ih1 =>
+      induction hs2 with
+      | ok_nil => simp [inter]; exact .ok_nil
+      | ok_cons l2 h2 t2 bounds2 below2 tailOk2 ih2 =>
+          have ok1 : ok (.Cons l1 h1 t1) :=
+            .ok_cons l1 h1 t1 bounds1 below1 tailOk1
+          have ok2 : ok (.Cons l2 h2 t2) :=
+            .ok_cons l2 h2 t2 bounds2 below2 tailOk2
+          simp only [inter]
+          split <;> rename_i h12
+          · exact ih1 _ ok2
+          · split <;> rename_i h21
+            · exact ih2
+            · split <;> rename_i hlo
+              · split <;> rename_i hhi
+                · apply ok.ok_cons l2 h2 _ bounds2
+                  · intro x hx
+                    rw [inInter x _ _ ok1 tailOk2] at hx
+                    exact below2 x hx.2
+                  · exact ih2
+                · apply ok.ok_cons l2 h1 _
+                    (by
+                      simp [ZArith.BinInt.Z.leb,
+                        ZArith.BinInt.Z.lt] at h12 ⊢
+                      omega)
+                  · intro x hx
+                    rw [inInter x _ _ tailOk1 ok2] at hx
+                    exact below1 x hx.1
+                  · exact ih1 _ ok2
+              · split <;> rename_i hhi
+                · apply ok.ok_cons l1 h1 _ bounds1
+                  · intro x hx
+                    rw [inInter x _ _ tailOk1 ok2] at hx
+                    exact below1 x hx.1
+                  · exact ih1 _ ok2
+                · apply ok.ok_cons l1 h2 _
+                    (by
+                      simp [ZArith.BinInt.Z.leb,
+                        ZArith.BinInt.Z.lt] at h21 ⊢
+                      omega)
+                  · intro x hx
+                    rw [inInter x _ _ ok1 tailOk2] at hx
+                    exact below2 x hx.2
+                  · exact ih2
+
+def beq : t → t → Bool
+  | .Nil, .Nil => true
+  | .Cons l1 h1 t1, .Cons l2 h2 t2 =>
+      decide (l1 = l2) && decide (h1 = h2) && beq t1 t2
+  | _, _ => false
+
 def contains (L H : Z) : t → Bool
   | .Nil => false
   | .Cons l h tail =>
       (ZArith.BinInt.Z.leb H h && ZArith.BinInt.Z.leb l L) ||
         contains L H tail
+
+/-! Source-named raw proof surfaces.  Their propositions retain the exact
+    source binder order; proof terms are assigned to proof grinding. -/
+
+def In_addStatement : Prop :=
+  ∀ x : Z, ∀ s : t, ok s → ∀ l0 h0 : Z,
+    In x (add l0 h0 s) ↔
+      (ZArith.BinInt.Z.le l0 x ∧ ZArith.BinInt.Z.lt x h0) ∨ In x s
+
+def add_okStatement : Prop :=
+  ∀ s : t, ok s → ∀ l0 h0 : Z,
+    ZArith.BinInt.Z.lt l0 h0 → ok (add l0 h0 s)
+
+def In_removeStatement : Prop :=
+  ∀ x l0 h0 : Z, ∀ s : t, ok s →
+    (In x (remove l0 h0 s) ↔
+      ¬ (ZArith.BinInt.Z.le l0 x ∧ ZArith.BinInt.Z.lt x h0) ∧ In x s)
+
+def remove_okStatement : Prop :=
+  ∀ l0 h0 : Z, ZArith.BinInt.Z.lt l0 h0 → ∀ s : t,
+    ok s → ok (remove l0 h0 s)
+
+def In_interStatement : Prop :=
+  ∀ x : Z, ∀ s1 : t, ok s1 → ∀ s2 : t, ok s2 →
+    (In x (inter s1 s2) ↔ In x s1 ∧ In x s2)
+
+def inter_okStatement : Prop :=
+  ∀ s1 : t, ok s1 → ∀ s2 : t, ok s2 → ok (inter s1 s2)
 
 end R
 
@@ -298,26 +540,10 @@ def remove (l h : Z) (s : t) : t :=
   else
     s
 
-private def addIntersections (l h : Z) : R.t → t → t
-  | .Nil, acc => acc
-  | .Cons l' h' tail, acc =>
-      addIntersections l h tail
-        (add (ZArith.BinInt.Z.max l l') (ZArith.BinInt.Z.min h h') acc)
+def inter (s1 s2 : t) : t :=
+  ⟨R.inter s1.1 s2.1, R.interOk s1.1 s2.1 s1.2 s2.2⟩
 
-private def interRaw : R.t → t → t
-  | .Nil, _ => empty
-  | .Cons l h tail, other =>
-      addIntersections l h other.1 (interRaw tail other)
-
-def inter (s1 s2 : t) : t := interRaw s1.1 s2
-
-private def rawBeq : R.t → R.t → Bool
-  | .Nil, .Nil => true
-  | .Cons l1 h1 t1, .Cons l2 h2 t2 =>
-      decide (l1 = l2) && decide (h1 = h2) && rawBeq t1 t2
-  | _, _ => false
-
-def beq (s1 s2 : t) : Bool := rawBeq s1.1 s2.1
+def beq (s1 s2 : t) : Bool := R.beq s1.1 s2.1
 
 def contains (l h : Z) (s : t) : Bool :=
   if ZArith.BinInt.Z.ltb l h then

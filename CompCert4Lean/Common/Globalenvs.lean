@@ -112,17 +112,17 @@ structure t : Type where
   public_symbol : ident → Bool
   invert_symbol : block → Option ident
   block_is_volatile : block → Bool
-  nextblock : block
+  {nextblock : block}
   find_symbol_injective :
-    ∀ id1 id2 b, find_symbol id1 = some b → find_symbol id2 = some b → id1 = id2
+    ∀ id1 id2 {b}, find_symbol id1 = some b → find_symbol id2 = some b → id1 = id2
   invert_find_symbol :
-    ∀ id b, invert_symbol b = some id → find_symbol id = some b
+    ∀ {id} b, invert_symbol b = some id → find_symbol id = some b
   find_invert_symbol :
-    ∀ id b, find_symbol id = some b → invert_symbol b = some id
+    ∀ id {b}, find_symbol id = some b → invert_symbol b = some id
   public_symbol_exists :
     ∀ id, public_symbol id = true → ∃ b, find_symbol id = some b
   find_symbol_below :
-    ∀ id b, find_symbol id = some b → Plt b nextblock
+    ∀ id {b}, find_symbol id = some b → Plt b nextblock
   block_is_volatile_below :
     ∀ b, block_is_volatile b = true → Plt b nextblock
 
@@ -148,10 +148,10 @@ structure t (F V : Type) : Type where
   genv_public : List ident
   genv_symb : PTree.t block
   genv_defs : PTree.t (globdef F V)
-  genv_next : block
-  genv_symb_range : ∀ id b, PTree.get id genv_symb = some b → Plt b genv_next
-  genv_defs_range : ∀ b g, PTree.get b genv_defs = some g → Plt b genv_next
-  genv_vars_inj : ∀ id1 id2 b,
+  {genv_next : block}
+  genv_symb_range : ∀ id {b}, PTree.get id genv_symb = some b → Plt b genv_next
+  genv_defs_range : ∀ b {g}, PTree.get b genv_defs = some g → Plt b genv_next
+  genv_vars_inj : ∀ id1 id2 {b},
     PTree.get id1 genv_symb = some b → PTree.get id2 genv_symb = some b → id1 = id2
 
 export t (genv_public genv_symb genv_defs genv_next genv_symb_range
@@ -294,7 +294,7 @@ private theorem findInvertSymbolProof {F V : Type} (ge : t F V) :
   rcases hexists with ⟨id', hinvert⟩
   have hback : find_symbol ge id' = some b :=
     invertFindSymbolProof ge id' b (by simpa [invert_symbol] using hinvert)
-  have hid : id = id' := ge.genv_vars_inj id id' b hfind hback
+  have hid : id = id' := ge.genv_vars_inj id id' hfind hback
   simpa [invert_symbol, hid] using hinvert
 
 private theorem blockIsVolatileBelowProof {F V : Type} (ge : t F V) :
@@ -306,7 +306,7 @@ private theorem blockIsVolatileBelowProof {F V : Type} (ge : t F V) :
   | some gd =>
       cases gd with
       | Gfun f => simp [hdef] at hvolatile
-      | Gvar gv => exact ge.genv_defs_range b (Gvar gv) hdef
+      | Gvar gv => exact ge.genv_defs_range b hdef
 
 def add_global {F V : Type} (ge : t F V) (idg : ident × globdef F V) : t F V :=
   let id := idg.1
@@ -327,7 +327,7 @@ def add_global {F V : Type} (ge : t F V) (idg : ident × globdef F V) : t F V :=
       · have ho := ptreeGetSetOther (show positive from id') (show positive from id)
             next ge.genv_symb heq
         have hold : PTree.get id' ge.genv_symb = some b := ho.symm.trans h
-        exact pltTransSucc (ge.genv_symb_range id' b hold)
+        exact pltTransSucc (ge.genv_symb_range id' hold)
     genv_defs_range := by
       intro b gd' h
       by_cases heq : b = next
@@ -339,7 +339,7 @@ def add_global {F V : Type} (ge : t F V) (idg : ident × globdef F V) : t F V :=
       · have ho := ptreeGetSetOther (show positive from b) (show positive from next)
             gd ge.genv_defs heq
         have hold : PTree.get b ge.genv_defs = some gd' := ho.symm.trans h
-        exact pltTransSucc (ge.genv_defs_range b gd' hold)
+        exact pltTransSucc (ge.genv_defs_range b hold)
     genv_vars_inj := by
       intro id1 id2 b h1 h2
       by_cases h1id : id1 = id
@@ -352,7 +352,7 @@ def add_global {F V : Type} (ge : t F V) (idg : ident × globdef F V) : t F V :=
         · have ho := ptreeGetSetOther (show positive from id2) (show positive from id)
               next ge.genv_symb h2id
           have hold : PTree.get id2 ge.genv_symb = some next := ho.symm.trans h2
-          have hrange := ge.genv_symb_range id2 next hold
+          have hrange := ge.genv_symb_range id2 hold
           exact False.elim (Nat.lt_irrefl _ hrange)
       · have ho1 := ptreeGetSetOther (show positive from id1) (show positive from id)
             next ge.genv_symb h1id
@@ -362,12 +362,12 @@ def add_global {F V : Type} (ge : t F V) (idg : ident × globdef F V) : t F V :=
           have hs := ptreeGetSetSame (show positive from id) next ge.genv_symb
           have hb : some next = some b := hs.symm.trans h2
           cases Option.some.inj hb
-          have hrange := ge.genv_symb_range id1 next hold1
+          have hrange := ge.genv_symb_range id1 hold1
           exact False.elim (Nat.lt_irrefl _ hrange)
         · have ho2 := ptreeGetSetOther (show positive from id2) (show positive from id)
               next ge.genv_symb h2id
           have hold2 : PTree.get id2 ge.genv_symb = some b := ho2.symm.trans h2
-          exact ge.genv_vars_inj id1 id2 b hold1 hold2 }
+          exact ge.genv_vars_inj id1 id2 hold1 hold2 }
 
 def add_globals {F V : Type} (ge : t F V)
     (gl : List (ident × globdef F V)) : t F V :=
@@ -401,8 +401,8 @@ def to_senv {F V : Type} (ge : t F V) : Senv.t :=
     block_is_volatile := block_is_volatile ge
     nextblock := ge.genv_next
     find_symbol_injective := ge.genv_vars_inj
-    invert_find_symbol := invertFindSymbolProof ge
-    find_invert_symbol := findInvertSymbolProof ge
+    invert_find_symbol := fun {id} b h => invertFindSymbolProof ge id b h
+    find_invert_symbol := fun id {b} h => findInvertSymbolProof ge id b h
     public_symbol_exists := by
       intro id h
       unfold public_symbol at h
@@ -411,7 +411,7 @@ def to_senv {F V : Type} (ge : t F V) : Senv.t :=
       | some b => exact ⟨b, rfl⟩
     find_symbol_below := by
       intro id b h
-      exact ge.genv_symb_range id b h
+      exact ge.genv_symb_range id h
     block_is_volatile_below := blockIsVolatileBelowProof ge }
 
 private def storeZerosNat : Nat → mem → block → Z → Option mem
@@ -866,18 +866,21 @@ def store_zeros_neutralStatement : Prop :=
 def store_init_data_neutralStatement : Prop :=
   ∀ (F V : Type) (ge : t F V) (thr : block) (m : mem) (b : block)
     (p : Z) (id : init_data) (m' : mem),
+    (∀ id b, find_symbol ge id = some b → Plt b thr) →
     Mem.inject_neutral thr m → Plt b thr →
     store_init_data ge m b p id = some m' → Mem.inject_neutral thr m'
 
 def store_init_data_list_neutralStatement : Prop :=
   ∀ (F V : Type) (ge : t F V) (thr : block) (b : block)
     (idl : List init_data) (m : mem) (p : Z) (m' : mem),
+    (∀ id b, find_symbol ge id = some b → Plt b thr) →
     Mem.inject_neutral thr m → Plt b thr →
     store_init_data_list ge m b p idl = some m' → Mem.inject_neutral thr m'
 
 def alloc_global_neutralStatement : Prop :=
   ∀ (F V : Type) (ge : t F V) (thr : block) (idg : ident × globdef F V)
     (m m' : mem),
+    (∀ id b, find_symbol ge id = some b → Plt b thr) →
     alloc_global ge m idg = some m' →
     Mem.inject_neutral thr m → Plt m.nextblock thr → Mem.inject_neutral thr m'
 
@@ -888,6 +891,7 @@ def advance_next_leStatement : Prop :=
 def alloc_globals_neutralStatement : Prop :=
   ∀ (F V : Type) (ge : t F V) (thr : block)
     (gl : List (ident × globdef F V)) (m m' : mem),
+    (∀ id b, find_symbol ge id = some b → Plt b thr) →
     alloc_globals ge m gl = some m' →
     Mem.inject_neutral thr m → Ple m'.nextblock thr → Mem.inject_neutral thr m'
 
@@ -969,14 +973,14 @@ def add_globals_matchStatement : Prop :=
       match_genvs R (add_globals ge1 gl1) (add_globals ge2 gl2)
 
 def globalenvs_matchStatement : Prop :=
-  ∀ (C F1 V1 F2 V2 : Type) [Linker C] [Linker F1] [Linker V1]
+  ∀ (C F1 V1 F2 V2 : Type) [Linker C]
     (match_fundef : C → F1 → F2 → Prop) (match_varinfo : V1 → V2 → Prop)
     (ctx : C) (p : program F1 V1) (tp : program F2 V2),
     match_program_gen match_fundef match_varinfo ctx p tp →
       match_genvs (match_globdef match_fundef match_varinfo ctx) (globalenv p) (globalenv tp)
 
 def find_def_match_2Statement : Prop :=
-  ∀ (C F1 V1 F2 V2 : Type) [Linker C] [Linker F1] [Linker V1]
+  ∀ (C F1 V1 F2 V2 : Type) [Linker C]
     (match_fundef : C → F1 → F2 → Prop) (match_varinfo : V1 → V2 → Prop)
     (ctx : C) (p : program F1 V1) (tp : program F2 V2),
     match_program_gen match_fundef match_varinfo ctx p tp →
@@ -984,7 +988,7 @@ def find_def_match_2Statement : Prop :=
       (find_def (globalenv p) b) (find_def (globalenv tp) b)
 
 def find_def_matchStatement : Prop :=
-  ∀ (C F1 V1 F2 V2 : Type) [Linker C] [Linker F1] [Linker V1]
+  ∀ (C F1 V1 F2 V2 : Type) [Linker C]
     (match_fundef : C → F1 → F2 → Prop) (match_varinfo : V1 → V2 → Prop)
     (ctx : C) (p : program F1 V1) (tp : program F2 V2),
     match_program_gen match_fundef match_varinfo ctx p tp →
@@ -993,7 +997,7 @@ def find_def_matchStatement : Prop :=
         match_globdef match_fundef match_varinfo ctx g tg
 
 def find_funct_ptr_matchStatement : Prop :=
-  ∀ (C F1 V1 F2 V2 : Type) [Linker C] [Linker F1] [Linker V1]
+  ∀ (C F1 V1 F2 V2 : Type) [Linker C]
     (match_fundef : C → F1 → F2 → Prop) (match_varinfo : V1 → V2 → Prop)
     (ctx : C) (p : program F1 V1) (tp : program F2 V2),
     match_program_gen match_fundef match_varinfo ctx p tp →
@@ -1002,7 +1006,7 @@ def find_funct_ptr_matchStatement : Prop :=
         match_fundef cunit f tf ∧ linkorder cunit ctx
 
 def find_funct_matchStatement : Prop :=
-  ∀ (C F1 V1 F2 V2 : Type) [Linker C] [Linker F1] [Linker V1]
+  ∀ (C F1 V1 F2 V2 : Type) [Linker C]
     (match_fundef : C → F1 → F2 → Prop) (match_varinfo : V1 → V2 → Prop)
     (ctx : C) (p : program F1 V1) (tp : program F2 V2),
     match_program_gen match_fundef match_varinfo ctx p tp →
@@ -1011,21 +1015,21 @@ def find_funct_matchStatement : Prop :=
         match_fundef cunit f tf ∧ linkorder cunit ctx
 
 def find_symbol_matchStatement : Prop :=
-  ∀ (C F1 V1 F2 V2 : Type) [Linker C] [Linker F1] [Linker V1]
+  ∀ (C F1 V1 F2 V2 : Type) [Linker C]
     (match_fundef : C → F1 → F2 → Prop) (match_varinfo : V1 → V2 → Prop)
     (ctx : C) (p : program F1 V1) (tp : program F2 V2),
     match_program_gen match_fundef match_varinfo ctx p tp →
     ∀ s : ident, find_symbol (globalenv tp) s = find_symbol (globalenv p) s
 
 def senv_matchStatement : Prop :=
-  ∀ (C F1 V1 F2 V2 : Type) [Linker C] [Linker F1] [Linker V1]
+  ∀ (C F1 V1 F2 V2 : Type) [Linker C]
     (match_fundef : C → F1 → F2 → Prop) (match_varinfo : V1 → V2 → Prop)
     (ctx : C) (p : program F1 V1) (tp : program F2 V2),
     match_program_gen match_fundef match_varinfo ctx p tp →
       Senv.equiv (to_senv (globalenv p)) (to_senv (globalenv tp))
 
 def store_init_data_list_matchStatement : Prop :=
-  ∀ (C F1 V1 F2 V2 : Type) [Linker C] [Linker F1] [Linker V1]
+  ∀ (C F1 V1 F2 V2 : Type) [Linker C]
     (match_fundef : C → F1 → F2 → Prop) (match_varinfo : V1 → V2 → Prop)
     (ctx : C) (p : program F1 V1) (tp : program F2 V2),
     match_program_gen match_fundef match_varinfo ctx p tp →
@@ -1034,7 +1038,7 @@ def store_init_data_list_matchStatement : Prop :=
       store_init_data_list (globalenv tp) m b ofs idl = some m'
 
 def alloc_globals_matchStatement : Prop :=
-  ∀ (C F1 V1 F2 V2 : Type) [Linker C] [Linker F1] [Linker V1]
+  ∀ (C F1 V1 F2 V2 : Type) [Linker C]
     (match_fundef : C → F1 → F2 → Prop) (match_varinfo : V1 → V2 → Prop)
     (ctx : C) (p : program F1 V1) (tp : program F2 V2),
     match_program_gen match_fundef match_varinfo ctx p tp →
@@ -1044,7 +1048,7 @@ def alloc_globals_matchStatement : Prop :=
       alloc_globals (globalenv tp) m gl2 = some m'
 
 def init_mem_matchStatement : Prop :=
-  ∀ (C F1 V1 F2 V2 : Type) [Linker C] [Linker F1] [Linker V1]
+  ∀ (C F1 V1 F2 V2 : Type) [Linker C]
     (match_fundef : C → F1 → F2 → Prop) (match_varinfo : V1 → V2 → Prop)
     (ctx : C) (p : program F1 V1) (tp : program F2 V2),
     match_program_gen match_fundef match_varinfo ctx p tp →
@@ -1119,5 +1123,31 @@ end Genv
 /- `store_zeros` is module-level in the Rocq source.  Keep the implementation in
    `Genv`, where the translated consumers live, and expose the exact source path. -/
 abbrev store_zeros := Genv.store_zeros
+
+/- Rocq's `Function store_zeros` generates this induction principle.  Selected
+   proof declarations consume it, so retain its exact proposition while proof
+   construction remains assigned to proof grinding. -/
+def store_zeros_indStatement : Prop :=
+  ∀ (P : mem → block → Z → Z → Option mem → Prop),
+    (∀ (m : mem) (b : block) (p n : Z)
+      (x : ZArith.BinInt.Z.le n z0),
+      zle n z0 = .left x →
+      P m b p n (some m)) →
+    (∀ (m : mem) (b : block) (p n : Z)
+      (x : ZArith.BinInt.Z.gt n z0),
+      zle n z0 = .right x →
+      ∀ m' : mem,
+        Mem.store Mint8unsigned m b p Vzero = some m' →
+        P m' b (zAdd p z1) (ZArith.BinInt.Z.sub n z1)
+          (store_zeros m' b (zAdd p z1) (ZArith.BinInt.Z.sub n z1)) →
+        P m b p n
+          (store_zeros m' b (zAdd p z1) (ZArith.BinInt.Z.sub n z1))) →
+    (∀ (m : mem) (b : block) (p n : Z)
+      (x : ZArith.BinInt.Z.gt n z0),
+      zle n z0 = .right x →
+      Mem.store Mint8unsigned m b p Vzero = none →
+      P m b p n none) →
+    ∀ (m : mem) (b : block) (p n : Z),
+      P m b p n (store_zeros m b p n)
 
 end CompCert4Lean.Common.Globalenvs

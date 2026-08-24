@@ -94,7 +94,7 @@ inductive match_stacks (cfg : InliningConfig) (prog : program) (F : Val.meminj) 
       tr_funbody fenv f'.fn_stacksize ctx f f'.fn_code →
       agree_regs F ctx rs rs' → F sp = some (sp', ctx.dstk) →
       range_private F m m' sp' (zAdd ctx.dstk ctx.mstk) f'.fn_stacksize →
-      zLe zZero f'.fn_stacksize → zLt f'.fn_stacksize Ptrofs.max_unsigned →
+      (zLe zZero f'.fn_stacksize ∧ zLt f'.fn_stacksize Ptrofs.max_unsigned) →
       (∀ ofs, Mem.perm m' sp' ofs .Max .Nonempty → zLe zZero ofs ∧ zLe ofs f'.fn_stacksize) →
       Ple res ctx.mreg → Plt sp' bound →
       match_stacks cfg prog F m m'
@@ -103,7 +103,7 @@ inductive match_stacks (cfg : InliningConfig) (prog : program) (F : Val.meminj) 
   | match_stacks_untailcall : ∀ stk res f' sp' rpc rs' stk' bound ctx,
       match_stacks_inside cfg prog F m m' stk stk' f' ctx sp' rs' →
       range_private F m m' sp' ctx.dstk f'.fn_stacksize →
-      zLe zZero f'.fn_stacksize → zLt f'.fn_stacksize Ptrofs.max_unsigned →
+      (zLe zZero f'.fn_stacksize ∧ zLt f'.fn_stacksize Ptrofs.max_unsigned) →
       (∀ ofs, Mem.perm m' sp' ofs .Max .Nonempty → zLe zZero ofs ∧ zLe ofs f'.fn_stacksize) →
       ctx.retinfo = some (rpc, res) → Plt sp' bound →
       match_stacks cfg prog F m m' stk
@@ -128,6 +128,55 @@ end
 
 export match_stacks (match_stacks_nil match_stacks_cons match_stacks_untailcall)
 export match_stacks_inside (match_stacks_inside_base match_stacks_inside_inlined)
+
+def match_stacks_indStatement : Prop :=
+  ∀ (cfg : InliningConfig) (prog : program) (F : Val.meminj) (m m' : mem)
+    (P : List stackframe → List stackframe → block → Prop),
+    (∀ bound1 bound,
+      match_globalenvs prog F bound1 → Ple bound1 bound → P [] [] bound) →
+    (∀ res f sp pc rs stk f' sp' rs' stk' bound fenv ctx,
+      match_stacks_inside cfg prog F m m' stk stk' f' ctx sp' rs' →
+      fenv_compat prog fenv →
+      tr_funbody fenv f'.fn_stacksize ctx f f'.fn_code →
+      agree_regs F ctx rs rs' → F sp = some (sp', ctx.dstk) →
+      range_private F m m' sp' (zAdd ctx.dstk ctx.mstk) f'.fn_stacksize →
+      (zLe zZero f'.fn_stacksize ∧ zLt f'.fn_stacksize Ptrofs.max_unsigned) →
+      (∀ ofs, Mem.perm m' sp' ofs .Max .Nonempty →
+        zLe zZero ofs ∧ zLe ofs f'.fn_stacksize) →
+      Ple res ctx.mreg → Plt sp' bound →
+      P
+        (Stackframe res f (Vptr sp Ptrofs.zero) pc rs :: stk)
+        (Stackframe (sreg ctx res) f' (Vptr sp' Ptrofs.zero) (spc ctx pc) rs' :: stk')
+        bound) →
+    (∀ stk res f' sp' rpc rs' stk' bound ctx,
+      match_stacks_inside cfg prog F m m' stk stk' f' ctx sp' rs' →
+      range_private F m m' sp' ctx.dstk f'.fn_stacksize →
+      (zLe zZero f'.fn_stacksize ∧ zLt f'.fn_stacksize Ptrofs.max_unsigned) →
+      (∀ ofs, Mem.perm m' sp' ofs .Max .Nonempty →
+        zLe zZero ofs ∧ zLe ofs f'.fn_stacksize) →
+      ctx.retinfo = some (rpc, res) → Plt sp' bound →
+      P stk (Stackframe res f' (Vptr sp' Ptrofs.zero) rpc rs' :: stk') bound) →
+    ∀ l l0 b, match_stacks cfg prog F m m' l l0 b → P l l0 b
+
+def match_stacks_inside_indStatement : Prop :=
+  ∀ (cfg : InliningConfig) (prog : program) (F : Val.meminj) (m m' : mem)
+    (P : List stackframe → List stackframe → function → context → block → regset → Prop),
+    (∀ stk stk' f' ctx sp' rs',
+      match_stacks cfg prog F m m' stk stk' sp' →
+      ctx.retinfo = none → ctx.dstk = zZero →
+      P stk stk' f' ctx sp' rs') →
+    (∀ res f sp pc rs stk stk' f' fenv ctx sp' rs' ctx',
+      match_stacks_inside cfg prog F m m' stk stk' f' ctx' sp' rs' →
+      P stk stk' f' ctx' sp' rs' →
+      fenv_compat prog fenv →
+      tr_funbody fenv f'.fn_stacksize ctx' f f'.fn_code →
+      agree_regs F ctx' rs rs' → F sp = some (sp', ctx'.dstk) →
+      range_private F m m' sp' (zAdd ctx'.dstk ctx'.mstk) ctx.dstk →
+      Ple res ctx'.mreg → ctx.retinfo = some (spc ctx' pc, sreg ctx' res) →
+      context_below ctx' ctx → context_stack_call ctx' ctx →
+      P (Stackframe res f (Vptr sp Ptrofs.zero) pc rs :: stk) stk' f' ctx sp' rs') →
+    ∀ l l0 f c b r,
+      match_stacks_inside cfg prog F m m' l l0 f c b r → P l l0 f c b r
 
 inductive match_states (cfg : InliningConfig) (prog : program) : RTL.state → RTL.state → Prop where
   | match_regular_states : ∀ stk f sp pc rs m stk' f' sp' rs' m' F fenv ctx,

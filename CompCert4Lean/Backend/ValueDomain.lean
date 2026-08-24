@@ -281,6 +281,9 @@ deriving DecidableEq
 
 export aptr (Pbot Gl Glo Glob Stk Stack Nonstack Ptop)
 
+def eq_aptr (p1 p2 : aptr) : Sumbool (p1 = p2) (p1 ≠ p2) :=
+  if h : p1 = p2 then .left h else .right h
+
 inductive pmatch (bc : block_classification) (b : block) (ofs : ptrofs) : aptr → Prop where
   | gl (id) : bc b = BCglob id → pmatch bc b ofs (Gl id ofs)
   | glo (id) : bc b = BCglob id → pmatch bc b ofs (Glo id)
@@ -384,6 +387,9 @@ inductive aval : Type where
 deriving DecidableEq
 
 export aval (Vbot I IU Uns Sgn L F FS Num Ptr Ifptr)
+
+def eq_aval (v1 v2 : aval) : Sumbool (v1 = v2) (v1 ≠ v2) :=
+  if h : v1 = v2 then .left h else .right h
 
 def Vtop : aval := Ifptr Ptop
 
@@ -1158,6 +1164,9 @@ deriving DecidableEq
 
 export acontent (ACval)
 
+def eq_acontent (c1 c2 : acontent) : Sumbool (c1 = c2) (c1 ≠ c2) :=
+  if h : c1 = c2 then .left h else .right h
+
 structure ablock : Type where
   ab_contents : ZTree.t acontent
   ab_summary : aptr
@@ -1248,8 +1257,9 @@ def blub (cfg : CompilerConfig) (ab1 ab2 : ablock) : ablock :=
     ab_summary := plub ab1.ab_summary ab2.ab_summary }
 
 def bbeq (ab1 ab2 : ablock) : Bool :=
-  decide (ab1.ab_summary = ab2.ab_summary) &&
-    ZTree.beq (fun c1 c2 => decide (c1 = c2)) ab1.ab_contents ab2.ab_contents
+  proj_sumbool (eq_aptr ab1.ab_summary ab2.ab_summary) &&
+    ZTree.beq (fun c1 c2 => proj_sumbool (eq_acontent c1 c2))
+      ab1.ab_contents ab2.ab_contents
 
 def romem : Type := PTree.t ablock
 
@@ -1386,8 +1396,8 @@ def mlub (cfg : CompilerConfig) (m1 m2 : amem) : amem :=
     am_top := plub m1.am_top m2.am_top }
 
 def mbeq (m1 m2 : amem) : Bool :=
-  decide (m1.am_top = m2.am_top) &&
-    decide (m1.am_nonstack = m2.am_nonstack) &&
+  proj_sumbool (eq_aptr m1.am_top m2.am_top) &&
+    proj_sumbool (eq_aptr m1.am_nonstack m2.am_nonstack) &&
     bbeq m1.am_stack m2.am_stack &&
     ZTree.beq bbeq m1.am_glob m2.am_glob
 
