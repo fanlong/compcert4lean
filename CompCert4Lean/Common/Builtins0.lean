@@ -25,8 +25,6 @@ private abbrev CCInt64 := CompCert4Lean.Lib.Integers.int64
 private abbrev CCFloat := CompCert4Lean.Lib.Floats.float
 private abbrev CCFloat32 := CompCert4Lean.Lib.Floats.float32
 private abbrev meminj := CompCert4Lean.Common.Values.Val.meminj
-private abbrev intRepr := CompCert4Lean.Lib.Integers.Int.repr
-private abbrev intUnsigned := CompCert4Lean.Lib.Integers.Int.unsigned
 private abbrev intZero := CompCert4Lean.Lib.Integers.Int.zero
 private abbrev intOne := CompCert4Lean.Lib.Integers.Int.one
 
@@ -183,11 +181,8 @@ private abbrev z1 : Z := ZArith.BinInt.Z.of_nat 1
 private abbrev z8 : Z := ZArith.BinInt.Z.of_nat 8
 private abbrev z16 : Z := ZArith.BinInt.Z.of_nat 16
 private abbrev zSub := ZArith.BinInt.Z.sub
-private abbrev zMod := ZArith.BinInt.Z.modulo
-private abbrev zTwoP := two_p
 
-private def intZeroExt (n : Z) (x : CCInt) : CCInt :=
-  intRepr (zMod (intUnsigned x) (zTwoP n))
+private abbrev intZeroExt := CompCert4Lean.Lib.Integers.Int.zero_ext
 
 private abbrev intSignExt := CompCert4Lean.Lib.Integers.Int.sign_ext
 

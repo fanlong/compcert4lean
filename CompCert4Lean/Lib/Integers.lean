@@ -443,7 +443,7 @@ def shrx {bits : Nat} (x y : Word bits) : Word bits :=
   divs x (shl (one bits) y)
 
 def zero_ext {bits : Nat} (n : Z) (x : Word bits) : Word bits :=
-  repr bits (zMod (unsigned x) (zTwoP n))
+  repr bits (CompCert4Lean.Lib.Zbits.Zzero_ext n (unsigned x))
 
 def sign_ext {bits : Nat} (n : Z) (x : Word bits) : Word bits :=
   let modulus := zTwoP n
@@ -479,6 +479,7 @@ structure GeneratedApplication where
   repr : Z → int
   unsigned : int → Z
   signed : int → Z
+  size : int → Z
   zero : int
   one : int
   eq : int → int → Bool
@@ -509,6 +510,7 @@ def makeGeneratedApplication (bits : Nat) : GeneratedApplication where
   repr := repr bits
   unsigned := unsigned
   signed := signed
+  size := fun x => CompCert4Lean.Lib.Zbits.Zsize (unsigned x)
   zero := zero bits
   one := one bits
   eq := eq
@@ -548,6 +550,7 @@ def ofFin (x : Fin (2 ^ wordsize)) : int := WordCore.Word.ofFin x
 def toFin (x : int) : Fin (2 ^ wordsize) := x.toFin
 def unsigned (x : int) : Z := WordCore.unsigned x
 def signed (x : int) : Z := WordCore.signed x
+def size (x : int) : Z := CompCert4Lean.Lib.Zbits.Zsize (unsigned x)
 def zero : int := WordCore.zero wordsize
 def one : int := WordCore.one wordsize
 def mone : int := WordCore.mone wordsize
@@ -581,6 +584,8 @@ def shl : int → int → int := WordCore.shl
 def shru : int → int → int := WordCore.shru
 def shr : int → int → int := WordCore.shr
 def sign_ext (n : Z) (x : int) : int := WordCore.sign_ext n x
+def zero_ext (n : Z) (x : int) : int :=
+  WordCore.zero_ext n x
 def rol : int → int → int := WordCore.rol
 def ror : int → int → int := WordCore.ror
 def shrx : int → int → int := WordCore.shrx
@@ -591,9 +596,6 @@ def is_power2 (x : int) : Option int :=
   match CompCert4Lean.Lib.Zbits.Z_is_power2 (unsigned x) with
   | some i => some (repr i)
   | none => none
-
-def zero_ext (n : Z) (x : int) : int :=
-  WordCore.zero_ext n x
 
 def one_bits (x : int) : List int :=
   List.map repr
@@ -779,14 +781,152 @@ private theorem zero_ext_modulo (n : Z) (x : int) (hn : zLe zZero n) :
   rw [ZArith.BinInt.Z.modulo_add_mul]
   exact ZArith.BinInt.Z.mod_small _ _ hrange
 
+private theorem ziter_unfold_succ {A : Type} (f : A → A) (x : A) (k : Nat) :
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.iter
+        (zOfNat (k + 1)) f x =
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.iter
+        (zOfNat k) f (f x) := by
+  simp only [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.iter,
+    zOfNat, CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat,
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt,
+    Int.ofNat_eq_natCast, Int.toNat_natCast]
+  rfl
+
+private theorem ziter_commute {A : Type} (f : A → A) (x : A) (k : Nat) :
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.iter
+        (zOfNat k) f (f x) =
+      f (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.iter
+        (zOfNat k) f x) := by
+  induction k generalizing x with
+  | zero => rfl
+  | succ k ih =>
+      rw [ziter_unfold_succ, ziter_unfold_succ]
+      rw [ih (f x), ih x]
+
+private theorem ziter_succ {A : Type} (f : A → A) (x : A) (k : Nat) :
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.iter
+        (zOfNat (k + 1)) f x =
+      f (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.iter
+        (zOfNat k) f x) := by
+  rw [ziter_unfold_succ, ziter_commute]
+
+private theorem zdiv2_nat (a : Nat) :
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.div2 (zOfNat a) =
+      zOfNat (a / 2) := by
+  apply CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective
+  simp only [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.div2,
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.div,
+    zOfNat, CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat,
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+  change Int.ediv (Int.ofNat a) (Int.ofNat 2) = Int.ofNat (a / 2)
+  exact Int.ofNat_ediv_ofNat
+
+private theorem zshiftin_nat (b : Bool) (a : Nat) :
+    CompCert4Lean.Lib.Zbits.Zshiftin b (zOfNat a) =
+      zOfNat (2 * a + if b then 1 else 0) := by
+  cases b <;>
+    apply CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective <;>
+    simp only [CompCert4Lean.Lib.Zbits.Zshiftin,
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.double,
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.succ_double,
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.succ,
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add,
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.mul,
+      zOfNat, CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat,
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt,
+      Bool.false_eq_true, ↓reduceIte]
+  · simp [CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ,
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat,
+      Nat.mul_comm, Nat.add_comm,
+      Int.mul_comm]
+  · simp [CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ,
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat,
+      Nat.mul_comm, Nat.add_comm,
+      Int.mul_comm, Int.add_comm]
+
+private theorem zNatAbs_nat (a : Nat) :
+    (CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (zOfNat a)).natAbs = a := by
+  have hcast :
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (zOfNat a) = Int.ofNat a := by
+    exact CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt (Int.ofNat a)
+  rw [hcast]
+  simp
+
+private theorem zzero_ext_nat (k a : Nat) :
+    CompCert4Lean.Lib.Zbits.Zzero_ext (zOfNat k) (zOfNat a) =
+      zOfNat (a % (2 ^ k)) := by
+  induction k generalizing a with
+  | zero =>
+      change zOfNat 0 = zOfNat (a % 1)
+      rw [Nat.mod_one]
+  | succ k ih =>
+      have hstep :
+          CompCert4Lean.Lib.Zbits.Zzero_ext (zOfNat (k + 1)) (zOfNat a) =
+            CompCert4Lean.Lib.Zbits.Zshiftin
+              (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.odd
+                (zOfNat a))
+              (CompCert4Lean.Lib.Zbits.Zzero_ext (zOfNat k)
+                (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.div2
+                  (zOfNat a))) := by
+        change CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.iter
+            (zOfNat (k + 1))
+            (fun rec y =>
+              CompCert4Lean.Lib.Zbits.Zshiftin
+                (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.odd y)
+                (rec (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.div2 y)))
+            (fun _ => zZero) (zOfNat a) = _
+        rw [ziter_succ]
+        rfl
+      rw [hstep]
+      rw [zdiv2_nat]
+      rw [ih]
+      rw [zshiftin_nat]
+      congr 1
+      by_cases h : a % 2 = 0
+      · have hodd :
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.odd
+                (zOfNat a) = false := by
+          unfold CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.odd
+          unfold CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.even
+          rw [zNatAbs_nat]
+          simp [h]
+        rw [hodd]
+        simp only [Bool.false_eq_true, ↓reduceIte]
+        have hmod := Nat.mod_mul (a := 2) (b := 2 ^ k) (x := a)
+        simpa [Nat.pow_succ, Nat.add_comm, Nat.mul_comm, h] using hmod.symm
+      · have hrem : a % 2 = 1 := by omega
+        have hodd :
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.odd
+                (zOfNat a) = true := by
+          unfold CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.odd
+          unfold CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.even
+          rw [zNatAbs_nat]
+          simp [hrem]
+        rw [hodd]
+        simp only [↓reduceIte]
+        have hmod := Nat.mod_mul (a := 2) (b := 2 ^ k) (x := a)
+        simpa [Nat.pow_succ, Nat.add_comm, Nat.mul_comm, hrem] using hmod.symm
+
+private theorem zzero_ext_nonneg (n : Z) (x : int) (hn : zLe zZero n) :
+    CompCert4Lean.Lib.Zbits.Zzero_ext n (unsigned x) =
+      zOfNat (x.val % (2 ^ zToNat n)) := by
+  have hn' := CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.Znat.Z2Nat.id n hn
+  rw [← hn']
+  change CompCert4Lean.Lib.Zbits.Zzero_ext (zOfNat (zToNat n)) x.intval = _
+  rw [WordCore.intval_eq_zOfNat_val x]
+  simpa only [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.Znat.Nat2Z.id] using
+    zzero_ext_nat (zToNat n) x.val
+
 private theorem zero_ext_val (n : Z) (x : int) (hn : zLe zZero n) :
     (zero_ext n x).val =
       (x.val % (2 ^ zToNat n)) % (2 ^ wordsize) := by
   unfold zero_ext WordCore.zero_ext
-  change (repr (ZArith.BinInt.Z.modulo (unsigned x) (two_p n))).val =
-    (x.val % (2 ^ zToNat n)) % (2 ^ wordsize)
-  rw [zero_ext_modulo n x hn]
-  simp only [repr]
+  change (WordCore.repr wordsize
+    (CompCert4Lean.Lib.Zbits.Zzero_ext n (unsigned x))).val = _
+  rw [zzero_ext_nonneg n x hn]
+  change (WordCore.repr wordsize
+    (CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt
+      (Int.ofNat (x.val % (2 ^ zToNat n))))).val = _
   rw [WordCore.val_repr]
   change Int.toNat
       (Int.ofNat (x.val % (2 ^ zToNat n)) % ((2 ^ wordsize : Nat) : Int)) =
@@ -870,6 +1010,7 @@ def ofFin (x : Fin (2 ^ wordsize)) : int := WordCore.Word.ofFin x
 def toFin (x : int) : Fin (2 ^ wordsize) := x.toFin
 def unsigned (x : int) : Z := WordCore.unsigned x
 def signed (x : int) : Z := WordCore.signed x
+def size (x : int) : Z := CompCert4Lean.Lib.Zbits.Zsize (unsigned x)
 def zero : int := WordCore.zero wordsize
 def one : int := WordCore.one wordsize
 def mone : int := WordCore.mone wordsize
@@ -900,6 +1041,8 @@ def shl : int → int → int := WordCore.shl
 def shru : int → int → int := WordCore.shru
 def shr : int → int → int := WordCore.shr
 def sign_ext (n : Z) (x : int) : int := WordCore.sign_ext n x
+def zero_ext (n : Z) (x : int) : int :=
+  WordCore.zero_ext n x
 def rol : int → int → int := WordCore.rol
 def ror : int → int → int := WordCore.ror
 def shrx : int → int → int := WordCore.shrx
