@@ -45,6 +45,20 @@ abbrev loc_Exact : location := CompCert4Lean.Flocq.Calc.Bracket.loc_Exact
 abbrev loc_Inexact (c : comparison) : location :=
   CompCert4Lean.Flocq.Calc.Bracket.loc_Inexact c
 
+abbrev ExactRealContext := CompCert4Lean.Flocq.Calc.Bracket.ExactRealContext
+
+namespace Exact
+
+abbrev Magnitude (ctx : ExactRealContext) :=
+  CompCert4Lean.Flocq.Core.Float_prop.Exact.Magnitude ctx
+abbrev F2R := CompCert4Lean.Flocq.Calc.Bracket.F2R
+abbrev mag (ctx : ExactRealContext) (magnitude : Magnitude ctx) (beta : radix)
+    (x : CompCert4Lean.Flocq.Core.Float_prop.Exact.R ctx) : Z :=
+  CompCert4Lean.Flocq.Core.Float_prop.Exact.mag magnitude beta x
+abbrev sqrt := CompCert4Lean.Flocq.Core.Raux.Exact.sqrt
+
+end Exact
+
 abbrev float := CompCert4Lean.Flocq.Core.Float_prop.float
 abbrev Float (beta : radix) (m e : Z) : float beta :=
   CompCert4Lean.Flocq.Core.Float_prop.Float beta m e
@@ -66,18 +80,20 @@ def Fsqrt_core (beta : radix) (m1 e1 e : Z) : Z × location :=
 
 /-! Exact source proposition descriptors for later proof migration. -/
 
-def mag_sqrt_F2RStatement : Prop :=
+def mag_sqrt_F2RStatement (ctx : ExactRealContext)
+    (magnitude : Exact.Magnitude ctx) : Prop :=
   ∀ (beta : radix) (m1 e1 : Z),
     Zlt Z0 m1 →
-      (mag beta (sqrt (F2R (Float beta m1 e1))) : Z) =
+      Exact.mag ctx magnitude beta
+          (Exact.sqrt ctx (Exact.F2R ctx (Float beta m1 e1))) =
         Zdiv2 (Zadd (Zadd (Zdigits beta m1) e1) Zone)
 
-def Fsqrt_core_correctStatement : Prop :=
+def Fsqrt_core_correctStatement (ctx : ExactRealContext) : Prop :=
   ∀ (beta : radix) (m1 e1 e : Z),
     Zlt Z0 m1 →
     Zle (Zmul Ztwo e) e1 →
     let (m, l) := Fsqrt_core beta m1 e1 e
-    CompCert4Lean.Flocq.Calc.Bracket.inbetween_float beta m e
-      (sqrt (F2R (Float beta m1 e1))) l
+    CompCert4Lean.Flocq.Calc.Bracket.inbetween_float ctx beta m e
+      (Exact.sqrt ctx (Exact.F2R ctx (Float beta m1 e1))) l
 
 end CompCert4Lean.Flocq.Calc.Sqrt

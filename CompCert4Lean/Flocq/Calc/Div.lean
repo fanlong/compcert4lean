@@ -43,6 +43,19 @@ abbrev inbetween_float := CompCert4Lean.Flocq.Calc.Bracket.inbetween_float
 abbrev new_location := CompCert4Lean.Flocq.Calc.Bracket.new_location
 abbrev loc_Exact := CompCert4Lean.Flocq.Calc.Bracket.loc_Exact
 
+abbrev ExactRealContext := CompCert4Lean.Flocq.Calc.Bracket.ExactRealContext
+
+namespace Exact
+
+abbrev F2R := CompCert4Lean.Flocq.Calc.Bracket.F2R
+abbrev Rdiv := CompCert4Lean.Flocq.Calc.Bracket.Rdiv
+abbrev Magnitude := CompCert4Lean.Flocq.Core.Float_prop.Exact.Magnitude
+abbrev mag (ctx : ExactRealContext) (magnitude : Magnitude ctx) (beta : radix)
+    (x : CompCert4Lean.Flocq.Core.Float_prop.Exact.R ctx) : Z :=
+  CompCert4Lean.Flocq.Core.Float_prop.Exact.mag magnitude beta x
+
+end Exact
+
 /- The source notation `bpow e` is a beta-parameterized abbreviation. -/
 abbrev bpow (beta : radix) (e : Z) : R :=
   CompCert4Lean.Flocq.Core.Raux.bpow beta e
@@ -58,29 +71,30 @@ def Fdiv_core (beta : radix) (m1 e1 m2 e2 e : Z) : Z × location :=
 
 /-! Exact source proposition descriptors for later proof migration. -/
 
-def mag_div_F2RStatement : Prop :=
+def mag_div_F2RStatement (ctx : ExactRealContext)
+    (magnitude : Exact.Magnitude ctx) : Prop :=
   ∀ (beta : radix) (m1 e1 m2 e2 : Z),
     Zlt Z0 m1 →
       Zlt Z0 m2 →
         let x :=
-          Rdiv
-            (F2R (Float beta m1 e1))
-            (F2R (Float beta m2 e2))
+          Exact.Rdiv ctx
+            (Exact.F2R ctx (Float beta m1 e1))
+            (Exact.F2R ctx (Float beta m2 e2))
         let e :=
           Zsub
             (Zadd (Zdigits beta m1) e1)
             (Zadd (Zdigits beta m2) e2)
-        Zle e (mag_val (mag beta x)) ∧
-          Zle (mag_val (mag beta x)) (Zadd e Zone)
+        Zle e (Exact.mag ctx magnitude beta x) ∧
+          Zle (Exact.mag ctx magnitude beta x) (Zadd e Zone)
 
-def Fdiv_core_correctStatement : Prop :=
+def Fdiv_core_correctStatement (ctx : ExactRealContext) : Prop :=
   ∀ (beta : radix) (m1 e1 m2 e2 e : Z),
       Zlt Z0 m1 →
       Zlt Z0 m2 →
         let (m, l) := Fdiv_core beta m1 e1 m2 e2 e
-        inbetween_float beta m e
-          (Rdiv
-            (F2R (Float beta m1 e1))
-            (F2R (Float beta m2 e2))) l
+        inbetween_float ctx beta m e
+          (Exact.Rdiv ctx
+            (Exact.F2R ctx (Float beta m1 e1))
+            (Exact.F2R ctx (Float beta m2 e2))) l
 
 end CompCert4Lean.Flocq.Calc.Div

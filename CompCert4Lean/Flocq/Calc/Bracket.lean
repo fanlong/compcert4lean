@@ -12,7 +12,11 @@ are represented by exact source-shaped proposition descriptors.
 
 namespace CompCert4Lean.Flocq.Calc.Bracket
 
-abbrev R := CompCert4Lean.Flocq.Core.Float_prop.R
+/-! The canonical Bracket specification is parameterized by the injected
+    exact-real context.  No ambient runtime carrier is used at this boundary. -/
+abbrev ExactRealContext := CompCert4Lean.Flocq.Core.Float_prop.ExactRealContext
+abbrev R (ctx : ExactRealContext) :=
+  CompCert4Lean.Flocq.Core.Float_prop.Exact.R ctx
 abbrev Z := CompCert4Lean.Flocq.Core.Float_prop.Z
 abbrev radix := CompCert4Lean.Flocq.Core.Float_prop.radix
 abbrev comparison := CompCert4Lean.Flocq.Core.Zaux.comparison
@@ -35,15 +39,25 @@ abbrev Zcompare := CompCert4Lean.Flocq.Core.Zaux.Zcompare
 abbrev Zle := CompCert4Lean.Flocq.Core.Zaux.Zle
 abbrev Zlt := CompCert4Lean.Flocq.Core.Zaux.Zlt
 
-abbrev IZR := CompCert4Lean.Flocq.Core.Float_prop.IZR
-abbrev R0 := CompCert4Lean.Flocq.Core.Raux.R0
-abbrev Rtwo := CompCert4Lean.Flocq.Core.Raux.Rtwo
-abbrev Rplus := CompCert4Lean.Flocq.Core.Raux.Rplus
-abbrev Rmult := CompCert4Lean.Flocq.Core.Raux.Rmult
-abbrev Rdiv := CompCert4Lean.Flocq.Core.Raux.Rdiv
-abbrev Rlt := CompCert4Lean.Flocq.Core.Raux.Rlt
-abbrev Rle := CompCert4Lean.Flocq.Core.Raux.Rle
-abbrev Rcompare := CompCert4Lean.Flocq.Core.Raux.Rcompare
+abbrev IZR (ctx : ExactRealContext) : Z → R ctx :=
+  CompCert4Lean.Flocq.Core.Float_prop.Exact.IZR ctx
+abbrev R0 (ctx : ExactRealContext) : R ctx :=
+  CompCert4Lean.Flocq.Core.Raux.Exact.R0 ctx
+abbrev Rtwo (ctx : ExactRealContext) : R ctx :=
+  CompCert4Lean.Flocq.Core.Raux.Exact.Rtwo ctx
+abbrev Rplus (ctx : ExactRealContext) : R ctx → R ctx → R ctx :=
+  CompCert4Lean.Flocq.Core.Raux.Exact.Rplus ctx
+abbrev Rmult (ctx : ExactRealContext) : R ctx → R ctx → R ctx :=
+  CompCert4Lean.Flocq.Core.Raux.Exact.Rmult ctx
+abbrev Rdiv (ctx : ExactRealContext) : R ctx → R ctx → R ctx :=
+  CompCert4Lean.Flocq.Core.Raux.Exact.Rdiv ctx
+abbrev Rlt (ctx : ExactRealContext) : R ctx → R ctx → Prop :=
+  CompCert4Lean.Flocq.Core.Raux.Exact.Rlt ctx
+abbrev Rle (ctx : ExactRealContext) : R ctx → R ctx → Prop :=
+  CompCert4Lean.Flocq.Core.Raux.Exact.Rle ctx
+noncomputable abbrev Rcompare (ctx : ExactRealContext) :
+    R ctx → R ctx → comparison :=
+  CompCert4Lean.Flocq.Core.Raux.Exact.Rcompare ctx
 
 abbrev location := CompCert4Lean.Lib.Floats.Model.Rocq.Coq.Floats.SpecFloat.location
 abbrev loc_Exact : location := CompCert4Lean.Lib.Floats.Model.Rocq.Coq.Floats.SpecFloat.loc_Exact
@@ -52,8 +66,25 @@ abbrev loc_Inexact (c : comparison) : location :=
 
 abbrev Float (beta : radix) (m e : Z) : CompCert4Lean.Flocq.Core.Float_prop.float beta :=
   CompCert4Lean.Flocq.Core.Float_prop.Float beta m e
-abbrev F2R {beta : radix} (f : CompCert4Lean.Flocq.Core.Float_prop.float beta) : R :=
-  CompCert4Lean.Flocq.Core.Float_prop.F2R f
+abbrev F2R (ctx : ExactRealContext) {beta : radix}
+    (f : CompCert4Lean.Flocq.Core.Float_prop.float beta) : R ctx :=
+  CompCert4Lean.Flocq.Core.Float_prop.Exact.F2R ctx f
+
+section ExactSpecification
+
+variable (ctx : ExactRealContext)
+
+local notation "R" => R ctx
+local notation "IZR" => IZR ctx
+local notation "R0" => R0 ctx
+local notation "Rtwo" => Rtwo ctx
+local notation "Rplus" => Rplus ctx
+local notation "Rmult" => Rmult ctx
+local notation "Rdiv" => Rdiv ctx
+local notation "Rlt" => Rlt ctx
+local notation "Rle" => Rle ctx
+local notation "Rcompare" => Rcompare ctx
+local notation "F2R" => F2R ctx
 
 inductive inbetween (d u x : R) : location → Prop where
   | inbetween_Exact (h : x = d) : inbetween d u x loc_Exact
@@ -63,6 +94,8 @@ inductive inbetween (d u x : R) : location → Prop where
       inbetween d u x (loc_Inexact l)
 
 export inbetween (inbetween_Exact inbetween_Inexact)
+
+local notation "inbetween" => inbetween ctx
 
 def new_location_even (nb_steps k : Z) (l : location) : location :=
   if Zeq_bool k Z0 then
@@ -104,8 +137,12 @@ def inbetween_float (beta : radix) (m e : Z) (x : R) (l : location) : Prop :=
   inbetween (F2R (Float beta m e))
     (F2R (Float beta (Zadd m Zone) e)) x l
 
+local notation "inbetween_float" => inbetween_float ctx
+
 def inbetween_int (m : Z) (x : R) (l : location) : Prop :=
   inbetween (IZR m) (IZR (Zadd m Zone)) x l
+
+local notation "inbetween_int" => inbetween_int ctx
 
 /-! Exact source proposition descriptors for later proof migration. -/
 
@@ -280,5 +317,7 @@ def inbetween_float_exStatement : Prop :=
 def inbetween_float_uniqueStatement : Prop :=
   ∀ (beta : radix) (x : R) (e m : Z) (l : location) (m' : Z) (l' : location),
     inbetween_float beta m e x l → inbetween_float beta m' e x l' → m = m' ∧ l = l'
+
+end ExactSpecification
 
 end CompCert4Lean.Flocq.Calc.Bracket

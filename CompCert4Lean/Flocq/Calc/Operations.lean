@@ -37,6 +37,18 @@ abbrev Rmult := CompCert4Lean.Flocq.Core.Raux.Rmult
 abbrev Ropp := CompCert4Lean.Flocq.Core.Raux.Ropp
 abbrev Rabs := CompCert4Lean.Flocq.Core.Raux.Rabs
 
+abbrev ExactRealContext := CompCert4Lean.Flocq.Core.Raux.ExactRealContext
+
+namespace Exact
+
+abbrev F2R := CompCert4Lean.Flocq.Core.Defs.Exact.F2R
+abbrev Ropp := CompCert4Lean.Flocq.Core.Raux.Exact.Ropp
+abbrev Rabs := CompCert4Lean.Flocq.Core.Raux.Exact.Rabs
+abbrev Rplus := CompCert4Lean.Flocq.Core.Raux.Exact.Rplus
+abbrev Rmult := CompCert4Lean.Flocq.Core.Raux.Exact.Rmult
+
+end Exact
+
 def Falign (f1 f2 : float beta) : (Z × Z) × Z :=
   match f1, f2 with
   | ⟨m1, e1⟩, ⟨m2, e2⟩ =>
@@ -63,34 +75,36 @@ def Fmult {beta : radix} (f1 f2 : float beta) : float beta :=
 
 /-! Exact source proposition descriptors for later proof migration. -/
 
-def Falign_specStatement : Prop :=
+def Falign_specStatement (ctx : ExactRealContext) : Prop :=
   ∀ (beta : radix) (f1 f2 : float beta),
     let ((m1, m2), e) := Falign f1 f2
-    F2R f1 = F2R (Float beta m1 e) ∧
-      F2R f2 = F2R (Float beta m2 e)
+    Exact.F2R ctx f1 = Exact.F2R ctx (Float beta m1 e) ∧
+      Exact.F2R ctx f2 = Exact.F2R ctx (Float beta m2 e)
 
 def Falign_spec_expStatement : Prop :=
   ∀ (beta : radix) (f1 f2 : float beta),
     (Falign f1 f2).2 = Zmin (Fexp f1) (Fexp f2)
 
-def F2R_oppStatement : Prop :=
+def F2R_oppStatement (ctx : ExactRealContext) : Prop :=
   ∀ (beta : radix) (f1 : float beta),
-    F2R (Fopp f1) = Ropp (F2R f1)
+    Exact.F2R ctx (Fopp f1) = Exact.Ropp ctx (Exact.F2R ctx f1)
 
-def F2R_absStatement : Prop :=
+def F2R_absStatement (ctx : ExactRealContext) : Prop :=
   ∀ (beta : radix) (f1 : float beta),
-    F2R (Fabs f1) = Rabs (F2R f1)
+    Exact.F2R ctx (Fabs f1) = Exact.Rabs ctx (Exact.F2R ctx f1)
 
-def F2R_plusStatement : Prop :=
+def F2R_plusStatement (ctx : ExactRealContext) : Prop :=
   ∀ (beta : radix) (f1 f2 : float beta),
-    F2R (Fplus f1 f2) = Rplus (F2R f1) (F2R f2)
+    Exact.F2R ctx (Fplus f1 f2) =
+      Exact.Rplus ctx (Exact.F2R ctx f1) (Exact.F2R ctx f2)
 
 def Fexp_FplusStatement : Prop :=
   ∀ (beta : radix) (f1 f2 : float beta),
     Fexp (Fplus f1 f2) = Zmin (Fexp f1) (Fexp f2)
 
-def F2R_multStatement : Prop :=
+def F2R_multStatement (ctx : ExactRealContext) : Prop :=
   ∀ (beta : radix) (f1 f2 : float beta),
-    F2R (Fmult f1 f2) = Rmult (F2R f1) (F2R f2)
+    Exact.F2R ctx (Fmult f1 f2) =
+      Exact.Rmult ctx (Exact.F2R ctx f1) (Exact.F2R ctx f2)
 
 end CompCert4Lean.Flocq.Calc.Operations

@@ -79,6 +79,12 @@ abbrev inbetween_float := CompCert4Lean.Flocq.Calc.Bracket.inbetween_float
 abbrev inbetween_int := CompCert4Lean.Flocq.Calc.Bracket.inbetween_int
 abbrev new_location := CompCert4Lean.Flocq.Calc.Bracket.new_location
 
+abbrev ExactRealContext := CompCert4Lean.Flocq.Calc.Bracket.ExactRealContext
+abbrev ExactR (ctx : ExactRealContext) :=
+  CompCert4Lean.Flocq.Calc.Bracket.R ctx
+abbrev ExactMagnitude (ctx : ExactRealContext) :=
+  CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Magnitude ctx
+
 abbrev format (beta : radix) (fexp : Z → Z) (x : R) : Prop :=
   generic_format beta fexp x
 
@@ -116,79 +122,111 @@ def truncate (beta : radix) (fexp : Z → Z) (t : (Z × Z) × location) : (Z × 
 
 /-! Exact source proposition descriptors for later proof migration. -/
 
+section ExactSpecification
+
+variable (ctx : ExactRealContext)
+variable (magnitude : ExactMagnitude ctx)
+
+local notation "ER" => ExactR ctx
+local notation "ER0" => CompCert4Lean.Flocq.Calc.Bracket.R0 ctx
+local notation "ERabs" => CompCert4Lean.Flocq.Core.Raux.Exact.Rabs ctx
+local notation "ERlt" => CompCert4Lean.Flocq.Calc.Bracket.Rlt ctx
+local notation "ERle" => CompCert4Lean.Flocq.Calc.Bracket.Rle ctx
+local notation "ERlt_bool" => CompCert4Lean.Flocq.Core.Raux.Exact.Rlt_bool ctx
+local notation "EZfloor" => CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zfloor ctx
+local notation "EZceil" => CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zceil ctx
+local notation "EZtrunc" => CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Ztrunc ctx
+local notation "EZnearest" => CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Znearest ctx
+local notation "EZnearestE" =>
+  CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Znearest ctx
+    (fun m => Bool.not (Zeven m))
+local notation "EZnearestA" =>
+  CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Znearest ctx
+    (fun m => Zle_bool Z0 m)
+local notation "Ecexp" =>
+  CompCert4Lean.Flocq.Core.Generic_fmt.Exact.cexp ctx magnitude
+local notation "Egeneric_format" =>
+  CompCert4Lean.Flocq.Core.Generic_fmt.Exact.generic_format ctx magnitude
+local notation "Eround" =>
+  CompCert4Lean.Flocq.Core.Generic_fmt.Exact.round ctx magnitude
+local notation "EValid_rnd" =>
+  CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Valid_rnd ctx
+local notation "EFloat" => CompCert4Lean.Flocq.Calc.Bracket.Float
+local notation "EF2R" => CompCert4Lean.Flocq.Calc.Bracket.F2R ctx
+
 def cexp_inbetween_floatStatement : Prop :=
   ∀ (beta : radix) (fexp : Z → Z), Valid_exp fexp →
-    ∀ (x : R) (m e : Z) (l : location),
-      Rlt R0 x →
-      inbetween_float beta m e x l →
-      (Zle e (cexp beta fexp x) ∨
+    ∀ (x : ER) (m e : Z) (l : location),
+      ERlt ER0 x →
+      CompCert4Lean.Flocq.Calc.Bracket.inbetween_float ctx beta m e x l →
+      (Zle e (Ecexp beta fexp x) ∨
         Zle e (fexp (Zadd (Zdigits beta m) e))) →
-      cexp beta fexp x = fexp (Zadd (Zdigits beta m) e)
+      Ecexp beta fexp x = fexp (Zadd (Zdigits beta m) e)
 
 def cexp_inbetween_float_loc_ExactStatement : Prop :=
   ∀ (beta : radix) (fexp : Z → Z), Valid_exp fexp →
-    ∀ (x : R) (m e : Z) (l : location),
-      Rle R0 x →
-      inbetween_float beta m e x l →
-      ((Zle e (cexp beta fexp x) ∨ l = loc_Exact) ↔
+    ∀ (x : ER) (m e : Z) (l : location),
+      ERle ER0 x →
+      CompCert4Lean.Flocq.Calc.Bracket.inbetween_float ctx beta m e x l →
+      ((Zle e (Ecexp beta fexp x) ∨ l = loc_Exact) ↔
         (Zle e (fexp (Zadd (Zdigits beta m) e)) ∨ l = loc_Exact))
 
 def inbetween_float_round_signStatement : Prop :=
-  ∀ (beta : radix) (fexp : Z → Z) (rnd : R → Z)
+  ∀ (beta : radix) (fexp : Z → Z) (rnd : ER → Z)
       (choice : Bool → Z → location → Z),
     Valid_exp fexp →
-      (∀ (x : R) (m : Z) (l : location),
-        inbetween_int m (Rabs x) l →
-          rnd x = cond_Zopp (Rlt_bool x R0)
-            (choice (Rlt_bool x R0) m l)) →
-      ∀ (x : R) (m : Z) (l : location),
-        let e := cexp beta fexp x
-        inbetween_float beta m e (Rabs x) l →
-          round beta fexp rnd x =
-            F2R (Float beta
-              (cond_Zopp (Rlt_bool x R0)
-                (choice (Rlt_bool x R0) m l)) e)
+      (∀ (x : ER) (m : Z) (l : location),
+        CompCert4Lean.Flocq.Calc.Bracket.inbetween_int ctx m (ERabs x) l →
+          rnd x = cond_Zopp (ERlt_bool x ER0)
+            (choice (ERlt_bool x ER0) m l)) →
+      ∀ (x : ER) (m : Z) (l : location),
+        let e := Ecexp beta fexp x
+        CompCert4Lean.Flocq.Calc.Bracket.inbetween_float ctx beta m e (ERabs x) l →
+          Eround beta fexp rnd x =
+            EF2R (EFloat beta
+              (cond_Zopp (ERlt_bool x ER0)
+                (choice (ERlt_bool x ER0) m l)) e)
 
 def inbetween_int_DN_signStatement : Prop :=
-  ∀ (x : R) (m : Z) (l : location),
-    inbetween_int m (Rabs x) l →
-      Zfloor x = cond_Zopp (Rlt_bool x R0)
-        (cond_incr (round_sign_DN (Rlt_bool x R0) l) m)
+  ∀ (x : ER) (m : Z) (l : location),
+    CompCert4Lean.Flocq.Calc.Bracket.inbetween_int ctx m (ERabs x) l →
+      EZfloor x = cond_Zopp (ERlt_bool x ER0)
+        (cond_incr (round_sign_DN (ERlt_bool x ER0) l) m)
 
 def inbetween_int_UP_signStatement : Prop :=
-  ∀ (x : R) (m : Z) (l : location),
-    inbetween_int m (Rabs x) l →
-      Zceil x = cond_Zopp (Rlt_bool x R0)
-        (cond_incr (round_sign_UP (Rlt_bool x R0) l) m)
+  ∀ (x : ER) (m : Z) (l : location),
+    CompCert4Lean.Flocq.Calc.Bracket.inbetween_int ctx m (ERabs x) l →
+      EZceil x = cond_Zopp (ERlt_bool x ER0)
+        (cond_incr (round_sign_UP (ERlt_bool x ER0) l) m)
 
 def inbetween_int_ZR_signStatement : Prop :=
-  ∀ (x : R) (m : Z) (l : location),
-    inbetween_int m (Rabs x) l →
-      Ztrunc x = cond_Zopp (Rlt_bool x R0) m
+  ∀ (x : ER) (m : Z) (l : location),
+    CompCert4Lean.Flocq.Calc.Bracket.inbetween_int ctx m (ERabs x) l →
+      EZtrunc x = cond_Zopp (ERlt_bool x ER0) m
 
 def inbetween_int_N_signStatement : Prop :=
-  ∀ (choice : Z → Bool) (x : R) (m : Z) (l : location),
-    inbetween_int m (Rabs x) l →
-      Znearest choice x =
-        cond_Zopp (Rlt_bool x R0)
+  ∀ (choice : Z → Bool) (x : ER) (m : Z) (l : location),
+    CompCert4Lean.Flocq.Calc.Bracket.inbetween_int ctx m (ERabs x) l →
+      EZnearest choice x =
+        cond_Zopp (ERlt_bool x ER0)
           (cond_incr
             (round_N
-              (if Rlt_bool x R0 then
+              (if ERlt_bool x ER0 then
                 Bool.not (choice (Zopp (Zadd m Zone)))
                else choice m)
               l)
             m)
 
 def inbetween_int_NE_signStatement : Prop :=
-  ∀ (x : R) (m : Z) (l : location),
-    inbetween_int m (Rabs x) l →
-      ZnearestE x = cond_Zopp (Rlt_bool x R0)
+  ∀ (x : ER) (m : Z) (l : location),
+    CompCert4Lean.Flocq.Calc.Bracket.inbetween_int ctx m (ERabs x) l →
+      EZnearestE x = cond_Zopp (ERlt_bool x ER0)
         (cond_incr (round_N (Bool.not (Zeven m)) l) m)
 
 def inbetween_int_NA_signStatement : Prop :=
-  ∀ (x : R) (m : Z) (l : location),
-    inbetween_int m (Rabs x) l →
-      ZnearestA x = cond_Zopp (Rlt_bool x R0)
+  ∀ (x : ER) (m : Z) (l : location),
+    CompCert4Lean.Flocq.Calc.Bracket.inbetween_int ctx m (ERabs x) l →
+      EZnearestA x = cond_Zopp (ERlt_bool x ER0)
         (cond_incr (round_N true l) m)
 
 def truncate_0Statement : Prop :=
@@ -199,107 +237,109 @@ def truncate_0Statement : Prop :=
 def truncate_correct_formatStatement : Prop :=
   ∀ (beta : radix) (fexp : Z → Z) (m e : Z), Valid_exp fexp →
     m ≠ Z0 →
-      let x := F2R (Float beta m e)
-      generic_format beta fexp x →
+      let x := EF2R (EFloat beta m e)
+      Egeneric_format beta fexp x →
       Zle e (fexp (Zadd (Zdigits beta m) e)) →
       let ((m', e'), l') := truncate beta fexp ((m, e), loc_Exact)
-      x = F2R (Float beta m' e') ∧
-        e' = cexp beta fexp x
+      x = EF2R (EFloat beta m' e') ∧
+        e' = Ecexp beta fexp x
 
 def truncate_correct_partial'Statement : Prop :=
-  ∀ (beta : radix) (fexp : Z → Z) (x : R) (m e : Z) (l : location),
+  ∀ (beta : radix) (fexp : Z → Z) (x : ER) (m e : Z) (l : location),
     Valid_exp fexp →
-      Rlt R0 x →
-      inbetween_float beta m e x l →
-      Zle e (cexp beta fexp x) →
+      ERlt ER0 x →
+      CompCert4Lean.Flocq.Calc.Bracket.inbetween_float ctx beta m e x l →
+      Zle e (Ecexp beta fexp x) →
       let ((m', e'), l') := truncate beta fexp ((m, e), l)
-      inbetween_float beta m' e' x l' ∧
-        e' = cexp beta fexp x
+      CompCert4Lean.Flocq.Calc.Bracket.inbetween_float ctx beta m' e' x l' ∧
+        e' = Ecexp beta fexp x
 
 def truncate_correct_partialStatement : Prop :=
-  ∀ (beta : radix) (fexp : Z → Z) (x : R) (m e : Z) (l : location),
+  ∀ (beta : radix) (fexp : Z → Z) (x : ER) (m e : Z) (l : location),
     Valid_exp fexp →
-      Rlt R0 x →
-      inbetween_float beta m e x l →
+      ERlt ER0 x →
+      CompCert4Lean.Flocq.Calc.Bracket.inbetween_float ctx beta m e x l →
       Zle e (fexp (Zadd (Zdigits beta m) e)) →
       let ((m', e'), l') := truncate beta fexp ((m, e), l)
-      inbetween_float beta m' e' x l' ∧
-        e' = cexp beta fexp x
+      CompCert4Lean.Flocq.Calc.Bracket.inbetween_float ctx beta m' e' x l' ∧
+        e' = Ecexp beta fexp x
 
 def truncate_correct'Statement : Prop :=
-  ∀ (beta : radix) (fexp : Z → Z) (x : R) (m e : Z) (l : location),
+  ∀ (beta : radix) (fexp : Z → Z) (x : ER) (m e : Z) (l : location),
     Valid_exp fexp →
-      Rle R0 x →
-      inbetween_float beta m e x l →
-      (Zle e (cexp beta fexp x) ∨ l = loc_Exact) →
+      ERle ER0 x →
+      CompCert4Lean.Flocq.Calc.Bracket.inbetween_float ctx beta m e x l →
+      (Zle e (Ecexp beta fexp x) ∨ l = loc_Exact) →
       let ((m', e'), l') := truncate beta fexp ((m, e), l)
-      inbetween_float beta m' e' x l' ∧
-        (e' = cexp beta fexp x ∨
-          (l' = loc_Exact ∧ generic_format beta fexp x))
+      CompCert4Lean.Flocq.Calc.Bracket.inbetween_float ctx beta m' e' x l' ∧
+        (e' = Ecexp beta fexp x ∨
+          (l' = loc_Exact ∧ Egeneric_format beta fexp x))
 
 def truncate_correctStatement : Prop :=
-  ∀ (beta : radix) (fexp : Z → Z) (x : R) (m e : Z) (l : location),
+  ∀ (beta : radix) (fexp : Z → Z) (x : ER) (m e : Z) (l : location),
     Valid_exp fexp →
-      Rle R0 x →
-      inbetween_float beta m e x l →
+      ERle ER0 x →
+      CompCert4Lean.Flocq.Calc.Bracket.inbetween_float ctx beta m e x l →
       (Zle e (fexp (Zadd (Zdigits beta m) e)) ∨ l = loc_Exact) →
       let ((m', e'), l') := truncate beta fexp ((m, e), l)
-      inbetween_float beta m' e' x l' ∧
-        (e' = cexp beta fexp x ∨
-          (l' = loc_Exact ∧ generic_format beta fexp x))
+      CompCert4Lean.Flocq.Calc.Bracket.inbetween_float ctx beta m' e' x l' ∧
+        (e' = Ecexp beta fexp x ∨
+          (l' = loc_Exact ∧ Egeneric_format beta fexp x))
 
 def round_sign_any_correctStatement : Prop :=
-  ∀ (beta : radix) (fexp : Z → Z) (rnd : R → Z)
+  ∀ (beta : radix) (fexp : Z → Z) (rnd : ER → Z)
       (choice : Bool → Z → location → Z),
     Valid_exp fexp →
-      Valid_rnd rnd →
-      (∀ (x : R) (m : Z) (l : location),
-        inbetween_int m (Rabs x) l →
-          rnd x = cond_Zopp (Rlt_bool x R0)
-            (choice (Rlt_bool x R0) m l)) →
-      ∀ (x : R) (m e : Z) (l : location),
-        inbetween_float beta m e (Rabs x) l →
-        (e = cexp beta fexp x ∨
-          (l = loc_Exact ∧ generic_format beta fexp x)) →
-        round beta fexp rnd x =
-          F2R (Float beta
-            (cond_Zopp (Rlt_bool x R0)
-              (choice (Rlt_bool x R0) m l)) e)
+      EValid_rnd rnd →
+      (∀ (x : ER) (m : Z) (l : location),
+        CompCert4Lean.Flocq.Calc.Bracket.inbetween_int ctx m (ERabs x) l →
+          rnd x = cond_Zopp (ERlt_bool x ER0)
+            (choice (ERlt_bool x ER0) m l)) →
+      ∀ (x : ER) (m e : Z) (l : location),
+        CompCert4Lean.Flocq.Calc.Bracket.inbetween_float ctx beta m e (ERabs x) l →
+        (e = Ecexp beta fexp x ∨
+          (l = loc_Exact ∧ Egeneric_format beta fexp x)) →
+        Eround beta fexp rnd x =
+          EF2R (EFloat beta
+            (cond_Zopp (ERlt_bool x ER0)
+              (choice (ERlt_bool x ER0) m l)) e)
 
 def round_trunc_sign_any_correct'Statement : Prop :=
-  ∀ (beta : radix) (fexp : Z → Z) (rnd : R → Z)
+  ∀ (beta : radix) (fexp : Z → Z) (rnd : ER → Z)
       (choice : Bool → Z → location → Z),
     Valid_exp fexp →
-      Valid_rnd rnd →
-      (∀ (x : R) (m : Z) (l : location),
-        inbetween_int m (Rabs x) l →
-          rnd x = cond_Zopp (Rlt_bool x R0)
-            (choice (Rlt_bool x R0) m l)) →
-      ∀ (x : R) (m e : Z) (l : location),
-        inbetween_float beta m e (Rabs x) l →
-        (Zle e (cexp beta fexp x) ∨ l = loc_Exact) →
+      EValid_rnd rnd →
+      (∀ (x : ER) (m : Z) (l : location),
+        CompCert4Lean.Flocq.Calc.Bracket.inbetween_int ctx m (ERabs x) l →
+          rnd x = cond_Zopp (ERlt_bool x ER0)
+            (choice (ERlt_bool x ER0) m l)) →
+      ∀ (x : ER) (m e : Z) (l : location),
+        CompCert4Lean.Flocq.Calc.Bracket.inbetween_float ctx beta m e (ERabs x) l →
+        (Zle e (Ecexp beta fexp x) ∨ l = loc_Exact) →
         let ((m', e'), l') := truncate beta fexp ((m, e), l)
-        round beta fexp rnd x =
-          F2R (Float beta
-            (cond_Zopp (Rlt_bool x R0)
-              (choice (Rlt_bool x R0) m' l')) e')
+        Eround beta fexp rnd x =
+          EF2R (EFloat beta
+            (cond_Zopp (ERlt_bool x ER0)
+              (choice (ERlt_bool x ER0) m' l')) e')
 
 def round_trunc_sign_any_correctStatement : Prop :=
-  ∀ (beta : radix) (fexp : Z → Z) (rnd : R → Z)
+  ∀ (beta : radix) (fexp : Z → Z) (rnd : ER → Z)
       (choice : Bool → Z → location → Z),
     Valid_exp fexp →
-      Valid_rnd rnd →
-      (∀ (x : R) (m : Z) (l : location),
-        inbetween_int m (Rabs x) l →
-          rnd x = cond_Zopp (Rlt_bool x R0)
-            (choice (Rlt_bool x R0) m l)) →
-      ∀ (x : R) (m e : Z) (l : location),
-        inbetween_float beta m e (Rabs x) l →
+      EValid_rnd rnd →
+      (∀ (x : ER) (m : Z) (l : location),
+        CompCert4Lean.Flocq.Calc.Bracket.inbetween_int ctx m (ERabs x) l →
+          rnd x = cond_Zopp (ERlt_bool x ER0)
+            (choice (ERlt_bool x ER0) m l)) →
+      ∀ (x : ER) (m e : Z) (l : location),
+        CompCert4Lean.Flocq.Calc.Bracket.inbetween_float ctx beta m e (ERabs x) l →
         (Zle e (fexp (Zadd (Zdigits beta m) e)) ∨ l = loc_Exact) →
         let ((m', e'), l') := truncate beta fexp ((m, e), l)
-        round beta fexp rnd x =
-          F2R (Float beta
-            (cond_Zopp (Rlt_bool x R0)
-              (choice (Rlt_bool x R0) m' l')) e')
+        Eround beta fexp rnd x =
+          EF2R (EFloat beta
+            (cond_Zopp (ERlt_bool x ER0)
+              (choice (ERlt_bool x ER0) m' l')) e')
+
+end ExactSpecification
 
 end CompCert4Lean.Flocq.Calc.Round

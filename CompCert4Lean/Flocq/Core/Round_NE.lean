@@ -34,14 +34,19 @@ abbrev format (beta : radix) (fexp : Z → Z) : R → Prop :=
 abbrev ZnearestE (x : R) : Z :=
   Znearest (fun m => Bool.not (Zeven m)) x
 
-class Exists_NE (beta : radix) (fexp : Z → Z) : Prop where
-  exists_NE :
+def Exists_NE (beta : radix) (fexp : Z → Z) : Prop :=
+  Zeven (beta : Z) = false ∨
+    ∀ e : Z,
+      (Zlt (fexp e) e → Zlt (fexp (Zadd e Zone)) e) ∧
+        (Zle e (fexp e) → fexp (Zadd (fexp e) Zone) = fexp e)
+
+def exists_NE (beta : radix) (fexp : Z → Z)
+    {exists_NE_ : Exists_NE beta fexp} :
     Zeven (beta : Z) = false ∨
       ∀ e : Z,
         (Zlt (fexp e) e → Zlt (fexp (Zadd e Zone)) e) ∧
-          (Zle e (fexp e) → fexp (Zadd (fexp e) Zone) = fexp e)
-
-export Exists_NE (exists_NE)
+          (Zle e (fexp e) → fexp (Zadd (fexp e) Zone) = fexp e) :=
+  exists_NE_
 
 def DN_UP_parity_pos_prop (beta : radix) (fexp : Z → Z) : Prop :=
   ∀ (x : R) (xd xu : Defs.float beta),
@@ -63,7 +68,7 @@ def DN_UP_parity_prop (beta : radix) (fexp : Z → Z) : Prop :=
 /-! Exact source proposition descriptors for later proof migration. -/
 
 def round_NE_oppStatement : Prop :=
-  ∀ beta fexp, Valid_exp fexp → ∀ x,
+  ∀ beta fexp x,
     round beta fexp ZnearestE (Ropp x) =
       Ropp (round beta fexp ZnearestE x)
 
@@ -74,12 +79,11 @@ def round_NE_absStatement : Prop :=
 
 def DN_UP_parity_auxStatement : Prop :=
   ∀ (beta : radix) (fexp : Z → Z),
-    Valid_exp fexp →
-      DN_UP_parity_pos_prop beta fexp → DN_UP_parity_prop beta fexp
+    DN_UP_parity_pos_prop beta fexp → DN_UP_parity_prop beta fexp
 
 def DN_UP_parity_genericStatement : Prop :=
   ∀ (beta : radix) (fexp : Z → Z),
-    Valid_exp fexp → DN_UP_parity_prop beta fexp
+    Valid_exp fexp → Exists_NE beta fexp → DN_UP_parity_prop beta fexp
 
 def DN_UP_parity_generic_posStatement : Prop :=
   ∀ (beta : radix) (fexp : Z → Z),
