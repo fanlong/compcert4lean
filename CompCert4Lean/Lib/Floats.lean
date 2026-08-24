@@ -147,8 +147,17 @@ def quiet_nan_64_proofStatement : Prop :=
 def quiet_nan_64 (sp : Bool × positive) : float :=
   mkNaN64 sp.1 (quiet_nan_64_payload sp.2)
 
+def quiet_nan_64_result_obligation : Prop :=
+  ∀ sp : Bool × positive,
+    Binary.is_nan (decode64 (quiet_nan_64 sp)) = true ∧
+      Binary.BinaryFloatCertificate (decode64 (quiet_nan_64 sp))
+
 def default_nan_64 : float :=
   quiet_nan_64 Archi.default_nan_64
+
+def default_nan_64_result_obligation : Prop :=
+  Binary.is_nan (decode64 default_nan_64) = true ∧
+    Binary.BinaryFloatCertificate (decode64 default_nan_64)
 
 def quiet_nan_32_payload (p : positive) : positive :=
   PArith.BinPos.Pos.of_nat
@@ -160,8 +169,17 @@ def quiet_nan_32_proofStatement : Prop :=
 def quiet_nan_32 (sp : Bool × positive) : float32 :=
   mkNaN32 sp.1 (quiet_nan_32_payload sp.2)
 
+def quiet_nan_32_result_obligation : Prop :=
+  ∀ sp : Bool × positive,
+    Binary.is_nan (decode32 (quiet_nan_32 sp)) = true ∧
+      Binary.BinaryFloatCertificate (decode32 (quiet_nan_32 sp))
+
 def default_nan_32 : float32 :=
   quiet_nan_32 Archi.default_nan_32
+
+def default_nan_32_result_obligation : Prop :=
+  Binary.is_nan (decode32 default_nan_32) = true ∧
+    Binary.BinaryFloatCertificate (decode32 default_nan_32)
 
 abbrev __ :
     (CompCert4Lean.Foundation.Numbers.Rocq.Coq.Lt =
@@ -198,6 +216,11 @@ def expand_nan_proofStatement : Prop :=
 def expand_nan (s : Bool) (p : positive) (_h : Binary.nan_pl (prec := z24) p = true) : float :=
   mkNaN64 s (expand_nan_payload p)
 
+def expand_nan_result_obligation : Prop :=
+  ∀ (s : Bool) (p : positive) (h : Binary.nan_pl (prec := z24) p = true),
+    Binary.is_nan (decode64 (expand_nan s p h)) = true ∧
+      Binary.BinaryFloatCertificate (decode64 (expand_nan s p h))
+
 def of_single_nan (f : float32) : float :=
   if isNaN32 f then
     if Archi.float_conversion_default_nan then default_nan_64
@@ -205,6 +228,12 @@ def of_single_nan (f : float32) : float :=
       mkNaN64 (sign32 f) (expand_nan_payload (payload32 f))
     else quiet_nan_64 (sign32 f, expand_nan_payload (payload32 f))
   else default_nan_64
+
+def of_single_nan_result_obligation : Prop :=
+  ∀ f : float32,
+    Binary.BinaryFloatCertificate (decode32 f) →
+      Binary.is_nan (decode64 (of_single_nan f)) = true ∧
+        Binary.BinaryFloatCertificate (decode64 (of_single_nan f))
 
 def reduce_nan_payload (p : positive) : positive :=
   PArith.BinPos.Pos.shiftr_nat (quiet_nan_64_payload p) 29
@@ -215,13 +244,31 @@ def to_single_nan (f : float) : float32 :=
     else quiet_nan_32 (sign64 f, reduce_nan_payload (payload64 f))
   else default_nan_32
 
+def to_single_nan_result_obligation : Prop :=
+  ∀ f : float,
+    Binary.BinaryFloatCertificate (decode64 f) →
+      Binary.is_nan (decode32 (to_single_nan f)) = true ∧
+        Binary.BinaryFloatCertificate (decode32 (to_single_nan f))
+
 def neg_nan (f : float) : float :=
   if isNaN64 f then
     mkNaN64 (!sign64 f) (payload64 f)
   else default_nan_64
 
+def neg_nan_result_obligation : Prop :=
+  ∀ f : float,
+    Binary.BinaryFloatCertificate (decode64 f) →
+      Binary.is_nan (decode64 (neg_nan f)) = true ∧
+        Binary.BinaryFloatCertificate (decode64 (neg_nan f))
+
 def abs_nan (f : float) : float :=
   if isNaN64 f then mkNaN64 false (payload64 f) else default_nan_64
+
+def abs_nan_result_obligation : Prop :=
+  ∀ f : float,
+    Binary.BinaryFloatCertificate (decode64 f) →
+      Binary.is_nan (decode64 (abs_nan f)) = true ∧
+        Binary.BinaryFloatCertificate (decode64 (abs_nan f))
 
 def cons_pl (x : float) (l : List (Bool × positive)) : List (Bool × positive) :=
   if isNaN64 x then (sign64 x, payload64 x) :: l else l
@@ -229,8 +276,21 @@ def cons_pl (x : float) (l : List (Bool × positive)) : List (Bool × positive) 
 def unop_nan (x : float) : float :=
   quiet_nan_64 (Archi.choose_nan_64 (cons_pl x []))
 
+def unop_nan_result_obligation : Prop :=
+  ∀ x : float,
+    Binary.BinaryFloatCertificate (decode64 x) →
+      Binary.is_nan (decode64 (unop_nan x)) = true ∧
+        Binary.BinaryFloatCertificate (decode64 (unop_nan x))
+
 def binop_nan (x y : float) : float :=
   quiet_nan_64 (Archi.choose_nan_64 (cons_pl x (cons_pl y [])))
+
+def binop_nan_result_obligation : Prop :=
+  ∀ (x y : float),
+    Binary.BinaryFloatCertificate (decode64 x) →
+      Binary.BinaryFloatCertificate (decode64 y) →
+        Binary.is_nan (decode64 (binop_nan x y)) = true ∧
+          Binary.BinaryFloatCertificate (decode64 (binop_nan x y))
 
 def zero : float := ⟨0#64⟩
 
@@ -310,16 +370,20 @@ def to_long (f : float) : Option Integers.Int64.int :=
 def to_longu (f : float) : Option Integers.Int64.int :=
   (IEEE754_extra.ZofB_range (decode64 f) z0 Integers.Int64.max_unsigned).map Integers.Int64.repr
 
-def of_int (n : Integers.Int.int) : float :=
+def of_int (n : Integers.Int.int)
+    [certificate : Binary.BinaryNormalizeCertificate z53 z1024] : float :=
   encode64 (IEEE754_extra.BofZ (prec := z53) (emax := z1024) (Integers.Int.signed n))
 
-def of_intu (n : Integers.Int.int) : float :=
+def of_intu (n : Integers.Int.int)
+    [certificate : Binary.BinaryNormalizeCertificate z53 z1024] : float :=
   encode64 (IEEE754_extra.BofZ (prec := z53) (emax := z1024) (Integers.Int.unsigned n))
 
-def of_long (n : Integers.Int64.int) : float :=
+def of_long (n : Integers.Int64.int)
+    [certificate : Binary.BinaryNormalizeCertificate z53 z1024] : float :=
   encode64 (IEEE754_extra.BofZ (prec := z53) (emax := z1024) (Integers.Int64.signed n))
 
-def of_longu (n : Integers.Int64.int) : float :=
+def of_longu (n : Integers.Int64.int)
+    [certificate : Binary.BinaryNormalizeCertificate z53 z1024] : float :=
   encode64 (IEEE754_extra.BofZ (prec := z53) (emax := z1024) (Integers.Int64.unsigned n))
 
 def to_bits (f : float) : Integers.Int64.int :=
@@ -328,17 +392,20 @@ def to_bits (f : float) : Integers.Int64.int :=
 def of_bits (b : Integers.Int64.int) : float :=
   ⟨BitVec.ofFin (Integers.Int64.toFin b)⟩
 
-def exact_inverse (f : float) : Option float :=
+def exact_inverse (f : float)
+    [certificate : IEEE754_extra.Bexact_inverse_certificate z53 z1024] : Option float :=
   (IEEE754_extra.Bexact_inverse (prec := z53) (emax := z1024) (decode64 f)).map encode64
 
 def mul_commutStatement : Prop :=
   ∀ x y : float, isNaN64 x = false ∨ isNaN64 y = false → mul x y = mul y x
 
-def mul2_addStatement : Prop :=
+def mul2_addStatement
+    [certificate : Binary.BinaryNormalizeCertificate z53 z1024] : Prop :=
   ∀ f : float,
     add f f = mul f (of_int (Integers.Int.repr (ZArith.BinInt.Z.of_nat 2)))
 
-def div_mul_inverseStatement : Prop :=
+def div_mul_inverseStatement
+    [certificate : IEEE754_extra.Bexact_inverse_certificate z53 z1024] : Prop :=
   ∀ x y z : float, exact_inverse y = some z → div x y = mul x z
 
 def cmp_swapStatement : Prop :=
@@ -354,21 +421,25 @@ def of_to_bitsStatement : Prop :=
 def ox8000_0000 : Integers.Int.int :=
   Integers.Int.repr Integers.Int.half_modulus
 
-def of_intu_of_int_1Statement : Prop :=
+def of_intu_of_int_1Statement
+    [certificate : Binary.BinaryNormalizeCertificate z53 z1024] : Prop :=
   ∀ x : Integers.Int.int,
     Integers.Int.ltu x ox8000_0000 = true → of_intu x = of_int x
 
-def of_intu_of_int_2Statement : Prop :=
+def of_intu_of_int_2Statement
+    [certificate : Binary.BinaryNormalizeCertificate z53 z1024] : Prop :=
   ∀ x : Integers.Int.int, Integers.Int.ltu x ox8000_0000 = false →
     of_intu x =
       add (of_int (Integers.Int.sub x ox8000_0000)) (of_intu ox8000_0000)
 
-def to_intu_to_int_1Statement : Prop :=
+def to_intu_to_int_1Statement
+    [certificate : Binary.BinaryNormalizeCertificate z53 z1024] : Prop :=
   ∀ (x : float) (n : Integers.Int.int),
     cmp .Clt x (of_intu ox8000_0000) = true →
     to_intu x = some n → to_int x = some n
 
-def to_intu_to_int_2Statement : Prop :=
+def to_intu_to_int_2Statement
+    [certificate : Binary.BinaryNormalizeCertificate z53 z1024] : Prop :=
   ∀ (x : float) (n : Integers.Int.int),
     cmp .Clt x (of_intu ox8000_0000) = false →
     to_intu x = some n →
@@ -385,7 +456,8 @@ def to_intu_to_longStatement : Prop :=
     to_intu f = some n →
     to_long f = some (Integers.Int64.repr (Integers.Int.unsigned n))
 
-def of_intu_of_longStatement : Prop :=
+def of_intu_of_longStatement
+    [certificate : Binary.BinaryNormalizeCertificate z53 z1024] : Prop :=
   ∀ n : Integers.Int.int,
     of_intu n = of_long (Integers.Int64.repr (Integers.Int.unsigned n))
 
@@ -396,8 +468,20 @@ namespace Float32
 def neg_nan (f : float32) : float32 :=
   if isNaN32 f then mkNaN32 (!sign32 f) (payload32 f) else default_nan_32
 
+def neg_nan_result_obligation : Prop :=
+  ∀ f : float32,
+    Binary.BinaryFloatCertificate (decode32 f) →
+      Binary.is_nan (decode32 (neg_nan f)) = true ∧
+        Binary.BinaryFloatCertificate (decode32 (neg_nan f))
+
 def abs_nan (f : float32) : float32 :=
   if isNaN32 f then mkNaN32 false (payload32 f) else default_nan_32
+
+def abs_nan_result_obligation : Prop :=
+  ∀ f : float32,
+    Binary.BinaryFloatCertificate (decode32 f) →
+      Binary.is_nan (decode32 (abs_nan f)) = true ∧
+        Binary.BinaryFloatCertificate (decode32 (abs_nan f))
 
 def cons_pl (x : float32) (l : List (Bool × positive)) : List (Bool × positive) :=
   if isNaN32 x then (sign32 x, payload32 x) :: l else l
@@ -405,8 +489,21 @@ def cons_pl (x : float32) (l : List (Bool × positive)) : List (Bool × positive
 def unop_nan (x : float32) : float32 :=
   quiet_nan_32 (Archi.choose_nan_32 (cons_pl x []))
 
+def unop_nan_result_obligation : Prop :=
+  ∀ x : float32,
+    Binary.BinaryFloatCertificate (decode32 x) →
+      Binary.is_nan (decode32 (unop_nan x)) = true ∧
+        Binary.BinaryFloatCertificate (decode32 (unop_nan x))
+
 def binop_nan (x y : float32) : float32 :=
   quiet_nan_32 (Archi.choose_nan_32 (cons_pl x (cons_pl y [])))
+
+def binop_nan_result_obligation : Prop :=
+  ∀ (x y : float32),
+    Binary.BinaryFloatCertificate (decode32 x) →
+      Binary.BinaryFloatCertificate (decode32 y) →
+        Binary.is_nan (decode32 (binop_nan x y)) = true ∧
+          Binary.BinaryFloatCertificate (decode32 (binop_nan x y))
 
 def zero : float32 := ⟨0#32⟩
 
@@ -482,16 +579,20 @@ def to_long (f : float32) : Option Integers.Int64.int :=
 def to_longu (f : float32) : Option Integers.Int64.int :=
   (IEEE754_extra.ZofB_range (decode32 f) z0 Integers.Int64.max_unsigned).map Integers.Int64.repr
 
-def of_int (n : Integers.Int.int) : float32 :=
+def of_int (n : Integers.Int.int)
+    [certificate : Binary.BinaryNormalizeCertificate z24 z128] : float32 :=
   encode32 (IEEE754_extra.BofZ (prec := z24) (emax := z128) (Integers.Int.signed n))
 
-def of_intu (n : Integers.Int.int) : float32 :=
+def of_intu (n : Integers.Int.int)
+    [certificate : Binary.BinaryNormalizeCertificate z24 z128] : float32 :=
   encode32 (IEEE754_extra.BofZ (prec := z24) (emax := z128) (Integers.Int.unsigned n))
 
-def of_long (n : Integers.Int64.int) : float32 :=
+def of_long (n : Integers.Int64.int)
+    [certificate : Binary.BinaryNormalizeCertificate z24 z128] : float32 :=
   encode32 (IEEE754_extra.BofZ (prec := z24) (emax := z128) (Integers.Int64.signed n))
 
-def of_longu (n : Integers.Int64.int) : float32 :=
+def of_longu (n : Integers.Int64.int)
+    [certificate : Binary.BinaryNormalizeCertificate z24 z128] : float32 :=
   encode32 (IEEE754_extra.BofZ (prec := z24) (emax := z128) (Integers.Int64.unsigned n))
 
 def to_bits (f : float32) : Integers.Int.int :=
@@ -500,17 +601,20 @@ def to_bits (f : float32) : Integers.Int.int :=
 def of_bits (b : Integers.Int.int) : float32 :=
   ⟨BitVec.ofFin (Integers.Int.toFin b)⟩
 
-def exact_inverse (f : float32) : Option float32 :=
+def exact_inverse (f : float32)
+    [certificate : IEEE754_extra.Bexact_inverse_certificate z24 z128] : Option float32 :=
   (IEEE754_extra.Bexact_inverse (prec := z24) (emax := z128) (decode32 f)).map encode32
 
 def mul_commutStatement : Prop :=
   ∀ x y : float32, isNaN32 x = false ∨ isNaN32 y = false → mul x y = mul y x
 
-def mul2_addStatement : Prop :=
+def mul2_addStatement
+    [certificate : Binary.BinaryNormalizeCertificate z24 z128] : Prop :=
   ∀ f : float32,
     add f f = mul f (of_int (Integers.Int.repr (ZArith.BinInt.Z.of_nat 2)))
 
-def div_mul_inverseStatement : Prop :=
+def div_mul_inverseStatement
+    [certificate : IEEE754_extra.Bexact_inverse_certificate z24 z128] : Prop :=
   ∀ x y z : float32, exact_inverse y = some z → div x y = mul x z
 
 def cmp_swapStatement : Prop :=
@@ -523,7 +627,9 @@ def cmp_ne_eqStatement : Prop :=
 def of_to_bitsStatement : Prop :=
   ∀ f : float32, of_bits (to_bits f) = f
 
-def of_intu_doubleStatement : Prop :=
+def of_intu_doubleStatement
+    [binary32_certificate : Binary.BinaryNormalizeCertificate z24 z128]
+    [binary64_certificate : Binary.BinaryNormalizeCertificate z53 z1024] : Prop :=
   ∀ n : Integers.Int.int, of_intu n = of_double (Float.of_intu n)
 
 def to_intu_doubleStatement : Prop :=
@@ -549,18 +655,20 @@ parts of CompCert's unary square-root policy: input NaNs are handled by
 normalized to `default_nan_64` / `default_nan_32`. -/
 
 def float32_sqrt_correctStatement : Prop :=
-  ∀ x : UInt32,
-    float32_sqrt x =
-      UInt32.ofBitVec
-        (Float32.sqrt (⟨x.toBitVec⟩ : float32)).bits
+  Float32.unop_nan_result_obligation →
+    ∀ x : UInt32,
+      float32_sqrt x =
+        UInt32.ofBitVec
+          (Float32.sqrt (⟨x.toBitVec⟩ : float32)).bits
 
 abbrev float32_sqrt_correct : Prop := float32_sqrt_correctStatement
 
 def float64_sqrt_correctStatement : Prop :=
-  ∀ x : UInt64,
-    float64_sqrt x =
-      UInt64.ofBitVec
-        (Float.sqrt (⟨x.toBitVec⟩ : float)).bits
+  Float.unop_nan_result_obligation →
+    ∀ x : UInt64,
+      float64_sqrt x =
+        UInt64.ofBitVec
+          (Float.sqrt (⟨x.toBitVec⟩ : float)).bits
 
 abbrev float64_sqrt_correct : Prop := float64_sqrt_correctStatement
 
