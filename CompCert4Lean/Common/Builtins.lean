@@ -11,6 +11,7 @@ proposition descriptors.
 
 namespace CompCert4Lean.Common.Builtins
 
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
 open CompCert4Lean.Common.AST
 open CompCert4Lean.Common.Builtins0
 open CompCert4Lean.Common.Values
@@ -49,23 +50,54 @@ def builtin_function_sig : builtin_function → signature
   | BI_standard b => standard_builtin_sig b
   | BI_platform b => platform_builtin_sig b
 
-def builtin_function_sem (b : builtin_function) :
+def builtin_function_sem
+    [binary64_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)]
+    (b : builtin_function) :
     builtin_sem (builtin_function_sig b).sig_res :=
   match b with
-  | BI_standard b => standard_builtin_sem b
+  | BI_standard b => standard_builtin_sem
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) b
   | BI_platform b => platform_builtin_sem b
 
-def builtin_function_sem_injectStatement : Prop :=
+def builtin_function_sem_injectStatement
+    [binary64_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)] : Prop :=
   ∀ b (vargs : List val) (vres : val) (f : Val.meminj) vargs',
-    builtin_function_sem b vargs = some vres →
+    builtin_function_sem
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) b vargs = some vres →
     Val.inject_list f vargs vargs' →
-    ∃ vres', builtin_function_sem b vargs' = some vres' ∧ Val.inject f vres vres'
+    ∃ vres', builtin_function_sem
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) b vargs' = some vres' ∧
+      Val.inject f vres vres'
 
-def builtin_function_sem_lessdefStatement : Prop :=
+def builtin_function_sem_lessdefStatement
+    [binary64_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)] : Prop :=
   ∀ b (vargs : List val) (vres : val) vargs',
-    builtin_function_sem b vargs = some vres →
+    builtin_function_sem
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) b vargs = some vres →
     Val.lessdef_list vargs vargs' →
-    ∃ vres', builtin_function_sem b vargs' = some vres' ∧ Val.lessdef vres vres'
+    ∃ vres', builtin_function_sem
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) b vargs' = some vres' ∧
+      Val.lessdef vres vres'
 
 def lookup_builtin_function (name : RocqString) (sg : signature) :
     Option builtin_function :=
