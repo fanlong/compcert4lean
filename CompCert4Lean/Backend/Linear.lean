@@ -185,7 +185,7 @@ inductive step (cfg : CompilerConfig) (xi : ExternalCalls) (ge : genv) :
       (s : List stackframe) (f : function) (sp : val) (sig : signature)
       (ros : Sum mreg ident) (b : code) (rs : locset) (m : mem) (f' : fundef)
       (hfind : find_function ge ros rs = some f')
-      (hsig : funsig f' = sig) :
+      (hsig : sig = funsig f') :
       step cfg xi ge (State s f sp (Lcall sig ros :: b) rs m) E0
         (Callstate (Stackframe f sp rs b :: s) f' rs m)
   | exec_Ltailcall
@@ -195,15 +195,15 @@ inductive step (cfg : CompilerConfig) (xi : ExternalCalls) (ge : genv) :
       (hrs : rs' = CompCert4Lean.Backend.LTL.return_regs cfg
         (parent_locset s) rs)
       (hfind : find_function ge ros rs' = some f')
-      (hsig : funsig f' = sig)
+      (hsig : sig = funsig f')
       (hfree : Mem.free m stk z0 f.fn_stacksize = some m') :
       step cfg xi ge
         (State s f (Vptr stk Ptrofs.zero) (Ltailcall sig ros :: b) rs m) E0
         (Callstate s f' rs' m')
   | exec_Lbuiltin
-      (s : List stackframe) (f : function) (sp : val)
+      (s : List stackframe) (f : function) (sp : val) (rs : locset) (m : mem)
       (ef : external_function) (args : List (builtin_arg loc))
-      (res : builtin_res mreg) (b : code) (rs : locset) (m : mem)
+      (res : builtin_res mreg) (b : code)
       (vargs : List val) (t : trace) (vres : val) (rs' : locset) (m' : mem)
       (hargs : eval_builtin_args (Genv.to_senv ge) rs sp m args vargs)
       (hcall : external_call xi ef (Genv.to_senv ge) vargs m t vres m')
@@ -262,8 +262,8 @@ inductive step (cfg : CompilerConfig) (xi : ExternalCalls) (ge : genv) :
         (Returnstate s (CompCert4Lean.Backend.LTL.return_regs cfg
           (parent_locset s) rs) m')
   | exec_function_internal
-      (s : List stackframe) (f : function) (rs : locset) (m m' : mem)
-      (stk : block) (rs' : locset)
+      (s : List stackframe) (f : function) (rs : locset) (m : mem)
+      (rs' : locset) (m' : mem) (stk : block)
       (halloc : Mem.alloc m z0 f.fn_stacksize = (m', stk))
       (hrs : rs' = CompCert4Lean.Backend.LTL.undef_regs
         destroyed_at_function_entry (CompCert4Lean.Backend.LTL.call_regs rs)) :
