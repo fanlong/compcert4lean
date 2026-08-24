@@ -85,8 +85,7 @@ private def sumboolBool {P Q : Prop} (d : Sumbool P Q) : Bool :=
   | .left _ => true
   | .right _ => false
 
-private def intZeroExt (n : Z) (x : CCInt.int) : CCInt.int :=
-  CCInt.repr (zMod (CCInt.unsigned x) (zTwoP n))
+private abbrev intZeroExt := CompCert4Lean.Lib.Integers.Int.zero_ext
 
 private abbrev intSignExt := CompCert4Lean.Lib.Integers.Int.sign_ext
 
@@ -445,40 +444,40 @@ def quantity_chunk : memory_chunk → quantity
   | Mint64 | Mfloat64 | Many64 => Q64
   | _ => Q32
 
-inductive shape_encoding (chunk : memory_chunk) (v : val) : List memval → Prop where
-  | fragment (q : quantity) (i : Nat) (mvl : List memval) :
+inductive shape_encoding : memory_chunk → val → List memval → Prop where
+  | fragment (chunk : memory_chunk) (v : val) (q : quantity) (i : Nat) (mvl : List memval) :
       (chunk = Mint32 ∨ chunk = Many32 ∨ chunk = Mint64 ∨ chunk = Many64) →
       q = quantity_chunk chunk →
       Nat.succ i = size_quantity_nat q →
       (∀ mv, mv ∈ mvl →
         ∃ j, mv = Fragment v q j ∧ Nat.succ j ≠ size_quantity_nat q) →
       shape_encoding chunk v (Fragment v q i :: mvl)
-  | bytes (b : byte) (mvl : List memval) :
+  | bytes (chunk : memory_chunk) (v : val) (b : byte) (mvl : List memval) :
       (match v with
        | Vint _ | Vlong _ | Vfloat _ | Vsingle _ => True
        | _ => False) →
       (∀ mv, mv ∈ mvl → ∃ b', mv = Byte b') →
       shape_encoding chunk v (Byte b :: mvl)
-  | undef (mvl : List memval) :
+  | undef (chunk : memory_chunk) (v : val) (mvl : List memval) :
       (∀ mv, mv ∈ mvl → mv = Undef) →
       shape_encoding chunk v (Undef :: mvl)
 
 def encode_val_shapeStatement : Prop :=
   ∀ chunk v, shape_encoding chunk v (encode_val chunk v)
 
-inductive shape_decoding (chunk : memory_chunk) : List memval → val → Prop where
-  | fragment (v : val) (q : quantity) (i : Nat) (mvl : List memval) :
+inductive shape_decoding : memory_chunk → List memval → val → Prop where
+  | fragment (chunk : memory_chunk) (v : val) (q : quantity) (i : Nat) (mvl : List memval) :
       (chunk = Mint32 ∨ chunk = Many32 ∨ chunk = Mint64 ∨ chunk = Many64) →
       q = quantity_chunk chunk →
       Nat.succ i = size_quantity_nat q →
       (∀ mv, mv ∈ mvl →
         ∃ j, mv = Fragment v q j ∧ Nat.succ j ≠ size_quantity_nat q) →
       shape_decoding chunk (Fragment v q i :: mvl) (Val.load_result chunk v)
-  | shape_decoding_b (b : byte) (mvl : List memval) (v : val) :
+  | shape_decoding_b (chunk : memory_chunk) (b : byte) (mvl : List memval) (v : val) :
       (match v with | Vptr _ _ => False | _ => True) →
       (∀ mv, mv ∈ mvl → ∃ b', mv = Byte b') →
       shape_decoding chunk (Byte b :: mvl) v
-  | shape_decoding_u (mvl : List memval) :
+  | shape_decoding_u (chunk : memory_chunk) (mvl : List memval) :
       shape_decoding chunk mvl Vundef
 
 export shape_decoding (shape_decoding_b shape_decoding_u)
@@ -489,12 +488,12 @@ def decode_val_shapeStatement : Prop :=
 
 /-! ## Compatibility with memory injections -/
 
-inductive memval_inject (f : meminj) : memval → memval → Prop where
-  | byte (n : byte) : memval_inject f (Byte n) (Byte n)
-  | fragment {v1 v2 : val} (q : quantity) (n : Nat) :
+inductive memval_inject : meminj → memval → memval → Prop where
+  | byte (f : meminj) (n : byte) : memval_inject f (Byte n) (Byte n)
+  | fragment (f : meminj) (v1 v2 : val) (q : quantity) (n : Nat) :
       Val.inject f v1 v2 →
       memval_inject f (Fragment v1 q n) (Fragment v2 q n)
-  | undef (mv : memval) : memval_inject f Undef mv
+  | undef (f : meminj) (mv : memval) : memval_inject f Undef mv
 
 def memval_inject_incrStatement : Prop :=
   ∀ f f' v1 v2,
