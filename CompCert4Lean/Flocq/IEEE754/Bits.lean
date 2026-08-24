@@ -118,12 +118,14 @@ def split_join_bitsStatement : Prop :=
 def split_bits_of_binary_float_correctStatement : Prop :=
   ∀ (mw ew : Z), Zlt Z0 mw → Zlt Z0 ew →
     ∀ x : binary_float mw ew,
+    Binary.BinaryFloatCertificate x →
     split_bits mw ew (bits_of_binary_float mw ew x) =
       split_bits_of_binary_float mw ew x
 
 def bits_of_binary_float_rangeStatement : Prop :=
   ∀ (mw ew : Z), Zlt Z0 mw → Zlt Z0 ew →
     ∀ x : binary_float mw ew,
+    Binary.BinaryFloatCertificate x →
     Zle Z0 (bits_of_binary_float mw ew x) ∧
       Zlt (bits_of_binary_float mw ew x)
         (Zpower Ztwo (Zadd (Zadd mw ew) Zone))
@@ -137,6 +139,7 @@ def binary_float_of_bits_aux_correctStatement : Prop :=
 def binary_float_of_bits_of_binary_floatStatement : Prop :=
   ∀ (mw ew : Z) (Hmw : Zlt Z0 mw) (Hew : Zlt Z0 ew)
     (Hmax : Zlt (prec mw) (emax ew)) (x : binary_float mw ew),
+    Binary.BinaryFloatCertificate x →
     binary_float_of_bits mw ew Hmw Hew Hmax (bits_of_binary_float mw ew x) = x
 
 private abbrev z8 : Z := Z_of_nat 8

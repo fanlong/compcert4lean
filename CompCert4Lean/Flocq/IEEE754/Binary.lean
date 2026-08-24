@@ -285,13 +285,20 @@ def Bmult (mult_nan : binary_float prec emax → binary_float prec emax →
   BSN2B (mult_nan x y)
     (BinarySingleNaN.Bmult (prec := prec) (emax := emax) m (B2BSN x) (B2BSN y))
 
-def binary_normalize (m : BinarySingleNaN.mode) (x e : Z) (szero : Bool) :
-    binary_float prec emax :=
-  match BinarySingleNaN.binary_normalize (prec := prec) (emax := emax) m x e szero with
-  | .B754_zero s => B754_zero s
-  | .B754_infinity s => B754_infinity s
-  | .B754_finite s m e => .B754_finite s m e
-  | .B754_nan => B754_zero szero
+/- The source applies `BSN2B'` with the exact non-NaN proof for every
+   normalization invocation.  DMC-003 defers construction of that proof while
+   keeping the proof-gated conversion boundary mandatory. -/
+class BinaryNormalizeCertificate (prec emax : Z)
+    [Core.FLX.Prec_gt_0 prec] [BinarySingleNaN.Prec_lt_emax prec emax] : Prop where
+  is_nan_binary_normalize :
+    ∀ (m : BinarySingleNaN.mode) (x e : Z) (szero : Bool),
+      BinarySingleNaN.is_nan
+          (BinarySingleNaN.binary_normalize (prec := prec) (emax := emax) m x e szero) = false
+
+def binary_normalize (m : BinarySingleNaN.mode) (x e : Z) (szero : Bool)
+    [certificate : BinaryNormalizeCertificate prec emax] : binary_float prec emax :=
+  BSN2B' (BinarySingleNaN.binary_normalize (prec := prec) (emax := emax) m x e szero)
+    (certificate.is_nan_binary_normalize m x e szero)
 
 def Bplus (plus_nan : binary_float prec emax → binary_float prec emax →
       { x : binary_float prec emax // is_nan x = true })
@@ -530,7 +537,8 @@ def SF2FF_FF2SFStatement : Prop :=
   ∀ x : full_float, is_nan_FF x = false → SF2FF (FF2SF x) = x
 
 def binary_normalize_correctStatement (ctx : ExactRealContext)
-    (magnitude : Exact.Magnitude ctx) : Prop :=
+    (magnitude : Exact.Magnitude ctx)
+    [BinaryNormalizeCertificate prec emax] : Prop :=
   ∀ (m : BinarySingleNaN.mode) (mx ex : Z) (szero : Bool),
     let x := Exact.F2R ctx (Float radix2 mx ex)
     let z := binary_normalize (prec := prec) (emax := emax) m mx ex szero
