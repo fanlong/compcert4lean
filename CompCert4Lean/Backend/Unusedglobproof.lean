@@ -34,6 +34,29 @@ private abbrev zLe := ZArith.BinInt.Z.le
 private abbrev zLt := ZArith.BinInt.Z.lt
 private abbrev zOfNat := ZArith.BinInt.Z.of_nat
 
+/-! ## Selected generated finite-set facts surface -/
+
+namespace ISF
+
+/-- The selected `FSetFacts.Facts(IS)` application over the canonical set provider. -/
+def ISF := CompCert4Lean.Backend.Unusedglob.IS.MF
+
+abbrev F := ISF
+abbrev elt := CompCert4Lean.Backend.Unusedglob.IS.elt
+abbrev t := CompCert4Lean.Backend.Unusedglob.IS.t
+abbrev In := CompCert4Lean.Backend.Unusedglob.IS.In
+abbrev eqb := CompCert4Lean.Lib.FSetFacts.WFacts_fun.eqb ISF
+abbrev mem := CompCert4Lean.Backend.Unusedglob.IS.mem
+abbrev remove := CompCert4Lean.Backend.Unusedglob.IS.remove
+abbrev for_all := CompCert4Lean.Backend.Unusedglob.IS.for_all
+
+abbrev for_all_iff :=
+  CompCert4Lean.Lib.FSetFacts.WFacts_fun.for_all_iff ISF
+abbrev remove_b := CompCert4Lean.Lib.FSetFacts.WFacts_fun.remove_b ISF
+abbrev remove_iff := CompCert4Lean.Lib.FSetFacts.WFacts_fun.remove_iff ISF
+
+end ISF
+
 /-! ## Relational specification of the transformation -/
 
 structure match_prog_1 (u : IS.t) (p tp : program) : Prop where
@@ -79,11 +102,15 @@ def match_prog (p tp : program) : Prop :=
 
 /-! ## Properties of the static analysis -/
 
-structure workset_incl (w1 w2 : workset) : Prop where
-  seen_subset : IS.Subset w1.w_seen w2.w_seen
-  todo_subset : ∀ ⦃id⦄, id ∈ w1.w_todo → id ∈ w2.w_todo
-  seen_tracked : ∀ id,
-    IS.In id w2.w_seen → IS.In id w1.w_seen ∨ id ∈ w2.w_todo
+inductive workset_incl (w1 w2 : workset) : Prop where
+  | workset_incl_intro
+      (SEEN : IS.Subset w1.w_seen w2.w_seen)
+      (TODO : ∀ (id : ident), id ∈ w1.w_todo → id ∈ w2.w_todo)
+      (TRACK : ∀ id,
+        IS.In id w2.w_seen → IS.In id w1.w_seen ∨ id ∈ w2.w_todo) :
+      workset_incl w1 w2
+
+export workset_incl (workset_incl_intro)
 
 def seen_workset_inclStatement : Prop :=
   ∀ (w1 w2 : workset) (id : IS.elt),
