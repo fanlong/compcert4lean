@@ -58,6 +58,14 @@ end Relations.Relation_Operators
 
 namespace Sorting.Sorted
 
+inductive LocallySorted {A : Type} (R : A → A → Prop) : List A → Prop where
+  | LSorted_nil : LocallySorted R []
+  | LSorted_cons1 (a : A) : LocallySorted R [a]
+  | LSorted_consn (a b : A) (l : List A) :
+      LocallySorted R (b :: l) → R a b → LocallySorted R (a :: b :: l)
+
+export LocallySorted (LSorted_nil LSorted_cons1 LSorted_consn)
+
 inductive HdRel {A : Type} (R : A → A → Prop) (a : A) : List A → Prop where
   | nil : HdRel R a []
   | cons (b : A) (l : List A) : R a b → HdRel R a (b :: l)
@@ -110,6 +118,15 @@ theorem Sorted_inv {A : Type} {R : A → A → Prop}
     Sorted R l ∧ HdRel R a l := by
   cases sorted with
   | cons sorted hdRel => exact ⟨sorted, hdRel⟩
+
+inductive StronglySorted {A : Type} (R : A → A → Prop) : List A → Prop where
+  | SSorted_nil : StronglySorted R []
+  | SSorted_cons (a : A) (l : List A) :
+      StronglySorted R l →
+      _root_.CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.List.Forall (R a) l →
+      StronglySorted R (a :: l)
+
+export StronglySorted (SSorted_nil SSorted_cons)
 
 noncomputable opaque Sorted_rect {A : Type} {R : A → A → Prop}
     (P : List A → Type)

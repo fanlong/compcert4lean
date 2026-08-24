@@ -18,6 +18,7 @@ module; no theorem stubs are introduced here.
 namespace CompCert4Lean.Lib.Postorder
 
 open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Foundation.Ordered.Rocq.Coq.Sorting.Sorted
 open CompCert4Lean.Lib.Coqlib
 open CompCert4Lean.Lib.Maps
 
@@ -72,30 +73,6 @@ def iter_merge : List (Option (List positive)) → List positive → List positi
 def «Sort» : Type := List positive → List positive
 
 def sort : «Sort» := iter_merge []
-
-private inductive LocallySorted (R : positive → positive → Prop) :
-    List positive → Prop where
-  | nil : LocallySorted R []
-  | singleton (a : positive) : LocallySorted R [a]
-  | cons (a b : positive) (l : List positive) :
-      LocallySorted R (b :: l) → R a b → LocallySorted R (a :: b :: l)
-
-private inductive HeadRel (R : positive → positive → Prop) (a : positive) :
-    List positive → Prop where
-  | nil : HeadRel R a []
-  | cons (b : positive) (l : List positive) : R a b → HeadRel R a (b :: l)
-
-private inductive Sorted (R : positive → positive → Prop) :
-    List positive → Prop where
-  | nil : Sorted R []
-  | cons (a : positive) (l : List positive) :
-      Sorted R l → HeadRel R a l → Sorted R (a :: l)
-
-private inductive StronglySorted (R : positive → positive → Prop) :
-    List positive → Prop where
-  | nil : StronglySorted R []
-  | cons (a : positive) (l : List positive) :
-      StronglySorted R l → (∀ b ∈ l, R a b) → StronglySorted R (a :: l)
 
 private def ordered (x y : positive) : Prop := leb x y = true
 

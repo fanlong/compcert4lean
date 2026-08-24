@@ -45,4 +45,46 @@ def Rnd_UP_pt (F : R → Prop) (x f : R) : Prop :=
 def Rnd_N_pt (F : R → Prop) (x f : R) : Prop :=
   F f ∧ ∀ g : R, F g → Rle (Rabs (Rminus f x)) (Rabs (Rminus g x))
 
+/-! The theorem-facing definitions range over an explicitly injected exact-real
+    context.  The executable definitions above retain the runtime carrier. -/
+namespace Exact
+
+abbrev Context := CompCert4Lean.Flocq.Core.Raux.Exact.Context
+abbrev R (ctx : Context) := CompCert4Lean.Flocq.Core.Raux.Exact.R ctx
+
+def F2R (ctx : Context) {beta : radix} (f : float beta) : R ctx :=
+  CompCert4Lean.Flocq.Core.Raux.Exact.Rmult ctx
+    (CompCert4Lean.Flocq.Core.Raux.Exact.IZR ctx (Fnum f))
+    (CompCert4Lean.Flocq.Core.Raux.Exact.bpow ctx beta (Fexp f))
+
+def round_pred_total (ctx : Context) (P : R ctx → R ctx → Prop) : Prop :=
+  ∀ x, ∃ f, P x f
+
+def round_pred_monotone (ctx : Context) (P : R ctx → R ctx → Prop) : Prop :=
+  ∀ x y f g, P x f → P y g →
+    CompCert4Lean.Flocq.Core.Raux.Exact.Rle ctx x y →
+      CompCert4Lean.Flocq.Core.Raux.Exact.Rle ctx f g
+
+def Rnd_DN_pt (ctx : Context) (F : R ctx → Prop) (x f : R ctx) : Prop :=
+  F f ∧ CompCert4Lean.Flocq.Core.Raux.Exact.Rle ctx f x ∧
+    ∀ g : R ctx, F g →
+      CompCert4Lean.Flocq.Core.Raux.Exact.Rle ctx g x →
+        CompCert4Lean.Flocq.Core.Raux.Exact.Rle ctx g f
+
+def Rnd_UP_pt (ctx : Context) (F : R ctx → Prop) (x f : R ctx) : Prop :=
+  F f ∧ CompCert4Lean.Flocq.Core.Raux.Exact.Rle ctx x f ∧
+    ∀ g : R ctx, F g →
+      CompCert4Lean.Flocq.Core.Raux.Exact.Rle ctx x g →
+        CompCert4Lean.Flocq.Core.Raux.Exact.Rle ctx f g
+
+def Rnd_N_pt (ctx : Context) (F : R ctx → Prop) (x f : R ctx) : Prop :=
+  F f ∧ ∀ g : R ctx, F g →
+    CompCert4Lean.Flocq.Core.Raux.Exact.Rle ctx
+      (CompCert4Lean.Flocq.Core.Raux.Exact.Rabs ctx
+        (CompCert4Lean.Flocq.Core.Raux.Exact.Rminus ctx f x))
+      (CompCert4Lean.Flocq.Core.Raux.Exact.Rabs ctx
+        (CompCert4Lean.Flocq.Core.Raux.Exact.Rminus ctx g x))
+
+end Exact
+
 end CompCert4Lean.Flocq.Core.Defs

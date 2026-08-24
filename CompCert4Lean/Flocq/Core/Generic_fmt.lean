@@ -115,10 +115,83 @@ class Valid_rnd_Certificate : Prop where
   nearest : ∀ choice : Z → Bool, Valid_rnd (Znearest choice)
   down : Valid_rnd Zfloor
 
-def valid_rnd_NStatement : Prop :=
-  ∀ choice : Z → Bool, Valid_rnd (Znearest choice)
+/-! Theorem-facing surfaces use the canonical exact-real provider.  The
+    executable definitions and classes above intentionally remain on the
+    checked runtime carrier. -/
+abbrev ExactRealContext := Raux.ExactRealContext
 
-def valid_rnd_DNStatement : Prop := Valid_rnd Zfloor
+namespace Exact
+
+abbrev Context := ExactRealContext
+abbrev Magnitude (ctx : Context) := Raux.Exact.Magnitude ctx
+abbrev R (ctx : Context) := Defs.Exact.R ctx
+abbrev Valid_exp (fexp : Z → Z) := CompCert4Lean.Flocq.Core.Generic_fmt.Valid_exp fexp
+abbrev IZR (ctx : Context) := Raux.Exact.IZR ctx
+abbrev R0 (ctx : Context) := Raux.Exact.R0 ctx
+abbrev Rone (ctx : Context) := Raux.Exact.Rone ctx
+abbrev Rtwo (ctx : Context) := Raux.Exact.Rtwo ctx
+abbrev Ropp (ctx : Context) := Raux.Exact.Ropp ctx
+abbrev Rplus (ctx : Context) := Raux.Exact.Rplus ctx
+abbrev Rminus (ctx : Context) := Raux.Exact.Rminus ctx
+abbrev Rmult (ctx : Context) := Raux.Exact.Rmult ctx
+abbrev Rdiv (ctx : Context) := Raux.Exact.Rdiv ctx
+abbrev Rabs (ctx : Context) := Raux.Exact.Rabs ctx
+abbrev Rlt (ctx : Context) := Raux.Exact.Rlt ctx
+abbrev Rle (ctx : Context) := Raux.Exact.Rle ctx
+noncomputable abbrev Rcompare (ctx : Context) := Raux.Exact.Rcompare ctx
+abbrev Zfloor (ctx : Context) := Raux.Exact.Zfloor ctx
+abbrev Zceil (ctx : Context) := Raux.Exact.Zceil ctx
+noncomputable abbrev Ztrunc (ctx : Context) := Raux.Exact.Ztrunc ctx
+noncomputable abbrev Zaway (ctx : Context) := Raux.Exact.Zaway ctx
+abbrev bpow (ctx : Context) := Raux.Exact.bpow ctx
+abbrev F2R (ctx : Context) {beta : radix} (f : float beta) : R ctx :=
+  Defs.Exact.F2R ctx f
+abbrev mag (magnitude : Magnitude ctx) (beta : radix) (x : R ctx) : Z :=
+  (Raux.Exact.mag magnitude beta x).mag_val
+
+def cexp (ctx : Context) (magnitude : Magnitude ctx) (beta : radix)
+    (fexp : Z → Z) (x : R ctx) : Z :=
+  fexp (mag magnitude beta x)
+
+def canonical (ctx : Context) (magnitude : Magnitude ctx) (beta : radix)
+    (fexp : Z → Z) (f : float beta) : Prop :=
+  Fexp f = cexp ctx magnitude beta fexp (F2R ctx f)
+
+def scaled_mantissa (ctx : Context) (magnitude : Magnitude ctx) (beta : radix)
+    (fexp : Z → Z) (x : R ctx) : R ctx :=
+  Rmult ctx x (bpow ctx beta (Zopp (cexp ctx magnitude beta fexp x)))
+
+noncomputable def generic_format (ctx : Context) (magnitude : Magnitude ctx) (beta : radix)
+    (fexp : Z → Z) (x : R ctx) : Prop :=
+  x = F2R ctx (Float beta (Ztrunc ctx (scaled_mantissa ctx magnitude beta fexp x))
+    (cexp ctx magnitude beta fexp x))
+
+class Valid_rnd (ctx : Context) (rnd : R ctx → Z) : Prop where
+  Zrnd_le : ∀ x y : R ctx, Rle ctx x y → Zle (rnd x) (rnd y)
+  Zrnd_IZR : ∀ n : Z, rnd (IZR ctx n) = n
+
+def round (ctx : Context) (magnitude : Magnitude ctx) (beta : radix)
+    (fexp : Z → Z) (rnd : R ctx → Z) (x : R ctx) : R ctx :=
+  F2R ctx (Float beta (rnd (scaled_mantissa ctx magnitude beta fexp x))
+    (cexp ctx magnitude beta fexp x))
+
+noncomputable def Znearest (ctx : Context) (choice : Z → Bool) (x : R ctx) : Z :=
+  match Rcompare ctx (Rminus ctx x (IZR ctx (Zfloor ctx x)))
+      (Rdiv ctx (Rone ctx) (Rtwo ctx)) with
+  | .Lt => Zfloor ctx x
+  | .Eq => if choice (Zfloor ctx x) then Zceil ctx x else Zfloor ctx x
+  | .Gt => Zceil ctx x
+
+def Zrnd_opp (ctx : Context) (rnd : R ctx → Z) (x : R ctx) : Z :=
+  Zopp (rnd (Ropp ctx x))
+
+end Exact
+
+def valid_rnd_NStatement (ctx : ExactRealContext) : Prop :=
+  ∀ choice : Z → Bool, Exact.Valid_rnd ctx (Exact.Znearest ctx choice)
+
+def valid_rnd_DNStatement (ctx : ExactRealContext) : Prop :=
+  Exact.Valid_rnd ctx (Exact.Zfloor ctx)
 
 /- The proof phase constructs the mandatory certificate.  These adapters then
    restore the source Global Instance results without a hidden or fabricated
@@ -132,370 +205,273 @@ instance valid_rnd_DN [certificate : Valid_rnd_Certificate] : Valid_rnd Zfloor :
 
 /-! Generated and directly implemented surfaces. -/
 
-def Znearest_DN_or_UPStatement : Prop :=
-  ∀ choice x, Znearest choice x = Zfloor x ∨ Znearest choice x = Zceil x
+def Znearest_DN_or_UPStatement (ctx : ExactRealContext) : Prop :=
+  ∀ choice x, Exact.Znearest ctx choice x = Exact.Zfloor ctx x ∨ Exact.Znearest ctx choice x = Exact.Zceil ctx x
 
-def Znearest_ge_floorStatement : Prop :=
-  ∀ choice x, Zle (Zfloor x) (Znearest choice x)
+def Znearest_ge_floorStatement (ctx : ExactRealContext) : Prop :=
+  ∀ choice x, Zle (Exact.Zfloor ctx x) (Exact.Znearest ctx choice x)
 
-def Znearest_le_ceilStatement : Prop :=
-  ∀ choice x, Zle (Znearest choice x) (Zceil x)
+def Znearest_le_ceilStatement (ctx : ExactRealContext) : Prop :=
+  ∀ choice x, Zle (Exact.Znearest ctx choice x) (Exact.Zceil ctx x)
 
-def Znearest_oppStatement : Prop :=
+def Znearest_oppStatement (ctx : ExactRealContext) : Prop :=
   ∀ choice x,
-    Znearest choice (Ropp x) =
-      Zopp (Znearest (fun t => Bool.not (choice (Zopp (Zadd t Zone)))) x)
+    Exact.Znearest ctx choice (Exact.Ropp ctx x) =
+      Zopp (Exact.Znearest ctx (fun t => Bool.not (choice (Zopp (Zadd t Zone)))) x)
 
-def Zrnd_DN_or_UPStatement : Prop :=
-  ∀ rnd, Valid_rnd rnd → ∀ x, rnd x = Zfloor x ∨ rnd x = Zceil x
+def Zrnd_DN_or_UPStatement (ctx : ExactRealContext) : Prop :=
+  ∀ rnd, Exact.Valid_rnd ctx rnd → ∀ x, rnd x = Exact.Zfloor ctx x ∨ rnd x = Exact.Zceil ctx x
 
-def Zrnd_ZR_or_AWStatement : Prop :=
-  ∀ rnd, Valid_rnd rnd → ∀ x, rnd x = Ztrunc x ∨ rnd x = Zaway x
+def Zrnd_ZR_or_AWStatement (ctx : ExactRealContext) : Prop :=
+  ∀ rnd, Exact.Valid_rnd ctx rnd → ∀ x, rnd x = Exact.Ztrunc ctx x ∨ rnd x = Exact.Zaway ctx x
 
-def canonical_uniqueStatement : Prop :=
+def canonical_uniqueStatement (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx) : Prop :=
   ∀ beta fexp f1 f2,
-    canonical beta fexp f1 → canonical beta fexp f2 →
-      F2R f1 = F2R f2 → f1 = f2
+    Exact.canonical ctx magnitude beta fexp f1 → Exact.canonical ctx magnitude beta fexp f2 →
+      Exact.F2R ctx f1 = Exact.F2R ctx f2 → f1 = f2
 
-def cexp_absStatement : Prop :=
-  ∀ beta fexp x, cexp beta fexp (Rabs x) = cexp beta fexp x
+def cexp_absStatement (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx) : Prop :=
+  ∀ beta fexp x, Exact.cexp ctx magnitude beta fexp (Exact.Rabs ctx x) = Exact.cexp ctx magnitude beta fexp x
 
-def cexp_fexpStatement : Prop :=
+def cexp_fexpStatement (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx) : Prop :=
   ∀ beta fexp x ex,
-    (Rle (bpow beta (Zsub ex Zone)) (Rabs x) ∧ Rlt (Rabs x) (bpow beta ex)) →
-      cexp beta fexp x = fexp ex
+    (Exact.Rle ctx (Exact.bpow ctx beta (Zsub ex Zone)) (Exact.Rabs ctx x) ∧ Exact.Rlt ctx (Exact.Rabs ctx x) (Exact.bpow ctx beta ex)) →
+      Exact.cexp ctx magnitude beta fexp x = fexp ex
 
-def cexp_fexp_posStatement : Prop :=
+def cexp_fexp_posStatement (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx) : Prop :=
   ∀ beta fexp x ex,
-    (Rle (bpow beta (Zsub ex Zone)) x ∧ Rlt x (bpow beta ex)) →
-      cexp beta fexp x = fexp ex
+    (Exact.Rle ctx (Exact.bpow ctx beta (Zsub ex Zone)) x ∧ Exact.Rlt ctx x (Exact.bpow ctx beta ex)) →
+      Exact.cexp ctx magnitude beta fexp x = fexp ex
 
-def cexp_oppStatement : Prop :=
-  ∀ beta fexp x, cexp beta fexp (Ropp x) = cexp beta fexp x
+def cexp_oppStatement (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx) : Prop :=
+  ∀ beta fexp x, Exact.cexp ctx magnitude beta fexp (Exact.Ropp ctx x) = Exact.cexp ctx magnitude beta fexp x
 
-def cexp_round_geStatement : Prop :=
-  ∀ beta fexp rnd,
-    Valid_exp fexp → Monotone_exp fexp → Valid_rnd rnd →
-      ∀ x, round beta fexp rnd x ≠ R0 →
-        Zle (cexp beta fexp x) (cexp beta fexp (round beta fexp rnd x))
+def cexp_round_geStatement (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx) : Prop :=
+  ∀ beta fexp, Valid_exp fexp → Monotone_exp fexp →
+    ∀ rnd, Exact.Valid_rnd ctx rnd →
+    ∀ x, Exact.round ctx magnitude beta fexp rnd x ≠ Exact.R0 ctx →
+      Zle (Exact.cexp ctx magnitude beta fexp x) (Exact.cexp ctx magnitude beta fexp (Exact.round ctx magnitude beta fexp rnd x))
 
-def generic_format_0Statement : Prop :=
-  ∀ beta fexp, generic_format beta fexp R0
+def generic_format_0Statement (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx) : Prop :=
+  ∀ beta fexp, Exact.generic_format ctx magnitude beta fexp (Exact.R0 ctx)
 
-def generic_format_EMStatement : Prop :=
-  ∀ beta fexp, Valid_exp fexp → ∀ x, generic_format beta fexp x ∨ ¬ generic_format beta fexp x
+def generic_format_EMStatement (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx) : Prop :=
+  ∀ beta fexp, Valid_exp fexp → ∀ x, Exact.generic_format ctx magnitude beta fexp x ∨ ¬ Exact.generic_format ctx magnitude beta fexp x
 
-def generic_format_F2RStatement : Prop :=
+def generic_format_F2RStatement (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx) : Prop :=
   ∀ beta fexp m e,
-    (m ≠ Z0 → Zle (cexp beta fexp (F2R (Float beta m e))) e) →
-      generic_format beta fexp (F2R (Float beta m e))
+    (m ≠ Z0 → Zle (Exact.cexp ctx magnitude beta fexp (Exact.F2R ctx (Float beta m e))) e) →
+      Exact.generic_format ctx magnitude beta fexp (Exact.F2R ctx (Float beta m e))
 
-def generic_format_absStatement : Prop :=
-  ∀ beta fexp, ∀ x, generic_format beta fexp x → generic_format beta fexp (Rabs x)
+def generic_format_absStatement (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx) : Prop :=
+  ∀ beta fexp x, Exact.generic_format ctx magnitude beta fexp x → Exact.generic_format ctx magnitude beta fexp (Exact.Rabs ctx x)
 
-def generic_format_abs_invStatement : Prop :=
-  ∀ beta fexp, ∀ x, generic_format beta fexp (Rabs x) → generic_format beta fexp x
+def generic_format_abs_invStatement (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx) : Prop :=
+  ∀ beta fexp x, Exact.generic_format ctx magnitude beta fexp (Exact.Rabs ctx x) → Exact.generic_format ctx magnitude beta fexp x
 
-def generic_format_bpowStatement : Prop :=
-  ∀ beta fexp e,
-    Zle (fexp (Zadd e Zone)) e → generic_format beta fexp (bpow beta e)
+def generic_format_bpowStatement (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx) : Prop :=
+  ∀ beta fexp e, Zle (fexp (Zadd e Zone)) e → Exact.generic_format ctx magnitude beta fexp (Exact.bpow ctx beta e)
 
-def generic_format_bpow'Statement : Prop :=
-  ∀ beta fexp e, Valid_exp fexp → Zle (fexp e) e → generic_format beta fexp (bpow beta e)
+def generic_format_bpow'Statement (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx) : Prop :=
+  ∀ beta fexp, Valid_exp fexp → ∀ e, Zle (fexp e) e → Exact.generic_format ctx magnitude beta fexp (Exact.bpow ctx beta e)
 
-def generic_format_bpow_invStatement : Prop :=
-  ∀ beta fexp e, Valid_exp fexp → generic_format beta fexp (bpow beta e) → Zle (fexp e) e
+def generic_format_bpow_invStatement (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx) : Prop :=
+  ∀ beta fexp, Valid_exp fexp → ∀ e, Exact.generic_format ctx magnitude beta fexp (Exact.bpow ctx beta e) → Zle (fexp e) e
 
-def generic_format_bpow_inv'Statement : Prop :=
-  ∀ beta fexp e, generic_format beta fexp (bpow beta e) →
-    Zle (fexp (Zadd e Zone)) e
+def generic_format_bpow_inv'Statement (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx) : Prop :=
+  ∀ beta fexp e, Exact.generic_format ctx magnitude beta fexp (Exact.bpow ctx beta e) → Zle (fexp (Zadd e Zone)) e
 
-def generic_format_canonicalStatement : Prop :=
-  ∀ beta fexp f, canonical beta fexp f → generic_format beta fexp (F2R f)
+def generic_format_canonicalStatement (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx) : Prop :=
+  ∀ beta fexp f, Exact.canonical ctx magnitude beta fexp f → Exact.generic_format ctx magnitude beta fexp (Exact.F2R ctx f)
 
-def generic_format_ge_bpowStatement : Prop :=
-  ∀ beta fexp emin,
-    (∀ e, Zle emin (fexp e)) → ∀ x, Rlt R0 x → generic_format beta fexp x → Rle (bpow beta emin) x
+def generic_format_ge_bpowStatement (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx) : Prop :=
+  ∀ beta fexp emin, (∀ e, Zle emin (fexp e)) → ∀ x, Exact.Rlt ctx (Exact.R0 ctx) x → Exact.generic_format ctx magnitude beta fexp x → Exact.Rle ctx (Exact.bpow ctx beta emin) x
 
-def generic_format_oppStatement : Prop :=
-  ∀ beta fexp, ∀ x, generic_format beta fexp x → generic_format beta fexp (Ropp x)
+def generic_format_oppStatement (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx) : Prop :=
+  ∀ beta fexp x, Exact.generic_format ctx magnitude beta fexp x → Exact.generic_format ctx magnitude beta fexp (Exact.Ropp ctx x)
 
-def generic_format_roundStatement : Prop :=
-  ∀ beta fexp rnd, Valid_exp fexp → Valid_rnd rnd → ∀ x,
-    generic_format beta fexp (round beta fexp rnd x)
+def generic_format_roundStatement (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx) : Prop :=
+  ∀ beta fexp, Valid_exp fexp → ∀ rnd, Exact.Valid_rnd ctx rnd → ∀ x, Exact.generic_format ctx magnitude beta fexp (Exact.round ctx magnitude beta fexp rnd x)
 
-def generic_format_round_posStatement : Prop :=
-  ∀ beta fexp rnd x, Valid_exp fexp → Valid_rnd rnd →
-    Rlt R0 x → generic_format beta fexp (round beta fexp rnd x)
+def generic_format_round_posStatement (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx) : Prop :=
+  ∀ beta fexp, Valid_exp fexp → ∀ rnd, Exact.Valid_rnd ctx rnd → ∀ x, Exact.Rlt ctx (Exact.R0 ctx) x → Exact.generic_format ctx magnitude beta fexp (Exact.round ctx magnitude beta fexp rnd x)
 
-def generic_inclusionStatement : Prop :=
-  ∀ beta fexp1 fexp2 e, Valid_exp fexp1 → Valid_exp fexp2 →
-    Zle (fexp2 e) (fexp1 e) → ∀ x,
-      (Rle (bpow beta (Zsub e Zone)) (Rabs x) ∧ Rle (Rabs x) (bpow beta e)) →
-        generic_format beta fexp1 x → generic_format beta fexp2 x
+def generic_inclusionStatement (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx) : Prop :=
+  ∀ beta fexp1 fexp2, Valid_exp fexp1 → Valid_exp fexp2 → ∀ e, Zle (fexp2 e) (fexp1 e) → ∀ x,
+    (Exact.Rle ctx (Exact.bpow ctx beta (Zsub e Zone)) (Exact.Rabs ctx x) ∧ Exact.Rle ctx (Exact.Rabs ctx x) (Exact.bpow ctx beta e)) →
+      Exact.generic_format ctx magnitude beta fexp1 x → Exact.generic_format ctx magnitude beta fexp2 x
 
-def generic_inclusion_leStatement : Prop :=
-  ∀ beta fexp1 fexp2 e2, Valid_exp fexp1 → Valid_exp fexp2 →
-    (∀ e, Zle e e2 → Zle (fexp2 e) (fexp1 e)) → ∀ x,
-      Rle (Rabs x) (bpow beta e2) → generic_format beta fexp1 x → generic_format beta fexp2 x
+def generic_inclusion_leStatement (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx) : Prop :=
+  ∀ beta fexp1 fexp2, Valid_exp fexp1 → Valid_exp fexp2 → ∀ e2, (∀ e, Zle e e2 → Zle (fexp2 e) (fexp1 e)) → ∀ x,
+    Exact.Rle ctx (Exact.Rabs ctx x) (Exact.bpow ctx beta e2) → Exact.generic_format ctx magnitude beta fexp1 x → Exact.generic_format ctx magnitude beta fexp2 x
 
-def generic_inclusion_magStatement : Prop :=
-  ∀ beta fexp1 fexp2 x,
-    (x ≠ R0 → Zle (fexp2 (mag beta x)) (fexp1 (mag beta x))) →
-      generic_format beta fexp1 x → generic_format beta fexp2 x
+def generic_inclusion_magStatement (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx) : Prop :=
+  ∀ beta fexp1 fexp2 x, (x ≠ Exact.R0 ctx → Zle (fexp2 (Exact.mag magnitude beta x)) (fexp1 (Exact.mag magnitude beta x))) →
+    Exact.generic_format ctx magnitude beta fexp1 x → Exact.generic_format ctx magnitude beta fexp2 x
 
-def lt_cexp_posStatement : Prop :=
-  ∀ beta fexp x y, Monotone_exp fexp → Rlt R0 y →
-    Zlt (cexp beta fexp x) (cexp beta fexp y) → Rlt x y
+def lt_cexp_posStatement (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx) : Prop :=
+  ∀ beta fexp, Monotone_exp fexp → ∀ x y, Exact.Rlt ctx (Exact.R0 ctx) y → Zlt (Exact.cexp ctx magnitude beta fexp x) (Exact.cexp ctx magnitude beta fexp y) → Exact.Rlt ctx x y
 
-def mag_generic_gtStatement : Prop :=
-  ∀ beta fexp x, Valid_exp fexp → x ≠ R0 → generic_format beta fexp x →
-    Zlt (cexp beta fexp x) (mag beta x)
+def mag_generic_gtStatement (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx) : Prop :=
+  ∀ beta fexp, Valid_exp fexp → ∀ x, x ≠ Exact.R0 ctx → Exact.generic_format ctx magnitude beta fexp x → Zlt (Exact.cexp ctx magnitude beta fexp x) (Exact.mag magnitude beta x)
 
-def mag_round_ZRStatement : Prop :=
-  ∀ beta fexp, Valid_exp fexp →
-    ∀ x, round beta fexp Ztrunc x ≠ R0 →
-      (mag beta (round beta fexp Ztrunc x) : Z) = (mag beta x : Z)
+def mag_round_ZRStatement (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx) : Prop :=
+  ∀ beta fexp, Valid_exp fexp → ∀ x, Exact.round ctx magnitude beta fexp (Exact.Ztrunc ctx) x ≠ Exact.R0 ctx → Exact.mag magnitude beta (Exact.round ctx magnitude beta fexp (Exact.Ztrunc ctx) x) = Exact.mag magnitude beta x
 
-def mag_round_geStatement : Prop :=
-  ∀ beta fexp, Valid_exp fexp →
-    ∀ rnd, Valid_rnd rnd →
-      ∀ x, round beta fexp rnd x ≠ R0 →
-        Zle (mag beta x) (mag beta (round beta fexp rnd x))
+def mag_round_geStatement (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx) : Prop :=
+  ∀ beta fexp, Valid_exp fexp → ∀ rnd, Exact.Valid_rnd ctx rnd → ∀ x, Exact.round ctx magnitude beta fexp rnd x ≠ Exact.R0 ctx → Zle (Exact.mag magnitude beta x) (Exact.mag magnitude beta (Exact.round ctx magnitude beta fexp rnd x))
 
-def mantissa_small_posStatement : Prop :=
-  ∀ (beta : radix) (fexp : Z → Z) x ex,
-    (Rle (bpow beta (Zsub ex Zone)) x ∧ Rlt x (bpow beta ex)) →
-      Zle ex (fexp ex) →
-        Rlt R0 (Rmult x (bpow beta (Zopp (fexp ex)))) ∧
-          Rlt (Rmult x (bpow beta (Zopp (fexp ex)))) ⟨1⟩
+def mantissa_small_posStatement (ctx : ExactRealContext) : Prop :=
+  ∀ (beta : radix) (fexp : Z → Z) x ex, (Exact.Rle ctx (Exact.bpow ctx beta (Zsub ex Zone)) x ∧ Exact.Rlt ctx x (Exact.bpow ctx beta ex)) → Zle ex (fexp ex) →
+    Exact.Rlt ctx (Exact.R0 ctx) (Exact.Rmult ctx x (Exact.bpow ctx beta (Zopp (fexp ex)))) ∧ Exact.Rlt ctx (Exact.Rmult ctx x (Exact.bpow ctx beta (Zopp (fexp ex)))) (Exact.IZR ctx Zone)
 
-def round_0Statement : Prop :=
-  ∀ beta fexp rnd, Valid_rnd rnd → round beta fexp rnd R0 = R0
+def round_0Statement (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx) : Prop :=
+  ∀ beta fexp rnd, Exact.Valid_rnd ctx rnd → Exact.round ctx magnitude beta fexp rnd (Exact.R0 ctx) = Exact.R0 ctx
 
-def round_AW_UPStatement : Prop :=
-  ∀ beta fexp x, Rle R0 x →
-    round beta fexp Zaway x = round beta fexp Zceil x
+def round_AW_UPStatement (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx) : Prop :=
+  ∀ beta fexp x, Exact.Rle ctx (Exact.R0 ctx) x → Exact.round ctx magnitude beta fexp (Exact.Zaway ctx) x = Exact.round ctx magnitude beta fexp (Exact.Zceil ctx) x
 
-def round_AW_absStatement : Prop :=
-  ∀ beta fexp, Valid_exp fexp → ∀ x,
-    round beta fexp Zaway (Rabs x) = Rabs (round beta fexp Zaway x)
+def round_AW_absStatement (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx) : Prop :=
+  ∀ beta fexp, Valid_exp fexp → ∀ x, Exact.round ctx magnitude beta fexp (Exact.Zaway ctx) (Exact.Rabs ctx x) = Exact.Rabs ctx (Exact.round ctx magnitude beta fexp (Exact.Zaway ctx) x)
 
-def round_AW_oppStatement : Prop :=
-  ∀ beta fexp x, round beta fexp Zaway (Ropp x) = Ropp (round beta fexp Zaway x)
+def round_AW_oppStatement (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx) : Prop :=
+  ∀ beta fexp x, Exact.round ctx magnitude beta fexp (Exact.Zaway ctx) (Exact.Ropp ctx x) = Exact.Ropp ctx (Exact.round ctx magnitude beta fexp (Exact.Zaway ctx) x)
 
-def round_DN_oppStatement : Prop :=
-  ∀ beta fexp x, round beta fexp Zfloor (Ropp x) = Ropp (round beta fexp Zceil x)
+def round_DN_oppStatement (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx) : Prop :=
+  ∀ beta fexp x, Exact.round ctx magnitude beta fexp (Exact.Zfloor ctx) (Exact.Ropp ctx x) = Exact.Ropp ctx (Exact.round ctx magnitude beta fexp (Exact.Zceil ctx) x)
 
-def round_DN_or_UPStatement : Prop :=
-  ∀ beta fexp rnd, Valid_rnd rnd → ∀ x,
-    round beta fexp rnd x = round beta fexp Zfloor x ∨ round beta fexp rnd x = round beta fexp Zceil x
+def round_DN_or_UPStatement (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx) : Prop :=
+  ∀ beta fexp rnd, Exact.Valid_rnd ctx rnd → ∀ x, Exact.round ctx magnitude beta fexp rnd x = Exact.round ctx magnitude beta fexp (Exact.Zfloor ctx) x ∨ Exact.round ctx magnitude beta fexp rnd x = Exact.round ctx magnitude beta fexp (Exact.Zceil ctx) x
 
-def round_DN_ptStatement : Prop :=
-  ∀ beta fexp x, Valid_exp fexp → Rnd_DN_pt (generic_format beta fexp) x (round beta fexp Zfloor x)
+def round_DN_ptStatement (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx) : Prop :=
+  ∀ beta fexp, Valid_exp fexp → ∀ x, Defs.Exact.Rnd_DN_pt ctx (Exact.generic_format ctx magnitude beta fexp) x (Exact.round ctx magnitude beta fexp (Exact.Zfloor ctx) x)
 
-def round_UP_oppStatement : Prop :=
-  ∀ beta fexp x, round beta fexp Zceil (Ropp x) = Ropp (round beta fexp Zfloor x)
+def round_UP_oppStatement (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx) : Prop :=
+  ∀ beta fexp x, Exact.round ctx magnitude beta fexp (Exact.Zceil ctx) (Exact.Ropp ctx x) = Exact.Ropp ctx (Exact.round ctx magnitude beta fexp (Exact.Zfloor ctx) x)
 
-def round_UP_ptStatement : Prop :=
-  ∀ beta fexp x, Valid_exp fexp → Rnd_UP_pt (generic_format beta fexp) x (round beta fexp Zceil x)
+def round_UP_ptStatement (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx) : Prop :=
+  ∀ beta fexp, Valid_exp fexp → ∀ x, Defs.Exact.Rnd_UP_pt ctx (Exact.generic_format ctx magnitude beta fexp) x (Exact.round ctx magnitude beta fexp (Exact.Zceil ctx) x)
 
-def round_ZR_DNStatement : Prop :=
-  ∀ beta fexp x, Rle R0 x → round beta fexp Ztrunc x = round beta fexp Zfloor x
+def round_ZR_DNStatement (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx) : Prop :=
+  ∀ beta fexp x, Exact.Rle ctx (Exact.R0 ctx) x → Exact.round ctx magnitude beta fexp (Exact.Ztrunc ctx) x = Exact.round ctx magnitude beta fexp (Exact.Zfloor ctx) x
 
-def round_ZR_absStatement : Prop :=
-  ∀ beta fexp x, Valid_exp fexp → round beta fexp Ztrunc (Rabs x) = Rabs (round beta fexp Ztrunc x)
+def round_ZR_absStatement (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx) : Prop :=
+  ∀ beta fexp, Valid_exp fexp → ∀ x, Exact.round ctx magnitude beta fexp (Exact.Ztrunc ctx) (Exact.Rabs ctx x) = Exact.Rabs ctx (Exact.round ctx magnitude beta fexp (Exact.Ztrunc ctx) x)
 
-def round_ZR_oppStatement : Prop :=
-  ∀ beta fexp x, round beta fexp Ztrunc (Ropp x) = Ropp (round beta fexp Ztrunc x)
+def round_ZR_oppStatement (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx) : Prop :=
+  ∀ beta fexp x, Exact.round ctx magnitude beta fexp (Exact.Ztrunc ctx) (Exact.Ropp ctx x) = Exact.Ropp ctx (Exact.round ctx magnitude beta fexp (Exact.Ztrunc ctx) x)
 
-def round_ZR_or_AWStatement : Prop :=
-  ∀ beta fexp rnd, Valid_rnd rnd → ∀ x,
-    round beta fexp rnd x = round beta fexp Ztrunc x ∨ round beta fexp rnd x = round beta fexp Zaway x
+def round_ZR_or_AWStatement (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx) : Prop :=
+  ∀ beta fexp rnd, Exact.Valid_rnd ctx rnd → ∀ x, Exact.round ctx magnitude beta fexp rnd x = Exact.round ctx magnitude beta fexp (Exact.Ztrunc ctx) x ∨ Exact.round ctx magnitude beta fexp rnd x = Exact.round ctx magnitude beta fexp (Exact.Zaway ctx) x
 
-def round_bounded_large_posStatement : Prop :=
-  ∀ beta fexp rnd, Valid_rnd rnd → ∀ x ex,
-    Zlt (fexp ex) ex →
-      (Rle (bpow beta (Zsub ex Zone)) x ∧ Rlt x (bpow beta ex)) →
-        Rle (bpow beta (Zsub ex Zone)) (round beta fexp rnd x) ∧
-          Rle (round beta fexp rnd x) (bpow beta ex)
+def round_bounded_large_posStatement (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx) : Prop :=
+  ∀ beta fexp rnd, Exact.Valid_rnd ctx rnd → ∀ x ex, Zlt (fexp ex) ex → (Exact.Rle ctx (Exact.bpow ctx beta (Zsub ex Zone)) x ∧ Exact.Rlt ctx x (Exact.bpow ctx beta ex)) →
+    Exact.Rle ctx (Exact.bpow ctx beta (Zsub ex Zone)) (Exact.round ctx magnitude beta fexp rnd x) ∧ Exact.Rle ctx (Exact.round ctx magnitude beta fexp rnd x) (Exact.bpow ctx beta ex)
 
-def round_bounded_small_posStatement : Prop :=
-  ∀ beta fexp rnd, Valid_rnd rnd → ∀ x ex,
-    Zle ex (fexp ex) →
-      (Rle (bpow beta (Zsub ex Zone)) x ∧ Rlt x (bpow beta ex)) →
-        round beta fexp rnd x = R0 ∨ round beta fexp rnd x = bpow beta (fexp ex)
+def round_bounded_small_posStatement (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx) : Prop :=
+  ∀ beta fexp rnd, Exact.Valid_rnd ctx rnd → ∀ x ex, Zle ex (fexp ex) → (Exact.Rle ctx (Exact.bpow ctx beta (Zsub ex Zone)) x ∧ Exact.Rlt ctx x (Exact.bpow ctx beta ex)) →
+    Exact.round ctx magnitude beta fexp rnd x = Exact.R0 ctx ∨ Exact.round ctx magnitude beta fexp rnd x = Exact.bpow ctx beta (fexp ex)
 
-def round_ge_genericStatement : Prop :=
-  ∀ beta fexp rnd x y, Valid_exp fexp → Valid_rnd rnd →
-    generic_format beta fexp x → Rle x y → Rle x (round beta fexp rnd y)
+def round_ge_genericStatement (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx) : Prop :=
+  ∀ beta fexp, Valid_exp fexp → ∀ rnd, Exact.Valid_rnd ctx rnd → ∀ x y, Exact.generic_format ctx magnitude beta fexp x → Exact.Rle ctx x y → Exact.Rle ctx x (Exact.round ctx magnitude beta fexp rnd y)
 
-def round_genericStatement : Prop :=
-  ∀ beta fexp rnd, Valid_rnd rnd → ∀ x,
-    generic_format beta fexp x → round beta fexp rnd x = x
+def round_genericStatement (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx) : Prop :=
+  ∀ beta fexp rnd, Exact.Valid_rnd ctx rnd → ∀ x, Exact.generic_format ctx magnitude beta fexp x → Exact.round ctx magnitude beta fexp rnd x = x
 
-def round_large_pos_ge_bpowStatement : Prop :=
-  ∀ beta fexp rnd, Valid_rnd rnd → ∀ x e,
-    Rlt R0 (round beta fexp rnd x) → Rle (bpow beta e) x →
-      Rle (bpow beta e) (round beta fexp rnd x)
+def round_large_pos_ge_bpowStatement (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx) : Prop :=
+  ∀ beta fexp rnd, Exact.Valid_rnd ctx rnd → ∀ x e, Exact.Rlt ctx (Exact.R0 ctx) (Exact.round ctx magnitude beta fexp rnd x) → Exact.Rle ctx (Exact.bpow ctx beta e) x → Exact.Rle ctx (Exact.bpow ctx beta e) (Exact.round ctx magnitude beta fexp rnd x)
 
-def round_leStatement : Prop :=
-  ∀ beta fexp rnd x y, Valid_exp fexp → Valid_rnd rnd →
-    Rle x y → Rle (round beta fexp rnd x) (round beta fexp rnd y)
+def round_leStatement (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx) : Prop :=
+  ∀ beta fexp, Valid_exp fexp → ∀ rnd, Exact.Valid_rnd ctx rnd → ∀ x y, Exact.Rle ctx x y → Exact.Rle ctx (Exact.round ctx magnitude beta fexp rnd x) (Exact.round ctx magnitude beta fexp rnd y)
 
-def round_le_genericStatement : Prop :=
-  ∀ beta fexp rnd x y, Valid_exp fexp → Valid_rnd rnd →
-    generic_format beta fexp y → Rle x y → Rle (round beta fexp rnd x) y
+def round_le_genericStatement (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx) : Prop :=
+  ∀ beta fexp, Valid_exp fexp → ∀ rnd, Exact.Valid_rnd ctx rnd → ∀ x y, Exact.generic_format ctx magnitude beta fexp y → Exact.Rle ctx x y → Exact.Rle ctx (Exact.round ctx magnitude beta fexp rnd x) y
 
-def round_le_posStatement : Prop :=
-  ∀ beta fexp rnd x y, Valid_exp fexp → Valid_rnd rnd →
-    Rlt R0 x → Rle x y → Rle (round beta fexp rnd x) (round beta fexp rnd y)
+def round_le_posStatement (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx) : Prop :=
+  ∀ beta fexp, Valid_exp fexp → ∀ rnd, Exact.Valid_rnd ctx rnd → ∀ x y, Exact.Rlt ctx (Exact.R0 ctx) x → Exact.Rle ctx x y → Exact.Rle ctx (Exact.round ctx magnitude beta fexp rnd x) (Exact.round ctx magnitude beta fexp rnd y)
 
-def scaled_mantissa_0Statement : Prop :=
-  ∀ beta fexp, scaled_mantissa beta fexp R0 = R0
+def scaled_mantissa_0Statement (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx) : Prop :=
+  ∀ beta fexp, Exact.scaled_mantissa ctx magnitude beta fexp (Exact.R0 ctx) = Exact.R0 ctx
 
-def scaled_mantissa_absStatement : Prop :=
-  ∀ beta fexp, ∀ x,
-    scaled_mantissa beta fexp (Rabs x) = Rabs (scaled_mantissa beta fexp x)
+def scaled_mantissa_absStatement (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx) : Prop :=
+  ∀ beta fexp x, Exact.scaled_mantissa ctx magnitude beta fexp (Exact.Rabs ctx x) = Exact.Rabs ctx (Exact.scaled_mantissa ctx magnitude beta fexp x)
 
-def scaled_mantissa_genericStatement : Prop :=
-  ∀ beta fexp x, generic_format beta fexp x →
-    scaled_mantissa beta fexp x = IZR (Ztrunc (scaled_mantissa beta fexp x))
+def scaled_mantissa_genericStatement (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx) : Prop :=
+  ∀ beta fexp x, Exact.generic_format ctx magnitude beta fexp x → Exact.scaled_mantissa ctx magnitude beta fexp x = Exact.IZR ctx (Exact.Ztrunc ctx (Exact.scaled_mantissa ctx magnitude beta fexp x))
 
-def scaled_mantissa_lt_1Statement : Prop :=
-  ∀ beta fexp x ex, Valid_exp fexp →
-    Rlt (Rabs x) (bpow beta ex) → Zle ex (fexp ex) →
-      Rlt (Rabs (scaled_mantissa beta fexp x)) ⟨1⟩
+def scaled_mantissa_lt_1Statement (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx) : Prop :=
+  ∀ beta fexp, Valid_exp fexp → ∀ x ex, Exact.Rlt ctx (Exact.Rabs ctx x) (Exact.bpow ctx beta ex) → Zle ex (fexp ex) → Exact.Rlt ctx (Exact.Rabs ctx (Exact.scaled_mantissa ctx magnitude beta fexp x)) (Exact.IZR ctx Zone)
 
-def scaled_mantissa_mult_bpowStatement : Prop :=
-  ∀ beta fexp x,
-    Rmult (scaled_mantissa beta fexp x) (bpow beta (cexp beta fexp x)) = x
+def scaled_mantissa_mult_bpowStatement (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx) : Prop :=
+  ∀ beta fexp x, Exact.Rmult ctx (Exact.scaled_mantissa ctx magnitude beta fexp x) (Exact.bpow ctx beta (Exact.cexp ctx magnitude beta fexp x)) = x
 
-def scaled_mantissa_oppStatement : Prop :=
-  ∀ beta fexp x,
-    scaled_mantissa beta fexp (Ropp x) = Ropp (scaled_mantissa beta fexp x)
+def scaled_mantissa_oppStatement (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx) : Prop :=
+  ∀ beta fexp x, Exact.scaled_mantissa ctx magnitude beta fexp (Exact.Ropp ctx x) = Exact.Ropp ctx (Exact.scaled_mantissa ctx magnitude beta fexp x)
 
 def valid_exp_large'Statement : Prop :=
-  ∀ fexp, Valid_exp fexp → ∀ k l,
-    Zlt (fexp k) k → Zle l k → Zlt (fexp l) k
+  ∀ fexp, Valid_exp fexp → ∀ k l, Zlt (fexp k) k → Zle l k → Zlt (fexp l) k
 
-def abs_round_ge_genericStatement : Prop :=
-  ∀ (beta : radix) (fexp : Z → Z) (rnd : R → Z),
-    Valid_exp fexp → Valid_rnd rnd →
-      ∀ x y, generic_format beta fexp x →
-        Rle x (Rabs y) → Rle x (Rabs (round beta fexp rnd y))
+def abs_round_ge_genericStatement (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx) : Prop :=
+  ∀ beta fexp, Valid_exp fexp → ∀ rnd, Exact.Valid_rnd ctx rnd → ∀ x y, Exact.generic_format ctx magnitude beta fexp x → Exact.Rle ctx x (Exact.Rabs ctx y) → Exact.Rle ctx x (Exact.Rabs ctx (Exact.round ctx magnitude beta fexp rnd y))
 
-def abs_round_le_genericStatement : Prop :=
-  ∀ (beta : radix) (fexp : Z → Z) (rnd : R → Z),
-    Valid_exp fexp → Valid_rnd rnd →
-      ∀ x y, generic_format beta fexp y →
-        Rle (Rabs x) y → Rle (Rabs (round beta fexp rnd x)) y
+def abs_round_le_genericStatement (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx) : Prop :=
+  ∀ beta fexp, Valid_exp fexp → ∀ rnd, Exact.Valid_rnd ctx rnd → ∀ x y, Exact.generic_format ctx magnitude beta fexp y → Exact.Rle ctx (Exact.Rabs ctx x) y → Exact.Rle ctx (Exact.Rabs ctx (Exact.round ctx magnitude beta fexp rnd x)) y
 
-def canonical_0Statement : Prop :=
-  ∀ (beta : radix) (fexp : Z → Z),
-    canonical beta fexp (Float beta Z0 (cexp beta fexp R0))
+def canonical_0Statement (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx) : Prop :=
+  ∀ beta fexp, Exact.canonical ctx magnitude beta fexp (Float beta Z0 (Exact.cexp ctx magnitude beta fexp (Exact.R0 ctx)))
 
-def canonical_absStatement : Prop :=
-  ∀ (beta : radix) (fexp : Z → Z) (m e : Z),
-    canonical beta fexp (Float beta m e) →
-      canonical beta fexp (Float beta (Zabs m) e)
+def canonical_absStatement (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx) : Prop :=
+  ∀ beta fexp m e, Exact.canonical ctx magnitude beta fexp (Float beta m e) → Exact.canonical ctx magnitude beta fexp (Float beta (Zabs m) e)
 
-def canonical_generic_formatStatement : Prop :=
-  ∀ (beta : radix) (fexp : Z → Z), ∀ x,
-    generic_format beta fexp x →
-      ∃ f : float beta, x = F2R f ∧ canonical beta fexp f
+def canonical_generic_formatStatement (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx) : Prop :=
+  ∀ beta fexp x, Exact.generic_format ctx magnitude beta fexp x → ∃ f : float beta, x = Exact.F2R ctx f ∧ Exact.canonical ctx magnitude beta fexp f
 
-def canonical_oppStatement : Prop :=
-  ∀ (beta : radix) (fexp : Z → Z) (m e : Z),
-    canonical beta fexp (Float beta m e) →
-      canonical beta fexp (Float beta (Zopp m) e)
+def canonical_oppStatement (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx) : Prop :=
+  ∀ beta fexp m e, Exact.canonical ctx magnitude beta fexp (Float beta m e) → Exact.canonical ctx magnitude beta fexp (Float beta (Zopp m) e)
 
-def cexp_DNStatement : Prop :=
-  ∀ (beta : radix) (fexp : Z → Z), Valid_exp fexp → ∀ x,
-    Rlt R0 (round beta fexp Zfloor x) →
-      cexp beta fexp (round beta fexp Zfloor x) = cexp beta fexp x
+def cexp_DNStatement (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx) : Prop :=
+  ∀ beta fexp, Valid_exp fexp → ∀ x, Exact.Rlt ctx (Exact.R0 ctx) (Exact.round ctx magnitude beta fexp (Exact.Zfloor ctx) x) → Exact.cexp ctx magnitude beta fexp (Exact.round ctx magnitude beta fexp (Exact.Zfloor ctx) x) = Exact.cexp ctx magnitude beta fexp x
 
-def exp_small_round_0Statement : Prop :=
-  ∀ (beta : radix) (fexp : Z → Z) (rnd : R → Z),
-    Valid_exp fexp → Valid_rnd rnd → ∀ x ex,
-      (Rle (bpow beta (Zsub ex Zone)) (Rabs x) ∧
-        Rlt (Rabs x) (bpow beta ex)) →
-      round beta fexp rnd x = R0 → Zle ex (fexp ex)
+def exp_small_round_0Statement (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx) : Prop :=
+  ∀ beta fexp, Valid_exp fexp → ∀ rnd, Exact.Valid_rnd ctx rnd → ∀ x ex, (Exact.Rle ctx (Exact.bpow ctx beta (Zsub ex Zone)) (Exact.Rabs ctx x) ∧ Exact.Rlt ctx (Exact.Rabs ctx x) (Exact.bpow ctx beta ex)) → Exact.round ctx magnitude beta fexp rnd x = Exact.R0 ctx → Zle ex (fexp ex)
 
-def exp_small_round_0_posStatement : Prop :=
-  ∀ (beta : radix) (fexp : Z → Z) (rnd : R → Z), Valid_rnd rnd → ∀ x ex,
-    (Rle (bpow beta (Zsub ex Zone)) x ∧ Rlt x (bpow beta ex)) →
-    round beta fexp rnd x = R0 → Zle ex (fexp ex)
+def exp_small_round_0_posStatement (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx) : Prop :=
+  ∀ beta fexp, Valid_exp fexp → ∀ rnd, Exact.Valid_rnd ctx rnd → ∀ x ex, (Exact.Rle ctx (Exact.bpow ctx beta (Zsub ex Zone)) x ∧ Exact.Rlt ctx x (Exact.bpow ctx beta ex)) → Exact.round ctx magnitude beta fexp rnd x = Exact.R0 ctx → Zle ex (fexp ex)
 
-def generic_format_F2R'Statement : Prop :=
-  ∀ (beta : radix) (fexp : Z → Z),
-    ∀ (x : R) (f : float beta), F2R f = x →
-      (x ≠ R0 → Zle (cexp beta fexp x) (Fexp f)) →
-      generic_format beta fexp x
+def generic_format_F2R'Statement (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx) : Prop :=
+  ∀ beta fexp, ∀ (x : Exact.R ctx) (f : float beta), Exact.F2R ctx f = x → (x ≠ Exact.R0 ctx → Zle (Exact.cexp ctx magnitude beta fexp x) (Fexp f)) → Exact.generic_format ctx magnitude beta fexp x
 
-def generic_format_satisfies_anyStatement : Prop :=
-  ∀ (beta : radix) (fexp : Z → Z), Valid_exp fexp →
-    satisfies_any (generic_format beta fexp)
+def generic_format_satisfies_anyStatement (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx) : Prop :=
+  ∀ beta fexp, Valid_exp fexp → Round_pred.satisfies_any ctx (Exact.generic_format ctx magnitude beta fexp)
 
-def mag_DNStatement : Prop :=
-  ∀ (beta : radix) (fexp : Z → Z), Valid_exp fexp → ∀ x,
-    Rlt R0 (round beta fexp Zfloor x) →
-      (mag beta (round beta fexp Zfloor x) : Z) = (mag beta x : Z)
+def mag_DNStatement (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx) : Prop :=
+  ∀ beta fexp, Valid_exp fexp → ∀ x, Exact.Rlt ctx (Exact.R0 ctx) (Exact.round ctx magnitude beta fexp (Exact.Zfloor ctx) x) → Exact.mag magnitude beta (Exact.round ctx magnitude beta fexp (Exact.Zfloor ctx) x) = Exact.mag magnitude beta x
 
-def mantissa_DN_small_posStatement : Prop :=
-  ∀ (beta : radix) (fexp : Z → Z) (x : R) (ex : Z),
-    (Rle (bpow beta (Zsub ex Zone)) x ∧ Rlt x (bpow beta ex)) →
-      Zle ex (fexp ex) →
-      Zfloor (Rmult x (bpow beta (Zopp (fexp ex)))) = Z0
+def mantissa_DN_small_posStatement (ctx : ExactRealContext) : Prop :=
+  ∀ (beta : radix) (fexp : Z → Z) x ex, (Exact.Rle ctx (Exact.bpow ctx beta (Zsub ex Zone)) x ∧ Exact.Rlt ctx x (Exact.bpow ctx beta ex)) → Zle ex (fexp ex) → Exact.Zfloor ctx (Exact.Rmult ctx x (Exact.bpow ctx beta (Zopp (fexp ex)))) = Z0
 
-def mantissa_UP_small_posStatement : Prop :=
-  ∀ (beta : radix) (fexp : Z → Z) (x : R) (ex : Z),
-    (Rle (bpow beta (Zsub ex Zone)) x ∧ Rlt x (bpow beta ex)) →
-      Zle ex (fexp ex) →
-      Zceil (Rmult x (bpow beta (Zopp (fexp ex)))) = Zone
+def mantissa_UP_small_posStatement (ctx : ExactRealContext) : Prop :=
+  ∀ (beta : radix) (fexp : Z → Z) x ex, (Exact.Rle ctx (Exact.bpow ctx beta (Zsub ex Zone)) x ∧ Exact.Rlt ctx x (Exact.bpow ctx beta ex)) → Zle ex (fexp ex) → Exact.Zceil ctx (Exact.Rmult ctx x (Exact.bpow ctx beta (Zopp (fexp ex)))) = Zone
 
-def round_DN_UP_ltStatement : Prop :=
-  ∀ (beta : radix) (fexp : Z → Z), Valid_exp fexp → ∀ x,
-    ¬ generic_format beta fexp x →
-      Rlt (round beta fexp Zfloor x) x ∧
-        Rlt x (round beta fexp Zceil x)
+def round_DN_UP_ltStatement (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx) : Prop :=
+  ∀ beta fexp, Valid_exp fexp → ∀ x, ¬ Exact.generic_format ctx magnitude beta fexp x → Exact.Rlt ctx (Exact.round ctx magnitude beta fexp (Exact.Zfloor ctx) x) x ∧ Exact.Rlt ctx x (Exact.round ctx magnitude beta fexp (Exact.Zceil ctx) x)
 
-def round_DN_small_posStatement : Prop :=
-  ∀ (beta : radix) (fexp : Z → Z) (x : R) (ex : Z),
-    (Rle (bpow beta (Zsub ex Zone)) x ∧ Rlt x (bpow beta ex)) →
-      Zle ex (fexp ex) → round beta fexp Zfloor x = R0
+def round_DN_small_posStatement (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx) : Prop :=
+  ∀ beta fexp x ex, (Exact.Rle ctx (Exact.bpow ctx beta (Zsub ex Zone)) x ∧ Exact.Rlt ctx x (Exact.bpow ctx beta ex)) → Zle ex (fexp ex) → Exact.round ctx magnitude beta fexp (Exact.Zfloor ctx) x = Exact.R0 ctx
 
-def round_N_oppStatement : Prop :=
-  ∀ (beta : radix) (fexp : Z → Z) (choice : Z → Bool),
-    Valid_exp fexp → ∀ x,
-      round beta fexp (Znearest choice) (Ropp x) =
-        Ropp (round beta fexp
-          (Znearest (fun t => Bool.not (choice (Zopp (Zadd t Zone))))) x)
+def round_N_oppStatement (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx) : Prop :=
+  ∀ beta fexp choice, Valid_exp fexp → ∀ x, Exact.round ctx magnitude beta fexp (Exact.Znearest ctx choice) (Exact.Ropp ctx x) = Exact.Ropp ctx (Exact.round ctx magnitude beta fexp (Exact.Znearest ctx (fun t => Bool.not (choice (Zopp (Zadd t Zone))))) x)
 
-def round_N_ptStatement : Prop :=
-  ∀ (beta : radix) (fexp : Z → Z), Valid_exp fexp →
-    ∀ (choice : Z → Bool) (x : R),
-    Rnd_N_pt (generic_format beta fexp) x
-      (round beta fexp (Znearest choice) x)
+def round_N_ptStatement (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx) : Prop :=
+  ∀ beta fexp, Valid_exp fexp → ∀ choice x, Defs.Exact.Rnd_N_pt ctx (Exact.generic_format ctx magnitude beta fexp) x (Exact.round ctx magnitude beta fexp (Exact.Znearest ctx choice) x)
 
-def round_UP_small_posStatement : Prop :=
-  ∀ (beta : radix) (fexp : Z → Z) (x : R) (ex : Z),
-    (Rle (bpow beta (Zsub ex Zone)) x ∧ Rlt x (bpow beta ex)) →
-      Zle ex (fexp ex) →
-      round beta fexp Zceil x = bpow beta (fexp ex)
+def round_UP_small_posStatement (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx) : Prop :=
+  ∀ beta fexp x ex, (Exact.Rle ctx (Exact.bpow ctx beta (Zsub ex Zone)) x ∧ Exact.Rlt ctx x (Exact.bpow ctx beta ex)) → Zle ex (fexp ex) → Exact.round ctx magnitude beta fexp (Exact.Zceil ctx) x = Exact.bpow ctx beta (fexp ex)
 
-def round_abs_absStatement : Prop :=
-  ∀ (beta : radix) (fexp : Z → Z), Valid_exp fexp →
-    ∀ (P : R → R → Prop),
-    (∀ (rnd : R → Z), Valid_rnd rnd → ∀ x, Rle R0 x →
-      P x (round beta fexp rnd x)) →
-    ∀ (rnd : R → Z), Valid_rnd rnd → ∀ x,
-      P (Rabs x) (Rabs (round beta fexp rnd x))
+def round_abs_absStatement (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx) : Prop :=
+  ∀ beta fexp, Valid_exp fexp → ∀ (P : Exact.R ctx → Exact.R ctx → Prop), (∀ rnd, Exact.Valid_rnd ctx rnd → ∀ x, Exact.Rle ctx (Exact.R0 ctx) x → P x (Exact.round ctx magnitude beta fexp rnd x)) → ∀ rnd, Exact.Valid_rnd ctx rnd → ∀ x, P (Exact.Rabs ctx x) (Exact.Rabs ctx (Exact.round ctx magnitude beta fexp rnd x))
 
-def round_oppStatement : Prop :=
-  ∀ (beta : radix) (fexp : Z → Z) (rnd : R → Z),
-    ∀ x,
-      round beta fexp rnd (Ropp x) =
-        Ropp (round beta fexp (Zrnd_opp rnd) x)
+def round_oppStatement (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx) : Prop :=
+  ∀ beta fexp rnd x, Exact.round ctx magnitude beta fexp rnd (Exact.Ropp ctx x) = Exact.Ropp ctx (Exact.round ctx magnitude beta fexp (Exact.Zrnd_opp ctx rnd) x)
 
 end CompCert4Lean.Flocq.Core.Generic_fmt

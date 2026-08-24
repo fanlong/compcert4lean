@@ -52,166 +52,199 @@ abbrev F2R {beta : radix} (f : float beta) : R :=
 abbrev bpow (beta : radix) (e : Z) : R :=
   CompCert4Lean.Flocq.Core.Raux.bpow beta e
 
+/-! Theorem-facing interpretation over the explicit exact-real context. -/
+
+abbrev ExactRealContext := CompCert4Lean.Flocq.Core.Raux.ExactRealContext
+
+namespace Exact
+
+abbrev Context := ExactRealContext
+abbrev Magnitude (ctx : Context) := CompCert4Lean.Flocq.Core.Raux.Exact.Magnitude ctx
+abbrev R (ctx : Context) := CompCert4Lean.Flocq.Core.Raux.Exact.R ctx
+
+abbrev IZR (ctx : Context) : Z → R ctx := CompCert4Lean.Flocq.Core.Raux.Exact.IZR ctx
+abbrev R0 (ctx : Context) : R ctx := CompCert4Lean.Flocq.Core.Raux.Exact.R0 ctx
+abbrev Ropp (ctx : Context) : R ctx → R ctx := CompCert4Lean.Flocq.Core.Raux.Exact.Ropp ctx
+abbrev Rabs (ctx : Context) : R ctx → R ctx := CompCert4Lean.Flocq.Core.Raux.Exact.Rabs ctx
+abbrev Rlt (ctx : Context) : R ctx → R ctx → Prop := CompCert4Lean.Flocq.Core.Raux.Exact.Rlt ctx
+abbrev Rle (ctx : Context) : R ctx → R ctx → Prop := CompCert4Lean.Flocq.Core.Raux.Exact.Rle ctx
+noncomputable abbrev Rcompare (ctx : Context) : R ctx → R ctx →
+    CompCert4Lean.Flocq.Core.Zaux.comparison :=
+  CompCert4Lean.Flocq.Core.Raux.Exact.Rcompare ctx
+abbrev cond_Ropp (ctx : Context) (b : Bool) (x : R ctx) : R ctx :=
+  CompCert4Lean.Flocq.Core.Raux.Exact.cond_Ropp ctx b x
+abbrev bpow (ctx : Context) : radix → Z → R ctx :=
+  CompCert4Lean.Flocq.Core.Raux.Exact.bpow ctx
+
+abbrev F2R (ctx : Context) {beta : radix} (f : float beta) : R ctx :=
+  CompCert4Lean.Flocq.Core.Defs.Exact.F2R ctx f
+
+abbrev mag (magnitude : Magnitude ctx) (beta : radix) (x : R ctx) : Z :=
+  (CompCert4Lean.Flocq.Core.Raux.Exact.mag magnitude beta x).mag_val
+
+end Exact
+
 /-! Exact source proposition descriptors for later proof migration. -/
 
-def Rcompare_F2RStatement : Prop :=
+def Rcompare_F2RStatement (ctx : ExactRealContext) : Prop :=
   ∀ (beta : radix) (e m1 m2 : Z),
-    Rcompare (F2R (Float beta m1 e)) (F2R (Float beta m2 e)) =
+    Exact.Rcompare ctx (Exact.F2R ctx (Float beta m1 e)) (Exact.F2R ctx (Float beta m2 e)) =
       Zcompare m1 m2
 
-def le_F2RStatement : Prop :=
+def le_F2RStatement (ctx : ExactRealContext) : Prop :=
   ∀ (beta : radix) (e m1 m2 : Z),
-    Rle (F2R (Float beta m1 e)) (F2R (Float beta m2 e)) →
+    Exact.Rle ctx (Exact.F2R ctx (Float beta m1 e)) (Exact.F2R ctx (Float beta m2 e)) →
       Zle m1 m2
 
-def F2R_leStatement : Prop :=
+def F2R_leStatement (ctx : ExactRealContext) : Prop :=
   ∀ (beta : radix) (m1 m2 e : Z),
     Zle m1 m2 →
-      Rle (F2R (Float beta m1 e)) (F2R (Float beta m2 e))
+      Exact.Rle ctx (Exact.F2R ctx (Float beta m1 e)) (Exact.F2R ctx (Float beta m2 e))
 
-def lt_F2RStatement : Prop :=
+def lt_F2RStatement (ctx : ExactRealContext) : Prop :=
   ∀ (beta : radix) (e m1 m2 : Z),
-    Rlt (F2R (Float beta m1 e)) (F2R (Float beta m2 e)) →
+    Exact.Rlt ctx (Exact.F2R ctx (Float beta m1 e)) (Exact.F2R ctx (Float beta m2 e)) →
       Zlt m1 m2
 
-def F2R_ltStatement : Prop :=
+def F2R_ltStatement (ctx : ExactRealContext) : Prop :=
   ∀ (beta : radix) (e m1 m2 : Z),
     Zlt m1 m2 →
-      Rlt (F2R (Float beta m1 e)) (F2R (Float beta m2 e))
+      Exact.Rlt ctx (Exact.F2R ctx (Float beta m1 e)) (Exact.F2R ctx (Float beta m2 e))
 
-def F2R_eqStatement : Prop :=
+def F2R_eqStatement (ctx : ExactRealContext) : Prop :=
   ∀ (beta : radix) (e m1 m2 : Z),
     m1 = m2 →
-      F2R (Float beta m1 e) = F2R (Float beta m2 e)
+      Exact.F2R ctx (Float beta m1 e) = Exact.F2R ctx (Float beta m2 e)
 
-def eq_F2RStatement : Prop :=
+def eq_F2RStatement (ctx : ExactRealContext) : Prop :=
   ∀ (beta : radix) (e m1 m2 : Z),
-    F2R (Float beta m1 e) = F2R (Float beta m2 e) →
+    Exact.F2R ctx (Float beta m1 e) = Exact.F2R ctx (Float beta m2 e) →
       m1 = m2
 
-def F2R_ZabsStatement : Prop :=
+def F2R_ZabsStatement (ctx : ExactRealContext) : Prop :=
   ∀ (beta : radix) (m e : Z),
-    F2R (Float beta (Zabs m) e) = Rabs (F2R (Float beta m e))
+    Exact.F2R ctx (Float beta (Zabs m) e) = Exact.Rabs ctx (Exact.F2R ctx (Float beta m e))
 
-def F2R_ZoppStatement : Prop :=
+def F2R_ZoppStatement (ctx : ExactRealContext) : Prop :=
   ∀ (beta : radix) (m e : Z),
-    F2R (Float beta (Zopp m) e) = Ropp (F2R (Float beta m e))
+    Exact.F2R ctx (Float beta (Zopp m) e) = Exact.Ropp ctx (Exact.F2R ctx (Float beta m e))
 
-def F2R_cond_ZoppStatement : Prop :=
+def F2R_cond_ZoppStatement (ctx : ExactRealContext) : Prop :=
   ∀ (beta : radix) (b : Bool) (m e : Z),
-    F2R (Float beta (cond_Zopp b m) e) =
-      cond_Ropp b (F2R (Float beta m e))
+    Exact.F2R ctx (Float beta (cond_Zopp b m) e) =
+      Exact.cond_Ropp ctx b (Exact.F2R ctx (Float beta m e))
 
-def F2R_0Statement : Prop :=
+def F2R_0Statement (ctx : ExactRealContext) : Prop :=
   ∀ (beta : radix) (e : Z),
-    F2R (Float beta Z0 e) = R0
+    Exact.F2R ctx (Float beta Z0 e) = Exact.R0 ctx
 
-def eq_0_F2RStatement : Prop :=
+def eq_0_F2RStatement (ctx : ExactRealContext) : Prop :=
   ∀ (beta : radix) (m e : Z),
-    F2R (Float beta m e) = R0 →
+    Exact.F2R ctx (Float beta m e) = Exact.R0 ctx →
       m = Z0
 
-def ge_0_F2RStatement : Prop :=
+def ge_0_F2RStatement (ctx : ExactRealContext) : Prop :=
   ∀ (beta : radix) (m e : Z),
-    Rle R0 (F2R (Float beta m e)) →
+    Exact.Rle ctx (Exact.R0 ctx) (Exact.F2R ctx (Float beta m e)) →
       Zle Z0 m
 
-def le_0_F2RStatement : Prop :=
+def le_0_F2RStatement (ctx : ExactRealContext) : Prop :=
   ∀ (beta : radix) (m e : Z),
-    Rle (F2R (Float beta m e)) R0 →
+    Exact.Rle ctx (Exact.F2R ctx (Float beta m e)) (Exact.R0 ctx) →
       Zle m Z0
 
-def gt_0_F2RStatement : Prop :=
+def gt_0_F2RStatement (ctx : ExactRealContext) : Prop :=
   ∀ (beta : radix) (m e : Z),
-    Rlt R0 (F2R (Float beta m e)) →
+    Exact.Rlt ctx (Exact.R0 ctx) (Exact.F2R ctx (Float beta m e)) →
       Zlt Z0 m
 
-def lt_0_F2RStatement : Prop :=
+def lt_0_F2RStatement (ctx : ExactRealContext) : Prop :=
   ∀ (beta : radix) (m e : Z),
-    Rlt (F2R (Float beta m e)) R0 →
+    Exact.Rlt ctx (Exact.F2R ctx (Float beta m e)) (Exact.R0 ctx) →
       Zlt m Z0
 
-def F2R_ge_0Statement : Prop :=
+def F2R_ge_0Statement (ctx : ExactRealContext) : Prop :=
   ∀ (beta : radix) (f : float beta),
     Zle Z0 (Fnum f) →
-      Rle R0 (F2R f)
+      Exact.Rle ctx (Exact.R0 ctx) (Exact.F2R ctx f)
 
-def F2R_le_0Statement : Prop :=
+def F2R_le_0Statement (ctx : ExactRealContext) : Prop :=
   ∀ (beta : radix) (f : float beta),
     Zle (Fnum f) Z0 →
-      Rle (F2R f) R0
+      Exact.Rle ctx (Exact.F2R ctx f) (Exact.R0 ctx)
 
-def F2R_gt_0Statement : Prop :=
+def F2R_gt_0Statement (ctx : ExactRealContext) : Prop :=
   ∀ (beta : radix) (f : float beta),
     Zlt Z0 (Fnum f) →
-      Rlt R0 (F2R f)
+      Exact.Rlt ctx (Exact.R0 ctx) (Exact.F2R ctx f)
 
-def F2R_lt_0Statement : Prop :=
+def F2R_lt_0Statement (ctx : ExactRealContext) : Prop :=
   ∀ (beta : radix) (f : float beta),
     Zlt (Fnum f) Z0 →
-      Rlt (F2R f) R0
+      Exact.Rlt ctx (Exact.F2R ctx f) (Exact.R0 ctx)
 
-def F2R_neq_0Statement : Prop :=
+def F2R_neq_0Statement (ctx : ExactRealContext) : Prop :=
   ∀ (beta : radix) (f : float beta),
     Fnum f ≠ Z0 →
-      F2R f ≠ R0
+      Exact.F2R ctx f ≠ Exact.R0 ctx
 
-def F2R_bpowStatement : Prop :=
+def F2R_bpowStatement (ctx : ExactRealContext) : Prop :=
   ∀ (beta : radix) (e : Z),
-    F2R (Float beta Zone e) = bpow beta e
+    Exact.F2R ctx (Float beta Zone e) = Exact.bpow ctx beta e
 
-def bpow_le_F2RStatement : Prop :=
+def bpow_le_F2RStatement (ctx : ExactRealContext) : Prop :=
   ∀ (beta : radix) (m e : Z),
     Zlt Z0 m →
-      Rle (bpow beta e) (F2R (Float beta m e))
+      Exact.Rle ctx (Exact.bpow ctx beta e) (Exact.F2R ctx (Float beta m e))
 
-def F2R_p1_le_bpowStatement : Prop :=
+def F2R_p1_le_bpowStatement (ctx : ExactRealContext) : Prop :=
   ∀ (beta : radix) (m e1 e2 : Z),
     Zlt Z0 m →
-      Rlt (F2R (Float beta m e1)) (bpow beta e2) →
-        Rle (F2R (Float beta (Zadd m Zone) e1)) (bpow beta e2)
+      Exact.Rlt ctx (Exact.F2R ctx (Float beta m e1)) (Exact.bpow ctx beta e2) →
+        Exact.Rle ctx (Exact.F2R ctx (Float beta (Zadd m Zone) e1)) (Exact.bpow ctx beta e2)
 
-def F2R_change_expStatement : Prop :=
+def F2R_change_expStatement (ctx : ExactRealContext) : Prop :=
   ∀ (beta : radix) (e' m e : Z),
     Zle e' e →
-      F2R (Float beta m e) =
-        F2R (Float beta (Zmul m (Zpower (beta : Z) (Zsub e e'))) e')
+      Exact.F2R ctx (Float beta m e) =
+        Exact.F2R ctx (Float beta (Zmul m (Zpower (beta : Z) (Zsub e e'))) e')
 
-def mag_F2R_boundsStatement : Prop :=
-  ∀ (beta : radix) (x : R) (m e : Z),
+def mag_F2R_boundsStatement (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx) : Prop :=
+  ∀ (beta : radix) (x : Exact.R ctx) (m e : Z),
     Zlt Z0 m →
-      (Rle (F2R (Float beta m e)) x ∧
-        Rlt x (F2R (Float beta (Zadd m Zone) e))) →
-        (mag beta x : Z) = (mag beta (F2R (Float beta m e)) : Z)
+      (Exact.Rle ctx (Exact.F2R ctx (Float beta m e)) x ∧
+        Exact.Rlt ctx x (Exact.F2R ctx (Float beta (Zadd m Zone) e))) →
+        Exact.mag magnitude beta x = Exact.mag magnitude beta (Exact.F2R ctx (Float beta m e))
 
-def mag_F2RStatement : Prop :=
+def mag_F2RStatement (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx) : Prop :=
   ∀ (beta : radix) (m e : Z),
     m ≠ Z0 →
-      (mag beta (F2R (Float beta m e)) : Z) =
-        Zadd (mag beta (IZR m) : Z) e
+      Exact.mag magnitude beta (Exact.F2R ctx (Float beta m e)) =
+        Zadd (Exact.mag magnitude beta (Exact.IZR ctx m)) e
 
-def Zdigits_magStatement : Prop :=
+def Zdigits_magStatement (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx) : Prop :=
   ∀ (beta : radix) (n : Z),
     n ≠ Z0 →
-      Zdigits beta n = (mag beta (IZR n) : Z)
+      Zdigits beta n = Exact.mag magnitude beta (Exact.IZR ctx n)
 
-def mag_F2R_ZdigitsStatement : Prop :=
+def mag_F2R_ZdigitsStatement (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx) : Prop :=
   ∀ (beta : radix) (m e : Z),
     m ≠ Z0 →
-      (mag beta (F2R (Float beta m e)) : Z) =
+      Exact.mag magnitude beta (Exact.F2R ctx (Float beta m e)) =
         Zadd (Zdigits beta m) e
 
-def mag_F2R_bounds_ZdigitsStatement : Prop :=
-  ∀ (beta : radix) (x : R) (m e : Z),
+def mag_F2R_bounds_ZdigitsStatement (ctx : ExactRealContext)
+    (magnitude : Exact.Magnitude ctx) : Prop :=
+  ∀ (beta : radix) (x : Exact.R ctx) (m e : Z),
     Zlt Z0 m →
-      (Rle (F2R (Float beta m e)) x ∧
-        Rlt x (F2R (Float beta (Zadd m Zone) e))) →
-        (mag beta x : Z) = Zadd (Zdigits beta m) e
+      (Exact.Rle ctx (Exact.F2R ctx (Float beta m e)) x ∧
+        Exact.Rlt ctx x (Exact.F2R ctx (Float beta (Zadd m Zone) e))) →
+        Exact.mag magnitude beta x = Zadd (Zdigits beta m) e
 
-def bpow_le_F2R_m1Statement : Prop :=
+def bpow_le_F2R_m1Statement (ctx : ExactRealContext) : Prop :=
   ∀ (beta : radix) (m e1 e2 : Z),
     Zlt Zone m →
-      Rlt (bpow beta e2) (F2R (Float beta m e1)) →
-        Rle (bpow beta e2) (F2R (Float beta (Zsub m Zone) e1))
+      Exact.Rlt ctx (Exact.bpow ctx beta e2) (Exact.F2R ctx (Float beta m e1)) →
+        Exact.Rle ctx (Exact.bpow ctx beta e2) (Exact.F2R ctx (Float beta (Zsub m Zone) e1))
 
 end CompCert4Lean.Flocq.Core.Float_prop

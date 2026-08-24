@@ -44,6 +44,20 @@ inductive FIX_format (beta : radix) (emin : Z) (x : R) : Prop where
 
 export FIX_format (FIX_spec)
 
+abbrev ExactRealContext := CompCert4Lean.Flocq.Core.Generic_fmt.ExactRealContext
+
+namespace Exact
+
+inductive FIX_format (ctx : ExactRealContext) (beta : radix) (emin : Z)
+    (x : CompCert4Lean.Flocq.Core.Generic_fmt.Exact.R ctx) : Prop where
+  | FIX_spec (f : float beta) :
+      x = CompCert4Lean.Flocq.Core.Generic_fmt.Exact.F2R ctx f →
+        Fexp f = emin → FIX_format ctx beta emin x
+
+export FIX_format (FIX_spec)
+
+end Exact
+
 def FIX_exp (emin : Z) (e : Z) : Z := emin
 
 instance FIX_exp_valid (emin : Z) : Valid_exp (FIX_exp emin) where
@@ -58,25 +72,39 @@ instance FIX_exp_valid (emin : Z) : Valid_exp (FIX_exp emin) where
       · intro l _
         rfl
 
-def generic_format_FIXStatement : Prop :=
-  ∀ (beta : radix) (emin : Z) (x : R),
-    FIX_format beta emin x → generic_format beta (FIX_exp emin) x
+def generic_format_FIXStatement (ctx : ExactRealContext)
+    (magnitude : CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Magnitude ctx) : Prop :=
+  ∀ (beta : radix) (emin : Z)
+    (x : CompCert4Lean.Flocq.Core.Generic_fmt.Exact.R ctx),
+    Exact.FIX_format ctx beta emin x →
+      CompCert4Lean.Flocq.Core.Generic_fmt.Exact.generic_format
+        ctx magnitude beta (FIX_exp emin) x
 
-def FIX_format_genericStatement : Prop :=
-  ∀ (beta : radix) (emin : Z) (x : R),
-    generic_format beta (FIX_exp emin) x → FIX_format beta emin x
+def FIX_format_genericStatement (ctx : ExactRealContext)
+    (magnitude : CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Magnitude ctx) : Prop :=
+  ∀ (beta : radix) (emin : Z)
+    (x : CompCert4Lean.Flocq.Core.Generic_fmt.Exact.R ctx),
+    CompCert4Lean.Flocq.Core.Generic_fmt.Exact.generic_format
+        ctx magnitude beta (FIX_exp emin) x →
+      Exact.FIX_format ctx beta emin x
 
-def FIX_format_satisfies_anyStatement : Prop :=
-  ∀ (beta : radix) (emin : Z), satisfies_any (FIX_format beta emin)
+def FIX_format_satisfies_anyStatement (ctx : ExactRealContext) : Prop :=
+  ∀ (beta : radix) (emin : Z),
+    CompCert4Lean.Flocq.Core.Round_pred.satisfies_any ctx
+      (Exact.FIX_format ctx beta emin)
 
 instance FIX_exp_monotone (emin : Z) : Monotone_exp (FIX_exp emin) where
   monotone_exp := by
     intro ex ey _
     exact Int.le_refl _
 
-def ulp_FIXStatement : Prop :=
-  ∀ (beta : radix) (emin : Z) (x : R),
-    CompCert4Lean.Flocq.Core.Ulp.ulp beta (FIX_exp emin) x = bpow beta emin
+def ulp_FIXStatement (ctx : ExactRealContext)
+    (magnitude : CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Magnitude ctx) : Prop :=
+  ∀ (beta : radix) (emin : Z)
+    (x : CompCert4Lean.Flocq.Core.Generic_fmt.Exact.R ctx),
+    CompCert4Lean.Flocq.Core.Ulp.Exact.ulp
+        ctx magnitude beta (FIX_exp emin) x =
+      CompCert4Lean.Flocq.Core.Generic_fmt.Exact.bpow ctx beta emin
 
 instance exists_NE_FIX (beta : radix) (emin : Z) : Exists_NE beta (FIX_exp emin) where
   exists_NE := Or.inr (fun e => by
@@ -86,14 +114,12 @@ instance exists_NE_FIX (beta : radix) (emin : Z) : Exists_NE beta (FIX_exp emin)
     · intro _
       rfl)
 
-def round_FIX_IZRStatement : Prop :=
-  ∀ (f : R → Z) (x : R),
-    round radix2 (FIX_exp Z0) f x = IZR (f x)
-
-def FIX_format_ind (beta : radix) (emin : Z) (x : R) (P : Prop)
-    (step : ∀ (f : float beta), x = F2R f → Fexp f = emin → P)
-    (h : FIX_format beta emin x) : P :=
-  match h with
-  | .FIX_spec f hxf hfe => step f hxf hfe
+def round_FIX_IZRStatement (ctx : ExactRealContext)
+    (magnitude : CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Magnitude ctx) : Prop :=
+  ∀ (f : CompCert4Lean.Flocq.Core.Generic_fmt.Exact.R ctx → Z)
+    (x : CompCert4Lean.Flocq.Core.Generic_fmt.Exact.R ctx),
+    CompCert4Lean.Flocq.Core.Generic_fmt.Exact.round
+        ctx magnitude radix2 (FIX_exp Z0) f x =
+      CompCert4Lean.Flocq.Core.Generic_fmt.Exact.IZR ctx (f x)
 
 end CompCert4Lean.Flocq.Core.FIX
