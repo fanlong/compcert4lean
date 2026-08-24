@@ -72,6 +72,7 @@ private abbrev shru := CompCert4Lean.Lib.Integers.Int.shru
 private abbrev shr := CompCert4Lean.Lib.Integers.Int.shr
 private abbrev rol := CompCert4Lean.Lib.Integers.Int.rol
 private abbrev ror := CompCert4Lean.Lib.Integers.Int.ror
+private abbrev size := CompCert4Lean.Lib.Integers.Int.size
 private abbrev zero_ext := CompCert4Lean.Lib.Integers.Int.zero_ext
 end Int
 
@@ -91,6 +92,8 @@ private abbrev shru' := CompCert4Lean.Lib.Integers.Int64.shru'
 private abbrev shr' := CompCert4Lean.Lib.Integers.Int64.shr'
 private abbrev rol := CompCert4Lean.Lib.Integers.Int64.rol
 private abbrev ror := CompCert4Lean.Lib.Integers.Int64.ror
+private abbrev size := CompCert4Lean.Lib.Integers.Int64.size
+private abbrev zero_ext := CompCert4Lean.Lib.Integers.Int64.zero_ext
 private abbrev loword := CompCert4Lean.Lib.Integers.Int64.loword
 private abbrev hiword := CompCert4Lean.Lib.Integers.Int64.hiword
 private abbrev ofwords := CompCert4Lean.Lib.Integers.Int64.ofwords
@@ -105,11 +108,11 @@ inductive nval : Type where
 export nval (Nothing I L All)
 
 def iagree (p q mask : int) : Prop :=
-  ∀ i, ZArith.BinInt.Z.le z0 i → ZArith.BinInt.Z.lt i Int.zwordsize →
+  ∀ i, (ZArith.BinInt.Z.le z0 i ∧ ZArith.BinInt.Z.lt i Int.zwordsize) →
     Int.testbit mask i = true → Int.testbit p i = Int.testbit q i
 
 def lagree (p q mask : int64) : Prop :=
-  ∀ i, ZArith.BinInt.Z.le z0 i → ZArith.BinInt.Z.lt i Int64.zwordsize →
+  ∀ i, (ZArith.BinInt.Z.le z0 i ∧ ZArith.BinInt.Z.lt i Int64.zwordsize) →
     Int64.testbit mask i = true → Int64.testbit p i = Int64.testbit q i
 
 private def iVagree (v w : val) (m : int) : Prop :=
@@ -144,10 +147,10 @@ inductive nge : nval → nval → Prop where
   | nge_nothing (x) : nge All x
   | nge_all (x) : nge x Nothing
   | nge_int (m1 m2) :
-      (∀ i, ZArith.BinInt.Z.le z0 i → ZArith.BinInt.Z.lt i Int.zwordsize →
+      (∀ i, (ZArith.BinInt.Z.le z0 i ∧ ZArith.BinInt.Z.lt i Int.zwordsize) →
         Int.testbit m2 i = true → Int.testbit m1 i = true) → nge (I m1) (I m2)
   | nge_long (m1 m2) :
-      (∀ i, ZArith.BinInt.Z.le z0 i → ZArith.BinInt.Z.lt i Int64.zwordsize →
+      (∀ i, (ZArith.BinInt.Z.le z0 i ∧ ZArith.BinInt.Z.lt i Int64.zwordsize) →
         Int64.testbit m2 i = true → Int64.testbit m1 i = true) → nge (L m1) (L m2)
 
 def nlub (x y : nval) : nval :=
@@ -158,23 +161,8 @@ def nlub (x y : nval) : nval :=
   | L m1, L m2 => L (Int64.or m1 m2)
   | _, _ => All
 
-private def intSize (m : int) : Z :=
-  match Int.unsigned m with
-  | .Z0 => z0
-  | .Zpos p => .Zpos (PArith.BinPos.Pos.size p)
-  | .Zneg p => .Zpos (PArith.BinPos.Pos.size p)
-
-private def int64Size (m : int64) : Z :=
-  match Int64.unsigned m with
-  | .Z0 => z0
-  | .Zpos p => .Zpos (PArith.BinPos.Pos.size p)
-  | .Zneg p => .Zpos (PArith.BinPos.Pos.size p)
-
-private def int64ZeroExt (n : Z) (m : int64) : int64 :=
-  Int64.repr (ZArith.BinInt.Z.modulo (Int64.unsigned m) (two_p n))
-
-def complete_mask (m : int) : int := Int.zero_ext (intSize m) Int.mone
-def complete_mask64 (m : int64) : int64 := int64ZeroExt (int64Size m) Int64.mone
+def complete_mask (m : int) : int := Int.zero_ext (Int.size m) Int.mone
+def complete_mask64 (m : int64) : int64 := Int64.zero_ext (Int64.size m) Int64.mone
 
 def andimm (x : nval) (n : int) : nval :=
   match x with
@@ -394,21 +382,7 @@ def set (p : positive) (v : NVal.t) (x : t) : t :=
 
 def eq (x y : t) : Prop := ∀ p, NVal.eq (get p x) (get p y)
 
-private def treeBeq : PTree.tree' NVal.t → PTree.tree' NVal.t → Bool
-  | .Node001 r₁, .Node001 r₂ => treeBeq r₁ r₂
-  | .Node010 x₁, .Node010 x₂ => NVal.beq x₁ x₂
-  | .Node011 x₁ r₁, .Node011 x₂ r₂ => NVal.beq x₁ x₂ && treeBeq r₁ r₂
-  | .Node100 l₁, .Node100 l₂ => treeBeq l₁ l₂
-  | .Node101 l₁ r₁, .Node101 l₂ r₂ => treeBeq l₁ l₂ && treeBeq r₁ r₂
-  | .Node110 l₁ x₁, .Node110 l₂ x₂ => NVal.beq x₁ x₂ && treeBeq l₁ l₂
-  | .Node111 l₁ x₁ r₁, .Node111 l₂ x₂ r₂ =>
-      NVal.beq x₁ x₂ && treeBeq l₁ l₂ && treeBeq r₁ r₂
-  | _, _ => false
-
-def beq : t → t → Bool
-  | .Empty, .Empty => true
-  | .Nodes m₁, .Nodes m₂ => treeBeq m₁ m₂
-  | _, _ => false
+def beq (x y : t) : Bool := PTree.beq NVal.beq x y
 
 def ge (x y : t) : Prop := ∀ p, NVal.ge (get p x) (get p y)
 
@@ -534,7 +508,7 @@ def nmem_lub : nmem → nmem → nmem
 def nmem_beq : nmem → nmem → Bool
   | NMemDead, NMemDead => true
   | NMem stk1 gl1, NMem stk2 gl2 =>
-      ISet.beq stk1 stk2 && ZTree.beq ISet.beq gl1 gl2
+      ISet.beq stk1 stk2 && PTree.beq ISet.beq gl1 gl2
   | _, _ => false
 
 namespace NA
@@ -544,7 +518,7 @@ def eq (x y : t) : Prop :=
     ∀ ge sp b ofs, nlive ge sp x.2 b ofs ↔ nlive ge sp y.2 b ofs
 def beq (x y : t) : Bool := NE.beq x.1 y.1 && nmem_beq x.2 y.2
 def ge (x y : t) : Prop :=
-  (∀ r, nge (NE.get r x.1) (NE.get r y.1)) ∧
+  NE.ge x.1 y.1 ∧
   (∀ ge sp b ofs, nlive ge sp y.2 b ofs → nlive ge sp x.2 b ofs)
 def bot : t := (NE.bot, NMemDead)
 def lub (x y : t) : t := (NE.lub x.1 y.1, nmem_lub x.2 y.2)
@@ -640,10 +614,10 @@ def eq_same_bits64Statement : Prop :=
   ∀ i x y, x = y → Int64.testbit x i = Int64.testbit y i
 
 def eqmod_iagreeStatement : Prop :=
-  ∀ m x y, eqmod (two_p (intSize m)) x y → iagree (Int.repr x) (Int.repr y) m
+  ∀ m x y, eqmod (two_p (Int.size m)) x y → iagree (Int.repr x) (Int.repr y) m
 
 def eqmod_lagreeStatement : Prop :=
-  ∀ m x y, eqmod (two_p (int64Size m)) x y →
+  ∀ m x y, eqmod (two_p (Int64.size m)) x y →
     lagree (Int64.repr x) (Int64.repr y) m
 
 def hiword_soundStatement : Prop :=
@@ -666,7 +640,7 @@ def iagree_bitwise_binopStatement : Prop :=
 
 def iagree_eqmodStatement : Prop :=
   ∀ x y m, iagree x y (complete_mask m) →
-    eqmod (two_p (intSize m)) (Int.unsigned x) (Int.unsigned y)
+    eqmod (two_p (Int.size m)) (Int.unsigned x) (Int.unsigned y)
 
 def iagree_moneStatement : Prop :=
   ∀ p q, iagree p q Int.mone → p = q
@@ -728,7 +702,7 @@ def lagree_bitwise_binopStatement : Prop :=
 
 def lagree_eqmodStatement : Prop :=
   ∀ x y m, lagree x y (complete_mask64 m) →
-    eqmod (two_p (int64Size m)) (Int64.unsigned x) (Int64.unsigned y)
+    eqmod (two_p (Int64.size m)) (Int64.unsigned x) (Int64.unsigned y)
 
 def lagree_moneStatement : Prop :=
   ∀ p q, lagree p q Int64.mone → p = q
