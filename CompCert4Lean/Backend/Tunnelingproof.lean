@@ -15,6 +15,7 @@ later proof-migration phase; no theorem placeholder is introduced here.
 namespace CompCert4Lean.Backend.Tunnelingproof
 
 open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Foundation.Logic.Rocq.Coq.Init.Specif
 open CompCert4Lean.Backend.LTL
 open CompCert4Lean.Backend.Tunneling
 open CompCert4Lean.Backend.Locations
@@ -104,7 +105,7 @@ def branch_target (fn : function) (pc : node) : node :=
 
 /-! The source witness is computational: proof erasure removes only its
 correctness field, while retaining the function built by the two folds.  Keep
-that executable carrier separate from the proposition descriptor below. -/
+that executable carrier separate from the source-shaped result descriptor. -/
 
 private def record_branch_measure
     (st : U.t × (node → Nat)) (pc : node) (b : bblock) : U.t × (node → Nat) :=
@@ -300,8 +301,26 @@ private def record_gotos_measure (fn : function) : U.t × (node → Nat) :=
   let branches := record_branches_measure fn
   record_conds_measure_wf ((fn.fn_code, branches.1), branches.2)
 
+/-! This is the executable companion for the source `proj1_sig` witness.
+The correctness field is deliberately a separate obligation: until proof
+grinding supplies a value of `record_gotos_correct_1Statement`, the executable
+provider must not fabricate one. -/
+structure record_gotos_correct_1_companion (fn : function) : Type where
+  witness : node → Nat
+
+def record_gotos_correct_1_provider (fn : function) :
+    record_gotos_correct_1_companion fn :=
+  { witness := (record_gotos_measure fn).2 }
+
+def record_gotos_correct_1_projection (fn : function) : node → Nat :=
+  (record_gotos_correct_1_provider fn).witness
+
+def record_gotos_correct_1_bridge (fn : function) : Prop :=
+  branch_map_correct fn (record_gotos fn)
+    (record_gotos_correct_1_projection fn)
+
 def count_gotos (fn : function) (pc : node) : Nat :=
-  (record_gotos_measure fn).2 pc
+  record_gotos_correct_1_projection fn pc
 
 def tunneled_block (f : function) (b : bblock) : bblock :=
   tunnel_block (record_gotos f) b
@@ -381,43 +400,49 @@ def measure : state → Nat
 def transf_program_matchStatement : Prop :=
   ∀ p : program, match_prog p (tunnel_program p)
 
-def record_branch_correctStatement : Prop :=
+def record_branch_correctStatement : Type :=
   ∀ (c : code) (u : U.t) (f : node → Nat) (pc : node) (b : bblock),
     branch_map_correct_1 (PTree.remove pc c) u f →
     PTree.get pc c = some b →
-    ∃ f', branch_map_correct_1 c (record_branch u pc b) f'
+    sig (fun f' : node → Nat =>
+      branch_map_correct_1 c (record_branch u pc b) f')
 
-def record_branches_correctStatement : Prop :=
+def record_branches_correctStatement : Type :=
   ∀ fn : function,
-    ∃ f, branch_map_correct_1 fn.fn_code (record_branches fn) f
+    sig (fun f : node → Nat =>
+      branch_map_correct_1 fn.fn_code (record_branches fn) f)
 
-def record_cond_correctStatement : Prop :=
+def record_cond_correctStatement : Type :=
   ∀ (fn : function) (c : code) (u : U.t) (changed : Bool)
     (f : node → Nat) (pc : node) (b : bblock),
     branch_map_correct_2 fn c u f →
     PTree.get pc fn.fn_code = some b →
     PTree.get pc c ≠ none →
-    ∃ f',
+    sig (fun f' : node → Nat =>
       branch_map_correct_2 fn
         (record_cond (c, u, changed) pc b).1
-        (record_cond (c, u, changed) pc b).2.1 f'
+        (record_cond (c, u, changed) pc b).2.1 f')
 
-def record_conds_1_correctStatement : Prop :=
+def record_conds_1_correctStatement : Type :=
   ∀ (fn : function) (c : code) (u : U.t) (f : node → Nat),
     branch_map_correct_2 fn c u f →
-    code_compat fn c →
-      code_compat fn (record_conds_1 (c, u)).1 ∧
-      (∃ f', branch_map_correct_2 fn
-        (record_conds_1 (c, u)).1 (record_conds_1 (c, u)).2.1 f')
+      code_compat fn c →
+      -- `PLift` keeps the Coq proof component inside this Type-level product.
+      PLift (code_compat fn (record_conds_1 (c, u)).1) ×
+      sig (fun f' : node → Nat =>
+        branch_map_correct_2 fn
+          (record_conds_1 (c, u)).1 (record_conds_1 (c, u)).2.1 f')
 
-def record_conds_correctStatement : Prop :=
+def record_conds_correctStatement : Type :=
   ∀ (fn : function) (cu : code × U.t),
-    (∃ f, branch_map_correct_2 fn cu.1 cu.2 f) →
+    sig (fun f : node → Nat => branch_map_correct_2 fn cu.1 cu.2 f) →
     code_compat fn cu.1 →
-    ∃ f, branch_map_correct fn (record_conds cu) f
+    sig (fun f : node → Nat =>
+      branch_map_correct fn (record_conds cu) f)
 
-def record_gotos_correct_1Statement : Prop :=
-  ∀ fn : function, ∃ f, branch_map_correct fn (record_gotos fn) f
+def record_gotos_correct_1Statement : Type :=
+  ∀ fn : function,
+    sig (fun f : node → Nat => branch_map_correct fn (record_gotos fn) f)
 
 def record_gotos_correctStatement : Prop :=
   ∀ (fn : function) (pc : node),
