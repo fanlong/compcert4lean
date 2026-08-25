@@ -35,6 +35,8 @@ private abbrev float32 := CompCert4Lean.Lib.Floats.float32
 private abbrev comparison := CompCert4Lean.Lib.Integers.comparison
 private abbrev typ := CompCert4Lean.Common.AST.typ
 private abbrev ident := CompCert4Lean.Common.AST.ident
+private abbrev BinaryNormalizeCertificate :=
+  CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
 private abbrev RelocationContext := CompCert4Lean.X86.SelectOp.RelocationContext
 private abbrev CompilerConfig := CompCert4Lean.Config.CompilerConfig
 private abbrev Z := CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z
@@ -530,12 +532,20 @@ def make_modluimm (n : int64) (r1 r2 : reg) : operation × List reg :=
   | some _ => (Oandlimm (CompCert4Lean.Lib.Integers.Int64.sub n CompCert4Lean.Lib.Integers.Int64.one), [r1])
   | none => (Omodlu, [r1, r2])
 
-def make_mulfimm (n : float) (r r1 r2 : reg) : operation × List reg :=
-  if n = CompCert4Lean.Lib.Floats.Float.of_int (CompCert4Lean.Lib.Integers.Int.repr (zOfNat 2)) then
+def make_mulfimm
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    (n : float) (r r1 r2 : reg) : operation × List reg :=
+  if n = CompCert4Lean.Lib.Floats.Float.of_int
+      (certificate := binary64_certificate)
+      (CompCert4Lean.Lib.Integers.Int.repr (zOfNat 2)) then
     (Oaddf, [r, r]) else (Omulf, [r1, r2])
 
-def make_mulfsimm (n : float32) (r r1 r2 : reg) : operation × List reg :=
-  if n = CompCert4Lean.Lib.Floats.Float32.of_int (CompCert4Lean.Lib.Integers.Int.repr (zOfNat 2)) then
+def make_mulfsimm
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (n : float32) (r r1 r2 : reg) : operation × List reg :=
+  if n = CompCert4Lean.Lib.Floats.Float32.of_int
+      (certificate := binary32_certificate)
+      (CompCert4Lean.Lib.Integers.Int.repr (zOfNat 2)) then
     (Oaddfs, [r, r]) else (Omulfs, [r1, r2])
 
 def make_cast8signed (r : reg) (a : aval) : operation × List reg :=
@@ -663,7 +673,10 @@ def op_strength_reduction_match (op : operation) (args : List reg) (vl : List av
   | Omulfs, [r1, r2], [FS n1, v2] => .op_strength_reduction_case44 r1 r2 n1 v2
   | op, args, vl => .op_strength_reduction_default op args vl
 
-def op_strength_reduction (cfg : CompilerConfig) (op : operation)
+def op_strength_reduction
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (cfg : CompilerConfig) (op : operation)
     (args : List reg) (vl : List aval) :
     operation × List reg :=
   match op_strength_reduction_match op args vl with
@@ -712,10 +725,14 @@ def op_strength_reduction (cfg : CompilerConfig) (op : operation)
   | .op_strength_reduction_case39 c args vl => make_cmp c args vl
   | .op_strength_reduction_case40 c ty r1 r2 args _ _ vl =>
       make_select cfg c ty r1 r2 args vl
-  | .op_strength_reduction_case41 r1 r2 _ n2 => make_mulfimm n2 r1 r1 r2
-  | .op_strength_reduction_case42 r1 r2 n1 _ => make_mulfimm n1 r2 r1 r2
-  | .op_strength_reduction_case43 r1 r2 _ n2 => make_mulfsimm n2 r1 r1 r2
-  | .op_strength_reduction_case44 r1 r2 n1 _ => make_mulfsimm n1 r2 r1 r2
+  | .op_strength_reduction_case41 r1 r2 _ n2 =>
+      make_mulfimm (binary64_certificate := binary64_certificate) n2 r1 r1 r2
+  | .op_strength_reduction_case42 r1 r2 n1 _ =>
+      make_mulfimm (binary64_certificate := binary64_certificate) n1 r2 r1 r2
+  | .op_strength_reduction_case43 r1 r2 _ n2 =>
+      make_mulfsimm (binary32_certificate := binary32_certificate) n2 r1 r1 r2
+  | .op_strength_reduction_case44 r1 r2 n1 _ =>
+      make_mulfsimm (binary32_certificate := binary32_certificate) n1 r2 r1 r2
   | .op_strength_reduction_default op args _ => (op, args)
 
 end CompCert4Lean.X86.ConstpropOp
