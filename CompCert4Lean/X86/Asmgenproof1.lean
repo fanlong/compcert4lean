@@ -36,6 +36,9 @@ private abbrev Mem := CompCert4Lean.Common.Memory.mem
 private abbrev AsmGenv := CompCert4Lean.X86.Asm.genv
 private abbrev AsmFunction := CompCert4Lean.X86.Asm.function
 private abbrev AsmCode := CompCert4Lean.X86.Asm.code
+private abbrev BinaryNormalizeCertificate :=
+  CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+private abbrev zOfNat := ZArith.BinInt.Z.of_nat
 
 def eval_extcond (xc : extcond) (rs : regset) : Option Bool :=
   match xc with
@@ -228,30 +231,45 @@ def divls_modls_existsStatement : Prop :=
       divmods2 nh nl d = some (q, r) ∧
       Val.divls v1 v2 = some (.Vlong q) ∧ Val.modls v1 v2 = some (.Vlong r)
 
-def mk_shrximm_correctStatement : Prop :=
+def mk_shrximm_correctStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (ge : AsmGenv) (fn : AsmFunction) (n : Int32) (k c : AsmCode)
     (rs1 : regset) (v : Val) (m : Mem),
     mk_shrximm n k = .OK c →
     Val.shrx (rs1 (.IR .RAX)) (.Vint n) = some v →
-    ∃ rs2, exec_straight ge fn c rs1 m k rs2 m ∧
+    ∃ rs2, exec_straight
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      ge fn c rs1 m k rs2 m ∧
       rs2 (.IR .RAX) = v ∧
       (∀ r, data_preg r = true → r ≠ .IR .RAX → r ≠ .IR .RCX → rs2 r = rs1 r)
 
-def mk_shrxlimm_correctStatement : Prop :=
+def mk_shrxlimm_correctStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (ge : AsmGenv) (fn : AsmFunction) (n : Int32) (k c : AsmCode)
     (rs1 : regset) (v : Val) (m : Mem),
     mk_shrxlimm n k = .OK c →
     Val.shrxl (rs1 (.IR .RAX)) (.Vint n) = some v →
-    ∃ rs2, exec_straight ge fn c rs1 m k rs2 m ∧
+    ∃ rs2, exec_straight
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      ge fn c rs1 m k rs2 m ∧
       rs2 (.IR .RAX) = v ∧
       (∀ r, data_preg r = true → r ≠ .IR .RAX → r ≠ .IR .RDX → rs2 r = rs1 r)
 
-def mk_storebyte_correctStatement : Prop :=
+def mk_storebyte_correctStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (ge : AsmGenv) (fn : AsmFunction) (addr : addrmode) (r : Ireg)
     (k c : AsmCode) (rs1 : regset) (m1 m2 : Mem),
     mk_storebyte addr r k = .OK c →
     Mem.storev .Mint8unsigned m1 (eval_addrmode ge addr rs1) (rs1 (.IR r)) = some m2 →
-    ∃ rs2, exec_straight ge fn c rs1 m1 k rs2 m2 ∧
+    ∃ rs2, exec_straight
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      ge fn c rs1 m1 k rs2 m2 ∧
       (∀ r, data_preg r = true →
         preg_notin r (if CompCert4Lean.X86_64.Archi.ptr64 then [] else
           [CompCert4Lean.X86.Machregs.AX, CompCert4Lean.X86.Machregs.CX]) →
@@ -282,14 +300,19 @@ def normalize_addrmode_64_correctStatement : Prop :=
       | (am', some delta) =>
           Val.addl (eval_addrmode64 ge am' rs) (.Vlong delta)
 
-def storeind_correctStatement : Prop :=
+def storeind_correctStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (ge : AsmGenv) (fn : AsmFunction) (base : Ireg) (ofs : Ptrofs)
     (ty : typ) (src : Mreg) (k : AsmCode) (rs : regset) (c : AsmCode)
     (m m' : Mem),
     storeind src base ofs ty k = .OK c →
     Mem.storev (chunk_of_type ty) m (Val.offset_ptr (rs (.IR base)) ofs)
       (rs (preg_of src)) = some m' →
-    ∃ rs', exec_straight ge fn c rs m k rs' m' ∧
+    ∃ rs', exec_straight
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      ge fn c rs m k rs' m' ∧
       (∀ r, data_preg r = true →
         preg_notin r (CompCert4Lean.X86.Machregs.destroyed_by_setstack ty) →
         rs' r = rs r)
@@ -389,53 +412,83 @@ def eval_testcond_set_iregStatement : Prop :=
   ∀ (c : testcond) (rs : regset) (r : Ireg) (v : Val),
     eval_testcond c (Pregmap.set (.IR r) v rs) = eval_testcond c rs
 
-def loadind_correctStatement : Prop :=
+def loadind_correctStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (ge : AsmGenv) (fn : AsmFunction) (base : Ireg) (ofs : Ptrofs)
     (ty : typ) (dst : Mreg) (k : AsmCode) (rs : regset) (c : AsmCode)
     (m : Mem) (v : Val),
     loadind base ofs ty dst k = .OK c →
     Mem.loadv (chunk_of_type ty) m (Val.offset_ptr (rs (.IR base)) ofs) = some v →
-    ∃ rs', exec_straight ge fn c rs m k rs' m ∧
+    ∃ rs', exec_straight
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      ge fn c rs m k rs' m ∧
       rs' (preg_of dst) = v ∧
       (∀ r, data_preg r = true → r ≠ preg_of dst → rs' r = rs r)
 
-def mk_intconv_correctStatement : Prop :=
+def mk_intconv_correctStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (ge : AsmGenv) (fn : AsmFunction)
     (mk : Ireg → Ireg → instruction) (sem : Val → Val)
     (rd rs : Ireg) (k c : AsmCode) (rs1 : regset) (m : Mem),
     mk_intconv mk rd rs k = .OK c →
-    (∀ (c : AsmCode) (rd rs : Ireg) (r : regset) (m : Mem),
-      exec_instr ge fn (mk rd rs) r m = .Next (nextinstr
+    (∀ (fn' : AsmFunction) (rd rs : Ireg) (r : regset) (m : Mem),
+      exec_instr
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        ge fn' (mk rd rs) r m = .Next (nextinstr
         (Pregmap.set (.IR rd) (sem (r (.IR rs))) r)) m) →
-    ∃ rs2, exec_straight ge fn c rs1 m k rs2 m ∧
+    ∃ rs2, exec_straight
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      ge fn c rs1 m k rs2 m ∧
       rs2 (.IR rd) = sem (rs1 (.IR rs)) ∧
       (∀ r, data_preg r = true → r ≠ .IR rd → r ≠ .IR .RAX → rs2 r = rs1 r)
 
-def mk_mov_correctStatement : Prop :=
+def mk_mov_correctStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (ge : AsmGenv) (fn : AsmFunction) (rd rs : Preg) (k c : AsmCode)
     (rs1 : regset) (m : Mem),
     mk_mov rd rs k = .OK c →
-    ∃ rs2, exec_straight ge fn c rs1 m k rs2 m ∧
+    ∃ rs2, exec_straight
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      ge fn c rs1 m k rs2 m ∧
       rs2 rd = rs1 rs ∧
       (∀ r, data_preg r = true → r ≠ rd → rs2 r = rs1 r)
 
-def mk_setcc_base_correctStatement : Prop :=
+def mk_setcc_base_correctStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (ge : AsmGenv) (fn : AsmFunction) (cond : extcond) (rd : Ireg)
     (k : AsmCode) (rs1 : regset) (m : Mem),
-    ∃ rs2, exec_straight ge fn (mk_setcc_base cond rd k) rs1 m k rs2 m ∧
+    ∃ rs2, exec_straight
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      ge fn (mk_setcc_base cond rd k) rs1 m k rs2 m ∧
       rs2 (.IR rd) = Val.of_optbool (eval_extcond cond rs1) ∧
-      (∀ r, data_preg r = true → r ≠ .IR .RAX → r ≠ .IR .RCX →
+      (∀ r, data_preg r = true → r ≠ .IR .RAX ∧ r ≠ .IR .RCX →
         r ≠ .IR rd → rs2 r = rs1 r)
 
-def mk_setcc_correctStatement : Prop :=
+def mk_setcc_correctStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (ge : AsmGenv) (fn : AsmFunction) (cond : extcond) (rd : Ireg)
     (k : AsmCode) (rs1 : regset) (m : Mem),
-    ∃ rs2, exec_straight ge fn (mk_setcc cond rd k) rs1 m k rs2 m ∧
+    ∃ rs2, exec_straight
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      ge fn (mk_setcc cond rd k) rs1 m k rs2 m ∧
       rs2 (.IR rd) = Val.of_optbool (eval_extcond cond rs1) ∧
-      (∀ r, data_preg r = true → r ≠ .IR .RAX → r ≠ .IR .RCX →
+      (∀ r, data_preg r = true → r ≠ .IR .RAX ∧ r ≠ .IR .RCX →
         r ≠ .IR rd → rs2 r = rs1 r)
 
-def mk_sel_correctStatement : Prop :=
+def mk_sel_correctStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (ge : AsmGenv) (fn : AsmFunction) (xc : extcond) (ty : typ)
     (rd r2 : Ireg) (k c : AsmCode) (ob : Option Bool) (rs : regset) (m : Mem),
     mk_sel xc rd r2 k = .OK c → rd ≠ r2 →
@@ -443,43 +496,66 @@ def mk_sel_correctStatement : Prop :=
     | some b => eval_extcond xc rs = some b ∧
         eval_extcond (negate_extcond xc) rs = some (!b)
     | none => True) →
-    ∃ rs', exec_straight ge fn c rs m k rs' m ∧
+    ∃ rs', exec_straight
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      ge fn c rs m k rs' m ∧
       Val.lessdef (Val.select ob (rs (.IR rd)) (rs (.IR r2)) ty) (rs' (.IR rd)) ∧
       (∀ r, data_preg r = true → r ≠ .IR rd → rs' r = rs r)
 
-def transl_cond_correctStatement : Prop :=
+def transl_cond_correctStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (ge : AsmGenv) (fn : AsmFunction) (cond : condition) (args : List Mreg)
     (k c : AsmCode) (rs : regset) (m : Mem),
     transl_cond cond args k = .OK c →
-    ∃ rs', exec_straight ge fn c rs m k rs' m ∧
+    ∃ rs', exec_straight
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      ge fn c rs m k rs' m ∧
       (match eval_condition cond (args.map (fun r => rs (preg_of r))) m with
       | none => True
       | some b => eval_extcond (testcond_for_condition cond) rs' = some b ∧
           eval_extcond (testcond_for_condition (negate_condition cond)) rs' = some (!b)) ∧
       (∀ r, data_preg r = true → rs' r = rs r)
 
-def transl_sel_correctStatement : Prop :=
+def transl_sel_correctStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (ge : AsmGenv) (fn : AsmFunction) (ty : typ) (cond : condition)
     (args : List Mreg) (rd r2 : Ireg) (k c : AsmCode) (rs : regset) (m : Mem),
     transl_sel cond args rd r2 k = .OK c →
-    ∃ rs', exec_straight ge fn c rs m k rs' m ∧
+    ∃ rs', exec_straight
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      ge fn c rs m k rs' m ∧
       Val.lessdef
         (Val.select (eval_condition cond (args.map (fun r => rs (preg_of r))) m)
           (rs (.IR rd)) (rs (.IR r2)) ty) (rs' (.IR rd)) ∧
       (∀ r, data_preg r = true → r ≠ .IR rd → rs' r = rs r)
 
-def transl_op_correctStatement : Prop :=
+def transl_op_correctStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (ge : AsmGenv) (fn : AsmFunction) (op : operation) (args : List Mreg)
     (res : Mreg) (k c : AsmCode) (rs : regset) (m : Mem) (v : Val),
     transl_op op args res k = .OK c →
-    eval_operation ge (rs (.IR .RSP)) op
+    eval_operation
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      ge (rs (.IR .RSP)) op
       (args.map (fun r => rs (preg_of r))) m = some v →
-    ∃ rs', exec_straight ge fn c rs m k rs' m ∧
+    ∃ rs', exec_straight
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      ge fn c rs m k rs' m ∧
       Val.lessdef v (rs' (preg_of res)) ∧
       (∀ r, data_preg r = true → r ≠ preg_of res →
         preg_notin r (CompCert4Lean.X86.Machregs.destroyed_by_op op) → rs' r = rs r)
 
-def transl_load_correctStatement : Prop :=
+def transl_load_correctStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (ge : AsmGenv) (fn : AsmFunction) (chunk : memory_chunk)
     (addr : addressing) (args : List Mreg) (dest : Mreg) (k c : AsmCode)
     (rs : regset) (m : Mem) (a v : Val),
@@ -487,11 +563,16 @@ def transl_load_correctStatement : Prop :=
     eval_addressing ge (rs (.IR .RSP)) addr
       (args.map (fun r => rs (preg_of r))) = some a →
     Mem.loadv chunk m a = some v →
-    ∃ rs', exec_straight ge fn c rs m k rs' m ∧
+    ∃ rs', exec_straight
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      ge fn c rs m k rs' m ∧
       rs' (preg_of dest) = v ∧
       (∀ r, data_preg r = true → r ≠ preg_of dest → rs' r = rs r)
 
-def transl_store_correctStatement : Prop :=
+def transl_store_correctStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (ge : AsmGenv) (fn : AsmFunction) (chunk : memory_chunk)
     (addr : addressing) (args : List Mreg) (src : Mreg) (k c : AsmCode)
     (rs : regset) (m : Mem) (a : Val) (m' : Mem),
@@ -499,7 +580,10 @@ def transl_store_correctStatement : Prop :=
     eval_addressing ge (rs (.IR .RSP)) addr
       (args.map (fun r => rs (preg_of r))) = some a →
     Mem.storev chunk m a (rs (preg_of src)) = some m' →
-    ∃ rs', exec_straight ge fn c rs m k rs' m' ∧
+    ∃ rs', exec_straight
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      ge fn c rs m k rs' m' ∧
       (∀ r, data_preg r = true →
         preg_notin r (CompCert4Lean.X86.Machregs.destroyed_by_store chunk addr) →
         rs' r = rs r)
