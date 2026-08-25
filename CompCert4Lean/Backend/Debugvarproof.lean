@@ -59,7 +59,7 @@ def diff_sameStatement : Prop :=
   ∀ s : avail, diff s s = []
 
 def delta_state_sameStatement : Prop :=
-  ∀ s : avail, delta_state s s = ([], [])
+  ∀ s : Option avail, delta_state s s = ([], [])
 
 def transf_code_matchStatement : Prop :=
   ∀ (cfg : CompilerConfig) (lm : labelmap) (c : code) (before : Option avail),
