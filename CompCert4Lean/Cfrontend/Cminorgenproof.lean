@@ -30,6 +30,10 @@ open CompCert4Lean.Lib.Integers
 open CompCert4Lean.Lib.Maps
 open CompCert4Lean.Cfrontend.Cminorgen
 
+private abbrev BinaryNormalizeCertificate :=
+  CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+private abbrev zOfNat := ZArith.BinInt.Z.of_nat
+
 namespace CS
 
 private abbrev program := CompCert4Lean.Cfrontend.Csharpminor.program
@@ -51,14 +55,34 @@ private abbrev create_undef_temps :=
 private abbrev bind_parameters := CompCert4Lean.Cfrontend.Csharpminor.bind_parameters
 private abbrev alloc_variables := CompCert4Lean.Cfrontend.Csharpminor.alloc_variables
 private abbrev eval_constant := CompCert4Lean.Cfrontend.Csharpminor.eval_constant
-private abbrev eval_expr := CompCert4Lean.Cfrontend.Csharpminor.eval_expr
-private abbrev eval_exprlist := CompCert4Lean.Cfrontend.Csharpminor.eval_exprlist
+private abbrev eval_expr
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :=
+  CompCert4Lean.Cfrontend.Csharpminor.eval_expr
+    (binary64_certificate := binary64_certificate)
+    (binary32_certificate := binary32_certificate)
+private abbrev eval_exprlist
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :=
+  CompCert4Lean.Cfrontend.Csharpminor.eval_exprlist
+    (binary64_certificate := binary64_certificate)
+    (binary32_certificate := binary32_certificate)
 private abbrev eval_var_addr := CompCert4Lean.Cfrontend.Csharpminor.eval_var_addr
 private abbrev call_cont := CompCert4Lean.Cfrontend.Csharpminor.call_cont
-private abbrev step := CompCert4Lean.Cfrontend.Csharpminor.step
+private abbrev step
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :=
+  CompCert4Lean.Cfrontend.Csharpminor.step
+    (binary64_certificate := binary64_certificate)
+    (binary32_certificate := binary32_certificate)
 private abbrev initial_state := CompCert4Lean.Cfrontend.Csharpminor.initial_state
 private abbrev final_state := CompCert4Lean.Cfrontend.Csharpminor.final_state
-private abbrev semantics := CompCert4Lean.Cfrontend.Csharpminor.semantics
+private abbrev semantics
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :=
+  CompCert4Lean.Cfrontend.Csharpminor.semantics
+    (binary64_certificate := binary64_certificate)
+    (binary32_certificate := binary32_certificate)
 private abbrev find_label := CompCert4Lean.Cfrontend.Csharpminor.find_label
 private abbrev select_switch_default :=
   CompCert4Lean.Cfrontend.Csharpminor.select_switch_default
@@ -80,17 +104,42 @@ private abbrev state := CompCert4Lean.Backend.Cminor.state
 private abbrev funsig := CompCert4Lean.Backend.Cminor.funsig
 private abbrev set_params := CompCert4Lean.Backend.Cminor.set_params
 private abbrev set_locals := CompCert4Lean.Backend.Cminor.set_locals
-private abbrev eval_unop := CompCert4Lean.Backend.Cminor.eval_unop
+private abbrev eval_unop
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :=
+  CompCert4Lean.Backend.Cminor.eval_unop
+    (binary64_certificate := binary64_certificate)
+    (binary32_certificate := binary32_certificate)
 private abbrev eval_binop := CompCert4Lean.Backend.Cminor.eval_binop
 private abbrev eval_constant := CompCert4Lean.Backend.Cminor.eval_constant
-private abbrev eval_expr := CompCert4Lean.Backend.Cminor.eval_expr
-private abbrev eval_exprlist := CompCert4Lean.Backend.Cminor.eval_exprlist
+private abbrev eval_expr
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :=
+  CompCert4Lean.Backend.Cminor.eval_expr
+    (binary64_certificate := binary64_certificate)
+    (binary32_certificate := binary32_certificate)
+private abbrev eval_exprlist
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :=
+  CompCert4Lean.Backend.Cminor.eval_exprlist
+    (binary64_certificate := binary64_certificate)
+    (binary32_certificate := binary32_certificate)
 private abbrev call_cont := CompCert4Lean.Backend.Cminor.call_cont
 private abbrev is_call_cont := CompCert4Lean.Backend.Cminor.is_call_cont
-private abbrev step := CompCert4Lean.Backend.Cminor.step
+private abbrev step
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :=
+  CompCert4Lean.Backend.Cminor.step
+    (binary64_certificate := binary64_certificate)
+    (binary32_certificate := binary32_certificate)
 private abbrev initial_state := CompCert4Lean.Backend.Cminor.initial_state
 private abbrev final_state := CompCert4Lean.Backend.Cminor.final_state
-private abbrev semantics := CompCert4Lean.Backend.Cminor.semantics
+private abbrev semantics
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :=
+  CompCert4Lean.Backend.Cminor.semantics
+    (binary64_certificate := binary64_certificate)
+    (binary32_certificate := binary32_certificate)
 private abbrev find_label := CompCert4Lean.Backend.Cminor.find_label
 
 end CM
@@ -685,11 +734,17 @@ def val_inject_val_of_boolStatement : Prop :=
 def val_inject_val_of_optboolStatement : Prop :=
   ∀ f ob, Val.inject f (Val.of_optbool ob) (Val.of_optbool ob)
 
-def eval_unop_compatStatement : Prop :=
+def eval_unop_compatStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ f op v1 tv1 v,
-    CM.eval_unop op v1 = some v →
+    CM.eval_unop
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) op v1 = some v →
     Val.inject f v1 tv1 →
-    ∃ tv, CM.eval_unop op tv1 = some tv ∧ Val.inject f v tv
+    ∃ tv, CM.eval_unop
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) op tv1 = some tv ∧ Val.inject f v tv
 
 def eval_binop_compatStatement : Prop :=
   ∀ f op v1 tv1 v2 tv2 v m tm,
@@ -699,15 +754,19 @@ def eval_binop_compatStatement : Prop :=
     Mem.inject f m tm →
     ∃ tv, CM.eval_binop op tv1 tv2 tm = some tv ∧ Val.inject f v tv
 
-def var_addr_correctStatement : Prop :=
+def var_addr_correctStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ prog tprog, match_prog prog tprog →
     ∀ cenv id f tf e le te sp lo hi m cs tm b,
       match_callstack prog f m tm (Frame cenv tf e le te sp lo hi :: cs)
         m.nextblock tm.nextblock →
       CS.eval_var_addr (sourceGenv prog) e id b →
       ∃ tv,
-        CM.eval_expr (targetGenv tprog) (.Vptr sp Ptrofs.zero) te tm
-          (var_addr cenv id) tv ∧
+        CM.eval_expr
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate)
+          (targetGenv tprog) (.Vptr sp Ptrofs.zero) te tm (var_addr cenv id) tv ∧
         Val.inject f (.Vptr b Ptrofs.zero) tv
 
 def bool_of_val_injectStatement : Prop :=
@@ -721,30 +780,46 @@ def transl_constant_correctStatement : Prop :=
       CM.eval_constant (targetGenv tprog) sp (transl_constant cst) = some tv ∧
       Val.inject f v tv
 
-def transl_expr_correctStatement : Prop :=
+def transl_expr_correctStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ prog tprog, match_prog prog tprog →
     ∀ f m tm cenv tf e le te sp lo hi cs,
       Mem.inject f m tm →
       match_callstack prog f m tm (Frame cenv tf e le te sp lo hi :: cs)
         m.nextblock tm.nextblock →
       ∀ a v,
-        CS.eval_expr (sourceGenv prog) e le m a v →
+        CS.eval_expr
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate)
+          (sourceGenv prog) e le m a v →
         ∀ ta, transl_expr cenv a = .OK ta →
           ∃ tv,
-            CM.eval_expr (targetGenv tprog) (.Vptr sp Ptrofs.zero) te tm ta tv ∧
+            CM.eval_expr
+              (binary64_certificate := binary64_certificate)
+              (binary32_certificate := binary32_certificate)
+              (targetGenv tprog) (.Vptr sp Ptrofs.zero) te tm ta tv ∧
             Val.inject f v tv
 
-def transl_exprlist_correctStatement : Prop :=
+def transl_exprlist_correctStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ prog tprog, match_prog prog tprog →
     ∀ f m tm cenv tf e le te sp lo hi cs,
       Mem.inject f m tm →
       match_callstack prog f m tm (Frame cenv tf e le te sp lo hi :: cs)
         m.nextblock tm.nextblock →
       ∀ a v,
-        CS.eval_exprlist (sourceGenv prog) e le m a v →
+        CS.eval_exprlist
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate)
+          (sourceGenv prog) e le m a v →
         ∀ ta, transl_exprlist cenv a = .OK ta →
           ∃ tv,
-            CM.eval_exprlist (targetGenv tprog) (.Vptr sp Ptrofs.zero) te tm ta tv ∧
+            CM.eval_exprlist
+              (binary64_certificate := binary64_certificate)
+              (binary32_certificate := binary32_certificate)
+              (targetGenv tprog) (.Vptr sp Ptrofs.zero) te tm ta tv ∧
             Val.inject_list f v tv
 
 def val_inject_function_pointerStatement : Prop :=
@@ -758,12 +833,16 @@ def match_call_contStatement : Prop :=
     match_cont k tk cenv xenv cs →
     match_cont (CS.call_cont k) (CM.call_cont tk) cenv [] cs
 
-def match_is_call_contStatement : Prop :=
+def match_is_call_contStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (xi : ExternalCalls) tprog tfn te sp tm k tk cenv xenv cs,
     match_cont k tk cenv xenv cs →
     CS.is_call_cont k →
     ∃ tk',
-      star (CM.step xi) (targetGenv tprog)
+      star (CM.step
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) xi) (targetGenv tprog)
         (.State tfn .Sskip tk sp te tm) E0
         (.State tfn .Sskip tk' sp te tm) ∧
       CM.is_call_cont tk' ∧
@@ -788,20 +867,28 @@ def switch_table_selectStatement : Prop :=
       (switch_target i (switch_table sl 0).2 (switch_table sl 0).1)
       (CS.select_switch i sl)
 
-def switch_descentStatement : Prop :=
+def switch_descentStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (xi : ExternalCalls) tprog cenv xenv k ls body s,
     transl_lblstmt cenv (switch_env ls xenv) ls body = .OK s →
     ∃ k', transl_lblstmt_cont cenv xenv ls k k' ∧
       ∀ f sp e m,
-        plus (CM.step xi) (targetGenv tprog)
+        plus (CM.step
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate) xi) (targetGenv tprog)
           (.State f s k sp e m) E0 (.State f body k' sp e m)
 
-def switch_ascentStatement : Prop :=
+def switch_ascentStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (xi : ExternalCalls) tprog f sp e m cenv xenv ls n ls',
     lbl_stmt_tail ls n ls' →
     ∀ k k1, transl_lblstmt_cont cenv xenv ls k k1 →
       ∃ k2,
-        star (CM.step xi) (targetGenv tprog)
+        star (CM.step
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate) xi) (targetGenv tprog)
           (.State f (.Sexit n) k1 sp e m) E0
           (.State f (.Sexit 0) k2 sp e m) ∧
         transl_lblstmt_cont cenv xenv ls' k k2
@@ -813,7 +900,9 @@ def switch_match_contStatement : Prop :=
     match_cont (.Kseq (CS.seq_of_lbl_stmt ls) k) tk' cenv
       (false :: switch_env ls xenv) cs
 
-def switch_match_statesStatement : Prop :=
+def switch_match_statesStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (xi : ExternalCalls) prog tprog
       fn k e le m tfn ts tk sp te tm cenv xenv f lo hi cs sz ls body tk',
     transl_funbody cenv sz fn = .OK tfn →
@@ -824,7 +913,9 @@ def switch_match_statesStatement : Prop :=
     match_cont k tk cenv xenv cs →
     transl_lblstmt_cont cenv xenv ls tk tk' →
     ∃ S,
-      plus (CM.step xi) (targetGenv tprog)
+      plus (CM.step
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) xi) (targetGenv tprog)
         (.State tfn (.Sexit 0) tk' (.Vptr sp Ptrofs.zero) te tm) E0 S ∧
       match_states prog (.State fn (CS.seq_of_lbl_stmt ls) k e le m) S
 
@@ -856,12 +947,21 @@ def transl_find_label_bodyStatement : Prop :=
       transl_stmt cenv xenv' s' = .OK ts' ∧
       match_cont k' tk' cenv xenv' cs
 
-def transl_step_correctStatement : Prop :=
+def transl_step_correctStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (xi : ExternalCalls) prog tprog, match_prog prog tprog →
-    ∀ S1 t S2, CS.step xi (sourceGenv prog) S1 t S2 →
+    ∀ S1 t S2,
+      CS.step
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        xi (sourceGenv prog) S1 t S2 →
       ∀ T1, match_states prog S1 T1 →
         (∃ T2,
-          plus (CM.step xi) (targetGenv tprog) T1 t T2 ∧ match_states prog S2 T2) ∨
+          plus (CM.step
+            (binary64_certificate := binary64_certificate)
+            (binary32_certificate := binary32_certificate) xi) (targetGenv tprog)
+            T1 t T2 ∧ match_states prog S2 T2) ∨
         (measure S2 < measure S1 ∧ t = E0 ∧ match_states prog S2 T1)
 
 def match_globalenvs_initStatement : Prop :=
@@ -877,8 +977,16 @@ def transl_final_statesStatement : Prop :=
   ∀ prog S R r,
     match_states prog S R → CS.final_state S r → CM.final_state R r
 
-def transl_program_correctStatement : Prop :=
+def transl_program_correctStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (xi : ExternalCalls) prog tprog, match_prog prog tprog →
-    forward_simulation (CS.semantics xi prog) (CM.semantics xi tprog)
+    forward_simulation
+      (CS.semantics
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) xi prog)
+      (CM.semantics
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) xi tprog)
 
 end CompCert4Lean.Cfrontend.Cminorgenproof
