@@ -45,6 +45,9 @@ private abbrev program := CompCert4Lean.Backend.RTL.program
 private abbrev aenv := CompCert4Lean.Backend.ValueDomain.aenv
 private abbrev aval := CompCert4Lean.Backend.ValueDomain.aval
 private abbrev romem := CompCert4Lean.Backend.ValueDomain.romem
+private abbrev BinaryNormalizeCertificate :=
+  CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+private abbrev zOfNat := ZArith.BinInt.Z.of_nat
 
 def transf_ros (ae : aenv) (ros : Sum reg ident) : Sum reg ident :=
   match ros with
@@ -131,7 +134,10 @@ def builtin_strength_reduction
   | .EF_debug _ _ _ => debug_strength_reduction cfg ae al
   | _ => builtin_args_strength_reduction cfg ae al (builtin_constraints ef)
 
-def transf_instr (cfg : CompilerConfig) (f : function)
+def transf_instr
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (cfg : CompilerConfig) (f : function)
     (an : PMap.t VA.t) (rm : romem)
     (pc : node) (instr : instruction) : instruction :=
   match PMap.get pc an with
@@ -140,7 +146,9 @@ def transf_instr (cfg : CompilerConfig) (f : function)
       match instr with
       | Iop op args res s =>
           let aargs := aregs ae args
-          let a := CompCert4Lean.X86.ValueAOp.eval_static_operation cfg op aargs
+          let a := CompCert4Lean.X86.ValueAOp.eval_static_operation
+            (binary64_certificate := binary64_certificate)
+            (binary32_certificate := binary32_certificate) cfg op aargs
           let s' := successor cfg f (AE.set res a ae) s
           match const_for_result cfg cfg.relocation a with
           | some cop => Iop cop [] res s'
@@ -170,7 +178,10 @@ def transf_instr (cfg : CompilerConfig) (f : function)
           | .EF_builtin name sg, .BR rd =>
               match lookup_builtin_function name sg with
               | some bf =>
-                  match eval_static_builtin_function cfg ae am rm bf args with
+                  match eval_static_builtin_function
+                      (binary64_certificate := binary64_certificate)
+                      (binary32_certificate := binary32_certificate)
+                      cfg ae am rm bf args with
                   | some a =>
                       match const_for_result cfg cfg.relocation a with
                       | some cop => Iop cop [] rd s
@@ -195,19 +206,40 @@ def transf_instr (cfg : CompilerConfig) (f : function)
           | _ => instr
       | _ => instr
 
-def transf_function (cfg : CompilerConfig) (rm : romem) (f : function) : function :=
-  let an := CompCert4Lean.Backend.ValueAnalysis.analyze cfg rm f
+def transf_function
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (cfg : CompilerConfig) (rm : romem) (f : function) : function :=
+  let an := CompCert4Lean.Backend.ValueAnalysis.analyze
+    (binary64_certificate := binary64_certificate)
+    (binary32_certificate := binary32_certificate) cfg rm f
   { fn_sig := f.fn_sig
     fn_params := f.fn_params
     fn_stacksize := f.fn_stacksize
-    fn_code := PTree.map (transf_instr cfg f an rm) f.fn_code
+    fn_code := PTree.map
+      (transf_instr
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) cfg f an rm)
+      f.fn_code
     fn_entrypoint := f.fn_entrypoint }
 
-def transf_fundef (cfg : CompilerConfig) (rm : romem) (fd : fundef) : fundef :=
-  CompCert4Lean.Common.AST.transf_fundef (transf_function cfg rm) fd
+def transf_fundef
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (cfg : CompilerConfig) (rm : romem) (fd : fundef) : fundef :=
+  CompCert4Lean.Common.AST.transf_fundef
+    (transf_function
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) cfg rm) fd
 
-def transf_program (cfg : CompilerConfig) (p : program) : program :=
+def transf_program
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (cfg : CompilerConfig) (p : program) : program :=
   let rm := CompCert4Lean.Backend.ValueAnalysis.romem_for cfg p
-  CompCert4Lean.Common.AST.transform_program (transf_fundef cfg rm) p
+  CompCert4Lean.Common.AST.transform_program
+    (transf_fundef
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) cfg rm) p
 
 end CompCert4Lean.Backend.Constprop
