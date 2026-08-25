@@ -102,16 +102,17 @@ def sig_ii_l : signature :=
 def makelong (h l : expr) : expr :=
   Eop Omakelong (Econs h (Econs l Enil))
 
-inductive splitlong_cases : Type where
-  | splitlong_case1 (h l : expr)
-  | splitlong_default (e : expr)
+inductive splitlong_cases : expr -> Type where
+  | splitlong_case1 (h l : expr) :
+      splitlong_cases (Eop Omakelong (Econs h (Econs l Enil)))
+  | splitlong_default (e : expr) : splitlong_cases e
 
 export splitlong_cases (splitlong_case1 splitlong_default)
 
-def splitlong_match (e : expr) : splitlong_cases :=
+def splitlong_match (e : expr) : splitlong_cases e :=
   match e with
   | Eop Omakelong (Econs h (Econs l Enil)) => .splitlong_case1 h l
-  | _ => .splitlong_default e
+  | e => .splitlong_default e
 
 def splitlong (e : expr) (f : expr -> expr -> expr) : expr :=
   match splitlong_match e with
@@ -121,16 +122,21 @@ def splitlong (e : expr) (f : expr -> expr -> expr) : expr :=
         (f (Eop Ohighlong (Econs (Eletvar 0) Enil))
           (Eop Olowlong (Econs (Eletvar 0) Enil)))
 
-inductive splitlong2_cases : Type where
-  | splitlong2_case1 (h1 l1 h2 l2 : expr)
-  | splitlong2_case2 (h1 l1 t2 : expr)
-  | splitlong2_case3 (t1 h2 l2 : expr)
-  | splitlong2_default (e1 e2 : expr)
+inductive splitlong2_cases : expr -> expr -> Type where
+  | splitlong2_case1 (h1 l1 h2 l2 : expr) :
+      splitlong2_cases
+        (Eop Omakelong (Econs h1 (Econs l1 Enil)))
+        (Eop Omakelong (Econs h2 (Econs l2 Enil)))
+  | splitlong2_case2 (h1 l1 t2 : expr) :
+      splitlong2_cases (Eop Omakelong (Econs h1 (Econs l1 Enil))) t2
+  | splitlong2_case3 (t1 h2 l2 : expr) :
+      splitlong2_cases t1 (Eop Omakelong (Econs h2 (Econs l2 Enil)))
+  | splitlong2_default (e1 e2 : expr) : splitlong2_cases e1 e2
 
 export splitlong2_cases (splitlong2_case1 splitlong2_case2 splitlong2_case3
   splitlong2_default)
 
-def splitlong2_match (e1 e2 : expr) : splitlong2_cases :=
+def splitlong2_match (e1 e2 : expr) : splitlong2_cases e1 e2 :=
   match e1, e2 with
   | Eop Omakelong (Econs h1 (Econs l1 Enil)),
       Eop Omakelong (Econs h2 (Econs l2 Enil)) =>
@@ -139,7 +145,7 @@ def splitlong2_match (e1 e2 : expr) : splitlong2_cases :=
       .splitlong2_case2 h1 l1 t2
   | t1, Eop Omakelong (Econs h2 (Econs l2 Enil)) =>
       .splitlong2_case3 t1 h2 l2
-  | _, _ => .splitlong2_default e1 e2
+  | e1, e2 => .splitlong2_default e1 e2
 
 def splitlong2 (e1 e2 : expr)
     (f : expr -> expr -> expr -> expr -> expr) : expr :=
@@ -163,32 +169,34 @@ def splitlong2 (e1 e2 : expr)
             (Eop Ohighlong (Econs (Eletvar 0) Enil))
             (Eop Olowlong (Econs (Eletvar 0) Enil))))
 
-inductive lowlong_cases : Type where
-  | lowlong_case1 (e1 e2 : expr)
-  | lowlong_default (e : expr)
+inductive lowlong_cases : expr -> Type where
+  | lowlong_case1 (e1 e2 : expr) :
+      lowlong_cases (Eop Omakelong (Econs e1 (Econs e2 Enil)))
+  | lowlong_default (e : expr) : lowlong_cases e
 
 export lowlong_cases (lowlong_case1 lowlong_default)
 
-def lowlong_match (e : expr) : lowlong_cases :=
+def lowlong_match (e : expr) : lowlong_cases e :=
   match e with
   | Eop Omakelong (Econs e1 (Econs e2 Enil)) => .lowlong_case1 e1 e2
-  | _ => .lowlong_default e
+  | e => .lowlong_default e
 
 def lowlong (e : expr) : expr :=
   match lowlong_match e with
   | .lowlong_case1 _ e2 => e2
   | .lowlong_default e => Eop Olowlong (Econs e Enil)
 
-inductive highlong_cases : Type where
-  | highlong_case1 (e1 e2 : expr)
-  | highlong_default (e : expr)
+inductive highlong_cases : expr -> Type where
+  | highlong_case1 (e1 e2 : expr) :
+      highlong_cases (Eop Omakelong (Econs e1 (Econs e2 Enil)))
+  | highlong_default (e : expr) : highlong_cases e
 
 export highlong_cases (highlong_case1 highlong_default)
 
-def highlong_match (e : expr) : highlong_cases :=
+def highlong_match (e : expr) : highlong_cases e :=
   match e with
   | Eop Omakelong (Econs e1 (Econs e2 Enil)) => .highlong_case1 e1 e2
-  | _ => .highlong_default e
+  | e => .highlong_default e
 
 def highlong (e : expr) : expr :=
   match highlong_match e with
@@ -201,19 +209,23 @@ def longconst (n : CCInt64) : expr :=
   makelong (Eop (Ointconst (int64Hiword n)) Enil)
     (Eop (Ointconst (int64Loword n)) Enil)
 
-inductive is_longconst_cases : Type where
-  | is_longconst_case1 (h l : CCInt)
-  | is_longconst_default (e : expr)
+inductive is_longconst_cases : expr -> Type where
+  | is_longconst_case1 (h l : CCInt) :
+      is_longconst_cases
+        (Eop Omakelong
+          (Econs (Eop (Ointconst h) Enil)
+            (Econs (Eop (Ointconst l) Enil) Enil)))
+  | is_longconst_default (e : expr) : is_longconst_cases e
 
 export is_longconst_cases (is_longconst_case1 is_longconst_default)
 
-def is_longconst_match (e : expr) : is_longconst_cases :=
+def is_longconst_match (e : expr) : is_longconst_cases e :=
   match e with
   | Eop Omakelong
       (Econs (Eop (Ointconst h) Enil)
         (Econs (Eop (Ointconst l) Enil) Enil)) =>
       .is_longconst_case1 h l
-  | _ => .is_longconst_default e
+  | e => .is_longconst_default e
 
 def is_longconst (e : expr) : Option CCInt64 :=
   match is_longconst_match e with
@@ -227,16 +239,17 @@ def is_longconst_zero (e : expr) : Bool :=
 
 def intoflong (e : expr) : expr := lowlong e
 
-inductive longofint_cases : Type where
-  | longofint_case1 (n : CCInt)
-  | longofint_default (e : expr)
+inductive longofint_cases : expr -> Type where
+  | longofint_case1 (n : CCInt) :
+      longofint_cases (Eop (Ointconst n) Enil)
+  | longofint_default (e : expr) : longofint_cases e
 
 export longofint_cases (longofint_case1 longofint_default)
 
-def longofint_match (e : expr) : longofint_cases :=
+def longofint_match (e : expr) : longofint_cases e :=
   match e with
   | Eop (Ointconst n) Enil => .longofint_case1 n
-  | _ => .longofint_default e
+  | e => .longofint_default e
 
 def longofint (e : expr) : expr :=
   match longofint_match e with
