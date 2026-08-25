@@ -75,6 +75,12 @@ private abbrev zAdd := ZArith.BinInt.Z.add
 private abbrev zLe := ZArith.BinInt.Z.le
 private abbrev zLt := ZArith.BinInt.Z.lt
 private abbrev zOfNat := ZArith.BinInt.Z.of_nat
+private abbrev BinaryNormalizeCertificate :=
+  CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+
+variable
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
 
 /-! ## Program matching and memory agreement -/
 
@@ -83,6 +89,8 @@ def match_prog (cfg : CompilerConfig) (prog tprog : program) : Prop :=
     (Linker_fundef function) Linker_unit
     (fun cu f tf =>
       CompCert4Lean.Backend.Deadcode.transf_fundef
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
         cfg (prog_defmap cu) (romem_for cfg cu) f = .OK tf)
     (fun x y : Unit => x = y) prog tprog
 
@@ -106,7 +114,10 @@ export magree (ma_perm ma_perm_inv ma_memval ma_nextblock)
 /-! ## Static-analysis and state relations -/
 
 def vanalyze (cfg : CompilerConfig) (cu : program) (f : function) : PMap.t VA.t :=
-  ValueAnalysis.analyze cfg (romem_for cfg cu) f
+  ValueAnalysis.analyze
+    (binary64_certificate := binary64_certificate)
+    (binary32_certificate := binary32_certificate)
+    cfg (romem_for cfg cu) f
 
 inductive match_stackframes (cfg : CompilerConfig) (prog : program) :
     stackframe → stackframe → Prop where
@@ -116,6 +127,8 @@ inductive match_stackframes (cfg : CompilerConfig) (prog : program) :
       (an : PMap.t NA.t)
       (hlink : linkorder cu prog)
       (hfun : CompCert4Lean.Backend.Deadcode.transf_function
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
         cfg (prog_defmap cu) (romem_for cfg cu) f = .OK tf)
       (han : CompCert4Lean.Backend.Deadcode.analyze
         cfg f (prog_defmap cu) (vanalyze cfg cu f) = some an)
@@ -132,6 +145,28 @@ export match_stackframes (match_stackframes_intro)
 
 inductive match_states (cfg : CompilerConfig) (prog : program) :
     state → state → Prop where
+  | match_regular_states
+      (s : List stackframe) (f : function) (sp : block) (pc : node)
+      (e : regset) (m : mem) (ts : List stackframe) (tf : function)
+      (te : regset) (tm : mem) (cu : program) (an : PMap.t NA.t)
+      (hstacks : list_forall2 (match_stackframes cfg prog) s ts)
+      (hlink : linkorder cu prog)
+      (hfun : CompCert4Lean.Backend.Deadcode.transf_function
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        cfg (prog_defmap cu) (romem_for cfg cu) f = .OK tf)
+      (han : CompCert4Lean.Backend.Deadcode.analyze
+        cfg f (prog_defmap cu) (vanalyze cfg cu f) = some an)
+      (henv : eagree e te
+        (CompCert4Lean.Backend.Deadcode.transfer
+          cfg f (prog_defmap cu) (vanalyze cfg cu f) pc (PMap.get pc an)).1)
+      (hmem : magree m tm
+        (fun b ofs => nlive (Genv.globalenv prog) sp
+          (CompCert4Lean.Backend.Deadcode.transfer
+            cfg f (prog_defmap cu) (vanalyze cfg cu f) pc (PMap.get pc an)).2 b ofs)) :
+      match_states cfg prog
+        (State s f (Vptr sp Ptrofs.zero) pc e m)
+        (State ts tf (Vptr sp Ptrofs.zero) pc te tm)
   | match_call_states
       (s : List stackframe) (f : fundef) (args : List val) (m : mem)
       (ts : List stackframe) (tf : fundef) (targs : List val) (tm : mem)
@@ -139,21 +174,34 @@ inductive match_states (cfg : CompilerConfig) (prog : program) :
       (hstacks : list_forall2 (match_stackframes cfg prog) s ts)
       (hlink : linkorder cu prog)
       (hfun : CompCert4Lean.Backend.Deadcode.transf_fundef
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
         cfg (prog_defmap cu) (romem_for cfg cu) f = .OK tf)
       (hargs : Val.lessdef_list args targs)
       (hmem : Mem.extends m tm) :
       match_states cfg prog
         (Callstate s f args m)
         (Callstate ts tf targs tm)
+  | match_return_states
+      (s : List stackframe) (v : val) (m : mem)
+      (ts : List stackframe) (tv : val) (tm : mem)
+      (hstacks : list_forall2 (match_stackframes cfg prog) s ts)
+      (hres : Val.lessdef v tv)
+      (hmem : Mem.extends m tm) :
+      match_states cfg prog
+        (Returnstate s v m)
+        (Returnstate ts tv tm)
 
-export match_states (match_call_states)
+export match_states (match_regular_states match_call_states match_return_states)
 
 /-! ## Simulation endpoint -/
 
 def eventually (prog : program) (xi : ExternalCalls) (n : Nat)
     (s : state) (P : state → Prop) : Prop :=
   CompCert4Lean.Common.Smallstep.eventually
-    (fun ge => CompCert4Lean.Backend.RTL.step xi ge)
+    (fun ge => CompCert4Lean.Backend.RTL.step
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) xi ge)
     CompCert4Lean.Backend.RTL.final_state
     (Genv.globalenv prog) n s P
 
@@ -163,7 +211,9 @@ variable (cfg : CompilerConfig)
 
 def transf_program_matchStatement : Prop :=
   ∀ (p tp : program),
-    CompCert4Lean.Backend.Deadcode.transf_program cfg p = .OK tp →
+    CompCert4Lean.Backend.Deadcode.transf_program
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) cfg p = .OK tp →
       match_prog cfg p tp
 
 def magree_monotoneStatement : Prop :=
@@ -284,6 +334,8 @@ def functions_translatedStatement : Prop :=
       ∃ cu tf,
         Genv.find_funct (Genv.globalenv tprog) v = some tf ∧
         CompCert4Lean.Backend.Deadcode.transf_fundef
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate)
           cfg (prog_defmap cu) (romem_for cfg cu) f = .OK tf ∧
         linkorder cu prog
 
@@ -294,22 +346,30 @@ def function_ptr_translatedStatement : Prop :=
       ∃ cu tf,
         Genv.find_funct_ptr (Genv.globalenv tprog) b = some tf ∧
         CompCert4Lean.Backend.Deadcode.transf_fundef
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate)
           cfg (prog_defmap cu) (romem_for cfg cu) f = .OK tf ∧
         linkorder cu prog
 
 def sig_function_translatedStatement : Prop :=
   ∀ dm rm f tf,
-    CompCert4Lean.Backend.Deadcode.transf_fundef cfg dm rm f = .OK tf →
+    CompCert4Lean.Backend.Deadcode.transf_fundef
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) cfg dm rm f = .OK tf →
       RTL.funsig tf = RTL.funsig f
 
 def stacksize_translatedStatement : Prop :=
   ∀ dm rm f tf,
-    CompCert4Lean.Backend.Deadcode.transf_function cfg dm rm f = .OK tf →
+    CompCert4Lean.Backend.Deadcode.transf_function
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) cfg dm rm f = .OK tf →
       tf.fn_stacksize = f.fn_stacksize
 
 def transf_function_atStatement : Prop :=
   ∀ cu f tf an pc instr,
     CompCert4Lean.Backend.Deadcode.transf_function
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
       cfg (prog_defmap cu) (romem_for cfg cu) f = .OK tf →
     CompCert4Lean.Backend.Deadcode.analyze
       cfg f (prog_defmap cu) (vanalyze cfg cu f) = some an →
@@ -328,6 +388,8 @@ def find_function_translatedStatement : Prop :=
       ∃ cu tfd,
         RTL.find_function (Genv.globalenv tprog) ros trs = some tfd ∧
         CompCert4Lean.Backend.Deadcode.transf_fundef
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate)
           cfg (prog_defmap cu) (romem_for cfg cu) fd = .OK tfd ∧
         linkorder cu prog
 def analyze_successorsStatement : Prop :=
@@ -344,6 +406,8 @@ def match_succ_statesStatement : Prop :=
     linkorder cu prog →
     list_forall2 (match_stackframes cfg prog) s ts →
     CompCert4Lean.Backend.Deadcode.transf_function
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
       cfg (prog_defmap cu) (romem_for cfg cu) f = .OK tf →
     CompCert4Lean.Backend.Deadcode.analyze
       cfg f (prog_defmap cu) (vanalyze cfg cu f) = some an →
@@ -434,7 +498,10 @@ def transf_external_callStatement : Prop :=
       ne2 nm2 ne1 nm1 bc te tm,
     eval_builtin_args (Genv.to_senv (Genv.globalenv prog))
       (fun r => Regmap.get r e) (Vptr sp Ptrofs.zero) m args vargs →
-    external_call xi ef (Genv.to_senv (Genv.globalenv prog)) vargs m t vres m' →
+    external_call
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      xi ef (Genv.to_senv (Genv.globalenv prog)) vargs m t vres m' →
     transfer_builtin_args (kill_builtin_res res ne2, nmem_all) args =
       (ne1, nm1) →
     eagree e te ne1 →
@@ -444,20 +511,32 @@ def transf_external_callStatement : Prop :=
     ∃ tvargs tvres tm',
       eval_builtin_args (Genv.to_senv (Genv.globalenv tprog))
         (fun r => Regmap.get r te) (Vptr sp Ptrofs.zero) tm args tvargs ∧
-      external_call xi ef (Genv.to_senv (Genv.globalenv tprog))
+      external_call
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        xi ef (Genv.to_senv (Genv.globalenv tprog))
         tvargs tm t tvres tm' ∧
       eagree (regmap_setres res vres e) (regmap_setres res tvres te) ne2 ∧
       magree m' tm' (fun b ofs => nlive (Genv.globalenv prog) sp nm2 b ofs)
 def step_simulationStatement : Prop :=
   ∀ (prog tprog : program) (xi : ExternalCalls) S1 t S2,
-    RTL.step xi (Genv.globalenv prog) S1 t S2 →
+    RTL.step
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      xi (Genv.globalenv prog) S1 t S2 →
     ∀ S1', match_states cfg prog S1 S1' →
       sound_state cfg prog S1 →
       (∃ S2',
-        RTL.step xi (Genv.globalenv tprog) S1' t S2' ∧
+        RTL.step
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate)
+          xi (Genv.globalenv tprog) S1' t S2' ∧
           match_states cfg prog S2 S2') ∨
       (∃ S2' n,
-        plus (RTL.step xi) (Genv.globalenv tprog) S1' t S2' ∧
+        plus (RTL.step
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate) xi)
+          (Genv.globalenv tprog) S1' t S2' ∧
           eventually prog xi n S2 (fun S3 => match_states cfg prog S3 S2'))
 
 def transf_initial_statesStatement : Prop :=
@@ -473,6 +552,12 @@ def transf_final_statesStatement : Prop :=
 def transf_program_correctStatement : Prop :=
   ∀ (prog tprog : program) (xi : ExternalCalls),
     match_prog cfg prog tprog →
-    forward_simulation (RTL.semantics xi prog) (RTL.semantics xi tprog)
+    forward_simulation
+      (RTL.semantics
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) xi prog)
+      (RTL.semantics
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) xi tprog)
 
 end CompCert4Lean.Backend.Deadcodeproof
