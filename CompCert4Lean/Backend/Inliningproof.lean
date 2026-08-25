@@ -40,6 +40,9 @@ open CompCert4Lean.Lib.Integers
 open CompCert4Lean.Lib.Maps
 open CompCert4Lean.X86.Op
 
+private abbrev BinaryNormalizeCertificate :=
+  CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+private abbrev zOfNat := ZArith.BinInt.Z.of_nat
 private abbrev zZero : Z := .Z0
 private abbrev zAdd := ZArith.BinInt.Z.add
 private abbrev zSub := ZArith.BinInt.Z.sub
@@ -71,16 +74,18 @@ def loc_private (F : Val.meminj) (m m' : mem) (sp : block) (ofs : Z) : Prop :=
       ¬ Mem.perm m b (zSub ofs delta) .Max .Nonempty)
 
 def range_private (F : Val.meminj) (m m' : mem) (sp : block) (lo hi : Z) : Prop :=
-  ∀ ofs, zLe lo ofs → zLt ofs hi → loc_private F m m' sp ofs
+  ∀ ofs, zLe lo ofs ∧ zLt ofs hi → loc_private F m m' sp ofs
 
 inductive match_globalenvs (prog : program) (F : Val.meminj) (bound : block) : Prop where
-  | mk
+  | mk_match_globalenvs
       (DOMAIN : ∀ b, Plt b bound → F b = some (b, zZero))
       (IMAGE : ∀ b1 b2 delta, F b1 = some (b2, delta) → Plt b2 bound → b1 = b2)
       (SYMBOLS : ∀ id b, Genv.find_symbol (Genv.globalenv prog) id = some b → Plt b bound)
       (FUNCTIONS : ∀ b fd, Genv.find_funct_ptr (Genv.globalenv prog) b = some fd → Plt b bound)
       (VARINFOS : ∀ b gv, Genv.find_var_info (Genv.globalenv prog) b = some gv → Plt b bound) :
       match_globalenvs prog F bound
+
+export match_globalenvs (mk_match_globalenvs)
 
 mutual
 inductive match_stacks (cfg : InliningConfig) (prog : program) (F : Val.meminj) (m m' : mem) :
@@ -186,12 +191,64 @@ inductive match_states (cfg : InliningConfig) (prog : program) : RTL.state → R
       agree_regs F ctx rs rs' → F sp = some (sp', ctx.dstk) →
       Mem.inject F m m' → Mem.valid_block m' sp' →
       range_private F m m' sp' (zAdd ctx.dstk ctx.mstk) f'.fn_stacksize →
-      zLe zZero f'.fn_stacksize → zLt f'.fn_stacksize Ptrofs.max_unsigned →
+      (zLe zZero f'.fn_stacksize ∧ zLt f'.fn_stacksize Ptrofs.max_unsigned) →
       (∀ ofs, Mem.perm m' sp' ofs .Max .Nonempty → zLe zZero ofs ∧ zLe ofs f'.fn_stacksize) →
       match_states cfg prog (State stk f (Vptr sp Ptrofs.zero) pc rs m)
         (State stk' f' (Vptr sp' Ptrofs.zero) (spc ctx pc) rs' m')
 
-export match_states (match_regular_states)
+  | match_call_states : ∀ stk fd args m stk' fd' args' m' cunit F,
+      match_stacks cfg prog F m m' stk stk' m'.nextblock →
+      rtlLinkorder cunit prog →
+      transf_fundef (funenv_program cfg cunit) fd = OK fd' →
+      Val.inject_list F args args' →
+      Mem.inject F m m' →
+      match_states cfg prog (Callstate stk fd args m)
+        (Callstate stk' fd' args' m')
+
+  | match_call_regular_states : ∀ stk f vargs m stk' f' sp' rs' m' F fenv ctx ctx' pc' pc1' rargs,
+      match_stacks_inside cfg prog F m m' stk stk' f' ctx sp' rs' →
+      fenv_compat prog fenv →
+      tr_funbody fenv f'.fn_stacksize ctx f f'.fn_code →
+      context_below ctx' ctx →
+      PTree.get pc' f'.fn_code = some (Inop pc1') →
+      tr_moves f'.fn_code pc1' (sregs ctx' rargs) (sregs ctx f.fn_params)
+        (spc ctx f.fn_entrypoint) →
+      list_forall2 (val_reg_charact F ctx' rs') vargs rargs →
+      Mem.inject F m m' →
+      Mem.valid_block m' sp' →
+      range_private F m m' sp' ctx.dstk f'.fn_stacksize →
+      (zLe zZero f'.fn_stacksize ∧ zLt f'.fn_stacksize Ptrofs.max_unsigned) →
+      (∀ ofs, Mem.perm m' sp' ofs .Max .Nonempty →
+        zLe zZero ofs ∧ zLe ofs f'.fn_stacksize) →
+      match_states cfg prog (Callstate stk (Internal f) vargs m)
+        (State stk' f' (Vptr sp' Ptrofs.zero) pc' rs' m')
+
+  | match_return_states : ∀ stk v m stk' v' m' F,
+      match_stacks cfg prog F m m' stk stk' m'.nextblock →
+      Val.inject F v v' →
+      Mem.inject F m m' →
+      match_states cfg prog (Returnstate stk v m)
+        (Returnstate stk' v' m')
+
+  | match_return_regular_states : ∀ stk v m stk' f' sp' rs' m' F ctx pc' or rinfo,
+      match_stacks_inside cfg prog F m m' stk stk' f' ctx sp' rs' →
+      ctx.retinfo = some rinfo →
+      PTree.get pc' f'.fn_code = some (inline_return ctx or rinfo) →
+      (match or with
+        | some r => Val.inject F v (Regmap.get (sreg ctx r) rs')
+        | none => v = Vundef) →
+      Mem.inject F m m' →
+      Mem.valid_block m' sp' →
+      range_private F m m' sp' ctx.dstk f'.fn_stacksize →
+      (zLe zZero f'.fn_stacksize ∧ zLt f'.fn_stacksize Ptrofs.max_unsigned) →
+      (∀ ofs, Mem.perm m' sp' ofs .Max .Nonempty →
+        zLe zZero ofs ∧ zLe ofs f'.fn_stacksize) →
+      match_states cfg prog (Returnstate stk v m)
+        (State stk' f' (Vptr sp' Ptrofs.zero) pc' rs' m')
+
+export match_states
+  (match_regular_states match_call_states match_call_regular_states
+    match_return_states match_return_regular_states)
 
 def measure : RTL.state → Nat
   | State _ _ _ _ _ _ => 1
@@ -263,7 +320,7 @@ def find_function_agreeStatement : Prop :=
         transf_fundef (funenv_program cfg cu) fd = OK fd' ∧ rtlLinkorder cu prog
 
 def find_inlined_functionStatement : Prop :=
-  ∀ (cfg : InliningConfig) (prog : program) (fenv : funenv) (id : ident)
+  ∀ (prog : program) (fenv : funenv) (id : ident)
     (rs : regset) (fd : fundef) (f : function),
     fenv_compat prog fenv →
     find_function (Genv.globalenv prog) (.inr id) rs = some fd →
@@ -296,29 +353,32 @@ def match_stacks_emptyStatement : Prop :=
     match_stacks cfg prog F m m' stk stk' bound → stk = [] → stk' = []
 
 def match_stacks_extcallStatement : Prop :=
-  ∀ cfg prog F1 F2 m1 m2 m1' m2' stk stk' bound,
+  ∀ cfg prog F1 F2 m1 m2 m1' m2',
     (∀ b ofs p, Mem.valid_block m1 b → Mem.perm m2 b ofs .Max p →
       Mem.perm m1 b ofs .Max p) →
     (∀ b ofs p, Mem.valid_block m1' b → Mem.perm m2' b ofs .Max p →
       Mem.perm m1' b ofs .Max p) →
     Mem.unchanged_on (loc_out_of_reach F1 m1) m1' m2' →
     Mem.inject F1 m1 m1' →
-    match_stacks cfg prog F1 m1 m1' stk stk' bound →
-    Ple bound m1'.nextblock → Val.inject_incr F1 F2 →
+    Val.inject_incr F1 F2 →
     inject_separated F1 F2 m1 m1' →
-    match_stacks cfg prog F2 m2 m2' stk stk' bound
+    ∀ stk stk' bound,
+      match_stacks cfg prog F1 m1 m1' stk stk' bound →
+      Ple bound m1'.nextblock →
+      match_stacks cfg prog F2 m2 m2' stk stk' bound
 
 def match_stacks_globalenvsStatement : Prop :=
   ∀ cfg prog F m m' stk stk' bound,
     match_stacks cfg prog F m m' stk stk' bound → ∃ b, match_globalenvs prog F b
 def match_stacks_inside_alloc_leftStatement : Prop :=
-  ∀ cfg prog F m m' stk stk' f' ctx sp' rs' sz m1 b F1 delta,
+  ∀ cfg prog F m m' stk stk' f' ctx sp' rs',
     match_stacks_inside cfg prog F m m' stk stk' f' ctx sp' rs' →
-    Mem.alloc m zZero sz = (m1, b) → Val.inject_incr F F1 →
-    F1 b = some (sp', delta) →
-    (∀ b1, b1 ≠ b → F1 b1 = F b1) →
-    zLe ctx.dstk delta →
-    match_stacks_inside cfg prog F1 m1 m' stk stk' f' ctx sp' rs'
+    ∀ sz m1 b F1 delta,
+      Mem.alloc m zZero sz = (m1, b) → Val.inject_incr F F1 →
+      F1 b = some (sp', delta) →
+      (∀ b1, b1 ≠ b → F1 b1 = F b1) →
+      zLe ctx.dstk delta →
+      match_stacks_inside cfg prog F1 m1 m' stk stk' f' ctx sp' rs'
 
 def match_stacks_inside_emptyStatement : Prop :=
   ∀ cfg prog F m m' stk stk' f ctx sp rs,
@@ -326,17 +386,19 @@ def match_stacks_inside_emptyStatement : Prop :=
     stk = [] → stk' = [] ∧ ctx.retinfo = none
 
 def match_stacks_inside_extcallStatement : Prop :=
-  ∀ cfg prog F1 F2 m1 m2 m1' m2' stk stk' f' ctx sp' rs',
+  ∀ cfg prog F1 F2 m1 m2 m1' m2',
     (∀ b ofs p, Mem.valid_block m1 b → Mem.perm m2 b ofs .Max p →
       Mem.perm m1 b ofs .Max p) →
     (∀ b ofs p, Mem.valid_block m1' b → Mem.perm m2' b ofs .Max p →
       Mem.perm m1' b ofs .Max p) →
     Mem.unchanged_on (loc_out_of_reach F1 m1) m1' m2' →
     Mem.inject F1 m1 m1' →
-    match_stacks_inside cfg prog F1 m1 m1' stk stk' f' ctx sp' rs' →
-    Plt sp' m1'.nextblock → Val.inject_incr F1 F2 →
+    Val.inject_incr F1 F2 →
     inject_separated F1 F2 m1 m1' →
-    match_stacks_inside cfg prog F2 m2 m2' stk stk' f' ctx sp' rs'
+    ∀ stk stk' f' ctx sp' rs',
+      match_stacks_inside cfg prog F1 m1 m1' stk stk' f' ctx sp' rs' →
+      Plt sp' m1'.nextblock →
+      match_stacks_inside cfg prog F2 m2 m2' stk stk' f' ctx sp' rs'
 
 def match_stacks_inside_globalenvsStatement : Prop :=
   ∀ cfg prog F m m' stk stk' f ctx sp rs,
@@ -359,17 +421,21 @@ def match_stacks_inside_inlined_tailcallStatement : Prop :=
     match_stacks_inside cfg prog F m m' stk stk' f' ctx' sp rs
 
 def match_stacks_inside_invariantStatement : Prop :=
-  ∀ cfg prog F F1 m m' m1 m1' stk stk' f' ctx sp rs rs2,
-    match_stacks_inside cfg prog F m m' stk stk' f' ctx sp rs →
-    (∀ r, Plt r ctx.dreg → Regmap.get r rs2 = Regmap.get r rs) →
-    (∀ b1 b2 delta, F1 b1 = some (b2, delta) → Ple b2 sp → F b1 = some (b2, delta)) →
-    (∀ b1 b2 delta ofs, F1 b1 = some (b2, delta) → Ple b2 sp →
-      Mem.perm m1 b1 ofs .Max .Nonempty → Mem.perm m b1 ofs .Max .Nonempty) →
-    (∀ b ofs, Ple b sp → Mem.perm m' b ofs .Cur .Freeable →
-      Mem.perm m1' b ofs .Cur .Freeable) →
-    (∀ b ofs k p, Ple b sp → Mem.perm m1' b ofs k p →
-      Mem.perm m' b ofs k p) →
-    match_stacks_inside cfg prog F1 m1 m1' stk stk' f' ctx sp rs2
+  ∀ cfg prog F m m' F1 m1 m1',
+    Val.inject_incr F F1 →
+    ∀ stk stk' f' ctx sp rs1,
+      match_stacks_inside cfg prog F m m' stk stk' f' ctx sp rs1 →
+      ∀ rs2,
+        (∀ r, Plt r ctx.dreg → Regmap.get r rs2 = Regmap.get r rs1) →
+        (∀ b1 b2 delta, F1 b1 = some (b2, delta) → Ple b2 sp →
+          F b1 = some (b2, delta)) →
+        (∀ b1 b2 delta ofs, F1 b1 = some (b2, delta) → Ple b2 sp →
+          Mem.perm m1 b1 ofs .Max .Nonempty → Mem.perm m b1 ofs .Max .Nonempty) →
+        (∀ b ofs, Ple b sp → Mem.perm m' b ofs .Cur .Freeable →
+          Mem.perm m1' b ofs .Cur .Freeable) →
+        (∀ b ofs k p, Ple b sp → Mem.perm m1' b ofs k p →
+          Mem.perm m' b ofs k p) →
+        match_stacks_inside cfg prog F1 m1 m1' stk stk' f' ctx sp rs2
 
 def match_stacks_inside_set_regStatement : Prop :=
   ∀ cfg prog F m m' stk stk' f ctx sp rs r v,
@@ -383,24 +449,25 @@ def match_stacks_inside_set_resStatement : Prop :=
       (regmap_setres (sbuiltinres ctx res) v rs)
 
 def match_stacks_inside_storeStatement : Prop :=
-  ∀ cfg prog F m m' m1 m1' stk stk' f ctx sp rs chunk b ofs v chunk' b' ofs' v',
-    match_stacks_inside cfg prog F m m' stk stk' f ctx sp rs →
+  ∀ cfg prog F m m' stk stk' f' ctx sp' rs' chunk b ofs v m1 chunk' b' ofs' v' m1',
+    match_stacks_inside cfg prog F m m' stk stk' f' ctx sp' rs' →
     Mem.store chunk m b ofs v = some m1 → Mem.store chunk' m' b' ofs' v' = some m1' →
-    match_stacks_inside cfg prog F m1 m1' stk stk' f ctx sp rs
+    match_stacks_inside cfg prog F m1 m1' stk stk' f' ctx sp' rs'
 
 def match_stacks_invariantStatement : Prop :=
-  ∀ cfg prog F F1 m m' m1 m1' stk stk' bound,
-    match_stacks cfg prog F m m' stk stk' bound →
+  ∀ cfg prog F m m' F1 m1 m1',
     Val.inject_incr F F1 →
-    (∀ b1 b2 delta, F1 b1 = some (b2, delta) → Plt b2 bound →
-      F b1 = some (b2, delta)) →
-    (∀ b1 b2 delta ofs, F1 b1 = some (b2, delta) → Plt b2 bound →
-      Mem.perm m1 b1 ofs .Max .Nonempty → Mem.perm m b1 ofs .Max .Nonempty) →
-    (∀ b ofs, Plt b bound → Mem.perm m' b ofs .Cur .Freeable →
-      Mem.perm m1' b ofs .Cur .Freeable) →
-    (∀ b ofs k p, Plt b bound → Mem.perm m1' b ofs k p →
-      Mem.perm m' b ofs k p) →
-    match_stacks cfg prog F1 m1 m1' stk stk' bound
+    ∀ stk stk' bound,
+      match_stacks cfg prog F m m' stk stk' bound →
+      ∀ (INJ : ∀ b1 b2 delta, F1 b1 = some (b2, delta) → Plt b2 bound →
+        F b1 = some (b2, delta))
+        (PERM1 : ∀ b1 b2 delta ofs, F1 b1 = some (b2, delta) → Plt b2 bound →
+          Mem.perm m1 b1 ofs .Max .Nonempty → Mem.perm m b1 ofs .Max .Nonempty)
+        (PERM2 : ∀ b ofs, Plt b bound → Mem.perm m' b ofs .Cur .Freeable →
+          Mem.perm m1' b ofs .Cur .Freeable)
+        (PERM3 : ∀ b ofs k p, Plt b bound → Mem.perm m1' b ofs k p →
+          Mem.perm m' b ofs k p),
+        match_stacks cfg prog F1 m1 m1' stk stk' bound
 
 def min_alignment_soundStatement : Prop :=
   ∀ sz n, ZArith.BinInt.Z.divide (min_alignment sz) n → Mem.inj_offset_aligned n sz
@@ -429,10 +496,10 @@ def range_private_free_leftStatement : Prop :=
 
 def range_private_invariantStatement : Prop :=
   ∀ F m m' sp lo hi F1 m1 m1', range_private F m m' sp lo hi →
-    (∀ b1 b2 delta ofs, F1 b1 = some (b2, delta) →
-      Mem.perm m1 b1 ofs .Max .Nonempty →
-      zLe lo (zAdd ofs delta) → zLt (zAdd ofs delta) hi →
-      F b1 = some (b2, delta) ∧ Mem.perm m b1 ofs .Max .Nonempty) →
+    (∀ b delta ofs, F1 b = some (sp, delta) →
+      Mem.perm m1 b ofs .Max .Nonempty →
+      (zLe lo (zAdd ofs delta) ∧ zLt (zAdd ofs delta) hi) →
+      F b = some (sp, delta) ∧ Mem.perm m b ofs .Max .Nonempty) →
     (∀ ofs, Mem.perm m' sp ofs .Cur .Freeable →
       Mem.perm m1' sp ofs .Cur .Freeable) →
     range_private F1 m1 m1' sp lo hi
@@ -451,13 +518,21 @@ def sig_function_translatedStatement : Prop :=
 def sreg_below_diffStatement : Prop :=
   ∀ ctx r r', Plt r' ctx.dreg → sreg ctx r ≠ r'
 
-def step_simulationStatement : Prop :=
+def step_simulationStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (xi : ExternalCalls) (cfg : InliningConfig) (prog tprog : program),
     match_prog cfg prog tprog →
     ∀ (S1 : RTL.state) (t : trace) (S2 : RTL.state),
-      step xi (Genv.globalenv prog) S1 t S2 →
+      step
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        xi (Genv.globalenv prog) S1 t S2 →
       ∀ S1', match_states cfg prog S1 S1' →
-        (∃ S2', plus (step xi) (Genv.globalenv tprog) S1' t S2' ∧
+        (∃ S2', plus (step
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate)
+          xi) (Genv.globalenv tprog) S1' t S2' ∧
           match_states cfg prog S2 S2') ∨
         (measure S2 < measure S1 ∧ t = E0 ∧ match_states cfg prog S2 S1')
 
@@ -466,53 +541,71 @@ def symbols_preservedStatement : Prop :=
     ∀ s, Genv.find_symbol (Genv.globalenv tprog) s = Genv.find_symbol (Genv.globalenv prog) s
 
 def tr_builtin_argStatement : Prop :=
-  ∀ (cfg : InliningConfig) (prog : program) F bound ctx rs rs' sp sp' m m' a v,
-    match_globalenvs prog F bound → agree_regs F ctx rs rs' → F sp = some (sp', ctx.dstk) →
-    Mem.inject F m m' →
-    eval_builtin_arg (Genv.to_senv (Genv.globalenv prog)) (fun r => Regmap.get r rs)
-      (Vptr sp Ptrofs.zero) m a v →
-    ∃ v', eval_builtin_arg (Genv.to_senv (Genv.globalenv prog)) (fun r => Regmap.get r rs')
-      (Vptr sp' Ptrofs.zero) m' (sbuiltinarg ctx a) v' ∧ Val.inject F v v'
+  ∀ (cfg : InliningConfig) (prog tprog : program),
+    match_prog cfg prog tprog →
+    ∀ F bound ctx rs rs' sp sp' m m' a v,
+      match_globalenvs prog F bound → agree_regs F ctx rs rs' → F sp = some (sp', ctx.dstk) →
+      Mem.inject F m m' →
+      eval_builtin_arg (Genv.to_senv (Genv.globalenv prog)) (fun r => Regmap.get r rs)
+        (Vptr sp Ptrofs.zero) m a v →
+      ∃ v', eval_builtin_arg (Genv.to_senv (Genv.globalenv tprog)) (fun r => Regmap.get r rs')
+        (Vptr sp' Ptrofs.zero) m' (sbuiltinarg ctx a) v' ∧ Val.inject F v v'
 
 def tr_builtin_argsStatement : Prop :=
-  ∀ (cfg : InliningConfig) (prog : program) F bound ctx rs rs' sp sp' m m' al vl,
-    match_globalenvs prog F bound → agree_regs F ctx rs rs' → F sp = some (sp', ctx.dstk) →
-    Mem.inject F m m' →
-    eval_builtin_args (Genv.to_senv (Genv.globalenv prog)) (fun r => Regmap.get r rs)
-      (Vptr sp Ptrofs.zero) m al vl →
-    ∃ vl', eval_builtin_args (Genv.to_senv (Genv.globalenv prog)) (fun r => Regmap.get r rs')
-      (Vptr sp' Ptrofs.zero) m' (al.map (sbuiltinarg ctx)) vl' ∧ Val.inject_list F vl vl'
+  ∀ (cfg : InliningConfig) (prog tprog : program),
+    match_prog cfg prog tprog →
+    ∀ F bound ctx rs rs' sp sp' m m' al vl,
+      match_globalenvs prog F bound → agree_regs F ctx rs rs' → F sp = some (sp', ctx.dstk) →
+      Mem.inject F m m' →
+      eval_builtin_args (Genv.to_senv (Genv.globalenv prog)) (fun r => Regmap.get r rs)
+        (Vptr sp Ptrofs.zero) m al vl →
+      ∃ vl', eval_builtin_args (Genv.to_senv (Genv.globalenv tprog)) (fun r => Regmap.get r rs')
+        (Vptr sp' Ptrofs.zero) m' (al.map (sbuiltinarg ctx)) vl' ∧ Val.inject_list F vl vl'
 
 def tr_funbody_invStatement : Prop :=
   ∀ fenv sz ctx (f : function) c pc i, tr_funbody fenv sz ctx f c →
     PTree.get pc f.fn_code = some i →
     tr_instr fenv sz ctx pc i c
 
-def tr_moves_init_regsStatement : Prop :=
+def tr_moves_init_regsStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (xi : ExternalCalls) (tprog : program) F (stk : List stackframe) (f : function) (sp : val) (m : mem)
-    ctx1 ctx2 rdsts rsrcs vl pc1 pc2 rs1,
+    ctx1 ctx2,
     context_below ctx1 ctx2 →
-    tr_moves f.fn_code pc1 (sregs ctx1 rsrcs) (sregs ctx2 rdsts) pc2 →
-    (∀ r, r ∈ rdsts → Ple r ctx2.mreg) →
-    list_forall2 (val_reg_charact F ctx1 rs1) vl rsrcs →
-    ∃ rs2,
-      star (step xi) (Genv.globalenv tprog) (State stk f sp pc1 rs1 m) E0
-        (State stk f sp pc2 rs2 m) ∧
-      agree_regs F ctx2 (init_regs vl rdsts) rs2 ∧
-      (∀ r, Plt r ctx2.dreg → Regmap.get r rs2 = Regmap.get r rs1)
+    ∀ rdsts rsrcs vl pc1 pc2 rs1,
+      tr_moves f.fn_code pc1 (sregs ctx1 rsrcs) (sregs ctx2 rdsts) pc2 →
+      (∀ r, r ∈ rdsts → Ple r ctx2.mreg) →
+      list_forall2 (val_reg_charact F ctx1 rs1) vl rsrcs →
+      ∃ rs2,
+        star (step
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate) xi)
+          (Genv.globalenv tprog) (State stk f sp pc1 rs1 m) E0
+          (State stk f sp pc2 rs2 m) ∧
+        agree_regs F ctx2 (init_regs vl rdsts) rs2 ∧
+        (∀ r, Plt r ctx2.dreg → Regmap.get r rs2 = Regmap.get r rs1)
 
 def transf_final_statesStatement : Prop :=
-  ∀ cfg prog tprog, match_prog cfg prog tprog →
+  ∀ (cfg : InliningConfig) (prog : program),
     ∀ st1 st2 r, match_states cfg prog st1 st2 → final_state st1 r → final_state st2 r
 
 def transf_initial_statesStatement : Prop :=
   ∀ cfg prog tprog, match_prog cfg prog tprog →
     ∀ st1, initial_state prog st1 → ∃ st2, initial_state tprog st2 ∧ match_states cfg prog st1 st2
 
-def transf_program_correctStatement : Prop :=
+def transf_program_correctStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (xi : ExternalCalls) (cfg : InliningConfig) (prog tprog : program),
     match_prog cfg prog tprog →
-    forward_simulation (RTL.semantics xi prog) (RTL.semantics xi tprog)
+    forward_simulation
+      (RTL.semantics
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) xi prog)
+      (RTL.semantics
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) xi tprog)
 
 def transf_program_matchStatement : Prop :=
   ∀ cfg prog tprog, transf_program cfg prog = OK tprog → match_prog cfg prog tprog
