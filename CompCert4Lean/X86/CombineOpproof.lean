@@ -30,12 +30,20 @@ private abbrev operation := CompCert4Lean.X86.Op.operation
 private abbrev genv := CompCert4Lean.Backend.RTL.genv
 private abbrev val := CompCert4Lean.Common.Values.val
 private abbrev mem := CompCert4Lean.Common.Memory.mem
+private abbrev BinaryNormalizeCertificate :=
+  CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+private abbrev zOfNat := ZArith.BinInt.Z.of_nat
 
-def combine_compimm_ne_0_soundStatement : Prop :=
+def combine_compimm_ne_0_soundStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (ge : genv) (sp : val) (m : mem) (get : valnum → Option rhs)
     (valu : valnum → val),
     (∀ (v : valnum) (rh : rhs), get v = some rh →
-      rhs_eval_to valu ge sp m rh (valu v)) →
+      rhs_eval_to
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        valu ge sp m rh (valu v)) →
     ∀ (x : valnum) (cond : condition) (args : List valnum),
     combine_compimm_ne_0 get x = some (cond, args) →
     eval_condition cond (List.map valu args) m =
@@ -43,11 +51,16 @@ def combine_compimm_ne_0_soundStatement : Prop :=
     eval_condition cond (List.map valu args) m =
         Val.cmpu_bool (Mem.valid_pointer m) .Cne (valu x) (.Vint Int.zero)
 
-def combine_compimm_eq_0_soundStatement : Prop :=
+def combine_compimm_eq_0_soundStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (ge : genv) (sp : val) (m : mem) (get : valnum → Option rhs)
     (valu : valnum → val),
     (∀ (v : valnum) (rh : rhs), get v = some rh →
-      rhs_eval_to valu ge sp m rh (valu v)) →
+      rhs_eval_to
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        valu ge sp m rh (valu v)) →
     ∀ (x : valnum) (cond : condition) (args : List valnum),
     combine_compimm_eq_0 get x = some (cond, args) →
     eval_condition cond (List.map valu args) m =
@@ -55,11 +68,16 @@ def combine_compimm_eq_0_soundStatement : Prop :=
     eval_condition cond (List.map valu args) m =
         Val.cmpu_bool (Mem.valid_pointer m) .Ceq (valu x) (.Vint Int.zero)
 
-def combine_compimm_eq_1_soundStatement : Prop :=
+def combine_compimm_eq_1_soundStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (ge : genv) (sp : val) (m : mem) (get : valnum → Option rhs)
     (valu : valnum → val),
     (∀ (v : valnum) (rh : rhs), get v = some rh →
-      rhs_eval_to valu ge sp m rh (valu v)) →
+      rhs_eval_to
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        valu ge sp m rh (valu v)) →
     ∀ (x : valnum) (cond : condition) (args : List valnum),
     combine_compimm_eq_1 get x = some (cond, args) →
     eval_condition cond (List.map valu args) m =
@@ -67,11 +85,16 @@ def combine_compimm_eq_1_soundStatement : Prop :=
     eval_condition cond (List.map valu args) m =
         Val.cmpu_bool (Mem.valid_pointer m) .Ceq (valu x) (.Vint Int.one)
 
-def combine_compimm_ne_1_soundStatement : Prop :=
+def combine_compimm_ne_1_soundStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (ge : genv) (sp : val) (m : mem) (get : valnum → Option rhs)
     (valu : valnum → val),
     (∀ (v : valnum) (rh : rhs), get v = some rh →
-      rhs_eval_to valu ge sp m rh (valu v)) →
+      rhs_eval_to
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        valu ge sp m rh (valu v)) →
     ∀ (x : valnum) (cond : condition) (args : List valnum),
     combine_compimm_ne_1 get x = some (cond, args) →
     eval_condition cond (List.map valu args) m =
@@ -79,11 +102,16 @@ def combine_compimm_ne_1_soundStatement : Prop :=
     eval_condition cond (List.map valu args) m =
         Val.cmpu_bool (Mem.valid_pointer m) .Cne (valu x) (.Vint Int.one)
 
-def combine_cond_soundStatement : Prop :=
+def combine_cond_soundStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (ge : genv) (sp : val) (m : mem) (get : valnum → Option rhs)
     (valu : valnum → val),
     (∀ (v : valnum) (rh : rhs), get v = some rh →
-      rhs_eval_to valu ge sp m rh (valu v)) →
+      rhs_eval_to
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        valu ge sp m rh (valu v)) →
     ∀ (cond : condition) (args : List valnum) (cond' : condition)
       (args' : List valnum),
     combine_cond get cond args = some (cond', args') →
@@ -97,49 +125,75 @@ def combine_cond'_soundStatement : Prop :=
     eval_condition cond (List.map valu args) m = some res →
     res = res'
 
-def combine_addr_32_soundStatement : Prop :=
+def combine_addr_32_soundStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (ge : genv) (sp : val) (m : mem) (get : valnum → Option rhs)
     (valu : valnum → val),
     (∀ (v : valnum) (rh : rhs), get v = some rh →
-      rhs_eval_to valu ge sp m rh (valu v)) →
+      rhs_eval_to
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        valu ge sp m rh (valu v)) →
     ∀ (addr : addressing) (args : List valnum) (addr' : addressing)
       (args' : List valnum),
     combine_addr_32 get addr args = some (addr', args') →
     eval_addressing32 ge sp addr' (List.map valu args') =
       eval_addressing32 ge sp addr (List.map valu args)
 
-def combine_addr_64_soundStatement : Prop :=
+def combine_addr_64_soundStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (ge : genv) (sp : val) (m : mem) (get : valnum → Option rhs)
     (valu : valnum → val),
     (∀ (v : valnum) (rh : rhs), get v = some rh →
-      rhs_eval_to valu ge sp m rh (valu v)) →
+      rhs_eval_to
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        valu ge sp m rh (valu v)) →
     ∀ (addr : addressing) (args : List valnum) (addr' : addressing)
       (args' : List valnum),
     combine_addr_64 get addr args = some (addr', args') →
     eval_addressing64 ge sp addr' (List.map valu args') =
       eval_addressing64 ge sp addr (List.map valu args)
 
-def combine_addr_soundStatement : Prop :=
+def combine_addr_soundStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (ge : genv) (sp : val) (m : mem) (get : valnum → Option rhs)
     (valu : valnum → val),
     (∀ (v : valnum) (rh : rhs), get v = some rh →
-      rhs_eval_to valu ge sp m rh (valu v)) →
+      rhs_eval_to
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        valu ge sp m rh (valu v)) →
     ∀ (addr : addressing) (args : List valnum) (addr' : addressing)
       (args' : List valnum),
     combine_addr get addr args = some (addr', args') →
     eval_addressing ge sp addr' (List.map valu args') =
       eval_addressing ge sp addr (List.map valu args)
 
-def combine_op_soundStatement : Prop :=
+def combine_op_soundStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (ge : genv) (sp : val) (m : mem) (get : valnum → Option rhs)
     (valu : valnum → val),
     (∀ (v : valnum) (rh : rhs), get v = some rh →
-      rhs_eval_to valu ge sp m rh (valu v)) →
+      rhs_eval_to
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        valu ge sp m rh (valu v)) →
     ∀ (op : operation) (args : List valnum) (op' : operation)
       (args' : List valnum) (r : val),
     combine_op get op args = some (op', args') →
-    eval_operation ge sp op (List.map valu args) m = some r →
-    ∃ r', eval_operation ge sp op' (List.map valu args') m = some r' ∧
+    eval_operation
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        ge sp op (List.map valu args) m = some r →
+    ∃ r', eval_operation
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        ge sp op' (List.map valu args') m = some r' ∧
       Val.lessdef r r'
 
 end CompCert4Lean.X86.CombineOpproof
