@@ -269,7 +269,7 @@ def match_envs_invariantStatement : Prop :=
     (∀ b chunk v, f b = none → Ple lo b ∧ Plt b hi →
       Mem.load chunk m b (.Z0 : Z) = some v →
       Mem.load chunk m' b (.Z0 : Z) = some v) →
-    Val.inject_incr f f' →
+    inject_incr f f' →
     (∀ b, Ple lo b ∧ Plt b hi → f' b = f b) →
     (∀ b b' delta, f' b = some (b', delta) →
       Ple tlo b' ∧ Plt b' thi → f' b = f b) →
@@ -279,7 +279,7 @@ def match_envs_extcallStatement : Prop :=
   ∀ f cenv e le m lo hi te tle tlo thi tm f' m',
     match_envs f cenv e le m lo hi te tle tlo thi →
     Mem.unchanged_on (loc_unmapped f) m m' →
-    Val.inject_incr f f' → inject_separated f f' m tm →
+    inject_incr f f' → inject_separated f f' m tm →
     Ple hi m.nextblock → Ple thi tm.nextblock →
     match_envs f' cenv e le m' lo hi te tle tlo thi
 
@@ -477,7 +477,7 @@ def match_alloc_variablesStatement : Prop :=
     Mem.inject j m tm →
     ∃ j' te' tm',
       alloc_variables tge te tm (remove_lifted cenv vars) te' tm' ∧
-      Mem.inject j' m' tm' ∧ Val.inject_incr j j' ∧
+      Mem.inject j' m' tm' ∧ inject_incr j j' ∧
       (∀ b, Mem.valid_block m b → j' b = j b) ∧
       (∀ b b' delta, j' b = some (b', delta) →
         Mem.valid_block tm b' → j' b = j b) ∧
@@ -567,7 +567,7 @@ def match_envs_alloc_variablesStatement : Prop :=
       match_envs j' cenv e (create_undef_temps temps) m'
         m.nextblock m'.nextblock te
         (create_undef_temps (add_lifted cenv vars temps)) tm.nextblock tm'.nextblock ∧
-      Mem.inject j' m' tm' ∧ Val.inject_incr j j' ∧
+      Mem.inject j' m' tm' ∧ inject_incr j j' ∧
       (∀ b, Mem.valid_block m b → j' b = j b) ∧
       (∀ b b' delta, j' b = some (b', delta) →
         Mem.valid_block tm b' → j' b = j b) ∧
@@ -766,7 +766,7 @@ def match_cont_invariantStatement : Prop :=
     (∀ b chunk v, f b = none → Plt b bound →
       Mem.load chunk m b (.Z0 : Z) = some v →
       Mem.load chunk m' b (.Z0 : Z) = some v) →
-    Val.inject_incr f f' →
+    inject_incr f f' →
     (∀ b, Plt b bound → f' b = f b) →
     (∀ b b' delta, f' b = some (b', delta) → Plt b' tbound → f' b = f b) →
     match_cont cfg ge f' cenv k tk m' bound tbound
@@ -780,7 +780,7 @@ def match_cont_assign_locStatement : Prop :=
 def match_cont_extcallStatement : Prop :=
   ∀ cfg ge f cenv k tk m bound tbound tm f' m',
     match_cont cfg ge f cenv k tk m bound tbound →
-    Mem.unchanged_on (loc_unmapped f) m m' → Val.inject_incr f f' →
+    Mem.unchanged_on (loc_unmapped f) m m' → inject_incr f f' →
     inject_separated f f' m tm → Ple bound m.nextblock → Ple tbound tm.nextblock →
     match_cont cfg ge f' cenv k tk m' bound tbound
 

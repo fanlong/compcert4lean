@@ -542,7 +542,7 @@ def agree_regs_extenStatement : Prop :=
     agree_regs j ls' rs'
 
 def agree_regs_inject_incrStatement : Prop :=
-  ∀ j ls rs j', agree_regs j ls rs → Val.inject_incr j j' →
+  ∀ j ls rs j', agree_regs j ls rs → inject_incr j j' →
     agree_regs j' ls rs
 
 def agree_regs_set_pairStatement : Prop :=
@@ -589,7 +589,7 @@ def contains_callee_saves_extenStatement : Prop :=
       (contains_callee_saves j sp pos rl ls')
 
 def contains_callee_saves_incrStatement : Prop :=
-  ∀ j j' sp ls, Val.inject_incr j j' → ∀ rl pos,
+  ∀ j j' sp ls, inject_incr j j' → ∀ rl pos,
     massert_imp (contains_callee_saves j sp pos rl ls)
       (contains_callee_saves j' sp pos rl ls)
 
@@ -606,7 +606,7 @@ def contains_locations_extenStatement : Prop :=
       (contains_locations j sp pos bound sl ls')
 
 def contains_locations_incrStatement : Prop :=
-  ∀ j j' sp pos bound sl ls, Val.inject_incr j j' →
+  ∀ j j' sp pos bound sl ls, inject_incr j j' →
     massert_imp (contains_locations j sp pos bound sl ls)
       (contains_locations j' sp pos bound sl ls)
 
@@ -679,7 +679,7 @@ def frame_contents_extenStatement : Prop :=
 def frame_contents_incrStatement : Prop :=
   ∀ cfg f j sp ls ls0 parent retaddr m P j',
     (sepconj (frame_contents cfg f j sp ls ls0 parent retaddr) P).m_pred m →
-    Val.inject_incr j j' →
+    inject_incr j j' →
     (sepconj (frame_contents cfg f j' sp ls ls0 parent retaddr) P).m_pred m
 
 def frame_get_localStatement : Prop :=
@@ -824,7 +824,7 @@ def function_prologue_correctStatement
         (sepconj (minjection j' m2)
           (sepconj (globalenv_inject (Genv.globalenv prog) j') P))).m_pred m5' ∧
       j' sp = some (sp', (make_env cfg (function_bounds cfg f)).fe_stack_data) ∧
-      Val.inject_incr j j'
+      inject_incr j j'
 def functions_translatedStatement : Prop :=
   ∀ cfg (prog : Linear.program) (tprog : Mach.program),
     match_prog cfg prog tprog → ∀ v f,
@@ -885,7 +885,7 @@ def load_result_injectStatement : Prop :=
     Val.inject j v (Val.load_result (chunk_of_type ty) v')
 
 def match_stacks_change_meminjStatement : Prop :=
-  ∀ cfg tprog j j', Val.inject_incr j j' → ∀ cs cs' sg,
+  ∀ cfg tprog j j', inject_incr j j' → ∀ cs cs' sg,
     match_stacks cfg tprog j cs cs' sg →
     match_stacks cfg tprog j' cs cs' sg
 
@@ -1046,7 +1046,7 @@ def slot_outgoing_argument_validStatement : Prop :=
     slot_valid cfg f Outgoing ofs ty = true
 
 def stack_contents_change_meminjStatement : Prop :=
-  ∀ cfg m j j', Val.inject_incr j j' → ∀ cs cs' P,
+  ∀ cfg m j j', inject_incr j j' → ∀ cs cs' P,
     (sepconj (stack_contents cfg j cs cs') P).m_pred m →
     (sepconj (stack_contents cfg j' cs cs') P).m_pred m
 

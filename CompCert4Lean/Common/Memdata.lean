@@ -497,7 +497,7 @@ inductive memval_inject : meminj → memval → memval → Prop where
 
 def memval_inject_incrStatement : Prop :=
   ∀ f f' v1 v2,
-    memval_inject f v1 v2 → Val.inject_incr f f' → memval_inject f' v1 v2
+    memval_inject f v1 v2 → inject_incr f f' → memval_inject f' v1 v2
 
 def proj_bytes_injectStatement : Prop :=
   ∀ f vl vl',
@@ -564,7 +564,7 @@ def encode_val_injectStatement : Prop :=
       list_forall2 (memval_inject f) (encode_val chunk v1) (encode_val chunk v2)
 
 def memval_lessdef : memval → memval → Prop :=
-  memval_inject Val.inject_id
+  memval_inject inject_id
 
 def memval_lessdef_reflStatement : Prop :=
   ∀ mv, memval_lessdef mv mv

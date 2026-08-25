@@ -382,7 +382,7 @@ def set_res_injectStatement : Prop :=
 
 def regset_inject_incrStatement : Prop :=
   ∀ (f f' : Val.meminj) (rs rs' : regset),
-    regset_inject f rs rs' → Val.inject_incr f f' → regset_inject f' rs rs'
+    regset_inject f rs rs' → inject_incr f f' → regset_inject f' rs rs'
 
 def regset_undef_injectStatement : Prop :=
   ∀ f : Val.meminj,
@@ -423,7 +423,7 @@ def match_stacks_preserves_globalsStatement : Prop :=
 
 def match_stacks_incrStatement : Prop :=
   ∀ (p tp : program) (used : IS.t) (j j' : Val.meminj),
-    Val.inject_incr j j' →
+    inject_incr j j' →
       ∀ (s ts : List stackframe) (bound tbound : block),
         match_stacks p tp used j s ts bound tbound →
           (∀ (b1 b2 : block) (delta : Z),
@@ -493,7 +493,7 @@ def external_call_injectStatement
               Mem.inject f' m2 m2' ∧
               Mem.unchanged_on (loc_unmapped f) m1 m2 ∧
               Mem.unchanged_on (loc_out_of_reach f m1) m1' m2' ∧
-              Val.inject_incr f f' ∧
+              inject_incr f f' ∧
               inject_separated f f' m1 m1'
 
 def find_function_injectStatement : Prop :=

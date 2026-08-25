@@ -171,8 +171,6 @@ private def boolOfSumbool {P Q : Prop} (d : Sumbool P Q) : Bool :=
   | .left _ => true
   | .right _ => false
 
-private def eqBool {A : Type} [DecidableEq A] (x y : A) : Bool := decide (x = y)
-
 private abbrev intZeroExt := CompCert4Lean.Lib.Integers.Int.zero_ext
 
 private abbrev intSignExt := CompCert4Lean.Lib.Integers.Int.sign_ext
@@ -188,30 +186,6 @@ private def int64ShrCarry (x : CCInt64) (y : CCInt) : CCInt64 := Int64.shr' x y
 private def intRolm (x amount mask : CCInt) : CCInt := Int.or (Int.rol x amount) mask
 private def int64Rolm (x amount : CCInt) (mask : CCInt64) : CCInt64 :=
   Int64.or (Int64.rol (Int64.repr (Int.unsigned x)) (Int64.repr (Int.unsigned amount))) mask
-
-private def cmpWord (c : comparison) (eqv ltv gtv : Bool) : Bool :=
-  match c with
-  | .Ceq => eqv
-  | .Cne => !eqv
-  | .Clt => ltv
-  | .Cle => ltv || eqv
-  | .Cgt => gtv
-  | .Cge => gtv || eqv
-
-private def intCmp (c : comparison) (x y : CCInt) : Bool :=
-  cmpWord c (Int.eq x y) (Int.lt x y) (Int.lt y x)
-
-private def intCmpu (c : comparison) (x y : CCInt) : Bool :=
-  cmpWord c (Int.eq x y) (Int.ltu x y) (Int.ltu y x)
-
-private def int64Cmp (c : comparison) (x y : CCInt64) : Bool :=
-  cmpWord c (Int64.eq x y) (Int64.lt x y) (Int64.lt y x)
-
-private def int64Cmpu (c : comparison) (x y : CCInt64) : Bool :=
-  cmpWord c (Int64.eq x y) (Int64.ltu x y) (Int64.ltu y x)
-
-private def ptCmp (c : comparison) (x y : Ptrofs) : Bool :=
-  cmpWord c (Ptrofs.eq x y) (Ptrofs.ltu x y) (Ptrofs.ltu y x)
 
 def block : Type := positive
 
@@ -366,7 +340,7 @@ def singleofintu (v : val)
 def negint (v : val) : val := match v with | Vint n => Vint (Int.neg n) | _ => Vundef
 def notint (v : val) : val := match v with | Vint n => Vint (Int.not n) | _ => Vundef
 def of_bool (b : Bool) : val := if b then Vtrue else Vfalse
-def is_bool (v : val) : Bool := eqBool v Vtrue || eqBool v Vfalse
+def is_bool (v : val) : Bool := boolOfSumbool (eq v Vtrue) || boolOfSumbool (eq v Vfalse)
 def norm_bool (v : val) : val := if is_bool v then v else Vundef
 def zero_ext (nbits : Z) (v : val) : val := match v with | Vint n => Vint (intZeroExt nbits n) | _ => Vundef
 def sign_ext (nbits : Z) (v : val) : val := match v with | Vint n => Vint (intSignExt nbits n) | _ => Vundef
@@ -385,7 +359,10 @@ def sub (v1 v2 : val) : val :=
   | Vint n1, Vint n2 => Vint (Int.sub n1 n2)
   | Vptr b ofs, Vint n => if Archi.ptr64 then Vundef else Vptr b (Ptrofs.sub ofs (Ptrofs.of_int n))
   | Vptr b1 ofs1, Vptr b2 ofs2 =>
-      if Archi.ptr64 then Vundef else if eqBool b1 b2 then Vint (Ptrofs.to_int (Ptrofs.sub ofs1 ofs2)) else Vundef
+      if Archi.ptr64 then Vundef else
+        if boolOfSumbool (eq_block b1 b2) then
+          Vint (Ptrofs.to_int (Ptrofs.sub ofs1 ofs2))
+        else Vundef
   | _, _ => Vundef
 
 def mul (v1 v2 : val) : val := match v1, v2 with | Vint n1, Vint n2 => Vint (Int.mul n1 n2) | _, _ => Vundef
@@ -484,7 +461,11 @@ def subl (v1 v2 : val) : val :=
   match v1, v2 with
   | Vlong n1, Vlong n2 => Vlong (Int64.sub n1 n2)
   | Vptr b ofs, Vlong n => if Archi.ptr64 then Vptr b (Ptrofs.sub ofs (Ptrofs.of_int64 n)) else Vundef
-  | Vptr b1 ofs1, Vptr b2 ofs2 => if !Archi.ptr64 then Vundef else if eqBool b1 b2 then Vlong (Ptrofs.to_int64 (Ptrofs.sub ofs1 ofs2)) else Vundef
+  | Vptr b1 ofs1, Vptr b2 ofs2 =>
+      if !Archi.ptr64 then Vundef
+      else if boolOfSumbool (eq_block b1 b2) then
+        Vlong (Ptrofs.to_int64 (Ptrofs.sub ofs1 ofs2))
+      else Vundef
   | _, _ => Vundef
 def mull (v1 v2 : val) : val := match v1, v2 with | Vlong n1, Vlong n2 => Vlong (Int64.mul n1 n2) | _, _ => Vundef
 def mull' (v1 v2 : val) : val := match v1, v2 with | Vint n1, Vint n2 => Vlong (Int64.mul' n1 n2) | _, _ => Vundef
@@ -507,28 +488,33 @@ def shrxl (v1 v2 : val) : Option val := match v1, v2 with | Vlong n1, Vint n2 =>
 def rorl (v1 v2 : val) : val := match v1, v2 with | Vlong n1, Vint n2 => Vlong (Int64.ror n1 (Int64.repr (Int.unsigned n2))) | _, _ => Vundef
 
 def cmp_bool (c : comparison) (v1 v2 : val) : Option Bool :=
-  match v1, v2 with | Vint n1, Vint n2 => some (intCmp c n1 n2) | _, _ => none
+  match v1, v2 with
+  | Vint n1, Vint n2 => some (CompCert4Lean.Lib.Integers.Int.cmp c n1 n2)
+  | _, _ => none
 def cmp_different_blocks (c : comparison) : Option Bool := match c with | .Ceq => some false | .Cne => some true | _ => none
 def cmpu_bool (valid_ptr : block → Z → Bool) (c : comparison) (v1 v2 : val) : Option Bool :=
   match v1, v2 with
-  | Vint n1, Vint n2 => some (intCmpu c n1 n2)
+  | Vint n1, Vint n2 => some (CompCert4Lean.Lib.Integers.Int.cmpu c n1 n2)
   | Vint n, Vptr b ofs => if !Archi.ptr64 && Int.eq n Int.zero && (valid_ptr b (Ptrofs.unsigned ofs) || valid_ptr b (zSub (Ptrofs.unsigned ofs) z1)) then cmp_different_blocks c else none
   | Vptr b ofs, Vint n => if !Archi.ptr64 && Int.eq n Int.zero && (valid_ptr b (Ptrofs.unsigned ofs) || valid_ptr b (zSub (Ptrofs.unsigned ofs) z1)) then cmp_different_blocks c else none
   | Vptr b1 ofs1, Vptr b2 ofs2 =>
       if !Archi.ptr64 then
-        if eqBool b1 b2 then
+        if boolOfSumbool (eq_block b1 b2) then
           if (valid_ptr b1 (Ptrofs.unsigned ofs1) || valid_ptr b1 (zSub (Ptrofs.unsigned ofs1) z1)) &&
              (valid_ptr b2 (Ptrofs.unsigned ofs2) || valid_ptr b2 (zSub (Ptrofs.unsigned ofs2) z1))
-          then some (ptCmp c ofs1 ofs2) else none
+          then some (CompCert4Lean.Lib.Integers.Ptrofs.cmpu c ofs1 ofs2) else none
         else if valid_ptr b1 (Ptrofs.unsigned ofs1) && valid_ptr b2 (Ptrofs.unsigned ofs2) then cmp_different_blocks c else none
       else none
   | _, _ => none
 def cmpf_bool (c : comparison) (v1 v2 : val) : Option Bool := match v1, v2 with | Vfloat f1, Vfloat f2 => some (Float.cmp c f1 f2) | _, _ => none
 def cmpfs_bool (c : comparison) (v1 v2 : val) : Option Bool := match v1, v2 with | Vsingle f1, Vsingle f2 => some (Float32.cmp c f1 f2) | _, _ => none
-def cmpl_bool (c : comparison) (v1 v2 : val) : Option Bool := match v1, v2 with | Vlong n1, Vlong n2 => some (int64Cmp c n1 n2) | _, _ => none
+def cmpl_bool (c : comparison) (v1 v2 : val) : Option Bool :=
+  match v1, v2 with
+  | Vlong n1, Vlong n2 => some (CompCert4Lean.Lib.Integers.Int64.cmp c n1 n2)
+  | _, _ => none
 def cmplu_bool (valid_ptr : block → Z → Bool) (c : comparison) (v1 v2 : val) : Option Bool :=
   match v1, v2 with
-  | Vlong n1, Vlong n2 => some (int64Cmpu c n1 n2)
+  | Vlong n1, Vlong n2 => some (CompCert4Lean.Lib.Integers.Int64.cmpu c n1 n2)
   | Vlong n, Vptr b ofs =>
       if Archi.ptr64 && Int64.eq n Int64.zero &&
         (valid_ptr b (Ptrofs.unsigned ofs) || valid_ptr b (zSub (Ptrofs.unsigned ofs) z1))
@@ -539,10 +525,10 @@ def cmplu_bool (valid_ptr : block → Z → Bool) (c : comparison) (v1 v2 : val)
       then cmp_different_blocks c else none
   | Vptr b1 ofs1, Vptr b2 ofs2 =>
       if Archi.ptr64 then
-        if eqBool b1 b2 then
+        if boolOfSumbool (eq_block b1 b2) then
           if (valid_ptr b1 (Ptrofs.unsigned ofs1) || valid_ptr b1 (zSub (Ptrofs.unsigned ofs1) z1)) &&
              (valid_ptr b2 (Ptrofs.unsigned ofs2) || valid_ptr b2 (zSub (Ptrofs.unsigned ofs2) z1))
-          then some (ptCmp c ofs1 ofs2) else none
+          then some (CompCert4Lean.Lib.Integers.Ptrofs.cmpu c ofs1 ofs2) else none
         else if valid_ptr b1 (Ptrofs.unsigned ofs1) && valid_ptr b2 (Ptrofs.unsigned ofs2)
         then cmp_different_blocks c else none
       else none
@@ -600,7 +586,10 @@ inductive inject (mi : meminj) : val → val → Prop where
   | inject_long (i : CCInt64) : inject mi (Vlong i) (Vlong i)
   | inject_float (f : CCFloat) : inject mi (Vfloat f) (Vfloat f)
   | inject_single (f : CCFloat32) : inject mi (Vsingle f) (Vsingle f)
-  | inject_ptr {b1 b2 : block} {ofs1 ofs2 : Ptrofs} {delta : Z} : mi b1 = some (b2, delta) → ofs2 = Ptrofs.add ofs1 (Ptrofs.repr delta) → inject mi (Vptr b1 ofs1) (Vptr b2 ofs2)
+  | inject_ptr (b1 : block) (ofs1 : Ptrofs) (b2 : block) (ofs2 : Ptrofs) (delta : Z) :
+      mi b1 = some (b2, delta) →
+      ofs2 = Ptrofs.add ofs1 (Ptrofs.repr delta) →
+      inject mi (Vptr b1 ofs1) (Vptr b2 ofs2)
   | val_inject_undef (v : val) : inject mi Vundef v
 
 def addl_injectStatement : Prop :=
@@ -637,8 +626,8 @@ theorem subl_inject : subl_injectStatement := by
     subst_vars
     exact Ptrofs.sub_add_l_proof_api _ _ _
   case inject_ptr.inject_ptr =>
-    rename_i srcB1 dstB1 srcOfs1 dstOfs1 delta1 map1 ofsEq1
-      srcB2 dstB2 srcOfs2 dstOfs2 delta2 map2 ofsEq2
+    rename_i srcB1 srcOfs1 dstB1 dstOfs1 delta1 map1 ofsEq1
+      srcB2 srcOfs2 dstB2 dstOfs2 delta2 map2 ofsEq2
     by_cases hsrc : srcB1 = srcB2
     · subst srcB2
       have hpair : (dstB1, delta1) = (dstB2, delta2) :=
@@ -647,18 +636,31 @@ theorem subl_inject : subl_injectStatement := by
       have hdelta : delta1 = delta2 := congrArg Prod.snd hpair
       subst dstB2
       subst delta2
-      simp only [eqBool]
+      have hsrcEq : boolOfSumbool (eq_block srcB1 srcB1) = true := by
+        cases h : eq_block srcB1 srcB1 with
+        | left _ => rfl
+        | right hne => exact (hne rfl).elim
+      have hdstEq : boolOfSumbool (eq_block dstB1 dstB1) = true := by
+        cases h : eq_block dstB1 dstB1 with
+        | left _ => rfl
+        | right hne => exact (hne rfl).elim
+      rw [hsrcEq, hdstEq]
       simp
       rw [ofsEq1, ofsEq2, Ptrofs.sub_shifted_proof_api]
       exact inject.inject_long _
-    · have hsrcEq : eqBool srcB1 srcB2 = false := by
-        simp [eqBool, hsrc]
+    · have hsrcEq : boolOfSumbool (eq_block srcB1 srcB2) = false := by
+        cases h : eq_block srcB1 srcB2 with
+        | left heq => exact (hsrc heq).elim
+        | right _ => rfl
       rw [hsrcEq]
       exact inject.val_inject_undef _
 
 inductive inject_list (mi : meminj) : List val → List val → Prop where
   | inject_list_nil : inject_list mi [] []
-  | inject_list_cons : inject mi v1 v2 → inject_list mi vl1 vl2 → inject_list mi (v1 :: vl1) (v2 :: vl2)
+  | inject_list_cons (v1 v2 : val) (vl1 vl2 : List val) :
+      inject mi v1 v2 →
+      inject_list mi vl1 vl2 →
+      inject_list mi (v1 :: vl1) (v2 :: vl2)
 
 def bool_of_val_of_optboolStatement : Prop :=
   ∀ ob b, bool_of_val (of_optbool ob) b → ob = some b
@@ -1094,29 +1096,29 @@ def zero_ext_andStatement : Prop :=
   ∀ n v,
     zLe z0 n → zero_ext n v = and v (Vint (Int.repr (zSub (zTwoP n) z1)))
 
-def inject_incr (f1 f2 : meminj) : Prop := ∀ b b' delta, f1 b = some (b', delta) → f2 b = some (b', delta)
-def inject_id : meminj := fun b => some (b, z0)
-
 end Val
 
 abbrev meminj := Val.meminj
-abbrev inject_incr := Val.inject_incr
-abbrev inject_id := Val.inject_id
+
+def inject_incr (f1 f2 : meminj) : Prop :=
+  ∀ b b' delta, f1 b = some (b', delta) → f2 b = some (b', delta)
+
+def inject_id : meminj := fun b => some (b, z0)
 
 def inject_incr_reflStatement : Prop :=
-  ∀ f : Val.meminj, Val.inject_incr f f
+  ∀ f : meminj, inject_incr f f
 
 def inject_incr_transStatement : Prop :=
   ∀ f1 f2 f3,
-    Val.inject_incr f1 f2 → Val.inject_incr f2 f3 → Val.inject_incr f1 f3
+    inject_incr f1 f2 → inject_incr f2 f3 → inject_incr f1 f3
 
 def val_inject_incrStatement : Prop :=
   ∀ f1 f2 v v',
-    Val.inject_incr f1 f2 → Val.inject f1 v v' → Val.inject f2 v v'
+    inject_incr f1 f2 → Val.inject f1 v v' → Val.inject f2 v v'
 
 def val_inject_list_incrStatement : Prop :=
   ∀ f1 f2 vl vl',
-    Val.inject_incr f1 f2 → Val.inject_list f1 vl vl' → Val.inject_list f2 vl vl'
+    inject_incr f1 f2 → Val.inject_list f1 vl vl' → Val.inject_list f2 vl vl'
 
 def val_inject_lessdefStatement : Prop :=
   ∀ v1 v2,
@@ -1127,6 +1129,6 @@ def val_inject_list_lessdefStatement : Prop :=
     Val.lessdef_list vl1 vl2 ↔ Val.inject_list (fun b => some (b, z0)) vl1 vl2
 
 def val_inject_idStatement : Prop :=
-  ∀ v1 v2, Val.inject Val.inject_id v1 v2 ↔ Val.lessdef v1 v2
+  ∀ v1 v2, Val.inject inject_id v1 v2 ↔ Val.lessdef v1 v2
 
 end CompCert4Lean.Common.Values

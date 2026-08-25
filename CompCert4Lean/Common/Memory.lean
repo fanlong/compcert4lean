@@ -590,7 +590,7 @@ def inj_offset_aligned (delta size : Z) : Prop :=
 
 structure extends' (m1 m2 : mem) : Prop where
   mext_next : m1.nextblock = m2.nextblock
-  mext_inj : mem_inj Val.inject_id m1 m2
+  mext_inj : mem_inj inject_id m1 m2
   mext_perm_inv : ∀ b ofs k p,
     perm m2 b ofs k p →
     perm m1 b ofs k p ∨ ¬ perm m1 b ofs Max Memtype.Nonempty
@@ -1794,7 +1794,7 @@ def alloc_left_unmapped_injectStatement : Prop :=
     inject f m1 m2 →
     alloc m1 lo hi = (m1', b1) →
     ∃ f',
-      inject f' m1' m2 ∧ Val.inject_incr f f' ∧ f' b1 = none ∧
+      inject f' m1' m2 ∧ inject_incr f f' ∧ f' b1 = none ∧
       ∀ b, b ≠ b1 → f' b = f b
 
 def alloc_left_mapped_injectStatement : Prop :=
@@ -1814,7 +1814,7 @@ def alloc_left_mapped_injectStatement : Prop :=
       zLe (zAdd lo delta) (zAdd ofs delta') ∧
         zLt (zAdd ofs delta') (zAdd hi delta) → False) →
     ∃ f',
-      inject f' m1' m2 ∧ Val.inject_incr f f' ∧ f' b1 = some (b2, delta) ∧
+      inject f' m1' m2 ∧ inject_incr f f' ∧ f' b1 = some (b2, delta) ∧
       ∀ b, b ≠ b1 → f' b = f b
 
 def alloc_parallel_injectStatement : Prop :=
@@ -1824,7 +1824,7 @@ def alloc_parallel_injectStatement : Prop :=
     zLe lo2 lo1 → zLe hi1 hi2 →
     ∃ f' m2' b2,
       alloc m2 lo2 hi2 = (m2', b2) ∧
-      inject f' m1' m2' ∧ Val.inject_incr f f' ∧ f' b1 = some (b2, z0) ∧
+      inject f' m1' m2' ∧ inject_incr f f' ∧ f' b1 = some (b2, z0) ∧
       ∀ b, b ≠ b1 → f' b = f b
 
 def free_left_injectStatement : Prop :=

@@ -79,10 +79,10 @@ def mkbuiltin_v1t
     intro j vl vl' h
     cases h with
     | inject_list_nil => trivial
-    | inject_list_cons h1 ht =>
+    | inject_list_cons _ _ _ _ h1 ht =>
         cases ht with
         | inject_list_nil => exact INJ j _ _ h1
-        | inject_list_cons _ _ => trivial
+        | inject_list_cons _ _ _ _ _ _ => trivial
 
 def mkbuiltin_v2t
     (tret : xtype) (f : val → val → val)
@@ -109,13 +109,13 @@ def mkbuiltin_v2t
     intro j vl vl' h
     cases h with
     | inject_list_nil => trivial
-    | inject_list_cons h1 ht =>
+    | inject_list_cons _ _ _ _ h1 ht =>
         cases ht with
         | inject_list_nil => trivial
-        | inject_list_cons h2 ht =>
+        | inject_list_cons _ _ _ _ h2 ht =>
             cases ht with
             | inject_list_nil => exact INJ j _ _ _ _ h1 h2
-            | inject_list_cons _ _ => trivial
+            | inject_list_cons _ _ _ _ _ _ => trivial
 
 def mkbuiltin_v1p
     (tret : xtype) (f : val → Option val)
@@ -138,10 +138,10 @@ def mkbuiltin_v1p
     intro j vl vl' h
     cases h with
     | inject_list_nil => trivial
-    | inject_list_cons h1 ht =>
+    | inject_list_cons _ _ _ _ h1 ht =>
         cases ht with
         | inject_list_nil => exact INJ j _ _ h1
-        | inject_list_cons _ _ => trivial
+        | inject_list_cons _ _ _ _ _ _ => trivial
 
 def mkbuiltin_v2p
     (tret : xtype) (f : val → val → Option val)
@@ -168,13 +168,13 @@ def mkbuiltin_v2p
     intro j vl vl' h
     cases h with
     | inject_list_nil => trivial
-    | inject_list_cons h1 ht =>
+    | inject_list_cons _ _ _ _ h1 ht =>
         cases ht with
         | inject_list_nil => trivial
-        | inject_list_cons h2 ht =>
+        | inject_list_cons _ _ _ _ h2 ht =>
             cases ht with
             | inject_list_nil => exact INJ j _ _ _ _ h1 h2
-            | inject_list_cons _ _ => trivial
+            | inject_list_cons _ _ _ _ _ _ => trivial
 
 private abbrev z0 : Z := .Z0
 private abbrev z1 : Z := ZArith.BinInt.Z.of_nat 1
@@ -773,17 +773,17 @@ private def selectBuiltin (t : typ) : builtin_sem (inj_type t) where
     intro j vargs vargs' h
     cases h with
     | inject_list_nil => trivial
-    | inject_list_cons h0 hs =>
+    | inject_list_cons _ _ _ _ h0 hs =>
       cases h0 <;> try trivial
       case inject_int n =>
         cases hs with
         | inject_list_nil => trivial
-        | inject_list_cons h1 hs =>
+        | inject_list_cons _ _ _ _ h1 hs =>
           cases hs with
           | inject_list_nil => trivial
-          | inject_list_cons h2 hs =>
+          | inject_list_cons _ _ _ _ h2 hs =>
             cases hs with
-            | inject_list_cons _ _ => trivial
+            | inject_list_cons _ _ _ _ _ _ => trivial
             | inject_list_nil =>
               simp [val_opt_inject]
               split

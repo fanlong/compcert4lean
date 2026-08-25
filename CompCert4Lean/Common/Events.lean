@@ -750,7 +750,7 @@ def external_call_mem_inject_gen
       Mem.inject f' m2 m2' ∧
       Mem.unchanged_on (loc_unmapped f) m1 m2 ∧
       Mem.unchanged_on (loc_out_of_reach f m1) m1' m2' ∧
-      Val.inject_incr f f' ∧
+      inject_incr f f' ∧
       inject_separated f f' m1 m1'
 
 def external_call_trace_length
@@ -860,7 +860,7 @@ def external_call_mem_injectStatement
       Mem.inject f' m2 m2' ∧
       Mem.unchanged_on (loc_unmapped f) m1 m2 ∧
       Mem.unchanged_on (loc_out_of_reach f m1) m1' m2' ∧
-      Val.inject_incr f f' ∧
+      inject_incr f f' ∧
       inject_separated f f' m1 m1'
 
 /-! ## Evaluation of builtin arguments -/

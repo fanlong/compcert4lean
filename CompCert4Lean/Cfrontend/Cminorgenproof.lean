@@ -418,7 +418,7 @@ def free_list_freeableStatement : Prop :=
     ∀ b lo hi, In (b, lo, hi) l → Mem.range_perm m b lo hi .Cur .Freeable
 
 def match_temps_invariantStatement : Prop :=
-  ∀ f f' le te, match_temps f le te → Val.inject_incr f f' →
+  ∀ f f' le te, match_temps f le te → inject_incr f f' →
     match_temps f' le te
 
 def match_temps_assignStatement : Prop :=
@@ -428,7 +428,7 @@ def match_temps_assignStatement : Prop :=
 def match_env_invariantStatement : Prop :=
   ∀ f1 cenv e sp lo hi f2,
     match_env f1 cenv e sp lo hi →
-    Val.inject_incr f1 f2 →
+    inject_incr f1 f2 →
     (∀ b delta, f2 b = some (sp, delta) → f1 b = some (sp, delta)) →
     (∀ b, Plt b lo → f2 b = f1 b) →
     match_env f2 cenv e sp lo hi
@@ -438,7 +438,7 @@ def match_env_allocStatement : Prop :=
     match_env f1 (PTree.remove id cenv) e sp lo m1.nextblock →
     Mem.alloc m1 0 sz = (m2, b) →
     PTree.get id cenv = some ofs →
-    Val.inject_incr f1 f2 →
+    inject_incr f1 f2 →
     f2 b = some (sp, ofs) →
     (∀ b', b' ≠ b → f2 b' = f1 b') →
     PTree.get id e = none →
@@ -476,7 +476,7 @@ def match_callstack_match_globalenvsStatement : Prop :=
 def match_callstack_invariantStatement : Prop :=
   ∀ prog f1 m1 tm1 f2 m2 tm2 cs bound tbound,
     match_callstack prog f1 m1 tm1 cs bound tbound →
-    Val.inject_incr f1 f2 →
+    inject_incr f1 f2 →
     (∀ b ofs p, Plt b bound → Mem.perm m2 b ofs .Max p →
       Mem.perm m1 b ofs .Max p) →
     (∀ sp ofs, Plt sp tbound → Mem.perm tm1 sp ofs .Cur .Freeable →
@@ -518,7 +518,7 @@ def match_callstack_external_callStatement : Prop :=
   ∀ prog f1 f2 m1 m2 m1' m2',
     Mem.unchanged_on (loc_unmapped f1) m1 m2 →
     Mem.unchanged_on (loc_out_of_reach f1 m1) m1' m2' →
-    Val.inject_incr f1 f2 →
+    inject_incr f1 f2 →
     inject_separated f1 f2 m1 m1' →
     (∀ b ofs p, Mem.valid_block m1 b → Mem.perm m2 b ofs .Max p →
       Mem.perm m1 b ofs .Max p) →
@@ -545,7 +545,7 @@ def match_callstack_alloc_leftStatement : Prop :=
       m1.nextblock tm.nextblock →
     Mem.alloc m1 0 sz = (m2, b) →
     PTree.get id cenv = some ofs →
-    Val.inject_incr f1 f2 →
+    inject_incr f1 f2 →
     f2 b = some (sp, ofs) →
     (∀ b', b' ≠ b → f2 b' = f1 b') →
     PTree.get id e = none →

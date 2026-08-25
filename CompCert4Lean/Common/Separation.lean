@@ -616,7 +616,7 @@ def alloc_parallel_ruleStatement : Prop :=
     ∃ j',
       (sepconj (range b2 z0 lo)
         (sepconj (range b2 hi sz2) (sepconj (minjection j' m1') P))).m_pred m2' ∧
-      Val.inject_incr j j' ∧
+      inject_incr j j' ∧
       j' b1 = some (b2, delta) ∧
       (∀ b, b ≠ b1 → j' b = j b)
 
@@ -655,7 +655,7 @@ def globalenv_inject_preserves_globalsStatement : Prop :=
 
 def globalenv_inject_incrStatement : Prop :=
   ∀ j m0 (F V : Type) (ge : Genv.t F V) m j' P,
-    Val.inject_incr j j' →
+    inject_incr j j' →
     Events.inject_separated j j' m0 m →
     (sepconj (globalenv_inject ge j) P).m_pred m →
     (sepconj (globalenv_inject ge j') P).m_pred m
@@ -681,7 +681,7 @@ def external_call_parallel_ruleStatement
           xi ef (Genv.to_senv ge) vargs2 m2 t vres2 m2' ∧
       Val.inject j' vres1 vres2 ∧
       (sepconj (minjection j' m1') (sepconj (globalenv_inject ge j') P)).m_pred m2' ∧
-      Val.inject_incr j j' ∧
+      inject_incr j j' ∧
       Events.inject_separated j j' m1 m2
 
 def alloc_parallel_rule_2Statement : Prop :=
@@ -698,7 +698,7 @@ def alloc_parallel_rule_2Statement : Prop :=
       (sepconj (range b2 z0 lo)
         (sepconj (range b2 hi sz2)
           (sepconj (minjection j' m1') (sepconj (globalenv_inject ge j') P)))).m_pred m2' ∧
-      Val.inject_incr j j' ∧
+      inject_incr j j' ∧
       j' b1 = some (b2, delta)
 
 end CompCert4Lean.Common.Separation

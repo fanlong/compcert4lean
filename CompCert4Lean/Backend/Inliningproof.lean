@@ -261,7 +261,7 @@ def Plt_Ple_decStatement : Type :=
   ∀ p q : positive, Support.Sumbool (Plt p q) (Ple q p)
 
 def agree_regs_incrStatement : Prop :=
-  ∀ F ctx rs1 rs2 F', agree_regs F ctx rs1 rs2 → Val.inject_incr F F' → agree_regs F' ctx rs1 rs2
+  ∀ F ctx rs1 rs2 F', agree_regs F ctx rs1 rs2 → inject_incr F F' → agree_regs F' ctx rs1 rs2
 
 def agree_regs_initStatement : Prop :=
   ∀ F ctx rs, agree_regs F ctx (Regmap.init Vundef) rs
@@ -360,7 +360,7 @@ def match_stacks_extcallStatement : Prop :=
       Mem.perm m1' b ofs .Max p) →
     Mem.unchanged_on (loc_out_of_reach F1 m1) m1' m2' →
     Mem.inject F1 m1 m1' →
-    Val.inject_incr F1 F2 →
+    inject_incr F1 F2 →
     inject_separated F1 F2 m1 m1' →
     ∀ stk stk' bound,
       match_stacks cfg prog F1 m1 m1' stk stk' bound →
@@ -374,7 +374,7 @@ def match_stacks_inside_alloc_leftStatement : Prop :=
   ∀ cfg prog F m m' stk stk' f' ctx sp' rs',
     match_stacks_inside cfg prog F m m' stk stk' f' ctx sp' rs' →
     ∀ sz m1 b F1 delta,
-      Mem.alloc m zZero sz = (m1, b) → Val.inject_incr F F1 →
+      Mem.alloc m zZero sz = (m1, b) → inject_incr F F1 →
       F1 b = some (sp', delta) →
       (∀ b1, b1 ≠ b → F1 b1 = F b1) →
       zLe ctx.dstk delta →
@@ -393,7 +393,7 @@ def match_stacks_inside_extcallStatement : Prop :=
       Mem.perm m1' b ofs .Max p) →
     Mem.unchanged_on (loc_out_of_reach F1 m1) m1' m2' →
     Mem.inject F1 m1 m1' →
-    Val.inject_incr F1 F2 →
+    inject_incr F1 F2 →
     inject_separated F1 F2 m1 m1' →
     ∀ stk stk' f' ctx sp' rs',
       match_stacks_inside cfg prog F1 m1 m1' stk stk' f' ctx sp' rs' →
@@ -422,7 +422,7 @@ def match_stacks_inside_inlined_tailcallStatement : Prop :=
 
 def match_stacks_inside_invariantStatement : Prop :=
   ∀ cfg prog F m m' F1 m1 m1',
-    Val.inject_incr F F1 →
+    inject_incr F F1 →
     ∀ stk stk' f' ctx sp rs1,
       match_stacks_inside cfg prog F m m' stk stk' f' ctx sp rs1 →
       ∀ rs2,
@@ -456,7 +456,7 @@ def match_stacks_inside_storeStatement : Prop :=
 
 def match_stacks_invariantStatement : Prop :=
   ∀ cfg prog F m m' F1 m1 m1',
-    Val.inject_incr F F1 →
+    inject_incr F F1 →
     ∀ stk stk' bound,
       match_stacks cfg prog F m m' stk stk' bound →
       ∀ (INJ : ∀ b1 b2 delta, F1 b1 = some (b2, delta) → Plt b2 bound →
@@ -484,7 +484,7 @@ def range_private_extcallStatement : Prop :=
     (∀ b ofs p, Mem.valid_block m1 b → Mem.perm m2 b ofs .Max p →
       Mem.perm m1 b ofs .Max p) →
     Mem.unchanged_on (loc_out_of_reach F m1) m1' m2' →
-    Mem.inject F m1 m1' → Val.inject_incr F F' →
+    Mem.inject F m1 m1' → inject_incr F F' →
     inject_separated F F' m1 m1' → Mem.valid_block m1' sp →
     range_private F' m2 m2' sp base hi
 

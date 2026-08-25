@@ -242,7 +242,7 @@ structure extcall_properties (sem : extcall_sem) (sg : signature) : Prop where
         Mem.inject f' m2 m2' ∧
         Mem.unchanged_on (loc_unmapped f) m1 m2 ∧
         Mem.unchanged_on (loc_out_of_reach f m1) m1' m2' ∧
-        Val.inject_incr f f' ∧
+        inject_incr f f' ∧
         inject_separated f f' m1 m1'
 
   ec_trace_length :
