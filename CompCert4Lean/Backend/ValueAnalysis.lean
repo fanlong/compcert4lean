@@ -58,6 +58,8 @@ private abbrev int64 := CompCert4Lean.Lib.Integers.int64
 private abbrev float := CompCert4Lean.Lib.Floats.float
 private abbrev float32 := CompCert4Lean.Lib.Floats.float32
 private abbrev ptrofs := CompCert4Lean.Lib.Integers.ptrofs
+private abbrev BinaryNormalizeCertificate :=
+  CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
 private abbrev z0 : Z := .Z0
 private abbrev zOfNat := ZArith.BinInt.Z.of_nat
 private abbrev zAdd := ZArith.BinInt.Z.add
@@ -271,14 +273,22 @@ def transfer_builtin_default (cfg : CompilerConfig) (ae : aenv) (am : amem) (rm 
   let (av, am') := analyze_call am (args.map (abuiltin_arg cfg ae am rm))
   VA.State (set_builtin_res res av ae) am'
 
-def eval_static_builtin_function (cfg : CompilerConfig) (ae : aenv) (am : amem) (rm : romem)
+def eval_static_builtin_function
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (cfg : CompilerConfig) (ae : aenv) (am : amem) (rm : romem)
     (bf : builtin_function) (args : List (builtin_arg reg)) : Option aval :=
-  match builtin_function_sem bf
+  match builtin_function_sem
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) bf
       (List.map val_of_aval (args.map (abuiltin_arg cfg ae am rm))) with
   | some v => aval_of_val v
   | none => none
 
-def transfer_builtin (cfg : CompilerConfig) (ae : aenv) (am : amem)
+def transfer_builtin
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (cfg : CompilerConfig) (ae : aenv) (am : amem)
     (rm : romem) (ef : external_function)
     (args : List (builtin_arg reg)) (res : builtin_res reg) : VA.t :=
   match ef, args with
@@ -309,20 +319,27 @@ def transfer_builtin (cfg : CompilerConfig) (ae : aenv) (am : amem)
   | .EF_builtin name sg, _ =>
       match lookup_builtin_function name sg with
       | some bf =>
-          match eval_static_builtin_function cfg ae am rm bf args with
+          match eval_static_builtin_function
+              (binary64_certificate := binary64_certificate)
+              (binary32_certificate := binary32_certificate)
+              cfg ae am rm bf args with
           | some av => VA.State (set_builtin_res res av ae) am
           | none => transfer_builtin_default cfg ae am rm args res
       | none => transfer_builtin_default cfg ae am rm args res
   | _, _ => transfer_builtin_default cfg ae am rm args res
 
-def transfer (cfg : CompilerConfig) (f : function) (rm : romem)
+def transfer
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (cfg : CompilerConfig) (f : function) (rm : romem)
     (pc : node) (ae : aenv) (am : amem) : VA.t :=
   match PTree.get pc f.fn_code with
   | none => VA.Bot
   | some (.Inop _) => VA.State ae am
   | some (.Iop op args res _) =>
-      VA.State (AE.set res (CompCert4Lean.X86.ValueAOp.eval_static_operation cfg op
-        (aregs ae args)) ae) am
+      VA.State (AE.set res (CompCert4Lean.X86.ValueAOp.eval_static_operation
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) cfg op (aregs ae args)) ae) am
   | some (.Iload chunk addr args dst _) =>
       VA.State (AE.set dst (loadv cfg chunk rm am
         (CompCert4Lean.X86.ValueAOp.eval_static_addressing addr (aregs ae args))) ae) am
@@ -331,18 +348,26 @@ def transfer (cfg : CompilerConfig) (f : function) (rm : romem)
         (CompCert4Lean.X86.ValueAOp.eval_static_addressing addr (aregs ae args)) (areg ae src))
   | some (.Icall _ _ args res _) => transfer_call ae am args res
   | some (.Itailcall _ _ _) => VA.Bot
-  | some (.Ibuiltin ef args res _) => transfer_builtin cfg ae am rm ef args res
+  | some (.Ibuiltin ef args res _) => transfer_builtin
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) cfg ae am rm ef args res
   | some (.Icond _ _ _ _) => VA.State ae am
   | some (.Ijumptable _ _) => VA.State ae am
   | some (.Ireturn _) => VA.Bot
 
-def transfer' (cfg : CompilerConfig) (f : function)
+def transfer'
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (cfg : CompilerConfig) (f : function)
     (lastuses : PTree.t (List reg)) (rm : romem)
     (pc : node) (before : VA.t) : VA.t :=
   match before with
   | .Bot => .Bot
   | .State ae am =>
-      match transfer cfg f rm pc ae am with
+      match transfer
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate)
+          cfg f rm pc ae am with
       | .Bot => .Bot
       | .State ae' am' =>
           let ae'' := match PTree.get pc lastuses with
@@ -356,11 +381,17 @@ def mfunction_entry : amem :=
     am_nonstack := Nonstack
     am_top := Nonstack }
 
-def analyze (cfg : CompilerConfig) (rm : romem) (f : function) : PMap.t VA.t :=
+def analyze
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (cfg : CompilerConfig) (rm : romem) (f : function) : PMap.t VA.t :=
   let lu := Liveness.last_uses f
   let entry := VA.State (einit_regs f.fn_params f.fn_sig.sig_args) mfunction_entry
   match DS.fixpoint cfg f.fn_code
-      successors_instr (fun pc before => transfer' cfg f lu rm pc before)
+      successors_instr (fun pc before => transfer'
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        cfg f lu rm pc before)
       f.fn_entrypoint entry with
   | none => PMap.init (VA.State AE.top mtop)
   | some res => res
@@ -421,7 +452,10 @@ def romem_consistent (cfg : CompilerConfig)
 
 /-! ## Generated invariant carriers and constructors -/
 
-inductive sound_stack (cfg : CompilerConfig)
+inductive sound_stack
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (cfg : CompilerConfig)
     (prog : CompCert4Lean.Backend.RTL.program)
     (ge : CompCert4Lean.Backend.RTL.genv) :
     block_classification → List stackframe → mem → block → Prop where
@@ -438,7 +472,10 @@ inductive sound_stack (cfg : CompilerConfig)
       (SP' : bc' sp = BCstack)
       (SAME : ∀ b, Plt b bound' → b ≠ sp → bc b = bc' b)
       (GE : genv_match bc' ge)
-      (AN : VA.ge (PMap.get pc (analyze cfg (romem_for cfg prog) f))
+      (AN : VA.ge (PMap.get pc (analyze
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        cfg (romem_for cfg prog) f))
         (VA.State (AE.set res Vtop ae) mafter_public_call))
       (EM : ematch bc' e ae) :
       sound_stack cfg prog ge bc
@@ -454,7 +491,10 @@ inductive sound_stack (cfg : CompilerConfig)
       (SP' : bc' sp = BCstack)
       (SAME : ∀ b, Plt b bound' → b ≠ sp → bc b = bc' b)
       (GE : genv_match bc' ge)
-      (AN : VA.ge (PMap.get pc (analyze cfg (romem_for cfg prog) f))
+      (AN : VA.ge (PMap.get pc (analyze
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        cfg (romem_for cfg prog) f))
         (VA.State (AE.set res (Ifptr Nonstack) ae) (mafter_private_call am)))
       (EM : ematch bc' e ae)
       (CONTENTS : bmatch bc' m sp am.am_stack) :
@@ -463,14 +503,20 @@ inductive sound_stack (cfg : CompilerConfig)
 
 export sound_stack (sound_stack_nil sound_stack_public_call sound_stack_private_call)
 
-inductive sound_state_base (cfg : CompilerConfig)
+inductive sound_state_base
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (cfg : CompilerConfig)
     (prog : CompCert4Lean.Backend.RTL.program)
     (ge : CompCert4Lean.Backend.RTL.genv) : state → Prop where
   | sound_regular_state
       (s : List stackframe) (f : function) (sp : block) (pc : node)
       (e : regset) (m : mem) (ae : aenv) (am : amem) (bc : block_classification)
       (STK : sound_stack cfg prog ge bc s m sp)
-      (AN : PMap.get pc (analyze cfg (romem_for cfg prog) f) = VA.State ae am)
+      (AN : PMap.get pc (analyze
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        cfg (romem_for cfg prog) f) = VA.State ae am)
       (EM : ematch bc e ae)
       (RO : romatch bc m (romem_for cfg prog))
       (MM : mmatch bc m am)
@@ -499,7 +545,10 @@ inductive sound_state_base (cfg : CompilerConfig)
 
 export sound_state_base (sound_regular_state sound_call_state sound_return_state)
 
-inductive sound_state (cfg : CompilerConfig)
+inductive sound_state
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (cfg : CompilerConfig)
     (prog : CompCert4Lean.Backend.RTL.program) : state → Prop where
   | sound_state_intro (st : state)
       (H : ∀ cunit, linkorder cunit prog →
@@ -530,38 +579,61 @@ def aaddr_arg (cfg : CompilerConfig) (a : VA.t) (ba : builtin_arg reg) : aptr :=
 
 /-! ## Later-proof statement descriptors -/
 
-def analyze_entrypointStatement : Prop :=
+def analyze_entrypointStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (cfg : CompilerConfig) (rm : romem) (f : function) (vl : List val) (m : mem)
     (bc : block_classification),
     (∀ v, v ∈ vl → vmatch bc v (Ifptr Nonstack)) →
     Val.has_argtype_list vl f.fn_sig.sig_args →
     mmatch bc m mfunction_entry →
     ∃ ae am,
-      PMap.get f.fn_entrypoint (analyze cfg rm f) = VA.State ae am ∧
+      PMap.get f.fn_entrypoint (analyze
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) cfg rm f) = VA.State ae am ∧
       ematch bc (init_regs vl f.fn_params) ae ∧ mmatch bc m am
 
-def analyze_successorStatement : Prop :=
+def analyze_successorStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (cfg : CompilerConfig) (f : function) (n : node)
     (ae : aenv) (am : amem) (instr : instruction)
     (s : node) (rm : romem) (ae' : aenv) (am' : amem),
-    PMap.get n (analyze cfg rm f) = VA.State ae am →
+    PMap.get n (analyze
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) cfg rm f) = VA.State ae am →
     PTree.get n f.fn_code = some instr →
     s ∈ successors_instr instr →
-    transfer cfg f rm n ae am = VA.State ae' am' →
-    VA.ge (PMap.get s (analyze cfg rm f)) (transfer cfg f rm n ae am)
+    transfer
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) cfg f rm n ae am = VA.State ae' am' →
+    VA.ge (PMap.get s (analyze
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) cfg rm f))
+      (transfer
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) cfg f rm n ae am)
 
-def analyze_succStatement : Prop :=
+def analyze_succStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (cfg : CompilerConfig) (e : regset) (m : mem) (rm : romem)
     (f : function) (n : node)
     (ae : aenv) (am : amem) (instr : instruction) (s : node)
     (ae' : aenv) (am' : amem) (bc : block_classification),
-    PMap.get n (analyze cfg rm f) = VA.State ae am →
+    PMap.get n (analyze
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) cfg rm f) = VA.State ae am →
     PTree.get n f.fn_code = some instr →
     s ∈ successors_instr instr →
-    transfer cfg f rm n ae am = VA.State ae' am' →
+    transfer
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) cfg f rm n ae am = VA.State ae' am' →
     ematch bc e ae' → mmatch bc m am' →
     ∃ ae'' am'',
-      PMap.get s (analyze cfg rm f) = VA.State ae'' am'' ∧
+      PMap.get s (analyze
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) cfg rm f) = VA.State ae'' am'' ∧
       ematch bc e ae'' ∧ mmatch bc m am''
 
 def areg_soundStatement : Prop :=
@@ -601,7 +673,9 @@ def abuiltin_args_soundStatement : Prop :=
 def set_builtin_res_soundStatement : Prop :=
   ∀ bc rs ae v av res, ematch bc rs ae → vmatch bc v av →
     ematch bc (regmap_setres res v rs) (set_builtin_res res av ae)
-def eval_static_builtin_function_soundStatement : Prop :=
+def eval_static_builtin_function_soundStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (cfg : CompilerConfig) (bc : block_classification) (ge : genv)
     (rs : regset) (sp : block)
     (m : mem) (ae : aenv) (rm : romem) (am : amem)
@@ -614,8 +688,12 @@ def eval_static_builtin_function_soundStatement : Prop :=
     bc sp = BCstack →
     eval_builtin_args (Genv.to_senv ge) (fun r => Regmap.get r rs)
       (Vptr sp Ptrofs.zero) m al vl →
-    eval_static_builtin_function cfg ae am rm bf al = some va →
-    builtin_function_sem bf vl = some v →
+    eval_static_builtin_function
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) cfg ae am rm bf al = some va →
+    builtin_function_sem
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) bf vl = some v →
     vmatch bc v va
 
 def pmatch_no_stackStatement : Prop :=
@@ -727,11 +805,16 @@ def return_from_private_callStatement : Prop :=
       bc sp = BCstack ∧
       (∀ b, Plt b sp → bc b = caller b)
 
-def external_call_matchStatement : Prop :=
+def external_call_matchStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (xi : CompCert4Lean.Common.ExternalCalls.ExternalCalls)
     (ef : external_function) (ge : genv) (vargs : List val) (m m' : mem)
     (t : trace) (vres : val) (bc : block_classification) (rm : romem) (am : amem),
-    external_call xi ef (Genv.to_senv ge) vargs m t vres m' →
+    external_call
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      xi ef (Genv.to_senv ge) vargs m t vres m' →
     genv_match bc ge →
     (∀ v, v ∈ vargs → vmatch bc v Vtop) →
     romatch bc m rm →
@@ -748,7 +831,9 @@ def external_call_matchStatement : Prop :=
       (∀ b ofs n, Mem.valid_block m b → bc b = BCinvalid →
         Mem.loadbytes m' b ofs n = Mem.loadbytes m b ofs n)
 
-def sound_stack_extStatement : Prop :=
+def sound_stack_extStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (cfg : CompilerConfig) (prog : program) (ge : genv) (m' : mem) (bc : block_classification)
     (stk : List stackframe) (m : mem) (bound : block),
     sound_stack cfg prog ge bc stk m bound →
@@ -757,7 +842,9 @@ def sound_stack_extStatement : Prop :=
       Mem.loadbytes m b ofs n = some bytes) →
     sound_stack cfg prog ge bc stk m' bound
 
-def sound_stack_invStatement : Prop :=
+def sound_stack_invStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (cfg : CompilerConfig) (prog : program) (ge : genv) (m' : mem) (bc : block_classification)
     (stk : List stackframe) (m : mem) (bound : block),
     sound_stack cfg prog ge bc stk m bound →
@@ -765,7 +852,9 @@ def sound_stack_invStatement : Prop :=
       Mem.loadbytes m' b ofs n = Mem.loadbytes m b ofs n) →
     sound_stack cfg prog ge bc stk m' bound
 
-def sound_stack_storevStatement : Prop :=
+def sound_stack_storevStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (cfg : CompilerConfig) (prog : program) (ge : genv) (chunk : memory_chunk)
     (m : mem) (addr v : val)
     (m' : mem) (bc : block_classification) (aaddr : aval)
@@ -775,7 +864,9 @@ def sound_stack_storevStatement : Prop :=
     sound_stack cfg prog ge bc stk m bound →
     sound_stack cfg prog ge bc stk m' bound
 
-def sound_stack_storebytesStatement : Prop :=
+def sound_stack_storebytesStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (cfg : CompilerConfig) (prog : program) (ge : genv) (m : mem) (b : block)
     (ofs : ptrofs)
     (bytes : List memval) (m' : mem) (bc : block_classification)
@@ -785,7 +876,9 @@ def sound_stack_storebytesStatement : Prop :=
     sound_stack cfg prog ge bc stk m bound →
     sound_stack cfg prog ge bc stk m' bound
 
-def sound_stack_freeStatement : Prop :=
+def sound_stack_freeStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (cfg : CompilerConfig) (prog : program) (ge : genv) (m : mem) (b : block)
     (lo hi : Z) (m' : mem)
     (bc : block_classification) (stk : List stackframe) (bound : block),
@@ -793,7 +886,9 @@ def sound_stack_freeStatement : Prop :=
     sound_stack cfg prog ge bc stk m bound →
     sound_stack cfg prog ge bc stk m' bound
 
-def sound_stack_new_boundStatement : Prop :=
+def sound_stack_new_boundStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (cfg : CompilerConfig) (prog : program) (ge : genv) (bc : block_classification)
     (stk : List stackframe)
     (m : mem) (bound bound' : block),
@@ -801,7 +896,9 @@ def sound_stack_new_boundStatement : Prop :=
     Ple bound bound' →
     sound_stack cfg prog ge bc stk m bound'
 
-def sound_stack_extenStatement : Prop :=
+def sound_stack_extenStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (cfg : CompilerConfig) (prog : program) (ge : genv) (bc : block_classification)
     (stk : List stackframe)
     (m : mem) (bound : block) (bc1 : block_classification),
@@ -809,16 +906,22 @@ def sound_stack_extenStatement : Prop :=
     (∀ b, Plt b bound → bc1 b = bc b) →
     sound_stack cfg prog ge bc1 stk m bound
 
-def sound_succ_stateStatement : Prop :=
+def sound_succ_stateStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (cfg : CompilerConfig) (prog : program) (ge : genv) (rm : romem)
     (bc : block_classification) (pc : node)
     (ae : aenv) (am : amem) (instr : instruction) (ae' : aenv) (am' : amem)
     (s : List stackframe) (f : function) (sp pc' : node) (e' : regset)
     (m' : mem),
-    PMap.get pc (analyze cfg rm f) = VA.State ae am →
+    PMap.get pc (analyze
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) cfg rm f) = VA.State ae am →
     PTree.get pc f.fn_code = some instr →
     pc' ∈ successors_instr instr →
-    transfer cfg f rm pc ae am = VA.State ae' am' →
+    transfer
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) cfg f rm pc ae am = VA.State ae' am' →
     ematch bc e' ae' →
     mmatch bc m' am' →
     romatch bc m' rm →
@@ -827,23 +930,34 @@ def sound_succ_stateStatement : Prop :=
     sound_stack cfg prog ge bc s m' sp →
     sound_state_base cfg prog ge (State s f (Vptr sp Ptrofs.zero) pc' e' m')
 
-def sound_step_baseStatement : Prop :=
+def sound_step_baseStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (cfg : CompilerConfig) (prog : program)
     (xi : CompCert4Lean.Common.ExternalCalls.ExternalCalls)
     (ge : genv) (st st' : state) (t : trace),
-    RTL.step xi ge st t st' →
+    RTL.step
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) xi ge st t st' →
     sound_state_base cfg prog ge st →
     sound_state_base cfg prog ge st'
 
-def sound_stepStatement : Prop :=
+def sound_stepStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (cfg : CompilerConfig) (prog : program)
     (xi : CompCert4Lean.Common.ExternalCalls.ExternalCalls)
     (st st' : state) (t : trace),
-    RTL.step xi (Genv.globalenv prog) st t st' →
+    RTL.step
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      xi (Genv.globalenv prog) st t st' →
     sound_state cfg prog st →
     sound_state cfg prog st'
 
-def sound_state_invStatement : Prop :=
+def sound_state_invStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (cfg : CompilerConfig) (prog cunit : program) (st : state),
     sound_state cfg prog st →
     linkorder cunit prog →
@@ -957,12 +1071,16 @@ def alloc_global_consistentStatement : Prop :=
     romem_consistent cfg dm rm →
     romem_consistent cfg (PTree.set idg.1 idg.2 dm) (alloc_global cfg rm idg)
 
-def sound_initialStatement : Prop :=
+def sound_initialStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (cfg : CompilerConfig) (prog : program) (st : state),
     RTL.initial_state prog st →
     sound_state cfg prog st
 
-def aaddressing_soundStatement : Prop :=
+def aaddressing_soundStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (cfg : CompilerConfig) (cunit prog : program) (s : List stackframe) (f : function)
     (sp : block) (pc : node) (e : regset) (m : mem)
     (addr : addressing) (args : List reg) (b : block) (ofs : ptrofs),
@@ -972,7 +1090,10 @@ def aaddressing_soundStatement : Prop :=
       (args.map (fun r => Regmap.get r e)) = some (Vptr b ofs) →
     ∃ bc,
       pmatch bc b ofs
-        (aaddressing cfg (PMap.get pc (analyze cfg (romem_for cfg cunit) f)) addr args) ∧
+        (aaddressing cfg (PMap.get pc (analyze
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate)
+          cfg (romem_for cfg cunit) f)) addr args) ∧
       genv_match bc (Genv.globalenv prog) ∧
       bc sp = BCstack
 
@@ -990,7 +1111,9 @@ def aaddr_arg_sound_1Statement : Prop :=
       (Vptr sp Ptrofs.zero) m a (Vptr b ofs) →
     pmatch bc b ofs (aaddr_arg cfg (VA.State ae am) a)
 
-def aaddr_arg_soundStatement : Prop :=
+def aaddr_arg_soundStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (cfg : CompilerConfig) (cunit prog : program) (s : List stackframe) (f : function)
     (sp : block) (pc : node) (e : regset) (m : mem)
     (a : builtin_arg reg) (b : block) (ofs : ptrofs),
@@ -1000,7 +1123,10 @@ def aaddr_arg_soundStatement : Prop :=
       (fun r => Regmap.get r e) (Vptr sp Ptrofs.zero) m a (Vptr b ofs) →
     ∃ bc,
       pmatch bc b ofs
-        (aaddr_arg cfg (PMap.get pc (analyze cfg (romem_for cfg cunit) f)) a) ∧
+        (aaddr_arg cfg (PMap.get pc (analyze
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate)
+          cfg (romem_for cfg cunit) f)) a) ∧
       genv_match bc (Genv.globalenv prog) ∧
       bc sp = BCstack
 
