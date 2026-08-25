@@ -26,6 +26,9 @@ open CompCert4Lean.Lib.Coqlib
 open CompCert4Lean.Lib.Integers
 open CompCert4Lean.Lib.Maps
 
+private abbrev BinaryNormalizeCertificate :=
+  CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+
 def match_prog (p tp : program) : Prop :=
   @match_program fundef Unit fundef Unit
     (Linker_fundef function) Linker_unit
@@ -121,13 +124,23 @@ inductive match_states : state → state → Prop where
 
 export match_states (match_regular_states match_callstates match_returnstates)
 
-def step_simulationStatement : Prop :=
+def step_simulationStatement
+    [binary64_certificate : BinaryNormalizeCertificate
+      (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate
+      (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)] : Prop :=
   ∀ (xi : ExternalCalls) (prog tprog : program), match_prog prog tprog →
     ∀ (S1 : state) (t : trace) (S2 : state),
-      step xi (Genv.globalenv prog) S1 t S2 →
+      step
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        xi (Genv.globalenv prog) S1 t S2 →
       ∀ S1', match_states S1 S1' →
         ∃ S2',
-          step xi (Genv.globalenv tprog) S1' t S2' ∧
+          step
+            (binary64_certificate := binary64_certificate)
+            (binary32_certificate := binary32_certificate)
+            xi (Genv.globalenv tprog) S1' t S2' ∧
           match_states S2 S2'
 
 def transf_initial_statesStatement : Prop :=
@@ -139,9 +152,19 @@ def transf_final_statesStatement : Prop :=
   ∀ (S1 S2 : state) (r : int),
     match_states S1 S2 → final_state S1 r → final_state S2 r
 
-def transf_program_correctStatement : Prop :=
+def transf_program_correctStatement
+    [binary64_certificate : BinaryNormalizeCertificate
+      (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate
+      (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)] : Prop :=
   ∀ (xi : ExternalCalls) (prog tprog : program),
     match_prog prog tprog →
-    forward_simulation (semantics xi prog) (semantics xi tprog)
+    forward_simulation
+      (semantics
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) xi prog)
+      (semantics
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) xi tprog)
 
 end CompCert4Lean.Backend.Renumberproof
