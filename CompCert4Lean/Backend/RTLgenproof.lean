@@ -36,6 +36,10 @@ open CompCert4Lean.Common.Values
 open CompCert4Lean.Lib.Coqlib
 open CompCert4Lean.Lib.Maps
 
+private abbrev BinaryNormalizeCertificate :=
+  CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+private abbrev zOfNat := ZArith.BinInt.Z.of_nat
+
 /-! ## Compilation-environment matching -/
 
 structure map_wf (m : mapping) : Prop where
@@ -67,7 +71,10 @@ def match_prog (p : CminorSel.program) (tp : RTL.program) : Prop :=
 
 /-! ## Expression and exit simulation predicates -/
 
-def transl_expr_prop (xi : ExternalCalls) (tprog : RTL.program) (sp : val)
+def transl_expr_prop
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (xi : ExternalCalls) (tprog : RTL.program) (sp : val)
     (e : CompCert4Lean.Backend.Cminor.env) (m : mem)
     (le : letenv) (a : expr) (v : val) : Prop :=
   let tge := Genv.globalenv tprog
@@ -77,14 +84,20 @@ def transl_expr_prop (xi : ExternalCalls) (tprog : RTL.program) (sp : val)
     match_env map e le rs →
     Mem.extends m tm →
     ∃ rs' tm',
-      star (RTL.step xi) tge (RTL.State cs f sp ns rs tm) E0
+      star (RTL.step
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) xi)
+        tge (RTL.State cs f sp ns rs tm) E0
           (RTL.State cs f sp nd rs' tm') ∧
       match_env map (CompCert4Lean.Backend.Cminor.set_optvar dst v e) le rs' ∧
       Val.lessdef v (Regmap.get rd rs') ∧
       (∀ r, r ∈ pr → Regmap.get r rs' = Regmap.get r rs) ∧
       Mem.extends m tm'
 
-def transl_exprlist_prop (xi : ExternalCalls) (tprog : RTL.program) (sp : val)
+def transl_exprlist_prop
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (xi : ExternalCalls) (tprog : RTL.program) (sp : val)
     (e : CompCert4Lean.Backend.Cminor.env) (m : mem)
     (le : letenv) (al : exprlist) (vl : List val) : Prop :=
   let tge := Genv.globalenv tprog
@@ -94,14 +107,20 @@ def transl_exprlist_prop (xi : ExternalCalls) (tprog : RTL.program) (sp : val)
     match_env map e le rs →
     Mem.extends m tm →
     ∃ rs' tm',
-      star (RTL.step xi) tge (RTL.State cs f sp ns rs tm) E0
+      star (RTL.step
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) xi)
+        tge (RTL.State cs f sp ns rs tm) E0
           (RTL.State cs f sp nd rs' tm') ∧
       match_env map e le rs' ∧
       Val.lessdef_list vl (rl.map (fun r => Regmap.get r rs')) ∧
       (∀ r, r ∈ pr → Regmap.get r rs' = Regmap.get r rs) ∧
       Mem.extends m tm'
 
-def transl_condexpr_prop (xi : ExternalCalls) (tprog : RTL.program) (sp : val)
+def transl_condexpr_prop
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (xi : ExternalCalls) (tprog : RTL.program) (sp : val)
     (e : CompCert4Lean.Backend.Cminor.env) (m : mem)
     (le : letenv) (a : condexpr) (v : Bool) : Prop :=
   let tge := Genv.globalenv tprog
@@ -111,13 +130,19 @@ def transl_condexpr_prop (xi : ExternalCalls) (tprog : RTL.program) (sp : val)
     match_env map e le rs →
     Mem.extends m tm →
     ∃ rs' tm',
-      plus (RTL.step xi) tge (RTL.State cs f sp ns rs tm) E0
+      plus (RTL.step
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) xi)
+        tge (RTL.State cs f sp ns rs tm) E0
           (RTL.State cs f sp (if v then ntrue else nfalse) rs' tm') ∧
       match_env map e le rs' ∧
       (∀ r, r ∈ pr → Regmap.get r rs' = Regmap.get r rs) ∧
       Mem.extends m tm'
 
-def transl_exitexpr_prop (xi : ExternalCalls) (tprog : RTL.program) (sp : val)
+def transl_exitexpr_prop
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (xi : ExternalCalls) (tprog : RTL.program) (sp : val)
     (e : CompCert4Lean.Backend.Cminor.env) (m : mem)
     (le : letenv) (a : exitexpr) (x : Nat) : Prop :=
   let tge := Genv.globalenv tprog
@@ -127,7 +152,10 @@ def transl_exitexpr_prop (xi : ExternalCalls) (tprog : RTL.program) (sp : val)
     match_env map e le rs →
     Mem.extends m tm →
     ∃ nd rs' tm',
-      star (RTL.step xi) tge (RTL.State cs f sp ns rs tm) E0
+      star (RTL.step
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) xi)
+        tge (RTL.State cs f sp ns rs tm) E0
           (RTL.State cs f sp nd rs' tm') ∧
       nth_error nexits x = some nd ∧
       match_env map e le rs' ∧
@@ -261,15 +289,23 @@ def eval_builtin_args_trivialStatement : Prop :=
     eval_builtin_args (Genv.to_senv ge) (fun r => Regmap.get r rs) sp m (rl.map (.BA ·))
       (rl.map (fun r => Regmap.get r rs))
 
-def eval_exprlist_appendStatement : Prop :=
+def eval_exprlist_appendStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (xi : ExternalCalls) (ge : CminorSel.genv) (sp : val)
     (e : CompCert4Lean.Backend.Cminor.env) (m : mem) (le : letenv)
     (al1 al2 : List expr) (vl1 vl2 : List val),
-    CminorSel.eval_exprlist xi ge sp e m le
+    CminorSel.eval_exprlist
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) xi ge sp e m le
       (RTLgen.exprlist_of_expr_list al1) vl1 →
-    CminorSel.eval_exprlist xi ge sp e m le
+    CminorSel.eval_exprlist
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) xi ge sp e m le
       (RTLgen.exprlist_of_expr_list al2) vl2 →
-    CminorSel.eval_exprlist xi ge sp e m le
+    CminorSel.eval_exprlist
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) xi ge sp e m le
       (RTLgen.exprlist_of_expr_list (al1 ++ al2)) (vl1 ++ vl2)
 
 def function_ptr_translatedStatement : Prop :=
@@ -286,12 +322,18 @@ def functions_translatedStatement : Prop :=
 
 def init_mapping_wfStatement : Prop := map_wf RTLgen.init_mapping
 
-def invert_eval_builtin_argStatement : Prop :=
+def invert_eval_builtin_argStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (xi : ExternalCalls) (ge : CminorSel.genv) (sp : val)
     (e : CompCert4Lean.Backend.Cminor.env) (m : mem) (a : builtin_arg expr) (v : val),
-    CminorSel.eval_builtin_arg xi ge sp e m a v →
+    CminorSel.eval_builtin_arg
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) xi ge sp e m a v →
     ∃ vl,
-      CminorSel.eval_exprlist xi ge sp e m []
+      CminorSel.eval_exprlist
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) xi ge sp e m []
         (RTLgen.exprlist_of_expr_list (params_of_builtin_arg a)) vl ∧
       eval_builtin_arg (Genv.to_senv ge) (fun v => v) sp m
           (convert_builtin_arg a vl).1 v ∧
@@ -299,13 +341,19 @@ def invert_eval_builtin_argStatement : Prop :=
         convert_builtin_arg a (vl ++ vl') =
           ((convert_builtin_arg a vl).1, vl'))
 
-def invert_eval_builtin_argsStatement : Prop :=
+def invert_eval_builtin_argsStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (xi : ExternalCalls) (ge : CminorSel.genv) (sp : val)
     (e : CompCert4Lean.Backend.Cminor.env) (m : mem)
     (al : List (builtin_arg expr)) (vl : List val),
-    list_forall2 (CminorSel.eval_builtin_arg xi ge sp e m) al vl →
+    list_forall2 (CminorSel.eval_builtin_arg
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) xi ge sp e m) al vl →
     ∃ vl',
-      CminorSel.eval_exprlist xi ge sp e m []
+      CminorSel.eval_exprlist
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) xi ge sp e m []
         (RTLgen.exprlist_of_expr_list (params_of_builtin_args al)) vl' ∧
       eval_builtin_args (Genv.to_senv ge) (fun v => v) sp m
         (convert_builtin_args al vl') vl
@@ -453,64 +501,128 @@ def tr_find_labelStatement : Prop :=
         tr_stmt c map s' ns2 nd2 nexits2 ngoto nret rret ∧
         tr_cont c map k' nd2 nexits2 ngoto nret rret cs
 
-def tr_move_correctStatement : Prop :=
+def tr_move_correctStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (xi : ExternalCalls) (tprog : RTL.program) (r1 : reg) (ns : node)
     (r2 : reg) (nd : node) (cs : List RTL.stackframe)
     (f : RTL.function) (sp : val) (rs : regset) (m : mem),
     tr_move f.fn_code ns r1 nd r2 →
     ∃ rs',
-      star (RTL.step xi) (Genv.globalenv tprog)
+      star (RTL.step
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) xi)
+        (Genv.globalenv tprog)
         (RTL.State cs f sp ns rs m) E0
         (RTL.State cs f sp nd rs' m) ∧
       Regmap.get r2 rs' = Regmap.get r1 rs ∧
       (∀ r, r ≠ r2 → Regmap.get r rs' = Regmap.get r rs)
 
-def transf_program_correctStatement : Prop :=
+def transf_program_correctStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (xi : ExternalCalls) (prog : CminorSel.program) (tprog : RTL.program),
     match_prog prog tprog →
     forward_simulation
-      (CminorSel.semantics xi prog)
-      (RTL.semantics xi tprog)
+      (CminorSel.semantics
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) xi prog)
+      (RTL.semantics
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) xi tprog)
 
 def transf_program_matchStatement : Prop :=
   ∀ (p : CminorSel.program) (tp : RTL.program),
     RTLgen.transl_program p = .OK tp → match_prog p tp
-def transl_condexpr_CEcond_correctStatement : Prop :=
+def transl_condexpr_CEcond_correctStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (xi : ExternalCalls) (prog : CminorSel.program) (tprog : RTL.program)
     (sp : val) (e : CompCert4Lean.Backend.Cminor.env) (m : mem)
     (le : letenv) (cond : condition) (al : exprlist) (vl : List val)
     (vb : Bool),
-    eval_exprlist xi (Genv.globalenv prog) sp e m le al vl →
-    transl_exprlist_prop xi tprog sp e m le al vl →
+    eval_exprlist
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      xi (Genv.globalenv prog) sp e m le al vl →
+    transl_exprlist_prop
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      xi tprog sp e m le al vl →
     eval_condition cond vl m = some vb →
-    transl_condexpr_prop xi tprog sp e m le (.CEcond cond al) vb
+    transl_condexpr_prop
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      xi tprog sp e m le (.CEcond cond al) vb
 
-def transl_condexpr_CEcondition_correctStatement : Prop :=
+def transl_condexpr_CEcondition_correctStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (xi : ExternalCalls) (prog : CminorSel.program) (tprog : RTL.program)
     (sp : val) (e : CompCert4Lean.Backend.Cminor.env) (m : mem)
     (le : letenv) (a b c : condexpr) (va : Bool) (v : Bool),
-    eval_condexpr xi (Genv.globalenv prog) sp e m le a va →
-    transl_condexpr_prop xi tprog sp e m le a va →
-    eval_condexpr xi (Genv.globalenv prog) sp e m le (if va then b else c) v →
-    transl_condexpr_prop xi tprog sp e m le (if va then b else c) v →
-    transl_condexpr_prop xi tprog sp e m le (.CEcondition a b c) v
+    eval_condexpr
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      xi (Genv.globalenv prog) sp e m le a va →
+    transl_condexpr_prop
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      xi tprog sp e m le a va →
+    eval_condexpr
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      xi (Genv.globalenv prog) sp e m le (if va then b else c) v →
+    transl_condexpr_prop
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      xi tprog sp e m le (if va then b else c) v →
+    transl_condexpr_prop
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      xi tprog sp e m le (.CEcondition a b c) v
 
-def transl_condexpr_CElet_correctStatement : Prop :=
+def transl_condexpr_CElet_correctStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (xi : ExternalCalls) (prog : CminorSel.program) (tprog : RTL.program)
     (sp : val) (e : CompCert4Lean.Backend.Cminor.env) (m : mem)
     (le : letenv) (a : expr) (b : condexpr) (v1 : val) (v2 : Bool),
-    eval_expr xi (Genv.globalenv prog) sp e m le a v1 →
-    transl_expr_prop xi tprog sp e m le a v1 →
-    eval_condexpr xi (Genv.globalenv prog) sp e m (v1 :: le) b v2 →
-    transl_condexpr_prop xi tprog sp e m (v1 :: le) b v2 →
-    transl_condexpr_prop xi tprog sp e m le (.CElet a b) v2
+    eval_expr
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      xi (Genv.globalenv prog) sp e m le a v1 →
+    transl_expr_prop
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      xi tprog sp e m le a v1 →
+    eval_condexpr
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      xi (Genv.globalenv prog) sp e m (v1 :: le) b v2 →
+    transl_condexpr_prop
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      xi tprog sp e m (v1 :: le) b v2 →
+    transl_condexpr_prop
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      xi tprog sp e m le (.CElet a b) v2
 
-def transl_condexpr_correctStatement : Prop :=
+def transl_condexpr_correctStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (xi : ExternalCalls) (prog : CminorSel.program) (tprog : RTL.program)
     (sp : val) (e : CompCert4Lean.Backend.Cminor.env) (m : mem)
     (le : letenv) (a : condexpr) (v : Bool),
-    eval_condexpr xi (Genv.globalenv prog) sp e m le a v →
-    transl_condexpr_prop xi tprog sp e m le a v
+    eval_condexpr
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      xi (Genv.globalenv prog) sp e m le a v →
+    transl_condexpr_prop
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      xi tprog sp e m le a v
 
 def transl_eval_builtin_argStatement : Prop :=
   ∀ (prog : CminorSel.program) (sp : val) (m : mem)
@@ -538,35 +650,76 @@ def transl_eval_builtin_argsStatement : Prop :=
         (fun r => Regmap.get r rs) sp m (convert_builtin_args al rl) vl' ∧
       Val.lessdef_list vl vl'
 
-def transl_exitexpr_correctStatement : Prop :=
+def transl_exitexpr_correctStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (xi : ExternalCalls) (prog : CminorSel.program) (tprog : RTL.program)
     (sp : val) (e : CompCert4Lean.Backend.Cminor.env) (m : mem)
     (le : letenv) (a : exitexpr) (x : Nat),
-    eval_exitexpr xi (Genv.globalenv prog) sp e m le a x →
-    transl_exitexpr_prop xi tprog sp e m le a x
+    eval_exitexpr
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      xi (Genv.globalenv prog) sp e m le a x →
+    transl_exitexpr_prop
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      xi tprog sp e m le a x
 
-def transl_expr_Ebuiltin_correctStatement : Prop :=
+def transl_expr_Ebuiltin_correctStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (xi : ExternalCalls) (prog : CminorSel.program) (tprog : RTL.program)
     (sp : val) (e : CompCert4Lean.Backend.Cminor.env) (m : mem)
     (le : letenv) (ef : external_function) (al : exprlist)
     (vl : List val) (v : val),
-    eval_exprlist xi (Genv.globalenv prog) sp e m le al vl →
-    transl_exprlist_prop xi tprog sp e m le al vl →
-    external_call xi ef (Genv.to_senv (Genv.globalenv prog)) vl m E0 v m →
-    transl_expr_prop xi tprog sp e m le (.Ebuiltin ef al) v
+    eval_exprlist
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      xi (Genv.globalenv prog) sp e m le al vl →
+    transl_exprlist_prop
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      xi tprog sp e m le al vl →
+    external_call
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      xi ef (Genv.to_senv (Genv.globalenv prog)) vl m E0 v m →
+    transl_expr_prop
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      xi tprog sp e m le (.Ebuiltin ef al) v
 
-def transl_expr_Econdition_correctStatement : Prop :=
+def transl_expr_Econdition_correctStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (xi : ExternalCalls) (prog : CminorSel.program) (tprog : RTL.program)
     (sp : val) (e : CompCert4Lean.Backend.Cminor.env) (m : mem)
     (le : letenv) (a : condexpr) (ifso ifnot : expr)
     (va : Bool) (v : val),
-    eval_condexpr xi (Genv.globalenv prog) sp e m le a va →
-    transl_condexpr_prop xi tprog sp e m le a va →
-    eval_expr xi (Genv.globalenv prog) sp e m le (if va then ifso else ifnot) v →
-    transl_expr_prop xi tprog sp e m le (if va then ifso else ifnot) v →
-    transl_expr_prop xi tprog sp e m le (.Econdition a ifso ifnot) v
+    eval_condexpr
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      xi (Genv.globalenv prog) sp e m le a va →
+    transl_condexpr_prop
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      xi tprog sp e m le a va →
+    eval_expr
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      xi (Genv.globalenv prog) sp e m le (if va then ifso else ifnot) v →
+    transl_expr_prop
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      xi tprog sp e m le (if va then ifso else ifnot) v →
+    transl_expr_prop
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      xi tprog sp e m le (.Econdition a ifso ifnot) v
 
-def transl_expr_Eexternal_correctStatement : Prop :=
+def transl_expr_Eexternal_correctStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (xi : ExternalCalls) (prog : CminorSel.program) (tprog : RTL.program)
     (sp : val) (e : CompCert4Lean.Backend.Cminor.env) (m : mem)
     (le : letenv) (id : ident) (sg : signature) (al : exprlist)
@@ -574,86 +727,188 @@ def transl_expr_Eexternal_correctStatement : Prop :=
     Genv.find_symbol (Genv.globalenv prog) id = some b →
     Genv.find_funct_ptr (Genv.globalenv prog) b = some (.External ef) →
     ef_sig ef = sg →
-    eval_exprlist xi (Genv.globalenv prog) sp e m le al vl →
-    transl_exprlist_prop xi tprog sp e m le al vl →
-    external_call xi ef (Genv.to_senv (Genv.globalenv prog)) vl m E0 v m →
-    transl_expr_prop xi tprog sp e m le (.Eexternal id sg al) v
+    eval_exprlist
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      xi (Genv.globalenv prog) sp e m le al vl →
+    transl_exprlist_prop
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      xi tprog sp e m le al vl →
+    external_call
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      xi ef (Genv.to_senv (Genv.globalenv prog)) vl m E0 v m →
+    transl_expr_prop
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      xi tprog sp e m le (.Eexternal id sg al) v
 
-def transl_expr_Elet_correctStatement : Prop :=
+def transl_expr_Elet_correctStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (xi : ExternalCalls) (prog : CminorSel.program) (tprog : RTL.program)
     (sp : val) (e : CompCert4Lean.Backend.Cminor.env) (m : mem)
     (le : letenv) (a1 a2 : expr) (v1 v2 : val),
-    eval_expr xi (Genv.globalenv prog) sp e m le a1 v1 →
-    transl_expr_prop xi tprog sp e m le a1 v1 →
-    eval_expr xi (Genv.globalenv prog) sp e m (v1 :: le) a2 v2 →
-    transl_expr_prop xi tprog sp e m (v1 :: le) a2 v2 →
-    transl_expr_prop xi tprog sp e m le (.Elet a1 a2) v2
+    eval_expr
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      xi (Genv.globalenv prog) sp e m le a1 v1 →
+    transl_expr_prop
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      xi tprog sp e m le a1 v1 →
+    eval_expr
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      xi (Genv.globalenv prog) sp e m (v1 :: le) a2 v2 →
+    transl_expr_prop
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      xi tprog sp e m (v1 :: le) a2 v2 →
+    transl_expr_prop
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      xi tprog sp e m le (.Elet a1 a2) v2
 
-def transl_expr_Eletvar_correctStatement : Prop :=
+def transl_expr_Eletvar_correctStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (xi : ExternalCalls) (tprog : RTL.program)
     (sp : val) (e : CompCert4Lean.Backend.Cminor.env) (m : mem)
     (le : List val) (n : Nat) (v : val),
     nth_error le n = some v →
-    transl_expr_prop xi tprog sp e m le (.Eletvar n) v
+    transl_expr_prop
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      xi tprog sp e m le (.Eletvar n) v
 
-def transl_expr_Eload_correctStatement : Prop :=
+def transl_expr_Eload_correctStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (xi : ExternalCalls) (prog : CminorSel.program) (tprog : RTL.program)
     (sp : val) (e : CompCert4Lean.Backend.Cminor.env) (m : mem)
     (le : letenv) (chunk : memory_chunk) (addr : addressing)
     (args : exprlist) (vargs : List val) (vaddr v : val),
-    eval_exprlist xi (Genv.globalenv prog) sp e m le args vargs →
-    transl_exprlist_prop xi tprog sp e m le args vargs →
+    eval_exprlist
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      xi (Genv.globalenv prog) sp e m le args vargs →
+    transl_exprlist_prop
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      xi tprog sp e m le args vargs →
     eval_addressing (Genv.globalenv prog) sp addr vargs = some vaddr →
     Mem.loadv chunk m vaddr = some v →
-    transl_expr_prop xi tprog sp e m le (.Eload chunk addr args) v
+    transl_expr_prop
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      xi tprog sp e m le (.Eload chunk addr args) v
 
-def transl_expr_Eop_correctStatement : Prop :=
+def transl_expr_Eop_correctStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (xi : ExternalCalls) (prog : CminorSel.program) (tprog : RTL.program)
     (sp : val) (e : CompCert4Lean.Backend.Cminor.env) (m : mem)
     (le : letenv) (op : operation) (args : exprlist)
     (vargs : List val) (v : val),
-    eval_exprlist xi (Genv.globalenv prog) sp e m le args vargs →
-    transl_exprlist_prop xi tprog sp e m le args vargs →
-    eval_operation (Genv.globalenv prog) sp op vargs m = some v →
-    transl_expr_prop xi tprog sp e m le (.Eop op args) v
+    eval_exprlist
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      xi (Genv.globalenv prog) sp e m le args vargs →
+    transl_exprlist_prop
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      xi tprog sp e m le args vargs →
+    eval_operation
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      (Genv.globalenv prog) sp op vargs m = some v →
+    transl_expr_prop
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      xi tprog sp e m le (.Eop op args) v
 
-def transl_expr_Evar_correctStatement : Prop :=
+def transl_expr_Evar_correctStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (xi : ExternalCalls) (tprog : RTL.program)
     (sp : val) (e : CompCert4Lean.Backend.Cminor.env) (m : mem)
     (le : letenv) (id : ident) (v : val),
     PTree.get id e = some v →
-    transl_expr_prop xi tprog sp e m le (.Evar id) v
+    transl_expr_prop
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      xi tprog sp e m le (.Evar id) v
 
-def transl_expr_correctStatement : Prop :=
+def transl_expr_correctStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (xi : ExternalCalls) (prog : CminorSel.program) (tprog : RTL.program)
     (sp : val) (e : CompCert4Lean.Backend.Cminor.env) (m : mem)
     (le : letenv) (a : expr) (v : val),
-    eval_expr xi (Genv.globalenv prog) sp e m le a v →
-    transl_expr_prop xi tprog sp e m le a v
+    eval_expr
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      xi (Genv.globalenv prog) sp e m le a v →
+    transl_expr_prop
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      xi tprog sp e m le a v
 
-def transl_exprlist_Econs_correctStatement : Prop :=
+def transl_exprlist_Econs_correctStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (xi : ExternalCalls) (prog : CminorSel.program) (tprog : RTL.program)
     (sp : val) (e : CompCert4Lean.Backend.Cminor.env) (m : mem)
     (le : letenv) (a1 : expr) (al : exprlist) (v1 : val)
     (vl : List val),
-    eval_expr xi (Genv.globalenv prog) sp e m le a1 v1 →
-    transl_expr_prop xi tprog sp e m le a1 v1 →
-    eval_exprlist xi (Genv.globalenv prog) sp e m le al vl →
-    transl_exprlist_prop xi tprog sp e m le al vl →
-    transl_exprlist_prop xi tprog sp e m le (.Econs a1 al) (v1 :: vl)
+    eval_expr
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      xi (Genv.globalenv prog) sp e m le a1 v1 →
+    transl_expr_prop
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      xi tprog sp e m le a1 v1 →
+    eval_exprlist
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      xi (Genv.globalenv prog) sp e m le al vl →
+    transl_exprlist_prop
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      xi tprog sp e m le al vl →
+    transl_exprlist_prop
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      xi tprog sp e m le (.Econs a1 al) (v1 :: vl)
 
-def transl_exprlist_Enil_correctStatement : Prop :=
+def transl_exprlist_Enil_correctStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (xi : ExternalCalls) (tprog : RTL.program)
     (sp : val) (e : CompCert4Lean.Backend.Cminor.env) (m : mem)
     (le : letenv),
-    transl_exprlist_prop xi tprog sp e m le .Enil []
+    transl_exprlist_prop
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      xi tprog sp e m le .Enil []
 
-def transl_exprlist_correctStatement : Prop :=
+def transl_exprlist_correctStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (xi : ExternalCalls) (prog : CminorSel.program) (tprog : RTL.program)
     (sp : val) (e : CompCert4Lean.Backend.Cminor.env) (m : mem)
     (le : letenv) (al : exprlist) (vl : List val),
-    eval_exprlist xi (Genv.globalenv prog) sp e m le al vl →
-    transl_exprlist_prop xi tprog sp e m le al vl
+    eval_exprlist
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      xi (Genv.globalenv prog) sp e m le al vl →
+    transl_exprlist_prop
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      xi tprog sp e m le al vl
 
 def transl_final_statesStatement : Prop :=
   ∀ (S : CminorSel.state) (R : RTL.state)
@@ -668,15 +923,26 @@ def transl_initial_statesStatement : Prop :=
     ∀ S, CminorSel.initial_state prog S →
       ∃ R, RTL.initial_state tprog R ∧ match_states S R
 
-def transl_step_correctStatement : Prop :=
+def transl_step_correctStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (xi : ExternalCalls) (prog : CminorSel.program) (tprog : RTL.program),
     match_prog prog tprog →
     ∀ (S1 : CminorSel.state) (t : trace) (S2 : CminorSel.state),
-      CminorSel.step xi (Genv.globalenv prog) S1 t S2 →
+      CminorSel.step
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        xi (Genv.globalenv prog) S1 t S2 →
       ∀ R1, match_states S1 R1 →
         ∃ R2,
-          (plus (RTL.step xi) (Genv.globalenv tprog) R1 t R2 ∨
-            (star (RTL.step xi) (Genv.globalenv tprog) R1 t R2 ∧
+          (plus (RTL.step
+            (binary64_certificate := binary64_certificate)
+            (binary32_certificate := binary32_certificate) xi)
+            (Genv.globalenv tprog) R1 t R2 ∨
+            (star (RTL.step
+              (binary64_certificate := binary64_certificate)
+              (binary32_certificate := binary32_certificate) xi)
+              (Genv.globalenv tprog) R1 t R2 ∧
               lt_state S2 S1)) ∧
           match_states S2 R2
 
