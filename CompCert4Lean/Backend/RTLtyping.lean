@@ -35,6 +35,8 @@ open CompCert4Lean.Backend.RTL
 open CompCert4Lean.X86.Op
 
 private abbrev CompilerConfig := CompCert4Lean.Config.CompilerConfig
+private abbrev BinaryNormalizeCertificate :=
+  CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
 private abbrev Sumbool := CompCert4Lean.Foundation.Logic.Support.Sumbool
 private abbrev RocqString :=
   CompCert4Lean.Foundation.RocqString.Rocq.Coq.Strings.String.string
@@ -576,12 +578,21 @@ def wt_init_regsStatement : Prop :=
     Val.has_type_list args (List.map env rl) →
       wt_regset env (init_regs args rl)
 
-def wt_exec_IopStatement : Prop :=
+def wt_exec_IopStatement
+    [binary64_certificate :
+      BinaryNormalizeCertificate
+        (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate :
+      BinaryNormalizeCertificate
+        (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)] : Prop :=
   ∀ (cfg : CompilerConfig) (ge : genv) (env : regenv) (f : function)
     (sp : val) (op : operation) (args : List reg) (res : reg) (s : node)
     (rs : regset) (m : mem) (v : val),
     wt_instr cfg f env (Iop op args res s) →
-      eval_operation ge sp op (List.map (fun r => Regmap.get r rs) args) m = some v →
+      eval_operation
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        ge sp op (List.map (fun r => Regmap.get r rs) args) m = some v →
         wt_regset env rs → wt_regset env (Regmap.set res v rs)
 
 def wt_exec_IloadStatement : Prop :=
@@ -592,13 +603,22 @@ def wt_exec_IloadStatement : Prop :=
       Mem.loadv chunk m a = some v →
         wt_regset env rs → wt_regset env (Regmap.set dst v rs)
 
-def wt_exec_IbuiltinStatement : Prop :=
+def wt_exec_IbuiltinStatement
+    [binary64_certificate :
+      BinaryNormalizeCertificate
+        (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate :
+      BinaryNormalizeCertificate
+        (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)] : Prop :=
   ∀ (cfg : CompilerConfig) (xi : ExternalCalls) (env : regenv) (f : function)
     (ef : external_function) (ge : genv) (args : List (builtin_arg reg))
     (res : builtin_res reg) (s : node) (vargs : List val) (m : mem)
     (t : trace) (vres : val) (m' : mem) (rs : regset),
     wt_instr cfg f env (Ibuiltin ef args res s) →
-      external_call xi ef (Genv.to_senv ge) vargs m t vres m' →
+      external_call
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        xi ef (Genv.to_senv ge) vargs m t vres m' →
         wt_regset env rs → wt_regset env (regmap_setres res vres rs)
 
 def wt_instr_atStatement : Prop :=
@@ -646,11 +666,20 @@ def wt_stackframes_change_sigStatement : Prop :=
     sg1.sig_res = sg2.sig_res →
       wt_stackframes cfg s sg1 → wt_stackframes cfg s sg2
 
-def subject_reductionStatement : Prop :=
+def subject_reductionStatement
+    [binary64_certificate :
+      BinaryNormalizeCertificate
+        (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate :
+      BinaryNormalizeCertificate
+        (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)] : Prop :=
   ∀ (cfg : CompilerConfig) (xi : ExternalCalls) (p : program),
     wt_program cfg p →
       ∀ (st1 : state) (t : trace) (st2 : state),
-        step xi (Genv.globalenv p) st1 t st2 →
+        step
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate)
+          xi (Genv.globalenv p) st1 t st2 →
           wt_state cfg st1 → wt_state cfg st2
 
 def wt_initial_stateStatement : Prop :=
