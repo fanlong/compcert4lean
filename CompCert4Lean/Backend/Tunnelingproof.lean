@@ -552,13 +552,24 @@ def match_parent_locsetStatement : Prop :=
     list_forall2 match_stackframes s ts →
     locmap_lessdef (parent_locset s) (parent_locset ts)
 
-def tunnel_step_correctStatement : Prop :=
+def tunnel_step_correctStatement
+    [binary64_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)] : Prop :=
   ∀ (cfg : CompilerConfig) (xi : ExternalCalls) (prog tprog : program),
     match_prog prog tprog →
     ∀ (st1 st2 : state) (t : trace),
-      step cfg xi (Genv.globalenv prog) st1 t st2 →
+      step (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        cfg xi (Genv.globalenv prog) st1 t st2 →
       ∀ st1', match_states st1 st1' →
-        (∃ st2', step cfg xi (Genv.globalenv tprog) st1' t st2' ∧
+        (∃ st2',
+          step (binary64_certificate := binary64_certificate)
+            (binary32_certificate := binary32_certificate)
+            cfg xi (Genv.globalenv tprog) st1' t st2' ∧
           match_states st2 st2') ∨
         (measure st2 < measure st1 ∧ t = E0 ∧ match_states st2 st1')
 
@@ -571,9 +582,19 @@ def transf_final_statesStatement : Prop :=
   ∀ (st1 st2 : state) (r : CompCert4Lean.Lib.Integers.int),
     match_states st1 st2 → final_state st1 r → final_state st2 r
 
-def transf_program_correctStatement : Prop :=
+def transf_program_correctStatement
+    [binary64_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)] : Prop :=
   ∀ (cfg : CompilerConfig) (xi : ExternalCalls) (prog tprog : program),
     match_prog prog tprog →
-    forward_simulation (semantics cfg xi prog) (semantics cfg xi tprog)
+    forward_simulation
+      (semantics (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) cfg xi prog)
+      (semantics (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) cfg xi tprog)
 
 end CompCert4Lean.Backend.Tunnelingproof
