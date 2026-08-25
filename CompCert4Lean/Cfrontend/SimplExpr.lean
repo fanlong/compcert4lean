@@ -53,6 +53,9 @@ private abbrev program := CompCert4Lean.Cfrontend.Clight.program
 private abbrev zOne : Z := .Zpos .xH
 private abbrev zSub := ZArith.BinInt.Z.sub
 private abbrev two_p := ZArith.Zpower.two_p
+private abbrev BinaryNormalizeCertificate :=
+  CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+private abbrev zOfNat := ZArith.BinInt.Z.of_nat
 
 private def rocqStringOfBytes :
     List UInt8 →
@@ -181,22 +184,34 @@ def makeseq_rec (s : statement) : List statement → statement
 def makeseq (statements : List statement) : statement :=
   makeseq_rec .Sskip statements
 
-def eval_simpl_expr : expr → Option val
+def eval_simpl_expr
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    expr → Option val
   | .Econst_int n _ => some (.Vint n)
   | .Econst_float n _ => some (.Vfloat n)
   | .Econst_single n _ => some (.Vsingle n)
   | .Econst_long n _ => some (.Vlong n)
   | .Ecast b ty =>
-      match eval_simpl_expr b with
+      match eval_simpl_expr
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate) b with
       | none => none
       | some v =>
           CompCert4Lean.Cfrontend.Cop.sem_cast v
+            (binary64_certificate := binary64_certificate)
+            (binary32_certificate := binary32_certificate)
             (CompCert4Lean.Cfrontend.Clight.typeof b) ty
             CompCert4Lean.Common.Memory.Mem.empty
   | _ => none
 
-def makeif (a : expr) (s1 s2 : statement) : statement :=
-  match eval_simpl_expr a with
+def makeif
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (a : expr) (s1 s2 : statement) : statement :=
+  match eval_simpl_expr
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) a with
   | some v =>
       match CompCert4Lean.Cfrontend.Cop.bool_val v
           (CompCert4Lean.Cfrontend.Clight.typeof a)
@@ -353,7 +368,10 @@ def temp_for_sd (ty : type) (sd : set_destination) : mon ident :=
 /-! ## Translation of expressions -/
 
 mutual
-  def transl_expr (ce : composite_env) (dst : destination) :
+  def transl_expr
+      [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+      [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+      (ce : composite_env) (dst : destination) :
       CompCert4Lean.Cfrontend.Csyntax.expr → mon (List statement × expr)
     | .Eloc _ _ _ _ => error (CompCert4Lean.Common.Errors.msg translExprElocText)
     | .Evar x ty => ret (finish dst [] (.Evar x ty))
@@ -398,18 +416,24 @@ mutual
             let sd := .SDbase type_bool ty t
             let (sl2, _) ← transl_expr ce (.For_set sd) r2
             pure
-              (sl1 ++ [makeif a1 (makeseq sl2)
+              (sl1 ++ [makeif
+                (binary64_certificate := binary64_certificate)
+                (binary32_certificate := binary32_certificate) a1 (makeseq sl2)
                 (.Sset t (.Econst_int CompCert4Lean.Lib.Integers.Int.zero ty))],
                .Etempvar t ty)
         | .For_effects => do
             let (sl2, _) ← transl_expr ce .For_effects r2
-            pure (sl1 ++ [makeif a1 (makeseq sl2) .Sskip], dummy_expr)
+            pure (sl1 ++ [makeif
+              (binary64_certificate := binary64_certificate)
+              (binary32_certificate := binary32_certificate) a1 (makeseq sl2) .Sskip], dummy_expr)
         | .For_set sd => do
             let t ← temp_for_sd ty sd
             let sd' := .SDcons type_bool ty t sd
             let (sl2, _) ← transl_expr ce (.For_set sd') r2
             pure
-              (sl1 ++ [makeif a1 (makeseq sl2)
+              (sl1 ++ [makeif
+                (binary64_certificate := binary64_certificate)
+                (binary32_certificate := binary32_certificate) a1 (makeseq sl2)
                 (makeseq (do_set sd (.Econst_int CompCert4Lean.Lib.Integers.Int.zero ty)))],
                dummy_expr)
     | .Eseqor r1 r2 ty => do
@@ -420,19 +444,25 @@ mutual
             let sd := .SDbase type_bool ty t
             let (sl2, _) ← transl_expr ce (.For_set sd) r2
             pure
-              (sl1 ++ [makeif a1
+              (sl1 ++ [makeif
+                (binary64_certificate := binary64_certificate)
+                (binary32_certificate := binary32_certificate) a1
                 (.Sset t (.Econst_int CompCert4Lean.Lib.Integers.Int.one ty))
                 (makeseq sl2)],
                .Etempvar t ty)
         | .For_effects => do
             let (sl2, _) ← transl_expr ce .For_effects r2
-            pure (sl1 ++ [makeif a1 .Sskip (makeseq sl2)], dummy_expr)
+            pure (sl1 ++ [makeif
+              (binary64_certificate := binary64_certificate)
+              (binary32_certificate := binary32_certificate) a1 .Sskip (makeseq sl2)], dummy_expr)
         | .For_set sd => do
             let t ← temp_for_sd ty sd
             let sd' := .SDcons type_bool ty t sd
             let (sl2, _) ← transl_expr ce (.For_set sd') r2
             pure
-              (sl1 ++ [makeif a1
+              (sl1 ++ [makeif
+                (binary64_certificate := binary64_certificate)
+                (binary32_certificate := binary32_certificate) a1
                 (makeseq (do_set sd (.Econst_int CompCert4Lean.Lib.Integers.Int.one ty)))
                 (makeseq sl2)],
                dummy_expr)
@@ -444,17 +474,23 @@ mutual
             let sd := .SDbase ty ty t
             let (sl2, _) ← transl_expr ce (.For_set sd) r2
             let (sl3, _) ← transl_expr ce (.For_set sd) r3
-            pure (sl1 ++ [makeif a1 (makeseq sl2) (makeseq sl3)], .Etempvar t ty)
+            pure (sl1 ++ [makeif
+              (binary64_certificate := binary64_certificate)
+              (binary32_certificate := binary32_certificate) a1 (makeseq sl2) (makeseq sl3)], .Etempvar t ty)
         | .For_effects => do
             let (sl2, _) ← transl_expr ce .For_effects r2
             let (sl3, _) ← transl_expr ce .For_effects r3
-            pure (sl1 ++ [makeif a1 (makeseq sl2) (makeseq sl3)], dummy_expr)
+            pure (sl1 ++ [makeif
+              (binary64_certificate := binary64_certificate)
+              (binary32_certificate := binary32_certificate) a1 (makeseq sl2) (makeseq sl3)], dummy_expr)
         | .For_set sd => do
             let t ← temp_for_sd ty sd
             let sd' := .SDcons ty ty t sd
             let (sl2, _) ← transl_expr ce (.For_set sd') r2
             let (sl3, _) ← transl_expr ce (.For_set sd') r3
-            pure (sl1 ++ [makeif a1 (makeseq sl2) (makeseq sl3)], dummy_expr)
+            pure (sl1 ++ [makeif
+              (binary64_certificate := binary64_certificate)
+              (binary32_certificate := binary32_certificate) a1 (makeseq sl2) (makeseq sl3)], dummy_expr)
     | .Eassign l1 r2 _ => do
         let (sl1, a1) ← transl_expr ce .For_val l1
         let (sl2, a2) ← transl_expr ce .For_val r2
@@ -530,7 +566,10 @@ mutual
             ret (sl ++ [.Sbuiltin none ef tyargs al], dummy_expr)
     | .Eparen _ _ _ => error (CompCert4Lean.Common.Errors.msg translExprParenText)
 
-  private def translExprList (ce : composite_env) :
+  private def translExprList
+      [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+      [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+      (ce : composite_env) :
       CompCert4Lean.Cfrontend.Csyntax.exprlist → mon (List statement × List expr)
     | .Enil => ret ([], [])
     | .Econs r1 rl2 => do
@@ -539,20 +578,31 @@ mutual
         pure (sl1 ++ sl2, a1 :: al2)
 end
 
-def transl_expression (ce : composite_env)
+def transl_expression
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (ce : composite_env)
     (r : CompCert4Lean.Cfrontend.Csyntax.expr) : mon (statement × expr) := do
   let (sl, a) ← transl_expr ce .For_val r
   pure (makeseq sl, a)
 
-def transl_expr_stmt (ce : composite_env)
+def transl_expr_stmt
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (ce : composite_env)
     (r : CompCert4Lean.Cfrontend.Csyntax.expr) : mon statement := do
   let (sl, _) ← transl_expr ce .For_effects r
   pure (makeseq sl)
 
-def transl_if (ce : composite_env) (r : CompCert4Lean.Cfrontend.Csyntax.expr)
+def transl_if
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (ce : composite_env) (r : CompCert4Lean.Cfrontend.Csyntax.expr)
     (s1 s2 : statement) : mon statement := do
   let (sl, a) ← transl_expr ce .For_val r
-  pure (makeseq (sl ++ [makeif a s1 s2]))
+  pure (makeseq (sl ++ [makeif
+    (binary64_certificate := binary64_certificate)
+    (binary32_certificate := binary32_certificate) a s1 s2]))
 
 /-! ## Translation of statements -/
 
@@ -579,7 +629,10 @@ private def skipBool (s : CompCert4Lean.Cfrontend.Csyntax.statement) : Bool :=
   | .right _ => false
 
 mutual
-  def transl_stmt (ce : composite_env) :
+  def transl_stmt
+      [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+      [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+      (ce : composite_env) :
       CompCert4Lean.Cfrontend.Csyntax.statement → mon statement
     | .Sskip => ret .Sskip
     | .Sdo e => transl_expr_stmt ce e
@@ -627,7 +680,10 @@ mutual
         pure (.Slabel lbl ts1)
     | .Sgoto lbl => ret (.Sgoto lbl)
 
-  private def translLblstmt (ce : composite_env) :
+  private def translLblstmt
+      [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+      [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+      (ce : composite_env) :
       CompCert4Lean.Cfrontend.Csyntax.labeled_statements → mon labeled_statements
     | .LSnil => ret .LSnil
     | .LScons c s rest => do
@@ -638,7 +694,10 @@ end
 
 /-! ## Translation of functions and programs -/
 
-def transl_function (ctx : FreshIdentContext) (ce : composite_env)
+def transl_function
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (ctx : FreshIdentContext) (ce : composite_env)
     (f : CompCert4Lean.Cfrontend.Csyntax.function) : errorsRes function :=
   match transl_stmt ce f.fn_body (initial_generator ctx ()) with
   | .Err message => .Error message
@@ -651,7 +710,10 @@ def transl_function (ctx : FreshIdentContext) (ce : composite_env)
           fn_temps := g.gen_trail
           fn_body := tbody }
 
-def transl_fundef (ctx : FreshIdentContext) (ce : composite_env)
+def transl_fundef
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (ctx : FreshIdentContext) (ce : composite_env)
     (fd : CompCert4Lean.Cfrontend.Csyntax.fundef) : errorsRes fundef :=
   match fd with
   | .Internal f =>
@@ -660,7 +722,10 @@ def transl_fundef (ctx : FreshIdentContext) (ce : composite_env)
       | .Error message => .Error message
   | .External ef targs tres cc => .OK (.External ef targs tres cc)
 
-def transl_program (ctx : FreshIdentContext)
+def transl_program
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (ctx : FreshIdentContext)
     (p : CompCert4Lean.Cfrontend.Csyntax.program) : errorsRes program :=
   match CompCert4Lean.Common.AST.transform_partial_program
       (transl_fundef ctx p.prog_comp_env)
