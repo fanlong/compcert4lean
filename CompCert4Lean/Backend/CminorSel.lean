@@ -41,6 +41,9 @@ private abbrev CCInt := CompCert4Lean.Lib.Integers.int
 private abbrev Ptrofs := CompCert4Lean.Lib.Integers.ptrofs
 private abbrev env := CompCert4Lean.Backend.Cminor.env
 private abbrev z0 : Z := .Z0
+private abbrev BinaryNormalizeCertificate :=
+  CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+private abbrev zOfNat := ZArith.BinInt.Z.of_nat
 
 /-! ## Abstract syntax -/
 
@@ -142,7 +145,10 @@ inductive state : Type where
 export state (State Callstate Returnstate)
 
 mutual
-  inductive eval_expr (xi : ExternalCalls) (ge : genv) (sp : val) (e : env)
+  inductive eval_expr
+      [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+      [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+      (xi : ExternalCalls) (ge : genv) (sp : val) (e : env)
       (m : mem) : letenv → expr → val → Prop where
     | var (le : letenv) (id : ident) (v : val)
         (hget : PTree.get id e = some v) :
@@ -150,7 +156,9 @@ mutual
     | eval_Eop (le : letenv) (op : operation) (al : exprlist)
         (vl : List val) (v : val)
         (hargs : eval_exprlist xi ge sp e m le al vl)
-        (hop : eval_operation ge sp op vl m = some v) :
+        (hop : eval_operation
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate) ge sp op vl m = some v) :
         eval_expr xi ge sp e m le (.Eop op al) v
     | eval_Eload (le : letenv) (chunk : memory_chunk) (addr : addressing)
         (al : exprlist) (vl : List val) (vaddr v : val)
@@ -173,7 +181,10 @@ mutual
     | builtin (le : letenv) (ef : external_function) (al : exprlist)
         (vl : List val) (v : val)
         (hargs : eval_exprlist xi ge sp e m le al vl)
-        (hext : external_call xi ef (Genv.to_senv ge) vl m E0 v m) :
+        (hext : external_call
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate)
+          xi ef (Genv.to_senv ge) vl m E0 v m) :
         eval_expr xi ge sp e m le (.Ebuiltin ef al) v
     | external (le : letenv) (id : ident) (sg : signature)
         (al : exprlist) (b : block) (ef : external_function) (vl : List val)
@@ -182,10 +193,16 @@ mutual
         (hfun : Genv.find_funct_ptr ge b = some (.External ef))
         (hsig : ef_sig ef = sg)
         (hargs : eval_exprlist xi ge sp e m le al vl)
-        (hext : external_call xi ef (Genv.to_senv ge) vl m E0 v m) :
+        (hext : external_call
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate)
+          xi ef (Genv.to_senv ge) vl m E0 v m) :
         eval_expr xi ge sp e m le (.Eexternal id sg al) v
 
-  inductive eval_exprlist (xi : ExternalCalls) (ge : genv) (sp : val)
+  inductive eval_exprlist
+      [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+      [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+      (xi : ExternalCalls) (ge : genv) (sp : val)
       (e : env) (m : mem) : letenv → exprlist → List val → Prop where
     | nil (le : letenv) :
         eval_exprlist xi ge sp e m le .Enil []
@@ -195,7 +212,10 @@ mutual
         (htail : eval_exprlist xi ge sp e m le al vl) :
         eval_exprlist xi ge sp e m le (.Econs a1 al) (v1 :: vl)
 
-  inductive eval_condexpr (xi : ExternalCalls) (ge : genv) (sp : val)
+  inductive eval_condexpr
+      [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+      [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+      (xi : ExternalCalls) (ge : genv) (sp : val)
       (e : env) (m : mem) : letenv → condexpr → Bool → Prop where
     | condition (le : letenv) (cond : condition) (al : exprlist)
         (vl : List val) (vb : Bool)
@@ -216,7 +236,10 @@ end
 export eval_expr (eval_Eop eval_Eload eval_Econdition eval_Elet eval_Eletvar)
 export eval_condexpr (eval_CEcondition eval_CElet)
 
-private structure EvalInductionResult (xi : ExternalCalls) (ge : genv)
+private structure EvalInductionResult
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (xi : ExternalCalls) (ge : genv)
     (sp : val) (e : env) (m : mem)
     (P : letenv → expr → val → Prop)
     (PList : letenv → exprlist → List val → Prop)
@@ -225,7 +248,10 @@ private structure EvalInductionResult (xi : ExternalCalls) (ge : genv)
   listCase : ∀ le al vl, eval_exprlist xi ge sp e m le al vl → PList le al vl
   condCase : ∀ le a v, eval_condexpr xi ge sp e m le a v → PCond le a v
 
-private def evalInduction (xi : ExternalCalls) (ge : genv) (sp : val)
+private def evalInduction
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (xi : ExternalCalls) (ge : genv) (sp : val)
     (e : env) (m : mem)
     (P : letenv → expr → val → Prop)
     (PList : letenv → exprlist → List val → Prop)
@@ -233,7 +259,10 @@ private def evalInduction (xi : ExternalCalls) (ge : genv) (sp : val)
     (fVar : ∀ le id v, PTree.get id e = some v → P le (.Evar id) v)
     (fOp : ∀ le op al vl v,
       eval_exprlist xi ge sp e m le al vl → PList le al vl →
-      eval_operation ge sp op vl m = some v → P le (.Eop op al) v)
+      eval_operation
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) ge sp op vl m = some v →
+      P le (.Eop op al) v)
     (fLoad : ∀ le chunk addr al vl vaddr v,
       eval_exprlist xi ge sp e m le al vl → PList le al vl →
       eval_addressing ge sp addr vl = some vaddr →
@@ -249,13 +278,19 @@ private def evalInduction (xi : ExternalCalls) (ge : genv) (sp : val)
     (fLetVar : ∀ le n v, nth_error le n = some v → P le (.Eletvar n) v)
     (fBuiltin : ∀ le ef al vl v,
       eval_exprlist xi ge sp e m le al vl → PList le al vl →
-      external_call xi ef (Genv.to_senv ge) vl m E0 v m →
+      external_call
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        xi ef (Genv.to_senv ge) vl m E0 v m →
       P le (.Ebuiltin ef al) v)
     (fExternal : ∀ le id sg al b ef vl v,
       Genv.find_symbol ge id = some b →
       Genv.find_funct_ptr ge b = some (.External ef) → ef_sig ef = sg →
       eval_exprlist xi ge sp e m le al vl → PList le al vl →
-      external_call xi ef (Genv.to_senv ge) vl m E0 v m →
+      external_call
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        xi ef (Genv.to_senv ge) vl m E0 v m →
       P le (.Eexternal id sg al) v)
     (fNil : ∀ le, PList le .Enil [])
     (fCons : ∀ le a al v vl,
@@ -273,7 +308,9 @@ private def evalInduction (xi : ExternalCalls) (ge : genv) (sp : val)
       eval_expr xi ge sp e m le a v1 → P le a v1 →
       eval_condexpr xi ge sp e m (v1 :: le) b v2 → PCond (v1 :: le) b v2 →
       PCond le (.CElet a b) v2) :
-    EvalInductionResult xi ge sp e m P PList PCond :=
+    EvalInductionResult
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) xi ge sp e m P PList PCond :=
   let gOp := fun le op al vl v hargs hop ih =>
     fOp le op al vl v hargs ih hop
   let gLoad := fun le chunk addr al vl vaddr v hargs haddr hload ih =>
@@ -294,44 +331,71 @@ private def evalInduction (xi : ExternalCalls) (ge : genv) (sp : val)
     fCEcondition le a b c va v hcond ihCond hbranch ihBranch
   let gCElet := fun le a b v1 v2 hbound hbody ihBound ihBody =>
     fCElet le a b v1 v2 hbound ihBound hbody ihBody
-  { exprCase := @eval_expr.rec xi ge sp e m
+  { exprCase := @eval_expr.rec
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) xi ge sp e m
       (fun le a v _ => P le a v)
       (fun le al vl _ => PList le al vl)
       (fun le a v _ => PCond le a v)
       fVar gOp gLoad gCondition gLet fLetVar gBuiltin gExternal fNil gCons
       gCEcond gCEcondition gCElet
-    listCase := @eval_exprlist.rec xi ge sp e m
+    listCase := @eval_exprlist.rec
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) xi ge sp e m
       (fun le a v _ => P le a v)
       (fun le al vl _ => PList le al vl)
       (fun le a v _ => PCond le a v)
       fVar gOp gLoad gCondition gLet fLetVar gBuiltin gExternal fNil gCons
       gCEcond gCEcondition gCElet
-    condCase := @eval_condexpr.rec xi ge sp e m
+    condCase := @eval_condexpr.rec
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) xi ge sp e m
       (fun le a v _ => P le a v)
       (fun le al vl _ => PList le al vl)
       (fun le a v _ => PCond le a v)
       fVar gOp gLoad gCondition gLet fLetVar gBuiltin gExternal fNil gCons
       gCEcond gCEcondition gCElet }
 
-def eval_expr_ind3 := fun xi ge sp e m P PList PCond fVar fOp fLoad
+def eval_expr_ind3
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :=
+  fun xi ge sp e m P PList PCond fVar fOp fLoad
     fCondition fLet fLetVar fBuiltin fExternal fNil fCons fCEcond fCEcondition
     fCElet =>
-  (evalInduction xi ge sp e m P PList PCond fVar fOp fLoad fCondition fLet
+  (evalInduction
+    (binary64_certificate := binary64_certificate)
+    (binary32_certificate := binary32_certificate)
+    xi ge sp e m P PList PCond fVar fOp fLoad fCondition fLet
     fLetVar fBuiltin fExternal fNil fCons fCEcond fCEcondition fCElet).exprCase
 
-def eval_exprlist_ind3 := fun xi ge sp e m P PList PCond fVar fOp fLoad
+def eval_exprlist_ind3
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :=
+  fun xi ge sp e m P PList PCond fVar fOp fLoad
     fCondition fLet fLetVar fBuiltin fExternal fNil fCons fCEcond fCEcondition
     fCElet =>
-  (evalInduction xi ge sp e m P PList PCond fVar fOp fLoad fCondition fLet
+  (evalInduction
+    (binary64_certificate := binary64_certificate)
+    (binary32_certificate := binary32_certificate)
+    xi ge sp e m P PList PCond fVar fOp fLoad fCondition fLet
     fLetVar fBuiltin fExternal fNil fCons fCEcond fCEcondition fCElet).listCase
 
-def eval_condexpr_ind3 := fun xi ge sp e m P PList PCond fVar fOp fLoad
+def eval_condexpr_ind3
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :=
+  fun xi ge sp e m P PList PCond fVar fOp fLoad
     fCondition fLet fLetVar fBuiltin fExternal fNil fCons fCEcond fCEcondition
     fCElet =>
-  (evalInduction xi ge sp e m P PList PCond fVar fOp fLoad fCondition fLet
+  (evalInduction
+    (binary64_certificate := binary64_certificate)
+    (binary32_certificate := binary32_certificate)
+    xi ge sp e m P PList PCond fVar fOp fLoad fCondition fLet
     fLetVar fBuiltin fExternal fNil fCons fCEcond fCEcondition fCElet).condCase
 
-inductive eval_exitexpr (xi : ExternalCalls) (ge : genv) (sp : val) (e : env)
+inductive eval_exitexpr
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (xi : ExternalCalls) (ge : genv) (sp : val) (e : env)
     (m : mem) : letenv → exitexpr → Nat → Prop where
   | exit (le : letenv) (x : Nat) :
       eval_exitexpr xi ge sp e m le (.XEexit x) x
@@ -352,7 +416,10 @@ inductive eval_exitexpr (xi : ExternalCalls) (ge : genv) (sp : val) (e : env)
 
 export eval_exitexpr (eval_XEcondition)
 
-inductive eval_expr_or_symbol (xi : ExternalCalls) (ge : genv) (sp : val)
+inductive eval_expr_or_symbol
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (xi : ExternalCalls) (ge : genv) (sp : val)
     (e : env) (m : mem) : letenv → Sum expr ident → val → Prop where
   | eval_eos_e (le : letenv) (a : expr) (v : val)
       (heval : eval_expr xi ge sp e m le a v) :
@@ -363,7 +430,10 @@ inductive eval_expr_or_symbol (xi : ExternalCalls) (ge : genv) (sp : val)
 
 export eval_expr_or_symbol (eval_eos_e eval_eos_s)
 
-inductive eval_builtin_arg (xi : ExternalCalls) (ge : genv) (sp : val)
+inductive eval_builtin_arg
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (xi : ExternalCalls) (ge : genv) (sp : val)
     (e : env) (m : mem) : builtin_arg expr → val → Prop where
   | argument (a : expr) (v : val)
       (heval : eval_expr xi ge sp e m [] a v) :
@@ -432,7 +502,10 @@ def find_label (lbl : ident) : stmt → cont → Option (stmt × cont)
       | .right _ => find_label lbl s k
   | _, _ => none
 
-inductive step (xi : ExternalCalls) (ge : genv) : state → trace → state → Prop where
+inductive step
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (xi : ExternalCalls) (ge : genv) : state → trace → state → Prop where
   | skipSequence (f : function) (s : stmt) (k : cont) (sp : val) (e : env)
       (m : mem) :
       step xi ge (.State f .Sskip (.Kseq s k) sp e m) E0
@@ -482,7 +555,10 @@ inductive step (xi : ExternalCalls) (ge : genv) : state → trace → state → 
       (al : List (builtin_arg expr)) (k : cont) (sp : val) (e : env) (m : mem)
       (vl : List val) (t : trace) (v : val) (m' : mem)
       (hargs : list_forall2 (eval_builtin_arg xi ge sp e m) al vl)
-      (hext : external_call xi ef (Genv.to_senv ge) vl m t v m') :
+      (hext : external_call
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        xi ef (Genv.to_senv ge) vl m t v m') :
       step xi ge (.State f (.Sbuiltin res ef al) k sp e m) t
         (.State f .Sskip k sp (set_builtin_res res v e) m')
   | sequence (f : function) (s1 s2 : stmt) (k : cont) (sp : val) (e : env)
@@ -547,7 +623,10 @@ inductive step (xi : ExternalCalls) (ge : genv) : state → trace → state → 
         (.State f f.fn_body k (.Vptr sp Ptrofs.zero) e m')
   | externalFunction (ef : external_function) (vargs : List val) (k : cont)
       (m : mem) (t : trace) (v : val) (m' : mem)
-      (hext : external_call xi ef (Genv.to_senv ge) vargs m t v m') :
+      (hext : external_call
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        xi ef (Genv.to_senv ge) vargs m t v m') :
       step xi ge (.Callstate (.External ef) vargs k m) t
         (.Returnstate v k m')
   | returnToCaller (v : val) (optid : Option ident) (f : function) (sp : val)
@@ -570,9 +649,15 @@ inductive final_state : state → CCInt → Prop where
   | intro (r : CCInt) (m : mem) :
       final_state (.Returnstate (.Vint r) .Kstop m) r
 
-def semantics (xi : ExternalCalls) (p : program) :
+def semantics
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (xi : ExternalCalls) (p : program) :
     CompCert4Lean.Common.Smallstep.semantics :=
-  Semantics (step xi) (initial_state p) final_state (Genv.globalenv p)
+  Semantics
+    (step (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) xi)
+    (initial_state p) final_state (Genv.globalenv p)
 
 /-! ## Lifting let-bound variables -/
 
@@ -622,14 +707,18 @@ def insert_lenv_lookup2Statement : Prop :=
       ∀ (n : Nat) (v : val), nth_error le n = some v → p ≤ n →
         nth_error le' (n + 1) = some v
 
-def eval_lift_exprStatement : Prop :=
+def eval_lift_exprStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (xi : ExternalCalls) (ge : genv) (sp : val) (e : env) (m : mem)
       (w : val) (le : letenv) (a : expr) (v : val),
     eval_expr xi ge sp e m le a v →
       ∀ (p : Nat) (le' : letenv), insert_lenv le p w le' →
         eval_expr xi ge sp e m le' (lift_expr p a) v
 
-def eval_liftStatement : Prop :=
+def eval_liftStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (xi : ExternalCalls) (ge : genv) (sp : val) (e : env) (m : mem)
       (le : letenv) (a : expr) (v w : val),
     eval_expr xi ge sp e m le a v →
