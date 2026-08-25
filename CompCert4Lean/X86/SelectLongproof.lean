@@ -30,297 +30,385 @@ private abbrev CCInt64 := CompCert4Lean.Lib.Integers.int64
 private abbrev comparison := CompCert4Lean.Lib.Integers.comparison
 private abbrev env := CompCert4Lean.Backend.Cminor.env
 private abbrev HelperFunctions := CompCert4Lean.Backend.SplitLong.helper_functions
+private abbrev BinaryNormalizeCertificate :=
+  CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+private abbrev zOfNat := ZArith.BinInt.Z.of_nat
 
-def unary_constructor_sound (xi : ExternalCalls) (ge : genv) (sp : val)
+def unary_constructor_sound
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (xi : ExternalCalls) (prog : program) (sp : val)
     (e : env) (m : mem) (cstr : expr → expr) (sem : val → val) : Prop :=
   ∀ (le : letenv) (a : expr) (x : val),
-    eval_expr xi ge sp e m le a x →
-      ∃ v, eval_expr xi ge sp e m le (cstr a) v ∧ Val.lessdef (sem x) v
+    eval_expr (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) xi (Genv.globalenv prog) sp e m le a x →
+      ∃ v, eval_expr (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) xi (Genv.globalenv prog) sp e m le (cstr a) v ∧
+        Val.lessdef (sem x) v
 
-def binary_constructor_sound (xi : ExternalCalls) (ge : genv) (sp : val)
+def binary_constructor_sound
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (xi : ExternalCalls) (prog : program) (sp : val)
     (e : env) (m : mem) (cstr : expr → expr → expr)
     (sem : val → val → val) : Prop :=
   ∀ (le : letenv) (a : expr) (x : val) (b : expr) (y : val),
-    eval_expr xi ge sp e m le a x →
-    eval_expr xi ge sp e m le b y →
-      ∃ v, eval_expr xi ge sp e m le (cstr a b) v ∧
+    eval_expr (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) xi (Genv.globalenv prog) sp e m le a x →
+    eval_expr (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) xi (Genv.globalenv prog) sp e m le b y →
+      ∃ v, eval_expr (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) xi (Genv.globalenv prog) sp e m le (cstr a b) v ∧
         Val.lessdef (sem x y) v
 
-def partial_unary_constructor_sound (xi : ExternalCalls) (ge : genv) (sp : val)
+def partial_unary_constructor_sound
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (xi : ExternalCalls) (prog : program) (sp : val)
     (e : env) (m : mem) (cstr : expr → expr) (sem : val → Option val) : Prop :=
   ∀ (le : letenv) (a : expr) (x y : val),
-    eval_expr xi ge sp e m le a x →
+    eval_expr (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) xi (Genv.globalenv prog) sp e m le a x →
     sem x = some y →
-      ∃ v, eval_expr xi ge sp e m le (cstr a) v ∧ Val.lessdef y v
+      ∃ v, eval_expr (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) xi (Genv.globalenv prog) sp e m le (cstr a) v ∧
+        Val.lessdef y v
 
-def partial_binary_constructor_sound (xi : ExternalCalls) (ge : genv) (sp : val)
+def partial_binary_constructor_sound
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (xi : ExternalCalls) (prog : program) (sp : val)
     (e : env) (m : mem) (cstr : expr → expr → expr)
     (sem : val → val → Option val) : Prop :=
   ∀ (le : letenv) (a : expr) (x : val) (b : expr) (y z : val),
-    eval_expr xi ge sp e m le a x →
-    eval_expr xi ge sp e m le b y →
+    eval_expr (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) xi (Genv.globalenv prog) sp e m le a x →
+    eval_expr (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) xi (Genv.globalenv prog) sp e m le b y →
     sem x y = some z →
-      ∃ v, eval_expr xi ge sp e m le (cstr a b) v ∧ Val.lessdef z v
+      ∃ v, eval_expr (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) xi (Genv.globalenv prog) sp e m le (cstr a b) v ∧
+        Val.lessdef z v
 
 /-! ## Exact statement descriptors for later proof migration -/
 
-def eval_addlStatement : Prop :=
+def eval_addlStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (xi : ExternalCalls) (prog : program) (sp : val) (e : env) (m : mem),
-    binary_constructor_sound xi (Genv.globalenv prog) sp e m addl Val.addl
+    binary_constructor_sound (binary64_certificate := binary64_certificate) (binary32_certificate := binary32_certificate) xi prog sp e m addl Val.addl
 
-def eval_addlimmStatement : Prop :=
+def eval_addlimmStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (xi : ExternalCalls) (prog : program) (sp : val) (e : env) (m : mem)
     (n : CCInt64),
-    unary_constructor_sound xi (Genv.globalenv prog) sp e m (addlimm n)
+    unary_constructor_sound (binary64_certificate := binary64_certificate) (binary32_certificate := binary32_certificate) xi prog sp e m (addlimm n)
       (fun v => Val.addl v (.Vlong n))
 
-def eval_andlStatement : Prop :=
+def eval_andlStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (xi : ExternalCalls) (prog : program) (sp : val) (e : env) (m : mem),
-    binary_constructor_sound xi (Genv.globalenv prog) sp e m andl Val.andl
+    binary_constructor_sound (binary64_certificate := binary64_certificate) (binary32_certificate := binary32_certificate) xi prog sp e m andl Val.andl
 
-def eval_andlimmStatement : Prop :=
+def eval_andlimmStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (xi : ExternalCalls) (prog : program) (sp : val) (e : env) (m : mem)
     (n : CCInt64),
-    unary_constructor_sound xi (Genv.globalenv prog) sp e m (andlimm n)
+    unary_constructor_sound (binary64_certificate := binary64_certificate) (binary32_certificate := binary32_certificate) xi prog sp e m (andlimm n)
       (fun v => Val.andl v (.Vlong n))
 
-def eval_cmplStatement : Prop :=
+def eval_cmplStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (xi : ExternalCalls) (prog : program) (sp : val) (e : env) (m : mem)
     (c : comparison) (le : letenv) (a : expr) (x : val) (b : expr) (y v : val),
-    eval_expr xi (Genv.globalenv prog) sp e m le a x →
-    eval_expr xi (Genv.globalenv prog) sp e m le b y →
+    eval_expr (binary64_certificate := binary64_certificate) (binary32_certificate := binary32_certificate) xi (Genv.globalenv prog) sp e m le a x →
+    eval_expr (binary64_certificate := binary64_certificate) (binary32_certificate := binary32_certificate) xi (Genv.globalenv prog) sp e m le b y →
     Val.cmpl c x y = some v →
-    eval_expr xi (Genv.globalenv prog) sp e m le (cmpl c a b) v
+    eval_expr (binary64_certificate := binary64_certificate) (binary32_certificate := binary32_certificate) xi (Genv.globalenv prog) sp e m le (cmpl c a b) v
 
-def eval_cmpluStatement : Prop :=
+def eval_cmpluStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (xi : ExternalCalls) (prog : program) (sp : val) (e : env) (m : mem)
     (c : comparison) (le : letenv) (a : expr) (x : val) (b : expr) (y v : val),
-    eval_expr xi (Genv.globalenv prog) sp e m le a x →
-    eval_expr xi (Genv.globalenv prog) sp e m le b y →
+    eval_expr (binary64_certificate := binary64_certificate) (binary32_certificate := binary32_certificate) xi (Genv.globalenv prog) sp e m le a x →
+    eval_expr (binary64_certificate := binary64_certificate) (binary32_certificate := binary32_certificate) xi (Genv.globalenv prog) sp e m le b y →
     Val.cmplu (Mem.valid_pointer m) c x y = some v →
-    eval_expr xi (Genv.globalenv prog) sp e m le (cmplu c a b) v
+    eval_expr (binary64_certificate := binary64_certificate) (binary32_certificate := binary32_certificate) xi (Genv.globalenv prog) sp e m le (cmplu c a b) v
 
-def eval_divls_baseStatement [hf : HelperFunctions] : Prop :=
-  ∀ (xi : ExternalCalls) (prog : program),
+def eval_divls_baseStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
+  ∀ (xi : ExternalCalls) (prog : program) (hf : HelperFunctions),
     CompCert4Lean.Backend.SplitLongproof.helper_functions_declared prog hf →
-    ∀ (sp : val) (e : env) (m : mem)
-      (le : letenv) (a b : expr) (x y z : val),
-      eval_expr xi (Genv.globalenv prog) sp e m le a x →
-      eval_expr xi (Genv.globalenv prog) sp e m le b y →
-      Val.divls x y = some z →
-      ∃ v, eval_expr xi (Genv.globalenv prog) sp e m le (divls_base a b) v ∧
-        Val.lessdef z v
+    ∀ (sp : val) (e : env) (m : mem),
+    partial_binary_constructor_sound (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) xi prog sp e m divls_base Val.divls
 
-def eval_divlu_baseStatement [hf : HelperFunctions] : Prop :=
-  ∀ (xi : ExternalCalls) (prog : program),
+def eval_divlu_baseStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
+  ∀ (xi : ExternalCalls) (prog : program) (hf : HelperFunctions),
     CompCert4Lean.Backend.SplitLongproof.helper_functions_declared prog hf →
-    ∀ (sp : val) (e : env) (m : mem)
-      (le : letenv) (a b : expr) (x y z : val),
-      eval_expr xi (Genv.globalenv prog) sp e m le a x →
-      eval_expr xi (Genv.globalenv prog) sp e m le b y →
-      Val.divlu x y = some z →
-      ∃ v, eval_expr xi (Genv.globalenv prog) sp e m le (divlu_base a b) v ∧
-        Val.lessdef z v
+    ∀ (sp : val) (e : env) (m : mem),
+    partial_binary_constructor_sound (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) xi prog sp e m divlu_base Val.divlu
 
-def eval_floatoflongStatement [hf : HelperFunctions] : Prop :=
-  ∀ (xi : ExternalCalls) (prog : program),
+def eval_floatoflongStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
+  ∀ (xi : ExternalCalls) (prog : program) (hf : HelperFunctions),
     CompCert4Lean.Backend.SplitLongproof.helper_functions_declared prog hf →
     ∀ (sp : val) (e : env) (m : mem)
       (le : letenv) (a : expr) (x y : val),
-      eval_expr xi (Genv.globalenv prog) sp e m le a x →
+      eval_expr (binary64_certificate := binary64_certificate) (binary32_certificate := binary32_certificate) xi (Genv.globalenv prog) sp e m le a x →
       Val.floatoflong x = some y →
-      ∃ v, eval_expr xi (Genv.globalenv prog) sp e m le (floatoflong a) v ∧
+      ∃ v, eval_expr (binary64_certificate := binary64_certificate) (binary32_certificate := binary32_certificate) xi (Genv.globalenv prog) sp e m le (floatoflong a) v ∧
         Val.lessdef y v
 
-def eval_intoflongStatement : Prop :=
+def eval_intoflongStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (xi : ExternalCalls) (prog : program) (sp : val) (e : env) (m : mem),
-    unary_constructor_sound xi (Genv.globalenv prog) sp e m intoflong Val.loword
+    unary_constructor_sound (binary64_certificate := binary64_certificate) (binary32_certificate := binary32_certificate) xi prog sp e m intoflong Val.loword
 
-def eval_longconstStatement : Prop :=
+def eval_longconstStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (xi : ExternalCalls) (prog : program) (sp : val) (e : env) (m : mem)
     (le : letenv) (n : CCInt64),
-    eval_expr xi (Genv.globalenv prog) sp e m le (longconst n) (.Vlong n)
+    eval_expr (binary64_certificate := binary64_certificate) (binary32_certificate := binary32_certificate) xi (Genv.globalenv prog) sp e m le (longconst n) (.Vlong n)
 
-def eval_longoffloatStatement [hf : HelperFunctions] : Prop :=
-  ∀ (xi : ExternalCalls) (prog : program),
+def eval_longoffloatStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
+  ∀ (xi : ExternalCalls) (prog : program) (hf : HelperFunctions),
     CompCert4Lean.Backend.SplitLongproof.helper_functions_declared prog hf →
     ∀ (sp : val) (e : env) (m : mem)
       (le : letenv) (a : expr) (x y : val),
-      eval_expr xi (Genv.globalenv prog) sp e m le a x →
+      eval_expr (binary64_certificate := binary64_certificate) (binary32_certificate := binary32_certificate) xi (Genv.globalenv prog) sp e m le a x →
       Val.longoffloat x = some y →
-      ∃ v, eval_expr xi (Genv.globalenv prog) sp e m le (longoffloat a) v ∧
+      ∃ v, eval_expr (binary64_certificate := binary64_certificate) (binary32_certificate := binary32_certificate) xi (Genv.globalenv prog) sp e m le (longoffloat a) v ∧
         Val.lessdef y v
 
-def eval_longofintStatement : Prop :=
+def eval_longofintStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (xi : ExternalCalls) (prog : program) (sp : val) (e : env) (m : mem),
-    unary_constructor_sound xi (Genv.globalenv prog) sp e m longofint Val.longofint
+    unary_constructor_sound (binary64_certificate := binary64_certificate) (binary32_certificate := binary32_certificate) xi prog sp e m longofint Val.longofint
 
-def eval_longofintuStatement : Prop :=
+def eval_longofintuStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (xi : ExternalCalls) (prog : program) (sp : val) (e : env) (m : mem),
-    unary_constructor_sound xi (Genv.globalenv prog) sp e m longofintu Val.longofintu
+    unary_constructor_sound (binary64_certificate := binary64_certificate) (binary32_certificate := binary32_certificate) xi prog sp e m longofintu Val.longofintu
 
-def eval_longofsingleStatement [hf : HelperFunctions] : Prop :=
-  ∀ (xi : ExternalCalls) (prog : program),
+def eval_longofsingleStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
+  ∀ (xi : ExternalCalls) (prog : program) (hf : HelperFunctions),
     CompCert4Lean.Backend.SplitLongproof.helper_functions_declared prog hf →
     ∀ (sp : val) (e : env) (m : mem)
       (le : letenv) (a : expr) (x y : val),
-      eval_expr xi (Genv.globalenv prog) sp e m le a x →
+      eval_expr (binary64_certificate := binary64_certificate) (binary32_certificate := binary32_certificate) xi (Genv.globalenv prog) sp e m le a x →
       Val.longofsingle x = some y →
-      ∃ v, eval_expr xi (Genv.globalenv prog) sp e m le (longofsingle a) v ∧
+      ∃ v, eval_expr (binary64_certificate := binary64_certificate) (binary32_certificate := binary32_certificate) xi (Genv.globalenv prog) sp e m le (longofsingle a) v ∧
         Val.lessdef y v
 
-def eval_modls_baseStatement [hf : HelperFunctions] : Prop :=
-  ∀ (xi : ExternalCalls) (prog : program),
-    CompCert4Lean.Backend.SplitLongproof.helper_functions_declared prog hf →
-    ∀ (sp : val) (e : env) (m : mem)
-      (le : letenv) (a b : expr) (x y z : val),
-      eval_expr xi (Genv.globalenv prog) sp e m le a x →
-      eval_expr xi (Genv.globalenv prog) sp e m le b y →
-      Val.modls x y = some z →
-      ∃ v, eval_expr xi (Genv.globalenv prog) sp e m le (modls_base a b) v ∧
-        Val.lessdef z v
-
-def eval_modlu_baseStatement [hf : HelperFunctions] : Prop :=
-  ∀ (xi : ExternalCalls) (prog : program),
-    CompCert4Lean.Backend.SplitLongproof.helper_functions_declared prog hf →
-    ∀ (sp : val) (e : env) (m : mem)
-      (le : letenv) (a b : expr) (x y z : val),
-      eval_expr xi (Genv.globalenv prog) sp e m le a x →
-      eval_expr xi (Genv.globalenv prog) sp e m le b y →
-      Val.modlu x y = some z →
-      ∃ v, eval_expr xi (Genv.globalenv prog) sp e m le (modlu_base a b) v ∧
-        Val.lessdef z v
-
-def eval_mullStatement [hf : HelperFunctions] : Prop :=
-  ∀ (xi : ExternalCalls) (prog : program),
+def eval_modls_baseStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
+  ∀ (xi : ExternalCalls) (prog : program) (hf : HelperFunctions),
     CompCert4Lean.Backend.SplitLongproof.helper_functions_declared prog hf →
     ∀ (sp : val) (e : env) (m : mem),
-      binary_constructor_sound xi (Genv.globalenv prog) sp e m mull Val.mull
+    partial_binary_constructor_sound (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) xi prog sp e m modls_base Val.modls
 
-def eval_mullhsStatement [hf : HelperFunctions] : Prop :=
-  ∀ (xi : ExternalCalls) (prog : program),
+def eval_modlu_baseStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
+  ∀ (xi : ExternalCalls) (prog : program) (hf : HelperFunctions),
+    CompCert4Lean.Backend.SplitLongproof.helper_functions_declared prog hf →
+    ∀ (sp : val) (e : env) (m : mem),
+    partial_binary_constructor_sound (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) xi prog sp e m modlu_base Val.modlu
+
+def eval_mullStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
+  ∀ (xi : ExternalCalls) (prog : program) (hf : HelperFunctions),
+    CompCert4Lean.Backend.SplitLongproof.helper_functions_declared prog hf →
+    ∀ (sp : val) (e : env) (m : mem),
+      binary_constructor_sound (binary64_certificate := binary64_certificate) (binary32_certificate := binary32_certificate) xi prog sp e m mull Val.mull
+
+def eval_mullhsStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
+  ∀ (xi : ExternalCalls) (prog : program) (hf : HelperFunctions),
     CompCert4Lean.Backend.SplitLongproof.helper_functions_declared prog hf →
     ∀ (sp : val) (e : env) (m : mem) (n : CCInt64),
-      unary_constructor_sound xi (Genv.globalenv prog) sp e m
+      unary_constructor_sound (binary64_certificate := binary64_certificate) (binary32_certificate := binary32_certificate) xi prog sp e m
         (fun a => mullhs a n) (fun v => Val.mullhs v (.Vlong n))
 
-def eval_mullhuStatement [hf : HelperFunctions] : Prop :=
-  ∀ (xi : ExternalCalls) (prog : program),
+def eval_mullhuStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
+  ∀ (xi : ExternalCalls) (prog : program) (hf : HelperFunctions),
     CompCert4Lean.Backend.SplitLongproof.helper_functions_declared prog hf →
     ∀ (sp : val) (e : env) (m : mem) (n : CCInt64),
-      unary_constructor_sound xi (Genv.globalenv prog) sp e m
+      unary_constructor_sound (binary64_certificate := binary64_certificate) (binary32_certificate := binary32_certificate) xi prog sp e m
         (fun a => mullhu a n) (fun v => Val.mullhu v (.Vlong n))
 
-def eval_mullimmStatement [hf : HelperFunctions] : Prop :=
-  ∀ (xi : ExternalCalls) (prog : program),
+def eval_mullimmStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
+  ∀ (xi : ExternalCalls) (prog : program) (hf : HelperFunctions),
     CompCert4Lean.Backend.SplitLongproof.helper_functions_declared prog hf →
     ∀ (sp : val) (e : env) (m : mem) (n : CCInt64),
-      unary_constructor_sound xi (Genv.globalenv prog) sp e m (mullimm n)
+      unary_constructor_sound (binary64_certificate := binary64_certificate) (binary32_certificate := binary32_certificate) xi prog sp e m (mullimm n)
         (fun v => Val.mull v (.Vlong n))
 
-def eval_mullimm_baseStatement [hf : HelperFunctions] : Prop :=
-  ∀ (xi : ExternalCalls) (prog : program),
+def eval_mullimm_baseStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
+  ∀ (xi : ExternalCalls) (prog : program) (hf : HelperFunctions),
     CompCert4Lean.Backend.SplitLongproof.helper_functions_declared prog hf →
     ∀ (sp : val) (e : env) (m : mem) (n : CCInt64),
-      unary_constructor_sound xi (Genv.globalenv prog) sp e m (mullimm_base n)
+      unary_constructor_sound (binary64_certificate := binary64_certificate) (binary32_certificate := binary32_certificate) xi prog sp e m (mullimm_base n)
         (fun v => Val.mull v (.Vlong n))
 
-def eval_neglStatement : Prop :=
+def eval_neglStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (xi : ExternalCalls) (prog : program) (sp : val) (e : env) (m : mem),
-    unary_constructor_sound xi (Genv.globalenv prog) sp e m negl Val.negl
+    unary_constructor_sound (binary64_certificate := binary64_certificate) (binary32_certificate := binary32_certificate) xi prog sp e m negl Val.negl
 
-def eval_notlStatement : Prop :=
+def eval_notlStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (xi : ExternalCalls) (prog : program) (sp : val) (e : env) (m : mem),
-    unary_constructor_sound xi (Genv.globalenv prog) sp e m notl Val.notl
+    unary_constructor_sound (binary64_certificate := binary64_certificate) (binary32_certificate := binary32_certificate) xi prog sp e m notl Val.notl
 
-def eval_orlStatement : Prop :=
+def eval_orlStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (xi : ExternalCalls) (prog : program) (sp : val) (e : env) (m : mem),
-    binary_constructor_sound xi (Genv.globalenv prog) sp e m orl Val.orl
+    binary_constructor_sound (binary64_certificate := binary64_certificate) (binary32_certificate := binary32_certificate) xi prog sp e m orl Val.orl
 
-def eval_orlimmStatement : Prop :=
+def eval_orlimmStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (xi : ExternalCalls) (prog : program) (sp : val) (e : env) (m : mem)
     (n : CCInt64),
-    unary_constructor_sound xi (Genv.globalenv prog) sp e m (orlimm n)
+    unary_constructor_sound (binary64_certificate := binary64_certificate) (binary32_certificate := binary32_certificate) xi prog sp e m (orlimm n)
       (fun v => Val.orl v (.Vlong n))
 
-def eval_shllStatement [hf : HelperFunctions] : Prop :=
-  ∀ (xi : ExternalCalls) (prog : program),
+def eval_shllStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
+  ∀ (xi : ExternalCalls) (prog : program) (hf : HelperFunctions),
     CompCert4Lean.Backend.SplitLongproof.helper_functions_declared prog hf →
     ∀ (sp : val) (e : env) (m : mem),
-      binary_constructor_sound xi (Genv.globalenv prog) sp e m shll Val.shll
+      binary_constructor_sound (binary64_certificate := binary64_certificate) (binary32_certificate := binary32_certificate) xi prog sp e m shll Val.shll
 
-def eval_shllimmStatement [hf : HelperFunctions] : Prop :=
-  ∀ (xi : ExternalCalls) (prog : program),
+def eval_shllimmStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
+  ∀ (xi : ExternalCalls) (prog : program) (hf : HelperFunctions),
     CompCert4Lean.Backend.SplitLongproof.helper_functions_declared prog hf →
     ∀ (sp : val) (e : env) (m : mem) (n : CCInt),
-      unary_constructor_sound xi (Genv.globalenv prog) sp e m
+      unary_constructor_sound (binary64_certificate := binary64_certificate) (binary32_certificate := binary32_certificate) xi prog sp e m
         (fun e => shllimm e n) (fun v => Val.shll v (.Vint n))
 
-def eval_shrlStatement [hf : HelperFunctions] : Prop :=
-  ∀ (xi : ExternalCalls) (prog : program),
+def eval_shrlStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
+  ∀ (xi : ExternalCalls) (prog : program) (hf : HelperFunctions),
     CompCert4Lean.Backend.SplitLongproof.helper_functions_declared prog hf →
     ∀ (sp : val) (e : env) (m : mem),
-      binary_constructor_sound xi (Genv.globalenv prog) sp e m shrl Val.shrl
+      binary_constructor_sound (binary64_certificate := binary64_certificate) (binary32_certificate := binary32_certificate) xi prog sp e m shrl Val.shrl
 
-def eval_shrlimmStatement [hf : HelperFunctions] : Prop :=
-  ∀ (xi : ExternalCalls) (prog : program),
+def eval_shrlimmStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
+  ∀ (xi : ExternalCalls) (prog : program) (hf : HelperFunctions),
     CompCert4Lean.Backend.SplitLongproof.helper_functions_declared prog hf →
     ∀ (sp : val) (e : env) (m : mem) (n : CCInt),
-      unary_constructor_sound xi (Genv.globalenv prog) sp e m
+      unary_constructor_sound (binary64_certificate := binary64_certificate) (binary32_certificate := binary32_certificate) xi prog sp e m
         (fun e => shrlimm e n) (fun v => Val.shrl v (.Vint n))
 
-def eval_shrluStatement [hf : HelperFunctions] : Prop :=
-  ∀ (xi : ExternalCalls) (prog : program),
+def eval_shrluStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
+  ∀ (xi : ExternalCalls) (prog : program) (hf : HelperFunctions),
     CompCert4Lean.Backend.SplitLongproof.helper_functions_declared prog hf →
     ∀ (sp : val) (e : env) (m : mem),
-      binary_constructor_sound xi (Genv.globalenv prog) sp e m shrlu Val.shrlu
+      binary_constructor_sound (binary64_certificate := binary64_certificate) (binary32_certificate := binary32_certificate) xi prog sp e m shrlu Val.shrlu
 
-def eval_shrluimmStatement [hf : HelperFunctions] : Prop :=
-  ∀ (xi : ExternalCalls) (prog : program),
+def eval_shrluimmStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
+  ∀ (xi : ExternalCalls) (prog : program) (hf : HelperFunctions),
     CompCert4Lean.Backend.SplitLongproof.helper_functions_declared prog hf →
     ∀ (sp : val) (e : env) (m : mem) (n : CCInt),
-      unary_constructor_sound xi (Genv.globalenv prog) sp e m
+      unary_constructor_sound (binary64_certificate := binary64_certificate) (binary32_certificate := binary32_certificate) xi prog sp e m
         (fun e => shrluimm e n) (fun v => Val.shrlu v (.Vint n))
 
-def eval_shrxlimmStatement [hf : HelperFunctions] : Prop :=
-  ∀ (xi : ExternalCalls) (prog : program),
+def eval_shrxlimmStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
+  ∀ (xi : ExternalCalls) (prog : program) (hf : HelperFunctions),
     CompCert4Lean.Backend.SplitLongproof.helper_functions_declared prog hf →
     ∀ (sp : val) (e : env) (m : mem)
       (le : letenv) (a : expr) (n : CCInt) (x z : val),
-      eval_expr xi (Genv.globalenv prog) sp e m le a x →
+      eval_expr (binary64_certificate := binary64_certificate) (binary32_certificate := binary32_certificate) xi (Genv.globalenv prog) sp e m le a x →
       Val.shrxl x (.Vint n) = some z →
-      ∃ v, eval_expr xi (Genv.globalenv prog) sp e m le (shrxlimm a n) v ∧
+      ∃ v, eval_expr (binary64_certificate := binary64_certificate) (binary32_certificate := binary32_certificate) xi (Genv.globalenv prog) sp e m le (shrxlimm a n) v ∧
         Val.lessdef z v
 
-def eval_singleoflongStatement [hf : HelperFunctions] : Prop :=
-  ∀ (xi : ExternalCalls) (prog : program),
+def eval_singleoflongStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
+  ∀ (xi : ExternalCalls) (prog : program) (hf : HelperFunctions),
     CompCert4Lean.Backend.SplitLongproof.helper_functions_declared prog hf →
     ∀ (sp : val) (e : env) (m : mem)
       (le : letenv) (a : expr) (x y : val),
-      eval_expr xi (Genv.globalenv prog) sp e m le a x →
+      eval_expr (binary64_certificate := binary64_certificate) (binary32_certificate := binary32_certificate) xi (Genv.globalenv prog) sp e m le a x →
       Val.singleoflong x = some y →
-      ∃ v, eval_expr xi (Genv.globalenv prog) sp e m le (singleoflong a) v ∧
+      ∃ v, eval_expr (binary64_certificate := binary64_certificate) (binary32_certificate := binary32_certificate) xi (Genv.globalenv prog) sp e m le (singleoflong a) v ∧
         Val.lessdef y v
 
-def eval_sublStatement : Prop :=
+def eval_sublStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (xi : ExternalCalls) (prog : program) (sp : val) (e : env) (m : mem),
-    binary_constructor_sound xi (Genv.globalenv prog) sp e m subl Val.subl
+    binary_constructor_sound (binary64_certificate := binary64_certificate) (binary32_certificate := binary32_certificate) xi prog sp e m subl Val.subl
 
-def eval_xorlStatement : Prop :=
+def eval_xorlStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (xi : ExternalCalls) (prog : program) (sp : val) (e : env) (m : mem),
-    binary_constructor_sound xi (Genv.globalenv prog) sp e m xorl Val.xorl
+    binary_constructor_sound (binary64_certificate := binary64_certificate) (binary32_certificate := binary32_certificate) xi prog sp e m xorl Val.xorl
 
-def eval_xorlimmStatement : Prop :=
+def eval_xorlimmStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (xi : ExternalCalls) (prog : program) (sp : val) (e : env) (m : mem)
     (n : CCInt64),
-    unary_constructor_sound xi (Genv.globalenv prog) sp e m (xorlimm n)
+    unary_constructor_sound (binary64_certificate := binary64_certificate) (binary32_certificate := binary32_certificate) xi prog sp e m (xorlimm n)
       (fun v => Val.xorl v (.Vlong n))
 
-def is_longconst_soundStatement : Prop :=
+def is_longconst_soundStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (xi : ExternalCalls) (prog : program) (sp : val) (e : env) (m : mem)
-    (le : letenv) (a : expr) (x : val) (n : CCInt64),
+    (x : val) (a : expr) (n : CCInt64) (le : letenv),
     is_longconst a = some n →
-    eval_expr xi (Genv.globalenv prog) sp e m le a x →
+    eval_expr (binary64_certificate := binary64_certificate) (binary32_certificate := binary32_certificate) xi (Genv.globalenv prog) sp e m le a x →
     x = .Vlong n
 
 end CompCert4Lean.X86.SelectLongproof
