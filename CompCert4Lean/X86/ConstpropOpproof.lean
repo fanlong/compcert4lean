@@ -51,18 +51,25 @@ private abbrev ptrofs := CompCert4Lean.Lib.Integers.ptrofs
 private abbrev float := CompCert4Lean.Lib.Floats.float
 private abbrev float32 := CompCert4Lean.Lib.Floats.float32
 private abbrev Z := CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z
+private abbrev BinaryNormalizeCertificate :=
+  CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+private abbrev zOfNat := ZArith.BinInt.Z.of_nat
 private abbrev CompilerConfig := CompCert4Lean.Config.CompilerConfig
 private abbrev RelocationContext := CompCert4Lean.X86.SelectOp.RelocationContext
 
 private def reg_values (e : regset) (args : List reg) : List val :=
   args.map (fun r => Regmap.get r e)
 
-def eval_Olea_ptrStatement : Prop :=
+def eval_Olea_ptrStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (ge : genv) (sp : block) (m : mem) (a : addressing) (el : List val),
-    eval_operation ge (.Vptr sp Ptrofs.zero) (ConstpropOp.Olea_ptr a) el m =
+    eval_operation (binary64_certificate := binary64_certificate) (binary32_certificate := binary32_certificate) ge (.Vptr sp Ptrofs.zero) (ConstpropOp.Olea_ptr a) el m =
       eval_addressing ge (.Vptr sp Ptrofs.zero) a el
 
-def const_for_result_correctStatement : Prop :=
+def const_for_result_correctStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (cfg : CompilerConfig) (bc : block_classification) (ge : genv),
     genv_match bc ge →
     ∀ (sp : block), bc sp = BCstack →
@@ -70,7 +77,7 @@ def const_for_result_correctStatement : Prop :=
       const_for_result cfg ctx a = some op →
       vmatch bc v a →
       ∃ v',
-        eval_operation ge (.Vptr sp Ptrofs.zero) op [] m = some v' ∧
+        eval_operation (binary64_certificate := binary64_certificate) (binary32_certificate := binary32_certificate) ge (.Vptr sp Ptrofs.zero) op [] m = some v' ∧
         Val.lessdef v v'
 
 def cond_strength_reduction_correctStatement : Prop :=
@@ -148,7 +155,9 @@ def addr_strength_reduction_correctStatement : Prop :=
         eval_addressing ge (.Vptr sp Ptrofs.zero) addr' (reg_values e args') = some res' ∧
         Val.lessdef res res'
 
-def make_cmp_base_correctStatement : Prop :=
+def make_cmp_base_correctStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (bc : block_classification) (ge : genv) (sp : block) (ae : AE.t)
     (e : regset) (m : mem),
     ematch bc e ae →
@@ -156,10 +165,12 @@ def make_cmp_base_correctStatement : Prop :=
       vl = args.map (fun r => AE.get r ae) →
       let (op', args') := make_cmp_base c args vl
       ∃ v,
-        eval_operation ge (.Vptr sp Ptrofs.zero) op' (reg_values e args') m = some v ∧
+        eval_operation (binary64_certificate := binary64_certificate) (binary32_certificate := binary32_certificate) ge (.Vptr sp Ptrofs.zero) op' (reg_values e args') m = some v ∧
         Val.lessdef (Val.of_optbool (eval_condition c (reg_values e args) m)) v
 
-def make_cmp_correctStatement : Prop :=
+def make_cmp_correctStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (bc : block_classification) (ge : genv) (sp : block) (ae : AE.t)
     (e : regset) (m : mem),
     ematch bc e ae →
@@ -167,10 +178,12 @@ def make_cmp_correctStatement : Prop :=
       vl = args.map (fun r => AE.get r ae) →
       let (op', args') := make_cmp c args vl
       ∃ v,
-        eval_operation ge (.Vptr sp Ptrofs.zero) op' (reg_values e args') m = some v ∧
+        eval_operation (binary64_certificate := binary64_certificate) (binary32_certificate := binary32_certificate) ge (.Vptr sp Ptrofs.zero) op' (reg_values e args') m = some v ∧
         Val.lessdef (Val.of_optbool (eval_condition c (reg_values e args) m)) v
 
-def make_select_correctStatement : Prop :=
+def make_select_correctStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (cfg : CompilerConfig) (bc : block_classification) (ge : genv)
     (sp : block) (ae : AE.t)
     (e : regset) (m : mem),
@@ -179,270 +192,332 @@ def make_select_correctStatement : Prop :=
       vl = args.map (fun r => AE.get r ae) →
       let (op', args') := make_select cfg c ty r1 r2 args vl
       ∃ v,
-        eval_operation ge (.Vptr sp Ptrofs.zero) op' (reg_values e args') m = some v ∧
+        eval_operation (binary64_certificate := binary64_certificate) (binary32_certificate := binary32_certificate) ge (.Vptr sp Ptrofs.zero) op' (reg_values e args') m = some v ∧
         Val.lessdef (Val.select (eval_condition c (reg_values e args) m)
           (Regmap.get r1 e) (Regmap.get r2 e) ty) v
 
-def make_addimm_correctStatement : Prop :=
+def make_addimm_correctStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (ge : genv) (sp : block) (e : regset) (m : mem) (n : int) (r : reg),
     let (op, args) := make_addimm n r
     ∃ v,
-      eval_operation ge (.Vptr sp Ptrofs.zero) op (reg_values e args) m = some v ∧
+      eval_operation (binary64_certificate := binary64_certificate) (binary32_certificate := binary32_certificate) ge (.Vptr sp Ptrofs.zero) op (reg_values e args) m = some v ∧
       Val.lessdef (Val.add (Regmap.get r e) (.Vint n)) v
 
-def make_shlimm_correctStatement : Prop :=
+def make_shlimm_correctStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (ge : genv) (sp : block) (e : regset) (m : mem) (n : int)
     (r1 r2 : reg),
     Regmap.get r2 e = .Vint n →
     let (op, args) := make_shlimm n r1 r2
     ∃ v,
-      eval_operation ge (.Vptr sp Ptrofs.zero) op (reg_values e args) m = some v ∧
+      eval_operation (binary64_certificate := binary64_certificate) (binary32_certificate := binary32_certificate) ge (.Vptr sp Ptrofs.zero) op (reg_values e args) m = some v ∧
       Val.lessdef (Val.shl (Regmap.get r1 e) (.Vint n)) v
 
-def make_shrimm_correctStatement : Prop :=
+def make_shrimm_correctStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (ge : genv) (sp : block) (e : regset) (m : mem) (n : int)
     (r1 r2 : reg),
     Regmap.get r2 e = .Vint n →
     let (op, args) := make_shrimm n r1 r2
     ∃ v,
-      eval_operation ge (.Vptr sp Ptrofs.zero) op (reg_values e args) m = some v ∧
+      eval_operation (binary64_certificate := binary64_certificate) (binary32_certificate := binary32_certificate) ge (.Vptr sp Ptrofs.zero) op (reg_values e args) m = some v ∧
       Val.lessdef (Val.shr (Regmap.get r1 e) (.Vint n)) v
 
-def make_shruimm_correctStatement : Prop :=
+def make_shruimm_correctStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (ge : genv) (sp : block) (e : regset) (m : mem) (n : int)
     (r1 r2 : reg),
     Regmap.get r2 e = .Vint n →
     let (op, args) := make_shruimm n r1 r2
     ∃ v,
-      eval_operation ge (.Vptr sp Ptrofs.zero) op (reg_values e args) m = some v ∧
+      eval_operation (binary64_certificate := binary64_certificate) (binary32_certificate := binary32_certificate) ge (.Vptr sp Ptrofs.zero) op (reg_values e args) m = some v ∧
       Val.lessdef (Val.shru (Regmap.get r1 e) (.Vint n)) v
 
-def make_mulimm_correctStatement : Prop :=
+def make_mulimm_correctStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (ge : genv) (sp : block) (e : regset) (m : mem) (n : int) (r1 : reg),
     let (op, args) := make_mulimm n r1
     ∃ v,
-      eval_operation ge (.Vptr sp Ptrofs.zero) op (reg_values e args) m = some v ∧
+      eval_operation (binary64_certificate := binary64_certificate) (binary32_certificate := binary32_certificate) ge (.Vptr sp Ptrofs.zero) op (reg_values e args) m = some v ∧
       Val.lessdef (Val.mul (Regmap.get r1 e) (.Vint n)) v
 
-def make_divimm_correctStatement : Prop :=
+def make_divimm_correctStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (ge : genv) (sp : block) (e : regset) (m : mem) (n : int)
     (r1 r2 : reg) (v : val),
     Val.divs (Regmap.get r1 e) (Regmap.get r2 e) = some v →
     Regmap.get r2 e = .Vint n →
     let (op, args) := make_divimm n r1 r2
     ∃ w,
-      eval_operation ge (.Vptr sp Ptrofs.zero) op (reg_values e args) m = some w ∧
+      eval_operation (binary64_certificate := binary64_certificate) (binary32_certificate := binary32_certificate) ge (.Vptr sp Ptrofs.zero) op (reg_values e args) m = some w ∧
       Val.lessdef v w
 
-def make_divuimm_correctStatement : Prop :=
+def make_divuimm_correctStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (ge : genv) (sp : block) (e : regset) (m : mem) (n : int)
     (r1 r2 : reg) (v : val),
     Val.divu (Regmap.get r1 e) (Regmap.get r2 e) = some v →
     Regmap.get r2 e = .Vint n →
     let (op, args) := make_divuimm n r1 r2
     ∃ w,
-      eval_operation ge (.Vptr sp Ptrofs.zero) op (reg_values e args) m = some w ∧
+      eval_operation (binary64_certificate := binary64_certificate) (binary32_certificate := binary32_certificate) ge (.Vptr sp Ptrofs.zero) op (reg_values e args) m = some w ∧
       Val.lessdef v w
 
-def make_moduimm_correctStatement : Prop :=
+def make_moduimm_correctStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (ge : genv) (sp : block) (e : regset) (m : mem) (n : int)
     (r1 r2 : reg) (v : val),
     Val.modu (Regmap.get r1 e) (Regmap.get r2 e) = some v →
     Regmap.get r2 e = .Vint n →
     let (op, args) := make_moduimm n r1 r2
     ∃ w,
-      eval_operation ge (.Vptr sp Ptrofs.zero) op (reg_values e args) m = some w ∧
+      eval_operation (binary64_certificate := binary64_certificate) (binary32_certificate := binary32_certificate) ge (.Vptr sp Ptrofs.zero) op (reg_values e args) m = some w ∧
       Val.lessdef v w
 
-def make_andimm_correctStatement : Prop :=
+def make_andimm_correctStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (bc : block_classification) (ge : genv) (sp : block) (e : regset)
     (m : mem) (n : int) (r : reg) (x : aval),
     vmatch bc (Regmap.get r e) x →
     let (op, args) := make_andimm n r x
     ∃ v,
-      eval_operation ge (.Vptr sp Ptrofs.zero) op (reg_values e args) m = some v ∧
+      eval_operation (binary64_certificate := binary64_certificate) (binary32_certificate := binary32_certificate) ge (.Vptr sp Ptrofs.zero) op (reg_values e args) m = some v ∧
       Val.lessdef (Val.and (Regmap.get r e) (.Vint n)) v
 
-def make_orimm_correctStatement : Prop :=
+def make_orimm_correctStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (ge : genv) (sp : block) (e : regset) (m : mem) (n : int) (r : reg),
     let (op, args) := make_orimm n r
     ∃ v,
-      eval_operation ge (.Vptr sp Ptrofs.zero) op (reg_values e args) m = some v ∧
+      eval_operation (binary64_certificate := binary64_certificate) (binary32_certificate := binary32_certificate) ge (.Vptr sp Ptrofs.zero) op (reg_values e args) m = some v ∧
       Val.lessdef (Val.or (Regmap.get r e) (.Vint n)) v
 
-def make_xorimm_correctStatement : Prop :=
+def make_xorimm_correctStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (ge : genv) (sp : block) (e : regset) (m : mem) (n : int) (r : reg),
     let (op, args) := make_xorimm n r
     ∃ v,
-      eval_operation ge (.Vptr sp Ptrofs.zero) op (reg_values e args) m = some v ∧
+      eval_operation (binary64_certificate := binary64_certificate) (binary32_certificate := binary32_certificate) ge (.Vptr sp Ptrofs.zero) op (reg_values e args) m = some v ∧
       Val.lessdef (Val.xor (Regmap.get r e) (.Vint n)) v
 
-def make_addlimm_correctStatement : Prop :=
+def make_addlimm_correctStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (ge : genv) (sp : block) (e : regset) (m : mem) (n : int64) (r : reg),
     let (op, args) := make_addlimm n r
     ∃ v,
-      eval_operation ge (.Vptr sp Ptrofs.zero) op (reg_values e args) m = some v ∧
+      eval_operation (binary64_certificate := binary64_certificate) (binary32_certificate := binary32_certificate) ge (.Vptr sp Ptrofs.zero) op (reg_values e args) m = some v ∧
       Val.lessdef (Val.addl (Regmap.get r e) (.Vlong n)) v
 
-def make_shllimm_correctStatement : Prop :=
+def make_shllimm_correctStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (ge : genv) (sp : block) (e : regset) (m : mem) (n : int)
     (r1 r2 : reg),
     Regmap.get r2 e = .Vint n →
     let (op, args) := make_shllimm n r1 r2
     ∃ v,
-      eval_operation ge (.Vptr sp Ptrofs.zero) op (reg_values e args) m = some v ∧
+      eval_operation (binary64_certificate := binary64_certificate) (binary32_certificate := binary32_certificate) ge (.Vptr sp Ptrofs.zero) op (reg_values e args) m = some v ∧
       Val.lessdef (Val.shll (Regmap.get r1 e) (.Vint n)) v
 
-def make_shrlimm_correctStatement : Prop :=
+def make_shrlimm_correctStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (ge : genv) (sp : block) (e : regset) (m : mem) (n : int)
     (r1 r2 : reg),
     Regmap.get r2 e = .Vint n →
     let (op, args) := make_shrlimm n r1 r2
     ∃ v,
-      eval_operation ge (.Vptr sp Ptrofs.zero) op (reg_values e args) m = some v ∧
+      eval_operation (binary64_certificate := binary64_certificate) (binary32_certificate := binary32_certificate) ge (.Vptr sp Ptrofs.zero) op (reg_values e args) m = some v ∧
       Val.lessdef (Val.shrl (Regmap.get r1 e) (.Vint n)) v
 
-def make_shrluimm_correctStatement : Prop :=
+def make_shrluimm_correctStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (ge : genv) (sp : block) (e : regset) (m : mem) (n : int)
     (r1 r2 : reg),
     Regmap.get r2 e = .Vint n →
     let (op, args) := make_shrluimm n r1 r2
     ∃ v,
-      eval_operation ge (.Vptr sp Ptrofs.zero) op (reg_values e args) m = some v ∧
+      eval_operation (binary64_certificate := binary64_certificate) (binary32_certificate := binary32_certificate) ge (.Vptr sp Ptrofs.zero) op (reg_values e args) m = some v ∧
       Val.lessdef (Val.shrlu (Regmap.get r1 e) (.Vint n)) v
 
-def make_mullimm_correctStatement : Prop :=
+def make_mullimm_correctStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (ge : genv) (sp : block) (e : regset) (m : mem) (n : int64) (r1 : reg),
     let (op, args) := make_mullimm n r1
     ∃ v,
-      eval_operation ge (.Vptr sp Ptrofs.zero) op (reg_values e args) m = some v ∧
+      eval_operation (binary64_certificate := binary64_certificate) (binary32_certificate := binary32_certificate) ge (.Vptr sp Ptrofs.zero) op (reg_values e args) m = some v ∧
       Val.lessdef (Val.mull (Regmap.get r1 e) (.Vlong n)) v
 
-def make_divlimm_correctStatement : Prop :=
+def make_divlimm_correctStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (ge : genv) (sp : block) (e : regset) (m : mem) (n : int64)
     (r1 r2 : reg) (v : val),
     Val.divls (Regmap.get r1 e) (Regmap.get r2 e) = some v →
     Regmap.get r2 e = .Vlong n →
     let (op, args) := make_divlimm n r1 r2
     ∃ w,
-      eval_operation ge (.Vptr sp Ptrofs.zero) op (reg_values e args) m = some w ∧
+      eval_operation (binary64_certificate := binary64_certificate) (binary32_certificate := binary32_certificate) ge (.Vptr sp Ptrofs.zero) op (reg_values e args) m = some w ∧
       Val.lessdef v w
 
-def make_divluimm_correctStatement : Prop :=
+def make_divluimm_correctStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (ge : genv) (sp : block) (e : regset) (m : mem) (n : int64)
     (r1 r2 : reg) (v : val),
     Val.divlu (Regmap.get r1 e) (Regmap.get r2 e) = some v →
     Regmap.get r2 e = .Vlong n →
     let (op, args) := make_divluimm n r1 r2
     ∃ w,
-      eval_operation ge (.Vptr sp Ptrofs.zero) op (reg_values e args) m = some w ∧
+      eval_operation (binary64_certificate := binary64_certificate) (binary32_certificate := binary32_certificate) ge (.Vptr sp Ptrofs.zero) op (reg_values e args) m = some w ∧
       Val.lessdef v w
 
-def make_modluimm_correctStatement : Prop :=
+def make_modluimm_correctStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (ge : genv) (sp : block) (e : regset) (m : mem) (n : int64)
     (r1 r2 : reg) (v : val),
     Val.modlu (Regmap.get r1 e) (Regmap.get r2 e) = some v →
     Regmap.get r2 e = .Vlong n →
     let (op, args) := make_modluimm n r1 r2
     ∃ w,
-      eval_operation ge (.Vptr sp Ptrofs.zero) op (reg_values e args) m = some w ∧
+      eval_operation (binary64_certificate := binary64_certificate) (binary32_certificate := binary32_certificate) ge (.Vptr sp Ptrofs.zero) op (reg_values e args) m = some w ∧
       Val.lessdef v w
 
-def make_andlimm_correctStatement : Prop :=
+def make_andlimm_correctStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (ge : genv) (sp : block) (e : regset) (m : mem) (n : int64)
     (r : reg) (x : aval),
     let (op, args) := make_andlimm n r x
     ∃ v,
-      eval_operation ge (.Vptr sp Ptrofs.zero) op (reg_values e args) m = some v ∧
+      eval_operation (binary64_certificate := binary64_certificate) (binary32_certificate := binary32_certificate) ge (.Vptr sp Ptrofs.zero) op (reg_values e args) m = some v ∧
       Val.lessdef (Val.andl (Regmap.get r e) (.Vlong n)) v
 
-def make_orlimm_correctStatement : Prop :=
+def make_orlimm_correctStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (ge : genv) (sp : block) (e : regset) (m : mem) (n : int64) (r : reg),
     let (op, args) := make_orlimm n r
     ∃ v,
-      eval_operation ge (.Vptr sp Ptrofs.zero) op (reg_values e args) m = some v ∧
+      eval_operation (binary64_certificate := binary64_certificate) (binary32_certificate := binary32_certificate) ge (.Vptr sp Ptrofs.zero) op (reg_values e args) m = some v ∧
       Val.lessdef (Val.orl (Regmap.get r e) (.Vlong n)) v
 
-def make_xorlimm_correctStatement : Prop :=
+def make_xorlimm_correctStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (ge : genv) (sp : block) (e : regset) (m : mem) (n : int64) (r : reg),
     let (op, args) := make_xorlimm n r
     ∃ v,
-      eval_operation ge (.Vptr sp Ptrofs.zero) op (reg_values e args) m = some v ∧
+      eval_operation (binary64_certificate := binary64_certificate) (binary32_certificate := binary32_certificate) ge (.Vptr sp Ptrofs.zero) op (reg_values e args) m = some v ∧
       Val.lessdef (Val.xorl (Regmap.get r e) (.Vlong n)) v
 
-def make_mulfimm_correctStatement : Prop :=
+def make_mulfimm_correctStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (ge : genv) (sp : block) (e : regset) (m : mem) (n : float)
     (r1 r2 : reg),
     Regmap.get r2 e = .Vfloat n →
     let (op, args) := make_mulfimm n r1 r1 r2
     ∃ v,
-      eval_operation ge (.Vptr sp Ptrofs.zero) op (reg_values e args) m = some v ∧
+      eval_operation (binary64_certificate := binary64_certificate) (binary32_certificate := binary32_certificate) ge (.Vptr sp Ptrofs.zero) op (reg_values e args) m = some v ∧
       Val.lessdef (Val.mulf (Regmap.get r1 e) (Regmap.get r2 e)) v
 
-def make_mulfimm_correct_2Statement : Prop :=
+def make_mulfimm_correct_2Statement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (ge : genv) (sp : block) (e : regset) (m : mem) (n : float)
     (r1 : reg) (r2 : reg),
     Regmap.get r1 e = .Vfloat n →
     let (op, args) := make_mulfimm n r2 r1 r2
     ∃ v,
-      eval_operation ge (.Vptr sp Ptrofs.zero) op (reg_values e args) m = some v ∧
+      eval_operation (binary64_certificate := binary64_certificate) (binary32_certificate := binary32_certificate) ge (.Vptr sp Ptrofs.zero) op (reg_values e args) m = some v ∧
       Val.lessdef (Val.mulf (Regmap.get r1 e) (Regmap.get r2 e)) v
 
-def make_mulfsimm_correctStatement : Prop :=
+def make_mulfsimm_correctStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (ge : genv) (sp : block) (e : regset) (m : mem) (n : float32)
     (r1 r2 : reg),
     Regmap.get r2 e = .Vsingle n →
     let (op, args) := make_mulfsimm n r1 r1 r2
     ∃ v,
-      eval_operation ge (.Vptr sp Ptrofs.zero) op (reg_values e args) m = some v ∧
+      eval_operation (binary64_certificate := binary64_certificate) (binary32_certificate := binary32_certificate) ge (.Vptr sp Ptrofs.zero) op (reg_values e args) m = some v ∧
       Val.lessdef (Val.mulfs (Regmap.get r1 e) (Regmap.get r2 e)) v
 
-def make_mulfsimm_correct_2Statement : Prop :=
+def make_mulfsimm_correct_2Statement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (ge : genv) (sp : block) (e : regset) (m : mem) (n : float32)
     (r1 : reg) (r2 : reg),
     Regmap.get r1 e = .Vsingle n →
     let (op, args) := make_mulfsimm n r2 r1 r2
     ∃ v,
-      eval_operation ge (.Vptr sp Ptrofs.zero) op (reg_values e args) m = some v ∧
+      eval_operation (binary64_certificate := binary64_certificate) (binary32_certificate := binary32_certificate) ge (.Vptr sp Ptrofs.zero) op (reg_values e args) m = some v ∧
       Val.lessdef (Val.mulfs (Regmap.get r1 e) (Regmap.get r2 e)) v
 
-def make_cast8signed_correctStatement : Prop :=
+def make_cast8signed_correctStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (bc : block_classification) (ge : genv) (sp : block) (e : regset)
     (m : mem) (r : reg) (x : aval),
     vmatch bc (Regmap.get r e) x →
     let (op, args) := make_cast8signed r x
     ∃ v,
-      eval_operation ge (.Vptr sp Ptrofs.zero) op (reg_values e args) m = some v ∧
+      eval_operation (binary64_certificate := binary64_certificate) (binary32_certificate := binary32_certificate) ge (.Vptr sp Ptrofs.zero) op (reg_values e args) m = some v ∧
       Val.lessdef (Val.sign_ext (ZArith.BinInt.Z.of_nat 8) (Regmap.get r e)) v
 
-def make_cast8unsigned_correctStatement : Prop :=
+def make_cast8unsigned_correctStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (bc : block_classification) (ge : genv) (sp : block) (e : regset)
     (m : mem) (r : reg) (x : aval),
     vmatch bc (Regmap.get r e) x →
     let (op, args) := make_cast8unsigned r x
     ∃ v,
-      eval_operation ge (.Vptr sp Ptrofs.zero) op (reg_values e args) m = some v ∧
+      eval_operation (binary64_certificate := binary64_certificate) (binary32_certificate := binary32_certificate) ge (.Vptr sp Ptrofs.zero) op (reg_values e args) m = some v ∧
       Val.lessdef (Val.zero_ext (ZArith.BinInt.Z.of_nat 8) (Regmap.get r e)) v
 
-def make_cast16signed_correctStatement : Prop :=
+def make_cast16signed_correctStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (bc : block_classification) (ge : genv) (sp : block) (e : regset)
     (m : mem) (r : reg) (x : aval),
     vmatch bc (Regmap.get r e) x →
     let (op, args) := make_cast16signed r x
     ∃ v,
-      eval_operation ge (.Vptr sp Ptrofs.zero) op (reg_values e args) m = some v ∧
+      eval_operation (binary64_certificate := binary64_certificate) (binary32_certificate := binary32_certificate) ge (.Vptr sp Ptrofs.zero) op (reg_values e args) m = some v ∧
       Val.lessdef (Val.sign_ext (ZArith.BinInt.Z.of_nat 16) (Regmap.get r e)) v
 
-def make_cast16unsigned_correctStatement : Prop :=
+def make_cast16unsigned_correctStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (bc : block_classification) (ge : genv) (sp : block) (e : regset)
     (m : mem) (r : reg) (x : aval),
     vmatch bc (Regmap.get r e) x →
     let (op, args) := make_cast16unsigned r x
     ∃ v,
-      eval_operation ge (.Vptr sp Ptrofs.zero) op (reg_values e args) m = some v ∧
+      eval_operation (binary64_certificate := binary64_certificate) (binary32_certificate := binary32_certificate) ge (.Vptr sp Ptrofs.zero) op (reg_values e args) m = some v ∧
       Val.lessdef (Val.zero_ext (ZArith.BinInt.Z.of_nat 16) (Regmap.get r e)) v
 
-def op_strength_reduction_correctStatement : Prop :=
+def op_strength_reduction_correctStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (cfg : CompilerConfig) (bc : block_classification) (ge : genv),
     genv_match bc ge →
     ∀ (sp : block), bc sp = BCstack →
@@ -450,10 +525,10 @@ def op_strength_reduction_correctStatement : Prop :=
       ematch bc e ae →
       ∀ (op : operation) (args : List reg) (vl : List aval) (v : val),
         vl = args.map (fun r => AE.get r ae) →
-        eval_operation ge (.Vptr sp Ptrofs.zero) op (reg_values e args) m = some v →
+        eval_operation (binary64_certificate := binary64_certificate) (binary32_certificate := binary32_certificate) ge (.Vptr sp Ptrofs.zero) op (reg_values e args) m = some v →
         let (op', args') := op_strength_reduction cfg op args vl
         ∃ w,
-          eval_operation ge (.Vptr sp Ptrofs.zero) op' (reg_values e args') m = some w ∧
+          eval_operation (binary64_certificate := binary64_certificate) (binary32_certificate := binary32_certificate) ge (.Vptr sp Ptrofs.zero) op' (reg_values e args') m = some w ∧
           Val.lessdef v w
 
 end CompCert4Lean.X86.ConstpropOpproof
