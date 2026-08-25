@@ -31,6 +31,8 @@ private abbrev int := CompCert4Lean.Lib.Integers.int
 private abbrev int64 := CompCert4Lean.Lib.Integers.int64
 private abbrev float := CompCert4Lean.Lib.Floats.float
 private abbrev float32 := CompCert4Lean.Lib.Floats.float32
+private abbrev BexactInverseCertificate :=
+  CompCert4Lean.Lib.IEEE754_extra.Bexact_inverse_certificate
 private abbrev Z := CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z
 private abbrev intRepr := CompCert4Lean.Lib.Integers.Int.repr
 private abbrev intUnsigned := CompCert4Lean.Lib.Integers.Int.unsigned
@@ -68,8 +70,12 @@ private abbrev int64Zwordsize := CompCert4Lean.Lib.Integers.Int64.zwordsize
 
 private abbrev z0 : Z := .Z0
 private abbrev z1 : Z := ZArith.BinInt.Z.of_nat 1
+private abbrev z24 : Z := ZArith.BinInt.Z.of_nat 24
 private abbrev z32 : Z := ZArith.BinInt.Z.of_nat 32
+private abbrev z53 : Z := ZArith.BinInt.Z.of_nat 53
 private abbrev z64 : Z := ZArith.BinInt.Z.of_nat 64
+private abbrev z128 : Z := ZArith.BinInt.Z.of_nat 128
+private abbrev z1024 : Z := ZArith.BinInt.Z.of_nat 1024
 private abbrev zAdd := ZArith.BinInt.Z.add
 private abbrev zSub := ZArith.BinInt.Z.sub
 private abbrev zMul := ZArith.BinInt.Z.mul
@@ -367,8 +373,8 @@ def modls (cfg : CompilerConfig) (e1 e2 : expr) : expr :=
                 Elet e1 (modl_from_divl (divls_mull p m) n2)
   | _, _ => modls_base e1 e2
 
-def divfimm (e : expr) (n : float) : expr :=
-  match Float.exact_inverse n with
+def divfimm [certificate : BexactInverseCertificate z53 z1024] (e : expr) (n : float) : expr :=
+  match Float.exact_inverse (certificate := certificate) n with
   | some n' => Eop Omulf (Econs e (Econs (Eop (Ofloatconst n') Enil) Enil))
   | none => Eop Odivf (Econs e (Econs (Eop (Ofloatconst n) Enil) Enil))
 
@@ -383,13 +389,13 @@ def divf_match (e2 : expr) : divf_cases e2 :=
   | Eop (Ofloatconst n2) Enil => .divf_case1 n2
   | e2 => .divf_default e2
 
-def divf (e1 e2 : expr) : expr :=
+def divf [certificate : BexactInverseCertificate z53 z1024] (e1 e2 : expr) : expr :=
   match divf_match e2 with
-  | .divf_case1 n2 => divfimm e1 n2
+  | .divf_case1 n2 => divfimm (certificate := certificate) e1 n2
   | .divf_default e2 => Eop Odivf (Econs e1 (Econs e2 Enil))
 
-def divfsimm (e : expr) (n : float32) : expr :=
-  match Float32.exact_inverse n with
+def divfsimm [certificate : BexactInverseCertificate z24 z128] (e : expr) (n : float32) : expr :=
+  match Float32.exact_inverse (certificate := certificate) n with
   | some n' => Eop Omulfs (Econs e (Econs (Eop (Osingleconst n') Enil) Enil))
   | none => Eop Odivfs (Econs e (Econs (Eop (Osingleconst n) Enil) Enil))
 
@@ -404,9 +410,9 @@ def divfs_match (e2 : expr) : divfs_cases e2 :=
   | Eop (Osingleconst n2) Enil => .divfs_case1 n2
   | e2 => .divfs_default e2
 
-def divfs (e1 e2 : expr) : expr :=
+def divfs [certificate : BexactInverseCertificate z24 z128] (e1 e2 : expr) : expr :=
   match divfs_match e2 with
-  | .divfs_case1 n2 => divfsimm e1 n2
+  | .divfs_case1 n2 => divfsimm (certificate := certificate) e1 n2
   | .divfs_default e2 => Eop Odivfs (Econs e1 (Econs e2 Enil))
 
 end CompCert4Lean.Backend.SelectDiv
