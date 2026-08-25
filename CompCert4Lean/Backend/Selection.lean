@@ -54,6 +54,15 @@ private abbrev CCInt64 := CompCert4Lean.Lib.Integers.int64
 private abbrev CCFloat := CompCert4Lean.Lib.Floats.float
 private abbrev CCFloat32 := CompCert4Lean.Lib.Floats.float32
 private abbrev positive := CompCert4Lean.Foundation.Numbers.Rocq.Coq.positive
+private abbrev BinaryNormalizeCertificate :=
+  CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+private abbrev BexactInverseCertificate :=
+  CompCert4Lean.Lib.IEEE754_extra.Bexact_inverse_certificate
+private abbrev zOfNat := ZArith.BinInt.Z.of_nat
+private abbrev z24 : Z := zOfNat 24
+private abbrev z53 : Z := zOfNat 53
+private abbrev z128 : Z := zOfNat 128
+private abbrev z1024 : Z := zOfNat 1024
 private abbrev z0 : Z := .Z0
 private abbrev z1 : Z := ZArith.BinInt.Z.of_nat 1
 private abbrev zAdd := ZArith.BinInt.Z.add
@@ -84,10 +93,12 @@ private def selectionErrorText : RocqString :=
   bytesToString [83, 101, 108, 101, 99, 116, 105, 111, 110, 58, 32]
 
 private def badSwitchIntText : RocqString :=
-  bytesToString [98, 97, 100, 32, 115, 119, 105, 116, 99, 104, 32, 40, 105, 110, 116, 41]
+  bytesToString [83, 101, 108, 101, 99, 116, 105, 111, 110, 58, 32,
+    98, 97, 100, 32, 115, 119, 105, 116, 99, 104, 32, 40, 105, 110, 116, 41]
 
 private def badSwitchLongText : RocqString :=
-  bytesToString [98, 97, 100, 32, 115, 119, 105, 116, 99, 104, 32, 40, 108, 111, 110, 103, 41]
+  bytesToString [83, 101, 108, 101, 99, 116, 105, 111, 110, 58, 32,
+    98, 97, 100, 32, 115, 119, 105, 116, 99, 104, 32, 40, 108, 111, 110, 103, 41]
 
 /-! Condition conversion support (the source keeps these outside the mapped roots). -/
 
@@ -144,7 +155,10 @@ def sel_constant (cfg : CompilerConfig) (cst : Cminor.constant) : CminorSel.expr
   | .Oaddrsymbol id ofs => addrsymbol cfg.relocation id ofs
   | .Oaddrstack ofs => addrstack ofs
 
-def sel_unop (op : Cminor.unary_operation) (arg : CminorSel.expr) : CminorSel.expr :=
+def sel_unop
+    [binary64_certificate : BinaryNormalizeCertificate z53 z1024]
+    [binary32_certificate : BinaryNormalizeCertificate z24 z128]
+    (op : Cminor.unary_operation) (arg : CminorSel.expr) : CminorSel.expr :=
   match op with
   | .Ocast8unsigned => cast8unsigned arg
   | .Ocast8signed => cast8signed arg
@@ -159,13 +173,20 @@ def sel_unop (op : Cminor.unary_operation) (arg : CminorSel.expr) : CminorSel.ex
   | .Osingleoffloat => singleoffloat arg
   | .Ofloatofsingle => floatofsingle arg
   | .Ointoffloat => intoffloat arg
-  | .Ointuoffloat => intuoffloat arg
-  | .Ofloatofint => floatofint arg
-  | .Ofloatofintu => floatofintu arg
+  | .Ointuoffloat => intuoffloat
+      (binary64_certificate := binary64_certificate) arg
+  | .Ofloatofint => floatofint
+      (binary64_certificate := binary64_certificate) arg
+  | .Ofloatofintu => floatofintu
+      (binary64_certificate := binary64_certificate) arg
   | .Ointofsingle => intofsingle arg
-  | .Ointuofsingle => intuofsingle arg
-  | .Osingleofint => singleofint arg
-  | .Osingleofintu => singleofintu arg
+  | .Ointuofsingle => intuofsingle
+      (binary64_certificate := binary64_certificate) arg
+  | .Osingleofint => singleofint
+      (binary32_certificate := binary32_certificate) arg
+  | .Osingleofintu => singleofintu
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) arg
   | .Onegl => negl arg
   | .Onotl => notl arg
   | .Ointoflong => intoflong arg
@@ -180,7 +201,11 @@ def sel_unop (op : Cminor.unary_operation) (arg : CminorSel.expr) : CminorSel.ex
   | .Osingleoflong => singleoflong arg
   | .Osingleoflongu => singleoflongu arg
 
-def sel_binop (cfg : CompilerConfig) (op : Cminor.binary_operation)
+def sel_binop
+    [binary64_inverse_certificate : BexactInverseCertificate z53 z1024]
+    [binary32_inverse_certificate : BexactInverseCertificate z24 z128]
+    (cfg : CompilerConfig)
+    (op : Cminor.binary_operation)
     (arg1 arg2 : CminorSel.expr) : CminorSel.expr :=
   match op with
   | .Oadd => add arg1 arg2
@@ -199,11 +224,13 @@ def sel_binop (cfg : CompilerConfig) (op : Cminor.binary_operation)
   | .Oaddf => addf arg1 arg2
   | .Osubf => subf arg1 arg2
   | .Omulf => mulf arg1 arg2
-  | .Odivf => CompCert4Lean.Backend.SelectDiv.divf arg1 arg2
+  | .Odivf => CompCert4Lean.Backend.SelectDiv.divf
+      (certificate := binary64_inverse_certificate) arg1 arg2
   | .Oaddfs => addfs arg1 arg2
   | .Osubfs => subfs arg1 arg2
   | .Omulfs => mulfs arg1 arg2
-  | .Odivfs => CompCert4Lean.Backend.SelectDiv.divfs arg1 arg2
+  | .Odivfs => CompCert4Lean.Backend.SelectDiv.divfs
+      (certificate := binary32_inverse_certificate) arg1 arg2
   | .Oaddl => addl arg1 arg2
   | .Osubl => subl arg1 arg2
   | .Omull => mull arg1 arg2
@@ -229,21 +256,88 @@ def sel_select (ty : typ) (cnd ifso ifnot : CminorSel.expr) : CminorSel.expr :=
   if select_supported ty then select ty cond args ifso ifnot
   else .Econdition (condexpr_of_expr cnd) ifso ifnot
 
-def sel_expr (cfg : CompilerConfig) : Cminor.expr → CminorSel.expr
+def sel_expr
+    [binary64_certificate : BinaryNormalizeCertificate z53 z1024]
+    [binary32_certificate : BinaryNormalizeCertificate z24 z128]
+    [binary64_inverse_certificate : BexactInverseCertificate z53 z1024]
+    [binary32_inverse_certificate : BexactInverseCertificate z24 z128]
+    (cfg : CompilerConfig)
+    : Cminor.expr → CminorSel.expr
   | .Evar id => .Evar id
   | .Econst cst => sel_constant cfg cst
-  | .Eunop op arg => sel_unop op (sel_expr cfg arg)
-  | .Ebinop op arg1 arg2 => sel_binop cfg op (sel_expr cfg arg1) (sel_expr cfg arg2)
-  | .Eload chunk addr => load chunk (sel_expr cfg addr)
+  | .Eunop op arg => sel_unop
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) op
+      (sel_expr
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        (binary64_inverse_certificate := binary64_inverse_certificate)
+        (binary32_inverse_certificate := binary32_inverse_certificate) cfg arg)
+  | .Ebinop op arg1 arg2 => sel_binop cfg
+      (binary64_inverse_certificate := binary64_inverse_certificate)
+      (binary32_inverse_certificate := binary32_inverse_certificate) op
+      (sel_expr
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        (binary64_inverse_certificate := binary64_inverse_certificate)
+        (binary32_inverse_certificate := binary32_inverse_certificate) cfg arg1)
+      (sel_expr
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        (binary64_inverse_certificate := binary64_inverse_certificate)
+        (binary32_inverse_certificate := binary32_inverse_certificate) cfg arg2)
+  | .Eload chunk addr => load chunk
+      (sel_expr
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        (binary64_inverse_certificate := binary64_inverse_certificate)
+        (binary32_inverse_certificate := binary32_inverse_certificate) cfg addr)
 
-def sel_exprlist (cfg : CompilerConfig) : List Cminor.expr → exprlist
+def sel_exprlist
+    [binary64_certificate : BinaryNormalizeCertificate z53 z1024]
+    [binary32_certificate : BinaryNormalizeCertificate z24 z128]
+    [binary64_inverse_certificate : BexactInverseCertificate z53 z1024]
+    [binary32_inverse_certificate : BexactInverseCertificate z24 z128]
+    (cfg : CompilerConfig)
+    : List Cminor.expr → exprlist
   | [] => .Enil
-  | a :: rest => .Econs (sel_expr cfg a) (sel_exprlist cfg rest)
+  | a :: rest => .Econs
+      (sel_expr
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        (binary64_inverse_certificate := binary64_inverse_certificate)
+        (binary32_inverse_certificate := binary32_inverse_certificate) cfg a)
+      (sel_exprlist
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        (binary64_inverse_certificate := binary64_inverse_certificate)
+        (binary32_inverse_certificate := binary32_inverse_certificate) cfg rest)
 
-def sel_select_expr (cfg : CompilerConfig) (ty : typ)
+def sel_select_expr
+    [binary64_certificate : BinaryNormalizeCertificate z53 z1024]
+    [binary32_certificate : BinaryNormalizeCertificate z24 z128]
+    [binary64_inverse_certificate : BexactInverseCertificate z53 z1024]
+    [binary32_inverse_certificate : BexactInverseCertificate z24 z128]
+    (cfg : CompilerConfig)
+    (ty : typ)
     (arg1 arg2 arg3 : Cminor.expr) : CminorSel.expr :=
-  let (cond, args) := condition_of_expr (sel_expr cfg arg1)
-  select ty cond args (sel_expr cfg arg2) (sel_expr cfg arg3)
+  let (cond, args) := condition_of_expr
+    (sel_expr
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      (binary64_inverse_certificate := binary64_inverse_certificate)
+      (binary32_inverse_certificate := binary32_inverse_certificate) cfg arg1)
+  select ty cond args
+    (sel_expr
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      (binary64_inverse_certificate := binary64_inverse_certificate)
+      (binary32_inverse_certificate := binary32_inverse_certificate) cfg arg2)
+    (sel_expr
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      (binary64_inverse_certificate := binary64_inverse_certificate)
+      (binary32_inverse_certificate := binary32_inverse_certificate) cfg arg3)
 
 def sel_known_builtin (bf : builtin_function) (args : exprlist) : Option CminorSel.expr :=
   match bf, args with
@@ -275,18 +369,43 @@ def classify_call (e : Cminor.expr) : call_kind :=
       | some (.Gfun (.External ef)) => if ef_inline ef then .Call_builtin ef else .Call_imm id
       | _ => .Call_imm id
 
-def sel_builtin_arg (cfg : CompilerConfig) (e : Cminor.expr)
+def sel_builtin_arg
+    [binary64_certificate : BinaryNormalizeCertificate z53 z1024]
+    [binary32_certificate : BinaryNormalizeCertificate z24 z128]
+    [binary64_inverse_certificate : BexactInverseCertificate z53 z1024]
+    [binary32_inverse_certificate : BexactInverseCertificate z24 z128]
+    (cfg : CompilerConfig)
+    (e : Cminor.expr)
     (c : builtin_arg_constraint) : builtin_arg CminorSel.expr :=
-  let e' := sel_expr cfg e
+  let e' := sel_expr
+    (binary64_certificate := binary64_certificate)
+    (binary32_certificate := binary32_certificate)
+    (binary64_inverse_certificate := binary64_inverse_certificate)
+    (binary32_inverse_certificate := binary32_inverse_certificate) cfg e
   let ba := builtin_arg e'
   if builtin_arg_ok ba c then ba else .BA e'
 
-def sel_builtin_args (cfg : CompilerConfig) :
+def sel_builtin_args
+    [binary64_certificate : BinaryNormalizeCertificate z53 z1024]
+    [binary32_certificate : BinaryNormalizeCertificate z24 z128]
+    [binary64_inverse_certificate : BexactInverseCertificate z53 z1024]
+    [binary32_inverse_certificate : BexactInverseCertificate z24 z128]
+    (cfg : CompilerConfig)
+    :
     List Cminor.expr → List builtin_arg_constraint → List (builtin_arg CminorSel.expr)
   | [], _ => []
   | e :: rest, constraints =>
-      sel_builtin_arg cfg e (constraints.headD .OK_default) ::
-        sel_builtin_args cfg rest constraints.tail
+      sel_builtin_arg
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        (binary64_inverse_certificate := binary64_inverse_certificate)
+        (binary32_inverse_certificate := binary32_inverse_certificate) cfg e
+        (constraints.headD .OK_default) ::
+        sel_builtin_args
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate)
+          (binary64_inverse_certificate := binary64_inverse_certificate)
+          (binary32_inverse_certificate := binary32_inverse_certificate) cfg rest constraints.tail
 
 def sel_builtin_res (optid : Option ident) : builtin_res ident :=
   match optid with
@@ -295,11 +414,29 @@ def sel_builtin_res (optid : Option ident) : builtin_res ident :=
 
 def Sno_op : CminorSel.stmt := .Sseq .Sskip .Sskip
 
-def sel_builtin_default (cfg : CompilerConfig) (optid : Option ident) (ef : external_function)
+def sel_builtin_default
+    [binary64_certificate : BinaryNormalizeCertificate z53 z1024]
+    [binary32_certificate : BinaryNormalizeCertificate z24 z128]
+    [binary64_inverse_certificate : BexactInverseCertificate z53 z1024]
+    [binary32_inverse_certificate : BexactInverseCertificate z24 z128]
+    (cfg : CompilerConfig)
+    (optid : Option ident) (ef : external_function)
     (args : List Cminor.expr) : CminorSel.stmt :=
-  .Sbuiltin (sel_builtin_res optid) ef (sel_builtin_args cfg args (builtin_constraints ef))
+  .Sbuiltin (sel_builtin_res optid) ef
+    (sel_builtin_args
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      (binary64_inverse_certificate := binary64_inverse_certificate)
+      (binary32_inverse_certificate := binary32_inverse_certificate) cfg args
+      (builtin_constraints ef))
 
-def sel_builtin (cfg : CompilerConfig) (optid : Option ident) (ef : external_function)
+def sel_builtin
+    [binary64_certificate : BinaryNormalizeCertificate z53 z1024]
+    [binary32_certificate : BinaryNormalizeCertificate z24 z128]
+    [binary64_inverse_certificate : BexactInverseCertificate z53 z1024]
+    [binary32_inverse_certificate : BexactInverseCertificate z24 z128]
+    (cfg : CompilerConfig)
+    (optid : Option ident) (ef : external_function)
     (args : List Cminor.expr) : CminorSel.stmt :=
   match ef with
   | .EF_builtin name sg =>
@@ -307,12 +444,29 @@ def sel_builtin (cfg : CompilerConfig) (optid : Option ident) (ef : external_fun
       | some bf =>
           match optid with
           | some id =>
-              match sel_known_builtin bf (sel_exprlist cfg args) with
+              match sel_known_builtin bf
+                  (sel_exprlist
+                    (binary64_certificate := binary64_certificate)
+                    (binary32_certificate := binary32_certificate)
+                    (binary64_inverse_certificate := binary64_inverse_certificate)
+                    (binary32_inverse_certificate := binary32_inverse_certificate) cfg args) with
               | some a => .Sassign id a
-              | none => sel_builtin_default cfg optid ef args
+              | none => sel_builtin_default
+                  (binary64_certificate := binary64_certificate)
+                  (binary32_certificate := binary32_certificate)
+                  (binary64_inverse_certificate := binary64_inverse_certificate)
+                  (binary32_inverse_certificate := binary32_inverse_certificate) cfg optid ef args
           | none => Sno_op
-      | none => sel_builtin_default cfg optid ef args
-  | _ => sel_builtin_default cfg optid ef args
+      | none => sel_builtin_default
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate)
+          (binary64_inverse_certificate := binary64_inverse_certificate)
+          (binary32_inverse_certificate := binary32_inverse_certificate) cfg optid ef args
+  | _ => sel_builtin_default
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      (binary64_inverse_certificate := binary64_inverse_certificate)
+      (binary32_inverse_certificate := binary32_inverse_certificate) cfg optid ef args
 
 def sel_switch (make_cmp_eq : CminorSel.expr → Z → CminorSel.expr)
     (make_cmp_ltu : CminorSel.expr → Z → CminorSel.expr)
@@ -370,89 +524,227 @@ def classify_stmt : Cminor.stmt → stmt_class
       | _, _ => .SCother
   | _ => .SCother
 
-def if_conversion_base (cfg : CompilerConfig) (oracle : SelectionOracle)
+def if_conversion_base
+    [binary64_certificate : BinaryNormalizeCertificate z53 z1024]
+    [binary32_certificate : BinaryNormalizeCertificate z24 z128]
+    [binary64_inverse_certificate : BexactInverseCertificate z53 z1024]
+    [binary32_inverse_certificate : BexactInverseCertificate z24 z128]
+    (cfg : CompilerConfig) (oracle : SelectionOracle)
     (ki : known_idents) (env : typenv)
     (cond : Cminor.expr) (id : ident) (ifso ifnot : Cminor.expr)
     (kont : CminorSel.stmt) : Option CminorSel.stmt :=
   let ty := env id
   if select_supported ty && is_known ki id && safe_expr ki ifso && safe_expr ki ifnot &&
       if_conversion_heuristic oracle id cond ifso ifnot ty kont then
-    some (.Sassign id (sel_select_expr cfg ty cond ifso ifnot))
+      some (.Sassign id (sel_select_expr
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        (binary64_inverse_certificate := binary64_inverse_certificate)
+        (binary32_inverse_certificate := binary32_inverse_certificate) cfg ty cond ifso ifnot))
   else none
 
-def if_conversion (cfg : CompilerConfig) (oracle : SelectionOracle)
+def if_conversion
+    [binary64_certificate : BinaryNormalizeCertificate z53 z1024]
+    [binary32_certificate : BinaryNormalizeCertificate z24 z128]
+    [binary64_inverse_certificate : BexactInverseCertificate z53 z1024]
+    [binary32_inverse_certificate : BexactInverseCertificate z24 z128]
+    (cfg : CompilerConfig) (oracle : SelectionOracle)
     (ki : known_idents) (env : typenv)
     (cond : Cminor.expr)
     (ifso ifnot : Cminor.stmt) (kont : CminorSel.stmt) : Option CminorSel.stmt :=
   match classify_stmt ifso, classify_stmt ifnot with
   | .SCskip, .SCassign id a =>
-      if_conversion_base cfg oracle ki env cond id (.Evar id) a kont
+      if_conversion_base cfg oracle
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        (binary64_inverse_certificate := binary64_inverse_certificate)
+        (binary32_inverse_certificate := binary32_inverse_certificate)
+        ki env cond id (.Evar id) a kont
   | .SCassign id a, .SCskip =>
-      if_conversion_base cfg oracle ki env cond id a (.Evar id) kont
+      if_conversion_base cfg oracle
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        (binary64_inverse_certificate := binary64_inverse_certificate)
+        (binary32_inverse_certificate := binary32_inverse_certificate)
+        ki env cond id a (.Evar id) kont
   | .SCassign id1 a1, .SCassign id2 a2 =>
       match ident_eq id1 id2 with
-      | .left _ => if_conversion_base cfg oracle ki env cond id1 a1 a2 kont
+      | .left _ => if_conversion_base cfg oracle
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate)
+          (binary64_inverse_certificate := binary64_inverse_certificate)
+          (binary32_inverse_certificate := binary32_inverse_certificate)
+          ki env cond id1 a1 a2 kont
       | .right _ => none
   | _, _ => none
 
-def sel_stmt (cfg : CompilerConfig) (oracle : SelectionOracle)
+def sel_stmt
+    [binary64_certificate : BinaryNormalizeCertificate z53 z1024]
+    [binary32_certificate : BinaryNormalizeCertificate z24 z128]
+    [binary64_inverse_certificate : BexactInverseCertificate z53 z1024]
+    [binary32_inverse_certificate : BexactInverseCertificate z24 z128]
+    (cfg : CompilerConfig) (oracle : SelectionOracle)
     (defmap : PTree.t globdef)
     (ki : known_idents) (env : typenv)
     : Cminor.stmt → CminorSel.stmt → res CminorSel.stmt
   | .Sskip, _ => .OK .Sskip
-  | .Sassign id e, _ => .OK (.Sassign id (sel_expr cfg e))
+  | .Sassign id e, _ => .OK (.Sassign id (sel_expr
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      (binary64_inverse_certificate := binary64_inverse_certificate)
+      (binary32_inverse_certificate := binary32_inverse_certificate) cfg e))
   | .Sstore chunk addr rhs, _ =>
-      let (mode, args) := CompCert4Lean.X86.SelectOp.addressing chunk (sel_expr cfg addr)
-      .OK (.Sstore chunk mode args (sel_expr cfg rhs))
+      let (mode, args) := CompCert4Lean.X86.SelectOp.addressing chunk (sel_expr
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        (binary64_inverse_certificate := binary64_inverse_certificate)
+        (binary32_inverse_certificate := binary32_inverse_certificate) cfg addr)
+      .OK (.Sstore chunk mode args (sel_expr
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        (binary64_inverse_certificate := binary64_inverse_certificate)
+        (binary32_inverse_certificate := binary32_inverse_certificate) cfg rhs))
   | .Scall optid sg fn args, _ =>
       .OK (match classify_call defmap fn with
-      | Call_default => .Scall optid sg (.inl (sel_expr cfg fn)) (sel_exprlist cfg args)
-      | Call_imm id => .Scall optid sg (.inr id) (sel_exprlist cfg args)
-      | Call_builtin ef => sel_builtin cfg optid ef args)
-  | .Sbuiltin optid ef args, _ => .OK (sel_builtin cfg optid ef args)
+      | Call_default => .Scall optid sg (.inl (sel_expr
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate)
+          (binary64_inverse_certificate := binary64_inverse_certificate)
+          (binary32_inverse_certificate := binary32_inverse_certificate) cfg fn))
+          (sel_exprlist
+            (binary64_certificate := binary64_certificate)
+            (binary32_certificate := binary32_certificate)
+            (binary64_inverse_certificate := binary64_inverse_certificate)
+            (binary32_inverse_certificate := binary32_inverse_certificate) cfg args)
+      | Call_imm id => .Scall optid sg (.inr id)
+          (sel_exprlist
+            (binary64_certificate := binary64_certificate)
+            (binary32_certificate := binary32_certificate)
+            (binary64_inverse_certificate := binary64_inverse_certificate)
+            (binary32_inverse_certificate := binary32_inverse_certificate) cfg args)
+      | Call_builtin ef => sel_builtin
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate)
+          (binary64_inverse_certificate := binary64_inverse_certificate)
+          (binary32_inverse_certificate := binary32_inverse_certificate) cfg optid ef args)
+  | .Sbuiltin optid ef args, _ => .OK (sel_builtin
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      (binary64_inverse_certificate := binary64_inverse_certificate)
+      (binary32_inverse_certificate := binary32_inverse_certificate) cfg optid ef args)
   | .Stailcall sg fn args, _ =>
       .OK (match classify_call defmap fn with
-      | Call_imm id => .Stailcall sg (.inr id) (sel_exprlist cfg args)
-      | _ => .Stailcall sg (.inl (sel_expr cfg fn)) (sel_exprlist cfg args))
+      | Call_imm id => .Stailcall sg (.inr id)
+          (sel_exprlist
+            (binary64_certificate := binary64_certificate)
+            (binary32_certificate := binary32_certificate)
+            (binary64_inverse_certificate := binary64_inverse_certificate)
+            (binary32_inverse_certificate := binary32_inverse_certificate) cfg args)
+      | _ => .Stailcall sg (.inl (sel_expr
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate)
+          (binary64_inverse_certificate := binary64_inverse_certificate)
+          (binary32_inverse_certificate := binary32_inverse_certificate) cfg fn))
+          (sel_exprlist
+            (binary64_certificate := binary64_certificate)
+            (binary32_certificate := binary32_certificate)
+            (binary64_inverse_certificate := binary64_inverse_certificate)
+            (binary32_inverse_certificate := binary32_inverse_certificate) cfg args))
   | .Sseq s1 s2, k =>
-      match sel_stmt cfg oracle defmap ki env s2 k with
+      match sel_stmt cfg oracle
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate)
+          (binary64_inverse_certificate := binary64_inverse_certificate)
+          (binary32_inverse_certificate := binary32_inverse_certificate)
+          defmap ki env s2 k with
       | .Error msg => .Error msg
       | .OK s2' =>
-          match sel_stmt cfg oracle defmap ki env s1 s2' with
+          match sel_stmt cfg oracle
+              (binary64_certificate := binary64_certificate)
+              (binary32_certificate := binary32_certificate)
+              (binary64_inverse_certificate := binary64_inverse_certificate)
+              (binary32_inverse_certificate := binary32_inverse_certificate)
+              defmap ki env s1 s2' with
           | .Error msg => .Error msg
           | .OK s1' => .OK (.Sseq s1' s2')
   | .Sifthenelse e ifso ifnot, k =>
-      match if_conversion cfg oracle ki env e ifso ifnot k with
+      match if_conversion cfg oracle
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate)
+          (binary64_inverse_certificate := binary64_inverse_certificate)
+          (binary32_inverse_certificate := binary32_inverse_certificate)
+          ki env e ifso ifnot k with
       | some s => .OK s
       | none =>
-          match sel_stmt cfg oracle defmap ki env ifso k,
-              sel_stmt cfg oracle defmap ki env ifnot k with
+          match sel_stmt cfg oracle
+              (binary64_certificate := binary64_certificate)
+              (binary32_certificate := binary32_certificate)
+              (binary64_inverse_certificate := binary64_inverse_certificate)
+              (binary32_inverse_certificate := binary32_inverse_certificate)
+              defmap ki env ifso k,
+              sel_stmt cfg oracle
+                (binary64_certificate := binary64_certificate)
+                (binary32_certificate := binary32_certificate)
+                (binary64_inverse_certificate := binary64_inverse_certificate)
+                (binary32_inverse_certificate := binary32_inverse_certificate)
+                defmap ki env ifnot k with
           | .OK ifso', .OK ifnot' =>
-              .OK (.Sifthenelse (condexpr_of_expr (sel_expr cfg e)) ifso' ifnot')
+              .OK (.Sifthenelse (condexpr_of_expr (sel_expr
+                (binary64_certificate := binary64_certificate)
+                (binary32_certificate := binary32_certificate)
+                (binary64_inverse_certificate := binary64_inverse_certificate)
+                (binary32_inverse_certificate := binary32_inverse_certificate) cfg e)) ifso' ifnot')
           | .Error msg, _ | _, .Error msg => .Error msg
   | .Sloop body, _ =>
-      match sel_stmt cfg oracle defmap ki env body .Sskip with
+      match sel_stmt cfg oracle
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate)
+          (binary64_inverse_certificate := binary64_inverse_certificate)
+          (binary32_inverse_certificate := binary32_inverse_certificate)
+          defmap ki env body .Sskip with
       | .OK body' => .OK (.Sloop body')
       | .Error msg => .Error msg
   | .Sblock body, k =>
-      match sel_stmt cfg oracle defmap ki env body k with
+      match sel_stmt cfg oracle
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate)
+          (binary64_inverse_certificate := binary64_inverse_certificate)
+          (binary32_inverse_certificate := binary32_inverse_certificate)
+          defmap ki env body k with
       | .OK body' => .OK (.Sblock body')
       | .Error msg => .Error msg
   | .Sexit n, _ => .OK (.Sexit n)
   | .Sswitch false e cases dfl, _ =>
       let t := compile_switch oracle Int.modulus dfl cases
       if validate_switch Int.modulus dfl cases t then
-        .OK (.Sswitch (.XElet (sel_expr cfg e) (sel_switch_int 0 t)))
+        .OK (.Sswitch (.XElet (sel_expr
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate)
+          (binary64_inverse_certificate := binary64_inverse_certificate)
+          (binary32_inverse_certificate := binary32_inverse_certificate) cfg e) (sel_switch_int 0 t)))
       else .Error (msg badSwitchIntText)
   | .Sswitch true e cases dfl, _ =>
       let t := compile_switch oracle Int64.modulus dfl cases
       if validate_switch Int64.modulus dfl cases t then
-        .OK (.Sswitch (.XElet (sel_expr cfg e) (sel_switch_long 0 t)))
+        .OK (.Sswitch (.XElet (sel_expr
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate)
+          (binary64_inverse_certificate := binary64_inverse_certificate)
+          (binary32_inverse_certificate := binary32_inverse_certificate) cfg e) (sel_switch_long 0 t)))
       else .Error (msg badSwitchLongText)
   | .Sreturn none, _ => .OK (.Sreturn none)
-  | .Sreturn (some e), _ => .OK (.Sreturn (some (sel_expr cfg e)))
+  | .Sreturn (some e), _ => .OK (.Sreturn (some (sel_expr
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      (binary64_inverse_certificate := binary64_inverse_certificate)
+      (binary32_inverse_certificate := binary32_inverse_certificate) cfg e)))
   | .Slabel lbl body, k =>
-      match sel_stmt cfg oracle defmap ki env body k with
+      match sel_stmt cfg oracle
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate)
+          (binary64_inverse_certificate := binary64_inverse_certificate)
+          (binary32_inverse_certificate := binary32_inverse_certificate)
+          defmap ki env body k with
       | .OK body' => .OK (.Slabel lbl body')
       | .Error msg => .Error msg
   | .Sgoto lbl, _ => .OK (.Sgoto lbl)
@@ -463,7 +755,12 @@ def known_id (f : Cminor.function) : known_idents :=
   let add (ki : known_idents) (id : ident) := PTree.set id () ki
   f.fn_vars.foldl add (f.fn_params.foldl add (PTree.empty Unit))
 
-def sel_function (cfg : CompilerConfig) (oracle : SelectionOracle)
+def sel_function
+    [binary64_certificate : BinaryNormalizeCertificate z53 z1024]
+    [binary32_certificate : BinaryNormalizeCertificate z24 z128]
+    [binary64_inverse_certificate : BexactInverseCertificate z53 z1024]
+    [binary32_inverse_certificate : BexactInverseCertificate z24 z128]
+    (cfg : CompilerConfig) (oracle : SelectionOracle)
     (dm : PTree.t globdef) (hf : helper_functions)
     (f : Cminor.function) : res CminorSel.function :=
   letI : helper_functions := hf
@@ -471,16 +768,31 @@ def sel_function (cfg : CompilerConfig) (oracle : SelectionOracle)
   match type_function f with
   | .Error msg => .Error msg
   | .OK env =>
-      match sel_stmt cfg oracle dm ki env f.fn_body .Sskip with
+      match sel_stmt cfg oracle
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate)
+          (binary64_inverse_certificate := binary64_inverse_certificate)
+          (binary32_inverse_certificate := binary32_inverse_certificate)
+          dm ki env f.fn_body .Sskip with
       | .Error msg => .Error msg
       | .OK body' =>
           .OK { fn_sig := f.fn_sig, fn_params := f.fn_params, fn_vars := f.fn_vars,
                 fn_stackspace := f.fn_stackspace, fn_body := body' }
 
-def sel_fundef (cfg : CompilerConfig) (oracle : SelectionOracle)
+def sel_fundef
+    [binary64_certificate : BinaryNormalizeCertificate z53 z1024]
+    [binary32_certificate : BinaryNormalizeCertificate z24 z128]
+    [binary64_inverse_certificate : BexactInverseCertificate z53 z1024]
+    [binary32_inverse_certificate : BexactInverseCertificate z24 z128]
+    (cfg : CompilerConfig) (oracle : SelectionOracle)
     (dm : PTree.t globdef) (hf : helper_functions)
     (f : Cminor.fundef) : res CminorSel.fundef :=
-  transf_partial_fundef (sel_function cfg oracle dm hf) f
+  transf_partial_fundef
+    (sel_function cfg oracle
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      (binary64_inverse_certificate := binary64_inverse_certificate)
+      (binary32_inverse_certificate := binary32_inverse_certificate) dm hf) f
 
 def globdef_of_interest (gd : globdef) : Bool :=
   match gd with
@@ -556,11 +868,21 @@ def get_helpers (defmap : PTree.t globdef) : res helper_functions :=
                                       i64_sdiv, i64_udiv, i64_smod, i64_umod, i64_shl, i64_shr,
                                       i64_sar, i64_umulh, i64_smulh }
 
-def sel_program (cfg : CompilerConfig) (oracle : SelectionOracle)
+def sel_program
+    [binary64_certificate : BinaryNormalizeCertificate z53 z1024]
+    [binary32_certificate : BinaryNormalizeCertificate z24 z128]
+    [binary64_inverse_certificate : BexactInverseCertificate z53 z1024]
+    [binary32_inverse_certificate : BexactInverseCertificate z24 z128]
+    (cfg : CompilerConfig) (oracle : SelectionOracle)
     (p : Cminor.program) : res CminorSel.program :=
   let dm := prog_defmap p
   match get_helpers dm with
   | .Error msg => .Error msg
-  | .OK hf => transform_partial_program (sel_fundef cfg oracle dm hf) p
+  | .OK hf => transform_partial_program
+      (sel_fundef cfg oracle
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        (binary64_inverse_certificate := binary64_inverse_certificate)
+        (binary32_inverse_certificate := binary32_inverse_certificate) dm hf) p
 
 end CompCert4Lean.Backend.Selection
