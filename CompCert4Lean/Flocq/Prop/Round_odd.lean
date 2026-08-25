@@ -251,17 +251,6 @@ local notation "Rnd_DN_pt" => Rnd_DN_pt ctx
 local notation "Rnd_UP_pt" => Rnd_UP_pt ctx
 local notation "Rnd_odd_pt" => Rnd_odd_pt ctx magnitude
 local notation "round_pred_monotone" => round_pred_monotone ctx
-local notation "Valid_rnd" =>
-  CompCert4Lean.Flocq.Prop.Round_odd.Valid_rnd ctx
-local notation "odd_rnd" =>
-  CompCert4Lean.Flocq.Prop.Round_odd.Valid_rnd ctx
-    (CompCert4Lean.Flocq.Prop.Round_odd.Zrnd_odd ctx)
-local notation "down_rnd" =>
-  CompCert4Lean.Flocq.Prop.Round_odd.Valid_rnd ctx
-    (CompCert4Lean.Flocq.Prop.Round_odd.Zfloor ctx)
-local notation "up_rnd" =>
-  CompCert4Lean.Flocq.Prop.Round_odd.Valid_rnd ctx
-    (CompCert4Lean.Flocq.Prop.Round_odd.Zceil ctx)
 
 def Zrnd_odd_ZoddStatement : Prop :=
   ∀ x : R, x ≠ IZR (Zfloor x) → Zeven (Zrnd_odd ctx x) = false
@@ -290,14 +279,13 @@ def Rnd_odd_pt_opp_invStatement : Prop :=
       Rnd_odd_pt beta fexp x f
 
 def round_odd_oppStatement : Prop :=
-  odd_rnd →
-    ∀ (beta : radix) (fexp : Z → Z) (x : R),
-      round beta fexp (Zrnd_odd ctx) (Ropp x) =
-        Ropp (round beta fexp (Zrnd_odd ctx) x)
+  ∀ (beta : radix) (fexp : Z → Z) (x : R),
+    round beta fexp (Zrnd_odd ctx) (Ropp x) =
+      Ropp (round beta fexp (Zrnd_odd ctx) x)
 
 def round_odd_ptStatement : Prop :=
   ∀ (beta : radix) (fexp : Z → Z),
-    Valid_exp fexp → Exists_NE beta fexp → odd_rnd →
+    Valid_exp fexp → Exists_NE beta fexp →
       ∀ x : R,
         Rnd_odd_pt beta fexp x
           (round beta fexp (Zrnd_odd ctx) x)
@@ -329,13 +317,13 @@ def exists_even_fexp_ltStatement : Prop :=
           F2R f = x ∧ canonical beta c f ∧ Zeven (Fnum f) = true
 
 def d_eqStatement : Prop :=
-  ∀ (beta : radix) (fexp : Z → Z), Valid_exp fexp → down_rnd →
+  ∀ (beta : radix) (fexp : Z → Z), Valid_exp fexp →
     ∀ (x : R) (d : float beta),
       Rnd_DN_pt (generic_format beta fexp) x (F2R d) →
         F2R d = round beta fexp Zfloor x
 
 def u_eqStatement : Prop :=
-  ∀ (beta : radix) (fexp : Z → Z), Valid_exp fexp → up_rnd →
+  ∀ (beta : radix) (fexp : Z → Z), Valid_exp fexp →
     ∀ (x : R) (u : float beta),
       Rnd_UP_pt (generic_format beta fexp) x (F2R u) →
         F2R u = round beta fexp Zceil x
@@ -497,16 +485,14 @@ def round_N_odd_posStatement : Prop :=
       Valid_exp fexp → Exists_NE beta fexp →
         Valid_exp fexpe → Exists_NE beta fexpe →
           (∀ e : Z, Zle (fexpe e) (Zsub (fexp e) Ztwo)) →
-            ∀ (choice : Z → Bool),
-              Valid_rnd (Znearest choice) → odd_rnd →
-                ∀ (x : R) (d u : float beta),
-                  Rnd_DN_pt (generic_format beta fexp) x (F2R d) →
-                    canonical beta fexp d →
-                      Rnd_UP_pt (generic_format beta fexp) x (F2R u) →
-                        canonical beta fexp u → Rlt R0 x →
-                          round beta fexp (Znearest choice)
-                              (round beta fexpe (Zrnd_odd ctx) x) =
-                            round beta fexp (Znearest choice) x
+            ∀ (choice : Z → Bool) (x : R) (d u : float beta),
+              Rnd_DN_pt (generic_format beta fexp) x (F2R d) →
+                canonical beta fexp d →
+                  Rnd_UP_pt (generic_format beta fexp) x (F2R u) →
+                    canonical beta fexp u → Rlt R0 x →
+                      round beta fexp (Znearest choice)
+                          (round beta fexpe (Zrnd_odd ctx) x) =
+                        round beta fexp (Znearest choice) x
 
 def round_N_oddStatement : Prop :=
   ∀ (beta : radix), Zeven (radix_val beta) = true →
@@ -514,11 +500,10 @@ def round_N_oddStatement : Prop :=
       Valid_exp fexp → Exists_NE beta fexp →
         Valid_exp fexpe → Exists_NE beta fexpe →
           (∀ e : Z, Zle (fexpe e) (Zsub (fexp e) Ztwo)) →
-            Valid_rnd (Znearest choice) → odd_rnd →
-              ∀ x : R,
-                round beta fexp (Znearest choice)
-                    (round beta fexpe (Zrnd_odd ctx) x) =
-                  round beta fexp (Znearest choice) x
+            ∀ x : R,
+              round beta fexp (Znearest choice)
+                  (round beta fexpe (Zrnd_odd ctx) x) =
+                round beta fexp (Znearest choice) x
 
 def Zrnd_odd_plus'Statement : Prop :=
   ∀ (beta : radix), Zeven (radix_val beta) = true →
@@ -530,7 +515,7 @@ def Zrnd_odd_plus'Statement : Prop :=
 
 def mag_round_oddStatement : Prop :=
   ∀ (beta : radix), Zeven (radix_val beta) = true →
-    ∀ (emin prec : Z), Zlt Zone prec → odd_rnd →
+    ∀ (emin prec : Z), Zlt Zone prec →
       ∀ x : R,
         Zlt emin (mag_val beta x) →
           mag_val beta
@@ -539,7 +524,7 @@ def mag_round_oddStatement : Prop :=
 
 def fexp_round_oddStatement : Prop :=
   ∀ (beta : radix), Zeven (radix_val beta) = true →
-    ∀ (emin prec : Z), Zlt Zone prec → odd_rnd →
+    ∀ (emin prec : Z), Zlt Zone prec →
       ∀ x : R,
         cexp beta (FLT_exp emin prec)
             (round beta (FLT_exp emin prec) (Zrnd_odd ctx) x) =

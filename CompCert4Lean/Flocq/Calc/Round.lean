@@ -174,7 +174,6 @@ def cexp_inbetween_float_loc_ExactStatement : Prop :=
 def inbetween_float_round_signStatement : Prop :=
   ∀ (beta : radix) (fexp : Z → Z) (rnd : ER → Z)
       (choice : Bool → Z → location → Z),
-    Valid_exp fexp →
       (∀ (x : ER) (m : Z) (l : location),
         CompCert4Lean.Flocq.Calc.Bracket.inbetween_int ctx m (ERabs x) l →
           rnd x = cond_Zopp (ERlt_bool x ER0)
@@ -235,7 +234,7 @@ def truncate_0Statement : Prop :=
     m' = Z0
 
 def truncate_correct_formatStatement : Prop :=
-  ∀ (beta : radix) (fexp : Z → Z) (m e : Z), Valid_exp fexp →
+  ∀ (beta : radix) (fexp : Z → Z) (m e : Z),
     m ≠ Z0 →
       let x := EF2R (EFloat beta m e)
       Egeneric_format beta fexp x →
@@ -245,8 +244,8 @@ def truncate_correct_formatStatement : Prop :=
         e' = Ecexp beta fexp x
 
 def truncate_correct_partial'Statement : Prop :=
-  ∀ (beta : radix) (fexp : Z → Z) (x : ER) (m e : Z) (l : location),
-    Valid_exp fexp →
+  ∀ (beta : radix) (fexp : Z → Z), Valid_exp fexp →
+    ∀ (x : ER) (m e : Z) (l : location),
       ERlt ER0 x →
       CompCert4Lean.Flocq.Calc.Bracket.inbetween_float ctx beta m e x l →
       Zle e (Ecexp beta fexp x) →
@@ -255,8 +254,8 @@ def truncate_correct_partial'Statement : Prop :=
         e' = Ecexp beta fexp x
 
 def truncate_correct_partialStatement : Prop :=
-  ∀ (beta : radix) (fexp : Z → Z) (x : ER) (m e : Z) (l : location),
-    Valid_exp fexp →
+  ∀ (beta : radix) (fexp : Z → Z), Valid_exp fexp →
+    ∀ (x : ER) (m e : Z) (l : location),
       ERlt ER0 x →
       CompCert4Lean.Flocq.Calc.Bracket.inbetween_float ctx beta m e x l →
       Zle e (fexp (Zadd (Zdigits beta m) e)) →
@@ -265,8 +264,8 @@ def truncate_correct_partialStatement : Prop :=
         e' = Ecexp beta fexp x
 
 def truncate_correct'Statement : Prop :=
-  ∀ (beta : radix) (fexp : Z → Z) (x : ER) (m e : Z) (l : location),
-    Valid_exp fexp →
+  ∀ (beta : radix) (fexp : Z → Z), Valid_exp fexp →
+    ∀ (x : ER) (m e : Z) (l : location),
       ERle ER0 x →
       CompCert4Lean.Flocq.Calc.Bracket.inbetween_float ctx beta m e x l →
       (Zle e (Ecexp beta fexp x) ∨ l = loc_Exact) →
@@ -276,8 +275,8 @@ def truncate_correct'Statement : Prop :=
           (l' = loc_Exact ∧ Egeneric_format beta fexp x))
 
 def truncate_correctStatement : Prop :=
-  ∀ (beta : radix) (fexp : Z → Z) (x : ER) (m e : Z) (l : location),
-    Valid_exp fexp →
+  ∀ (beta : radix) (fexp : Z → Z), Valid_exp fexp →
+    ∀ (x : ER) (m e : Z) (l : location),
       ERle ER0 x →
       CompCert4Lean.Flocq.Calc.Bracket.inbetween_float ctx beta m e x l →
       (Zle e (fexp (Zadd (Zdigits beta m) e)) ∨ l = loc_Exact) →
@@ -287,10 +286,9 @@ def truncate_correctStatement : Prop :=
           (l' = loc_Exact ∧ Egeneric_format beta fexp x))
 
 def round_sign_any_correctStatement : Prop :=
-  ∀ (beta : radix) (fexp : Z → Z) (rnd : ER → Z)
-      (choice : Bool → Z → location → Z),
-    Valid_exp fexp →
-      EValid_rnd rnd →
+  ∀ (beta : radix) (fexp : Z → Z) (rnd : ER → Z),
+    EValid_rnd rnd →
+    ∀ (choice : Bool → Z → location → Z),
       (∀ (x : ER) (m : Z) (l : location),
         CompCert4Lean.Flocq.Calc.Bracket.inbetween_int ctx m (ERabs x) l →
           rnd x = cond_Zopp (ERlt_bool x ER0)
@@ -305,11 +303,10 @@ def round_sign_any_correctStatement : Prop :=
               (choice (ERlt_bool x ER0) m l)) e)
 
 def round_trunc_sign_any_correct'Statement : Prop :=
-  ∀ (beta : radix) (fexp : Z → Z) (rnd : ER → Z)
-      (choice : Bool → Z → location → Z),
-    Valid_exp fexp →
-      EValid_rnd rnd →
-      (∀ (x : ER) (m : Z) (l : location),
+  ∀ (beta : radix) (fexp : Z → Z), Valid_exp fexp →
+    ∀ (rnd : ER → Z), EValid_rnd rnd →
+      ∀ (choice : Bool → Z → location → Z),
+        (∀ (x : ER) (m : Z) (l : location),
         CompCert4Lean.Flocq.Calc.Bracket.inbetween_int ctx m (ERabs x) l →
           rnd x = cond_Zopp (ERlt_bool x ER0)
             (choice (ERlt_bool x ER0) m l)) →
@@ -323,11 +320,10 @@ def round_trunc_sign_any_correct'Statement : Prop :=
               (choice (ERlt_bool x ER0) m' l')) e')
 
 def round_trunc_sign_any_correctStatement : Prop :=
-  ∀ (beta : radix) (fexp : Z → Z) (rnd : ER → Z)
-      (choice : Bool → Z → location → Z),
-    Valid_exp fexp →
-      EValid_rnd rnd →
-      (∀ (x : ER) (m : Z) (l : location),
+  ∀ (beta : radix) (fexp : Z → Z), Valid_exp fexp →
+    ∀ (rnd : ER → Z), EValid_rnd rnd →
+      ∀ (choice : Bool → Z → location → Z),
+        (∀ (x : ER) (m : Z) (l : location),
         CompCert4Lean.Flocq.Calc.Bracket.inbetween_int ctx m (ERabs x) l →
           rnd x = cond_Zopp (ERlt_bool x ER0)
             (choice (ERlt_bool x ER0) m l)) →
