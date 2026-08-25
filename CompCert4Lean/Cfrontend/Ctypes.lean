@@ -1318,8 +1318,11 @@ def program_of_program {F : Type} (p : program F) : AST.program (fundef F) type 
 
 /-! ## Separate compilation and linking -/
 
-noncomputable instance Linker_types : CompCert4Lean.Common.Linking.Linker type where
-  link := fun t1 t2 => if t1 = t2 then some t1 else none
+instance Linker_types : CompCert4Lean.Common.Linking.Linker type where
+  link := fun t1 t2 =>
+    match type_eq t1 t2 with
+    | .left _ => some t1
+    | .right _ => none
   linkorder := Eq
   linkorder_refl := fun _ => rfl
   linkorder_trans := by
@@ -1327,22 +1330,31 @@ noncomputable instance Linker_types : CompCert4Lean.Common.Linking.Linker type w
     exact hxy.trans hyz
   link_linkorder := by
     intro x y z h
-    by_cases hxy : x = y
-    · subst y
-      simp only [↓reduceIte] at h
-      cases h
-      exact ⟨rfl, rfl⟩
-    · simp only [hxy, ↓reduceIte] at h
-      cases h
+    cases hdec : type_eq x y with
+    | left hxy =>
+        simp only [hdec] at h
+        cases Option.some.inj h
+        exact ⟨rfl, hxy.symm⟩
+    | right _ =>
+        simp only [hdec] at h
+        cases h
 
-noncomputable def link_fundef {F : Type} (fd1 fd2 : fundef F) : Option (fundef F) :=
+def link_fundef {F : Type} (fd1 fd2 : fundef F) : Option (fundef F) :=
   match fd1, fd2 with
   | .Internal _, .Internal _ => none
   | .External ef1 args1 result1 cc1, .External ef2 args2 result2 cc2 =>
-      if ef1 = ef2 ∧ args1 = args2 ∧ result1 = result2 ∧ cc1 = cc2 then
-        some (.External ef1 args1 result1 cc1)
-      else
-        none
+      match CompCert4Lean.Common.AST.external_function_eq ef1 ef2 with
+      | .right _ => none
+      | .left _ =>
+          match typelist_eq args1 args2 with
+          | .right _ => none
+          | .left _ =>
+              match type_eq result1 result2 with
+              | .right _ => none
+              | .left _ =>
+                  match CompCert4Lean.Common.AST.calling_convention_eq cc1 cc2 with
+                  | .right _ => none
+                  | .left _ => some (.External ef1 args1 result1 cc1)
   | .Internal f, .External (.EF_external _ _) _ _ _ => some (.Internal f)
   | .External (.EF_external _ _) _ _ _, .Internal f => some (.Internal f)
   | _, _ => none
@@ -1355,7 +1367,7 @@ inductive linkorder_fundef {F : Type} : fundef F → fundef F → Prop where
 
 export linkorder_fundef (linkorder_fundef_refl linkorder_fundef_ext_int)
 
-noncomputable instance Linker_fundef (F : Type) :
+instance Linker_fundef (F : Type) :
     CompCert4Lean.Common.Linking.Linker (fundef F) where
   link := link_fundef
   linkorder := linkorder_fundef
@@ -1384,18 +1396,30 @@ noncomputable instance Linker_fundef (F : Type) :
               exact ⟨linkorder_fundef.linkorder_fundef_ext_int f2 id sg args1 result1 cc1,
                 linkorder_fundef.linkorder_fundef_refl _⟩
         | External ef2 args2 result2 cc2 =>
-            by_cases heq : ef1 = ef2 ∧ args1 = args2 ∧ result1 = result2 ∧ cc1 = cc2
-            · rcases heq with ⟨hef, hargs, hresult, hcc⟩
-              subst ef2
-              subst args2
-              subst result2
-              subst cc2
-              simp only [link_fundef, and_self, if_true] at h
-              cases Option.some.inj h
-              exact ⟨linkorder_fundef.linkorder_fundef_refl _,
-                linkorder_fundef.linkorder_fundef_refl _⟩
-            · simp only [link_fundef, heq, ↓reduceIte] at h
-              cases h
+            cases hefEq : CompCert4Lean.Common.AST.external_function_eq ef1 ef2 with
+            | right _ =>
+                simp [link_fundef, hefEq] at h
+            | left hef =>
+                subst ef2
+                cases hargsEq : typelist_eq args1 args2 with
+                | right _ =>
+                    simp [link_fundef, hefEq, hargsEq] at h
+                | left hargs =>
+                    subst args2
+                    cases hresultEq : type_eq result1 result2 with
+                    | right _ =>
+                        simp [link_fundef, hefEq, hargsEq, hresultEq] at h
+                    | left hresult =>
+                        subst result2
+                        cases hccEq : CompCert4Lean.Common.AST.calling_convention_eq cc1 cc2 with
+                        | right _ =>
+                            simp [link_fundef, hefEq, hargsEq, hresultEq, hccEq] at h
+                        | left hcc =>
+                            subst cc2
+                            simp [link_fundef, hefEq, hargsEq, hresultEq, hccEq] at h
+                            cases h
+                            exact ⟨linkorder_fundef.linkorder_fundef_refl _,
+                              linkorder_fundef.linkorder_fundef_refl _⟩
 
 def linkorder_program {F : Type} (p1 p2 : program F) : Prop :=
   CompCert4Lean.Common.Linking.linkorder
