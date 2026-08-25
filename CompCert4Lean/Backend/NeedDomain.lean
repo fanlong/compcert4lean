@@ -45,6 +45,9 @@ private abbrev val := CompCert4Lean.Common.Values.val
 private abbrev block := CompCert4Lean.Common.Values.block
 private abbrev mem := CompCert4Lean.Common.Memory.mem
 private abbrev genv := CompCert4Lean.Backend.RTL.genv
+private abbrev BinaryNormalizeCertificate :=
+  CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+private abbrev zOfNat := ZArith.BinInt.Z.of_nat
 private abbrev z0 : Z := .Z0
 private abbrev z1 : Z := .Zpos .xH
 private abbrev z31 : Z := ZArith.BinInt.Z.of_nat 31
@@ -580,17 +583,25 @@ def default_needs_of_condition_soundStatement : Prop :=
       vagree_list args1 args2 [] →
       eval_condition cond args2 m2 = some b
 
-def default_needs_of_operation_soundStatement : Prop :=
+def default_needs_of_operation_soundStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (ge : genv) (sp : block) (m1 m2 : mem),
     (∀ b ofs k p, Mem.perm m1 b ofs k p → Mem.perm m2 b ofs k p) →
     ∀ op args1 v1 args2 nv,
-      eval_operation ge (Vptr sp Ptrofs.zero) op args1 m1 = some v1 →
+      eval_operation
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        ge (Vptr sp Ptrofs.zero) op args1 m1 = some v1 →
       (vagree_list args1 args2 [] ∨
        vagree_list args1 args2 (default nv :: []) ∨
        vagree_list args1 args2 (default nv :: default nv :: []) ∨
        vagree_list args1 args2 (default nv :: default nv :: default nv :: [])) →
       nv ≠ Nothing →
-      ∃ v2, eval_operation ge (Vptr sp Ptrofs.zero) op args2 m2 = some v2 ∧
+      ∃ v2, eval_operation
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        ge (Vptr sp Ptrofs.zero) op args2 m2 = some v2 ∧
         vagree v1 v2 nv
 
 def eagree_geStatement : Prop :=
