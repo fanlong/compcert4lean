@@ -436,7 +436,7 @@ def exp_small_round_0Statement (ctx : ExactRealContext) (magnitude : Exact.Magni
   ∀ beta fexp, Valid_exp fexp → ∀ rnd, Exact.Valid_rnd ctx rnd → ∀ x ex, (Exact.Rle ctx (Exact.bpow ctx beta (Zsub ex Zone)) (Exact.Rabs ctx x) ∧ Exact.Rlt ctx (Exact.Rabs ctx x) (Exact.bpow ctx beta ex)) → Exact.round ctx magnitude beta fexp rnd x = Exact.R0 ctx → Zle ex (fexp ex)
 
 def exp_small_round_0_posStatement (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx) : Prop :=
-  ∀ beta fexp, Valid_exp fexp → ∀ rnd, Exact.Valid_rnd ctx rnd → ∀ x ex, (Exact.Rle ctx (Exact.bpow ctx beta (Zsub ex Zone)) x ∧ Exact.Rlt ctx x (Exact.bpow ctx beta ex)) → Exact.round ctx magnitude beta fexp rnd x = Exact.R0 ctx → Zle ex (fexp ex)
+  ∀ beta fexp, ∀ rnd, Exact.Valid_rnd ctx rnd → ∀ x ex, (Exact.Rle ctx (Exact.bpow ctx beta (Zsub ex Zone)) x ∧ Exact.Rlt ctx x (Exact.bpow ctx beta ex)) → Exact.round ctx magnitude beta fexp rnd x = Exact.R0 ctx → Zle ex (fexp ex)
 
 def generic_format_F2R'Statement (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx) : Prop :=
   ∀ beta fexp, ∀ (x : Exact.R ctx) (f : float beta), Exact.F2R ctx f = x → (x ≠ Exact.R0 ctx → Zle (Exact.cexp ctx magnitude beta fexp x) (Fexp f)) → Exact.generic_format ctx magnitude beta fexp x
@@ -460,7 +460,7 @@ def round_DN_small_posStatement (ctx : ExactRealContext) (magnitude : Exact.Magn
   ∀ beta fexp x ex, (Exact.Rle ctx (Exact.bpow ctx beta (Zsub ex Zone)) x ∧ Exact.Rlt ctx x (Exact.bpow ctx beta ex)) → Zle ex (fexp ex) → Exact.round ctx magnitude beta fexp (Exact.Zfloor ctx) x = Exact.R0 ctx
 
 def round_N_oppStatement (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx) : Prop :=
-  ∀ beta fexp choice, Valid_exp fexp → ∀ x, Exact.round ctx magnitude beta fexp (Exact.Znearest ctx choice) (Exact.Ropp ctx x) = Exact.Ropp ctx (Exact.round ctx magnitude beta fexp (Exact.Znearest ctx (fun t => Bool.not (choice (Zopp (Zadd t Zone))))) x)
+  ∀ beta fexp choice, ∀ x, Exact.round ctx magnitude beta fexp (Exact.Znearest ctx choice) (Exact.Ropp ctx x) = Exact.Ropp ctx (Exact.round ctx magnitude beta fexp (Exact.Znearest ctx (fun t => Bool.not (choice (Zopp (Zadd t Zone))))) x)
 
 def round_N_ptStatement (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx) : Prop :=
   ∀ beta fexp, Valid_exp fexp → ∀ choice x, Defs.Exact.Rnd_N_pt ctx (Exact.generic_format ctx magnitude beta fexp) x (Exact.round ctx magnitude beta fexp (Exact.Znearest ctx choice) x)
