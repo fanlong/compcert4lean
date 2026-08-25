@@ -224,14 +224,24 @@ def find_function_translatedStatement : Prop :=
       regs_lessdef rs rs' →
       find_function (targetGenv tprog) ros rs' = some (transf_fundef cfg f)
 
-def transf_step_correctStatement : Prop :=
+def transf_step_correctStatement
+    [binary64_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)] : Prop :=
   ∀ (cfg : CompilerConfig) (xi : ExternalCalls) (prog tprog : program),
     match_prog cfg prog tprog →
     ∀ (s1 : state) (t : trace) (s2 : state),
-      step xi (sourceGenv prog) s1 t s2 →
+      step (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        xi (sourceGenv prog) s1 t s2 →
       ∀ s1', match_states cfg s1 s1' →
         (∃ s2',
-          step xi (targetGenv tprog) s1' t s2' ∧
+          step (binary64_certificate := binary64_certificate)
+            (binary32_certificate := binary32_certificate)
+            xi (targetGenv tprog) s1' t s2' ∧
           match_states cfg s2 s2') ∨
         (measure s2 < measure s1 ∧ t = E0 ∧ match_states cfg s2 s1')
 
@@ -247,9 +257,19 @@ def transf_final_statesStatement : Prop :=
     ∀ st1 st2 r,
       match_states cfg st1 st2 → final_state st1 r → final_state st2 r
 
-def transf_program_correctStatement : Prop :=
+def transf_program_correctStatement
+    [binary64_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)] : Prop :=
   ∀ (cfg : CompilerConfig) (xi : ExternalCalls) (prog tprog : program),
     match_prog cfg prog tprog →
-    forward_simulation (semantics xi prog) (semantics xi tprog)
+    forward_simulation
+      (semantics (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) xi prog)
+      (semantics (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) xi tprog)
 
 end CompCert4Lean.Backend.Tailcallproof
