@@ -58,6 +58,8 @@ open CompCert4Lean.X86.Machregs
 
 private abbrev CompilerConfig := CompCert4Lean.Config.CompilerConfig
 private abbrev RegallocOracle := CompCert4Lean.Backend.Allocation.RegallocOracle
+private abbrev BinaryNormalizeCertificate :=
+  CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
 
 /-! ## The six generated finite-set applications -/
 
@@ -1007,16 +1009,25 @@ inductive transf_function_spec (cfg : CompilerConfig) (oracle : RegallocOracle)
 
 export transf_function_spec (transf_function_spec_intro)
 
-inductive match_stackframes (cfg : CompilerConfig) (oracle : RegallocOracle)
+inductive match_stackframes
+    [binary64_certificate : BinaryNormalizeCertificate (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)]
+    (cfg : CompilerConfig) (oracle : RegallocOracle)
     (xi : ExternalCalls) (tprog : LTL.program) :
     List RTL.stackframe → List LTL.stackframe → signature → Prop where
   | match_stackframes_nil (sg : signature) (hres : sg.sig_res = Xint) :
-      match_stackframes cfg oracle xi tprog [] [] sg
+      match_stackframes
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        cfg oracle xi tprog [] [] sg
   | match_stackframes_cons (resultReg : reg) (f : RTL.function) (sp : val) (pc : RTL.node)
       (rs : RTL.regset) (s : List RTL.stackframe) (tf : LTL.function)
       (bb : LTL.bblock) (ls : LTL.locset) (ts : List LTL.stackframe)
       (sg : signature) (an : PMap.t (res eqs)) (e : eqs) (env : regenv)
-      (hstacks : match_stackframes cfg oracle xi tprog s ts tf.fn_sig)
+      (hstacks : match_stackframes
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        cfg oracle xi tprog s ts tf.fn_sig)
       (hfun : transf_function cfg oracle f = .OK tf)
       (hanalyze : analyze cfg f env (pair_codes f tf) = some an)
       (heq : transfer cfg f env (pair_codes f tf) pc (PMap.get pc an) = .OK e)
@@ -1027,50 +1038,77 @@ inductive match_stackframes (cfg : CompilerConfig) (oracle : RegallocOracle)
         Val.lessdef v (Locmap.getpair (map_rpair R (loc_result sg)) ls1) →
         Val.has_type v (env resultReg) → agree_callee_save cfg ls ls1 →
         ∃ ls2,
-          star (LTL.step cfg xi) (Genv.globalenv tprog)
+          star (LTL.step
+            (binary64_certificate := binary64_certificate)
+            (binary32_certificate := binary32_certificate)
+            cfg xi) (Genv.globalenv tprog)
             (LTL.Block ts tf sp bb ls1 m) E0 (LTL.State ts tf sp pc ls2 m) ∧
           satisf (Regmap.set resultReg v rs) ls2 e) :
-      match_stackframes cfg oracle xi tprog
+      match_stackframes
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        cfg oracle xi tprog
         (RTL.Stackframe resultReg f sp pc rs :: s)
         (LTL.Stackframe tf sp ls bb :: ts) sg
 
 export match_stackframes (match_stackframes_nil match_stackframes_cons)
 
-inductive match_states (cfg : CompilerConfig) (oracle : RegallocOracle)
+inductive match_states
+    [binary64_certificate : BinaryNormalizeCertificate (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)]
+    (cfg : CompilerConfig) (oracle : RegallocOracle)
     (xi : ExternalCalls) (tprog : LTL.program) : RTL.state → LTL.state → Prop where
   | match_states_intro (s : List RTL.stackframe) (f : RTL.function) (sp : val)
       (pc : RTL.node) (rs : RTL.regset) (m : mem) (ts : List LTL.stackframe)
       (tf : LTL.function) (ls : LTL.locset) (m' : mem)
       (an : PMap.t (res eqs)) (e : eqs) (env : regenv)
-      (hstacks : match_stackframes cfg oracle xi tprog s ts tf.fn_sig)
+      (hstacks : match_stackframes
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        cfg oracle xi tprog s ts tf.fn_sig)
       (hfun : transf_function cfg oracle f = .OK tf)
       (hanalyze : analyze cfg f env (pair_codes f tf) = some an)
       (heq : transfer cfg f env (pair_codes f tf) pc (PMap.get pc an) = .OK e)
       (hsat : satisf rs ls e) (hmem : Mem.extends m m')
       (hwtf : wt_function cfg f env) (hwtrs : wt_regset env rs) :
-      match_states cfg oracle xi tprog (RTL.State s f sp pc rs m)
+      match_states
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        cfg oracle xi tprog (RTL.State s f sp pc rs m)
         (LTL.State ts tf sp pc ls m')
   | match_states_call (s : List RTL.stackframe) (f : RTL.fundef) (args : List val)
       (m : mem) (ts : List LTL.stackframe) (tf : LTL.fundef)
       (ls : LTL.locset) (m' : mem)
-      (hstacks : match_stackframes cfg oracle xi tprog s ts (LTL.funsig tf))
+      (hstacks : match_stackframes
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        cfg oracle xi tprog s ts (LTL.funsig tf))
       (hfun : transf_fundef cfg oracle f = .OK tf)
       (hargs : Val.lessdef_list args
         ((loc_arguments cfg (LTL.funsig tf)).map (fun p => Locmap.getpair p ls)))
       (hag : agree_callee_save cfg (LTL.parent_locset ts) ls)
       (hmem : Mem.extends m m')
       (hwtargs : Val.has_type_list args (proj_sig_args (LTL.funsig tf))) :
-      match_states cfg oracle xi tprog (RTL.Callstate s f args m)
+      match_states
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        cfg oracle xi tprog (RTL.Callstate s f args m)
         (LTL.Callstate ts tf ls m')
   | match_states_return (s : List RTL.stackframe) (result : val) (m : mem)
       (ts : List LTL.stackframe) (ls : LTL.locset) (m' : mem) (sg : signature)
-      (hstacks : match_stackframes cfg oracle xi tprog s ts sg)
+      (hstacks : match_stackframes
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        cfg oracle xi tprog s ts sg)
       (hres : Val.lessdef result
         (Locmap.getpair (map_rpair R (loc_result sg)) ls))
       (hag : agree_callee_save cfg (LTL.parent_locset ts) ls)
       (hmem : Mem.extends m m')
       (hwtres : Val.has_type result (proj_sig_res sg)) :
-      match_states cfg oracle xi tprog (RTL.Returnstate s result m)
+      match_states
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        cfg oracle xi tprog (RTL.Returnstate s result m)
         (LTL.Returnstate ts ls m')
 
 export match_states (match_states_intro match_states_call match_states_return)
@@ -1563,7 +1601,9 @@ def add_equations_debug_args_evalStatement : Prop :=
       satisf rs ls e' → wt_regset env rs → Mem.extends m tm →
       ∃ vl', eval_builtin_args (Genv.to_senv ge) ls sp tm args' vl'
 
-def add_equations_builtin_evalStatement : Prop :=
+def add_equations_builtin_evalStatement
+    [binary64_certificate : BinaryNormalizeCertificate (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)] : Prop :=
   ∀ (xi : ExternalCalls) (ef : external_function) (env : regenv)
     (args : List (builtin_arg reg)) (args' : List (builtin_arg loc))
     (e1 e2 : eqs) (m1 m1' : mem) (rs : RTL.regset) (ls : LTL.locset)
@@ -1576,11 +1616,17 @@ def add_equations_builtin_evalStatement : Prop :=
     Mem.extends m1 m1' → satisf rs ls e2 →
     eval_builtin_args (Genv.to_senv ge) (fun r => Regmap.get r rs)
       sp m1 args vargs →
-    external_call xi ef (Genv.to_senv ge) vargs m1 t vres m2 →
+    external_call
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      xi ef (Genv.to_senv ge) vargs m1 t vres m2 →
     satisf rs ls e1 ∧
     ∃ vargs' vres' m2',
       eval_builtin_args (Genv.to_senv ge) ls sp m1' args' vargs' ∧
-      external_call xi ef (Genv.to_senv ge) vargs' m1' t vres' m2' ∧
+      external_call
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        xi ef (Genv.to_senv ge) vargs' m1' t vres' m2' ∧
       Val.lessdef vres vres' ∧ Mem.extends m2 m2'
 
 def parallel_set_builtin_res_satisfStatement : Prop :=
@@ -1685,24 +1731,37 @@ def find_function_translatedStatement : Prop :=
         LTL.find_function (Genv.globalenv tprog) ros' ls = some tfd ∧
         transf_fundef cfg oracle fd = .OK tfd
 
-def exec_movesStatement : Prop :=
+def exec_movesStatement
+    [binary64_certificate : BinaryNormalizeCertificate (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)] : Prop :=
   ∀ (cfg : CompilerConfig) (xi : ExternalCalls) (tprog : LTL.program)
     (mv : moves) (env : regenv) (rs : RTL.regset)
     (s : List LTL.stackframe) (f : LTL.function) (sp : val)
     (bb : LTL.bblock) (m : mem) (e e' : eqs) (ls : LTL.locset),
     track_moves env mv e = some e' → wf_moves mv → satisf rs ls e' →
     wt_regset env rs →
-    ∃ ls', star (LTL.step cfg xi) (Genv.globalenv tprog)
+    ∃ ls', star (LTL.step
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      cfg xi) (Genv.globalenv tprog)
       (LTL.Block s f sp (expand_moves mv bb) ls m) E0
       (LTL.Block s f sp bb ls' m) ∧ satisf rs ls' e
 
-def match_stackframes_change_sigStatement : Prop :=
+def match_stackframes_change_sigStatement
+    [binary64_certificate : BinaryNormalizeCertificate (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)] : Prop :=
   ∀ (cfg : CompilerConfig) (oracle : RegallocOracle) (xi : ExternalCalls)
     (tprog : LTL.program) (s : List RTL.stackframe)
     (ts : List LTL.stackframe) (sg sg' : signature),
-    match_stackframes cfg oracle xi tprog s ts sg →
+    match_stackframes
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      cfg oracle xi tprog s ts sg →
     sg'.sig_res = sg.sig_res →
-      match_stackframes cfg oracle xi tprog s ts sg'
+      match_stackframes
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        cfg oracle xi tprog s ts sg'
 
 def addressing_not_longStatement : Prop :=
   ∀ (cfg : CompilerConfig) (env : regenv) (f : RTL.function)
@@ -1710,29 +1769,53 @@ def addressing_not_longStatement : Prop :=
     wt_instr cfg f env (Iload Mint64 addr args dst s) →
     CompCert4Lean.X86_64.Archi.splitlong = true → r ∈ args → r ≠ dst
 
-def step_simulationStatement : Prop :=
+def step_simulationStatement
+    [binary64_certificate : BinaryNormalizeCertificate (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)] : Prop :=
   ∀ (cfg : CompilerConfig) (oracle : RegallocOracle) (xi : ExternalCalls)
     (prog : RTL.program) (tprog : LTL.program),
     match_prog cfg oracle prog tprog →
     ∀ (S1 : RTL.state) (t : trace) (S2 : RTL.state),
-      RTL.step xi (Genv.globalenv prog) S1 t S2 → wt_state cfg S1 →
-      ∀ S1', match_states cfg oracle xi tprog S1 S1' →
-      ∃ S2', plus (LTL.step cfg xi) (Genv.globalenv tprog) S1' t S2' ∧
-        match_states cfg oracle xi tprog S2 S2'
+      RTL.step
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        xi (Genv.globalenv prog) S1 t S2 → wt_state cfg S1 →
+      ∀ S1', match_states
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        cfg oracle xi tprog S1 S1' →
+      ∃ S2', plus (LTL.step
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        cfg xi) (Genv.globalenv tprog) S1' t S2' ∧
+        match_states
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate)
+          cfg oracle xi tprog S2 S2'
 
-def initial_states_simulationStatement : Prop :=
+def initial_states_simulationStatement
+    [binary64_certificate : BinaryNormalizeCertificate (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)] : Prop :=
   ∀ (cfg : CompilerConfig) (oracle : RegallocOracle) (xi : ExternalCalls)
     (prog : RTL.program) (tprog : LTL.program),
     match_prog cfg oracle prog tprog →
     ∀ st1, RTL.initial_state prog st1 →
       ∃ st2, LTL.initial_state tprog st2 ∧
-        match_states cfg oracle xi tprog st1 st2
+        match_states
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate)
+          cfg oracle xi tprog st1 st2
 
-def final_states_simulationStatement : Prop :=
+def final_states_simulationStatement
+    [binary64_certificate : BinaryNormalizeCertificate (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)] : Prop :=
   ∀ (cfg : CompilerConfig) (oracle : RegallocOracle) (xi : ExternalCalls)
     (tprog : LTL.program) (st1 : RTL.state) (st2 : LTL.state)
     (r : CompCert4Lean.Lib.Integers.Int.int),
-    match_states cfg oracle xi tprog st1 st2 →
+    match_states
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      cfg oracle xi tprog st1 st2 →
       RTL.final_state st1 r → LTL.final_state st2 r
 
 def wt_progStatement : Prop :=
@@ -1740,10 +1823,20 @@ def wt_progStatement : Prop :=
     (prog : RTL.program) (tprog : LTL.program),
     match_prog cfg oracle prog tprog → wt_program cfg prog
 
-def transf_program_correctStatement : Prop :=
+def transf_program_correctStatement
+    [binary64_certificate : BinaryNormalizeCertificate (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)] : Prop :=
   ∀ (cfg : CompilerConfig) (oracle : RegallocOracle) (xi : ExternalCalls)
     (prog : RTL.program) (tprog : LTL.program),
     match_prog cfg oracle prog tprog →
-      forward_simulation (RTL.semantics xi prog) (LTL.semantics cfg xi tprog)
+      forward_simulation
+        (RTL.semantics
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate)
+          xi prog)
+        (LTL.semantics
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate)
+          cfg xi tprog)
 
 end CompCert4Lean.Backend.Allocproof
