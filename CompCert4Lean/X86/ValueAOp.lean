@@ -40,6 +40,8 @@ private abbrev block := CompCert4Lean.Common.Values.block
 private abbrev int := CompCert4Lean.Lib.Integers.int
 private abbrev int64 := CompCert4Lean.Lib.Integers.int64
 private abbrev ptrofs := CompCert4Lean.Lib.Integers.ptrofs
+private abbrev BinaryNormalizeCertificate :=
+  CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
 
 private abbrev zOfNat := ZArith.BinInt.Z.of_nat
 
@@ -108,7 +110,10 @@ def eval_static_addressing (addr : addressing) (vl : List aval) : aval :=
   else
     eval_static_addressing_32 addr vl
 
-def eval_static_operation (cfg : CompilerConfig) (op : operation)
+def eval_static_operation
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (cfg : CompilerConfig) (op : operation)
     (vl : List aval) : aval :=
   match op, vl with
   | .Omove, [v1] => v1
@@ -202,13 +207,17 @@ def eval_static_operation (cfg : CompilerConfig) (op : operation)
   | .Osingleoffloat, [v1] => singleoffloat v1
   | .Ofloatofsingle, [v1] => floatofsingle v1
   | .Ointoffloat, [v1] => intoffloat cfg v1
-  | .Ofloatofint, [v1] => floatofint v1
+  | .Ofloatofint, [v1] =>
+      floatofint (binary64_certificate := binary64_certificate) v1
   | .Ointofsingle, [v1] => intofsingle cfg v1
-  | .Osingleofint, [v1] => singleofint v1
+  | .Osingleofint, [v1] =>
+      singleofint (binary32_certificate := binary32_certificate) v1
   | .Olongoffloat, [v1] => longoffloat cfg v1
-  | .Ofloatoflong, [v1] => floatoflong v1
+  | .Ofloatoflong, [v1] =>
+      floatoflong (binary64_certificate := binary64_certificate) v1
   | .Olongofsingle, [v1] => longofsingle cfg v1
-  | .Osingleoflong, [v1] => singleoflong v1
+  | .Osingleoflong, [v1] =>
+      singleoflong (binary32_certificate := binary32_certificate) v1
   | .Ocmp c, _ => of_optbool (eval_static_condition cfg c vl)
   | .Osel c ty, v1 :: v2 :: rest =>
       select cfg (eval_static_condition cfg c rest) v1 v2 ty
@@ -253,13 +262,21 @@ def eval_static_addressing_soundStatement : Prop :=
       list_forall2 (vmatch bc) vargs aargs →
       vmatch bc vres (eval_static_addressing addr aargs)
 
-def eval_static_operation_soundStatement : Prop :=
+def eval_static_operation_soundStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (cfg : CompilerConfig) (bc : block_classification) (ge : genv),
     genv_match bc ge → ∀ (sp : block), bc sp = BCstack →
     ∀ (op : operation) (vargs : List val) (m : mem) (vres : val)
       (aargs : List aval),
-      eval_operation ge (Vptr sp Ptrofs.zero) op vargs m = some vres →
+      eval_operation
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        ge (Vptr sp Ptrofs.zero) op vargs m = some vres →
       list_forall2 (vmatch bc) vargs aargs →
-      vmatch bc vres (eval_static_operation cfg op aargs)
+      vmatch bc vres
+        (eval_static_operation
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate) cfg op aargs)
 
 end CompCert4Lean.X86.ValueAOp
