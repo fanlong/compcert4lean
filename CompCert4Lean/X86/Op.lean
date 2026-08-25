@@ -27,6 +27,8 @@ private abbrev Ptrofs := CompCert4Lean.Lib.Integers.ptrofs
 private abbrev CCFloat := CompCert4Lean.Lib.Floats.float
 private abbrev CCFloat32 := CompCert4Lean.Lib.Floats.float32
 private abbrev CCComparison := CompCert4Lean.Lib.Integers.comparison
+private abbrev BinaryNormalizeCertificate :=
+  CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
 private abbrev val := CompCert4Lean.Common.Values.val
 private abbrev mem := CompCert4Lean.Common.Memory.mem
 private abbrev block := CompCert4Lean.Common.Values.block
@@ -338,7 +340,10 @@ def eval_addressing {F V : Type} (genv : Genv.t F V) (sp : val)
   if CompCert4Lean.X86_64.Archi.ptr64 then eval_addressing64 genv sp addr vl
   else eval_addressing32 genv sp addr vl
 
-def eval_operation {F V : Type} (genv : Genv.t F V) (sp : val)
+def eval_operation
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    {F V : Type} (genv : Genv.t F V) (sp : val)
     (op : operation) (vl : List val) (m : mem) : Option val :=
   match op, vl with
   | .Omove, [v1] => some v1
@@ -431,13 +436,17 @@ def eval_operation {F V : Type} (genv : Genv.t F V) (sp : val)
   | .Osingleoffloat, [v1] => some (Val.singleoffloat v1)
   | .Ofloatofsingle, [v1] => some (Val.floatofsingle v1)
   | .Ointoffloat, [v1] => Val.intoffloat v1
-  | .Ofloatofint, [v1] => Val.floatofint v1
+  | .Ofloatofint, [v1] =>
+      Val.floatofint (binary64_certificate := binary64_certificate) v1
   | .Ointofsingle, [v1] => Val.intofsingle v1
-  | .Osingleofint, [v1] => Val.singleofint v1
+  | .Osingleofint, [v1] =>
+      Val.singleofint (binary32_certificate := binary32_certificate) v1
   | .Olongoffloat, [v1] => Val.longoffloat v1
-  | .Ofloatoflong, [v1] => Val.floatoflong v1
+  | .Ofloatoflong, [v1] =>
+      Val.floatoflong (binary64_certificate := binary64_certificate) v1
   | .Olongofsingle, [v1] => Val.longofsingle v1
-  | .Osingleoflong, [v1] => Val.singleoflong v1
+  | .Osingleoflong, [v1] =>
+      Val.singleoflong (binary32_certificate := binary32_certificate) v1
   | .Ocmp c, _ => some (Val.of_optbool (eval_condition c vl m))
   | .Osel c ty, v1 :: v2 :: rest =>
       some (Val.select (eval_condition c rest m) v1 v2 ty)
@@ -649,11 +658,15 @@ def type_of_addressing32_soundStatement : Prop :=
       (sp v : val),
     eval_addressing32 genv sp addr vl = some v → Val.has_type v Tint
 
-def type_of_operation_soundStatement : Prop :=
+def type_of_operation_soundStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (A V : Type) (genv : Genv.t A V) (op : operation) (vl : List val)
       (sp v : val) (m : mem),
     op ≠ Omove →
-    eval_operation genv sp op vl m = some v →
+    eval_operation
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) genv sp op vl m = some v →
     Val.has_type v (type_of_operation op).2
 
 def is_move_operation_correctStatement : Prop :=
@@ -682,11 +695,19 @@ def eval_shift_stack_addressingStatement : Prop :=
     eval_addressing ge (.Vptr sp Ptrofs.zero) (shift_stack_addressing delta addr) vl =
       eval_addressing ge (.Vptr sp (Ptrofs.repr delta)) addr vl
 
-def eval_shift_stack_operationStatement : Prop :=
+def eval_shift_stack_operationStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (F V : Type) (ge : Genv.t F V) (sp : block) (op : operation)
       (vl : List val) (m : mem) (delta : Z),
-    eval_operation ge (.Vptr sp Ptrofs.zero) (shift_stack_operation delta op) vl m =
-      eval_operation ge (.Vptr sp (Ptrofs.repr delta)) op vl m
+    eval_operation
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        ge (.Vptr sp Ptrofs.zero) (shift_stack_operation delta op) vl m =
+      eval_operation
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        ge (.Vptr sp (Ptrofs.repr delta)) op vl m
 
 def eval_offset_addressing_total_32Statement : Prop :=
   ∀ (F V : Type) (ge : Genv.t F V) (sp : val) (addr : addressing)
@@ -716,11 +737,18 @@ def condition_depends_on_memory_correctStatement : Prop :=
     condition_depends_on_memory c = false →
       eval_condition c args m1 = eval_condition c args m2
 
-def op_depends_on_memory_correctStatement : Prop :=
+def op_depends_on_memory_correctStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (F V : Type) (ge : Genv.t F V) (sp : val) (op : operation)
       (args : List val) (m1 m2 : mem),
     op_depends_on_memory op = false →
-      eval_operation ge sp op args m1 = eval_operation ge sp op args m2
+      eval_operation
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate) ge sp op args m1 =
+        eval_operation
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate) ge sp op args m2
 
 def eval_addressing32_preservedStatement : Prop :=
   ∀ (F1 F2 V1 V2 : Type) (ge1 : Genv.t F1 V1) (ge2 : Genv.t F2 V2),
@@ -740,11 +768,18 @@ def eval_addressing_preservedStatement : Prop :=
     ∀ (sp : val) (addr : addressing) (vl : List val),
       eval_addressing ge2 sp addr vl = eval_addressing ge1 sp addr vl
 
-def eval_operation_preservedStatement : Prop :=
+def eval_operation_preservedStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (F1 F2 V1 V2 : Type) (ge1 : Genv.t F1 V1) (ge2 : Genv.t F2 V2),
     (∀ s : ident, Genv.find_symbol ge2 s = Genv.find_symbol ge1 s) →
     ∀ (sp : val) (op : operation) (vl : List val) (m : mem),
-      eval_operation ge2 sp op vl m = eval_operation ge1 sp op vl m
+      eval_operation
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate) ge2 sp op vl m =
+        eval_operation
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate) ge1 sp op vl m
 
 def eval_condition_injStatement : Prop :=
   ∀ (f : meminj) (m1 m2 : mem),
@@ -814,7 +849,9 @@ def eval_addressing_injStatement : Prop :=
     eval_addressing ge1 sp1 addr vl1 = some v1 →
     ∃ v2, eval_addressing ge2 sp2 addr vl2 = some v2 ∧ Val.inject f v1 v2
 
-def eval_operation_injStatement : Prop :=
+def eval_operation_injStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (F1 F2 V1 V2 : Type) (ge1 : Genv.t F1 V1) (ge2 : Genv.t F2 V2)
       (f : meminj) (m1 m2 : mem),
     (∀ b1 ofs b2 delta,
@@ -850,8 +887,14 @@ def eval_operation_injStatement : Prop :=
           (Genv.symbol_address ge2 id ofs)) →
       Val.inject f sp1 sp2 →
       Val.inject_list f vl1 vl2 →
-      eval_operation ge1 sp1 op vl1 m1 = some v1 →
-      ∃ v2, eval_operation ge2 sp2 op vl2 m2 = some v2 ∧ Val.inject f v1 v2
+      eval_operation
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate) ge1 sp1 op vl1 m1 = some v1 →
+      ∃ v2,
+        eval_operation
+            (binary64_certificate := binary64_certificate)
+            (binary32_certificate := binary32_certificate) ge2 sp2 op vl2 m2 = some v2 ∧
+          Val.inject f v1 v2
 
 def valid_pointer_extendsStatement : Prop :=
   ∀ (m1 m2 : mem), Mem.extends m1 m2 →
@@ -896,13 +939,21 @@ def eval_condition_lessdefStatement : Prop :=
     eval_condition cond vl1 m1 = some b →
     eval_condition cond vl2 m2 = some b
 
-def eval_operation_lessdefStatement : Prop :=
+def eval_operation_lessdefStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (F V : Type) (genv : Genv.t F V) (sp : val) (op : operation)
       (vl1 vl2 : List val) (v1 : val) (m1 m2 : mem),
     Val.lessdef_list vl1 vl2 →
     Mem.extends m1 m2 →
-    eval_operation genv sp op vl1 m1 = some v1 →
-    ∃ v2, eval_operation genv sp op vl2 m2 = some v2 ∧ Val.lessdef v1 v2
+    eval_operation
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) genv sp op vl1 m1 = some v1 →
+    ∃ v2,
+      eval_operation
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate) genv sp op vl2 m2 = some v2 ∧
+        Val.lessdef v1 v2
 
 def eval_addressing_lessdefStatement : Prop :=
   ∀ (F V : Type) (genv : Genv.t F V) (sp : val) (addr : addressing)
@@ -938,7 +989,9 @@ def eval_addressing_injectStatement : Prop :=
             (shift_stack_addressing delta addr) vl2 = some v2 ∧
           Val.inject f v1 v2
 
-def eval_operation_injectStatement : Prop :=
+def eval_operation_injectStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (F V : Type) (genv : Genv.t F V) (f : meminj),
     meminj_preserves_globals F V genv f →
     ∀ (sp1 sp2 : block) (delta : Z),
@@ -946,10 +999,16 @@ def eval_operation_injectStatement : Prop :=
       ∀ (op : operation) (vl1 vl2 : List val) (v1 : val) (m1 m2 : mem),
         Val.inject_list f vl1 vl2 →
         Mem.inject f m1 m2 →
-        eval_operation genv (.Vptr sp1 Ptrofs.zero) op vl1 m1 = some v1 →
+        eval_operation
+            (binary64_certificate := binary64_certificate)
+            (binary32_certificate := binary32_certificate)
+            genv (.Vptr sp1 Ptrofs.zero) op vl1 m1 = some v1 →
         ∃ v2,
-          eval_operation genv (.Vptr sp2 Ptrofs.zero)
-            (shift_stack_operation delta op) vl2 m2 = some v2 ∧
+          eval_operation
+              (binary64_certificate := binary64_certificate)
+              (binary32_certificate := binary32_certificate)
+              genv (.Vptr sp2 Ptrofs.zero)
+              (shift_stack_operation delta op) vl2 m2 = some v2 ∧
           Val.inject f v1 v2
 
 end CompCert4Lean.X86.Op
