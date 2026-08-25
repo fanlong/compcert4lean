@@ -48,6 +48,9 @@ open CompCert4Lean.X86.Stacklayout
 
 private abbrev CompilerConfig := CompCert4Lean.Config.CompilerConfig
 private abbrev Z := CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z
+private abbrev BinaryNormalizeCertificate :=
+  CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+private abbrev zOfNat := ZArith.BinInt.Z.of_nat
 private abbrev meminj := CompCert4Lean.Common.Values.Val.meminj
 private abbrev locset := CompCert4Lean.Backend.Linear.locset
 private abbrev mem := CompCert4Lean.Common.Memory.mem
@@ -756,7 +759,9 @@ def frame_undef_regsStatement : Prop :=
     (sepconj (frame_contents cfg f j sp ls ls0 parent retaddr) P).m_pred m →
     (sepconj (frame_contents cfg f j sp
       (LTL.undef_regs rl ls) ls0 parent retaddr) P).m_pred m
-def function_epilogue_correctStatement : Prop :=
+def function_epilogue_correctStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ cfg xi (return_address_offset : Mach.function → Mach.code → ptrofs → Prop)
     (tprog : Mach.program) (f : Linear.function) (tf : Mach.function),
     transf_function cfg f = .OK tf →
@@ -771,7 +776,10 @@ def function_epilogue_correctStatement : Prop :=
       Mach.load_stack m' (Vptr sp' Ptrofs.zero) Tptr tf.fn_link_ofs = some pa ∧
       Mach.load_stack m' (Vptr sp' Ptrofs.zero) Tptr tf.fn_retaddr_ofs = some ra ∧
       Mem.free m' sp' z0 tf.fn_stacksize = some m1' ∧
-      star (Mach.step cfg xi return_address_offset) (Genv.globalenv tprog)
+      star (Mach.step
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        cfg xi return_address_offset) (Genv.globalenv tprog)
         (Mach.State cs fb (Vptr sp' Ptrofs.zero)
           (restore_callee_save (make_env cfg (function_bounds cfg f)) k) rs m')
         E0 (Mach.State cs fb (Vptr sp' Ptrofs.zero) k rs1 m') ∧
@@ -779,7 +787,9 @@ def function_epilogue_correctStatement : Prop :=
       agree_callee_save cfg (LTL.return_regs cfg ls0 ls) ls0 ∧
       (sepconj (minjection j m1) P).m_pred m1'
 
-def function_prologue_correctStatement : Prop :=
+def function_prologue_correctStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ cfg xi (return_address_offset : Mach.function → Mach.code → ptrofs → Prop)
     (prog : Linear.program) (tprog : Mach.program)
     (f : Linear.function) (tf : Mach.function),
@@ -801,7 +811,10 @@ def function_prologue_correctStatement : Prop :=
         some m3' ∧
       Mach.store_stack m3' (Vptr sp' Ptrofs.zero) Tptr tf.fn_retaddr_ofs ra =
         some m4' ∧
-      star (Mach.step cfg xi return_address_offset) (Genv.globalenv tprog)
+      star (Mach.step
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        cfg xi return_address_offset) (Genv.globalenv tprog)
         (Mach.State cs fb (Vptr sp' Ptrofs.zero)
           (save_callee_save (make_env cfg (function_bounds cfg f)) k) rs1 m4')
         E0 (Mach.State cs fb (Vptr sp' Ptrofs.zero) k rs' m5') ∧
@@ -888,21 +901,28 @@ def match_stacks_type_retaddrStatement : Prop :=
 def match_stacks_type_spStatement : Prop :=
   ∀ cfg tprog j cs cs' sg,
     match_stacks cfg tprog j cs cs' sg → Val.has_type (Mach.parent_sp cs') Tptr
-def restore_callee_save_correctStatement : Prop :=
+def restore_callee_save_correctStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ cfg xi (return_address_offset : Mach.function → Mach.code → ptrofs → Prop)
     (tprog : Mach.program) (f : Linear.function)
     m j sp ls ls0 pa ra P rs k cs fb,
     (sepconj (frame_contents cfg f j sp ls ls0 pa ra) P).m_pred m →
     agree_unused cfg (function_bounds cfg f) j ls0 rs →
     ∃ rs',
-      star (Mach.step cfg xi return_address_offset) (Genv.globalenv tprog)
+      star (Mach.step
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        cfg xi return_address_offset) (Genv.globalenv tprog)
         (Mach.State cs fb (Vptr sp Ptrofs.zero)
           (restore_callee_save (make_env cfg (function_bounds cfg f)) k) rs m)
         E0 (Mach.State cs fb (Vptr sp Ptrofs.zero) k rs' m) ∧
       (∀ r, is_callee_save cfg r = true → Val.inject j (ls0 (R r)) (rs' r)) ∧
       (∀ r, is_callee_save cfg r = false → rs' r = rs r)
 
-def restore_callee_save_rec_correctStatement : Prop :=
+def restore_callee_save_rec_correctStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ cfg xi (return_address_offset : Mach.function → Mach.code → ptrofs → Prop)
     (tprog : Mach.program) (f : Linear.function)
     j cs fb sp ls0 m l ofs rs k,
@@ -910,7 +930,10 @@ def restore_callee_save_rec_correctStatement : Prop :=
     agree_unused cfg (function_bounds cfg f) j ls0 rs →
     (∀ r, r ∈ l → mreg_within_bounds cfg (function_bounds cfg f) r) →
     ∃ rs',
-      star (Mach.step cfg xi return_address_offset) (Genv.globalenv tprog)
+      star (Mach.step
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        cfg xi return_address_offset) (Genv.globalenv tprog)
         (Mach.State cs fb (Vptr sp Ptrofs.zero)
           (restore_callee_save_rec l ofs k) rs m)
         E0 (Mach.State cs fb (Vptr sp Ptrofs.zero) k rs' m) ∧
@@ -918,7 +941,9 @@ def restore_callee_save_rec_correctStatement : Prop :=
       (∀ r, r ∉ l → rs' r = rs r) ∧
       agree_unused cfg (function_bounds cfg f) j ls0 rs'
 
-def save_callee_save_correctStatement : Prop :=
+def save_callee_save_correctStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ cfg xi (return_address_offset : Mach.function → Mach.code → ptrofs → Prop)
     (tprog : Mach.program) (f : Linear.function)
     j ls ls0 rs sp cs fb k m P,
@@ -931,7 +956,10 @@ def save_callee_save_correctStatement : Prop :=
     let ls1 := LTL.undef_regs destroyed_at_function_entry (LTL.call_regs ls)
     let rs1 := Mach.undef_regs destroyed_at_function_entry rs
     ∃ rs' m',
-      star (Mach.step cfg xi return_address_offset) (Genv.globalenv tprog)
+      star (Mach.step
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        cfg xi return_address_offset) (Genv.globalenv tprog)
         (Mach.State cs fb (Vptr sp Ptrofs.zero)
           (save_callee_save (make_env cfg (function_bounds cfg f)) k) rs1 m)
         E0 (Mach.State cs fb (Vptr sp Ptrofs.zero) k rs' m') ∧
@@ -941,7 +969,9 @@ def save_callee_save_correctStatement : Prop :=
       (∀ ofs k p, Mem.perm m sp ofs k p → Mem.perm m' sp ofs k p) ∧
       agree_regs j ls1 rs'
 
-def save_callee_save_rec_correctStatement : Prop :=
+def save_callee_save_rec_correctStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ cfg xi (return_address_offset : Mach.function → Mach.code → ptrofs → Prop)
     (tprog : Mach.program) j cs fb sp ls,
     (∀ ty r, r ∈ destroyed_by_setstack ty → ls (R r) = Vundef) →
@@ -951,7 +981,10 @@ def save_callee_save_rec_correctStatement : Prop :=
     (sepconj (range sp pos (size_callee_save_area_rec l pos)) P).m_pred m →
     agree_regs j ls rs →
     ∃ rs' m',
-      star (Mach.step cfg xi return_address_offset) (Genv.globalenv tprog)
+      star (Mach.step
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        cfg xi return_address_offset) (Genv.globalenv tprog)
         (Mach.State cs fb (Vptr sp Ptrofs.zero)
           (save_callee_save_rec l pos k) rs m)
         E0 (Mach.State cs fb (Vptr sp Ptrofs.zero) k rs' m') ∧
@@ -1036,17 +1069,25 @@ def transf_initial_statesStatement : Prop :=
 def transf_function_well_typedStatement : Prop :=
   ∀ cfg f tf, transf_function cfg f = .OK tf → wt_function cfg f = true
 
-def transf_program_correctStatement : Prop :=
+def transf_program_correctStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ cfg xi (return_address_offset : Mach.function → Mach.code → ptrofs → Prop)
     (prog : Linear.program) (tprog : Mach.program),
     (∀ f sg ros c, is_tail (.Mcall sg ros :: c) f.fn_code →
       ∃ ofs, return_address_offset f c ofs) →
     match_prog cfg prog tprog →
-    forward_simulation (Linear.semantics cfg xi prog)
-      (Mach.semantics cfg xi return_address_offset tprog)
+    forward_simulation
+      (Linear.semantics cfg xi prog)
+      (Mach.semantics
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        cfg xi return_address_offset tprog)
 def transf_program_matchStatement : Prop :=
   ∀ cfg p tp, transf_program cfg p = .OK tp → match_prog cfg p tp
-def transf_step_correctStatement : Prop :=
+def transf_step_correctStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ cfg xi (return_address_offset : Mach.function → Mach.code → ptrofs → Prop)
     (prog : Linear.program) (tprog : Mach.program),
     (∀ f sg ros c, is_tail (.Mcall sg ros :: c) f.fn_code →
@@ -1055,7 +1096,10 @@ def transf_step_correctStatement : Prop :=
     Linear.step cfg xi (Genv.globalenv prog) s1 t s2 →
     wt_state cfg s1 → ∀ s1', match_states cfg prog tprog s1 s1' →
     ∃ s2',
-      plus (Mach.step cfg xi return_address_offset) (Genv.globalenv tprog) s1' t s2' ∧
+      plus (Mach.step
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        cfg xi return_address_offset) (Genv.globalenv tprog) s1' t s2' ∧
       match_states cfg prog tprog s2 s2'
 
 def transl_builtin_arg_correctStatement : Prop :=
