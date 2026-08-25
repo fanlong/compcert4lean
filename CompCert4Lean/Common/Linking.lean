@@ -380,7 +380,7 @@ instance Linker_def (F V : Type) [LF : Linker F] [LV : Linker V] :
                 rcases (Linker_vardef V).link_linkorder _ _ _ hv with ⟨hx, hy⟩
                 exact ⟨linkorder_def_var _ _ hx, linkorder_def_var _ _ hy⟩
 
-def linkorder_program {F V : Type} [LF : Linker F] [LV : Linker V]
+private def linkorder_program {F V : Type} [LF : Linker F] [LV : Linker V]
     (p1 p2 : program F V) : Prop :=
   p1.prog_main = p2.prog_main ∧
     incl p1.prog_public p2.prog_public ∧
@@ -698,17 +698,25 @@ class TransfLink {A B : Type} [LA : Linker A] [LB : Linker B]
 export TransfLink (transf_link)
 
 structure Language where
-  lang_prog : Type
+  {lang_prog : Type}
   lang_link : Linker lang_prog
 
 export Language (lang_prog lang_link)
 
+instance : CoeSort Language (Type) where
+  coe language := language.lang_prog
+
 structure Pass (S T : Language) where
   pass_match : S.lang_prog → T.lang_prog → Prop
-  pass_match_link :
+  {pass_match_link :
     @TransfLink S.lang_prog T.lang_prog S.lang_link T.lang_link pass_match
+  }
 
 export Pass (pass_match pass_match_link)
+
+instance {S T : Language} : CoeFun (Pass S T)
+    (fun _ => S.lang_prog → T.lang_prog → Prop) where
+  coe pass := pass.pass_match
 
 def pass_identity (l : Language) : Pass l l where
   pass_match := Eq
@@ -741,8 +749,8 @@ inductive Passes : Language → Language → Type 1 where
 
 export Passes (pass_nil pass_cons)
 
-def compose_passes : (l l' : Language) → Passes l l' → Pass l l'
+def compose_passes : {l l' : Language} → Passes l l' → Pass l l'
   | _, _, .pass_nil l => pass_identity l
-  | _, _, .pass_cons head tail => pass_compose head (compose_passes _ _ tail)
+  | _, _, .pass_cons head tail => pass_compose head (compose_passes tail)
 
 end CompCert4Lean.Common.Linking
