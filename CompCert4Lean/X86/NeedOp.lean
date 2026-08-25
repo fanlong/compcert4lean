@@ -29,6 +29,8 @@ private abbrev block := CompCert4Lean.Common.Values.block
 private abbrev mem := CompCert4Lean.Common.Memory.mem
 private abbrev genv := CompCert4Lean.Backend.RTL.genv
 private abbrev nval := CompCert4Lean.Backend.NeedDomain.nval
+private abbrev BinaryNormalizeCertificate :=
+  CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
 
 def op1 (nv : nval) : List nval := [nv]
 
@@ -159,24 +161,41 @@ def needs_of_addressing_64_soundStatement : Prop :=
       eval_addressing64 ge (Vptr sp Ptrofs.zero) addr args' = some v' ∧
         vagree v v' nv
 
-def needs_of_operation_soundStatement : Prop :=
+def needs_of_operation_soundStatement
+    [binary64_certificate : BinaryNormalizeCertificate
+      (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate
+      (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)] : Prop :=
   ∀ (ge : genv) (sp : block) (m m' : mem),
     (∀ b ofs k p, Mem.perm m b ofs k p → Mem.perm m' b ofs k p) →
     ∀ (op : operation) (args : List val) (v : val) (nv : nval)
       (args' : List val),
-      eval_operation ge (Vptr sp Ptrofs.zero) op args m = some v →
+      eval_operation
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate)
+          ge (Vptr sp Ptrofs.zero) op args m = some v →
       vagree_list args args' (needs_of_operation op nv) →
       nv ≠ Nothing →
       ∃ v',
-        eval_operation ge (Vptr sp Ptrofs.zero) op args' m' = some v' ∧
-          vagree v v' nv
+        eval_operation
+            (binary64_certificate := binary64_certificate)
+            (binary32_certificate := binary32_certificate)
+            ge (Vptr sp Ptrofs.zero) op args' m' = some v' ∧
+        vagree v v' nv
 
-def operation_is_redundant_soundStatement : Prop :=
+def operation_is_redundant_soundStatement
+    [binary64_certificate : BinaryNormalizeCertificate
+      (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate
+      (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)] : Prop :=
   ∀ (ge : genv) (sp : block) (m : mem) (op : operation) (nv : nval)
       (arg1 : val) (args : List val) (v : val) (arg1' : val)
       (args' : List val),
     operation_is_redundant op nv = true →
-    eval_operation ge (Vptr sp Ptrofs.zero) op (arg1 :: args) m = some v →
+    eval_operation
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        ge (Vptr sp Ptrofs.zero) op (arg1 :: args) m = some v →
     vagree_list (arg1 :: args) (arg1' :: args') (needs_of_operation op nv) →
     vagree v arg1' nv
 
