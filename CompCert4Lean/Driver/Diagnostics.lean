@@ -53,6 +53,11 @@ open CompCert4Lean.X86
 
 private abbrev CompilerConfig := CompCert4Lean.Config.CompilerConfig
 private abbrev Res := CompCert4Lean.Common.Errors.res
+private abbrev BinaryNormalizeCertificate :=
+  CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+private abbrev BexactInverseCertificate :=
+  CompCert4Lean.Lib.IEEE754_extra.Bexact_inverse_certificate
+private abbrev zOfNat := ZArith.BinInt.Z.of_nat
 
 abbrev CompilerDiagnosticSink :=
   DiagnosticSink Clight.program Cminor.program RTL.program LTL.program Mach.program
@@ -72,7 +77,10 @@ private def bindIORes {A B : Type} (action : IO (Res A))
 
 /-! ## Executable diagnostic companions -/
 
-def transf_rtl_program (sink : CompilerDiagnosticSink)
+def transf_rtl_program
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (sink : CompilerDiagnosticSink)
     (cfg : CompilerConfig) (inlineCfg : Inlining.InliningConfig)
     (regallocOracle : Allocation.RegallocOracle)
     (enumerationService : Linearize.EnumerationService)
@@ -95,7 +103,9 @@ def transf_rtl_program (sink : CompilerDiagnosticSink)
   let p4 := bindIORes p3 fun p =>
     let tp :=
       if CompCert4Lean.Driver.Compopts.optim_constprop cfg then
-        Constprop.transf_program cfg p
+        Constprop.transf_program
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate) cfg p
       else
         p
     emitResult (sink.rtl (rtlTag 4)) tp
@@ -109,7 +119,9 @@ def transf_rtl_program (sink : CompilerDiagnosticSink)
   let p6 := bindIORes p5 fun p =>
     let result :=
       if CompCert4Lean.Driver.Compopts.optim_CSE cfg then
-        CSE.transf_program cfg p
+        CSE.transf_program
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate) cfg p
       else
         .OK p
     match result with
@@ -118,7 +130,9 @@ def transf_rtl_program (sink : CompilerDiagnosticSink)
   let p7 := bindIORes p6 fun p =>
     let result :=
       if CompCert4Lean.Driver.Compopts.optim_redundancy cfg then
-        Deadcode.transf_program cfg p
+        Deadcode.transf_program
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate) cfg p
       else
         .OK p
     match result with
@@ -149,7 +163,12 @@ def transf_rtl_program (sink : CompilerDiagnosticSink)
     | .OK tp => emitResult sink.mach tp
   bindIORes p14 fun p => pure (Asmgen.transf_program p)
 
-def transf_cminor_program (sink : CompilerDiagnosticSink)
+def transf_cminor_program
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    [binary64_inverse_certificate : BexactInverseCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_inverse_certificate : BexactInverseCertificate (zOfNat 24) (zOfNat 128)]
+    (sink : CompilerDiagnosticSink)
     (cfg : CompilerConfig) (selectionOracle : Selection.SelectionOracle)
     (inlineCfg : Inlining.InliningConfig)
     (regallocOracle : Allocation.RegallocOracle)
@@ -157,12 +176,25 @@ def transf_cminor_program (sink : CompilerDiagnosticSink)
     (p : Cminor.program) : IO (Res Asm.program) :=
   let p0 : IO (Res Cminor.program) := emitResult sink.cminor p
   let p1 := bindIORes p0 fun p =>
-    pure (Selection.sel_program cfg selectionOracle p)
+    pure (Selection.sel_program
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      (binary64_inverse_certificate := binary64_inverse_certificate)
+      (binary32_inverse_certificate := binary32_inverse_certificate)
+      cfg selectionOracle p)
   let p2 := bindIORes p1 fun p => pure (RTLgen.transl_program p)
   bindIORes p2 fun p =>
-    transf_rtl_program sink cfg inlineCfg regallocOracle enumerationService p
+    transf_rtl_program
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      sink cfg inlineCfg regallocOracle enumerationService p
 
-def transf_clight_program (sink : CompilerDiagnosticSink)
+def transf_clight_program
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    [binary64_inverse_certificate : BexactInverseCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_inverse_certificate : BexactInverseCertificate (zOfNat 24) (zOfNat 128)]
+    (sink : CompilerDiagnosticSink)
     (cfg : CompilerConfig) (selectionOracle : Selection.SelectionOracle)
     (inlineCfg : Inlining.InliningConfig)
     (regallocOracle : Allocation.RegallocOracle)
@@ -173,20 +205,35 @@ def transf_clight_program (sink : CompilerDiagnosticSink)
   let p2 := bindIORes p1 fun p => pure (Cshmgen.transl_program p)
   let p3 := bindIORes p2 fun p => pure (Cminorgen.transl_program p)
   bindIORes p3 fun p =>
-    transf_cminor_program sink cfg selectionOracle inlineCfg regallocOracle
-      enumerationService p
+    transf_cminor_program
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      (binary64_inverse_certificate := binary64_inverse_certificate)
+      (binary32_inverse_certificate := binary32_inverse_certificate)
+      sink cfg selectionOracle inlineCfg regallocOracle enumerationService p
 
-def transf_c_program (sink : CompilerDiagnosticSink)
+def transf_c_program
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    [binary64_inverse_certificate : BexactInverseCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_inverse_certificate : BexactInverseCertificate (zOfNat 24) (zOfNat 128)]
+    (sink : CompilerDiagnosticSink)
     (cfg : CompilerConfig) (selectionOracle : Selection.SelectionOracle)
     (inlineCfg : Inlining.InliningConfig)
     (regallocOracle : Allocation.RegallocOracle)
     (enumerationService : Linearize.EnumerationService)
     (ctx : SimplExpr.FreshIdentContext)
     (p : Csyntax.program) : IO (Res Asm.program) :=
-  match SimplExpr.transl_program ctx p with
+  match SimplExpr.transl_program
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) ctx p with
   | .Error message => pure (.Error message)
   | .OK tp =>
-      transf_clight_program sink cfg selectionOracle inlineCfg regallocOracle
-        enumerationService tp
+      transf_clight_program
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        (binary64_inverse_certificate := binary64_inverse_certificate)
+        (binary32_inverse_certificate := binary32_inverse_certificate)
+        sink cfg selectionOracle inlineCfg regallocOracle enumerationService tp
 
 end CompCert4Lean.Driver.Diagnostics
