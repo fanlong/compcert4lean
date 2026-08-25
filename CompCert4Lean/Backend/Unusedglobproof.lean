@@ -33,6 +33,8 @@ private abbrev zAdd := ZArith.BinInt.Z.add
 private abbrev zLe := ZArith.BinInt.Z.le
 private abbrev zLt := ZArith.BinInt.Z.lt
 private abbrev zOfNat := ZArith.BinInt.Z.of_nat
+private abbrev BinaryNormalizeCertificate :=
+  CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
 
 /-! ## Selected generated finite-set facts surface -/
 
@@ -466,18 +468,26 @@ inductive match_states (p tp : program) (used : IS.t) : state → state → Prop
 
 export match_states (match_states_regular match_states_return)
 
-def external_call_injectStatement : Prop :=
+def external_call_injectStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (xi : ExternalCalls) (p tp : program) (used : IS.t),
     valid_used_set p used → match_prog_1 used p tp →
       ∀ (ef : external_function) (vargs : List val) (m1 : mem)
         (t : trace) (vres : val) (m2 : mem) (f : Val.meminj)
         (m1' : mem) (vargs' : List val),
         meminj_preserves_globals p tp used f →
-          external_call xi ef (Genv.to_senv (Genv.globalenv p))
+          external_call
+            (binary64_certificate := binary64_certificate)
+            (binary32_certificate := binary32_certificate)
+            xi ef (Genv.to_senv (Genv.globalenv p))
             vargs m1 t vres m2 →
           Mem.inject f m1 m1' → Val.inject_list f vargs vargs' →
             ∃ f' vres' m2',
-              external_call xi ef (Genv.to_senv (Genv.globalenv tp))
+              external_call
+                (binary64_certificate := binary64_certificate)
+                (binary32_certificate := binary32_certificate)
+                xi ef (Genv.to_senv (Genv.globalenv tp))
                 vargs' m1' t vres' m2' ∧
               Val.inject f' vres vres' ∧
               Mem.inject f' m2 m2' ∧
@@ -527,13 +537,21 @@ def eval_builtin_args_injectStatement : Prop :=
           (fun r => Regmap.get r rs') (Vptr sp' Ptrofs.zero) m' al vl' ∧
         Val.inject_list j vl vl'
 
-def step_simulationStatement : Prop :=
+def step_simulationStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (xi : ExternalCalls) (p tp : program) (used : IS.t),
     valid_used_set p used → match_prog_1 used p tp →
       ∀ (S1 : state) (t : trace) (S2 : state),
-        step xi (Genv.globalenv p) S1 t S2 →
+        step
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate)
+          xi (Genv.globalenv p) S1 t S2 →
           ∀ S1', match_states p tp used S1 S1' →
-            ∃ S2', step xi (Genv.globalenv tp) S1' t S2' ∧
+            ∃ S2', step
+              (binary64_certificate := binary64_certificate)
+              (binary32_certificate := binary32_certificate)
+              xi (Genv.globalenv tp) S1' t S2' ∧
               match_states p tp used S2 S2'
 
 /-! ## Initial memories and whole-program simulation -/
@@ -605,13 +623,30 @@ def transf_final_statesStatement : Prop :=
   ∀ (p tp : program) (used : IS.t) (S1 S2 : state) (r : int),
     match_states p tp used S1 S2 → final_state S1 r → final_state S2 r
 
-def transf_program_correct_1Statement : Prop :=
+def transf_program_correct_1Statement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (xi : ExternalCalls) (p tp : program) (used : IS.t),
     valid_used_set p used → match_prog_1 used p tp →
-      forward_simulation (semantics xi p) (semantics xi tp)
+      forward_simulation
+        (semantics
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate) xi p)
+        (semantics
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate) xi tp)
 
-def transf_program_correctStatement : Prop :=
+def transf_program_correctStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (xi : ExternalCalls) (p tp : program),
-    match_prog p tp → forward_simulation (semantics xi p) (semantics xi tp)
+    match_prog p tp →
+      forward_simulation
+        (semantics
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate) xi p)
+        (semantics
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate) xi tp)
 
 end CompCert4Lean.Backend.Unusedglobproof
