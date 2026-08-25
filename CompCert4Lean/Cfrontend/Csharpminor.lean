@@ -47,6 +47,8 @@ private abbrev Ptrofs := CompCert4Lean.Lib.Integers.ptrofs
 private abbrev CCFloat := CompCert4Lean.Lib.Floats.float
 private abbrev CCFloat32 := CompCert4Lean.Lib.Floats.float32
 private abbrev z0 : Z := .Z0
+private abbrev BinaryNormalizeCertificate :=
+  CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
 
 /-! ## Abstract syntax -/
 
@@ -223,7 +225,17 @@ def eval_constant : constant → Option val
   | .Osingleconst n => some (.Vsingle n)
   | .Olongconst n => some (.Vlong n)
 
-def eval_unop := CompCert4Lean.Backend.Cminor.eval_unop
+def eval_unop
+    [binary64_certificate :
+      BinaryNormalizeCertificate (ZArith.BinInt.Z.of_nat 53)
+        (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate :
+      BinaryNormalizeCertificate (ZArith.BinInt.Z.of_nat 24)
+        (ZArith.BinInt.Z.of_nat 128)] :
+    unary_operation → val → Option val :=
+  CompCert4Lean.Backend.Cminor.eval_unop
+    (binary64_certificate := binary64_certificate)
+    (binary32_certificate := binary32_certificate)
 
 def eval_binop := CompCert4Lean.Backend.Cminor.eval_binop
 
@@ -256,7 +268,14 @@ inductive eval_var_addr (ge : genv) : env → ident → block → Prop where
 
 export eval_var_addr (eval_var_addr_local eval_var_addr_global)
 
-inductive eval_expr (ge : genv) (e : env) (le : temp_env) (m : mem) :
+inductive eval_expr
+    [binary64_certificate :
+      BinaryNormalizeCertificate (ZArith.BinInt.Z.of_nat 53)
+        (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate :
+      BinaryNormalizeCertificate (ZArith.BinInt.Z.of_nat 24)
+        (ZArith.BinInt.Z.of_nat 128)]
+    (ge : genv) (e : env) (le : temp_env) (m : mem) :
     expr → val → Prop where
   | eval_Evar (id : ident) (v : val)
       (hget : PTree.get id le = some v) :
@@ -268,32 +287,60 @@ inductive eval_expr (ge : genv) (e : env) (le : temp_env) (m : mem) :
       (heval : eval_constant cst = some v) :
       eval_expr ge e le m (.Econst cst) v
   | eval_Eunop (op : unary_operation) (a1 : expr) (v1 v : val)
-      (ha1 : eval_expr ge e le m a1 v1)
-      (hop : eval_unop op v1 = some v) :
+      (ha1 : eval_expr
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) ge e le m a1 v1)
+      (hop : eval_unop
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) op v1 = some v) :
       eval_expr ge e le m (.Eunop op a1) v
   | eval_Ebinop (op : binary_operation) (a1 a2 : expr) (v1 v2 v : val)
-      (ha1 : eval_expr ge e le m a1 v1)
-      (ha2 : eval_expr ge e le m a2 v2)
+      (ha1 : eval_expr
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) ge e le m a1 v1)
+      (ha2 : eval_expr
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) ge e le m a2 v2)
       (hop : eval_binop op v1 v2 m = some v) :
       eval_expr ge e le m (.Ebinop op a1 a2) v
   | eval_Eload (chunk : memory_chunk) (address : expr) (vaddr v : val)
-      (haddr : eval_expr ge e le m address vaddr)
+      (haddr : eval_expr
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) ge e le m address vaddr)
       (hload : Mem.loadv chunk m vaddr = some v) :
       eval_expr ge e le m (.Eload chunk address) v
 
 export eval_expr (eval_Evar eval_Eaddrof eval_Econst eval_Eunop eval_Ebinop eval_Eload)
 
-inductive eval_exprlist (ge : genv) (e : env) (le : temp_env) (m : mem) :
+inductive eval_exprlist
+    [binary64_certificate :
+      BinaryNormalizeCertificate (ZArith.BinInt.Z.of_nat 53)
+        (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate :
+      BinaryNormalizeCertificate (ZArith.BinInt.Z.of_nat 24)
+        (ZArith.BinInt.Z.of_nat 128)]
+    (ge : genv) (e : env) (le : temp_env) (m : mem) :
     List expr → List val → Prop where
   | eval_Enil : eval_exprlist ge e le m [] []
   | eval_Econs (a1 : expr) (al : List expr) (v1 : val) (vl : List val)
-      (ha1 : eval_expr ge e le m a1 v1)
-      (hal : eval_exprlist ge e le m al vl) :
+      (ha1 : eval_expr
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) ge e le m a1 v1)
+      (hal : eval_exprlist
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) ge e le m al vl) :
       eval_exprlist ge e le m (a1 :: al) (v1 :: vl)
 
 export eval_exprlist (eval_Enil eval_Econs)
 
-inductive step (xi : ExternalCalls) (ge : genv) : state → trace → state → Prop where
+inductive step
+    [binary64_certificate :
+      BinaryNormalizeCertificate (ZArith.BinInt.Z.of_nat 53)
+        (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate :
+      BinaryNormalizeCertificate (ZArith.BinInt.Z.of_nat 24)
+        (ZArith.BinInt.Z.of_nat 128)]
+    (xi : ExternalCalls) (ge : genv) : state → trace → state → Prop where
   | step_skip_seq (f : function) (s : stmt) (k : cont) (e : env)
       (le : temp_env) (m : mem) :
       step xi ge (.State f .Sskip (.Kseq s k) e le m) E0
@@ -309,22 +356,32 @@ inductive step (xi : ExternalCalls) (ge : genv) : state → trace → state → 
       step xi ge (.State f .Sskip k e le m) E0 (.Returnstate Vundef k m')
   | step_set (f : function) (id : ident) (a : expr) (k : cont) (e : env)
       (le : temp_env) (m : mem) (v : val)
-      (heval : eval_expr ge e le m a v) :
+      (heval : eval_expr
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) ge e le m a v) :
       step xi ge (.State f (.Sset id a) k e le m) E0
         (.State f .Sskip k e (PTree.set id v le) m)
   | step_store (f : function) (chunk : memory_chunk) (address value : expr)
       (k : cont) (e : env) (le : temp_env) (m : mem) (vaddr v : val)
       (m' : mem)
-      (haddr : eval_expr ge e le m address vaddr)
-      (hvalue : eval_expr ge e le m value v)
+      (haddr : eval_expr
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) ge e le m address vaddr)
+      (hvalue : eval_expr
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) ge e le m value v)
       (hstore : Mem.storev chunk m vaddr v = some m') :
       step xi ge (.State f (.Sstore chunk address value) k e le m) E0
         (.State f .Sskip k e le m')
   | step_call (f : function) (optid : Option ident) (sig : signature) (a : expr)
       (args : List expr) (k : cont) (e : env) (le : temp_env) (m : mem)
       (vf : val) (vargs : List val) (fd : fundef)
-      (hcallee : eval_expr ge e le m a vf)
-      (hargs : eval_exprlist ge e le m args vargs)
+      (hcallee : eval_expr
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) ge e le m a vf)
+      (hargs : eval_exprlist
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) ge e le m args vargs)
       (hfind : Genv.find_funct ge vf = some fd)
       (hsig : funsig fd = sig) :
       step xi ge (.State f (.Scall optid sig a args) k e le m) E0
@@ -332,8 +389,13 @@ inductive step (xi : ExternalCalls) (ge : genv) : state → trace → state → 
   | step_builtin (f : function) (optid : Option ident) (ef : external_function)
       (args : List expr) (k : cont) (e : env) (le : temp_env) (m : mem)
       (vargs : List val) (t : trace) (vres : val) (m' : mem)
-      (hargs : eval_exprlist ge e le m args vargs)
-      (hext : external_call xi ef (Genv.to_senv ge) vargs m t vres m') :
+      (hargs : eval_exprlist
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) ge e le m args vargs)
+      (hext : external_call
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        xi ef (Genv.to_senv ge) vargs m t vres m') :
       step xi ge (.State f (.Sbuiltin optid ef args) k e le m) t
         (.State f .Sskip k e
           (CompCert4Lean.Backend.Cminor.set_optvar optid vres le) m')
@@ -343,7 +405,9 @@ inductive step (xi : ExternalCalls) (ge : genv) : state → trace → state → 
         (.State f s1 (.Kseq s2 k) e le m)
   | step_ifthenelse (f : function) (a : expr) (s1 s2 : stmt) (k : cont)
       (e : env) (le : temp_env) (m : mem) (v : val) (b : Bool)
-      (heval : eval_expr ge e le m a v)
+      (heval : eval_expr
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) ge e le m a v)
       (hbool : Val.bool_of_val v b) :
       step xi ge (.State f (.Sifthenelse a s1 s2) k e le m) E0
         (.State f (if b then s1 else s2) k e le m)
@@ -369,7 +433,9 @@ inductive step (xi : ExternalCalls) (ge : genv) : state → trace → state → 
         (.State f (.Sexit n) k e le m)
   | step_switch (f : function) (isLong : Bool) (a : expr) (cases : lbl_stmt)
       (k : cont) (e : env) (le : temp_env) (m : mem) (v : val) (n : Z)
-      (heval : eval_expr ge e le m a v)
+      (heval : eval_expr
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) ge e le m a v)
       (harg : switch_argument isLong v n) :
       step xi ge (.State f (.Sswitch isLong a cases) k e le m) E0
         (.State f (seq_of_lbl_stmt (select_switch n cases)) k e le m)
@@ -380,7 +446,9 @@ inductive step (xi : ExternalCalls) (ge : genv) : state → trace → state → 
         (.Returnstate Vundef (call_cont k) m')
   | step_return_1 (f : function) (a : expr) (k : cont) (e : env)
       (le : temp_env) (m : mem) (v : val) (m' : mem)
-      (heval : eval_expr ge e le m a v)
+      (heval : eval_expr
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) ge e le m a v)
       (hfree : Mem.free_list m (blocks_of_env e) = some m') :
       step xi ge (.State f (.Sreturn (some a)) k e le m) E0
         (.Returnstate v (call_cont k) m')
@@ -406,7 +474,10 @@ inductive step (xi : ExternalCalls) (ge : genv) : state → trace → state → 
         (.State f f.fn_body k e le m1)
   | step_external_function (ef : external_function) (vargs : List val)
       (k : cont) (m : mem) (t : trace) (vres : val) (m' : mem)
-      (hext : external_call xi ef (Genv.to_senv ge) vargs m t vres m') :
+      (hext : external_call
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        xi ef (Genv.to_senv ge) vargs m t vres m') :
       step xi ge (.Callstate (.External ef) vargs k m) t
         (.Returnstate vres k m')
   | step_return (v : val) (optid : Option ident) (f : function) (e : env)
@@ -437,8 +508,21 @@ inductive final_state : state → CCInt → Prop where
 
 export final_state (final_state_intro)
 
-def semantics (xi : ExternalCalls) (p : program) :
+def semantics
+    [binary64_certificate :
+      BinaryNormalizeCertificate (ZArith.BinInt.Z.of_nat 53)
+        (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate :
+      BinaryNormalizeCertificate (ZArith.BinInt.Z.of_nat 24)
+        (ZArith.BinInt.Z.of_nat 128)]
+    (xi : ExternalCalls) (p : program) :
     CompCert4Lean.Common.Smallstep.semantics :=
-  Semantics (step xi) (initial_state p) final_state (Genv.globalenv p)
+  Semantics
+    (step
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) xi)
+    (initial_state p)
+    final_state
+    (Genv.globalenv p)
 
 end CompCert4Lean.Cfrontend.Csharpminor

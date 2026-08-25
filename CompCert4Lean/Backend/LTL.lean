@@ -145,7 +145,14 @@ def parent_locset : List stackframe → locset
   | [] => Locmap.init Vundef
   | Stackframe _ _ ls _ :: _ => ls
 
-inductive step (cfg : CompilerConfig) (xi : ExternalCalls) (ge : genv) :
+inductive step
+    [binary64_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)]
+    (cfg : CompilerConfig) (xi : ExternalCalls) (ge : genv) :
     state → trace → state → Prop where
   | exec_start_block
       (s : List stackframe) (f : function) (sp : val) (pc : node)
@@ -221,7 +228,10 @@ inductive step (cfg : CompilerConfig) (xi : ExternalCalls) (ge : genv) :
       (rs : locset) (m : mem) (vargs : List val) (t : trace) (vres : val)
       (rs' : locset) (m' : mem)
       (hargs : eval_builtin_args (Genv.to_senv ge) rs sp m args vargs)
-      (hcall : external_call xi ef (Genv.to_senv ge) vargs m t vres m')
+      (hcall : external_call
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        xi ef (Genv.to_senv ge) vargs m t vres m')
       (hrs : rs' = Locmap.setres res vres
         (undef_regs (destroyed_by_builtin ef) rs)) :
       step cfg xi ge (Block s f sp (Lbuiltin ef args res :: bb) rs m) t
@@ -269,7 +279,10 @@ inductive step (cfg : CompilerConfig) (xi : ExternalCalls) (ge : genv) :
       (m' : mem)
       (hargs : args =
         (locArguments cfg (ef_sig ef)).map (fun p => Locmap.getpair p rs))
-      (hcall : external_call xi ef (Genv.to_senv ge) args m t res m')
+      (hcall : external_call
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        xi ef (Genv.to_senv ge) args m t res m')
       (hrs : rs' = Locmap.setpair (locResult (ef_sig ef)) res
         (undef_caller_save_regs cfg rs)) :
       step cfg xi ge (Callstate s (External ef) rs m) t
@@ -300,9 +313,21 @@ inductive final_state : state → int → Prop where
         Vint retcode) :
       final_state (Returnstate [] rs m) retcode
 
-def semantics (cfg : CompilerConfig) (xi : ExternalCalls) (p : program) :
+def semantics
+    [binary64_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)]
+    (cfg : CompilerConfig) (xi : ExternalCalls) (p : program) :
     CompCert4Lean.Common.Smallstep.semantics :=
-  Semantics (step cfg xi) (initial_state p) final_state (Genv.globalenv p)
+  Semantics
+    (step (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) cfg xi)
+    (initial_state p)
+    final_state
+    (Genv.globalenv p)
 
 /-! ## Operations on LTL syntax -/
 
