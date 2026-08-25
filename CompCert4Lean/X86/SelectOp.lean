@@ -25,6 +25,9 @@ private abbrev CCInt64 := CompCert4Lean.Lib.Integers.int64
 private abbrev Ptrofs := CompCert4Lean.Lib.Integers.ptrofs
 private abbrev comparison := CompCert4Lean.Lib.Integers.comparison
 private abbrev op_addressing := CompCert4Lean.X86.Op.addressing
+private abbrev BinaryNormalizeCertificate :=
+  CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+private abbrev zOfNat := ZArith.BinInt.Z.of_nat
 private abbrev z0 : Z := .Z0
 private abbrev z8 : Z := ZArith.BinInt.Z.of_nat 8
 private abbrev z16 : Z := ZArith.BinInt.Z.of_nat 16
@@ -911,15 +914,21 @@ def floatofint_match (e : expr) : floatofint_cases e :=
   | Eop (Ointconst n) Enil => .floatofint_case1 n
   | e => .floatofint_default e : floatofint_cases e)
 
-def floatofint (e : expr) : expr :=
+def floatofint
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    (e : expr) : expr :=
   match floatofint_match e with
-  | .floatofint_case1 n => Eop (Ofloatconst (Float.of_int n)) Enil
+  | .floatofint_case1 n =>
+      Eop (Ofloatconst (Float.of_int (certificate := binary64_certificate) n)) Enil
   | .floatofint_default e => Eop Ofloatofint (Econs e Enil)
 
-def intuoffloat (e : expr) : expr :=
+def intuoffloat
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    (e : expr) : expr :=
   if CompCert4Lean.X86_64.Archi.splitlong then
     Elet e
-      (Elet (Eop (Ofloatconst (Float.of_intu Float.ox8000_0000)) Enil)
+      (Elet (Eop (Ofloatconst (Float.of_intu
+          (certificate := binary64_certificate) Float.ox8000_0000)) Enil)
         (Econdition
           (CEcond (Ccompf Clt) (Econs (Eletvar 1) (Econs (Eletvar 0) Enil)))
           (intoffloat (Eletvar 1))
@@ -939,18 +948,26 @@ def floatofintu_match (e : expr) : floatofintu_cases e :=
   | Eop (Ointconst n) Enil => .floatofintu_case1 n
   | e => .floatofintu_default e : floatofintu_cases e)
 
-def floatofintu (e : expr) : expr :=
+def floatofintu
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    (e : expr) : expr :=
   match floatofintu_match e with
-  | .floatofintu_case1 n => Eop (Ofloatconst (Float.of_intu n)) Enil
+  | .floatofintu_case1 n =>
+      Eop (Ofloatconst (Float.of_intu (certificate := binary64_certificate) n)) Enil
   | .floatofintu_default e =>
       if CompCert4Lean.X86_64.Archi.splitlong then
-        let f := Eop (Ofloatconst (Float.of_intu Float.ox8000_0000)) Enil
+        let f := Eop (Ofloatconst (Float.of_intu
+          (certificate := binary64_certificate) Float.ox8000_0000)) Enil
         Elet e
           (Econdition
             (CEcond (Ccompuimm Clt Float.ox8000_0000) (Econs (Eletvar 0) Enil))
-            (floatofint (Eletvar 0))
+            (floatofint
+              (binary64_certificate := binary64_certificate)
+              (Eletvar 0))
             (addf
-              (floatofint (addimm (Int.neg Float.ox8000_0000) (Eletvar 0))) f))
+              (floatofint
+                (binary64_certificate := binary64_certificate)
+                (addimm (Int.neg Float.ox8000_0000) (Eletvar 0))) f))
       else
         Eop Ofloatoflong (Econs (Eop Ocast32unsigned (Econs e Enil)) Enil)
 
@@ -967,12 +984,20 @@ def singleofint_match (e : expr) : singleofint_cases e :=
   | Eop (Ointconst n) Enil => .singleofint_case1 n
   | e => .singleofint_default e : singleofint_cases e)
 
-def singleofint (e : expr) : expr :=
+def singleofint
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (e : expr) : expr :=
   match singleofint_match e with
-  | .singleofint_case1 n => Eop (Osingleconst (Float32.of_int n)) Enil
+  | .singleofint_case1 n =>
+      Eop (Osingleconst (Float32.of_int (certificate := binary32_certificate) n)) Enil
   | .singleofint_default e => Eop Osingleofint (Econs e Enil)
 
-def intuofsingle (e : expr) : expr := intuoffloat (floatofsingle e)
+def intuofsingle
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    (e : expr) : expr :=
+  intuoffloat
+    (binary64_certificate := binary64_certificate)
+    (floatofsingle e)
 
 inductive singleofintu_cases : expr -> Type where
   | singleofintu_case1 (n : CCInt) : singleofintu_cases (Eop (Ointconst n) Enil)
@@ -985,10 +1010,17 @@ def singleofintu_match (e : expr) : singleofintu_cases e :=
   | Eop (Ointconst n) Enil => .singleofintu_case1 n
   | e => .singleofintu_default e : singleofintu_cases e)
 
-def singleofintu (e : expr) : expr :=
+def singleofintu
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (e : expr) : expr :=
   match singleofintu_match e with
-  | .singleofintu_case1 n => Eop (Osingleconst (Float32.of_intu n)) Enil
-  | .singleofintu_default e => singleoffloat (floatofintu e)
+  | .singleofintu_case1 n =>
+      Eop (Osingleconst (Float32.of_intu (certificate := binary32_certificate) n)) Enil
+  | .singleofintu_default e =>
+    singleoffloat (floatofintu
+      (binary64_certificate := binary64_certificate)
+      e)
 
 /-! ## Addressing modes -/
 
