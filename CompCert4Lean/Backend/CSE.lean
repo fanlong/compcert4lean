@@ -68,6 +68,9 @@ private abbrev defmap := CompCert4Lean.Backend.RTL.defmap
 private abbrev program := CompCert4Lean.Backend.RTL.program
 private abbrev romem := CompCert4Lean.Backend.ValueDomain.romem
 private abbrev CompilerConfig := CompCert4Lean.Config.CompilerConfig
+private abbrev BinaryNormalizeCertificate :=
+  CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+private abbrev zOfNat := ZArith.BinInt.Z.of_nat
 private abbrev Res := CompCert4Lean.Common.Errors.res
 private abbrev RocqString :=
   CompCert4Lean.Foundation.RocqString.Rocq.Coq.Strings.String.string
@@ -343,64 +346,142 @@ end REDUCE
 
 namespace Numbering
 
-def ge (n1 n2 : numbering) : Prop :=
+def ge
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (n1 n2 : numbering) : Prop :=
   ∀ (valu : valuation) (genv : CompCert4Lean.Backend.RTL.genv)
     (sp : val) (rs : regset) (m : mem),
-    numbering_holds valu genv sp rs m n2 →
-      numbering_holds valu genv sp rs m n1
+    numbering_holds
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      valu genv sp rs m n2 →
+      numbering_holds
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        valu genv sp rs m n1
 
 end Numbering
 
-private def numberingSolver : OrderedTop :=
+private def numberingSolver
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : OrderedTop :=
   { t := numbering
     ge := Numbering.ge
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
     top := empty_numbering }
 
 /-! Generated surface for `Kildall.BBlock_solver(Numbering)`. -/
 namespace Solver
 
-def L : OrderedTop := numberingSolver
+def L
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : OrderedTop :=
+  numberingSolver
+    (binary64_certificate := binary64_certificate)
+    (binary32_certificate := binary32_certificate)
 
-def law_obligation : Prop := OrderedTopLaws L
+def law_obligation
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
+  OrderedTopLaws
+    (L
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate))
 
-def Solver : Type 1 :=
-  { solver : BBLOCK_SOLVER // solver.L = L ∧ law_obligation }
+def Solver
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Type 1 :=
+  { solver : BBLOCK_SOLVER //
+      solver.L = L
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) ∧
+      law_obligation
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) }
 
-def fixpoint {A : Type} (code : PTree.t A)
+def fixpoint
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    {A : Type} (code : PTree.t A)
     (successors : A -> List positive)
-    (transf : positive -> L.t -> L.t)
+    (transf : positive ->
+      (L
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)).t ->
+      (L
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)).t)
     (entrypoint : positive) : Option (PMap.t L.t) :=
-  BBlock_solver.fixpoint L code successors transf entrypoint
+  BBlock_solver.fixpoint
+    (L
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate))
+    code successors transf entrypoint
 
-def fixpoint_solution (_laws : law_obligation) : Prop :=
+def fixpoint_solution
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (_laws : law_obligation
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)) : Prop :=
   ∀ (A : Type) (code : PTree.t A)
     (successors : A -> List positive)
     (transf : positive -> L.t -> L.t)
     (entrypoint : positive) (res : PMap.t L.t)
     (n : positive) (instr : A) (s : positive),
-    fixpoint code successors transf entrypoint = some res ->
+    fixpoint
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      code successors transf entrypoint = some res ->
     PTree.get n code = some instr ->
     s ∈ successors instr ->
-    L.ge (PMap.get s res) (transf n (PMap.get n res))
+    (L
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)).ge
+      (PMap.get s res) (transf n (PMap.get n res))
 
-def fixpoint_entry (_laws : law_obligation) : Prop :=
+def fixpoint_entry
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (_laws : law_obligation
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)) : Prop :=
   ∀ (A : Type) (code : PTree.t A)
     (successors : A -> List positive)
     (transf : positive -> L.t -> L.t)
     (entrypoint : positive) (res : PMap.t L.t),
-    fixpoint code successors transf entrypoint = some res ->
-    PMap.get entrypoint res = L.top
+    fixpoint
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      code successors transf entrypoint = some res ->
+    PMap.get entrypoint res =
+      (L
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)).top
 
-def fixpoint_invariant (_laws : law_obligation) : Prop :=
+def fixpoint_invariant
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (_laws : law_obligation
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)) : Prop :=
   ∀ (A : Type) (code : PTree.t A)
     (successors : A -> List positive)
     (transf : positive -> L.t -> L.t)
     (entrypoint : positive) (P : L.t -> Prop),
-    P L.top ->
+    P
+      (L
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)).top ->
     (∀ pc instr x, PTree.get pc code = some instr ->
       P x -> P (transf pc x)) ->
     ∀ (res : PMap.t L.t) (pc : positive),
-      fixpoint code successors transf entrypoint = some res ->
+      fixpoint
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        code successors transf entrypoint = some res ->
       P (PMap.get pc res)
 
 end Solver
@@ -452,9 +533,15 @@ def transfer (cfg : CompilerConfig) (f : function) (dm : defmap)
       | .Ijumptable _ _ => before
       | .Ireturn _ => before
 
-def analyze (cfg : CompilerConfig) (f : function) (dm : defmap)
+def analyze
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (cfg : CompilerConfig) (f : function) (dm : defmap)
     (approx : PMap.t VA.t) : Option (PMap.t numbering) :=
-  Solver.fixpoint f.fn_code successors_instr
+  Solver.fixpoint
+    (binary64_certificate := binary64_certificate)
+    (binary32_certificate := binary32_certificate)
+    f.fn_code successors_instr
     (transfer cfg f dm approx) f.fn_entrypoint
 
 def transf_instr (dm : defmap) (n : numbering) (instr : instruction) : instruction :=
@@ -507,14 +594,29 @@ def transf_instr (dm : defmap) (n : numbering) (instr : instruction) : instructi
 
 def transf_code (dm : defmap) (approxs : PMap.t numbering)
     (instrs : code) : code :=
-  PTree.map (fun pc instr => transf_instr dm (PMap.get pc approxs) instr) instrs
+  PTree.map
+    (fun pc instr => transf_instr dm (PMap.get pc approxs) instr)
+    instrs
 
-def vanalyze (cfg : CompilerConfig) := ValueAnalysis.analyze cfg
+def vanalyze
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (cfg : CompilerConfig) :=
+  ValueAnalysis.analyze
+    (binary64_certificate := binary64_certificate)
+    (binary32_certificate := binary32_certificate) cfg
 
-def transf_function (cfg : CompilerConfig) (dm : defmap) (rm : romem)
+def transf_function
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (cfg : CompilerConfig) (dm : defmap) (rm : romem)
     (f : function) : Res function :=
-  let approx := vanalyze cfg rm f
-  match analyze cfg f dm approx with
+  let approx := vanalyze
+    (binary64_certificate := binary64_certificate)
+    (binary32_certificate := binary32_certificate) cfg rm f
+  match analyze
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) cfg f dm approx with
   | none => Error (msg cseFailureText)
   | some approxs =>
       OK { fn_sig := f.fn_sig
@@ -523,12 +625,24 @@ def transf_function (cfg : CompilerConfig) (dm : defmap) (rm : romem)
            fn_code := transf_code dm approxs f.fn_code
            fn_entrypoint := f.fn_entrypoint }
 
-def transf_fundef (cfg : CompilerConfig) (dm : defmap) (rm : romem)
+def transf_fundef
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (cfg : CompilerConfig) (dm : defmap) (rm : romem)
     (f : fundef) : Res fundef :=
-  transf_partial_fundef (transf_function cfg dm rm) f
+  transf_partial_fundef
+    (transf_function
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) cfg dm rm) f
 
-def transf_program (cfg : CompilerConfig) (p : program) : Res program :=
+def transf_program
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (cfg : CompilerConfig) (p : program) : Res program :=
   transform_partial_program
-    (transf_fundef cfg (prog_defmap p) (romem_for cfg p)) p
+    (transf_fundef
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      cfg (prog_defmap p) (romem_for cfg p)) p
 
 end CompCert4Lean.Backend.CSE
