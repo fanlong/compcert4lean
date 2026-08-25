@@ -59,15 +59,14 @@ inductive slot : Type where
 
 export slot (Local Incoming Outgoing)
 
-private def slotDecEq : DecidableEq slot := by
-  intro x y
-  cases x <;> cases y <;>
-    first
-    | exact isTrue rfl
-    | exact isFalse (by intro h; cases h)
-
 def slot_eqStatement : Type :=
   ∀ p q : slot, Sumbool (p = q) (p ≠ q)
+
+def slot_eq (p q : slot) : Sumbool (p = q) (p ≠ q) := by
+  cases p <;> cases q <;>
+    first
+    | exact .left rfl
+    | exact .right (by intro h; cases h)
 
 def typesize : typ → Z
   | .Tint => zOfNat 1
@@ -94,40 +93,6 @@ inductive loc : Type where
 
 export loc (R S)
 
-private def locDecEq : DecidableEq loc
-  | .R r1, .R r2 =>
-      match mregDecEq r1 r2 with
-      | .isTrue h => .isTrue (congrArg R h)
-      | .isFalse h => .isFalse (by
-          intro heq
-          cases heq
-          exact h rfl)
-  | .R _, .S _ _ _ => .isFalse (by intro h; cases h)
-  | .S _ _ _, .R _ => .isFalse (by intro h; cases h)
-  | .S s1 d1 t1, .S s2 d2 t2 =>
-      match slotDecEq s1 s2 with
-      | .isFalse h => .isFalse (by
-          intro heq
-          cases heq
-          exact h rfl)
-      | .isTrue hs =>
-          match (inferInstance : Decidable (d1 = d2)) with
-          | .isFalse h => .isFalse (by
-              intro heq
-              cases heq
-              exact h rfl)
-          | .isTrue hd =>
-              match (inferInstance : Decidable (t1 = t2)) with
-              | .isFalse h => .isFalse (by
-                  intro heq
-                  cases heq
-                  exact h rfl)
-              | .isTrue ht => .isTrue (by
-                  subst s2
-                  subst d2
-                  subst t2
-                  rfl)
-
 namespace Loc
 
 def type : loc → typ
@@ -136,6 +101,45 @@ def type : loc → typ
 
 def eqStatement : Type :=
   ∀ p q : loc, Sumbool (p = q) (p ≠ q)
+
+def eq (p q : loc) : Sumbool (p = q) (p ≠ q) := by
+  cases p with
+  | R r1 =>
+      cases q with
+      | R r2 =>
+          cases mregDecEq r1 r2 with
+          | isTrue h => exact .left (congrArg R h)
+          | isFalse h => exact .right (by
+              intro heq
+              cases heq
+              exact h rfl)
+      | S _ _ _ => exact .right (by intro h; cases h)
+  | S s1 d1 t1 =>
+      cases q with
+      | R _ => exact .right (by intro h; cases h)
+      | S s2 d2 t2 =>
+          cases slot_eq s1 s2 with
+          | right h => exact .right (by
+              intro heq
+              cases heq
+              exact h rfl)
+          | left hs =>
+              match (inferInstance : Decidable (d1 = d2)) with
+              | isFalse h => exact .right (by
+                  intro heq
+                  cases heq
+                  exact h rfl)
+              | isTrue hd =>
+                  match (inferInstance : Decidable (t1 = t2)) with
+                  | isFalse h => exact .right (by
+                      intro heq
+                      cases heq
+                      exact h rfl)
+                  | isTrue ht => exact .left (by
+                      subst s2
+                      subst d2
+                      subst t2
+                      rfl)
 
 def diff : loc → loc → Prop
   | .R r1, .R r2 => r1 ≠ r2
@@ -169,9 +173,9 @@ def diff_dec (l1 l2 : loc) : Sumbool (diff l1 l2) (¬ diff l1 l2) := by
       cases l2 with
       | R _ => exact .left trivial
       | S s2 d2 t2 =>
-          cases slotDecEq s1 s2 with
-          | isFalse h => exact .left (Or.inl h)
-          | isTrue hs =>
+          cases slot_eq s1 s2 with
+          | right h => exact .left (Or.inl h)
+          | left hs =>
               match CompCert4Lean.Lib.Coqlib.zle
                   (zAdd d1 (typesize t1)) d2 with
               | .left h12 => exact .left (Or.inr (Or.inl h12))
@@ -211,12 +215,12 @@ def init (x : val) : t :=
 
 def set (l : loc) (v : val) (m : t) : t :=
   fun p =>
-    match locDecEq l p with
-    | .isTrue _ =>
+    match Loc.eq l p with
+    | .left _ =>
         match l with
         | .R _ => v
         | .S _ _ ty => Val.load_result (chunk_of_type ty) v
-    | .isFalse _ =>
+    | .right _ =>
         match Loc.diff_dec l p with
         | .left _ => m p
         | .right _ => Vundef
@@ -363,9 +367,7 @@ def compare (x y : t) : OrderedCompare lt eq x y := by
         decide)
 
 def eq_dec (x y : t) : Sumbool (eq x y) (¬ eq x y) :=
-  match slotDecEq x y with
-  | .isTrue h => .left h
-  | .isFalse h => .right h
+  slot_eq x y
 
 end OrderedSlot
 

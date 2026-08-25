@@ -676,6 +676,15 @@ def perm_maxStatement : Prop :=
 def perm_valid_blockStatement : Prop :=
   ∀ m b ofs k p, perm m b ofs k p → valid_block m b
 
+def perm_order_decStatement : Type :=
+  ∀ p1 p2, Sumbool (perm_order p1 p2) (¬ perm_order p1 p2)
+
+def perm_order'_decStatement : Type :=
+  ∀ op p, Sumbool (perm_order' op p) (¬ perm_order' op p)
+
+def perm_decStatement : Type :=
+  ∀ m b ofs k p, Sumbool (perm m b ofs k p) (¬ perm m b ofs k p)
+
 def range_perm_impliesStatement : Prop :=
   ∀ m b lo hi k p1 p2,
     range_perm m b lo hi k p1 → perm_order p1 p2 → range_perm m b lo hi k p2
@@ -683,6 +692,10 @@ def range_perm_impliesStatement : Prop :=
 def range_perm_maxStatement : Prop :=
   ∀ m b lo hi k p,
     range_perm m b lo hi k p → range_perm m b lo hi Max p
+
+def range_perm_decStatement : Type :=
+  ∀ m b lo hi k p,
+    Sumbool (range_perm m b lo hi k p) (¬ range_perm m b lo hi k p)
 
 def valid_access_impliesStatement : Prop :=
   ∀ m chunk b ofs p1 p2,
@@ -694,6 +707,10 @@ def valid_access_compatStatement : Prop :=
     zLe (align_chunk chunk2) (align_chunk chunk1) →
     valid_access m chunk1 b ofs p →
     valid_access m chunk2 b ofs p
+
+def valid_access_decStatement : Type :=
+  ∀ m chunk b ofs p,
+    Sumbool (valid_access m chunk b ofs p) (¬ valid_access m chunk b ofs p)
 
 def valid_pointer_nonempty_permStatement : Prop :=
   ∀ m b ofs,
