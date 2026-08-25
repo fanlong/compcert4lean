@@ -296,7 +296,7 @@ def id_p_ulp_le_bpowStatement : Prop :=
       Rle (Rplus x (ulp beta fexp x)) (bpow beta e)
 
 def le_pred_pos_ltStatement : Prop :=
-  ∀ (beta : radix) (fexp : Z → Z), ∀ x y,
+  ∀ (beta : radix) (fexp : Z → Z), Valid_exp fexp → ∀ x y,
     generic_format beta fexp x → generic_format beta fexp y →
       (Rle R0 x ∧ Rlt x y) → Rle x (pred_pos beta fexp y)
 
