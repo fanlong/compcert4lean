@@ -65,12 +65,20 @@ private abbrev block_classification := CompCert4Lean.Backend.ValueDomain.block_c
 private abbrev genv := CompCert4Lean.Backend.RTL.genv
 private abbrev romem := CompCert4Lean.Backend.ValueDomain.romem
 private abbrev CompilerConfig := CompCert4Lean.Config.CompilerConfig
+private abbrev BinaryNormalizeCertificate :=
+  CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+private abbrev zOfNat := ZArith.BinInt.Z.of_nat
 
-def match_prog (cfg : CompilerConfig) (prog tprog : program) : Prop :=
+def match_prog
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (cfg : CompilerConfig) (prog tprog : program) : Prop :=
   @match_program fundef Unit fundef Unit
     (Linker_fundef function) Linker_unit
     (fun cu f tf =>
       tf = CompCert4Lean.Backend.Constprop.transf_fundef
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
         cfg (CompCert4Lean.Backend.ValueAnalysis.romem_for cfg cu) f)
     (fun x y : Unit => x = y) prog tprog
 
@@ -89,58 +97,90 @@ inductive match_pc (f : function) (rs : regset) (m : mem) : Nat → node → nod
           match_pc f rs m n (if b then s1 else s2) pcx) :
       match_pc f rs m (Nat.succ n) pc pcx
 
-inductive match_stackframes (cfg : CompilerConfig) (prog : program) :
+inductive match_stackframes
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (cfg : CompilerConfig) (prog : program) :
     stackframe → stackframe → Prop where
   | match_stackframe_intro
       (res : reg) (sp : val) (pc : node) (rs : regset)
       (f : function) (rs' : regset) (cu : program)
       (hlink : linkorder cu prog)
       (hld : regs_lessdef rs rs') :
-      match_stackframes cfg prog
+      match_stackframes
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) cfg prog
         (Stackframe res f sp pc rs)
         (Stackframe res
           (CompCert4Lean.Backend.Constprop.transf_function
+            (binary64_certificate := binary64_certificate)
+            (binary32_certificate := binary32_certificate)
             cfg (CompCert4Lean.Backend.ValueAnalysis.romem_for cfg cu) f)
           sp pc rs')
 
-inductive match_states (cfg : CompilerConfig) (prog : program) :
+inductive match_states
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (cfg : CompilerConfig) (prog : program) :
     Nat → state → state → Prop where
   | match_states_intro
       (s : List stackframe) (sp : val) (pc : node) (rs : regset) (m : mem)
       (f : function) (s' : List stackframe) (pc' : node) (rs' : regset)
       (m' : mem) (cu : program) (n : Nat)
       (hlink : linkorder cu prog)
-      (hstacks : list_forall2 (match_stackframes cfg prog) s s')
+      (hstacks : list_forall2
+        (match_stackframes
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate) cfg prog) s s')
       (hpc : match_pc f rs m n pc pc')
       (hregs : regs_lessdef rs rs')
       (hmem : Mem.extends m m') :
-      match_states cfg prog n
+      match_states
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) cfg prog n
         (State s f sp pc rs m)
         (State s'
           (CompCert4Lean.Backend.Constprop.transf_function
+            (binary64_certificate := binary64_certificate)
+            (binary32_certificate := binary32_certificate)
             cfg (CompCert4Lean.Backend.ValueAnalysis.romem_for cfg cu) f)
           sp pc' rs' m')
   | match_states_call
       (s : List stackframe) (f : fundef) (args : List val) (m : mem)
       (s' : List stackframe) (args' : List val) (m' : mem) (cu : program)
       (hlink : linkorder cu prog)
-      (hstacks : list_forall2 (match_stackframes cfg prog) s s')
+      (hstacks : list_forall2
+        (match_stackframes
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate) cfg prog) s s')
       (hargs : Val.lessdef_list args args')
       (hmem : Mem.extends m m') :
-      match_states cfg prog 0
+      match_states
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) cfg prog 0
         (Callstate s f args m)
         (Callstate s'
           (CompCert4Lean.Backend.Constprop.transf_fundef
+            (binary64_certificate := binary64_certificate)
+            (binary32_certificate := binary32_certificate)
             cfg (CompCert4Lean.Backend.ValueAnalysis.romem_for cfg cu) f)
           args' m')
   | match_states_return
       (s : List stackframe) (v : val) (m : mem)
       (s' : List stackframe) (v' : val) (m' : mem)
-      (hstacks : list_forall2 (match_stackframes cfg prog) s s')
+      (hstacks : list_forall2
+        (match_stackframes
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate) cfg prog) s s')
       (hres : Val.lessdef v v')
       (hmem : Mem.extends m m')
-      (hstacks' : list_forall2 (match_stackframes cfg prog) s s') :
-      match_states cfg prog 0
+      (hstacks' : list_forall2
+        (match_stackframes
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate) cfg prog) s s') :
+      match_states
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) cfg prog 0
         (Returnstate s v m)
         (Returnstate s' v' m')
 
@@ -150,41 +190,62 @@ export match_states (match_states_intro match_states_call match_states_return)
 
 /-! Exact source statement descriptors for later proof migration. -/
 
-variable (cfg : CompilerConfig)
+variable
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (cfg : CompilerConfig)
 
 def symbols_preservedStatement : Prop :=
-  ∀ (prog tprog : program), match_prog cfg prog tprog →
+  ∀ (prog tprog : program),
+    match_prog
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) cfg prog tprog →
     ∀ s : ident,
       Genv.find_symbol (Genv.globalenv tprog) s =
         Genv.find_symbol (Genv.globalenv prog) s
 
 def senv_preservedStatement : Prop :=
-  ∀ (prog tprog : program), match_prog cfg prog tprog →
+  ∀ (prog tprog : program),
+    match_prog
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) cfg prog tprog →
     Senv.equiv (Genv.to_senv (Genv.globalenv prog))
       (Genv.to_senv (Genv.globalenv tprog))
 
 def functions_translatedStatement : Prop :=
-  ∀ (prog tprog : program), match_prog cfg prog tprog →
+  ∀ (prog tprog : program),
+    match_prog
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) cfg prog tprog →
     ∀ (v : val) (f : fundef),
       Genv.find_funct (Genv.globalenv prog) v = some f →
       ∃ cu, Genv.find_funct (Genv.globalenv tprog) v =
         some (CompCert4Lean.Backend.Constprop.transf_fundef
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate)
           cfg (CompCert4Lean.Backend.ValueAnalysis.romem_for cfg cu) f) ∧
         linkorder cu prog
 
 def function_ptr_translatedStatement : Prop :=
-  ∀ (prog tprog : program), match_prog cfg prog tprog →
+  ∀ (prog tprog : program),
+    match_prog
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) cfg prog tprog →
     ∀ (b : block) (f : fundef),
       Genv.find_funct_ptr (Genv.globalenv prog) b = some f →
       ∃ cu, Genv.find_funct_ptr (Genv.globalenv tprog) b =
         some (CompCert4Lean.Backend.Constprop.transf_fundef
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate)
           cfg (CompCert4Lean.Backend.ValueAnalysis.romem_for cfg cu) f) ∧
         linkorder cu prog
 
 def sig_function_translatedStatement : Prop :=
   ∀ (rm : romem) (f : fundef),
     CompCert4Lean.Backend.RTL.funsig
-      (CompCert4Lean.Backend.Constprop.transf_fundef cfg rm f) =
+      (CompCert4Lean.Backend.Constprop.transf_fundef
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) cfg rm f) =
       CompCert4Lean.Backend.RTL.funsig f
 
 def init_regs_lessdefStatement : Prop :=
@@ -193,7 +254,10 @@ def init_regs_lessdefStatement : Prop :=
       regs_lessdef (init_regs vl1 rl) (init_regs vl2 rl)
 
 def transf_ros_correctStatement : Prop :=
-  ∀ (prog tprog : program), match_prog cfg prog tprog →
+  ∀ (prog tprog : program),
+    match_prog
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) cfg prog tprog →
     ∀ (bc : block_classification) (rs : regset) (ae : aenv)
       (ros : Sum reg ident) (f : fundef) (rs' : regset),
       genv_match bc (Genv.globalenv prog) →
@@ -202,19 +266,27 @@ def transf_ros_correctStatement : Prop :=
       regs_lessdef rs rs' →
       ∃ cu, find_function (Genv.globalenv tprog) (transf_ros ae ros) rs' =
         some (CompCert4Lean.Backend.Constprop.transf_fundef
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate)
           cfg (CompCert4Lean.Backend.ValueAnalysis.romem_for cfg cu) f) ∧
         linkorder cu prog
 
 def const_for_result_correctStatement : Prop :=
-  ∀ (prog tprog : program), match_prog cfg prog tprog →
+  ∀ (prog tprog : program),
+    match_prog
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) cfg prog tprog →
     ∀ (a : aval) (op : operation) (bc : block_classification) (v : val)
       (sp : block) (m : mem),
       const_for_result cfg cfg.relocation a = some op →
       vmatch bc v a →
       bc sp = BCstack →
       genv_match bc (Genv.globalenv prog) →
-      ∃ v', eval_operation (Genv.globalenv tprog) (Vptr sp Ptrofs.zero)
-        op [] m = some v' ∧ Val.lessdef v v'
+      ∃ v', eval_operation
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        (Genv.globalenv tprog) (Vptr sp Ptrofs.zero) op [] m = some v' ∧
+        Val.lessdef v v'
 
 def match_successor_recStatement : Prop :=
   ∀ (f : function) (rs : regset) (m : mem)
@@ -282,55 +354,108 @@ def builtin_strength_reduction_correctStatement : Prop :=
       ematch bc rs ae →
       eval_builtin_args (Genv.to_senv (Genv.globalenv prog)) (fun r => Regmap.get r rs)
         sp m args vargs →
-      external_call xi ef (Genv.to_senv (Genv.globalenv prog)) vargs m t vres m' →
+      external_call
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        xi ef (Genv.to_senv (Genv.globalenv prog)) vargs m t vres m' →
       ∃ vargs',
         eval_builtin_args (Genv.to_senv (Genv.globalenv prog)) (fun r => Regmap.get r rs)
           sp m (builtin_strength_reduction cfg ae ef args) vargs' ∧
-        external_call xi ef (Genv.to_senv (Genv.globalenv prog)) vargs' m t vres m'
+        external_call
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate)
+          xi ef (Genv.to_senv (Genv.globalenv prog)) vargs' m t vres m'
 
 def match_states_succStatement : Prop :=
   ∀ (prog : program) (s : List stackframe) (f : function) (sp : val)
     (pc : node) (rs : regset) (m : mem) (s' : List stackframe)
     (rs' : regset) (m' : mem) (cu : program),
     linkorder cu prog →
-    list_forall2 (match_stackframes cfg prog) s s' →
+    list_forall2
+      (match_stackframes
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) cfg prog) s s' →
     regs_lessdef rs rs' →
     Mem.extends m m' →
-    match_states cfg prog 0
+    match_states
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) cfg prog 0
       (State s f sp pc rs m)
       (State s'
         (CompCert4Lean.Backend.Constprop.transf_function
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate)
           cfg (CompCert4Lean.Backend.ValueAnalysis.romem_for cfg cu) f)
         sp pc rs' m')
 
 def transf_step_correctStatement : Prop :=
-  ∀ (xi : ExternalCalls) (prog tprog : program), match_prog cfg prog tprog →
+  ∀ (xi : ExternalCalls) (prog tprog : program),
+    match_prog
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) cfg prog tprog →
     ∀ (s1 : state) (t : trace) (s2 : state),
-      step xi (Genv.globalenv prog) s1 t s2 →
+      step
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        xi (Genv.globalenv prog) s1 t s2 →
       ∀ (n1 : Nat) (s1' : state),
-        ValueAnalysis.sound_state cfg prog s1 →
-        match_states cfg prog n1 s1 s1' →
+        ValueAnalysis.sound_state
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate) cfg prog s1 →
+        match_states
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate) cfg prog n1 s1 s1' →
         (∃ n2 s2',
-          step xi (Genv.globalenv tprog) s1' t s2' ∧
-          match_states cfg prog n2 s2 s2') ∨
-        (∃ n2, n2 < n1 ∧ t = E0 ∧ match_states cfg prog n2 s2 s1')
+          step
+            (binary64_certificate := binary64_certificate)
+            (binary32_certificate := binary32_certificate)
+            xi (Genv.globalenv tprog) s1' t s2' ∧
+          match_states
+            (binary64_certificate := binary64_certificate)
+            (binary32_certificate := binary32_certificate) cfg prog n2 s2 s2') ∨
+        (∃ n2, n2 < n1 ∧ t = E0 ∧
+          match_states
+            (binary64_certificate := binary64_certificate)
+            (binary32_certificate := binary32_certificate) cfg prog n2 s2 s1')
 
 def transf_initial_statesStatement : Prop :=
-  ∀ (prog tprog : program), match_prog cfg prog tprog →
+  ∀ (prog tprog : program),
+    match_prog
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) cfg prog tprog →
     ∀ (st1 : state), initial_state prog st1 →
-      ∃ n st2, initial_state tprog st2 ∧ match_states cfg prog n st1 st2
+      ∃ n st2, initial_state tprog st2 ∧
+        match_states
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate) cfg prog n st1 st2
 
 def transf_final_statesStatement : Prop :=
   ∀ (prog : program) (n : Nat) (st1 st2 : state) (r : int),
-    match_states cfg prog n st1 st2 → final_state st1 r → final_state st2 r
+    match_states
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) cfg prog n st1 st2 →
+    final_state st1 r → final_state st2 r
 
 def transf_program_matchStatement : Prop :=
-  ∀ (prog : program), match_prog cfg prog (transf_program cfg prog)
+  ∀ (prog : program),
+    match_prog
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) cfg prog
+      (transf_program
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) cfg prog)
 
 def transf_program_correctStatement : Prop :=
-  ∀ (xi : ExternalCalls) (prog tprog : program), match_prog cfg prog tprog →
+  ∀ (xi : ExternalCalls) (prog tprog : program),
+    match_prog
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) cfg prog tprog →
     forward_simulation
-      (semantics xi prog)
-      (semantics xi tprog)
+      (semantics
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) xi prog)
+      (semantics
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) xi tprog)
 
 end CompCert4Lean.Backend.Constpropproof
