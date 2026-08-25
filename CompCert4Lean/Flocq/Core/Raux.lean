@@ -571,6 +571,15 @@ def mag (r : radix) (x : R) : mag_prop r x :=
 
 def cond_Ropp (b : Bool) (m : R) : R := if b then Ropp m else m
 
+noncomputable def LPO_Z (P : Z → Prop) (_decideP : ∀ n, P n ∨ ¬ P n) :
+    Sumor (Subtype P) (∀ z, ¬ P z) := by
+  classical
+  by_cases h : ∃ z, P z
+  · exact .inleft
+      (CompCert4Lean.Foundation.Logic.Rocq.Coq.Logic.ClassicalEpsilon.constructive_indefinite_description
+        P h)
+  · exact .inright (fun z hz => h ⟨z, hz⟩)
+
 /-! Exact source proposition descriptors for later proof migration. -/
 
 section ExactStatements
