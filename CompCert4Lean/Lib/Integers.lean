@@ -619,6 +619,35 @@ def cmpu (c : comparison) (x y : int) : Bool :=
   | .Cgt => ltu y x
   | .Cge => !(ltu x y)
 
+def divmodu2 (nhi nlo d : int) : Option (int × int) :=
+  match eq_dec d zero with
+  | .left _ => none
+  | .right _ =>
+      let qr := ZArith.BinInt.Z.div_eucl
+        (zAdd (zMul (unsigned nhi) modulus) (unsigned nlo)) (unsigned d)
+      match CompCert4Lean.Lib.Coqlib.zle qr.1 max_unsigned with
+      | .left _ => some (repr qr.1, repr qr.2)
+      | .right _ => none
+
+def divmods2 (nhi nlo d : int) : Option (int × int) :=
+  match eq_dec d zero with
+  | .left _ => none
+  | .right _ =>
+      let n := zAdd (zMul (signed nhi) modulus) (unsigned nlo)
+      let sd := signed d
+      let q := zQuot n sd
+      let r := zSub n (zMul q sd)
+      match CompCert4Lean.Lib.Coqlib.zle min_signed q,
+          CompCert4Lean.Lib.Coqlib.zle q max_signed with
+      | .left _, .left _ => some (repr q, repr r)
+      | _, _ => none
+
+def unsigned_bitfield_extract (pos width : Z) (n : int) : int :=
+  zero_ext width (shru n (repr pos))
+
+def signed_bitfield_extract (pos width : Z) (n : int) : int :=
+  sign_ext width (shru n (repr pos))
+
 /-! Selected generated members of `Make(Wordsize_32)` retain their exact
     source propositions here; proof discharge remains a later phase. -/
 def add_unsigned : Prop :=
@@ -717,6 +746,362 @@ def unsigned_repr_wordsize : Prop := unsigned iwordsize = zwordsize
 
 def wordsize_max_unsigned : Prop := zLe zwordsize max_unsigned
 
+def modulus_power : Prop := modulus = zTwoP zwordsize
+
+def half_modulus_pos : Prop := zLt zZero half_modulus
+
+def min_signed_neg : Prop := zLt min_signed zZero
+
+def signed_repr_eq : Prop :=
+  ∀ x : Z,
+    signed (repr x) =
+      zltSelect (zMod x modulus) half_modulus (zMod x modulus)
+        (zSub (zMod x modulus) modulus)
+
+def eqm_refl2 : Prop := ∀ x y : Z, x = y → eqm x y
+
+def eqm_trans : Prop :=
+  ∀ x y z : Z, eqm x y → eqm y z → eqm x z
+
+def eqm_samerepr : Prop :=
+  ∀ x y : Z, eqm x y → repr x = repr y
+
+def eqm_unsigned_repr_r : Prop :=
+  ∀ a b : Z, eqm a b → eqm a (unsigned (repr b))
+
+def repr_signed : Prop := ∀ i : int, repr (signed i) = i
+
+def signed_repr : Prop :=
+  ∀ z : Z, zLe min_signed z ∧ zLe z max_signed → signed (repr z) = z
+
+def signed_zero : Prop := signed zero = zZero
+
+def signed_mone : Prop := signed mone = zOpp zOne
+
+def one_not_zero : Prop := one ≠ zero
+
+def eq_spec : Prop :=
+  ∀ x y : int, if eq x y then x = y else x ≠ y
+
+def eq_true : Prop := ∀ x : int, eq x x = true
+
+def eq_false : Prop := ∀ x y : int, x ≠ y → eq x y = false
+
+def add_signed : Prop :=
+  ∀ x y : int, add x y = repr (zAdd (signed x) (signed y))
+
+def add_commut : Prop := ∀ x y : int, add x y = add y x
+
+def add_zero : Prop := ∀ x : int, add x zero = x
+
+def add_zero_l : Prop := ∀ x : int, add zero x = x
+
+def add_assoc : Prop :=
+  ∀ x y z : int, add (add x y) z = add x (add y z)
+
+def add_neg_zero : Prop := ∀ x : int, add x (neg x) = zero
+
+def neg_involutive : Prop := ∀ x : int, neg (neg x) = x
+
+def sub_add_opp : Prop :=
+  ∀ x y : int, sub x y = add x (neg y)
+
+def sub_idem : Prop := ∀ x : int, sub x x = zero
+
+def sub_add_l : Prop :=
+  ∀ x y z : int, sub (add x y) z = add (sub x z) y
+
+def sub_add_r : Prop :=
+  ∀ x y z : int, sub x (add y z) = add (sub x z) (neg y)
+
+def mul_commut : Prop := ∀ x y : int, mul x y = mul y x
+
+def mul_zero : Prop := ∀ x : int, mul x zero = zero
+
+def mul_one : Prop := ∀ x : int, mul x one = x
+
+def mul_add_distr_l : Prop :=
+  ∀ x y z : int, mul (add x y) z = add (mul x z) (mul y z)
+
+def mul_add_distr_r : Prop :=
+  ∀ x y z : int, mul x (add y z) = add (mul x y) (mul x z)
+
+def modu_divu : Prop :=
+  ∀ x y : int, y ≠ zero → modu x y = sub x (mul (divu x y) y)
+
+def mods_divs : Prop :=
+  ∀ x y : int, mods x y = sub x (mul (divs x y) y)
+
+def divu_one : Prop := ∀ x : int, divu x one = x
+
+def divs_one : Prop :=
+  ∀ x : int, zLt zOne zwordsize → divs x one = x
+
+def divmodu2_divu_modu : Prop :=
+  ∀ n d : int, d ≠ zero →
+    divmodu2 zero n d = some (divu n d, modu n d)
+
+def divmods2_divs_mods : Prop :=
+  ∀ n d : int,
+    d ≠ zero → n ≠ repr min_signed ∨ d ≠ mone →
+      divmods2 (if lt n zero then mone else zero) n d =
+        some (divs n d, mods n d)
+
+def bits_one : Prop :=
+  ∀ n : Z,
+    testbit one n =
+      sumboolSelect (CompCert4Lean.Lib.Coqlib.zeq n zZero) true false
+
+def bits_mone : Prop :=
+  ∀ i : Z, zLe zZero i ∧ zLt i zwordsize → testbit mone i = true
+
+def bits_signed : Prop :=
+  ∀ (x : int) (i : Z), zLe zZero i →
+    zTestbit (signed x) i =
+      testbit x (zltSelect i zwordsize i (zSub zwordsize zOne))
+
+def bits_not : Prop :=
+  ∀ (x : int) (i : Z), zLe zZero i ∧ zLt i zwordsize →
+    testbit (not x) i = !(testbit x i)
+
+def and_commut : Prop := ∀ x y : int, and x y = and y x
+
+def and_assoc : Prop :=
+  ∀ x y z : int, and (and x y) z = and x (and y z)
+
+def and_zero : Prop := ∀ x : int, and x zero = zero
+
+def and_mone : Prop := ∀ x : int, and x mone = x
+
+def and_idem : Prop := ∀ x : int, and x x = x
+
+def or_commut : Prop := ∀ x y : int, or x y = or y x
+
+def or_assoc : Prop :=
+  ∀ x y z : int, or (or x y) z = or x (or y z)
+
+def or_zero : Prop := ∀ x : int, or x zero = x
+
+def or_mone : Prop := ∀ x : int, or x mone = mone
+
+def xor_commut : Prop := ∀ x y : int, xor x y = xor y x
+
+def xor_assoc : Prop :=
+  ∀ x y z : int, xor (xor x y) z = xor x (xor y z)
+
+def xor_zero : Prop := ∀ x : int, xor x zero = x
+
+def xor_is_zero : Prop :=
+  ∀ x y : int, eq (xor x y) zero = eq x y
+
+def not_involutive : Prop := ∀ x : int, not (not x) = x
+
+def not_or_and_not : Prop :=
+  ∀ x y : int, not (or x y) = and (not x) (not y)
+
+def shl_zero : Prop := ∀ x : int, shl x zero = x
+
+def ltu_iwordsize_inv : Prop :=
+  ∀ x : int, ltu x iwordsize = true →
+    zLe zZero (unsigned x) ∧ zLt (unsigned x) zwordsize
+
+def shl_shl : Prop :=
+  ∀ x y z : int,
+    ltu y iwordsize = true →
+    ltu z iwordsize = true →
+    ltu (add y z) iwordsize = true →
+      shl (shl x y) z = shl x (add y z)
+
+def shru_zero : Prop := ∀ x : int, shru x zero = x
+
+def shru_shru : Prop :=
+  ∀ x y z : int,
+    ltu y iwordsize = true →
+    ltu z iwordsize = true →
+    ltu (add y z) iwordsize = true →
+      shru (shru x y) z = shru x (add y z)
+
+def shr_zero : Prop := ∀ x : int, shr x zero = x
+
+def shr_shr : Prop :=
+  ∀ x y z : int,
+    ltu y iwordsize = true →
+    ltu z iwordsize = true →
+    ltu (add y z) iwordsize = true →
+      shr (shr x y) z = shr x (add y z)
+
+def shru_lt_zero : Prop :=
+  ∀ x : int,
+    shru x (repr (zSub zwordsize zOne)) =
+      if lt x zero then one else zero
+
+def shr_lt_zero : Prop :=
+  ∀ x : int,
+    shr x (repr (zSub zwordsize zOne)) =
+      if lt x zero then mone else zero
+
+def bits_rol : Prop :=
+  ∀ (x y : int) (i : Z), zLe zZero i ∧ zLt i zwordsize →
+    testbit (rol x y) i = testbit x (zMod (zSub i (unsigned y)) zwordsize)
+
+def bits_ror : Prop :=
+  ∀ (x y : int) (i : Z), zLe zZero i ∧ zLt i zwordsize →
+    testbit (ror x y) i = testbit x (zMod (zAdd i (unsigned y)) zwordsize)
+
+def ror_rol_neg : Prop :=
+  ∀ x y : int, zDivide zwordsize modulus → ror x y = rol x (neg y)
+
+def or_ror : Prop :=
+  ∀ x y z : int,
+    ltu y iwordsize = true →
+    ltu z iwordsize = true →
+    add y z = iwordsize →
+      ror x z = or (shl x y) (shru x z)
+
+def is_power2_range : Prop :=
+  ∀ n logn : int,
+    is_power2 n = some logn → ltu logn iwordsize = true
+
+def shl_mul : Prop :=
+  ∀ x y : int, shl x y = mul x (shl one y)
+
+def mul_pow2 : Prop :=
+  ∀ x n logn : int,
+    is_power2 n = some logn → mul x n = shl x logn
+
+def shru_div_two_p : Prop :=
+  ∀ x y : int, shru x y = repr (zDiv (unsigned x) (zTwoP (unsigned y)))
+
+def divu_pow2 : Prop :=
+  ∀ x n logn : int,
+    is_power2 n = some logn → divu x n = shru x logn
+
+def shr_div_two_p : Prop :=
+  ∀ x y : int, shr x y = repr (zDiv (signed x) (zTwoP (unsigned y)))
+
+def divs_pow2 : Prop :=
+  ∀ x n logn : int,
+    is_power2 n = some logn → divs x n = shrx x logn
+
+def modu_and : Prop :=
+  ∀ x n logn : int,
+    is_power2 n = some logn → modu x n = and x (sub n one)
+
+def shrx_shr : Prop :=
+  ∀ x y : int,
+    ltu y (repr (zSub zwordsize zOne)) = true →
+      shrx x y =
+        shr (if lt x zero then add x (sub (shl one y) one) else x) y
+
+def bits_zero_ext : Prop :=
+  ∀ (n : Z) (x : int) (i : Z), zLe zZero i →
+    testbit (zero_ext n x) i =
+      zltSelect i n (testbit x i) false
+
+def bits_sign_ext : Prop :=
+  ∀ (n : Z) (x : int) (i : Z), zLe zZero i ∧ zLt i zwordsize →
+    testbit (sign_ext n x) i =
+      testbit x (zltSelect i n i (zSub n zOne))
+
+def zero_ext_and : Prop :=
+  ∀ (n : Z) (x : int), zLe zZero n →
+    zero_ext n x = and x (repr (zSub (zTwoP n) zOne))
+
+def sign_ext_widen : Prop :=
+  ∀ (x : int) (n n' : Z), zLt zZero n ∧ zLe n n' →
+    sign_ext n' (sign_ext n x) = sign_ext n x
+
+def zero_ext_idem : Prop :=
+  ∀ (n : Z) (x : int), zLe zZero n →
+    zero_ext n (zero_ext n x) = zero_ext n x
+
+def sign_ext_idem : Prop :=
+  ∀ (n : Z) (x : int), zLt zZero n →
+    sign_ext n (sign_ext n x) = sign_ext n x
+
+def sign_ext_shr_shl : Prop :=
+  ∀ (n : Z) (x : int), zLt zZero n ∧ zLe n zwordsize →
+    let y := repr (zSub zwordsize n)
+    sign_ext n x = shr (shl x y) y
+
+def one_bits_range : Prop :=
+  ∀ x i : int, i ∈ one_bits x → ltu i iwordsize = true
+
+def one_bits_decomp : Prop :=
+  let rec intOfOneBits : List int → int
+    | [] => zero
+    | a :: rest => add (shl one a) (intOfOneBits rest)
+  ∀ x : int, x = intOfOneBits (one_bits x)
+
+def negate_cmp : Prop :=
+  ∀ (c : comparison) (x y : int),
+    cmp (negate_comparison c) x y = !(cmp c x y)
+
+def negate_cmpu : Prop :=
+  ∀ (c : comparison) (x y : int),
+    cmpu (negate_comparison c) x y = !(cmpu c x y)
+
+def swap_cmp : Prop :=
+  ∀ (c : comparison) (x y : int),
+    cmp (swap_comparison c) x y = cmp c y x
+
+def swap_cmpu : Prop :=
+  ∀ (c : comparison) (x y : int),
+    cmpu (swap_comparison c) x y = cmpu c y x
+
+def lt_sub_overflow : Prop :=
+  ∀ x y : int,
+    xor (sub_overflow x y zero) (negative (sub x y)) =
+      if lt x y then one else zero
+
+def not_lt : Prop :=
+  ∀ x y : int, !(lt y x) = (lt x y || eq x y)
+
+def lt_not : Prop :=
+  ∀ x y : int, lt y x = (!(lt x y) && !(eq x y))
+
+def not_ltu : Prop :=
+  ∀ x y : int, !(ltu y x) = (ltu x y || eq x y)
+
+def ltu_not : Prop :=
+  ∀ x y : int, ltu y x = (!(ltu x y) && !(eq x y))
+
+def bits_size_2 : Prop :=
+  ∀ (x : int) (i : Z), zLe (size x) i → testbit x i = false
+
+def size_range : Prop :=
+  ∀ x : int, zLe zZero (size x) ∧ zLe (size x) zwordsize
+
+def bits_size_4 : Prop :=
+  ∀ (x : int) (n : Z),
+    zLe zZero n →
+    testbit x (zSub n zOne) = true →
+    (∀ i : Z, zLe n i ∧ zLt i zwordsize → testbit x i = false) →
+      size x = n
+
+def unsigned_bitfield_extract_by_shifts : Prop :=
+  ∀ (pos width : Z) (n : int),
+    zLe zZero pos → zLt zZero width → zLe (zAdd pos width) zwordsize →
+      unsigned_bitfield_extract pos width n =
+        shru (shl n (repr (zSub (zSub zwordsize pos) width)))
+          (repr (zSub zwordsize width))
+
+def signed_bitfield_extract_by_shifts : Prop :=
+  ∀ (pos width : Z) (n : int),
+    zLe zZero pos → zLt zZero width → zLe (zAdd pos width) zwordsize →
+      signed_bitfield_extract pos width n =
+        shr (shl n (repr (zSub (zSub zwordsize pos) width)))
+          (repr (zSub zwordsize width))
+
+def bitfield_insert_alternative : Prop :=
+  let bitfieldInsert := fun (pos width : Z) (n p : int) =>
+    let mask := shl (repr (zSub (zTwoP width) zOne)) (repr pos)
+    or (shl (zero_ext width p) (repr pos)) (and n (not mask))
+  ∀ (pos width : Z) (n p : int), zLe zZero width →
+    bitfieldInsert pos width n p =
+      let mask := shl (repr (zSub (zTwoP width) zOne)) (repr pos)
+      or (and (shl p (repr pos)) mask) (and n (not mask))
+
 private theorem zero_ext_modulo (n : Z) (x : int) (hn : zLe zZero n) :
     ZArith.BinInt.Z.modulo (unsigned x) (two_p n) =
       CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt
@@ -733,7 +1118,7 @@ private theorem zero_ext_modulo (n : Z) (x : int) (hn : zLe zZero n) :
     | Zpos exponent =>
         have hexp : ¬(Int.ofNat
             (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat exponent) < 0) :=
-          Int.not_lt.mpr (Int.natCast_nonneg _)
+          _root_.Int.not_lt.mpr (_root_.Int.natCast_nonneg _)
         simp only [p, zToNat, two_p, ZArith.Zpower.two_p, ZArith.BinInt.Z.pow,
           ZArith.BinInt.Z.to_nat,
           CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ,
@@ -978,8 +1363,17 @@ end Int
 namespace Byte
 
 def wordsize : Nat := 8
+def modulus : Z := zTwoPowerNat wordsize
 abbrev int := WordCore.Word wordsize
 def repr (x : Z) : int := WordCore.repr wordsize x
+def unsigned (x : int) : Z := WordCore.unsigned x
+def zero : int := WordCore.zero wordsize
+
+def eqm_samerepr : Prop :=
+  ∀ x y : Z, WordCore.eqm wordsize x y → repr x = repr y
+
+def unsigned_range : Prop :=
+  ∀ i : int, zLe zZero (unsigned i) ∧ zLt (unsigned i) modulus
 
 /-- `GENAPP-COMPCERT-LIB-INTEGERS-3582-ASSIGNMENT`: `Make(Wordsize_8)`. -/
 def generatedApplication : WordCore.GeneratedApplication :=
@@ -992,6 +1386,9 @@ abbrev byte := Byte.int
 
 def int_wordsize_divides_modulusStatement : Prop :=
   zDivide (zOfNat Int.wordsize) Int.modulus
+
+def int_wordsize_divides_modulus : Prop :=
+  int_wordsize_divides_modulusStatement
 
 namespace Int64
 
@@ -1016,6 +1413,9 @@ def one : int := WordCore.one wordsize
 def mone : int := WordCore.mone wordsize
 def iwordsize : int := WordCore.iwordsize wordsize
 def eq : int → int → Bool := WordCore.eq
+def eq_dec (x y : int) :
+    CompCert4Lean.Foundation.Logic.Support.Sumbool (x = y) (x ≠ y) :=
+  if h : x = y then .left h else .right h
 def lt : int → int → Bool := WordCore.lt
 def ltu : int → int → Bool := WordCore.ltu
 def neg : int → int := WordCore.neg
@@ -1053,6 +1453,47 @@ def is_power2 (x : int) : Option int :=
   match CompCert4Lean.Lib.Zbits.Z_is_power2 (unsigned x) with
   | some i => some (repr i)
   | none => none
+
+def cmp (c : comparison) (x y : int) : Bool :=
+  match c with
+  | .Ceq => eq x y
+  | .Cne => !(eq x y)
+  | .Clt => lt x y
+  | .Cle => !(lt y x)
+  | .Cgt => lt y x
+  | .Cge => !(lt x y)
+
+def cmpu (c : comparison) (x y : int) : Bool :=
+  match c with
+  | .Ceq => eq x y
+  | .Cne => !(eq x y)
+  | .Clt => ltu x y
+  | .Cle => !(ltu y x)
+  | .Cgt => ltu y x
+  | .Cge => !(ltu x y)
+
+def divmodu2 (nhi nlo d : int) : Option (int × int) :=
+  match eq_dec d zero with
+  | .left _ => none
+  | .right _ =>
+      let qr := ZArith.BinInt.Z.div_eucl
+        (zAdd (zMul (unsigned nhi) modulus) (unsigned nlo)) (unsigned d)
+      match CompCert4Lean.Lib.Coqlib.zle qr.1 max_unsigned with
+      | .left _ => some (repr qr.1, repr qr.2)
+      | .right _ => none
+
+def divmods2 (nhi nlo d : int) : Option (int × int) :=
+  match eq_dec d zero with
+  | .left _ => none
+  | .right _ =>
+      let n := zAdd (zMul (signed nhi) modulus) (unsigned nlo)
+      let sd := signed d
+      let q := zQuot n sd
+      let r := zSub n (zMul q sd)
+      match CompCert4Lean.Lib.Coqlib.zle min_signed q,
+          CompCert4Lean.Lib.Coqlib.zle q max_signed with
+      | .left _, .left _ => some (repr q, repr r)
+      | _, _ => none
 
 def iwordsize' : Int.int := Int.repr zwordsize
 
@@ -1209,6 +1650,208 @@ def unsigned_repr : Prop :=
 
 def unsigned_repr_eq : Prop :=
   ∀ x : Z, unsigned (repr x) = zMod x modulus
+
+def modulus_power : Prop := modulus = zTwoP zwordsize
+def modulus_pos : Prop := zLt zZero modulus
+def half_modulus_pos : Prop := zLt zZero half_modulus
+def min_signed_neg : Prop := zLt min_signed zZero
+
+def signed_repr_eq : Prop :=
+  ∀ x : Z,
+    signed (repr x) =
+      zltSelect (zMod x modulus) half_modulus (zMod x modulus)
+        (zSub (zMod x modulus) modulus)
+
+def eqm_refl2 : Prop := ∀ x y : Z, x = y → eqm x y
+
+def eqm_trans : Prop :=
+  ∀ x y z : Z, eqm x y → eqm y z → eqm x z
+
+def eqm_unsigned_repr_r : Prop :=
+  ∀ a b : Z, eqm a b → eqm a (unsigned (repr b))
+
+def eqm_signed_unsigned : Prop :=
+  ∀ x : int, eqm (signed x) (unsigned x)
+
+def signed_range : Prop :=
+  ∀ i : int, zLe min_signed (signed i) ∧ zLe (signed i) max_signed
+
+def repr_signed : Prop := ∀ i : int, repr (signed i) = i
+def signed_zero : Prop := signed zero = zZero
+def signed_mone : Prop := signed mone = zOpp zOne
+def one_not_zero : Prop := one ≠ zero
+
+def eq_spec : Prop :=
+  ∀ x y : int, if eq x y then x = y else x ≠ y
+
+def eq_true : Prop := ∀ x : int, eq x x = true
+def eq_sym : Prop := ∀ x y : int, eq x y = eq y x
+
+def add_signed : Prop :=
+  ∀ x y : int, add x y = repr (zAdd (signed x) (signed y))
+
+def add_commut : Prop := ∀ x y : int, add x y = add y x
+def add_zero : Prop := ∀ x : int, add x zero = x
+def add_zero_l : Prop := ∀ x : int, add zero x = x
+
+def add_assoc : Prop :=
+  ∀ x y z : int, add (add x y) z = add x (add y z)
+
+def neg_involutive : Prop := ∀ x : int, neg (neg x) = x
+def sub_zero_l : Prop := ∀ x : int, sub x zero = x
+
+def sub_add_opp : Prop :=
+  ∀ x y : int, sub x y = add x (neg y)
+
+def sub_add_l : Prop :=
+  ∀ x y z : int, sub (add x y) z = add (sub x z) y
+
+def sub_add_r : Prop :=
+  ∀ x y z : int, sub x (add y z) = add (sub x z) (neg y)
+
+def mul_zero : Prop := ∀ x : int, mul x zero = zero
+
+def mul_add_distr_l : Prop :=
+  ∀ x y z : int, mul (add x y) z = add (mul x z) (mul y z)
+
+def mul_add_distr_r : Prop :=
+  ∀ x y z : int, mul x (add y z) = add (mul x y) (mul x z)
+
+def modu_divu : Prop :=
+  ∀ x y : int, y ≠ zero → modu x y = sub x (mul (divu x y) y)
+
+def mods_divs : Prop :=
+  ∀ x y : int, mods x y = sub x (mul (divs x y) y)
+
+def divmodu2_divu_modu : Prop :=
+  ∀ n d : int, d ≠ zero →
+    divmodu2 zero n d = some (divu n d, modu n d)
+
+def divmods2_divs_mods : Prop :=
+  ∀ n d : int,
+    d ≠ zero → n ≠ repr min_signed ∨ d ≠ mone →
+      divmods2 (if lt n zero then mone else zero) n d =
+        some (divs n d, mods n d)
+
+def bits_zero : Prop := ∀ i : Z, testbit zero i = false
+
+def bits_mone : Prop :=
+  ∀ i : Z, zLe zZero i ∧ zLt i zwordsize → testbit mone i = true
+
+def and_commut : Prop := ∀ x y : int, and x y = and y x
+
+def and_assoc : Prop :=
+  ∀ x y z : int, and (and x y) z = and x (and y z)
+
+def and_zero : Prop := ∀ x : int, and x zero = zero
+def and_mone : Prop := ∀ x : int, and x mone = x
+def and_idem : Prop := ∀ x : int, and x x = x
+def or_commut : Prop := ∀ x y : int, or x y = or y x
+
+def or_assoc : Prop :=
+  ∀ x y z : int, or (or x y) z = or x (or y z)
+
+def or_zero : Prop := ∀ x : int, or x zero = x
+def or_mone : Prop := ∀ x : int, or x mone = mone
+def xor_commut : Prop := ∀ x y : int, xor x y = xor y x
+
+def xor_assoc : Prop :=
+  ∀ x y z : int, xor (xor x y) z = xor x (xor y z)
+
+def xor_zero : Prop := ∀ x : int, xor x zero = x
+def xor_idem : Prop := ∀ x : int, xor x x = zero
+
+def xor_zero_equal : Prop :=
+  ∀ x y : int, xor x y = zero → x = y
+
+def not_involutive : Prop := ∀ x : int, not (not x) = x
+
+def not_or_and_not : Prop :=
+  ∀ x y : int, not (or x y) = and (not x) (not y)
+
+def shl_zero : Prop := ∀ x : int, shl x zero = x
+
+def ltu_inv : Prop :=
+  ∀ x y : int, ltu x y = true →
+    zLe zZero (unsigned x) ∧ zLt (unsigned x) (unsigned y)
+
+def shru_zero : Prop := ∀ x : int, shru x zero = x
+def shr_zero : Prop := ∀ x : int, shr x zero = x
+
+def shru_lt_zero : Prop :=
+  ∀ x : int,
+    shru x (repr (zSub zwordsize zOne)) =
+      if lt x zero then one else zero
+
+def shr_lt_zero : Prop :=
+  ∀ x : int,
+    shr x (repr (zSub zwordsize zOne)) =
+      if lt x zero then mone else zero
+
+def bits_rol : Prop :=
+  ∀ (x y : int) (i : Z), zLe zZero i ∧ zLt i zwordsize →
+    testbit (rol x y) i = testbit x (zMod (zSub i (unsigned y)) zwordsize)
+
+def bits_ror : Prop :=
+  ∀ (x y : int) (i : Z), zLe zZero i ∧ zLt i zwordsize →
+    testbit (ror x y) i = testbit x (zMod (zAdd i (unsigned y)) zwordsize)
+
+def ror_rol_neg : Prop :=
+  ∀ x y : int, zDivide zwordsize modulus → ror x y = rol x (neg y)
+
+def modu_and : Prop :=
+  ∀ x n logn : int,
+    is_power2 n = some logn → modu x n = and x (sub n one)
+
+def bits_zero_ext : Prop :=
+  ∀ (n : Z) (x : int) (i : Z), zLe zZero i →
+    testbit (zero_ext n x) i = zltSelect i n (testbit x i) false
+
+def negate_cmp : Prop :=
+  ∀ (c : comparison) (x y : int),
+    cmp (negate_comparison c) x y = !(cmp c x y)
+
+def negate_cmpu : Prop :=
+  ∀ (c : comparison) (x y : int),
+    cmpu (negate_comparison c) x y = !(cmpu c x y)
+
+def swap_cmp : Prop :=
+  ∀ (c : comparison) (x y : int),
+    cmp (swap_comparison c) x y = cmp c y x
+
+def swap_cmpu : Prop :=
+  ∀ (c : comparison) (x y : int),
+    cmpu (swap_comparison c) x y = cmpu c y x
+
+def lt_sub_overflow : Prop :=
+  ∀ x y : int,
+    xor (sub_overflow x y zero) (negative (sub x y)) =
+      if lt x y then one else zero
+
+def not_lt : Prop :=
+  ∀ x y : int, !(lt y x) = (lt x y || eq x y)
+
+def lt_not : Prop :=
+  ∀ x y : int, lt y x = (!(lt x y) && !(eq x y))
+
+def not_ltu : Prop :=
+  ∀ x y : int, !(ltu y x) = (ltu x y || eq x y)
+
+def ltu_not : Prop :=
+  ∀ x y : int, ltu y x = (!(ltu x y) && !(eq x y))
+
+def size_range : Prop :=
+  ∀ x : int, zLe zZero (size x) ∧ zLe (size x) zwordsize
+
+def bits_size_2 : Prop :=
+  ∀ (x : int) (i : Z), zLe (size x) i → testbit x i = false
+
+def bits_size_4 : Prop :=
+  ∀ (x : int) (n : Z),
+    zLe zZero n →
+    testbit x (zSub n zOne) = true →
+    (∀ i : Z, zLe n i ∧ zLt i zwordsize → testbit x i = false) →
+      size x = n
 
 /-! ## Exact statement descriptors for the deferred Int64 proofs -/
 
@@ -1477,6 +2120,52 @@ def decompose_leStatement : Prop :=
     (! (lt (ofwords yh yl) (ofwords xh xl))) =
       (if Int.eq xh yh then !(Int.ltu yl xl) else Int.lt xh yh)
 
+def bits_hiword : Prop := bits_hiwordStatement
+def bits_loword : Prop := bits_lowordStatement
+def bits_ofwords : Prop := bits_ofwordsStatement
+def bits_shl' : Prop := bits_shl'Statement
+def bits_shr' : Prop := bits_shr'Statement
+def bits_shru' : Prop := bits_shru'Statement
+def decompose_and : Prop := decompose_andStatement
+def decompose_bitwise_binop : Prop := decompose_bitwise_binopStatement
+def decompose_le : Prop := decompose_leStatement
+def decompose_leu : Prop := decompose_leuStatement
+def decompose_lt : Prop := decompose_ltStatement
+def decompose_ltu : Prop := decompose_ltuStatement
+def decompose_mul : Prop := decompose_mulStatement
+def decompose_or : Prop := decompose_orStatement
+def decompose_shl_1 : Prop := decompose_shl_1Statement
+def decompose_shl_2 : Prop := decompose_shl_2Statement
+def decompose_shr_1 : Prop := decompose_shr_1Statement
+def decompose_shr_2 : Prop := decompose_shr_2Statement
+def decompose_shru_1 : Prop := decompose_shru_1Statement
+def decompose_shru_2 : Prop := decompose_shru_2Statement
+def decompose_xor : Prop := decompose_xorStatement
+def divu_pow2' : Prop := divu_pow2'Statement
+def eqm_mul_2p32 : Prop := eqm_mul_2p32Statement
+def hi_ofwords : Prop := hi_ofwordsStatement
+def int_ltu_2_inv : Prop := int_ltu_2_invStatement
+def is_power2'_correct : Prop := is_power2'_correctStatement
+def is_power2'_range : Prop := is_power2'_rangeStatement
+def is_power2'_rng : Prop := is_power2'_rngStatement
+def lo_ofwords : Prop := lo_ofwordsStatement
+def mul_pow2' : Prop := mul_pow2'Statement
+def ofwords_add : Prop := ofwords_addStatement
+def ofwords_add' : Prop := ofwords_add'Statement
+def ofwords_add'' : Prop := ofwords_add''Statement
+def ofwords_recompose : Prop := ofwords_recomposeStatement
+def one_bits'_decomp : Prop := one_bits'_decompStatement
+def one_bits'_range : Prop := one_bits'_rangeStatement
+def or_ror' : Prop := or_ror'Statement
+def shl'_mul : Prop := shl'_mulStatement
+def shl'_mul_two_p : Prop := shl'_mul_two_pStatement
+def shl'_one_two_p : Prop := shl'_one_two_pStatement
+def shl'_shl' : Prop := shl'_shl'Statement
+def shr'_shr' : Prop := shr'_shr'Statement
+def shru'_shru' : Prop := shru'_shru'Statement
+def shrx'_shr_2 : Prop := shrx'_shr_2Statement
+def shrx'_zero : Prop := shrx'_zeroStatement
+
 /-- `GENAPP-COMPCERT-LIB-INTEGERS-3598-INCLUDE`: `Include Make(Wordsize_64)`. -/
 def generatedApplication : WordCore.GeneratedApplication :=
   WordCore.makeGeneratedApplication wordsize
@@ -1510,8 +2199,19 @@ def signed (x : int) : Z := WordCore.signed x
 def zero : int := WordCore.zero wordsize
 def one : int := WordCore.one wordsize
 def eq : int → int → Bool := WordCore.eq
+def eq_dec (x y : int) :
+    CompCert4Lean.Foundation.Logic.Support.Sumbool (x = y) (x ≠ y) :=
+  if h : x = y then .left h else .right h
 def lt : int → int → Bool := WordCore.lt
 def ltu : int → int → Bool := WordCore.ltu
+def cmpu (c : comparison) (x y : int) : Bool :=
+  match c with
+  | .Ceq => eq x y
+  | .Cne => !(eq x y)
+  | .Clt => ltu x y
+  | .Cle => !(ltu y x)
+  | .Cgt => ltu y x
+  | .Cge => !(ltu x y)
 def neg : int → int := WordCore.neg
 def add : int → int → int := WordCore.add
 def sub : int → int → int := WordCore.sub
@@ -1535,6 +2235,79 @@ def eqm_repr_eq : Prop :=
 
 def unsigned_repr_eq : Prop :=
   ∀ x : Z, unsigned (repr x) = zMod x modulus
+
+def modulus_pos : Prop := zLt zZero modulus
+def min_signed_neg : Prop := zLt min_signed zZero
+
+def eqm_unsigned_repr : Prop :=
+  ∀ z : Z, eqm z (unsigned (repr z))
+
+def unsigned_range : Prop :=
+  ∀ i : int, zLe zZero (unsigned i) ∧ zLt (unsigned i) modulus
+
+def unsigned_range_2 : Prop :=
+  ∀ i : int, zLe zZero (unsigned i) ∧ zLe (unsigned i) max_unsigned
+
+def repr_unsigned : Prop := ∀ i : int, repr (unsigned i) = i
+
+def unsigned_repr : Prop :=
+  ∀ z : Z, zLe zZero z ∧ zLe z max_unsigned → unsigned (repr z) = z
+
+def signed_repr : Prop :=
+  ∀ z : Z, zLe min_signed z ∧ zLe z max_signed → signed (repr z) = z
+
+def unsigned_zero : Prop := unsigned zero = zZero
+def unsigned_one : Prop := unsigned one = zOne
+
+def eq_spec : Prop :=
+  ∀ x y : int, if eq x y then x = y else x ≠ y
+
+def eq_true : Prop := ∀ x : int, eq x x = true
+def eq_false : Prop := ∀ x y : int, x ≠ y → eq x y = false
+
+def add_unsigned : Prop :=
+  ∀ x y : int, add x y = repr (zAdd (unsigned x) (unsigned y))
+
+def add_commut : Prop := ∀ x y : int, add x y = add y x
+def add_zero : Prop := ∀ x : int, add x zero = x
+def add_zero_l : Prop := ∀ x : int, add zero x = x
+
+def add_assoc : Prop :=
+  ∀ x y z : int, add (add x y) z = add x (add y z)
+
+def sub_add_opp : Prop :=
+  ∀ x y : int, sub x y = add x (neg y)
+
+def sub_add_l : Prop :=
+  ∀ x y z : int, sub (add x y) z = add (sub x z) y
+
+def sub_add_r : Prop :=
+  ∀ x y z : int, sub x (add y z) = add (sub x z) (neg y)
+
+def sub_shifted : Prop :=
+  ∀ x y z : int, sub (add x z) (add y z) = sub x y
+
+def negate_cmpu : Prop :=
+  ∀ (c : comparison) (x y : int),
+    cmpu (negate_comparison c) x y = !(cmpu c x y)
+
+def swap_cmpu : Prop :=
+  ∀ (c : comparison) (x y : int),
+    cmpu (swap_comparison c) x y = cmpu c y x
+
+def translate_cmpu : Prop :=
+  ∀ (c : comparison) (x y d : int),
+    zLe zZero (zAdd (unsigned x) (unsigned d)) ∧
+      zLe (zAdd (unsigned x) (unsigned d)) max_unsigned →
+    zLe zZero (zAdd (unsigned y) (unsigned d)) ∧
+      zLe (zAdd (unsigned y) (unsigned d)) max_unsigned →
+      cmpu c (add x d) (add y d) = cmpu c x y
+
+def not_ltu : Prop :=
+  ∀ x y : int, !(ltu y x) = (ltu x y || eq x y)
+
+def ltu_not : Prop :=
+  ∀ x y : int, ltu y x = (!(ltu x y) && !(eq x y))
 
 /-- `GENAPP-COMPCERT-LIB-INTEGERS-4725-INCLUDE`: `Include Make(Wordsize_Ptrofs)`. -/
 def generatedApplication : WordCore.GeneratedApplication :=
@@ -1650,6 +2423,16 @@ def agree64_reprStatement : Prop :=
 def of_int64_to_int64Statement : Prop :=
   CompCert4Lean.X86_64.Archi.ptr64 = true →
     ∀ n : int, of_int64 (to_int64 n) = n
+
+def agree32_of_int : Prop := agree32_of_intStatement
+def agree32_repr : Prop := agree32_reprStatement
+def agree64_repr : Prop := agree64_reprStatement
+def eqm32 : Prop := eqm32Statement
+def eqm64 : Prop := eqm64Statement
+def modulus_eq32 : Prop := modulus_eq32Statement
+def modulus_eq64 : Prop := modulus_eq64Statement
+def of_int64_to_int64 : Prop := of_int64_to_int64Statement
+def of_int_to_int : Prop := of_int_to_intStatement
 
 end Ptrofs
 
