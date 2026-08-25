@@ -28,6 +28,9 @@ open CompCert4Lean.Backend.Cminor
 private abbrev Sumbool := CompCert4Lean.Foundation.Logic.Support.Sumbool
 private abbrev RocqString :=
   CompCert4Lean.Foundation.RocqString.Rocq.Coq.Strings.String.string
+private abbrev BinaryNormalizeCertificate :=
+  CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+private abbrev zOfNat := ZArith.BinInt.Z.of_nat
 
 private def rocqStringOfBytes : List UInt8 → RocqString
   | [] => .EmptyString
@@ -466,24 +469,39 @@ def type_constant_soundStatement : Prop :=
     eval_constant (Genv.globalenv p) sp cst = some v →
       Val.has_type v (type_constant cst)
 
-def type_unop_soundStatement : Prop :=
+def type_unop_soundStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (op : unary_operation) (v1 v : val),
-    eval_unop op v1 = some v → Val.has_type v (type_unop op).2
+    eval_unop
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      op v1 = some v → Val.has_type v (type_unop op).2
 
 def type_binop_soundStatement : Prop :=
   ∀ (op : binary_operation) (v1 v2 : val) (m : mem) (v : val),
     eval_binop op v1 v2 m = some v → Val.has_type v (type_binop op).2
 
-def wt_eval_exprStatement : Prop :=
+def wt_eval_exprStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (p : program) (env : typenv) (sp : val) (e : Cminor.env) (m : mem)
     (a : expr) (v : val),
-    eval_expr (Genv.globalenv p) sp e m a v →
+    eval_expr
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      (Genv.globalenv p) sp e m a v →
       ∀ t, wt_expr env a t → wt_env env e → Val.has_type v t
 
-def wt_eval_exprlistStatement : Prop :=
+def wt_eval_exprlistStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (p : program) (env : typenv) (sp : val) (e : Cminor.env) (m : mem)
     (al : List expr) (vl : List val),
-    eval_exprlist (Genv.globalenv p) sp e m al vl →
+    eval_exprlist
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      (Genv.globalenv p) sp e m al vl →
       ∀ tl,
         list_forall2 (wt_expr env) al tl →
           wt_env env e → Val.has_type_list vl tl
@@ -494,11 +512,16 @@ def wt_find_functStatement : Prop :=
       ∀ (v : val) (fd : fundef),
         Genv.find_funct (Genv.globalenv p) v = some fd → wt_fundef fd
 
-def subject_reductionStatement : Prop :=
+def subject_reductionStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (xi : ExternalCalls) (p : program),
     wt_program p →
       ∀ (st1 : state) (t : trace) (st2 : state),
-        step xi (Genv.globalenv p) st1 t st2 → wt_state st1 → wt_state st2
+        step
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate)
+          xi (Genv.globalenv p) st1 t st2 → wt_state st1 → wt_state st2
 
 def wt_initial_stateStatement : Prop :=
   ∀ (p : program), wt_program p → ∀ s, initial_state p s → wt_state s
@@ -544,10 +567,15 @@ def known_id_sound_2Statement : Prop :=
   ∀ (f : function) (id : ident),
     is_known (known_id f) id = true → id ∈ f.fn_params ∨ id ∈ f.fn_vars
 
-def eval_safe_exprStatement : Prop :=
+def eval_safe_exprStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (ge : genv) (f : function) (sp : val) (e : Cminor.env) (m : mem)
     (a : expr),
     def_env f e → safe_expr (known_id f) a = true →
-      ∃ v, eval_expr ge sp e m a v
+      ∃ v, eval_expr
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        ge sp e m a v
 
 end CompCert4Lean.Backend.Cminortyping
