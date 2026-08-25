@@ -57,6 +57,8 @@ private abbrev CompilerConfig := CompCert4Lean.Config.CompilerConfig
 private abbrev SelectionOracle := CompCert4Lean.Backend.Selection.SelectionOracle
 private abbrev BinaryNormalizeCertificate :=
   CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+private abbrev BexactInverseCertificate :=
+  CompCert4Lean.Lib.IEEE754_extra.Bexact_inverse_certificate
 private abbrev RocqString :=
   CompCert4Lean.Foundation.RocqString.Rocq.Coq.Strings.String.string
 private abbrev zle := ZArith.BinInt.Z.le
@@ -70,20 +72,39 @@ private instance cminorProgramLinker : Linker CminorProgram :=
 
 /-! Relational specification of instruction selection. -/
 
-def match_fundef (cfg : CompilerConfig) (oracle : SelectionOracle)
+def match_fundef
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    [binary64_inverse_certificate : BexactInverseCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_inverse_certificate : BexactInverseCertificate (zOfNat 24) (zOfNat 128)]
+    (cfg : CompilerConfig) (oracle : SelectionOracle)
     (cunit : CminorProgram) (f : CminorFundef)
     (tf : CminorSelFundef) : Prop :=
   ∃ hf : HelperFunctions,
     CompCert4Lean.Backend.SplitLongproof.helper_functions_declared cunit hf ∧
-    sel_fundef cfg oracle (prog_defmap cunit) hf f = .OK tf
+    sel_fundef cfg oracle
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      (binary64_inverse_certificate := binary64_inverse_certificate)
+      (binary32_inverse_certificate := binary32_inverse_certificate)
+      (prog_defmap cunit) hf f = .OK tf
 
-def match_prog (cfg : CompilerConfig) (oracle : SelectionOracle) (p : CminorProgram)
+def match_prog
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    [binary64_inverse_certificate : BexactInverseCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_inverse_certificate : BexactInverseCertificate (zOfNat 24) (zOfNat 128)]
+    (cfg : CompilerConfig) (oracle : SelectionOracle) (p : CminorProgram)
     (tp : CminorSelProgram) : Prop :=
   @CompCert4Lean.Common.Linking.match_program
     CminorFundef Unit CminorSelFundef Unit
     (CompCert4Lean.Common.Linking.Linker_fundef Cminor.function)
     CompCert4Lean.Common.Linking.Linker_unit
-    (fun cu f tf => match_fundef cfg oracle cu f tf) Eq p tp
+    (fun cu f tf => match_fundef cfg oracle
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      (binary64_inverse_certificate := binary64_inverse_certificate)
+      (binary32_inverse_certificate := binary32_inverse_certificate) cu f tf) Eq p tp
 
 /-! Local environment less-definedness. -/
 
@@ -116,50 +137,117 @@ def eventually
 source-facing API and are intentionally retained. -/
 
 mutual
-inductive match_cont (cfg : CompilerConfig) (oracle : SelectionOracle)
+inductive match_cont
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    [binary64_inverse_certificate : BexactInverseCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_inverse_certificate : BexactInverseCertificate (zOfNat 24) (zOfNat 128)]
+    (cfg : CompilerConfig) (oracle : SelectionOracle)
     (prog : CminorProgram) :
     CminorProgram → HelperFunctions → KnownIdents → typenv →
     Cminor.cont → CminorSel.cont → Prop
   | match_cont_seq (cunit : CminorProgram) (hf : HelperFunctions)
       (ki : KnownIdents) (env : typenv) (s : Cminor.stmt) (kont : CminorSel.stmt)
       (s' : CminorSel.stmt) (k : Cminor.cont) (k' : CminorSel.cont)
-      (hsel : sel_stmt cfg oracle (prog_defmap cunit) ki env s kont = .OK s')
-      (hcont : match_cont cfg oracle prog cunit hf ki env k k') :
-      match_cont cfg oracle prog cunit hf ki env
+      (hsel : sel_stmt cfg oracle
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        (binary64_inverse_certificate := binary64_inverse_certificate)
+        (binary32_inverse_certificate := binary32_inverse_certificate)
+        (prog_defmap cunit) ki env s kont = .OK s')
+      (hcont : match_cont
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        (binary64_inverse_certificate := binary64_inverse_certificate)
+        (binary32_inverse_certificate := binary32_inverse_certificate)
+        cfg oracle prog cunit hf ki env k k') :
+      match_cont
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        (binary64_inverse_certificate := binary64_inverse_certificate)
+        (binary32_inverse_certificate := binary32_inverse_certificate)
+        cfg oracle prog cunit hf ki env
         (Cminor.Kseq s k) (CminorSel.Kseq s' k')
   | match_cont_block (cunit : CminorProgram) (hf : HelperFunctions)
       (ki : KnownIdents) (env : typenv) (k : Cminor.cont) (k' : CminorSel.cont)
-      (hcont : match_cont cfg oracle prog cunit hf ki env k k') :
-      match_cont cfg oracle prog cunit hf ki env
+      (hcont : match_cont
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        (binary64_inverse_certificate := binary64_inverse_certificate)
+        (binary32_inverse_certificate := binary32_inverse_certificate)
+        cfg oracle prog cunit hf ki env k k') :
+      match_cont
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        (binary64_inverse_certificate := binary64_inverse_certificate)
+        (binary32_inverse_certificate := binary32_inverse_certificate)
+        cfg oracle prog cunit hf ki env
         (Cminor.Kblock k) (CminorSel.Kblock k')
   | match_cont_other (cunit : CminorProgram) (hf : HelperFunctions)
       (ki : KnownIdents) (env : typenv) (k : Cminor.cont) (k' : CminorSel.cont)
-      (hcall : match_call_cont cfg oracle prog k k') :
-      match_cont cfg oracle prog cunit hf ki env k k'
+      (hcall : match_call_cont
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        (binary64_inverse_certificate := binary64_inverse_certificate)
+        (binary32_inverse_certificate := binary32_inverse_certificate)
+        cfg oracle prog k k') :
+      match_cont
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        (binary64_inverse_certificate := binary64_inverse_certificate)
+        (binary32_inverse_certificate := binary32_inverse_certificate)
+        cfg oracle prog cunit hf ki env k k'
 
-inductive match_call_cont (cfg : CompilerConfig) (oracle : SelectionOracle)
+inductive match_call_cont
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    [binary64_inverse_certificate : BexactInverseCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_inverse_certificate : BexactInverseCertificate (zOfNat 24) (zOfNat 128)]
+    (cfg : CompilerConfig) (oracle : SelectionOracle)
     (prog : CminorProgram) :
     Cminor.cont → CminorSel.cont → Prop where
   | match_cont_stop :
-      match_call_cont cfg oracle prog Cminor.Kstop CminorSel.Kstop
+      match_call_cont
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        (binary64_inverse_certificate := binary64_inverse_certificate)
+        (binary32_inverse_certificate := binary32_inverse_certificate)
+        cfg oracle prog Cminor.Kstop CminorSel.Kstop
   | match_cont_call (cunit : CminorProgram) (hf : HelperFunctions)
       (env : typenv) (id : Option ident) (f : Cminor.function) (sp : val)
       (e : Env) (k : Cminor.cont) (f' : CminorSel.function)
       (e' : Env) (k' : CminorSel.cont)
       (hlink : linkorder cunit prog)
       (hhf : CompCert4Lean.Backend.SplitLongproof.helper_functions_declared cunit hf)
-      (hsel : sel_function cfg oracle (prog_defmap cunit) hf f = .OK f')
+      (hsel : sel_function cfg oracle
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        (binary64_inverse_certificate := binary64_inverse_certificate)
+        (binary32_inverse_certificate := binary32_inverse_certificate)
+        (prog_defmap cunit) hf f = .OK f')
       (hty : type_function f = .OK env)
-      (hcont : match_cont cfg oracle prog cunit hf
+      (hcont : match_cont
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        (binary64_inverse_certificate := binary64_inverse_certificate)
+        (binary32_inverse_certificate := binary32_inverse_certificate)
+        cfg oracle prog cunit hf
         (CompCert4Lean.Backend.Selection.known_id f) env k k')
       (hld : env_lessdef e e') :
-      match_call_cont cfg oracle prog (Cminor.Kcall id f sp e k)
+      match_call_cont
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        (binary64_inverse_certificate := binary64_inverse_certificate)
+        (binary32_inverse_certificate := binary32_inverse_certificate)
+        cfg oracle prog (Cminor.Kcall id f sp e k)
         (CminorSel.Kcall id f' sp e' k')
 end
 
 inductive match_states
     [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
     [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    [binary64_inverse_certificate : BexactInverseCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_inverse_certificate : BexactInverseCertificate (zOfNat 24) (zOfNat 128)]
     (cfg : CompilerConfig) (oracle : SelectionOracle)
     (prog : CminorProgram) :
     Cminor.state → CminorSel.state → Prop where
@@ -170,34 +258,74 @@ inductive match_states
       (e : Env) (m : mem) (e' : Env) (m' : mem) (env : typenv)
       (hlink : linkorder cunit prog)
       (hhf : CompCert4Lean.Backend.SplitLongproof.helper_functions_declared cunit hf)
-      (hsel : sel_function cfg oracle (prog_defmap cunit) hf f = .OK f')
+      (hsel : sel_function cfg oracle
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        (binary64_inverse_certificate := binary64_inverse_certificate)
+        (binary32_inverse_certificate := binary32_inverse_certificate)
+        (prog_defmap cunit) hf f = .OK f')
       (hty : type_function f = .OK env)
-      (hstmt : sel_stmt cfg oracle (prog_defmap cunit)
+      (hstmt : sel_stmt cfg oracle
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        (binary64_inverse_certificate := binary64_inverse_certificate)
+        (binary32_inverse_certificate := binary32_inverse_certificate)
+        (prog_defmap cunit)
         (CompCert4Lean.Backend.Selection.known_id f) env s k = .OK s')
-      (hcont : match_cont cfg oracle prog cunit hf
+      (hcont : match_cont
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        (binary64_inverse_certificate := binary64_inverse_certificate)
+        (binary32_inverse_certificate := binary32_inverse_certificate)
+        cfg oracle prog cunit hf
         (CompCert4Lean.Backend.Selection.known_id f) env kont k')
       (hld : env_lessdef e e') (hme : Mem.extends m m') :
       match_states
         (binary64_certificate := binary64_certificate)
-        (binary32_certificate := binary32_certificate) cfg oracle prog (Cminor.State f s kont sp e m)
+        (binary32_certificate := binary32_certificate)
+        (binary64_inverse_certificate := binary64_inverse_certificate)
+        (binary32_inverse_certificate := binary32_inverse_certificate)
+        cfg oracle prog (Cminor.State f s kont sp e m)
         (CminorSel.State f' s' k' sp e' m')
   | match_callstate (cunit : CminorProgram) (f : CminorFundef)
       (f' : CminorSelFundef) (args args' : List val)
       (k : Cminor.cont) (k' : CminorSel.cont) (m m' : mem)
-      (hlink : linkorder cunit prog) (hfun : match_fundef cfg oracle cunit f f')
-      (hcont : match_call_cont cfg oracle prog k k')
+      (hlink : linkorder cunit prog)
+      (hfun : match_fundef cfg oracle
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        (binary64_inverse_certificate := binary64_inverse_certificate)
+        (binary32_inverse_certificate := binary32_inverse_certificate)
+        cunit f f')
+      (hcont : match_call_cont
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        (binary64_inverse_certificate := binary64_inverse_certificate)
+        (binary32_inverse_certificate := binary32_inverse_certificate)
+        cfg oracle prog k k')
       (hld : Val.lessdef_list args args') (hme : Mem.extends m m') :
       match_states
         (binary64_certificate := binary64_certificate)
-        (binary32_certificate := binary32_certificate) cfg oracle prog (Cminor.Callstate f args k m)
+        (binary32_certificate := binary32_certificate)
+        (binary64_inverse_certificate := binary64_inverse_certificate)
+        (binary32_inverse_certificate := binary32_inverse_certificate)
+        cfg oracle prog (Cminor.Callstate f args k m)
         (CminorSel.Callstate f' args' k' m')
   | match_returnstate (v v' : val) (k : Cminor.cont) (k' : CminorSel.cont)
       (m m' : mem)
-      (hcont : match_call_cont cfg oracle prog k k')
+      (hcont : match_call_cont
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        (binary64_inverse_certificate := binary64_inverse_certificate)
+        (binary32_inverse_certificate := binary32_inverse_certificate)
+        cfg oracle prog k k')
       (hld : Val.lessdef v v') (hme : Mem.extends m m') :
       match_states
         (binary64_certificate := binary64_certificate)
-        (binary32_certificate := binary32_certificate) cfg oracle prog (Cminor.Returnstate v k m)
+        (binary32_certificate := binary32_certificate)
+        (binary64_inverse_certificate := binary64_inverse_certificate)
+        (binary32_inverse_certificate := binary32_inverse_certificate)
+        cfg oracle prog (Cminor.Returnstate v k m)
         (.Returnstate v' k' m')
   | match_builtin_1 (cunit : CminorProgram) (hf : HelperFunctions)
       (ef : external_function) (args : List val) (optid : Option ident)
@@ -206,9 +334,19 @@ inductive match_states
       (e' : Env) (k' : CminorSel.cont) (m' : mem) (env : typenv)
       (hlink : linkorder cunit prog)
       (hhf : CompCert4Lean.Backend.SplitLongproof.helper_functions_declared cunit hf)
-      (hsel : sel_function cfg oracle (prog_defmap cunit) hf f = .OK f')
+      (hsel : sel_function cfg oracle
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        (binary64_inverse_certificate := binary64_inverse_certificate)
+        (binary32_inverse_certificate := binary32_inverse_certificate)
+        (prog_defmap cunit) hf f = .OK f')
       (hty : type_function f = .OK env)
-      (hcont : match_cont cfg oracle prog cunit hf
+      (hcont : match_cont
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        (binary64_inverse_certificate := binary64_inverse_certificate)
+        (binary32_inverse_certificate := binary32_inverse_certificate)
+        cfg oracle prog cunit hf
         (CompCert4Lean.Backend.Selection.known_id f) env k k')
       (heval : @Cminor.eval_exprlist
         binary64_certificate binary32_certificate
@@ -216,25 +354,47 @@ inductive match_states
       (hld : env_lessdef e e') (hme : Mem.extends m m') :
       match_states
         (binary64_certificate := binary64_certificate)
-        (binary32_certificate := binary32_certificate) cfg oracle prog
+        (binary32_certificate := binary32_certificate)
+        (binary64_inverse_certificate := binary64_inverse_certificate)
+        (binary32_inverse_certificate := binary32_inverse_certificate)
+        cfg oracle prog
         (Cminor.Callstate (.External ef) args (Cminor.Kcall optid f sp e k) m)
-        (CminorSel.State f' (sel_builtin cfg optid ef al) k' sp e' m')
+        (CminorSel.State f'
+          (sel_builtin cfg
+            (binary64_certificate := binary64_certificate)
+            (binary32_certificate := binary32_certificate)
+            (binary64_inverse_certificate := binary64_inverse_certificate)
+            (binary32_inverse_certificate := binary32_inverse_certificate)
+            optid ef al) k' sp e' m')
   | match_builtin_2 (cunit : CminorProgram) (hf : HelperFunctions)
       (v v' : val) (optid : Option ident) (f : Cminor.function) (sp : val)
       (e : Env) (k : Cminor.cont) (m : mem) (f' : CminorSel.function)
       (e' : Env) (m' : mem) (k' : CminorSel.cont) (env : typenv)
       (hlink : linkorder cunit prog)
       (hhf : CompCert4Lean.Backend.SplitLongproof.helper_functions_declared cunit hf)
-      (hsel : sel_function cfg oracle (prog_defmap cunit) hf f = .OK f')
+      (hsel : sel_function cfg oracle
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        (binary64_inverse_certificate := binary64_inverse_certificate)
+        (binary32_inverse_certificate := binary32_inverse_certificate)
+        (prog_defmap cunit) hf f = .OK f')
       (hty : type_function f = .OK env)
-      (hcont : match_cont cfg oracle prog cunit hf
+      (hcont : match_cont
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        (binary64_inverse_certificate := binary64_inverse_certificate)
+        (binary32_inverse_certificate := binary32_inverse_certificate)
+        cfg oracle prog cunit hf
         (CompCert4Lean.Backend.Selection.known_id f) env k k')
       (hld : Val.lessdef v v')
       (hlde : env_lessdef (Cminor.set_optvar optid v e) e')
       (hme : Mem.extends m m') :
       match_states
         (binary64_certificate := binary64_certificate)
-        (binary32_certificate := binary32_certificate) cfg oracle prog
+        (binary32_certificate := binary32_certificate)
+        (binary64_inverse_certificate := binary64_inverse_certificate)
+        (binary32_inverse_certificate := binary32_inverse_certificate)
+        cfg oracle prog
         (Cminor.Returnstate v (Cminor.Kcall optid f sp e k) m)
         (CminorSel.State f' CminorSel.Sskip k' sp e' m')
 
@@ -259,6 +419,8 @@ def nolabel' (s : CminorSel.stmt) : Prop :=
 
 variable [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
 variable [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+variable [binary64_inverse_certificate : BexactInverseCertificate (zOfNat 53) (zOfNat 1024)]
+variable [binary32_inverse_certificate : BexactInverseCertificate (zOfNat 24) (zOfNat 128)]
 variable (cfg : CompilerConfig) (oracle : SelectionOracle)
 
 def record_globdefs_soundStatement : Prop :=
@@ -282,7 +444,16 @@ def get_helpers_correctStatement : Prop :=
 
 def transf_program_matchStatement : Prop :=
   ∀ (p : CminorProgram) (tp : CminorSelProgram),
-    sel_program cfg oracle p = .OK tp → match_prog cfg oracle p tp
+    sel_program cfg oracle
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      (binary64_inverse_certificate := binary64_inverse_certificate)
+      (binary32_inverse_certificate := binary32_inverse_certificate)
+      p = .OK tp → match_prog cfg oracle
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        (binary64_inverse_certificate := binary64_inverse_certificate)
+        (binary32_inverse_certificate := binary32_inverse_certificate) p tp
 
 def helper_functions_declared_linkorderStatement : Prop :=
   ∀ (p p' : CminorProgram) (hf : HelperFunctions),
@@ -292,52 +463,96 @@ def helper_functions_declared_linkorderStatement : Prop :=
 
 def wt_progStatement : Prop :=
   ∀ (prog : CminorProgram) (tprog : CminorSelProgram),
-    match_prog cfg oracle prog tprog → wt_program prog
+    match_prog cfg oracle
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      (binary64_inverse_certificate := binary64_inverse_certificate)
+      (binary32_inverse_certificate := binary32_inverse_certificate) prog tprog → wt_program prog
 
 def symbols_preservedStatement : Prop :=
   ∀ (prog : CminorProgram) (tprog : CminorSelProgram),
-    match_prog cfg oracle prog tprog →
+    match_prog cfg oracle
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      (binary64_inverse_certificate := binary64_inverse_certificate)
+      (binary32_inverse_certificate := binary32_inverse_certificate) prog tprog →
       ∀ s : ident,
         Genv.find_symbol (Genv.globalenv tprog) s =
           Genv.find_symbol (Genv.globalenv prog) s
 
 def senv_preservedStatement : Prop :=
   ∀ (prog : CminorProgram) (tprog : CminorSelProgram),
-    match_prog cfg oracle prog tprog →
+    match_prog cfg oracle
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      (binary64_inverse_certificate := binary64_inverse_certificate)
+      (binary32_inverse_certificate := binary32_inverse_certificate) prog tprog →
       Senv.equiv (Genv.to_senv (Genv.globalenv prog))
         (Genv.to_senv (Genv.globalenv tprog))
 
 def function_ptr_translatedStatement : Prop :=
   ∀ (prog : CminorProgram) (tprog : CminorSelProgram),
-    match_prog cfg oracle prog tprog →
+    match_prog cfg oracle
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      (binary64_inverse_certificate := binary64_inverse_certificate)
+      (binary32_inverse_certificate := binary32_inverse_certificate) prog tprog →
       ∀ (b : block) (f : CminorFundef),
         Genv.find_funct_ptr (Genv.globalenv prog) b = some f →
           ∃ (cu : CminorProgram) (tf : CminorSelFundef),
             Genv.find_funct_ptr (Genv.globalenv tprog) b = some tf ∧
-            match_fundef cfg oracle cu f tf ∧ linkorder cu prog
+            match_fundef cfg oracle
+              (binary64_certificate := binary64_certificate)
+              (binary32_certificate := binary32_certificate)
+              (binary64_inverse_certificate := binary64_inverse_certificate)
+              (binary32_inverse_certificate := binary32_inverse_certificate)
+              cu f tf ∧ linkorder cu prog
 
 def functions_translatedStatement : Prop :=
   ∀ (prog : CminorProgram) (tprog : CminorSelProgram),
-    match_prog cfg oracle prog tprog →
+    match_prog cfg oracle
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      (binary64_inverse_certificate := binary64_inverse_certificate)
+      (binary32_inverse_certificate := binary32_inverse_certificate) prog tprog →
       ∀ (v v' : val) (f : CminorFundef),
         Genv.find_funct (Genv.globalenv prog) v = some f →
         Val.lessdef v v' →
           ∃ (cu : CminorProgram) (tf : CminorSelFundef),
             Genv.find_funct (Genv.globalenv tprog) v' = some tf ∧
-            match_fundef cfg oracle cu f tf ∧ linkorder cu prog
+            match_fundef cfg oracle
+              (binary64_certificate := binary64_certificate)
+              (binary32_certificate := binary32_certificate)
+              (binary64_inverse_certificate := binary64_inverse_certificate)
+              (binary32_inverse_certificate := binary32_inverse_certificate)
+              cu f tf ∧ linkorder cu prog
 
 def sig_function_translatedStatement : Prop :=
   ∀ (cu : CminorProgram) (f : CminorFundef) (tf : CminorSelFundef),
-    match_fundef cfg oracle cu f tf → CminorSel.funsig tf = Cminor.funsig f
+    match_fundef cfg oracle
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      (binary64_inverse_certificate := binary64_inverse_certificate)
+      (binary32_inverse_certificate := binary32_inverse_certificate)
+      cu f tf → CminorSel.funsig tf = Cminor.funsig f
 
 def stackspace_function_translatedStatement : Prop :=
   ∀ (dm : PTree.t Globdef) (hf : HelperFunctions)
     (f : Cminor.function) (tf : CminorSel.function),
-    sel_function cfg oracle dm hf f = .OK tf → tf.fn_stackspace = f.fn_stackspace
+    sel_function cfg oracle
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      (binary64_inverse_certificate := binary64_inverse_certificate)
+      (binary32_inverse_certificate := binary32_inverse_certificate)
+      dm hf f = .OK tf → tf.fn_stackspace = f.fn_stackspace
 
 def helper_functions_preservedStatement : Prop :=
   ∀ (prog : CminorProgram) (tprog : CminorSelProgram),
-    match_prog cfg oracle prog tprog →
+    match_prog cfg oracle
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      (binary64_inverse_certificate := binary64_inverse_certificate)
+      (binary32_inverse_certificate := binary32_inverse_certificate) prog tprog →
       ∀ hf : HelperFunctions,
         CompCert4Lean.Backend.SplitLongproof.helper_functions_declared prog hf →
           CompCert4Lean.Backend.SplitLongproof.helper_functions_declared tprog hf
@@ -404,7 +619,11 @@ def eval_storeStatement
 def eval_sel_unopStatement
  : Prop :=
   ∀ (xi : ExternalCalls) (prog : CminorProgram) (tprog : CminorSelProgram),
-    match_prog cfg oracle prog tprog →
+    match_prog cfg oracle
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      (binary64_inverse_certificate := binary64_inverse_certificate)
+      (binary32_inverse_certificate := binary32_inverse_certificate) prog tprog →
     ∀ (cunit : CminorProgram) (hf : HelperFunctions),
       linkorder cunit prog →
       CompCert4Lean.Backend.SplitLongproof.helper_functions_declared cunit hf →
@@ -420,12 +639,19 @@ def eval_sel_unopStatement
             CminorSel.eval_expr
         (binary64_certificate := binary64_certificate)
         (binary32_certificate := binary32_certificate) xi (Genv.globalenv tprog) sp e m le
-              (sel_unop op a1) v' ∧ Val.lessdef v v'
+              (sel_unop
+                (binary64_certificate := binary64_certificate)
+                (binary32_certificate := binary32_certificate)
+                op a1) v' ∧ Val.lessdef v v'
 
 def eval_sel_binopStatement
  : Prop :=
   ∀ (xi : ExternalCalls) (prog : CminorProgram) (tprog : CminorSelProgram),
-    match_prog cfg oracle prog tprog →
+    match_prog cfg oracle
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      (binary64_inverse_certificate := binary64_inverse_certificate)
+      (binary32_inverse_certificate := binary32_inverse_certificate) prog tprog →
     ∀ (cunit : CminorProgram) (hf : HelperFunctions),
       linkorder cunit prog →
       CompCert4Lean.Backend.SplitLongproof.helper_functions_declared cunit hf →
@@ -443,7 +669,10 @@ def eval_sel_binopStatement
             CminorSel.eval_expr
         (binary64_certificate := binary64_certificate)
         (binary32_certificate := binary32_certificate) xi (Genv.globalenv tprog) sp e m le
-              (sel_binop cfg op a1 a2) v' ∧ Val.lessdef v v'
+              (sel_binop cfg
+                (binary64_inverse_certificate := binary64_inverse_certificate)
+                (binary32_inverse_certificate := binary32_inverse_certificate)
+                op a1 a2) v' ∧ Val.lessdef v v'
 
 def eval_sel_selectStatement
  : Prop :=
@@ -687,7 +916,11 @@ def set_locals_lessdefStatement : Prop :=
 def sel_expr_correctStatement
  : Prop :=
   ∀ (xi : ExternalCalls) (prog : CminorProgram) (tprog : CminorSelProgram),
-    match_prog cfg oracle prog tprog →
+    match_prog cfg oracle
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      (binary64_inverse_certificate := binary64_inverse_certificate)
+      (binary32_inverse_certificate := binary32_inverse_certificate) prog tprog →
     ∀ (cunit : CminorProgram) (hf : HelperFunctions),
       linkorder cunit prog →
       CompCert4Lean.Backend.SplitLongproof.helper_functions_declared cunit hf →
@@ -701,13 +934,22 @@ def sel_expr_correctStatement
               CminorSel.eval_expr
         (binary64_certificate := binary64_certificate)
         (binary32_certificate := binary32_certificate) xi (Genv.globalenv tprog) sp e' m' le
-                (sel_expr cfg a) v' ∧
+                (sel_expr cfg
+                  (binary64_certificate := binary64_certificate)
+                  (binary32_certificate := binary32_certificate)
+                  (binary64_inverse_certificate := binary64_inverse_certificate)
+                  (binary32_inverse_certificate := binary32_inverse_certificate)
+                  a) v' ∧
               Val.lessdef v v'
 
 def sel_exprlist_correctStatement
  : Prop :=
   ∀ (xi : ExternalCalls) (prog : CminorProgram) (tprog : CminorSelProgram),
-    match_prog cfg oracle prog tprog →
+    match_prog cfg oracle
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      (binary64_inverse_certificate := binary64_inverse_certificate)
+      (binary32_inverse_certificate := binary32_inverse_certificate) prog tprog →
     ∀ (cunit : CminorProgram) (hf : HelperFunctions),
       linkorder cunit prog →
       CompCert4Lean.Backend.SplitLongproof.helper_functions_declared cunit hf →
@@ -721,12 +963,21 @@ def sel_exprlist_correctStatement
               CminorSel.eval_exprlist
         (binary64_certificate := binary64_certificate)
         (binary32_certificate := binary32_certificate) xi (Genv.globalenv tprog) sp e' m' le
-                (sel_exprlist cfg a) v' ∧ Val.lessdef_list v v'
+                (sel_exprlist cfg
+                  (binary64_certificate := binary64_certificate)
+                  (binary32_certificate := binary32_certificate)
+                  (binary64_inverse_certificate := binary64_inverse_certificate)
+                  (binary32_inverse_certificate := binary32_inverse_certificate)
+                  a) v' ∧ Val.lessdef_list v v'
 
 def sel_select_expr_correctStatement
  : Prop :=
   ∀ (xi : ExternalCalls) (prog : CminorProgram) (tprog : CminorSelProgram),
-    match_prog cfg oracle prog tprog →
+    match_prog cfg oracle
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      (binary64_inverse_certificate := binary64_inverse_certificate)
+      (binary32_inverse_certificate := binary32_inverse_certificate) prog tprog →
     ∀ (cunit : CminorProgram) (hf : HelperFunctions),
       linkorder cunit prog →
       CompCert4Lean.Backend.SplitLongproof.helper_functions_declared cunit hf →
@@ -748,13 +999,22 @@ def sel_select_expr_correctStatement
             CminorSel.eval_expr
         (binary64_certificate := binary64_certificate)
         (binary32_certificate := binary32_certificate) xi (Genv.globalenv tprog) sp e' m' le
-              (sel_select_expr cfg ty cond a1 a2) v' ∧
+              (sel_select_expr cfg
+                (binary64_certificate := binary64_certificate)
+                (binary32_certificate := binary32_certificate)
+                (binary64_inverse_certificate := binary64_inverse_certificate)
+                (binary32_inverse_certificate := binary32_inverse_certificate)
+                ty cond a1 a2) v' ∧
             Val.lessdef (Val.select (some b) v1 v2 ty) v'
 
 def sel_builtin_arg_correctStatement
  : Prop :=
   ∀ (xi : ExternalCalls) (prog : CminorProgram) (tprog : CminorSelProgram),
-    match_prog cfg oracle prog tprog →
+    match_prog cfg oracle
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      (binary64_inverse_certificate := binary64_inverse_certificate)
+      (binary32_inverse_certificate := binary32_inverse_certificate) prog tprog →
     ∀ (cunit : CminorProgram) (hf : HelperFunctions),
       linkorder cunit prog →
       CompCert4Lean.Backend.SplitLongproof.helper_functions_declared cunit hf →
@@ -768,12 +1028,21 @@ def sel_builtin_arg_correctStatement
             CminorSel.eval_builtin_arg
         (binary64_certificate := binary64_certificate)
         (binary32_certificate := binary32_certificate) xi (Genv.globalenv tprog) sp e' m'
-              (sel_builtin_arg cfg a c) v' ∧ Val.lessdef v v'
+              (sel_builtin_arg cfg
+                (binary64_certificate := binary64_certificate)
+                (binary32_certificate := binary32_certificate)
+                (binary64_inverse_certificate := binary64_inverse_certificate)
+                (binary32_inverse_certificate := binary32_inverse_certificate)
+                a c) v' ∧ Val.lessdef v v'
 
 def sel_builtin_args_correctStatement
  : Prop :=
   ∀ (xi : ExternalCalls) (prog : CminorProgram) (tprog : CminorSelProgram),
-    match_prog cfg oracle prog tprog →
+    match_prog cfg oracle
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      (binary64_inverse_certificate := binary64_inverse_certificate)
+      (binary32_inverse_certificate := binary32_inverse_certificate) prog tprog →
     ∀ (cunit : CminorProgram) (hf : HelperFunctions),
       linkorder cunit prog →
       CompCert4Lean.Backend.SplitLongproof.helper_functions_declared cunit hf →
@@ -789,7 +1058,12 @@ def sel_builtin_args_correctStatement
                 (CminorSel.eval_builtin_arg
         (binary64_certificate := binary64_certificate)
         (binary32_certificate := binary32_certificate) xi (Genv.globalenv tprog) sp e' m')
-                (sel_builtin_args cfg al cl) vl' ∧ Val.lessdef_list vl vl'
+                (sel_builtin_args cfg
+                  (binary64_certificate := binary64_certificate)
+                  (binary32_certificate := binary32_certificate)
+                  (binary64_inverse_certificate := binary64_inverse_certificate)
+                  (binary32_inverse_certificate := binary32_inverse_certificate)
+                  al cl) vl' ∧ Val.lessdef_list vl vl'
 
 def sel_builtin_res_correctStatement : Prop :=
   ∀ (oid : Option ident) (v : val) (e : Env) (v' : val) (e' : Env),
@@ -800,7 +1074,11 @@ def sel_builtin_res_correctStatement : Prop :=
 def sel_builtin_default_correctStatement
  : Prop :=
   ∀ (xi : ExternalCalls) (prog : CminorProgram) (tprog : CminorSelProgram),
-    match_prog cfg oracle prog tprog →
+    match_prog cfg oracle
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      (binary64_inverse_certificate := binary64_inverse_certificate)
+      (binary32_inverse_certificate := binary32_inverse_certificate) prog tprog →
     ∀ (cunit : CminorProgram) (hf : HelperFunctions),
       linkorder cunit prog →
       CompCert4Lean.Backend.SplitLongproof.helper_functions_declared cunit hf →
@@ -819,14 +1097,24 @@ def sel_builtin_default_correctStatement
             plus (CminorSel.step
           (binary64_certificate := binary64_certificate)
           (binary32_certificate := binary32_certificate) xi) (Genv.globalenv tprog)
-              (CminorSel.State f (sel_builtin_default cfg optid ef al) k sp e1' m1') t
+              (CminorSel.State f
+                (sel_builtin_default cfg
+                  (binary64_certificate := binary64_certificate)
+                  (binary32_certificate := binary32_certificate)
+                  (binary64_inverse_certificate := binary64_inverse_certificate)
+                  (binary32_inverse_certificate := binary32_inverse_certificate)
+                  optid ef al) k sp e1' m1') t
               (CminorSel.State f CminorSel.Sskip k sp e2' m2') ∧
             env_lessdef (Cminor.set_optvar optid v e1) e2' ∧ Mem.extends m2 m2'
 
 def sel_builtin_correctStatement
  : Prop :=
   ∀ (xi : ExternalCalls) (prog : CminorProgram) (tprog : CminorSelProgram),
-    match_prog cfg oracle prog tprog →
+    match_prog cfg oracle
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      (binary64_inverse_certificate := binary64_inverse_certificate)
+      (binary32_inverse_certificate := binary32_inverse_certificate) prog tprog →
     ∀ (cunit : CminorProgram) (hf : HelperFunctions),
       linkorder cunit prog →
       CompCert4Lean.Backend.SplitLongproof.helper_functions_declared cunit hf →
@@ -845,7 +1133,13 @@ def sel_builtin_correctStatement
             plus (CminorSel.step
           (binary64_certificate := binary64_certificate)
           (binary32_certificate := binary32_certificate) xi) (Genv.globalenv tprog)
-              (CminorSel.State f (sel_builtin cfg optid ef al) k sp e1' m1') t
+              (CminorSel.State f
+                (sel_builtin cfg
+                  (binary64_certificate := binary64_certificate)
+                  (binary32_certificate := binary32_certificate)
+                  (binary64_inverse_certificate := binary64_inverse_certificate)
+                  (binary32_inverse_certificate := binary32_inverse_certificate)
+                  optid ef al) k sp e1' m1') t
               (CminorSel.State f CminorSel.Sskip k sp e2' m2') ∧
             env_lessdef (Cminor.set_optvar optid v e1) e2' ∧ Mem.extends m2 m2'
 
@@ -895,7 +1189,11 @@ def classify_stmt_wtStatement : Prop :=
 def if_conversion_base_correctStatement
  : Prop :=
   ∀ (xi : ExternalCalls) (prog : CminorProgram) (tprog : CminorSelProgram),
-    match_prog cfg oracle prog tprog →
+    match_prog cfg oracle
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      (binary64_inverse_certificate := binary64_inverse_certificate)
+      (binary32_inverse_certificate := binary32_inverse_certificate) prog tprog →
     ∀ (cunit : CminorProgram) (hf : HelperFunctions),
       linkorder cunit prog →
       CompCert4Lean.Backend.SplitLongproof.helper_functions_declared cunit hf →
@@ -903,7 +1201,12 @@ def if_conversion_base_correctStatement
         (ifso ifnot : Cminor.expr) (kont s : CminorSel.stmt) (e : Env)
         (ty : typ) (vb : val) (b : Bool) (sp : val) (m : mem)
         (tf : CminorSel.function) (tk : CminorSel.cont) (e' : Env) (m' : mem),
-        if_conversion_base cfg oracle (Selection.known_id f) env cond id ifso ifnot kont = some s →
+        if_conversion_base cfg oracle
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate)
+          (binary64_inverse_certificate := binary64_inverse_certificate)
+          (binary32_inverse_certificate := binary32_inverse_certificate)
+          (Selection.known_id f) env cond id ifso ifnot kont = some s →
         def_env f e → wt_env env e → env id = ty → wt_expr env ifso ty →
         wt_expr env ifnot ty →
         Cminor.eval_expr
@@ -927,7 +1230,11 @@ def if_conversion_base_correctStatement
 def if_conversion_correctStatement
  : Prop :=
   ∀ (xi : ExternalCalls) (prog : CminorProgram) (tprog : CminorSelProgram),
-    match_prog cfg oracle prog tprog →
+    match_prog cfg oracle
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      (binary64_inverse_certificate := binary64_inverse_certificate)
+      (binary32_inverse_certificate := binary32_inverse_certificate) prog tprog →
     ∀ (cunit : CminorProgram) (hf : HelperFunctions),
       linkorder cunit prog →
       CompCert4Lean.Backend.SplitLongproof.helper_functions_declared cunit hf →
@@ -935,7 +1242,12 @@ def if_conversion_correctStatement
         (ifso ifnot : Cminor.stmt) (kont s : CminorSel.stmt) (vb : val) (b : Bool)
         (k : Cminor.cont) (f' : CminorSel.function) (k' : CminorSel.cont)
         (sp : val) (e : Env) (m : mem) (e' : Env) (m' : mem),
-        if_conversion cfg oracle (Selection.known_id f) env cond ifso ifnot kont = some s →
+        if_conversion cfg oracle
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate)
+          (binary64_inverse_certificate := binary64_inverse_certificate)
+          (binary32_inverse_certificate := binary32_inverse_certificate)
+          (Selection.known_id f) env cond ifso ifnot kont = some s →
         def_env f e → wt_env env e → wt_stmt env tyret ifso → wt_stmt env tyret ifnot →
         Cminor.eval_expr
         (binary64_certificate := binary64_certificate)
@@ -961,25 +1273,58 @@ def match_states_skipStatement
     (env : typenv),
     linkorder cunit prog →
     CompCert4Lean.Backend.SplitLongproof.helper_functions_declared cunit hf →
-    sel_function cfg oracle (prog_defmap cunit) hf f = .OK f' → type_function f = .OK env →
-    match_cont cfg oracle prog cunit hf (Selection.known_id f) env k k' → env_lessdef e e' →
+    sel_function cfg oracle
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      (binary64_inverse_certificate := binary64_inverse_certificate)
+      (binary32_inverse_certificate := binary32_inverse_certificate)
+      (prog_defmap cunit) hf f = .OK f' → type_function f = .OK env →
+    match_cont
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      (binary64_inverse_certificate := binary64_inverse_certificate)
+      (binary32_inverse_certificate := binary32_inverse_certificate)
+      cfg oracle prog cunit hf (Selection.known_id f) env k k' → env_lessdef e e' →
     Mem.extends m m' →
       match_states
         (binary64_certificate := binary64_certificate)
-        (binary32_certificate := binary32_certificate) cfg oracle prog (Cminor.State f Cminor.Sskip k sp e m)
+        (binary32_certificate := binary32_certificate)
+        (binary64_inverse_certificate := binary64_inverse_certificate)
+        (binary32_inverse_certificate := binary32_inverse_certificate)
+        cfg oracle prog (Cminor.State f Cminor.Sskip k sp e m)
         (CminorSel.State f' CminorSel.Sskip k' sp e' m')
 
 def call_cont_commutStatement : Prop :=
   ∀ (prog : CminorProgram) (cunit : CminorProgram) (hf : HelperFunctions)
     (ki : KnownIdents) (env : typenv) (k : Cminor.cont) (k' : CminorSel.cont),
-    match_cont cfg oracle prog cunit hf ki env k k' →
-      match_call_cont cfg oracle prog (Cminor.call_cont k) (CminorSel.call_cont k')
+    match_cont
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      (binary64_inverse_certificate := binary64_inverse_certificate)
+      (binary32_inverse_certificate := binary32_inverse_certificate)
+      cfg oracle prog cunit hf ki env k k' →
+      match_call_cont
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        (binary64_inverse_certificate := binary64_inverse_certificate)
+        (binary32_inverse_certificate := binary32_inverse_certificate)
+        cfg oracle prog (Cminor.call_cont k) (CminorSel.call_cont k')
 
 def match_is_call_contStatement : Prop :=
   ∀ (prog : CminorProgram) (cunit : CminorProgram) (hf : typenv)
     (ki : HelperFunctions) (env : KnownIdents) (k : Cminor.cont) (k' : CminorSel.cont),
-    match_cont cfg oracle prog cunit ki env hf k k' → Cminor.is_call_cont k →
-      match_call_cont cfg oracle prog k k' ∧ CminorSel.is_call_cont k'
+    match_cont
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      (binary64_inverse_certificate := binary64_inverse_certificate)
+      (binary32_inverse_certificate := binary32_inverse_certificate)
+      cfg oracle prog cunit ki env hf k k' → Cminor.is_call_cont k →
+      match_call_cont
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        (binary64_inverse_certificate := binary64_inverse_certificate)
+        (binary32_inverse_certificate := binary32_inverse_certificate)
+        cfg oracle prog k k' ∧ CminorSel.is_call_cont k'
 
 def classify_stmt_nolabelStatement : Prop :=
   ∀ (s : Cminor.stmt), classify_stmt s ≠ SCother → nolabel s
@@ -987,30 +1332,66 @@ def classify_stmt_nolabelStatement : Prop :=
 def if_conversion_base_nolabelStatement : Prop :=
   ∀ (hf : HelperFunctions) (ki : KnownIdents) (env : typenv) (a : Cminor.expr)
     (id : ident) (a1 a2 : Cminor.expr) (kont s : CminorSel.stmt),
-    if_conversion_base cfg oracle ki env a id a1 a2 kont = some s → nolabel' s
+    if_conversion_base cfg oracle
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      (binary64_inverse_certificate := binary64_inverse_certificate)
+      (binary32_inverse_certificate := binary32_inverse_certificate)
+      ki env a id a1 a2 kont = some s → nolabel' s
 
 def if_conversion_nolabelStatement : Prop :=
   ∀ (hf : HelperFunctions) (ki : KnownIdents) (env : typenv) (a : Cminor.expr)
     (s1 s2 : Cminor.stmt) (kont s : CminorSel.stmt),
-    if_conversion cfg oracle ki env a s1 s2 kont = some s →
+    if_conversion cfg oracle
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      (binary64_inverse_certificate := binary64_inverse_certificate)
+      (binary32_inverse_certificate := binary32_inverse_certificate)
+      ki env a s1 s2 kont = some s →
       nolabel s1 ∧ nolabel s2 ∧ nolabel' s
 
 def sel_builtin_nolabelStatement : Prop :=
   ∀ (hf : HelperFunctions) (optid : Option ident) (ef : external_function)
-    (args : List Cminor.expr), nolabel' (sel_builtin cfg optid ef args)
+    (args : List Cminor.expr), nolabel'
+      (sel_builtin cfg
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        (binary64_inverse_certificate := binary64_inverse_certificate)
+        (binary32_inverse_certificate := binary32_inverse_certificate)
+        optid ef args)
 
 def find_label_commutStatement : Prop :=
   ∀ (prog : CminorProgram) (cunit : CminorProgram) (hf : HelperFunctions)
     (ki : KnownIdents) (env : typenv) (lbl : ident) (s : Cminor.stmt)
     (kont : CminorSel.stmt) (k : Cminor.cont) (s' : CminorSel.stmt) (k' : CminorSel.cont),
-    match_cont cfg oracle prog cunit hf ki env k k' →
-    sel_stmt cfg oracle (prog_defmap cunit) ki env s kont = .OK s' →
+    match_cont
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      (binary64_inverse_certificate := binary64_inverse_certificate)
+      (binary32_inverse_certificate := binary32_inverse_certificate)
+      cfg oracle prog cunit hf ki env k k' →
+    sel_stmt cfg oracle
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      (binary64_inverse_certificate := binary64_inverse_certificate)
+      (binary32_inverse_certificate := binary32_inverse_certificate)
+      (prog_defmap cunit) ki env s kont = .OK s' →
     match Cminor.find_label lbl s k with
     | some (s1, k1) =>
         match CminorSel.find_label lbl s' k' with
         | some (s1', k1') =>
-            ∃ kont1, sel_stmt cfg oracle (prog_defmap cunit) ki env s1 kont1 = .OK s1' ∧
-              match_cont cfg oracle prog cunit hf ki env k1 k1'
+            ∃ kont1, sel_stmt cfg oracle
+              (binary64_certificate := binary64_certificate)
+              (binary32_certificate := binary32_certificate)
+              (binary64_inverse_certificate := binary64_inverse_certificate)
+              (binary32_inverse_certificate := binary32_inverse_certificate)
+              (prog_defmap cunit) ki env s1 kont1 = .OK s1' ∧
+              match_cont
+                (binary64_certificate := binary64_certificate)
+                (binary32_certificate := binary32_certificate)
+                (binary64_inverse_certificate := binary64_inverse_certificate)
+                (binary32_inverse_certificate := binary32_inverse_certificate)
+                cfg oracle prog cunit hf ki env k1 k1'
         | none => False
     | none =>
         match CminorSel.find_label lbl s' k' with
@@ -1020,23 +1401,36 @@ def find_label_commutStatement : Prop :=
 def sel_step_correctStatement
  : Prop :=
   ∀ (xi : ExternalCalls) (prog : CminorProgram) (tprog : CminorSelProgram),
-    match_prog cfg oracle prog tprog →
+    match_prog cfg oracle
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      (binary64_inverse_certificate := binary64_inverse_certificate)
+      (binary32_inverse_certificate := binary32_inverse_certificate) prog tprog →
     ∀ (s1 : Cminor.state) (t : trace) (s2 : Cminor.state),
       Cminor.step
         (binary64_certificate := binary64_certificate)
         (binary32_certificate := binary32_certificate) xi (Genv.globalenv prog) s1 t s2 →
       ∀ t1 : CminorSel.state, match_states
         (binary64_certificate := binary64_certificate)
-        (binary32_certificate := binary32_certificate) cfg oracle prog s1 t1 → wt_state s1 →
+        (binary32_certificate := binary32_certificate)
+        (binary64_inverse_certificate := binary64_inverse_certificate)
+        (binary32_inverse_certificate := binary32_inverse_certificate)
+        cfg oracle prog s1 t1 → wt_state s1 →
         (∃ t2, plus (CminorSel.step
           (binary64_certificate := binary64_certificate)
           (binary32_certificate := binary32_certificate) xi) (Genv.globalenv tprog) t1 t t2 ∧
           match_states
         (binary64_certificate := binary64_certificate)
-        (binary32_certificate := binary32_certificate) cfg oracle prog s2 t2) ∨
+        (binary32_certificate := binary32_certificate)
+        (binary64_inverse_certificate := binary64_inverse_certificate)
+        (binary32_inverse_certificate := binary32_inverse_certificate)
+        cfg oracle prog s2 t2) ∨
         (measure s2 < measure s1 ∧ t = E0 ∧ match_states
         (binary64_certificate := binary64_certificate)
-        (binary32_certificate := binary32_certificate) cfg oracle prog s2 t1) ∨
+        (binary32_certificate := binary32_certificate)
+        (binary64_inverse_certificate := binary64_inverse_certificate)
+        (binary32_inverse_certificate := binary32_inverse_certificate)
+        cfg oracle prog s2 t1) ∨
         (∃ t2 n, CminorSel.step
           (binary64_certificate := binary64_certificate)
           (binary32_certificate := binary32_certificate) xi (Genv.globalenv tprog) t1 t t2 ∧
@@ -1044,28 +1438,45 @@ def sel_step_correctStatement
           (binary64_certificate := binary64_certificate)
           (binary32_certificate := binary32_certificate) prog xi n s2 (fun s3 => match_states
         (binary64_certificate := binary64_certificate)
-        (binary32_certificate := binary32_certificate) cfg oracle prog s3 t2))
+        (binary32_certificate := binary32_certificate)
+        (binary64_inverse_certificate := binary64_inverse_certificate)
+        (binary32_inverse_certificate := binary32_inverse_certificate)
+        cfg oracle prog s3 t2))
 
 def sel_initial_statesStatement
  : Prop :=
   ∀ (prog : CminorProgram) (tprog : CminorSelProgram),
-    match_prog cfg oracle prog tprog →
+    match_prog cfg oracle
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      (binary64_inverse_certificate := binary64_inverse_certificate)
+      (binary32_inverse_certificate := binary32_inverse_certificate) prog tprog →
       ∀ s, Cminor.initial_state prog s →
         ∃ r, CminorSel.initial_state tprog r ∧ match_states
         (binary64_certificate := binary64_certificate)
-        (binary32_certificate := binary32_certificate) cfg oracle prog s r
+        (binary32_certificate := binary32_certificate)
+        (binary64_inverse_certificate := binary64_inverse_certificate)
+        (binary32_inverse_certificate := binary32_inverse_certificate)
+        cfg oracle prog s r
 
 def sel_final_statesStatement
  : Prop :=
   ∀ (prog : CminorProgram) (s : Cminor.state) (r : CminorSel.state) (v : int),
     match_states
         (binary64_certificate := binary64_certificate)
-        (binary32_certificate := binary32_certificate) cfg oracle prog s r → Cminor.final_state s v → CminorSel.final_state r v
+        (binary32_certificate := binary32_certificate)
+        (binary64_inverse_certificate := binary64_inverse_certificate)
+        (binary32_inverse_certificate := binary32_inverse_certificate)
+        cfg oracle prog s r → Cminor.final_state s v → CminorSel.final_state r v
 
 def transf_program_correctStatement
  : Prop :=
   ∀ (xi : ExternalCalls) (prog : CminorProgram) (tprog : CminorSelProgram),
-    match_prog cfg oracle prog tprog →
+    match_prog cfg oracle
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      (binary64_inverse_certificate := binary64_inverse_certificate)
+      (binary32_inverse_certificate := binary32_inverse_certificate) prog tprog →
       forward_simulation (Cminor.semantics
         (binary64_certificate := binary64_certificate)
         (binary32_certificate := binary32_certificate) xi prog) (CminorSel.semantics
