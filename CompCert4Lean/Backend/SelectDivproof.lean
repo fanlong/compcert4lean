@@ -37,6 +37,10 @@ private abbrev CCInt := CompCert4Lean.Lib.Integers.int
 private abbrev CCInt64 := CompCert4Lean.Lib.Integers.int64
 private abbrev CCFloat := CompCert4Lean.Lib.Floats.float
 private abbrev CCFloat32 := CompCert4Lean.Lib.Floats.float32
+private abbrev BinaryNormalizeCertificate :=
+  CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+private abbrev BexactInverseCertificate :=
+  CompCert4Lean.Lib.IEEE754_extra.Bexact_inverse_certificate
 private abbrev CCZ := CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z
 private abbrev env := CompCert4Lean.Backend.Cminor.env
 private abbrev zLe := CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.le
@@ -250,191 +254,375 @@ def divlu_mul_shiftStatement : Prop :=
     (zLe z0 p ∧ zLt p z64) ∧
       int64Divu x y = int64Shru' (int64Mulhu x (int64Repr m)) (intRepr p)
 
-def is_intconst_soundStatement : Prop :=
+def is_intconst_soundStatement
+    [binary64_certificate : BinaryNormalizeCertificate (ZArith.BinInt.Z.of_nat 53)
+      (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (ZArith.BinInt.Z.of_nat 24)
+      (ZArith.BinInt.Z.of_nat 128)] : Prop :=
   ∀ (xi : ExternalCalls) (prog : program) (sp : val) (e : env) (m : mem),
     ∀ (v : val) (a : expr) (n : CCInt) (le : letenv),
       is_intconst a = some n →
-      eval_expr xi (Genv.globalenv prog) sp e m le a v →
+      eval_expr (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        xi (Genv.globalenv prog) sp e m le a v →
       v = .Vint n
 
-def eval_divu_mulStatement : Prop :=
+def eval_divu_mulStatement
+    [binary64_certificate : BinaryNormalizeCertificate (ZArith.BinInt.Z.of_nat 53)
+      (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (ZArith.BinInt.Z.of_nat 24)
+      (ZArith.BinInt.Z.of_nat 128)] : Prop :=
   ∀ (xi : ExternalCalls) (prog : program) (sp : val) (e : env) (m : mem),
     ∀ (le : letenv) (x y : CCInt) (p M : CCZ),
       divu_mul_params (intUnsigned y) = some (p, M) →
       nth_error le 0 = some (.Vint x) →
-      eval_expr xi (Genv.globalenv prog) sp e m le (divu_mul p M)
+      eval_expr (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        xi (Genv.globalenv prog) sp e m le (divu_mul p M)
         (.Vint (intDivu x y))
 
-def eval_divuimmStatement : Prop :=
+def eval_divuimmStatement
+    [binary64_certificate : BinaryNormalizeCertificate (ZArith.BinInt.Z.of_nat 53)
+      (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (ZArith.BinInt.Z.of_nat 24)
+      (ZArith.BinInt.Z.of_nat 128)] : Prop :=
   ∀ (cfg : CompilerConfig) (xi : ExternalCalls) (prog : program)
     (sp : val) (e : env) (m : mem),
     ∀ (le : letenv) (e1 : expr) (x : val) (n2 : CCInt) (z : val),
-      eval_expr xi (Genv.globalenv prog) sp e m le e1 x →
+      eval_expr (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        xi (Genv.globalenv prog) sp e m le e1 x →
       Val.divu x (.Vint n2) = some z →
-      ∃ v, eval_expr xi (Genv.globalenv prog) sp e m le (divuimm cfg e1 n2) v ∧
+      ∃ v, eval_expr (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        xi (Genv.globalenv prog) sp e m le (divuimm cfg e1 n2) v ∧
         Val.lessdef z v
 
-def eval_divuStatement : Prop :=
+def eval_divuStatement
+    [binary64_certificate : BinaryNormalizeCertificate (ZArith.BinInt.Z.of_nat 53)
+      (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (ZArith.BinInt.Z.of_nat 24)
+      (ZArith.BinInt.Z.of_nat 128)] : Prop :=
   ∀ (cfg : CompilerConfig) (xi : ExternalCalls) (prog : program)
     (sp : val) (e : env) (m : mem),
     ∀ (le : letenv) (a b : expr) (x y z : val),
-      eval_expr xi (Genv.globalenv prog) sp e m le a x →
-      eval_expr xi (Genv.globalenv prog) sp e m le b y →
+      eval_expr (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        xi (Genv.globalenv prog) sp e m le a x →
+      eval_expr (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        xi (Genv.globalenv prog) sp e m le b y →
       Val.divu x y = some z →
-      ∃ v, eval_expr xi (Genv.globalenv prog) sp e m le (divu cfg a b) v ∧
+      ∃ v, eval_expr (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        xi (Genv.globalenv prog) sp e m le (divu cfg a b) v ∧
         Val.lessdef z v
 
-def eval_mod_from_divStatement : Prop :=
+def eval_mod_from_divStatement
+    [binary64_certificate : BinaryNormalizeCertificate (ZArith.BinInt.Z.of_nat 53)
+      (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (ZArith.BinInt.Z.of_nat 24)
+      (ZArith.BinInt.Z.of_nat 128)] : Prop :=
   ∀ (xi : ExternalCalls) (prog : program) (sp : val) (e : env) (m : mem),
     ∀ (le : letenv) (a : expr) (n : CCInt) (x y : CCInt),
-      eval_expr xi (Genv.globalenv prog) sp e m le a (.Vint y) →
+      eval_expr (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        xi (Genv.globalenv prog) sp e m le a (.Vint y) →
       nth_error le 0 = some (.Vint x) →
-      eval_expr xi (Genv.globalenv prog) sp e m le (mod_from_div a n)
+      eval_expr (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        xi (Genv.globalenv prog) sp e m le (mod_from_div a n)
         (.Vint (intSub x (intMul y n)))
 
-def eval_moduimmStatement : Prop :=
+def eval_moduimmStatement
+    [binary64_certificate : BinaryNormalizeCertificate (ZArith.BinInt.Z.of_nat 53)
+      (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (ZArith.BinInt.Z.of_nat 24)
+      (ZArith.BinInt.Z.of_nat 128)] : Prop :=
   ∀ (cfg : CompilerConfig) (xi : ExternalCalls) (prog : program)
     (sp : val) (e : env) (m : mem),
     ∀ (le : letenv) (e1 : expr) (x : val) (n2 : CCInt) (z : val),
-      eval_expr xi (Genv.globalenv prog) sp e m le e1 x →
+      eval_expr (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        xi (Genv.globalenv prog) sp e m le e1 x →
       Val.modu x (.Vint n2) = some z →
-      ∃ v, eval_expr xi (Genv.globalenv prog) sp e m le (moduimm cfg e1 n2) v ∧
+      ∃ v, eval_expr (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        xi (Genv.globalenv prog) sp e m le (moduimm cfg e1 n2) v ∧
         Val.lessdef z v
 
-def eval_moduStatement : Prop :=
+def eval_moduStatement
+    [binary64_certificate : BinaryNormalizeCertificate (ZArith.BinInt.Z.of_nat 53)
+      (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (ZArith.BinInt.Z.of_nat 24)
+      (ZArith.BinInt.Z.of_nat 128)] : Prop :=
   ∀ (cfg : CompilerConfig) (xi : ExternalCalls) (prog : program)
     (sp : val) (e : env) (m : mem),
     ∀ (le : letenv) (a b : expr) (x y z : val),
-      eval_expr xi (Genv.globalenv prog) sp e m le a x →
-      eval_expr xi (Genv.globalenv prog) sp e m le b y →
+      eval_expr (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        xi (Genv.globalenv prog) sp e m le a x →
+      eval_expr (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        xi (Genv.globalenv prog) sp e m le b y →
       Val.modu x y = some z →
-      ∃ v, eval_expr xi (Genv.globalenv prog) sp e m le (modu cfg a b) v ∧
+      ∃ v, eval_expr (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        xi (Genv.globalenv prog) sp e m le (modu cfg a b) v ∧
         Val.lessdef z v
 
-def eval_divs_mulStatement : Prop :=
+def eval_divs_mulStatement
+    [binary64_certificate : BinaryNormalizeCertificate (ZArith.BinInt.Z.of_nat 53)
+      (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (ZArith.BinInt.Z.of_nat 24)
+      (ZArith.BinInt.Z.of_nat 128)] : Prop :=
   ∀ (xi : ExternalCalls) (prog : program) (sp : val) (e : env) (m : mem),
     ∀ (le : letenv) (x y : CCInt) (p M : CCZ),
       divs_mul_params (intSigned y) = some (p, M) →
       nth_error le 0 = some (.Vint x) →
-      eval_expr xi (Genv.globalenv prog) sp e m le (divs_mul p M)
+      eval_expr (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        xi (Genv.globalenv prog) sp e m le (divs_mul p M)
         (.Vint (intDivs x y))
 
-def eval_divsimmStatement : Prop :=
+def eval_divsimmStatement
+    [binary64_certificate : BinaryNormalizeCertificate (ZArith.BinInt.Z.of_nat 53)
+      (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (ZArith.BinInt.Z.of_nat 24)
+      (ZArith.BinInt.Z.of_nat 128)] : Prop :=
   ∀ (cfg : CompilerConfig) (xi : ExternalCalls) (prog : program)
     (sp : val) (e : env) (m : mem),
     ∀ (le : letenv) (e1 : expr) (x : val) (n2 : CCInt) (z : val),
-      eval_expr xi (Genv.globalenv prog) sp e m le e1 x →
+      eval_expr (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        xi (Genv.globalenv prog) sp e m le e1 x →
       Val.divs x (.Vint n2) = some z →
-      ∃ v, eval_expr xi (Genv.globalenv prog) sp e m le (divsimm cfg e1 n2) v ∧
+      ∃ v, eval_expr (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        xi (Genv.globalenv prog) sp e m le (divsimm cfg e1 n2) v ∧
         Val.lessdef z v
 
-def eval_divsStatement : Prop :=
+def eval_divsStatement
+    [binary64_certificate : BinaryNormalizeCertificate (ZArith.BinInt.Z.of_nat 53)
+      (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (ZArith.BinInt.Z.of_nat 24)
+      (ZArith.BinInt.Z.of_nat 128)] : Prop :=
   ∀ (cfg : CompilerConfig) (xi : ExternalCalls) (prog : program)
     (sp : val) (e : env) (m : mem),
     ∀ (le : letenv) (a b : expr) (x y z : val),
-      eval_expr xi (Genv.globalenv prog) sp e m le a x →
-      eval_expr xi (Genv.globalenv prog) sp e m le b y →
+      eval_expr (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        xi (Genv.globalenv prog) sp e m le a x →
+      eval_expr (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        xi (Genv.globalenv prog) sp e m le b y →
       Val.divs x y = some z →
-      ∃ v, eval_expr xi (Genv.globalenv prog) sp e m le (divs cfg a b) v ∧
+      ∃ v, eval_expr (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        xi (Genv.globalenv prog) sp e m le (divs cfg a b) v ∧
         Val.lessdef z v
 
-def eval_modsimmStatement : Prop :=
+def eval_modsimmStatement
+    [binary64_certificate : BinaryNormalizeCertificate (ZArith.BinInt.Z.of_nat 53)
+      (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (ZArith.BinInt.Z.of_nat 24)
+      (ZArith.BinInt.Z.of_nat 128)] : Prop :=
   ∀ (cfg : CompilerConfig) (xi : ExternalCalls) (prog : program)
     (sp : val) (e : env) (m : mem),
     ∀ (le : letenv) (e1 : expr) (x : val) (n2 : CCInt) (z : val),
-      eval_expr xi (Genv.globalenv prog) sp e m le e1 x →
+      eval_expr (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        xi (Genv.globalenv prog) sp e m le e1 x →
       Val.mods x (.Vint n2) = some z →
-      ∃ v, eval_expr xi (Genv.globalenv prog) sp e m le (modsimm cfg e1 n2) v ∧
+      ∃ v, eval_expr (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        xi (Genv.globalenv prog) sp e m le (modsimm cfg e1 n2) v ∧
         Val.lessdef z v
 
-def eval_modsStatement : Prop :=
+def eval_modsStatement
+    [binary64_certificate : BinaryNormalizeCertificate (ZArith.BinInt.Z.of_nat 53)
+      (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (ZArith.BinInt.Z.of_nat 24)
+      (ZArith.BinInt.Z.of_nat 128)] : Prop :=
   ∀ (cfg : CompilerConfig) (xi : ExternalCalls) (prog : program)
     (sp : val) (e : env) (m : mem),
     ∀ (le : letenv) (a b : expr) (x y z : val),
-      eval_expr xi (Genv.globalenv prog) sp e m le a x →
-      eval_expr xi (Genv.globalenv prog) sp e m le b y →
+      eval_expr (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        xi (Genv.globalenv prog) sp e m le a x →
+      eval_expr (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        xi (Genv.globalenv prog) sp e m le b y →
       Val.mods x y = some z →
-      ∃ v, eval_expr xi (Genv.globalenv prog) sp e m le (mods cfg a b) v ∧
+      ∃ v, eval_expr (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        xi (Genv.globalenv prog) sp e m le (mods cfg a b) v ∧
         Val.lessdef z v
 
-def eval_modl_from_divlStatement : Prop :=
+def eval_modl_from_divlStatement
+    [binary64_certificate : BinaryNormalizeCertificate (ZArith.BinInt.Z.of_nat 53)
+      (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (ZArith.BinInt.Z.of_nat 24)
+      (ZArith.BinInt.Z.of_nat 128)] : Prop :=
   ∀ (xi : ExternalCalls) (prog : program) (sp : val) (e : env) (m : mem),
     ∀ (le : letenv) (a : expr) (n : CCInt64) (x y : CCInt64),
-      eval_expr xi (Genv.globalenv prog) sp e m le a (.Vlong y) →
+      eval_expr (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        xi (Genv.globalenv prog) sp e m le a (.Vlong y) →
       nth_error le 0 = some (.Vlong x) →
-      eval_expr xi (Genv.globalenv prog) sp e m le (modl_from_divl a n)
+      eval_expr (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        xi (Genv.globalenv prog) sp e m le (modl_from_divl a n)
         (.Vlong (int64Sub x (int64Mul y n)))
 
-def eval_divlu_mullStatement : Prop :=
+def eval_divlu_mullStatement
+    [binary64_certificate : BinaryNormalizeCertificate (ZArith.BinInt.Z.of_nat 53)
+      (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (ZArith.BinInt.Z.of_nat 24)
+      (ZArith.BinInt.Z.of_nat 128)] : Prop :=
   ∀ (xi : ExternalCalls) (prog : program) (sp : val) (e : env) (m : mem),
     ∀ (le : letenv) (x y : CCInt64) (p M : CCZ),
       divlu_mul_params (int64Unsigned y) = some (p, M) →
       nth_error le 0 = some (.Vlong x) →
-      eval_expr xi (Genv.globalenv prog) sp e m le (divlu_mull p M)
+      eval_expr (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        xi (Genv.globalenv prog) sp e m le (divlu_mull p M)
         (.Vlong (int64Divu x y))
 
-def eval_divluStatement : Prop :=
+def eval_divluStatement
+    [binary64_certificate : BinaryNormalizeCertificate (ZArith.BinInt.Z.of_nat 53)
+      (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (ZArith.BinInt.Z.of_nat 24)
+      (ZArith.BinInt.Z.of_nat 128)] : Prop :=
   ∀ (cfg : CompilerConfig) (xi : ExternalCalls) (prog : program)
     (sp : val) (e : env) (m : mem),
     ∀ (le : letenv) (a b : expr) (x y z : val),
-      eval_expr xi (Genv.globalenv prog) sp e m le a x →
-      eval_expr xi (Genv.globalenv prog) sp e m le b y →
+      eval_expr (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        xi (Genv.globalenv prog) sp e m le a x →
+      eval_expr (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        xi (Genv.globalenv prog) sp e m le b y →
       Val.divlu x y = some z →
-      ∃ v, eval_expr xi (Genv.globalenv prog) sp e m le (divlu cfg a b) v ∧
+      ∃ v, eval_expr (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        xi (Genv.globalenv prog) sp e m le (divlu cfg a b) v ∧
         Val.lessdef z v
 
-def eval_modluStatement : Prop :=
+def eval_modluStatement
+    [binary64_certificate : BinaryNormalizeCertificate (ZArith.BinInt.Z.of_nat 53)
+      (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (ZArith.BinInt.Z.of_nat 24)
+      (ZArith.BinInt.Z.of_nat 128)] : Prop :=
   ∀ (cfg : CompilerConfig) (xi : ExternalCalls) (prog : program)
     (sp : val) (e : env) (m : mem),
     ∀ (le : letenv) (a b : expr) (x y z : val),
-      eval_expr xi (Genv.globalenv prog) sp e m le a x →
-      eval_expr xi (Genv.globalenv prog) sp e m le b y →
+      eval_expr (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        xi (Genv.globalenv prog) sp e m le a x →
+      eval_expr (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        xi (Genv.globalenv prog) sp e m le b y →
       Val.modlu x y = some z →
-      ∃ v, eval_expr xi (Genv.globalenv prog) sp e m le (modlu cfg a b) v ∧
+      ∃ v, eval_expr (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        xi (Genv.globalenv prog) sp e m le (modlu cfg a b) v ∧
         Val.lessdef z v
 
-def eval_divls_mullStatement : Prop :=
+def eval_divls_mullStatement
+    [binary64_certificate : BinaryNormalizeCertificate (ZArith.BinInt.Z.of_nat 53)
+      (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (ZArith.BinInt.Z.of_nat 24)
+      (ZArith.BinInt.Z.of_nat 128)] : Prop :=
   ∀ (xi : ExternalCalls) (prog : program) (sp : val) (e : env) (m : mem),
     ∀ (le : letenv) (x y : CCInt64) (p M : CCZ),
       divls_mul_params (int64Signed y) = some (p, M) →
       nth_error le 0 = some (.Vlong x) →
-      eval_expr xi (Genv.globalenv prog) sp e m le (divls_mull p M)
+      eval_expr (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        xi (Genv.globalenv prog) sp e m le (divls_mull p M)
         (.Vlong (int64Divs x y))
 
-def eval_divlsStatement : Prop :=
+def eval_divlsStatement
+    [binary64_certificate : BinaryNormalizeCertificate (ZArith.BinInt.Z.of_nat 53)
+      (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (ZArith.BinInt.Z.of_nat 24)
+      (ZArith.BinInt.Z.of_nat 128)] : Prop :=
   ∀ (cfg : CompilerConfig) (xi : ExternalCalls) (prog : program)
     (sp : val) (e : env) (m : mem),
     ∀ (le : letenv) (a b : expr) (x y z : val),
-      eval_expr xi (Genv.globalenv prog) sp e m le a x →
-      eval_expr xi (Genv.globalenv prog) sp e m le b y →
+      eval_expr (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        xi (Genv.globalenv prog) sp e m le a x →
+      eval_expr (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        xi (Genv.globalenv prog) sp e m le b y →
       Val.divls x y = some z →
-      ∃ v, eval_expr xi (Genv.globalenv prog) sp e m le (divls cfg a b) v ∧
+      ∃ v, eval_expr (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        xi (Genv.globalenv prog) sp e m le (divls cfg a b) v ∧
         Val.lessdef z v
 
-def eval_modlsStatement : Prop :=
+def eval_modlsStatement
+    [binary64_certificate : BinaryNormalizeCertificate (ZArith.BinInt.Z.of_nat 53)
+      (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (ZArith.BinInt.Z.of_nat 24)
+      (ZArith.BinInt.Z.of_nat 128)] : Prop :=
   ∀ (cfg : CompilerConfig) (xi : ExternalCalls) (prog : program)
     (sp : val) (e : env) (m : mem),
     ∀ (le : letenv) (a b : expr) (x y z : val),
-      eval_expr xi (Genv.globalenv prog) sp e m le a x →
-      eval_expr xi (Genv.globalenv prog) sp e m le b y →
+      eval_expr (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        xi (Genv.globalenv prog) sp e m le a x →
+      eval_expr (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        xi (Genv.globalenv prog) sp e m le b y →
       Val.modls x y = some z →
-      ∃ v, eval_expr xi (Genv.globalenv prog) sp e m le (modls cfg a b) v ∧
+      ∃ v, eval_expr (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        xi (Genv.globalenv prog) sp e m le (modls cfg a b) v ∧
         Val.lessdef z v
 
-def eval_divfStatement : Prop :=
+def eval_divfStatement
+    [binary64_certificate : BinaryNormalizeCertificate (ZArith.BinInt.Z.of_nat 53)
+      (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (ZArith.BinInt.Z.of_nat 24)
+      (ZArith.BinInt.Z.of_nat 128)]
+    [certificate : BexactInverseCertificate (ZArith.BinInt.Z.of_nat 53)
+      (ZArith.BinInt.Z.of_nat 1024)] : Prop :=
   ∀ (xi : ExternalCalls) (prog : program) (sp : val) (e : env) (m : mem),
     ∀ (le : letenv) (a b : expr) (x y : val),
-      eval_expr xi (Genv.globalenv prog) sp e m le a x →
-      eval_expr xi (Genv.globalenv prog) sp e m le b y →
-      ∃ v, eval_expr xi (Genv.globalenv prog) sp e m le (divf a b) v ∧
+      eval_expr (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        xi (Genv.globalenv prog) sp e m le a x →
+      eval_expr (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        xi (Genv.globalenv prog) sp e m le b y →
+      ∃ v, eval_expr (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        xi (Genv.globalenv prog) sp e m le
+        (divf (certificate := certificate) a b) v ∧
         Val.lessdef (Val.divf x y) v
 
-def eval_divfsStatement : Prop :=
+def eval_divfsStatement
+    [binary64_certificate : BinaryNormalizeCertificate (ZArith.BinInt.Z.of_nat 53)
+      (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (ZArith.BinInt.Z.of_nat 24)
+      (ZArith.BinInt.Z.of_nat 128)]
+    [certificate : BexactInverseCertificate (ZArith.BinInt.Z.of_nat 24)
+      (ZArith.BinInt.Z.of_nat 128)] : Prop :=
   ∀ (xi : ExternalCalls) (prog : program) (sp : val) (e : env) (m : mem),
     ∀ (le : letenv) (a b : expr) (x y : val),
-      eval_expr xi (Genv.globalenv prog) sp e m le a x →
-      eval_expr xi (Genv.globalenv prog) sp e m le b y →
-      ∃ v, eval_expr xi (Genv.globalenv prog) sp e m le (divfs a b) v ∧
+      eval_expr (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        xi (Genv.globalenv prog) sp e m le a x →
+      eval_expr (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        xi (Genv.globalenv prog) sp e m le b y →
+      ∃ v, eval_expr (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        xi (Genv.globalenv prog) sp e m le
+        (divfs (certificate := certificate) a b) v ∧
         Val.lessdef (Val.divfs x y) v
 
 end CompCert4Lean.Backend.SelectDivproof
