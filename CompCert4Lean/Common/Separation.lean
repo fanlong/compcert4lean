@@ -113,37 +113,11 @@ private theorem permReadableOfFreeable {m : mem} {b : block} {ofs : Z}
   rw [accessFreeableOfPerm h]
   exact perm_F_any Readable
 
-private def permissionRank : permission → Nat
-  | Freeable => 3
-  | Writable => 2
-  | Readable => 1
-  | Memtype.Nonempty => 0
-
-private def permOrderBool (actual required : permission) : Bool :=
-  decide (permissionRank required ≤ permissionRank actual)
-
-private def permBool (m : mem) (b : block) (ofs : Z) (k : perm_kind)
-    (p : permission) : Bool :=
-  match (PMap.get b m.mem_access) ofs k with
-  | none => false
-  | some actual => permOrderBool actual p
-
-private def rangePermLoop (m : mem) (b : block) (lo : Z) (k : perm_kind)
-    (p : permission) : Nat → Bool
-  | 0 => true
-  | n + 1 => permBool m b lo k p && rangePermLoop m b (zAdd lo z1) k p n
-
-private def rangePermBool (m : mem) (b : block) (lo hi : Z) (k : perm_kind)
-    (p : permission) : Bool :=
-  rangePermLoop m b lo k p (ZArith.BinInt.Z.to_nat (zSub hi lo))
-
-private def alignedBool (alignment ofs : Z) : Bool :=
-  ZArith.BinInt.Z.eqb (ZArith.BinInt.Z.modulo ofs alignment) z0
-
 private def validAccessBool (m : mem) (chunk : memory_chunk) (b : block) (ofs : Z)
     (p : permission) : Bool :=
-  rangePermBool m b ofs (zAdd ofs (size_chunk chunk)) Cur p &&
-    alignedBool (align_chunk chunk) ofs
+  match Mem.valid_access_dec m chunk b ofs p with
+  | .left _ => true
+  | .right _ => false
 
 private theorem load_eq (chunk : memory_chunk) (m : mem) (b : block) (ofs : Z) :
     Mem.load chunk m b ofs =
@@ -153,16 +127,6 @@ private theorem load_eq (chunk : memory_chunk) (m : mem) (b : block) (ofs : Z) :
       else none := by
   rfl'
 
-private theorem chunkSpanNat (chunk : memory_chunk) (ofs : Z) :
-    ZArith.BinInt.Z.to_nat (zSub (zAdd ofs (size_chunk chunk)) ofs) =
-      size_chunk_nat chunk := by
-  rw [show zSub (zAdd ofs (size_chunk chunk)) ofs = size_chunk chunk by
-    apply intOfZ_injective
-    unfold zSub zAdd ZArith.BinInt.Z.sub ZArith.BinInt.Z.add
-    repeat rw [intOfZ_zOfInt]
-    omega]
-  rfl
-
 private theorem chunkSpanInt (chunk : memory_chunk) (ofs : Z) :
     intOfZ (zAdd ofs (size_chunk chunk)) =
       intOfZ ofs + Int.ofNat (size_chunk_nat chunk) := by
@@ -170,47 +134,6 @@ private theorem chunkSpanInt (chunk : memory_chunk) (ofs : Z) :
   rw [intOfZ_zOfInt]
   congr 1
   cases chunk <;> rfl
-
-private theorem rangePermLoopCongr
-    (m1 m2 : mem) (b : block) (root finish current : Z)
-    (k : perm_kind) (p : permission) (n : Nat)
-    (hAccess : ∀ i, zLe root i ∧ zLt i finish →
-      (PMap.get b m2.mem_access) i k = (PMap.get b m1.mem_access) i k)
-    (hroot : zLe root current)
-    (hfinish : intOfZ finish = intOfZ current + Int.ofNat n) :
-    rangePermLoop m2 b current k p n = rangePermLoop m1 b current k p n := by
-  induction n generalizing current with
-  | zero => rfl
-  | succ n ih =>
-      have hnpos : (0 : Int) < Int.ofNat (n + 1) :=
-        Int.ofNat_lt.mpr (Nat.succ_pos n)
-      have hlt : zLt current finish := by
-        unfold zLt ZArith.BinInt.Z.lt
-        omega
-      have hAccessCurrent := hAccess current ⟨hroot, hlt⟩
-      simp only [rangePermLoop]
-      congr 1
-      · unfold permBool
-        rw [hAccessCurrent]
-      · apply ih (zAdd current z1)
-        · unfold zLe ZArith.BinInt.Z.le at hroot ⊢
-          unfold zAdd ZArith.BinInt.Z.add
-          simp only [intOfZ_zOfInt, intOfZZ1]
-          have hone : (0 : Int) < Int.ofNat 1 := by decide
-          omega
-        · unfold zAdd ZArith.BinInt.Z.add
-          simp only [intOfZ_zOfInt, intOfZZ1]
-          have hsucc : Int.ofNat (n + 1) = Int.ofNat n + 1 := by
-            change Int.ofNat (Nat.succ n) = Int.ofNat n + 1
-            exact (Int.ofNat_add_one_out n).symm
-          rw [hsucc] at hfinish
-          change intOfZ finish = intOfZ current + (1 : Int) + Int.ofNat n
-          calc
-            intOfZ finish = intOfZ current + (Int.ofNat n + 1) := hfinish
-            _ = intOfZ current + (1 + Int.ofNat n) := by
-              rw [Int.add_comm (Int.ofNat n) 1]
-            _ = intOfZ current + 1 + Int.ofNat n := by
-              rw [Int.add_assoc]
 
 private theorem getNCongr
     (m1 m2 : mem) (b : block) (root finish current : Z) (n : Nat)
@@ -480,13 +403,37 @@ def contains (chunk : memory_chunk) (b : block) (ofs : Z) (spec : val → Prop) 
       exact hunch.unchanged_on_contents b i ⟨rfl, hi⟩ (permReadableOfFreeable hp)
     refine ⟨hlo, hhi, hvalid', v, ?_, hspec⟩
     rw [load_eq] at hload ⊢
-    have hLoop :
-        rangePermLoop m' b ofs Cur Readable (size_chunk_nat chunk) =
-          rangePermLoop m b ofs Cur Readable (size_chunk_nat chunk) :=
-      rangePermLoopCongr m m' b ofs (zAdd ofs (size_chunk chunk)) ofs Cur Readable
-        (size_chunk_nat chunk) hAccess (by
-          unfold zLe ZArith.BinInt.Z.le
-          omega) (chunkSpanInt chunk ofs)
+    have hValidReadable :
+        Mem.valid_access m' chunk b ofs Readable ↔
+          Mem.valid_access m chunk b ofs Readable := by
+      constructor
+      · intro h
+        refine ⟨?_, h.2⟩
+        intro i hi
+        have hp := h.1 i hi
+        unfold Mem.perm at hp ⊢
+        rw [hAccess i hi] at hp
+        exact hp
+      · intro h
+        refine ⟨?_, h.2⟩
+        intro i hi
+        have hp := h.1 i hi
+        unfold Mem.perm at hp ⊢
+        rw [hAccess i hi]
+        exact hp
+    have hGuard :
+        validAccessBool m' chunk b ofs Readable =
+          validAccessBool m chunk b ofs Readable := by
+      unfold validAccessBool
+      cases hm' : Mem.valid_access_dec m' chunk b ofs Readable with
+      | left hp' =>
+          cases hm : Mem.valid_access_dec m chunk b ofs Readable with
+          | left _ => rfl
+          | right hn => exact (hn (hValidReadable.mp hp')).elim
+      | right hn' =>
+          cases hm : Mem.valid_access_dec m chunk b ofs Readable with
+          | left hp => exact (hn' (hValidReadable.mpr hp)).elim
+          | right _ => rfl
     have hGet :
         Mem.getN (size_chunk_nat chunk) ofs (PMap.get b m'.mem_contents) =
           Mem.getN (size_chunk_nat chunk) ofs (PMap.get b m.mem_contents) :=
@@ -494,9 +441,7 @@ def contains (chunk : memory_chunk) (b : block) (ofs : Z) (spec : val → Prop) 
         (size_chunk_nat chunk) hContents (by
           unfold zLe ZArith.BinInt.Z.le
           omega) (chunkSpanInt chunk ofs)
-    unfold validAccessBool rangePermBool at hload ⊢
-    rw [chunkSpanNat] at hload ⊢
-    rw [hLoop, hGet]
+    rw [hGuard, hGet]
     exact hload
   m_valid := by
     intro m b' ofs' hpred hfoot
@@ -715,13 +660,25 @@ def globalenv_inject_incrStatement : Prop :=
     (sepconj (globalenv_inject ge j) P).m_pred m →
     (sepconj (globalenv_inject ge j') P).m_pred m
 
-def external_call_parallel_ruleStatement : Prop :=
+def external_call_parallel_ruleStatement
+    [binary64_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)] : Prop :=
   ∀ xi (F V : Type) ef (ge : Genv.t F V) vargs1 m1 t vres1 m1' m2 j P vargs2,
-    Events.external_call xi ef (Genv.to_senv ge) vargs1 m1 t vres1 m1' →
+    Events.external_call
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        xi ef (Genv.to_senv ge) vargs1 m1 t vres1 m1' →
     (sepconj (minjection j m1) (sepconj (globalenv_inject ge j) P)).m_pred m2 →
     Val.inject_list j vargs1 vargs2 →
     ∃ j' vres2 m2',
-      Events.external_call xi ef (Genv.to_senv ge) vargs2 m2 t vres2 m2' ∧
+      Events.external_call
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate)
+          xi ef (Genv.to_senv ge) vargs2 m2 t vres2 m2' ∧
       Val.inject j' vres1 vres2 ∧
       (sepconj (minjection j' m1') (sepconj (globalenv_inject ge j') P)).m_pred m2' ∧
       Val.inject_incr j j' ∧
