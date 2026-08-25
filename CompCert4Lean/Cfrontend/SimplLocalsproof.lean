@@ -70,6 +70,9 @@ private abbrev ptrofs := CompCert4Lean.Lib.Integers.ptrofs
 private abbrev compilenv := CompCert4Lean.Cfrontend.SimplLocals.compilenv
 private abbrev CompilerConfig := CompCert4Lean.Config.CompilerConfig
 private abbrev Res := CompCert4Lean.Common.Errors.res
+private abbrev BinaryNormalizeCertificate :=
+  CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+private abbrev zOfNat := ZArith.BinInt.Z.of_nat
 
 def match_prog (cfg : CompilerConfig) (p tp : program) : Prop :=
   match_program_gen (fun _ f tf => transf_fundef cfg f = .OK tf) Eq ()
@@ -296,39 +299,79 @@ def val_casted_list_paramsStatement : Prop :=
   ∀ params vl, val_casted_list vl (type_of_params params) →
     CompCert4Lean.Lib.Coqlib.list_forall2 val_casted vl (params.map Prod.snd)
 
-def make_cast_correctStatement : Prop :=
+def make_cast_correctStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (ge : genv) e le m a v1 tto v2,
-    eval_expr ge e le m a v1 →
-    sem_cast v1 (typeof a) tto m = some v2 →
-    eval_expr ge e le m (make_cast a tto) v2
+    eval_expr
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) ge e le m a v1 →
+    sem_cast
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) v1 (typeof a) tto m = some v2 →
+    eval_expr
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) ge e le m (make_cast a tto) v2
 
-def cast_typeconvStatement : Prop :=
-  ∀ v ty m, val_casted v ty → sem_cast v ty (typeconv ty) m = some v
+def cast_typeconvStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
+  ∀ v ty m, val_casted v ty →
+    sem_cast
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) v ty (typeconv ty) m = some v
 
-def step_Sdebug_tempStatement : Prop :=
+def step_Sdebug_tempStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (xi : ExternalCalls) (ge : genv) f id ty k e le m v,
     PTree.get id le = some v → val_casted v ty →
-    step2 xi ge (.State f (Sdebug_temp id ty) k e le m) E0
+    step2
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) xi ge
+      (.State f (Sdebug_temp id ty) k e le m) E0
       (.State f .Sskip k e le m)
 
-def step_Sdebug_varStatement : Prop :=
+def step_Sdebug_varStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (xi : ExternalCalls) (ge : genv) f id ty k e le m b,
     PTree.get id e = some (b, ty) →
-    step2 xi ge (.State f (Sdebug_var id ty) k e le m) E0
+    step2
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) xi ge
+      (.State f (Sdebug_var id ty) k e le m) E0
       (.State f .Sskip k e le m)
 
-def step_Sset_debugStatement : Prop :=
+def step_Sset_debugStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (cfg : CompilerConfig) (xi : ExternalCalls) (ge : genv)
     f id ty a k e le m v v',
-    eval_expr ge e le m a v → sem_cast v (typeof a) ty m = some v' →
-    plus (step2 xi) ge (.State f (Sset_debug cfg id ty a) k e le m) E0
+    eval_expr
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) ge e le m a v →
+    sem_cast
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) v (typeof a) ty m = some v' →
+    plus
+      (step2
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) xi)
+      ge (.State f (Sset_debug cfg id ty a) k e le m) E0
       (.State f .Sskip k e (PTree.set id v' le) m)
 
-def step_add_debug_varsStatement : Prop :=
+def step_add_debug_varsStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (cfg : CompilerConfig) (xi : ExternalCalls) (ge : genv)
     f s e le m vars k,
     (∀ id ty, (id, ty) ∈ vars → ∃ b, PTree.get id e = some (b, ty)) →
-    star (step2 xi) ge (.State f (add_debug_vars cfg vars s) k e le m) E0
+    star
+      (step2
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) xi)
+      ge (.State f (add_debug_vars cfg vars s) k e le m) E0
       (.State f s k e le m)
 
 def bind_parameter_temps_invStatement : Prop :=
@@ -336,13 +379,19 @@ def bind_parameter_temps_invStatement : Prop :=
     bind_parameter_temps params args le = some le' →
     id ∉ var_names params → PTree.get id le' = PTree.get id le
 
-def step_add_debug_paramsStatement : Prop :=
+def step_add_debug_paramsStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (cfg : CompilerConfig) (xi : ExternalCalls) (ge : genv)
     f s k e le m params vl le1,
     CompCert4Lean.Lib.Coqlib.list_norepet (var_names params) →
     CompCert4Lean.Lib.Coqlib.list_forall2 val_casted vl (params.map Prod.snd) →
     bind_parameter_temps params vl le1 = some le →
-    star (step2 xi) ge (.State f (add_debug_params cfg params s) k e le m) E0
+    star
+      (step2
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) xi)
+      ge (.State f (add_debug_params cfg params s) k e le m) E0
       (.State f s k e le m)
 
 def match_envs_assign_liftedStatement : Prop :=
@@ -543,7 +592,9 @@ def assign_loc_nextblockStatement : Prop :=
   ∀ ge ty m b ofs bf v m', assign_loc ge ty m b ofs bf v m' →
     m'.nextblock = m.nextblock
 
-def store_params_correctStatement : Prop :=
+def store_params_correctStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (cfg : CompilerConfig) (xi : ExternalCalls) (p tp : program),
     match_prog cfg p tp →
     let ge := globalenv p
@@ -558,7 +609,11 @@ def store_params_correctStatement : Prop :=
     (∀ id, id ∉ var_names params → PTree.get id tle2 = PTree.get id tle1) →
     (∀ id, id ∈ var_names params → PTree.get id le = none) →
     ∃ tle tm',
-      star (step2 xi) tge (.State f (store_params cenv params s) k te tle tm) E0
+      star
+        (step2
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate) xi)
+        tge (.State f (store_params cenv params s) k te tle tm) E0
         (.State f s k te tle tm') ∧
       bind_parameter_temps params targs tle2 = some tle ∧
       Mem.inject j m' tm' ∧ match_envs j cenv e le m' lo hi te tle tlo thi ∧
@@ -641,40 +696,68 @@ def deref_loc_injectStatement : Prop :=
     Val.inject f (.Vptr loc ofs) (.Vptr loc' ofs') →
     ∃ tv, deref_loc ty tm loc' ofs' bf tv ∧ Val.inject f v tv
 
-def eval_simpl_exprStatement : Prop :=
+def eval_simpl_exprStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (cfg : CompilerConfig) (p tp : program), match_prog cfg p tp →
     let ge := globalenv p
     let tge := globalenv tp
     ∀ e te le tle m tm f cenv lo hi tlo thi,
     match_envs f cenv e le m lo hi te tle tlo thi → Mem.inject f m tm →
     (∃ bound, match_globalenvs ge f bound) →
-    ∀ a v, eval_expr ge e le m a v → compat_cenv (addr_taken_expr a) cenv →
-    ∃ tv, eval_expr tge te tle tm (simpl_expr cenv a) tv ∧ Val.inject f v tv
+    ∀ a v,
+      eval_expr
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) ge e le m a v →
+      compat_cenv (addr_taken_expr a) cenv →
+      ∃ tv,
+        eval_expr
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate) tge te tle tm
+            (simpl_expr cenv a) tv ∧ Val.inject f v tv
 
-def eval_simpl_lvalueStatement : Prop :=
+def eval_simpl_lvalueStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (cfg : CompilerConfig) (p tp : program), match_prog cfg p tp →
     let ge := globalenv p
     let tge := globalenv tp
     ∀ e te le tle m tm f cenv lo hi tlo thi,
     match_envs f cenv e le m lo hi te tle tlo thi → Mem.inject f m tm →
     (∃ bound, match_globalenvs ge f bound) →
-    ∀ a b ofs bf, eval_lvalue ge e le m a b ofs bf →
+    ∀ a b ofs bf,
+      eval_lvalue
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) ge e le m a b ofs bf →
     compat_cenv (addr_taken_expr a) cenv →
     (match a with | .Evar id _ => VSet.mem id cenv = false | _ => True) →
-    ∃ b' ofs', eval_lvalue tge te tle tm (simpl_expr cenv a) b' ofs' bf ∧
+    ∃ b' ofs',
+      eval_lvalue
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) tge te tle tm
+          (simpl_expr cenv a) b' ofs' bf ∧
       Val.inject f (.Vptr b ofs) (.Vptr b' ofs')
 
-def eval_simpl_exprlistStatement : Prop :=
+def eval_simpl_exprlistStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (cfg : CompilerConfig) (p tp : program), match_prog cfg p tp →
     let ge := globalenv p
     let tge := globalenv tp
     ∀ e te le tle m tm f cenv lo hi tlo thi,
     match_envs f cenv e le m lo hi te tle tlo thi → Mem.inject f m tm →
     (∃ bound, match_globalenvs ge f bound) →
-    ∀ al tyl vl, eval_exprlist ge e le m al tyl vl →
+    ∀ al tyl vl,
+      eval_exprlist
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) ge e le m al tyl vl →
     compat_cenv (addr_taken_exprlist al) cenv →
     val_casted_list vl tyl ∧
-      ∃ tvl, eval_exprlist tge te tle tm (simpl_exprlist cenv al) tyl tvl ∧
+      ∃ tvl,
+        eval_exprlist
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate) tge te tle tm
+            (simpl_exprlist cenv al) tyl tvl ∧
         Val.inject_list f vl tvl
 
 def match_cont_invariantStatement : Prop :=
@@ -797,14 +880,25 @@ def find_label_add_debug_paramsStatement : Prop :=
   ∀ cfg lbl s k vars,
     find_label lbl (add_debug_params cfg vars s) k = find_label lbl s k
 
-def step_simulationStatement : Prop :=
+def step_simulationStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (cfg : CompilerConfig) (xi : ExternalCalls) (p tp : program),
     match_prog cfg p tp →
     let ge := globalenv p
     let tge := globalenv tp
-    ∀ S1 t S2, step1 xi ge S1 t S2 → ∀ S1',
+    ∀ S1 t S2,
+      step1
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) xi ge S1 t S2 →
+      ∀ S1',
       match_states cfg ge S1 S1' →
-      ∃ S2', plus (step2 xi) tge S1' t S2' ∧ match_states cfg ge S2 S2'
+      ∃ S2',
+        plus
+          (step2
+            (binary64_certificate := binary64_certificate)
+            (binary32_certificate := binary32_certificate) xi)
+          tge S1' t S2' ∧ match_states cfg ge S2 S2'
 
 def initial_states_simulationStatement : Prop :=
   ∀ (cfg : CompilerConfig) (p tp : program), match_prog cfg p tp →
@@ -816,9 +910,17 @@ def final_states_simulationStatement : Prop :=
     ∀ S R result, match_states cfg (globalenv p) S R →
       final_state S result → final_state R result
 
-def transf_program_correctStatement : Prop :=
+def transf_program_correctStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (cfg : CompilerConfig) (xi : ExternalCalls) (p tp : program),
     match_prog cfg p tp →
-    forward_simulation (semantics1 xi p) (semantics2 xi tp)
+    forward_simulation
+      (semantics1
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) xi p)
+      (semantics2
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) xi tp)
 
 end CompCert4Lean.Cfrontend.SimplLocalsproof
