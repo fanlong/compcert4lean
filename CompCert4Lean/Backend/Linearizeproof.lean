@@ -334,7 +334,13 @@ def find_label_uniqueStatement : Prop :=
     is_tail (Linear.Llabel lbl :: c1) c2 -> unique_labels c2 ->
     Linear.find_label lbl c2 = some c3 -> c1 = c3
 
-def starts_with_correctStatement : Prop :=
+def starts_with_correctStatement
+  [binary64_certificate :
+    CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+      (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+  [binary32_certificate :
+    CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+      (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)] : Prop :=
   forall (cfg : CompilerConfig) (xi : ExternalCalls) (tge : Linear.genv)
     (lbl : Linear.label) (c1 c2 c3 : Linear.code) (s : List Linear.stackframe)
     (f : Linear.function) (sp : val) (ls : Linear.locset) (m : mem),
@@ -418,7 +424,13 @@ def is_tail_lin_blockStatement : Prop :=
   forall (b : LTL.bblock) (c1 c2 : Linear.code),
     is_tail (linearize_block b c1) c2 -> is_tail c1 c2
 
-def add_branch_correctStatement : Prop :=
+def add_branch_correctStatement
+  [binary64_certificate :
+    CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+      (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+  [binary32_certificate :
+    CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+      (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)] : Prop :=
   forall (cfg : CompilerConfig) (xi : ExternalCalls) (tge : Linear.genv)
     (service : EnumerationService)
     (lbl : Linear.label) (c k : Linear.code) (s : List Linear.stackframe)
@@ -436,13 +448,21 @@ def match_parent_locsetStatement : Prop :=
     list_forall2 (match_stackframes service) s ts ->
     Linear.parent_locset ts = LTL.parent_locset s
 
-def transf_step_correctStatement : Prop :=
+def transf_step_correctStatement
+  [binary64_certificate :
+    CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+      (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+  [binary32_certificate :
+    CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+      (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)] : Prop :=
   forall (cfg : CompilerConfig) (xi : ExternalCalls)
     (service : EnumerationService)
     (prog : LTL.program) (tprog : Linear.program),
     match_prog service prog tprog ->
     forall (s1 : LTL.state) (t : trace) (s2 : LTL.state),
-      LTL.step cfg xi (Genv.globalenv prog) s1 t s2 ->
+      LTL.step (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        cfg xi (Genv.globalenv prog) s1 t s2 ->
       forall s1', match_states service s1 s1' ->
         (exists s2',
           plus (fun ge => Linear.step cfg xi ge) (Genv.globalenv tprog)
@@ -463,12 +483,20 @@ def transf_final_statesStatement : Prop :=
     match_states service st1 st2 ->
       LTL.final_state st1 r -> Linear.final_state st2 r
 
-def transf_program_correctStatement : Prop :=
+def transf_program_correctStatement
+  [binary64_certificate :
+    CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+      (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+  [binary32_certificate :
+    CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+      (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)] : Prop :=
   forall (cfg : CompilerConfig) (xi : ExternalCalls)
     (service : EnumerationService)
     (prog : LTL.program) (tprog : Linear.program),
     match_prog service prog tprog ->
     forward_simulation
-      (LTL.semantics cfg xi prog) (Linear.semantics cfg xi tprog)
+      (LTL.semantics (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) cfg xi prog)
+      (Linear.semantics cfg xi tprog)
 
 end CompCert4Lean.Backend.Linearizeproof
