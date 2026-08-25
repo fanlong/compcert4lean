@@ -107,12 +107,12 @@ def ulp_FIXStatement (ctx : ExactRealContext)
       CompCert4Lean.Flocq.Core.Generic_fmt.Exact.bpow ctx beta emin
 
 def exists_NE_FIX (beta : radix) (emin : Z) : Exists_NE beta (FIX_exp emin) :=
-  Or.inr (fun e => by
+  ⟨Or.inr (fun e => by
     constructor
     · intro h
       exact h
     · intro _
-      rfl)
+      rfl)⟩
 
 def round_FIX_IZRStatement (ctx : ExactRealContext)
     (magnitude : CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Magnitude ctx) : Prop :=

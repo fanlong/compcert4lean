@@ -34,19 +34,14 @@ abbrev format (beta : radix) (fexp : Z → Z) : R → Prop :=
 abbrev ZnearestE (x : R) : Z :=
   Znearest (fun m => Bool.not (Zeven m)) x
 
-def Exists_NE (beta : radix) (fexp : Z → Z) : Prop :=
-  Zeven (beta : Z) = false ∨
-    ∀ e : Z,
-      (Zlt (fexp e) e → Zlt (fexp (Zadd e Zone)) e) ∧
-        (Zle e (fexp e) → fexp (Zadd (fexp e) Zone) = fexp e)
-
-def exists_NE (beta : radix) (fexp : Z → Z)
-    {exists_NE_ : Exists_NE beta fexp} :
+class Exists_NE (beta : radix) (fexp : Z → Z) : Prop where
+  exists_NE :
     Zeven (beta : Z) = false ∨
       ∀ e : Z,
         (Zlt (fexp e) e → Zlt (fexp (Zadd e Zone)) e) ∧
-          (Zle e (fexp e) → fexp (Zadd (fexp e) Zone) = fexp e) :=
-  exists_NE_
+          (Zle e (fexp e) → fexp (Zadd (fexp e) Zone) = fexp e)
+
+export Exists_NE (exists_NE)
 
 def DN_UP_parity_pos_prop (beta : radix) (fexp : Z → Z) : Prop :=
   ∀ (x : R) (xd xu : Defs.float beta),
