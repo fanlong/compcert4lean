@@ -384,7 +384,7 @@ def gso0Statement : Prop := ∀ {A : Type} (p q : positive) (x : A), p ≠ q →
 def gssStatement : Prop := ∀ (A : Type) (i : positive) (x : A) (m : tree A), get i (set i x m) = some x
 def gsoStatement : Prop := ∀ (A : Type) (i j : positive) (x : A) (m : tree A), i ≠ j → get i (set j x m) = get i m
 def gsspecStatement : Prop := ∀ (A : Type) (i j : positive) (x : A) (m : t A),
-  get i (set j x m) = if h : i = j then some x else get i m
+  get i (set j x m) = match peq i j with | .left _ => some x | .right _ => get i m
 def gNodeStatement : Prop := ∀ {A : Type} (i : positive) (l : tree A) (x : Option A) (r : tree A),
   get i (Node l x r) = match i with | .xH => x | .xO j => get j l | .xI j => get j r
 def grsStatement : Prop := ∀ (A : Type) (i : positive) (m : tree A), get i (remove i m) = none
@@ -520,7 +520,12 @@ private theorem getSet_proof (A : Type) (x y : positive) (v : A)
 
 theorem gsspec_proof : gsspecStatement := by
   intro A i j x m
-  exact getSet_proof A i j x m
+  cases h : peq i j with
+  | left hij =>
+      subst j
+      simpa [h] using (getSet_proof A i i x m)
+  | right hne =>
+      simpa [h, hne] using (getSet_proof A i j x m)
 
 theorem getSet_equation {A : Type} (i j : positive) (x : A) (m : tree A) :
     get i (set j x m) = if h : i = j then some x else get i m :=

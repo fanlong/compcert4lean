@@ -223,7 +223,7 @@ def empty : t M :=
       rw [mapGet_empty] at h
       cases h }
 
-private theorem identify_order (uf : t M) (a b : elt M)
+private theorem identify_order_calc (uf : t M) (a b : elt M)
     (ha : mapGet M a uf.m = none) (x y : elt M) :
   order M (mapSet M a b uf.m) y x ↔
     order M uf.m y x ∨ (x = a ∧ y = b) := by
@@ -244,7 +244,7 @@ private theorem identify_order (uf : t M) (a b : elt M)
       · simpa [h]
   · simp [hxa]
 
-private def identify_Acc_b (uf : t M) (a b : elt M) (x : elt M)
+private def identify_Acc_b_calc (uf : t M) (a b : elt M) (x : elt M)
     (ha : mapGet M a uf.m = none) (hneq : repr M uf x ≠ a) :
     _root_.Acc (order M (mapSet M a b uf.m)) x :=
   by
@@ -254,7 +254,7 @@ private def identify_Acc_b (uf : t M) (a b : elt M) (x : elt M)
     intro x ih hneq
     apply Acc.intro x
     intro y hxy
-    rw [identify_order M uf a b ha x y] at hxy
+    rw [identify_order_calc M uf a b ha x y] at hxy
     cases hxy with
     | inl hxy =>
         apply ih y hxy
@@ -267,7 +267,7 @@ private def identify_Acc_b (uf : t M) (a b : elt M) (x : elt M)
         subst y
         exact False.elim (hneq (repr_none_calc M uf a ha))
 
-private def identify_Acc (uf : t M) (a b : elt M) (x : elt M)
+private def identify_Acc_calc (uf : t M) (a b : elt M) (x : elt M)
     (ha : mapGet M a uf.m = none) (hneq : repr M uf b ≠ a) :
     _root_.Acc (order M (mapSet M a b uf.m)) x :=
   by
@@ -276,27 +276,27 @@ private def identify_Acc (uf : t M) (a b : elt M) (x : elt M)
     intro x ih
     apply Acc.intro x
     intro y hxy
-    rw [identify_order M uf a b ha x y] at hxy
+    rw [identify_order_calc M uf a b ha x y] at hxy
     cases hxy with
     | inl hxy => exact ih y hxy
     | inr hxy =>
         rcases hxy with ⟨hxa, hyb⟩
         subst x
         subst y
-        exact identify_Acc_b M uf a b b ha hneq
+        exact identify_Acc_b_calc M uf a b b ha hneq
 
-private def identify_wf (uf : t M) (a b : elt M)
+private def identify_wf_calc (uf : t M) (a b : elt M)
     (ha : mapGet M a uf.m = none) (hneq : repr M uf b ≠ a) :
     WellFounded (order M (mapSet M a b uf.m)) := by
   apply _root_.WellFounded.intro
   intro x
-  exact identify_Acc M uf a b x ha hneq
+  exact identify_Acc_calc M uf a b x ha hneq
 
 def identify (uf : t M) (a b : elt M)
     (a_canon : mapGet M a uf.m = none)
     (not_same_class : repr M uf b ≠ a) : t M :=
   { m := mapSet M a b uf.m
-    mwf := identify_wf M uf a b a_canon not_same_class }
+    mwf := identify_wf_calc M uf a b a_canon not_same_class }
 
 def union (uf : t M) (a b : elt M) : t M :=
   let a' := repr M uf a
@@ -336,7 +336,7 @@ def F_pathlen (uf : t M) (a : elt M)
 def pathlen (uf : t M) (a : elt M) : Nat :=
   WellFounded.fix uf.mwf (F_pathlen M uf) a
 
-private def compress_Acc (uf : t M) (a b : elt M) (x : elt M)
+private def compress_Acc_calc (uf : t M) (a b : elt M) (x : elt M)
     (hneq : a ≠ b) (hrepr : repr M uf a = b) :
     _root_.Acc (order M (mapSet M a b uf.m)) x :=
   by
@@ -365,17 +365,17 @@ private def compress_Acc (uf : t M) (a b : elt M) (x : elt M)
     · have hxy' : mapGet M x uf.m = some y := by simpa [hxa] using hxy
       exact ih y (show UFOrder M uf.m y x from hxy')
 
-private def compress_wf (uf : t M) (a b : elt M)
+private def compress_wf_calc (uf : t M) (a b : elt M)
     (hneq : a ≠ b) (hrepr : repr M uf a = b) :
     WellFounded (order M (mapSet M a b uf.m)) := by
   apply _root_.WellFounded.intro
   intro x
-  exact compress_Acc M uf a b x hneq hrepr
+  exact compress_Acc_calc M uf a b x hneq hrepr
 
 def compress (uf : t M) (a b : elt M)
     (a_diff_b : a ≠ b) (a_repr_b : repr M uf a = b) : t M :=
   { m := mapSet M a b uf.m
-    mwf := compress_wf M uf a b a_diff_b a_repr_b }
+    mwf := compress_wf_calc M uf a b a_diff_b a_repr_b }
 
 private theorem repr_compress_calc (uf : t M) (a b : elt M)
     (a_diff_b : a ≠ b) (a_repr_b : repr M uf a = b) (x : elt M) :
@@ -607,13 +607,15 @@ def pathlen_someStatement : Prop :=
 def pathlen_zeroStatement : Prop :=
   ∀ (uf : t M) (a : elt M), repr M uf a = a ↔ pathlen M uf a = 0
 
-def pathlen_mergeStatement : Prop := by
-  exact ∀ (uf : t M) (a b x : elt M),
+def pathlen_mergeStatement : Prop :=
+  ∀ (uf : t M) (a b x : elt M),
     pathlen M (merge M uf a b) x =
-      if h : repr M uf a = repr M uf b then pathlen M uf x
-      else if h' : repr M uf x = repr M uf a then
-        pathlen M uf x + pathlen M uf b + 1
-      else pathlen M uf x
+      match M.elt_eq (repr M uf a) (repr M uf b) with
+      | .left _ => pathlen M uf x
+      | .right _ =>
+          match M.elt_eq (repr M uf x) (repr M uf a) with
+          | .left _ => pathlen M uf x + pathlen M uf b + 1
+          | .right _ => pathlen M uf x
 
 def pathlen_gt_mergeStatement : Prop :=
   ∀ (uf : t M) (a b x y : elt M), repr M uf x = repr M uf y →
@@ -684,6 +686,58 @@ def identify_wfStatement : Prop :=
 
 def wf_emptyStatement : Prop :=
   WellFounded (order M (M.empty (elt M)))
+
+/-! Public source identities for proof declarations whose proof terms remain
+assigned to proof grinding.  Each identity is definitionally the exact mapped
+statement descriptor above; the private calculation lemmas remain internal to
+the executable implementation. -/
+abbrev repr_unroll : Prop := repr_unrollStatement M
+abbrev repr_none : Prop := repr_noneStatement M
+abbrev repr_some : Prop := repr_someStatement M
+abbrev repr_res_none : Prop := repr_res_noneStatement M
+abbrev repr_canonical : Prop := repr_canonicalStatement M
+abbrev repr_some_diff : Prop := repr_some_diffStatement M
+abbrev sameclass_refl : Prop := sameclass_reflStatement M
+abbrev sameclass_sym : Prop := sameclass_symStatement M
+abbrev sameclass_trans : Prop := sameclass_transStatement M
+abbrev sameclass_repr : Prop := sameclass_reprStatement M
+abbrev wf_empty : Prop := wf_emptyStatement M
+abbrev repr_empty : Prop := repr_emptyStatement M
+abbrev sameclass_empty : Prop := sameclass_emptyStatement M
+abbrev identify_order : Prop := identify_orderStatement M
+abbrev identify_Acc_b : Prop := identify_Acc_bStatement M
+abbrev identify_Acc : Prop := identify_AccStatement M
+abbrev identify_wf : Prop := identify_wfStatement M
+abbrev repr_identify_1 : Prop := repr_identify_1Statement M
+abbrev repr_identify_2 : Prop := repr_identify_2Statement M
+abbrev union_not_same_class : Prop := union_not_same_classStatement M
+abbrev repr_union_1 : Prop := repr_union_1Statement M
+abbrev repr_union_2 : Prop := repr_union_2Statement M
+abbrev repr_union_3 : Prop := repr_union_3Statement M
+abbrev sameclass_union_1 : Prop := sameclass_union_1Statement M
+abbrev sameclass_union_2 : Prop := sameclass_union_2Statement M
+abbrev sameclass_union_3 : Prop := sameclass_union_3Statement M
+abbrev repr_merge : Prop := repr_mergeStatement M
+abbrev sameclass_merge : Prop := sameclass_mergeStatement M
+abbrev path_ord_wellfounded : Prop := path_ord_wellfoundedStatement M
+abbrev path_ord_canonical : Prop := path_ord_canonicalStatement M
+abbrev path_ord_merge_1 : Prop := path_ord_merge_1Statement M
+abbrev path_ord_merge_2 : Prop := path_ord_merge_2Statement M
+abbrev pathlen_unroll : Prop := pathlen_unrollStatement M
+abbrev pathlen_none : Prop := pathlen_noneStatement M
+abbrev pathlen_some : Prop := pathlen_someStatement M
+abbrev pathlen_zero : Prop := pathlen_zeroStatement M
+abbrev pathlen_merge : Prop := pathlen_mergeStatement M
+abbrev pathlen_gt_merge : Prop := pathlen_gt_mergeStatement M
+abbrev compress_order : Prop := compress_orderStatement M
+abbrev compress_Acc : Prop := compress_AccStatement M
+abbrev compress_wf : Prop := compress_wfStatement M
+abbrev repr_compress : Prop := repr_compressStatement M
+abbrev find_repr : Prop := find_reprStatement M
+abbrev find_unchanged : Prop := find_unchangedStatement M
+abbrev sameclass_find_1 : Prop := sameclass_find_1Statement M
+abbrev sameclass_find_2 : Prop := sameclass_find_2Statement M
+abbrev sameclass_find_3 : Prop := sameclass_find_3Statement M
 
 end UF
 

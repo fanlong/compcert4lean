@@ -20,15 +20,15 @@ open CompCert4Lean.Lib.FSetInterface
 abbrev OrderedType :=
   CompCert4Lean.Foundation.Ordered.Rocq.Coq.Structures.OrderedType.OrderedType
 
+/-- Materialized Lean facade for the source functor-module identity. -/
+def Make : Type := Unit
+
 namespace Make
 
-/-- Materialized Lean facade for the source functor-module identity. -/
-def ImportMarker : Type := Unit
+/-- Materialized Lean facade for the source `Module Raw := MSet.Raw` identity. -/
+def Raw : Type := Unit
 
 namespace Raw
-
-/-- Materialized Lean facade for the source `Module Raw := MSet.Raw` identity. -/
-def ImportMarker : Type := Unit
 
 export CompCert4Lean.Lib.MSetAVL
   (OrderedType tree t Leaf Node empty is_empty mem min_elt max_elt choose fold
