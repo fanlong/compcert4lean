@@ -43,7 +43,10 @@ proposition descriptors for the later proof-migration phase.
 namespace LabelsetFacts
 
 def LabelsetFacts : Type := Unit
-def eqb (x y : Labelset.elt) : Bool := decide (x = y)
+def eqb (x y : Labelset.elt) : Bool :=
+  match CompCert4Lean.Backend.Registers.Regset.E.eq_dec x y with
+  | .left _ => true
+  | .right _ => false
 
 abbrev E_ST := CompCert4Lean.Backend.Registers.RegsetFacts.E_ST
 abbrev Empty_m := CompCert4Lean.Backend.Registers.RegsetFacts.Empty_m
