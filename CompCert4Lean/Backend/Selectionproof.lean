@@ -55,9 +55,12 @@ private abbrev HelperFunctions := CompCert4Lean.Backend.SplitLong.helper_functio
 private abbrev KnownIdents := CompCert4Lean.Backend.Cminortyping.known_idents
 private abbrev CompilerConfig := CompCert4Lean.Config.CompilerConfig
 private abbrev SelectionOracle := CompCert4Lean.Backend.Selection.SelectionOracle
+private abbrev BinaryNormalizeCertificate :=
+  CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
 private abbrev RocqString :=
   CompCert4Lean.Foundation.RocqString.Rocq.Coq.Strings.String.string
 private abbrev zle := ZArith.BinInt.Z.le
+private abbrev zOfNat := ZArith.BinInt.Z.of_nat
 
 private instance cminorFundefLinker : Linker CminorFundef :=
   CompCert4Lean.Common.Linking.Linker_fundef Cminor.function
@@ -98,10 +101,16 @@ inductive Rlong : Z → val → Prop where
 
 /-! The eventual relation used by the simulation diagram. -/
 
-def eventually (prog : CminorProgram) (xi : ExternalCalls) (n : Nat) (s : Cminor.state)
+def eventually
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (prog : CminorProgram) (xi : ExternalCalls) (n : Nat) (s : Cminor.state)
     (P : Cminor.state → Prop) : Prop :=
   CompCert4Lean.Common.Smallstep.eventually
-    (fun ge => Cminor.step xi ge) Cminor.final_state (Genv.globalenv prog) n s P
+    (fun ge => Cminor.step
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) xi ge)
+    Cminor.final_state (Genv.globalenv prog) n s P
 
 /-! Semantic state matching.  The generated constructor names are part of the
 source-facing API and are intentionally retained. -/
@@ -148,7 +157,10 @@ inductive match_call_cont (cfg : CompilerConfig) (oracle : SelectionOracle)
         (CminorSel.Kcall id f' sp e' k')
 end
 
-inductive match_states (cfg : CompilerConfig) (oracle : SelectionOracle)
+inductive match_states
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (cfg : CompilerConfig) (oracle : SelectionOracle)
     (prog : CminorProgram) :
     Cminor.state → CminorSel.state → Prop where
   | match_state (cunit : CminorProgram) (hf : HelperFunctions)
@@ -165,7 +177,9 @@ inductive match_states (cfg : CompilerConfig) (oracle : SelectionOracle)
       (hcont : match_cont cfg oracle prog cunit hf
         (CompCert4Lean.Backend.Selection.known_id f) env kont k')
       (hld : env_lessdef e e') (hme : Mem.extends m m') :
-      match_states cfg oracle prog (Cminor.State f s kont sp e m)
+      match_states
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) cfg oracle prog (Cminor.State f s kont sp e m)
         (CminorSel.State f' s' k' sp e' m')
   | match_callstate (cunit : CminorProgram) (f : CminorFundef)
       (f' : CminorSelFundef) (args args' : List val)
@@ -173,13 +187,17 @@ inductive match_states (cfg : CompilerConfig) (oracle : SelectionOracle)
       (hlink : linkorder cunit prog) (hfun : match_fundef cfg oracle cunit f f')
       (hcont : match_call_cont cfg oracle prog k k')
       (hld : Val.lessdef_list args args') (hme : Mem.extends m m') :
-      match_states cfg oracle prog (Cminor.Callstate f args k m)
+      match_states
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) cfg oracle prog (Cminor.Callstate f args k m)
         (CminorSel.Callstate f' args' k' m')
   | match_returnstate (v v' : val) (k : Cminor.cont) (k' : CminorSel.cont)
       (m m' : mem)
       (hcont : match_call_cont cfg oracle prog k k')
       (hld : Val.lessdef v v') (hme : Mem.extends m m') :
-      match_states cfg oracle prog (Cminor.Returnstate v k m)
+      match_states
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) cfg oracle prog (Cminor.Returnstate v k m)
         (.Returnstate v' k' m')
   | match_builtin_1 (cunit : CminorProgram) (hf : HelperFunctions)
       (ef : external_function) (args : List val) (optid : Option ident)
@@ -192,9 +210,13 @@ inductive match_states (cfg : CompilerConfig) (oracle : SelectionOracle)
       (hty : type_function f = .OK env)
       (hcont : match_cont cfg oracle prog cunit hf
         (CompCert4Lean.Backend.Selection.known_id f) env k k')
-      (heval : Cminor.eval_exprlist (Genv.globalenv prog) sp e m al args)
+      (heval : @Cminor.eval_exprlist
+        binary64_certificate binary32_certificate
+        (Genv.globalenv prog) sp e m al args)
       (hld : env_lessdef e e') (hme : Mem.extends m m') :
-      match_states cfg oracle prog
+      match_states
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) cfg oracle prog
         (Cminor.Callstate (.External ef) args (Cminor.Kcall optid f sp e k) m)
         (CminorSel.State f' (sel_builtin cfg optid ef al) k' sp e' m')
   | match_builtin_2 (cunit : CminorProgram) (hf : HelperFunctions)
@@ -210,7 +232,9 @@ inductive match_states (cfg : CompilerConfig) (oracle : SelectionOracle)
       (hld : Val.lessdef v v')
       (hlde : env_lessdef (Cminor.set_optvar optid v e) e')
       (hme : Mem.extends m m') :
-      match_states cfg oracle prog
+      match_states
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) cfg oracle prog
         (Cminor.Returnstate v (Cminor.Kcall optid f sp e k) m)
         (CminorSel.State f' CminorSel.Sskip k' sp e' m')
 
@@ -233,6 +257,8 @@ def nolabel' (s : CminorSel.stmt) : Prop :=
 
 /-! Exact source declaration descriptors for later proof migration. -/
 
+variable [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+variable [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
 variable (cfg : CompilerConfig) (oracle : SelectionOracle)
 
 def record_globdefs_soundStatement : Prop :=
@@ -316,44 +342,67 @@ def helper_functions_preservedStatement : Prop :=
         CompCert4Lean.Backend.SplitLongproof.helper_functions_declared prog hf →
           CompCert4Lean.Backend.SplitLongproof.helper_functions_declared tprog hf
 
-def eval_condexpr_of_exprStatement : Prop :=
+def eval_condexpr_of_exprStatement
+ : Prop :=
   ∀ (xi : ExternalCalls) (tprog : CminorSelProgram) (sp : val) (e : Env) (m : mem)
     (a : CminorSel.expr) (le : CminorSel.letenv) (v : val) (b : Bool),
-    CminorSel.eval_expr xi (Genv.globalenv tprog) sp e m le a v →
+    CminorSel.eval_expr
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) xi (Genv.globalenv tprog) sp e m le a v →
     Val.bool_of_val v b →
-      CminorSel.eval_condexpr xi (Genv.globalenv tprog) sp e m le
+      CminorSel.eval_condexpr
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) xi (Genv.globalenv tprog) sp e m le
         (condexpr_of_expr a) b
 
-def eval_condition_of_exprStatement : Prop :=
+def eval_condition_of_exprStatement
+ : Prop :=
   ∀ (xi : ExternalCalls) (tprog : CminorSelProgram) (sp : val) (e : Env) (m : mem)
     (a : CminorSel.expr) (le : CminorSel.letenv) (v : val) (b : Bool),
-    CminorSel.eval_expr xi (Genv.globalenv tprog) sp e m le a v →
+    CminorSel.eval_expr
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) xi (Genv.globalenv tprog) sp e m le a v →
     Val.bool_of_val v b →
       ∃ vl,
-        CminorSel.eval_exprlist xi (Genv.globalenv tprog) sp e m le
+        CminorSel.eval_exprlist
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) xi (Genv.globalenv tprog) sp e m le
           (condition_of_expr a).2 vl ∧
         eval_condition (condition_of_expr a).1 vl m = some b
 
-def eval_loadStatement : Prop :=
+def eval_loadStatement
+ : Prop :=
   ∀ (xi : ExternalCalls) (tprog : CminorSelProgram) (sp : val) (e : Env) (m : mem)
     (le : CminorSel.letenv) (a : CminorSel.expr) (v : val) (chunk : memory_chunk)
     (v' : val),
-    CminorSel.eval_expr xi (Genv.globalenv tprog) sp e m le a v →
+    CminorSel.eval_expr
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) xi (Genv.globalenv tprog) sp e m le a v →
     Mem.loadv chunk m v = some v' →
-      CminorSel.eval_expr xi (Genv.globalenv tprog) sp e m le (load chunk a) v'
+      CminorSel.eval_expr
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) xi (Genv.globalenv tprog) sp e m le (load chunk a) v'
 
-def eval_storeStatement : Prop :=
+def eval_storeStatement
+ : Prop :=
   ∀ (xi : ExternalCalls) (tprog : CminorSelProgram) (sp : val) (e : Env) (m : mem)
     (chunk : memory_chunk) (a1 a2 : CminorSel.expr) (v1 v2 : val)
     (f : CminorSel.function) (k : CminorSel.cont) (m' : mem),
-    CminorSel.eval_expr xi (Genv.globalenv tprog) sp e m [] a1 v1 →
-    CminorSel.eval_expr xi (Genv.globalenv tprog) sp e m [] a2 v2 →
+    CminorSel.eval_expr
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) xi (Genv.globalenv tprog) sp e m [] a1 v1 →
+    CminorSel.eval_expr
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) xi (Genv.globalenv tprog) sp e m [] a2 v2 →
     Mem.storev chunk m v1 v2 = some m' →
-      CminorSel.step xi (Genv.globalenv tprog)
+      CminorSel.step
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate) xi (Genv.globalenv tprog)
         (CminorSel.State f (store chunk a1 a2) k sp e m) E0
         (CminorSel.State f CminorSel.Sskip k sp e m')
 
-def eval_sel_unopStatement : Prop :=
+def eval_sel_unopStatement
+ : Prop :=
   ∀ (xi : ExternalCalls) (prog : CminorProgram) (tprog : CminorSelProgram),
     match_prog cfg oracle prog tprog →
     ∀ (cunit : CminorProgram) (hf : HelperFunctions),
@@ -361,13 +410,20 @@ def eval_sel_unopStatement : Prop :=
       CompCert4Lean.Backend.SplitLongproof.helper_functions_declared cunit hf →
       ∀ (sp : val) (e : Env) (m : mem) (le : CminorSel.letenv)
         (op : Cminor.unary_operation) (a1 : CminorSel.expr) (v1 v : val),
-        CminorSel.eval_expr xi (Genv.globalenv tprog) sp e m le a1 v1 →
-        Cminor.eval_unop op v1 = some v →
+        CminorSel.eval_expr
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) xi (Genv.globalenv tprog) sp e m le a1 v1 →
+        Cminor.eval_unop
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) op v1 = some v →
           ∃ v',
-            CminorSel.eval_expr xi (Genv.globalenv tprog) sp e m le
+            CminorSel.eval_expr
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) xi (Genv.globalenv tprog) sp e m le
               (sel_unop op a1) v' ∧ Val.lessdef v v'
 
-def eval_sel_binopStatement : Prop :=
+def eval_sel_binopStatement
+ : Prop :=
   ∀ (xi : ExternalCalls) (prog : CminorProgram) (tprog : CminorSelProgram),
     match_prog cfg oracle prog tprog →
     ∀ (cunit : CminorProgram) (hf : HelperFunctions),
@@ -376,35 +432,57 @@ def eval_sel_binopStatement : Prop :=
       ∀ (sp : val) (e : Env) (m : mem) (le : CminorSel.letenv)
         (op : Cminor.binary_operation) (a1 a2 : CminorSel.expr)
         (v1 v2 v : val),
-        CminorSel.eval_expr xi (Genv.globalenv tprog) sp e m le a1 v1 →
-        CminorSel.eval_expr xi (Genv.globalenv tprog) sp e m le a2 v2 →
+        CminorSel.eval_expr
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) xi (Genv.globalenv tprog) sp e m le a1 v1 →
+        CminorSel.eval_expr
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) xi (Genv.globalenv tprog) sp e m le a2 v2 →
         Cminor.eval_binop op v1 v2 m = some v →
           ∃ v',
-            CminorSel.eval_expr xi (Genv.globalenv tprog) sp e m le
+            CminorSel.eval_expr
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) xi (Genv.globalenv tprog) sp e m le
               (sel_binop cfg op a1 a2) v' ∧ Val.lessdef v v'
 
-def eval_sel_selectStatement : Prop :=
+def eval_sel_selectStatement
+ : Prop :=
   ∀ (xi : ExternalCalls) (tprog : CminorSelProgram) (sp : val) (e : Env) (m : mem)
     (le : CminorSel.letenv) (a1 a2 a3 : CminorSel.expr) (v1 v2 v3 : val)
     (b : Bool) (ty : typ),
-    CminorSel.eval_expr xi (Genv.globalenv tprog) sp e m le a1 v1 →
-    CminorSel.eval_expr xi (Genv.globalenv tprog) sp e m le a2 v2 →
-    CminorSel.eval_expr xi (Genv.globalenv tprog) sp e m le a3 v3 →
+    CminorSel.eval_expr
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) xi (Genv.globalenv tprog) sp e m le a1 v1 →
+    CminorSel.eval_expr
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) xi (Genv.globalenv tprog) sp e m le a2 v2 →
+    CminorSel.eval_expr
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) xi (Genv.globalenv tprog) sp e m le a3 v3 →
     Val.bool_of_val v1 b →
       ∃ v,
-        CminorSel.eval_expr xi (Genv.globalenv tprog) sp e m le
+        CminorSel.eval_expr
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) xi (Genv.globalenv tprog) sp e m le
           (sel_select ty a1 a2 a3) v ∧
         Val.lessdef (Val.select (some b) v2 v3 ty) v
 
-def eval_sel_known_builtinStatement : Prop :=
+def eval_sel_known_builtinStatement
+ : Prop :=
   ∀ (xi : ExternalCalls) (tprog : CminorSelProgram) (sp : val) (e : Env) (m : mem)
     (bf : builtin_function) (args : CminorSel.exprlist) (a : CminorSel.expr)
     (vl : List val) (v : val) (le : CminorSel.letenv),
     sel_known_builtin bf args = some a →
-    CminorSel.eval_exprlist xi (Genv.globalenv tprog) sp e m le args vl →
-    builtin_function_sem bf vl = some v →
+    CminorSel.eval_exprlist
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) xi (Genv.globalenv tprog) sp e m le args vl →
+    builtin_function_sem
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate) bf vl = some v →
       ∃ v',
-        CminorSel.eval_expr xi (Genv.globalenv tprog) sp e m le a v' ∧
+        CminorSel.eval_expr
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) xi (Genv.globalenv tprog) sp e m le a v' ∧
         Val.lessdef v v'
 
 def expr_is_addrof_ident_correctStatement : Prop :=
@@ -412,11 +490,14 @@ def expr_is_addrof_ident_correctStatement : Prop :=
     expr_is_addrof_ident e = some id →
       e = Cminor.Econst (Cminor.Oaddrsymbol id Ptrofs.zero)
 
-def classify_call_correctStatement : Prop :=
+def classify_call_correctStatement
+ : Prop :=
   ∀ (prog unit : CminorProgram) (sp : val) (e : Env) (m : mem)
       (a : Cminor.expr) (v : val) (fd : CminorFundef),
     linkorder unit prog →
-    Cminor.eval_expr (Genv.globalenv prog) sp e m a v →
+    Cminor.eval_expr
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) (Genv.globalenv prog) sp e m a v →
     Genv.find_funct (Genv.globalenv prog) v = some fd →
     match classify_call (prog_defmap unit) a with
     | Call_default => True
@@ -424,110 +505,165 @@ def classify_call_correctStatement : Prop :=
         v = Vptr b Ptrofs.zero
     | Call_builtin ef => fd = .External ef
 
-def sel_switch_correct_recStatement : Prop :=
+def sel_switch_correct_recStatement
+ : Prop :=
   ∀ (xi : ExternalCalls) (tprog : CminorSelProgram)
     (make_cmp_eq make_cmp_ltu make_sub : CminorSel.expr → Z → CminorSel.expr)
     (make_to_int : CminorSel.expr → CminorSel.expr) (modulus : Z)
     (R : Z → val → Prop),
     (∀ (sp : val) (e : Env) (m : mem) (le : CminorSel.letenv)
       (a : CminorSel.expr) (v : val) (i n : Z),
-      CminorSel.eval_expr xi (Genv.globalenv tprog) sp e m le a v →
+      CminorSel.eval_expr
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) xi (Genv.globalenv tprog) sp e m le a v →
       R i v → zle .Z0 n ∧ ZArith.BinInt.Z.lt n modulus →
-      CminorSel.eval_expr xi (Genv.globalenv tprog) sp e m le (make_cmp_eq a n)
+      CminorSel.eval_expr
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) xi (Genv.globalenv tprog) sp e m le (make_cmp_eq a n)
         (Val.of_bool (proj_sumbool (zeq i n)))) →
     (∀ (sp : val) (e : Env) (m : mem) (le : CminorSel.letenv)
       (a : CminorSel.expr) (v : val) (i n : Z),
-      CminorSel.eval_expr xi (Genv.globalenv tprog) sp e m le a v →
+      CminorSel.eval_expr
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) xi (Genv.globalenv tprog) sp e m le a v →
       R i v → zle .Z0 n ∧ ZArith.BinInt.Z.lt n modulus →
-      CminorSel.eval_expr xi (Genv.globalenv tprog) sp e m le (make_cmp_ltu a n)
+      CminorSel.eval_expr
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) xi (Genv.globalenv tprog) sp e m le (make_cmp_ltu a n)
         (Val.of_bool (proj_sumbool (CompCert4Lean.Lib.Coqlib.zlt i n)))) →
     (∀ (sp : val) (e : Env) (m : mem) (le : CminorSel.letenv)
       (a : CminorSel.expr) (v : val) (i n : Z),
-      CminorSel.eval_expr xi (Genv.globalenv tprog) sp e m le a v →
+      CminorSel.eval_expr
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) xi (Genv.globalenv tprog) sp e m le a v →
       R i v → zle .Z0 n ∧ ZArith.BinInt.Z.lt n modulus →
       ∃ v',
-        CminorSel.eval_expr xi (Genv.globalenv tprog) sp e m le (make_sub a n) v' ∧
+        CminorSel.eval_expr
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) xi (Genv.globalenv tprog) sp e m le (make_sub a n) v' ∧
         R (ZArith.BinInt.Z.modulo (ZArith.BinInt.Z.sub i n) modulus) v') →
     (∀ (sp : val) (e : Env) (m : mem) (le : CminorSel.letenv)
       (a : CminorSel.expr) (v : val) (i : Z),
-      CminorSel.eval_expr xi (Genv.globalenv tprog) sp e m le a v →
+      CminorSel.eval_expr
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) xi (Genv.globalenv tprog) sp e m le a v →
       R i v →
       ∃ v',
-        CminorSel.eval_expr xi (Genv.globalenv tprog) sp e m le (make_to_int a) v' ∧
+        CminorSel.eval_expr
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) xi (Genv.globalenv tprog) sp e m le (make_to_int a) v' ∧
         Rint (ZArith.BinInt.Z.modulo i Int.modulus) v') →
     ∀ (sp : val) (e : Env) (m : mem) (varg : val) (i : Z) (x : Nat),
       R i varg →
       ∀ (t : comptree) (arg : Nat) (le : CminorSel.letenv),
         wf_comptree modulus t → nth_error le arg = some varg →
         comptree_match modulus i t = some x →
-        CminorSel.eval_exitexpr xi (Genv.globalenv tprog) sp e m le
+        CminorSel.eval_exitexpr
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) xi (Genv.globalenv tprog) sp e m le
           (sel_switch make_cmp_eq make_cmp_ltu make_sub make_to_int arg t) x
 
-def sel_switch_correctStatement : Prop :=
+def sel_switch_correctStatement
+ : Prop :=
   ∀ (xi : ExternalCalls) (tprog : CminorSelProgram)
     (make_cmp_eq make_cmp_ltu make_sub : CminorSel.expr → Z → CminorSel.expr)
     (make_to_int : CminorSel.expr → CminorSel.expr) (modulus : Z)
     (R : Z → val → Prop),
     (∀ (sp : val) (e : Env) (m : mem) (le : CminorSel.letenv)
       (a : CminorSel.expr) (v : val) (i n : Z),
-      CminorSel.eval_expr xi (Genv.globalenv tprog) sp e m le a v →
+      CminorSel.eval_expr
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) xi (Genv.globalenv tprog) sp e m le a v →
       R i v → zle .Z0 n ∧ ZArith.BinInt.Z.lt n modulus →
-      CminorSel.eval_expr xi (Genv.globalenv tprog) sp e m le (make_cmp_eq a n)
+      CminorSel.eval_expr
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) xi (Genv.globalenv tprog) sp e m le (make_cmp_eq a n)
         (Val.of_bool (proj_sumbool (zeq i n)))) →
     (∀ (sp : val) (e : Env) (m : mem) (le : CminorSel.letenv)
       (a : CminorSel.expr) (v : val) (i n : Z),
-      CminorSel.eval_expr xi (Genv.globalenv tprog) sp e m le a v →
+      CminorSel.eval_expr
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) xi (Genv.globalenv tprog) sp e m le a v →
       R i v → zle .Z0 n ∧ ZArith.BinInt.Z.lt n modulus →
-      CminorSel.eval_expr xi (Genv.globalenv tprog) sp e m le (make_cmp_ltu a n)
+      CminorSel.eval_expr
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) xi (Genv.globalenv tprog) sp e m le (make_cmp_ltu a n)
         (Val.of_bool (proj_sumbool (CompCert4Lean.Lib.Coqlib.zlt i n)))) →
     (∀ (sp : val) (e : Env) (m : mem) (le : CminorSel.letenv)
       (a : CminorSel.expr) (v : val) (i n : Z),
-      CminorSel.eval_expr xi (Genv.globalenv tprog) sp e m le a v →
+      CminorSel.eval_expr
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) xi (Genv.globalenv tprog) sp e m le a v →
       R i v → zle .Z0 n ∧ ZArith.BinInt.Z.lt n modulus →
       ∃ v',
-        CminorSel.eval_expr xi (Genv.globalenv tprog) sp e m le (make_sub a n) v' ∧
+        CminorSel.eval_expr
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) xi (Genv.globalenv tprog) sp e m le (make_sub a n) v' ∧
         R (ZArith.BinInt.Z.modulo (ZArith.BinInt.Z.sub i n) modulus) v') →
     (∀ (sp : val) (e : Env) (m : mem) (le : CminorSel.letenv)
       (a : CminorSel.expr) (v : val) (i : Z),
-      CminorSel.eval_expr xi (Genv.globalenv tprog) sp e m le a v →
+      CminorSel.eval_expr
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) xi (Genv.globalenv tprog) sp e m le a v →
       R i v →
       ∃ v',
-        CminorSel.eval_expr xi (Genv.globalenv tprog) sp e m le (make_to_int a) v' ∧
+        CminorSel.eval_expr
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) xi (Genv.globalenv tprog) sp e m le (make_to_int a) v' ∧
         Rint (ZArith.BinInt.Z.modulo i Int.modulus) v') →
     ∀ (dfl : Nat) (cases : table) (arg : CminorSel.expr)
       (sp : val) (e : Env) (m : mem) (varg : val) (i : Z) (t : comptree)
       (le : CminorSel.letenv),
       validate_switch modulus dfl cases t = true →
-      CminorSel.eval_expr xi (Genv.globalenv tprog) sp e m le arg varg →
+      CminorSel.eval_expr
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) xi (Genv.globalenv tprog) sp e m le arg varg →
       R i varg → zle .Z0 i ∧ ZArith.BinInt.Z.lt i modulus →
-      CminorSel.eval_exitexpr xi (Genv.globalenv tprog) sp e m le
+      CminorSel.eval_exitexpr
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) xi (Genv.globalenv tprog) sp e m le
         (.XElet arg (sel_switch make_cmp_eq make_cmp_ltu make_sub make_to_int 0 t))
         (switch_target i dfl cases)
 
-def sel_switch_int_correctStatement : Prop :=
+def sel_switch_int_correctStatement
+ : Prop :=
   ∀ (xi : ExternalCalls) (tprog : CminorSelProgram) (dfl : Nat) (cases : table)
     (arg : CminorSel.expr) (sp : val) (e : Env) (m : mem) (i : int)
     (t : comptree) (le : CminorSel.letenv),
     validate_switch Int.modulus dfl cases t = true →
-    CminorSel.eval_expr xi (Genv.globalenv tprog) sp e m le arg (.Vint i) →
-    CminorSel.eval_exitexpr xi (Genv.globalenv tprog) sp e m le
+    CminorSel.eval_expr
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) xi (Genv.globalenv tprog) sp e m le arg (.Vint i) →
+    CminorSel.eval_exitexpr
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) xi (Genv.globalenv tprog) sp e m le
       (.XElet arg (sel_switch_int 0 t))
       (switch_target (Int.unsigned i) dfl cases)
 
-def sel_switch_long_correctStatement : Prop :=
+def sel_switch_long_correctStatement
+ : Prop :=
   ∀ (xi : ExternalCalls) (tprog : CminorSelProgram) (dfl : Nat) (cases : table)
     (arg : CminorSel.expr) (sp : val) (e : Env) (m : mem) (i : int64)
     (t : comptree) (le : CminorSel.letenv),
     validate_switch Int64.modulus dfl cases t = true →
-    CminorSel.eval_expr xi (Genv.globalenv tprog) sp e m le arg (.Vlong i) →
-    CminorSel.eval_exitexpr xi (Genv.globalenv tprog) sp e m le
+    CminorSel.eval_expr
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) xi (Genv.globalenv tprog) sp e m le arg (.Vlong i) →
+    CminorSel.eval_exitexpr
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) xi (Genv.globalenv tprog) sp e m le
       (.XElet arg (sel_switch_long 0 t))
       (switch_target (Int64.unsigned i) dfl cases)
 
-def eval_unop_lessdefStatement : Prop :=
+def eval_unop_lessdefStatement
+ : Prop :=
   ∀ (op : Cminor.unary_operation) (v1 v1' v : val),
-    Cminor.eval_unop op v1 = some v → Val.lessdef v1 v1' →
-      ∃ v2, Cminor.eval_unop op v1' = some v2 ∧ Val.lessdef v v2
+    Cminor.eval_unop
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) op v1 = some v → Val.lessdef v1 v1' →
+      ∃ v2, Cminor.eval_unop
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) op v1' = some v2 ∧ Val.lessdef v v2
 
 def eval_binop_lessdefStatement : Prop :=
   ∀ (op : Cminor.binary_operation) (v1 v1' v2 v2' v : val) (m m' : mem),
@@ -548,36 +684,47 @@ def set_locals_lessdefStatement : Prop :=
   ∀ (e1 e2 : Env), env_lessdef e1 e2 →
     ∀ il : List ident, env_lessdef (Cminor.set_locals il e1) (Cminor.set_locals il e2)
 
-def sel_expr_correctStatement : Prop :=
+def sel_expr_correctStatement
+ : Prop :=
   ∀ (xi : ExternalCalls) (prog : CminorProgram) (tprog : CminorSelProgram),
     match_prog cfg oracle prog tprog →
     ∀ (cunit : CminorProgram) (hf : HelperFunctions),
       linkorder cunit prog →
       CompCert4Lean.Backend.SplitLongproof.helper_functions_declared cunit hf →
       ∀ (sp : val) (e : Env) (m : mem) (a : Cminor.expr) (v : val),
-        Cminor.eval_expr (Genv.globalenv prog) sp e m a v →
+        Cminor.eval_expr
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) (Genv.globalenv prog) sp e m a v →
         ∀ (e' : Env) (le : CminorSel.letenv) (m' : mem),
           env_lessdef e e' → Mem.extends m m' →
             ∃ v',
-              CminorSel.eval_expr xi (Genv.globalenv tprog) sp e' m' le
+              CminorSel.eval_expr
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) xi (Genv.globalenv tprog) sp e' m' le
                 (sel_expr cfg a) v' ∧
               Val.lessdef v v'
 
-def sel_exprlist_correctStatement : Prop :=
+def sel_exprlist_correctStatement
+ : Prop :=
   ∀ (xi : ExternalCalls) (prog : CminorProgram) (tprog : CminorSelProgram),
     match_prog cfg oracle prog tprog →
     ∀ (cunit : CminorProgram) (hf : HelperFunctions),
       linkorder cunit prog →
       CompCert4Lean.Backend.SplitLongproof.helper_functions_declared cunit hf →
       ∀ (sp : val) (e : Env) (m : mem) (a : List Cminor.expr) (v : List val),
-        Cminor.eval_exprlist (Genv.globalenv prog) sp e m a v →
+        Cminor.eval_exprlist
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) (Genv.globalenv prog) sp e m a v →
         ∀ (e' : Env) (le : CminorSel.letenv) (m' : mem),
           env_lessdef e e' → Mem.extends m m' →
             ∃ v',
-              CminorSel.eval_exprlist xi (Genv.globalenv tprog) sp e' m' le
+              CminorSel.eval_exprlist
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) xi (Genv.globalenv tprog) sp e' m' le
                 (sel_exprlist cfg a) v' ∧ Val.lessdef_list v v'
 
-def sel_select_expr_correctStatement : Prop :=
+def sel_select_expr_correctStatement
+ : Prop :=
   ∀ (xi : ExternalCalls) (prog : CminorProgram) (tprog : CminorSelProgram),
     match_prog cfg oracle prog tprog →
     ∀ (cunit : CminorProgram) (hf : HelperFunctions),
@@ -587,16 +734,25 @@ def sel_select_expr_correctStatement : Prop :=
         (vcond v1 v2 : val) (b : Bool) (e' : Env) (m' : mem)
         (le : CminorSel.letenv),
         select_supported ty = true →
-        Cminor.eval_expr (Genv.globalenv prog) sp e m cond vcond →
-        Cminor.eval_expr (Genv.globalenv prog) sp e m a1 v1 →
-        Cminor.eval_expr (Genv.globalenv prog) sp e m a2 v2 →
+        Cminor.eval_expr
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) (Genv.globalenv prog) sp e m cond vcond →
+        Cminor.eval_expr
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) (Genv.globalenv prog) sp e m a1 v1 →
+        Cminor.eval_expr
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) (Genv.globalenv prog) sp e m a2 v2 →
         Val.bool_of_val vcond b → env_lessdef e e' → Mem.extends m m' →
           ∃ v',
-            CminorSel.eval_expr xi (Genv.globalenv tprog) sp e' m' le
+            CminorSel.eval_expr
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) xi (Genv.globalenv tprog) sp e' m' le
               (sel_select_expr cfg ty cond a1 a2) v' ∧
             Val.lessdef (Val.select (some b) v1 v2 ty) v'
 
-def sel_builtin_arg_correctStatement : Prop :=
+def sel_builtin_arg_correctStatement
+ : Prop :=
   ∀ (xi : ExternalCalls) (prog : CminorProgram) (tprog : CminorSelProgram),
     match_prog cfg oracle prog tprog →
     ∀ (cunit : CminorProgram) (hf : HelperFunctions),
@@ -605,12 +761,17 @@ def sel_builtin_arg_correctStatement : Prop :=
       ∀ (sp : val) (e e' : Env) (m m' : mem) (a : Cminor.expr)
         (v : val) (c : builtin_arg_constraint),
         env_lessdef e e' → Mem.extends m m' →
-        Cminor.eval_expr (Genv.globalenv prog) sp e m a v →
+        Cminor.eval_expr
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) (Genv.globalenv prog) sp e m a v →
           ∃ v',
-            CminorSel.eval_builtin_arg xi (Genv.globalenv tprog) sp e' m'
+            CminorSel.eval_builtin_arg
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) xi (Genv.globalenv tprog) sp e' m'
               (sel_builtin_arg cfg a c) v' ∧ Val.lessdef v v'
 
-def sel_builtin_args_correctStatement : Prop :=
+def sel_builtin_args_correctStatement
+ : Prop :=
   ∀ (xi : ExternalCalls) (prog : CminorProgram) (tprog : CminorSelProgram),
     match_prog cfg oracle prog tprog →
     ∀ (cunit : CminorProgram) (hf : HelperFunctions),
@@ -619,11 +780,15 @@ def sel_builtin_args_correctStatement : Prop :=
       ∀ (sp : val) (e e' : Env) (m m' : mem),
         env_lessdef e e' → Mem.extends m m' →
         ∀ (al : List Cminor.expr) (vl : List val),
-          Cminor.eval_exprlist (Genv.globalenv prog) sp e m al vl →
+          Cminor.eval_exprlist
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) (Genv.globalenv prog) sp e m al vl →
           ∀ cl : List builtin_arg_constraint,
             ∃ vl',
               list_forall2
-                (CminorSel.eval_builtin_arg xi (Genv.globalenv tprog) sp e' m')
+                (CminorSel.eval_builtin_arg
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) xi (Genv.globalenv tprog) sp e' m')
                 (sel_builtin_args cfg al cl) vl' ∧ Val.lessdef_list vl vl'
 
 def sel_builtin_res_correctStatement : Prop :=
@@ -632,7 +797,8 @@ def sel_builtin_res_correctStatement : Prop :=
       env_lessdef (Cminor.set_optvar oid v e)
         (CminorSel.set_builtin_res (sel_builtin_res oid) v' e')
 
-def sel_builtin_default_correctStatement : Prop :=
+def sel_builtin_default_correctStatement
+ : Prop :=
   ∀ (xi : ExternalCalls) (prog : CminorProgram) (tprog : CminorSelProgram),
     match_prog cfg oracle prog tprog →
     ∀ (cunit : CminorProgram) (hf : HelperFunctions),
@@ -642,16 +808,23 @@ def sel_builtin_default_correctStatement : Prop :=
         (sp : val) (e1 : Env) (m1 : mem) (vl : List val) (t : trace)
         (v : val) (m2 : mem) (e1' : Env) (m1' : mem) (f : CminorSel.function)
         (k : CminorSel.cont),
-        Cminor.eval_exprlist (Genv.globalenv prog) sp e1 m1 al vl →
-        external_call xi ef (Genv.to_senv (Genv.globalenv prog)) vl m1 t v m2 →
+        Cminor.eval_exprlist
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) (Genv.globalenv prog) sp e1 m1 al vl →
+        external_call
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate) xi ef (Genv.to_senv (Genv.globalenv prog)) vl m1 t v m2 →
         env_lessdef e1 e1' → Mem.extends m1 m1' →
           ∃ e2' m2',
-            plus (CminorSel.step xi) (Genv.globalenv tprog)
+            plus (CminorSel.step
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate) xi) (Genv.globalenv tprog)
               (CminorSel.State f (sel_builtin_default cfg optid ef al) k sp e1' m1') t
               (CminorSel.State f CminorSel.Sskip k sp e2' m2') ∧
             env_lessdef (Cminor.set_optvar optid v e1) e2' ∧ Mem.extends m2 m2'
 
-def sel_builtin_correctStatement : Prop :=
+def sel_builtin_correctStatement
+ : Prop :=
   ∀ (xi : ExternalCalls) (prog : CminorProgram) (tprog : CminorSelProgram),
     match_prog cfg oracle prog tprog →
     ∀ (cunit : CminorProgram) (hf : HelperFunctions),
@@ -661,37 +834,57 @@ def sel_builtin_correctStatement : Prop :=
         (sp : val) (e1 : Env) (m1 : mem) (vl : List val) (t : trace)
         (v : val) (m2 : mem) (e1' : Env) (m1' : mem) (f : CminorSel.function)
         (k : CminorSel.cont),
-        Cminor.eval_exprlist (Genv.globalenv prog) sp e1 m1 al vl →
-        external_call xi ef (Genv.to_senv (Genv.globalenv prog)) vl m1 t v m2 →
+        Cminor.eval_exprlist
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) (Genv.globalenv prog) sp e1 m1 al vl →
+        external_call
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate) xi ef (Genv.to_senv (Genv.globalenv prog)) vl m1 t v m2 →
         env_lessdef e1 e1' → Mem.extends m1 m1' →
           ∃ e2' m2',
-            plus (CminorSel.step xi) (Genv.globalenv tprog)
+            plus (CminorSel.step
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate) xi) (Genv.globalenv tprog)
               (CminorSel.State f (sel_builtin cfg optid ef al) k sp e1' m1') t
               (CminorSel.State f CminorSel.Sskip k sp e2' m2') ∧
             env_lessdef (Cminor.set_optvar optid v e1) e2' ∧ Mem.extends m2 m2'
 
-def eventually_stepStatement : Prop :=
+def eventually_stepStatement
+ : Prop :=
   ∀ (xi : ExternalCalls) (prog : CminorProgram) (f : Cminor.function)
     (s : Cminor.stmt) (k : Cminor.cont) (sp : val) (e : Env) (m : mem)
     (n : Nat) (P : Cminor.state → Prop),
     (∀ (t : trace) (s' : Cminor.state),
-      Cminor.step xi (Genv.globalenv prog)
+      Cminor.step
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) xi (Genv.globalenv prog)
         (Cminor.State f s k sp e m) t s' →
-        t = E0 ∧ eventually prog xi n s' P) →
-      eventually prog xi (Nat.succ n) (Cminor.State f s k sp e m) P
+        t = E0 ∧ eventually
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate) prog xi n s' P) →
+      eventually
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate) prog xi (Nat.succ n) (Cminor.State f s k sp e m) P
 
-def classify_stmt_soundStatement : Prop :=
+def classify_stmt_soundStatement
+ : Prop :=
   ∀ (xi : ExternalCalls) (prog : CminorProgram) (s : Cminor.stmt),
     match classify_stmt s with
     | SCskip =>
         ∃ n, ∀ (f : Cminor.function) (k : Cminor.cont) (sp : val) (e : Env) (m : mem),
-          eventually prog xi n (Cminor.State f s k sp e m)
+          eventually
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate) prog xi n (Cminor.State f s k sp e m)
             (Eq (Cminor.State f Cminor.Sskip k sp e m))
     | SCassign id a =>
         ∃ n, ∀ (f : Cminor.function) (k : Cminor.cont) (sp : val) (e : Env) (m : mem)
           (v : val),
-          Cminor.eval_expr (Genv.globalenv prog) sp e m a v →
-            eventually prog xi n (Cminor.State f s k sp e m)
+          Cminor.eval_expr
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) (Genv.globalenv prog) sp e m a v →
+            eventually
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate) prog xi n (Cminor.State f s k sp e m)
               (Eq (Cminor.State f Cminor.Sskip k sp (PTree.set id v e) m))
     | SCother => True
 
@@ -699,7 +892,8 @@ def classify_stmt_wtStatement : Prop :=
   ∀ (env : typenv) (tyret : xtype) (id : ident) (a : Cminor.expr) (s : Cminor.stmt),
     classify_stmt s = SCassign id a → wt_stmt env tyret s → wt_expr env a (env id)
 
-def if_conversion_base_correctStatement : Prop :=
+def if_conversion_base_correctStatement
+ : Prop :=
   ∀ (xi : ExternalCalls) (prog : CminorProgram) (tprog : CminorSelProgram),
     match_prog cfg oracle prog tprog →
     ∀ (cunit : CminorProgram) (hf : HelperFunctions),
@@ -712,17 +906,26 @@ def if_conversion_base_correctStatement : Prop :=
         if_conversion_base cfg oracle (Selection.known_id f) env cond id ifso ifnot kont = some s →
         def_env f e → wt_env env e → env id = ty → wt_expr env ifso ty →
         wt_expr env ifnot ty →
-        Cminor.eval_expr (Genv.globalenv prog) sp e m cond vb →
+        Cminor.eval_expr
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) (Genv.globalenv prog) sp e m cond vb →
         Val.bool_of_val vb b → env_lessdef e e' → Mem.extends m m' →
           ∃ v1 v2 v',
-            Cminor.eval_expr (Genv.globalenv prog) sp e m ifso v1 ∧
-            Cminor.eval_expr (Genv.globalenv prog) sp e m ifnot v2 ∧
+            Cminor.eval_expr
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) (Genv.globalenv prog) sp e m ifso v1 ∧
+            Cminor.eval_expr
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) (Genv.globalenv prog) sp e m ifnot v2 ∧
             Val.lessdef (if b then v1 else v2) v' ∧
-            CminorSel.step xi (Genv.globalenv tprog)
+            CminorSel.step
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate) xi (Genv.globalenv tprog)
               (CminorSel.State tf s tk sp e' m') E0
               (CminorSel.State tf CminorSel.Sskip tk sp (PTree.set id v' e') m')
 
-def if_conversion_correctStatement : Prop :=
+def if_conversion_correctStatement
+ : Prop :=
   ∀ (xi : ExternalCalls) (prog : CminorProgram) (tprog : CminorSelProgram),
     match_prog cfg oracle prog tprog →
     ∀ (cunit : CminorProgram) (hf : HelperFunctions),
@@ -734,17 +937,24 @@ def if_conversion_correctStatement : Prop :=
         (sp : val) (e : Env) (m : mem) (e' : Env) (m' : mem),
         if_conversion cfg oracle (Selection.known_id f) env cond ifso ifnot kont = some s →
         def_env f e → wt_env env e → wt_stmt env tyret ifso → wt_stmt env tyret ifnot →
-        Cminor.eval_expr (Genv.globalenv prog) sp e m cond vb →
+        Cminor.eval_expr
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) (Genv.globalenv prog) sp e m cond vb →
         Val.bool_of_val vb b → env_lessdef e e' → Mem.extends m m' →
         let s0 := if b then ifso else ifnot
         ∃ n e1 e1',
-          CminorSel.step xi (Genv.globalenv tprog)
+          CminorSel.step
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate) xi (Genv.globalenv tprog)
             (CminorSel.State f' s k' sp e' m') E0
             (CminorSel.State f' CminorSel.Sskip k' sp e1' m') ∧
-          eventually prog xi n (Cminor.State f s0 k sp e m)
+          eventually
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate) prog xi n (Cminor.State f s0 k sp e m)
             (Eq (Cminor.State f Cminor.Sskip k sp e1 m)) ∧ env_lessdef e1 e1'
 
-def match_states_skipStatement : Prop :=
+def match_states_skipStatement
+ : Prop :=
   ∀ (prog : CminorProgram) (cunit : CminorProgram) (hf : HelperFunctions)
     (f : Cminor.function) (f' : CminorSel.function) (k : Cminor.cont)
     (k' : CminorSel.cont) (sp : val) (e : Env) (m : mem) (e' : Env) (m' : mem)
@@ -754,7 +964,9 @@ def match_states_skipStatement : Prop :=
     sel_function cfg oracle (prog_defmap cunit) hf f = .OK f' → type_function f = .OK env →
     match_cont cfg oracle prog cunit hf (Selection.known_id f) env k k' → env_lessdef e e' →
     Mem.extends m m' →
-      match_states cfg oracle prog (Cminor.State f Cminor.Sskip k sp e m)
+      match_states
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) cfg oracle prog (Cminor.State f Cminor.Sskip k sp e m)
         (CminorSel.State f' CminorSel.Sskip k' sp e' m')
 
 def call_cont_commutStatement : Prop :=
@@ -805,31 +1017,59 @@ def find_label_commutStatement : Prop :=
         | some _ => False
         | none => True
 
-def sel_step_correctStatement : Prop :=
+def sel_step_correctStatement
+ : Prop :=
   ∀ (xi : ExternalCalls) (prog : CminorProgram) (tprog : CminorSelProgram),
     match_prog cfg oracle prog tprog →
     ∀ (s1 : Cminor.state) (t : trace) (s2 : Cminor.state),
-      Cminor.step xi (Genv.globalenv prog) s1 t s2 →
-      ∀ t1 : CminorSel.state, match_states cfg oracle prog s1 t1 → wt_state s1 →
-        (∃ t2, plus (CminorSel.step xi) (Genv.globalenv tprog) t1 t t2 ∧
-          match_states cfg oracle prog s2 t2) ∨
-        (measure s2 < measure s1 ∧ t = E0 ∧ match_states cfg oracle prog s2 t1) ∨
-        (∃ t2 n, CminorSel.step xi (Genv.globalenv tprog) t1 t t2 ∧
-          eventually prog xi n s2 (fun s3 => match_states cfg oracle prog s3 t2))
+      Cminor.step
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) xi (Genv.globalenv prog) s1 t s2 →
+      ∀ t1 : CminorSel.state, match_states
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) cfg oracle prog s1 t1 → wt_state s1 →
+        (∃ t2, plus (CminorSel.step
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate) xi) (Genv.globalenv tprog) t1 t t2 ∧
+          match_states
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) cfg oracle prog s2 t2) ∨
+        (measure s2 < measure s1 ∧ t = E0 ∧ match_states
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) cfg oracle prog s2 t1) ∨
+        (∃ t2 n, CminorSel.step
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate) xi (Genv.globalenv tprog) t1 t t2 ∧
+          eventually
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate) prog xi n s2 (fun s3 => match_states
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) cfg oracle prog s3 t2))
 
-def sel_initial_statesStatement : Prop :=
+def sel_initial_statesStatement
+ : Prop :=
   ∀ (prog : CminorProgram) (tprog : CminorSelProgram),
     match_prog cfg oracle prog tprog →
       ∀ s, Cminor.initial_state prog s →
-        ∃ r, CminorSel.initial_state tprog r ∧ match_states cfg oracle prog s r
+        ∃ r, CminorSel.initial_state tprog r ∧ match_states
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) cfg oracle prog s r
 
-def sel_final_statesStatement : Prop :=
+def sel_final_statesStatement
+ : Prop :=
   ∀ (prog : CminorProgram) (s : Cminor.state) (r : CminorSel.state) (v : int),
-    match_states cfg oracle prog s r → Cminor.final_state s v → CminorSel.final_state r v
+    match_states
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) cfg oracle prog s r → Cminor.final_state s v → CminorSel.final_state r v
 
-def transf_program_correctStatement : Prop :=
+def transf_program_correctStatement
+ : Prop :=
   ∀ (xi : ExternalCalls) (prog : CminorProgram) (tprog : CminorSelProgram),
     match_prog cfg oracle prog tprog →
-      forward_simulation (Cminor.semantics xi prog) (CminorSel.semantics xi tprog)
+      forward_simulation (Cminor.semantics
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) xi prog) (CminorSel.semantics
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) xi tprog)
 
 end CompCert4Lean.Backend.Selectionproof
