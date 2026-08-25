@@ -158,7 +158,7 @@ def fixpoint {A : Type} (code : PTree.t A)
     (transf : positive → L.t → L.t) : Option (PMap.t L.t) :=
   Backward_Dataflow_Solver.fixpoint L NodeSetBackward code successors transf
 
-def fixpoint_solution : Prop :=
+def fixpoint_solution (_laws : law_obligation) : Prop :=
   ∀ (A : Type) (code : PTree.t A) (successors : A → List positive)
     (transf : positive → L.t → L.t) (res : PMap.t L.t)
     (n : positive) (instr : A) (s : positive),
@@ -175,7 +175,7 @@ def fixpoint_allnodes {A : Type} (code : PTree.t A)
   Backward_Dataflow_Solver.fixpoint_allnodes L NodeSetBackward
     code successors transf
 
-def fixpoint_allnodes_solution : Prop :=
+def fixpoint_allnodes_solution (_laws : law_obligation) : Prop :=
   ∀ (A : Type) (code : PTree.t A) (successors : A → List positive)
     (transf : positive → L.t → L.t) (res : PMap.t L.t)
     (n : positive) (instr : A) (s : positive),

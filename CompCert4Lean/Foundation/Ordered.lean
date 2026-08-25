@@ -16,10 +16,13 @@ namespace Rocq.Coq
 namespace Classes.DecidableClass
 
 class Decidable (P : Prop) where
-  Decidable_witness : Bool
-  Decidable_spec : Decidable_witness = true ↔ P
+  witness : Bool
+  spec : witness = true ↔ P
 
-export Decidable (Decidable_witness Decidable_spec)
+def Decidable_witness {P : Prop} {H : Decidable P} : Bool := H.witness
+
+def Decidable_spec {P : Prop} {H : Decidable P} :
+    @Decidable_witness P H = true ↔ P := H.spec
 
 def Decidable_complete_altStatement : Prop :=
   ∀ (P : Prop) (H : Decidable P),
@@ -47,9 +50,10 @@ end FSets.FSetAVL.Make
 
 namespace Relations.Relation_Operators
 
-inductive clos_trans (A : Type) (R : A → A → Prop) : A → A → Prop where
-  | t_step (x y : A) : R x y → clos_trans A R x y
-  | t_trans (x y z : A) :
+inductive clos_trans : (A : Type) → (A → A → Prop) → A → A → Prop where
+  | t_step (A : Type) (R : A → A → Prop) (x y : A) :
+      R x y → clos_trans A R x y
+  | t_trans (A : Type) (R : A → A → Prop) (x y z : A) :
       clos_trans A R x y → clos_trans A R y z → clos_trans A R x z
 
 export clos_trans (t_step t_trans)
@@ -144,14 +148,14 @@ end Sorting.Sorted
 
 namespace Sorting.Permutation
 
-inductive Permutation {A : Type} : List A → List A → Prop where
-  | perm_nil : Permutation [] []
-  | perm_skip (x : A) {l l' : List A} :
-      Permutation l l' → Permutation (x :: l) (x :: l')
-  | perm_swap (x y : A) (l : List A) :
-      Permutation (y :: x :: l) (x :: y :: l)
-  | perm_trans {l l' l'' : List A} :
-      Permutation l l' → Permutation l' l'' → Permutation l l''
+inductive Permutation : {A : Type} → List A → List A → Prop where
+  | perm_nil (A : Type) : @Permutation A [] []
+  | perm_skip {A : Type} (x : A) {l l' : List A} :
+      @Permutation A l l' → @Permutation A (x :: l) (x :: l')
+  | perm_swap {A : Type} (x y : A) (l : List A) :
+      @Permutation A (y :: x :: l) (x :: y :: l)
+  | perm_trans {A : Type} {l l' l'' : List A} :
+      @Permutation A l l' → @Permutation A l' l'' → @Permutation A l l''
 
 export Permutation (perm_nil perm_skip perm_swap perm_trans)
 

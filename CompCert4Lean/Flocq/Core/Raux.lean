@@ -267,7 +267,7 @@ private theorem Rabs_value_ne_zero (x : R) (hx : x ≠ R0) : (Rabs x).value ≠ 
 
 def Rcompare (x y : R) : comparison :=
   let order :
-      CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.Rdefinitions.total_order_T x y :=
+      CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.Rdefinitions.total_order_T_type x y :=
     if hxy : x.value < y.value then
       .inleft (.left hxy)
     else if heq : x.value = y.value then

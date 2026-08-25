@@ -709,7 +709,7 @@ def reachable_visited : Prop :=
       CompCert4Lean.Backend.Kildall.reachable code successors p q →
       visited st p → visited st q
 
-def fixpoint_solution : Prop :=
+def fixpoint_solution (_laws : law_obligation) : Prop :=
   ∀ (A : Type) (code : PTree.t A)
     (successors : A → List positive)
     (transf : positive → L.t → L.t)
@@ -721,7 +721,7 @@ def fixpoint_solution : Prop :=
     (∀ n0, L.eq (transf n0 L.bot) L.bot) →
     L.ge (PMap.get s res) (transf n (PMap.get n res))
 
-def fixpoint_entry : Prop :=
+def fixpoint_entry (_laws : law_obligation) : Prop :=
   ∀ (A : Type) (code : PTree.t A)
     (successors : A → List positive)
     (transf : positive → L.t → L.t)
@@ -729,7 +729,7 @@ def fixpoint_entry : Prop :=
     fixpoint code successors transf ep ev = some res →
     L.ge (PMap.get ep res) ev
 
-def fixpoint_allnodes_solution : Prop :=
+def fixpoint_allnodes_solution (_laws : law_obligation) : Prop :=
   ∀ (A : Type) (code : PTree.t A)
     (successors : A → List positive)
     (transf : positive → L.t → L.t) (res : PMap.t L.t)
@@ -739,7 +739,7 @@ def fixpoint_allnodes_solution : Prop :=
     s ∈ successors instr →
     L.ge (PMap.get n res) (transf n (PMap.get n res))
 
-def fixpoint_nodeset_solution : Prop :=
+def fixpoint_nodeset_solution (_laws : law_obligation) : Prop :=
   ∀ (A : Type) (code : PTree.t A)
     (successors : A → List positive)
     (transf : positive → L.t → L.t)
@@ -752,7 +752,7 @@ def fixpoint_nodeset_solution : Prop :=
     s ∈ successors instr →
     L.ge (PMap.get s res) (transf n (PMap.get n res))
 
-def fixpoint_invariant : Prop :=
+def fixpoint_invariant (_laws : law_obligation) : Prop :=
   ∀ (A : Type) (code : PTree.t A)
     (successors : A → List positive)
     (transf : positive → L.t → L.t)

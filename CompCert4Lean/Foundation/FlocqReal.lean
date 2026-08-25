@@ -53,7 +53,6 @@ structure ExactRealSpec where
   one : carrier
   neg : carrier → carrier
   add : carrier → carrier → carrier
-  sub : carrier → carrier → carrier
   mul : carrier → carrier → carrier
   inv : carrier → carrier
   div : carrier → carrier → carrier
@@ -64,7 +63,6 @@ structure ExactRealSpec where
   sqrt : carrier → carrier
   exp : carrier → carrier
   ln : carrier → carrier
-  powerRZ : carrier → SourceZ → carrier
   up : carrier → SourceZ
 
 abbrev ExactRealCarrier (spec : ExactRealSpec) := spec.carrier
@@ -79,7 +77,8 @@ def R0 (spec : ExactRealSpec) : spec.carrier := spec.zero
 def Rone (spec : ExactRealSpec) : spec.carrier := spec.one
 def Ropp (spec : ExactRealSpec) : spec.carrier → spec.carrier := spec.neg
 def Rplus (spec : ExactRealSpec) : spec.carrier → spec.carrier → spec.carrier := spec.add
-def Rminus (spec : ExactRealSpec) : spec.carrier → spec.carrier → spec.carrier := spec.sub
+def Rminus (spec : ExactRealSpec) : spec.carrier → spec.carrier → spec.carrier :=
+  fun x y => spec.add x (spec.neg y)
 def Rmult (spec : ExactRealSpec) : spec.carrier → spec.carrier → spec.carrier := spec.mul
 def Rinv (spec : ExactRealSpec) : spec.carrier → spec.carrier := spec.inv
 def Rdiv (spec : ExactRealSpec) : spec.carrier → spec.carrier → spec.carrier := spec.div
@@ -94,7 +93,17 @@ def sqrt (spec : ExactRealSpec) : spec.carrier → spec.carrier := spec.sqrt
 def Rsqrt (spec : ExactRealSpec) : spec.carrier → spec.carrier := spec.sqrt
 def exp (spec : ExactRealSpec) : spec.carrier → spec.carrier := spec.exp
 def ln (spec : ExactRealSpec) : spec.carrier → spec.carrier := spec.ln
-def powerRZ (spec : ExactRealSpec) : spec.carrier → Z → spec.carrier := spec.powerRZ
+
+def powerNat (spec : ExactRealSpec) (x : spec.carrier) : Nat → spec.carrier
+  | 0 => spec.one
+  | n + 1 => spec.mul x (powerNat spec x n)
+
+def powerRZ (spec : ExactRealSpec) (x : spec.carrier) : Z → spec.carrier
+  | .Z0 => spec.one
+  | .Zpos p => powerNat spec x
+      (_root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.PArith.BinPos.Pos.to_nat p)
+  | .Zneg p => spec.inv (powerNat spec x
+      (_root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.PArith.BinPos.Pos.to_nat p))
 def up (spec : ExactRealSpec) : spec.carrier → Z := spec.up
 
 end ExactReal
@@ -123,6 +132,11 @@ structure OrderedFieldCertificate (spec : ExactRealSpec) : Prop where
   lt_irrefl : ∀ x, ¬ spec.lt x x
   lt_trans : ∀ x y z, spec.lt x y → spec.lt y z → spec.lt x z
   lt_iff_le_not_le : ∀ x y, spec.lt x y ↔ spec.le x y ∧ ¬ spec.le y x
+  add_lt_compat_l : ∀ r r1 r2,
+    spec.lt r1 r2 → spec.lt (spec.add r r1) (spec.add r r2)
+  mul_lt_compat_l : ∀ r r1 r2,
+    spec.lt spec.zero r → spec.lt r1 r2 →
+      spec.lt (spec.mul r r1) (spec.mul r r2)
 
 /-- Exact square-root laws required by Flocq theorem consumers. -/
 structure SqrtCertificate (spec : ExactRealSpec) : Prop where
@@ -167,22 +181,27 @@ structure ExactRealSourceLaws (spec : ExactRealSpec) : Prop where
     spec.lt spec.zero x → spec.lt spec.zero (spec.sqrt x)
   exp_opp : ∀ x,
     spec.exp (spec.neg x) = spec.inv (spec.exp x)
+  abs_negative : ∀ x,
+    spec.lt x spec.zero → spec.abs x = spec.neg x
+  abs_nonnegative : ∀ x,
+    spec.le spec.zero x → spec.abs x = x
   min_left : ∀ x y, spec.le (spec.min x y) x
   min_right : ∀ x y, spec.le (spec.min x y) y
   min_eq_left : ∀ x y, spec.le x y → spec.min x y = x
   min_eq_right : ∀ x y, spec.le y x → spec.min x y = y
   powerRZ_zero : ∀ x,
-    spec.powerRZ x (_root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.Z0) = spec.one
+    ExactReal.powerRZ spec x
+      (_root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.Z0) = spec.one
   powerRZ_add : ∀ x z1 z2,
     x ≠ spec.zero →
-      spec.powerRZ x
+      ExactReal.powerRZ spec x
           (_root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add z1 z2) =
-        spec.mul (spec.powerRZ x z1) (spec.powerRZ x z2)
+        spec.mul (ExactReal.powerRZ spec x z1) (ExactReal.powerRZ spec x z2)
   up_gt : ∀ x,
     spec.lt x (spec.ofZ (spec.up x))
   up_gap : ∀ x,
     spec.le
-      (spec.sub (spec.ofZ (spec.up x)) x)
+      (ExactReal.Rminus spec (spec.ofZ (spec.up x)) x)
       (spec.ofZ (_root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.Zpos
         _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.xH))
   completeness :
@@ -230,7 +249,7 @@ structure RuntimeExactAdapter (spec : ExactRealSpec) : Type where
   sub_closed : ∀ x, represented x → ∀ y, represented y → represented ⟨x.value - y.value⟩
   sub_preserved : ∀ x (hx : represented x) y (hy : represented y),
     embed ⟨x.value - y.value⟩ (sub_closed x hx y hy) =
-      spec.sub (embed x hx) (embed y hy)
+      ExactReal.Rminus spec (embed x hx) (embed y hy)
   mul_closed : ∀ x, represented x → ∀ y, represented y → represented ⟨x.value * y.value⟩
   mul_preserved : ∀ x (hx : represented x) y (hy : represented y),
     embed ⟨x.value * y.value⟩ (mul_closed x hx y hy) =
@@ -254,7 +273,8 @@ structure RuntimeExactAdapter (spec : ExactRealSpec) : Type where
   runtime_powerRZ : RuntimeReal → SourceZ → RuntimeReal
   powerRZ_closed : ∀ x, represented x → ∀ z, represented (runtime_powerRZ x z)
   powerRZ_preserved : ∀ x (hx : represented x) z,
-    embed (runtime_powerRZ x z) (powerRZ_closed x hx z) = spec.powerRZ (embed x hx) z
+    embed (runtime_powerRZ x z) (powerRZ_closed x hx z) =
+      ExactReal.powerRZ spec (embed x hx) z
   lt_preserved : ∀ x (hx : represented x) y (hy : represented y),
     spec.lt (embed x hx) (embed y hy) ↔ x.value < y.value
   le_preserved : ∀ x (hx : represented x) y (hy : represented y),
@@ -408,7 +428,8 @@ def Rdiv : R → R → R := _root_.CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.R
 abbrev Rinv := _root_.CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.Rinv
 def Rminus : R → R → R := _root_.CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.Rminus
 def up : R → Z := _root_.CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.up
-def total_order_T (r1 r2 : R) : Type := Sumor (Sumbool (Rlt r1 r2) (Eq r1 r2)) (Rlt r2 r1)
+def total_order_T_type (r1 r2 : R) : Type :=
+  Sumor (Sumbool (Rlt r1 r2) (Eq r1 r2)) (Rlt r2 r1)
 end Rdefinitions
 
 namespace R_sqrt
@@ -578,6 +599,8 @@ def Rabs_def2Statement : Prop := ∀ (x a : R) (_ : Rlt (Rabs x) a), And (Rlt x 
 def Rabs_leStatement : Prop := ∀ (a b : R) (_ : And (Rle (Ropp b) a) (Rle a b)), Rle (Rabs a) b
 def Rabs_leftStatement : Prop := ∀ (r : R) (_ : Rlt r (IZR Z0)), Eq (Rabs r) (Ropp r)
 def Rabs_left1Statement : Prop := ∀ (a : R) (_ : Rle a (IZR Z0)), Eq (Rabs a) (Ropp a)
+def Rabs_minus_symStatement : Prop :=
+  ∀ x y : R, Eq (Rabs (Rminus x y)) (Rabs (Rminus y x))
 def Rabs_multStatement : Prop := ∀ x y : R, Eq (Rabs (Rmult x y)) (Rmult (Rabs x) (Rabs y))
 def Rabs_no_R0Statement : Prop := ∀ (r : R) (_ : Not (Eq r (IZR Z0))), Not (Eq (Rabs r) (IZR Z0))
 def Rabs_pos_eqStatement : Prop := ∀ (x : R) (_ : Rle (IZR Z0) x), Eq (Rabs x) x
@@ -589,10 +612,16 @@ def Rabs_rightStatement : Prop := ∀ (r : R) (_ : Rge r (IZR Z0)), Eq (Rabs r) 
 def Rabs_RoppStatement : Prop := ∀ x : R, Eq (Rabs (Ropp x)) (Rabs x)
 def Rcase_absStatement : Type := ∀ r : R, Sumbool (Rlt r (IZR Z0)) (Rge r (IZR Z0))
 def Rmin_commStatement : Prop := ∀ x y : R, Eq (Rmin x y) (Rmin y x)
+def Rmin_lStatement : Prop := ∀ x y : R, Rle (Rmin x y) x
+def Rmin_rStatement : Prop := ∀ x y : R, Rle (Rmin x y) y
 
 end Rbasic_fun
 
 namespace Rdefinitions
+
+noncomputable def total_order_T (r1 r2 : R) :
+    Sumor (Sumbool (Rlt r1 r2) (Eq r1 r2)) (Rlt r2 r1) :=
+  ExactReal.total_order_T ctx r1 r2
 
 def total_order_TStatement : Type := ∀ r1 r2 : R, Sumor (Sumbool (Rlt r1 r2) (Eq r1 r2)) (Rlt r2 r1)
 
@@ -676,6 +705,9 @@ def Rmult_lt_compat_rStatement : Prop := ∀ (r r1 r2 : R) (_ : Rlt (IZR Z0) r) 
 def Rmult_lt_reg_lStatement : Prop := ∀ (r r1 r2 : R) (_ : Rlt (IZR Z0) r) (_ : Rlt (Rmult r r1) (Rmult r r2)), Rlt r1 r2
 def Rmult_lt_reg_rStatement : Prop := ∀ (r r1 r2 : R) (_ : Rlt (IZR Z0) r) (_ : Rlt (Rmult r1 r) (Rmult r2 r)), Rlt r1 r2
 def Rmult_opp_oppStatement : Prop := ∀ r1 r2 : R, Eq (Rmult (Ropp r1) (Ropp r2)) (Rmult r1 r2)
+def Rmult_minus_distr_rStatement : Prop :=
+  ∀ r1 r2 r3 : R,
+    Eq (Rmult (Rminus r2 r3) r1) (Rminus (Rmult r2 r1) (Rmult r3 r1))
 def Rmult_plus_distr_rStatement : Prop := ∀ r1 r2 r3 : R, Eq (Rmult (Rplus r1 r2) r3) (Rplus (Rmult r1 r3) (Rmult r2 r3))
 def Rnot_le_ltStatement : Prop := ∀ (r1 r2 : R) (_ : Not (Rle r1 r2)), Rlt r2 r1
 def Rnot_lt_leStatement : Prop := ∀ (r1 r2 : R) (_ : Not (Rlt r1 r2)), Rle r2 r1

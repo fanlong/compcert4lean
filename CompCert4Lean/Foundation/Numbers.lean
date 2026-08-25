@@ -80,6 +80,7 @@ inductive BoolSpec (A B : Prop) : Bool → Prop where
 namespace Numbers.BinNums
 
 export positive (xH xI xO)
+export N (N0 Npos)
 export Z (Z0 Zneg Zpos)
 
 end Numbers.BinNums
@@ -637,7 +638,9 @@ end ZArith.Zabs
 namespace ZArith.Zdiv
 
 abbrev Zmod := ZArith.BinInt.Z.modulo
-def Remainder (r b : Z) : Prop := ZArith.BinInt.Z.le Z0 r ∧ ZArith.BinInt.Z.lt r b
+def Remainder (r b : Z) : Prop :=
+  (ZArith.BinInt.Z.le Z0 r ∧ ZArith.BinInt.Z.lt r b) ∨
+    (ZArith.BinInt.Z.lt b r ∧ ZArith.BinInt.Z.le r Z0)
 
 theorem Z_mod_plus_full (a b c : Z) :
     ZArith.BinInt.Z.modulo

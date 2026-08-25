@@ -655,20 +655,18 @@ parts of CompCert's unary square-root policy: input NaNs are handled by
 normalized to `default_nan_64` / `default_nan_32`. -/
 
 def float32_sqrt_correctStatement : Prop :=
-  Float32.unop_nan_result_obligation →
-    ∀ x : UInt32,
-      float32_sqrt x =
-        UInt32.ofBitVec
-          (Float32.sqrt (⟨x.toBitVec⟩ : float32)).bits
+  ∀ x : UInt32,
+    float32_sqrt x =
+      UInt32.ofBitVec
+        (Float32.sqrt (⟨x.toBitVec⟩ : float32)).bits
 
 abbrev float32_sqrt_correct : Prop := float32_sqrt_correctStatement
 
 def float64_sqrt_correctStatement : Prop :=
-  Float.unop_nan_result_obligation →
-    ∀ x : UInt64,
-      float64_sqrt x =
-        UInt64.ofBitVec
-          (Float.sqrt (⟨x.toBitVec⟩ : float)).bits
+  ∀ x : UInt64,
+    float64_sqrt x =
+      UInt64.ofBitVec
+        (Float.sqrt (⟨x.toBitVec⟩ : float)).bits
 
 abbrev float64_sqrt_correct : Prop := float64_sqrt_correctStatement
 
