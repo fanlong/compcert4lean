@@ -43,6 +43,8 @@ private abbrev external_function := CompCert4Lean.Common.AST.external_function
 private abbrev trace := CompCert4Lean.Common.Events.trace
 private abbrev CompilerConfig := CompCert4Lean.Config.CompilerConfig
 private abbrev ExternalCalls := CompCert4Lean.Common.ExternalCalls.ExternalCalls
+private abbrev BinaryNormalizeCertificate :=
+  CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
 
 private abbrev z0 : Z := .Z0
 private abbrev z1 : Z := ZArith.BinInt.Z.of_nat 1
@@ -589,7 +591,10 @@ private def divmods2Int64 (nhi nlo d : int64) : Option (int64 × int64) :=
         CompCert4Lean.Lib.Integers.Int64.repr r)
     | _, _ => none
 
-def exec_instr (ge : genv) (f : function) (i : instruction)
+def exec_instr
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (ge : genv) (f : function) (i : instruction)
     (rs : regset) (m : mem) : outcome :=
   match i with
   | .Pmov_rr rd r1 => .Next (nextinstr (Pregmap.set (.IR rd) (Pregmap.get (.IR r1) rs) rs)) m
@@ -639,19 +644,23 @@ def exec_instr (ge : genv) (f : function) (i : instruction)
   | .Pcvttsd2si_rf rd r1 => .Next (nextinstr (Pregmap.set (.IR rd)
       (Val.maketotal (Val.intoffloat (Pregmap.get (.FR r1) rs))) rs)) m
   | .Pcvtsi2sd_fr rd r1 => .Next (nextinstr (Pregmap.set (.FR rd)
-      (Val.maketotal (Val.floatofint (Pregmap.get (.IR r1) rs))) rs)) m
+      (Val.maketotal (Val.floatofint
+        (binary64_certificate := binary64_certificate) (Pregmap.get (.IR r1) rs))) rs)) m
   | .Pcvttss2si_rf rd r1 => .Next (nextinstr (Pregmap.set (.IR rd)
       (Val.maketotal (Val.intofsingle (Pregmap.get (.FR r1) rs))) rs)) m
   | .Pcvtsi2ss_fr rd r1 => .Next (nextinstr (Pregmap.set (.FR rd)
-      (Val.maketotal (Val.singleofint (Pregmap.get (.IR r1) rs))) rs)) m
+      (Val.maketotal (Val.singleofint
+        (binary32_certificate := binary32_certificate) (Pregmap.get (.IR r1) rs))) rs)) m
   | .Pcvttsd2sl_rf rd r1 => .Next (nextinstr (Pregmap.set (.IR rd)
       (Val.maketotal (Val.longoffloat (Pregmap.get (.FR r1) rs))) rs)) m
   | .Pcvtsl2sd_fr rd r1 => .Next (nextinstr (Pregmap.set (.FR rd)
-      (Val.maketotal (Val.floatoflong (Pregmap.get (.IR r1) rs))) rs)) m
+      (Val.maketotal (Val.floatoflong
+        (binary64_certificate := binary64_certificate) (Pregmap.get (.IR r1) rs))) rs)) m
   | .Pcvttss2sl_rf rd r1 => .Next (nextinstr (Pregmap.set (.IR rd)
       (Val.maketotal (Val.longofsingle (Pregmap.get (.FR r1) rs))) rs)) m
   | .Pcvtsl2ss_fr rd r1 => .Next (nextinstr (Pregmap.set (.FR rd)
-      (Val.maketotal (Val.singleoflong (Pregmap.get (.IR r1) rs))) rs)) m
+      (Val.maketotal (Val.singleoflong
+        (binary32_certificate := binary32_certificate) (Pregmap.get (.IR r1) rs))) rs)) m
   | .Pleal rd a => .Next (nextinstr (Pregmap.set (.IR rd) (eval_addrmode32 ge a rs) rs)) m
   | .Pleaq rd a => .Next (nextinstr (Pregmap.set (.IR rd) (eval_addrmode64 ge a rs) rs)) m
   | .Pnegl rd => .Next (nextinstr_nf (Pregmap.set (.IR rd)
@@ -990,14 +999,19 @@ def initial_regset (p : program) : regset :=
           CompCert4Lean.Lib.Integers.Ptrofs.zero)
         (Pregmap.init Vundef)))
 
-inductive step (cfg : CompilerConfig) (xi : ExternalCalls) (ge : genv) :
+inductive step
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (cfg : CompilerConfig) (xi : ExternalCalls) (ge : genv) :
     state → trace → state → Prop where
   | exec_step_internal (b : block) (ofs : ptrofs) (f : function)
       (i : instruction) (rs : regset) (m : mem) (rs' : regset) (m' : mem)
       (hpc : Pregmap.get .PC rs = .Vptr b ofs)
       (hf : Genv.find_funct_ptr ge b = some (Internal f))
       (hi : find_instr (CompCert4Lean.Lib.Integers.Ptrofs.unsigned ofs) f.fn_code = some i)
-      (he : exec_instr ge f i rs m = .Next rs' m') :
+      (he : exec_instr
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) ge f i rs m = .Next rs' m') :
       step cfg xi ge (.State rs m) E0 (.State rs' m')
   | exec_step_builtin (b : block) (ofs : ptrofs) (f : function)
       (ef : external_function) (args : List (builtin_arg preg))
@@ -1009,7 +1023,10 @@ inductive step (cfg : CompilerConfig) (xi : ExternalCalls) (ge : genv) :
         some (.Pbuiltin ef args res))
       (hargs : eval_builtin_args (Genv.to_senv ge)
         (fun r => Pregmap.get r rs) (Pregmap.get (.IR .RSP) rs) m args vargs)
-      (hcall : external_call xi ef (Genv.to_senv ge) vargs m t vres m')
+      (hcall : external_call
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        xi ef (Genv.to_senv ge) vargs m t vres m')
       (hrs : rs' = nextinstr_nf
         (set_res res vres
           (undef_regs (List.map preg_of (destroyed_by_builtin ef)) rs))) :
@@ -1019,7 +1036,10 @@ inductive step (cfg : CompilerConfig) (xi : ExternalCalls) (ge : genv) :
       (hpc : Pregmap.get .PC rs = .Vptr b CompCert4Lean.Lib.Integers.Ptrofs.zero)
       (hf : Genv.find_funct_ptr ge b = some (External ef))
       (hargs : extcall_arguments cfg rs m (ef_sig ef) args)
-      (hcall : external_call xi ef (Genv.to_senv ge) args m t res m')
+      (hcall : external_call
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        xi ef (Genv.to_senv ge) args m t res m')
       (hrs : rs' = Pregmap.set .PC (Pregmap.get .RA rs)
         (set_pair (loc_external_result (ef_sig ef)) res
           (undef_caller_save_regs cfg rs))) :
@@ -1042,15 +1062,31 @@ inductive final_state : state → int → Prop where
 
 export final_state (final_state_intro)
 
-def semantics (cfg : CompilerConfig) (xi : ExternalCalls) (p : program) :=
-  Semantics (step cfg xi)
-    (CompCert4Lean.X86.Asm.initial_state p) final_state
+def semantics
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (cfg : CompilerConfig) (xi : ExternalCalls) (p : program) :=
+  Semantics
+    (step
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) cfg xi)
+    (CompCert4Lean.X86.Asm.initial_state p)
+    final_state
     (CompCert4Lean.Common.Globalenvs.Genv.globalenv p)
 
-def semantics_determinateStatement : Prop :=
-  ∀ cfg xi p, determinate (semantics cfg xi p)
+def semantics_determinateStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
+  ∀ cfg xi p, determinate (semantics
+    (binary64_certificate := binary64_certificate)
+    (binary32_certificate := binary32_certificate) cfg xi p)
 
-def semantics_determinate := semantics_determinateStatement
+def semantics_determinate
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :=
+  semantics_determinateStatement
+    (binary64_certificate := binary64_certificate)
+    (binary32_certificate := binary32_certificate)
 
 def data_preg : preg → Bool
   | .PC | .CR _ | .RA => false

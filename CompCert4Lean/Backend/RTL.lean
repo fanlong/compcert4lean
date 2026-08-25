@@ -105,7 +105,14 @@ def find_function (ge : genv) (ros : Sum reg ident) (rs : regset) : Option funde
       | none => none
       | some b => Genv.find_funct_ptr ge b
 
-inductive step (xi : ExternalCalls) (ge : genv) : state → trace → state → Prop where
+inductive step
+    [binary64_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)]
+    (xi : ExternalCalls) (ge : genv) : state → trace → state → Prop where
   | exec_Inop
       (s : List stackframe) (f : function) (sp : val) (pc : node)
       (rs : regset) (m : mem) (pc' : node)
@@ -116,7 +123,10 @@ inductive step (xi : ExternalCalls) (ge : genv) : state → trace → state → 
       (rs : regset) (m : mem) (op : operation) (args : List reg)
       (res : reg) (pc' : node) (v : val)
       (hcode : PTree.get pc f.fn_code = some (Iop op args res pc'))
-      (heval : eval_operation ge sp op (args.map (fun r => Regmap.get r rs)) m = some v) :
+      (heval : eval_operation
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        ge sp op (args.map (fun r => Regmap.get r rs)) m = some v) :
       step xi ge (State s f sp pc rs m) E0
         (State s f sp pc' (Regmap.set res v rs) m)
   | exec_Iload
@@ -164,7 +174,10 @@ inductive step (xi : ExternalCalls) (ge : genv) : state → trace → state → 
       (hcode : PTree.get pc f.fn_code = some (Ibuiltin ef args res pc'))
       (hargs : eval_builtin_args (Genv.to_senv ge) (fun r => Regmap.get r rs)
         sp m args vargs)
-      (hcall : external_call xi ef (Genv.to_senv ge) vargs m t vres m') :
+      (hcall : external_call
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        xi ef (Genv.to_senv ge) vargs m t vres m') :
       step xi ge (State s f sp pc rs m) t
         (State s f sp pc' (regmap_setres res vres rs) m')
   | exec_Icond
@@ -201,7 +214,10 @@ inductive step (xi : ExternalCalls) (ge : genv) : state → trace → state → 
   | exec_function_external
       (s : List stackframe) (ef : external_function) (args : List val)
       (res : val) (t : trace) (m m' : mem)
-      (hcall : external_call xi ef (Genv.to_senv ge) args m t res m') :
+      (hcall : external_call
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        xi ef (Genv.to_senv ge) args m t res m') :
       step xi ge (Callstate s (External ef) args m) t (Returnstate s res m')
   | exec_return
       (res : reg) (f : function) (sp : val) (pc : node) (rs : regset)
@@ -225,9 +241,21 @@ inductive initial_state (p : program) : state → Prop where
 inductive final_state : state → int → Prop where
   | intro (r : int) (m : mem) : final_state (Returnstate [] (Vint r) m) r
 
-def semantics (xi : ExternalCalls) (p : program) :
+def semantics
+    [binary64_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)]
+    (xi : ExternalCalls) (p : program) :
     CompCert4Lean.Common.Smallstep.semantics :=
-  Semantics (step xi) (initial_state p) final_state (Genv.globalenv p)
+  Semantics
+    (step (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) xi)
+    (initial_state p)
+    final_state
+    (Genv.globalenv p)
 
 /-! ## Operations on RTL syntax -/
 

@@ -278,7 +278,14 @@ def parent_ra : List stackframe → val
 
 /-! ## Transition semantics -/
 
-inductive step (cfg : CompilerConfig) (xi : ExternalCalls)
+inductive step
+    [binary64_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)]
+    (cfg : CompilerConfig) (xi : ExternalCalls)
     (return_address_offset : function → code → Ptrofs → Prop) (ge : genv) :
     state → trace → state → Prop where
   | exec_Mlabel
@@ -373,7 +380,10 @@ inductive step (cfg : CompilerConfig) (xi : ExternalCalls)
       (res : builtin_res mreg) (b : code) (vargs : List val) (t : trace)
       (vres : val) (rs' : regset) (m' : mem)
       (hargs : eval_builtin_args (Genv.to_senv ge) rs sp m args vargs)
-      (hcall : external_call xi ef (Genv.to_senv ge) vargs m t vres m')
+      (hcall : external_call
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        xi ef (Genv.to_senv ge) vargs m t vres m')
       (hrs : rs' = set_res res vres
         (undef_regs (destroyed_by_builtin ef) rs)) :
       step cfg xi return_address_offset ge
@@ -451,7 +461,10 @@ inductive step (cfg : CompilerConfig) (xi : ExternalCalls)
       (res : val) (m' : mem)
       (hfun : Genv.find_funct_ptr ge fb = some (.External ef))
       (hargs : extcall_arguments cfg rs m (parent_sp s) (ef_sig ef) args)
-      (hcall : external_call xi ef (Genv.to_senv ge) args m t res m')
+      (hcall : external_call
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        xi ef (Genv.to_senv ge) args m t res m')
       (hrs : rs' = set_pair (CompCert4Lean.X86.Conventions1.loc_result (ef_sig ef))
         res (undef_caller_save_regs cfg rs)) :
       step cfg xi return_address_offset ge (Callstate s fb rs m) t
@@ -485,10 +498,22 @@ inductive final_state : state → int → Prop where
       (hval : rs r = Vint retcode) :
       final_state (Returnstate [] rs m) retcode
 
-def semantics (cfg : CompilerConfig) (xi : ExternalCalls)
+def semantics
+    [binary64_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)]
+    (cfg : CompilerConfig) (xi : ExternalCalls)
     (return_address_offset : function → code → Ptrofs → Prop) (p : program) :
     CompCert4Lean.Common.Smallstep.semantics :=
-  Semantics (step cfg xi return_address_offset) (initial_state p) final_state
+  Semantics
+    (step (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      cfg xi return_address_offset)
+    (initial_state p)
+    final_state
     (Genv.globalenv p)
 
 end CompCert4Lean.Backend.Mach
