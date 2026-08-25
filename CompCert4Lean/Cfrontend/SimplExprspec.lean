@@ -48,6 +48,9 @@ private abbrev set_destination := CompCert4Lean.Cfrontend.SimplExpr.set_destinat
 private abbrev generator := CompCert4Lean.Cfrontend.SimplExpr.generator
 private abbrev FreshIdentContext :=
   CompCert4Lean.Cfrontend.SimplExpr.FreshIdentContext
+private abbrev BinaryNormalizeCertificate :=
+  CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+private abbrev zOfNat := ZArith.BinInt.Z.of_nat
 
 private abbrev Included {A : Type} (xs ys : List A) : Prop :=
   CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.List.incl xs ys
@@ -88,7 +91,10 @@ inductive tr_rvalof (ce : composite_env) :
         (.Etempvar t ty) tmp
 
 mutual
-  inductive tr_expr (ce : composite_env) :
+  inductive tr_expr
+      [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+      [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+      (ce : composite_env) :
       temp_env → destination → cexpr → List statement → expr → List ident → Prop where
     | tr_var (le : temp_env) (dst : destination) (id : ident) (ty : type)
         (tmp : List ident) :
@@ -112,14 +118,18 @@ mutual
         (tmp : List ident) (htype : CompCert4Lean.Cfrontend.Clight.typeof a = ty)
         (heval : ∀ (tge : genv) (e : env) (le' : temp_env) (m : mem),
           (∀ id, id ∈ tmp → PTree.get id le' = PTree.get id le) →
-          CompCert4Lean.Cfrontend.Clight.eval_expr tge e le' m a v) :
+          CompCert4Lean.Cfrontend.Clight.eval_expr
+            (binary64_certificate := binary64_certificate)
+            (binary32_certificate := binary32_certificate) tge e le' m a v) :
         tr_expr ce le .For_val (.Eval v ty) [] a tmp
     | tr_val_set (le : temp_env) (sd : set_destination) (v : val) (ty : type)
         (a any : expr) (tmp : List ident)
         (htype : CompCert4Lean.Cfrontend.Clight.typeof a = ty)
         (heval : ∀ (tge : genv) (e : env) (le' : temp_env) (m : mem),
           (∀ id, id ∈ tmp → PTree.get id le' = PTree.get id le) →
-          CompCert4Lean.Cfrontend.Clight.eval_expr tge e le' m a v) :
+          CompCert4Lean.Cfrontend.Clight.eval_expr
+            (binary64_certificate := binary64_certificate)
+            (binary32_certificate := binary32_certificate) tge e le' m a v) :
         tr_expr ce le (.For_set sd) (.Eval v ty)
           (CompCert4Lean.Cfrontend.SimplExpr.do_set sd a) any tmp
     | tr_sizeof (le : temp_env) (dst : destination) (ty' ty : type)
@@ -463,7 +473,10 @@ mutual
         (htmp : t ∈ tmp) :
         tr_expr ce le (.For_set sd) (.Eparen e1 tycast ty) sl1 any tmp
 
-  inductive tr_exprlist (ce : composite_env) :
+  inductive tr_exprlist
+      [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+      [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+      (ce : composite_env) :
       temp_env → cexprlist → List statement → List expr → List ident → Prop where
     | tr_nil (le : temp_env) (tmp : List ident) :
         tr_exprlist ce le .Enil [] [] tmp
@@ -487,32 +500,43 @@ abbrev tr_paren_val := @tr_expr.tr_paren_val
 abbrev tr_paren_effects := @tr_expr.tr_paren_effects
 abbrev tr_paren_set := @tr_expr.tr_paren_set
 
-def tr_expr_invariantStatement : Prop :=
+def tr_expr_invariantStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (ce : composite_env) (le : temp_env) (dst : destination) (r : cexpr)
     (sl : List statement) (a : expr) (tmps : List ident),
     tr_expr ce le dst r sl a tmps →
     ∀ le', (∀ x, x ∈ tmps → PTree.get x le' = PTree.get x le) →
       tr_expr ce le' dst r sl a tmps
 
-def tr_exprlist_invariantStatement : Prop :=
+def tr_exprlist_invariantStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (ce : composite_env) (le : temp_env) (rl : cexprlist)
     (sl : List statement) (al : List expr) (tmps : List ident),
     tr_exprlist ce le rl sl al tmps →
     ∀ le', (∀ x, x ∈ tmps → PTree.get x le' = PTree.get x le) →
       tr_exprlist ce le' rl sl al tmps
 
-def tr_expr_monotoneStatement : Prop :=
+def tr_expr_monotoneStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (ce : composite_env) (le : temp_env) (dst : destination) (r : cexpr)
     (sl : List statement) (a : expr) (tmps : List ident),
     tr_expr ce le dst r sl a tmps →
     ∀ tmps', Included tmps tmps' → tr_expr ce le dst r sl a tmps'
 
-inductive tr_top (ce : composite_env) (ge : genv) (e : env)
+inductive tr_top
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (ce : composite_env) (ge : genv) (e : env)
     (le : temp_env) (m : mem) :
     destination → cexpr → List statement → expr → List ident → Prop where
   | tr_top_val_val (v : val) (ty : type) (a : expr) (tmp : List ident)
       (htype : CompCert4Lean.Cfrontend.Clight.typeof a = ty)
-      (heval : CompCert4Lean.Cfrontend.Clight.eval_expr ge e le m a v) :
+      (heval : CompCert4Lean.Cfrontend.Clight.eval_expr
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) ge e le m a v) :
       tr_top ce ge e le m .For_val (.Eval v ty) [] a tmp
   | tr_top_base (dst : destination) (r : cexpr) (sl : List statement) (a : expr)
       (tmp : List ident) (h : tr_expr ce le dst r sl a tmp) :
@@ -523,7 +547,10 @@ export tr_top (tr_top_val_val tr_top_base)
 abbrev tr_top_val_val := @tr_top.tr_top_val_val
 abbrev tr_top_base := @tr_top.tr_top_base
 
-inductive tr_expression (ce : composite_env) :
+inductive tr_expression
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (ce : composite_env) :
     cexpr → statement → expr → Prop where
   | tr_expression_intro (r : cexpr) (sl : List statement) (a : expr)
       (tmps : List ident)
@@ -531,14 +558,20 @@ inductive tr_expression (ce : composite_env) :
         tr_top ce ge e le m .For_val r sl a tmps) :
       tr_expression ce r (CompCert4Lean.Cfrontend.SimplExpr.makeseq sl) a
 
-inductive tr_expr_stmt (ce : composite_env) : cexpr → statement → Prop where
+inductive tr_expr_stmt
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (ce : composite_env) : cexpr → statement → Prop where
   | tr_expr_stmt_intro (r : cexpr) (sl : List statement) (a : expr)
       (tmps : List ident)
       (h : ∀ (ge : genv) (e : env) (le : temp_env) (m : mem),
         tr_top ce ge e le m .For_effects r sl a tmps) :
       tr_expr_stmt ce r (CompCert4Lean.Cfrontend.SimplExpr.makeseq sl)
 
-inductive tr_if (ce : composite_env) :
+inductive tr_if
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (ce : composite_env) :
     cexpr → statement → statement → statement → Prop where
   | tr_if_intro (r : cexpr) (s1 s2 : statement) (sl : List statement)
       (a : expr) (tmps : List ident)
@@ -553,7 +586,10 @@ export tr_expr_stmt (tr_expr_stmt_intro)
 export tr_if (tr_if_intro)
 
 mutual
-  inductive tr_stmt (ce : composite_env) :
+  inductive tr_stmt
+      [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+      [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+      (ce : composite_env) :
       cstatement → statement → Prop where
     | tr_skip : tr_stmt ce .Sskip .Sskip
     | tr_do (r : cexpr) (s : statement) (h : tr_expr_stmt ce r s) :
@@ -603,7 +639,10 @@ mutual
         tr_stmt ce (.Slabel lbl s) (.Slabel lbl ts)
     | tr_goto (lbl : ident) : tr_stmt ce (.Sgoto lbl) (.Sgoto lbl)
 
-  inductive tr_lblstmts (ce : composite_env) :
+  inductive tr_lblstmts
+      [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+      [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+      (ce : composite_env) :
       clabeled_statements → labeled_statements → Prop where
     | tr_ls_nil : tr_lblstmts ce .LSnil .LSnil
     | tr_ls_cons (c : Option Z) (s : cstatement) (ls : clabeled_statements)
@@ -612,14 +651,19 @@ mutual
         tr_lblstmts ce (.LScons c s ls) (.LScons c ts tls)
 end
 
-def transl_stmt_meets_specStatement : Prop :=
+def transl_stmt_meets_specStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (ce : composite_env) (s : cstatement) (g : generator) (ts : statement)
     (g' : generator) (I : CompCert4Lean.Lib.Coqlib.Ple g.gen_next g'.gen_next),
     CompCert4Lean.Cfrontend.SimplExpr.transl_stmt ce s g =
       .Res ts g' I →
     tr_stmt ce s ts
 
-inductive tr_function (ce : composite_env) :
+inductive tr_function
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (ce : composite_env) :
     cfunction → function → Prop where
   | tr_function_intro (f : cfunction) (tf : function)
       (hbody : tr_stmt ce f.fn_body tf.fn_body)
@@ -629,12 +673,17 @@ inductive tr_function (ce : composite_env) :
       (hvars : tf.fn_vars = f.fn_vars) :
       tr_function ce f tf
 
-def transl_function_specStatement : Prop :=
+def transl_function_specStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (ctx : FreshIdentContext) (ce : composite_env) (f : cfunction) (tf : function),
     CompCert4Lean.Cfrontend.SimplExpr.transl_function ctx ce f = .OK tf →
     tr_function ce f tf
 
-inductive tr_fundef (p : cprogram) : cfundef → fundef → Prop where
+inductive tr_fundef
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (p : cprogram) : cfundef → fundef → Prop where
   | tr_internal (f : cfunction) (tf : function)
       (h : tr_function p.prog_comp_env f tf) :
       tr_fundef p (.Internal f) (.Internal tf)
@@ -642,7 +691,9 @@ inductive tr_fundef (p : cprogram) : cfundef → fundef → Prop where
       (tres : type) (cconv : CompCert4Lean.Common.AST.calling_convention) :
       tr_fundef p (.External ef targs tres cconv) (.External ef targs tres cconv)
 
-def transl_fundef_specStatement : Prop :=
+def transl_fundef_specStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (ctx : FreshIdentContext) (p : cprogram) (fd : cfundef) (tfd : fundef),
     CompCert4Lean.Cfrontend.SimplExpr.transl_fundef ctx p.prog_comp_env fd = .OK tfd →
     tr_fundef p fd tfd
