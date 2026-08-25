@@ -122,21 +122,42 @@ export wf_numbering (wf_num_eqs wf_num_reg wf_num_val)
 
 def valuation : Type := valnum → val
 
-inductive rhs_eval_to (valu : valuation) (ge : genv) (sp : val) (m : mem) :
+inductive rhs_eval_to
+    [binary64_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)]
+    (valu : valuation) (ge : genv) (sp : val) (m : mem) :
     rhs → val → Prop where
   | op_eval_to (op : operation) (vl : List valnum) (v : val) :
-      eval_operation ge sp op (List.map valu vl) m = some v →
-      rhs_eval_to valu ge sp m (Op op vl) v
+      eval_operation
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        ge sp op (List.map valu vl) m = some v →
+      rhs_eval_to
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        valu ge sp m (Op op vl) v
   | load_eval_to (chunk : memory_chunk) (addr : addressing) (vl : List valnum)
       (a v : val) (p : aptr) :
       eval_addressing ge sp addr (List.map valu vl) = some a →
       Mem.loadv chunk m a = some v →
-      rhs_eval_to valu ge sp m (Load chunk addr vl p) v
+      rhs_eval_to
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        valu ge sp m (Load chunk addr vl p) v
   | builtin_eval_to (bf : builtin_function) (args : List (builtin_arg valnum))
       (vargs : List val) (v : val) :
       eval_builtin_args (Genv.to_senv ge) valu sp m args vargs →
-      builtin_function_sem bf vargs = some v →
-      rhs_eval_to valu ge sp m (Builtin bf args) v
+      builtin_function_sem
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) bf vargs = some v →
+      rhs_eval_to
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        valu ge sp m (Builtin bf args) v
 
 export rhs_eval_to (op_eval_to load_eval_to builtin_eval_to)
 
@@ -158,24 +179,54 @@ inductive rhs_valid (valu : valuation) (ge : genv) : val → rhs → Prop where
 
 export rhs_valid (op_valid load_valid builtin_valid)
 
-inductive equation_holds (valu : valuation) (ge : genv) (sp : val) (m : mem) :
+inductive equation_holds
+    [binary64_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)]
+    (valu : valuation) (ge : genv) (sp : val) (m : mem) :
     equation → Prop where
   | eq_holds_strict (l : valnum) (r : rhs) :
-      rhs_eval_to valu ge sp m r (valu l) →
+      rhs_eval_to
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        valu ge sp m r (valu l) →
       rhs_valid valu ge sp r →
-      equation_holds valu ge sp m (Eq l true r)
+      equation_holds
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        valu ge sp m (Eq l true r)
   | eq_holds_lessdef (l : valnum) (r : rhs) (v : val) :
-      rhs_eval_to valu ge sp m r v →
+      rhs_eval_to
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        valu ge sp m r v →
       Val.lessdef v (valu l) →
       rhs_valid valu ge sp r →
-      equation_holds valu ge sp m (Eq l false r)
+      equation_holds
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        valu ge sp m (Eq l false r)
 
 export equation_holds (eq_holds_strict eq_holds_lessdef)
 
-structure numbering_holds (valu : valuation) (ge : genv) (sp : val)
+structure numbering_holds
+    [binary64_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)]
+    (valu : valuation) (ge : genv) (sp : val)
     (rs : regset) (m : mem) (n : numbering) : Prop where
   num_holds_wf : wf_numbering n
-  num_holds_eq : ∀ e, In e n.num_eqs → equation_holds valu ge sp m e
+  num_holds_eq : ∀ e, In e n.num_eqs →
+    equation_holds
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      valu ge sp m e
   num_holds_reg : ∀ r v, PTree.get r n.num_reg = some v → Regmap.get r rs = valu v
 
 export numbering_holds (num_holds_wf num_holds_eq num_holds_reg)
@@ -196,14 +247,36 @@ def rhs_compat_symStatement : Prop :=
 def compat_rhs_soundStatement : Prop :=
   ∀ r1 r2, compat_rhs r1 r2 = true → rhs_compat r1 r2
 
-def rhs_eval_to_compatStatement : Prop :=
+def rhs_eval_to_compatStatement
+    [binary64_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)] : Prop :=
   ∀ valu ge sp m rh v rh',
-    rhs_eval_to valu ge sp m rh v →
+    rhs_eval_to
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      valu ge sp m rh v →
     rhs_compat rh rh' →
-    rhs_eval_to valu ge sp m rh' v
+    rhs_eval_to
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      valu ge sp m rh' v
 
-def empty_numbering_holdsStatement : Prop :=
-  ∀ valu ge sp rs m, numbering_holds valu ge sp rs m empty_numbering
+def empty_numbering_holdsStatement
+    [binary64_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)] : Prop :=
+  ∀ valu ge sp rs m,
+    numbering_holds
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      valu ge sp rs m empty_numbering
 
 def combine_comparison_cmp_soundStatement : Prop :=
   ∀ (valu : valnum → val) c x y res res',
