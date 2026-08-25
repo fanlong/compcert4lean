@@ -51,13 +51,21 @@ private abbrev AsmRegset := CompCert4Lean.X86.Asm.regset
 private abbrev AsmGenv := CompCert4Lean.X86.Asm.genv
 private abbrev AsmState := CompCert4Lean.X86.Asm.state
 private abbrev Ptrofs := CompCert4Lean.Lib.Integers.Ptrofs.int
+private abbrev BinaryNormalizeCertificate :=
+  CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+private abbrev zOfNat := ZArith.BinInt.Z.of_nat
 
 private abbrev asmSP : Preg := .IR CompCert4Lean.X86.Asm.SP
 private abbrev asmPC : Preg := .PC
 
-private def asmStep (cfg : CompilerConfig) (xi : ExternalCalls) :
+private def asmStep
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (cfg : CompilerConfig) (xi : ExternalCalls) :
     AsmGenv → AsmState → trace → AsmState → Prop :=
-  CompCert4Lean.X86.Asm.step cfg xi
+  CompCert4Lean.X86.Asm.step
+    (binary64_certificate := binary64_certificate)
+    (binary32_certificate := binary32_certificate) cfg xi
 
 /-! Agreement between machine and processor register states. -/
 
@@ -80,22 +88,40 @@ inductive code_tail : Z → AsmCode → AsmCode → Prop where
 
 /-! Straight-line execution. -/
 
-inductive exec_straight (ge : AsmGenv) (fn : AsmFunction) :
+inductive exec_straight
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (ge : AsmGenv) (fn : AsmFunction) :
     AsmCode → AsmRegset → Mem → AsmCode → AsmRegset → Mem → Prop where
   | exec_straight_one (i1 : CompCert4Lean.X86.Asm.instruction)
       (c : AsmCode) (rs1 : AsmRegset) (m1 : Mem) (rs2 : AsmRegset) (m2 : Mem)
-      (hstep : CompCert4Lean.X86.Asm.exec_instr ge fn i1 rs1 m1 = .Next rs2 m2)
+      (hstep : CompCert4Lean.X86.Asm.exec_instr
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        ge fn i1 rs1 m1 = .Next rs2 m2)
       (hpc : rs2 asmPC = Val.offset_ptr (rs1 asmPC)
         CompCert4Lean.Lib.Integers.Ptrofs.one) :
-      exec_straight ge fn (i1 :: c) rs1 m1 c rs2 m2
+      exec_straight
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        ge fn (i1 :: c) rs1 m1 c rs2 m2
   | exec_straight_step (i : CompCert4Lean.X86.Asm.instruction)
       (c : AsmCode) (rs1 : AsmRegset) (m1 : Mem) (rs2 : AsmRegset) (m2 : Mem)
       (c' : AsmCode) (rs3 : AsmRegset) (m3 : Mem)
-      (hstep : CompCert4Lean.X86.Asm.exec_instr ge fn i rs1 m1 = .Next rs2 m2)
+      (hstep : CompCert4Lean.X86.Asm.exec_instr
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        ge fn i rs1 m1 = .Next rs2 m2)
       (hpc : rs2 asmPC = Val.offset_ptr (rs1 asmPC)
         CompCert4Lean.Lib.Integers.Ptrofs.one)
-      (htail : exec_straight ge fn c rs2 m2 c' rs3 m3) :
-      exec_straight ge fn (i :: c) rs1 m1 c' rs3 m3
+      (htail : exec_straight
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        ge fn c rs2 m2 c' rs3 m3) :
+      exec_straight
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        ge fn (i :: c) rs1 m1 c' rs3 m3
 
 export exec_straight (exec_straight_one exec_straight_step)
 
@@ -294,23 +320,36 @@ def code_tail_uniqueStatement : Prop :=
   ∀ (fn c : AsmCode) (pos pos' : Z),
     code_tail pos fn c → code_tail pos' fn c → pos = pos'
 
-def exec_straight_steps_1Statement : Prop :=
+def exec_straight_steps_1Statement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (cfg : CompilerConfig) (xi : ExternalCalls) (ge : AsmGenv)
     (fn : AsmFunction) (c : AsmCode) (rs : AsmRegset)
     (m : Mem) (c' : AsmCode) (rs' : AsmRegset) (m' : Mem),
-    exec_straight ge fn c rs m c' rs' m' →
+    exec_straight
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      ge fn c rs m c' rs' m' →
     ZArith.BinInt.Z.le (list_length_z fn.fn_code)
       CompCert4Lean.Lib.Integers.Ptrofs.max_unsigned →
     ∀ (b : Block) (ofs : Ptrofs),
       rs asmPC = Vptr b ofs →
       Genv.find_funct_ptr ge b = some (Internal fn) →
       code_tail (CompCert4Lean.Lib.Integers.Ptrofs.unsigned ofs) fn.fn_code c →
-      plus (asmStep cfg xi) ge (.State rs m) E0 (.State rs' m')
+      plus (asmStep
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        cfg xi) ge (.State rs m) E0 (.State rs' m')
 
-def exec_straight_steps_2Statement : Prop :=
+def exec_straight_steps_2Statement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (ge : AsmGenv) (fn : AsmFunction) (c : AsmCode) (rs : AsmRegset)
     (m : Mem) (c' : AsmCode) (rs' : AsmRegset) (m' : Mem),
-    exec_straight ge fn c rs m c' rs' m' →
+    exec_straight
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      ge fn c rs m c' rs' m' →
     ZArith.BinInt.Z.le (list_length_z fn.fn_code)
       CompCert4Lean.Lib.Integers.Ptrofs.max_unsigned →
     ∀ (b : Block) (ofs : Ptrofs),
@@ -321,36 +360,72 @@ def exec_straight_steps_2Statement : Prop :=
         rs' asmPC = Vptr b ofs' ∧
         code_tail (CompCert4Lean.Lib.Integers.Ptrofs.unsigned ofs') fn.fn_code c'
 
-def exec_straight_threeStatement : Prop :=
+def exec_straight_threeStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (ge : AsmGenv) (fn : AsmFunction) (i1 i2 i3 : AsmInstruction)
     (c : AsmCode) (rs1 : AsmRegset) (m1 : Mem) (rs2 : AsmRegset) (m2 : Mem)
     (rs3 : AsmRegset) (m3 : Mem) (rs4 : AsmRegset) (m4 : Mem),
-    CompCert4Lean.X86.Asm.exec_instr ge fn i1 rs1 m1 = .Next rs2 m2 →
-    CompCert4Lean.X86.Asm.exec_instr ge fn i2 rs2 m2 = .Next rs3 m3 →
-    CompCert4Lean.X86.Asm.exec_instr ge fn i3 rs3 m3 = .Next rs4 m4 →
+    CompCert4Lean.X86.Asm.exec_instr
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      ge fn i1 rs1 m1 = .Next rs2 m2 →
+    CompCert4Lean.X86.Asm.exec_instr
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      ge fn i2 rs2 m2 = .Next rs3 m3 →
+    CompCert4Lean.X86.Asm.exec_instr
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      ge fn i3 rs3 m3 = .Next rs4 m4 →
     rs2 asmPC = Val.offset_ptr (rs1 asmPC) CompCert4Lean.Lib.Integers.Ptrofs.one →
     rs3 asmPC = Val.offset_ptr (rs2 asmPC) CompCert4Lean.Lib.Integers.Ptrofs.one →
     rs4 asmPC = Val.offset_ptr (rs3 asmPC) CompCert4Lean.Lib.Integers.Ptrofs.one →
-    exec_straight ge fn (i1 :: i2 :: i3 :: c) rs1 m1 c rs4 m4
+    exec_straight
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      ge fn (i1 :: i2 :: i3 :: c) rs1 m1 c rs4 m4
 
-def exec_straight_transStatement : Prop :=
+def exec_straight_transStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (ge : AsmGenv) (fn : AsmFunction)
     (c1 : AsmCode) (rs1 : AsmRegset) (m1 : Mem)
     (c2 : AsmCode) (rs2 : AsmRegset) (m2 : Mem)
     (c3 : AsmCode) (rs3 : AsmRegset) (m3 : Mem),
-    exec_straight ge fn c1 rs1 m1 c2 rs2 m2 →
-    exec_straight ge fn c2 rs2 m2 c3 rs3 m3 →
-    exec_straight ge fn c1 rs1 m1 c3 rs3 m3
+    exec_straight
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      ge fn c1 rs1 m1 c2 rs2 m2 →
+    exec_straight
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      ge fn c2 rs2 m2 c3 rs3 m3 →
+    exec_straight
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      ge fn c1 rs1 m1 c3 rs3 m3
 
-def exec_straight_twoStatement : Prop :=
+def exec_straight_twoStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (ge : AsmGenv) (fn : AsmFunction) (i1 i2 : AsmInstruction)
     (c : AsmCode) (rs1 : AsmRegset) (m1 : Mem) (rs2 : AsmRegset) (m2 : Mem)
     (rs3 : AsmRegset) (m3 : Mem),
-    CompCert4Lean.X86.Asm.exec_instr ge fn i1 rs1 m1 = .Next rs2 m2 →
-    CompCert4Lean.X86.Asm.exec_instr ge fn i2 rs2 m2 = .Next rs3 m3 →
+    CompCert4Lean.X86.Asm.exec_instr
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      ge fn i1 rs1 m1 = .Next rs2 m2 →
+    CompCert4Lean.X86.Asm.exec_instr
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      ge fn i2 rs2 m2 = .Next rs3 m3 →
     rs2 asmPC = Val.offset_ptr (rs1 asmPC) CompCert4Lean.Lib.Integers.Ptrofs.one →
     rs3 asmPC = Val.offset_ptr (rs2 asmPC) CompCert4Lean.Lib.Integers.Ptrofs.one →
-    exec_straight ge fn (i1 :: i2 :: c) rs1 m1 c rs3 m3
+    exec_straight
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      ge fn (i1 :: i2 :: c) rs1 m1 c rs3 m3
 
 def extcall_arg_matchStatement : Prop :=
   ∀ (cfg : CompilerConfig) (ms : MachRegset) (sp : Val) (rs : AsmRegset)
