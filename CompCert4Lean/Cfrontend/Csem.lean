@@ -47,8 +47,11 @@ private abbrev type := CompCert4Lean.Cfrontend.Ctypes.type
 private abbrev bitfield := CompCert4Lean.Cfrontend.Ctypes.bitfield
 private abbrev composite_env := CompCert4Lean.Cfrontend.Ctypes.composite_env
 private abbrev ExternalCalls := CompCert4Lean.Common.ExternalCalls.ExternalCalls
+private abbrev BinaryNormalizeCertificate :=
+  CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
 
 private abbrev z0 : Z := .Z0
+private abbrev zOfNat := ZArith.BinInt.Z.of_nat
 private abbrev zAdd := ZArith.BinInt.Z.add
 private abbrev zLe := ZArith.BinInt.Z.le
 private abbrev zDivide := ZArith.BinInt.Z.divide
@@ -170,11 +173,18 @@ def seq_of_labeled_statement : labeled_statements → statement
   | .LSnil => .Sskip
   | .LScons _ s rest => .Ssequence s (seq_of_labeled_statement rest)
 
-inductive cast_arguments (m : mem) : exprlist → List type → List val → Prop where
+inductive cast_arguments
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (m : mem) : exprlist → List type → List val → Prop where
   | nil : cast_arguments m .Enil [] []
   | cons {v ty el targ1 targs v1 vl} :
-      sem_cast v ty targ1 m = some v1 →
-      cast_arguments m el targs vl →
+      sem_cast
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate) v ty targ1 m = some v1 →
+      cast_arguments
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate) m el targs vl →
       cast_arguments m (.Econs (.Eval v ty) el) (targ1 :: targs) (v1 :: vl)
 
 /-! ## Head reductions -/
@@ -200,7 +210,10 @@ inductive lred (ge : genv) (e : env) : expr → mem → expr → mem → Prop wh
       lred ge e (.Efield (.Eval (.Vptr b ofs) (.Tunion id a)) f ty) m
         (.Eloc b (Ptrofs.add ofs (Ptrofs.repr delta)) bf ty) m
 
-inductive rred (xi : ExternalCalls) (ge : genv) (e : env) :
+inductive rred
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (xi : ExternalCalls) (ge : genv) (e : env) :
     expr → mem → trace → expr → mem → Prop where
   | rvalof {b ofs bf ty m t v} :
       deref_loc ge ty m b ofs bf t v →
@@ -208,13 +221,19 @@ inductive rred (xi : ExternalCalls) (ge : genv) (e : env) :
   | addrof {b ofs ty1 ty m} :
       rred xi ge e (.Eaddrof (.Eloc b ofs .Full ty1) ty) m E0 (.Eval (.Vptr b ofs) ty) m
   | unop {op v1 ty1 ty m v} :
-      sem_unary_operation op v1 ty1 m = some v →
+      sem_unary_operation
+          (binary64_certificate := binary64_certificate) op v1 ty1 m = some v →
       rred xi ge e (.Eunop op (.Eval v1 ty1) ty) m E0 (.Eval v ty) m
   | binop {op v1 ty1 v2 ty2 ty m v} :
-      sem_binary_operation ge.genv_cenv op v1 ty1 v2 ty2 m = some v →
+      sem_binary_operation
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate)
+          ge.genv_cenv op v1 ty1 v2 ty2 m = some v →
       rred xi ge e (.Ebinop op (.Eval v1 ty1) (.Eval v2 ty2) ty) m E0 (.Eval v ty) m
   | cast {ty v1 ty1 m v} :
-      sem_cast v1 ty1 ty m = some v →
+      sem_cast
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate) v1 ty1 ty m = some v →
       rred xi ge e (.Ecast (.Eval v1 ty1) ty) m E0 (.Eval v ty) m
   | red_seqand_true {v1 ty1 r2 ty m} :
       bool_val v1 ty1 m = some true →
@@ -241,7 +260,9 @@ inductive rred (xi : ExternalCalls) (ge : genv) (e : env) :
         (.Eval (CompCert4Lean.Common.Values.Vptrofs
           (Ptrofs.repr (Ctypes.alignof ge.genv_cenv ty1))) ty) m
   | assign {b ofs ty1 bf v2 ty2 m v t m' v'} :
-      sem_cast v2 ty2 ty1 m = some v →
+      sem_cast
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate) v2 ty2 ty1 m = some v →
       assign_loc ge ty1 m b ofs bf v t m' v' →
       rred xi ge e (.Eassign (.Eloc b ofs bf ty1) (.Eval v2 ty2) ty1) m
         t (.Eval v' ty1) m'
@@ -263,11 +284,17 @@ inductive rred (xi : ExternalCalls) (ge : genv) (e : env) :
       typeof r2 = ty →
       rred xi ge e (.Ecomma (.Eval v ty1) r2 ty) m E0 r2 m
   | paren {v1 ty1 ty2 ty m v} :
-      sem_cast v1 ty1 ty2 m = some v →
+      sem_cast
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate) v1 ty1 ty2 m = some v →
       rred xi ge e (.Eparen (.Eval v1 ty1) ty2 ty) m E0 (.Eval v ty) m
   | builtin {ef tyargs el ty m vargs t vres m'} :
-      cast_arguments m el tyargs vargs →
-      external_call xi ef (symbolEnv ge) vargs m t vres m' →
+      cast_arguments
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate) m el tyargs vargs →
+      external_call
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate) xi ef (symbolEnv ge) vargs m t vres m' →
       rred xi ge e (.Ebuiltin ef tyargs el ty) m t (.Eval vres ty) m'
 
 export rred (red_seqand_true red_seqand_false red_seqor_true red_seqor_false)
@@ -277,10 +304,15 @@ private def classifyFunAs (tyf : type) (tyargs : List type) (tyres : type)
   tyf = .Tfunction tyargs tyres cconv ∨
     ∃ a, tyf = .Tpointer (.Tfunction tyargs tyres cconv) a
 
-inductive callred (ge : genv) : expr → mem → fundef → List val → type → Prop where
+inductive callred
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (ge : genv) : expr → mem → fundef → List val → type → Prop where
   | call {vf tyf m tyargs tyres cconv el ty fd vargs} :
       Genv.find_funct ge.genv_genv vf = some fd →
-      cast_arguments m el tyargs vargs →
+      cast_arguments
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate) m el tyargs vargs →
       type_of_fundef fd = .Tfunction tyargs tyres cconv →
       classifyFunAs tyf tyargs tyres cconv →
       callred ge (.Ecall (.Eval vf tyf) el ty) m fd vargs ty
@@ -343,7 +375,10 @@ end
 export context (ctx_top)
 export contextlist (ctx_list_head ctx_list_tail)
 
-inductive imm_safe (xi : ExternalCalls) (ge : genv) (e : env) :
+inductive imm_safe
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (xi : ExternalCalls) (ge : genv) (e : env) :
     kind → expr → mem → Prop where
   | value (v : val) (ty : type) (m : mem) : imm_safe xi ge e .RV (.Eval v ty) m
   | location (b : block) (ofs : ptrofs) (bf : bitfield) (ty : type) (m : mem) :
@@ -353,11 +388,15 @@ inductive imm_safe (xi : ExternalCalls) (ge : genv) (e : env) :
       context .LV to C →
       imm_safe xi ge e to (C a) m
   | rvalRed {to C a m t a' m'} :
-      rred xi ge e a m t a' m' →
+      rred
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate) xi ge e a m t a' m' →
       context .RV to C →
       imm_safe xi ge e to (C a) m
   | callRed {to C a m fd args ty} :
-      callred ge a m fd args ty →
+      callred
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate) ge a m fd args ty →
       context .RV to C →
       imm_safe xi ge e to (C a) m
 
@@ -453,28 +492,40 @@ end
 
 /-! ## Program transitions -/
 
-inductive estep (xi : ExternalCalls) (ge : genv) : state → trace → state → Prop where
+inductive estep
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (xi : ExternalCalls) (ge : genv) : state → trace → state → Prop where
   | step_lred {C f a k e m a' m'} :
       lred ge e a m a' m' →
       context .LV .RV C →
       estep xi ge (.ExprState f (C a) k e m) E0 (.ExprState f (C a') k e m')
   | step_rred {C f a k e m t a' m'} :
-      rred xi ge e a m t a' m' →
+      rred
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate) xi ge e a m t a' m' →
       context .RV .RV C →
       estep xi ge (.ExprState f (C a) k e m) t (.ExprState f (C a') k e m')
   | step_call {C f a k e m fd vargs ty} :
-      callred ge a m fd vargs ty →
+      callred
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate) ge a m fd vargs ty →
       context .RV .RV C →
       estep xi ge (.ExprState f (C a) k e m) E0
         (.Callstate fd vargs (.Kcall f e C ty k) m)
   | step_stuck {C f a k e m K} :
       context K .RV C →
-      ¬ imm_safe xi ge e K a m →
+      ¬ imm_safe
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate) xi ge e K a m →
       estep xi ge (.ExprState f (C a) k e m) E0 .Stuckstate
 
 export estep (step_lred step_rred step_call step_stuck)
 
-inductive sstep (xi : ExternalCalls) (ge : genv) : state → trace → state → Prop where
+inductive sstep
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (xi : ExternalCalls) (ge : genv) : state → trace → state → Prop where
   | do₁ {f x k e m} :
       sstep xi ge (.State f (.Sdo x) k e m) E0 (.ExprState f x (.Kdo k) e m)
   | do₂ {f v ty k e m} :
@@ -558,7 +609,9 @@ inductive sstep (xi : ExternalCalls) (ge : genv) : state → trace → state →
       sstep xi ge (.State f (.Sreturn (some x)) k e m) E0
         (.ExprState f x (.Kreturn k) e m)
   | returnValue {f v1 ty k e m v2 m'} :
-      sem_cast v1 ty f.fn_return m = some v2 →
+      sem_cast
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate) v1 ty f.fn_return m = some v2 →
       Mem.free_list m (blocks_of_env ge e) = some m' →
       sstep xi ge (.ExprState f (.Eval v1 ty) (.Kreturn k) e m) E0
         (.Returnstate v2 (call_cont k) m')
@@ -589,15 +642,25 @@ inductive sstep (xi : ExternalCalls) (ge : genv) : state → trace → state →
       bind_parameters ge e m1 f.fn_params vargs m2 →
       sstep xi ge (.Callstate (.Internal f) vargs k m) E0 (.State f f.fn_body k e m2)
   | externalFunction {ef targs tres cc vargs k m vres t m'} :
-      external_call xi ef (symbolEnv ge) vargs m t vres m' →
+      external_call
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate) xi ef (symbolEnv ge) vargs m t vres m' →
       sstep xi ge (.Callstate (.External ef targs tres cc) vargs k m) t
         (.Returnstate vres k m')
   | returnstate {v f e C ty k m} :
       sstep xi ge (.Returnstate v (.Kcall f e C ty k) m) E0
         (.ExprState f (C (.Eval v ty)) k e m)
 
-def step (xi : ExternalCalls) (ge : genv) (S : state) (t : trace) (S' : state) : Prop :=
-  estep xi ge S t S' ∨ sstep xi ge S t S'
+def step
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (xi : ExternalCalls) (ge : genv) (S : state) (t : trace) (S' : state) : Prop :=
+  estep
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) xi ge S t S' ∨
+    sstep
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) xi ge S t S'
 
 /-! ## Whole-program semantics -/
 
@@ -612,16 +675,27 @@ inductive initial_state (p : program) : state → Prop where
 inductive final_state : state → int → Prop where
   | intro (r : int) (m : mem) : final_state (.Returnstate (.Vint r) .Kstop m) r
 
-def semantics (xi : ExternalCalls) (p : program) : Smallstep.semantics :=
+def semantics
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (xi : ExternalCalls) (p : program) : Smallstep.semantics :=
   { state := state
     genvtype := genv
-    step := step xi
+    step := step
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) xi
     initial_state := initial_state p
     final_state := final_state
     globalenv := globalenv p
     symbolenv := symbolEnv (globalenv p) }
 
-def semantics_single_eventsStatement : Prop :=
-  ∀ (xi : ExternalCalls) (p : program), single_events (semantics xi p)
+def semantics_single_eventsStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
+  ∀ (xi : ExternalCalls) (p : program),
+    single_events
+      (semantics
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) xi p)
 
 end CompCert4Lean.Cfrontend.Csem
