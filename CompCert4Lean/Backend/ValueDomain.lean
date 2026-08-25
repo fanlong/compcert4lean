@@ -45,6 +45,8 @@ private abbrev mem := CompCert4Lean.Common.Memory.mem
 private abbrev memval := CompCert4Lean.Common.Memdata.memval
 private abbrev meminj := CompCert4Lean.Common.Values.Val.meminj
 private abbrev comparison := CompCert4Lean.Lib.Integers.comparison
+private abbrev BinaryNormalizeCertificate :=
+  CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
 
 private abbrev z0 : Z := .Z0
 private abbrev z1 : Z := .Zpos .xH
@@ -957,32 +959,40 @@ def intoffloat (cfg : CompilerConfig) : aval → aval
   | F f => match Float.to_int f with | some i => I i | none => failedConversion cfg
   | v => ntop1 v
 
-def floatofint : aval → aval
-  | I i => F (Float.of_int i)
+def floatofint
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)] :
+    aval → aval
+  | I i => F (Float.of_int (certificate := binary64_certificate) i)
   | v => ntop1 v
 
 def intofsingle (cfg : CompilerConfig) : aval → aval
   | FS f => match Float32.to_int f with | some i => I i | none => failedConversion cfg
   | v => ntop1 v
 
-def singleofint : aval → aval
-  | I i => FS (Float32.of_int i)
+def singleofint
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    aval → aval
+  | I i => FS (Float32.of_int (certificate := binary32_certificate) i)
   | v => ntop1 v
 
 def longoffloat (cfg : CompilerConfig) : aval → aval
   | F f => match Float.to_long f with | some i => L i | none => failedConversion cfg
   | v => ntop1 v
 
-def floatoflong : aval → aval
-  | L i => F (Float.of_long i)
+def floatoflong
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)] :
+    aval → aval
+  | L i => F (Float.of_long (certificate := binary64_certificate) i)
   | v => ntop1 v
 
 def longofsingle (cfg : CompilerConfig) : aval → aval
   | FS f => match Float32.to_long f with | some i => L i | none => failedConversion cfg
   | v => ntop1 v
 
-def singleoflong : aval → aval
-  | L i => FS (Float32.of_long i)
+def singleoflong
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    aval → aval
+  | L i => FS (Float32.of_long (certificate := binary32_certificate) i)
   | v => ntop1 v
 
 def longofwords (x y : aval) : aval :=
