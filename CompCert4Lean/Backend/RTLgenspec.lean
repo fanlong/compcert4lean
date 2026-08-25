@@ -107,7 +107,7 @@ mutual
         (hfalse : tr_expr c map pr ifnot nfalse nd rd dst) :
         tr_expr c map pr (.Econdition a ifso ifnot) ns nd rd dst
     | tr_Elet (map : RTLgen.mapping) (pr : List reg) (b1 b2 : expr)
-        (ns nd : RTL.node) (rd r : reg) (n1 : RTL.node) (dst : Option ident)
+        (ns nd : RTL.node) (rd : reg) (n1 : RTL.node) (r : reg) (dst : Option ident)
         (hfresh : ¬reg_in_map map r)
         (hbound : tr_expr c map pr b1 ns n1 r none)
         (hbody : tr_expr c (RTLgen.add_letvar map r) pr b2 n1 nd rd dst) :
@@ -354,20 +354,20 @@ def add_vars_validStatement : Prop :=
       map_valid map1 s1 → regs_valid rl s2 ∧ map_valid map2 s2
 
 def alloc_optreg_map_okStatement : Prop :=
-  ∀ (map : RTLgen.mapping) (optid : Option ident) (s1 s2 : RTLgen.state)
-    (r : reg) (i : state_incr s1 s2),
+  ∀ (map : RTLgen.mapping) (optid : Option ident) (s1 : RTLgen.state)
+    (r : reg) (s2 : RTLgen.state) (i : state_incr s1 s2),
     map_valid map s1 → RTLgen.alloc_optreg map optid s1 = .OK r s2 i →
       reg_map_ok map r optid
 
 def alloc_reg_target_okStatement : Prop :=
-  ∀ (map : RTLgen.mapping) (pr : List reg) (s1 s2 : RTLgen.state)
-    (a : expr) (r : reg) (i : state_incr s1 s2),
+  ∀ (map : RTLgen.mapping) (pr : List reg) (s1 : RTLgen.state)
+    (a : expr) (r : reg) (s2 : RTLgen.state) (i : state_incr s1 s2),
     map_valid map s1 → regs_valid pr s1 →
       RTLgen.alloc_reg map a s1 = .OK r s2 i → target_reg_ok map pr a r
 
 def alloc_regs_target_okStatement : Prop :=
   ∀ (map : RTLgen.mapping) (al : exprlist) (pr : List reg)
-    (s1 s2 : RTLgen.state) (rl : List reg) (i : state_incr s1 s2),
+    (s1 : RTLgen.state) (rl : List reg) (s2 : RTLgen.state) (i : state_incr s1 s2),
     map_valid map s1 → regs_valid pr s1 →
       RTLgen.alloc_regs map al s1 = .OK rl s2 i → target_regs_ok map pr al rl
 
@@ -390,8 +390,8 @@ def new_reg_not_in_mapStatement : Prop :=
     RTLgen.new_reg s1 = .OK r s2 i → map_valid m s1 → ¬reg_in_map m r
 
 def new_reg_target_okStatement : Prop :=
-  ∀ (map : RTLgen.mapping) (pr : List reg) (s1 s2 : RTLgen.state)
-    (a : expr) (r : reg) (i : state_incr s1 s2),
+  ∀ (map : RTLgen.mapping) (pr : List reg) (s1 : RTLgen.state)
+    (a : expr) (r : reg) (s2 : RTLgen.state) (i : state_incr s1 s2),
     map_valid map s1 → regs_valid pr s1 → RTLgen.new_reg s1 = .OK r s2 i →
       target_reg_ok map pr a r
 

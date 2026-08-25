@@ -250,12 +250,12 @@ private def sincrCompose {s1 s2 s3 : state}
       .intro (Nat.le_trans nr12 nr23) (Nat.le_trans nn12 nn23)
         (Int.le_trans ss12 ss23)
 
-inductive res {A : Type} (s : state) : Type where
+inductive res {A : Type} {s : state} : Type where
   | R (x : A) (s' : state) (incr : sincr s s')
 
 export res (R)
 
-def mon (A : Type) : Type := ∀ s : state, res (A := A) s
+def mon (A : Type) : Type := ∀ s : state, res (A := A) (s := s)
 
 def ret {A : Type} (x : A) : mon A :=
   fun s => R x s (sincrRefl s)
