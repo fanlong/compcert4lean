@@ -65,10 +65,18 @@ private abbrev Operation := CompCert4Lean.X86.Op.operation
 private abbrev Extcond := CompCert4Lean.X86.Asmgen.extcond
 private abbrev CompilerConfig := CompCert4Lean.Config.CompilerConfig
 private abbrev ExternalCalls := CompCert4Lean.Common.ExternalCalls.ExternalCalls
+private abbrev BinaryNormalizeCertificate :=
+  CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+private abbrev zOfNat := ZArith.BinInt.Z.of_nat
 
-private def asmStep (cfg : CompilerConfig) (xi : ExternalCalls) :
+private def asmStep
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (cfg : CompilerConfig) (xi : ExternalCalls) :
     AsmGenv → AsmState → trace → AsmState → Prop :=
-  CompCert4Lean.X86.Asm.step cfg xi
+  CompCert4Lean.X86.Asm.step
+    (binary64_certificate := binary64_certificate)
+    (binary32_certificate := binary32_certificate) cfg xi
 
 /-! ## Program matching -/
 
@@ -160,25 +168,38 @@ def transf_function_no_overflowStatement : Prop :=
     CompCert4Lean.X86.Asmgen.transf_function f = .OK tf →
     ZArith.BinInt.Z.le (list_length_z tf.fn_code) Ptrofs.max_unsigned
 
-def exec_straight_execStatement : Prop :=
+def exec_straight_execStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (cfg : CompilerConfig) (xi : ExternalCalls)
     (prog : MachProgram) (tprog : AsmProgram), match_prog prog tprog →
     ∀ (fb : Block) (f : MachFunction) (c : MachCode) (ep : Bool)
       (tf : AsmFunction) (tc c' : AsmCode) (rs : AsmRegset) (m : Mem)
       (rs' : AsmRegset) (m' : Mem),
       transl_code_at_pc (Genv.globalenv prog) (rs .PC) fb f c ep tf tc →
-      exec_straight (Genv.globalenv tprog) tf tc rs m c' rs' m' →
-      plus (asmStep cfg xi) (Genv.globalenv tprog)
+      exec_straight
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        (Genv.globalenv tprog) tf tc rs m c' rs' m' →
+      plus (asmStep
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        cfg xi) (Genv.globalenv tprog)
         (.State rs m) E0 (.State rs' m')
 
-def exec_straight_atStatement : Prop :=
+def exec_straight_atStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (prog : MachProgram) (tprog : AsmProgram), match_prog prog tprog →
     ∀ (fb : Block) (f : MachFunction) (c : MachCode) (ep : Bool)
       (tf : AsmFunction) (tc tc' : AsmCode) (c' : MachCode) (ep' : Bool)
       (rs : AsmRegset) (m : Mem) (rs' : AsmRegset) (m' : Mem),
       transl_code_at_pc (Genv.globalenv prog) (rs .PC) fb f c ep tf tc →
       CompCert4Lean.X86.Asmgen.transl_code f c' ep' = .OK tc' →
-      exec_straight (Genv.globalenv tprog) tf tc rs m tc' rs' m' →
+      exec_straight
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        (Genv.globalenv tprog) tf tc rs m tc' rs' m' →
       transl_code_at_pc (Genv.globalenv prog) (rs' .PC) fb f c' ep' tf tc'
 
 def loadind_labelStatement : Prop :=
@@ -279,7 +300,9 @@ def return_address_existsStatement : Prop :=
     is_tail (.Mcall sg ros :: c) f.fn_code →
     ∃ ra, CompCert4Lean.Backend.Asmgenproof0.return_address_offset f c ra
 
-def exec_straight_stepsStatement : Prop :=
+def exec_straight_stepsStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (cfg : CompilerConfig) (xi : ExternalCalls)
     (prog : MachProgram) (tprog : AsmProgram), match_prog prog tprog →
     ∀ (s : List MachStackframe) (fb : Block) (f : MachFunction)
@@ -292,15 +315,23 @@ def exec_straight_stepsStatement : Prop :=
       transl_code_at_pc (Genv.globalenv prog) (rs1 .PC) fb f (i :: c) ep tf tc →
       (∀ (k c' : AsmCode), CompCert4Lean.X86.Asmgen.transl_instr f i ep k = .OK c' →
         ∃ rs2,
-          exec_straight (Genv.globalenv tprog) tf c' rs1 m1' k rs2 m2' ∧
+          exec_straight
+            (binary64_certificate := binary64_certificate)
+            (binary32_certificate := binary32_certificate)
+            (Genv.globalenv tprog) tf c' rs1 m1' k rs2 m2' ∧
           CompCert4Lean.Backend.Asmgenproof0.agree ms2 sp rs2 ∧
           (CompCert4Lean.X86.Asmgen.it1_is_parent ep i = true →
             rs2 (.IR .RAX) = parent_sp s)) →
       ∃ st',
-        plus (asmStep cfg xi) (Genv.globalenv tprog) (.State rs1 m1') E0 st' ∧
+        plus (asmStep
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate)
+          cfg xi) (Genv.globalenv tprog) (.State rs1 m1') E0 st' ∧
         match_states (Genv.globalenv prog) (.State s fb sp c ms2 m2) st'
 
-def exec_straight_steps_gotoStatement : Prop :=
+def exec_straight_steps_gotoStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (cfg : CompilerConfig) (xi : ExternalCalls)
     (prog : MachProgram) (tprog : AsmProgram), match_prog prog tprog →
     ∀ (s : List MachStackframe) (fb : Block) (f : MachFunction)
@@ -315,24 +346,40 @@ def exec_straight_steps_gotoStatement : Prop :=
       CompCert4Lean.X86.Asmgen.it1_is_parent ep i = false →
       (∀ (k c'' : AsmCode), CompCert4Lean.X86.Asmgen.transl_instr f i ep k = .OK c'' →
         ∃ jmp k' rs2,
-          exec_straight (Genv.globalenv tprog) tf c'' rs1 m1' (jmp :: k') rs2 m2' ∧
+          exec_straight
+            (binary64_certificate := binary64_certificate)
+            (binary32_certificate := binary32_certificate)
+            (Genv.globalenv tprog) tf c'' rs1 m1' (jmp :: k') rs2 m2' ∧
           CompCert4Lean.Backend.Asmgenproof0.agree ms2 sp rs2 ∧
-          CompCert4Lean.X86.Asm.exec_instr (Genv.globalenv tprog) tf jmp rs2 m2' =
+          CompCert4Lean.X86.Asm.exec_instr
+            (binary64_certificate := binary64_certificate)
+            (binary32_certificate := binary32_certificate)
+            (Genv.globalenv tprog) tf jmp rs2 m2' =
             CompCert4Lean.X86.Asm.goto_label tf lbl rs2 m2') →
       ∃ st',
-        plus (asmStep cfg xi) (Genv.globalenv tprog) (.State rs1 m1') E0 st' ∧
+        plus (asmStep
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate)
+          cfg xi) (Genv.globalenv tprog) (.State rs1 m1') E0 st' ∧
         match_states (Genv.globalenv prog) (.State s fb sp c' ms2 m2) st'
 
-def step_simulationStatement : Prop :=
+def step_simulationStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (cfg : CompilerConfig) (xi : ExternalCalls)
     (prog : MachProgram) (tprog : AsmProgram), match_prog prog tprog →
     ∀ (S1 : MachState) (t : trace) (S2 : MachState),
-      CompCert4Lean.Backend.Mach.step cfg xi
+      CompCert4Lean.Backend.Mach.step
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) cfg xi
         CompCert4Lean.Backend.Asmgenproof0.return_address_offset
         (Genv.globalenv prog) S1 t S2 →
       ∀ S1', match_states (Genv.globalenv prog) S1 S1' →
         (∃ S2',
-          plus (asmStep cfg xi) (Genv.globalenv tprog) S1' t S2' ∧
+          plus (asmStep
+            (binary64_certificate := binary64_certificate)
+            (binary32_certificate := binary32_certificate)
+            cfg xi) (Genv.globalenv tprog) S1' t S2' ∧
             match_states (Genv.globalenv prog) S2 S2') ∨
         (measure S2 < measure S1 ∧ t = E0 ∧
           match_states (Genv.globalenv prog) S2 S1')
@@ -350,12 +397,18 @@ def transf_final_statesStatement : Prop :=
       CompCert4Lean.Backend.Mach.final_state st1 r →
         CompCert4Lean.X86.Asm.final_state st2 r
 
-def transf_program_correctStatement : Prop :=
+def transf_program_correctStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (cfg : CompilerConfig) (xi : ExternalCalls)
     (prog : MachProgram) (tprog : AsmProgram), match_prog prog tprog →
     forward_simulation
-      (CompCert4Lean.Backend.Mach.semantics cfg xi
-        CompCert4Lean.Backend.Asmgenproof0.return_address_offset prog)
-      (CompCert4Lean.X86.Asm.semantics cfg xi tprog)
+      (CompCert4Lean.Backend.Mach.semantics
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        cfg xi CompCert4Lean.Backend.Asmgenproof0.return_address_offset prog)
+      (CompCert4Lean.X86.Asm.semantics
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) cfg xi tprog)
 
 end CompCert4Lean.X86.Asmgenproof
