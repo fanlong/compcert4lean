@@ -38,6 +38,9 @@ private abbrev int := CompCert4Lean.Lib.Integers.int
 private abbrev int64 := CompCert4Lean.Lib.Integers.int64
 private abbrev reg := CompCert4Lean.Backend.Registers.reg
 private abbrev CompilerConfig := CompCert4Lean.Config.CompilerConfig
+private abbrev BinaryNormalizeCertificate :=
+  CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+private abbrev zOfNat := ZArith.BinInt.Z.of_nat
 private abbrev RocqString :=
   CompCert4Lean.Foundation.RocqString.Rocq.Coq.Strings.String.string
 
@@ -287,9 +290,14 @@ def transf_instr (cfg : CompilerConfig) (dm : defmap) (approx : PMap.t VA.t)
       | .right _ => instr
   | _ => instr
 
-def transf_function (cfg : CompilerConfig) (dm : defmap) (rm : romem)
+def transf_function
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (cfg : CompilerConfig) (dm : defmap) (rm : romem)
     (f : function) : res function :=
-  let approx := ValueAnalysis.analyze cfg rm f
+  let approx := ValueAnalysis.analyze
+    (binary64_certificate := binary64_certificate)
+    (binary32_certificate := binary32_certificate) cfg rm f
   match analyze cfg f dm approx with
   | some an =>
       OK
@@ -300,13 +308,25 @@ def transf_function (cfg : CompilerConfig) (dm : defmap) (rm : romem)
           fn_entrypoint := f.fn_entrypoint }
   | none => Error (msg needednessAnalysisFailedText)
 
-def transf_fundef (cfg : CompilerConfig) (dm : defmap) (rm : romem)
+def transf_fundef
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (cfg : CompilerConfig) (dm : defmap) (rm : romem)
     (fd : fundef) : res fundef :=
   CompCert4Lean.Common.AST.transf_partial_fundef
-    (transf_function cfg dm rm) fd
+    (transf_function
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      cfg dm rm) fd
 
-def transf_program (cfg : CompilerConfig) (p : program) : res program :=
+def transf_program
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (cfg : CompilerConfig) (p : program) : res program :=
   CompCert4Lean.Common.AST.transform_partial_program
-    (transf_fundef cfg (prog_defmap p) (romem_for cfg p)) p
+    (transf_fundef
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      cfg (prog_defmap p) (romem_for cfg p)) p
 
 end CompCert4Lean.Backend.Deadcode
