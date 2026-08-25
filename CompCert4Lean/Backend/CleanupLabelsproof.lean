@@ -4,6 +4,7 @@ import CompCert4Lean.Common.ExternalCalls
 import CompCert4Lean.Common.Globalenvs
 import CompCert4Lean.Common.Linking
 import CompCert4Lean.Common.Smallstep
+import CompCert4Lean.Foundation.Numbers
 
 /-!
 # Correctness surface for cleanup of unused labels
@@ -27,6 +28,7 @@ open CompCert4Lean.Common.Memory
 open CompCert4Lean.Common.Smallstep
 open CompCert4Lean.Common.Values
 open CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.List
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
 open CompCert4Lean.Lib.Coqlib
 open CompCert4Lean.Lib.Integers
 open CompCert4Lean.X86.Machregs
@@ -282,14 +284,26 @@ def match_parent_locsetStatement : Prop :=
     list_forall2 match_stackframes s ts →
       parent_locset ts = parent_locset s
 
-def transf_step_correctStatement : Prop :=
+def transf_step_correctStatement
+  [binary64_certificate :
+    CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+      (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+  [binary32_certificate :
+    CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+      (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)] : Prop :=
   ∀ (cfg : CompilerConfig) (xi : ExternalCalls) (prog tprog : program),
     match_prog prog tprog →
     ∀ (s1 : state) (t : trace) (s2 : state),
-      CompCert4Lean.Backend.Linear.step cfg xi (Genv.globalenv prog) s1 t s2 →
+      CompCert4Lean.Backend.Linear.step
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        cfg xi (Genv.globalenv prog) s1 t s2 →
       ∀ s1', match_states s1 s1' →
         (∃ s2',
-          CompCert4Lean.Backend.Linear.step cfg xi (Genv.globalenv tprog) s1' t s2' ∧
+          CompCert4Lean.Backend.Linear.step
+            (binary64_certificate := binary64_certificate)
+            (binary32_certificate := binary32_certificate)
+            cfg xi (Genv.globalenv tprog) s1' t s2' ∧
           match_states s2 s2') ∨
         (measure s2 < measure s1 ∧ t = E0 ∧ match_states s2 s1')
 
@@ -302,11 +316,21 @@ def transf_final_statesStatement : Prop :=
   ∀ (st1 st2 : state) (r : int),
     match_states st1 st2 → final_state st1 r → final_state st2 r
 
-def transf_program_correctStatement : Prop :=
+def transf_program_correctStatement
+  [binary64_certificate :
+    CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+      (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+  [binary32_certificate :
+    CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+      (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)] : Prop :=
   ∀ (cfg : CompilerConfig) (xi : ExternalCalls) (prog tprog : program),
     match_prog prog tprog →
     forward_simulation
-      (CompCert4Lean.Backend.Linear.semantics cfg xi prog)
-      (CompCert4Lean.Backend.Linear.semantics cfg xi tprog)
+      (CompCert4Lean.Backend.Linear.semantics
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) cfg xi prog)
+      (CompCert4Lean.Backend.Linear.semantics
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) cfg xi tprog)
 
 end CompCert4Lean.Backend.CleanupLabelsproof

@@ -274,12 +274,21 @@ def wt_find_functionStatement : Prop :=
     ∀ (ros : Sum mreg ident) (rs : Locset) (f : LinearFundef),
       Linear.find_function (Genv.globalenv p) ros rs = some f → wt_fundef cfg f
 
-def step_type_preservationStatement : Prop :=
+def step_type_preservationStatement
+  [binary64_certificate :
+    CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+      (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+  [binary32_certificate :
+    CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+      (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)] : Prop :=
   ∀ (cfg : CompilerConfig) (xi : ExternalCalls) (p : LinearProgram),
     (∀ (i : ident) (fd : LinearFundef),
       (i, Gfun fd) ∈ p.prog_defs → wt_fundef cfg fd) →
     ∀ (S1 S2 : LinearState) (t : trace),
-      Linear.step cfg xi (Genv.globalenv p) S1 t S2 →
+      Linear.step
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        cfg xi (Genv.globalenv p) S1 t S2 →
         wt_state cfg S1 → wt_state cfg S2
 
 def wt_initial_stateStatement : Prop :=

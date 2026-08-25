@@ -155,11 +155,21 @@ def can_eval_safe_argStatement : Prop :=
         ∃ v,
           eval_builtin_arg (Genv.to_senv (Genv.globalenv tprog)) rs sp m a v
 
-def eval_add_delta_rangesStatement : Prop :=
+def eval_add_delta_rangesStatement
+  [binary64_certificate :
+    CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+      (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+  [binary32_certificate :
+    CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+      (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)] : Prop :=
   ∀ (cfg : CompilerConfig) (xi : ExternalCalls) (tprog : program),
     ∀ (s : List stackframe) (f : function) (sp : val) (c : code)
       (rs : locset) (m : mem) (before after : Option avail),
-      star (step cfg xi) (Genv.globalenv tprog)
+      star
+        (fun ge => Linear.step
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate) cfg xi ge)
+        (Genv.globalenv tprog)
         (State s f sp (add_delta_ranges before after c) rs m)
         E0 (State s f sp c rs m)
 
@@ -195,14 +205,27 @@ def parent_locset_matchStatement : Prop :=
     list_forall2 match_stackframes s ts →
       parent_locset ts = parent_locset s
 
-def transf_step_correctStatement : Prop :=
+def transf_step_correctStatement
+  [binary64_certificate :
+    CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+      (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+  [binary32_certificate :
+    CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+      (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)] : Prop :=
   ∀ (cfg : CompilerConfig) (xi : ExternalCalls) (prog tprog : program),
     match_prog cfg prog tprog →
       ∀ (s1 : state) (t : trace) (s2 : state),
-        step cfg xi (Genv.globalenv prog) s1 t s2 →
+        Linear.step
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate)
+          cfg xi (Genv.globalenv prog) s1 t s2 →
           ∀ ts1, match_states cfg s1 ts1 →
             ∃ ts2,
-              plus (step cfg xi) (Genv.globalenv tprog) ts1 t ts2 ∧
+              plus
+                (fun ge => Linear.step
+                  (binary64_certificate := binary64_certificate)
+                  (binary32_certificate := binary32_certificate) cfg xi ge)
+                (Genv.globalenv tprog) ts1 t ts2 ∧
                 match_states cfg s2 ts2
 
 def transf_initial_statesStatement : Prop :=
@@ -215,10 +238,21 @@ def transf_final_statesStatement : Prop :=
   ∀ (cfg : CompilerConfig) (st1 st2 : state) (r : int),
     match_states cfg st1 st2 → final_state st1 r → final_state st2 r
 
-def transf_program_correctStatement : Prop :=
+def transf_program_correctStatement
+  [binary64_certificate :
+    CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+      (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+  [binary32_certificate :
+    CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+      (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)] : Prop :=
   ∀ (cfg : CompilerConfig) (xi : ExternalCalls) (prog tprog : program),
     match_prog cfg prog tprog →
       forward_simulation
-        (semantics cfg xi prog) (semantics cfg xi tprog)
+        (Linear.semantics
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate) cfg xi prog)
+        (Linear.semantics
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate) cfg xi tprog)
 
 end CompCert4Lean.Backend.Debugvarproof
