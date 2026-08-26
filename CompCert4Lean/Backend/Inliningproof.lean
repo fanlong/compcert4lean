@@ -376,7 +376,7 @@ def match_stacks_inside_alloc_leftStatement : Prop :=
     ∀ sz m1 b F1 delta,
       Mem.alloc m zZero sz = (m1, b) → inject_incr F F1 →
       F1 b = some (sp', delta) →
-      (∀ b1, b1 ≠ b → F1 b1 = F b1) →
+      (∀ b1, Plt b b1 → F1 b1 = F b1) →
       zLe ctx.dstk delta →
       match_stacks_inside cfg prog F1 m1 m' stk stk' f' ctx sp' rs'
 

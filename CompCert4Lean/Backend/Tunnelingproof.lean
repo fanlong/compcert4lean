@@ -561,7 +561,7 @@ def tunnel_step_correctStatement
         (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)] : Prop :=
   ∀ (cfg : CompilerConfig) (xi : ExternalCalls) (prog tprog : program),
     match_prog prog tprog →
-    ∀ (st1 st2 : state) (t : trace),
+    ∀ (st1 : state) (t : trace) (st2 : state),
       step (binary64_certificate := binary64_certificate)
         (binary32_certificate := binary32_certificate)
         cfg xi (Genv.globalenv prog) st1 t st2 →

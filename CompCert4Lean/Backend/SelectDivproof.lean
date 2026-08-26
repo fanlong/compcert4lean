@@ -95,43 +95,49 @@ private def boolOfSumbool {P Q : Prop} :
 private def zltBool (x y : CCZ) : Bool := boolOfSumbool (CompCert4Lean.Lib.Coqlib.zlt x y)
 
 def Zdiv_mul_posStatement : Prop :=
-  ∀ (N d : CCZ),
-    zLe z0 N → zLt z0 d →
-    ∀ (m l : CCZ),
+  ∀ N : CCZ,
+    zLe z0 N →
+    ∀ d : CCZ,
+      zLt z0 d →
+      ∀ (m l : CCZ),
       zLe z0 l →
-      zLe (two_p (zAdd N l)) (zMul m d) →
-      zLe (zMul m d) (zAdd (two_p (zAdd N l)) (two_p l)) →
+      (zLe (two_p (zAdd N l)) (zMul m d) ∧
+        zLe (zMul m d) (zAdd (two_p (zAdd N l)) (two_p l))) →
       ∀ n : CCZ,
-        zLe z0 n → zLt n (two_p N) →
+        (zLe z0 n ∧ zLt n (two_p N)) →
         zDiv n d = zDiv (zMul m n) (two_p (zAdd N l))
 
 def Zdiv_unique_2Statement : Prop :=
   ∀ (x y q : CCZ),
     zLt z0 y →
-    zLt z0 (zSub (zMul y q) x) →
-    zLe (zSub (zMul y q) x) y →
+    (zLt z0 (zSub (zMul y q) x) ∧
+      zLe (zSub (zMul y q) x) y) →
     zDiv x y = zSub q z1
 
 def Zdiv_mul_oppStatement : Prop :=
-  ∀ (N d : CCZ),
-    zLe z0 N → zLt z0 d →
-    ∀ (m l : CCZ),
+  ∀ N : CCZ,
+    zLe z0 N →
+    ∀ d : CCZ,
+      zLt z0 d →
+      ∀ (m l : CCZ),
       zLe z0 l →
-      zLt (two_p (zAdd N l)) (zMul m d) →
-      zLe (zMul m d) (zAdd (two_p (zAdd N l)) (two_p l)) →
+      (zLt (two_p (zAdd N l)) (zMul m d) ∧
+        zLe (zMul m d) (zAdd (two_p (zAdd N l)) (two_p l))) →
       ∀ n : CCZ,
-        zLt z0 n → zLe n (two_p N) →
+        (zLt z0 n ∧ zLe n (two_p N)) →
         zDiv n d = zSub (zOpp (zDiv (zMul m (zOpp n)) (two_p (zAdd N l)))) z1
 
 def Zquot_mulStatement : Prop :=
-  ∀ (N d : CCZ),
-    zLe z0 N → zLt z0 d →
-    ∀ (m l : CCZ),
+  ∀ N : CCZ,
+    zLe z0 N →
+    ∀ d : CCZ,
+      zLt z0 d →
+      ∀ (m l : CCZ),
       zLe z0 l →
-      zLt (two_p (zAdd N l)) (zMul m d) →
-      zLe (zMul m d) (zAdd (two_p (zAdd N l)) (two_p l)) →
+      (zLt (two_p (zAdd N l)) (zMul m d) ∧
+        zLe (zMul m d) (zAdd (two_p (zAdd N l)) (two_p l))) →
       ∀ n : CCZ,
-        zLe (zOpp (two_p N)) n → zLt n (two_p N) →
+        (zLe (zOpp (two_p N)) n ∧ zLt n (two_p N)) →
         zQuot n d =
           zAdd (zDiv (zMul m n) (two_p (zAdd N l)))
             (if zltBool n z0 then z1 else z0)
@@ -142,7 +148,7 @@ def divs_mul_params_soundStatement : Prop :=
     (zLe z0 m ∧ zLt m Int.modulus) ∧
       (zLe z0 p ∧ zLt p z32) ∧
       ∀ n : CCZ,
-        zLe Int.min_signed n → zLe n Int.max_signed →
+        (zLe Int.min_signed n ∧ zLe n Int.max_signed) →
         zQuot n d =
           zAdd (zDiv (zMul m n) (two_p (zAdd z32 p)))
             (if zltBool n z0 then z1 else z0)
@@ -153,7 +159,7 @@ def divu_mul_params_soundStatement : Prop :=
     (zLe z0 m ∧ zLt m Int.modulus) ∧
       (zLe z0 p ∧ zLt p z32) ∧
       ∀ n : CCZ,
-        zLe z0 n → zLt n Int.modulus →
+        (zLe z0 n ∧ zLt n Int.modulus) →
         zDiv n d = zDiv (zMul m n) (two_p (zAdd z32 p))
 
 def divs_mul_shift_genStatement : Prop :=
@@ -196,7 +202,7 @@ def divls_mul_params_soundStatement : Prop :=
     (zLe z0 m ∧ zLt m Int64.modulus) ∧
       (zLe z0 p ∧ zLt p z64) ∧
       ∀ n : CCZ,
-        zLe Int64.min_signed n → zLe n Int64.max_signed →
+        (zLe Int64.min_signed n ∧ zLe n Int64.max_signed) →
         zQuot n d =
           zAdd (zDiv (zMul m n) (two_p (zAdd z64 p)))
             (if zltBool n z0 then z1 else z0)
@@ -207,7 +213,7 @@ def divlu_mul_params_soundStatement : Prop :=
     (zLe z0 m ∧ zLt m Int64.modulus) ∧
       (zLe z0 p ∧ zLt p z64) ∧
       ∀ n : CCZ,
-        zLe z0 n → zLt n Int64.modulus →
+        (zLe z0 n ∧ zLt n Int64.modulus) →
         zDiv n d = zDiv (zMul m n) (two_p (zAdd z64 p))
 
 def int64_shr'_div_two_pStatement : Prop :=

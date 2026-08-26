@@ -335,11 +335,6 @@ export leftcontext
 
 export leftcontextlist (lctx_list_head lctx_list_tail)
 
-private def classifyFunAs (tyf : type) (tyargs : List type) (tyres : type)
-    (cconv : calling_convention) : Prop :=
-  tyf = .Tfunction tyargs tyres cconv ∨
-    ∃ a, tyf = .Tpointer (.Tfunction tyargs tyres cconv) a
-
 inductive estep
     [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
     [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
@@ -557,7 +552,7 @@ inductive estep
         (.ExprState f (C (.Eval v ty)) k e m)
   | step_call {f C rf rargs ty k e m targs tres cconv vf vargs fd} :
       leftcontext .RV .RV C →
-      classifyFunAs (typeof rf) targs tres cconv →
+      Cop.classify_fun (typeof rf) = .fun_case_f targs tres cconv →
       eval_simple_rvalue
           (binary64_certificate := binary64_certificate)
           (binary32_certificate := binary32_certificate) ge e m rf vf →
@@ -686,7 +681,7 @@ def invert_expr_prop
   | .Ecall (.Eval vf tyf) rargs _ =>
       exprlist_all_values rargs →
       ∃ tyargs tyres cconv fd vl,
-        classifyFunAs tyf tyargs tyres cconv ∧
+        Cop.classify_fun tyf = .fun_case_f tyargs tyres cconv ∧
         Genv.find_funct ge.genv_genv vf = some fd ∧
         Csem.cast_arguments
           (binary64_certificate := binary64_certificate)

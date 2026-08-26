@@ -814,9 +814,7 @@ def expand_move (m : move) : LTL.instruction :=
   | MVhighlong src dst => Lop Ohighlong [src] dst
 
 def expand_moves (mv : moves) (k : LTL.bblock) : LTL.bblock :=
-  match mv with
-  | [] => k
-  | m :: ms => expand_move m :: expand_moves ms k
+  List.append (List.map expand_move mv) k
 
 def wf_move (m : move) : Prop :=
   match m with

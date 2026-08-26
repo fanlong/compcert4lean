@@ -404,7 +404,9 @@ def make_boolean_correctStatement
     [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (ge : TGenv) e le m a v ty b,
     T_eval_expr ge e le m a v → bool_val v ty m = some b →
-    T_eval_expr ge e le m (make_boolean a ty) (Val.of_bool b)
+    ∃ vb,
+      T_eval_expr ge e le m (make_boolean a ty) vb ∧
+        Val.bool_of_val vb b
 
 def make_cast_correctStatement
     [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
