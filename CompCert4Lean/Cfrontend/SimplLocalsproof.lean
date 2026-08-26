@@ -15,6 +15,7 @@ import CompCert4Lean.Cfrontend.Ctypes
 import CompCert4Lean.Cfrontend.SimplLocals
 import CompCert4Lean.Driver.Compopts
 import CompCert4Lean.Lib.Coqlib
+import CompCert4Lean.Lib.FSetFacts
 import CompCert4Lean.Lib.Integers
 import CompCert4Lean.Lib.Maps
 
@@ -74,9 +75,26 @@ private abbrev BinaryNormalizeCertificate :=
   CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
 private abbrev zOfNat := ZArith.BinInt.Z.of_nat
 
+/-! ## Generated finite-set facts surface -/
+
+namespace VSF
+
+private abbrev F := CompCert4Lean.Cfrontend.SimplLocals.VSet.MFProvider
+
+abbrev add_iff := CompCert4Lean.Lib.FSetFacts.WFacts_fun.add_iff F
+abbrev empty_iff := CompCert4Lean.Lib.FSetFacts.WFacts_fun.empty_iff F
+abbrev mem_iff := CompCert4Lean.Lib.FSetFacts.WFacts_fun.mem_iff F
+
+end VSF
+
 def match_prog (cfg : CompilerConfig) (p tp : program) : Prop :=
-  match_program_gen (fun _ f tf => transf_fundef cfg f = .OK tf) Eq ()
-      (program_of_program p) (program_of_program tp) ∧
+  @match_program
+    (CompCert4Lean.Cfrontend.Ctypes.fundef function) type
+    (CompCert4Lean.Cfrontend.Ctypes.fundef function) type
+    (CompCert4Lean.Cfrontend.Ctypes.Linker_fundef function)
+    CompCert4Lean.Cfrontend.Ctypes.Linker_types
+    (fun _ f tf => transf_fundef cfg f = .OK tf) Eq
+    (program_of_program p) (program_of_program tp) ∧
     tp.prog_types = p.prog_types
 
 inductive match_var (f : meminj) (cenv : compilenv) (e : env) (m : mem)

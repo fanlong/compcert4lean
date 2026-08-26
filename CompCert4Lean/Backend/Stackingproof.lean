@@ -313,10 +313,22 @@ def frame_contents (cfg : CompilerConfig) (f : Linear.function)
 def agree_regs (j : meminj) (ls : locset) (rs : regset) : Prop :=
   ∀ r, Val.inject j (ls (R r)) (rs r)
 
+/-! The source record is declared inside `FRAME_PROPERTIES`, where `f` is a
+section variable and `b` is the local definition `function_bounds f`; it is
+not an independent carrier parameter.  The immutable ABI configuration is
+explicit here, so every field and descriptor below closes over the same
+source-shaped `cfg`/`f` carrier.  The exported `agree_unused_reg` projection
+and `mk_agree_locs` constructor are the generated surfaces owned by this
+carrier (source `backend/Stackingproof.v`, lines 563--570; projection span
+21461--21667).  Deferred proof declarations such as
+`agree_locs_set_pair` remain statement descriptors below rather than new
+carrier implementations. -/
+
 structure agree_locs (cfg : CompilerConfig) (f : Linear.function)
-    (b : bounds cfg) (ls ls0 : locset) : Prop where
+    (ls ls0 : locset) : Prop where
   agree_unused_reg :
-    ∀ r, ¬ mreg_within_bounds cfg b r → ls (R r) = ls0 (R r)
+    ∀ r, ¬ mreg_within_bounds cfg (function_bounds cfg f) r →
+      ls (R r) = ls0 (R r)
   agree_incoming :
     ∀ ofs ty,
       S Incoming ofs ty ∈ regs_of_rpairs (loc_parameters cfg f.fn_sig) →
@@ -327,18 +339,26 @@ export agree_locs (agree_unused_reg agree_incoming)
 /-! Stable top-level identity for Rocq's record constructor. -/
 
 abbrev mk_agree_locs (f : Linear.function) (ls ls0 : locset)
-    {cfg : CompilerConfig} {b : bounds cfg}
-    (agree_unused_reg : ∀ r, ¬ mreg_within_bounds cfg b r →
+    {cfg : CompilerConfig}
+    (agree_unused_reg : ∀ r,
+      ¬ mreg_within_bounds cfg (function_bounds cfg f) r →
       ls (R r) = ls0 (R r))
     (agree_incoming : ∀ ofs ty,
       S Incoming ofs ty ∈ regs_of_rpairs (loc_parameters cfg f.fn_sig) →
       ls (S Incoming ofs ty) = ls0 (S Outgoing ofs ty)) :
-    agree_locs cfg f b ls ls0 :=
-  @agree_locs.mk cfg f b ls ls0 agree_unused_reg agree_incoming
+    agree_locs cfg f ls ls0 :=
+  @agree_locs.mk cfg f ls ls0 agree_unused_reg agree_incoming
 
-def agree_unused (cfg : CompilerConfig) (b : bounds cfg) (j : meminj)
+/-! `agree_unused` is declared in the nested `RESTORE_CALLEE_SAVE` section
+while still generalized over the outer `f`/`b := function_bounds f`; keep
+that source section parameter explicit and do not expose a free `bounds`
+argument.  The restore descriptors below retain this same carrier identity;
+the separately deferred restore proofs remain statement surfaces only. -/
+
+def agree_unused (cfg : CompilerConfig) (f : Linear.function) (j : meminj)
     (ls0 : locset) (rs : regset) : Prop :=
-  ∀ r, ¬ mreg_within_bounds cfg b r → Val.inject j (ls0 (R r)) (rs r)
+  ∀ r, ¬ mreg_within_bounds cfg (function_bounds cfg f) r →
+    Val.inject j (ls0 (R r)) (rs r)
 
 def no_callee_saves (cfg : CompilerConfig) (l : List mreg) : Prop :=
   List.any l (fun r => is_callee_save cfg r) = false
@@ -372,7 +392,7 @@ inductive match_stacks (cfg : CompilerConfig) (tprog : Mach.program) (j : meminj
       (hcode : transl_code cfg (make_env cfg (function_bounds cfg f)) c = c')
       (hinj : j sp = some (sp', (make_env cfg (function_bounds cfg f)).fe_stack_data))
       (hra : Val.has_type ra Tptr)
-      (hlocs : agree_locs cfg f (function_bounds cfg f) ls
+      (hlocs : agree_locs cfg f ls
         (Linear.parent_locset cs))
       (hargs : ∀ ofs ty,
         S Outgoing ofs ty ∈ regs_of_rpairs (loc_arguments cfg sg) →
@@ -400,7 +420,7 @@ abbrev match_stacks_cons {cfg : CompilerConfig} {tprog : Mach.program}
     (hcode : transl_code cfg (make_env cfg (function_bounds cfg f)) c = c')
     (hinj : j sp = some (sp', (make_env cfg (function_bounds cfg f)).fe_stack_data))
     (hra : Val.has_type ra Tptr)
-    (hlocs : agree_locs cfg f (function_bounds cfg f) ls (Linear.parent_locset cs))
+    (hlocs : agree_locs cfg f ls (Linear.parent_locset cs))
     (hargs : ∀ ofs ty,
       S Outgoing ofs ty ∈ regs_of_rpairs (loc_arguments cfg sg) →
         slot_within_bounds (function_bounds cfg f) Outgoing ofs ty)
@@ -422,7 +442,7 @@ inductive match_states (cfg : CompilerConfig)
       (htransf : transf_function cfg f = .OK tf)
       (hfind : Genv.find_funct_ptr (Genv.globalenv tprog) fb = some (.Internal tf))
       (hregs : agree_regs j ls rs)
-      (hlocs : agree_locs cfg f (function_bounds cfg f) ls
+      (hlocs : agree_locs cfg f ls
         (Linear.parent_locset cs))
       (hinj : j sp = some (sp', (make_env cfg (function_bounds cfg f)).fe_stack_data))
       (htail : is_tail c f.fn_code)
@@ -475,54 +495,54 @@ def LTL_undef_regs_slotStatement : Prop :=
 
 def agree_locs_returnStatement : Prop :=
   ∀ cfg f ls ls0 ls',
-    agree_locs cfg f (function_bounds cfg f) ls ls0 →
+    agree_locs cfg f ls ls0 →
     agree_callee_save cfg ls' ls →
-    agree_locs cfg f (function_bounds cfg f) ls' ls0
+    agree_locs cfg f ls' ls0
 
 def agree_locs_set_regStatement : Prop :=
   ∀ cfg f ls ls0 r v,
-    agree_locs cfg f (function_bounds cfg f) ls ls0 →
+    agree_locs cfg f ls ls0 →
     mreg_within_bounds cfg (function_bounds cfg f) r →
-    agree_locs cfg f (function_bounds cfg f) (Locmap.set (R r) v ls) ls0
+    agree_locs cfg f (Locmap.set (R r) v ls) ls0
 
 def agree_locs_set_pairStatement : Prop :=
   ∀ cfg f ls0 p v ls,
-    agree_locs cfg f (function_bounds cfg f) ls ls0 →
+    agree_locs cfg f ls ls0 →
     forall_rpair (fun r => is_callee_save cfg r = false) p →
-    agree_locs cfg f (function_bounds cfg f) (Locmap.setpair p v ls) ls0
+    agree_locs cfg f (Locmap.setpair p v ls) ls0
 
 def agree_locs_set_resStatement : Prop :=
   ∀ cfg f ls0 res v ls,
-    agree_locs cfg f (function_bounds cfg f) ls ls0 →
+    agree_locs cfg f ls ls0 →
     (∀ r, r ∈ params_of_builtin_res res →
       mreg_within_bounds cfg (function_bounds cfg f) r) →
-    agree_locs cfg f (function_bounds cfg f) (Locmap.setres res v ls) ls0
+    agree_locs cfg f (Locmap.setres res v ls) ls0
 
 def agree_locs_set_slotStatement : Prop :=
   ∀ cfg f ls ls0 sl ofs ty v,
-    agree_locs cfg f (function_bounds cfg f) ls ls0 →
+    agree_locs cfg f ls ls0 →
     slot_writable sl = true →
-    agree_locs cfg f (function_bounds cfg f)
+    agree_locs cfg f
       (Locmap.set (S sl ofs ty) v ls) ls0
 
 def agree_locs_undef_locsStatement : Prop :=
   ∀ cfg f ls0 regs ls,
-    agree_locs cfg f (function_bounds cfg f) ls ls0 →
+    agree_locs cfg f ls ls0 →
     List.any regs (is_callee_save cfg) = false →
-    agree_locs cfg f (function_bounds cfg f) (LTL.undef_regs regs ls) ls0
+    agree_locs cfg f (LTL.undef_regs regs ls) ls0
 
 def agree_locs_undef_locs_1Statement : Prop :=
   ∀ cfg f ls0 regs ls,
-    agree_locs cfg f (function_bounds cfg f) ls ls0 →
+    agree_locs cfg f ls ls0 →
     (∀ r, r ∈ regs → is_callee_save cfg r = false) →
-    agree_locs cfg f (function_bounds cfg f) (LTL.undef_regs regs ls) ls0
+    agree_locs cfg f (LTL.undef_regs regs ls) ls0
 
 def agree_locs_undef_regsStatement : Prop :=
   ∀ cfg f ls0 regs ls,
-    agree_locs cfg f (function_bounds cfg f) ls ls0 →
+    agree_locs cfg f ls ls0 →
     (∀ r, r ∈ regs →
       mreg_within_bounds cfg (function_bounds cfg f) r) →
-    agree_locs cfg f (function_bounds cfg f) (LTL.undef_regs regs ls) ls0
+    agree_locs cfg f (LTL.undef_regs regs ls) ls0
 
 def agree_regStatement : Prop :=
   ∀ j ls rs r, agree_regs j ls rs → Val.inject j (ls (R r)) (rs r)
@@ -769,7 +789,7 @@ def function_epilogue_correctStatement
     (sepconj (frame_contents cfg f j sp' ls ls0 pa ra)
       (sepconj (minjection j m) P)).m_pred m' →
     agree_regs j ls rs →
-    agree_locs cfg f (function_bounds cfg f) ls ls0 →
+    agree_locs cfg f ls ls0 →
     j sp = some (sp', (make_env cfg (function_bounds cfg f)).fe_stack_data) →
     Mem.free m sp z0 f.fn_stacksize = some m1 →
     ∃ rs1 m1',
@@ -819,7 +839,7 @@ def function_prologue_correctStatement
           (save_callee_save (make_env cfg (function_bounds cfg f)) k) rs1 m4')
         E0 (Mach.State cs fb (Vptr sp' Ptrofs.zero) k rs' m5') ∧
       agree_regs j' ls1 rs' ∧
-      agree_locs cfg f (function_bounds cfg f) ls1 ls0 ∧
+      agree_locs cfg f ls1 ls0 ∧
       (sepconj (frame_contents cfg f j' sp' ls1 ls0 parent ra)
         (sepconj (minjection j' m2)
           (sepconj (globalenv_inject (Genv.globalenv prog) j') P))).m_pred m5' ∧
@@ -908,7 +928,7 @@ def restore_callee_save_correctStatement
     (tprog : Mach.program) (f : Linear.function)
     m j sp ls ls0 pa ra P rs k cs fb,
     (sepconj (frame_contents cfg f j sp ls ls0 pa ra) P).m_pred m →
-    agree_unused cfg (function_bounds cfg f) j ls0 rs →
+    agree_unused cfg f j ls0 rs →
     ∃ rs',
       star (Mach.step
         (binary64_certificate := binary64_certificate)
@@ -927,7 +947,7 @@ def restore_callee_save_rec_correctStatement
     (tprog : Mach.program) (f : Linear.function)
     j cs fb sp ls0 m l ofs rs k,
     (contains_callee_saves j sp ofs l ls0).m_pred m →
-    agree_unused cfg (function_bounds cfg f) j ls0 rs →
+    agree_unused cfg f j ls0 rs →
     (∀ r, r ∈ l → mreg_within_bounds cfg (function_bounds cfg f) r) →
     ∃ rs',
       star (Mach.step
@@ -939,7 +959,7 @@ def restore_callee_save_rec_correctStatement
         E0 (Mach.State cs fb (Vptr sp Ptrofs.zero) k rs' m) ∧
       (∀ r, r ∈ l → Val.inject j (ls0 (R r)) (rs' r)) ∧
       (∀ r, r ∉ l → rs' r = rs r) ∧
-      agree_unused cfg (function_bounds cfg f) j ls0 rs'
+      agree_unused cfg f j ls0 rs'
 
 def save_callee_save_correctStatement
     [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]

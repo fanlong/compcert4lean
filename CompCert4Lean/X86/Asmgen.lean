@@ -71,6 +71,11 @@ private def mreg_eq (x y : mreg) : Bool :=
   | .left _ => true
   | .right _ => false
 
+private def assertMregEq {A : Type} (x y : mreg) (k : res A) : res A :=
+  match CompCert4Lean.Backend.Mach.RegEq.eq x y with
+  | .left _ => k
+  | .right _ => CompCert4Lean.Common.Errors.assertion_failed
+
 private def ireg_eq (x y : ireg) : Bool := decide (x = y)
 
 private def freg_eq (x y : freg) : Bool := decide (x = y)
@@ -369,106 +374,191 @@ def transl_op (op : operation) (args : List mreg) (dst : mreg) (k : code) : res 
       bindRes (ireg_of dst) (fun r => pure (.Pmovsw_rr r r1 :: k)))
   | .Ocast16unsigned, [a1] => bindRes (ireg_of a1) (fun r1 =>
       bindRes (ireg_of dst) (fun r => pure (.Pmovzw_rr r r1 :: k)))
-  | .Oneg, [_] => bindRes (ireg_of dst) (fun r => pure (.Pnegl r :: k))
-  | .Osub, [_, a2] => bindRes (ireg_of dst) (fun r =>
-      bindRes (ireg_of a2) (fun r2 => pure (.Psubl_rr r r2 :: k)))
-  | .Omul, [_, a2] => bindRes (ireg_of dst) (fun r =>
-      bindRes (ireg_of a2) (fun r2 => pure (.Pimull_rr r r2 :: k)))
-  | .Omulimm n, [_] => bindRes (ireg_of dst) (fun r => pure (.Pimull_ri r n :: k))
-  | .Omulhs, [_, a2] => bindRes (ireg_of a2) (fun r2 => pure (.Pimull_r r2 :: k))
-  | .Omulhu, [_, a2] => bindRes (ireg_of a2) (fun r2 => pure (.Pmull_r r2 :: k))
-  | .Odiv, [_, _] => pure (.Pcltd :: .Pidivl .RCX :: k)
-  | .Odivu, [_, _] => pure (.Pxorl_r .RDX :: .Pdivl .RCX :: k)
-  | .Omod, [_, _] => pure (.Pcltd :: .Pidivl .RCX :: k)
-  | .Omodu, [_, _] => pure (.Pxorl_r .RDX :: .Pdivl .RCX :: k)
-  | .Oand, [_, a2] => bindRes (ireg_of dst) (fun r =>
-      bindRes (ireg_of a2) (fun r2 => pure (.Pandl_rr r r2 :: k)))
-  | .Oandimm n, [_] => bindRes (ireg_of dst) (fun r => pure (.Pandl_ri r n :: k))
-  | .Oor, [_, a2] => bindRes (ireg_of dst) (fun r =>
-      bindRes (ireg_of a2) (fun r2 => pure (.Porl_rr r r2 :: k)))
-  | .Oorimm n, [_] => bindRes (ireg_of dst) (fun r => pure (.Porl_ri r n :: k))
-  | .Oxor, [_, a2] => bindRes (ireg_of dst) (fun r =>
-      bindRes (ireg_of a2) (fun r2 => pure (.Pxorl_rr r r2 :: k)))
-  | .Oxorimm n, [_] => bindRes (ireg_of dst) (fun r => pure (.Pxorl_ri r n :: k))
-  | .Onot, [_] => bindRes (ireg_of dst) (fun r => pure (.Pnotl r :: k))
-  | .Oshl, [_, _] => bindRes (ireg_of dst) (fun r => pure (.Psall_rcl r :: k))
-  | .Oshr, [_, _] => bindRes (ireg_of dst) (fun r => pure (.Psarl_rcl r :: k))
-  | .Oshru, [_, _] => bindRes (ireg_of dst) (fun r => pure (.Pshrl_rcl r :: k))
-  | .Oshlimm n, [_] => bindRes (ireg_of dst) (fun r => pure (.Psall_ri r n :: k))
-  | .Oshrimm n, [_] => bindRes (ireg_of dst) (fun r => pure (.Psarl_ri r n :: k))
-  | .Oshruimm n, [_] => bindRes (ireg_of dst) (fun r => pure (.Pshrl_ri r n :: k))
-  | .Oshrximm n, [_] => mk_shrximm n k
-  | .Ororimm n, [_] => bindRes (ireg_of dst) (fun r => pure (.Prorl_ri r n :: k))
-  | .Oshldimm n, [_, a2] => bindRes (ireg_of dst) (fun r =>
-      bindRes (ireg_of a2) (fun r2 => pure (.Pshld_ri r r2 n :: k)))
+  | .Oneg, [a1] => assertMregEq a1 dst
+      (bindRes (ireg_of dst) (fun r => pure (.Pnegl r :: k)))
+  | .Osub, [a1, a2] => assertMregEq a1 dst
+      (bindRes (ireg_of dst) (fun r =>
+        bindRes (ireg_of a2) (fun r2 => pure (.Psubl_rr r r2 :: k))))
+  | .Omul, [a1, a2] => assertMregEq a1 dst
+      (bindRes (ireg_of dst) (fun r =>
+        bindRes (ireg_of a2) (fun r2 => pure (.Pimull_rr r r2 :: k))))
+  | .Omulimm n, [a1] => assertMregEq a1 dst
+      (bindRes (ireg_of dst) (fun r => pure (.Pimull_ri r n :: k)))
+  | .Omulhs, [a1, a2] => assertMregEq a1 .AX
+      (assertMregEq dst .DX
+        (bindRes (ireg_of a2) (fun r2 => pure (.Pimull_r r2 :: k))))
+  | .Omulhu, [a1, a2] => assertMregEq a1 .AX
+      (assertMregEq dst .DX
+        (bindRes (ireg_of a2) (fun r2 => pure (.Pmull_r r2 :: k))))
+  | .Odiv, [a1, a2] => assertMregEq a1 .AX
+      (assertMregEq a2 .CX (assertMregEq dst .AX
+        (pure (.Pcltd :: .Pidivl .RCX :: k))))
+  | .Odivu, [a1, a2] => assertMregEq a1 .AX
+      (assertMregEq a2 .CX (assertMregEq dst .AX
+        (pure (.Pxorl_r .RDX :: .Pdivl .RCX :: k))))
+  | .Omod, [a1, a2] => assertMregEq a1 .AX
+      (assertMregEq a2 .CX (assertMregEq dst .DX
+        (pure (.Pcltd :: .Pidivl .RCX :: k))))
+  | .Omodu, [a1, a2] => assertMregEq a1 .AX
+      (assertMregEq a2 .CX (assertMregEq dst .DX
+        (pure (.Pxorl_r .RDX :: .Pdivl .RCX :: k))))
+  | .Oand, [a1, a2] => assertMregEq a1 dst
+      (bindRes (ireg_of dst) (fun r =>
+        bindRes (ireg_of a2) (fun r2 => pure (.Pandl_rr r r2 :: k))))
+  | .Oandimm n, [a1] => assertMregEq a1 dst
+      (bindRes (ireg_of dst) (fun r => pure (.Pandl_ri r n :: k)))
+  | .Oor, [a1, a2] => assertMregEq a1 dst
+      (bindRes (ireg_of dst) (fun r =>
+        bindRes (ireg_of a2) (fun r2 => pure (.Porl_rr r r2 :: k))))
+  | .Oorimm n, [a1] => assertMregEq a1 dst
+      (bindRes (ireg_of dst) (fun r => pure (.Porl_ri r n :: k)))
+  | .Oxor, [a1, a2] => assertMregEq a1 dst
+      (bindRes (ireg_of dst) (fun r =>
+        bindRes (ireg_of a2) (fun r2 => pure (.Pxorl_rr r r2 :: k))))
+  | .Oxorimm n, [a1] => assertMregEq a1 dst
+      (bindRes (ireg_of dst) (fun r => pure (.Pxorl_ri r n :: k)))
+  | .Onot, [a1] => assertMregEq a1 dst
+      (bindRes (ireg_of dst) (fun r => pure (.Pnotl r :: k)))
+  | .Oshl, [a1, a2] => assertMregEq a1 dst
+      (assertMregEq a2 .CX
+        (bindRes (ireg_of dst) (fun r => pure (.Psall_rcl r :: k))))
+  | .Oshr, [a1, a2] => assertMregEq a1 dst
+      (assertMregEq a2 .CX
+        (bindRes (ireg_of dst) (fun r => pure (.Psarl_rcl r :: k))))
+  | .Oshru, [a1, a2] => assertMregEq a1 dst
+      (assertMregEq a2 .CX
+        (bindRes (ireg_of dst) (fun r => pure (.Pshrl_rcl r :: k))))
+  | .Oshlimm n, [a1] => assertMregEq a1 dst
+      (bindRes (ireg_of dst) (fun r => pure (.Psall_ri r n :: k)))
+  | .Oshrimm n, [a1] => assertMregEq a1 dst
+      (bindRes (ireg_of dst) (fun r => pure (.Psarl_ri r n :: k)))
+  | .Oshruimm n, [a1] => assertMregEq a1 dst
+      (bindRes (ireg_of dst) (fun r => pure (.Pshrl_ri r n :: k)))
+  | .Oshrximm n, [a1] => assertMregEq a1 .AX
+      (assertMregEq dst .AX (mk_shrximm n k))
+  | .Ororimm n, [a1] => assertMregEq a1 dst
+      (bindRes (ireg_of dst) (fun r => pure (.Prorl_ri r n :: k)))
+  | .Oshldimm n, [a1, a2] => assertMregEq a1 dst
+      (bindRes (ireg_of dst) (fun r =>
+        bindRes (ireg_of a2) (fun r2 => pure (.Pshld_ri r r2 n :: k))))
   | .Olea addr, _ => bindRes (transl_addressing addr args) (fun am =>
       bindRes (ireg_of dst) (fun r => pure (.Pleal r (normalize_addrmode_32 am) :: k)))
-  | .Olowlong, [_] => bindRes (ireg_of dst) (fun r => pure (.Pmovls_rr r :: k))
+  | .Olowlong, [a1] => assertMregEq a1 dst
+      (bindRes (ireg_of dst) (fun r => pure (.Pmovls_rr r :: k)))
   | .Ocast32signed, [a1] => bindRes (ireg_of a1) (fun r1 =>
       bindRes (ireg_of dst) (fun r => pure (.Pmovsl_rr r r1 :: k)))
   | .Ocast32unsigned, [a1] => bindRes (ireg_of a1) (fun r1 =>
       bindRes (ireg_of dst) (fun r => pure (.Pmovzl_rr r r1 :: k)))
-  | .Onegl, [_] => bindRes (ireg_of dst) (fun r => pure (.Pnegq r :: k))
-  | .Oaddlimm n, [_] => bindRes (ireg_of dst) (fun r => pure (.Paddq_ri r n :: k))
-  | .Osubl, [_, a2] => bindRes (ireg_of dst) (fun r =>
-      bindRes (ireg_of a2) (fun r2 => pure (.Psubq_rr r r2 :: k)))
-  | .Omull, [_, a2] => bindRes (ireg_of dst) (fun r =>
-      bindRes (ireg_of a2) (fun r2 => pure (.Pimulq_rr r r2 :: k)))
-  | .Omullimm n, [_] => bindRes (ireg_of dst) (fun r => pure (.Pimulq_ri r n :: k))
-  | .Omullhs, [_, a2] => bindRes (ireg_of a2) (fun r2 => pure (.Pimulq_r r2 :: k))
-  | .Omullhu, [_, a2] => bindRes (ireg_of a2) (fun r2 => pure (.Pmulq_r r2 :: k))
-  | .Odivl, [_, _] => pure (.Pcqto :: .Pidivq .RCX :: k)
-  | .Odivlu, [_, _] => pure (.Pxorq_r .RDX :: .Pdivq .RCX :: k)
-  | .Omodl, [_, _] => pure (.Pcqto :: .Pidivq .RCX :: k)
-  | .Omodlu, [_, _] => pure (.Pxorq_r .RDX :: .Pdivq .RCX :: k)
-  | .Oandl, [_, a2] => bindRes (ireg_of dst) (fun r =>
-      bindRes (ireg_of a2) (fun r2 => pure (.Pandq_rr r r2 :: k)))
-  | .Oandlimm n, [_] => bindRes (ireg_of dst) (fun r => pure (.Pandq_ri r n :: k))
-  | .Oorl, [_, a2] => bindRes (ireg_of dst) (fun r =>
-      bindRes (ireg_of a2) (fun r2 => pure (.Porq_rr r r2 :: k)))
-  | .Oorlimm n, [_] => bindRes (ireg_of dst) (fun r => pure (.Porq_ri r n :: k))
-  | .Oxorl, [_, a2] => bindRes (ireg_of dst) (fun r =>
-      bindRes (ireg_of a2) (fun r2 => pure (.Pxorq_rr r r2 :: k)))
-  | .Oxorlimm n, [_] => bindRes (ireg_of dst) (fun r => pure (.Pxorq_ri r n :: k))
-  | .Onotl, [_] => bindRes (ireg_of dst) (fun r => pure (.Pnotq r :: k))
-  | .Oshll, [_, _] => bindRes (ireg_of dst) (fun r => pure (.Psalq_rcl r :: k))
-  | .Oshrl, [_, _] => bindRes (ireg_of dst) (fun r => pure (.Psarq_rcl r :: k))
-  | .Oshrlu, [_, _] => bindRes (ireg_of dst) (fun r => pure (.Pshrq_rcl r :: k))
-  | .Oshllimm n, [_] => bindRes (ireg_of dst) (fun r => pure (.Psalq_ri r n :: k))
-  | .Oshrlimm n, [_] => bindRes (ireg_of dst) (fun r => pure (.Psarq_ri r n :: k))
-  | .Oshrxlimm n, [_] => mk_shrxlimm n k
-  | .Oshrluimm n, [_] => bindRes (ireg_of dst) (fun r => pure (.Pshrq_ri r n :: k))
-  | .Ororlimm n, [_] => bindRes (ireg_of dst) (fun r => pure (.Prorq_ri r n :: k))
+  | .Onegl, [a1] => assertMregEq a1 dst
+      (bindRes (ireg_of dst) (fun r => pure (.Pnegq r :: k)))
+  | .Oaddlimm n, [a1] => assertMregEq a1 dst
+      (bindRes (ireg_of dst) (fun r => pure (.Paddq_ri r n :: k)))
+  | .Osubl, [a1, a2] => assertMregEq a1 dst
+      (bindRes (ireg_of dst) (fun r =>
+        bindRes (ireg_of a2) (fun r2 => pure (.Psubq_rr r r2 :: k))))
+  | .Omull, [a1, a2] => assertMregEq a1 dst
+      (bindRes (ireg_of dst) (fun r =>
+        bindRes (ireg_of a2) (fun r2 => pure (.Pimulq_rr r r2 :: k))))
+  | .Omullimm n, [a1] => assertMregEq a1 dst
+      (bindRes (ireg_of dst) (fun r => pure (.Pimulq_ri r n :: k)))
+  | .Omullhs, [a1, a2] => assertMregEq a1 .AX
+      (assertMregEq dst .DX
+        (bindRes (ireg_of a2) (fun r2 => pure (.Pimulq_r r2 :: k))))
+  | .Omullhu, [a1, a2] => assertMregEq a1 .AX
+      (assertMregEq dst .DX
+        (bindRes (ireg_of a2) (fun r2 => pure (.Pmulq_r r2 :: k))))
+  | .Odivl, [a1, a2] => assertMregEq a1 .AX
+      (assertMregEq a2 .CX (assertMregEq dst .AX
+        (pure (.Pcqto :: .Pidivq .RCX :: k))))
+  | .Odivlu, [a1, a2] => assertMregEq a1 .AX
+      (assertMregEq a2 .CX (assertMregEq dst .AX
+        (pure (.Pxorq_r .RDX :: .Pdivq .RCX :: k))))
+  | .Omodl, [a1, a2] => assertMregEq a1 .AX
+      (assertMregEq a2 .CX (assertMregEq dst .DX
+        (pure (.Pcqto :: .Pidivq .RCX :: k))))
+  | .Omodlu, [a1, a2] => assertMregEq a1 .AX
+      (assertMregEq a2 .CX (assertMregEq dst .DX
+        (pure (.Pxorq_r .RDX :: .Pdivq .RCX :: k))))
+  | .Oandl, [a1, a2] => assertMregEq a1 dst
+      (bindRes (ireg_of dst) (fun r =>
+        bindRes (ireg_of a2) (fun r2 => pure (.Pandq_rr r r2 :: k))))
+  | .Oandlimm n, [a1] => assertMregEq a1 dst
+      (bindRes (ireg_of dst) (fun r => pure (.Pandq_ri r n :: k)))
+  | .Oorl, [a1, a2] => assertMregEq a1 dst
+      (bindRes (ireg_of dst) (fun r =>
+        bindRes (ireg_of a2) (fun r2 => pure (.Porq_rr r r2 :: k))))
+  | .Oorlimm n, [a1] => assertMregEq a1 dst
+      (bindRes (ireg_of dst) (fun r => pure (.Porq_ri r n :: k)))
+  | .Oxorl, [a1, a2] => assertMregEq a1 dst
+      (bindRes (ireg_of dst) (fun r =>
+        bindRes (ireg_of a2) (fun r2 => pure (.Pxorq_rr r r2 :: k))))
+  | .Oxorlimm n, [a1] => assertMregEq a1 dst
+      (bindRes (ireg_of dst) (fun r => pure (.Pxorq_ri r n :: k)))
+  | .Onotl, [a1] => assertMregEq a1 dst
+      (bindRes (ireg_of dst) (fun r => pure (.Pnotq r :: k)))
+  | .Oshll, [a1, a2] => assertMregEq a1 dst
+      (assertMregEq a2 .CX
+        (bindRes (ireg_of dst) (fun r => pure (.Psalq_rcl r :: k))))
+  | .Oshrl, [a1, a2] => assertMregEq a1 dst
+      (assertMregEq a2 .CX
+        (bindRes (ireg_of dst) (fun r => pure (.Psarq_rcl r :: k))))
+  | .Oshrlu, [a1, a2] => assertMregEq a1 dst
+      (assertMregEq a2 .CX
+        (bindRes (ireg_of dst) (fun r => pure (.Pshrq_rcl r :: k))))
+  | .Oshllimm n, [a1] => assertMregEq a1 dst
+      (bindRes (ireg_of dst) (fun r => pure (.Psalq_ri r n :: k)))
+  | .Oshrlimm n, [a1] => assertMregEq a1 dst
+      (bindRes (ireg_of dst) (fun r => pure (.Psarq_ri r n :: k)))
+  | .Oshrxlimm n, [a1] => assertMregEq a1 .AX
+      (assertMregEq dst .AX (mk_shrxlimm n k))
+  | .Oshrluimm n, [a1] => assertMregEq a1 dst
+      (bindRes (ireg_of dst) (fun r => pure (.Pshrq_ri r n :: k)))
+  | .Ororlimm n, [a1] => assertMregEq a1 dst
+      (bindRes (ireg_of dst) (fun r => pure (.Prorq_ri r n :: k)))
   | .Oleal addr, _ => bindRes (transl_addressing addr args) (fun am =>
       bindRes (ireg_of dst) (fun r =>
         let am' := normalize_addrmode_64 am
         pure (match am' with
           | (a, none) => .Pleaq r a :: k
           | (a, some delta) => .Pleaq r a :: .Paddq_ri r delta :: k)))
-  | .Onegf, [_] => bindRes (freg_of dst) (fun r => pure (.Pnegd r :: k))
-  | .Oabsf, [_] => bindRes (freg_of dst) (fun r => pure (.Pabsd r :: k))
-  | .Oaddf, [_, a2] => bindRes (freg_of dst) (fun r =>
-      bindRes (freg_of a2) (fun r2 => pure (.Paddd_ff r r2 :: k)))
-  | .Osubf, [_, a2] => bindRes (freg_of dst) (fun r =>
-      bindRes (freg_of a2) (fun r2 => pure (.Psubd_ff r r2 :: k)))
-  | .Omulf, [_, a2] => bindRes (freg_of dst) (fun r =>
-      bindRes (freg_of a2) (fun r2 => pure (.Pmuld_ff r r2 :: k)))
-  | .Odivf, [_, a2] => bindRes (freg_of dst) (fun r =>
-      bindRes (freg_of a2) (fun r2 => pure (.Pdivd_ff r r2 :: k)))
-  | .Omaxf, [_, a2] => bindRes (freg_of dst) (fun r =>
-      bindRes (freg_of a2) (fun r2 => pure (.Pmaxsd r r2 :: k)))
-  | .Ominf, [_, a2] => bindRes (freg_of dst) (fun r =>
-      bindRes (freg_of a2) (fun r2 => pure (.Pminsd r r2 :: k)))
-  | .Onegfs, [_] => bindRes (freg_of dst) (fun r => pure (.Pnegs r :: k))
-  | .Oabsfs, [_] => bindRes (freg_of dst) (fun r => pure (.Pabss r :: k))
-  | .Oaddfs, [_, a2] => bindRes (freg_of dst) (fun r =>
-      bindRes (freg_of a2) (fun r2 => pure (.Padds_ff r r2 :: k)))
-  | .Osubfs, [_, a2] => bindRes (freg_of dst) (fun r =>
-      bindRes (freg_of a2) (fun r2 => pure (.Psubs_ff r r2 :: k)))
-  | .Omulfs, [_, a2] => bindRes (freg_of dst) (fun r =>
-      bindRes (freg_of a2) (fun r2 => pure (.Pmuls_ff r r2 :: k)))
-  | .Odivfs, [_, a2] => bindRes (freg_of dst) (fun r =>
-      bindRes (freg_of a2) (fun r2 => pure (.Pdivs_ff r r2 :: k)))
+  | .Onegf, [a1] => assertMregEq a1 dst
+      (bindRes (freg_of dst) (fun r => pure (.Pnegd r :: k)))
+  | .Oabsf, [a1] => assertMregEq a1 dst
+      (bindRes (freg_of dst) (fun r => pure (.Pabsd r :: k)))
+  | .Oaddf, [a1, a2] => assertMregEq a1 dst
+      (bindRes (freg_of dst) (fun r =>
+        bindRes (freg_of a2) (fun r2 => pure (.Paddd_ff r r2 :: k))))
+  | .Osubf, [a1, a2] => assertMregEq a1 dst
+      (bindRes (freg_of dst) (fun r =>
+        bindRes (freg_of a2) (fun r2 => pure (.Psubd_ff r r2 :: k))))
+  | .Omulf, [a1, a2] => assertMregEq a1 dst
+      (bindRes (freg_of dst) (fun r =>
+        bindRes (freg_of a2) (fun r2 => pure (.Pmuld_ff r r2 :: k))))
+  | .Odivf, [a1, a2] => assertMregEq a1 dst
+      (bindRes (freg_of dst) (fun r =>
+        bindRes (freg_of a2) (fun r2 => pure (.Pdivd_ff r r2 :: k))))
+  | .Omaxf, [a1, a2] => assertMregEq a1 dst
+      (bindRes (freg_of dst) (fun r =>
+        bindRes (freg_of a2) (fun r2 => pure (.Pmaxsd r r2 :: k))))
+  | .Ominf, [a1, a2] => assertMregEq a1 dst
+      (bindRes (freg_of dst) (fun r =>
+        bindRes (freg_of a2) (fun r2 => pure (.Pminsd r r2 :: k))))
+  | .Onegfs, [a1] => assertMregEq a1 dst
+      (bindRes (freg_of dst) (fun r => pure (.Pnegs r :: k)))
+  | .Oabsfs, [a1] => assertMregEq a1 dst
+      (bindRes (freg_of dst) (fun r => pure (.Pabss r :: k)))
+  | .Oaddfs, [a1, a2] => assertMregEq a1 dst
+      (bindRes (freg_of dst) (fun r =>
+        bindRes (freg_of a2) (fun r2 => pure (.Padds_ff r r2 :: k))))
+  | .Osubfs, [a1, a2] => assertMregEq a1 dst
+      (bindRes (freg_of dst) (fun r =>
+        bindRes (freg_of a2) (fun r2 => pure (.Psubs_ff r r2 :: k))))
+  | .Omulfs, [a1, a2] => assertMregEq a1 dst
+      (bindRes (freg_of dst) (fun r =>
+        bindRes (freg_of a2) (fun r2 => pure (.Pmuls_ff r r2 :: k))))
+  | .Odivfs, [a1, a2] => assertMregEq a1 dst
+      (bindRes (freg_of dst) (fun r =>
+        bindRes (freg_of a2) (fun r2 => pure (.Pdivs_ff r r2 :: k))))
   | .Osingleoffloat, [a1] => bindRes (freg_of dst) (fun r =>
       bindRes (freg_of a1) (fun r1 => pure (.Pcvtsd2ss_ff r r1 :: k)))
   | .Ofloatofsingle, [a1] => bindRes (freg_of dst) (fun r =>
@@ -491,8 +581,9 @@ def transl_op (op : operation) (args : List mreg) (dst : mreg) (k : code) : res 
       bindRes (ireg_of a1) (fun r1 => pure (.Pcvtsl2ss_fr r r1 :: k)))
   | .Ocmp c, _ => bindRes (ireg_of dst) (fun r =>
       transl_cond c args (mk_setcc (testcond_for_condition c) r k))
-  | .Osel c _, a1 :: a2 :: rest => bindRes (ireg_of dst) (fun r =>
-      bindRes (ireg_of a2) (fun r2 => transl_sel c rest r r2 k))
+  | .Osel c _, a1 :: a2 :: rest => assertMregEq a1 dst
+      (bindRes (ireg_of dst) (fun r =>
+        bindRes (ireg_of a2) (fun r2 => transl_sel c rest r r2 k)))
   | _, _ => fail "Asmgen.transl_op"
 
 def transl_load (chunk : memory_chunk) (addr : addressing) (args : List mreg)
