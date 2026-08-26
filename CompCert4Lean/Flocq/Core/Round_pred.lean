@@ -62,6 +62,16 @@ inductive satisfies_any (ctx : ExactRealContext) (F : ExactSpec.R ctx → Prop) 
         (CompCert4Lean.Flocq.Core.Defs.Exact.Rnd_DN_pt ctx F) →
       satisfies_any ctx F
 
+/-! Source-facing constructor identity. -/
+
+abbrev Satisfies_any (ctx : ExactRealContext) (F : ExactSpec.R ctx → Prop) :
+    F (ExactSpec.R0 ctx) →
+      (∀ x : ExactSpec.R ctx, F x → F (ExactSpec.Ropp ctx x)) →
+      CompCert4Lean.Flocq.Core.Defs.Exact.round_pred_total ctx
+        (CompCert4Lean.Flocq.Core.Defs.Exact.Rnd_DN_pt ctx F) →
+      satisfies_any ctx F :=
+  satisfies_any.mk
+
 def Rnd_DN_UP_pt_splitStatement : Prop :=
   ∀ (ctx : ExactRealContext) (F : ExactSpec.R ctx → Prop)
     (x d u : ExactSpec.R ctx),

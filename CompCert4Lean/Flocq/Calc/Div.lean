@@ -50,15 +50,21 @@ namespace Exact
 abbrev F2R := CompCert4Lean.Flocq.Calc.Bracket.F2R
 abbrev Rdiv := CompCert4Lean.Flocq.Calc.Bracket.Rdiv
 abbrev Magnitude := CompCert4Lean.Flocq.Core.Float_prop.Exact.Magnitude
+abbrev bpow (ctx : ExactRealContext) (beta : radix) (e : Z) :
+    CompCert4Lean.Flocq.Core.Float_prop.Exact.R ctx :=
+  CompCert4Lean.Flocq.Core.Raux.Exact.bpow ctx beta e
 abbrev mag (ctx : ExactRealContext) (magnitude : Magnitude ctx) (beta : radix)
     (x : CompCert4Lean.Flocq.Core.Float_prop.Exact.R ctx) : Z :=
   CompCert4Lean.Flocq.Core.Float_prop.Exact.mag magnitude beta x
 
 end Exact
 
-/- The source notation `bpow e` is a beta-parameterized abbreviation. -/
-abbrev bpow (beta : radix) (e : Z) : R :=
-  CompCert4Lean.Flocq.Core.Raux.bpow beta e
+/- The source notation `bpow e` is theorem-facing here.  Under RPR-007 the
+   mapped identity names the injected exact-real carrier explicitly; the
+   runtime/rational carrier remains confined to executable surfaces. -/
+abbrev bpow (ctx : ExactRealContext) (beta : radix) (e : Z) :
+    CompCert4Lean.Flocq.Core.Float_prop.Exact.R ctx :=
+  CompCert4Lean.Flocq.Core.Raux.Exact.bpow ctx beta e
 
 def Fdiv_core (beta : radix) (m1 e1 m2 e2 e : Z) : Z × location :=
   let (m1', m2') :=
@@ -69,23 +75,34 @@ def Fdiv_core (beta : radix) (m1 e1 m2 e2 e : Z) : Z × location :=
   let (q, r) := Zdiv_eucl m1' m2'
   (q, new_location m2' r loc_Exact)
 
-/-! Exact source proposition descriptors for later proof migration. -/
+/-! Exact source proposition descriptors for later proof migration.
+
+The explicit `ctx` and (for magnitude) `magnitude` arguments are the
+RPR-007 carrier/certificate seam.  The proposition after those arguments is
+source-shaped; no extra computational premise is introduced, and construction
+of the exact-real laws and magnitude invariant remains a proof-grinding duty.
+-/
 
 def mag_div_F2RStatement (ctx : ExactRealContext)
     (magnitude : Exact.Magnitude ctx) : Prop :=
   ∀ (beta : radix) (m1 e1 m2 e2 : Z),
     Zlt Z0 m1 →
       Zlt Z0 m2 →
-        let x :=
-          Exact.Rdiv ctx
-            (Exact.F2R ctx (Float beta m1 e1))
-            (Exact.F2R ctx (Float beta m2 e2))
         let e :=
           Zsub
             (Zadd (Zdigits beta m1) e1)
             (Zadd (Zdigits beta m2) e2)
-        Zle e (Exact.mag ctx magnitude beta x) ∧
-          Zle (Exact.mag ctx magnitude beta x) (Zadd e Zone)
+        Zle e
+            (Exact.mag ctx magnitude beta
+              (Exact.Rdiv ctx
+                (Exact.F2R ctx (Float beta m1 e1))
+                (Exact.F2R ctx (Float beta m2 e2)))) ∧
+          Zle
+            (Exact.mag ctx magnitude beta
+              (Exact.Rdiv ctx
+                (Exact.F2R ctx (Float beta m1 e1))
+                (Exact.F2R ctx (Float beta m2 e2))))
+            (Zadd e Zone)
 
 def Fdiv_core_correctStatement (ctx : ExactRealContext) : Prop :=
   ∀ (beta : radix) (m1 e1 m2 e2 e : Z),
