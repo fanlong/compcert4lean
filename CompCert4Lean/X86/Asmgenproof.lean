@@ -192,8 +192,8 @@ def exec_straight_atStatement
     [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (prog : MachProgram) (tprog : AsmProgram), match_prog prog tprog →
     ∀ (fb : Block) (f : MachFunction) (c : MachCode) (ep : Bool)
-      (tf : AsmFunction) (tc tc' : AsmCode) (c' : MachCode) (ep' : Bool)
-      (rs : AsmRegset) (m : Mem) (rs' : AsmRegset) (m' : Mem),
+      (tf : AsmFunction) (tc : AsmCode) (c' : MachCode) (ep' : Bool)
+      (tc' : AsmCode) (rs : AsmRegset) (m : Mem) (rs' : AsmRegset) (m' : Mem),
       transl_code_at_pc (Genv.globalenv prog) (rs .PC) fb f c ep tf tc →
       CompCert4Lean.X86.Asmgen.transl_code f c' ep' = .OK tc' →
       exec_straight
