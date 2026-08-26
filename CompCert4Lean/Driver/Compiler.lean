@@ -362,21 +362,21 @@ def match_prog
 /-! ## Exact statement descriptors for the later proof phase -/
 
 def print_identityStatement : Prop :=
-  ∀ {A : Type} (printer : A → Unit) (prog : A),
+  ∀ (A : Type) (printer : A → Unit) (prog : A),
     print printer prog = prog
 
 def compose_print_identityStatement : Prop :=
-  ∀ {A : Type} (x : Res A) (f : A → Unit),
+  ∀ (A : Type) (x : Res A) (f : A → Unit),
     mapRes x (print f) = x
 
 def total_if_matchStatement : Prop :=
-  ∀ {A : Type} (flag : Unit → Bool) (f : A → A)
+  ∀ (A : Type) (flag : Unit → Bool) (f : A → A)
     (rel : A → A → Prop) (prog : A),
     (∀ p, rel p (f p)) →
     rel prog (total_if flag f prog)
 
 def partial_if_matchStatement : Prop :=
-  ∀ {A : Type} (flag : Unit → Bool) (f : A → Res A)
+  ∀ (A : Type) (flag : Unit → Bool) (f : A → Res A)
     (rel : A → A → Prop) (prog tprog : A),
     (∀ p tp, f p = .OK tp → rel p tp) →
     partial_if flag f prog = .OK tprog →
@@ -408,7 +408,7 @@ def forward_simulation_identityStatement : Prop :=
   ∀ (sem : semantics), forward_simulation sem sem
 
 def match_if_simulationStatement : Prop :=
-  ∀ {A : Type} (sem : A → semantics) (flag : Unit → Bool)
+  ∀ (A : Type) (sem : A → semantics) (flag : Unit → Bool)
     (transf : A → A → Prop) (prog tprog : A),
     match_if flag transf prog tprog →
     (∀ p tp, transf p tp → forward_simulation (sem p) (sem tp)) →
