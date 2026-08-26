@@ -22,6 +22,13 @@ inductive t : Type where
   | Cons (lo hi : Z) (tail : t)
 deriving DecidableEq
 
+/-! The source module places these constructors directly under `R`.  Lean
+    stores them under their inductive owner (`R.t`), so expose the same
+    source-facing spellings as reducible match patterns for the genuine
+    constructors. -/
+@[match_pattern] abbrev Nil : t := t.Nil
+@[match_pattern] abbrev Cons (lo hi : Z) (tail : t) : t := t.Cons lo hi tail
+
 def In (x : Z) : t → Prop
   | .Nil => False
   | .Cons lo hi tail =>
@@ -34,6 +41,13 @@ inductive ok : t → Prop where
       (below : ∀ x, In x s → ZArith.BinInt.Z.lt h x)
       (tail_ok : ok s) :
       ok (.Cons l h s)
+
+@[match_pattern] abbrev ok_nil : ok Nil := ok.ok_nil
+@[match_pattern] abbrev ok_cons (l h : Z) (s : t)
+    (bounds : ZArith.BinInt.Z.lt l h)
+    (below : ∀ x, In x s → ZArith.BinInt.Z.lt h x)
+    (tail_ok : ok s) : ok (Cons l h s) :=
+  ok.ok_cons l h s bounds below tail_ok
 
 def add (L H : Z) : t → t
   | .Nil => .Cons L H .Nil

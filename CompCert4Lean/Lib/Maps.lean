@@ -302,7 +302,7 @@ def beq {A : Type} (beqA : A → A → Bool) : t A → t A → Bool
   | _, _ => false
 
 def beq_correct : Prop :=
-  ∀ (A : Type) (beqA : A → A → Bool) (m₁ m₂ : t A),
+  ∀ {A : Type} (beqA : A → A → Bool) (m₁ m₂ : t A),
     beq beqA m₁ m₂ = true ↔
       ∀ x : elt,
         match get x m₁, get x m₂ with
@@ -311,7 +311,7 @@ def beq_correct : Prop :=
         | _, _ => False
 
 def beq_correct_boolStatement : Prop :=
-  ∀ (A : Type) (beqA : A → A → Bool) (m₁ m₂ : t A),
+  ∀ {A : Type} (beqA : A → A → Bool) (m₁ m₂ : t A),
     beq beqA m₁ m₂ = true ↔
       ∀ x : elt,
         (match get x m₁, get x m₂ with
@@ -380,16 +380,16 @@ abbrev list_forall2 {A B : Type} (R : A → B → Prop) : List A → List B → 
 
 def gemptyStatement : Prop := ∀ (A : Type) (i : positive), get i (empty A) = none
 def gss0Statement : Prop := ∀ {A : Type} (p : positive) (x : A), get' p (set0 p x) = some x
-def gso0Statement : Prop := ∀ {A : Type} (p q : positive) (x : A), p ≠ q → get' p (set0 q x) = none
-def gssStatement : Prop := ∀ (A : Type) (i : positive) (x : A) (m : tree A), get i (set i x m) = some x
-def gsoStatement : Prop := ∀ (A : Type) (i j : positive) (x : A) (m : tree A), i ≠ j → get i (set j x m) = get i m
-def gsspecStatement : Prop := ∀ (A : Type) (i j : positive) (x : A) (m : t A),
+def gso0Statement : Prop := ∀ {A : Type} {p q : positive} (x : A), p ≠ q → get' p (set0 q x) = none
+def gssStatement : Prop := ∀ {A : Type} (i : positive) (x : A) (m : tree A), get i (set i x m) = some x
+def gsoStatement : Prop := ∀ {A : Type} {i j : positive} (x : A) (m : tree A), i ≠ j → get i (set j x m) = get i m
+def gsspecStatement : Prop := ∀ {A : Type} (i j : positive) (x : A) (m : t A),
   get i (set j x m) = match peq i j with | .left _ => some x | .right _ => get i m
 def gNodeStatement : Prop := ∀ {A : Type} (i : positive) (l : tree A) (x : Option A) (r : tree A),
   get i (Node l x r) = match i with | .xH => x | .xO j => get j l | .xI j => get j r
-def grsStatement : Prop := ∀ (A : Type) (i : positive) (m : tree A), get i (remove i m) = none
-def groStatement : Prop := ∀ (A : Type) (i j : positive) (m : tree A), i ≠ j → get i (remove j m) = get i m
-def grspecStatement : Prop := ∀ (A : Type) (i j : elt) (m : t A),
+def grsStatement : Prop := ∀ {A : Type} (i : positive) (m : tree A), get i (remove i m) = none
+def groStatement : Prop := ∀ {A : Type} {i j : positive} (m : tree A), i ≠ j → get i (remove j m) = get i m
+def grspecStatement : Prop := ∀ {A : Type} (i j : elt) (m : t A),
   get i (remove j m) = match elt_eq i j with | .left _ => none | .right _ => get i m
 
 def unroll_tree_recStatement : Prop :=
@@ -422,8 +422,8 @@ def unroll_tree_rec2_NNStatement : Prop :=
 
 def tree'_not_emptyStatement : Prop := ∀ {A : Type} (m : tree' A), ∃ i, get' i m ≠ none
 def extensionality_emptyStatement : Prop := ∀ {A : Type} (m : tree A), (∀ i, get i m = none) → m = .Empty
-def extensionalityStatement : Prop := ∀ (A : Type) (m1 m2 : tree A), (∀ i, get i m1 = get i m2) → m1 = m2
-def gsidentStatement : Prop := ∀ {A : Type} (i : positive) (m : t A) (v : A), get i m = some v → set i v m = m
+def extensionalityStatement : Prop := ∀ {A : Type} (m1 m2 : tree A), (∀ i, get i m1 = get i m2) → m1 = m2
+def gsidentStatement : Prop := ∀ {A : Type} (i : positive) (m : t A) {v : A}, get i m = some v → set i v m = m
 def set2Statement : Prop := ∀ {A : Type} (i : elt) (m : t A) (v1 v2 : A), set i v2 (set i v1 m) = set i v2 m
 
 def prev_append_prevStatement : Prop := ∀ (i j : positive), prev (prev_append i j) = prev_append j i
@@ -447,23 +447,23 @@ def gcombineStatement : Prop := ∀ {A B C : Type} (f : Option A → Option B �
   (f_none_none : f none none = none) (m1 : t A) (m2 : t B) (i : positive),
   get i (combine f m1 m2) = f (get i m1) (get i m2)
 
-def xelements'_appendStatement : Prop := ∀ (A : Type) (m : tree' A) (i : positive) (k1 k2 : List (positive × A)),
+def xelements'_appendStatement : Prop := ∀ {A : Type} (m : tree' A) (i : positive) (k1 k2 : List (positive × A)),
   xelements' m i (k1 ++ k2) = xelements' m i k1 ++ k2
-def xelements_NodeStatement : Prop := ∀ (A : Type) (l : tree A) (o : Option A) (r : tree A) (i : positive),
+def xelements_NodeStatement : Prop := ∀ {A : Type} (l : tree A) (o : Option A) (r : tree A) (i : positive),
   xelements (Node l o r) i = xelements l (.xO i) ++ (match o with | none => [] | some v => [(prev i, v)]) ++ xelements r (.xI i)
-def xelements_correctStatement : Prop := ∀ (A : Type) (m : tree A) (i j : positive) (v : A),
+def xelements_correctStatement : Prop := ∀ {A : Type} (m : tree A) (i j : positive) {v : A},
   get i m = some v → (prev (prev_append i j), v) ∈ xelements m j
-def elements_correctStatement : Prop := ∀ (A : Type) (m : t A) (i : positive) (v : A),
+def elements_correctStatement : Prop := ∀ {A : Type} (m : t A) (i : positive) {v : A},
   get i m = some v → (i, v) ∈ elements m
-def in_xelementsStatement : Prop := ∀ (A : Type) (m : tree A) (i k : positive) (v : A),
+def in_xelementsStatement : Prop := ∀ {A : Type} (m : tree A) (i k : positive) (v : A),
   (k, v) ∈ xelements m i → ∃ j, k = prev (prev_append j i) ∧ get j m = some v
-def elements_completeStatement : Prop := ∀ (A : Type) (m : t A) (i : positive) (v : A),
+def elements_completeStatement : Prop := ∀ {A : Type} (m : t A) (i : positive) (v : A),
   (i, v) ∈ elements m → get i m = some v
-def xkeys_NodeStatement : Prop := ∀ (A : Type) (m1 : t A) (o : Option A) (m2 : t A) (i : positive),
+def xkeys_NodeStatement : Prop := ∀ {A : Type} (m1 : t A) (o : Option A) (m2 : t A) (i : positive),
   xkeys (Node m1 o m2) i = xkeys m1 (.xO i) ++ (match o with | none => [] | some v => [prev i]) ++ xkeys m2 (.xI i)
-def in_xkeysStatement : Prop := ∀ (A : Type) (m : t A) (i k : positive), k ∈ xkeys m i → ∃ j, k = prev (prev_append j i)
-def xelements_keys_norepetStatement : Prop := ∀ (A : Type) (m : t A) (i : positive), list_norepet (xkeys m i)
-def elements_keys_norepetStatement : Prop := ∀ (A : Type) (m : t A), list_norepet ((elements m).map Prod.fst)
+def in_xkeysStatement : Prop := ∀ {A : Type} (m : t A) (i k : positive), k ∈ xkeys m i → ∃ j, k = prev (prev_append j i)
+def xelements_keys_norepetStatement : Prop := ∀ {A : Type} (m : t A) (i : positive), list_norepet (xkeys m i)
+def elements_keys_norepetStatement : Prop := ∀ {A : Type} (m : t A), list_norepet ((elements m).map Prod.fst)
 def elements_canonical_order'Statement : Prop := ∀ {A B : Type} (R : A → B → Prop) (m : t A) (n : t B),
   (∀ i, option_rel R (get i m) (get i n)) →
   list_forall2 (fun p q => p.1 = q.1 ∧ R p.2 q.2) (elements m) (elements n)
@@ -471,11 +471,11 @@ def elements_canonical_orderStatement : Prop := ∀ {A B : Type} (R : A → B �
   (∀ i x, get i m = some x → ∃ y, get i n = some y ∧ R x y) →
   (∀ i y, get i n = some y → ∃ x, get i m = some x ∧ R x y) →
   list_forall2 (fun p q => p.1 = q.1 ∧ R p.2 q.2) (elements m) (elements n)
-def fold'_xelements'Statement : Prop := ∀ (A B : Type) (f : B → positive → A → B) (m : tree' A)
+def fold'_xelements'Statement : Prop := ∀ {A B : Type} (f : B → positive → A → B) (m : tree' A)
   (i : positive) (v : B) (l : List (positive × A)),
   List.foldl (fun a p => f a p.1 p.2) (fold' f i m v) l =
     List.foldl (fun a p => f a p.1 p.2) v (xelements' m i l)
-def fold_specStatement : Prop := ∀ (A B : Type) (f : B → positive → A → B) (v : B) (m : t A),
+def fold_specStatement : Prop := ∀ {A B : Type} (f : B → positive → A → B) (v : B) (m : t A),
   fold f m v = List.foldl (fun a p => f a p.1 p.2) v (elements m)
 
 private theorem getSet0_proof (A : Type) (x y : positive) (v : A) :
@@ -1171,14 +1171,14 @@ def set {A : Type} (i : positive) (x : A) (m : t A) : t A := (m.1, PTree.set i x
 def map {A B : Type} (f : A → B) (m : t A) : t B :=
   (f m.1, PTree.map1 f m.2)
 
-def giStatement : Prop := ∀ (A : Type) (i : positive) (x : A), get i (init x) = x
-def gssStatement : Prop := ∀ (A : Type) (i : positive) (x : A) (m : t A), get i (set i x m) = x
-def gsoStatement : Prop := ∀ (A : Type) (i j : positive) (x : A) (m : t A), i ≠ j → get i (set j x m) = get i m
-def gsspecStatement : Prop := ∀ (A : Type) (i j : positive) (x : A) (m : t A),
+def giStatement : Prop := ∀ {A : Type} (i : positive) (x : A), get i (init x) = x
+def gssStatement : Prop := ∀ {A : Type} (i : positive) (x : A) (m : t A), get i (set i x m) = x
+def gsoStatement : Prop := ∀ {A : Type} {i j : positive} (x : A) (m : t A), i ≠ j → get i (set j x m) = get i m
+def gsspecStatement : Prop := ∀ {A : Type} (i j : positive) (x : A) (m : t A),
   get i (set j x m) = match peq i j with | .left _ => x | .right _ => get i m
-def gmap : Prop := ∀ (A B : Type) (f : A → B) (i : positive) (m : t A),
+def gmap : Prop := ∀ {A B : Type} (f : A → B) (i : positive) (m : t A),
   get i (map f m) = f (get i m)
-def set2Statement : Prop := ∀ (A : Type) (i : elt) (x y : A) (m : t A),
+def set2Statement : Prop := ∀ {A : Type} (i : elt) (x y : A) (m : t A),
   set i y (set i x m) = set i y m
 
 end PMap
@@ -1511,15 +1511,15 @@ theorem for_all_correct_proof : for_all_correct := by
   rw [show for_all m f =
       List.foldl (fun b p => b && f p.1 p.2) true (PTree.elements m) by
         simpa [for_all, PTree.fold_specStatement] using
-          PTree.fold_spec_proof A Bool (fun b x a => b && f x a) true m]
+          PTree.fold_spec_proof (B := Bool) (fun b x a => b && f x a) true m]
   rw [foldl_and_true]
   simp only [Bool.true_eq, true_and]
   constructor
   · intro hall x a hget
-    exact hall (x, a) (PTree.elements_correct_proof A m x a hget)
+    exact hall (x, a) (PTree.elements_correct_proof m x (v := a) hget)
   · intro h p hp
     rcases p with ⟨x, a⟩
-    exact h x a (PTree.elements_complete_proof A m x a hp)
+    exact h x a (PTree.elements_complete_proof m x a hp)
 
 def exists_ {A : Type} (m : PTree.t A) (f : PTree.elt → A → Bool) : Bool :=
   PTree.fold (fun b x a => b || f x a) m false
@@ -2010,10 +2010,10 @@ theorem of_list_elements_proof : of_list_elements := by
   intro A m k
   have hcorrect : ∀ (i : positive) (v : A),
       PTree.get i m = some v → (i, v) ∈ PTree.elements m := by
-    simpa [PTree.elements_correctStatement] using PTree.elements_correct_proof A m
+    simpa [PTree.elements_correctStatement] using (PTree.elements_correct_proof (m := m))
   have hcomplete : ∀ (i : positive) (v : A),
       (i, v) ∈ PTree.elements m → PTree.get i m = some v := by
-    simpa [PTree.elements_completeStatement] using PTree.elements_complete_proof A m
+    simpa [PTree.elements_completeStatement] using (PTree.elements_complete_proof (m := m))
   have hnodup : (PTree.elements m).map Prod.fst |>.Nodup := by
     cases m with
     | Empty => simp [PTree.elements, PTree.xelements]
@@ -2045,7 +2045,7 @@ theorem fold_rec_proof : fold_rec := by
   intro V A f P init mFinal hext hbase hstep
   have hcomplete : ∀ (i : positive) (v : V),
       (i, v) ∈ PTree.elements mFinal → PTree.get i mFinal = some v := by
-    simpa [PTree.elements_completeStatement] using PTree.elements_complete_proof V mFinal
+    simpa [PTree.elements_completeStatement] using (PTree.elements_complete_proof (m := mFinal))
   have hnodup : (PTree.elements mFinal).map Prod.fst |>.Nodup := by
     cases mFinal with
     | Empty => simp [PTree.elements, PTree.xelements]
@@ -2099,7 +2099,7 @@ theorem fold_rec_proof : fold_rec := by
   have hfold : PTree.fold f mFinal init =
       List.foldl (fun a p => f a p.1 p.2) init (PTree.elements mFinal) := by
     simpa [PTree.fold_specStatement] using
-      (PTree.fold_spec_proof V A f init mFinal)
+      (PTree.fold_spec_proof (A := V) (B := A) f init mFinal)
   rw [hfold]
   exact hp
 

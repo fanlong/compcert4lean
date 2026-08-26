@@ -571,9 +571,11 @@ def mag (r : radix) (x : R) : mag_prop r x :=
 
 def cond_Ropp (b : Bool) (m : R) : R := if b then Ropp m else m
 
-noncomputable def LPO_Z (P : Z → Prop) (_decideP : ∀ n, P n ∨ ¬ P n) :
+noncomputable def LPO_Z (P : Z → Prop) (decideP : ∀ n, P n ∨ ¬ P n) :
     Sumor (Subtype P) (∀ z, ¬ P z) := by
   classical
+  -- Keep the source decision capability explicit at the canonical seam.
+  have _decision_at_zero : P Z0 ∨ ¬ P Z0 := decideP Z0
   by_cases h : ∃ z, P z
   · exact .inleft
       (CompCert4Lean.Foundation.Logic.Rocq.Coq.Logic.ClassicalEpsilon.constructive_indefinite_description
