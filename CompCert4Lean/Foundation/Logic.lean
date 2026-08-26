@@ -137,11 +137,15 @@ end Rocq.Coq.Bool.Bool
 namespace Rocq.Coq.Init.Datatypes
 
 inductive comparison : Type where
-  | Lt
   | Eq
+  | Lt
   | Gt
 
-export comparison (Lt Eq Gt)
+/- Source-named endpoints.  The constructors remain `comparison.*`; these
+   constants provide the promised canonical identities at the Rocq names. -/
+abbrev Eq : comparison := comparison.Eq
+abbrev Lt : comparison := comparison.Lt
+abbrev Gt : comparison := comparison.Gt
 
 def CompOpp (r : comparison) : comparison :=
   match r with
@@ -181,15 +185,14 @@ end Rocq.Coq.Init.Datatypes
 
 namespace Rocq.Coq.Init.Logic
 
-/-! The source `or_introl` identity is a constructor of Rocq's `or`
-    proposition.  Keep the carrier explicit so the exported source name is
-    resolved as a constructor rather than as a proposition-valued definition. -/
+/-! Rocq's disjunction is Lean's native `Or`; source names are narrow adapters
+    with the original constructor propositions. -/
 
-inductive or (A B : Prop) : Prop where
-  | or_introl (h : A) : or A B
-  | or_intror (h : B) : or A B
+abbrev or (A B : Prop) : Prop := Or A B
 
-export or (or_introl or_intror)
+def or_introl {A B : Prop} (h : A) : or A B := Or.inl h
+
+def or_intror {A B : Prop} (h : B) : or A B := Or.inr h
 
 def False_ind (P : Prop) (h : False) : P := False.elim h
 
@@ -241,22 +244,42 @@ end Rocq.Coq.Init.Nat
 
 namespace Rocq.Coq.Init.Specif
 
-/-! These are the selected source carriers whose constructor names are part of
-    the promised compatibility surface.  Their shapes follow Rocq's `sig`,
-    `sig2`, and `sigT` declarations directly. -/
+/-! Dependent containers use Lean's checked native carriers.  The source
+    constructors below retain Rocq's names and argument order. -/
 
-inductive sig {A : Type} (P : A → Prop) : Type where
-  | exist (x : A) (h : P x) : sig P
+abbrev sig {A : Type} (P : A → Prop) : Type := Subtype P
 
-inductive sig2 {A : Type} (P Q : A → Prop) : Type where
-  | exist2 (x : A) (hp : P x) (hq : Q x) : sig2 P Q
+abbrev sig2 {A : Type} (P Q : A → Prop) : Type :=
+  Subtype (fun x => P x ∧ Q x)
 
-inductive sigT {A : Type} (P : A → Type) : Type where
-  | existT (x : A) (h : P x) : sigT P
+abbrev sigT {A : Type} (P : A → Type) : Type := Sigma P
 
-export sig (exist)
-export sig2 (exist2)
-export sigT (existT)
+def exist {A : Type} (P : A → Prop) (x : A) (h : P x) : sig P :=
+  ⟨x, h⟩
+
+def exist2 {A : Type} (P Q : A → Prop) (x : A) (hp : P x) (hq : Q x) : sig2 P Q :=
+  ⟨x, hp, hq⟩
+
+def existT {A : Type} (P : A → Type) (x : A) (h : P x) : sigT P :=
+  ⟨x, h⟩
+
+/- Pattern aliases preserve existing source-shaped matches for the native
+   `Subtype`/`Sigma` carriers. -/
+namespace sig
+@[match_pattern] def exist {A : Type} {P : A → Prop} (x : A) (h : P x) : sig P :=
+  _root_.CompCert4Lean.Foundation.Logic.Rocq.Coq.Init.Specif.exist P x h
+end sig
+
+namespace sigT
+@[match_pattern] def existT {A : Type} {P : A → Type} (x : A) (h : P x) : sigT P :=
+  _root_.CompCert4Lean.Foundation.Logic.Rocq.Coq.Init.Specif.existT P x h
+end sigT
+
+namespace sig2
+@[match_pattern] def exist2 {A : Type} {P Q : A → Prop}
+    (x : A) (hp : P x) (hq : Q x) : sig2 P Q :=
+  _root_.CompCert4Lean.Foundation.Logic.Rocq.Coq.Init.Specif.exist2 P Q x hp hq
+end sig2
 
 /-! `sumbool` and `sumor` retain the canonical support carriers used by the
     rest of the migration.  Exporting their constructors gives the promised
@@ -265,13 +288,21 @@ export sigT (existT)
 export Support.Sumbool (left right)
 export Support.Sumor (inleft inright)
 
-def proj1_sig {A : Type} {P : A → Prop} (e : sig P) : A :=
-  match e with
-  | .exist x _ => x
+def proj1_sig {A : Type} {P : A → Prop} (e : sig P) : A := e.1
 
-def proj2_sig {A : Type} {P : A → Prop} (e : sig P) : P (proj1_sig e) :=
-  match e with
-  | .exist _ h => h
+def proj2_sig {A : Type} {P : A → Prop} (e : sig P) : P (proj1_sig e) := e.2
+
+def inleft {A : Type} {B : Prop} (a : A) : Support.Sumor A B :=
+  Support.Sumor.inleft a
+
+def inright {A : Type} {B : Prop} (h : B) : Support.Sumor A B :=
+  Support.Sumor.inright h
+
+def left {A B : Prop} (h : A) : Support.Sumbool A B :=
+  Support.Sumbool.left h
+
+def right {A B : Prop} (h : B) : Support.Sumbool A B :=
+  Support.Sumbool.right h
 
 end Rocq.Coq.Init.Specif
 

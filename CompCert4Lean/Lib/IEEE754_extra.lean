@@ -106,21 +106,11 @@ abbrev binary_float (prec emax : Z) : Type := Binary.binary_float prec emax
 abbrev BinaryFloatCertificate {prec emax : Z} :=
   Binary.BinaryFloatCertificate (prec := prec) (emax := emax)
 
+abbrev CertifiedBinaryFloat (prec emax : Z) :=
+  Binary.CertifiedBinaryFloat prec emax
+
 abbrev NaNResult (prec emax : Z) :=
-  { x : binary_float prec emax // Binary.is_nan x = true ∧ BinaryFloatCertificate x }
-
-def dropNaNCertificate
-    (nan : binary_float prec emax → binary_float prec emax → NaNResult prec emax)
-    (x y : binary_float prec emax) :
-    { x : binary_float prec emax // Binary.is_nan x = true } :=
-  ⟨(nan x y).1, (nan x y).2.1⟩
-
-def dropUnaryNaNCertificate
-    {precIn emaxIn precOut emaxOut : Z}
-    (nan : binary_float precIn emaxIn → NaNResult precOut emaxOut)
-    (x : binary_float precIn emaxIn) :
-    { x : binary_float precOut emaxOut // Binary.is_nan x = true } :=
-  ⟨(nan x).1, (nan x).2.1⟩
+  Binary.CertifiedNaNResult prec emax
 
 def keepPrecisionHypotheses
     (P : Prop) [prec_gt_0 : Prec_gt_0 prec]
@@ -138,14 +128,13 @@ variable {prec emax : Z} [Prec_gt_0 prec] [Prec_lt_emax prec emax]
 
 def is_finite_not_is_nanStatement : Prop :=
   keepPrecisionHypotheses (prec := prec) (emax := emax)
-    (∀ f : binary_float prec emax,
-      BinaryFloatCertificate f → Binary.is_finite f = true → Binary.is_nan f = false)
+    (∀ f : CertifiedBinaryFloat prec emax,
+      Binary.is_finite f.1 = true → Binary.is_nan f.1 = false)
 
 def is_finite_strict_finiteStatement : Prop :=
   keepPrecisionHypotheses (prec := prec) (emax := emax)
-    (∀ f : binary_float prec emax,
-      BinaryFloatCertificate f →
-      Binary.is_finite_strict f = true → Binary.is_finite f = true)
+    (∀ f : CertifiedBinaryFloat prec emax,
+      Binary.is_finite_strict f.1 = true → Binary.is_finite f.1 = true)
 
 private def binaryFloatDecidableEq
     (f1 f2 : binary_float prec emax) : Decidable (f1 = f2) := by
@@ -270,7 +259,7 @@ def BofZ_plusStatement : Prop :=
     (p q : Z),
     integer_representable (prec := prec) (emax := emax) ctx magnitude p →
     integer_representable (prec := prec) (emax := emax) ctx magnitude q →
-    Binary.Bplus (dropNaNCertificate nan) mode_NE
+    Binary.Bplus nan mode_NE
         (BofZ (prec := prec) (emax := emax) p)
         (BofZ (prec := prec) (emax := emax) q) =
       BofZ (prec := prec) (emax := emax) (Zadd p q)
@@ -286,11 +275,10 @@ def ZofB (f : binary_float prec emax) : Option Z :=
   | _ => none
 
 def ZofB_correctStatement : Prop :=
-  ∀ f : binary_float prec emax,
-    BinaryFloatCertificate f →
+  ∀ f : CertifiedBinaryFloat prec emax,
     ∀ (ctx : ExactRealContext),
-    ZofB f =
-      if Binary.is_finite f then some (Exact.Ztrunc ctx (Exact.B2R ctx f)) else none
+    ZofB f.1 =
+      if Binary.is_finite f.1 then some (Exact.Ztrunc ctx (Exact.B2R ctx f.1)) else none
 
 def Ztrunc_range_posStatement : Prop :=
   ∀ (ctx : ExactRealContext) (x : Exact.R ctx),
@@ -306,28 +294,26 @@ def Ztrunc_range_zeroStatement : Prop :=
 
 def ZofB_range_posStatement : Prop :=
   keepPrecisionHypotheses (prec := prec) (emax := emax)
-    (∀ (f : binary_float prec emax) (n : Z),
-      BinaryFloatCertificate f →
-      ZofB f = some n → Zlt Z0 n →
+    (∀ (f : CertifiedBinaryFloat prec emax) (n : Z),
+      ZofB f.1 = some n → Zlt Z0 n →
       ∀ (ctx : ExactRealContext),
-      Exact.Rle ctx (Exact.IZR ctx n) (Exact.B2R ctx f) ∧
-        Exact.Rlt ctx (Exact.B2R ctx f) (Exact.IZR ctx (Zadd n Zone)))
+      Exact.Rle ctx (Exact.IZR ctx n) (Exact.B2R ctx f.1) ∧
+        Exact.Rlt ctx (Exact.B2R ctx f.1) (Exact.IZR ctx (Zadd n Zone)))
 
 def ZofB_range_zeroStatement : Prop :=
   keepPrecisionHypotheses (prec := prec) (emax := emax)
-    (∀ (f : binary_float prec emax), BinaryFloatCertificate f →
-      ZofB f = some Z0 → ∀ (ctx : ExactRealContext),
-      Exact.Rlt ctx (Exact.Ropp ctx (Exact.Rone ctx)) (Exact.B2R ctx f) ∧
-        Exact.Rlt ctx (Exact.B2R ctx f) (Exact.Rone ctx))
+    (∀ (f : CertifiedBinaryFloat prec emax),
+      ZofB f.1 = some Z0 → ∀ (ctx : ExactRealContext),
+      Exact.Rlt ctx (Exact.Ropp ctx (Exact.Rone ctx)) (Exact.B2R ctx f.1) ∧
+        Exact.Rlt ctx (Exact.B2R ctx f.1) (Exact.Rone ctx))
 
 def ZofB_range_nonnegStatement : Prop :=
   keepPrecisionHypotheses (prec := prec) (emax := emax)
-    (∀ (f : binary_float prec emax) (n : Z),
-      BinaryFloatCertificate f →
-      ZofB f = some n → Zle Z0 n →
+    (∀ (f : CertifiedBinaryFloat prec emax) (n : Z),
+      ZofB f.1 = some n → Zle Z0 n →
       ∀ (ctx : ExactRealContext),
-      Exact.Rlt ctx (Exact.Ropp ctx (Exact.Rone ctx)) (Exact.B2R ctx f) ∧
-        Exact.Rlt ctx (Exact.B2R ctx f) (Exact.IZR ctx (Zadd n Zone)))
+      Exact.Rlt ctx (Exact.Ropp ctx (Exact.Rone ctx)) (Exact.B2R ctx f.1) ∧
+        Exact.Rlt ctx (Exact.B2R ctx f.1) (Exact.IZR ctx (Zadd n Zone)))
 
 def Zfloor_minusStatement : Prop :=
   ∀ (ctx : ExactRealContext) (x : Exact.R ctx) (n : Z),
@@ -336,14 +322,13 @@ def Zfloor_minusStatement : Prop :=
 
 def ZofB_minusStatement : Prop :=
   ∀ (minus_nan : binary_float prec emax → binary_float prec emax → NaNResult prec emax)
-    (m : mode) (f : binary_float prec emax) (p q : Z),
-    BinaryFloatCertificate f →
-    ZofB f = some p →
+    (m : mode) (f : CertifiedBinaryFloat prec emax) (p q : Z),
+    ZofB f.1 = some p →
     (Zle Z0 p ∧ Zlt p (Zmul Ztwo q)) →
     Zle q (Zpower Ztwo prec) →
     ∀ (ctx : ExactRealContext),
-    Exact.Rle ctx (Exact.IZR ctx q) (Exact.B2R ctx f) →
-    ZofB (Binary.Bminus (dropNaNCertificate minus_nan) m f
+    Exact.Rle ctx (Exact.IZR ctx q) (Exact.B2R ctx f.1) →
+    ZofB (Binary.Bminus minus_nan m f.1
       (BofZ (prec := prec) (emax := emax) q)) = some (Zsub p q)
 
 def ZofB_range (f : binary_float prec emax) (zmin zmax : Z) : Option Z :=
@@ -352,50 +337,44 @@ def ZofB_range (f : binary_float prec emax) (zmin zmax : Z) : Option Z :=
   | some z => if Zle_bool zmin z && Zle_bool z zmax then some z else none
 
 def ZofB_range_correctStatement : Prop :=
-  ∀ (f : binary_float prec emax) (min max : Z),
-    BinaryFloatCertificate f →
+  ∀ (f : CertifiedBinaryFloat prec emax) (min max : Z),
     ∀ (ctx : ExactRealContext),
-    let n := Exact.Ztrunc ctx (Exact.B2R ctx f)
-    ZofB_range f min max =
-      if Binary.is_finite f && Zle_bool min n && Zle_bool n max then some n else none
+    let n := Exact.Ztrunc ctx (Exact.B2R ctx f.1)
+    ZofB_range f.1 min max =
+      if Binary.is_finite f.1 && Zle_bool min n && Zle_bool n max then some n else none
 
 def ZofB_range_inversionStatement : Prop :=
-  ∀ (f : binary_float prec emax) (min max n : Z),
-    BinaryFloatCertificate f →
-    ZofB_range f min max = some n →
-    Zle min n ∧ Zle n max ∧ ZofB f = some n
+  ∀ (f : CertifiedBinaryFloat prec emax) (min max n : Z),
+    ZofB_range f.1 min max = some n →
+    Zle min n ∧ Zle n max ∧ ZofB f.1 = some n
 
 def ZofB_range_minusStatement : Prop :=
   ∀ (minus_nan : binary_float prec emax → binary_float prec emax → NaNResult prec emax)
-    (m : mode) (f : binary_float prec emax) (p q : Z),
-    BinaryFloatCertificate f →
-    ZofB_range f Z0 (Zsub (Zmul Ztwo q) Zone) = some p →
+    (m : mode) (f : CertifiedBinaryFloat prec emax) (p q : Z),
+    ZofB_range f.1 Z0 (Zsub (Zmul Ztwo q) Zone) = some p →
     Zle q (Zpower Ztwo prec) →
     ∀ (ctx : ExactRealContext),
-    Exact.Rle ctx (Exact.IZR ctx q) (Exact.B2R ctx f) →
+    Exact.Rle ctx (Exact.IZR ctx q) (Exact.B2R ctx f.1) →
     ZofB_range
-      (Binary.Bminus (dropNaNCertificate minus_nan) m f
+      (Binary.Bminus minus_nan m f.1
         (BofZ (prec := prec) (emax := emax) q))
       (Zopp q) (Zsub q Zone) = some (Zsub p q)
 
 def Bmult_commutStatement : Prop :=
   ∀ (mult_nan : binary_float prec emax → binary_float prec emax → NaNResult prec emax)
-    (m : mode) (x y : binary_float prec emax),
-    BinaryFloatCertificate x → BinaryFloatCertificate y →
-    mult_nan x y = mult_nan y x →
-    Binary.Bmult (dropNaNCertificate mult_nan) m x y =
-      Binary.Bmult (dropNaNCertificate mult_nan) m y x
+    (m : mode) (x y : CertifiedBinaryFloat prec emax),
+    mult_nan x.1 y.1 = mult_nan y.1 x.1 →
+    Binary.Bmult mult_nan m x.1 y.1 =
+      Binary.Bmult mult_nan m y.1 x.1
 
 def Bmult2_BplusStatement : Prop :=
   ∀ (plus_nan mult_nan : binary_float prec emax → binary_float prec emax → NaNResult prec emax)
-    (m : mode) (f : binary_float prec emax),
-    BinaryFloatCertificate f →
-    (∀ x y : binary_float prec emax,
-      BinaryFloatCertificate x → BinaryFloatCertificate y →
-      Binary.is_nan x = true → Binary.is_finite y = true →
-      plus_nan x x = mult_nan x y) →
-    Binary.Bplus (dropNaNCertificate plus_nan) m f f =
-      Binary.Bmult (dropNaNCertificate mult_nan) m f
+    (m : mode) (f : CertifiedBinaryFloat prec emax),
+    (∀ x y : CertifiedBinaryFloat prec emax,
+      Binary.is_nan x.1 = true → Binary.is_finite y.1 = true →
+      plus_nan x.1 x.1 = mult_nan x.1 y.1) →
+    Binary.Bplus plus_nan m f.1 f.1 =
+      Binary.Bmult mult_nan m f.1
         (BofZ (prec := prec) (emax := emax) Ztwo)
 
 def Bexact_inverse_mantissa : positive :=
@@ -451,36 +430,33 @@ def Bexact_inverse (f : binary_float prec emax)
 
 def Bexact_inverse_result_obligation
     [Bexact_inverse_certificate prec emax] : Prop :=
-  ∀ (f : binary_float prec emax), BinaryFloatCertificate f →
-    ∀ f', Bexact_inverse (prec := prec) (emax := emax) f = some f' →
+  ∀ (f : CertifiedBinaryFloat prec emax),
+    ∀ f', Bexact_inverse (prec := prec) (emax := emax) f.1 = some f' →
       BinaryFloatCertificate f'
 
 def Bexact_inverse_correctStatement : Prop :=
   keepPrecisionHypotheses (prec := prec) (emax := emax)
   (∀ (_certificate : Bexact_inverse_certificate prec emax)
-    (f f' : binary_float prec emax),
-    BinaryFloatCertificate f → BinaryFloatCertificate f' →
-    Bexact_inverse (certificate := _certificate) f = some f' →
-    Binary.is_finite_strict f = true ∧
-      Binary.is_finite_strict f' = true ∧
+    (f f' : CertifiedBinaryFloat prec emax),
+    Bexact_inverse (certificate := _certificate) f.1 = some f'.1 →
+    Binary.is_finite_strict f.1 = true ∧
+      Binary.is_finite_strict f'.1 = true ∧
       ∀ (ctx : ExactRealContext),
-      Exact.B2R ctx f' = Exact.Rinv ctx (Exact.B2R ctx f) ∧
-      Exact.B2R ctx f ≠ Exact.R0 ctx ∧
-      Binary.Bsign f' = Binary.Bsign f)
+      Exact.B2R ctx f'.1 = Exact.Rinv ctx (Exact.B2R ctx f.1) ∧
+      Exact.B2R ctx f.1 ≠ Exact.R0 ctx ∧
+      Binary.Bsign f'.1 = Binary.Bsign f.1)
 
 def Bdiv_mult_inverseStatement : Prop :=
   ∀ (_certificate : Bexact_inverse_certificate prec emax)
     (div_nan mult_nan : binary_float prec emax → binary_float prec emax → NaNResult prec emax)
-    (m : mode) (x y z : binary_float prec emax),
-    BinaryFloatCertificate x → BinaryFloatCertificate y → BinaryFloatCertificate z →
-    (∀ a b c : binary_float prec emax,
-      BinaryFloatCertificate a → BinaryFloatCertificate b → BinaryFloatCertificate c →
-      Binary.is_nan a = true →
-      Binary.is_finite b = true → Binary.is_finite c = true →
-      div_nan a b = mult_nan a c) →
-    Bexact_inverse (certificate := _certificate) y = some z →
-    Binary.Bdiv (dropNaNCertificate div_nan) m x y =
-      Binary.Bmult (dropNaNCertificate mult_nan) m x z
+    (m : mode) (x y z : CertifiedBinaryFloat prec emax),
+    (∀ a b c : CertifiedBinaryFloat prec emax,
+      Binary.is_nan a.1 = true →
+      Binary.is_finite b.1 = true → Binary.is_finite c.1 = true →
+      div_nan a.1 b.1 = mult_nan a.1 c.1) →
+    Bexact_inverse (certificate := _certificate) y.1 = some z.1 →
+    Binary.Bdiv div_nan m x.1 y.1 =
+      Binary.Bmult mult_nan m x.1 z.1
 
 section Conversions
 
@@ -495,7 +471,8 @@ def Bconv
       NaNResult prec2 emax2)
     (md : mode) (f : binary_float prec1 emax1) : binary_float prec2 emax2 :=
   match f with
-  | .B754_nan _ _ => Binary.build_nan (dropUnaryNaNCertificate conv_nan f)
+  | .B754_nan _ _ => Binary.build_nan
+      ⟨(conv_nan f).1, (conv_nan f).2.1⟩
   | .B754_infinity s => Binary.B754_infinity s
   | .B754_zero s => Binary.B754_zero s
   | .B754_finite s m e =>
@@ -504,41 +481,38 @@ def Bconv
 def Bconv_result_obligation
     [Binary.BinaryNormalizeCertificate prec2 emax2] : Prop :=
   ∀ (conv_nan : binary_float prec1 emax1 → NaNResult prec2 emax2)
-    (md : mode) (f : binary_float prec1 emax1),
-    BinaryFloatCertificate f →
-    BinaryFloatCertificate (Bconv conv_nan md f)
+    (md : mode) (f : CertifiedBinaryFloat prec1 emax1),
+    BinaryFloatCertificate (Bconv conv_nan md f.1)
 
 def Bconv_correctStatement : Prop :=
   ∀ (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx)
     (conv_nan : binary_float prec1 emax1 → NaNResult prec2 emax2)
-    (m : mode) (f : binary_float prec1 emax1),
-    BinaryFloatCertificate f →
-    Binary.is_finite f = true →
+    (m : mode) (f : CertifiedBinaryFloat prec1 emax1),
+    Binary.is_finite f.1 = true →
     if Exact.Rlt_bool ctx
         (Exact.Rabs ctx
           (Exact.round magnitude Zaux.radix2 (fexp prec2 emax2)
-            (Exact.round_mode ctx m) (Exact.B2R ctx f)))
+            (Exact.round_mode ctx m) (Exact.B2R ctx f.1)))
         (Exact.bpow ctx Zaux.radix2 emax2) then
-      Exact.B2R ctx (Bconv conv_nan m f) =
+      Exact.B2R ctx (Bconv conv_nan m f.1) =
           Exact.round magnitude Zaux.radix2 (fexp prec2 emax2)
-            (Exact.round_mode ctx m) (Exact.B2R ctx f) ∧
-        Binary.is_finite (Bconv conv_nan m f) = true ∧
-        Binary.Bsign (Bconv conv_nan m f) = Binary.Bsign f
+            (Exact.round_mode ctx m) (Exact.B2R ctx f.1) ∧
+        Binary.is_finite (Bconv conv_nan m f.1) = true ∧
+        Binary.Bsign (Bconv conv_nan m f.1) = Binary.Bsign f.1
     else
-      Binary.B2FF (Bconv conv_nan m f) =
-        Binary.binary_overflow (prec := prec2) (emax := emax2) m (Binary.Bsign f)
+      Binary.B2FF (Bconv conv_nan m f.1) =
+        Binary.binary_overflow (prec := prec2) (emax := emax2) m (Binary.Bsign f.1)
 
 def Bconv_widen_exactStatement : Prop :=
   keepPrecGt (prec := prec1)
   (∀ (ctx : ExactRealContext),
   Zle prec1 prec2 → Zle emax1 emax2 →
   ∀ (conv_nan : binary_float prec1 emax1 → NaNResult prec2 emax2)
-    (m : mode) (f : binary_float prec1 emax1),
-    BinaryFloatCertificate f → BinaryFloatCertificate (Bconv conv_nan m f) →
-    Binary.is_finite f = true →
-    Exact.B2R ctx (Bconv conv_nan m f) = Exact.B2R ctx f ∧
-      Binary.is_finite (Bconv conv_nan m f) = true ∧
-      Binary.Bsign (Bconv conv_nan m f) = Binary.Bsign f)
+    (m : mode) (f : CertifiedBinaryFloat prec1 emax1),
+    Binary.is_finite f.1 = true →
+    Exact.B2R ctx (Bconv conv_nan m f.1) = Exact.B2R ctx f.1 ∧
+      Binary.is_finite (Bconv conv_nan m f.1) = true ∧
+      Binary.Bsign (Bconv conv_nan m f.1) = Binary.Bsign f.1)
 
 def Bconv_BofZStatement : Prop :=
   ∀ (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx)
@@ -553,9 +527,8 @@ def ZofB_BconvStatement : Prop :=
   keepPrecGt (prec := prec1)
     (Zle prec1 prec2 → Zle emax1 emax2 →
     ∀ (conv_nan : binary_float prec1 emax1 → NaNResult prec2 emax2)
-      (m : mode) (f : binary_float prec1 emax1) (n : Z),
-      BinaryFloatCertificate f → BinaryFloatCertificate (Bconv conv_nan m f) →
-      ZofB f = some n → ZofB (Bconv conv_nan m f) = some n)
+      (m : mode) (f : CertifiedBinaryFloat prec1 emax1) (n : Z),
+      ZofB f.1 = some n → ZofB (Bconv conv_nan m f.1) = some n)
 
 def ZofB_range_BconvStatement : Prop :=
   keepPrecGt (prec := prec1)
@@ -563,10 +536,9 @@ def ZofB_range_BconvStatement : Prop :=
       Zle prec1 prec2 → Zle emax1 emax2 →
       Zle min2 min1 → Zle max1 max2 →
       ∀ (conv_nan : binary_float prec1 emax1 → NaNResult prec2 emax2)
-        (m : mode) (f : binary_float prec1 emax1) (n : Z),
-        BinaryFloatCertificate f → BinaryFloatCertificate (Bconv conv_nan m f) →
-        ZofB_range f min1 max1 = some n →
-        ZofB_range (Bconv conv_nan m f) min2 max2 = some n)
+        (m : mode) (f : CertifiedBinaryFloat prec1 emax1) (n : Z),
+        ZofB_range f.1 min1 max1 = some n →
+        ZofB_range (Bconv conv_nan m f.1) min2 max2 = some n)
 
 end Conversions
 

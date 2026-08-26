@@ -342,6 +342,12 @@ def binary_normalize [Core.FLX.Prec_gt_0 prec] [Prec_lt_emax prec emax]
   | .Zneg p => SF2B (prec := prec) (emax := emax)
       (binary_round (prec := prec) (emax := emax) m true p e)
 
+def binary_normalize_result_obligation
+    [Core.FLX.Prec_gt_0 prec] [Prec_lt_emax prec emax] : Prop :=
+  ∀ (m : mode) (x e : Z) (szero : Bool),
+    BinaryFloatCertificate
+      (binary_normalize (prec := prec) (emax := emax) m x e szero)
+
 def Fplus_naive (sx : Bool) (mx : positive) (ex : Z)
     (sy : Bool) (my : positive) (ey ez : Z) : Z :=
   let m1 := shl_align mx ex ez

@@ -52,14 +52,16 @@ deriving DecidableEq
   bits : BitVec 32
 deriving DecidableEq
 
+/- Raw-word decoding remains a runtime compatibility boundary; theorem-facing
+   certified consumers use the corresponding result obligations. -/
 private def decode64 (x : float) : Bits.binary64 :=
-  Bits.b64_of_bits (ZArith.BinInt.Z.of_nat x.bits.toNat)
+  Bits.b64_of_bits_unchecked (ZArith.BinInt.Z.of_nat x.bits.toNat)
 
 private def encode64 (x : Bits.binary64) : float :=
   ⟨BitVec.ofNat 64 (ZArith.BinInt.Z.to_nat (Bits.bits_of_b64 x))⟩
 
 private def decode32 (x : float32) : Bits.binary32 :=
-  Bits.b32_of_bits (ZArith.BinInt.Z.of_nat x.bits.toNat)
+  Bits.b32_of_bits_unchecked (ZArith.BinInt.Z.of_nat x.bits.toNat)
 
 private def encode32 (x : Bits.binary32) : float32 :=
   ⟨BitVec.ofNat 32 (ZArith.BinInt.Z.to_nat (Bits.bits_of_b32 x))⟩

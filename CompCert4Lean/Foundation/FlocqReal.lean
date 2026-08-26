@@ -58,6 +58,10 @@ structure ExactRealSpec where
   div : carrier → carrier → carrier
   lt : carrier → carrier → Prop
   le : carrier → carrier → Prop
+  /-- Source-shaped exact decision procedure used by total real extensions. -/
+  lt_dec : ∀ x y,
+    _root_.CompCert4Lean.Foundation.Logic.Support.Sumbool
+      (lt x y) (¬ lt x y)
   abs : carrier → carrier
   min : carrier → carrier → carrier
   sqrt : carrier → carrier
@@ -89,10 +93,16 @@ def Rgt (spec : ExactRealSpec) : spec.carrier → spec.carrier → Prop := fun x
 def Rabs (spec : ExactRealSpec) : spec.carrier → spec.carrier := spec.abs
 def Rmin (spec : ExactRealSpec) : spec.carrier → spec.carrier → spec.carrier := spec.min
 def Rsqr (spec : ExactRealSpec) : spec.carrier → spec.carrier := fun x => spec.mul x x
-def sqrt (spec : ExactRealSpec) : spec.carrier → spec.carrier := spec.sqrt
+def sqrt (spec : ExactRealSpec) (x : spec.carrier) : spec.carrier :=
+  match spec.lt_dec x spec.zero with
+  | .left _ => spec.zero
+  | .right _ => spec.sqrt x
 def Rsqrt (spec : ExactRealSpec) : spec.carrier → spec.carrier := spec.sqrt
 def exp (spec : ExactRealSpec) : spec.carrier → spec.carrier := spec.exp
-def ln (spec : ExactRealSpec) : spec.carrier → spec.carrier := spec.ln
+def ln (spec : ExactRealSpec) (x : spec.carrier) : spec.carrier :=
+  match spec.lt_dec spec.zero x with
+  | .left _ => spec.ln x
+  | .right _ => spec.zero
 
 def powerNat (spec : ExactRealSpec) (x : spec.carrier) : Nat → spec.carrier
   | 0 => spec.one
@@ -637,6 +647,10 @@ end Rfunctions
 
 namespace RIneq
 
+def Rlt_dec (r1 r2 : R) : Sumbool (Rlt r1 r2) (Not (Rlt r1 r2)) :=
+  ctx.spec.lt_dec r1 r2
+def Rlt_decStatement : Type :=
+  ∀ r1 r2 : R, Sumbool (Rlt r1 r2) (Not (Rlt r1 r2))
 def eq_IZRStatement : Prop := ∀ (n m : Z) (_ : Eq (IZR n) (IZR m)), Eq n m
 def INR_IZR_INZStatement : Prop := ∀ n : Nat, Eq (INR n) (IZR (Z.of_nat n))
 def INR_ltStatement : Prop := ∀ (n m : Nat) (_ : Rlt (INR n) (INR m)), lt n m

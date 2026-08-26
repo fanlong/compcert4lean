@@ -89,7 +89,13 @@ structure shr_record where
   shr_s : Bool
 deriving DecidableEq
 
+abbrev Build_shr_record (shr_m : Z) (shr_r shr_s : Bool) : shr_record :=
+  shr_record.mk shr_m shr_r shr_s
+
 export shr_record (shr_m shr_r)
+
+abbrev shr_s (mrs : shr_record) : Bool :=
+  mrs.shr_s
 
 /-! Pinned Float.Model entry points used by the executable provider. -/
 abbrev Format := Float.Model.Format
@@ -187,7 +193,7 @@ private def new_location_even_impl (nb_steps k : Z) : location :=
   else
     .loc_Inexact (zcompare (zmul zTwo k) nb_steps)
 
-private def new_location_odd_impl (nb_steps k : Z) : location :=
+def new_location_odd (nb_steps k : Z) : location :=
   if CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.Zbool.Zeq_bool k .Z0 then
     .loc_Exact
   else
@@ -202,7 +208,7 @@ def new_location (nb_steps k : Z) : location :=
   if zeven nb_steps then
     new_location_even nb_steps k
   else
-    new_location_odd_impl nb_steps k
+    new_location_odd nb_steps k
 
 def SFcompare (f1 f2 : spec_float) : Option comparison :=
   match f1, f2 with

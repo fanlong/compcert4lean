@@ -43,7 +43,7 @@ def iterate_F (step : A → Sum B A) (ord : A → A → Prop)
     (a : A) (rec : ∀ a', ord a' a → B) : B :=
   match step_info A B step ord step_decr a with
   | Sum.inl (.exist b _) => b
-  | Sum.inr (.exist2 a' _ hord) => rec a' hord
+  | Sum.inr next => rec next.1 next.2.2
 
 def iterate (step : A → Sum B A) (ord : A → A → Prop)
     (ord_wf : WellFounded ord)

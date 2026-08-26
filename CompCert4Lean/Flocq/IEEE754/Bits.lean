@@ -93,11 +93,28 @@ def binary_float_of_bits_aux (mw ew x : Z) :=
     | .Zpos px => Binary.F754_finite sx px (Zsub (Zadd ex (emin mw ew)) Zone)
     | _ => Binary.F754_nan false .xH
 
-def binary_float_of_bits (mw ew : Z)
+def binary_float_of_bits_unchecked (mw ew : Z)
     (_Hmw : Zlt Z0 mw) (_Hew : Zlt Z0 ew)
     (_Hmax : Zlt (prec mw) (emax ew))
     (x : Z) : binary_float mw ew :=
-  Binary.FF2B (binary_float_of_bits_aux mw ew x)
+  Binary.FF2B_unchecked (binary_float_of_bits_aux mw ew x)
+
+def binary_float_of_bits (mw ew : Z)
+    (_Hmw : Zlt Z0 mw) (_Hew : Zlt Z0 ew)
+    (_Hmax : Zlt (prec mw) (emax ew))
+    (x : Z)
+    (Hx : Binary.FF2BObligation
+      (prec := prec mw) (emax := emax ew) (binary_float_of_bits_aux mw ew x)) :
+    Binary.CertifiedBinaryFloat (prec mw) (emax ew) :=
+  Binary.FF2B (binary_float_of_bits_aux mw ew x) Hx
+
+def binary_float_of_bits_result_obligation : Prop :=
+  ∀ (mw ew : Z) (_Hmw : Zlt Z0 mw) (_Hew : Zlt Z0 ew)
+    (_Hmax : Zlt (prec mw) (emax ew)) (x : Z)
+    (Hx : Binary.FF2BObligation
+      (prec := prec mw) (emax := emax ew) (binary_float_of_bits_aux mw ew x)),
+    Binary.BinaryFloatCertificate
+      (binary_float_of_bits mw ew _Hmw _Hew _Hmax x Hx).1
 
 /-! Exact source proposition descriptors for later proof migration. -/
 
@@ -117,17 +134,15 @@ def split_join_bitsStatement : Prop :=
 
 def split_bits_of_binary_float_correctStatement : Prop :=
   ∀ (mw ew : Z), Zlt Z0 mw → Zlt Z0 ew →
-    ∀ x : binary_float mw ew,
-    Binary.BinaryFloatCertificate x →
-    split_bits mw ew (bits_of_binary_float mw ew x) =
-      split_bits_of_binary_float mw ew x
+    ∀ x : Binary.CertifiedBinaryFloat (prec mw) (emax ew),
+    split_bits mw ew (bits_of_binary_float mw ew x.1) =
+      split_bits_of_binary_float mw ew x.1
 
 def bits_of_binary_float_rangeStatement : Prop :=
   ∀ (mw ew : Z), Zlt Z0 mw → Zlt Z0 ew →
-    ∀ x : binary_float mw ew,
-    Binary.BinaryFloatCertificate x →
-    Zle Z0 (bits_of_binary_float mw ew x) ∧
-      Zlt (bits_of_binary_float mw ew x)
+    ∀ x : Binary.CertifiedBinaryFloat (prec mw) (emax ew),
+    Zle Z0 (bits_of_binary_float mw ew x.1) ∧
+      Zlt (bits_of_binary_float mw ew x.1)
         (Zpower Ztwo (Zadd (Zadd mw ew) Zone))
 
 def binary_float_of_bits_aux_correctStatement : Prop :=
@@ -138,9 +153,10 @@ def binary_float_of_bits_aux_correctStatement : Prop :=
 
 def binary_float_of_bits_of_binary_floatStatement : Prop :=
   ∀ (mw ew : Z) (Hmw : Zlt Z0 mw) (Hew : Zlt Z0 ew)
-    (Hmax : Zlt (prec mw) (emax ew)) (x : binary_float mw ew),
-    Binary.BinaryFloatCertificate x →
-    binary_float_of_bits mw ew Hmw Hew Hmax (bits_of_binary_float mw ew x) = x
+    (Hmax : Zlt (prec mw) (emax ew))
+    (x : Binary.CertifiedBinaryFloat (prec mw) (emax ew)),
+    (binary_float_of_bits_unchecked mw ew Hmw Hew Hmax
+      (bits_of_binary_float mw ew x.1)) = x.1
 
 private abbrev z8 : Z := Z_of_nat 8
 private abbrev z11 : Z := Z_of_nat 11
@@ -173,16 +189,30 @@ private def z52_format : Zlt (prec z52) (emax z11) := by
 
 def binary32 : Type := binary_float z23 z8
 
-def b32_of_bits (x : Z) : binary32 :=
-  binary_float_of_bits z23 z8 z23_gt_0 z8_gt_0 z23_format x
+def b32_of_bits_unchecked (x : Z) : binary32 :=
+  binary_float_of_bits_unchecked z23 z8 z23_gt_0 z8_gt_0 z23_format x
+
+/- Certified construction requires the exact `FF2B` validity witness. -/
+def b32_of_bits (x : Z)
+    (Hx : Binary.FF2BObligation
+      (prec := prec z23) (emax := emax z8) (binary_float_of_bits_aux z23 z8 x)) :
+    Binary.CertifiedBinaryFloat (prec z23) (emax z8) :=
+  binary_float_of_bits z23 z8 z23_gt_0 z8_gt_0 z23_format x Hx
 
 def bits_of_b32 (x : binary32) : Z :=
   bits_of_binary_float z23 z8 x
 
 def binary64 : Type := binary_float z52 z11
 
-def b64_of_bits (x : Z) : binary64 :=
-  binary_float_of_bits z52 z11 z52_gt_0 z11_gt_0 z52_format x
+def b64_of_bits_unchecked (x : Z) : binary64 :=
+  binary_float_of_bits_unchecked z52 z11 z52_gt_0 z11_gt_0 z52_format x
+
+/- Certified construction requires the exact `FF2B` validity witness. -/
+def b64_of_bits (x : Z)
+    (Hx : Binary.FF2BObligation
+      (prec := prec z52) (emax := emax z11) (binary_float_of_bits_aux z52 z11 x)) :
+    Binary.CertifiedBinaryFloat (prec z52) (emax z11) :=
+  binary_float_of_bits z52 z11 z52_gt_0 z11_gt_0 z52_format x Hx
 
 def bits_of_b64 (x : binary64) : Z :=
   bits_of_binary_float z52 z11 x
