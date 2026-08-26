@@ -283,9 +283,14 @@ export volatile_store (volatile_store_vol volatile_store_nonvol)
 def loc_not_writable (m : mem) (b : block) (ofs : Z) : Prop :=
   ¬ Mem.perm m b ofs Max Writable
 
-def volatile_load_sem (chunk : memory_chunk) : extcall_sem :=
-  fun ge vargs m t v m' =>
-    ∃ b ofs, vargs = [Vptr b ofs] ∧ m' = m ∧ volatile_load ge chunk m b ofs t v
+inductive volatile_load_sem (chunk : memory_chunk) (ge : Senv.t) :
+    List val → mem → trace → val → mem → Prop where
+  | volatile_load_sem_intro (b : block) (ofs : PtrofsT) (m : mem)
+      (t : trace) (v : val)
+      (load : volatile_load ge chunk m b ofs t v) :
+      volatile_load_sem chunk ge [Vptr b ofs] m t v m
+
+export volatile_load_sem (volatile_load_sem_intro)
 
 def volatile_load_preservedStatement : Prop :=
   ∀ ge1 ge2 chunk m b ofs t v,
@@ -318,12 +323,14 @@ def volatile_load_okStatement : Prop :=
     extcall_properties (volatile_load_sem chunk)
       { sig_args := [Xptr], sig_res := xtype_of_chunk chunk, sig_cc := cc_default }
 
-def volatile_store_sem (chunk : memory_chunk) : extcall_sem :=
-  fun ge vargs m1 t vres m2 =>
-    ∃ b ofs v,
-      vargs = [Vptr b ofs, v] ∧
-      vres = Vundef ∧
-      volatile_store ge chunk m1 b ofs v t m2
+inductive volatile_store_sem (chunk : memory_chunk) (ge : Senv.t) :
+    List val → mem → trace → val → mem → Prop where
+  | volatile_store_sem_intro (b : block) (ofs : PtrofsT) (m1 : mem)
+      (v : val) (t : trace) (m2 : mem)
+      (store : volatile_store ge chunk m1 b ofs v t m2) :
+      volatile_store_sem chunk ge [Vptr b ofs, v] m1 t Vundef m2
+
+export volatile_store_sem (volatile_store_sem_intro)
 
 def volatile_store_preservedStatement : Prop :=
   ∀ ge1 ge2 chunk m1 b ofs v t m2,
@@ -381,116 +388,124 @@ def volatile_store_okStatement : Prop :=
 
 /-! ## Concrete external-call relations -/
 
-def extcall_malloc_sem : extcall_sem :=
-  fun _ vargs m t vres m'' =>
-    ∃ sz m' b,
-      vargs = [Vptrofs sz] ∧
-      Mem.alloc m (zOpp (size_chunk Mptr)) (Ptrofs.unsigned sz) = (m', b) ∧
-      Mem.store Mptr m' b (zOpp (size_chunk Mptr)) (Vptrofs sz) = some m'' ∧
-      t = E0 ∧
-      vres = Vptr b Ptrofs.zero
+inductive extcall_malloc_sem (ge : Senv.t) :
+    List val → mem → trace → val → mem → Prop where
+  | extcall_malloc_sem_intro (sz : PtrofsT) (m m' : mem) (b : block) (m'' : mem)
+      (alloc :
+        Mem.alloc m (zOpp (size_chunk Mptr)) (Ptrofs.unsigned sz) = (m', b))
+      (store :
+        Mem.store Mptr m' b (zOpp (size_chunk Mptr)) (Vptrofs sz) = some m'') :
+      extcall_malloc_sem ge [Vptrofs sz] m E0 (Vptr b Ptrofs.zero) m''
+
+export extcall_malloc_sem (extcall_malloc_sem_intro)
 
 def extcall_malloc_okStatement : Prop :=
   extcall_properties extcall_malloc_sem
     { sig_args := [Xsize_t], sig_res := Xptr, sig_cc := cc_default }
 
-def extcall_free_sem : extcall_sem :=
-  fun _ vargs m t vres m' =>
-    (∃ b lo sz,
-      vargs = [Vptr b lo] ∧
-      Mem.load Mptr m b (zSub (Ptrofs.unsigned lo) (size_chunk Mptr)) =
-        some (Vptrofs sz) ∧
-      Mem.free m b (zSub (Ptrofs.unsigned lo) (size_chunk Mptr))
-          (zAdd (Ptrofs.unsigned lo) (Ptrofs.unsigned sz)) = some m' ∧
-      t = E0 ∧
-      vres = Vundef) ∨
-    (vargs = [Vnullptr] ∧ t = E0 ∧ vres = Vundef ∧ m' = m)
+inductive extcall_free_sem (ge : Senv.t) :
+    List val → mem → trace → val → mem → Prop where
+  | extcall_free_sem_ptr (b : block) (lo sz : PtrofsT) (m m' : mem)
+      (load :
+        Mem.load Mptr m b (zSub (Ptrofs.unsigned lo) (size_chunk Mptr)) =
+          some (Vptrofs sz))
+      (free :
+        Mem.free m b (zSub (Ptrofs.unsigned lo) (size_chunk Mptr))
+          (zAdd (Ptrofs.unsigned lo) (Ptrofs.unsigned sz)) = some m') :
+      extcall_free_sem ge [Vptr b lo] m E0 Vundef m'
+  | extcall_free_sem_null (m : mem) :
+      extcall_free_sem ge [Vnullptr] m E0 Vundef m
 
-def extcall_free_sem_ptr (ge : Senv.t) (b : block) (lo sz : PtrofsT)
-    (m m' : mem)
-    (LOAD : Mem.load Mptr m b (zSub (Ptrofs.unsigned lo) (size_chunk Mptr)) =
-      some (Vptrofs sz))
-    (FREE : Mem.free m b (zSub (Ptrofs.unsigned lo) (size_chunk Mptr))
-      (zAdd (Ptrofs.unsigned lo) (Ptrofs.unsigned sz)) = some m') :
-    extcall_free_sem ge [Vptr b lo] m E0 Vundef m' :=
-  Or.inl ⟨b, lo, sz, rfl, LOAD, FREE, rfl, rfl⟩
+export extcall_free_sem (extcall_free_sem_ptr extcall_free_sem_null)
 
 def extcall_free_okStatement : Prop :=
   extcall_properties extcall_free_sem
     { sig_args := [Xptr], sig_res := Xvoid, sig_cc := cc_default }
 
-def extcall_memcpy_sem (sz al : Z) : extcall_sem :=
-  fun _ vargs m t vres m' =>
-    ∃ bdst odst bsrc osrc bytes,
-      vargs = [Vptr bdst odst, Vptr bsrc osrc] ∧
-      (al = z1 ∨ al = ZArith.BinInt.Z.of_nat 2 ∨
-        al = ZArith.BinInt.Z.of_nat 4 ∨ al = ZArith.BinInt.Z.of_nat 8) ∧
-      zLe z0 sz ∧
-      zDivide al sz ∧
-      (zLt z0 sz → zDivide al (Ptrofs.unsigned osrc)) ∧
-      (zLt z0 sz → zDivide al (Ptrofs.unsigned odst)) ∧
-      (bsrc ≠ bdst ∨
-        Ptrofs.unsigned osrc = Ptrofs.unsigned odst ∨
-        zLe (zAdd (Ptrofs.unsigned osrc) sz) (Ptrofs.unsigned odst) ∨
-        zLe (zAdd (Ptrofs.unsigned odst) sz) (Ptrofs.unsigned osrc)) ∧
-      Mem.loadbytes m bsrc (Ptrofs.unsigned osrc) sz = some bytes ∧
-      Mem.storebytes m bdst (Ptrofs.unsigned odst) bytes = some m' ∧
-      t = E0 ∧
-      vres = Vundef
+inductive extcall_memcpy_sem (sz al : Z) (ge : Senv.t) :
+    List val → mem → trace → val → mem → Prop where
+  | extcall_memcpy_sem_intro (bdst : block) (odst : PtrofsT) (bsrc : block)
+      (osrc : PtrofsT) (m : mem) (bytes : List memval) (m' : mem)
+      (alignment :
+        al = z1 ∨ al = ZArith.BinInt.Z.of_nat 2 ∨
+          al = ZArith.BinInt.Z.of_nat 4 ∨ al = ZArith.BinInt.Z.of_nat 8)
+      (size_nonnegative : zLe z0 sz)
+      (size_aligned : zDivide al sz)
+      (source_aligned : zLt z0 sz → zDivide al (Ptrofs.unsigned osrc))
+      (destination_aligned : zLt z0 sz → zDivide al (Ptrofs.unsigned odst))
+      (nonoverlap :
+        bsrc ≠ bdst ∨
+          Ptrofs.unsigned osrc = Ptrofs.unsigned odst ∨
+          zLe (zAdd (Ptrofs.unsigned osrc) sz) (Ptrofs.unsigned odst) ∨
+          zLe (zAdd (Ptrofs.unsigned odst) sz) (Ptrofs.unsigned osrc))
+      (loadbytes : Mem.loadbytes m bsrc (Ptrofs.unsigned osrc) sz = some bytes)
+      (storebytes : Mem.storebytes m bdst (Ptrofs.unsigned odst) bytes = some m') :
+      extcall_memcpy_sem sz al ge [Vptr bdst odst, Vptr bsrc osrc] m E0 Vundef m'
+
+export extcall_memcpy_sem (extcall_memcpy_sem_intro)
 
 def extcall_memcpy_okStatement : Prop :=
   ∀ sz al,
     extcall_properties (extcall_memcpy_sem sz al)
       { sig_args := [Xptr, Xptr], sig_res := Xvoid, sig_cc := cc_default }
 
-def extcall_annot_sem (text : RocqString) (targs : List typ) : extcall_sem :=
-  fun ge vargs m t vres m' =>
-    ∃ args,
-      eventval_list_match ge args targs vargs ∧
-      t = [Event_annot text args] ∧
-      vres = Vundef ∧
-      m' = m
+inductive extcall_annot_sem (text : RocqString) (targs : List typ) (ge : Senv.t) :
+    List val → mem → trace → val → mem → Prop where
+  | extcall_annot_sem_intro (vargs : List val) (m : mem) (args : List eventval)
+      (eventval_matches : eventval_list_match ge args targs vargs) :
+      extcall_annot_sem text targs ge vargs m [Event_annot text args] Vundef m
+
+export extcall_annot_sem (extcall_annot_sem_intro)
 
 def extcall_annot_okStatement : Prop :=
   ∀ text targs,
     extcall_properties (extcall_annot_sem text targs)
       { sig_args := List.map inj_type targs, sig_res := Xvoid, sig_cc := cc_default }
 
-def extcall_annot_val_sem (text : RocqString) (targ : typ) : extcall_sem :=
-  fun ge vargs m t vres m' =>
-    ∃ varg arg,
-      vargs = [varg] ∧
-      eventval_match ge arg targ varg ∧
-      t = [Event_annot text [arg]] ∧
-      vres = varg ∧
-      m' = m
+inductive extcall_annot_val_sem (text : RocqString) (targ : typ) (ge : Senv.t) :
+    List val → mem → trace → val → mem → Prop where
+  | extcall_annot_val_sem_intro (varg : val) (m : mem) (arg : eventval)
+      (eventval_matches : eventval_match ge arg targ varg) :
+      extcall_annot_val_sem text targ ge [varg] m [Event_annot text [arg]] varg m
+
+export extcall_annot_val_sem (extcall_annot_val_sem_intro)
 
 def extcall_annot_val_okStatement : Prop :=
   ∀ text targ,
     extcall_properties (extcall_annot_val_sem text targ)
       { sig_args := [inj_type targ], sig_res := inj_type targ, sig_cc := cc_default }
 
-def extcall_debug_sem : extcall_sem :=
-  fun _ _ m t vres m' => t = E0 ∧ vres = Vundef ∧ m' = m
+inductive extcall_debug_sem (ge : Senv.t) :
+    List val → mem → trace → val → mem → Prop where
+  | extcall_debug_sem_intro (vargs : List val) (m : mem) :
+      extcall_debug_sem ge vargs m E0 Vundef m
+
+export extcall_debug_sem (extcall_debug_sem_intro)
 
 def extcall_debug_okStatement : Prop :=
   ∀ targs,
     extcall_properties extcall_debug_sem
       { sig_args := List.map inj_type targs, sig_res := Xvoid, sig_cc := cc_default }
 
-def known_builtin_sem
+inductive known_builtin_sem
     [binary64_certificate :
       CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
         (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
     [binary32_certificate :
       CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
         (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)]
-    (bf : builtin_function) : extcall_sem :=
-  fun _ vargs m t vres m' =>
-    builtin_function_sem
+    (bf : builtin_function) (ge : Senv.t) :
+    List val → mem → trace → val → mem → Prop where
+  | known_builtin_sem_intro (vargs : List val) (vres : val) (m : mem)
+      (evaluation :
+        builtin_function_sem
         (binary64_certificate := binary64_certificate)
-        (binary32_certificate := binary32_certificate) bf vargs = some vres ∧
-      t = E0 ∧ m' = m
+          (binary32_certificate := binary32_certificate) bf vargs = some vres) :
+      known_builtin_sem
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) bf ge vargs m E0 vres m
+
+export known_builtin_sem (known_builtin_sem_intro)
 
 def known_builtin_sem_injectStatement
     [binary64_certificate :
@@ -865,33 +880,42 @@ def external_call_mem_injectStatement
 
 /-! ## Evaluation of builtin arguments -/
 
-def eval_builtin_arg {A : Type} (ge : Senv.t) (e : A → val)
-    (sp : val) (m : mem) : builtin_arg A → val → Prop
-  | BA x, v => v = e x
-  | BA_int n, v => v = Vint n
-  | BA_long n, v => v = Vlong n
-  | BA_float f, v => v = Vfloat f
-  | BA_single f, v => v = Vsingle f
-  | BA_loadstack chunk ofs, v =>
-      Mem.loadv chunk m (Val.offset_ptr sp ofs) = some v
-  | BA_addrstack ofs, v => v = Val.offset_ptr sp ofs
-  | BA_loadglobal chunk id ofs, v =>
-      Mem.loadv chunk m (Senv.symbol_address ge id ofs) = some v
-  | BA_addrglobal id ofs, v => v = Senv.symbol_address ge id ofs
-  | BA_splitlong hi lo, v =>
-      ∃ vhi vlo,
-        eval_builtin_arg ge e sp m hi vhi ∧
-        eval_builtin_arg ge e sp m lo vlo ∧
-        v = Val.longofwords vhi vlo
-  | BA_addptr a1 a2, v =>
-      ∃ v1 v2,
-        eval_builtin_arg ge e sp m a1 v1 ∧
-        eval_builtin_arg ge e sp m a2 v2 ∧
-        v = if CompCert4Lean.X86_64.Archi.ptr64 then Val.addl v1 v2 else Val.add v1 v2
+inductive eval_builtin_arg {A : Type} (ge : Senv.t) (e : A → val)
+    (sp : val) (m : mem) : builtin_arg A → val → Prop where
+  | eval_BA (x : A) :
+      eval_builtin_arg ge e sp m (BA x) (e x)
+  | eval_BA_int (n : CCInt) :
+      eval_builtin_arg ge e sp m (BA_int n) (Vint n)
+  | eval_BA_long (n : CCInt64) :
+      eval_builtin_arg ge e sp m (BA_long n) (Vlong n)
+  | eval_BA_float (n : CCFloat) :
+      eval_builtin_arg ge e sp m (BA_float n) (Vfloat n)
+  | eval_BA_single (n : CCFloat32) :
+      eval_builtin_arg ge e sp m (BA_single n) (Vsingle n)
+  | eval_BA_loadstack (chunk : memory_chunk) (ofs : PtrofsT) (v : val)
+      (load : Mem.loadv chunk m (Val.offset_ptr sp ofs) = some v) :
+      eval_builtin_arg ge e sp m (BA_loadstack chunk ofs) v
+  | eval_BA_addrstack (ofs : PtrofsT) :
+      eval_builtin_arg ge e sp m (BA_addrstack ofs) (Val.offset_ptr sp ofs)
+  | eval_BA_loadglobal (chunk : memory_chunk) (id : ident) (ofs : PtrofsT) (v : val)
+      (load : Mem.loadv chunk m (Senv.symbol_address ge id ofs) = some v) :
+      eval_builtin_arg ge e sp m (BA_loadglobal chunk id ofs) v
+  | eval_BA_addrglobal (id : ident) (ofs : PtrofsT) :
+      eval_builtin_arg ge e sp m (BA_addrglobal id ofs) (Senv.symbol_address ge id ofs)
+  | eval_BA_splitlong (hi lo : builtin_arg A) (vhi vlo : val)
+      (eval_hi : eval_builtin_arg ge e sp m hi vhi)
+      (eval_lo : eval_builtin_arg ge e sp m lo vlo) :
+      eval_builtin_arg ge e sp m (BA_splitlong hi lo) (Val.longofwords vhi vlo)
+  | eval_BA_addptr (a1 a2 : builtin_arg A) (v1 v2 : val)
+      (eval_a1 : eval_builtin_arg ge e sp m a1 v1)
+      (eval_a2 : eval_builtin_arg ge e sp m a2 v2) :
+      eval_builtin_arg ge e sp m (BA_addptr a1 a2)
+        (if CompCert4Lean.X86_64.Archi.ptr64 then Val.addl v1 v2 else Val.add v1 v2)
 
-def eval_BA {A : Type} (ge : Senv.t) (e : A → val) (sp : val) (m : mem)
-    (x : A) : eval_builtin_arg ge e sp m (BA x) (e x) :=
-  rfl
+export eval_builtin_arg
+  (eval_BA eval_BA_int eval_BA_long eval_BA_float eval_BA_single
+    eval_BA_loadstack eval_BA_addrstack eval_BA_loadglobal eval_BA_addrglobal
+    eval_BA_splitlong eval_BA_addptr)
 
 def eval_builtin_args {A : Type} (ge : Senv.t) (e : A → val)
     (sp : val) (m : mem) : List (builtin_arg A) → List val → Prop
