@@ -276,65 +276,117 @@ def type_function (f : function) : res typenv :=
 
 /-! ## Relational specification -/
 
-def wt_expr (env : typenv) : expr → typ → Prop
-  | .Evar id, t => t = env id
-  | .Econst c, t => t = type_constant c
-  | .Eunop op a1, t =>
-      ∃ targ1 tres,
-        type_unop op = (targ1, tres) ∧ wt_expr env a1 targ1 ∧ t = tres
-  | .Ebinop op a1 a2, t =>
-      ∃ targ1 targ2 tres,
-        type_binop op = ((targ1, targ2), tres) ∧
-          wt_expr env a1 targ1 ∧ wt_expr env a2 targ2 ∧ t = tres
-  | .Eload chunk a1, t => wt_expr env a1 Tptr ∧ t = type_of_chunk chunk
+inductive wt_expr : typenv → expr → typ → Prop where
+  | wt_Evar (env : typenv) (id : ident) :
+      wt_expr env (.Evar id) (env id)
+  | wt_Econst (env : typenv) (c : constant) :
+      wt_expr env (.Econst c) (type_constant c)
+  | wt_Eunop (env : typenv) (op : unary_operation) (a1 : expr)
+      (targ1 tres : typ) :
+      type_unop op = (targ1, tres) →
+      wt_expr env a1 targ1 →
+      wt_expr env (.Eunop op a1) tres
+  | wt_Ebinop (env : typenv) (op : binary_operation) (a1 a2 : expr)
+      (targ1 targ2 tres : typ) :
+      type_binop op = ((targ1, targ2), tres) →
+      wt_expr env a1 targ1 →
+      wt_expr env a2 targ2 →
+      wt_expr env (.Ebinop op a1 a2) tres
+  | wt_Eload (env : typenv) (chunk : memory_chunk) (a1 : expr) :
+      wt_expr env a1 Tptr →
+      wt_expr env (.Eload chunk a1) (type_of_chunk chunk)
+
+export wt_expr (wt_Evar wt_Econst wt_Eunop wt_Ebinop wt_Eload)
 
 def wt_opt_assign (env : typenv) (optid : Option ident) (ty : xtype) : Prop :=
   match optid with
   | some id => proj_xtype ty = env id
   | none => True
 
-def wt_stmt (env : typenv) (tret : xtype) : stmt → Prop
-  | .Sskip => True
-  | .Sassign id a => wt_expr env a (env id)
-  | .Sstore chunk a1 a2 =>
-      wt_expr env a1 Tptr ∧ wt_expr env a2 (type_of_chunk chunk)
-  | .Scall optid sg a1 args =>
-      wt_expr env a1 Tptr ∧
-        list_forall2 (wt_expr env) args (proj_sig_args sg) ∧
-        wt_opt_assign env optid sg.sig_res
-  | .Stailcall sg a1 args =>
-      wt_expr env a1 Tptr ∧
-        list_forall2 (wt_expr env) args (proj_sig_args sg) ∧ sg.sig_res = tret
-  | .Sbuiltin optid ef args =>
-      list_forall2 (wt_expr env) args (proj_sig_args (ef_sig ef)) ∧
-        wt_opt_assign env optid (ef_sig ef).sig_res
-  | .Sseq s1 s2 => wt_stmt env tret s1 ∧ wt_stmt env tret s2
-  | .Sifthenelse a s1 s2 =>
-      wt_expr env a Tint ∧ wt_stmt env tret s1 ∧ wt_stmt env tret s2
-  | .Sloop s => wt_stmt env tret s
-  | .Sblock s => wt_stmt env tret s
-  | .Sexit _ => True
-  | .Sswitch isLong a _ _ => wt_expr env a (if isLong then Tlong else Tint)
-  | .Sreturn none => True
-  | .Sreturn (some a) => wt_expr env a (proj_xtype tret)
-  | .Slabel _ s => wt_stmt env tret s
-  | .Sgoto _ => True
+inductive wt_stmt : typenv → xtype → stmt → Prop where
+  | wt_Sskip (env : typenv) (tret : xtype) :
+      wt_stmt env tret Sskip
+  | wt_Sassign (env : typenv) (tret : xtype) (id : ident) (a : expr) :
+      wt_expr env a (env id) →
+      wt_stmt env tret (.Sassign id a)
+  | wt_Sstore (env : typenv) (tret : xtype) (chunk : memory_chunk)
+      (a1 a2 : expr) :
+      wt_expr env a1 Tptr →
+      wt_expr env a2 (type_of_chunk chunk) →
+      wt_stmt env tret (.Sstore chunk a1 a2)
+  | wt_Scall (env : typenv) (tret : xtype) (optid : Option ident)
+      (sg : signature) (a1 : expr)
+      (al : List expr) :
+      wt_expr env a1 Tptr →
+      list_forall2 (wt_expr env) al (proj_sig_args sg) →
+      wt_opt_assign env optid sg.sig_res →
+      wt_stmt env tret (.Scall optid sg a1 al)
+  | wt_Stailcall (env : typenv) (tret : xtype) (sg : signature)
+      (a1 : expr) (al : List expr) :
+      wt_expr env a1 Tptr →
+      list_forall2 (wt_expr env) al (proj_sig_args sg) →
+      sg.sig_res = tret →
+      wt_stmt env tret (.Stailcall sg a1 al)
+  | wt_Sbuiltin (env : typenv) (tret : xtype) (optid : Option ident)
+      (ef : external_function) (al : List expr) :
+      list_forall2 (wt_expr env) al (proj_sig_args (ef_sig ef)) →
+      wt_opt_assign env optid (ef_sig ef).sig_res →
+      wt_stmt env tret (.Sbuiltin optid ef al)
+  | wt_Sseq (env : typenv) (tret : xtype) (s1 s2 : stmt) :
+      wt_stmt env tret s1 →
+      wt_stmt env tret s2 →
+      wt_stmt env tret (.Sseq s1 s2)
+  | wt_Sifthenelse (env : typenv) (tret : xtype) (a : expr)
+      (s1 s2 : stmt) :
+      wt_expr env a Tint →
+      wt_stmt env tret s1 →
+      wt_stmt env tret s2 →
+      wt_stmt env tret (.Sifthenelse a s1 s2)
+  | wt_Sloop (env : typenv) (tret : xtype) (s1 : stmt) :
+      wt_stmt env tret s1 →
+      wt_stmt env tret (.Sloop s1)
+  | wt_Sblock (env : typenv) (tret : xtype) (s1 : stmt) :
+      wt_stmt env tret s1 →
+      wt_stmt env tret (.Sblock s1)
+  | wt_Sexit (env : typenv) (tret : xtype) (n : Nat) :
+      wt_stmt env tret (.Sexit n)
+  | wt_Sswitch (env : typenv) (tret : xtype) (sz : Bool) (a : expr)
+      (tbl : List (Z × Nat))
+      (dfl : Nat) :
+      wt_expr env a (if sz then Tlong else Tint) →
+      wt_stmt env tret (.Sswitch sz a tbl dfl)
+  | wt_Sreturn_none (env : typenv) (tret : xtype) :
+      wt_stmt env tret (.Sreturn none)
+  | wt_Sreturn_some (env : typenv) (tret : xtype) (a : expr) :
+      wt_expr env a (proj_xtype tret) →
+      wt_stmt env tret (.Sreturn (some a))
+  | wt_Slabel (env : typenv) (tret : xtype) (lbl : label) (s1 : stmt) :
+      wt_stmt env tret s1 →
+      wt_stmt env tret (.Slabel lbl s1)
+  | wt_Sgoto (env : typenv) (tret : xtype) (lbl : label) :
+      wt_stmt env tret (.Sgoto lbl)
 
-def wt_Sskip (env : typenv) (tret : xtype) : wt_stmt env tret Sskip :=
-  True.intro
+export wt_stmt (wt_Sskip wt_Sassign wt_Sstore wt_Scall wt_Stailcall wt_Sbuiltin
+  wt_Sseq wt_Sifthenelse wt_Sloop wt_Sblock wt_Sexit wt_Sswitch
+  wt_Sreturn_none wt_Sreturn_some wt_Slabel wt_Sgoto)
 
-def wt_Sexit (env : typenv) (tret : xtype) (n : Nat) :
-    wt_stmt env tret (Sexit n) :=
-  True.intro
+inductive wt_function : typenv → function → Prop where
+  | wt_function_intro (env : typenv) (f : function) :
+      type_function f = OK env →
+      List.map env f.fn_params = proj_sig_args f.fn_sig →
+      wt_stmt env f.fn_sig.sig_res f.fn_body →
+      wt_function env f
 
-def wt_function (env : typenv) (f : function) : Prop :=
-  type_function f = OK env ∧
-    List.map env f.fn_params = proj_sig_args f.fn_sig ∧
-    wt_stmt env f.fn_sig.sig_res f.fn_body
+export wt_function (wt_function_intro)
 
-def wt_fundef : fundef → Prop
-  | .Internal f => ∃ env, wt_function env f
-  | .External _ => True
+inductive wt_fundef : fundef → Prop where
+  | wt_fundef_internal (env : typenv) (f : function) :
+      wt_function env f →
+      wt_fundef (.Internal f)
+  | wt_fundef_external (ef : external_function) :
+      wt_fundef (.External ef)
+
+export wt_fundef (wt_fundef_internal wt_fundef_external)
 
 def wt_program (p : program) : Prop :=
   ∀ i f, (i, Gfun f) ∈ p.prog_defs → wt_fundef f
@@ -348,43 +400,56 @@ def def_env (f : function) (e : Cminor.env) : Prop :=
   ∀ id, id ∈ f.fn_params ∨ id ∈ f.fn_vars →
     ∃ v, PTree.get id e = some v
 
-def wt_cont (env : typenv) (tret : xtype) : cont → Prop
-  | .Kstop => tret = Xint
-  | .Kseq s k => wt_stmt env tret s ∧ wt_cont env tret k
-  | .Kblock k => wt_cont env tret k
-  | .Kcall optid f _ e k =>
-      ∃ callerEnv,
-        wt_function callerEnv f ∧
-          wt_cont callerEnv f.fn_sig.sig_res k ∧
-          wt_env callerEnv e ∧
-          def_env f e ∧
-          wt_opt_assign callerEnv optid tret
+mutual
+  inductive wt_cont_call : cont → xtype → Prop where
+    | wt_cont_Kstop :
+        wt_cont_call Kstop Xint
+    | wt_cont_Kcall (optid : Option ident) (f : function) (sp : val)
+        (e : Cminor.env) (k : cont) (tret : xtype) (env : typenv) :
+        (WT_FN : wt_function env f) →
+        (WT_CONT : wt_cont env f.fn_sig.sig_res k) →
+        (WT_ENV : wt_env env e) →
+        (DEF_ENV : def_env f e) →
+        (WT_DEST : wt_opt_assign env optid tret) →
+        wt_cont_call (.Kcall optid f sp e k) tret
 
-def wt_cont_call : cont → xtype → Prop
-  | .Kstop, tret => tret = Xint
-  | .Kcall optid f _ e k, tret =>
-      ∃ env,
-        wt_function env f ∧
-          wt_cont env f.fn_sig.sig_res k ∧
-          wt_env env e ∧
-          def_env f e ∧
-          wt_opt_assign env optid tret
-  | _, _ => False
+  inductive wt_cont : typenv → xtype → cont → Prop where
+    | wt_cont_Kseq (env : typenv) (tret : xtype) (s : stmt) (k : cont) :
+        wt_stmt env tret s →
+        wt_cont env tret k →
+        wt_cont env tret (.Kseq s k)
+    | wt_cont_Kblock (env : typenv) (tret : xtype) (k : cont) :
+        wt_cont env tret k →
+        wt_cont env tret (.Kblock k)
+    | wt_cont_other (env : typenv) (tret : xtype) (k : cont) :
+        wt_cont_call k tret →
+        wt_cont env tret k
 
-def wt_state : state → Prop
-  | .State f s k _ e _ =>
-      ∃ env,
-        wt_function env f ∧
-          wt_stmt env f.fn_sig.sig_res s ∧
-          wt_cont env f.fn_sig.sig_res k ∧
-          wt_env env e ∧
-          def_env f e
-  | .Callstate f args k _ =>
-      wt_fundef f ∧
-        Val.has_type_list args (proj_sig_args (funsig f)) ∧
-        wt_cont_call k (funsig f).sig_res
-  | .Returnstate v k _ =>
-      ∃ tret, Val.has_type v (proj_xtype tret) ∧ wt_cont_call k tret
+end
+
+export wt_cont_call (wt_cont_Kstop wt_cont_Kcall)
+export wt_cont (wt_cont_Kseq wt_cont_Kblock wt_cont_other)
+
+  inductive wt_state : state → Prop where
+  | wt_normal_state (f : function) (s : stmt) (k : cont) (sp : val)
+      (e : Cminor.env) (m : mem) (env : typenv) :
+      (WT_FN : wt_function env f) →
+      (WT_STMT : wt_stmt env f.fn_sig.sig_res s) →
+      (WT_CONT : wt_cont env f.fn_sig.sig_res k) →
+      (WT_ENV : wt_env env e) →
+      (DEF_ENV : def_env f e) →
+      wt_state (.State f s k sp e m)
+  | wt_call_state (f : fundef) (args : List val) (k : cont) (m : mem) :
+      (WT_FD : wt_fundef f) →
+      (WT_ARGS : Val.has_type_list args (proj_sig_args (funsig f))) →
+      (WT_CONT : wt_cont_call k (funsig f).sig_res) →
+      wt_state (.Callstate f args k m)
+  | wt_return_state (v : val) (k : cont) (m : mem) (tret : xtype) :
+      (WT_RES : Val.has_type v (proj_xtype tret)) →
+      (WT_CONT : wt_cont_call k tret) →
+      wt_state (.Returnstate v k m)
+
+export wt_state (wt_normal_state wt_call_state wt_return_state)
 
 /-! ## Exact statement descriptors for later proofs -/
 

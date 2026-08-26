@@ -335,28 +335,28 @@ def function_return_preservedStatement
 def eval_Ederef'Statement
     [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
     [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
-  ∀ tp e le m a t l ofs,
-    Clight.eval_expr (Clight.globalenv tp) e le m a (.Vptr l ofs) →
-      Clight.eval_lvalue (Clight.globalenv tp) e le m (Ederef' a t) l ofs .Full
+  ∀ (tge : tgenv) e le m a t l ofs,
+    Clight.eval_expr tge e le m a (.Vptr l ofs) →
+      Clight.eval_lvalue tge e le m (Ederef' a t) l ofs .Full
 def typeof_Ederef'Statement : Prop :=
   ∀ a t, Clight.typeof (Ederef' a t) = t
 def eval_Eaddrof'Statement
     [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
     [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
-  ∀ tp e le m a t l ofs,
-    Clight.eval_lvalue (Clight.globalenv tp) e le m a l ofs .Full →
-      Clight.eval_expr (Clight.globalenv tp) e le m (Eaddrof' a t) (.Vptr l ofs)
+  ∀ (tge : tgenv) e le m a t l ofs,
+    Clight.eval_lvalue tge e le m a l ofs .Full →
+      Clight.eval_expr tge e le m (Eaddrof' a t) (.Vptr l ofs)
 def typeof_Eaddrof'Statement : Prop :=
   ∀ a t, Clight.typeof (Eaddrof' a t) = t
 def eval_make_normalizeStatement
     [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
     [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
-  ∀ tp e le m a n sz sg sg1 attr (width : Z),
+  ∀ (tge : tgenv) e le m a n sz sg sg1 attr (width : Z),
     ZArith.BinInt.Z.lt .Z0 width →
     ZArith.BinInt.Z.le width (bitsize_intsize sz) →
     Clight.typeof a = .Tint sz sg1 attr →
-    Clight.eval_expr (Clight.globalenv tp) e le m a (.Vint n) →
-    Clight.eval_expr (Clight.globalenv tp) e le m
+    Clight.eval_expr tge e le m a (.Vint n) →
+    Clight.eval_expr tge e le m
       (make_normalize sz sg width a)
       (.Vint (bitfield_normalize sz sg width n))
 
@@ -372,19 +372,24 @@ def eval_simpl_expr_soundStatement
 def tr_simple_nilStatement
     [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
     [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
-  (∀ ce le dst r sl a tmps, tr_expr ce le dst r sl a tmps →
+  ∀ cunit : cprogram,
+  (∀ le dst r sl a tmps, tr_expr cunit.prog_comp_env le dst r sl a tmps →
       (dst = .For_val ∨ dst = .For_effects) → Cstrategy.simple r = true → sl = []) ∧
-  (∀ ce le rl sl al tmps, tr_exprlist ce le rl sl al tmps →
+  (∀ le rl sl al tmps, tr_exprlist cunit.prog_comp_env le rl sl al tmps →
       Cstrategy.simplelist rl = true → sl = [])
 
 def tr_simple_expr_nilStatement
     [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
     [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
-  ∀ ce le dst r sl a tmps, tr_expr ce le dst r sl a tmps →
+  ∀ (cunit : cprogram) le dst r sl a tmps,
+    tr_expr cunit.prog_comp_env le dst r sl a tmps →
     (dst = .For_val ∨ dst = .For_effects) → Cstrategy.simple r = true → sl = []
 
-def deref_loc_translatedStatement : Prop :=
-  ∀ p tp ty m b ofs bf t v,
+def deref_loc_translatedStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
+  ∀ p tp, match_prog p tp →
+    ∀ ty m b ofs bf t v,
     Csem.deref_loc (Csem.globalenv p) ty m b ofs bf t v →
       match chunk_for_volatile_type ty bf with
       | none => t = E0 ∧ Clight.deref_loc ty m b ofs bf v
@@ -392,8 +397,11 @@ def deref_loc_translatedStatement : Prop :=
           volatile_load (Genv.to_senv (Clight.globalenv tp).genv_genv)
             chunk m b ofs t v
 
-def assign_loc_translatedStatement : Prop :=
-  ∀ p tp ty m b ofs bf v t m' v',
+def assign_loc_translatedStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
+  ∀ p tp, match_prog p tp →
+    ∀ ty m b ofs bf v t m' v',
     Csem.assign_loc (Csem.globalenv p) ty m b ofs bf v t m' v' →
       match chunk_for_volatile_type ty bf with
       | none => t = E0 ∧
@@ -405,40 +413,50 @@ def assign_loc_translatedStatement : Prop :=
 def is_bitfield_access_soundStatement
     [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
     [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
-  ∀ tp ce e le m a b ofs bf bf',
+  ∀ p tp, match_prog p tp →
+    ∀ cunit : cprogram, Ctypes.linkorder_program cunit p →
+    ∀ e le m a b ofs bf bf',
     Clight.eval_lvalue (Clight.globalenv tp) e le m a b ofs bf →
-    tr_is_bitfield_access ce a bf' → bf' = bf
+    tr_is_bitfield_access cunit.prog_comp_env a bf' → bf' = bf
 
 def make_assign_value_soundStatement
     [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
     [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
-  ∀ p tp ty m b ofs bf v t m' v',
+  ∀ p ty m b ofs bf v t m' v',
     Csem.assign_loc (Csem.globalenv p) ty m b ofs bf v t m' v' →
-    ∀ e le m'' r, Clight.typeof r = ty →
-      Clight.eval_expr (Clight.globalenv tp) e le m'' r v →
-      Clight.eval_expr (Clight.globalenv tp) e le m''
+    ∀ (tge : tgenv) e le m'' r, Clight.typeof r = ty →
+      Clight.eval_expr tge e le m'' r v →
+      Clight.eval_expr tge e le m''
         (make_assign_value bf r) v'
 def typeof_make_assign_valueStatement : Prop :=
   ∀ bf r, Clight.typeof (make_assign_value bf r) = Clight.typeof r
 def tr_simpleStatement
     [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
     [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
-  ∀ p tp (cu : cprogram) e m r v, Cstrategy.eval_simple_rvalue (Csem.globalenv p) e m r v →
-    ∀ le dst sl a tmps, tr_expr cu.prog_comp_env le dst r sl a tmps →
-      match dst with
-      | .For_val => sl = [] ∧ Csyntax.typeof r = Clight.typeof a ∧
-          Clight.eval_expr (Clight.globalenv tp) e le m a v
-      | .For_effects => sl = []
-      | .For_set sd => ∃ b, sl = do_set sd b ∧
-          Csyntax.typeof r = Clight.typeof b ∧
-          Clight.eval_expr (Clight.globalenv tp) e le m b v
+  ∀ p tp, match_prog p tp →
+    ∀ (cunit : cprogram) e m,
+    (∀ r v, Cstrategy.eval_simple_rvalue (Csem.globalenv p) e m r v →
+      ∀ le dst sl a tmps, tr_expr cunit.prog_comp_env le dst r sl a tmps →
+        match dst with
+        | .For_val => sl = [] ∧ Csyntax.typeof r = Clight.typeof a ∧
+            Clight.eval_expr (Clight.globalenv tp) e le m a v
+        | .For_effects => sl = []
+        | .For_set sd => ∃ b, sl = do_set sd b ∧
+            Csyntax.typeof r = Clight.typeof b ∧
+            Clight.eval_expr (Clight.globalenv tp) e le m b v) ∧
+    (∀ l b ofs bf,
+      Cstrategy.eval_simple_lvalue (Csem.globalenv p) e m l b ofs bf →
+      ∀ le sl a tmps, tr_expr cunit.prog_comp_env le .For_val l sl a tmps →
+        sl = [] ∧ Csyntax.typeof l = Clight.typeof a ∧
+          Clight.eval_lvalue (Clight.globalenv tp) e le m a b ofs bf)
 
 def tr_simple_rvalueStatement
     [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
     [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
-  ∀ p tp (cu : cprogram) e m r v,
+  ∀ p tp, match_prog p tp →
+    ∀ (cunit : cprogram) e m r v,
     Cstrategy.eval_simple_rvalue (Csem.globalenv p) e m r v →
-    ∀ le dst sl a tmps, tr_expr cu.prog_comp_env le dst r sl a tmps →
+    ∀ le dst sl a tmps, tr_expr cunit.prog_comp_env le dst r sl a tmps →
       match dst with
       | .For_val => sl = [] ∧ Csyntax.typeof r = Clight.typeof a ∧
           Clight.eval_expr (Clight.globalenv tp) e le m a v
@@ -450,17 +468,19 @@ def tr_simple_rvalueStatement
 def tr_simple_lvalueStatement
     [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
     [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
-  ∀ p tp (cu : cprogram) e m l b ofs bf,
+  ∀ p tp, match_prog p tp →
+    ∀ (cunit : cprogram) e m l b ofs bf,
     Cstrategy.eval_simple_lvalue (Csem.globalenv p) e m l b ofs bf →
-    ∀ le sl a tmps, tr_expr cu.prog_comp_env le .For_val l sl a tmps →
+    ∀ le sl a tmps, tr_expr cunit.prog_comp_env le .For_val l sl a tmps →
       sl = [] ∧ Csyntax.typeof l = Clight.typeof a ∧
         Clight.eval_lvalue (Clight.globalenv tp) e le m a b ofs bf
 
 def tr_simple_exprlistStatement
     [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
     [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
-  ∀ p tp (cu : cprogram) le rl sl al tmps,
-    tr_exprlist cu.prog_comp_env le rl sl al tmps →
+  ∀ p tp, match_prog p tp →
+    ∀ (cunit : cprogram) le rl sl al tmps,
+    tr_exprlist cunit.prog_comp_env le rl sl al tmps →
     ∀ e m tyl vl,
       Cstrategy.eval_simple_list (Csem.globalenv p) e m rl tyl vl →
       sl = [] ∧ Clight.eval_exprlist (Clight.globalenv tp) e le m al tyl vl
@@ -473,55 +493,58 @@ def typeof_contextStatement : Prop :=
 def tr_expr_leftcontext_recStatement
     [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
     [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
-  (∀ ce kfrom kto C, leftcontext kfrom kto C →
-    ∀ le e dst sl a tmps, tr_expr ce le dst (C e) sl a tmps →
+  ∀ cunit : cprogram,
+  (∀ kfrom kto C, leftcontext kfrom kto C →
+    ∀ le e dst sl a tmps, tr_expr cunit.prog_comp_env le dst (C e) sl a tmps →
       ∃ dst' sl1 sl2 a' tmp',
-        tr_expr ce le dst' e sl1 a' tmp' ∧ sl = sl1 ++ sl2 ∧
+        tr_expr cunit.prog_comp_env le dst' e sl1 a' tmp' ∧ sl = sl1 ++ sl2 ∧
         Included tmp' tmps ∧
         (∀ le' e' sl3,
-          tr_expr ce le' dst' e' sl3 a' tmp' →
+          tr_expr cunit.prog_comp_env le' dst' e' sl3 a' tmp' →
           (∀ id, id ∉ tmp' → PTree.get id le' = PTree.get id le) →
           Csyntax.typeof e' = Csyntax.typeof e →
-          tr_expr ce le' dst (C e') (sl3 ++ sl2) a tmps)) ∧
-  (∀ ce kfrom C, leftcontextlist kfrom C →
-    ∀ le e sl a tmps, tr_exprlist ce le (C e) sl a tmps →
+          tr_expr cunit.prog_comp_env le' dst (C e') (sl3 ++ sl2) a tmps)) ∧
+  (∀ kfrom C, leftcontextlist kfrom C →
+    ∀ le e sl a tmps, tr_exprlist cunit.prog_comp_env le (C e) sl a tmps →
       ∃ dst' sl1 sl2 a' tmp',
-        tr_expr ce le dst' e sl1 a' tmp' ∧ sl = sl1 ++ sl2 ∧
+        tr_expr cunit.prog_comp_env le dst' e sl1 a' tmp' ∧ sl = sl1 ++ sl2 ∧
         Included tmp' tmps ∧
         (∀ le' e' sl3,
-          tr_expr ce le' dst' e' sl3 a' tmp' →
+          tr_expr cunit.prog_comp_env le' dst' e' sl3 a' tmp' →
           (∀ id, id ∉ tmp' → PTree.get id le' = PTree.get id le) →
           Csyntax.typeof e' = Csyntax.typeof e →
-          tr_exprlist ce le' (C e') (sl3 ++ sl2) a tmps))
+          tr_exprlist cunit.prog_comp_env le' (C e') (sl3 ++ sl2) a tmps))
 
 def tr_expr_leftcontextStatement
     [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
     [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
-  ∀ ce C le r dst sl a tmps, leftcontext .RV .RV C →
-    tr_expr ce le dst (C r) sl a tmps →
+  ∀ (cunit : cprogram) C le r dst sl a tmps, leftcontext .RV .RV C →
+    tr_expr cunit.prog_comp_env le dst (C r) sl a tmps →
       ∃ dst' sl1 sl2 a' tmp',
-        tr_expr ce le dst' r sl1 a' tmp' ∧ sl = sl1 ++ sl2 ∧
+        tr_expr cunit.prog_comp_env le dst' r sl1 a' tmp' ∧ sl = sl1 ++ sl2 ∧
         Included tmp' tmps ∧
         (∀ le' r' sl3,
-          tr_expr ce le' dst' r' sl3 a' tmp' →
+          tr_expr cunit.prog_comp_env le' dst' r' sl3 a' tmp' →
           (∀ id, id ∉ tmp' → PTree.get id le' = PTree.get id le) →
           Csyntax.typeof r' = Csyntax.typeof r →
-          tr_expr ce le' dst (C r') (sl3 ++ sl2) a tmps)
+          tr_expr cunit.prog_comp_env le' dst (C r') (sl3 ++ sl2) a tmps)
 
 def tr_top_leftcontextStatement
     [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
     [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
-  ∀ ce ge e le m dst rtop sl a tmps,
-    tr_top ce ge e le m dst rtop sl a tmps →
+  ∀ (tprog : tprogram) (cunit : cprogram) e le m dst rtop sl a tmps,
+    tr_top cunit.prog_comp_env (Clight.globalenv tprog) e le m dst rtop sl a tmps →
     ∀ r C, rtop = C r → leftcontext .RV .RV C →
       ∃ dst' sl1 sl2 a' tmp',
-        tr_top ce ge e le m dst' r sl1 a' tmp' ∧ sl = sl1 ++ sl2 ∧
+        tr_top cunit.prog_comp_env (Clight.globalenv tprog)
+          e le m dst' r sl1 a' tmp' ∧ sl = sl1 ++ sl2 ∧
         Included tmp' tmps ∧
         (∀ le' m' r' sl3,
-          tr_expr ce le' dst' r' sl3 a' tmp' →
+          tr_expr cunit.prog_comp_env le' dst' r' sl3 a' tmp' →
           (∀ id, id ∉ tmp' → PTree.get id le' = PTree.get id le) →
           Csyntax.typeof r' = Csyntax.typeof r →
-          tr_top ce ge e le' m' dst (C r') (sl3 ++ sl2) a tmps)
+          tr_top cunit.prog_comp_env (Clight.globalenv tprog)
+            e le' m' dst (C r') (sl3 ++ sl2) a tmps)
 
 def sem_cast_deterministicStatement
     [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
@@ -545,7 +568,8 @@ def step_makeifStatement
 def step_make_setStatement
     [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
     [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
-  ∀ (xi : ExternalCalls) p tp ty m b ofs bf t v e le f k id a,
+  ∀ (xi : ExternalCalls) p tp, match_prog p tp →
+    ∀ id a ty m b ofs bf t v e le f k,
     Csem.deref_loc (Csem.globalenv p) ty m b ofs bf t v →
     Clight.eval_lvalue (Clight.globalenv tp) e le m a b ofs bf →
     Clight.typeof a = ty →
@@ -556,7 +580,8 @@ def step_make_setStatement
 def step_make_assignStatement
     [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
     [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
-  ∀ (xi : ExternalCalls) p tp a1 a2 ty m b ofs bf t v m' v' v2 e le f k,
+  ∀ (xi : ExternalCalls) p tp, match_prog p tp →
+    ∀ a1 a2 ty m b ofs bf t v m' v' v2 e le f k,
     Csem.assign_loc (Csem.globalenv p) ty m b ofs bf v t m' v' →
     Clight.eval_lvalue (Clight.globalenv tp) e le m a1 b ofs bf →
     Clight.eval_expr (Clight.globalenv tp) e le m a2 v2 →
@@ -633,33 +658,9 @@ def tr_find_labelStatement
         ∃ ts' tk', Clight.find_label lbl ts tk = some (ts', tk') ∧
           tr_stmt ce s' ts' ∧ match_cont p tp ce k' tk'
 
-private def csemFindLabelLs (lbl : ident) :
-    clabeled_statements → ccont → Option (cstatement × ccont)
-  | .LSnil, _ => none
-  | .LScons _ s rest, k =>
-      match Csem.find_label lbl s (.Kseq (Csem.seq_of_labeled_statement rest) k) with
-      | some sk => some sk
-      | none => csemFindLabelLs lbl rest k
-
-def tr_find_label_lsStatement
-    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
-    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
-  ∀ (p : cprogram) (tp : tprogram) lbl ce s k ts tk,
-    tr_lblstmts ce s ts → match_cont p tp ce k tk →
-    match csemFindLabelLs lbl s k with
-    | none => Clight.findLabelCases lbl ts tk = none
-    | some (s', k') =>
-        ∃ ts' tk', Clight.findLabelCases lbl ts tk = some (ts', tk') ∧
-          tr_stmt ce s' ts' ∧ match_cont p tp ce k' tk'
-
 def leftcontext_sizeStatement : Prop :=
   ∀ kfrom kto C, leftcontext kfrom kto C →
     ∀ e1 e2, esize e1 < esize e2 → esize (C e1) < esize (C e2)
-
-def leftcontextlist_sizeStatement : Prop :=
-  ∀ kfrom C, leftcontextlist kfrom C →
-    ∀ e1 e2, esize e1 < esize e2 →
-      esize.esizeList (C e1) < esize.esizeList (C e2)
 
 def tr_val_genStatement
     [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
