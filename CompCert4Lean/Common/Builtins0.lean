@@ -504,22 +504,69 @@ private def byteSwap64 (n : CCInt64) : CCInt64 :=
         (CompCert4Lean.Common.Memdata.encode_int 8
           (CompCert4Lean.Lib.Integers.Int64.unsigned n))))
 
-private def truncate16 (n : CCInt) : valxty Xint16unsigned :=
-  ⟨intZeroExt z16 n, by
-    change CompCert4Lean.Lib.Integers.Int.zero_ext z16 n =
-      CompCert4Lean.Lib.Integers.Int.zero_ext z16
-        (CompCert4Lean.Lib.Integers.Int.zero_ext z16 n)
-    exact (CompCert4Lean.Lib.Integers.Int.zero_ext_idem_proof_api z16 n (by
-      change (0 : Int) ≤ 16
-      omega)).symm⟩
-
 private def byteSwap16 (n : CCInt) : valxty Xint16unsigned :=
-  truncate16
-    (CompCert4Lean.Lib.Integers.Int.repr
-      (CompCert4Lean.Common.Memdata.decode_int
-        (List.reverse
-          (CompCert4Lean.Common.Memdata.encode_int 2
-            (CompCert4Lean.Lib.Integers.Int.unsigned n)))))
+  let bl := List.reverse
+    (CompCert4Lean.Common.Memdata.encode_int 2
+      (CompCert4Lean.Lib.Integers.Int.unsigned n))
+  let x := CompCert4Lean.Common.Memdata.decode_int bl
+  ⟨CompCert4Lean.Lib.Integers.Int.repr x, by
+    have hbl : bl.length = 2 := by
+      simpa [bl] using
+        CompCert4Lean.Common.Memdata.encode_int_length_proof_api 2
+          (CompCert4Lean.Lib.Integers.Int.unsigned n)
+    have hx := CompCert4Lean.Common.Memdata.int_of_bytes_range_proof_api
+      (CompCert4Lean.Common.Memdata.rev_if_be bl)
+    have hrev := CompCert4Lean.Common.Memdata.rev_if_be_length_proof_api bl
+    have hx16 :
+        ZArith.BinInt.Z.le z0 x ∧
+          ZArith.BinInt.Z.lt x
+            (CompCert4Lean.Foundation.Numbers.Rocq.Coq.two_p z16) := by
+      change ZArith.BinInt.Z.le z0
+          (CompCert4Lean.Common.Memdata.int_of_bytes
+            (CompCert4Lean.Common.Memdata.rev_if_be bl)) ∧
+        ZArith.BinInt.Z.lt
+          (CompCert4Lean.Common.Memdata.int_of_bytes
+            (CompCert4Lean.Common.Memdata.rev_if_be bl))
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.two_p z16)
+      rw [hrev, hbl] at hx
+      have h16 :
+          ZArith.BinInt.Z.mul (ZArith.BinInt.Z.of_nat 2)
+              (ZArith.BinInt.Z.of_nat 8) = z16 := by
+        rfl
+      change ZArith.BinInt.Z.le z0
+          (CompCert4Lean.Common.Memdata.int_of_bytes
+            (CompCert4Lean.Common.Memdata.rev_if_be bl)) ∧
+        ZArith.BinInt.Z.lt
+          (CompCert4Lean.Common.Memdata.int_of_bytes
+            (CompCert4Lean.Common.Memdata.rev_if_be bl))
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.two_p
+            (ZArith.BinInt.Z.mul (ZArith.BinInt.Z.of_nat 2)
+              (ZArith.BinInt.Z.of_nat 8))) at hx
+      rw [h16] at hx
+      exact hx
+    have hxmax :
+        ZArith.BinInt.Z.le z0 x ∧
+          ZArith.BinInt.Z.le x CompCert4Lean.Lib.Integers.Int.max_unsigned := by
+      constructor
+      · exact hx16.1
+      · have hxlt := hx16.2
+        change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ x ≤ 4294967295
+        change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ x < 65536 at hxlt
+        omega
+    apply CompCert4Lean.Lib.Integers.WordCore.ext
+    change CompCert4Lean.Lib.Integers.Int.unsigned
+        (CompCert4Lean.Lib.Integers.Int.repr x) =
+      CompCert4Lean.Lib.Integers.Int.unsigned
+        (CompCert4Lean.Lib.Integers.Int.zero_ext z16
+          (CompCert4Lean.Lib.Integers.Int.repr x))
+    rw [CompCert4Lean.Lib.Integers.Int.unsigned_repr_proof_api x hxmax]
+    rw [CompCert4Lean.Lib.Integers.Int.zero_ext_mod_proof_api z16
+      (CompCert4Lean.Lib.Integers.Int.repr x) (by
+        change (0 : _root_.Int) ≤ 16 ∧ (16 : _root_.Int) < 32
+        omega)]
+    rw [CompCert4Lean.Lib.Integers.Int.unsigned_repr_proof_api x hxmax]
+    exact (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.mod_small
+      x (CompCert4Lean.Foundation.Numbers.Rocq.Coq.two_p z16) hx16).symm⟩
 
 private def mkbuiltin_num_v2tInternal
     (targ1 targ2 : typ) (tres : xtype)

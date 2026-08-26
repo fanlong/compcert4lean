@@ -78,6 +78,21 @@ private abbrev zOfNat := ZArith.BinInt.Z.of_nat
 private abbrev zToNat := ZArith.BinInt.Z.to_nat
 private abbrev zDivide := ZArith.BinInt.Z.divide
 private abbrev zTwoP := two_p
+
+private theorem intOfZ_two_p_zOfNat (n : Nat) :
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+        (zTwoP (zOfNat n)) = (2 : _root_.Int) ^ n := by
+  change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+      (ZArith.BinInt.Z.pow (Zpos (.xO .xH)) (ZArith.BinInt.Z.of_nat n)) = _
+  unfold ZArith.BinInt.Z.pow
+  rw [show ZArith.BinInt.Z.of_nat n =
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt (_root_.Int.ofNat n) by rfl,
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+  have hn : ¬ _root_.Int.ofNat n < 0 :=
+    _root_.Int.not_lt.mpr (_root_.Int.natCast_nonneg n)
+  rw [if_neg hn]
+  simp only [CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+  rfl
 private abbrev eqmod := CompCert4Lean.Lib.Zbits.eqmod
 
 private def sumboolBool {P Q : Prop} (d : Sumbool P Q) : Bool :=
@@ -185,6 +200,22 @@ def rev_if_be_lengthStatement : Prop :=
 
 def encode_int_lengthStatement : Prop :=
   ∀ sz x, (encode_int sz x).length = sz
+
+theorem length_bytes_of_int_proof_api (n : Nat) (x : Z) :
+    (bytes_of_int n x).length = n := by
+  induction n generalizing x with
+  | zero => rfl
+  | succ n ih => simp only [bytes_of_int, List.length_cons, ih]
+
+theorem rev_if_be_length_proof_api (l : List byte) :
+    (rev_if_be l).length = l.length := by
+  unfold rev_if_be
+  split <;> simp
+
+theorem encode_int_length_proof_api (sz : Nat) (x : Z) :
+    (encode_int sz x).length = sz := by
+  rw [encode_int, rev_if_be_length_proof_api,
+    length_bytes_of_int_proof_api]
 
 def bytes_of_int_modStatement : Prop :=
   ∀ n x y,
@@ -581,6 +612,66 @@ def int_of_bytes_rangeStatement : Prop :=
   ∀ l,
     zLe z0 (int_of_bytes l) ∧
       zLt (int_of_bytes l) (zTwoP (zMul (zOfNat l.length) z8))
+
+theorem int_of_bytes_range_proof_api (l : List byte) :
+    zLe z0 (int_of_bytes l) ∧
+      zLt (int_of_bytes l) (zTwoP (zMul (zOfNat l.length) z8)) := by
+  induction l with
+  | nil =>
+      change (0 : _root_.Int) ≤ 0 ∧ (0 : _root_.Int) < 1
+      omega
+  | cons b rest ih =>
+      have hb := CompCert4Lean.Lib.Integers.Byte.unsigned_range_proof_api b
+      have hpow :
+          (2 : _root_.Int) ^ ((rest.length + 1) * 8) =
+            (2 : _root_.Int) ^ (rest.length * 8) * 256 := by
+        rw [show (rest.length + 1) * 8 = rest.length * 8 + 8 by omega,
+          _root_.Int.pow_add]
+        rfl
+      change 0 ≤ CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+          (int_of_bytes (b :: rest)) ∧
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+            (int_of_bytes (b :: rest)) <
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+            (zTwoP (zMul (zOfNat (b :: rest).length) z8))
+      have hexp :
+          zMul (zOfNat (rest.length + 1)) z8 =
+            zOfNat ((rest.length + 1) * 8) := by
+        apply CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective
+        simp only [zMul, zOfNat, z8, ZArith.BinInt.Z.mul,
+          ZArith.BinInt.Z.of_nat,
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+        rfl
+      simp only [List.length_cons]
+      rw [hexp, intOfZ_two_p_zOfNat]
+      simp only [int_of_bytes, zAdd, zMul, z256,
+        ZArith.BinInt.Z.add, ZArith.BinInt.Z.mul, ZArith.BinInt.Z.of_nat,
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt,
+        _root_.Int.ofNat_eq_natCast]
+      change
+        0 ≤ CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (CCByte.unsigned b) +
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (int_of_bytes rest) * 256 ∧
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (CCByte.unsigned b) +
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (int_of_bytes rest) * 256 <
+            (2 : _root_.Int) ^ ((rest.length + 1) * 8)
+      change 0 ≤ CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+          (CCByte.unsigned b) ∧
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (CCByte.unsigned b) < 256 at hb
+      change 0 ≤ CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+          (int_of_bytes rest) ∧
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (int_of_bytes rest) <
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+            (zTwoP (zMul (zOfNat rest.length) z8)) at ih
+      have hexpRest :
+          zMul (zOfNat rest.length) z8 = zOfNat (rest.length * 8) := by
+        apply CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective
+        simp only [zMul, zOfNat, z8, ZArith.BinInt.Z.mul,
+          ZArith.BinInt.Z.of_nat,
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+        rfl
+      rw [hexpRest, intOfZ_two_p_zOfNat] at ih
+      rw [hpow]
+      constructor <;> omega
 
 def length_proj_bytesStatement : Prop :=
   ∀ l b, proj_bytes l = some b → b.length = l.length

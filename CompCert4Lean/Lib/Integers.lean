@@ -1323,6 +1323,75 @@ private theorem zero_ext_val (n : Z) (x : int) (hn : zLe zZero n) :
   simp only [Int.ofNat_eq_natCast]
   rw [← hbridge]
 
+theorem unsigned_repr_proof_api (z : Z)
+    (hz : zLe zZero z ∧ zLe z max_unsigned) :
+    unsigned (repr z) = z := by
+  have hznonneg : 0 ≤ CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ z := hz.1
+  have hzlt :
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ z <
+        ((2 ^ wordsize : Nat) : _root_.Int) := by
+    have hzmax := hz.2
+    change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ z ≤
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ max_unsigned at hzmax
+    unfold max_unsigned modulus at hzmax
+    rw [WordCore.twoPowerNat_eq_zOfNat_twoPow] at hzmax
+    change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ z ≤
+      _root_.Int.ofNat (2 ^ wordsize) - 1 at hzmax
+    have hzmax' :
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ z ≤
+          ((2 ^ wordsize : Nat) : _root_.Int) - 1 := by
+      simpa only [_root_.Int.ofNat_eq_natCast] using hzmax
+    omega
+  change (WordCore.repr wordsize z).intval = z
+  rw [WordCore.intval_eq_zOfNat_val]
+  have hval :
+      (WordCore.repr wordsize z).val =
+        _root_.Int.toNat
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ z %
+            ((2 ^ wordsize : Nat) : _root_.Int)) := by
+    rw [← CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt_intOfZ z]
+    simpa only [CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt] using
+      WordCore.val_repr wordsize
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ z)
+  rw [hval, _root_.Int.emod_eq_of_lt hznonneg hzlt]
+  change CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt
+      (_root_.Int.ofNat
+        (_root_.Int.toNat
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ z))) = z
+  calc
+    _ = CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ z) :=
+      congrArg CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt
+        (_root_.Int.toNat_of_nonneg hznonneg)
+    _ = z := CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt_intOfZ z
+
+theorem zero_ext_mod_proof_api (n : Z) (x : int)
+    (hn : zLe zZero n ∧ zLt n zwordsize) :
+    unsigned (zero_ext n x) =
+      ZArith.BinInt.Z.modulo (unsigned x) (two_p n) := by
+  have hnnonneg : 0 ≤ CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ n := hn.1
+  have hnlt : zToNat n < wordsize := by
+    change _root_.Int.toNat
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ n) < wordsize
+    apply (_root_.Int.toNat_lt hnnonneg).2
+    have hnltInt := hn.2
+    change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ n <
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (zOfNat wordsize) at hnltInt
+    have hnltInt' :
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ n <
+          _root_.Int.ofNat wordsize := by
+      simpa only [zOfNat, ZArith.BinInt.Z.of_nat,
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt] using hnltInt
+    simpa only [_root_.Int.ofNat_eq_natCast] using hnltInt'
+  have hpow : 2 ^ zToNat n ≤ 2 ^ wordsize :=
+    Nat.pow_le_pow_right Nat.zero_lt_two (Nat.le_of_lt hnlt)
+  have hvalLt : x.val % (2 ^ zToNat n) < 2 ^ wordsize :=
+    Nat.lt_of_lt_of_le (Nat.mod_lt _ (Nat.two_pow_pos _)) hpow
+  change (zero_ext n x).intval = _
+  rw [WordCore.intval_eq_zOfNat_val, zero_ext_val n x hn.1,
+    Nat.mod_eq_of_lt hvalLt, zero_ext_modulo n x hn.1]
+  rfl
+
 private theorem nested_power_mod_idem (a k w : Nat) :
     ((((a % (2 ^ k)) % (2 ^ w)) % (2 ^ k)) % (2 ^ w)) =
       (a % (2 ^ k)) % (2 ^ w) := by
@@ -1374,6 +1443,16 @@ def eqm_samerepr : Prop :=
 
 def unsigned_range : Prop :=
   ∀ i : int, zLe zZero (unsigned i) ∧ zLt (unsigned i) modulus
+
+theorem unsigned_range_proof_api (i : int) :
+    zLe zZero (unsigned i) ∧ zLt (unsigned i) modulus := by
+  constructor
+  · have h := i.intrange.1
+    change (-1 : _root_.Int) <
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ i.intval at h
+    change 0 ≤ CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ i.intval
+    omega
+  · exact i.intrange.2
 
 /-- `GENAPP-COMPCERT-LIB-INTEGERS-3582-ASSIGNMENT`: `Make(Wordsize_8)`. -/
 def generatedApplication : WordCore.GeneratedApplication :=
