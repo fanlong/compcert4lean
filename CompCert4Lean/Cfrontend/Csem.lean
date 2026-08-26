@@ -299,11 +299,6 @@ inductive rred
 
 export rred (red_seqand_true red_seqand_false red_seqor_true red_seqor_false)
 
-private def classifyFunAs (tyf : type) (tyargs : List type) (tyres : type)
-    (cconv : calling_convention) : Prop :=
-  tyf = .Tfunction tyargs tyres cconv ∨
-    ∃ a, tyf = .Tpointer (.Tfunction tyargs tyres cconv) a
-
 inductive callred
     [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
     [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
@@ -314,7 +309,7 @@ inductive callred
           (binary64_certificate := binary64_certificate)
           (binary32_certificate := binary32_certificate) m el tyargs vargs →
       type_of_fundef fd = .Tfunction tyargs tyres cconv →
-      classifyFunAs tyf tyargs tyres cconv →
+      Cop.classify_fun tyf = .fun_case_f tyargs tyres cconv →
       callred ge (.Ecall (.Eval vf tyf) el ty) m fd vargs ty
 
 /-! ## Reduction contexts and immediate safety -/

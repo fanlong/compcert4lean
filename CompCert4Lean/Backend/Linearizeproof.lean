@@ -351,7 +351,7 @@ def starts_with_correctStatement
       (Linear.State s f sp c3 ls m)
 
 def find_label_add_branchStatement : Prop :=
-  forall (lbl s : Linear.label) (k : Linear.code),
+  forall (lbl : Linear.label) (k : Linear.code) (s : Linear.label),
     Linear.find_label lbl (add_branch s k) = Linear.find_label lbl k
 
 def find_label_lin_blockStatement : Prop :=

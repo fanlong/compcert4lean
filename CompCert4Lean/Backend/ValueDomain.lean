@@ -1203,12 +1203,42 @@ def ablock_load (chunk : memory_chunk) (ab : ablock) (i : Z) : aval :=
 def ablock_load_anywhere (chunk : memory_chunk) (ab : ablock) : aval :=
   vnormalize chunk (Ifptr ab.ab_summary)
 
-private def eraseDown (lo : Z) : Nat → Z → ZTree.t acontent → ZTree.t acontent
-  | 0, _, c => c
-  | n + 1, hi, c => eraseDown lo n (zSub hi z1) (ZTree.remove hi c)
+private def inval_after_measure (lo hi : Z) : Nat :=
+  if zle lo hi then Int.toNat (intOfZ hi - intOfZ lo) + 1 else 0
+
+private theorem zle_true_prop_for_inval {x y : Z} (h : zle x y = true) : zLe x y := by
+  unfold zle at h
+  cases hd : CompCert4Lean.Lib.Coqlib.zle x y with
+  | left hxy => exact hxy
+  | right hxy => simp [hd, boolOfSumbool] at h
 
 def inval_after (lo hi : Z) (c : ZTree.t acontent) : ZTree.t acontent :=
-  if zle lo hi then eraseDown lo (zToNat (zAdd (zSub hi lo) z1)) hi c else c
+  if zle lo hi then inval_after lo (zSub hi z1) (ZTree.remove hi c) else c
+termination_by inval_after_measure lo hi
+decreasing_by
+  dsimp [inval_after_measure]
+  rename_i hrec
+  by_cases hcur : zle lo hi = true
+  · by_cases hnext : zle lo (zSub hi z1) = true
+    · rw [if_pos hnext, if_pos hcur]
+      have _hlo : intOfZ lo ≤ intOfZ hi := zle_true_prop_for_inval hcur
+      have hnextlo : intOfZ lo ≤ intOfZ (zSub hi z1) :=
+        zle_true_prop_for_inval hnext
+      have hz1 : intOfZ z1 = 1 := by rfl
+      have hsub : intOfZ (zSub hi z1) = intOfZ hi - 1 := by
+        simp [zSub, ZArith.BinInt.Z.sub, intOfZ_zOfInt, hz1]
+      rw [hsub] at hnextlo
+      rw [hsub]
+      have _hcur_nonneg : 0 ≤ intOfZ hi - intOfZ lo := by omega
+      have _hnext_nonneg : 0 ≤ intOfZ hi - 1 - intOfZ lo := by omega
+      have hpos : 0 < intOfZ hi - intOfZ lo := by omega
+      apply Nat.succ_lt_succ_iff.mpr
+      apply (Int.toNat_lt_toNat hpos).mpr
+      omega
+    · rw [if_neg hnext, if_pos hcur]
+      omega
+  · rw [if_neg hcur]
+    exact False.elim (hcur hrec)
 
 def inval_if (hi lo : Z) (c : ZTree.t acontent) : ZTree.t acontent :=
   match ZTree.get lo c with
@@ -1216,12 +1246,42 @@ def inval_if (hi lo : Z) (c : ZTree.t acontent) : ZTree.t acontent :=
   | some (ACval chunk _) =>
       if zle (zAdd lo (size_chunk chunk)) hi then c else ZTree.remove lo c
 
-private def eraseUp (hi : Z) : Nat → Z → ZTree.t acontent → ZTree.t acontent
-  | 0, _, c => c
-  | n + 1, lo, c => eraseUp hi n (zAdd lo z1) (inval_if hi lo c)
+private def inval_before_measure (hi lo : Z) : Nat :=
+  if zlt lo hi then Int.toNat (intOfZ hi - intOfZ lo) + 1 else 0
+
+private theorem zlt_true_prop_for_inval {x y : Z} (h : zlt x y = true) : zLt x y := by
+  unfold zlt at h
+  cases hd : CompCert4Lean.Lib.Coqlib.zlt x y with
+  | left hxy => exact hxy
+  | right hxy => simp [hd, boolOfSumbool] at h
 
 def inval_before (hi lo : Z) (c : ZTree.t acontent) : ZTree.t acontent :=
-  if zlt lo hi then eraseUp hi (zToNat (zSub hi lo)) lo c else c
+  if zlt lo hi then inval_before hi (zAdd lo z1) (inval_if hi lo c) else c
+termination_by inval_before_measure hi lo
+decreasing_by
+  dsimp [inval_before_measure]
+  rename_i hrec
+  by_cases hcur : zlt lo hi = true
+  · by_cases hnext : zlt (zAdd lo z1) hi = true
+    · rw [if_pos hnext, if_pos hcur]
+      have _hlt : intOfZ lo < intOfZ hi := zlt_true_prop_for_inval hcur
+      have hnextlt : intOfZ (zAdd lo z1) < intOfZ hi :=
+        zlt_true_prop_for_inval hnext
+      have hz1 : intOfZ z1 = 1 := by rfl
+      have hadd : intOfZ (zAdd lo z1) = intOfZ lo + 1 := by
+        simp [zAdd, ZArith.BinInt.Z.add, intOfZ_zOfInt, hz1]
+      rw [hadd] at hnextlt
+      rw [hadd]
+      have _hcur_nonneg : 0 ≤ intOfZ hi - intOfZ lo := by omega
+      have _hnext_nonneg : 0 ≤ intOfZ hi - (intOfZ lo + 1) := by omega
+      have hpos : 0 < intOfZ hi - intOfZ lo := by omega
+      apply Nat.succ_lt_succ_iff.mpr
+      apply (Int.toNat_lt_toNat hpos).mpr
+      omega
+    · rw [if_neg hnext, if_pos hcur]
+      omega
+  · rw [if_neg hcur]
+    exact False.elim (hcur hrec)
 
 def ablock_store (chunk : memory_chunk) (ab : ablock) (i : Z) (av : aval) : ablock :=
   { ab_contents :=
@@ -1460,7 +1520,7 @@ def eq (x y : t) : Prop := ∀ p, get p x = get p y
 
 def beq : t → t → Bool
   | .Bot, .Bot => true
-  | .Top_except x, .Top_except y => decide (PTree.elements x = PTree.elements y)
+  | .Top_except x, .Top_except y => PTree.beq (fun v1 v2 => proj_sumbool (eq_aval v1 v2)) x y
   | _, _ => false
 
 def ge (x y : t) : Prop := ∀ p, vge (get p x) (get p y)

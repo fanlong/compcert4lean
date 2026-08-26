@@ -63,21 +63,6 @@ variable
     [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
     [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
 
-private def cmpWord (c : CCComparison) (eqv ltv gtv : Bool) : Bool :=
-  match c with
-  | .Ceq => eqv
-  | .Cne => !eqv
-  | .Clt => ltv
-  | .Cle => ltv || eqv
-  | .Cgt => gtv
-  | .Cge => gtv || eqv
-
-private def intCmp (c : CCComparison) (x y : CCInt) : Bool :=
-  cmpWord c (intEq x y) (intLt x y) (intLt y x)
-
-private def intCmpu (c : CCComparison) (x y : CCInt) : Bool :=
-  cmpWord c (intEq x y) (intLtu x y) (intLtu y x)
-
 private abbrev RocqString :=
   CompCert4Lean.Foundation.RocqString.Rocq.Coq.Strings.String.string
 
@@ -600,8 +585,8 @@ def eval_cmplu_genStatement : Prop :=
       eval_expr (binary64_certificate := binary64_certificate) (binary32_certificate := binary32_certificate) xi (Genv.globalenv prog) sp e m le b (.Vlong y) →
       eval_expr (binary64_certificate := binary64_certificate) (binary32_certificate := binary32_certificate) xi (Genv.globalenv prog) sp e m le (cmplu_gen ch cl a b)
         (Val.of_bool (if intEq (int64Hiword x) (int64Hiword y) then
-          intCmpu cl (int64Loword x) (int64Loword y) else
-          intCmpu ch (int64Hiword x) (int64Hiword y)))
+          Int.cmpu cl (int64Loword x) (int64Loword y) else
+          Int.cmpu ch (int64Hiword x) (int64Hiword y)))
 
 def int64_eq_xorStatement : Prop :=
   ∀ (p q : CCInt64),
@@ -609,7 +594,8 @@ def int64_eq_xorStatement : Prop :=
 
 def eval_cmpluStatement : Prop :=
   ∀ (xi : ExternalCalls) (prog : program) (sp : val) (e : env) (m : mem),
-    ∀ (c : CCComparison) (le : letenv) (a b : expr) (x y v : val),
+    ∀ (c : CCComparison) (le : letenv) (a : expr) (x : val) (b : expr)
+      (y : val) (v : val),
       eval_expr (binary64_certificate := binary64_certificate) (binary32_certificate := binary32_certificate) xi (Genv.globalenv prog) sp e m le a x →
       eval_expr (binary64_certificate := binary64_certificate) (binary32_certificate := binary32_certificate) xi (Genv.globalenv prog) sp e m le b y →
       Val.cmplu (Mem.valid_pointer m) c x y = some v →
@@ -624,8 +610,8 @@ def eval_cmpl_genStatement : Prop :=
       eval_expr (binary64_certificate := binary64_certificate) (binary32_certificate := binary32_certificate) xi (Genv.globalenv prog) sp e m le b (.Vlong y) →
       eval_expr (binary64_certificate := binary64_certificate) (binary32_certificate := binary32_certificate) xi (Genv.globalenv prog) sp e m le (cmpl_gen ch cl a b)
         (Val.of_bool (if intEq (int64Hiword x) (int64Hiword y) then
-          intCmpu cl (int64Loword x) (int64Loword y) else
-          intCmp ch (int64Hiword x) (int64Hiword y)))
+          Int.cmpu cl (int64Loword x) (int64Loword y) else
+          Int.cmp ch (int64Hiword x) (int64Hiword y)))
 
 def decompose_cmpl_lt_zeroStatement : Prop :=
   ∀ (h l : CCInt),
@@ -633,7 +619,8 @@ def decompose_cmpl_lt_zeroStatement : Prop :=
 
 def eval_cmplStatement : Prop :=
   ∀ (xi : ExternalCalls) (prog : program) (sp : val) (e : env) (m : mem),
-    ∀ (c : CCComparison) (le : letenv) (a b : expr) (x y v : val),
+    ∀ (c : CCComparison) (le : letenv) (a : expr) (x : val) (b : expr)
+      (y : val) (v : val),
       eval_expr (binary64_certificate := binary64_certificate) (binary32_certificate := binary32_certificate) xi (Genv.globalenv prog) sp e m le a x →
       eval_expr (binary64_certificate := binary64_certificate) (binary32_certificate := binary32_certificate) xi (Genv.globalenv prog) sp e m le b y →
       Val.cmpl c x y = some v →

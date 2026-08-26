@@ -284,7 +284,7 @@ def step_type_preservationStatement
   ∀ (cfg : CompilerConfig) (xi : ExternalCalls) (p : LinearProgram),
     (∀ (i : ident) (fd : LinearFundef),
       (i, Gfun fd) ∈ p.prog_defs → wt_fundef cfg fd) →
-    ∀ (S1 S2 : LinearState) (t : trace),
+    ∀ (S1 : LinearState) (t : trace) (S2 : LinearState),
       Linear.step
         (binary64_certificate := binary64_certificate)
         (binary32_certificate := binary32_certificate)
@@ -307,7 +307,7 @@ def wt_state_getstackStatement : Prop :=
 
 def wt_state_setstackStatement : Prop :=
   ∀ (cfg : CompilerConfig) (s : List LinearStackframe) (f : LinearFunction)
-    (sp : val) (r : mreg) (sl : slot) (ofs : Z) (ty : typ)
+    (sp : val) (sl : slot) (ofs : Z) (ty : typ) (r : mreg)
     (c : LinearCode) (rs : Locset) (m : mem),
     wt_state cfg (Linear.State s f sp
       (Linear.Lsetstack r sl ofs ty :: c) rs m) →
