@@ -151,8 +151,8 @@ def arg_no_overlap (a : builtin_arg loc) (l : loc) : Bool :=
   match a with
   | .BA l' =>
       match Loc.diff_dec l' l with
-      | .left _ => false
-      | .right _ => true
+      | .left _ => true
+      | .right _ => false
   | .BA_splitlong hi lo => arg_no_overlap hi l && arg_no_overlap lo l
   | _ => true
 
@@ -327,7 +327,7 @@ def ana_code (cfg : CompilerConfig) (lm : labelmap) (before : Option avail)
 
 def ana_iter (cfg : CompilerConfig) (c : code) (lm : labelmap) : Sum labelmap labelmap :=
   let lm' := ana_code cfg (lm.1, false) (some top) c
-  if lm'.2 then .inr lm' else .inl lm'
+  if lm'.2 then .inr lm' else .inl lm
 
 def ana_function (cfg : CompilerConfig) (f : function) : Option labelmap :=
   CompCert4Lean.Lib.Iteration.PrimIter.iterate labelmap labelmap
