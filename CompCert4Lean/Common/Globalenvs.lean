@@ -42,6 +42,17 @@ private abbrev zOfNat := ZArith.BinInt.Z.of_nat
 private abbrev zDivide := ZArith.BinInt.Z.divide
 private abbrev posSucc := PArith.BinPos.Pos.succ
 
+/- `store_zeros` is module-level in the Rocq source. -/
+private def storeZerosNat : Nat → mem → block → Z → Option mem
+  | 0, m, _, _ => some m
+  | n + 1, m, b, p =>
+      match Mem.store Mint8unsigned m b p Vzero with
+      | none => none
+      | some m' => storeZerosNat n m' b (zAdd p z1)
+
+def store_zeros (m : mem) (b : block) (p n : Z) : Option mem :=
+  storeZerosNat (zToNat n) m b p
+
 private theorem ptreeGetSet0Same {A : Type} (i : positive) (x : A) :
     PTree.get' i (PTree.set0 i x) = some x := by
   induction i <;> simp [PTree.get', PTree.set0, *]
@@ -414,16 +425,6 @@ def to_senv {F V : Type} (ge : t F V) : Senv.t :=
       exact ge.genv_symb_range id h
     block_is_volatile_below := blockIsVolatileBelowProof ge }
 
-private def storeZerosNat : Nat → mem → block → Z → Option mem
-  | 0, m, _, _ => some m
-  | n + 1, m, b, p =>
-      match Mem.store Mint8unsigned m b p Vzero with
-      | none => none
-      | some m' => storeZerosNat n m' b (zAdd p z1)
-
-def store_zeros (m : mem) (b : block) (p n : Z) : Option mem :=
-  storeZerosNat (zToNat n) m b p
-
 def store_init_data {F V : Type} (ge : t F V) (m : mem) (b : block)
     (p : Z) (id : init_data) : Option mem :=
   match id with
@@ -587,6 +588,14 @@ structure match_genvs {A B V W : Type} (R : globdef A V → globdef B W → Prop
   mge_next : ge2.genv_next = ge1.genv_next
   mge_symb : ∀ id, PTree.get id ge2.genv_symb = PTree.get id ge1.genv_symb
   mge_defs : ∀ b, option_rel R (PTree.get b ge1.genv_defs) (PTree.get b ge2.genv_defs)
+
+def Build_match_genvs {A B V W : Type} (R : globdef A V → globdef B W → Prop)
+    (ge1 : t A V) (ge2 : t B W)
+    (mge_next : ge2.genv_next = ge1.genv_next)
+    (mge_symb : ∀ id, PTree.get id ge2.genv_symb = PTree.get id ge1.genv_symb)
+    (mge_defs : ∀ b, option_rel R (PTree.get b ge1.genv_defs) (PTree.get b ge2.genv_defs)) :
+    match_genvs R ge1 ge2 :=
+  { mge_next, mge_symb, mge_defs }
 
 export match_genvs (mge_next mge_symb mge_defs)
 
@@ -864,23 +873,23 @@ def store_zeros_neutralStatement : Prop :=
     store_zeros m b p n = some m' → Mem.inject_neutral thr m'
 
 def store_init_data_neutralStatement : Prop :=
-  ∀ (F V : Type) (ge : t F V) (thr : block) (m : mem) (b : block)
-    (p : Z) (id : init_data) (m' : mem),
+  ∀ (F V : Type) (ge : t F V) (thr : block),
     (∀ id b, find_symbol ge id = some b → Plt b thr) →
+    ∀ (m : mem) (b : block) (p : Z) (id : init_data) (m' : mem),
     Mem.inject_neutral thr m → Plt b thr →
     store_init_data ge m b p id = some m' → Mem.inject_neutral thr m'
 
 def store_init_data_list_neutralStatement : Prop :=
-  ∀ (F V : Type) (ge : t F V) (thr : block) (b : block)
-    (idl : List init_data) (m : mem) (p : Z) (m' : mem),
+  ∀ (F V : Type) (ge : t F V) (thr : block),
     (∀ id b, find_symbol ge id = some b → Plt b thr) →
+    ∀ (b : block) (idl : List init_data) (m : mem) (p : Z) (m' : mem),
     Mem.inject_neutral thr m → Plt b thr →
     store_init_data_list ge m b p idl = some m' → Mem.inject_neutral thr m'
 
 def alloc_global_neutralStatement : Prop :=
-  ∀ (F V : Type) (ge : t F V) (thr : block) (idg : ident × globdef F V)
-    (m m' : mem),
+  ∀ (F V : Type) (ge : t F V) (thr : block),
     (∀ id b, find_symbol ge id = some b → Plt b thr) →
+    ∀ (idg : ident × globdef F V) (m m' : mem),
     alloc_global ge m idg = some m' →
     Mem.inject_neutral thr m → Plt m.nextblock thr → Mem.inject_neutral thr m'
 
@@ -889,9 +898,9 @@ def advance_next_leStatement : Prop :=
     Ple x (advance_next gl x)
 
 def alloc_globals_neutralStatement : Prop :=
-  ∀ (F V : Type) (ge : t F V) (thr : block)
-    (gl : List (ident × globdef F V)) (m m' : mem),
+  ∀ (F V : Type) (ge : t F V) (thr : block),
     (∀ id b, find_symbol ge id = some b → Plt b thr) →
+    ∀ (gl : List (ident × globdef F V)) (m m' : mem),
     alloc_globals ge m gl = some m' →
     Mem.inject_neutral thr m → Ple m'.nextblock thr → Mem.inject_neutral thr m'
 
@@ -1119,10 +1128,6 @@ def init_mem_transfStatement : Prop :=
     ∀ m, init_mem p = some m → init_mem tp = some m
 
 end Genv
-
-/- `store_zeros` is module-level in the Rocq source.  Keep the implementation in
-   `Genv`, where the translated consumers live, and expose the exact source path. -/
-abbrev store_zeros := Genv.store_zeros
 
 /- Rocq's `Function store_zeros` generates this induction principle.  Selected
    proof declarations consume it, so retain its exact proposition while proof
