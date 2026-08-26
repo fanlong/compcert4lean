@@ -54,6 +54,12 @@ export mreg (AX BX CX DX SI DI BP R8 R9 R10 R11 R12 R13 R14 R15 X0 X1 X2
 def mreg_eqStatement :=
   ∀ r1 r2 : mreg, Sumbool (r1 = r2) (r1 ≠ r2)
 
+def mreg_eq (r1 r2 : mreg) : Sumbool (r1 = r2) (r1 ≠ r2) := by
+  cases r1 <;> cases r2 <;>
+    first
+    | exact .left rfl
+    | exact .right (by intro h; cases h)
+
 def all_mregs : List mreg :=
   [ AX, BX, CX, DX, SI, DI, BP
   , R8, R9, R10, R11, R12, R13, R14, R15

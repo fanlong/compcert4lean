@@ -56,18 +56,6 @@ private abbrev z4 : Z := ZArith.BinInt.Z.of_nat 4
 private abbrev zAdd := ZArith.BinInt.Z.add
 private abbrev zMul := ZArith.BinInt.Z.mul
 
-private def mregDecEq : DecidableEq mreg := by
-  intro x y
-  cases x <;> cases y <;>
-    first
-    | exact isTrue rfl
-    | exact isFalse (by intro h; cases h)
-
-private def mregEq (x y : mreg) : Sumbool (x = y) (x ≠ y) :=
-  match mregDecEq x y with
-  | isTrue h => .left h
-  | isFalse h => .right h
-
 /-! ## Abstract syntax -/
 
 def label : Type := positive
@@ -120,7 +108,8 @@ def store_stack (m : mem) (sp : val) (ty : typ) (ofs : Ptrofs) (v : val) : Optio
 
 namespace RegEq
 
-def eq (x y : mreg) : Sumbool (x = y) (x ≠ y) := mregEq x y
+def eq (x y : mreg) : Sumbool (x = y) (x ≠ y) :=
+  CompCert4Lean.X86.Machregs.mreg_eq x y
 
 end RegEq
 
