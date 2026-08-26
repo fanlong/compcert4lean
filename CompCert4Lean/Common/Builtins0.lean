@@ -521,33 +521,6 @@ private def byteSwap16 (n : CCInt) : valxty Xint16unsigned :=
           (CompCert4Lean.Common.Memdata.encode_int 2
             (CompCert4Lean.Lib.Integers.Int.unsigned n)))))
 
-private def mkbuiltin_n2pInternal
-    (targ1 targ2 : typ) (tres : xtype)
-    (f : valty targ1 → valty targ2 → Option (valxty tres)) : builtin_sem tres :=
-  mkbuiltin_v2p tres
-    (fun v1 v2 =>
-      proj_num targ1 none v1 (fun x1 =>
-      proj_num targ2 none v2 (fun x2 => Option.map (inj_num tres) (f x1 x2))))
-    (by
-      intro v1 v2
-      exact projNumOptWellTyped tres targ1 none _ v1 (Or.inl rfl) (fun x1 =>
-        projNumOptWellTyped tres targ2 none _ v2 (Or.inl rfl) (fun x2 => by
-          cases f x1 x2 with
-          | none => trivial
-          | some y => exact injNumWellTyped tres y)))
-    (by
-      intro j v1 v1' v2 v2' h1 h2
-      exact projNumOptInject j none targ1 _ v1 _ v1'
-        (fun _ => trivial)
-        (fun x1 => projNumOptInject j none targ2 _ v2 _ v2'
-          (fun _ => trivial)
-          (fun x2 => by
-            cases f x1 x2 with
-            | none => trivial
-            | some y => exact injNumInject j tres y)
-          h2)
-        h1)
-
 private def mkbuiltin_num_v2tInternal
     (targ1 targ2 : typ) (tres : xtype)
     (f : valty targ1 → valty targ2 → val)
@@ -627,11 +600,23 @@ private def divlsBuiltin : builtin_sem Xlong :=
         · exact Val.inject.inject_long _)
 
 private def divluBuiltin : builtin_sem Xlong :=
-  mkbuiltin_n2pInternal Tlong Tlong Xlong (fun n1 n2 =>
-    if CompCert4Lean.Lib.Integers.Int64.eq n2 CompCert4Lean.Lib.Integers.Int64.zero then
-      none
-    else
-      some (CompCert4Lean.Lib.Integers.Int64.divu n1 n2))
+  longBinaryPartial Val.divlu
+    (by
+      intro v1 v2
+      cases v1 <;> cases v2
+      all_goals simp only [Val.divlu]
+      all_goals try trivial
+      case Vlong.Vlong =>
+        split <;> trivial)
+    (by
+      intro j v1 v1' v2 v2' h1 h2
+      cases h1 <;> cases h2
+      all_goals simp only [Val.divlu]
+      all_goals try trivial
+      case inject_long.inject_long =>
+        split
+        · trivial
+        · exact Val.inject.inject_long _)
 
 private def modlsBuiltin : builtin_sem Xlong :=
   longBinaryPartial Val.modls
@@ -653,13 +638,23 @@ private def modlsBuiltin : builtin_sem Xlong :=
         · exact Val.inject.inject_long _)
 
 private def modluBuiltin : builtin_sem Xlong :=
-  mkbuiltin_n2pInternal Tlong Tlong Xlong (fun n1 n2 =>
-    if CompCert4Lean.Lib.Integers.Int64.eq n2 CompCert4Lean.Lib.Integers.Int64.zero then
-      none
-    else
-      some (CompCert4Lean.Lib.Integers.Int64.sub n1
-        (CompCert4Lean.Lib.Integers.Int64.mul
-          (CompCert4Lean.Lib.Integers.Int64.divu n1 n2) n2)))
+  longBinaryPartial Val.modlu
+    (by
+      intro v1 v2
+      cases v1 <;> cases v2
+      all_goals simp only [Val.modlu]
+      all_goals try trivial
+      case Vlong.Vlong =>
+        split <;> trivial)
+    (by
+      intro j v1 v1' v2 v2' h1 h2
+      cases h1 <;> cases h2
+      all_goals simp only [Val.modlu]
+      all_goals try trivial
+      case inject_long.inject_long =>
+        split
+        · trivial
+        · exact Val.inject.inject_long _)
 
 private def shllBuiltin : builtin_sem Xlong :=
   mkbuiltin_num_v2tInternal Tlong Tint Xlong
