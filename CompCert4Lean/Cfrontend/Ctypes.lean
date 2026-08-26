@@ -350,15 +350,27 @@ inductive member : Type where
   | Member_plain (id : ident) (t : type)
   | Member_bitfield (id : ident) (size : intsize) (signed : signedness)
       (attributes : attr) (width : Z) (padding : Bool)
+deriving DecidableEq
 
 export member (Member_plain Member_bitfield)
 
 def members : Type := List member
 
+private instance membersDecidableEq : DecidableEq members := by
+  unfold members
+  infer_instance
+
 inductive composite_definition : Type where
   | Composite (id : ident) (su : struct_or_union) (members : members) (attributes : attr)
+deriving DecidableEq
 
 export composite_definition (Composite)
+
+def name_composite_def : composite_definition → ident
+  | .Composite id _ _ _ => id
+
+def composite_def_eq (x y : composite_definition) : Sumbool (x = y) (x ≠ y) :=
+  decEqSumbool x y
 
 def name_member : member -> ident
   | .Member_plain id _ => id
@@ -1318,6 +1330,85 @@ def program_of_program {F : Type} (p : program F) : AST.program (fundef F) type 
 
 /-! ## Separate compilation and linking -/
 
+private def boolOfSumbool {P Q : Prop} : Sumbool P Q → Bool
+  | .left _ => true
+  | .right _ => false
+
+def check_compat_composite (l : List composite_definition)
+    (cd : composite_definition) : Bool :=
+  CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.List.forallb
+    (fun cd' =>
+      match AST.ident_eq (name_composite_def cd') (name_composite_def cd) with
+      | .left _ => boolOfSumbool (composite_def_eq cd cd')
+      | .right _ => true)
+    l
+
+def filter_redefs (l1 l2 : List composite_definition) : List composite_definition :=
+  let names1 := l1.map name_composite_def
+  CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.List.filter
+    (fun cd =>
+      match CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.List.in_dec
+          AST.ident_eq (name_composite_def cd) names1 with
+      | .left _ => false
+      | .right _ => true)
+    l2
+
+def link_composite_defs (l1 l2 : List composite_definition) :
+    Option (List composite_definition) :=
+  match CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.List.forallb
+      (check_compat_composite l2) l1 with
+  | true => some (l1 ++ filter_redefs l1 l2)
+  | false => none
+
+def link_composite_def_invStatement : Prop :=
+  ∀ l1 l2 l,
+    link_composite_defs l1 l2 = some l →
+      (∀ cd1 cd2, cd1 ∈ l1 → cd2 ∈ l2 →
+        name_composite_def cd2 = name_composite_def cd1 → cd2 = cd1) ∧
+      l = l1 ++ filter_redefs l1 l2 ∧
+      (∀ x, x ∈ l ↔ x ∈ l1 ∨ x ∈ l2)
+
+def link_composite_def_inv : Prop := link_composite_def_invStatement
+
+def link_build_composite_envStatement : Prop :=
+  ∀ l1 l2 l env1 env2,
+    build_composite_env l1 = .OK env1 →
+    build_composite_env l2 = .OK env2 →
+    link_composite_defs l1 l2 = some l →
+    ∃ env,
+      build_composite_env l = .OK env ∧
+      (∀ id co, PTree.get id env1 = some co → PTree.get id env = some co) ∧
+      (∀ id co, PTree.get id env2 = some co → PTree.get id env = some co)
+
+def link_build_composite_env : Prop := link_build_composite_envStatement
+
+/-!
+The source [Program Instance] declarations carry proof obligations which are
+intentionally discharged in the later proof-grinding phase.  Keep those
+obligations explicit instead of manufacturing inhabited proof fields or making
+the instances global.  The executable link functions remain the source
+operations; these records carry only their theorem-facing laws.
+-/
+def link_composite_defs_link_linkorderStatement : Prop :=
+  ∀ l1 l2 l,
+    link_composite_defs l1 l2 = some l →
+      CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.List.incl l1 l ∧
+      CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.List.incl l2 l
+
+structure Linker_composite_defs_obligations : Prop where
+  link_composite_def_inv : link_composite_def_invStatement
+  link_build_composite_env : link_build_composite_envStatement
+  link_linkorder : link_composite_defs_link_linkorderStatement
+
+abbrev LinkerCompositeDefsCertificate := Linker_composite_defs_obligations
+
+def lift_option {A : Type} (opt : Option A) :
+    Sum (Subtype (fun x : A => opt = some x))
+      (Subtype (fun _ : Unit => opt = none)) :=
+  match opt with
+  | some x => .inl ⟨x, rfl⟩
+  | none => .inr ⟨(), rfl⟩
+
 instance Linker_types : CompCert4Lean.Common.Linking.Linker type where
   link := fun t1 t2 =>
     match type_eq t1 t2 with
@@ -1426,5 +1517,76 @@ def linkorder_program {F : Type} (p1 p2 : program F) : Prop :=
       (program_of_program p1) (program_of_program p2) ∧
     ∀ id co, PTree.get id p1.prog_comp_env = some co →
       PTree.get id p2.prog_comp_env = some co
+
+def link_program {F : Type} (p1 p2 : program F) : Option (program F) :=
+  match CompCert4Lean.Common.Linking.link
+      (program_of_program p1) (program_of_program p2) with
+  | none => none
+  | some p =>
+      match lift_option (link_composite_defs p1.prog_types p2.prog_types) with
+      | .inr _ => none
+      | .inl typs =>
+          match henv : build_composite_env typs.val with
+          | .Error _ => none
+          | .OK env =>
+              some
+                { prog_defs := p.prog_defs
+                  prog_public := p.prog_public
+                  prog_main := p.prog_main
+                  prog_types := typs.val
+                  prog_comp_env := env
+                  prog_comp_env_eq := henv }
+
+def link_program_link_linkorderStatement : Prop :=
+  ∀ {F : Type} (p1 p2 p : program F),
+    link_program p1 p2 = some p →
+      linkorder_program p1 p ∧ linkorder_program p2 p
+
+structure Linker_program_obligations : Prop where
+  composite_defs : Linker_composite_defs_obligations
+  link_linkorder : link_program_link_linkorderStatement
+
+abbrev LinkerProgramCertificate := Linker_program_obligations
+
+def link_program_with_certificate {F : Type}
+    (_certificate : Linker_program_obligations) (p1 p2 : program F) : Option (program F) :=
+  link_program p1 p2
+
+def Linker_composite_defs (certificate : Linker_composite_defs_obligations) :
+    CompCert4Lean.Common.Linking.Linker (List composite_definition) where
+  link := link_composite_defs
+  linkorder := CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.List.incl
+  linkorder_refl := by
+    intro l
+    exact CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.List.incl_refl l
+  linkorder_trans := by
+    intro l1 l2 l3 h12 h23
+    exact CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.List.incl_tran h12 h23
+  link_linkorder := certificate.link_linkorder
+
+def Linker_program (F : Type) (certificate : Linker_program_obligations) :
+    CompCert4Lean.Common.Linking.Linker (program F) where
+  link := link_program_with_certificate certificate
+  linkorder := linkorder_program
+  linkorder_refl := by
+    intro p
+    refine ⟨(CompCert4Lean.Common.Linking.Linker.linkorder_refl
+      (A := CompCert4Lean.Common.AST.program (fundef F) type) (program_of_program p)), ?_⟩
+    intro id co hget
+    exact hget
+  linkorder_trans := by
+    intro p1 p2 p3 h12 h23
+    rcases h12 with ⟨h12defs, h12env⟩
+    rcases h23 with ⟨h23defs, h23env⟩
+    refine ⟨
+      CompCert4Lean.Common.Linking.Linker.linkorder_trans
+        (A := CompCert4Lean.Common.AST.program (fundef F) type)
+        (program_of_program p1) (program_of_program p2) (program_of_program p3)
+        h12defs h23defs,
+      ?_⟩
+    intro id co hget
+    exact h23env id co (h12env id co hget)
+  link_linkorder := by
+    simpa [link_program_with_certificate] using certificate.link_linkorder
 
 end CompCert4Lean.Cfrontend.Ctypes
