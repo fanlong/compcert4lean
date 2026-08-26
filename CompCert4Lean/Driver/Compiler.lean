@@ -269,9 +269,224 @@ def transf_c_program
 
 /-! ## Relational compiler surface -/
 
-/- The pass list is represented by its source-shaped composed matching
-   relation.  The individual simulation proofs remain statement descriptors in
-   the later proof-migration phase. -/
+/-! The source pass list is typed by the language linker carried by each
+   `Pass`.  Csyntax and Clight use the certified Ctypes program linkers; the
+   remaining AST program linkers are the generic source linkers.  The
+   `TransfLink` fields below are companion obligations: their propositions are
+   preserved now and their proof terms are supplied by the later proof phase.
+-/
+
+private def csyntaxLanguage
+    (certificate : Ctypes.Linker_program_obligations) : Language where
+  lang_prog := Csyntax.program
+  lang_link := Ctypes.Linker_program Csyntax.function certificate
+
+private def clightLanguage
+    (certificate : Ctypes.Linker_program_obligations) : Language where
+  lang_prog := Clight.program
+  lang_link := Ctypes.Linker_program Clight.function certificate
+
+private def csharpminorLinker : Linker Csharpminor.program :=
+  @Linker_prog Csharpminor.fundef Unit
+    (Linker_fundef Csharpminor.function) Linker_unit
+
+private def cminorLinker : Linker Cminor.program :=
+  @Linker_prog Cminor.fundef Unit
+    (Linker_fundef Cminor.function) Linker_unit
+
+private def cminorSelLinker : Linker CminorSel.program :=
+  @Linker_prog CminorSel.fundef Unit
+    (Linker_fundef CminorSel.function) Linker_unit
+
+private def rtlLinker : Linker RTL.program :=
+  @Linker_prog RTL.fundef Unit
+    (Linker_fundef RTL.function) Linker_unit
+
+private def ltlLinker : Linker LTL.program :=
+  @Linker_prog LTL.fundef Unit
+    (Linker_fundef LTL.function) Linker_unit
+
+private def linearLinker : Linker Linear.program :=
+  @Linker_prog Linear.fundef Unit
+    (Linker_fundef Linear.function) Linker_unit
+
+private def machLinker : Linker Mach.program :=
+  @Linker_prog Mach.fundef Unit
+    (Linker_fundef Mach.function) Linker_unit
+
+private def asmLinker : Linker Asm.program :=
+  @Linker_prog Asm.fundef Unit
+    (Linker_fundef Asm.function) Linker_unit
+
+private def csharpminorLanguage : Language where
+  lang_prog := Csharpminor.program
+  lang_link := csharpminorLinker
+
+private def cminorLanguage : Language where
+  lang_prog := Cminor.program
+  lang_link := cminorLinker
+
+private def cminorSelLanguage : Language where
+  lang_prog := CminorSel.program
+  lang_link := cminorSelLinker
+
+private def rtlLanguage : Language where
+  lang_prog := RTL.program
+  lang_link := rtlLinker
+
+private def ltlLanguage : Language where
+  lang_prog := LTL.program
+  lang_link := ltlLinker
+
+private def linearLanguage : Language where
+  lang_prog := Linear.program
+  lang_link := linearLinker
+
+private def machLanguage : Language where
+  lang_prog := Mach.program
+  lang_link := machLinker
+
+private def asmLanguage : Language where
+  lang_prog := Asm.program
+  lang_link := asmLinker
+
+structure CompilerPassCertificates
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    [binary64_inverse_certificate : BexactInverseCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_inverse_certificate : BexactInverseCertificate (zOfNat 24) (zOfNat 128)]
+    (cfg : CompilerConfig)
+    (selectionOracle : Selection.SelectionOracle)
+    (inlineCfg : Inlining.InliningConfig)
+    (regallocOracle : Allocation.RegallocOracle)
+    (enumerationService : Linearize.EnumerationService)
+    (csyntaxLinkerCertificate : Ctypes.Linker_program_obligations)
+    (clightLinkerCertificate : Ctypes.Linker_program_obligations) : Prop where
+  simplExpr :
+    @TransfLink Csyntax.program Clight.program
+      (Ctypes.Linker_program Csyntax.function csyntaxLinkerCertificate)
+      (Ctypes.Linker_program Clight.function clightLinkerCertificate)
+      (fun p tp => SimplExprproof.match_prog
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) p tp)
+  simplLocals :
+    @TransfLink Clight.program Clight.program
+      (Ctypes.Linker_program Clight.function clightLinkerCertificate)
+      (Ctypes.Linker_program Clight.function clightLinkerCertificate)
+      (SimplLocalsproof.match_prog cfg)
+  cshmgen :
+    @TransfLink Clight.program Csharpminor.program
+      (Ctypes.Linker_program Clight.function clightLinkerCertificate)
+      csharpminorLinker
+      Cshmgenproof.match_prog
+  cminorgen :
+    @TransfLink Csharpminor.program Cminor.program
+      csharpminorLinker
+      cminorLinker
+      Cminorgenproof.match_prog
+  selection :
+    @TransfLink Cminor.program CminorSel.program
+      cminorLinker
+      cminorSelLinker
+      (fun p tp => Selectionproof.match_prog
+        cfg selectionOracle
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        (binary64_inverse_certificate := binary64_inverse_certificate)
+        (binary32_inverse_certificate := binary32_inverse_certificate) p tp)
+  rtlgen :
+    @TransfLink CminorSel.program RTL.program
+      cminorSelLinker
+      rtlLinker
+      RTLgenproof.match_prog
+  tailcall :
+    @TransfLink RTL.program RTL.program
+      rtlLinker
+      rtlLinker
+      (match_if (fun _ => Compopts.optim_tailcalls cfg)
+        (Tailcallproof.match_prog cfg))
+  inlining :
+    @TransfLink RTL.program RTL.program
+      rtlLinker
+      rtlLinker
+      (Inliningproof.match_prog inlineCfg)
+  renumber :
+    @TransfLink RTL.program RTL.program
+      rtlLinker
+      rtlLinker
+      Renumberproof.match_prog
+  constprop :
+    @TransfLink RTL.program RTL.program
+      rtlLinker
+      rtlLinker
+      (match_if (fun _ => Compopts.optim_constprop cfg)
+        (Constpropproof.match_prog
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate) cfg))
+  renumberConstprop :
+    @TransfLink RTL.program RTL.program
+      rtlLinker
+      rtlLinker
+      (match_if (fun _ => Compopts.optim_constprop cfg)
+        Renumberproof.match_prog)
+  cse :
+    @TransfLink RTL.program RTL.program
+      rtlLinker
+      rtlLinker
+      (match_if (fun _ => Compopts.optim_CSE cfg)
+        (CSEproof.match_prog
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate) cfg))
+  deadcode :
+    @TransfLink RTL.program RTL.program
+      rtlLinker
+      rtlLinker
+      (match_if (fun _ => Compopts.optim_redundancy cfg)
+        (Deadcodeproof.match_prog
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate) cfg))
+  unusedglob :
+    @TransfLink RTL.program RTL.program
+      rtlLinker
+      rtlLinker
+      Unusedglobproof.match_prog
+  allocation :
+    @TransfLink RTL.program LTL.program
+      rtlLinker
+      ltlLinker
+      (Allocproof.match_prog cfg regallocOracle)
+  tunneling :
+    @TransfLink LTL.program LTL.program
+      ltlLinker
+      ltlLinker
+      Tunnelingproof.match_prog
+  linearize :
+    @TransfLink LTL.program Linear.program
+      ltlLinker
+      linearLinker
+      (Linearizeproof.match_prog enumerationService)
+  cleanupLabels :
+    @TransfLink Linear.program Linear.program
+      linearLinker
+      linearLinker
+      CleanupLabelsproof.match_prog
+  debugvar :
+    @TransfLink Linear.program Linear.program
+      linearLinker
+      linearLinker
+      (match_if (fun _ => Compopts.debug cfg)
+        (Debugvarproof.match_prog cfg))
+  stacking :
+    @TransfLink Linear.program Mach.program
+      linearLinker
+      machLinker
+      (Stackingproof.match_prog cfg)
+  asmgen :
+    @TransfLink Mach.program Asm.program
+      machLinker
+      asmLinker
+      Asmgenproof.match_prog
+
 def CompCert's_passes
     [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
     [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
@@ -282,66 +497,106 @@ def CompCert's_passes
     (inlineCfg : Inlining.InliningConfig)
     (regallocOracle : Allocation.RegallocOracle)
     (enumerationService : Linearize.EnumerationService)
-    (p : Csyntax.program) (tp : Asm.program) : Prop :=
-  ∃ p1 : Clight.program,
-  ∃ p2 : Clight.program,
-  ∃ p3 : Csharpminor.program,
-  ∃ p4 : Cminor.program,
-  ∃ p5 : CminorSel.program,
-  ∃ p6 : RTL.program,
-  ∃ p7 : RTL.program,
-  ∃ p8 : RTL.program,
-  ∃ p9 : RTL.program,
-  ∃ p10 : RTL.program,
-  ∃ p11 : RTL.program,
-  ∃ p12 : RTL.program,
-  ∃ p13 : RTL.program,
-  ∃ p14 : RTL.program,
-  ∃ p15 : LTL.program,
-  ∃ p16 : LTL.program,
-  ∃ p17 : Linear.program,
-  ∃ p18 : Linear.program,
-  ∃ p19 : Linear.program,
-  ∃ p20 : Mach.program,
-    SimplExprproof.match_prog
-      (binary64_certificate := binary64_certificate)
-      (binary32_certificate := binary32_certificate) p p1 ∧
-    SimplLocalsproof.match_prog cfg p1 p2 ∧
-    Cshmgenproof.match_prog p2 p3 ∧
-    Cminorgenproof.match_prog p3 p4 ∧
-    Selectionproof.match_prog cfg selectionOracle
+    (csyntaxLinkerCertificate : Ctypes.Linker_program_obligations)
+    (clightLinkerCertificate : Ctypes.Linker_program_obligations)
+    (passCertificates : CompilerPassCertificates
       (binary64_certificate := binary64_certificate)
       (binary32_certificate := binary32_certificate)
       (binary64_inverse_certificate := binary64_inverse_certificate)
-      (binary32_inverse_certificate := binary32_inverse_certificate) p4 p5 ∧
-    RTLgenproof.match_prog p5 p6 ∧
-    match_if (fun _ => Compopts.optim_tailcalls cfg)
-      (Tailcallproof.match_prog cfg) p6 p7 ∧
-    Inliningproof.match_prog inlineCfg p7 p8 ∧
-    Renumberproof.match_prog p8 p9 ∧
-    match_if (fun _ => Compopts.optim_constprop cfg)
-      (Constpropproof.match_prog
+      (binary32_inverse_certificate := binary32_inverse_certificate)
+      cfg selectionOracle inlineCfg regallocOracle enumerationService
+      csyntaxLinkerCertificate clightLinkerCertificate) :
+    Passes (csyntaxLanguage csyntaxLinkerCertificate) (asmLanguage) :=
+  let pass1 : Pass (csyntaxLanguage csyntaxLinkerCertificate)
+      (clightLanguage clightLinkerCertificate) :=
+    { pass_match := fun p tp => SimplExprproof.match_prog
         (binary64_certificate := binary64_certificate)
-        (binary32_certificate := binary32_certificate) cfg) p9 p10 ∧
-    match_if (fun _ => Compopts.optim_constprop cfg)
-      Renumberproof.match_prog p10 p11 ∧
-    match_if (fun _ => Compopts.optim_CSE cfg)
-      (CSEproof.match_prog
+        (binary32_certificate := binary32_certificate) p tp
+      pass_match_link := passCertificates.simplExpr }
+  let pass2 : Pass (clightLanguage clightLinkerCertificate)
+      (clightLanguage clightLinkerCertificate) :=
+    { pass_match := SimplLocalsproof.match_prog cfg
+      pass_match_link := passCertificates.simplLocals }
+  let pass3 : Pass (clightLanguage clightLinkerCertificate)
+      csharpminorLanguage :=
+    { pass_match := Cshmgenproof.match_prog
+      pass_match_link := passCertificates.cshmgen }
+  let pass4 : Pass csharpminorLanguage cminorLanguage :=
+    { pass_match := Cminorgenproof.match_prog
+      pass_match_link := passCertificates.cminorgen }
+  let pass5 : Pass cminorLanguage cminorSelLanguage :=
+    { pass_match := fun p tp => Selectionproof.match_prog cfg selectionOracle
         (binary64_certificate := binary64_certificate)
-        (binary32_certificate := binary32_certificate) cfg) p11 p12 ∧
-    match_if (fun _ => Compopts.optim_redundancy cfg)
-      (Deadcodeproof.match_prog
-        (binary64_certificate := binary64_certificate)
-        (binary32_certificate := binary32_certificate) cfg) p12 p13 ∧
-    Unusedglobproof.match_prog p13 p14 ∧
-    Allocproof.match_prog cfg regallocOracle p14 p15 ∧
-    Tunnelingproof.match_prog p15 p16 ∧
-    Linearizeproof.match_prog enumerationService p16 p17 ∧
-    CleanupLabelsproof.match_prog p17 p18 ∧
-    match_if (fun _ => Compopts.debug cfg)
-      (Debugvarproof.match_prog cfg) p18 p19 ∧
-    Stackingproof.match_prog cfg p19 p20 ∧
-    Asmgenproof.match_prog p20 tp
+        (binary32_certificate := binary32_certificate)
+        (binary64_inverse_certificate := binary64_inverse_certificate)
+        (binary32_inverse_certificate := binary32_inverse_certificate) p tp
+      pass_match_link := passCertificates.selection }
+  let pass6 : Pass cminorSelLanguage rtlLanguage :=
+    { pass_match := RTLgenproof.match_prog
+      pass_match_link := passCertificates.rtlgen }
+  let pass7 : Pass rtlLanguage rtlLanguage :=
+    { pass_match := match_if (fun _ => Compopts.optim_tailcalls cfg)
+        (Tailcallproof.match_prog cfg)
+      pass_match_link := passCertificates.tailcall }
+  let pass8 : Pass rtlLanguage rtlLanguage :=
+    { pass_match := Inliningproof.match_prog inlineCfg
+      pass_match_link := passCertificates.inlining }
+  let pass9 : Pass rtlLanguage rtlLanguage :=
+    { pass_match := Renumberproof.match_prog
+      pass_match_link := passCertificates.renumber }
+  let pass10 : Pass rtlLanguage rtlLanguage :=
+    { pass_match := match_if (fun _ => Compopts.optim_constprop cfg)
+        (Constpropproof.match_prog
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate) cfg)
+      pass_match_link := passCertificates.constprop }
+  let pass11 : Pass rtlLanguage rtlLanguage :=
+    { pass_match := match_if (fun _ => Compopts.optim_constprop cfg)
+        Renumberproof.match_prog
+      pass_match_link := passCertificates.renumberConstprop }
+  let pass12 : Pass rtlLanguage rtlLanguage :=
+    { pass_match := match_if (fun _ => Compopts.optim_CSE cfg)
+        (CSEproof.match_prog
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate) cfg)
+      pass_match_link := passCertificates.cse }
+  let pass13 : Pass rtlLanguage rtlLanguage :=
+    { pass_match := match_if (fun _ => Compopts.optim_redundancy cfg)
+        (Deadcodeproof.match_prog
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate) cfg)
+      pass_match_link := passCertificates.deadcode }
+  let pass14 : Pass rtlLanguage rtlLanguage :=
+    { pass_match := Unusedglobproof.match_prog
+      pass_match_link := passCertificates.unusedglob }
+  let pass15 : Pass rtlLanguage ltlLanguage :=
+    { pass_match := Allocproof.match_prog cfg regallocOracle
+      pass_match_link := passCertificates.allocation }
+  let pass16 : Pass ltlLanguage ltlLanguage :=
+    { pass_match := Tunnelingproof.match_prog
+      pass_match_link := passCertificates.tunneling }
+  let pass17 : Pass ltlLanguage linearLanguage :=
+    { pass_match := Linearizeproof.match_prog enumerationService
+      pass_match_link := passCertificates.linearize }
+  let pass18 : Pass linearLanguage linearLanguage :=
+    { pass_match := CleanupLabelsproof.match_prog
+      pass_match_link := passCertificates.cleanupLabels }
+  let pass19 : Pass linearLanguage linearLanguage :=
+    { pass_match := match_if (fun _ => Compopts.debug cfg)
+        (Debugvarproof.match_prog cfg)
+      pass_match_link := passCertificates.debugvar }
+  let pass20 : Pass linearLanguage machLanguage :=
+    { pass_match := Stackingproof.match_prog cfg
+      pass_match_link := passCertificates.stacking }
+  let pass21 : Pass machLanguage asmLanguage :=
+    { pass_match := Asmgenproof.match_prog
+      pass_match_link := passCertificates.asmgen }
+  pass_cons pass1 (pass_cons pass2 (pass_cons pass3 (pass_cons pass4
+    (pass_cons pass5 (pass_cons pass6 (pass_cons pass7 (pass_cons pass8
+      (pass_cons pass9 (pass_cons pass10 (pass_cons pass11 (pass_cons pass12
+        (pass_cons pass13 (pass_cons pass14 (pass_cons pass15 (pass_cons pass16
+          (pass_cons pass17 (pass_cons pass18 (pass_cons pass19 (pass_cons pass20
+            (pass_cons pass21 (pass_nil asmLanguage)))))))))))))))))))))
 
 def match_prog
     [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
@@ -351,13 +606,23 @@ def match_prog
     (cfg : CompilerConfig) (selectionOracle : Selection.SelectionOracle)
     (inlineCfg : Inlining.InliningConfig) (regallocOracle : Allocation.RegallocOracle)
     (enumerationService : Linearize.EnumerationService)
+    (csyntaxLinkerCertificate : Ctypes.Linker_program_obligations)
+    (clightLinkerCertificate : Ctypes.Linker_program_obligations)
+    (passCertificates : CompilerPassCertificates
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      (binary64_inverse_certificate := binary64_inverse_certificate)
+      (binary32_inverse_certificate := binary32_inverse_certificate)
+      cfg selectionOracle inlineCfg regallocOracle enumerationService
+      csyntaxLinkerCertificate clightLinkerCertificate)
     (p : Csyntax.program) (tp : Asm.program) : Prop :=
-  CompCert's_passes
+  pass_match (compose_passes (CompCert's_passes
     (binary64_certificate := binary64_certificate)
     (binary32_certificate := binary32_certificate)
     (binary64_inverse_certificate := binary64_inverse_certificate)
     (binary32_inverse_certificate := binary32_inverse_certificate)
-    cfg selectionOracle inlineCfg regallocOracle enumerationService p tp
+    cfg selectionOracle inlineCfg regallocOracle enumerationService
+    csyntaxLinkerCertificate clightLinkerCertificate passCertificates)) p tp
 
 /-! ## Exact statement descriptors for the later proof phase -/
 
@@ -390,6 +655,15 @@ def transf_c_program_matchStatement
   ∀ (cfg : CompilerConfig) (selectionOracle : Selection.SelectionOracle)
     (inlineCfg : Inlining.InliningConfig) (regallocOracle : Allocation.RegallocOracle)
     (enumerationService : Linearize.EnumerationService)
+    (csyntaxLinkerCertificate : Ctypes.Linker_program_obligations)
+    (clightLinkerCertificate : Ctypes.Linker_program_obligations)
+    (passCertificates : CompilerPassCertificates
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      (binary64_inverse_certificate := binary64_inverse_certificate)
+      (binary32_inverse_certificate := binary32_inverse_certificate)
+      cfg selectionOracle inlineCfg regallocOracle enumerationService
+      csyntaxLinkerCertificate clightLinkerCertificate)
     (ctx : SimplExpr.FreshIdentContext) (p : Csyntax.program) (tp : Asm.program),
     transf_c_program
         (binary64_certificate := binary64_certificate)
@@ -402,7 +676,8 @@ def transf_c_program_matchStatement
       (binary32_certificate := binary32_certificate)
       (binary64_inverse_certificate := binary64_inverse_certificate)
       (binary32_inverse_certificate := binary32_inverse_certificate)
-      cfg selectionOracle inlineCfg regallocOracle enumerationService p tp
+      cfg selectionOracle inlineCfg regallocOracle enumerationService
+      csyntaxLinkerCertificate clightLinkerCertificate passCertificates p tp
 
 def forward_simulation_identityStatement : Prop :=
   ∀ (sem : semantics), forward_simulation sem sem
@@ -422,14 +697,24 @@ def cstrategy_semantic_preservationStatement
   ∀ (cfg : CompilerConfig) (selectionOracle : Selection.SelectionOracle)
     (inlineCfg : Inlining.InliningConfig) (regallocOracle : Allocation.RegallocOracle)
     (enumerationService : Linearize.EnumerationService)
+    (csyntaxLinkerCertificate : Ctypes.Linker_program_obligations)
+    (clightLinkerCertificate : Ctypes.Linker_program_obligations)
+    (passCertificates : CompilerPassCertificates
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      (binary64_inverse_certificate := binary64_inverse_certificate)
+      (binary32_inverse_certificate := binary32_inverse_certificate)
+      cfg selectionOracle inlineCfg regallocOracle enumerationService
+      csyntaxLinkerCertificate clightLinkerCertificate)
     (xi : ExternalCalls)
     (p : Csyntax.program) (tp : Asm.program),
     match_prog
         (binary64_certificate := binary64_certificate)
         (binary32_certificate := binary32_certificate)
         (binary64_inverse_certificate := binary64_inverse_certificate)
-        (binary32_inverse_certificate := binary32_inverse_certificate)
-        cfg selectionOracle inlineCfg regallocOracle enumerationService p tp →
+      (binary32_inverse_certificate := binary32_inverse_certificate)
+        cfg selectionOracle inlineCfg regallocOracle enumerationService
+        csyntaxLinkerCertificate clightLinkerCertificate passCertificates p tp →
     forward_simulation
       (Cstrategy.semantics
         (binary64_certificate := binary64_certificate)
@@ -453,14 +738,24 @@ def c_semantic_preservationStatement
   ∀ (cfg : CompilerConfig) (selectionOracle : Selection.SelectionOracle)
     (inlineCfg : Inlining.InliningConfig) (regallocOracle : Allocation.RegallocOracle)
     (enumerationService : Linearize.EnumerationService)
+    (csyntaxLinkerCertificate : Ctypes.Linker_program_obligations)
+    (clightLinkerCertificate : Ctypes.Linker_program_obligations)
+    (passCertificates : CompilerPassCertificates
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      (binary64_inverse_certificate := binary64_inverse_certificate)
+      (binary32_inverse_certificate := binary32_inverse_certificate)
+      cfg selectionOracle inlineCfg regallocOracle enumerationService
+      csyntaxLinkerCertificate clightLinkerCertificate)
     (xi : ExternalCalls)
     (p : Csyntax.program) (tp : Asm.program),
     match_prog
         (binary64_certificate := binary64_certificate)
         (binary32_certificate := binary32_certificate)
         (binary64_inverse_certificate := binary64_inverse_certificate)
-        (binary32_inverse_certificate := binary32_inverse_certificate)
-        cfg selectionOracle inlineCfg regallocOracle enumerationService p tp →
+      (binary32_inverse_certificate := binary32_inverse_certificate)
+        cfg selectionOracle inlineCfg regallocOracle enumerationService
+        csyntaxLinkerCertificate clightLinkerCertificate passCertificates p tp →
     backward_simulation
       (Csem.semantics
         (binary64_certificate := binary64_certificate)
@@ -477,6 +772,15 @@ def transf_c_program_correctStatement
   ∀ (cfg : CompilerConfig) (selectionOracle : Selection.SelectionOracle)
     (inlineCfg : Inlining.InliningConfig) (regallocOracle : Allocation.RegallocOracle)
     (enumerationService : Linearize.EnumerationService)
+    (csyntaxLinkerCertificate : Ctypes.Linker_program_obligations)
+    (clightLinkerCertificate : Ctypes.Linker_program_obligations)
+    (passCertificates : CompilerPassCertificates
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      (binary64_inverse_certificate := binary64_inverse_certificate)
+      (binary32_inverse_certificate := binary32_inverse_certificate)
+      cfg selectionOracle inlineCfg regallocOracle enumerationService
+      csyntaxLinkerCertificate clightLinkerCertificate)
     (ctx : SimplExpr.FreshIdentContext) (xi : ExternalCalls)
     (p : Csyntax.program) (tp : Asm.program),
     transf_c_program
