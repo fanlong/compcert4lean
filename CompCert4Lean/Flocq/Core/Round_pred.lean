@@ -54,8 +54,9 @@ def Rnd_UP_pt_oppStatement : Prop :=
 
 /-! Ensures that a real number can always be rounded. -/
 
-inductive satisfies_any (ctx : ExactRealContext) (F : ExactSpec.R ctx → Prop) : Prop where
-  | Satisfies_any :
+inductive satisfies_any (ctx : ExactRealContext) :
+    (F : ExactSpec.R ctx → Prop) → Prop where
+  | Satisfies_any (F : ExactSpec.R ctx → Prop) :
       F (ExactSpec.R0 ctx) →
       (∀ x : ExactSpec.R ctx, F x → F (ExactSpec.Ropp ctx x)) →
       CompCert4Lean.Flocq.Core.Defs.Exact.round_pred_total ctx
