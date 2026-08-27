@@ -53,20 +53,16 @@ abbrev Zrnd_opp := CompCert4Lean.Flocq.Core.Generic_fmt.Zrnd_opp
 def bpow (beta : radix) (e : Z) : R :=
   CompCert4Lean.Flocq.Core.Raux.bpow beta e
 
-/- LPO_Z is a classical Rocq specification primitive.  This local adapter
-   keeps that source boundary explicit while preserving the selected
-   `negligible_exp` definition without introducing an extra project assumption. -/
-private noncomputable def lpo_Z (P : Z → Prop) :
-    Sumor (Subtype P) (∀ z, ¬ P z) := by
-  classical
-  by_cases h : ∃ z, P z
-  · exact .inleft ⟨Classical.choose h, Classical.choose_spec h⟩
-  · exact .inright (fun z hz => h ⟨z, hz⟩)
-
 noncomputable def negligible_exp (fexp : Z → Z) : Option Z :=
-  match lpo_Z (fun z => Zle z (fexp z)) with
+  match CompCert4Lean.Flocq.Core.Raux.LPO_Z
+      (fun z => Zle z (fexp z))
+      (fun z =>
+        match CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.ZArith_dec.Z_le_dec
+            z (fexp z) with
+        | .left h => Or.inl h
+        | .right h => Or.inr h) with
   | .inleft witness => some witness.val
-      | .inright _ => none
+  | .inright _ => none
 
 inductive negligible_exp_prop (fexp : Z → Z) : Option Z → Prop where
   | negligible_None : (∀ n : Z, Raux.Zlt (fexp n) n) → negligible_exp_prop fexp none
