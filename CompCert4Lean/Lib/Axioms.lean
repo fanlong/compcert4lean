@@ -11,16 +11,18 @@ for the later proof-migration phase.
 
 namespace CompCert4Lean.Lib.Axioms
 
+universe uA uB
+
 def functional_extensionality_depStatement : Prop :=
-  ∀ {A : Type} {B : A → Type} (f g : (x : A) → B x),
+  ∀ {A : Type uA} {B : A → Type uB} (f g : (x : A) → B x),
     (∀ x, f x = g x) → f = g
 
 def functional_extensionalityStatement : Prop :=
-  ∀ {A B : Type} (f g : A → B),
+  ∀ {A : Type uA} {B : Type uB} (f g : A → B),
     (∀ x, f x = g x) → f = g
 
 def extensionalityStatement : Prop :=
-  ∀ {A B : Type} (f g : A → B),
+  ∀ {A : Type uA} {B : Type uB} (f g : A → B),
     (∀ x, f x = g x) → f = g
 
 def proof_irrStatement : Prop :=
