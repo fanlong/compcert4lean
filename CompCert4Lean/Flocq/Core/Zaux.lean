@@ -44,7 +44,9 @@ abbrev Zpower_nat := CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.Zpower.Zpo
 def cond_Zopp (b : Bool) (m : Z) : Z :=
   CompCert4Lean.Lib.Floats.Model.Rocq.Coq.Floats.SpecFloat.cond_Zopp b m
 
-def iter_pos {A : Type} (f : A → A) (p : positive) (x : A) : A :=
+universe u
+
+def iter_pos {A : Type u} (f : A → A) (p : positive) (x : A) : A :=
   CompCert4Lean.Lib.Floats.Model.Rocq.Coq.Floats.SpecFloat.iter_pos f p x
 
 def eq_dep_elim (A : Type) (x : A) (P : ∀ a : A, x = a → Type)
@@ -94,7 +96,7 @@ inductive Zcompare_prop (x y : Z) : comparison → Prop where
 
 export Zcompare_prop (Zcompare_Lt_ Zcompare_Eq_ Zcompare_Gt_)
 
-def iter_nat {A : Type} (f : A → A) : Nat → A → A
+def iter_nat {A : Type u} (f : A → A) : Nat → A → A
   | 0, x => x
   | n + 1, x => iter_nat f n (f x)
 
@@ -200,15 +202,15 @@ def abs_cond_ZoppStatement : Prop :=
   ∀ (b : Bool) (m : Z), Zabs (cond_Zopp b m) = Zabs m
 
 def iter_nat_plusStatement : Prop :=
-  ∀ {A : Type} (f : A → A) (p q : Nat) (x : A),
+  ∀ {A : Type u} (f : A → A) (p q : Nat) (x : A),
     iter_nat f (p + q) x = iter_nat f p (iter_nat f q x)
 
 def iter_nat_SStatement : Prop :=
-  ∀ {A : Type} (f : A → A) (p : Nat) (x : A),
+  ∀ {A : Type u} (f : A → A) (p : Nat) (x : A),
     iter_nat f (Nat.succ p) x = f (iter_nat f p x)
 
 def iter_pos_natStatement : Prop :=
-  ∀ {A : Type} (f : A → A) (p : positive) (x : A),
+  ∀ {A : Type u} (f : A → A) (p : positive) (x : A),
     iter_pos f p x = iter_nat f
       (CompCert4Lean.Foundation.Numbers.Rocq.Coq.PArith.BinPos.Pos.to_nat p) x
 
