@@ -446,12 +446,19 @@ def zero_ext {bits : Nat} (n : Z) (x : Word bits) : Word bits :=
   repr bits (CompCert4Lean.Lib.Zbits.Zzero_ext n (unsigned x))
 
 def sign_ext {bits : Nat} (n : Z) (x : Word bits) : Word bits :=
-  let modulus := zTwoP n
-  let residue := zMod (unsigned x) modulus
-  if zLtb residue (zTwoP (zSub n zOne)) then
-    repr bits residue
-  else
-    repr bits (zSub residue modulus)
+  let step : (Z → Z) → (Z → Z) :=
+    fun rec y =>
+      CompCert4Lean.Lib.Zbits.Zshiftin
+        (ZArith.BinInt.Z.odd y)
+        (rec (ZArith.BinInt.Z.div2 y))
+  let base : Z → Z :=
+    fun y =>
+      if ZArith.BinInt.Z.odd y then
+        sumboolSelect (CompCert4Lean.Lib.Coqlib.zlt zZero n) (zOpp zOne) zZero
+      else
+        zZero
+  repr bits
+    (ZArith.BinInt.Z.iter (ZArith.BinInt.Z.pred n) step base (unsigned x))
 
 def testbit {bits : Nat} (x : Word bits) : Z → Bool
   | .Zneg _ => false
