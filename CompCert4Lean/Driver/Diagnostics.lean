@@ -16,28 +16,16 @@ later events.
 
 namespace CompCert4Lean.Driver.Diagnostics
 
-universe uClight uCminor uRTL uLTL uMach
-
-structure DiagnosticSink
-    (ClightProgram : Type uClight)
-    (CminorProgram : Type uCminor)
-    (RTLProgram : Type uRTL)
-    (LTLProgram : Type uLTL)
-    (MachProgram : Type uMach) where
-  clight : ClightProgram → IO Unit
-  cminor : CminorProgram → IO Unit
-  rtl : CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z → RTLProgram → IO Unit
-  ltl : LTLProgram → IO Unit
-  mach : MachProgram → IO Unit
+structure DiagnosticSink where
+  clight : CompCert4Lean.Cfrontend.Clight.program → IO Unit
+  cminor : CompCert4Lean.Backend.Cminor.program → IO Unit
+  rtl : CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z →
+    CompCert4Lean.Backend.RTL.program → IO Unit
+  ltl : CompCert4Lean.Backend.LTL.program → IO Unit
+  mach : CompCert4Lean.Backend.Mach.program → IO Unit
 
 /-- The ordinary no-diagnostics sink; every callback completes with no output. -/
-def DiagnosticSink.silent
-    {ClightProgram : Type uClight}
-    {CminorProgram : Type uCminor}
-    {RTLProgram : Type uRTL}
-    {LTLProgram : Type uLTL}
-    {MachProgram : Type uMach} :
-    DiagnosticSink ClightProgram CminorProgram RTLProgram LTLProgram MachProgram :=
+def DiagnosticSink.silent : DiagnosticSink :=
   { clight := fun _ => pure ()
     cminor := fun _ => pure ()
     rtl := fun _ _ => pure ()
@@ -59,9 +47,6 @@ private abbrev BexactInverseCertificate :=
   CompCert4Lean.Lib.IEEE754_extra.Bexact_inverse_certificate
 private abbrev zOfNat := ZArith.BinInt.Z.of_nat
 
-abbrev CompilerDiagnosticSink :=
-  DiagnosticSink Clight.program Cminor.program RTL.program LTL.program Mach.program
-
 private def rtlTag (n : Nat) : Z := ZArith.BinInt.Z.of_nat n
 
 private def emitResult {A : Type} (emit : A → IO Unit) (value : A) :
@@ -80,7 +65,7 @@ private def bindIORes {A B : Type} (action : IO (Res A))
 def transf_rtl_program
     [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
     [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
-    (sink : CompilerDiagnosticSink)
+    (sink : DiagnosticSink)
     (cfg : CompilerConfig) (inlineCfg : Inlining.InliningConfig)
     (regallocOracle : Allocation.RegallocOracle)
     (enumerationService : Linearize.EnumerationService)
@@ -168,7 +153,7 @@ def transf_cminor_program
     [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
     [binary64_inverse_certificate : BexactInverseCertificate (zOfNat 53) (zOfNat 1024)]
     [binary32_inverse_certificate : BexactInverseCertificate (zOfNat 24) (zOfNat 128)]
-    (sink : CompilerDiagnosticSink)
+    (sink : DiagnosticSink)
     (cfg : CompilerConfig) (selectionOracle : Selection.SelectionOracle)
     (inlineCfg : Inlining.InliningConfig)
     (regallocOracle : Allocation.RegallocOracle)
@@ -194,7 +179,7 @@ def transf_clight_program
     [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
     [binary64_inverse_certificate : BexactInverseCertificate (zOfNat 53) (zOfNat 1024)]
     [binary32_inverse_certificate : BexactInverseCertificate (zOfNat 24) (zOfNat 128)]
-    (sink : CompilerDiagnosticSink)
+    (sink : DiagnosticSink)
     (cfg : CompilerConfig) (selectionOracle : Selection.SelectionOracle)
     (inlineCfg : Inlining.InliningConfig)
     (regallocOracle : Allocation.RegallocOracle)
@@ -217,7 +202,7 @@ def transf_c_program
     [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
     [binary64_inverse_certificate : BexactInverseCertificate (zOfNat 53) (zOfNat 1024)]
     [binary32_inverse_certificate : BexactInverseCertificate (zOfNat 24) (zOfNat 128)]
-    (sink : CompilerDiagnosticSink)
+    (sink : DiagnosticSink)
     (cfg : CompilerConfig) (selectionOracle : Selection.SelectionOracle)
     (inlineCfg : Inlining.InliningConfig)
     (regallocOracle : Allocation.RegallocOracle)
