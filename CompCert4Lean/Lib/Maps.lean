@@ -310,6 +310,8 @@ def beq_correct : Prop :=
         | some y₁, some y₂ => beqA y₁ y₂ = true
         | _, _ => False
 
+def beq_correctStatement : Prop := beq_correct
+
 def beq_correct_boolStatement : Prop :=
   ∀ {A : Type} (beqA : A → A → Bool) (m₁ m₂ : t A),
     beq beqA m₁ m₂ = true ↔
@@ -1178,6 +1180,7 @@ def gsspecStatement : Prop := ∀ {A : Type} (i j : positive) (x : A) (m : t A),
   get i (set j x m) = match peq i j with | .left _ => x | .right _ => get i m
 def gmap : Prop := ∀ {A B : Type} (f : A → B) (i : positive) (m : t A),
   get i (map f m) = f (get i m)
+def gmapStatement : Prop := gmap
 def set2Statement : Prop := ∀ {A : Type} (i : elt) (x y : A) (m : t A),
   set i y (set i x m) = set i y m
 
@@ -1209,6 +1212,8 @@ theorem index_inj (x y : t) (h : index x = index y) : x = y := by
       | Z0 => cases h
       | Zpos _ => cases h
       | Zneg _ => cases h; rfl
+
+def index_injStatement : Prop := ∀ (x y : t), index x = index y → x = y
 
 def eq (x y : t) : CompCert4Lean.Foundation.Logic.Support.Sumbool (x = y) (x ≠ y) := by
   change Z at x y
@@ -1267,6 +1272,8 @@ theorem index_inj (x y : t) (h : index x = index y) : x = y := by
       | N0 => cases h
       | Npos _ => cases h; rfl
 
+def index_injStatement : Prop := ∀ (x y : t), index x = index y → x = y
+
 def eq (x y : t) :
     CompCert4Lean.Foundation.Logic.Support.Sumbool (x = y) (x ≠ y) := by
   cases x with
@@ -1281,6 +1288,10 @@ def eq (x y : t) :
           match peq p q with
           | .left h => exact .left (by cases h; rfl)
           | .right h => exact .right (by intro hn; cases hn; exact h rfl)
+
+def eqStatement :=
+  ∀ (x y : t),
+    CompCert4Lean.Foundation.Logic.Support.Sumbool (x = y) (x ≠ y)
 
 end NIndexed
 
@@ -1873,15 +1884,21 @@ def Equal_Equivalence : Prop := ∀ (A : Type) (eqA : A → A → Prop) (eqAeq :
 
 def Equal_dec_obligation_1 : Prop :=
   ∀ (A : Type) (eqA : A → A → Prop) (eqAeq : Equivalence eqA)
-    (eqAdec : ∀ a₁ a₂, CompCert4Lean.Foundation.Logic.Support.Sumbool (eqA a₁ a₂) (¬ eqA a₁ a₂))
+    (eqAdec : ∀ a₁ a₂,
+      CompCert4Lean.Foundation.Logic.Support.Sumbool (eqA a₁ a₂) (¬ eqA a₁ a₂))
     (m₁ m₂ : PTree.t A),
-    PTree.beq (fun a₁ a₂ => proj_sumbool (eqAdec a₁ a₂)) m₁ m₂ = true →
+    let filtered_var :=
+      PTree.beq (fun a₁ a₂ => proj_sumbool (eqAdec a₁ a₂)) m₁ m₂
+    ∀ Heq_anonymous : true = filtered_var,
       Equal eqA eqAeq m₁ m₂
 def Equal_dec_obligation_2 : Prop :=
   ∀ (A : Type) (eqA : A → A → Prop) (eqAeq : Equivalence eqA)
-    (eqAdec : ∀ a₁ a₂, CompCert4Lean.Foundation.Logic.Support.Sumbool (eqA a₁ a₂) (¬ eqA a₁ a₂))
+    (eqAdec : ∀ a₁ a₂,
+      CompCert4Lean.Foundation.Logic.Support.Sumbool (eqA a₁ a₂) (¬ eqA a₁ a₂))
     (m₁ m₂ : PTree.t A),
-    PTree.beq (fun a₁ a₂ => proj_sumbool (eqAdec a₁ a₂)) m₁ m₂ = false →
+    let filtered_var :=
+      PTree.beq (fun a₁ a₂ => proj_sumbool (eqAdec a₁ a₂)) m₁ m₂
+    false = filtered_var →
       ¬ Equal eqA eqAeq m₁ m₂
 
 def Equal_dec :
