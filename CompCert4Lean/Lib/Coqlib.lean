@@ -239,9 +239,10 @@ def option_eq {A : Type}
       | .left h => .left (by cases h; rfl)
       | .right h => .right (by intro h'; cases h'; exact h rfl)
 
-inductive option_rel {A B : Type} (R : A → B → Prop) : Option A → Option B → Prop where
-  | none : option_rel R none none
-  | some {x : A} {y : B} : R x y → option_rel R (some x) (some y)
+inductive option_rel {A B : Type} : (R : A → B → Prop) → Option A → Option B → Prop where
+  | none (R : A → B → Prop) : option_rel R none none
+  | some {R : A → B → Prop} (x : A) (y : B) :
+      R x y → option_rel R (some x) (some y)
 
 def option_map {A B : Type} (f : A → B) : Option A → Option B
   | none => none
@@ -400,9 +401,9 @@ def list_disjoint_decStatement :=
     CompCert4Lean.Foundation.Logic.Support.Sumbool
       (list_disjoint l1 l2) (¬ list_disjoint l1 l2)
 
-inductive list_norepet {A : Type} : List A → Prop where
-  | nil : list_norepet []
-  | cons {hd : A} {tl : List A} :
+inductive list_norepet : {A : Type} → List A → Prop where
+  | nil (A : Type) : list_norepet (A := A) []
+  | cons {A : Type} (hd : A) {tl : List A} :
       (¬ hd ∈ tl) → list_norepet tl → list_norepet (hd :: tl)
 
 def list_norepet_decStatement :=
@@ -420,20 +421,20 @@ def list_norepet_dec {A : Type}
       CompCert4Lean.Foundation.Logic.Support.Sumbool
         (list_norepet l) (¬ list_norepet l) :=
   match l with
-  | [] => .left list_norepet.nil
+  | [] => .left (list_norepet.nil A)
   | x :: xs =>
       match list_mem_dec eqA x xs with
       | .left hmem => .right (by
           intro hnr
           cases hnr with
-          | cons hnot _ => exact hnot hmem)
+          | cons _ hnot _ => exact hnot hmem)
       | .right hmem =>
           match list_norepet_dec eqA xs with
-          | .left htail => .left (.cons hmem htail)
+          | .left htail => .left (.cons x hmem htail)
           | .right htail => .right (by
               intro hnr
               cases hnr with
-              | cons _ h => exact htail h)
+              | cons _ _ h => exact htail h)
 
 def list_norepet_append_commutStatement : Prop :=
   ∀ (A : Type) (a b : List A),
@@ -469,9 +470,10 @@ def is_tail_transStatement : Prop :=
   ∀ (A : Type) (l1 l2 : List A),
     is_tail l1 l2 → ∀ l3 : List A, is_tail l2 l3 → is_tail l1 l3
 
-inductive list_forall2 {A B : Type} (P : A → B → Prop) : List A → List B → Prop where
-  | nil : list_forall2 P [] []
-  | cons {a1 : A} {al : List A} {b1 : B} {bl : List B} :
+inductive list_forall2 {A B : Type} :
+    (P : A → B → Prop) → List A → List B → Prop where
+  | nil (P : A → B → Prop) : list_forall2 P [] []
+  | cons {P : A → B → Prop} (a1 : A) {al : List A} (b1 : B) {bl : List B} :
       P a1 b1 → list_forall2 P al bl → list_forall2 P (a1 :: al) (b1 :: bl)
 
 open list_forall2 renaming nil → list_forall2_nil
@@ -543,11 +545,13 @@ def pred_dec_falseStatement : Prop :=
 
 /-! ## Lexicographic order -/
 
-inductive lex_ord {A B : Type} (ordA : A → A → Prop) (ordB : B → B → Prop) :
-    A × B → A × B → Prop where
-  | left {a1 a2 : A} {b1 b2 : B} :
+inductive lex_ord {A B : Type} :
+    (ordA : A → A → Prop) → (ordB : B → B → Prop) → A × B → A × B → Prop where
+  | left (ordA : A → A → Prop) (ordB : B → B → Prop)
+      (a1 : A) (b1 : B) (a2 : A) (b2 : B) :
       ordA a1 a2 → lex_ord ordA ordB (a1, b1) (a2, b2)
-  | right {a : A} {b1 b2 : B} :
+  | right (ordA : A → A → Prop) (ordB : B → B → Prop)
+      (a : A) (b1 : B) (b2 : B) :
       ordB b1 b2 → lex_ord ordA ordB (a, b1) (a, b2)
 
 open lex_ord renaming left → lex_ord_left, right → lex_ord_right
