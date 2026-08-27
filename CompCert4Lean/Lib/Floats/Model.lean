@@ -144,7 +144,9 @@ def valid_binary (prec emax : Z) (x : spec_float) : Bool :=
 def cond_Zopp (b : Bool) (m : Z) : Z :=
   if b then zopp m else m
 
-def iter_pos {A : Type} (f : A → A) : positive → A → A
+universe u
+
+def iter_pos {A : Type u} (f : A → A) : positive → A → A
   | .xI n', x => iter_pos f n' (iter_pos f n' (f x))
   | .xO n', x => iter_pos f n' (iter_pos f n' x)
   | .xH, x => f x
