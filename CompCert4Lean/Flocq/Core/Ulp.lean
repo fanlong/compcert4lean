@@ -248,10 +248,6 @@ def ulp_le_idStatement : Prop :=
   ∀ (beta : radix) (fexp : Z → Z), ∀ x,
     Rlt R0 x → generic_format beta fexp x → Rle (ulp beta fexp x) x
 
-def fexp_negligible_exp_eq_auxStatement : Prop :=
-  ∀ (beta : radix) (fexp : Z → Z), Valid_exp fexp →
-    ∀ n m, Zle n (fexp n) → Zle m (fexp m) → fexp n = fexp m
-
 def generic_format_succ_aux1Statement : Prop :=
   ∀ (beta : radix) (fexp : Z → Z), Valid_exp fexp → ∀ x,
     Rlt R0 x → generic_format beta fexp x →
