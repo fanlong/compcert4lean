@@ -288,8 +288,8 @@ private theorem lexNat_wf : WellFounded (lex_ord Nat.lt Nat.lt) := by
           constructor
           intro q hq
           cases hq with
-          | left hlt => exact ihN _ hlt _
-          | right hlt => exact ihM _ hlt
+          | left _ _ _ _ hlt => exact ihN _ hlt _
+          | right _ _ _ hlt => exact ihM _ hlt
 
 def lt_state_wfStatement : Prop :=
   WellFounded lt_state
@@ -313,21 +313,30 @@ theorem transition_decreases : transition_decreasesStatement := by
       | nil =>
           simp [transition] at hstep
           subst s'
-          apply lex_ord.right
+          apply lex_ord.right Nat.lt Nat.lt (graphCardinal gr)
+            (size_worklist rest) (size_worklist ((x, []) :: rest))
           simp [size_worklist]
       | cons y succsX =>
           cases hget : PTree.get y gr with
           | none =>
               simp [transition, hget] at hstep
               subst s'
-              apply lex_ord.right
+              apply lex_ord.right Nat.lt Nat.lt (graphCardinal gr)
+                (size_worklist ((x, succsX) :: rest))
+                (size_worklist ((x, y :: succsX) :: rest))
               change succsX.length + 1 + size_worklist rest <
                 (succsX.length + 1) + 1 + size_worklist rest
               omega
           | some succsY =>
               simp [transition, hget] at hstep
               subst s'
-              exact lex_ord.left (graphCardinal_remove y gr succsY hget)
+              exact lex_ord.left Nat.lt Nat.lt
+                (graphCardinal (PTree.remove y gr))
+                (size_worklist
+                  ((y, Sort.sort succsY) :: (x, succsX) :: rest))
+                (graphCardinal gr)
+                (size_worklist ((x, y :: succsX) :: rest))
+                (graphCardinal_remove y gr succsY hget)
 
 def postorder (g : graph) (root : node) : PTree.t positive :=
   CompCert4Lean.Lib.Iteration.WfIter.iterate
