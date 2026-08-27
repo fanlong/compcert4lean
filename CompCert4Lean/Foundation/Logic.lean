@@ -698,11 +698,22 @@ end Rocq.Coq.Logic.Eqdep_dec
 
 namespace Rocq.Coq.Logic.FunctionalExtensionality
 
-theorem functional_extensionality {A B : Type} (f g : A → B)
+universe uA uB
+
+theorem functional_extensionality {A : Type uA} {B : Type uB} (f g : A → B)
     (h : ∀ x, f x = g x) : f = g := funext h
 
-theorem functional_extensionality_dep {A : Type} {B : A → Type}
+theorem functional_extensionality_dep {A : Type uA} {B : A → Type uB}
     (f g : (x : A) → B x) (h : ∀ x, f x = g x) : f = g := funext h
+
+/- Universe probes: the domain is itself `Type`, while the codomain remains
+   independently at `Type 0`. -/
+example (f g : Type → Nat) (h : ∀ x, f x = g x) : f = g :=
+  functional_extensionality (A := Type) f g h
+
+example (B : Type → Type) (f g : (x : Type) → B x)
+    (h : ∀ x, f x = g x) : f = g :=
+  functional_extensionality_dep (A := Type) (B := B) f g h
 
 end Rocq.Coq.Logic.FunctionalExtensionality
 
