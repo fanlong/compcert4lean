@@ -106,7 +106,7 @@ def ulp_FIXStatement (ctx : ExactRealContext)
         ctx magnitude beta (FIX_exp emin) x =
       CompCert4Lean.Flocq.Core.Generic_fmt.Exact.bpow ctx beta emin
 
-def exists_NE_FIX (beta : radix) (emin : Z) : Exists_NE beta (FIX_exp emin) :=
+instance exists_NE_FIX (beta : radix) (emin : Z) : Exists_NE beta (FIX_exp emin) :=
   ⟨Or.inr (fun e => by
     constructor
     · intro h
