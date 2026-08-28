@@ -208,6 +208,20 @@ def sepconj (P Q : massert) : massert where
     | inl h => exact P.m_valid m b ofs hpred.1 h
     | inr h => exact Q.m_valid m b ofs hpred.2.1 h
 
+/-! Rocq `Program` obligations retained as exact proposition surfaces. -/
+
+def sepconj_obligation_1Statement : Prop :=
+  ∀ (P Q : massert) (m m' : mem),
+    (sepconj P Q).m_pred m →
+    Mem.unchanged_on (sepconj P Q).m_footprint m m' →
+    (sepconj P Q).m_pred m'
+
+def sepconj_obligation_2Statement : Prop :=
+  ∀ (P Q : massert) (m : mem) (b : block) (ofs : Z),
+    (sepconj P Q).m_pred m →
+    (sepconj P Q).m_footprint b ofs →
+    Mem.valid_block m b
+
 def sep_impStatement : Prop :=
   ∀ P P' Q Q' m,
     (sepconj P Q).m_pred m →
@@ -321,6 +335,9 @@ def pure (P : Prop) : massert where
   m_invar := by intro _ _ h _; exact h
   m_valid := by intro _ _ _ _ h; exact False.elim h
 
+def pure_obligation_2Statement : Prop :=
+  ∀ (m : mem) (b : block), False → Mem.valid_block m b
+
 def sep_pureStatement : Prop :=
   ∀ P Q m, (sepconj (pure P) Q).m_pred m ↔ P ∧ Q.m_pred m
 
@@ -340,6 +357,18 @@ def range (b : block) (lo hi : Z) : massert where
     intro m b' ofs hpred hfoot
     rw [hfoot.1]
     exact validBlockOfPerm (hpred.2.2 ofs Cur Freeable ⟨hfoot.2.1, hfoot.2.2⟩)
+
+def range_obligation_1Statement : Prop :=
+  ∀ (b : block) (lo hi : Z) (m m' : mem),
+    (range b lo hi).m_pred m →
+    Mem.unchanged_on (range b lo hi).m_footprint m m' →
+    (range b lo hi).m_pred m'
+
+def range_obligation_2Statement : Prop :=
+  ∀ (b : block) (lo hi : Z) (m : mem) (b' : block) (ofs : Z),
+    (range b lo hi).m_pred m →
+    (range b lo hi).m_footprint b' ofs →
+    Mem.valid_block m b'
 
 def range_splitStatement : Prop :=
   ∀ b lo hi P mid m,
@@ -449,6 +478,20 @@ def contains (chunk : memory_chunk) (b : block) (ofs : Z) (spec : val → Prop) 
     have hvalid := hpred.2.2.1
     exact validBlockOfPerm (hvalid.1 ofs' ⟨hfoot.2.1, hfoot.2.2⟩)
 
+def contains_obligation_1Statement : Prop :=
+  ∀ (chunk : memory_chunk) (b : block) (ofs : Z) (spec : val → Prop)
+    (m m' : mem),
+    (contains chunk b ofs spec).m_pred m →
+    Mem.unchanged_on (contains chunk b ofs spec).m_footprint m m' →
+    (contains chunk b ofs spec).m_pred m'
+
+def contains_obligation_2Statement : Prop :=
+  ∀ (chunk : memory_chunk) (b : block) (ofs : Z) (spec : val → Prop)
+    (m : mem) (b' : block) (ofs' : Z),
+    (contains chunk b ofs spec).m_pred m →
+    (contains chunk b ofs spec).m_footprint b' ofs' →
+    Mem.valid_block m b'
+
 def contains_no_overflowStatement : Prop :=
   ∀ spec m chunk b ofs,
     (contains chunk b ofs spec).m_pred m → zLe z0 ofs ∧ zLe ofs Ptrofs.max_unsigned
@@ -507,6 +550,18 @@ def mconj (P Q : massert) : massert where
     cases hfoot with
     | inl h => exact P.m_valid m b ofs hpred.1 h
     | inr h => exact Q.m_valid m b ofs hpred.2 h
+
+def mconj_obligation_1Statement : Prop :=
+  ∀ (P Q : massert) (m m' : mem),
+    (mconj P Q).m_pred m →
+    Mem.unchanged_on (mconj P Q).m_footprint m m' →
+    (mconj P Q).m_pred m'
+
+def mconj_obligation_2Statement : Prop :=
+  ∀ (P Q : massert) (m : mem) (b : block) (ofs : Z),
+    (mconj P Q).m_pred m →
+    (mconj P Q).m_footprint b ofs →
+    Mem.valid_block m b
 
 def mconj_introStatement : Prop :=
   ∀ P Q R m,
@@ -587,6 +642,18 @@ def minjection (j : meminj) (m0 : mem) : massert where
     rcases hfoot with ⟨b0, delta, hmap, _⟩
     exact hinj.mi_mappedblocks b0 b delta hmap
 
+def minjection_obligation_1Statement : Prop :=
+  ∀ (j : meminj) (m0 m m' : mem),
+    (minjection j m0).m_pred m →
+    Mem.unchanged_on (minjection j m0).m_footprint m m' →
+    (minjection j m0).m_pred m'
+
+def minjection_obligation_2Statement : Prop :=
+  ∀ (j : meminj) (m0 m : mem) (b : block) (ofs : Z),
+    (minjection j m0).m_pred m →
+    (minjection j m0).m_footprint b ofs →
+    Mem.valid_block m b
+
 def loadv_parallel_ruleStatement : Prop :=
   ∀ j m1 m2 chunk addr1 v1 addr2,
     (minjection j m1).m_pred m2 →
@@ -632,13 +699,15 @@ def free_parallel_ruleStatement : Prop :=
 
 inductive globalenv_preserved {F V : Type} (ge : Genv.t F V) (j : meminj)
     (bound : block) : Prop where
-  | mk :
+  | globalenv_preserved_intro :
       (∀ b, Plt b bound → j b = some (b, z0)) →
       (∀ b1 b2 delta, j b1 = some (b2, delta) → Plt b2 bound → b1 = b2) →
       (∀ id b, Genv.find_symbol ge id = some b → Plt b bound) →
       (∀ b fd, Genv.find_funct_ptr ge b = some fd → Plt b bound) →
       (∀ b gv, Genv.find_var_info ge b = some gv → Plt b bound) →
       globalenv_preserved ge j bound
+
+export globalenv_preserved (globalenv_preserved_intro)
 
 def globalenv_inject {F V : Type} (ge : Genv.t F V) (j : meminj) : massert where
   m_pred := fun m => ∃ bound, Ple bound m.nextblock ∧ globalenv_preserved ge j bound
@@ -648,6 +717,18 @@ def globalenv_inject {F V : Type} (ge : Genv.t F V) (j : meminj) : massert where
     rcases hpred with ⟨bound, hbound, hge⟩
     exact ⟨bound, Nat.le_trans hbound hunch.unchanged_on_nextblock, hge⟩
   m_valid := by intro _ _ _ _ h; exact False.elim h
+
+def globalenv_inject_obligation_1Statement : Prop :=
+  ∀ (F V : Type) (ge : Genv.t F V) (j : meminj) (m m' : mem),
+    (globalenv_inject ge j).m_pred m →
+    Mem.unchanged_on (globalenv_inject ge j).m_footprint m m' →
+    (globalenv_inject ge j).m_pred m'
+
+def globalenv_inject_obligation_2Statement : Prop :=
+  ∀ (F V : Type) (ge : Genv.t F V) (j : meminj) (m : mem) (b : block),
+    (globalenv_inject ge j).m_pred m →
+    False →
+    Mem.valid_block m b
 
 def globalenv_inject_preserves_globalsStatement : Prop :=
   ∀ (F V : Type) (ge : Genv.t F V) j m,
