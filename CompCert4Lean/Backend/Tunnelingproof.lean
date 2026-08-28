@@ -336,6 +336,10 @@ inductive match_stackframes : stackframe → stackframe → Prop where
         (Stackframe f sp ls0 bb)
         (Stackframe (tunnel_function f) sp tls0 (tunneled_block f bb))
 
+/-! Authenticated source constructor endpoint.  Keep the relation's existing
+constructor while exposing its reconciled flat identity. -/
+abbrev match_stackframes_intro := @match_stackframes.intro
+
 inductive match_states : state → state → Prop where
   | intro (s : List stackframe) (f : function) (sp : val) (pc : node)
       (ls : locset) (m : mem) (ts : List stackframe) (tls : locset)
@@ -385,6 +389,15 @@ inductive match_states : state → state → Prop where
       locmap_lessdef ls tls →
       Mem.extends m tm →
       match_states (Returnstate s ls m) (Returnstate ts tls tm)
+
+/-! Authenticated source constructor endpoints; these aliases preserve the
+exact relation propositions and constructor obligations above. -/
+abbrev match_states_intro := @match_states.intro
+abbrev match_states_block := @match_states.block
+abbrev match_states_interm_branch := @match_states.interm_branch
+abbrev match_states_interm_cond := @match_states.interm_cond
+abbrev match_states_call := @match_states.call
+abbrev match_states_return := @match_states.return
 
 def measure : state → Nat
   | State _ f _ pc _ _ => count_gotos f pc * 2
