@@ -192,7 +192,9 @@ def match_prog (cfg : CompilerConfig) (p : Linear.program) (tp : Mach.program) :
 
 /-! Memory assertions used by the frame relation. -/
 
-def contains_locations (j : meminj) (sp : block) (pos bound : Z)
+def contains_locations
+    (return_address_offset : Mach.function → Mach.code → ptrofs → Prop)
+    (tprog : Mach.program) (j : meminj) (sp : block) (pos bound : Z)
     (sl : slot) (ls : locset) : massert :=
   { m_pred := fun m =>
       zDivide z8 pos ∧ zLe z0 pos ∧
@@ -261,16 +263,25 @@ generated proof duties available to the later proof phase. -/
 def contains_locations_obligation_1Statement : Prop :=
   ∀ (return_address_offset : Mach.function → Mach.code → ptrofs → Prop)
     (tprog : Mach.program) j sp pos bound sl ls m m',
-    (contains_locations j sp pos bound sl ls).m_pred m →
+    (contains_locations return_address_offset tprog j sp pos bound sl ls).m_pred m →
     Mem.unchanged_on
       (fun b ofs =>
         b = sp ∧ zLe pos ofs ∧ zLt ofs (zAdd pos (zMul z4 bound))) m m' →
-    (contains_locations j sp pos bound sl ls).m_pred m'
+    (contains_locations return_address_offset tprog j sp pos bound sl ls).m_pred m'
 
 def contains_locations_obligation_2Statement : Prop :=
-  ∀ j sp pos bound sl ls m b ofs,
-    (contains_locations j sp pos bound sl ls).m_pred m →
-    (contains_locations j sp pos bound sl ls).m_footprint b ofs →
+  ∀ (j : meminj) (sp : block) (pos bound : Z) (sl : slot) (ls : locset)
+    (m : mem) (b : block) (ofs : Z),
+    (zDivide z8 pos ∧ zLe z0 pos ∧
+      zLe (zAdd pos (zMul z4 bound)) Ptrofs.modulus ∧
+      Mem.range_perm m sp pos (zAdd pos (zMul z4 bound)) Cur Freeable ∧
+      ∀ ofs ty, zLe z0 ofs →
+        zLe (zAdd ofs (CompCert4Lean.Backend.Locations.typesize ty)) bound →
+        zDivide (CompCert4Lean.Backend.Locations.typealign ty) ofs →
+        ∃ v,
+          Mem.load (chunk_of_type ty) m sp (zAdd pos (zMul z4 ofs)) = some v ∧
+          Val.inject j (ls (S sl ofs ty)) v) →
+    (b = sp ∧ zLe pos ofs ∧ zLt ofs (zAdd pos (zMul z4 bound))) →
     Mem.valid_block m b
 
 def contains_callee_saves (j : meminj) (sp : block) (pos : Z)
@@ -289,22 +300,38 @@ def contains_callee_saves (j : meminj) (sp : block) (pos : Z)
 /-! Frame assertions.  The configuration and source function are explicit in
 Lean because the target ABI is an immutable parameter. -/
 
-def frame_contents_1 (cfg : CompilerConfig) (f : Linear.function)
+def frame_contents_1
+    (return_address_offset : Mach.function → Mach.code → ptrofs → Prop)
+    (tprog : Mach.program) (cfg : CompilerConfig) (f : Linear.function)
+    (_bound_local_pos : bound_local_pos cfg (function_bounds cfg f))
+    (_bound_outgoing_pos : bound_outgoing_pos cfg (function_bounds cfg f))
+    (_bound_stack_data_pos : bound_stack_data_pos cfg (function_bounds cfg f))
+    (_used_callee_save_norepet : used_callee_save_norepet cfg (function_bounds cfg f))
+    (_used_callee_save_prop : used_callee_save_prop cfg (function_bounds cfg f))
     (j : meminj) (sp : block) (ls ls0 : locset) (parent retaddr : val) : massert :=
   let b := function_bounds cfg f
   let fe := make_env cfg b
-  sepconj (contains_locations j sp fe.fe_ofs_local b.bound_local Local ls)
-    (sepconj (contains_locations j sp (fe_ofs_arg cfg) b.bound_outgoing Outgoing ls)
+  sepconj (contains_locations return_address_offset tprog j sp fe.fe_ofs_local b.bound_local Local ls)
+    (sepconj (contains_locations return_address_offset tprog j sp (fe_ofs_arg cfg) b.bound_outgoing Outgoing ls)
       (sepconj (hasvalue Mptr sp fe.fe_ofs_link parent)
         (sepconj (hasvalue Mptr sp fe.fe_ofs_retaddr retaddr)
           (contains_callee_saves j sp fe.fe_ofs_callee_save
             b.used_callee_save ls0))))
 
-def frame_contents (cfg : CompilerConfig) (f : Linear.function)
+def frame_contents
+    (return_address_offset : Mach.function → Mach.code → ptrofs → Prop)
+    (tprog : Mach.program) (cfg : CompilerConfig) (f : Linear.function)
+    (_bound_local_pos : bound_local_pos cfg (function_bounds cfg f))
+    (_bound_outgoing_pos : bound_outgoing_pos cfg (function_bounds cfg f))
+    (_bound_stack_data_pos : bound_stack_data_pos cfg (function_bounds cfg f))
+    (_used_callee_save_norepet : used_callee_save_norepet cfg (function_bounds cfg f))
+    (_used_callee_save_prop : used_callee_save_prop cfg (function_bounds cfg f))
     (j : meminj) (sp : block) (ls ls0 : locset) (parent retaddr : val) : massert :=
   let b := function_bounds cfg f
   let fe := make_env cfg b
-  mconj (frame_contents_1 cfg f j sp ls ls0 parent retaddr)
+  mconj (frame_contents_1 return_address_offset tprog cfg f
+    _bound_local_pos _bound_outgoing_pos _bound_stack_data_pos
+    _used_callee_save_norepet _used_callee_save_prop j sp ls ls0 parent retaddr)
     (sepconj (range sp .Z0 fe.fe_stack_data)
       (range sp (ZArith.BinInt.Z.add fe.fe_stack_data b.bound_stack_data) fe.fe_size))
 
@@ -325,6 +352,11 @@ carrier (source `backend/Stackingproof.v`, lines 563--570; projection span
 carrier implementations. -/
 
 structure agree_locs (cfg : CompilerConfig) (f : Linear.function)
+    (_bound_local_pos : bound_local_pos cfg (function_bounds cfg f))
+    (_bound_outgoing_pos : bound_outgoing_pos cfg (function_bounds cfg f))
+    (_bound_stack_data_pos : bound_stack_data_pos cfg (function_bounds cfg f))
+    (_used_callee_save_norepet : used_callee_save_norepet cfg (function_bounds cfg f))
+    (_used_callee_save_prop : used_callee_save_prop cfg (function_bounds cfg f))
     (ls ls0 : locset) : Prop where
   agree_unused_reg :
     ∀ r, ¬ mreg_within_bounds cfg (function_bounds cfg f) r →
@@ -338,16 +370,24 @@ export agree_locs (agree_unused_reg agree_incoming)
 
 /-! Stable top-level identity for Rocq's record constructor. -/
 
-abbrev mk_agree_locs (f : Linear.function) (ls ls0 : locset)
+abbrev mk_agree_locs (f : Linear.function)
     {cfg : CompilerConfig}
+    (_bound_local_pos : bound_local_pos cfg (function_bounds cfg f))
+    (_bound_outgoing_pos : bound_outgoing_pos cfg (function_bounds cfg f))
+    (_bound_stack_data_pos : bound_stack_data_pos cfg (function_bounds cfg f))
+    (_used_callee_save_norepet : used_callee_save_norepet cfg (function_bounds cfg f))
+    (_used_callee_save_prop : used_callee_save_prop cfg (function_bounds cfg f))
+    (ls ls0 : locset)
     (agree_unused_reg : ∀ r,
       ¬ mreg_within_bounds cfg (function_bounds cfg f) r →
       ls (R r) = ls0 (R r))
     (agree_incoming : ∀ ofs ty,
       S Incoming ofs ty ∈ regs_of_rpairs (loc_parameters cfg f.fn_sig) →
       ls (S Incoming ofs ty) = ls0 (S Outgoing ofs ty)) :
-    agree_locs cfg f ls ls0 :=
-  @agree_locs.mk cfg f ls ls0 agree_unused_reg agree_incoming
+    agree_locs cfg f _bound_local_pos _bound_outgoing_pos _bound_stack_data_pos
+      _used_callee_save_norepet _used_callee_save_prop ls ls0 :=
+  @agree_locs.mk cfg f _bound_local_pos _bound_outgoing_pos _bound_stack_data_pos
+    _used_callee_save_norepet _used_callee_save_prop ls ls0 agree_unused_reg agree_incoming
 
 /-! `agree_unused` is declared in the nested `RESTORE_CALLEE_SAVE` section
 while still generalized over the outer `f`/`b := function_bounds f`; keep
@@ -355,8 +395,13 @@ that source section parameter explicit and do not expose a free `bounds`
 argument.  The restore descriptors below retain this same carrier identity;
 the separately deferred restore proofs remain statement surfaces only. -/
 
-def agree_unused (cfg : CompilerConfig) (f : Linear.function) (j : meminj)
-    (ls0 : locset) (rs : regset) : Prop :=
+def agree_unused (cfg : CompilerConfig) (f : Linear.function)
+    (_bound_local_pos : bound_local_pos cfg (function_bounds cfg f))
+    (_bound_outgoing_pos : bound_outgoing_pos cfg (function_bounds cfg f))
+    (_bound_stack_data_pos : bound_stack_data_pos cfg (function_bounds cfg f))
+    (_used_callee_save_norepet : used_callee_save_norepet cfg (function_bounds cfg f))
+    (_used_callee_save_prop : used_callee_save_prop cfg (function_bounds cfg f))
+    (j : meminj) (ls0 : locset) (rs : regset) : Prop :=
   ∀ r, ¬ mreg_within_bounds cfg (function_bounds cfg f) r →
     Val.inject j (ls0 (R r)) (rs r)
 
@@ -365,23 +410,51 @@ def no_callee_saves (cfg : CompilerConfig) (l : List mreg) : Prop :=
 
 /-! Call-stack and state relations. -/
 
-def stack_contents (cfg : CompilerConfig) (j : meminj) (cs : List Linear.stackframe)
-    (cs' : List Mach.stackframe) : massert :=
+def stack_contents
+    (return_address_offset : Mach.function → Mach.code → ptrofs → Prop)
+    (tprog : Mach.program) (cfg : CompilerConfig) (j : meminj) (cs : List Linear.stackframe)
+    (cs' : List Mach.stackframe)
+    (_bound_local_pos : ∀ f : Linear.function,
+      bound_local_pos cfg (function_bounds cfg f))
+    (_bound_outgoing_pos : ∀ f : Linear.function,
+      bound_outgoing_pos cfg (function_bounds cfg f))
+    (_bound_stack_data_pos : ∀ f : Linear.function,
+      bound_stack_data_pos cfg (function_bounds cfg f))
+    (_used_callee_save_norepet : ∀ f : Linear.function,
+      used_callee_save_norepet cfg (function_bounds cfg f))
+    (_used_callee_save_prop : ∀ f : Linear.function,
+      used_callee_save_prop cfg (function_bounds cfg f)) : massert :=
   match cs, cs' with
   | [], [] => pure True
   | Linear.Stackframe f _ ls _ :: cs,
       Mach.Stackframe _ (Vptr sp' _) _ _ :: cs' =>
       sepconj
-        (frame_contents cfg f j sp' ls (Linear.parent_locset cs)
+        (frame_contents return_address_offset tprog cfg f
+          (_bound_local_pos f) (_bound_outgoing_pos f) (_bound_stack_data_pos f)
+          (_used_callee_save_norepet f) (_used_callee_save_prop f)
+          j sp' ls (Linear.parent_locset cs)
           (Mach.parent_sp cs') (Mach.parent_ra cs'))
-        (stack_contents cfg j cs cs')
+        (stack_contents return_address_offset tprog cfg j cs cs'
+          _bound_local_pos _bound_outgoing_pos _bound_stack_data_pos
+          _used_callee_save_norepet _used_callee_save_prop)
   | _, _ => pure False
 
-inductive match_stacks (cfg : CompilerConfig) (tprog : Mach.program) (j : meminj) :
+inductive match_stacks (cfg : CompilerConfig) (tprog : Mach.program) (j : meminj)
+    (_bound_local_pos : ∀ f : Linear.function,
+      bound_local_pos cfg (function_bounds cfg f))
+    (_bound_outgoing_pos : ∀ f : Linear.function,
+      bound_outgoing_pos cfg (function_bounds cfg f))
+    (_bound_stack_data_pos : ∀ f : Linear.function,
+      bound_stack_data_pos cfg (function_bounds cfg f))
+    (_used_callee_save_norepet : ∀ f : Linear.function,
+      used_callee_save_norepet cfg (function_bounds cfg f))
+    (_used_callee_save_prop : ∀ f : Linear.function,
+      used_callee_save_prop cfg (function_bounds cfg f)) :
     List Linear.stackframe → List Mach.stackframe → signature → Prop where
   | match_stacks_empty (sg : signature)
       (htail : tailcall_possible cfg sg) :
-      match_stacks cfg tprog j [] [] sg
+      match_stacks cfg tprog j _bound_local_pos _bound_outgoing_pos
+        _bound_stack_data_pos _used_callee_save_norepet _used_callee_save_prop [] [] sg
   | match_stacks_cons (f : Linear.function) (sp : block) (ls : locset)
       (c : Linear.code) (cs : List Linear.stackframe) (fb sp' : block)
       (ra : val) (c' : Mach.code) (cs' : List Mach.stackframe)
@@ -392,25 +465,52 @@ inductive match_stacks (cfg : CompilerConfig) (tprog : Mach.program) (j : meminj
       (hcode : transl_code cfg (make_env cfg (function_bounds cfg f)) c = c')
       (hinj : j sp = some (sp', (make_env cfg (function_bounds cfg f)).fe_stack_data))
       (hra : Val.has_type ra Tptr)
-      (hlocs : agree_locs cfg f ls
-        (Linear.parent_locset cs))
+      (hlocs : agree_locs cfg f (_bound_local_pos f) (_bound_outgoing_pos f)
+        (_bound_stack_data_pos f) (_used_callee_save_norepet f) (_used_callee_save_prop f)
+        ls (Linear.parent_locset cs))
       (hargs : ∀ ofs ty,
         S Outgoing ofs ty ∈ regs_of_rpairs (loc_arguments cfg sg) →
           slot_within_bounds (function_bounds cfg f) Outgoing ofs ty)
-      (hstacks : match_stacks cfg tprog j cs cs' f.fn_sig) :
-      match_stacks cfg tprog j
+      (hstacks : match_stacks cfg tprog j _bound_local_pos _bound_outgoing_pos
+        _bound_stack_data_pos _used_callee_save_norepet _used_callee_save_prop cs cs' f.fn_sig) :
+      match_stacks cfg tprog j _bound_local_pos _bound_outgoing_pos
+        _bound_stack_data_pos _used_callee_save_norepet _used_callee_save_prop
         (Linear.Stackframe f (Vptr sp Ptrofs.zero) ls c :: cs)
         (Mach.Stackframe fb (Vptr sp' Ptrofs.zero) ra c' :: cs') sg
 
 /-! Stable top-level identities for the two source constructors. -/
 
 abbrev match_stacks_empty {cfg : CompilerConfig} {tprog : Mach.program}
-    {j : meminj} (sg : signature) (htail : tailcall_possible cfg sg) :
-    match_stacks cfg tprog j [] [] sg :=
-  @match_stacks.match_stacks_empty cfg tprog j sg htail
+    {j : meminj}
+    (bound_local_pos : ∀ f : Linear.function,
+      bound_local_pos cfg (function_bounds cfg f))
+    (bound_outgoing_pos : ∀ f : Linear.function,
+      bound_outgoing_pos cfg (function_bounds cfg f))
+    (bound_stack_data_pos : ∀ f : Linear.function,
+      bound_stack_data_pos cfg (function_bounds cfg f))
+    (used_callee_save_norepet : ∀ f : Linear.function,
+      used_callee_save_norepet cfg (function_bounds cfg f))
+    (used_callee_save_prop : ∀ f : Linear.function,
+      used_callee_save_prop cfg (function_bounds cfg f))
+    (sg : signature) (htail : tailcall_possible cfg sg) :
+    match_stacks cfg tprog j bound_local_pos bound_outgoing_pos
+      bound_stack_data_pos used_callee_save_norepet used_callee_save_prop [] [] sg :=
+  @match_stacks.match_stacks_empty cfg tprog j bound_local_pos bound_outgoing_pos
+    bound_stack_data_pos used_callee_save_norepet used_callee_save_prop sg htail
 
 abbrev match_stacks_cons {cfg : CompilerConfig} {tprog : Mach.program}
-    {j : meminj} (f : Linear.function) (sp : block) (ls : locset)
+    {j : meminj}
+    (bound_local_pos : ∀ f : Linear.function,
+      bound_local_pos cfg (function_bounds cfg f))
+    (bound_outgoing_pos : ∀ f : Linear.function,
+      bound_outgoing_pos cfg (function_bounds cfg f))
+    (bound_stack_data_pos : ∀ f : Linear.function,
+      bound_stack_data_pos cfg (function_bounds cfg f))
+    (used_callee_save_norepet : ∀ f : Linear.function,
+      used_callee_save_norepet cfg (function_bounds cfg f))
+    (used_callee_save_prop : ∀ f : Linear.function,
+      used_callee_save_prop cfg (function_bounds cfg f))
+    (f : Linear.function) (sp : block) (ls : locset)
     (c : Linear.code) (cs : List Linear.stackframe) (fb sp' : block)
     (ra : val) (c' : Mach.code) (cs' : List Mach.stackframe)
     (sg : signature) (trf : Mach.function)
@@ -420,63 +520,97 @@ abbrev match_stacks_cons {cfg : CompilerConfig} {tprog : Mach.program}
     (hcode : transl_code cfg (make_env cfg (function_bounds cfg f)) c = c')
     (hinj : j sp = some (sp', (make_env cfg (function_bounds cfg f)).fe_stack_data))
     (hra : Val.has_type ra Tptr)
-    (hlocs : agree_locs cfg f ls (Linear.parent_locset cs))
+    (hlocs : agree_locs cfg f (bound_local_pos f) (bound_outgoing_pos f)
+      (bound_stack_data_pos f) (used_callee_save_norepet f) (used_callee_save_prop f)
+      ls (Linear.parent_locset cs))
     (hargs : ∀ ofs ty,
       S Outgoing ofs ty ∈ regs_of_rpairs (loc_arguments cfg sg) →
         slot_within_bounds (function_bounds cfg f) Outgoing ofs ty)
-    (hstacks : match_stacks cfg tprog j cs cs' f.fn_sig) :
-    match_stacks cfg tprog j
+    (hstacks : match_stacks cfg tprog j bound_local_pos bound_outgoing_pos
+      bound_stack_data_pos used_callee_save_norepet used_callee_save_prop cs cs' f.fn_sig) :
+    match_stacks cfg tprog j bound_local_pos bound_outgoing_pos
+      bound_stack_data_pos used_callee_save_norepet used_callee_save_prop
       (Linear.Stackframe f (Vptr sp Ptrofs.zero) ls c :: cs)
       (Mach.Stackframe fb (Vptr sp' Ptrofs.zero) ra c' :: cs') sg :=
-  @match_stacks.match_stacks_cons cfg tprog j f sp ls c cs fb sp' ra c' cs' sg trf
+  @match_stacks.match_stacks_cons cfg tprog j bound_local_pos bound_outgoing_pos
+    bound_stack_data_pos used_callee_save_norepet used_callee_save_prop
+    f sp ls c cs fb sp' ra c' cs' sg trf
     htail hfind htransf hcode hinj hra hlocs hargs hstacks
 
 inductive match_states (cfg : CompilerConfig)
-    (prog : Linear.program) (tprog : Mach.program) :
+    (return_address_offset : Mach.function → Mach.code → ptrofs → Prop)
+    (prog : Linear.program) (tprog : Mach.program)
+    (bound_local_pos : ∀ f : Linear.function,
+      bound_local_pos cfg (function_bounds cfg f))
+    (bound_outgoing_pos : ∀ f : Linear.function,
+      bound_outgoing_pos cfg (function_bounds cfg f))
+    (bound_stack_data_pos : ∀ f : Linear.function,
+      bound_stack_data_pos cfg (function_bounds cfg f))
+    (used_callee_save_norepet : ∀ f : Linear.function,
+      used_callee_save_norepet cfg (function_bounds cfg f))
+    (used_callee_save_prop : ∀ f : Linear.function,
+      used_callee_save_prop cfg (function_bounds cfg f)) :
     Linear.state → Mach.state → Prop where
   | match_states_intro (cs : List Linear.stackframe) (f : Linear.function)
       (sp : block) (c : Linear.code) (ls : locset) (m : mem)
       (cs' : List Mach.stackframe) (fb sp' : block) (rs : regset) (m' : mem)
       (j : meminj) (tf : Mach.function)
-      (hstacks : match_stacks cfg tprog j cs cs' f.fn_sig)
+      (hstacks : match_stacks cfg tprog j bound_local_pos bound_outgoing_pos
+        bound_stack_data_pos used_callee_save_norepet used_callee_save_prop cs cs' f.fn_sig)
       (htransf : transf_function cfg f = .OK tf)
       (hfind : Genv.find_funct_ptr (Genv.globalenv tprog) fb = some (.Internal tf))
       (hregs : agree_regs j ls rs)
-      (hlocs : agree_locs cfg f ls
-        (Linear.parent_locset cs))
+      (hlocs : agree_locs cfg f (bound_local_pos f) (bound_outgoing_pos f)
+        (bound_stack_data_pos f) (used_callee_save_norepet f) (used_callee_save_prop f)
+        ls (Linear.parent_locset cs))
       (hinj : j sp = some (sp', (make_env cfg (function_bounds cfg f)).fe_stack_data))
       (htail : is_tail c f.fn_code)
       (hsep : (sepconj
-        (frame_contents cfg f j sp' ls (Linear.parent_locset cs)
-          (Mach.parent_sp cs') (Mach.parent_ra cs'))
-        (sepconj (stack_contents cfg j cs cs')
+          (frame_contents return_address_offset tprog cfg f
+            (bound_local_pos f) (bound_outgoing_pos f) (bound_stack_data_pos f)
+            (used_callee_save_norepet f) (used_callee_save_prop f)
+            j sp' ls (Linear.parent_locset cs)
+            (Mach.parent_sp cs') (Mach.parent_ra cs'))
+        (sepconj (stack_contents return_address_offset tprog cfg j cs cs'
+            bound_local_pos bound_outgoing_pos bound_stack_data_pos
+            used_callee_save_norepet used_callee_save_prop)
           (sepconj (minjection j m)
             (globalenv_inject (Genv.globalenv prog) j)))).m_pred m') :
-      match_states cfg prog tprog
+      match_states cfg return_address_offset prog tprog bound_local_pos bound_outgoing_pos
+        bound_stack_data_pos used_callee_save_norepet used_callee_save_prop
         (Linear.State cs f (Vptr sp Ptrofs.zero) c ls m)
         (Mach.State cs' fb (Vptr sp' Ptrofs.zero)
           (transl_code cfg (make_env cfg (function_bounds cfg f)) c) rs m')
   | match_states_call (cs : List Linear.stackframe) (f : Linear.fundef)
       (ls : locset) (m : mem) (cs' : List Mach.stackframe) (fb : block)
       (rs : regset) (m' : mem) (j : meminj) (tf : Mach.fundef)
-      (hstacks : match_stacks cfg tprog j cs cs' (Linear.funsig f))
+      (hstacks : match_stacks cfg tprog j bound_local_pos bound_outgoing_pos
+        bound_stack_data_pos used_callee_save_norepet used_callee_save_prop cs cs'
+        (Linear.funsig f))
       (htransf : transf_fundef cfg f = .OK tf)
       (hfind : Genv.find_funct_ptr (Genv.globalenv tprog) fb = some tf)
       (hregs : agree_regs j ls rs)
-      (hsep : (sepconj (stack_contents cfg j cs cs')
+      (hsep : (sepconj (stack_contents return_address_offset tprog cfg j cs cs'
+          bound_local_pos bound_outgoing_pos bound_stack_data_pos
+          used_callee_save_norepet used_callee_save_prop)
         (sepconj (minjection j m)
           (globalenv_inject (Genv.globalenv prog) j))).m_pred m') :
-      match_states cfg prog tprog
+      match_states cfg return_address_offset prog tprog bound_local_pos bound_outgoing_pos
+        bound_stack_data_pos used_callee_save_norepet used_callee_save_prop
         (Linear.Callstate cs f ls m) (Mach.Callstate cs' fb rs m')
   | match_states_return (cs : List Linear.stackframe) (ls : locset) (m : mem)
       (cs' : List Mach.stackframe) (rs : regset) (m' : mem) (j : meminj)
       (sg : signature)
-      (hstacks : match_stacks cfg tprog j cs cs' sg)
+      (hstacks : match_stacks cfg tprog j bound_local_pos bound_outgoing_pos
+        bound_stack_data_pos used_callee_save_norepet used_callee_save_prop cs cs' sg)
       (hregs : agree_regs j ls rs)
-      (hsep : (sepconj (stack_contents cfg j cs cs')
+      (hsep : (sepconj (stack_contents return_address_offset tprog cfg j cs cs'
+          bound_local_pos bound_outgoing_pos bound_stack_data_pos
+          used_callee_save_norepet used_callee_save_prop)
         (sepconj (minjection j m)
           (globalenv_inject (Genv.globalenv prog) j))).m_pred m') :
-      match_states cfg prog tprog
+      match_states cfg return_address_offset prog tprog bound_local_pos bound_outgoing_pos
+        bound_stack_data_pos used_callee_save_norepet used_callee_save_prop
         (Linear.Returnstate cs ls m) (Mach.Returnstate cs' rs m')
 
 export match_states (match_states_intro match_states_call match_states_return)
@@ -484,65 +618,145 @@ export match_states (match_states_intro match_states_call match_states_return)
 /-! Exact declaration identities reserved for later proof migration. -/
 
 def LTL_undef_regs_othersStatement : Prop :=
-  ∀ r rl ls, r ∉ rl → LTL.undef_regs rl ls (R r) = ls (R r)
+  ∀ (return_address_offset : Mach.function → Mach.code → ptrofs → Prop)
+    (tprog : Mach.program),
+    ∀ r rl ls, r ∉ rl → LTL.undef_regs rl ls (R r) = ls (R r)
 
 def LTL_undef_regs_sameStatement : Prop :=
-  ∀ r rl ls, r ∈ rl → LTL.undef_regs rl ls (R r) = Vundef
+  ∀ (return_address_offset : Mach.function → Mach.code → ptrofs → Prop)
+    (tprog : Mach.program),
+    ∀ r rl ls, r ∈ rl → LTL.undef_regs rl ls (R r) = Vundef
 
 def LTL_undef_regs_slotStatement : Prop :=
   ∀ sl ofs ty rl ls,
     LTL.undef_regs rl ls (S sl ofs ty) = ls (S sl ofs ty)
 
 def agree_locs_returnStatement : Prop :=
-  ∀ cfg f ls ls0 ls',
-    agree_locs cfg f ls ls0 →
+  ∀ (return_address_offset : Mach.function → Mach.code → ptrofs → Prop)
+    (tprog : Mach.program),
+    ∀ cfg f
+    (_bound_local_pos : bound_local_pos cfg (function_bounds cfg f))
+    (_bound_outgoing_pos : bound_outgoing_pos cfg (function_bounds cfg f))
+    (_bound_stack_data_pos : bound_stack_data_pos cfg (function_bounds cfg f))
+    (_used_callee_save_norepet : used_callee_save_norepet cfg (function_bounds cfg f))
+    (_used_callee_save_prop : used_callee_save_prop cfg (function_bounds cfg f))
+    ls ls0 ls',
+    agree_locs cfg f _bound_local_pos _bound_outgoing_pos _bound_stack_data_pos
+      _used_callee_save_norepet _used_callee_save_prop ls ls0 →
     agree_callee_save cfg ls' ls →
-    agree_locs cfg f ls' ls0
+    agree_locs cfg f _bound_local_pos _bound_outgoing_pos _bound_stack_data_pos
+      _used_callee_save_norepet _used_callee_save_prop ls' ls0
 
 def agree_locs_set_regStatement : Prop :=
-  ∀ cfg f ls ls0 r v,
-    agree_locs cfg f ls ls0 →
+  ∀ (return_address_offset : Mach.function → Mach.code → ptrofs → Prop)
+    (tprog : Mach.program),
+    ∀ cfg f
+    (_bound_local_pos : bound_local_pos cfg (function_bounds cfg f))
+    (_bound_outgoing_pos : bound_outgoing_pos cfg (function_bounds cfg f))
+    (_bound_stack_data_pos : bound_stack_data_pos cfg (function_bounds cfg f))
+    (_used_callee_save_norepet : used_callee_save_norepet cfg (function_bounds cfg f))
+    (_used_callee_save_prop : used_callee_save_prop cfg (function_bounds cfg f))
+    ls ls0 r v,
+    agree_locs cfg f _bound_local_pos _bound_outgoing_pos _bound_stack_data_pos
+      _used_callee_save_norepet _used_callee_save_prop ls ls0 →
     mreg_within_bounds cfg (function_bounds cfg f) r →
-    agree_locs cfg f (Locmap.set (R r) v ls) ls0
+    agree_locs cfg f _bound_local_pos _bound_outgoing_pos _bound_stack_data_pos
+      _used_callee_save_norepet _used_callee_save_prop (Locmap.set (R r) v ls) ls0
 
 def agree_locs_set_pairStatement : Prop :=
-  ∀ cfg f ls0 p v ls,
-    agree_locs cfg f ls ls0 →
+  ∀ cfg f
+    (_bound_local_pos : bound_local_pos cfg (function_bounds cfg f))
+    (_bound_outgoing_pos : bound_outgoing_pos cfg (function_bounds cfg f))
+    (_bound_stack_data_pos : bound_stack_data_pos cfg (function_bounds cfg f))
+    (_used_callee_save_norepet : used_callee_save_norepet cfg (function_bounds cfg f))
+    (_used_callee_save_prop : used_callee_save_prop cfg (function_bounds cfg f))
+    ls0 p v ls,
+    agree_locs cfg f _bound_local_pos _bound_outgoing_pos _bound_stack_data_pos
+      _used_callee_save_norepet _used_callee_save_prop ls ls0 →
     forall_rpair (fun r => is_callee_save cfg r = false) p →
-    agree_locs cfg f (Locmap.setpair p v ls) ls0
+    agree_locs cfg f _bound_local_pos _bound_outgoing_pos _bound_stack_data_pos
+      _used_callee_save_norepet _used_callee_save_prop (Locmap.setpair p v ls) ls0
 
 def agree_locs_set_resStatement : Prop :=
-  ∀ cfg f ls0 res v ls,
-    agree_locs cfg f ls ls0 →
+  ∀ (return_address_offset : Mach.function → Mach.code → ptrofs → Prop)
+    (tprog : Mach.program),
+    ∀ cfg f
+    (_bound_local_pos : bound_local_pos cfg (function_bounds cfg f))
+    (_bound_outgoing_pos : bound_outgoing_pos cfg (function_bounds cfg f))
+    (_bound_stack_data_pos : bound_stack_data_pos cfg (function_bounds cfg f))
+    (_used_callee_save_norepet : used_callee_save_norepet cfg (function_bounds cfg f))
+    (_used_callee_save_prop : used_callee_save_prop cfg (function_bounds cfg f))
+    ls0 res v ls,
+    agree_locs cfg f _bound_local_pos _bound_outgoing_pos _bound_stack_data_pos
+      _used_callee_save_norepet _used_callee_save_prop ls ls0 →
     (∀ r, r ∈ params_of_builtin_res res →
       mreg_within_bounds cfg (function_bounds cfg f) r) →
-    agree_locs cfg f (Locmap.setres res v ls) ls0
+    agree_locs cfg f _bound_local_pos _bound_outgoing_pos _bound_stack_data_pos
+      _used_callee_save_norepet _used_callee_save_prop (Locmap.setres res v ls) ls0
 
 def agree_locs_set_slotStatement : Prop :=
-  ∀ cfg f ls ls0 sl ofs ty v,
-    agree_locs cfg f ls ls0 →
+  ∀ cfg f
+    (_bound_local_pos : bound_local_pos cfg (function_bounds cfg f))
+    (_bound_outgoing_pos : bound_outgoing_pos cfg (function_bounds cfg f))
+    (_bound_stack_data_pos : bound_stack_data_pos cfg (function_bounds cfg f))
+    (_used_callee_save_norepet : used_callee_save_norepet cfg (function_bounds cfg f))
+    (_used_callee_save_prop : used_callee_save_prop cfg (function_bounds cfg f))
+    ls ls0 sl ofs ty v,
+    agree_locs cfg f _bound_local_pos _bound_outgoing_pos _bound_stack_data_pos
+      _used_callee_save_norepet _used_callee_save_prop ls ls0 →
     slot_writable sl = true →
-    agree_locs cfg f
+    agree_locs cfg f _bound_local_pos _bound_outgoing_pos _bound_stack_data_pos
+      _used_callee_save_norepet _used_callee_save_prop
       (Locmap.set (S sl ofs ty) v ls) ls0
 
 def agree_locs_undef_locsStatement : Prop :=
-  ∀ cfg f ls0 regs ls,
-    agree_locs cfg f ls ls0 →
+  ∀ (return_address_offset : Mach.function → Mach.code → ptrofs → Prop)
+    (tprog : Mach.program),
+    ∀ cfg f
+    (_bound_local_pos : bound_local_pos cfg (function_bounds cfg f))
+    (_bound_outgoing_pos : bound_outgoing_pos cfg (function_bounds cfg f))
+    (_bound_stack_data_pos : bound_stack_data_pos cfg (function_bounds cfg f))
+    (_used_callee_save_norepet : used_callee_save_norepet cfg (function_bounds cfg f))
+    (_used_callee_save_prop : used_callee_save_prop cfg (function_bounds cfg f))
+    ls0 regs ls,
+    agree_locs cfg f _bound_local_pos _bound_outgoing_pos _bound_stack_data_pos
+      _used_callee_save_norepet _used_callee_save_prop ls ls0 →
     List.any regs (is_callee_save cfg) = false →
-    agree_locs cfg f (LTL.undef_regs regs ls) ls0
+    agree_locs cfg f _bound_local_pos _bound_outgoing_pos _bound_stack_data_pos
+      _used_callee_save_norepet _used_callee_save_prop (LTL.undef_regs regs ls) ls0
 
 def agree_locs_undef_locs_1Statement : Prop :=
-  ∀ cfg f ls0 regs ls,
-    agree_locs cfg f ls ls0 →
+  ∀ (return_address_offset : Mach.function → Mach.code → ptrofs → Prop)
+    (tprog : Mach.program),
+    ∀ cfg f
+    (_bound_local_pos : bound_local_pos cfg (function_bounds cfg f))
+    (_bound_outgoing_pos : bound_outgoing_pos cfg (function_bounds cfg f))
+    (_bound_stack_data_pos : bound_stack_data_pos cfg (function_bounds cfg f))
+    (_used_callee_save_norepet : used_callee_save_norepet cfg (function_bounds cfg f))
+    (_used_callee_save_prop : used_callee_save_prop cfg (function_bounds cfg f))
+    ls0 regs ls,
+    agree_locs cfg f _bound_local_pos _bound_outgoing_pos _bound_stack_data_pos
+      _used_callee_save_norepet _used_callee_save_prop ls ls0 →
     (∀ r, r ∈ regs → is_callee_save cfg r = false) →
-    agree_locs cfg f (LTL.undef_regs regs ls) ls0
+    agree_locs cfg f _bound_local_pos _bound_outgoing_pos _bound_stack_data_pos
+      _used_callee_save_norepet _used_callee_save_prop (LTL.undef_regs regs ls) ls0
 
 def agree_locs_undef_regsStatement : Prop :=
-  ∀ cfg f ls0 regs ls,
-    agree_locs cfg f ls ls0 →
+  ∀ (return_address_offset : Mach.function → Mach.code → ptrofs → Prop)
+    (tprog : Mach.program),
+    ∀ cfg f
+    (_bound_local_pos : bound_local_pos cfg (function_bounds cfg f))
+    (_bound_outgoing_pos : bound_outgoing_pos cfg (function_bounds cfg f))
+    (_bound_stack_data_pos : bound_stack_data_pos cfg (function_bounds cfg f))
+    (_used_callee_save_norepet : used_callee_save_norepet cfg (function_bounds cfg f))
+    (_used_callee_save_prop : used_callee_save_prop cfg (function_bounds cfg f))
+    ls0 regs ls,
+    agree_locs cfg f _bound_local_pos _bound_outgoing_pos _bound_stack_data_pos
+      _used_callee_save_norepet _used_callee_save_prop ls ls0 →
     (∀ r, r ∈ regs →
       mreg_within_bounds cfg (function_bounds cfg f) r) →
-    agree_locs cfg f (LTL.undef_regs regs ls) ls0
+    agree_locs cfg f _bound_local_pos _bound_outgoing_pos _bound_stack_data_pos
+      _used_callee_save_norepet _used_callee_save_prop (LTL.undef_regs regs ls) ls0
 
 def agree_regStatement : Prop :=
   ∀ j ls rs r, agree_regs j ls rs → Val.inject j (ls (R r)) (rs r)
@@ -620,15 +834,19 @@ def contains_get_stackStatement : Prop :=
       spec v
 
 def contains_locations_extenStatement : Prop :=
-  ∀ ls ls' j sp pos bound sl,
+  ∀ (return_address_offset : Mach.function → Mach.code → ptrofs → Prop)
+    (tprog : Mach.program),
+    ∀ ls ls' j sp pos bound sl,
     (∀ ofs ty, Val.lessdef (ls' (S sl ofs ty)) (ls (S sl ofs ty))) →
-    massert_imp (contains_locations j sp pos bound sl ls)
-      (contains_locations j sp pos bound sl ls')
+    massert_imp (contains_locations return_address_offset tprog j sp pos bound sl ls)
+      (contains_locations return_address_offset tprog j sp pos bound sl ls')
 
 def contains_locations_incrStatement : Prop :=
-  ∀ j j' sp pos bound sl ls, inject_incr j j' →
-    massert_imp (contains_locations j sp pos bound sl ls)
-      (contains_locations j' sp pos bound sl ls)
+  ∀ (return_address_offset : Mach.function → Mach.code → ptrofs → Prop)
+    (tprog : Mach.program),
+    ∀ j j' sp pos bound sl ls, inject_incr j j' →
+    massert_imp (contains_locations return_address_offset tprog j sp pos bound sl ls)
+      (contains_locations return_address_offset tprog j' sp pos bound sl ls)
 
 def contains_set_stackStatement : Prop :=
   ∀ (spec : val → Prop) v (spec1 : val → Prop) m ty sp ofs P,
@@ -656,7 +874,9 @@ def destroyed_by_setstack_caller_saveStatement : Prop :=
   ∀ cfg ty, no_callee_saves cfg (destroyed_by_setstack ty)
 
 def destroyed_by_setstack_function_entryStatement : Prop :=
-  ∀ ty r, r ∈ destroyed_by_setstack ty → r ∈ destroyed_at_function_entry
+  ∀ (return_address_offset : Mach.function → Mach.code → ptrofs → Prop)
+    (tprog : Mach.program),
+    ∀ ty r, r ∈ destroyed_by_setstack ty → r ∈ destroyed_at_function_entry
 
 def destroyed_by_store_caller_saveStatement : Prop :=
   ∀ cfg chunk addr, no_callee_saves cfg (destroyed_by_store chunk addr)
@@ -688,23 +908,62 @@ def find_label_transl_codeStatement : Prop :=
       Option.map (transl_code cfg fe) (Linear.find_label lbl c)
 
 def frame_contents_extenStatement : Prop :=
-  ∀ cfg f ls ls0 ls' ls0' j sp parent retaddr P m,
+  ∀ (return_address_offset : Mach.function → Mach.code → ptrofs → Prop)
+    (tprog : Mach.program),
+    ∀ cfg f
+    (_bound_local_pos : bound_local_pos cfg (function_bounds cfg f))
+    (_bound_outgoing_pos : bound_outgoing_pos cfg (function_bounds cfg f))
+    (_bound_stack_data_pos : bound_stack_data_pos cfg (function_bounds cfg f))
+    (_used_callee_save_norepet : used_callee_save_norepet cfg (function_bounds cfg f))
+    (_used_callee_save_prop : used_callee_save_prop cfg (function_bounds cfg f))
+    ls ls0 ls' ls0' j sp parent retaddr P m,
     (∀ ofs ty, Val.lessdef (ls' (S Local ofs ty)) (ls (S Local ofs ty))) →
     (∀ ofs ty, Val.lessdef (ls' (S Outgoing ofs ty)) (ls (S Outgoing ofs ty))) →
     (∀ r, r ∈ (function_bounds cfg f).used_callee_save →
       ls0' (R r) = ls0 (R r)) →
-    (sepconj (frame_contents cfg f j sp ls ls0 parent retaddr) P).m_pred m →
-    (sepconj (frame_contents cfg f j sp ls' ls0' parent retaddr) P).m_pred m
+    (sepconj (frame_contents return_address_offset tprog cfg f
+      _bound_local_pos _bound_outgoing_pos _bound_stack_data_pos
+      _used_callee_save_norepet _used_callee_save_prop
+      j sp ls ls0 parent retaddr) P).m_pred m →
+    (sepconj (frame_contents return_address_offset tprog cfg f
+      _bound_local_pos _bound_outgoing_pos _bound_stack_data_pos
+      _used_callee_save_norepet _used_callee_save_prop
+      j sp ls' ls0' parent retaddr) P).m_pred m
 
 def frame_contents_incrStatement : Prop :=
-  ∀ cfg f j sp ls ls0 parent retaddr m P j',
-    (sepconj (frame_contents cfg f j sp ls ls0 parent retaddr) P).m_pred m →
+  ∀ (return_address_offset : Mach.function → Mach.code → ptrofs → Prop)
+    (tprog : Mach.program),
+    ∀ cfg f
+    (_bound_local_pos : bound_local_pos cfg (function_bounds cfg f))
+    (_bound_outgoing_pos : bound_outgoing_pos cfg (function_bounds cfg f))
+    (_bound_stack_data_pos : bound_stack_data_pos cfg (function_bounds cfg f))
+    (_used_callee_save_norepet : used_callee_save_norepet cfg (function_bounds cfg f))
+    (_used_callee_save_prop : used_callee_save_prop cfg (function_bounds cfg f))
+    j sp ls ls0 parent retaddr m P j',
+    (sepconj (frame_contents return_address_offset tprog cfg f
+      _bound_local_pos _bound_outgoing_pos _bound_stack_data_pos
+      _used_callee_save_norepet _used_callee_save_prop
+      j sp ls ls0 parent retaddr) P).m_pred m →
     inject_incr j j' →
-    (sepconj (frame_contents cfg f j' sp ls ls0 parent retaddr) P).m_pred m
+    (sepconj (frame_contents return_address_offset tprog cfg f
+      _bound_local_pos _bound_outgoing_pos _bound_stack_data_pos
+      _used_callee_save_norepet _used_callee_save_prop
+      j' sp ls ls0 parent retaddr) P).m_pred m
 
 def frame_get_localStatement : Prop :=
-  ∀ cfg f ofs ty j sp ls ls0 parent retaddr m P,
-    (sepconj (frame_contents cfg f j sp ls ls0 parent retaddr) P).m_pred m →
+  ∀ (return_address_offset : Mach.function → Mach.code → ptrofs → Prop)
+    (tprog : Mach.program),
+    ∀ cfg f
+    (_bound_local_pos : bound_local_pos cfg (function_bounds cfg f))
+    (_bound_outgoing_pos : bound_outgoing_pos cfg (function_bounds cfg f))
+    (_bound_stack_data_pos : bound_stack_data_pos cfg (function_bounds cfg f))
+    (_used_callee_save_norepet : used_callee_save_norepet cfg (function_bounds cfg f))
+    (_used_callee_save_prop : used_callee_save_prop cfg (function_bounds cfg f))
+    ofs ty j sp ls ls0 parent retaddr m P,
+    (sepconj (frame_contents return_address_offset tprog cfg f
+      _bound_local_pos _bound_outgoing_pos _bound_stack_data_pos
+      _used_callee_save_norepet _used_callee_save_prop
+      j sp ls ls0 parent retaddr) P).m_pred m →
     slot_within_bounds (function_bounds cfg f) Local ofs ty →
     slot_valid cfg f Local ofs ty = true →
     ∃ v,
@@ -713,8 +972,19 @@ def frame_get_localStatement : Prop :=
       Val.inject j (ls (S Local ofs ty)) v
 
 def frame_get_outgoingStatement : Prop :=
-  ∀ cfg f ofs ty j sp ls ls0 parent retaddr m P,
-    (sepconj (frame_contents cfg f j sp ls ls0 parent retaddr) P).m_pred m →
+  ∀ (return_address_offset : Mach.function → Mach.code → ptrofs → Prop)
+    (tprog : Mach.program),
+    ∀ cfg f
+    (_bound_local_pos : bound_local_pos cfg (function_bounds cfg f))
+    (_bound_outgoing_pos : bound_outgoing_pos cfg (function_bounds cfg f))
+    (_bound_stack_data_pos : bound_stack_data_pos cfg (function_bounds cfg f))
+    (_used_callee_save_norepet : used_callee_save_norepet cfg (function_bounds cfg f))
+    (_used_callee_save_prop : used_callee_save_prop cfg (function_bounds cfg f))
+    ofs ty j sp ls ls0 parent retaddr m P,
+    (sepconj (frame_contents return_address_offset tprog cfg f
+      _bound_local_pos _bound_outgoing_pos _bound_stack_data_pos
+      _used_callee_save_norepet _used_callee_save_prop
+      j sp ls ls0 parent retaddr) P).m_pred m →
     slot_within_bounds (function_bounds cfg f) Outgoing ofs ty →
     slot_valid cfg f Outgoing ofs ty = true →
     ∃ v,
@@ -723,73 +993,183 @@ def frame_get_outgoingStatement : Prop :=
       Val.inject j (ls (S Outgoing ofs ty)) v
 
 def frame_get_parentStatement : Prop :=
-  ∀ cfg f j sp ls ls0 parent retaddr m P,
-    (sepconj (frame_contents cfg f j sp ls ls0 parent retaddr) P).m_pred m →
+  ∀ (return_address_offset : Mach.function → Mach.code → ptrofs → Prop)
+    (tprog : Mach.program),
+    ∀ cfg f
+    (_bound_local_pos : bound_local_pos cfg (function_bounds cfg f))
+    (_bound_outgoing_pos : bound_outgoing_pos cfg (function_bounds cfg f))
+    (_bound_stack_data_pos : bound_stack_data_pos cfg (function_bounds cfg f))
+    (_used_callee_save_norepet : used_callee_save_norepet cfg (function_bounds cfg f))
+    (_used_callee_save_prop : used_callee_save_prop cfg (function_bounds cfg f))
+    j sp ls ls0 parent retaddr m P,
+    (sepconj (frame_contents return_address_offset tprog cfg f
+      _bound_local_pos _bound_outgoing_pos _bound_stack_data_pos
+      _used_callee_save_norepet _used_callee_save_prop
+      j sp ls ls0 parent retaddr) P).m_pred m →
     Mach.load_stack m (Vptr sp Ptrofs.zero) Tptr
       (Ptrofs.repr (make_env cfg (function_bounds cfg f)).fe_ofs_link) = some parent
 
 def frame_get_retaddrStatement : Prop :=
-  ∀ cfg f j sp ls ls0 parent retaddr m P,
-    (sepconj (frame_contents cfg f j sp ls ls0 parent retaddr) P).m_pred m →
+  ∀ (return_address_offset : Mach.function → Mach.code → ptrofs → Prop)
+    (tprog : Mach.program),
+    ∀ cfg f
+    (_bound_local_pos : bound_local_pos cfg (function_bounds cfg f))
+    (_bound_outgoing_pos : bound_outgoing_pos cfg (function_bounds cfg f))
+    (_bound_stack_data_pos : bound_stack_data_pos cfg (function_bounds cfg f))
+    (_used_callee_save_norepet : used_callee_save_norepet cfg (function_bounds cfg f))
+    (_used_callee_save_prop : used_callee_save_prop cfg (function_bounds cfg f))
+    j sp ls ls0 parent retaddr m P,
+    (sepconj (frame_contents return_address_offset tprog cfg f
+      _bound_local_pos _bound_outgoing_pos _bound_stack_data_pos
+      _used_callee_save_norepet _used_callee_save_prop
+      j sp ls ls0 parent retaddr) P).m_pred m →
     Mach.load_stack m (Vptr sp Ptrofs.zero) Tptr
       (Ptrofs.repr (make_env cfg (function_bounds cfg f)).fe_ofs_retaddr) = some retaddr
 
 def frame_set_localStatement : Prop :=
-  ∀ cfg f ofs ty v v' j sp ls ls0 parent retaddr m P,
-    (sepconj (frame_contents cfg f j sp ls ls0 parent retaddr) P).m_pred m →
+  ∀ (return_address_offset : Mach.function → Mach.code → ptrofs → Prop)
+    (tprog : Mach.program),
+    ∀ cfg f
+    (_bound_local_pos : bound_local_pos cfg (function_bounds cfg f))
+    (_bound_outgoing_pos : bound_outgoing_pos cfg (function_bounds cfg f))
+    (_bound_stack_data_pos : bound_stack_data_pos cfg (function_bounds cfg f))
+    (_used_callee_save_norepet : used_callee_save_norepet cfg (function_bounds cfg f))
+    (_used_callee_save_prop : used_callee_save_prop cfg (function_bounds cfg f))
+    ofs ty v v' j sp ls ls0 parent retaddr m P,
+    (sepconj (frame_contents return_address_offset tprog cfg f
+      _bound_local_pos _bound_outgoing_pos _bound_stack_data_pos
+      _used_callee_save_norepet _used_callee_save_prop
+      j sp ls ls0 parent retaddr) P).m_pred m →
     slot_within_bounds (function_bounds cfg f) Local ofs ty →
     slot_valid cfg f Local ofs ty = true → Val.inject j v v' →
     ∃ m',
       Mach.store_stack m (Vptr sp Ptrofs.zero) ty
         (Ptrofs.repr (offset_local (make_env cfg (function_bounds cfg f)) ofs)) v' = some m' ∧
-      (sepconj (frame_contents cfg f j sp
+      (sepconj (frame_contents return_address_offset tprog cfg f
+        _bound_local_pos _bound_outgoing_pos _bound_stack_data_pos
+        _used_callee_save_norepet _used_callee_save_prop j sp
         (Locmap.set (S Local ofs ty) v ls) ls0 parent retaddr) P).m_pred m'
 
 def frame_set_outgoingStatement : Prop :=
-  ∀ cfg f ofs ty v v' j sp ls ls0 parent retaddr m P,
-    (sepconj (frame_contents cfg f j sp ls ls0 parent retaddr) P).m_pred m →
+  ∀ (return_address_offset : Mach.function → Mach.code → ptrofs → Prop)
+    (tprog : Mach.program),
+    ∀ cfg f
+    (_bound_local_pos : bound_local_pos cfg (function_bounds cfg f))
+    (_bound_outgoing_pos : bound_outgoing_pos cfg (function_bounds cfg f))
+    (_bound_stack_data_pos : bound_stack_data_pos cfg (function_bounds cfg f))
+    (_used_callee_save_norepet : used_callee_save_norepet cfg (function_bounds cfg f))
+    (_used_callee_save_prop : used_callee_save_prop cfg (function_bounds cfg f))
+    ofs ty v v' j sp ls ls0 parent retaddr m P,
+    (sepconj (frame_contents return_address_offset tprog cfg f
+      _bound_local_pos _bound_outgoing_pos _bound_stack_data_pos
+      _used_callee_save_norepet _used_callee_save_prop
+      j sp ls ls0 parent retaddr) P).m_pred m →
     slot_within_bounds (function_bounds cfg f) Outgoing ofs ty →
     slot_valid cfg f Outgoing ofs ty = true → Val.inject j v v' →
     ∃ m',
       Mach.store_stack m (Vptr sp Ptrofs.zero) ty
         (Ptrofs.repr (offset_arg cfg ofs)) v' = some m' ∧
-      (sepconj (frame_contents cfg f j sp
+      (sepconj (frame_contents return_address_offset tprog cfg f
+        _bound_local_pos _bound_outgoing_pos _bound_stack_data_pos
+        _used_callee_save_norepet _used_callee_save_prop j sp
         (Locmap.set (S Outgoing ofs ty) v ls) ls0 parent retaddr) P).m_pred m'
 
 def frame_set_regStatement : Prop :=
-  ∀ cfg f r v j sp ls ls0 parent retaddr m P,
-    (sepconj (frame_contents cfg f j sp ls ls0 parent retaddr) P).m_pred m →
-    (sepconj (frame_contents cfg f j sp
+  ∀ (return_address_offset : Mach.function → Mach.code → ptrofs → Prop)
+    (tprog : Mach.program),
+    ∀ cfg f
+    (_bound_local_pos : bound_local_pos cfg (function_bounds cfg f))
+    (_bound_outgoing_pos : bound_outgoing_pos cfg (function_bounds cfg f))
+    (_bound_stack_data_pos : bound_stack_data_pos cfg (function_bounds cfg f))
+    (_used_callee_save_norepet : used_callee_save_norepet cfg (function_bounds cfg f))
+    (_used_callee_save_prop : used_callee_save_prop cfg (function_bounds cfg f))
+    r v j sp ls ls0 parent retaddr m P,
+    (sepconj (frame_contents return_address_offset tprog cfg f
+      _bound_local_pos _bound_outgoing_pos _bound_stack_data_pos
+      _used_callee_save_norepet _used_callee_save_prop
+      j sp ls ls0 parent retaddr) P).m_pred m →
+    (sepconj (frame_contents return_address_offset tprog cfg f
+      _bound_local_pos _bound_outgoing_pos _bound_stack_data_pos
+      _used_callee_save_norepet _used_callee_save_prop j sp
       (Locmap.set (R r) v ls) ls0 parent retaddr) P).m_pred m
 
 def frame_set_regpairStatement : Prop :=
-  ∀ cfg f j sp ls0 parent retaddr m P p v ls,
-    (sepconj (frame_contents cfg f j sp ls ls0 parent retaddr) P).m_pred m →
-    (sepconj (frame_contents cfg f j sp
+  ∀ (return_address_offset : Mach.function → Mach.code → ptrofs → Prop)
+    (tprog : Mach.program),
+    ∀ cfg f
+    (_bound_local_pos : bound_local_pos cfg (function_bounds cfg f))
+    (_bound_outgoing_pos : bound_outgoing_pos cfg (function_bounds cfg f))
+    (_bound_stack_data_pos : bound_stack_data_pos cfg (function_bounds cfg f))
+    (_used_callee_save_norepet : used_callee_save_norepet cfg (function_bounds cfg f))
+    (_used_callee_save_prop : used_callee_save_prop cfg (function_bounds cfg f))
+    j sp ls0 parent retaddr m P p v ls,
+    (sepconj (frame_contents return_address_offset tprog cfg f
+      _bound_local_pos _bound_outgoing_pos _bound_stack_data_pos
+      _used_callee_save_norepet _used_callee_save_prop
+      j sp ls ls0 parent retaddr) P).m_pred m →
+    (sepconj (frame_contents return_address_offset tprog cfg f
+      _bound_local_pos _bound_outgoing_pos _bound_stack_data_pos
+      _used_callee_save_norepet _used_callee_save_prop j sp
       (Locmap.setpair p v ls) ls0 parent retaddr) P).m_pred m
 
 def frame_set_resStatement : Prop :=
-  ∀ cfg f j sp ls0 parent retaddr m P res v ls,
-    (sepconj (frame_contents cfg f j sp ls ls0 parent retaddr) P).m_pred m →
-    (sepconj (frame_contents cfg f j sp
+  ∀ (return_address_offset : Mach.function → Mach.code → ptrofs → Prop)
+    (tprog : Mach.program),
+    ∀ cfg f
+    (_bound_local_pos : bound_local_pos cfg (function_bounds cfg f))
+    (_bound_outgoing_pos : bound_outgoing_pos cfg (function_bounds cfg f))
+    (_bound_stack_data_pos : bound_stack_data_pos cfg (function_bounds cfg f))
+    (_used_callee_save_norepet : used_callee_save_norepet cfg (function_bounds cfg f))
+    (_used_callee_save_prop : used_callee_save_prop cfg (function_bounds cfg f))
+    j sp ls0 parent retaddr m P res v ls,
+    (sepconj (frame_contents return_address_offset tprog cfg f
+      _bound_local_pos _bound_outgoing_pos _bound_stack_data_pos
+      _used_callee_save_norepet _used_callee_save_prop
+      j sp ls ls0 parent retaddr) P).m_pred m →
+    (sepconj (frame_contents return_address_offset tprog cfg f
+      _bound_local_pos _bound_outgoing_pos _bound_stack_data_pos
+      _used_callee_save_norepet _used_callee_save_prop j sp
       (Locmap.setres res v ls) ls0 parent retaddr) P).m_pred m
 
 def frame_undef_regsStatement : Prop :=
-  ∀ cfg f j sp ls ls0 parent retaddr m P rl,
-    (sepconj (frame_contents cfg f j sp ls ls0 parent retaddr) P).m_pred m →
-    (sepconj (frame_contents cfg f j sp
+  ∀ (return_address_offset : Mach.function → Mach.code → ptrofs → Prop)
+    (tprog : Mach.program),
+    ∀ cfg f
+    (_bound_local_pos : bound_local_pos cfg (function_bounds cfg f))
+    (_bound_outgoing_pos : bound_outgoing_pos cfg (function_bounds cfg f))
+    (_bound_stack_data_pos : bound_stack_data_pos cfg (function_bounds cfg f))
+    (_used_callee_save_norepet : used_callee_save_norepet cfg (function_bounds cfg f))
+    (_used_callee_save_prop : used_callee_save_prop cfg (function_bounds cfg f))
+    j sp ls ls0 parent retaddr m P rl,
+    (sepconj (frame_contents return_address_offset tprog cfg f
+      _bound_local_pos _bound_outgoing_pos _bound_stack_data_pos
+      _used_callee_save_norepet _used_callee_save_prop
+      j sp ls ls0 parent retaddr) P).m_pred m →
+    (sepconj (frame_contents return_address_offset tprog cfg f
+      _bound_local_pos _bound_outgoing_pos _bound_stack_data_pos
+      _used_callee_save_norepet _used_callee_save_prop j sp
       (LTL.undef_regs rl ls) ls0 parent retaddr) P).m_pred m
 def function_epilogue_correctStatement
     [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
     [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ cfg xi (return_address_offset : Mach.function → Mach.code → ptrofs → Prop)
-    (tprog : Mach.program) (f : Linear.function) (tf : Mach.function),
+    (tprog : Mach.program) (f : Linear.function)
+    (_bound_local_pos : bound_local_pos cfg (function_bounds cfg f))
+    (_bound_outgoing_pos : bound_outgoing_pos cfg (function_bounds cfg f))
+    (_bound_stack_data_pos : bound_stack_data_pos cfg (function_bounds cfg f))
+    (_used_callee_save_norepet : used_callee_save_norepet cfg (function_bounds cfg f))
+    (_used_callee_save_prop : used_callee_save_prop cfg (function_bounds cfg f))
+    (tf : Mach.function),
     transf_function cfg f = .OK tf →
     ∀ m' j sp' ls ls0 pa ra P m rs sp m1 k cs fb,
-    (sepconj (frame_contents cfg f j sp' ls ls0 pa ra)
+    (sepconj (frame_contents return_address_offset tprog cfg f
+      _bound_local_pos _bound_outgoing_pos _bound_stack_data_pos
+      _used_callee_save_norepet _used_callee_save_prop
+      j sp' ls ls0 pa ra)
       (sepconj (minjection j m) P)).m_pred m' →
     agree_regs j ls rs →
-    agree_locs cfg f ls ls0 →
+    agree_locs cfg f _bound_local_pos _bound_outgoing_pos _bound_stack_data_pos
+      _used_callee_save_norepet _used_callee_save_prop ls ls0 →
     j sp = some (sp', (make_env cfg (function_bounds cfg f)).fe_stack_data) →
     Mem.free m sp z0 f.fn_stacksize = some m1 →
     ∃ rs1 m1',
@@ -812,7 +1192,13 @@ def function_prologue_correctStatement
     [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ cfg xi (return_address_offset : Mach.function → Mach.code → ptrofs → Prop)
     (prog : Linear.program) (tprog : Mach.program)
-    (f : Linear.function) (tf : Mach.function),
+    (f : Linear.function)
+    (_bound_local_pos : bound_local_pos cfg (function_bounds cfg f))
+    (_bound_outgoing_pos : bound_outgoing_pos cfg (function_bounds cfg f))
+    (_bound_stack_data_pos : bound_stack_data_pos cfg (function_bounds cfg f))
+    (_used_callee_save_norepet : used_callee_save_norepet cfg (function_bounds cfg f))
+    (_used_callee_save_prop : used_callee_save_prop cfg (function_bounds cfg f))
+    (tf : Mach.function),
     transf_function cfg f = .OK tf →
     ∀ j ls ls0 ls1 rs rs1 m1 m1' m2 sp parent ra cs fb k P,
     agree_regs j ls rs →
@@ -839,8 +1225,12 @@ def function_prologue_correctStatement
           (save_callee_save (make_env cfg (function_bounds cfg f)) k) rs1 m4')
         E0 (Mach.State cs fb (Vptr sp' Ptrofs.zero) k rs' m5') ∧
       agree_regs j' ls1 rs' ∧
-      agree_locs cfg f ls1 ls0 ∧
-      (sepconj (frame_contents cfg f j' sp' ls1 ls0 parent ra)
+      agree_locs cfg f _bound_local_pos _bound_outgoing_pos _bound_stack_data_pos
+        _used_callee_save_norepet _used_callee_save_prop ls1 ls0 ∧
+      (sepconj (frame_contents return_address_offset tprog cfg f
+        _bound_local_pos _bound_outgoing_pos _bound_stack_data_pos
+        _used_callee_save_norepet _used_callee_save_prop
+        j' sp' ls1 ls0 parent ra)
         (sepconj (minjection j' m2)
           (sepconj (globalenv_inject (Genv.globalenv prog) j') P))).m_pred m5' ∧
       j' sp = some (sp', (make_env cfg (function_bounds cfg f)).fe_stack_data) ∧
@@ -860,8 +1250,10 @@ def function_ptr_translatedStatement : Prop :=
       transf_fundef cfg f = .OK tf
 
 def get_locationStatement : Prop :=
-  ∀ m j sp pos bound sl ls ofs ty,
-    (contains_locations j sp pos bound sl ls).m_pred m →
+  ∀ (return_address_offset : Mach.function → Mach.code → ptrofs → Prop)
+    (tprog : Mach.program),
+    ∀ m j sp pos bound sl ls ofs ty,
+    (contains_locations return_address_offset tprog j sp pos bound sl ls).m_pred m →
     zLe z0 ofs →
     zLe (zAdd ofs (CompCert4Lean.Backend.Locations.typesize ty)) bound →
     zDivide (CompCert4Lean.Backend.Locations.typealign ty) ofs →
@@ -876,11 +1268,13 @@ def hasvalue_get_stackStatement : Prop :=
     Mach.load_stack m (Vptr sp Ptrofs.zero) ty (Ptrofs.repr ofs) = some v
 
 def initial_locationsStatement : Prop :=
-  ∀ j sp pos bound P sl ls m,
+  ∀ (return_address_offset : Mach.function → Mach.code → ptrofs → Prop)
+    (tprog : Mach.program),
+    ∀ j sp pos bound P sl ls m,
     (sepconj (range sp pos (zAdd pos (zMul z4 bound))) P).m_pred m →
     zDivide z8 pos →
     (∀ ofs ty, ls (S sl ofs ty) = Vundef) →
-    (sepconj (contains_locations j sp pos bound sl ls) P).m_pred m
+    (sepconj (contains_locations return_address_offset tprog j sp pos bound sl ls) P).m_pred m
 
 def is_tail_restore_callee_saveStatement : Prop :=
   ∀ l ofs k, is_tail k (restore_callee_save_rec l ofs k)
@@ -905,30 +1299,92 @@ def load_result_injectStatement : Prop :=
     Val.inject j v (Val.load_result (chunk_of_type ty) v')
 
 def match_stacks_change_meminjStatement : Prop :=
-  ∀ cfg tprog j j', inject_incr j j' → ∀ cs cs' sg,
-    match_stacks cfg tprog j cs cs' sg →
-    match_stacks cfg tprog j' cs cs' sg
+  ∀ cfg tprog j j'
+    (_bound_local_pos : ∀ f : Linear.function,
+      bound_local_pos cfg (function_bounds cfg f))
+    (_bound_outgoing_pos : ∀ f : Linear.function,
+      bound_outgoing_pos cfg (function_bounds cfg f))
+    (_bound_stack_data_pos : ∀ f : Linear.function,
+      bound_stack_data_pos cfg (function_bounds cfg f))
+    (_used_callee_save_norepet : ∀ f : Linear.function,
+      used_callee_save_norepet cfg (function_bounds cfg f))
+    (_used_callee_save_prop : ∀ f : Linear.function,
+      used_callee_save_prop cfg (function_bounds cfg f)),
+    inject_incr j j' → ∀ cs cs' sg,
+    match_stacks cfg tprog j _bound_local_pos _bound_outgoing_pos
+      _bound_stack_data_pos _used_callee_save_norepet _used_callee_save_prop cs cs' sg →
+    match_stacks cfg tprog j' _bound_local_pos _bound_outgoing_pos
+      _bound_stack_data_pos _used_callee_save_norepet _used_callee_save_prop cs cs' sg
 
 def match_stacks_change_sigStatement : Prop :=
-  ∀ cfg tprog sg1 j cs cs' sg,
-    match_stacks cfg tprog j cs cs' sg → tailcall_possible cfg sg1 →
-    match_stacks cfg tprog j cs cs' sg1
+  ∀ cfg tprog sg1 j
+    (_bound_local_pos : ∀ f : Linear.function,
+      bound_local_pos cfg (function_bounds cfg f))
+    (_bound_outgoing_pos : ∀ f : Linear.function,
+      bound_outgoing_pos cfg (function_bounds cfg f))
+    (_bound_stack_data_pos : ∀ f : Linear.function,
+      bound_stack_data_pos cfg (function_bounds cfg f))
+    (_used_callee_save_norepet : ∀ f : Linear.function,
+      used_callee_save_norepet cfg (function_bounds cfg f))
+    (_used_callee_save_prop : ∀ f : Linear.function,
+      used_callee_save_prop cfg (function_bounds cfg f)),
+    ∀ cs cs' sg,
+    match_stacks cfg tprog j _bound_local_pos _bound_outgoing_pos
+      _bound_stack_data_pos _used_callee_save_norepet _used_callee_save_prop cs cs' sg →
+    tailcall_possible cfg sg1 →
+    match_stacks cfg tprog j _bound_local_pos _bound_outgoing_pos
+      _bound_stack_data_pos _used_callee_save_norepet _used_callee_save_prop cs cs' sg1
 
 def match_stacks_type_retaddrStatement : Prop :=
-  ∀ cfg tprog j cs cs' sg,
-    match_stacks cfg tprog j cs cs' sg → Val.has_type (Mach.parent_ra cs') Tptr
+  ∀ cfg tprog j
+    (_bound_local_pos : ∀ f : Linear.function,
+      bound_local_pos cfg (function_bounds cfg f))
+    (_bound_outgoing_pos : ∀ f : Linear.function,
+      bound_outgoing_pos cfg (function_bounds cfg f))
+    (_bound_stack_data_pos : ∀ f : Linear.function,
+      bound_stack_data_pos cfg (function_bounds cfg f))
+    (_used_callee_save_norepet : ∀ f : Linear.function,
+      used_callee_save_norepet cfg (function_bounds cfg f))
+    (_used_callee_save_prop : ∀ f : Linear.function,
+      used_callee_save_prop cfg (function_bounds cfg f)),
+    ∀ cs cs' sg,
+    match_stacks cfg tprog j _bound_local_pos _bound_outgoing_pos
+      _bound_stack_data_pos _used_callee_save_norepet _used_callee_save_prop cs cs' sg →
+    Val.has_type (Mach.parent_ra cs') Tptr
 
 def match_stacks_type_spStatement : Prop :=
-  ∀ cfg tprog j cs cs' sg,
-    match_stacks cfg tprog j cs cs' sg → Val.has_type (Mach.parent_sp cs') Tptr
+  ∀ cfg tprog j
+    (_bound_local_pos : ∀ f : Linear.function,
+      bound_local_pos cfg (function_bounds cfg f))
+    (_bound_outgoing_pos : ∀ f : Linear.function,
+      bound_outgoing_pos cfg (function_bounds cfg f))
+    (_bound_stack_data_pos : ∀ f : Linear.function,
+      bound_stack_data_pos cfg (function_bounds cfg f))
+    (_used_callee_save_norepet : ∀ f : Linear.function,
+      used_callee_save_norepet cfg (function_bounds cfg f))
+    (_used_callee_save_prop : ∀ f : Linear.function,
+      used_callee_save_prop cfg (function_bounds cfg f)),
+    ∀ cs cs' sg,
+    match_stacks cfg tprog j _bound_local_pos _bound_outgoing_pos
+      _bound_stack_data_pos _used_callee_save_norepet _used_callee_save_prop cs cs' sg →
+    Val.has_type (Mach.parent_sp cs') Tptr
 def restore_callee_save_correctStatement
     [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
     [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ cfg xi (return_address_offset : Mach.function → Mach.code → ptrofs → Prop)
     (tprog : Mach.program) (f : Linear.function)
+    (_bound_local_pos : bound_local_pos cfg (function_bounds cfg f))
+    (_bound_outgoing_pos : bound_outgoing_pos cfg (function_bounds cfg f))
+    (_bound_stack_data_pos : bound_stack_data_pos cfg (function_bounds cfg f))
+    (_used_callee_save_norepet : used_callee_save_norepet cfg (function_bounds cfg f))
+    (_used_callee_save_prop : used_callee_save_prop cfg (function_bounds cfg f))
     m j sp ls ls0 pa ra P rs k cs fb,
-    (sepconj (frame_contents cfg f j sp ls ls0 pa ra) P).m_pred m →
-    agree_unused cfg f j ls0 rs →
+    (sepconj (frame_contents return_address_offset tprog cfg f
+      _bound_local_pos _bound_outgoing_pos _bound_stack_data_pos
+      _used_callee_save_norepet _used_callee_save_prop
+      j sp ls ls0 pa ra) P).m_pred m →
+    agree_unused cfg f _bound_local_pos _bound_outgoing_pos _bound_stack_data_pos
+      _used_callee_save_norepet _used_callee_save_prop j ls0 rs →
     ∃ rs',
       star (Mach.step
         (binary64_certificate := binary64_certificate)
@@ -945,9 +1401,15 @@ def restore_callee_save_rec_correctStatement
     [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ cfg xi (return_address_offset : Mach.function → Mach.code → ptrofs → Prop)
     (tprog : Mach.program) (f : Linear.function)
+    (_bound_local_pos : bound_local_pos cfg (function_bounds cfg f))
+    (_bound_outgoing_pos : bound_outgoing_pos cfg (function_bounds cfg f))
+    (_bound_stack_data_pos : bound_stack_data_pos cfg (function_bounds cfg f))
+    (_used_callee_save_norepet : used_callee_save_norepet cfg (function_bounds cfg f))
+    (_used_callee_save_prop : used_callee_save_prop cfg (function_bounds cfg f))
     j cs fb sp ls0 m l ofs rs k,
     (contains_callee_saves j sp ofs l ls0).m_pred m →
-    agree_unused cfg f j ls0 rs →
+    agree_unused cfg f _bound_local_pos _bound_outgoing_pos _bound_stack_data_pos
+      _used_callee_save_norepet _used_callee_save_prop j ls0 rs →
     (∀ r, r ∈ l → mreg_within_bounds cfg (function_bounds cfg f) r) →
     ∃ rs',
       star (Mach.step
@@ -959,13 +1421,19 @@ def restore_callee_save_rec_correctStatement
         E0 (Mach.State cs fb (Vptr sp Ptrofs.zero) k rs' m) ∧
       (∀ r, r ∈ l → Val.inject j (ls0 (R r)) (rs' r)) ∧
       (∀ r, r ∉ l → rs' r = rs r) ∧
-      agree_unused cfg f j ls0 rs'
+      agree_unused cfg f _bound_local_pos _bound_outgoing_pos _bound_stack_data_pos
+        _used_callee_save_norepet _used_callee_save_prop j ls0 rs'
 
 def save_callee_save_correctStatement
     [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
     [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ cfg xi (return_address_offset : Mach.function → Mach.code → ptrofs → Prop)
     (tprog : Mach.program) (f : Linear.function)
+    (_bound_local_pos : bound_local_pos cfg (function_bounds cfg f))
+    (_bound_outgoing_pos : bound_outgoing_pos cfg (function_bounds cfg f))
+    (_bound_stack_data_pos : bound_stack_data_pos cfg (function_bounds cfg f))
+    (_used_callee_save_norepet : used_callee_save_norepet cfg (function_bounds cfg f))
+    (_used_callee_save_prop : used_callee_save_prop cfg (function_bounds cfg f))
     j ls ls0 rs sp cs fb k m P,
     (sepconj
       (range sp (make_env cfg (function_bounds cfg f)).fe_ofs_callee_save
@@ -1018,8 +1486,10 @@ def senv_preservedStatement : Prop :=
       (Genv.to_senv (Genv.globalenv tprog))
 
 def set_locationStatement : Prop :=
-  ∀ m j sp pos bound sl ls P ofs ty v v',
-    (sepconj (contains_locations j sp pos bound sl ls) P).m_pred m →
+  ∀ (return_address_offset : Mach.function → Mach.code → ptrofs → Prop)
+    (tprog : Mach.program),
+    ∀ m j sp pos bound sl ls P ofs ty v v',
+    (sepconj (contains_locations return_address_offset tprog j sp pos bound sl ls) P).m_pred m →
     zLe z0 ofs →
     zLe (zAdd ofs (CompCert4Lean.Backend.Locations.typesize ty)) bound →
     zDivide (CompCert4Lean.Backend.Locations.typealign ty) ofs →
@@ -1027,7 +1497,7 @@ def set_locationStatement : Prop :=
     ∃ m',
       Mach.store_stack m (Vptr sp Ptrofs.zero) ty
         (Ptrofs.repr (zAdd pos (zMul z4 ofs))) v' = some m' ∧
-      (sepconj (contains_locations j sp pos bound sl
+      (sepconj (contains_locations return_address_offset tprog j sp pos bound sl
         (Locmap.set (S sl ofs ty) v ls)) P).m_pred m'
 
 def sig_preservedStatement : Prop :=
@@ -1066,9 +1536,26 @@ def slot_outgoing_argument_validStatement : Prop :=
     slot_valid cfg f Outgoing ofs ty = true
 
 def stack_contents_change_meminjStatement : Prop :=
-  ∀ cfg m j j', inject_incr j j' → ∀ cs cs' P,
-    (sepconj (stack_contents cfg j cs cs') P).m_pred m →
-    (sepconj (stack_contents cfg j' cs cs') P).m_pred m
+  ∀ (return_address_offset : Mach.function → Mach.code → ptrofs → Prop)
+    (tprog : Mach.program),
+    ∀ cfg m j j'
+    (_bound_local_pos : ∀ f : Linear.function,
+      bound_local_pos cfg (function_bounds cfg f))
+    (_bound_outgoing_pos : ∀ f : Linear.function,
+      bound_outgoing_pos cfg (function_bounds cfg f))
+    (_bound_stack_data_pos : ∀ f : Linear.function,
+      bound_stack_data_pos cfg (function_bounds cfg f))
+    (_used_callee_save_norepet : ∀ f : Linear.function,
+      used_callee_save_norepet cfg (function_bounds cfg f))
+    (_used_callee_save_prop : ∀ f : Linear.function,
+      used_callee_save_prop cfg (function_bounds cfg f)),
+    inject_incr j j' → ∀ cs cs' P,
+    (sepconj (stack_contents return_address_offset tprog cfg j cs cs'
+      _bound_local_pos _bound_outgoing_pos _bound_stack_data_pos
+      _used_callee_save_norepet _used_callee_save_prop) P).m_pred m →
+    (sepconj (stack_contents return_address_offset tprog cfg j' cs cs'
+      _bound_local_pos _bound_outgoing_pos _bound_stack_data_pos
+      _used_callee_save_norepet _used_callee_save_prop) P).m_pred m
 
 def symbols_preservedStatement : Prop :=
   ∀ cfg (prog : Linear.program) (tprog : Mach.program),
@@ -1076,15 +1563,44 @@ def symbols_preservedStatement : Prop :=
     Genv.find_symbol (Genv.globalenv tprog) s =
       Genv.find_symbol (Genv.globalenv prog) s
 def transf_final_statesStatement : Prop :=
-  ∀ cfg (prog : Linear.program) (tprog : Mach.program) st1 st2 r,
-    match_states cfg prog tprog st1 st2 → Linear.final_state st1 r →
+  ∀ cfg (return_address_offset : Mach.function → Mach.code → ptrofs → Prop)
+    (prog : Linear.program) (tprog : Mach.program)
+    (_bound_local_pos : ∀ f : Linear.function,
+      bound_local_pos cfg (function_bounds cfg f))
+    (_bound_outgoing_pos : ∀ f : Linear.function,
+      bound_outgoing_pos cfg (function_bounds cfg f))
+    (_bound_stack_data_pos : ∀ f : Linear.function,
+      bound_stack_data_pos cfg (function_bounds cfg f))
+    (_used_callee_save_norepet : ∀ f : Linear.function,
+      used_callee_save_norepet cfg (function_bounds cfg f))
+    (_used_callee_save_prop : ∀ f : Linear.function,
+      used_callee_save_prop cfg (function_bounds cfg f))
+    st1 st2 r,
+    match_states cfg return_address_offset prog tprog
+      _bound_local_pos _bound_outgoing_pos _bound_stack_data_pos
+      _used_callee_save_norepet _used_callee_save_prop st1 st2 →
+    Linear.final_state st1 r →
     Mach.final_state st2 r
 
 def transf_initial_statesStatement : Prop :=
-  ∀ cfg (prog : Linear.program) (tprog : Mach.program),
+  ∀ cfg (return_address_offset : Mach.function → Mach.code → ptrofs → Prop)
+    (prog : Linear.program) (tprog : Mach.program)
+    (_bound_local_pos : ∀ f : Linear.function,
+      bound_local_pos cfg (function_bounds cfg f))
+    (_bound_outgoing_pos : ∀ f : Linear.function,
+      bound_outgoing_pos cfg (function_bounds cfg f))
+    (_bound_stack_data_pos : ∀ f : Linear.function,
+      bound_stack_data_pos cfg (function_bounds cfg f))
+    (_used_callee_save_norepet : ∀ f : Linear.function,
+      used_callee_save_norepet cfg (function_bounds cfg f))
+    (_used_callee_save_prop : ∀ f : Linear.function,
+      used_callee_save_prop cfg (function_bounds cfg f)),
     match_prog cfg prog tprog → ∀ st1,
     Linear.initial_state prog st1 →
-    ∃ st2, Mach.initial_state tprog st2 ∧ match_states cfg prog tprog st1 st2
+    ∃ st2, Mach.initial_state tprog st2 ∧
+      match_states cfg return_address_offset prog tprog
+        _bound_local_pos _bound_outgoing_pos _bound_stack_data_pos
+        _used_callee_save_norepet _used_callee_save_prop st1 st2
 
 def transf_function_well_typedStatement : Prop :=
   ∀ cfg f tf, transf_function cfg f = .OK tf → wt_function cfg f = true
@@ -1092,10 +1608,20 @@ def transf_function_well_typedStatement : Prop :=
 def transf_program_correctStatement
     [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
     [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
-  ∀ cfg xi (return_address_offset : Mach.function → Mach.code → ptrofs → Prop)
-    (prog : Linear.program) (tprog : Mach.program),
+  ∀ cfg xi (return_address_offset : Mach.function → Mach.code → ptrofs → Prop),
     (∀ f sg ros c, is_tail (.Mcall sg ros :: c) f.fn_code →
       ∃ ofs, return_address_offset f c ofs) →
+    ∀ (prog : Linear.program) (tprog : Mach.program)
+    (_bound_local_pos : ∀ f : Linear.function,
+      bound_local_pos cfg (function_bounds cfg f))
+    (_bound_outgoing_pos : ∀ f : Linear.function,
+      bound_outgoing_pos cfg (function_bounds cfg f))
+    (_bound_stack_data_pos : ∀ f : Linear.function,
+      bound_stack_data_pos cfg (function_bounds cfg f))
+    (_used_callee_save_norepet : ∀ f : Linear.function,
+      used_callee_save_norepet cfg (function_bounds cfg f))
+    (_used_callee_save_prop : ∀ f : Linear.function,
+      used_callee_save_prop cfg (function_bounds cfg f)),
     match_prog cfg prog tprog →
     forward_simulation
       (Linear.semantics cfg xi prog)
@@ -1108,26 +1634,50 @@ def transf_program_matchStatement : Prop :=
 def transf_step_correctStatement
     [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
     [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
-  ∀ cfg xi (return_address_offset : Mach.function → Mach.code → ptrofs → Prop)
-    (prog : Linear.program) (tprog : Mach.program),
+  ∀ cfg xi (return_address_offset : Mach.function → Mach.code → ptrofs → Prop),
     (∀ f sg ros c, is_tail (.Mcall sg ros :: c) f.fn_code →
       ∃ ofs, return_address_offset f c ofs) →
+    ∀ (prog : Linear.program) (tprog : Mach.program)
+    (_bound_local_pos : ∀ f : Linear.function,
+      bound_local_pos cfg (function_bounds cfg f))
+    (_bound_outgoing_pos : ∀ f : Linear.function,
+      bound_outgoing_pos cfg (function_bounds cfg f))
+    (_bound_stack_data_pos : ∀ f : Linear.function,
+      bound_stack_data_pos cfg (function_bounds cfg f))
+    (_used_callee_save_norepet : ∀ f : Linear.function,
+      used_callee_save_norepet cfg (function_bounds cfg f))
+    (_used_callee_save_prop : ∀ f : Linear.function,
+      used_callee_save_prop cfg (function_bounds cfg f)),
     match_prog cfg prog tprog → ∀ s1 t s2,
     Linear.step cfg xi (Genv.globalenv prog) s1 t s2 →
-    wt_state cfg s1 → ∀ s1', match_states cfg prog tprog s1 s1' →
+    wt_state cfg s1 → ∀ s1',
+    match_states cfg return_address_offset prog tprog
+      _bound_local_pos _bound_outgoing_pos _bound_stack_data_pos
+      _used_callee_save_norepet _used_callee_save_prop s1 s1' →
     ∃ s2',
       plus (Mach.step
         (binary64_certificate := binary64_certificate)
         (binary32_certificate := binary32_certificate)
         cfg xi return_address_offset) (Genv.globalenv tprog) s1' t s2' ∧
-      match_states cfg prog tprog s2 s2'
+      match_states cfg return_address_offset prog tprog
+        _bound_local_pos _bound_outgoing_pos _bound_stack_data_pos
+        _used_callee_save_norepet _used_callee_save_prop s2 s2'
 
 def transl_builtin_arg_correctStatement : Prop :=
-  ∀ cfg (prog : Linear.program) (f : Linear.function),
+  ∀ cfg (return_address_offset : Mach.function → Mach.code → ptrofs → Prop)
+    (prog : Linear.program) (tprog : Mach.program) (f : Linear.function)
+    (_bound_local_pos : bound_local_pos cfg (function_bounds cfg f))
+    (_bound_outgoing_pos : bound_outgoing_pos cfg (function_bounds cfg f))
+    (_bound_stack_data_pos : bound_stack_data_pos cfg (function_bounds cfg f))
+    (_used_callee_save_norepet : used_callee_save_norepet cfg (function_bounds cfg f))
+    (_used_callee_save_prop : used_callee_save_prop cfg (function_bounds cfg f)),
     ∀ j m m' ls ls0 rs sp sp' parent retaddr a v,
     j sp = some (sp', (make_env cfg (function_bounds cfg f)).fe_stack_data) →
     agree_regs j ls rs →
-    (sepconj (frame_contents cfg f j sp' ls ls0 parent retaddr)
+    (sepconj (frame_contents return_address_offset tprog cfg f
+      _bound_local_pos _bound_outgoing_pos _bound_stack_data_pos
+      _used_callee_save_norepet _used_callee_save_prop
+      j sp' ls ls0 parent retaddr)
       (sepconj (minjection j m)
         (globalenv_inject (Genv.globalenv prog) j))).m_pred m' →
     eval_builtin_arg (Genv.to_senv (Genv.globalenv prog)) ls
@@ -1142,11 +1692,20 @@ def transl_builtin_arg_correctStatement : Prop :=
       Val.inject j v v'
 
 def transl_builtin_args_correctStatement : Prop :=
-  ∀ cfg (prog : Linear.program) (f : Linear.function),
+  ∀ cfg (return_address_offset : Mach.function → Mach.code → ptrofs → Prop)
+    (prog : Linear.program) (tprog : Mach.program) (f : Linear.function)
+    (_bound_local_pos : bound_local_pos cfg (function_bounds cfg f))
+    (_bound_outgoing_pos : bound_outgoing_pos cfg (function_bounds cfg f))
+    (_bound_stack_data_pos : bound_stack_data_pos cfg (function_bounds cfg f))
+    (_used_callee_save_norepet : used_callee_save_norepet cfg (function_bounds cfg f))
+    (_used_callee_save_prop : used_callee_save_prop cfg (function_bounds cfg f)),
     ∀ j m m' ls ls0 rs sp sp' parent retaddr al vl,
     j sp = some (sp', (make_env cfg (function_bounds cfg f)).fe_stack_data) →
     agree_regs j ls rs →
-    (sepconj (frame_contents cfg f j sp' ls ls0 parent retaddr)
+    (sepconj (frame_contents return_address_offset tprog cfg f
+      _bound_local_pos _bound_outgoing_pos _bound_stack_data_pos
+      _used_callee_save_norepet _used_callee_save_prop
+      j sp' ls ls0 parent retaddr)
       (sepconj (minjection j m)
         (globalenv_inject (Genv.globalenv prog) j))).m_pred m' →
     eval_builtin_args (Genv.to_senv (Genv.globalenv prog)) ls
@@ -1174,44 +1733,104 @@ def transl_destroyed_by_storeStatement : Prop :=
   ∀ chunk addr fe,
     destroyed_by_store chunk (transl_addr fe addr) = destroyed_by_store chunk addr
 def transl_external_argumentStatement : Prop :=
-  ∀ cfg (tprog : Mach.program) j cs cs' sg ls rs m',
-    match_stacks cfg tprog j cs cs' sg →
+  ∀ cfg (return_address_offset : Mach.function → Mach.code → ptrofs → Prop)
+    (tprog : Mach.program) j cs cs' sg
+    (_bound_local_pos : ∀ f : Linear.function,
+      bound_local_pos cfg (function_bounds cfg f))
+    (_bound_outgoing_pos : ∀ f : Linear.function,
+      bound_outgoing_pos cfg (function_bounds cfg f))
+    (_bound_stack_data_pos : ∀ f : Linear.function,
+      bound_stack_data_pos cfg (function_bounds cfg f))
+    (_used_callee_save_norepet : ∀ f : Linear.function,
+      used_callee_save_norepet cfg (function_bounds cfg f))
+    (_used_callee_save_prop : ∀ f : Linear.function,
+      used_callee_save_prop cfg (function_bounds cfg f))
+    ls rs m',
+    match_stacks cfg tprog j _bound_local_pos _bound_outgoing_pos
+      _bound_stack_data_pos _used_callee_save_norepet _used_callee_save_prop cs cs' sg →
     agree_regs j ls rs →
     agree_callee_save cfg ls (Linear.parent_locset cs) →
     agree_outgoing_arguments cfg sg ls (Linear.parent_locset cs) →
-    (stack_contents cfg j cs cs').m_pred m' → ∀ l,
+    (stack_contents return_address_offset tprog cfg j cs cs'
+      _bound_local_pos _bound_outgoing_pos _bound_stack_data_pos
+      _used_callee_save_norepet _used_callee_save_prop).m_pred m' → ∀ l,
     l ∈ regs_of_rpairs (loc_arguments cfg sg) →
     ∃ v, Mach.extcall_arg cfg rs m' (Mach.parent_sp cs') l v ∧
       Val.inject j (ls l) v
 
 def transl_external_argument_2Statement : Prop :=
-  ∀ cfg (tprog : Mach.program) j cs cs' sg ls rs m',
-    match_stacks cfg tprog j cs cs' sg →
+  ∀ cfg (return_address_offset : Mach.function → Mach.code → ptrofs → Prop)
+    (tprog : Mach.program) j cs cs' sg
+    (_bound_local_pos : ∀ f : Linear.function,
+      bound_local_pos cfg (function_bounds cfg f))
+    (_bound_outgoing_pos : ∀ f : Linear.function,
+      bound_outgoing_pos cfg (function_bounds cfg f))
+    (_bound_stack_data_pos : ∀ f : Linear.function,
+      bound_stack_data_pos cfg (function_bounds cfg f))
+    (_used_callee_save_norepet : ∀ f : Linear.function,
+      used_callee_save_norepet cfg (function_bounds cfg f))
+    (_used_callee_save_prop : ∀ f : Linear.function,
+      used_callee_save_prop cfg (function_bounds cfg f))
+    ls rs m',
+    match_stacks cfg tprog j _bound_local_pos _bound_outgoing_pos
+      _bound_stack_data_pos _used_callee_save_norepet _used_callee_save_prop cs cs' sg →
     agree_regs j ls rs →
     agree_callee_save cfg ls (Linear.parent_locset cs) →
     agree_outgoing_arguments cfg sg ls (Linear.parent_locset cs) →
-    (stack_contents cfg j cs cs').m_pred m' → ∀ p,
+    (stack_contents return_address_offset tprog cfg j cs cs'
+      _bound_local_pos _bound_outgoing_pos _bound_stack_data_pos
+      _used_callee_save_norepet _used_callee_save_prop).m_pred m' → ∀ p,
     p ∈ loc_arguments cfg sg →
     ∃ v, Mach.extcall_arg_pair cfg rs m' (Mach.parent_sp cs') p v ∧
       Val.inject j (Locmap.getpair p ls) v
 
 def transl_external_argumentsStatement : Prop :=
-  ∀ cfg (tprog : Mach.program) j cs cs' sg ls rs m',
-    match_stacks cfg tprog j cs cs' sg →
+  ∀ cfg (return_address_offset : Mach.function → Mach.code → ptrofs → Prop)
+    (tprog : Mach.program) j cs cs' sg
+    (_bound_local_pos : ∀ f : Linear.function,
+      bound_local_pos cfg (function_bounds cfg f))
+    (_bound_outgoing_pos : ∀ f : Linear.function,
+      bound_outgoing_pos cfg (function_bounds cfg f))
+    (_bound_stack_data_pos : ∀ f : Linear.function,
+      bound_stack_data_pos cfg (function_bounds cfg f))
+    (_used_callee_save_norepet : ∀ f : Linear.function,
+      used_callee_save_norepet cfg (function_bounds cfg f))
+    (_used_callee_save_prop : ∀ f : Linear.function,
+      used_callee_save_prop cfg (function_bounds cfg f))
+    ls rs m',
+    match_stacks cfg tprog j _bound_local_pos _bound_outgoing_pos
+      _bound_stack_data_pos _used_callee_save_norepet _used_callee_save_prop cs cs' sg →
     agree_regs j ls rs →
     agree_callee_save cfg ls (Linear.parent_locset cs) →
     agree_outgoing_arguments cfg sg ls (Linear.parent_locset cs) →
-    (stack_contents cfg j cs cs').m_pred m' →
+    (stack_contents return_address_offset tprog cfg j cs cs'
+      _bound_local_pos _bound_outgoing_pos _bound_stack_data_pos
+      _used_callee_save_norepet _used_callee_save_prop).m_pred m' →
     ∃ vl, Mach.extcall_arguments cfg rs m' (Mach.parent_sp cs') sg vl ∧
       Val.inject_list j ((loc_arguments cfg sg).map (fun p => Locmap.getpair p ls)) vl
 
 def transl_external_arguments_recStatement : Prop :=
-  ∀ cfg (tprog : Mach.program) j cs cs' sg ls rs m',
-    match_stacks cfg tprog j cs cs' sg →
+  ∀ cfg (return_address_offset : Mach.function → Mach.code → ptrofs → Prop)
+    (tprog : Mach.program) j cs cs' sg
+    (_bound_local_pos : ∀ f : Linear.function,
+      bound_local_pos cfg (function_bounds cfg f))
+    (_bound_outgoing_pos : ∀ f : Linear.function,
+      bound_outgoing_pos cfg (function_bounds cfg f))
+    (_bound_stack_data_pos : ∀ f : Linear.function,
+      bound_stack_data_pos cfg (function_bounds cfg f))
+    (_used_callee_save_norepet : ∀ f : Linear.function,
+      used_callee_save_norepet cfg (function_bounds cfg f))
+    (_used_callee_save_prop : ∀ f : Linear.function,
+      used_callee_save_prop cfg (function_bounds cfg f))
+    ls rs m',
+    match_stacks cfg tprog j _bound_local_pos _bound_outgoing_pos
+      _bound_stack_data_pos _used_callee_save_norepet _used_callee_save_prop cs cs' sg →
     agree_regs j ls rs →
     agree_callee_save cfg ls (Linear.parent_locset cs) →
     agree_outgoing_arguments cfg sg ls (Linear.parent_locset cs) →
-    (stack_contents cfg j cs cs').m_pred m' → ∀ locs,
+    (stack_contents return_address_offset tprog cfg j cs cs'
+      _bound_local_pos _bound_outgoing_pos _bound_stack_data_pos
+      _used_callee_save_norepet _used_callee_save_prop).m_pred m' → ∀ locs,
     (∀ p, p ∈ locs → p ∈ loc_arguments cfg sg) →
     ∃ vl,
       list_forall2 (Mach.extcall_arg_pair cfg rs m' (Mach.parent_sp cs')) locs vl ∧
