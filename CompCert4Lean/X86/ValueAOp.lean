@@ -235,6 +235,11 @@ def symbol_address_soundStatement : Prop :=
     genv_match bc ge → ∀ (id : ident) (ofs : ptrofs),
     vmatch bc (Genv.symbol_address ge id ofs) (Ptr (Gl id ofs))
 
+def symbol_address_sound_2Statement : Prop :=
+  ∀ (bc : block_classification) (ge : genv),
+    genv_match bc ge → ∀ (id : ident) (ofs : ptrofs),
+    vmatch bc (Genv.symbol_address ge id ofs) (Ifptr (Gl id ofs))
+
 def eval_static_addressing_32_soundStatement : Prop :=
   ∀ (bc : block_classification) (ge : genv),
     genv_match bc ge → ∀ (sp : block), bc sp = BCstack →
