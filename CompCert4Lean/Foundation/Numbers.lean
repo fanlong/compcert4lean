@@ -73,10 +73,6 @@ abbrev le := _root_.Nat.le
 abbrev lt := _root_.Nat.lt
 abbrev orb := _root_.Bool.or
 
-inductive BoolSpec (A B : Prop) : Bool → Prop where
-  | of_true (h : A) : BoolSpec A B true
-  | of_false (h : B) : BoolSpec A B false
-
 namespace Numbers.BinNums
 
 export positive (xH xI xO)
@@ -858,7 +854,9 @@ def ZArith.BinInt.Z.lt_sub_0Statement := ∀ n m : Z, Iff (ZArith.BinInt.Z.lt (Z
 def ZArith.BinInt.Z.lt_succ_rStatement := ∀ n m : Z, Iff (ZArith.BinInt.Z.lt n (ZArith.BinInt.Z.succ m)) (ZArith.BinInt.Z.le n m)
 def ZArith.BinInt.Z.ltb_ltStatement := ∀ n m : Z, Iff (((ZArith.BinInt.Z.ltb n m) = true)) (ZArith.BinInt.Z.lt n m)
 def ZArith.BinInt.Z.ltb_specStatement :=
-  ∀ x y : Z, BoolSpec (ZArith.BinInt.Z.lt x y) (ZArith.BinInt.Z.le y x) (ZArith.BinInt.Z.ltb x y)
+  ∀ x y : Z,
+    _root_.CompCert4Lean.Foundation.Logic.Rocq.Coq.Init.Datatypes.BoolSpec
+      (ZArith.BinInt.Z.lt x y) (ZArith.BinInt.Z.le y x) (ZArith.BinInt.Z.ltb x y)
 def ZArith.BinInt.Z.max_case_strongStatement := ∀ (n m : Z) (P : ∀ _ : Z, Type) (_ : ∀ _ : ZArith.BinInt.Z.le m n, P n) (_ : ∀ _ : ZArith.BinInt.Z.le n m, P m), P (ZArith.BinInt.Z.max n m)
 def ZArith.BinInt.Z.max_caseStatement := ∀ (n m : Z) (P : ∀ _ : Z, Type) (_ : P n) (_ : P m), P (ZArith.BinInt.Z.max n m)
 def ZArith.BinInt.Z.max_commStatement := ∀ n m : Z, ((ZArith.BinInt.Z.max n m) = (ZArith.BinInt.Z.max m n))
