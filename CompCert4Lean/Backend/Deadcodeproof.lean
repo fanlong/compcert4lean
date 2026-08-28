@@ -382,7 +382,7 @@ def is_int_zero_soundStatement : Prop :=
     nv = CompCert4Lean.Backend.NeedDomain.nval.I CompCert4Lean.Lib.Integers.Int.zero
 def find_function_translatedStatement : Prop :=
   ∀ (prog tprog : program), match_prog cfg prog tprog →
-    ∀ (ros : Sum reg ident) (rs trs : regset) (fd : fundef) ne,
+    ∀ (ros : Sum reg ident) (rs : regset) (fd : fundef) (trs : regset) ne,
       RTL.find_function (Genv.globalenv prog) ros rs = some fd →
       eagree rs trs (add_ros_need_all ros ne) →
       ∃ cu tfd,
@@ -459,7 +459,8 @@ def transfer_builtin_args_soundStatement : Prop :=
         magree m m' (fun b ofs => nlive (Genv.globalenv prog) sp nm1 b ofs)
 
 def can_eval_builtin_argStatement : Prop :=
-  ∀ (prog tprog : program) (sp : block) e m e' m' P,
+  ∀ (prog tprog : program), match_prog cfg prog tprog →
+    ∀ (sp : block) e m e' m' P,
     magree m m' P →
     ∀ a v,
       eval_builtin_arg (Genv.to_senv (Genv.globalenv prog))
@@ -469,7 +470,8 @@ def can_eval_builtin_argStatement : Prop :=
           (fun r => Regmap.get r e') (Vptr sp Ptrofs.zero) m' a v'
 
 def can_eval_builtin_argsStatement : Prop :=
-  ∀ (prog tprog : program) (sp : block) e m e' m' P,
+  ∀ (prog tprog : program), match_prog cfg prog tprog →
+    ∀ (sp : block) e m e' m' P,
     magree m m' P →
     ∀ al vl,
       eval_builtin_args (Genv.to_senv (Genv.globalenv prog))
@@ -494,7 +496,8 @@ def eagree_set_undefStatement : Prop :=
   ∀ e1 e2 ne r, eagree e1 e2 ne →
     eagree (Regmap.set r Vundef e1) e2 ne
 def transf_external_callStatement : Prop :=
-  ∀ (prog tprog : program) xi e sp m args vargs ef t vres m' res
+  ∀ (prog tprog : program), match_prog cfg prog tprog →
+    ∀ xi e sp m args vargs ef t vres m' res
       ne2 nm2 ne1 nm1 bc te tm,
     eval_builtin_args (Genv.to_senv (Genv.globalenv prog))
       (fun r => Regmap.get r e) (Vptr sp Ptrofs.zero) m args vargs →
@@ -519,7 +522,8 @@ def transf_external_callStatement : Prop :=
       eagree (regmap_setres res vres e) (regmap_setres res tvres te) ne2 ∧
       magree m' tm' (fun b ofs => nlive (Genv.globalenv prog) sp nm2 b ofs)
 def step_simulationStatement : Prop :=
-  ∀ (prog tprog : program) (xi : ExternalCalls) S1 t S2,
+  ∀ (prog tprog : program), match_prog cfg prog tprog →
+    ∀ (xi : ExternalCalls) S1 t S2,
     RTL.step
       (binary64_certificate := binary64_certificate)
       (binary32_certificate := binary32_certificate)
