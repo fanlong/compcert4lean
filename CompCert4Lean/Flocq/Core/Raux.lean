@@ -569,6 +569,18 @@ def mag (r : radix) (x : R) : mag_prop r x :=
             rw [bpow_zOfInt_value]
             exact (rat_lt_invNatPow_iff a ha b q.val (by omega)).2 hupper }
 
+/-! The executable magnitude remains a runtime support operation.  The
+    source-shaped exact magnitude is owned by `Exact.Magnitude`; this seam
+    records the adapter obligation that later proof grinding must discharge
+    for their magnitude projections to correspond. -/
+def mag_runtime_exact_correspondence
+    (ctx : Exact.Context) (magnitude : Exact.Magnitude ctx) : Prop :=
+  ∀ (r : radix) (x : R),
+    ∃ h : ctx.adapter.represented x,
+      (Exact.mag magnitude r
+        (ctx.adapter.operation ⟨x, h⟩)).mag_val =
+        (mag r x).mag_val
+
 def cond_Ropp (b : Bool) (m : R) : R := if b then Ropp m else m
 
 noncomputable def LPO_Z (P : Z → Prop) (decideP : ∀ n, P n ∨ ¬ P n) :
