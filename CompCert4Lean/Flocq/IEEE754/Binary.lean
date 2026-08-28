@@ -199,6 +199,10 @@ abbrev CertifiedBinaryFloat (prec emax : Z) :=
 abbrev CertifiedSingleNaN (prec emax : Z) :=
   BinarySingleNaN.CertifiedBinaryFloat prec emax
 
+def B2BSN_result_obligation : Prop :=
+  ∀ (x : CertifiedBinaryFloat prec emax),
+    BinarySingleNaN.BinaryFloatCertificate (B2BSN x.1)
+
 def mkB754_nan (s : Bool) (pl : positive)
     (h : B754_nanObligation (prec := prec) pl) :
     CertifiedBinaryFloat prec emax :=
@@ -275,6 +279,10 @@ def build_nan (x : { x : binary_float prec emax // is_nan x = true }) :
   | ⟨.B754_zero _, hx⟩ => nomatch hx
   | ⟨.B754_infinity _, hx⟩ => nomatch hx
   | ⟨.B754_finite _ _ _, hx⟩ => nomatch hx
+
+def build_nan_result_obligation : Prop :=
+  ∀ (x : CertifiedNaNResult prec emax),
+    BinaryFloatCertificate (build_nan ⟨x.1, x.2.1⟩)
 
 def BSN2B (nan : { x : binary_float prec emax // is_nan x = true })
     (x : BinarySingleNaN.binary_float prec emax) : binary_float prec emax :=
