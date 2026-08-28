@@ -82,6 +82,7 @@ private abbrev Signature := CompCert4Lean.Common.AST.signature
 private abbrev Comparison := CompCert4Lean.Lib.Integers.comparison
 private abbrev UnaryOp := CompCert4Lean.Cfrontend.Cop.unary_operation
 private abbrev BinaryOp := CompCert4Lean.Cfrontend.Cop.binary_operation
+private abbrev TBinaryOp := CompCert4Lean.Backend.Cminor.binary_operation
 private abbrev IntSize := CompCert4Lean.Cfrontend.Ctypes.intsize
 private abbrev Signedness := CompCert4Lean.Cfrontend.Ctypes.signedness
 private abbrev Bitfield := CompCert4Lean.Cfrontend.Ctypes.bitfield
@@ -233,8 +234,8 @@ inductive match_transl : TStmt → TCont → TStmt → TCont → Prop where
 
 inductive match_cont (prog : CProgram) (tprog : TProgram) :
     composite_env → CType → Nat → Nat → CCont → TCont → Prop where
-  | match_Kstop (ce : composite_env) (tyret : CType) (nbrk ncnt : Nat) :
-      match_cont prog tprog ce tyret nbrk ncnt .Kstop .Kstop
+  | match_Kstop (ce : CType) (tyret : composite_env) (nbrk ncnt : Nat) :
+      match_cont prog tprog tyret ce nbrk ncnt .Kstop .Kstop
   | match_Kseq (ce : composite_env) (tyret : CType) (nbrk ncnt : Nat)
       (s : CStmt) (k : CCont) (ts : TStmt) (tk : TCont) :
       transl_statement ce tyret nbrk ncnt s = .OK ts →
@@ -335,13 +336,13 @@ def field_offset_stableStatement : Prop :=
         Ctypes.field_offset cunit.prog_comp_env f co.co_members
 
 def first_bit_rangeStatement : Prop :=
-  ∀ sz pos width,
+  ∀ (sz : IntSize) (pos width : Z),
     0 ≤ pos → 0 < width → pos + width ≤ Cop.bitsize_carrier sz →
-    0 ≤ Cop.first_bit sz pos width ∧
-      Cop.first_bit sz pos width < CompCert4Lean.Lib.Integers.Int.zwordsize ∧
-      0 ≤ CompCert4Lean.Lib.Integers.Int.zwordsize - Cop.first_bit sz pos width - width ∧
+    (0 ≤ Cop.first_bit sz pos width ∧
+      Cop.first_bit sz pos width < CompCert4Lean.Lib.Integers.Int.zwordsize) ∧
+    (0 ≤ CompCert4Lean.Lib.Integers.Int.zwordsize - Cop.first_bit sz pos width - width ∧
       CompCert4Lean.Lib.Integers.Int.zwordsize - Cop.first_bit sz pos width - width <
-        CompCert4Lean.Lib.Integers.Int.zwordsize
+        CompCert4Lean.Lib.Integers.Int.zwordsize)
 
 def function_ptr_translatedStatement : Prop :=
   ∀ prog tprog, match_prog prog tprog →
@@ -358,7 +359,7 @@ def functions_translatedStatement : Prop :=
         match_fundef cu f tf ∧ Ctypes.linkorder_program cu prog
 
 def int_ltu_trueStatement : Prop :=
-  ∀ x : Z, 0 ≤ x → x < CompCert4Lean.Lib.Integers.Int.zwordsize →
+  ∀ x : Z, (0 ≤ x ∧ x < CompCert4Lean.Lib.Integers.Int.zwordsize) →
     CompCert4Lean.Lib.Integers.Int.ltu
       (CompCert4Lean.Lib.Integers.Int.repr x)
       CompCert4Lean.Lib.Integers.Int.iwordsize = true
@@ -373,10 +374,11 @@ def make_absfloat_correctStatement
 def make_add_correctStatement
     [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
     [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
-  ∀ (ge : TGenv) (cunit prog : CProgram),
+  ∀ (cunit prog : CProgram),
     Ctypes.linkorder_program cunit prog →
-    binary_constructor_correct ge (make_add cunit.prog_comp_env)
-      (sem_add prog.prog_comp_env)
+    ∀ (ge : TGenv),
+      binary_constructor_correct ge (make_add cunit.prog_comp_env)
+        (sem_add prog.prog_comp_env)
 
 def make_and_correctStatement
     [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
@@ -386,7 +388,24 @@ def make_and_correctStatement
 def make_binarith_correctStatement
     [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
     [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
-  ∀ (ge : TGenv) sem_int sem_long sem_float sem_single iop iopu fop sop lop lopu,
+  ∀ (ge : TGenv)
+    (sem_int : Signedness → CCInt → CCInt → Option val)
+    (sem_long : Signedness → CCInt64 → CCInt64 → Option val)
+    (sem_float : CCFloat → CCFloat → Option val)
+    (sem_single : CCFloat32 → CCFloat32 → Option val)
+    (iop iopu fop sop lop lopu : TBinaryOp),
+    (∀ (x y : CCInt) (m : mem),
+      Csharpminor.eval_binop iop (.Vint x) (.Vint y) m = sem_int .Signed x y) →
+    (∀ (x y : CCInt) (m : mem),
+      Csharpminor.eval_binop iopu (.Vint x) (.Vint y) m = sem_int .Unsigned x y) →
+    (∀ (x y : CCInt64) (m : mem),
+      Csharpminor.eval_binop lop (.Vlong x) (.Vlong y) m = sem_long .Signed x y) →
+    (∀ (x y : CCInt64) (m : mem),
+      Csharpminor.eval_binop lopu (.Vlong x) (.Vlong y) m = sem_long .Unsigned x y) →
+    (∀ (x y : CCFloat) (m : mem),
+      Csharpminor.eval_binop fop (.Vfloat x) (.Vfloat y) m = sem_float x y) →
+    (∀ (x y : CCFloat32) (m : mem),
+      Csharpminor.eval_binop sop (.Vsingle x) (.Vsingle y) m = sem_single x y) →
     binary_constructor_correct ge
       (make_binarith iop iopu fop sop lop lopu)
       (sem_binarith sem_int sem_long sem_float sem_single)
@@ -394,7 +413,18 @@ def make_binarith_correctStatement
 def make_binarith_int_correctStatement
     [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
     [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
-  ∀ (ge : TGenv) sem_int sem_long iop iopu lop lopu,
+  ∀ (ge : TGenv)
+    (sem_int : Signedness → CCInt → CCInt → Option val)
+    (sem_long : Signedness → CCInt64 → CCInt64 → Option val)
+    (iop iopu lop lopu : TBinaryOp),
+    (∀ (x y : CCInt) (m : mem),
+      Csharpminor.eval_binop iop (.Vint x) (.Vint y) m = sem_int .Signed x y) →
+    (∀ (x y : CCInt) (m : mem),
+      Csharpminor.eval_binop iopu (.Vint x) (.Vint y) m = sem_int .Unsigned x y) →
+    (∀ (x y : CCInt64) (m : mem),
+      Csharpminor.eval_binop lop (.Vlong x) (.Vlong y) m = sem_long .Signed x y) →
+    (∀ (x y : CCInt64) (m : mem),
+      Csharpminor.eval_binop lopu (.Vlong x) (.Vlong y) m = sem_long .Unsigned x y) →
     binary_constructor_correct ge
       (make_binarith_int iop iopu lop lopu)
       (sem_binarith sem_int sem_long (fun _ _ => none) (fun _ _ => none))
@@ -488,9 +518,10 @@ def make_memcpy_correctStatement
     [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
     [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (xi : CompCert4Lean.Common.ExternalCalls.ExternalCalls)
-    (ge : TGenv) (cunit prog : CProgram)
-    (f : TFunction) dst src ty k e le m b ofs v m' s,
+    (cunit prog : CProgram),
     Ctypes.linkorder_program cunit prog →
+    ∀ (ge : TGenv)
+    (f : TFunction) dst src ty k e le m b ofs v m' s,
     T_eval_expr ge e le m dst (.Vptr b ofs) →
     T_eval_expr ge e le m src v →
     Clight.assign_loc prog.prog_comp_env ty m b ofs .Full v m' →
@@ -596,7 +627,7 @@ def make_store_bitfield_correctStatement
     [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
     [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (xi : CompCert4Lean.Common.ExternalCalls.ExternalCalls)
-    (ge : TGenv) (prog : CProgram) (f : TFunction)
+    (prog : CProgram) (ge : TGenv) (f : TFunction)
     sz sg pos width dst src ty k e le m b ofs v m' s,
     T_eval_expr ge e le m dst (.Vptr b ofs) →
     T_eval_expr ge e le m src v →
@@ -609,9 +640,10 @@ def make_store_correctStatement
     [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
     [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (xi : CompCert4Lean.Common.ExternalCalls.ExternalCalls)
-    (ge : TGenv) (cunit prog : CProgram)
-    addr ty bf rhs code e le m b ofs v m' f k,
+    (cunit prog : CProgram),
     Ctypes.linkorder_program cunit prog →
+    ∀ (ge : TGenv)
+    addr ty bf rhs code e le m b ofs v m' f k,
     make_store cunit.prog_comp_env addr ty bf rhs = .OK code →
     T_eval_expr ge e le m addr (.Vptr b ofs) →
     T_eval_expr ge e le m rhs v →
@@ -622,10 +654,11 @@ def make_store_correctStatement
 def make_sub_correctStatement
     [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
     [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
-  ∀ (ge : TGenv) (cunit prog : CProgram),
+  ∀ (cunit prog : CProgram),
     Ctypes.linkorder_program cunit prog →
-    binary_constructor_correct ge (make_sub cunit.prog_comp_env)
-      (sem_sub prog.prog_comp_env)
+    ∀ (ge : TGenv),
+      binary_constructor_correct ge (make_sub cunit.prog_comp_env)
+        (sem_sub prog.prog_comp_env)
 
 def make_xor_correctStatement
     [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
@@ -647,9 +680,11 @@ def match_cont_is_call_contStatement : Prop :=
       Csharpminor.is_call_cont tk
 
 def match_env_alloc_variablesStatement : Prop :=
-  ∀ (prog cunit : CProgram) e1 m1 vars e2 m2 tvars te1,
+  ∀ (prog cunit : CProgram),
     Ctypes.linkorder_program cunit prog →
+    ∀ e1 m1 vars e2 m2,
     Clight.alloc_variables (Clight.globalenv prog) e1 m1 vars e2 m2 →
+    ∀ tvars te1,
     CompCert4Lean.Common.Errors.mmap (transl_var cunit.prog_comp_env) vars = .OK tvars →
     match_env prog e1 te1 →
     ∃ te2,
@@ -742,11 +777,13 @@ def transl_alignof_blockcopyStatement : Prop :=
 def transl_arglist_correctStatement
     [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
     [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
-  ∀ (prog cunit : CProgram) (tprog : TProgram) (e : CEnv) (le : CTempEnv)
-    (m : mem) (te : TEnv) (al : List CExpr) (tyl : List CType) (vl : List val),
+  ∀ (prog : CProgram) (tprog : TProgram),
     match_prog prog tprog →
+    ∀ (cunit : CProgram),
     Ctypes.linkorder_program cunit prog →
+    ∀ (e : CEnv) (le : CTempEnv) (m : mem) (te : TEnv),
     match_env prog e te →
+    ∀ (al : List CExpr) (tyl : List CType) (vl : List val),
     C_eval_exprlist (Clight.globalenv prog) e le m al tyl vl →
     ∀ tal, transl_arglist cunit.prog_comp_env al tyl = .OK tal →
       T_eval_exprlist (Genv.globalenv tprog) te le m tal vl
@@ -761,8 +798,9 @@ def transl_arglist_typedStatement
 def transl_binop_correctStatement
     [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
     [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
-  ∀ (ge : TGenv) (cunit prog : CProgram) op a tya b tyb c va vb v e le m,
+  ∀ (cunit prog : CProgram),
     Ctypes.linkorder_program cunit prog →
+    ∀ (ge : TGenv) op a tya b tyb c va vb v e le m,
     transl_binop cunit.prog_comp_env op a tya b tyb = .OK c →
     sem_binary_operation prog.prog_comp_env op va tya vb tyb m = some v →
     T_eval_expr ge e le m a va → T_eval_expr ge e le m b vb →
@@ -771,11 +809,13 @@ def transl_binop_correctStatement
 def transl_expr_correctStatement
     [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
     [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
-  ∀ (prog cunit : CProgram) (tprog : TProgram) (e : CEnv) (te : TEnv)
-    (le : CTempEnv) (m : mem) (a : CExpr) (v : val),
+  ∀ (prog : CProgram) (tprog : TProgram),
     match_prog prog tprog →
+    ∀ (cunit : CProgram),
     Ctypes.linkorder_program cunit prog →
+    ∀ (e : CEnv) (le : CTempEnv) (m : mem) (te : TEnv),
     match_env prog e te →
+    ∀ (a : CExpr) (v : val),
     C_eval_expr (Clight.globalenv prog) e le m a v →
     ∀ ta, transl_expr cunit.prog_comp_env a = .OK ta →
       T_eval_expr (Genv.globalenv tprog) te le m ta v
@@ -783,9 +823,10 @@ def transl_expr_correctStatement
 def transl_expr_lvalueStatement
     [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
     [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
-  ∀ (prog cunit : CProgram) (e : CEnv) (le : CTempEnv) (m : mem)
-    a loc ofs bf ta,
+  ∀ (prog cunit : CProgram),
     Ctypes.linkorder_program cunit prog →
+    ∀ (e : CEnv) (le : CTempEnv) (m : mem)
+    a loc ofs bf ta,
     C_eval_lvalue (Clight.globalenv prog) e le m a loc ofs bf →
     transl_expr cunit.prog_comp_env a = .OK ta →
     ∃ tb, transl_lvalue cunit.prog_comp_env a = .OK (tb, bf) ∧
@@ -794,10 +835,11 @@ def transl_expr_lvalueStatement
 def transl_expr_lvalue_correctStatement
     [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
     [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
-  ∀ (prog cunit : CProgram) (tprog : TProgram) (e : CEnv) (te : TEnv)
-    (le : CTempEnv) (m : mem),
+  ∀ (prog : CProgram) (tprog : TProgram),
     match_prog prog tprog →
+    ∀ (cunit : CProgram),
     Ctypes.linkorder_program cunit prog →
+    ∀ (e : CEnv) (le : CTempEnv) (m : mem) (te : TEnv),
     match_env prog e te →
     (∀ a v, C_eval_expr (Clight.globalenv prog) e le m a v →
       ∀ ta, transl_expr cunit.prog_comp_env a = .OK ta →
@@ -809,12 +851,11 @@ def transl_expr_lvalue_correctStatement
 
 def transl_final_statesStatement : Prop :=
   ∀ (prog : CProgram) (tprog : TProgram) S R r,
-    match_prog prog tprog →
     match_states prog tprog S R →
     Clight.final_state S r → Csharpminor.final_state R r
 
 def transl_find_labelStatement : Prop :=
-  ∀ (prog : CProgram) (tprog : TProgram) lbl ce tyret s nbrk ncnt k ts tk,
+  ∀ (prog : CProgram) (tprog : TProgram) ce lbl tyret s nbrk ncnt k ts tk,
     transl_statement ce tyret nbrk ncnt s = .OK ts →
     match_cont prog tprog ce tyret nbrk ncnt k tk →
     match Clight.find_label lbl s k with
@@ -858,10 +899,11 @@ def transl_lbl_stmt_2Statement : Prop :=
 def transl_lvalue_correctStatement
     [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
     [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
-  ∀ (prog cunit : CProgram) (tprog : TProgram) (e : CEnv) (te : TEnv)
-    (le : CTempEnv) (m : mem) a b ofs bf,
+  ∀ (prog : CProgram) (tprog : TProgram),
     match_prog prog tprog →
+    ∀ (cunit : CProgram),
     Ctypes.linkorder_program cunit prog →
+    ∀ (e : CEnv) (le : CTempEnv) (m : mem) (te : TEnv) a b ofs bf,
     match_env prog e te →
     C_eval_lvalue (Clight.globalenv prog) e le m a b ofs bf →
     ∀ ta bf', transl_lvalue cunit.prog_comp_env a = .OK (ta, bf') →
