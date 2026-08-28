@@ -601,7 +601,7 @@ def size_arguments_boundStatement : Prop :=
 def mreg_is_within_boundsStatement : Prop :=
   ∀ (cfg : CompilerConfig) (f : function) (i : instruction), List.Mem i (codeList f) → ∀ r, defined_by_instr r i → mreg_within_bounds cfg (function_bounds cfg f) r
 def slot_is_within_boundsStatement : Prop :=
-  ∀ (cfg : CompilerConfig) (f : function) (i : instruction), List.Mem i (codeList f) → ∀ sl ofs ty, (sl, ofs, ty) ∈ slots_of_instr i → slot_within_bounds (function_bounds cfg f) sl ofs ty
+  ∀ (cfg : CompilerConfig) (f : function) (i : instruction), List.Mem i (codeList f) → ∀ sl ty ofs, (sl, ofs, ty) ∈ slots_of_instr i → slot_within_bounds (function_bounds cfg f) sl ofs ty
 def slots_of_locs_charactStatement : Prop :=
   ∀ (sl : slot) (ofs : Z) (ty : typ) (l : List loc), (sl, ofs, ty) ∈ slots_of_locs l ↔ (S sl ofs ty) ∈ l
 def instr_is_within_boundsStatement : Prop :=
