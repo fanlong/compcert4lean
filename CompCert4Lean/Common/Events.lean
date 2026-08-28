@@ -655,6 +655,18 @@ def external_call_well_typed_gen
         (binary32_certificate := binary32_certificate) xi ef ge vargs m1 t vres m2 →
     Val.has_rettype vres (ef_sig ef).sig_res
 
+def external_call_well_typed_genStatement
+    [binary64_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)]
+    (xi : ExternalCalls) (ef : external_function) : Prop :=
+  external_call_well_typed_gen
+    (binary64_certificate := binary64_certificate)
+    (binary32_certificate := binary32_certificate) xi ef
+
 def external_call_symbols_preserved
     [binary64_certificate :
       CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
@@ -672,6 +684,18 @@ def external_call_symbols_preserved
         (binary64_certificate := binary64_certificate)
         (binary32_certificate := binary32_certificate) xi ef ge2 vargs m1 t vres m2
 
+def external_call_symbols_preservedStatement
+    [binary64_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)]
+    (xi : ExternalCalls) (ef : external_function) : Prop :=
+  external_call_symbols_preserved
+    (binary64_certificate := binary64_certificate)
+    (binary32_certificate := binary32_certificate) xi ef
+
 def external_call_valid_block
     [binary64_certificate :
       CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
@@ -686,6 +710,18 @@ def external_call_valid_block
         (binary32_certificate := binary32_certificate) xi ef ge vargs m1 t vres m2 →
     Mem.valid_block m1 b →
     Mem.valid_block m2 b
+
+def external_call_valid_blockStatement
+    [binary64_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)]
+    (xi : ExternalCalls) (ef : external_function) : Prop :=
+  external_call_valid_block
+    (binary64_certificate := binary64_certificate)
+    (binary32_certificate := binary32_certificate) xi ef
 
 def external_call_max_perm
     [binary64_certificate :
@@ -703,6 +739,18 @@ def external_call_max_perm
     Mem.perm m2 b ofs Max p →
     Mem.perm m1 b ofs Max p
 
+def external_call_max_permStatement
+    [binary64_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)]
+    (xi : ExternalCalls) (ef : external_function) : Prop :=
+  external_call_max_perm
+    (binary64_certificate := binary64_certificate)
+    (binary32_certificate := binary32_certificate) xi ef
+
 def external_call_readonly
     [binary64_certificate :
       CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
@@ -719,6 +767,18 @@ def external_call_readonly
     Mem.loadbytes m2 b ofs n = some bytes →
     (∀ i, zLe ofs i ∧ zLt i (zAdd ofs n) → ¬ Mem.perm m1 b i Max Writable) →
     Mem.loadbytes m1 b ofs n = some bytes
+
+def external_call_readonlyStatement
+    [binary64_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)]
+    (xi : ExternalCalls) (ef : external_function) : Prop :=
+  external_call_readonly
+    (binary64_certificate := binary64_certificate)
+    (binary32_certificate := binary32_certificate) xi ef
 
 def external_call_mem_extends
     [binary64_certificate :
@@ -741,6 +801,18 @@ def external_call_mem_extends
       Val.lessdef vres vres' ∧
       Mem.extends m2 m2' ∧
       Mem.unchanged_on (loc_out_of_bounds m1) m1' m2'
+
+def external_call_mem_extendsStatement
+    [binary64_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)]
+    (xi : ExternalCalls) (ef : external_function) : Prop :=
+  external_call_mem_extends
+    (binary64_certificate := binary64_certificate)
+    (binary32_certificate := binary32_certificate) xi ef
 
 def external_call_mem_inject_gen
     [binary64_certificate :
@@ -768,6 +840,18 @@ def external_call_mem_inject_gen
       inject_incr f f' ∧
       inject_separated f f' m1 m1'
 
+def external_call_mem_inject_genStatement
+    [binary64_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)]
+    (xi : ExternalCalls) (ef : external_function) : Prop :=
+  external_call_mem_inject_gen
+    (binary64_certificate := binary64_certificate)
+    (binary32_certificate := binary32_certificate) xi ef
+
 def external_call_trace_length
     [binary64_certificate :
       CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
@@ -781,6 +865,18 @@ def external_call_trace_length
         (binary64_certificate := binary64_certificate)
         (binary32_certificate := binary32_certificate) xi ef ge vargs m t vres m' →
       t.length ≤ 1
+
+def external_call_trace_lengthStatement
+    [binary64_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)]
+    (xi : ExternalCalls) (ef : external_function) : Prop :=
+  external_call_trace_length
+    (binary64_certificate := binary64_certificate)
+    (binary32_certificate := binary32_certificate) xi ef
 
 def external_call_receptive
     [binary64_certificate :
@@ -800,6 +896,18 @@ def external_call_receptive
         (binary64_certificate := binary64_certificate)
         (binary32_certificate := binary32_certificate) xi ef ge vargs m t2 vres2 m2
 
+def external_call_receptiveStatement
+    [binary64_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)]
+    (xi : ExternalCalls) (ef : external_function) : Prop :=
+  external_call_receptive
+    (binary64_certificate := binary64_certificate)
+    (binary32_certificate := binary32_certificate) xi ef
+
 def external_call_determ
     [binary64_certificate :
       CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
@@ -816,6 +924,18 @@ def external_call_determ
         (binary64_certificate := binary64_certificate)
         (binary32_certificate := binary32_certificate) xi ef ge vargs m t2 vres2 m2 →
     match_traces ge t1 t2 ∧ (t1 = t2 → vres1 = vres2 ∧ m1 = m2)
+
+def external_call_determStatement
+    [binary64_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)]
+    (xi : ExternalCalls) (ef : external_function) : Prop :=
+  external_call_determ
+    (binary64_certificate := binary64_certificate)
+    (binary32_certificate := binary32_certificate) xi ef
 
 def external_call_well_typedStatement
     [binary64_certificate :
@@ -918,11 +1038,8 @@ export eval_builtin_arg
     eval_BA_splitlong eval_BA_addptr)
 
 def eval_builtin_args {A : Type} (ge : Senv.t) (e : A → val)
-    (sp : val) (m : mem) : List (builtin_arg A) → List val → Prop
-  | [], [] => True
-  | a :: al, v :: vl =>
-      eval_builtin_arg ge e sp m a v ∧ eval_builtin_args ge e sp m al vl
-  | _, _ => False
+    (sp : val) (m : mem) (al : List (builtin_arg A)) (vl : List val) : Prop :=
+  CompCert4Lean.Lib.Coqlib.list_forall2 (eval_builtin_arg ge e sp m) al vl
 
 def eval_builtin_arg_determStatement : Prop :=
   ∀ (A : Type) ge (e : A → val) sp m a v,
