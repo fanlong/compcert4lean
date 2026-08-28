@@ -295,10 +295,10 @@ private def wrongEnumerationText := bytesToString
 
 private def booleanLattice : CompCert4Lean.Backend.Kildall.SemiLattice :=
   { t := Bool
-    bot := false
-    lub := (· || ·)
-    beq := (· == ·)
-    eq := (· = ·)
+    bot := CompCert4Lean.Lib.Lattice.LBoolean.bot
+    lub := CompCert4Lean.Lib.Lattice.LBoolean.lub
+    beq := CompCert4Lean.Lib.Lattice.LBoolean.beq
+    eq := CompCert4Lean.Lib.Lattice.LBoolean.eq
     ge := CompCert4Lean.Lib.Lattice.LBoolean.ge }
 
 def reachable_aux (f : LTL.function) : Option (PMap.t Bool) :=
