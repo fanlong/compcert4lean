@@ -454,7 +454,8 @@ end Raxioms
 
 namespace Rbasic_fun
 def Rabs : R → R := _root_.CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.Rabs
-abbrev Rabs_Rinv (r : R) (h : Not (Eq r (IZR Z0))) : Prop := Eq (Rabs (Rinv r)) (Rinv (Rabs r))
+def Rabs_Rinv_runtime (r : R) (_h : Not (Eq r (IZR Z0))) : Prop :=
+  Eq (Rabs (Rinv r)) (Rinv (Rabs r))
 def Rmin : R → R → R := _root_.CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.Rmin
 end Rbasic_fun
 
@@ -468,20 +469,19 @@ def IZR_neq (ctx : ExactRealContext) (z1 z2 : Z) (h : z1 ≠ z2) : Prop :=
 def Req_dec_T (r1 r2 : R) : Sumbool (Eq r1 r2) (Not (Eq r1 r2)) :=
   if h : r1 = r2 then .left h else .right h
 abbrev Req_EM_T := Req_dec_T
-def Rinv_involutive_depr (r : R) (h : Not (Eq r (IZR Z0))) : Prop := Eq (Rinv (Rinv r)) r
-abbrev Rinv_involutive := Rinv_involutive_depr
-def Rle_Rinv_depr (x y : R) (hx : Rlt (IZR Z0) x) (hy : Rlt (IZR Z0) y) (hxy : Rle x y) : Prop :=
+def Rinv_involutive_runtime (r : R) (_h : Not (Eq r (IZR Z0))) : Prop :=
+  Eq (Rinv (Rinv r)) r
+def Rle_Rinv_runtime (x y : R) (_hx : Rlt (IZR Z0) x) (_hy : Rlt (IZR Z0) y)
+    (_hxy : Rle x y) : Prop :=
   Rle (Rinv y) (Rinv x)
-abbrev Rle_Rinv := Rle_Rinv_depr
 def Rlt_0_minus (a b : R) : Prop := Rlt (IZR Z0) (Rminus a b)
 def Rlt_Rminus (ctx : ExactRealContext) (a b : ctx.spec.carrier)
     (_h : ExactReal.Rlt ctx.spec a b) : Prop :=
   ExactReal.Rlt ctx.spec (ExactReal.R0 ctx.spec)
     (ExactReal.Rminus ctx.spec b a)
-def Ropp_inv_permute_depr (r : R) (h : Not (Eq r (IZR Z0))) : Prop :=
+def Ropp_inv_permute_runtime (r : R) (_h : Not (Eq r (IZR Z0))) : Prop :=
   Eq (Ropp (Rinv r)) (Rinv (Ropp r))
-abbrev Ropp_inv_permute := Ropp_inv_permute_depr
-def Ropp_Ropp_IZR (n : Z) : Prop := Eq (IZR (Z.opp n)) (Ropp (IZR n))
+def Ropp_Ropp_IZR_runtime (n : Z) : Prop := Eq (IZR (Z.opp n)) (Ropp (IZR n))
 def Rsqr : R → R := _root_.CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.Rsqr
 end RIneq
 
@@ -603,6 +603,11 @@ end Raxioms
 
 namespace Rbasic_fun
 
+def Rabs_Rinv (ctx : ExactRealContext)
+    (r : ctx.spec.carrier)
+    (_h : Not (Eq r (ExactReal.IZR ctx.spec Z0))) : Prop :=
+  Eq (ExactReal.Rabs ctx.spec (ExactReal.Rinv ctx.spec r))
+    (ExactReal.Rinv ctx.spec (ExactReal.Rabs ctx.spec r))
 def abs_IZRStatement : Prop := ∀ z : Z, Eq (IZR (Z.abs z)) (Rabs (IZR z))
 def Rabs_def1Statement : Prop := ∀ (x a : R) (_ : Rlt x a) (_ : Rlt (Ropp a) x), Rlt (Rabs x) a
 def Rabs_def2Statement : Prop := ∀ (x a : R) (_ : Rlt (Rabs x) a), And (Rlt x a) (Rlt (Ropp a) x)
@@ -647,6 +652,24 @@ end Rfunctions
 
 namespace RIneq
 
+def Rinv_involutive (ctx : ExactRealContext)
+    (r : ctx.spec.carrier)
+    (_h : Not (Eq r (ExactReal.IZR ctx.spec Z0))) : Prop :=
+  Eq (ExactReal.Rinv ctx.spec (ExactReal.Rinv ctx.spec r)) r
+def Rle_Rinv (ctx : ExactRealContext)
+    (x y : ctx.spec.carrier)
+    (_hx : ExactReal.Rlt ctx.spec (ExactReal.IZR ctx.spec Z0) x)
+    (_hy : ExactReal.Rlt ctx.spec (ExactReal.IZR ctx.spec Z0) y)
+    (_hxy : ExactReal.Rle ctx.spec x y) : Prop :=
+  ExactReal.Rle ctx.spec (ExactReal.Rinv ctx.spec y) (ExactReal.Rinv ctx.spec x)
+def Ropp_inv_permute (ctx : ExactRealContext)
+    (r : ctx.spec.carrier)
+    (_h : Not (Eq r (ExactReal.IZR ctx.spec Z0))) : Prop :=
+  Eq (ExactReal.Ropp ctx.spec (ExactReal.Rinv ctx.spec r))
+    (ExactReal.Rinv ctx.spec (ExactReal.Ropp ctx.spec r))
+def Ropp_Ropp_IZR (ctx : ExactRealContext) (n : Z) : Prop :=
+  Eq (ExactReal.IZR ctx.spec (Z.opp n))
+    (ExactReal.Ropp ctx.spec (ExactReal.IZR ctx.spec n))
 def Rlt_dec (r1 r2 : R) : Sumbool (Rlt r1 r2) (Not (Rlt r1 r2)) :=
   ctx.spec.lt_dec r1 r2
 def Rlt_decStatement : Type :=
@@ -767,7 +790,7 @@ namespace Rsqrt_def
 def Rsqrt_positivityStatement : Prop :=
   ∀ (ctx : ExactRealContext) (x : ExactNonnegReal ctx),
     ExactReal.Rle ctx.spec (ExactReal.R0 ctx.spec)
-      (ExactReal.sqrt ctx.spec x.nonneg)
+      (ExactReal.Rsqrt ctx.spec x.nonneg)
 
 end Rsqrt_def
 
