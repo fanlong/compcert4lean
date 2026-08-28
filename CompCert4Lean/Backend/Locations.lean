@@ -4,6 +4,7 @@ import CompCert4Lean.Foundation.Numbers
 import CompCert4Lean.Common.AST
 import CompCert4Lean.Common.Values
 import CompCert4Lean.Lib.Coqlib
+import CompCert4Lean.Lib.Ordered
 import CompCert4Lean.X86.Machregs
 
 /-!
@@ -399,48 +400,29 @@ def lt_transStatement : Prop :=
 def lt_not_eqStatement : Prop :=
   ∀ x y : t, lt x y → ¬ eq x y
 
-private def compareMreg (x y : mreg) :
-    OrderedCompare
-      (fun a b => pLt (IndexedMreg.index a) (IndexedMreg.index b))
-      (fun a b => a = b) x y := by
-  cases x <;> cases y <;>
-    first
-    | exact .LT (by
-        unfold pLt CompCert4Lean.Lib.Coqlib.Plt
-          PArith.BinPos.Pos.lt IndexedMreg.index
-        decide)
-    | exact .EQ rfl
-    | exact .GT (by
-        unfold pLt CompCert4Lean.Lib.Coqlib.Plt
-          PArith.BinPos.Pos.lt IndexedMreg.index
-        decide)
-
-private def compareZ (x y : Z) :
-    OrderedCompare zLt (fun a b => a = b) x y := by
-  cases CompCert4Lean.Lib.Coqlib.zlt x y with
-  | left hlt => exact .LT hlt
-  | right hlt =>
-      cases CompCert4Lean.Lib.Coqlib.zeq x y with
-      | left heq => exact .EQ heq
-      | right heq =>
-          refine
-            CompCert4Lean.Foundation.Ordered.Rocq.Coq.Structures.OrderedType.Compare.GT ?_
-          change intOfZ y ≤ intOfZ x at hlt
-          change intOfZ y < intOfZ x
-          have hne : intOfZ x ≠ intOfZ y := by
-            intro h
-            exact heq (intOfZ_injective h)
-          omega
+private theorem mregIndex_inj (x y : mreg)
+    (h : IndexedMreg.index x = IndexedMreg.index y) : x = y := by
+  cases x <;> cases y <;> try rfl
+  all_goals
+    exfalso
+    have hnat := congrArg PArith.BinPos.Pos.to_nat h
+    change posToNat (posOfNat _) = posToNat (posOfNat _) at hnat
+    rw [posToNat_posOfNat (by omega)] at hnat
+    rw [posToNat_posOfNat (by omega)] at hnat
+    omega
 
 def compare (x y : t) : OrderedCompare lt eq x y := by
   cases x with
   | R r1 =>
       cases y with
       | R r2 =>
-          cases compareMreg r1 r2 with
+          cases CompCert4Lean.Lib.Ordered.OrderedPositive.compare
+              (IndexedMreg.index r1) (IndexedMreg.index r2) with
           | LT h => exact .LT h
-          | EQ h => exact .EQ (congrArg R h)
           | GT h => exact .GT h
+          | EQ h =>
+              change IndexedMreg.index r1 = IndexedMreg.index r2 at h
+              exact .EQ (congrArg R (mregIndex_inj r1 r2 h))
       | S _ _ _ => exact .LT trivial
   | S sl1 ofs1 ty1 =>
       cases y with
@@ -450,7 +432,7 @@ def compare (x y : t) : OrderedCompare lt eq x y := by
           | LT h => exact .LT (Or.inl h)
           | GT h => exact .GT (Or.inl h)
           | EQ hsl =>
-              cases compareZ ofs1 ofs2 with
+              cases CompCert4Lean.Lib.Ordered.OrderedZ.compare ofs1 ofs2 with
               | LT h => exact .LT (Or.inr ⟨hsl, Or.inl h⟩)
               | GT h => exact .GT (Or.inr ⟨hsl.symm, Or.inl h⟩)
               | EQ hofs =>
