@@ -470,7 +470,9 @@ def is_tail_transStatement : Prop :=
   ∀ (A : Type) (l1 l2 : List A),
     is_tail l1 l2 → ∀ l3 : List A, is_tail l2 l3 → is_tail l1 l3
 
-inductive list_forall2 {A B : Type} :
+universe u v
+
+inductive list_forall2 {A : Type u} {B : Type v} :
     (P : A → B → Prop) → List A → List B → Prop where
   | nil (P : A → B → Prop) : list_forall2 P [] []
   | cons {P : A → B → Prop} (a1 : A) {al : List A} (b1 : B) {bl : List B} :
@@ -480,17 +482,18 @@ open list_forall2 renaming nil → list_forall2_nil
 export _root_ (list_forall2_nil)
 
 def list_forall2_appStatement : Prop :=
-  ∀ (A B : Type) (P : A → B → Prop)
+  ∀ (A : Type u) (B : Type v) (P : A → B → Prop)
     (a2 : List A) (b2 : List B) (a1 : List A) (b1 : List B),
     list_forall2 P a1 b1 → list_forall2 P a2 b2 →
       list_forall2 P (a1 ++ a2) (b1 ++ b2)
 
 def list_forall2_lengthStatement : Prop :=
-  ∀ (A B : Type) (P : A → B → Prop) (l1 : List A) (l2 : List B),
+  ∀ (A : Type u) (B : Type v) (P : A → B → Prop)
+    (l1 : List A) (l2 : List B),
     list_forall2 P l1 l2 → List.length l1 = List.length l2
 
 def list_forall2_in_leftStatement : Prop :=
-  ∀ (A B : Type) (P : A → B → Prop) (x1 : A)
+  ∀ (A : Type u) (B : Type v) (P : A → B → Prop) (x1 : A)
     (l1 : List A) (l2 : List B),
     list_forall2 P l1 l2 → x1 ∈ l1 → ∃ x2 : B, x2 ∈ l2 ∧ P x1 x2
 
