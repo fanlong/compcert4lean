@@ -196,6 +196,118 @@ def transfer_builtin (cfg : CompilerConfig) (app : VA.t) (ef : external_function
       | none => transfer_builtin_args (kill_builtin_res res ne, nmem_all) args
   | _, _ => transfer_builtin_args (kill_builtin_res res ne, nmem_all) args
 
+/-! Exact proposition of Rocq's generated `transfer_builtin_ind` scheme.
+The explicit `CompilerConfig` parameter is the authenticated configuration
+seam used by the translated source equations.  Its proof term remains assigned
+to the later proof-migration phase. -/
+def transfer_builtin_indStatement (cfg : CompilerConfig) : Prop :=
+  ∀ (app : VA.t)
+    (P : external_function → List (builtin_arg reg) → builtin_res reg →
+      NE.t → nmem → NA.t → Prop),
+    (∀ (ef : external_function) (args : List (builtin_arg reg))
+      (res : builtin_res reg) (ne : NE.t) (nm : nmem) (chunk : memory_chunk),
+      ef = .EF_vload chunk →
+      ∀ (a1 : builtin_arg reg), args = [a1] →
+        P (.EF_vload chunk) [a1] res ne nm
+          (transfer_builtin_arg All
+            (kill_builtin_res res ne,
+              nmem_add nm (aaddr_arg cfg app a1) (size_chunk chunk)) a1)) →
+    (∀ (ef : external_function) (args : List (builtin_arg reg))
+      (res : builtin_res reg) (ne : NE.t) (nm : nmem) (chunk : memory_chunk),
+      ef = .EF_vstore chunk →
+      ∀ (a1 a2 : builtin_arg reg), args = [a1, a2] →
+        P (.EF_vstore chunk) [a1, a2] res ne nm
+          (transfer_builtin_arg All
+            (transfer_builtin_arg (store_argument chunk)
+              (kill_builtin_res res ne, nm) a2) a1)) →
+    (∀ (ef : external_function) (args : List (builtin_arg reg))
+      (res : builtin_res reg) (ne : NE.t) (nm : nmem) (sz al : Z),
+      ef = .EF_memcpy sz al →
+      ∀ (dst src : builtin_arg reg), args = [dst, src] →
+      nmem_contains nm (aaddr_arg cfg app dst) sz = true →
+        P (.EF_memcpy sz al) [dst, src] res ne nm
+          (transfer_builtin_args
+            (kill_builtin_res res ne,
+              nmem_add (nmem_remove nm (aaddr_arg cfg app dst) sz)
+                (aaddr_arg cfg app src) sz) args)) →
+    (∀ (ef : external_function) (args : List (builtin_arg reg))
+      (res : builtin_res reg) (ne : NE.t) (nm : nmem) (sz al : Z),
+      ef = .EF_memcpy sz al →
+      ∀ (dst src : builtin_arg reg), args = [dst, src] →
+      nmem_contains nm (aaddr_arg cfg app dst) sz = false →
+        P (.EF_memcpy sz al) [dst, src] res ne nm (ne, nm)) →
+    (∀ (ef : external_function) (args : List (builtin_arg reg))
+      (res : builtin_res reg) (ne : NE.t) (nm : nmem) (kind : positive)
+      (text : RocqString) (targs : List typ),
+      ef = .EF_annot kind text targs →
+      ∀ (args' : List (builtin_arg reg)), args = args' →
+        P (.EF_annot kind text targs) args' res ne nm
+          (transfer_builtin_args (kill_builtin_res res ne, nm) args)) →
+    (∀ (ef : external_function) (args : List (builtin_arg reg))
+      (res : builtin_res reg) (ne : NE.t) (nm : nmem) (kind : positive)
+      (text : RocqString) (targ : typ),
+      ef = .EF_annot_val kind text targ →
+      ∀ (args' : List (builtin_arg reg)), args = args' →
+        P (.EF_annot_val kind text targ) args' res ne nm
+          (transfer_builtin_args (kill_builtin_res res ne, nm) args)) →
+    (∀ (ef : external_function) (args : List (builtin_arg reg))
+      (res : builtin_res reg) (ne : NE.t) (nm : nmem) (kind : positive)
+      (id : ident) (targs : List typ),
+      ef = .EF_debug kind id targs →
+      ∀ (args' : List (builtin_arg reg)), args = args' →
+        P (.EF_debug kind id targs) args' res ne nm
+          (kill_builtin_res res ne, nm)) →
+    (∀ (ef : external_function) (args : List (builtin_arg reg))
+      (res : builtin_res reg) (ne : NE.t) (nm : nmem)
+      (name : RocqString) (sg : signature),
+      ef = .EF_builtin name sg →
+      ∀ (args' : List (builtin_arg reg)), args = args' →
+      ∀ (bf : builtin_function), lookup_builtin_function name sg = some bf →
+      builtin_res_dead res ne = true →
+        P (.EF_builtin name sg) args' res ne nm (ne, nm)) →
+    (∀ (ef : external_function) (args : List (builtin_arg reg))
+      (res : builtin_res reg) (ne : NE.t) (nm : nmem)
+      (name : RocqString) (sg : signature),
+      ef = .EF_builtin name sg →
+      ∀ (args' : List (builtin_arg reg)), args = args' →
+      ∀ (bf : builtin_function), lookup_builtin_function name sg = some bf →
+      builtin_res_dead res ne = false →
+        P (.EF_builtin name sg) args' res ne nm
+          (transfer_builtin_args (kill_builtin_res res ne, nm) args')) →
+    (∀ (ef : external_function) (args : List (builtin_arg reg))
+      (res : builtin_res reg) (ne : NE.t) (nm : nmem)
+      (name : RocqString) (sg : signature),
+      ef = .EF_builtin name sg →
+      ∀ (args' : List (builtin_arg reg)), args = args' →
+      ∀ (found : Option builtin_function), lookup_builtin_function name sg = found →
+      (match found with
+       | some _ => False
+       | none => True) →
+        P (.EF_builtin name sg) args' res ne nm
+          (transfer_builtin_args (kill_builtin_res res ne, nmem_all) args')) →
+    (∀ (ef : external_function) (args : List (builtin_arg reg))
+      (res : builtin_res reg) (ne : NE.t) (nm : nmem)
+      (ef' : external_function),
+      ef = ef' →
+      ∀ (args' : List (builtin_arg reg)), args = args' →
+      (match ef' with
+       | .EF_vload _ =>
+           match args' with
+           | [_] => False
+           | _ => True
+       | .EF_vstore _ | .EF_memcpy _ _ =>
+           match args' with
+           | [_, _] => False
+           | _ => True
+       | .EF_builtin _ _ | .EF_annot _ _ _ | .EF_annot_val _ _ _ |
+         .EF_debug _ _ _ => False
+       | _ => True) →
+        P ef' args' res ne nm
+          (transfer_builtin_args (kill_builtin_res res ne, nmem_all) args)) →
+    ∀ (ef : external_function) (args : List (builtin_arg reg))
+      (res : builtin_res reg) (ne : NE.t) (nm : nmem),
+      P ef args res ne nm (transfer_builtin cfg app ef args res ne nm)
+
 def transfer (cfg : CompilerConfig) (f : function) (dm : defmap)
     (approx : PMap.t VA.t)
     (pc : node) (after : NA.t) : NA.t :=
