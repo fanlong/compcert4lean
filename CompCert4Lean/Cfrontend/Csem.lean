@@ -213,50 +213,50 @@ inductive lred (ge : genv) (e : env) : expr → mem → expr → mem → Prop wh
 inductive rred
     [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
     [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
-    (xi : ExternalCalls) (ge : genv) (e : env) :
+    (xi : ExternalCalls) (ge : genv) :
     expr → mem → trace → expr → mem → Prop where
   | rvalof {b ofs bf ty m t v} :
       deref_loc ge ty m b ofs bf t v →
-      rred xi ge e (.Evalof (.Eloc b ofs bf ty) ty) m t (.Eval v ty) m
+      rred xi ge (.Evalof (.Eloc b ofs bf ty) ty) m t (.Eval v ty) m
   | addrof {b ofs ty1 ty m} :
-      rred xi ge e (.Eaddrof (.Eloc b ofs .Full ty1) ty) m E0 (.Eval (.Vptr b ofs) ty) m
+      rred xi ge (.Eaddrof (.Eloc b ofs .Full ty1) ty) m E0 (.Eval (.Vptr b ofs) ty) m
   | unop {op v1 ty1 ty m v} :
       sem_unary_operation
           (binary64_certificate := binary64_certificate) op v1 ty1 m = some v →
-      rred xi ge e (.Eunop op (.Eval v1 ty1) ty) m E0 (.Eval v ty) m
+      rred xi ge (.Eunop op (.Eval v1 ty1) ty) m E0 (.Eval v ty) m
   | binop {op v1 ty1 v2 ty2 ty m v} :
       sem_binary_operation
           (binary64_certificate := binary64_certificate)
           (binary32_certificate := binary32_certificate)
           ge.genv_cenv op v1 ty1 v2 ty2 m = some v →
-      rred xi ge e (.Ebinop op (.Eval v1 ty1) (.Eval v2 ty2) ty) m E0 (.Eval v ty) m
+      rred xi ge (.Ebinop op (.Eval v1 ty1) (.Eval v2 ty2) ty) m E0 (.Eval v ty) m
   | cast {ty v1 ty1 m v} :
       sem_cast
           (binary64_certificate := binary64_certificate)
           (binary32_certificate := binary32_certificate) v1 ty1 ty m = some v →
-      rred xi ge e (.Ecast (.Eval v1 ty1) ty) m E0 (.Eval v ty) m
+      rred xi ge (.Ecast (.Eval v1 ty1) ty) m E0 (.Eval v ty) m
   | red_seqand_true {v1 ty1 r2 ty m} :
       bool_val v1 ty1 m = some true →
-      rred xi ge e (.Eseqand (.Eval v1 ty1) r2 ty) m E0 (.Eparen r2 type_bool ty) m
+      rred xi ge (.Eseqand (.Eval v1 ty1) r2 ty) m E0 (.Eparen r2 type_bool ty) m
   | red_seqand_false {v1 ty1 r2 ty m} :
       bool_val v1 ty1 m = some false →
-      rred xi ge e (.Eseqand (.Eval v1 ty1) r2 ty) m E0 (.Eval (.Vint Int.zero) ty) m
+      rred xi ge (.Eseqand (.Eval v1 ty1) r2 ty) m E0 (.Eval (.Vint Int.zero) ty) m
   | red_seqor_true {v1 ty1 r2 ty m} :
       bool_val v1 ty1 m = some true →
-      rred xi ge e (.Eseqor (.Eval v1 ty1) r2 ty) m E0 (.Eval (.Vint Int.one) ty) m
+      rred xi ge (.Eseqor (.Eval v1 ty1) r2 ty) m E0 (.Eval (.Vint Int.one) ty) m
   | red_seqor_false {v1 ty1 r2 ty m} :
       bool_val v1 ty1 m = some false →
-      rred xi ge e (.Eseqor (.Eval v1 ty1) r2 ty) m E0 (.Eparen r2 type_bool ty) m
+      rred xi ge (.Eseqor (.Eval v1 ty1) r2 ty) m E0 (.Eparen r2 type_bool ty) m
   | condition {v1 ty1 r1 r2 ty b m} :
       bool_val v1 ty1 m = some b →
-      rred xi ge e (.Econdition (.Eval v1 ty1) r1 r2 ty) m E0
+      rred xi ge (.Econdition (.Eval v1 ty1) r1 r2 ty) m E0
         (.Eparen (if b then r1 else r2) ty ty) m
   | sizeof {ty1 ty m} :
-      rred xi ge e (.Esizeof ty1 ty) m E0
+      rred xi ge (.Esizeof ty1 ty) m E0
         (.Eval (CompCert4Lean.Common.Values.Vptrofs
           (Ptrofs.repr (Ctypes.sizeof ge.genv_cenv ty1))) ty) m
   | alignof {ty1 ty m} :
-      rred xi ge e (.Ealignof ty1 ty) m E0
+      rred xi ge (.Ealignof ty1 ty) m E0
         (.Eval (CompCert4Lean.Common.Values.Vptrofs
           (Ptrofs.repr (Ctypes.alignof ge.genv_cenv ty1))) ty) m
   | assign {b ofs ty1 bf v2 ty2 m v t m' v'} :
@@ -264,17 +264,17 @@ inductive rred
           (binary64_certificate := binary64_certificate)
           (binary32_certificate := binary32_certificate) v2 ty2 ty1 m = some v →
       assign_loc ge ty1 m b ofs bf v t m' v' →
-      rred xi ge e (.Eassign (.Eloc b ofs bf ty1) (.Eval v2 ty2) ty1) m
+      rred xi ge (.Eassign (.Eloc b ofs bf ty1) (.Eval v2 ty2) ty1) m
         t (.Eval v' ty1) m'
   | assignop {op b ofs ty1 bf v2 ty2 tyres m t v1} :
       deref_loc ge ty1 m b ofs bf t v1 →
-      rred xi ge e (.Eassignop op (.Eloc b ofs bf ty1) (.Eval v2 ty2) tyres ty1) m t
+      rred xi ge (.Eassignop op (.Eloc b ofs bf ty1) (.Eval v2 ty2) tyres ty1) m t
         (.Eassign (.Eloc b ofs bf ty1)
           (.Ebinop op (.Eval v1 ty1) (.Eval v2 ty2) tyres) ty1) m
   | postincr {id b ofs ty bf m t v1 op} :
       deref_loc ge ty m b ofs bf t v1 →
       op = (match id with | .Incr => .Oadd | .Decr => .Osub) →
-      rred xi ge e (.Epostincr id (.Eloc b ofs bf ty) ty) m t
+      rred xi ge (.Epostincr id (.Eloc b ofs bf ty) ty) m t
         (.Ecomma
           (.Eassign (.Eloc b ofs bf ty)
             (.Ebinop op (.Eval v1 ty) (.Eval (.Vint Int.one) type_int32s)
@@ -282,12 +282,12 @@ inductive rred
           (.Eval v1 ty) ty) m
   | comma {v ty1 r2 ty m} :
       typeof r2 = ty →
-      rred xi ge e (.Ecomma (.Eval v ty1) r2 ty) m E0 r2 m
+      rred xi ge (.Ecomma (.Eval v ty1) r2 ty) m E0 r2 m
   | paren {v1 ty1 ty2 ty m v} :
       sem_cast
           (binary64_certificate := binary64_certificate)
           (binary32_certificate := binary32_certificate) v1 ty1 ty2 m = some v →
-      rred xi ge e (.Eparen (.Eval v1 ty1) ty2 ty) m E0 (.Eval v ty) m
+      rred xi ge (.Eparen (.Eval v1 ty1) ty2 ty) m E0 (.Eval v ty) m
   | builtin {ef tyargs el ty m vargs t vres m'} :
       cast_arguments
           (binary64_certificate := binary64_certificate)
@@ -295,7 +295,7 @@ inductive rred
       external_call
           (binary64_certificate := binary64_certificate)
           (binary32_certificate := binary32_certificate) xi ef (symbolEnv ge) vargs m t vres m' →
-      rred xi ge e (.Ebuiltin ef tyargs el ty) m t (.Eval vres ty) m'
+      rred xi ge (.Ebuiltin ef tyargs el ty) m t (.Eval vres ty) m'
 
 export rred (red_seqand_true red_seqand_false red_seqor_true red_seqor_false)
 
@@ -385,7 +385,7 @@ inductive imm_safe
   | rvalRed {to C a m t a' m'} :
       rred
           (binary64_certificate := binary64_certificate)
-          (binary32_certificate := binary32_certificate) xi ge e a m t a' m' →
+          (binary32_certificate := binary32_certificate) xi ge a m t a' m' →
       context .RV to C →
       imm_safe xi ge e to (C a) m
   | callRed {to C a m fd args ty} :
@@ -498,7 +498,7 @@ inductive estep
   | step_rred {C f a k e m t a' m'} :
       rred
           (binary64_certificate := binary64_certificate)
-          (binary32_certificate := binary32_certificate) xi ge e a m t a' m' →
+          (binary32_certificate := binary32_certificate) xi ge a m t a' m' →
       context .RV .RV C →
       estep xi ge (.ExprState f (C a) k e m) t (.ExprState f (C a') k e m')
   | step_call {C f a k e m fd vargs ty} :

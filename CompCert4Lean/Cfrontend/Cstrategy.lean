@@ -811,10 +811,10 @@ def lred_kindStatement : Prop :=
 def rred_kindStatement
     [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
     [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
-  ∀ (xi : ExternalCalls) (ge : genv) e a m t a' m',
+  ∀ (xi : ExternalCalls) (ge : genv) a m t a' m',
     rred
       (binary64_certificate := binary64_certificate)
-      (binary32_certificate := binary32_certificate) xi ge e a m t a' m' →
+      (binary32_certificate := binary32_certificate) xi ge a m t a' m' →
     expr_kind a = .RV
 
 def callred_kindStatement
@@ -864,7 +864,7 @@ def rred_invertStatement
   ∀ (xi : ExternalCalls) (ge : genv) (e : env) r m t r' m',
     rred
       (binary64_certificate := binary64_certificate)
-      (binary32_certificate := binary32_certificate) xi ge e r m t r' m' →
+      (binary32_certificate := binary32_certificate) xi ge r m t r' m' →
     invert_expr_prop
       (binary64_certificate := binary64_certificate)
       (binary32_certificate := binary32_certificate) xi ge e r m
