@@ -14,10 +14,29 @@ decision procedures are only secondary implementation aids.
 
 namespace CompCert4Lean.Lib.Decidableplus
 
+universe u v
+
 open CompCert4Lean.Foundation.Logic
 open CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.List
 open CompCert4Lean.Foundation.Numbers.Rocq.Coq
 open CompCert4Lean.Foundation.Ordered.Rocq.Coq.Classes.DecidableClass
+
+/- The foundation list facade predates the universe-polymorphic source API and
+   exposes these Boolean traversals only at `Type 0`.  Keep the source
+   computation local here so the public declarations can retain their full
+   carrier universes without changing the provider-owned file. -/
+private def forallbU {A : Type u} (f : A → Bool) (l : List A) : Bool :=
+  match l with
+  | [] => true
+  | x :: xs => f x && forallbU f xs
+
+private def existsbU {A : Type u} (f : A → Bool) (l : List A) : Bool :=
+  match l with
+  | [] => false
+  | x :: xs => f x || existsbU f xs
+
+private def listProdU {A : Type u} {B : Type v} (l : List A) (l' : List B) : List (A × B) :=
+  l.flatMap (fun x => l'.map (fun y => (x, y)))
 
 private abbrev RocqDecidable (P : Prop) :=
   CompCert4Lean.Foundation.Ordered.Rocq.Coq.Classes.DecidableClass.Decidable P
@@ -136,7 +155,7 @@ instance instDecidable_implies (P Q : Prop) [dP : RocqDecidable P]
     [dQ : RocqDecidable Q] : RocqDecidable (P → Q) :=
   Decidable_implies P Q dP dQ
 
-def Decidable_eq {A : Type}
+def Decidable_eq {A : Type u}
     (eqdec : ∀ (x y : A),
       CompCert4Lean.Foundation.Logic.Support.Sumbool (x = y) (¬ x = y))
     (x y : A) : RocqDecidable (x = y) where
@@ -274,17 +293,17 @@ instance Decidable_divides (x y : Z) : RocqDecidable (ZArith.BinInt.Z.divide x y
     (ZArith.BinInt.Z.mul (ZArith.BinInt.Z.div y x) x)
   spec := ⟨divide_of_eqb_true x y, eqb_true_of_divide x y⟩
 
-private theorem forallb_decidable_spec (A : Type) (l : List A) (P : A → Prop)
+private theorem forallb_decidable_spec (A : Type u) (l : List A) (P : A → Prop)
     (dP : ∀ x : A, RocqDecidable (P x)) :
-    forallb (fun x => (dP x).witness) l = true ↔
-      ∀ x : A, In x l → P x := by
+    forallbU (fun x => (dP x).witness) l = true ↔
+      ∀ x : A, _root_.List.Mem x l → P x := by
   induction l with
   | nil =>
-      simp only [forallb, Bool.true_eq, true_iff]
+      simp only [forallbU, Bool.true_eq, true_iff]
       intro x hx
       cases hx
   | cons a l ih =>
-      simp only [forallb, Bool.and_eq_true, ih, (dP a).spec]
+      simp only [forallbU, Bool.and_eq_true, ih, (dP a).spec]
       constructor
       · rintro ⟨ha, hl⟩ x hx
         rcases _root_.List.mem_cons.mp hx with hxa | hxl
@@ -294,17 +313,17 @@ private theorem forallb_decidable_spec (A : Type) (l : List A) (P : A → Prop)
         exact ⟨hall a (_root_.List.Mem.head l),
           fun x hx => hall x (_root_.List.Mem.tail a hx)⟩
 
-private theorem existsb_decidable_spec (A : Type) (l : List A) (P : A → Prop)
+private theorem existsb_decidable_spec (A : Type u) (l : List A) (P : A → Prop)
     (dP : ∀ x : A, RocqDecidable (P x)) :
-    existsb (fun x => (dP x).witness) l = true ↔
-      ∃ x : A, In x l ∧ P x := by
+    existsbU (fun x => (dP x).witness) l = true ↔
+      ∃ x : A, _root_.List.Mem x l ∧ P x := by
   induction l with
   | nil =>
-      simp only [existsb, Bool.false_eq_true, false_iff]
+      simp only [existsbU, Bool.false_eq_true, false_iff]
       rintro ⟨x, hx, _⟩
       cases hx
   | cons a l ih =>
-      simp only [existsb, Bool.or_eq_true, ih, (dP a).spec]
+      simp only [existsbU, Bool.or_eq_true, ih, (dP a).spec]
       constructor
       · intro h
         rcases h with ha | ⟨x, hx, hpx⟩
@@ -315,37 +334,37 @@ private theorem existsb_decidable_spec (A : Type) (l : List A) (P : A → Prop)
         · exact Or.inl (hxa ▸ hpx)
         · exact Or.inr ⟨x, hxl, hpx⟩
 
-def Decidable_forall_in_list (A : Type) (l : List A) (P : A → Prop)
+def Decidable_forall_in_list (A : Type u) (l : List A) (P : A → Prop)
     (dP : ∀ x : A, RocqDecidable (P x)) :
-    RocqDecidable (∀ x : A, In x l → P x) where
-  witness := forallb (fun x => (dP x).witness) l
+    RocqDecidable (∀ x : A, _root_.List.Mem x l → P x) where
+  witness := forallbU (fun x => (dP x).witness) l
   spec := forallb_decidable_spec A l P dP
 
-def Decidable_exists_in_list (A : Type) (l : List A) (P : A → Prop)
+def Decidable_exists_in_list (A : Type u) (l : List A) (P : A → Prop)
     (dP : ∀ x : A, RocqDecidable (P x)) :
-    RocqDecidable (∃ x : A, In x l ∧ P x) where
-  witness := existsb (fun x => (dP x).witness) l
+    RocqDecidable (∃ x : A, _root_.List.Mem x l ∧ P x) where
+  witness := existsbU (fun x => (dP x).witness) l
   spec := existsb_decidable_spec A l P dP
 
-instance instDecidable_forall_in_list {A : Type} (l : List A) (P : A → Prop)
+instance instDecidable_forall_in_list {A : Type u} (l : List A) (P : A → Prop)
     [dP : ∀ x : A, RocqDecidable (P x)] :
-    RocqDecidable (∀ x : A, In x l → P x) :=
+    RocqDecidable (∀ x : A, _root_.List.Mem x l → P x) :=
   Decidable_forall_in_list A l P dP
 
-instance instDecidable_exists_in_list {A : Type} (l : List A) (P : A → Prop)
+instance instDecidable_exists_in_list {A : Type u} (l : List A) (P : A → Prop)
     [dP : ∀ x : A, RocqDecidable (P x)] :
-    RocqDecidable (∃ x : A, In x l ∧ P x) :=
+    RocqDecidable (∃ x : A, _root_.List.Mem x l ∧ P x) :=
   Decidable_exists_in_list A l P dP
 
-class Finite (T : Type) where
+class Finite (T : Type u) where
   Finite_elements : List T
-  Finite_elements_spec : ∀ x : T, In x Finite_elements
+  Finite_elements_spec : ∀ x : T, _root_.List.Mem x Finite_elements
 
 export Finite (Finite_elements Finite_elements_spec)
 
-def Decidable_forall (T : Type) (fT : Finite T) (P : T → Prop)
+def Decidable_forall (T : Type u) (fT : Finite T) (P : T → Prop)
     (dP : ∀ x : T, RocqDecidable (P x)) : RocqDecidable (∀ x : T, P x) where
-  witness := forallb (fun x => (dP x).witness)
+  witness := forallbU (fun x => (dP x).witness)
     (Finite.Finite_elements (self := fT))
   spec := by
     rw [forallb_decidable_spec T (Finite.Finite_elements (self := fT)) P dP]
@@ -355,9 +374,9 @@ def Decidable_forall (T : Type) (fT : Finite T) (P : T → Prop)
     · intro h x _
       exact h x
 
-def Decidable_exists (T : Type) (fT : Finite T) (P : T → Prop)
+def Decidable_exists (T : Type u) (fT : Finite T) (P : T → Prop)
     (dP : ∀ x : T, RocqDecidable (P x)) : RocqDecidable (∃ x : T, P x) where
-  witness := existsb (fun x => (dP x).witness)
+  witness := existsbU (fun x => (dP x).witness)
     (Finite.Finite_elements (self := fT))
   spec := by
     rw [existsb_decidable_spec T (Finite.Finite_elements (self := fT)) P dP]
@@ -367,11 +386,11 @@ def Decidable_exists (T : Type) (fT : Finite T) (P : T → Prop)
     · rintro ⟨x, hpx⟩
       exact ⟨x, Finite.Finite_elements_spec (self := fT) x, hpx⟩
 
-instance instDecidable_forall {T : Type} [fT : Finite T] (P : T → Prop)
+instance instDecidable_forall {T : Type u} [fT : Finite T] (P : T → Prop)
     [dP : ∀ x : T, RocqDecidable (P x)] : RocqDecidable (∀ x : T, P x) :=
   Decidable_forall T fT P dP
 
-instance instDecidable_exists {T : Type} [fT : Finite T] (P : T → Prop)
+instance instDecidable_exists {T : Type u} [fT : Finite T] (P : T → Prop)
     [dP : ∀ x : T, RocqDecidable (P x)] : RocqDecidable (∃ x : T, P x) :=
   Decidable_exists T fT P dP
 
@@ -383,23 +402,23 @@ instance Finite_bool : Finite Bool where
     | false => exact _root_.List.Mem.head _
     | true => exact _root_.List.Mem.tail false (_root_.List.Mem.head _)
 
-instance Finite_pair {A B : Type} [fA : Finite A] [fB : Finite B] :
+instance Finite_pair {A : Type u} {B : Type v} [fA : Finite A] [fB : Finite B] :
     Finite (A × B) where
   Finite_elements :=
-    CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.List.list_prod
-      (Finite.Finite_elements (self := fA)) (Finite.Finite_elements (self := fB))
+    listProdU (Finite.Finite_elements (self := fA)) (Finite.Finite_elements (self := fB))
   Finite_elements_spec := by
     intro x
     rcases x with ⟨a, b⟩
-    exact
-      CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.List.in_prod
-        (Finite.Finite_elements (self := fA)) (Finite.Finite_elements (self := fB)) a b
-        (Finite.Finite_elements_spec (self := fA) a)
-        (Finite.Finite_elements_spec (self := fB) b)
+    change (a, b) ∈
+      ((Finite.Finite_elements (self := fA)).flatMap
+        (fun x => (Finite.Finite_elements (self := fB)).map (fun y => (x, y))))
+    rw [_root_.List.mem_flatMap]
+    exact ⟨a, Finite.Finite_elements_spec (self := fA) a,
+      _root_.List.mem_map.mpr ⟨b, Finite.Finite_elements_spec (self := fB) b, rfl⟩⟩
 
-instance Finite_option {A : Type} [fA : Finite A] : Finite (Option A) where
+instance Finite_option {A : Type u} [fA : Finite A] : Finite (Option A) where
   Finite_elements :=
-    none :: CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.List.map
+    none :: _root_.List.map
       some (Finite.Finite_elements (self := fA))
   Finite_elements_spec := by
     intro x
@@ -407,8 +426,6 @@ instance Finite_option {A : Type} [fA : Finite A] : Finite (Option A) where
     | none => exact _root_.List.Mem.head _
     | some a =>
         exact _root_.List.Mem.tail none
-          (CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.List.in_map
-            some (Finite.Finite_elements (self := fA)) a
-            (Finite.Finite_elements_spec (self := fA) a))
+          (_root_.List.mem_map.mpr ⟨a, Finite.Finite_elements_spec (self := fA) a, rfl⟩)
 
 end CompCert4Lean.Lib.Decidableplus
