@@ -116,7 +116,7 @@ def ret {A : Type} (x : A) : mon A :=
 def error {A : Type} (message : errmsg) : mon A :=
   fun _ => .Err message
 
-private def monBind {A B : Type} (x : mon A) (f : A → mon B) : mon B :=
+def bind {A B : Type} (x : mon A) (f : A → mon B) : mon B :=
   fun g =>
     match x g with
     | .Err message => .Err message
@@ -125,9 +125,12 @@ private def monBind {A B : Type} (x : mon A) (f : A → mon B) : mon B :=
         | .Err message => .Err message
         | .Res b g'' h' => .Res b g'' (Nat.le_trans h h')
 
+def bind2 {A B C : Type} (x : mon (A × B)) (f : A → B → mon C) : mon C :=
+  bind x (fun p => f p.1 p.2)
+
 private instance monMonad : Monad mon where
   pure := @ret
-  bind := @monBind
+  bind := @bind
 
 /-!
 The reference implementation obtains this value from Camlcoq's atom table.
@@ -549,7 +552,7 @@ mutual
         pure (sl1 ++ sl2, a2)
     | .Ecall r1 rl2 ty => do
         let (sl1, a1) ← transl_expr ce .For_val r1
-        let (sl2, al2) ← translExprList ce rl2
+        let (sl2, al2) ← transl_exprlist ce rl2
         match dst with
         | .For_val | .For_set _ => do
             let t ← gensym ty
@@ -557,7 +560,7 @@ mutual
         | .For_effects =>
             ret (sl1 ++ sl2 ++ [.Scall none a1 al2], dummy_expr)
     | .Ebuiltin ef tyargs rl ty => do
-        let (sl, al) ← translExprList ce rl
+        let (sl, al) ← transl_exprlist ce rl
         match dst with
         | .For_val | .For_set _ => do
             let t ← gensym ty
@@ -566,7 +569,7 @@ mutual
             ret (sl ++ [.Sbuiltin none ef tyargs al], dummy_expr)
     | .Eparen _ _ _ => error (CompCert4Lean.Common.Errors.msg translExprParenText)
 
-  private def translExprList
+  def transl_exprlist
       [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
       [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
       (ce : composite_env) :
@@ -574,7 +577,7 @@ mutual
     | .Enil => ret ([], [])
     | .Econs r1 rl2 => do
         let (sl1, a1) ← transl_expr ce .For_val r1
-        let (sl2, al2) ← translExprList ce rl2
+        let (sl2, al2) ← transl_exprlist ce rl2
         pure (sl1 ++ sl2, a1 :: al2)
 end
 
@@ -673,14 +676,14 @@ mutual
         pure (.Ssequence s' (.Sreturn (some a)))
     | .Sswitch e ls => do
         let (s', a) ← transl_expression ce e
-        let tls ← translLblstmt ce ls
+        let tls ← transl_lblstmt ce ls
         pure (.Ssequence s' (.Sswitch a tls))
     | .Slabel lbl s1 => do
         let ts1 ← transl_stmt ce s1
         pure (.Slabel lbl ts1)
     | .Sgoto lbl => ret (.Sgoto lbl)
 
-  private def translLblstmt
+  def transl_lblstmt
       [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
       [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
       (ce : composite_env) :
@@ -688,7 +691,7 @@ mutual
     | .LSnil => ret .LSnil
     | .LScons c s rest => do
         let ts ← transl_stmt ce s
-        let tls ← translLblstmt ce rest
+        let tls ← transl_lblstmt ce rest
         pure (.LScons c ts tls)
 end
 
