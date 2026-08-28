@@ -88,39 +88,39 @@ def match_prog (p : MachProgram) (tp : AsmProgram) : Prop :=
 
 /-! ## State matching for the simulation -/
 
-inductive match_states (ge : MachGenv) : MachState → AsmState → Prop where
+inductive match_states (prog : MachProgram) : MachState → AsmState → Prop where
   | match_states_intro
       (s : List MachStackframe) (fb : Block) (sp : Val)
       (c : MachCode) (ep : Bool) (ms : MachRegset) (m m' : Mem)
       (rs : AsmRegset) (f : MachFunction) (tf : AsmFunction) (tc : AsmCode)
-      (stacks : match_stack ge s)
-      (find : Genv.find_funct_ptr ge fb = some (.Internal f))
+      (stacks : match_stack (Genv.globalenv prog) s)
+      (find : Genv.find_funct_ptr (Genv.globalenv prog) fb = some (.Internal f))
       (mext : CompCert4Lean.Common.Memory.Mem.extends m m')
-      (atpc : transl_code_at_pc ge (rs .PC) fb f c ep tf tc)
+      (atpc : transl_code_at_pc (Genv.globalenv prog) (rs .PC) fb f c ep tf tc)
       (agree : CompCert4Lean.Backend.Asmgenproof0.agree ms sp rs)
       (axp : ep = true → rs (.IR .RAX) = parent_sp s) :
-      match_states ge
+      match_states prog
         (.State s fb sp c ms m)
         (.State rs m')
   | match_states_call
       (s : List MachStackframe) (fb : Block) (ms : MachRegset)
       (m m' : Mem) (rs : AsmRegset)
-      (stacks : match_stack ge s)
+      (stacks : match_stack (Genv.globalenv prog) s)
       (mext : CompCert4Lean.Common.Memory.Mem.extends m m')
       (agree : CompCert4Lean.Backend.Asmgenproof0.agree ms (parent_sp s) rs)
       (atpc : rs .PC = .Vptr fb Ptrofs.zero)
       (atlr : rs .RA = parent_ra s) :
-      match_states ge
+      match_states prog
         (.Callstate s fb ms m)
         (.State rs m')
   | match_states_return
       (s : List MachStackframe) (ms : MachRegset) (m m' : Mem)
       (rs : AsmRegset)
-      (stacks : match_stack ge s)
+      (stacks : match_stack (Genv.globalenv prog) s)
       (mext : CompCert4Lean.Common.Memory.Mem.extends m m')
       (agree : CompCert4Lean.Backend.Asmgenproof0.agree ms (parent_sp s) rs)
       (atpc : rs .PC = parent_ra s) :
-      match_states ge
+      match_states prog
         (.Returnstate s ms m)
         (.State rs m')
 
@@ -327,7 +327,7 @@ def exec_straight_stepsStatement
           (binary64_certificate := binary64_certificate)
           (binary32_certificate := binary32_certificate)
           cfg xi) (Genv.globalenv tprog) (.State rs1 m1') E0 st' ∧
-        match_states (Genv.globalenv prog) (.State s fb sp c ms2 m2) st'
+        match_states prog (.State s fb sp c ms2 m2) st'
 
 def exec_straight_steps_gotoStatement
     [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
@@ -361,7 +361,7 @@ def exec_straight_steps_gotoStatement
           (binary64_certificate := binary64_certificate)
           (binary32_certificate := binary32_certificate)
           cfg xi) (Genv.globalenv tprog) (.State rs1 m1') E0 st' ∧
-        match_states (Genv.globalenv prog) (.State s fb sp c' ms2 m2) st'
+        match_states prog (.State s fb sp c' ms2 m2) st'
 
 def step_simulationStatement
     [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
@@ -374,28 +374,28 @@ def step_simulationStatement
         (binary32_certificate := binary32_certificate) cfg xi
         CompCert4Lean.Backend.Asmgenproof0.return_address_offset
         (Genv.globalenv prog) S1 t S2 →
-      ∀ S1', match_states (Genv.globalenv prog) S1 S1' →
+      ∀ S1', match_states prog S1 S1' →
         (∃ S2',
           plus (asmStep
             (binary64_certificate := binary64_certificate)
             (binary32_certificate := binary32_certificate)
             cfg xi) (Genv.globalenv tprog) S1' t S2' ∧
-            match_states (Genv.globalenv prog) S2 S2') ∨
+            match_states prog S2 S2') ∨
         (measure S2 < measure S1 ∧ t = E0 ∧
-          match_states (Genv.globalenv prog) S2 S1')
+          match_states prog S2 S1')
 
 def transf_initial_statesStatement : Prop :=
   ∀ (prog : MachProgram) (tprog : AsmProgram), match_prog prog tprog →
     ∀ st1, CompCert4Lean.Backend.Mach.initial_state prog st1 →
       ∃ st2, CompCert4Lean.X86.Asm.initial_state tprog st2 ∧
-        match_states (Genv.globalenv prog) st1 st2
+        match_states prog st1 st2
 
 def transf_final_statesStatement : Prop :=
-  ∀ (prog : MachProgram) (tprog : AsmProgram), match_prog prog tprog →
-    ∀ (st1 : MachState) (st2 : AsmState) (r : CompCert4Lean.Lib.Integers.int),
-      match_states (Genv.globalenv prog) st1 st2 →
-      CompCert4Lean.Backend.Mach.final_state st1 r →
-        CompCert4Lean.X86.Asm.final_state st2 r
+  ∀ (prog : MachProgram) (st1 : MachState) (st2 : AsmState)
+    (r : CompCert4Lean.Lib.Integers.int),
+    match_states prog st1 st2 →
+    CompCert4Lean.Backend.Mach.final_state st1 r →
+      CompCert4Lean.X86.Asm.final_state st2 r
 
 def transf_program_correctStatement
     [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
