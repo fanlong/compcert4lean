@@ -388,6 +388,23 @@ def match_states_succStatement : Prop :=
           cfg (CompCert4Lean.Backend.ValueAnalysis.romem_for cfg cu) f)
         sp pc rs' m')
 
+def transf_instr_atStatement : Prop :=
+  ∀ (rm : romem) (f : function) (pc : node)
+    (i : CompCert4Lean.Backend.RTL.instruction),
+    PTree.get pc f.fn_code = some i →
+    PTree.get pc
+      (CompCert4Lean.Backend.Constprop.transf_function
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) cfg rm f).fn_code =
+      some (CompCert4Lean.Backend.Constprop.transf_instr
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        cfg f
+        (CompCert4Lean.Backend.ValueAnalysis.analyze
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate) cfg rm f)
+        rm pc i)
+
 def transf_step_correctStatement : Prop :=
   ∀ (xi : ExternalCalls) (prog tprog : program),
     match_prog
