@@ -70,7 +70,7 @@ def globalenv (p : program) : genv :=
 
 def env := PTree.t (block × type)
 
-private def emptyEnv : env := PTree.empty (block × type)
+def empty_env : env := PTree.empty (block × type)
 
 private def symbolEnv (ge : genv) : Senv.t :=
   Genv.to_senv ge.genv_genv
@@ -469,20 +469,20 @@ mutual
             match find_label lbl s1 (.Kfor3 a2 a3 s1 k) with
             | some sk => some sk
             | none => find_label lbl a3 (.Kfor4 a2 a3 s1 k)
-    | .Sswitch _ sl, k => findLabelLs lbl sl (.Kswitch2 k)
+    | .Sswitch _ sl, k => find_label_ls lbl sl (.Kswitch2 k)
     | .Slabel lbl' s', k =>
         match ident_eq lbl lbl' with
         | .left _ => some (s', k)
         | .right _ => find_label lbl s' k
     | _, _ => none
 
-  private def findLabelLs (lbl : label) :
+  def find_label_ls (lbl : label) :
       labeled_statements → cont → Option (statement × cont)
     | .LSnil, _ => none
     | .LScons _ s rest, k =>
         match find_label lbl s (.Kseq (seq_of_labeled_statement rest) k) with
         | some sk => some sk
-        | none => findLabelLs lbl rest k
+        | none => find_label_ls lbl rest k
 end
 
 /-! ## Program transitions -/
@@ -633,7 +633,7 @@ inductive sstep
       sstep xi ge (.State f (.Sgoto lbl) k e m) E0 (.State f s' k' e m)
   | internalFunction {f vargs k m e m1 m2} :
       list_norepet (var_names f.fn_params ++ var_names f.fn_vars) →
-      alloc_variables ge emptyEnv m (f.fn_params ++ f.fn_vars) e m1 →
+      alloc_variables ge empty_env m (f.fn_params ++ f.fn_vars) e m1 →
       bind_parameters ge e m1 f.fn_params vargs m2 →
       sstep xi ge (.Callstate (.Internal f) vargs k m) E0 (.State f f.fn_body k e m2)
   | externalFunction {ef targs tres cc vargs k m vres t m'} :
