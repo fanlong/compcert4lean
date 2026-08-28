@@ -106,27 +106,85 @@ def ireg_eqStatement :=
   ∀ (x y : ireg),
     CompCert4Lean.Foundation.Logic.Support.Sumbool (x = y) (x ≠ y)
 
-def ireg_eq := ireg_eqStatement
+def ireg_eq (x y : ireg) :
+    CompCert4Lean.Foundation.Logic.Support.Sumbool (x = y) (x ≠ y) := by
+  cases x <;> cases y <;>
+    first
+    | exact .left rfl
+    | exact .right (by intro h; cases h)
 
 def freg_eqStatement :=
   ∀ (x y : freg),
     CompCert4Lean.Foundation.Logic.Support.Sumbool (x = y) (x ≠ y)
 
-def freg_eq := freg_eqStatement
+def freg_eq (x y : freg) :
+    CompCert4Lean.Foundation.Logic.Support.Sumbool (x = y) (x ≠ y) := by
+  cases x <;> cases y <;>
+    first
+    | exact .left rfl
+    | exact .right (by intro h; cases h)
 
 def preg_eqStatement :=
   ∀ (x y : preg),
     CompCert4Lean.Foundation.Logic.Support.Sumbool (x = y) (x ≠ y)
 
-def preg_eq := preg_eqStatement
+def preg_eq (x y : preg) :
+    CompCert4Lean.Foundation.Logic.Support.Sumbool (x = y) (x ≠ y) := by
+  cases x with
+  | PC =>
+      cases y with
+      | PC => exact .left rfl
+      | IR _ | FR _ | ST0 | CR _ | RA =>
+          exact .right (by intro h; cases h)
+  | IR r =>
+      cases y with
+      | PC | FR _ | ST0 | CR _ | RA =>
+          exact .right (by intro h; cases h)
+      | IR r' =>
+          cases ireg_eq r r' with
+          | left h => exact .left (congrArg preg.IR h)
+          | right h =>
+              exact .right (by
+                intro heq
+                cases heq
+                exact h rfl)
+  | FR r =>
+      cases y with
+      | PC | IR _ | ST0 | CR _ | RA =>
+          exact .right (by intro h; cases h)
+      | FR r' =>
+          cases freg_eq r r' with
+          | left h => exact .left (congrArg preg.FR h)
+          | right h =>
+              exact .right (by
+                intro heq
+                cases heq
+                exact h rfl)
+  | ST0 =>
+      cases y with
+      | PC | IR _ | FR _ | CR _ | RA =>
+          exact .right (by intro h; cases h)
+      | ST0 => exact .left rfl
+  | CR r =>
+      cases y with
+      | PC | IR _ | FR _ | ST0 | RA =>
+          exact .right (by intro h; cases h)
+      | CR r' =>
+          cases r <;> cases r' <;>
+            first
+            | exact .left rfl
+            | exact .right (by intro h; cases h)
+  | RA =>
+      cases y with
+      | PC | IR _ | FR _ | ST0 | CR _ =>
+          exact .right (by intro h; cases h)
+      | RA => exact .left rfl
 
 namespace PregEq
 
 def t : Type := preg
 
-def eq (x y : t) :
-    CompCert4Lean.Foundation.Logic.Support.Sumbool (x = y) (x ≠ y) :=
-  decEqSumbool (A := preg) x y
+def eq := preg_eq
 
 end PregEq
 
