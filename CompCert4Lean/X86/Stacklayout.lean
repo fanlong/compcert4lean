@@ -55,7 +55,13 @@ def make_env (cfg : CompilerConfig) (b : bounds cfg) : frame_env :=
 /-! ## Statement descriptors for later proof migration -/
 
 def frame_env_separatedStatement : Prop :=
-  ∀ (cfg : CompilerConfig) (b : bounds cfg) (sp : block) (m : mem) (P : massert),
+  ∀ (cfg : CompilerConfig) (b : bounds cfg)
+    (_bound_local_pos : bound_local_pos cfg b)
+    (_bound_outgoing_pos : bound_outgoing_pos cfg b)
+    (_bound_stack_data_pos : bound_stack_data_pos cfg b)
+    (_used_callee_save_norepet : used_callee_save_norepet cfg b)
+    (_used_callee_save_prop : used_callee_save_prop cfg b)
+    (sp : block) (m : mem) (P : massert),
     let fe := make_env cfg b
     (sepconj
       (range sp z0 (fe_stack_data fe))
@@ -80,13 +86,23 @@ def frame_env_separatedStatement : Prop :=
               P))))).m_pred m
 
 def frame_env_rangeStatement : Prop :=
-  ∀ (cfg : CompilerConfig) (b : bounds cfg),
+  ∀ (cfg : CompilerConfig) (b : bounds cfg)
+    (_bound_local_pos : bound_local_pos cfg b)
+    (_bound_outgoing_pos : bound_outgoing_pos cfg b)
+    (_bound_stack_data_pos : bound_stack_data_pos cfg b)
+    (_used_callee_save_norepet : used_callee_save_norepet cfg b)
+    (_used_callee_save_prop : used_callee_save_prop cfg b),
     let fe := make_env cfg b
     zLe z0 (fe_stack_data fe) ∧
       zLe (zAdd (fe_stack_data fe) b.bound_stack_data) (fe_size fe)
 
 def frame_env_alignedStatement : Prop :=
-  ∀ (cfg : CompilerConfig) (b : bounds cfg),
+  ∀ (cfg : CompilerConfig) (b : bounds cfg)
+    (_bound_local_pos : bound_local_pos cfg b)
+    (_bound_outgoing_pos : bound_outgoing_pos cfg b)
+    (_bound_stack_data_pos : bound_stack_data_pos cfg b)
+    (_used_callee_save_norepet : used_callee_save_norepet cfg b)
+    (_used_callee_save_prop : used_callee_save_prop cfg b),
     let fe := make_env cfg b
     zDivide z8 (fe_ofs_arg cfg) ∧
       zDivide z8 (fe_ofs_local fe) ∧
