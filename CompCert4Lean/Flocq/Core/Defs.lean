@@ -27,6 +27,10 @@ structure float (beta : radix) where
 
 export float (Fnum Fexp)
 
+/-! The source record constructor keeps its radix argument explicit. -/
+def Float (beta : radix) (m e : Z) : float beta :=
+  float.mk m e
+
 def F2R {beta : radix} (f : float beta) : R :=
   Rmult (IZR (Fnum f)) (bpow beta (Fexp f))
 
@@ -86,5 +90,21 @@ def Rnd_N_pt (ctx : Context) (F : R ctx → Prop) (x f : R ctx) : Prop :=
         (CompCert4Lean.Flocq.Core.Raux.Exact.Rminus ctx g x))
 
 end Exact
+
+/-! The exact theorem carrier is related to the executable Raux carrier only
+    through an explicit adapter obligation.  The runtime side deliberately
+    spells out the operations used by `F2R`; theorem consumers therefore never
+    obtain an implicit identification with the rational carrier. -/
+def F2R_runtime_exact_correspondence (ctx : Exact.Context) : Prop :=
+  ∀ (beta : radix) (m e : Z),
+    ∃ h : ctx.adapter.represented
+      (CompCert4Lean.Flocq.Core.Raux.Rmult
+        (CompCert4Lean.Flocq.Core.Raux.IZR m)
+        (CompCert4Lean.Flocq.Core.Raux.bpow beta e)),
+      ctx.adapter.embed
+        (CompCert4Lean.Flocq.Core.Raux.Rmult
+          (CompCert4Lean.Flocq.Core.Raux.IZR m)
+          (CompCert4Lean.Flocq.Core.Raux.bpow beta e)) h =
+        Exact.F2R ctx (Float beta m e)
 
 end CompCert4Lean.Flocq.Core.Defs
