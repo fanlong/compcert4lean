@@ -100,7 +100,7 @@ private def badSwitchLongText : RocqString :=
   bytesToString [83, 101, 108, 101, 99, 116, 105, 111, 110, 58, 32,
     98, 97, 100, 32, 115, 119, 105, 116, 99, 104, 32, 40, 108, 111, 110, 103, 41]
 
-/-! Condition conversion support (the source keeps these outside the mapped roots). -/
+/-! Condition conversion support. -/
 
 def condexpr_of_expr : CminorSel.expr → condexpr
   | CminorSel.expr.Eop (X86.Op.operation.Ocmp c) el => .CEcond c el
@@ -113,6 +113,50 @@ def condition_of_expr : CminorSel.expr → condition × exprlist
   | CminorSel.expr.Eop (X86.Op.operation.Ocmp c) el => (c, el)
   | e => (Ccompuimm .Cne (CompCert4Lean.Lib.Integers.Int.zero),
       CminorSel.exprlist.Econs e CminorSel.exprlist.Enil)
+
+/-! ## Exact generated functional-induction surfaces
+
+These transparent proposition descriptors preserve the source-generated
+branch equalities, recursive hypotheses, and negative match obligations.
+Their canonical identities are owned here; proof terms remain assigned to the
+later proof-migration phase for the `Selectionproof` consumer.
+-/
+
+def condexpr_of_expr_indStatement : Prop :=
+  ∀ (P : CminorSel.expr → CminorSel.condexpr → Prop),
+    (∀ (e : CminorSel.expr) (c : condition) (el : CminorSel.exprlist),
+      e = .Eop (.Ocmp c) el →
+        P (.Eop (.Ocmp c) el) (.CEcond c el)) →
+    (∀ (e : CminorSel.expr) (a : CminorSel.condexpr) (b c : CminorSel.expr),
+      e = .Econdition a b c →
+      P b (condexpr_of_expr b) →
+      P c (condexpr_of_expr c) →
+        P (.Econdition a b c)
+          (.CEcondition a (condexpr_of_expr b) (condexpr_of_expr c))) →
+    (∀ (e a b : CminorSel.expr),
+      e = .Elet a b →
+      P b (condexpr_of_expr b) →
+        P (.Elet a b) (.CElet a (condexpr_of_expr b))) →
+    (∀ (e x : CminorSel.expr),
+      e = x →
+      (match x with
+       | .Eop (.Ocmp _) _ | .Econdition _ _ _ | .Elet _ _ => False
+       | _ => True) →
+        P x (.CEcond (.Ccompuimm .Cne Int.zero) (.Econs e .Enil))) →
+    ∀ e : CminorSel.expr, P e (condexpr_of_expr e)
+
+def condition_of_expr_indStatement : Prop :=
+  ∀ (P : CminorSel.expr → condition × CminorSel.exprlist → Prop),
+    (∀ (e : CminorSel.expr) (c : condition) (el : CminorSel.exprlist),
+      e = .Eop (.Ocmp c) el →
+        P (.Eop (.Ocmp c) el) (c, el)) →
+    (∀ (e x : CminorSel.expr),
+      e = x →
+      (match x with
+       | .Eop (.Ocmp _) _ => False
+       | _ => True) →
+        P x (.Ccompuimm .Cne Int.zero, .Econs e .Enil)) →
+    ∀ e : CminorSel.expr, P e (condition_of_expr e)
 
 /-! Extracted host callbacks used by instruction selection. -/
 
