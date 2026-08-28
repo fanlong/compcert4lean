@@ -155,6 +155,12 @@ def CompOpp (r : comparison) : comparison :=
 
 inductive Empty_set : Type where
 
+inductive BoolSpec (P Q : Prop) : _root_.Bool → Prop where
+  | BoolSpecT (h : P) : BoolSpec P Q true
+  | BoolSpecF (h : Q) : BoolSpec P Q false
+
+export BoolSpec (BoolSpecT BoolSpecF)
+
 def andb (b1 b2 : _root_.Bool) : _root_.Bool := _root_.Bool.and b1 b2
 
 theorem andb_prop (a b : _root_.Bool) (h : andb a b = true) :
