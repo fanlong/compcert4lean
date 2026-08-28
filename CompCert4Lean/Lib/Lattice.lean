@@ -1,3 +1,5 @@
+import CompCert4Lean.Foundation.Logic
+
 /-!
 # Semi-lattice translation surface
 
@@ -12,7 +14,16 @@ namespace LBoolean
 
 def t : Type := Bool
 
+def eq (x y : t) : Prop := x = y
+
+def beq (x y : t) : Bool :=
+  CompCert4Lean.Foundation.Logic.Rocq.Coq.Bool.Bool.eqb x y
+
 def ge (x y : t) : Prop := x = y ∨ x = true
+
+def bot : t := false
+
+def lub (x y : t) : t := x || y
 
 end LBoolean
 
