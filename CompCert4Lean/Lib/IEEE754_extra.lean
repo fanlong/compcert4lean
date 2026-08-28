@@ -406,6 +406,28 @@ def Bexact_inverse_obligation_1 : Prop :=
       Zle (emin prec emax) e' →
         Binary.B754_finiteObligation (prec := prec) (emax := emax) m e')
 
+def Bexact_inverse_obligation_2Statement : Prop :=
+  ∀ (b : Bool),
+    let wildcard' := Binary.B754_zero (prec := prec) (emax := emax) b
+    ∀ (s : Bool) (m : positive) (e : Z)
+      (B : Binary.B754_finiteObligation (prec := prec) (emax := emax) m e),
+      Binary.B754_finite s m e ≠ wildcard'
+
+def Bexact_inverse_obligation_3Statement : Prop :=
+  ∀ (b : Bool),
+    let wildcard' := Binary.B754_infinity (prec := prec) (emax := emax) b
+    ∀ (s : Bool) (m : positive) (e : Z)
+      (B : Binary.B754_finiteObligation (prec := prec) (emax := emax) m e),
+      Binary.B754_finite s m e ≠ wildcard'
+
+def Bexact_inverse_obligation_4Statement : Prop :=
+  ∀ (b : Bool) (p : positive)
+    (e : Binary.nan_pl (prec := prec) p = true),
+    let wildcard' := Binary.B754_nan (prec := prec) (emax := emax) b p
+    ∀ (s : Bool) (m : positive) (e0 : Z)
+      (B : Binary.B754_finiteObligation (prec := prec) (emax := emax) m e0),
+      Binary.B754_finite s m e0 ≠ wildcard'
+
 class Bexact_inverse_certificate (prec emax : Z)
     [Prec_gt_0 prec] [Prec_lt_emax prec emax] : Prop where
   obligation : Bexact_inverse_obligation_1 (prec := prec) (emax := emax)
