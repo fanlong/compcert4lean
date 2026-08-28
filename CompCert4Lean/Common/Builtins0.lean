@@ -77,12 +77,11 @@ def mkbuiltin_v1t
         | cons _ _ => trivial
   bs_inject := by
     intro j vl vl' h
-    cases h with
-    | inject_list_nil => trivial
-    | inject_list_cons _ _ _ _ h1 ht =>
-        cases ht with
-        | inject_list_nil => exact INJ j _ _ h1
-        | inject_list_cons _ _ _ _ _ _ => trivial
+    rcases h with ⟨⟩ | ⟨_, _, _, _, h1, ht⟩
+    · trivial
+    · rcases ht with ⟨⟩ | ⟨_, _, _, _, _, _⟩
+      · exact INJ j _ _ h1
+      · trivial
 
 def mkbuiltin_v2t
     (tret : xtype) (f : val → val → val)
@@ -107,15 +106,13 @@ def mkbuiltin_v2t
             | cons _ _ => trivial
   bs_inject := by
     intro j vl vl' h
-    cases h with
-    | inject_list_nil => trivial
-    | inject_list_cons _ _ _ _ h1 ht =>
-        cases ht with
-        | inject_list_nil => trivial
-        | inject_list_cons _ _ _ _ h2 ht =>
-            cases ht with
-            | inject_list_nil => exact INJ j _ _ _ _ h1 h2
-            | inject_list_cons _ _ _ _ _ _ => trivial
+    rcases h with ⟨⟩ | ⟨_, _, _, _, h1, ht⟩
+    · trivial
+    · rcases ht with ⟨⟩ | ⟨_, _, _, _, h2, ht⟩
+      · trivial
+      · rcases ht with ⟨⟩ | ⟨_, _, _, _, _, _⟩
+        · exact INJ j _ _ _ _ h1 h2
+        · trivial
 
 def mkbuiltin_v1p
     (tret : xtype) (f : val → Option val)
@@ -136,12 +133,11 @@ def mkbuiltin_v1p
         | cons _ _ => trivial
   bs_inject := by
     intro j vl vl' h
-    cases h with
-    | inject_list_nil => trivial
-    | inject_list_cons _ _ _ _ h1 ht =>
-        cases ht with
-        | inject_list_nil => exact INJ j _ _ h1
-        | inject_list_cons _ _ _ _ _ _ => trivial
+    rcases h with ⟨⟩ | ⟨_, _, _, _, h1, ht⟩
+    · trivial
+    · rcases ht with ⟨⟩ | ⟨_, _, _, _, _, _⟩
+      · exact INJ j _ _ h1
+      · trivial
 
 def mkbuiltin_v2p
     (tret : xtype) (f : val → val → Option val)
@@ -166,15 +162,13 @@ def mkbuiltin_v2p
             | cons _ _ => trivial
   bs_inject := by
     intro j vl vl' h
-    cases h with
-    | inject_list_nil => trivial
-    | inject_list_cons _ _ _ _ h1 ht =>
-        cases ht with
-        | inject_list_nil => trivial
-        | inject_list_cons _ _ _ _ h2 ht =>
-            cases ht with
-            | inject_list_nil => exact INJ j _ _ _ _ h1 h2
-            | inject_list_cons _ _ _ _ _ _ => trivial
+    rcases h with ⟨⟩ | ⟨_, _, _, _, h1, ht⟩
+    · trivial
+    · rcases ht with ⟨⟩ | ⟨_, _, _, _, h2, ht⟩
+      · trivial
+      · rcases ht with ⟨⟩ | ⟨_, _, _, _, _, _⟩
+        · exact INJ j _ _ _ _ h1 h2
+        · trivial
 
 private abbrev z0 : Z := .Z0
 private abbrev z1 : Z := ZArith.BinInt.Z.of_nat 1
@@ -284,15 +278,15 @@ private def injNumInject (j : meminj) (t : xtype) (x : valxty t) :
     Val.inject j (inj_num t x) (inj_num t x) := by
   cases t with
   | Xbool | Xint8signed | Xint8unsigned | Xint16signed | Xint16unsigned =>
-      exact Val.inject.inject_int x.1
-  | Xint => exact Val.inject.inject_int x
-  | Xlong => exact Val.inject.inject_long x
-  | Xfloat => exact Val.inject.inject_float x
-  | Xsingle => exact Val.inject.inject_single x
+      exact Val.inject_int j x.1
+  | Xint => exact Val.inject_int j x
+  | Xlong => exact Val.inject_long j x
+  | Xfloat => exact Val.inject_float j x
+  | Xsingle => exact Val.inject_single j x
   | Xptr => exact nomatch x
   | Xany32 => exact nomatch x
   | Xany64 => exact nomatch x
-  | Xvoid => exact Val.inject.val_inject_undef Vundef
+  | Xvoid => exact Val.val_inject_undef j Vundef
 
 private def projNumWellTyped
     (tres : xtype) (t : typ) (k1 : valty t → val) (v : val)
@@ -308,7 +302,7 @@ private def projNumInject
     (hv : Val.inject j v v') :
     Val.inject j (proj_num t Vundef v k1) (proj_num t Vundef v' k1') := by
   cases t <;> cases hv <;> simp [proj_num]
-  all_goals first | apply hk | apply Val.inject.val_inject_undef
+  all_goals first | apply hk | apply Val.val_inject_undef
 
 private def projNumOptWellTyped
     (tres : xtype) (t : typ) (k0 : Option val) (k1 : valty t → Option val) (v : val)
@@ -641,10 +635,10 @@ private def divlsBuiltin : builtin_sem Xlong :=
       cases h1 <;> cases h2
       all_goals simp only [Val.divls]
       all_goals try trivial
-      case inject_long.inject_long =>
+      all_goals
         split
         · trivial
-        · exact Val.inject.inject_long _)
+        · exact Val.inject_long j _)
 
 private def divluBuiltin : builtin_sem Xlong :=
   longBinaryPartial Val.divlu
@@ -660,10 +654,10 @@ private def divluBuiltin : builtin_sem Xlong :=
       cases h1 <;> cases h2
       all_goals simp only [Val.divlu]
       all_goals try trivial
-      case inject_long.inject_long =>
+      all_goals
         split
         · trivial
-        · exact Val.inject.inject_long _)
+        · exact Val.inject_long j _)
 
 private def modlsBuiltin : builtin_sem Xlong :=
   longBinaryPartial Val.modls
@@ -679,10 +673,10 @@ private def modlsBuiltin : builtin_sem Xlong :=
       cases h1 <;> cases h2
       all_goals simp only [Val.modls]
       all_goals try trivial
-      case inject_long.inject_long =>
+      all_goals
         split
         · trivial
-        · exact Val.inject.inject_long _)
+        · exact Val.inject_long j _)
 
 private def modluBuiltin : builtin_sem Xlong :=
   longBinaryPartial Val.modlu
@@ -698,10 +692,10 @@ private def modluBuiltin : builtin_sem Xlong :=
       cases h1 <;> cases h2
       all_goals simp only [Val.modlu]
       all_goals try trivial
-      case inject_long.inject_long =>
+      all_goals
         split
         · trivial
-        · exact Val.inject.inject_long _)
+        · exact Val.inject_long j _)
 
 private def shllBuiltin : builtin_sem Xlong :=
   mkbuiltin_num_v2tInternal Tlong Tint Xlong
@@ -713,8 +707,8 @@ private def shllBuiltin : builtin_sem Xlong :=
     (by
       intro j n1 n2
       split
-      · exact Val.inject.inject_long _
-      · exact Val.inject.val_inject_undef Vundef)
+      · exact Val.inject_long j _
+      · exact Val.val_inject_undef j Vundef)
 
 private def shrluBuiltin : builtin_sem Xlong :=
   mkbuiltin_num_v2tInternal Tlong Tint Xlong
@@ -726,8 +720,8 @@ private def shrluBuiltin : builtin_sem Xlong :=
     (by
       intro j n1 n2
       split
-      · exact Val.inject.inject_long _
-      · exact Val.inject.val_inject_undef Vundef)
+      · exact Val.inject_long j _
+      · exact Val.val_inject_undef j Vundef)
 
 private def shrlBuiltin : builtin_sem Xlong :=
   mkbuiltin_num_v2tInternal Tlong Tint Xlong
@@ -739,8 +733,8 @@ private def shrlBuiltin : builtin_sem Xlong :=
     (by
       intro j n1 n2
       split
-      · exact Val.inject.inject_long _
-      · exact Val.inject.val_inject_undef Vundef)
+      · exact Val.inject_long j _
+      · exact Val.val_inject_undef j Vundef)
 
 private def addlBuiltin : builtin_sem Xlong :=
   longBinaryTotal Val.addl
@@ -778,12 +772,12 @@ private def normalizeInject (j : meminj) (t : typ) (v v' : val)
   cases h <;> cases t <;>
     simp [Val.normalize, CompCert4Lean.X86_64.Archi.ptr64]
   all_goals first
-    | exact Val.inject.inject_int _
-    | exact Val.inject.inject_long _
-    | exact Val.inject.inject_float _
-    | exact Val.inject.inject_single _
-    | exact Val.inject.val_inject_undef _
-    | apply Val.inject.inject_ptr <;> assumption
+    | exact Val.inject_int j _
+    | exact Val.inject_long j _
+    | exact Val.inject_float j _
+    | exact Val.inject_single j _
+    | exact Val.val_inject_undef j _
+    | apply Val.inject_ptr <;> assumption
 
 private def selectBuiltin (t : typ) : builtin_sem (inj_type t) where
   bs_sem := fun vargs =>
@@ -813,24 +807,24 @@ private def selectBuiltin (t : typ) : builtin_sem (inj_type t) where
               · exact normalizeWellTyped t v1
   bs_inject := by
     intro j vargs vargs' h
-    cases h with
-    | inject_list_nil => trivial
-    | inject_list_cons _ _ _ _ h0 hs =>
-      cases h0 <;> try trivial
-      case inject_int n =>
-        cases hs with
-        | inject_list_nil => trivial
-        | inject_list_cons _ _ _ _ h1 hs =>
-          cases hs with
-          | inject_list_nil => trivial
-          | inject_list_cons _ _ _ _ h2 hs =>
-            cases hs with
-            | inject_list_cons _ _ _ _ _ _ => trivial
-            | inject_list_nil =>
-              simp [val_opt_inject]
+    rcases h with ⟨⟩ | ⟨_, _, _, _, h0, hs⟩
+    · trivial
+    · rcases h0 with ⟨n⟩ | ⟨_⟩ | ⟨_⟩ | ⟨_⟩ | ⟨_, _, _, _, _, _, _⟩ | ⟨_⟩
+      · rcases hs with ⟨⟩ | ⟨_, _, _, _, h1, hs⟩
+        · trivial
+        · rcases hs with ⟨⟩ | ⟨_, _, _, _, h2, hs⟩
+          · trivial
+          · rcases hs with ⟨⟩ | ⟨_, _, _, _, _, _⟩
+            · simp [val_opt_inject]
               split
               · exact normalizeInject j t _ _ h2
               · exact normalizeInject j t _ _ h1
+            · trivial
+      · trivial
+      · trivial
+      · trivial
+      · trivial
+      · trivial
 
 private def unreachableBuiltin : builtin_sem Xvoid where
   bs_sem := fun _ => none
