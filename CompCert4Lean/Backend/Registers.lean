@@ -92,26 +92,6 @@ open CompCert4Lean.Lib.Ordered
 
 private abbrev OrderedType :=
   CompCert4Lean.Foundation.Ordered.Rocq.Coq.Structures.OrderedType.OrderedType
-private abbrev Compare {X : Type} (lt eq : X → X → Prop) (x y : X) :=
-  CompCert4Lean.Foundation.Ordered.Rocq.Coq.Structures.OrderedType.Compare
-    lt eq x y
-
-private def comparePositive (x y : OrderedPositive.t) :
-    Compare OrderedPositive.lt OrderedPositive.eq x y := by
-  cases CompCert4Lean.Lib.Coqlib.plt x y with
-  | left hlt => exact .LT hlt
-  | right hlt =>
-    cases CompCert4Lean.Lib.Coqlib.peq x y with
-    | left heq => exact .EQ heq
-    | right heq =>
-      refine .GT ?_
-      change PArith.BinPos.Pos.to_nat y < PArith.BinPos.Pos.to_nat x
-      change ¬ PArith.BinPos.Pos.to_nat x < PArith.BinPos.Pos.to_nat y at hlt
-      have hne :
-          PArith.BinPos.Pos.to_nat x ≠ PArith.BinPos.Pos.to_nat y := by
-        intro h
-        exact heq (posToNat_injective h)
-      omega
 
 def EOrder : OrderedType where
   t := OrderedPositive.t
@@ -125,7 +105,7 @@ def EOrder : OrderedType where
     intro x y hxy heq
     cases heq
     exact Nat.lt_irrefl _ hxy
-  compare := comparePositive
+  compare := OrderedPositive.compare
   eq_dec := CompCert4Lean.Lib.Coqlib.peq
 
 /- Consumer-facing element-module type; EOrder is the canonical OrderedType value. -/
