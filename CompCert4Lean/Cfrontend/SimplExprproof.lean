@@ -99,33 +99,35 @@ def Kseqlist : List Clight.statement → Clight.cont → Clight.cont
   | [], k => k
   | s :: rest, k => .Kseq s (Kseqlist rest k)
 
-def esize : cexpr → Nat
-  | .Eloc _ _ _ _ => 1
-  | .Evar _ _ => 1
-  | .Ederef r _ => Nat.succ (esize r)
-  | .Efield l _ _ => Nat.succ (esize l)
-  | .Eval _ _ => 0
-  | .Evalof l _ => Nat.succ (esize l)
-  | .Eaddrof l _ => Nat.succ (esize l)
-  | .Eunop _ r _ => Nat.succ (esize r)
-  | .Ebinop _ r1 r2 _ => Nat.succ (esize r1 + esize r2)
-  | .Ecast r _ => Nat.succ (esize r)
-  | .Eseqand r _ _ => Nat.succ (esize r)
-  | .Eseqor r _ _ => Nat.succ (esize r)
-  | .Econdition r _ _ _ => Nat.succ (esize r)
-  | .Esizeof _ _ => 1
-  | .Ealignof _ _ => 1
-  | .Eassign l r _ => Nat.succ (esize l + esize r)
-  | .Eassignop _ l r _ _ => Nat.succ (esize l + esize r)
-  | .Epostincr _ l _ => Nat.succ (esize l)
-  | .Ecomma r1 r2 _ => Nat.succ (esize r1 + esize r2)
-  | .Ecall r1 rl _ => Nat.succ (esize r1 + esizeList rl)
-  | .Ebuiltin _ _ rl _ => Nat.succ (esizeList rl)
-  | .Eparen r _ _ => Nat.succ (esize r)
-where
-  esizeList : cexprlist → Nat
+mutual
+  def esize : cexpr → Nat
+    | .Eloc _ _ _ _ => 1
+    | .Evar _ _ => 1
+    | .Ederef r _ => Nat.succ (esize r)
+    | .Efield l _ _ => Nat.succ (esize l)
+    | .Eval _ _ => 0
+    | .Evalof l _ => Nat.succ (esize l)
+    | .Eaddrof l _ => Nat.succ (esize l)
+    | .Eunop _ r _ => Nat.succ (esize r)
+    | .Ebinop _ r1 r2 _ => Nat.succ (esize r1 + esize r2)
+    | .Ecast r _ => Nat.succ (esize r)
+    | .Eseqand r _ _ => Nat.succ (esize r)
+    | .Eseqor r _ _ => Nat.succ (esize r)
+    | .Econdition r _ _ _ => Nat.succ (esize r)
+    | .Esizeof _ _ => 1
+    | .Ealignof _ _ => 1
+    | .Eassign l r _ => Nat.succ (esize l + esize r)
+    | .Eassignop _ l r _ _ => Nat.succ (esize l + esize r)
+    | .Epostincr _ l _ => Nat.succ (esize l)
+    | .Ecomma r1 r2 _ => Nat.succ (esize r1 + esize r2)
+    | .Ecall r1 rl _ => Nat.succ (esize r1 + esizelist rl)
+    | .Ebuiltin _ _ rl _ => Nat.succ (esizelist rl)
+    | .Eparen r _ _ => Nat.succ (esize r)
+
+  def esizelist : cexprlist → Nat
     | .Enil => 0
-    | .Econs r rest => esize r + esizeList rest
+    | .Econs r rest => esize r + esizelist rest
+end
 
 def measure : cstate → Nat
   | .ExprState _ r _ _ _ => esize r + 1
@@ -650,7 +652,7 @@ def tr_seq_of_labeled_statementStatement
 def tr_find_labelStatement
     [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
     [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
-  ∀ (p : cprogram) (tp : tprogram) lbl ce s k ts tk,
+  ∀ (p : cprogram) (tp : tprogram) ce lbl s k ts tk,
     tr_stmt ce s ts → match_cont p tp ce k tk →
     match Csem.find_label lbl s k with
     | none => Clight.find_label lbl ts tk = none
