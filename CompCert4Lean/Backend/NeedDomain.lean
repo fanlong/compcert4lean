@@ -110,6 +110,31 @@ inductive nval : Type where
 
 export nval (Nothing I L All)
 
+def eq_nval : (x y : nval) →
+    CompCert4Lean.Foundation.Logic.Support.Sumbool (x = y) (x ≠ y)
+  | Nothing, Nothing => .left rfl
+  | Nothing, I _ => .right (by intro h; cases h)
+  | Nothing, L _ => .right (by intro h; cases h)
+  | Nothing, All => .right (by intro h; cases h)
+  | I _, Nothing => .right (by intro h; cases h)
+  | I m, I n =>
+      match CompCert4Lean.Lib.Integers.Int.eq_dec m n with
+      | .left h => .left (by cases h; rfl)
+      | .right h => .right (by intro h'; cases h'; exact h rfl)
+  | I _, L _ => .right (by intro h; cases h)
+  | I _, All => .right (by intro h; cases h)
+  | L _, Nothing => .right (by intro h; cases h)
+  | L _, I _ => .right (by intro h; cases h)
+  | L m, L n =>
+      match CompCert4Lean.Lib.Integers.Int64.eq_dec m n with
+      | .left h => .left (by cases h; rfl)
+      | .right h => .right (by intro h'; cases h'; exact h rfl)
+  | L _, All => .right (by intro h; cases h)
+  | All, Nothing => .right (by intro h; cases h)
+  | All, I _ => .right (by intro h; cases h)
+  | All, L _ => .right (by intro h; cases h)
+  | All, All => .left rfl
+
 def iagree (p q mask : int) : Prop :=
   ∀ i, (ZArith.BinInt.Z.le z0 i ∧ ZArith.BinInt.Z.lt i Int.zwordsize) →
     Int.testbit mask i = true → Int.testbit p i = Int.testbit q i
@@ -349,12 +374,7 @@ namespace NVal
 
 def t : Type := nval
 def eq (x y : t) : Prop := x = y
-def beq : t → t → Bool
-  | Nothing, Nothing => true
-  | I m, I n => Int.eq m n
-  | L m, L n => Int64.eq m n
-  | All, All => true
-  | _, _ => false
+def beq (x y : t) : Bool := CompCert4Lean.Lib.Coqlib.proj_sumbool (eq_nval x y)
 def ge : t → t → Prop := nge
 def bot : t := Nothing
 def lub : t → t → t := nlub
