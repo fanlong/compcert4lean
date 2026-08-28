@@ -589,7 +589,7 @@ structure match_genvs {A B V W : Type} (R : globdef A V → globdef B W → Prop
   mge_symb : ∀ id, PTree.get id ge2.genv_symb = PTree.get id ge1.genv_symb
   mge_defs : ∀ b, option_rel R (PTree.get b ge1.genv_defs) (PTree.get b ge2.genv_defs)
 
-def Build_match_genvs {A B V W : Type} (R : globdef A V → globdef B W → Prop)
+def Build_match_genvs {A B V W : Type} {R : globdef A V → globdef B W → Prop}
     (ge1 : t A V) (ge2 : t B W)
     (mge_next : ge2.genv_next = ge1.genv_next)
     (mge_symb : ∀ id, PTree.get id ge2.genv_symb = PTree.get id ge1.genv_symb)
