@@ -17,6 +17,7 @@ namespace CompCert4Lean.Lib.Heaps
 open CompCert4Lean.Foundation.Numbers.Rocq.Coq
 open CompCert4Lean.Foundation.Ordered.Rocq.Coq.Structures.OrderedType
 open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Ordered
 
 abbrev OrderedType :=
   CompCert4Lean.Foundation.Ordered.Rocq.Coq.Structures.OrderedType.OrderedType
@@ -781,69 +782,21 @@ def In_deleteMaxStatement : Prop :=
 
 end SplayHeapSet
 
-private def positiveNat : positive → Nat
-  | .xH => 1
-  | .xI p => 2 * positiveNat p + 1
-  | .xO p => 2 * positiveNat p
-
-private theorem positiveNat_pos (p : positive) : 0 < positiveNat p := by
-  induction p <;> simp [positiveNat, *] <;> omega
-
-private theorem positiveNat_injective : Function.Injective positiveNat := by
-  intro p
-  induction p with
-  | xH =>
-      intro q hq
-      cases q with
-      | xH => rfl
-      | xI q => have h := positiveNat_pos q; simp [positiveNat] at hq; omega
-      | xO q => have h := positiveNat_pos q; simp [positiveNat] at hq; omega
-  | xI p ih =>
-      intro q hq
-      cases q with
-      | xH => have h := positiveNat_pos p; simp [positiveNat] at hq; omega
-      | xI q =>
-          simp [positiveNat] at hq
-          have hval : positiveNat p = positiveNat q := by omega
-          cases ih hval
-          rfl
-      | xO q => simp [positiveNat] at hq; omega
-  | xO p ih =>
-      intro q hq
-      cases q with
-      | xH => have h := positiveNat_pos p; simp [positiveNat] at hq; omega
-      | xI q => simp [positiveNat] at hq; omega
-      | xO q =>
-          simp [positiveNat] at hq
-          have hval : positiveNat p = positiveNat q := by omega
-          cases ih hval
-          rfl
-
 private def positiveOrder : OrderedType :=
   { t := positive
-    eq := fun x y => x = y
-    lt := fun x y => positiveNat x < positiveNat y
-    compare := fun x y => by
-      by_cases hxy : positiveNat x < positiveNat y
-      · exact .LT hxy
-      · by_cases heq : x = y
-        · exact .EQ heq
-        · have hle : positiveNat y ≤ positiveNat x :=
-            Nat.le_of_not_gt hxy
-          have hne : positiveNat y ≠ positiveNat x := by
-            intro h
-            apply heq
-            exact positiveNat_injective h.symm
-          exact .GT (Nat.lt_of_le_of_ne hle hne)
+    eq := OrderedPositive.eq
+    lt := OrderedPositive.lt
+    compare := OrderedPositive.compare
     eq_refl := fun _ => rfl
     eq_sym := by intro x y h; exact h.symm
     eq_trans := by intro x y z h₁ h₂; exact h₁.trans h₂
     lt_trans := by intro x y z hxy hyz; exact Nat.lt_trans hxy hyz
-    lt_not_eq := by intro x y hxy heq; cases heq; exact Nat.lt_irrefl _ hxy
-    eq_dec := fun x y => by
-      by_cases h : x = y
-      · exact .left h
-      · exact .right h }
+    lt_not_eq := by
+      intro x y hxy heq
+      change x = y at heq
+      subst y
+      exact Nat.lt_irrefl _ hxy
+    eq_dec := fun x y => peq x y }
 
 def PHeap : Type := Unit
 
@@ -884,6 +837,221 @@ def In_deleteMin : Prop := SplayHeapSet.In_deleteMinStatement positiveOrder
 def findMax_empty : Prop := SplayHeapSet.findMax_emptyStatement positiveOrder
 def findMax_max : Prop := SplayHeapSet.findMax_maxStatement positiveOrder
 def In_deleteMax : Prop := SplayHeapSet.In_deleteMaxStatement positiveOrder
+
+namespace R
+
+/-! ## Exact statements of the generated functional-induction schemes
+
+The source `Functional Scheme` declarations are proof-facing generated
+surfaces.  Their propositions retain the branch equalities, comparison
+witnesses, recursive hypotheses, and result equations; proof terms are
+deferred to the proof-grinding phase.
+-/
+
+def partition_indStatement : Prop :=
+  ∀ (pivot : positive)
+    (P : SplayHeapSet.R.heap positiveOrder →
+      SplayHeapSet.R.heap positiveOrder × SplayHeapSet.R.heap positiveOrder → Prop),
+    (∀ h : SplayHeapSet.R.heap positiveOrder,
+      h = (@SplayHeapSet.R.Empty positiveOrder) →
+        P (@SplayHeapSet.R.Empty positiveOrder)
+          ((@SplayHeapSet.R.Empty positiveOrder), (@SplayHeapSet.R.Empty positiveOrder))) →
+    (∀ (h a : SplayHeapSet.R.heap positiveOrder) (x : positive)
+      (b : SplayHeapSet.R.heap positiveOrder),
+      h = SplayHeapSet.R.Node a x b →
+      ∀ (_x : OrderedPositive.lt x pivot),
+        OrderedPositive.compare x pivot = .LT _x →
+      b = (@SplayHeapSet.R.Empty positiveOrder) →
+      P (SplayHeapSet.R.Node a x (@SplayHeapSet.R.Empty positiveOrder))
+        (h, (@SplayHeapSet.R.Empty positiveOrder))) →
+    (∀ (h a : SplayHeapSet.R.heap positiveOrder) (x : positive)
+      (b : SplayHeapSet.R.heap positiveOrder),
+      h = SplayHeapSet.R.Node a x b →
+      ∀ (_x : OrderedPositive.lt x pivot),
+        OrderedPositive.compare x pivot = .LT _x →
+      ∀ (b1 : SplayHeapSet.R.heap positiveOrder) (y : positive)
+        (b2 : SplayHeapSet.R.heap positiveOrder),
+      b = SplayHeapSet.R.Node b1 y b2 →
+      ∀ (_x0 : OrderedPositive.lt y pivot),
+        OrderedPositive.compare y pivot = .LT _x0 →
+      P b2 (SplayHeapSet.R.partition positiveOrder pivot b2) →
+      ∀ (small big : SplayHeapSet.R.heap positiveOrder),
+        SplayHeapSet.R.partition positiveOrder pivot b2 = (small, big) →
+      P (SplayHeapSet.R.Node a x (SplayHeapSet.R.Node b1 y b2))
+        (SplayHeapSet.R.Node (SplayHeapSet.R.Node a x b1) y small, big)) →
+    (∀ (h a : SplayHeapSet.R.heap positiveOrder) (x : positive)
+      (b : SplayHeapSet.R.heap positiveOrder),
+      h = SplayHeapSet.R.Node a x b →
+      ∀ (_x : OrderedPositive.lt x pivot),
+        OrderedPositive.compare x pivot = .LT _x →
+      ∀ (b1 : SplayHeapSet.R.heap positiveOrder) (y : positive)
+        (b2 : SplayHeapSet.R.heap positiveOrder),
+      b = SplayHeapSet.R.Node b1 y b2 →
+      ∀ (_x0 : OrderedPositive.eq y pivot),
+        OrderedPositive.compare y pivot = .EQ _x0 →
+      P (SplayHeapSet.R.Node a x (SplayHeapSet.R.Node b1 y b2))
+        (SplayHeapSet.R.Node a x b1, b2)) →
+    (∀ (h a : SplayHeapSet.R.heap positiveOrder) (x : positive)
+      (b : SplayHeapSet.R.heap positiveOrder),
+      h = SplayHeapSet.R.Node a x b →
+      ∀ (_x : OrderedPositive.lt x pivot),
+        OrderedPositive.compare x pivot = .LT _x →
+      ∀ (b1 : SplayHeapSet.R.heap positiveOrder) (y : positive)
+        (b2 : SplayHeapSet.R.heap positiveOrder),
+      b = SplayHeapSet.R.Node b1 y b2 →
+      ∀ (_x0 : OrderedPositive.lt pivot y),
+        OrderedPositive.compare y pivot = .GT _x0 →
+      P b1 (SplayHeapSet.R.partition positiveOrder pivot b1) →
+      ∀ (small big : SplayHeapSet.R.heap positiveOrder),
+        SplayHeapSet.R.partition positiveOrder pivot b1 = (small, big) →
+      P (SplayHeapSet.R.Node a x (SplayHeapSet.R.Node b1 y b2))
+        (SplayHeapSet.R.Node a x small, SplayHeapSet.R.Node big y b2)) →
+    (∀ (h a : SplayHeapSet.R.heap positiveOrder) (x : positive)
+      (b : SplayHeapSet.R.heap positiveOrder),
+      h = SplayHeapSet.R.Node a x b →
+      ∀ (_x : OrderedPositive.eq x pivot),
+        OrderedPositive.compare x pivot = .EQ _x →
+      P (SplayHeapSet.R.Node a x b) (a, b)) →
+    (∀ (h a : SplayHeapSet.R.heap positiveOrder) (x : positive)
+      (b : SplayHeapSet.R.heap positiveOrder),
+      h = SplayHeapSet.R.Node a x b →
+      ∀ (_x : OrderedPositive.lt pivot x),
+        OrderedPositive.compare x pivot = .GT _x →
+      a = (@SplayHeapSet.R.Empty positiveOrder) →
+      P (@SplayHeapSet.R.Node positiveOrder
+          (@SplayHeapSet.R.Empty positiveOrder) x b)
+        ((@SplayHeapSet.R.Empty positiveOrder), h)) →
+    (∀ (h a : SplayHeapSet.R.heap positiveOrder) (x : positive)
+      (b : SplayHeapSet.R.heap positiveOrder),
+      h = SplayHeapSet.R.Node a x b →
+      ∀ (_x : OrderedPositive.lt pivot x),
+        OrderedPositive.compare x pivot = .GT _x →
+      ∀ (a1 : SplayHeapSet.R.heap positiveOrder) (y : positive)
+        (a2 : SplayHeapSet.R.heap positiveOrder),
+      a = SplayHeapSet.R.Node a1 y a2 →
+      ∀ (_x0 : OrderedPositive.lt y pivot),
+        OrderedPositive.compare y pivot = .LT _x0 →
+      P a2 (SplayHeapSet.R.partition positiveOrder pivot a2) →
+      ∀ (small big : SplayHeapSet.R.heap positiveOrder),
+        SplayHeapSet.R.partition positiveOrder pivot a2 = (small, big) →
+      P (SplayHeapSet.R.Node (SplayHeapSet.R.Node a1 y a2) x b)
+        (SplayHeapSet.R.Node a1 y small, SplayHeapSet.R.Node big x b)) →
+    (∀ (h a : SplayHeapSet.R.heap positiveOrder) (x : positive)
+      (b : SplayHeapSet.R.heap positiveOrder),
+      h = SplayHeapSet.R.Node a x b →
+      ∀ (_x : OrderedPositive.lt pivot x),
+        OrderedPositive.compare x pivot = .GT _x →
+      ∀ (a1 : SplayHeapSet.R.heap positiveOrder) (y : positive)
+        (a2 : SplayHeapSet.R.heap positiveOrder),
+      a = SplayHeapSet.R.Node a1 y a2 →
+      ∀ (_x0 : OrderedPositive.eq y pivot),
+        OrderedPositive.compare y pivot = .EQ _x0 →
+      P (SplayHeapSet.R.Node (SplayHeapSet.R.Node a1 y a2) x b)
+        (a1, SplayHeapSet.R.Node a2 x b)) →
+    (∀ (h a : SplayHeapSet.R.heap positiveOrder) (x : positive)
+      (b : SplayHeapSet.R.heap positiveOrder),
+      h = SplayHeapSet.R.Node a x b →
+      ∀ (_x : OrderedPositive.lt pivot x),
+        OrderedPositive.compare x pivot = .GT _x →
+      ∀ (a1 : SplayHeapSet.R.heap positiveOrder) (y : positive)
+        (a2 : SplayHeapSet.R.heap positiveOrder),
+      a = SplayHeapSet.R.Node a1 y a2 →
+      ∀ (_x0 : OrderedPositive.lt pivot y),
+        OrderedPositive.compare y pivot = .GT _x0 →
+      P a1 (SplayHeapSet.R.partition positiveOrder pivot a1) →
+      ∀ (small big : SplayHeapSet.R.heap positiveOrder),
+        SplayHeapSet.R.partition positiveOrder pivot a1 = (small, big) →
+      P (SplayHeapSet.R.Node (SplayHeapSet.R.Node a1 y a2) x b)
+        (small, SplayHeapSet.R.Node big y
+          (SplayHeapSet.R.Node a2 x b))) →
+    ∀ h : SplayHeapSet.R.heap positiveOrder,
+      P h (SplayHeapSet.R.partition positiveOrder pivot h)
+
+def deleteMin_indStatement : Prop :=
+  ∀ (P : SplayHeapSet.R.heap positiveOrder →
+      SplayHeapSet.R.heap positiveOrder → Prop),
+    (∀ h : SplayHeapSet.R.heap positiveOrder,
+      h = (@SplayHeapSet.R.Empty positiveOrder) →
+        P (@SplayHeapSet.R.Empty positiveOrder) (@SplayHeapSet.R.Empty positiveOrder)) →
+    (∀ (h l : SplayHeapSet.R.heap positiveOrder) (y : positive)
+      (c : SplayHeapSet.R.heap positiveOrder),
+      h = SplayHeapSet.R.Node l y c →
+      l = @SplayHeapSet.R.Empty positiveOrder →
+      P (@SplayHeapSet.R.Node positiveOrder
+          (@SplayHeapSet.R.Empty positiveOrder) y c) c) →
+    (∀ (h l : SplayHeapSet.R.heap positiveOrder) (y : positive)
+      (c : SplayHeapSet.R.heap positiveOrder),
+      h = SplayHeapSet.R.Node l y c →
+      ∀ (a : SplayHeapSet.R.heap positiveOrder) (x : positive)
+        (b : SplayHeapSet.R.heap positiveOrder),
+      l = SplayHeapSet.R.Node a x b →
+      a = (@SplayHeapSet.R.Empty positiveOrder) →
+      P (@SplayHeapSet.R.Node positiveOrder
+          (@SplayHeapSet.R.Node positiveOrder
+            (@SplayHeapSet.R.Empty positiveOrder) x b) y c)
+        (@SplayHeapSet.R.Node positiveOrder b y c)) →
+    (∀ (h l : SplayHeapSet.R.heap positiveOrder) (y : positive)
+      (c : SplayHeapSet.R.heap positiveOrder),
+      h = SplayHeapSet.R.Node l y c →
+      ∀ (a : SplayHeapSet.R.heap positiveOrder) (x : positive)
+        (b : SplayHeapSet.R.heap positiveOrder),
+      l = SplayHeapSet.R.Node a x b →
+      ∀ (a0 : SplayHeapSet.R.heap positiveOrder) (x0 : positive)
+        (b0 : SplayHeapSet.R.heap positiveOrder),
+      a = SplayHeapSet.R.Node a0 x0 b0 →
+      P a (SplayHeapSet.R.deleteMin positiveOrder a) →
+      P (@SplayHeapSet.R.Node positiveOrder
+          (@SplayHeapSet.R.Node positiveOrder
+            (@SplayHeapSet.R.Node positiveOrder a0 x0 b0) x b) y c)
+        (@SplayHeapSet.R.Node positiveOrder
+          (SplayHeapSet.R.deleteMin positiveOrder a) x
+          (@SplayHeapSet.R.Node positiveOrder b y c))) →
+    ∀ h : SplayHeapSet.R.heap positiveOrder,
+      P h (SplayHeapSet.R.deleteMin positiveOrder h)
+
+def deleteMax_indStatement : Prop :=
+  ∀ (P : SplayHeapSet.R.heap positiveOrder →
+      SplayHeapSet.R.heap positiveOrder → Prop),
+    (∀ h : SplayHeapSet.R.heap positiveOrder,
+      h = (@SplayHeapSet.R.Empty positiveOrder) →
+        P (@SplayHeapSet.R.Empty positiveOrder) (@SplayHeapSet.R.Empty positiveOrder)) →
+    (∀ (h a : SplayHeapSet.R.heap positiveOrder) (x : positive)
+      (r : SplayHeapSet.R.heap positiveOrder),
+      h = SplayHeapSet.R.Node a x r →
+      r = (@SplayHeapSet.R.Empty positiveOrder) →
+      P (@SplayHeapSet.R.Node positiveOrder a x
+          (@SplayHeapSet.R.Empty positiveOrder)) a) →
+    (∀ (h a : SplayHeapSet.R.heap positiveOrder) (x : positive)
+      (r : SplayHeapSet.R.heap positiveOrder),
+      h = SplayHeapSet.R.Node a x r →
+      ∀ (b : SplayHeapSet.R.heap positiveOrder) (y : positive)
+        (c : SplayHeapSet.R.heap positiveOrder),
+      r = SplayHeapSet.R.Node b y c →
+      c = (@SplayHeapSet.R.Empty positiveOrder) →
+      P (@SplayHeapSet.R.Node positiveOrder a x
+          (@SplayHeapSet.R.Node positiveOrder b y
+            (@SplayHeapSet.R.Empty positiveOrder)))
+        (@SplayHeapSet.R.Node positiveOrder a x b)) →
+    (∀ (h a : SplayHeapSet.R.heap positiveOrder) (x : positive)
+      (r : SplayHeapSet.R.heap positiveOrder),
+      h = SplayHeapSet.R.Node a x r →
+      ∀ (b : SplayHeapSet.R.heap positiveOrder) (y : positive)
+        (c : SplayHeapSet.R.heap positiveOrder),
+      r = SplayHeapSet.R.Node b y c →
+      ∀ (a0 : SplayHeapSet.R.heap positiveOrder) (x0 : positive)
+        (b0 : SplayHeapSet.R.heap positiveOrder),
+      c = SplayHeapSet.R.Node a0 x0 b0 →
+      P c (SplayHeapSet.R.deleteMax positiveOrder c) →
+      P (@SplayHeapSet.R.Node positiveOrder a x
+          (@SplayHeapSet.R.Node positiveOrder b y
+            (@SplayHeapSet.R.Node positiveOrder a0 x0 b0)))
+        (@SplayHeapSet.R.Node positiveOrder
+          (@SplayHeapSet.R.Node positiveOrder a x b) y
+          (SplayHeapSet.R.deleteMax positiveOrder c))) →
+    ∀ h : SplayHeapSet.R.heap positiveOrder,
+      P h (SplayHeapSet.R.deleteMax positiveOrder h)
+
+end R
 
 end PHeap
 
