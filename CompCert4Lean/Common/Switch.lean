@@ -59,6 +59,14 @@ inductive switch_argument : Bool → val → Z → Prop where
   | of64 (i : CCInt64) :
       switch_argument true (.Vlong i) (CompCert4Lean.Lib.Integers.Int64.unsigned i)
 
+def switch_argument_32 (i : CompCert4Lean.Lib.Integers.int) :
+    switch_argument false (.Vint i) (CompCert4Lean.Lib.Integers.Int.unsigned i) :=
+  switch_argument.of32 i
+
+def switch_argument_64 (i : CompCert4Lean.Lib.Integers.int64) :
+    switch_argument true (.Vlong i) (CompCert4Lean.Lib.Integers.Int64.unsigned i) :=
+  switch_argument.of64 i
+
 inductive comptree : Type where
   | CTaction (act : Nat)
   | CTifeq (key : Z) (act : Nat) (cne : comptree)
@@ -184,6 +192,30 @@ inductive wf_comptree (modulus : Z) : comptree → Prop where
       zLe z0 sz ∧ zLt sz modulus →
       wf_comptree modulus cother →
       wf_comptree modulus (.CTjumptable ofs sz acts cother)
+
+def wf_action (modulus : Z) (act : Nat) :
+    wf_comptree modulus (.CTaction act) :=
+  wf_comptree.action (modulus := modulus) act
+
+def wf_ifeq (modulus : Z) (key : Z) (act : Nat) (cne : comptree)
+    (hkey : ZArith.BinInt.Z.le Z0 key ∧ ZArith.BinInt.Z.lt key modulus)
+    (hcne : wf_comptree modulus cne) :
+    wf_comptree modulus (.CTifeq key act cne) :=
+  wf_comptree.ifeq (modulus := modulus) key act cne hkey hcne
+
+def wf_iflt (modulus : Z) (key : Z) (clt cge : comptree)
+    (hkey : ZArith.BinInt.Z.le Z0 key ∧ ZArith.BinInt.Z.lt key modulus)
+    (hclt : wf_comptree modulus clt)
+    (hcge : wf_comptree modulus cge) :
+    wf_comptree modulus (.CTiflt key clt cge) :=
+  wf_comptree.iflt (modulus := modulus) key clt cge hkey hclt hcge
+
+def wf_jumptable (modulus : Z) (ofs sz : Z) (acts : List Nat) (cother : comptree)
+    (hofs : ZArith.BinInt.Z.le Z0 ofs ∧ ZArith.BinInt.Z.lt ofs modulus)
+    (hsz : ZArith.BinInt.Z.le Z0 sz ∧ ZArith.BinInt.Z.lt sz modulus)
+    (hcother : wf_comptree modulus cother) :
+    wf_comptree modulus (.CTjumptable ofs sz acts cother) :=
+  wf_comptree.jumptable (modulus := modulus) ofs sz acts cother hofs hsz hcother
 
 def validate_wfStatement : Prop :=
   ∀ (modulus : Z) (default : Nat) (t : comptree) (cases : table) (lo hi : Z),
