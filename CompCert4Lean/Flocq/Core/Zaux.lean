@@ -44,17 +44,17 @@ abbrev Zpower_nat := CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.Zpower.Zpo
 def cond_Zopp (b : Bool) (m : Z) : Z :=
   CompCert4Lean.Lib.Floats.Model.Rocq.Coq.Floats.SpecFloat.cond_Zopp b m
 
-universe u
+universe u v
 
 def iter_pos {A : Type u} (f : A → A) (p : positive) (x : A) : A :=
   CompCert4Lean.Lib.Floats.Model.Rocq.Coq.Floats.SpecFloat.iter_pos f p x
 
-def eq_dep_elim (A : Type) (x : A) (P : ∀ a : A, x = a → Type)
+def eq_dep_elim (A : Type u) (x : A) (P : ∀ a : A, x = a → Sort v)
     (f : P x rfl) (a : A) (e : x = a) : P a e := by
   cases e
   exact f
 
-def eqbool_dep (P : Bool → Type) (h1 : P true) (b : Bool) : P b → Prop :=
+def eqbool_dep (P : Bool → Sort u) (h1 : P true) (b : Bool) : P b → Prop :=
   match b with
   | true => fun h2 => h1 = h2
   | false => fun _ => False
