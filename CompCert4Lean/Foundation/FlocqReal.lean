@@ -293,6 +293,53 @@ structure RuntimeExactAdapter (spec : ExactRealSpec) : Type where
   up_preserved : ∀ x (hx : represented x),
     spec.up (embed x hx) = runtime_up x
 
+namespace RuntimeExactAdapter
+
+/-! The dependent `embed` field is the primitive adapter operation.  Exposing
+    it over the represented-value carrier gives theorem-facing consumers one
+    stable operation to thread through source/runtime correspondences without
+    identifying the two carriers. -/
+abbrev Represented (adapter : RuntimeExactAdapter spec) :=
+  Subtype adapter.represented
+
+def operation (adapter : RuntimeExactAdapter spec)
+    (x : adapter.Represented) : spec.carrier :=
+  adapter.embed x.1 x.2
+
+/-! These propositions restate the exact laws at the operation surface.  They
+    intentionally carry no proof terms of their own; the existing adapter
+    fields remain the proof-grinding obligations. -/
+def operation_ofZ (adapter : RuntimeExactAdapter spec) : Prop :=
+  ∀ z,
+    adapter.operation
+        ⟨adapter.runtime_ofZ z, adapter.ofZ_represents z⟩ =
+      spec.ofZ z
+
+def operation_mul (adapter : RuntimeExactAdapter spec) : Prop :=
+  ∀ (x y : adapter.Represented),
+    adapter.operation
+        ⟨⟨x.1.value * y.1.value⟩,
+          adapter.mul_closed x.1 x.2 y.1 y.2⟩ =
+      spec.mul (adapter.operation x) (adapter.operation y)
+
+/-! Generic source-indexed correspondence schema.  SCC-098 instantiates this
+    with its canonical exact `F2R` identity and the separately named runtime
+    `F2R` operation; the provider does not duplicate either source declaration.
+    The existential representation witness is deliberately retained. -/
+def operation_correspondence (adapter : RuntimeExactAdapter spec)
+    {ι : Type} (runtime : ι → RuntimeReal) (exact : ι → spec.carrier) : Prop :=
+  ∀ i, ∃ h : adapter.represented (runtime i),
+    adapter.operation ⟨runtime i, h⟩ = exact i
+
+def f2r_correspondence (adapter : RuntimeExactAdapter spec)
+    {β : Type}
+    (runtimeF2R : β → SourceZ → SourceZ → RuntimeReal)
+    (exactF2R : β → SourceZ → SourceZ → spec.carrier) : Prop :=
+  ∀ beta m e, ∃ h : adapter.represented (runtimeF2R beta m e),
+    adapter.operation ⟨runtimeF2R beta m e, h⟩ = exactF2R beta m e
+
+end RuntimeExactAdapter
+
 /-- Explicit bundle threaded by theorem-facing Flocq consumers. -/
 structure ExactRealContext where
   spec : ExactRealSpec
