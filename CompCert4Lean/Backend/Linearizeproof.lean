@@ -334,7 +334,7 @@ def find_label_uniqueStatement : Prop :=
     is_tail (Linear.Llabel lbl :: c1) c2 -> unique_labels c2 ->
     Linear.find_label lbl c2 = some c3 -> c1 = c3
 
-def starts_with_correctStatement
+def starts_with_correct_genvStatement
   [binary64_certificate :
     CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
       (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
@@ -347,6 +347,23 @@ def starts_with_correctStatement
     is_tail c1 c2 -> unique_labels c2 ->
     starts_with lbl c1 = true -> Linear.find_label lbl c2 = some c3 ->
     plus (fun ge => Linear.step cfg xi ge) tge
+      (Linear.State s f sp c1 ls m) E0
+      (Linear.State s f sp c3 ls m)
+
+def starts_with_correctStatement
+  [binary64_certificate :
+    CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+      (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+  [binary32_certificate :
+    CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+      (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)] : Prop :=
+  forall (cfg : CompilerConfig) (xi : ExternalCalls) (tprog : Linear.program)
+    (lbl : Linear.label) (c1 c2 : List Linear.instruction) (c3 : Linear.code)
+    (s : List Linear.stackframe) (f : Linear.function) (sp : val)
+    (ls : Linear.locset) (m : mem),
+    is_tail c1 c2 -> unique_labels c2 ->
+    starts_with lbl c1 = true -> Linear.find_label lbl c2 = some c3 ->
+    plus (fun ge => Linear.step cfg xi ge) (Genv.globalenv tprog)
       (Linear.State s f sp c1 ls m) E0
       (Linear.State s f sp c3 ls m)
 
@@ -424,7 +441,7 @@ def is_tail_lin_blockStatement : Prop :=
   forall (b : LTL.bblock) (c1 c2 : Linear.code),
     is_tail (linearize_block b c1) c2 -> is_tail c1 c2
 
-def add_branch_correctStatement
+def add_branch_correct_genvStatement
   [binary64_certificate :
     CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
       (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
@@ -439,6 +456,24 @@ def add_branch_correctStatement
     transf_function service f = .OK tf -> is_tail k tf.fn_code ->
     Linear.find_label lbl tf.fn_code = some c ->
     plus (fun ge => Linear.step cfg xi ge) tge
+      (Linear.State s tf sp (add_branch lbl k) ls m) E0
+      (Linear.State s tf sp c ls m)
+
+def add_branch_correctStatement
+  [binary64_certificate :
+    CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+      (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+  [binary32_certificate :
+    CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+      (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)] : Prop :=
+  forall (cfg : CompilerConfig) (xi : ExternalCalls)
+    (service : EnumerationService) (tprog : Linear.program)
+    (lbl : Linear.label) (c : Linear.code) (k : List Linear.instruction)
+    (s : List Linear.stackframe) (f : LTL.function) (tf : Linear.function)
+    (sp : val) (ls : Linear.locset) (m : mem),
+    transf_function service f = .OK tf -> is_tail k tf.fn_code ->
+    Linear.find_label lbl tf.fn_code = some c ->
+    plus (fun ge => Linear.step cfg xi ge) (Genv.globalenv tprog)
       (Linear.State s tf sp (add_branch lbl k) ls m) E0
       (Linear.State s tf sp c ls m)
 
