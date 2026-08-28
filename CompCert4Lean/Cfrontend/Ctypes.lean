@@ -1192,6 +1192,12 @@ def build_composite_env (defs : List composite_definition) : Errors.res composit
 
 /-! ## Stability and consistency statement surface -/
 
+def add_composite_definitions_incrStatement : Prop :=
+  ∀ id co defs env1 env2,
+    add_composite_definitions env1 defs = .OK env2 →
+    PTree.get id env1 = some co →
+    PTree.get id env2 = some co
+
 def alignof_stableStatement : Prop :=
   forall env env',
     (forall id co, PTree.get id env = some co -> PTree.get id env' = some co) ->
@@ -1306,6 +1312,20 @@ def build_composite_env_consistentStatement : Prop :=
   forall defs env,
     build_composite_env defs = .OK env -> composite_env_consistent env
 
+def build_composite_env_charactStatement : Prop :=
+  ∀ id su m a defs env,
+    build_composite_env defs = .OK env →
+    Composite id su m a ∈ defs →
+    ∃ co,
+      PTree.get id env = some co ∧
+      co.co_members = m ∧ co.co_attr = a ∧ co.co_su = su
+
+def build_composite_env_domainStatement : Prop :=
+  ∀ env defs id co,
+    build_composite_env defs = .OK env →
+    PTree.get id env = some co →
+    Composite id co.co_su co.co_members co.co_attr ∈ defs
+
 /-! ## Programs and compilation units -/
 
 inductive fundef (F : Type) : Type where
@@ -1369,6 +1389,69 @@ def link_composite_def_invStatement : Prop :=
       (∀ x, x ∈ l ↔ x ∈ l1 ∨ x ∈ l2)
 
 def link_composite_def_inv : Prop := link_composite_def_invStatement
+
+def add_composite_definitions_appendStatement : Prop :=
+  ∀ l1 l2 env env'',
+    add_composite_definitions env (l1 ++ l2) = .OK env'' ↔
+      ∃ env',
+        add_composite_definitions env l1 = .OK env' ∧
+        add_composite_definitions env' l2 = .OK env''
+
+def composite_eqStatement : Prop :=
+  ∀ (su1 : struct_or_union) (m1 : members) (a1 : attr) (sz1 al1 : Z) (r1 : Nat)
+      (pos1 : zLe z0 sz1)
+      (al2p1 : ∃ n : Nat, al1 = two_power_nat n)
+      (szal1 : zDivide al1 sz1)
+      (su2 : struct_or_union) (m2 : members) (a2 : attr) (sz2 al2 : Z) (r2 : Nat)
+      (pos2 : zLe z0 sz2)
+      (al2p2 : ∃ n : Nat, al2 = two_power_nat n)
+      (szal2 : zDivide al2 sz2),
+    su1 = su2 → m1 = m2 → a1 = a2 → sz1 = sz2 → al1 = al2 → r1 = r2 →
+    composite.mk su1 m1 a1 sz1 al1 r1 pos1 al2p1 szal1 =
+      composite.mk su2 m2 a2 sz2 al2 r2 pos2 al2p2 szal2
+
+def composite_of_def_eqStatement : Prop :=
+  ∀ env id co,
+    composite_consistent env co →
+    PTree.get id env = none →
+    composite_of_def env id co.co_su co.co_members co.co_attr = .OK co
+
+def composite_consistent_uniqueStatement : Prop :=
+  ∀ env co1 co2,
+    composite_consistent env co1 →
+    composite_consistent env co2 →
+    co1.co_su = co2.co_su →
+    co1.co_members = co2.co_members →
+    co1.co_attr = co2.co_attr →
+    co1 = co2
+
+def composite_of_def_stableStatement : Prop :=
+  ∀ (env env' : composite_env)
+      (EXTENDS : ∀ id co, PTree.get id env = some co → PTree.get id env' = some co)
+      id su m a co,
+    PTree.get id env' = none →
+    composite_of_def env id su m a = .OK co →
+    composite_of_def env' id su m a = .OK co
+
+def link_add_composite_definitionsStatement : Type :=
+  ∀ l0 env0,
+    build_composite_env l0 = .OK env0 →
+    ∀ l env1 env1' env2,
+      add_composite_definitions env1 l = .OK env1' →
+      (∀ id co, PTree.get id env1 = some co → PTree.get id env2 = some co) →
+      (∀ id co, PTree.get id env0 = some co → PTree.get id env2 = some co) →
+      (∀ id,
+        PTree.get id env2 =
+          match CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.List.in_dec
+              AST.ident_eq id (l0.map name_composite_def) with
+          | .left _ => PTree.get id env0
+          | .right _ => PTree.get id env1) →
+      (∀ cd1 cd2,
+        cd1 ∈ l0 → cd2 ∈ l → name_composite_def cd2 = name_composite_def cd1 → cd2 = cd1) →
+      Subtype fun env2' =>
+        add_composite_definitions env2 (filter_redefs l0 l) = .OK env2' ∧
+        (∀ id co, PTree.get id env1' = some co → PTree.get id env2' = some co) ∧
+        (∀ id co, PTree.get id env0 = some co → PTree.get id env2' = some co)
 
 def link_build_composite_envStatement : Prop :=
   ∀ l1 l2 l env1 env2,
