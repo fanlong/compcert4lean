@@ -42,10 +42,6 @@ private abbrev intLtu := CompCert4Lean.Lib.Integers.Int.ltu
 private abbrev intSub := CompCert4Lean.Lib.Integers.Int.sub
 private abbrev intDivu := CompCert4Lean.Lib.Integers.Int.divu
 private abbrev intDivs := CompCert4Lean.Lib.Integers.Int.divs
-private abbrev intModu (x y : int) : int :=
-  intSub x (CompCert4Lean.Lib.Integers.Int.mul (intDivu x y) y)
-private abbrev intMods (x y : int) : int :=
-  intSub x (CompCert4Lean.Lib.Integers.Int.mul (intDivs x y) y)
 private abbrev int64Repr := CompCert4Lean.Lib.Integers.Int64.repr
 private abbrev int64Unsigned := CompCert4Lean.Lib.Integers.Int64.unsigned
 private abbrev int64Signed := CompCert4Lean.Lib.Integers.Int64.signed
@@ -55,10 +51,6 @@ private abbrev int64Sub := CompCert4Lean.Lib.Integers.Int64.sub
 private abbrev int64Mul := CompCert4Lean.Lib.Integers.Int64.mul
 private abbrev int64Divu := CompCert4Lean.Lib.Integers.Int64.divu
 private abbrev int64Divs := CompCert4Lean.Lib.Integers.Int64.divs
-private abbrev int64Modu (x y : int64) : int64 :=
-  int64Sub x (int64Mul (int64Divu x y) y)
-private abbrev int64Mods (x y : int64) : int64 :=
-  int64Sub x (int64Mul (int64Divs x y) y)
 private abbrev intWordsize := CompCert4Lean.Lib.Integers.Int.wordsize
 private abbrev intModulus := CompCert4Lean.Lib.Integers.Int.modulus
 private abbrev intHalfModulus := CompCert4Lean.Lib.Integers.Int.half_modulus
@@ -96,16 +88,6 @@ private def zleBool (x y : Z) : Bool :=
 
 private def optimForSize (cfg : CompilerConfig) : Bool :=
   CompCert4Lean.Driver.Compopts.optim_for_size cfg
-
-private def intIsPower2 (x : int) : Option int :=
-  match CompCert4Lean.Lib.Zbits.Z_one_bits intWordsize (intUnsigned x) z0 with
-  | [i] => some (intRepr i)
-  | _ => none
-
-private def int64IsPower2 (x : int64) : Option int :=
-  match CompCert4Lean.Lib.Zbits.Z_one_bits int64Wordsize (int64Unsigned x) z0 with
-  | [i] => some (intRepr i)
-  | _ => none
 
 def is_intconst (e : expr) : Option int :=
   match e with
@@ -191,7 +173,7 @@ def divu_mul (p m : Z) : expr :=
     (intRepr p)
 
 def divuimm (cfg : CompilerConfig) (e1 : expr) (n2 : int) : expr :=
-  match intIsPower2 n2 with
+  match CompCert4Lean.Lib.Integers.Int.is_power2 n2 with
   | some l => shruimm e1 l
   | none =>
       if optimForSize cfg then
@@ -215,7 +197,7 @@ def mod_from_div (equo : expr) (n : int) : expr :=
   Eop Osub (Econs (Eletvar 0) (Econs (mulimm n equo) Enil))
 
 def moduimm (cfg : CompilerConfig) (e1 : expr) (n2 : int) : expr :=
-  match intIsPower2 n2 with
+  match CompCert4Lean.Lib.Integers.Int.is_power2 n2 with
   | some l => andimm (intSub n2 (CompCert4Lean.Lib.Integers.Int.one)) e1
   | none =>
       if optimForSize cfg then
@@ -231,7 +213,7 @@ def modu (cfg : CompilerConfig) (e1 e2 : expr) : expr :=
       if intEq n2 (CompCert4Lean.Lib.Integers.Int.zero) then
         modu_base e1 e2
       else
-        Eop (Ointconst (intModu n1 n2)) Enil
+        Eop (Ointconst (CompCert4Lean.Lib.Integers.Int.modu n1 n2)) Enil
   | some n2, _ => moduimm cfg e1 n2
   | _, _ => modu_base e1 e2
 
@@ -242,7 +224,7 @@ def divs_mul (p m : Z) : expr :=
     (shruimm (Eletvar 0) (intRepr (zSub intZwordsize z1)))
 
 def divsimm (cfg : CompilerConfig) (e1 : expr) (n2 : int) : expr :=
-  match intIsPower2 n2 with
+  match CompCert4Lean.Lib.Integers.Int.is_power2 n2 with
   | some l =>
       if intLtu l (intRepr (zOfNat 31)) then
         shrximm e1 l
@@ -267,7 +249,7 @@ def divs (cfg : CompilerConfig) (e1 e2 : expr) : expr :=
   | _, _ => divs_base e1 e2
 
 def modsimm (cfg : CompilerConfig) (e1 : expr) (n2 : int) : expr :=
-  match intIsPower2 n2 with
+  match CompCert4Lean.Lib.Integers.Int.is_power2 n2 with
   | some l =>
       if intLtu l (intRepr (zOfNat 31)) then
         Elet e1 (mod_from_div (shrximm (Eletvar 0) l) n2)
@@ -287,7 +269,7 @@ def mods (cfg : CompilerConfig) (e1 e2 : expr) : expr :=
       if intEq n2 (CompCert4Lean.Lib.Integers.Int.zero) then
         mods_base e1 e2
       else
-        Eop (Ointconst (intMods n1 n2)) Enil
+        Eop (Ointconst (CompCert4Lean.Lib.Integers.Int.mods n1 n2)) Enil
   | some n2, _ => modsimm cfg e1 n2
   | _, _ => mods_base e1 e2
 
@@ -314,9 +296,10 @@ def divlu (cfg : CompilerConfig) (e1 e2 : expr) : expr :=
 
 def modlu (cfg : CompilerConfig) (e1 e2 : expr) : expr :=
   match is_longconst e2, is_longconst e1 with
-  | some n2, some n1 => longconst (int64Modu n1 n2)
+  | some n2, some n1 =>
+      longconst (CompCert4Lean.Lib.Integers.Int64.modu n1 n2)
   | some n2, _ =>
-      match int64IsPower2 n2 with
+      match CompCert4Lean.Lib.Integers.Int64.is_power2 n2 with
       | some l => andl e1 (longconst (int64Sub n2 (CompCert4Lean.Lib.Integers.Int64.one)))
       | none =>
           if optimForSize cfg then
@@ -355,7 +338,8 @@ def divls (cfg : CompilerConfig) (e1 e2 : expr) : expr :=
 
 def modls (cfg : CompilerConfig) (e1 e2 : expr) : expr :=
   match is_longconst e2, is_longconst e1 with
-  | some n2, some n1 => longconst (int64Mods n1 n2)
+  | some n2, some n1 =>
+      longconst (CompCert4Lean.Lib.Integers.Int64.mods n1 n2)
   | some n2, _ =>
       match CompCert4Lean.Lib.Integers.Int64.is_power2' n2 with
       | some l =>
