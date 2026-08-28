@@ -7,6 +7,7 @@ import CompCert4Lean.Common.AST
 import CompCert4Lean.Lib.Coqlib
 import CompCert4Lean.Lib.Maps
 import CompCert4Lean.Lib.Integers
+import CompCert4Lean.Lib.Ordered
 import CompCert4Lean.Lib.FSetAVLplus
 import CompCert4Lean.Backend.Kildall
 import CompCert4Lean.Backend.RTL
@@ -496,24 +497,6 @@ private theorem positiveLtTrans {x y z : positive} :
 private theorem positiveLtIrrefl (x : positive) : ¬ Plt x x :=
   Nat.lt_irrefl _
 
-private def comparePositive (x y : positive) :
-    CompCert4Lean.Foundation.Ordered.Rocq.Coq.Structures.OrderedType.Compare
-      Plt (fun a b => a = b) x y := by
-  cases plt x y with
-  | left hlt => exact .LT hlt
-  | right hlt =>
-      cases peq x y with
-      | left heq => exact .EQ heq
-      | right heq =>
-          refine .GT ?_
-          change PArith.BinPos.Pos.to_nat y < PArith.BinPos.Pos.to_nat x
-          change ¬ PArith.BinPos.Pos.to_nat x < PArith.BinPos.Pos.to_nat y at hlt
-          have hnatne :
-              PArith.BinPos.Pos.to_nat x ≠ PArith.BinPos.Pos.to_nat y := by
-            intro h
-            exact heq (posToNat_injective h)
-          omega
-
 private theorem orderedSlotLtTrans (x y z : slot) :
     Locations.OrderedSlot.lt x y → Locations.OrderedSlot.lt y z →
       Locations.OrderedSlot.lt x z := by
@@ -630,7 +613,7 @@ theorem lt_not_eq (x y : t) (hlt : lt x y) : ¬ eq x y := by
 def compare (x y : t) :
     CompCert4Lean.Foundation.Ordered.Rocq.Coq.Structures.OrderedType.Compare
       lt eq x y := by
-  cases comparePositive x.ereg y.ereg with
+  cases CompCert4Lean.Lib.Ordered.OrderedPositive.compare x.ereg y.ereg with
   | LT hr => exact .LT (Or.inl hr)
   | GT hr => exact .GT (Or.inl hr)
   | EQ her =>
@@ -716,7 +699,7 @@ def compare (x y : t) :
   | LT hl => exact .LT (Or.inl hl)
   | GT hl => exact .GT (Or.inl hl)
   | EQ hel =>
-      cases comparePositive x.ereg y.ereg with
+      cases CompCert4Lean.Lib.Ordered.OrderedPositive.compare x.ereg y.ereg with
       | LT hr => exact .LT (Or.inr ⟨hel, Or.inl hr⟩)
       | GT hr => exact .GT (Or.inr ⟨hel.symm, Or.inl hr⟩)
       | EQ her =>
