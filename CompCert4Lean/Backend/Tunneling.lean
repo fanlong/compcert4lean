@@ -386,6 +386,19 @@ def record_conds_equationStatement : Prop :=
       let result := record_conds_1 cu
       if result.2.2 then record_conds (result.1, result.2.1) else cu.2
 
+def record_conds_recStatement : Type 1 :=
+  ∀ (P : code × U.t → U.t → Type),
+    (∀ (cu cu' : code × U.t) (changed : Bool),
+      record_conds_1 cu = (cu'.1, (cu'.2, changed)) →
+      changed = true →
+      P cu' (record_conds cu') →
+      P cu (record_conds cu)) →
+    (∀ (cu cu' : code × U.t) (changed : Bool),
+      record_conds_1 cu = (cu'.1, (cu'.2, changed)) →
+      changed = false →
+      P cu cu.2) →
+    ∀ cu : code × U.t, P cu (record_conds cu)
+
 def record_gotos (f : function) : U.t :=
   record_conds (f.fn_code, record_branches f)
 
