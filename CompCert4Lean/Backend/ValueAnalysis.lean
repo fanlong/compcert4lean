@@ -707,7 +707,7 @@ def smatch_no_stackStatement : Prop :=
     ∀ m b p, smatch bc m b p → smatch bc m b Nonstack
 
 def allocate_stackStatement : Prop :=
-  ∀ (m m' : mem) (sz : Z) (sp : block) (bc : block_classification)
+  ∀ (m : mem) (sz : Z) (m' : mem) (sp : block) (bc : block_classification)
     (ge : genv) (rm : romem) (am : amem),
     Mem.alloc m z0 sz = (m', sp) →
     genv_match bc ge →
@@ -809,8 +809,9 @@ def external_call_matchStatement
     [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
     [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (xi : CompCert4Lean.Common.ExternalCalls.ExternalCalls)
-    (ef : external_function) (ge : genv) (vargs : List val) (m m' : mem)
-    (t : trace) (vres : val) (bc : block_classification) (rm : romem) (am : amem),
+    (ef : external_function) (ge : genv) (vargs : List val) (m : mem)
+    (t : trace) (vres : val) (m' : mem) (bc : block_classification)
+    (rm : romem) (am : amem),
     external_call
       (binary64_certificate := binary64_certificate)
       (binary32_certificate := binary32_certificate)
@@ -935,7 +936,7 @@ def sound_step_baseStatement
     [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (cfg : CompilerConfig) (prog : program)
     (xi : CompCert4Lean.Common.ExternalCalls.ExternalCalls)
-    (ge : genv) (st st' : state) (t : trace),
+    (ge : genv) (st : state) (t : trace) (st' : state),
     RTL.step
       (binary64_certificate := binary64_certificate)
       (binary32_certificate := binary32_certificate) xi ge st t st' →
@@ -947,7 +948,7 @@ def sound_stepStatement
     [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (cfg : CompilerConfig) (prog : program)
     (xi : CompCert4Lean.Common.ExternalCalls.ExternalCalls)
-    (st st' : state) (t : trace),
+    (st : state) (t : trace) (st' : state),
     RTL.step
       (binary64_certificate := binary64_certificate)
       (binary32_certificate := binary32_certificate)
@@ -958,7 +959,7 @@ def sound_stepStatement
 def sound_state_invStatement
     [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
     [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
-  ∀ (cfg : CompilerConfig) (prog cunit : program) (st : state),
+  ∀ (cfg : CompilerConfig) (prog : program) (st : state) (cunit : program),
     sound_state cfg prog st →
     linkorder cunit prog →
     sound_state_base cfg cunit (Genv.globalenv prog) st
@@ -1000,8 +1001,8 @@ def store_init_data_list_soundStatement : Prop :=
     bmatch bc m' b (store_init_data_list cfg ab p idl)
 
 def store_init_data_otherStatement : Prop :=
-  ∀ (prog : program) (bc : block_classification) (m : mem) (b b' : block)
-    (p : Z) (id : init_data) (m' : mem) (ab : ablock),
+  ∀ (prog : program) (bc : block_classification) (m : mem) (b : block)
+    (p : Z) (id : init_data) (m' : mem) (ab : ablock) (b' : block),
     genv_match bc (Genv.globalenv prog) →
     Genv.store_init_data (Genv.globalenv prog) m b p id = some m' →
     b' ≠ b →
@@ -1041,23 +1042,22 @@ def initial_mem_matchesStatement : Prop :=
       (∀ b, Mem.valid_block m b → bc b ≠ BCinvalid)
 
 def alloc_global_matchStatement : Prop :=
-  ∀ (cfg : CompilerConfig) (prog : program) (bc : block_classification) (m m' : mem)
-    (g : genv) (idg : ident × globdef fundef Unit),
+  ∀ (cfg : CompilerConfig) (prog : program) (bc : block_classification),
     genv_match bc (Genv.globalenv prog) →
-    g.genv_next = m.nextblock →
-    initial_mem_match cfg bc m g →
-    Genv.alloc_global (Genv.globalenv prog) m idg = some m' →
-    initial_mem_match cfg bc m' (Genv.add_global g idg)
+    ∀ (m : mem) (g : genv) (idg : ident × globdef fundef Unit) (m' : mem),
+      g.genv_next = m.nextblock →
+      initial_mem_match cfg bc m g →
+      Genv.alloc_global (Genv.globalenv prog) m idg = some m' →
+      initial_mem_match cfg bc m' (Genv.add_global g idg)
 
 def alloc_globals_matchStatement : Prop :=
-  ∀ (cfg : CompilerConfig) (prog : program) (bc : block_classification)
-    (gl : List (ident × globdef fundef Unit))
-    (m m' : mem) (g : genv),
+  ∀ (cfg : CompilerConfig) (prog : program) (bc : block_classification),
     genv_match bc (Genv.globalenv prog) →
-    g.genv_next = m.nextblock →
-    initial_mem_match cfg bc m g →
-    Genv.alloc_globals (Genv.globalenv prog) m gl = some m' →
-    initial_mem_match cfg bc m' (Genv.add_globals g gl)
+    ∀ (gl : List (ident × globdef fundef Unit)) (m : mem) (g : genv) (m' : mem),
+      g.genv_next = m.nextblock →
+      initial_mem_match cfg bc m g →
+      Genv.alloc_globals (Genv.globalenv prog) m gl = some m' →
+      initial_mem_match cfg bc m' (Genv.add_globals g gl)
 def romem_for_consistentStatement : Prop :=
   ∀ (cfg : CompilerConfig) (cunit : program),
     romem_consistent cfg (prog_defmap cunit) (romem_for cfg cunit)
