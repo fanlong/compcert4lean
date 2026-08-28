@@ -307,6 +307,9 @@ def has_inj_typeStatement : Prop :=
 inductive bool_of_val : val → Bool → Prop where
   | bool_of_val_int (n : CCInt) : bool_of_val (Vint n) (!(Int.eq n Int.zero))
 
+abbrev bool_of_val_int (n : CCInt) : bool_of_val (Vint n) (!(Int.eq n Int.zero)) :=
+  @bool_of_val.bool_of_val_int n
+
 def neg (v : val) : val := match v with | Vint n => Vint (Int.neg n) | _ => Vundef
 def negf (v : val) : val := match v with | Vfloat f => Vfloat (Float.neg f) | _ => Vundef
 def absf (v : val) : val := match v with | Vfloat f => Vfloat (Float.abs f) | _ => Vundef
@@ -394,10 +397,6 @@ def modu (v1 v2 : val) : Option val :=
   | Vint n1, Vint n2 => if Int.eq n2 Int.zero then none else some (Vint (Int.modu n1 n2))
   | _, _ => none
 
-def add_carry (v1 v2 cin : val) : val :=
-  match v1, v2, cin with
-  | Vint n1, Vint n2, Vint c => Vint (Int.add_carry n1 n2 c)
-  | _, _, _ => Vundef
 def sub_overflow (v1 v2 : val) : val := match v1, v2 with | Vint n1, Vint n2 => Vint (Int.sub_overflow n1 n2 Int.zero) | _, _ => Vundef
 def negative (v : val) : val := match v with | Vint n => Vint (Int.negative n) | _ => Vundef
 def and (v1 v2 : val) : val := match v1, v2 with | Vint n1, Vint n2 => Vint (Int.and n1 n2) | _, _ => Vundef
@@ -475,7 +474,6 @@ def divls (v1 v2 : val) : Option val := match v1, v2 with | Vlong n1, Vlong n2 =
 def modls (v1 v2 : val) : Option val := match v1, v2 with | Vlong n1, Vlong n2 => if Int64.eq n2 Int64.zero || (Int64.eq n1 (Int64.repr Int64.min_signed) && Int64.eq n2 Int64.mone) then none else some (Vlong (Int64.mods n1 n2)) | _, _ => none
 def divlu (v1 v2 : val) : Option val := match v1, v2 with | Vlong n1, Vlong n2 => if Int64.eq n2 Int64.zero then none else some (Vlong (Int64.divu n1 n2)) | _, _ => none
 def modlu (v1 v2 : val) : Option val := match v1, v2 with | Vlong n1, Vlong n2 => if Int64.eq n2 Int64.zero then none else some (Vlong (Int64.modu n1 n2)) | _, _ => none
-def addl_carry (v1 v2 cin : val) : val := match v1, v2, cin with | Vlong n1, Vlong n2, Vlong c => Vlong (Int64.add_carry n1 n2 c) | _, _, _ => Vundef
 def subl_overflow (v1 v2 : val) : val := match v1, v2 with | Vlong n1, Vlong n2 => Vint (Int.repr (Int64.unsigned (Int64.sub_overflow n1 n2 Int64.zero))) | _, _ => Vundef
 def negativel (v : val) : val := match v with | Vlong n => Vint (Int.repr (Int64.unsigned (Int64.negative n))) | _ => Vundef
 def andl (v1 v2 : val) : val := match v1, v2 with | Vlong n1, Vlong n2 => Vlong (Int64.and n1 n2) | _, _ => Vundef
@@ -575,9 +573,23 @@ inductive lessdef : val → val → Prop where
   | lessdef_refl (v : val) : lessdef v v
   | lessdef_undef (v : val) : lessdef Vundef v
 
+abbrev lessdef_refl (v : val) : lessdef v v :=
+  @lessdef.lessdef_refl v
+
+abbrev lessdef_undef (v : val) : lessdef Vundef v :=
+  @lessdef.lessdef_undef v
+
 inductive lessdef_list : List val → List val → Prop where
   | lessdef_list_nil : lessdef_list [] []
-  | lessdef_list_cons {v1 v2 : val} {vl1 vl2 : List val} : lessdef v1 v2 → lessdef_list vl1 vl2 → lessdef_list (v1 :: vl1) (v2 :: vl2)
+  | lessdef_list_cons (v1 v2 : val) (vl1 vl2 : List val) : lessdef v1 v2 → lessdef_list vl1 vl2 → lessdef_list (v1 :: vl1) (v2 :: vl2)
+
+abbrev lessdef_list_nil : lessdef_list [] [] :=
+  @lessdef_list.lessdef_list_nil
+
+abbrev lessdef_list_cons (v1 v2 : val) (vl1 vl2 : List val)
+    (hhead : lessdef v1 v2) (htail : lessdef_list vl1 vl2) :
+    lessdef_list (v1 :: vl1) (v2 :: vl2) :=
+  @lessdef_list.lessdef_list_cons v1 v2 vl1 vl2 hhead htail
 
 def meminj : Type := block → Option (block × Z)
 
@@ -591,6 +603,27 @@ inductive inject (mi : meminj) : val → val → Prop where
       ofs2 = Ptrofs.add ofs1 (Ptrofs.repr delta) →
       inject mi (Vptr b1 ofs1) (Vptr b2 ofs2)
   | val_inject_undef (v : val) : inject mi Vundef v
+
+abbrev inject_int (mi : meminj) (i : CCInt) : inject mi (Vint i) (Vint i) :=
+  @inject.inject_int mi i
+
+abbrev inject_long (mi : meminj) (i : CCInt64) : inject mi (Vlong i) (Vlong i) :=
+  @inject.inject_long mi i
+
+abbrev inject_float (mi : meminj) (f : CCFloat) : inject mi (Vfloat f) (Vfloat f) :=
+  @inject.inject_float mi f
+
+abbrev inject_single (mi : meminj) (f : CCFloat32) : inject mi (Vsingle f) (Vsingle f) :=
+  @inject.inject_single mi f
+
+abbrev inject_ptr (mi : meminj) (b1 : block) (ofs1 : Ptrofs) (b2 : block)
+    (ofs2 : Ptrofs) (delta : Z) (hmap : mi b1 = some (b2, delta))
+    (hofs : ofs2 = Ptrofs.add ofs1 (Ptrofs.repr delta)) :
+    inject mi (Vptr b1 ofs1) (Vptr b2 ofs2) :=
+  @inject.inject_ptr mi b1 ofs1 b2 ofs2 delta hmap hofs
+
+abbrev val_inject_undef (mi : meminj) (v : val) : inject mi Vundef v :=
+  @inject.val_inject_undef mi v
 
 def addl_injectStatement : Prop :=
   ∀ (f : meminj) v1 v1' v2 v2',
@@ -661,6 +694,14 @@ inductive inject_list (mi : meminj) : List val → List val → Prop where
       inject mi v1 v2 →
       inject_list mi vl1 vl2 →
       inject_list mi (v1 :: vl1) (v2 :: vl2)
+
+abbrev inject_list_nil (mi : meminj) : inject_list mi [] [] :=
+  @inject_list.inject_list_nil mi
+
+abbrev inject_list_cons (mi : meminj) (v1 v2 : val) (vl1 vl2 : List val)
+    (hhead : inject mi v1 v2) (htail : inject_list mi vl1 vl2) :
+    inject_list mi (v1 :: vl1) (v2 :: vl2) :=
+  @inject_list.inject_list_cons mi v1 v2 vl1 vl2 hhead htail
 
 def bool_of_val_of_optboolStatement : Prop :=
   ∀ ob b, bool_of_val (of_optbool ob) b → ob = some b
