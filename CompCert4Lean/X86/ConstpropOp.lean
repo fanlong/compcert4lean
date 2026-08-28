@@ -46,14 +46,6 @@ private abbrev zAdd := ZArith.BinInt.Z.add
 private abbrev zMul := ZArith.BinInt.Z.mul
 private abbrev zOpp := ZArith.BinInt.Z.opp
 
-private abbrev int64IsPower2 := CompCert4Lean.Lib.Integers.Int64.is_power2'
-
-private def intIsPower2 (x : int) : Option int :=
-  match CompCert4Lean.Lib.Zbits.Z_one_bits CompCert4Lean.Lib.Integers.Int.wordsize
-      (CompCert4Lean.Lib.Integers.Int.unsigned x) Z0 with
-  | [i] => some (CompCert4Lean.Lib.Integers.Int.repr i)
-  | _ => none
-
 def Olea_ptr (a : addressing) : operation :=
   if CompCert4Lean.X86_64.Archi.ptr64 then Oleal a else Olea a
 
@@ -432,7 +424,7 @@ def make_shruimm (n : int) (r1 r2 : reg) : operation × List reg :=
 def make_mulimm (n : int) (r : reg) : operation × List reg :=
   if CompCert4Lean.Lib.Integers.Int.eq n CompCert4Lean.Lib.Integers.Int.zero then (Ointconst CompCert4Lean.Lib.Integers.Int.zero, [])
   else if CompCert4Lean.Lib.Integers.Int.eq n CompCert4Lean.Lib.Integers.Int.one then (Omove, [r])
-  else match intIsPower2 n with
+  else match CompCert4Lean.Lib.Integers.Int.is_power2 n with
     | some l => (Oshlimm l, [r])
     | none => (Omulimm n, [r])
 
@@ -459,19 +451,19 @@ def make_xorimm (n : int) (r : reg) : operation × List reg :=
 
 def make_divimm (n : int) (r1 r2 : reg) : operation × List reg :=
   if CompCert4Lean.Lib.Integers.Int.eq n CompCert4Lean.Lib.Integers.Int.one then (Omove, [r1])
-  else match intIsPower2 n with
+  else match CompCert4Lean.Lib.Integers.Int.is_power2 n with
     | some l => if CompCert4Lean.Lib.Integers.Int.ltu l (CompCert4Lean.Lib.Integers.Int.repr (zOfNat 31)) then (Oshrximm l, [r1])
       else (Odiv, [r1, r2])
     | none => (Odiv, [r1, r2])
 
 def make_divuimm (n : int) (r1 r2 : reg) : operation × List reg :=
   if CompCert4Lean.Lib.Integers.Int.eq n CompCert4Lean.Lib.Integers.Int.one then (Omove, [r1])
-  else match intIsPower2 n with
+  else match CompCert4Lean.Lib.Integers.Int.is_power2 n with
     | some l => (Oshruimm l, [r1])
     | none => (Odivu, [r1, r2])
 
 def make_moduimm (n : int) (r1 r2 : reg) : operation × List reg :=
-  match intIsPower2 n with
+  match CompCert4Lean.Lib.Integers.Int.is_power2 n with
   | some _ => (Oandimm (CompCert4Lean.Lib.Integers.Int.sub n CompCert4Lean.Lib.Integers.Int.one), [r1])
   | none => (Omodu, [r1, r2])
 
@@ -497,7 +489,7 @@ def make_shrluimm (n : int) (r1 r2 : reg) : operation × List reg :=
 def make_mullimm (n : int64) (r : reg) : operation × List reg :=
   if CompCert4Lean.Lib.Integers.Int64.eq n CompCert4Lean.Lib.Integers.Int64.zero then (Olongconst CompCert4Lean.Lib.Integers.Int64.zero, [])
   else if CompCert4Lean.Lib.Integers.Int64.eq n CompCert4Lean.Lib.Integers.Int64.one then (Omove, [r])
-  else match int64IsPower2 n with
+  else match CompCert4Lean.Lib.Integers.Int64.is_power2' n with
     | some l => (Oshllimm l, [r])
     | none => (Omullimm n, [r])
 
@@ -517,18 +509,18 @@ def make_xorlimm (n : int64) (r : reg) : operation × List reg :=
   else (Oxorlimm n, [r])
 
 def make_divlimm (n : int64) (r1 r2 : reg) : operation × List reg :=
-  match int64IsPower2 n with
+  match CompCert4Lean.Lib.Integers.Int64.is_power2' n with
   | some l => if CompCert4Lean.Lib.Integers.Int.ltu l (CompCert4Lean.Lib.Integers.Int.repr (zOfNat 63)) then (Oshrxlimm l, [r1])
     else (Odivl, [r1, r2])
   | none => (Odivl, [r1, r2])
 
 def make_divluimm (n : int64) (r1 r2 : reg) : operation × List reg :=
-  match int64IsPower2 n with
+  match CompCert4Lean.Lib.Integers.Int64.is_power2' n with
   | some l => (Oshrluimm l, [r1])
   | none => (Odivlu, [r1, r2])
 
 def make_modluimm (n : int64) (r1 r2 : reg) : operation × List reg :=
-  match int64IsPower2 n with
+  match CompCert4Lean.Lib.Integers.Int64.is_power2 n with
   | some _ => (Oandlimm (CompCert4Lean.Lib.Integers.Int64.sub n CompCert4Lean.Lib.Integers.Int64.one), [r1])
   | none => (Omodlu, [r1, r2])
 
