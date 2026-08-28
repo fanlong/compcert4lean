@@ -216,7 +216,7 @@ def mon (A : Type) : Type := ∀ s : state, res A s
 def ret {A : Type} (x : A) : mon A :=
   fun s => .OK x s (stateIncrRefl s)
 
-private def bindM {A B : Type} (f : mon A) (g : A → mon B) : mon B :=
+def bind {A B : Type} (f : mon A) (g : A → mon B) : mon B :=
   fun s =>
     match f s with
     | .Error msg => .Error msg
@@ -225,9 +225,12 @@ private def bindM {A B : Type} (f : mon A) (g : A → mon B) : mon B :=
         | .Error msg => .Error msg
         | .OK b s'' h' => .OK b s'' (stateIncrTrans h h')
 
+def bind2 {A B C : Type} (f : mon (A × B)) (g : A → B → mon C) : mon C :=
+  bind f (fun xy => g xy.1 xy.2)
+
 private instance : Monad mon where
   pure := @ret
-  bind := @bindM
+  bind := @bind
 
 def error {A : Type} (msg : CompCert4Lean.Common.Errors.errmsg) : mon A :=
   fun _ => .Error msg
