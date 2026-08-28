@@ -1,4 +1,5 @@
 import CompCert4Lean.Backend.CminorSel
+import CompCert4Lean.Backend.SplitLong
 import CompCert4Lean.Lib.Integers
 import CompCert4Lean.X86.SelectOp
 
@@ -61,28 +62,6 @@ private abbrev shr' := CompCert4Lean.Lib.Integers.Int64.shr'
 private abbrev one_bits' := CompCert4Lean.Lib.Integers.Int64.one_bits'
 end Int64
 
-private def zCmp (c : comparison) (x y : Z) : Bool :=
-  let x' := CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ x
-  let y' := CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ y
-  match c with
-  | .Ceq => decide (x' = y')
-  | .Cne => decide (x' != y')
-  | .Clt => decide (x' < y')
-  | .Cle => decide (x' <= y')
-  | .Cgt => decide (x' > y')
-  | .Cge => decide (x' >= y')
-
-private def int64Cmp (c : comparison) (x y : CCInt64) : Bool :=
-  zCmp c (Int64.signed x) (Int64.signed y)
-
-private def int64Cmpu (c : comparison) (x y : CCInt64) : Bool :=
-  zCmp c (Int64.unsigned x) (Int64.unsigned y)
-
-private def is_intconst (e : expr) : Option CCInt :=
-  match e with
-  | Eop (Ointconst n) Enil => some n
-  | _ => none
-
 /-! ## Constants and conversions -/
 
 def longconst (n : CCInt64) : expr :=
@@ -99,12 +78,12 @@ def intoflong (e : expr) : expr :=
   | none => Eop Olowlong (Econs e Enil)
 
 def longofint (e : expr) : expr :=
-  match is_intconst e with
+  match CompCert4Lean.Backend.SplitLong.is_intconst e with
   | some n => longconst (Int64.repr (Int.signed n))
   | none => Eop Ocast32signed (Econs e Enil)
 
 def longofintu (e : expr) : expr :=
-  match is_intconst e with
+  match CompCert4Lean.Backend.SplitLong.is_intconst e with
   | some n => longconst (Int64.repr (Int.unsigned n))
   | none => Eop Ocast32unsigned (Econs e Enil)
 
@@ -392,17 +371,17 @@ def shrlimm (e1 : expr) (n : CCInt) : expr :=
     | .shrlimm_default e1 => Eop (Oshrlimm n) (Econs e1 Enil)
 
 def shll (e1 e2 : expr) : expr :=
-  match is_intconst e2 with
+  match CompCert4Lean.Backend.SplitLong.is_intconst e2 with
   | some n2 => shllimm e1 n2
   | none => Eop Oshll (Econs e1 (Econs e2 Enil))
 
 def shrl (e1 e2 : expr) : expr :=
-  match is_intconst e2 with
+  match CompCert4Lean.Backend.SplitLong.is_intconst e2 with
   | some n2 => shrlimm e1 n2
   | none => Eop Oshrl (Econs e1 (Econs e2 Enil))
 
 def shrlu (e1 e2 : expr) : expr :=
-  match is_intconst e2 with
+  match CompCert4Lean.Backend.SplitLong.is_intconst e2 with
   | some n2 => shrluimm e1 n2
   | none => Eop Oshrlu (Econs e1 (Econs e2 Enil))
 
@@ -611,7 +590,10 @@ def modls_base (e1 e2 : expr) : expr := Eop Omodl (Econs e1 (Econs e2 Enil))
 def cmplu (c : comparison) (e1 e2 : expr) : expr :=
   match is_longconst e1, is_longconst e2 with
   | some n1, some n2 =>
-      Eop (Ointconst (if int64Cmpu c n1 n2 then Int.one else Int.zero)) Enil
+      Eop
+        (Ointconst
+          (if CompCert4Lean.Lib.Integers.Int64.cmpu c n1 n2 then Int.one else Int.zero))
+        Enil
   | some n1, none => Eop (Ocmp (Ccompluimm (swap_comparison c) n1)) (Econs e2 Enil)
   | none, some n2 => Eop (Ocmp (Ccompluimm c n2)) (Econs e1 Enil)
   | none, none => Eop (Ocmp (Ccomplu c)) (Econs e1 (Econs e2 Enil))
@@ -619,7 +601,10 @@ def cmplu (c : comparison) (e1 e2 : expr) : expr :=
 def cmpl (c : comparison) (e1 e2 : expr) : expr :=
   match is_longconst e1, is_longconst e2 with
   | some n1, some n2 =>
-      Eop (Ointconst (if int64Cmp c n1 n2 then Int.one else Int.zero)) Enil
+      Eop
+        (Ointconst
+          (if CompCert4Lean.Lib.Integers.Int64.cmp c n1 n2 then Int.one else Int.zero))
+        Enil
   | some n1, none => Eop (Ocmp (Ccomplimm (swap_comparison c) n1)) (Econs e2 Enil)
   | none, some n2 => Eop (Ocmp (Ccomplimm c n2)) (Econs e1 Enil)
   | none, none => Eop (Ocmp (Ccompl c)) (Econs e1 (Econs e2 Enil))
