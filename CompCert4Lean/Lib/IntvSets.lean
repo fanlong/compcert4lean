@@ -495,6 +495,12 @@ def contains (L H : Z) : t → Bool
 /-! Source-named raw proof surfaces.  Their propositions retain the exact
     source binder order; proof terms are assigned to proof grinding. -/
 
+def contains_InStatement : Prop :=
+  ∀ l0 h0 : Z, ZArith.BinInt.Z.lt l0 h0 → ∀ s : t, ok s →
+    (contains l0 h0 s = true ↔
+      ∀ x : Z,
+        (ZArith.BinInt.Z.le l0 x ∧ ZArith.BinInt.Z.lt x h0) → In x s)
+
 def In_addStatement : Prop :=
   ∀ x : Z, ∀ s : t, ok s → ∀ l0 h0 : Z,
     In x (add l0 h0 s) ↔
