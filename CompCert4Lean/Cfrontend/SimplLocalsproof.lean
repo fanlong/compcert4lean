@@ -147,11 +147,16 @@ structure match_envs (f : meminj) (cenv : compilenv)
 export match_envs (me_vars me_temps me_inj me_range me_trange me_mapped
   me_flat me_incr me_tincr)
 
+abbrev mk_match_envs := @match_envs.mk
+
 inductive val_casted_list : List val → List type → Prop where
   | nil : val_casted_list [] []
   | cons (v : val) (vl : List val) (ty : type) (tyl : List type) :
       val_casted v ty → val_casted_list vl tyl →
       val_casted_list (v :: vl) (ty :: tyl)
+
+abbrev vcl_nil := @val_casted_list.nil
+abbrev vcl_cons := @val_casted_list.cons
 
 def cenv_for_gen (atk : VSet.t) (vars : List (ident × type)) : compilenv :=
   vars.foldr (add_local_variable atk) VSet.empty
@@ -184,6 +189,8 @@ inductive match_globalenvs (ge : genv) (f : meminj) (bound : block) : Prop where
       (VARINFOS : ∀ b gv,
         Genv.find_var_info ge.genv_genv b = some gv → Plt b bound) :
       match_globalenvs ge f bound
+
+abbrev mk_match_globalenvs := @match_globalenvs.intro
 
 inductive match_cont (cfg : CompilerConfig) (ge : genv) (f : meminj) :
     compilenv → cont → cont → mem → block → block → Prop where
@@ -223,6 +230,28 @@ inductive match_cont (cfg : CompilerConfig) (ge : genv) (f : meminj) :
       match_cont cfg ge f cenv (.Kcall optid fn e le k)
         (.Kcall optid tfn te tle tk) m bound tbound
 
+abbrev match_Kstop := @match_cont.stop
+abbrev match_Kseq := @match_cont.seq
+abbrev match_Kloop1 := @match_cont.loop1
+abbrev match_Kloop2 := @match_cont.loop2
+abbrev match_Kswitch := @match_cont.switch
+
+def match_Kcall {cfg : CompilerConfig} {ge : genv} {f : meminj}
+    (cenv : compilenv) (optid : Option ident) (fn : function)
+    (e : env) (le : temp_env) (k : cont) (tfn : function)
+    (te : env) (tle : temp_env) (tk : cont) (m : mem)
+    (hi thi lo tlo bound tbound : block) (x : Unit)
+    (TRF : transf_function cfg fn = .OK tfn)
+    (MENV : match_envs f (cenv_for fn) e le m lo hi te tle tlo thi)
+    (MCONT : match_cont cfg ge f (cenv_for fn) k tk m lo tlo)
+    (CHECK : check_opttemp (cenv_for fn) optid = .OK x)
+    (BOUND : Ple hi bound) (TBOUND : Ple thi tbound) :
+    match_cont cfg ge f cenv (.Kcall optid fn e le k)
+      (.Kcall optid tfn te tle tk) m bound tbound := by
+  cases x
+  exact .call cenv optid fn e le k tfn te tle tk m hi thi lo tlo bound tbound
+    TRF MENV MCONT CHECK BOUND TBOUND
+
 inductive match_states (cfg : CompilerConfig) (ge : genv) : state → state → Prop where
   | regular (f : function) (s : statement) (k : cont) (e : env)
       (le : temp_env) (m : mem) (tf : function) (ts : statement)
@@ -250,6 +279,10 @@ inductive match_states (cfg : CompilerConfig) (ge : genv) : state → state → 
       (∀ cenv, match_cont cfg ge j cenv k tk m m.nextblock tm.nextblock) →
       Mem.inject j m tm → Val.inject j v tv →
       match_states cfg ge (.Returnstate v k m) (.Returnstate tv tk tm)
+
+abbrev match_regular_states := @match_states.regular
+abbrev match_call_state := @match_states.call
+abbrev match_return_state := @match_states.return_
 
 /-! ## Exact statement descriptors for later proof migration -/
 
