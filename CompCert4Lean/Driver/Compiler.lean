@@ -256,9 +256,12 @@ def transf_c_program
     (enumerationService : Linearize.EnumerationService)
     (ctx : SimplExpr.FreshIdentContext)
     (p : Csyntax.program) : Res CompCert4Lean.X86.Asm.program :=
-  let p1 := SimplExpr.transl_program
-    (binary64_certificate := binary64_certificate)
-    (binary32_certificate := binary32_certificate) ctx p
+  let p0 : Res Csyntax.program := .OK p
+  let p1 := apply_partial p0
+    (time (ofString "Clight generation")
+      (SimplExpr.transl_program
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) ctx))
   apply_partial p1
     (transf_clight_program
       (binary64_certificate := binary64_certificate)
