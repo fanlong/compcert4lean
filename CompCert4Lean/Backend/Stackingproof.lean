@@ -230,7 +230,7 @@ def contains_locations
             exact hperm i (locationChunkRange pos bound ofs i ty hofs hbound hi)
           · exact locationAligned pos ofs ty hdiv halign
         have hc : (contains (chunk_of_type ty) sp addr spec).m_pred m :=
-          ⟨haddr0, haddrmax, hvalid, v, hv, hinj⟩
+          ⟨⟨haddr0, haddrmax⟩, hvalid, v, hv, hinj⟩
         have hunch' : Mem.unchanged_on
             (contains (chunk_of_type ty) sp addr spec).m_footprint m m' := by
           exact {
@@ -249,7 +249,7 @@ def contains_locations
                   ⟨hlo, hhi⟩⟩) hp
           }
         rcases (contains (chunk_of_type ty) sp addr spec).m_invar m m' hc hunch' with
-          ⟨_, _, _, v', hv', hinj'⟩
+          ⟨⟨_, _⟩, _, v', hv', hinj'⟩
         exact ⟨v', hv', hinj'⟩
     m_valid := by
       intro m b ofs h hfoot

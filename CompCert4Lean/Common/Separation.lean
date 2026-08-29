@@ -403,14 +403,14 @@ def range_preservedStatement : Prop :=
 
 def contains (chunk : memory_chunk) (b : block) (ofs : Z) (spec : val → Prop) : massert where
   m_pred := fun m =>
-    zLe z0 ofs ∧ zLe ofs Ptrofs.max_unsigned ∧
+    (zLe z0 ofs ∧ zLe ofs Ptrofs.max_unsigned) ∧
       Mem.valid_access m chunk b ofs Freeable ∧
       ∃ v, Mem.load chunk m b ofs = some v ∧ spec v
   m_footprint := fun b' ofs' =>
     b' = b ∧ zLe ofs ofs' ∧ zLt ofs' (zAdd ofs (size_chunk chunk))
   m_invar := by
     intro m m' hpred hunch
-    rcases hpred with ⟨hlo, hhi, hvalid, v, hload, hspec⟩
+    rcases hpred with ⟨⟨hlo, hhi⟩, hvalid, v, hload, hspec⟩
     have hvalid' : Mem.valid_access m' chunk b ofs Freeable := by
       refine ⟨?_, hvalid.2⟩
       intro i hi
@@ -430,7 +430,7 @@ def contains (chunk : memory_chunk) (b : block) (ofs : Z) (spec : val → Prop) 
       intro i hi
       have hp := hvalid.1 i hi
       exact hunch.unchanged_on_contents b i ⟨rfl, hi⟩ (permReadableOfFreeable hp)
-    refine ⟨hlo, hhi, hvalid', v, ?_, hspec⟩
+    refine ⟨⟨hlo, hhi⟩, hvalid', v, ?_, hspec⟩
     rw [load_eq] at hload ⊢
     have hValidReadable :
         Mem.valid_access m' chunk b ofs Readable ↔
@@ -475,7 +475,7 @@ def contains (chunk : memory_chunk) (b : block) (ofs : Z) (spec : val → Prop) 
   m_valid := by
     intro m b' ofs' hpred hfoot
     rw [hfoot.1]
-    have hvalid := hpred.2.2.1
+    have hvalid := hpred.2.1
     exact validBlockOfPerm (hvalid.1 ofs' ⟨hfoot.2.1, hfoot.2.2⟩)
 
 def contains_obligation_1Statement : Prop :=
