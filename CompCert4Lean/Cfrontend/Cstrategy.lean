@@ -209,8 +209,66 @@ mutual
           (CompCert4Lean.Common.Values.Vptrofs (Ptrofs.repr (alignof ge.genv_cenv ty1)))
 end
 
-export eval_simple_lvalue
-  (esl_loc esl_var_local esl_var_global esl_deref esl_field_struct esl_field_union)
+section EvalSimpleLvalueSourceEndpoints
+
+variable
+  [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+  [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+
+def esl_var_local
+    (ge : genv) (e : env) (m : mem) (x : ident) (ty : type) (b : block)
+    (hlocal : PTree.get x e = some (b, ty)) :
+    eval_simple_lvalue
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      ge e m (.Evar x ty) b Ptrofs.zero .Full :=
+  eval_simple_lvalue.esl_var_local hlocal
+
+def esl_var_global
+    (ge : genv) (e : env) (m : mem) (x : ident) (ty : type) (b : block)
+    (hlocal : PTree.get x e = none)
+    (hglobal : Genv.find_symbol ge.genv_genv x = some b) :
+    eval_simple_lvalue
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      ge e m (.Evar x ty) b Ptrofs.zero .Full :=
+  eval_simple_lvalue.esl_var_global hlocal hglobal
+
+def esl_field_struct
+    (ge : genv) (e : env) (m : mem) (r : expr) (f : ident) (ty : type)
+    (b : block) (ofs : ptrofs) (id : ident) (co : composite) (a : attr)
+    (delta : Z) (bf : bitfield)
+    (heval : eval_simple_rvalue
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) ge e m r (.Vptr b ofs))
+    (htype : typeof r = .Tstruct id a)
+    (hcomposite : PTree.get id ge.genv_cenv = some co)
+    (hoffset : field_offset ge.genv_cenv f co.co_members = .OK (delta, bf)) :
+    eval_simple_lvalue
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      ge e m (.Efield r f ty) b (Ptrofs.add ofs (Ptrofs.repr delta)) bf :=
+  eval_simple_lvalue.esl_field_struct heval htype hcomposite hoffset
+
+def esl_field_union
+    (ge : genv) (e : env) (m : mem) (r : expr) (f : ident) (ty : type)
+    (b : block) (ofs : ptrofs) (id : ident) (co : composite) (a : attr)
+    (delta : Z) (bf : bitfield)
+    (heval : eval_simple_rvalue
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) ge e m r (.Vptr b ofs))
+    (htype : typeof r = .Tunion id a)
+    (hoffset : union_field_offset ge.genv_cenv f co.co_members = .OK (delta, bf))
+    (hcomposite : PTree.get id ge.genv_cenv = some co) :
+    eval_simple_lvalue
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      ge e m (.Efield r f ty) b (Ptrofs.add ofs (Ptrofs.repr delta)) bf :=
+  eval_simple_lvalue.esl_field_union heval htype hoffset hcomposite
+
+end EvalSimpleLvalueSourceEndpoints
+
+export eval_simple_lvalue (esl_loc esl_deref)
 
 export eval_simple_rvalue
   (esr_val esr_rvalof esr_addrof esr_unop esr_binop esr_cast esr_sizeof esr_alignof)
@@ -581,11 +639,336 @@ inductive estep
         xi ge (.ExprState f (C (.Ebuiltin ef tyargs rargs ty)) k e m) t
         (.ExprState f (C (.Eval vres ty)) k e m')
 
-export estep
-  (step_expr step_rvalof_volatile step_seqand_true step_seqand_false
-    step_seqor_true step_seqor_false step_condition step_assign step_assignop
-    step_assignop_stuck step_postincr step_postincr_stuck step_comma step_paren
-    step_call step_builtin)
+section EstepSourceEndpoints
+
+variable
+  [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+  [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+
+def step_expr
+    (xi : ExternalCalls) (ge : genv) (f : function) (r : expr) (k : cont)
+    (e : env) (m : mem) (v : val) (ty : type)
+    (heval : eval_simple_rvalue
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) ge e m r v)
+    (hnotval : (fun r : expr => match r with | .Eval _ _ => False | _ => True) r)
+    (htype : ty = typeof r) :
+    estep
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      xi ge (.ExprState f r k e m) E0 (.ExprState f (.Eval v ty) k e m) :=
+  estep.step_expr heval hnotval htype
+
+def step_rvalof_volatile
+    (xi : ExternalCalls) (ge : genv) (f : function) (C : expr → expr)
+    (l : expr) (ty : type) (k : cont) (e : env) (m : mem) (b : block)
+    (ofs : ptrofs) (bf : bitfield) (t : trace) (v : val)
+    (hcontext : leftcontext .RV .RV C)
+    (heval : eval_simple_lvalue
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) ge e m l b ofs bf)
+    (hderef : Csem.deref_loc ge ty m b ofs bf t v)
+    (htype : ty = typeof l) (hvolatile : type_is_volatile ty = true) :
+    estep
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      xi ge (.ExprState f (C (.Evalof l ty)) k e m) t
+      (.ExprState f (C (.Eval v ty)) k e m) :=
+  estep.step_rvalof_volatile hcontext heval hderef htype hvolatile
+
+def step_seqand_true
+    (xi : ExternalCalls) (ge : genv) (f : function) (C : expr → expr)
+    (r1 r2 : expr) (ty : type) (k : cont) (e : env) (m : mem) (v : val)
+    (hcontext : leftcontext .RV .RV C)
+    (heval : eval_simple_rvalue
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) ge e m r1 v)
+    (hbool : bool_val v (typeof r1) m = some true) :
+    estep
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      xi ge (.ExprState f (C (.Eseqand r1 r2 ty)) k e m) E0
+      (.ExprState f (C (.Eparen r2 type_bool ty)) k e m) :=
+  estep.step_seqand_true hcontext heval hbool
+
+def step_seqand_false
+    (xi : ExternalCalls) (ge : genv) (f : function) (C : expr → expr)
+    (r1 r2 : expr) (ty : type) (k : cont) (e : env) (m : mem) (v : val)
+    (hcontext : leftcontext .RV .RV C)
+    (heval : eval_simple_rvalue
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) ge e m r1 v)
+    (hbool : bool_val v (typeof r1) m = some false) :
+    estep
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      xi ge (.ExprState f (C (.Eseqand r1 r2 ty)) k e m) E0
+      (.ExprState f (C (.Eval (.Vint Int.zero) ty)) k e m) :=
+  estep.step_seqand_false hcontext heval hbool
+
+def step_seqor_true
+    (xi : ExternalCalls) (ge : genv) (f : function) (C : expr → expr)
+    (r1 r2 : expr) (ty : type) (k : cont) (e : env) (m : mem) (v : val)
+    (hcontext : leftcontext .RV .RV C)
+    (heval : eval_simple_rvalue
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) ge e m r1 v)
+    (hbool : bool_val v (typeof r1) m = some true) :
+    estep
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      xi ge (.ExprState f (C (.Eseqor r1 r2 ty)) k e m) E0
+      (.ExprState f (C (.Eval (.Vint Int.one) ty)) k e m) :=
+  estep.step_seqor_true hcontext heval hbool
+
+def step_seqor_false
+    (xi : ExternalCalls) (ge : genv) (f : function) (C : expr → expr)
+    (r1 r2 : expr) (ty : type) (k : cont) (e : env) (m : mem) (v : val)
+    (hcontext : leftcontext .RV .RV C)
+    (heval : eval_simple_rvalue
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) ge e m r1 v)
+    (hbool : bool_val v (typeof r1) m = some false) :
+    estep
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      xi ge (.ExprState f (C (.Eseqor r1 r2 ty)) k e m) E0
+      (.ExprState f (C (.Eparen r2 type_bool ty)) k e m) :=
+  estep.step_seqor_false hcontext heval hbool
+
+def step_condition
+    (xi : ExternalCalls) (ge : genv) (f : function) (C : expr → expr)
+    (r1 r2 r3 : expr) (ty : type) (k : cont) (e : env) (m : mem) (v : val)
+    (b : Bool) (hcontext : leftcontext .RV .RV C)
+    (heval : eval_simple_rvalue
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) ge e m r1 v)
+    (hbool : bool_val v (typeof r1) m = some b) :
+    estep
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      xi ge (.ExprState f (C (.Econdition r1 r2 r3 ty)) k e m) E0
+      (.ExprState f (C (.Eparen (if b then r2 else r3) ty ty)) k e m) :=
+  estep.step_condition hcontext heval hbool
+
+def step_assign
+    (xi : ExternalCalls) (ge : genv) (f : function) (C : expr → expr)
+    (l r : expr) (ty : type) (k : cont) (e : env) (m : mem) (b : block)
+    (ofs : ptrofs) (bf : bitfield) (v v1 : val) (t : trace) (m' : mem)
+    (v' : val) (hcontext : leftcontext .RV .RV C)
+    (hlvalue : eval_simple_lvalue
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) ge e m l b ofs bf)
+    (hrvalue : eval_simple_rvalue
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) ge e m r v)
+    (hcast : sem_cast
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      v (typeof r) (typeof l) m = some v1)
+    (hassign : Csem.assign_loc ge (typeof l) m b ofs bf v1 t m' v')
+    (htype : ty = typeof l) :
+    estep
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      xi ge (.ExprState f (C (.Eassign l r ty)) k e m) t
+      (.ExprState f (C (.Eval v' ty)) k e m') :=
+  estep.step_assign hcontext hlvalue hrvalue hcast hassign htype
+
+def step_assignop
+    (xi : ExternalCalls) (ge : genv) (f : function) (C : expr → expr)
+    (op : binary_operation) (l r : expr) (tyres ty : type) (k : cont)
+    (e : env) (m : mem) (b : block) (ofs : ptrofs) (bf : bitfield)
+    (v1 v2 v3 v4 : val) (t1 t2 : trace) (m' : mem) (v' : val) (t : trace)
+    (hcontext : leftcontext .RV .RV C)
+    (hlvalue : eval_simple_lvalue
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) ge e m l b ofs bf)
+    (hderef : Csem.deref_loc ge (typeof l) m b ofs bf t1 v1)
+    (hrvalue : eval_simple_rvalue
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) ge e m r v2)
+    (hbinary : sem_binary_operation
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      ge.genv_cenv op v1 (typeof l) v2 (typeof r) m = some v3)
+    (hcast : sem_cast
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      v3 tyres (typeof l) m = some v4)
+    (hassign : Csem.assign_loc ge (typeof l) m b ofs bf v4 t2 m' v')
+    (htype : ty = typeof l) (htrace : t = Eapp t1 t2) :
+    estep
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      xi ge (.ExprState f (C (.Eassignop op l r tyres ty)) k e m) t
+      (.ExprState f (C (.Eval v' ty)) k e m') :=
+  estep.step_assignop hcontext hlvalue hderef hrvalue hbinary hcast hassign htype htrace
+
+def step_assignop_stuck
+    (xi : ExternalCalls) (ge : genv) (f : function) (C : expr → expr)
+    (op : binary_operation) (l r : expr) (tyres ty : type) (k : cont)
+    (e : env) (m : mem) (b : block) (ofs : ptrofs) (bf : bitfield)
+    (v1 v2 : val) (t : trace) (hcontext : leftcontext .RV .RV C)
+    (hlvalue : eval_simple_lvalue
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) ge e m l b ofs bf)
+    (hderef : Csem.deref_loc ge (typeof l) m b ofs bf t v1)
+    (hrvalue : eval_simple_rvalue
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) ge e m r v2)
+    (hstuck :
+      match sem_binary_operation
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate)
+          ge.genv_cenv op v1 (typeof l) v2 (typeof r) m with
+      | none => True
+      | some v3 =>
+          match sem_cast
+              (binary64_certificate := binary64_certificate)
+              (binary32_certificate := binary32_certificate)
+              v3 tyres (typeof l) m with
+          | none => True
+          | some v4 => ∀ t2 m' v',
+              ¬ Csem.assign_loc ge (typeof l) m b ofs bf v4 t2 m' v')
+    (htype : ty = typeof l) :
+    estep
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      xi ge (.ExprState f (C (.Eassignop op l r tyres ty)) k e m) t .Stuckstate :=
+  estep.step_assignop_stuck hcontext hlvalue hderef hrvalue hstuck htype
+
+def step_postincr
+    (xi : ExternalCalls) (ge : genv) (f : function) (C : expr → expr)
+    (id : incr_or_decr) (l : expr) (ty : type) (k : cont) (e : env) (m : mem)
+    (b : block) (ofs : ptrofs) (bf : bitfield) (v1 v2 v3 : val)
+    (t1 t2 : trace) (m' : mem) (v' : val) (t : trace)
+    (hcontext : leftcontext .RV .RV C)
+    (hlvalue : eval_simple_lvalue
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) ge e m l b ofs bf)
+    (hderef : Csem.deref_loc ge ty m b ofs bf t1 v1)
+    (hincr : sem_incrdecr
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      ge.genv_cenv id v1 ty m = some v2)
+    (hcast : sem_cast
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      v2 (incrdecr_type ty) ty m = some v3)
+    (hassign : Csem.assign_loc ge ty m b ofs bf v3 t2 m' v')
+    (htype : ty = typeof l) (htrace : t = Eapp t1 t2) :
+    estep
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      xi ge (.ExprState f (C (.Epostincr id l ty)) k e m) t
+      (.ExprState f (C (.Eval v1 ty)) k e m') :=
+  estep.step_postincr hcontext hlvalue hderef hincr hcast hassign htype htrace
+
+def step_postincr_stuck
+    (xi : ExternalCalls) (ge : genv) (f : function) (C : expr → expr)
+    (id : incr_or_decr) (l : expr) (ty : type) (k : cont) (e : env) (m : mem)
+    (b : block) (ofs : ptrofs) (bf : bitfield) (v1 : val) (t : trace)
+    (hcontext : leftcontext .RV .RV C)
+    (hlvalue : eval_simple_lvalue
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) ge e m l b ofs bf)
+    (hderef : Csem.deref_loc ge ty m b ofs bf t v1)
+    (hstuck :
+      match sem_incrdecr
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate)
+          ge.genv_cenv id v1 ty m with
+      | none => True
+      | some v2 =>
+          match sem_cast
+              (binary64_certificate := binary64_certificate)
+              (binary32_certificate := binary32_certificate)
+              v2 (incrdecr_type ty) ty m with
+          | none => True
+          | some v3 => ∀ t2 m' v',
+              ¬ Csem.assign_loc ge (typeof l) m b ofs bf v3 t2 m' v')
+    (htype : ty = typeof l) :
+    estep
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      xi ge (.ExprState f (C (.Epostincr id l ty)) k e m) t .Stuckstate :=
+  estep.step_postincr_stuck hcontext hlvalue hderef hstuck htype
+
+def step_comma
+    (xi : ExternalCalls) (ge : genv) (f : function) (C : expr → expr)
+    (r1 r2 : expr) (ty : type) (k : cont) (e : env) (m : mem) (v : val)
+    (hcontext : leftcontext .RV .RV C)
+    (heval : eval_simple_rvalue
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) ge e m r1 v)
+    (htype : ty = typeof r2) :
+    estep
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      xi ge (.ExprState f (C (.Ecomma r1 r2 ty)) k e m) E0
+      (.ExprState f (C r2) k e m) :=
+  estep.step_comma hcontext heval htype
+
+def step_paren
+    (xi : ExternalCalls) (ge : genv) (f : function) (C : expr → expr)
+    (r : expr) (tycast ty : type) (k : cont) (e : env) (m : mem) (v1 v : val)
+    (hcontext : leftcontext .RV .RV C)
+    (heval : eval_simple_rvalue
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) ge e m r v1)
+    (hcast : sem_cast
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      v1 (typeof r) tycast m = some v) :
+    estep
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      xi ge (.ExprState f (C (.Eparen r tycast ty)) k e m) E0
+      (.ExprState f (C (.Eval v ty)) k e m) :=
+  estep.step_paren hcontext heval hcast
+
+def step_call
+    (xi : ExternalCalls) (ge : genv) (f : function) (C : expr → expr)
+    (rf : expr) (rargs : exprlist) (ty : type) (k : cont) (e : env) (m : mem)
+    (targs : List type) (tres : type) (cconv : calling_convention) (vf : val)
+    (vargs : List val) (fd : fundef) (hcontext : leftcontext .RV .RV C)
+    (hclassify : classify_fun (typeof rf) = .fun_case_f targs tres cconv)
+    (hfun : eval_simple_rvalue
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) ge e m rf vf)
+    (hargs : eval_simple_list
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) ge e m rargs targs vargs)
+    (hfind : Genv.find_funct ge.genv_genv vf = some fd)
+    (htype : type_of_fundef fd = .Tfunction targs tres cconv) :
+    estep
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      xi ge (.ExprState f (C (.Ecall rf rargs ty)) k e m) E0
+      (.Callstate fd vargs (.Kcall f e C ty k) m) :=
+  estep.step_call hcontext hclassify hfun hargs hfind htype
+
+def step_builtin
+    (xi : ExternalCalls) (ge : genv) (f : function) (C : expr → expr)
+    (ef : external_function) (tyargs : List type) (rargs : exprlist) (ty : type)
+    (k : cont) (e : env) (m : mem) (vargs : List val) (t : trace) (vres : val)
+    (m' : mem) (hcontext : leftcontext .RV .RV C)
+    (hargs : eval_simple_list
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) ge e m rargs tyargs vargs)
+    (hexternal : external_call
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      xi ef (Genv.to_senv ge.genv_genv) vargs m t vres m') :
+    estep
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      xi ge (.ExprState f (C (.Ebuiltin ef tyargs rargs ty)) k e m) t
+      (.ExprState f (C (.Eval vres ty)) k e m') :=
+  estep.step_builtin hcontext hargs hexternal
+
+end EstepSourceEndpoints
 
 open CompCert4Lean.Cfrontend.Csem
 
@@ -737,7 +1120,17 @@ inductive contextlist' : (exprlist → expr) → Prop where
       context .RV .RV C →
       contextlist' (fun rl => C (.Ebuiltin ef tyargs (exprlist_app rl0 rl) ty))
 
-export contextlist' (contextlist'_call contextlist'_builtin)
+def contextlist'_call
+    (r1 : expr) (rl0 : exprlist) (ty : type) (C : expr → expr)
+    (hcontext : context .RV .RV C) :
+    contextlist' (fun rl => C (.Ecall r1 (exprlist_app rl0 rl) ty)) :=
+  contextlist'.contextlist'_call hcontext
+
+def contextlist'_builtin
+    (ef : external_function) (tyargs : List type) (rl0 : exprlist) (ty : type)
+    (C : expr → expr) (hcontext : context .RV .RV C) :
+    contextlist' (fun rl => C (.Ebuiltin ef tyargs (exprlist_app rl0 rl) ty)) :=
+  contextlist'.contextlist'_builtin hcontext
 
 def simple_side_effect : expr → Prop
   | .Evalof l _ => simple l = true ∧ type_is_volatile (typeof l) = true
