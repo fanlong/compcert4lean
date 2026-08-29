@@ -196,9 +196,10 @@ abbrev Rlt := CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Rlt
 
 end Exact
 
-inductive FLT_format (ctx : ExactRealContext) (beta : radix) (emin prec : Z)
-    (x : Exact.R ctx) : Prop where
-  | FLT_spec (f : float beta) :
+inductive FLT_format (ctx : ExactRealContext) :
+    radix → Z → Z → Exact.R ctx → Prop where
+  | FLT_spec (beta : radix) (emin prec : Z) (x : Exact.R ctx)
+      (f : float beta) :
       x = Exact.F2R ctx f →
       Zlt (Zabs (Fnum f)) (Zpower beta prec) →
       Zle emin (Fexp f) →
