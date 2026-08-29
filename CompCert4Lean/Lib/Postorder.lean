@@ -224,35 +224,32 @@ private theorem ptreeCard_Node {A : Type} (l : PTree.tree A) (o : Option A)
   cases l <;> cases o <;> cases r <;>
     simp [PTree.Node, ptreeCard, ptreeCard', optionCard]
 
+private theorem ptreeCard_remove'_lt {A : Type} (p : positive)
+    (m : PTree.tree' A) (v : A) (h : PTree.get' p m = some v) :
+    ptreeCard (PTree.remove' p m) < ptreeCard' m := by
+  induction p generalizing m with
+  | xH =>
+      cases m <;> simp_all [PTree.get', PTree.remove', ptreeCard, ptreeCard']
+  | xO p ih =>
+      cases m <;> simp_all [PTree.get', PTree.remove', ptreeCard, ptreeCard']
+      all_goals
+        have decrease := ih _ h
+        cases hrem : PTree.remove' p _ <;>
+          simp [PTree.remove', hrem, ptreeCard, ptreeCard'] at decrease ⊢ <;> omega
+  | xI p ih =>
+      cases m <;> simp_all [PTree.get', PTree.remove', ptreeCard, ptreeCard']
+      all_goals
+        have decrease := ih _ h
+        cases hrem : PTree.remove' p _ <;>
+          simp [PTree.remove', hrem, ptreeCard, ptreeCard'] at decrease ⊢ <;> omega
+
 private theorem ptreeCard_remove_lt {A : Type} (p : positive)
     (m : PTree.tree A) (v : A) (h : PTree.get p m = some v) :
     ptreeCard (PTree.remove p m) < ptreeCard m := by
   cases m with
   | Empty => simp [PTree.get] at h
   | Nodes m =>
-      simp only [PTree.remove, PTree.remove', PTree.get] at h ⊢
-      induction p generalizing m with
-      | xH =>
-          cases m <;>
-            simp_all [PTree.get', PTree.rem', ptreeCard, ptreeCard']
-      | xO p ih =>
-          cases m <;>
-            simp_all [PTree.get', PTree.rem', ptreeCard, ptreeCard']
-          all_goals
-            change ptreeCard (PTree.Node _ _ _) < _
-            rw [ptreeCard_Node]
-            simp only [ptreeCard, optionCard]
-            have hlt := ih _ h
-            omega
-      | xI p ih =>
-          cases m <;>
-            simp_all [PTree.get', PTree.rem', ptreeCard, ptreeCard']
-          all_goals
-            change ptreeCard (PTree.Node _ _ _) < _
-            rw [ptreeCard_Node]
-            simp only [ptreeCard, optionCard]
-            have hlt := ih _ h
-            omega
+      exact ptreeCard_remove'_lt p m v (by simpa [PTree.get] using h)
 
 private theorem ptreeCard_xelements' {A : Type} (m : PTree.tree' A)
     (i : positive) (k : List (positive × A)) :
