@@ -87,14 +87,14 @@ mutual
         (hmove : tr_move c ns r nd rd) :
         tr_expr c map pr (.Evar id) ns nd rd dst
     | tr_Eop (map : RTLgen.mapping) (pr : List reg) (op : operation)
-        (al : exprlist) (ns nd : RTL.node) (rd n1 : RTL.node)
+        (al : exprlist) (ns nd : RTL.node) (rd : reg) (n1 : RTL.node)
         (rl : List reg) (dst : Option ident)
         (hargs : tr_exprlist c map pr al ns n1 rl)
         (hcode : PTree.get n1 c = some (RTL.instruction.Iop op rl rd nd))
         (hmap : reg_map_ok map rd dst) (hpr : ¬rd ∈ pr) :
         tr_expr c map pr (.Eop op al) ns nd rd dst
     | tr_Eload (map : RTLgen.mapping) (pr : List reg) (chunk : memory_chunk)
-        (addr : addressing) (al : exprlist) (ns nd : RTL.node) (rd n1 : RTL.node)
+        (addr : addressing) (al : exprlist) (ns nd : RTL.node) (rd : reg) (n1 : RTL.node)
         (rl : List reg) (dst : Option ident)
         (hargs : tr_exprlist c map pr al ns n1 rl)
         (hcode : PTree.get n1 c = some (RTL.instruction.Iload chunk addr rl rd nd))
@@ -175,7 +175,7 @@ inductive tr_exitexpr (c : RTL.code) :
       (h : nth_error nexits x = some n) :
       tr_exitexpr c map (.XEexit x) n nexits
   | tr_XEjumptable (map : RTLgen.mapping) (a : expr) (tbl : List Nat)
-      (ns : RTL.node) (nexits : List RTL.node) (n1 r : RTL.node)
+      (ns : RTL.node) (nexits : List RTL.node) (n1 : RTL.node) (r : reg)
       (tbl' : List RTL.node)
       (hjt : tr_jumptable nexits tbl tbl')
       (harg : tr_expr c map [] a ns n1 r none)
@@ -188,7 +188,7 @@ inductive tr_exitexpr (c : RTL.code) :
       (h3 : tr_exitexpr c map a3 n3 nexits) :
       tr_exitexpr c map (.XEcondition a1 a2 a3) ns nexits
   | tr_XElet (map : RTLgen.mapping) (a : expr) (b : exitexpr)
-      (ns : RTL.node) (nexits : List RTL.node) (r n1 : RTL.node)
+      (ns : RTL.node) (nexits : List RTL.node) (r : reg) (n1 : RTL.node)
       (hfresh : ¬reg_in_map map r)
       (hbound : tr_expr c map [] a ns n1 r none)
       (hbody : tr_exitexpr c (RTLgen.add_letvar map r) b n1 nexits) :
@@ -216,7 +216,7 @@ inductive tr_stmt (c : RTL.code) (map : RTLgen.mapping) :
       tr_stmt c map (.Sassign id a) ns nd nexits ngoto nret rret
   | tr_Sstore (chunk : memory_chunk) (addr : addressing) (al : exprlist) (b : expr)
       (ns nd : RTL.node) (nexits : List RTL.node) (ngoto : RTLgen.labelmap)
-      (nret : RTL.node) (rret : Option reg) (rd n1 : RTL.node) (rl : List reg)
+      (nret : RTL.node) (rret : Option reg) (rd : reg) (n1 : RTL.node) (rl : List reg)
       (n2 : RTL.node)
       (hargs : tr_exprlist c map [] al ns n1 rl)
       (hvalue : tr_expr c map rl b n1 n2 rd none)
@@ -224,7 +224,8 @@ inductive tr_stmt (c : RTL.code) (map : RTLgen.mapping) :
       tr_stmt c map (.Sstore chunk addr al b) ns nd nexits ngoto nret rret
   | tr_Scall (optid : Option ident) (sig : signature) (b : expr) (cl : exprlist)
       (ns nd : RTL.node) (nexits : List RTL.node) (ngoto : RTLgen.labelmap)
-      (nret : RTL.node) (rret : Option reg) (rd n1 rf n2 : RTL.node) (rargs : List reg)
+      (nret : RTL.node) (rret : Option reg) (rd : reg) (n1 : RTL.node) (rf : reg) (n2 : RTL.node)
+      (rargs : List reg)
       (hcallee : tr_expr c map [] b ns n1 rf none)
       (hargs : tr_exprlist c map [rf] cl n1 n2 rargs)
       (hcode : PTree.get n2 c = some (RTL.instruction.Icall sig (.inl rf) rargs rd nd))
@@ -232,14 +233,15 @@ inductive tr_stmt (c : RTL.code) (map : RTLgen.mapping) :
       tr_stmt c map (.Scall optid sig (.inl b) cl) ns nd nexits ngoto nret rret
   | tr_Scall_imm (optid : Option ident) (sig : signature) (id : ident) (cl : exprlist)
       (ns nd : RTL.node) (nexits : List RTL.node) (ngoto : RTLgen.labelmap)
-      (nret : RTL.node) (rret : Option reg) (rd n2 : RTL.node) (rargs : List reg)
+      (nret : RTL.node) (rret : Option reg) (rd : reg) (n2 : RTL.node) (rargs : List reg)
       (hargs : tr_exprlist c map [] cl ns n2 rargs)
       (hcode : PTree.get n2 c = some (RTL.instruction.Icall sig (.inr id) rargs rd nd))
       (hmap : reg_map_ok map rd optid) :
       tr_stmt c map (.Scall optid sig (.inr id) cl) ns nd nexits ngoto nret rret
   | tr_Stailcall (sig : signature) (b : expr) (cl : exprlist)
       (ns nd : RTL.node) (nexits : List RTL.node) (ngoto : RTLgen.labelmap)
-      (nret : RTL.node) (rret : Option reg) (n1 rf n2 : RTL.node) (rargs : List reg)
+      (nret : RTL.node) (rret : Option reg) (n1 : RTL.node) (rf : reg) (n2 : RTL.node)
+      (rargs : List reg)
       (hcallee : tr_expr c map [] b ns n1 rf none)
       (hargs : tr_exprlist c map [rf] cl n1 n2 rargs)
       (hcode : PTree.get n2 c = some (RTL.instruction.Itailcall sig (.inl rf) rargs)) :
