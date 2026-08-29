@@ -14,6 +14,7 @@ import CompCert4Lean.Backend.Cminortyping
 import CompCert4Lean.Backend.SplitLong
 import CompCert4Lean.Backend.SelectDiv
 import CompCert4Lean.X86.Op
+import CompCert4Lean.X86.SelectLong
 import CompCert4Lean.X86.SelectOp
 import CompCert4Lean.X86.Machregs
 
@@ -195,7 +196,7 @@ def sel_constant (cfg : CompilerConfig) (cst : Cminor.constant) : CminorSel.expr
   | .Ointconst n => .Eop (.Ointconst n) .Enil
   | .Ofloatconst f => .Eop (.Ofloatconst f) .Enil
   | .Osingleconst f => .Eop (.Osingleconst f) .Enil
-  | .Olongconst n => longconst n
+  | .Olongconst n => CompCert4Lean.X86.SelectLong.longconst n
   | .Oaddrsymbol id ofs => addrsymbol cfg.relocation id ofs
   | .Oaddrstack ofs => addrstack ofs
 
@@ -231,18 +232,18 @@ def sel_unop
   | .Osingleofintu => singleofintu
       (binary64_certificate := binary64_certificate)
       (binary32_certificate := binary32_certificate) arg
-  | .Onegl => negl arg
-  | .Onotl => notl arg
-  | .Ointoflong => intoflong arg
-  | .Olongofint => longofint arg
-  | .Olongofintu => longofintu arg
-  | .Olongoffloat => longoffloat arg
+  | .Onegl => CompCert4Lean.X86.SelectLong.negl arg
+  | .Onotl => CompCert4Lean.X86.SelectLong.notl arg
+  | .Ointoflong => CompCert4Lean.X86.SelectLong.intoflong arg
+  | .Olongofint => CompCert4Lean.X86.SelectLong.longofint arg
+  | .Olongofintu => CompCert4Lean.X86.SelectLong.longofintu arg
+  | .Olongoffloat => CompCert4Lean.X86.SelectLong.longoffloat arg
   | .Olonguoffloat => longuoffloat arg
-  | .Ofloatoflong => floatoflong arg
+  | .Ofloatoflong => CompCert4Lean.X86.SelectLong.floatoflong arg
   | .Ofloatoflongu => floatoflongu arg
-  | .Olongofsingle => longofsingle arg
+  | .Olongofsingle => CompCert4Lean.X86.SelectLong.longofsingle arg
   | .Olonguofsingle => longuofsingle arg
-  | .Osingleoflong => singleoflong arg
+  | .Osingleoflong => CompCert4Lean.X86.SelectLong.singleoflong arg
   | .Osingleoflongu => singleoflongu arg
 
 def sel_binop
@@ -275,25 +276,25 @@ def sel_binop
   | .Omulfs => mulfs arg1 arg2
   | .Odivfs => CompCert4Lean.Backend.SelectDiv.divfs
       (certificate := binary32_inverse_certificate) arg1 arg2
-  | .Oaddl => addl arg1 arg2
-  | .Osubl => subl arg1 arg2
-  | .Omull => mull arg1 arg2
+  | .Oaddl => CompCert4Lean.X86.SelectLong.addl arg1 arg2
+  | .Osubl => CompCert4Lean.X86.SelectLong.subl arg1 arg2
+  | .Omull => CompCert4Lean.X86.SelectLong.mull arg1 arg2
   | .Odivl => divls cfg arg1 arg2
   | .Odivlu => divlu cfg arg1 arg2
   | .Omodl => modls cfg arg1 arg2
   | .Omodlu => modlu cfg arg1 arg2
-  | .Oandl => andl arg1 arg2
-  | .Oorl => orl arg1 arg2
-  | .Oxorl => xorl arg1 arg2
-  | .Oshll => shll arg1 arg2
-  | .Oshrl => shrl arg1 arg2
-  | .Oshrlu => shrlu arg1 arg2
+  | .Oandl => CompCert4Lean.X86.SelectLong.andl arg1 arg2
+  | .Oorl => CompCert4Lean.X86.SelectLong.orl arg1 arg2
+  | .Oxorl => CompCert4Lean.X86.SelectLong.xorl arg1 arg2
+  | .Oshll => CompCert4Lean.X86.SelectLong.shll arg1 arg2
+  | .Oshrl => CompCert4Lean.X86.SelectLong.shrl arg1 arg2
+  | .Oshrlu => CompCert4Lean.X86.SelectLong.shrlu arg1 arg2
   | .Ocmp c => comp c arg1 arg2
   | .Ocmpu c => compu c arg1 arg2
   | .Ocmpf c => compf c arg1 arg2
   | .Ocmpfs c => compfs c arg1 arg2
-  | .Ocmpl c => cmpl c arg1 arg2
-  | .Ocmplu c => cmplu c arg1 arg2
+  | .Ocmpl c => CompCert4Lean.X86.SelectLong.cmpl c arg1 arg2
+  | .Ocmplu c => CompCert4Lean.X86.SelectLong.cmplu c arg1 arg2
 
 def sel_select (ty : typ) (cnd ifso ifnot : CminorSel.expr) : CminorSel.expr :=
   let (cond, args) := condition_of_expr cnd
@@ -539,9 +540,12 @@ def sel_switch_int : Nat → comptree → exitexpr :=
 
 def sel_switch_long : Nat → comptree → exitexpr :=
   sel_switch
-    (fun arg n => cmpl .Ceq arg (longconst (Int64.repr n)))
-    (fun arg n => cmplu .Clt arg (longconst (Int64.repr n)))
-    (fun arg ofs => subl arg (longconst (Int64.repr ofs)))
+    (fun arg n => CompCert4Lean.X86.SelectLong.cmpl .Ceq arg
+      (CompCert4Lean.X86.SelectLong.longconst (Int64.repr n)))
+    (fun arg n => CompCert4Lean.X86.SelectLong.cmplu .Clt arg
+      (CompCert4Lean.X86.SelectLong.longconst (Int64.repr n)))
+    (fun arg ofs => CompCert4Lean.X86.SelectLong.subl arg
+      (CompCert4Lean.X86.SelectLong.longconst (Int64.repr ofs)))
     lowlong
 
 inductive stmt_class : Type where
