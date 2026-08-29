@@ -1149,16 +1149,9 @@ def matching_instr_blockStatement : Prop :=
     ∃ b : LTL.bblock,
       PTree.get pc f2.fn_code = some b ∧ expand_block_shape bsh i b
 
-def empty_eqs_satisfStatement : Prop :=
-  ∀ (rs : RTL.regset) (ls : LTL.locset), satisf rs ls empty_eqs
-
 def satisf_incrStatement : Prop :=
   ∀ (rs : RTL.regset) (ls : LTL.locset) (e1 e2 : eqs),
     satisf rs ls e2 → EqSet.Subset e1 e2 → satisf rs ls e1
-
-def satisf_undef_regStatement : Prop :=
-  ∀ (rs : RTL.regset) (ls : LTL.locset) (e : eqs) (r : reg),
-    satisf rs ls e → satisf (Regmap.set r Vundef rs) ls e
 
 def add_equation_lessdefStatement : Prop :=
   ∀ (rs : RTL.regset) (ls : LTL.locset) (q : equation) (e : eqs),
@@ -1207,15 +1200,6 @@ def add_equation_ros_satisfStatement : Prop :=
   ∀ (rs : RTL.regset) (ls : LTL.locset) (ros : Sum reg ident)
     (mos : Sum mreg ident) (e e' : eqs),
     add_equation_ros ros mos e = some e' → satisf rs ls e' → satisf rs ls e
-
-def remove_equation_satisfStatement : Prop :=
-  ∀ (rs : RTL.regset) (ls : LTL.locset) (q : equation) (e : eqs),
-    satisf rs ls e → satisf rs ls (remove_equation q e)
-
-def remove_equation_res_satisfStatement : Prop :=
-  ∀ (rs : RTL.regset) (ls : LTL.locset) (r : reg) (l : rpair mreg)
-    (e e' : eqs),
-    remove_equations_res r l e = some e' → satisf rs ls e → satisf rs ls e'
 
 def select_reg_l_monotoneStatement : Prop :=
   ∀ (r : reg) (q1 q2 : OrderedEquation.t),
@@ -1283,15 +1267,6 @@ def parallel_assignment_satisfStatement : Prop :=
       (remove_equation { ekind := k, ereg := r, eloc := l } e) = true →
     satisf rs ls (remove_equation { ekind := k, ereg := r, eloc := l } e) →
     satisf (Regmap.set r v rs) (Locmap.set l v' ls) e
-
-def parallel_assignment_satisf_2Statement : Prop :=
-  ∀ (rs : RTL.regset) (ls : LTL.locset) (resultReg : reg)
-    (resultLoc : rpair mreg) (e e' : eqs) (v v' : val),
-    remove_equations_res resultReg resultLoc e = some e' →
-    satisf rs ls e' → reg_unconstrained resultReg e' = true →
-    ((regs_of_rpair resultLoc).map R).all (fun l => loc_unconstrained l e') = true →
-    Val.lessdef v v' →
-    satisf (Regmap.set resultReg v rs) (Locmap.setpair resultLoc v' ls) e
 
 def in_elements_between_1Statement : Prop :=
   ∀ (r1 : reg) (s : EqSet.t) (q : EqSet.elt),
@@ -1376,13 +1351,6 @@ def well_typed_move_charactStatement : Prop :=
 def val_lessdef_normalizeStatement : Prop :=
   ∀ (v v' : val) (ty : typ), Val.has_type v ty → Val.lessdef v v' →
     Val.lessdef v (Val.load_result (chunk_of_type ty) v')
-
-def subst_loc_satisfStatement : Prop :=
-  ∀ (env : regenv) (src dst : loc) (rs : RTL.regset) (ls : LTL.locset)
-    (e e' : eqs),
-    subst_loc dst src e = some e' → well_typed_move env dst e = true →
-    wt_regset env rs → satisf rs ls e' →
-      satisf rs (Locmap.set dst (ls src) ls) e
 
 def in_subst_loc_partStatement : Prop :=
   ∀ (l1 l2 : loc) (k : equation_kind) (q : EqSet.elt) (e e' : eqs),
