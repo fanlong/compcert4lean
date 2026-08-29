@@ -48,17 +48,6 @@ private def treeCount {A : Type} : PTree.tree A → Nat
   | .Empty => 0
   | .Nodes tree => treeCount' tree
 
-private def optionCount {A : Type} : Option A → Nat
-  | none => 0
-  | some _ => 1
-
-private theorem treeCountNode {A : Type} (left : PTree.tree A) (value : Option A)
-    (right : PTree.tree A) :
-    treeCount (PTree.Node left value right) =
-      treeCount left + optionCount value + treeCount right := by
-  cases left <;> cases value <;> cases right <;>
-    simp [PTree.Node, treeCount, treeCount', optionCount]
-
 private theorem xelementsLength {A : Type} (tree : PTree.tree' A)
     (index : positive) (suffix : List (positive × A)) :
     (PTree.xelements' tree index suffix).length = treeCount' tree + suffix.length := by
@@ -77,25 +66,23 @@ def size_fenv (fenv : funenv) : Nat := PTree_Properties.cardinal fenv
 
 private theorem treeCountRemLt {A : Type} (p : positive) (tree : PTree.tree' A)
     (value : A) (h : PTree.get' p tree = some value) :
-    treeCount (PTree.rem' p tree) < treeCount' tree := by
+    treeCount (PTree.remove' p tree) < treeCount' tree := by
   induction p generalizing tree with
   | xH =>
       cases tree <;>
-        simp_all [PTree.get', PTree.rem', treeCount, treeCount']
+        simp_all [PTree.get', PTree.remove', treeCount, treeCount']
   | xI p ih =>
-      cases tree <;> simp_all [PTree.get', PTree.rem', treeCount, treeCount']
-      all_goals change treeCount (PTree.Node _ _ _) < _
-      all_goals rw [treeCountNode]
-      all_goals simp [treeCount, optionCount]
-      all_goals have decrease := ih _ h
-      all_goals omega
+      cases tree <;> simp_all [PTree.get', PTree.remove', treeCount, treeCount']
+      all_goals
+        have decrease := ih _ h
+        cases hrem : PTree.remove' p _ <;>
+          simp [hrem, treeCount'] at decrease ⊢ <;> omega
   | xO p ih =>
-      cases tree <;> simp_all [PTree.get', PTree.rem', treeCount, treeCount']
-      all_goals change treeCount (PTree.Node _ _ _) < _
-      all_goals rw [treeCountNode]
-      all_goals simp [treeCount, optionCount]
-      all_goals have decrease := ih _ h
-      all_goals omega
+      cases tree <;> simp_all [PTree.get', PTree.remove', treeCount, treeCount']
+      all_goals
+        have decrease := ih _ h
+        cases hrem : PTree.remove' p _ <;>
+          simp [hrem, treeCount'] at decrease ⊢ <;> omega
 
 private theorem sizeFenvRemoveLt (fenv : funenv) (id : ident) (f : function)
     (h : PTree.get id fenv = some f) :
