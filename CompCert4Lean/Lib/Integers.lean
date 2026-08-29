@@ -468,6 +468,34 @@ def testbit {bits : Nat} (x : Word bits) : Z → Bool
 def eqm (bits : Nat) (x y : Z) : Prop :=
   CompCert4Lean.Lib.Zbits.eqmod (zTwoPowerNat bits) x y
 
+def cmp {bits : Nat} (c : comparison) (x y : Word bits) : Bool :=
+  match c with
+  | .Ceq => eq x y
+  | .Cne => !(eq x y)
+  | .Clt => lt x y
+  | .Cle => !(lt y x)
+  | .Cgt => lt y x
+  | .Cge => !(lt x y)
+
+def cmpu {bits : Nat} (c : comparison) (x y : Word bits) : Bool :=
+  match c with
+  | .Ceq => eq x y
+  | .Cne => !(eq x y)
+  | .Clt => ltu x y
+  | .Cle => !(ltu y x)
+  | .Cgt => ltu y x
+  | .Cge => !(ltu x y)
+
+def unsigned_bitfield_extract {bits : Nat} (pos width : Z) (n : Word bits) : Word bits :=
+  zero_ext width (shru n (repr bits pos))
+
+def signed_bitfield_extract {bits : Nat} (pos width : Z) (n : Word bits) : Word bits :=
+  sign_ext width (shru n (repr bits pos))
+
+def bitfield_insert {bits : Nat} (pos width : Z) (n p : Word bits) : Word bits :=
+  let mask := shl (repr bits (zSub (zTwoP width) zOne)) (repr bits pos)
+  or (shl (zero_ext width p) (repr bits pos)) (and n (not mask))
+
 /--
 The concrete member correspondence for a source application of `Make`.
 Its dependent carrier fields retain the generated constructor, projections,
@@ -497,7 +525,11 @@ structure GeneratedApplication where
   sub : int → int → int
   mul : int → int → int
   divs : int → int → int
+  mods : int → int → int
   divu : int → int → int
+  modu : int → int → int
+  cmp : comparison → int → int → Bool
+  cmpu : comparison → int → int → Bool
   and : int → int → int
   or : int → int → int
   xor : int → int → int
@@ -506,6 +538,9 @@ structure GeneratedApplication where
   shr : int → int → int
   zero_ext : Z → int → int
   sign_ext : Z → int → int
+  unsigned_bitfield_extract : Z → Z → int → int
+  signed_bitfield_extract : Z → Z → int → int
+  bitfield_insert : Z → Z → int → int → int
 
 def makeGeneratedApplication (bits : Nat) : GeneratedApplication where
   wordsize := bits
@@ -528,7 +563,11 @@ def makeGeneratedApplication (bits : Nat) : GeneratedApplication where
   sub := sub
   mul := mul
   divs := divs
+  mods := mods
   divu := divu
+  modu := modu
+  cmp := cmp
+  cmpu := cmpu
   and := and
   or := or
   xor := xor
@@ -537,6 +576,9 @@ def makeGeneratedApplication (bits : Nat) : GeneratedApplication where
   shr := shr
   zero_ext := zero_ext
   sign_ext := sign_ext
+  unsigned_bitfield_extract := unsigned_bitfield_extract
+  signed_bitfield_extract := signed_bitfield_extract
+  bitfield_insert := bitfield_insert
 
 end WordCore
 
@@ -608,23 +650,8 @@ def one_bits (x : int) : List int :=
   List.map repr
     (CompCert4Lean.Lib.Zbits.Z_one_bits wordsize (unsigned x) zZero)
 
-def cmp (c : comparison) (x y : int) : Bool :=
-  match c with
-  | .Ceq => eq x y
-  | .Cne => !(eq x y)
-  | .Clt => lt x y
-  | .Cle => !(lt y x)
-  | .Cgt => lt y x
-  | .Cge => !(lt x y)
-
-def cmpu (c : comparison) (x y : int) : Bool :=
-  match c with
-  | .Ceq => eq x y
-  | .Cne => !(eq x y)
-  | .Clt => ltu x y
-  | .Cle => !(ltu y x)
-  | .Cgt => ltu y x
-  | .Cge => !(ltu x y)
+def cmp : comparison → int → int → Bool := WordCore.cmp
+def cmpu : comparison → int → int → Bool := WordCore.cmpu
 
 def divmodu2 (nhi nlo d : int) : Option (int × int) :=
   match eq_dec d zero with
@@ -650,10 +677,13 @@ def divmods2 (nhi nlo d : int) : Option (int × int) :=
       | _, _ => none
 
 def unsigned_bitfield_extract (pos width : Z) (n : int) : int :=
-  zero_ext width (shru n (repr pos))
+  WordCore.unsigned_bitfield_extract pos width n
 
 def signed_bitfield_extract (pos width : Z) (n : int) : int :=
-  sign_ext width (shru n (repr pos))
+  WordCore.signed_bitfield_extract pos width n
+
+def bitfield_insert (pos width : Z) (n p : int) : int :=
+  WordCore.bitfield_insert pos width n p
 
 /-! Selected generated members of `Make(Wordsize_32)` retain their exact
     source propositions here; proof discharge remains a later phase. -/
@@ -1540,23 +1570,8 @@ def is_power2 (x : int) : Option int :=
   | some i => some (repr i)
   | none => none
 
-def cmp (c : comparison) (x y : int) : Bool :=
-  match c with
-  | .Ceq => eq x y
-  | .Cne => !(eq x y)
-  | .Clt => lt x y
-  | .Cle => !(lt y x)
-  | .Cgt => lt y x
-  | .Cge => !(lt x y)
-
-def cmpu (c : comparison) (x y : int) : Bool :=
-  match c with
-  | .Ceq => eq x y
-  | .Cne => !(eq x y)
-  | .Clt => ltu x y
-  | .Cle => !(ltu y x)
-  | .Cgt => ltu y x
-  | .Cge => !(ltu x y)
+def cmp : comparison → int → int → Bool := WordCore.cmp
+def cmpu : comparison → int → int → Bool := WordCore.cmpu
 
 def divmodu2 (nhi nlo d : int) : Option (int × int) :=
   match eq_dec d zero with
@@ -1580,6 +1595,15 @@ def divmods2 (nhi nlo d : int) : Option (int × int) :=
           CompCert4Lean.Lib.Coqlib.zle q max_signed with
       | .left _, .left _ => some (repr q, repr r)
       | _, _ => none
+
+def unsigned_bitfield_extract (pos width : Z) (n : int) : int :=
+  WordCore.unsigned_bitfield_extract pos width n
+
+def signed_bitfield_extract (pos width : Z) (n : int) : int :=
+  WordCore.signed_bitfield_extract pos width n
+
+def bitfield_insert (pos width : Z) (n p : int) : int :=
+  WordCore.bitfield_insert pos width n p
 
 def iwordsize' : Int.int := Int.repr zwordsize
 
