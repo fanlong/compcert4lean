@@ -179,24 +179,31 @@ export tr_funbody (tr_funbody_intro)
 export tr_function (tr_function_intro)
 export tr_moves (tr_moves_cons tr_moves_nil)
 
-abbrev tr_builtin := @tr_instr.tr_builtin
-abbrev tr_call := @tr_instr.tr_call
-abbrev tr_call_inlined := @tr_instr.tr_call_inlined
-abbrev tr_cond := @tr_instr.tr_cond
-abbrev tr_funbody_intro := @tr_funbody.tr_funbody_intro
+abbrev tr_builtin (fenv : funenv) (stacksize : Z) := @tr_instr.tr_builtin fenv stacksize
+abbrev tr_call (fenv : funenv) (stacksize : Z) := @tr_instr.tr_call fenv stacksize
+abbrev tr_call_inlined (fenv : funenv) (stacksize : Z) :=
+  @tr_instr.tr_call_inlined fenv stacksize
+abbrev tr_cond (fenv : funenv) (stacksize : Z) := @tr_instr.tr_cond fenv stacksize
+abbrev tr_funbody_intro (fenv : funenv) (stacksize : Z) :=
+  @tr_funbody.tr_funbody_intro fenv stacksize
 abbrev tr_function_intro := @tr_function.tr_function_intro
-abbrev tr_jumptable := @tr_instr.tr_jumptable
-abbrev tr_load := @tr_instr.tr_load
-abbrev tr_moves_cons := @tr_moves.tr_moves_cons
-abbrev tr_moves_nil := @tr_moves.tr_moves_nil
-abbrev tr_nop := @tr_instr.tr_nop
-abbrev tr_op := @tr_instr.tr_op
-abbrev tr_return := @tr_instr.tr_return
-abbrev tr_return_inlined := @tr_instr.tr_return_inlined
-abbrev tr_store := @tr_instr.tr_store
-abbrev tr_tailcall := @tr_instr.tr_tailcall
-abbrev tr_tailcall_call := @tr_instr.tr_tailcall_call
-abbrev tr_tailcall_inlined := @tr_instr.tr_tailcall_inlined
+abbrev tr_jumptable (fenv : funenv) (stacksize : Z) :=
+  @tr_instr.tr_jumptable fenv stacksize
+abbrev tr_load (fenv : funenv) (stacksize : Z) := @tr_instr.tr_load fenv stacksize
+abbrev tr_moves_cons (c : code) := @tr_moves.tr_moves_cons c
+abbrev tr_moves_nil (c : code) := @tr_moves.tr_moves_nil c
+abbrev tr_nop (fenv : funenv) (stacksize : Z) := @tr_instr.tr_nop fenv stacksize
+abbrev tr_op (fenv : funenv) (stacksize : Z) := @tr_instr.tr_op fenv stacksize
+abbrev tr_return (fenv : funenv) (stacksize : Z) := @tr_instr.tr_return fenv stacksize
+abbrev tr_return_inlined (fenv : funenv) (stacksize : Z) :=
+  @tr_instr.tr_return_inlined fenv stacksize
+abbrev tr_store (fenv : funenv) (stacksize : Z) := @tr_instr.tr_store fenv stacksize
+abbrev tr_tailcall (fenv : funenv) (stacksize : Z) :=
+  @tr_instr.tr_tailcall fenv stacksize
+abbrev tr_tailcall_call (fenv : funenv) (stacksize : Z) :=
+  @tr_instr.tr_tailcall_call fenv stacksize
+abbrev tr_tailcall_inlined (fenv : funenv) (stacksize : Z) :=
+  @tr_instr.tr_tailcall_inlined fenv stacksize
 
 /-! Exact statement descriptors for later proof migration. -/
 
