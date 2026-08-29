@@ -506,11 +506,9 @@ def generic_format (magnitude : Magnitude ctx) (beta : radix) (fexp : Z → Z)
     (Float beta (Ztrunc ctx (scaled_mantissa magnitude beta fexp x))
       (cexp magnitude beta fexp x))
 
-def round (magnitude : Magnitude ctx) (beta : radix) (fexp : Z → Z)
+abbrev round (magnitude : Magnitude ctx) (beta : radix) (fexp : Z → Z)
     (rnd : R ctx → Z) (x : R ctx) : R ctx :=
-  F2R ctx
-    (Float beta (rnd (scaled_mantissa magnitude beta fexp x))
-      (cexp magnitude beta fexp x))
+  Core.Generic_fmt.Exact.round ctx magnitude beta fexp rnd x
 
 noncomputable def Znearest (ctx : Context) (choice : Z → Bool) (x : R ctx) : Z :=
   match Rcompare ctx (Rminus ctx x (IZR ctx (Zfloor ctx x)))
@@ -533,14 +531,11 @@ noncomputable def round_mode (ctx : Context) (m : mode) : R ctx → Z :=
   | mode.mode_UP => Zceil ctx
   | mode.mode_NA => ZnearestA ctx
 
-structure Valid_rnd (ctx : Context) (rnd : R ctx → Z) : Prop where
-  Zrnd_le : ∀ x y : R ctx, Rle ctx x y → Zle (rnd x) (rnd y)
-  Zrnd_IZR : ∀ n : Z, rnd (IZR ctx n) = n
-
 end Exact
 
 def valid_rnd_round_mode (ctx : ExactRealContext) : Prop :=
-  ∀ m : mode, Exact.Valid_rnd ctx (Exact.round_mode ctx m)
+  ∀ m : mode,
+    Core.Generic_fmt.Exact.Valid_rnd ctx (Exact.round_mode ctx m)
 
 def B2R_BoppStatement (ctx : ExactRealContext) : Prop :=
   ∀ x : binary_float prec emax,
@@ -756,7 +751,8 @@ def Bsqrt_correct_auxStatement (ctx : ExactRealContext) (magnitude : Exact.Magni
       binary_round_aux (prec := prec) (emax := emax) m false pair.1 pair.2 lz
     valid_binary (prec := prec) (emax := emax) z = true ∧
     Exact.SF2R ctx radix2 z =
-      Exact.round magnitude radix2 (fexp (prec := prec) (emax := emax))
+      Core.Generic_fmt.Exact.round ctx magnitude radix2
+        (fexp (prec := prec) (emax := emax))
         (Exact.round_mode ctx m) (Exact.sqrt ctx x) ∧
     is_finite_SF z = true ∧ sign_SF z = false
 
