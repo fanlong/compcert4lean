@@ -273,13 +273,16 @@ def mods (cfg : CompilerConfig) (e1 e2 : expr) : expr :=
   | some n2, _ => modsimm cfg e1 n2
   | _, _ => mods_base e1 e2
 
-def modl_from_divl (equo : expr) (n : int64) : expr :=
+def modl_from_divl [hf : CompCert4Lean.Backend.SplitLong.helper_functions]
+    (equo : expr) (n : int64) : expr :=
   subl (Eletvar 0) (mullimm n equo)
 
-def divlu_mull (p m : Z) : expr :=
+def divlu_mull [hf : CompCert4Lean.Backend.SplitLong.helper_functions]
+    (p m : Z) : expr :=
   shrluimm (mullhu (Eletvar 0) (int64Repr m)) (intRepr p)
 
-def divlu (cfg : CompilerConfig) (e1 e2 : expr) : expr :=
+def divlu [hf : CompCert4Lean.Backend.SplitLong.helper_functions]
+    (cfg : CompilerConfig) (e1 e2 : expr) : expr :=
   match is_longconst e2, is_longconst e1 with
   | some n2, some n1 => longconst (int64Divu n1 n2)
   | some n2, _ =>
@@ -294,7 +297,8 @@ def divlu (cfg : CompilerConfig) (e1 e2 : expr) : expr :=
             | some (p, m) => Elet e1 (divlu_mull p m)
   | _, _ => divlu_base e1 e2
 
-def modlu (cfg : CompilerConfig) (e1 e2 : expr) : expr :=
+def modlu [hf : CompCert4Lean.Backend.SplitLong.helper_functions]
+    (cfg : CompilerConfig) (e1 e2 : expr) : expr :=
   match is_longconst e2, is_longconst e1 with
   | some n2, some n1 =>
       longconst (CompCert4Lean.Lib.Integers.Int64.modu n1 n2)
@@ -311,13 +315,15 @@ def modlu (cfg : CompilerConfig) (e1 e2 : expr) : expr :=
                 Elet e1 (modl_from_divl (divlu_mull p m) n2)
   | _, _ => modlu_base e1 e2
 
-def divls_mull (p m : Z) : expr :=
+def divls_mull [hf : CompCert4Lean.Backend.SplitLong.helper_functions]
+    (p m : Z) : expr :=
   let e2 := mullhs (Eletvar 0) (int64Repr m)
   let e3 := if zltBool m int64HalfModulus then e2 else addl e2 (Eletvar 0)
   addl (shrlimm e3 (intRepr p))
     (shrluimm (Eletvar 0) (intRepr (zSub int64Zwordsize z1)))
 
-def divls (cfg : CompilerConfig) (e1 e2 : expr) : expr :=
+def divls [hf : CompCert4Lean.Backend.SplitLong.helper_functions]
+    (cfg : CompilerConfig) (e1 e2 : expr) : expr :=
   match is_longconst e2, is_longconst e1 with
   | some n2, some n1 => longconst (int64Divs n1 n2)
   | some n2, _ =>
@@ -336,7 +342,8 @@ def divls (cfg : CompilerConfig) (e1 e2 : expr) : expr :=
             | some (p, m) => Elet e1 (divls_mull p m)
   | _, _ => divls_base e1 e2
 
-def modls (cfg : CompilerConfig) (e1 e2 : expr) : expr :=
+def modls [hf : CompCert4Lean.Backend.SplitLong.helper_functions]
+    (cfg : CompilerConfig) (e1 e2 : expr) : expr :=
   match is_longconst e2, is_longconst e1 with
   | some n2, some n1 =>
       longconst (CompCert4Lean.Lib.Integers.Int64.mods n1 n2)
