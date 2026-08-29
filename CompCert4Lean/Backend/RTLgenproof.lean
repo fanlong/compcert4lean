@@ -269,6 +269,42 @@ inductive match_states : CminorSel.state → RTL.state → Prop where
 
 export match_states (match_state match_callstate match_returnstate)
 
+/-! The selected Rocq proofs consume this generated induction scheme.  Keep its
+    source-named proposition and constructor-case order explicit; construction
+    of the proof term remains assigned to proof grinding under DMC-003. -/
+def tr_cont_ind : Prop :=
+  ∀ (P : RTL.code → mapping → CminorSel.cont → node → List node → labelmap →
+      node → Option reg → List RTL.stackframe → Prop),
+    (∀ (c : RTL.code) (map : mapping) (s : stmt) (k : cont)
+      (nd : node) (nexits : List node) (ngoto : labelmap) (nret : node)
+      (rret : Option reg) (cs : List RTL.stackframe) (n : node),
+      tr_stmt c map s nd n nexits ngoto nret rret →
+      tr_cont c map k n nexits ngoto nret rret cs →
+      P c map k n nexits ngoto nret rret cs →
+      P c map (.Kseq s k) nd nexits ngoto nret rret cs) →
+    (∀ (c : RTL.code) (map : mapping) (k : cont) (nd : node)
+      (nexits : List node) (ngoto : labelmap) (nret : node)
+      (rret : Option reg) (cs : List RTL.stackframe),
+      tr_cont c map k nd nexits ngoto nret rret cs →
+      P c map k nd nexits ngoto nret rret cs →
+      P c map (.Kblock k) nd (nd :: nexits) ngoto nret rret cs) →
+    (∀ (c : RTL.code) (map : mapping) (ngoto : labelmap) (nret : node)
+      (rret : Option reg) (cs : List RTL.stackframe),
+      PTree.get nret c = some (.Ireturn rret) →
+      match_stacks .Kstop cs →
+      P c map .Kstop nret [] ngoto nret rret cs) →
+    (∀ (c : RTL.code) (map : mapping) (optid : Option ident)
+      (f : CminorSel.function) (sp : val) (e : Cminor.env) (k : cont)
+      (ngoto : labelmap) (nret : node) (rret : Option reg)
+      (cs : List RTL.stackframe),
+      PTree.get nret c = some (.Ireturn rret) →
+      match_stacks (.Kcall optid f sp e k) cs →
+      P c map (.Kcall optid f sp e k) nret [] ngoto nret rret cs) →
+    ∀ (c : RTL.code) (m : mapping) (c0 : cont) (n : node)
+      (l : List node) (l0 : labelmap) (n0 : node) (o : Option reg)
+      (l1 : List RTL.stackframe),
+      tr_cont c m c0 n l l0 n0 o l1 → P c m c0 n l l0 n0 o l1
+
 /-! ## Exact statement descriptors -/
 
 def add_letvar_wfStatement : Prop :=
