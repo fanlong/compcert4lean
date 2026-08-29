@@ -19,6 +19,7 @@ Definition-bearing translation of CompCert's `cfrontend/Cminorgen.v`.
 namespace CompCert4Lean.Cfrontend.Cminorgen
 
 open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Foundation.Ordered.Rocq.Coq.Sorting.Sorted
 open CompCert4Lean.Common.AST
 open CompCert4Lean.Common.Errors
 open CompCert4Lean.Lib.Coqlib
@@ -269,29 +270,6 @@ def iter_merge : List (Option (List varEntry)) → List varEntry → List varEnt
   | stack, a :: l => iter_merge (merge_list_to_stack stack [a]) l
 
 def sort (l : List varEntry) : List varEntry := iter_merge [] l
-
-private inductive LocallySorted (R : varEntry → varEntry → Prop) :
-    List varEntry → Prop where
-  | nil : LocallySorted R []
-  | singleton (a : varEntry) : LocallySorted R [a]
-  | cons (a b : varEntry) (l : List varEntry) :
-      LocallySorted R (b :: l) → R a b → LocallySorted R (a :: b :: l)
-
-private inductive HeadRel (R : varEntry → varEntry → Prop) (a : varEntry) :
-    List varEntry → Prop where
-  | nil : HeadRel R a []
-  | cons (b : varEntry) (l : List varEntry) : R a b → HeadRel R a (b :: l)
-
-private inductive Sorted (R : varEntry → varEntry → Prop) : List varEntry → Prop where
-  | nil : Sorted R []
-  | cons (a : varEntry) (l : List varEntry) :
-      Sorted R l → HeadRel R a l → Sorted R (a :: l)
-
-private inductive StronglySorted (R : varEntry → varEntry → Prop) :
-    List varEntry → Prop where
-  | nil : StronglySorted R []
-  | cons (a : varEntry) (l : List varEntry) :
-      StronglySorted R l → (∀ b ∈ l, R a b) → StronglySorted R (a :: l)
 
 private def ordered (v1 v2 : varEntry) : Prop :=
   leb v1 v2 = true
