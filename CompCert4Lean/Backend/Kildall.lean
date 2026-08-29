@@ -300,7 +300,24 @@ inductive steps {A : Type} {LAT : SemiLattice} {NS : NodeSetOps}
 
 export steps (steps_base steps_right)
 
-abbrev steps_ind := @steps.rec
+def steps_ind {A : Type} {LAT : SemiLattice} {NS : NodeSetOps}
+    (code : PTreeT A)
+    (successors : A → List positive)
+    (transf : positive → LAT.t → LAT.t)
+    (P : ∀ s s0, steps code successors transf s s0 → Prop)
+    (f : ∀ s, P s s (steps_base s))
+    (f0 : ∀ (s1 s2 s3 : state LAT NS)
+      (s : steps code successors transf s1 s2)
+      (_ih : P s1 s2 s)
+      (e : step code successors transf s2 = Sum.inr s3),
+      P s1 s3 (steps_right s1 s2 s3 s e))
+    (s s0 : state LAT NS)
+    (s1 : steps code successors transf s s0) : P s s0 s1 :=
+  @steps.rec A LAT NS code successors transf s
+    (fun s0 h => P s s0 h)
+    (f s)
+    (fun s2 s3 a_1 a_2 ih => f0 s s2 s3 a_1 ih a_2)
+    s0 s1
 
 structure good_state {A : Type} {LAT : SemiLattice} {NS : NodeSetOps}
     (code : PTreeT A) (successors : A → List positive)
