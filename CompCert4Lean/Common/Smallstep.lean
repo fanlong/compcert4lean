@@ -37,7 +37,21 @@ inductive star {genv state : Type}
       (hstar : star step ge s2 t2 s3)
       (htrace : t = Eapp t1 t2) : star step ge s1 t s3
 
-export star (star_refl star_step)
+/-! The kernel carrier keeps Lean's generated constructors namespaced.  These
+source-facing wrappers restore the pinned Rocq application binders. -/
+abbrev star_refl {genv state : Type}
+    (step : genv → state → trace → state → Prop)
+    (ge : genv) (s : state) : star step ge s E0 s :=
+  @star.star_refl genv state step ge s
+
+abbrev star_step {genv state : Type}
+    {step : genv → state → trace → state → Prop}
+    {ge : genv} (s1 : state) (t1 : trace)
+    {s2 : state} {t2 : trace} {s3 : state} {t : trace}
+    (hstep : step ge s1 t1 s2)
+    (hstar : star step ge s2 t2 s3)
+    (htrace : t = Eapp t1 t2) : star step ge s1 t s3 :=
+  @star.star_step genv state step ge s1 t1 s2 t2 s3 t hstep hstar htrace
 
 def star_oneStatement : Prop :=
   ∀ (genv state : Type)
@@ -103,7 +117,14 @@ inductive plus {genv state : Type}
       (hstar : star step ge s2 t2 s3)
       (htrace : t = Eapp t1 t2) : plus step ge s1 t s3
 
-export plus (plus_left)
+abbrev plus_left {genv state : Type}
+    {step : genv → state → trace → state → Prop}
+    {ge : genv} (s1 : state) (t1 : trace)
+    {s2 : state} {t2 : trace} {s3 : state} {t : trace}
+    (hstep : step ge s1 t1 s2)
+    (hstar : star step ge s2 t2 s3)
+    (htrace : t = Eapp t1 t2) : plus step ge s1 t s3 :=
+  @plus.plus_left genv state step ge s1 t1 s2 t2 s3 t hstep hstar htrace
 
 def plus_oneStatement : Prop :=
   ∀ (genv state : Type)
@@ -433,6 +454,14 @@ structure semantics : Type 1 where
   symbolenv : Senv.t
 
 export semantics (state genvtype step initial_state final_state globalenv symbolenv)
+
+abbrev Semantics_gen {state genvtype : Type}
+    (step : genvtype → state → trace → state → Prop)
+    (initial_state : state → Prop)
+    (final_state : state → int → Prop)
+    (globalenv : genvtype)
+    (symbolenv : Senv.t) : semantics :=
+  semantics.mk state genvtype step initial_state final_state globalenv symbolenv
 
 def Semantics {state funtype vartype : Type}
     (step : Genv.t funtype vartype → state → trace → state → Prop)
@@ -873,7 +902,19 @@ inductive bb_match_states (L1 L2 L3 : semantics) {index : Type}
       (hmatch2 : match_states' i2 s2y s3) :
       bb_match_states L1 L2 L3 match_states match_states' (i1, i2) s1 s3
 
-export bb_match_states (bb_match_later)
+abbrev bb_match_later
+    (L1 L2 L3 : semantics) {index : Type}
+    (match_states : index → state L1 → state L2 → Prop)
+    {index' : Type}
+    (match_states' : index' → state L2 → state L3 → Prop)
+    (i1 : index) (i2 : index') (s1 : state L1) (s3 : state L3)
+    {s2x s2y : state L2}
+    (hmatch1 : match_states i1 s1 s2x)
+    (hstar : star (step L2) (globalenv L2) s2x E0 s2y)
+    (hmatch2 : match_states' i2 s2y s3) :
+    bb_match_states L1 L2 L3 match_states match_states' (i1, i2) s1 s3 :=
+  @bb_match_states.bb_match_later L1 L2 L3 index match_states index' match_states'
+    i1 i2 s1 s3 s2x s2y hmatch1 hstar hmatch2
 
 def bb_match_atStatement : Prop :=
   ∀ (L1 L2 L3 : semantics) (index : Type)
@@ -941,7 +982,30 @@ inductive f2b_transitions (L1 L2 : semantics) {index : Type}
       (hmatch2 : match_states i'' s1'' s2') :
       f2b_transitions L1 L2 match_states s1 s2
 
-export f2b_transitions (f2b_trans_final f2b_trans_step)
+abbrev f2b_trans_final
+    (L1 L2 : semantics) {index : Type}
+    (match_states : index → state L1 → state L2 → Prop)
+    {s1 : state L1} (s2 : state L2) {s1' : state L1} (r : int)
+    (hstar : star (step L1) (globalenv L1) s1 E0 s1')
+    (hfinal1 : final_state L1 s1' r)
+    (hfinal2 : final_state L2 s2 r) :
+    f2b_transitions L1 L2 match_states s1 s2 :=
+  @f2b_transitions.f2b_trans_final L1 L2 index match_states s1 s2 s1' r
+    hstar hfinal1 hfinal2
+
+abbrev f2b_trans_step
+    (L1 L2 : semantics) {index : Type}
+    (match_states : index → state L1 → state L2 → Prop)
+    {s1 : state L1} {s2 : state L2} {s1' : state L1} {t : trace}
+    (s1'' : state L1) {s2' : state L2} (i' i'' : index)
+    (hstar : star (step L1) (globalenv L1) s1 E0 s1')
+    (hstep : step L1 (globalenv L1) s1' t s1'')
+    (hplus : plus (step L2) (globalenv L2) s2 t s2')
+    (hmatch1 : match_states i' s1' s2)
+    (hmatch2 : match_states i'' s1'' s2') :
+    f2b_transitions L1 L2 match_states s1 s2 :=
+  @f2b_transitions.f2b_trans_step L1 L2 index match_states s1 s2 s1' t s1'' s2' i' i''
+    hstar hstep hplus hmatch1 hmatch2
 
 def f2b_progressStatement : Prop :=
   ∀ (L1 L2 : semantics) (index : Type) (order : index → index → Prop)
@@ -1064,7 +1128,24 @@ inductive atomic_step (L : semantics) (ge : genvtype L) :
       (hout : output_trace (ev :: t)) :
       atomic_step L ge (ev :: t, s) [ev] (t, s)
 
-export atomic_step (atomic_step_silent atomic_step_start atomic_step_continue)
+abbrev atomic_step_silent
+    (L : semantics) (ge : genvtype L) (s s' : state L)
+    (hstep : step L (globalenv L) s E0 s') :
+    atomic_step L ge (E0, s) E0 (E0, s') :=
+  @atomic_step.atomic_step_silent L ge s s' hstep
+
+abbrev atomic_step_start
+    (L : semantics) (ge : genvtype L) (s : state L) (ev : event)
+    (t : trace) (s' : state L)
+    (hstep : step L (globalenv L) s (ev :: t) s') :
+    atomic_step L ge (E0, s) [ev] (t, s') :=
+  @atomic_step.atomic_step_start L ge s ev t s' hstep
+
+abbrev atomic_step_continue
+    (L : semantics) (ge : genvtype L) {ev : event} {t : trace} (s : state L)
+    (hout : output_trace (ev :: t)) :
+    atomic_step L ge (ev :: t, s) [ev] (t, s) :=
+  @atomic_step.atomic_step_continue L ge ev t s hout
 
 def atomic (L : semantics) : semantics where
   state := trace × state L
