@@ -744,7 +744,7 @@ def reduce_rec_soundStatement : Prop :=
       (rl' : List reg) (res : V),
       reduce_rec f n niter op args = some (op', rl') →
       sem op (List.map valu args) = some res →
-      sem op (List.map (fun r => Regmap.get r rs) rl') = some res
+      sem op' (List.map (fun r => Regmap.get r rs) rl') = some res
 
 def reduce_soundStatement : Prop :=
   ∀ (A : Type)
