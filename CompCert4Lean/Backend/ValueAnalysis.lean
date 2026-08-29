@@ -555,6 +555,8 @@ inductive sound_state
         sound_state_base cfg cunit (Genv.globalenv prog) st) :
       sound_state cfg prog st
 
+export sound_state (sound_state_intro)
+
 def avalue (a : VA.t) (r : reg) : aval :=
   match a with
   | .Bot => Vbot
@@ -910,22 +912,22 @@ def sound_stack_extenStatement
 def sound_succ_stateStatement
     [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
     [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
-  ∀ (cfg : CompilerConfig) (prog : program) (ge : genv) (rm : romem)
+  ∀ (cfg : CompilerConfig) (prog : program) (ge : genv)
     (bc : block_classification) (pc : node)
     (ae : aenv) (am : amem) (instr : instruction) (ae' : aenv) (am' : amem)
     (s : List stackframe) (f : function) (sp pc' : node) (e' : regset)
     (m' : mem),
     PMap.get pc (analyze
       (binary64_certificate := binary64_certificate)
-      (binary32_certificate := binary32_certificate) cfg rm f) = VA.State ae am →
+      (binary32_certificate := binary32_certificate) cfg (romem_for cfg prog) f) = VA.State ae am →
     PTree.get pc f.fn_code = some instr →
     pc' ∈ successors_instr instr →
     transfer
       (binary64_certificate := binary64_certificate)
-      (binary32_certificate := binary32_certificate) cfg f rm pc ae am = VA.State ae' am' →
+      (binary32_certificate := binary32_certificate) cfg f (romem_for cfg prog) pc ae am = VA.State ae' am' →
     ematch bc e' ae' →
     mmatch bc m' am' →
-    romatch bc m' rm →
+    romatch bc m' (romem_for cfg prog) →
     genv_match bc ge →
     bc sp = BCstack →
     sound_stack cfg prog ge bc s m' sp →
@@ -1003,7 +1005,6 @@ def store_init_data_list_soundStatement : Prop :=
 def store_init_data_otherStatement : Prop :=
   ∀ (prog : program) (bc : block_classification) (m : mem) (b : block)
     (p : Z) (id : init_data) (m' : mem) (ab : ablock) (b' : block),
-    genv_match bc (Genv.globalenv prog) →
     Genv.store_init_data (Genv.globalenv prog) m b p id = some m' →
     b' ≠ b →
     bmatch bc m b' ab →
@@ -1012,7 +1013,6 @@ def store_init_data_otherStatement : Prop :=
 def store_init_data_list_otherStatement : Prop :=
   ∀ (prog : program) (bc : block_classification) (b b' : block)
     (ab : ablock) (idl : List init_data) (m : mem) (p : Z) (m' : mem),
-    genv_match bc (Genv.globalenv prog) →
     Genv.store_init_data_list (Genv.globalenv prog) m b p idl = some m' →
     b' ≠ b →
     bmatch bc m b' ab →
