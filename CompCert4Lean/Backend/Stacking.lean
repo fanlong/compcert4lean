@@ -179,13 +179,14 @@ def transf_function (cfg : CompilerConfig) (f : LinearFunction) : res MachFuncti
   else
     match zlt Ptrofs.max_unsigned fe.fe_size with
     | .left _ =>
+        Error (msg stackSizeExceededText)
+    | .right _ =>
         OK
           { fn_sig := f.fn_sig
             fn_code := transl_body cfg f fe
             fn_stacksize := fe.fe_size
             fn_link_ofs := Ptrofs.repr fe.fe_ofs_link
             fn_retaddr_ofs := Ptrofs.repr fe.fe_ofs_retaddr }
-    | .right _ => Error (msg stackSizeExceededText)
 
 def transf_fundef (cfg : CompilerConfig) (f : LinearFundef) : res MachFundef :=
   CompCert4Lean.Common.AST.transf_partial_fundef (transf_function cfg) f
