@@ -64,7 +64,9 @@ def choose_nan_32_idemStatement : Prop :=
   ∀ n : Bool × positive,
     choose_nan_32 [n, n] = choose_nan_32 [n]
 
-def fma_order {A : Type} (x y z : A) : (A × A) × A :=
+universe u
+
+def fma_order {A : Type u} (x y z : A) : (A × A) × A :=
   ((x, y), z)
 
 def fma_invalid_mul_is_nan : Bool :=
