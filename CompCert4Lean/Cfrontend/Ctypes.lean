@@ -1453,24 +1453,25 @@ def link_add_composite_definitionsStatement : Type :=
         (∀ id co, PTree.get id env1' = some co → PTree.get id env2' = some co) ∧
         (∀ id co, PTree.get id env0 = some co → PTree.get id env2' = some co)
 
-def link_build_composite_envStatement : Prop :=
+def link_build_composite_envStatement : Type :=
   ∀ l1 l2 l env1 env2,
     build_composite_env l1 = .OK env1 →
     build_composite_env l2 = .OK env2 →
     link_composite_defs l1 l2 = some l →
-    ∃ env,
+    Subtype fun env =>
       build_composite_env l = .OK env ∧
       (∀ id co, PTree.get id env1 = some co → PTree.get id env = some co) ∧
       (∀ id co, PTree.get id env2 = some co → PTree.get id env = some co)
 
-def link_build_composite_env : Prop := link_build_composite_envStatement
+def link_build_composite_env : Type := link_build_composite_envStatement
 
 /-!
 The source [Program Instance] declarations carry proof obligations which are
 intentionally discharged in the later proof-grinding phase.  Keep those
 obligations explicit instead of manufacturing inhabited proof fields or making
 the instances global.  The executable link functions remain the source
-operations; these records carry only their theorem-facing laws.
+operations; these records carry their exact theorem-facing laws and the
+source Type-valued composite-environment witness operation.
 -/
 def link_composite_defs_link_linkorderStatement : Prop :=
   ∀ l1 l2 l,
@@ -1478,7 +1479,7 @@ def link_composite_defs_link_linkorderStatement : Prop :=
       CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.List.incl l1 l ∧
       CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.List.incl l2 l
 
-structure Linker_composite_defs_obligations : Prop where
+structure Linker_composite_defs_obligations : Type where
   link_composite_def_inv : link_composite_def_invStatement
   link_build_composite_env : link_build_composite_envStatement
   link_linkorder : link_composite_defs_link_linkorderStatement
@@ -1486,11 +1487,11 @@ structure Linker_composite_defs_obligations : Prop where
 abbrev LinkerCompositeDefsCertificate := Linker_composite_defs_obligations
 
 def lift_option {A : Type} (opt : Option A) :
-    Sum (Subtype (fun x : A => opt = some x))
-      (Subtype (fun _ : Unit => opt = none)) :=
+    CompCert4Lean.Foundation.Logic.Support.Sumor
+      (Subtype (fun x : A => opt = some x)) (opt = none) :=
   match opt with
-  | some x => .inl ⟨x, rfl⟩
-  | none => .inr ⟨(), rfl⟩
+  | some x => .inleft ⟨x, rfl⟩
+  | none => .inright rfl
 
 instance Linker_types : CompCert4Lean.Common.Linking.Linker type where
   link := fun t1 t2 =>
@@ -1601,39 +1602,42 @@ def linkorder_program {F : Type} (p1 p2 : program F) : Prop :=
     ∀ id co, PTree.get id p1.prog_comp_env = some co →
       PTree.get id p2.prog_comp_env = some co
 
-def link_program {F : Type} (p1 p2 : program F) : Option (program F) :=
+def link_program {F : Type} (certificate : Linker_composite_defs_obligations)
+    (p1 p2 : program F) : Option (program F) :=
   match CompCert4Lean.Common.Linking.link
       (program_of_program p1) (program_of_program p2) with
   | none => none
   | some p =>
       match lift_option (link_composite_defs p1.prog_types p2.prog_types) with
-      | .inr _ => none
-      | .inl typs =>
-          match henv : build_composite_env typs.val with
-          | .Error _ => none
-          | .OK env =>
-              some
-                { prog_defs := p.prog_defs
-                  prog_public := p.prog_public
-                  prog_main := p.prog_main
-                  prog_types := typs.val
-                  prog_comp_env := env
-                  prog_comp_env_eq := henv }
+      | .inright _ => none
+      | .inleft typs =>
+          let env := certificate.link_build_composite_env
+            p1.prog_types p2.prog_types typs.val
+            p1.prog_comp_env p2.prog_comp_env
+            p1.prog_comp_env_eq p2.prog_comp_env_eq typs.property
+          some
+            { prog_defs := p.prog_defs
+              prog_public := p.prog_public
+              prog_main := p.prog_main
+              prog_types := typs.val
+              prog_comp_env := env.val
+              prog_comp_env_eq := env.property.1 }
 
-def link_program_link_linkorderStatement : Prop :=
+def link_program_link_linkorderStatement
+    (certificate : Linker_composite_defs_obligations) : Prop :=
   ∀ {F : Type} (p1 p2 p : program F),
-    link_program p1 p2 = some p →
+    link_program certificate p1 p2 = some p →
       linkorder_program p1 p ∧ linkorder_program p2 p
 
-structure Linker_program_obligations : Prop where
+structure Linker_program_obligations : Type where
   composite_defs : Linker_composite_defs_obligations
-  link_linkorder : link_program_link_linkorderStatement
+  link_linkorder : link_program_link_linkorderStatement composite_defs
 
 abbrev LinkerProgramCertificate := Linker_program_obligations
 
 def link_program_with_certificate {F : Type}
-    (_certificate : Linker_program_obligations) (p1 p2 : program F) : Option (program F) :=
-  link_program p1 p2
+    (certificate : Linker_program_obligations) (p1 p2 : program F) : Option (program F) :=
+  link_program certificate.composite_defs p1 p2
 
 def Linker_composite_defs (certificate : Linker_composite_defs_obligations) :
     CompCert4Lean.Common.Linking.Linker (List composite_definition) where
