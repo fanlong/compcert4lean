@@ -583,16 +583,72 @@ def mag_runtime_exact_correspondence
 
 def cond_Ropp (b : Bool) (m : R) : R := if b then Ropp m else m
 
-noncomputable def LPO_Z (P : Z → Prop) (decideP : ∀ n, P n ∨ ¬ P n) :
-    Sumor (Subtype P) (∀ z, ¬ P z) := by
+noncomputable def LPO_min (P : Nat → Prop) (decideP : ∀ n, P n ∨ ¬ P n) :
+    Sumor (Subtype (fun n => P n ∧ ∀ i, i < n → ¬ P i)) (∀ n, ¬ P n) := by
   classical
-  -- Keep the source decision capability explicit at the canonical seam.
-  have _decision_at_zero : P Z0 ∨ ¬ P Z0 := decideP Z0
-  by_cases h : ∃ z, P z
-  · exact .inleft
-      (CompCert4Lean.Foundation.Logic.Rocq.Coq.Logic.ClassicalEpsilon.constructive_indefinite_description
-        P h)
-  · exact .inright (fun z hz => h ⟨z, hz⟩)
+  have _decision_at_zero : P 0 ∨ ¬ P 0 := decideP 0
+  by_cases h : ∃ n, P n
+  · let first := firstNat P (Classical.choose h) (Classical.choose_spec h)
+    exact .inleft ⟨first.val, first.property, first.minimal⟩
+  · exact .inright (fun n hn => h ⟨n, hn⟩)
+
+noncomputable def LPO (P : Nat → Prop) (decideP : ∀ n, P n ∨ ¬ P n) :
+    Sumor (Subtype P) (∀ n, ¬ P n) :=
+  match LPO_min P decideP with
+  | .inleft witness => .inleft ⟨witness.val, witness.property.1⟩
+  | .inright h => .inright h
+
+private theorem zOfNat_toNat_eq_of_nonneg (z : Z)
+    (h : 0 ≤ CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ z) :
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat
+      (Int.toNat (CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ z)) = z := by
+  apply CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective
+  simp [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat,
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt,
+    Int.toNat_of_nonneg h]
+
+private theorem zOppOfNat_toNat_neg_eq_of_neg (z : Z)
+    (h : CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ z < 0) :
+    Zopp (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat
+      (Int.toNat (-CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ z))) = z := by
+  apply CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective
+  simp [Zopp, CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat,
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.opp,
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt,
+    Int.toNat_of_nonneg (Int.neg_nonneg.mpr (Int.le_of_lt h))]
+
+noncomputable def LPO_Z (P : Z → Prop) (decideP : ∀ z, P z ∨ ¬ P z) :
+    Sumor (Subtype P) (∀ z, ¬ P z) :=
+  match LPO
+      (fun n => P (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat n))
+      (fun n =>
+        decideP (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat n)) with
+  | .inleft witness =>
+      .inleft
+        ⟨CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat witness.val,
+          witness.property⟩
+  | .inright nonnegative =>
+      match LPO
+          (fun n => P (Zopp
+            (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat n)))
+          (fun n => decideP (Zopp
+            (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat n))) with
+      | .inleft witness =>
+          .inleft
+            ⟨Zopp
+                (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat witness.val),
+              witness.property⟩
+      | .inright negative => .inright (by
+          intro z hz
+          by_cases hsign : 0 ≤ CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ z
+          · apply nonnegative (Int.toNat
+                (CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ z))
+            rw [zOfNat_toNat_eq_of_nonneg z hsign]
+            exact hz
+          · apply negative (Int.toNat
+                (-CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ z))
+            rw [zOppOfNat_toNat_neg_eq_of_neg z (Int.lt_of_not_ge hsign)]
+            exact hz)
 
 /-! Exact source proposition descriptors for later proof migration. -/
 
