@@ -18,7 +18,7 @@ universe u
 def bool_eq {A : Type u} (_x _y : A) : Type := Bool
 
 def proj_sumbool_is_trueStatement : Prop :=
-  ∀ (A : Type)
+  ∀ (A : Type u)
     (f : ∀ (x y : A),
       CompCert4Lean.Foundation.Logic.Support.Sumbool (x = y) (x ≠ y))
     (x : A),
@@ -28,7 +28,7 @@ def false_not_trueStatement : Prop :=
   ∀ (P : Prop), false = true → P
 
 def proj_sumbool_trueStatement : Prop :=
-  ∀ (A : Type) (x y : A)
+  ∀ (A : Type u) (x y : A)
     (a : CompCert4Lean.Foundation.Logic.Support.Sumbool (x = y) (x ≠ y)),
     CompCert4Lean.Lib.Coqlib.proj_sumbool a = true → x = y
 
@@ -48,7 +48,7 @@ def dec_eq_from_bool_eq (A : Type u) (f : A → A → Bool)
         cases this)
 
 def dec_eq_from_bool_eqStatement :=
-  ∀ (A : Type) (f : A → A → Bool)
+  ∀ (A : Type u) (f : A → A → Bool)
     (f_refl : ∀ x, f x x = true)
     (f_sound : ∀ x y, f x y = true → x = y),
     ∀ (x y : A),
