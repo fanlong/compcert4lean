@@ -111,14 +111,15 @@ abbrev round_pred_monotone (ctx : ExactRealContext)
     (P : ExactR ctx → ExactR ctx → Prop) : Prop :=
   CompCert4Lean.Flocq.Core.Defs.Exact.round_pred_monotone ctx P
 
-noncomputable def Zrnd_odd (ctx : ExactRealContext) (x : ExactR ctx) : Z := by
-  classical
-  exact if x = IZR ctx (Zfloor ctx x) then
-    Zfloor ctx x
-  else if Zeven (Zfloor ctx x) then
-    Zceil ctx x
-  else
-    Zfloor ctx x
+def Zrnd_odd (ctx : ExactRealContext) (x : ExactR ctx) : Z :=
+  match CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.Req_EM_T
+      ctx x (IZR ctx (Zfloor ctx x)) with
+  | .left _ => Zfloor ctx x
+  | .right _ =>
+      if Zeven (Zfloor ctx x) then
+        Zceil ctx x
+      else
+        Zfloor ctx x
 
 class Valid_rnd_odd_Certificate (ctx : ExactRealContext) : Prop where
   odd : Valid_rnd ctx (Zrnd_odd ctx)

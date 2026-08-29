@@ -349,23 +349,23 @@ structure ExactRealContext where
 namespace ExactReal
 
 /-- Canonical source-shaped total-order witness for an exact-real context. -/
-noncomputable def total_order_T (ctx : ExactRealContext) (x y : ctx.spec.carrier) :
+def total_order_T (ctx : ExactRealContext) (x y : ctx.spec.carrier) :
     _root_.CompCert4Lean.Foundation.Logic.Support.Sumor
       (_root_.CompCert4Lean.Foundation.Logic.Support.Sumbool
         (ctx.spec.lt x y) (x = y))
       (ctx.spec.lt y x) := by
-  classical
-  by_cases hlt : ctx.spec.lt x y
-  · exact .inleft (.left hlt)
-  by_cases heq : x = y
-  · exact .inleft (.right heq)
-  · have hyx : ctx.spec.lt y x := by
-      rcases ctx.certificate.total_order x y with hxy | hyx
-      · rcases hxy with hlt' | heq'
-        · exact (hlt hlt').elim
-        · exact (heq heq').elim
-      · exact hyx
-    exact .inright hyx
+  match ctx.spec.lt_dec x y with
+  | .left hxy => exact .inleft (.left hxy)
+  | .right hnxy =>
+      match ctx.spec.lt_dec y x with
+      | .left hyx => exact .inright hyx
+      | .right hnyx =>
+          exact .inleft (.right (by
+            rcases ctx.certificate.total_order x y with hxy | hyx
+            · rcases hxy with hlt | heq
+              · exact (hnxy hlt).elim
+              · exact heq
+            · exact (hnyx hyx).elim))
 
 end ExactReal
 
@@ -511,11 +511,34 @@ def powerRZ : R → Z → R := _root_.CompCert4Lean.Foundation.FlocqReal.Rocq.Co
 end Rfunctions
 
 namespace RIneq
-def IZR_neq (ctx : ExactRealContext) (z1 z2 : Z) (h : z1 ≠ z2) : Prop :=
-  Not (Eq (ExactReal.IZR ctx.spec z1) (ExactReal.IZR ctx.spec z2))
+
+namespace Runtime
+
 def Req_dec_T (r1 r2 : R) : Sumbool (Eq r1 r2) (Not (Eq r1 r2)) :=
   if h : r1 = r2 then .left h else .right h
+
 abbrev Req_EM_T := Req_dec_T
+
+end Runtime
+
+/-- Source `Req_dec_T`, constructively derived from the injected exact order. -/
+def Req_dec_T (ctx : ExactRealContext) (r1 r2 : ctx.spec.carrier) :
+    Sumbool (Eq r1 r2) (Not (Eq r1 r2)) :=
+  match ExactReal.total_order_T ctx r1 r2 with
+  | .inleft (.left hlt) => .right (by
+      intro heq
+      subst r2
+      exact ctx.certificate.orderedField.lt_irrefl r1 hlt)
+  | .inleft (.right heq) => .left heq
+  | .inright hgt => .right (by
+      intro heq
+      subst r2
+      exact ctx.certificate.orderedField.lt_irrefl r1 hgt)
+
+abbrev Req_EM_T := Req_dec_T
+
+def IZR_neq (ctx : ExactRealContext) (z1 z2 : Z) (h : z1 ≠ z2) : Prop :=
+  Not (Eq (ExactReal.IZR ctx.spec z1) (ExactReal.IZR ctx.spec z2))
 def Rinv_involutive_runtime (r : R) (_h : Not (Eq r (IZR Z0))) : Prop :=
   Eq (Rinv (Rinv r)) r
 def Rle_Rinv_runtime (x y : R) (_hx : Rlt (IZR Z0) x) (_hy : Rlt (IZR Z0) y)
@@ -681,7 +704,7 @@ end Rbasic_fun
 
 namespace Rdefinitions
 
-noncomputable def total_order_T (r1 r2 : R) :
+def total_order_T (r1 r2 : R) :
     Sumor (Sumbool (Rlt r1 r2) (Eq r1 r2)) (Rlt r2 r1) :=
   ExactReal.total_order_T ctx r1 r2
 
