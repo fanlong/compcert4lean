@@ -22,14 +22,21 @@ abbrev Rabs := CompCert4Lean.Flocq.Core.Raux.Rabs
 abbrev Rminus := CompCert4Lean.Flocq.Core.Raux.Rminus
 
 structure float (beta : radix) where
+  Float ::
   Fnum : Z
   Fexp : Z
 
-export float (Fnum Fexp)
+export float (Float Fnum Fexp)
 
-/-! The source record constructor keeps its radix argument explicit. -/
-def Float (beta : radix) (m e : Z) : float beta :=
-  float.mk m e
+/-! Compatibility for existing target modules that used Lean's default
+    structure-constructor name before the source-shaped constructor was
+    restored.  The actual computational constructor is `Float`. -/
+namespace float
+
+abbrev mk {beta : radix} (m e : Z) : float beta :=
+  Float m e
+
+end float
 
 def F2R {beta : radix} (f : float beta) : R :=
   Rmult (IZR (Fnum f)) (bpow beta (Fexp f))
@@ -105,6 +112,6 @@ def F2R_runtime_exact_correspondence (ctx : Exact.Context) : Prop :=
         (CompCert4Lean.Flocq.Core.Raux.Rmult
           (CompCert4Lean.Flocq.Core.Raux.IZR m)
           (CompCert4Lean.Flocq.Core.Raux.bpow beta e)) h =
-        Exact.F2R ctx (Float beta m e)
+        Exact.F2R ctx (Float (beta := beta) m e)
 
 end CompCert4Lean.Flocq.Core.Defs

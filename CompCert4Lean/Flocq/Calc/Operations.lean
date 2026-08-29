@@ -15,7 +15,7 @@ abbrev Z := CompCert4Lean.Flocq.Core.Defs.Z
 abbrev radix := CompCert4Lean.Flocq.Core.Defs.radix
 abbrev float := CompCert4Lean.Flocq.Core.Defs.float
 abbrev Float (beta : radix) (m e : Z) : float beta :=
-  CompCert4Lean.Flocq.Core.Defs.float.mk m e
+  CompCert4Lean.Flocq.Core.Defs.Float m e
 abbrev Fnum {beta : radix} (f : float beta) : Z :=
   CompCert4Lean.Flocq.Core.Defs.Fnum f
 abbrev Fexp {beta : radix} (f : float beta) : Z :=
@@ -51,7 +51,8 @@ end Exact
 
 def Falign (f1 f2 : float beta) : (Z × Z) × Z :=
   match f1, f2 with
-  | ⟨m1, e1⟩, ⟨m2, e2⟩ =>
+  | CompCert4Lean.Flocq.Core.Defs.Float m1 e1,
+      CompCert4Lean.Flocq.Core.Defs.Float m2 e2 =>
       if Zle_bool e1 e2 then
         ((m1, Zmul m2 (Zpower (beta : Z) (Zsub e2 e1))), e1)
       else
@@ -59,11 +60,11 @@ def Falign (f1 f2 : float beta) : (Z × Z) × Z :=
 
 def Fopp {beta : radix} (f1 : float beta) : float beta :=
   match f1 with
-  | ⟨m1, e1⟩ => Float beta (Zopp m1) e1
+  | CompCert4Lean.Flocq.Core.Defs.Float m1 e1 => Float beta (Zopp m1) e1
 
 def Fabs {beta : radix} (f1 : float beta) : float beta :=
   match f1 with
-  | ⟨m1, e1⟩ => Float beta (Zabs m1) e1
+  | CompCert4Lean.Flocq.Core.Defs.Float m1 e1 => Float beta (Zabs m1) e1
 
 def Fplus {beta : radix} (f1 f2 : float beta) : float beta :=
   let ((m1, m2), e) := Falign f1 f2
@@ -71,7 +72,9 @@ def Fplus {beta : radix} (f1 f2 : float beta) : float beta :=
 
 def Fmult {beta : radix} (f1 f2 : float beta) : float beta :=
   match f1, f2 with
-  | ⟨m1, e1⟩, ⟨m2, e2⟩ => Float beta (Zmul m1 m2) (Zadd e1 e2)
+  | CompCert4Lean.Flocq.Core.Defs.Float m1 e1,
+      CompCert4Lean.Flocq.Core.Defs.Float m2 e2 =>
+      Float beta (Zmul m1 m2) (Zadd e1 e2)
 
 /-! Exact source proposition descriptors for later proof migration. -/
 
