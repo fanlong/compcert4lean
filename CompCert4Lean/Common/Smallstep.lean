@@ -669,8 +669,9 @@ def simulation_plusStatement : Prop :=
       ∀ i s2, match_states i s1 s2 →
         (∃ i' s2', plus (step L2) (globalenv L2) s2 t s2' ∧
           match_states i' s1' s2') ∨
-        (∃ i', Relation.TransGen order i' i ∧ t = E0 ∧
-          match_states i' s1' s2)
+        (∃ i',
+          _root_.CompCert4Lean.Foundation.Ordered.Rocq.Coq.Relations.Relation_Operators.clos_trans
+            index order i' i ∧ t = E0 ∧ match_states i' s1' s2)
 
 def simulation_forever_silentStatement : Prop :=
   ∀ (L1 L2 : semantics) (index : Type) (order : index → index → Prop)
@@ -840,7 +841,9 @@ def bsim_E0_plusStatement : Prop :=
       ∀ i s1, match_states i s1 s2 → safe L1 s1 →
         (∃ i' s1', plus (step L1) (globalenv L1) s1 E0 s1' ∧
           match_states i' s1' s2') ∨
-        (∃ i', Relation.TransGen order i' i ∧ match_states i' s1 s2')
+        (∃ i',
+          _root_.CompCert4Lean.Foundation.Ordered.Rocq.Coq.Relations.Relation_Operators.clos_trans
+            index order i' i ∧ match_states i' s1 s2')
 
 def star_non_E0_splitStatement : Prop :=
   ∀ (L2 : semantics) (s2 : state L2) (t : trace) (s2' : state L2),
@@ -855,7 +858,10 @@ def star_non_E0_splitStatement : Prop :=
 def bb_order {index index' : Type}
     (order : index → index → Prop) (order' : index' → index' → Prop) :
     index × index' → index × index' → Prop :=
-  lex_ord (Relation.TransGen order) order'
+  lex_ord
+    (_root_.CompCert4Lean.Foundation.Ordered.Rocq.Coq.Relations.Relation_Operators.clos_trans
+      index order)
+    order'
 
 inductive bb_match_states (L1 L2 L3 : semantics) {index : Type}
     (match_states : index → state L1 → state L2 → Prop)
