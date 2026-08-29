@@ -61,7 +61,7 @@ structure NodeSetLaws (NS : NodeSetOps) : Prop where
   pick_none : ∀ s n, NS.pick s = none → ¬ NS.In n s
   pick_some : ∀ s n s', NS.pick s = some (n, s') →
     ∀ n', NS.In n' s ↔ n = n' ∨ NS.In n' s'
-  all_nodes_spec : ∀ {A : Type} (code : PTreeT A) n instr,
+  all_nodes_spec : ∀ (A : Type) (code : PTreeT A) n instr,
     PTree.get n code = some instr → NS.In n (NS.all_nodes code)
 
 structure OrderedTop where
@@ -83,17 +83,17 @@ structure DATAFLOW_SOLVER where
   fixpoint : {A : Type} → PTreeT A → (A → List positive) →
     (positive → L.t → L.t) → positive → L.t → Option (PMapT L.t)
   fixpoint_solution :
-    ∀ {A : Type} (code : PTreeT A) successors transf ep ev res n instr s,
+    ∀ (A : Type) (code : PTreeT A) successors transf ep ev res n instr s,
       fixpoint code successors transf ep ev = some res →
       PTree.get n code = some instr → s ∈ successors instr →
       (∀ n, L.eq (transf n L.bot) L.bot) →
       L.ge (PMap.get s res) (transf n (PMap.get n res))
   fixpoint_entry :
-    ∀ {A : Type} (code : PTreeT A) successors transf ep ev res,
+    ∀ (A : Type) (code : PTreeT A) successors transf ep ev res,
       fixpoint code successors transf ep ev = some res →
       L.ge (PMap.get ep res) ev
   fixpoint_invariant :
-    ∀ {A : Type} (code : PTreeT A) successors transf ep ev
+    ∀ (A : Type) (code : PTreeT A) successors transf ep ev
       (P : L.t → Prop), P L.bot →
       (∀ x y, P x → P y → P (L.lub x y)) →
       (∀ pc instr x, PTree.get pc code = some instr → P x → P (transf pc x)) →
@@ -112,7 +112,7 @@ structure NODE_SET where
   pick_none : ∀ s n, pick s = none → ¬ In n s
   pick_some : ∀ s n s', pick s = some (n, s') →
     ∀ n', In n' s ↔ n = n' ∨ In n' s'
-  all_nodes_spec : ∀ {A : Type} (code : PTreeT A) n instr,
+  all_nodes_spec : ∀ (A : Type) (code : PTreeT A) n instr,
     PTree.get n code = some instr → In n (all_nodes code)
 
 structure BACKWARD_DATAFLOW_SOLVER where
@@ -121,7 +121,7 @@ structure BACKWARD_DATAFLOW_SOLVER where
   fixpoint : {A : Type} → PTreeT A → (A → List positive) →
     (positive → L.t → L.t) → Option (PMapT L.t)
   fixpoint_solution :
-    ∀ {A : Type} (code : PTreeT A) successors transf res n instr s,
+    ∀ (A : Type) (code : PTreeT A) successors transf res n instr s,
       fixpoint code successors transf = some res →
       PTree.get n code = some instr → s ∈ successors instr →
       (∀ n a, PTree.get n code = none → L.eq (transf n a) L.bot) →
@@ -129,7 +129,7 @@ structure BACKWARD_DATAFLOW_SOLVER where
   fixpoint_allnodes : {A : Type} → PTreeT A → (A → List positive) →
     (positive → L.t → L.t) → Option (PMapT L.t)
   fixpoint_allnodes_solution :
-    ∀ {A : Type} (code : PTreeT A) successors transf res n instr s,
+    ∀ (A : Type) (code : PTreeT A) successors transf res n instr s,
       fixpoint_allnodes code successors transf = some res →
       PTree.get n code = some instr → s ∈ successors instr →
       L.ge (PMap.get n res) (transf s (PMap.get s res))
@@ -167,7 +167,25 @@ def reachable_ind {A : Type} (code : PTreeT A)
   | reachable_left n1 n2 n3 i hcode hsucc hreach ih =>
       exact hleft n1 n2 n3 i hcode hsucc hreach ih
 
-def Dataflow_Solver (LAT : SemiLattice) (NS : NodeSetOps) : Type := Unit
+/-!
+The Rocq functor result contains polymorphic operation fields, so its direct
+Lean representation lives one universe above the ordinary `Type` used by the
+generated application seams.  Keep the exact source operation record in a
+proof-erased `PLift (Nonempty ...)` carrier and expose the mandatory DMC-004
+law certificate on the lower-universe bundled result.
+-/
+abbrev DataflowSolverOps (LAT : SemiLattice) : Type 1 :=
+  { solver : DATAFLOW_SOLVER // solver.L = LAT }
+
+abbrev DataflowSolverCertificate (LAT : SemiLattice) (NS : NodeSetOps) : Prop :=
+  SemiLatticeLaws LAT ∧ NodeSetLaws NS
+
+structure DataflowSolverBundle (LAT : SemiLattice) (NS : NodeSetOps) where
+  operations : PLift (Nonempty (DataflowSolverOps LAT))
+  law_certificate : DataflowSolverCertificate LAT NS
+
+def Dataflow_Solver (LAT : SemiLattice) (NS : NodeSetOps) : Type :=
+  DataflowSolverBundle LAT NS
 
 def «Dataflow_Solver.L» (LAT : SemiLattice) (_NS : NodeSetOps) : SemiLattice := LAT
 
@@ -315,7 +333,18 @@ def make_predecessors {A : Type} (code : PTreeT A)
   PTree.fold (fun pred pc instr => add_successors pred pc (successors instr))
     code (PTree.empty (List positive))
 
-def Backward_Dataflow_Solver (LAT : SemiLattice) (NS : NodeSetOps) : Type := Unit
+abbrev BackwardDataflowSolverOps (LAT : SemiLattice) : Type 1 :=
+  { solver : BACKWARD_DATAFLOW_SOLVER // solver.L = LAT }
+
+abbrev BackwardDataflowSolverCertificate (LAT : SemiLattice) (NS : NodeSetOps) : Prop :=
+  SemiLatticeLaws LAT ∧ NodeSetLaws NS
+
+structure BackwardDataflowSolverBundle (LAT : SemiLattice) (NS : NodeSetOps) where
+  operations : PLift (Nonempty (BackwardDataflowSolverOps LAT))
+  law_certificate : BackwardDataflowSolverCertificate LAT NS
+
+def Backward_Dataflow_Solver (LAT : SemiLattice) (NS : NodeSetOps) : Type :=
+  BackwardDataflowSolverBundle LAT NS
 def «Backward_Dataflow_Solver.L» (LAT : SemiLattice) (_NS : NodeSetOps) : SemiLattice := LAT
 def «Backward_Dataflow_Solver.DS» (LAT : SemiLattice) (NS : NodeSetOps) : Type :=
   Dataflow_Solver LAT NS
@@ -361,22 +390,31 @@ structure BBLOCK_SOLVER where
   fixpoint : {A : Type} → PTreeT A → (A → List positive) →
     (positive → L.t → L.t) → positive → Option (PMapT L.t)
   fixpoint_solution :
-    ∀ {A : Type} (code : PTreeT A) successors transf entrypoint res n instr s,
+    ∀ (A : Type) (code : PTreeT A) successors transf entrypoint res n instr s,
       fixpoint code successors transf entrypoint = some res →
       PTree.get n code = some instr → s ∈ successors instr →
       L.ge (PMap.get s res) (transf n (PMap.get n res))
   fixpoint_entry :
-    ∀ {A : Type} (code : PTreeT A) successors transf entrypoint res,
+    ∀ (A : Type) (code : PTreeT A) successors transf entrypoint res,
       fixpoint code successors transf entrypoint = some res →
       PMap.get entrypoint res = L.top
   fixpoint_invariant :
-    ∀ {A : Type} (code : PTreeT A) successors transf entrypoint
+    ∀ (A : Type) (code : PTreeT A) successors transf entrypoint
       (P : L.t → Prop), P L.top →
       (∀ pc instr x, PTree.get pc code = some instr → P x → P (transf pc x)) →
       ∀ res pc, fixpoint code successors transf entrypoint = some res →
       P (PMap.get pc res)
 
-def BBlock_solver (LAT : OrderedTop) : Type := Unit
+abbrev BBlockSolverOps (LAT : OrderedTop) : Type 1 :=
+  { solver : BBLOCK_SOLVER // solver.L = LAT }
+
+abbrev BBlockSolverCertificate (LAT : OrderedTop) : Prop := OrderedTopLaws LAT
+
+structure BBlockSolverBundle (LAT : OrderedTop) where
+  operations : PLift (Nonempty (BBlockSolverOps LAT))
+  law_certificate : BBlockSolverCertificate LAT
+
+def BBlock_solver (LAT : OrderedTop) : Type := BBlockSolverBundle LAT
 def «BBlock_solver.L» (LAT : OrderedTop) : OrderedTop := LAT
 namespace BBlock_solver
 
@@ -529,7 +567,7 @@ def optge_transStatement : Prop :=
 def optge_abstr_valueStatement : Prop :=
   ∀ {LAT : SemiLattice} {NS : NodeSetOps}
     (_LATlaws : SemiLatticeLaws LAT) (_NSlaws : NodeSetLaws NS)
-    (n : positive) (st st' : state LAT NS),
+    (st st' : state LAT NS) (n : positive),
     optge LAT (PTree.get n st.aval) (PTree.get n st'.aval) →
     LAT.ge (abstr_value n st) (abstr_value n st')
 def propagate_succ_charactStatement : Prop :=
@@ -854,7 +892,7 @@ def pick_noneStatement : Prop := ∀ s n, pick s = none → ¬ In n s
 def pick_someStatement : Prop :=
   ∀ s n s', pick s = some (n, s') → ∀ n', In n' s ↔ n = n' ∨ In n' s'
 def all_nodes_specStatement : Prop :=
-  ∀ {A : Type} (code : PTreeT A) n instr,
+  ∀ (A : Type) (code : PTreeT A) n instr,
     PTree.get n code = some instr → In n (all_nodes code)
 end NodeSetForward
 
@@ -865,7 +903,7 @@ def pick_noneStatement : Prop := ∀ s n, pick s = none → ¬ In n s
 def pick_someStatement : Prop :=
   ∀ s n s', pick s = some (n, s') → ∀ n', In n' s ↔ n = n' ∨ In n' s'
 def all_nodes_specStatement : Prop :=
-  ∀ {A : Type} (code : PTreeT A) n instr,
+  ∀ (A : Type) (code : PTreeT A) n instr,
     PTree.get n code = some instr → In n (all_nodes code)
 end NodeSetBackward
 
