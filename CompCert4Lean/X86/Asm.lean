@@ -585,70 +585,6 @@ def exec_store (_ge : genv) (chunk : memory_chunk) (m : mem)
   | some m' => .Next (nextinstr_nf (undef_regs destroyed rs)) m'
   | none => .Stuck
 
-private def divmodu2Int (nhi nlo d : int) : Option (int × int) :=
-  if CompCert4Lean.Lib.Integers.Int.eq d CompCert4Lean.Lib.Integers.Int.zero then none
-  else
-    let qr := ZArith.BinInt.Z.div_eucl
-      (ZArith.BinInt.Z.add
-        (ZArith.BinInt.Z.mul
-          (CompCert4Lean.Lib.Integers.Int.unsigned nhi)
-          CompCert4Lean.Lib.Integers.Int.modulus)
-        (CompCert4Lean.Lib.Integers.Int.unsigned nlo))
-      (CompCert4Lean.Lib.Integers.Int.unsigned d)
-    match CompCert4Lean.Lib.Coqlib.zle qr.1 CompCert4Lean.Lib.Integers.Int.max_unsigned with
-    | .left _ => some (CompCert4Lean.Lib.Integers.Int.repr qr.1,
-        CompCert4Lean.Lib.Integers.Int.repr qr.2)
-    | .right _ => none
-
-private def divmods2Int (nhi nlo d : int) : Option (int × int) :=
-  if CompCert4Lean.Lib.Integers.Int.eq d CompCert4Lean.Lib.Integers.Int.zero then none
-  else
-    let n := ZArith.BinInt.Z.add
-      (ZArith.BinInt.Z.mul
-        (CompCert4Lean.Lib.Integers.Int.signed nhi)
-        CompCert4Lean.Lib.Integers.Int.modulus)
-      (CompCert4Lean.Lib.Integers.Int.unsigned nlo)
-    let sd := CompCert4Lean.Lib.Integers.Int.signed d
-    let q := ZArith.BinInt.Z.quot n sd
-    let r := ZArith.BinInt.Z.sub n (ZArith.BinInt.Z.mul q sd)
-    match CompCert4Lean.Lib.Coqlib.zle CompCert4Lean.Lib.Integers.Int.min_signed q,
-      CompCert4Lean.Lib.Coqlib.zle q CompCert4Lean.Lib.Integers.Int.max_signed with
-    | .left _, .left _ => some (CompCert4Lean.Lib.Integers.Int.repr q,
-        CompCert4Lean.Lib.Integers.Int.repr r)
-    | _, _ => none
-
-private def divmodu2Int64 (nhi nlo d : int64) : Option (int64 × int64) :=
-  if CompCert4Lean.Lib.Integers.Int64.eq d CompCert4Lean.Lib.Integers.Int64.zero then none
-  else
-    let qr := ZArith.BinInt.Z.div_eucl
-      (ZArith.BinInt.Z.add
-        (ZArith.BinInt.Z.mul
-          (CompCert4Lean.Lib.Integers.Int64.unsigned nhi)
-          CompCert4Lean.Lib.Integers.Int64.modulus)
-        (CompCert4Lean.Lib.Integers.Int64.unsigned nlo))
-      (CompCert4Lean.Lib.Integers.Int64.unsigned d)
-    match CompCert4Lean.Lib.Coqlib.zle qr.1 CompCert4Lean.Lib.Integers.Int64.max_unsigned with
-    | .left _ => some (CompCert4Lean.Lib.Integers.Int64.repr qr.1,
-        CompCert4Lean.Lib.Integers.Int64.repr qr.2)
-    | .right _ => none
-
-private def divmods2Int64 (nhi nlo d : int64) : Option (int64 × int64) :=
-  if CompCert4Lean.Lib.Integers.Int64.eq d CompCert4Lean.Lib.Integers.Int64.zero then none
-  else
-    let n := ZArith.BinInt.Z.add
-      (ZArith.BinInt.Z.mul
-        (CompCert4Lean.Lib.Integers.Int64.signed nhi)
-        CompCert4Lean.Lib.Integers.Int64.modulus)
-      (CompCert4Lean.Lib.Integers.Int64.unsigned nlo)
-    let sd := CompCert4Lean.Lib.Integers.Int64.signed d
-    let q := ZArith.BinInt.Z.quot n sd
-    let r := ZArith.BinInt.Z.sub n (ZArith.BinInt.Z.mul q sd)
-    match CompCert4Lean.Lib.Coqlib.zle CompCert4Lean.Lib.Integers.Int64.min_signed q,
-      CompCert4Lean.Lib.Coqlib.zle q CompCert4Lean.Lib.Integers.Int64.max_signed with
-    | .left _, .left _ => some (CompCert4Lean.Lib.Integers.Int64.repr q,
-        CompCert4Lean.Lib.Integers.Int64.repr r)
-    | _, _ => none
-
 def exec_instr
     [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
     [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
@@ -760,7 +696,7 @@ def exec_instr
   | .Pdivl r1 =>
       match Pregmap.get (.IR .RDX) rs, Pregmap.get (.IR .RAX) rs, Pregmap.get (.IR r1) rs with
       | .Vint nh, .Vint nl, .Vint d =>
-          match divmodu2Int nh nl d with
+          match CompCert4Lean.Lib.Integers.Int.divmodu2 nh nl d with
           | some (q, r) => .Next (nextinstr_nf
               (Pregmap.set (.IR .RAX) (.Vint q) (Pregmap.set (.IR .RDX) (.Vint r) rs))) m
           | none => .Stuck
@@ -768,7 +704,7 @@ def exec_instr
   | .Pdivq r1 =>
       match Pregmap.get (.IR .RDX) rs, Pregmap.get (.IR .RAX) rs, Pregmap.get (.IR r1) rs with
       | .Vlong nh, .Vlong nl, .Vlong d =>
-          match divmodu2Int64 nh nl d with
+          match CompCert4Lean.Lib.Integers.Int64.divmodu2 nh nl d with
           | some (q, r) => .Next (nextinstr_nf
               (Pregmap.set (.IR .RAX) (.Vlong q) (Pregmap.set (.IR .RDX) (.Vlong r) rs))) m
           | none => .Stuck
@@ -776,7 +712,7 @@ def exec_instr
   | .Pidivl r1 =>
       match Pregmap.get (.IR .RDX) rs, Pregmap.get (.IR .RAX) rs, Pregmap.get (.IR r1) rs with
       | .Vint nh, .Vint nl, .Vint d =>
-          match divmods2Int nh nl d with
+          match CompCert4Lean.Lib.Integers.Int.divmods2 nh nl d with
           | some (q, r) => .Next (nextinstr_nf
               (Pregmap.set (.IR .RAX) (.Vint q) (Pregmap.set (.IR .RDX) (.Vint r) rs))) m
           | none => .Stuck
@@ -784,7 +720,7 @@ def exec_instr
   | .Pidivq r1 =>
       match Pregmap.get (.IR .RDX) rs, Pregmap.get (.IR .RAX) rs, Pregmap.get (.IR r1) rs with
       | .Vlong nh, .Vlong nl, .Vlong d =>
-          match divmods2Int64 nh nl d with
+          match CompCert4Lean.Lib.Integers.Int64.divmods2 nh nl d with
           | some (q, r) => .Next (nextinstr_nf
               (Pregmap.set (.IR .RAX) (.Vlong q) (Pregmap.set (.IR .RDX) (.Vlong r) rs))) m
           | none => .Stuck
