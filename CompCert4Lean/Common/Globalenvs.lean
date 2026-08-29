@@ -585,19 +585,12 @@ def init_data_list_aligned : Z → List init_data → Prop
 
 structure match_genvs {A B V W : Type} (R : globdef A V → globdef B W → Prop)
     (ge1 : t A V) (ge2 : t B W) : Prop where
+  Build_match_genvs (ge1 ge2) ::
   mge_next : ge2.genv_next = ge1.genv_next
   mge_symb : ∀ id, PTree.get id ge2.genv_symb = PTree.get id ge1.genv_symb
   mge_defs : ∀ b, option_rel R (PTree.get b ge1.genv_defs) (PTree.get b ge2.genv_defs)
 
-def Build_match_genvs {A B V W : Type} {R : globdef A V → globdef B W → Prop}
-    (ge1 : t A V) (ge2 : t B W)
-    (mge_next : ge2.genv_next = ge1.genv_next)
-    (mge_symb : ∀ id, PTree.get id ge2.genv_symb = PTree.get id ge1.genv_symb)
-    (mge_defs : ∀ b, option_rel R (PTree.get b ge1.genv_defs) (PTree.get b ge2.genv_defs)) :
-    match_genvs R ge1 ge2 :=
-  { mge_next, mge_symb, mge_defs }
-
-export match_genvs (mge_next mge_symb mge_defs)
+export match_genvs (Build_match_genvs mge_next mge_symb mge_defs)
 
 /-! ## Exact statement descriptors for later proof migration -/
 
