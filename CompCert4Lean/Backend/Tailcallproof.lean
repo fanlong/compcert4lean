@@ -73,6 +73,13 @@ inductive transf_instr_spec (f : function) : instruction → instruction → Pro
 
 export transf_instr_spec (transf_instr_tailcall)
 
+/-! The kernel carrier keeps Lean's generated constructor namespaced.  This
+source-facing alias restores the pinned Rocq application binder modes for the
+default case without changing the relation or its existing constructor. -/
+abbrev transf_instr_default (f : function) (i : instruction) :
+    transf_instr_spec f i i :=
+  @transf_instr_spec.unchanged f i
+
 /-! ## Program and state matching -/
 
 def match_prog (cfg : CompilerConfig) (p tp : program) : Prop :=
@@ -137,6 +144,60 @@ inductive match_states (cfg : CompilerConfig) : state → state → Prop where
       match_states cfg
         (State s f (Vptr sp Ptrofs.zero) pc rs m)
         (Returnstate s' v' m')
+
+/-! The source constructors are exposed as flat aliases with Rocq's explicit
+state and proof binders.  The compiler configuration remains an inferred
+parameter introduced by the authenticated downstream configuration seam. -/
+abbrev match_states_normal
+    {cfg : CompilerConfig}
+    (s : List stackframe) (sp : block) (pc : node)
+    (rs : regset) (m : Mem.mem) (s' : List stackframe)
+    (rs' : regset) (m' : Mem.mem) (f : function)
+    (hstack : match_stackframes cfg s s')
+    (hrld : regs_lessdef rs rs')
+    (hmld : Mem.extends m m') :
+    match_states cfg
+      (State s f (Vptr sp Ptrofs.zero) pc rs m)
+      (State s' (transf_function cfg f) (Vptr sp Ptrofs.zero) pc rs' m') :=
+  @match_states.normal cfg s sp pc rs m s' rs' m' f hstack hrld hmld
+
+abbrev match_states_call
+    {cfg : CompilerConfig}
+    (s : List stackframe) (f : fundef) (args : List val)
+    (m : Mem.mem) (s' : List stackframe) (args' : List val)
+    (m' : Mem.mem)
+    (hstack : match_stackframes cfg s s')
+    (hargs : Val.lessdef_list args args')
+    (hmld : Mem.extends m m') :
+    match_states cfg (Callstate s f args m)
+      (Callstate s' (transf_fundef cfg f) args' m') :=
+  @match_states.call cfg s f args m s' args' m' hstack hargs hmld
+
+abbrev match_states_return
+    {cfg : CompilerConfig}
+    (s : List stackframe) (v : val) (m : Mem.mem)
+    (s' : List stackframe) (v' : val) (m' : Mem.mem)
+    (hstack : match_stackframes cfg s s')
+    (hval : Val.lessdef v v')
+    (hmld : Mem.extends m m') :
+    match_states cfg (Returnstate s v m) (Returnstate s' v' m') :=
+  @match_states.return cfg s v m s' v' m' hstack hval hmld
+
+abbrev match_states_interm
+    {cfg : CompilerConfig}
+    (s : List stackframe) (sp : block) (pc : node)
+    (rs : regset) (m : Mem.mem) (s' : List stackframe)
+    (m' : Mem.mem) (f : function) (r : reg) (v' : val)
+    (hstack : match_stackframes cfg s s')
+    (hmld : Mem.extends m m')
+    (hreturn : is_return_spec f pc r)
+    (hstacksize : f.fn_stacksize = .Z0)
+    (hval : Val.lessdef (Regmap.get r rs) v') :
+    match_states cfg
+      (State s f (Vptr sp Ptrofs.zero) pc rs m)
+      (Returnstate s' v' m') :=
+  @match_states.interm cfg s sp pc rs m s' m' f r v'
+    hstack hmld hreturn hstacksize hval
 
 def measure : state → Nat
   | State s f _ pc _ _ =>
