@@ -38,8 +38,8 @@ abbrev IZR := CompCert4Lean.Flocq.Core.Raux.IZR
 def bpow (beta : radix) (e : Z) : R :=
   CompCert4Lean.Flocq.Core.Raux.bpow beta e
 
-inductive FIX_format (beta : radix) (emin : Z) (x : R) : Prop where
-  | FIX_spec (f : float beta) :
+inductive FIX_format : radix → Z → R → Prop where
+  | FIX_spec (beta : radix) (emin : Z) (x : R) (f : float beta) :
       x = F2R f → Fexp f = emin → FIX_format beta emin x
 
 export FIX_format (FIX_spec)
