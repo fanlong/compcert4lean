@@ -708,14 +708,12 @@ def sameclass_find_3Statement : Prop :=
 
 def identify_orderStatement : Prop :=
   ∀ (uf : t M) (a b : elt M)
-    (a_canon : mapGet M a uf.m = none)
-    (not_same_class : repr M uf b ≠ a), ∀ x y,
+    (a_canon : mapGet M a uf.m = none), ∀ x y,
     order M (mapSet M a b uf.m) y x ↔ order M uf.m y x ∨ (x = a ∧ y = b)
 
 def identify_Acc_bStatement : Prop :=
   ∀ (uf : t M) (a b : elt M)
-    (a_canon : mapGet M a uf.m = none)
-    (not_same_class : repr M uf b ≠ a) (x : elt M),
+    (a_canon : mapGet M a uf.m = none) (x : elt M),
     _root_.Acc (order M uf.m) x → repr M uf x ≠ a →
       _root_.Acc (order M (mapSet M a b uf.m)) x
 
