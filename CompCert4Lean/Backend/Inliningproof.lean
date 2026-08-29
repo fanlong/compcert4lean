@@ -88,13 +88,13 @@ inductive match_globalenvs (prog : program) (F : Val.meminj) (bound : block) : P
 export match_globalenvs (mk_match_globalenvs)
 
 mutual
-inductive match_stacks (cfg : InliningConfig) (prog : program) (F : Val.meminj) (m m' : mem) :
+inductive match_stacks (prog : program) (F : Val.meminj) (m m' : mem) :
     List stackframe → List stackframe → block → Prop where
   | match_stacks_nil : ∀ bound1 bound,
       match_globalenvs prog F bound1 → Ple bound1 bound →
-      match_stacks cfg prog F m m' [] [] bound
+      match_stacks prog F m m' [] [] bound
   | match_stacks_cons : ∀ res f sp pc rs stk f' sp' rs' stk' bound fenv ctx,
-      match_stacks_inside cfg prog F m m' stk stk' f' ctx sp' rs' →
+      match_stacks_inside prog F m m' stk stk' f' ctx sp' rs' →
       fenv_compat prog fenv →
       tr_funbody fenv f'.fn_stacksize ctx f f'.fn_code →
       agree_regs F ctx rs rs' → F sp = some (sp', ctx.dstk) →
@@ -102,32 +102,32 @@ inductive match_stacks (cfg : InliningConfig) (prog : program) (F : Val.meminj) 
       (zLe zZero f'.fn_stacksize ∧ zLt f'.fn_stacksize Ptrofs.max_unsigned) →
       (∀ ofs, Mem.perm m' sp' ofs .Max .Nonempty → zLe zZero ofs ∧ zLe ofs f'.fn_stacksize) →
       Ple res ctx.mreg → Plt sp' bound →
-      match_stacks cfg prog F m m'
+      match_stacks prog F m m'
         (Stackframe res f (Vptr sp Ptrofs.zero) pc rs :: stk)
         (Stackframe (sreg ctx res) f' (Vptr sp' Ptrofs.zero) (spc ctx pc) rs' :: stk') bound
   | match_stacks_untailcall : ∀ stk res f' sp' rpc rs' stk' bound ctx,
-      match_stacks_inside cfg prog F m m' stk stk' f' ctx sp' rs' →
+      match_stacks_inside prog F m m' stk stk' f' ctx sp' rs' →
       range_private F m m' sp' ctx.dstk f'.fn_stacksize →
       (zLe zZero f'.fn_stacksize ∧ zLt f'.fn_stacksize Ptrofs.max_unsigned) →
       (∀ ofs, Mem.perm m' sp' ofs .Max .Nonempty → zLe zZero ofs ∧ zLe ofs f'.fn_stacksize) →
       ctx.retinfo = some (rpc, res) → Plt sp' bound →
-      match_stacks cfg prog F m m' stk
+      match_stacks prog F m m' stk
         (Stackframe res f' (Vptr sp' Ptrofs.zero) rpc rs' :: stk') bound
 
-inductive match_stacks_inside (cfg : InliningConfig) (prog : program) (F : Val.meminj) (m m' : mem) :
+inductive match_stacks_inside (prog : program) (F : Val.meminj) (m m' : mem) :
     List stackframe → List stackframe → function → context → block → regset → Prop where
   | match_stacks_inside_base : ∀ stk stk' f' ctx sp' rs',
-      match_stacks cfg prog F m m' stk stk' sp' → ctx.retinfo = none → ctx.dstk = zZero →
-      match_stacks_inside cfg prog F m m' stk stk' f' ctx sp' rs'
+      match_stacks prog F m m' stk stk' sp' → ctx.retinfo = none → ctx.dstk = zZero →
+      match_stacks_inside prog F m m' stk stk' f' ctx sp' rs'
   | match_stacks_inside_inlined : ∀ res f sp pc rs stk stk' f' fenv ctx sp' rs' ctx',
-      match_stacks_inside cfg prog F m m' stk stk' f' ctx' sp' rs' →
+      match_stacks_inside prog F m m' stk stk' f' ctx' sp' rs' →
       fenv_compat prog fenv →
       tr_funbody fenv f'.fn_stacksize ctx' f f'.fn_code →
       agree_regs F ctx' rs rs' → F sp = some (sp', ctx'.dstk) →
       range_private F m m' sp' (zAdd ctx'.dstk ctx'.mstk) ctx.dstk →
       Ple res ctx'.mreg → ctx.retinfo = some (spc ctx' pc, sreg ctx' res) →
       context_below ctx' ctx → context_stack_call ctx' ctx →
-      match_stacks_inside cfg prog F m m'
+      match_stacks_inside prog F m m'
         (Stackframe res f (Vptr sp Ptrofs.zero) pc rs :: stk) stk' f' ctx sp' rs'
 end
 
@@ -135,12 +135,12 @@ export match_stacks (match_stacks_nil match_stacks_cons match_stacks_untailcall)
 export match_stacks_inside (match_stacks_inside_base match_stacks_inside_inlined)
 
 def match_stacks_indStatement : Prop :=
-  ∀ (cfg : InliningConfig) (prog : program) (F : Val.meminj) (m m' : mem)
+  ∀ (prog : program) (F : Val.meminj) (m m' : mem)
     (P : List stackframe → List stackframe → block → Prop),
     (∀ bound1 bound,
       match_globalenvs prog F bound1 → Ple bound1 bound → P [] [] bound) →
     (∀ res f sp pc rs stk f' sp' rs' stk' bound fenv ctx,
-      match_stacks_inside cfg prog F m m' stk stk' f' ctx sp' rs' →
+      match_stacks_inside prog F m m' stk stk' f' ctx sp' rs' →
       fenv_compat prog fenv →
       tr_funbody fenv f'.fn_stacksize ctx f f'.fn_code →
       agree_regs F ctx rs rs' → F sp = some (sp', ctx.dstk) →
@@ -154,24 +154,24 @@ def match_stacks_indStatement : Prop :=
         (Stackframe (sreg ctx res) f' (Vptr sp' Ptrofs.zero) (spc ctx pc) rs' :: stk')
         bound) →
     (∀ stk res f' sp' rpc rs' stk' bound ctx,
-      match_stacks_inside cfg prog F m m' stk stk' f' ctx sp' rs' →
+      match_stacks_inside prog F m m' stk stk' f' ctx sp' rs' →
       range_private F m m' sp' ctx.dstk f'.fn_stacksize →
       (zLe zZero f'.fn_stacksize ∧ zLt f'.fn_stacksize Ptrofs.max_unsigned) →
       (∀ ofs, Mem.perm m' sp' ofs .Max .Nonempty →
         zLe zZero ofs ∧ zLe ofs f'.fn_stacksize) →
       ctx.retinfo = some (rpc, res) → Plt sp' bound →
       P stk (Stackframe res f' (Vptr sp' Ptrofs.zero) rpc rs' :: stk') bound) →
-    ∀ l l0 b, match_stacks cfg prog F m m' l l0 b → P l l0 b
+    ∀ l l0 b, match_stacks prog F m m' l l0 b → P l l0 b
 
 def match_stacks_inside_indStatement : Prop :=
-  ∀ (cfg : InliningConfig) (prog : program) (F : Val.meminj) (m m' : mem)
+  ∀ (prog : program) (F : Val.meminj) (m m' : mem)
     (P : List stackframe → List stackframe → function → context → block → regset → Prop),
     (∀ stk stk' f' ctx sp' rs',
-      match_stacks cfg prog F m m' stk stk' sp' →
+      match_stacks prog F m m' stk stk' sp' →
       ctx.retinfo = none → ctx.dstk = zZero →
       P stk stk' f' ctx sp' rs') →
     (∀ res f sp pc rs stk stk' f' fenv ctx sp' rs' ctx',
-      match_stacks_inside cfg prog F m m' stk stk' f' ctx' sp' rs' →
+      match_stacks_inside prog F m m' stk stk' f' ctx' sp' rs' →
       P stk stk' f' ctx' sp' rs' →
       fenv_compat prog fenv →
       tr_funbody fenv f'.fn_stacksize ctx' f f'.fn_code →
@@ -181,11 +181,11 @@ def match_stacks_inside_indStatement : Prop :=
       context_below ctx' ctx → context_stack_call ctx' ctx →
       P (Stackframe res f (Vptr sp Ptrofs.zero) pc rs :: stk) stk' f' ctx sp' rs') →
     ∀ l l0 f c b r,
-      match_stacks_inside cfg prog F m m' l l0 f c b r → P l l0 f c b r
+      match_stacks_inside prog F m m' l l0 f c b r → P l l0 f c b r
 
 inductive match_states (cfg : InliningConfig) (prog : program) : RTL.state → RTL.state → Prop where
   | match_regular_states : ∀ stk f sp pc rs m stk' f' sp' rs' m' F fenv ctx,
-      match_stacks_inside cfg prog F m m' stk stk' f' ctx sp' rs' →
+      match_stacks_inside prog F m m' stk stk' f' ctx sp' rs' →
       fenv_compat prog fenv →
       tr_funbody fenv f'.fn_stacksize ctx f f'.fn_code →
       agree_regs F ctx rs rs' → F sp = some (sp', ctx.dstk) →
@@ -197,7 +197,7 @@ inductive match_states (cfg : InliningConfig) (prog : program) : RTL.state → R
         (State stk' f' (Vptr sp' Ptrofs.zero) (spc ctx pc) rs' m')
 
   | match_call_states : ∀ stk fd args m stk' fd' args' m' cunit F,
-      match_stacks cfg prog F m m' stk stk' m'.nextblock →
+      match_stacks prog F m m' stk stk' m'.nextblock →
       rtlLinkorder cunit prog →
       transf_fundef (funenv_program cfg cunit) fd = OK fd' →
       Val.inject_list F args args' →
@@ -206,7 +206,7 @@ inductive match_states (cfg : InliningConfig) (prog : program) : RTL.state → R
         (Callstate stk' fd' args' m')
 
   | match_call_regular_states : ∀ stk f vargs m stk' f' sp' rs' m' F fenv ctx ctx' pc' pc1' rargs,
-      match_stacks_inside cfg prog F m m' stk stk' f' ctx sp' rs' →
+      match_stacks_inside prog F m m' stk stk' f' ctx sp' rs' →
       fenv_compat prog fenv →
       tr_funbody fenv f'.fn_stacksize ctx f f'.fn_code →
       context_below ctx' ctx →
@@ -224,14 +224,14 @@ inductive match_states (cfg : InliningConfig) (prog : program) : RTL.state → R
         (State stk' f' (Vptr sp' Ptrofs.zero) pc' rs' m')
 
   | match_return_states : ∀ stk v m stk' v' m' F,
-      match_stacks cfg prog F m m' stk stk' m'.nextblock →
+      match_stacks prog F m m' stk stk' m'.nextblock →
       Val.inject F v v' →
       Mem.inject F m m' →
       match_states cfg prog (Returnstate stk v m)
         (Returnstate stk' v' m')
 
   | match_return_regular_states : ∀ stk v m stk' f' sp' rs' m' F ctx pc' or rinfo,
-      match_stacks_inside cfg prog F m m' stk stk' f' ctx sp' rs' →
+      match_stacks_inside prog F m m' stk stk' f' ctx sp' rs' →
       ctx.retinfo = some rinfo →
       PTree.get pc' f'.fn_code = some (inline_return ctx or rinfo) →
       (match or with
@@ -344,16 +344,16 @@ def match_globalenvs_preserves_globalsStatement : Prop :=
       (Genv.globalenv prog) F
 
 def match_stacks_boundStatement : Prop :=
-  ∀ cfg prog F m m' stk stk' bound bound1,
-    match_stacks cfg prog F m m' stk stk' bound → Ple bound bound1 →
-      match_stacks cfg prog F m m' stk stk' bound1
+  ∀ prog F m m' stk stk' bound bound1,
+    match_stacks prog F m m' stk stk' bound → Ple bound bound1 →
+      match_stacks prog F m m' stk stk' bound1
 
 def match_stacks_emptyStatement : Prop :=
-  ∀ cfg prog F m m' stk stk' bound,
-    match_stacks cfg prog F m m' stk stk' bound → stk = [] → stk' = []
+  ∀ prog F m m' stk stk' bound,
+    match_stacks prog F m m' stk stk' bound → stk = [] → stk' = []
 
 def match_stacks_extcallStatement : Prop :=
-  ∀ cfg prog F1 F2 m1 m2 m1' m2',
+  ∀ prog F1 F2 m1 m2 m1' m2',
     (∀ b ofs p, Mem.valid_block m1 b → Mem.perm m2 b ofs .Max p →
       Mem.perm m1 b ofs .Max p) →
     (∀ b ofs p, Mem.valid_block m1' b → Mem.perm m2' b ofs .Max p →
@@ -363,30 +363,30 @@ def match_stacks_extcallStatement : Prop :=
     inject_incr F1 F2 →
     inject_separated F1 F2 m1 m1' →
     ∀ stk stk' bound,
-      match_stacks cfg prog F1 m1 m1' stk stk' bound →
+      match_stacks prog F1 m1 m1' stk stk' bound →
       Ple bound m1'.nextblock →
-      match_stacks cfg prog F2 m2 m2' stk stk' bound
+      match_stacks prog F2 m2 m2' stk stk' bound
 
 def match_stacks_globalenvsStatement : Prop :=
-  ∀ cfg prog F m m' stk stk' bound,
-    match_stacks cfg prog F m m' stk stk' bound → ∃ b, match_globalenvs prog F b
+  ∀ prog F m m' stk stk' bound,
+    match_stacks prog F m m' stk stk' bound → ∃ b, match_globalenvs prog F b
 def match_stacks_inside_alloc_leftStatement : Prop :=
-  ∀ cfg prog F m m' stk stk' f' ctx sp' rs',
-    match_stacks_inside cfg prog F m m' stk stk' f' ctx sp' rs' →
+  ∀ prog F m m' stk stk' f' ctx sp' rs',
+    match_stacks_inside prog F m m' stk stk' f' ctx sp' rs' →
     ∀ sz m1 b F1 delta,
       Mem.alloc m zZero sz = (m1, b) → inject_incr F F1 →
       F1 b = some (sp', delta) →
       (∀ b1, b1 ≠ b → F1 b1 = F b1) →
       zLe ctx.dstk delta →
-      match_stacks_inside cfg prog F1 m1 m' stk stk' f' ctx sp' rs'
+      match_stacks_inside prog F1 m1 m' stk stk' f' ctx sp' rs'
 
 def match_stacks_inside_emptyStatement : Prop :=
-  ∀ cfg prog F m m' stk stk' f ctx sp rs,
-    match_stacks_inside cfg prog F m m' stk stk' f ctx sp rs →
+  ∀ prog F m m' stk stk' f ctx sp rs,
+    match_stacks_inside prog F m m' stk stk' f ctx sp rs →
     stk = [] → stk' = [] ∧ ctx.retinfo = none
 
 def match_stacks_inside_extcallStatement : Prop :=
-  ∀ cfg prog F1 F2 m1 m2 m1' m2',
+  ∀ prog F1 F2 m1 m2 m1' m2',
     (∀ b ofs p, Mem.valid_block m1 b → Mem.perm m2 b ofs .Max p →
       Mem.perm m1 b ofs .Max p) →
     (∀ b ofs p, Mem.valid_block m1' b → Mem.perm m2' b ofs .Max p →
@@ -396,35 +396,35 @@ def match_stacks_inside_extcallStatement : Prop :=
     inject_incr F1 F2 →
     inject_separated F1 F2 m1 m1' →
     ∀ stk stk' f' ctx sp' rs',
-      match_stacks_inside cfg prog F1 m1 m1' stk stk' f' ctx sp' rs' →
+      match_stacks_inside prog F1 m1 m1' stk stk' f' ctx sp' rs' →
       Plt sp' m1'.nextblock →
-      match_stacks_inside cfg prog F2 m2 m2' stk stk' f' ctx sp' rs'
+      match_stacks_inside prog F2 m2 m2' stk stk' f' ctx sp' rs'
 
 def match_stacks_inside_globalenvsStatement : Prop :=
-  ∀ cfg prog F m m' stk stk' f ctx sp rs,
-    match_stacks_inside cfg prog F m m' stk stk' f ctx sp rs →
+  ∀ prog F m m' stk stk' f ctx sp rs,
+    match_stacks_inside prog F m m' stk stk' f ctx sp rs →
     ∃ b, match_globalenvs prog F b
 
 def match_stacks_inside_globalsStatement : Prop :=
-  ∀ cfg prog F m m' stk stk' f ctx sp rs,
-    match_stacks_inside cfg prog F m m' stk stk' f ctx sp rs →
+  ∀ prog F m m' stk stk' f ctx sp rs,
+    match_stacks_inside prog F m m' stk stk' f ctx sp rs →
     CompCert4Lean.Common.Events.meminj_preserves_globals fundef Unit
       (Genv.globalenv prog) F
 
 def match_stacks_inside_inlined_tailcallStatement : Prop :=
-  ∀ cfg prog fenv F m m' stk stk' f' ctx sp rs ctx' f,
-    match_stacks_inside cfg prog F m m' stk stk' f' ctx sp rs →
+  ∀ prog fenv F m m' stk stk' f' ctx sp rs ctx' f,
+    match_stacks_inside prog F m m' stk stk' f' ctx sp rs →
     context_below ctx ctx' → context_stack_tailcall ctx f ctx' →
     ctx'.retinfo = ctx.retinfo →
     range_private F m m' sp ctx.dstk f'.fn_stacksize →
     tr_funbody fenv f'.fn_stacksize ctx' f f'.fn_code →
-    match_stacks_inside cfg prog F m m' stk stk' f' ctx' sp rs
+    match_stacks_inside prog F m m' stk stk' f' ctx' sp rs
 
 def match_stacks_inside_invariantStatement : Prop :=
-  ∀ cfg prog F m m' F1 m1 m1',
+  ∀ prog F m m' F1 m1 m1',
     inject_incr F F1 →
     ∀ stk stk' f' ctx sp rs1,
-      match_stacks_inside cfg prog F m m' stk stk' f' ctx sp rs1 →
+      match_stacks_inside prog F m m' stk stk' f' ctx sp rs1 →
       ∀ rs2,
         (∀ r, Plt r ctx.dreg → Regmap.get r rs2 = Regmap.get r rs1) →
         (∀ b1 b2 delta, F1 b1 = some (b2, delta) → Ple b2 sp →
@@ -435,30 +435,30 @@ def match_stacks_inside_invariantStatement : Prop :=
           Mem.perm m1' b ofs .Cur .Freeable) →
         (∀ b ofs k p, Ple b sp → Mem.perm m1' b ofs k p →
           Mem.perm m' b ofs k p) →
-        match_stacks_inside cfg prog F1 m1 m1' stk stk' f' ctx sp rs2
+        match_stacks_inside prog F1 m1 m1' stk stk' f' ctx sp rs2
 
 def match_stacks_inside_set_regStatement : Prop :=
-  ∀ cfg prog F m m' stk stk' f ctx sp rs r v,
-    match_stacks_inside cfg prog F m m' stk stk' f ctx sp rs →
-    match_stacks_inside cfg prog F m m' stk stk' f ctx sp (Regmap.set (sreg ctx r) v rs)
+  ∀ prog F m m' stk stk' f ctx sp rs r v,
+    match_stacks_inside prog F m m' stk stk' f ctx sp rs →
+    match_stacks_inside prog F m m' stk stk' f ctx sp (Regmap.set (sreg ctx r) v rs)
 
 def match_stacks_inside_set_resStatement : Prop :=
-  ∀ cfg prog F m m' stk stk' f ctx sp rs res v,
-    match_stacks_inside cfg prog F m m' stk stk' f ctx sp rs →
-    match_stacks_inside cfg prog F m m' stk stk' f ctx sp
+  ∀ prog F m m' stk stk' f ctx sp rs res v,
+    match_stacks_inside prog F m m' stk stk' f ctx sp rs →
+    match_stacks_inside prog F m m' stk stk' f ctx sp
       (regmap_setres (sbuiltinres ctx res) v rs)
 
 def match_stacks_inside_storeStatement : Prop :=
-  ∀ cfg prog F m m' stk stk' f' ctx sp' rs' chunk b ofs v m1 chunk' b' ofs' v' m1',
-    match_stacks_inside cfg prog F m m' stk stk' f' ctx sp' rs' →
+  ∀ prog F m m' stk stk' f' ctx sp' rs' chunk b ofs v m1 chunk' b' ofs' v' m1',
+    match_stacks_inside prog F m m' stk stk' f' ctx sp' rs' →
     Mem.store chunk m b ofs v = some m1 → Mem.store chunk' m' b' ofs' v' = some m1' →
-    match_stacks_inside cfg prog F m1 m1' stk stk' f' ctx sp' rs'
+    match_stacks_inside prog F m1 m1' stk stk' f' ctx sp' rs'
 
 def match_stacks_invariantStatement : Prop :=
-  ∀ cfg prog F m m' F1 m1 m1',
+  ∀ prog F m m' F1 m1 m1',
     inject_incr F F1 →
     ∀ stk stk' bound,
-      match_stacks cfg prog F m m' stk stk' bound →
+      match_stacks prog F m m' stk stk' bound →
       ∀ (INJ : ∀ b1 b2 delta, F1 b1 = some (b2, delta) → Plt b2 bound →
         F b1 = some (b2, delta))
         (PERM1 : ∀ b1 b2 delta ofs, F1 b1 = some (b2, delta) → Plt b2 bound →
@@ -467,7 +467,7 @@ def match_stacks_invariantStatement : Prop :=
           Mem.perm m1' b ofs .Cur .Freeable)
         (PERM3 : ∀ b ofs k p, Plt b bound → Mem.perm m1' b ofs k p →
           Mem.perm m' b ofs k p),
-        match_stacks cfg prog F1 m1 m1' stk stk' bound
+        match_stacks prog F1 m1 m1' stk stk' bound
 
 def min_alignment_soundStatement : Prop :=
   ∀ sz n, ZArith.BinInt.Z.divide (min_alignment sz) n → Mem.inj_offset_aligned n sz
