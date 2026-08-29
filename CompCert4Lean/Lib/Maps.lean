@@ -134,7 +134,52 @@ def rem' {A : Type} : positive → tree' A → tree A
   | .xI q, .Node110 l y => .Nodes (.Node110 l y)
   | .xI q, .Node111 l y r => Node (.Nodes l) (some y) (rem' q r)
 
-def remove' {A : Type} (p : positive) (m : tree' A) : tree A := rem' p m
+def remove' {A : Type} : positive → tree' A → tree A
+  | .xI q, .Node001 r =>
+      match remove' q r with
+      | .Empty => .Empty
+      | .Nodes r' => .Nodes (.Node001 r')
+  | .xI q, .Node010 y => .Nodes (.Node010 y)
+  | .xI q, .Node011 y r =>
+      match remove' q r with
+      | .Empty => .Nodes (.Node010 y)
+      | .Nodes r' => .Nodes (.Node011 y r')
+  | .xI q, .Node100 l => .Nodes (.Node100 l)
+  | .xI q, .Node101 l r =>
+      match remove' q r with
+      | .Empty => .Nodes (.Node100 l)
+      | .Nodes r' => .Nodes (.Node101 l r')
+  | .xI q, .Node110 l y => .Nodes (.Node110 l y)
+  | .xI q, .Node111 l y r =>
+      match remove' q r with
+      | .Empty => .Nodes (.Node110 l y)
+      | .Nodes r' => .Nodes (.Node111 l y r')
+  | .xO q, .Node001 r => .Nodes (.Node001 r)
+  | .xO q, .Node010 y => .Nodes (.Node010 y)
+  | .xO q, .Node011 y r => .Nodes (.Node011 y r)
+  | .xO q, .Node100 l =>
+      match remove' q l with
+      | .Empty => .Empty
+      | .Nodes l' => .Nodes (.Node100 l')
+  | .xO q, .Node101 l r =>
+      match remove' q l with
+      | .Empty => .Nodes (.Node001 r)
+      | .Nodes l' => .Nodes (.Node101 l' r)
+  | .xO q, .Node110 l y =>
+      match remove' q l with
+      | .Empty => .Nodes (.Node010 y)
+      | .Nodes l' => .Nodes (.Node110 l' y)
+  | .xO q, .Node111 l y r =>
+      match remove' q l with
+      | .Empty => .Nodes (.Node011 y r)
+      | .Nodes l' => .Nodes (.Node111 l' y r)
+  | .xH, .Node001 r => .Nodes (.Node001 r)
+  | .xH, .Node010 y => .Empty
+  | .xH, .Node011 _ r => .Nodes (.Node001 r)
+  | .xH, .Node100 l => .Nodes (.Node100 l)
+  | .xH, .Node101 l r => .Nodes (.Node101 l r)
+  | .xH, .Node110 l _ => .Nodes (.Node100 l)
+  | .xH, .Node111 l _ r => .Nodes (.Node101 l r)
 
 def remove {A : Type} (p : positive) (m : tree A) : tree A :=
   match m with
@@ -283,7 +328,75 @@ def map_filter1_nonopt {A B : Type} (f : A → Option B) (m : tree A) : tree B :
       Node lrec (match o with | none => none | some a => f a) rrec) m
 
 def map_filter1 {A B : Type} (f : A → Option B) (m : tree A) : tree B :=
-  map_filter1_nonopt f m
+  match m with
+  | .Empty => .Empty
+  | .Nodes m' =>
+      let rec go : tree' A → tree B
+        | .Node001 r =>
+            match go r with
+            | .Empty => .Empty
+            | .Nodes r' => .Nodes (.Node001 r')
+        | .Node010 x =>
+            match f x with
+            | some y => .Nodes (.Node010 y)
+            | none => .Empty
+        | .Node011 x r =>
+            match f x with
+            | some y =>
+                match go r with
+                | .Empty => .Nodes (.Node010 y)
+                | .Nodes r' => .Nodes (.Node011 y r')
+            | none =>
+                match go r with
+                | .Empty => .Empty
+                | .Nodes r' => .Nodes (.Node001 r')
+        | .Node100 l =>
+            match go l with
+            | .Empty => .Empty
+            | .Nodes l' => .Nodes (.Node100 l')
+        | .Node101 l r =>
+            match go l with
+            | .Empty =>
+                match go r with
+                | .Empty => .Empty
+                | .Nodes r' => .Nodes (.Node001 r')
+            | .Nodes l' =>
+                match go r with
+                | .Empty => .Nodes (.Node100 l')
+                | .Nodes r' => .Nodes (.Node101 l' r')
+        | .Node110 l x =>
+            match go l with
+            | .Empty =>
+                match f x with
+                | some y => .Nodes (.Node010 y)
+                | none => .Empty
+            | .Nodes l' =>
+                match f x with
+                | some y => .Nodes (.Node110 l' y)
+                | none => .Nodes (.Node100 l')
+        | .Node111 l x r =>
+            match go l with
+            | .Empty =>
+                match f x with
+                | some y =>
+                    match go r with
+                    | .Empty => .Nodes (.Node010 y)
+                    | .Nodes r' => .Nodes (.Node011 y r')
+                | none =>
+                    match go r with
+                    | .Empty => .Empty
+                    | .Nodes r' => .Nodes (.Node001 r')
+            | .Nodes l' =>
+                match f x with
+                | some y =>
+                    match go r with
+                    | .Empty => .Nodes (.Node110 l' y)
+                    | .Nodes r' => .Nodes (.Node111 l' y r')
+                | none =>
+                    match go r with
+                    | .Empty => .Nodes (.Node100 l')
+                    | .Nodes r' => .Nodes (.Node101 l' r')
+      go m'
 
 def beq' {A : Type} (beqA : A → A → Bool) : tree' A → tree' A → Bool
   | .Node001 r₁, .Node001 r₂ => beq' beqA r₁ r₂
@@ -322,21 +435,119 @@ def beq_correct_boolStatement : Prop :=
         | _, _ => false
         ) = true
 
-def combineOpt {A B C : Type} (f : Option A → Option B → Option C)
-    (o1 : Option A) (o2 : Option B) : Option C :=
-  match o1, o2 with
-  | none, none => none
-  | none, some b => f none (some b)
-  | some a, none => f (some a) none
-  | some a, some b => f (some a) (some b)
-
 def combine {A B C : Type} (f : Option A → Option B → Option C)
     (m1 : tree A) (m2 : tree B) : tree C :=
-  tree_rec2 .Empty
-    (map_filter1 (fun b => f none (some b)))
-    (map_filter1 (fun a => f (some a) none))
-    (fun l1 o1 r1 l2 o2 r2 lrec rrec => Node lrec (combineOpt f o1 o2) rrec)
-    m1 m2
+  let combine_l := map_filter1 (fun a => f (some a) none)
+  let combine_r := map_filter1 (fun b => f none (some b))
+  match m1 with
+  | .Empty =>
+      match m2 with
+      | .Empty => .Empty
+      | .Nodes _ => combine_r m2
+  | .Nodes a' =>
+      match m2 with
+      | .Empty => combine_l m1
+      | .Nodes b' =>
+          let rec go : tree' A → tree' B → tree C
+            | .Node001 l1, .Node001 l2 =>
+                Node .Empty none (go l1 l2)
+            | .Node001 l1, .Node010 x2 =>
+                Node .Empty (f none (some x2)) (combine_l (.Nodes l1))
+            | .Node001 l1, .Node011 x2 r2 =>
+                Node .Empty (f none (some x2)) (go l1 r2)
+            | .Node001 l1, .Node100 l2 =>
+                Node (combine_r (.Nodes l2)) none (combine_l (.Nodes l1))
+            | .Node001 l1, .Node101 l2 r2 =>
+                Node (combine_r (.Nodes l2)) none (go l1 r2)
+            | .Node001 l1, .Node110 l2 x2 =>
+                Node (combine_r (.Nodes l2)) (f none (some x2)) (combine_l (.Nodes l1))
+            | .Node001 l1, .Node111 l2 x2 r2 =>
+                Node (combine_r (.Nodes l2)) (f none (some x2)) (go l1 r2)
+            | .Node010 x1, .Node001 l2 =>
+                Node .Empty (f (some x1) none) (combine_r (.Nodes l2))
+            | .Node010 x1, .Node010 x2 =>
+                Node .Empty (f (some x1) (some x2)) .Empty
+            | .Node010 x1, .Node011 x2 r2 =>
+                Node .Empty (f (some x1) (some x2)) (combine_r (.Nodes r2))
+            | .Node010 x1, .Node100 l2 =>
+                Node (combine_r (.Nodes l2)) (f (some x1) none) .Empty
+            | .Node010 x1, .Node101 l2 r2 =>
+                Node (combine_r (.Nodes l2)) (f (some x1) none) (combine_r (.Nodes r2))
+            | .Node010 x1, .Node110 l2 x2 =>
+                Node (combine_r (.Nodes l2)) (f (some x1) (some x2)) .Empty
+            | .Node010 x1, .Node111 l2 x2 r2 =>
+                Node (combine_r (.Nodes l2)) (f (some x1) (some x2)) (combine_r (.Nodes r2))
+            | .Node011 x1 r1, .Node001 l2 =>
+                Node .Empty (f (some x1) none) (go r1 l2)
+            | .Node011 x1 r1, .Node010 x2 =>
+                Node .Empty (f (some x1) (some x2)) (combine_l (.Nodes r1))
+            | .Node011 x1 r1, .Node011 x2 r2 =>
+                Node .Empty (f (some x1) (some x2)) (go r1 r2)
+            | .Node011 x1 r1, .Node100 l2 =>
+                Node (combine_r (.Nodes l2)) (f (some x1) none) (combine_l (.Nodes r1))
+            | .Node011 x1 r1, .Node101 l2 r2 =>
+                Node (combine_r (.Nodes l2)) (f (some x1) none) (go r1 r2)
+            | .Node011 x1 r1, .Node110 l2 x2 =>
+                Node (combine_r (.Nodes l2)) (f (some x1) (some x2)) (combine_l (.Nodes r1))
+            | .Node011 x1 r1, .Node111 l2 x2 r2 =>
+                Node (combine_r (.Nodes l2)) (f (some x1) (some x2)) (go r1 r2)
+            | .Node100 l1, .Node001 l2 =>
+                Node (combine_l (.Nodes l1)) none (combine_r (.Nodes l2))
+            | .Node100 l1, .Node010 x2 =>
+                Node (combine_l (.Nodes l1)) (f none (some x2)) .Empty
+            | .Node100 l1, .Node011 x2 r2 =>
+                Node (combine_l (.Nodes l1)) (f none (some x2)) (combine_r (.Nodes r2))
+            | .Node100 l1, .Node100 l2 =>
+                Node (go l1 l2) none .Empty
+            | .Node100 l1, .Node101 l2 r2 =>
+                Node (go l1 l2) none (combine_r (.Nodes r2))
+            | .Node100 l1, .Node110 l2 x2 =>
+                Node (go l1 l2) (f none (some x2)) .Empty
+            | .Node100 l1, .Node111 l2 x2 r2 =>
+                Node (go l1 l2) (f none (some x2)) (combine_r (.Nodes r2))
+            | .Node101 l1 r1, .Node001 l2 =>
+                Node (combine_l (.Nodes l1)) none (go r1 l2)
+            | .Node101 l1 r1, .Node010 x2 =>
+                Node (combine_l (.Nodes l1)) (f none (some x2)) (combine_l (.Nodes r1))
+            | .Node101 l1 r1, .Node011 x2 r2 =>
+                Node (combine_l (.Nodes l1)) (f none (some x2)) (go r1 r2)
+            | .Node101 l1 r1, .Node100 l2 =>
+                Node (go l1 l2) none (combine_l (.Nodes r1))
+            | .Node101 l1 r1, .Node101 l2 r2 =>
+                Node (go l1 l2) none (go r1 r2)
+            | .Node101 l1 r1, .Node110 l2 x2 =>
+                Node (go l1 l2) (f none (some x2)) (combine_l (.Nodes r1))
+            | .Node101 l1 r1, .Node111 l2 x2 r2 =>
+                Node (go l1 l2) (f none (some x2)) (go r1 r2)
+            | .Node110 l1 x1, .Node001 l2 =>
+                Node (combine_l (.Nodes l1)) (f (some x1) none) (combine_r (.Nodes l2))
+            | .Node110 l1 x1, .Node010 x2 =>
+                Node (combine_l (.Nodes l1)) (f (some x1) (some x2)) .Empty
+            | .Node110 l1 x1, .Node011 x2 r2 =>
+                Node (combine_l (.Nodes l1)) (f (some x1) (some x2)) (combine_r (.Nodes r2))
+            | .Node110 l1 x1, .Node100 l2 =>
+                Node (go l1 l2) (f (some x1) none) .Empty
+            | .Node110 l1 x1, .Node101 l2 r2 =>
+                Node (go l1 l2) (f (some x1) none) (combine_r (.Nodes r2))
+            | .Node110 l1 x1, .Node110 l2 x2 =>
+                Node (go l1 l2) (f (some x1) (some x2)) .Empty
+            | .Node110 l1 x1, .Node111 l2 x2 r2 =>
+                Node (go l1 l2) (f (some x1) (some x2)) (combine_r (.Nodes r2))
+            | .Node111 l1 x1 r1, .Node001 l2 =>
+                Node (combine_l (.Nodes l1)) (f (some x1) none) (go r1 l2)
+            | .Node111 l1 x1 r1, .Node010 x2 =>
+                Node (combine_l (.Nodes l1)) (f (some x1) (some x2)) (combine_l (.Nodes r1))
+            | .Node111 l1 x1 r1, .Node011 x2 r2 =>
+                Node (combine_l (.Nodes l1)) (f (some x1) (some x2)) (go r1 r2)
+            | .Node111 l1 x1 r1, .Node100 l2 =>
+                Node (go l1 l2) (f (some x1) none) (combine_l (.Nodes r1))
+            | .Node111 l1 x1 r1, .Node101 l2 r2 =>
+                Node (go l1 l2) (f (some x1) none) (go r1 r2)
+            | .Node111 l1 x1 r1, .Node110 l2 x2 =>
+                Node (go l1 l2) (f (some x1) (some x2)) (combine_l (.Nodes r1))
+            | .Node111 l1 x1 r1, .Node111 l2 x2 r2 =>
+                Node (go l1 l2) (f (some x1) (some x2)) (go r1 r2)
+          go a' b'
 
 def xelements' {A : Type} : tree' A → positive → List (positive × A) → List (positive × A)
   | .Node001 r, i, k => xelements' r (.xI i) k
@@ -565,17 +776,69 @@ theorem unroll_tree_rec2_NN_proof : unroll_tree_rec2_NNStatement := by
 
 private theorem get_map_filter1_nodes_proof {A B : Type} (f : A → Option B)
     (m : tree' A) (i : positive) :
-    get i (map_filter1 f (.Nodes m)) = Option.bind (get' i m) f := by
-  induction m generalizing i <;> cases i <;>
-    simp_all [map_filter1, map_filter1_nonopt, tree_rec, tree_rec', get',
-      getNode_equation, getNodes_equation, getEmpty_equation, Option.bind]
+    get i (map_filter1.go f m) = Option.bind (get' i m) f := by
+  induction m generalizing i with
+  | Node001 r ih =>
+      cases i with
+      | xH => cases h : map_filter1.go f r <;>
+          simp [map_filter1, map_filter1.go, h, get, get', Option.bind]
+      | xO q => cases h : map_filter1.go f r <;>
+          simp [map_filter1, map_filter1.go, h, get, get', Option.bind]
+      | xI q => cases h : map_filter1.go f r <;>
+          simpa [map_filter1.go, h, get, get', Option.bind] using ih q
+  | Node010 x =>
+      cases i <;> cases h : f x <;>
+        simp [map_filter1, map_filter1.go, h, get, get', Option.bind]
+  | Node011 x r ih =>
+      cases i with
+      | xH => cases hf : f x <;> cases hr : map_filter1.go f r <;>
+          simp [map_filter1, map_filter1.go, hf, hr, get, get', Option.bind]
+      | xO q => cases hf : f x <;> cases hr : map_filter1.go f r <;>
+          simp [map_filter1, map_filter1.go, hf, hr, get, get', Option.bind]
+      | xI q => cases hf : f x <;> cases hr : map_filter1.go f r <;>
+          simpa [map_filter1.go, hf, hr, get, get', Option.bind] using ih q
+  | Node100 l ih =>
+      cases i with
+      | xH => cases h : map_filter1.go f l <;>
+          simp [map_filter1, map_filter1.go, h, get, get', Option.bind]
+      | xO q => cases h : map_filter1.go f l <;>
+          simpa [map_filter1.go, h, get, get', Option.bind] using ih q
+      | xI q => cases h : map_filter1.go f l <;>
+          simp [map_filter1, map_filter1.go, h, get, get', Option.bind]
+  | Node101 l r ihl ihr =>
+      cases i with
+      | xH => cases hl : map_filter1.go f l <;> cases hr : map_filter1.go f r <;>
+          simp [map_filter1, map_filter1.go, hl, hr, get, get', Option.bind]
+      | xO q => cases hl : map_filter1.go f l <;> cases hr : map_filter1.go f r <;>
+          simpa [map_filter1.go, hl, hr, get, get', Option.bind] using ihl q
+      | xI q => cases hl : map_filter1.go f l <;> cases hr : map_filter1.go f r <;>
+          simpa [map_filter1.go, hl, hr, get, get', Option.bind] using ihr q
+  | Node110 l x ih =>
+      cases i with
+      | xH => cases hl : map_filter1.go f l <;> cases hf : f x <;>
+          simp [map_filter1, map_filter1.go, hl, hf, get, get', Option.bind]
+      | xO q => cases hl : map_filter1.go f l <;> cases hf : f x <;>
+          simpa [map_filter1.go, hl, hf, get, get', Option.bind] using ih q
+      | xI q => cases hl : map_filter1.go f l <;> cases hf : f x <;>
+          simp [map_filter1, map_filter1.go, hl, hf, get, get', Option.bind]
+  | Node111 l x r ihl ihr =>
+      cases i with
+      | xH => cases hl : map_filter1.go f l <;> cases hf : f x <;>
+          cases hr : map_filter1.go f r <;>
+          simp [map_filter1, map_filter1.go, hl, hf, hr, get, get', Option.bind]
+      | xO q => cases hl : map_filter1.go f l <;> cases hf : f x <;>
+          cases hr : map_filter1.go f r <;>
+          simpa [map_filter1.go, hl, hf, hr, get, get', Option.bind] using ihl q
+      | xI q => cases hl : map_filter1.go f l <;> cases hf : f x <;>
+          cases hr : map_filter1.go f r <;>
+          simpa [map_filter1.go, hl, hf, hr, get, get', Option.bind] using ihr q
 
 private theorem get_map_filter1_proof {A B : Type} (f : A → Option B)
     (m : tree A) (i : positive) :
     get i (map_filter1 f m) = Option.bind (get i m) f := by
   cases m with
   | Empty => rfl
-  | Nodes m => exact get_map_filter1_nodes_proof f m i
+  | Nodes m => simpa [map_filter1, get] using get_map_filter1_nodes_proof f m i
 
 theorem gcombine_l_proof : gcombine_lStatement := by
   intro A B C f hnone m i
@@ -587,85 +850,164 @@ theorem gcombine_r_proof : gcombine_rStatement := by
   rw [get_map_filter1_proof]
   cases hget : get i m <;> simp [Option.bind, hget, hnone]
 
+private theorem get_combine_go_proof {A B C : Type}
+    (f : Option A → Option B → Option C) (hnone : f none none = none)
+    (a : tree' A) (b : tree' B) (i : positive) :
+    get i (combine.go f (map_filter1 (fun x => f (some x) none))
+      (map_filter1 (fun x => f none (some x))) a b) =
+      f (get i (.Nodes a)) (get i (.Nodes b)) := by
+  induction a generalizing b i with
+  | Node001 l ih =>
+      cases b <;> cases i <;>
+        simp_all [combine.go, get', getNode_equation, getNodes_equation, getEmpty_equation,
+          get_map_filter1_proof, Option.bind, hnone] <;>
+        try cases h : get' _ _ <;> simp_all [Option.bind, h, hnone]
+  | Node010 x =>
+      cases b <;> cases i <;>
+        simp_all [combine.go, get', getNode_equation, getNodes_equation, getEmpty_equation,
+          get_map_filter1_proof, Option.bind, hnone] <;>
+        try cases h : get' _ _ <;> simp_all [Option.bind, h, hnone]
+  | Node011 x r ih =>
+      cases b <;> cases i <;>
+        simp_all [combine.go, get', getNode_equation, getNodes_equation, getEmpty_equation,
+          get_map_filter1_proof, Option.bind, hnone] <;>
+        try cases h : get' _ _ <;> simp_all [Option.bind, h, hnone]
+  | Node100 l ih =>
+      cases b <;> cases i <;>
+        simp_all [combine.go, get', getNode_equation, getNodes_equation, getEmpty_equation,
+          get_map_filter1_proof, Option.bind, hnone] <;>
+        try cases h : get' _ _ <;> simp_all [Option.bind, h, hnone]
+  | Node101 l r ihl ihr =>
+      cases b <;> cases i <;>
+        simp_all [combine.go, get', getNode_equation, getNodes_equation, getEmpty_equation,
+          get_map_filter1_proof, Option.bind, hnone] <;>
+        try cases h : get' _ _ <;> simp_all [Option.bind, h, hnone]
+  | Node110 l x ih =>
+      cases b <;> cases i <;>
+        simp_all [combine.go, get', getNode_equation, getNodes_equation, getEmpty_equation,
+          get_map_filter1_proof, Option.bind, hnone] <;>
+        try cases h : get' _ _ <;> simp_all [Option.bind, h, hnone]
+  | Node111 l x r ihl ihr =>
+      cases b <;> cases i <;>
+        simp_all [combine.go, get', getNode_equation, getNodes_equation, getEmpty_equation,
+          get_map_filter1_proof, Option.bind, hnone] <;>
+        try cases h : get' _ _ <;> simp_all [Option.bind, h, hnone]
+
 theorem gcombine_proof : gcombineStatement := by
-  intro A B C f hnone m1
-  have hm1 : PLift (∀ (m2 : t B) (i : positive),
-      get i (combine f m1 m2) = f (get i m1) (get i m2)) := by
-    refine tree_ind
-      (P := fun m1 => PLift (∀ (m2 : t B) (i : positive),
-        get i (combine f m1 m2) = f (get i m1) (get i m2))) ?_ ?_ m1
-    · refine ⟨?_⟩
-      intro m2
-      have hm2 : PLift (∀ i : positive,
-          get i (combine f Empty m2) = f (get i Empty) (get i m2)) := by
-        refine tree_ind
-          (P := fun m2 => PLift (∀ i : positive,
-            get i (combine f Empty m2) = f (get i Empty) (get i m2))) ?_ ?_ m2
-        · refine ⟨?_⟩
-          intro i
-          simpa [combine, tree_rec2, get] using hnone.symm
-        · intro l2 _ o2 r2 _ hne2
-          refine ⟨?_⟩
-          intro i
-          unfold combine
-          rw [unroll_tree_rec2_EN_proof _ _ _ _ _ _ _ hne2]
-          simpa [get] using gcombine_r_proof f hnone (Node l2 o2 r2) i
-      exact hm2.down
-    · intro l1 il o1 r1 ir hne1
-      refine ⟨?_⟩
-      intro m2
-      have hm2 : PLift (∀ i : positive,
-          get i (combine f (Node l1 o1 r1) m2) =
-            f (get i (Node l1 o1 r1)) (get i m2)) := by
-        refine tree_ind
-          (P := fun m2 => PLift (∀ i : positive,
-            get i (combine f (Node l1 o1 r1) m2) =
-              f (get i (Node l1 o1 r1)) (get i m2))) ?_ ?_ m2
-        · refine ⟨?_⟩
-          intro i
-          unfold combine
-          rw [unroll_tree_rec2_NE_proof _ _ _ _ _ _ _ hne1]
-          simpa [get] using gcombine_l_proof f hnone (Node l1 o1 r1) i
-        · intro l2 _ o2 r2 _ hne2
-          refine ⟨?_⟩
-          intro i
-          unfold combine
-          rw [unroll_tree_rec2_NN_proof _ _ _ _ _ _ _ _ _ _ hne1 hne2]
-          rw [getNode_equation, getNode_equation, getNode_equation]
-          cases i with
-          | xH => cases o1 <;> cases o2 <;> simp [combineOpt, hnone]
-          | xO i => simpa [combine] using il.down l2 i
-          | xI i => simpa [combine] using ir.down r2 i
-      exact hm2.down
-  exact hm1.down
+  intro A B C f hnone m1 m2 i
+  cases m1 with
+  | Empty =>
+      cases m2 with
+      | Empty => simp [combine, get, hnone]
+      | Nodes b =>
+          simpa [combine, get] using
+            (gcombine_r_proof f hnone (.Nodes b) i)
+  | Nodes a =>
+      cases m2 with
+      | Empty =>
+          simpa [combine, get] using
+            (gcombine_l_proof f hnone (.Nodes a) i)
+      | Nodes b =>
+          simpa [combine, get] using get_combine_go_proof f hnone a b i
 
 theorem gNode_proof : gNodeStatement := by
   intro A i l o r
   cases i <;> cases l <;> cases o <;> cases r <;> rfl
 
 private theorem getRemove'_proof {A : Type} (x y : positive) (m : tree' A) :
-    get x (rem' y m) = if h : x = y then none else get' x m := by
-  induction x generalizing y m with
+    get x (remove' y m) = if h : x = y then none else get' x m := by
+  induction y generalizing x m with
   | xH =>
-      cases y <;> cases m <;> simp [rem', get', getNode_equation, getNodes_equation, getEmpty_equation]
-  | xO x ih =>
-      cases y with
-      | xH => cases m <;> simp [rem', get', getNode_equation, getNodes_equation, getEmpty_equation]
-      | xO y =>
-          cases m <;> simp [rem', get', getNode_equation, getNodes_equation, getEmpty_equation, ih]
-      | xI y => cases m <;> simp [rem', get', getNode_equation, getNodes_equation, getEmpty_equation]
-  | xI x ih =>
-      cases y with
-      | xH => cases m <;> simp [rem', get', getNode_equation, getNodes_equation, getEmpty_equation]
-      | xO y => cases m <;> simp [rem', get', getNode_equation, getNodes_equation, getEmpty_equation]
-      | xI y =>
-          cases m <;> simp [rem', get', getNode_equation, getNodes_equation, getEmpty_equation, ih]
+      cases x <;> cases m <;>
+        simp [remove', get', getNode_equation, getNodes_equation, getEmpty_equation]
+  | xO q ih =>
+      cases x with
+      | xH =>
+          cases m with
+          | Node001 r => simp [remove', get', getNode_equation, getNodes_equation, getEmpty_equation]
+          | Node010 y => simp [remove', get', getNode_equation, getNodes_equation, getEmpty_equation]
+          | Node011 y r => simp [remove', get', getNode_equation, getNodes_equation, getEmpty_equation]
+          | Node100 l => cases h : remove' q l <;>
+              simp [remove', h, get', getNode_equation, getNodes_equation, getEmpty_equation]
+          | Node101 l r => cases h : remove' q l <;>
+              simp [remove', h, get', getNode_equation, getNodes_equation, getEmpty_equation]
+          | Node110 l y => cases h : remove' q l <;>
+              simp [remove', h, get', getNode_equation, getNodes_equation, getEmpty_equation]
+          | Node111 l y r => cases h : remove' q l <;>
+              simp [remove', h, get', getNode_equation, getNodes_equation, getEmpty_equation]
+      | xO p =>
+          cases m with
+          | Node001 r => simp [remove', get', getNode_equation, getNodes_equation, getEmpty_equation]
+          | Node010 y => simp [remove', get', getNode_equation, getNodes_equation, getEmpty_equation]
+          | Node011 y r => simp [remove', get', getNode_equation, getNodes_equation, getEmpty_equation]
+          | Node100 l => cases h : remove' q l <;>
+              simpa [remove', h, get', getNode_equation, getNodes_equation, getEmpty_equation] using ih p l
+          | Node101 l r => cases h : remove' q l <;>
+              simpa [remove', h, get', getNode_equation, getNodes_equation, getEmpty_equation] using ih p l
+          | Node110 l y => cases h : remove' q l <;>
+              simpa [remove', h, get', getNode_equation, getNodes_equation, getEmpty_equation] using ih p l
+          | Node111 l y r => cases h : remove' q l <;>
+              simpa [remove', h, get', getNode_equation, getNodes_equation, getEmpty_equation] using ih p l
+      | xI p =>
+          cases m with
+          | Node001 r => simp [remove', get', getNode_equation, getNodes_equation, getEmpty_equation]
+          | Node010 y => simp [remove', get', getNode_equation, getNodes_equation, getEmpty_equation]
+          | Node011 y r => simp [remove', get', getNode_equation, getNodes_equation, getEmpty_equation]
+          | Node100 l => cases h : remove' q l <;>
+              simp [remove', h, get', getNode_equation, getNodes_equation, getEmpty_equation]
+          | Node101 l r => cases h : remove' q l <;>
+              simp [remove', h, get', getNode_equation, getNodes_equation, getEmpty_equation]
+          | Node110 l y => cases h : remove' q l <;>
+              simp [remove', h, get', getNode_equation, getNodes_equation, getEmpty_equation]
+          | Node111 l y r => cases h : remove' q l <;>
+              simp [remove', h, get', getNode_equation, getNodes_equation, getEmpty_equation]
+  | xI q ih =>
+      cases x with
+      | xH =>
+          cases m with
+          | Node001 r => cases h : remove' q r <;>
+              simp [remove', h, get', getNode_equation, getNodes_equation, getEmpty_equation]
+          | Node010 y => simp [remove', get', getNode_equation, getNodes_equation, getEmpty_equation]
+          | Node011 y r => cases h : remove' q r <;>
+              simp [remove', h, get', getNode_equation, getNodes_equation, getEmpty_equation]
+          | Node100 l => simp [remove', get', getNode_equation, getNodes_equation, getEmpty_equation]
+          | Node101 l r => cases h : remove' q r <;>
+              simp [remove', h, get', getNode_equation, getNodes_equation, getEmpty_equation]
+          | Node110 l y => simp [remove', get', getNode_equation, getNodes_equation, getEmpty_equation]
+          | Node111 l y r => cases h : remove' q r <;>
+              simp [remove', h, get', getNode_equation, getNodes_equation, getEmpty_equation]
+      | xO p =>
+          cases m with
+          | Node001 r => cases h : remove' q r <;>
+              simp [remove', h, get', getNode_equation, getNodes_equation, getEmpty_equation]
+          | Node010 y => simp [remove', get', getNode_equation, getNodes_equation, getEmpty_equation]
+          | Node011 y r => cases h : remove' q r <;>
+              simp [remove', h, get', getNode_equation, getNodes_equation, getEmpty_equation]
+          | Node100 l => simp [remove', get', getNode_equation, getNodes_equation, getEmpty_equation]
+          | Node101 l r => cases h : remove' q r <;>
+              simp [remove', h, get', getNode_equation, getNodes_equation, getEmpty_equation]
+          | Node110 l y => simp [remove', get', getNode_equation, getNodes_equation, getEmpty_equation]
+          | Node111 l y r => cases h : remove' q r <;>
+              simp [remove', h, get', getNode_equation, getNodes_equation, getEmpty_equation]
+      | xI p =>
+          cases m with
+          | Node001 r => cases h : remove' q r <;>
+              simpa [remove', h, get', getNode_equation, getNodes_equation, getEmpty_equation] using ih p r
+          | Node010 y => simp [remove', get', getNode_equation, getNodes_equation, getEmpty_equation]
+          | Node011 y r => cases h : remove' q r <;>
+              simpa [remove', h, get', getNode_equation, getNodes_equation, getEmpty_equation] using ih p r
+          | Node100 l => simp [remove', get', getNode_equation, getNodes_equation, getEmpty_equation]
+          | Node101 l r => cases h : remove' q r <;>
+              simpa [remove', h, get', getNode_equation, getNodes_equation, getEmpty_equation] using ih p r
+          | Node110 l y => simp [remove', get', getNode_equation, getNodes_equation, getEmpty_equation]
+          | Node111 l y r => cases h : remove' q r <;>
+              simpa [remove', h, get', getNode_equation, getNodes_equation, getEmpty_equation] using ih p r
 
 private theorem getRemove_proof {A : Type} (x y : positive) (m : tree A) :
     get x (remove y m) = if h : x = y then none else get x m := by
   cases m with
   | Empty => simp [remove, get]
-  | Nodes m => simpa [remove, get, remove'] using getRemove'_proof x y m
+  | Nodes m => exact getRemove'_proof x y m
 
 theorem getRemove_equation {A : Type} (x y : positive) (m : tree A) :
     get x (remove y m) = if h : x = y then none else get x m :=
@@ -1457,26 +1799,22 @@ private theorem cardinal_eq_treeCard {A : Type} (m : PTree.tree A) :
 
 private theorem treeCard_remove_lt {A : Type} (p : positive) (m : PTree.tree' A)
     (v : A) (h : PTree.get' p m = some v) :
-    treeCard (PTree.rem' p m) < treeCard' m := by
+    treeCard (PTree.remove' p m) < treeCard' m := by
   induction p generalizing m with
   | xH =>
-      cases m <;> simp_all [PTree.get', PTree.rem', treeCard, treeCard']
+      cases m <;> simp_all [PTree.get', PTree.remove', treeCard, treeCard']
   | xO p ih =>
-      cases m <;> simp_all [PTree.get', PTree.rem', treeCard, treeCard']
+      cases m <;> simp_all [PTree.get', PTree.remove', treeCard, treeCard']
       all_goals
-        change treeCard (PTree.Node _ _ _) < _
-        rw [treeCard_node]
-        simp only [treeCard, optionCard]
         have decrease := ih _ h
-        omega
+        cases hrem : PTree.remove' p _ <;>
+          simp [PTree.remove', hrem, treeCard, treeCard'] at decrease ⊢ <;> omega
   | xI p ih =>
-      cases m <;> simp_all [PTree.get', PTree.rem', treeCard, treeCard']
+      cases m <;> simp_all [PTree.get', PTree.remove', treeCard, treeCard']
       all_goals
-        change treeCard (PTree.Node _ _ _) < _
-        rw [treeCard_node]
-        simp only [treeCard, optionCard]
         have decrease := ih _ h
-        omega
+        cases hrem : PTree.remove' p _ <;>
+          simp [PTree.remove', hrem, treeCard, treeCard'] at decrease ⊢ <;> omega
 
 theorem cardinal_remove_proof : cardinal_remove := by
   intro V x m y h
