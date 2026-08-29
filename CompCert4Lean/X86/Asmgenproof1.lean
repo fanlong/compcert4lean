@@ -124,111 +124,41 @@ def compare_longs_specStatement : Prop :=
     (∀ r, data_preg r = true → rs' r = rs r)
 
 def divu_modu_existsStatement : Prop :=
-  let divmodu2 : Int32 → Int32 → Int32 → Option (Int32 × Int32) :=
-    fun nhi nlo d =>
-      if CompCert4Lean.Lib.Integers.Int.eq d CompCert4Lean.Lib.Integers.Int.zero then none
-      else
-        let qr := ZArith.BinInt.Z.div_eucl
-          (ZArith.BinInt.Z.add
-            (ZArith.BinInt.Z.mul
-              (CompCert4Lean.Lib.Integers.Int.unsigned nhi)
-              CompCert4Lean.Lib.Integers.Int.modulus)
-            (CompCert4Lean.Lib.Integers.Int.unsigned nlo))
-          (CompCert4Lean.Lib.Integers.Int.unsigned d)
-        match CompCert4Lean.Lib.Coqlib.zle qr.1
-          CompCert4Lean.Lib.Integers.Int.max_unsigned with
-        | .left _ => some (CompCert4Lean.Lib.Integers.Int.repr qr.1,
-            CompCert4Lean.Lib.Integers.Int.repr qr.2)
-        | .right _ => none
   ∀ (v1 v2 : Val),
     Val.divu v1 v2 ≠ none ∨ Val.modu v1 v2 ≠ none →
     ∃ (n d q r : Int32),
       v1 = .Vint n ∧ v2 = .Vint d ∧
-      divmodu2 CompCert4Lean.Lib.Integers.Int.zero n d = some (q, r) ∧
+      CompCert4Lean.Lib.Integers.Int.divmodu2
+        CompCert4Lean.Lib.Integers.Int.zero n d = some (q, r) ∧
       Val.divu v1 v2 = some (.Vint q) ∧ Val.modu v1 v2 = some (.Vint r)
 
 def divs_mods_existsStatement : Prop :=
-  let divmods2 : Int32 → Int32 → Int32 → Option (Int32 × Int32) :=
-    fun nhi nlo d =>
-      if CompCert4Lean.Lib.Integers.Int.eq d CompCert4Lean.Lib.Integers.Int.zero then none
-      else
-        let n := ZArith.BinInt.Z.add
-          (ZArith.BinInt.Z.mul
-            (CompCert4Lean.Lib.Integers.Int.signed nhi)
-            CompCert4Lean.Lib.Integers.Int.modulus)
-          (CompCert4Lean.Lib.Integers.Int.unsigned nlo)
-        let sd := CompCert4Lean.Lib.Integers.Int.signed d
-        let q := ZArith.BinInt.Z.quot n sd
-        let r := ZArith.BinInt.Z.sub n (ZArith.BinInt.Z.mul q sd)
-        match CompCert4Lean.Lib.Coqlib.zle
-            CompCert4Lean.Lib.Integers.Int.min_signed q,
-          CompCert4Lean.Lib.Coqlib.zle q
-            CompCert4Lean.Lib.Integers.Int.max_signed with
-        | .left _, .left _ => some (CompCert4Lean.Lib.Integers.Int.repr q,
-            CompCert4Lean.Lib.Integers.Int.repr r)
-        | _, _ => none
   ∀ (v1 v2 : Val),
     Val.divs v1 v2 ≠ none ∨ Val.mods v1 v2 ≠ none →
     ∃ (nh nl d q r : Int32),
       Val.shr v1 (.Vint (CompCert4Lean.Lib.Integers.Int.repr
         (ZArith.BinInt.Z.of_nat 31))) = .Vint nh ∧
       v1 = .Vint nl ∧ v2 = .Vint d ∧
-      divmods2 nh nl d = some (q, r) ∧
+      CompCert4Lean.Lib.Integers.Int.divmods2 nh nl d = some (q, r) ∧
       Val.divs v1 v2 = some (.Vint q) ∧ Val.mods v1 v2 = some (.Vint r)
 
 def divlu_modlu_existsStatement : Prop :=
-  let divmodu2 : Int64 → Int64 → Int64 → Option (Int64 × Int64) :=
-    fun nhi nlo d =>
-      if CompCert4Lean.Lib.Integers.Int64.eq d
-          CompCert4Lean.Lib.Integers.Int64.zero then none
-      else
-        let qr := ZArith.BinInt.Z.div_eucl
-          (ZArith.BinInt.Z.add
-            (ZArith.BinInt.Z.mul
-              (CompCert4Lean.Lib.Integers.Int64.unsigned nhi)
-              CompCert4Lean.Lib.Integers.Int64.modulus)
-            (CompCert4Lean.Lib.Integers.Int64.unsigned nlo))
-          (CompCert4Lean.Lib.Integers.Int64.unsigned d)
-        match CompCert4Lean.Lib.Coqlib.zle qr.1
-          CompCert4Lean.Lib.Integers.Int64.max_unsigned with
-        | .left _ => some (CompCert4Lean.Lib.Integers.Int64.repr qr.1,
-            CompCert4Lean.Lib.Integers.Int64.repr qr.2)
-        | .right _ => none
   ∀ (v1 v2 : Val),
     Val.divlu v1 v2 ≠ none ∨ Val.modlu v1 v2 ≠ none →
     ∃ (n d q r : Int64),
       v1 = .Vlong n ∧ v2 = .Vlong d ∧
-      divmodu2 CompCert4Lean.Lib.Integers.Int64.zero n d = some (q, r) ∧
+      CompCert4Lean.Lib.Integers.Int64.divmodu2
+        CompCert4Lean.Lib.Integers.Int64.zero n d = some (q, r) ∧
       Val.divlu v1 v2 = some (.Vlong q) ∧ Val.modlu v1 v2 = some (.Vlong r)
 
 def divls_modls_existsStatement : Prop :=
-  let divmods2 : Int64 → Int64 → Int64 → Option (Int64 × Int64) :=
-    fun nhi nlo d =>
-      if CompCert4Lean.Lib.Integers.Int64.eq d
-          CompCert4Lean.Lib.Integers.Int64.zero then none
-      else
-        let n := ZArith.BinInt.Z.add
-          (ZArith.BinInt.Z.mul
-            (CompCert4Lean.Lib.Integers.Int64.signed nhi)
-            CompCert4Lean.Lib.Integers.Int64.modulus)
-          (CompCert4Lean.Lib.Integers.Int64.unsigned nlo)
-        let sd := CompCert4Lean.Lib.Integers.Int64.signed d
-        let q := ZArith.BinInt.Z.quot n sd
-        let r := ZArith.BinInt.Z.sub n (ZArith.BinInt.Z.mul q sd)
-        match CompCert4Lean.Lib.Coqlib.zle
-            CompCert4Lean.Lib.Integers.Int64.min_signed q,
-          CompCert4Lean.Lib.Coqlib.zle q
-            CompCert4Lean.Lib.Integers.Int64.max_signed with
-        | .left _, .left _ => some (CompCert4Lean.Lib.Integers.Int64.repr q,
-            CompCert4Lean.Lib.Integers.Int64.repr r)
-        | _, _ => none
   ∀ (v1 v2 : Val),
     Val.divls v1 v2 ≠ none ∨ Val.modls v1 v2 ≠ none →
     ∃ (nh nl d q r : Int64),
       Val.shrl v1 (.Vint (CompCert4Lean.Lib.Integers.Int.repr
         (ZArith.BinInt.Z.of_nat 63))) = .Vlong nh ∧
       v1 = .Vlong nl ∧ v2 = .Vlong d ∧
-      divmods2 nh nl d = some (q, r) ∧
+      CompCert4Lean.Lib.Integers.Int64.divmods2 nh nl d = some (q, r) ∧
       Val.divls v1 v2 = some (.Vlong q) ∧ Val.modls v1 v2 = some (.Vlong r)
 
 def mk_shrximm_correctStatement
@@ -589,33 +519,16 @@ def transl_store_correctStatement
         rs' r = rs r)
 
 def int64_sub_overflowStatement : Prop :=
-  let sub_overflow : Int64 → Int64 → Int64 → Int64 :=
-    fun x y bin =>
-      let s := ZArith.BinInt.Z.sub
-        (ZArith.BinInt.Z.sub
-          (CompCert4Lean.Lib.Integers.Int64.signed x)
-          (CompCert4Lean.Lib.Integers.Int64.signed y))
-        (CompCert4Lean.Lib.Integers.Int64.signed bin)
-      match CompCert4Lean.Lib.Coqlib.zle
-          CompCert4Lean.Lib.Integers.Int64.min_signed s,
-        CompCert4Lean.Lib.Coqlib.zle s
-          CompCert4Lean.Lib.Integers.Int64.max_signed with
-      | .left _, .left _ => CompCert4Lean.Lib.Integers.Int64.zero
-      | _, _ => CompCert4Lean.Lib.Integers.Int64.one
-  let negative : Int64 → Int64 := fun x =>
-    if CompCert4Lean.Lib.Integers.Int64.lt x
-        CompCert4Lean.Lib.Integers.Int64.zero then
-      CompCert4Lean.Lib.Integers.Int64.one
-    else
-      CompCert4Lean.Lib.Integers.Int64.zero
   ∀ (x y : Int64),
     CompCert4Lean.Lib.Integers.Int.xor
       (CompCert4Lean.Lib.Integers.Int.repr
         (CompCert4Lean.Lib.Integers.Int64.unsigned
-          (sub_overflow x y CompCert4Lean.Lib.Integers.Int64.zero)))
+          (CompCert4Lean.Lib.Integers.Int64.sub_overflow
+            x y CompCert4Lean.Lib.Integers.Int64.zero)))
       (CompCert4Lean.Lib.Integers.Int.repr
         (CompCert4Lean.Lib.Integers.Int64.unsigned
-          (negative (CompCert4Lean.Lib.Integers.Int64.sub x y)))) =
+          (CompCert4Lean.Lib.Integers.Int64.negative
+            (CompCert4Lean.Lib.Integers.Int64.sub x y)))) =
       (if CompCert4Lean.Lib.Integers.Int64.lt x y then
         CompCert4Lean.Lib.Integers.Int.one
        else CompCert4Lean.Lib.Integers.Int.zero)
