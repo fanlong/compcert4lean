@@ -54,18 +54,12 @@ def switch_target (n : Z) (dfl : Nat) : table → Nat
       | .right _ => switch_target n dfl rem
 
 inductive switch_argument : Bool → val → Z → Prop where
-  | of32 (i : CCInt) :
+  | switch_argument_32 (i : CCInt) :
       switch_argument false (.Vint i) (CompCert4Lean.Lib.Integers.Int.unsigned i)
-  | of64 (i : CCInt64) :
+  | switch_argument_64 (i : CCInt64) :
       switch_argument true (.Vlong i) (CompCert4Lean.Lib.Integers.Int64.unsigned i)
 
-def switch_argument_32 (i : CompCert4Lean.Lib.Integers.int) :
-    switch_argument false (.Vint i) (CompCert4Lean.Lib.Integers.Int.unsigned i) :=
-  switch_argument.of32 i
-
-def switch_argument_64 (i : CompCert4Lean.Lib.Integers.int64) :
-    switch_argument true (.Vlong i) (CompCert4Lean.Lib.Integers.Int64.unsigned i) :=
-  switch_argument.of64 i
+export switch_argument (switch_argument_32 switch_argument_64)
 
 inductive comptree : Type where
   | CTaction (act : Nat)
@@ -74,6 +68,18 @@ inductive comptree : Type where
   | CTjumptable (ofs : Z) (sz : Z) (acts : List Nat) (cother : comptree)
 
 export comptree (CTaction CTifeq CTiflt CTjumptable)
+
+abbrev comptree_ind
+    (P : comptree → Prop)
+    (hCTaction : ∀ act, P (.CTaction act))
+    (hCTifeq : ∀ key act cne, P cne → P (.CTifeq key act cne))
+    (hCTiflt : ∀ key clt, P clt → ∀ cge, P cge → P (.CTiflt key clt cge))
+    (hCTjumptable : ∀ ofs sz acts cother, P cother →
+      P (.CTjumptable ofs sz acts cother))
+    (t : comptree) : P t :=
+  comptree.rec hCTaction hCTifeq
+    (fun key clt cge hclt hcge => hCTiflt key clt hclt cge hcge)
+    hCTjumptable t
 
 def comptree_match (modulus n : Z) : comptree → Option Nat
   | .CTaction act => some act
@@ -176,46 +182,24 @@ def validate (modulus : Z) (default : Nat) (cases : table) :
 def validate_switch (modulus : Z) (default : Nat) (cases : table) (t : comptree) : Bool :=
   validate modulus default cases t z0 (zSub modulus z1)
 
-inductive wf_comptree (modulus : Z) : comptree → Prop where
-  | action (act : Nat) : wf_comptree modulus (.CTaction act)
-  | ifeq (key : Z) (act : Nat) (cne : comptree) :
+inductive wf_comptree : Z → comptree → Prop where
+  | wf_action (modulus : Z) (act : Nat) : wf_comptree modulus (.CTaction act)
+  | wf_ifeq (modulus key : Z) (act : Nat) (cne : comptree) :
       zLe z0 key ∧ zLt key modulus →
       wf_comptree modulus cne →
       wf_comptree modulus (.CTifeq key act cne)
-  | iflt (key : Z) (clt cge : comptree) :
+  | wf_iflt (modulus key : Z) (clt cge : comptree) :
       zLe z0 key ∧ zLt key modulus →
       wf_comptree modulus clt →
       wf_comptree modulus cge →
       wf_comptree modulus (.CTiflt key clt cge)
-  | jumptable (ofs sz : Z) (acts : List Nat) (cother : comptree) :
+  | wf_jumptable (modulus ofs sz : Z) (acts : List Nat) (cother : comptree) :
       zLe z0 ofs ∧ zLt ofs modulus →
       zLe z0 sz ∧ zLt sz modulus →
       wf_comptree modulus cother →
       wf_comptree modulus (.CTjumptable ofs sz acts cother)
 
-def wf_action (modulus : Z) (act : Nat) :
-    wf_comptree modulus (.CTaction act) :=
-  wf_comptree.action (modulus := modulus) act
-
-def wf_ifeq (modulus : Z) (key : Z) (act : Nat) (cne : comptree)
-    (hkey : ZArith.BinInt.Z.le Z0 key ∧ ZArith.BinInt.Z.lt key modulus)
-    (hcne : wf_comptree modulus cne) :
-    wf_comptree modulus (.CTifeq key act cne) :=
-  wf_comptree.ifeq (modulus := modulus) key act cne hkey hcne
-
-def wf_iflt (modulus : Z) (key : Z) (clt cge : comptree)
-    (hkey : ZArith.BinInt.Z.le Z0 key ∧ ZArith.BinInt.Z.lt key modulus)
-    (hclt : wf_comptree modulus clt)
-    (hcge : wf_comptree modulus cge) :
-    wf_comptree modulus (.CTiflt key clt cge) :=
-  wf_comptree.iflt (modulus := modulus) key clt cge hkey hclt hcge
-
-def wf_jumptable (modulus : Z) (ofs sz : Z) (acts : List Nat) (cother : comptree)
-    (hofs : ZArith.BinInt.Z.le Z0 ofs ∧ ZArith.BinInt.Z.lt ofs modulus)
-    (hsz : ZArith.BinInt.Z.le Z0 sz ∧ ZArith.BinInt.Z.lt sz modulus)
-    (hcother : wf_comptree modulus cother) :
-    wf_comptree modulus (.CTjumptable ofs sz acts cother) :=
-  wf_comptree.jumptable (modulus := modulus) ofs sz acts cother hofs hsz hcother
+export wf_comptree (wf_action wf_ifeq wf_iflt wf_jumptable)
 
 def validate_wfStatement : Prop :=
   ∀ (modulus : Z) (default : Nat) (t : comptree) (cases : table) (lo hi : Z),
