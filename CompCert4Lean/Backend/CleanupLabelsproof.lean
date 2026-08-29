@@ -154,6 +154,9 @@ inductive match_stackframes : stackframe → stackframe → Prop where
           (CompCert4Lean.Backend.CleanupLabels.remove_unused_labels
             (CompCert4Lean.Backend.CleanupLabels.labels_branched_to f.fn_code) c))
 
+/-! Source-facing constructor endpoint for the pinned Rocq binder surface. -/
+abbrev match_stackframe_intro := @match_stackframes.intro
+
 inductive match_states : state → state → Prop where
   | regular (s : List stackframe) (f : function) (sp : val) (c : code)
       (ls : locset) (m : mem) (ts : List stackframe)
@@ -174,6 +177,11 @@ inductive match_states : state → state → Prop where
       (ts : List stackframe)
       (stacks : list_forall2 match_stackframes s ts) :
       match_states (Returnstate s ls m) (Returnstate ts ls m)
+
+/-! Source-facing constructor endpoints for the pinned Rocq binder surfaces. -/
+abbrev match_states_intro := @match_states.regular
+abbrev match_states_call := @match_states.call
+abbrev match_states_return := @match_states.return
 
 def measure : state → Nat
   | State _ _ _ c _ _ => c.length
