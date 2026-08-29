@@ -32,11 +32,13 @@ private abbrev z53 : Z := ZArith.BinInt.Z.of_nat 53
 private abbrev z128 : Z := ZArith.BinInt.Z.of_nat 128
 private abbrev z1024 : Z := ZArith.BinInt.Z.of_nat 1024
 
-private instance : CompCert4Lean.Flocq.Core.FLX.Prec_gt_0Class z24 :=
-  CompCert4Lean.Flocq.Core.FLX.Prec_gt_0Class.of (by change (0 : Int) < 24; decide)
+private instance : CompCert4Lean.Flocq.Core.FLX.Prec_gt_0 z24 := by
+  change (0 : Int) < 24
+  decide
 
-private instance : CompCert4Lean.Flocq.Core.FLX.Prec_gt_0Class z53 :=
-  CompCert4Lean.Flocq.Core.FLX.Prec_gt_0Class.of (by change (0 : Int) < 53; decide)
+private instance : CompCert4Lean.Flocq.Core.FLX.Prec_gt_0 z53 := by
+  change (0 : Int) < 53
+  decide
 
 private instance : CompCert4Lean.Flocq.IEEE754.BinarySingleNaN.Prec_lt_emax z24 z128 :=
   ⟨by change (24 : Int) < 128; decide⟩

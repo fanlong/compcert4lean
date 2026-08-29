@@ -59,7 +59,6 @@ abbrev mode : Type := BinarySingleNaN.mode
 abbrev mode_NE : mode := BinarySingleNaN.mode_NE
 abbrev round_mode (m : mode) : R → Z := BinarySingleNaN.round_mode m
 abbrev Prec_gt_0 := FLX.Prec_gt_0
-abbrev Prec_gt_0Class := FLX.Prec_gt_0Class
 abbrev Prec_lt_emax := BinarySingleNaN.Prec_lt_emax
 abbrev Sumbool (P Q : Prop) : Type := CompCert4Lean.Foundation.Logic.Support.Sumbool P Q
 
@@ -114,17 +113,17 @@ abbrev NaNResult (prec emax : Z) :=
   Binary.CertifiedNaNResult prec emax
 
 def keepPrecisionHypotheses
-    (P : Prop) [prec_gt_0 : Prec_gt_0Class prec]
+    (P : Prop) [prec_gt_0 : Prec_gt_0 prec]
     [prec_lt_emax : Prec_lt_emax prec emax] : Prop :=
   let _ := prec_gt_0
   let _ := prec_lt_emax
   P
 
-def keepPrecGt (P : Prop) [prec_gt_0 : Prec_gt_0Class prec] : Prop :=
+def keepPrecGt (P : Prop) [prec_gt_0 : Prec_gt_0 prec] : Prop :=
   let _ := prec_gt_0
   P
 
-variable {prec emax : Z} [Prec_gt_0Class prec] [Prec_lt_emax prec emax]
+variable {prec emax : Z} [Prec_gt_0 prec] [Prec_lt_emax prec emax]
   [Binary.BinaryNormalizeCertificate prec emax]
 
 def is_finite_not_is_nanStatement : Prop :=
@@ -430,7 +429,7 @@ def Bexact_inverse_obligation_4Statement : Prop :=
       Binary.B754_finite s m e0 ≠ wildcard'
 
 class Bexact_inverse_certificate (prec emax : Z)
-    [Prec_gt_0Class prec] [Prec_lt_emax prec emax] : Prop where
+    [Prec_gt_0 prec] [Prec_lt_emax prec emax] : Prop where
   obligation : Bexact_inverse_obligation_1 (prec := prec) (emax := emax)
 
 def Bexact_inverse (f : binary_float prec emax)
@@ -484,7 +483,7 @@ def Bdiv_mult_inverseStatement : Prop :=
 section Conversions
 
 variable {prec1 emax1 prec2 emax2 : Z}
-  [Prec_gt_0Class prec1] [Prec_gt_0Class prec2]
+  [Prec_gt_0 prec1] [Prec_gt_0 prec2]
   [Prec_lt_emax prec1 emax1] [Prec_lt_emax prec2 emax2]
   [Binary.BinaryNormalizeCertificate prec1 emax1]
   [Binary.BinaryNormalizeCertificate prec2 emax2]
