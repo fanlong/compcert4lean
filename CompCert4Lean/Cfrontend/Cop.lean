@@ -88,28 +88,8 @@ private abbrev not := CompCert4Lean.Lib.Integers.Int.not
 private abbrev shl := CompCert4Lean.Lib.Integers.Int.shl
 private abbrev shru := CompCert4Lean.Lib.Integers.Int.shru
 private abbrev shr := CompCert4Lean.Lib.Integers.Int.shr
-private def modu (x y : CCInt) : CCInt := Int.sub x (Int.mul (Int.divu x y) y)
-private def mods (x y : CCInt) : CCInt := Int.sub x (Int.mul (Int.divs x y) y)
 private abbrev zero_ext := CompCert4Lean.Lib.Integers.Int.zero_ext
 private abbrev sign_ext := CompCert4Lean.Lib.Integers.Int.sign_ext
-private def unsigned_bitfield_extract (pos width : Z) (c : CCInt) : CCInt :=
-  Int.zero_ext width (Int.shru c (Int.repr pos))
-private def signed_bitfield_extract (pos width : Z) (c : CCInt) : CCInt :=
-  Int.sign_ext width (Int.shru c (Int.repr pos))
-private def bitfield_insert (pos width : Z) (c n : CCInt) : CCInt :=
-  let mask := Int.shl (Int.repr (zSub (ZArith.Zpower.two_p width) z1)) (Int.repr pos)
-  Int.or (Int.shl (Int.zero_ext width n) (Int.repr pos))
-    (Int.and c (Int.not mask))
-private def cmpWord (c : comparison) (eqv ltv gtv : Bool) : Bool :=
-  match c with
-  | .Ceq => eqv
-  | .Cne => !eqv
-  | .Clt => ltv
-  | .Cle => ltv || eqv
-  | .Cgt => gtv
-  | .Cge => gtv || eqv
-private def cmp (c : comparison) (x y : CCInt) : Bool := cmpWord c (Int.eq x y) (Int.lt x y) (Int.lt y x)
-private def cmpu (c : comparison) (x y : CCInt) : Bool := cmpWord c (Int.eq x y) (Int.ltu x y) (Int.ltu y x)
 end Int
 
 namespace Int64
@@ -138,18 +118,6 @@ private abbrev shl := CompCert4Lean.Lib.Integers.Int64.shl
 private abbrev shru := CompCert4Lean.Lib.Integers.Int64.shru
 private abbrev shr := CompCert4Lean.Lib.Integers.Int64.shr
 private abbrev loword := CompCert4Lean.Lib.Integers.Int64.loword
-private def modu (x y : CCInt64) : CCInt64 := Int64.sub x (Int64.mul (Int64.divu x y) y)
-private def mods (x y : CCInt64) : CCInt64 := Int64.sub x (Int64.mul (Int64.divs x y) y)
-private def cmpWord (c : comparison) (eqv ltv gtv : Bool) : Bool :=
-  match c with
-  | .Ceq => eqv
-  | .Cne => !eqv
-  | .Clt => ltv
-  | .Cle => ltv || eqv
-  | .Cgt => gtv
-  | .Cge => gtv || eqv
-private def cmp (c : comparison) (x y : CCInt64) : Bool := cmpWord c (Int64.eq x y) (Int64.lt x y) (Int64.lt y x)
-private def cmpu (c : comparison) (x y : CCInt64) : Bool := cmpWord c (Int64.eq x y) (Int64.ltu x y) (Int64.ltu y x)
 end Int64
 
 namespace Float
@@ -756,11 +724,11 @@ def sem_mod
   sem_binarith (binary64_certificate := binary64_certificate)
     (binary32_certificate := binary32_certificate)
     (fun sg n1 n2 => match sg with
-      | .Signed => if boolEqInt n2 Int.zero || (boolEqInt n1 (Int.repr Int.min_signed) && boolEqInt n2 Int.mone) then none else some (.Vint (Int.mods n1 n2))
-      | .Unsigned => if boolEqInt n2 Int.zero then none else some (.Vint (Int.modu n1 n2)))
+      | .Signed => if boolEqInt n2 Int.zero || (boolEqInt n1 (Int.repr Int.min_signed) && boolEqInt n2 Int.mone) then none else some (.Vint (CompCert4Lean.Lib.Integers.Int.mods n1 n2))
+      | .Unsigned => if boolEqInt n2 Int.zero then none else some (.Vint (CompCert4Lean.Lib.Integers.Int.modu n1 n2)))
     (fun sg n1 n2 => match sg with
-      | .Signed => if boolEqInt64 n2 Int64.zero || (boolEqInt64 n1 (Int64.repr Int64.min_signed) && boolEqInt64 n2 Int64.mone) then none else some (.Vlong (Int64.mods n1 n2))
-      | .Unsigned => if boolEqInt64 n2 Int64.zero then none else some (.Vlong (Int64.modu n1 n2)))
+      | .Signed => if boolEqInt64 n2 Int64.zero || (boolEqInt64 n1 (Int64.repr Int64.min_signed) && boolEqInt64 n2 Int64.mone) then none else some (.Vlong (CompCert4Lean.Lib.Integers.Int64.mods n1 n2))
+      | .Unsigned => if boolEqInt64 n2 Int64.zero then none else some (.Vlong (CompCert4Lean.Lib.Integers.Int64.modu n1 n2)))
     (fun _ _ => none) (fun _ _ => none) v1 t1 v2 t2 m
 
 def sem_and
@@ -882,8 +850,8 @@ def sem_cmp
   | .cmp_default =>
       sem_binarith (binary64_certificate := binary64_certificate)
         (binary32_certificate := binary32_certificate)
-        (fun sg n1 n2 => some (Val.of_bool (match sg with | .Signed => Int.cmp c n1 n2 | .Unsigned => Int.cmpu c n1 n2)))
-        (fun sg n1 n2 => some (Val.of_bool (match sg with | .Signed => Int64.cmp c n1 n2 | .Unsigned => Int64.cmpu c n1 n2)))
+        (fun sg n1 n2 => some (Val.of_bool (match sg with | .Signed => CompCert4Lean.Lib.Integers.Int.cmp c n1 n2 | .Unsigned => CompCert4Lean.Lib.Integers.Int.cmpu c n1 n2)))
+        (fun sg n1 n2 => some (Val.of_bool (match sg with | .Signed => CompCert4Lean.Lib.Integers.Int64.cmp c n1 n2 | .Unsigned => CompCert4Lean.Lib.Integers.Int64.cmpu c n1 n2)))
         (fun n1 n2 => some (Val.of_bool (Float.cmp c n1 n2)))
         (fun n1 n2 => some (Val.of_bool (Float32.cmp c n1 n2))) v1 t1 v2 t2 m
 
@@ -999,8 +967,8 @@ def first_bit (sz : intsize) (pos width : Z) : Z :=
 
 def bitfield_extract (sz : intsize) (sg : signedness) (pos width : Z) (c : CCInt) : CCInt :=
   if intsizeEq sz .IBool || signednessEq sg .Unsigned then
-    Int.unsigned_bitfield_extract (first_bit sz pos width) width c
-  else Int.signed_bitfield_extract (first_bit sz pos width) width c
+    CompCert4Lean.Lib.Integers.Int.unsigned_bitfield_extract (first_bit sz pos width) width c
+  else CompCert4Lean.Lib.Integers.Int.signed_bitfield_extract (first_bit sz pos width) width c
 
 def bitfield_normalize (sz : intsize) (sg : signedness) (width : Z) (n : CCInt) : CCInt :=
   if intsizeEq sz .IBool || signednessEq sg .Unsigned then Int.zero_ext width n else Int.sign_ext width n
@@ -1029,7 +997,7 @@ inductive store_bitfield : type → intsize → signedness → Z → Z → mem �
       (hsg : sg1 = (if zltBool width (bitsize_intsize sz) then .Signed else sg))
       (hload : Mem.loadv (chunk_for_carrier sz) m addr = some (.Vint c))
       (hstore : Mem.storev (chunk_for_carrier sz) m addr
-        (.Vint (Int.bitfield_insert (first_bit sz pos width) width c n)) = some m') :
+        (.Vint (CompCert4Lean.Lib.Integers.Int.bitfield_insert (first_bit sz pos width) width c n)) = some m') :
       store_bitfield (.Tint sz sg1 attr) sz sg pos width m addr (.Vint n)
         m' (.Vint (bitfield_normalize sz sg width n))
 
