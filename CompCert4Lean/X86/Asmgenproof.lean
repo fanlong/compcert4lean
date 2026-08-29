@@ -124,7 +124,13 @@ inductive match_states (prog : MachProgram) : MachState → AsmState → Prop wh
         (.Returnstate s ms m)
         (.State rs m')
 
-export match_states (match_states_intro match_states_call match_states_return)
+/-! Authenticated source-facing constructor endpoints.  The inductive
+    parameter `prog` is implicit on the kernel constructors because it is a
+    parameter of `match_states`; these aliases expose the exact Rocq
+    application surface while retaining the namespaced kernel constructors. -/
+abbrev match_states_intro (prog : MachProgram) := @match_states.match_states_intro prog
+abbrev match_states_call (prog : MachProgram) := @match_states.match_states_call prog
+abbrev match_states_return (prog : MachProgram) := @match_states.match_states_return prog
 
 def measure : MachState → Nat
   | .State _ _ _ _ _ _ => 0
