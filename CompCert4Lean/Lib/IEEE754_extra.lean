@@ -127,14 +127,12 @@ variable {prec emax : Z} [Prec_gt_0 prec] [Prec_lt_emax prec emax]
   [Binary.BinaryNormalizeCertificate prec emax]
 
 def is_finite_not_is_nanStatement : Prop :=
-  keepPrecisionHypotheses (prec := prec) (emax := emax)
-    (∀ f : CertifiedBinaryFloat prec emax,
-      Binary.is_finite f.1 = true → Binary.is_nan f.1 = false)
+  ∀ f : CertifiedBinaryFloat prec emax,
+    Binary.is_finite f.1 = true → Binary.is_nan f.1 = false
 
 def is_finite_strict_finiteStatement : Prop :=
-  keepPrecisionHypotheses (prec := prec) (emax := emax)
-    (∀ f : CertifiedBinaryFloat prec emax,
-      Binary.is_finite_strict f.1 = true → Binary.is_finite f.1 = true)
+  ∀ f : CertifiedBinaryFloat prec emax,
+    Binary.is_finite_strict f.1 = true → Binary.is_finite f.1 = true
 
 private def binaryFloatDecidableEq
     (f1 f2 : binary_float prec emax) : Decidable (f1 = f2) := by
@@ -173,10 +171,9 @@ def integer_representable_2pStatement : Prop :=
         (Zpower Ztwo p))
 
 def integer_representable_oppStatement : Prop :=
-  keepPrecisionHypotheses (prec := prec) (emax := emax)
-    (∀ (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx) (n : Z),
-      integer_representable (prec := prec) (emax := emax) ctx magnitude n →
-      integer_representable (prec := prec) (emax := emax) ctx magnitude (Zopp n))
+  ∀ (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx) (n : Z),
+    integer_representable (prec := prec) (emax := emax) ctx magnitude n →
+    integer_representable (prec := prec) (emax := emax) ctx magnitude (Zopp n)
 
 def integer_representable_n2p_wideStatement : Prop :=
   keepPrecisionHypotheses (prec := prec) (emax := emax)
