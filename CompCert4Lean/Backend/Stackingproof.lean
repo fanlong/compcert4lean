@@ -347,9 +347,8 @@ explicit here, so every field and descriptor below closes over the same
 source-shaped `cfg`/`f` carrier.  The exported `agree_unused_reg` projection
 and `mk_agree_locs` constructor are the generated surfaces owned by this
 carrier (source `backend/Stackingproof.v`, lines 563--570; projection span
-21461--21667).  Deferred proof declarations such as
-`agree_locs_set_pair` remain statement descriptors below rather than new
-carrier implementations. -/
+21461--21667).  Out-of-closure proof declarations remain deferred rather than
+being materialized as carrier implementations or statement descriptors here. -/
 
 structure agree_locs (cfg : CompilerConfig) (f : Linear.function)
     (_bound_local_pos : bound_local_pos cfg (function_bounds cfg f))
@@ -663,20 +662,6 @@ def agree_locs_set_regStatement : Prop :=
     agree_locs cfg f _bound_local_pos _bound_outgoing_pos _bound_stack_data_pos
       _used_callee_save_norepet _used_callee_save_prop (Locmap.set (R r) v ls) ls0
 
-def agree_locs_set_pairStatement : Prop :=
-  ∀ cfg f
-    (_bound_local_pos : bound_local_pos cfg (function_bounds cfg f))
-    (_bound_outgoing_pos : bound_outgoing_pos cfg (function_bounds cfg f))
-    (_bound_stack_data_pos : bound_stack_data_pos cfg (function_bounds cfg f))
-    (_used_callee_save_norepet : used_callee_save_norepet cfg (function_bounds cfg f))
-    (_used_callee_save_prop : used_callee_save_prop cfg (function_bounds cfg f))
-    ls0 p v ls,
-    agree_locs cfg f _bound_local_pos _bound_outgoing_pos _bound_stack_data_pos
-      _used_callee_save_norepet _used_callee_save_prop ls ls0 →
-    forall_rpair (fun r => is_callee_save cfg r = false) p →
-    agree_locs cfg f _bound_local_pos _bound_outgoing_pos _bound_stack_data_pos
-      _used_callee_save_norepet _used_callee_save_prop (Locmap.setpair p v ls) ls0
-
 def agree_locs_set_resStatement : Prop :=
   ∀ (return_address_offset : Mach.function → Mach.code → ptrofs → Prop)
     (tprog : Mach.program),
@@ -768,13 +753,6 @@ def agree_reglistStatement : Prop :=
 def agree_regs_call_regsStatement : Prop :=
   ∀ j ls rs, agree_regs j ls rs → agree_regs j (LTL.call_regs ls) rs
 
-def agree_regs_extenStatement : Prop :=
-  ∀ j ls rs ls' rs',
-    agree_regs j ls rs →
-    (∀ r, ls' (R r) = Vundef ∨
-      (ls' (R r) = ls (R r) ∧ rs' r = rs r)) →
-    agree_regs j ls' rs'
-
 def agree_regs_inject_incrStatement : Prop :=
   ∀ j ls rs j', agree_regs j ls rs → inject_incr j j' →
     agree_regs j' ls rs
@@ -807,10 +785,6 @@ def agree_regs_undef_regsStatement : Prop :=
 def align_type_chunkStatement : Prop :=
   ∀ ty, align_chunk (chunk_of_type ty) =
     zMul z4 (CompCert4Lean.Backend.Locations.typealign ty)
-
-def bound_stack_data_stacksizeStatement : Prop :=
-  ∀ cfg f,
-    zLe f.fn_stacksize (function_bounds cfg f).bound_stack_data
 
 def caller_save_reg_within_boundsStatement : Prop :=
   ∀ cfg f r, is_callee_save cfg r = false →
@@ -1009,23 +983,6 @@ def frame_get_parentStatement : Prop :=
     Mach.load_stack m (Vptr sp Ptrofs.zero) Tptr
       (Ptrofs.repr (make_env cfg (function_bounds cfg f)).fe_ofs_link) = some parent
 
-def frame_get_retaddrStatement : Prop :=
-  ∀ (return_address_offset : Mach.function → Mach.code → ptrofs → Prop)
-    (tprog : Mach.program),
-    ∀ cfg f
-    (_bound_local_pos : bound_local_pos cfg (function_bounds cfg f))
-    (_bound_outgoing_pos : bound_outgoing_pos cfg (function_bounds cfg f))
-    (_bound_stack_data_pos : bound_stack_data_pos cfg (function_bounds cfg f))
-    (_used_callee_save_norepet : used_callee_save_norepet cfg (function_bounds cfg f))
-    (_used_callee_save_prop : used_callee_save_prop cfg (function_bounds cfg f))
-    j sp ls ls0 parent retaddr m P,
-    (sepconj (frame_contents return_address_offset tprog cfg f
-      _bound_local_pos _bound_outgoing_pos _bound_stack_data_pos
-      _used_callee_save_norepet _used_callee_save_prop
-      j sp ls ls0 parent retaddr) P).m_pred m →
-    Mach.load_stack m (Vptr sp Ptrofs.zero) Tptr
-      (Ptrofs.repr (make_env cfg (function_bounds cfg f)).fe_ofs_retaddr) = some retaddr
-
 def frame_set_localStatement : Prop :=
   ∀ (return_address_offset : Mach.function → Mach.code → ptrofs → Prop)
     (tprog : Mach.program),
@@ -1092,25 +1049,6 @@ def frame_set_regStatement : Prop :=
       _bound_local_pos _bound_outgoing_pos _bound_stack_data_pos
       _used_callee_save_norepet _used_callee_save_prop j sp
       (Locmap.set (R r) v ls) ls0 parent retaddr) P).m_pred m
-
-def frame_set_regpairStatement : Prop :=
-  ∀ (return_address_offset : Mach.function → Mach.code → ptrofs → Prop)
-    (tprog : Mach.program),
-    ∀ cfg f
-    (_bound_local_pos : bound_local_pos cfg (function_bounds cfg f))
-    (_bound_outgoing_pos : bound_outgoing_pos cfg (function_bounds cfg f))
-    (_bound_stack_data_pos : bound_stack_data_pos cfg (function_bounds cfg f))
-    (_used_callee_save_norepet : used_callee_save_norepet cfg (function_bounds cfg f))
-    (_used_callee_save_prop : used_callee_save_prop cfg (function_bounds cfg f))
-    j sp ls0 parent retaddr m P p v ls,
-    (sepconj (frame_contents return_address_offset tprog cfg f
-      _bound_local_pos _bound_outgoing_pos _bound_stack_data_pos
-      _used_callee_save_norepet _used_callee_save_prop
-      j sp ls ls0 parent retaddr) P).m_pred m →
-    (sepconj (frame_contents return_address_offset tprog cfg f
-      _bound_local_pos _bound_outgoing_pos _bound_stack_data_pos
-      _used_callee_save_norepet _used_callee_save_prop j sp
-      (Locmap.setpair p v ls) ls0 parent retaddr) P).m_pred m
 
 def frame_set_resStatement : Prop :=
   ∀ (return_address_offset : Mach.function → Mach.code → ptrofs → Prop)
@@ -1235,13 +1173,6 @@ def function_prologue_correctStatement
           (sepconj (globalenv_inject (Genv.globalenv prog) j') P))).m_pred m5' ∧
       j' sp = some (sp', (make_env cfg (function_bounds cfg f)).fe_stack_data) ∧
       inject_incr j j'
-def functions_translatedStatement : Prop :=
-  ∀ cfg (prog : Linear.program) (tprog : Mach.program),
-    match_prog cfg prog tprog → ∀ v f,
-    Genv.find_funct (Genv.globalenv prog) v = some f →
-    ∃ tf,
-      Genv.find_funct (Genv.globalenv tprog) v = some tf ∧
-      transf_fundef cfg f = .OK tf
 def function_ptr_translatedStatement : Prop :=
   ∀ cfg (prog : Linear.program) (tprog : Mach.program),
     match_prog cfg prog tprog → ∀ b f,
@@ -1500,13 +1431,6 @@ def set_locationStatement : Prop :=
       (sepconj (contains_locations return_address_offset tprog j sp pos bound sl
         (Locmap.set (S sl ofs ty) v ls)) P).m_pred m'
 
-def sig_preservedStatement : Prop :=
-  ∀ cfg (f : Linear.fundef) (tf : Mach.fundef),
-    Stacking.transf_fundef cfg f = .OK tf →
-    (match tf with
-      | .Internal tf => tf.fn_sig
-      | .External ef => ef_sig ef) = Linear.funsig f
-
 def simplify_load_correctStatement : Prop :=
   ∀ chunk m a v, Mem.loadv chunk m a = some v →
     ∃ v', Mem.loadv (simplify_load chunk) m a = some v' ∧ Val.lessdef v v'
@@ -1601,9 +1525,6 @@ def transf_initial_statesStatement : Prop :=
       match_states cfg return_address_offset prog tprog
         _bound_local_pos _bound_outgoing_pos _bound_stack_data_pos
         _used_callee_save_norepet _used_callee_save_prop st1 st2
-
-def transf_function_well_typedStatement : Prop :=
-  ∀ cfg f tf, transf_function cfg f = .OK tf → wt_function cfg f = true
 
 def transf_program_correctStatement
     [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
