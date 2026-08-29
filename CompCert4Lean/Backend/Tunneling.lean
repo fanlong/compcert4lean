@@ -102,84 +102,125 @@ def elt_eq (x y : elt) :
     CompCert4Lean.Foundation.Logic.Support.Sumbool (x = y) (x ≠ y) :=
   PTree.elt_eq x y
 
-abbrev t : Type := CompCert4Lean.Lib.UnionFind.UF.t M
+/-! The result of the Rocq `UF(PTree)` application is sealed by the
+`UNIONFIND` signature.  Keep the canonical provider representation private
+to this generated application and expose only the source-shaped interface
+below. -/
+private structure state where
+  carrier : CompCert4Lean.Lib.UnionFind.UF.t M
 
-def repr : t → elt → elt := CompCert4Lean.Lib.UnionFind.UF.repr M
+def t : Type := state
+
+private def toProvider (uf : t) : CompCert4Lean.Lib.UnionFind.UF.t M :=
+  uf.carrier
+
+private def ofProvider (uf : CompCert4Lean.Lib.UnionFind.UF.t M) : t :=
+  ⟨uf⟩
+
+def repr (uf : t) (a : elt) : elt :=
+  CompCert4Lean.Lib.UnionFind.UF.repr M (toProvider uf) a
 
 def repr_canonical : Prop :=
-  CompCert4Lean.Lib.UnionFind.UF.repr_canonicalStatement M
+  ∀ (uf : t) (a : elt), repr uf (repr uf a) = repr uf a
 
-def sameclass : t → elt → elt → Prop :=
-  CompCert4Lean.Lib.UnionFind.UF.sameclass M
+def sameclass (uf : t) (a b : elt) : Prop := repr uf a = repr uf b
 
 def sameclass_refl : Prop :=
-  CompCert4Lean.Lib.UnionFind.UF.sameclass_reflStatement M
+  ∀ (uf : t) (a : elt), sameclass uf a a
 def sameclass_sym : Prop :=
-  CompCert4Lean.Lib.UnionFind.UF.sameclass_symStatement M
+  ∀ (uf : t) (a b : elt), sameclass uf a b → sameclass uf b a
 def sameclass_trans : Prop :=
-  CompCert4Lean.Lib.UnionFind.UF.sameclass_transStatement M
+  ∀ (uf : t) (a b c : elt), sameclass uf a b → sameclass uf b c →
+    sameclass uf a c
 def sameclass_repr : Prop :=
-  CompCert4Lean.Lib.UnionFind.UF.sameclass_reprStatement M
+  ∀ (uf : t) (a : elt), sameclass uf a (repr uf a)
 
-def empty : t := CompCert4Lean.Lib.UnionFind.UF.empty M
+def empty : t := ofProvider (CompCert4Lean.Lib.UnionFind.UF.empty M)
 
-def repr_empty : Prop := CompCert4Lean.Lib.UnionFind.UF.repr_emptyStatement M
+def repr_empty : Prop := ∀ (a : elt), repr empty a = a
 def sameclass_empty : Prop :=
-  CompCert4Lean.Lib.UnionFind.UF.sameclass_emptyStatement M
+  ∀ (a b : elt), sameclass empty a b → a = b
 
-def find : t → elt → elt × t := CompCert4Lean.Lib.UnionFind.UF.find M
+def find (uf : t) (a : elt) : elt × t :=
+  let r := CompCert4Lean.Lib.UnionFind.UF.find M (toProvider uf) a
+  (r.1, ofProvider r.2)
 
-def find_repr : Prop := CompCert4Lean.Lib.UnionFind.UF.find_reprStatement M
+def find_repr : Prop :=
+  ∀ (uf : t) (a : elt), (find uf a).1 = repr uf a
 def find_unchanged : Prop :=
-  CompCert4Lean.Lib.UnionFind.UF.find_unchangedStatement M
+  ∀ (uf : t) (a x : elt), repr (find uf a).2 x = repr uf x
 def sameclass_find_1 : Prop :=
-  CompCert4Lean.Lib.UnionFind.UF.sameclass_find_1Statement M
+  ∀ (uf : t) (a x y : elt),
+    sameclass (find uf a).2 x y ↔ sameclass uf x y
 def sameclass_find_2 : Prop :=
-  CompCert4Lean.Lib.UnionFind.UF.sameclass_find_2Statement M
+  ∀ (uf : t) (a : elt), sameclass uf a (find uf a).1
 def sameclass_find_3 : Prop :=
-  CompCert4Lean.Lib.UnionFind.UF.sameclass_find_3Statement M
+  ∀ (uf : t) (a : elt), sameclass (find uf a).2 a (find uf a).1
 
-def union : t → elt → elt → t := CompCert4Lean.Lib.UnionFind.UF.union M
+def union (uf : t) (a b : elt) : t :=
+  ofProvider (CompCert4Lean.Lib.UnionFind.UF.union M (toProvider uf) a b)
 
 def repr_union_1 : Prop :=
-  CompCert4Lean.Lib.UnionFind.UF.repr_union_1Statement M
+  ∀ (uf : t) (a b x : elt), repr uf x ≠ repr uf a →
+    repr (union uf a b) x = repr uf x
 def repr_union_2 : Prop :=
-  CompCert4Lean.Lib.UnionFind.UF.repr_union_2Statement M
+  ∀ (uf : t) (a b x : elt), repr uf x = repr uf a →
+    repr (union uf a b) x = repr uf b
 def repr_union_3 : Prop :=
-  CompCert4Lean.Lib.UnionFind.UF.repr_union_3Statement M
+  ∀ (uf : t) (a b : elt), repr (union uf a b) b = repr uf b
 def sameclass_union_1 : Prop :=
-  CompCert4Lean.Lib.UnionFind.UF.sameclass_union_1Statement M
+  ∀ (uf : t) (a b : elt), sameclass (union uf a b) a b
 def sameclass_union_2 : Prop :=
-  CompCert4Lean.Lib.UnionFind.UF.sameclass_union_2Statement M
+  ∀ (uf : t) (a b x y : elt), sameclass uf x y →
+    sameclass (union uf a b) x y
 def sameclass_union_3 : Prop :=
-  CompCert4Lean.Lib.UnionFind.UF.sameclass_union_3Statement M
+  ∀ (uf : t) (a b x y : elt), sameclass (union uf a b) x y →
+    sameclass uf x y ∨
+      (sameclass uf x a ∧ sameclass uf y b) ∨
+      (sameclass uf x b ∧ sameclass uf y a)
 
-def merge : t → elt → elt → t := CompCert4Lean.Lib.UnionFind.UF.merge M
+def merge (uf : t) (a b : elt) : t :=
+  ofProvider (CompCert4Lean.Lib.UnionFind.UF.merge M (toProvider uf) a b)
 
-def repr_merge : Prop := CompCert4Lean.Lib.UnionFind.UF.repr_mergeStatement M
+def repr_merge : Prop :=
+  ∀ (uf : t) (a b x : elt),
+    repr (merge uf a b) x = repr (union uf a b) x
 def sameclass_merge : Prop :=
-  CompCert4Lean.Lib.UnionFind.UF.sameclass_mergeStatement M
+  ∀ (uf : t) (a b x y : elt),
+    sameclass (merge uf a b) x y ↔ sameclass (union uf a b) x y
 
-def path_ord : t → elt → elt → Prop :=
-  CompCert4Lean.Lib.UnionFind.UF.path_ord M
+def path_ord (uf : t) (x y : elt) : Prop :=
+  CompCert4Lean.Lib.UnionFind.UF.path_ord M (toProvider uf) x y
 
 def path_ord_wellfounded : Prop :=
-  CompCert4Lean.Lib.UnionFind.UF.path_ord_wellfoundedStatement M
+  ∀ (uf : t), WellFounded (path_ord uf)
 def path_ord_canonical : Prop :=
-  CompCert4Lean.Lib.UnionFind.UF.path_ord_canonicalStatement M
+  ∀ (uf : t) (x y : elt), repr uf x = x → ¬ path_ord uf y x
 def path_ord_merge_1 : Prop :=
-  CompCert4Lean.Lib.UnionFind.UF.path_ord_merge_1Statement M
+  ∀ (uf : t) (a b x y : elt), path_ord uf x y →
+    path_ord (merge uf a b) x y
 def path_ord_merge_2 : Prop :=
-  CompCert4Lean.Lib.UnionFind.UF.path_ord_merge_2Statement M
+  ∀ (uf : t) (a b : elt), repr uf a ≠ repr uf b →
+    path_ord (merge uf a b) b (repr uf a)
 
-def pathlen : t → elt → Nat := CompCert4Lean.Lib.UnionFind.UF.pathlen M
+def pathlen (uf : t) (a : elt) : Nat :=
+  CompCert4Lean.Lib.UnionFind.UF.pathlen M (toProvider uf) a
 
 def pathlen_zero : Prop :=
-  CompCert4Lean.Lib.UnionFind.UF.pathlen_zeroStatement M
+  ∀ (uf : t) (a : elt), repr uf a = a ↔ pathlen uf a = 0
 def pathlen_merge : Prop :=
-  CompCert4Lean.Lib.UnionFind.UF.pathlen_mergeStatement M
+  ∀ (uf : t) (a b x : elt),
+    pathlen (merge uf a b) x =
+      match elt_eq (repr uf a) (repr uf b) with
+      | .left _ => pathlen uf x
+      | .right _ =>
+          match elt_eq (repr uf x) (repr uf a) with
+          | .left _ => pathlen uf x + pathlen uf b + 1
+          | .right _ => pathlen uf x
 def pathlen_gt_merge : Prop :=
-  CompCert4Lean.Lib.UnionFind.UF.pathlen_gt_mergeStatement M
+  ∀ (uf : t) (a b x y : elt), repr uf x = repr uf y →
+    pathlen uf x > pathlen uf y →
+      pathlen (merge uf a b) x > pathlen (merge uf a b) y
 
 end U
 
