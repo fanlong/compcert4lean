@@ -30,6 +30,7 @@ abbrev Zpower := CompCert4Lean.Flocq.Core.Zaux.Zpower
 abbrev Zsub := CompCert4Lean.Flocq.Core.Zaux.Zsub
 abbrev Zone := CompCert4Lean.Flocq.Core.Zaux.Zone
 abbrev Prec_gt_0 := CompCert4Lean.Flocq.Core.FLX.Prec_gt_0
+abbrev Prec_gt_0Class := CompCert4Lean.Flocq.Core.FLX.Prec_gt_0Class
 private abbrev intOfZ := CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
 private abbrev zOfInt := CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt
 abbrev Valid_exp := CompCert4Lean.Flocq.Core.Generic_fmt.Valid_exp
@@ -40,7 +41,7 @@ abbrev Rlt := CompCert4Lean.Flocq.Core.Raux.Rlt
 
 def FLT_exp (emin prec e : Z) : Z := Zmax (Zsub e prec) emin
 
-instance FLT_exp_valid (emin prec : Z) [Prec_gt_0 prec] : Valid_exp (FLT_exp emin prec) where
+instance FLT_exp_valid (emin prec : Z) [Prec_gt_0Class prec] : Valid_exp (FLT_exp emin prec) where
   valid_exp := by
     have zsub_int : ∀ a b : Z, intOfZ (Zsub a b) = intOfZ a - intOfZ b := by
       intro a b
@@ -56,7 +57,8 @@ instance FLT_exp_valid (emin prec : Z) [Prec_gt_0 prec] : Valid_exp (FLT_exp emi
           CompCert4Lean.Foundation.Numbers.Rocq.Coq.Numbers.BinNums.xH) = 1
       simp [CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat]
     have hp : 0 < intOfZ prec := by
-      exact CompCert4Lean.Flocq.Core.FLX.Prec_gt_0.prec_gt_0
+      exact CompCert4Lean.Flocq.Core.FLX.prec_gt_0 prec
+        (h := CompCert4Lean.Flocq.Core.FLX.Prec_gt_0Class.proof)
     have exp_succ_le : ∀ e : Z, intOfZ (Zsub (Zadd e Zone) prec) ≤ intOfZ e := by
       intro e
       rw [zsub_int, zadd_int, zone_int]
@@ -212,21 +214,21 @@ def generic_format_FLTStatement (ctx : ExactRealContext)
 
 def generic_format_FLT_bpowStatement (ctx : ExactRealContext)
     (magnitude : Exact.Magnitude ctx) : Prop :=
-  ∀ (beta : radix) (emin prec : Z) [Prec_gt_0 prec] (e : Z),
+  ∀ (beta : radix) (emin prec : Z) [Prec_gt_0Class prec] (e : Z),
     Zle emin e →
       Exact.generic_format ctx magnitude beta (FLT_exp emin prec)
         (Exact.bpow ctx beta e)
 
 def ulp_FLT_0Statement (ctx : ExactRealContext)
     (magnitude : Exact.Magnitude ctx) : Prop :=
-  ∀ (beta : radix) (emin prec : Z) [Prec_gt_0 prec],
+  ∀ (beta : radix) (emin prec : Z) [Prec_gt_0Class prec],
     CompCert4Lean.Flocq.Core.Ulp.Exact.ulp ctx magnitude beta (FLT_exp emin prec)
         (CompCert4Lean.Flocq.Core.Ulp.Exact.R0 ctx) =
       Exact.bpow ctx beta emin
 
 def ulp_FLT_smallStatement (ctx : ExactRealContext)
     (magnitude : Exact.Magnitude ctx) : Prop :=
-  ∀ (beta : radix) (emin prec : Z) [Prec_gt_0 prec] (x : Exact.R ctx),
+  ∀ (beta : radix) (emin prec : Z) [Prec_gt_0Class prec] (x : Exact.R ctx),
     Exact.Rlt ctx (Exact.Rabs ctx x) (Exact.bpow ctx beta (Zadd emin prec)) →
       CompCert4Lean.Flocq.Core.Ulp.Exact.ulp ctx magnitude beta (FLT_exp emin prec) x =
         Exact.bpow ctx beta emin

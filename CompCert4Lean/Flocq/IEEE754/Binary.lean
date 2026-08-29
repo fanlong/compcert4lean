@@ -89,7 +89,7 @@ abbrev canonical_mantissa0 := BinarySingleNaN.canonical_mantissa0
 abbrev emin0 := BinarySingleNaN.emin0
 abbrev fexp0 := BinarySingleNaN.fexp0
 abbrev cond_Zopp := BinarySingleNaN.cond_Zopp
-variable {prec emax : Z} [Core.FLX.Prec_gt_0 prec]
+variable {prec emax : Z} [Core.FLX.Prec_gt_0Class prec]
   [BinarySingleNaN.Prec_lt_emax prec emax]
 
 inductive full_float where
@@ -126,7 +126,7 @@ abbrev fexp : Z → Z := fexp0 prec emax
    proposition in a mandatory proof-phase certificate; executable definitions
    do not synthesize or carry a proof value. -/
 class FexpCorrectCertificate (prec emax : Z)
-    [Core.FLX.Prec_gt_0 prec] [BinarySingleNaN.Prec_lt_emax prec emax] : Prop where
+    [Core.FLX.Prec_gt_0Class prec] [BinarySingleNaN.Prec_lt_emax prec emax] : Prop where
   valid : Valid_exp (fexp (prec := prec) (emax := emax))
 
 def fexp_correctStatement : Prop :=
@@ -346,7 +346,7 @@ def Bmult (mult_nan : binary_float prec emax → binary_float prec emax →
    normalization invocation.  DMC-003 defers construction of that proof while
    keeping the proof-gated conversion boundary mandatory. -/
 class BinaryNormalizeCertificate (prec emax : Z)
-    [Core.FLX.Prec_gt_0 prec] [BinarySingleNaN.Prec_lt_emax prec emax] : Prop where
+    [Core.FLX.Prec_gt_0Class prec] [BinarySingleNaN.Prec_lt_emax prec emax] : Prop where
   is_nan_binary_normalize :
     ∀ (m : BinarySingleNaN.mode) (x e : Z) (szero : Bool),
       BinarySingleNaN.is_nan
