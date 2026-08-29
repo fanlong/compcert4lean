@@ -34,22 +34,6 @@ inductive program_behavior : Type where
 
 export program_behavior (Terminates Diverges Reacts Goes_wrong)
 
-private def programBehaviorElim {motive : program_behavior → Sort u}
-    (hTerminates : ∀ t r, motive (Terminates t r))
-    (hDiverges : ∀ t, motive (Diverges t))
-    (hReacts : ∀ T, motive (Reacts T))
-    (hGoesWrong : ∀ t, motive (Goes_wrong t)) :
-    ∀ beh, motive beh
-  | .Terminates t r => hTerminates t r
-  | .Diverges t => hDiverges t
-  | .Reacts T => hReacts T
-  | .Goes_wrong t => hGoesWrong t
-
-abbrev program_behavior_ind := @programBehaviorElim
-abbrev program_behavior_rec := @programBehaviorElim
-abbrev program_behavior_rect := @programBehaviorElim
-abbrev program_behavior_sind := @programBehaviorElim
-
 def not_wrong (beh : program_behavior) : Prop :=
   match beh with
   | .Terminates _ _ => True
@@ -138,9 +122,6 @@ abbrev state_goes_wrong (L : semantics) {s : state L}
     state_behaves L s (Goes_wrong t) :=
   state_behaves.state_goes_wrong t s' hstar hnostep hnofinal
 
-abbrev state_behaves_ind := @state_behaves.rec
-abbrev state_behaves_sind := @state_behaves.rec
-
 inductive program_behaves (L : semantics) : program_behavior → Prop where
   | program_runs (s : state L) (beh : program_behavior)
       (hinit : initial_state L s) (hbehaves : state_behaves L s beh) :
@@ -158,9 +139,6 @@ abbrev program_goes_initially_wrong (L : semantics)
     (hnoinit : ∀ s, ¬ initial_state L s) :
     program_behaves L (Goes_wrong E0) :=
   program_behaves.program_goes_initially_wrong hnoinit
-
-abbrev program_behaves_ind := @program_behaves.rec
-abbrev program_behaves_sind := @program_behaves.rec
 
 def state_behaves_appStatement : Prop :=
   ∀ (L : semantics) (s1 : state L) (t : trace) (s2 : state L)
@@ -462,18 +440,6 @@ abbrev ST (genv state : Type)
     tstate genv state step ge :=
   tstate.ST s T F
 
-private def tstateElim {genv state : Type}
-    {step : genv → state → trace → state → Prop} {ge : genv}
-    {motive : tstate genv state step ge → Sort u}
-    (hST : ∀ s T F, motive (tstate.ST s T F)) :
-    ∀ S, motive S
-  | .ST s T F => hST s T F
-
-abbrev tstate_ind := @tstateElim
-abbrev tstate_rec := @tstateElim
-abbrev tstate_rect := @tstateElim
-abbrev tstate_sind := @tstateElim
-
 def state_of_tstate (genv state : Type)
     (step : genv → state → trace → state → Prop) (ge : genv)
     (S : tstate genv state step ge) : state :=
@@ -503,8 +469,6 @@ abbrev tstep_intro (genv state : Type)
       (ST genv state step ge s1 (Eappinf t T) (forever_intro s1 t S F))
       (ST genv state step ge s2 T F) :=
   tstep.tstep_intro s1 t T s2 S F
-abbrev tstep_ind := @tstep.rec
-abbrev tstep_sind := @tstep.rec
 
 inductive tsteps (genv state : Type)
     (step : genv → state → trace → state → Prop) (ge : genv) :
@@ -528,8 +492,6 @@ abbrev tsteps_left (genv state : Type)
     (hsteps : tsteps genv state step ge S2 S3) :
     tsteps genv state step ge S1 S3 :=
   tsteps.tsteps_left t S1 S2 S3 hstep hsteps
-abbrev tsteps_ind := @tsteps.rec
-abbrev tsteps_sind := @tsteps.rec
 
 private def treactive {genv state : Type}
     (step : genv → state → trace → state → Prop) (ge : genv)
