@@ -40,7 +40,9 @@ abbrev Rlt := CompCert4Lean.Flocq.Core.Raux.Rlt
 
 def FLT_exp (emin prec e : Z) : Z := Zmax (Zsub e prec) emin
 
-instance FLT_exp_valid (emin prec : Z) [Prec_gt_0 prec] : Valid_exp (FLT_exp emin prec) where
+def FLT_exp_valid (emin prec : Z) {h : Prec_gt_0 prec} : Valid_exp (FLT_exp emin prec) := by
+  letI : Prec_gt_0 prec := h
+  exact {
   valid_exp := by
     have zsub_int : ∀ a b : Z, intOfZ (Zsub a b) = intOfZ a - intOfZ b := by
       intro a b
@@ -149,7 +151,11 @@ instance FLT_exp_valid (emin prec : Z) [Prec_gt_0 prec] : Valid_exp (FLT_exp emi
             rw [hl_sub] at hle
             exfalso
             omega
-        exact hlmax.trans hmax.symm
+        exact hlmax.trans hmax.symm }
+
+private instance FLT_exp_valid_instance (emin prec : Z) [h : Prec_gt_0 prec] :
+    Valid_exp (FLT_exp emin prec) :=
+  FLT_exp_valid emin prec (h := h)
 
 instance FLT_exp_monotone (emin prec : Z) : Monotone_exp (FLT_exp emin prec) where
   monotone_exp := by
@@ -213,21 +219,21 @@ def generic_format_FLTStatement (ctx : ExactRealContext)
 
 def generic_format_FLT_bpowStatement (ctx : ExactRealContext)
     (magnitude : Exact.Magnitude ctx) : Prop :=
-  ∀ (beta : radix) (emin prec : Z) [Prec_gt_0 prec] (e : Z),
+  ∀ (beta : radix) (emin prec : Z) {h : Prec_gt_0 prec} (e : Z),
     Zle emin e →
       Exact.generic_format ctx magnitude beta (FLT_exp emin prec)
         (Exact.bpow ctx beta e)
 
 def ulp_FLT_0Statement (ctx : ExactRealContext)
     (magnitude : Exact.Magnitude ctx) : Prop :=
-  ∀ (beta : radix) (emin prec : Z) [Prec_gt_0 prec],
+  ∀ (beta : radix) (emin prec : Z) {h : Prec_gt_0 prec},
     CompCert4Lean.Flocq.Core.Ulp.Exact.ulp ctx magnitude beta (FLT_exp emin prec)
         (CompCert4Lean.Flocq.Core.Ulp.Exact.R0 ctx) =
       Exact.bpow ctx beta emin
 
 def ulp_FLT_smallStatement (ctx : ExactRealContext)
     (magnitude : Exact.Magnitude ctx) : Prop :=
-  ∀ (beta : radix) (emin prec : Z) [Prec_gt_0 prec] (x : Exact.R ctx),
+  ∀ (beta : radix) (emin prec : Z) {h : Prec_gt_0 prec} (x : Exact.R ctx),
     Exact.Rlt ctx (Exact.Rabs ctx x) (Exact.bpow ctx beta (Zadd emin prec)) →
       CompCert4Lean.Flocq.Core.Ulp.Exact.ulp ctx magnitude beta (FLT_exp emin prec) x =
         Exact.bpow ctx beta emin
