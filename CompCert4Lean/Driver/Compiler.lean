@@ -802,6 +802,15 @@ def transf_c_program_correctStatement
   ∀ (cfg : CompilerConfig) (selectionOracle : Selection.SelectionOracle)
     (inlineCfg : Inlining.InliningConfig) (regallocOracle : Allocation.RegallocOracle)
     (enumerationService : Linearize.EnumerationService)
+    (csyntaxLinkerCertificate : Ctypes.Linker_program_obligations)
+    (clightLinkerCertificate : Ctypes.Linker_program_obligations)
+    (passCertificates : CompilerPassCertificates
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      (binary64_inverse_certificate := binary64_inverse_certificate)
+      (binary32_inverse_certificate := binary32_inverse_certificate)
+      cfg selectionOracle inlineCfg regallocOracle enumerationService
+      csyntaxLinkerCertificate clightLinkerCertificate)
     (ctx : SimplExpr.FreshIdentContext) (xi : ExternalCalls)
     (p : Csyntax.program) (tp : Asm.program),
     transf_c_program
