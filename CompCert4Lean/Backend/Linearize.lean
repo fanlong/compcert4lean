@@ -720,7 +720,7 @@ def fixpoint_allnodes_solution (_laws : law_obligation) : Prop :=
     fixpoint_allnodes code successors transf = some res →
     PTree.get n code = some instr →
     s ∈ successors instr →
-    L.ge (PMap.get n res) (transf n (PMap.get n res))
+    L.ge (PMap.get s res) (transf n (PMap.get n res))
 
 def fixpoint_nodeset_solution (_laws : law_obligation) : Prop :=
   ∀ (A : Type) (code : PTree.t A)
