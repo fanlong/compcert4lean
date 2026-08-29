@@ -603,7 +603,8 @@ def vincl (v w : aval) : Bool :=
   | Ptr p, Ifptr q | Ifptr p, Ifptr q | Num p, Ifptr q | Uns p _, Ifptr q | Sgn p _, Ifptr q => pincl p q
   | _, _ => false
 
-def genv_match {F V : Type} (bc : block_classification) (ge : Genv.t F V) : Prop :=
+def genv_match (bc : block_classification)
+    (ge : CompCert4Lean.Backend.RTL.genv) : Prop :=
   (∀ id b, Genv.find_symbol ge id = some b ↔ bc b = BCglob id) ∧
   (∀ b, Plt b ge.genv_next → bc b ≠ BCinvalid ∧ bc b ≠ BCstack)
 
@@ -1694,10 +1695,10 @@ def bc_below_invalidStatement : Prop :=
   ∀ b bc bound, ¬ Plt b bound → bc_below bc bound → bc b = BCinvalid
 
 def pdisjoint_sound_strongStatement : Prop :=
-  ∀ {F V : Type} (sz1 : Z) (b1 : block) (ofs1 : ptrofs)
+  ∀ (sz1 : Z) (b1 : block) (ofs1 : ptrofs)
     (bc1 : block_classification) (p1 : aptr) (sz2 : Z) (b2 : block)
     (ofs2 : ptrofs) (bc2 : block_classification) (p2 : aptr)
-    (ge : Genv.t F V) (sp : block),
+    (ge : CompCert4Lean.Backend.RTL.genv) (sp : block),
     pdisjoint p1 sz1 p2 sz2 = true →
     pmatch bc1 b1 ofs1 p1 → pmatch bc2 b2 ofs2 p2 →
     genv_match bc1 ge → bc1 sp = BCstack →
@@ -1707,7 +1708,7 @@ def pdisjoint_sound_strongStatement : Prop :=
       zLe (zAdd (Ptrofs.unsigned ofs2) sz2) (Ptrofs.unsigned ofs1)
 
 def genv_match_extenStatement : Prop :=
-  ∀ {F V : Type} (ge : Genv.t F V) (bc1 bc2 : block_classification),
+  ∀ (ge : CompCert4Lean.Backend.RTL.genv) (bc1 bc2 : block_classification),
     genv_match bc1 ge →
     (∀ b id, bc1 b = BCglob id ↔ bc2 b = BCglob id) →
     (∀ b, bc1 b = BCother → bc2 b = BCother) →
@@ -1755,8 +1756,10 @@ def mmatch_injStatement : Prop :=
     Mem.inject (inj_of_bc bc) m m
 
 def inj_of_bc_preserves_globalsStatement : Prop :=
-  ∀ {F V : Type} (bc : block_classification) (ge : Genv.t F V),
-    genv_match bc ge → meminj_preserves_globals F V ge (inj_of_bc bc)
+  ∀ (bc : block_classification) (ge : CompCert4Lean.Backend.RTL.genv),
+    genv_match bc ge →
+      meminj_preserves_globals CompCert4Lean.Backend.RTL.fundef Unit ge
+        (inj_of_bc bc)
 
 def pmatch_inj_topStatement : Prop :=
   ∀ bc b b' delta ofs,
@@ -1914,12 +1917,12 @@ def vincl_geStatement : Prop :=
   ∀ v w, vincl v w = true → vge w v
 
 def symbol_address_soundStatement : Prop :=
-  ∀ {F V : Type} (bc : block_classification) (ge : Genv.t F V) id ofs,
+  ∀ (bc : block_classification) (ge : CompCert4Lean.Backend.RTL.genv) id ofs,
     genv_match bc ge →
     vmatch bc (Genv.symbol_address ge id ofs) (Ptr (Gl id ofs))
 
 def vmatch_ptr_glStatement : Prop :=
-  ∀ {F V : Type} (bc : block_classification) (ge : Genv.t F V) v id ofs,
+  ∀ (bc : block_classification) (ge : CompCert4Lean.Backend.RTL.genv) v id ofs,
     genv_match bc ge → vmatch bc v (Ptr (Gl id ofs)) →
     Val.lessdef v (Genv.symbol_address ge id ofs)
 
