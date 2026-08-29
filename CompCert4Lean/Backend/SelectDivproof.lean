@@ -1,4 +1,5 @@
 import CompCert4Lean.Backend.SelectDiv
+import CompCert4Lean.Backend.SplitLongproof
 import CompCert4Lean.Common.ExternalCalls
 import CompCert4Lean.Common.Globalenvs
 import CompCert4Lean.Common.Memory
@@ -28,6 +29,7 @@ open CompCert4Lean.Common.Values
 open CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.List
 open CompCert4Lean.Backend.CminorSel
 open CompCert4Lean.Backend.SelectDiv
+open CompCert4Lean.Backend.SplitLong
 open CompCert4Lean.Lib.Coqlib
 open CompCert4Lean.Lib.Floats
 open CompCert4Lean.Lib.Integers
@@ -267,7 +269,7 @@ def is_intconst_soundStatement
       (ZArith.BinInt.Z.of_nat 128)] : Prop :=
   ∀ (xi : ExternalCalls) (prog : program) (sp : val) (e : env) (m : mem),
     ∀ (v : val) (a : expr) (n : CCInt) (le : letenv),
-      is_intconst a = some n →
+      CompCert4Lean.Backend.SelectDiv.is_intconst a = some n →
       eval_expr (binary64_certificate := binary64_certificate)
         (binary32_certificate := binary32_certificate)
         xi (Genv.globalenv prog) sp e m le a v →
@@ -470,7 +472,9 @@ def eval_modl_from_divlStatement
       (ZArith.BinInt.Z.of_nat 1024)]
     [binary32_certificate : BinaryNormalizeCertificate (ZArith.BinInt.Z.of_nat 24)
       (ZArith.BinInt.Z.of_nat 128)] : Prop :=
-  ∀ (xi : ExternalCalls) (prog : program) (sp : val) (e : env) (m : mem),
+  ∀ (xi : ExternalCalls) (prog : program) (hf : helper_functions),
+    CompCert4Lean.Backend.SplitLongproof.helper_functions_declared prog hf →
+    ∀ (sp : val) (e : env) (m : mem),
     ∀ (le : letenv) (a : expr) (n : CCInt64) (x y : CCInt64),
       eval_expr (binary64_certificate := binary64_certificate)
         (binary32_certificate := binary32_certificate)
@@ -478,7 +482,7 @@ def eval_modl_from_divlStatement
       nth_error le 0 = some (.Vlong x) →
       eval_expr (binary64_certificate := binary64_certificate)
         (binary32_certificate := binary32_certificate)
-        xi (Genv.globalenv prog) sp e m le (modl_from_divl a n)
+        xi (Genv.globalenv prog) sp e m le (modl_from_divl (hf := hf) a n)
         (.Vlong (int64Sub x (int64Mul y n)))
 
 def eval_divlu_mullStatement
@@ -486,13 +490,15 @@ def eval_divlu_mullStatement
       (ZArith.BinInt.Z.of_nat 1024)]
     [binary32_certificate : BinaryNormalizeCertificate (ZArith.BinInt.Z.of_nat 24)
       (ZArith.BinInt.Z.of_nat 128)] : Prop :=
-  ∀ (xi : ExternalCalls) (prog : program) (sp : val) (e : env) (m : mem),
+  ∀ (xi : ExternalCalls) (prog : program) (hf : helper_functions),
+    CompCert4Lean.Backend.SplitLongproof.helper_functions_declared prog hf →
+    ∀ (sp : val) (e : env) (m : mem),
     ∀ (le : letenv) (x y : CCInt64) (p M : CCZ),
       divlu_mul_params (int64Unsigned y) = some (p, M) →
       nth_error le 0 = some (.Vlong x) →
       eval_expr (binary64_certificate := binary64_certificate)
         (binary32_certificate := binary32_certificate)
-        xi (Genv.globalenv prog) sp e m le (divlu_mull p M)
+        xi (Genv.globalenv prog) sp e m le (divlu_mull (hf := hf) p M)
         (.Vlong (int64Divu x y))
 
 def eval_divluStatement
@@ -501,7 +507,9 @@ def eval_divluStatement
     [binary32_certificate : BinaryNormalizeCertificate (ZArith.BinInt.Z.of_nat 24)
       (ZArith.BinInt.Z.of_nat 128)] : Prop :=
   ∀ (cfg : CompilerConfig) (xi : ExternalCalls) (prog : program)
-    (sp : val) (e : env) (m : mem),
+    (hf : helper_functions),
+    CompCert4Lean.Backend.SplitLongproof.helper_functions_declared prog hf →
+    ∀ (sp : val) (e : env) (m : mem),
     ∀ (le : letenv) (a b : expr) (x y z : val),
       eval_expr (binary64_certificate := binary64_certificate)
         (binary32_certificate := binary32_certificate)
@@ -512,7 +520,7 @@ def eval_divluStatement
       Val.divlu x y = some z →
       ∃ v, eval_expr (binary64_certificate := binary64_certificate)
         (binary32_certificate := binary32_certificate)
-        xi (Genv.globalenv prog) sp e m le (divlu cfg a b) v ∧
+        xi (Genv.globalenv prog) sp e m le (divlu (hf := hf) cfg a b) v ∧
         Val.lessdef z v
 
 def eval_modluStatement
@@ -521,7 +529,9 @@ def eval_modluStatement
     [binary32_certificate : BinaryNormalizeCertificate (ZArith.BinInt.Z.of_nat 24)
       (ZArith.BinInt.Z.of_nat 128)] : Prop :=
   ∀ (cfg : CompilerConfig) (xi : ExternalCalls) (prog : program)
-    (sp : val) (e : env) (m : mem),
+    (hf : helper_functions),
+    CompCert4Lean.Backend.SplitLongproof.helper_functions_declared prog hf →
+    ∀ (sp : val) (e : env) (m : mem),
     ∀ (le : letenv) (a b : expr) (x y z : val),
       eval_expr (binary64_certificate := binary64_certificate)
         (binary32_certificate := binary32_certificate)
@@ -532,7 +542,7 @@ def eval_modluStatement
       Val.modlu x y = some z →
       ∃ v, eval_expr (binary64_certificate := binary64_certificate)
         (binary32_certificate := binary32_certificate)
-        xi (Genv.globalenv prog) sp e m le (modlu cfg a b) v ∧
+        xi (Genv.globalenv prog) sp e m le (modlu (hf := hf) cfg a b) v ∧
         Val.lessdef z v
 
 def eval_divls_mullStatement
@@ -540,13 +550,15 @@ def eval_divls_mullStatement
       (ZArith.BinInt.Z.of_nat 1024)]
     [binary32_certificate : BinaryNormalizeCertificate (ZArith.BinInt.Z.of_nat 24)
       (ZArith.BinInt.Z.of_nat 128)] : Prop :=
-  ∀ (xi : ExternalCalls) (prog : program) (sp : val) (e : env) (m : mem),
+  ∀ (xi : ExternalCalls) (prog : program) (hf : helper_functions),
+    CompCert4Lean.Backend.SplitLongproof.helper_functions_declared prog hf →
+    ∀ (sp : val) (e : env) (m : mem),
     ∀ (le : letenv) (x y : CCInt64) (p M : CCZ),
       divls_mul_params (int64Signed y) = some (p, M) →
       nth_error le 0 = some (.Vlong x) →
       eval_expr (binary64_certificate := binary64_certificate)
         (binary32_certificate := binary32_certificate)
-        xi (Genv.globalenv prog) sp e m le (divls_mull p M)
+        xi (Genv.globalenv prog) sp e m le (divls_mull (hf := hf) p M)
         (.Vlong (int64Divs x y))
 
 def eval_divlsStatement
@@ -555,7 +567,9 @@ def eval_divlsStatement
     [binary32_certificate : BinaryNormalizeCertificate (ZArith.BinInt.Z.of_nat 24)
       (ZArith.BinInt.Z.of_nat 128)] : Prop :=
   ∀ (cfg : CompilerConfig) (xi : ExternalCalls) (prog : program)
-    (sp : val) (e : env) (m : mem),
+    (hf : helper_functions),
+    CompCert4Lean.Backend.SplitLongproof.helper_functions_declared prog hf →
+    ∀ (sp : val) (e : env) (m : mem),
     ∀ (le : letenv) (a b : expr) (x y z : val),
       eval_expr (binary64_certificate := binary64_certificate)
         (binary32_certificate := binary32_certificate)
@@ -566,7 +580,7 @@ def eval_divlsStatement
       Val.divls x y = some z →
       ∃ v, eval_expr (binary64_certificate := binary64_certificate)
         (binary32_certificate := binary32_certificate)
-        xi (Genv.globalenv prog) sp e m le (divls cfg a b) v ∧
+        xi (Genv.globalenv prog) sp e m le (divls (hf := hf) cfg a b) v ∧
         Val.lessdef z v
 
 def eval_modlsStatement
@@ -575,7 +589,9 @@ def eval_modlsStatement
     [binary32_certificate : BinaryNormalizeCertificate (ZArith.BinInt.Z.of_nat 24)
       (ZArith.BinInt.Z.of_nat 128)] : Prop :=
   ∀ (cfg : CompilerConfig) (xi : ExternalCalls) (prog : program)
-    (sp : val) (e : env) (m : mem),
+    (hf : helper_functions),
+    CompCert4Lean.Backend.SplitLongproof.helper_functions_declared prog hf →
+    ∀ (sp : val) (e : env) (m : mem),
     ∀ (le : letenv) (a b : expr) (x y z : val),
       eval_expr (binary64_certificate := binary64_certificate)
         (binary32_certificate := binary32_certificate)
@@ -586,7 +602,7 @@ def eval_modlsStatement
       Val.modls x y = some z →
       ∃ v, eval_expr (binary64_certificate := binary64_certificate)
         (binary32_certificate := binary32_certificate)
-        xi (Genv.globalenv prog) sp e m le (modls cfg a b) v ∧
+        xi (Genv.globalenv prog) sp e m le (modls (hf := hf) cfg a b) v ∧
         Val.lessdef z v
 
 def eval_divfStatement
