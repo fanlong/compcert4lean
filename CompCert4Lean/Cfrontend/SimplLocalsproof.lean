@@ -177,57 +177,57 @@ def freelist_no_overlap : List (block × Z × Z) → Prop
       ∀ b' lo' hi', (b', lo', hi') ∈ rest →
         b' ≠ b ∨ ZArith.BinInt.Z.le hi' lo ∨ ZArith.BinInt.Z.le hi lo'
 
-inductive match_globalenvs (ge : genv) (f : meminj) (bound : block) : Prop where
+inductive match_globalenvs (prog : program) (f : meminj) (bound : block) : Prop where
   | intro
       (DOMAIN : ∀ b, Plt b bound → f b = some (b, .Z0))
       (IMAGE : ∀ b1 b2 delta,
         f b1 = some (b2, delta) → Plt b2 bound → b1 = b2)
       (SYMBOLS : ∀ id b,
-        Genv.find_symbol ge.genv_genv id = some b → Plt b bound)
+        Genv.find_symbol (Genv.globalenv (program_of_program prog)) id = some b → Plt b bound)
       (FUNCTIONS : ∀ b fd,
-        Genv.find_funct_ptr ge.genv_genv b = some fd → Plt b bound)
+        Genv.find_funct_ptr (Genv.globalenv (program_of_program prog)) b = some fd → Plt b bound)
       (VARINFOS : ∀ b gv,
-        Genv.find_var_info ge.genv_genv b = some gv → Plt b bound) :
-      match_globalenvs ge f bound
+        Genv.find_var_info (Genv.globalenv (program_of_program prog)) b = some gv → Plt b bound) :
+      match_globalenvs prog f bound
 
 abbrev mk_match_globalenvs := @match_globalenvs.intro
 
-inductive match_cont (cfg : CompilerConfig) (ge : genv) (f : meminj) :
+inductive match_cont (cfg : CompilerConfig) (prog : program) (f : meminj) :
     compilenv → cont → cont → mem → block → block → Prop where
   | stop (cenv : compilenv) (m : mem) (bound tbound hi : block) :
-      match_globalenvs ge f hi → Ple hi bound → Ple hi tbound →
-      match_cont cfg ge f cenv .Kstop .Kstop m bound tbound
+      match_globalenvs prog f hi → Ple hi bound → Ple hi tbound →
+      match_cont cfg prog f cenv .Kstop .Kstop m bound tbound
   | seq (cenv : compilenv) (s : statement) (k : cont)
       (ts : statement) (tk : cont) (m : mem) (bound tbound : block) :
       simpl_stmt cfg cenv s = .OK ts →
-      match_cont cfg ge f cenv k tk m bound tbound →
+      match_cont cfg prog f cenv k tk m bound tbound →
       compat_cenv (addr_taken_stmt s) cenv →
-      match_cont cfg ge f cenv (.Kseq s k) (.Kseq ts tk) m bound tbound
+      match_cont cfg prog f cenv (.Kseq s k) (.Kseq ts tk) m bound tbound
   | loop1 (cenv : compilenv) (s1 s2 : statement) (k : cont)
       (ts1 ts2 : statement) (tk : cont) (m : mem) (bound tbound : block) :
       simpl_stmt cfg cenv s1 = .OK ts1 → simpl_stmt cfg cenv s2 = .OK ts2 →
-      match_cont cfg ge f cenv k tk m bound tbound →
+      match_cont cfg prog f cenv k tk m bound tbound →
       compat_cenv (VSet.union (addr_taken_stmt s1) (addr_taken_stmt s2)) cenv →
-      match_cont cfg ge f cenv (.Kloop1 s1 s2 k) (.Kloop1 ts1 ts2 tk) m bound tbound
+      match_cont cfg prog f cenv (.Kloop1 s1 s2 k) (.Kloop1 ts1 ts2 tk) m bound tbound
   | loop2 (cenv : compilenv) (s1 s2 : statement) (k : cont)
       (ts1 ts2 : statement) (tk : cont) (m : mem) (bound tbound : block) :
       simpl_stmt cfg cenv s1 = .OK ts1 → simpl_stmt cfg cenv s2 = .OK ts2 →
-      match_cont cfg ge f cenv k tk m bound tbound →
+      match_cont cfg prog f cenv k tk m bound tbound →
       compat_cenv (VSet.union (addr_taken_stmt s1) (addr_taken_stmt s2)) cenv →
-      match_cont cfg ge f cenv (.Kloop2 s1 s2 k) (.Kloop2 ts1 ts2 tk) m bound tbound
+      match_cont cfg prog f cenv (.Kloop2 s1 s2 k) (.Kloop2 ts1 ts2 tk) m bound tbound
   | switch (cenv : compilenv) (k tk : cont) (m : mem) (bound tbound : block) :
-      match_cont cfg ge f cenv k tk m bound tbound →
-      match_cont cfg ge f cenv (.Kswitch k) (.Kswitch tk) m bound tbound
-  | call (cenv : compilenv) (optid : Option ident) (fn : function)
+      match_cont cfg prog f cenv k tk m bound tbound →
+      match_cont cfg prog f cenv (.Kswitch k) (.Kswitch tk) m bound tbound
+  | match_Kcall (cenv : compilenv) (optid : Option ident) (fn : function)
       (e : env) (le : temp_env) (k : cont) (tfn : function)
       (te : env) (tle : temp_env) (tk : cont) (m : mem)
-      (hi thi lo tlo bound tbound : block) :
+      (hi thi lo tlo bound tbound : block) (x : Unit) :
       transf_function cfg fn = .OK tfn →
       match_envs f (cenv_for fn) e le m lo hi te tle tlo thi →
-      match_cont cfg ge f (cenv_for fn) k tk m lo tlo →
-      check_opttemp (cenv_for fn) optid = .OK () →
+      match_cont cfg prog f (cenv_for fn) k tk m lo tlo →
+      check_opttemp (cenv_for fn) optid = .OK x →
       Ple hi bound → Ple thi tbound →
-      match_cont cfg ge f cenv (.Kcall optid fn e le k)
+      match_cont cfg prog f cenv (.Kcall optid fn e le k)
         (.Kcall optid tfn te tle tk) m bound tbound
 
 abbrev match_Kstop := @match_cont.stop
@@ -235,24 +235,9 @@ abbrev match_Kseq := @match_cont.seq
 abbrev match_Kloop1 := @match_cont.loop1
 abbrev match_Kloop2 := @match_cont.loop2
 abbrev match_Kswitch := @match_cont.switch
+export match_cont (match_Kcall)
 
-def match_Kcall {cfg : CompilerConfig} {ge : genv} {f : meminj}
-    (cenv : compilenv) (optid : Option ident) (fn : function)
-    (e : env) (le : temp_env) (k : cont) (tfn : function)
-    (te : env) (tle : temp_env) (tk : cont) (m : mem)
-    (hi thi lo tlo bound tbound : block) (x : Unit)
-    (TRF : transf_function cfg fn = .OK tfn)
-    (MENV : match_envs f (cenv_for fn) e le m lo hi te tle tlo thi)
-    (MCONT : match_cont cfg ge f (cenv_for fn) k tk m lo tlo)
-    (CHECK : check_opttemp (cenv_for fn) optid = .OK x)
-    (BOUND : Ple hi bound) (TBOUND : Ple thi tbound) :
-    match_cont cfg ge f cenv (.Kcall optid fn e le k)
-      (.Kcall optid tfn te tle tk) m bound tbound := by
-  cases x
-  exact .call cenv optid fn e le k tfn te tle tk m hi thi lo tlo bound tbound
-    TRF MENV MCONT CHECK BOUND TBOUND
-
-inductive match_states (cfg : CompilerConfig) (ge : genv) : state → state → Prop where
+inductive match_states (cfg : CompilerConfig) (prog : program) : state → state → Prop where
   | regular (f : function) (s : statement) (k : cont) (e : env)
       (le : temp_env) (m : mem) (tf : function) (ts : statement)
       (tk : cont) (te : env) (tle : temp_env) (tm : mem)
@@ -260,25 +245,25 @@ inductive match_states (cfg : CompilerConfig) (ge : genv) : state → state → 
       transf_function cfg f = .OK tf →
       simpl_stmt cfg (cenv_for f) s = .OK ts →
       match_envs j (cenv_for f) e le m lo hi te tle tlo thi →
-      match_cont cfg ge j (cenv_for f) k tk m lo tlo →
+      match_cont cfg prog j (cenv_for f) k tk m lo tlo →
       Mem.inject j m tm →
       compat_cenv (addr_taken_stmt s) (cenv_for f) →
       Ple hi m.nextblock → Ple thi tm.nextblock →
-      match_states cfg ge (.State f s k e le m) (.State tf ts tk te tle tm)
+      match_states cfg prog (.State f s k e le m) (.State tf ts tk te tle tm)
   | call (fd : fundef) (vargs : List val) (k : cont) (m : mem)
       (tfd : fundef) (tvargs : List val) (tk : cont) (tm : mem)
       (j : meminj) (targs : List type) (tres : type) (cconv : calling_convention) :
       transf_fundef cfg fd = .OK tfd →
-      (∀ cenv, match_cont cfg ge j cenv k tk m m.nextblock tm.nextblock) →
+      (∀ cenv, match_cont cfg prog j cenv k tk m m.nextblock tm.nextblock) →
       Mem.inject j m tm → Val.inject_list j vargs tvargs →
       type_of_fundef fd = .Tfunction targs tres cconv →
       val_casted_list vargs targs →
-      match_states cfg ge (.Callstate fd vargs k m) (.Callstate tfd tvargs tk tm)
+      match_states cfg prog (.Callstate fd vargs k m) (.Callstate tfd tvargs tk tm)
   | return_ (v : val) (k : cont) (m : mem) (tv : val) (tk : cont)
       (tm : mem) (j : meminj) :
-      (∀ cenv, match_cont cfg ge j cenv k tk m m.nextblock tm.nextblock) →
+      (∀ cenv, match_cont cfg prog j cenv k tk m m.nextblock tm.nextblock) →
       Mem.inject j m tm → Val.inject j v tv →
-      match_states cfg ge (.Returnstate v k m) (.Returnstate tv tk tm)
+      match_states cfg prog (.Returnstate v k m) (.Returnstate tv tk tm)
 
 abbrev match_regular_states := @match_states.regular
 abbrev match_call_state := @match_states.call
@@ -734,8 +719,8 @@ def match_envs_free_blocksStatement : Prop :=
     ∃ tm', Mem.free_list tm (blocks_of_env tge te) = some tm' ∧ Mem.inject j m' tm'
 
 def match_globalenvs_preserves_globalsStatement : Prop :=
-  ∀ ge f, (∃ bound, match_globalenvs ge f bound) →
-    meminj_preserves_globals fundef type ge.genv_genv f
+  ∀ (prog : program) f, (∃ bound, match_globalenvs prog f bound) →
+    meminj_preserves_globals fundef type (Genv.globalenv (program_of_program prog)) f
 
 def typeof_simpl_exprStatement : Prop :=
   ∀ cenv a, typeof (simpl_expr cenv a) = typeof a
@@ -755,7 +740,7 @@ def eval_simpl_exprStatement
     let tge := globalenv tp
     ∀ e te le tle m tm f cenv lo hi tlo thi,
     match_envs f cenv e le m lo hi te tle tlo thi → Mem.inject f m tm →
-    (∃ bound, match_globalenvs ge f bound) →
+    (∃ bound, match_globalenvs p f bound) →
     ∀ a v,
       eval_expr
         (binary64_certificate := binary64_certificate)
@@ -775,7 +760,7 @@ def eval_simpl_lvalueStatement
     let tge := globalenv tp
     ∀ e te le tle m tm f cenv lo hi tlo thi,
     match_envs f cenv e le m lo hi te tle tlo thi → Mem.inject f m tm →
-    (∃ bound, match_globalenvs ge f bound) →
+    (∃ bound, match_globalenvs p f bound) →
     ∀ a b ofs bf,
       eval_lvalue
         (binary64_certificate := binary64_certificate)
@@ -797,7 +782,7 @@ def eval_simpl_exprlistStatement
     let tge := globalenv tp
     ∀ e te le tle m tm f cenv lo hi tlo thi,
     match_envs f cenv e le m lo hi te tle tlo thi → Mem.inject f m tm →
-    (∃ bound, match_globalenvs ge f bound) →
+    (∃ bound, match_globalenvs p f bound) →
     ∀ al tyl vl,
       eval_exprlist
         (binary64_certificate := binary64_certificate)
@@ -812,48 +797,48 @@ def eval_simpl_exprlistStatement
         Val.inject_list f vl tvl
 
 def match_cont_invariantStatement : Prop :=
-  ∀ cfg ge f' m' f cenv k tk m bound tbound,
-    match_cont cfg ge f cenv k tk m bound tbound →
+  ∀ (cfg : CompilerConfig) (prog : program) f' m' f cenv k tk m bound tbound,
+    match_cont cfg prog f cenv k tk m bound tbound →
     (∀ b chunk v, f b = none → Plt b bound →
       Mem.load chunk m b (.Z0 : Z) = some v →
       Mem.load chunk m' b (.Z0 : Z) = some v) →
     inject_incr f f' →
     (∀ b, Plt b bound → f' b = f b) →
     (∀ b b' delta, f' b = some (b', delta) → Plt b' tbound → f' b = f b) →
-    match_cont cfg ge f' cenv k tk m' bound tbound
+    match_cont cfg prog f' cenv k tk m' bound tbound
 
 def match_cont_assign_locStatement : Prop :=
-  ∀ cfg ge f cenv k tk m bound tbound ty loc ofs bf v m',
-    match_cont cfg ge f cenv k tk m bound tbound →
-    assign_loc ge.genv_cenv ty m loc ofs bf v m' → Ple bound loc →
-    match_cont cfg ge f cenv k tk m' bound tbound
+  ∀ (cfg : CompilerConfig) (prog : program) f cenv k tk m bound tbound ty loc ofs bf v m',
+    match_cont cfg prog f cenv k tk m bound tbound →
+    assign_loc (globalenv prog).genv_cenv ty m loc ofs bf v m' → Ple bound loc →
+    match_cont cfg prog f cenv k tk m' bound tbound
 
 def match_cont_extcallStatement : Prop :=
-  ∀ cfg ge f cenv k tk m bound tbound tm f' m',
-    match_cont cfg ge f cenv k tk m bound tbound →
+  ∀ (cfg : CompilerConfig) (prog : program) f cenv k tk m bound tbound tm f' m',
+    match_cont cfg prog f cenv k tk m bound tbound →
     Mem.unchanged_on (loc_unmapped f) m m' → inject_incr f f' →
     inject_separated f f' m tm → Ple bound m.nextblock → Ple tbound tm.nextblock →
-    match_cont cfg ge f' cenv k tk m' bound tbound
+    match_cont cfg prog f' cenv k tk m' bound tbound
 
 def match_cont_incr_boundsStatement : Prop :=
-  ∀ cfg ge f cenv k tk m bound tbound,
-    match_cont cfg ge f cenv k tk m bound tbound →
+  ∀ (cfg : CompilerConfig) (prog : program) f cenv k tk m bound tbound,
+    match_cont cfg prog f cenv k tk m bound tbound →
     ∀ bound' tbound', Ple bound bound' → Ple tbound tbound' →
-      match_cont cfg ge f cenv k tk m bound' tbound'
+      match_cont cfg prog f cenv k tk m bound' tbound'
 
 def match_cont_change_cenvStatement : Prop :=
-  ∀ cfg ge f cenv k tk m bound tbound cenv',
-    match_cont cfg ge f cenv k tk m bound tbound → is_call_cont k →
-    match_cont cfg ge f cenv' k tk m bound tbound
+  ∀ (cfg : CompilerConfig) (prog : program) f cenv k tk m bound tbound cenv',
+    match_cont cfg prog f cenv k tk m bound tbound → is_call_cont k →
+    match_cont cfg prog f cenv' k tk m bound tbound
 
 def match_cont_is_call_contStatement : Prop :=
-  ∀ cfg ge f cenv k tk m bound tbound,
-    match_cont cfg ge f cenv k tk m bound tbound → is_call_cont k → is_call_cont tk
+  ∀ (cfg : CompilerConfig) (prog : program) f cenv k tk m bound tbound,
+    match_cont cfg prog f cenv k tk m bound tbound → is_call_cont k → is_call_cont tk
 
 def match_cont_call_contStatement : Prop :=
-  ∀ cfg ge f cenv k tk m bound tbound,
-    match_cont cfg ge f cenv k tk m bound tbound → ∀ cenv',
-    match_cont cfg ge f cenv' (call_cont k) (call_cont tk) m bound tbound
+  ∀ (cfg : CompilerConfig) (prog : program) f cenv k tk m bound tbound,
+    match_cont cfg prog f cenv k tk m bound tbound → ∀ cenv',
+    match_cont cfg prog f cenv' (call_cont k) (call_cont tk) m bound tbound
 
 def free_list_nextblockStatement : Prop :=
   ∀ l m m', Mem.free_list m l = some m' → m'.nextblock = m.nextblock
@@ -864,26 +849,27 @@ def free_list_loadStatement : Prop :=
     Mem.load chunk m' b' (.Z0 : Z) = Mem.load chunk m b' (.Z0 : Z)
 
 def match_cont_free_envStatement : Prop :=
-  ∀ cfg ge tge f cenv e le m lo hi te tle tm tlo thi k tk m' tm',
+  ∀ (cfg : CompilerConfig) (prog tprog : program),
+    let ge := globalenv prog
+    let tge := globalenv tprog
+    ∀ f cenv e le m lo hi te tle tm tlo thi k tk m' tm',
     match_envs f cenv e le m lo hi te tle tlo thi →
-    match_cont cfg ge f cenv k tk m lo tlo → Ple hi m.nextblock →
+    match_cont cfg prog f cenv k tk m lo tlo → Ple hi m.nextblock →
     Ple thi tm.nextblock → Mem.free_list m (blocks_of_env ge e) = some m' →
     Mem.free_list tm (blocks_of_env tge te) = some tm' →
-    match_cont cfg ge f cenv k tk m' m'.nextblock tm'.nextblock
+    match_cont cfg prog f cenv k tk m' m'.nextblock tm'.nextblock
 
 def match_cont_globalenvStatement : Prop :=
-  ∀ cfg ge f cenv k tk m bound tbound,
-    match_cont cfg ge f cenv k tk m bound tbound →
-    ∃ bound, match_globalenvs ge f bound
+  ∀ (cfg : CompilerConfig) (prog : program) f cenv k tk m bound tbound,
+    match_cont cfg prog f cenv k tk m bound tbound →
+    ∃ bound, match_globalenvs prog f bound
 
 def match_cont_find_functStatement : Prop :=
   ∀ (cfg : CompilerConfig) (p tp : program), match_prog cfg p tp →
-    let ge := globalenv p
-    let tge := globalenv tp
     ∀ f cenv k tk m bound tbound vf fd tvf,
-    match_cont cfg ge f cenv k tk m bound tbound →
-    Genv.find_funct ge.genv_genv vf = some fd → Val.inject f vf tvf →
-    ∃ tfd, Genv.find_funct tge.genv_genv tvf = some tfd ∧
+    match_cont cfg p f cenv k tk m bound tbound →
+    Genv.find_funct (Genv.globalenv (program_of_program p)) vf = some fd → Val.inject f vf tvf →
+    ∃ tfd, Genv.find_funct (Genv.globalenv (program_of_program tp)) tvf = some tfd ∧
       transf_fundef cfg fd = .OK tfd
 
 def is_liftable_var_charactStatement : Prop :=
@@ -909,15 +895,15 @@ def addr_taken_seq_of_labeled_statementStatement : Prop :=
   ∀ ls, addr_taken_stmt (seq_of_labeled_statement ls) = addr_taken_lblstmt ls
 
 def simpl_find_labelStatement : Prop :=
-  ∀ cfg ge f cenv m bound tbound lbl s k ts tk,
+  ∀ (cfg : CompilerConfig) (prog : program) f cenv m bound tbound lbl s k ts tk,
     simpl_stmt cfg cenv s = .OK ts →
-    match_cont cfg ge f cenv k tk m bound tbound →
+    match_cont cfg prog f cenv k tk m bound tbound →
     compat_cenv (addr_taken_stmt s) cenv →
     match find_label lbl s k with
     | none => find_label lbl ts tk = none
     | some (s', k') => ∃ ts' tk', find_label lbl ts tk = some (ts', tk') ∧
         compat_cenv (addr_taken_stmt s') cenv ∧ simpl_stmt cfg cenv s' = .OK ts' ∧
-        match_cont cfg ge f cenv k' tk' m bound tbound
+        match_cont cfg prog f cenv k' tk' m bound tbound
 
 def find_label_store_paramsStatement : Prop :=
   ∀ lbl cenv s k params,
@@ -943,22 +929,22 @@ def step_simulationStatement
         (binary64_certificate := binary64_certificate)
         (binary32_certificate := binary32_certificate) xi ge S1 t S2 →
       ∀ S1',
-      match_states cfg ge S1 S1' →
+      match_states cfg p S1 S1' →
       ∃ S2',
         plus
           (step2
             (binary64_certificate := binary64_certificate)
             (binary32_certificate := binary32_certificate) xi)
-          tge S1' t S2' ∧ match_states cfg ge S2 S2'
+          tge S1' t S2' ∧ match_states cfg p S2 S2'
 
 def initial_states_simulationStatement : Prop :=
   ∀ (cfg : CompilerConfig) (p tp : program), match_prog cfg p tp →
     ∀ S, initial_state p S → ∃ R, initial_state tp R ∧
-      match_states cfg (globalenv p) S R
+      match_states cfg p S R
 
 def final_states_simulationStatement : Prop :=
   ∀ (cfg : CompilerConfig) (p tp : program), match_prog cfg p tp →
-    ∀ S R result, match_states cfg (globalenv p) S R →
+    ∀ S R result, match_states cfg p S R →
       final_state S result → final_state R result
 
 def transf_program_correctStatement
