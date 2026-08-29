@@ -14,7 +14,9 @@ namespace CompCert4Lean.Lib.Coqlib
 
 open CompCert4Lean.Foundation.Numbers.Rocq.Coq
 
-private def sumboolSelect {P Q : Prop} {A : Type}
+universe u v w
+
+private def sumboolSelect {P Q : Prop} {A : Type u}
     (d : CompCert4Lean.Foundation.Logic.Support.Sumbool P Q) (ifso ifnot : A) : A :=
   match d with
   | .left _ => ifso
@@ -27,10 +29,10 @@ def peq (x y : positive) :
   PArith.BinPos.Pos.eq_dec x y
 
 def peq_trueStatement : Prop :=
-  ∀ (A : Type) (x : positive) (a b : A), sumboolSelect (peq x x) a b = a
+  ∀ (A : Type u) (x : positive) (a b : A), sumboolSelect (peq x x) a b = a
 
 def peq_falseStatement : Prop :=
-  ∀ (A : Type) (x y : positive) (a b : A),
+  ∀ (A : Type u) (x y : positive) (a b : A),
     x ≠ y → sumboolSelect (peq x y) a b = b
 
 def Plt (x y : positive) : Prop :=
@@ -89,10 +91,10 @@ def zeq (x y : Z) :
   ZArith.BinInt.Z.eq_dec x y
 
 def zeq_trueStatement : Prop :=
-  ∀ (A : Type) (x : Z) (a b : A), sumboolSelect (zeq x x) a b = a
+  ∀ (A : Type u) (x : Z) (a b : A), sumboolSelect (zeq x x) a b = a
 
 def zeq_falseStatement : Prop :=
-  ∀ (A : Type) (x y : Z) (a b : A),
+  ∀ (A : Type u) (x y : Z) (a b : A),
     x ≠ y → sumboolSelect (zeq x y) a b = b
 
 def zlt (x y : Z) :
@@ -103,11 +105,11 @@ def zlt (x y : Z) :
   | .right h => exact .right (Int.le_of_not_gt h)
 
 def zlt_trueStatement : Prop :=
-  ∀ (A : Type) (x y : Z) (a b : A),
+  ∀ (A : Type u) (x y : Z) (a b : A),
     ZArith.BinInt.Z.lt x y → sumboolSelect (zlt x y) a b = a
 
 def zlt_falseStatement : Prop :=
-  ∀ (A : Type) (x y : Z) (a b : A),
+  ∀ (A : Type u) (x y : Z) (a b : A),
     ZArith.BinInt.Z.ge x y → sumboolSelect (zlt x y) a b = b
 
 def zle (x y : Z) :
@@ -116,7 +118,7 @@ def zle (x y : Z) :
   ZArith.ZArith_dec.Z_le_gt_dec x y
 
 def zle_trueStatement : Prop :=
-  ∀ (A : Type) (x y : Z) (a b : A),
+  ∀ (A : Type u) (x y : Z) (a b : A),
     ZArith.BinInt.Z.le x y → sumboolSelect (zle x y) a b = a
 
 def two_power_nat_OStatement : Prop :=
@@ -226,7 +228,7 @@ def floor_intervalStatement : Prop :=
 
 /-! ## Options, sums, and lists -/
 
-def option_eq {A : Type}
+def option_eq {A : Type u}
     (eqA : ∀ x y : A,
       CompCert4Lean.Foundation.Logic.Support.Sumbool (x = y) (x ≠ y)) :
     ∀ x y : Option A,
@@ -239,39 +241,41 @@ def option_eq {A : Type}
       | .left h => .left (by cases h; rfl)
       | .right h => .right (by intro h'; cases h'; exact h rfl)
 
-inductive option_rel {A B : Type} : (R : A → B → Prop) → Option A → Option B → Prop where
+inductive option_rel {A : Type u} {B : Type v} :
+    (R : A → B → Prop) → Option A → Option B → Prop where
   | none (R : A → B → Prop) : option_rel R none none
   | some {R : A → B → Prop} (x : A) (y : B) :
       R x y → option_rel R (some x) (some y)
 
-def option_map {A B : Type} (f : A → B) : Option A → Option B
+def option_map {A : Type u} {B : Type v} (f : A → B) : Option A → Option B
   | none => none
   | some y => some (f y)
 
-def sum_left_map {A B C : Type} (f : A → B) : Sum A C → Sum B C
+def sum_left_map {A : Type u} {B : Type v} {C : Type w}
+    (f : A → B) : Sum A C → Sum B C
   | .inl y => .inl (f y)
   | .inr z => .inr z
 
-def list_length_z_aux {A : Type} : List A → Z → Z
+def list_length_z_aux {A : Type u} : List A → Z → Z
   | [], acc => acc
   | _ :: tl, acc => list_length_z_aux tl (ZArith.BinInt.Z.succ acc)
 
 def list_length_z_aux_shiftStatement : Prop :=
-  ∀ (A : Type) (l : List A) (n m : Z),
+  ∀ (A : Type u) (l : List A) (n m : Z),
     list_length_z_aux l n =
       ZArith.BinInt.Z.add (list_length_z_aux l m) (ZArith.BinInt.Z.sub n m)
 
-def list_length_z {A : Type} (l : List A) : Z :=
+def list_length_z {A : Type u} (l : List A) : Z :=
   list_length_z_aux l Z0
 
 def list_length_z_consStatement : Prop :=
-  ∀ (A : Type) (hd : A) (tl : List A),
+  ∀ (A : Type u) (hd : A) (tl : List A),
     list_length_z (hd :: tl) = ZArith.BinInt.Z.add (list_length_z tl) (Zpos xH)
 
 def list_length_z_posStatement : Prop :=
-  ∀ (A : Type) (l : List A), ZArith.BinInt.Z.ge (list_length_z l) Z0
+  ∀ (A : Type u) (l : List A), ZArith.BinInt.Z.ge (list_length_z l) Z0
 
-def list_nth_z {A : Type} : List A → Z → Option A
+def list_nth_z {A : Type u} : List A → Z → Option A
   | [], _ => none
   | hd :: tl, n =>
       match zeq n Z0 with
@@ -279,69 +283,71 @@ def list_nth_z {A : Type} : List A → Z → Option A
       | .right _ => list_nth_z tl (ZArith.BinInt.Z.pred n)
 
 def list_nth_z_inStatement : Prop :=
-  ∀ (A : Type) (l : List A) (n : Z) (x : A),
+  ∀ (A : Type u) (l : List A) (n : Z) (x : A),
     list_nth_z l n = some x → x ∈ l
 
 def list_nth_z_mapStatement : Prop :=
-  ∀ (A B : Type) (f : A → B) (l : List A) (n : Z),
+  ∀ (A : Type u) (B : Type v) (f : A → B) (l : List A) (n : Z),
     list_nth_z (List.map f l) n = option_map f (list_nth_z l n)
 
 def list_map_extenStatement : Prop :=
-  ∀ (A B : Type) (f f' : A → B) (l : List A),
+  ∀ (A : Type u) (B : Type v) (f f' : A → B) (l : List A),
     (∀ x : A, x ∈ l → f x = f' x) → List.map f' l = List.map f l
 
 def list_map_composeStatement : Prop :=
-  ∀ (A B C : Type) (f : A → B) (g : B → C) (l : List A),
+  ∀ (A : Type u) (B : Type v) (C : Type w)
+    (f : A → B) (g : B → C) (l : List A),
     List.map g (List.map f l) = List.map (fun x => g (f x)) l
 
 def list_in_map_invStatement : Prop :=
-  ∀ (A B : Type) (f : A → B) (l : List A) (y : B),
+  ∀ (A : Type u) (B : Type v) (f : A → B) (l : List A) (y : B),
     y ∈ List.map f l → ∃ x : A, y = f x ∧ x ∈ l
 
 def app_assStatement : Prop :=
-  ∀ (A : Type) (l1 l2 l3 : List A),
+  ∀ (A : Type u) (l1 l2 l3 : List A),
     (l1 ++ l2) ++ l3 = l1 ++ (l2 ++ l3)
 
-def list_fold_left {A B : Type} (f : A → B → B) : B → List A → B
+def list_fold_left {A : Type u} {B : Type v} (f : A → B → B) : B → List A → B
   | accu, [] => accu
   | accu, x :: xs => list_fold_left f (f x accu) xs
 
-def list_fold_right {A B : Type} (f : A → B → B) (l : List A) (base : B) : B :=
-  list_fold_left f base
-    (CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.List.rev' l)
+def list_fold_right {A : Type u} {B : Type v}
+    (f : A → B → B) (l : List A) (base : B) : B :=
+  list_fold_left f base (List.reverse l)
 
 def list_fold_left_appStatement : Prop :=
-  ∀ (A B : Type) (f : A → B → B) (l1 l2 : List A) (accu : B),
+  ∀ (A : Type u) (B : Type v)
+    (f : A → B → B) (l1 l2 : List A) (accu : B),
     list_fold_left f accu (l1 ++ l2) =
       list_fold_left f (list_fold_left f accu l1) l2
 
 def list_fold_right_eqStatement : Prop :=
-  ∀ (A B : Type) (f : A → B → B) (l : List A) (base : B),
+  ∀ (A : Type u) (B : Type v) (f : A → B → B) (l : List A) (base : B),
     list_fold_right f l base =
       match l with
       | [] => base
       | x :: xs => f x (list_fold_right f xs base)
 
 def in_appStatement : Prop :=
-  ∀ (A : Type) (x : A) (l1 l2 : List A),
+  ∀ (A : Type u) (x : A) (l1 l2 : List A),
     x ∈ l1 ++ l2 ↔ x ∈ l1 ∨ x ∈ l2
 
-def list_disjoint {A : Type} (l1 l2 : List A) : Prop :=
+def list_disjoint {A : Type u} (l1 l2 : List A) : Prop :=
   ∀ x y : A, x ∈ l1 → y ∈ l2 → x ≠ y
 
 def list_disjoint_cons_leftStatement : Prop :=
-  ∀ (A : Type) (a : A) (l1 l2 : List A),
+  ∀ (A : Type u) (a : A) (l1 l2 : List A),
     list_disjoint (a :: l1) l2 → list_disjoint l1 l2
 
 def list_disjoint_notinStatement : Prop :=
-  ∀ (A : Type) (l1 l2 : List A) (a : A),
+  ∀ (A : Type u) (l1 l2 : List A) (a : A),
     list_disjoint l1 l2 → a ∈ l1 → ¬ a ∈ l2
 
 def list_disjoint_symStatement : Prop :=
-  ∀ (A : Type) (l1 l2 : List A),
+  ∀ (A : Type u) (l1 l2 : List A),
     list_disjoint l1 l2 → list_disjoint l2 l1
 
-private def list_mem_dec {A : Type}
+private def list_mem_dec {A : Type u}
     (eqA : ∀ x y : A,
       CompCert4Lean.Foundation.Logic.Support.Sumbool (x = y) (x ≠ y))
     (x : A) : (l : List A) →
@@ -360,7 +366,7 @@ private def list_mem_dec {A : Type}
               | inl h => exact hxy h
               | inr h' => exact h h')
 
-def list_disjoint_dec {A : Type}
+def list_disjoint_dec {A : Type u}
     (eqA : ∀ x y : A,
       CompCert4Lean.Foundation.Logic.Support.Sumbool (x = y) (x ≠ y))
     (l1 l2 : List A) :
@@ -394,27 +400,27 @@ def list_disjoint_dec {A : Type}
               exact hdisj a b (by simp [ha]) hb hab)
 
 def list_disjoint_decStatement :=
-  ∀ (A : Type)
+  ∀ (A : Type u)
     (eqA : ∀ x y : A,
       CompCert4Lean.Foundation.Logic.Support.Sumbool (x = y) (x ≠ y))
     (l1 l2 : List A),
     CompCert4Lean.Foundation.Logic.Support.Sumbool
       (list_disjoint l1 l2) (¬ list_disjoint l1 l2)
 
-inductive list_norepet : {A : Type} → List A → Prop where
-  | nil (A : Type) : list_norepet (A := A) []
-  | cons {A : Type} (hd : A) {tl : List A} :
+inductive list_norepet : {A : Type u} → List A → Prop where
+  | nil (A : Type u) : list_norepet (A := A) []
+  | cons {A : Type u} (hd : A) {tl : List A} :
       (¬ hd ∈ tl) → list_norepet tl → list_norepet (hd :: tl)
 
 def list_norepet_decStatement :=
-  ∀ (A : Type)
+  ∀ (A : Type u)
     (eqA : ∀ x y : A,
       CompCert4Lean.Foundation.Logic.Support.Sumbool (x = y) (x ≠ y))
     (l : List A),
     CompCert4Lean.Foundation.Logic.Support.Sumbool
       (list_norepet l) (¬ list_norepet l)
 
-def list_norepet_dec {A : Type}
+def list_norepet_dec {A : Type u}
     (eqA : ∀ x y : A,
       CompCert4Lean.Foundation.Logic.Support.Sumbool (x = y) (x ≠ y))
     (l : List A) :
@@ -437,40 +443,38 @@ def list_norepet_dec {A : Type}
               | cons _ _ h => exact htail h)
 
 def list_norepet_append_commutStatement : Prop :=
-  ∀ (A : Type) (a b : List A),
+  ∀ (A : Type u) (a b : List A),
     list_norepet (a ++ b) → list_norepet (b ++ a)
 
 def list_norepet_appStatement : Prop :=
-  ∀ (A : Type) (l1 l2 : List A),
+  ∀ (A : Type u) (l1 l2 : List A),
     list_norepet (l1 ++ l2) ↔
       list_norepet l1 ∧ list_norepet l2 ∧ list_disjoint l1 l2
 
 def list_norepet_appendStatement : Prop :=
-  ∀ (A : Type) (l1 l2 : List A),
+  ∀ (A : Type u) (l1 l2 : List A),
     list_norepet l1 → list_norepet l2 → list_disjoint l1 l2 →
       list_norepet (l1 ++ l2)
 
 def list_norepet_append_leftStatement : Prop :=
-  ∀ (A : Type) (l1 l2 : List A),
+  ∀ (A : Type u) (l1 l2 : List A),
     list_norepet (l1 ++ l2) → list_norepet l1
 
-inductive is_tail {A : Type} : List A → List A → Prop where
+inductive is_tail {A : Type u} : List A → List A → Prop where
   | refl (c : List A) : is_tail c c
   | cons (i : A) {c1 c2 : List A} : is_tail c1 c2 → is_tail c1 (i :: c2)
 
 def is_tail_inStatement : Prop :=
-  ∀ (A : Type) (i : A) (c1 c2 : List A),
+  ∀ (A : Type u) (i : A) (c1 c2 : List A),
     is_tail (i :: c1) c2 → i ∈ c2
 
 def is_tail_cons_leftStatement : Prop :=
-  ∀ (A : Type) (i : A) (c1 c2 : List A),
+  ∀ (A : Type u) (i : A) (c1 c2 : List A),
     is_tail (i :: c1) c2 → is_tail c1 c2
 
 def is_tail_transStatement : Prop :=
-  ∀ (A : Type) (l1 l2 : List A),
+  ∀ (A : Type u) (l1 l2 : List A),
     is_tail l1 l2 → ∀ l3 : List A, is_tail l2 l3 → is_tail l1 l3
-
-universe u v
 
 inductive list_forall2 {A : Type u} {B : Type v} :
     (P : A → B → Prop) → List A → List B → Prop where
@@ -515,40 +519,40 @@ def proj_sumbool_is_trueStatement : Prop :=
     P → proj_sumbool a = true
 
 def dec_eq_trueStatement : Prop :=
-  ∀ (A : Type)
+  ∀ (A : Type u)
     (dec_eq : ∀ x y : A,
       CompCert4Lean.Foundation.Logic.Support.Sumbool (x = y) (x ≠ y))
-    (B : Type) (x : A) (ifso ifnot : B),
+    (B : Type v) (x : A) (ifso ifnot : B),
     sumboolSelect (dec_eq x x) ifso ifnot = ifso
 
 def dec_eq_falseStatement : Prop :=
-  ∀ (A : Type)
+  ∀ (A : Type u)
     (dec_eq : ∀ x y : A,
       CompCert4Lean.Foundation.Logic.Support.Sumbool (x = y) (x ≠ y))
-    (B : Type) (x y : A) (ifso ifnot : B),
+    (B : Type v) (x y : A) (ifso ifnot : B),
     x ≠ y → sumboolSelect (dec_eq x y) ifso ifnot = ifnot
 
 def dec_eq_symStatement : Prop :=
-  ∀ (A : Type)
+  ∀ (A : Type u)
     (dec_eq : ∀ x y : A,
       CompCert4Lean.Foundation.Logic.Support.Sumbool (x = y) (x ≠ y))
-    (B : Type) (x y : A) (ifso ifnot : B),
+    (B : Type v) (x y : A) (ifso ifnot : B),
     sumboolSelect (dec_eq x y) ifso ifnot =
       sumboolSelect (dec_eq y x) ifso ifnot
 
 def pred_dec_trueStatement : Prop :=
   ∀ (P : Prop) (dec : CompCert4Lean.Foundation.Logic.Support.Sumbool P (¬ P))
-    (A : Type) (a b : A),
+    (A : Type u) (a b : A),
     P → sumboolSelect dec a b = a
 
 def pred_dec_falseStatement : Prop :=
   ∀ (P : Prop) (dec : CompCert4Lean.Foundation.Logic.Support.Sumbool P (¬ P))
-    (A : Type) (a b : A),
+    (A : Type u) (a b : A),
     (¬ P) → sumboolSelect dec a b = b
 
 /-! ## Lexicographic order -/
 
-inductive lex_ord {A B : Type} :
+inductive lex_ord {A : Type u} {B : Type v} :
     (ordA : A → A → Prop) → (ordB : B → B → Prop) → A × B → A × B → Prop where
   | left (ordA : A → A → Prop) (ordB : B → B → Prop)
       (a1 : A) (b1 : B) (a2 : A) (b2 : B) :
@@ -561,7 +565,7 @@ open lex_ord renaming left → lex_ord_left, right → lex_ord_right
 export _root_ (lex_ord_left lex_ord_right)
 
 def wf_lex_ordStatement : Prop :=
-  ∀ (A B : Type) (ordA : A → A → Prop) (ordB : B → B → Prop),
+  ∀ (A : Type u) (B : Type v) (ordA : A → A → Prop) (ordB : B → B → Prop),
     WellFounded ordA → WellFounded ordB → WellFounded (lex_ord ordA ordB)
 
 end CompCert4Lean.Lib.Coqlib
