@@ -118,22 +118,22 @@ private def record_branches_measure (fn : function) : U.t × (node → Nat) :=
   PTree.fold record_branch_measure fn.fn_code (U.empty, fun _ => 0)
 
 private def record_cond_measure
-    (st : (code × U.t × Bool) × (node → Nat))
-    (pc : node) (b : bblock) : (code × U.t × Bool) × (node → Nat) :=
+    (st : (((code × U.t) × Bool) × (node → Nat)))
+    (pc : node) (b : bblock) : (((code × U.t) × Bool) × (node → Nat)) :=
   let next := record_cond st.1 pc b
   match b with
   | Lcond _cond _args s1 s2 :: _ =>
-      match peqNode (U.repr st.1.2.1 s1) (U.repr st.1.2.1 s2) with
-      | .left _ => (next, measure_cond st.1.2.1 pc s1 s2 st.2)
+      match peqNode (U.repr st.1.1.2 s1) (U.repr st.1.1.2 s2) with
+      | .left _ => (next, measure_cond st.1.1.2 pc s1 s2 st.2)
       | .right _ => (next, st.2)
   | _ => (next, st.2)
 
 private def record_conds_1_witness (cu : code × U.t) (f : node → Nat) :
     node → Nat :=
-  (PTree.fold record_cond_measure cu.1 ((cu.1, cu.2, false), f)).2
+  (PTree.fold record_cond_measure cu.1 (((cu.1, cu.2), false), f)).2
 
 private def record_conds_1_measure (cu : code × U.t) (f : node → Nat) :
-    (code × U.t × Bool) × (node → Nat) :=
+    (((code × U.t) × Bool) × (node → Nat)) :=
   (record_conds_1 cu, record_conds_1_witness cu f)
 
 private abbrev cond_measure_state := (code × U.t) × (node → Nat)
@@ -150,16 +150,16 @@ private theorem record_conds_measure_rel_wf :
 
 private theorem record_conds_measure_termination :
     ∀ (cu : code × U.t) (f : node → Nat),
-      (record_conds_1_measure cu f).1.2.2 = true →
-        PTree_Properties.cardinal (record_conds_1_measure cu f).1.1 <
+      (record_conds_1_measure cu f).1.2 = true →
+        PTree_Properties.cardinal (record_conds_1_measure cu f).1.1.1 <
           PTree_Properties.cardinal cu.1 := by
   intro cu f hchanged
   rcases cu with ⟨c0, u0⟩
-  let P : code → (code × U.t × Bool) → Prop := fun c s =>
-    (∀ pc, PTree.get pc c = none → PTree.get pc s.1 = PTree.get pc c0) ∧
-      (PTree_Properties.cardinal s.1 + (if s.2.2 then 1 else 0) ≤
+  let P : code → ((code × U.t) × Bool) → Prop := fun c s =>
+    (∀ pc, PTree.get pc c = none → PTree.get pc s.1.1 = PTree.get pc c0) ∧
+      (PTree_Properties.cardinal s.1.1 + (if s.2 then 1 else 0) ≤
         PTree_Properties.cardinal c0)
-  have hfold : P c0 (PTree.fold record_cond c0 (c0, u0, false)) := by
+  have hfold : P c0 (PTree.fold record_cond c0 ((c0, u0), false)) := by
     apply PTree_Properties.fold_rec_proof
     · intro m m' a hget hP
       refine ⟨?_, hP.2⟩
@@ -172,7 +172,7 @@ private theorem record_conds_measure_termination :
         simpa [PTree.get] using hnone
       · simp [PTree_Properties.cardinal, PTree.elements, PTree.xelements]
     · intro m a k b hnone hsome hP
-      rcases a with ⟨c, u, changed⟩
+      rcases a with ⟨⟨c, u⟩, changed⟩
       change PTree.tree bblock at c
       unfold P at hP ⊢
       change
@@ -270,18 +270,18 @@ private theorem record_conds_measure_termination :
               exact ⟨hpreserve, hP.2⟩
   let c0tree : PTree.tree bblock := c0
   have hchanged' :
-      (PTree.fold record_cond c0tree (c0tree, u0, false)).2.2 = true := by
+      (PTree.fold record_cond c0tree ((c0tree, u0), false)).2 = true := by
     simpa [record_conds_1_measure, record_conds_1, c0tree] using hchanged
   have hbound :
       PTree_Properties.cardinal
-          (PTree.fold record_cond c0tree (c0tree, u0, false)).1 +
-        (if (PTree.fold record_cond c0tree (c0tree, u0, false)).2.2 = true then 1 else 0) ≤
+          (PTree.fold record_cond c0tree ((c0tree, u0), false)).1.1 +
+        (if (PTree.fold record_cond c0tree ((c0tree, u0), false)).2 = true then 1 else 0) ≤
       PTree_Properties.cardinal c0tree := by
     simpa [c0tree, Prod.fst, Prod.snd] using hfold.2
   simp [hchanged'] at hbound
   have hlt :
       PTree_Properties.cardinal
-          (PTree.fold record_cond c0tree (c0tree, u0, false)).1 <
+          (PTree.fold record_cond c0tree ((c0tree, u0), false)).1.1 <
         PTree_Properties.cardinal c0tree := by
     omega
   simpa [record_conds_1_measure, record_conds_1, c0tree] using hlt
@@ -290,9 +290,9 @@ private def record_conds_measure_wf
     (cu : cond_measure_state) : U.t × (node → Nat) :=
   WellFounded.fix record_conds_measure_rel_wf (fun cu rec =>
     let result := record_conds_1_measure cu.1 cu.2
-    match hchanged : result.1.2.2 with
+    match hchanged : result.1.2 with
     | true =>
-      rec ((result.1.1, result.1.2.1), result.2)
+      rec (result.1.1, result.2)
         (record_conds_measure_termination cu.1 cu.2 (by simpa [hchanged]))
     | false =>
       (cu.1.2, cu.2)) cu
@@ -433,18 +433,18 @@ def record_cond_correctStatement : Type :=
     PTree.get pc c ≠ none →
     sig (fun f' : node → Nat =>
       branch_map_correct_2 fn
-        (record_cond (c, u, changed) pc b).1
-        (record_cond (c, u, changed) pc b).2.1 f')
+        (record_cond ((c, u), changed) pc b).1.1
+        (record_cond ((c, u), changed) pc b).1.2 f')
 
 def record_conds_1_correctStatement : Type :=
   ∀ (fn : function) (c : code) (u : U.t) (f : node → Nat),
     branch_map_correct_2 fn c u f →
       code_compat fn c →
       -- `PLift` keeps the Coq proof component inside this Type-level product.
-      PLift (code_compat fn (record_conds_1 (c, u)).1) ×
+      PLift (code_compat fn (record_conds_1 (c, u)).1.1) ×
       sig (fun f' : node → Nat =>
         branch_map_correct_2 fn
-          (record_conds_1 (c, u)).1 (record_conds_1 (c, u)).2.1 f')
+          (record_conds_1 (c, u)).1.1 (record_conds_1 (c, u)).1.2 f')
 
 def record_conds_correctStatement : Type :=
   ∀ (fn : function) (cu : code × U.t),

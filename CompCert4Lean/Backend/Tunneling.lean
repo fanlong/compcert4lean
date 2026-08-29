@@ -193,19 +193,19 @@ def record_branch (uf : U.t) (pc : node) (b : bblock) : U.t :=
 def record_branches (f : function) : U.t :=
   PTree.fold record_branch f.fn_code U.empty
 
-def record_cond (st : code × U.t × Bool) (pc : node) (b : bblock) :
-    code × U.t × Bool :=
+def record_cond (st : ((code × U.t) × Bool)) (pc : node) (b : bblock) :
+    ((code × U.t) × Bool) :=
   match b with
   | Lcond _cond _args s1 s2 :: _ =>
-      let (c, u, _) := st
+      let ((c, u), _) := st
       match peq (U.repr u s1) (U.repr u s2) with
-      | .left _ => (PTree.remove pc c, U.union u pc s1, true)
+      | .left _ => ((PTree.remove pc c, U.union u pc s1), true)
       | .right _ => st
   | _ => st
 
-def record_conds_1 (cu : code × U.t) : code × U.t × Bool :=
+def record_conds_1 (cu : code × U.t) : ((code × U.t) × Bool) :=
   let (c, u) := cu
-  PTree.fold record_cond c (c, u, false)
+  PTree.fold record_cond c ((c, u), false)
 
 private def measure_state (cu : code × U.t) : Nat :=
   PTree_Properties.cardinal cu.1
@@ -215,18 +215,17 @@ private def recordCondsRel (s' s : code × U.t) : Prop :=
 
 private def recordCondsTerminationStatement : Prop :=
   ∀ (cu : code × U.t),
-    (record_conds_1 cu).2.2 = true →
-      measure_state ((record_conds_1 cu).1, (record_conds_1 cu).2.1) <
-        measure_state cu
+    (record_conds_1 cu).2 = true →
+      measure_state (record_conds_1 cu).1 < measure_state cu
 
 private theorem recordCondsTermination : recordCondsTerminationStatement := by
   intro cu
   rcases cu with ⟨c0, u0⟩
-  let P : code → (code × U.t × Bool) → Prop := fun c s =>
-    (∀ pc, PTree.get pc c = none → PTree.get pc s.1 = PTree.get pc c0) ∧
-      (PTree_Properties.cardinal s.1 + (if s.2.2 then 1 else 0) ≤
+  let P : code → ((code × U.t) × Bool) → Prop := fun c s =>
+    (∀ pc, PTree.get pc c = none → PTree.get pc s.1.1 = PTree.get pc c0) ∧
+      (PTree_Properties.cardinal s.1.1 + (if s.2 then 1 else 0) ≤
         PTree_Properties.cardinal c0)
-  have hfold : P c0 (PTree.fold record_cond c0 (c0, u0, false)) := by
+  have hfold : P c0 (PTree.fold record_cond c0 ((c0, u0), false)) := by
     apply PTree_Properties.fold_rec_proof
     · intro m m' a hget hP
       refine ⟨?_, hP.2⟩
@@ -239,7 +238,7 @@ private theorem recordCondsTermination : recordCondsTerminationStatement := by
         simpa [PTree.get] using hnone
       · simp [PTree_Properties.cardinal, PTree.elements, PTree.xelements]
     · intro m a k b hnone hsome hP
-      rcases a with ⟨c, u, changed⟩
+      rcases a with ⟨⟨c, u⟩, changed⟩
       change PTree.tree bblock at c
       unfold P at hP ⊢
       change
@@ -336,17 +335,17 @@ private theorem recordCondsTermination : recordCondsTerminationStatement := by
   intro hchanged
   let c0tree : PTree.tree bblock := c0
   have hchanged' :
-      (PTree.fold record_cond c0tree (c0tree, u0, false)).2.2 = true := by
+      (PTree.fold record_cond c0tree ((c0tree, u0), false)).2 = true := by
     simpa [record_conds_1, c0tree] using hchanged
   have hbound :
       PTree_Properties.cardinal
-          (PTree.fold record_cond c0tree (c0tree, u0, false)).1 +
-        (if (PTree.fold record_cond c0tree (c0tree, u0, false)).2.2 = true then 1 else 0) ≤
+          (PTree.fold record_cond c0tree ((c0tree, u0), false)).1.1 +
+        (if (PTree.fold record_cond c0tree ((c0tree, u0), false)).2 = true then 1 else 0) ≤
       PTree_Properties.cardinal c0tree := by
     simpa [c0tree, Prod.fst, Prod.snd] using hfold.2
   simp [hchanged'] at hbound
   change PTree_Properties.cardinal
-      (PTree.fold record_cond c0tree (c0tree, u0, false)).1 <
+      (PTree.fold record_cond c0tree ((c0tree, u0), false)).1.1 <
     PTree_Properties.cardinal c0tree
   omega
 
@@ -357,8 +356,8 @@ private def recordCondsWF
     (cu : code × U.t)
     (rec : ∀ cu', recordCondsRel cu' cu → U.t) : U.t :=
   let result := record_conds_1 cu
-  if h : result.2.2 then
-    rec (result.1, result.2.1)
+  if h : result.2 then
+    rec result.1
       (recordCondsTermination (cu := cu) h)
   else
     cu.2
@@ -369,8 +368,8 @@ private def recordCondsCore (cu : code × U.t) : U.t :=
 private theorem recordCondsCore_equation (cu : code × U.t) :
     recordCondsCore cu =
       let result := record_conds_1 cu
-      if result.2.2 then
-        recordCondsCore (result.1, result.2.1)
+      if result.2 then
+        recordCondsCore result.1
       else
         cu.2 := by
   unfold recordCondsCore
@@ -384,17 +383,17 @@ def record_conds_equationStatement : Prop :=
   ∀ (cu : code × U.t),
     record_conds cu =
       let result := record_conds_1 cu
-      if result.2.2 then record_conds (result.1, result.2.1) else cu.2
+      if result.2 then record_conds result.1 else cu.2
 
 def record_conds_recStatement : Type 1 :=
   ∀ (P : code × U.t → U.t → Type),
     (∀ (cu cu' : code × U.t) (changed : Bool),
-      record_conds_1 cu = (cu'.1, (cu'.2, changed)) →
+      record_conds_1 cu = (cu', changed) →
       changed = true →
       P cu' (record_conds cu') →
-      P cu (record_conds cu)) →
+      P cu (record_conds cu')) →
     (∀ (cu cu' : code × U.t) (changed : Bool),
-      record_conds_1 cu = (cu'.1, (cu'.2, changed)) →
+      record_conds_1 cu = (cu', changed) →
       changed = false →
       P cu cu.2) →
     ∀ cu : code × U.t, P cu (record_conds cu)
