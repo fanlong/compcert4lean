@@ -406,7 +406,6 @@ def shl (v1 v2 : val) : val := match v1, v2 with | Vint n1, Vint n2 => if Int.lt
 def shr (v1 v2 : val) : val := match v1, v2 with | Vint n1, Vint n2 => if Int.ltu n2 Int.iwordsize then Vint (Int.shr n1 n2) else Vundef | _, _ => Vundef
 def shru (v1 v2 : val) : val := match v1, v2 with | Vint n1, Vint n2 => if Int.ltu n2 Int.iwordsize then Vint (Int.shru n1 n2) else Vundef | _, _ => Vundef
 def shrx (v1 v2 : val) : Option val := match v1, v2 with | Vint n1, Vint n2 => if Int.ltu n2 (Int.repr (zOfNat 31)) then some (Vint (Int.shrx n1 n2)) else none | _, _ => none
-def rol (v1 v2 : val) : val := match v1, v2 with | Vint n1, Vint n2 => Vint (Int.rol n1 n2) | _, _ => Vundef
 def ror (v1 v2 : val) : val := match v1, v2 with | Vint n1, Vint n2 => Vint (Int.ror n1 n2) | _, _ => Vundef
 
 def addf (v1 v2 : val) : val := match v1, v2 with | Vfloat f1, Vfloat f2 => Vfloat (Float.add f1 f2) | _, _ => Vundef
