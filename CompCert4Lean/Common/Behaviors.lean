@@ -117,23 +117,23 @@ inductive state_behaves (L : semantics) (s : state L) :
       (hnofinal : ∀ r, ¬ final_state L s' r) :
       state_behaves L s (Goes_wrong t)
 
-abbrev state_terminates {L : semantics} (s : state L)
-    (t : trace) (s' : state L) (r : int)
+abbrev state_terminates (L : semantics) {s : state L}
+    {t : trace} {s' : state L} (r : int)
     (hstar : Star L s t s') (hfinal : final_state L s' r) :
     state_behaves L s (Terminates t r) :=
   state_behaves.state_terminates t s' r hstar hfinal
 
-abbrev state_diverges {L : semantics} (s : state L)
-    (t : trace) (s' : state L) (hstar : Star L s t s')
+abbrev state_diverges (L : semantics) {s : state L}
+    {t : trace} {s' : state L} (hstar : Star L s t s')
     (hforever : ForeverSilent L s') : state_behaves L s (Diverges t) :=
   state_behaves.state_diverges t s' hstar hforever
 
-abbrev state_reacts {L : semantics} (s : state L) (T : traceinf)
+abbrev state_reacts (L : semantics) {s : state L} {T : traceinf}
     (hforever : ForeverReactive L s T) : state_behaves L s (Reacts T) :=
   state_behaves.state_reacts T hforever
 
-abbrev state_goes_wrong {L : semantics} (s : state L)
-    (t : trace) (s' : state L) (hstar : Star L s t s')
+abbrev state_goes_wrong (L : semantics) {s : state L}
+    {t : trace} {s' : state L} (hstar : Star L s t s')
     (hnostep : Nostep L s') (hnofinal : ∀ r, ¬ final_state L s' r) :
     state_behaves L s (Goes_wrong t) :=
   state_behaves.state_goes_wrong t s' hstar hnostep hnofinal
@@ -149,12 +149,12 @@ inductive program_behaves (L : semantics) : program_behavior → Prop where
       (hnoinit : ∀ s, ¬ initial_state L s) :
       program_behaves L (Goes_wrong E0)
 
-abbrev program_runs {L : semantics} (s : state L) (beh : program_behavior)
+abbrev program_runs {L : semantics} {s : state L} {beh : program_behavior}
     (hinit : initial_state L s) (hbehaves : state_behaves L s beh) :
     program_behaves L beh :=
   program_behaves.program_runs s beh hinit hbehaves
 
-abbrev program_goes_initially_wrong {L : semantics}
+abbrev program_goes_initially_wrong (L : semantics)
     (hnoinit : ∀ s, ¬ initial_state L s) :
     program_behaves L (Goes_wrong E0) :=
   program_behaves.program_goes_initially_wrong hnoinit
@@ -197,26 +197,35 @@ private theorem starAppend {genv state : Type}
       · rw [htrace]
         exact eappAssoc u v t2
 
+def reacts'Statement : Type 1 :=
+  ∀ (L : semantics) (s0 : state L),
+    (∀ (s1 : state L) (t1 : trace),
+      Star L s0 t1 s1 →
+      ∃ (s2 : state L) (t2 : trace), Star L s1 t2 s2 ∧ t2 ≠ E0) →
+    ∀ (s1 : state L) (t1 : trace),
+      Star L s0 t1 s1 →
+      Σ s2 : state L, {t2 : trace // Star L s1 t2 s2 ∧ t2 ≠ E0}
+
+noncomputable def reacts'
+    (L : semantics) {s0 : state L}
+    (reacts : ∀ (s1 : state L) (t1 : trace),
+      Star L s0 t1 s1 →
+      ∃ (s2 : state L) (t2 : trace), Star L s1 t2 s2 ∧ t2 ≠ E0)
+    {s1 : state L} {t1 : trace} (ST : Star L s0 t1 s1) :
+    Σ s2 : state L, {t2 : trace // Star L s1 t2 s2 ∧ t2 ≠ E0} := by
+  classical
+  let s2 := Classical.choose (reacts s1 t1 ST)
+  have hs2 : ∃ t2, Star L s1 t2 s2 ∧ t2 ≠ E0 :=
+    Classical.choose_spec (reacts s1 t1 ST)
+  let t2 := Classical.choose hs2
+  have ht2 : Star L s1 t2 s2 ∧ t2 ≠ E0 :=
+    Classical.choose_spec hs2
+  exact ⟨s2, ⟨t2, ht2⟩⟩
+
 private structure ReactiveCursor (L : semantics) (s0 : state L) where
   current : state L
   history : trace
   reachable : Star L s0 history current
-
-private noncomputable def chooseReactiveStep
-    (L : semantics) (s0 : state L)
-    (reacts : ∀ (s1 : state L) (t1 : trace),
-      Star L s0 t1 s1 →
-      ∃ (s2 : state L) (t2 : trace), Star L s1 t2 s2 ∧ t2 ≠ E0)
-    (cursor : ReactiveCursor L s0) :
-    Σ s2 : state L, {t2 : trace // Star L cursor.current t2 s2 ∧ t2 ≠ E0} := by
-  classical
-  let s2 := Classical.choose (reacts cursor.current cursor.history cursor.reachable)
-  have hs2 : ∃ t2, Star L cursor.current t2 s2 ∧ t2 ≠ E0 :=
-    Classical.choose_spec (reacts cursor.current cursor.history cursor.reachable)
-  let t2 := Classical.choose hs2
-  have ht2 : Star L cursor.current t2 s2 ∧ t2 ≠ E0 :=
-    Classical.choose_spec hs2
-  exact ⟨s2, ⟨t2, ht2⟩⟩
 
 private noncomputable def nextReactiveCursor
     (L : semantics) (s0 : state L)
@@ -224,7 +233,7 @@ private noncomputable def nextReactiveCursor
       Star L s0 t1 s1 →
       ∃ (s2 : state L) (t2 : trace), Star L s1 t2 s2 ∧ t2 ≠ E0)
     (cursor : ReactiveCursor L s0) : ReactiveCursor L s0 :=
-  let selected := chooseReactiveStep L s0 reacts cursor
+  let selected := reacts' L reacts cursor.reachable
   { current := selected.1
     history := Eapp cursor.history selected.2.1
     reachable := starAppend cursor.reachable selected.2.2.1 }
@@ -239,24 +248,15 @@ private noncomputable def reactiveCursorAt
   | n + 1 => nextReactiveCursor L s0 reacts
       (reactiveCursorAt L s0 reacts initial n)
 
-def reacts'Statement : Type 1 :=
-  ∀ (L : semantics) (s0 : state L),
-    (∀ (s1 : state L) (t1 : trace),
-      Star L s0 t1 s1 →
-      ∃ (s2 : state L) (t2 : trace), Star L s1 t2 s2 ∧ t2 ≠ E0) →
-    ∀ (s1 : state L) (t1 : trace),
-      Star L s0 t1 s1 →
-      Σ s2 : state L, {t2 : trace // Star L s1 t2 s2 ∧ t2 ≠ E0}
-
 noncomputable def build_traceinf'
-    (L : semantics) (s0 : state L)
+    (L : semantics) {s0 : state L}
     (reacts : ∀ (s1 : state L) (t1 : trace),
       Star L s0 t1 s1 →
       ∃ (s2 : state L) (t2 : trace), Star L s1 t2 s2 ∧ t2 ≠ E0)
-    (s1 : state L) (t1 : trace) (ST : Star L s0 t1 s1) : traceinf' :=
+    {s1 : state L} {t1 : trace} (ST : Star L s0 t1 s1) : traceinf' :=
   fun n =>
     let cursor := reactiveCursorAt L s0 reacts ⟨s1, t1, ST⟩ n
-    let selected := chooseReactiveStep L s0 reacts cursor
+    let selected := reacts' L reacts cursor.reachable
     NonemptyTrace.ofTrace selected.2.1 selected.2.2.2
 
 def reacts_forever_reactive_recStatement : Prop :=
@@ -266,7 +266,8 @@ def reacts_forever_reactive_recStatement : Prop :=
       ∃ (s2 : state L) (t2 : trace), Star L s1 t2 s2 ∧ t2 ≠ E0)
     (s1 : state L) (t1 : trace) (ST : Star L s0 t1 s1),
     ForeverReactive L s1
-      (traceinf_of_traceinf' (build_traceinf' L s0 reacts s1 t1 ST))
+      (traceinf_of_traceinf'
+        (build_traceinf' L (s0 := s0) reacts (s1 := s1) (t1 := t1) ST))
 
 def reacts_forever_reactiveStatement : Prop :=
   ∀ (L : semantics) (s0 : state L),
@@ -450,17 +451,21 @@ def atomic_behaviorsStatement : Prop :=
 
 /-! ## Infinite reduction sequences -/
 
-inductive tstate {genv state : Type}
+inductive tstate (genv state : Type)
     (step : genv → state → trace → state → Prop) (ge : genv) : Type where
   | ST (s : state) (T : traceinf) (F : forever step ge s T) :
-      tstate step ge
+      tstate genv state step ge
 
-export tstate (ST)
+abbrev ST (genv state : Type)
+    (step : genv → state → trace → state → Prop) (ge : genv)
+    (s : state) (T : traceinf) (F : forever step ge s T) :
+    tstate genv state step ge :=
+  tstate.ST s T F
 
 private def tstateElim {genv state : Type}
     {step : genv → state → trace → state → Prop} {ge : genv}
-    {motive : tstate step ge → Sort u}
-    (hST : ∀ s T F, motive (.ST s T F)) :
+    {motive : tstate genv state step ge → Sort u}
+    (hST : ∀ s T F, motive (tstate.ST s T F)) :
     ∀ S, motive S
   | .ST s T F => hST s T F
 
@@ -469,93 +474,123 @@ abbrev tstate_rec := @tstateElim
 abbrev tstate_rect := @tstateElim
 abbrev tstate_sind := @tstateElim
 
-def state_of_tstate {genv state : Type}
-    {step : genv → state → trace → state → Prop} {ge : genv}
-    (S : tstate step ge) : state :=
+def state_of_tstate (genv state : Type)
+    (step : genv → state → trace → state → Prop) (ge : genv)
+    (S : tstate genv state step ge) : state :=
   match S with
   | .ST s _ _ => s
 
-def traceinf_of_tstate {genv state : Type}
-    {step : genv → state → trace → state → Prop} {ge : genv}
-    (S : tstate step ge) : traceinf :=
+def traceinf_of_tstate (genv state : Type)
+    (step : genv → state → trace → state → Prop) (ge : genv)
+    (S : tstate genv state step ge) : traceinf :=
   match S with
   | .ST _ T _ => T
 
-inductive tstep {genv state : Type}
+inductive tstep (genv state : Type)
     (step : genv → state → trace → state → Prop) (ge : genv) :
-    trace → tstate step ge → tstate step ge → Prop where
+    trace → tstate genv state step ge → tstate genv state step ge → Prop where
   | tstep_intro (s1 : state) (t : trace) (T : traceinf) (s2 : state)
       (S : step ge s1 t s2) (F : forever step ge s2 T) :
-      tstep step ge t
-        (.ST s1 (Eappinf t T) (forever_intro s1 t S F))
-        (.ST s2 T F)
+      tstep genv state step ge t
+        (tstate.ST s1 (Eappinf t T) (forever_intro s1 t S F))
+        (tstate.ST s2 T F)
 
-abbrev tstep_intro := @tstep.tstep_intro
+abbrev tstep_intro (genv state : Type)
+    (step : genv → state → trace → state → Prop) (ge : genv)
+    (s1 : state) (t : trace) (T : traceinf) (s2 : state)
+    (S : step ge s1 t s2) (F : forever step ge s2 T) :
+    tstep genv state step ge t
+      (ST genv state step ge s1 (Eappinf t T) (forever_intro s1 t S F))
+      (ST genv state step ge s2 T F) :=
+  tstep.tstep_intro s1 t T s2 S F
 abbrev tstep_ind := @tstep.rec
 abbrev tstep_sind := @tstep.rec
 
-inductive tsteps {genv state : Type}
+inductive tsteps (genv state : Type)
     (step : genv → state → trace → state → Prop) (ge : genv) :
-    tstate step ge → tstate step ge → Prop where
-  | tsteps_refl (S : tstate step ge) : tsteps step ge S S
-  | tsteps_left (t : trace) (S1 S2 S3 : tstate step ge)
-      (hstep : tstep step ge t S1 S2) (hsteps : tsteps step ge S2 S3) :
-      tsteps step ge S1 S3
+    tstate genv state step ge → tstate genv state step ge → Prop where
+  | tsteps_refl (S : tstate genv state step ge) :
+      tsteps genv state step ge S S
+  | tsteps_left (t : trace) (S1 S2 S3 : tstate genv state step ge)
+      (hstep : tstep genv state step ge t S1 S2)
+      (hsteps : tsteps genv state step ge S2 S3) :
+      tsteps genv state step ge S1 S3
 
-abbrev tsteps_refl := @tsteps.tsteps_refl
-abbrev tsteps_left := @tsteps.tsteps_left
+abbrev tsteps_refl (genv state : Type)
+    (step : genv → state → trace → state → Prop) (ge : genv)
+    (S : tstate genv state step ge) : tsteps genv state step ge S S :=
+  tsteps.tsteps_refl S
+
+abbrev tsteps_left (genv state : Type)
+    (step : genv → state → trace → state → Prop) (ge : genv)
+    (t : trace) (S1 S2 S3 : tstate genv state step ge)
+    (hstep : tstep genv state step ge t S1 S2)
+    (hsteps : tsteps genv state step ge S2 S3) :
+    tsteps genv state step ge S1 S3 :=
+  tsteps.tsteps_left t S1 S2 S3 hstep hsteps
 abbrev tsteps_ind := @tsteps.rec
 abbrev tsteps_sind := @tsteps.rec
 
 private def treactive {genv state : Type}
     (step : genv → state → trace → state → Prop) (ge : genv)
-    (S : tstate step ge) : Prop :=
-  ∀ S1, tsteps step ge S S1 →
-    ∃ (S2 S3 : tstate step ge) (t : trace),
-      tsteps step ge S1 S2 ∧ tstep step ge t S2 S3 ∧ t ≠ E0
+    (S : tstate genv state step ge) : Prop :=
+  ∀ S1, tsteps genv state step ge S S1 →
+    ∃ (S2 S3 : tstate genv state step ge) (t : trace),
+      tsteps genv state step ge S1 S2 ∧
+        tstep genv state step ge t S2 S3 ∧ t ≠ E0
 
 private def tsilent {genv state : Type}
     (step : genv → state → trace → state → Prop) (ge : genv)
-    (S : tstate step ge) : Prop :=
-  ∀ (S1 : tstate step ge) (t : trace) (S2 : tstate step ge),
-    tsteps step ge S S1 → tstep step ge t S1 S2 → t = E0
+    (S : tstate genv state step ge) : Prop :=
+  ∀ (S1 : tstate genv state step ge) (t : trace)
+    (S2 : tstate genv state step ge),
+    tsteps genv state step ge S S1 →
+      tstep genv state step ge t S1 S2 → t = E0
 
 def tsteps_transStatement : Prop :=
   ∀ (genv state : Type)
     (step : genv → state → trace → state → Prop) (ge : genv)
-    (S1 S2 : tstate step ge),
-    tsteps step ge S1 S2 →
-    ∀ S3 : tstate step ge,
-      tsteps step ge S2 S3 → tsteps step ge S1 S3
+    (S1 S2 : tstate genv state step ge),
+    tsteps genv state step ge S1 S2 →
+    ∀ S3 : tstate genv state step ge,
+      tsteps genv state step ge S2 S3 →
+        tsteps genv state step ge S1 S3
 
 def treactive_or_tsilentStatement : Prop :=
   ∀ (genv state : Type)
     (step : genv → state → trace → state → Prop) (ge : genv)
-    (S : tstate step ge),
+    (S : tstate genv state step ge),
     treactive step ge S ∨
-      ∃ S' : tstate step ge, tsteps step ge S S' ∧ tsilent step ge S'
+      ∃ S' : tstate genv state step ge,
+        tsteps genv state step ge S S' ∧ tsilent step ge S'
 
 def tsteps_starStatement : Prop :=
   ∀ (genv state : Type)
     (step : genv → state → trace → state → Prop) (ge : genv)
-    (S1 S2 : tstate step ge),
-    tsteps step ge S1 S2 →
+    (S1 S2 : tstate genv state step ge),
+    tsteps genv state step ge S1 S2 →
     ∃ t : trace,
-      star step ge (state_of_tstate S1) t (state_of_tstate S2) ∧
-        traceinf_of_tstate S1 = Eappinf t (traceinf_of_tstate S2)
+      star step ge
+          (state_of_tstate genv state step ge S1) t
+          (state_of_tstate genv state step ge S2) ∧
+        traceinf_of_tstate genv state step ge S1 =
+          Eappinf t (traceinf_of_tstate genv state step ge S2)
 
 def tsilent_forever_silentStatement : Prop :=
   ∀ (genv state : Type)
     (step : genv → state → trace → state → Prop) (ge : genv)
-    (S : tstate step ge),
-    tsilent step ge S → forever_silent step ge (state_of_tstate S)
+    (S : tstate genv state step ge),
+    tsilent step ge S →
+      forever_silent step ge (state_of_tstate genv state step ge S)
 
 def treactive_forever_reactiveStatement : Prop :=
   ∀ (genv state : Type)
     (step : genv → state → trace → state → Prop) (ge : genv)
-    (S : tstate step ge),
+    (S : tstate genv state step ge),
     treactive step ge S →
-    forever_reactive step ge (state_of_tstate S) (traceinf_of_tstate S)
+    forever_reactive step ge
+      (state_of_tstate genv state step ge S)
+      (traceinf_of_tstate genv state step ge S)
 
 def forever_silent_or_reactiveStatement : Prop :=
   ∀ (genv state : Type)
