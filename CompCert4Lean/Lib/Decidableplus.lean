@@ -362,6 +362,14 @@ class Finite (T : Type u) where
 
 export Finite (Finite_elements Finite_elements_spec)
 
+/- Lean makes a structure parameter implicit in its generated constructor
+   whenever the fields determine it.  Keep that implementation detail behind
+   the source-named constructor endpoint, whose carrier and fields are explicit
+   in the same order as Rocq's `Build_Finite`. -/
+def Build_Finite (T : Type u) (Finite_elements : List T)
+    (Finite_elements_spec : ∀ x : T, _root_.List.Mem x Finite_elements) : Finite T :=
+  Finite.mk Finite_elements Finite_elements_spec
+
 def Decidable_forall (T : Type u) (fT : Finite T) (P : T → Prop)
     (dP : ∀ x : T, RocqDecidable (P x)) : RocqDecidable (∀ x : T, P x) where
   witness := forallbU (fun x => (dP x).witness)
@@ -394,19 +402,18 @@ instance instDecidable_exists {T : Type u} [fT : Finite T] (P : T → Prop)
     [dP : ∀ x : T, RocqDecidable (P x)] : RocqDecidable (∃ x : T, P x) :=
   Decidable_exists T fT P dP
 
-instance Finite_bool : Finite Bool where
-  Finite_elements := [false, true]
-  Finite_elements_spec := by
+instance Finite_bool : Finite Bool :=
+  Build_Finite Bool [false, true] (by
     intro x
     cases x with
     | false => exact _root_.List.Mem.head _
-    | true => exact _root_.List.Mem.tail false (_root_.List.Mem.head _)
+    | true => exact _root_.List.Mem.tail false (_root_.List.Mem.head _))
 
-instance Finite_pair {A : Type u} {B : Type v} [fA : Finite A] [fB : Finite B] :
-    Finite (A × B) where
-  Finite_elements :=
-    listProdU (Finite.Finite_elements (self := fA)) (Finite.Finite_elements (self := fB))
-  Finite_elements_spec := by
+def Finite_pair (A : Type u) (B : Type v) (fA : Finite A) (fB : Finite B) :
+    Finite (A × B) :=
+  Build_Finite (A × B)
+    (listProdU (Finite.Finite_elements (self := fA))
+      (Finite.Finite_elements (self := fB))) (by
     intro x
     rcases x with ⟨a, b⟩
     change (a, b) ∈
@@ -414,18 +421,25 @@ instance Finite_pair {A : Type u} {B : Type v} [fA : Finite A] [fB : Finite B] :
         (fun x => (Finite.Finite_elements (self := fB)).map (fun y => (x, y))))
     rw [_root_.List.mem_flatMap]
     exact ⟨a, Finite.Finite_elements_spec (self := fA) a,
-      _root_.List.mem_map.mpr ⟨b, Finite.Finite_elements_spec (self := fB) b, rfl⟩⟩
+      _root_.List.mem_map.mpr
+        ⟨b, Finite.Finite_elements_spec (self := fB) b, rfl⟩⟩)
 
-instance Finite_option {A : Type u} [fA : Finite A] : Finite (Option A) where
-  Finite_elements :=
-    none :: _root_.List.map
-      some (Finite.Finite_elements (self := fA))
-  Finite_elements_spec := by
+instance instFinite_pair {A : Type u} {B : Type v} [fA : Finite A] [fB : Finite B] :
+    Finite (A × B) :=
+  Finite_pair A B fA fB
+
+def Finite_option (A : Type u) (fA : Finite A) : Finite (Option A) :=
+  Build_Finite (Option A)
+    (none :: _root_.List.map some (Finite.Finite_elements (self := fA))) (by
     intro x
     cases x with
     | none => exact _root_.List.Mem.head _
     | some a =>
         exact _root_.List.Mem.tail none
-          (_root_.List.mem_map.mpr ⟨a, Finite.Finite_elements_spec (self := fA) a, rfl⟩)
+          (_root_.List.mem_map.mpr
+            ⟨a, Finite.Finite_elements_spec (self := fA) a, rfl⟩))
+
+instance instFinite_option {A : Type u} [fA : Finite A] : Finite (Option A) :=
+  Finite_option A fA
 
 end CompCert4Lean.Lib.Decidableplus
