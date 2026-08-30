@@ -915,7 +915,7 @@ def sound_succ_stateStatement
   ∀ (cfg : CompilerConfig) (prog : program) (ge : genv)
     (bc : block_classification) (pc : node)
     (ae : aenv) (am : amem) (instr : instruction) (ae' : aenv) (am' : amem)
-    (s : List stackframe) (f : function) (sp pc' : node) (e' : regset)
+    (s : List stackframe) (f : function) (sp : block) (pc' : node) (e' : regset)
     (m' : mem),
     PMap.get pc (analyze
       (binary64_certificate := binary64_certificate)
