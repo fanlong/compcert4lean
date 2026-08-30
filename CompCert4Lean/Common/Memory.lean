@@ -504,16 +504,12 @@ def storebytes (m : mem) (b : block) (ofs : Z) (bytes : List memval) : Option me
     none
 
 def drop_perm (m : mem) (b : block) (lo hi : Z) (p : permission) : Option mem :=
-  if boolOfSumbool (range_perm_dec m b lo hi Cur Freeable) then
+  match range_perm_dec m b lo hi Cur Freeable with
+  | .left hRange =>
     let oldAccess := PMap.get b m.mem_access
     let newAccess : Z → perm_kind → Option permission :=
       fun ofs k =>
-        if inRange lo hi ofs then
-          match oldAccess ofs k with
-          | none => none
-          | some _ => some p
-        else
-          oldAccess ofs k
+        if inRange lo hi ofs then some p else oldAccess ofs k
     some
       { mem_contents := m.mem_contents
         mem_access := PMap.set b newAccess m.mem_access
@@ -525,13 +521,7 @@ def drop_perm (m : mem) (b : block) (lo hi : Z) (p : permission) : Option mem :=
             rw [pmapGetSetSame]
             simp only [newAccess]
             split
-            · have ham := m.access_max b ofs
-              change perm_order'' (oldAccess ofs Max) (oldAccess ofs Cur) at ham
-              generalize hmax : oldAccess ofs Max = maxPerm
-              generalize hcur : oldAccess ofs Cur = curPerm
-              cases maxPerm <;> cases curPerm <;>
-                simp_all [perm_order'']
-              exact perm_refl p
+            · exact perm_refl p
             · exact m.access_max b ofs
           · rw [pmapGetSetOther _ _ _ _ h]
             exact m.access_max b' ofs
@@ -543,14 +533,23 @@ def drop_perm (m : mem) (b : block) (lo hi : Z) (p : permission) : Option mem :=
             simp only [newAccess]
             have oldNone := m.nextblock_noaccess b ofs k hnot
             change oldAccess ofs k = none at oldNone
-            split
-            · rw [oldNone]
+            split <;> rename_i hIn
+            · exfalso
+              have hBounds : zLe lo ofs ∧ zLt ofs hi := by
+                change intOfZ lo ≤ intOfZ ofs ∧ intOfZ ofs < intOfZ hi
+                simpa [inRange, ZArith.BinInt.Z.leb, ZArith.BinInt.Z.ltb] using hIn
+              have hPerm := hRange ofs hBounds
+              unfold perm at hPerm
+              change perm_order' (oldAccess ofs Cur) Freeable at hPerm
+              have oldCurNone := m.nextblock_noaccess b ofs Cur hnot
+              change oldAccess ofs Cur = none at oldCurNone
+              rw [oldCurNone] at hPerm
+              exact hPerm
             · exact oldNone
           · rw [pmapGetSetOther _ _ _ _ h]
             exact m.nextblock_noaccess b' ofs k hnot
         contents_default := m.contents_default }
-  else
-    none
+  | .right _ => none
 
 def compat_pointer_chunks (chunk1 chunk2 : memory_chunk) : Prop :=
   match chunk1, chunk2 with
