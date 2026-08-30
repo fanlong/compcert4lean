@@ -412,7 +412,14 @@ inductive eventually {genv state : Type}
         eventually step final_state ge n s' P) :
       eventually step final_state ge (Nat.succ n) s P
 
-export eventually (eventually_now eventually_later)
+export eventually (eventually_later)
+
+abbrev eventually_now {genv state : Type}
+    (step : genv → state → trace → state → Prop)
+    (final_state : state → int → Prop) (ge : genv)
+    (s : state) (P : state → Prop) (h : P s) :
+    eventually step final_state ge 0 s P :=
+  @eventually.eventually_now genv state step final_state ge s P h
 
 def eventually_transStatement : Prop :=
   ∀ (genv state : Type)
@@ -730,7 +737,7 @@ def single_events (L : semantics) : Prop :=
 
 structure receptive (L : semantics) : Prop where
   sr_receptive :
-    ∀ s t1 s1 t2, step L (globalenv L) s t1 s1 →
+    ∀ s {t1} s1 {t2}, step L (globalenv L) s t1 s1 →
       match_traces (symbolenv L) t1 t2 →
       ∃ s2, step L (globalenv L) s t2 s2
   sr_traces : single_events L
@@ -786,17 +793,17 @@ structure bsim_properties (L1 L2 : semantics) (index : Type)
     ∀ s1 s2, initial_state L1 s1 → initial_state L2 s2 →
       ∃ i s1', initial_state L1 s1' ∧ match_states i s1' s2
   bsim_match_final_states :
-    ∀ i s1 s2 r, match_states i s1 s2 → safe L1 s1 →
+    ∀ i {s1} s2 r, match_states i s1 s2 → safe L1 s1 →
       final_state L2 s2 r →
       ∃ s1', star (step L1) (globalenv L1) s1 E0 s1' ∧
         final_state L1 s1' r
   bsim_progress :
-    ∀ i s1 s2, match_states i s1 s2 → safe L1 s1 →
+    ∀ i {s1} s2, match_states i s1 s2 → safe L1 s1 →
       (∃ r, final_state L2 s2 r) ∨
       (∃ t s2', step L2 (globalenv L2) s2 t s2')
   bsim_simulation :
     ∀ s2 t s2', step L2 (globalenv L2) s2 t s2' →
-      ∀ i s1, match_states i s1 s2 → safe L1 s1 →
+      ∀ i {s1}, match_states i s1 s2 → safe L1 s1 →
         ∃ i' s1',
           (plus (step L1) (globalenv L1) s1 t s1' ∨
             (star (step L1) (globalenv L1) s1 t s1' ∧ order i' i)) ∧
@@ -1232,7 +1239,7 @@ def factor_backward_simulationStatement : Prop :=
 
 structure strongly_receptive (L : semantics) : Prop where
   ssr_receptive :
-    ∀ s ev1 t1 s1 ev2,
+    ∀ s {ev1} t1 s1 {ev2},
       step L (globalenv L) s (ev1 :: t1) s1 →
       match_traces (symbolenv L) [ev1] [ev2] →
       ∃ s2 t2, step L (globalenv L) s (ev2 :: t2) s2
