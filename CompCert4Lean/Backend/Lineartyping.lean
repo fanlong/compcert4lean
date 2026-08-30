@@ -184,8 +184,8 @@ def wt_fundef (cfg : CompilerConfig) (fd : LinearFundef) : Prop :=
   | .External _ => True
 
 inductive wt_callstack (cfg : CompilerConfig) : List LinearStackframe → Prop where
-  | mkNil : wt_callstack cfg []
-  | mkCons (f : LinearFunction) (sp : val) (rs : Locset)
+  | wt_callstack_nil : wt_callstack cfg []
+  | wt_callstack_cons (f : LinearFunction) (sp : val) (rs : Locset)
       (c : LinearCode) (s : List LinearStackframe)
       (WTSTK : wt_callstack cfg s)
       (WTF : wt_function cfg f = true)
@@ -193,19 +193,21 @@ inductive wt_callstack (cfg : CompilerConfig) : List LinearStackframe → Prop w
       (WTRS : wt_locset rs) :
       wt_callstack cfg (Linear.Stackframe f sp rs c :: s)
 
+export wt_callstack (wt_callstack_nil wt_callstack_cons)
+
 def wt_parent_locsetStatement : Prop :=
   ∀ (cfg : CompilerConfig) (s : List LinearStackframe),
   wt_callstack cfg s → wt_locset (Linear.parent_locset s)
 
 inductive wt_state (cfg : CompilerConfig) : LinearState → Prop where
-  | mkRegular (s : List LinearStackframe) (f : LinearFunction)
+  | wt_regular_state (s : List LinearStackframe) (f : LinearFunction)
       (sp : val) (c : LinearCode) (rs : Locset) (m : mem)
       (WTSTK : wt_callstack cfg s)
       (WTF : wt_function cfg f = true)
       (WTC : wt_code cfg f c = true)
       (WTRS : wt_locset rs) :
       wt_state cfg (Linear.State s f sp c rs m)
-  | mkCall (s : List LinearStackframe) (fd : LinearFundef)
+  | wt_call_state (s : List LinearStackframe) (fd : LinearFundef)
       (rs : Locset) (m : mem)
       (WTSTK : wt_callstack cfg s)
       (WTFD : wt_fundef cfg fd)
@@ -214,12 +216,14 @@ inductive wt_state (cfg : CompilerConfig) : LinearState → Prop where
       (AGARGS : agree_outgoing_arguments cfg (Linear.funsig fd) rs
         (Linear.parent_locset s)) :
       wt_state cfg (Linear.Callstate s fd rs m)
-  | mkReturn (s : List LinearStackframe) (rs : Locset) (m : mem)
+  | wt_return_state (s : List LinearStackframe) (rs : Locset) (m : mem)
       (WTSTK : wt_callstack cfg s)
       (WTRS : wt_locset rs)
       (AGCS : agree_callee_save cfg rs (Linear.parent_locset s))
       (UOUT : outgoing_undef rs) :
       wt_state cfg (Linear.Returnstate s rs m)
+
+export wt_state (wt_regular_state wt_call_state wt_return_state)
 
 /-! ## Exact statement descriptors for later proofs -/
 
