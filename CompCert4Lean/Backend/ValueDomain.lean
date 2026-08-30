@@ -122,11 +122,6 @@ private abbrev shrx := CompCert4Lean.Lib.Integers.Int.shrx
 private abbrev testbit := CompCert4Lean.Lib.Integers.Int.testbit
 private abbrev zero_ext := CompCert4Lean.Lib.Integers.Int.zero_ext
 
-private def sign_ext (n : Z) (x : int) : int :=
-  let modulus := two_p n
-  let residue := zMod (unsigned x) modulus
-  if zLtb (two_p (zSub n z1)) residue then repr (zSub residue modulus) else repr residue
-
 private def size (x : int) : Z :=
   match unsigned x with
   | .Z0 => z0
@@ -589,7 +584,8 @@ def vincl (v w : aval) : Bool :=
   | Vbot, _ => true
   | I i, I j | I i, IU j | IU i, IU j => decide (i = j)
   | I i, Uns _ n | IU i, Uns _ n => decide (Int.zero_ext n i = i) && zle z0 n
-  | I i, Sgn _ n | IU i, Sgn _ n => decide (Int.sign_ext n i = i) && zlt z0 n
+  | I i, Sgn _ n | IU i, Sgn _ n =>
+      decide (CompCert4Lean.Lib.Integers.Int.sign_ext n i = i) && zlt z0 n
   | Uns p n, Uns q m => zle n m && pincl p q
   | Uns p n, Sgn q m => zlt n m && pincl p q
   | Sgn p n, Sgn q m => zle n m && pincl p q
@@ -932,8 +928,8 @@ def zero_ext (nbits : Z) : aval → aval
 def sign_ext (nbits : Z) (v : aval) : aval :=
   if zle nbits z0 then Uns (provenance v) z0 else
   match v with
-  | I i => I (Int.sign_ext nbits i)
-  | IU i => IU (Int.sign_ext nbits i)
+  | I i => I (CompCert4Lean.Lib.Integers.Int.sign_ext nbits i)
+  | IU i => IU (CompCert4Lean.Lib.Integers.Int.sign_ext nbits i)
   | Uns p n => if zlt n nbits then Uns p n else sgn p nbits
   | Sgn p n => sgn p (zMin n nbits)
   | _ => sgn (provenance v) nbits
@@ -1112,8 +1108,10 @@ def vnormalize (chunk : memory_chunk) (v : aval) : aval :=
   | .Mbool, I i => let j := Int.zero_ext (zOfNat 8) i; if Int.eq j Int.zero || Int.eq j Int.one then I j else Uns Pbot z1
   | .Mbool, IU i => let j := Int.zero_ext (zOfNat 8) i; if Int.eq j Int.zero || Int.eq j Int.one then IU j else Uns Pbot z1
   | .Mbool, _ => Uns (provenance v) z1
-  | .Mint8signed, I i => I (Int.sign_ext (zOfNat 8) i)
-  | .Mint8signed, IU i => IU (Int.sign_ext (zOfNat 8) i)
+  | .Mint8signed, I i =>
+      I (CompCert4Lean.Lib.Integers.Int.sign_ext (zOfNat 8) i)
+  | .Mint8signed, IU i =>
+      IU (CompCert4Lean.Lib.Integers.Int.sign_ext (zOfNat 8) i)
   | .Mint8signed, Uns _ n => if zlt n (zOfNat 8) then Uns (provenance v) n else Sgn (provenance v) (zOfNat 8)
   | .Mint8signed, Sgn _ n => Sgn (provenance v) (zMin n (zOfNat 8))
   | .Mint8signed, _ => Sgn (provenance v) (zOfNat 8)
@@ -1121,8 +1119,10 @@ def vnormalize (chunk : memory_chunk) (v : aval) : aval :=
   | .Mint8unsigned, IU i => IU (Int.zero_ext (zOfNat 8) i)
   | .Mint8unsigned, Uns _ n => Uns (provenance v) (zMin n (zOfNat 8))
   | .Mint8unsigned, _ => Uns (provenance v) (zOfNat 8)
-  | .Mint16signed, I i => I (Int.sign_ext (zOfNat 16) i)
-  | .Mint16signed, IU i => IU (Int.sign_ext (zOfNat 16) i)
+  | .Mint16signed, I i =>
+      I (CompCert4Lean.Lib.Integers.Int.sign_ext (zOfNat 16) i)
+  | .Mint16signed, IU i =>
+      IU (CompCert4Lean.Lib.Integers.Int.sign_ext (zOfNat 16) i)
   | .Mint16signed, Uns _ n => if zlt n (zOfNat 16) then Uns (provenance v) n else Sgn (provenance v) (zOfNat 16)
   | .Mint16signed, Sgn _ n => Sgn (provenance v) (zMin n (zOfNat 16))
   | .Mint16signed, _ => Sgn (provenance v) (zOfNat 16)
@@ -1840,17 +1840,20 @@ def is_uns_zero_extStatement : Prop :=
   ∀ n i, is_uns n i ↔ Int.zero_ext n i = i
 
 def is_sgn_sign_extStatement : Prop :=
-  ∀ n i, zLt z0 n → (is_sgn n i ↔ Int.sign_ext n i = i)
+  ∀ n i, zLt z0 n →
+    (is_sgn n i ↔ CompCert4Lean.Lib.Integers.Int.sign_ext n i = i)
 
 def is_zero_ext_unsStatement : Prop :=
   ∀ i n m, is_uns m i ∨ zLe n m → is_uns m (Int.zero_ext n i)
 
 def is_sign_ext_unsStatement : Prop :=
-  ∀ i n m, (zLe z0 m ∧ zLt m n) → is_uns m i → is_uns m (Int.sign_ext n i)
+  ∀ i n m, (zLe z0 m ∧ zLt m n) →
+    is_uns m i → is_uns m (CompCert4Lean.Lib.Integers.Int.sign_ext n i)
 
 def is_sign_ext_sgnStatement : Prop :=
   ∀ i n m, zLt z0 n → zLt z0 m →
-    is_sgn m i ∨ zLe n m → is_sgn m (Int.sign_ext n i)
+    is_sgn m i ∨ zLe n m →
+      is_sgn m (CompCert4Lean.Lib.Integers.Int.sign_ext n i)
 
 def is_uns_1Statement : Prop :=
   ∀ n, is_uns z1 n → n = Int.zero ∨ n = Int.one
