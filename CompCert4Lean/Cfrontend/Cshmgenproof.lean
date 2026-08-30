@@ -602,10 +602,7 @@ def make_ptrofsconst_correctStatement
     [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
   ∀ (ge : TGenv) n e le m,
     T_eval_expr ge e le m (make_ptrofsconst n)
-      (if CompCert4Lean.X86_64.Archi.ptr64 then
-        .Vlong (CompCert4Lean.Lib.Integers.Int64.repr n)
-       else
-        .Vint (CompCert4Lean.Lib.Integers.Int.repr n))
+      (Vptrofs (Ptrofs.repr n))
 
 def make_shl_correctStatement
     [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
