@@ -20,6 +20,7 @@ private abbrev Res := CompCert4Lean.Common.Errors.res
 /-! ## Syntactic linkers -/
 
 class Linker (A : Type) where
+  mk (A) ::
   link : A → A → Option A
   linkorder : A → A → Prop
   linkorder_refl : ∀ x, linkorder x x
@@ -589,7 +590,7 @@ theorem prog_defmap_linkorder_proof : prog_defmap_linkorderStatement := by
 
 inductive match_globvar {V1 V2 : Type} (match_varinfo : V1 → V2 → Prop) :
     globvar V1 → globvar V2 → Prop where
-  | match_globvar_intro (info1 : V1) (info2 : V2) (init : List init_data)
+  | match_globvar_intro (match_varinfo) (info1 : V1) (info2 : V2) (init : List init_data)
       (readonly volatile : Bool) :
       match_varinfo info1 info2 →
       match_globvar match_varinfo
@@ -603,11 +604,12 @@ export match_globvar (match_globvar_intro)
 inductive match_globdef {C F1 V1 F2 V2 : Type} [LC : Linker C]
     (match_fundef : C → F1 → F2 → Prop) (match_varinfo : V1 → V2 → Prop)
     (ctx : C) : globdef F1 V1 → globdef F2 V2 → Prop where
-  | match_globdef_fun (ctx' : C) (f1 : F1) (f2 : F2) :
+  | match_globdef_fun (match_fundef match_varinfo ctx) (ctx' : C) (f1 : F1) (f2 : F2) :
       LC.linkorder ctx' ctx →
       match_fundef ctx' f1 f2 →
       match_globdef match_fundef match_varinfo ctx (.Gfun f1) (.Gfun f2)
-  | match_globdef_var (v1 : globvar V1) (v2 : globvar V2) :
+  | match_globdef_var (match_fundef match_varinfo ctx)
+      (v1 : globvar V1) (v2 : globvar V2) :
       match_globvar match_varinfo v1 v2 →
       match_globdef match_fundef match_varinfo ctx (.Gvar v1) (.Gvar v2)
 
