@@ -426,12 +426,12 @@ def init_regs_injectStatement : Prop :=
 
 inductive match_stacks (p tp : program) (used : IS.t) (j : Val.meminj) :
     List stackframe → List stackframe → block → block → Prop where
-  | base (bound tbound : block)
+  | match_stacks_nil (bound tbound : block)
       (globals : meminj_preserves_globals p tp used j)
       (source_bound : Ple (Genv.globalenv p).genv_next bound)
       (target_bound : Ple (Genv.globalenv tp).genv_next tbound) :
       match_stacks p tp used j [] [] bound tbound
-  | frame (res : reg) (f : function) (sp : block) (pc : node)
+  | match_stacks_cons (res : reg) (f : function) (sp : block) (pc : node)
       (rs : regset) (s : List stackframe) (tsp : block) (trs : regset)
       (ts : List stackframe) (bound tbound : block)
       (stacks : match_stacks p tp used j s ts sp tsp)
@@ -444,6 +444,8 @@ inductive match_stacks (p tp : program) (used : IS.t) (j : Val.meminj) :
         (Stackframe res f (Vptr sp Ptrofs.zero) pc rs :: s)
         (Stackframe res f (Vptr tsp Ptrofs.zero) pc trs :: ts)
         bound tbound
+
+export match_stacks (match_stacks_nil match_stacks_cons)
 
 def match_stacks_preserves_globalsStatement : Prop :=
   ∀ (p tp : program) (used : IS.t) (j : Val.meminj)
@@ -480,7 +482,7 @@ inductive match_states (p tp : program) (used : IS.t) : state → state → Prop
       match_states p tp used
         (State s f (Vptr sp Ptrofs.zero) pc rs m)
         (State ts f (Vptr tsp Ptrofs.zero) pc trs tm)
-  | call (s : List stackframe) (fd : fundef) (args : List val) (m : mem)
+  | match_states_call (s : List stackframe) (fd : fundef) (args : List val) (m : mem)
       (ts : List stackframe) (targs : List val) (tm : mem) (j : Val.meminj)
       (stacks : match_stacks p tp used j s ts m.nextblock tm.nextblock)
       (refs_kept : ∀ id, ref_fundef fd id → kept used id)
@@ -496,7 +498,7 @@ inductive match_states (p tp : program) (used : IS.t) : state → state → Prop
       match_states p tp used
         (Returnstate s res m) (Returnstate ts tres tm)
 
-export match_states (match_states_regular match_states_return)
+export match_states (match_states_regular match_states_call match_states_return)
 
 def external_call_injectStatement
     [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
