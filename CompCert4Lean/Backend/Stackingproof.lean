@@ -1592,7 +1592,7 @@ def transl_builtin_arg_correctStatement : Prop :=
     (_bound_stack_data_pos : bound_stack_data_pos cfg (function_bounds cfg f))
     (_used_callee_save_norepet : used_callee_save_norepet cfg (function_bounds cfg f))
     (_used_callee_save_prop : used_callee_save_prop cfg (function_bounds cfg f)),
-    ∀ j m m' ls ls0 rs sp sp' parent retaddr a v,
+    ∀ j m m' ls ls0 rs sp sp' parent retaddr,
     j sp = some (sp', (make_env cfg (function_bounds cfg f)).fe_stack_data) →
     agree_regs j ls rs →
     (sepconj (frame_contents return_address_offset tprog cfg f
@@ -1600,7 +1600,7 @@ def transl_builtin_arg_correctStatement : Prop :=
       _used_callee_save_norepet _used_callee_save_prop
       j sp' ls ls0 parent retaddr)
       (sepconj (minjection j m)
-        (globalenv_inject (Genv.globalenv prog) j))).m_pred m' →
+        (globalenv_inject (Genv.globalenv prog) j))).m_pred m' → ∀ a v,
     eval_builtin_arg (Genv.to_senv (Genv.globalenv prog)) ls
       (Vptr sp Ptrofs.zero) m a v →
     (∀ l, l ∈ params_of_builtin_arg a → loc_valid cfg f l = true) →
@@ -1620,7 +1620,7 @@ def transl_builtin_args_correctStatement : Prop :=
     (_bound_stack_data_pos : bound_stack_data_pos cfg (function_bounds cfg f))
     (_used_callee_save_norepet : used_callee_save_norepet cfg (function_bounds cfg f))
     (_used_callee_save_prop : used_callee_save_prop cfg (function_bounds cfg f)),
-    ∀ j m m' ls ls0 rs sp sp' parent retaddr al vl,
+    ∀ j m m' ls ls0 rs sp sp' parent retaddr,
     j sp = some (sp', (make_env cfg (function_bounds cfg f)).fe_stack_data) →
     agree_regs j ls rs →
     (sepconj (frame_contents return_address_offset tprog cfg f
@@ -1628,7 +1628,7 @@ def transl_builtin_args_correctStatement : Prop :=
       _used_callee_save_norepet _used_callee_save_prop
       j sp' ls ls0 parent retaddr)
       (sepconj (minjection j m)
-        (globalenv_inject (Genv.globalenv prog) j))).m_pred m' →
+        (globalenv_inject (Genv.globalenv prog) j))).m_pred m' → ∀ al vl,
     eval_builtin_args (Genv.to_senv (Genv.globalenv prog)) ls
       (Vptr sp Ptrofs.zero) m al vl →
     (∀ l, l ∈ params_of_builtin_args al → loc_valid cfg f l = true) →
@@ -1665,13 +1665,12 @@ def transl_external_argumentStatement : Prop :=
     (_used_callee_save_norepet : ∀ f : Linear.function,
       used_callee_save_norepet cfg (function_bounds cfg f))
     (_used_callee_save_prop : ∀ f : Linear.function,
-      used_callee_save_prop cfg (function_bounds cfg f))
-    ls rs m',
+      used_callee_save_prop cfg (function_bounds cfg f)),
     match_stacks cfg tprog j _bound_local_pos _bound_outgoing_pos
-      _bound_stack_data_pos _used_callee_save_norepet _used_callee_save_prop cs cs' sg →
+      _bound_stack_data_pos _used_callee_save_norepet _used_callee_save_prop cs cs' sg → ∀ ls rs,
     agree_regs j ls rs →
     agree_callee_save cfg ls (Linear.parent_locset cs) →
-    agree_outgoing_arguments cfg sg ls (Linear.parent_locset cs) →
+    agree_outgoing_arguments cfg sg ls (Linear.parent_locset cs) → ∀ m',
     (stack_contents return_address_offset tprog cfg j cs cs'
       _bound_local_pos _bound_outgoing_pos _bound_stack_data_pos
       _used_callee_save_norepet _used_callee_save_prop).m_pred m' → ∀ l,
@@ -1691,13 +1690,12 @@ def transl_external_argument_2Statement : Prop :=
     (_used_callee_save_norepet : ∀ f : Linear.function,
       used_callee_save_norepet cfg (function_bounds cfg f))
     (_used_callee_save_prop : ∀ f : Linear.function,
-      used_callee_save_prop cfg (function_bounds cfg f))
-    ls rs m',
+      used_callee_save_prop cfg (function_bounds cfg f)),
     match_stacks cfg tprog j _bound_local_pos _bound_outgoing_pos
-      _bound_stack_data_pos _used_callee_save_norepet _used_callee_save_prop cs cs' sg →
+      _bound_stack_data_pos _used_callee_save_norepet _used_callee_save_prop cs cs' sg → ∀ ls rs,
     agree_regs j ls rs →
     agree_callee_save cfg ls (Linear.parent_locset cs) →
-    agree_outgoing_arguments cfg sg ls (Linear.parent_locset cs) →
+    agree_outgoing_arguments cfg sg ls (Linear.parent_locset cs) → ∀ m',
     (stack_contents return_address_offset tprog cfg j cs cs'
       _bound_local_pos _bound_outgoing_pos _bound_stack_data_pos
       _used_callee_save_norepet _used_callee_save_prop).m_pred m' → ∀ p,
@@ -1717,13 +1715,12 @@ def transl_external_argumentsStatement : Prop :=
     (_used_callee_save_norepet : ∀ f : Linear.function,
       used_callee_save_norepet cfg (function_bounds cfg f))
     (_used_callee_save_prop : ∀ f : Linear.function,
-      used_callee_save_prop cfg (function_bounds cfg f))
-    ls rs m',
+      used_callee_save_prop cfg (function_bounds cfg f)),
     match_stacks cfg tprog j _bound_local_pos _bound_outgoing_pos
-      _bound_stack_data_pos _used_callee_save_norepet _used_callee_save_prop cs cs' sg →
+      _bound_stack_data_pos _used_callee_save_norepet _used_callee_save_prop cs cs' sg → ∀ ls rs,
     agree_regs j ls rs →
     agree_callee_save cfg ls (Linear.parent_locset cs) →
-    agree_outgoing_arguments cfg sg ls (Linear.parent_locset cs) →
+    agree_outgoing_arguments cfg sg ls (Linear.parent_locset cs) → ∀ m',
     (stack_contents return_address_offset tprog cfg j cs cs'
       _bound_local_pos _bound_outgoing_pos _bound_stack_data_pos
       _used_callee_save_norepet _used_callee_save_prop).m_pred m' →
@@ -1742,13 +1739,12 @@ def transl_external_arguments_recStatement : Prop :=
     (_used_callee_save_norepet : ∀ f : Linear.function,
       used_callee_save_norepet cfg (function_bounds cfg f))
     (_used_callee_save_prop : ∀ f : Linear.function,
-      used_callee_save_prop cfg (function_bounds cfg f))
-    ls rs m',
+      used_callee_save_prop cfg (function_bounds cfg f)),
     match_stacks cfg tprog j _bound_local_pos _bound_outgoing_pos
-      _bound_stack_data_pos _used_callee_save_norepet _used_callee_save_prop cs cs' sg →
+      _bound_stack_data_pos _used_callee_save_norepet _used_callee_save_prop cs cs' sg → ∀ ls rs,
     agree_regs j ls rs →
     agree_callee_save cfg ls (Linear.parent_locset cs) →
-    agree_outgoing_arguments cfg sg ls (Linear.parent_locset cs) →
+    agree_outgoing_arguments cfg sg ls (Linear.parent_locset cs) → ∀ m',
     (stack_contents return_address_offset tprog cfg j cs cs'
       _bound_local_pos _bound_outgoing_pos _bound_stack_data_pos
       _used_callee_save_norepet _used_callee_save_prop).m_pred m' → ∀ locs,
