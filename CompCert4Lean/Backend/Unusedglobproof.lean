@@ -1,4 +1,5 @@
 import CompCert4Lean.Backend.Unusedglob
+import CompCert4Lean.Common.Linking
 
 /-!
 # Correctness interface for elimination of unreferenced globals
@@ -20,6 +21,7 @@ open CompCert4Lean.Common.Errors
 open CompCert4Lean.Common.Events
 open CompCert4Lean.Common.ExternalCalls
 open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Linking
 open CompCert4Lean.Common.Memdata
 open CompCert4Lean.Common.Memory
 open CompCert4Lean.Common.Smallstep
@@ -101,6 +103,34 @@ export valid_used_set (used_closed used_main used_public used_defined)
 
 def match_prog (p tp : program) : Prop :=
   ∃ u : IS.t, valid_used_set p u ∧ match_prog_1 u p tp
+
+/-! ## Linking-compatible transformation obligation -/
+
+/- The source theorem is retained as an exact proposition descriptor. Its
+   linker arguments are the canonical RTL program linkers used by
+   `CompCert4Lean.Common.Linking.TransfLink`; the proof remains deferred to
+   the later proof-migration phase. -/
+def link_match_programStatement : Prop :=
+  ∀ (p1 p2 tp1 tp2 p : RTL.program),
+    @link RTL.program
+      (@Linker_prog RTL.fundef Unit (@Linker_fundef RTL.function) Linker_unit)
+      p1 p2 = some p →
+    match_prog p1 tp1 →
+    match_prog p2 tp2 →
+    ∃ tp : RTL.program,
+      @link RTL.program
+        (@Linker_prog RTL.fundef Unit (@Linker_fundef RTL.function) Linker_unit)
+        tp1 tp2 = some tp ∧
+      match_prog p tp
+
+/- The source `TransfSelectionLink` instance contributes precisely this
+   canonical `TransfLink match_prog` proposition. It is exposed as a
+   source-named descriptor, without introducing an unproved instance. -/
+def TransfSelectionLinkStatement : Prop :=
+  @TransfLink RTL.program RTL.program
+    (@Linker_prog RTL.fundef Unit (@Linker_fundef RTL.function) Linker_unit)
+    (@Linker_prog RTL.fundef Unit (@Linker_fundef RTL.function) Linker_unit)
+    match_prog
 
 /-! ## Properties of the static analysis -/
 
