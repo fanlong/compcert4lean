@@ -155,9 +155,9 @@ def CompOpp (r : comparison) : comparison :=
 
 inductive Empty_set : Type where
 
-inductive BoolSpec (P Q : Prop) : _root_.Bool → Prop where
-  | BoolSpecT (h : P) : BoolSpec P Q true
-  | BoolSpecF (h : Q) : BoolSpec P Q false
+inductive BoolSpec : (P Q : Prop) → _root_.Bool → Prop where
+  | BoolSpecT {P : Prop} (Q : Prop) (h : P) : BoolSpec P Q true
+  | BoolSpecF (P : Prop) {Q : Prop} (h : Q) : BoolSpec P Q false
 
 export BoolSpec (BoolSpecT BoolSpecF)
 
@@ -537,7 +537,7 @@ theorem in_rev {A : Type} (l : _root_.List A) (x : A) :
     In x l ↔ In x (_root_.List.reverse l) := by
   exact (_root_.List.mem_reverse.symm)
 
-def incl {A : Type} (l m : _root_.List A) : Prop := ∀ ⦃a⦄, In a l → In a m
+def incl {A : Type} (l m : _root_.List A) : Prop := ∀ a, In a l → In a m
 
 theorem incl_refl {A : Type} (l : _root_.List A) : incl l l := by
   intro a h
@@ -545,11 +545,11 @@ theorem incl_refl {A : Type} (l : _root_.List A) : incl l l := by
 
 theorem incl_tl {A : Type} (a : A) {l m : _root_.List A} (h : incl l m) : incl l (a :: m) := by
   intro x hx
-  exact List.Mem.tail a (h hx)
+  exact List.Mem.tail a (h x hx)
 
 theorem incl_tran {A : Type} {l m n : _root_.List A} (h1 : incl l m) (h2 : incl m n) : incl l n := by
   intro x hx
-  exact h2 (h1 hx)
+  exact h2 x (h1 x hx)
 
 def list_eq_dec {A : Type}
     (eq_dec : (x y : A) → Support.Sumbool (x = y) (¬ x = y))
@@ -690,7 +690,7 @@ end Rocq.Coq.Logic.ClassicalEpsilon
 
 namespace Rocq.Coq.Logic.ClassicalFacts
 
-def proof_irrelevance : Prop := ∀ {A : Prop} (a1 a2 : A), a1 = a2
+def proof_irrelevance : Prop := ∀ (A : Prop) (a1 a2 : A), a1 = a2
 
 end Rocq.Coq.Logic.ClassicalFacts
 

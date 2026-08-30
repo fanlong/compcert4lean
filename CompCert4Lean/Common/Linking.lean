@@ -508,7 +508,7 @@ instance Linker_prog (F V : Type) [LF : Linker F] [LV : Linker V] :
     rcases hdefs23 id gd2 hget2 with ⟨gd3, hget3, horder23, hstatic3⟩
     refine ⟨gd3, hget3, (Linker_def F V).linkorder_trans _ _ _ horder12 horder23, ?_⟩
     intro hnot3
-    exact (hstatic3 hnot3).trans (hstatic2 (fun hmem2 => hnot3 (hpub23 hmem2)))
+    exact (hstatic3 hnot3).trans (hstatic2 (fun hmem2 => hnot3 (hpub23 id hmem2)))
   link_linkorder := by
     intro p1 p2 p hlink
     rcases link_prog_inv_proof p1 p2 p hlink with ⟨hmain, hcompatible, rfl⟩
