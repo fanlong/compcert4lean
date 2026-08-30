@@ -121,12 +121,12 @@ def partial_if {A : Type} (flag : Unit → Bool) (f : A → Res A) (prog : A) : 
 def match_if {A : Type} (flag : Unit → Bool) (rel : A → A → Prop) : A → A → Prop :=
   if flag () then rel else Eq
 
-def apply_total {A B : Type} (x : Res A) (f : A → B) : Res B :=
+def apply_total (A B : Type) (x : Res A) (f : A → B) : Res B :=
   match x with
   | .Error message => .Error message
   | .OK value => .OK (f value)
 
-def apply_partial {A B : Type} (x : Res A) (f : A → Res B) : Res B :=
+def apply_partial (A B : Type) (x : Res A) (f : A → Res B) : Res B :=
   match x with
   | .Error message => .Error message
   | .OK value => f value
@@ -142,55 +142,55 @@ def transf_rtl_program
     (enumerationService : Linearize.EnumerationService)
     (f : RTL.program) : Res Asm.program :=
   let p0 : Res RTL.program := .OK f
-  let p1 := apply_total p0 (print (print_RTL (ZArith.BinInt.Z.of_nat 0)))
-  let p2 := apply_total p1
+  let p1 := apply_total _ _ p0 (print (print_RTL (ZArith.BinInt.Z.of_nat 0)))
+  let p2 := apply_total _ _ p1
     (total_if (fun _ => Compopts.optim_tailcalls cfg)
       (time (ofString "Tail calls") (Tailcall.transf_program cfg)))
-  let p3 := apply_total p2 (print (print_RTL (ZArith.BinInt.Z.of_nat 1)))
-  let p4 := apply_partial p3 (time (ofString "Inlining") (Inlining.transf_program inlineCfg))
-  let p5 := apply_total p4 (print (print_RTL (ZArith.BinInt.Z.of_nat 2)))
-  let p6 := apply_total p5 (time (ofString "Renumbering") Renumber.transf_program)
-  let p7 := apply_total p6 (print (print_RTL (ZArith.BinInt.Z.of_nat 3)))
-  let p8 := apply_total p7
+  let p3 := apply_total _ _ p2 (print (print_RTL (ZArith.BinInt.Z.of_nat 1)))
+  let p4 := apply_partial _ _ p3 (time (ofString "Inlining") (Inlining.transf_program inlineCfg))
+  let p5 := apply_total _ _ p4 (print (print_RTL (ZArith.BinInt.Z.of_nat 2)))
+  let p6 := apply_total _ _ p5 (time (ofString "Renumbering") Renumber.transf_program)
+  let p7 := apply_total _ _ p6 (print (print_RTL (ZArith.BinInt.Z.of_nat 3)))
+  let p8 := apply_total _ _ p7
     (total_if (fun _ => Compopts.optim_constprop cfg)
       (time (ofString "Constant propagation")
         (Constprop.transf_program
           (binary64_certificate := binary64_certificate)
           (binary32_certificate := binary32_certificate) cfg)))
-  let p9 := apply_total p8 (print (print_RTL (ZArith.BinInt.Z.of_nat 4)))
-  let p10 := apply_total p9
+  let p9 := apply_total _ _ p8 (print (print_RTL (ZArith.BinInt.Z.of_nat 4)))
+  let p10 := apply_total _ _ p9
     (total_if (fun _ => Compopts.optim_constprop cfg)
       (time (ofString "Renumbering") Renumber.transf_program))
-  let p11 := apply_total p10 (print (print_RTL (ZArith.BinInt.Z.of_nat 5)))
-  let p12 := apply_partial p11
+  let p11 := apply_total _ _ p10 (print (print_RTL (ZArith.BinInt.Z.of_nat 5)))
+  let p12 := apply_partial _ _ p11
     (partial_if (fun _ => Compopts.optim_CSE cfg)
       (time (ofString "CSE")
         (CSE.transf_program
           (binary64_certificate := binary64_certificate)
           (binary32_certificate := binary32_certificate) cfg)))
-  let p13 := apply_total p12 (print (print_RTL (ZArith.BinInt.Z.of_nat 6)))
-  let p14 := apply_partial p13
+  let p13 := apply_total _ _ p12 (print (print_RTL (ZArith.BinInt.Z.of_nat 6)))
+  let p14 := apply_partial _ _ p13
     (partial_if (fun _ => Compopts.optim_redundancy cfg)
       (time (ofString "Redundancy elimination")
         (Deadcode.transf_program
           (binary64_certificate := binary64_certificate)
           (binary32_certificate := binary32_certificate) cfg)))
-  let p15 := apply_total p14 (print (print_RTL (ZArith.BinInt.Z.of_nat 7)))
-  let p16 := apply_partial p15 (time (ofString "Unused globals") Unusedglob.transform_program)
-  let p17 := apply_total p16 (print (print_RTL (ZArith.BinInt.Z.of_nat 8)))
-  let p18 := apply_partial p17 (time (ofString "Register allocation") (Allocation.transf_program cfg oracle))
-  let p19 := apply_total p18 (print print_LTL)
-  let p20 := apply_total p19 (time (ofString "Branch tunneling") Tunneling.tunnel_program)
-  let p21 := apply_partial p20
+  let p15 := apply_total _ _ p14 (print (print_RTL (ZArith.BinInt.Z.of_nat 7)))
+  let p16 := apply_partial _ _ p15 (time (ofString "Unused globals") Unusedglob.transform_program)
+  let p17 := apply_total _ _ p16 (print (print_RTL (ZArith.BinInt.Z.of_nat 8)))
+  let p18 := apply_partial _ _ p17 (time (ofString "Register allocation") (Allocation.transf_program cfg oracle))
+  let p19 := apply_total _ _ p18 (print print_LTL)
+  let p20 := apply_total _ _ p19 (time (ofString "Branch tunneling") Tunneling.tunnel_program)
+  let p21 := apply_partial _ _ p20
     (time (ofString "CFG linearization")
       (Linearize.transf_program enumerationService))
-  let p22 := apply_total p21 (time (ofString "Label cleanup") CleanupLabels.transf_program)
-  let p23 := apply_partial p22
+  let p22 := apply_total _ _ p21 (time (ofString "Label cleanup") CleanupLabels.transf_program)
+  let p23 := apply_partial _ _ p22
     (partial_if (fun _ => Compopts.debug cfg)
       (time (ofString "Debugging info for local variables") (Debugvar.transf_program cfg)))
-  let p24 := apply_partial p23 (time (ofString "Mach generation") (Stacking.transf_program cfg))
-  let p25 := apply_total p24 (print print_Mach)
-  apply_partial p25 (time (ofString "Asm generation") Asmgen.transf_program)
+  let p24 := apply_partial _ _ p23 (time (ofString "Mach generation") (Stacking.transf_program cfg))
+  let p25 := apply_total _ _ p24 (print print_Mach)
+  apply_partial _ _ p25 (time (ofString "Asm generation") Asmgen.transf_program)
 
 def transf_cminor_program
     [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
@@ -204,8 +204,8 @@ def transf_cminor_program
     (enumerationService : Linearize.EnumerationService)
     (p : Cminor.program) : Res Asm.program :=
   let p0 : Res Cminor.program := .OK p
-  let p1 := apply_total p0 (print print_Cminor)
-  let p2 := apply_partial p1
+  let p1 := apply_total _ _ p0 (print print_Cminor)
+  let p2 := apply_partial _ _ p1
     (time (ofString "Instruction selection")
       (Selection.sel_program
         (binary64_certificate := binary64_certificate)
@@ -213,8 +213,8 @@ def transf_cminor_program
         (binary64_inverse_certificate := binary64_inverse_certificate)
         (binary32_inverse_certificate := binary32_inverse_certificate)
         cfg selectionOracle))
-  let p3 := apply_partial p2 (time (ofString "RTL generation") RTLgen.transl_program)
-  apply_partial p3
+  let p3 := apply_partial _ _ p2 (time (ofString "RTL generation") RTLgen.transl_program)
+  apply_partial _ _ p3
     (transf_rtl_program
       (binary64_certificate := binary64_certificate)
       (binary32_certificate := binary32_certificate)
@@ -232,11 +232,11 @@ def transf_clight_program
     (enumerationService : Linearize.EnumerationService)
     (p : Clight.program) : Res Asm.program :=
   let p0 : Res Clight.program := .OK p
-  let p1 := apply_total p0 (print print_Clight)
-  let p2 := apply_partial p1 (time (ofString "Simplification of locals") (SimplLocals.transf_program cfg))
-  let p3 := apply_partial p2 (time (ofString "C#minor generation") Cshmgen.transl_program)
-  let p4 := apply_partial p3 (time (ofString "Cminor generation") Cminorgen.transl_program)
-  apply_partial p4
+  let p1 := apply_total _ _ p0 (print print_Clight)
+  let p2 := apply_partial _ _ p1 (time (ofString "Simplification of locals") (SimplLocals.transf_program cfg))
+  let p3 := apply_partial _ _ p2 (time (ofString "C#minor generation") Cshmgen.transl_program)
+  let p4 := apply_partial _ _ p3 (time (ofString "Cminor generation") Cminorgen.transl_program)
+  apply_partial _ _ p4
     (transf_cminor_program
       (binary64_certificate := binary64_certificate)
       (binary32_certificate := binary32_certificate)
@@ -257,12 +257,12 @@ def transf_c_program
     (ctx : SimplExpr.FreshIdentContext)
     (p : Csyntax.program) : Res CompCert4Lean.X86.Asm.program :=
   let p0 : Res Csyntax.program := .OK p
-  let p1 := apply_partial p0
+  let p1 := apply_partial _ _ p0
     (time (ofString "Clight generation")
       (SimplExpr.transl_program
         (binary64_certificate := binary64_certificate)
         (binary32_certificate := binary32_certificate) ctx))
-  apply_partial p1
+  apply_partial _ _ p1
     (transf_clight_program
       (binary64_certificate := binary64_certificate)
       (binary32_certificate := binary32_certificate)
@@ -353,9 +353,9 @@ private def asmLanguage : Language where
   lang_prog := Asm.program
   lang_link := asmLinker
 
-instance TransfIfLink {A : Type} [LA : Linker A]
+def TransfIfLink {A : Type} {LA : Linker A}
     (flag : Unit → Bool) (transf : A → A → Prop)
-    [TL : TransfLink transf] : TransfLink (match_if flag transf) where
+    (TL : TransfLink transf) : TransfLink (match_if flag transf) where
   transf_link := by
     unfold match_if
     split
@@ -456,10 +456,7 @@ structure CompilerPassCertificates
         (binary64_certificate := binary64_certificate)
         (binary32_certificate := binary32_certificate) cfg)
   unusedglob :
-    @TransfLink RTL.program RTL.program
-      rtlLinker
-      rtlLinker
-      Unusedglobproof.match_prog
+    Unusedglobproof.TransfSelectionLinkStatement
   allocation :
     @TransfLink RTL.program LTL.program
       rtlLinker
@@ -662,7 +659,7 @@ def print_identityStatement : Prop :=
 
 def compose_print_identityStatement : Prop :=
   ∀ (A : Type) (x : Res A) (f : A → Unit),
-    apply_total x (print f) = x
+    apply_total _ _ x (print f) = x
 
 def total_if_matchStatement : Prop :=
   ∀ (A : Type) (flag : Unit → Bool) (f : A → A)
