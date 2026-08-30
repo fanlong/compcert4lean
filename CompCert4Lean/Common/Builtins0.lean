@@ -848,7 +848,19 @@ def standard_builtin_sem
   | BI_negl => mkbuiltin_n1t Tlong Xlong CompCert4Lean.Lib.Integers.Int64.neg
   | BI_addl => addlBuiltin
   | BI_subl => sublBuiltin
-  | BI_mull => mkbuiltin_n2t Tint Tint Xlong CompCert4Lean.Lib.Integers.Int64.mul'
+  | BI_mull =>
+      mkbuiltin_v2t Xlong CompCert4Lean.Common.Values.Val.mull'
+        (by
+          intro v1 v2
+          cases v1 <;> cases v2 <;>
+            simp [CompCert4Lean.Common.Values.Val.mull', Val.has_rettype])
+        (by
+          intro j v1 v1' v2 v2' h1 h2
+          cases h1 <;> cases h2 <;>
+            simp only [CompCert4Lean.Common.Values.Val.mull']
+          all_goals first
+          | exact Val.inject_long j _
+          | exact Val.val_inject_undef j _)
   | BI_i16_bswap => mkbuiltin_n1t Tint Xint16unsigned byteSwap16
   | BI_i32_bswap => mkbuiltin_n1t Tint Xint byteSwap32
   | BI_i64_bswap => mkbuiltin_n1t Tlong Xlong byteSwap64
@@ -859,9 +871,57 @@ def standard_builtin_sem
   | BI_i64_udiv => divluBuiltin
   | BI_i64_smod => modlsBuiltin
   | BI_i64_umod => modluBuiltin
-  | BI_i64_shl => shllBuiltin
-  | BI_i64_shr => shrluBuiltin
-  | BI_i64_sar => shrlBuiltin
+  | BI_i64_shl =>
+      mkbuiltin_v2t Xlong CompCert4Lean.Common.Values.Val.shll
+        (by
+          intro v1 v2
+          cases v1 <;> cases v2
+          case Vlong.Vint n1 n2 =>
+            by_cases h : Int.ltu n2 Int64.iwordsize' = true <;>
+              simp [CompCert4Lean.Common.Values.Val.shll, Val.has_rettype, h]
+          all_goals simp [CompCert4Lean.Common.Values.Val.shll, Val.has_rettype])
+        (by
+          intro j v1 v1' v2 v2' h1 h2
+          cases h1 <;> cases h2 <;>
+            simp only [CompCert4Lean.Common.Values.Val.shll]
+          all_goals try split
+          all_goals first
+          | exact Val.inject_long j _
+          | exact Val.val_inject_undef j _)
+  | BI_i64_shr =>
+      mkbuiltin_v2t Xlong CompCert4Lean.Common.Values.Val.shrlu
+        (by
+          intro v1 v2
+          cases v1 <;> cases v2
+          case Vlong.Vint n1 n2 =>
+            by_cases h : Int.ltu n2 Int64.iwordsize' = true <;>
+              simp [CompCert4Lean.Common.Values.Val.shrlu, Val.has_rettype, h]
+          all_goals simp [CompCert4Lean.Common.Values.Val.shrlu, Val.has_rettype])
+        (by
+          intro j v1 v1' v2 v2' h1 h2
+          cases h1 <;> cases h2 <;>
+            simp only [CompCert4Lean.Common.Values.Val.shrlu]
+          all_goals try split
+          all_goals first
+          | exact Val.inject_long j _
+          | exact Val.val_inject_undef j _)
+  | BI_i64_sar =>
+      mkbuiltin_v2t Xlong CompCert4Lean.Common.Values.Val.shrl
+        (by
+          intro v1 v2
+          cases v1 <;> cases v2
+          case Vlong.Vint n1 n2 =>
+            by_cases h : Int.ltu n2 Int64.iwordsize' = true <;>
+              simp [CompCert4Lean.Common.Values.Val.shrl, Val.has_rettype, h]
+          all_goals simp [CompCert4Lean.Common.Values.Val.shrl, Val.has_rettype])
+        (by
+          intro j v1 v1' v2 v2' h1 h2
+          cases h1 <;> cases h2 <;>
+            simp only [CompCert4Lean.Common.Values.Val.shrl]
+          all_goals try split
+          all_goals first
+          | exact Val.inject_long j _
+          | exact Val.val_inject_undef j _)
   | BI_i64_dtos => mkbuiltin_n1p Tfloat Xlong CompCert4Lean.Lib.Floats.Float.to_long
   | BI_i64_dtou => mkbuiltin_n1p Tfloat Xlong CompCert4Lean.Lib.Floats.Float.to_longu
   | BI_i64_stod => mkbuiltin_n1t Tlong Xfloat (fun n => CompCert4Lean.Lib.Floats.Float.of_long n)
