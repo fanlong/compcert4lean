@@ -168,7 +168,7 @@ inductive match_states
           (binary64_certificate := binary64_certificate)
           (binary32_certificate := binary32_certificate)
           valu (Genv.globalenv prog) sp rs m
-          (approx!!pc))
+          (PMap.get pc approx))
       (rld : regs_lessdef rs rs')
       (mext : Mem.extends m m')
       (stacks : match_stackframes
