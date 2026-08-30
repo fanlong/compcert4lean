@@ -53,21 +53,33 @@ def combine_cond (get : valnum → Option rhs) (cond : condition)
     (args : List valnum) : Option (condition × List valnum) :=
   match cond, args with
   | .Ccompimm .Cne n, [x] =>
-      if n = Int.zero then combine_compimm_ne_0 get x
-      else if n = Int.one then combine_compimm_ne_1 get x
-      else none
+      match Int.eq_dec n Int.zero with
+      | .left _ => combine_compimm_ne_0 get x
+      | .right _ =>
+          match Int.eq_dec n Int.one with
+          | .left _ => combine_compimm_ne_1 get x
+          | .right _ => none
   | .Ccompimm .Ceq n, [x] =>
-      if n = Int.zero then combine_compimm_eq_0 get x
-      else if n = Int.one then combine_compimm_eq_1 get x
-      else none
+      match Int.eq_dec n Int.zero with
+      | .left _ => combine_compimm_eq_0 get x
+      | .right _ =>
+          match Int.eq_dec n Int.one with
+          | .left _ => combine_compimm_eq_1 get x
+          | .right _ => none
   | .Ccompuimm .Cne n, [x] =>
-      if n = Int.zero then combine_compimm_ne_0 get x
-      else if n = Int.one then combine_compimm_ne_1 get x
-      else none
+      match Int.eq_dec n Int.zero with
+      | .left _ => combine_compimm_ne_0 get x
+      | .right _ =>
+          match Int.eq_dec n Int.one with
+          | .left _ => combine_compimm_ne_1 get x
+          | .right _ => none
   | .Ccompuimm .Ceq n, [x] =>
-      if n = Int.zero then combine_compimm_eq_0 get x
-      else if n = Int.one then combine_compimm_eq_1 get x
-      else none
+      match Int.eq_dec n Int.zero with
+      | .left _ => combine_compimm_eq_0 get x
+      | .right _ =>
+          match Int.eq_dec n Int.one with
+          | .left _ => combine_compimm_eq_1 get x
+          | .right _ => none
   | _, _ => none
 
 def combine_cond' (cond : condition) (args : List valnum) : Option Bool :=
