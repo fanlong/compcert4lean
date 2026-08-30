@@ -34,6 +34,7 @@ private abbrev memval := CompCert4Lean.Common.Memdata.memval
 private abbrev z0 : Z := .Z0
 private abbrev z1 : Z := .Zpos .xH
 private abbrev zAdd := ZArith.BinInt.Z.add
+private abbrev zSub := ZArith.BinInt.Z.sub
 private abbrev zLe := ZArith.BinInt.Z.le
 private abbrev zLt := ZArith.BinInt.Z.lt
 private abbrev zMax := ZArith.BinInt.Z.max
@@ -43,15 +44,35 @@ private abbrev zDivide := ZArith.BinInt.Z.divide
 private abbrev posSucc := PArith.BinPos.Pos.succ
 
 /- `store_zeros` is module-level in the Rocq source. -/
-private def storeZerosNat : Nat → mem → block → Z → Option mem
-  | 0, m, _, _ => some m
-  | n + 1, m, b, p =>
-      match Mem.store Mint8unsigned m b p Vzero with
-      | none => none
-      | some m' => storeZerosNat n m' b (zAdd p z1)
+private theorem intOfZ_z1 : intOfZ z1 = 1 := by
+  rfl
+
+private theorem intOfZ_sub_one (n : Z) : intOfZ (zSub n z1) = intOfZ n - 1 := by
+  unfold zSub ZArith.BinInt.Z.sub
+  rw [intOfZ_zOfInt, intOfZ_z1]
+
+private theorem zToNat_sub_one_lt {n : Z} (h : zLt z0 n) :
+    zToNat (zSub n z1) < zToNat n := by
+  change Int.toNat (intOfZ (zSub n z1)) < Int.toNat (intOfZ n)
+  rw [intOfZ_sub_one]
+  change 0 < intOfZ n at h
+  have hn : 0 ≤ intOfZ n := by omega
+  have hn1 : 0 ≤ intOfZ n - 1 := by omega
+  have hnat : (Int.toNat (intOfZ n) : Int) = intOfZ n :=
+    Int.toNat_of_nonneg hn
+  have hnat1 : (Int.toNat (intOfZ n - 1) : Int) = intOfZ n - 1 :=
+    Int.toNat_of_nonneg hn1
+  omega
 
 def store_zeros (m : mem) (b : block) (p n : Z) : Option mem :=
-  storeZerosNat (zToNat n) m b p
+  match zle n z0 with
+  | .left _ => some m
+  | .right h =>
+      match Mem.store Mint8unsigned m b p Vzero with
+      | none => none
+      | some m' => store_zeros m' b (zAdd p z1) (zSub n z1)
+termination_by zToNat n
+decreasing_by exact zToNat_sub_one_lt h
 
 private theorem ptreeGetSet0Same {A : Type} (i : positive) (x : A) :
     PTree.get' i (PTree.set0 i x) = some x := by
