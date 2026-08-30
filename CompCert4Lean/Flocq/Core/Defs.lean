@@ -21,20 +21,32 @@ abbrev Rle := CompCert4Lean.Flocq.Core.Raux.Rle
 abbrev Rabs := CompCert4Lean.Flocq.Core.Raux.Rabs
 abbrev Rminus := CompCert4Lean.Flocq.Core.Raux.Rminus
 
-structure float (beta : radix) where
-  Float ::
-  Fnum : Z
-  Fexp : Z
+/-! The source record is indexed by its radix, and Rocq exposes its
+    constructor with that radix as an explicit first argument. An indexed
+    inductive retains the same carrier while making the constructor
+    source-facing. -/
+inductive float : radix → Type where
+  | Float (beta : radix) (Fnum : Z) (Fexp : Z) : float beta
 
-export float (Float Fnum Fexp)
+/-! Source projections retain the implicit radix parameter of Rocq. -/
+def Fnum {beta : radix} (f : float beta) : Z :=
+  match f with
+  | .Float _ m _ => m
 
-/-! Compatibility for existing target modules that used Lean's default
-    structure-constructor name before the source-shaped constructor was
-    restored.  The actual computational constructor is `Float`. -/
+def Fexp {beta : radix} (f : float beta) : Z :=
+  match f with
+  | .Float _ _ e => e
+
+/-! Export the genuine indexed constructor under the source-facing name. -/
+export float (Float)
+
+/-! Compatibility for target consumers that used Lean's former default
+    structure-constructor spelling. The canonical source constructor is
+    `Float`, whose radix is explicit. -/
 namespace float
 
 abbrev mk {beta : radix} (m e : Z) : float beta :=
-  Float m e
+  Float beta m e
 
 end float
 
@@ -112,6 +124,6 @@ def F2R_runtime_exact_correspondence (ctx : Exact.Context) : Prop :=
         (CompCert4Lean.Flocq.Core.Raux.Rmult
           (CompCert4Lean.Flocq.Core.Raux.IZR m)
           (CompCert4Lean.Flocq.Core.Raux.bpow beta e)) h =
-        Exact.F2R ctx (Float (beta := beta) m e)
+        Exact.F2R ctx (Float beta m e)
 
 end CompCert4Lean.Flocq.Core.Defs
