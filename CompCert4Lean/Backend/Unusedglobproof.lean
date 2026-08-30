@@ -125,12 +125,25 @@ def link_match_programStatement : Prop :=
 
 /- The source `TransfSelectionLink` instance contributes precisely this
    canonical `TransfLink match_prog` proposition. It is exposed as a
-   source-named descriptor, without introducing an unproved instance. -/
+   source-named descriptor for the certificate-gated adapter below. -/
 def TransfSelectionLinkStatement : Prop :=
   @TransfLink RTL.program RTL.program
     (@Linker_prog RTL.fundef Unit (@Linker_fundef RTL.function) Linker_unit)
     (@Linker_prog RTL.fundef Unit (@Linker_fundef RTL.function) Linker_unit)
     match_prog
+
+/- The source global instance is restored through a mandatory companion
+   certificate.  Its proof term remains assigned to the later proof-grinding
+   phase, while the adapter preserves the exact canonical RTL `TransfLink`
+   surface without introducing a default inhabitant. -/
+class TransfSelectionLink_Certificate : Prop where
+  link : TransfSelectionLinkStatement
+
+instance TransfSelectionLink [certificate : TransfSelectionLink_Certificate] :
+    @TransfLink RTL.program RTL.program
+      (@Linker_prog RTL.fundef Unit (@Linker_fundef RTL.function) Linker_unit)
+      (@Linker_prog RTL.fundef Unit (@Linker_fundef RTL.function) Linker_unit)
+      match_prog := certificate.link
 
 /-! ## Properties of the static analysis -/
 
