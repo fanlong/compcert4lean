@@ -1,5 +1,6 @@
 import CompCert4Lean.Foundation.Logic
 import CompCert4Lean.Foundation.Numbers
+import CompCert4Lean.Foundation.Ordered
 
 /-!
 # Rocq well-founded recursion compatibility surface
@@ -106,7 +107,9 @@ namespace Wellfounded.Transitive_Closure
 
 def wf_clos_transStatement :=
   ∀ (A : Type) (R : A → A → Prop) (_ : Init.Wf.well_founded R),
-    Init.Wf.well_founded (_root_.Relation.TransGen R)
+    Init.Wf.well_founded
+      (_root_.CompCert4Lean.Foundation.Ordered.Rocq.Coq.Relations.Relation_Operators.clos_trans
+        A R)
 
 end Wellfounded.Transitive_Closure
 
