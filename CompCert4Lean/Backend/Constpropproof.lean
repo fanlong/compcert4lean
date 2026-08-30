@@ -83,13 +83,13 @@ def match_prog
     (fun x y : Unit => x = y) prog tprog
 
 inductive match_pc (f : function) (rs : regset) (m : mem) : Nat → node → node → Prop where
-  | match_pc_base (n : Nat) (pc : node) :
+  | match_pc_base (f rs m) (n : Nat) (pc : node) :
       match_pc f rs m n pc pc
-  | match_pc_nop (n : Nat) (pc s pcx : node)
+  | match_pc_nop (f rs m) (n : Nat) (pc s pcx : node)
       (hcode : PTree.get pc f.fn_code = some (Inop s))
       (hmatch : match_pc f rs m n s pcx) :
       match_pc f rs m (Nat.succ n) pc pcx
-  | match_pc_cond (n : Nat) (pc : node) (cond : condition) (args : List reg)
+  | match_pc_cond (f rs m) (n : Nat) (pc : node) (cond : condition) (args : List reg)
       (s1 s2 pcx : node)
       (hcode : PTree.get pc f.fn_code = some (Icond cond args s1 s2))
       (hmatch : ∀ b,
@@ -101,8 +101,8 @@ inductive match_stackframes
     [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
     [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
     (cfg : CompilerConfig) (prog : program) :
-    stackframe → stackframe → Prop where
-  | match_stackframe_intro
+  stackframe → stackframe → Prop where
+  | match_stackframe_intro (cfg prog)
       (res : reg) (sp : val) (pc : node) (rs : regset)
       (f : function) (rs' : regset) (cu : program)
       (hlink : linkorder cu prog)
@@ -123,7 +123,7 @@ inductive match_states
     [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
     (cfg : CompilerConfig) (prog : program) :
     Nat → state → state → Prop where
-  | match_states_intro
+  | match_states_intro (cfg prog)
       (s : List stackframe) (sp : val) (pc : node) (rs : regset) (m : mem)
       (f : function) (s' : List stackframe) (pc' : node) (rs' : regset)
       (m' : mem) (cu : program) (n : Nat)
@@ -145,7 +145,7 @@ inductive match_states
             (binary32_certificate := binary32_certificate)
             cfg (CompCert4Lean.Backend.ValueAnalysis.romem_for cfg cu) f)
           sp pc' rs' m')
-  | match_states_call
+  | match_states_call (cfg prog)
       (s : List stackframe) (f : fundef) (args : List val) (m : mem)
       (s' : List stackframe) (args' : List val) (m' : mem) (cu : program)
       (hlink : linkorder cu prog)
@@ -165,7 +165,7 @@ inductive match_states
             (binary32_certificate := binary32_certificate)
             cfg (CompCert4Lean.Backend.ValueAnalysis.romem_for cfg cu) f)
           args' m')
-  | match_states_return
+  | match_states_return (cfg prog)
       (s : List stackframe) (v : val) (m : mem)
       (s' : List stackframe) (v' : val) (m' : mem)
       (hstacks : list_forall2
