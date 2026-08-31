@@ -70,8 +70,8 @@ private def adapter : CompCert4Lean.Lib.UnionFind.MAP where
   elt_eq := PTree.elt_eq
   t := PTree.t
   empty := fun A => PTree.empty A
-  get := fun _ => PTree.get
-  set := fun _ => PTree.set
+  get := fun {_} => PTree.get
+  set := fun {_} => PTree.set
   gempty := fun A x => getEmpty A x
   gsspec := by
     intro A x y v m

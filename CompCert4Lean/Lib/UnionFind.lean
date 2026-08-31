@@ -20,14 +20,14 @@ structure MAP where
   elt_eq : ∀ x y : elt, Sumbool (x = y) (x ≠ y)
   t : Type → Type
   empty : (A : Type) → t A
-  get : (A : Type) → elt → t A → Option A
-  set : (A : Type) → elt → A → t A → t A
-  gempty : (A : Type) → (x : elt) → get A x (empty A) = none
-  gsspec : (A : Type) → (x y : elt) → (v : A) → (m : t A) →
-    get A x (set A y v m) =
+  get : {A : Type} → elt → t A → Option A
+  set : {A : Type} → elt → A → t A → t A
+  gempty : (A : Type) → (x : elt) → get x (empty A) = none
+  gsspec : {A : Type} → (x y : elt) → (v : A) → (m : t A) →
+    get x (set y v m) =
       match elt_eq x y with
       | .left _ => some v
-      | .right _ => get A x m
+      | .right _ => get x m
 
 private def decidableEqOfSumbool {A : Type}
     (eqDec : ∀ x y : A, Sumbool (x = y) (x ≠ y)) : DecidableEq A :=
@@ -40,10 +40,10 @@ private instance (M : MAP) : DecidableEq M.elt :=
   decidableEqOfSumbool M.elt_eq
 
 private abbrev mapGet (M : MAP) {A : Type} : M.elt → M.t A → Option A :=
-  M.get A
+  M.get
 
 private abbrev mapSet (M : MAP) {A : Type} : M.elt → A → M.t A → M.t A :=
-  M.set A
+  M.set
 
 private theorem mapGet_empty (M : MAP) {A : Type} (x : M.elt) :
     mapGet M x (M.empty A) = none := M.gempty A x
@@ -52,8 +52,8 @@ private theorem mapGet_set (M : MAP) {A : Type} (x y : M.elt)
     (v : A) (m : M.t A) :
     mapGet M x (mapSet M y v m) =
       if h : x = y then some v else mapGet M x m := by
-  change M.get A x (M.set A y v m) =
-    if h : x = y then some v else M.get A x m
+  change M.get x (M.set y v m) =
+    if h : x = y then some v else M.get x m
   rw [M.gsspec]
   cases hxy : M.elt_eq x y with
   | left h => simp [h]
