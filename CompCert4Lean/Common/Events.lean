@@ -65,38 +65,30 @@ def Eappinf_assocStatement : Prop :=
   ∀ t1 t2 : trace, ∀ T : traceinf,
     Eappinf (Eapp t1 t2) T = Eappinf t1 (Eappinf t2 T)
 
-structure NonemptyTrace : Type where
-  head : event
-  tail : trace
-
-namespace NonemptyTrace
-
-def toTrace (chunk : NonemptyTrace) : trace :=
-  chunk.head :: chunk.tail
-
-def ofTrace (t : trace) (h : t ≠ E0) : NonemptyTrace :=
-  match t with
-  | [] => False.elim (h rfl)
-  | e :: rest => ⟨e, rest⟩
-
-end NonemptyTrace
-
-abbrev traceinf' : Type := Nat → NonemptyTrace
+structure traceinf' : Type where
+  chunk : Nat → trace
+  nonempty : ∀ n, chunk n ≠ E0
 
 namespace traceinf'
 
-def cons (chunk : NonemptyTrace) (T : traceinf') : traceinf'
-  | 0 => chunk
-  | n + 1 => T n
+def cons (t : trace) (T : traceinf') (NE : t ≠ E0) : traceinf' where
+  chunk
+    | 0 => t
+    | n + 1 => T.chunk n
+  nonempty
+    | 0 => NE
+    | n + 1 => T.nonempty n
 
-def headChunk (T : traceinf') : NonemptyTrace := T 0
+def headChunk (T : traceinf') : trace := T.chunk 0
 
-def tailChunks (T : traceinf') : traceinf' := fun n => T (n + 1)
+def tailChunks (T : traceinf') : traceinf' where
+  chunk n := T.chunk (n + 1)
+  nonempty n := T.nonempty (n + 1)
 
 end traceinf'
 
 def Econsinf' (t : trace) (T : traceinf') (NE : t ≠ E0) : traceinf' :=
-  traceinf'.cons (NonemptyTrace.ofTrace t NE) T
+  traceinf'.cons t T NE
 
 def split_traceinf' (t : trace) (T : traceinf') (NE : t ≠ E0) :
     event × traceinf' :=
@@ -106,30 +98,22 @@ def split_traceinf' (t : trace) (T : traceinf') (NE : t ≠ E0) :
   | e :: e' :: rest =>
       (e, Econsinf' (e' :: rest) T (by intro h; cases h))
 
-private structure TraceChunkCursor : Type where
-  current : NonemptyTrace
-  rest : traceinf'
-
-private def TraceChunkCursor.ofChunks (T : traceinf') : TraceChunkCursor where
-  current := traceinf'.headChunk T
-  rest := traceinf'.tailChunks T
-
-private def TraceChunkCursor.next (cursor : TraceChunkCursor) : TraceChunkCursor :=
-  match cursor.current.tail with
-  | [] => TraceChunkCursor.ofChunks cursor.rest
-  | e :: rest => { current := ⟨e, rest⟩, rest := cursor.rest }
-
-private def TraceChunkCursor.nth : TraceChunkCursor → Nat → event
-  | cursor, 0 => cursor.current.head
-  | cursor, n + 1 => TraceChunkCursor.nth cursor.next n
+private def traceinf'EventAt : traceinf' → Nat → event
+  | T, 0 =>
+      (split_traceinf' (traceinf'.headChunk T) (traceinf'.tailChunks T)
+        (T.nonempty 0)).1
+  | T, n + 1 =>
+      traceinf'EventAt
+        (split_traceinf' (traceinf'.headChunk T) (traceinf'.tailChunks T)
+          (T.nonempty 0)).2 n
 
 def traceinf_of_traceinf' (T : traceinf') : traceinf :=
-  TraceChunkCursor.nth (TraceChunkCursor.ofChunks T)
+  fun n => traceinf'EventAt T n
 
 def unroll_traceinf'Statement : Prop :=
   ∀ T : traceinf',
-    T = Econsinf' (NonemptyTrace.toTrace (traceinf'.headChunk T))
-      (traceinf'.tailChunks T) (by intro h; cases h)
+    T = Econsinf' (traceinf'.headChunk T) (traceinf'.tailChunks T)
+      (T.nonempty 0)
 
 def unroll_traceinfStatement : Prop :=
   ∀ T : traceinf, T = Econsinf (T 0) (fun n => T (n + 1))

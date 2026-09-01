@@ -251,7 +251,43 @@ def sep_swapStatement : Prop :=
   ∀ P Q R,
     massert_eqv (sepconj P (sepconj Q R)) (sepconj Q (sepconj P R))
 
-def sep_swap12 : Prop := sep_swapStatement
+theorem sep_swap : sep_swapStatement := by
+  intro P Q R
+  constructor
+  · constructor
+    · intro m h
+      refine ⟨h.2.1.1, ⟨h.1, h.2.1.2.1, ?_⟩, ?_⟩
+      · intro b ofs hP hR
+        exact h.2.2 b ofs hP (Or.inr hR)
+      · intro b ofs hQ hPR
+        cases hPR with
+        | inl hP => exact h.2.2 b ofs hP (Or.inl hQ)
+        | inr hR => exact h.2.1.2.2 b ofs hQ hR
+    · intro b ofs h
+      cases h with
+      | inl hQ => exact Or.inr (Or.inl hQ)
+      | inr hPR =>
+          cases hPR with
+          | inl hP => exact Or.inl hP
+          | inr hR => exact Or.inr (Or.inr hR)
+  · constructor
+    · intro m h
+      refine ⟨h.2.1.1, ⟨h.1, h.2.1.2.1, ?_⟩, ?_⟩
+      · intro b ofs hQ hR
+        exact h.2.2 b ofs hQ (Or.inr hR)
+      · intro b ofs hP hQR
+        cases hQR with
+        | inl hQ => exact h.2.2 b ofs hQ (Or.inl hP)
+        | inr hR => exact h.2.1.2.2 b ofs hP hR
+    · intro b ofs h
+      cases h with
+      | inl hP => exact Or.inr (Or.inl hP)
+      | inr hQR =>
+          cases hQR with
+          | inl hQ => exact Or.inl hQ
+          | inr hR => exact Or.inr (Or.inr hR)
+
+def sep_swap12 : sep_swapStatement := sep_swap
 
 def sep_swap23Statement : Prop :=
   ∀ P Q R S,
@@ -271,7 +307,7 @@ def sep_swap45Statement : Prop :=
       (sepconj P (sepconj Q (sepconj R (sepconj S (sepconj T U)))))
       (sepconj P (sepconj Q (sepconj R (sepconj T (sepconj S U)))))
 
-def sep_swap2 : Prop := sep_swapStatement
+def sep_swap2 : sep_swapStatement := sep_swap
 
 def sep_swap3Statement : Prop :=
   ∀ P Q R S,
@@ -301,10 +337,14 @@ def sep_drop2Statement : Prop :=
 def sep_proj1Statement : Prop :=
   ∀ Q P m, (sepconj P Q).m_pred m → P.m_pred m
 
+theorem sep_proj1 : sep_proj1Statement := by
+  intro Q P m h
+  exact h.1
+
 def sep_proj2Statement : Prop :=
   ∀ P Q m, (sepconj P Q).m_pred m → Q.m_pred m
 
-def sep_pick1 : Prop := sep_proj1Statement
+def sep_pick1 : sep_proj1Statement := sep_proj1
 
 def sep_pick2Statement : Prop :=
   ∀ P Q R m, (sepconj P (sepconj Q R)).m_pred m → Q.m_pred m

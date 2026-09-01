@@ -10,6 +10,8 @@ their proof bodies belong to the later proof-migration phase.
 
 namespace CompCert4Lean.Lib.Zbits
 
+universe u
+
 open CompCert4Lean.Foundation.Numbers.Rocq.Coq
 private abbrev zZero : Z :=
   CompCert4Lean.Foundation.Numbers.Rocq.Coq.Numbers.BinNums.Z.Z0
@@ -49,7 +51,7 @@ private abbrev zTestbit : Z → Z → Bool :=
   CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.testbit
 private abbrev zLog2 : Z → Z :=
   CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.log2
-private def zIter {A : Type} (n : Z) (f : A → A) (x : A) : A :=
+private def zIter {A : Type u} (n : Z) (f : A → A) (x : A) : A :=
   CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.iter n f x
 private abbrev zShiftl : Z → Z → Z :=
   CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.shiftl
@@ -157,11 +159,11 @@ def ZdecompStatement : Prop :=
   ∀ (x : Z), x = Zshiftin (zOdd x) (zDiv2 x)
 
 def Ziter_baseStatement : Prop :=
-  ∀ (A : Type) (n : Z) (f : A → A) (x : A),
+  ∀ (A : Type u) (n : Z) (f : A → A) (x : A),
     zLe n zZero → zIter n f x = x
 
 def Ziter_succStatement : Prop :=
-  ∀ (A : Type) (n : Z) (f : A → A) (x : A),
+  ∀ (A : Type u) (n : Z) (f : A → A) (x : A),
     zLe zZero n → zIter (zSucc n) f x = f (zIter n f x)
 
 def Znatlike_indStatement : Prop :=

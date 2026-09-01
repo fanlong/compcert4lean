@@ -16,6 +16,8 @@ used by CompCert.
 namespace CompCert4Lean.Foundation.Numbers
 namespace Rocq.Coq
 
+universe u
+
 abbrev comparison := _root_.CompCert4Lean.Foundation.Logic.Rocq.Coq.Init.Datatypes.comparison
 abbrev Lt : comparison := _root_.CompCert4Lean.Foundation.Logic.Rocq.Coq.Init.Datatypes.comparison.Lt
 abbrev Eq : comparison := _root_.CompCert4Lean.Foundation.Logic.Rocq.Coq.Init.Datatypes.comparison.Eq
@@ -230,7 +232,7 @@ theorem intOfZ_injective : Function.Injective intOfZ := by
     _ = zOfInt (intOfZ y) := congrArg zOfInt h
     _ = y := zOfInt_intOfZ y
 
-private def natIter {α : Type} (f : α → α) : Nat → α → α
+private def natIter {α : Type u} (f : α → α) : Nat → α → α
   | 0, x => x
   | n + 1, x => natIter f n (f x)
 
@@ -328,7 +330,7 @@ def leb (p q : positive) : Bool := if posToNat p ≤ posToNat q then true else f
 def lor (p q : positive) : positive := posOfNat (Nat.lor (posToNat p) (posToNat q))
 def max (p q : positive) : positive := if posToNat p ≤ posToNat q then q else p
 def mul (p q : positive) : positive := posOfNat (posToNat p * posToNat q)
-def iter {A : Type} (f : A → A) (x : A) (p : positive) : A := natIter f (posToNat p) x
+def iter {A : Type u} (f : A → A) (x : A) (p : positive) : A := natIter f (posToNat p) x
 
 private theorem succ_pred_double (p : positive) : succ (pred_double p) = .xO p := by
   induction p with
@@ -493,7 +495,9 @@ def pow (x n : _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z) :=
   if intOfZ n < 0 then Z0
   else zOfInt (Int.pow (intOfZ x) (Int.toNat (intOfZ n)))
 def pow_pos (x : _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z) (n : positive) := zOfInt (Int.pow (intOfZ x) (PArith.BinPos.Pos.to_nat n))
-def iter (n : _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z) {α : Type} (f : α → α) (x : α) := natIter f (Int.toNat (intOfZ n)) x
+def iter (n : _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z)
+    {α : Type u} (f : α → α) (x : α) : α :=
+  natIter f (Int.toNat (intOfZ n)) x
 def testbit (x n : _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z) : Bool :=
   match n with
   | .Zneg _ => false

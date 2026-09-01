@@ -226,16 +226,26 @@ private noncomputable def reactiveCursorAt
   | n + 1 => nextReactiveCursor L s0 reacts
       (reactiveCursorAt L s0 reacts initial n)
 
+private noncomputable def reactiveChunkAt
+    (L : semantics) (s0 : state L)
+    (reacts : ∀ (s1 : state L) (t1 : trace),
+      Star L s0 t1 s1 →
+      ∃ (s2 : state L) (t2 : trace), Star L s1 t2 s2 ∧ t2 ≠ E0)
+    (initial : ReactiveCursor L s0) (n : Nat) : {t : trace // t ≠ E0} :=
+  let cursor := reactiveCursorAt L s0 reacts initial n
+  let selected := reacts' L reacts cursor.reachable
+  ⟨selected.2.1, selected.2.2.2⟩
+
 noncomputable def build_traceinf'
     (L : semantics) {s0 : state L}
     (reacts : ∀ (s1 : state L) (t1 : trace),
       Star L s0 t1 s1 →
       ∃ (s2 : state L) (t2 : trace), Star L s1 t2 s2 ∧ t2 ≠ E0)
     {s1 : state L} {t1 : trace} (ST : Star L s0 t1 s1) : traceinf' :=
-  fun n =>
-    let cursor := reactiveCursorAt L s0 reacts ⟨s1, t1, ST⟩ n
-    let selected := reacts' L reacts cursor.reachable
-    NonemptyTrace.ofTrace selected.2.1 selected.2.2.2
+  { chunk := fun n =>
+      (reactiveChunkAt L s0 reacts ⟨s1, t1, ST⟩ n).1
+    nonempty := fun n =>
+      (reactiveChunkAt L s0 reacts ⟨s1, t1, ST⟩ n).2 }
 
 def reacts_forever_reactive_recStatement : Prop :=
   ∀ (L : semantics) (s0 : state L)
