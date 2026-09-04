@@ -71,6 +71,15 @@ private abbrev CompilerConfig := CompCert4Lean.Config.CompilerConfig
 private abbrev BinaryNormalizeCertificate :=
   CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
 private abbrev zOfNat := ZArith.BinInt.Z.of_nat
+
+/- Public names for the two fixed certificate domains make the exact generated
+   solver theorem telescopes addressable by inventory probes without exposing
+   the file-local representation aliases above. -/
+abbrev Binary64NormalizeCertificate :=
+  BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)
+
+abbrev Binary32NormalizeCertificate :=
+  BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)
 private abbrev Res := CompCert4Lean.Common.Errors.res
 private abbrev RocqString :=
   CompCert4Lean.Foundation.RocqString.Rocq.Coq.Strings.String.string
