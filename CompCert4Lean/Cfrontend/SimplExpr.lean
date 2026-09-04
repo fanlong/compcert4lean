@@ -223,6 +223,28 @@ def makeif
       | none => .Sifthenelse a s1 s2
   | none => .Sifthenelse a s1 s2
 
+def makeif_indStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
+  ∀ (a : expr) (s1 s2 : statement) (P : statement → Prop),
+    (∀ v, eval_simpl_expr a = some v → ∀ b,
+      CompCert4Lean.Cfrontend.Cop.bool_val v
+        (CompCert4Lean.Cfrontend.Clight.typeof a)
+        CompCert4Lean.Common.Memory.Mem.empty = some b →
+      b = true → P s1) →
+    (∀ v, eval_simpl_expr a = some v → ∀ b,
+      CompCert4Lean.Cfrontend.Cop.bool_val v
+        (CompCert4Lean.Cfrontend.Clight.typeof a)
+        CompCert4Lean.Common.Memory.Mem.empty = some b →
+      b = false → P s2) →
+    (∀ v, eval_simpl_expr a = some v →
+      CompCert4Lean.Cfrontend.Cop.bool_val v
+        (CompCert4Lean.Cfrontend.Clight.typeof a)
+        CompCert4Lean.Common.Memory.Mem.empty = none →
+      P (.Sifthenelse a s1 s2)) →
+    (eval_simpl_expr a = none → P (.Sifthenelse a s1 s2)) →
+    P (makeif a s1 s2)
+
 private def typeEq (t1 t2 : type) : Bool :=
   CompCert4Lean.Lib.Coqlib.proj_sumbool
     (CompCert4Lean.Cfrontend.Ctypes.type_eq t1 t2)

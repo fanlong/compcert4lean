@@ -764,4 +764,14 @@ def transl_program_correctStatement
     match_prog p tp →
     forward_simulation (Cstrategy.semantics xi p) (Clight.semantics1 xi tp)
 
+def TransfSimplExprLinkStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (csyntaxLinkerCertificate : Ctypes.Linker_program_obligations)
+    (clightLinkerCertificate : Ctypes.Linker_program_obligations) : Prop :=
+  @CompCert4Lean.Common.Linking.TransfLink cprogram tprogram
+    (Ctypes.Linker_program cfunction csyntaxLinkerCertificate)
+    (Ctypes.Linker_program tfunction clightLinkerCertificate)
+    (fun p tp => match_prog p tp)
+
 end CompCert4Lean.Cfrontend.SimplExprproof

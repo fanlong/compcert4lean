@@ -487,6 +487,17 @@ def cenv_for_gen_compatStatement : Prop :=
 def compat_cenv_forStatement : Prop :=
   ∀ f, compat_cenv (addr_taken_stmt f.fn_body) (cenv_for f)
 
+def compat_cenv_union_lStatement : Prop :=
+  ∀ atk1 atk2 cenv,
+    compat_cenv (VSet.union atk1 atk2) cenv → compat_cenv atk1 cenv
+
+def compat_cenv_union_rStatement : Prop :=
+  ∀ atk1 atk2 cenv,
+    compat_cenv (VSet.union atk1 atk2) cenv → compat_cenv atk2 cenv
+
+def compat_cenv_emptyStatement : Prop :=
+  ∀ cenv, compat_cenv VSet.empty cenv
+
 def alloc_variables_nextblockStatement : Prop :=
   ∀ ge e m vars e' m', alloc_variables ge e m vars e' m' →
     Ple m.nextblock m'.nextblock

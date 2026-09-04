@@ -185,6 +185,14 @@ def measure_state : CminorSel.state → Nat × Nat
 def lt_state (s1 s2 : CminorSel.state) : Prop :=
   lex_ord Nat.lt Nat.lt (measure_state s1) (measure_state s2)
 
+def lt_state_introStatement : Prop :=
+  ∀ f1 s1 k1 sp1 e1 m1 f2 s2 k2 sp2 e2 m2,
+    size_stmt s1 + size_cont k1 < size_stmt s2 + size_cont k2 ∨
+      (size_stmt s1 + size_cont k1 = size_stmt s2 + size_cont k2 ∧
+        size_stmt s1 < size_stmt s2) →
+    lt_state (CminorSel.State f1 s1 k1 sp1 e1 m1)
+      (CminorSel.State f2 s2 k2 sp2 e2 m2)
+
 /-! ## Continuations and state matching -/
 
 inductive tr_fun (tf : RTL.function) (map : mapping)

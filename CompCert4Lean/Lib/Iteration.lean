@@ -51,6 +51,13 @@ def iterate (step : A → Sum B A) (ord : A → A → Prop)
   CompCert4Lean.Lib.Wfsimpl.Fix ord_wf
     (iterate_F A B step ord step_decr) a
 
+def iterate_propStatement (P : A → Prop) (Q : B → Prop)
+    (step_prop : ∀ a : A, P a →
+      match step a with
+      | .inl b => Q b
+      | .inr a' => P a') : Prop :=
+  ∀ a, P a → Q (iterate A B step ord ord_wf step_decr a)
+
 end ITERATION
 
 end WfIter

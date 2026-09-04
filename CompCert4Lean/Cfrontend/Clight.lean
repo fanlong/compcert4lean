@@ -398,6 +398,72 @@ export eval_expr (eval_Etempvar eval_Eaddrof eval_Elvalue)
 export eval_lvalue (eval_Evar_local eval_Evar_global eval_Ederef
   eval_Efield_struct eval_Efield_union)
 
+/-! The exact combined mutual-induction surface emitted by Rocq's
+`Combined Scheme eval_expr_lvalue_ind`.  It is a descriptor, not a proof: the
+proof remains a distinct DMC-006 obligation even though Lean generates the two
+component recursors. -/
+def eval_expr_lvalue_indStatement
+    [binary64_certificate : BinaryNormalizeCertificate
+      (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate
+      (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)] : Prop :=
+  ∀ (ge : genv) (e : env) (le : temp_env) (m : mem)
+    (P : expr → val → Prop)
+    (P0 : expr → block → ptrofs → bitfield → Prop),
+    (∀ (i : int) (ty : type), P (.Econst_int i ty) (.Vint i)) →
+    (∀ (f : float) (ty : type), P (.Econst_float f ty) (.Vfloat f)) →
+    (∀ (f : float32) (ty : type), P (.Econst_single f ty) (.Vsingle f)) →
+    (∀ (i : int64) (ty : type), P (.Econst_long i ty) (.Vlong i)) →
+    (∀ (id : ident) (ty : type) (v : val),
+      PTree.get id le = some v → P (.Etempvar id ty) v) →
+    (∀ (a : expr) (ty : type) (loc : block) (ofs : ptrofs),
+      eval_lvalue ge e le m a loc ofs .Full → P0 a loc ofs .Full →
+      P (.Eaddrof a ty) (.Vptr loc ofs)) →
+    (∀ (op : unary_operation) (a : expr) (ty : type) (v1 v : val),
+      eval_expr ge e le m a v1 → P a v1 →
+      sem_unary_operation op v1 (typeof a) m = some v →
+      P (.Eunop op a ty) v) →
+    (∀ (op : binary_operation) (a1 a2 : expr) (ty : type) (v1 v2 v : val),
+      eval_expr ge e le m a1 v1 → P a1 v1 →
+      eval_expr ge e le m a2 v2 → P a2 v2 →
+      sem_binary_operation ge.genv_cenv op v1 (typeof a1) v2 (typeof a2) m = some v →
+      P (.Ebinop op a1 a2 ty) v) →
+    (∀ (a : expr) (ty : type) (v1 v : val),
+      eval_expr ge e le m a v1 → P a v1 →
+      sem_cast v1 (typeof a) ty m = some v → P (.Ecast a ty) v) →
+    (∀ ty1 ty : type,
+      P (.Esizeof ty1 ty) (Vptrofs (Ptrofs.repr (sizeof ge.genv_cenv ty1)))) →
+    (∀ ty1 ty : type,
+      P (.Ealignof ty1 ty) (Vptrofs (Ptrofs.repr (alignof ge.genv_cenv ty1)))) →
+    (∀ (a : expr) (loc : block) (ofs : ptrofs) (bf : bitfield) (v : val),
+      eval_lvalue ge e le m a loc ofs bf → P0 a loc ofs bf →
+      deref_loc (typeof a) m loc ofs bf v → P a v) →
+    (∀ (id : ident) (loc : block) (ty : type),
+      PTree.get id e = some (loc, ty) →
+      P0 (.Evar id ty) loc Ptrofs.zero .Full) →
+    (∀ (id : ident) (loc : block) (ty : type),
+      PTree.get id e = none → Genv.find_symbol ge.genv_genv id = some loc →
+      P0 (.Evar id ty) loc Ptrofs.zero .Full) →
+    (∀ (a : expr) (ty : type) (loc : block) (ofs : ptrofs),
+      eval_expr ge e le m a (.Vptr loc ofs) → P a (.Vptr loc ofs) →
+      P0 (.Ederef a ty) loc ofs .Full) →
+    (∀ (a : expr) (id : ident) (ty : type) (loc : block) (ofs : ptrofs)
+      (structId : ident) (co : composite) (att : attr) (delta : Z) (bf : bitfield),
+      eval_expr ge e le m a (.Vptr loc ofs) → P a (.Vptr loc ofs) →
+      typeof a = .Tstruct structId att →
+      PTree.get structId ge.genv_cenv = some co →
+      field_offset ge.genv_cenv id co.co_members = .OK (delta, bf) →
+      P0 (.Efield a id ty) loc (Ptrofs.add ofs (Ptrofs.repr delta)) bf) →
+    (∀ (a : expr) (id : ident) (ty : type) (loc : block) (ofs : ptrofs)
+      (unionId : ident) (co : composite) (att : attr) (delta : Z) (bf : bitfield),
+      eval_expr ge e le m a (.Vptr loc ofs) → P a (.Vptr loc ofs) →
+      typeof a = .Tunion unionId att →
+      PTree.get unionId ge.genv_cenv = some co →
+      union_field_offset ge.genv_cenv id co.co_members = .OK (delta, bf) →
+      P0 (.Efield a id ty) loc (Ptrofs.add ofs (Ptrofs.repr delta)) bf) →
+    (∀ e0 v, eval_expr ge e le m e0 v → P e0 v) ∧
+      (∀ e0 b i bf, eval_lvalue ge e le m e0 b i bf → P0 e0 b i bf)
+
 inductive eval_exprlist
     [binary64_certificate : BinaryNormalizeCertificate
       (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
