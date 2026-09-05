@@ -436,6 +436,36 @@ export R_combine_addr_64
   (R_combine_addr_64_0 R_combine_addr_64_1 R_combine_addr_64_2
    R_combine_addr_64_3)
 
+def R_combine_cond_correctStatement : Type :=
+  ∀ (get : valnum → Option rhs) (cond : condition) (args : List valnum)
+    (res : Option (condition × List valnum)),
+    res = combine_cond get cond args → R_combine_cond get cond args res
+
+def R_combine_cond_completeStatement : Prop :=
+  ∀ (get : valnum → Option rhs) (cond : condition) (args : List valnum)
+    (res : Option (condition × List valnum)),
+    R_combine_cond get cond args res → res = combine_cond get cond args
+
+def R_combine_addr_32_correctStatement : Type :=
+  ∀ (get : valnum → Option rhs) (addr : addressing) (args : List valnum)
+    (res : Option (addressing × List valnum)),
+    res = combine_addr_32 get addr args → R_combine_addr_32 get addr args res
+
+def R_combine_addr_32_completeStatement : Prop :=
+  ∀ (get : valnum → Option rhs) (addr : addressing) (args : List valnum)
+    (res : Option (addressing × List valnum)),
+    R_combine_addr_32 get addr args res → res = combine_addr_32 get addr args
+
+def R_combine_addr_64_correctStatement : Type :=
+  ∀ (get : valnum → Option rhs) (addr : addressing) (args : List valnum)
+    (res : Option (addressing × List valnum)),
+    res = combine_addr_64 get addr args → R_combine_addr_64 get addr args res
+
+def R_combine_addr_64_completeStatement : Prop :=
+  ∀ (get : valnum → Option rhs) (addr : addressing) (args : List valnum)
+    (res : Option (addressing × List valnum)),
+    R_combine_addr_64 get addr args res → res = combine_addr_64 get addr args
+
 /-! ## Selected Rocq `Function` case surface
 
 The pinned Rocq compiler generates the relation `R_combine_op` for

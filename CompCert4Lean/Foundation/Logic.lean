@@ -615,11 +615,33 @@ end Rocq.Coq.Lists.List
 
 namespace Rocq.Coq.Lists.SetoidList
 
-def InA {A : Type} (eqA : A → A → Prop) (x : A) (l : _root_.List A) : Prop :=
-  ∃ y, eqA x y ∧ Rocq.Coq.Lists.List.In y l
+inductive InA {A : Type} (eqA : A → A → Prop) (x : A) :
+    _root_.List A → Prop where
+  | cons_hd (y : A) (l : _root_.List A) :
+      eqA x y → InA eqA x (y :: l)
+  | cons_tl (y : A) (l : _root_.List A) :
+      InA eqA x l → InA eqA x (y :: l)
+
+abbrev InA_cons_hd := @InA.cons_hd
+abbrev InA_cons_tl := @InA.cons_tl
 
 theorem InA_alt {A : Type} (eqA : A → A → Prop) (x : A) (l : _root_.List A) :
-    InA eqA x l ↔ ∃ y, eqA x y ∧ Rocq.Coq.Lists.List.In y l := Iff.rfl
+    InA eqA x l ↔ ∃ y, eqA x y ∧ Rocq.Coq.Lists.List.In y l := by
+  constructor
+  · intro h
+    induction h with
+    | cons_hd y l hxy => exact ⟨y, hxy, _root_.List.Mem.head l⟩
+    | cons_tl y l _ ih =>
+        obtain ⟨z, hxz, hz⟩ := ih
+        exact ⟨z, hxz, _root_.List.Mem.tail y hz⟩
+  · rintro ⟨z, hxz, hz⟩
+    induction l with
+    | nil => exact (_root_.List.not_mem_nil hz).elim
+    | cons y l ih =>
+        rcases _root_.List.mem_cons.mp hz with hzy | hz
+        · subst z
+          exact InA.cons_hd y l hxz
+        · exact InA.cons_tl y l (ih hz)
 
 inductive NoDupA {A : Type} (eqA : A → A → Prop) : _root_.List A → Prop where
   | nil : NoDupA eqA []

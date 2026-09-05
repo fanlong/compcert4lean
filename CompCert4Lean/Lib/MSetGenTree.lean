@@ -492,21 +492,24 @@ theorem choose_spec2 {s : tree X Info}
     (h : choose s = none) : Empty s := min_elt_spec3 h
 
 theorem inA_nil (x : X.t) : ¬ InA X.eq x [] := by
-  rintro ⟨y, _, hy⟩
-  exact List.not_mem_nil hy
+  intro h
+  cases h
 
 theorem inA_cons (x y : X.t) (l : List X.t) :
     InA X.eq x (y :: l) ↔ X.eq x y ∨ InA X.eq x l := by
   constructor
-  · rintro ⟨z, hxz, hz⟩
-    rcases List.mem_cons.mp hz with hzy | hz
-    · subst z
-      exact Or.inl hxz
-    · exact Or.inr ⟨z, hxz, hz⟩
   · intro h
-    rcases h with hxy | ⟨z, hxz, hz⟩
-    · exact ⟨y, hxy, List.Mem.head l⟩
-    · exact ⟨z, hxz, List.Mem.tail y hz⟩
+    cases h with
+    | cons_hd _ _ hxy => exact Or.inl hxy
+    | cons_tl _ _ htail => exact Or.inr htail
+  · intro h
+    rcases h with hxy | htail
+    · exact CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.SetoidList.InA.cons_hd y l hxy
+    · exact CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.SetoidList.InA.cons_tl y l htail
+
+theorem inA_exists (eqA : X.t → X.t → Prop) (x : X.t) (l : List X.t) :
+    InA eqA x l ↔ ∃ y, eqA x y ∧ y ∈ l :=
+  CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.SetoidList.InA_alt eqA x l
 
 theorem elements_aux_spec (s : tree X Info) (acc : List X.t) (x : X.t) :
     InA X.eq x (elements_aux acc s) ↔ In x s ∨ InA X.eq x acc := by
@@ -695,7 +698,7 @@ theorem exists_spec (s : tree X Info) (f : X.t → Bool)
 theorem list_mem_elements_in {s : tree X Info} {x : X.t}
     (h : x ∈ elements s) : In x s := by
   apply (elements_spec1 s x).mp
-  exact ⟨x, X.eq_refl x, h⟩
+  exact (inA_exists X.eq x _).mpr ⟨x, X.eq_refl x, h⟩
 
 theorem hdRel_of_all {x : X.t} {l : List X.t}
     (h : ∀ y, y ∈ l → X.lt x y) : HdRel X.lt x l := by
@@ -755,7 +758,8 @@ theorem sorted_noDupA {l : List X.t} (h : Sorted X.lt l) :
   | nil => exact .nil
   | @cons x l hs hd ih =>
       apply CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.SetoidList.NoDupA.cons
-      · rintro ⟨y, hxy, hy⟩
+      · intro hin
+        rcases (inA_exists X.eq x l).mp hin with ⟨y, hxy, hy⟩
         exact X.lt_not_eq x y (sorted_head_all (.cons hs hd) y hy) hxy
       · exact ih
 
@@ -770,7 +774,8 @@ theorem elements_spec2' (s : tree X Info) (acc : List X.t) (hs : bst s)
   rw [elements_aux_append]
   apply sorted_append (elements_sorted hs) hacc
   intro y hy x hx
-  exact hcross x y ⟨x, X.eq_refl x, hx⟩ (list_mem_elements_in hy)
+  exact hcross x y ((inA_exists X.eq x _).mpr ⟨x, X.eq_refl x, hx⟩)
+    (list_mem_elements_in hy)
 
 theorem elements_spec2 (s : tree X Info) (hs : bst s) :
     Sorted X.lt (elements s) :=
@@ -972,7 +977,9 @@ theorem sorted_app_inv (l₁ l₂ : List X.t)
       ∀ x₁ x₂, InA X.eq x₁ l₁ → InA X.eq x₂ l₂ → X.lt x₁ x₂ := by
   rcases sorted_append_inv h with ⟨h₁, h₂, hcross⟩
   refine ⟨h₁, h₂, ?_⟩
-  rintro x₁ x₂ ⟨y₁, hx₁y₁, hy₁⟩ ⟨y₂, hx₂y₂, hy₂⟩
+  intro x₁ x₂ hx₁ hx₂
+  rcases (inA_exists X.eq x₁ l₁).mp hx₁ with ⟨y₁, hx₁y₁, hy₁⟩
+  rcases (inA_exists X.eq x₂ l₂).mp hx₂ with ⟨y₂, hx₂y₂, hy₂⟩
   exact lt_of_lt_of_eq
     (lt_of_eq_of_lt (X.eq_sym x₁ y₁ hx₁y₁) (hcross y₁ y₂ hy₁ hy₂))
     (X.eq_sym x₂ y₂ hx₂y₂)
@@ -988,11 +995,13 @@ theorem elements_sort_ok (s : tree X Info)
         CompCert4Lean.Foundation.Ordered.Rocq.Coq.Sorting.Sorted.Sorted_inv hxright
       refine bst.BSNode info x left right (ihl hleft) (ihr hi.1) ?_ ?_
       · intro y hy
-        rcases (elements_spec1 left y).mpr hy with ⟨z, hyz, hz⟩
+        rcases (inA_exists X.eq y _).mp ((elements_spec1 left y).mpr hy) with
+          ⟨z, hyz, hz⟩
         exact lt_of_eq_of_lt (X.eq_sym y z hyz)
           (hcross z x hz (List.Mem.head (elements right)))
       · intro y hy
-        rcases (elements_spec1 right y).mpr hy with ⟨z, hyz, hz⟩
+        rcases (inA_exists X.eq y _).mp ((elements_spec1 right y).mpr hy) with
+          ⟨z, hyz, hz⟩
         exact lt_of_lt_of_eq (sorted_head_all hxright z hz) (X.eq_sym y z hyz)
 
 theorem in_left_of_lt_root {info : Info} {left right : tree X Info}
@@ -1458,9 +1467,10 @@ theorem sorted_head_not_lt {x y : X.t} {l : List X.t}
     (hs : Sorted X.lt (x :: l)) (hy : InA X.eq y (x :: l)) : ¬ X.lt y x := by
   intro hyx
   rw [inA_cons] at hy
-  rcases hy with hyxEq | ⟨z, hyz, hz⟩
+  rcases hy with hyxEq | htail
   · exact X.lt_not_eq y x hyx hyxEq
-  · have hxz := sorted_head_all hs z hz
+  · rcases (inA_exists X.eq y l).mp htail with ⟨z, hyz, hz⟩
+    have hxz := sorted_head_all hs z hz
     have hzx : X.lt z x := lt_of_eq_of_lt hyz hyx
     exact lt_asymm hxz hzx
 
@@ -1474,7 +1484,7 @@ theorem sorted_tail_eq {x y : X.t} {l₁ l₂ : List X.t}
     have hzfull := (heq z).mp ((inA_cons z x l₁).mpr (Or.inr hz))
     rw [inA_cons] at hzfull
     rcases hzfull with hzy | hzright
-    · rcases hz with ⟨w, hzw, hw⟩
+    · rcases (inA_exists X.eq z l₁).mp hz with ⟨w, hzw, hw⟩
       have hxw := sorted_head_all hs₁ w hw
       have hxz := lt_of_lt_of_eq hxw (X.eq_sym z w hzw)
       have hxzEq := X.eq_trans x y z hxy (X.eq_sym z y hzy)
@@ -1484,7 +1494,7 @@ theorem sorted_tail_eq {x y : X.t} {l₁ l₂ : List X.t}
     have hzfull := (heq z).mpr ((inA_cons z y l₂).mpr (Or.inr hz))
     rw [inA_cons] at hzfull
     rcases hzfull with hzx | hzleft
-    · rcases hz with ⟨w, hzw, hw⟩
+    · rcases (inA_exists X.eq z l₂).mp hz with ⟨w, hzw, hw⟩
       have hyw := sorted_head_all hs₂ w hw
       have hyz := lt_of_lt_of_eq hyw (X.eq_sym z w hzw)
       have hyzEq := X.eq_trans y x z (X.eq_sym x y hxy) (X.eq_sym z x hzx)

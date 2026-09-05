@@ -34,6 +34,23 @@ private abbrev BinaryNormalizeCertificate :=
   CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
 private abbrev zOfNat := ZArith.BinInt.Z.of_nat
 
+def get_op_soundStatement
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=
+  ∀ (ge : genv) (sp : val) (m : mem) (get : valnum → Option rhs)
+    (valu : valnum → val),
+    (∀ (v : valnum) (rh : rhs), get v = some rh →
+      rhs_eval_to
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        valu ge sp m rh (valu v)) →
+    ∀ (v : valnum) (op : operation) (vl : List valnum),
+      get v = some (.Op op vl) →
+      eval_operation
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        ge sp op (List.map valu vl) m = some (valu v)
+
 def combine_compimm_ne_0_soundStatement
     [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
     [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] : Prop :=

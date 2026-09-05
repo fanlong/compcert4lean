@@ -918,6 +918,17 @@ def simpl_find_labelStatement : Prop :=
         compat_cenv (addr_taken_stmt s') cenv ∧ simpl_stmt cfg cenv s' = .OK ts' ∧
         match_cont cfg prog f cenv k' tk' m bound tbound
 
+def simpl_find_label_lsStatement : Prop :=
+  ∀ (cfg : CompilerConfig) (prog : program) f cenv m bound tbound lbl ls k tls tk,
+    simpl_lblstmt cfg cenv ls = .OK tls →
+    match_cont cfg prog f cenv k tk m bound tbound →
+    compat_cenv (addr_taken_lblstmt ls) cenv →
+    match find_label_ls lbl ls k with
+    | none => find_label_ls lbl tls tk = none
+    | some (s', k') => ∃ ts' tk', find_label_ls lbl tls tk = some (ts', tk') ∧
+        compat_cenv (addr_taken_stmt s') cenv ∧ simpl_stmt cfg cenv s' = .OK ts' ∧
+        match_cont cfg prog f cenv k' tk' m bound tbound
+
 def find_label_store_paramsStatement : Prop :=
   ∀ lbl cenv s k params,
     find_label lbl (store_params cenv params s) k = find_label lbl s k
@@ -971,5 +982,13 @@ def transf_program_correctStatement
       (semantics2
         (binary64_certificate := binary64_certificate)
         (binary32_certificate := binary32_certificate) xi tp)
+
+def TransfSimplLocalsLinkStatement
+    (cfg : CompilerConfig)
+    (clightLinkerCertificate : Ctypes.Linker_program_obligations) : Prop :=
+  @CompCert4Lean.Common.Linking.TransfLink program program
+    (Ctypes.Linker_program function clightLinkerCertificate)
+    (Ctypes.Linker_program function clightLinkerCertificate)
+    (match_prog cfg)
 
 end CompCert4Lean.Cfrontend.SimplLocalsproof

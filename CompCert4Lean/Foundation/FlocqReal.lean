@@ -786,6 +786,8 @@ def Rle_reflStatement : Prop := ∀ r : R, Rle r r
 def Rle_transStatement : Prop := ∀ (r1 r2 r3 : R) (_ : Rle r1 r2) (_ : Rle r2 r3), Rle r1 r3
 def Rlt_0_1Statement : Prop := Rlt (IZR Z0) (IZR (Zpos xH))
 def Rlt_0_2Statement : Prop := Rlt (IZR Z0) (IZR (Zpos (xO xH)))
+def Rlt_0_minusStatement : Prop :=
+  ∀ r1 r2 : R, Iff (Rlt (IZR Z0) (Rminus r2 r1)) (Rlt r1 r2)
 def Rlt_irreflStatement : Prop := ∀ r : R, Not (Rlt r r)
 def Rlt_le_decStatement : Type := ∀ r1 r2 : R, Sumbool (Rlt r1 r2) (Rle r2 r1)
 def Rlt_leStatement : Prop := ∀ (r1 r2 : R) (_ : Rlt r1 r2), Rle r1 r2
