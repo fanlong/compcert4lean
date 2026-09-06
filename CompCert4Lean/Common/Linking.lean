@@ -744,6 +744,106 @@ def pass_compose {l1 l2 l3 : Language} (pass : Pass l1 l2) (pass' : Pass l2 l3) 
       exact ⟨tp, htp, ip, hmip, hmtp⟩
     )
 
+/-! Exact proof-field surfaces extracted from the six selected `Linker`
+instances.  The existing inline terms are deliberately not declared as
+completed inventory evidence here; proof grinding may authenticate and reuse
+them through the separately named `_proof` targets. -/
+
+def Linker_fundef_linkorder_reflStatement : Prop :=
+  ∀ (F : Type) (x : fundef F), (Linker_fundef F).linkorder x x
+
+def Linker_fundef_linkorder_transStatement : Prop :=
+  ∀ (F : Type) (x y z : fundef F),
+    (Linker_fundef F).linkorder x y →
+    (Linker_fundef F).linkorder y z →
+    (Linker_fundef F).linkorder x z
+
+def Linker_fundef_link_linkorderStatement : Prop :=
+  ∀ (F : Type) (x y z : fundef F),
+    (Linker_fundef F).link x y = some z →
+    (Linker_fundef F).linkorder x z ∧ (Linker_fundef F).linkorder y z
+
+def Linker_varinit_linkorder_reflStatement : Prop :=
+  ∀ x : List init_data, Linker_varinit.linkorder x x
+
+def Linker_varinit_linkorder_transStatement : Prop :=
+  ∀ x y z : List init_data,
+    Linker_varinit.linkorder x y → Linker_varinit.linkorder y z →
+    Linker_varinit.linkorder x z
+
+def Linker_varinit_link_linkorderStatement : Prop :=
+  ∀ x y z : List init_data,
+    Linker_varinit.link x y = some z →
+    Linker_varinit.linkorder x z ∧ Linker_varinit.linkorder y z
+
+def Linker_vardef_linkorder_reflStatement : Prop :=
+  ∀ (V : Type) [LV : Linker V] (x : globvar V),
+    (Linker_vardef V).linkorder x x
+
+def Linker_vardef_linkorder_transStatement : Prop :=
+  ∀ (V : Type) [LV : Linker V] (x y z : globvar V),
+    (Linker_vardef V).linkorder x y →
+    (Linker_vardef V).linkorder y z →
+    (Linker_vardef V).linkorder x z
+
+def Linker_vardef_link_linkorderStatement : Prop :=
+  ∀ (V : Type) [LV : Linker V] (x y z : globvar V),
+    (Linker_vardef V).link x y = some z →
+    (Linker_vardef V).linkorder x z ∧ (Linker_vardef V).linkorder y z
+
+def Linker_unit_linkorder_reflStatement : Prop :=
+  ∀ x : Unit, Linker_unit.linkorder x x
+
+def Linker_unit_linkorder_transStatement : Prop :=
+  ∀ x y z : Unit,
+    Linker_unit.linkorder x y → Linker_unit.linkorder y z →
+    Linker_unit.linkorder x z
+
+def Linker_unit_link_linkorderStatement : Prop :=
+  ∀ x y z : Unit,
+    Linker_unit.link x y = some z →
+    Linker_unit.linkorder x z ∧ Linker_unit.linkorder y z
+
+def Linker_def_linkorder_reflStatement : Prop :=
+  ∀ (F V : Type) [LF : Linker F] [LV : Linker V] (x : globdef F V),
+    (Linker_def F V).linkorder x x
+
+def Linker_def_linkorder_transStatement : Prop :=
+  ∀ (F V : Type) [LF : Linker F] [LV : Linker V] (x y z : globdef F V),
+    (Linker_def F V).linkorder x y →
+    (Linker_def F V).linkorder y z →
+    (Linker_def F V).linkorder x z
+
+def Linker_def_link_linkorderStatement : Prop :=
+  ∀ (F V : Type) [LF : Linker F] [LV : Linker V] (x y z : globdef F V),
+    (Linker_def F V).link x y = some z →
+    (Linker_def F V).linkorder x z ∧ (Linker_def F V).linkorder y z
+
+def Linker_prog_linkorder_reflStatement : Prop :=
+  ∀ (F V : Type) [LF : Linker F] [LV : Linker V] (x : program F V),
+    (Linker_prog F V).linkorder x x
+
+def Linker_prog_linkorder_transStatement : Prop :=
+  ∀ (F V : Type) [LF : Linker F] [LV : Linker V] (x y z : program F V),
+    (Linker_prog F V).linkorder x y →
+    (Linker_prog F V).linkorder y z →
+    (Linker_prog F V).linkorder x z
+
+def Linker_prog_link_linkorderStatement : Prop :=
+  ∀ (F V : Type) [LF : Linker F] [LV : Linker V] (x y z : program F V),
+    (Linker_prog F V).link x y = some z →
+    (Linker_prog F V).linkorder x z ∧ (Linker_prog F V).linkorder y z
+
+def pass_identity_pass_match_linkStatement : Prop :=
+  ∀ l : Language,
+    @TransfLink l.lang_prog l.lang_prog l.lang_link l.lang_link
+      (pass_identity l).pass_match
+
+def pass_compose_pass_match_linkStatement : Prop :=
+  ∀ {l1 l2 l3 : Language} (pass : Pass l1 l2) (pass' : Pass l2 l3),
+    @TransfLink l1.lang_prog l3.lang_prog l1.lang_link l3.lang_link
+      (pass_compose pass pass').pass_match
+
 inductive Passes : Language → Language → Type 1 where
   | pass_nil (l : Language) : Passes l l
   | pass_cons {l1 l2 l3 : Language} (head : Pass l1 l2) (tail : Passes l2 l3) :

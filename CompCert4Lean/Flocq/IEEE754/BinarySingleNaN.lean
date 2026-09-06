@@ -533,9 +533,17 @@ noncomputable def round_mode (ctx : Context) (m : mode) : R ctx → Z :=
 
 end Exact
 
-def valid_rnd_round_mode (ctx : ExactRealContext) : Prop :=
+def valid_rnd_round_modeStatement (ctx : ExactRealContext) : Prop :=
   ∀ m : mode,
     Core.Generic_fmt.Exact.Valid_rnd ctx (Exact.round_mode ctx m)
+
+class ValidRndRoundModeCertificate (ctx : ExactRealContext) : Prop where
+  valid : valid_rnd_round_modeStatement ctx
+
+instance valid_rnd_round_mode (ctx : ExactRealContext)
+    [certificate : ValidRndRoundModeCertificate ctx] (m : mode) :
+    Core.Generic_fmt.Exact.Valid_rnd ctx (Exact.round_mode ctx m) :=
+  certificate.valid m
 
 def B2R_BoppStatement (ctx : ExactRealContext) : Prop :=
   ∀ x : binary_float prec emax,
