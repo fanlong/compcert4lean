@@ -11,7 +11,7 @@ as exact statement descriptors for the later proof-migration phase.
 namespace CompCert4Lean.Lib.Wfsimpl
 
 def Fix {A B : Type} {R : A → A → Prop}
-    (Rwf : WellFounded R)
+    (Rwf : CompCert4Lean.Foundation.Recursion.Rocq.Coq.Init.Wf.well_founded R)
     (F : ∀ x : A, (∀ y : A, R y x → B) → B)
     (x : A) : B :=
   CompCert4Lean.Foundation.Recursion.Rocq.Coq.Init.Wf.Fix
@@ -19,7 +19,7 @@ def Fix {A B : Type} {R : A → A → Prop}
 
 def unroll_FixStatement : Prop :=
   ∀ {A B : Type} {R : A → A → Prop}
-    (Rwf : WellFounded R)
+    (Rwf : CompCert4Lean.Foundation.Recursion.Rocq.Coq.Init.Wf.well_founded R)
     (F : ∀ x : A, (∀ y : A, R y x → B) → B)
     (x : A),
     Fix Rwf F x = F x (fun (y : A) (_ : R y x) => Fix Rwf F y)
