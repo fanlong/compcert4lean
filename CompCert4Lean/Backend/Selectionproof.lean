@@ -120,6 +120,14 @@ inductive Rint : Z → val → Prop where
 inductive Rlong : Z → val → Prop where
   | intro (n : int64) : Rlong (Int64.unsigned n) (Vlong n)
 
+/-! Preserve the exact source-facing names of the two primary constructors.
+The aliases add no proof obligation and delegate to the corresponding Lean
+kernel constructors without changing either relation. -/
+
+abbrev Rint_intro := @Rint.intro
+
+abbrev Rlong_intro := @Rlong.intro
+
 /-! The eventual relation used by the simulation diagram. -/
 
 def eventually
