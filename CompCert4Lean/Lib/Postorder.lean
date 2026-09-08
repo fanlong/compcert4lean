@@ -348,4 +348,12 @@ inductive reachable (g : graph) (root : positive) : positive → Prop where
 
 export reachable (reachable_root reachable_succ)
 
+def postorder_correctStatement : Prop :=
+  ∀ (g : graph) (root : node),
+    let m := postorder g root
+    (∀ (x₁ x₂ y : positive),
+      PTree.get x₁ m = some y → PTree.get x₂ m = some y → x₁ = x₂) ∧
+    (∀ x : positive,
+      reachable g root x → PTree.get x g ≠ none → PTree.get x m ≠ none)
+
 end CompCert4Lean.Lib.Postorder
