@@ -83,6 +83,25 @@ def pnum (f : function) : PTree.t positive :=
 def reach (f : function) (pc : node) : Prop :=
   CompCert4Lean.Lib.Postorder.reachable (successors_map f) f.fn_entrypoint pc
 
+def renum_cfg_nodesStatement : Prop :=
+  ∀ (f : PTree.t positive),
+    (∀ (x₁ x₂ y : positive),
+      PTree.get x₁ f = some y → PTree.get x₂ f = some y → x₁ = x₂) →
+    ∀ (c : code) (x y : positive) (i : instruction),
+      PTree.get x c = some i →
+      PTree.get x f = some y →
+      PTree.get y (CompCert4Lean.Backend.Renumber.renum_cfg f c) =
+        some (CompCert4Lean.Backend.Renumber.renum_instr f i)
+
+def transf_function_atStatement : Prop :=
+  ∀ (f : function) (pc : node) (i : instruction),
+    PTree.get pc f.fn_code = some i →
+    reach f pc →
+    PTree.get
+        (CompCert4Lean.Backend.Renumber.renum_pc (pnum f) pc)
+        (CompCert4Lean.Backend.Renumber.transf_function f).fn_code =
+      some (CompCert4Lean.Backend.Renumber.renum_instr (pnum f) i)
+
 def reach_succStatement : Prop :=
   ∀ (f : function) (pc : positive) (i : instruction) (s : node),
     PTree.get pc f.fn_code = some i →
