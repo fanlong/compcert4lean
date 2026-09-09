@@ -342,3 +342,84 @@ def transf_program_correctStatement
         (binary32_certificate := binary32_certificate) cfg xi tprog)
 
 end CompCert4Lean.Backend.CleanupLabelsproof
+
+namespace CompCert4Lean.Backend.CleanupLabelsproof
+
+open CompCert4Lean.Backend.CleanupLabels
+open CompCert4Lean.Backend.Linear
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Linking
+open CompCert4Lean.Lib.Coqlib
+
+theorem sig_function_translated : sig_function_translatedStatement := by
+  intro f
+  cases f <;> rfl
+
+theorem add_label_branched_to_incr : add_label_branched_to_incrStatement := by
+  intro ls i
+  unfold Labelset.Subset
+  intro x hx
+  cases i with
+  | Lgoto lbl => exact CompCert4Lean.Lib.FSetAVLplus.Make.add_2 ls lbl x hx
+  | Lcond cond args lbl => exact CompCert4Lean.Lib.FSetAVLplus.Make.add_2 ls lbl x hx
+  | Ljumptable arg tbl =>
+      change Labelset.In x (tbl.foldr Labelset.add ls)
+      induction tbl generalizing ls with
+      | nil => exact hx
+      | cons lbl tbl ih =>
+          simp only [List.foldr]
+          exact CompCert4Lean.Lib.FSetAVLplus.Make.add_2
+            (List.foldr Labelset.add ls tbl) lbl x (ih ls hx)
+  | Lgetstack sl ofs ty dst => exact hx
+  | Lsetstack src sl ofs ty => exact hx
+  | Lop op args res => exact hx
+  | Lload chunk addr args dst => exact hx
+  | Lstore chunk addr args src => exact hx
+  | Lcall sig ros => exact hx
+  | Ltailcall sig ros => exact hx
+  | Lbuiltin ef args res => exact hx
+  | Llabel lbl => exact hx
+  | Lreturn => exact hx
+
+theorem transf_program_match : transf_program_matchStatement := by
+  letI : Linker fundef := Linker_fundef function
+  letI : Linker program := Linker_prog fundef Unit
+  intro p
+  unfold match_prog CompCert4Lean.Backend.CleanupLabels.transf_program
+    CompCert4Lean.Common.AST.transform_program
+  constructor
+  · induction p.prog_defs with
+    | nil => exact list_forall2.nil _
+    | cons hd tl ih =>
+        cases hd with
+        | mk id gd =>
+            cases gd with
+              | Gfun f =>
+                  change list_forall2 _
+                    ((id, Gfun f) :: tl)
+                    ((id, Gfun (CompCert4Lean.Backend.CleanupLabels.transf_fundef f)) ::
+                      List.map (transform_program_globdef
+                        CompCert4Lean.Backend.CleanupLabels.transf_fundef) tl)
+                  apply list_forall2.cons
+                  · constructor
+                    · rfl
+                    · apply match_globdef.match_globdef_fun (ctx' := p)
+                      · exact linkorder_refl _
+                      · rfl
+                  · exact ih
+              | Gvar v =>
+                  change list_forall2 _
+                    ((id, Gvar v) :: tl)
+                    ((id, Gvar v) ::
+                      List.map (transform_program_globdef
+                        CompCert4Lean.Backend.CleanupLabels.transf_fundef) tl)
+                  apply list_forall2.cons
+                  · constructor
+                    · rfl
+                    · apply match_globdef.match_globdef_var
+                      exact match_globvar.match_globvar_intro _ _ _ _ _ _ rfl
+                  · exact ih
+  · exact ⟨rfl, rfl⟩
+
+end CompCert4Lean.Backend.CleanupLabelsproof
