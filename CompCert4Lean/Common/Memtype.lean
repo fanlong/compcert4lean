@@ -34,3 +34,11 @@ inductive perm_kind : Type where
 export perm_kind (Max Cur)
 
 end CompCert4Lean.Common.Memtype
+
+namespace CompCert4Lean.Common.Memtype
+
+theorem perm_order_trans : perm_order_transStatement := by
+  intro p1 p2 p3 h12 h23
+  cases h12 <;> cases h23 <;> constructor
+
+end CompCert4Lean.Common.Memtype
