@@ -1033,3 +1033,24 @@ def sign_plus_overflowStatement (ctx : ExactRealContext)
     sx = Exact.Rlt_bool ctx z (Exact.R0 ctx) ∧ sx = sy
 
 end CompCert4Lean.Flocq.IEEE754.BinarySingleNaN
+
+namespace CompCert4Lean.Flocq.IEEE754.BinarySingleNaN
+
+theorem SF2BCertificateStatement_proof :
+    ∀ {prec emax : Z},
+      SF2BCertificateStatement (prec := prec) (emax := emax) := by
+  intro prec emax x Hx
+  cases x <;> exact Hx
+
+theorem B2SF_SF2B :
+    ∀ {prec emax : Z}, B2SF_SF2BStatement (prec := prec) (emax := emax) := by
+  intro prec emax x Hx
+  cases x <;> rfl
+
+theorem B2R_SF2B :
+    ∀ {prec emax : Z} (ctx : ExactRealContext),
+      B2R_SF2BStatement (prec := prec) (emax := emax) ctx := by
+  intro prec emax ctx x Hx
+  cases x <;> rfl
+
+end CompCert4Lean.Flocq.IEEE754.BinarySingleNaN
