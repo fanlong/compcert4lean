@@ -569,3 +569,52 @@ def wf_lex_ordStatement : Prop :=
     WellFounded ordA → WellFounded ordB → WellFounded (lex_ord ordA ordB)
 
 end CompCert4Lean.Lib.Coqlib
+
+namespace CompCert4Lean.Lib.Coqlib
+
+theorem list_forall2_length : list_forall2_lengthStatement := by
+  intro A B P l1 l2 h
+  induction h with
+  | nil => rfl
+  | cons a1 b1 hp htail ih =>
+      simp_all
+
+theorem dec_eq_false : dec_eq_falseStatement := by
+  intro A dec_eq B x y ifso ifnot hxy
+  cases h : dec_eq x y with
+  | left heq => exact False.elim (hxy heq)
+  | right hne => rfl
+
+theorem Plt_strict : Plt_strictStatement := by
+  intro p hp
+  exact (Nat.lt_irrefl _ hp)
+
+theorem app_ass : app_assStatement := by
+  intro A l1 l2 l3
+  induction l1 with
+  | nil => rfl
+  | cons a l ih =>
+      simp [ih]
+
+theorem peq_true : peq_trueStatement := by
+  intro A x a b
+  cases h : peq x x with
+  | left heq => rfl
+  | right hne => exact False.elim (hne rfl)
+
+theorem peq_false : peq_falseStatement := by
+  intro A x y a b hxy
+  cases h : peq x y with
+  | left heq => exact False.elim (hxy heq)
+  | right hne => rfl
+
+theorem Plt_ne : Plt_neStatement := by
+  intro x y hxy heq
+  subst y
+  exact Nat.lt_irrefl _ hxy
+
+theorem Plt_trans : Plt_transStatement := by
+  intro x y z hxy hyz
+  exact Nat.lt_trans hxy hyz
+
+end CompCert4Lean.Lib.Coqlib

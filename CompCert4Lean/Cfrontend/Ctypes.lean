@@ -1677,3 +1677,26 @@ def Linker_program (F : Type) (certificate : Linker_program_obligations) :
     simpa [link_program_with_certificate] using certificate.link_linkorder
 
 end CompCert4Lean.Cfrontend.Ctypes
+
+namespace CompCert4Lean.Cfrontend.Ctypes
+
+theorem align_attr_two_p : align_attr_two_pStatement := by
+  intro al a h
+  exact alignAttrTwoPower a al h
+
+theorem alignof_two_p : alignof_two_pStatement := by
+  exact alignofTwoPower
+
+theorem alignof_pos : alignof_posStatement := by
+  exact alignof_positive
+
+theorem sizeof_pos : sizeof_posStatement := by
+  exact sizeof_nonneg
+
+theorem bitalignof_intsize_pos : bitalignof_intsize_posStatement := by
+  exact bitalignof_intsize_positive
+
+theorem alignof_composite_two_p : alignof_composite_two_pStatement := by
+  exact alignofCompositeTwoPower
+
+end CompCert4Lean.Cfrontend.Ctypes

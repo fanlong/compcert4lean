@@ -43,3 +43,17 @@ def unroll_FixmStatement : Prop :=
     Fixm measure F x = F x (fun (y : A) (_ : measure y < measure x) => Fixm measure F y)
 
 end CompCert4Lean.Lib.Wfsimpl
+
+namespace CompCert4Lean.Lib.Wfsimpl
+
+theorem unroll_Fix : unroll_FixStatement := by
+  intro A B R Rwf F x
+  unfold Fix
+  apply _root_.WellFounded.fix_eq
+
+theorem unroll_Fixm : unroll_FixmStatement := by
+  intro A B measure F x
+  unfold Fixm Fix
+  apply _root_.WellFounded.fix_eq
+
+end CompCert4Lean.Lib.Wfsimpl
