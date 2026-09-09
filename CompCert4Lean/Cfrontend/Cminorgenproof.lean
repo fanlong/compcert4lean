@@ -990,3 +990,17 @@ def transl_program_correctStatement
         (binary32_certificate := binary32_certificate) xi tprog)
 
 end CompCert4Lean.Cfrontend.Cminorgenproof
+
+namespace CompCert4Lean.Cfrontend.Cminorgenproof
+
+theorem sig_preserved_body : sig_preserved_bodyStatement := by
+  intro f tf cenv size h
+  unfold CompCert4Lean.Cfrontend.Cminorgen.transl_funbody at h
+  cases htrans : CompCert4Lean.Cfrontend.Cminorgen.transl_stmt cenv [] f.fn_body with
+  | Error msg => simp [htrans] at h
+  | OK body =>
+      simp [htrans] at h
+      cases h
+      rfl
+
+end CompCert4Lean.Cfrontend.Cminorgenproof
