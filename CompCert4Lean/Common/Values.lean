@@ -1172,3 +1172,18 @@ def val_inject_idStatement : Prop :=
   ∀ v1 v2, Val.inject inject_id v1 v2 ↔ Val.lessdef v1 v2
 
 end CompCert4Lean.Common.Values
+
+namespace CompCert4Lean.Common.Values
+
+theorem inject_incr_refl : inject_incr_reflStatement := by
+  intro f b b' delta h
+  exact h
+
+namespace Val
+
+theorem Vptr_has_type : Vptr_has_typeStatement := by
+  intro b ofs
+  rfl
+
+end Val
+end CompCert4Lean.Common.Values
