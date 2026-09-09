@@ -321,3 +321,14 @@ def inbetween_float_uniqueStatement : Prop :=
 end ExactSpecification
 
 end CompCert4Lean.Flocq.Calc.Bracket
+
+namespace CompCert4Lean.Flocq.Calc.Bracket
+
+theorem inbetween_bounds_not_Eq (ctx : ExactRealContext) :
+    inbetween_bounds_not_EqStatement ctx := by
+  intro d u x l hx hl
+  cases hx with
+  | inbetween_Exact h => exact (hl rfl).elim
+  | inbetween_Inexact l hbounds hmiddle => exact hbounds
+
+end CompCert4Lean.Flocq.Calc.Bracket
