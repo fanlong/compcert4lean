@@ -123,3 +123,42 @@ def round_FIX_IZRStatement (ctx : ExactRealContext)
       CompCert4Lean.Flocq.Core.Generic_fmt.Exact.IZR ctx (f x)
 
 end CompCert4Lean.Flocq.Core.FIX
+
+namespace CompCert4Lean.Flocq.Core.FIX
+
+theorem FIX_format_generic (ctx : ExactRealContext)
+    (magnitude : CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Magnitude ctx) :
+    FIX_format_genericStatement ctx magnitude := by
+  intro beta emin x hgeneric
+  unfold CompCert4Lean.Flocq.Core.Generic_fmt.Exact.generic_format at hgeneric
+  refine Exact.FIX_spec (CompCert4Lean.Flocq.Core.Defs.Float beta
+    (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Ztrunc ctx
+      (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.scaled_mantissa ctx magnitude beta (FIX_exp emin) x))
+    emin) ?_ rfl
+  simpa [FIX_exp, CompCert4Lean.Flocq.Core.Generic_fmt.Exact.cexp] using hgeneric
+
+theorem ulp_FIX (ctx : ExactRealContext)
+    (magnitude : CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Magnitude ctx) :
+    ulp_FIXStatement ctx magnitude := by
+  intro beta emin x
+  cases hreq : CompCert4Lean.Flocq.Core.Ulp.Exact.Req_bool ctx x
+      (CompCert4Lean.Flocq.Core.Ulp.Exact.R0 ctx) with
+  | false =>
+      simp [CompCert4Lean.Flocq.Core.Ulp.Exact.ulp, hreq,
+        CompCert4Lean.Flocq.Core.Generic_fmt.Exact.cexp, FIX_exp]
+  | true =>
+      rw [CompCert4Lean.Flocq.Core.Ulp.Exact.ulp, hreq]
+      cases hnegligible : CompCert4Lean.Flocq.Core.Ulp.negligible_exp (FIX_exp emin) with
+      | some n =>
+          simp [FIX_exp]
+      | none =>
+          have hspec := CompCert4Lean.Flocq.Core.Ulp.negligible_exp_spec (FIX_exp emin)
+          rw [hnegligible] at hspec
+          cases hspec with
+          | negligible_None hall =>
+              have hlt := hall emin
+              change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ emin <
+                CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ emin at hlt
+              exact (Int.lt_irrefl _ hlt).elim
+
+end CompCert4Lean.Flocq.Core.FIX
