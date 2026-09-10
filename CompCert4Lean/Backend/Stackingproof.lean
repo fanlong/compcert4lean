@@ -1894,3 +1894,19 @@ theorem transf_program_match : transf_program_matchStatement := by
       · exact ⟨rfl, rfl⟩
 
 end CompCert4Lean.Backend.Stackingproof
+
+namespace CompCert4Lean.Backend.Stackingproof
+
+theorem typesize_typesize : typesize_typesizeStatement := by
+  intro ty
+  cases ty <;> rfl
+
+theorem size_type_chunk : size_type_chunkStatement := by
+  intro ty
+  cases ty <;> rfl
+
+theorem align_type_chunk : align_type_chunkStatement := by
+  intro ty
+  cases ty <;> rfl
+
+end CompCert4Lean.Backend.Stackingproof
