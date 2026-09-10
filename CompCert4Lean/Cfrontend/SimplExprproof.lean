@@ -775,3 +775,21 @@ def TransfSimplExprLinkStatement
     (fun p tp => match_prog p tp)
 
 end CompCert4Lean.Cfrontend.SimplExprproof
+
+namespace CompCert4Lean.Cfrontend.SimplExprproof
+
+theorem typeof_make_assign_value : typeof_make_assign_valueStatement := by
+  intro bf r
+  cases bf with
+  | Full => rfl
+  | Bits size signed pos width =>
+      unfold SimplExpr.make_assign_value SimplExpr.make_normalize
+      by_cases h : size = .IBool ∨ signed = .Unsigned
+      · simp [h, Clight.typeof]
+      · simp [h, Clight.typeof]
+
+theorem typeof_context : typeof_contextStatement := by
+  intro k1 k2 C h
+  cases h <;> intro e1 e2 heq <;> simp_all [Csyntax.typeof]
+
+end CompCert4Lean.Cfrontend.SimplExprproof

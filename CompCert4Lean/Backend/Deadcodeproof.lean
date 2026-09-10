@@ -565,3 +565,236 @@ def transf_program_correctStatement : Prop :=
         (binary32_certificate := binary32_certificate) xi tprog)
 
 end CompCert4Lean.Backend.Deadcodeproof
+
+namespace CompCert4Lean.Backend.Deadcodeproof
+
+theorem magree_loadbytes : magree_loadbytesStatement := by
+  intro m1 m2 P b ofs n bytes h hload hP
+  have getN_aux : ∀ (N : Nat)
+      (p : CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z)
+      (c1 c2 : CompCert4Lean.Lib.Maps.ZMap.t CompCert4Lean.Common.Memdata.memval),
+      (∀ i, CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.le p i ∧
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.lt i
+            (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add p
+              (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat N)) →
+          CompCert4Lean.Common.Memdata.memval_lessdef
+            (CompCert4Lean.Lib.Maps.ZMap.get i c1)
+            (CompCert4Lean.Lib.Maps.ZMap.get i c2)) →
+      CompCert4Lean.Lib.Coqlib.list_forall2
+        CompCert4Lean.Common.Memdata.memval_lessdef
+        (CompCert4Lean.Common.Memory.Mem.getN N p c1)
+        (CompCert4Lean.Common.Memory.Mem.getN N p c2) := by
+    intro N
+    induction N with
+    | zero =>
+        intro p c1 c2 hN
+        exact CompCert4Lean.Lib.Coqlib.list_forall2_nil _
+    | succ N ih =>
+        intro p c1 c2 hN
+        apply CompCert4Lean.Lib.Coqlib.list_forall2.cons
+        · apply hN p
+          constructor
+          · change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ p ≤
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ p
+            omega
+          · change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ p <
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+                (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add p
+                  (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat (N + 1)))
+            simp [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add,
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat,
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+            omega
+        · apply ih
+            (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add p
+              (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 1)) c1 c2
+          intro i hi
+          apply hN i
+          rcases hi with ⟨hile, hilt⟩
+          constructor
+          · change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ p ≤
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ i
+            change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+              (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add p
+                (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 1)) ≤
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ i at hile
+            simp [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add,
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat,
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt] at hile
+            omega
+          · change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ i <
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+                (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add p
+                  (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat (N + 1)))
+            simp [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add,
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat,
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+            change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ i <
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+                (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add
+                  (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add p
+                    (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 1))
+                  (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat N)) at hilt
+            simp [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add,
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat,
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt] at hilt
+            omega
+  unfold CompCert4Lean.Common.Memory.Mem.loadbytes at hload
+  generalize hd1 : CompCert4Lean.Common.Memory.Mem.range_perm_dec m1 b ofs
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add ofs n)
+      CompCert4Lean.Common.Memtype.Cur CompCert4Lean.Common.Memtype.Readable = d1 at hload
+  cases d1 with
+  | left hr1 =>
+      simp [hd1] at hload
+      rcases hload with ⟨_, hbytes⟩
+      subst bytes
+      have hr2 : CompCert4Lean.Common.Memory.Mem.range_perm m2 b ofs
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add ofs n)
+          CompCert4Lean.Common.Memtype.Cur CompCert4Lean.Common.Memtype.Readable := by
+        intro i hi
+        exact h.ma_perm b i CompCert4Lean.Common.Memtype.Cur
+          CompCert4Lean.Common.Memtype.Readable (hr1 i hi)
+      refine ⟨CompCert4Lean.Common.Memory.Mem.getN
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.to_nat n) ofs
+          (CompCert4Lean.Lib.Maps.PMap.get b m2.mem_contents), ?_, ?_⟩
+      · unfold CompCert4Lean.Common.Memory.Mem.loadbytes
+        generalize hd2 : CompCert4Lean.Common.Memory.Mem.range_perm_dec m2 b ofs
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add ofs n)
+          CompCert4Lean.Common.Memtype.Cur CompCert4Lean.Common.Memtype.Readable = d2
+        cases d2 with
+        | left hp => rfl
+        | right hn => exact False.elim (hn hr2)
+      · by_cases hnpos : 0 ≤ CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ n
+        · have hn_eq : CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat
+              (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.to_nat n) = n := by
+            exact CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.Znat.Z2Nat.id n hnpos
+          apply getN_aux
+            (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.to_nat n) ofs
+            (CompCert4Lean.Lib.Maps.PMap.get b m1.mem_contents)
+            (CompCert4Lean.Lib.Maps.PMap.get b m2.mem_contents)
+          intro i hi
+          rw [hn_eq] at hi
+          apply h.ma_memval b i
+          · exact hr1 i hi
+          · exact hP i hi
+        · have hnzero :
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.to_nat n = 0 := by
+            change Int.toNat (CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ n) = 0
+            omega
+          simpa [CompCert4Lean.Common.Memory.Mem.getN, hnzero] using
+            (CompCert4Lean.Lib.Coqlib.list_forall2_nil
+              CompCert4Lean.Common.Memdata.memval_lessdef)
+  | right hr1 =>
+      exact False.elim (by
+        change none = some bytes at hload
+        cases hload)
+
+end CompCert4Lean.Backend.Deadcodeproof
+
+namespace CompCert4Lean.Backend.Deadcodeproof
+
+theorem magree_extends : magree_extendsStatement := by
+  intro m1 m2 P hP h
+  refine ⟨h.ma_nextblock.symm, ?_, h.ma_perm_inv⟩
+  refine ⟨?_, ?_, ?_⟩
+  · intro b1 b2 delta ofs k p hmap hp
+    have hpair : (b1, (.Z0 : CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z)) =
+        (b2, delta) := by
+      simpa [CompCert4Lean.Common.Values.inject_id] using Option.some.inj hmap
+    cases hpair
+    change CompCert4Lean.Common.Memory.Mem.perm m2 b1
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add ofs (.Z0)) k p
+    have hzadd : CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add ofs (.Z0) = ofs := by
+      apply CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective
+      change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ ofs + 0)) =
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ ofs
+      rw [CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+      simp
+    rw [hzadd]
+    exact h.ma_perm b1 ofs k p hp
+  · intro b1 b2 delta chunk ofs p hmap hp
+    have hpair : (b1, (.Z0 : CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z)) =
+        (b2, delta) := by
+      simpa [CompCert4Lean.Common.Values.inject_id] using Option.some.inj hmap
+    cases hpair
+    refine ⟨.Z0, ?_⟩
+    apply CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective
+    change 0 = CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.mul
+        (CompCert4Lean.Common.Memdata.align_chunk chunk) (.Z0))
+    change 0 = CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+          (CompCert4Lean.Common.Memdata.align_chunk chunk) * 0))
+    rw [CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+    simp
+  · intro b1 ofs b2 delta hmap hp
+    have hpair : (b1, (.Z0 : CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z)) =
+        (b2, delta) := by
+      simpa [CompCert4Lean.Common.Values.inject_id] using Option.some.inj hmap
+    cases hpair
+    change CompCert4Lean.Common.Memdata.memval_inject CompCert4Lean.Common.Values.inject_id
+      (CompCert4Lean.Lib.Maps.ZMap.get ofs (CompCert4Lean.Lib.Maps.PMap.get b1 m1.mem_contents))
+      (CompCert4Lean.Lib.Maps.ZMap.get
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add ofs (.Z0))
+        (CompCert4Lean.Lib.Maps.PMap.get b1 m2.mem_contents))
+    have hzadd : CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add ofs (.Z0) = ofs := by
+      apply CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective
+      change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ ofs + 0)) =
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ ofs
+      rw [CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+      simp
+    rw [hzadd]
+    exact h.ma_memval b1 ofs hp (hP b1 ofs)
+
+end CompCert4Lean.Backend.Deadcodeproof
+
+namespace CompCert4Lean.Backend.Deadcodeproof
+
+theorem mextends_agree : mextends_agreeStatement := by
+  intro m1 m2 P h
+  have hzadd : ∀ ofs : CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z,
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add ofs (.Z0) = ofs := by
+    intro ofs
+    apply CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective
+    change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ ofs + 0)) =
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ ofs
+    rw [CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+    simp
+  refine ⟨?_, h.mext_perm_inv, ?_, h.mext_next.symm⟩
+  · intro b ofs k p hp
+    have hi := h.mext_inj.mi_perm b b (.Z0) ofs k p (by rfl) hp
+    change CompCert4Lean.Common.Memory.Mem.perm m2 b
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add ofs (.Z0)) k p at hi
+    rw [hzadd ofs] at hi
+    exact hi
+  · intro b ofs hp hP
+    have hi := h.mext_inj.mi_memval b ofs b (.Z0) (by rfl) hp
+    unfold CompCert4Lean.Common.Memdata.memval_lessdef
+    change CompCert4Lean.Common.Memdata.memval_inject CompCert4Lean.Common.Values.inject_id
+      (CompCert4Lean.Lib.Maps.ZMap.get ofs (CompCert4Lean.Lib.Maps.PMap.get b m1.mem_contents))
+      (CompCert4Lean.Lib.Maps.ZMap.get
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add ofs (.Z0))
+        (CompCert4Lean.Lib.Maps.PMap.get b m2.mem_contents)) at hi
+    rw [hzadd ofs] at hi
+    exact hi
+
+end CompCert4Lean.Backend.Deadcodeproof
+
+namespace CompCert4Lean.Backend.Deadcodeproof
+
+theorem magree_monotone : magree_monotoneStatement := by
+  intro m1 m2 P Q h hQ
+  exact
+    { ma_perm := h.ma_perm
+      ma_perm_inv := h.ma_perm_inv
+      ma_memval := fun b ofs hp hq => h.ma_memval b ofs hp (hQ b ofs hq)
+      ma_nextblock := h.ma_nextblock }
+
+end CompCert4Lean.Backend.Deadcodeproof

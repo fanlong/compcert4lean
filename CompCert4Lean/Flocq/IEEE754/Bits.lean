@@ -218,3 +218,12 @@ def bits_of_b64 (x : binary64) : Z :=
   bits_of_binary_float z52 z11 x
 
 end CompCert4Lean.Flocq.IEEE754.Bits
+
+namespace CompCert4Lean.Flocq.IEEE754.Bits
+
+theorem binary_float_of_bits_result_obligation_proof :
+    binary_float_of_bits_result_obligation := by
+  intro mw ew Hmw Hew Hmax x Hx
+  exact (binary_float_of_bits mw ew Hmw Hew Hmax x Hx).2
+
+end CompCert4Lean.Flocq.IEEE754.Bits

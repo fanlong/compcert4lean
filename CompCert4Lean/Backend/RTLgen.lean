@@ -835,3 +835,20 @@ def transl_program (p : CminorSel.program) : CompCert4Lean.Common.Errors.res RTL
   transform_partial_program transl_fundef p
 
 end CompCert4Lean.Backend.RTLgen
+
+namespace CompCert4Lean.Backend.RTLgen
+
+theorem state_incr_refl : state_incr_reflStatement := by
+  exact fun s => stateIncrRefl s
+
+theorem state_incr_trans : state_incr_transStatement := by
+  exact fun s1 s2 s3 h12 h23 => stateIncrTrans h12 h23
+
+theorem init_state_wf : init_state_wfStatement := by
+  exact fun pc => initStateWf pc
+
+theorem add_instr_wf : add_instr_wfStatement := by
+  intro s i pc
+  exact addInstrWf s i pc
+
+end CompCert4Lean.Backend.RTLgen

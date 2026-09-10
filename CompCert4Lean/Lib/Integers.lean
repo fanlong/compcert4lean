@@ -2698,3 +2698,79 @@ theorem xor_is_zero_proof : xor_is_zero := by
     simp [hp, hq]
 
 end CompCert4Lean.Lib.Integers.Int
+
+namespace CompCert4Lean.Lib.Integers.Int
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+private theorem suffix_wordcore_neg_val_int (x : int) :
+    Int.ofNat (WordCore.neg x).val =
+      (-Int.ofNat x.val) % Int.ofNat (2 ^ wordsize) := by
+  unfold WordCore.neg
+  have hrepr : zOpp (WordCore.unsigned x) =
+      zOfInt (-Int.ofNat x.val) := by
+    change zOfInt (-intOfZ x.intval) = zOfInt (-Int.ofNat x.val)
+    rw [WordCore.intval_eq_zOfNat_val x]
+    simp only [zOfNat, ZArith.BinInt.Z.of_nat, intOfZ_zOfInt]
+  rw [hrepr, WordCore.val_repr]
+  exact Int.toNat_of_nonneg
+    (Int.emod_nonneg _ (Int.ne_of_gt
+      (Int.natCast_pos.mpr (Nat.two_pow_pos wordsize))))
+
+private theorem suffix_wordcore_mul_val_int (x y : int) :
+    Int.ofNat (WordCore.mul x y).val =
+      (Int.ofNat x.val * Int.ofNat y.val) % Int.ofNat (2 ^ wordsize) := by
+  unfold WordCore.mul
+  have hrepr : zMul (WordCore.unsigned x) (WordCore.unsigned y) =
+      zOfInt (Int.ofNat x.val * Int.ofNat y.val) := by
+    change zOfInt (intOfZ x.intval * intOfZ y.intval) =
+      zOfInt (Int.ofNat x.val * Int.ofNat y.val)
+    rw [WordCore.intval_eq_zOfNat_val x, WordCore.intval_eq_zOfNat_val y]
+    simp only [zOfNat, ZArith.BinInt.Z.of_nat, intOfZ_zOfInt]
+  rw [hrepr, WordCore.val_repr]
+  exact Int.toNat_of_nonneg
+    (Int.emod_nonneg _ (Int.ne_of_gt
+      (Int.natCast_pos.mpr (Nat.two_pow_pos wordsize))))
+
+theorem sub_add_opp_proof : sub_add_opp := by
+  intro x y
+  change WordCore.sub x y = WordCore.add x (WordCore.neg y)
+  apply WordCore.ext_of_val_eq
+  apply Int.ofNat.inj
+  rw [WordCore.sub_val_int, WordCore.add_val_int,
+    suffix_wordcore_neg_val_int]
+  rw [Int.sub_eq_add_neg, Int.add_emod_emod]
+
+theorem mul_add_distr_r_proof : mul_add_distr_r := by
+  intro x y z
+  change WordCore.mul x (WordCore.add y z) =
+    WordCore.add (WordCore.mul x y) (WordCore.mul x z)
+  apply WordCore.ext_of_val_eq
+  apply Int.ofNat.inj
+  rw [suffix_wordcore_mul_val_int x (WordCore.add y z),
+    WordCore.add_val_int y z,
+    WordCore.add_val_int (WordCore.mul x y) (WordCore.mul x z),
+    suffix_wordcore_mul_val_int x y, suffix_wordcore_mul_val_int x z]
+  let m : Int := Int.ofNat (2 ^ wordsize)
+  change
+    (Int.ofNat x.val * ((Int.ofNat y.val + Int.ofNat z.val) % m)) % m =
+      ((Int.ofNat x.val * Int.ofNat y.val) % m +
+        (Int.ofNat x.val * Int.ofNat z.val) % m) % m
+  calc
+    (Int.ofNat x.val * ((Int.ofNat y.val + Int.ofNat z.val) % m)) % m =
+        (Int.ofNat x.val % m *
+          (((Int.ofNat y.val + Int.ofNat z.val) % m) % m)) % m :=
+      Int.mul_emod _ _ _
+    _ = (Int.ofNat x.val % m *
+          ((Int.ofNat y.val + Int.ofNat z.val) % m)) % m := by
+      rw [Int.emod_emod]
+    _ = (Int.ofNat x.val * (Int.ofNat y.val + Int.ofNat z.val)) % m :=
+      (Int.mul_emod _ _ _).symm
+    _ = (Int.ofNat x.val * Int.ofNat y.val +
+          Int.ofNat x.val * Int.ofNat z.val) % m := by
+      rw [Int.mul_add]
+    _ = ((Int.ofNat x.val * Int.ofNat y.val) % m +
+          (Int.ofNat x.val * Int.ofNat z.val) % m) % m :=
+      Int.add_emod _ _ _
+
+end CompCert4Lean.Lib.Integers.Int
