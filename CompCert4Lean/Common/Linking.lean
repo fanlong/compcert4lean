@@ -856,3 +856,27 @@ def compose_passes : {l l' : Language} → Passes l l' → Pass l l'
   | _, _, .pass_cons head tail => pass_compose head (compose_passes tail)
 
 end CompCert4Lean.Common.Linking
+
+namespace CompCert4Lean.Common.Linking
+
+theorem Linker_fundef_linkorder_refl_proof :
+    Linker_fundef_linkorder_reflStatement := by
+  intro F x
+  exact (Linker_fundef F).linkorder_refl x
+
+theorem Linker_fundef_link_linkorder_proof :
+    Linker_fundef_link_linkorderStatement := by
+  intro F x y z hlink
+  exact (Linker_fundef F).link_linkorder x y z hlink
+
+theorem Linker_fundef_linkorder_trans_proof :
+    Linker_fundef_linkorder_transStatement := by
+  intro F x y z hxy hyz
+  exact (Linker_fundef F).linkorder_trans x y z hxy hyz
+
+theorem Linker_varinit_linkorder_trans_proof :
+    Linker_varinit_linkorder_transStatement := by
+  intro x y z hxy hyz
+  exact Linker_varinit.linkorder_trans x y z hxy hyz
+
+end CompCert4Lean.Common.Linking
