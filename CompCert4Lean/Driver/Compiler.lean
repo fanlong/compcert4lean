@@ -825,3 +825,61 @@ def transf_c_program_correctStatement
         (binary32_certificate := binary32_certificate) cfg xi tp)
 
 end CompCert4Lean.Driver.Compiler
+
+namespace CompCert4Lean.Driver.Compiler
+
+theorem print_identity : print_identityStatement := by
+  intro A printer prog
+  rfl
+
+theorem total_if_match : total_if_matchStatement := by
+  intro A flag f rel prog h
+  unfold match_if total_if
+  cases hflag : flag () with
+  | false => simp [hflag]
+  | true => exact h prog
+
+theorem partial_if_match : partial_if_matchStatement := by
+  intro A flag f rel prog tprog hrel hres
+  unfold partial_if at hres
+  unfold match_if
+  cases hflag : flag () with
+  | false =>
+      simp [hflag] at hres
+      cases hres
+      rfl
+  | true =>
+      simp [hflag] at hres
+      exact hrel prog tprog hres
+
+theorem forward_simulation_identity : forward_simulation_identityStatement := by
+  intro sem
+  refine CompCert4Lean.Common.Smallstep.forward_simulation.Forward_simulation
+    (order := fun _ _ : Unit => False)
+    (match_states := fun _ s1 s2 => s2 = s1) ?_
+  have wfFalse : WellFounded (fun _ _ : Unit => False) := by
+    exact ⟨fun i => Acc.intro i (by
+      intro j h
+      exact False.elim h)⟩
+  refine {
+    fsim_order_wf := wfFalse
+    fsim_match_initial_states := by
+      intro s1 hs1
+      exact ⟨(), s1, hs1, rfl⟩
+    fsim_match_final_states := by
+      intro i s1 s2 r hmatch hfinal
+      cases hmatch
+      exact hfinal
+    fsim_simulation := by
+      intro s1 t s1' hstep i s2 hmatch
+      cases hmatch
+      refine ⟨(), s1', ?_, rfl⟩
+      left
+      exact CompCert4Lean.Common.Smallstep.plus_left s1 t hstep
+        (CompCert4Lean.Common.Smallstep.star_refl _ _ s1')
+        (by exact (List.append_nil t).symm)
+    fsim_public_preserved := by
+      intro id
+      rfl }
+
+end CompCert4Lean.Driver.Compiler
