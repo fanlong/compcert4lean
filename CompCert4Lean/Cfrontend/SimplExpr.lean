@@ -766,3 +766,29 @@ def transl_program
           prog_comp_env_eq := p.prog_comp_env_eq }
 
 end CompCert4Lean.Cfrontend.SimplExpr
+
+namespace CompCert4Lean.Cfrontend.SimplExpr
+
+theorem makeif_ind
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    makeif_indStatement := by
+  intro a s1 s2 P htrue hfalse hnone hnoneval
+  unfold makeif
+  cases hev : eval_simpl_expr a with
+  | none =>
+      exact hnoneval hev
+  | some v =>
+      cases hb : CompCert4Lean.Cfrontend.Cop.bool_val v
+          (CompCert4Lean.Cfrontend.Clight.typeof a)
+          CompCert4Lean.Common.Memory.Mem.empty with
+      | none =>
+          simpa [hev, hb] using hnone v hev hb
+      | some b =>
+          cases b with
+          | false =>
+              simpa [hev, hb] using hfalse v hev false hb rfl
+          | true =>
+              simpa [hev, hb] using htrue v hev true hb rfl
+
+end CompCert4Lean.Cfrontend.SimplExpr

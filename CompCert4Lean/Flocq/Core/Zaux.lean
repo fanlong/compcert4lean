@@ -219,3 +219,87 @@ def Zeven_Zpower_oddStatement : Prop :=
     Zeven (Zpower b e) = false
 
 end CompCert4Lean.Flocq.Core.Zaux
+
+namespace CompCert4Lean.Flocq.Core.Zaux
+
+theorem Zgt_not_eq : Zgt_not_eqStatement := by
+  intro x y hxy hEq
+  subst y
+  exact Int.lt_irrefl _ hxy
+
+theorem Zopp_le_cancel : Zopp_le_cancelStatement := by
+  intro x y h
+  simp only [Zle, Zopp,
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.opp,
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.le,
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt] at h
+  have h' :
+      -CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ y ≤
+        -CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ x := by
+    exact h
+  change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ x ≤
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ y
+  omega
+
+theorem Zeq_bool_spec : Zeq_bool_specStatement := by
+  intro x y
+  by_cases h : x = y
+  · have hb : Zeq_bool x y = true := by
+      simp [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.Zbool.Zeq_bool, h]
+    rw [hb]
+    exact Zeq_bool_true_ h
+  · have hb : Zeq_bool x y = false := by
+      simp [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.Zbool.Zeq_bool, h]
+    rw [hb]
+    exact Zeq_bool_false_ h
+
+theorem Zpower_ge_0 : Zpower_ge_0Statement := by
+  intro r e
+  have hr0 : 0 ≤ CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ r.radix_val := by
+    have hp := r.radix_prop
+    change (if CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (Ztwo : Z) ≤
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ r.radix_val then true else false) = true at hp
+    have htwo : 0 ≤ CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (Ztwo : Z) := by
+      simp [CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ,
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat]
+    split at hp
+    · omega
+    · simp at hp
+  cases e with
+  | Z0 =>
+      change 0 ≤ CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+        (Zpower r.radix_val Z0)
+      unfold Zpower CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.Zpow_def.Zpower
+      have h : ¬ CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (Z0 : Z) < 0 := by
+        simp [CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ]
+      simp only [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.pow, h,
+        ↓reduceIte]
+      rw [CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+      change 0 ≤ (CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ r.radix_val) ^ (0 : Nat)
+      exact Int.pow_nonneg hr0
+  | Zpos p =>
+      change 0 ≤ CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+        (Zpower r.radix_val (.Zpos p))
+      unfold Zpower CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.Zpow_def.Zpower
+      have hp : 0 < CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p :=
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat_positive p
+      have h : ¬ CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (.Zpos p : Z) < 0 := by
+        simp [CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ]
+      simp only [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.pow, h,
+        ↓reduceIte]
+      rw [CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+      exact Int.pow_nonneg hr0
+  | Zneg p =>
+      change 0 ≤ CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+        (Zpower r.radix_val (.Zneg p))
+      unfold Zpower CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.Zpow_def.Zpower
+      have hp : 0 < CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p :=
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat_positive p
+      have h : CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (.Zneg p : Z) < 0 := by
+        simp [CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ]
+        omega
+      simp only [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.pow, h,
+        ↓reduceIte]
+      simp [CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ]
+
+end CompCert4Lean.Flocq.Core.Zaux

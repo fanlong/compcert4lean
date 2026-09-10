@@ -655,3 +655,468 @@ def transf_program
       cfg (prog_defmap p) (romem_for cfg p)) p
 
 end CompCert4Lean.Backend.CSE
+
+namespace CompCert4Lean.Backend.CSE.Solver
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.Backend.Kildall
+open CompCert4Lean.Lib.Iteration
+
+private theorem cse_propagate_entry {LAT : OrderedTop}
+    (bb : BBlock_solver.bbmap) (entrypoint : positive) (hbb : bb entrypoint = true)
+    (succs : List positive) (l : LAT.t) (st : BBlock_solver.state LAT) :
+    PMap.get entrypoint (BBlock_solver.propagate_successors bb succs l st).aval =
+      PMap.get entrypoint st.aval := by
+  induction succs generalizing st with
+  | nil => rfl
+  | cons s succs ih =>
+      simp only [BBlock_solver.propagate_successors]
+      split
+      · exact ih st
+      · rename_i hs
+        have hne : entrypoint ≠ s := by
+          intro heq
+          subst s
+          simp [hbb] at hs
+        rw [ih]
+        simp only [PMap.get, PMap.set]
+        rw [PTree.gsspec_proof]
+        cases hpeq : CompCert4Lean.Lib.Coqlib.peq entrypoint s with
+        | left heq => exact False.elim (hne heq)
+        | right _ => rfl
+
+private theorem cse_bblock_fixpoint_entry {A : Type} (LAT : OrderedTop)
+    (code : PTree.t A) (successors : A -> List positive)
+    (transf : positive -> LAT.t -> LAT.t) (entrypoint : positive)
+    (res : PMap.t LAT.t) :
+    BBlock_solver.fixpoint LAT code successors transf entrypoint = some res ->
+    PMap.get entrypoint res = LAT.top := by
+  unfold BBlock_solver.fixpoint
+  let bb := BBlock_solver.basic_block_map entrypoint code successors
+  apply PrimIter.iter_prop (A := BBlock_solver.state LAT) (B := BBlock_solver.result LAT)
+    (step := BBlock_solver.step code successors transf bb)
+    (P := fun st => PMap.get entrypoint st.aval = LAT.top)
+    (Q := fun result => PMap.get entrypoint result = LAT.top)
+  · intro st hst
+    unfold BBlock_solver.step
+    cases st.worklist with
+    | nil => exact hst
+    | cons pc rem =>
+      cases hcode : PTree.get pc code with
+      | none =>
+        simp only [hcode]
+        exact hst
+      | some instr =>
+        simp only [hcode]
+        rw [cse_propagate_entry bb entrypoint
+          (by simp [bb, BBlock_solver.basic_block_map, BBlock_solver.is_basic_block_head])
+          (successors instr) (transf pc (PMap.get pc st.aval))
+          { aval := st.aval, worklist := rem }]
+        exact hst
+  · exact rfl
+
+theorem fixpoint_entry_proof
+    [binary64_certificate : CompCert4Lean.Backend.CSE.Binary64NormalizeCertificate]
+    [binary32_certificate : CompCert4Lean.Backend.CSE.Binary32NormalizeCertificate]
+    (laws : CompCert4Lean.Backend.CSE.Solver.law_obligation
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)) :
+    CompCert4Lean.Backend.CSE.Solver.fixpoint_entry
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) laws := by
+  intro A code successors transf entrypoint res hfix
+  exact cse_bblock_fixpoint_entry
+    (L
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate))
+    code successors transf entrypoint res hfix
+
+end CompCert4Lean.Backend.CSE.Solver
+
+namespace CompCert4Lean.Backend.CSE.Solver
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.Backend.Kildall
+open CompCert4Lean.Lib.Iteration
+
+private theorem cse_add_successors_correct
+    (tolist : List positive) (src : positive) (pred : PTree.t (List positive))
+    (n s : positive) :
+    n ∈ successors_list pred s ∨ (n = src ∧ s ∈ tolist) ->
+    n ∈ successors_list (add_successors pred src tolist) s := by
+  induction tolist generalizing pred with
+  | nil =>
+      intro h
+      simpa [add_successors] using h
+  | cons to rem ih =>
+      intro h
+      simp only [add_successors]
+      apply ih
+      unfold successors_list
+      rw [PTree.gsspec_proof]
+      cases hpeq : CompCert4Lean.Lib.Coqlib.peq s to with
+      | left heq =>
+          subst s
+          simp at h ⊢
+          exact h.elim (fun hn => Or.inl (Or.inr hn)) (fun hn => Or.inl (Or.inl hn))
+      | right hne =>
+          simp [hne] at h ⊢
+          exact h
+
+private theorem cse_make_predecessors_correct {A : Type}
+    (code : PTree.t A) (successors : A -> List positive)
+    (n : positive) (instr : A) (s : positive) :
+    PTree.get n code = some instr -> s ∈ successors instr ->
+    n ∈ successors_list (make_predecessors code successors) s := by
+  let P : PTree.t A -> PTree.t (List positive) -> Prop := fun m pred =>
+    PTree.get n m = some instr -> s ∈ successors instr -> n ∈ successors_list pred s
+  unfold make_predecessors
+  apply PTree_Properties.fold_rec_proof (P := P)
+  · intro m m' pred hext hm hinstr
+    apply hm
+    rw [hext n]
+    exact hinstr
+  · intro hinstr
+    cases hinstr
+  · intro m pred k value hnone hfinal hm hinstr hsucc
+    apply cse_add_successors_correct
+    rw [PTree.getSet_equation] at hinstr
+    split at hinstr
+    · rename_i hnk
+      subst n
+      cases hinstr
+      exact Or.inr ⟨rfl, hsucc⟩
+    · exact Or.inl (hm hinstr hsucc)
+
+private theorem cse_multiple_predecessors {A : Type}
+    (entrypoint : positive) (code : PTree.t A) (successors : A -> List positive)
+    (s n1 : positive) (instr1 : A) (n2 : positive) (instr2 : A) :
+    PTree.get n1 code = some instr1 -> s ∈ successors instr1 ->
+    PTree.get n2 code = some instr2 -> s ∈ successors instr2 -> n1 ≠ n2 ->
+    BBlock_solver.basic_block_map entrypoint code successors s = true := by
+  intro hcode1 hsucc1 hcode2 hsucc2 hneq
+  have hpred1 := cse_make_predecessors_correct code successors n1 instr1 s hcode1 hsucc1
+  have hpred2 := cse_make_predecessors_correct code successors n2 instr2 s hcode2 hsucc2
+  unfold BBlock_solver.basic_block_map BBlock_solver.is_basic_block_head
+  split
+  · rfl
+  · rename_i hentry
+    unfold successors_list at hpred1 hpred2
+    cases hpreds : PTree.get s (make_predecessors code successors) with
+    | none => simp [hpreds] at hpred1
+    | some preds =>
+      cases preds with
+      | nil => simp [hpreds] at hpred1
+      | cons pred preds =>
+        cases preds with
+        | nil =>
+          simp [hpreds] at hpred1 hpred2
+          exact False.elim (hneq (hpred1.trans hpred2.symm))
+        | cons pred' preds => simp [successors_list, hpreds]
+
+private theorem cse_no_self_loop {A : Type}
+    (entrypoint : positive) (code : PTree.t A) (successors : A -> List positive)
+    (n : positive) (instr : A) :
+    PTree.get n code = some instr -> n ∈ successors instr ->
+    BBlock_solver.basic_block_map entrypoint code successors n = true := by
+  intro hcode hsucc
+  have hpred := cse_make_predecessors_correct code successors n instr n hcode hsucc
+  unfold BBlock_solver.basic_block_map BBlock_solver.is_basic_block_head
+  split
+  · rfl
+  · rename_i hentry
+    unfold successors_list at hpred
+    cases hpreds : PTree.get n (make_predecessors code successors) with
+    | none => simp [hpreds] at hpred
+    | some preds =>
+      cases preds with
+      | nil => simp [hpreds] at hpred
+      | cons pred preds =>
+        cases preds with
+        | nil =>
+          simp [hpreds] at hpred
+          subst pred
+          simp [successors_list, hpreds]
+        | cons pred' preds => simp [successors_list, hpreds]
+
+private theorem cse_result_get_set {LAT : OrderedTop} (i j : positive) (x : LAT.t)
+    (m : BBlock_solver.result LAT) :
+    PMap.get i (PMap.set j x m) =
+      if _h : i = j then x else PMap.get i m := by
+  change PMap.get i (PMap.set j x m) = _
+  simp only [PMap.get, PMap.set]
+  rw [PTree.gsspec_proof]
+  cases hpeq : CompCert4Lean.Lib.Coqlib.peq i j with
+  | left heq => simp [heq]
+  | right hne => simp [hne]
+
+private theorem cse_propagate_successors_charact1 {LAT : OrderedTop}
+    (bb : BBlock_solver.bbmap) (succs : List positive)
+    (l : LAT.t) (st : BBlock_solver.state LAT) (n : positive) :
+    n ∈ st.worklist -> n ∈ (BBlock_solver.propagate_successors bb succs l st).worklist := by
+  induction succs generalizing st with
+  | nil => exact fun h => h
+  | cons s succs ih =>
+      simp only [BBlock_solver.propagate_successors]
+      split
+      · exact ih st
+      · exact fun h =>
+          ih { aval := PMap.set s l st.aval, worklist := s :: st.worklist }
+            (List.mem_cons.mpr (Or.inr h))
+
+private theorem cse_propagate_successors_charact2 {LAT : OrderedTop}
+    (bb : BBlock_solver.bbmap) (succs : List positive)
+    (l : LAT.t) (st : BBlock_solver.state LAT) (n : positive) :
+    let st' := BBlock_solver.propagate_successors bb succs l st
+    (n ∈ succs -> bb n = false -> n ∈ st'.worklist ∧ PMap.get n st'.aval = l) ∧
+    (n ∉ succs ∨ bb n = true -> PMap.get n st'.aval = PMap.get n st.aval) := by
+  induction succs generalizing st with
+  | nil =>
+      simp only [BBlock_solver.propagate_successors]
+      constructor
+      · intro h
+        simp at h
+      · intro _
+        exact True.intro
+  | cons s succs ih =>
+      simp only [BBlock_solver.propagate_successors]
+      split
+      · rename_i hbs
+        constructor
+        · intro hmem hbn
+          rcases List.mem_cons.mp hmem with hns | hmem
+          · subst n
+            simp [hbs] at hbn
+          · exact (ih st).1 hmem hbn
+        · intro h
+          apply (ih st).2
+          rcases h with hnot | hbn
+          · exact Or.inl (by
+              intro hmem
+              exact hnot (List.mem_cons.mpr (Or.inr hmem)))
+          · exact Or.inr hbn
+      · rename_i hbs
+        let st1 : BBlock_solver.state LAT :=
+          { aval := PMap.set s l st.aval, worklist := s :: st.worklist }
+        constructor
+        · intro hmem hbn
+          rcases List.mem_cons.mp hmem with hns | hmem
+          · subst n
+            constructor
+            · apply cse_propagate_successors_charact1 bb succs l st1 s
+              exact List.mem_cons.mpr (Or.inl rfl)
+            · by_cases hrem : s ∈ succs
+              · exact ((ih st1).1 hrem (by simpa using hbn)).2
+              · rw [(ih st1).2 (Or.inl hrem)]
+                dsimp [st1]
+                rw [cse_result_get_set]
+                simp
+          · exact (ih st1).1 hmem hbn
+        · intro h
+          rw [(ih st1).2 (by
+            rcases h with hnot | hbn
+            · exact Or.inl (by
+              intro hmem
+              exact hnot (List.mem_cons.mpr (Or.inr hmem)))
+            · exact Or.inr hbn)]
+          rcases h with hnot | hbn
+          · have hne : n ≠ s := by
+              intro heq
+              subst n
+              exact hnot (List.mem_cons.mpr (Or.inl rfl))
+            dsimp [st1]
+            rw [cse_result_get_set]
+            simp [hne]
+          · have hne : n ≠ s := by
+              intro heq
+              subst n
+              simp [hbs] at hbn
+            dsimp [st1]
+            rw [cse_result_get_set]
+            simp [hne]
+
+private def cse_state_invariant {A : Type} {LAT : OrderedTop}
+    (entrypoint : positive) (code : PTree.t A) (successors : A -> List positive)
+    (transf : positive -> LAT.t -> LAT.t) (st : BBlock_solver.state LAT) : Prop :=
+  (∀ n, BBlock_solver.basic_block_map entrypoint code successors n = true ->
+      PMap.get n st.aval = LAT.top) ∧
+  (∀ n, n ∈ st.worklist ∨ ∀ instr s, PTree.get n code = some instr ->
+      s ∈ successors instr -> LAT.ge (PMap.get s st.aval) (transf n (PMap.get n st.aval)))
+
+private theorem cse_propagate_successors_invariant {A : Type} {LAT : OrderedTop}
+    (entrypoint : positive) (laws : OrderedTopLaws LAT) (code : PTree.t A)
+    (successors : A -> List positive) (transf : positive -> LAT.t -> LAT.t)
+    (pc : positive) (instr : A) (res : BBlock_solver.result LAT) (rem : List positive) :
+    PTree.get pc code = some instr ->
+    cse_state_invariant entrypoint code successors transf { aval := res, worklist := pc :: rem } ->
+    cse_state_invariant entrypoint code successors transf
+      (BBlock_solver.propagate_successors (BBlock_solver.basic_block_map entrypoint code successors)
+        (successors instr) (transf pc (PMap.get pc res)) { aval := res, worklist := rem }) := by
+  intro hcode hinv
+  rcases hinv with ⟨hheads, hstable⟩
+  let bb := BBlock_solver.basic_block_map entrypoint code successors
+  let l := transf pc (PMap.get pc res)
+  let st0 : BBlock_solver.state LAT := { aval := res, worklist := rem }
+  constructor
+  · intro n hbb
+    rw [(cse_propagate_successors_charact2 bb (successors instr) l st0 n).2 (Or.inr hbb)]
+    exact hheads n hbb
+  · intro n
+    by_cases hpc : n = pc
+    · subst n
+      right
+      intro instr' s hget hsucc
+      have hinstr : instr' = instr := Option.some.inj (hget.symm.trans hcode)
+      subst instr'
+      have hmappc := (cse_propagate_successors_charact2 bb (successors instr) l st0 pc).2 (by
+        by_cases hself : pc ∈ successors instr
+        · right
+          exact cse_no_self_loop entrypoint code successors pc instr hcode hself
+        · left
+          exact hself)
+      cases hsbb : bb s with
+      | true =>
+          have hmaps := (cse_propagate_successors_charact2 bb (successors instr) l st0 s).2 (Or.inr hsbb)
+          rw [hmaps, hmappc, hheads s hsbb]
+          exact laws.top_ge _
+      | false =>
+          have hmaps := (cse_propagate_successors_charact2 bb (successors instr) l st0 s).1 hsucc hsbb
+          rw [hmaps.2, hmappc]
+          exact laws.refl_ge _
+    · rcases hstable n with hold | hold
+      · left
+        rcases List.mem_cons.mp hold with hnp | hrem
+        · exact False.elim (hpc hnp)
+        · exact cse_propagate_successors_charact1 bb (successors instr) l st0 n hrem
+      · by_cases hnsucc : n ∈ successors instr
+        · cases hnbb : bb n with
+          | true =>
+              right
+              intro instr' s hget hsucc
+              have hmapn := (cse_propagate_successors_charact2 bb (successors instr) l st0 n).2 (Or.inr hnbb)
+              have hmaps := (cse_propagate_successors_charact2 bb (successors instr) l st0 s).2 (by
+                by_cases hssucc : s ∈ successors instr
+                · right
+                  exact cse_multiple_predecessors entrypoint code successors s pc instr n instr'
+                    hcode hssucc hget hsucc (by intro h; exact hpc h.symm)
+                · left
+                  exact hssucc)
+              rw [hmaps, hmapn]
+              exact hold instr' s hget hsucc
+          | false =>
+              exact Or.inl ((cse_propagate_successors_charact2 bb (successors instr) l st0 n).1 hnsucc hnbb).1
+        · right
+          intro instr' s hget hsucc
+          have hmapn := (cse_propagate_successors_charact2 bb (successors instr) l st0 n).2 (Or.inl hnsucc)
+          have hmaps := (cse_propagate_successors_charact2 bb (successors instr) l st0 s).2 (by
+            by_cases hssucc : s ∈ successors instr
+            · right
+              exact cse_multiple_predecessors entrypoint code successors s pc instr n instr'
+                hcode hssucc hget hsucc (by intro h; exact hpc h.symm)
+            · left
+              exact hssucc)
+          rw [hmaps, hmapn]
+          exact hold instr' s hget hsucc
+
+private theorem cse_drop_invariant {A : Type} {LAT : OrderedTop}
+    (entrypoint : positive) (code : PTree.t A) (successors : A -> List positive)
+    (transf : positive -> LAT.t -> LAT.t) (pc : positive)
+    (res : BBlock_solver.result LAT) (rem : List positive) :
+    PTree.get pc code = none ->
+    cse_state_invariant entrypoint code successors transf { aval := res, worklist := pc :: rem } ->
+    cse_state_invariant entrypoint code successors transf { aval := res, worklist := rem } := by
+  intro hcode hinv
+  rcases hinv with ⟨hheads, hstable⟩
+  constructor
+  · exact hheads
+  · intro n
+    rcases hstable n with hwork | hstable
+    · rcases List.mem_cons.mp hwork with hnp | hrem
+      · subst n
+        right
+        intro instr s hget hsucc
+        rw [hcode] at hget
+        cases hget
+      · exact Or.inl hrem
+    · exact Or.inr hstable
+
+private theorem cse_initial_state_invariant {A : Type} {LAT : OrderedTop}
+    (entrypoint : positive) (laws : OrderedTopLaws LAT) (code : PTree.t A)
+    (successors : A -> List positive) (transf : positive -> LAT.t -> LAT.t) :
+    cse_state_invariant entrypoint code successors transf
+      { aval := PMap.init LAT.top,
+        worklist := BBlock_solver.basic_block_list (BBlock_solver.basic_block_map entrypoint code successors) code } := by
+  constructor
+  · intro n _
+    cases n <;> rfl
+  · intro n
+    right
+    intro instr s hcode hsucc
+    have hinit : PMap.get s (PMap.init LAT.top) = LAT.top := by
+      cases s <;> rfl
+    rw [hinit]
+    exact laws.top_ge _
+
+private theorem cse_analyze_invariant {A : Type} {LAT : OrderedTop}
+    (entrypoint : positive) (laws : OrderedTopLaws LAT) (code : PTree.t A)
+    (successors : A -> List positive) (transf : positive -> LAT.t -> LAT.t)
+    (res : BBlock_solver.result LAT) :
+    BBlock_solver.fixpoint LAT code successors transf entrypoint = some res ->
+    cse_state_invariant entrypoint code successors transf { aval := res, worklist := [] } := by
+  unfold BBlock_solver.fixpoint
+  let bb := BBlock_solver.basic_block_map entrypoint code successors
+  apply PrimIter.iter_prop (A := BBlock_solver.state LAT) (B := BBlock_solver.result LAT)
+    (step := BBlock_solver.step code successors transf bb)
+    (P := cse_state_invariant entrypoint code successors transf)
+    (Q := fun result => cse_state_invariant entrypoint code successors transf
+      { aval := result, worklist := [] })
+  · intro st hinv
+    cases st with
+    | mk aval worklist =>
+      cases worklist with
+      | nil =>
+        simp only [BBlock_solver.step]
+        exact hinv
+      | cons pc rem =>
+        cases hcode : PTree.get pc code with
+        | none =>
+          simp only [BBlock_solver.step, hcode]
+          exact cse_drop_invariant entrypoint code successors transf pc aval rem hcode hinv
+        | some instr =>
+          simp only [BBlock_solver.step, hcode]
+          exact cse_propagate_successors_invariant entrypoint laws code successors transf
+            pc instr aval rem hcode hinv
+  · exact cse_initial_state_invariant entrypoint laws code successors transf
+
+private theorem cse_bblock_fixpoint_solution {A : Type} (LAT : OrderedTop)
+    (laws : OrderedTopLaws LAT) (code : PTree.t A) (successors : A -> List positive)
+    (transf : positive -> LAT.t -> LAT.t) (entrypoint : positive)
+    (res : BBlock_solver.result LAT) (n : positive) (instr : A) (s : positive) :
+    BBlock_solver.fixpoint LAT code successors transf entrypoint = some res ->
+    PTree.get n code = some instr -> s ∈ successors instr ->
+    LAT.ge (PMap.get s res) (transf n (PMap.get n res)) := by
+  intro hfix hcode hsucc
+  have hinv := cse_analyze_invariant entrypoint laws code successors transf res hfix
+  rcases hinv.2 n with hwork | hstable
+  · simp at hwork
+  · exact hstable instr s hcode hsucc
+
+theorem fixpoint_solution_proof
+    [binary64_certificate : CompCert4Lean.Backend.CSE.Binary64NormalizeCertificate]
+    [binary32_certificate : CompCert4Lean.Backend.CSE.Binary32NormalizeCertificate]
+    (laws : CompCert4Lean.Backend.CSE.Solver.law_obligation
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)) :
+    CompCert4Lean.Backend.CSE.Solver.fixpoint_solution
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) laws := by
+  intro A code successors transf entrypoint res n instr s hfix hcode hsucc
+  exact cse_bblock_fixpoint_solution
+    (L
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)) laws
+    code successors transf entrypoint res n instr s hfix hcode hsucc
+
+end CompCert4Lean.Backend.CSE.Solver
