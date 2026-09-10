@@ -930,3 +930,27 @@ def standard_builtin_sem
   | BI_i64_utof => mkbuiltin_n1t Tlong Xsingle (fun n => CompCert4Lean.Lib.Floats.Float32.of_longu n)
 
 end CompCert4Lean.Common.Builtins0
+
+namespace CompCert4Lean.Common.Builtins0
+
+theorem inj_num_wt : inj_num_wtStatement := by
+  intro t x
+  exact injNumWellTyped t x
+
+theorem inj_num_inject : inj_num_injectStatement := by
+  intro j t x
+  exact injNumInject j t x
+
+theorem inj_num_opt_wt : inj_num_opt_wtStatement := by
+  intro t x
+  cases x with
+  | none => trivial
+  | some x => exact injNumWellTyped t x
+
+theorem inj_num_opt_inject : inj_num_opt_injectStatement := by
+  intro j t x
+  cases x with
+  | none => trivial
+  | some x => exact injNumInject j t x
+
+end CompCert4Lean.Common.Builtins0

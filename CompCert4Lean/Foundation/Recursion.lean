@@ -153,3 +153,43 @@ end ZArith.Zwf
 
 end Rocq.Coq
 end CompCert4Lean.Foundation.Recursion
+
+namespace CompCert4Lean.Foundation.Recursion
+namespace Rocq.Coq
+namespace Arith.Wf_nat
+
+theorem well_founded_lt_compat : well_founded_lt_compatStatement := by
+  intro A f R compat
+  have H : ∀ n (a : A), f a < n → Init.Wf.Acc R a := by
+    intro n
+    induction n with
+    | zero =>
+        intro a ha
+        exact False.elim (Nat.not_lt_zero _ ha)
+    | succ n ih =>
+        intro a ha
+        apply Init.Wf.Acc_intro a
+        intro b hba
+        apply ih b
+        exact Nat.lt_of_lt_of_le (compat b a hba) (Nat.le_of_lt_succ ha)
+  intro a
+  exact H (Nat.succ (f a)) a (Nat.lt_succ_self _)
+
+theorem well_founded_ltof : well_founded_ltofStatement := by
+  intro A f
+  exact well_founded_lt_compat A f (ltof A f) (by
+    intro x y h
+    exact h)
+
+theorem lt_wf : lt_wfStatement := by
+  exact well_founded_ltof Nat (fun x : Nat => x)
+
+theorem lt_wf_ind : lt_wf_indStatement := by
+  intro n P step
+  induction lt_wf n with
+  | Acc_intro x h ih =>
+      exact step x (fun y hy => ih y hy)
+
+end Arith.Wf_nat
+end Rocq.Coq
+end CompCert4Lean.Foundation.Recursion

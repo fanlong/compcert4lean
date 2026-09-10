@@ -2022,3 +2022,50 @@ end Mem
 abbrev mem := Mem.mem
 
 end CompCert4Lean.Common.Memory
+
+namespace CompCert4Lean.Common.Memory
+
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Lib.Maps
+
+namespace Mem
+
+theorem mkmem_ext : mkmem_extStatement := by
+  intro cont1 cont2 acc1 acc2 next1 next2 a1 a2 b1 b2 c1 c2 hcont hacc hnext
+  subst cont2
+  subst acc2
+  subst next2
+  rfl
+
+theorem valid_not_valid_diff : valid_not_valid_diffStatement := by
+  intro m b b' hvalid hnot heq
+  subst b'
+  exact hnot hvalid
+
+theorem perm_implies : perm_impliesStatement := by
+  intro m b ofs k p1 p2 hperm horder
+  unfold perm perm_order' at hperm ⊢
+  cases haccess : (PMap.get b m.mem_access) ofs k with
+  | none =>
+      exfalso
+      simp [haccess] at hperm
+  | some p =>
+      exact perm_order_trans p p1 p2 (by simpa [haccess] using hperm) horder
+
+private theorem perm_order'_of_perm_order'' (po1 po2 : Option permission) (p : permission) :
+    perm_order' po2 p → perm_order'' po1 po2 → perm_order' po1 p := by
+  intro h2 h12
+  cases po1 <;> cases po2 <;> simp [perm_order', perm_order''] at *
+  exact perm_order_trans _ _ _ h12 h2
+
+theorem perm_cur_max : perm_cur_maxStatement := by
+  intro m b ofs p hperm
+  unfold perm at hperm ⊢
+  exact perm_order'_of_perm_order''
+    ((PMap.get b m.mem_access) ofs Max)
+    ((PMap.get b m.mem_access) ofs Cur)
+    p hperm (m.access_max b ofs)
+
+end Mem
+
+end CompCert4Lean.Common.Memory

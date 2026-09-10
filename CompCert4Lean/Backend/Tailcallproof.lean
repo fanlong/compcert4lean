@@ -383,3 +383,200 @@ theorem transf_program_match : transf_program_matchStatement := by
   · exact ⟨rfl, rfl⟩
 
 end CompCert4Lean.Backend.Tailcallproof
+
+namespace CompCert4Lean.Backend.Tailcallproof
+
+open CompCert4Lean.Backend.Tailcall
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.X86.Op
+
+private theorem is_move_operation_shape {A : Type} (op : operation)
+    (args : List A) (a : A)
+    (h : is_move_operation op args = some a) :
+    op = Omove ∧ args = [a] := by
+  cases op with
+  | Omove =>
+      cases args with
+      | nil => simp [is_move_operation] at h
+      | cons x xs =>
+          cases xs with
+          | nil => simpa [is_move_operation] using h
+          | cons y ys => simp [is_move_operation] at h
+  | _ => simp [is_move_operation] at h
+
+theorem return_measure_bounds : return_measure_boundsStatement := by
+  intro c pc
+  unfold return_measure
+  have h : ∀ n (pc : node), return_measure_rec n c pc ≤ n := by
+    intro n
+    induction n with
+    | zero => intro pc; simp [return_measure_rec]
+    | succ n ih =>
+        intro pc
+        cases hget : PTree.get pc c with
+        | none => simp [return_measure_rec, hget]
+        | some i =>
+            cases i with
+            | Inop s =>
+                simp [return_measure_rec, hget]
+                exact ih s
+            | Iop op args dst s =>
+                simp [return_measure_rec, hget]
+                exact ih s
+            | Iload chunk addr args dst s => simp [return_measure_rec, hget]
+            | Istore chunk addr args src s => simp [return_measure_rec, hget]
+            | Icall sig ros args res s => simp [return_measure_rec, hget]
+            | Itailcall sig ros args => simp [return_measure_rec, hget]
+            | Ibuiltin ef args res s => simp [return_measure_rec, hget]
+            | Icond cond args ifso ifnot => simp [return_measure_rec, hget]
+            | Ijumptable arg tbl => simp [return_measure_rec, hget]
+            | Ireturn ores => simp [return_measure_rec, hget]
+  exact h niter pc
+
+theorem is_return_measure_rec : is_return_measure_recStatement := by
+  intro f n
+  induction n with
+  | zero =>
+      intro n' pc r h _
+      simp [CompCert4Lean.Backend.Tailcall.is_return] at h
+  | succ n ih =>
+      intro n' pc r h hle
+      cases n' with
+      | zero => omega
+      | succ n' =>
+          cases hget : PTree.get pc f.fn_code with
+          | none => simp [CompCert4Lean.Backend.Tailcall.is_return,
+              return_measure_rec, hget] at h ⊢
+          | some i =>
+              cases i with
+              | Inop s =>
+                  simp [CompCert4Lean.Backend.Tailcall.is_return,
+                    return_measure_rec, hget] at h ⊢
+                  exact ih n' s r h (by omega)
+              | Iop op args dst s =>
+                  cases hm : is_move_operation op args with
+                  | none =>
+                      simp [CompCert4Lean.Backend.Tailcall.is_return,
+                        return_measure_rec, hget, hm] at h
+                  | some src =>
+                      by_cases heq : r = src
+                      · simp [CompCert4Lean.Backend.Tailcall.is_return,
+                          return_measure_rec, hget, hm, heq] at h ⊢
+                        exact ih n' s dst h (by omega)
+                      · simp [CompCert4Lean.Backend.Tailcall.is_return,
+                          return_measure_rec, hget, hm, heq] at h
+              | Iload chunk addr args dst s =>
+                  simp [CompCert4Lean.Backend.Tailcall.is_return,
+                    return_measure_rec, hget] at h ⊢
+              | Istore chunk addr args src s =>
+                  simp [CompCert4Lean.Backend.Tailcall.is_return,
+                    return_measure_rec, hget] at h ⊢
+              | Icall sig ros args res s =>
+                  simp [CompCert4Lean.Backend.Tailcall.is_return,
+                    return_measure_rec, hget] at h ⊢
+              | Itailcall sig ros args =>
+                  simp [CompCert4Lean.Backend.Tailcall.is_return,
+                    return_measure_rec, hget] at h ⊢
+              | Ibuiltin ef args res s =>
+                  simp [CompCert4Lean.Backend.Tailcall.is_return,
+                    return_measure_rec, hget] at h ⊢
+              | Icond cond args ifso ifnot =>
+                  simp [CompCert4Lean.Backend.Tailcall.is_return,
+                    return_measure_rec, hget] at h ⊢
+              | Ijumptable arg tbl =>
+                  simp [CompCert4Lean.Backend.Tailcall.is_return,
+                    return_measure_rec, hget] at h ⊢
+              | Ireturn ores =>
+                  simp [CompCert4Lean.Backend.Tailcall.is_return,
+                    return_measure_rec, hget] at h ⊢
+
+theorem is_return_charact : is_return_charactStatement := by
+  intro f n
+  induction n with
+  | zero =>
+      intro pc r h _
+      simp [CompCert4Lean.Backend.Tailcall.is_return] at h
+  | succ n ih =>
+      intro pc r h hle
+      cases hget : PTree.get pc f.fn_code with
+      | none =>
+          simp [CompCert4Lean.Backend.Tailcall.is_return, hget] at h
+      | some i =>
+          cases i with
+          | Inop s =>
+              have hparent := h
+              simp [CompCert4Lean.Backend.Tailcall.is_return, hget] at h
+              apply is_return_nop (f := f) hget
+              · exact ih s r h (by omega)
+              · unfold return_measure
+                have ep := is_return_measure_rec f (n + 1) niter pc r hparent (by omega)
+                have es := is_return_measure_rec f n niter s r h (by omega)
+                rw [← ep, ← es]
+                simp [return_measure_rec, hget]
+          | Iop op args dst s =>
+              have hparent := h
+              cases hm : is_move_operation op args with
+              | none =>
+                  simp [CompCert4Lean.Backend.Tailcall.is_return, hget, hm] at h
+              | some src =>
+                  by_cases heq : r = src
+                  · simp [CompCert4Lean.Backend.Tailcall.is_return, hget, hm, heq] at h
+                    have hshape := is_move_operation_shape op args src hm
+                    rcases hshape with ⟨rfl, rfl⟩
+                    subst r
+                    apply is_return_move (f := f) hget
+                    · exact ih s dst h (by omega)
+                    · unfold return_measure
+                      have ep := is_return_measure_rec f (n + 1) niter pc src hparent (by omega)
+                      have es := is_return_measure_rec f n niter s dst h (by omega)
+                      rw [← ep, ← es]
+                      simp [return_measure_rec, hget]
+                  · simp [CompCert4Lean.Backend.Tailcall.is_return, hget, hm, heq] at h
+          | Iload chunk addr args dst s =>
+              simp [CompCert4Lean.Backend.Tailcall.is_return, hget] at h
+          | Istore chunk addr args src s =>
+              simp [CompCert4Lean.Backend.Tailcall.is_return, hget] at h
+          | Icall sig ros args res s =>
+              simp [CompCert4Lean.Backend.Tailcall.is_return, hget] at h
+          | Itailcall sig ros args =>
+              simp [CompCert4Lean.Backend.Tailcall.is_return, hget] at h
+          | Ibuiltin ef args res s =>
+              simp [CompCert4Lean.Backend.Tailcall.is_return, hget] at h
+          | Icond cond args ifso ifnot =>
+              simp [CompCert4Lean.Backend.Tailcall.is_return, hget] at h
+          | Ijumptable arg tbl =>
+              simp [CompCert4Lean.Backend.Tailcall.is_return, hget] at h
+          | Ireturn ores =>
+              cases ores with
+              | none => exact is_return_none (f := f) hget
+              | some rr =>
+                  simp [CompCert4Lean.Backend.Tailcall.is_return, hget] at h
+                  subst rr
+                  exact is_return_some (f := f) hget
+
+theorem transf_instr_charact : transf_instr_charactStatement := by
+  intro cfg f pc instr hstack
+  cases instr with
+  | Icall sig ros args res s =>
+      simp only [CompCert4Lean.Backend.Tailcall.transf_instr]
+      split
+      · rename_i hb
+        have hparts :
+            is_return niter f s res = true ∧
+              CompCert4Lean.Backend.Conventions.tailcall_is_possible cfg sig = true ∧
+              sig.sig_res = f.fn_sig.sig_res := by
+          rcases (CompCert4Lean.Foundation.Logic.Rocq.Coq.Bool.Bool.andb_true_iff _ _).mp hb
+            with ⟨hab, hc⟩
+          rcases (CompCert4Lean.Foundation.Logic.Rocq.Coq.Bool.Bool.andb_true_iff _ _).mp hab
+            with ⟨ha, hb⟩
+          exact ⟨ha, hb, (decide_eq_true_eq.mp hc)⟩
+        exact transf_instr_tailcall hstack
+          (is_return_charact f niter s res hparts.1 (by omega))
+      · exact @transf_instr_spec.unchanged f (Icall sig ros args res s)
+  | _ =>
+      simp [CompCert4Lean.Backend.Tailcall.transf_instr]
+      exact @transf_instr_spec.unchanged f _
+
+end CompCert4Lean.Backend.Tailcallproof

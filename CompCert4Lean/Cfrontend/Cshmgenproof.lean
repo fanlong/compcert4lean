@@ -1100,3 +1100,137 @@ theorem transf_program_match : transf_program_matchStatement := by
       rfl, rfl⟩
 
 end CompCert4Lean.Cfrontend.Cshmgenproof
+
+namespace CompCert4Lean.Cfrontend.Cshmgenproof
+
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Linking
+open CompCert4Lean.Cfrontend.Clight
+open CompCert4Lean.Cfrontend.Cshmgen
+open CompCert4Lean.Cfrontend.Csharpminor
+open CompCert4Lean.Cfrontend.Ctypes
+open CompCert4Lean.Cfrontend.Cop
+open CompCert4Lean.Lib.Maps
+
+private theorem transl_sizeof_stable_local (env1 env2 : composite_env) :
+    (forall id co, PTree.get id env1 = some co -> PTree.get id env2 = some co) ->
+    forall t, Ctypes.complete_type env1 t = true -> Ctypes.sizeof env2 t = Ctypes.sizeof env1 t := by
+  intro henv t hcomplete
+  induction t using Ctypes.type.rec (motive_2 := fun _ => True) with
+  | Tvoid => rfl
+  | Tint s sg a => cases s <;> rfl
+  | Tlong sg a => rfl
+  | Tfloat s a => cases s <;> rfl
+  | Tpointer t a ih => rfl
+  | Tarray t n a ih =>
+    simp only [Ctypes.complete_type] at hcomplete
+    simp [Ctypes.sizeof, ih hcomplete]
+  | Tfunction args res cc ihargs ihres => rfl
+  | Tstruct id a =>
+    cases hget : PTree.get id env1 with
+    | none => simp [Ctypes.complete_type, hget] at hcomplete
+    | some co =>
+      have hget2 := henv id co hget
+      simp [Ctypes.sizeof, hget, hget2]
+  | Tunion id a =>
+    cases hget : PTree.get id env1 with
+    | none => simp [Ctypes.complete_type, hget] at hcomplete
+    | some co =>
+      have hget2 := henv id co hget
+      simp [Ctypes.sizeof, hget, hget2]
+  | nil => trivial
+  | cons head tail ihhead ihtail => trivial
+
+private theorem transl_alignof_stable_local (env1 env2 : composite_env) :
+    (forall id co, PTree.get id env1 = some co -> PTree.get id env2 = some co) ->
+    forall t, Ctypes.complete_type env1 t = true -> Ctypes.alignof env2 t = Ctypes.alignof env1 t := by
+  intro henv t hcomplete
+  induction t using Ctypes.type.rec (motive_2 := fun _ => True) with
+  | Tvoid => rfl
+  | Tint s sg a => cases s <;> rfl
+  | Tlong sg a => rfl
+  | Tfloat s a => cases s <;> rfl
+  | Tpointer t a ih => rfl
+  | Tarray t n a ih =>
+    simp only [Ctypes.complete_type] at hcomplete
+    simp [Ctypes.alignof, ih hcomplete]
+  | Tfunction args res cc ihargs ihres => rfl
+  | Tstruct id a =>
+    cases hget : PTree.get id env1 with
+    | none => simp [Ctypes.complete_type, hget] at hcomplete
+    | some co =>
+      have hget2 := henv id co hget
+      simp [Ctypes.alignof, hget, hget2]
+  | Tunion id a =>
+    cases hget : PTree.get id env1 with
+    | none => simp [Ctypes.complete_type, hget] at hcomplete
+    | some co =>
+      have hget2 := henv id co hget
+      simp [Ctypes.alignof, hget, hget2]
+  | nil => trivial
+  | cons head tail ihhead ihtail => trivial
+
+theorem transl_fundef_sig1 : transl_fundef_sig1Statement := by
+  intro p f tf args res cc hmatch hclass
+  cases hmatch with
+  | match_fundef_internal f tf htrans =>
+    unfold Cshmgen.transl_function at htrans
+    cases hbody : Cshmgen.transl_statement p.prog_comp_env f.fn_return 1 0 f.fn_body with
+    | Error msg => simp [hbody] at htrans
+    | OK tbody =>
+      cases hvars : CompCert4Lean.Common.Errors.mmap
+          (Cshmgen.transl_var p.prog_comp_env) f.fn_vars with
+      | Error msg => simp [hbody, hvars] at htrans
+      | OK tvars =>
+        simp [hbody, hvars] at htrans
+        cases htrans
+        obtain ⟨hargs, hres, hcc⟩ := by
+          simpa [Clight.type_of_fundef, Clight.type_of_function, classify_fun] using hclass
+        subst args
+        subst res
+        subst cc
+        change Cshmgen.signature_of_function f =
+          Ctypes.signature_of_type (Ctypes.type_of_params f.fn_params) f.fn_return f.fn_callconv
+        simp [Cshmgen.signature_of_function, Ctypes.signature_of_type,
+          Ctypes.type_of_params, List.map_map]
+  | match_fundef_external ef args0 res0 cc0 hsig =>
+    obtain ⟨hargs, hres, hcc⟩ := by
+      simpa [Clight.type_of_fundef, classify_fun] using hclass
+    subst args
+    subst res
+    subst cc
+    change CompCert4Lean.Common.AST.ef_sig ef = Ctypes.signature_of_type args0 res0 cc0
+    exact hsig
+
+theorem transl_fundef_sig2 : transl_fundef_sig2Statement := by
+  intro p f tf args res cc hmatch htype
+  apply transl_fundef_sig1 p f tf args res cc hmatch
+  rw [htype]
+
+theorem transl_sizeof : transl_sizeofStatement := by
+  intro cunit prog t sz hlink hsize
+  rcases hlink with ⟨_, henv⟩
+  unfold Cshmgen.sizeof at hsize
+  cases hcomplete : Ctypes.complete_type cunit.prog_comp_env t with
+  | false =>
+    simp [hcomplete] at hsize
+    cases hsize
+  | true =>
+    simp [hcomplete] at hsize
+    cases hsize
+    exact (transl_sizeof_stable_local cunit.prog_comp_env prog.prog_comp_env henv t hcomplete).symm
+
+theorem transl_alignof : transl_alignofStatement := by
+  intro cunit prog t al hlink halign
+  rcases hlink with ⟨_, henv⟩
+  unfold Cshmgen.alignof at halign
+  cases hcomplete : Ctypes.complete_type cunit.prog_comp_env t with
+  | false =>
+    simp [hcomplete] at halign
+    cases halign
+  | true =>
+    simp [hcomplete] at halign
+    cases halign
+    exact (transl_alignof_stable_local cunit.prog_comp_env prog.prog_comp_env henv t hcomplete).symm
+
+end CompCert4Lean.Cfrontend.Cshmgenproof

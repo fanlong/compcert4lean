@@ -618,3 +618,44 @@ theorem Plt_trans : Plt_transStatement := by
   exact Nat.lt_trans hxy hyz
 
 end CompCert4Lean.Lib.Coqlib
+
+namespace CompCert4Lean.Lib.Coqlib
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+private theorem coqlib_posToNat_succ (p : positive) :
+    PArith.BinPos.Pos.to_nat (PArith.BinPos.Pos.succ p) =
+      PArith.BinPos.Pos.to_nat p + 1 := by
+  induction p with
+  | xH => rfl
+  | xI p ih =>
+      change 2 * PArith.BinPos.Pos.to_nat (PArith.BinPos.Pos.succ p) =
+        (2 * PArith.BinPos.Pos.to_nat p + 1) + 1
+      rw [ih]
+      omega
+  | xO p ih => rfl
+
+theorem Plt_succ : Plt_succStatement := by
+  intro p
+  change PArith.BinPos.Pos.to_nat p <
+    PArith.BinPos.Pos.to_nat (PArith.BinPos.Pos.succ p)
+  rw [coqlib_posToNat_succ]
+  omega
+
+theorem Plt_trans_succ : Plt_trans_succStatement := by
+  intro x y hxy
+  change PArith.BinPos.Pos.to_nat x < PArith.BinPos.Pos.to_nat y at hxy
+  change PArith.BinPos.Pos.to_nat x <
+    PArith.BinPos.Pos.to_nat (PArith.BinPos.Pos.succ y)
+  rw [coqlib_posToNat_succ]
+  omega
+
+theorem Ple_refl : Ple_reflStatement := by
+  intro p
+  exact Nat.le_refl _
+
+theorem Ple_trans : Ple_transStatement := by
+  intro p q r hpq hqr
+  exact Nat.le_trans hpq hqr
+
+end CompCert4Lean.Lib.Coqlib

@@ -90,3 +90,99 @@ def has_rettype_wt_valStatement : Prop :=
     CompCert4Lean.Common.Values.Val.has_rettype v (rettype_of_type ty) → wt_val v ty
 
 end CompCert4Lean.Cfrontend.Ctyping
+
+namespace CompCert4Lean.Cfrontend.Ctyping
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Cfrontend.Ctypes
+open CompCert4Lean.Cfrontend.Cop
+open CompCert4Lean.Common.Values
+
+theorem has_rettype_wt_val : has_rettype_wt_valStatement := by
+  intro v ty h
+  cases ty with
+  | Tvoid =>
+      cases v <;> simp [rettype_of_type,
+        CompCert4Lean.Common.Values.Val.has_rettype] at h
+      exact wt_val.wt_val_void _
+  | Tint sz sg attr =>
+      cases sz <;> cases sg <;> cases v <;>
+        simp [rettype_of_type, CompCert4Lean.Common.Values.Val.has_rettype,
+          wt_int, CompCert4Lean.X86_64.Archi.ptr64] at h ⊢
+      all_goals constructor
+      all_goals first | exact h | exact h.symm | trivial
+  | Tlong sg attr =>
+      cases v <;>
+        simp [rettype_of_type, CompCert4Lean.Common.Values.Val.has_rettype,
+          CompCert4Lean.X86_64.Archi.ptr64] at h ⊢
+      all_goals constructor <;> simp [CompCert4Lean.X86_64.Archi.ptr64]
+  | Tfloat sz attr =>
+      cases sz <;> cases v <;>
+        simp [rettype_of_type, CompCert4Lean.Common.Values.Val.has_rettype] at h ⊢
+      all_goals constructor
+  | Tpointer elem attr =>
+      cases v <;>
+        simp [rettype_of_type, CompCert4Lean.Common.Values.Val.has_rettype,
+          CompCert4Lean.X86_64.Archi.ptr64] at h ⊢
+      all_goals constructor <;> simp [CompCert4Lean.X86_64.Archi.ptr64]
+  | Tarray elem len attr =>
+      cases v <;> simp [rettype_of_type,
+        CompCert4Lean.Common.Values.Val.has_rettype] at h ⊢
+      all_goals constructor
+  | Tfunction args res cc =>
+      cases v <;> simp [rettype_of_type,
+        CompCert4Lean.Common.Values.Val.has_rettype] at h ⊢
+      all_goals constructor
+  | Tstruct id attr =>
+      cases v <;> simp [rettype_of_type,
+        CompCert4Lean.Common.Values.Val.has_rettype] at h ⊢
+      all_goals constructor
+  | Tunion id attr =>
+      cases v <;> simp [rettype_of_type,
+        CompCert4Lean.Common.Values.Val.has_rettype] at h ⊢
+      all_goals constructor
+
+end CompCert4Lean.Cfrontend.Ctyping
+
+namespace CompCert4Lean.Cfrontend.Ctyping
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Cfrontend.Ctypes
+open CompCert4Lean.Cfrontend.Cop
+open CompCert4Lean.Common.Values
+
+theorem wt_val_casted : wt_val_castedStatement := by
+  intro v ty h
+  cases h with
+  | val_casted_int sz si attr n hcast =>
+      constructor
+      cases sz <;> cases si <;> simp [wt_int, cast_int_int] at hcast ⊢
+      all_goals try assumption
+      all_goals
+        split at hcast
+        · exact Or.inl hcast.symm
+        · exact Or.inr hcast.symm
+  | val_casted_float attr n =>
+      exact wt_val.wt_val_float n attr
+  | val_casted_single attr n =>
+      exact wt_val.wt_val_single n attr
+  | val_casted_long si attr n =>
+      exact wt_val.wt_val_long n si attr
+  | val_casted_ptr_ptr b ofs ty attr =>
+      exact wt_val.wt_val_pointer b ofs ty attr
+  | val_casted_int_ptr n ty attr hptr64 =>
+      exact wt_val.wt_val_int_pointer n ty attr hptr64
+  | val_casted_ptr_int b ofs si attr hptr64 =>
+      exact wt_val.wt_val_ptr_int b ofs si attr hptr64
+  | val_casted_long_ptr n ty attr hptr64 =>
+      exact wt_val.wt_val_long_pointer n ty attr hptr64
+  | val_casted_ptr_long b ofs si attr hptr64 =>
+      exact wt_val.wt_val_ptr_long b ofs si attr hptr64
+  | val_casted_struct id attr b ofs =>
+      exact wt_val.wt_val_struct b ofs id attr
+  | val_casted_union id attr b ofs =>
+      exact wt_val.wt_val_union b ofs id attr
+  | val_casted_void v =>
+      exact wt_val.wt_val_void v
+
+end CompCert4Lean.Cfrontend.Ctyping

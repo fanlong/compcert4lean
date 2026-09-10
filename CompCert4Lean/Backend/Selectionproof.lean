@@ -1492,3 +1492,227 @@ def transf_program_correctStatement
         (binary32_certificate := binary32_certificate) xi tprog)
 
 end CompCert4Lean.Backend.Selectionproof
+
+namespace CompCert4Lean.Backend.Selectionproof
+
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Foundation.RocqString.Rocq.Coq.Strings.String
+
+theorem lookup_helper_correct_1 :
+    CompCert4Lean.Backend.Selectionproof.lookup_helper_correct_1Statement := by
+  intro globs name sg id hlookup
+  change positive at id
+  let P := fun (m : PTree.t CompCert4Lean.Backend.Selection.globdef)
+      (result : Option positive) =>
+    result = some id →
+      PTree.get id m = some (.Gfun (.External (.EF_runtime name sg)))
+  have hfold : P globs
+      (PTree.fold (CompCert4Lean.Backend.Selection.lookup_helper_aux name sg)
+        globs none) := by
+    apply PTree_Properties.fold_rec_proof
+    · intro m m' a heq hP ha
+      rw [← heq id]
+      exact hP ha
+    · intro ha
+      cases ha
+    · intro m a k v hk hfinal hP
+      unfold P at hP ⊢
+      have hpreserve : PTree.get id m =
+          some (.Gfun (.External (.EF_runtime name sg))) →
+          PTree.get id (PTree.set k v m) =
+            some (.Gfun (.External (.EF_runtime name sg))) := by
+        intro hm
+        rw [PTree.getSet_equation]
+        split
+        · rename_i hik
+          subst k
+          rw [hk] at hm
+          contradiction
+        · exact hm
+      cases v with
+      | Gvar v =>
+          change a = some id → _
+          intro ha
+          exact hpreserve (hP ha)
+      | Gfun f =>
+        cases f with
+        | Internal f =>
+            change a = some id → _
+            intro ha
+            exact hpreserve (hP ha)
+        | External ef =>
+          cases ef with
+          | EF_runtime name' sg' =>
+              change
+                (if (match string_dec name name' with
+                    | .left _ => true
+                    | .right _ => false) &&
+                    (match signature_eq sg sg' with
+                    | .left _ => true
+                    | .right _ => false)
+                  then some k else a) = some id → _
+              cases hname : string_dec name name' with
+              | left hname =>
+                cases hsg : signature_eq sg sg' with
+                | left hsg =>
+                  subst name'
+                  subst sg'
+                  simp
+                  intro hkid
+                  subst k
+                  simpa using
+                    (PTree.getSet_equation
+                      (A := CompCert4Lean.Backend.Selection.globdef) id id
+                      (.Gfun (.External (.EF_runtime name sg))) m)
+                | right hsg =>
+                    simp
+                    intro ha
+                    exact hpreserve (hP ha)
+              | right hname =>
+                  simp
+                  intro ha
+                  exact hpreserve (hP ha)
+          | EF_external name' sg' =>
+              change a = some id → _
+              intro ha
+              exact hpreserve (hP ha)
+          | EF_builtin name' sg' =>
+              change a = some id → _
+              intro ha
+              exact hpreserve (hP ha)
+          | EF_vload chunk =>
+              change a = some id → _
+              intro ha
+              exact hpreserve (hP ha)
+          | EF_vstore chunk =>
+              change a = some id → _
+              intro ha
+              exact hpreserve (hP ha)
+          | EF_malloc =>
+              change a = some id → _
+              intro ha
+              exact hpreserve (hP ha)
+          | EF_free =>
+              change a = some id → _
+              intro ha
+              exact hpreserve (hP ha)
+          | EF_memcpy size alignment =>
+              change a = some id → _
+              intro ha
+              exact hpreserve (hP ha)
+          | EF_annot kind text targs =>
+              change a = some id → _
+              intro ha
+              exact hpreserve (hP ha)
+          | EF_annot_val kind text targ =>
+              change a = some id → _
+              intro ha
+              exact hpreserve (hP ha)
+          | EF_inline_asm text sg clobbers =>
+              change a = some id → _
+              intro ha
+              exact hpreserve (hP ha)
+          | EF_debug kind text targs =>
+              change a = some id → _
+              intro ha
+              exact hpreserve (hP ha)
+  unfold CompCert4Lean.Backend.Selection.lookup_helper at hlookup
+  cases hresult : PTree.fold
+      (CompCert4Lean.Backend.Selection.lookup_helper_aux name sg) globs none with
+  | none =>
+      simp [hresult] at hlookup
+  | some result =>
+      change positive at result
+      have hid : result = id := by
+        have hEq : CompCert4Lean.Common.Errors.res.OK result =
+            CompCert4Lean.Common.Errors.res.OK id := by
+          rw [hresult] at hlookup
+          exact hlookup
+        cases hEq
+        rfl
+      subst result
+      exact hfold hresult
+
+end CompCert4Lean.Backend.Selectionproof
+
+namespace CompCert4Lean.Backend.Selectionproof
+
+open CompCert4Lean.Lib.Maps
+
+theorem record_globdefs_sound :
+    CompCert4Lean.Backend.Selectionproof.record_globdefs_soundStatement := by
+  intro dm id gd hget
+  change CompCert4Lean.Foundation.Numbers.Rocq.Coq.positive at id
+  unfold CompCert4Lean.Backend.Selection.record_globdefs at hget
+  let P := fun (m a : PTree.t CompCert4Lean.Backend.Selection.globdef) =>
+    PTree.get id a = some gd → PTree.get id m = some gd
+  have hfold : P dm
+      (PTree.fold
+        (fun m id gd =>
+          if CompCert4Lean.Backend.Selection.globdef_of_interest gd then
+            PTree.set id gd m
+          else m)
+        dm (PTree.empty _)) := by
+    apply PTree_Properties.fold_rec_proof
+    · intro m m' a heq hP ha
+      rw [← heq id]
+      exact hP ha
+    · intro ha
+      exact ha
+    · intro m a k v hk hfinal hP
+      unfold P at hP ⊢
+      cases hv : CompCert4Lean.Backend.Selection.globdef_of_interest v <;>
+        simp [hv] at *
+      · intro ha
+        have hm := hP ha
+        rw [PTree.getSet_equation]
+        split
+        · rename_i hid
+          subst k
+          rw [hk] at hm
+          contradiction
+        · exact hm
+      · intro ha
+        have hcase (x : PTree.tree CompCert4Lean.Backend.Selection.globdef) :
+            PTree.get id (PTree.set k v x) =
+              if id = k then some v else PTree.get id x :=
+          PTree.getSet_equation id k v x
+        rw [hcase a] at ha
+        rw [hcase m]
+        by_cases hik : id = k
+        · simp [hik] at ha ⊢
+          exact ha
+        · simp [hik] at ha ⊢
+          exact hP ha
+  exact hfold hget
+
+end CompCert4Lean.Backend.Selectionproof
+
+namespace CompCert4Lean.Backend.Selectionproof
+
+theorem lookup_helper_correct :
+    CompCert4Lean.Backend.Selectionproof.lookup_helper_correctStatement := by
+  intro p name sg id hlookup
+  unfold CompCert4Lean.Backend.SplitLongproof.helper_declared
+  apply record_globdefs_sound
+  apply lookup_helper_correct_1
+  exact hlookup
+
+end CompCert4Lean.Backend.Selectionproof
+
+namespace CompCert4Lean.Backend.Selectionproof
+
+theorem get_helpers_correct :
+    CompCert4Lean.Backend.Selectionproof.get_helpers_correctStatement := by
+  intro p hf h
+  unfold CompCert4Lean.Backend.Selection.get_helpers at h
+  dsimp at h
+  repeat split at h <;> try contradiction
+  cases h
+  repeat' constructor
+  all_goals apply lookup_helper_correct
+  all_goals assumption
+
+end CompCert4Lean.Backend.Selectionproof

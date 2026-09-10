@@ -499,3 +499,155 @@ theorem middle_range (ctx : ExactRealContext) :
   exact middle_range_core ctx start step k
 
 end CompCert4Lean.Flocq.Calc.Bracket
+
+namespace CompCert4Lean.Flocq.Calc.Bracket
+
+private theorem bracket_Rcompare_lt (ctx : ExactRealContext)
+    {x y : R ctx} (hxy : Rlt ctx x y) :
+    Rcompare ctx x y = Lt := by
+  change CompCert4Lean.Flocq.Core.Raux.Exact.Rcompare ctx x y = Lt
+  unfold CompCert4Lean.Flocq.Core.Raux.Exact.Rcompare
+  unfold CompCert4Lean.Foundation.FlocqReal.ExactReal.total_order_T
+  cases hdec : ctx.spec.lt_dec x y with
+  | left _ => rfl
+  | right hnxy => exact (hnxy hxy).elim
+
+private theorem bracket_Rcompare_eq (ctx : ExactRealContext)
+    {x y : R ctx} (hxy : x = y) :
+    Rcompare ctx x y = Eq := by
+  change CompCert4Lean.Flocq.Core.Raux.Exact.Rcompare ctx x y = Eq
+  subst y
+  cases hdec : ctx.spec.lt_dec x x with
+  | left hlt => exact (ctx.certificate.orderedField.lt_irrefl x hlt).elim
+  | right _ =>
+      simp [CompCert4Lean.Flocq.Core.Raux.Exact.Rcompare,
+        CompCert4Lean.Foundation.FlocqReal.ExactReal.total_order_T, hdec]
+
+private theorem bracket_Rcompare_gt (ctx : ExactRealContext)
+    {x y : R ctx} (hyx : Rlt ctx y x) :
+    Rcompare ctx x y = Gt := by
+  have hnxy : ¬ Rlt ctx x y := by
+    intro hxy
+    exact ctx.certificate.orderedField.lt_irrefl x
+      (ctx.certificate.orderedField.lt_trans x y x hxy hyx)
+  change CompCert4Lean.Flocq.Core.Raux.Exact.Rcompare ctx x y = Gt
+  unfold CompCert4Lean.Flocq.Core.Raux.Exact.Rcompare
+  unfold CompCert4Lean.Foundation.FlocqReal.ExactReal.total_order_T
+  cases hxy : ctx.spec.lt_dec x y with
+  | left hlt => exact (hnxy hlt).elim
+  | right _ =>
+      cases hyx_dec : ctx.spec.lt_dec y x with
+      | left _ => rfl
+      | right hnyx => exact (hnyx hyx).elim
+
+private theorem bracket_Rcompare_mult_r (ctx : ExactRealContext)
+    (z x y : R ctx) (hz : Rlt ctx (R0 ctx) z) :
+    Rcompare ctx (Rmult ctx x z) (Rmult ctx y z) = Rcompare ctx x y := by
+  change CompCert4Lean.Flocq.Core.Raux.Exact.Rcompare ctx (ctx.spec.mul x z)
+      (ctx.spec.mul y z) = CompCert4Lean.Flocq.Core.Raux.Exact.Rcompare ctx x y
+  change ctx.spec.lt ctx.spec.zero z at hz
+  rcases ctx.certificate.total_order x y with h | h
+  · rcases h with hlt | heq
+    · have hmul := ctx.certificate.orderedField.mul_lt_compat_l z x y hz hlt
+      rw [ctx.certificate.orderedField.mul_comm z x,
+        ctx.certificate.orderedField.mul_comm z y] at hmul
+      have hleft :
+          CompCert4Lean.Flocq.Core.Raux.Exact.Rcompare ctx
+              (ctx.spec.mul x z) (ctx.spec.mul y z) = Lt :=
+        bracket_Rcompare_lt ctx hmul
+      have hright :
+          CompCert4Lean.Flocq.Core.Raux.Exact.Rcompare ctx x y = Lt :=
+        bracket_Rcompare_lt ctx hlt
+      rw [hleft, hright]
+    · subst y
+      have hleft :
+          CompCert4Lean.Flocq.Core.Raux.Exact.Rcompare ctx
+              (ctx.spec.mul x z) (ctx.spec.mul x z) = Eq :=
+        bracket_Rcompare_eq ctx rfl
+      have hright :
+          CompCert4Lean.Flocq.Core.Raux.Exact.Rcompare ctx x x = Eq :=
+        bracket_Rcompare_eq ctx rfl
+      rw [hleft, hright]
+  · have hmul := ctx.certificate.orderedField.mul_lt_compat_l z y x hz h
+    rw [ctx.certificate.orderedField.mul_comm z y,
+      ctx.certificate.orderedField.mul_comm z x] at hmul
+    have hleft :
+        CompCert4Lean.Flocq.Core.Raux.Exact.Rcompare ctx
+            (ctx.spec.mul x z) (ctx.spec.mul y z) = Gt :=
+      bracket_Rcompare_gt ctx hmul
+    have hright :
+        CompCert4Lean.Flocq.Core.Raux.Exact.Rcompare ctx x y = Gt :=
+      bracket_Rcompare_gt ctx h
+    rw [hleft, hright]
+
+private theorem bracket_middle_mult (ctx : ExactRealContext)
+    (x d s : R ctx) :
+    Rdiv ctx (Rplus ctx (Rmult ctx x s) (Rmult ctx d s)) (Rtwo ctx) =
+      Rmult ctx (Rdiv ctx (Rplus ctx x d) (Rtwo ctx)) s := by
+  change ctx.spec.div
+      (ctx.spec.add (ctx.spec.mul x s) (ctx.spec.mul d s))
+      (ctx.spec.add ctx.spec.one ctx.spec.one) =
+    ctx.spec.mul
+      (ctx.spec.div (ctx.spec.add x d) (ctx.spec.add ctx.spec.one ctx.spec.one)) s
+  rw [ctx.certificate.orderedField.div_eq_mul_inv,
+    ctx.certificate.orderedField.div_eq_mul_inv]
+  calc
+    ctx.spec.mul (ctx.spec.add (ctx.spec.mul x s) (ctx.spec.mul d s))
+        (ctx.spec.inv (ctx.spec.add ctx.spec.one ctx.spec.one)) =
+      ctx.spec.mul (ctx.spec.mul (ctx.spec.add x d) s)
+        (ctx.spec.inv (ctx.spec.add ctx.spec.one ctx.spec.one)) := by
+          congr 1
+          calc
+            ctx.spec.add (ctx.spec.mul x s) (ctx.spec.mul d s) =
+                ctx.spec.add (ctx.spec.mul s x) (ctx.spec.mul s d) := by
+                  rw [ctx.certificate.orderedField.mul_comm s x,
+                    ctx.certificate.orderedField.mul_comm s d]
+            _ = ctx.spec.mul s (ctx.spec.add x d) :=
+              (ctx.certificate.orderedField.left_distrib s x d).symm
+            _ = ctx.spec.mul (ctx.spec.add x d) s :=
+              ctx.certificate.orderedField.mul_comm _ _
+    _ = ctx.spec.mul (ctx.spec.add x d)
+        (ctx.spec.mul s (ctx.spec.inv (ctx.spec.add ctx.spec.one ctx.spec.one))) :=
+      ctx.certificate.orderedField.mul_assoc _ _ _
+    _ = ctx.spec.mul (ctx.spec.add x d)
+        (ctx.spec.mul (ctx.spec.inv (ctx.spec.add ctx.spec.one ctx.spec.one)) s) := by
+          rw [ctx.certificate.orderedField.mul_comm s]
+    _ = ctx.spec.mul
+        (ctx.spec.mul (ctx.spec.add x d)
+          (ctx.spec.inv (ctx.spec.add ctx.spec.one ctx.spec.one))) s := by
+          rw [ctx.certificate.orderedField.mul_assoc]
+
+theorem inbetween_mult_compat (ctx : ExactRealContext) :
+    inbetween_mult_compatStatement ctx := by
+  intro x d u l s hs hbetween
+  have hs0 : Rlt ctx (R0 ctx) s := by
+    change ctx.spec.lt ctx.spec.zero s
+    have hzero : IZR ctx Z0 = ctx.spec.zero :=
+      ctx.certificate.sourceLaws.ofZ_zero
+    rw [← hzero]
+    exact hs
+  cases hbetween with
+  | inbetween_Exact h =>
+      constructor
+      rw [h]
+  | inbetween_Inexact l hbounds hmiddle =>
+      constructor
+      · constructor
+        · exact
+            CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.Rmult_lt_compat_r
+              ctx s x u hs hbounds.1
+        · exact
+            CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.Rmult_lt_compat_r
+              ctx s u d hs hbounds.2
+      · calc
+          Rcompare ctx (Rmult ctx u s)
+              (Rdiv ctx (Rplus ctx (Rmult ctx x s) (Rmult ctx d s)) (Rtwo ctx)) =
+            Rcompare ctx (Rmult ctx u s)
+              (Rmult ctx (Rdiv ctx (Rplus ctx x d) (Rtwo ctx)) s) := by
+                rw [bracket_middle_mult]
+          _ = Rcompare ctx u (Rdiv ctx (Rplus ctx x d) (Rtwo ctx)) :=
+            bracket_Rcompare_mult_r ctx s u
+              (Rdiv ctx (Rplus ctx x d) (Rtwo ctx)) hs0
+          _ = l := hmiddle
+
+end CompCert4Lean.Flocq.Calc.Bracket

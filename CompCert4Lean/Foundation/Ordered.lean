@@ -217,3 +217,31 @@ end Structures.OrderedType
 
 end Rocq.Coq
 end CompCert4Lean.Foundation.Ordered
+
+namespace CompCert4Lean.Foundation.Ordered
+namespace Rocq.Coq.Classes.DecidableClass
+
+theorem Decidable_sound : Decidable_soundStatement := by
+  intro P H hw
+  exact (Decidable_spec (P := P) (H := H)).mp hw
+
+theorem Decidable_complete : Decidable_completeStatement := by
+  intro P H hp
+  exact (Decidable_spec (P := P) (H := H)).mpr hp
+
+theorem Decidable_sound_alt : Decidable_sound_altStatement := by
+  intro P H hnp
+  cases h : @Decidable_witness P H with
+  | false => rfl
+  | true =>
+      exact False.elim (hnp ((Decidable_spec (P := P) (H := H)).mp h))
+
+theorem Decidable_complete_alt : Decidable_complete_altStatement := by
+  intro P H hw hP
+  have ht : @Decidable_witness P H = true :=
+    (Decidable_spec (P := P) (H := H)).mpr hP
+  rw [hw] at ht
+  cases ht
+
+end Rocq.Coq.Classes.DecidableClass
+end CompCert4Lean.Foundation.Ordered

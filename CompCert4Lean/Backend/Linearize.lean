@@ -752,3 +752,15 @@ def fixpoint_invariant (_laws : law_obligation) : Prop :=
 end DS
 
 end CompCert4Lean.Backend.Linearize
+
+namespace CompCert4Lean.Backend.Linearize.Nodeset
+
+theorem add_1_proof : add_1 := by
+  intro s x y hxy
+  exact CompCert4Lean.Lib.FSetAVLplus.Make.add_1 s x y hxy
+
+theorem mem_2_proof : mem_2 := by
+  intro s x h
+  exact CompCert4Lean.Lib.FSetAVLplus.Make.mem_2 s x h
+
+end CompCert4Lean.Backend.Linearize.Nodeset

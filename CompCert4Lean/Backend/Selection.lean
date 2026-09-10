@@ -934,3 +934,67 @@ def sel_program
         (binary32_inverse_certificate := binary32_inverse_certificate) dm hf) p
 
 end CompCert4Lean.Backend.Selection
+
+namespace CompCert4Lean.Backend.Selection
+
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.X86.Op
+open CompCert4Lean.Lib.Integers
+
+theorem condexpr_of_expr_ind : condexpr_of_expr_indStatement := by
+  intro P hO hC hL hX
+  let M1 : CminorSel.expr → Prop := fun e => P e (condexpr_of_expr e)
+  let M2 : CminorSel.exprlist → Prop := fun _ => True
+  let M3 : CminorSel.condexpr → Prop := fun _ => True
+  have H : ∀ e : CminorSel.expr, M1 e := by
+    intro e
+    exact CminorSel.expr.rec
+      (motive_1 := M1) (motive_2 := M2) (motive_3 := M3)
+      (fun id => hX _ _ rfl (by simp))
+      (fun op args _ => by
+        cases op with
+        | Ocmp c => exact hO _ _ _ rfl
+        | _ => exact hX _ _ rfl (by simp))
+      (fun chunk addr args _ => hX _ _ rfl (by simp))
+      (fun a b c _ ihb ihc => hC _ _ _ _ rfl ihb ihc)
+      (fun a b _ ihb => hL _ _ _ rfl ihb)
+      (fun index => hX _ _ rfl (by simp))
+      (fun ef args _ => hX _ _ rfl (by simp))
+      (fun id sig args _ => hX _ _ rfl (by simp))
+      (by trivial)
+      (fun head tail _ _ => by trivial)
+      (fun condition args _ => by trivial)
+      (fun condition ifso ifnot _ _ _ => by trivial)
+      (fun bound body _ _ => by trivial)
+      e
+  exact fun e => H e
+
+theorem condition_of_expr_ind : condition_of_expr_indStatement := by
+  intro P hO hX
+  let M1 : CminorSel.expr → Prop := fun e => P e (condition_of_expr e)
+  let M2 : CminorSel.exprlist → Prop := fun _ => True
+  let M3 : CminorSel.condexpr → Prop := fun _ => True
+  have H : ∀ e : CminorSel.expr, M1 e := by
+    intro e
+    exact CminorSel.expr.rec
+      (motive_1 := M1) (motive_2 := M2) (motive_3 := M3)
+      (fun id => hX _ _ rfl (by simp))
+      (fun op args _ => by
+        cases op with
+        | Ocmp c => exact hO _ _ _ rfl
+        | _ => exact hX _ _ rfl (by simp))
+      (fun chunk addr args _ => hX _ _ rfl (by simp))
+      (fun a b c _ ihb ihc => hX _ _ rfl (by simp))
+      (fun a b _ _ => hX _ _ rfl (by simp))
+      (fun index => hX _ _ rfl (by simp))
+      (fun ef args _ => hX _ _ rfl (by simp))
+      (fun id sig args _ => hX _ _ rfl (by simp))
+      (by trivial)
+      (fun head tail _ _ => by trivial)
+      (fun condition args _ => by trivial)
+      (fun condition ifso ifnot _ _ _ => by trivial)
+      (fun bound body _ _ => by trivial)
+      e
+  exact fun e => H e
+
+end CompCert4Lean.Backend.Selection

@@ -1270,3 +1270,41 @@ structure bigstep_sound (B : bigstep_semantics) (L : semantics) : Prop where
 export bigstep_sound (bigstep_terminates_sound bigstep_diverges_sound)
 
 end CompCert4Lean.Common.Smallstep
+
+namespace CompCert4Lean.Common.Smallstep
+
+open CompCert4Lean.Common.Events
+
+theorem star_one : star_oneStatement := by
+  intro genv state step ge s1 t s2 hstep
+  apply star_step s1 t hstep (star_refl step ge s2)
+  exact (_root_.List.append_nil t).symm
+
+theorem star_two : star_twoStatement := by
+  intro genv state step ge s1 t1 s2 t2 s3 t hstep1 hstep2 htrace
+  exact star_step s1 t1 hstep1
+    (star_one genv state step ge s2 t2 s3 hstep2) htrace
+
+theorem star_three : star_threeStatement := by
+  intro genv state step ge s1 t1 s2 t2 s3 t3 s4 t hstep1 hstep2 hstep3 htrace
+  exact star_step s1 t1 hstep1
+    (star_two genv state step ge s2 t2 s3 t3 s4 (Eapp t2 t3) hstep2 hstep3 rfl) htrace
+
+theorem star_trans : star_transStatement := by
+  intro genv state step ge s1 t1 s2 hstar
+  induction hstar with
+  | star_refl s =>
+    intro t2 s3 t hstar htrace
+    subst t
+    rw [show Eapp E0 t2 = t2 by exact _root_.List.nil_append t2]
+    exact hstar
+  | star_step s1 t1 s2 t2 s3 t hstep hstar htrace ih =>
+    intro t3 s4 t' hstar' htrace'
+    exact star_step s1 t1 hstep
+      (ih t3 s4 (Eapp t2 t3) hstar' rfl)
+      (by
+        subst t'
+        subst t
+        exact _root_.List.append_assoc t1 t2 t3)
+
+end CompCert4Lean.Common.Smallstep

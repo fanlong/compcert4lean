@@ -939,3 +939,322 @@ theorem empty_spec : empty_specStatement := by
     CompCert4Lean.Lib.Heaps.SplayHeapSet.R.In]
 
 end CompCert4Lean.Backend.Kildall.NodeSetBackward
+
+namespace CompCert4Lean.Backend.Kildall.NodeSetBackward
+
+private theorem pheap_in_insert_self (n :
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.positive)
+    (s : CompCert4Lean.Lib.Heaps.PHeap.t) :
+    CompCert4Lean.Lib.Heaps.PHeap.In n
+      (CompCert4Lean.Lib.Heaps.PHeap.insert n s) := by
+  rcases s with ⟨h, hb⟩
+  change CompCert4Lean.Lib.Heaps.SplayHeapSet.R.In _ n
+    (CompCert4Lean.Lib.Heaps.SplayHeapSet.R.insert _ n h)
+  simp only [CompCert4Lean.Lib.Heaps.SplayHeapSet.R.insert,
+    CompCert4Lean.Lib.Heaps.SplayHeapSet.R.In]
+  exact Or.inr (Or.inl rfl)
+
+private theorem raw_in_partition {E : CompCert4Lean.Lib.Heaps.OrderedType}
+    (y pivot : E.t) (hne : ¬ E.eq y pivot) :
+    ∀ h : CompCert4Lean.Lib.Heaps.SplayHeapSet.R.heap E,
+      (CompCert4Lean.Lib.Heaps.SplayHeapSet.R.In E y h ↔
+        CompCert4Lean.Lib.Heaps.SplayHeapSet.R.In E y
+          (CompCert4Lean.Lib.Heaps.SplayHeapSet.R.partition E pivot h).1 ∨
+        CompCert4Lean.Lib.Heaps.SplayHeapSet.R.In E y
+          (CompCert4Lean.Lib.Heaps.SplayHeapSet.R.partition E pivot h).2)
+  | .Empty => by
+      simp [CompCert4Lean.Lib.Heaps.SplayHeapSet.R.partition,
+        CompCert4Lean.Lib.Heaps.SplayHeapSet.R.In]
+  | .Node a x b => by
+      cases hcmp : E.compare x pivot with
+      | EQ hx =>
+          have hyx : ¬ E.eq y x := fun h =>
+            hne (E.eq_trans y x pivot h hx)
+          rw [CompCert4Lean.Lib.Heaps.SplayHeapSet.R.partition.eq_def]
+          simp only [hcmp, CompCert4Lean.Lib.Heaps.SplayHeapSet.R.In]
+          simp_all [or_assoc, or_left_comm, or_comm]
+      | LT hx =>
+          cases b with
+          | Empty =>
+              rw [CompCert4Lean.Lib.Heaps.SplayHeapSet.R.partition.eq_def]
+              simp only [hcmp, CompCert4Lean.Lib.Heaps.SplayHeapSet.R.In]
+              simp_all [or_assoc, or_left_comm, or_comm]
+          | Node b1 z b2 =>
+              cases hzcmp : E.compare z pivot with
+              | EQ hz =>
+                  have hyz : ¬ E.eq y z := fun h =>
+                    hne (E.eq_trans y z pivot h hz)
+                  rw [CompCert4Lean.Lib.Heaps.SplayHeapSet.R.partition.eq_def]
+                  simp only [hcmp, hzcmp,
+                    CompCert4Lean.Lib.Heaps.SplayHeapSet.R.In]
+                  simp_all [or_assoc, or_left_comm, or_comm]
+              | LT hz =>
+                  have hi := raw_in_partition y pivot hne b2
+                  rw [CompCert4Lean.Lib.Heaps.SplayHeapSet.R.partition.eq_def]
+                  simp only [hcmp, hzcmp,
+                    CompCert4Lean.Lib.Heaps.SplayHeapSet.R.In] at hi ⊢
+                  simp_all [or_assoc, or_left_comm, or_comm]
+              | GT hz =>
+                  have hi := raw_in_partition y pivot hne b1
+                  rw [CompCert4Lean.Lib.Heaps.SplayHeapSet.R.partition.eq_def]
+                  simp only [hcmp, hzcmp,
+                    CompCert4Lean.Lib.Heaps.SplayHeapSet.R.In] at hi ⊢
+                  simp_all [or_assoc, or_left_comm, or_comm]
+      | GT hx =>
+          cases a with
+          | Empty =>
+              rw [CompCert4Lean.Lib.Heaps.SplayHeapSet.R.partition.eq_def]
+              simp only [hcmp, CompCert4Lean.Lib.Heaps.SplayHeapSet.R.In]
+              simp_all [or_assoc, or_left_comm, or_comm]
+          | Node a1 z a2 =>
+              cases hzcmp : E.compare z pivot with
+              | EQ hz =>
+                  have hyz : ¬ E.eq y z := fun h =>
+                    hne (E.eq_trans y z pivot h hz)
+                  rw [CompCert4Lean.Lib.Heaps.SplayHeapSet.R.partition.eq_def]
+                  simp only [hcmp, hzcmp,
+                    CompCert4Lean.Lib.Heaps.SplayHeapSet.R.In]
+                  simp_all [or_assoc, or_left_comm, or_comm]
+              | LT hz =>
+                  have hi := raw_in_partition y pivot hne a2
+                  rw [CompCert4Lean.Lib.Heaps.SplayHeapSet.R.partition.eq_def]
+                  simp only [hcmp, hzcmp,
+                    CompCert4Lean.Lib.Heaps.SplayHeapSet.R.In] at hi ⊢
+                  simp_all [or_assoc, or_left_comm, or_comm]
+              | GT hz =>
+                  have hi := raw_in_partition y pivot hne a1
+                  rw [CompCert4Lean.Lib.Heaps.SplayHeapSet.R.partition.eq_def]
+                  simp only [hcmp, hzcmp,
+                    CompCert4Lean.Lib.Heaps.SplayHeapSet.R.In] at hi ⊢
+                  simp_all [or_assoc, or_left_comm, or_comm]
+
+private theorem raw_in_insert {E : CompCert4Lean.Lib.Heaps.OrderedType}
+    (x y : E.t) (h : CompCert4Lean.Lib.Heaps.SplayHeapSet.R.heap E) :
+    (CompCert4Lean.Lib.Heaps.SplayHeapSet.R.In E y
+        (CompCert4Lean.Lib.Heaps.SplayHeapSet.R.insert E x h) ↔
+      E.eq y x ∨ CompCert4Lean.Lib.Heaps.SplayHeapSet.R.In E y h) := by
+  unfold CompCert4Lean.Lib.Heaps.SplayHeapSet.R.insert
+  cases hpart : CompCert4Lean.Lib.Heaps.SplayHeapSet.R.partition E x h with
+  | mk a b =>
+      simp only [CompCert4Lean.Lib.Heaps.SplayHeapSet.R.In]
+      by_cases hyx : E.eq y x
+      · simp [hyx]
+      · have hp := raw_in_partition y x hyx h
+        rw [hpart] at hp
+        simp_all [or_assoc, or_left_comm, or_comm]
+
+private theorem pheap_in_insert (s : CompCert4Lean.Lib.Heaps.PHeap.t)
+    (x y : CompCert4Lean.Foundation.Numbers.Rocq.Coq.positive) :
+    (CompCert4Lean.Lib.Heaps.PHeap.In y
+        (CompCert4Lean.Lib.Heaps.PHeap.insert x s) ↔
+      x = y ∨ CompCert4Lean.Lib.Heaps.PHeap.In y s) := by
+  rcases s with ⟨h, hb⟩
+  have hraw := raw_in_insert x y h
+  constructor
+  · intro hin
+    rcases hraw.mp hin with hxy | hin
+    · exact Or.inl hxy.symm
+    · exact Or.inr hin
+  · intro hin
+    rcases hin with hxy | hin
+    · exact hraw.mpr (Or.inl hxy.symm)
+    · exact hraw.mpr (Or.inr hin)
+
+theorem add_spec : add_specStatement := by
+  intro n n' s
+  change CompCert4Lean.Lib.Heaps.PHeap.In n'
+      (CompCert4Lean.Lib.Heaps.PHeap.insert n s) ↔
+    n = n' ∨ CompCert4Lean.Lib.Heaps.PHeap.In n' s
+  exact pheap_in_insert s n n'
+
+theorem all_nodes_spec : all_nodes_specStatement := by
+  intro A code n instr hget
+  let P : PTreeT A → CompCert4Lean.Lib.Heaps.PHeap.t → Prop :=
+    fun m s => ∀ n instr, CompCert4Lean.Lib.Maps.PTree.get n m = some instr →
+      CompCert4Lean.Lib.Heaps.PHeap.In n s
+  have hfold : P code
+      (CompCert4Lean.Lib.Maps.PTree.fold
+        (fun s pc _ => CompCert4Lean.Lib.Heaps.PHeap.insert pc s)
+        code CompCert4Lean.Lib.Heaps.PHeap.empty) := by
+    apply CompCert4Lean.Lib.Maps.PTree_Properties.fold_rec_proof
+    · intro m m' s hmaps hP n instr hn
+      apply hP n instr
+      rw [hmaps n]
+      exact hn
+    · intro n instr hn
+      simp [CompCert4Lean.Lib.Maps.PTree.empty,
+        CompCert4Lean.Lib.Maps.PTree.get] at hn
+    · intro m s k v hnone hsome hP n instr hn
+      rw [CompCert4Lean.Lib.Maps.PTree.getSet_equation] at hn
+      split at hn
+      · subst n
+        exact pheap_in_insert_self k s
+      · exact (pheap_in_insert s k n).mpr (Or.inr (hP n instr hn))
+  change CompCert4Lean.Lib.Heaps.PHeap.In n (all_nodes code)
+  simpa [all_nodes] using hfold n instr hget
+
+end CompCert4Lean.Backend.Kildall.NodeSetBackward
+
+namespace CompCert4Lean.Backend.Kildall.NodeSetBackward
+
+private theorem pheap_findMin_none_eq_empty (s :
+    CompCert4Lean.Lib.Heaps.PHeap.t) :
+    CompCert4Lean.Lib.Heaps.PHeap.findMin s = none → s.1 = .Empty := by
+  rcases s with ⟨h, hb⟩
+  revert hb
+  induction h with
+  | Empty =>
+      intro hb hs
+      rfl
+  | Node l x r ihl ihr =>
+      intro hb hs
+      cases l with
+      | Empty =>
+          have hcontra : (some x : Option
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.positive) = none := by
+            simpa [CompCert4Lean.Lib.Heaps.PHeap.findMin,
+              CompCert4Lean.Lib.Heaps.SplayHeapSet.findMin,
+              CompCert4Lean.Lib.Heaps.SplayHeapSet.R.findMin] using hs
+          cases hcontra
+      | Node l₁ y l₂ =>
+          have hs' : CompCert4Lean.Lib.Heaps.PHeap.findMin
+              ⟨.Node l₁ y l₂, hb.1⟩ = none := hs
+          have he := ihl hb.1 hs'
+          cases he
+
+theorem pick_none : pick_noneStatement := by
+  intro s n hs
+  intro hn
+  unfold pick at hs
+  cases hfind : CompCert4Lean.Lib.Heaps.PHeap.findMin s with
+  | some x => simp [hfind] at hs
+  | none =>
+    have he := pheap_findMin_none_eq_empty s hfind
+    rcases s with ⟨h, hb⟩
+    cases he
+    change CompCert4Lean.Lib.Heaps.PHeap.In n ⟨.Empty, hb⟩ at hn
+    simpa [CompCert4Lean.Lib.Heaps.PHeap.In,
+      CompCert4Lean.Lib.Heaps.SplayHeapSet.In,
+      CompCert4Lean.Lib.Heaps.SplayHeapSet.R.In] using hn
+
+private def raw_heap_size {E : CompCert4Lean.Lib.Heaps.OrderedType} :
+    CompCert4Lean.Lib.Heaps.SplayHeapSet.R.heap E → Nat
+  | .Empty => 0
+  | .Node l _ r => raw_heap_size l + raw_heap_size r + 1
+
+private def raw_in_deleteMin {E : CompCert4Lean.Lib.Heaps.OrderedType}
+    (h : CompCert4Lean.Lib.Heaps.SplayHeapSet.R.heap E)
+    (hb : CompCert4Lean.Lib.Heaps.SplayHeapSet.R.bst E h)
+    (x y : E.t)
+    (hs : CompCert4Lean.Lib.Heaps.SplayHeapSet.R.findMin E h = some x) :
+    (CompCert4Lean.Lib.Heaps.SplayHeapSet.R.In E y h ↔
+      E.eq x y ∨ CompCert4Lean.Lib.Heaps.SplayHeapSet.R.In E y
+        (CompCert4Lean.Lib.Heaps.SplayHeapSet.R.deleteMin E h)) := by
+  cases h with
+  | Empty => simp [CompCert4Lean.Lib.Heaps.SplayHeapSet.R.findMin] at hs
+  | Node l z r =>
+      cases l with
+      | Empty =>
+          simp only [CompCert4Lean.Lib.Heaps.SplayHeapSet.R.findMin] at hs
+          cases hs
+          simp only [CompCert4Lean.Lib.Heaps.SplayHeapSet.R.In,
+            CompCert4Lean.Lib.Heaps.SplayHeapSet.R.deleteMin]
+          constructor <;> intro h
+          · rcases h with h | h | h
+            · exact False.elim h
+            · exact Or.inl (E.eq_sym _ _ h)
+            · exact Or.inr h
+          · rcases h with h | h
+            · exact Or.inr (Or.inl (E.eq_sym _ _ h))
+            · exact Or.inr (Or.inr h)
+      | Node l₁ w l₂ =>
+          cases l₁ with
+          | Empty =>
+              simp only [CompCert4Lean.Lib.Heaps.SplayHeapSet.R.findMin] at hs
+              cases hs
+              change
+                ((False ∨ E.eq y x ∨
+                    CompCert4Lean.Lib.Heaps.SplayHeapSet.R.In E y l₂) ∨
+                  E.eq y z ∨
+                  CompCert4Lean.Lib.Heaps.SplayHeapSet.R.In E y r ↔
+                  E.eq x y ∨
+                    CompCert4Lean.Lib.Heaps.SplayHeapSet.R.In E y l₂ ∨
+                      E.eq y z ∨
+                        CompCert4Lean.Lib.Heaps.SplayHeapSet.R.In E y r)
+              constructor <;> intro h
+              · rcases h with h | h | h
+                · rcases h with h | h | h
+                  · exact False.elim h
+                  · exact Or.inl (E.eq_sym _ _ h)
+                  · exact Or.inr (Or.inl h)
+                · exact Or.inr (Or.inr (Or.inl h))
+                · exact Or.inr (Or.inr (Or.inr h))
+              · rcases h with h | h | h | h
+                · exact Or.inl (Or.inr (Or.inl (E.eq_sym _ _ h)))
+                · exact Or.inl (Or.inr (Or.inr h))
+                · exact Or.inr (Or.inl h)
+                · exact Or.inr (Or.inr h)
+          | Node a u b =>
+              have hs₁ : CompCert4Lean.Lib.Heaps.SplayHeapSet.R.findMin E
+                  (.Node a u b) = some x := by
+                simpa only [CompCert4Lean.Lib.Heaps.SplayHeapSet.R.findMin] using hs
+              have hi := raw_in_deleteMin (.Node a u b) hb.1.1 x y hs₁
+              change
+                ((CompCert4Lean.Lib.Heaps.SplayHeapSet.R.In E y (.Node a u b) ∨
+                    E.eq y w ∨
+                    CompCert4Lean.Lib.Heaps.SplayHeapSet.R.In E y l₂) ∨
+                  E.eq y z ∨
+                  CompCert4Lean.Lib.Heaps.SplayHeapSet.R.In E y r ↔
+                  E.eq x y ∨
+                    CompCert4Lean.Lib.Heaps.SplayHeapSet.R.In E y
+                      (CompCert4Lean.Lib.Heaps.SplayHeapSet.R.deleteMin E
+                        (.Node a u b)) ∨
+                    E.eq y w ∨
+                    CompCert4Lean.Lib.Heaps.SplayHeapSet.R.In E y l₂ ∨
+                    E.eq y z ∨
+                    CompCert4Lean.Lib.Heaps.SplayHeapSet.R.In E y r)
+              constructor
+              · intro h
+                rcases h with h | h | h
+                · rcases h with h | h | h
+                  · rcases hi.mp h with h | h
+                    · exact Or.inl h
+                    · exact Or.inr (Or.inl h)
+                  · exact Or.inr (Or.inr (Or.inl h))
+                  · exact Or.inr (Or.inr (Or.inr (Or.inl h)))
+                · exact Or.inr (Or.inr (Or.inr (Or.inr (Or.inl h))))
+                · exact Or.inr (Or.inr (Or.inr (Or.inr (Or.inr h))))
+              · intro h
+                rcases h with h | h | h | h | h | h
+                · exact Or.inl (Or.inl (hi.mpr (Or.inl h)))
+                · exact Or.inl (Or.inl (hi.mpr (Or.inr h)))
+                · exact Or.inl (Or.inr (Or.inl h))
+                · exact Or.inl (Or.inr (Or.inr h))
+                · exact Or.inr (Or.inl h)
+                · exact Or.inr (Or.inr h)
+
+private theorem pheap_in_deleteMin :
+    ∀ (s : CompCert4Lean.Lib.Heaps.PHeap.t)
+      (x y : CompCert4Lean.Foundation.Numbers.Rocq.Coq.positive),
+      CompCert4Lean.Lib.Heaps.PHeap.findMin s = some x →
+      (CompCert4Lean.Lib.Heaps.PHeap.In y s ↔
+        x = y ∨ CompCert4Lean.Lib.Heaps.PHeap.In y
+          (CompCert4Lean.Lib.Heaps.PHeap.deleteMin s)) := by
+  intro s x y hs
+  rcases s with ⟨h, hb⟩
+  exact raw_in_deleteMin h hb x y hs
+
+theorem pick_some : pick_someStatement := by
+  intro s n s' hs n'
+  unfold pick at hs
+  cases hfind : CompCert4Lean.Lib.Heaps.PHeap.findMin s with
+  | none => simp [hfind] at hs
+  | some m =>
+      rw [hfind] at hs
+      have hresult := pheap_in_deleteMin s m n' hfind
+      change some (m, CompCert4Lean.Lib.Heaps.PHeap.deleteMin s) =
+        some (n, s') at hs
+      cases hs
+      exact hresult
+
+end CompCert4Lean.Backend.Kildall.NodeSetBackward

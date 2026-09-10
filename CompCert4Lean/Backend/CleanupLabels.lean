@@ -270,3 +270,23 @@ def transf_program (p : program) : program :=
   CompCert4Lean.Common.AST.transform_program transf_fundef p
 
 end CompCert4Lean.Backend.CleanupLabels
+
+namespace CompCert4Lean.Backend.CleanupLabels
+
+namespace Labelset
+
+theorem mem_1_proof : mem_1 := by
+  intro s x hx
+  exact CompCert4Lean.Lib.FSetAVLplus.Make.mem_1 (X := EOrder) s x hx
+
+theorem add_1_proof : add_1 := by
+  intro s x y hxy
+  exact CompCert4Lean.Lib.FSetAVLplus.Make.add_1 (X := EOrder) s x y hxy
+
+theorem add_2_proof : add_2 := by
+  intro s x y hy
+  exact CompCert4Lean.Lib.FSetAVLplus.Make.add_2 (X := EOrder) s x y hy
+
+end Labelset
+
+end CompCert4Lean.Backend.CleanupLabels

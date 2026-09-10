@@ -119,3 +119,106 @@ def Zdigits2_ZdigitsStatement : Prop :=
   ∀ n : Z, Zdigits2 n = Zdigits radix2 n
 
 end CompCert4Lean.Flocq.Core.Digits
+
+namespace CompCert4Lean.Flocq.Core.Digits
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt
+
+private theorem digits_intOfZ_of_nat (n : Nat) :
+    intOfZ (ZArith.BinInt.Z.of_nat n) = Int.ofNat n := by
+  unfold ZArith.BinInt.Z.of_nat
+  exact intOfZ_zOfInt _
+
+private theorem digits_intOfZ_power_nat (x : Z) (n : Nat) :
+    intOfZ (Zpower_nat x n) = (intOfZ x) ^ n := by
+  change intOfZ (ZArith.BinInt.Z.pow x (ZArith.BinInt.Z.of_nat n)) = _
+  unfold ZArith.BinInt.Z.pow
+  rw [digits_intOfZ_of_nat]
+  split
+  · next h => exact False.elim ((Int.not_lt_of_ge (Int.natCast_nonneg _)) h)
+  · next h =>
+      change intOfZ (zOfInt ((intOfZ x).pow n)) = (intOfZ x) ^ n
+      exact intOfZ_zOfInt _
+
+theorem digits2_Pnat_correct : digits2_Pnat_correctStatement := by
+  intro n
+  let d := digits2_Pnat n
+  dsimp [d]
+  induction n with
+  | xH =>
+      constructor
+      · change intOfZ (Zpower_nat Ztwo 0) <= intOfZ (Zpos .xH)
+        rw [digits_intOfZ_power_nat]
+        simp [intOfZ, posToNat]
+      · change intOfZ (Zpos .xH) < intOfZ (Zpower_nat Ztwo (Nat.succ 0))
+        rw [digits_intOfZ_power_nat]
+        simp [intOfZ, posToNat]
+  | xI p ih =>
+      have ih1 :
+          intOfZ (Zpower_nat Ztwo (digits2_Pnat p)) <= intOfZ (Zpos p) := by
+        exact ih.1
+      have ih2 :
+          intOfZ (Zpos p) < intOfZ (Zpower_nat Ztwo (Nat.succ (digits2_Pnat p))) := by
+        exact ih.2
+      rw [digits_intOfZ_power_nat] at ih1 ih2
+      simp [intOfZ, posToNat] at ih1 ih2
+      constructor
+      · change intOfZ (Zpower_nat Ztwo (Nat.succ (digits2_Pnat p))) <=
+          intOfZ (Zpos (.xI p))
+        rw [digits_intOfZ_power_nat]
+        simp [intOfZ, posToNat]
+        rw [Int.pow_succ]
+        omega
+      · change intOfZ (Zpos (.xI p)) <
+          intOfZ (Zpower_nat Ztwo (Nat.succ (Nat.succ (digits2_Pnat p))))
+        rw [digits_intOfZ_power_nat]
+        simp [intOfZ, posToNat]
+        rw [Int.pow_succ, Int.pow_succ]
+        omega
+  | xO p ih =>
+      have ih1 :
+          intOfZ (Zpower_nat Ztwo (digits2_Pnat p)) <= intOfZ (Zpos p) := by
+        exact ih.1
+      have ih2 :
+          intOfZ (Zpos p) < intOfZ (Zpower_nat Ztwo (Nat.succ (digits2_Pnat p))) := by
+        exact ih.2
+      rw [digits_intOfZ_power_nat] at ih1 ih2
+      simp [intOfZ, posToNat] at ih1 ih2
+      constructor
+      · change intOfZ (Zpower_nat Ztwo (Nat.succ (digits2_Pnat p))) <=
+          intOfZ (Zpos (.xO p))
+        rw [digits_intOfZ_power_nat]
+        simp [intOfZ, posToNat]
+        rw [Int.pow_succ]
+        omega
+      · change intOfZ (Zpos (.xO p)) <
+          intOfZ (Zpower_nat Ztwo (Nat.succ (Nat.succ (digits2_Pnat p))))
+        rw [digits_intOfZ_power_nat]
+        simp [intOfZ, posToNat]
+        rw [Int.pow_succ, Int.pow_succ]
+        omega
+
+private theorem digits_Zabs_pos (p : positive) : Zabs (Zpos p) = Zpos p := by
+  apply intOfZ_injective
+  change intOfZ (zOfInt (Int.natAbs (Int.ofNat (posToNat p)))) =
+    Int.ofNat (posToNat p)
+  rw [intOfZ_zOfInt]
+  exact Int.natAbs_of_nonneg (Int.natCast_nonneg _)
+
+private theorem digits_Zabs_neg (p : positive) : Zabs (Zneg p) = Zpos p := by
+  apply intOfZ_injective
+  change intOfZ (zOfInt (Int.natAbs (-Int.ofNat (posToNat p)))) =
+    Int.ofNat (posToNat p)
+  rw [intOfZ_zOfInt]
+  simp
+
+theorem Zdigits_abs : Zdigits_absStatement := by
+  intro beta n
+  cases n
+  · rfl
+  · rw [digits_Zabs_pos]
+  · rw [digits_Zabs_neg]
+    rfl
+
+end CompCert4Lean.Flocq.Core.Digits

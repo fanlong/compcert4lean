@@ -1139,3 +1139,191 @@ theorem combine_compimm_ne_1_ind : combine_compimm_ne_1_indStatement := by
             exact hcmp _ _ rfl
 
 end CompCert4Lean.X86.CombineOp
+
+namespace CompCert4Lean.X86.CombineOp
+
+theorem R_combine_addr_32_complete : R_combine_addr_32_completeStatement := by
+  intro get addr args res h
+  cases h with
+  | R_combine_addr_32_0 addr args n haddr x hargs a ys hg a' ho =>
+      subst addr; subst args; simp [combine_addr_32, hg, ho]
+  | R_combine_addr_32_1 addr args n haddr x hargs a ys hg ho =>
+      subst addr; subst args; simp [combine_addr_32, hg, ho]
+  | R_combine_addr_32_2 addr args n haddr x hargs r hg hb =>
+      subst addr; subst args
+      cases r with
+      | none => simp [combine_addr_32, hg]
+      | some r =>
+          cases r with
+          | Load chunk addr vl p => simp [combine_addr_32, hg]
+          | Builtin bf args => simp [combine_addr_32, hg]
+          | Op op ys => cases op <;> simp_all [combine_addr_32]
+  | R_combine_addr_32_3 addr args a haddr xs hargs hb =>
+      cases haddr; cases hargs; simp [combine_addr_32]; split <;> simp_all
+
+theorem R_combine_addr_64_complete : R_combine_addr_64_completeStatement := by
+  intro get addr args res h
+  cases h with
+  | R_combine_addr_64_0 addr args n haddr x hargs a ys hg a' ho =>
+      subst addr; subst args; simp [combine_addr_64, hg, ho]
+  | R_combine_addr_64_1 addr args n haddr x hargs a ys hg ho =>
+      subst addr; subst args; simp [combine_addr_64, hg, ho]
+  | R_combine_addr_64_2 addr args n haddr x hargs r hg hb =>
+      subst addr; subst args
+      cases r with
+      | none => simp [combine_addr_64, hg]
+      | some r =>
+          cases r with
+          | Load chunk addr vl p => simp [combine_addr_64, hg]
+          | Builtin bf args => simp [combine_addr_64, hg]
+          | Op op ys => cases op <;> simp_all [combine_addr_64]
+  | R_combine_addr_64_3 addr args a haddr xs hargs hb =>
+      cases haddr; cases hargs; simp [combine_addr_64]; split <;> simp_all
+
+end CompCert4Lean.X86.CombineOp
+
+namespace CompCert4Lean.X86.CombineOp
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Backend.CSEdomain
+open CompCert4Lean.X86.Op
+
+def R_combine_addr_32_correct : R_combine_addr_32_correctStatement := by
+  intro get addr args res hres
+  subst res
+  have mk3 : ∀ (a : addressing) (xs : List valnum),
+      (match a with
+       | .Aindexed _ =>
+           match xs with
+           | [_] => False
+           | _ => True
+       | _ => True) → R_combine_addr_32 get a xs none := by
+    intro a xs h
+    exact R_combine_addr_32_3 a xs a rfl xs rfl h
+  have mk2 : ∀ (n : Z) (x : valnum) (r : Option rhs),
+      get x = r →
+      (match r with
+       | some (.Op (.Olea _) _) => False
+       | _ => True) →
+      R_combine_addr_32 get (.Aindexed n) [x] none := by
+    intro n x r hr hb
+    exact R_combine_addr_32_2 (.Aindexed n) [x] n rfl x rfl r hr hb
+  cases addr with
+  | Aindexed n =>
+      cases args with
+      | nil =>
+          simpa [combine_addr_32] using mk3 (.Aindexed n) [] (by simp)
+      | cons x xs =>
+          cases xs with
+          | nil =>
+              cases hg : get x with
+              | none =>
+                  simpa [combine_addr_32, hg] using mk2 n x none hg (by simp)
+              | some r =>
+                  cases r with
+                  | Load chunk addr vl p =>
+                      simpa [combine_addr_32, hg] using
+                        mk2 n x (some (.Load chunk addr vl p)) hg (by simp)
+                  | Builtin bf args =>
+                      simpa [combine_addr_32, hg] using
+                        mk2 n x (some (.Builtin bf args)) hg (by simp)
+                  | Op op ys =>
+                      cases op with
+                      | Olea a =>
+                          cases ho : offset_addressing a n with
+                          | none =>
+                              simpa [combine_addr_32, hg, ho] using
+                                R_combine_addr_32_1 (.Aindexed n) [x] n rfl x rfl a ys hg ho
+                          | some a' =>
+                              simpa [combine_addr_32, hg, ho] using
+                                R_combine_addr_32_0 (.Aindexed n) [x] n rfl x rfl a ys hg a' ho
+                      | _ =>
+                          simpa [combine_addr_32, hg] using
+                            mk2 n x _ hg (by simp)
+          | cons y ys =>
+              simpa [combine_addr_32] using mk3 (.Aindexed n) (x :: y :: ys) (by simp)
+  | Aindexed2 ofs =>
+      simpa [combine_addr_32] using mk3 (.Aindexed2 ofs) args (by simp)
+  | Ascaled scale ofs =>
+      simpa [combine_addr_32] using mk3 (.Ascaled scale ofs) args (by simp)
+  | Aindexed2scaled scale ofs =>
+      simpa [combine_addr_32] using mk3 (.Aindexed2scaled scale ofs) args (by simp)
+  | Aglobal id ofs =>
+      simpa [combine_addr_32] using mk3 (.Aglobal id ofs) args (by simp)
+  | Abased id ofs =>
+      simpa [combine_addr_32] using mk3 (.Abased id ofs) args (by simp)
+  | Abasedscaled scale id ofs =>
+      simpa [combine_addr_32] using mk3 (.Abasedscaled scale id ofs) args (by simp)
+  | Ainstack ofs =>
+      simpa [combine_addr_32] using mk3 (.Ainstack ofs) args (by simp)
+
+def R_combine_addr_64_correct : R_combine_addr_64_correctStatement := by
+  intro get addr args res hres
+  subst res
+  have mk3 : ∀ (a : addressing) (xs : List valnum),
+      (match a with
+       | .Aindexed _ =>
+           match xs with
+           | [_] => False
+           | _ => True
+       | _ => True) → R_combine_addr_64 get a xs none := by
+    intro a xs h
+    exact R_combine_addr_64_3 a xs a rfl xs rfl h
+  have mk2 : ∀ (n : Z) (x : valnum) (r : Option rhs),
+      get x = r →
+      (match r with
+       | some (.Op (.Oleal _) _) => False
+       | _ => True) →
+      R_combine_addr_64 get (.Aindexed n) [x] none := by
+    intro n x r hr hb
+    exact R_combine_addr_64_2 (.Aindexed n) [x] n rfl x rfl r hr hb
+  cases addr with
+  | Aindexed n =>
+      cases args with
+      | nil =>
+          simpa [combine_addr_64] using mk3 (.Aindexed n) [] (by simp)
+      | cons x xs =>
+          cases xs with
+          | nil =>
+              cases hg : get x with
+              | none =>
+                  simpa [combine_addr_64, hg] using mk2 n x none hg (by simp)
+              | some r =>
+                  cases r with
+                  | Load chunk addr vl p =>
+                      simpa [combine_addr_64, hg] using
+                        mk2 n x (some (.Load chunk addr vl p)) hg (by simp)
+                  | Builtin bf args =>
+                      simpa [combine_addr_64, hg] using
+                        mk2 n x (some (.Builtin bf args)) hg (by simp)
+                  | Op op ys =>
+                      cases op with
+                      | Oleal a =>
+                          cases ho : offset_addressing a n with
+                          | none =>
+                              simpa [combine_addr_64, hg, ho] using
+                                R_combine_addr_64_1 (.Aindexed n) [x] n rfl x rfl a ys hg ho
+                          | some a' =>
+                              simpa [combine_addr_64, hg, ho] using
+                                R_combine_addr_64_0 (.Aindexed n) [x] n rfl x rfl a ys hg a' ho
+                      | _ =>
+                          simpa [combine_addr_64, hg] using
+                            mk2 n x _ hg (by simp)
+          | cons y ys =>
+              simpa [combine_addr_64] using mk3 (.Aindexed n) (x :: y :: ys) (by simp)
+  | Aindexed2 ofs =>
+      simpa [combine_addr_64] using mk3 (.Aindexed2 ofs) args (by simp)
+  | Ascaled scale ofs =>
+      simpa [combine_addr_64] using mk3 (.Ascaled scale ofs) args (by simp)
+  | Aindexed2scaled scale ofs =>
+      simpa [combine_addr_64] using mk3 (.Aindexed2scaled scale ofs) args (by simp)
+  | Aglobal id ofs =>
+      simpa [combine_addr_64] using mk3 (.Aglobal id ofs) args (by simp)
+  | Abased id ofs =>
+      simpa [combine_addr_64] using mk3 (.Abased id ofs) args (by simp)
+  | Abasedscaled scale id ofs =>
+      simpa [combine_addr_64] using mk3 (.Abasedscaled scale id ofs) args (by simp)
+  | Ainstack ofs =>
+      simpa [combine_addr_64] using mk3 (.Ainstack ofs) args (by simp)
+
+end CompCert4Lean.X86.CombineOp

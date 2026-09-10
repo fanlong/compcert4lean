@@ -544,3 +544,90 @@ def solve_completeStatement : Prop :=
 end UniSolver
 
 end CompCert4Lean.Common.Unityping
+
+namespace CompCert4Lean.Common.Unityping.UniSolver
+
+theorem move_shape : move_shapeStatement := by
+  intro T e r1 r2 changed e' h
+  unfold move at h
+  split at h
+  · rcases h with ⟨rfl, rfl⟩
+    simp
+  · split at h
+    · rcases h with ⟨rfl, rfl⟩
+      exact ⟨Or.inr rfl, by simp⟩
+    · rcases h with ⟨rfl, rfl⟩
+      exact ⟨Or.inl rfl, by simp⟩
+    · rcases h with ⟨rfl, rfl⟩
+      exact ⟨Or.inl rfl, by simp⟩
+    · split at h
+      · rcases h with ⟨rfl, rfl⟩
+        exact ⟨Or.inl rfl, by simp⟩
+      · cases h
+
+theorem satisf_initial : satisf_initialStatement := by
+  intro T te
+  constructor
+  · intro x ty h
+    change CompCert4Lean.Lib.Maps.PTree.get x
+      (CompCert4Lean.Lib.Maps.PTree.empty T.t) = some ty at h
+    cases h
+  · intro x y h
+    change (x, y) ∈ ([] : List constraint) at h
+    cases h
+
+theorem set_incr : set_incrStatement := by
+  intro T te x ty e e' hset hs
+  unfold set at hset
+  split at hset
+  · rename_i _ hnone
+    rcases hset with ⟨rfl, rfl⟩
+    rcases hs with ⟨hmap, hconstraints⟩
+    have hmap' : ∀ y ty',
+        CompCert4Lean.Lib.Maps.PTree.get y
+          (CompCert4Lean.Lib.Maps.PTree.set x ty e.te_typ) = some ty' → te y = ty' := hmap
+    constructor
+    · intro y ty' hy
+      by_cases hxy : y = x
+      · subst y
+        rw [hnone] at hy
+        cases hy
+      · apply hmap' y ty'
+        change CompCert4Lean.Lib.Maps.PTree.get y
+          (show CompCert4Lean.Lib.Maps.PTree.tree T.t from e.te_typ) = some ty' at hy
+        change CompCert4Lean.Lib.Maps.PTree.get y
+          (CompCert4Lean.Lib.Maps.PTree.set x ty
+            (show CompCert4Lean.Lib.Maps.PTree.tree T.t from e.te_typ)) = some ty'
+        rw [CompCert4Lean.Lib.Maps.PTree.getSet_equation]
+        simp only [dif_neg hxy]
+        exact hy
+    · intro y z hy
+      exact hconstraints y z hy
+  · rename_i _ ty' hsome
+    split at hset
+    · rcases hset with ⟨rfl, rfl⟩
+      exact hs
+    · cases hset
+
+theorem set_sound : set_soundStatement := by
+  intro T te x ty e e' hset hs
+  unfold set at hset
+  split at hset
+  · rcases hset with ⟨rfl, rfl⟩
+    rcases hs with ⟨hmap, _⟩
+    apply hmap x ty
+    change CompCert4Lean.Lib.Maps.PTree.get x
+      (CompCert4Lean.Lib.Maps.PTree.set x ty
+        (show CompCert4Lean.Lib.Maps.PTree.tree T.t from e.te_typ)) = some ty
+    simpa using (CompCert4Lean.Lib.Maps.PTree.getSet_equation
+      (i := x) (j := x) (x := ty)
+      (m := (show CompCert4Lean.Lib.Maps.PTree.tree T.t from e.te_typ)))
+  · rename_i _ ty' hsome
+    split at hset
+    · rename_i hty _
+      rcases hset with ⟨rfl, rfl⟩
+      rcases hs with ⟨hmap, _⟩
+      exact (hmap x ty' hsome).trans hty.symm
+    · cases hset
+
+end CompCert4Lean.Common.Unityping.UniSolver

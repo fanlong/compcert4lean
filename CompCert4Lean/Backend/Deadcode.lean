@@ -442,3 +442,147 @@ def transf_program
       cfg (prog_defmap p) (romem_for cfg p)) p
 
 end CompCert4Lean.Backend.Deadcode
+
+namespace CompCert4Lean.Backend.Deadcode
+
+open CompCert4Lean.Backend.NeedDomain
+open CompCert4Lean.Backend.ValueAnalysis
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Builtins
+open CompCert4Lean.Common.Memdata
+
+set_option maxHeartbeats 200000 in
+theorem transfer_builtin_ind :
+    ∀ (cfg : CompilerConfig), transfer_builtin_indStatement cfg := by
+  intro cfg app P hvload hvstore hmemcpy_true hmemcpy_false hannot hannval hdebug
+    hbuiltin_dead hbuiltin_live hbuiltin_missing hother ef args res ne nm
+  cases ef with
+  | EF_external name sg =>
+      change P (.EF_external name sg) args res ne nm
+        (transfer_builtin_args (kill_builtin_res res ne, nmem_all) args)
+      exact hother _ _ _ _ _ _ rfl args rfl (by simp)
+  | EF_runtime name sg =>
+      change P (.EF_runtime name sg) args res ne nm
+        (transfer_builtin_args (kill_builtin_res res ne, nmem_all) args)
+      exact hother _ _ _ _ _ _ rfl args rfl (by simp)
+  | EF_malloc =>
+      change P .EF_malloc args res ne nm
+        (transfer_builtin_args (kill_builtin_res res ne, nmem_all) args)
+      exact hother _ _ _ _ _ _ rfl args rfl (by simp)
+  | EF_free =>
+      change P .EF_free args res ne nm
+        (transfer_builtin_args (kill_builtin_res res ne, nmem_all) args)
+      exact hother _ _ _ _ _ _ rfl args rfl (by simp)
+  | EF_inline_asm text sg clobbers =>
+      change P (.EF_inline_asm text sg clobbers) args res ne nm
+        (transfer_builtin_args (kill_builtin_res res ne, nmem_all) args)
+      exact hother _ _ _ _ _ _ rfl args rfl (by simp)
+  | EF_vload chunk =>
+      cases args with
+      | nil =>
+          change P (.EF_vload chunk) [] res ne nm
+            (transfer_builtin_args (kill_builtin_res res ne, nmem_all) [])
+          exact hother _ _ _ _ _ _ rfl [] rfl (by simp)
+      | cons a1 rest =>
+          cases rest with
+          | nil =>
+              change P (.EF_vload chunk) [a1] res ne nm
+                (transfer_builtin_arg All
+                  (kill_builtin_res res ne,
+                    nmem_add nm (aaddr_arg cfg app a1) (size_chunk chunk)) a1)
+              exact hvload _ _ _ _ _ _ rfl a1 rfl
+          | cons a2 rest' =>
+              change P (.EF_vload chunk) (a1 :: a2 :: rest') res ne nm
+                (transfer_builtin_args (kill_builtin_res res ne, nmem_all)
+                  (a1 :: a2 :: rest'))
+              exact hother _ _ _ _ _ _ rfl (a1 :: a2 :: rest') rfl (by simp)
+  | EF_vstore chunk =>
+      cases args with
+      | nil =>
+          change P (.EF_vstore chunk) [] res ne nm
+            (transfer_builtin_args (kill_builtin_res res ne, nmem_all) [])
+          exact hother _ _ _ _ _ _ rfl [] rfl (by simp)
+      | cons a1 rest =>
+          cases rest with
+          | nil =>
+              change P (.EF_vstore chunk) [a1] res ne nm
+                (transfer_builtin_args (kill_builtin_res res ne, nmem_all) [a1])
+              exact hother _ _ _ _ _ _ rfl [a1] rfl (by simp)
+          | cons a2 rest' =>
+              cases rest' with
+              | nil =>
+                  change P (.EF_vstore chunk) [a1, a2] res ne nm
+                    (transfer_builtin_arg All
+                      (transfer_builtin_arg (store_argument chunk)
+                        (kill_builtin_res res ne, nm) a2) a1)
+                  exact hvstore _ _ _ _ _ _ rfl a1 a2 rfl
+              | cons a3 rest'' =>
+                  change P (.EF_vstore chunk) (a1 :: a2 :: a3 :: rest'')
+                    res ne nm
+                    (transfer_builtin_args (kill_builtin_res res ne, nmem_all)
+                      (a1 :: a2 :: a3 :: rest''))
+                  exact hother _ _ _ _ _ _ rfl (a1 :: a2 :: a3 :: rest'') rfl
+                    (by simp)
+  | EF_memcpy sz al =>
+      cases args with
+      | nil =>
+          change P (.EF_memcpy sz al) [] res ne nm
+            (transfer_builtin_args (kill_builtin_res res ne, nmem_all) [])
+          exact hother _ _ _ _ _ _ rfl [] rfl (by simp)
+      | cons dst rest =>
+          cases rest with
+          | nil =>
+              change P (.EF_memcpy sz al) [dst] res ne nm
+                (transfer_builtin_args (kill_builtin_res res ne, nmem_all) [dst])
+              exact hother _ _ _ _ _ _ rfl [dst] rfl (by simp)
+          | cons src rest' =>
+              cases rest' with
+              | nil =>
+                  by_cases hcontains : nmem_contains nm (aaddr_arg cfg app dst) sz = true
+                  · dsimp [transfer_builtin]
+                    simp only [hcontains]
+                    exact hmemcpy_true _ _ _ _ _ _ _ rfl dst src rfl hcontains
+                  · have hfalse : nmem_contains nm (aaddr_arg cfg app dst) sz = false := by
+                      cases h : nmem_contains nm (aaddr_arg cfg app dst) sz <;> simp_all
+                    dsimp [transfer_builtin]
+                    simp only [hcontains]
+                    exact hmemcpy_false _ _ _ _ _ _ _ rfl dst src rfl hfalse
+              | cons a3 rest'' =>
+                  change P (.EF_memcpy sz al) (dst :: src :: a3 :: rest'')
+                    res ne nm
+                    (transfer_builtin_args (kill_builtin_res res ne, nmem_all)
+                      (dst :: src :: a3 :: rest''))
+                  exact hother _ _ _ _ _ _ rfl (dst :: src :: a3 :: rest'') rfl
+                    (by simp)
+  | EF_annot kind text targs =>
+      change P (.EF_annot kind text targs) args res ne nm
+        (transfer_builtin_args (kill_builtin_res res ne, nm) args)
+      exact hannot _ _ _ _ _ _ _ _ rfl args rfl
+  | EF_annot_val kind text targ =>
+      change P (.EF_annot_val kind text targ) args res ne nm
+        (transfer_builtin_args (kill_builtin_res res ne, nm) args)
+      exact hannval _ _ _ _ _ _ _ _ rfl args rfl
+  | EF_debug kind id targs =>
+      change P (.EF_debug kind id targs) args res ne nm
+        (kill_builtin_res res ne, nm)
+      exact hdebug _ _ _ _ _ _ _ _ rfl args rfl
+  | EF_builtin name sg =>
+      cases hlookup : lookup_builtin_function name sg with
+      | none =>
+          dsimp [transfer_builtin]
+          rw [hlookup]
+          exact hbuiltin_missing _ _ _ _ _ _ _ rfl args rfl none hlookup (by simp)
+      | some bf =>
+          cases hdead : builtin_res_dead res ne with
+          | false =>
+              dsimp [transfer_builtin]
+              rw [hlookup]
+              simp only [hdead]
+              exact hbuiltin_live _ _ _ _ _ _ _ rfl args rfl bf hlookup hdead
+          | true =>
+              dsimp [transfer_builtin]
+              rw [hlookup]
+              simp only [hdead]
+              exact hbuiltin_dead _ _ _ _ _ _ _ rfl args rfl bf hlookup hdead
+
+end CompCert4Lean.Backend.Deadcode

@@ -641,3 +641,31 @@ theorem transf_program_match : transf_program_matchStatement := by
       exact ⟨hlist p.prog_defs defs hdefs, rfl, rfl⟩
 
 end CompCert4Lean.Backend.Linearizeproof
+
+namespace CompCert4Lean.Backend.Linearizeproof.NodesetFacts
+
+theorem add_iff_proof : add_iff := by
+  intro s x y
+  constructor
+  · intro hy
+    by_cases hxy : F.E.eq x y
+    · exact Or.inl hxy
+    · exact Or.inr (F.M.add_3 s x y hxy hy)
+  · intro hy
+    cases hy with
+    | inl hxy => exact F.M.add_1 s x y hxy
+    | inr hy => exact F.M.add_2 s x y hy
+
+theorem not_mem_iff_proof : not_mem_iff := by
+  intro s x
+  constructor
+  · intro hnot
+    cases hmem : F.M.mem x s with
+    | false => rfl
+    | true => exact False.elim (hnot (F.M.mem_2 s x hmem))
+  · intro hmem hin
+    have htrue := F.M.mem_1 s x hin
+    rw [hmem] at htrue
+    cases htrue
+
+end CompCert4Lean.Backend.Linearizeproof.NodesetFacts

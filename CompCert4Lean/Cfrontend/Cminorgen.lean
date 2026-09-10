@@ -366,3 +366,133 @@ def transl_program (p : CSProgram) : Res CMProgram :=
   transform_partial_program transl_fundef p
 
 end CompCert4Lean.Cfrontend.Cminorgen
+
+namespace CompCert4Lean.Cfrontend.Cminorgen
+namespace VarSort
+
+open CompCert4Lean.Foundation.Ordered.Rocq.Coq.Sorting.Permutation
+
+private theorem perm_refl {A : Type} (l : List A) : Permutation l l := by
+  induction l with
+  | nil => exact perm_nil A
+  | cons x l ih => exact perm_skip x ih
+
+private theorem perm_sym {A : Type} {l l' : List A} :
+    Permutation l l' -> Permutation l' l := by
+  intro h
+  induction h with
+  | perm_nil => exact perm_nil _
+  | perm_skip x _ ih => exact perm_skip x ih
+  | perm_swap x y l => exact perm_swap y x l
+  | perm_trans _ _ ih1 ih2 => exact perm_trans ih2 ih1
+
+private theorem perm_append_tail {A : Type} {l1 l2 : List A}
+    (h : Permutation l1 l2) (r : List A) :
+    Permutation (l1 ++ r) (l2 ++ r) := by
+  induction h generalizing r with
+  | perm_nil => simpa using perm_refl r
+  | perm_skip x _ ih => simpa using perm_skip x (ih r)
+  | perm_swap x y l => simpa using perm_swap x y (l ++ r)
+  | perm_trans _ _ ih1 ih2 =>
+      exact perm_trans (ih1 r) (ih2 r)
+
+private theorem perm_append_head {A : Type} (r : List A) {l1 l2 : List A}
+    (h : Permutation l1 l2) : Permutation (r ++ l1) (r ++ l2) := by
+  induction r with
+  | nil => simpa using h
+  | cons x r ih => simpa using perm_skip x ih
+
+private theorem perm_move_head {A : Type} (x : A) (l : List A) :
+    Permutation (x :: l) (l ++ [x]) := by
+  induction l with
+  | nil => exact perm_refl [x]
+  | cons y l ih =>
+      exact perm_trans (perm_swap y x l) (perm_skip y ih)
+
+private theorem perm_append_comm {A : Type} (l1 l2 : List A) :
+    Permutation (l1 ++ l2) (l2 ++ l1) := by
+  induction l1 with
+  | nil => simpa using perm_refl l2
+  | cons x l1 ih =>
+      exact perm_trans (perm_skip x ih)
+        (by simpa [List.append_assoc] using
+          perm_append_tail (perm_move_head x l2) l1)
+
+private theorem permuted_merge (l1 l2) :
+    Permutation (l1 ++ l2) (merge l1 l2) := by
+  induction l1, l2 using merge.induct with
+  | case1 l2 =>
+      rw [merge.eq_1]
+      simpa using perm_refl l2
+  | case2 l1 h =>
+      rw [merge.eq_2 l1 h]
+      simpa using perm_refl l1
+  | case3 a1 l1' a2 l2' h ih =>
+      rw [merge.eq_3, if_pos h]
+      simpa using perm_skip a1 ih
+  | case4 a1 l1' a2 l2' h ih =>
+      rw [merge.eq_3, if_neg h]
+      exact perm_trans
+        (by simpa [List.append_assoc] using
+          perm_sym (perm_append_tail (perm_move_head a2 (a1 :: l1')) l2'))
+        (perm_skip a2 ih)
+
+private theorem permuted_merge_list_to_stack (stack l) :
+    Permutation (l ++ flatten_stack stack)
+      (flatten_stack (merge_list_to_stack stack l)) := by
+  induction stack generalizing l with
+  | nil =>
+      simp only [merge_list_to_stack.eq_1, flatten_stack]
+      exact perm_refl (l ++ [])
+  | cons head stack ih =>
+      cases head with
+      | none =>
+          simp only [merge_list_to_stack.eq_2, flatten_stack]
+          exact perm_refl (l ++ flatten_stack stack)
+      | some l' =>
+          rw [merge_list_to_stack.eq_3]
+          simp only [flatten_stack]
+          exact perm_trans
+            (perm_trans
+              (by simpa [List.append_assoc] using
+                perm_append_tail (perm_append_comm l l') (flatten_stack stack))
+              (by simpa [List.append_assoc] using
+                perm_append_tail (permuted_merge l' l) (flatten_stack stack)))
+            (ih (merge l' l))
+
+private theorem permuted_merge_stack (stack) :
+    Permutation (flatten_stack stack) (merge_stack stack) := by
+  induction stack with
+  | nil =>
+      simp only [flatten_stack, merge_stack]
+      exact perm_refl []
+  | cons head stack ih =>
+      cases head with
+      | none =>
+          simpa [flatten_stack, merge_stack] using ih
+      | some l =>
+          simp only [flatten_stack, merge_stack]
+          exact perm_trans (perm_append_head l ih) (permuted_merge l (merge_stack stack))
+
+private theorem permuted_iter_merge (l stack) :
+    Permutation (flatten_stack stack ++ l) (iter_merge stack l) := by
+  induction l generalizing stack with
+  | nil =>
+      rw [iter_merge.eq_1]
+      simpa using permuted_merge_stack stack
+  | cons a l ih =>
+      rw [iter_merge.eq_2]
+      exact perm_trans
+        (perm_trans
+          (by simpa [List.append_assoc] using
+            perm_append_tail (perm_append_comm (flatten_stack stack) [a]) l)
+          (by simpa [List.append_assoc] using
+            perm_append_tail (permuted_merge_list_to_stack stack [a]) l))
+        (ih (merge_list_to_stack stack [a]))
+
+theorem Permuted_sort_proof : Permuted_sort := by
+  intro l
+  simpa [sort, flatten_stack] using permuted_iter_merge l []
+
+end VarSort
+end CompCert4Lean.Cfrontend.Cminorgen

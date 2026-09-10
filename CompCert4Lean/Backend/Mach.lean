@@ -557,3 +557,45 @@ theorem is_label_correct_proof : is_label_correctStatement := by
   | Mreturn => simp [is_label]
 
 end CompCert4Lean.Backend.Mach
+
+namespace CompCert4Lean.Backend.Mach
+
+open CompCert4Lean.Common.Values
+
+theorem undef_regs_other_proof : undef_regs_otherStatement := by
+  intro r rl rs hnot
+  induction rl generalizing rs with
+  | nil => rfl
+  | cons r1 rl ih =>
+      have hne : r ≠ r1 := by
+        intro heq
+        apply hnot
+        simp [heq]
+      have htail : r ∉ rl := by
+        intro hin
+        apply hnot
+        exact List.mem_cons_of_mem r1 hin
+      change Regmap.get r (Regmap.set r1 Vundef (undef_regs rl rs)) = rs r
+      rw [@Regmap.gso_proof val r r1 CompCert4Lean.Common.Values.Vundef (undef_regs rl rs) hne]
+      exact ih rs htail
+
+theorem undef_regs_same_proof : undef_regs_sameStatement := by
+  intro r rl rs hin
+  induction rl generalizing rs with
+  | nil => simp at hin
+  | cons r1 rl ih =>
+      simp only [List.mem_cons] at hin
+      rcases hin with heq | htail
+      · cases heq
+        change Regmap.get r (Regmap.set r CompCert4Lean.Common.Values.Vundef (undef_regs rl rs)) = CompCert4Lean.Common.Values.Vundef
+        exact @Regmap.gss_proof val r CompCert4Lean.Common.Values.Vundef (undef_regs rl rs)
+      ·
+          by_cases heq : r = r1
+          · subst r
+            change Regmap.get r1 (Regmap.set r1 CompCert4Lean.Common.Values.Vundef (undef_regs rl rs)) = CompCert4Lean.Common.Values.Vundef
+            exact @Regmap.gss_proof val r1 CompCert4Lean.Common.Values.Vundef (undef_regs rl rs)
+          · change Regmap.get r (Regmap.set r1 CompCert4Lean.Common.Values.Vundef (undef_regs rl rs)) = CompCert4Lean.Common.Values.Vundef
+            rw [@Regmap.gso_proof val r r1 CompCert4Lean.Common.Values.Vundef (undef_regs rl rs) heq]
+            exact ih rs htail
+
+end CompCert4Lean.Backend.Mach

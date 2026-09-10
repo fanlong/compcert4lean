@@ -357,3 +357,38 @@ theorem transf_program_match : transf_program_matchStatement := by
       exact ⟨hlist p.prog_defs defs hdefs, rfl, rfl⟩
 
 end CompCert4Lean.Backend.Debugvarproof
+
+namespace CompCert4Lean.Backend.Debugvarproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Backend.Debugvar
+open CompCert4Lean.Backend.Linear
+open CompCert4Lean.Common.AST
+
+theorem diff_same : diff_sameStatement := by
+  intro s
+  induction s with
+  | nil => exact CompCert4Lean.Backend.Debugvar.diff.eq_1 []
+  | cons p s ih =>
+      cases p with
+      | mk v i =>
+          rw [CompCert4Lean.Backend.Debugvar.diff.eq_3]
+          have hcmp : CompCert4Lean.Foundation.Numbers.Rocq.Coq.PArith.BinPos.Pos.compare v v =
+              CompCert4Lean.Foundation.Logic.Rocq.Coq.Init.Datatypes.comparison.Eq := by
+            change (if _ < _ then _ else if _ = _ then _ else _) = _
+            simp
+          rw [hcmp]
+          cases hinfo : CompCert4Lean.Backend.Debugvar.eq_debuginfo i i with
+          | left h => exact ih
+          | right h => exact False.elim (h rfl)
+
+theorem delta_state_same : delta_state_sameStatement := by
+  intro s
+  cases s with
+  | none => rfl
+  | some s =>
+      change (CompCert4Lean.Backend.Debugvar.diff s s,
+        CompCert4Lean.Backend.Debugvar.diff s s) = ([], [])
+      exact Prod.ext (diff_same s) (diff_same s)
+
+end CompCert4Lean.Backend.Debugvarproof
