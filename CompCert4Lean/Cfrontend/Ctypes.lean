@@ -1700,3 +1700,113 @@ theorem alignof_composite_two_p : alignof_composite_two_pStatement := by
   exact alignofCompositeTwoPower
 
 end CompCert4Lean.Cfrontend.Ctypes
+
+namespace CompCert4Lean.Cfrontend.Ctypes
+
+theorem alignof_composite_pos : alignof_composite_posStatement := by
+  intro env m a
+  exact alignAttrPositive a _ (alignof_composite_positive env m)
+
+theorem sizeof_union_pos : sizeof_union_posStatement := by
+  intro env m
+  exact sizeof_union_nonneg env m
+
+end CompCert4Lean.Cfrontend.Ctypes
+
+namespace CompCert4Lean.Cfrontend.Ctypes
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+private theorem suffix_zInt_zFromInt (i : Int) : zInt (zFromInt i) = i := by
+  change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt i) = i
+  exact CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt i
+
+private theorem suffix_alignLe (x y : Z) (hy : zGt y z0) : zLe x (align x y) := by
+  apply (zLe_iff_zInt _ _).mpr
+  simp only [align, CompCert4Lean.Lib.Coqlib.align, zMul_fromInt, zDiv_fromInt,
+    zSub_fromInt, zAdd_fromInt, suffix_zInt_zFromInt]
+  unfold intDivEucl
+  have hy0 : zInt y ≠ 0 := Int.ne_of_gt ((zLt_iff_zInt _ _).mp hy)
+  have hyp : 0 < zInt y := (zLt_iff_zInt _ _).mp hy
+  rw [if_neg hy0, if_pos hyp]
+  have hr := Int.emod_nonneg (zInt x + zInt y - 1) hy0
+  have hrlt := Int.emod_lt_of_pos (zInt x + zInt y - 1) hyp
+  have hdecomp : (zInt x + zInt y - 1).ediv (zInt y) * zInt y +
+      (zInt x + zInt y - 1) % zInt y = zInt x + zInt y - 1 := by
+    rw [Int.mul_comm]
+    exact Int.mul_ediv_add_emod (zInt x + zInt y - 1) (zInt y)
+  have hone : zInt z1 = 1 := rfl
+  rw [hone]
+  omega
+
+private theorem suffix_floorInterval (x y : Z) (hy : zGt y z0) :
+    zLe (floor x y) x ∧ zLt x (zAdd (floor x y) y) := by
+  have hyi : 0 < zInt y := (zLt_iff_zInt _ _).mp hy
+  have hy0 : zInt y ≠ 0 := Int.ne_of_gt hyi
+  have hr := Int.emod_nonneg (zInt x) hy0
+  have hrlt := Int.emod_lt_of_pos (zInt x) hyi
+  have hdecomp : (zInt x).ediv (zInt y) * zInt y + (zInt x) % zInt y = zInt x := by
+    rw [Int.mul_comm]
+    exact Int.mul_ediv_add_emod (zInt x) (zInt y)
+  constructor
+  · apply (zLe_iff_zInt _ _).mpr
+    simp only [floor, CompCert4Lean.Lib.Coqlib.floor, zMul_fromInt, zDiv_fromInt,
+      suffix_zInt_zFromInt]
+    unfold intDivEucl
+    rw [if_neg hy0, if_pos hyi]
+    omega
+  · apply (zLt_iff_zInt _ _).mpr
+    simp only [floor, CompCert4Lean.Lib.Coqlib.floor, zMul_fromInt, zDiv_fromInt,
+      zAdd_fromInt, suffix_zInt_zFromInt]
+    unfold intDivEucl
+    rw [if_neg hy0, if_pos hyi]
+    omega
+
+private theorem suffix_leAdd (x y z : Z) (hxy : zLe x y) (hz : zLe z0 z) :
+    zLe x (zAdd y z) := by
+  apply (zLe_iff_zInt _ _).mpr
+  rw [zAdd_fromInt, suffix_zInt_zFromInt]
+  exact Int.le_trans ((zLe_iff_zInt _ _).mp hxy)
+    (Int.le_add_of_nonneg_right ((zLe_iff_zInt _ _).mp hz))
+
+theorem next_field_incr : next_field_incrStatement := by
+  intro env pos m
+  cases m with
+  | Member_plain id t =>
+      simp only [next_field]
+      exact suffix_leAdd _ _ _ (suffix_alignLe _ _ (bitalignof_positive env t))
+        (bitsizeof_nonneg env t)
+  | Member_bitfield id sz sg a width padding =>
+      simp only [next_field]
+      cases hwidth : CompCert4Lean.Lib.Coqlib.zle width z0 with
+      | left hw =>
+          simp only [hwidth]
+          exact suffix_alignLe _ _ (bitalignof_intsize_positive sz)
+      | right hw =>
+          simp only [hwidth]
+          let s := bitalignof_intsize sz
+          let current := floor pos s
+          let next := zAdd current s
+          have hs : zGt s z0 := bitalignof_intsize_positive sz
+          have hwidth0 : zLe z0 width := Int.le_of_lt hw
+          have hinterval := suffix_floorInterval pos s hs
+          cases hfit : CompCert4Lean.Lib.Coqlib.zle (zAdd pos width) next with
+          | left hle =>
+              simp only [hfit]
+              exact suffix_leAdd _ _ _ (Int.le_refl _) hwidth0
+          | right hgt =>
+              simp only [hfit]
+              exact suffix_leAdd _ _ _ (Int.le_of_lt hinterval.2) hwidth0
+
+theorem bitsizeof_struct_incr : bitsizeof_struct_incrStatement := by
+  intro env m current
+  induction m generalizing current with
+  | nil =>
+      simp only [bitsizeof_struct]
+      exact Int.le_refl _
+  | cons a ms ih =>
+      simp only [bitsizeof_struct]
+      exact Int.le_trans (next_field_incr env current a) (ih (next_field env current a))
+
+end CompCert4Lean.Cfrontend.Ctypes

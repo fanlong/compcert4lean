@@ -597,3 +597,75 @@ def contains_specStatement : Prop :=
 end ISet
 
 end CompCert4Lean.Lib.IntvSets
+
+namespace CompCert4Lean.Lib.IntvSets
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+namespace ISet
+namespace R
+
+theorem In_add : In_addStatement := by
+  intro x s hs L H
+  exact inAdd x hs L H
+
+theorem In_inter : In_interStatement := by
+  intro x s1 hs1 s2 hs2
+  exact inInter x s1 s2 hs1 hs2
+
+theorem contains_In : contains_InStatement := by
+  intro l0 h0 hlh s hs
+  induction hs with
+  | ok_nil =>
+      simp [contains, In]
+      exact ⟨l0, by simp [ZArith.BinInt.Z.le], hlh⟩
+  | ok_cons l h tail bounds below tail_ok ih =>
+      simp only [contains]
+      simp only [Bool.or_eq_true, Bool.and_eq_true]
+      constructor
+      · rintro (⟨hHh, hll0⟩ | htail) x hx
+        · left
+          constructor
+          · simp [ZArith.BinInt.Z.leb, ZArith.BinInt.Z.le] at hll0 hx ⊢
+            omega
+          · simp [ZArith.BinInt.Z.leb, ZArith.BinInt.Z.lt,
+              ZArith.BinInt.Z.le] at hHh hx ⊢
+            omega
+        · right
+          exact ih.mp htail x hx
+      · intro hp
+        by_cases hHh : ZArith.BinInt.Z.leb h0 h = true
+        · by_cases hll0 : ZArith.BinInt.Z.leb l l0 = true
+          · exact Or.inl ⟨hHh, hll0⟩
+          · right
+            apply ih.mpr
+            exfalso
+            rcases hp l0 ⟨by simp [ZArith.BinInt.Z.le], hlh⟩ with hcur | htail
+            · simp [ZArith.BinInt.Z.leb, ZArith.BinInt.Z.lt,
+                ZArith.BinInt.Z.le] at hll0 hcur
+              omega
+            · have hb := below l0 htail
+              simp [ZArith.BinInt.Z.leb, ZArith.BinInt.Z.lt] at hll0 bounds hb
+              omega
+        · right
+          apply ih.mpr
+          by_cases hl0h : ZArith.BinInt.Z.le l0 h
+          · exfalso
+            have hh0 : ZArith.BinInt.Z.lt h h0 := by
+              simp [ZArith.BinInt.Z.leb, ZArith.BinInt.Z.lt] at hHh ⊢
+              omega
+            rcases hp h ⟨hl0h, hh0⟩ with hcur | htail
+            · simp [ZArith.BinInt.Z.lt] at hcur
+            · have hb := below h htail
+              simp [ZArith.BinInt.Z.lt] at hb
+          · intro x hx
+            rcases hp x hx with hcur | htail
+            · exfalso
+              simp [ZArith.BinInt.Z.lt, ZArith.BinInt.Z.le] at hl0h hx hcur
+              omega
+            · exact htail
+
+end R
+end ISet
+
+end CompCert4Lean.Lib.IntvSets

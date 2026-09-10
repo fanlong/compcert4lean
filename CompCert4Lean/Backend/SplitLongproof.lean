@@ -627,3 +627,181 @@ def eval_cmplStatement : Prop :=
       eval_expr (binary64_certificate := binary64_certificate) (binary32_certificate := binary32_certificate) xi (Genv.globalenv prog) sp e m le (cmpl c a b) v
 
 end CompCert4Lean.Backend.SplitLongproof
+
+namespace CompCert4Lean.Backend.SplitLongproof
+
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+variable
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+
+theorem eval_builtin_1 : eval_builtin_1Statement := by
+  intro xi prog sp e m bf le id sg arg1 varg1 vres harg hlookup hsem
+  refine CompCert4Lean.Backend.CminorSel.eval_expr.builtin (le := le)
+    (ef := .EF_builtin id sg)
+    (al := CompCert4Lean.Backend.CminorSel.exprlist.Econs arg1
+      CompCert4Lean.Backend.CminorSel.exprlist.Enil) (vl := [varg1])
+    (v := vres) ?_ ?_
+  · exact CompCert4Lean.Backend.CminorSel.eval_exprlist.cons le arg1
+      CompCert4Lean.Backend.CminorSel.exprlist.Enil varg1 [] harg
+      (CompCert4Lean.Backend.CminorSel.eval_exprlist.nil le)
+  · simpa [CompCert4Lean.Common.Events.external_call,
+      CompCert4Lean.Common.Events.builtin_or_external_sem, hlookup] using
+      (CompCert4Lean.Common.Events.known_builtin_sem_intro [varg1] vres m hsem)
+
+private theorem splitlong_ptreeGetSet0Same {A : Type} (i : positive) (x : A) :
+    PTree.get' i (PTree.set0 i x) = some x := by
+  induction i <;> simp [PTree.get', PTree.set0, *]
+
+private theorem splitlong_ptreeGetSet'Same {A : Type} (i : positive) (x : A)
+    (m : PTree.tree' A) : PTree.get' i (PTree.set' i x m) = some x := by
+  induction i generalizing m <;> cases m <;>
+    simp [PTree.get', PTree.set', splitlong_ptreeGetSet0Same, *]
+
+private theorem splitlong_ptreeGetSetSame {A : Type} (i : positive) (x : A) (m : PTree.t A) :
+    PTree.get i (PTree.set i x m) = some x := by
+  cases m <;> simp [PTree.get, PTree.set, splitlong_ptreeGetSet0Same,
+    splitlong_ptreeGetSet'Same]
+
+private theorem splitlong_ptreeGetSet0Other {A : Type} (i j : positive) (x : A) (h : i ≠ j) :
+    PTree.get' i (PTree.set0 j x) = none := by
+  induction j generalizing i with
+  | xH => cases i <;> simp_all [PTree.get', PTree.set0]
+  | xI j ih => cases i <;> simp_all [PTree.get', PTree.set0]
+  | xO j ih => cases i <;> simp_all [PTree.get', PTree.set0]
+
+private theorem splitlong_ptreeGetSet'Other {A : Type} (i j : positive) (x : A)
+    (m : PTree.tree' A) (h : i ≠ j) :
+    PTree.get' i (PTree.set' j x m) = PTree.get' i m := by
+  induction j generalizing i m with
+  | xH => cases i <;> cases m <;> simp_all [PTree.get', PTree.set']
+  | xI j ih => cases i <;> cases m <;>
+      simp_all [PTree.get', PTree.set', splitlong_ptreeGetSet0Other]
+  | xO j ih => cases i <;> cases m <;>
+      simp_all [PTree.get', PTree.set', splitlong_ptreeGetSet0Other]
+
+private theorem splitlong_ptreeGetSetOther {A : Type} (i j : positive) (x : A)
+    (m : PTree.t A) (h : i ≠ j) :
+    PTree.get i (PTree.set j x m) = PTree.get i m := by
+  cases m <;> simp [PTree.get, PTree.set, splitlong_ptreeGetSet0Other,
+    splitlong_ptreeGetSet'Other, h]
+
+private def splitlong_maps_rel {F V : Type}
+    (ge : Genv.t F V) (dm : PTree.t (globdef F V)) : Prop :=
+  ∀ id g, PTree.get id dm = some g →
+    ∃ b, Genv.find_symbol ge id = some b ∧ Genv.find_def ge b = some g
+
+private theorem splitlong_add_global_rel {F V : Type}
+    (ge : Genv.t F V) (dm : PTree.t (globdef F V))
+    (idg : ident × globdef F V)
+    (hrel : splitlong_maps_rel ge dm) :
+    splitlong_maps_rel (Genv.add_global ge idg)
+      (PTree.set idg.1 idg.2 dm) := by
+  intro id g hget
+  by_cases hid : id = idg.1
+  · subst id
+    have hnew : g = idg.2 := by
+      have := splitlong_ptreeGetSetSame (idg.1 : positive) idg.2 dm
+      exact Option.some.inj (hget.symm.trans this)
+    subst g
+    refine ⟨ge.genv_next, ?_, ?_⟩
+    · change PTree.get idg.1 (PTree.set idg.1 ge.genv_next ge.genv_symb) =
+        some ge.genv_next
+      exact splitlong_ptreeGetSetSame idg.1 ge.genv_next ge.genv_symb
+    · change PTree.get ge.genv_next
+        (PTree.set ge.genv_next idg.2 ge.genv_defs) = some idg.2
+      exact splitlong_ptreeGetSetSame ge.genv_next idg.2 ge.genv_defs
+  · have hget' : PTree.get id dm = some g := by
+      exact (splitlong_ptreeGetSetOther (id : positive) (idg.1 : positive)
+        idg.2 dm hid).symm.trans hget
+    obtain ⟨b, hsym, hdef⟩ := hrel id g hget'
+    have hbnext : b ≠ ge.genv_next :=
+      CompCert4Lean.Lib.Coqlib.Plt_ne _ _ (ge.genv_defs_range b hdef)
+    refine ⟨b, ?_, ?_⟩
+    · change PTree.get id (PTree.set idg.1 ge.genv_next ge.genv_symb) = some b
+      rw [splitlong_ptreeGetSetOther id idg.1 ge.genv_next ge.genv_symb hid]
+      exact hsym
+    · change PTree.get b (PTree.set ge.genv_next idg.2 ge.genv_defs) = some g
+      rw [splitlong_ptreeGetSetOther b ge.genv_next idg.2 ge.genv_defs hbnext]
+      exact hdef
+
+private theorem splitlong_empty_maps_rel {F V : Type} (pub : List ident) :
+    splitlong_maps_rel (Genv.empty_genv F V pub) (PTree.empty (globdef F V)) := by
+  intro id g h
+  change (none : Option (globdef F V)) = some g at h
+  cases h
+
+private theorem splitlong_fold_rel {F V : Type} :
+    ∀ (gl : List (ident × globdef F V)) (ge : Genv.t F V)
+      (dm : PTree.t (globdef F V)),
+      splitlong_maps_rel ge dm →
+      splitlong_maps_rel (Genv.add_globals ge gl)
+        (gl.foldl (fun m idg => PTree.set idg.1 idg.2 m) dm) := by
+  intro gl
+  induction gl with
+  | nil =>
+      intro ge dm hrel
+      simpa [Genv.add_globals, List.foldl] using hrel
+  | cons idg gl ih =>
+      intro ge dm hrel
+      apply ih (Genv.add_global ge idg)
+        (PTree.set idg.1 idg.2 dm)
+        (splitlong_add_global_rel ge dm idg hrel)
+
+private theorem splitlong_find_def_symbol {F V : Type}
+    (p : program F V) (id : ident) (g : globdef F V)
+    (h : PTree.get id (prog_defmap p) = some g) :
+    ∃ b, Genv.find_symbol (Genv.globalenv p) id = some b ∧
+      Genv.find_def (Genv.globalenv p) b = some g := by
+  have hrel := splitlong_fold_rel p.prog_defs
+    (Genv.empty_genv F V p.prog_public)
+    (PTree.empty (globdef F V))
+    (splitlong_empty_maps_rel p.prog_public)
+  exact hrel id g h
+
+theorem eval_helper : eval_helperStatement := by
+  intro xi prog sp e m bf le id name sg args vargs vres hargs hdecl hlookup hsem
+  obtain ⟨b, hsym, hdef⟩ := splitlong_find_def_symbol prog id
+    (.Gfun (.External (.EF_runtime name sg))) hdecl
+  refine CompCert4Lean.Backend.CminorSel.eval_expr.external (le := le)
+    (id := id) (sg := sg) (al := args) (b := b)
+    (ef := .EF_runtime name sg) (vl := vargs) (v := vres)
+    hsym ?_ rfl hargs ?_
+  · simp [Genv.find_funct_ptr, hdef]
+  · simpa [CompCert4Lean.Common.Events.external_call,
+      CompCert4Lean.Common.Events.builtin_or_external_sem, hlookup] using
+      (CompCert4Lean.Common.Events.known_builtin_sem_intro vargs vres m hsem)
+
+theorem eval_helper_1 : eval_helper_1Statement := by
+  intro xi prog sp e m bf le id name sg arg1 varg1 vres harg hdecl hlookup hsem
+  exact eval_helper xi prog sp e m bf le id name sg
+    (CompCert4Lean.Backend.CminorSel.exprlist.Econs arg1
+      CompCert4Lean.Backend.CminorSel.exprlist.Enil)
+    [varg1] vres
+    (CompCert4Lean.Backend.CminorSel.eval_exprlist.cons le arg1
+      CompCert4Lean.Backend.CminorSel.exprlist.Enil varg1 [] harg
+      (CompCert4Lean.Backend.CminorSel.eval_exprlist.nil le))
+    hdecl hlookup hsem
+
+theorem eval_helper_2 : eval_helper_2Statement := by
+  intro xi prog sp e m bf le id name sg arg1 arg2 varg1 varg2 vres
+    harg1 harg2 hdecl hlookup hsem
+  exact eval_helper xi prog sp e m bf le id name sg
+    (CompCert4Lean.Backend.CminorSel.exprlist.Econs arg1
+      (CompCert4Lean.Backend.CminorSel.exprlist.Econs arg2
+        CompCert4Lean.Backend.CminorSel.exprlist.Enil))
+    [varg1, varg2] vres
+    (CompCert4Lean.Backend.CminorSel.eval_exprlist.cons le arg1
+      (CompCert4Lean.Backend.CminorSel.exprlist.Econs arg2
+        CompCert4Lean.Backend.CminorSel.exprlist.Enil) varg1 [varg2] harg1
+      (CompCert4Lean.Backend.CminorSel.eval_exprlist.cons le arg2
+        CompCert4Lean.Backend.CminorSel.exprlist.Enil varg2 [] harg2
+        (CompCert4Lean.Backend.CminorSel.eval_exprlist.nil le)))
+    hdecl hlookup hsem
+
+end CompCert4Lean.Backend.SplitLongproof

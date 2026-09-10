@@ -907,3 +907,81 @@ end PARTITION_BETWEEN
 
 end Make
 end CompCert4Lean.Lib.FSetAVLplus
+
+namespace CompCert4Lean.Lib.FSetAVLplus.Make
+
+theorem raw_mem_between_1 : raw_mem_between_1Statement := by
+  intro X above_low_bound below_high_bound m hmem
+  induction m with
+  | Leaf => simp [raw_mem_between] at hmem
+  | Node height left value right left_ih right_ih =>
+      cases habove : above_low_bound value with
+      | false =>
+          simp only [raw_mem_between, habove] at hmem
+          rcases right_ih hmem with ⟨x, hx, habove, hbelow⟩
+          exact ⟨x, .InRight height left right value hx, habove, hbelow⟩
+      | true =>
+          cases hbelow : below_high_bound value with
+          | false =>
+              simp only [raw_mem_between, habove, hbelow] at hmem
+              rcases left_ih hmem with ⟨x, hx, habove, hbelow⟩
+              exact ⟨x, .InLeft height left right value hx, habove, hbelow⟩
+          | true =>
+              exact ⟨value, .IsRoot height left right value (X.eq_refl value),
+                habove, hbelow⟩
+
+theorem raw_mem_between_2 : raw_mem_between_2Statement := by
+  intro X above_low_bound below_high_bound above_monotone below_monotone
+    x m hbst hx habove hbelow
+  induction hbst generalizing x with
+  | BSLeaf => exact False.elim ((Raw.In_leaf_iff x).mp hx)
+  | BSNode info value left right hleft hright hlt hgt left_ih right_ih =>
+      rw [Raw.In_node_iff] at hx
+      cases hvalue_above : above_low_bound value with
+      | false =>
+          simp only [raw_mem_between, hvalue_above]
+          cases hx with
+          | inl hxleft =>
+              have hcontra : above_low_bound value = true :=
+                above_monotone x value (Or.inr (hlt x hxleft)) habove
+              rw [hvalue_above] at hcontra
+              cases hcontra
+          | inr hx =>
+              cases hx with
+              | inl hxeq =>
+                  have hcontra : above_low_bound value = true :=
+                    above_monotone x value (Or.inl hxeq) habove
+                  rw [hvalue_above] at hcontra
+                  cases hcontra
+              | inr hxright => exact right_ih x hxright habove hbelow
+      | true =>
+          cases hvalue_below : below_high_bound value with
+          | false =>
+              simp only [raw_mem_between, hvalue_above, hvalue_below]
+              cases hx with
+              | inl hxleft => exact left_ih x hxleft habove hbelow
+              | inr hx =>
+                  cases hx with
+                  | inl hxeq =>
+                      have hcontra : below_high_bound value = true :=
+                        below_monotone x value (Or.inl hxeq) hbelow
+                      rw [hvalue_below] at hcontra
+                      cases hcontra
+                  | inr hxright =>
+                      have hcontra : below_high_bound value = true :=
+                        below_monotone x value (Or.inr (hgt x hxright)) hbelow
+                      rw [hvalue_below] at hcontra
+                      cases hcontra
+          | true => simp [raw_mem_between, hvalue_above, hvalue_below]
+
+theorem mem_between_1 : mem_between_1Statement := by
+  intro X above_low_bound below_high_bound s hmem
+  exact raw_mem_between_1 X above_low_bound below_high_bound s.this hmem
+
+theorem mem_between_2 : mem_between_2Statement := by
+  intro X above_low_bound below_high_bound above_monotone below_monotone
+    x s hx habove hbelow
+  exact raw_mem_between_2 X above_low_bound below_high_bound
+    above_monotone below_monotone x s.this s.is_ok.ok hx habove hbelow
+
+end CompCert4Lean.Lib.FSetAVLplus.Make

@@ -386,3 +386,314 @@ def is_known_runtime_function_soundStatement : Prop :=
       lookup_builtin_function name sg = some bf
 
 end CompCert4Lean.Backend.RTL
+
+namespace CompCert4Lean.Backend.RTL
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Builtins
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+
+private theorem rtl_ple_refl (p : positive) : Ple p p := by
+  unfold Ple PArith.BinPos.Pos.le
+  exact Nat.le_refl _
+
+private theorem rtl_ple_trans (p q r : positive) :
+    Ple p q → Ple q r → Ple p r := by
+  intro hpq hqr
+  unfold Ple PArith.BinPos.Pos.le at *
+  exact Nat.le_trans hpq hqr
+
+private theorem rtl_ple_max_l (p q : positive) : Ple p (PArith.BinPos.Pos.max p q) := by
+  unfold Ple PArith.BinPos.Pos.le PArith.BinPos.Pos.max
+  split <;> omega
+
+private theorem rtl_ple_max_r (p q : positive) : Ple q (PArith.BinPos.Pos.max p q) := by
+  unfold Ple PArith.BinPos.Pos.le PArith.BinPos.Pos.max
+  split <;> omega
+
+private theorem rtl_foldl_max_ge (m : positive) :
+    ∀ (l : List positive) (n : positive),
+      Ple m n → Ple m (l.foldl PArith.BinPos.Pos.max n)
+  | [], _, h => h
+  | x :: xs, n, h =>
+      rtl_foldl_max_ge m xs (PArith.BinPos.Pos.max n x)
+        (rtl_ple_trans m n (PArith.BinPos.Pos.max n x) h (rtl_ple_max_l n x))
+
+private theorem rtl_foldl_max_of (r : positive) :
+    ∀ (l : List positive) (n : positive),
+      Ple r n → Ple r (l.foldl PArith.BinPos.Pos.max n)
+  | [], _, h => h
+  | x :: xs, n, h =>
+      rtl_foldl_max_of r xs (PArith.BinPos.Pos.max n x)
+        (rtl_ple_trans r n (PArith.BinPos.Pos.max n x) h (rtl_ple_max_l n x))
+
+private theorem rtl_ptree_empty_get {A : Type} (pc : positive) :
+    PTree.get pc (PTree.empty A) = none := by
+  cases pc <;> rfl
+
+private theorem rtl_ptree_set_get {A : Type} (pc k : positive) (v : A)
+    (c : PTree.t A) :
+    PTree.get pc (PTree.set k v c) =
+      match peq pc k with
+      | .left _ => some v
+      | .right _ => PTree.get pc c := by
+  exact PTree.gsspec_proof pc k v c
+
+private theorem rtl_ptree_fold_bound (f : function) (pc : node) (i : instruction) :
+    PTree.get pc f.fn_code = some i →
+      Ple pc (PTree.fold (fun m k _ => PArith.BinPos.Pos.max m k) f.fn_code .xH) := by
+  apply CompCert4Lean.Lib.Maps.PTree_Properties.fold_rec_proof
+    (V := instruction) (A := positive)
+    (f := fun m k _ => PArith.BinPos.Pos.max m k)
+    (P := fun c m => PTree.get pc c = some i → Ple pc m)
+    (init := .xH) (mFinal := f.fn_code)
+  · intro c c' m hext hc hget
+    apply hc
+    rw [hext pc]
+    exact hget
+  · intro hget
+    have hempty : PTree.get pc (PTree.empty instruction) = none :=
+      rtl_ptree_empty_get pc
+    rw [hempty] at hget
+    cases hget
+  · intro c m k v hnone hfinal hc hget
+    have hcase :
+        PTree.get pc (PTree.set k v c) =
+          match peq pc k with
+          | .left _ => some v
+          | .right _ => PTree.get pc c := rtl_ptree_set_get pc k v c
+    rw [hcase] at hget
+    cases hpk : peq pc k with
+    | left hEq =>
+      subst k
+      rw [hpk] at hget
+      have hvi : v = i := Option.some.inj hget
+      subst v
+      exact rtl_ple_max_r m pc
+    | right hNe =>
+      rw [hpk] at hget
+      exact rtl_ple_trans pc m (PArith.BinPos.Pos.max m k)
+        (hc hget) (rtl_ple_max_l m k)
+
+private theorem rtl_max_reg_instr_ge : max_reg_instr_geStatement := by
+  intro m pc i
+  cases i with
+  | Inop succ => exact rtl_ple_refl m
+  | Iop op args res succ =>
+      apply rtl_foldl_max_ge m args
+      exact rtl_ple_max_r res m
+  | Iload chunk addr args dst succ =>
+      apply rtl_foldl_max_ge m args
+      exact rtl_ple_max_r dst m
+  | Istore chunk addr args src succ =>
+      apply rtl_foldl_max_ge m args
+      exact rtl_ple_max_r src m
+  | Icall sig fn args dest succ =>
+      cases fn with
+      | inl r =>
+          apply rtl_foldl_max_ge m args
+          exact rtl_ple_trans m (PArith.BinPos.Pos.max dest m)
+            (PArith.BinPos.Pos.max r (PArith.BinPos.Pos.max dest m))
+            (rtl_ple_max_r dest m) (rtl_ple_max_r r (PArith.BinPos.Pos.max dest m))
+      | inr id =>
+          apply rtl_foldl_max_ge m args
+          exact rtl_ple_max_r dest m
+  | Itailcall sig fn args =>
+      cases fn with
+      | inl r =>
+          apply rtl_foldl_max_ge m args
+          exact rtl_ple_max_r r m
+      | inr id => exact rtl_foldl_max_ge m args m (rtl_ple_refl m)
+  | Ibuiltin ef args res succ =>
+      apply rtl_foldl_max_ge m (params_of_builtin_args args)
+      exact rtl_foldl_max_ge m (params_of_builtin_res res) m (rtl_ple_refl m)
+  | Icond cond args ifso ifnot =>
+      exact rtl_foldl_max_ge m args m (rtl_ple_refl m)
+  | Ijumptable arg tbl => exact rtl_ple_max_r arg m
+  | Ireturn ores =>
+      cases ores with
+      | none => exact rtl_ple_refl m
+      | some arg => exact rtl_ple_max_r arg m
+
+private theorem rtl_max_reg_instr_def (m : positive) (pc : node)
+    (i : instruction) (r : reg) :
+    instr_defs i = some r → Ple r (max_reg_instr m pc i) := by
+  intro h
+  cases i with
+  | Inop succ => simp [instr_defs] at h
+  | Iop op args dest succ =>
+      simp [instr_defs] at h
+      cases h
+      apply rtl_foldl_max_of r args
+      exact rtl_ple_max_l r m
+  | Iload chunk addr args dest succ =>
+      simp [instr_defs] at h
+      cases h
+      apply rtl_foldl_max_of r args
+      exact rtl_ple_max_l r m
+  | Istore chunk addr args src succ => simp [instr_defs] at h
+  | Icall sig fn args dest succ =>
+      simp [instr_defs] at h
+      cases h
+      cases fn with
+      | inl callee =>
+          apply rtl_foldl_max_of r args
+          exact rtl_ple_trans r (PArith.BinPos.Pos.max r m)
+            (PArith.BinPos.Pos.max callee (PArith.BinPos.Pos.max r m))
+            (rtl_ple_max_l r m)
+            (rtl_ple_max_r callee (PArith.BinPos.Pos.max r m))
+      | inr id =>
+          apply rtl_foldl_max_of r args
+          exact rtl_ple_max_l r m
+  | Itailcall sig fn args => simp [instr_defs] at h
+  | Ibuiltin ef args res succ =>
+      cases res with
+      | BR dest =>
+          simp [instr_defs] at h
+          cases h
+          apply rtl_foldl_max_of r (params_of_builtin_args args)
+          simpa [params_of_builtin_res, List.foldl] using (rtl_ple_max_r m r)
+      | BR_none => simp [instr_defs] at h
+      | BR_splitlong hi lo => simp [instr_defs] at h
+  | Icond cond args ifso ifnot => simp [instr_defs] at h
+  | Ijumptable arg tbl => simp [instr_defs] at h
+  | Ireturn ores => simp [instr_defs] at h
+
+private theorem rtl_ptree_reg_bound (f : function) (pc : node)
+    (i : instruction) (r : reg) :
+    PTree.get pc f.fn_code = some i → instr_defs i = some r →
+      Ple r (PTree.fold max_reg_instr f.fn_code .xH) := by
+  apply CompCert4Lean.Lib.Maps.PTree_Properties.fold_rec_proof
+    (V := instruction) (A := positive)
+    (f := max_reg_instr)
+    (P := fun c m => PTree.get pc c = some i → instr_defs i = some r → Ple r m)
+    (init := .xH) (mFinal := f.fn_code)
+  · intro c c' m hext hc hcode hdef
+    apply hc
+    · rw [hext pc]
+      exact hcode
+    · exact hdef
+  · intro hcode _
+    have hempty : PTree.get pc (PTree.empty instruction) = none :=
+      rtl_ptree_empty_get pc
+    rw [hempty] at hcode
+    cases hcode
+  · intro c m k v hnone hfinal hc hcode hdef
+    have hcase :
+        PTree.get pc (PTree.set k v c) =
+          match peq pc k with
+          | .left _ => some v
+          | .right _ => PTree.get pc c := rtl_ptree_set_get pc k v c
+    rw [hcase] at hcode
+    cases hpk : peq pc k with
+    | left hEq =>
+      rw [hpk] at hcode
+      have hvi : v = i := Option.some.inj hcode
+      subst v
+      exact rtl_max_reg_instr_def m k i r hdef
+    | right hNe =>
+      rw [hpk] at hcode
+      exact rtl_ple_trans r m (max_reg_instr m k v)
+        (hc hcode hdef) (rtl_max_reg_instr_ge m k v)
+
+theorem max_reg_instr_ge : max_reg_instr_geStatement := by
+  intro m pc i
+  cases i with
+  | Inop succ => exact rtl_ple_refl m
+  | Iop op args res succ =>
+      apply rtl_foldl_max_ge m args
+      exact rtl_ple_max_r res m
+  | Iload chunk addr args dst succ =>
+      apply rtl_foldl_max_ge m args
+      exact rtl_ple_max_r dst m
+  | Istore chunk addr args src succ =>
+      apply rtl_foldl_max_ge m args
+      exact rtl_ple_max_r src m
+  | Icall sig fn args dest succ =>
+      cases fn with
+      | inl r =>
+          apply rtl_foldl_max_ge m args
+          exact rtl_ple_trans m (PArith.BinPos.Pos.max dest m)
+            (PArith.BinPos.Pos.max r (PArith.BinPos.Pos.max dest m))
+            (rtl_ple_max_r dest m) (rtl_ple_max_r r (PArith.BinPos.Pos.max dest m))
+      | inr id =>
+          apply rtl_foldl_max_ge m args
+          exact rtl_ple_max_r dest m
+  | Itailcall sig fn args =>
+      cases fn with
+      | inl r =>
+          apply rtl_foldl_max_ge m args
+          exact rtl_ple_max_r r m
+      | inr id => exact rtl_foldl_max_ge m args m (rtl_ple_refl m)
+  | Ibuiltin ef args res succ =>
+      apply rtl_foldl_max_ge m (params_of_builtin_args args)
+      exact rtl_foldl_max_ge m (params_of_builtin_res res) m (rtl_ple_refl m)
+  | Icond cond args ifso ifnot =>
+      exact rtl_foldl_max_ge m args m (rtl_ple_refl m)
+  | Ijumptable arg tbl => exact rtl_ple_max_r arg m
+  | Ireturn ores =>
+      cases ores with
+      | none => exact rtl_ple_refl m
+      | some arg => exact rtl_ple_max_r arg m
+
+theorem max_reg_instr_def : max_reg_instr_defStatement := by
+  intro m pc i r h
+  cases i with
+  | Inop succ => simp [instr_defs] at h
+  | Iop op args dest succ =>
+      simp [instr_defs] at h
+      cases h
+      apply rtl_foldl_max_of r args
+      exact rtl_ple_max_l r m
+  | Iload chunk addr args dest succ =>
+      simp [instr_defs] at h
+      cases h
+      apply rtl_foldl_max_of r args
+      exact rtl_ple_max_l r m
+  | Istore chunk addr args src succ => simp [instr_defs] at h
+  | Icall sig fn args dest succ =>
+      simp [instr_defs] at h
+      cases h
+      cases fn with
+      | inl callee =>
+          apply rtl_foldl_max_of r args
+          exact rtl_ple_trans r (PArith.BinPos.Pos.max r m)
+            (PArith.BinPos.Pos.max callee (PArith.BinPos.Pos.max r m))
+            (rtl_ple_max_l r m)
+            (rtl_ple_max_r callee (PArith.BinPos.Pos.max r m))
+      | inr id =>
+          apply rtl_foldl_max_of r args
+          exact rtl_ple_max_l r m
+  | Itailcall sig fn args => simp [instr_defs] at h
+  | Ibuiltin ef args res succ =>
+      cases res with
+      | BR dest =>
+          simp [instr_defs] at h
+          cases h
+          apply rtl_foldl_max_of r (params_of_builtin_args args)
+          simpa [params_of_builtin_res, List.foldl] using (rtl_ple_max_r m r)
+      | BR_none => simp [instr_defs] at h
+      | BR_splitlong hi lo => simp [instr_defs] at h
+  | Icond cond args ifso ifnot => simp [instr_defs] at h
+  | Ijumptable arg tbl => simp [instr_defs] at h
+  | Ireturn ores => simp [instr_defs] at h
+
+theorem max_pc_function_sound : max_pc_function_soundStatement := by
+  intro f pc i hget
+  unfold max_pc_function
+  exact rtl_ptree_fold_bound f pc i hget
+
+theorem max_reg_function_def : max_reg_function_defStatement := by
+  intro f pc i r hcode hdef
+  unfold max_reg_function
+  exact rtl_ple_trans r (PTree.fold max_reg_instr f.fn_code .xH)
+    (PArith.BinPos.Pos.max (PTree.fold max_reg_instr f.fn_code .xH)
+      (f.fn_params.foldl PArith.BinPos.Pos.max .xH))
+    (rtl_ptree_reg_bound f pc i r hcode hdef)
+    (rtl_ple_max_l (PTree.fold max_reg_instr f.fn_code .xH)
+      (f.fn_params.foldl PArith.BinPos.Pos.max .xH))
+
+end CompCert4Lean.Backend.RTL

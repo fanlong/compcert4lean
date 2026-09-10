@@ -707,3 +707,265 @@ theorem transf_program_match : transf_program_matchStatement := by
     (by intro f tf htf; exact htf) h
 
 end CompCert4Lean.Backend.Inliningproof
+
+namespace CompCert4Lean.Backend.Inliningproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Linking
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.Backend.Inlining
+open CompCert4Lean.Backend.RTL
+
+private theorem inlining_ptree_get_set0_same {A : Type} (i : positive) (x : A) :
+    PTree.get' i (PTree.set0 i x) = some x := by
+  induction i <;> simp [PTree.get', PTree.set0, *]
+
+private theorem inlining_ptree_get_set'_same {A : Type} (i : positive) (x : A)
+    (m : PTree.tree' A) :
+    PTree.get' i (PTree.set' i x m) = some x := by
+  induction i generalizing m <;> cases m <;>
+    simp [PTree.get', PTree.set', inlining_ptree_get_set0_same, *]
+
+private theorem inlining_ptree_get_set_same {A : Type} (i : positive) (x : A)
+    (m : PTree.t A) :
+    PTree.get i (PTree.set i x m) = some x := by
+  cases m <;>
+    simp [PTree.get, PTree.set, inlining_ptree_get_set0_same,
+      inlining_ptree_get_set'_same]
+
+private theorem inlining_ptree_get_set0_other {A : Type} (i j : positive) (x : A)
+    (h : i ≠ j) : PTree.get' i (PTree.set0 j x) = none := by
+  induction j generalizing i with
+  | xH => cases i <;> simp_all [PTree.get', PTree.set0]
+  | xI j ih => cases i <;> simp_all [PTree.get', PTree.set0]
+  | xO j ih => cases i <;> simp_all [PTree.get', PTree.set0]
+
+private theorem inlining_ptree_get_set'_other {A : Type} (i j : positive) (x : A)
+    (m : PTree.tree' A) (h : i ≠ j) :
+    PTree.get' i (PTree.set' j x m) = PTree.get' i m := by
+  induction j generalizing i m with
+  | xH => cases i <;> cases m <;> simp_all [PTree.get', PTree.set']
+  | xI j ih =>
+      cases i <;> cases m <;>
+        simp_all [PTree.get', PTree.set', inlining_ptree_get_set0_other]
+  | xO j ih =>
+      cases i <;> cases m <;>
+        simp_all [PTree.get', PTree.set', inlining_ptree_get_set0_other]
+
+private theorem inlining_ptree_get_set_other {A : Type} (i j : positive) (x : A)
+    (m : PTree.t A) (h : i ≠ j) :
+    PTree.get i (PTree.set j x m) = PTree.get i m := by
+  cases m <;>
+    simp [PTree.get, PTree.set, inlining_ptree_get_set0_other,
+      inlining_ptree_get_set'_other, h]
+
+private theorem inlining_symbols_add_globals
+    {A B V : Type} (ge : Genv.t A V) (tge : Genv.t B V)
+    (hnext : tge.genv_next = ge.genv_next)
+    (hsym : ∀ s, Genv.find_symbol tge s = Genv.find_symbol ge s) :
+    ∀ (l : List (ident × globdef A V)) (tl : List (ident × globdef B V)),
+      list_forall2 (fun x y => x.1 = y.1) l tl →
+      ∀ s, Genv.find_symbol (Genv.add_globals tge tl) s =
+        Genv.find_symbol (Genv.add_globals ge l) s := by
+  intro l tl hlist
+  induction hlist generalizing ge tge with
+  | nil =>
+      simpa [Genv.add_globals] using hsym
+  | cons x y hxy htail ih =>
+      cases x with
+      | mk id gd =>
+          cases y with
+          | mk tid tgd =>
+              have hid : id = tid := hxy
+              subst tid
+              have hnext' :
+                  (Genv.add_global tge (id, tgd)).genv_next =
+                    (Genv.add_global ge (id, gd)).genv_next := by
+                change PArith.BinPos.Pos.succ tge.genv_next =
+                  PArith.BinPos.Pos.succ ge.genv_next
+                exact congrArg _ hnext
+              have hsym' : ∀ s,
+                  Genv.find_symbol (Genv.add_global tge (id, tgd)) s =
+                    Genv.find_symbol (Genv.add_global ge (id, gd)) s := by
+                intro s
+                by_cases hs : s = id
+                · subst s
+                  change PTree.get id (PTree.set id tge.genv_next tge.genv_symb) =
+                    PTree.get id (PTree.set id ge.genv_next ge.genv_symb)
+                  exact (inlining_ptree_get_set_same id tge.genv_next tge.genv_symb).trans
+                    ((congrArg some hnext).trans
+                      (inlining_ptree_get_set_same id ge.genv_next ge.genv_symb).symm)
+                · change PTree.get s (PTree.set id tge.genv_next tge.genv_symb) =
+                    PTree.get s (PTree.set id ge.genv_next ge.genv_symb)
+                  exact (inlining_ptree_get_set_other s id tge.genv_next tge.genv_symb hs).trans
+                    ((hsym s).trans
+                      (inlining_ptree_get_set_other s id ge.genv_next ge.genv_symb hs).symm)
+              simpa [Genv.add_globals] using ih
+                (Genv.add_global ge (id, gd)) (Genv.add_global tge (id, tgd)) hnext' hsym'
+
+private theorem inlining_list_forall2_fst
+    {I A B : Type} {R : (I × A) → (I × B) → Prop}
+    {l : List (I × A)} {tl : List (I × B)}
+    (h : list_forall2 R l tl)
+    (hfst : ∀ x y, R x y → x.1 = y.1) :
+    list_forall2 (fun x y => x.1 = y.1) l tl := by
+  induction h with
+  | nil => exact list_forall2.nil _
+  | cons x y hxy htail ih => exact list_forall2.cons x y (hfst x y hxy) ih
+
+theorem symbols_preserved : symbols_preservedStatement := by
+  intro cfg prog tprog hmatch s
+  unfold match_prog CompCert4Lean.Common.Linking.match_program at hmatch
+  rcases hmatch with ⟨hdefs, hmain, hpublic⟩
+  have hdefs' := inlining_list_forall2_fst hdefs (fun x y hxy => hxy.1)
+  unfold Genv.globalenv
+  apply inlining_symbols_add_globals
+    (Genv.empty_genv RTL.fundef Unit prog.prog_public)
+    (Genv.empty_genv RTL.fundef Unit tprog.prog_public)
+  · rfl
+  · intro id
+    simp [Genv.empty_genv, hpublic]
+  · exact hdefs'
+
+end CompCert4Lean.Backend.Inliningproof
+
+/-
+namespace CompCert4Lean.Backend.Inliningproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Linking
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+
+private theorem inlining_find_def_add_global_same {F V : Type}
+    (ge : Genv.t F V) (id : ident) (gd : globdef F V) :
+    Genv.find_def (Genv.add_global ge (id, gd)) ge.genv_next = some gd := by
+  unfold Genv.find_def Genv.add_global
+  exact inlining_ptree_get_set_same ge.genv_next gd ge.genv_defs
+
+private theorem inlining_find_def_add_global_other {F V : Type}
+    (ge : Genv.t F V) (id : ident) (gd : globdef F V)
+    (b : CompCert4Lean.Common.Values.block)
+    (h : b ≠ ge.genv_next) :
+    Genv.find_def (Genv.add_global ge (id, gd)) b = Genv.find_def ge b := by
+  unfold Genv.find_def Genv.add_global
+  exact inlining_ptree_get_set_other b ge.genv_next gd ge.genv_defs h
+
+private theorem inlining_function_ptrs_add_globals
+    {C A B V : Type} [LC : Linker C]
+    (match_fun : C → A → B → Prop) (match_var : V → V → Prop) (ctx : C)
+    (ge : Genv.t A V) (tge : Genv.t B V)
+    (hnext : tge.genv_next = ge.genv_next)
+    (hptr : ∀ b f, Genv.find_funct_ptr ge b = some f →
+      ∃ cu tf, Genv.find_funct_ptr tge b = some tf ∧
+        match_fun cu f tf ∧ linkorder cu ctx) :
+    ∀ (l : List (ident × globdef A V)) (tl : List (ident × globdef B V)),
+      list_forall2 (match_ident_globdef match_fun match_var ctx) l tl →
+      ∀ b f, Genv.find_funct_ptr (Genv.add_globals ge l) b = some f →
+        ∃ cu tf, Genv.find_funct_ptr (Genv.add_globals tge tl) b = some tf ∧
+          match_fun cu f tf ∧ linkorder cu ctx := by
+  intro l tl hlist
+  induction hlist generalizing ge tge hptr with
+  | nil =>
+      simpa [Genv.add_globals] using hptr
+  | cons x y hxy htail ih =>
+      cases x with
+      | mk id gd =>
+          cases y with
+          | mk tid tgd =>
+              have hid : id = tid := hxy.1
+              subst tid
+              have hnext' :
+                  (Genv.add_global tge (id, tgd)).genv_next =
+                    (Genv.add_global ge (id, gd)).genv_next := by
+                change PArith.BinPos.Pos.succ tge.genv_next =
+                  PArith.BinPos.Pos.succ ge.genv_next
+                exact congrArg _ hnext
+              intro b f hfind
+              by_cases hb : b = ge.genv_next
+              · subst b
+                cases gd with
+                | Gfun f0 =>
+                    cases tgd with
+                    | Gfun tf0 =>
+                        have hnow :
+                            Genv.find_funct_ptr (Genv.add_global ge (id, Gfun f0))
+                              ge.genv_next = some f := by
+                          simpa [Genv.add_globals] using hfind
+                        unfold Genv.find_funct_ptr at hnow
+                        rw [inlining_find_def_add_global_same] at hnow
+                        have hf : f0 = f := Option.some.inj (by simpa using hnow)
+                        subst f
+                        cases hxy.2 with
+                        | match_globdef_fun cu _ _ hlink hfun =>
+                            refine ⟨cu, tf0, ?_, hfun, hlink⟩
+                            have ht :
+                                Genv.find_funct_ptr (Genv.add_global tge (id, Gfun tf0))
+                                  tge.genv_next = some tf0 := by
+                              unfold Genv.find_funct_ptr
+                              rw [inlining_find_def_add_global_same]
+                              rfl
+                            simpa only [hnext] using ht
+                    | Gvar tv => cases hxy.2
+                | Gvar v =>
+                    have hnow :
+                        Genv.find_funct_ptr (Genv.add_global ge (id, Gvar v))
+                          ge.genv_next = some f := by
+                      simpa [Genv.add_globals] using hfind
+                    unfold Genv.find_funct_ptr at hnow
+                    rw [inlining_find_def_add_global_same] at hnow
+                    simp at hnow
+              · have hbt : b ≠ tge.genv_next := by simpa only [hnext] using hb
+                have hfind' : Genv.find_funct_ptr ge b = some f := by
+                  unfold Genv.find_funct_ptr at hfind ⊢
+                  rw [inlining_find_def_add_global_other] at hfind
+                  exact hfind
+                have hptr' : ∀ b f,
+                    Genv.find_funct_ptr (Genv.add_global ge (id, gd)) b = some f →
+                      ∃ cu tf, Genv.find_funct_ptr (Genv.add_global tge (id, tgd)) b = some tf ∧
+                        match_fun cu f tf ∧ linkorder cu ctx := by
+                  intro b' f' h'
+                  have hb' : b' ≠ ge.genv_next := by
+                    intro hbeq
+                    subst b'
+                    cases gd <;>
+                      simp [Genv.find_funct_ptr, inlining_find_def_add_global_same] at h'
+                  have hbt' : b' ≠ tge.genv_next := by simpa only [hnext] using hb'
+                  have hbase : Genv.find_funct_ptr ge b' = some f' := by
+                    unfold Genv.find_funct_ptr at h' ⊢
+                    rw [inlining_find_def_add_global_other] at h'
+                    exact h'
+                  rcases hptr b' f' hbase with ⟨cu, tf, htf, hfun, hlink⟩
+                  refine ⟨cu, tf, ?_, hfun, hlink⟩
+                  unfold Genv.find_funct_ptr at htf ⊢
+                  rw [inlining_find_def_add_global_other]
+                  exact htf
+                apply ih (Genv.add_global ge (id, gd))
+                  (Genv.add_global tge (id, tgd)) hnext' hptr' b f
+                simpa [Genv.add_globals] using hfind
+
+theorem function_ptr_translated : function_ptr_translatedStatement := by
+  letI : Linker RTL.program := by
+    exact @Linker_prog RTL.fundef Unit (Linker_fundef RTL.function) Linker_unit
+  intro cfg prog tprog hmatch b f hfind
+  unfold match_prog CompCert4Lean.Common.Linking.match_program at hmatch
+  rcases hmatch with ⟨hdefs, hmain, hpublic⟩
+  unfold Genv.globalenv
+  apply inlining_function_ptrs_add_globals
+    (fun cu f tf => transf_fundef (funenv_program cfg cu) f = .OK tf)
+    (fun x y : Unit => x = y) prog
+    (Genv.empty_genv RTL.fundef Unit prog.prog_public)
+    (Genv.empty_genv RTL.fundef Unit tprog.prog_public)
+  · rfl
+  · intro b f h
+    simp [Genv.find_funct_ptr, Genv.find_def, Genv.empty_genv] at h
+  · exact hdefs
+  · exact hfind
+
+end CompCert4Lean.Backend.Inliningproof
+-/

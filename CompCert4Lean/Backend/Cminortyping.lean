@@ -644,3 +644,491 @@ def eval_safe_exprStatement
         ge sp e m a v
 
 end CompCert4Lean.Backend.Cminortyping
+
+namespace CompCert4Lean.Backend.Cminortyping.S
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.Unityping
+open CompCert4Lean.Common.Unityping.UniSolver
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Common.Errors
+
+private theorem set_incr_aux :
+    ∀ (te : typassign) (x : CompCert4Lean.Foundation.Numbers.Rocq.Coq.positive)
+      (ty : RTLtypes.t) (e e' : typenv),
+      S.set e x ty = OK e' → satisf te e' → satisf te e := by
+  intro te x ty e e' hset hs
+  unfold set CompCert4Lean.Common.Unityping.UniSolver.set at hset
+  split at hset
+  · rename_i hget
+    cases hset
+    constructor
+    · intro y t hy
+      have hgs :=
+        (CompCert4Lean.Lib.Maps.PTree.gsspec_proof
+          (A := RTLtypes.t) y x ty (te_typ e))
+      cases hp : peq y x with
+      | left hxy =>
+          subst y
+          simp [hget] at hy
+      | right hne =>
+          have hupd : PTree.get y (PTree.set x ty (te_typ e)) = some t := by
+            rw [hgs]
+            simp [hp]
+            exact hy
+          exact hs.1 y t hupd
+    · intro y z heq
+      exact hs.2 y z heq
+  · rename_i hget
+    split at hset
+    · rename_i opt ty' dec hproof hmatch
+      cases hset
+      exact hs
+    · rename_i hne
+      cases hset
+
+theorem set_sound_proof : set_sound := by
+  intro te x ty e e' hset hs
+  unfold set CompCert4Lean.Common.Unityping.UniSolver.set at hset
+  split at hset
+  · rename_i hget
+    cases hset
+    have hg : PTree.get x (PTree.set x ty (te_typ e)) = some ty := by
+      have hg0 :=
+        (CompCert4Lean.Lib.Maps.PTree.gsspec_proof
+          (A := RTLtypes.t) x x ty (te_typ e))
+      cases hpeq : peq x x with
+      | left h => simpa [hpeq] using hg0
+      | right h => exact False.elim (h rfl)
+    exact hs.1 x ty hg
+  · rename_i hget
+    split at hset
+    · rename_i opt ty' dec hproof hmatch
+      cases hset
+      simpa [hproof] using hs.1 x ty' hget
+    · rename_i hne
+      cases hset
+
+private theorem set_list_incr_aux :
+    ∀ (te : typassign)
+      (xs : List CompCert4Lean.Foundation.Numbers.Rocq.Coq.positive)
+      (tys : List RTLtypes.t)
+      (e e' : typenv),
+      S.set_list e xs tys = OK e' → satisf te e' → satisf te e := by
+  intro te xs tys e e' h hs
+  induction xs generalizing tys e e' with
+  | nil =>
+      cases tys with
+      | nil =>
+          cases h
+          exact hs
+      | cons ty tys =>
+          simp [S.set_list, CompCert4Lean.Common.Unityping.UniSolver.set_list] at h
+  | cons x xs ih =>
+      cases tys with
+      | nil =>
+          simp [S.set_list, CompCert4Lean.Common.Unityping.UniSolver.set_list] at h
+      | cons ty tys =>
+          simp only [S.set_list, CompCert4Lean.Common.Unityping.UniSolver.set_list] at h
+          split at h
+          · cases h
+          · rename_i e1 hset
+            have htail := ih (tys := tys) (e := e1) (e' := e') h hs
+            exact set_incr_aux te x ty e e1 hset htail
+
+theorem set_list_sound_proof : set_list_sound := by
+  intro te xs tys e e' h hs
+  induction xs generalizing tys e e' with
+  | nil =>
+      cases tys with
+      | nil =>
+          simp [S.set_list, CompCert4Lean.Common.Unityping.UniSolver.set_list] at h
+          cases h
+          rfl
+      | cons ty tys =>
+          simp [S.set_list, CompCert4Lean.Common.Unityping.UniSolver.set_list] at h
+  | cons x xs ih =>
+      cases tys with
+      | nil =>
+          simp [S.set_list, CompCert4Lean.Common.Unityping.UniSolver.set_list] at h
+      | cons ty tys =>
+          simp only [S.set_list, CompCert4Lean.Common.Unityping.UniSolver.set_list] at h
+          split at h
+          · rename_i msg herr
+            cases h
+          · rename_i e1 hset
+            change S.set e x ty = OK e1 at hset
+            have hs1 : satisf te e1 := set_list_incr_aux te xs tys e1 e' h hs
+            have htail := ih (tys := tys) (e := e1) (e' := e') h hs
+            have hx : te x = ty := set_sound_proof te x ty e e1 hset hs1
+            simp only [List.map] at htail ⊢
+            rw [hx, htail]
+            rfl
+
+private theorem pget_set_same {A : Type}
+    (i : CompCert4Lean.Foundation.Numbers.Rocq.Coq.positive)
+    (v : A) (m : PTree.t A) :
+    PTree.get i (PTree.set i v m) = some v := by
+  have h := CompCert4Lean.Lib.Maps.PTree.gsspec_proof i i v m
+  cases hpeq : peq i i with
+  | left hEq => simpa [hpeq] using h
+  | right hNe => exact False.elim (hNe rfl)
+
+private theorem pget_set_other {A : Type}
+    (i j : CompCert4Lean.Foundation.Numbers.Rocq.Coq.positive)
+    (v : A) (m : PTree.t A) (hne : i ≠ j) :
+    PTree.get i (PTree.set j v m) = PTree.get i m := by
+  have h := CompCert4Lean.Lib.Maps.PTree.gsspec_proof i j v m
+  cases hpeq : peq i j with
+  | left hEq => exact False.elim (hne hEq)
+  | right hNe => simpa [hpeq] using h
+
+theorem move_sound_proof : move_sound := by
+  intro te e r1 r2 e' changed h hs
+  unfold S.move CompCert4Lean.Common.Unityping.UniSolver.move at h
+  cases hp : peq r1 r2 with
+  | left hEq =>
+      simp [hp] at h
+      cases h
+      exact hEq ▸ rfl
+  | right hNe =>
+      cases h1 : PTree.get r1 (te_typ e) with
+      | none =>
+          cases h2 : PTree.get r2 (te_typ e) with
+          | none =>
+              rw [hp, h1, h2] at h
+              cases h
+              apply hs.2 r1 r2
+              change (r1, r2) ∈ (r1, r2) :: te_equ e
+              exact List.mem_cons_self
+          | some ty2 =>
+              rw [hp, h1, h2] at h
+              cases h
+              have hu1 := pget_set_same r1 ty2 (te_typ e)
+              have hu2 := pget_set_other r2 r1 ty2 (te_typ e) hNe.symm
+              have htr1 : te r1 = ty2 := hs.1 r1 ty2 (by
+                change PTree.get r1 (PTree.set r1 ty2 (te_typ e)) = some ty2
+                exact hu1)
+              have htr2 : te r2 = ty2 := hs.1 r2 ty2 (by
+                change PTree.get r2 (PTree.set r1 ty2 (te_typ e)) = some ty2
+                exact hu2.trans h2)
+              exact htr1.trans htr2.symm
+      | some ty1 =>
+          cases h2 : PTree.get r2 (te_typ e) with
+          | none =>
+              rw [hp, h1, h2] at h
+              cases h
+              have hu1 := pget_set_other r1 r2 ty1 (te_typ e) hNe
+              have hu2 := pget_set_same r2 ty1 (te_typ e)
+              have htr1 : te r1 = ty1 := hs.1 r1 ty1 (by
+                change PTree.get r1 (PTree.set r2 ty1 (te_typ e)) = some ty1
+                exact hu1.trans h1)
+              have htr2 : te r2 = ty1 := hs.1 r2 ty1 (by
+                change PTree.get r2 (PTree.set r2 ty1 (te_typ e)) = some ty1
+                exact hu2)
+              exact htr1.trans htr2.symm
+          | some ty2 =>
+              rw [hp, h1, h2] at h
+              cases hEq : cminorTypeAlgebra.eq ty1 ty2 with
+              | left hty =>
+                simp [hEq] at h
+                have he' : e' = e := h.2.symm
+                subst e'
+                have htr1 := hs.1 r1 ty1 (by exact h1)
+                have htr2 := hs.1 r2 ty2 (by exact h2)
+                exact htr1.trans (hty.trans htr2.symm)
+              | right hty =>
+                simp [hEq] at h
+
+end CompCert4Lean.Backend.Cminortyping.S
+
+namespace CompCert4Lean.Backend.Cminortyping.S
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.Unityping
+open CompCert4Lean.Common.Unityping.UniSolver
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Common.Errors
+
+private theorem move_incr_aux :
+    ∀ (te : typassign) (e : typenv) (r1 r2 : positive)
+      (e' : typenv) (changed : Bool),
+      move e r1 r2 = OK (changed, e') → satisf te e' → satisf te e := by
+  intro te e r1 r2 e' changed h hs
+  unfold S.move CompCert4Lean.Common.Unityping.UniSolver.move at h
+  cases hp : peq r1 r2 with
+  | left hEq =>
+      simp [hp] at h
+      rcases h with ⟨rfl, rfl⟩
+      exact hs
+  | right hNe =>
+      cases h1 : PTree.get r1 (te_typ e) with
+      | none =>
+          cases h2 : PTree.get r2 (te_typ e) with
+          | none =>
+              rw [hp, h1, h2] at h
+              cases h
+              constructor
+              · intro x ty hx
+                exact hs.1 x ty hx
+              · intro x y hxy
+                exact hs.2 x y (List.mem_cons_of_mem _ hxy)
+          | some ty2 =>
+              rw [hp, h1, h2] at h
+              cases h
+              constructor
+              · intro x ty hx
+                by_cases hxr : x = r1
+                · subst x
+                  rw [h1] at hx
+                  cases hx
+                · exact hs.1 x ty (by
+                    rw [pget_set_other x r1 ty2 (te_typ e) hxr]
+                    exact hx)
+              · intro x y hxy
+                exact hs.2 x y hxy
+      | some ty1 =>
+          cases h2 : PTree.get r2 (te_typ e) with
+          | none =>
+              rw [hp, h1, h2] at h
+              cases h
+              constructor
+              · intro x ty hx
+                by_cases hxr : x = r2
+                · subst x
+                  rw [h2] at hx
+                  cases hx
+                · exact hs.1 x ty (by
+                    rw [pget_set_other x r2 ty1 (te_typ e) hxr]
+                    exact hx)
+              · intro x y hxy
+                exact hs.2 x y hxy
+          | some ty2 =>
+              rw [hp, h1, h2] at h
+              cases hEq : cminorTypeAlgebra.eq ty1 ty2 with
+              | left hty =>
+                  simp [hEq] at h
+                  rcases h with ⟨rfl, rfl⟩
+                  exact hs
+              | right hty =>
+                  simp [hEq] at h
+
+private theorem solve_rec_incr_aux :
+    ∀ (te : typassign) (q : List (positive × positive))
+      (e : typenv) (changed : Bool) (e' : typenv) (changed' : Bool),
+      CompCert4Lean.Common.Unityping.UniSolver.solve_rec cminorTypeAlgebra
+        e changed q = OK (e', changed') →
+      satisf te e' → satisf te e := by
+  intro te q
+  induction q with
+  | nil =>
+      intro e changed e' changed' h hs
+      simp [CompCert4Lean.Common.Unityping.UniSolver.solve_rec] at h
+      rcases h with ⟨rfl, rfl⟩
+      exact hs
+  | cons a q ih =>
+      rcases a with ⟨r1, r2⟩
+      intro e changed e' changed' h hs
+      simp only [CompCert4Lean.Common.Unityping.UniSolver.solve_rec] at h
+      split at h
+      · cases h
+      · rename_i changed1 e1 hmove
+        exact move_incr_aux te e r1 r2 e1 changed1 hmove
+          (ih e1 (changed || changed1) e' changed' h hs)
+
+private theorem solve_rec_sound_aux :
+    ∀ (te : typassign) (r1 r2 : positive)
+      (q : List (positive × positive)) (e : typenv) (changed : Bool)
+      (e' : typenv) (changed' : Bool),
+      CompCert4Lean.Common.Unityping.UniSolver.solve_rec cminorTypeAlgebra
+        e changed q = OK (e', changed') →
+      (r1, r2) ∈ q → satisf te e' → te r1 = te r2 := by
+  intro te r1 r2 q
+  induction q generalizing r1 r2 with
+  | nil =>
+      intro e changed e' changed' h hmem hs
+      cases hmem
+  | cons a q ih =>
+      rcases a with ⟨a1, a2⟩
+      intro e changed e' changed' h hmem hs
+      simp only [CompCert4Lean.Common.Unityping.UniSolver.solve_rec] at h
+      split at h
+      · cases h
+      · rename_i changed1 e1 hmove
+        simp only [List.mem_cons] at hmem
+        rcases hmem with hmem | hmem
+        · injection hmem with hr1 hr2
+          subst r1
+          subst r2
+          exact move_sound_proof te e a1 a2 e1 changed1 hmove
+            (solve_rec_incr_aux te q e1 (changed || changed1) e' changed' h hs)
+        · exact ih r1 r2 e1 (changed || changed1) e' changed' h hmem hs
+
+private theorem move_false_aux :
+    ∀ (e : typenv) (r1 r2 : positive) (e' : typenv),
+      move e r1 r2 = OK (false, e') →
+      te_typ e' = te_typ e ∧
+        makeassign cminorTypeAlgebra e r1 = makeassign cminorTypeAlgebra e r2 := by
+  intro e r1 r2 e' h
+  unfold S.move CompCert4Lean.Common.Unityping.UniSolver.move at h
+  cases hp : peq r1 r2 with
+  | left hEq =>
+      simp [hp] at h
+      rcases h with ⟨rfl, rfl⟩
+      exact ⟨rfl, hEq ▸ rfl⟩
+  | right hNe =>
+      cases h1 : PTree.get r1 (te_typ e) with
+      | none =>
+          cases h2 : PTree.get r2 (te_typ e) with
+          | none =>
+              rw [hp, h1, h2] at h
+              rcases h with ⟨rfl, rfl⟩
+              constructor
+              · rfl
+              · simp [CompCert4Lean.Common.Unityping.UniSolver.makeassign, h1, h2]
+          | some ty2 =>
+              rw [hp, h1, h2] at h
+              cases h
+      | some ty1 =>
+          cases h2 : PTree.get r2 (te_typ e) with
+          | none =>
+              rw [hp, h1, h2] at h
+              cases h
+          | some ty2 =>
+              rw [hp, h1, h2] at h
+              cases hEq : cminorTypeAlgebra.eq ty1 ty2 with
+              | left hty =>
+                  simp [hEq] at h
+                  rcases h with ⟨rfl, rfl⟩
+                  constructor
+                  · rfl
+                  · simp [CompCert4Lean.Common.Unityping.UniSolver.makeassign, h1, h2, hty]
+              | right hty =>
+                  simp [hEq] at h
+
+private theorem solve_rec_false_aux :
+    ∀ (r1 r2 : positive) (q : List (positive × positive))
+      (e : typenv) (changed : Bool) (e' : typenv),
+      CompCert4Lean.Common.Unityping.UniSolver.solve_rec cminorTypeAlgebra
+        e changed q = OK (e', false) →
+      changed = false ∧
+        ((r1, r2) ∈ q →
+          makeassign cminorTypeAlgebra e r1 = makeassign cminorTypeAlgebra e r2) := by
+  intro r1 r2 q
+  induction q with
+  | nil =>
+      intro e changed e' h
+      simp only [CompCert4Lean.Common.Unityping.UniSolver.solve_rec] at h
+      cases changed with
+      | false =>
+          rcases h with ⟨rfl, rfl⟩
+          exact ⟨rfl, by intro hmem; cases hmem⟩
+      | true =>
+          cases h
+  | cons a q ih =>
+      rcases a with ⟨a1, a2⟩
+      intro e changed e' h
+      simp only [CompCert4Lean.Common.Unityping.UniSolver.solve_rec] at h
+      split at h
+      · cases h
+      · rename_i changed1 e1 hmove
+        have htail := ih e1 (changed || changed1) e' h
+        rcases htail with ⟨hchanged, hmem⟩
+        have hc : changed = false := by
+          cases changed <;> cases changed1 <;> simp_all
+        have hc1 : changed1 = false := by
+          cases changed <;> cases changed1 <;> simp_all
+        subst changed
+        subst changed1
+        have hmf := move_false_aux e a1 a2 e1 hmove
+        constructor
+        · rfl
+        · intro hmem'
+          simp only [List.mem_cons] at hmem'
+          rcases hmem' with hhead | htailmem
+          · rcases hhead with ⟨rfl, rfl⟩
+            exact hmf.2
+          · have hEq := hmem htailmem
+            unfold CompCert4Lean.Common.Unityping.UniSolver.makeassign at hEq ⊢
+            rw [hmf.1] at hEq
+            exact hEq
+
+private theorem solve_constraints_incr_aux :
+    ∀ (te : typassign) (e e' : typenv),
+      CompCert4Lean.Common.Unityping.UniSolver.solve_constraints cminorTypeAlgebra e =
+        OK e' → satisf te e' → satisf te e := by
+  intro te e e' h hs
+  let P : typenv → res typenv → Prop := fun e r =>
+    ∀ e', r = OK e' → satisf te e' → satisf te e
+  have hind :=
+    CompCert4Lean.Common.Unityping.UniSolver.solve_constraints_ind
+      cminorTypeAlgebra P
+      (by
+        intro e e' hrec e'' heq hs'
+        cases heq
+        exact hs')
+      (by
+        intro e e' hrec ih e'' heq hs'
+        have hsbase := ih e'' heq hs'
+        have hsorig : satisf te e := by
+          have hs0 := solve_rec_incr_aux te (te_equ e)
+            { te_typ := te_typ e, te_equ := [] } false e' true hrec hsbase
+          constructor
+          · intro x ty hx
+            exact hs0.1 x ty hx
+          · intro x y hxy
+            exact solve_rec_sound_aux te x y (te_equ e)
+              { te_typ := te_typ e, te_equ := [] } false e' true hrec hxy hsbase
+        exact hsorig)
+      (by
+        intro e message hrec e'' heq hs'
+        cases heq)
+      e
+  exact hind e' h hs
+
+private theorem solve_constraints_sound_aux :
+    ∀ (e e' : typenv),
+      CompCert4Lean.Common.Unityping.UniSolver.solve_constraints cminorTypeAlgebra e =
+        OK e' →
+      satisf (makeassign cminorTypeAlgebra e') e' := by
+  intro e e' h
+  let P : typenv → res typenv → Prop := fun _ r =>
+    ∀ e', r = OK e' →
+      satisf (makeassign cminorTypeAlgebra e') e'
+  have hind :=
+    CompCert4Lean.Common.Unityping.UniSolver.solve_constraints_ind
+      cminorTypeAlgebra P
+      (by
+        intro e e' hrec e'' heq
+        cases heq
+        constructor
+        · intro x ty hx
+          simp [CompCert4Lean.Common.Unityping.UniSolver.makeassign, hx]
+        · intro x y hxy
+          have hf := solve_rec_false_aux x y (te_equ e)
+            { te_typ := te_typ e, te_equ := [] } false e' hrec
+          have heq' := hf.2 hxy
+          simpa [CompCert4Lean.Common.Unityping.UniSolver.makeassign] using heq')
+      (by
+        intro e e' hrec ih e'' heq
+        have hs := ih e'' heq
+        exact hs)
+      (by
+        intro e message hrec e' heq
+        cases heq)
+      e
+  exact hind e' h
+
+theorem solve_sound_proof : solve_sound := by
+  intro e te h
+  unfold S.solve CompCert4Lean.Common.Unityping.UniSolver.solve at h
+  split at h
+  · cases h
+  · rename_i e' hconstraints
+    rcases h with ⟨rfl⟩
+    exact solve_constraints_incr_aux (makeassign cminorTypeAlgebra e') e e'
+      hconstraints (solve_constraints_sound_aux e e' hconstraints)
+
+end CompCert4Lean.Backend.Cminortyping.S

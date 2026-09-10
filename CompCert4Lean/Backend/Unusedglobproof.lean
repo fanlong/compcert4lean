@@ -695,3 +695,71 @@ def transf_program_correctStatement
           (binary32_certificate := binary32_certificate) xi tp)
 
 end CompCert4Lean.Backend.Unusedglobproof
+
+namespace CompCert4Lean.Backend.Unusedglobproof
+
+namespace ISF
+
+theorem for_all_iff_proof : ISF.for_all_iff := by
+  intro s f hf
+  constructor
+  · exact ISF.source.1.for_all_1 s f hf
+  · exact ISF.source.1.for_all_2 s f hf
+
+theorem remove_iff_proof : ISF.remove_iff := by
+  intro s x y
+  constructor
+  · intro hy
+    have hys : ISF.M.In y s := ISF.source.1.remove_3 s x y hy
+    constructor
+    · exact hys
+    · intro hxy
+      exact ISF.source.1.remove_1 s x y hxy hy
+  · intro h
+    exact ISF.source.1.remove_2 s x y h.2 h.1
+
+theorem remove_b_proof : ISF.remove_b := by
+  intro s x y
+  by_cases hxy : ISF.E.eq x y
+  · have heqb : ISF.eqb x y = true := by
+      cases h : ISF.E.eq_dec x y with
+      | left h' => simp [ISF.eqb, CompCert4Lean.Lib.FSetFacts.WFacts_fun.eqb, h]
+      | right h' => exact False.elim (h' hxy)
+    have hleft : ISF.M.mem y (ISF.M.remove x s) = false := by
+      cases hm : ISF.M.mem y (ISF.M.remove x s) with
+      | false => rfl
+      | true => exact False.elim (ISF.source.1.remove_1 s x y hxy
+          (ISF.source.1.mem_2 (ISF.M.remove x s) y hm))
+    simpa [heqb] using hleft
+  · by_cases hm : ISF.M.mem y s = true
+    · have hy : ISF.M.In y s := ISF.source.1.mem_2 s y hm
+      have hremove : ISF.M.In y (ISF.M.remove x s) :=
+        ISF.source.1.remove_2 s x y hxy hy
+      have hleft : ISF.M.mem y (ISF.M.remove x s) = true :=
+        ISF.source.1.mem_1 (ISF.M.remove x s) y hremove
+      have heqb : ISF.eqb x y = false := by
+        cases h : ISF.E.eq_dec x y with
+        | left h' => exact False.elim (hxy h')
+        | right h' => simp [ISF.eqb, CompCert4Lean.Lib.FSetFacts.WFacts_fun.eqb, h]
+      simpa [hm, heqb] using hleft
+    · have hleft : ISF.M.mem y (ISF.M.remove x s) = false := by
+        cases hmr : ISF.M.mem y (ISF.M.remove x s) with
+        | false => rfl
+        | true =>
+            have hys : ISF.M.In y s := ISF.source.1.remove_3 s x y
+              (ISF.source.1.mem_2 (ISF.M.remove x s) y hmr)
+            exact False.elim (hm (ISF.source.1.mem_1 s y hys))
+      have heqb : ISF.eqb x y = false := by
+        cases h : ISF.E.eq_dec x y with
+        | left h' => exact False.elim (hxy h')
+        | right h' => simp [ISF.eqb, CompCert4Lean.Lib.FSetFacts.WFacts_fun.eqb, h]
+      simpa [hm, heqb] using hleft
+
+end ISF
+
+theorem seen_workset_incl : seen_workset_inclStatement := by
+  intro w1 w2 id hwi hid
+  cases hwi with
+  | workset_incl_intro seen _ _ => exact seen id hid
+
+end CompCert4Lean.Backend.Unusedglobproof

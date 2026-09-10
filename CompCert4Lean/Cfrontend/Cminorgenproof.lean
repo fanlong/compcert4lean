@@ -1084,3 +1084,316 @@ theorem transf_program_match : transf_program_matchStatement := by
       exact ⟨aux _ _ hdefs, rfl, rfl⟩
 
 end CompCert4Lean.Cfrontend.Cminorgenproof
+
+namespace CompCert4Lean.Cfrontend.Cminorgenproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Linking
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+
+private theorem cminorgenproof_add_global_match
+    {A B V W : Type} (R : globdef A V → globdef B W → Prop)
+    (ge1 : Genv.t A V) (ge2 : Genv.t B W)
+    (h : Genv.match_genvs R ge1 ge2)
+    (id : ident) (g1 : globdef A V) (g2 : globdef B W) (hr : R g1 g2) :
+    Genv.match_genvs R (Genv.add_global ge1 (id, g1)) (Genv.add_global ge2 (id, g2)) := by
+  change positive at id
+  constructor
+  · simp only [Genv.add_global]
+    change PArith.BinPos.Pos.succ ge2.genv_next = PArith.BinPos.Pos.succ ge1.genv_next
+    exact congrArg _ h.mge_next
+  · intro id'
+    simp only [Genv.add_global]
+    change PTree.get id' (PTree.set id ge2.genv_next ge2.genv_symb) =
+      PTree.get id' (PTree.set id ge1.genv_next ge1.genv_symb)
+    have hx2 := @PTree.gsspec_proof _ id' id ge2.genv_next ge2.genv_symb
+    have hx1 := @PTree.gsspec_proof _ id' id ge1.genv_next ge1.genv_symb
+    cases heq : peq id' id with
+    | left hij =>
+        have hx2' : PTree.get id' (PTree.set id ge2.genv_next ge2.genv_symb) =
+            some ge2.genv_next := by
+          simpa [heq] using hx2
+        have hx1' : PTree.get id' (PTree.set id ge1.genv_next ge1.genv_symb) =
+            some ge1.genv_next := by
+          simpa [heq] using hx1
+        rw [hx2', hx1', h.mge_next]
+    | right hne =>
+        have hx2' : PTree.get id' (PTree.set id ge2.genv_next ge2.genv_symb) =
+            PTree.get id' ge2.genv_symb := by
+          simpa [heq] using hx2
+        have hx1' : PTree.get id' (PTree.set id ge1.genv_next ge1.genv_symb) =
+            PTree.get id' ge1.genv_symb := by
+          simpa [heq] using hx1
+        rw [hx2', hx1', h.mge_symb]
+  · intro b
+    simp only [Genv.add_global]
+    change option_rel R
+      (PTree.get b (PTree.set ge1.genv_next g1 ge1.genv_defs))
+      (PTree.get b (PTree.set ge2.genv_next g2 ge2.genv_defs))
+    have hx1 := @PTree.gsspec_proof _ b ge1.genv_next g1 ge1.genv_defs
+    have hx2 := @PTree.gsspec_proof _ b ge2.genv_next g2 ge2.genv_defs
+    cases heq : peq b ge1.genv_next with
+    | left hb =>
+        have heq' : b = ge2.genv_next := hb.trans h.mge_next.symm
+        cases hpeq2 : peq b ge2.genv_next with
+        | left hb2 =>
+            have hx1' : PTree.get b (PTree.set ge1.genv_next g1 ge1.genv_defs) =
+                some g1 := by
+              simpa [heq] using hx1
+            have hx2' : PTree.get b (PTree.set ge2.genv_next g2 ge2.genv_defs) =
+                some g2 := by
+              simpa [hpeq2] using hx2
+            rw [hx1', hx2']
+            exact option_rel.some g1 g2 hr
+        | right hb2 => exact False.elim (hb2 heq')
+    | right hb =>
+        have hb2 : b ≠ ge2.genv_next := by
+          intro hbeq
+          apply hb
+          exact hbeq.trans h.mge_next
+        cases hpeq2 : peq b ge2.genv_next with
+        | left hb2' => exact False.elim (hb (hb2'.trans h.mge_next))
+        | right hb2' =>
+            have hx1' : PTree.get b (PTree.set ge1.genv_next g1 ge1.genv_defs) =
+                PTree.get b ge1.genv_defs := by
+              simpa [heq] using hx1
+            have hx2' : PTree.get b (PTree.set ge2.genv_next g2 ge2.genv_defs) =
+                PTree.get b ge2.genv_defs := by
+              simpa [hpeq2] using hx2
+            rw [hx1', hx2']
+            exact h.mge_defs b
+
+private theorem cminorgenproof_add_globals_match
+    {A B V W : Type} (R : globdef A V → globdef B W → Prop)
+    (gl1 : List (ident × globdef A V)) (gl2 : List (ident × globdef B W))
+    (ge1 : Genv.t A V) (ge2 : Genv.t B W) :
+    list_forall2 (fun x y => x.1 = y.1 ∧ R x.2 y.2) gl1 gl2 →
+    Genv.match_genvs R ge1 ge2 →
+    Genv.match_genvs R (Genv.add_globals ge1 gl1) (Genv.add_globals ge2 gl2) := by
+  intro hlist hge
+  induction hlist generalizing ge1 ge2 with
+  | nil => exact hge
+  | cons hd1 hd2 hhd htl ih =>
+      rcases hhd with ⟨hid, hrel⟩
+      cases hd1 with
+      | mk id1 gd1 =>
+          cases hd2 with
+          | mk id2 gd2 =>
+              simp only [Genv.add_globals, List.foldl]
+              change id1 = id2 at hid
+              subst id2
+              exact ih
+                (Genv.add_global ge1 (id1, gd1))
+                (Genv.add_global ge2 (id1, gd2))
+                (cminorgenproof_add_global_match R ge1 ge2 hge id1 gd1 gd2 hrel)
+
+private theorem cminorgenproof_globalenvs_match
+    {A B V : Type} [Linker A] [Linker V]
+    (transf : A → CompCert4Lean.Common.Errors.res B) (p : program A V) (tp : program B V)
+    (hmatch : match_program (fun _ f tf => transf f = .OK tf) Eq p tp) :
+    Genv.match_genvs
+      (match_globdef (fun _ f tf => transf f = .OK tf) Eq p)
+      (Genv.globalenv p) (Genv.globalenv tp) := by
+  have hempty : Genv.match_genvs
+      (match_globdef (fun _ f tf => transf f = .OK tf) Eq p)
+      (Genv.empty_genv A V p.prog_public) (Genv.empty_genv B V tp.prog_public) := by
+    constructor
+    · rfl
+    · intro id
+      rfl
+    · intro b
+      exact option_rel.none _
+  exact cminorgenproof_add_globals_match
+    (match_globdef (fun _ f tf => transf f = .OK tf) Eq p)
+    p.prog_defs tp.prog_defs
+    (Genv.empty_genv A V p.prog_public) (Genv.empty_genv B V tp.prog_public)
+    hmatch.1 hempty
+theorem symbols_preserved : symbols_preservedStatement := by
+  intro prog tprog hmatch s
+  letI : CompCert4Lean.Common.Linking.Linker CS.fundef :=
+    @CompCert4Lean.Common.Linking.Linker_fundef CS.function
+  letI : CompCert4Lean.Common.Linking.Linker CS.program :=
+    @CompCert4Lean.Common.Linking.Linker_prog CS.fundef Unit _ _
+  have hgenv := cminorgenproof_globalenvs_match
+    (A := CS.fundef) (B := CompCert4Lean.Backend.Cminor.fundef) (V := Unit)
+    (transf := fun f => CompCert4Lean.Cfrontend.Cminorgen.transl_fundef f)
+    (p := prog) (tp := tprog) hmatch
+  exact hgenv.mge_symb s
+
+end CompCert4Lean.Cfrontend.Cminorgenproof
+
+namespace CompCert4Lean.Cfrontend.Cminorgenproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Linking
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+
+theorem senv_preserved : senv_preservedStatement := by
+  intro prog tprog hmatch
+  letI : CompCert4Lean.Common.Linking.Linker CS.fundef :=
+    @CompCert4Lean.Common.Linking.Linker_fundef CS.function
+  letI : CompCert4Lean.Common.Linking.Linker CS.program :=
+    @CompCert4Lean.Common.Linking.Linker_prog CS.fundef Unit _ _
+  have hgenv := cminorgenproof_globalenvs_match
+    (A := CS.fundef) (B := CompCert4Lean.Backend.Cminor.fundef) (V := Unit)
+    (transf := fun f => CompCert4Lean.Cfrontend.Cminorgen.transl_fundef f)
+    (p := prog) (tp := tprog) hmatch
+  constructor
+  · intro id
+    exact hgenv.mge_symb id
+  constructor
+  · intro id
+    have hpub_general : ∀ (F V : Type) (gl : List (ident × globdef F V))
+        (ge : Genv.t F V),
+        (Genv.add_globals ge gl).genv_public = ge.genv_public := by
+      intro F V gl ge
+      induction gl generalizing ge with
+      | nil => rfl
+      | cons hd tl ih =>
+          simp only [Genv.add_globals, List.foldl]
+          exact ih (Genv.add_global ge hd)
+    have hpub : (Genv.globalenv tprog).genv_public =
+        (Genv.globalenv prog).genv_public := by
+      have htpub : (Genv.globalenv tprog).genv_public = tprog.prog_public := by
+        simpa [Genv.globalenv] using
+          hpub_general _ _ tprog.prog_defs (Genv.empty_genv _ _ tprog.prog_public)
+            |>.trans (by rfl)
+      have hspub : (Genv.globalenv prog).genv_public = prog.prog_public := by
+        simpa [Genv.globalenv] using
+          hpub_general _ _ prog.prog_defs (Genv.empty_genv _ _ prog.prog_public)
+            |>.trans (by rfl)
+      exact htpub.trans (hmatch.2.2.trans hspub.symm)
+    have hsymb : PTree.get id (Genv.globalenv tprog).genv_symb =
+        PTree.get id (Genv.globalenv prog).genv_symb := hgenv.mge_symb id
+    simp only [Genv.to_senv, Genv.public_symbol, Genv.find_symbol]
+    rw [hsymb, hpub]
+  · intro b
+    have hrel := hgenv.mge_defs b
+    simp only [Genv.to_senv, Genv.block_is_volatile, Genv.find_var_info,
+      Genv.find_def]
+    cases hs : PTree.get b (Genv.globalenv prog).genv_defs with
+    | none =>
+        have ht : PTree.get b (Genv.globalenv tprog).genv_defs = none := by
+          cases ht' : PTree.get b (Genv.globalenv tprog).genv_defs with
+          | none => rfl
+          | some gd =>
+              have hh := hrel
+              rw [hs, ht'] at hh
+              cases hh
+        simp [hs, ht]
+    | some gd =>
+        cases gd with
+        | Gfun f =>
+            cases ht : PTree.get b (Genv.globalenv tprog).genv_defs with
+            | none =>
+                have hh := hrel
+                rw [hs, ht] at hh
+            | some gd2 =>
+                have hh := hrel
+                rw [hs, ht] at hh
+                cases hh with
+                | some _ _ hgd =>
+                    cases gd2 with
+                    | Gfun tf => simp [hs, ht]
+                    | Gvar gv => cases hgd
+        | Gvar gv =>
+            cases ht : PTree.get b (Genv.globalenv tprog).genv_defs with
+            | none =>
+                have hh := hrel
+                rw [hs, ht] at hh
+                cases hh
+            | some gd2 =>
+                have hh := hrel
+                rw [hs, ht] at hh
+                cases hh with
+                | some _ _ hgd =>
+                    cases gd2 with
+                    | Gfun tf => cases hgd
+                    | Gvar gv2 =>
+                        cases hgd with
+                        | match_globdef_var _ _ hvar =>
+                            cases hvar
+                            rfl
+
+end CompCert4Lean.Cfrontend.Cminorgenproof
+
+namespace CompCert4Lean.Cfrontend.Cminorgenproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Linking
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+
+theorem function_ptr_translated : function_ptr_translatedStatement := by
+  intro prog tprog hmatch b f hfind
+  letI : CompCert4Lean.Common.Linking.Linker CS.fundef :=
+    @CompCert4Lean.Common.Linking.Linker_fundef CS.function
+  letI : CompCert4Lean.Common.Linking.Linker CS.program :=
+    @CompCert4Lean.Common.Linking.Linker_prog CS.fundef Unit _ _
+  have hgenv := cminorgenproof_globalenvs_match
+    (A := CS.fundef) (B := CompCert4Lean.Backend.Cminor.fundef) (V := Unit)
+    (transf := fun f => CompCert4Lean.Cfrontend.Cminorgen.transl_fundef f)
+    (p := prog) (tp := tprog) hmatch
+  unfold Genv.find_funct_ptr Genv.find_def at hfind ⊢
+  cases hs : PTree.get b (Genv.globalenv prog).genv_defs with
+  | none => simp [hs] at hfind
+  | some gd =>
+      cases hg : gd with
+      | Gfun f0 =>
+          simp [hs, hg] at hfind
+          subst f0
+          cases hg
+          have hrel := hgenv.mge_defs b
+          rw [hs] at hrel
+          cases ht : PTree.get b (Genv.globalenv tprog).genv_defs with
+          | none =>
+              rw [ht] at hrel
+              cases hrel
+          | some gd2 =>
+              rw [ht] at hrel
+              cases hrel with
+              | some gd1 gd2 hgd =>
+                  cases hgd with
+                  | match_globdef_fun ctx' f1 f2 horder htrans =>
+                      exact ⟨f2, by simp [ht], htrans⟩
+      | Gvar gv => simp [hs, hg] at hfind
+
+end CompCert4Lean.Cfrontend.Cminorgenproof
+
+namespace CompCert4Lean.Cfrontend.Cminorgenproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Linking
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+
+theorem functions_translated : functions_translatedStatement := by
+  intro prog tprog hmatch v f hfind
+  cases v with
+  | Vptr b ofs =>
+      simp only [Genv.find_funct] at hfind ⊢
+      split at hfind <;> rename_i heq
+      · have hptr : Genv.find_funct_ptr (Genv.globalenv prog) b = some f := by
+          simpa [heq] using hfind
+        obtain ⟨tf, hptrt, htrans⟩ :=
+          function_ptr_translated prog tprog hmatch b f hptr
+        simp [heq, hptrt]
+        exact htrans
+      · cases hfind
+  | Vundef => simp [Genv.find_funct] at hfind
+  | Vint n => simp [Genv.find_funct] at hfind
+  | Vlong n => simp [Genv.find_funct] at hfind
+  | Vfloat n => simp [Genv.find_funct] at hfind
+  | Vsingle n => simp [Genv.find_funct] at hfind
+
+end CompCert4Lean.Cfrontend.Cminorgenproof

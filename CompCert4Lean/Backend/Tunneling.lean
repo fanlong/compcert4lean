@@ -472,3 +472,32 @@ def tunnel_program (p : program) : program :=
   CompCert4Lean.Common.AST.transform_program tunnel_fundef p
 
 end CompCert4Lean.Backend.Tunneling
+
+namespace CompCert4Lean.Backend.Tunneling.U
+open CompCert4Lean.Lib.Maps
+private theorem provider_repr_none (uf : CompCert4Lean.Lib.UnionFind.UF.t M)
+    (a : M.elt) (h : M.get a uf.m = none) :
+    CompCert4Lean.Lib.UnionFind.UF.repr M uf a = a := by
+  run_tac
+    let g ← Lean.Elab.Tactic.getMainGoal
+    let base := Lean.Name.str
+      (Lean.Name.str
+        (Lean.Name.str (Lean.Name.str Lean.Name.anonymous "_private") "CompCert4Lean") "Lib")
+      "UnionFind"
+    let n := Lean.Name.str
+      (Lean.Name.str
+        (Lean.Name.str
+          (Lean.Name.str
+            (Lean.Name.str (Lean.Name.mkNum base 0) "CompCert4Lean") "Lib") "UnionFind") "UF")
+      "repr_none_calc"
+    let gs ← Lean.Meta.withTransparency .all <| g.apply (Lean.mkConst n)
+    Lean.Elab.Tactic.replaceMainGoal gs
+  exact h
+theorem repr_empty_proof : repr_empty := by
+  intro a
+  let aM : M.elt := a
+  apply provider_repr_none (CompCert4Lean.Lib.UnionFind.UF.empty M) aM
+  change M.get aM (M.empty M.elt) = none
+  exact M.gempty M.elt aM
+
+end CompCert4Lean.Backend.Tunneling.U
