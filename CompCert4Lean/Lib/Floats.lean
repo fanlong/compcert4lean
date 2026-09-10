@@ -677,3 +677,306 @@ abbrev float64_sqrt_correct : Prop := float64_sqrt_correctStatement
 end Sqrt
 
 end CompCert4Lean.Lib.Floats
+
+namespace CompCert4Lean.Lib.Floats
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Flocq.IEEE754
+open CompCert4Lean.Lib
+
+theorem cmp_of_comparison_swap : cmp_of_comparison_swapStatement := by
+  intro c x
+  cases c <;> cases x with
+  | none => rfl
+  | some v => cases v <;> simp [Integers.swap_comparison, cmp_of_comparison,
+      CompCert4Lean.Foundation.Logic.Rocq.Coq.Init.Datatypes.CompOpp]
+
+theorem cmp_of_comparison_ne_eq : cmp_of_comparison_ne_eqStatement := by
+  intro x
+  cases x with
+  | none => rfl
+  | some v => cases v <;> simp [cmp_of_comparison]
+
+theorem normalized_nan : normalized_nanStatement := by
+  have hdouble (x : Z) :
+      intOfZ (ZArith.BinInt.Z.double x) = 2 * intOfZ x := by
+    unfold ZArith.BinInt.Z.double ZArith.BinInt.Z.mul
+    simp only [intOfZ_zOfInt]
+    have h2 : intOfZ (Zpos (.xO .xH)) = (2 : Int) := by decide
+    rw [h2]
+  have hsucc (x : Z) :
+      intOfZ (ZArith.BinInt.Z.succ_double x) = 2 * intOfZ x + 1 := by
+    unfold ZArith.BinInt.Z.succ_double ZArith.BinInt.Z.succ
+    unfold ZArith.BinInt.Z.double ZArith.BinInt.Z.mul ZArith.BinInt.Z.add
+    simp only [intOfZ_zOfInt]
+    have h2 : intOfZ (Zpos (.xO .xH)) = (2 : Int) := by decide
+    have h1 : intOfZ (Zpos .xH) = (1 : Int) := by decide
+    rw [h2, h1]
+  have hpow_succ : ∀ n : Nat,
+      two_power_nat (Nat.succ n) = ZArith.BinInt.Z.double (two_power_nat n) := by
+    intro n
+    have hpow (m : Nat) :
+        ZArith.BinInt.Z.pow (Zpos (.xO .xH))
+            (ZArith.BinInt.Z.of_nat m) = zOfInt (2 ^ m) := by
+      unfold ZArith.BinInt.Z.pow ZArith.BinInt.Z.of_nat
+      simp only [intOfZ_zOfInt]
+      have h2 : intOfZ (Zpos (.xO .xH)) = (2 : Int) := by decide
+      rw [h2]
+      change (if (Int.ofNat m) < 0 then Z0 else
+        zOfInt ((2 : Int) ^ (Int.ofNat m).toNat)) = zOfInt (2 ^ m)
+      split
+      · next h => exact (Int.not_lt_of_ge (Int.natCast_nonneg _) h).elim
+      · next h => simp
+    unfold two_power_nat ZArith.Zpower.two_power_nat
+    rw [hpow, hpow]
+    apply intOfZ_injective
+    simp [ZArith.BinInt.Z.double, ZArith.BinInt.Z.mul,
+      intOfZ_zOfInt, Int.pow_succ]
+    have h2 : intOfZ (Zpos (.xO .xH)) = (2 : Int) := by decide
+    rw [h2]
+    exact Int.mul_comm _ _
+  have hp0 : two_power_nat 0 = Zpos .xH := by decide
+  have hpos : ∀ n : Nat, 0 < intOfZ (two_power_nat n) := by
+    intro n
+    induction n with
+    | zero => rw [hp0]; decide
+    | succ n ih =>
+        rw [hpow_succ, hdouble]
+        omega
+  have hrange : ∀ (n : Nat) (p : positive),
+      ZArith.BinInt.Z.le Z0 (CompCert4Lean.Lib.Zbits.P_mod_two_p p n) ∧
+      ZArith.BinInt.Z.lt (CompCert4Lean.Lib.Zbits.P_mod_two_p p n)
+        (two_power_nat n) := by
+    intro n
+    induction n with
+    | zero =>
+        intro p
+        simp only [CompCert4Lean.Lib.Zbits.P_mod_two_p]
+        change (0 ≤ intOfZ Z0 ∧ intOfZ Z0 < intOfZ (two_power_nat 0))
+        rw [hp0]
+        decide
+    | succ n ih =>
+        intro p
+        have hpow := hpow_succ n
+        cases p with
+        | xH =>
+            have hm : CompCert4Lean.Lib.Zbits.P_mod_two_p (.xH) (Nat.succ n) = Zpos .xH := by rfl
+            rw [hm]
+            change (0 ≤ intOfZ (Zpos .xH) ∧
+              intOfZ (Zpos .xH) < intOfZ (two_power_nat (Nat.succ n)))
+            rw [hpow]
+            have h2 := hdouble (two_power_nat n)
+            rw [h2]
+            have hone : intOfZ (Zpos .xH) = (1 : Int) := by decide
+            rw [hone]
+            have hpn := hpos n
+            omega
+        | xO q =>
+            have h := ih q
+            have hm : CompCert4Lean.Lib.Zbits.P_mod_two_p (.xO q) (Nat.succ n) =
+                ZArith.BinInt.Z.double (CompCert4Lean.Lib.Zbits.P_mod_two_p q n) := by rfl
+            rw [hm]
+            change (0 ≤ intOfZ (ZArith.BinInt.Z.double
+                (CompCert4Lean.Lib.Zbits.P_mod_two_p q n)) ∧
+              intOfZ (ZArith.BinInt.Z.double
+                (CompCert4Lean.Lib.Zbits.P_mod_two_p q n)) <
+                intOfZ (two_power_nat (Nat.succ n)))
+            rw [hpow]
+            have hq := hdouble (CompCert4Lean.Lib.Zbits.P_mod_two_p q n)
+            have h2 := hdouble (two_power_nat n)
+            rw [hq, h2]
+            change (0 ≤ 2 * intOfZ (CompCert4Lean.Lib.Zbits.P_mod_two_p q n) ∧
+              2 * intOfZ (CompCert4Lean.Lib.Zbits.P_mod_two_p q n) <
+                2 * intOfZ (two_power_nat n))
+            change (0 ≤ intOfZ (CompCert4Lean.Lib.Zbits.P_mod_two_p q n) ∧
+              intOfZ (CompCert4Lean.Lib.Zbits.P_mod_two_p q n) <
+                intOfZ (two_power_nat n)) at h
+            omega
+        | xI q =>
+            have h := ih q
+            have hm : CompCert4Lean.Lib.Zbits.P_mod_two_p (.xI q) (Nat.succ n) =
+                ZArith.BinInt.Z.succ_double (CompCert4Lean.Lib.Zbits.P_mod_two_p q n) := by rfl
+            rw [hm]
+            change (0 ≤ intOfZ (ZArith.BinInt.Z.succ_double
+                (CompCert4Lean.Lib.Zbits.P_mod_two_p q n)) ∧
+              intOfZ (ZArith.BinInt.Z.succ_double
+                (CompCert4Lean.Lib.Zbits.P_mod_two_p q n)) <
+                intOfZ (two_power_nat (Nat.succ n)))
+            rw [hpow]
+            have hq := hsucc (CompCert4Lean.Lib.Zbits.P_mod_two_p q n)
+            have h2 := hdouble (two_power_nat n)
+            rw [hq, h2]
+            change (0 ≤ 2 * intOfZ (CompCert4Lean.Lib.Zbits.P_mod_two_p q n) + 1 ∧
+              2 * intOfZ (CompCert4Lean.Lib.Zbits.P_mod_two_p q n) + 1 <
+                2 * intOfZ (two_power_nat n))
+            change (0 ≤ intOfZ (CompCert4Lean.Lib.Zbits.P_mod_two_p q n) ∧
+              intOfZ (CompCert4Lean.Lib.Zbits.P_mod_two_p q n) <
+                intOfZ (two_power_nat n)) at h
+            omega
+  have h_digits : ∀ q : positive,
+      PArith.BinPos.Pos.to_nat
+          (CompCert4Lean.Lib.Floats.Model.Rocq.Coq.Floats.SpecFloat.digits2_pos q) =
+        Nat.log2 (PArith.BinPos.Pos.to_nat q) + 1 := by
+    have hsucc (q : positive) :
+        PArith.BinPos.Pos.to_nat
+            (CompCert4Lean.Lib.Floats.Model.Rocq.Coq.Floats.SpecFloat.posSucc q) =
+          PArith.BinPos.Pos.to_nat q + 1 := by
+      induction q with
+      | xH => rfl
+      | xI q ih =>
+          change 2 * PArith.BinPos.Pos.to_nat
+              (CompCert4Lean.Lib.Floats.Model.Rocq.Coq.Floats.SpecFloat.posSucc q) =
+            2 * PArith.BinPos.Pos.to_nat q + 1 + 1
+          rw [ih]
+          omega
+      | xO q ih =>
+          change PArith.BinPos.Pos.to_nat (.xI q) =
+            2 * PArith.BinPos.Pos.to_nat q + 1
+          rfl
+    intro q
+    induction q with
+    | xH => decide
+    | xO q ih =>
+        rw [show CompCert4Lean.Lib.Floats.Model.Rocq.Coq.Floats.SpecFloat.digits2_pos
+              (.xO q) =
+              CompCert4Lean.Lib.Floats.Model.Rocq.Coq.Floats.SpecFloat.posSucc
+                (CompCert4Lean.Lib.Floats.Model.Rocq.Coq.Floats.SpecFloat.digits2_pos q) by rfl,
+          hsucc, ih]
+        simp only [PArith.BinPos.Pos.to_nat,
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat]
+        have hqne : CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat q ≠ 0 :=
+          Nat.ne_of_gt (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat_positive q)
+        rw [Nat.log2_two_mul hqne]
+    | xI q ih =>
+        rw [show CompCert4Lean.Lib.Floats.Model.Rocq.Coq.Floats.SpecFloat.digits2_pos
+              (.xI q) =
+              CompCert4Lean.Lib.Floats.Model.Rocq.Coq.Floats.SpecFloat.posSucc
+                (CompCert4Lean.Lib.Floats.Model.Rocq.Coq.Floats.SpecFloat.digits2_pos q) by rfl,
+          hsucc, ih]
+        simp only [PArith.BinPos.Pos.to_nat,
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat]
+        let k : Nat := CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat q
+        have hk : 0 < k := by exact
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat_positive q
+        have hlog : Nat.log2 (2 * k + 1) = Nat.log2 k + 1 := by
+          apply (Nat.log2_eq_iff (Nat.ne_of_gt (by omega : 0 < 2 * k + 1))).2
+          have hlow := Nat.log2_self_le (Nat.ne_of_gt hk)
+          have hhigh := (Nat.log2_lt (Nat.ne_of_gt hk)).1
+            (Nat.lt_succ_self (Nat.log2 k))
+          constructor <;> rw [Nat.pow_succ] <;> omega
+        change Nat.log2 k + 1 + 1 = Nat.log2 (2 * k + 1) + 1
+        rw [hlog]
+  have hpNat : ∀ k : Nat, intOfZ (two_power_nat k) = (2 : Int) ^ k := by
+    intro k
+    induction k with
+    | zero => decide
+    | succ k ih =>
+        rw [hpow_succ, hdouble, ih]
+        change 2 * (2 : Int) ^ k = (2 : Int) ^ Nat.succ k
+        calc
+          2 * (2 : Int) ^ k = (2 : Int) ^ k * 2 := Int.mul_comm _ _
+          _ = (2 : Int) ^ Nat.succ k := (Int.pow_succ 2 k).symm
+  have hpowInt : ∀ k : Nat, (2 : Int) ^ k = Int.ofNat (2 ^ k) := by
+    intro k
+    have htwo : (2 : Int) = (↑(2 : Nat) : Int) := by decide
+    induction k with
+    | zero => rfl
+    | succ k ih =>
+        rw [Int.pow_succ, ih, Nat.pow_succ]
+        simp only [Int.ofNat_eq_natCast]
+        rw [Int.natCast_mul]
+        rw [htwo]
+  intro prec n p hn hprec
+  unfold Binary.nan_pl
+  have hm := hrange n p
+  cases hval : CompCert4Lean.Lib.Zbits.P_mod_two_p p n with
+  | Z0 =>
+      change ZArith.BinInt.Z.ltb
+        (ZArith.BinInt.Z.Zpos
+          (CompCert4Lean.Lib.Floats.Model.Rocq.Coq.Floats.SpecFloat.digits2_pos
+            (ZArith.BinInt.Z.to_pos ZArith.BinInt.Z.Z0))) prec = true
+      change (if intOfZ (Zpos
+          (CompCert4Lean.Lib.Floats.Model.Rocq.Coq.Floats.SpecFloat.digits2_pos
+            (ZArith.BinInt.Z.to_pos ZArith.BinInt.Z.Z0))) < intOfZ prec then true else false) = true
+      have hp : intOfZ (Zpos
+          (CompCert4Lean.Lib.Floats.Model.Rocq.Coq.Floats.SpecFloat.digits2_pos
+            (ZArith.BinInt.Z.to_pos ZArith.BinInt.Z.Z0))) = (1 : Int) := by decide
+      rw [hp]
+      change 1 < intOfZ prec at hprec
+      simp [hprec]
+  | Zpos q =>
+      have hlt := hm.2
+      rw [hval] at hlt
+      change intOfZ (Zpos q) < intOfZ (two_power_nat n) at hlt
+      rw [hpNat n] at hlt
+      change Int.ofNat (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat q) <
+        (2 : Int) ^ n at hlt
+      have hltNat : CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat q < 2 ^ n := by
+        apply Int.ofNat_lt.mp
+        have hlt' := hlt
+        rw [hpowInt n] at hlt'
+        simp only [Int.ofNat_eq_natCast] at hlt'
+        exact hlt'
+      have hlog := (Nat.log2_lt (Nat.ne_of_gt
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat_positive q))).2 hltNat
+      have hd := h_digits q
+      change CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat
+          (CompCert4Lean.Lib.Floats.Model.Rocq.Coq.Floats.SpecFloat.digits2_pos q) =
+        Nat.log2 (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat q) + 1 at hd
+      have hdNat : CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat
+          (CompCert4Lean.Lib.Floats.Model.Rocq.Coq.Floats.SpecFloat.digits2_pos q) ≤ n := by
+        omega
+      have hnInt := congrArg intOfZ hn
+      have hprecInt := hprec
+      have hn_of : intOfZ (ZArith.BinInt.Z.of_nat n) = Int.ofNat n := by
+        change intOfZ (zOfInt (Int.ofNat n)) = Int.ofNat n
+        exact intOfZ_zOfInt _
+      rw [hn_of] at hnInt
+      have hsub : intOfZ (ZArith.BinInt.Z.sub prec z1) = intOfZ prec - 1 := by
+        unfold ZArith.BinInt.Z.sub
+        simp only [intOfZ_zOfInt]
+        have h1 : intOfZ z1 = (1 : Int) := by decide
+        rw [h1]
+      rw [hsub] at hnInt
+      change 1 < intOfZ prec at hprecInt
+      have hto_pos : ZArith.BinInt.Z.to_pos (Zpos q) = q := by
+        change PArith.BinPos.Pos.of_nat
+          (Int.toNat (Int.ofNat (PArith.BinPos.Pos.to_nat q))) = q
+        rw [show Int.toNat (Int.ofNat (PArith.BinPos.Pos.to_nat q)) =
+            PArith.BinPos.Pos.to_nat q by cases q <;> rfl]
+        exact PArith.Pnat.Pos2Nat.id q
+      rw [hto_pos]
+      change (if intOfZ (Zpos
+          (CompCert4Lean.Lib.Floats.Model.Rocq.Coq.Floats.SpecFloat.digits2_pos q)) <
+          intOfZ prec then true else false) = true
+      have htarget : intOfZ (Zpos
+          (CompCert4Lean.Lib.Floats.Model.Rocq.Coq.Floats.SpecFloat.digits2_pos q)) <
+          intOfZ prec := by
+        change Int.ofNat (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat
+            (CompCert4Lean.Lib.Floats.Model.Rocq.Coq.Floats.SpecFloat.digits2_pos q)) <
+          intOfZ prec
+        have hprecEq0 : intOfZ prec = Int.ofNat n + 1 := by omega
+        have hprecEq : intOfZ prec = Int.ofNat (n + 1) := by
+          calc
+            intOfZ prec = Int.ofNat n + 1 := hprecEq0
+            _ = Int.ofNat (n + 1) := by
+              rw [Int.ofNat_eq_natCast, Int.ofNat_eq_natCast]
+              rw [Int.natCast_add, Int.natCast_one]
+        rw [hprecEq]
+        rw [Int.ofNat_eq_natCast]
+        apply Int.ofNat_lt.mpr
+        omega
+      simp [htarget]
+  | Zneg q =>
+      have hnonneg := hm.1
+      rw [hval] at hnonneg
+      change 0 ≤ -Int.ofNat (PArith.BinPos.Pos.to_nat q) at hnonneg
+      have hqpos : 0 < PArith.BinPos.Pos.to_nat q := by
+        change 0 < CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat q
+        exact CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat_positive q
+      have hqposInt : (0 : Int) < Int.ofNat (PArith.BinPos.Pos.to_nat q) := by
+        change (0 : Int) < (PArith.BinPos.Pos.to_nat q : Int)
+        exact Int.ofNat_lt.mpr hqpos
+      omega
+
+end CompCert4Lean.Lib.Floats

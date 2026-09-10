@@ -433,3 +433,253 @@ def transf_function_specStatement : Prop :=
       CompCert4Lean.Common.Errors.res.OK f' → tr_function cunit f f'
 
 end CompCert4Lean.Backend.Inliningspec
+
+namespace CompCert4Lean.Backend.Inliningspec
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Backend.Inlining
+
+private theorem shiftpos_pred_double_nat (p : positive) :
+    posToNat (PArith.BinPos.Pos.pred_double p) = 2 * posToNat p - 1 := by
+  induction p with
+  | xH => simp [PArith.BinPos.Pos.pred_double, posToNat]
+  | xI p ih =>
+      simp [PArith.BinPos.Pos.pred_double, posToNat]
+      omega
+  | xO p ih =>
+      simp [PArith.BinPos.Pos.pred_double, posToNat, ih]
+      have hp := posToNat_positive p
+      omega
+
+private theorem shiftpos_pred_nat_sub_one (p : positive) (h : p ≠ xH) :
+    posToNat (PArith.BinPos.Pos.pred p) = posToNat p - 1 := by
+  cases p with
+  | xH => contradiction
+  | xI p =>
+      simp [PArith.BinPos.Pos.pred, posToNat]
+  | xO p =>
+      simpa [PArith.BinPos.Pos.pred, posToNat] using shiftpos_pred_double_nat p
+
+theorem shiftpos_eq : shiftpos_eqStatement := by
+  intro x y
+  let nx := posToNat x
+  let ny := posToNat y
+  have hx : 0 < nx := by dsimp [nx]; exact posToNat_positive x
+  have hy : 0 < ny := by dsimp [ny]; exact posToNat_positive y
+  have hxy : 0 < nx + ny := by omega
+  have hp : posToNat (posOfNat (nx + ny)) = nx + ny := posToNat_posOfNat hxy
+  have hne : posOfNat (nx + ny) ≠ xH := by
+    intro h
+    have : nx + ny = 1 := by
+      have hp' : posToNat xH = 1 := rfl
+      rw [h] at hp
+      omega
+    omega
+  have hpred := shiftpos_pred_nat_sub_one (posOfNat (nx + ny)) hne
+  unfold shiftpos
+  change Zpos (PArith.BinPos.Pos.pred (PArith.BinPos.Pos.add x y)) = _
+  have hleft : intOfZ (Zpos (PArith.BinPos.Pos.pred (PArith.BinPos.Pos.add x y))) =
+      Int.ofNat (nx + ny - 1) := by
+    change Int.ofNat (posToNat (PArith.BinPos.Pos.pred (PArith.BinPos.Pos.add x y))) = _
+    rw [show PArith.BinPos.Pos.add x y = posOfNat (nx + ny) by rfl]
+    rw [hpred, hp]
+  have hright : intOfZ (ZArith.BinInt.Z.sub
+      (ZArith.BinInt.Z.add (Zpos x) (Zpos y)) (Zpos xH)) =
+      Int.ofNat (nx + ny - 1) := by
+    simp only [ZArith.BinInt.Z.sub, ZArith.BinInt.Z.add, intOfZ_zOfInt]
+    simp [intOfZ, nx, ny]
+    have hxH : posToNat xH = 1 := rfl
+    rw [hxH]
+    omega
+  change Zpos (PArith.BinPos.Pos.pred (PArith.BinPos.Pos.add x y)) =
+    ZArith.BinInt.Z.sub (ZArith.BinInt.Z.add (Zpos x) (Zpos y)) (Zpos xH)
+  apply Eq.trans (zOfInt_intOfZ _).symm
+  apply Eq.trans (congrArg zOfInt (hleft.trans hright.symm))
+  exact zOfInt_intOfZ _
+
+theorem shiftpos_inj : shiftpos_injStatement := by
+  intro x y n h
+  have hz : Zpos (shiftpos x n) = Zpos (shiftpos y n) := congrArg Zpos h
+  rw [shiftpos_eq x n, shiftpos_eq y n] at hz
+  have hi := congrArg intOfZ hz
+  simp [ZArith.BinInt.Z.sub, ZArith.BinInt.Z.add, intOfZ_zOfInt] at hi
+  have hn : Int.ofNat (posToNat x) = Int.ofNat (posToNat y) := by
+    simpa [intOfZ] using hi
+  exact posToNat_injective (Int.ofNat.inj hn)
+
+end CompCert4Lean.Backend.Inliningspec
+
+
+namespace CompCert4Lean.Backend.Inliningspec
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Backend.Inlining
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Linking
+open CompCert4Lean.Lib.Maps
+private def P
+    (dm : PTree.tree (globdef (CompCert4Lean.Common.AST.fundef function) Unit)) (fenv : funenv) : Prop :=
+  ∀ id f, PTree.get id fenv = some f →
+    PTree.get id dm = some (Gfun (Internal f))
+
+theorem funenv_program_compat : funenv_program_compatStatement := by
+  intro cfg p
+  let info := inlining_analysis cfg p
+  have REMOVE : ∀ (dm : PTree.tree (globdef (CompCert4Lean.Common.AST.fundef function) Unit)) (fenv : funenv) id g,
+      P dm fenv → P (PTree.set id g dm) (PTree.remove id fenv) := by
+    intro dm fenv id g h
+    intro id0 f hget
+    change PTree.get id0 (PTree.remove id (fenv : PTree.t function)) = some f at hget
+    have hr := @PTree.getRemove_equation function id0 id (fenv : PTree.tree function)
+    rw [hr] at hget
+    split at hget
+    · contradiction
+    · rename_i hne
+      have hdm := h id0 f hget
+      change PTree.get id0 (PTree.set id g dm) = some (Gfun (Internal f))
+      have hs := @PTree.getSet_equation
+        (globdef (CompCert4Lean.Common.AST.fundef function) Unit) id0 id g dm
+      rw [hs]
+      simp [hne, hdm]
+  have ADD : ∀ (cfg : InliningConfig) (info : inlining_info)
+      (dm : PTree.tree (globdef (CompCert4Lean.Common.AST.fundef function) Unit)) (fenv : funenv)
+      (idg : ident × globdef (CompCert4Lean.Common.AST.fundef function) Unit),
+      P dm fenv →
+      P (PTree.set idg.1 idg.2 dm)
+        (add_globdef cfg info fenv idg) := by
+    intro cfg info dm fenv idg h
+    rcases idg with ⟨id, gd⟩
+    change positive at id
+    cases gd with
+    | Gvar v =>
+        intro id0 f hget
+        change PTree.get id0 (PTree.remove (show positive from id)
+          (fenv : PTree.t function)) = some f at hget
+        have hr := @PTree.getRemove_equation function id0 (show positive from id)
+          (fenv : PTree.tree function)
+        rw [hr] at hget
+        split at hget
+        · contradiction
+        · rename_i hne
+          have hdm := h id0 f hget
+          change PTree.get id0 (PTree.set (show positive from id) (Gvar v) dm) =
+            some (Gfun (Internal f))
+          have hs := @PTree.getSet_equation
+            (globdef (CompCert4Lean.Common.AST.fundef function) Unit) id0
+              (show positive from id) (Gvar v) dm
+          rw [hs]
+          simp [hne, hdm]
+    | Gfun fd =>
+        cases fd with
+        | External ef =>
+            intro id0 f hget
+            change PTree.get id0 (PTree.remove (show positive from id)
+              (fenv : PTree.t function)) = some f at hget
+            have hr := @PTree.getRemove_equation function id0 (show positive from id)
+              (fenv : PTree.tree function)
+            rw [hr] at hget
+            split at hget
+            · contradiction
+            · rename_i hne
+              have hdm := h id0 f hget
+              change PTree.get id0
+                (PTree.set (show positive from id) (Gfun (External ef)) dm) =
+                some (Gfun (Internal f))
+              have hs := @PTree.getSet_equation
+                (globdef (CompCert4Lean.Common.AST.fundef function) Unit) id0
+                (show positive from id) (Gfun (External ef)) dm
+              rw [hs]
+              simp [hne, hdm]
+        | Internal f0 =>
+            by_cases hi : should_inline cfg info id f0
+            · intro id0 f hget
+              have hget' : PTree.get id0 (PTree.set (show positive from id) f0
+                (fenv : PTree.t function)) = some f := by
+                simpa [add_globdef, hi] using hget
+              have hsenv := @PTree.getSet_equation function id0
+                (show positive from id) f0 (fenv : PTree.tree function)
+              rw [hsenv] at hget'
+              split at hget'
+              · rename_i heq
+                subst id0
+                cases hget'
+                change PTree.get id (PTree.set (show positive from id)
+                  (Gfun (Internal f0)) dm) = some (Gfun (Internal f0))
+                have hs := @PTree.getSet_equation
+                  (globdef (CompCert4Lean.Common.AST.fundef function) Unit) id id
+                  (Gfun (Internal f0)) dm
+                rw [hs]
+                simp
+              · rename_i hne
+                have hdm := h id0 f hget'
+                change PTree.get id0
+                  (PTree.set (show positive from id) (Gfun (Internal f0)) dm) =
+                  some (Gfun (Internal f))
+                have hs := @PTree.getSet_equation
+                  (globdef (CompCert4Lean.Common.AST.fundef function) Unit) id0
+                  (show positive from id) (Gfun (Internal f0)) dm
+                rw [hs]
+                simp [hne, hdm]
+            · intro id0 f hget
+              have hget' : PTree.get id0 (PTree.remove (show positive from id)
+                (fenv : PTree.t function)) = some f := by
+                simpa [add_globdef, hi] using hget
+              have hr := @PTree.getRemove_equation function id0 (show positive from id)
+                (fenv : PTree.tree function)
+              rw [hr] at hget'
+              split at hget'
+              · contradiction
+              · rename_i hne
+                have hdm := h id0 f hget'
+                change PTree.get id0
+                  (PTree.set (show positive from id) (Gfun (Internal f0)) dm) =
+                  some (Gfun (Internal f))
+                have hs := @PTree.getSet_equation
+                  (globdef (CompCert4Lean.Common.AST.fundef function) Unit) id0
+                  (show positive from id) (Gfun (Internal f0)) dm
+                rw [hs]
+                simp [hne, hdm]
+  have REC : ∀ (l : List (ident × globdef (CompCert4Lean.Common.AST.fundef function) Unit))
+      (dm : PTree.tree (globdef (CompCert4Lean.Common.AST.fundef function) Unit)) (fenv : funenv),
+      P dm fenv →
+      P (l.foldl (fun m idg => PTree.set idg.1 idg.2 m) dm)
+        (l.foldl (add_globdef cfg info) fenv) := by
+    intro l
+    induction l with
+    | nil =>
+        intro dm fenv h
+        simpa only [List.foldl] using h
+    | cons idg l ih =>
+        intro dm fenv h
+        apply ih
+        exact ADD cfg info dm fenv idg h
+  have h0 : P (PTree.empty (globdef (CompCert4Lean.Common.AST.fundef function) Unit))
+      (PTree.empty function) := by
+    intro id f hget
+    change PTree.get id (PTree.Empty : PTree.tree function) = some f at hget
+    simp [PTree.get] at hget
+  have h := REC p.prog_defs
+      (PTree.empty (globdef (CompCert4Lean.Common.AST.fundef function) Unit))
+      (PTree.empty function) h0
+  change P (prog_defmap p) (funenv_program cfg p)
+  exact h
+
+
+theorem fenv_compat_linkorder : fenv_compat_linkorderStatement := by
+  intro cunit prog fenv horder hcompat id f hget
+  change @linkorder CompCert4Lean.Backend.RTL.program
+      (@Linker_prog CompCert4Lean.Backend.RTL.fundef Unit
+        (@Linker_fundef CompCert4Lean.Backend.RTL.function) Linker_unit)
+      cunit prog at horder
+  have hc := hcompat id f hget
+  obtain ⟨gd2, hget2, hgd⟩ :=
+    CompCert4Lean.Common.Linking.prog_defmap_linkorder_proof
+      (F := CompCert4Lean.Backend.RTL.fundef) (V := Unit)
+      (LF := Linker_fundef CompCert4Lean.Backend.RTL.function) (LV := Linker_unit)
+      cunit prog id (Gfun (Internal f)) horder hc
+  cases hgd with
+  | linkorder_def_fun _ _ hfd =>
+      cases hfd with
+      | linkorder_fundef_refl _ => exact hget2
+
+end CompCert4Lean.Backend.Inliningspec

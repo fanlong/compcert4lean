@@ -666,3 +666,23 @@ def transf_program (cfg : CompilerConfig) (p : program) : Res program :=
           prog_comp_env_eq := p.prog_comp_env_eq }
 
 end CompCert4Lean.Cfrontend.SimplLocals
+
+namespace CompCert4Lean.Cfrontend.SimplLocals
+
+namespace VSet
+
+theorem mem_2_proof : mem_2 := by
+  intro s x h
+  exact CompCert4Lean.Lib.FSetAVLplus.Make.mem_2 s x h
+
+theorem singleton_2_proof : singleton_2 := by
+  intro x y hxy
+  exact CompCert4Lean.Lib.FSetAVLplus.Make.singleton_2 x y hxy
+
+theorem add_1_proof : add_1 := by
+  intro s x y hxy
+  exact CompCert4Lean.Lib.FSetAVLplus.Make.add_1 s x y hxy
+
+end VSet
+
+end CompCert4Lean.Cfrontend.SimplLocals

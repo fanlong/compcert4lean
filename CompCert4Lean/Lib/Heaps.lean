@@ -1056,3 +1056,190 @@ end R
 end PHeap
 
 end CompCert4Lean.Lib.Heaps
+
+namespace CompCert4Lean.Lib.Heaps.SplayHeapSet.R
+
+theorem le_lt_trans (E : OrderedType) : le_lt_transStatement E := by
+  intro x1 x2 x3 h12 h23
+  rcases h12 with h12 | h12
+  · cases E.compare x1 x3 with
+    | LT h13 => exact h13
+    | EQ h13 =>
+        exact False.elim
+          (E.lt_not_eq x2 x3 h23
+            (E.eq_trans x2 x1 x3 (E.eq_sym x1 x2 h12) h13))
+    | GT h31 =>
+        exact False.elim
+          (E.lt_not_eq x2 x1 (E.lt_trans x2 x3 x1 h23 h31)
+            (E.eq_sym x1 x2 h12))
+  · exact E.lt_trans x1 x2 x3 h12 h23
+
+end CompCert4Lean.Lib.Heaps.SplayHeapSet.R
+
+namespace CompCert4Lean.Lib.Heaps.PHeap.R
+
+private def proofHeapSize {E : OrderedType} : SplayHeapSet.R.heap E → Nat
+  | .Empty => 0
+  | .Node l _ r => proofHeapSize l + proofHeapSize r + 1
+
+theorem deleteMin_ind : deleteMin_indStatement := by
+  unfold deleteMin_indStatement
+  intro P hEmpty hOne hTwo hRec
+  have aux : ∀ n (h : _), proofHeapSize h ≤ n →
+      P h (SplayHeapSet.R.deleteMin _ h) := by
+    intro n
+    induction n with
+    | zero =>
+        intro h hs
+        cases h with
+        | Empty => exact hEmpty .Empty rfl
+        | Node l x r => simp [proofHeapSize] at hs
+    | succ n ih =>
+        intro h hs
+        cases h with
+        | Empty => exact hEmpty .Empty rfl
+        | Node l y c =>
+            cases l with
+            | Empty =>
+                simpa [SplayHeapSet.R.deleteMin] using
+                  hOne (.Node .Empty y c) .Empty y c rfl rfl
+            | Node a x b =>
+                cases a with
+                | Empty =>
+                    simpa [SplayHeapSet.R.deleteMin] using
+                      hTwo (.Node (.Node .Empty x b) y c) (.Node .Empty x b) y c rfl
+                        .Empty x b rfl rfl
+                | Node a0 x0 b0 =>
+                    simpa [SplayHeapSet.R.deleteMin] using
+                      hRec (.Node (.Node (.Node a0 x0 b0) x b) y c)
+                        (.Node (.Node a0 x0 b0) x b) y c rfl
+                        (.Node a0 x0 b0) x b rfl
+                        a0 x0 b0 rfl
+                        (ih (.Node a0 x0 b0)
+                          (by simp [proofHeapSize] at hs ⊢; omega))
+  intro h
+  exact aux (proofHeapSize h) h (Nat.le_refl _)
+
+theorem deleteMax_ind : deleteMax_indStatement := by
+  unfold deleteMax_indStatement
+  intro P hEmpty hOne hTwo hRec
+  have aux : ∀ n (h : _), proofHeapSize h ≤ n →
+      P h (SplayHeapSet.R.deleteMax _ h) := by
+    intro n
+    induction n with
+    | zero =>
+        intro h hs
+        cases h with
+        | Empty => exact hEmpty .Empty rfl
+        | Node l x r => simp [proofHeapSize] at hs
+    | succ n ih =>
+        intro h hs
+        cases h with
+        | Empty => exact hEmpty .Empty rfl
+        | Node a x r =>
+            cases r with
+            | Empty =>
+                simpa [SplayHeapSet.R.deleteMax] using
+                  hOne (.Node a x .Empty) a x .Empty rfl rfl
+            | Node b y c =>
+                cases c with
+                | Empty =>
+                    simpa [SplayHeapSet.R.deleteMax] using
+                      hTwo (.Node a x (.Node b y .Empty)) a x (.Node b y .Empty) rfl
+                        b y .Empty rfl rfl
+                | Node a0 x0 b0 =>
+                    simpa [SplayHeapSet.R.deleteMax] using
+                      hRec (.Node a x (.Node b y (.Node a0 x0 b0)))
+                        a x (.Node b y (.Node a0 x0 b0)) rfl
+                        b y (.Node a0 x0 b0) rfl
+                        a0 x0 b0 rfl
+                        (ih (.Node a0 x0 b0)
+                          (by simp [proofHeapSize] at hs ⊢; omega))
+  intro h
+  exact aux (proofHeapSize h) h (Nat.le_refl _)
+
+theorem partition_ind : partition_indStatement := by
+  unfold partition_indStatement
+  intro pivot P hEmpty hLtEmpty hLtLt hLtEq hLtGt hEq hGtEmpty hGtLt hGtEq hGtGt
+  have aux : ∀ n (h : _), proofHeapSize h ≤ n →
+      P h (SplayHeapSet.R.partition _ pivot h) := by
+    intro n
+    induction n with
+    | zero =>
+        intro h hs
+        cases h with
+        | Empty => exact hEmpty .Empty rfl
+        | Node l x r => simp [proofHeapSize] at hs
+    | succ n ih =>
+        intro h hs
+        cases h with
+        | Empty => exact hEmpty .Empty rfl
+        | Node a x b =>
+            cases hcmp : CompCert4Lean.Lib.Ordered.OrderedPositive.compare x pivot with
+            | EQ heq =>
+                simpa only [SplayHeapSet.R.partitionEq positiveOrder pivot a x b hcmp] using
+                  hEq (.Node a x b) a x b rfl heq hcmp
+            | LT hltx =>
+                cases b with
+                | Empty =>
+                    simpa only [SplayHeapSet.R.partitionLtEmpty positiveOrder pivot a x hcmp]
+                      using hLtEmpty (.Node a x .Empty) a x .Empty rfl hltx hcmp rfl
+                | Node b1 y b2 =>
+                    cases hycmp : CompCert4Lean.Lib.Ordered.OrderedPositive.compare y pivot with
+                    | EQ heq =>
+                        simpa only [SplayHeapSet.R.partitionLtEq positiveOrder pivot a x b1 y b2
+                          hcmp hycmp] using
+                          hLtEq (.Node a x (.Node b1 y b2)) a x (.Node b1 y b2)
+                            rfl hltx hcmp b1 y b2 rfl heq hycmp
+                    | LT hlty =>
+                        have hrec := ih b2
+                          (by simp [proofHeapSize] at hs ⊢; omega)
+                        cases hp : SplayHeapSet.R.partition _ pivot b2 with
+                        | mk small big =>
+                            simpa only [SplayHeapSet.R.partitionLtLt positiveOrder pivot a x b1 y b2
+                              hcmp hycmp, hp] using
+                              hLtLt (.Node a x (.Node b1 y b2)) a x (.Node b1 y b2)
+                                rfl hltx hcmp b1 y b2 rfl hlty hycmp hrec small big hp
+                    | GT hgty =>
+                        have hrec := ih b1
+                          (by simp [proofHeapSize] at hs ⊢; omega)
+                        cases hp : SplayHeapSet.R.partition _ pivot b1 with
+                        | mk small big =>
+                            simpa only [SplayHeapSet.R.partitionLtGt positiveOrder pivot a x b1 y b2
+                              hcmp hycmp, hp] using
+                              hLtGt (.Node a x (.Node b1 y b2)) a x (.Node b1 y b2)
+                                rfl hltx hcmp b1 y b2 rfl hgty hycmp hrec small big hp
+            | GT hgtx =>
+                cases a with
+                | Empty =>
+                    simpa only [SplayHeapSet.R.partitionGtEmpty positiveOrder pivot x b hcmp]
+                      using hGtEmpty (.Node .Empty x b) .Empty x b rfl hgtx hcmp rfl
+                | Node a1 y a2 =>
+                    cases hycmp : CompCert4Lean.Lib.Ordered.OrderedPositive.compare y pivot with
+                    | EQ heq =>
+                        simpa only [SplayHeapSet.R.partitionGtEq positiveOrder pivot a1 y a2 x b
+                          hcmp hycmp] using
+                          hGtEq (.Node (.Node a1 y a2) x b) (.Node a1 y a2) x b
+                            rfl hgtx hcmp a1 y a2 rfl heq hycmp
+                    | LT hlty =>
+                        have hrec := ih a2
+                          (by simp [proofHeapSize] at hs ⊢; omega)
+                        cases hp : SplayHeapSet.R.partition _ pivot a2 with
+                        | mk small big =>
+                            simpa only [SplayHeapSet.R.partitionGtLt positiveOrder pivot a1 y a2 x b
+                              hcmp hycmp, hp] using
+                              hGtLt (.Node (.Node a1 y a2) x b) (.Node a1 y a2) x b
+                                rfl hgtx hcmp a1 y a2 rfl hlty hycmp hrec small big hp
+                    | GT hgty =>
+                        have hrec := ih a1
+                          (by simp [proofHeapSize] at hs ⊢; omega)
+                        cases hp : SplayHeapSet.R.partition _ pivot a1 with
+                        | mk small big =>
+                            simpa only [SplayHeapSet.R.partitionGtGt positiveOrder pivot a1 y a2 x b
+                              hcmp hycmp, hp] using
+                              hGtGt (.Node (.Node a1 y a2) x b) (.Node a1 y a2) x b
+                                rfl hgtx hcmp a1 y a2 rfl hgty hycmp hrec small big hp
+  intro h
+  exact aux (proofHeapSize h) h (Nat.le_refl _)
+
+end CompCert4Lean.Lib.Heaps.PHeap.R

@@ -271,3 +271,313 @@ def validate_switch_correctStatement : Prop :=
         wf_comptree modulus t ∧ table_tree_agree modulus default cases t
 
 end CompCert4Lean.Common.Switch
+
+namespace CompCert4Lean.Common.Switch
+
+theorem validate_wf : validate_wfStatement := by
+  intro modulus default t cases lo hi h
+  induction t generalizing cases lo hi with
+  | CTaction act =>
+      exact wf_action modulus act
+  | CTifeq key act cne ih =>
+      simp only [validate] at h
+      have hkey0 : zLe z0 key := by
+        cases hz : zle z0 key with
+        | left hp => exact hp
+        | right hp =>
+            have : boolOfSumbool (zle z0 key) = false := by simp [hz, boolOfSumbool]
+            have hf : False := by simpa [this] using h
+            exact hf.elim
+      have hkeymod : zLt key modulus := by
+        cases hz : zlt key modulus with
+        | left hp => exact hp
+        | right hp =>
+            have : boolOfSumbool (zlt key modulus) = false := by simp [hz, boolOfSumbool]
+            have hf : False := by simpa [this] using h
+            exact hf.elim
+      cases hs : split_eq key cases with
+      | mk opt others =>
+          cases opt with
+          | none => simp [validate, hs] at h
+          | some act' =>
+              have hv : validate modulus default others cne
+                  (refine_low_bound key lo) (refine_high_bound key hi) = true := by
+                simp [validate, hs] at h
+                exact h.2.2.2
+              exact wf_ifeq modulus key act cne ⟨hkey0, hkeymod⟩ (ih others _ _ hv)
+  | CTiflt key clt cge ihl ihr =>
+      simp only [validate] at h
+      have hkey0 : zLe z0 key := by
+        cases hz : zle z0 key with
+        | left hp => exact hp
+        | right hp =>
+            have hh : False := by simpa [boolOfSumbool, hz] using h
+            exact hh.elim
+      have hkeymod : zLt key modulus := by
+        cases hz : zlt key modulus with
+        | left hp => exact hp
+        | right hp =>
+            have hh : False := by simpa [boolOfSumbool, hz] using h
+            exact hh.elim
+      cases hs : split_lt key cases with
+      | mk l r =>
+          have hl : validate modulus default l clt lo (zSub key z1) = true := by
+            simp only [Bool.and_eq_true] at h
+            rw [hs] at h
+            exact h.2.2.1
+          have hr : validate modulus default r cge key hi = true := by
+            simp only [Bool.and_eq_true] at h
+            rw [hs] at h
+            exact h.2.2.2
+          exact wf_iflt modulus key clt cge ⟨hkey0, hkeymod⟩
+            (ihl l lo (zSub key z1) hl) (ihr r key hi hr)
+  | CTjumptable ofs sz acts cother ih =>
+      simp only [validate] at h
+      have hofs0 : zLe z0 ofs := by
+        cases hz : zle z0 ofs with
+        | left hp => exact hp
+        | right hp =>
+            have hh : False := by simpa [boolOfSumbool, hz] using h
+            exact hh.elim
+      have hofsmod : zLt ofs modulus := by
+        cases hz : zlt ofs modulus with
+        | left hp => exact hp
+        | right hp =>
+            have hh : False := by simpa [boolOfSumbool, hz] using h
+            exact hh.elim
+      have hsz0 : zLe z0 sz := by
+        cases hz : zle z0 sz with
+        | left hp => exact hp
+        | right hp =>
+            have hh : False := by simpa [boolOfSumbool, hz] using h
+            exact hh.elim
+      have hszmod : zLt sz modulus := by
+        cases hz : zlt sz modulus with
+        | left hp => exact hp
+        | right hp =>
+            have hh : False := by simpa [boolOfSumbool, hz] using h
+            exact hh.elim
+      cases hs : split_between modulus default ofs sz cases with
+      | mk inside outside =>
+          simp only [Bool.and_eq_true] at h
+          rw [hs] at h
+          have hc : validate modulus default outside cother lo hi = true := by
+            exact h.2.2.2.2.2.2.2.2
+          exact wf_jumptable modulus ofs sz acts cother
+            ⟨hofs0, hofsmod⟩ ⟨hsz0, hszmod⟩ (ih outside lo hi hc)
+
+theorem split_eq_prop : split_eq_propStatement := by
+  intro v default n cases
+  induction cases with
+  | nil =>
+      intro optact cases' h
+      simp [split_eq] at h
+      cases h
+      cases hz : zeq v n with
+      | left hv => simp [switch_target, hz]
+      | right hv => simp [switch_target, hz]
+  | cons p rem ih =>
+      rcases p with ⟨key, act⟩
+      intro optact cases' h
+      cases hs : split_eq n rem with
+      | mk same others =>
+          have hi := ih same others hs
+          cases hk : zeq key n with
+          | left hkn =>
+              subst key
+              simp [split_eq, hs, hk] at h
+              rcases h with ⟨rfl, rfl⟩
+              cases hv : zeq v n with
+              | left hvn => simp [switch_target, hv]
+              | right hvn =>
+                  simp [switch_target, hv, hi]
+          | right hkn =>
+              simp [split_eq, hs, hk] at h
+              rcases h with ⟨rfl, rfl⟩
+              cases hv : zeq v n with
+              | left hvn =>
+                  cases hvk : zeq v key with
+                  | left hvk' =>
+                      have : False := hkn (hvk'.symm.trans hvn)
+                      exact this.elim
+                  | right hvk' =>
+                      simp [switch_target, hv, hvk, hi]
+              | right hvn =>
+                  cases hvk : zeq v key with
+                  | left hvk' => simp [switch_target, hv, hvk]
+                  | right hvk' => simp [switch_target, hv, hvk, hi]
+
+theorem split_lt_prop : split_lt_propStatement := by
+  intro v default n cases
+  induction cases with
+  | nil =>
+      intro lcases rcases h
+      simp [split_lt] at h
+      cases h
+      cases hv : zlt v n with
+      | left hvn => simp [switch_target, hv]
+      | right hvn => simp [switch_target, hv]
+  | cons p rem ih =>
+      rcases p with ⟨key, act⟩
+      intro lcases rcases h
+      cases hs : split_lt n rem with
+      | mk l r =>
+          have hi := ih l r hs
+          cases hk : zlt key n with
+          | left hkn =>
+              simp [split_lt, hs, hk] at h
+              rcases h with ⟨rfl, rfl⟩
+              cases hvn : zlt v n with
+              | left hvn' =>
+                  cases hvk : zeq v key with
+                  | left hvk' => simp [switch_target, hvn, hvk]
+                  | right hvk' =>
+                      cases hvl : zlt v key with
+                      | left hvl' =>
+                          simp [switch_target, hvn, hvk, hvl, hi]
+                      | right hvl' =>
+                          simp [switch_target, hvn, hvk, hi]
+              | right hvn' =>
+                  cases hvk : zeq v key with
+                  | left hvk' =>
+                      subst v
+                      change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ key <
+                        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ n at hkn
+                      change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ n ≤
+                        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ key at hvn'
+                      have : False := by omega
+                      exact this.elim
+                  | right hvk' =>
+                      simp [switch_target, hvn, hvk, hi]
+          | right hkn =>
+              simp [split_lt, hs, hk] at h
+              rcases h with ⟨rfl, rfl⟩
+              cases hvn : zlt v n with
+              | left hvn' =>
+                  cases hvk : zeq v key with
+                  | left hvk' =>
+                      subst v
+                      change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ key <
+                        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ n at hvn'
+                      change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ n ≤
+                        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ key at hkn
+                      have : False := by omega
+                      exact this.elim
+                  | right hvk' =>
+                      simp [switch_target, hvn, hvk, hi]
+              | right hvn' =>
+                  cases hvk : zeq v key with
+                  | left hvk' => simp [switch_target, hvn, hvk]
+                  | right hvk' =>
+                      simp [switch_target, hvn, hvk, hi]
+
+private theorem zmap_get_set {A : Type}
+    (i j : CompCert4Lean.Lib.Maps.ZMap.elt) (x : A)
+    (m : CompCert4Lean.Lib.Maps.ZMap.t A) :
+    CompCert4Lean.Lib.Maps.ZMap.get i
+        (CompCert4Lean.Lib.Maps.ZMap.set j x m) =
+    match CompCert4Lean.Lib.Maps.ZMap.elt_eq i j with
+      | .left _ => x
+      | .right _ => CompCert4Lean.Lib.Maps.ZMap.get i m := by
+  rcases m with ⟨mdefault, mtree⟩
+  by_cases hij : i = j
+  · subst j
+    simp only [CompCert4Lean.Lib.Maps.ZMap.get, CompCert4Lean.Lib.Maps.ZMap.set,
+      CompCert4Lean.Lib.Maps.PMap.get, CompCert4Lean.Lib.Maps.PMap.set]
+    have hg := CompCert4Lean.Lib.Maps.PTree.getSet_equation
+      (A := A) (CompCert4Lean.Lib.Maps.ZIndexed.index i)
+      (CompCert4Lean.Lib.Maps.ZIndexed.index i) x mtree
+    rw [hg]
+    cases heq : CompCert4Lean.Lib.Maps.ZMap.elt_eq i i with
+    | left _ => simp [heq]
+    | right hne => exact (hne rfl).elim
+  · simp [CompCert4Lean.Lib.Maps.ZMap.get, CompCert4Lean.Lib.Maps.ZMap.set,
+      CompCert4Lean.Lib.Maps.PMap.get, CompCert4Lean.Lib.Maps.PMap.set]
+    have hg := CompCert4Lean.Lib.Maps.PTree.getSet_equation
+      (A := A) (CompCert4Lean.Lib.Maps.ZIndexed.index i)
+      (CompCert4Lean.Lib.Maps.ZIndexed.index j) x mtree
+    rw [hg]
+    cases heq : CompCert4Lean.Lib.Maps.ZMap.elt_eq i j with
+    | left heq' => exact (hij heq').elim
+    | right _ =>
+        have hidx : CompCert4Lean.Lib.Maps.ZIndexed.index i ≠
+            CompCert4Lean.Lib.Maps.ZIndexed.index j := by
+          intro hidx
+          exact hij (CompCert4Lean.Lib.Maps.ZIndexed.index_inj i j hidx)
+        simp [hidx, heq]
+
+theorem split_between_prop : split_between_propStatement := by
+  intro modulus v default ofs sz cases
+  induction cases with
+  | nil =>
+      intro inside outside h
+      simp [split_between] at h
+      cases h
+      cases hz : zlt (zMod (zSub v ofs) modulus) sz with
+      | left hz' =>
+          simp [switch_target, hz]
+          rfl
+      | right hz' => simp [switch_target, hz]
+  | cons p rem ih =>
+      rcases p with ⟨key, act⟩
+      intro inside outside h
+      cases hs : split_between modulus default ofs sz rem with
+      | mk ins outs =>
+          have hi := ih ins outs hs
+          cases hk : zlt (zMod (zSub key ofs) modulus) sz with
+          | left hkin =>
+              simp [split_between, hs, hk] at h
+              rcases h with ⟨rfl, rfl⟩
+              cases hz : zlt (zMod (zSub v ofs) modulus) sz with
+              | left hzv =>
+                  cases hvk : zeq v key with
+                  | left hvk' =>
+                      subst v
+                      simp only [hz]
+                      have hset := zmap_get_set (A := Nat) key key act ins
+                      rw [hset]
+                      cases heq : CompCert4Lean.Lib.Maps.ZMap.elt_eq key key with
+                      | left _ => simp [switch_target, heq, hvk]
+                      | right hne => exact (hne rfl).elim
+                  | right hvk' =>
+                      simp only [hz]
+                      have hset := zmap_get_set (A := Nat) v key act ins
+                      rw [hset]
+                      cases heq : CompCert4Lean.Lib.Maps.ZMap.elt_eq v key with
+                      | left heq' => exact (hvk' heq').elim
+                      | right _ => simp [switch_target, hz, heq, hvk, hi]
+              | right hzv =>
+                  cases hvk : zeq v key with
+                  | left hvk' =>
+                      subst v
+                      change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+                        (zMod (zSub key ofs) modulus) <
+                        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ sz at hkin
+                      change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ sz ≤
+                        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+                          (zMod (zSub key ofs) modulus) at hzv
+                      exact (Int.not_lt_of_ge hzv hkin).elim
+                  | right hvk' =>
+                      simp [switch_target, hz, hvk, zmap_get_set, hi]
+          | right hkout =>
+              simp [split_between, hs, hk] at h
+              rcases h with ⟨rfl, rfl⟩
+              cases hz : zlt (zMod (zSub v ofs) modulus) sz with
+              | left hzv =>
+                  cases hvk : zeq v key with
+                  | left hvk' =>
+                      subst v
+                      change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+                        (zMod (zSub key ofs) modulus) <
+                        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ sz at hzv
+                      change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ sz ≤
+                        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+                          (zMod (zSub key ofs) modulus) at hkout
+                      exact (Int.not_lt_of_ge hkout hzv).elim
+                  | right hvk' => simp [switch_target, hz, hvk, hi]
+              | right hzv =>
+                  cases hvk : zeq v key with
+                  | left hvk' => simp [switch_target, hz, hvk]
+                  | right hvk' => simp [switch_target, hz, hvk, hi]
+
+end CompCert4Lean.Common.Switch
