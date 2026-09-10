@@ -627,3 +627,100 @@ theorem fold_left_preserves : fold_left_preservesStatement := by
       exact h a b ha
 
 end CompCert4Lean.Backend.Bounds
+
+namespace CompCert4Lean.Backend.Bounds
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+namespace RegSet
+
+theorem add_1_proof : add_1 := by
+  intro s x y hxy
+  exact CompCert4Lean.Lib.FSetAVLplus.Make.add_1 s x y hxy
+
+theorem add_2_proof : add_2 := by
+  intro s x y hy
+  exact CompCert4Lean.Lib.FSetAVLplus.Make.add_2 s x y hy
+
+end RegSet
+
+private theorem zLe_refl (x : Z) : zLe x x := by
+  change intOfZ x ≤ intOfZ x
+  exact Int.le_refl _
+
+private theorem zLe_trans (x y z : Z) : zLe x y → zLe y z → zLe x z := by
+  intro hxy hyz
+  change intOfZ x ≤ intOfZ y at hxy
+  change intOfZ y ≤ intOfZ z at hyz
+  change intOfZ x ≤ intOfZ z
+  exact Int.le_trans hxy hyz
+
+private theorem zLe_max_left (x y : Z) : zLe x (zMax x y) := by
+  change intOfZ x ≤ intOfZ (zMax x y)
+  unfold zMax ZArith.BinInt.Z.max
+  by_cases h : intOfZ x ≤ intOfZ y
+  · simp [h]
+  · simp [h]
+
+private theorem zLe_max_right (x y : Z) : zLe y (zMax x y) := by
+  change intOfZ y ≤ intOfZ (zMax x y)
+  unfold zMax ZArith.BinInt.Z.max
+  by_cases h : intOfZ x ≤ intOfZ y
+  · simp [h]
+  · have hyx : intOfZ y ≤ intOfZ x := by omega
+    simp [h, hyx]
+
+private theorem max_over_list_aux {A : Type} (valu : A → Z) (x : A) :
+    ∀ (l : List A) (z : Z),
+      zLe z (List.foldl (fun m y => zMax m (valu y)) z l) ∧
+        (x ∈ l → zLe (valu x)
+          (List.foldl (fun m y => zMax m (valu y)) z l)) := by
+  intro l
+  induction l with
+  | nil =>
+      intro z
+      constructor
+      · exact zLe_refl z
+      · intro hx
+        exact (_root_.List.not_mem_nil hx).elim
+  | cons a l ih =>
+      intro z
+      simp only [List.foldl]
+      have hi := ih (zMax z (valu a))
+      constructor
+      · exact zLe_trans z (zMax z (valu a)) _ (zLe_max_left z (valu a)) hi.1
+      · intro hx
+        rcases (_root_.List.mem_cons.mp hx) with hxa | hxl
+        · subst a
+          exact zLe_trans (valu x) (zMax z (valu x)) _
+            (zLe_max_right z (valu x)) hi.1
+        · exact hi.2 hxl
+
+theorem max_over_list_bound : max_over_list_boundStatement := by
+  intro A valu l x hx
+  have h := max_over_list_aux valu x l z0
+  exact h.2 hx
+
+theorem fold_left_ensures : fold_left_ensuresStatement := by
+  intro A B f P b0 hpres hbase l a hmem
+  induction l generalizing a with
+  | nil =>
+      exact (_root_.List.not_mem_nil hmem).elim
+  | cons b l ih =>
+      simp only [List.foldl]
+      rcases (_root_.List.mem_cons.mp hmem) with hhead | htail
+      · subst b
+        have hp : ∀ (ll : List B) (aa : A), P aa → P (List.foldl f aa ll) := by
+          intro ll
+          induction ll with
+          | nil =>
+              intro aa haa
+              exact haa
+          | cons bb ll ih =>
+              intro aa haa
+              apply ih
+              exact hpres aa bb haa
+        exact hp l (f a b0) (hbase a)
+      · exact ih (f a b) htail
+
+end CompCert4Lean.Backend.Bounds

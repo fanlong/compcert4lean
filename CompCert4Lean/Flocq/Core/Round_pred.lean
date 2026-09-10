@@ -147,3 +147,30 @@ def satisfies_any_eqStatement : Prop :=
     (∀ x, F1 x ↔ F2 x) → satisfies_any ctx F1 → satisfies_any ctx F2
 
 end CompCert4Lean.Flocq.Core.Round_pred
+
+namespace CompCert4Lean.Flocq.Core.Round_pred
+
+theorem round_unique : round_uniqueStatement := by
+  intro ctx rnd Hr x f1 f2 H1 H2
+  apply ctx.certificate.orderedField.le_antisymm
+  · exact Hr x x f1 f2 H1 H2 (ctx.certificate.orderedField.le_refl x)
+  · exact Hr x x f2 f1 H2 H1 (ctx.certificate.orderedField.le_refl x)
+
+theorem Rnd_DN_pt_monotone : Rnd_DN_pt_monotoneStatement := by
+  intro ctx F x y f g Hx Hy Hxy
+  rcases Hx with ⟨Hf, Hfx, Hxmax⟩
+  rcases Hy with ⟨Hg, Hgy, Hymax⟩
+  exact Hymax f Hf (ctx.certificate.orderedField.le_trans f x y Hfx Hxy)
+
+theorem Rnd_DN_pt_unique : Rnd_DN_pt_uniqueStatement := by
+  intro ctx F x f1 f2 H1 H2
+  exact round_unique ctx (CompCert4Lean.Flocq.Core.Defs.Exact.Rnd_DN_pt ctx F)
+    (Rnd_DN_pt_monotone ctx F) x f1 f2 H1 H2
+
+theorem Rnd_UP_pt_monotone : Rnd_UP_pt_monotoneStatement := by
+  intro ctx F x y f g Hx Hy Hxy
+  rcases Hx with ⟨Hf, Hxf, Hxmin⟩
+  rcases Hy with ⟨Hg, Hyg, Hymin⟩
+  exact Hxmin g Hg (ctx.certificate.orderedField.le_trans x y g Hxy Hyg)
+
+end CompCert4Lean.Flocq.Core.Round_pred

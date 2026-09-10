@@ -603,3 +603,33 @@ inductive builtin_arg_constraint : Type where
 export builtin_arg_constraint (OK_default OK_const OK_addrstack OK_addressing OK_all)
 
 end CompCert4Lean.Common.AST
+
+namespace CompCert4Lean.Common.AST
+
+def typ_eq : typ_eqStatement := by
+  intro t1 t2
+  by_cases h : t1 = t2
+  · exact .left h
+  · exact .right h
+
+theorem typesize_pos : typesize_posStatement := by
+  intro ty
+  cases ty <;>
+    simp [typesize,
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.lt,
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat,
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ,
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt,
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat_posOfNat]
+
+def xtype_eq : xtype_eqStatement := by
+  intro t1 t2
+  by_cases h : t1 = t2
+  · exact .left h
+  · exact .right h
+
+theorem proj_xtype_of_chunk : proj_xtype_of_chunkStatement := by
+  intro chunk
+  cases chunk <;> rfl
+
+end CompCert4Lean.Common.AST
