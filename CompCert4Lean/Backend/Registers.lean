@@ -730,3 +730,69 @@ def set_res_lessdefStatement : Prop :=
         (regmap_setres res v2 rs2)
 
 end CompCert4Lean.Backend.Registers
+
+namespace CompCert4Lean.Backend.Registers
+
+namespace Regmap
+
+theorem gi_proof : gi := by
+  intro A i x
+  rfl
+
+theorem gss_proof : gss := by
+  intro A i x m
+  rcases m with ⟨d, m⟩
+  change CompCert4Lean.Lib.Maps.PTree.tree A at m
+  change CompCert4Lean.Foundation.Numbers.Rocq.Coq.positive at i
+  change (match CompCert4Lean.Lib.Maps.PTree.get i
+      (CompCert4Lean.Lib.Maps.PTree.set i x m) with
+    | some y => y
+    | none => d) = x
+  rw [CompCert4Lean.Lib.Maps.PTree.getSet_equation]
+  simp
+
+theorem gso_proof : gso := by
+  intro A i j x m hij
+  rcases m with ⟨d, m⟩
+  change CompCert4Lean.Lib.Maps.PTree.tree A at m
+  change CompCert4Lean.Foundation.Numbers.Rocq.Coq.positive at i
+  change CompCert4Lean.Foundation.Numbers.Rocq.Coq.positive at j
+  change (match CompCert4Lean.Lib.Maps.PTree.get i
+      (CompCert4Lean.Lib.Maps.PTree.set j x m) with
+    | some y => y
+    | none => d) =
+    match CompCert4Lean.Lib.Maps.PTree.get i m with
+    | some y => y
+    | none => d
+  rw [CompCert4Lean.Lib.Maps.PTree.getSet_equation]
+  by_cases heq : i = j
+  · exact False.elim (hij heq)
+  · simp [heq]
+
+theorem gsspec_proof : gsspec := by
+  intro A i j x m
+  rcases m with ⟨d, m⟩
+  change CompCert4Lean.Lib.Maps.PTree.tree A at m
+  change CompCert4Lean.Foundation.Numbers.Rocq.Coq.positive at i
+  change CompCert4Lean.Foundation.Numbers.Rocq.Coq.positive at j
+  change (match CompCert4Lean.Lib.Maps.PTree.get i
+      (CompCert4Lean.Lib.Maps.PTree.set j x m) with
+    | some y => y
+    | none => d) =
+    match CompCert4Lean.Lib.Coqlib.peq i j with
+    | .left _ => x
+    | .right _ =>
+      match CompCert4Lean.Lib.Maps.PTree.get i m with
+      | some y => y
+      | none => d
+  rw [CompCert4Lean.Lib.Maps.PTree.getSet_equation]
+  cases CompCert4Lean.Lib.Coqlib.peq i j with
+  | left hij =>
+      subst j
+      simp
+  | right hij =>
+      simp [hij]
+
+end Regmap
+
+end CompCert4Lean.Backend.Registers

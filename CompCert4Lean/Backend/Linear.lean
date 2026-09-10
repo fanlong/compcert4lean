@@ -336,3 +336,29 @@ def semantics
     (initial_state p) final_state (Genv.globalenv p)
 
 end CompCert4Lean.Backend.Linear
+
+namespace CompCert4Lean.Backend.Linear
+
+theorem is_label_correct : is_label_correctStatement := by
+  intro lbl instr
+  cases instr with
+  | Lgetstack sl ofs ty dst => simp [is_label]
+  | Lsetstack src sl ofs ty => simp [is_label]
+  | Lop op args res => simp [is_label]
+  | Lload chunk addr args dst => simp [is_label]
+  | Lstore chunk addr args src => simp [is_label]
+  | Lcall sig ros => simp [is_label]
+  | Ltailcall sig ros => simp [is_label]
+  | Lbuiltin ef args res => simp [is_label]
+  | Llabel l =>
+      cases h : CompCert4Lean.Lib.Coqlib.peq lbl l with
+      | left heq => simp [is_label, h, heq]
+      | right hne =>
+          simp [is_label, h]
+          exact fun hEq => hne hEq.symm
+  | Lgoto l => simp [is_label]
+  | Lcond cond args l => simp [is_label]
+  | Ljumptable arg tbl => simp [is_label]
+  | Lreturn => simp [is_label]
+
+end CompCert4Lean.Backend.Linear

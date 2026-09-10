@@ -620,3 +620,25 @@ def undef_regs_other_2Statement : Prop :=
         (List.map CompCert4Lean.X86.Asm.preg_of rl) rs r = rs r
 
 end CompCert4Lean.Backend.Asmgenproof0
+
+namespace CompCert4Lean.Backend.Asmgenproof0
+
+theorem ireg_of_eq : ireg_of_eqStatement := by
+  intro r r' h
+  simp [CompCert4Lean.X86.Asmgen.ireg_of] at h
+  cases r <;> cases h <;> rfl
+
+theorem freg_of_eq : freg_of_eqStatement := by
+  intro r r' h
+  simp [CompCert4Lean.X86.Asmgen.freg_of] at h
+  cases r <;> cases h <;> rfl
+
+theorem preg_of_injective : preg_of_injectiveStatement := by
+  intro r1 r2 h
+  cases r1 <;> cases r2 <;> simp [CompCert4Lean.X86.Asm.preg_of] at h ⊢
+
+theorem preg_of_data : preg_of_dataStatement := by
+  intro r
+  cases r <;> rfl
+
+end CompCert4Lean.Backend.Asmgenproof0

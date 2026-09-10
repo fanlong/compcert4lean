@@ -382,3 +382,23 @@ def transform_program (p : program) : res program :=
         .Error (msg undefinedGlobalText)
 
 end CompCert4Lean.Backend.Unusedglob
+
+namespace CompCert4Lean.Backend.Unusedglob.IS
+
+theorem mem_1_proof : mem_1 := by
+  intro s x h
+  exact CompCert4Lean.Lib.FSetAVLplus.Make.mem_1 s x h
+
+theorem add_2_proof : add_2 := by
+  intro s x y h
+  exact CompCert4Lean.Lib.FSetAVLplus.Make.add_2 s x y h
+
+theorem remove_2_proof : remove_2 := by
+  intro s x y hne h
+  exact CompCert4Lean.Lib.FSetAVLplus.Make.remove_2 s x y hne h
+
+theorem add_3_proof : add_3 := by
+  intro s x y hne h
+  exact CompCert4Lean.Lib.FSetAVLplus.Make.add_3 s x y hne h
+
+end CompCert4Lean.Backend.Unusedglob.IS

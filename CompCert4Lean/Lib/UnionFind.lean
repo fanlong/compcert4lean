@@ -818,3 +818,54 @@ theorem repr_some_proof :
 end UF
 
 end CompCert4Lean.Lib.UnionFind
+
+namespace CompCert4Lean.Lib.UnionFind
+
+namespace UF
+
+theorem find_x_obligation_2 :
+    ∀ (M : MAP), find_x_obligation_2Statement M := by
+  intro M uf a find_x find_x_obligation_1
+  dsimp
+  intro a' h₀ b uf' h
+  have hne : a ≠ repr M uf a' :=
+    repr_some_diff_calc M uf a a' h₀.symm
+  let r := find_x a' (find_x_obligation_1 uf a a' h₀)
+  change (b, uf') = r.1 at h
+  have hr : r.1.1 = repr M uf a' := r.2.1
+  have hb : b = r.1.1 := by simpa using congrArg Prod.fst h
+  intro hab
+  apply hne
+  exact hab.trans (hb.trans hr)
+
+theorem find_x_obligation_3 :
+    ∀ (M : MAP), find_x_obligation_3Statement M := by
+  intro M uf a find_x find_x_obligation_1
+  dsimp
+  intro a' h₀ b uf' h
+  let r := find_x a' (find_x_obligation_1 uf a a' h₀)
+  change (b, uf') = r.1 at h
+  have hr : r.1.1 = repr M uf a' := r.2.1
+  have hunchanged : repr M r.1.2 a = repr M uf a := r.2.2 a
+  have huf : uf' = r.1.2 := by simpa using congrArg Prod.snd h
+  have hb : b = r.1.1 := by simpa using congrArg Prod.fst h
+  rw [huf]
+  calc
+    repr M r.1.2 a = repr M uf a := hunchanged
+    _ = repr M uf a' := repr_some_calc M uf a a' h₀.symm
+    _ = r.1.1 := hr.symm
+    _ = b := hb.symm
+
+theorem repr_res_none_proof :
+    ∀ (M : MAP), repr_res_noneStatement M := by
+  intro M uf a
+  exact repr_res_none_calc M uf a
+
+theorem repr_canonical_proof :
+    ∀ (M : MAP), repr_canonicalStatement M := by
+  intro M uf a
+  exact repr_canonical_calc M uf a
+
+end UF
+
+end CompCert4Lean.Lib.UnionFind

@@ -516,3 +516,45 @@ def valid_fresh_differentStatement : Prop :=
   ∀ (r1 r2 : reg) (s : RTLgen.state), reg_valid r1 s → reg_fresh r2 s → r1 ≠ r2
 
 end CompCert4Lean.Backend.RTLgenspec
+
+namespace CompCert4Lean.Backend.RTLgenspec
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Lib.Maps
+
+theorem instr_at_incr : instr_at_incrStatement := by
+  intro s1 s2 n i hin hget
+  cases hin with
+  | state_incr_intro _ _ hcode =>
+      rcases hcode n with hnone | heq
+      · have hcontra : (some i : Option RTL.instruction) = none := by
+          rw [← hget]
+          exact hnone
+        exact False.elim ((Option.some_ne_none i) hcontra)
+      · calc
+          CompCert4Lean.Lib.Maps.PTree.get n s2.st_code =
+            CompCert4Lean.Lib.Maps.PTree.get n s1.st_code := heq
+          _ = some i := hget
+
+theorem valid_fresh_absurd : valid_fresh_absurdStatement := by
+  intro r s hvalid hfresh
+  exact hfresh hvalid
+
+theorem valid_fresh_different : valid_fresh_differentStatement := by
+  intro r1 r2 s hvalid hfresh heq
+  subst r2
+  exact hfresh hvalid
+
+theorem reg_valid_incr : reg_valid_incrStatement := by
+  intro r s1 s2 hin hvalid
+  cases hin with
+  | state_incr_intro _ hnextreg _ =>
+      change CompCert4Lean.Foundation.Numbers.Rocq.Coq.PArith.BinPos.Pos.to_nat r <
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.PArith.BinPos.Pos.to_nat s1.st_nextreg at hvalid
+      change CompCert4Lean.Foundation.Numbers.Rocq.Coq.PArith.BinPos.Pos.to_nat s1.st_nextreg ≤
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.PArith.BinPos.Pos.to_nat s2.st_nextreg at hnextreg
+      change CompCert4Lean.Foundation.Numbers.Rocq.Coq.PArith.BinPos.Pos.to_nat r <
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.PArith.BinPos.Pos.to_nat s2.st_nextreg
+      exact Nat.lt_of_lt_of_le hvalid hnextreg
+
+end CompCert4Lean.Backend.RTLgenspec

@@ -226,3 +226,20 @@ theorem iter_prop :
           exact hiter
 
 end CompCert4Lean.Lib.Iteration.PrimIter
+
+namespace CompCert4Lean.Lib.Iteration.PrimIter
+
+theorem iterate_prop :
+    ∀ (A B : Type) (step : A → Sum B A) (P : A → Prop) (Q : B → Prop)
+      (step_prop : ∀ (a : A), P a →
+        match step a with
+        | Sum.inl b => Q b
+        | Sum.inr a' => P a'),
+      iterate_propStatement A B step P Q step_prop := by
+  intro A B step P Q step_prop
+  unfold iterate_propStatement
+  intro a b hiter hPa
+  apply iter_prop A B step P Q step_prop num_iterations a b hPa
+  exact hiter
+
+end CompCert4Lean.Lib.Iteration.PrimIter

@@ -145,3 +145,285 @@ def locmap_get_set_loc_result_callee_saveStatement : Prop :=
       Locmap.setpair (locResult sg) v rs l = rs l
 
 end CompCert4Lean.Backend.Conventions
+
+namespace CompCert4Lean.Backend.Conventions
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Backend.Locations
+open CompCert4Lean.X86.Machregs
+
+private abbrev ProofZ := CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z
+private abbrev proofIntOfZ := CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+private abbrev proofZLe := CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.le
+private abbrev proofZGe := CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.ge
+private abbrev proofZMax := CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.max
+
+private theorem proof_zle_max_left (x y : ProofZ) : proofZLe x (proofZMax x y) := by
+  change proofIntOfZ x ≤ proofIntOfZ
+    (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.max x y)
+  by_cases h : proofIntOfZ x ≤ proofIntOfZ y
+  · simp [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.max, h]
+  · simp [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.max, h]
+
+private theorem proof_zle_max_right (x y : ProofZ) : proofZLe y (proofZMax x y) := by
+  change proofIntOfZ y ≤ proofIntOfZ
+    (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.max x y)
+  by_cases h : proofIntOfZ x ≤ proofIntOfZ y
+  · simp [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.max, h]
+  · have hxy : proofIntOfZ y ≤ proofIntOfZ x := by omega
+    simpa [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.max, h] using hxy
+
+private theorem proof_zle_trans {x y z : ProofZ}
+    (hxy : proofZLe x y) (hyz : proofZLe y z) : proofZLe x z := by
+  change proofIntOfZ x ≤ proofIntOfZ y at hxy
+  change proofIntOfZ y ≤ proofIntOfZ z at hyz
+  change proofIntOfZ x ≤ proofIntOfZ z
+  exact Int.le_trans hxy hyz
+
+private theorem proof_zge_trans {x y z : ProofZ}
+    (hxy : proofZGe x y) (hyz : proofZGe y z) : proofZGe x z := by
+  change proofIntOfZ y ≤ proofIntOfZ x at hxy
+  change proofIntOfZ z ≤ proofIntOfZ y at hyz
+  change proofIntOfZ z ≤ proofIntOfZ x
+  exact Int.le_trans hyz hxy
+
+private theorem proof_max_outgoing_1_above
+    (accu : ProofZ) (l : CompCert4Lean.Backend.Locations.loc) :
+    proofZGe (max_outgoing_1 accu l) accu := by
+  cases l with
+  | R r =>
+      change proofIntOfZ accu ≤ proofIntOfZ accu
+      exact Int.le_refl _
+  | S sl ofs ty =>
+      cases sl with
+      | Local =>
+          change proofIntOfZ accu ≤ proofIntOfZ accu
+          exact Int.le_refl _
+      | Incoming =>
+          change proofIntOfZ accu ≤ proofIntOfZ accu
+          exact Int.le_refl _
+      | Outgoing =>
+          change proofIntOfZ accu ≤ proofIntOfZ
+            (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.max accu
+              (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add ofs
+                (CompCert4Lean.Backend.Locations.typesize ty)))
+          exact proof_zle_max_left accu _
+
+private theorem proof_fold_max_outgoing_above_aux : fold_max_outgoing_aboveStatement := by
+  intro l n
+  induction l generalizing n with
+  | nil => change proofIntOfZ n ≤ proofIntOfZ n; exact Int.le_refl _
+  | cons p ps ih =>
+      change proofZGe (List.foldl max_outgoing_2 n (p :: ps)) n
+      simp only [List.foldl]
+      have hp : proofZGe (max_outgoing_2 n p) n := by
+        cases p with
+        | One l => exact proof_max_outgoing_1_above n l
+        | Twolong l1 l2 =>
+            change proofZGe (max_outgoing_1 (max_outgoing_1 n l1) l2) n
+            exact proof_zge_trans (proof_max_outgoing_1_above _ l2)
+              (proof_max_outgoing_1_above n l1)
+      exact proof_zge_trans (ih (max_outgoing_2 n p)) hp
+
+private theorem proof_target_le_max_outgoing_2
+    (ofs : ProofZ) (ty : typ) (p : rpair CompCert4Lean.Backend.Locations.loc)
+    (n : ProofZ)
+    (h : S Outgoing ofs ty ∈ regs_of_rpair p) :
+    proofZLe
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add ofs
+        (CompCert4Lean.Backend.Locations.typesize ty))
+      (max_outgoing_2 n p) := by
+  cases p with
+  | One l =>
+      simp [regs_of_rpair] at h
+      subst l
+      exact proof_zle_max_right n _
+  | Twolong l1 l2 =>
+      simp [regs_of_rpair] at h
+      rcases h with h | h
+      · subst l1
+        change proofZLe
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add ofs
+            (CompCert4Lean.Backend.Locations.typesize ty))
+          (max_outgoing_1 (max_outgoing_1 n (S Outgoing ofs ty)) l2)
+        apply proof_zle_trans (proof_zle_max_right n _)
+        exact proof_max_outgoing_1_above _ l2
+      · subst l2
+        change proofZLe
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add ofs
+            (CompCert4Lean.Backend.Locations.typesize ty))
+          (max_outgoing_1 (max_outgoing_1 n l1) (S Outgoing ofs ty))
+        exact proof_zle_max_right _ _
+
+private theorem proof_target_le_fold
+    (ofs : ProofZ) (ty : typ) (l : List (rpair CompCert4Lean.Backend.Locations.loc))
+    (n : ProofZ)
+    (h : S Outgoing ofs ty ∈ regs_of_rpairs l) :
+    proofZLe
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add ofs
+        (CompCert4Lean.Backend.Locations.typesize ty))
+      (listFoldLeft max_outgoing_2 l n) := by
+  induction l generalizing n with
+  | nil => exact (_root_.List.not_mem_nil h).elim
+  | cons p ps ih =>
+      change S Outgoing ofs ty ∈ regs_of_rpair p ++ regs_of_rpairs ps at h
+      rcases (_root_.List.mem_append.mp h) with hp | hps
+      · change proofZLe _ (listFoldLeft max_outgoing_2 (p :: ps) n)
+        change proofZLe _ (listFoldLeft max_outgoing_2 ps (max_outgoing_2 n p))
+        apply proof_zle_trans (proof_target_le_max_outgoing_2 ofs ty p n hp)
+        exact proof_fold_max_outgoing_above_aux ps (max_outgoing_2 n p)
+      · change proofZLe _ (listFoldLeft max_outgoing_2 ps (max_outgoing_2 n p))
+        exact ih (max_outgoing_2 n p) hps
+ 
+theorem fold_max_outgoing_above : fold_max_outgoing_aboveStatement :=
+  proof_fold_max_outgoing_above_aux
+
+theorem loc_arguments_bounded : loc_arguments_boundedStatement := by
+  intro cfg s ofs ty h
+  exact proof_target_le_fold ofs ty (locArguments cfg s) z0 h
+
+private theorem proof_no_incoming_win64 :
+    ∀ (tys : List typ) (r ofs : ProofZ) (xofs : ProofZ) (xty : typ),
+      S Incoming xofs xty ∉
+        regs_of_rpairs (CompCert4Lean.X86.Conventions1.loc_arguments_win64 tys r ofs) := by
+  intro tys
+  induction tys with
+  | nil =>
+      intro r ofs xofs xty h
+      simp [CompCert4Lean.X86.Conventions1.loc_arguments_win64,
+        regs_of_rpairs] at h
+  | cons ty tys ih =>
+      intro r ofs xofs xty h
+      cases ty with
+      | Tint | Tlong | Tany32 | Tany64 =>
+          cases hn : CompCert4Lean.Lib.Coqlib.list_nth_z
+              CompCert4Lean.X86.Conventions1.int_param_regs_win64 r with
+          | none =>
+              simp [CompCert4Lean.X86.Conventions1.loc_arguments_win64, hn,
+                regs_of_rpairs] at h
+              rcases h with h | h
+              · simpa [regs_of_rpair] using h
+              · exact ih _ _ _ _ h
+          | some ireg =>
+              simp [CompCert4Lean.X86.Conventions1.loc_arguments_win64, hn,
+                regs_of_rpairs] at h
+              rcases h with h | h
+              · simpa [regs_of_rpair] using h
+              · exact ih _ _ _ _ h
+      | Tfloat | Tsingle =>
+          cases hn : CompCert4Lean.Lib.Coqlib.list_nth_z
+              CompCert4Lean.X86.Conventions1.float_param_regs_win64 r with
+          | none =>
+              simp [CompCert4Lean.X86.Conventions1.loc_arguments_win64, hn,
+                regs_of_rpairs] at h
+              rcases h with h | h
+              · simpa [regs_of_rpair] using h
+              · exact ih _ _ _ _ h
+          | some freg =>
+              simp [CompCert4Lean.X86.Conventions1.loc_arguments_win64, hn,
+                regs_of_rpairs] at h
+              rcases h with h | h
+              · simpa [regs_of_rpair] using h
+              · exact ih _ _ _ _ h
+
+private theorem proof_no_incoming_elf64 :
+    ∀ (tys : List typ) (ir fr ofs : ProofZ) (xofs : ProofZ) (xty : typ),
+      S Incoming xofs xty ∉
+        regs_of_rpairs (CompCert4Lean.X86.Conventions1.loc_arguments_elf64 tys ir fr ofs) := by
+  intro tys
+  induction tys with
+  | nil =>
+      intro ir fr ofs xofs xty h
+      simp [CompCert4Lean.X86.Conventions1.loc_arguments_elf64,
+        regs_of_rpairs] at h
+  | cons ty tys ih =>
+      intro ir fr ofs xofs xty h
+      cases ty with
+      | Tint | Tlong | Tany32 | Tany64 =>
+          cases hn : CompCert4Lean.Lib.Coqlib.list_nth_z
+              CompCert4Lean.X86.Conventions1.int_param_regs_elf64 ir with
+          | none =>
+              simp [CompCert4Lean.X86.Conventions1.loc_arguments_elf64, hn,
+                regs_of_rpairs] at h
+              rcases h with h | h
+              · simpa [regs_of_rpair] using h
+              · exact ih _ _ _ _ _ h
+          | some ireg =>
+              simp [CompCert4Lean.X86.Conventions1.loc_arguments_elf64, hn,
+                regs_of_rpairs] at h
+              rcases h with h | h
+              · simpa [regs_of_rpair] using h
+              · exact ih _ _ _ _ _ h
+      | Tfloat | Tsingle =>
+          cases hn : CompCert4Lean.Lib.Coqlib.list_nth_z
+              CompCert4Lean.X86.Conventions1.float_param_regs_elf64 fr with
+          | none =>
+              simp [CompCert4Lean.X86.Conventions1.loc_arguments_elf64, hn,
+                regs_of_rpairs] at h
+              rcases h with h | h
+              · simpa [regs_of_rpair] using h
+              · exact ih _ _ _ _ _ h
+          | some freg =>
+              simp [CompCert4Lean.X86.Conventions1.loc_arguments_elf64, hn,
+                regs_of_rpairs] at h
+              rcases h with h | h
+              · simpa [regs_of_rpair] using h
+              · exact ih _ _ _ _ _ h
+
+private theorem proof_no_incoming_arguments :
+    ∀ (cfg : CompilerConfig) (s : signature) (xofs : ProofZ) (xty : typ),
+      S Incoming xofs xty ∉ regs_of_rpairs (locArguments cfg s) := by
+  intro cfg s xofs xty h
+  change S Incoming xofs xty ∈
+    regs_of_rpairs (CompCert4Lean.X86.Conventions1.loc_arguments cfg s) at h
+  simp only [CompCert4Lean.X86.Conventions1.loc_arguments,
+    CompCert4Lean.X86_64.Archi.ptr64, ↓reduceIte] at h
+  split at h <;> rename_i habi
+  · exact proof_no_incoming_win64 _ _ _ _ _ h
+  · exact proof_no_incoming_elf64 _ _ _ _ _ _ h
+
+private theorem proof_regs_map_parameter :
+    ∀ (l : List (rpair CompCert4Lean.Backend.Locations.loc)),
+      regs_of_rpairs (l.map (map_rpair parameter_of_argument)) =
+        List.map parameter_of_argument (regs_of_rpairs l) := by
+  intro l
+  induction l with
+  | nil => rfl
+  | cons p ps ih =>
+      cases p <;> simp [map_rpair, regs_of_rpair, regs_of_rpairs, ih]
+
+private theorem proof_list_map_mem_inv {A B : Type} (f : A → B)
+    (l : List A) (y : B) (h : y ∈ List.map f l) :
+    ∃ x, y = f x ∧ x ∈ l := by
+  induction l with
+  | nil => exact (_root_.List.not_mem_nil h).elim
+  | cons a l ih =>
+      simp only [List.map, _root_.List.mem_cons] at h
+      rcases h with h | h
+      · exact ⟨a, h, _root_.List.Mem.head l⟩
+      · rcases ih h with ⟨x, hx, hxl⟩
+        exact ⟨x, hx, _root_.List.Mem.tail a hxl⟩
+
+theorem incoming_slot_in_parameters : incoming_slot_in_parametersStatement := by
+  intro cfg ofs ty sg h
+  have hmap : S Incoming ofs ty ∈
+      List.map parameter_of_argument (regs_of_rpairs (locArguments cfg sg)) := by
+    rw [← proof_regs_map_parameter (locArguments cfg sg)]
+    exact h
+  obtain ⟨x, hx, hmem⟩ := proof_list_map_mem_inv parameter_of_argument
+    (regs_of_rpairs (locArguments cfg sg)) (S Incoming ofs ty) hmap
+  cases x with
+  | R r => cases hx
+  | S sl pos typx =>
+      cases sl with
+      | Local => cases hx
+      | Incoming =>
+          exfalso
+          exact proof_no_incoming_arguments cfg sg pos typx hmem
+      | Outgoing =>
+          cases hx
+          exact hmem
+
+end CompCert4Lean.Backend.Conventions

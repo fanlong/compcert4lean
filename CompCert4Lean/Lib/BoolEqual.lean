@@ -57,3 +57,27 @@ def dec_eq_from_bool_eqStatement :=
 end BE
 
 end CompCert4Lean.Lib.BoolEqual
+
+namespace CompCert4Lean.Lib.BoolEqual
+
+namespace BE
+
+theorem proj_sumbool_is_true : proj_sumbool_is_trueStatement := by
+  intro A f x
+  cases h : f x x with
+  | left hxy => rfl
+  | right hxy => exact (hxy rfl).elim
+
+theorem false_not_true : false_not_trueStatement := by
+  intro P h
+  cases h
+
+theorem proj_sumbool_true : proj_sumbool_trueStatement := by
+  intro A x y a h
+  cases a with
+  | left hxy => exact hxy
+  | right hxy => simp [CompCert4Lean.Lib.Coqlib.proj_sumbool] at h
+
+end BE
+
+end CompCert4Lean.Lib.BoolEqual

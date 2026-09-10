@@ -1021,3 +1021,12 @@ theorem eval_addressing_Aglobal : eval_addressing_AglobalStatement := by
     CompCert4Lean.X86_64.Archi.ptr64]
 
 end CompCert4Lean.X86.Op
+
+namespace CompCert4Lean.X86.Op
+
+theorem eval_addressing_Ainstack : eval_addressing_AinstackStatement := by
+  intro F V genv sp ofs
+  simp [eval_addressing, eval_addressing64,
+    CompCert4Lean.X86_64.Archi.ptr64]
+
+end CompCert4Lean.X86.Op

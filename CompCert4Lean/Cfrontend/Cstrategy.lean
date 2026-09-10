@@ -1653,3 +1653,85 @@ def strategy_simulationStatement
         (binary32_certificate := binary32_certificate) xi p)
 
 end CompCert4Lean.Cfrontend.Cstrategy
+
+namespace CompCert4Lean.Cfrontend.Cstrategy
+
+open CompCert4Lean.Cfrontend.Csem
+
+theorem leftcontext_context : leftcontext_contextStatement := by
+  unfold leftcontext_contextStatement
+  intro k1 k2 C h
+  exact leftcontext.rec
+    (motive_1 := fun k C _ => context k1 k C)
+    (motive_2 := fun C _ => contextlist k1 C)
+    (.ctx_top k1)
+    (fun _ ih => .deref ih)
+    (fun _ ih => .field ih)
+    (fun _ ih => .rvalof ih)
+    (fun _ ih => .addrof ih)
+    (fun _ ih => .unop ih)
+    (fun _ ih => .binopLeft ih)
+    (fun _ _ ih => .binopRight ih)
+    (fun _ ih => .cast ih)
+    (fun _ ih => .seqand ih)
+    (fun _ ih => .seqor ih)
+    (fun _ ih => .condition ih)
+    (fun _ ih => .assignLeft ih)
+    (fun _ _ ih => .assignRight ih)
+    (fun _ ih => .assignopLeft ih)
+    (fun _ _ ih => .assignopRight ih)
+    (fun _ ih => .postincr ih)
+    (fun _ ih => .callLeft ih)
+    (fun _ _ ih => .callRight ih)
+    (fun _ ih => .builtin ih)
+    (fun _ ih => .comma ih)
+    (fun _ ih => .paren ih)
+    (fun _ ih => .ctx_list_head ih)
+    (fun _ _ ih => .ctx_list_tail ih)
+    h
+
+theorem context_compose : context_composeStatement := by
+  unfold context_composeStatement
+  intro k2 k3 C2 h2 k1 C1 h1
+  exact context.rec
+    (motive_1 := fun k C _ => context k1 k (fun x => C (C1 x)))
+    (motive_2 := fun C _ => contextlist k1 (fun x => C (C1 x)))
+    h1
+    (fun _ ih => .deref ih)
+    (fun _ ih => .field ih)
+    (fun _ ih => .rvalof ih)
+    (fun _ ih => .addrof ih)
+    (fun _ ih => .unop ih)
+    (fun _ ih => .binopLeft ih)
+    (fun _ ih => .binopRight ih)
+    (fun _ ih => .cast ih)
+    (fun _ ih => .seqand ih)
+    (fun _ ih => .seqor ih)
+    (fun _ ih => .condition ih)
+    (fun _ ih => .assignLeft ih)
+    (fun _ ih => .assignRight ih)
+    (fun _ ih => .assignopLeft ih)
+    (fun _ ih => .assignopRight ih)
+    (fun _ ih => .postincr ih)
+    (fun _ ih => .callLeft ih)
+    (fun _ ih => .callRight ih)
+    (fun _ ih => .builtin ih)
+    (fun _ ih => .comma ih)
+    (fun _ ih => .paren ih)
+    (fun _ ih => .ctx_list_head ih)
+    (fun _ ih => .ctx_list_tail ih)
+    h2
+
+theorem lred_kind : lred_kindStatement := by
+  unfold lred_kindStatement
+  intro ge e a m a' m' h
+  cases h <;> rfl
+
+theorem context_kind : context_kindStatement := by
+  unfold context_kindStatement
+  intro a fromKind to C h hkind
+  cases h
+  case ctx_top => exact hkind
+  all_goals rfl
+
+end CompCert4Lean.Cfrontend.Cstrategy

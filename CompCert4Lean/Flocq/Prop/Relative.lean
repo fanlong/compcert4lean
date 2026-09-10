@@ -124,3 +124,61 @@ def relative_error_FLT_exStatement : Prop :=
 end ExactSpecification
 
 end CompCert4Lean.Flocq.Prop.Relative
+
+namespace CompCert4Lean.Flocq.Prop.Relative
+
+theorem relative_error_FLT_aux : relative_error_FLT_auxStatement := by
+  intro emin prec k h
+  change
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ prec ≤
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+        (Zsub k (FLT_exp emin prec k))
+  change
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+      (Zsub (Zadd emin prec) Zone) <
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ k at h
+  have intOfZ_sub : ∀ a b : Z,
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (Zsub a b) =
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ a -
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ b := by
+    intro a b
+    change
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+            a - CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ b)) = _
+    simp only [CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+  have intOfZ_add : ∀ a b : Z,
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (Zadd a b) =
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ a +
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ b := by
+    intro a b
+    change
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ a +
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ b)) = _
+    simp only [CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+  have intOfZ_one : CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ Zone = 1 := by
+    rfl
+  have intOfZ_FLT_sub : ∀ a b : Z,
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+        (CompCert4Lean.Flocq.Core.FLT.Zsub a b) =
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ a -
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ b := by
+    intro a b
+    change
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ a -
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ b)) = _
+    simp only [CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+  simp only [intOfZ_sub, intOfZ_add, intOfZ_one,
+    CompCert4Lean.Flocq.Core.FLT.FLT_exp,
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.max] at h ⊢
+  split
+  · omega
+  · rw [intOfZ_FLT_sub]
+    omega
+
+end CompCert4Lean.Flocq.Prop.Relative

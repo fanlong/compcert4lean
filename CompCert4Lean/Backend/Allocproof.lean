@@ -1884,3 +1884,274 @@ theorem transf_program_match : transf_program_matchStatement := by
       exact ⟨hlist p.prog_defs defs hdefs, rfl, rfl⟩
 
 end CompCert4Lean.Backend.Allocproof
+
+namespace CompCert4Lean.Backend.Allocproof
+
+open CompCert4Lean.Backend.Allocation
+open CompCert4Lean.Backend.Locations
+open CompCert4Lean.X86.Op
+open CompCert4Lean.Lib.Coqlib
+
+theorem expand_moves_cons : expand_moves_consStatement := by
+  intro m accu b
+  change List.append (List.map expand_move (m :: accu).reverse) b =
+    List.append (List.map expand_move accu.reverse) (expand_move m :: b)
+  rw [List.reverse_cons, List.map_append]
+  exact List.append_assoc _ _ _
+
+private theorem wf_moves_reverse {mv : CompCert4Lean.Backend.Allocation.moves}
+    (h : wf_moves mv) :
+    wf_moves (List.reverse mv) := by
+  unfold wf_moves at h ⊢
+  apply (CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.List.Forall_forall wf_move _).2
+  intro m hm
+  apply (CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.List.Forall_forall wf_move _).1 h m
+  change m ∈ (show List move from mv)
+  exact List.mem_reverse.mp hm
+
+private theorem is_move_operation_correct_local {A : Type} (op : operation)
+    (args : List A) (a : A) (h : is_move_operation op args = some a) :
+    op = Omove ∧ args = [a] := by
+  cases op with
+  | Omove =>
+      cases args with
+      | nil => simp [is_move_operation] at h
+      | cons x xs =>
+          cases xs with
+          | nil => simp [is_move_operation] at h ⊢; exact h
+          | cons y ys => simp [is_move_operation] at h
+  | _ => simp [is_move_operation] at h
+
+private theorem extract_moves_aux :
+    ∀ (b : LTL.bblock)
+      (accu : CompCert4Lean.Backend.Allocation.moves)
+      (mv : CompCert4Lean.Backend.Allocation.moves) (b' : LTL.bblock),
+      extract_moves accu b = (mv, b') →
+      wf_moves accu →
+      wf_moves mv ∧ expand_moves (List.reverse accu) b = expand_moves mv b' := by
+  intro b
+  induction b with
+  | nil =>
+      intro accu mv b' h hacc
+      simp [extract_moves] at h
+      cases h
+      exact ⟨wf_moves_reverse hacc, rfl⟩
+  | cons a b ih =>
+      intro accu mv b' h hacc
+      cases a with
+      | Lgetstack sl ofs ty dst =>
+          simp only [extract_moves] at h
+          have hh := ih (MV (S sl ofs ty) (R dst) :: accu) mv b' h
+            (.cons (by simp [wf_move]) hacc)
+          rcases hh with ⟨hmv, heq⟩
+          constructor
+          · exact hmv
+          · simpa [expand_moves, expand_move] using
+              (expand_moves_cons (MV (S sl ofs ty) (R dst)) accu b).symm.trans heq
+      | Lsetstack src sl ofs ty =>
+          simp only [extract_moves] at h
+          have hh := ih (MV (R src) (S sl ofs ty) :: accu) mv b' h
+            (.cons (by simp [wf_move]) hacc)
+          rcases hh with ⟨hmv, heq⟩
+          constructor
+          · exact hmv
+          · simpa [expand_moves, expand_move] using
+              (expand_moves_cons (MV (R src) (S sl ofs ty)) accu b).symm.trans heq
+      | Lop op args res =>
+          cases hm : is_move_operation op args with
+          | none =>
+              simp [extract_moves, hm] at h
+              cases h
+              exact ⟨wf_moves_reverse hacc, rfl⟩
+          | some arg =>
+              rcases is_move_operation_correct_local op args arg hm with
+                ⟨hop, hargs⟩
+              subst op
+              subst args
+              simp [extract_moves, hm] at h
+              have hh := ih (MV (R arg) (R res) :: accu) mv b' h
+                (.cons (by simp [wf_move]) hacc)
+              rcases hh with ⟨hmv, heq⟩
+              constructor
+              · exact hmv
+              · simpa [expand_moves, expand_move] using
+                  (expand_moves_cons (MV (R arg) (R res)) accu b).symm.trans heq
+      | Lload chunk addr args dst =>
+          simp [extract_moves] at h
+          cases h
+          exact ⟨wf_moves_reverse hacc, rfl⟩
+      | Lstore chunk addr args src =>
+          simp [extract_moves] at h
+          cases h
+          exact ⟨wf_moves_reverse hacc, rfl⟩
+      | Lcall sg ros =>
+          simp [extract_moves] at h
+          cases h
+          exact ⟨wf_moves_reverse hacc, rfl⟩
+      | Ltailcall sg ros =>
+          simp [extract_moves] at h
+          cases h
+          exact ⟨wf_moves_reverse hacc, rfl⟩
+      | Lbuiltin ef args res =>
+          simp [extract_moves] at h
+          cases h
+          exact ⟨wf_moves_reverse hacc, rfl⟩
+      | Lbranch succ =>
+          simp [extract_moves] at h
+          cases h
+          exact ⟨wf_moves_reverse hacc, rfl⟩
+      | Lcond cond args ifso ifnot =>
+          simp [extract_moves] at h
+          cases h
+          exact ⟨wf_moves_reverse hacc, rfl⟩
+      | Ljumptable arg tbl =>
+          simp [extract_moves] at h
+          cases h
+          exact ⟨wf_moves_reverse hacc, rfl⟩
+      | Lreturn =>
+          simp [extract_moves] at h
+          cases h
+          exact ⟨wf_moves_reverse hacc, rfl⟩
+
+theorem extract_moves_sound : extract_moves_soundStatement := by
+  intro b mv b' h
+  exact extract_moves_aux b [] mv b' h .nil
+
+private theorem extract_moves_ext_aux :
+    ∀ (b : LTL.bblock)
+      (accu : CompCert4Lean.Backend.Allocation.moves)
+      (mv : CompCert4Lean.Backend.Allocation.moves) (b' : LTL.bblock),
+      extract_moves_ext accu b = (mv, b') →
+      wf_moves accu →
+      wf_moves mv ∧ expand_moves (List.reverse accu) b = expand_moves mv b' := by
+  intro b
+  induction b with
+  | nil =>
+      intro accu mv b' h hacc
+      simp [extract_moves_ext] at h
+      cases h
+      exact ⟨wf_moves_reverse hacc, rfl⟩
+  | cons a b ih =>
+      intro accu mv b' h hacc
+      cases a with
+      | Lgetstack sl ofs ty dst =>
+          simp only [extract_moves_ext] at h
+          have hh := ih (MV (S sl ofs ty) (R dst) :: accu) mv b' h
+            (.cons (by simp [wf_move]) hacc)
+          rcases hh with ⟨hmv, heq⟩
+          constructor
+          · exact hmv
+          · simpa [expand_moves, expand_move] using
+              (expand_moves_cons (MV (S sl ofs ty) (R dst)) accu b).symm.trans heq
+      | Lsetstack src sl ofs ty =>
+          simp only [extract_moves_ext] at h
+          have hh := ih (MV (R src) (S sl ofs ty) :: accu) mv b' h
+            (.cons (by simp [wf_move]) hacc)
+          rcases hh with ⟨hmv, heq⟩
+          constructor
+          · exact hmv
+          · simpa [expand_moves, expand_move] using
+              (expand_moves_cons (MV (R src) (S sl ofs ty)) accu b).symm.trans heq
+      | Lop op args res =>
+          cases hc : classify_operation op args with
+          | operation_Omove arg =>
+              simp [extract_moves_ext, hc] at h
+              have hh := ih (MV (R arg) (R res) :: accu) mv b' h
+                (.cons (by simp [wf_move]) hacc)
+              rcases hh with ⟨hmv, heq⟩
+              constructor
+              · exact hmv
+              · simpa [expand_moves, expand_move] using
+                  (expand_moves_cons (MV (R arg) (R res)) accu b).symm.trans heq
+          | operation_Omakelong arg1 arg2 =>
+              simp [extract_moves_ext, hc] at h
+              have hh := ih (MVmakelong arg1 arg2 res :: accu) mv b' h
+                (.cons (by simp [wf_move]) hacc)
+              rcases hh with ⟨hmv, heq⟩
+              constructor
+              · exact hmv
+              · simpa [expand_moves, expand_move] using
+                  (expand_moves_cons (MVmakelong arg1 arg2 res) accu b).symm.trans heq
+          | operation_Olowlong arg =>
+              simp [extract_moves_ext, hc] at h
+              have hh := ih (MVlowlong arg res :: accu) mv b' h
+                (.cons (by simp [wf_move]) hacc)
+              rcases hh with ⟨hmv, heq⟩
+              constructor
+              · exact hmv
+              · simpa [expand_moves, expand_move] using
+                  (expand_moves_cons (MVlowlong arg res) accu b).symm.trans heq
+          | operation_Ohighlong arg =>
+              simp [extract_moves_ext, hc] at h
+              have hh := ih (MVhighlong arg res :: accu) mv b' h
+                (.cons (by simp [wf_move]) hacc)
+              rcases hh with ⟨hmv, heq⟩
+              constructor
+              · exact hmv
+              · simpa [expand_moves, expand_move] using
+                  (expand_moves_cons (MVhighlong arg res) accu b).symm.trans heq
+          | operation_other op' args' =>
+              simp [extract_moves_ext, hc] at h
+              cases h
+              exact ⟨wf_moves_reverse hacc, rfl⟩
+      | Lload chunk addr args dst =>
+          simp [extract_moves_ext] at h
+          cases h
+          exact ⟨wf_moves_reverse hacc, rfl⟩
+      | Lstore chunk addr args src =>
+          simp [extract_moves_ext] at h
+          cases h
+          exact ⟨wf_moves_reverse hacc, rfl⟩
+      | Lcall sg ros =>
+          simp [extract_moves_ext] at h
+          cases h
+          exact ⟨wf_moves_reverse hacc, rfl⟩
+      | Ltailcall sg ros =>
+          simp [extract_moves_ext] at h
+          cases h
+          exact ⟨wf_moves_reverse hacc, rfl⟩
+      | Lbuiltin ef args res =>
+          simp [extract_moves_ext] at h
+          cases h
+          exact ⟨wf_moves_reverse hacc, rfl⟩
+      | Lbranch succ =>
+          simp [extract_moves_ext] at h
+          cases h
+          exact ⟨wf_moves_reverse hacc, rfl⟩
+      | Lcond cond args ifso ifnot =>
+          simp [extract_moves_ext] at h
+          cases h
+          exact ⟨wf_moves_reverse hacc, rfl⟩
+      | Ljumptable arg tbl =>
+          simp [extract_moves_ext] at h
+          cases h
+          exact ⟨wf_moves_reverse hacc, rfl⟩
+      | Lreturn =>
+          simp [extract_moves_ext] at h
+          cases h
+          exact ⟨wf_moves_reverse hacc, rfl⟩
+
+theorem extract_moves_ext_sound : extract_moves_ext_soundStatement := by
+  intro b mv b' h
+  exact extract_moves_ext_aux b [] mv b' h .nil
+
+theorem check_succ_sound : check_succ_soundStatement := by
+  intro s b h
+  cases b with
+  | nil => simp [check_succ] at h
+  | cons i tl =>
+      cases i with
+      | Lbranch s' =>
+          cases hp : peq s s' with
+          | left heq =>
+              simp only [check_succ, hp] at h
+              change true = true at h
+              subst s'
+              exact ⟨tl, rfl⟩
+          | right hne =>
+              simp only [check_succ, hp] at h
+              change false = true at h
+              cases h
+      | _ => simp [check_succ] at h
+
+end CompCert4Lean.Backend.Allocproof

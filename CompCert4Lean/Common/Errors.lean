@@ -95,3 +95,40 @@ def mmap_inversionStatement : Prop :=
         (fun x y => f x = OK y) l l'
 
 end CompCert4Lean.Common.Errors
+
+namespace CompCert4Lean.Common.Errors
+
+theorem bind_inversion : bind_inversionStatement := by
+  intro A B f g y h
+  cases f with
+  | OK x => exact ⟨x, rfl, h⟩
+  | Error message => cases h
+
+theorem bind2_inversion : bind2_inversionStatement := by
+  intro A B C f g z h
+  cases f with
+  | OK pair =>
+      cases pair with
+      | mk x y => exact ⟨x, y, rfl, h⟩
+  | Error message => cases h
+
+theorem mmap_inversion : mmap_inversionStatement := by
+  intro A B f l
+  induction l with
+  | nil =>
+      intro l' h
+      cases h
+      exact _root_.CompCert4Lean.Lib.Coqlib.list_forall2.nil _
+  | cons head tail ih =>
+      intro l' h
+      cases hhead : f head with
+      | Error message => simp [mmap, hhead] at h
+      | OK head' =>
+          cases htail : mmap f tail with
+          | Error message => simp [mmap, hhead, htail] at h
+          | OK tail' =>
+              simp only [mmap, hhead, htail] at h
+              cases h
+              exact _root_.CompCert4Lean.Lib.Coqlib.list_forall2.cons head head' hhead (ih tail' htail)
+
+end CompCert4Lean.Common.Errors

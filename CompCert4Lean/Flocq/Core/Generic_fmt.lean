@@ -475,3 +475,27 @@ def round_oppStatement (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx
   ∀ beta fexp rnd x, Exact.round ctx magnitude beta fexp rnd (Exact.Ropp ctx x) = Exact.Ropp ctx (Exact.round ctx magnitude beta fexp (Exact.Zrnd_opp ctx rnd) x)
 
 end CompCert4Lean.Flocq.Core.Generic_fmt
+
+namespace CompCert4Lean.Flocq.Core.Generic_fmt
+
+theorem valid_exp_large' : valid_exp_large'Statement := by
+  intro fexp hvalid k l hfk h_lk
+  apply Int.lt_of_not_ge
+  intro hnot
+  have hkl : Zle l (fexp l) := by
+    change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ l ≤
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (fexp l)
+    change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ l ≤
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ k at h_lk
+    change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ k ≤
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (fexp l) at hnot
+    exact Int.le_trans h_lk hnot
+  have heq : fexp k = fexp l := (hvalid.valid_exp l).2 hkl |>.2 k hnot
+  have hflk : Zlt (fexp l) k := by simpa [heq] using hfk
+  change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ k ≤
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (fexp l) at hnot
+  change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (fexp l) <
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ k at hflk
+  exact (Int.not_lt_of_ge hnot) hflk
+
+end CompCert4Lean.Flocq.Core.Generic_fmt

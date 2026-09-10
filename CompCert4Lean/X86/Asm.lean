@@ -1087,3 +1087,84 @@ def data_preg : preg → Bool
   | .IR _ | .FR _ | .ST0 => true
 
 end CompCert4Lean.X86.Asm
+
+namespace CompCert4Lean.X86.Asm
+
+private theorem extcall_arg_determ_aux (cfg : CompilerConfig) (rs : regset) (m : mem)
+    (l : CompCert4Lean.Backend.Locations.loc) (v1 v2 : val) :
+    extcall_arg cfg rs m l v1 → extcall_arg cfg rs m l v2 → v1 = v2 := by
+  intro h1 h2
+  cases h1 with
+  | extcall_arg_reg r =>
+      cases h2
+      rfl
+  | extcall_arg_stack ofs ty bofs v hb hv =>
+      cases h2 with
+      | extcall_arg_stack ofs' ty' bofs' v' hb' hv' =>
+          subst bofs
+          subst bofs'
+          exact Option.some.inj (hv.symm.trans hv')
+
+private theorem extcall_arg_pair_determ_aux (cfg : CompilerConfig) (rs : regset) (m : mem)
+    (p : CompCert4Lean.Common.AST.rpair CompCert4Lean.Backend.Locations.loc) (v1 v2 : val) :
+    extcall_arg_pair cfg rs m p v1 → extcall_arg_pair cfg rs m p v2 → v1 = v2 := by
+  intro h1 h2
+  cases h1
+  case extcall_arg_one =>
+    cases h2
+    apply extcall_arg_determ_aux cfg rs m <;> assumption
+  case extcall_arg_twolong =>
+    cases h2
+    congr
+    · apply extcall_arg_determ_aux cfg rs m <;> assumption
+    · apply extcall_arg_determ_aux cfg rs m <;> assumption
+
+private theorem list_forall2_extcall_arg_pair_determ_aux
+    (cfg : CompilerConfig) (rs : regset) (m : mem) :
+    ∀ (ps : List (CompCert4Lean.Common.AST.rpair CompCert4Lean.Backend.Locations.loc))
+      (vs1 vs2 : List val),
+      CompCert4Lean.Lib.Coqlib.list_forall2 (extcall_arg_pair cfg rs m) ps vs1 →
+      CompCert4Lean.Lib.Coqlib.list_forall2 (extcall_arg_pair cfg rs m) ps vs2 →
+      vs1 = vs2 := by
+  intro ps vs1 vs2 h1 h2
+  induction h1 generalizing vs2 with
+  | nil =>
+      cases h2
+      rfl
+  | @cons a1 al b1 bl hp ht ih =>
+      cases h2 with
+      | @cons _ _ b2 _ hp2 ht2 =>
+          congr
+          · exact extcall_arg_pair_determ_aux cfg rs m a1 b1 b2 hp hp2
+          · exact ih _ ht2
+
+theorem extcall_arguments_determ_proof : extcall_arguments_determStatement := by
+  intro cfg rs m sg args1 args2 h1 h2
+  unfold extcall_arguments at h1 h2
+  exact list_forall2_extcall_arg_pair_determ_aux cfg rs m _ _ _ h1 h2
+
+end CompCert4Lean.X86.Asm
+
+namespace CompCert4Lean.X86.Asm
+
+namespace Pregmap
+
+theorem gss_proof : gss := by
+  intro A i x m
+  unfold set
+  split
+  · rfl
+  · rename_i h
+    exact False.elim (h rfl)
+
+theorem gso_proof : gso := by
+  intro A i j x m hij
+  unfold set
+  split
+  · rename_i h
+    exact False.elim (hij h)
+  · rfl
+
+end Pregmap
+
+end CompCert4Lean.X86.Asm

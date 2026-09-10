@@ -659,3 +659,305 @@ theorem transf_program_match : transf_program_matchStatement := by
   · exact ⟨rfl, rfl⟩
 
 end CompCert4Lean.Backend.Tunnelingproof
+
+namespace CompCert4Lean.Backend.Tunnelingproof
+
+open CompCert4Lean.Backend.Tunneling
+open CompCert4Lean.Backend.LTL
+open CompCert4Lean.Lib.UnionFind
+open CompCert4Lean.Lib.Maps
+
+private theorem tunnel_map_get_set {M : MAP} {A : Type} (x y : M.elt)
+    (v : A) (m : M.t A) :
+    M.get x (M.set y v m) = if _h : x = y then some v else M.get x m := by
+  rw [M.gsspec]
+  cases hxy : M.elt_eq x y with
+  | left h => simp [h]
+  | right h => simp [h]
+
+private theorem tunnel_repr_res_none {M : MAP} (uf : UF.t M) (a : UF.elt M) :
+    M.get (UF.repr M uf a) uf.m = none := by
+  apply uf.mwf.induction a
+  intro x ih
+  rw [UF.repr_unroll_proof M uf x]
+  cases h : M.get x uf.m with
+  | none => simpa [h]
+  | some y => simpa [h] using ih y (by
+      change M.get x uf.m = some y
+      exact h)
+
+private theorem tunnel_repr_canonical {M : MAP} (uf : UF.t M) (a : UF.elt M) :
+    UF.repr M uf (UF.repr M uf a) = UF.repr M uf a := by
+  rw [UF.repr_none_proof M uf (UF.repr M uf a) (tunnel_repr_res_none uf a)]
+
+private theorem tunnel_repr_none {M : MAP} (uf : UF.t M) (a : UF.elt M)
+    (h : M.get a uf.m = none) : UF.repr M uf a = a :=
+  UF.repr_none_proof M uf a h
+
+private theorem tunnel_repr_some {M : MAP} (uf : UF.t M) (a a' : UF.elt M)
+    (h : M.get a uf.m = some a') : UF.repr M uf a = UF.repr M uf a' :=
+  UF.repr_some_proof M uf a a' h
+
+private theorem tunnel_repr_identify_1 {M : MAP} (uf : UF.t M) (a b : UF.elt M)
+    (ha : M.get a uf.m = none) (hn : UF.repr M uf b ≠ a) (x : UF.elt M)
+    (hx : UF.repr M uf x ≠ a) :
+    UF.repr M (UF.identify M uf a b ha hn) x = UF.repr M uf x := by
+  revert hx
+  apply (UF.identify M uf a b ha hn).mwf.induction x
+  intro x ih hx
+  rw [UF.repr_unroll_proof M (UF.identify M uf a b ha hn) x]
+  cases hnew : M.get x (UF.identify M uf a b ha hn).m with
+  | none =>
+      simp only [hnew]
+      change M.get x (M.set a b uf.m) = none at hnew
+      rw [tunnel_map_get_set] at hnew
+      by_cases hxa : x = a
+      · subst x
+        simp at hnew
+      · simp [hxa] at hnew
+        exact (tunnel_repr_none uf x hnew).symm
+  | some y =>
+      simp only [hnew]
+      change M.get x (M.set a b uf.m) = some y at hnew
+      rw [tunnel_map_get_set] at hnew
+      by_cases hxa : x = a
+      · subst x
+        simp at hnew
+        subst y
+        exact False.elim (hx (tunnel_repr_none uf a ha))
+      · simp [hxa] at hnew
+        have hy : UF.repr M uf y ≠ a := by
+          intro hya
+          apply hx
+          exact (tunnel_repr_some uf x y hnew).trans hya
+        exact (ih y (by
+          change M.get x (M.set a b uf.m) = some y
+          rw [tunnel_map_get_set]
+          simp [hxa, hnew]) hy).trans (tunnel_repr_some uf x y hnew).symm
+
+private theorem tunnel_repr_identify_2 {M : MAP} (uf : UF.t M) (a b : UF.elt M)
+    (ha : M.get a uf.m = none) (hn : UF.repr M uf b ≠ a) (x : UF.elt M)
+    (hx : UF.repr M uf x = a) :
+    UF.repr M (UF.identify M uf a b ha hn) x = UF.repr M uf b := by
+  revert hx
+  apply (UF.identify M uf a b ha hn).mwf.induction x
+  intro x ih hx
+  rw [UF.repr_unroll_proof M (UF.identify M uf a b ha hn) x]
+  cases hnew : M.get x (UF.identify M uf a b ha hn).m with
+  | none =>
+      simp only [hnew]
+      change M.get x (M.set a b uf.m) = none at hnew
+      rw [tunnel_map_get_set] at hnew
+      by_cases hxa : x = a
+      · subst x
+        simp at hnew
+      · simp [hxa] at hnew
+        exact False.elim (hxa ((tunnel_repr_none uf x hnew).symm.trans hx))
+  | some y =>
+      simp only [hnew]
+      change M.get x (M.set a b uf.m) = some y at hnew
+      rw [tunnel_map_get_set] at hnew
+      by_cases hxa : x = a
+      · subst x
+        simp at hnew
+        subst y
+        exact tunnel_repr_identify_1 uf a b ha hn b hn
+      · simp [hxa] at hnew
+        apply ih y (by
+          change M.get x (M.set a b uf.m) = some y
+          rw [tunnel_map_get_set]
+          simp [hxa, hnew])
+        exact (tunnel_repr_some uf x y hnew).symm.trans hx
+
+private theorem tunnel_repr_union_1 {M : MAP} (uf : UF.t M) (a b x : UF.elt M)
+    (hx : UF.repr M uf x ≠ UF.repr M uf a) :
+    UF.repr M (UF.union M uf a b) x = UF.repr M uf x := by
+  unfold UF.union
+  dsimp
+  split <;> rename_i h
+  · rfl
+  · apply tunnel_repr_identify_1
+    exact hx
+
+private theorem tunnel_repr_union_2 {M : MAP} (uf : UF.t M) (a b x : UF.elt M)
+    (hx : UF.repr M uf x = UF.repr M uf a) :
+    UF.repr M (UF.union M uf a b) x = UF.repr M uf b := by
+  unfold UF.union
+  dsimp
+  split
+  · next heq => exact hx.trans heq
+  · next heq =>
+      exact (tunnel_repr_identify_2 uf (UF.repr M uf a) (UF.repr M uf b) _ _ x hx).trans
+        (tunnel_repr_canonical uf b)
+
+private theorem tunnel_repr_union_3 {M : MAP} (uf : UF.t M) (a b : UF.elt M) :
+    UF.repr M (UF.union M uf a b) b = UF.repr M uf b := by
+  by_cases h : UF.repr M uf a = UF.repr M uf b
+  · unfold UF.union
+    dsimp
+    simp [h]
+  · exact tunnel_repr_union_1 uf a b b (Ne.symm h)
+
+private theorem tunnel_sameclass_union_2 {M : MAP} (uf : UF.t M)
+    (a b x y : UF.elt M) (hxy : UF.repr M uf x = UF.repr M uf y) :
+    UF.repr M (UF.union M uf a b) x = UF.repr M (UF.union M uf a b) y := by
+  by_cases hx : UF.repr M uf x = UF.repr M uf a
+  · rw [tunnel_repr_union_2 uf a b x hx]
+    rw [tunnel_repr_union_2 uf a b y (hxy.symm.trans hx)]
+  · rw [tunnel_repr_union_1 uf a b x hx]
+    rw [tunnel_repr_union_1 uf a b y (by
+      intro hy
+      exact hx (hxy.trans hy))]
+    exact hxy
+
+private theorem tunnel_u_repr_union_1 (uf : U.t) (a b x : U.elt)
+    (hx : U.repr uf x ≠ U.repr uf a) :
+    U.repr (U.union uf a b) x = U.repr uf x := by
+  cases uf
+  unfold U.repr at hx
+  unfold U.repr U.union
+  apply tunnel_repr_union_1
+  exact hx
+
+private theorem tunnel_u_repr_union_2 (uf : U.t) (a b x : U.elt)
+    (hx : U.repr uf x = U.repr uf a) :
+    U.repr (U.union uf a b) x = U.repr uf b := by
+  cases uf
+  unfold U.repr at hx
+  unfold U.repr U.union
+  apply tunnel_repr_union_2
+  exact hx
+
+private theorem tunnel_u_repr_union_3 (uf : U.t) (a b : U.elt) :
+    U.repr (U.union uf a b) b = U.repr uf b := by
+  cases uf
+  unfold U.repr U.union
+  apply tunnel_repr_union_3
+
+private theorem tunnel_u_sameclass_union_2 (uf : U.t) (a b x y : U.elt)
+    (hxy : U.repr uf x = U.repr uf y) :
+    U.repr (U.union uf a b) x = U.repr (U.union uf a b) y := by
+  cases uf
+  unfold U.repr at hxy
+  unfold U.repr U.union
+  apply tunnel_sameclass_union_2
+  exact hxy
+
+def record_branch_correct : record_branch_correctStatement := by
+  intro c u f pc b hmap hget
+  have hpc : U.repr u pc = pc := by
+    have hremove := PTree.grs_proof pc c
+    have h := hmap pc
+    simp only [hremove] at h
+    exact h
+  have hdefault : branch_map_correct_1 c u f := by
+    intro p
+    by_cases hppc : p = pc
+    · subst p
+      rw [hget]
+      cases b with
+      | nil => exact hpc
+      | cons instr tail =>
+          cases instr with
+          | Lbranch s => exact Or.inl hpc
+          | Lop op args res => exact hpc
+          | Lload chunk addr args dst => exact hpc
+          | Lgetstack sl ofs ty dst => exact hpc
+          | Lsetstack src sl ofs ty => exact hpc
+          | Lstore chunk addr args src => exact hpc
+          | Lcall sig ros => exact hpc
+          | Ltailcall sig ros => exact hpc
+          | Lbuiltin ef args res => exact hpc
+          | Ljumptable arg tbl => exact hpc
+          | Lreturn => exact hpc
+          | Lcond cond args s1 s2 => exact hpc
+    · have hremove := PTree.gro_proof c hppc
+      have h := hmap p
+      simp only [hremove] at h
+      exact h
+  cases b with
+  | nil => exact ⟨f, hdefault⟩
+  | cons instr tail =>
+      cases instr with
+      | Lbranch s =>
+          refine ⟨measure_branch u pc s f, ?_⟩
+          intro p
+          by_cases hppc : p = pc
+          · subst p
+            rw [hget]
+            simp only [record_branch]
+            cases hs : peqNode (U.repr u s) pc with
+            | left heq => exact Or.inl ((tunnel_u_repr_union_2 u pc s pc rfl).trans heq)
+            | right hne =>
+                right
+                refine ⟨(tunnel_u_repr_union_2 u pc s pc rfl).trans
+                  (tunnel_u_repr_union_3 u pc s).symm, ?_⟩
+                unfold measure_branch
+                cases hpc' : peqNode (U.repr u pc) pc with
+                | left heq => simp [hs, hpc']; omega
+                | right hnepc => exact False.elim (hnepc hpc)
+          · have hpreserve : U.repr u p = p → U.repr (U.union u pc s) p = p := by
+              intro hp
+              exact (tunnel_u_repr_union_1 u pc s p (by
+                intro hrepr
+                apply hppc
+                exact hp.symm.trans (hrepr.trans hpc))).trans hp
+            have hpmap := hdefault p
+            cases hpget : PTree.get p c with
+            | none =>
+                simp only [hpget] at hpmap
+                simpa [record_branch] using hpreserve hpmap
+            | some block =>
+                cases block with
+                | nil =>
+                    simp only [hpget] at hpmap
+                    simpa [record_branch] using hpreserve hpmap
+                | cons pinstr ptail =>
+                    cases pinstr with
+                    | Lbranch ps =>
+                        simp only [hpget] at hpmap
+                        simp only [record_branch] at hpmap ⊢
+                        cases hpmap with
+                        | inl hp => exact Or.inl (hpreserve hp)
+                        | inr hp =>
+                            right
+                            refine ⟨tunnel_u_sameclass_union_2 u pc s p ps hp.1, ?_⟩
+                            unfold measure_branch
+                            cases hs : peqNode (U.repr u s) pc with
+                            | left heq => simpa [hs] using hp.2
+                            | right hne =>
+                                cases hps : peqNode (U.repr u ps) pc with
+                                | left heqps =>
+                                    cases hp' : peqNode (U.repr u p) pc with
+                                    | left heqp => simp [hs, hps, hp']; omega
+                                    | right hnep =>
+                                        exact False.elim (hnep (hp.1.trans heqps))
+                                | right hneps =>
+                                    cases hp' : peqNode (U.repr u p) pc with
+                                    | left heqp =>
+                                        exact False.elim (hneps (hp.1.symm.trans heqp))
+                                    | right hnep => simpa [hs, hps, hp'] using hp.2
+                    | Lop op args res => simp only [hpget] at hpmap; simpa [record_branch] using hpreserve hpmap
+                    | Lload chunk addr args dst => simp only [hpget] at hpmap; simpa [record_branch] using hpreserve hpmap
+                    | Lgetstack sl ofs ty dst => simp only [hpget] at hpmap; simpa [record_branch] using hpreserve hpmap
+                    | Lsetstack src sl ofs ty => simp only [hpget] at hpmap; simpa [record_branch] using hpreserve hpmap
+                    | Lstore chunk addr args src => simp only [hpget] at hpmap; simpa [record_branch] using hpreserve hpmap
+                    | Lcall sig ros => simp only [hpget] at hpmap; simpa [record_branch] using hpreserve hpmap
+                    | Ltailcall sig ros => simp only [hpget] at hpmap; simpa [record_branch] using hpreserve hpmap
+                    | Lbuiltin ef args res => simp only [hpget] at hpmap; simpa [record_branch] using hpreserve hpmap
+                    | Ljumptable arg tbl => simp only [hpget] at hpmap; simpa [record_branch] using hpreserve hpmap
+                    | Lreturn => simp only [hpget] at hpmap; simpa [record_branch] using hpreserve hpmap
+                    | Lcond cond args s1 s2 => simp only [hpget] at hpmap; simpa [record_branch] using hpreserve hpmap
+      | Lop op args res => exact ⟨f, hdefault⟩
+      | Lload chunk addr args dst => exact ⟨f, hdefault⟩
+      | Lgetstack sl ofs ty dst => exact ⟨f, hdefault⟩
+      | Lsetstack src sl ofs ty => exact ⟨f, hdefault⟩
+      | Lstore chunk addr args src => exact ⟨f, hdefault⟩
+      | Lcall sig ros => exact ⟨f, hdefault⟩
+      | Ltailcall sig ros => exact ⟨f, hdefault⟩
+      | Lbuiltin ef args res => exact ⟨f, hdefault⟩
+      | Ljumptable arg tbl => exact ⟨f, hdefault⟩
+      | Lreturn => exact ⟨f, hdefault⟩
+      | Lcond cond args s1 s2 => exact ⟨f, hdefault⟩
+
+end CompCert4Lean.Backend.Tunnelingproof

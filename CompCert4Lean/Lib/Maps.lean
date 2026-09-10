@@ -2466,3 +2466,52 @@ def of_list_related : Prop := ∀ (A B : Type) (R : A → B → Prop) (k : PTree
 end PTree_Properties
 
 end CompCert4Lean.Lib.Maps
+
+namespace CompCert4Lean.Lib.Maps
+
+namespace PTree
+
+theorem gempty : gemptyStatement := by
+  intro A i
+  rfl
+
+theorem gss0 : gss0Statement := by
+  intro A p x
+  induction p with
+  | xH => rfl
+  | xO p ih => simpa [get', set0] using ih
+  | xI p ih => simpa [get', set0] using ih
+
+theorem gso0 : gso0Statement := by
+  intro A p q x hpq
+  induction p generalizing q with
+  | xH =>
+      cases q <;> simp [get', set0] at hpq ⊢
+  | xO p ih =>
+      cases q with
+      | xH => rfl
+      | xO q =>
+          simp only [set0, get']
+          apply ih
+          intro hpq'
+          apply hpq
+          simpa [hpq']
+      | xI q => rfl
+  | xI p ih =>
+      cases q with
+      | xH => rfl
+      | xO q => rfl
+      | xI q =>
+          simp only [set0, get']
+          apply ih
+          intro hpq'
+          apply hpq
+          simpa [hpq']
+
+theorem gss : gssStatement := by
+  intro A i x m
+  simpa using getSet_equation i i x m
+
+end PTree
+
+end CompCert4Lean.Lib.Maps

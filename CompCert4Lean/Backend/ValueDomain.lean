@@ -2248,3 +2248,62 @@ def mmatch_lub_rStatement : Prop :=
   ∀ cfg bc m x y, mmatch bc m y → mmatch bc m (mlub cfg x y)
 
 end CompCert4Lean.Backend.ValueDomain
+
+namespace CompCert4Lean.Backend.ValueDomain
+
+theorem bc_below_invalid : bc_below_invalidStatement := by
+  intro b bc bound hnot hbelow
+  cases h : bc b with
+  | BCinvalid => rfl
+  | BCglob id =>
+      exact False.elim (hnot (hbelow b (by simp [h])))
+  | BCstack =>
+      exact False.elim (hnot (hbelow b (by simp [h])))
+  | BCother =>
+      exact False.elim (hnot (hbelow b (by simp [h])))
+
+theorem pge_trans : pge_transStatement := by
+  intro p q hpq r hqr
+  induction hpq generalizing r <;> cases hqr <;> constructor
+
+theorem pmatch_ge : pmatch_geStatement := by
+  intro bc b ofs p q hpq hmq
+  cases hpq with
+  | pge_top q =>
+      cases hmq with
+      | gl id h => exact pmatch.top (by simp [h])
+      | glo id h => exact pmatch.top (by simp [h])
+      | glob id h => exact pmatch.top (by simp [h])
+      | stk h => exact pmatch.top (by simp [h])
+      | stack h => exact pmatch.top (by simp [h])
+      | nonstack hns hni => exact pmatch.top hni
+      | top hni => exact pmatch.top hni
+  | bot p => cases hmq
+  | pge_refl p => exact hmq
+  | gloGl id ofs =>
+      cases hmq with
+      | gl id h => exact pmatch.glo id h
+  | globGl id ofs =>
+      cases hmq with
+      | gl id h => exact pmatch.glob id h
+  | globGlo id =>
+      cases hmq with
+      | glo id h => exact pmatch.glob id h
+  | nsGl id ofs =>
+      cases hmq with
+      | gl id h => exact pmatch.nonstack (by simp [h]) (by simp [h])
+  | nsGlo id =>
+      cases hmq with
+      | glo id h => exact pmatch.nonstack (by simp [h]) (by simp [h])
+  | nsGlob =>
+      cases hmq with
+      | glob id h => exact pmatch.nonstack (by simp [h]) (by simp [h])
+  | stackStk ofs =>
+      cases hmq with
+      | stk h => exact pmatch.stack h
+
+theorem pmatch_top' : pmatch_top'Statement := by
+  intro bc b ofs p h
+  exact pmatch_ge bc b ofs Ptop p (pge.pge_top p) h
+
+end CompCert4Lean.Backend.ValueDomain

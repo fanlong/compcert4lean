@@ -683,3 +683,45 @@ def is_nan_build_nanStatement : Prop :=
     is_nan (build_nan ⟨x.1, x.2.1⟩) = true
 
 end CompCert4Lean.Flocq.IEEE754.Binary
+
+namespace CompCert4Lean.Flocq.IEEE754.Binary
+
+theorem is_nan_FF2SF : is_nan_FF2SFStatement := by
+  intro x
+  cases x <;> rfl
+
+theorem SF2FF_FF2SF : SF2FF_FF2SFStatement := by
+  intro x hx
+  cases x with
+  | F754_zero s => rfl
+  | F754_infinity s => rfl
+  | F754_nan s m => simp [is_nan_FF] at hx
+  | F754_finite s m e => rfl
+
+theorem binary64_normalize_certificate_proof :
+    ∀ [prec_gt_0 : Core.FLX.Prec_gt_0
+        (_root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 53)]
+      [prec_lt_emax : BinarySingleNaN.Prec_lt_emax
+        (_root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 53)
+        (_root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 1024)],
+      BinaryNormalizeCertificate
+        (_root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 53)
+        (_root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 1024) := by
+  intro prec_gt_0 prec_lt_emax
+  constructor
+  exact BinarySingleNaN.is_nan_binary_normalize
+
+theorem binary32_normalize_certificate_proof :
+    ∀ [prec_gt_0 : Core.FLX.Prec_gt_0
+        (_root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 24)]
+      [prec_lt_emax : BinarySingleNaN.Prec_lt_emax
+        (_root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 24)
+        (_root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 128)],
+      BinaryNormalizeCertificate
+        (_root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 24)
+        (_root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 128) := by
+  intro prec_gt_0 prec_lt_emax
+  constructor
+  exact BinarySingleNaN.is_nan_binary_normalize
+
+end CompCert4Lean.Flocq.IEEE754.Binary

@@ -1131,3 +1131,18 @@ def aaddr_arg_soundStatement
       bc sp = BCstack
 
 end CompCert4Lean.Backend.ValueAnalysis
+
+namespace CompCert4Lean.Backend.ValueAnalysis
+
+theorem areg_sound : areg_soundStatement := by
+  intro bc e ae r h
+  exact h r
+
+theorem aregs_sound : aregs_soundStatement := by
+  intro bc e ae rl h
+  induction rl with
+  | nil => exact .nil _
+  | cons r rl ih =>
+      exact .cons _ _ (h r) ih
+
+end CompCert4Lean.Backend.ValueAnalysis

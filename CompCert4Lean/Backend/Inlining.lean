@@ -645,3 +645,23 @@ def transf_program (cfg : InliningConfig) (p : program) :
   CompCert4Lean.Common.AST.transform_partial_program (transf_fundef fenv) p
 
 end CompCert4Lean.Backend.Inlining
+
+namespace CompCert4Lean.Backend.Inlining
+
+theorem sincr_refl : sincr_reflStatement := by
+  intro s
+  exact sincrRefl s
+
+theorem sincr_trans : sincr_transStatement := by
+  intro s1 s2 s3 h12 h23
+  exact sincrCompose h12 h23
+
+theorem set_instr_obligation_1 : set_instr_obligation_1Statement := by
+  intro pc instr s
+  exact .intro (Nat.le_refl _) (Nat.le_refl _) (Int.le_refl _)
+
+theorem add_instr_obligation_1 : add_instr_obligation_1Statement := by
+  intro instr s
+  exact .intro (Nat.le_refl _) (pleSucc s.st_nextnode) (Int.le_refl _)
+
+end CompCert4Lean.Backend.Inlining

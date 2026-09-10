@@ -1002,3 +1002,122 @@ def transf_program_correctStatement : Prop :=
         (binary32_certificate := binary32_certificate) xi tprog)
 
 end CompCert4Lean.Backend.CSEproof
+
+namespace CompCert4Lean.Backend.CSEproof
+
+open CompCert4Lean.Backend.CSE
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Backend.ValueAnalysis
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Linking
+open CompCert4Lean.Common.Errors
+open CompCert4Lean.Lib.Coqlib
+
+variable
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+
+theorem transf_program_match : ∀ cfg, transf_program_matchStatement cfg := by
+  intro cfg p tp h
+  letI : Linker RTL.program := by
+    change Linker (CompCert4Lean.Common.AST.program
+      (CompCert4Lean.Common.AST.fundef RTL.function) Unit)
+    exact @Linker_prog (CompCert4Lean.Common.AST.fundef RTL.function) Unit
+      (Linker_fundef RTL.function) Linker_unit
+  unfold CompCert4Lean.Backend.CSE.transf_program
+    CompCert4Lean.Common.AST.transform_partial_program
+    CompCert4Lean.Common.AST.transform_partial_program2 at h
+  have hlist :
+      ∀ (xs : List (ident × globdef RTL.fundef Unit))
+        (ys : List (ident × globdef RTL.fundef Unit)),
+        transf_globdefs (fun _ f => CSE.transf_fundef cfg (prog_defmap p)
+          (romem_for cfg p) f)
+            (fun _ v => .OK v) xs = .OK ys →
+          list_forall2
+            (match_ident_globdef
+              (fun q f tf => CSE.transf_fundef cfg (prog_defmap q)
+                (romem_for cfg q) f = .OK tf)
+              (fun x y : Unit => x = y) p) xs ys := by
+    intro xs
+    induction xs with
+    | nil =>
+        intro ys hys
+        cases hys
+        exact list_forall2.nil _
+    | cons hd tl ih =>
+        intro ys hys
+        cases hd with
+        | mk id gd =>
+            cases gd with
+            | Gfun f =>
+                cases hf : CSE.transf_fundef cfg (prog_defmap p) (romem_for cfg p) f with
+                | Error msg => simp [transf_globdefs, hf] at hys
+                | OK tf =>
+                    cases ht : transf_globdefs (fun _ f => CSE.transf_fundef cfg (prog_defmap p)
+                      (romem_for cfg p) f) (fun _ v => .OK v) tl with
+                    | Error msg => simp [transf_globdefs, hf, ht] at hys
+                    | OK ysTail =>
+                        simp only [transf_globdefs, hf, ht] at hys
+                        cases hys
+                        apply list_forall2.cons
+                        · constructor
+                          · rfl
+                          · apply match_globdef.match_globdef_fun (ctx' := p)
+                            · exact linkorder_refl _
+                            · exact hf
+                        · exact ih ysTail ht
+            | Gvar v =>
+                cases ht : transf_globdefs (fun _ f => CSE.transf_fundef cfg (prog_defmap p)
+                  (romem_for cfg p) f) (fun _ v => .OK v) tl with
+                | Error msg => simp [transf_globdefs, transf_globvar, ht] at hys
+                | OK ysTail =>
+                    simp only [transf_globdefs, transf_globvar, ht] at hys
+                    cases hys
+                    apply list_forall2.cons
+                    · constructor
+                      · rfl
+                      · apply match_globdef.match_globdef_var
+                        exact match_globvar.match_globvar_intro _ _ _ _ _ _ rfl
+                    · exact ih ysTail ht
+  cases hdefs : transf_globdefs (fun _ f => CSE.transf_fundef cfg (prog_defmap p)
+      (romem_for cfg p) f) (fun _ v => .OK v) p.prog_defs with
+  | Error msg => simp [hdefs] at h
+  | OK defs =>
+      simp only [hdefs] at h
+      cases h
+      unfold match_prog match_program match_program_gen
+      exact ⟨hlist p.prog_defs defs hdefs, rfl, rfl⟩
+
+end CompCert4Lean.Backend.CSEproof
+
+namespace CompCert4Lean.Backend.CSEproof
+
+open CompCert4Lean.Backend.CSEdomain
+open CompCert4Lean.Lib.Coqlib
+
+theorem valu_agree_refl : valu_agree_reflStatement := by
+  intro valu upto v h
+  rfl
+
+theorem valnums_val_exten : valnums_val_extenStatement := by
+  intro valu1 upto valu2 hagree vl hlt
+  induction vl with
+  | nil => rfl
+  | cons v vl ih =>
+      change valu2 v :: List.map valu2 vl = valu1 v :: List.map valu1 vl
+      rw [hagree v (hlt v (by exact List.Mem.head _))]
+      exact congrArg (fun xs => valu1 v :: xs)
+        (ih (fun w hw => hlt w (List.Mem.tail _ hw)))
+
+theorem wf_equation_incr : wf_equation_incrStatement := by
+  intro next1 next2 e h ple
+  cases e with
+  | Eq l strict r =>
+      change (Plt l next1 ∧ wf_rhs next1 r) at h
+      change (Plt l next2 ∧ wf_rhs next2 r)
+      constructor
+      · exact Nat.lt_of_lt_of_le h.1 ple
+      · intro v hv
+        exact Nat.lt_of_lt_of_le (h.2 v hv) ple
+
+end CompCert4Lean.Backend.CSEproof

@@ -823,3 +823,34 @@ def alloc_parallel_rule_2Statement : Prop :=
       j' b1 = some (b2, delta)
 
 end CompCert4Lean.Common.Separation
+
+namespace CompCert4Lean.Common.Separation
+
+theorem sep_imp : sep_impStatement := by
+  intro P P' Q Q' m hpred hPP' hQQ'
+  exact ⟨hPP'.1 m hpred.1, hQQ'.1 m hpred.2.1,
+    fun b ofs hP' hQ' => hpred.2.2 b ofs (hPP'.2 b ofs hP') (hQQ'.2 b ofs hQ')⟩
+
+theorem sep_comm_1 : sep_comm_1Statement := by
+  intro P Q
+  constructor
+  · intro m hpred
+    exact ⟨hpred.2.1, hpred.1, fun b ofs hQ hP => hpred.2.2 b ofs hP hQ⟩
+  · intro b ofs hfoot
+    cases hfoot with
+    | inl hQ => exact Or.inr hQ
+    | inr hP => exact Or.inl hP
+
+end CompCert4Lean.Common.Separation
+
+namespace CompCert4Lean.Common.Separation
+
+theorem sepconj_obligation_1 : sepconj_obligation_1Statement := by
+  intro P Q m m' hpred hunch
+  exact (sepconj P Q).m_invar m m' hpred hunch
+
+theorem sepconj_obligation_2 : sepconj_obligation_2Statement := by
+  intro P Q m b ofs hpred hfoot
+  exact (sepconj P Q).m_valid m b ofs hpred hfoot
+
+end CompCert4Lean.Common.Separation
