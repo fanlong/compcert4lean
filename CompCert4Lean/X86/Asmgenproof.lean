@@ -525,3 +525,236 @@ theorem transf_program_match : transf_program_matchStatement := by
         · exact ⟨rfl, rfl⟩
 
 end CompCert4Lean.X86.Asmgenproof
+
+namespace CompCert4Lean.X86.Asmgenproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Backend.Mach
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Linking
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.X86.Asm
+open CompCert4Lean.X86.Asmgen
+
+private theorem asmgenproof_ptree_get_set0 {A : Type} (x y : positive) (v : A) :
+    PTree.get' x (PTree.set0 y v) = if _h : x = y then some v else none := by
+  induction x generalizing y with
+  | xH => cases y <;> simp [PTree.get', PTree.set0]
+  | xO x ih => cases y <;> simp [PTree.get', PTree.set0, ih]
+  | xI x ih => cases y <;> simp [PTree.get', PTree.set0, ih]
+
+private theorem asmgenproof_ptree_get_set' {A : Type} (x y : positive) (v : A)
+    (m : PTree.tree' A) :
+    PTree.get' x (PTree.set' y v m) =
+      if _h : x = y then some v else PTree.get' x m := by
+  induction x generalizing y m with
+  | xH => cases y <;> cases m <;> simp [PTree.get', PTree.set']
+  | xO x ih =>
+      cases y <;> cases m <;>
+        simp [PTree.get', PTree.set', asmgenproof_ptree_get_set0, ih]
+  | xI x ih =>
+      cases y <;> cases m <;>
+        simp [PTree.get', PTree.set', asmgenproof_ptree_get_set0, ih]
+
+private theorem asmgenproof_ptree_get_set {A : Type} (i j : positive) (v : A)
+    (m : PTree.t A) :
+    PTree.get i (PTree.set j v m) = if _h : i = j then some v else PTree.get i m := by
+  cases m with
+  | Empty =>
+      simpa [PTree.get, PTree.set] using asmgenproof_ptree_get_set0 i j v
+  | Nodes m =>
+      simpa [PTree.get, PTree.set] using asmgenproof_ptree_get_set' i j v m
+
+private theorem asmgenproof_ptree_set_rel {A B : Type} (R : A → B → Prop)
+    (i j : positive) (x : A) (y : B) (m1 : PTree.t A) (m2 : PTree.t B)
+    (hxy : R x y)
+    (h : ∀ k, option_rel R (PTree.get k m1) (PTree.get k m2)) :
+    option_rel R (PTree.get i (PTree.set j x m1)) (PTree.get i (PTree.set j y m2)) := by
+  rw [asmgenproof_ptree_get_set, asmgenproof_ptree_get_set]
+  by_cases hij : i = j
+  · simp only [dif_pos hij]
+    exact .some _ _ hxy
+  · simp only [dif_neg hij]
+    exact h i
+
+private theorem asmgenproof_add_global_match {A B V W : Type}
+    (R : globdef A V → globdef B W → Prop)
+    (ge1 : Genv.t A V) (ge2 : Genv.t B W) (id : positive)
+    (g1 : globdef A V) (g2 : globdef B W)
+    (hge : Genv.match_genvs R ge1 ge2) (hgd : R g1 g2) :
+    Genv.match_genvs R (Genv.add_global ge1 (id, g1))
+      (Genv.add_global ge2 (id, g2)) := by
+  rcases hge with ⟨hnext, hsymb, hdefs⟩
+  constructor
+  · exact congrArg _ hnext
+  · intro id'
+    change PTree.get id' (PTree.set id ge2.genv_next ge2.genv_symb) =
+      PTree.get id' (PTree.set id ge1.genv_next ge1.genv_symb)
+    rw [asmgenproof_ptree_get_set, asmgenproof_ptree_get_set]
+    split <;> simp_all
+  · intro b
+    change option_rel R
+      (PTree.get b (PTree.set ge1.genv_next g1 ge1.genv_defs))
+      (PTree.get b (PTree.set ge2.genv_next g2 ge2.genv_defs))
+    rw [hnext]
+    exact asmgenproof_ptree_set_rel R b ge1.genv_next g1 g2
+      ge1.genv_defs ge2.genv_defs hgd hdefs
+
+private theorem asmgenproof_add_globals_match {A B V W : Type}
+    (R : globdef A V → globdef B W → Prop)
+    (ge1 : Genv.t A V) (ge2 : Genv.t B W) (hge : Genv.match_genvs R ge1 ge2) :
+    ∀ (xs : List (ident × globdef A V)) (ys : List (ident × globdef B W)),
+      list_forall2
+        (fun (x : ident × globdef A V) (y : ident × globdef B W) =>
+          x.1 = y.1 ∧ R x.2 y.2) xs ys →
+      Genv.match_genvs R (Genv.add_globals ge1 xs) (Genv.add_globals ge2 ys) := by
+  intro xs ys h
+  induction h generalizing ge1 ge2 with
+  | nil => simpa [Genv.add_globals] using hge
+  | cons x y hxy htail ih =>
+      rcases x with ⟨id, g1⟩
+      rcases y with ⟨id', g2⟩
+      rcases hxy with ⟨hid, hg⟩
+      change id = id' at hid
+      change R g1 g2 at hg
+      subst id'
+      simp only [Genv.add_globals, List.foldl]
+      exact ih (Genv.add_global ge1 (id, g1)) (Genv.add_global ge2 (id, g2))
+        (asmgenproof_add_global_match R ge1 ge2 id g1 g2 hge hg)
+
+private theorem asmgenproof_empty_genv_match {A B V W : Type}
+    (R : globdef A V → globdef B W → Prop) (pub : List ident) :
+    Genv.match_genvs R (Genv.empty_genv A V pub) (Genv.empty_genv B W pub) := by
+  constructor
+  · rfl
+  · intro id
+    rfl
+  · intro b
+    exact .none _
+
+private theorem asmgenproof_globalenv_match {C F1 V1 F2 V2 : Type} [Linker C]
+    (mf : C → F1 → F2 → Prop) (mv : V1 → V2 → Prop) (ctx : C)
+    (p : program F1 V1) (tp : program F2 V2)
+    (h : match_program_gen mf mv ctx p tp) :
+    Genv.match_genvs (match_globdef mf mv ctx)
+      (Genv.globalenv p) (Genv.globalenv tp) := by
+  rcases h with ⟨hdefs, hmain, hpub⟩
+  unfold Genv.globalenv
+  rw [hpub]
+  apply asmgenproof_add_globals_match
+  apply asmgenproof_empty_genv_match
+  exact hdefs
+
+private theorem asmgenproof_volatile_match {C F1 V1 F2 V2 : Type} [Linker C]
+    (mf : C → F1 → F2 → Prop) (mv : V1 → V2 → Prop) (ctx : C)
+    (p : program F1 V1) (tp : program F2 V2)
+    (hge : Genv.match_genvs (match_globdef mf mv ctx)
+      (Genv.globalenv p) (Genv.globalenv tp)) (b : positive) :
+    Genv.block_is_volatile (Genv.globalenv tp) b =
+      Genv.block_is_volatile (Genv.globalenv p) b := by
+  unfold Genv.block_is_volatile Genv.find_var_info Genv.find_def
+  have hrel := hge.mge_defs b
+  cases hs : PTree.get b (Genv.globalenv p).genv_defs with
+  | none =>
+      cases st : PTree.get b (Genv.globalenv tp).genv_defs with
+      | none => simp [hs, st]
+      | some tg => rw [hs, st] at hrel; cases hrel
+  | some sg =>
+      cases st : PTree.get b (Genv.globalenv tp).genv_defs with
+      | none => rw [hs, st] at hrel; cases hrel
+      | some tg =>
+          rw [hs, st] at hrel
+          cases hrel with
+          | some _ _ hgd =>
+              cases hgd with
+              | match_globdef_fun _ _ _ _ _ => simp [hs, st]
+              | match_globdef_var _ _ hgv =>
+                  cases hgv
+                  simp [hs, st]
+
+private theorem asmgenproof_add_globals_public {F V : Type}
+    (ge : Genv.t F V) (gl : List (ident × globdef F V)) :
+    (Genv.add_globals ge gl).genv_public = ge.genv_public := by
+  induction gl generalizing ge with
+  | nil => rfl
+  | cons x xs ih =>
+      simp only [Genv.add_globals, List.foldl]
+      exact ih (Genv.add_global ge x)
+
+theorem symbols_preserved : symbols_preservedStatement := by
+  intro prog tprog hprog s
+  letI : Linker MachFundef := Linker_fundef MachFunction
+  letI : Linker Unit := Linker_unit
+  letI : Linker MachProgram := Linker_prog MachFundef Unit
+  unfold match_prog at hprog
+  exact (asmgenproof_globalenv_match _ _ _ prog tprog hprog).mge_symb s
+
+theorem senv_preserved : senv_preservedStatement := by
+  intro prog tprog hprog
+  letI : Linker MachFundef := Linker_fundef MachFunction
+  letI : Linker Unit := Linker_unit
+  letI : Linker MachProgram := Linker_prog MachFundef Unit
+  unfold match_prog CompCert4Lean.Common.Linking.match_program at hprog
+  rcases hprog with ⟨hdefs, hmain, hpub⟩
+  have hge := asmgenproof_globalenv_match _ _ _ prog tprog ⟨hdefs, hmain, hpub⟩
+  constructor
+  · exact hge.mge_symb
+  · constructor
+    · intro id
+      change Genv.public_symbol (Genv.globalenv tprog) id =
+        Genv.public_symbol (Genv.globalenv prog) id
+      have hs : Genv.find_symbol (Genv.globalenv tprog) id =
+          Genv.find_symbol (Genv.globalenv prog) id := hge.mge_symb id
+      have hp : (Genv.globalenv tprog).genv_public =
+          (Genv.globalenv prog).genv_public := by
+        unfold Genv.globalenv
+        rw [asmgenproof_add_globals_public, asmgenproof_add_globals_public]
+        exact hpub
+      unfold Genv.public_symbol
+      rw [hs, hp]
+    · intro b
+      exact asmgenproof_volatile_match _ _ _ _ _ hge b
+
+theorem functions_translated : functions_translatedStatement := by
+  intro prog tprog hprog b f hfind
+  letI : Linker MachFundef := Linker_fundef MachFunction
+  letI : Linker Unit := Linker_unit
+  letI : Linker MachProgram := Linker_prog MachFundef Unit
+  unfold match_prog at hprog
+  have hge := asmgenproof_globalenv_match _ _ _ prog tprog hprog
+  unfold Genv.find_funct_ptr Genv.find_def at hfind
+  cases hsrc : PTree.get b (Genv.globalenv prog).genv_defs with
+  | none => simp [hsrc] at hfind
+  | some gd =>
+      cases gd with
+      | Gfun f' =>
+          simp [hsrc] at hfind
+          subst f'
+          have hrel := hge.mge_defs b
+          rw [hsrc] at hrel
+          cases htgt : PTree.get b (Genv.globalenv tprog).genv_defs with
+          | none => rw [htgt] at hrel; cases hrel
+          | some tgd =>
+              rw [htgt] at hrel
+              cases hrel with
+              | some _ _ hfun =>
+                  cases hfun with
+                  | match_globdef_fun _ _ _ _ htrans =>
+                      exact ⟨_, by
+                        simp [Genv.find_funct_ptr, Genv.find_def, htgt], htrans⟩
+      | Gvar v => simp [hsrc] at hfind
+
+theorem functions_transl : functions_translStatement := by
+  intro prog tprog hprog fb f tf hfind htrans
+  rcases functions_translated prog tprog hprog fb (.Internal f) hfind with
+    ⟨tf', hfind', hfund⟩
+  unfold CompCert4Lean.X86.Asmgen.transf_fundef
+    CompCert4Lean.Common.AST.transf_partial_fundef at hfund
+  simp [htrans] at hfund
+  injection hfund with heq
+  subst tf'
+  exact hfind'
+
+end CompCert4Lean.X86.Asmgenproof

@@ -1041,3 +1041,40 @@ theorem ZArith.BinInt.Z.le_refl :
 
 end Rocq.Coq
 end CompCert4Lean.Foundation.Numbers
+
+namespace CompCert4Lean.Foundation.Numbers
+namespace Rocq.Coq
+
+theorem ZArith.Zorder.Zlt_le_succ :
+    ZArith.Zorder.Zlt_le_succStatement := by
+  intro n m h
+  change intOfZ n < intOfZ m at h
+  change intOfZ (ZArith.BinInt.Z.succ n) ≤ intOfZ m
+  simp only [ZArith.BinInt.Z.succ, ZArith.BinInt.Z.add,
+    intOfZ_zOfInt]
+  change intOfZ n + 1 ≤ intOfZ m
+  exact (Int.add_one_le_iff).2 h
+
+theorem ZArith.BinInt.Z.le_max_r :
+    ZArith.BinInt.Z.le_max_rStatement := by
+  intro n m
+  change intOfZ m ≤ intOfZ (ZArith.BinInt.Z.max n m)
+  by_cases h : intOfZ n ≤ intOfZ m
+  · simp [ZArith.BinInt.Z.max, h]
+  · simp [ZArith.BinInt.Z.max, h, Int.le_of_not_le h]
+
+theorem ZArith.BinInt.Z.le_lt_trans :
+    ZArith.BinInt.Z.le_lt_transStatement := by
+  intro n m p hnm hmp
+  exact Int.lt_of_le_of_lt hnm hmp
+
+theorem ZArith.BinInt.Z.max_r :
+    ZArith.BinInt.Z.max_rStatement := by
+  intro n m h
+  apply intOfZ_injective
+  change intOfZ (ZArith.BinInt.Z.max n m) = intOfZ m
+  change intOfZ n ≤ intOfZ m at h
+  simp [ZArith.BinInt.Z.max, h]
+
+end Rocq.Coq
+end CompCert4Lean.Foundation.Numbers

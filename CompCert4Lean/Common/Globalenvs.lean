@@ -1170,3 +1170,87 @@ def store_zeros_indStatement : Prop :=
       P m b p n (store_zeros m b p n)
 
 end CompCert4Lean.Common.Globalenvs
+
+namespace CompCert4Lean.Common.Globalenvs
+
+theorem store_zeros_ind : store_zeros_indStatement := by
+  intro P hzero hstore hnone
+  have hind : ∀ k, ∀ m b p n,
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.to_nat n = k →
+        P m b p n (store_zeros m b p n) := by
+    intro k
+    induction k using Nat.strongRecOn with
+    | _ k ih =>
+        intro m b p n hk
+        unfold store_zeros
+        split
+        · rename_i x hx
+          exact hzero m b p n x hx
+        · rename_i x hx
+          split
+          · rename_i hmem
+            exact hnone m b p n x hx hmem
+          · rename_i m' hmem
+            apply hstore m b p n x hx m' hmem
+            apply ih (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.to_nat
+              (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.sub n
+                (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.Zpos
+                  .xH)))
+            · simpa [hk] using zToNat_sub_one_lt x
+            · rfl
+  intro m b p n
+  exact hind (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.to_nat n)
+    m b p n rfl
+
+namespace Genv
+
+theorem add_globals_preserves : add_globals_preservesStatement := by
+  intro F V P gl
+  induction gl with
+  | nil =>
+      intro ge _ hP
+      exact hP
+  | cons idg gl ih =>
+      intro ge hstep hP
+      rcases idg with ⟨id, g⟩
+      have hstep' : ∀ ge' id' g', P ge' → (id', g') ∈ gl →
+          P (add_global ge' (id', g')) := by
+        intro ge' id' g' hP' hin'
+        exact hstep ge' id' g' hP' (by simp [hin'])
+      apply ih (ge := add_global ge (id, g)) hstep'
+      exact hstep ge id g hP (by simp)
+
+theorem add_globals_ensures : add_globals_ensuresStatement := by
+  intro F V P id g gl
+  induction gl with
+  | nil =>
+      intro ge hstep hensures hin
+      cases hin
+  | cons idg gl ih =>
+      intro ge hstep hensures hin
+      rcases idg with ⟨id', g'⟩
+      simp only [List.mem_cons] at hin
+      rcases hin with heq | hin
+      · cases heq
+        change P (add_globals (add_global ge (id, g)) gl)
+        have hstep' : ∀ ge' id'' g'', P ge' → (id'', g'') ∈ gl →
+            P (add_global ge' (id'', g'')) := by
+          intro ge' id'' g'' hP' hin'
+          exact hstep ge' id'' g'' hP' (by simp [hin'])
+        exact add_globals_preserves F V P gl (add_global ge (id, g)) hstep'
+          (hensures ge)
+      · have hstep' : ∀ ge' id'' g'', P ge' → (id'', g'') ∈ gl →
+            P (add_global ge' (id'', g'')) := by
+          intro ge' id'' g'' hP' hin'
+          exact hstep ge' id'' g'' hP' (by simp [hin'])
+        exact ih (ge := add_global ge (id', g')) hstep' hensures hin
+
+theorem public_symbol_exists : public_symbol_existsStatement := by
+  intro F V ge id hpub
+  unfold public_symbol at hpub
+  cases hfind : find_symbol ge id with
+  | none => simp [hfind] at hpub
+  | some b => exact ⟨b, rfl⟩
+
+end Genv
+end CompCert4Lean.Common.Globalenvs

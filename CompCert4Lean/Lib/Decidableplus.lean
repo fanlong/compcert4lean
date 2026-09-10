@@ -543,3 +543,23 @@ def Finite_option_obligation_1Statement : Prop :=
       (Finite.Finite_elements (self := Finite_option A fA))
 
 end CompCert4Lean.Lib.Decidableplus
+
+namespace CompCert4Lean.Lib.Decidableplus
+
+theorem Decidable_not_obligation_1 : Decidable_not_obligation_1Statement := by
+  intro P dP
+  exact (Decidable_not P dP).spec
+
+theorem Decidable_equiv_obligation_1 : Decidable_equiv_obligation_1Statement := by
+  intro P Q dP dQ
+  exact (Decidable_equiv P Q dP dQ).spec
+
+theorem Decidable_and_obligation_1 : Decidable_and_obligation_1Statement := by
+  intro P Q dP dQ
+  exact (Decidable_and P Q dP dQ).spec
+
+theorem Decidable_or_obligation_1 : Decidable_or_obligation_1Statement := by
+  intro P Q dP dQ
+  exact (Decidable_or P Q dP dQ).spec
+
+end CompCert4Lean.Lib.Decidableplus

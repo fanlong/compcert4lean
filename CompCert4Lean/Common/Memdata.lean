@@ -732,3 +732,27 @@ theorem size_chunk_pos : size_chunk_posStatement := by
   all_goals exact CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat_positive _
 
 end CompCert4Lean.Common.Memdata
+
+namespace CompCert4Lean.Common.Memdata
+
+theorem size_chunk_conv : size_chunk_convStatement := by
+  intro chunk
+  cases chunk <;> rfl
+
+theorem size_chunk_nat_pos : size_chunk_nat_posStatement := by
+  intro chunk
+  cases chunk <;> simp [size_chunk_nat, zToNat, size_chunk, z1, z2, z4, z8]
+
+theorem size_chunk_Mptr : size_chunk_MptrStatement := by
+  rfl
+
+theorem align_chunk_pos : align_chunk_posStatement := by
+  intro chunk
+  cases chunk <;> simp [align_chunk, zLt, z0, z1, z2, z4, z8,
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.lt,
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ,
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat,
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt]
+  all_goals exact CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat_positive _
+
+end CompCert4Lean.Common.Memdata

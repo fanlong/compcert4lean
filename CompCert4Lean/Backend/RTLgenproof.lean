@@ -1099,3 +1099,216 @@ theorem transf_program_match : transf_program_matchStatement := by
       · rfl
 
 end CompCert4Lean.Backend.RTLgenproof
+namespace CompCert4Lean.Backend.RTLgenproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Backend.RTLgen
+open CompCert4Lean.Backend.RTLgenspec
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+
+private theorem rtlgenproof_plt_succ (p : positive) :
+    Plt p (PArith.BinPos.Pos.succ p) := by
+  unfold Plt
+  induction p with
+  | xH =>
+    change 1 < 2
+    omega
+  | xI p ih =>
+    change PArith.BinPos.Pos.to_nat p <
+      PArith.BinPos.Pos.to_nat (PArith.BinPos.Pos.succ p) at ih
+    change 2 * PArith.BinPos.Pos.to_nat p + 1 <
+      2 * PArith.BinPos.Pos.to_nat (PArith.BinPos.Pos.succ p)
+    omega
+  | xO p ih =>
+    change 2 * PArith.BinPos.Pos.to_nat p < 2 * PArith.BinPos.Pos.to_nat p + 1
+    omega
+
+private theorem rtlgenproof_add_var_valid
+    (s1 s2 : RTLgen.state) (map mapPrime : RTLgen.mapping) (name : ident) (r : reg)
+    (i : RTLgen.state_incr s1 s2) :
+    RTLgen.add_var map name s1 = .OK (r, mapPrime) s2 i →
+    map_valid map s1 → map_valid mapPrime s2 := by
+  intro h hvalid
+  cases map with
+  | mk mapVars mapLetvars =>
+    unfold PTree.t at mapVars
+    unfold CompCert4Lean.Common.AST.ident at name
+    unfold CompCert4Lean.Backend.Registers.reg at *
+    change RTLgen.bind RTLgen.new_reg
+      (fun r => RTLgen.ret (r,
+        ({ map_vars := PTree.set name r mapVars, map_letvars := mapLetvars } : RTLgen.mapping)))
+      s1 = RTLgen.res.OK (r, mapPrime) s2 i at h
+    dsimp [RTLgen.bind] at h
+    rw [show RTLgen.new_reg s1 = .OK s1.st_nextreg _ _ from rfl] at h
+    simp [RTLgen.ret] at h
+    cases h
+    unfold map_valid at hvalid ⊢
+    intro r hin
+    unfold CompCert4Lean.Backend.Registers.reg at r
+    unfold reg_in_map at hin
+    change Plt r (PArith.BinPos.Pos.succ s1.st_nextreg)
+    rcases hin with ⟨id, hget⟩ | hmem
+    · change PTree.get id (PTree.set name s1.st_nextreg mapVars) = some r at hget
+      rw [PTree.getSet_equation] at hget
+      by_cases hid : id = name
+      · subst id
+        simp at hget
+        cases hget
+        exact rtlgenproof_plt_succ _
+      · simp [hid] at hget
+        exact Nat.lt_trans (hvalid r (Or.inl ⟨id, hget⟩)) (rtlgenproof_plt_succ _)
+    · exact Nat.lt_trans (hvalid r (Or.inr hmem)) (rtlgenproof_plt_succ _)
+
+end CompCert4Lean.Backend.RTLgenproof
+
+namespace CompCert4Lean.Backend.RTLgenproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Backend.RTLgen
+open CompCert4Lean.Backend.RTLgenspec
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+
+theorem init_mapping_wf : init_mapping_wfStatement := by
+  constructor
+  · intro id1 id2 r h1 h2
+    simp [RTLgen.init_mapping, PTree.get, PTree.empty] at h1
+  · intro id r h1 h2
+    simp [RTLgen.init_mapping, PTree.get, PTree.empty] at h1
+
+theorem add_var_wf : add_var_wfStatement := by
+  intro s1 s2 map name r mapPrime i h hwf hvalid
+  cases map with
+  | mk mapVars mapLetvars =>
+    unfold PTree.t at mapVars
+    unfold CompCert4Lean.Common.AST.ident at name
+    unfold CompCert4Lean.Backend.Registers.reg at *
+    change RTLgen.bind RTLgen.new_reg
+      (fun r => RTLgen.ret (r,
+        ({ map_vars := PTree.set name r mapVars, map_letvars := mapLetvars } : RTLgen.mapping)))
+      s1 = RTLgen.res.OK (r, mapPrime) s2 i at h
+    dsimp [RTLgen.bind] at h
+    rw [show RTLgen.new_reg s1 = .OK s1.st_nextreg _ _ from rfl] at h
+    simp [RTLgen.ret] at h
+    cases h
+    have hfresh : ¬ reg_in_map { map_vars := mapVars, map_letvars := mapLetvars }
+        s1.st_nextreg := by
+      intro hin
+      exact Nat.lt_irrefl _ (hvalid _ hin)
+    constructor
+    · intro id1 id2 r h1 h2
+      unfold CompCert4Lean.Backend.Registers.reg at r
+      change PTree.get id1 (PTree.set name s1.st_nextreg mapVars) = some r at h1
+      change PTree.get id2 (PTree.set name s1.st_nextreg mapVars) = some r at h2
+      rw [PTree.getSet_equation] at h1 h2
+      by_cases hid1 : id1 = name
+      · by_cases hid2 : id2 = name
+        · exact hid1.trans hid2.symm
+        · simp [hid1] at h1
+          cases h1
+          simp [hid2] at h2
+          exact False.elim (hfresh (Or.inl ⟨id2, h2⟩))
+      · by_cases hid2 : id2 = name
+        · simp [hid1] at h1
+          simp [hid2] at h2
+          cases h2
+          exact False.elim (hfresh (Or.inl ⟨id1, h1⟩))
+        · simp [hid1] at h1
+          simp [hid2] at h2
+          exact hwf.map_wf_inj id1 id2 r h1 h2
+    · intro id r hget hmem
+      unfold CompCert4Lean.Backend.Registers.reg at r
+      change PTree.get id (PTree.set name s1.st_nextreg mapVars) = some r at hget
+      change r ∈ mapLetvars at hmem
+      rw [PTree.getSet_equation] at hget
+      by_cases hid : id = name
+      · subst id
+        simp at hget
+        subst r
+        exact hfresh (Or.inr hmem)
+      · simp [hid] at hget
+        exact hwf.map_wf_disj id r hget hmem
+
+end CompCert4Lean.Backend.RTLgenproof
+
+namespace CompCert4Lean.Backend.RTLgenproof
+
+open CompCert4Lean.Lib.Coqlib
+
+theorem lt_state_intro : lt_state_introStatement := by
+  intro f1 s1 k1 sp1 e1 m1 f2 s2 k2 sp2 e2 m2 h
+  unfold lt_state
+  rcases h with h | ⟨h1, h2⟩
+  · change lex_ord Nat.lt Nat.lt (size_stmt s1 + size_cont k1, size_stmt s1)
+      (size_stmt s2 + size_cont k2, size_stmt s2)
+    exact lex_ord.left _ _ _ _ _ _ h
+  · change lex_ord Nat.lt Nat.lt (size_stmt s1 + size_cont k1, size_stmt s1)
+      (size_stmt s2 + size_cont k2, size_stmt s2)
+    rw [h1]
+    exact lex_ord.right _ _ _ _ _ h2
+
+end CompCert4Lean.Backend.RTLgenproof
+
+namespace CompCert4Lean.Backend.RTLgenproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Backend.RTLgen
+open CompCert4Lean.Backend.RTLgenspec
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+
+private theorem rtlgenproof_add_vars_wf_valid
+    (names : List ident) (s1 s2 : RTLgen.state) (map mapPrime : RTLgen.mapping)
+    (rl : List reg) (i : RTLgen.state_incr s1 s2) :
+    RTLgen.add_vars map names s1 = .OK (rl, mapPrime) s2 i →
+    map_wf map → map_valid map s1 → map_wf mapPrime ∧ map_valid mapPrime s2 := by
+  induction names generalizing s1 s2 map mapPrime rl i with
+  | nil =>
+    intro h hwf hvalid
+    change RTLgen.ret ([], map) s1 = .OK (rl, mapPrime) s2 i at h
+    simp [RTLgen.ret] at h
+    rcases h with ⟨⟨hrl, hmap⟩, hs⟩
+    cases hrl
+    cases hmap
+    cases hs
+    exact ⟨hwf, hvalid⟩
+  | cons name names ih =>
+    intro h hwf hvalid
+    change RTLgen.bind (RTLgen.add_vars map names)
+      (fun x => RTLgen.bind (RTLgen.add_var x.2 name)
+        (fun y => RTLgen.ret (y.1 :: x.1, y.2))) s1 = .OK (rl, mapPrime) s2 i at h
+    cases hrec : RTLgen.add_vars map names s1 with
+    | Error msg =>
+      simp [RTLgen.bind, hrec] at h
+    | OK x sm hincr =>
+      cases x with
+      | mk rlmid mapmid =>
+        simp [RTLgen.bind, hrec] at h
+        cases hvar : RTLgen.add_var mapmid name sm with
+        | Error msg =>
+          simp [hvar] at h
+        | OK x sn hinc =>
+          cases x with
+          | mk rnew mapnew =>
+            simp [RTLgen.ret, hvar] at h
+            rcases h with ⟨⟨hrl, hmap⟩, hs⟩
+            have hrecwf := ih (s1 := s1) (s2 := sm) (map := map)
+              (mapPrime := mapmid) (rl := rlmid) (i := hincr) hrec hwf hvalid
+            constructor
+            · simpa only [hmap, hs] using
+                (add_var_wf sm sn mapmid name rnew mapnew hinc hvar hrecwf.1 hrecwf.2)
+            · simpa only [hmap, hs] using
+                (rtlgenproof_add_var_valid (s1 := sm) (s2 := sn) (map := mapmid)
+                  (mapPrime := mapnew) (name := name) (r := rnew) (i := hinc) hvar hrecwf.2)
+
+theorem add_vars_wf : add_vars_wfStatement := by
+  intro names s1 s2 map mapPrime rl i h hwf hvalid
+  exact (rtlgenproof_add_vars_wf_valid names s1 s2 map mapPrime rl i h hwf hvalid).1
+
+end CompCert4Lean.Backend.RTLgenproof
