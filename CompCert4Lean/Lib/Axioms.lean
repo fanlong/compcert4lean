@@ -29,3 +29,20 @@ def proof_irrStatement : Prop :=
   ∀ {A : Prop} (p q : A), p = q
 
 end CompCert4Lean.Lib.Axioms
+
+namespace CompCert4Lean.Lib.Axioms
+
+theorem functional_extensionality_dep : functional_extensionality_depStatement :=
+  CompCert4Lean.Foundation.Logic.Rocq.Coq.Logic.FunctionalExtensionality.functional_extensionality_dep
+
+theorem functional_extensionality : functional_extensionalityStatement :=
+  CompCert4Lean.Foundation.Logic.Rocq.Coq.Logic.FunctionalExtensionality.functional_extensionality
+
+theorem extensionality : extensionalityStatement :=
+  functional_extensionality
+
+theorem proof_irr : proof_irrStatement := by
+  intro A p q
+  exact Subsingleton.elim p q
+
+end CompCert4Lean.Lib.Axioms

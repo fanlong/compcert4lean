@@ -481,3 +481,60 @@ theorem typesize_pos : typesize_posStatement := by
       CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat_posOfNat]
 
 end CompCert4Lean.Backend.Locations
+
+namespace CompCert4Lean.Backend.Locations
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem Loc.same_not_diff : Loc.same_not_diffStatement := by
+  intro l h
+  cases l with
+  | R r => exact h rfl
+  | S sl ofs ty =>
+      rcases h with h | h | h
+      · exact h rfl
+      · have hp := typesize_pos ty
+        change 0 < intOfZ (typesize ty) at hp
+        change intOfZ (zAdd ofs (typesize ty)) ≤ intOfZ ofs at h
+        simp only [zAdd,
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add,
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt] at h
+        omega
+      · have hp := typesize_pos ty
+        change 0 < intOfZ (typesize ty) at hp
+        change intOfZ (zAdd ofs (typesize ty)) ≤ intOfZ ofs at h
+        simp only [zAdd,
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add,
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt] at h
+        omega
+
+theorem Loc.diff_sym : Loc.diff_symStatement := by
+  intro l1 l2 h
+  cases l1 with
+  | R r1 =>
+      cases l2 with
+      | R r2 => exact fun heq => h heq.symm
+      | S sl ofs ty => exact trivial
+  | S sl1 ofs1 ty1 =>
+      cases l2 with
+      | R r => exact trivial
+      | S sl2 ofs2 ty2 =>
+          rcases h with h | h | h
+          · exact Or.inl fun heq => h heq.symm
+          · exact Or.inr (Or.inr h)
+          · exact Or.inr (Or.inl h)
+
+theorem OrderedSlot.lt_not_eq_proof : OrderedSlot.lt_not_eq := by
+  intro x y h heq
+  subst y
+  cases x <;>
+    simp [OrderedSlot.lt, CompCert4Lean.Lib.Coqlib.Plt,
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.PArith.BinPos.Pos.lt] at h
+
+theorem OrderedTyp.lt_trans_proof : OrderedTyp.lt_trans := by
+  intro x y z hxy hyz
+  cases x <;> cases y <;> cases z <;>
+    simp_all [OrderedTyp.lt, CompCert4Lean.Lib.Coqlib.Plt,
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.PArith.BinPos.Pos.lt] <;> omega
+
+end CompCert4Lean.Backend.Locations
