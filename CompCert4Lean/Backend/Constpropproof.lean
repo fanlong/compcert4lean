@@ -476,3 +476,120 @@ def transf_program_correctStatement : Prop :=
         (binary32_certificate := binary32_certificate) xi tprog)
 
 end CompCert4Lean.Backend.Constpropproof
+
+namespace CompCert4Lean.Backend.Constpropproof
+
+open CompCert4Lean.Backend.Constprop
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Backend.ValueAnalysis
+open CompCert4Lean.Backend.ValueDomain
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Values
+
+theorem builtin_arg_reduction_correct :
+    ∀ (cfg : CompCert4Lean.Config.CompilerConfig),
+      builtin_arg_reduction_correctStatement cfg := by
+  intro cfg prog bc sp m rs ae hmatch a v hev
+  induction hev with
+  | eval_BA x =>
+      have hx := hmatch x
+      generalize hreg : Regmap.get x rs = vx at hx ⊢
+      unfold builtin_arg_reduction
+      generalize hax : AE.get x ae = av at hx ⊢
+      cases av with
+      | Vbot => cases hx
+      | I n =>
+          cases hx
+          simpa [areg, hax, hreg] using (eval_BA_int n :
+            eval_builtin_arg (Genv.to_senv (Genv.globalenv prog))
+              (fun r => Regmap.get r rs) sp m (BA_int n) (Vint n))
+      | IU n =>
+          rw [← hreg]
+          simpa [areg, hax] using (eval_BA x :
+          eval_builtin_arg (Genv.to_senv (Genv.globalenv prog))
+            (fun r => Regmap.get r rs) sp m (BA x) (Regmap.get x rs))
+      | Uns p n =>
+          rw [← hreg]
+          simpa [areg, hax] using (eval_BA x :
+          eval_builtin_arg (Genv.to_senv (Genv.globalenv prog))
+            (fun r => Regmap.get r rs) sp m (BA x) (Regmap.get x rs))
+      | Sgn p n =>
+          rw [← hreg]
+          simpa [areg, hax] using (eval_BA x :
+          eval_builtin_arg (Genv.to_senv (Genv.globalenv prog))
+            (fun r => Regmap.get r rs) sp m (BA x) (Regmap.get x rs))
+      | L n =>
+          cases hx
+          simpa [areg, hax, hreg] using (eval_BA_long n :
+            eval_builtin_arg (Genv.to_senv (Genv.globalenv prog))
+              (fun r => Regmap.get r rs) sp m (BA_long n) (Vlong n))
+      | F f =>
+          cases hx
+          by_cases hgen : CompCert4Lean.Driver.Compopts.generate_float_constants cfg
+          · simpa [areg, hax, hgen, hreg] using (eval_BA_float f :
+              eval_builtin_arg (Genv.to_senv (Genv.globalenv prog))
+                (fun r => Regmap.get r rs) sp m (BA_float f) (Vfloat f))
+          · rw [← hreg]
+            simpa [areg, hax, hgen] using (eval_BA x :
+              eval_builtin_arg (Genv.to_senv (Genv.globalenv prog))
+                (fun r => Regmap.get r rs) sp m (BA x) (Regmap.get x rs))
+      | FS f =>
+          cases hx
+          by_cases hgen : CompCert4Lean.Driver.Compopts.generate_float_constants cfg
+          · simpa [areg, hax, hgen, hreg] using (eval_BA_single f :
+              eval_builtin_arg (Genv.to_senv (Genv.globalenv prog))
+                (fun r => Regmap.get r rs) sp m (BA_single f) (Vsingle f))
+          · rw [← hreg]
+            simpa [areg, hax, hgen] using (eval_BA x :
+              eval_builtin_arg (Genv.to_senv (Genv.globalenv prog))
+                (fun r => Regmap.get r rs) sp m (BA x) (Regmap.get x rs))
+      | Num p =>
+          rw [← hreg]
+          simpa [areg, hax] using (eval_BA x :
+          eval_builtin_arg (Genv.to_senv (Genv.globalenv prog))
+            (fun r => Regmap.get r rs) sp m (BA x) (Regmap.get x rs))
+      | Ptr p =>
+          rw [← hreg]
+          simpa [areg, hax] using (eval_BA x :
+          eval_builtin_arg (Genv.to_senv (Genv.globalenv prog))
+            (fun r => Regmap.get r rs) sp m (BA x) (Regmap.get x rs))
+      | Ifptr p =>
+          rw [← hreg]
+          simpa [areg, hax] using (eval_BA x :
+          eval_builtin_arg (Genv.to_senv (Genv.globalenv prog))
+            (fun r => Regmap.get r rs) sp m (BA x) (Regmap.get x rs))
+  | eval_BA_int n => exact eval_BA_int n
+  | eval_BA_long n => exact eval_BA_long n
+  | eval_BA_float n => exact eval_BA_float n
+  | eval_BA_single n => exact eval_BA_single n
+  | eval_BA_loadstack chunk ofs v load => exact eval_BA_loadstack chunk ofs v load
+  | eval_BA_addrstack ofs => exact eval_BA_addrstack ofs
+  | eval_BA_loadglobal chunk id ofs v load => exact eval_BA_loadglobal chunk id ofs v load
+  | eval_BA_addrglobal id ofs => exact eval_BA_addrglobal id ofs
+  | @eval_BA_splitlong hi lo vhi vlo eval_hi eval_lo ih_hi ih_lo =>
+      dsimp [builtin_arg_reduction]
+      generalize hhi : builtin_arg_reduction cfg ae hi = hi' at ih_hi ⊢
+      generalize hlo : builtin_arg_reduction cfg ae lo = lo' at ih_lo ⊢
+      cases hi' with
+      | BA_int nhi =>
+          cases lo' with
+          | BA_int nlo =>
+              cases ih_hi
+              cases ih_lo
+              simpa [builtin_arg_reduction, hhi, hlo, Val.longofwords] using
+                (eval_BA_long (CompCert4Lean.Lib.Integers.Int64.ofwords nhi nlo) :
+                  eval_builtin_arg (Genv.to_senv (Genv.globalenv prog))
+                    (fun r => Regmap.get r rs) sp m
+                    (BA_long (CompCert4Lean.Lib.Integers.Int64.ofwords nhi nlo))
+                    (Vlong (CompCert4Lean.Lib.Integers.Int64.ofwords nhi nlo)))
+          | _ => exact eval_BA_splitlong _ _ _ _ ih_hi ih_lo
+      | _ =>
+          exact eval_BA_splitlong _ _ _ _ ih_hi ih_lo
+  | @eval_BA_addptr a1 a2 v1 v2 eval_a1 eval_a2 ih_a1 ih_a2 =>
+      simpa [builtin_arg_reduction] using
+        (eval_BA_addptr (builtin_arg_reduction cfg ae a1)
+          (builtin_arg_reduction cfg ae a2) v1 v2 ih_a1 ih_a2)
+
+end CompCert4Lean.Backend.Constpropproof

@@ -144,3 +144,85 @@ end ITERATION
 end PrimIter
 
 end CompCert4Lean.Lib.Iteration
+
+namespace CompCert4Lean.Lib.Iteration.WfIter
+
+theorem iterate_prop :
+    ∀ (A B : Type) (step : A → Sum B A) (ord : A → A → Prop)
+      (ord_wf : WellFounded ord)
+      (step_decr : ∀ (a a' : A), step a = Sum.inr a' → ord a' a)
+      (P : A → Prop) (Q : B → Prop)
+      (step_prop : ∀ (a : A), P a →
+        match step a with
+        | Sum.inl b => Q b
+        | Sum.inr a' => P a'),
+      iterate_propStatement A B step ord ord_wf step_decr P Q step_prop := by
+  intro A B step ord ord_wf step_decr P Q step_prop
+  unfold iterate_propStatement
+  intro a
+  refine ord_wf.induction (C := fun a => P a →
+    Q (iterate A B step ord ord_wf step_decr a)) a ?_
+  intro a ih hPa
+  unfold CompCert4Lean.Lib.Iteration.WfIter.iterate
+  rw [CompCert4Lean.Lib.Wfsimpl.unroll_Fix]
+  unfold CompCert4Lean.Lib.Iteration.WfIter.iterate_F
+  cases h : step_info A B step ord step_decr a with
+  | inl binfo =>
+      cases binfo with
+      | mk b hb =>
+          have hstep := step_prop a hPa
+          rw [hb] at hstep
+          exact hstep
+  | inr next =>
+      cases next with
+      | mk a' hpair =>
+          rcases hpair with ⟨ha', hord⟩
+          apply ih a' hord
+          have hstep := step_prop a hPa
+          rw [ha'] at hstep
+          exact hstep
+
+end CompCert4Lean.Lib.Iteration.WfIter
+
+namespace CompCert4Lean.Lib.Iteration.PrimIter
+
+theorem iter_prop :
+    ∀ (A B : Type) (step : A → Sum B A) (P : A → Prop) (Q : B → Prop)
+      (step_prop : ∀ (a : A), P a →
+        match step a with
+        | Sum.inl b => Q b
+        | Sum.inr a' => P a'),
+      iter_propStatement A B step P Q step_prop := by
+  intro A B step P Q step_prop
+  unfold iter_propStatement
+  intro n
+  refine plt_wf.induction (C := fun n => ∀ a b, P a →
+    iter A B step n a = some b → Q b) n ?_
+  intro n ih a b hPa hiter
+  unfold CompCert4Lean.Lib.Iteration.PrimIter.iter at hiter
+  rw [CompCert4Lean.Lib.Wfsimpl.unroll_Fix] at hiter
+  unfold CompCert4Lean.Lib.Iteration.PrimIter.iter_step at hiter
+  cases hpeq : CompCert4Lean.Lib.Coqlib.peq n
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.xH with
+  | left heq =>
+      rw [hpeq] at hiter
+      simp at hiter
+  | right hne =>
+      rw [hpeq] at hiter
+      cases hstep : step a with
+      | inl b' =>
+          rw [hstep] at hiter
+          cases hiter
+          have hq := step_prop a hPa
+          rw [hstep] at hq
+          exact hq
+      | inr a' =>
+          rw [hstep] at hiter
+          have hPa' := step_prop a hPa
+          rw [hstep] at hPa'
+          apply ih
+            (CompCert4Lean.Foundation.Numbers.Rocq.Coq.PArith.BinPos.Pos.pred n)
+            (pred_lt n hne) a' b hPa'
+          exact hiter
+
+end CompCert4Lean.Lib.Iteration.PrimIter

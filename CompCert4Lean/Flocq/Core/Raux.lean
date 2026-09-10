@@ -1040,3 +1040,133 @@ def bpow_injStatement : Prop :=
 end ExactStatements
 
 end CompCert4Lean.Flocq.Core.Raux
+
+namespace CompCert4Lean.Flocq.Core.Raux
+
+theorem sqrt_ge_0 (ctx : ExactRealContext) : sqrt_ge_0Statement ctx := by
+  intro x
+  change ctx.spec.le ctx.spec.zero
+    (CompCert4Lean.Foundation.FlocqReal.ExactReal.sqrt ctx.spec x)
+  unfold CompCert4Lean.Foundation.FlocqReal.ExactReal.sqrt
+  split
+  · exact ctx.certificate.orderedField.le_refl ctx.spec.zero
+  · exact ctx.certificate.sqrt.nonnegative x
+
+theorem Req_bool_true (ctx : ExactRealContext) : Req_bool_trueStatement ctx := by
+  intro x y hxy
+  subst y
+  change Exact.Req_bool ctx x x = true
+  cases hdec : ctx.spec.lt_dec x x with
+  | left hlt => exact (ctx.certificate.orderedField.lt_irrefl x hlt).elim
+  | right _ =>
+      simp [Exact.Req_bool, Exact.Rcompare,
+        CompCert4Lean.Foundation.FlocqReal.ExactReal.total_order_T, hdec]
+
+private theorem exact_zero_lt_one_aux (ctx : ExactRealContext) :
+    ctx.spec.lt ctx.spec.zero ctx.spec.one := by
+  rcases ctx.certificate.total_order ctx.spec.zero ctx.spec.one with h | h
+  · rcases h with hlt | heq
+    · exact hlt
+    · exact (ctx.certificate.orderedField.zero_ne_one heq).elim
+  · have hzero_lt_neg : ctx.spec.lt ctx.spec.zero (ctx.spec.neg ctx.spec.one) := by
+      have hadd := ctx.certificate.orderedField.add_lt_compat_l
+        (ctx.spec.neg ctx.spec.one) ctx.spec.one ctx.spec.zero h
+      rw [ctx.certificate.orderedField.neg_add_cancel,
+        ctx.certificate.orderedField.add_zero] at hadd
+      exact hadd
+    have hneg_lt_zero := ctx.certificate.orderedField.mul_lt_compat_l
+      (ctx.spec.neg ctx.spec.one) ctx.spec.one ctx.spec.zero hzero_lt_neg h
+    rw [ctx.certificate.orderedField.mul_one,
+      ctx.certificate.orderedField.mul_zero] at hneg_lt_zero
+    exact (ctx.certificate.orderedField.lt_irrefl ctx.spec.zero
+      (ctx.certificate.orderedField.lt_trans ctx.spec.zero (ctx.spec.neg ctx.spec.one)
+        ctx.spec.zero hzero_lt_neg hneg_lt_zero)).elim
+
+private theorem exact_Rcompare_lt_aux (ctx : ExactRealContext)
+    {x y : ctx.spec.carrier} (hxy : ctx.spec.lt x y) :
+    Exact.Rcompare ctx x y = Lt := by
+  unfold Exact.Rcompare
+  unfold CompCert4Lean.Foundation.FlocqReal.ExactReal.total_order_T
+  cases hdec : ctx.spec.lt_dec x y with
+  | left _ => rfl
+  | right hnxy => exact (hnxy hxy).elim
+
+private theorem exact_Rcompare_eq_aux (ctx : ExactRealContext)
+    {x y : ctx.spec.carrier} (hxy : x = y) :
+    Exact.Rcompare ctx x y = Eq := by
+  subst y
+  cases hdec : ctx.spec.lt_dec x x with
+  | left hlt => exact (ctx.certificate.orderedField.lt_irrefl x hlt).elim
+  | right _ =>
+      simp [Exact.Rcompare,
+        CompCert4Lean.Foundation.FlocqReal.ExactReal.total_order_T, hdec]
+
+private theorem exact_Rcompare_gt_aux (ctx : ExactRealContext)
+    {x y : ctx.spec.carrier} (hyx : ctx.spec.lt y x) :
+    Exact.Rcompare ctx x y = Gt := by
+  have hnxy : ¬ctx.spec.lt x y := by
+    intro hxy
+    exact ctx.certificate.orderedField.lt_irrefl x
+      (ctx.certificate.orderedField.lt_trans x y x hxy hyx)
+  unfold Exact.Rcompare
+  unfold CompCert4Lean.Foundation.FlocqReal.ExactReal.total_order_T
+  cases hxy : ctx.spec.lt_dec x y with
+  | left hlt => exact (hnxy hlt).elim
+  | right _ =>
+      cases hyx_dec : ctx.spec.lt_dec y x with
+      | left _ => rfl
+      | right hnyx => exact (hnyx hyx).elim
+
+private theorem exact_Rcompare_mul_pos_right_aux (ctx : ExactRealContext)
+    (z x y : ctx.spec.carrier) (hz : ctx.spec.lt ctx.spec.zero z) :
+    Exact.Rcompare ctx (ctx.spec.mul x z) (ctx.spec.mul y z) =
+      Exact.Rcompare ctx x y := by
+  rcases ctx.certificate.total_order x y with h | h
+  · rcases h with hlt | heq
+    · have hmul := ctx.certificate.orderedField.mul_lt_compat_l z x y hz hlt
+      rw [ctx.certificate.orderedField.mul_comm z x,
+        ctx.certificate.orderedField.mul_comm z y] at hmul
+      rw [exact_Rcompare_lt_aux ctx hmul, exact_Rcompare_lt_aux ctx hlt]
+    · subst y
+      rw [exact_Rcompare_eq_aux ctx rfl, exact_Rcompare_eq_aux ctx rfl]
+  · have hmul := ctx.certificate.orderedField.mul_lt_compat_l z y x hz h
+    rw [ctx.certificate.orderedField.mul_comm z y,
+      ctx.certificate.orderedField.mul_comm z x] at hmul
+    rw [exact_Rcompare_gt_aux ctx hmul, exact_Rcompare_gt_aux ctx h]
+
+theorem Rcompare_half_r (ctx : ExactRealContext) : Rcompare_half_rStatement ctx := by
+  intro x y
+  change Exact.Rcompare ctx x (ctx.spec.div y (ctx.spec.add ctx.spec.one ctx.spec.one)) =
+    Exact.Rcompare ctx (ctx.spec.mul (ctx.spec.add ctx.spec.one ctx.spec.one) x) y
+  have hone_pos := exact_zero_lt_one_aux ctx
+  have hone_lt_two := ctx.certificate.orderedField.add_lt_compat_l ctx.spec.one
+    ctx.spec.zero ctx.spec.one hone_pos
+  rw [ctx.certificate.orderedField.add_zero] at hone_lt_two
+  have htwo_pos := ctx.certificate.orderedField.lt_trans ctx.spec.zero ctx.spec.one
+    (ctx.spec.add ctx.spec.one ctx.spec.one) hone_pos hone_lt_two
+  have htwo_ne : ctx.spec.add ctx.spec.one ctx.spec.one ≠ ctx.spec.zero := by
+    intro heq
+    rw [heq] at htwo_pos
+    exact ctx.certificate.orderedField.lt_irrefl ctx.spec.zero htwo_pos
+  have hdivmul :
+      ctx.spec.mul (ctx.spec.div y (ctx.spec.add ctx.spec.one ctx.spec.one))
+          (ctx.spec.add ctx.spec.one ctx.spec.one) = y := by
+    rw [ctx.certificate.orderedField.div_eq_mul_inv,
+      ctx.certificate.orderedField.mul_assoc,
+      ctx.certificate.orderedField.inv_mul_cancel _ htwo_ne,
+      ctx.certificate.orderedField.mul_one]
+  have hcmp := exact_Rcompare_mul_pos_right_aux ctx
+    (ctx.spec.add ctx.spec.one ctx.spec.one) x
+    (ctx.spec.div y (ctx.spec.add ctx.spec.one ctx.spec.one)) htwo_pos
+  calc
+    Exact.Rcompare ctx x (ctx.spec.div y (ctx.spec.add ctx.spec.one ctx.spec.one)) =
+        Exact.Rcompare ctx
+          (ctx.spec.mul x (ctx.spec.add ctx.spec.one ctx.spec.one))
+          (ctx.spec.mul (ctx.spec.div y (ctx.spec.add ctx.spec.one ctx.spec.one))
+            (ctx.spec.add ctx.spec.one ctx.spec.one)) := hcmp.symm
+    _ = Exact.Rcompare ctx
+          (ctx.spec.mul (ctx.spec.add ctx.spec.one ctx.spec.one) x) y := by
+      rw [ctx.certificate.orderedField.mul_comm x,
+        hdivmul]
+
+end CompCert4Lean.Flocq.Core.Raux

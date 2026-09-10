@@ -611,3 +611,99 @@ def transf_program_matchStatement : Prop :=
   ∀ cfg prog tprog, transf_program cfg prog = OK tprog → match_prog cfg prog tprog
 
 end CompCert4Lean.Backend.Inliningproof
+
+namespace CompCert4Lean.Backend.Inliningproof
+
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Errors
+open CompCert4Lean.Common.Linking
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Backend.Inlining
+open CompCert4Lean.Backend.RTL
+
+private theorem transf_globdefs_match
+    {A B V : Type} [LA : Linker A] [LV : Linker V]
+    (transf_fun : A → res B) (p : program A V)
+    (match_fundef : program A V → A → B → Prop)
+    (hmatch : ∀ f tf, transf_fun f = .OK tf → match_fundef p f tf) :
+    ∀ (l : List (ident × globdef A V)) (defs : List (ident × globdef B V)),
+      transf_globdefs (fun _ f => transf_fun f) (fun _ v => .OK v) l = .OK defs →
+      list_forall2
+        (match_ident_globdef match_fundef Eq p)
+        l defs := by
+  intro l
+  induction l with
+  | nil =>
+      intro defs hdefs
+      simp [transf_globdefs] at hdefs
+      subst defs
+      exact list_forall2_nil _
+  | cons hd tl ih =>
+      intro defs hdefs
+      cases hd with
+      | mk id gd =>
+          cases gd with
+          | Gfun f =>
+              cases htf : transf_fun f with
+              | Error msg => simp [transf_globdefs, htf] at hdefs
+              | OK tf =>
+                  cases htail : transf_globdefs
+                      (fun _ f => transf_fun f) (fun _ v => .OK v) tl with
+                  | Error msg => simp [transf_globdefs, htf, htail] at hdefs
+                  | OK defsTail =>
+                      simp [transf_globdefs, htf, htail] at hdefs
+                      subst defs
+                      apply list_forall2.cons
+                      · constructor
+                        · rfl
+                        · apply match_globdef.match_globdef_fun (ctx' := p)
+                          · exact linkorder_refl _
+                          · exact hmatch f tf htf
+                      · exact ih defsTail htail
+          | Gvar v =>
+              cases v with
+              | mk info init readonly volatile =>
+                  cases htail : transf_globdefs
+                      (fun _ f => transf_fun f) (fun _ v => .OK v) tl with
+                  | Error msg => simp [transf_globdefs, transf_globvar, htail] at hdefs
+                  | OK defsTail =>
+                      simp [transf_globdefs, transf_globvar, htail] at hdefs
+                      subst defs
+                      apply list_forall2.cons
+                      · constructor
+                        · rfl
+                        · apply match_globdef.match_globdef_var
+                          exact match_globvar.match_globvar_intro _ _ _ _ _ _ rfl
+                      · exact ih defsTail htail
+
+private theorem match_transform_partial_program_local
+    {A B V : Type} [LA : Linker A] [LV : Linker V]
+    (transf_fun : A → res B) (p : program A V) (tp : program B V)
+    (match_fundef : program A V → A → B → Prop)
+    (hmatch : ∀ f tf, transf_fun f = .OK tf → match_fundef p f tf) :
+    transform_partial_program transf_fun p = .OK tp →
+      match_program match_fundef Eq p tp := by
+  intro h
+  unfold transform_partial_program transform_partial_program2 at h
+  unfold match_program match_program_gen
+  cases hdefs : transf_globdefs (fun _ f => transf_fun f) (fun _ v => .OK v) p.prog_defs with
+  | Error msg => simp [hdefs] at h
+  | OK defs =>
+      simp [hdefs] at h
+      subst tp
+      constructor
+      · exact transf_globdefs_match transf_fun p match_fundef hmatch p.prog_defs defs hdefs
+      · exact ⟨rfl, rfl⟩
+
+theorem transf_program_match : transf_program_matchStatement := by
+  intro cfg prog tprog h
+  unfold CompCert4Lean.Backend.Inlining.transf_program at h
+  unfold match_prog
+  exact @match_transform_partial_program_local
+    fundef fundef Unit
+    (Linker_fundef function) Linker_unit
+    (transf_fundef (funenv_program cfg prog)) prog tprog
+    (fun cunit f tf => transf_fundef (funenv_program cfg cunit) f = .OK tf)
+    (by intro f tf htf; exact htf) h
+
+end CompCert4Lean.Backend.Inliningproof

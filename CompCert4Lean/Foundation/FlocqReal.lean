@@ -875,3 +875,24 @@ end Rtrigo_def
 end ExactStatements
 end Rocq.Coq.Reals
 end CompCert4Lean.Foundation.FlocqReal
+
+namespace CompCert4Lean.Foundation.FlocqReal
+namespace Rocq.Coq.Reals
+namespace RIneq
+
+theorem Rmult_lt_compat_r (ctx : ExactRealContext) :
+    Rmult_lt_compat_rStatement ctx := by
+  intro r r1 r2 hr h12
+  have hzero : ExactReal.IZR ctx.spec Z0 = ctx.spec.zero := by
+    exact ctx.certificate.sourceLaws.ofZ_zero
+  have hr' : ctx.spec.lt ctx.spec.zero r := by
+    rw [← hzero]
+    exact hr
+  change ctx.spec.lt (ctx.spec.mul r1 r) (ctx.spec.mul r2 r)
+  rw [ctx.certificate.orderedField.mul_comm r1 r,
+    ctx.certificate.orderedField.mul_comm r2 r]
+  exact ctx.certificate.orderedField.mul_lt_compat_l r r1 r2 hr' h12
+
+end RIneq
+end Rocq.Coq.Reals
+end CompCert4Lean.Foundation.FlocqReal

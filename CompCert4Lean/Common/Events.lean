@@ -1093,3 +1093,17 @@ def eval_builtin_args_lessdefStatement : Prop :=
       ∃ vl2, eval_builtin_args ge e2 sp m2 al vl2 ∧ Val.lessdef_list vl1 vl2
 
 end CompCert4Lean.Common.Events
+
+namespace CompCert4Lean.Common.Events
+
+theorem eventval_match_preserved : eventval_match_preservedStatement := by
+  intro ge1 ge2 hp hs ev ty v h
+  cases h with
+  | ev_match_int => exact ev_match_int _
+  | ev_match_long => exact ev_match_long _
+  | ev_match_float => exact ev_match_float _
+  | ev_match_single => exact ev_match_single _
+  | ev_match_ptr id b ofs pub find =>
+      exact ev_match_ptr id b ofs (by rw [hp]; exact pub) (by rw [hs]; exact find)
+
+end CompCert4Lean.Common.Events

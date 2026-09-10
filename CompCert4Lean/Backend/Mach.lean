@@ -506,3 +506,54 @@ def semantics
     (Genv.globalenv p)
 
 end CompCert4Lean.Backend.Mach
+
+namespace CompCert4Lean.Backend.Mach
+
+open CompCert4Lean.Lib.Coqlib
+
+namespace Regmap
+
+theorem gi_proof : gi := by
+  intro A i x
+  rfl
+
+theorem gss_proof : gss := by
+  intro A i x m
+  unfold get set elt_eq RegEq.eq
+  cases h : CompCert4Lean.X86.Machregs.mreg_eq i i with
+  | left heq => rfl
+  | right hne => exact False.elim (hne rfl)
+
+theorem gso_proof : gso := by
+  intro A i j x m hij
+  unfold get set elt_eq RegEq.eq
+  cases h : CompCert4Lean.X86.Machregs.mreg_eq i j with
+  | left heq => exact False.elim (hij heq)
+  | right hne => rfl
+
+end Regmap
+
+theorem is_label_correct_proof : is_label_correctStatement := by
+  intro lbl instr
+  cases instr with
+  | Mgetstack ofs ty dst => simp [is_label]
+  | Msetstack src ofs ty => simp [is_label]
+  | Mgetparam ofs ty dst => simp [is_label]
+  | Mop op args res => simp [is_label]
+  | Mload chunk addr args dst => simp [is_label]
+  | Mstore chunk addr args src => simp [is_label]
+  | Mcall sig ros => simp [is_label]
+  | Mtailcall sig ros => simp [is_label]
+  | Mbuiltin ef args res => simp [is_label]
+  | Mlabel l =>
+      cases h : CompCert4Lean.Lib.Coqlib.peq lbl l with
+      | left heq => simp [is_label, h, heq]
+      | right hne =>
+          simp [is_label, h]
+          exact fun hEq => hne hEq.symm
+  | Mgoto l => simp [is_label]
+  | Mcond cond args l => simp [is_label]
+  | Mjumptable arg tbl => simp [is_label]
+  | Mreturn => simp [is_label]
+
+end CompCert4Lean.Backend.Mach

@@ -1075,3 +1075,67 @@ def combine_op_indStatement : Prop :=
       P op args (combine_op get op args)
 
 end CompCert4Lean.X86.CombineOp
+
+namespace CompCert4Lean.X86.CombineOp
+
+theorem combine_compimm_ne_0_ind : combine_compimm_ne_0_indStatement := by
+  intro get x P hcmp hand hxor hnone
+  cases h : get x with
+  | none =>
+      simpa [combine_compimm_ne_0, h] using hnone none h (by simp)
+  | some r =>
+      cases r with
+      | Load chunk addr vl p =>
+          simpa [combine_compimm_ne_0, h] using hnone _ h (by simp)
+      | Builtin bf args =>
+          simpa [combine_compimm_ne_0, h] using hnone _ h (by simp)
+      | Op op ys =>
+          cases op <;> simp_all [combine_compimm_ne_0] <;>
+            first | exact hcmp _ _ rfl | exact hand _ _ rfl | exact hxor _ _ rfl
+
+theorem combine_compimm_eq_0_ind : combine_compimm_eq_0_indStatement := by
+  intro get x P hcmp hand hxor hnone
+  cases h : get x with
+  | none =>
+      simpa [combine_compimm_eq_0, h] using hnone none h (by simp)
+  | some r =>
+      cases r with
+      | Load chunk addr vl p =>
+          simpa [combine_compimm_eq_0, h] using hnone _ h (by simp)
+      | Builtin bf args =>
+          simpa [combine_compimm_eq_0, h] using hnone _ h (by simp)
+      | Op op ys =>
+          cases op <;> simp_all [combine_compimm_eq_0] <;>
+            first | exact hcmp _ _ rfl | exact hand _ _ rfl | exact hxor _ _ rfl
+
+theorem combine_compimm_eq_1_ind : combine_compimm_eq_1_indStatement := by
+  intro get x P hcmp hnone
+  cases h : get x with
+  | none =>
+      simpa [combine_compimm_eq_1, h] using hnone none h (by simp)
+  | some r =>
+      cases r with
+      | Load chunk addr vl p =>
+          simpa [combine_compimm_eq_1, h] using hnone _ h (by simp)
+      | Builtin bf args =>
+          simpa [combine_compimm_eq_1, h] using hnone _ h (by simp)
+      | Op op ys =>
+          cases op <;> simp_all [combine_compimm_eq_1] <;>
+            exact hcmp _ _ rfl
+
+theorem combine_compimm_ne_1_ind : combine_compimm_ne_1_indStatement := by
+  intro get x P hcmp hnone
+  cases h : get x with
+  | none =>
+      simpa [combine_compimm_ne_1, h] using hnone none h (by simp)
+  | some r =>
+      cases r with
+      | Load chunk addr vl p =>
+          simpa [combine_compimm_ne_1, h] using hnone _ h (by simp)
+      | Builtin bf args =>
+          simpa [combine_compimm_ne_1, h] using hnone _ h (by simp)
+      | Op op ys =>
+          cases op <;> simp_all [combine_compimm_ne_1] <;>
+            exact hcmp _ _ rfl
+
+end CompCert4Lean.X86.CombineOp

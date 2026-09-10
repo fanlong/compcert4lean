@@ -1012,3 +1012,12 @@ def eval_operation_injectStatement
           Val.inject f v1 v2
 
 end CompCert4Lean.X86.Op
+
+namespace CompCert4Lean.X86.Op
+
+theorem eval_addressing_Aglobal : eval_addressing_AglobalStatement := by
+  intro F V genv sp id ofs
+  simp [eval_addressing, eval_addressing32, eval_addressing64,
+    CompCert4Lean.X86_64.Archi.ptr64]
+
+end CompCert4Lean.X86.Op

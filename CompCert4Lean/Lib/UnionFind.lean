@@ -787,3 +787,34 @@ abbrev sameclass_find_3 : Prop := sameclass_find_3Statement M
 end UF
 
 end CompCert4Lean.Lib.UnionFind
+
+namespace CompCert4Lean.Lib.UnionFind
+
+namespace UF
+
+theorem find_x_obligation_1 :
+    ∀ (M : MAP), find_x_obligation_1Statement M := by
+  intro M uf a
+  dsimp
+  intro a' h
+  change mapGet M a uf.m = some a'
+  exact h.symm
+
+theorem repr_unroll_proof :
+    ∀ (M : MAP), repr_unrollStatement M := by
+  intro M uf a
+  exact repr_unroll_calc M uf a
+
+theorem repr_none_proof :
+    ∀ (M : MAP), repr_noneStatement M := by
+  intro M uf a h
+  exact repr_none_calc M uf a h
+
+theorem repr_some_proof :
+    ∀ (M : MAP), repr_someStatement M := by
+  intro M uf a a' h
+  exact repr_some_calc M uf a a' h
+
+end UF
+
+end CompCert4Lean.Lib.UnionFind

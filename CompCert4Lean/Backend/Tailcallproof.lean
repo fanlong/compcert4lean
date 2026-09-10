@@ -334,3 +334,52 @@ def transf_program_correctStatement
         (binary32_certificate := binary32_certificate) xi tprog)
 
 end CompCert4Lean.Backend.Tailcallproof
+
+namespace CompCert4Lean.Backend.Tailcallproof
+
+open CompCert4Lean.Backend.Tailcall
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Linking
+open CompCert4Lean.Lib.Coqlib
+
+theorem transf_program_match : transf_program_matchStatement := by
+  letI : Linker RTL.fundef := Linker_fundef RTL.function
+  letI : Linker RTL.program := Linker_prog RTL.fundef Unit
+  intro cfg p
+  unfold match_prog CompCert4Lean.Backend.Tailcall.transf_program
+    CompCert4Lean.Common.AST.transform_program
+  constructor
+  · induction p.prog_defs with
+    | nil => exact list_forall2.nil _
+    | cons hd tl ih =>
+        cases hd with
+        | mk id gd =>
+            cases gd with
+            | Gfun f =>
+                change list_forall2 _
+                  ((id, Gfun f) :: tl)
+                  ((id, Gfun (CompCert4Lean.Backend.Tailcall.transf_fundef cfg f)) ::
+                    List.map (transform_program_globdef
+                      (CompCert4Lean.Backend.Tailcall.transf_fundef cfg)) tl)
+                apply list_forall2.cons
+                · constructor
+                  · rfl
+                  · apply match_globdef.match_globdef_fun (ctx' := p)
+                    · exact linkorder_refl _
+                    · rfl
+                · exact ih
+            | Gvar v =>
+                change list_forall2 _
+                  ((id, Gvar v) :: tl)
+                  ((id, Gvar v) ::
+                    List.map (transform_program_globdef
+                      (CompCert4Lean.Backend.Tailcall.transf_fundef cfg)) tl)
+                apply list_forall2.cons
+                · constructor
+                  · rfl
+                  · apply match_globdef.match_globdef_var
+                    exact match_globvar.match_globvar_intro _ _ _ _ _ _ rfl
+                · exact ih
+  · exact ⟨rfl, rfl⟩
+
+end CompCert4Lean.Backend.Tailcallproof

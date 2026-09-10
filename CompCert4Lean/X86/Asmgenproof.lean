@@ -418,3 +418,110 @@ def transf_program_correctStatement
         (binary32_certificate := binary32_certificate) cfg xi tprog)
 
 end CompCert4Lean.X86.Asmgenproof
+
+namespace CompCert4Lean.X86.Asmgenproof
+
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Errors
+open CompCert4Lean.Common.Linking
+open CompCert4Lean.Lib.Coqlib
+
+theorem transf_program_match : transf_program_matchStatement := by
+  intro p tp h
+  letI : Linker MachFundef := Linker_fundef MachFunction
+  letI : Linker Unit := Linker_unit
+  letI : Linker MachProgram := Linker_prog MachFundef Unit
+  unfold match_prog
+  cases htp : CompCert4Lean.X86.Asmgen.transf_program p with
+  | Error msg =>
+      rw [htp] at h
+      cases h
+  | OK defs =>
+      rw [htp] at h
+      injection h with hEq
+      subst tp
+      unfold CompCert4Lean.X86.Asmgen.transf_program
+          CompCert4Lean.Common.AST.transform_partial_program
+          CompCert4Lean.Common.AST.transform_partial_program2 at htp
+      split at htp
+      · cases htp
+      · rename_i hdefs
+        injection htp with hEq
+        subst defs
+        constructor
+        · have hlist : ∀ (xs : List (ident × globdef MachFundef Unit))
+            (ys : List (ident × globdef AsmFundef Unit)),
+            CompCert4Lean.Common.AST.transf_globdefs
+                (fun _ f => CompCert4Lean.X86.Asmgen.transf_fundef f)
+                (fun _ v => .OK v) xs = .OK ys →
+              list_forall2
+                (match_ident_globdef
+                  (fun _ f tf => CompCert4Lean.X86.Asmgen.transf_fundef f = .OK tf)
+                  (fun x y : Unit => x = y) p) xs ys := by
+            intro xs
+            induction xs with
+            | nil =>
+                intro ys hys
+                cases ys with
+                | nil => exact list_forall2_nil _
+                | cons y ys => cases hys
+            | cons x xs ih =>
+                intro ys hys
+                cases x with
+                | mk id gd =>
+                    cases gd with
+                    | Gfun f =>
+                        cases htf : CompCert4Lean.X86.Asmgen.transf_fundef f with
+                        | Error msg =>
+                            simp [CompCert4Lean.Common.AST.transf_globdefs, htf] at hys
+                        | OK tf =>
+                            cases htail : CompCert4Lean.Common.AST.transf_globdefs
+                                (fun _ f => CompCert4Lean.X86.Asmgen.transf_fundef f)
+                                (fun _ v => .OK v) xs with
+                            | Error msg =>
+                                simp [CompCert4Lean.Common.AST.transf_globdefs, htf, htail] at hys
+                            | OK ys' =>
+                                cases ys with
+                                | nil =>
+                                    simp [CompCert4Lean.Common.AST.transf_globdefs, htf, htail] at hys
+                                    cases hys
+                                | cons y ys =>
+                                    cases y with
+                                    | mk id' gd' =>
+                                        simp [CompCert4Lean.Common.AST.transf_globdefs, htf, htail] at hys
+                                        cases hys
+                                        apply list_forall2.cons
+                                        · constructor
+                                          · rfl
+                                          · apply match_globdef_fun (ctx' := p)
+                                            · exact linkorder_refl _
+                                            · exact htf
+                                        · exact ih ys' (by simp [htail])
+                    | Gvar v =>
+                        cases htail : CompCert4Lean.Common.AST.transf_globdefs
+                            (fun _ f => CompCert4Lean.X86.Asmgen.transf_fundef f)
+                            (fun _ v => .OK v) xs with
+                        | Error msg =>
+                            simp [CompCert4Lean.Common.AST.transf_globdefs,
+                              CompCert4Lean.Common.AST.transf_globvar, htail] at hys
+                        | OK ys' =>
+                            cases ys with
+                            | nil =>
+                                simp [CompCert4Lean.Common.AST.transf_globdefs,
+                                  CompCert4Lean.Common.AST.transf_globvar, htail] at hys
+                                cases hys
+                            | cons y ys =>
+                                cases y with
+                                | mk id' gd' =>
+                                    simp [CompCert4Lean.Common.AST.transf_globdefs, htail] at hys
+                                    cases hys
+                                    apply list_forall2.cons
+                                    · constructor
+                                      · rfl
+                                      · apply match_globdef_var
+                                        exact match_globvar_intro _ _ _ _ _ _ rfl
+                                    · exact ih ys' (by simp [htail])
+          exact hlist p.prog_defs _ hdefs
+        · exact ⟨rfl, rfl⟩
+
+end CompCert4Lean.X86.Asmgenproof

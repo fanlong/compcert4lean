@@ -883,3 +883,25 @@ theorem forward_simulation_identity : forward_simulation_identityStatement := by
       rfl }
 
 end CompCert4Lean.Driver.Compiler
+
+namespace CompCert4Lean.Driver.Compiler
+
+theorem compose_print_identity : compose_print_identityStatement := by
+  intro A x f
+  cases x with
+  | Error message => rfl
+  | OK value => rfl
+
+theorem match_if_simulation : match_if_simulationStatement := by
+  intro A sem flag transf prog tprog hmatch htrans
+  unfold match_if at hmatch
+  cases hflag : flag () with
+  | true =>
+      simp [hflag] at hmatch
+      exact htrans prog tprog hmatch
+  | false =>
+      simp [hflag] at hmatch
+      cases hmatch
+      exact forward_simulation_identity (sem prog)
+
+end CompCert4Lean.Driver.Compiler

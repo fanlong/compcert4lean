@@ -725,3 +725,37 @@ def eval_liftStatement
       eval_expr xi ge sp e m (w :: le) (lift a) v
 
 end CompCert4Lean.Backend.CminorSel
+
+namespace CompCert4Lean.Backend.CminorSel
+
+theorem insert_lenv_lookup1 : insert_lenv_lookup1Statement := by
+  intro le p w le' h
+  induction h with
+  | insert_lenv_0 le w =>
+      intro n v hnth hgt
+      omega
+  | insert_lenv_S le p w le' v hins ih =>
+      intro n v' hnth hgt
+      cases n with
+      | zero =>
+          simpa [CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.List.nth_error] using hnth
+      | succ n =>
+          simp [CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.List.nth_error] at hnth ⊢
+          exact ih n v' hnth (by omega)
+
+theorem insert_lenv_lookup2 : insert_lenv_lookup2Statement := by
+  intro le p w le' h
+  induction h with
+  | insert_lenv_0 le w =>
+      intro n v hnth hle
+      simpa [CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.List.nth_error] using hnth
+  | insert_lenv_S le p w le' v hins ih =>
+      intro n v' hnth hle
+      cases n with
+      | zero =>
+          omega
+      | succ n =>
+          simp [CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.List.nth_error] at hnth ⊢
+          exact ih n v' hnth (by omega)
+
+end CompCert4Lean.Backend.CminorSel

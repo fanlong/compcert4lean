@@ -1806,3 +1806,81 @@ def transf_program_correctStatement
           cfg xi tprog)
 
 end CompCert4Lean.Backend.Allocproof
+
+namespace CompCert4Lean.Backend.Allocproof
+
+open CompCert4Lean.Backend.Allocation
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Linking
+open CompCert4Lean.Lib.Coqlib
+
+theorem transf_program_match : transf_program_matchStatement := by
+  intro cfg oracle p tp h
+  letI : Linker RTL.program := by
+    change Linker (CompCert4Lean.Common.AST.program
+      (CompCert4Lean.Common.AST.fundef RTL.function) Unit)
+    exact @Linker_prog (CompCert4Lean.Common.AST.fundef RTL.function) Unit
+      (Linker_fundef RTL.function) Linker_unit
+  unfold CompCert4Lean.Backend.Allocation.transf_program
+    CompCert4Lean.Common.AST.transform_partial_program
+    CompCert4Lean.Common.AST.transform_partial_program2 at h
+  have hlist :
+      ∀ (xs : List (ident × globdef RTL.fundef Unit))
+        (ys : List (ident × globdef LTL.fundef Unit)),
+        transf_globdefs (fun _ f => transf_fundef cfg oracle f)
+            (fun _ v => .OK v) xs = .OK ys →
+          list_forall2
+            (match_ident_globdef
+              (fun _ f tf => transf_fundef cfg oracle f = .OK tf)
+              (fun x y : Unit => x = y) p) xs ys := by
+    intro xs
+    induction xs with
+    | nil =>
+        intro ys hys
+        cases hys
+        exact list_forall2.nil _
+    | cons hd tl ih =>
+        intro ys hys
+        cases hd with
+        | mk id gd =>
+            cases gd with
+            | Gfun f =>
+                cases hf : transf_fundef cfg oracle f with
+                | Error msg => simp [transf_globdefs, hf] at hys
+                | OK tf =>
+                    cases ht : transf_globdefs (fun _ f => transf_fundef cfg oracle f)
+                      (fun _ v => .OK v) tl with
+                    | Error msg => simp [transf_globdefs, hf, ht] at hys
+                    | OK ysTail =>
+                        simp only [transf_globdefs, hf, ht] at hys
+                        cases hys
+                        apply list_forall2.cons
+                        · constructor
+                          · rfl
+                          · apply match_globdef.match_globdef_fun (ctx' := p)
+                            · exact linkorder_refl _
+                            · exact hf
+                        · exact ih ysTail ht
+            | Gvar v =>
+                cases ht : transf_globdefs (fun _ f => transf_fundef cfg oracle f)
+                  (fun _ v => .OK v) tl with
+                | Error msg => simp [transf_globdefs, transf_globvar, ht] at hys
+                | OK ysTail =>
+                    simp only [transf_globdefs, transf_globvar, ht] at hys
+                    cases hys
+                    apply list_forall2.cons
+                    · constructor
+                      · rfl
+                      · apply match_globdef.match_globdef_var
+                        exact match_globvar.match_globvar_intro _ _ _ _ _ _ rfl
+                    · exact ih ysTail ht
+  cases hdefs : transf_globdefs (fun _ f => transf_fundef cfg oracle f)
+      (fun _ v => .OK v) p.prog_defs with
+  | Error msg => simp [hdefs] at h
+  | OK defs =>
+      simp only [hdefs] at h
+      cases h
+      unfold match_prog match_program match_program_gen
+      exact ⟨hlist p.prog_defs defs hdefs, rfl, rfl⟩
+
+end CompCert4Lean.Backend.Allocproof

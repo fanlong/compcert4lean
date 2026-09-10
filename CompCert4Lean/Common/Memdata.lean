@@ -719,3 +719,16 @@ def encode_val_int64Statement : Prop :=
         (if CompCert4Lean.X86_64.Archi.big_endian then Val.loword v else Val.hiword v)
 
 end CompCert4Lean.Common.Memdata
+
+namespace CompCert4Lean.Common.Memdata
+
+theorem size_chunk_pos : size_chunk_posStatement := by
+  intro chunk
+  cases chunk <;> simp [size_chunk, zLt, z0, z1, z2, z4, z8,
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.lt,
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ,
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat,
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt]
+  all_goals exact CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat_positive _
+
+end CompCert4Lean.Common.Memdata

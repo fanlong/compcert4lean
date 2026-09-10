@@ -925,3 +925,17 @@ def all_nodes_specStatement : Prop :=
 end NodeSetBackward
 
 end CompCert4Lean.Backend.Kildall
+
+namespace CompCert4Lean.Backend.Kildall.NodeSetBackward
+
+theorem empty_spec : empty_specStatement := by
+  intro n
+  change ¬ CompCert4Lean.Lib.Heaps.PHeap.In n
+    CompCert4Lean.Lib.Heaps.PHeap.empty
+  simp [CompCert4Lean.Lib.Heaps.PHeap.In,
+    CompCert4Lean.Lib.Heaps.PHeap.empty,
+    CompCert4Lean.Lib.Heaps.SplayHeapSet.empty,
+    CompCert4Lean.Lib.Heaps.SplayHeapSet.In,
+    CompCert4Lean.Lib.Heaps.SplayHeapSet.R.In]
+
+end CompCert4Lean.Backend.Kildall.NodeSetBackward

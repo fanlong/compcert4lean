@@ -1054,3 +1054,180 @@ theorem B2R_SF2B :
   cases x <;> rfl
 
 end CompCert4Lean.Flocq.IEEE754.BinarySingleNaN
+
+namespace CompCert4Lean.Flocq.IEEE754.BinarySingleNaN
+
+open CompCert4Lean.Flocq.Core
+
+private theorem zle_zero_zpos (p : positive) : Zle Z0 (Zpos p) := by
+  change 0 ≤ CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (Zpos p)
+  simp [CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ,
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat]
+
+private theorem zle_zero_add_one (z : Z) (h : Zle Z0 z) : Zle Z0 (Zadd z Zone) := by
+  change 0 ≤ CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+    (CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ z +
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ Zone))
+  rw [CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+  change 0 ≤ CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ z at h
+  change 0 ≤ CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ z + 1
+  omega
+
+private theorem shr1_nonneg (mrs : shr_record) (h : Zle Z0 (shr_m mrs)) :
+    Zle Z0 (shr_m (shr_1 mrs)) := by
+  cases mrs with
+  | mk m r s =>
+    cases m with
+    | Z0 => change 0 ≤ (0 : Int); omega
+    | Zpos p =>
+      cases p with
+      | xH => change 0 ≤ (0 : Int); omega
+      | xO p =>
+        change 0 ≤ Int.ofNat (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p)
+        exact Int.ofNat_zero_le _
+      | xI p =>
+        change 0 ≤ Int.ofNat (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p)
+        exact Int.ofNat_zero_le _
+    | Zneg p =>
+      exfalso
+      change 0 ≤ -Int.ofNat (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p) at h
+      have hp := CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat_positive p
+      have : ¬ (0 ≤ -(Int.ofNat (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p))) := by
+        have hp' : 0 < Int.ofNat (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p) := by
+          simpa using (Int.ofNat_lt.mpr (show 0 < CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p from hp))
+        omega
+      exact (this h).elim
+
+private theorem iter_pos_nonneg {A : Type} (P : A → Prop) (f : A → A)
+    (hf : ∀ x, P x → P (f x)) :
+    ∀ (p : positive) (x : A), P x → P (CompCert4Lean.Lib.Floats.Model.Rocq.Coq.Floats.SpecFloat.iter_pos f p x) := by
+  intro p
+  induction p with
+  | xH =>
+      intro x hx
+      exact hf x hx
+  | xO p ih =>
+      intro x hx
+      exact ih _ (ih x hx)
+  | xI p ih =>
+      intro x hx
+      exact ih _ (ih _ (hf x hx))
+
+private theorem shr_nonneg (mrs : shr_record) (e n : Z)
+    (h : Zle Z0 (shr_m mrs)) :
+    Zle Z0 (shr_m (shr mrs e n).1) := by
+  cases n with
+  | Z0 => exact h
+  | Zneg p => exact h
+  | Zpos p =>
+      exact iter_pos_nonneg (fun z : shr_record => Zle Z0 (shr_m z))
+        shr_1 (fun x hx => shr1_nonneg x hx) p mrs h
+
+private theorem shr_fexp_nonneg (prec emax m e : Z) (l : location)
+    (h : Zle Z0 m) :
+    Zle Z0 (shr_m (shr_fexp (prec := prec) (emax := emax) m e l).1) := by
+  unfold shr_fexp
+  apply shr_nonneg
+  have hm : shr_m (shr_record_of_loc m l) = m := by
+    cases l with
+    | loc_Exact => rfl
+    | loc_Inexact c => cases c <;> rfl
+  rw [hm]
+  exact h
+
+private theorem cond_incr_nonneg (b : Bool) (m : Z) (h : Zle Z0 m) :
+    Zle Z0 (cond_incr b m) := by
+  unfold cond_incr
+  simp only [Calc.Round.cond_incr]
+  split
+  · exact zle_zero_add_one m h
+  · exact h
+
+private theorem choice_mode_nonneg (m : mode) (sx : Bool) (mx : Z) (lx : location)
+    (h : Zle Z0 mx) : Zle Z0 (choice_mode m sx mx lx) := by
+  cases m with
+  | mode_NE => exact cond_incr_nonneg _ _ h
+  | mode_ZR => exact h
+  | mode_DN => exact cond_incr_nonneg _ _ h
+  | mode_UP => exact cond_incr_nonneg _ _ h
+  | mode_NA => exact cond_incr_nonneg _ _ h
+
+private theorem binary_overflow_not_nan (m : mode) (s : Bool) :
+    is_nan_SF (binary_overflow (prec := prec) (emax := emax) m s) = false := by
+  unfold binary_overflow
+  split <;> rfl
+
+private theorem binary_fit_aux_not_nan (m : mode) (sx : Bool) (mx : positive) (ex : Z) :
+    is_nan_SF (binary_fit_aux (prec := prec) (emax := emax) m sx mx ex) = false := by
+  unfold binary_fit_aux
+  split
+  · rfl
+  · exact binary_overflow_not_nan m sx
+
+private theorem binary_round_aux_not_nan [Core.FLX.Prec_gt_0 prec]
+    [Prec_lt_emax prec emax] (m : mode) (sx : Bool) (mx ex : Z) (lx : location)
+    (hmx : Zle Z0 mx) :
+    is_nan_SF (binary_round_aux (prec := prec) (emax := emax) m sx mx ex lx) = false := by
+  dsimp [binary_round_aux]
+  cases hqv : shr_fexp (prec := prec) (emax := emax) mx ex lx with
+    | mk mrs' e' =>
+    have hq : Zle Z0 (shr_m mrs') := by
+      have ht := shr_fexp_nonneg (prec := prec) (emax := emax) mx ex lx hmx
+      simpa [hqv] using ht
+    have hc : Zle Z0 (choice_mode m sx (shr_m mrs') (loc_of_shr_record mrs')) :=
+      choice_mode_nonneg m sx (shr_m mrs') (loc_of_shr_record mrs') hq
+    cases hrv : shr_fexp (prec := prec) (emax := emax)
+        (choice_mode m sx (shr_m mrs') (loc_of_shr_record mrs')) e' loc_Exact with
+    | mk mrs'' e'' =>
+      have hr : Zle Z0 (shr_m mrs'') := by
+        have ht := shr_fexp_nonneg (prec := prec) (emax := emax)
+          (choice_mode m sx (shr_m mrs') (loc_of_shr_record mrs')) e' loc_Exact hc
+        simpa [hrv] using ht
+      cases hm : shr_m mrs'' with
+      | Z0 => simp [hqv, hrv, hm, is_nan_SF]
+      | Zpos p =>
+        change is_nan_SF (binary_fit_aux (prec := prec) (emax := emax) m sx p e'') = false
+        exact binary_fit_aux_not_nan m sx p e''
+      | Zneg p =>
+        exfalso
+        have hr' := hr
+        rw [hm] at hr'
+        change 0 ≤ -Int.ofNat (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p) at hr'
+        have hp := CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat_positive p
+        have hp' : 0 < Int.ofNat (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p) :=
+          Int.ofNat_lt.mpr hp
+        omega
+
+private theorem binary_round_not_nan [Core.FLX.Prec_gt_0 prec]
+    [Prec_lt_emax prec emax] (m : mode) (sx : Bool) (mx : positive) (ex : Z) :
+    is_nan_SF (binary_round (prec := prec) (emax := emax) m sx mx ex) = false := by
+  unfold binary_round
+  cases hs : shl_align_fexp (prec := prec) (emax := emax) mx ex with
+  | mk mz ez =>
+      simpa [binary_round, hs] using
+        (binary_round_aux_not_nan (prec := prec) (emax := emax) m sx (Zpos mz) ez loc_Exact
+          (zle_zero_zpos mz))
+
+private theorem is_nan_SF2B_eq (prec emax : Z) (x : spec_float) :
+    is_nan (prec := prec) (emax := emax) (SF2B x) = is_nan_SF x := by
+  cases x <;> rfl
+
+theorem is_nan_binary_normalize :
+    ∀ {prec emax : Z}, [Core.FLX.Prec_gt_0 prec] → [Prec_lt_emax prec emax] →
+      is_nan_binary_normalizeStatement (prec := prec) (emax := emax) := by
+  intro prec emax instp inste m mx ex szero
+  cases mx with
+  | Z0 => rfl
+  | Zpos p =>
+      rw [show is_nan (binary_normalize (prec := prec) (emax := emax) m (Zpos p) ex szero) =
+        is_nan_SF (binary_round (prec := prec) (emax := emax) m false p ex) by
+          simp [binary_normalize, is_nan_SF2B_eq prec emax]]
+      exact binary_round_not_nan (prec := prec) (emax := emax) m false p ex
+  | Zneg p =>
+      rw [show is_nan (binary_normalize (prec := prec) (emax := emax) m (Zneg p) ex szero) =
+        is_nan_SF (binary_round (prec := prec) (emax := emax) m true p ex) by
+          simp [binary_normalize, is_nan_SF2B_eq prec emax]]
+      exact binary_round_not_nan (prec := prec) (emax := emax) m true p ex
+
+end CompCert4Lean.Flocq.IEEE754.BinarySingleNaN

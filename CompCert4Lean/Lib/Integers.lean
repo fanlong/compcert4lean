@@ -2549,3 +2549,152 @@ end Ptrofs
 abbrev ptrofs := Ptrofs.int
 
 end CompCert4Lean.Lib.Integers
+
+namespace CompCert4Lean.Lib.Integers.Int
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem signed_mone_proof : signed_mone := by
+  rfl
+
+theorem shru_zero_proof : shru_zero := by
+  intro x
+  have hx0 :
+      ZArith.BinInt.Z.le
+        Numbers.BinNums.Z.Z0 (unsigned x) := by
+    have h := x.intrange.1
+    change (-1 : Int) <
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ x.intval at h
+    change 0 ≤ CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ x.intval
+    omega
+  have hxlt : ZArith.BinInt.Z.lt (unsigned x) modulus := x.intrange.2
+  have hxmax :
+      ZArith.BinInt.Z.le (unsigned x) max_unsigned := by
+    change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ x.intval ≤ _
+    change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ x.intval ≤
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ modulus - 1
+    change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ x.intval <
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ modulus at hxlt
+    omega
+  apply WordCore.ext
+  change
+    (WordCore.repr wordsize
+      (ZArith.BinInt.Z.shiftr (unsigned x) (unsigned zero))).intval = x.intval
+  have hz : unsigned zero = Numbers.BinNums.Z.Z0 := by rfl
+  rw [hz]
+  rw [show ZArith.BinInt.Z.shiftr (unsigned x) Numbers.BinNums.Z.Z0 = unsigned x by
+    unfold ZArith.BinInt.Z.shiftr
+    change
+      (if (0 : Int) ≤ 0 then
+          zOfInt ((intOfZ (unsigned x)).ediv (Int.pow 2 (Int.toNat 0)))
+        else zOfInt (intOfZ (unsigned x) * Int.pow 2 (-0).toNat)) = unsigned x
+    rw [if_pos (by omega)]
+    have hp : Int.pow 2 (Int.toNat 0) = 1 := by rfl
+    rw [hp]
+    exact congrArg zOfInt (Int.ediv_one (intOfZ (unsigned x))) |>.trans
+      (zOfInt_intOfZ (unsigned x))]
+  change (WordCore.repr wordsize (unsigned x)).intval = x.intval
+  have hrepr := unsigned_repr_proof_api (unsigned x) ⟨hx0, hxmax⟩
+  exact hrepr
+
+private theorem suffix_val_lt_wordsize (x : int) : x.val < 2 ^ wordsize := by
+  have hxnonneg : 0 ≤ intOfZ x.intval := by
+    have h := x.intrange.1
+    change (-1 : Int) < intOfZ x.intval at h
+    omega
+  have hxlt : intOfZ x.intval < (Int.ofNat (2 ^ wordsize)) := by
+    have h := x.intrange.2
+    change intOfZ x.intval < intOfZ (two_power_nat wordsize) at h
+    have hp : intOfZ (two_power_nat wordsize) = Int.ofNat (2 ^ wordsize) := by rfl
+    rw [hp] at h
+    exact h
+  have hvalz :
+      ZArith.BinInt.Z.of_nat (ZArith.BinInt.Z.to_nat x.intval) = x.intval :=
+    ZArith.Znat.Z2Nat.id x.intval (by
+      change 0 ≤ intOfZ x.intval
+      exact hxnonneg)
+  have hint :
+      Int.ofNat (ZArith.BinInt.Z.to_nat x.intval) = intOfZ x.intval := by
+    have h := congrArg intOfZ hvalz
+    simpa only [ZArith.BinInt.Z.of_nat, intOfZ_zOfInt] using h
+  have hnat : ZArith.BinInt.Z.to_nat x.intval = Int.toNat (intOfZ x.intval) := by
+    rw [← Int.toNat_of_nonneg hxnonneg] at hint
+    exact Int.ofNat.inj hint
+  change ZArith.BinInt.Z.to_nat x.intval < 2 ^ wordsize
+  rw [hnat]
+  exact (Int.toNat_lt hxnonneg).mpr hxlt
+
+private theorem suffix_xor_unsigned (x y : int) :
+    unsigned (xor x y) =
+      ZArith.BinInt.Z.of_nat (Nat.xor x.val y.val) := by
+  have hnlt : Nat.xor x.val y.val < 2 ^ wordsize :=
+    Nat.xor_lt_two_pow (suffix_val_lt_wordsize x) (suffix_val_lt_wordsize y)
+  have hz0 : ZArith.BinInt.Z.le Numbers.BinNums.Z.Z0
+      (ZArith.BinInt.Z.of_nat (Nat.xor x.val y.val)) := by
+    change 0 ≤ intOfZ (ZArith.BinInt.Z.of_nat (Nat.xor x.val y.val))
+    have hnat : 0 ≤ (Nat.xor x.val y.val : Int) := by omega
+    simpa only [ZArith.BinInt.Z.of_nat, intOfZ_zOfInt, Int.ofNat_eq_natCast] using hnat
+  have hzm : ZArith.BinInt.Z.le
+      (ZArith.BinInt.Z.of_nat (Nat.xor x.val y.val)) max_unsigned := by
+    change intOfZ (ZArith.BinInt.Z.of_nat (Nat.xor x.val y.val)) ≤ intOfZ max_unsigned
+    have hmax : intOfZ max_unsigned = Int.ofNat (2 ^ wordsize) - 1 := by rfl
+    rw [hmax]
+    simp only [ZArith.BinInt.Z.of_nat, intOfZ_zOfInt, Int.ofNat_eq_natCast]
+    omega
+  exact unsigned_repr_proof_api
+    (ZArith.BinInt.Z.of_nat (Nat.xor x.val y.val)) ⟨hz0, hzm⟩
+
+private theorem suffix_xor_zero_iff_nat (x y : int) :
+    xor x y = zero ↔ Nat.xor x.val y.val = 0 := by
+  constructor
+  · intro h
+    have hu := congrArg unsigned h
+    rw [suffix_xor_unsigned] at hu
+    have hz : unsigned zero = Numbers.BinNums.Z.Z0 := by rfl
+    rw [hz] at hu
+    have hi := congrArg intOfZ hu
+    have hzero : intOfZ Numbers.BinNums.Z.Z0 = (0 : Int) := by rfl
+    rw [hzero] at hi
+    have hi' : Int.ofNat (Nat.xor x.val y.val) = 0 := by
+      simpa only [ZArith.BinInt.Z.of_nat, intOfZ_zOfInt] using hi
+    exact Int.ofNat.inj hi'
+  · intro h
+    apply WordCore.ext
+    change unsigned (xor x y) = unsigned zero
+    rw [suffix_xor_unsigned]
+    have hz : unsigned zero = Numbers.BinNums.Z.Z0 := by rfl
+    rw [hz]
+    rw [h]
+    rfl
+
+theorem xor_is_zero_proof : xor_is_zero := by
+  intro x y
+  change decide ((xor x y).intval = zero.intval) = decide (x.intval = y.intval)
+  have hiff : (xor x y).intval = zero.intval ↔ x.intval = y.intval := by
+    constructor
+    · intro h
+      have hxy : xor x y = zero := WordCore.ext h
+      have hn : Nat.xor x.val y.val = 0 := suffix_xor_zero_iff_nat x y |>.mp hxy
+      have hnat : x.val = y.val := by
+        apply Nat.eq_of_testBit_eq
+        intro i
+        have hz : (Nat.xor x.val y.val).testBit i = false := by rw [hn]; simp
+        rw [Nat.xor_eq, Nat.testBit_xor] at hz
+        by_cases ha : x.val.testBit i = true <;>
+          by_cases hb : y.val.testBit i = true <;> simp [ha, hb] at hz ⊢
+      have hv : x = y := WordCore.ext_of_val_eq hnat
+      exact congrArg (fun q => q.intval) hv
+    · intro h
+      have hxy : x = y := WordCore.ext h
+      have hn : Nat.xor x.val y.val = 0 := by rw [hxy, Nat.xor_eq, Nat.xor_self]
+      have hz : xor x y = zero := suffix_xor_zero_iff_nat x y |>.mpr hn
+      exact congrArg (fun q => q.intval) hz
+  by_cases hp : (xor x y).intval = zero.intval
+  · have hq : x.intval = y.intval := hiff.mp hp
+    simp [hp, hq]
+  · have hq : ¬ x.intval = y.intval := by
+      intro hq
+      exact hp (hiff.mpr hq)
+    simp [hp, hq]
+
+end CompCert4Lean.Lib.Integers.Int

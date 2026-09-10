@@ -1030,3 +1030,14 @@ def ZArith.Zpower.Zpower_pos_natStatement := ∀ (z : Z) (p : positive), ((ZArit
 def ZArith.Zquot.Zquot_Zdiv_posStatement := ∀ (a b : Z) (_ : ZArith.BinInt.Z.le Z0 a) (_ : ZArith.BinInt.Z.le Z0 b), ((ZArith.BinInt.Z.quot a b) = (ZArith.BinInt.Z.div a b))
 end Rocq.Coq
 end CompCert4Lean.Foundation.Numbers
+
+namespace CompCert4Lean.Foundation.Numbers
+namespace Rocq.Coq
+
+theorem ZArith.BinInt.Z.le_refl :
+    ZArith.BinInt.Z.le_reflStatement := by
+  intro n
+  exact Int.le_refl (intOfZ n)
+
+end Rocq.Coq
+end CompCert4Lean.Foundation.Numbers

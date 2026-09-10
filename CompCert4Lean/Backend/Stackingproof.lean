@@ -1791,3 +1791,106 @@ def wt_progStatement : Prop :=
     (i, .Gfun fd) ∈ prog.prog_defs → wt_fundef cfg fd
 
 end CompCert4Lean.Backend.Stackingproof
+
+namespace CompCert4Lean.Backend.Stackingproof
+
+open CompCert4Lean.Backend.Linear
+open CompCert4Lean.Backend.Mach
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Linking
+
+theorem transf_program_match : transf_program_matchStatement := by
+  letI : Linker Linear.fundef := by
+    change Linker (CompCert4Lean.Common.AST.fundef Linear.function)
+    exact Linker_fundef Linear.function
+  letI : Linker Mach.fundef := by
+    change Linker (CompCert4Lean.Common.AST.fundef Mach.function)
+    exact Linker_fundef Mach.function
+  letI : Linker Linear.program := by
+    change Linker (CompCert4Lean.Common.AST.program
+      (CompCert4Lean.Common.AST.fundef Linear.function) Unit)
+    exact Linker_prog (CompCert4Lean.Common.AST.fundef Linear.function) Unit
+  intro cfg p tp htrans
+  rcases p with ⟨pdefs, ppub, pmain⟩
+  unfold CompCert4Lean.Backend.Stacking.transf_program at htrans
+  unfold CompCert4Lean.Common.AST.transform_partial_program at htrans
+  unfold CompCert4Lean.Common.AST.transform_partial_program2 at htrans
+  cases hdefs : CompCert4Lean.Common.AST.transf_globdefs
+      (fun _ f => CompCert4Lean.Backend.Stacking.transf_fundef cfg f)
+      (fun _ v => .OK v) pdefs with
+  | Error msg =>
+      simp [hdefs] at htrans
+  | OK defs =>
+      simp [hdefs] at htrans
+      cases htrans
+      unfold match_prog
+      constructor
+      · let ctx : Linear.program :=
+          { prog_defs := pdefs, prog_public := ppub, prog_main := pmain }
+        have hlist : ∀ (xs : List (ident × globdef Linear.fundef Unit))
+            (ys : List (ident × globdef Mach.fundef Unit)),
+            CompCert4Lean.Common.AST.transf_globdefs
+                (fun _ f => CompCert4Lean.Backend.Stacking.transf_fundef cfg f)
+                (fun _ v => .OK v) xs = .OK ys →
+              CompCert4Lean.Lib.Coqlib.list_forall2
+                (match_ident_globdef
+                  (fun _ f tf => CompCert4Lean.Backend.Stacking.transf_fundef cfg f = .OK tf)
+                  (fun x y : Unit => x = y) ctx) xs ys := by
+          intro xs
+          induction xs with
+          | nil =>
+              intro ys h
+              change CompCert4Lean.Common.Errors.OK [] =
+                CompCert4Lean.Common.Errors.OK ys at h
+              cases h
+              exact CompCert4Lean.Lib.Coqlib.list_forall2.nil _
+          | cons hd tl ih =>
+              cases hd with
+              | mk id gd =>
+                  cases gd with
+                  | Gfun f =>
+                      change CompCert4Lean.Backend.Linear.fundef at f
+                      cases htf : CompCert4Lean.Backend.Stacking.transf_fundef cfg f with
+                      | Error msg =>
+                          intro ys h
+                          simp [CompCert4Lean.Common.AST.transf_globdefs, htf] at h
+                      | OK tf =>
+                          cases htail : CompCert4Lean.Common.AST.transf_globdefs
+                              (fun _ f => CompCert4Lean.Backend.Stacking.transf_fundef cfg f)
+                              (fun _ v => .OK v) tl with
+                          | Error msg =>
+                              intro ys h
+                              simp [CompCert4Lean.Common.AST.transf_globdefs, htf, htail] at h
+                          | OK ys' =>
+                              intro ys h
+                              simp [CompCert4Lean.Common.AST.transf_globdefs, htf, htail] at h
+                              cases h
+                              apply CompCert4Lean.Lib.Coqlib.list_forall2.cons
+                              · constructor
+                                · rfl
+                                · apply match_globdef.match_globdef_fun (ctx' := ctx)
+                                  · exact linkorder_refl _
+                                  · exact htf
+                              · exact ih ys' htail
+                  | Gvar v =>
+                      cases htail : CompCert4Lean.Common.AST.transf_globdefs
+                          (fun _ f => CompCert4Lean.Backend.Stacking.transf_fundef cfg f)
+                          (fun _ v => .OK v) tl with
+                      | Error msg =>
+                          intro ys h
+                          simp [CompCert4Lean.Common.AST.transf_globdefs,
+                            CompCert4Lean.Common.AST.transf_globvar, htail] at h
+                      | OK ys' =>
+                          intro ys h
+                          simp [CompCert4Lean.Common.AST.transf_globdefs, htail] at h
+                          cases h
+                          apply CompCert4Lean.Lib.Coqlib.list_forall2.cons
+                          · constructor
+                            · rfl
+                            · apply match_globdef.match_globdef_var
+                              exact match_globvar.match_globvar_intro _ _ _ _ _ _ rfl
+                          · exact ih ys' htail
+        exact hlist pdefs defs hdefs
+      · exact ⟨rfl, rfl⟩
+
+end CompCert4Lean.Backend.Stackingproof

@@ -961,3 +961,142 @@ def union_field_offset_stableStatement : Prop :=
         Ctypes.union_field_offset cunit.prog_comp_env f co.co_members
 
 end CompCert4Lean.Cfrontend.Cshmgenproof
+
+namespace CompCert4Lean.Cfrontend.Cshmgenproof
+
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Linking
+open CompCert4Lean.Cfrontend.Cshmgen
+open CompCert4Lean.Cfrontend.Ctypes
+open CompCert4Lean.Lib.Coqlib
+
+private theorem transl_fundef_match (p : CompCert4Lean.Cfrontend.Clight.program)
+    (i : ident) (f : CompCert4Lean.Cfrontend.Clight.fundef) tf :
+    Cshmgen.transl_fundef p.prog_comp_env i f = .OK tf →
+      ∃ cu, Ctypes.linkorder_program cu p ∧ match_fundef cu f tf := by
+  intro h
+  cases f with
+  | Internal g =>
+    simp only [Cshmgen.transl_fundef] at h
+    cases htf : Cshmgen.transl_function p.prog_comp_env g with
+    | Error msg => simp [htf] at h
+    | OK tg =>
+      simp [htf] at h
+      cases h
+      exact ⟨p, by
+        unfold Ctypes.linkorder_program
+        constructor
+        · exact Linker.linkorder_refl (Ctypes.program_of_program p)
+        · intro id co hget; exact hget,
+        .match_fundef_internal g tg htf⟩
+  | External ef args res cc =>
+    simp only [Cshmgen.transl_fundef] at h
+    generalize heq : CompCert4Lean.Common.AST.signature_eq
+      (CompCert4Lean.Common.AST.ef_sig ef)
+      (Ctypes.signature_of_type args res cc) = d at h
+    cases d with
+    | left hs =>
+      simp [heq] at h
+      cases h
+      exact ⟨p, by
+        unfold Ctypes.linkorder_program
+        constructor
+        · exact Linker.linkorder_refl (Ctypes.program_of_program p)
+        · intro id co hget; exact hget,
+        .match_fundef_external ef args res cc hs⟩
+    | right hs =>
+      simp [heq] at h
+      cases h
+
+private theorem transl_defs_match (p : CompCert4Lean.Cfrontend.Clight.program) :
+  ∀ (src : List (CompCert4Lean.Common.AST.ident ×
+      CompCert4Lean.Common.AST.globdef
+        (CompCert4Lean.Cfrontend.Clight.fundef)
+        CompCert4Lean.Cfrontend.Ctypes.type))
+    (defs : List (CompCert4Lean.Common.AST.ident ×
+      CompCert4Lean.Common.AST.globdef
+        (CompCert4Lean.Cfrontend.Csharpminor.fundef) Unit)),
+    CompCert4Lean.Common.AST.transf_globdefs
+      (CompCert4Lean.Cfrontend.Cshmgen.transl_fundef p.prog_comp_env)
+      CompCert4Lean.Cfrontend.Cshmgen.transl_globvar src = .OK defs →
+    list_forall2 (fun idg tidg => idg.1 = tidg.1 ∧
+      match idg.2, tidg.2 with
+      | .Gfun f, .Gfun tf =>
+          ∃ cu, Ctypes.linkorder_program cu p ∧ match_fundef cu f tf
+      | .Gvar v, .Gvar tv =>
+          match_varinfo v.gvar_info tv.gvar_info ∧
+            v.gvar_init = tv.gvar_init ∧
+            v.gvar_readonly = tv.gvar_readonly ∧
+            v.gvar_volatile = tv.gvar_volatile
+      | _, _ => False) src defs := by
+  intro src
+  induction src with
+  | nil =>
+      intro defs h
+      simp only [transf_globdefs] at h
+      cases h
+      exact list_forall2_nil _
+  | cons hd tl ih =>
+      intro defs h
+      rcases hd with ⟨id, gd⟩
+      cases gd with
+      | Gfun f =>
+          simp only [transf_globdefs] at h
+          cases htf : Cshmgen.transl_fundef p.prog_comp_env id f with
+          | Error msg => simp [htf] at h
+          | OK tf =>
+            cases htl : transf_globdefs
+                (Cshmgen.transl_fundef p.prog_comp_env)
+                Cshmgen.transl_globvar tl with
+            | Error msg => simp [htf, htl] at h
+            | OK defsTail =>
+              simp [htf, htl] at h
+              cases h
+              apply list_forall2.cons
+              · constructor
+                · rfl
+                · change ∃ cu, Ctypes.linkorder_program cu p ∧
+                    match_fundef cu f tf
+                  exact transl_fundef_match p id f tf htf
+              · exact ih defsTail htl
+      | Gvar v =>
+          simp only [transf_globdefs] at h
+          have hvar : CompCert4Lean.Common.AST.transf_globvar
+              Cshmgen.transl_globvar id v =
+              .OK ({ gvar_info := (), gvar_init := v.gvar_init, gvar_readonly := v.gvar_readonly, gvar_volatile := v.gvar_volatile } :
+                CompCert4Lean.Common.AST.globvar Unit) := by
+            rfl
+          cases htl : transf_globdefs
+              (Cshmgen.transl_fundef p.prog_comp_env)
+              Cshmgen.transl_globvar tl with
+          | Error msg =>
+            rw [hvar, htl] at h
+            cases h
+          | OK defsTail =>
+              rw [hvar, htl] at h
+              cases h
+              apply list_forall2.cons
+              · constructor
+                · rfl
+                · change match_varinfo v.gvar_info () ∧
+                    v.gvar_init = v.gvar_init ∧
+                    v.gvar_readonly = v.gvar_readonly ∧
+                    v.gvar_volatile = v.gvar_volatile
+                  exact ⟨True.intro, rfl, rfl, rfl⟩
+              · exact ih defsTail htl
+
+theorem transf_program_match : transf_program_matchStatement := by
+  intro p tp h
+  unfold Cshmgen.transl_program at h
+  unfold transform_partial_program2 at h
+  cases hdefs : transf_globdefs (transl_fundef p.prog_comp_env)
+      transl_globvar (program_of_program p).prog_defs with
+  | Error msg => simp [hdefs] at h
+  | OK defs =>
+    simp [hdefs] at h
+    cases h
+    unfold match_prog
+    refine ⟨transl_defs_match p (program_of_program p).prog_defs defs hdefs,
+      rfl, rfl⟩
+
+end CompCert4Lean.Cfrontend.Cshmgenproof

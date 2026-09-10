@@ -467,3 +467,17 @@ def diff_outside_intervalStatement : Prop :=
 end OrderedLoc
 
 end CompCert4Lean.Backend.Locations
+
+namespace CompCert4Lean.Backend.Locations
+
+theorem typesize_pos : typesize_posStatement := by
+  intro ty
+  cases ty <;>
+    simp [typesize, zLt, z0, zOfNat,
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.lt,
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat,
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ,
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt,
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat_posOfNat]
+
+end CompCert4Lean.Backend.Locations

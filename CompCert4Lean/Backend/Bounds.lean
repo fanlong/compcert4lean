@@ -614,3 +614,16 @@ def size_callee_save_area_incrStatement : Prop :=
   ∀ (cfg : CompilerConfig) (b : bounds cfg) (ofs : Z), zLe ofs (size_callee_save_area cfg b ofs)
 
 end CompCert4Lean.Backend.Bounds
+
+namespace CompCert4Lean.Backend.Bounds
+
+theorem fold_left_preserves : fold_left_preservesStatement := by
+  intro A B f P h l a ha
+  induction l generalizing a with
+  | nil => exact ha
+  | cons b l ih =>
+      simp only [List.foldl]
+      apply ih
+      exact h a b ha
+
+end CompCert4Lean.Backend.Bounds

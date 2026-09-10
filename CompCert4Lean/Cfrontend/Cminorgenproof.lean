@@ -1004,3 +1004,83 @@ theorem sig_preserved_body : sig_preserved_bodyStatement := by
       rfl
 
 end CompCert4Lean.Cfrontend.Cminorgenproof
+
+namespace CompCert4Lean.Cfrontend.Cminorgenproof
+
+theorem transf_program_match : transf_program_matchStatement := by
+  intro p tp h
+  letI : CompCert4Lean.Common.Linking.Linker CS.fundef :=
+    @CompCert4Lean.Common.Linking.Linker_fundef CS.function
+  letI : CompCert4Lean.Common.Linking.Linker CS.program :=
+    @CompCert4Lean.Common.Linking.Linker_prog CS.fundef Unit _ _
+  have aux : ∀ (defs : List (ident × CompCert4Lean.Common.AST.globdef CS.fundef Unit))
+      (tdefs : List (ident × CompCert4Lean.Common.AST.globdef
+        CompCert4Lean.Backend.Cminor.fundef Unit)),
+      CompCert4Lean.Common.AST.transf_globdefs
+          (fun _ f => CompCert4Lean.Cfrontend.Cminorgen.transl_fundef f)
+          (fun _ v => .OK v) defs = .OK tdefs →
+      CompCert4Lean.Lib.Coqlib.list_forall2
+        (CompCert4Lean.Common.Linking.match_ident_globdef
+          (fun _ f tf => CompCert4Lean.Cfrontend.Cminorgen.transl_fundef f = .OK tf)
+          Eq p) defs tdefs := by
+    intro defs
+    induction defs with
+    | nil =>
+        intro tdefs hdefs
+        simp [CompCert4Lean.Common.AST.transf_globdefs] at hdefs
+        cases hdefs
+        exact CompCert4Lean.Lib.Coqlib.list_forall2.nil _
+    | cons d ds ih =>
+        intro tdefs hdefs
+        cases d with
+        | mk id gd =>
+            cases gd with
+            | Gfun f =>
+                unfold CompCert4Lean.Common.AST.transf_globdefs at hdefs
+                cases htf : CompCert4Lean.Cfrontend.Cminorgen.transl_fundef f with
+                | Error msg => simp [htf] at hdefs
+                | OK tf =>
+                    cases hrest : CompCert4Lean.Common.AST.transf_globdefs
+                      (fun _ f => CompCert4Lean.Cfrontend.Cminorgen.transl_fundef f)
+                      (fun _ v => .OK v) ds with
+                    | Error msg => simp [htf, hrest] at hdefs
+                    | OK rest =>
+                        simp [htf, hrest] at hdefs
+                        cases hdefs
+                        apply CompCert4Lean.Lib.Coqlib.list_forall2.cons
+                        · constructor
+                          · rfl
+                          · exact CompCert4Lean.Common.Linking.match_globdef_fun _ _ _ _ _ _
+                              (CompCert4Lean.Common.Linking.Linker.linkorder_refl p) htf
+                        · exact ih rest hrest
+            | Gvar v =>
+                unfold CompCert4Lean.Common.AST.transf_globdefs at hdefs
+                simp [CompCert4Lean.Common.AST.transf_globvar] at hdefs
+                cases hrest : CompCert4Lean.Common.AST.transf_globdefs
+                  (fun _ f => CompCert4Lean.Cfrontend.Cminorgen.transl_fundef f)
+                  (fun _ v => .OK v) ds with
+                | Error msg => simp [hrest] at hdefs
+                | OK rest =>
+                    simp [hrest] at hdefs
+                    cases hdefs
+                    apply CompCert4Lean.Lib.Coqlib.list_forall2.cons
+                    · constructor
+                      · rfl
+                      · apply CompCert4Lean.Common.Linking.match_globdef_var
+                        apply CompCert4Lean.Common.Linking.match_globvar_intro
+                        rfl
+                    · exact ih rest hrest
+  unfold CompCert4Lean.Cfrontend.Cminorgen.transl_program at h
+  unfold match_prog
+  unfold CompCert4Lean.Common.AST.transform_partial_program
+    CompCert4Lean.Common.AST.transform_partial_program2 at h
+  cases hdefs : CompCert4Lean.Common.AST.transf_globdefs
+      (fun _ f => CompCert4Lean.Cfrontend.Cminorgen.transl_fundef f)
+      (fun _ v => .OK v) p.prog_defs with
+  | Error msg => simp [hdefs] at h
+  | OK defs =>
+      simp [hdefs] at h
+      cases h
+      exact ⟨aux _ _ hdefs, rfl, rfl⟩
+
+end CompCert4Lean.Cfrontend.Cminorgenproof

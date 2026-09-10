@@ -562,3 +562,141 @@ def ZofB_range_BconvStatement : Prop :=
 end Conversions
 
 end CompCert4Lean.Lib.IEEE754_extra
+
+namespace CompCert4Lean.Lib.IEEE754_extra
+
+open CompCert4Lean.Flocq.Core
+open CompCert4Lean.Flocq.IEEE754
+
+private abbrev binary32_prec : Z :=
+  _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 24
+private abbrev binary32_emax : Z :=
+  _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 128
+
+theorem binary32_exact_inverse_certificate_proof :
+    ∀ [pgt : Prec_gt_0
+        (_root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 24)]
+      [ple : Prec_lt_emax
+        (_root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 24)
+        (_root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 128)],
+      Bexact_inverse_certificate
+        (_root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 24)
+        (_root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 128) := by
+  intro pgt ple
+  letI : Prec_gt_0 binary32_prec := pgt
+  letI : Prec_lt_emax binary32_prec binary32_emax := ple
+  refine ⟨?_⟩
+  dsimp [Bexact_inverse_obligation_1, keepPrecisionHypotheses]
+  intro f s m e B Heq hm hemin
+  subst m
+  have hd :
+      _root_.CompCert4Lean.Lib.Floats.Model.Rocq.Coq.Floats.SpecFloat.digits2_pos
+          (Bexact_inverse_mantissa (prec := binary32_prec)) =
+        _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.PArith.BinPos.Pos.of_nat 24 := by
+    decide
+  have h24 : _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ binary32_prec = (24 : Int) := by
+    decide
+  have h128 : _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ binary32_emax = (128 : Int) := by
+    decide
+  have h1 : _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ Zone = (1 : Int) := by
+    decide
+  have h2 : _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ Ztwo = (2 : Int) := by
+    decide
+  have h3 :
+      _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+          (_root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.Zpos (.xI .xH)) = (3 : Int) := by
+    decide
+  have hp24 :
+      _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+          (_root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.Zpos
+            (_root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.PArith.BinPos.Pos.of_nat 24)) =
+        (24 : Int) := by
+    decide
+  have hemin_val :
+      _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+          (emin binary32_prec binary32_emax) = (-149 : Int) := by
+    decide
+  simp only [Binary.B754_finiteObligation,
+    _root_.CompCert4Lean.Lib.Floats.Model.Rocq.Coq.Floats.SpecFloat.bounded,
+    _root_.CompCert4Lean.Lib.Floats.Model.Rocq.Coq.Floats.SpecFloat.canonical_mantissa,
+    _root_.CompCert4Lean.Lib.Floats.Model.Rocq.Coq.Floats.SpecFloat.emin,
+    _root_.CompCert4Lean.Lib.Floats.Model.Rocq.Coq.Floats.SpecFloat.fexp]
+  rw [hd]
+  simp [_root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.Zbool.Zeq_bool,
+    _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.leb]
+  simp [_root_.CompCert4Lean.Lib.Floats.Model.Rocq.Coq.Floats.SpecFloat.zmax,
+    _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.max,
+    _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add,
+    _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.sub,
+    _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.mul,
+    _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.opp,
+    _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt,
+    h24, h128, h1, h2, h3, hp24, Binary.B754_finiteObligation,
+    _root_.CompCert4Lean.Lib.Floats.Model.Rocq.Coq.Floats.SpecFloat.bounded,
+    _root_.CompCert4Lean.Lib.Floats.Model.Rocq.Coq.Floats.SpecFloat.canonical_mantissa,
+    _root_.CompCert4Lean.Lib.Floats.Model.Rocq.Coq.Floats.SpecFloat.emin,
+    _root_.CompCert4Lean.Lib.Floats.Model.Rocq.Coq.Floats.SpecFloat.fexp] at B ⊢
+  rw [hd] at B
+  simp [_root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.Zbool.Zeq_bool,
+    _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.leb,
+    _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt,
+    h24, h128, h1, h2, h3, hp24,
+    _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.max,
+    _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add,
+    _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.sub,
+    _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.mul,
+    _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.opp] at B
+  have he_lower : (-149 : Int) ≤ _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ e := by
+    by_cases hgood : (-149 : Int) ≤ _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ e
+    · exact hgood
+    · let hnot := hgood
+      have hcancel (x : Int) : 24 + x - 24 = x := by
+        rw [Int.add_comm]
+        exact Int.add_sub_cancel x 24
+      have hcond :
+          24 + _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ e - 24 ≤ (-149 : Int) := by
+        rw [hcancel]
+        exact Int.le_of_lt (Int.lt_of_not_ge hnot)
+      rw [if_pos hcond] at B
+      have hEq := congrArg _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ B.1
+      have hEq' : (-149 : Int) = _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ e := by
+        simpa only [_root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt] using hEq
+      exact False.elim (hnot (hEq' ▸ Int.le_refl _))
+  have hmin0 := hemin
+  change _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (emin binary32_prec binary32_emax) ≤
+      _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+        (Zsub (Zopp e) (Zmul (Zsub binary32_prec Zone) Ztwo)) at hmin0
+  simp [_root_.CompCert4Lean.Lib.Floats.Model.Rocq.Coq.Floats.SpecFloat.emin,
+    _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add,
+    _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.sub,
+    _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.mul,
+    _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.opp,
+    _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt,
+    h24, h128, h1, h2, h3, hemin_val] at hmin0
+  have hupper : -_root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ e - 46 ≤ (104 : Int) := by
+    have hneg := Int.neg_le_neg he_lower
+    have hsub := Int.sub_le_sub_right hneg 46
+    have h103 : -_root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ e - 46 ≤ (103 : Int) := by
+      simpa using hsub
+    exact Int.le_trans h103 (by decide)
+  have hcancel (x : Int) : 24 + x - 24 = x := by
+    rw [Int.add_comm]
+    exact Int.add_sub_cancel x 24
+  by_cases hc :
+      24 + (-_root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ e - 46) - 24 ≤ (-149 : Int)
+  · have hc' : -_root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ e - 46 ≤ (-149 : Int) := by
+      calc
+        -_root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ e - 46 =
+            24 + (-_root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ e - 46) - 24 :=
+          (hcancel _).symm
+        _ ≤ -149 := hc
+    have heq : -_root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ e - 46 = (-149 : Int) :=
+      Int.le_antisymm hc' hmin0
+    constructor
+    · rw [if_pos hc, heq]
+    · exact hupper
+  · constructor
+    · rw [if_neg hc, hcancel]
+    · exact hupper
+
+end CompCert4Lean.Lib.IEEE754_extra

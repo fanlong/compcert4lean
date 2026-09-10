@@ -332,3 +332,170 @@ theorem inbetween_bounds_not_Eq (ctx : ExactRealContext) :
   | inbetween_Inexact l hbounds hmiddle => exact hbounds
 
 end CompCert4Lean.Flocq.Calc.Bracket
+
+namespace CompCert4Lean.Flocq.Calc.Bracket
+
+private theorem middle_mul_add_right (ctx : ExactRealContext)
+    (x y z : ctx.spec.carrier) :
+    ctx.spec.mul (ctx.spec.add x y) z =
+      ctx.spec.add (ctx.spec.mul x z) (ctx.spec.mul y z) := by
+  calc
+    ctx.spec.mul (ctx.spec.add x y) z =
+        ctx.spec.mul z (ctx.spec.add x y) :=
+      ctx.certificate.orderedField.mul_comm _ _
+    _ = ctx.spec.add (ctx.spec.mul z x) (ctx.spec.mul z y) :=
+      ctx.certificate.orderedField.left_distrib _ _ _
+    _ = ctx.spec.add (ctx.spec.mul x z) (ctx.spec.mul y z) := by
+      rw [ctx.certificate.orderedField.mul_comm z x,
+        ctx.certificate.orderedField.mul_comm z y]
+
+private theorem middle_zero_lt_one (ctx : ExactRealContext) :
+    ctx.spec.lt ctx.spec.zero ctx.spec.one := by
+  rcases ctx.certificate.total_order ctx.spec.zero ctx.spec.one with h | h
+  · rcases h with h | h
+    · exact h
+    · exact (ctx.certificate.orderedField.zero_ne_one h).elim
+  · have hneg : ctx.spec.lt ctx.spec.zero (ctx.spec.neg ctx.spec.one) := by
+      have h' := ctx.certificate.orderedField.add_lt_compat_l
+        (ctx.spec.neg ctx.spec.one) ctx.spec.one ctx.spec.zero h
+      rw [ctx.certificate.orderedField.neg_add_cancel,
+        ctx.certificate.orderedField.add_zero] at h'
+      exact h'
+    have hmul : ctx.spec.lt (ctx.spec.neg ctx.spec.one) ctx.spec.zero := by
+      have h' := ctx.certificate.orderedField.mul_lt_compat_l
+        (ctx.spec.neg ctx.spec.one) ctx.spec.one ctx.spec.zero hneg h
+      rw [ctx.certificate.orderedField.mul_one,
+        ctx.certificate.orderedField.mul_zero] at h'
+      exact h'
+    exact False.elim ((ctx.certificate.orderedField.lt_irrefl _)
+      (ctx.certificate.orderedField.lt_trans _ _ _ hneg hmul))
+
+private theorem middle_two_ne_zero (ctx : ExactRealContext) :
+    ctx.spec.add ctx.spec.one ctx.spec.one ≠ ctx.spec.zero := by
+  have h1two : ctx.spec.lt ctx.spec.one
+      (ctx.spec.add ctx.spec.one ctx.spec.one) := by
+    have h := ctx.certificate.orderedField.add_lt_compat_l
+      ctx.spec.one ctx.spec.zero ctx.spec.one (middle_zero_lt_one ctx)
+    rw [ctx.certificate.orderedField.add_zero] at h
+    exact h
+  have h0two : ctx.spec.lt ctx.spec.zero
+      (ctx.spec.add ctx.spec.one ctx.spec.one) :=
+    ctx.certificate.orderedField.lt_trans _ _ _
+      (middle_zero_lt_one ctx) h1two
+  intro h
+  exact (ctx.certificate.orderedField.lt_irrefl _)
+    (h ▸ h0two)
+
+private theorem middle_two_mul (ctx : ExactRealContext) (x : ctx.spec.carrier) :
+    ctx.spec.mul (ctx.spec.add ctx.spec.one ctx.spec.one) x =
+      ctx.spec.add x x := by
+  calc
+    ctx.spec.mul (ctx.spec.add ctx.spec.one ctx.spec.one) x =
+        ctx.spec.mul x (ctx.spec.add ctx.spec.one ctx.spec.one) :=
+      ctx.certificate.orderedField.mul_comm _ _
+    _ = ctx.spec.add (ctx.spec.mul x ctx.spec.one)
+        (ctx.spec.mul x ctx.spec.one) :=
+      ctx.certificate.orderedField.left_distrib _ _ _
+    _ = ctx.spec.add x x := by
+      rw [ctx.certificate.orderedField.mul_one]
+
+private theorem middle_range_core (ctx : ExactRealContext)
+    (start step : ctx.spec.carrier) (k : Z) :
+    ctx.spec.div
+        (ctx.spec.add start
+          (ctx.spec.add start (ctx.spec.mul (ctx.spec.ofZ k) step)))
+        (ctx.spec.add ctx.spec.one ctx.spec.one) =
+      ctx.spec.add start
+        (ctx.spec.mul
+          (ctx.spec.div (ctx.spec.ofZ k)
+            (ctx.spec.add ctx.spec.one ctx.spec.one)) step) := by
+  let two : ctx.spec.carrier := ctx.spec.add ctx.spec.one ctx.spec.one
+  let invTwo : ctx.spec.carrier := ctx.spec.inv two
+  have htwo : two ≠ ctx.spec.zero := by
+    exact middle_two_ne_zero ctx
+  have htwo_inv : ctx.spec.mul two invTwo = ctx.spec.one := by
+    calc
+      ctx.spec.mul two invTwo = ctx.spec.mul invTwo two :=
+        ctx.certificate.orderedField.mul_comm _ _
+      _ = ctx.spec.one :=
+        ctx.certificate.orderedField.inv_mul_cancel _ htwo
+  have hfirst :
+      ctx.spec.mul (ctx.spec.add start start) invTwo = start := by
+    calc
+      ctx.spec.mul (ctx.spec.add start start) invTwo =
+          ctx.spec.mul (ctx.spec.mul two start) invTwo := by
+            rw [middle_two_mul]
+      _ = ctx.spec.mul two (ctx.spec.mul start invTwo) :=
+        ctx.certificate.orderedField.mul_assoc _ _ _
+      _ = ctx.spec.mul two (ctx.spec.mul invTwo start) := by
+        rw [ctx.certificate.orderedField.mul_comm start]
+      _ = ctx.spec.mul (ctx.spec.mul two invTwo) start := by
+        rw [ctx.certificate.orderedField.mul_assoc]
+      _ = ctx.spec.mul ctx.spec.one start := by rw [htwo_inv]
+      _ = start := ctx.certificate.orderedField.one_mul _
+
+  have hsecond :
+      ctx.spec.mul (ctx.spec.mul (ctx.spec.ofZ k) step) invTwo =
+        ctx.spec.mul
+          (ctx.spec.div (ctx.spec.ofZ k) two) step := by
+    calc
+      ctx.spec.mul (ctx.spec.mul (ctx.spec.ofZ k) step) invTwo =
+          ctx.spec.mul (ctx.spec.ofZ k)
+            (ctx.spec.mul step invTwo) :=
+        ctx.certificate.orderedField.mul_assoc _ _ _
+      _ = ctx.spec.mul (ctx.spec.ofZ k)
+            (ctx.spec.mul invTwo step) := by
+        rw [ctx.certificate.orderedField.mul_comm step]
+      _ = ctx.spec.mul
+          (ctx.spec.mul (ctx.spec.ofZ k) invTwo) step := by
+        rw [ctx.certificate.orderedField.mul_assoc]
+      _ = ctx.spec.mul
+          (ctx.spec.div (ctx.spec.ofZ k) two) step := by
+        rw [ctx.certificate.orderedField.div_eq_mul_inv]
+
+  change ctx.spec.div
+      (ctx.spec.add start
+        (ctx.spec.add start (ctx.spec.mul (ctx.spec.ofZ k) step)))
+      (ctx.spec.add ctx.spec.one ctx.spec.one) =
+    ctx.spec.add start
+      (ctx.spec.mul
+        (ctx.spec.div (ctx.spec.ofZ k)
+          (ctx.spec.add ctx.spec.one ctx.spec.one)) step)
+  rw [ctx.certificate.orderedField.div_eq_mul_inv]
+  change ctx.spec.mul
+      (ctx.spec.add start
+        (ctx.spec.add start (ctx.spec.mul (ctx.spec.ofZ k) step)))
+      (ctx.spec.inv (ctx.spec.add ctx.spec.one ctx.spec.one)) = _
+  calc
+    ctx.spec.mul
+        (ctx.spec.add start
+          (ctx.spec.add start (ctx.spec.mul (ctx.spec.ofZ k) step)))
+        (ctx.spec.inv (ctx.spec.add ctx.spec.one ctx.spec.one)) =
+      ctx.spec.mul
+        (ctx.spec.add
+          (ctx.spec.add start start)
+          (ctx.spec.mul (ctx.spec.ofZ k) step))
+        (ctx.spec.inv (ctx.spec.add ctx.spec.one ctx.spec.one)) := by
+          rw [ctx.certificate.orderedField.add_assoc]
+    _ = ctx.spec.add
+        (ctx.spec.mul (ctx.spec.add start start)
+          (ctx.spec.inv (ctx.spec.add ctx.spec.one ctx.spec.one)))
+        (ctx.spec.mul (ctx.spec.mul (ctx.spec.ofZ k) step)
+          (ctx.spec.inv (ctx.spec.add ctx.spec.one ctx.spec.one))) :=
+          middle_mul_add_right ctx _ _ _
+    _ = ctx.spec.add start
+        (ctx.spec.mul (ctx.spec.mul (ctx.spec.ofZ k) step)
+          (ctx.spec.inv (ctx.spec.add ctx.spec.one ctx.spec.one))) := by
+          rw [hfirst]
+    _ = ctx.spec.add start
+        (ctx.spec.mul
+          (ctx.spec.div (ctx.spec.ofZ k)
+            (ctx.spec.add ctx.spec.one ctx.spec.one)) step) := by
+          rw [hsecond]
+
+theorem middle_range (ctx : ExactRealContext) :
+    middle_rangeStatement ctx := by
+  intro start step k
+  exact middle_range_core ctx start step k
+
+end CompCert4Lean.Flocq.Calc.Bracket

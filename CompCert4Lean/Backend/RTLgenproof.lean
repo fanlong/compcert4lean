@@ -1000,3 +1000,102 @@ def transl_step_correctStatement
           match_states S2 R2
 
 end CompCert4Lean.Backend.RTLgenproof
+
+namespace CompCert4Lean.Backend.RTLgenproof
+
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Errors
+open CompCert4Lean.Common.Linking
+open CompCert4Lean.Lib.Coqlib
+
+private theorem transfGlobdefsMatch
+    (p : CminorSel.program)
+    (l : List (ident × globdef (fundef CminorSel.function) Unit))
+    (l' : List (ident × globdef (fundef RTL.function) Unit))
+    (h : transf_globdefs
+      (fun _ f => RTLgen.transl_fundef f)
+      (fun _ v => .OK v) l = .OK l') :
+    list_forall2
+      (@match_ident_globdef
+        CminorSel.program (fundef CminorSel.function) Unit
+          (fundef RTL.function) Unit
+          (@Linker_prog (fundef CminorSel.function) Unit
+            (@Linker_fundef CminorSel.function) Linker_unit)
+        (fun _ f tf => RTLgen.transl_fundef f = .OK tf) Eq p) l l' := by
+  induction l generalizing l' with
+  | nil =>
+      simp [transf_globdefs] at h
+      cases h
+      exact list_forall2_nil _
+  | cons hd tl ih =>
+      cases hd with
+      | mk id gd =>
+          cases gd with
+          | Gfun f =>
+              cases htf : RTLgen.transl_fundef f with
+              | Error msg => simp [transf_globdefs, htf] at h
+              | OK tf =>
+                  cases htl : transf_globdefs
+                      (fun _ f => RTLgen.transl_fundef f)
+                      (fun _ v => .OK v) tl with
+                  | Error msg => simp [transf_globdefs, htf, htl] at h
+                  | OK tlt =>
+                      simp [transf_globdefs, htf, htl] at h
+                      cases h
+                      apply list_forall2.cons
+                      · constructor
+                        · rfl
+                        · exact @match_globdef_fun
+                            CminorSel.program (fundef CminorSel.function) Unit
+                            (fundef RTL.function) Unit
+                            (@Linker_prog (fundef CminorSel.function) Unit
+                              (@Linker_fundef CminorSel.function) Linker_unit)
+                            (fun _ f tf => RTLgen.transl_fundef f = .OK tf)
+                            Eq p p f tf
+                            (@Linker.linkorder_refl CminorSel.program
+                              (@Linker_prog (fundef CminorSel.function) Unit
+                                (@Linker_fundef CminorSel.function) Linker_unit) p)
+                            htf
+                      · exact ih tlt htl
+          | Gvar v =>
+              cases htl : transf_globdefs
+                  (fun _ f => RTLgen.transl_fundef f)
+                  (fun _ v => .OK v) tl with
+              | Error msg => simp [transf_globdefs, transf_globvar, htl] at h
+              | OK tlt =>
+                  simp [transf_globdefs, transf_globvar, htl] at h
+                  cases h
+                  apply list_forall2.cons
+                  · constructor
+                    · rfl
+                    · exact @match_globdef_var
+                        CminorSel.program (fundef CminorSel.function) Unit
+                        (fundef RTL.function) Unit
+                        (@Linker_prog (fundef CminorSel.function) Unit
+                          (@Linker_fundef CminorSel.function) Linker_unit)
+                        (fun _ f tf => RTLgen.transl_fundef f = .OK tf)
+                        Eq p v
+                        { gvar_info := v.gvar_info
+                          gvar_init := v.gvar_init
+                          gvar_readonly := v.gvar_readonly
+                          gvar_volatile := v.gvar_volatile }
+                        (match_globvar_intro Eq v.gvar_info v.gvar_info
+                          v.gvar_init v.gvar_readonly v.gvar_volatile rfl)
+                  · exact ih tlt htl
+
+theorem transf_program_match : transf_program_matchStatement := by
+  intro p tp h
+  unfold RTLgen.transl_program at h
+  unfold match_prog match_program
+  cases hdefs : transf_globdefs
+      (fun _ f => RTLgen.transl_fundef f)
+      (fun _ v => .OK v) p.prog_defs with
+  | Error msg => simp [transform_partial_program, transform_partial_program2, hdefs] at h
+  | OK defs =>
+      simp [transform_partial_program, transform_partial_program2, hdefs] at h
+      cases h
+      refine ⟨transfGlobdefsMatch p p.prog_defs defs hdefs, ?_, ?_⟩
+      · rfl
+      · rfl
+
+end CompCert4Lean.Backend.RTLgenproof

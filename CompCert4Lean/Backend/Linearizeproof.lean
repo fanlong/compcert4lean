@@ -535,3 +535,109 @@ def transf_program_correctStatement
       (Linear.semantics cfg xi tprog)
 
 end CompCert4Lean.Backend.Linearizeproof
+
+namespace CompCert4Lean.Backend.Linearizeproof
+
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Linking
+open CompCert4Lean.Lib.Coqlib
+
+theorem transf_program_match : transf_program_matchStatement := by
+  letI : Linker LTL.fundef := Linker_fundef LTL.function
+  letI : Linker Linear.fundef := Linker_fundef Linear.function
+  letI : Linker Unit := Linker_unit
+  letI : Linker LTL.program := Linker_prog LTL.fundef Unit
+  intro service p tp htrans
+  unfold match_prog at *
+  unfold CompCert4Lean.Backend.Linearize.transf_program
+    CompCert4Lean.Common.AST.transform_partial_program
+    CompCert4Lean.Common.AST.transform_partial_program2 at htrans
+  cases hdefs : CompCert4Lean.Common.AST.transf_globdefs
+      (fun _ f => CompCert4Lean.Backend.Linearize.transf_fundef service f)
+      (fun _ v => .OK v) p.prog_defs with
+  | Error msg =>
+      simp only [hdefs] at htrans
+      cases htrans
+  | OK defs =>
+      simp only [hdefs] at htrans
+      cases htrans
+      have hlist : ∀ (xs : List (ident × globdef LTL.fundef Unit))
+          (ys : List (ident × globdef Linear.fundef Unit)),
+          CompCert4Lean.Common.AST.transf_globdefs
+              (fun _ f => CompCert4Lean.Backend.Linearize.transf_fundef service f)
+              (fun _ v => .OK v) xs = .OK ys →
+            list_forall2
+              (match_ident_globdef
+                (fun _ f tf =>
+                  CompCert4Lean.Backend.Linearize.transf_fundef service f = .OK tf)
+                (fun x y : Unit => x = y) p) xs ys := by
+        intro xs
+        induction xs with
+        | nil =>
+            intro ys h
+            cases ys with
+            | nil => exact list_forall2.nil _
+            | cons y ys =>
+                simp only [CompCert4Lean.Common.AST.transf_globdefs] at h
+                cases h
+        | cons hd tl ih =>
+            intro ys h
+            cases hd with
+            | mk id gd =>
+                cases gd with
+                | Gfun f =>
+                    cases htf : CompCert4Lean.Backend.Linearize.transf_fundef service f with
+                    | Error msg =>
+                        simp only [CompCert4Lean.Common.AST.transf_globdefs, htf] at h
+                        cases h
+                    | OK tf =>
+                        cases htail : CompCert4Lean.Common.AST.transf_globdefs
+                            (fun _ f => CompCert4Lean.Backend.Linearize.transf_fundef service f)
+                            (fun _ v => .OK v) tl with
+                        | Error msg =>
+                            simp only [CompCert4Lean.Common.AST.transf_globdefs, htf, htail] at h
+                            cases h
+                        | OK ys' =>
+                            cases ys with
+                            | nil =>
+                                simp only [CompCert4Lean.Common.AST.transf_globdefs,
+                                  htf, htail] at h
+                                cases h
+                            | cons y ys =>
+                                simp only [CompCert4Lean.Common.AST.transf_globdefs,
+                                  htf, htail] at h
+                                cases h
+                                apply list_forall2.cons
+                                · constructor
+                                  · rfl
+                                  · apply match_globdef.match_globdef_fun (ctx' := p)
+                                    · exact linkorder_refl _
+                                    · exact htf
+                                · exact ih ys' htail
+                | Gvar v =>
+                    cases htail : CompCert4Lean.Common.AST.transf_globdefs
+                        (fun _ f => CompCert4Lean.Backend.Linearize.transf_fundef service f)
+                        (fun _ v => .OK v) tl with
+                    | Error msg =>
+                        simp only [CompCert4Lean.Common.AST.transf_globdefs,
+                          CompCert4Lean.Common.AST.transf_globvar, htail] at h
+                        cases h
+                    | OK ys' =>
+                        cases ys with
+                        | nil =>
+                            simp only [CompCert4Lean.Common.AST.transf_globdefs,
+                              CompCert4Lean.Common.AST.transf_globvar, htail] at h
+                            cases h
+                        | cons y ys =>
+                            simp only [CompCert4Lean.Common.AST.transf_globdefs,
+                              CompCert4Lean.Common.AST.transf_globvar, htail] at h
+                            cases h
+                            apply list_forall2.cons
+                            · constructor
+                              · rfl
+                              · apply match_globdef.match_globdef_var
+                                exact match_globvar.match_globvar_intro _ _ _ _ _ _ rfl
+                            · exact ih ys' htail
+      exact ⟨hlist p.prog_defs defs hdefs, rfl, rfl⟩
+
+end CompCert4Lean.Backend.Linearizeproof

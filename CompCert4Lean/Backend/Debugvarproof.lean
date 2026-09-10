@@ -256,3 +256,104 @@ def transf_program_correctStatement
           (binary32_certificate := binary32_certificate) cfg xi tprog)
 
 end CompCert4Lean.Backend.Debugvarproof
+
+namespace CompCert4Lean.Backend.Debugvarproof
+
+open CompCert4Lean.Backend.Debugvar
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Linking
+open CompCert4Lean.Lib.Coqlib
+
+theorem transf_program_match : transf_program_matchStatement := by
+  letI : Linker (CompCert4Lean.Backend.Linear.fundef) := by
+    change Linker (CompCert4Lean.Common.AST.fundef CompCert4Lean.Backend.Linear.function)
+    exact Linker_fundef CompCert4Lean.Backend.Linear.function
+  letI : Linker (CompCert4Lean.Backend.Linear.program) := by
+    change Linker (CompCert4Lean.Common.AST.program
+      (CompCert4Lean.Common.AST.fundef CompCert4Lean.Backend.Linear.function) Unit)
+    exact @Linker_prog
+      (CompCert4Lean.Common.AST.fundef CompCert4Lean.Backend.Linear.function) Unit
+      (Linker_fundef CompCert4Lean.Backend.Linear.function) Linker_unit
+  intro cfg p tp h
+  unfold match_prog
+  unfold CompCert4Lean.Backend.Debugvar.transf_program at h
+  unfold CompCert4Lean.Common.AST.transform_partial_program at h
+  unfold CompCert4Lean.Common.AST.transform_partial_program2 at h
+  have hlist : ∀ (defs : List (ident × globdef CompCert4Lean.Backend.Linear.fundef Unit))
+      (tdefs : List (ident × globdef CompCert4Lean.Backend.Linear.fundef Unit)),
+      CompCert4Lean.Common.AST.transf_globdefs
+        (fun _ f => CompCert4Lean.Backend.Debugvar.transf_fundef cfg f)
+        (fun _ v => .OK v) defs = .OK tdefs →
+      CompCert4Lean.Lib.Coqlib.list_forall2
+        (match_ident_globdef
+          (fun _ f tf => CompCert4Lean.Backend.Debugvar.transf_fundef cfg f = .OK tf)
+          (fun x y : Unit => x = y) p) defs tdefs := by
+    intro defs
+    induction defs with
+    | nil =>
+        intro tdefs hdefs
+        cases tdefs with
+        | nil => exact list_forall2.nil _
+        | cons hd tl => simp [CompCert4Lean.Common.AST.transf_globdefs] at hdefs
+    | cons hd tl ih =>
+        cases hd with
+        | mk id gd =>
+            cases gd with
+            | Gfun f =>
+                intro tdefs hdefs
+                cases htf : CompCert4Lean.Backend.Debugvar.transf_fundef cfg f with
+                | Error msg => simp [CompCert4Lean.Common.AST.transf_globdefs, htf] at hdefs
+                | OK tf =>
+                    cases htail : CompCert4Lean.Common.AST.transf_globdefs
+                        (fun _ f => CompCert4Lean.Backend.Debugvar.transf_fundef cfg f)
+                        (fun _ v => .OK v) tl with
+                    | Error msg => simp [CompCert4Lean.Common.AST.transf_globdefs, htf, htail] at hdefs
+                    | OK ttail =>
+                        cases tdefs with
+                        | nil => simp [CompCert4Lean.Common.AST.transf_globdefs, htf, htail] at hdefs
+                        | cons thd ttail' =>
+                            simp only [CompCert4Lean.Common.AST.transf_globdefs, htf, htail] at hdefs
+                            cases hdefs
+                            apply list_forall2.cons
+                            · constructor
+                              · rfl
+                              · apply match_globdef.match_globdef_fun (ctx' := p)
+                                · exact linkorder_refl _
+                                · exact htf
+                            · apply ih
+                              exact htail
+            | Gvar v =>
+                intro tdefs hdefs
+                cases htail : CompCert4Lean.Common.AST.transf_globdefs
+                    (fun _ f => CompCert4Lean.Backend.Debugvar.transf_fundef cfg f)
+                    (fun _ v => .OK v) tl with
+                | Error msg =>
+                    simp [CompCert4Lean.Common.AST.transf_globdefs,
+                      CompCert4Lean.Common.AST.transf_globvar, htail] at hdefs
+                | OK ttail =>
+                    cases tdefs with
+                    | nil => simp [CompCert4Lean.Common.AST.transf_globdefs,
+                          CompCert4Lean.Common.AST.transf_globvar, htail] at hdefs
+                    | cons thd ttail' =>
+                        simp only [CompCert4Lean.Common.AST.transf_globdefs,
+                          CompCert4Lean.Common.AST.transf_globvar, htail] at hdefs
+                        cases hdefs
+                        apply list_forall2.cons
+                        · constructor
+                          · rfl
+                          · apply match_globdef.match_globdef_var
+                            exact match_globvar.match_globvar_intro _ _ _ _ _ _ rfl
+                        · apply ih
+                          exact htail
+  cases hdefs : CompCert4Lean.Common.AST.transf_globdefs
+      (fun _ f => CompCert4Lean.Backend.Debugvar.transf_fundef cfg f)
+          (fun _ v => CompCert4Lean.Common.Errors.OK v) p.prog_defs with
+  | Error msg =>
+      rw [hdefs] at h
+      cases h
+  | OK defs =>
+      rw [hdefs] at h
+      cases h
+      exact ⟨hlist p.prog_defs defs hdefs, rfl, rfl⟩
+
+end CompCert4Lean.Backend.Debugvarproof

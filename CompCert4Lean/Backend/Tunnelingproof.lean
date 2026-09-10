@@ -611,3 +611,51 @@ def transf_program_correctStatement
         (binary32_certificate := binary32_certificate) cfg xi tprog)
 
 end CompCert4Lean.Backend.Tunnelingproof
+
+namespace CompCert4Lean.Backend.Tunnelingproof
+
+open CompCert4Lean.Backend.Tunneling
+open CompCert4Lean.Backend.LTL
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Linking
+open CompCert4Lean.Lib.Coqlib
+
+theorem transf_program_match : transf_program_matchStatement := by
+  letI : Linker fundef := Linker_fundef function
+  letI : Linker program := Linker_prog fundef Unit
+  intro p
+  unfold match_prog tunnel_program
+    CompCert4Lean.Common.AST.transform_program
+  constructor
+  · induction p.prog_defs with
+    | nil => exact list_forall2.nil _
+    | cons hd tl ih =>
+        cases hd with
+        | mk id gd =>
+            cases gd with
+            | Gfun f =>
+                change list_forall2 _
+                  ((id, Gfun f) :: tl)
+                  ((id, Gfun (tunnel_fundef f)) ::
+                    List.map (transform_program_globdef tunnel_fundef) tl)
+                apply list_forall2.cons
+                · constructor
+                  · rfl
+                  · apply match_globdef.match_globdef_fun (ctx' := p)
+                    · exact linkorder_refl _
+                    · rfl
+                · exact ih
+            | Gvar v =>
+                change list_forall2 _
+                  ((id, Gvar v) :: tl)
+                  ((id, Gvar v) ::
+                    List.map (transform_program_globdef tunnel_fundef) tl)
+                apply list_forall2.cons
+                · constructor
+                  · rfl
+                  · apply match_globdef.match_globdef_var
+                    exact match_globvar.match_globvar_intro _ _ _ _ _ _ rfl
+                · exact ih
+  · exact ⟨rfl, rfl⟩
+
+end CompCert4Lean.Backend.Tunnelingproof

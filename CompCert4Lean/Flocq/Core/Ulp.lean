@@ -528,3 +528,76 @@ def pred_0Statement : Prop :=
 end ExactStatements
 
 end CompCert4Lean.Flocq.Core.Ulp
+
+namespace CompCert4Lean.Flocq.Core.Ulp
+
+theorem Z_le_dec_aux : Z_le_dec_auxStatement := by
+  intro x y
+  cases CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.ZArith_dec.Z_le_dec x y with
+  | left h => exact Or.inl h
+  | right h => exact Or.inr h
+
+theorem negligible_exp_spec : negligible_exp_specStatement := by
+  intro fexp
+  unfold negligible_exp
+  cases h : CompCert4Lean.Flocq.Core.Raux.LPO_Z
+      (fun z => Zle z (fexp z))
+      (fun z =>
+        match CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.ZArith_dec.Z_le_dec
+            z (fexp z) with
+        | .left h => Or.inl h
+        | .right h => Or.inr h) with
+  | inleft witness =>
+      exact negligible_exp_prop.negligible_Some witness.val witness.property
+  | inright hnone =>
+      apply negligible_exp_prop.negligible_None
+      intro n
+      have hn := hnone n
+      change ¬ (CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ n ≤
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (fexp n)) at hn
+      change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (fexp n) <
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ n
+      exact Int.lt_of_not_ge hn
+
+theorem fexp_negligible_exp_eq : fexp_negligible_exp_eqStatement := by
+  intro fexp hvalid n m hn hm
+  by_cases hnm : Zle n m
+  · have hnm' : Zle n (fexp m) := by
+      change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ n ≤
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (fexp m)
+      exact Int.le_trans hnm hm
+    exact ((hvalid.valid_exp m).2 hm).2 n hnm'
+  · have hlt : CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ m <
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ n :=
+      Int.lt_of_not_ge hnm
+    have hmn : Zle m n := by
+      change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ m ≤
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ n
+      exact Int.le_of_lt hlt
+    have hmn' : Zle m (fexp n) := by
+      change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ m ≤
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (fexp n)
+      exact Int.le_trans hmn hn
+    exact (((hvalid.valid_exp n).2 hn).2 m hmn').symm
+
+theorem ulp_neq_0 :
+    ∀ (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx),
+      ulp_neq_0Statement ctx magnitude := by
+  intro ctx magnitude beta fexp x hx
+  have hreq : Exact.Req_bool ctx x (Exact.R0 ctx) = false := by
+    change (match CompCert4Lean.Flocq.Core.Raux.Exact.Rcompare ctx x
+        (CompCert4Lean.Flocq.Core.Raux.Exact.R0 ctx) with
+      | .Eq => true
+      | _ => false) = false
+    unfold CompCert4Lean.Flocq.Core.Raux.Exact.Rcompare
+    cases horder : CompCert4Lean.Foundation.FlocqReal.ExactReal.total_order_T
+        ctx x (Exact.R0 ctx) with
+    | inleft hleft =>
+        cases hleft with
+        | left hlt => rfl
+        | right heq => exact (hx heq).elim
+    | inright hgt => rfl
+  unfold Exact.ulp
+  rw [hreq]
+
+end CompCert4Lean.Flocq.Core.Ulp
