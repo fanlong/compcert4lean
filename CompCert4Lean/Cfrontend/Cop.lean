@@ -1268,3 +1268,76 @@ def val_casted_has_argtypeStatement : Prop :=
   ∀ v ty, val_casted v ty → Val.has_argtype v (argtype_of_type ty)
 
 end CompCert4Lean.Cfrontend.Cop
+
+
+namespace CompCert4Lean.Cfrontend.Cop
+
+private theorem bool_val_inj_aux : bool_val_injStatement := by
+  intro f m m' hweak v ty b tv hval hinj
+  cases hinj with
+  | inject_int n =>
+      cases hclass : classify_bool ty <;>
+        simp [bool_val, hclass, CompCert4Lean.X86_64.Archi.ptr64] at hval ⊢ <;>
+        exact hval
+  | inject_long n =>
+      cases hclass : classify_bool ty <;>
+        simp [bool_val, hclass, CompCert4Lean.X86_64.Archi.ptr64] at hval ⊢ <;>
+        exact hval
+  | inject_float x =>
+      cases hclass : classify_bool ty <;> simp [bool_val, hclass] at hval ⊢ <;>
+        exact hval
+  | inject_single x =>
+      cases hclass : classify_bool ty <;> simp [bool_val, hclass] at hval ⊢ <;>
+        exact hval
+  | val_inject_undef x =>
+      cases hclass : classify_bool ty <;> simp [bool_val, hclass] at hval
+  | inject_ptr b1 ofs1 b2 ofs2 delta hmap hofs =>
+      cases hclass : classify_bool ty with
+      | bool_case_i =>
+          simp [bool_val, hclass, CompCert4Lean.X86_64.Archi.ptr64] at hval ⊢
+      | bool_case_l =>
+          simp [bool_val, hclass, CompCert4Lean.X86_64.Archi.ptr64] at hval ⊢
+          have hp' := hweak b1 ofs1 b2 delta hmap hval.1
+          rw [hval.2]
+          simpa [hofs] using hp'
+      | _ => simp [bool_val, hclass] at hval
+
+theorem sem_unary_operation_inj :
+    ∀ [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)],
+      sem_unary_operation_injStatement := by
+  intro _binary64_certificate f m m' hweak op v1 ty v tv1 hsem hinj
+  cases op with
+  | Onotbool =>
+      unfold sem_unary_operation sem_notbool at hsem ⊢
+      cases hb : bool_val v1 ty m with
+      | none => simp [hb] at hsem
+      | some b =>
+          simp [hb] at hsem ⊢
+          have hb' := bool_val_inj_aux f m m' hweak v1 ty b tv1 hb hinj
+          cases b <;> simp [hb']
+          · rw [← hsem]
+            exact Common.Values.Val.inject.inject_int _
+          · rw [← hsem]
+            exact Common.Values.Val.inject.inject_int _
+  | Onotint =>
+      unfold sem_unary_operation sem_notint at hsem ⊢
+      cases hc : classify_notint ty <;> simp [hc] at hsem ⊢ <;>
+        cases hinj <;> simp_all <;> try { subst v; constructor }
+  | Oneg =>
+      unfold sem_unary_operation sem_neg at hsem ⊢
+      cases hc : classify_neg ty <;> simp [hc] at hsem ⊢ <;>
+        cases hinj <;> simp_all <;> try { subst v; constructor }
+  | Oabsfloat =>
+      unfold sem_unary_operation sem_absfloat at hsem ⊢
+      cases hc : classify_neg ty <;> simp [hc] at hsem ⊢ <;>
+        cases hinj <;> simp_all <;> try { subst v; constructor }
+
+end CompCert4Lean.Cfrontend.Cop
+
+
+
+namespace CompCert4Lean.Cfrontend.Cop
+
+theorem bool_val_inj : bool_val_injStatement := bool_val_inj_aux
+
+end CompCert4Lean.Cfrontend.Cop
