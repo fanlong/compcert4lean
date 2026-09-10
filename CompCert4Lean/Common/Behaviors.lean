@@ -590,3 +590,75 @@ def behavior_bigstep_divergesStatement : Prop :=
         ∃ t : trace, program_behaves L (Diverges t) ∧ traceinf_prefix t T
 
 end CompCert4Lean.Common.Behaviors
+
+namespace CompCert4Lean.Common.Behaviors
+
+open CompCert4Lean.Common.Events
+
+private theorem behavior_eapp_assoc (t1 t2 t3 : trace) :
+    Eapp (Eapp t1 t2) t3 = Eapp t1 (Eapp t2 t3) := by
+  induction t1 with
+  | nil => rfl
+  | cons ev t ih =>
+      exact congrArg (List.cons ev) ih
+
+private theorem behavior_eappinf_assoc (t1 t2 : trace) (T : traceinf) :
+    Eappinf (Eapp t1 t2) T = Eappinf t1 (Eappinf t2 T) := by
+  induction t1 with
+  | nil => rfl
+  | cons ev t ih =>
+      exact congrArg (Econsinf ev) ih
+
+theorem behavior_app_assoc : behavior_app_assocStatement := by
+  intro t1 t2 beh
+  cases beh with
+  | Terminates t r =>
+      simp only [behavior_app]
+      exact congrArg (fun t => Terminates t r) (behavior_eapp_assoc t1 t2 t)
+  | Diverges t =>
+      simp only [behavior_app]
+      exact congrArg Diverges (behavior_eapp_assoc t1 t2 t)
+  | Reacts T =>
+      simp only [behavior_app]
+      exact congrArg Reacts (behavior_eappinf_assoc t1 t2 T)
+  | Goes_wrong t =>
+      simp only [behavior_app]
+      exact congrArg Goes_wrong (behavior_eapp_assoc t1 t2 t)
+
+theorem behavior_app_E0 : behavior_app_E0Statement := by
+  intro beh
+  cases beh <;> rfl
+
+theorem behavior_improves_refl : behavior_improves_reflStatement := by
+  intro beh
+  exact Or.inl rfl
+
+theorem behavior_improves_trans : behavior_improves_transStatement := by
+  intro beh1 beh2 beh3 h12 h23
+  rcases h12 with h12 | ⟨t1, h1, b2, hb2⟩
+  · subst beh2
+    exact h23
+  rcases h23 with h23 | ⟨t2, h2wrong, b3, hb3⟩
+  · subst beh3
+    exact Or.inr ⟨t1, h1, b2, hb2⟩
+  have hEq : behavior_app t1 b2 = Goes_wrong t2 := by
+    rw [← hb2, h2wrong]
+  cases b2 with
+  | Terminates t r =>
+      simp only [behavior_app] at hEq
+      cases hEq
+  | Diverges t =>
+      simp only [behavior_app] at hEq
+      cases hEq
+  | Reacts T =>
+      simp only [behavior_app] at hEq
+      cases hEq
+  | Goes_wrong t2' =>
+      simp only [behavior_app] at hEq
+      cases hEq with
+      | refl =>
+          right
+          refine ⟨t1, h1, behavior_app t2' b3, ?_⟩
+          rw [hb3, ← behavior_app_assoc]
+
+end CompCert4Lean.Common.Behaviors

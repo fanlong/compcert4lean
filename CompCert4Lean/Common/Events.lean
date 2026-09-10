@@ -1107,3 +1107,20 @@ theorem eventval_match_preserved : eventval_match_preservedStatement := by
       exact ev_match_ptr id b ofs (by rw [hp]; exact pub) (by rw [hs]; exact find)
 
 end CompCert4Lean.Common.Events
+
+namespace CompCert4Lean.Common.Events
+
+theorem eventval_match_lessdef : eventval_match_lessdefStatement := by
+  intro ge ev ty v1 v2 hmatch hld
+  cases hmatch <;> cases hld <;> constructor <;> assumption
+
+theorem eventval_match_determ_2 : eventval_match_determ_2Statement := by
+  intro ge ev1 ev2 ty v h1 h2
+  cases h1 <;> cases h2 <;> try rfl
+  case ev_match_ptr.ev_match_ptr =>
+    rename_i id1 b ofs1 pub1 find1 id2 pub2 find2
+    have hid : id1 = id2 := ge.find_symbol_injective id1 id2 find1 find2
+    subst_vars
+    rfl
+
+end CompCert4Lean.Common.Events

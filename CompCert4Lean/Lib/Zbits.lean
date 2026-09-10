@@ -276,3 +276,70 @@ def same_bits_eqmodStatement : Prop :=
       zTestbit x i = zTestbit y i
 
 end CompCert4Lean.Lib.Zbits
+
+namespace CompCert4Lean.Lib.Zbits
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem eqmod_refl : eqmod_reflStatement := by
+  intro modul x
+  unfold eqmod
+  refine ⟨zZero, ?_⟩
+  apply intOfZ_injective
+  simp only [zAdd, zMul, zZero, ZArith.BinInt.Z.add, ZArith.BinInt.Z.mul]
+  simp only [intOfZ_zOfInt]
+  change intOfZ x = 0 * intOfZ modul + intOfZ x
+  omega
+
+theorem eqmod_refl2 : eqmod_refl2Statement := by
+  intro modul x y h
+  subst y
+  exact eqmod_refl modul x
+
+theorem eqmod_trans : eqmod_transStatement := by
+  intro modul x y z hxy hyz
+  unfold eqmod at hxy hyz ⊢
+  rcases hxy with ⟨k1, h1⟩
+  rcases hyz with ⟨k2, h2⟩
+  refine ⟨zAdd k1 k2, ?_⟩
+  apply intOfZ_injective
+  simp only [zAdd, zMul, ZArith.BinInt.Z.add, ZArith.BinInt.Z.mul] at h1 h2 ⊢
+  have h1' := congrArg intOfZ h1
+  have h2' := congrArg intOfZ h2
+  simp only [intOfZ_zOfInt] at h1' h2' ⊢
+  change intOfZ x = (intOfZ k1 + intOfZ k2) * intOfZ modul + intOfZ z
+  change intOfZ x = intOfZ k1 * intOfZ modul + intOfZ y at h1'
+  change intOfZ y = intOfZ k2 * intOfZ modul + intOfZ z at h2'
+  rw [h1', h2', Int.add_mul]
+  omega
+
+theorem eqmod_small_eq : eqmod_small_eqStatement := by
+  intro modul x y h hx hy
+  unfold eqmod at h
+  rcases h with ⟨k, h⟩
+  have h' := congrArg intOfZ h
+  simp only [zAdd, zMul, ZArith.BinInt.Z.add, ZArith.BinInt.Z.mul, intOfZ_zOfInt] at h'
+  change intOfZ x = intOfZ k * intOfZ modul + intOfZ y at h'
+  change 0 ≤ intOfZ x ∧ intOfZ x < intOfZ modul at hx
+  change 0 ≤ intOfZ y ∧ intOfZ y < intOfZ modul at hy
+  have hmpos : 0 < intOfZ modul := by omega
+  have hmnonneg : 0 ≤ intOfZ modul := Int.le_of_lt hmpos
+  apply intOfZ_injective
+  by_cases hkpos : 0 < intOfZ k
+  · have hkone : 1 ≤ intOfZ k := by omega
+    have hkm : intOfZ modul ≤ intOfZ k * intOfZ modul := by
+      have := Int.mul_le_mul_of_nonneg_right hkone hmnonneg
+      simpa [Int.one_mul] using this
+    omega
+  · by_cases hkzero : intOfZ k = 0
+    · simpa [hkzero] using h'
+    · have hkneg : intOfZ k < 0 := by omega
+      have hkminusone : intOfZ k ≤ -1 := by omega
+      have hkm : intOfZ k * intOfZ modul ≤ (-1) * intOfZ modul :=
+        Int.mul_le_mul_of_nonneg_right hkminusone hmnonneg
+      have hkm' : intOfZ k * intOfZ modul ≤ -intOfZ modul := by
+        simpa [Int.neg_one_mul] using hkm
+      have hsum : intOfZ k * intOfZ modul + intOfZ y < 0 := by omega
+      omega
+
+end CompCert4Lean.Lib.Zbits
