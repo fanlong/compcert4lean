@@ -1243,3 +1243,54 @@ theorem partition_ind : partition_indStatement := by
   exact aux (proofHeapSize h) h (Nat.le_refl _)
 
 end CompCert4Lean.Lib.Heaps.PHeap.R
+
+namespace CompCert4Lean.Lib.Heaps.SplayHeapSet.R
+
+theorem lt_le_trans (E : OrderedType) : lt_le_transStatement E := by
+  unfold lt_le_transStatement
+  intro x1 x2 x3 h12 h23
+  rcases h23 with h23 | h23
+  · cases E.compare x1 x3 with
+    | LT h13 => exact h13
+    | EQ h13 =>
+        exact False.elim
+          (E.lt_not_eq x1 x2 h12
+            (E.eq_trans x1 x3 x2 h13 (E.eq_sym x2 x3 h23)))
+    | GT h31 =>
+        exact False.elim
+          (E.lt_not_eq x3 x2 (E.lt_trans x3 x1 x2 h31 h12)
+            (E.eq_sym x2 x3 h23))
+  · exact E.lt_trans x1 x2 x3 h12 h23
+
+theorem le_trans (E : OrderedType) : le_transStatement E := by
+  unfold le_transStatement
+  intro x1 x2 x3 h12 h23
+  rcases h23 with h23 | h23
+  · rcases h12 with h12 | h12
+    · exact Or.inl (E.eq_trans x1 x2 x3 h12 h23)
+    · exact Or.inr (lt_le_trans E x1 x2 x3 h12 (Or.inl h23))
+  · exact Or.inr (le_lt_trans E x1 x2 x3 h12 h23)
+
+theorem lt_heap_trans (E : OrderedType) : lt_heap_transStatement E := by
+  unfold lt_heap_transStatement
+  intro x y hxy h
+  induction h with
+  | Empty =>
+      intro _
+      trivial
+  | Node a z b iha ihb =>
+      intro hlt
+      exact ⟨iha hlt.1, lt_le_trans E z x y hlt.2.1 hxy, ihb hlt.2.2⟩
+
+theorem gt_heap_trans (E : OrderedType) : gt_heap_transStatement E := by
+  unfold gt_heap_transStatement
+  intro x y hyx h
+  induction h with
+  | Empty =>
+      intro _
+      trivial
+  | Node a z b iha ihb =>
+      intro hgt
+      exact ⟨iha hgt.1, le_lt_trans E y x z hyx hgt.2.1, ihb hgt.2.2⟩
+
+end CompCert4Lean.Lib.Heaps.SplayHeapSet.R
