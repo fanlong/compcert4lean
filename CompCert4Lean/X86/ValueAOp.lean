@@ -285,3 +285,31 @@ def eval_static_operation_soundStatement
           (binary32_certificate := binary32_certificate) cfg op aargs)
 
 end CompCert4Lean.X86.ValueAOp
+
+namespace CompCert4Lean.X86.ValueAOp
+
+theorem symbol_address_sound : symbol_address_soundStatement := by
+  intro bc ge hge id ofs
+  unfold CompCert4Lean.Common.Globalenvs.Genv.symbol_address
+  cases hfind : CompCert4Lean.Common.Globalenvs.Genv.find_symbol ge id with
+  | none =>
+      exact CompCert4Lean.Backend.ValueDomain.vmatch.ptrUndef
+        (CompCert4Lean.Backend.ValueDomain.Gl id ofs)
+  | some b =>
+      apply CompCert4Lean.Backend.ValueDomain.vmatch.ptr
+      exact CompCert4Lean.Backend.ValueDomain.pmatch.gl id
+        ((hge.1 id b).mp hfind)
+
+theorem symbol_address_sound_2 : symbol_address_sound_2Statement := by
+  intro bc ge hge id ofs
+  unfold CompCert4Lean.Common.Globalenvs.Genv.symbol_address
+  cases hfind : CompCert4Lean.Common.Globalenvs.Genv.find_symbol ge id with
+  | none =>
+      exact CompCert4Lean.Backend.ValueDomain.vmatch.ifptrUndef
+        (CompCert4Lean.Backend.ValueDomain.Gl id ofs)
+  | some b =>
+      apply CompCert4Lean.Backend.ValueDomain.vmatch.ifptrPtr
+      exact CompCert4Lean.Backend.ValueDomain.pmatch.gl id
+        ((hge.1 id b).mp hfind)
+
+end CompCert4Lean.X86.ValueAOp

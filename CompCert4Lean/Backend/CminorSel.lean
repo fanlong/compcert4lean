@@ -826,3 +826,21 @@ theorem eval_lift_expr
       (ihbody (p + 1) (v1 :: le') (insert_lenv_S le p w le' v1 hins))
 
 end CompCert4Lean.Backend.CminorSel
+
+namespace CompCert4Lean.Backend.CminorSel
+
+theorem eval_lift
+    [binary64_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 53)
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 24)
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 128)] :
+    eval_liftStatement := by
+  intro xi ge sp e m le a v w heval
+  unfold lift
+  exact eval_lift_expr xi ge sp e m w le a v heval 0 (w :: le) (insert_lenv_0 le w)
+
+end CompCert4Lean.Backend.CminorSel

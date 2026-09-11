@@ -698,3 +698,30 @@ theorem preg_notin_charact : preg_notin_charactStatement := by
             exact h mr (List.mem_cons.mpr (Or.inr hmr))
 
 end CompCert4Lean.Backend.Asmgenproof0
+
+namespace CompCert4Lean.Backend.Asmgenproof0
+
+theorem undef_regs_other_2 : undef_regs_other_2Statement := by
+  intro r rl rs hnotin
+  apply undef_regs_other
+  intro r' hr'
+  rcases List.mem_map.mp hr' with ⟨mr, hmr, rfl⟩
+  exact ((preg_notin_charact r rl).mp hnotin) mr hmr
+
+theorem preg_val : preg_valStatement := by
+  intro ms sp rs r hagree
+  exact hagree.agree_mregs r
+
+theorem preg_vals : preg_valsStatement := by
+  intro ms sp rs hagree l
+  induction l with
+  | nil => exact CompCert4Lean.Common.Values.Val.lessdef_list_nil
+  | cons r l ih =>
+      exact CompCert4Lean.Common.Values.Val.lessdef_list_cons _ _ _ _
+        (preg_val ms sp rs r hagree) ih
+
+theorem sp_val : sp_valStatement := by
+  intro ms sp rs hagree
+  exact hagree.agree_sp.symm
+
+end CompCert4Lean.Backend.Asmgenproof0

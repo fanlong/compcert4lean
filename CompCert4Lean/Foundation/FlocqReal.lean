@@ -1242,3 +1242,65 @@ theorem IZR_le (ctx : ExactRealContext) :
 end RIneq
 end Rocq.Coq.Reals
 end CompCert4Lean.Foundation.FlocqReal
+
+namespace CompCert4Lean.Foundation.FlocqReal
+namespace Rocq.Coq.Reals
+namespace RIneq
+
+theorem Rplus_0_r (ctx : ExactRealContext) :
+    Rplus_0_rStatement ctx := by
+  intro r
+  change ctx.spec.add r (ctx.spec.ofZ Z0) = r
+  rw [ctx.certificate.sourceLaws.ofZ_zero]
+  exact ctx.certificate.orderedField.add_zero r
+
+theorem Rle_lt_trans (ctx : ExactRealContext) :
+    Rle_lt_transStatement ctx := by
+  intro r1 r2 r3 h12 h23
+  have h23' := (ctx.certificate.orderedField.lt_iff_le_not_le r2 r3).mp h23
+  apply (ctx.certificate.orderedField.lt_iff_le_not_le r1 r3).mpr
+  constructor
+  · exact ctx.certificate.orderedField.le_trans r1 r2 r3 h12 h23'.1
+  · intro h31
+    exact h23'.2 (ctx.certificate.orderedField.le_trans r3 r1 r2 h31 h12)
+
+theorem Rplus_le_compat_l (ctx : ExactRealContext) :
+    Rplus_le_compat_lStatement ctx := by
+  intro r r1 r2 h12
+  rcases ctx.certificate.total_order r1 r2 with h12' | h21
+  · rcases h12' with hlt | heq
+    · exact (ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp
+        (ctx.certificate.orderedField.add_lt_compat_l r r1 r2 hlt) |>.1
+    · subst r2
+      exact ctx.certificate.orderedField.le_refl _
+  · exact False.elim ((ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp h21 |>.2 h12)
+
+theorem Rmult_le_compat_r (ctx : ExactRealContext) :
+    Rmult_le_compat_rStatement ctx := by
+  intro r r1 r2 hr h12
+  change ctx.spec.le (ctx.spec.ofZ Z0) r at hr
+  rw [ctx.certificate.sourceLaws.ofZ_zero] at hr
+  rcases ctx.certificate.total_order ctx.spec.zero r with hzr | hrz
+  · rcases hzr with hpos | hzero
+    · rcases ctx.certificate.total_order r1 r2 with h12' | h21
+      · rcases h12' with hlt | heq
+        · have hmul : ctx.spec.lt (ctx.spec.mul r r1) (ctx.spec.mul r r2) :=
+            ctx.certificate.orderedField.mul_lt_compat_l r r1 r2 hpos hlt
+          have hmul' : ctx.spec.lt (ctx.spec.mul r1 r) (ctx.spec.mul r2 r) := by
+            rw [ctx.certificate.orderedField.mul_comm r1 r,
+              ctx.certificate.orderedField.mul_comm r2 r]
+            exact hmul
+          exact (ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp hmul' |>.1
+        · subst r2
+          exact ctx.certificate.orderedField.le_refl _
+      · exact False.elim ((ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp h21 |>.2 h12)
+    · subst r
+      change ctx.spec.le (ctx.spec.mul r1 ctx.spec.zero)
+        (ctx.spec.mul r2 ctx.spec.zero)
+      rw [ctx.certificate.orderedField.mul_zero, ctx.certificate.orderedField.mul_zero]
+      exact ctx.certificate.orderedField.le_refl _
+  · exact False.elim ((ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp hrz |>.2 hr)
+
+end RIneq
+end Rocq.Coq.Reals
+end CompCert4Lean.Foundation.FlocqReal
