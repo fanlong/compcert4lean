@@ -2401,3 +2401,13 @@ noncomputable def fold_rec_proof : fold_rec := by
 end ESP
 
 end CompCert4Lean.Backend.Allocproof
+
+namespace CompCert4Lean.Backend.Allocproof
+
+open CompCert4Lean.Backend.Allocation
+
+theorem satisf_incr : satisf_incrStatement := by
+  intro rs ls e1 e2 hs hsub q hq
+  exact hs q (hsub q hq)
+
+end CompCert4Lean.Backend.Allocproof

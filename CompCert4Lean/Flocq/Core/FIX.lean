@@ -162,3 +162,24 @@ theorem ulp_FIX (ctx : ExactRealContext)
               exact (Int.lt_irrefl _ hlt).elim
 
 end CompCert4Lean.Flocq.Core.FIX
+
+namespace CompCert4Lean.Flocq.Core.FIX
+
+theorem round_FIX_IZR (ctx : ExactRealContext)
+    (magnitude : CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Magnitude ctx) :
+    round_FIX_IZRStatement ctx magnitude := by
+  intro f x
+  unfold CompCert4Lean.Flocq.Core.Generic_fmt.Exact.round
+    CompCert4Lean.Flocq.Core.Generic_fmt.Exact.scaled_mantissa
+    CompCert4Lean.Flocq.Core.Generic_fmt.Exact.cexp FIX_exp
+  have hscaled :
+      CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Rmult ctx x
+          (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.bpow ctx radix2
+            (CompCert4Lean.Flocq.Core.Zaux.Zopp Z0)) = x := by
+    change ctx.spec.mul x ctx.spec.one = x
+    exact ctx.certificate.orderedField.mul_one _
+  rw [hscaled]
+  change ctx.spec.mul (ctx.spec.ofZ (f x)) ctx.spec.one = ctx.spec.ofZ (f x)
+  exact ctx.certificate.orderedField.mul_one _
+
+end CompCert4Lean.Flocq.Core.FIX

@@ -403,3 +403,144 @@ theorem eqmod_mult : eqmod_multStatement := by
     Int.add_assoc, Int.add_comm, Int.add_left_comm]
 
 end CompCert4Lean.Lib.Zbits
+
+namespace CompCert4Lean.Lib.Zbits
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem eqmod_divides : eqmod_dividesStatement := by
+  intro n m x y hxy hmn
+  unfold eqmod at hxy ⊢
+  rcases hxy with ⟨k₁, hk₁⟩
+  rcases hmn with ⟨k₂, hk₂⟩
+  refine ⟨zMul k₁ k₂, ?_⟩
+  apply intOfZ_injective
+  simp only [zAdd, zMul, ZArith.BinInt.Z.add, ZArith.BinInt.Z.mul] at hk₁ hk₂ ⊢
+  have hk₁' := congrArg intOfZ hk₁
+  have hk₂' := congrArg intOfZ hk₂
+  simp only [intOfZ_zOfInt] at hk₁' hk₂' ⊢
+  change intOfZ x = intOfZ k₁ * intOfZ n + intOfZ y at hk₁'
+  change intOfZ n = intOfZ m * intOfZ k₂ at hk₂'
+  change intOfZ x = (intOfZ k₁ * intOfZ k₂) * intOfZ m + intOfZ y
+  rw [hk₁', hk₂']
+  simp [Int.mul_assoc, Int.mul_comm, Int.mul_left_comm]
+
+theorem Ztestbit_0 : Ztestbit_0Statement := by
+  intro n
+  cases n <;> rfl
+
+theorem Zshiftin_spec : Zshiftin_specStatement := by
+  intro b x
+  have hzero : intOfZ zZero = (0 : Int) := by decide
+  have hone : intOfZ one = (1 : Int) := by decide
+  have htwo : intOfZ two = (2 : Int) := by decide
+  cases b
+  · apply intOfZ_injective
+    simp [Zshiftin, zDouble, zAdd, zMul,
+      ZArith.BinInt.Z.double, ZArith.BinInt.Z.add,
+      ZArith.BinInt.Z.mul, intOfZ_zOfInt, htwo, hzero]
+  · apply intOfZ_injective
+    simp [Zshiftin, zSuccDouble, zSucc, zDouble, zAdd, zMul,
+      ZArith.BinInt.Z.succ_double, ZArith.BinInt.Z.succ,
+      ZArith.BinInt.Z.double, ZArith.BinInt.Z.add,
+      ZArith.BinInt.Z.mul, intOfZ_zOfInt, htwo, hone]
+
+end CompCert4Lean.Lib.Zbits
+
+namespace CompCert4Lean.Lib.Zbits
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+private theorem zbits_two_power_nat_succ (n : Nat) :
+    two_power_nat (Nat.succ n) = zDouble (two_power_nat n) := by
+  have hpow (m : Nat) :
+      ZArith.BinInt.Z.pow (Zpos (.xO .xH))
+          (ZArith.BinInt.Z.of_nat m) = zOfInt (2 ^ m) := by
+    unfold ZArith.BinInt.Z.pow ZArith.BinInt.Z.of_nat
+    simp only [intOfZ_zOfInt]
+    have h2 : intOfZ (Zpos (.xO .xH)) = (2 : Int) := by decide
+    rw [h2]
+    change (if (Int.ofNat m) < 0 then Z0 else
+      zOfInt ((2 : Int) ^ (Int.ofNat m).toNat)) = zOfInt (2 ^ m)
+    split
+    · next h => exact (Int.not_lt_of_ge (Int.natCast_nonneg _) h).elim
+    · next h => simp
+  unfold two_power_nat ZArith.Zpower.two_power_nat
+  rw [hpow, hpow]
+  apply intOfZ_injective
+  simp [zDouble, zMul, ZArith.BinInt.Z.double,
+    ZArith.BinInt.Z.mul, intOfZ_zOfInt, Int.pow_succ]
+  have h2 : intOfZ (Zpos (.xO .xH)) = (2 : Int) := by decide
+  rw [h2]
+  exact Int.mul_comm _ _
+
+private theorem zbits_two_power_nat_zero :
+    two_power_nat 0 = Zpos .xH := by decide
+
+private theorem zbits_double_int (x : Z) :
+    intOfZ (zDouble x) = 2 * intOfZ x := by
+  unfold zDouble ZArith.BinInt.Z.double ZArith.BinInt.Z.mul
+  simp only [intOfZ_zOfInt]
+  have h2 : intOfZ (Zpos (.xO .xH)) = (2 : Int) := by decide
+  rw [h2]
+
+private theorem zbits_succ_double_int (x : Z) :
+    intOfZ (zSuccDouble x) = 2 * intOfZ x + 1 := by
+  unfold zSuccDouble ZArith.BinInt.Z.succ_double
+  unfold ZArith.BinInt.Z.double
+  unfold ZArith.BinInt.Z.succ ZArith.BinInt.Z.add ZArith.BinInt.Z.mul
+  simp only [intOfZ_zOfInt]
+  have h2 : intOfZ (Zpos (.xO .xH)) = (2 : Int) := by decide
+  have h1 : intOfZ (Zpos .xH) = (1 : Int) := by decide
+  rw [h2, h1]
+
+private theorem zbits_two_power_nat_pos (n : Nat) :
+    0 < intOfZ (two_power_nat n) := by
+  induction n with
+  | zero => rw [zbits_two_power_nat_zero]; decide
+  | succ n ih =>
+      rw [zbits_two_power_nat_succ, zbits_double_int]
+      omega
+
+theorem P_mod_two_p_range : P_mod_two_p_rangeStatement := by
+  intro n
+  induction n with
+  | zero =>
+      intro p
+      simp only [P_mod_two_p]
+      change (0 ≤ intOfZ zZero ∧ intOfZ zZero < intOfZ (two_power_nat 0))
+      rw [zbits_two_power_nat_zero]
+      decide
+  | succ n ih =>
+      intro p
+      have hpow := zbits_two_power_nat_succ n
+      cases p with
+      | xH =>
+          simp only [P_mod_two_p]
+          change (0 ≤ intOfZ one ∧ intOfZ one < intOfZ (two_power_nat (Nat.succ n)))
+          rw [hpow]
+          rw [zbits_double_int]
+          have hone : intOfZ one = (1 : Int) := by decide
+          rw [hone]
+          have hn := zbits_two_power_nat_pos n
+          omega
+      | xO q =>
+          have h := ih q
+          simp only [P_mod_two_p]
+          change (0 ≤ intOfZ (zDouble (P_mod_two_p q n)) ∧
+            intOfZ (zDouble (P_mod_two_p q n)) < intOfZ (two_power_nat (Nat.succ n)))
+          rw [hpow, zbits_double_int, zbits_double_int]
+          change (0 ≤ intOfZ (P_mod_two_p q n) ∧
+            intOfZ (P_mod_two_p q n) < intOfZ (two_power_nat n)) at h
+          omega
+      | xI q =>
+          have h := ih q
+          simp only [P_mod_two_p]
+          change (0 ≤ intOfZ (zSuccDouble (P_mod_two_p q n)) ∧
+            intOfZ (zSuccDouble (P_mod_two_p q n)) < intOfZ (two_power_nat (Nat.succ n)))
+          rw [hpow, zbits_succ_double_int, zbits_double_int]
+          change (0 ≤ intOfZ (P_mod_two_p q n) ∧
+            intOfZ (P_mod_two_p q n) < intOfZ (two_power_nat n)) at h
+          omega
+
+end CompCert4Lean.Lib.Zbits

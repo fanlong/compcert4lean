@@ -2504,3 +2504,25 @@ theorem vmatch_top : vmatch_topStatement := by
   | ifptrPtr b ofs p hp => exact vmatch.ifptrPtr b ofs Ptop (pmatch_top' bc b ofs p hp)
 
 end CompCert4Lean.Backend.ValueDomain
+
+namespace CompCert4Lean.Backend.ValueDomain
+
+theorem usize_pos : usize_posStatement := by
+  intro n
+  unfold usize Int.size
+  cases Int.unsigned n with
+  | Z0 =>
+      simp [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.le,
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ]
+  | Zpos p =>
+      simp [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.le,
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ,
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.PArith.BinPos.Pos.size,
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat_positive]
+  | Zneg p =>
+      simp [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.le,
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ,
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.PArith.BinPos.Pos.size,
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat_positive]
+
+end CompCert4Lean.Backend.ValueDomain

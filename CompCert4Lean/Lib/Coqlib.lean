@@ -734,3 +734,49 @@ theorem zlt_true : zlt_trueStatement := by
       omega
 
 end CompCert4Lean.Lib.Coqlib
+
+namespace CompCert4Lean.Lib.Coqlib
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem zlt_false : zlt_falseStatement := by
+  intro A x y a b hxy
+  cases h : zlt x y with
+  | left hlt =>
+      exfalso
+      change intOfZ y <= intOfZ x at hxy
+      change intOfZ x < intOfZ y at hlt
+      omega
+  | right hge => rfl
+
+theorem zle_true : zle_trueStatement := by
+  intro A x y a b hxy
+  cases h : zle x y with
+  | left hle => rfl
+  | right hgt =>
+      exfalso
+      change intOfZ x <= intOfZ y at hxy
+      change intOfZ y < intOfZ x at hgt
+      omega
+
+theorem two_power_nat_O : two_power_nat_OStatement := by
+  change two_power_nat 0 = Zpos xH
+  rfl
+
+theorem two_power_nat_pos : two_power_nat_posStatement := by
+  intro n
+  change 0 < intOfZ (two_power_nat n)
+  unfold two_power_nat ZArith.Zpower.two_power_nat
+  unfold ZArith.BinInt.Z.pow ZArith.BinInt.Z.of_nat
+  simp only [intOfZ_zOfInt]
+  have hbase : intOfZ (Zpos (.xO .xH)) = (2 : Int) := by decide
+  rw [hbase]
+  have hn : Not (Int.ofNat n < 0) := by simp
+  split
+  case isTrue h =>
+    exact (hn h).elim
+  case isFalse h =>
+    simp only [intOfZ_zOfInt]
+    exact Int.pow_pos (by decide)
+
+end CompCert4Lean.Lib.Coqlib

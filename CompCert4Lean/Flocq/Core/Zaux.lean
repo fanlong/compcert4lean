@@ -311,3 +311,131 @@ theorem eqbool_irrelevance : eqbool_irrelevanceStatement := by
   exact Subsingleton.elim h1 h2
 
 end CompCert4Lean.Flocq.Core.Zaux
+
+namespace CompCert4Lean.Flocq.Core.Zaux
+
+private theorem natAbs_ofNat (n : Nat) : Int.natAbs (Int.ofNat n) = n := by
+  apply Int.ofNat.inj
+  simpa using (Int.natAbs_of_nonneg (a := Int.ofNat n) (by simp))
+
+private theorem natAbs_negOfNat (n : Nat) : Int.natAbs (-Int.ofNat n) = n := by
+  rw [Int.natAbs_neg]
+  exact natAbs_ofNat n
+
+private theorem even_pos_xI (p : positive) : Zeven (.Zpos (.xI p)) = false := by
+  unfold Zeven CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.even
+  change decide ((Int.natAbs (Int.ofNat (2 * CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p + 1))) % 2 = 0) = false
+  rw [natAbs_ofNat]
+  have hmod : (2 * CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p + 1) % 2 = 1 := by omega
+  simp [hmod]
+
+private theorem even_pos_xO (p : positive) : Zeven (.Zpos (.xO p)) = true := by
+  unfold Zeven CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.even
+  change decide ((Int.natAbs (Int.ofNat (2 * CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p))) % 2 = 0) = true
+  rw [natAbs_ofNat]
+  have hmod : (2 * CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p) % 2 = 0 := by omega
+  simp [hmod]
+
+private theorem even_neg_xI (p : positive) : Zeven (.Zneg (.xI p)) = false := by
+  unfold Zeven CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.even
+  change decide ((Int.natAbs (-Int.ofNat (2 * CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p + 1))) % 2 = 0) = false
+  rw [natAbs_negOfNat]
+  have hmod : (2 * CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p + 1) % 2 = 1 := by omega
+  simp [hmod]
+
+private theorem even_neg_xO (p : positive) : Zeven (.Zneg (.xO p)) = true := by
+  unfold Zeven CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.even
+  change decide ((Int.natAbs (-Int.ofNat (2 * CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p))) % 2 = 0) = true
+  rw [natAbs_negOfNat]
+  have hmod : (2 * CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p) % 2 = 0 := by omega
+  simp [hmod]
+
+private theorem intOfZ_Zadd (a b : Z) :
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (Zadd a b) =
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ a +
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ b := by
+  simp only [Zadd, CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add,
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+
+private theorem intOfZ_Zmul (a b : Z) :
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (Zmul a b) =
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ a *
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ b := by
+  simp only [Zmul, CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.mul,
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+
+private theorem intOfZ_Zsub (a b : Z) :
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (Zsub a b) =
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ a -
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ b := by
+  simp only [Zsub, CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.sub,
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+
+theorem Zeven_ex : Zeven_exStatement := by
+  intro x
+  cases x with
+  | Z0 =>
+      refine ⟨Z0, ?_⟩
+      apply CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective
+      rw [intOfZ_Zadd, intOfZ_Zmul]
+      simp [Zeven, CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.even,
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ,
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat]
+  | Zpos p =>
+      cases p with
+      | xI p =>
+          refine ⟨.Zpos p, ?_⟩
+          rw [even_pos_xI]
+          apply CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective
+          rw [intOfZ_Zadd, intOfZ_Zmul]
+          simp [CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ,
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat]
+      | xO p =>
+          refine ⟨.Zpos p, ?_⟩
+          rw [even_pos_xO]
+          apply CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective
+          rw [intOfZ_Zadd, intOfZ_Zmul]
+          simp [CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ,
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat]
+      | xH =>
+          refine ⟨Z0, ?_⟩
+          have he : Zeven (.Zpos (.xH) : Z) = false := by
+            unfold Zeven CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.even
+            change decide ((Int.natAbs (Int.ofNat 1)) % 2 = 0) = false
+            decide
+          rw [he]
+          apply CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective
+          rw [intOfZ_Zadd, intOfZ_Zmul]
+          simp [CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ,
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat]
+  | Zneg p =>
+      cases p with
+      | xI p =>
+          refine ⟨Zsub (.Zneg p) (.Zpos .xH), ?_⟩
+          rw [even_neg_xI]
+          apply CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective
+          rw [intOfZ_Zadd, intOfZ_Zmul, intOfZ_Zsub]
+          simp [CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ,
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat]
+          omega
+      | xO p =>
+          refine ⟨.Zneg p, ?_⟩
+          rw [even_neg_xO]
+          apply CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective
+          rw [intOfZ_Zadd, intOfZ_Zmul]
+          simp [CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ,
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat]
+          omega
+      | xH =>
+          refine ⟨(.Zneg .xH : Z), ?_⟩
+          have he : Zeven (.Zneg (.xH) : Z) = false := by
+            unfold Zeven CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.even
+            change decide ((Int.natAbs (-Int.ofNat 1)) % 2 = 0) = false
+            decide
+          rw [he]
+          apply CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective
+          rw [intOfZ_Zadd, intOfZ_Zmul]
+          simp [CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ,
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat]
+
+end CompCert4Lean.Flocq.Core.Zaux

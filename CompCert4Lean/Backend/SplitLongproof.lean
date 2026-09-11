@@ -836,3 +836,157 @@ theorem eval_builtin_2 : eval_builtin_2Statement := by
       (CompCert4Lean.Common.Events.known_builtin_sem_intro [varg1, varg2] vres m hsem)
 
 end CompCert4Lean.Backend.SplitLongproof
+
+namespace CompCert4Lean.Backend.SplitLongproof
+
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.ExternalCalls
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Backend.SplitLong
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.X86.Op
+
+set_option maxHeartbeats 1000000
+
+variable
+    [binary64_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 53)
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 24)
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 128)]
+
+private theorem splitlong_eval_eop_inv
+    (xi : ExternalCalls)
+    (ge : CompCert4Lean.Backend.CminorSel.genv)
+    (sp : CompCert4Lean.Common.Values.val)
+    (e : CompCert4Lean.Backend.Cminor.env)
+    (m : CompCert4Lean.Common.Memory.mem)
+    (le : CompCert4Lean.Backend.CminorSel.letenv)
+    (op : CompCert4Lean.X86.Op.operation)
+    (al : CompCert4Lean.Backend.CminorSel.exprlist)
+    (x : CompCert4Lean.Common.Values.val)
+    (h : eval_expr (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) xi ge sp e m le (.Eop op al) x) :
+    ∃ vl, eval_exprlist (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) xi ge sp e m le al vl ∧
+      CompCert4Lean.X86.Op.eval_operation (F := CompCert4Lean.Backend.CminorSel.fundef)
+        (V := Unit) ge sp op vl m = some x := by
+  cases h with
+  | eval_Eop _ _ _ vl _ hargs hop => exact ⟨vl, hargs, hop⟩
+
+private theorem splitlong_eval_cons_inv
+    (xi : ExternalCalls)
+    (ge : CompCert4Lean.Backend.CminorSel.genv)
+    (sp : CompCert4Lean.Common.Values.val)
+    (e : CompCert4Lean.Backend.Cminor.env)
+    (m : CompCert4Lean.Common.Memory.mem)
+    (le : CompCert4Lean.Backend.CminorSel.letenv)
+    (a : CompCert4Lean.Backend.CminorSel.expr)
+    (al : CompCert4Lean.Backend.CminorSel.exprlist)
+    (vl : List CompCert4Lean.Common.Values.val)
+    (h : eval_exprlist (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) xi ge sp e m le
+      (.Econs a al) vl) :
+    ∃ v vl', vl = v :: vl' ∧
+      eval_expr (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) xi ge sp e m le a v ∧
+      eval_exprlist (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) xi ge sp e m le al vl' := by
+  cases h with
+  | cons _ _ _ v vl hhead htail => exact ⟨v, vl, rfl, hhead, htail⟩
+
+private theorem splitlong_eval_nil_inv
+    (xi : ExternalCalls)
+    (ge : CompCert4Lean.Backend.CminorSel.genv)
+    (sp : CompCert4Lean.Common.Values.val)
+    (e : CompCert4Lean.Backend.Cminor.env)
+    (m : CompCert4Lean.Common.Memory.mem)
+    (le : CompCert4Lean.Backend.CminorSel.letenv)
+    (vl : List CompCert4Lean.Common.Values.val)
+    (h : eval_exprlist (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) xi ge sp e m le .Enil vl) :
+    vl = [] := by
+  cases h
+  rfl
+
+private theorem splitlong_is_longconst_shape (a : expr) (n : CCInt64) :
+    is_longconst a = some n →
+      ∃ h l : CCInt, a = Eop Omakelong
+        (Econs (Eop (Ointconst h) Enil)
+          (Econs (Eop (Ointconst l) Enil) Enil)) ∧
+        n = int64Ofwords h l := by
+  intro hconst
+  unfold is_longconst at hconst
+  cases hmatch : is_longconst_match a with
+  | is_longconst_case1 h l =>
+      simp only [hmatch] at hconst
+      cases hconst
+      exact ⟨h, l, rfl, rfl⟩
+  | is_longconst_default e =>
+      simp only [hmatch] at hconst
+      cases hconst
+
+set_option maxHeartbeats 1000000 in
+theorem is_longconst_sound :
+    @is_longconst_soundStatement binary64_certificate binary32_certificate := by
+  unfold is_longconst_soundStatement
+  intro xi prog sp e m le a x n hconst heval
+  obtain ⟨h, l, ha, hn⟩ := splitlong_is_longconst_shape a n hconst
+  rw [ha] at heval
+  rw [hn] at ⊢
+  obtain ⟨vl, hargs, hop⟩ := splitlong_eval_eop_inv xi
+        (Genv.globalenv prog) sp e m le
+        (.Omakelong)
+        (.Econs (Eop (.Ointconst h) .Enil)
+          (Econs (Eop (.Ointconst l) .Enil) .Enil)) x heval
+  obtain ⟨v1, vl', hvl, hh, ht⟩ := splitlong_eval_cons_inv xi
+    (Genv.globalenv prog) sp e m le
+    (Eop (.Ointconst h) .Enil)
+    (Econs (Eop (.Ointconst l) .Enil) .Enil) vl hargs
+  obtain ⟨v2, vl2, hvl', hl, hn⟩ := splitlong_eval_cons_inv xi
+    (Genv.globalenv prog) sp e m le
+    (Eop (.Ointconst l) .Enil) .Enil vl' ht
+  have hnil := splitlong_eval_nil_inv xi (Genv.globalenv prog) sp e m le vl2 hn
+  rw [hvl, hvl', hnil] at hop
+  obtain ⟨wh, hnilh, hhi⟩ := splitlong_eval_eop_inv xi
+    (Genv.globalenv prog) sp e m le (.Ointconst h) .Enil _ hh
+  obtain ⟨wl, hnill, hlo⟩ := splitlong_eval_eop_inv xi
+    (Genv.globalenv prog) sp e m le (.Ointconst l) .Enil _ hl
+  have wh0 := splitlong_eval_nil_inv xi (Genv.globalenv prog) sp e m le wh hnilh
+  have wl0 := splitlong_eval_nil_inv xi (Genv.globalenv prog) sp e m le wl hnill
+  rw [wh0] at hhi
+  rw [wl0] at hlo
+  change some (CompCert4Lean.Common.Values.val.Vint h) = some v1 at hhi
+  change some (CompCert4Lean.Common.Values.val.Vint l) = some v2 at hlo
+  cases hhi
+  cases hlo
+  change some (CompCert4Lean.Common.Values.val.Vlong (int64Ofwords h l)) = some x at hop
+  cases hop
+  rfl
+
+set_option maxHeartbeats 1000000 in
+theorem is_longconst_zero_sound :
+    @is_longconst_zero_soundStatement binary64_certificate binary32_certificate := by
+  unfold is_longconst_zero_soundStatement
+  intro xi prog sp e m le a x hzero heval
+  unfold is_longconst_zero at hzero
+  cases hmatch : is_longconst a with
+  | none =>
+      simp only [hmatch] at hzero
+      cases hzero
+  | some n =>
+      simp only [hmatch] at hzero
+      have hn : n = int64Zero := by
+        -- Int64.eq is the boolean equality decision on the word carrier.
+        apply CompCert4Lean.Lib.Integers.WordCore.ext
+        simpa [int64Eq, CompCert4Lean.Lib.Integers.Int64.eq,
+          CompCert4Lean.Lib.Integers.WordCore.eq] using hzero
+      rw [← hn]
+      exact is_longconst_sound xi prog sp e m le a x n hmatch heval
+
+end CompCert4Lean.Backend.SplitLongproof

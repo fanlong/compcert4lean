@@ -2080,3 +2080,23 @@ theorem unfold_transf_function : unfold_transf_functionStatement := by
       rfl
 
 end CompCert4Lean.Backend.Stackingproof
+
+namespace CompCert4Lean.Backend.Stackingproof
+
+theorem size_no_overflow : size_no_overflowStatement := by
+  intro cfg f tf htf
+  unfold CompCert4Lean.Backend.Stacking.transf_function at htf
+  dsimp at htf
+  split at htf
+  · contradiction
+  · split at htf
+    · contradiction
+    · cases htf
+      rename_i hnot x hge heq
+      change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ _ ≤
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ _
+      change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ _ ≤
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ _ at hge
+      exact hge
+
+end CompCert4Lean.Backend.Stackingproof

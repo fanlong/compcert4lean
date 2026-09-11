@@ -993,3 +993,11 @@ theorem In_raw_elements_between_1 : In_raw_elements_between_1Statement := by
   exact in_raw_elements_between above_low_bound below_high_bound x m hx
 
 end CompCert4Lean.Lib.FSetAVLplus.Make
+
+namespace CompCert4Lean.Lib.FSetAVLplus.Make
+
+theorem raw_elements_between_ok : raw_elements_between_okStatement := by
+  intro X above_low_bound below_high_bound m hbst
+  exact raw_elements_between_bst above_low_bound below_high_bound m hbst
+
+end CompCert4Lean.Lib.FSetAVLplus.Make

@@ -1383,3 +1383,26 @@ theorem plus_star : plus_starStatement := by
       exact star_step s1 t1 hstep hstar htrace
 
 end CompCert4Lean.Common.Smallstep
+
+namespace CompCert4Lean.Common.Smallstep
+
+open CompCert4Lean.Common.Events
+
+theorem plus_right : plus_rightStatement := by
+  intro genv state step ge s1 t1 s2 t2 s3 t hstar hstep htrace
+  cases hstar with
+  | star_refl s =>
+      subst t
+      rw [show Eapp E0 t2 = t2 by exact _root_.List.nil_append t2]
+      exact plus_one genv state step ge s1 t2 s3 hstep
+  | star_step s1' t1' s2' t2' s3' t' hstep' hstar' htrace' =>
+      apply plus_left s1 t1' hstep'
+      · exact star_right genv state step ge s2' t2' s2 t2 s3
+          (Eapp t2' t2) hstar' hstep rfl
+      · calc
+          t = Eapp t1 t2 := htrace
+          _ = Eapp (Eapp t1' t2') t2 := by rw [htrace']
+          _ = Eapp t1' (Eapp t2' t2) := by
+            exact _root_.List.append_assoc t1' t2' t2
+
+end CompCert4Lean.Common.Smallstep

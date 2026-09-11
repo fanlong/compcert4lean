@@ -910,3 +910,148 @@ theorem transf_program_match : ∀ cfg, transf_program_matchStatement cfg := by
       exact ⟨hlist p.prog_defs defs hdefs, rfl, rfl⟩
 
 end CompCert4Lean.Backend.Deadcodeproof
+
+namespace CompCert4Lean.Backend.Deadcodeproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+
+private theorem intOfZ_add_one_local (x : Z) :
+    intOfZ (zAdd x (.Zpos .xH)) = intOfZ x + 1 := by
+  change intOfZ (zOfInt (intOfZ x + intOfZ (.Zpos .xH))) = intOfZ x + 1
+  rw [intOfZ_zOfInt]
+  rfl
+
+private theorem pmap_get_set_same_local {A : Type} (i : positive) (x : A)
+    (m : PMap.t A) : PMap.get i (PMap.set i x m) = x := by
+  change (match PTree.get i (PTree.set i x m.2) with
+    | some y => y
+    | none => m.1) = x
+  rw [PTree.gsspec_proof]
+  cases hpeq : peq i i with
+  | left h => simp [hpeq]
+  | right h => exact False.elim (h rfl)
+
+private theorem pmap_get_set_other_local {A : Type} (i j : positive) (x : A)
+    (m : PMap.t A) (h : i ≠ j) : PMap.get i (PMap.set j x m) = PMap.get i m := by
+  change (match PTree.get i (PTree.set j x m.2) with
+    | some y => y
+    | none => m.1) =
+    (match PTree.get i m.2 with
+    | some y => y
+    | none => m.1)
+  rw [PTree.gsspec_proof]
+  cases hpeq : peq i j with
+  | left hij => exact False.elim (h hij)
+  | right hne => simp [hpeq]
+
+private theorem zmap_get_set_same_local {A : Type} (i : Z) (x : A)
+    (m : ZMap.t A) : ZMap.get i (ZMap.set i x m) = x := by
+  exact pmap_get_set_same_local (ZIndexed.index i) x m
+
+private theorem zmap_get_set_other_local {A : Type} (i j : Z) (x : A)
+    (m : ZMap.t A) (h : i ≠ j) : ZMap.get i (ZMap.set j x m) = ZMap.get i m := by
+  apply pmap_get_set_other_local (ZIndexed.index i) (ZIndexed.index j) x m
+  intro hij
+  apply h
+  exact ZIndexed.index_inj i j hij
+
+private theorem setN_outside_local : ∀ (vl : List memval) (c : ZMap.t memval)
+    (p q : Z),
+    zLt q p ∨ zLe (zAdd p (zOfNat vl.length)) q →
+      ZMap.get q (CompCert4Lean.Common.Memory.Mem.setN vl p c) = ZMap.get q c
+  | [], c, p, q, h => rfl
+  | v :: rest, c, p, q, h => by
+      have hTail : zLt q (zAdd p (.Zpos .xH)) ∨
+          zLe (zAdd (zAdd p (.Zpos .xH)) (zOfNat rest.length)) q := by
+        rcases h with hlt | hge
+        · left
+          change intOfZ q < intOfZ (zAdd p (.Zpos .xH))
+          rw [intOfZ_add_one_local]
+          change intOfZ q < intOfZ p at hlt
+          omega
+        · right
+          change intOfZ (zAdd (zAdd p (.Zpos .xH)) (zOfNat rest.length)) ≤ intOfZ q
+          change intOfZ (zAdd p (zOfNat (List.length (v :: rest)))) ≤ intOfZ q at hge
+          have hlen : (List.length (v :: rest) : Nat) = rest.length + 1 := by rfl
+          rw [hlen] at hge
+          simp [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add,
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat,
+            intOfZ_zOfInt] at hge ⊢
+          have hone : intOfZ (.Zpos .xH) = 1 := by rfl
+          simp [hone] at hge ⊢
+          omega
+      have hs := setN_outside_local rest (ZMap.set p v c)
+        (zAdd p (.Zpos .xH)) q hTail
+      have hneq : q ≠ p := by
+        intro heq
+        subst q
+        rcases h with hlt | hge
+        · change intOfZ p < intOfZ p at hlt
+          omega
+        · change intOfZ (zAdd p (zOfNat (List.length (v :: rest)))) ≤ intOfZ p at hge
+          simp [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add,
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat,
+            intOfZ_zOfInt] at hge
+          omega
+      rw [zmap_get_set_other_local q p v c hneq] at hs
+      simpa [CompCert4Lean.Common.Memory.Mem.setN] using hs
+
+theorem magree_storebytes_left : magree_storebytes_leftStatement := by
+  intro m1 m2 P b ofs bytes1 m1' h hstore hP
+  unfold CompCert4Lean.Common.Memory.Mem.storebytes at hstore
+  split at hstore
+  next hcond =>
+    injection hstore with hm1'
+    subst m1'
+    constructor
+    · intro b' ofs' k p hp
+      exact h.ma_perm b' ofs' k p hp
+    · intro b' ofs' k p hp
+      exact h.ma_perm_inv b' ofs' k p hp
+    · intro b' ofs' hp hPb'
+      by_cases hbb : b' = b
+      · subst b'
+        rw [pmap_get_set_same_local]
+        have hnotrange : ¬ (zLe ofs ofs' ∧
+            zLt ofs' (zAdd ofs (zOfNat bytes1.length))) := by
+          intro hr
+          exact (hP ofs' hr) hPb'
+        have hOut : zLt ofs' ofs ∨
+            zLe (zAdd ofs (zOfNat bytes1.length)) ofs' := by
+          change intOfZ ofs' < intOfZ ofs ∨
+            intOfZ (zAdd ofs (zOfNat bytes1.length)) ≤ intOfZ ofs'
+          by_cases hlt : intOfZ ofs' < intOfZ ofs
+          · exact Or.inl hlt
+          · right
+            by_cases hge : intOfZ (zAdd ofs (zOfNat bytes1.length)) ≤ intOfZ ofs'
+            · exact hge
+            · exfalso
+              apply hnotrange
+              change intOfZ ofs ≤ intOfZ ofs' ∧
+                intOfZ ofs' < intOfZ (zAdd ofs (zOfNat bytes1.length))
+              constructor <;> omega
+        have hset := setN_outside_local bytes1
+          (PMap.get b m1.mem_contents) ofs ofs' hOut
+        change memval_lessdef
+          (ZMap.get ofs' (CompCert4Lean.Common.Memory.Mem.setN bytes1 ofs
+            (PMap.get b m1.mem_contents)))
+          (ZMap.get ofs' (PMap.get b m2.mem_contents))
+        rw [hset]
+        exact h.ma_memval b ofs' hp hPb'
+      · change memval_lessdef
+          (ZMap.get ofs'
+            (PMap.get b' (PMap.set b
+              (CompCert4Lean.Common.Memory.Mem.setN bytes1 ofs
+                (PMap.get b m1.mem_contents)) m1.mem_contents)))
+          (ZMap.get ofs' (PMap.get b' m2.mem_contents))
+        rw [pmap_get_set_other_local _ _ _ _ hbb]
+        exact h.ma_memval b' ofs' hp hPb'
+    · simpa using h.ma_nextblock
+  next hcond =>
+    cases hstore
+
+end CompCert4Lean.Backend.Deadcodeproof

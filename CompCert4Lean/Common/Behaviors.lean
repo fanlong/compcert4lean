@@ -742,3 +742,139 @@ theorem state_behaves_app : state_behaves_appStatement := by
         hnostep hnofinal
 
 end CompCert4Lean.Common.Behaviors
+
+namespace CompCert4Lean.Common.Behaviors
+
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.Smallstep
+
+private theorem behaviors_traceinf_app (t : trace) (T : traceinf') (NE : t ≠ E0) :
+    traceinf_of_traceinf' (Econsinf' t T NE) =
+      Eappinf t (traceinf_of_traceinf' T) := by
+  funext n
+  induction t generalizing n with
+  | nil => exact False.elim (NE rfl)
+  | cons e t ih =>
+      cases t with
+      | nil =>
+          cases n with
+          | zero => rfl
+          | succ n => rfl
+      | cons e' t =>
+          cases n with
+          | zero => rfl
+          | succ n =>
+              exact ih (by intro h; cases h) n
+
+private theorem behaviors_reactiveCursorAt_shift
+    (L : semantics) (s0 : state L)
+    (reacts : ∀ (s1 : state L) (t1 : trace),
+      Star L s0 t1 s1 →
+      ∃ (s2 : state L) (t2 : trace), Star L s1 t2 s2 ∧ t2 ≠ E0)
+    (c : ReactiveCursor L s0) (n : Nat) :
+    reactiveCursorAt L s0 reacts c (n + 1) =
+      reactiveCursorAt L s0 reacts (nextReactiveCursor L s0 reacts c) n := by
+  induction n with
+  | zero => rfl
+  | succ n ih =>
+      simp only [reactiveCursorAt]
+      exact congrArg (nextReactiveCursor L s0 reacts) ih
+
+private theorem behaviors_reactiveChunkAt_shift
+    (L : semantics) (s0 : state L)
+    (reacts : ∀ (s1 : state L) (t1 : trace),
+      Star L s0 t1 s1 →
+      ∃ (s2 : state L) (t2 : trace), Star L s1 t2 s2 ∧ t2 ≠ E0)
+    (c : ReactiveCursor L s0) (n : Nat) :
+    reactiveChunkAt L s0 reacts c (n + 1) =
+      reactiveChunkAt L s0 reacts (nextReactiveCursor L s0 reacts c) n := by
+  apply Subtype.ext
+  dsimp [reactiveChunkAt]
+  rw [behaviors_reactiveCursorAt_shift]
+
+private theorem behaviors_build_tail
+    (L : semantics) (s0 : state L)
+    (reacts : ∀ (s1 : state L) (t1 : trace),
+      Star L s0 t1 s1 →
+      ∃ (s2 : state L) (t2 : trace), Star L s1 t2 s2 ∧ t2 ≠ E0)
+    (c : ReactiveCursor L s0) :
+    traceinf'.tailChunks
+        (build_traceinf' L (s0 := s0) reacts c.reachable) =
+      build_traceinf' L (s0 := s0) reacts
+        (nextReactiveCursor L s0 reacts c).reachable := by
+  have hchunk :
+      (traceinf'.tailChunks
+        (build_traceinf' L (s0 := s0) reacts c.reachable)).chunk =
+      (build_traceinf' L (s0 := s0) reacts
+        (nextReactiveCursor L s0 reacts c).reachable).chunk := by
+    funext n
+    dsimp [traceinf', build_traceinf']
+    exact congrArg Subtype.val
+      (behaviors_reactiveChunkAt_shift L s0 reacts c n)
+  cases hleft : traceinf'.tailChunks
+      (build_traceinf' L (s0 := s0) reacts c.reachable) with
+  | mk l ln =>
+      cases hright : build_traceinf' L (s0 := s0) reacts
+          (nextReactiveCursor L s0 reacts c).reachable with
+      | mk r rn =>
+          simpa [hleft, hright] using hchunk
+
+private theorem behaviors_traceinf'_decompose (T : traceinf') :
+    T = Econsinf' (T.chunk 0) (traceinf'.tailChunks T) (T.nonempty 0) := by
+  cases T with
+  | mk chunk nonempty =>
+      apply (traceinf'.mk.injEq chunk nonempty _ _).mpr
+      funext n
+      cases n <;> rfl
+
+private theorem behaviors_build_step
+    (L : semantics) (s0 : state L)
+    (reacts : ∀ (s1 : state L) (t1 : trace),
+      Star L s0 t1 s1 →
+      ∃ (s2 : state L) (t2 : trace), Star L s1 t2 s2 ∧ t2 ≠ E0)
+    (c : ReactiveCursor L s0) :
+    traceinf_of_traceinf'
+        (build_traceinf' L (s0 := s0) reacts c.reachable) =
+      Eappinf ((reacts' L reacts c.reachable).2.1)
+        (traceinf_of_traceinf'
+          (build_traceinf' L (s0 := s0) reacts
+            (nextReactiveCursor L s0 reacts c).reachable)) := by
+  let B := build_traceinf' L (s0 := s0) reacts c.reachable
+  have hdec : B = Econsinf' (B.chunk 0) (traceinf'.tailChunks B) (B.nonempty 0) :=
+    behaviors_traceinf'_decompose B
+  change traceinf_of_traceinf' B = _
+  rw [hdec, behaviors_traceinf_app]
+  rw [behaviors_build_tail]
+  rfl
+
+theorem reacts_forever_reactive_rec : reacts_forever_reactive_recStatement := by
+  intro L s0 reacts s1 t1 ST
+  let c0 : ReactiveCursor L s0 := { current := s1, history := t1, reachable := ST }
+  let pred : state L → traceinf → Prop := fun s T =>
+    ∃ c : ReactiveCursor L s0,
+      c.current = s ∧
+        T = traceinf_of_traceinf'
+          (build_traceinf' L (s0 := s0) reacts c.reachable)
+  have hpred : pred c0.current
+      (traceinf_of_traceinf'
+        (build_traceinf' L (s0 := s0) reacts c0.reachable)) := by
+    exact ⟨c0, rfl, rfl⟩
+  exact forever_reactive.coinduct (step L) (globalenv L) pred
+    (by
+      intro s T hs
+      rcases hs with ⟨c, rfl, rfl⟩
+      let selected := reacts' L reacts c.reachable
+      let cnext := nextReactiveCursor L s0 reacts c
+      refine ⟨cnext.current, selected.2.1,
+        traceinf_of_traceinf'
+          (build_traceinf' L (s0 := s0) reacts cnext.reachable), ?_,
+        selected.2.2.2, ?_, ?_⟩
+      · exact selected.2.2.1
+      · exact ⟨cnext, rfl, rfl⟩
+      · exact behaviors_build_step L s0 reacts c)
+    c0.current
+    (traceinf_of_traceinf'
+      (build_traceinf' L (s0 := s0) reacts c0.reachable))
+    hpred
+
+end CompCert4Lean.Common.Behaviors

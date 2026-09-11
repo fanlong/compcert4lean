@@ -941,3 +941,116 @@ theorem can_eval_safe_arg : can_eval_safe_argStatement := by
       exact False.elim hsafe
 
 end CompCert4Lean.Backend.Debugvarproof
+
+namespace CompCert4Lean.Backend.Debugvarproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Backend.Debugvar
+open CompCert4Lean.Backend.Linear
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Smallstep
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Coqlib
+
+theorem eval_add_delta_ranges
+  [binary64_certificate :
+    CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+      (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+  [binary32_certificate :
+    CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+      (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)] :
+    eval_add_delta_rangesStatement := by
+  intro cfg xi tprog s f sp c rs m before after
+  unfold add_delta_ranges
+  cases hdelta : delta_state before after with
+  | mk killed born =>
+      have hborn : ∀ (xs : avail) (c : code),
+          star
+            (fun ge => Linear.step
+              (binary64_certificate := binary64_certificate)
+              (binary32_certificate := binary32_certificate) cfg xi ge)
+            (Genv.globalenv tprog)
+            (State s f sp (xs.foldr add_start_range c) rs m)
+            E0 (State s f sp c rs m) := by
+        intro xs
+        induction xs with
+        | nil =>
+            intro c
+            simpa using
+              (star_refl
+                (fun ge => Linear.step
+                  (binary64_certificate := binary64_certificate)
+                  (binary32_certificate := binary32_certificate) cfg xi ge)
+                (Genv.globalenv tprog) (State s f sp c rs m))
+        | cons vi xs ih =>
+            intro c
+            cases vi with
+            | mk v i =>
+                rcases can_eval_safe_arg tprog rs sp m i.1 i.2 with ⟨v', hv⟩
+                change star
+                  (fun ge => Linear.step
+                    (binary64_certificate := binary64_certificate)
+                    (binary32_certificate := binary32_certificate) cfg xi ge)
+                  (Genv.globalenv tprog)
+                  (State s f sp
+                    (Lbuiltin (EF_debug (PArith.BinPos.Pos.of_nat 3) v [])
+                      [i.1] BR_none :: xs.foldr add_start_range c) rs m)
+                  E0 (State s f sp c rs m)
+                apply CompCert4Lean.Common.Smallstep.star.star_step
+                · apply exec_Lbuiltin
+                  · exact CompCert4Lean.Lib.Coqlib.list_forall2.cons i.1 v' hv
+                      (CompCert4Lean.Lib.Coqlib.list_forall2.nil _)
+                  · exact extcall_debug_sem_intro [v'] m
+                  · rfl
+                · exact ih _
+                · rfl
+      have hkill : ∀ (xs : avail) (c : code),
+          star
+            (fun ge => Linear.step
+              (binary64_certificate := binary64_certificate)
+              (binary32_certificate := binary32_certificate) cfg xi ge)
+            (Genv.globalenv tprog)
+            (State s f sp (xs.foldr add_end_range c) rs m)
+            E0 (State s f sp c rs m) := by
+        intro xs
+        induction xs with
+        | nil =>
+            intro c
+            simpa using
+              (star_refl
+                (fun ge => Linear.step
+                  (binary64_certificate := binary64_certificate)
+                  (binary32_certificate := binary32_certificate) cfg xi ge)
+                (Genv.globalenv tprog) (State s f sp c rs m))
+        | cons vi xs ih =>
+            intro c
+            change star
+              (fun ge => Linear.step
+                (binary64_certificate := binary64_certificate)
+                (binary32_certificate := binary32_certificate) cfg xi ge)
+              (Genv.globalenv tprog)
+              (State s f sp
+                (Lbuiltin (EF_debug (PArith.BinPos.Pos.of_nat 4) vi.1 [])
+                  [] BR_none :: xs.foldr add_end_range c) rs m)
+              E0 (State s f sp c rs m)
+            apply CompCert4Lean.Common.Smallstep.star.star_step
+            · apply exec_Lbuiltin
+              · exact CompCert4Lean.Lib.Coqlib.list_forall2.nil _
+              · exact extcall_debug_sem_intro [] m
+              · rfl
+            · exact ih _
+            · rfl
+      change star
+        (fun ge => Linear.step
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate) cfg xi ge)
+        (Genv.globalenv tprog)
+        (State s f sp
+          (killed.foldr add_end_range (born.foldr add_start_range c)) rs m)
+        E0 (State s f sp c rs m)
+      exact star_trans _ _ _ _ _ E0 _ (hkill killed _)
+        E0 _ E0 (hborn born c) rfl
+
+end CompCert4Lean.Backend.Debugvarproof

@@ -1343,3 +1343,179 @@ theorem find_var_info_iff : find_var_info_iffStatement := by
 
 end Genv
 end CompCert4Lean.Common.Globalenvs
+
+namespace CompCert4Lean.Common.Globalenvs
+namespace Genv
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Linking
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.Lib.Integers
+
+theorem find_def_symbol : find_def_symbolStatement := by
+  intro F V p id g
+  have hfold : ∀ (l : List (ident × globdef F V))
+      (dm : PTree.t (globdef F V)) (ge : t F V),
+      (∀ (id : ident) (g : globdef F V), PTree.get (show positive from id) dm = some g ↔
+        ∃ b, find_symbol ge id = some b ∧ find_def ge b = some g) →
+      ∀ (id : ident) (g : globdef F V), PTree.get (show positive from id)
+        (l.foldl (fun m idg => PTree.set (show positive from idg.1) idg.2 m) dm) = some g ↔
+        ∃ b, find_symbol (l.foldl Genv.add_global ge) id = some b ∧
+          find_def (l.foldl Genv.add_global ge) b = some g := by
+    intro l
+    induction l with
+    | nil =>
+        intro dm ge hinv id g
+        simpa only [List.foldl] using hinv id g
+    | cons idg l ih =>
+        rcases idg with ⟨k, v⟩
+        intro dm ge hinv id g
+        apply ih (PTree.set (show positive from k) v dm) (Genv.add_global ge (k, v))
+        intro x g'
+        by_cases hx : x = k
+        · subst x
+          constructor
+          · intro hget
+            have hset : PTree.get (show positive from k)
+                (PTree.set (show positive from k) v dm) = some v :=
+              PTree.gss (show positive from k) v dm
+            have hvalue : v = g' := Option.some.inj (hset.symm.trans hget)
+            subst g'
+            refine ⟨ge.genv_next, ?_, ?_⟩
+            · change PTree.get (show positive from k)
+                (PTree.set (show positive from k) ge.genv_next ge.genv_symb) =
+                some ge.genv_next
+              exact PTree.gss (show positive from k) ge.genv_next ge.genv_symb
+            · change PTree.get (show positive from ge.genv_next)
+                (PTree.set (show positive from ge.genv_next) v ge.genv_defs) =
+                some v
+              exact PTree.gss (show positive from ge.genv_next) v ge.genv_defs
+          · rintro ⟨b, hsymbol, hdef⟩
+            have hs : some ge.genv_next = some b := by
+              change PTree.get (show positive from k)
+                  (PTree.set (show positive from k) ge.genv_next ge.genv_symb) = some b at hsymbol
+              exact (PTree.gss (show positive from k) ge.genv_next ge.genv_symb).symm.trans hsymbol
+            have hblock : b = ge.genv_next := (Option.some.inj hs).symm
+            subst b
+            have hvalue : v = g' := by
+              have hd : some v = some g' := by
+                change PTree.get (show positive from ge.genv_next)
+                    (PTree.set (show positive from ge.genv_next) v ge.genv_defs) = some g' at hdef
+                exact (PTree.gss (show positive from ge.genv_next) v ge.genv_defs).symm.trans hdef
+              exact Option.some.inj hd
+            subst g'
+            exact PTree.gss (show positive from k) v dm
+        · have hxp : (show positive from x) ≠ (show positive from k) := by
+            intro h
+            exact hx h
+          constructor
+          · intro hget
+            have hset : PTree.get (show positive from x)
+                (PTree.set (show positive from k) v dm) = PTree.get (show positive from x) dm :=
+              PTree.gso v dm hxp
+            have hold : PTree.get (show positive from x) dm = some g' := hset.symm.trans hget
+            rcases (hinv x g').mp hold with ⟨b, hsymbol, hdef⟩
+            refine ⟨b, ?_, ?_⟩
+            · change PTree.get (show positive from x)
+                (PTree.set (show positive from k) ge.genv_next ge.genv_symb) = some b
+              have hset' : PTree.get (show positive from x)
+                  (PTree.set (show positive from k) ge.genv_next ge.genv_symb) =
+                  PTree.get (show positive from x) ge.genv_symb :=
+                PTree.gso ge.genv_next ge.genv_symb hxp
+              exact hset'.trans hsymbol
+            · have hbne : b ≠ ge.genv_next := by
+                intro heq
+                subst b
+                exact (Nat.lt_irrefl _ (ge.genv_symb_range x hsymbol))
+              change PTree.get (show positive from b)
+                  (PTree.set (show positive from ge.genv_next) v ge.genv_defs) = some g'
+              have hset' : PTree.get (show positive from b)
+                  (PTree.set (show positive from ge.genv_next) v ge.genv_defs) =
+                  PTree.get (show positive from b) ge.genv_defs :=
+                PTree.gso v ge.genv_defs hbne
+              exact hset'.trans hdef
+          · rintro ⟨b, hsymbol, hdef⟩
+            have hold_symbol : PTree.get (show positive from x) ge.genv_symb = some b := by
+              change PTree.get (show positive from x)
+                  (PTree.set (show positive from k) ge.genv_next ge.genv_symb) = some b at hsymbol
+              have hset' : PTree.get (show positive from x)
+                  (PTree.set (show positive from k) ge.genv_next ge.genv_symb) =
+                  PTree.get (show positive from x) ge.genv_symb :=
+                PTree.gso ge.genv_next ge.genv_symb hxp
+              exact hset'.symm.trans hsymbol
+            have hbne : b ≠ ge.genv_next := by
+              intro heq
+              subst b
+              exact (Nat.lt_irrefl _ (ge.genv_symb_range x hold_symbol))
+            have hold_def : PTree.get (show positive from b) ge.genv_defs = some g' := by
+              change PTree.get (show positive from b)
+                  (PTree.set (show positive from ge.genv_next) v ge.genv_defs) = some g' at hdef
+              have hset' : PTree.get (show positive from b)
+                  (PTree.set (show positive from ge.genv_next) v ge.genv_defs) =
+                  PTree.get (show positive from b) ge.genv_defs :=
+                PTree.gso v ge.genv_defs hbne
+              exact hset'.symm.trans hdef
+            have hold := (hinv x g').mpr ⟨b, hold_symbol, hold_def⟩
+            change PTree.get (show positive from x)
+              (PTree.set (show positive from k) v dm) = some g'
+            have hset : PTree.get (show positive from x)
+                (PTree.set (show positive from k) v dm) = PTree.get (show positive from x) dm :=
+              PTree.gso v dm hxp
+            exact hset.trans hold
+  have hbase : ∀ (x : ident) (g' : globdef F V),
+      PTree.get (show positive from x) (PTree.empty (globdef F V)) = some g' ↔
+        ∃ b, find_symbol (Genv.empty_genv F V p.prog_public) x = some b ∧
+          find_def (Genv.empty_genv F V p.prog_public) b = some g' := by
+    intro x g'
+    constructor
+    · intro hget
+      simp [PTree.get, PTree.empty] at hget
+    · rintro ⟨b, hsymbol, hdef⟩
+      have hfalse : False := by
+        change PTree.get (show positive from x)
+            (PTree.empty block) = some b at hsymbol
+        simp [PTree.get, PTree.empty] at hsymbol
+      exact hfalse.elim
+  have h := hfold p.prog_defs (PTree.empty (globdef F V))
+      (Genv.empty_genv F V p.prog_public) hbase id g
+  constructor
+  · intro hget
+    have hget' : PTree.get (show positive from id)
+        (p.prog_defs.foldl
+          (fun m idg => PTree.set (show positive from idg.1) idg.2 m)
+          (PTree.empty (globdef F V))) = some g := by
+      change PTree.get (show positive from id)
+        (p.prog_defs.foldl
+          (fun m idg => PTree.set (show positive from idg.1) idg.2 m)
+          (PTree.empty (globdef F V))) = some g at hget
+      exact hget
+    have h' := h.mp hget'
+    change ∃ b, find_symbol (p.prog_defs.foldl Genv.add_global
+      (Genv.empty_genv F V p.prog_public)) id = some b ∧
+      find_def (p.prog_defs.foldl Genv.add_global
+      (Genv.empty_genv F V p.prog_public)) b = some g at h'
+    exact h'
+  · intro hex
+    have hex' : ∃ b, find_symbol
+        (p.prog_defs.foldl Genv.add_global (Genv.empty_genv F V p.prog_public)) id = some b ∧
+        find_def (p.prog_defs.foldl Genv.add_global (Genv.empty_genv F V p.prog_public)) b = some g := by
+      change ∃ b, find_symbol (p.prog_defs.foldl Genv.add_global
+        (Genv.empty_genv F V p.prog_public)) id = some b ∧
+        find_def (p.prog_defs.foldl Genv.add_global
+        (Genv.empty_genv F V p.prog_public)) b = some g at hex
+      exact hex
+    have h' := h.mpr hex'
+    change PTree.get (show positive from id)
+      (p.prog_defs.foldl
+        (fun m idg => PTree.set (show positive from idg.1) idg.2 m)
+        (PTree.empty (globdef F V))) = some g at h'
+    exact h'
+
+end Genv
+end CompCert4Lean.Common.Globalenvs

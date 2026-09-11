@@ -1561,3 +1561,60 @@ theorem nextblock_freelist : nextblock_freelistStatement := by
           exact hnext.trans (nextblock_free_local m x.1 x.2.1 x.2.2 m1 hfm)
 
 end CompCert4Lean.Cfrontend.Cminorgenproof
+
+namespace CompCert4Lean.Cfrontend.Cminorgenproof
+
+open CompCert4Lean.Common.Memory
+
+private theorem free_range_perm_local (m : Mem.mem) (b : proofBlock) (lo hi : proofZ)
+    (m' : Mem.mem) (hfree : Mem.free m b lo hi = some m') :
+    Mem.range_perm m b lo hi CompCert4Lean.Common.Memtype.Cur
+      CompCert4Lean.Common.Memtype.Freeable := by
+  unfold Mem.free at hfree
+  cases hr : Mem.range_perm_dec m b lo hi
+      CompCert4Lean.Common.Memtype.Cur CompCert4Lean.Common.Memtype.Freeable with
+  | left hp =>
+      simp [hr] at hfree
+      cases hfree
+      exact hp
+  | right hn =>
+      simp [hr] at hfree
+      cases hfree.1
+
+theorem free_list_freeable : free_list_freeableStatement := by
+  intro l m m' hfree b lo hi hin
+  induction l generalizing m m' with
+  | nil =>
+      cases hin
+  | cons a rest ih =>
+      cases a with
+      | mk b0 zpair =>
+          cases zpair with
+          | mk lo0 hi0 =>
+              change (match Mem.free m b0 lo0 hi0 with
+                | none => none
+                | some m1 => Mem.free_list m1 rest) = some m' at hfree
+              cases hfm : Mem.free m b0 lo0 hi0 with
+              | none =>
+                  rw [hfm] at hfree
+                  cases hfree
+              | some m1 =>
+                  rw [hfm] at hfree
+                  cases (_root_.List.mem_cons.mp hin) with
+                  | inl heq =>
+                      injection heq with hb hlo
+                      subst b
+                      cases hlo
+                      exact free_range_perm_local m b0 lo hi m1 hfm
+                  | inr htail =>
+                      have hrest : Mem.free_list m1 rest = some m' := hfree
+                      have hrange : Mem.range_perm m1 b lo hi
+                          CompCert4Lean.Common.Memtype.Cur
+                          CompCert4Lean.Common.Memtype.Freeable :=
+                        ih m1 m' hrest htail
+                      intro ofs hof
+                      exact perm_of_free m m1 b0 lo0 hi0 hfm b ofs
+                        CompCert4Lean.Common.Memtype.Cur CompCert4Lean.Common.Memtype.Freeable
+                        (hrange ofs hof)
+
+end CompCert4Lean.Cfrontend.Cminorgenproof

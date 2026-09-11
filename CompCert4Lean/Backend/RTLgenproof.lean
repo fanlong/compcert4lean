@@ -1559,3 +1559,108 @@ theorem match_env_empty : match_env_emptyStatement := by
   · simpa [hmap] using (Val.lessdef_list_nil : Val.lessdef_list [] [])
 
 end CompCert4Lean.Backend.RTLgenproof
+
+namespace CompCert4Lean.Backend.RTLgenproof
+
+open CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.List
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Backend.RTLgen
+open CompCert4Lean.Backend.RTLgenspec
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Maps
+
+theorem match_set_locals : match_set_localsStatement := by
+  intro map1 s1 hmap il rl map2 s2 e le rs i hmatch hfresh hadd
+  induction il generalizing map1 s1 rl map2 s2 i with
+  | nil =>
+      change RTLgen.ret ([], map1) s1 = .OK (rl, map2) s2 i at hadd
+      simp [RTLgen.ret] at hadd
+      rcases hadd with ⟨⟨hrl, hmap2⟩, hs⟩
+      cases hrl
+      cases hmap2
+      cases hs
+      exact hmatch
+  | cons name names ih =>
+      change RTLgen.bind (RTLgen.add_vars map1 names)
+        (fun x => RTLgen.bind (RTLgen.add_var x.2 name)
+          (fun y => RTLgen.ret (y.1 :: x.1, y.2))) s1 =
+        .OK (rl, map2) s2 i at hadd
+      cases hrec : RTLgen.add_vars map1 names s1 with
+      | Error msg =>
+          simp [RTLgen.bind, hrec] at hadd
+      | OK x sm hincr =>
+          cases x with
+          | mk rlmid mapmid =>
+              simp [RTLgen.bind, hrec] at hadd
+              cases hvar : RTLgen.add_var mapmid name sm with
+              | Error msg =>
+                  simp [hvar] at hadd
+              | OK x sn hinc =>
+                  cases x with
+                  | mk rnew mapnew =>
+                      simp [RTLgen.ret, hvar] at hadd
+                      rcases hadd with ⟨⟨hrl, hmap2⟩, hs⟩
+                      have htail := ih map1 s1 hmap rlmid mapmid sm hincr
+                        hmatch hfresh hrec
+                      subst rl
+                      subst map2
+                      subst s2
+                      unfold RTLgen.add_var at hvar
+                      cases mapmid with
+                      | mk mapVars mapLetvars =>
+                          unfold PTree.t at mapVars
+                          unfold CompCert4Lean.Common.AST.ident at name
+                          unfold CompCert4Lean.Backend.Registers.reg at rnew
+                          change RTLgen.bind RTLgen.new_reg
+                            (fun r => RTLgen.ret (r,
+                              ({ map_vars := PTree.set name r mapVars, map_letvars := mapLetvars } : RTLgen.mapping))) sm =
+                            .OK (rnew, mapnew) sn hinc at hvar
+                          dsimp [RTLgen.bind] at hvar
+                          rw [show RTLgen.new_reg sm = .OK sm.st_nextreg _ _ from rfl] at hvar
+                          simp [RTLgen.ret] at hvar
+                          rcases hvar with ⟨hpair, hstate⟩
+                          cases hpair
+                          cases hstate
+                          constructor
+                          · intro id v henv
+                            by_cases hid : id = name
+                            · subst id
+                              dsimp [CompCert4Lean.Backend.Cminor.set_locals] at henv
+                              have hset := @PTree.getSet_equation val name name Vundef
+                                (show PTree.tree val from
+                                  (CompCert4Lean.Backend.Cminor.set_locals names e))
+                              rw [hset] at henv
+                              simp at henv
+                              cases henv
+                              refine ⟨sm.st_nextreg, ?_, ?_⟩
+                              · change PTree.get name
+                                  (PTree.set name sm.st_nextreg mapVars) = some sm.st_nextreg
+                                have hmapset := @PTree.getSet_equation _ name name
+                                  sm.st_nextreg mapVars
+                                rw [hmapset]
+                                simp
+                              · have hfresh_sm : reg_fresh sm.st_nextreg sm := by
+                                  intro hlt
+                                  exact Nat.lt_irrefl _ hlt
+                                have hfresh_new : reg_fresh sm.st_nextreg s1 :=
+                                  reg_fresh_decr sm.st_nextreg s1 sm hincr hfresh_sm
+                                rw [hfresh sm.st_nextreg hfresh_new]
+                                exact Val.lessdef_undef _
+                            · dsimp [CompCert4Lean.Backend.Cminor.set_locals] at henv
+                              have hset := @PTree.getSet_equation val id name Vundef
+                                (show PTree.tree val from
+                                  (CompCert4Lean.Backend.Cminor.set_locals names e))
+                              rw [hset] at henv
+                              simp [hid] at henv
+                              rcases htail.me_vars id v henv with ⟨r, hget, hless⟩
+                              refine ⟨r, ?_, hless⟩
+                              change PTree.get id (PTree.set name sm.st_nextreg mapVars) = some r
+                              have hmapset := @PTree.getSet_equation _ id name sm.st_nextreg mapVars
+                              rw [hmapset]
+                              simp [hid]
+                              exact hget
+                          · exact htail.me_letvars
+
+end CompCert4Lean.Backend.RTLgenproof

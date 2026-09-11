@@ -883,3 +883,21 @@ end R
 end ISet
 
 end CompCert4Lean.Lib.IntvSets
+
+namespace CompCert4Lean.Lib.IntvSets
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+namespace ISet
+
+theorem In_interval : In_intervalStatement := by
+  intro x l h
+  by_cases hlt : ZArith.BinInt.Z.ltb l h = true
+  · simp [interval, hlt, In, R.In]
+  · simp [interval, hlt, empty, In, R.In]
+    simp [ZArith.BinInt.Z.ltb, ZArith.BinInt.Z.lt, ZArith.BinInt.Z.le] at hlt ⊢
+    omega
+
+end ISet
+
+end CompCert4Lean.Lib.IntvSets

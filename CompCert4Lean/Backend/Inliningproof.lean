@@ -1372,3 +1372,202 @@ theorem agree_val_regs : agree_val_regsStatement := by
       · exact ih
 
 end CompCert4Lean.Backend.Inliningproof
+
+namespace CompCert4Lean.Backend.Inliningproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Backend.Inlining
+open CompCert4Lean.Backend.Inliningspec
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+
+theorem agree_set_reg : agree_set_regStatement := by
+  intro F ctx rs rs' r v v' hag hv hr
+  unfold agree_regs at *
+  rcases hag with ⟨hbelow, habove⟩
+  constructor
+  · intro r0 hr0
+    rw [@CompCert4Lean.Backend.Registers.Regmap.gsspec_proof val
+      (r0 : CompCert4Lean.Backend.Registers.reg)
+      (r : CompCert4Lean.Backend.Registers.reg) v rs,
+      @CompCert4Lean.Backend.Registers.Regmap.gsspec_proof val
+        (sreg ctx r0 : CompCert4Lean.Backend.Registers.reg)
+        (sreg ctx r : CompCert4Lean.Backend.Registers.reg) v' rs']
+    cases peq r0 r with
+    | left h =>
+        subst r0
+        cases hsr : peq (sreg ctx r) (sreg ctx r) with
+        | left _ => simpa [hsr] using hv
+        | right hne => exact False.elim (hne rfl)
+    | right h =>
+        have hshift : sreg ctx r0 ≠ sreg ctx r := by
+          exact CompCert4Lean.Backend.Inliningspec.shiftpos_diff r0 r ctx.dreg h
+        cases hsr : peq (sreg ctx r0) (sreg ctx r) with
+        | left hEq => exact False.elim (hshift hEq)
+        | right _ => simpa [hsr] using hbelow r0 hr0
+  · intro r0 hr0
+    rw [@CompCert4Lean.Backend.Registers.Regmap.gsspec_proof val
+      (r0 : CompCert4Lean.Backend.Registers.reg)
+      (r : CompCert4Lean.Backend.Registers.reg) v rs]
+    cases peq r0 r with
+    | left h =>
+        subst r0
+        have hfalse : False := by
+          have hbad : Plt ctx.mreg ctx.mreg :=
+            Plt_Ple_trans _ _ _ hr0 hr
+          exact Plt_strict _ hbad
+        exact hfalse.elim
+    | right h =>
+        simp [h]
+        exact habove r0 hr0
+
+end CompCert4Lean.Backend.Inliningproof
+
+namespace CompCert4Lean.Backend.Inliningproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Backend.Inlining
+open CompCert4Lean.Backend.Inliningspec
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+
+theorem agree_set_reg_undef : agree_set_reg_undefStatement := by
+  intro F ctx rs rs' r v' hag
+  unfold agree_regs at *
+  rcases hag with ⟨hbelow, habove⟩
+  constructor
+  · intro r0 hr0
+    rw [@CompCert4Lean.Backend.Registers.Regmap.gsspec_proof val
+      (r0 : CompCert4Lean.Backend.Registers.reg)
+      (r : CompCert4Lean.Backend.Registers.reg) Vundef rs,
+      @CompCert4Lean.Backend.Registers.Regmap.gsspec_proof val
+        (sreg ctx r0 : CompCert4Lean.Backend.Registers.reg)
+        (sreg ctx r : CompCert4Lean.Backend.Registers.reg) v' rs']
+    cases peq r0 r with
+    | left h =>
+        subst r0
+        cases hsr : peq (sreg ctx r) (sreg ctx r) with
+        | left _ => exact Val.val_inject_undef _ _
+        | right hne => exact False.elim (hne rfl)
+    | right h =>
+        have hshift : sreg ctx r0 ≠ sreg ctx r := by
+          exact CompCert4Lean.Backend.Inliningspec.shiftpos_diff r0 r ctx.dreg h
+        cases hsr : peq (sreg ctx r0) (sreg ctx r) with
+        | left hEq => exact False.elim (hshift hEq)
+        | right _ => simpa [hsr] using hbelow r0 hr0
+  · intro r0 hr0
+    rw [@CompCert4Lean.Backend.Registers.Regmap.gsspec_proof val
+      (r0 : CompCert4Lean.Backend.Registers.reg)
+      (r : CompCert4Lean.Backend.Registers.reg) Vundef rs]
+    cases peq r0 r with
+    | left h =>
+        subst r0
+        cases hsr : peq r r with
+        | left _ => rfl
+        | right hne => exact False.elim (hne rfl)
+    | right h =>
+        simpa [h] using habove r0 hr0
+
+end CompCert4Lean.Backend.Inliningproof
+
+namespace CompCert4Lean.Backend.Inliningproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Backend.Inlining
+open CompCert4Lean.Backend.Inliningspec
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+
+theorem agree_set_reg_undef' : agree_set_reg_undef'Statement := by
+  intro F ctx rs rs' r hag
+  unfold agree_regs at *
+  rcases hag with ⟨hbelow, habove⟩
+  constructor
+  · intro r0 hr0
+    rw [@CompCert4Lean.Backend.Registers.Regmap.gsspec_proof val
+      (r0 : CompCert4Lean.Backend.Registers.reg)
+      (r : CompCert4Lean.Backend.Registers.reg) Vundef rs]
+    cases peq r0 r with
+    | left h =>
+        subst r0
+        cases hsr : peq r r with
+        | left _ => exact Val.val_inject_undef _ _
+        | right hne => exact False.elim (hne rfl)
+    | right h =>
+        simpa [h] using hbelow r0 hr0
+  · intro r0 hr0
+    rw [@CompCert4Lean.Backend.Registers.Regmap.gsspec_proof val
+      (r0 : CompCert4Lean.Backend.Registers.reg)
+      (r : CompCert4Lean.Backend.Registers.reg) Vundef rs]
+    cases peq r0 r with
+    | left h =>
+        subst r0
+        cases hsr : peq r r with
+        | left _ => rfl
+        | right hne => exact False.elim (hne rfl)
+    | right h =>
+        simpa [h] using habove r0 hr0
+
+end CompCert4Lean.Backend.Inliningproof
+
+namespace CompCert4Lean.Backend.Inliningproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Backend.Inlining
+open CompCert4Lean.Backend.Inliningspec
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+
+theorem agree_regs_invariant : agree_regs_invariantStatement := by
+  intro F ctx rs rs1 rs2 hag hsame
+  unfold agree_regs at *
+  rcases hag with ⟨hbelow, habove⟩
+  constructor
+  · intro r0 hr0
+    have hupper : Plt (sreg ctx r0) (PArith.BinPos.Pos.add ctx.dreg ctx.mreg) := by
+      have hshift := CompCert4Lean.Backend.Inliningspec.shiftpos_below r0 ctx.dreg
+      have hadd1 : posToNat (PArith.BinPos.Pos.add r0 ctx.dreg) =
+          posToNat r0 + posToNat ctx.dreg := by
+        simpa [PArith.BinPos.Pos.add] using posToNat_posOfNat (by
+          have hrpos := posToNat_positive r0
+          have hdpos := posToNat_positive ctx.dreg
+          omega : 0 < posToNat r0 + posToNat ctx.dreg)
+      have hadd2 : posToNat (PArith.BinPos.Pos.add ctx.dreg ctx.mreg) =
+          posToNat ctx.dreg + posToNat ctx.mreg := by
+        simpa [PArith.BinPos.Pos.add] using posToNat_posOfNat (by
+          have hdpos := posToNat_positive ctx.dreg
+          have hmpos := posToNat_positive ctx.mreg
+          omega : 0 < posToNat ctx.dreg + posToNat ctx.mreg)
+      unfold Plt at hshift ⊢
+      change posToNat (shiftpos r0 ctx.dreg) <
+        posToNat (PArith.BinPos.Pos.add r0 ctx.dreg) at hshift
+      change posToNat (shiftpos r0 ctx.dreg) <
+        posToNat (PArith.BinPos.Pos.add ctx.dreg ctx.mreg)
+      rw [hadd1] at hshift
+      rw [hadd2]
+      change posToNat r0 ≤ posToNat ctx.mreg at hr0
+      omega
+    have hEq := hsame (sreg ctx r0)
+      (CompCert4Lean.Backend.Inliningspec.shiftpos_above r0 ctx.dreg) hupper
+    rw [hEq]
+    exact hbelow r0 hr0
+  · intro r0 hr0
+    exact habove r0 hr0
+
+end CompCert4Lean.Backend.Inliningproof

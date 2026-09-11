@@ -603,3 +603,24 @@ theorem Decidable_lt_Z_obligation_1 : Decidable_lt_Z_obligation_1Statement := by
   exact (Decidable_lt_Z x y).spec
 
 end CompCert4Lean.Lib.Decidableplus
+
+namespace CompCert4Lean.Lib.Decidableplus
+
+theorem Decidable_ge_Z_obligation_1 : Decidable_ge_Z_obligation_1Statement := by
+  intro x y
+  exact (Decidable_ge_Z x y).spec
+
+theorem Decidable_gt_Z_obligation_1 : Decidable_gt_Z_obligation_1Statement := by
+  intro x y
+  exact (Decidable_gt_Z x y).spec
+
+theorem Decidable_divides_obligation_1 : Decidable_divides_obligation_1Statement := by
+  intro x y
+  exact (Decidable_divides x y).spec
+
+theorem Decidable_forall_in_list_obligation_1 :
+    Decidable_forall_in_list_obligation_1Statement := by
+  intro A l P dP
+  exact (Decidable_forall_in_list A l P dP).spec
+
+end CompCert4Lean.Lib.Decidableplus

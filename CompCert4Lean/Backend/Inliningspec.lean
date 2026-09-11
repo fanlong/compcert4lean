@@ -929,3 +929,99 @@ theorem add_moves_unchanged : add_moves_unchangedStatement := by
                 omega
 
 end CompCert4Lean.Backend.Inliningspec
+
+namespace CompCert4Lean.Backend.Inliningspec
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Backend.Inlining
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+
+theorem add_moves_spec : add_moves_specStatement := by
+  have succ_formula : ∀ p : positive,
+      posToNat (PArith.BinPos.Pos.succ p) = posToNat p + 1 := by
+    intro p
+    induction p with
+    | xH => simp [PArith.BinPos.Pos.succ, posToNat]
+    | xI p ih => simp [PArith.BinPos.Pos.succ, posToNat, ih]; omega
+    | xO p => simp [PArith.BinPos.Pos.succ, posToNat]
+  intro srcs
+  induction srcs with
+  | nil =>
+      intro dsts pc2 s pc1 s' i c h hcode
+      cases dsts with
+      | nil =>
+          simp [add_moves, ret] at h
+          rcases h with ⟨rfl, rfl⟩
+          exact tr_moves.tr_moves_nil [] [] pc2 (Or.inl rfl)
+      | cons dst dsts =>
+          simp [add_moves, ret] at h
+          rcases h with ⟨rfl, rfl⟩
+          exact tr_moves.tr_moves_nil [] (dst :: dsts) pc2 (Or.inl rfl)
+  | cons src srcs ih =>
+      intro dsts pc2 s pc1 s' i c h hcode
+      cases dsts with
+      | nil =>
+          simp [add_moves, ret] at h
+          rcases h with ⟨rfl, rfl⟩
+          exact tr_moves.tr_moves_nil (src :: srcs) [] pc2 (Or.inr rfl)
+      | cons dst dsts =>
+          unfold add_moves at h
+          unfold CompCert4Lean.Backend.Inlining.bind at h
+          simp only [add_instr] at h
+          cases hstep : (add_moves srcs dsts s.st_nextnode
+              { st_nextreg := s.st_nextreg
+                st_nextnode := PArith.BinPos.Pos.succ s.st_nextnode
+                st_code := PTree.set s.st_nextnode
+                  (RTL.Iop X86.Op.Omove [src] dst pc2) s.st_code
+                st_stksize := s.st_stksize }) with
+          | R next s1 hinc =>
+              simp [hstep] at h
+              rcases h with ⟨rfl, rfl⟩
+              apply tr_moves.tr_moves_cons (pc1 := next)
+                (pc2 := s.st_nextnode) (pc3 := pc2)
+              · apply ih
+                  dsts s.st_nextnode
+                  { st_nextreg := s.st_nextreg
+                    st_nextnode := PArith.BinPos.Pos.succ s.st_nextnode
+                    st_code := PTree.set s.st_nextnode
+                      (RTL.Iop X86.Op.Omove [src] dst pc2) s.st_code
+                    st_stksize := s.st_stksize }
+                  next s1 hinc c hstep
+                intro pc hpc hlt
+                apply hcode pc
+                · change posToNat s.st_nextnode ≤ posToNat pc
+                  change posToNat (PArith.BinPos.Pos.succ s.st_nextnode) ≤
+                    posToNat pc at hpc
+                  rw [succ_formula] at hpc
+                  omega
+                · exact hlt
+              · have hlt_succ : Plt s.st_nextnode
+                    (PArith.BinPos.Pos.succ s.st_nextnode) := by
+                  change posToNat s.st_nextnode <
+                    posToNat (PArith.BinPos.Pos.succ s.st_nextnode)
+                  rw [succ_formula]
+                  omega
+                have hlt_final : Plt s.st_nextnode s1.st_nextnode := by
+                  have hinc' := hinc.2
+                  change posToNat (PArith.BinPos.Pos.succ s.st_nextnode) ≤
+                    posToNat s1.st_nextnode at hinc'
+                  change posToNat s.st_nextnode < posToNat s1.st_nextnode
+                  rw [succ_formula] at hinc'
+                  omega
+                have hc := hcode s.st_nextnode (by
+                  change posToNat s.st_nextnode ≤ posToNat s.st_nextnode
+                  omega) hlt_final
+                rw [hc]
+                have hunch := add_moves_unchanged srcs dsts s.st_nextnode
+                  { st_nextreg := s.st_nextreg
+                    st_nextnode := PArith.BinPos.Pos.succ s.st_nextnode
+                    st_code := PTree.set s.st_nextnode
+                      (RTL.Iop X86.Op.Omove [src] dst pc2) s.st_code
+                    st_stksize := s.st_stksize }
+                  next s1 hinc s.st_nextnode hstep (Or.inl hlt_succ)
+                rw [hunch]
+                exact PTree.gss s.st_nextnode
+                  (RTL.Iop X86.Op.Omove [src] dst pc2) s.st_code
+
+end CompCert4Lean.Backend.Inliningspec

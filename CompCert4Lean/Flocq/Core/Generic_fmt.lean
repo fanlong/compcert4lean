@@ -499,3 +499,17 @@ theorem valid_exp_large' : valid_exp_large'Statement := by
   exact (Int.not_lt_of_ge hnot) hflk
 
 end CompCert4Lean.Flocq.Core.Generic_fmt
+
+namespace CompCert4Lean.Flocq.Core.Generic_fmt
+
+theorem canonical_generic_format : ∀ ctx magnitude, canonical_generic_formatStatement ctx magnitude := by
+  intro ctx magnitude beta fexp x hx
+  unfold Exact.generic_format at hx
+  refine ⟨Float beta (Exact.Ztrunc ctx (Exact.scaled_mantissa ctx magnitude beta fexp x))
+    (Exact.cexp ctx magnitude beta fexp x), ?_, ?_⟩
+  · exact hx
+  · unfold Exact.canonical
+    rw [← hx]
+    rfl
+
+end CompCert4Lean.Flocq.Core.Generic_fmt
