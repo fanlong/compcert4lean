@@ -697,3 +697,15 @@ theorem ptree_mfold_obligation_1 : ptree_mfold_obligation_1Statement := by
         exact sincrCompose hP hstep
 
 end CompCert4Lean.Backend.Inlining
+
+namespace CompCert4Lean.Backend.Inlining
+
+theorem can_inline_obligation_1 : can_inline_obligation_1Statement := by
+  intro id
+  rfl
+
+theorem can_inline_obligation_2 : can_inline_obligation_2Statement := by
+  intro fenv id filtered f h
+  exact h.symm
+
+end CompCert4Lean.Backend.Inlining

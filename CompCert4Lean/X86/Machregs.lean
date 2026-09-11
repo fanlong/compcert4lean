@@ -216,3 +216,23 @@ def builtin_constraints : external_function → List builtin_arg_constraint
   | _ => []
 
 end CompCert4Lean.X86.Machregs
+
+namespace CompCert4Lean.X86.Machregs
+
+theorem all_mregs_complete : all_mregs_completeStatement := by
+  intro r
+  cases r <;> simp [all_mregs]
+
+namespace IndexedMreg
+
+theorem index_inj : index_injStatement := by
+  intro r1 r2 h
+  cases r1 <;> cases r2 <;>
+    first
+    | rfl
+    | exfalso
+      revert h
+      decide
+
+end IndexedMreg
+end CompCert4Lean.X86.Machregs

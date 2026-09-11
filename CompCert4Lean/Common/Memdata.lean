@@ -756,3 +756,57 @@ theorem align_chunk_pos : align_chunk_posStatement := by
   all_goals exact CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat_positive _
 
 end CompCert4Lean.Common.Memdata
+
+namespace CompCert4Lean.Common.Memdata
+
+theorem align_chunk_Mptr : align_chunk_MptrStatement := by
+  rfl
+
+theorem size_quantity_nat_pos : size_quantity_nat_posStatement := by
+  intro q
+  cases q with
+  | Q32 => exact ⟨3, rfl⟩
+  | Q64 => exact ⟨7, rfl⟩
+
+end CompCert4Lean.Common.Memdata
+
+namespace CompCert4Lean.Common.Memdata
+
+theorem align_size_chunk_divides : align_size_chunk_dividesStatement := by
+  intro chunk
+  cases chunk <;> simp [align_chunk, size_chunk, zDivide, z1, z2, z4, z8]
+  all_goals first
+    | exact ⟨z1, by rfl⟩
+    | exact ⟨z2, by rfl⟩
+
+end CompCert4Lean.Common.Memdata
+
+namespace CompCert4Lean.Common.Memdata
+
+theorem align_le_divides : align_le_dividesStatement := by
+  intro chunk1 chunk2 h
+  have hp1 : CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posOfNat 1) = 1 :=
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat_posOfNat (by omega)
+  have hp2 : CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posOfNat 2) = 2 :=
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat_posOfNat (by omega)
+  have hp4 : CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posOfNat 4) = 4 :=
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat_posOfNat (by omega)
+  have hp8 : CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posOfNat 8) = 8 :=
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat_posOfNat (by omega)
+  cases chunk1 <;> cases chunk2 <;>
+    simp [align_chunk, zLe, zDivide, z1, z2, z4, z8,
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.le,
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat,
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ,
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt, hp1, hp2, hp4, hp8] at h ⊢
+  all_goals first
+    | exact ⟨z1, by rfl⟩
+    | exact ⟨z2, by rfl⟩
+    | exact ⟨z4, by rfl⟩
+    | exact ⟨z8, by rfl⟩
+
+end CompCert4Lean.Common.Memdata

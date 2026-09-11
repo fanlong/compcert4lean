@@ -1910,3 +1910,118 @@ theorem align_type_chunk : align_type_chunkStatement := by
   cases ty <;> rfl
 
 end CompCert4Lean.Backend.Stackingproof
+
+namespace CompCert4Lean.Backend.Stackingproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Backend.Linear
+open CompCert4Lean.Backend.Lineartyping
+open CompCert4Lean.Backend.Locations
+open CompCert4Lean.Common.AST
+
+private theorem stackingproof_typealign_pos (ty : CompCert4Lean.Common.AST.typ) :
+    0 < CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+      (CompCert4Lean.Backend.Locations.typealign ty) := by
+  cases ty <;>
+    simp [CompCert4Lean.Backend.Locations.typealign,
+      ZArith.BinInt.Z.of_nat,
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+
+private theorem stackingproof_modulo_zero_of_divide
+    (a b : CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z)
+    (ha : 0 < CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ a)
+    (h : ZArith.BinInt.Z.divide a b) :
+    ZArith.BinInt.Z.modulo b a = ZArith.BinInt.Z.Z0 := by
+  apply CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective
+  simp only [ZArith.BinInt.Z.modulo,
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+  run_tac
+    Lean.Elab.Tactic.liftMetaTactic fun goal => goal.withContext do
+      let target ← goal.getType
+      let target' ← Lean.Meta.transform target (pre := fun e => do
+        match e.getAppFn.constName? with
+        | some name =>
+            if Lean.Name.isPrefixOf `_private name then
+              let e' ← Lean.Meta.withTransparency .all <| Lean.Meta.whnf e
+              return Lean.TransformStep.done e'
+            else
+              return Lean.TransformStep.continue
+        | none => return Lean.TransformStep.continue)
+      let goal ← Lean.Meta.withTransparency .all <| goal.change target'
+      return [goal]
+  generalize hdec : (Int.instDecidableEq
+    (CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ a) 0) = d
+  cases d with
+  | isTrue hz =>
+      omega
+  | isFalse hz =>
+      simp only [Decidable.rec]
+      have hdvd :
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ a ∣
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ b := by
+        rcases h with ⟨k, hk⟩
+        refine ⟨CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ k, ?_⟩
+        have hk' := congrArg CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ hk
+        simp only [ZArith.BinInt.Z.mul,
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt] at hk'
+        exact hk'
+      have ha0 :
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ a ≠ 0 := by omega
+      simp only [if_pos ha]
+      change (CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ b).emod
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ a) = 0
+      exact Int.emod_eq_zero_of_dvd hdvd
+
+theorem slot_outgoing_argument_valid : slot_outgoing_argument_validStatement := by
+  intro cfg f ofs ty sg h
+  have hacc := CompCert4Lean.Backend.Conventions.loc_arguments_acceptable_2
+    cfg sg (S Outgoing ofs ty) h
+  change ZArith.BinInt.Z.le ZArith.BinInt.Z.Z0 ofs ∧
+    ZArith.BinInt.Z.divide
+      (CompCert4Lean.Backend.Locations.typealign ty) ofs at hacc
+  have hnonneg := hacc.1
+  have hdiv := hacc.2
+  unfold CompCert4Lean.Backend.Lineartyping.slot_valid
+  run_tac
+    Lean.Elab.Tactic.liftMetaTactic fun goal => goal.withContext do
+      let target ← goal.getType
+      let target' ← Lean.Meta.transform target (pre := fun e => do
+        match e.getAppFn.constName? with
+        | some name =>
+            if Lean.Name.isPrefixOf `_private name then
+              let e' ← Lean.Meta.withTransparency .all <| Lean.Meta.whnf e
+              return Lean.TransformStep.done e'
+            else
+              return Lean.TransformStep.continue
+        | none => return Lean.TransformStep.continue)
+      let goal ← Lean.Meta.withTransparency .all <| goal.change target'
+      return [goal]
+  simp only [Bool.and_eq_true]
+  constructor
+  · generalize hle : CompCert4Lean.Lib.Coqlib.zle
+      ZArith.BinInt.Z.Z0 ofs = d
+    cases d with
+    | left hp => rfl
+    | right hp =>
+        change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+            ZArith.BinInt.Z.Z0 ≤
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ ofs at hnonneg
+        change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ ofs <
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+              ZArith.BinInt.Z.Z0 at hp
+        omega
+  · have hmod : ZArith.BinInt.Z.modulo ofs
+        (CompCert4Lean.Backend.Locations.typealign ty) =
+          ZArith.BinInt.Z.Z0 := by
+      apply stackingproof_modulo_zero_of_divide
+      · exact stackingproof_typealign_pos ty
+      · exact hdiv
+    generalize hz : CompCert4Lean.Lib.Coqlib.zeq
+        (ZArith.BinInt.Z.modulo ofs
+          (CompCert4Lean.Backend.Locations.typealign ty))
+        ZArith.BinInt.Z.Z0 = d
+    cases d with
+    | left hp => rfl
+    | right hp => exact False.elim (hp hmod)
+
+end CompCert4Lean.Backend.Stackingproof

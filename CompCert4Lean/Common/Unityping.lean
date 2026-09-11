@@ -631,3 +631,192 @@ theorem set_sound : set_soundStatement := by
     · cases hset
 
 end CompCert4Lean.Common.Unityping.UniSolver
+
+namespace CompCert4Lean.Common.Unityping.UniSolver
+
+open CompCert4Lean.Foundation.Logic
+open CompCert4Lean.Foundation.Logic.Rocq.Coq.Init.Datatypes
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.Common.Errors
+
+private theorem set_list_incr_aux (T : TYPE_ALGEBRA) :
+    ∀ (te : typassign T) (xs : List positive) (tys : List T.t)
+      (e e' : typenv T),
+      set_list T e xs tys = OK e' → satisf T te e' → satisf T te e := by
+  intro te xs tys e e' h hs
+  induction xs generalizing tys e e' with
+  | nil =>
+      cases tys with
+      | nil =>
+          cases h
+          exact hs
+      | cons ty tys =>
+          simp [set_list] at h
+  | cons x xs ih =>
+      cases tys with
+      | nil =>
+          simp [set_list] at h
+      | cons ty tys =>
+          simp only [set_list] at h
+          split at h
+          · cases h
+          · rename_i e1 hset
+            have htail := ih (tys := tys) (e := e1) (e' := e') h hs
+            exact set_incr T te x ty e e1 hset htail
+
+theorem set_list_incr : set_list_incrStatement := by
+  intro T te xs tys e e' h hs
+  exact set_list_incr_aux T te xs tys e e' h hs
+
+theorem set_list_sound : set_list_soundStatement := by
+  intro T te xs tys e e' h hs
+  induction xs generalizing tys e e' with
+  | nil =>
+      cases tys with
+      | nil =>
+          simp [set_list] at h
+          cases h
+          rfl
+      | cons ty tys =>
+          simp [set_list] at h
+  | cons x xs ih =>
+      cases tys with
+      | nil =>
+          simp [set_list] at h
+      | cons ty tys =>
+          simp only [set_list] at h
+          split at h
+          · cases h
+          · rename_i e1 hset
+            change set T e x ty = OK e1 at hset
+            have hs1 : satisf T te e1 :=
+              set_list_incr_aux T te xs tys e1 e' h hs
+            have htail := ih (tys := tys) (e := e1) (e' := e') h hs
+            have hx : te x = ty := set_sound T te x ty e e1 hset hs1
+            simp only [List.map] at htail ⊢
+            rw [hx, htail]
+
+private theorem pget_set_same {A : Type} (i : positive) (v : A) (m : PTree.t A) :
+    PTree.get i (PTree.set i v m) = some v := by
+  have h := CompCert4Lean.Lib.Maps.PTree.gsspec_proof i i v m
+  cases hpeq : peq i i with
+  | left hEq => simpa [hpeq] using h
+  | right hNe => exact False.elim (hNe rfl)
+
+private theorem pget_set_other {A : Type} (i j : positive) (v : A) (m : PTree.t A)
+    (hne : i ≠ j) : PTree.get i (PTree.set j v m) = PTree.get i m := by
+  have h := CompCert4Lean.Lib.Maps.PTree.gsspec_proof i j v m
+  cases hpeq : peq i j with
+  | left hEq => exact False.elim (hne hEq)
+  | right hNe => simpa [hpeq] using h
+
+theorem move_incr : move_incrStatement := by
+  intro T te e r1 r2 e' changed h hs
+  unfold move at h
+  cases hp : peq r1 r2 with
+  | left hEq =>
+      simp [hp] at h
+      rcases h with ⟨rfl, rfl⟩
+      exact hs
+  | right hNe =>
+      cases h1 : PTree.get r1 (te_typ e) with
+      | none =>
+          cases h2 : PTree.get r2 (te_typ e) with
+          | none =>
+              rw [hp, h1, h2] at h
+              cases h
+              constructor
+              · intro x ty hx
+                exact hs.1 x ty hx
+              · intro x y hxy
+                exact hs.2 x y (List.mem_cons_of_mem _ hxy)
+          | some ty2 =>
+              rw [hp, h1, h2] at h
+              cases h
+              constructor
+              · intro x ty hx
+                by_cases hxr : x = r1
+                · subst x
+                  rw [h1] at hx
+                  cases hx
+                · exact hs.1 x ty (by
+                    rw [pget_set_other x r1 ty2 (te_typ e) hxr]
+                    exact hx)
+              · intro x y hxy
+                exact hs.2 x y hxy
+      | some ty1 =>
+          cases h2 : PTree.get r2 (te_typ e) with
+          | none =>
+              rw [hp, h1, h2] at h
+              cases h
+              constructor
+              · intro x ty hx
+                by_cases hxr : x = r2
+                · subst x
+                  rw [h2] at hx
+                  cases hx
+                · exact hs.1 x ty (by
+                    rw [pget_set_other x r2 ty1 (te_typ e) hxr]
+                    exact hx)
+              · intro x y hxy
+                exact hs.2 x y hxy
+          | some ty2 =>
+              rw [hp, h1, h2] at h
+              cases hEq : T.eq ty1 ty2 with
+              | left hty =>
+                  simp [hEq] at h
+                  rcases h with ⟨rfl, rfl⟩
+                  exact hs
+              | right hty =>
+                  simp [hEq] at h
+
+theorem move_sound : move_soundStatement := by
+  intro T te e r1 r2 e' changed h hs
+  unfold move at h
+  cases hp : peq r1 r2 with
+  | left hEq =>
+      simp [hp] at h
+      cases h
+      exact hEq ▸ rfl
+  | right hNe =>
+      cases h1 : PTree.get r1 (te_typ e) with
+      | none =>
+          cases h2 : PTree.get r2 (te_typ e) with
+          | none =>
+              rw [hp, h1, h2] at h
+              cases h
+              exact hs.2 r1 r2 (List.mem_cons_self)
+          | some ty2 =>
+              rw [hp, h1, h2] at h
+              cases h
+              have hu1 := pget_set_same r1 ty2 (te_typ e)
+              have hu2 := pget_set_other r2 r1 ty2 (te_typ e) hNe.symm
+              have htr1 : te r1 = ty2 := hs.1 r1 ty2 hu1
+              have htr2 : te r2 = ty2 := hs.1 r2 ty2 (hu2.trans h2)
+              exact htr1.trans htr2.symm
+      | some ty1 =>
+          cases h2 : PTree.get r2 (te_typ e) with
+          | none =>
+              rw [hp, h1, h2] at h
+              cases h
+              have hu1 := pget_set_other r1 r2 ty1 (te_typ e) hNe
+              have hu2 := pget_set_same r2 ty1 (te_typ e)
+              have htr1 : te r1 = ty1 := hs.1 r1 ty1 (hu1.trans h1)
+              have htr2 : te r2 = ty1 := hs.1 r2 ty1 hu2
+              exact htr1.trans htr2.symm
+          | some ty2 =>
+              rw [hp, h1, h2] at h
+              cases hEq : T.eq ty1 ty2 with
+              | left hty =>
+                  simp [hEq] at h
+                  have he' : e' = e := h.2.symm
+                  subst e'
+                  have htr1 := hs.1 r1 ty1 h1
+                  have htr2 := hs.1 r2 ty2 h2
+                  exact htr1.trans (hty.trans htr2.symm)
+              | right hty =>
+                  simp [hEq] at h
+
+end CompCert4Lean.Common.Unityping.UniSolver

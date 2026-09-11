@@ -174,3 +174,128 @@ theorem Rnd_UP_pt_monotone : Rnd_UP_pt_monotoneStatement := by
   exact Hxmin g Hg (ctx.certificate.orderedField.le_trans x y g Hxy Hyg)
 
 end CompCert4Lean.Flocq.Core.Round_pred
+
+namespace CompCert4Lean.Flocq.Core.Round_pred
+
+theorem Rnd_UP_pt_unique : Rnd_UP_pt_uniqueStatement := by
+  intro ctx F x f1 f2 H1 H2
+  exact round_unique ctx (CompCert4Lean.Flocq.Core.Defs.Exact.Rnd_UP_pt ctx F)
+    (Rnd_UP_pt_monotone ctx F) x f1 f2 H1 H2
+
+theorem Rnd_DN_UP_pt_split : Rnd_DN_UP_pt_splitStatement := by
+  intro ctx F x d u Hd Hu f Hf
+  rcases ctx.certificate.total_order f x with h | h
+  · rcases h with h | h
+    · left
+      exact Hd.2.2 f Hf
+        ((ctx.certificate.orderedField.lt_iff_le_not_le f x).mp h).1
+    · left
+      exact Hd.2.2 f Hf (h ▸ ctx.certificate.orderedField.le_refl x)
+  · right
+    exact Hu.2.2 f Hf
+      ((ctx.certificate.orderedField.lt_iff_le_not_le x f).mp h).1
+
+private theorem round_add_left_cancel (ctx : ExactRealContext)
+    (p q r : ExactSpec.R ctx)
+    (h : ctx.spec.add p q = ctx.spec.add p r) : q = r := by
+  have h' := congrArg (fun z => ctx.spec.add (ctx.spec.neg p) z) h
+  have hl : ctx.spec.add (ctx.spec.neg p) (ctx.spec.add p q) = q := by
+    rw [← ctx.certificate.orderedField.add_assoc,
+      ctx.certificate.orderedField.neg_add_cancel,
+      ctx.certificate.orderedField.zero_add]
+  have hr : ctx.spec.add (ctx.spec.neg p) (ctx.spec.add p r) = r := by
+    rw [← ctx.certificate.orderedField.add_assoc,
+      ctx.certificate.orderedField.neg_add_cancel,
+      ctx.certificate.orderedField.zero_add]
+  exact hl.symm.trans (h'.trans hr)
+
+private theorem round_neg_neg (ctx : ExactRealContext) (x : ExactSpec.R ctx) :
+    ctx.spec.neg (ctx.spec.neg x) = x := by
+  apply round_add_left_cancel ctx (ctx.spec.neg x)
+  calc
+    ctx.spec.add (ctx.spec.neg x) (ctx.spec.neg (ctx.spec.neg x)) =
+        ctx.spec.add (ctx.spec.neg (ctx.spec.neg x)) (ctx.spec.neg x) :=
+      ctx.certificate.orderedField.add_comm _ _
+    _ = ctx.spec.zero := ctx.certificate.orderedField.neg_add_cancel _
+    _ = ctx.spec.add (ctx.spec.neg x) x :=
+      (ctx.certificate.orderedField.neg_add_cancel _).symm
+
+private theorem round_neg_lt_reverse (ctx : ExactRealContext)
+    (a b : ExactSpec.R ctx)
+    (h : ctx.spec.lt (ctx.spec.neg a) (ctx.spec.neg b)) :
+    ctx.spec.lt b a := by
+  have h1 := ctx.certificate.orderedField.add_lt_compat_l
+    b (ctx.spec.neg a) (ctx.spec.neg b) h
+  have hbb : ctx.spec.add b (ctx.spec.neg b) = ctx.spec.zero := by
+    rw [ctx.certificate.orderedField.add_comm,
+      ctx.certificate.orderedField.neg_add_cancel]
+  rw [hbb] at h1
+  have h2 := ctx.certificate.orderedField.add_lt_compat_l
+    a (ctx.spec.add b (ctx.spec.neg a)) ctx.spec.zero h1
+  have haa : ctx.spec.add a (ctx.spec.neg a) = ctx.spec.zero := by
+    rw [ctx.certificate.orderedField.add_comm,
+      ctx.certificate.orderedField.neg_add_cancel]
+  have hleft : ctx.spec.add a (ctx.spec.add b (ctx.spec.neg a)) = b := by
+    calc
+      ctx.spec.add a (ctx.spec.add b (ctx.spec.neg a)) =
+          ctx.spec.add (ctx.spec.add a b) (ctx.spec.neg a) :=
+        (ctx.certificate.orderedField.add_assoc _ _ _).symm
+      _ = ctx.spec.add (ctx.spec.add b a) (ctx.spec.neg a) := by
+        rw [ctx.certificate.orderedField.add_comm a b]
+      _ = ctx.spec.add b (ctx.spec.add a (ctx.spec.neg a)) :=
+        ctx.certificate.orderedField.add_assoc _ _ _
+      _ = ctx.spec.add b ctx.spec.zero := by rw [haa]
+      _ = b := ctx.certificate.orderedField.add_zero _
+  have hright : ctx.spec.add a ctx.spec.zero = a :=
+    ctx.certificate.orderedField.add_zero _
+  rw [hleft, hright] at h2
+  exact h2
+
+private theorem round_neg_le_contravar (ctx : ExactRealContext)
+    (a b : ExactSpec.R ctx)
+    (h : ctx.spec.le a b) :
+    ctx.spec.le (ctx.spec.neg b) (ctx.spec.neg a) := by
+  rcases ctx.certificate.total_order (ctx.spec.neg b) (ctx.spec.neg a) with h' | h'
+  · rcases h' with h' | h'
+    · exact (ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp h' |>.1
+    · rw [h']
+      exact ctx.certificate.orderedField.le_refl _
+  · have hba : ctx.spec.lt b a := round_neg_lt_reverse ctx _ _ h'
+    have hfalse : False := ((ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp hba).2 h
+    exact hfalse.elim
+
+private theorem round_neg_le_cancel (ctx : ExactRealContext)
+    (a b : ExactSpec.R ctx)
+    (h : ctx.spec.le (ctx.spec.neg b) (ctx.spec.neg a)) :
+    ctx.spec.le a b := by
+  have h' := round_neg_le_contravar ctx (ctx.spec.neg b) (ctx.spec.neg a) h
+  rw [round_neg_neg ctx a, round_neg_neg ctx b] at h'
+  exact h'
+
+theorem Rnd_UP_pt_opp : Rnd_UP_pt_oppStatement := by
+  intro ctx F HF x f H
+  refine ⟨HF f H.1, round_neg_le_contravar ctx f x H.2.1, ?_⟩
+  intro g Hg Hxg
+  have hnegx : ctx.spec.le (ctx.spec.neg g) x := by
+    have h' := round_neg_le_contravar ctx (ctx.spec.neg x) g Hxg
+    rw [round_neg_neg ctx x] at h'
+    exact h'
+  have hgf := H.2.2 (ctx.spec.neg g) (HF g Hg) hnegx
+  have h' := round_neg_le_contravar ctx (ctx.spec.neg g) f hgf
+  rw [round_neg_neg ctx g] at h'
+  exact h'
+
+theorem Rnd_DN_pt_opp : Rnd_DN_pt_oppStatement := by
+  intro ctx F HF x f H
+  refine ⟨HF f H.1, round_neg_le_contravar ctx x f H.2.1, ?_⟩
+  intro g Hg Hgx
+  have hnegx : ctx.spec.le x (ctx.spec.neg g) := by
+    have h' := round_neg_le_contravar ctx g (ctx.spec.neg x) Hgx
+    rw [round_neg_neg ctx x] at h'
+    exact h'
+  have hfg := H.2.2 (ctx.spec.neg g) (HF g Hg) hnegx
+  have h' := round_neg_le_contravar ctx f (ctx.spec.neg g) hfg
+  rw [round_neg_neg ctx g] at h'
+  exact h'
+
+end CompCert4Lean.Flocq.Core.Round_pred

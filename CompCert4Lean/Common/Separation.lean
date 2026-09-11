@@ -854,3 +854,57 @@ theorem sepconj_obligation_2 : sepconj_obligation_2Statement := by
   exact (sepconj P Q).m_valid m b ofs hpred hfoot
 
 end CompCert4Lean.Common.Separation
+
+namespace CompCert4Lean.Common.Separation
+
+theorem sep_comm : sep_commStatement := by
+  intro P Q
+  constructor
+  · exact sep_comm_1 P Q
+  · exact sep_comm_1 Q P
+
+theorem sep_assoc_1 : sep_assoc_1Statement := by
+  intro P Q R
+  constructor
+  · intro m h
+    refine ⟨h.1.1, ⟨h.1.2.1, h.2.1, ?_⟩, ?_⟩
+    · intro b ofs hQ hR
+      exact h.2.2 b ofs (Or.inr hQ) hR
+    · intro b ofs hP hQR
+      cases hQR with
+      | inl hQ => exact h.1.2.2 b ofs hP hQ
+      | inr hR => exact h.2.2 b ofs (Or.inl hP) hR
+  · intro b ofs hfoot
+    cases hfoot with
+    | inl hP => exact Or.inl (Or.inl hP)
+    | inr hQR =>
+        cases hQR with
+        | inl hQ => exact Or.inl (Or.inr hQ)
+        | inr hR => exact Or.inr hR
+
+theorem sep_assoc_2 : sep_assoc_2Statement := by
+  intro P Q R
+  constructor
+  · intro m h
+    refine ⟨⟨h.1, h.2.1.1, ?_⟩, h.2.1.2.1, ?_⟩
+    · intro b ofs hP hQ
+      exact h.2.2 b ofs hP (Or.inl hQ)
+    · intro b ofs hPQ hR
+      cases hPQ with
+      | inl hP => exact h.2.2 b ofs hP (Or.inr hR)
+      | inr hQ => exact h.2.1.2.2 b ofs hQ hR
+  · intro b ofs hfoot
+    cases hfoot with
+    | inl hPQ =>
+        cases hPQ with
+        | inl hP => exact Or.inl hP
+        | inr hQ => exact Or.inr (Or.inl hQ)
+    | inr hR => exact Or.inr (Or.inr hR)
+
+theorem sep_assoc : sep_assocStatement := by
+  intro P Q R
+  constructor
+  · exact sep_assoc_1 P Q R
+  · exact sep_assoc_2 P Q R
+
+end CompCert4Lean.Common.Separation

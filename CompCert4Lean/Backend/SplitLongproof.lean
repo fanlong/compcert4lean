@@ -805,3 +805,34 @@ theorem eval_helper_2 : eval_helper_2Statement := by
     hdecl hlookup hsem
 
 end CompCert4Lean.Backend.SplitLongproof
+
+namespace CompCert4Lean.Backend.SplitLongproof
+
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+variable
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+
+theorem eval_builtin_2 : eval_builtin_2Statement := by
+  intro xi prog sp e m bf le id sg arg1 arg2 varg1 varg2 vres
+    harg1 harg2 hlookup hsem
+  refine CompCert4Lean.Backend.CminorSel.eval_expr.builtin (le := le)
+    (ef := .EF_builtin id sg)
+    (al := CompCert4Lean.Backend.CminorSel.exprlist.Econs arg1
+      (CompCert4Lean.Backend.CminorSel.exprlist.Econs arg2
+        CompCert4Lean.Backend.CminorSel.exprlist.Enil))
+    (vl := [varg1, varg2]) (v := vres) ?_ ?_
+  · exact CompCert4Lean.Backend.CminorSel.eval_exprlist.cons le arg1
+      (CompCert4Lean.Backend.CminorSel.exprlist.Econs arg2
+        CompCert4Lean.Backend.CminorSel.exprlist.Enil) varg1 [varg2] harg1
+      (CompCert4Lean.Backend.CminorSel.eval_exprlist.cons le arg2
+        CompCert4Lean.Backend.CminorSel.exprlist.Enil varg2 [] harg2
+        (CompCert4Lean.Backend.CminorSel.eval_exprlist.nil le))
+  · simpa [CompCert4Lean.Common.Events.external_call,
+      CompCert4Lean.Common.Events.builtin_or_external_sem, hlookup] using
+      (CompCert4Lean.Common.Events.known_builtin_sem_intro [varg1, varg2] vres m hsem)
+
+end CompCert4Lean.Backend.SplitLongproof

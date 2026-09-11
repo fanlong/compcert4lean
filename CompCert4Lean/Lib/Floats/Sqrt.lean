@@ -95,3 +95,10 @@ abbrev rawSqrt_eq_model : Prop := rawSqrt_eq_modelStatement
 end Sqrt
 
 end CompCert4Lean.Lib.Floats
+
+namespace CompCert4Lean.Lib.Floats.Sqrt
+
+theorem rawSqrt_eq_model_proof : rawSqrt_eq_modelStatement := by
+  constructor <;> intro x <;> rfl
+
+end CompCert4Lean.Lib.Floats.Sqrt

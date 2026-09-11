@@ -572,3 +572,47 @@ theorem Loc.diff_not_eq : Loc.diff_not_eqStatement := by
   exact Loc.same_not_diff l1 h
 
 end CompCert4Lean.Backend.Locations
+
+namespace CompCert4Lean.Backend.Locations
+
+theorem Locmap.gss : Locmap.gssStatement := by
+  intro l v m
+  unfold Locmap.set
+  cases Loc.eq l l with
+  | left h => cases l <;> rfl
+  | right h => exact (h rfl).elim
+
+theorem Locmap.getpair_exten : Locmap.getpair_extenStatement := by
+  intro p ls1 ls2 h
+  cases p with
+  | One l =>
+      exact h l (by simp [CompCert4Lean.Common.AST.regs_of_rpair])
+  | Twolong l1 l2 =>
+      unfold Locmap.getpair
+      change CompCert4Lean.Common.Values.Val.longofwords (ls2 l1) (ls2 l2) =
+        CompCert4Lean.Common.Values.Val.longofwords (ls1 l1) (ls1 l2)
+      rw [h l1 (by simp [CompCert4Lean.Common.AST.regs_of_rpair]),
+        h l2 (by simp [CompCert4Lean.Common.AST.regs_of_rpair])]
+
+theorem Locmap.gpo : Locmap.gpoStatement := by
+  intro p v m l h
+  cases p with
+  | One r =>
+      change Locmap.set (R r) v m l = m l
+      exact Locmap.gso _ _ _ _ (Loc.diff_sym _ _ h)
+  | Twolong hi lo =>
+      rcases h with ⟨hhi, hlo⟩
+      change Locmap.set (R lo) (CompCert4Lean.Common.Values.Val.loword v)
+          (Locmap.set (R hi) (CompCert4Lean.Common.Values.Val.hiword v) m) l = m l
+      calc
+        Locmap.set (R lo) (CompCert4Lean.Common.Values.Val.loword v)
+            (Locmap.set (R hi) (CompCert4Lean.Common.Values.Val.hiword v) m) l =
+            Locmap.set (R hi) (CompCert4Lean.Common.Values.Val.hiword v) m l :=
+          Locmap.gso _ _ _ _ (Loc.diff_sym _ _ hlo)
+        _ = m l := Locmap.gso _ _ _ _ (Loc.diff_sym _ _ hhi)
+
+theorem OrderedLoc.eq_sym : OrderedLoc.eq_symStatement := by
+  intro x y h
+  exact h.symm
+
+end CompCert4Lean.Backend.Locations
