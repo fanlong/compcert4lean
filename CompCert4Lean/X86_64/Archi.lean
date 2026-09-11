@@ -84,3 +84,19 @@ def win64 (cfg : Config.CompilerConfig) : Bool :=
   | .windows => true
 
 end CompCert4Lean.X86_64.Archi
+
+namespace CompCert4Lean.X86_64.Archi
+
+theorem splitlong_ptr32 : splitlong_ptr32Statement := by
+  unfold splitlong_ptr32Statement splitlong ptr64
+  decide
+
+theorem choose_nan_64_idem : choose_nan_64_idemStatement := by
+  intro n
+  rfl
+
+theorem choose_nan_32_idem : choose_nan_32_idemStatement := by
+  intro n
+  rfl
+
+end CompCert4Lean.X86_64.Archi

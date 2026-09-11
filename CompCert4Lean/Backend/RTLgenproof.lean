@@ -1417,3 +1417,114 @@ theorem match_env_invariant : match_env_invariantStatement := by
       (rs := rs) (rs' := rs') hmatch.me_letvars (fun r hr => hstable r (Or.inr hr))
 
 end CompCert4Lean.Backend.RTLgenproof
+
+namespace CompCert4Lean.Backend.RTLgenproof
+
+open CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.List
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Backend.RTLgen
+open CompCert4Lean.Backend.RTLgenspec
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Maps
+
+private theorem rtlgenproof_lessdef_list_invariant_update
+    (le : List val) (rl : List reg) (rs rs' : Regmap.t val)
+    (hless : Val.lessdef_list le (rl.map (fun r => Regmap.get r rs)))
+    (hstable : ∀ r, r ∈ rl → Regmap.get r rs' = Regmap.get r rs) :
+    Val.lessdef_list le (rl.map (fun r => Regmap.get r rs')) := by
+  induction rl generalizing le with
+  | nil =>
+      cases hless
+      exact Val.lessdef_list_nil
+  | cons r rl ih =>
+      cases le with
+      | nil => cases hless
+      | cons v le =>
+          cases hless with
+          | lessdef_list_cons _ _ _ _ hhead htail =>
+              refine Val.lessdef_list_cons _ _ _ _ ?_ ?_
+              · change Val.lessdef v (Regmap.get r rs')
+                rw [hstable r (by simp)]
+                exact hhead
+              · exact ih le htail (fun r hr => hstable r (by simp [hr]))
+
+private theorem rtlgenproof_match_env_invariant_update
+    (map : RTLgen.mapping) (e : CompCert4Lean.Backend.Cminor.env) (le : letenv)
+    (rs rs' : RTL.regset) : match_env map e le rs →
+    (∀ r, reg_in_map map r → Regmap.get r rs' = Regmap.get r rs) →
+    match_env map e le rs' := by
+  intro hmatch hstable
+  constructor
+  · intro id v henv
+    rcases hmatch.me_vars id v henv with ⟨r, hget, hless⟩
+    refine ⟨r, hget, ?_⟩
+    rw [hstable r (Or.inl ⟨id, hget⟩)]
+    exact hless
+  · exact rtlgenproof_lessdef_list_invariant_update (le := le) (rl := map.map_letvars)
+      (rs := rs) (rs' := rs') hmatch.me_letvars (fun r hr => hstable r (Or.inr hr))
+
+theorem match_env_update_temp : match_env_update_tempStatement := by
+  intro map e le rs r v hmatch hfresh
+  apply rtlgenproof_match_env_invariant_update map e le rs (Regmap.set r v rs) hmatch
+  intro r' hin
+  have hne : r' ≠ r := by
+    intro heq
+    subst r'
+    exact hfresh hin
+  exact Regmap.gso_proof val r' r v rs hne
+
+theorem match_env_update_var : match_env_update_varStatement := by
+  intro map e le rs id r v tv hless hwf hmap hmatch
+  constructor
+  · intro id' v' henv
+    unfold CompCert4Lean.Common.AST.ident at id
+    unfold CompCert4Lean.Backend.Cminor.env at e
+    unfold PTree.t at e
+    change PTree.get id' (PTree.set id v e) = some v' at henv
+    rw [PTree.getSet_equation] at henv
+    by_cases hid : id' = id
+    · subst id'
+      simp at henv
+      cases henv
+      refine ⟨r, hmap, ?_⟩
+      rw [Regmap.gss_proof val r tv rs]
+      exact hless
+    · simp [hid] at henv
+      rcases hmatch.me_vars id' v' henv with ⟨r', hget, hless'⟩
+      refine ⟨r', hget, ?_⟩
+      have hne : r' ≠ r := by
+        intro heq
+        subst r'
+        exact hid (hwf.map_wf_inj id' id r hget hmap)
+      rw [Regmap.gso_proof val r' r tv rs hne]
+      exact hless'
+  · apply rtlgenproof_lessdef_list_invariant_update (le := le) (rl := map.map_letvars)
+      (rs := rs) (rs' := Regmap.set r tv rs) hmatch.me_letvars
+    intro r' hmem
+    have hne : r' ≠ r := by
+      intro heq
+      subst r'
+      exact hwf.map_wf_disj id r hmap hmem
+    exact Regmap.gso_proof val r' r tv rs hne
+
+theorem match_env_update_dest : match_env_update_destStatement := by
+  intro map e le rs dst r v tv hless hwf hrok hmatch
+  cases hrok with
+  | reg_map_ok_novar hfresh =>
+      exact match_env_update_temp map e le rs r tv hmatch hfresh
+  | reg_map_ok_somevar id hmap =>
+      exact match_env_update_var map e le rs id r v tv hless hwf hmap hmatch
+
+theorem match_env_update_res : match_env_update_resStatement := by
+  intro map res v e le tres tv rs hless hwf htr hmatch
+  cases htr with
+  | tr_builtin_res_var id r hmap =>
+      exact match_env_update_var map e le rs id r v tv hless hwf hmap hmatch
+  | tr_builtin_res_none =>
+      exact hmatch
+  | tr_builtin_res_fresh r hfresh =>
+      exact match_env_update_temp map e le rs r tv hmatch hfresh
+
+end CompCert4Lean.Backend.RTLgenproof

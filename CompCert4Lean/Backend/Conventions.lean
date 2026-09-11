@@ -745,3 +745,126 @@ theorem loc_arguments_acceptable_2 : loc_arguments_acceptable_2Statement := by
       conv_zle_zero_refl (conv_zdivide_zero convZ2)
 
 end CompCert4Lean.Backend.Conventions
+
+namespace CompCert4Lean.Backend.Conventions
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Backend.Locations
+open CompCert4Lean.X86.Machregs
+
+private theorem conv_loc_result_caller_save (cfg : CompilerConfig) (sg : signature) :
+    forall_rpair (fun r => isCalleeSave cfg r = false) (locResult sg) := by
+  change forall_rpair (fun r => isCalleeSave cfg r = false)
+    (CompCert4Lean.X86.Conventions1.loc_result sg)
+  unfold CompCert4Lean.X86.Conventions1.loc_result
+  simp only [CompCert4Lean.X86_64.Archi.ptr64, ↓reduceIte]
+  unfold CompCert4Lean.X86.Conventions1.loc_result_64
+  cases hres : CompCert4Lean.Common.AST.proj_sig_res sg <;>
+    simp [hres, CompCert4Lean.Common.AST.forall_rpair,
+      CompCert4Lean.X86.Conventions1.is_callee_save]
+
+private theorem conv_setpair_callee_save
+    (cfg : CompilerConfig) (p : rpair mreg) (v : val) (rs : Locmap.t)
+    (l : loc) (hp : forall_rpair (fun r => isCalleeSave cfg r = false) p)
+    (hl : match l with
+      | .R r => isCalleeSave cfg r = true
+      | .S _ _ _ => True) :
+    Locmap.setpair p v rs l = rs l := by
+  have hdiff : ∀ r, isCalleeSave cfg r = false → Loc.diff (R r) l := by
+    intro r hr
+    cases l with
+    | R r' =>
+        change r ≠ r'
+        intro heq
+        subst r'
+        change isCalleeSave cfg r = true at hl
+        have hft : false = true := hr.symm.trans hl
+        cases hft
+    | S sl ofs ty => trivial
+  cases p with
+  | One r =>
+      have hr : isCalleeSave cfg r = false := hp
+      change Locmap.set (R r) v rs l = rs l
+      exact Locmap.gso (R r) v rs l (hdiff r hr)
+  | Twolong hi lo =>
+      rcases hp with ⟨hhi, hlo⟩
+      change Locmap.set (R lo) (Val.loword v)
+          (Locmap.set (R hi) (Val.hiword v) rs) l = rs l
+      calc
+        Locmap.set (R lo) (Val.loword v)
+            (Locmap.set (R hi) (Val.hiword v) rs) l =
+            (Locmap.set (R hi) (Val.hiword v) rs) l :=
+          Locmap.gso (R lo) (Val.loword v)
+            (Locmap.set (R hi) (Val.hiword v) rs) l (hdiff lo hlo)
+        _ = rs l := Locmap.gso (R hi) (Val.hiword v) rs l (hdiff hi hhi)
+
+theorem locmap_get_set_loc_result : locmap_get_set_loc_resultStatement := by
+  intro cfg sg v rs l hl
+  exact conv_setpair_callee_save cfg (locResult sg) v rs l
+    (conv_loc_result_caller_save cfg sg) hl
+
+theorem locmap_get_set_loc_result_callee_save :
+    locmap_get_set_loc_result_callee_saveStatement := by
+  intro cfg sg v rs l hl
+  apply locmap_get_set_loc_result cfg sg v rs l
+  cases l with
+  | R r => exact hl
+  | S sl ofs ty => trivial
+
+end CompCert4Lean.Backend.Conventions
+
+namespace CompCert4Lean.Backend.Conventions
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Backend.Locations
+open CompCert4Lean.X86.Machregs
+
+theorem tailcall_is_possible_correct : tailcall_is_possible_correctStatement := by
+  intro cfg s h
+  unfold tailcall_is_possible at h
+  have hall :=
+    (CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.List.forallb_forall _ _).mp h
+  intro l hl
+  cases l with
+  | R r => trivial
+  | S sl ofs ty =>
+      have hf := hall (S sl ofs ty) hl
+      simp at hf
+
+theorem zero_size_arguments_tailcall_possible :
+    zero_size_arguments_tailcall_possibleStatement := by
+  intro cfg sg hzero l hl
+  have haccept := loc_arguments_acceptable_2 cfg sg l hl
+  cases l with
+  | R r => trivial
+  | S sl ofs ty =>
+      cases sl with
+      | Local =>
+          simpa [CompCert4Lean.X86.Conventions1.loc_argument_acceptable] using haccept
+      | Incoming =>
+          simpa [CompCert4Lean.X86.Conventions1.loc_argument_acceptable] using haccept
+      | Outgoing =>
+          have hacc :
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.le
+                  (.Z0 : CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z) ofs ∧
+                CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.divide
+                  (CompCert4Lean.Backend.Locations.typealign ty) ofs := by
+            simpa [CompCert4Lean.X86.Conventions1.loc_argument_acceptable] using haccept
+          have hnonneg := hacc.1
+          change 0 ≤ intOfZ ofs at hnonneg
+          have hb := loc_arguments_bounded cfg sg ofs ty hl
+          rw [hzero] at hb
+          change intOfZ
+              (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add ofs
+                (CompCert4Lean.Backend.Locations.typesize ty)) ≤ 0 at hb
+          have hpos := CompCert4Lean.Backend.Locations.typesize_pos ty
+          change 0 < intOfZ (CompCert4Lean.Backend.Locations.typesize ty) at hpos
+          simp only [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add,
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt] at hb
+          omega
+
+end CompCert4Lean.Backend.Conventions

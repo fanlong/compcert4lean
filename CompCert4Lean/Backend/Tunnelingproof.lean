@@ -961,3 +961,51 @@ def record_branch_correct : record_branch_correctStatement := by
       | Lcond cond args s1 s2 => exact ⟨f, hdefault⟩
 
 end CompCert4Lean.Backend.Tunnelingproof
+
+namespace CompCert4Lean.Backend.Tunnelingproof
+
+open CompCert4Lean.Backend.Tunneling
+open CompCert4Lean.Backend.LTL
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Foundation.Logic.Rocq.Coq.Init.Specif
+open CompCert4Lean.Lib.UnionFind
+open CompCert4Lean.Lib.Maps
+
+noncomputable def record_branches_correct : record_branches_correctStatement := by
+  intro fn
+  let P : PTree.t bblock → U.t → Prop := fun m u =>
+    Nonempty (sig (fun f => branch_map_correct_1 m u f))
+  have hfold : P fn.fn_code (PTree.fold record_branch fn.fn_code U.empty) := by
+    apply PTree_Properties.fold_rec_proof (P := P)
+    · intro m m' u hext hP
+      let hP' := Classical.choice hP
+      refine ⟨⟨hP'.1, ?_⟩⟩
+      intro pc
+      rw [← hext pc]
+      exact hP'.2 pc
+    · refine ⟨⟨fun _ => 0, ?_⟩⟩
+      intro pc
+      have hempty : PTree.get pc (PTree.empty bblock) = none := rfl
+      rw [hempty]
+      exact U.repr_empty_proof pc
+    · intro m u pc bb hnone hfinal hP
+      let hP' := Classical.choice hP
+      have hpc : U.repr u pc = pc := by
+        have hp := hP'.2 pc
+        rw [hnone] at hp
+        exact hp
+      have hmap : branch_map_correct_1 (PTree.remove pc (PTree.set pc bb m)) u hP'.1 := by
+        intro p
+        rw [PTree.getRemove_equation]
+        by_cases heq : p = pc
+        · subst p
+          simp [hpc]
+        · rw [PTree.getSet_equation]
+          simp [heq]
+          exact hP'.2 p
+      have hget : PTree.get pc (PTree.set pc bb m) = some bb := by
+        simp [PTree.getSet_equation]
+      exact ⟨record_branch_correct (PTree.set pc bb m) u hP'.1 pc bb hmap hget⟩
+  exact Classical.choice hfold
+
+end CompCert4Lean.Backend.Tunnelingproof

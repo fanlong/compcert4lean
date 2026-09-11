@@ -763,3 +763,70 @@ theorem seen_workset_incl : seen_workset_inclStatement := by
   | workset_incl_intro seen _ _ => exact seen id hid
 
 end CompCert4Lean.Backend.Unusedglobproof
+
+namespace CompCert4Lean.Backend.Unusedglobproof
+
+theorem workset_incl_refl : workset_incl_reflStatement := by
+  intro w
+  apply workset_incl_intro
+  · intro id h
+    exact h
+  · intro id h
+    exact h
+  · intro id h
+    exact Or.inl h
+
+theorem workset_incl_trans : workset_incl_transStatement := by
+  intro w1 w2 w3 h12 h23
+  cases h12 with
+  | workset_incl_intro seen12 todo12 track12 =>
+    cases h23 with
+    | workset_incl_intro seen23 todo23 track23 =>
+      apply workset_incl_intro
+      · intro id h
+        exact seen23 id (seen12 id h)
+      · intro id h
+        exact todo23 id (todo12 id h)
+      · intro id h
+        rcases track23 id h with h2 | htodo2
+        · rcases track12 id h2 with h1 | htodo1
+          · exact Or.inl h1
+          · exact Or.inr (todo23 id htodo1)
+        · exact Or.inr htodo2
+
+theorem add_workset_incl : add_workset_inclStatement := by
+  intro id w
+  unfold CompCert4Lean.Backend.Unusedglob.add_workset
+  split
+  · apply workset_incl_intro
+    · intro x h
+      exact h
+    · intro x h
+      exact h
+    · intro x h
+      exact Or.inl h
+  · apply workset_incl_intro
+    · intro x h
+      exact CompCert4Lean.Lib.FSetAVLplus.Make.add_2 w.w_seen id x h
+    · intro x h
+      exact List.Mem.tail id h
+    · intro x h
+      by_cases heq : CompCert4Lean.Backend.Unusedglob.IS.X'.eq id x
+      · exact Or.inr (heq ▸ List.Mem.head w.w_todo)
+      · exact Or.inl
+          (CompCert4Lean.Lib.FSetAVLplus.Make.add_3 w.w_seen id x heq h)
+
+theorem addlist_workset_incl : addlist_workset_inclStatement := by
+  intro l w
+  induction l generalizing w with
+  | nil =>
+      exact workset_incl_refl w
+  | cons id rest ih =>
+      exact workset_incl_trans w
+        (CompCert4Lean.Backend.Unusedglob.add_workset id w)
+        (CompCert4Lean.Backend.Unusedglob.addlist_workset rest
+          (CompCert4Lean.Backend.Unusedglob.add_workset id w))
+        (add_workset_incl id w)
+        (ih (CompCert4Lean.Backend.Unusedglob.add_workset id w))
+
+end CompCert4Lean.Backend.Unusedglobproof

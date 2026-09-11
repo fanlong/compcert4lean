@@ -1551,3 +1551,116 @@ theorem IZR_Zpower (ctx : ExactRealContext) : IZR_ZpowerStatement ctx := by
       omega
 
 end CompCert4Lean.Flocq.Core.Raux
+
+namespace CompCert4Lean.Flocq.Core.Raux
+
+private theorem pg_posToNat_succ (p : positive) :
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.PArith.BinPos.Pos.succ p) =
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p + 1 := by
+  induction p with
+  | xH => simp [CompCert4Lean.Foundation.Numbers.Rocq.Coq.PArith.BinPos.Pos.succ,
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat]
+  | xI p ih => simp [CompCert4Lean.Foundation.Numbers.Rocq.Coq.PArith.BinPos.Pos.succ,
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat, ih] <;> omega
+  | xO p ih => simp [CompCert4Lean.Foundation.Numbers.Rocq.Coq.PArith.BinPos.Pos.succ,
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat]
+
+private theorem pg_zpower_pos_succ (z : Z) (p : positive) :
+    Zpower_pos z
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.PArith.BinPos.Pos.succ p) =
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.mul
+        (Zpower_pos z p) z := by
+  change CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt
+      (Int.pow (CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ z)
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.PArith.BinPos.Pos.succ p))) =
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+        (Zpower_pos z p) * CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ z)
+  rw [pg_posToNat_succ]
+  congr 1
+  rw [show CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p + 1 =
+      Nat.succ (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p) by omega]
+  simp only [Zpower_pos,
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.pow_pos,
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+  exact Int.pow_succ _ _
+
+private theorem pg_zpower_pos_one (z : Z) : Zpower_pos z xH = z := by
+  apply CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective
+  simp only [Zpower_pos,
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.pow_pos,
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt,
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.PArith.BinPos.Pos.to_nat]
+  change (CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ z).pow 1 = _
+  exact Int.pow_one _
+
+private theorem pg_bpow_pos (ctx : ExactRealContext) (r : radix) (p : positive) :
+    Exact.IZR ctx (Zpower_pos r.radix_val p) =
+      Exact.powerRZ ctx (Exact.IZR ctx r.radix_val) (Zpos p) := by
+  apply CompCert4Lean.Foundation.Numbers.Rocq.Coq.PArith.BinPos.Pos.peano_ind
+    (P := fun p => Exact.IZR ctx (Zpower_pos r.radix_val p) =
+      Exact.powerRZ ctx (Exact.IZR ctx r.radix_val) (Zpos p))
+  · rw [pg_zpower_pos_one]
+    change Exact.IZR ctx r.radix_val =
+      ctx.spec.mul (Exact.IZR ctx r.radix_val) ctx.spec.one
+    exact (ctx.certificate.orderedField.mul_one _).symm
+  · intro p ih
+    change Exact.IZR ctx
+        (Zpower_pos r.radix_val
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.PArith.BinPos.Pos.succ p)) =
+      CompCert4Lean.Foundation.FlocqReal.ExactReal.powerNat ctx.spec
+        (Exact.IZR ctx r.radix_val)
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.PArith.BinPos.Pos.succ p))
+    rw [pg_zpower_pos_succ]
+    have hmul :=
+      CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.mult_IZR ctx
+        (Zpower_pos r.radix_val p) r.radix_val
+    rw [show Exact.IZR ctx
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.mul
+          (Zpower_pos r.radix_val p) r.radix_val) =
+        ctx.spec.mul (Exact.IZR ctx (Zpower_pos r.radix_val p))
+          (Exact.IZR ctx r.radix_val) by exact hmul]
+    rw [ih, pg_posToNat_succ]
+    rw [show CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p + 1 =
+        Nat.succ (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p) by omega]
+    change ctx.spec.mul
+        (CompCert4Lean.Foundation.FlocqReal.ExactReal.powerNat ctx.spec
+          (Exact.IZR ctx r.radix_val)
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p))
+        (Exact.IZR ctx r.radix_val) =
+      ctx.spec.mul (Exact.IZR ctx r.radix_val)
+        (CompCert4Lean.Foundation.FlocqReal.ExactReal.powerNat ctx.spec
+          (Exact.IZR ctx r.radix_val)
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p))
+    rw [ctx.certificate.orderedField.mul_comm]
+
+private theorem pg_bpow_powerRZ (ctx : ExactRealContext) (r : radix) (e : Z) :
+    Exact.bpow ctx r e = Exact.powerRZ ctx (Exact.IZR ctx r.radix_val) e := by
+  cases e with
+  | Z0 => rfl
+  | Zpos p =>
+      change Exact.IZR ctx (Zpower_pos r.radix_val p) = _
+      exact pg_bpow_pos ctx r p
+  | Zneg p =>
+      change Exact.Rinv ctx (Exact.IZR ctx (Zpower_pos r.radix_val p)) =
+        Exact.Rinv ctx (Exact.powerRZ ctx (Exact.IZR ctx r.radix_val) (Zpos p))
+      exact congrArg (Exact.Rinv ctx) (pg_bpow_pos ctx r p)
+
+theorem bpow_plus (ctx : ExactRealContext) : bpow_plusStatement ctx := by
+  intro r e1 e2
+  rw [pg_bpow_powerRZ ctx r (Zadd e1 e2),
+    pg_bpow_powerRZ ctx r e1, pg_bpow_powerRZ ctx r e2]
+  apply ctx.certificate.sourceLaws.powerRZ_add
+  intro hzero
+  have hpos := bpow_gt_0 ctx r (Zpos xH)
+  change ctx.spec.lt ctx.spec.zero
+      (ctx.spec.ofZ (Zpower_pos r.radix_val xH)) at hpos
+  rw [pg_zpower_pos_one] at hpos
+  change ctx.spec.ofZ r.radix_val = ctx.spec.zero at hzero
+  rw [hzero] at hpos
+  exact (ctx.certificate.orderedField.lt_irrefl _ hpos).elim
+
+end CompCert4Lean.Flocq.Core.Raux

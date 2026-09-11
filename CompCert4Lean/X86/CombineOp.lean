@@ -1327,3 +1327,50 @@ def R_combine_addr_64_correct : R_combine_addr_64_correctStatement := by
       simpa [combine_addr_64] using mk3 (.Ainstack ofs) args (by simp)
 
 end CompCert4Lean.X86.CombineOp
+
+namespace CompCert4Lean.X86.CombineOp
+
+theorem R_combine_cond_complete : R_combine_cond_completeStatement := by
+  intro get cond args res h
+  cases h with
+  | R_combine_cond_0 cond args n hcond x hargs h0 heq =>
+      subst cond; subst args
+      simp [combine_cond, h0, heq]
+  | R_combine_cond_1 cond args n hcond x hargs h0 heq0 h1 heq1 =>
+      subst cond; subst args
+      simp [combine_cond, h0, h1, heq0, heq1]
+  | R_combine_cond_2 cond args n hcond x hargs h0 heq0 h1 heq1 =>
+      subst cond; subst args
+      simp [combine_cond, h0, h1, heq0, heq1]
+  | R_combine_cond_3 cond args n hcond x hargs h0 heq =>
+      subst cond; subst args
+      simp [combine_cond, h0, heq]
+  | R_combine_cond_4 cond args n hcond x hargs h0 heq0 h1 heq1 =>
+      subst cond; subst args
+      simp [combine_cond, h0, h1, heq0, heq1]
+  | R_combine_cond_5 cond args n hcond x hargs h0 heq0 h1 heq1 =>
+      subst cond; subst args
+      simp [combine_cond, h0, h1, heq0, heq1]
+  | R_combine_cond_6 cond args n hcond x hargs h0 heq =>
+      subst cond; subst args
+      simp [combine_cond, h0, heq]
+  | R_combine_cond_7 cond args n hcond x hargs h0 heq0 h1 heq1 =>
+      subst cond; subst args
+      simp [combine_cond, h0, h1, heq0, heq1]
+  | R_combine_cond_8 cond args n hcond x hargs h0 heq0 h1 heq1 =>
+      subst cond; subst args
+      simp [combine_cond, h0, h1, heq0, heq1]
+  | R_combine_cond_9 cond args n hcond x hargs h0 heq =>
+      subst cond; subst args
+      simp [combine_cond, h0, heq]
+  | R_combine_cond_10 cond args n hcond x hargs h0 heq0 h1 heq1 =>
+      subst cond; subst args
+      simp [combine_cond, h0, h1, heq0, heq1]
+  | R_combine_cond_11 cond args n hcond x hargs h0 heq0 h1 heq1 =>
+      subst cond; subst args
+      simp [combine_cond, h0, h1, heq0, heq1]
+  | R_combine_cond_12 cond args c hcond xs hargs hb =>
+      unfold combine_cond
+      split <;> simp_all
+
+end CompCert4Lean.X86.CombineOp

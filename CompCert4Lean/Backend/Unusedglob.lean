@@ -402,3 +402,18 @@ theorem add_3_proof : add_3 := by
   exact CompCert4Lean.Lib.FSetAVLplus.Make.add_3 s x y hne h
 
 end CompCert4Lean.Backend.Unusedglob.IS
+
+namespace CompCert4Lean.Backend.Unusedglob.IS
+
+theorem add_1_proof : add_1 := by
+  intro s x y hxy
+  exact CompCert4Lean.Lib.FSetAVLplus.Make.add_1 s x y hxy
+
+theorem mem_2_proof : mem_2 := by
+  intro s x h
+  exact CompCert4Lean.Lib.FSetAVLplus.Make.mem_2 s x h
+
+theorem empty_1_proof : empty_1 := by
+  exact CompCert4Lean.Lib.FSetAVLplus.Make.empty_1
+
+end CompCert4Lean.Backend.Unusedglob.IS

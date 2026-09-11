@@ -203,3 +203,30 @@ def last_uses (f : function) : PTree.t (List reg) :=
   | some live => PTree.map (last_uses_at live) f.fn_code
 
 end CompCert4Lean.Backend.Liveness
+
+namespace CompCert4Lean.Backend.Liveness.DS
+
+theorem law_obligation_proof : law_obligation := by
+  constructor
+  · constructor
+    · intro x
+      exact CompCert4Lean.Lib.FSetAVLplus.Make.eq_refl x
+    · intro x y h
+      exact CompCert4Lean.Lib.FSetAVLplus.Make.eq_sym x y h
+    · intro x y z hxy hyz
+      exact CompCert4Lean.Lib.FSetAVLplus.Make.eq_trans x y z hxy hyz
+    · intro x y h
+      exact CompCert4Lean.Lib.FSetAVLplus.Make.equal_2 x y h
+    · intro x y h a ha
+      exact (h a).mpr ha
+    · intro x y z hxy hyz a ha
+      exact hxy a (hyz a ha)
+    · intro x a ha
+      exact (CompCert4Lean.Lib.FSetAVLplus.Make.empty_1 a ha).elim
+    · intro x y a ha
+      exact CompCert4Lean.Lib.FSetAVLplus.Make.union_2 x y a ha
+    · intro x y a ha
+      exact CompCert4Lean.Lib.FSetAVLplus.Make.union_3 x y a ha
+  · exact CompCert4Lean.Backend.Kildall.NodeSetBackward.law_obligation_proof
+
+end CompCert4Lean.Backend.Liveness.DS
