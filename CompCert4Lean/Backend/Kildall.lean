@@ -1329,3 +1329,162 @@ theorem law_obligation_proof : law_obligation := by
   · exact all_nodes_spec
 
 end CompCert4Lean.Backend.Kildall.NodeSetBackward
+
+namespace CompCert4Lean.Backend.Kildall
+
+theorem reachable_trans : reachable_transStatement := by
+  intro A code successors n1 n2 hreach
+  induction hreach with
+  | reachable_refl n =>
+      intro n3 hreach'
+      exact hreach'
+  | reachable_left n₁ n₂ n₃ i hcode hsucc htail ih =>
+      intro n4 hreach'
+      exact reachable_left n₁ n₂ n4 i hcode hsucc (ih n4 hreach')
+
+theorem reachable_right : reachable_rightStatement := by
+  intro A code successors n1 n2 n3 i hreach hcode hsucc
+  exact reachable_trans code successors n1 n2 hreach n3
+    (reachable_left n2 n3 n3 i hcode hsucc (reachable_refl n3))
+
+end CompCert4Lean.Backend.Kildall
+
+namespace CompCert4Lean.Backend.Kildall.NodeSetForward
+
+private theorem forward_pheap_in_insert_self (n :
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.positive)
+    (s : CompCert4Lean.Lib.Heaps.PHeap.t) :
+    CompCert4Lean.Lib.Heaps.PHeap.In n
+      (CompCert4Lean.Lib.Heaps.PHeap.insert n s) := by
+  rcases s with ⟨h, hb⟩
+  change CompCert4Lean.Lib.Heaps.SplayHeapSet.R.In _ n
+    (CompCert4Lean.Lib.Heaps.SplayHeapSet.R.insert _ n h)
+  simp only [CompCert4Lean.Lib.Heaps.SplayHeapSet.R.insert,
+    CompCert4Lean.Lib.Heaps.SplayHeapSet.R.In]
+  exact Or.inr (Or.inl rfl)
+
+theorem all_nodes_spec : all_nodes_specStatement := by
+  intro A code n instr hget
+  let P : PTreeT A → CompCert4Lean.Lib.Heaps.PHeap.t → Prop :=
+    fun m s => ∀ n instr, CompCert4Lean.Lib.Maps.PTree.get n m = some instr →
+      CompCert4Lean.Lib.Heaps.PHeap.In n s
+  have hfold : P code
+      (CompCert4Lean.Lib.Maps.PTree.fold
+        (fun s pc _ => CompCert4Lean.Lib.Heaps.PHeap.insert pc s)
+        code CompCert4Lean.Lib.Heaps.PHeap.empty) := by
+    apply CompCert4Lean.Lib.Maps.PTree_Properties.fold_rec_proof
+    · intro m m' s hmaps hP n instr hn
+      apply hP n instr
+      rw [hmaps n]
+      exact hn
+    · intro n instr hn
+      simp [CompCert4Lean.Lib.Maps.PTree.empty,
+        CompCert4Lean.Lib.Maps.PTree.get] at hn
+    · intro m s k v hnone hsome hP n instr hn
+      rw [CompCert4Lean.Lib.Maps.PTree.getSet_equation] at hn
+      split at hn
+      · subst n
+        exact forward_pheap_in_insert_self k s
+      · exact (add_spec k n s).mpr (Or.inr (hP n instr hn))
+  change CompCert4Lean.Lib.Heaps.PHeap.In n (all_nodes code)
+  simpa [all_nodes] using hfold n instr hget
+
+end CompCert4Lean.Backend.Kildall.NodeSetForward
+
+namespace CompCert4Lean.Backend.Kildall.NodeSetForward
+
+private def forward_raw_in_deleteMax {E : CompCert4Lean.Lib.Heaps.OrderedType}
+    (h : CompCert4Lean.Lib.Heaps.SplayHeapSet.R.heap E)
+    (hb : CompCert4Lean.Lib.Heaps.SplayHeapSet.R.bst E h)
+    (x y : E.t)
+    (hs : CompCert4Lean.Lib.Heaps.SplayHeapSet.R.findMax E h = some x) :
+    (CompCert4Lean.Lib.Heaps.SplayHeapSet.R.In E y h ↔
+      E.eq x y ∨ CompCert4Lean.Lib.Heaps.SplayHeapSet.R.In E y
+        (CompCert4Lean.Lib.Heaps.SplayHeapSet.R.deleteMax E h)) := by
+  cases h with
+  | Empty => simp [CompCert4Lean.Lib.Heaps.SplayHeapSet.R.findMax] at hs
+  | Node l z r =>
+      cases r with
+      | Empty =>
+          simp only [CompCert4Lean.Lib.Heaps.SplayHeapSet.R.findMax] at hs
+          cases hs
+          simp only [CompCert4Lean.Lib.Heaps.SplayHeapSet.R.In,
+            CompCert4Lean.Lib.Heaps.SplayHeapSet.R.deleteMax]
+          constructor <;> intro h
+          · rcases h with h | h | h
+            · exact Or.inr h
+            · exact Or.inl (E.eq_sym _ _ h)
+            · exact False.elim h
+          · rcases h with h | h
+            · exact Or.inr (Or.inl (E.eq_sym _ _ h))
+            · exact Or.inl h
+      | Node r₁ w r₂ =>
+          cases r₂ with
+          | Empty =>
+              simp only [CompCert4Lean.Lib.Heaps.SplayHeapSet.R.findMax] at hs
+              cases hs
+              change
+                (CompCert4Lean.Lib.Heaps.SplayHeapSet.R.In E y l ∨ E.eq y z ∨
+                    (CompCert4Lean.Lib.Heaps.SplayHeapSet.R.In E y r₁ ∨
+                      E.eq y x ∨ False) ↔
+                  E.eq x y ∨
+                    (CompCert4Lean.Lib.Heaps.SplayHeapSet.R.In E y l ∨
+                      E.eq y z ∨
+                        CompCert4Lean.Lib.Heaps.SplayHeapSet.R.In E y r₁))
+              constructor <;> intro h
+              · rcases h with h | h | h | h | h
+                · exact Or.inr (Or.inl h)
+                · exact Or.inr (Or.inr (Or.inl h))
+                · exact Or.inr (Or.inr (Or.inr h))
+                · exact Or.inl (E.eq_sym _ _ h)
+                · exact False.elim h
+              · rcases h with h | h | h | h
+                · exact Or.inr (Or.inr (Or.inr (Or.inl (E.eq_sym _ _ h))))
+                · exact Or.inl h
+                · exact Or.inr (Or.inl h)
+                · exact Or.inr (Or.inr (Or.inl h))
+          | Node a u b =>
+              have hs₁ : CompCert4Lean.Lib.Heaps.SplayHeapSet.R.findMax E
+                  (.Node a u b) = some x := by
+                simpa only [CompCert4Lean.Lib.Heaps.SplayHeapSet.R.findMax] using hs
+              have hi := forward_raw_in_deleteMax (.Node a u b) hb.2.1.2.1 x y hs₁
+              change
+                (CompCert4Lean.Lib.Heaps.SplayHeapSet.R.In E y l ∨ E.eq y z ∨
+                    (CompCert4Lean.Lib.Heaps.SplayHeapSet.R.In E y r₁ ∨
+                      E.eq y w ∨
+                        CompCert4Lean.Lib.Heaps.SplayHeapSet.R.In E y
+                          (.Node a u b))) ↔
+                  E.eq x y ∨
+                    CompCert4Lean.Lib.Heaps.SplayHeapSet.R.In E y
+                      (.Node (.Node l z r₁) w
+                        (CompCert4Lean.Lib.Heaps.SplayHeapSet.R.deleteMax E
+                          (.Node a u b)))
+              rw [hi]
+              simp only [CompCert4Lean.Lib.Heaps.SplayHeapSet.R.In]
+              simp [or_assoc, or_left_comm, or_comm]
+
+private theorem forward_pheap_in_deleteMax :
+    ∀ (s : CompCert4Lean.Lib.Heaps.PHeap.t)
+      (x y : CompCert4Lean.Foundation.Numbers.Rocq.Coq.positive),
+      CompCert4Lean.Lib.Heaps.PHeap.findMax s = some x →
+      (CompCert4Lean.Lib.Heaps.PHeap.In y s ↔
+        x = y ∨ CompCert4Lean.Lib.Heaps.PHeap.In y
+          (CompCert4Lean.Lib.Heaps.PHeap.deleteMax s)) := by
+  intro s x y hs
+  rcases s with ⟨h, hb⟩
+  exact forward_raw_in_deleteMax h hb x y hs
+
+theorem pick_some : pick_someStatement := by
+  intro s n s' hs n'
+  unfold pick at hs
+  cases hfind : CompCert4Lean.Lib.Heaps.PHeap.findMax s with
+  | none => simp [hfind] at hs
+  | some m =>
+      rw [hfind] at hs
+      have hresult := forward_pheap_in_deleteMax s m n' hfind
+      change some (m, CompCert4Lean.Lib.Heaps.PHeap.deleteMax s) =
+        some (n, s') at hs
+      cases hs
+      exact hresult
+
+end CompCert4Lean.Backend.Kildall.NodeSetForward
