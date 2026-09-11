@@ -593,3 +593,69 @@ theorem builtin_arg_reduction_correct :
           (builtin_arg_reduction cfg ae a2) v1 v2 ih_a1 ih_a2)
 
 end CompCert4Lean.Backend.Constpropproof
+
+namespace CompCert4Lean.Backend.Constpropproof
+
+open CompCert4Lean.Backend.Constprop
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Linking
+open CompCert4Lean.Lib.Coqlib
+
+variable
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+
+theorem transf_program_match : ∀ cfg, transf_program_matchStatement cfg := by
+  letI : Linker (CompCert4Lean.Backend.RTL.fundef) :=
+    Linker_fundef CompCert4Lean.Backend.RTL.function
+  letI : Linker Unit := Linker_unit
+  letI : Linker (CompCert4Lean.Backend.RTL.program) :=
+    Linker_prog (CompCert4Lean.Backend.RTL.fundef) Unit
+  intro cfg p
+  unfold match_prog CompCert4Lean.Backend.Constprop.transf_program
+    CompCert4Lean.Common.AST.transform_program
+  constructor
+  · induction p.prog_defs with
+    | nil => exact list_forall2.nil _
+    | cons hd tl ih =>
+        cases hd with
+        | mk id gd =>
+            cases gd with
+            | Gfun f =>
+                change list_forall2 _
+                  ((id, Gfun f) :: tl)
+                  ((id, Gfun (CompCert4Lean.Backend.Constprop.transf_fundef
+                    (binary64_certificate := binary64_certificate)
+                    (binary32_certificate := binary32_certificate)
+                    cfg (CompCert4Lean.Backend.ValueAnalysis.romem_for cfg p) f)) ::
+                    List.map (transform_program_globdef (fun f =>
+                      CompCert4Lean.Backend.Constprop.transf_fundef
+                        (binary64_certificate := binary64_certificate)
+                        (binary32_certificate := binary32_certificate)
+                        cfg (CompCert4Lean.Backend.ValueAnalysis.romem_for cfg p) f)) tl)
+                apply list_forall2.cons
+                · constructor
+                  · rfl
+                  · apply match_globdef.match_globdef_fun (ctx' := p)
+                    · exact linkorder_refl _
+                    · rfl
+                · exact ih
+            | Gvar v =>
+                change list_forall2 _
+                  ((id, Gvar v) :: tl)
+                  ((id, Gvar v) ::
+                    List.map (transform_program_globdef (fun f =>
+                      CompCert4Lean.Backend.Constprop.transf_fundef
+                        (binary64_certificate := binary64_certificate)
+                        (binary32_certificate := binary32_certificate)
+                        cfg (CompCert4Lean.Backend.ValueAnalysis.romem_for cfg p) f)) tl)
+                apply list_forall2.cons
+                · constructor
+                  · rfl
+                  · apply match_globdef.match_globdef_var
+                    exact match_globvar.match_globvar_intro _ _ _ _ _ _ rfl
+                · exact ih
+  · exact ⟨rfl, rfl⟩
+
+end CompCert4Lean.Backend.Constpropproof

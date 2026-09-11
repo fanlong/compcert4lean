@@ -824,3 +824,85 @@ def semantics2
     symbolenv := Genv.to_senv ge.genv_genv }
 
 end CompCert4Lean.Cfrontend.Clight
+
+namespace CompCert4Lean.Cfrontend.Clight
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem eval_expr_lvalue_ind
+    [binary64_certificate : BinaryNormalizeCertificate
+      (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate
+      (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)] :
+    eval_expr_lvalue_indStatement := by
+  intro ge e le m P P0
+  intro hconst_int hconst_float hconst_single hconst_long htempvar haddrof
+    hunary hbinary hcast hsizeof halign hElvalue hvar_local hvar_global
+    hderef hfield_struct hfield_union
+  let motive₁ : ∀ (a : expr) (v : val),
+      eval_expr ge e le m a v → Prop := fun a v _ => P a v
+  let motive₂ : ∀ (a : expr) (b : block) (ofs : ptrofs) (bf : bitfield),
+      eval_lvalue ge e le m a b ofs bf → Prop := fun a b ofs bf _ => P0 a b ofs bf
+  have hexpr : ∀ (a : expr) (v : val),
+      eval_expr ge e le m a v → P a v := by
+    intro a v h
+    exact eval_expr.rec
+      (motive_1 := motive₁) (motive_2 := motive₂)
+      (const_int := fun i ty => hconst_int i ty)
+      (const_float := fun f ty => hconst_float f ty)
+      (const_single := fun f ty => hconst_single f ty)
+      (const_long := fun i ty => hconst_long i ty)
+      (eval_Etempvar := fun id ty v hfind => htempvar id ty v hfind)
+      (eval_Eaddrof := fun a ty loc ofs hlvalue ih => haddrof a ty loc ofs hlvalue ih)
+      (unary := fun op a ty v1 v ha hop ih => hunary op a ty v1 v ha ih hop)
+      (binary := fun op a1 a2 ty v1 v2 v ha1 ha2 hop ih1 ih2 =>
+        hbinary op a1 a2 ty v1 v2 v ha1 ih1 ha2 ih2 hop)
+      (cast := fun a ty v1 v ha hcast' ih => hcast a ty v1 v ha ih hcast')
+      (sizeof_type := fun ty1 ty => hsizeof ty1 ty)
+      (alignof_type := fun ty1 ty => halign ty1 ty)
+      (eval_Elvalue := fun a loc ofs bf v hlvalue hderef' ih =>
+        hElvalue a loc ofs bf v hlvalue ih hderef')
+      (eval_Evar_local := fun id loc ty hfind => hvar_local id loc ty hfind)
+      (eval_Evar_global := fun id loc ty hlocal hglobal =>
+        hvar_global id loc ty hlocal hglobal)
+      (eval_Ederef := fun a ty loc ofs ha ih => hderef a ty loc ofs ha ih)
+      (eval_Efield_struct := fun a id ty loc ofs structId co att delta bf ha htype
+          hcomposite hoffset ih =>
+        hfield_struct a id ty loc ofs structId co att delta bf ha ih htype hcomposite hoffset)
+      (eval_Efield_union := fun a id ty loc ofs unionId co att delta bf ha htype
+          hcomposite hoffset ih =>
+        hfield_union a id ty loc ofs unionId co att delta bf ha ih htype hcomposite hoffset)
+      h
+  have hlvalue : ∀ (a : expr) (b : block) (ofs : ptrofs) (bf : bitfield),
+      eval_lvalue ge e le m a b ofs bf → P0 a b ofs bf := by
+    intro a b ofs bf h
+    exact eval_lvalue.rec
+      (motive_1 := motive₁) (motive_2 := motive₂)
+      (const_int := fun i ty => hconst_int i ty)
+      (const_float := fun f ty => hconst_float f ty)
+      (const_single := fun f ty => hconst_single f ty)
+      (const_long := fun i ty => hconst_long i ty)
+      (eval_Etempvar := fun id ty v hfind => htempvar id ty v hfind)
+      (eval_Eaddrof := fun a ty loc ofs hlvalue ih => haddrof a ty loc ofs hlvalue ih)
+      (unary := fun op a ty v1 v ha hop ih => hunary op a ty v1 v ha ih hop)
+      (binary := fun op a1 a2 ty v1 v2 v ha1 ha2 hop ih1 ih2 =>
+        hbinary op a1 a2 ty v1 v2 v ha1 ih1 ha2 ih2 hop)
+      (cast := fun a ty v1 v ha hcast' ih => hcast a ty v1 v ha ih hcast')
+      (sizeof_type := fun ty1 ty => hsizeof ty1 ty)
+      (alignof_type := fun ty1 ty => halign ty1 ty)
+      (eval_Elvalue := fun a loc ofs bf v hlvalue hderef' ih =>
+        hElvalue a loc ofs bf v hlvalue ih hderef')
+      (eval_Evar_local := fun id loc ty hfind => hvar_local id loc ty hfind)
+      (eval_Evar_global := fun id loc ty hlocal hglobal =>
+        hvar_global id loc ty hlocal hglobal)
+      (eval_Ederef := fun a ty loc ofs ha ih => hderef a ty loc ofs ha ih)
+      (eval_Efield_struct := fun a id ty loc ofs structId co att delta bf ha htype
+          hcomposite hoffset ih =>
+        hfield_struct a id ty loc ofs structId co att delta bf ha ih htype hcomposite hoffset)
+      (eval_Efield_union := fun a id ty loc ofs unionId co att delta bf ha htype
+          hcomposite hoffset ih =>
+        hfield_union a id ty loc ofs unionId co att delta bf ha ih htype hcomposite hoffset)
+      h
+  exact ⟨hexpr, hlvalue⟩
+
+end CompCert4Lean.Cfrontend.Clight

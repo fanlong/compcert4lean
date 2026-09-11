@@ -1312,3 +1312,108 @@ theorem add_vars_wf : add_vars_wfStatement := by
   exact (rtlgenproof_add_vars_wf_valid names s1 s2 map mapPrime rl i h hwf hvalid).1
 
 end CompCert4Lean.Backend.RTLgenproof
+
+namespace CompCert4Lean.Backend.RTLgenproof
+
+open CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.List
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Backend.RTLgen
+open CompCert4Lean.Backend.RTLgenspec
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Maps
+
+private theorem rtlgenproof_lessdef_list_nth
+    (le : List val) (rl : List reg) (rs : Regmap.t val) (idx : Nat) (v : val) (r : reg) :
+    Val.lessdef_list le (rl.map (fun r => Regmap.get r rs)) →
+    nth_error le idx = some v → nth_error rl idx = some r →
+    Val.lessdef v (Regmap.get r rs) := by
+  induction idx generalizing le rl v r with
+  | zero =>
+    intro hless hle hrl
+    cases le with
+    | nil => simp [nth_error] at hle
+    | cons v' le =>
+      cases rl with
+      | nil => simp [nth_error] at hrl
+      | cons r' rl =>
+        simp [nth_error] at hle hrl
+        cases hle
+        cases hrl
+        cases hless with
+        | lessdef_list_cons v₁ v₂ vl₁ vl₂ hhead htail => exact hhead
+  | succ idx ih =>
+    intro hless hle hrl
+    cases le with
+    | nil => simp [nth_error] at hle
+    | cons v' le =>
+      cases rl with
+      | nil => simp [nth_error] at hrl
+      | cons r' rl =>
+        cases hless with
+        | lessdef_list_cons v₁ v₂ vl₁ vl₂ hhead htail =>
+          apply ih (le := le) (rl := rl) (v := v) (r := r) htail
+          · simpa [nth_error] using hle
+          · simpa [nth_error] using hrl
+
+private theorem rtlgenproof_lessdef_list_invariant
+    (le : List val) (rl : List reg) (rs rs' : Regmap.t val)
+    (hless : Val.lessdef_list le (rl.map (fun r => Regmap.get r rs)))
+    (hstable : ∀ r, r ∈ rl → Regmap.get r rs' = Regmap.get r rs) :
+    Val.lessdef_list le (rl.map (fun r => Regmap.get r rs')) := by
+  induction rl generalizing le with
+  | nil =>
+    cases hless
+    exact Val.lessdef_list_nil
+  | cons r rl ih =>
+    cases le with
+    | nil => cases hless
+    | cons v le =>
+      cases hless with
+      | lessdef_list_cons v₁ v₂ vl₁ vl₂ hhead htail =>
+        refine Val.lessdef_list_cons _ _ _ _ ?_ ?_
+        · change Val.lessdef v (Regmap.get r rs')
+          rw [hstable r (by simp)]
+          exact hhead
+        · exact ih le htail (fun r hr => hstable r (by simp [hr]))
+
+theorem add_letvar_wf : add_letvar_wfStatement := by
+  intro map r hwf hfresh
+  constructor
+  · intro id1 id2 r' h1 h2
+    change PTree.get id1 map.map_vars = some r' at h1
+    change PTree.get id2 map.map_vars = some r' at h2
+    exact hwf.map_wf_inj id1 id2 r' h1 h2
+  · intro id r' hget hmem
+    change PTree.get id map.map_vars = some r' at hget
+    simp only [RTLgen.add_letvar, List.mem_cons] at hmem
+    rcases hmem with h | h
+    · subst r'
+      exact hfresh (Or.inl ⟨id, hget⟩)
+    · exact hwf.map_wf_disj id r' hget h
+
+theorem match_env_find_var : match_env_find_varStatement := by
+  intro map e le rs id v r hmatch henv hmap
+  rcases hmatch.me_vars id v henv with ⟨r', hget, hless⟩
+  rw [hmap] at hget
+  cases hget
+  exact hless
+
+theorem match_env_find_letvar : match_env_find_letvarStatement := by
+  intro map e le rs idx v r hmatch hle hmap
+  exact rtlgenproof_lessdef_list_nth (le := le) (rl := map.map_letvars)
+    (rs := rs) idx v r hmatch.me_letvars hle hmap
+
+theorem match_env_invariant : match_env_invariantStatement := by
+  intro map e le rs rs' hmatch hstable
+  constructor
+  · intro id v henv
+    rcases hmatch.me_vars id v henv with ⟨r, hget, hless⟩
+    refine ⟨r, hget, ?_⟩
+    rw [hstable r (Or.inl ⟨id, hget⟩)]
+    exact hless
+  · exact rtlgenproof_lessdef_list_invariant (le := le) (rl := map.map_letvars)
+      (rs := rs) (rs' := rs') hmatch.me_letvars (fun r hr => hstable r (Or.inr hr))
+
+end CompCert4Lean.Backend.RTLgenproof

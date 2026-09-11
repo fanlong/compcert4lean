@@ -665,3 +665,35 @@ theorem add_instr_obligation_1 : add_instr_obligation_1Statement := by
   exact .intro (Nat.le_refl _) (pleSucc s.st_nextnode) (Int.le_refl _)
 
 end CompCert4Lean.Backend.Inlining
+
+namespace CompCert4Lean.Backend.Inlining
+
+theorem reserve_nodes_obligation_1 : reserve_nodes_obligation_1Statement := by
+  intro numnodes s
+  exact .intro (Nat.le_refl _) (pleAdd s.st_nextnode numnodes) (Int.le_refl _)
+
+theorem reserve_regs_obligation_1 : reserve_regs_obligation_1Statement := by
+  intro numregs s
+  exact .intro (pleAdd s.st_nextreg numregs) (Nat.le_refl _) (Int.le_refl _)
+
+theorem request_stack_obligation_1 : request_stack_obligation_1Statement := by
+  intro size s
+  exact .intro (Nat.le_refl _) (Nat.le_refl _) (zLeMaxLeft s.st_stksize size)
+
+theorem ptree_mfold_obligation_1 : ptree_mfold_obligation_1Statement := by
+  intro A f tree s
+  apply CompCert4Lean.Lib.Maps.PTree_Properties.fold_rec_proof
+    (V := A) (A := state)
+    (f := fun s1 key value =>
+      match f key value s1 with
+      | R _ s2 _ => s2)
+    (P := fun _ s' => sincr s s') (init := s) (mFinal := tree)
+  · intro m m' a hext hP
+    exact hP
+  · exact sincrRefl s
+  · intro m a k v hnone hfinal hP
+    cases hfv : f k v a with
+    | R _ s2 hstep =>
+        exact sincrCompose hP hstep
+
+end CompCert4Lean.Backend.Inlining

@@ -1121,3 +1121,105 @@ theorem wf_equation_incr : wf_equation_incrStatement := by
         exact Nat.lt_of_lt_of_le (h.2 v hv) ple
 
 end CompCert4Lean.Backend.CSEproof
+
+namespace CompCert4Lean.Backend.CSEproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Backend.CSEdomain
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Lib.Coqlib
+
+theorem builtin_arg_val_exten : builtin_arg_val_extenStatement := by
+  intro valu1 upto valu2 hagree ge sp m a v harg hlt
+  induction harg with
+  | eval_BA x =>
+      rw [← hagree x (hlt x (by simp [params_of_builtin_arg]))]
+      exact eval_BA x
+  | eval_BA_int n => exact eval_BA_int n
+  | eval_BA_long n => exact eval_BA_long n
+  | eval_BA_float n => exact eval_BA_float n
+  | eval_BA_single n => exact eval_BA_single n
+  | eval_BA_loadstack chunk ofs v hload => exact eval_BA_loadstack chunk ofs v hload
+  | eval_BA_addrstack ofs => exact eval_BA_addrstack ofs
+  | eval_BA_loadglobal chunk id ofs v hload => exact eval_BA_loadglobal chunk id ofs v hload
+  | eval_BA_addrglobal id ofs => exact eval_BA_addrglobal id ofs
+  | eval_BA_splitlong hi lo vhi vlo hhi hlo ihhi ihlo =>
+      apply eval_BA_splitlong hi lo vhi vlo
+      · apply ihhi
+        intro vn hvn
+        apply hlt vn
+        simp [params_of_builtin_arg, hvn]
+      · apply ihlo
+        intro vn hvn
+        apply hlt vn
+        simp [params_of_builtin_arg, hvn]
+  | eval_BA_addptr a1 a2 v1 v2 h1 h2 ih1 ih2 =>
+      apply eval_BA_addptr a1 a2 v1 v2
+      · apply ih1
+        intro vn hvn
+        apply hlt vn
+        simp [params_of_builtin_arg, hvn]
+      · apply ih2
+        intro vn hvn
+        apply hlt vn
+        simp [params_of_builtin_arg, hvn]
+
+theorem builtin_args_val_exten : builtin_args_val_extenStatement := by
+  intro valu1 upto valu2 hagree ge sp m al vl hargs hlt
+  unfold eval_builtin_args at hargs ⊢
+  induction hargs with
+  | nil => exact list_forall2.nil _
+  | cons =>
+      rename_i a1 al1 b1 bl1 ha hal ih
+      apply list_forall2.cons
+      · apply builtin_arg_val_exten valu1 upto valu2 hagree ge sp m a1 b1 ha
+        intro vn hvn
+        apply hlt vn
+        change vn ∈ params_of_builtin_arg a1 ++ params_of_builtin_args al1
+        exact List.mem_append.mpr (Or.inl hvn)
+      · apply ih
+        intro vn hvn
+        apply hlt vn
+        change vn ∈ params_of_builtin_arg a1 ++ params_of_builtin_args al1
+        exact List.mem_append.mpr (Or.inr hvn)
+
+theorem rhs_eval_to_exten
+    [binary64_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)] :
+    rhs_eval_to_extenStatement := by
+  intro valu1 upto valu2 hagree ge sp m r v hev hlt
+  induction hev with
+  | op_eval_to op vl v hop =>
+      apply op_eval_to
+      rw [valnums_val_exten valu1 upto valu2 hagree vl hlt]
+      exact hop
+  | load_eval_to chunk addr vl a v p ha hl =>
+      apply load_eval_to
+      · rw [valnums_val_exten valu1 upto valu2 hagree vl hlt]
+        exact ha
+      · exact hl
+  | builtin_eval_to bf args vargs v hargs hsem =>
+      apply builtin_eval_to
+      · apply builtin_args_val_exten valu1 upto valu2 hagree ge sp m args vargs hargs
+        exact hlt
+      · exact hsem
+
+theorem rhs_valid_exten : rhs_valid_extenStatement := by
+  intro valu1 upto valu2 hagree ge sp r hvalid hlt
+  induction hvalid with
+  | op_valid sp op vl => exact op_valid sp op vl
+  | load_valid sp chunk addr vl p b ofs bc ha hpmatch hgenv hstack =>
+      apply load_valid sp chunk addr vl p b ofs bc
+      · rw [valnums_val_exten valu1 upto valu2 hagree vl hlt]
+        exact ha
+      · exact hpmatch
+      · exact hgenv
+      · exact hstack
+  | builtin_valid sp bf args => exact builtin_valid sp bf args
+
+end CompCert4Lean.Backend.CSEproof

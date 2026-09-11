@@ -427,3 +427,321 @@ theorem incoming_slot_in_parameters : incoming_slot_in_parametersStatement := by
           exact hmem
 
 end CompCert4Lean.Backend.Conventions
+
+namespace CompCert4Lean.Backend.Conventions
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Backend.Locations
+open CompCert4Lean.X86.Machregs
+
+private abbrev ConvZ := CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z
+private abbrev convZ0 : ConvZ := .Z0
+private abbrev convZ1 := ZArith.BinInt.Z.of_nat 1
+private abbrev convZ2 := ZArith.BinInt.Z.of_nat 2
+private abbrev convZAdd := ZArith.BinInt.Z.add
+private abbrev convZMul := ZArith.BinInt.Z.mul
+private abbrev convZLe := ZArith.BinInt.Z.le
+private abbrev convZDivide := ZArith.BinInt.Z.divide
+private abbrev convIntOfZ := CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+
+private theorem conv_zle_zero_refl : convZLe convZ0 convZ0 := by
+  change convIntOfZ convZ0 ≤ convIntOfZ convZ0
+  exact Int.le_refl _
+
+private theorem conv_zle_add_two (ofs : ConvZ) (h : convZLe convZ0 ofs) :
+    convZLe convZ0 (convZAdd ofs convZ2) := by
+  change 0 ≤ convIntOfZ ofs at h
+  change 0 ≤ convIntOfZ (convZAdd ofs convZ2)
+  simp only [convZAdd, ZArith.BinInt.Z.add,
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+  change 0 ≤ convIntOfZ ofs + 2
+  omega
+
+private theorem conv_zdivide_zero (a : ConvZ) : convZDivide a convZ0 := by
+  refine ⟨convZ0, ?_⟩
+  change convZ0 = convZMul a convZ0
+  apply CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective
+  change convIntOfZ convZ0 =
+    convIntOfZ (CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt
+      (convIntOfZ a * convIntOfZ convZ0))
+  calc
+    convIntOfZ convZ0 = 0 := by rfl
+    _ = convIntOfZ a * convIntOfZ convZ0 := by
+      have hz : convIntOfZ convZ0 = 0 := by rfl
+      rw [hz]
+      simp
+    _ = convIntOfZ (CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt
+        (convIntOfZ a * convIntOfZ convZ0)) := by
+      symm
+      exact CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt _
+
+private theorem conv_zdivide_add_two (ofs : ConvZ) (h : convZDivide convZ2 ofs) :
+    convZDivide convZ2 (convZAdd ofs convZ2) := by
+  rcases h with ⟨k, hk⟩
+  refine ⟨convZAdd k convZ1, ?_⟩
+  rw [hk]
+  apply CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective
+  change convIntOfZ (convZAdd (convZMul convZ2 k) convZ2) =
+    convIntOfZ (convZMul convZ2 (convZAdd k convZ1))
+  change convIntOfZ (CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt
+      (convIntOfZ (CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt
+        (convIntOfZ convZ2 * convIntOfZ k)) + convIntOfZ convZ2)) =
+    convIntOfZ (CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt
+      (convIntOfZ convZ2 * convIntOfZ
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt
+          (convIntOfZ k + convIntOfZ convZ1))))
+  simp only [convIntOfZ,
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+  have h1 : convIntOfZ convZ1 = 1 := by rfl
+  have h2 : convIntOfZ convZ2 = 2 := by rfl
+  simp only [h1, h2]
+  omega
+
+private theorem conv_zdivide_one (ofs : ConvZ) : convZDivide convZ1 ofs := by
+  refine ⟨ofs, ?_⟩
+  apply CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective
+  change convIntOfZ ofs =
+    convIntOfZ (CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt
+      (convIntOfZ convZ1 * convIntOfZ ofs))
+  calc
+    convIntOfZ ofs = convIntOfZ convZ1 * convIntOfZ ofs := by
+      have hz : convIntOfZ convZ1 = 1 := by rfl
+      rw [hz]
+      simp
+    _ = convIntOfZ (CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt
+        (convIntOfZ convZ1 * convIntOfZ ofs)) := by
+      exact CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt _ |>.symm
+
+private theorem conv_typealign_divide (ty : typ) (ofs : ConvZ)
+    (h : convZDivide convZ2 ofs) :
+    convZDivide (CompCert4Lean.Backend.Locations.typealign ty) ofs := by
+  cases ty with
+  | Tint => exact conv_zdivide_one ofs
+  | Tlong => exact h
+  | Tfloat => exact conv_zdivide_one ofs
+  | Tsingle => exact conv_zdivide_one ofs
+  | Tany32 => exact conv_zdivide_one ofs
+  | Tany64 => exact conv_zdivide_one ofs
+
+private theorem conv_stack_acceptable (cfg : CompCert4Lean.Config.CompilerConfig)
+    (ofs : ConvZ) (ty : typ) (hnonneg : convZLe convZ0 ofs)
+    (hdiv : convZDivide convZ2 ofs) :
+    CompCert4Lean.X86.Conventions1.loc_argument_acceptable cfg
+      (S Outgoing ofs ty) := by
+  change convZLe convZ0 ofs ∧
+    convZDivide (CompCert4Lean.Backend.Locations.typealign ty) ofs
+  exact ⟨hnonneg, conv_typealign_divide ty ofs hdiv⟩
+
+private theorem conv_stack_head
+    (cfg : CompCert4Lean.Config.CompilerConfig) (ofs : ConvZ) (ty : typ)
+    (l : loc) (h : l ∈ regs_of_rpair (One (S Outgoing ofs ty)))
+    (hnonneg : convZLe convZ0 ofs) (hdiv : convZDivide convZ2 ofs) :
+    CompCert4Lean.X86.Conventions1.loc_argument_acceptable cfg l := by
+  have hl : l = S Outgoing ofs ty := by
+    simpa [regs_of_rpair] using h
+  subst l
+  exact conv_stack_acceptable cfg ofs ty hnonneg hdiv
+
+private theorem conv_register_head
+    (cfg : CompCert4Lean.Config.CompilerConfig) (r : mreg) (l : loc)
+    (h : l ∈ regs_of_rpair (One (R r)))
+    (hsave : CompCert4Lean.X86.Conventions1.is_callee_save cfg r = false) :
+    CompCert4Lean.X86.Conventions1.loc_argument_acceptable cfg l := by
+  have hl : l = R r := by
+    simpa [regs_of_rpair] using h
+  subst l
+  exact hsave
+
+private theorem conv_win64_int_caller_save
+    (cfg : CompCert4Lean.Config.CompilerConfig) (r : mreg)
+    (h : r ∈ CompCert4Lean.X86.Conventions1.int_param_regs_win64) :
+    CompCert4Lean.X86.Conventions1.is_callee_save cfg r = false := by
+  simp [CompCert4Lean.X86.Conventions1.int_param_regs_win64] at h
+  rcases h with h | h | h | h
+  · subst r; rfl
+  · subst r; rfl
+  · subst r; rfl
+  · subst r; rfl
+
+private theorem conv_win64_float_caller_save
+    (cfg : CompCert4Lean.Config.CompilerConfig) (r : mreg)
+    (h : r ∈ CompCert4Lean.X86.Conventions1.float_param_regs_win64) :
+    CompCert4Lean.X86.Conventions1.is_callee_save cfg r = false := by
+  simp [CompCert4Lean.X86.Conventions1.float_param_regs_win64] at h
+  rcases h with h | h | h | h
+  · subst r; rfl
+  · subst r; rfl
+  · subst r; rfl
+  · subst r; rfl
+
+private theorem conv_elf64_int_caller_save
+    (cfg : CompCert4Lean.Config.CompilerConfig) (r : mreg)
+    (habi : ¬ CompCert4Lean.X86_64.Archi.win64 cfg = true)
+    (h : r ∈ CompCert4Lean.X86.Conventions1.int_param_regs_elf64) :
+    CompCert4Lean.X86.Conventions1.is_callee_save cfg r = false := by
+  simp [CompCert4Lean.X86.Conventions1.int_param_regs_elf64] at h
+  rcases h with h | h | h | h | h | h
+  · subst r; simp [CompCert4Lean.X86.Conventions1.is_callee_save,
+      CompCert4Lean.X86_64.Archi.ptr64, habi]
+  · subst r; simp [CompCert4Lean.X86.Conventions1.is_callee_save,
+      CompCert4Lean.X86_64.Archi.ptr64, habi]
+  · subst r; rfl
+  · subst r; rfl
+  · subst r; rfl
+  · subst r; rfl
+
+private theorem conv_list_nth_z_in {A : Type} :
+    ∀ (l : List A) (n : ConvZ) (x : A),
+      CompCert4Lean.Lib.Coqlib.list_nth_z l n = some x → x ∈ l := by
+  intro l
+  induction l with
+  | nil =>
+      intro n x h
+      simp [CompCert4Lean.Lib.Coqlib.list_nth_z] at h
+  | cons a l ih =>
+      intro n x h
+      simp only [CompCert4Lean.Lib.Coqlib.list_nth_z] at h
+      split at h <;> rename_i hn
+      · simp at h
+        subst x
+        exact _root_.List.Mem.head l
+      · exact _root_.List.Mem.tail a (ih _ _ h)
+
+private theorem conv_elf64_float_caller_save
+    (cfg : CompCert4Lean.Config.CompilerConfig) (r : mreg)
+    (h : r ∈ CompCert4Lean.X86.Conventions1.float_param_regs_elf64) :
+    CompCert4Lean.X86.Conventions1.is_callee_save cfg r = false := by
+  simp [CompCert4Lean.X86.Conventions1.float_param_regs_elf64] at h
+  rcases h with h | h | h | h | h | h | h | h
+  · subst r; rfl
+  · subst r; rfl
+  · subst r; rfl
+  · subst r; rfl
+  · subst r; rfl
+  · subst r; rfl
+  · subst r; rfl
+  · subst r; rfl
+
+private theorem conv_win64_arguments_acceptable :
+    ∀ (cfg : CompCert4Lean.Config.CompilerConfig)
+      (tys : List typ) (r ofs : ConvZ) (l : loc),
+      l ∈ regs_of_rpairs
+        (CompCert4Lean.X86.Conventions1.loc_arguments_win64 tys r ofs) →
+      convZLe convZ0 ofs → convZDivide convZ2 ofs →
+      CompCert4Lean.X86.Conventions1.loc_argument_acceptable cfg l := by
+  intro cfg tys
+  induction tys with
+  | nil =>
+      intro r ofs l h
+      simp [CompCert4Lean.X86.Conventions1.loc_arguments_win64,
+        regs_of_rpairs] at h
+  | cons ty tys ih =>
+      intro r ofs l h hnonneg hdiv
+      cases ty with
+      | Tint | Tlong | Tany32 | Tany64 =>
+          cases hn : CompCert4Lean.Lib.Coqlib.list_nth_z
+              CompCert4Lean.X86.Conventions1.int_param_regs_win64 r with
+          | none =>
+              simp [CompCert4Lean.X86.Conventions1.loc_arguments_win64, hn,
+                regs_of_rpairs] at h
+              rcases h with h | h
+              · exact conv_stack_head cfg ofs _ l h hnonneg hdiv
+              · exact ih _ _ _ h (conv_zle_add_two ofs hnonneg)
+                  (conv_zdivide_add_two ofs hdiv)
+          | some ireg =>
+              simp [CompCert4Lean.X86.Conventions1.loc_arguments_win64, hn,
+                regs_of_rpairs] at h
+              rcases h with h | h
+              · exact conv_register_head cfg ireg l h
+                  (conv_win64_int_caller_save cfg ireg
+                    (conv_list_nth_z_in _ _ _ hn))
+              · exact ih _ _ _ h hnonneg hdiv
+      | Tfloat | Tsingle =>
+          cases hn : CompCert4Lean.Lib.Coqlib.list_nth_z
+              CompCert4Lean.X86.Conventions1.float_param_regs_win64 r with
+          | none =>
+              simp [CompCert4Lean.X86.Conventions1.loc_arguments_win64, hn,
+                regs_of_rpairs] at h
+              rcases h with h | h
+              · exact conv_stack_head cfg ofs _ l h hnonneg hdiv
+              · exact ih _ _ _ h (conv_zle_add_two ofs hnonneg)
+                  (conv_zdivide_add_two ofs hdiv)
+          | some freg =>
+              simp [CompCert4Lean.X86.Conventions1.loc_arguments_win64, hn,
+                regs_of_rpairs] at h
+              rcases h with h | h
+              · exact conv_register_head cfg freg l h
+                  (conv_win64_float_caller_save cfg freg
+                    (conv_list_nth_z_in _ _ _ hn))
+              · exact ih _ _ _ h hnonneg hdiv
+
+private theorem conv_elf64_arguments_acceptable :
+    ∀ (cfg : CompCert4Lean.Config.CompilerConfig)
+      (_habi : ¬ CompCert4Lean.X86_64.Archi.win64 cfg = true)
+      (tys : List typ) (ir fr ofs : ConvZ) (l : loc),
+      l ∈ regs_of_rpairs
+        (CompCert4Lean.X86.Conventions1.loc_arguments_elf64 tys ir fr ofs) →
+      convZLe convZ0 ofs → convZDivide convZ2 ofs →
+      CompCert4Lean.X86.Conventions1.loc_argument_acceptable cfg l := by
+  intro cfg habi tys
+  induction tys with
+  | nil =>
+      intro ir fr ofs l h
+      simp [CompCert4Lean.X86.Conventions1.loc_arguments_elf64,
+        regs_of_rpairs] at h
+  | cons ty tys ih =>
+      intro ir fr ofs l h hnonneg hdiv
+      cases ty with
+      | Tint | Tlong | Tany32 | Tany64 =>
+          cases hn : CompCert4Lean.Lib.Coqlib.list_nth_z
+              CompCert4Lean.X86.Conventions1.int_param_regs_elf64 ir with
+          | none =>
+              simp [CompCert4Lean.X86.Conventions1.loc_arguments_elf64, hn,
+                regs_of_rpairs] at h
+              rcases h with h | h
+              · exact conv_stack_head cfg ofs _ l h hnonneg hdiv
+              · exact ih _ _ _ _ h (conv_zle_add_two ofs hnonneg)
+                  (conv_zdivide_add_two ofs hdiv)
+          | some ireg =>
+              simp [CompCert4Lean.X86.Conventions1.loc_arguments_elf64, hn,
+                regs_of_rpairs] at h
+              rcases h with h | h
+              · exact conv_register_head cfg ireg l h
+                  (conv_elf64_int_caller_save cfg ireg habi
+                    (conv_list_nth_z_in _ _ _ hn))
+              · exact ih _ _ _ _ h hnonneg hdiv
+      | Tfloat | Tsingle =>
+          cases hn : CompCert4Lean.Lib.Coqlib.list_nth_z
+              CompCert4Lean.X86.Conventions1.float_param_regs_elf64 fr with
+          | none =>
+              simp [CompCert4Lean.X86.Conventions1.loc_arguments_elf64, hn,
+                regs_of_rpairs] at h
+              rcases h with h | h
+              · exact conv_stack_head cfg ofs _ l h hnonneg hdiv
+              · exact ih _ _ _ _ h (conv_zle_add_two ofs hnonneg)
+                  (conv_zdivide_add_two ofs hdiv)
+          | some freg =>
+              simp [CompCert4Lean.X86.Conventions1.loc_arguments_elf64, hn,
+                regs_of_rpairs] at h
+              rcases h with h | h
+              · exact conv_register_head cfg freg l h
+                  (conv_elf64_float_caller_save cfg freg
+                    (conv_list_nth_z_in _ _ _ hn))
+              · exact ih _ _ _ _ h hnonneg hdiv
+
+theorem loc_arguments_acceptable_2 : loc_arguments_acceptable_2Statement := by
+  intro cfg s l h
+  change l ∈ regs_of_rpairs
+    (CompCert4Lean.X86.Conventions1.loc_arguments cfg s) at h
+  simp only [CompCert4Lean.X86.Conventions1.loc_arguments,
+    CompCert4Lean.X86_64.Archi.ptr64, ↓reduceIte] at h
+  split at h <;> rename_i habi
+  · exact conv_win64_arguments_acceptable cfg _ convZ0 convZ0 l h
+      conv_zle_zero_refl (conv_zdivide_zero convZ2)
+  · have habi' : ¬ CompCert4Lean.X86_64.Archi.win64 cfg = true := by
+      exact habi
+    exact conv_elf64_arguments_acceptable cfg habi' _ convZ0 convZ0 convZ0 l h
+      conv_zle_zero_refl (conv_zdivide_zero convZ2)
+
+end CompCert4Lean.Backend.Conventions

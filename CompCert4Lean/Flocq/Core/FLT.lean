@@ -239,3 +239,80 @@ def ulp_FLT_smallStatement (ctx : ExactRealContext)
         Exact.bpow ctx beta emin
 
 end CompCert4Lean.Flocq.Core.FLT
+
+namespace CompCert4Lean.Flocq.Core.FLT
+
+theorem ulp_FLT_0 : ∀ (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx),
+    ulp_FLT_0Statement ctx magnitude := by
+  intro ctx magnitude beta emin prec h
+  have hreq : CompCert4Lean.Flocq.Core.Ulp.Exact.Req_bool ctx
+      (CompCert4Lean.Flocq.Core.Ulp.Exact.R0 ctx)
+      (CompCert4Lean.Flocq.Core.Ulp.Exact.R0 ctx) = true := by
+    exact CompCert4Lean.Flocq.Core.Raux.Req_bool_true ctx _ _ rfl
+  unfold CompCert4Lean.Flocq.Core.Ulp.Exact.ulp
+  rw [hreq]
+  cases hnegligible : CompCert4Lean.Flocq.Core.Ulp.negligible_exp
+      (FLT_exp emin prec) with
+  | none =>
+      have hspec := CompCert4Lean.Flocq.Core.Ulp.negligible_exp_spec
+        (FLT_exp emin prec)
+      rw [hnegligible] at hspec
+      cases hspec with
+      | negligible_None hall =>
+          have hlt := hall emin
+          have hzero : FLT_exp emin prec emin = emin := by
+            have hsub : Zle (Zsub emin prec) emin := by
+              change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+                  (Zsub emin prec) ≤
+                CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ emin
+              change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+                  (zOfInt
+                    (CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ emin -
+                      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ prec)) ≤
+                CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ emin
+              simp only [CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+              have hp : 0 < CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ prec := by
+                exact CompCert4Lean.Flocq.Core.FLX.prec_gt_0 prec
+              omega
+            simpa [FLT_exp] using
+              (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.max_r
+                (Zsub emin prec) emin hsub)
+          rw [hzero] at hlt
+          change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+              emin <
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ emin at hlt
+          exact (Int.lt_irrefl _ hlt).elim
+  | some n =>
+      have hspec := CompCert4Lean.Flocq.Core.Ulp.negligible_exp_spec
+        (FLT_exp emin prec)
+      rw [hnegligible] at hspec
+      cases hspec with
+      | negligible_Some n hn =>
+          have hmax : FLT_exp emin prec n = emin := by
+            have hn' := hn
+            change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ n ≤
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+                (Zmax (Zsub n prec) emin) at hn'
+            have hp : 0 < CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ prec := by
+              exact CompCert4Lean.Flocq.Core.FLX.prec_gt_0 prec
+            have hsub_int : CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (Zsub n prec) =
+                CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ n -
+                  CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ prec := by
+              change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+                  (zOfInt
+                    (CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ n -
+                      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ prec)) = _
+              simp only [CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+            by_cases hle : CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (Zsub n prec) ≤
+                CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ emin
+            · have hleZ : Zle (Zsub n prec) emin := hle
+              simpa [FLT_exp] using
+                (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.max_r
+                  (Zsub n prec) emin hleZ)
+            · simp only [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.max] at hn'
+              simp only [if_neg hle] at hn'
+              rw [hsub_int] at hn'
+              exact (False.elim (by omega))
+          simp [hmax]
+
+end CompCert4Lean.Flocq.Core.FLT

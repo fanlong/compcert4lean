@@ -1078,3 +1078,42 @@ theorem ZArith.BinInt.Z.max_r :
 
 end Rocq.Coq
 end CompCert4Lean.Foundation.Numbers
+
+namespace CompCert4Lean.Foundation.Numbers
+namespace Rocq.Coq
+
+theorem ZArith.BinInt.Z.mul_nonneg_nonneg :
+    ZArith.BinInt.Z.mul_nonneg_nonnegStatement := by
+  intro n m hn hm
+  change 0 ≤ intOfZ (ZArith.BinInt.Z.mul n m)
+  simp only [ZArith.BinInt.Z.mul, intOfZ_zOfInt]
+  exact Int.mul_nonneg hn hm
+
+theorem ZArith.BinInt.Z.max_lub :
+    ZArith.BinInt.Z.max_lubStatement := by
+  intro n m p hnp hmp
+  change intOfZ (ZArith.BinInt.Z.max n m) ≤ intOfZ p
+  change intOfZ n ≤ intOfZ p at hnp
+  change intOfZ m ≤ intOfZ p at hmp
+  by_cases h : intOfZ n ≤ intOfZ m
+  · simp [ZArith.BinInt.Z.max, h]
+    exact hmp
+  · simp [ZArith.BinInt.Z.max, h]
+    exact hnp
+
+theorem ZArith.Zorder.Zlt_le_weak_proof :
+    ∀ (n m : Z), ZArith.Zorder.Zlt_le_weak n m := by
+  intro n m h
+  exact Int.le_of_lt h
+
+def ZArith.BinInt.Z.max_case :
+    ZArith.BinInt.Z.max_caseStatement := by
+  intro n m P hn hm
+  by_cases h : intOfZ n ≤ intOfZ m
+  · simp [ZArith.BinInt.Z.max, h]
+    exact hm
+  · simp [ZArith.BinInt.Z.max, h]
+    exact hn
+
+end Rocq.Coq
+end CompCert4Lean.Foundation.Numbers

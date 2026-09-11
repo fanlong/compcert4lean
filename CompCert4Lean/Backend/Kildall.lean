@@ -1258,3 +1258,74 @@ theorem pick_some : pick_someStatement := by
       exact hresult
 
 end CompCert4Lean.Backend.Kildall.NodeSetBackward
+
+namespace CompCert4Lean.Backend.Kildall.NodeSetForward
+
+theorem empty_spec : empty_specStatement := by
+  intro n hn
+  exact hn
+
+theorem add_spec : add_specStatement := by
+  simpa [CompCert4Lean.Backend.Kildall.NodeSetForward.add_specStatement,
+    CompCert4Lean.Backend.Kildall.NodeSetBackward.add_specStatement,
+    CompCert4Lean.Backend.Kildall.NodeSetForward.add,
+    CompCert4Lean.Backend.Kildall.NodeSetBackward.add,
+    CompCert4Lean.Backend.Kildall.NodeSetForward.In,
+    CompCert4Lean.Backend.Kildall.NodeSetBackward.In] using
+    (CompCert4Lean.Backend.Kildall.NodeSetBackward.add_spec)
+
+private theorem pheap_findMax_none_eq_empty (s :
+    CompCert4Lean.Lib.Heaps.PHeap.t) :
+    CompCert4Lean.Lib.Heaps.PHeap.findMax s = none → s.1 = .Empty := by
+  rcases s with ⟨h, hb⟩
+  revert hb
+  induction h with
+  | Empty =>
+      intro hb hs
+      rfl
+  | Node l x r ihl ihr =>
+      intro hb hs
+      cases r with
+      | Empty =>
+          have hcontra : (some x : Option
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.positive) = none := by
+            simpa [CompCert4Lean.Lib.Heaps.PHeap.findMax,
+              CompCert4Lean.Lib.Heaps.SplayHeapSet.findMax,
+              CompCert4Lean.Lib.Heaps.SplayHeapSet.R.findMax] using hs
+          cases hcontra
+      | Node r₁ y r₂ =>
+          have hs' : CompCert4Lean.Lib.Heaps.PHeap.findMax
+              ⟨.Node r₁ y r₂, hb.2.1⟩ = none := by
+            simpa [CompCert4Lean.Lib.Heaps.PHeap.findMax,
+              CompCert4Lean.Lib.Heaps.SplayHeapSet.findMax,
+              CompCert4Lean.Lib.Heaps.SplayHeapSet.R.findMax] using hs
+          have he := ihr hb.2.1 hs'
+          cases he
+
+theorem pick_none : pick_noneStatement := by
+  intro s n hs hn
+  unfold pick at hs
+  cases hfind : CompCert4Lean.Lib.Heaps.PHeap.findMax s with
+  | some x => simp [hfind] at hs
+  | none =>
+      have he := pheap_findMax_none_eq_empty s hfind
+      rcases s with ⟨h, hb⟩
+      cases he
+      change CompCert4Lean.Lib.Heaps.PHeap.In n ⟨.Empty, hb⟩ at hn
+      simpa [CompCert4Lean.Lib.Heaps.PHeap.In,
+        CompCert4Lean.Lib.Heaps.SplayHeapSet.In,
+        CompCert4Lean.Lib.Heaps.SplayHeapSet.R.In] using hn
+
+end CompCert4Lean.Backend.Kildall.NodeSetForward
+
+namespace CompCert4Lean.Backend.Kildall.NodeSetBackward
+
+theorem law_obligation_proof : law_obligation := by
+  constructor
+  · exact empty_spec
+  · exact add_spec
+  · exact pick_none
+  · exact pick_some
+  · exact all_nodes_spec
+
+end CompCert4Lean.Backend.Kildall.NodeSetBackward

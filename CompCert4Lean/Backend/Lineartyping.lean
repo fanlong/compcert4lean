@@ -428,3 +428,80 @@ theorem wt_call_regs : wt_call_regsStatement := by
             CompCert4Lean.Common.Values.Val.has_type]
 
 end CompCert4Lean.Backend.Lineartyping
+
+namespace CompCert4Lean.Backend.Lineartyping
+
+open CompCert4Lean.Foundation.Logic
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Backend.Conventions
+open CompCert4Lean.Backend.Locations
+open CompCert4Lean.Backend.LTL
+open CompCert4Lean.X86.Machregs
+open CompCert4Lean.X86.Op
+
+theorem wt_return_regs : wt_return_regsStatement := by
+  intro cfg caller callee hcaller hcallee l
+  cases l with
+  | R r =>
+      simp only [CompCert4Lean.Backend.LTL.return_regs,
+        CompCert4Lean.Backend.Locations.Loc.type]
+      split
+      · exact hcaller (R r)
+      · exact hcallee (R r)
+  | S sl ofs ty =>
+      cases sl with
+      | Local =>
+          simpa [CompCert4Lean.Backend.LTL.return_regs,
+            CompCert4Lean.Backend.Locations.Loc.type] using hcaller (S .Local ofs ty)
+      | Incoming =>
+          simpa [CompCert4Lean.Backend.LTL.return_regs,
+            CompCert4Lean.Backend.Locations.Loc.type] using hcaller (S .Incoming ofs ty)
+      | Outgoing =>
+          simp [CompCert4Lean.Backend.LTL.return_regs,
+            CompCert4Lean.Backend.Locations.Loc.type,
+            CompCert4Lean.Common.Values.Val.has_type]
+
+theorem wt_undef_caller_save_regs : wt_undef_caller_save_regsStatement := by
+  intro cfg ls hls l
+  cases l with
+  | R r =>
+      simp only [CompCert4Lean.Backend.LTL.undef_caller_save_regs,
+        CompCert4Lean.Backend.Locations.Loc.type]
+      split
+      · exact hls (R r)
+      · exact trivial
+  | S sl ofs ty =>
+      cases sl with
+      | Local =>
+          simpa [CompCert4Lean.Backend.LTL.undef_caller_save_regs,
+            CompCert4Lean.Backend.Locations.Loc.type] using hls (S .Local ofs ty)
+      | Incoming =>
+          simpa [CompCert4Lean.Backend.LTL.undef_caller_save_regs,
+            CompCert4Lean.Backend.Locations.Loc.type] using hls (S .Incoming ofs ty)
+      | Outgoing =>
+          simp [CompCert4Lean.Backend.LTL.undef_caller_save_regs,
+            CompCert4Lean.Backend.Locations.Loc.type,
+            CompCert4Lean.Common.Values.Val.has_type]
+
+theorem wt_init : wt_initStatement := by
+  intro l
+  simp [CompCert4Lean.Backend.Locations.Locmap.init,
+    CompCert4Lean.Common.Values.Val.has_type]
+
+theorem wt_setpair : wt_setpairStatement := by
+  intro sg v rs hv hrs
+  cases sg with
+  | mk args res cc =>
+      cases res <;>
+        simp [CompCert4Lean.X86.Conventions1.loc_result,
+          CompCert4Lean.X86.Conventions1.loc_result_64,
+          CompCert4Lean.X86_64.Archi.ptr64,
+          CompCert4Lean.Backend.Locations.Locmap.setpair]
+      all_goals
+        apply wt_setreg
+        · cases v <;> trivial
+        · exact hrs
+
+end CompCert4Lean.Backend.Lineartyping

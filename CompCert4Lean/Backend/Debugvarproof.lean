@@ -392,3 +392,56 @@ theorem delta_state_same : delta_state_sameStatement := by
       exact Prod.ext (diff_same s) (diff_same s)
 
 end CompCert4Lean.Backend.Debugvarproof
+
+namespace CompCert4Lean.Backend.Debugvarproof
+
+open CompCert4Lean.Backend.Debugvar
+open CompCert4Lean.Backend.Linear
+
+theorem transf_code_match : transf_code_matchStatement := by
+  intro cfg lm c
+  refine List.brecOn
+    (motive := fun c => ∀ before : Option avail,
+      match_code c (transf_code cfg lm before c)) c ?_
+  intro c rec
+  cases c with
+  | nil =>
+      intro before
+      exact match_code.nil
+  | cons i rest =>
+      intro before
+      have generic : match_code (i :: rest)
+            (i :: add_delta_ranges before
+              (skip_debug_setvar cfg lm (transfer cfg lm before i).snd rest)
+              (transf_code cfg lm
+                (skip_debug_setvar cfg lm (transfer cfg lm before i).snd rest) rest)) := by
+        apply match_code.cons
+        exact rec.1 _
+      cases i with
+      | Lgoto lbl1 =>
+          cases rest with
+          | nil => exact generic
+          | cons j r =>
+              cases j with
+              | Llabel lbl2 =>
+                  let after := get_label lbl2 lm
+                  change match_code (Lgoto lbl1 :: Llabel lbl2 :: r)
+                    (Lgoto lbl1 :: Llabel lbl2 ::
+                      add_delta_ranges before after
+                        (transf_code cfg lm after r))
+                  have hs : add_delta_ranges before before
+                      (Llabel lbl2 :: add_delta_ranges before after
+                        (transf_code cfg lm after r)) =
+                      (Llabel lbl2 :: add_delta_ranges before after
+                        (transf_code cfg lm after r)) := by
+                    unfold add_delta_ranges
+                    rw [delta_state_same before]
+                    rfl
+                  rw [← hs]
+                  apply match_code.cons
+                  apply match_code.cons
+                  exact rec.2.1 after
+              | _ => exact generic
+      | _ => exact generic
+
+end CompCert4Lean.Backend.Debugvarproof

@@ -798,3 +798,115 @@ theorem magree_monotone : magree_monotoneStatement := by
       ma_nextblock := h.ma_nextblock }
 
 end CompCert4Lean.Backend.Deadcodeproof
+
+namespace CompCert4Lean.Backend.Deadcodeproof
+
+variable
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+
+theorem transf_program_match : ∀ cfg, transf_program_matchStatement cfg := by
+  intro cfg p tp h
+  unfold CompCert4Lean.Backend.Deadcode.transf_program
+    CompCert4Lean.Common.AST.transform_partial_program
+    CompCert4Lean.Common.AST.transform_partial_program2 at h
+  have hlist :
+      ∀ (xs : List (CompCert4Lean.Common.AST.ident ×
+          CompCert4Lean.Common.AST.globdef
+            CompCert4Lean.Backend.RTL.fundef Unit))
+        (ys : List (CompCert4Lean.Common.AST.ident ×
+          CompCert4Lean.Common.AST.globdef
+            CompCert4Lean.Backend.RTL.fundef Unit)),
+        CompCert4Lean.Common.AST.transf_globdefs
+            (fun _ f => CompCert4Lean.Backend.Deadcode.transf_fundef
+              (binary64_certificate := binary64_certificate)
+              (binary32_certificate := binary32_certificate)
+              cfg (CompCert4Lean.Common.AST.prog_defmap p)
+              (CompCert4Lean.Backend.ValueAnalysis.romem_for cfg p) f)
+            (fun _ v => .OK v) xs = .OK ys →
+          CompCert4Lean.Lib.Coqlib.list_forall2
+            (CompCert4Lean.Common.Linking.match_ident_globdef
+              (fun q f tf => CompCert4Lean.Backend.Deadcode.transf_fundef
+                (binary64_certificate := binary64_certificate)
+                (binary32_certificate := binary32_certificate)
+                cfg (CompCert4Lean.Common.AST.prog_defmap q)
+                (CompCert4Lean.Backend.ValueAnalysis.romem_for cfg q) f = .OK tf)
+              (fun x y : Unit => x = y) p) xs ys := by
+    intro xs
+    induction xs with
+    | nil =>
+        intro ys hys
+        cases hys
+        exact CompCert4Lean.Lib.Coqlib.list_forall2.nil _
+    | cons hd tl ih =>
+        intro ys hys
+        cases hd with
+        | mk id gd =>
+            cases gd with
+            | Gfun f =>
+                cases hf : CompCert4Lean.Backend.Deadcode.transf_fundef
+                    (binary64_certificate := binary64_certificate)
+                    (binary32_certificate := binary32_certificate)
+                    cfg (CompCert4Lean.Common.AST.prog_defmap p)
+                    (CompCert4Lean.Backend.ValueAnalysis.romem_for cfg p) f with
+                | Error msg =>
+                    simp [CompCert4Lean.Common.AST.transf_globdefs, hf] at hys
+                | OK tf =>
+                    cases ht : CompCert4Lean.Common.AST.transf_globdefs
+                        (fun _ f => CompCert4Lean.Backend.Deadcode.transf_fundef
+                          (binary64_certificate := binary64_certificate)
+                          (binary32_certificate := binary32_certificate)
+                          cfg (CompCert4Lean.Common.AST.prog_defmap p)
+                          (CompCert4Lean.Backend.ValueAnalysis.romem_for cfg p) f)
+                        (fun _ v => .OK v) tl with
+                    | Error msg =>
+                        simp [CompCert4Lean.Common.AST.transf_globdefs, hf, ht] at hys
+                    | OK ysTail =>
+                        simp only [CompCert4Lean.Common.AST.transf_globdefs, hf, ht] at hys
+                        cases hys
+                        apply CompCert4Lean.Lib.Coqlib.list_forall2.cons
+                        · constructor
+                          · rfl
+                          · apply CompCert4Lean.Common.Linking.match_globdef.match_globdef_fun
+                              (ctx' := p)
+                            · exact CompCert4Lean.Common.Linking.Linker.linkorder_refl p
+                            · exact hf
+                        · exact ih ysTail ht
+            | Gvar v =>
+                cases ht : CompCert4Lean.Common.AST.transf_globdefs
+                    (fun _ f => CompCert4Lean.Backend.Deadcode.transf_fundef
+                      (binary64_certificate := binary64_certificate)
+                      (binary32_certificate := binary32_certificate)
+                      cfg (CompCert4Lean.Common.AST.prog_defmap p)
+                      (CompCert4Lean.Backend.ValueAnalysis.romem_for cfg p) f)
+                    (fun _ v => .OK v) tl with
+                | Error msg =>
+                    simp [CompCert4Lean.Common.AST.transf_globdefs,
+                      CompCert4Lean.Common.AST.transf_globvar, ht] at hys
+                | OK ysTail =>
+                    simp only [CompCert4Lean.Common.AST.transf_globdefs,
+                      CompCert4Lean.Common.AST.transf_globvar, ht] at hys
+                    cases hys
+                    apply CompCert4Lean.Lib.Coqlib.list_forall2.cons
+                    · constructor
+                      · rfl
+                      · apply CompCert4Lean.Common.Linking.match_globdef.match_globdef_var
+                        exact CompCert4Lean.Common.Linking.match_globvar.match_globvar_intro
+                          _ _ _ _ _ _ rfl
+                    · exact ih ysTail ht
+  cases hdefs : CompCert4Lean.Common.AST.transf_globdefs
+      (fun _ f => CompCert4Lean.Backend.Deadcode.transf_fundef
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        cfg (CompCert4Lean.Common.AST.prog_defmap p)
+        (CompCert4Lean.Backend.ValueAnalysis.romem_for cfg p) f)
+      (fun _ v => .OK v) p.prog_defs with
+  | Error msg => simp [hdefs] at h
+  | OK defs =>
+      simp only [hdefs] at h
+      cases h
+      unfold match_prog CompCert4Lean.Common.Linking.match_program
+        CompCert4Lean.Common.Linking.match_program_gen
+      exact ⟨hlist p.prog_defs defs hdefs, rfl, rfl⟩
+
+end CompCert4Lean.Backend.Deadcodeproof

@@ -725,3 +725,129 @@ theorem senv_preserved : senv_preservedStatement := by
                     rfl
 
 end CompCert4Lean.Backend.CleanupLabelsproof
+
+namespace CompCert4Lean.Backend.CleanupLabelsproof
+
+open CompCert4Lean.Backend.CleanupLabels
+open CompCert4Lean.Backend.Linear
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Linking
+open CompCert4Lean.Lib.Coqlib
+
+theorem add_label_branched_to_contains : add_label_branched_to_containsStatement := by
+  intro ls i lbl hbranch
+  cases i with
+  | Lgoto target =>
+      change lbl = target at hbranch
+      exact CompCert4Lean.Lib.FSetAVLplus.Make.add_1 ls target lbl hbranch.symm
+  | Lcond cond args target =>
+      change lbl = target at hbranch
+      exact CompCert4Lean.Lib.FSetAVLplus.Make.add_1 ls target lbl hbranch.symm
+  | Ljumptable arg tbl =>
+      change lbl ∈ tbl at hbranch
+      change Labelset.In lbl (tbl.foldr Labelset.add ls)
+      induction tbl with
+      | nil => exact (_root_.List.not_mem_nil hbranch).elim
+      | cons target tbl ih =>
+          simp only [List.foldr, _root_.List.mem_cons] at hbranch ⊢
+          rcases hbranch with hEq | hMem
+          · exact CompCert4Lean.Lib.FSetAVLplus.Make.add_1
+              (tbl.foldr Labelset.add ls) target lbl hEq.symm
+          · exact CompCert4Lean.Lib.FSetAVLplus.Make.add_2
+              (tbl.foldr Labelset.add ls) target lbl (ih hMem)
+  | Lgetstack sl ofs ty dst => exact (False.elim hbranch)
+  | Lsetstack src sl ofs ty => exact (False.elim hbranch)
+  | Lop op args res => exact (False.elim hbranch)
+  | Lload chunk addr args dst => exact (False.elim hbranch)
+  | Lstore chunk addr args src => exact (False.elim hbranch)
+  | Lcall sig ros => exact (False.elim hbranch)
+  | Ltailcall sig ros => exact (False.elim hbranch)
+  | Lbuiltin ef args res => exact (False.elim hbranch)
+  | Llabel target => exact (False.elim hbranch)
+  | Lreturn => exact (False.elim hbranch)
+
+private theorem cleanup_labels_list_fold_left_append
+    {A B : Type} (f : A → B → B) (acc : B) (xs ys : List A) :
+    list_fold_left f acc (xs ++ ys) =
+      list_fold_left f (list_fold_left f acc xs) ys := by
+  induction xs generalizing acc with
+  | nil => rfl
+  | cons x xs ih =>
+      simp only [List.cons_append, list_fold_left]
+      exact ih (f x acc)
+
+private theorem cleanup_labels_list_fold_right_cons
+    {A B : Type} (f : A → B → B) (x : A) (xs : List A) (acc : B) :
+    list_fold_right f (x :: xs) acc =
+      f x (list_fold_right f xs acc) := by
+  unfold list_fold_right
+  rw [List.reverse_cons, cleanup_labels_list_fold_left_append]
+  rfl
+
+theorem remove_unused_labels_cons : remove_unused_labels_consStatement := by
+  intro bto i c
+  unfold CompCert4Lean.Backend.CleanupLabels.remove_unused_labels
+  change list_fold_right (remove_unused bto) (i :: c) [] = _
+  calc
+    list_fold_right (remove_unused bto) (i :: c) [] =
+        remove_unused bto i (list_fold_right (remove_unused bto) c []) :=
+      cleanup_labels_list_fold_right_cons (remove_unused bto) i c []
+    _ = _ := by rfl
+
+theorem labels_branched_to_correct : labels_branched_to_correctStatement := by
+  intro c i lbl hi hbranch
+  have fold_preserves : ∀ (c' : code) (bto : Labelset.t),
+      Labelset.Subset bto
+        (List.foldl (fun ls j => add_label_branched_to ls j) bto c') := by
+    intro c' bto
+    induction c' generalizing bto with
+    | nil => intro x hx; exact hx
+    | cons j js ih =>
+        simp only [List.foldl]
+        intro x hx
+        exact ih (add_label_branched_to bto j) x
+          (add_label_branched_to_incr bto j x hx)
+  have mem_fold : ∀ (c' : code) (bto : Labelset.t),
+      CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.List.In i c' →
+        instr_branches_to i lbl →
+      Labelset.In lbl
+        (List.foldl (fun ls j => add_label_branched_to ls j) bto c') := by
+    intro c' bto hi' hbranch'
+    induction c' generalizing bto with
+    | nil => exact (_root_.List.not_mem_nil hi').elim
+    | cons j js ih =>
+        simp only [List.foldl]
+        rcases (_root_.List.mem_cons.mp hi') with hhead | htail
+        · subst j
+          apply fold_preserves js (add_label_branched_to bto i) lbl
+          exact add_label_branched_to_contains bto i lbl hbranch'
+        · exact ih (add_label_branched_to bto j) htail
+  unfold CompCert4Lean.Backend.CleanupLabels.labels_branched_to
+  exact mem_fold c Labelset.empty hi hbranch
+
+theorem find_function_translated : find_function_translatedStatement := by
+  intro prog tprog hm ros ls f hfind
+  unfold CompCert4Lean.Backend.Linear.find_function at hfind ⊢
+  cases ros with
+  | inl r =>
+      exact functions_translated prog tprog hm
+        (ls (CompCert4Lean.Backend.Locations.R r)) f hfind
+  | inr symb =>
+      change
+        (match Genv.find_symbol (Genv.globalenv prog) symb with
+        | none => none
+        | some b => Genv.find_funct_ptr (Genv.globalenv prog) b) = some f at hfind
+      change
+        (match Genv.find_symbol (Genv.globalenv tprog) symb with
+        | none => none
+        | some b => Genv.find_funct_ptr (Genv.globalenv tprog) b) =
+          some (CompCert4Lean.Backend.CleanupLabels.transf_fundef f)
+      cases hs : Genv.find_symbol (Genv.globalenv prog) symb with
+      | none => simp [hs] at hfind
+      | some b =>
+          have hs' := symbols_preserved prog tprog hm symb
+          rw [hs', hs]
+          exact function_ptr_translated prog tprog hm b f (by simpa [hs] using hfind)
+
+end CompCert4Lean.Backend.CleanupLabelsproof

@@ -651,3 +651,87 @@ theorem inbetween_mult_compat (ctx : ExactRealContext) :
           _ = l := hmiddle
 
 end CompCert4Lean.Flocq.Calc.Bracket
+
+namespace CompCert4Lean.Flocq.Calc.Bracket
+
+theorem inbetween_bounds (ctx : ExactRealContext) :
+    inbetween_boundsStatement ctx := by
+  intro d u hdu x l hx
+  cases hx with
+  | inbetween_Exact h =>
+      subst x
+      constructor
+      · exact
+          CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.Rle_refl
+            ctx d
+      · exact hdu
+  | inbetween_Inexact l hbounds hmiddle =>
+      constructor
+      · exact
+          CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.Rlt_le
+            ctx d x hbounds.1
+      · exact hbounds.2
+
+private theorem bracket_bpow_pos (ctx : ExactRealContext) (beta : radix) (e : Z) :
+    ctx.spec.lt ctx.spec.zero
+      (CompCert4Lean.Flocq.Core.Raux.Exact.bpow ctx beta e) := by
+  have hnum : Zlt Z0
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.Zpos
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.xH) := by
+    change (0 : Int) < 1
+    omega
+  have h := CompCert4Lean.Flocq.Core.Float_prop.F2R_gt_0 ctx beta
+      (CompCert4Lean.Flocq.Core.Float_prop.Float beta
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.Zpos
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.xH) e) hnum
+  change ctx.spec.lt ctx.spec.zero
+      (ctx.spec.mul
+        (ctx.spec.ofZ
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.Zpos
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.xH))
+        (CompCert4Lean.Flocq.Core.Raux.Exact.bpow ctx beta e)) at h
+  rw [ctx.certificate.sourceLaws.ofZ_one,
+    ctx.certificate.orderedField.one_mul] at h
+  exact h
+
+private theorem bracket_float_endpoint_lt (ctx : ExactRealContext)
+    (beta : radix) (m e : Z) :
+    Rlt ctx (F2R ctx (Float beta m e))
+      (F2R ctx (Float beta (Zadd m Zone) e)) := by
+  change ctx.spec.lt
+      (ctx.spec.mul (ctx.spec.ofZ m)
+        (CompCert4Lean.Flocq.Core.Raux.Exact.bpow ctx beta e))
+      (ctx.spec.mul (ctx.spec.ofZ (Zadd m Zone))
+        (CompCert4Lean.Flocq.Core.Raux.Exact.bpow ctx beta e))
+  have hm : Zlt m (Zadd m Zone) := by
+    change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ m <
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (Zadd m Zone)
+    have hZone : CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ Zone = (1 : Int) := by
+      rfl
+    simp only [Zadd,
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add,
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+    rw [hZone]
+    omega
+  have hm' : ctx.spec.lt (ctx.spec.ofZ m) (ctx.spec.ofZ (Zadd m Zone)) :=
+    CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.IZR_lt ctx m
+      (Zadd m Zone) hm
+  have hs := bracket_bpow_pos ctx beta e
+  have hzero : IZR ctx Z0 = ctx.spec.zero :=
+    ctx.certificate.sourceLaws.ofZ_zero
+  have hs' : Rlt ctx (IZR ctx Z0)
+      (CompCert4Lean.Flocq.Core.Raux.Exact.bpow ctx beta e) := by
+    rw [hzero]
+    exact hs
+  exact
+    CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.Rmult_lt_compat_r
+      ctx (CompCert4Lean.Flocq.Core.Raux.Exact.bpow ctx beta e)
+      (ctx.spec.ofZ m) (ctx.spec.ofZ (Zadd m Zone)) hs' hm'
+
+theorem inbetween_float_bounds (ctx : ExactRealContext) :
+    inbetween_float_boundsStatement ctx := by
+  intro beta x m e l hx
+  unfold inbetween_float at hx
+  exact inbetween_bounds ctx _ _ (bracket_float_endpoint_lt ctx beta m e) _ _ hx
+
+end CompCert4Lean.Flocq.Calc.Bracket

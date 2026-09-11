@@ -558,3 +558,55 @@ theorem reg_valid_incr : reg_valid_incrStatement := by
       exact Nat.lt_of_lt_of_le hvalid hnextreg
 
 end CompCert4Lean.Backend.RTLgenspec
+
+namespace CompCert4Lean.Backend.RTLgenspec
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Foundation.Logic.Support
+open CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.List
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Backend.RTLgen
+open CompCert4Lean.X86.Op
+
+theorem reg_fresh_decr : reg_fresh_decrStatement := by
+  intro r s1 s2 hin hfresh hvalid
+  cases hin with
+  | state_incr_intro _ hnextreg _ =>
+      apply hfresh
+      change CompCert4Lean.Foundation.Numbers.Rocq.Coq.PArith.BinPos.Pos.to_nat r <
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.PArith.BinPos.Pos.to_nat s1.st_nextreg at hvalid
+      change CompCert4Lean.Foundation.Numbers.Rocq.Coq.PArith.BinPos.Pos.to_nat s1.st_nextreg ≤
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.PArith.BinPos.Pos.to_nat s2.st_nextreg at hnextreg
+      change CompCert4Lean.Foundation.Numbers.Rocq.Coq.PArith.BinPos.Pos.to_nat r <
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.PArith.BinPos.Pos.to_nat s2.st_nextreg
+      exact Nat.lt_of_lt_of_le hvalid hnextreg
+
+theorem regs_valid_cons : regs_valid_consStatement := by
+  intro r1 rl s hvalid hrl r hmem
+  simp only [List.mem_cons] at hmem
+  rcases hmem with heq | htail
+  · subst r
+    exact hvalid
+  · exact hrl r htail
+
+theorem regs_valid_incr : regs_valid_incrStatement := by
+  intro s1 s2 rl hin hvalid r hmem
+  exact reg_valid_incr r s1 s2 hin (hvalid r hmem)
+
+theorem new_reg_not_in_map : new_reg_not_in_mapStatement := by
+  intro s1 s2 m r i hnew hmap hin
+  simp only [RTLgen.new_reg] at hnew
+  injection hnew with hr hs
+  rw [← hr] at hin
+  have hvalid := hmap _ hin
+  change CompCert4Lean.Foundation.Numbers.Rocq.Coq.PArith.BinPos.Pos.to_nat s1.st_nextreg <
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.PArith.BinPos.Pos.to_nat s1.st_nextreg at hvalid
+  exact Nat.lt_irrefl _ hvalid
+
+end CompCert4Lean.Backend.RTLgenspec

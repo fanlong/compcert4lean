@@ -214,3 +214,16 @@ def combine_op_soundStatement
       Val.lessdef r r'
 
 end CompCert4Lean.X86.CombineOpproof
+
+namespace CompCert4Lean.X86.CombineOpproof
+
+theorem get_op_sound
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    get_op_soundStatement := by
+  intro ge sp m get valu get_sound v op vl hget
+  have h_eval := get_sound v (.Op op vl) hget
+  cases h_eval with
+  | op_eval_to _ => assumption
+
+end CompCert4Lean.X86.CombineOpproof

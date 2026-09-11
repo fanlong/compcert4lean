@@ -538,3 +538,37 @@ theorem OrderedTyp.lt_trans_proof : OrderedTyp.lt_trans := by
       CompCert4Lean.Foundation.Numbers.Rocq.Coq.PArith.BinPos.Pos.lt] <;> omega
 
 end CompCert4Lean.Backend.Locations
+
+namespace CompCert4Lean.Backend.Locations
+
+theorem Locmap.gso : Locmap.gsoStatement := by
+  intro l v m p h
+  unfold Locmap.set
+  cases Loc.eq l p with
+  | left heq =>
+      subst p
+      exact (Loc.same_not_diff l h).elim
+  | right hne =>
+      cases Loc.diff_dec l p with
+      | left hdiff => rfl
+      | right hnotdiff => exact (hnotdiff h).elim
+
+theorem OrderedTyp.lt_not_eq_proof : OrderedTyp.lt_not_eq := by
+  intro x y h heq
+  subst y
+  cases x <;>
+    simp [OrderedTyp.lt, CompCert4Lean.Lib.Coqlib.Plt,
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.PArith.BinPos.Pos.lt] at h
+
+theorem OrderedSlot.lt_trans_proof : OrderedSlot.lt_trans := by
+  intro x y z hxy hyz
+  cases x <;> cases y <;> cases z <;>
+    simp_all [OrderedSlot.lt, CompCert4Lean.Lib.Coqlib.Plt,
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.PArith.BinPos.Pos.lt] <;> omega
+
+theorem Loc.diff_not_eq : Loc.diff_not_eqStatement := by
+  intro l1 l2 h heq
+  subst l2
+  exact Loc.same_not_diff l1 h
+
+end CompCert4Lean.Backend.Locations

@@ -669,3 +669,189 @@ end R
 end ISet
 
 end CompCert4Lean.Lib.IntvSets
+
+namespace CompCert4Lean.Lib.IntvSets
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+namespace ISet
+namespace R
+
+theorem In_remove : In_removeStatement := by
+  intro x L H s hs
+  induction hs with
+  | ok_nil => simp [remove, In]
+  | ok_cons l h tail bounds below tail_ok ih =>
+      simp only [remove]
+      split <;> rename_i hlt
+      · simp only [In]
+        rw [ih]
+        constructor
+        · rintro (hx | hx)
+          · exact ⟨by
+              intro hb
+              rcases hb with ⟨hLx, hxH⟩
+              simp [ZArith.BinInt.Z.ltb, ZArith.BinInt.Z.lt,
+                ZArith.BinInt.Z.le] at hlt hx hLx hxH ⊢
+              omega, Or.inl hx⟩
+          · exact ⟨hx.1, Or.inr hx.2⟩
+        · rintro ⟨hn, hx | hx⟩
+          · exact Or.inl hx
+          · exact Or.inr ⟨hn, hx⟩
+      · split <;> rename_i hlt'
+        · simp only [In]
+          constructor
+          · intro hx
+            have hnot : ¬ (ZArith.BinInt.Z.le L x ∧
+                ZArith.BinInt.Z.lt x H) := by
+              intro hbad
+              rcases hbad with ⟨hLx, hxH⟩
+              rcases hx with hxhead | hxtail
+              · simp [ZArith.BinInt.Z.ltb, ZArith.BinInt.Z.lt,
+                  ZArith.BinInt.Z.le] at hlt' hxhead hLx hxH ⊢
+                omega
+              · have hb := below x hxtail
+                simp [ZArith.BinInt.Z.ltb, ZArith.BinInt.Z.lt,
+                  ZArith.BinInt.Z.le] at hlt' bounds hb hLx hxH ⊢
+                omega
+            exact ⟨hnot, hx⟩
+          · rintro ⟨_, hx⟩
+            exact hx
+        · split <;> rename_i hleft
+          · split <;> rename_i hright
+            · simp only [In]
+              constructor
+              · intro hx
+                have hnot : ¬ (ZArith.BinInt.Z.le L x ∧
+                    ZArith.BinInt.Z.lt x H) := by
+                  intro hbad
+                  rcases hbad with ⟨hLx, hxH⟩
+                  rcases hx with hxleft | hxmid | hxtail
+                  · simp [ZArith.BinInt.Z.ltb, ZArith.BinInt.Z.lt,
+                      ZArith.BinInt.Z.le] at hLx hxleft ⊢
+                    omega
+                  · simp [ZArith.BinInt.Z.ltb, ZArith.BinInt.Z.lt,
+                      ZArith.BinInt.Z.le] at hLx hxH hxmid ⊢
+                    omega
+                  · have hb := below x hxtail
+                    simp [ZArith.BinInt.Z.ltb, ZArith.BinInt.Z.lt,
+                      ZArith.BinInt.Z.le] at hb hxH hright ⊢
+                    omega
+                rcases hx with hxleft | hxmid | hxtail
+                · exact ⟨hnot, Or.inl (by
+                    simp [ZArith.BinInt.Z.ltb, ZArith.BinInt.Z.lt,
+                      ZArith.BinInt.Z.le] at hlt hxleft ⊢
+                    omega)⟩
+                · exact ⟨hnot, Or.inl (by
+                    simp [ZArith.BinInt.Z.ltb, ZArith.BinInt.Z.lt,
+                      ZArith.BinInt.Z.le] at hlt' hxmid ⊢
+                    omega)⟩
+                · exact ⟨hnot, Or.inr hxtail⟩
+              · intro hpair
+                have hnot := hpair.1
+                have hx := hpair.2
+                rcases hx with hxhead | hxtail
+                · by_cases hLx : ZArith.BinInt.Z.le L x
+                  · right
+                    left
+                    simp [ZArith.BinInt.Z.ltb, ZArith.BinInt.Z.lt,
+                      ZArith.BinInt.Z.le] at hright hLx hnot hxhead ⊢
+                    omega
+                  · left
+                    simp [ZArith.BinInt.Z.ltb, ZArith.BinInt.Z.lt,
+                      ZArith.BinInt.Z.le] at hLx hxhead ⊢
+                    omega
+                · exact Or.inr (Or.inr hxtail)
+            · simp only [In]
+              rw [ih]
+              constructor
+              · rintro (hx | hx)
+                · have hnot : ¬ (ZArith.BinInt.Z.le L x ∧
+                    ZArith.BinInt.Z.lt x H) := by
+                    intro hb
+                    rcases hb with ⟨hLx, hxH⟩
+                    simp [ZArith.BinInt.Z.ltb, ZArith.BinInt.Z.lt,
+                      ZArith.BinInt.Z.le] at hLx hxH hx ⊢
+                    omega
+                  have hhead : ZArith.BinInt.Z.le l x ∧
+                      ZArith.BinInt.Z.lt x h := by
+                    simp [ZArith.BinInt.Z.ltb, ZArith.BinInt.Z.lt,
+                      ZArith.BinInt.Z.le] at hlt hx ⊢
+                    omega
+                  exact ⟨hnot, Or.inl hhead⟩
+                · exact ⟨hx.1, Or.inr hx.2⟩
+              · intro hpair
+                have hnot := hpair.1
+                have hx := hpair.2
+                rcases hx with hxhead | hxtail
+                · by_cases hLx : ZArith.BinInt.Z.le L x
+                  · exfalso
+                    simp [ZArith.BinInt.Z.ltb, ZArith.BinInt.Z.lt,
+                      ZArith.BinInt.Z.le] at hright hLx hxhead hnot ⊢
+                    omega
+                  · left
+                    simp [ZArith.BinInt.Z.ltb, ZArith.BinInt.Z.lt,
+                      ZArith.BinInt.Z.le] at hLx hxhead ⊢
+                    omega
+                · exact Or.inr ⟨hnot, hxtail⟩
+          · split <;> rename_i hright
+            · simp only [In]
+              constructor
+              · intro hx
+                have hnot : ¬ (ZArith.BinInt.Z.le L x ∧
+                    ZArith.BinInt.Z.lt x H) := by
+                  intro hbad
+                  rcases hbad with ⟨hLx, hxH⟩
+                  rcases hx with hxhead | hxtail
+                  · rcases hxhead with ⟨hHx, hxh⟩
+                    simp [ZArith.BinInt.Z.ltb, ZArith.BinInt.Z.lt,
+                      ZArith.BinInt.Z.le] at hHx hxH ⊢
+                    omega
+                  · have hb := below x hxtail
+                    simp [ZArith.BinInt.Z.ltb, ZArith.BinInt.Z.lt,
+                      ZArith.BinInt.Z.le] at hright hb hxH ⊢
+                    omega
+                rcases hx with hxhead | hxtail
+                · rcases hxhead with ⟨hHx, hxh⟩
+                  have hhead : ZArith.BinInt.Z.le l x ∧
+                      ZArith.BinInt.Z.lt x h := by
+                    simp [ZArith.BinInt.Z.ltb, ZArith.BinInt.Z.lt,
+                      ZArith.BinInt.Z.le] at hlt' hHx hxh ⊢
+                    omega
+                  exact ⟨hnot, Or.inl hhead⟩
+                · exact ⟨hnot, Or.inr hxtail⟩
+              · intro hpair
+                have hnot := hpair.1
+                have hx := hpair.2
+                rcases hx with hxhead | hxtail
+                · rcases hxhead with ⟨hlx, hxh⟩
+                  by_cases hHx : ZArith.BinInt.Z.le H x
+                  · left
+                    simp [ZArith.BinInt.Z.ltb, ZArith.BinInt.Z.lt,
+                      ZArith.BinInt.Z.le] at hHx hxh ⊢
+                    omega
+                  · exfalso
+                    simp [ZArith.BinInt.Z.ltb, ZArith.BinInt.Z.lt,
+                      ZArith.BinInt.Z.le] at hleft hHx hlx hnot ⊢
+                    omega
+                · exact Or.inr hxtail
+            · simp only [In]
+              rw [ih]
+              constructor
+              · rintro hx
+                exact ⟨hx.1, Or.inr hx.2⟩
+              · intro hpair
+                have hnot := hpair.1
+                have hx := hpair.2
+                rcases hx with hxhead | hxtail
+                · exfalso
+                  rcases hxhead with ⟨hlx, hxh⟩
+                  simp [ZArith.BinInt.Z.ltb, ZArith.BinInt.Z.lt,
+                    ZArith.BinInt.Z.le] at hleft hright hnot hlx hxh ⊢
+                  omega
+                · exact ⟨hnot, hxtail⟩
+
+end R
+end ISet
+
+end CompCert4Lean.Lib.IntvSets

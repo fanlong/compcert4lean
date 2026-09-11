@@ -1030,3 +1030,108 @@ theorem eval_addressing_Ainstack : eval_addressing_AinstackStatement := by
     CompCert4Lean.X86_64.Archi.ptr64]
 
 end CompCert4Lean.X86.Op
+
+namespace CompCert4Lean.X86.Op
+
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Integers
+
+private theorem cmp_bool_neg (c : CCComparison) (x y : val) :
+    Val.cmp_bool (negate_comparison c) x y =
+      (Val.cmp_bool c x y).map Bool.not := by
+  cases c <;> cases x <;> cases y <;>
+    simp [Val.cmp_bool, negate_comparison, CompCert4Lean.Lib.Integers.Int.cmp,
+      CompCert4Lean.Lib.Integers.WordCore.cmp]
+
+private theorem cmpu_bool_neg
+    (valid_ptr : CompCert4Lean.Common.Values.block →
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z → Bool)
+    (c : CCComparison) (x y : val) :
+    Val.cmpu_bool valid_ptr (negate_comparison c) x y =
+      (Val.cmpu_bool valid_ptr c x y).map Bool.not := by
+  cases c <;> cases x <;> cases y <;>
+    simp [Val.cmpu_bool, negate_comparison, Val.cmp_different_blocks,
+      CompCert4Lean.Lib.Integers.Int.cmp,
+      CompCert4Lean.Lib.Integers.Int.cmpu,
+      CompCert4Lean.Lib.Integers.Int64.cmp,
+      CompCert4Lean.Lib.Integers.Int64.cmpu,
+      CompCert4Lean.Lib.Integers.Ptrofs.cmpu,
+      CompCert4Lean.Lib.Integers.WordCore.cmp,
+      CompCert4Lean.Lib.Integers.WordCore.cmpu,
+      CompCert4Lean.X86_64.Archi.ptr64]
+
+private theorem cmpl_bool_neg (c : CCComparison) (x y : val) :
+    Val.cmpl_bool (negate_comparison c) x y =
+      (Val.cmpl_bool c x y).map Bool.not := by
+  cases c <;> cases x <;> cases y <;>
+    simp [Val.cmpl_bool, negate_comparison, CompCert4Lean.Lib.Integers.Int64.cmp,
+      CompCert4Lean.Lib.Integers.WordCore.cmp]
+
+private theorem cmplu_bool_neg
+    (valid_ptr : CompCert4Lean.Common.Values.block →
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z → Bool)
+    (c : CCComparison) (x y : val) :
+    Val.cmplu_bool valid_ptr (negate_comparison c) x y =
+      (Val.cmplu_bool valid_ptr c x y).map Bool.not := by
+  cases c <;> cases x <;> cases y <;>
+    simp [Val.cmplu_bool, negate_comparison, Val.cmp_different_blocks,
+      CompCert4Lean.Lib.Integers.Int64.cmp,
+      CompCert4Lean.Lib.Integers.Int64.cmpu,
+      CompCert4Lean.Lib.Integers.Ptrofs.cmpu,
+      CompCert4Lean.Lib.Integers.WordCore.cmp,
+      CompCert4Lean.Lib.Integers.WordCore.cmpu,
+      CompCert4Lean.X86_64.Archi.ptr64] <;>
+    split <;> simp_all [CompCert4Lean.Lib.Integers.Ptrofs.cmpu]
+
+theorem eval_negate_condition : eval_negate_conditionStatement := by
+  intro cond vl m
+  cases vl with
+  | nil => cases cond <;> rfl
+  | cons v1 vl =>
+      cases vl with
+      | nil =>
+          cases cond with
+          | Ccomp c => simp [eval_condition, negate_condition]
+          | Ccompu c => simp [eval_condition, negate_condition]
+          | Ccompimm c n => exact cmp_bool_neg c v1 (.Vint n)
+          | Ccompuimm c n =>
+              exact cmpu_bool_neg (CompCert4Lean.Common.Memory.Mem.valid_pointer m) c v1 (.Vint n)
+          | Ccompl c => simp [eval_condition, negate_condition]
+          | Ccomplu c => simp [eval_condition, negate_condition]
+          | Ccomplimm c n => exact cmpl_bool_neg c v1 (.Vlong n)
+          | Ccompluimm c n =>
+              exact cmplu_bool_neg (CompCert4Lean.Common.Memory.Mem.valid_pointer m) c v1 (.Vlong n)
+          | Ccompf c => simp [eval_condition, negate_condition]
+          | Cnotcompf c => simp [eval_condition, negate_condition]
+          | Ccompfs c => simp [eval_condition, negate_condition]
+          | Cnotcompfs c => simp [eval_condition, negate_condition]
+          | Cmaskzero n => simp [eval_condition, negate_condition]
+          | Cmasknotzero n =>
+              simp [eval_condition, negate_condition, Function.comp_def]
+      | cons v2 vl =>
+          cases vl with
+          | nil =>
+              cases cond with
+              | Ccomp c => exact cmp_bool_neg c v1 v2
+              | Ccompu c =>
+                  exact cmpu_bool_neg (CompCert4Lean.Common.Memory.Mem.valid_pointer m) c v1 v2
+              | Ccompimm c n => simp [eval_condition, negate_condition]
+              | Ccompuimm c n => simp [eval_condition, negate_condition]
+              | Ccompl c => exact cmpl_bool_neg c v1 v2
+              | Ccomplu c =>
+                  exact cmplu_bool_neg (CompCert4Lean.Common.Memory.Mem.valid_pointer m) c v1 v2
+              | Ccomplimm c n => simp [eval_condition, negate_condition]
+              | Ccompluimm c n => simp [eval_condition, negate_condition]
+              | Ccompf c => rfl
+              | Cnotcompf c =>
+                  cases h : Val.cmpf_bool c v1 v2 <;>
+                    simp [eval_condition, negate_condition, h]
+              | Ccompfs c => rfl
+              | Cnotcompfs c =>
+                  cases h : Val.cmpfs_bool c v1 v2 <;>
+                    simp [eval_condition, negate_condition, h]
+              | Cmaskzero n => simp [eval_condition, negate_condition]
+              | Cmasknotzero n => simp [eval_condition, negate_condition, Function.comp_def]
+          | cons v3 vl => cases cond <;> rfl
+
+end CompCert4Lean.X86.Op

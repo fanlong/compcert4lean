@@ -969,3 +969,187 @@ theorem function_ptr_translated : function_ptr_translatedStatement := by
 
 end CompCert4Lean.Backend.Inliningproof
 -/
+
+namespace CompCert4Lean.Backend.Inliningproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Backend.Inlining
+open CompCert4Lean.Backend.Inliningspec
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Linking
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+
+private theorem inlining_senv_symbol_add_global
+    (ge1 ge2 : Genv.t fundef Unit) (id : ident)
+    (hm : ∀ id', PTree.get id' ge2.genv_symb = PTree.get id' ge1.genv_symb)
+    (hn : ge2.genv_next = ge1.genv_next) :
+    ∀ id', PTree.get id' (PTree.set id ge2.genv_next ge2.genv_symb) =
+      PTree.get id' (PTree.set id ge1.genv_next ge1.genv_symb) := by
+  intro id'
+  have h2 := @PTree.getSet_equation _ id' id ge2.genv_next ge2.genv_symb
+  have h1 := @PTree.getSet_equation _ id' id ge1.genv_next ge1.genv_symb
+  by_cases h : id' = id
+  · rw [h2, h1]
+    simp only [dif_pos h]
+    exact congrArg some hn
+  · rw [h2, h1]
+    simp only [dif_neg h]
+    exact hm id'
+
+private theorem inlining_senv_match_genvs_add_global
+    (R : globdef fundef Unit → globdef fundef Unit → Prop)
+    (ge1 ge2 : Genv.t fundef Unit) (id : ident)
+    (g1 g2 : globdef fundef Unit)
+    (hm : Genv.match_genvs R ge1 ge2) (hg : R g1 g2) :
+    Genv.match_genvs R (Genv.add_global ge1 (id, g1))
+      (Genv.add_global ge2 (id, g2)) := by
+  constructor
+  · exact congrArg PArith.BinPos.Pos.succ hm.mge_next
+  · exact inlining_senv_symbol_add_global ge1 ge2 id hm.mge_symb hm.mge_next
+  · intro b
+    change option_rel R
+      (PTree.get b (PTree.set ge1.genv_next g1 ge1.genv_defs))
+      (PTree.get b (PTree.set ge2.genv_next g2 ge2.genv_defs))
+    have h1 := @PTree.getSet_equation (globdef fundef Unit)
+      b ge1.genv_next g1 ge1.genv_defs
+    have h2 := @PTree.getSet_equation (globdef fundef Unit)
+      b ge2.genv_next g2 ge2.genv_defs
+    by_cases h : b = ge1.genv_next
+    · have h' : b = ge2.genv_next := h.trans hm.mge_next.symm
+      rw [h1, h2]
+      simp only [dif_pos h, dif_pos h']
+      exact option_rel.some g1 g2 hg
+    · have h' : b ≠ ge2.genv_next := by
+        intro hb
+        apply h
+        exact hb.trans hm.mge_next
+      rw [h1, h2]
+      simp only [dif_neg h, dif_neg h']
+      exact hm.mge_defs b
+
+private theorem inlining_senv_match_genvs_add_globals
+    (R : globdef fundef Unit → globdef fundef Unit → Prop)
+    (xs ys : List (ident × globdef fundef Unit))
+    (hxy : list_forall2 (fun a b => a.1 = b.1 ∧ R a.2 b.2) xs ys)
+    (ge1 ge2 : Genv.t fundef Unit) (hm : Genv.match_genvs R ge1 ge2) :
+    Genv.match_genvs R (Genv.add_globals ge1 xs) (Genv.add_globals ge2 ys) := by
+  induction hxy generalizing ge1 ge2 with
+  | nil => simpa [Genv.add_globals] using hm
+  | @cons a xs b ys hab htail ih =>
+      rcases a with ⟨aid, ag⟩
+      rcases b with ⟨bid, bg⟩
+      change aid = bid ∧ R ag bg at hab
+      rcases hab with ⟨rfl, hab⟩
+      simp only [Genv.add_globals, List.foldl_cons]
+      apply ih
+      simpa using (inlining_senv_match_genvs_add_global R ge1 ge2 aid ag bg hm hab)
+
+private theorem inlining_senv_add_globals_public
+    (ge : Genv.t fundef Unit) (gl : List (ident × globdef fundef Unit)) :
+    (Genv.add_globals ge gl).genv_public = ge.genv_public := by
+  induction gl generalizing ge with
+  | nil => rfl
+  | cons idg gl ih =>
+      simp only [Genv.add_globals, List.foldl_cons]
+      simpa [Genv.add_globals, Genv.add_global] using ih (Genv.add_global ge idg)
+
+private theorem inlining_senv_globalenvs_match
+    (cfg : InliningConfig) (prog tprog : program)
+    (hm : match_prog cfg prog tprog) :
+    Genv.match_genvs
+      (@match_globdef (program fundef Unit) fundef Unit fundef Unit
+        (@Linker_prog fundef Unit (Linker_fundef function) Linker_unit)
+        (fun (cunit : program fundef Unit) f tf =>
+          transf_fundef (funenv_program cfg cunit) f = .OK tf)
+        (fun x y : Unit => x = y) prog)
+      (Genv.globalenv prog) (Genv.globalenv tprog) := by
+  let R : globdef fundef Unit → globdef fundef Unit → Prop :=
+    @match_globdef (program fundef Unit) fundef Unit fundef Unit
+      (@Linker_prog fundef Unit (@Linker_fundef function) Linker_unit)
+      (fun (cunit : program fundef Unit) f tf =>
+        transf_fundef (funenv_program cfg cunit) f = .OK tf)
+      (fun x y : Unit => x = y) prog
+  unfold match_prog match_program match_program_gen at hm
+  have hempty : Genv.match_genvs R
+      (Genv.empty_genv fundef Unit prog.prog_public)
+      (Genv.empty_genv fundef Unit tprog.prog_public) := by
+    constructor
+    · rfl
+    · intro id'
+      rfl
+    · intro b
+      exact option_rel.none R
+  have hlist_of : ∀ (xs ys : List (ident × globdef fundef Unit)),
+      list_forall2 (@match_ident_globdef (program fundef Unit) fundef Unit fundef Unit
+        (@Linker_prog fundef Unit (Linker_fundef function) Linker_unit)
+        (fun (cunit : program fundef Unit) f tf =>
+          transf_fundef (funenv_program cfg cunit) f = .OK tf)
+        (fun x y : Unit => x = y) prog) xs ys →
+      list_forall2 (fun a b => a.1 = b.1 ∧ R a.2 b.2) xs ys := by
+    intro xs ys h
+    induction h with
+    | nil => exact list_forall2.nil _
+    | @cons a xs b ys hab htail ih =>
+        apply list_forall2.cons
+        · constructor
+          · exact hab.1
+          · simpa [R] using hab.2
+        · exact ih
+  have hlist := hlist_of prog.prog_defs tprog.prog_defs hm.1
+  exact inlining_senv_match_genvs_add_globals R prog.prog_defs tprog.prog_defs
+    hlist _ _ hempty
+
+theorem senv_preserved : senv_preservedStatement := by
+  intro cfg prog tprog hm
+  unfold Senv.equiv
+  constructor
+  · intro id
+    exact symbols_preserved cfg prog tprog hm id
+  constructor
+  · intro id
+    change Genv.public_symbol (Genv.globalenv tprog) id =
+      Genv.public_symbol (Genv.globalenv prog) id
+    have ht : (Genv.globalenv tprog).genv_public = tprog.prog_public := by
+      unfold Genv.globalenv
+      exact inlining_senv_add_globals_public _ _
+    have hp : (Genv.globalenv prog).genv_public = prog.prog_public := by
+      unfold Genv.globalenv
+      exact inlining_senv_add_globals_public _ _
+    unfold Genv.public_symbol
+    rw [symbols_preserved cfg prog tprog hm id]
+    unfold match_prog match_program match_program_gen at hm
+    rw [ht, hp, hm.2.2]
+  · intro b
+    change Genv.block_is_volatile (Genv.globalenv tprog) b =
+      Genv.block_is_volatile (Genv.globalenv prog) b
+    have hg := inlining_senv_globalenvs_match cfg prog tprog hm
+    unfold Genv.block_is_volatile Genv.find_var_info Genv.find_def
+    cases h1 : PTree.get b (Genv.globalenv prog).genv_defs with
+    | none =>
+        cases h2 : PTree.get b (Genv.globalenv tprog).genv_defs with
+        | none => rfl
+        | some gd2 =>
+            have hd := hg.mge_defs b
+            simp [h1, h2] at hd
+            cases hd
+    | some gd1 =>
+        cases h2 : PTree.get b (Genv.globalenv tprog).genv_defs with
+        | none =>
+            have hd := hg.mge_defs b
+            simp [h1, h2] at hd
+            cases hd
+        | some gd2 =>
+            have hd := hg.mge_defs b
+            simp [h1, h2] at hd
+            cases hd with
+            | some x y hrel =>
+                cases hrel with
+                | match_globdef_fun ctx' f1 f2 horder htrans => rfl
+                | match_globdef_var v1 v2 hvar =>
+                    cases hvar
+                    rfl
+
+end CompCert4Lean.Backend.Inliningproof

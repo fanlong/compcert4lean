@@ -1132,3 +1132,346 @@ theorem solve_sound_proof : solve_sound := by
       hconstraints (solve_constraints_sound_aux e e' hconstraints)
 
 end CompCert4Lean.Backend.Cminortyping.S
+
+namespace CompCert4Lean.Backend.Cminortyping
+
+open CompCert4Lean.Common.Errors
+
+theorem expect_sound : expect_soundStatement := by
+  intro e t1 t2 e' h
+  unfold expect at h
+  cases hEq : typEq t1 t2 with
+  | left htyp =>
+      simp [hEq] at h
+      exact htyp
+  | right htyp =>
+      simp [hEq] at h
+
+end CompCert4Lean.Backend.Cminortyping
+
+namespace CompCert4Lean.Backend.Cminortyping
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Errors
+open CompCert4Lean.Common.Unityping
+open CompCert4Lean.Common.Unityping.UniSolver
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.Backend.Cminor
+
+private theorem type_expr_set_incr_aux :
+    ∀ (te : S.typassign) (x : positive) (ty : RTLtypes.t) (e e' : S.typenv),
+      S.set e x ty = OK e' → S.satisf te e' → S.satisf te e := by
+  intro te x ty e e' hset hs
+  unfold S.set CompCert4Lean.Common.Unityping.UniSolver.set at hset
+  split at hset
+  · rename_i hget
+    cases hset
+    constructor
+    · intro y t hy
+      have hgs :=
+        CompCert4Lean.Lib.Maps.PTree.gsspec_proof
+          (A := RTLtypes.t) y x ty (te_typ e)
+      cases hp : peq y x with
+      | left hxy =>
+          subst y
+          simp [hget] at hy
+      | right hne =>
+          have hupd : PTree.get y (PTree.set x ty (te_typ e)) = some t := by
+            rw [hgs]
+            simp [hp]
+            exact hy
+          exact hs.1 y t hupd
+    · intro y z heq
+      exact hs.2 y z heq
+  · rename_i hget
+    split at hset
+    · rename_i opt ty' dec hproof hmatch
+      cases hset
+      exact hs
+    · rename_i hne
+      cases hset
+
+private theorem type_expr_expect_incr_aux :
+    ∀ (te : S.typassign) (e : S.typenv) (t1 t2 : typ) (e' : S.typenv),
+      expect e t1 t2 = OK e' → S.satisf te e' → S.satisf te e := by
+  intro te e t1 t2 e' h hs
+  unfold expect at h
+  cases hEq : typEq t1 t2 with
+  | left htyp =>
+      simp [hEq] at h
+      cases h
+      exact hs
+  | right htyp =>
+      simp [hEq] at h
+
+private theorem type_expr_incr_aux :
+    ∀ (te : S.typassign) (a : expr) (t : typ) (e e' : S.typenv),
+      type_expr e a t = OK e' → S.satisf te e' → S.satisf te e := by
+  intro te a
+  induction a with
+  | Evar id =>
+      intro t e e' h hs
+      exact type_expr_set_incr_aux te id t e e' h hs
+  | Econst c =>
+      intro t e e' h hs
+      exact type_expr_expect_incr_aux te e (type_constant c) t e' h hs
+  | Eunop op a ih =>
+      intro t e e' h hs
+      rcases hOp : type_unop op with ⟨targ, tres⟩
+      cases h1 : type_expr e a targ with
+      | Error message =>
+          simp [type_expr, hOp, h1] at h
+      | OK e1 =>
+          simp [type_expr, hOp, h1] at h
+          exact ih targ e e1 h1
+            (type_expr_expect_incr_aux te e1 tres t e' h hs)
+  | Ebinop op a1 a2 ih1 ih2 =>
+      intro t e e' h hs
+      rcases hOp : type_binop op with ⟨⟨targ1, targ2⟩, tres⟩
+      cases h1 : type_expr e a1 targ1 with
+      | Error message =>
+          simp [type_expr, hOp, h1] at h
+      | OK e1 =>
+          cases h2 : type_expr e1 a2 targ2 with
+          | Error message =>
+              simp [type_expr, hOp, h1, h2] at h
+          | OK e2 =>
+              simp [type_expr, hOp, h1, h2] at h
+              exact ih1 targ1 e e1 h1
+                (ih2 targ2 e1 e2 h2
+                  (type_expr_expect_incr_aux te e2 tres t e' h hs))
+  | Eload chunk a ih =>
+      intro t e e' h hs
+      cases h1 : type_expr e a Tptr with
+      | Error message =>
+          simp [type_expr, h1] at h
+      | OK e1 =>
+          simp [type_expr, h1] at h
+          exact ih Tptr e e1 h1
+            (type_expr_expect_incr_aux te e1 (type_of_chunk chunk) t e' h hs)
+
+theorem type_expr_sound : type_expr_soundStatement := by
+  intro te a
+  induction a with
+  | Evar id =>
+      intro t e e' h hs
+      have hty : te id = t := S.set_sound_proof te id t e e' h hs
+      exact hty ▸ wt_Evar te id
+  | Econst c =>
+      intro t e e' h hs
+      have hty : type_constant c = t := expect_sound e (type_constant c) t e' h
+      exact hty ▸ wt_Econst te c
+  | Eunop op a ih =>
+      intro t e e' h hs
+      rcases hOp : type_unop op with ⟨targ, tres⟩
+      cases h1 : type_expr e a targ with
+      | Error message =>
+          simp [type_expr, hOp, h1] at h
+      | OK e1 =>
+          simp [type_expr, hOp, h1] at h
+          have hs1 : S.satisf te e1 :=
+            type_expr_expect_incr_aux te e1 tres t e' h hs
+          have hrec : wt_expr te a targ := ih targ e e1 h1 hs1
+          have hty : tres = t := expect_sound e1 tres t e' h
+          exact hty ▸ wt_Eunop te op a targ tres hOp hrec
+  | Ebinop op a1 a2 ih1 ih2 =>
+      intro t e e' h hs
+      rcases hOp : type_binop op with ⟨⟨targ1, targ2⟩, tres⟩
+      cases h1 : type_expr e a1 targ1 with
+      | Error message =>
+          simp [type_expr, hOp, h1] at h
+      | OK e1 =>
+          cases h2 : type_expr e1 a2 targ2 with
+          | Error message =>
+              simp [type_expr, hOp, h1, h2] at h
+          | OK e2 =>
+              simp [type_expr, hOp, h1, h2] at h
+              have hs2 : S.satisf te e2 :=
+                type_expr_expect_incr_aux te e2 tres t e' h hs
+              have hs1 : S.satisf te e1 :=
+                type_expr_incr_aux te a2 targ2 e1 e2 h2 hs2
+              have hrec1 : wt_expr te a1 targ1 := ih1 targ1 e e1 h1 hs1
+              have hrec2 : wt_expr te a2 targ2 := ih2 targ2 e1 e2 h2 hs2
+              have hty : tres = t := expect_sound e2 tres t e' h
+              exact hty ▸ wt_Ebinop te op a1 a2 targ1 targ2 tres hOp hrec1 hrec2
+  | Eload chunk a ih =>
+      intro t e e' h hs
+      cases h1 : type_expr e a Tptr with
+      | Error message =>
+          simp [type_expr, h1] at h
+      | OK e1 =>
+          simp [type_expr, h1] at h
+          have hs1 : S.satisf te e1 :=
+            type_expr_expect_incr_aux te e1 (type_of_chunk chunk) t e' h hs
+          have hrec : wt_expr te a Tptr := ih Tptr e e1 h1 hs1
+          have hty : type_of_chunk chunk = t :=
+            expect_sound e1 (type_of_chunk chunk) t e' h
+          exact hty ▸ wt_Eload te chunk a hrec
+
+end CompCert4Lean.Backend.Cminortyping
+
+namespace CompCert4Lean.Backend.Cminortyping
+
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Errors
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Backend.Cminor
+
+private theorem type_exprlist_incr_aux :
+    ∀ (te : S.typassign) (al : List expr) (tl : List typ) (e e' : S.typenv),
+      type_exprlist e al tl = OK e' → S.satisf te e' → S.satisf te e := by
+  intro te al
+  induction al with
+  | nil =>
+      intro tl e e' h hs
+      cases tl with
+      | nil =>
+          simp [type_exprlist] at h
+          cases h
+          exact hs
+      | cons t tl =>
+          simp [type_exprlist] at h
+  | cons a al ih =>
+      intro tl e e' h hs
+      cases tl with
+      | nil =>
+          simp [type_exprlist] at h
+      | cons t tl =>
+          cases h1 : type_expr e a t with
+          | Error message =>
+              simp [type_exprlist, h1] at h
+          | OK e1 =>
+              simp [type_exprlist, h1] at h
+              exact type_expr_incr_aux te a t e e1 h1
+                (ih tl e1 e' h hs)
+
+theorem type_exprlist_sound : type_exprlist_soundStatement := by
+  intro te al
+  induction al with
+  | nil =>
+      intro tl e e' h hs
+      cases tl with
+      | nil =>
+          simp [type_exprlist] at h
+          cases h
+          exact list_forall2.nil _
+      | cons t tl =>
+          simp [type_exprlist] at h
+  | cons a al ih =>
+      intro tl e e' h hs
+      cases tl with
+      | nil =>
+          simp [type_exprlist] at h
+      | cons t tl =>
+          cases h1 : type_expr e a t with
+          | Error message =>
+              simp [type_exprlist, h1] at h
+          | OK e1 =>
+              simp [type_exprlist, h1] at h
+              have hs1 : S.satisf te e1 :=
+                type_exprlist_incr_aux te al tl e1 e' h hs
+              exact list_forall2.cons a t
+                (type_expr_sound te a t e e1 h1 hs1)
+                (ih tl e1 e' h hs)
+
+end CompCert4Lean.Backend.Cminortyping
+
+namespace CompCert4Lean.Backend.Cminortyping
+
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Errors
+open CompCert4Lean.Backend.Cminor
+
+theorem type_assign_sound : type_assign_soundStatement := by
+  intro te id a e e' h hs
+  cases a with
+  | Evar id' =>
+      cases hmove : S.move e id id' with
+      | Error message =>
+          simp [type_assign, hmove] at h
+      | OK result =>
+          rcases result with ⟨changed, e1⟩
+          simp [type_assign, hmove] at h
+          cases h
+          have hty : te id = te id' :=
+            S.move_sound_proof te e id id' e' changed hmove hs
+          exact hty.symm ▸ wt_Evar te id'
+  | Econst c =>
+      cases hset : S.set e id (type_constant c) with
+      | Error message =>
+          simp [type_assign, hset] at h
+      | OK e1 =>
+          simp [type_assign, hset] at h
+          cases h
+          have hty : te id = type_constant c :=
+            S.set_sound_proof te id (type_constant c) e e' hset hs
+          exact hty.symm ▸ wt_Econst te c
+  | Eunop op a1 =>
+      rcases hOp : type_unop op with ⟨targ, tres⟩
+      cases h1 : type_expr e a1 targ with
+      | Error message =>
+          simp [type_assign, hOp, h1] at h
+      | OK e1 =>
+          cases hset : S.set e1 id tres with
+          | Error message =>
+              simp [type_assign, hOp, h1, hset] at h
+          | OK e2 =>
+              simp [type_assign, hOp, h1, hset] at h
+              cases h
+              have hty : te id = tres :=
+                S.set_sound_proof te id tres e1 e' hset hs
+              have hs1 : S.satisf te e1 :=
+                type_expr_set_incr_aux te id tres e1 e' hset hs
+              have hrec : wt_expr te a1 targ :=
+                type_expr_sound te a1 targ e e1 h1 hs1
+              exact hty.symm ▸ wt_Eunop te op a1 targ tres hOp hrec
+  | Ebinop op a1 a2 =>
+      rcases hOp : type_binop op with ⟨⟨targ1, targ2⟩, tres⟩
+      cases h1 : type_expr e a1 targ1 with
+      | Error message =>
+          simp [type_assign, hOp, h1] at h
+      | OK e1 =>
+          cases h2 : type_expr e1 a2 targ2 with
+          | Error message =>
+              simp [type_assign, hOp, h1, h2] at h
+          | OK e2 =>
+              cases hset : S.set e2 id tres with
+              | Error message =>
+                  simp [type_assign, hOp, h1, h2, hset] at h
+              | OK e3 =>
+                  simp [type_assign, hOp, h1, h2, hset] at h
+                  cases h
+                  have hty : te id = tres :=
+                    S.set_sound_proof te id tres e2 e' hset hs
+                  have hs2 : S.satisf te e2 :=
+                    type_expr_set_incr_aux te id tres e2 e' hset hs
+                  have hs1 : S.satisf te e1 :=
+                    type_expr_incr_aux te a2 targ2 e1 e2 h2 hs2
+                  have hrec1 : wt_expr te a1 targ1 :=
+                    type_expr_sound te a1 targ1 e e1 h1 hs1
+                  have hrec2 : wt_expr te a2 targ2 :=
+                    type_expr_sound te a2 targ2 e1 e2 h2 hs2
+                  exact hty.symm ▸
+                    wt_Ebinop te op a1 a2 targ1 targ2 tres hOp hrec1 hrec2
+  | Eload chunk a1 =>
+      cases h1 : type_expr e a1 Tptr with
+      | Error message =>
+          simp [type_assign, h1] at h
+      | OK e1 =>
+          cases hset : S.set e1 id (type_of_chunk chunk) with
+          | Error message =>
+              simp [type_assign, h1, hset] at h
+          | OK e2 =>
+              simp [type_assign, h1, hset] at h
+              cases h
+              have hty : te id = type_of_chunk chunk :=
+                S.set_sound_proof te id (type_of_chunk chunk) e1 e' hset hs
+              have hs1 : S.satisf te e1 :=
+                type_expr_set_incr_aux te id (type_of_chunk chunk) e1 e' hset hs
+              have hrec : wt_expr te a1 Tptr :=
+                type_expr_sound te a1 Tptr e e1 h1 hs1
+              exact hty.symm ▸ wt_Eload te chunk a1 hrec
+
+end CompCert4Lean.Backend.Cminortyping

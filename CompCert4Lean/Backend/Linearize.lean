@@ -764,3 +764,126 @@ theorem mem_2_proof : mem_2 := by
   exact CompCert4Lean.Lib.FSetAVLplus.Make.mem_2 s x h
 
 end CompCert4Lean.Backend.Linearize.Nodeset
+
+namespace CompCert4Lean.Backend.Linearize.DS
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Lib.Maps
+
+private theorem fixpoint_entry_get_set {A : Type}
+    (i j : positive) (x : A) (m : PTree.t A) :
+    PTree.get i (PTree.set j x m) =
+      if _ : i = j then some x else PTree.get i m := by
+  simpa only [PTree.t] using PTree.getSet_equation i j x m
+
+private theorem fixpoint_entry_propagate
+    (laws : CompCert4Lean.Backend.Kildall.SemiLatticeLaws L)
+    (ep : positive) (ev : L.t) (st : state) (out : L.t) (n : positive) :
+    (∃ v, PTree.get ep st.aval = some v ∧ L.ge v ev) →
+    (∃ v, PTree.get ep (propagate_succ st out n).aval = some v ∧ L.ge v ev) := by
+  rintro ⟨v, hveq, hvg⟩
+  unfold propagate_succ CompCert4Lean.Backend.Kildall.Dataflow_Solver.propagate_succ
+  cases hget : PTree.get n st.aval with
+  | none =>
+      simp only
+      change ∃ v, PTree.get ep (PTree.set n out st.aval) = some v ∧ L.ge v ev
+      by_cases heq : ep = n
+      · subst n
+        rw [hget] at hveq
+        contradiction
+      · refine ⟨v, ?_, hvg⟩
+        rw [fixpoint_entry_get_set]
+        simp [heq, hveq]
+  | some old =>
+      simp only
+      by_cases hbeq : L.beq old (L.lub old out) = true
+      · simp [hbeq]
+        exact ⟨v, hveq, hvg⟩
+      · simp only [hbeq, Bool.false_eq_true, ↓reduceIte]
+        change ∃ v, PTree.get ep (PTree.set n (L.lub old out) st.aval) = some v ∧
+          L.ge v ev
+        by_cases heq : ep = n
+        · subst n
+          refine ⟨L.lub old out, ?_, ?_⟩
+          · exact PTree.gss ep (L.lub old out) st.aval
+          · have hold : old = v := by
+              rw [hget] at hveq
+              injection hveq
+            exact laws.ge_trans _ _ _ (laws.ge_lub_left old out) (hold.symm ▸ hvg)
+        · refine ⟨v, ?_, hvg⟩
+          rw [fixpoint_entry_get_set]
+          simp [heq, hveq]
+
+private theorem fixpoint_entry_propagate_list
+    (laws : CompCert4Lean.Backend.Kildall.SemiLatticeLaws L)
+    (ep : positive) (ev : L.t) (st : state) (out : L.t) (l : List positive) :
+    (∃ v, PTree.get ep st.aval = some v ∧ L.ge v ev) →
+    (∃ v, PTree.get ep (propagate_succ_list st out l).aval = some v ∧ L.ge v ev) := by
+  intro h
+  induction l generalizing st with
+  | nil => exact h
+  | cons n l ih =>
+      apply ih
+      apply fixpoint_entry_propagate laws ep ev st out n h
+
+private theorem fixpoint_entry_step_inl {A : Type}
+    (ep : positive) (ev : L.t) (code : PTree.t A) (successors : A → List positive)
+    (transf : positive → L.t → L.t) (st : state) (res : PMap.t L.t)
+    (hstep : CompCert4Lean.Backend.Kildall.Dataflow_Solver.step code successors transf st =
+      Sum.inl res)
+    (hex : ∃ v, PTree.get ep st.aval = some v ∧ L.ge v ev) :
+    L.ge (PMap.get ep res) ev := by
+  unfold CompCert4Lean.Backend.Kildall.Dataflow_Solver.step at hstep
+  split at hstep
+  · injection hstep with hres
+    subst res
+    rcases hex with ⟨v, hv, hvg⟩
+    unfold PMap.get
+    rw [hv]
+    exact hvg
+  · split at hstep <;> cases hstep
+
+private theorem fixpoint_entry_step_inr {A : Type}
+    (laws : CompCert4Lean.Backend.Kildall.SemiLatticeLaws L)
+    (ep : positive) (ev : L.t) (code : PTree.t A) (successors : A → List positive)
+    (transf : positive → L.t → L.t) (st st' : state)
+    (hstep : CompCert4Lean.Backend.Kildall.Dataflow_Solver.step code successors transf st =
+      Sum.inr st')
+    (hex : ∃ v, PTree.get ep st.aval = some v ∧ L.ge v ev) :
+    ∃ v, PTree.get ep st'.aval = some v ∧ L.ge v ev := by
+  unfold CompCert4Lean.Backend.Kildall.Dataflow_Solver.step at hstep
+  split at hstep
+  · cases hstep
+  · split at hstep
+    · injection hstep with hst
+      subst st'
+      exact hex
+    · injection hstep with hst
+      subst st'
+      apply fixpoint_entry_propagate_list laws ep ev
+      exact hex
+
+theorem fixpoint_entry_proof (laws : law_obligation) : fixpoint_entry laws := by
+  intro A code successors transf ep ev res hfix
+  unfold fixpoint at hfix
+  have hprop := CompCert4Lean.Lib.Iteration.PrimIter.iterate_prop
+    (CompCert4Lean.Backend.Kildall.Dataflow_Solver.state L
+      CompCert4Lean.Backend.Kildall.NodeSetForward)
+    (PMap.t L.t)
+    (CompCert4Lean.Backend.Kildall.Dataflow_Solver.step code successors transf)
+    (fun st => ∃ v, PTree.get ep st.aval = some v ∧ L.ge v ev)
+    (fun result => L.ge (PMap.get ep result) ev)
+    (by
+      intro st hst
+      cases hstep : CompCert4Lean.Backend.Kildall.Dataflow_Solver.step code successors transf st with
+      | inl result =>
+          exact fixpoint_entry_step_inl ep ev code successors transf st result hstep hst
+      | inr st' =>
+          exact fixpoint_entry_step_inr laws.1 ep ev code successors transf st st' hstep hst)
+  unfold CompCert4Lean.Lib.Iteration.PrimIter.iterate_propStatement at hprop
+  apply hprop (start_state ep ev) res hfix
+  refine ⟨ev, ?_, laws.1.ge_refl ev ev (laws.1.eq_refl ev)⟩
+  change PTree.get ep (PTree.set ep ev (PTree.empty L.t)) = some ev
+  exact PTree.gss ep ev (PTree.empty L.t)
+
+end CompCert4Lean.Backend.Linearize.DS

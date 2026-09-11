@@ -697,3 +697,184 @@ theorem max_reg_function_def : max_reg_function_defStatement := by
       (f.fn_params.foldl PArith.BinPos.Pos.max .xH))
 
 end CompCert4Lean.Backend.RTL
+
+namespace CompCert4Lean.Backend.RTL
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+
+private theorem rtl_params_ple_max_l (p q : positive) :
+    Ple p (PArith.BinPos.Pos.max p q) := by
+  unfold Ple PArith.BinPos.Pos.le PArith.BinPos.Pos.max
+  split <;> omega
+
+private theorem rtl_params_ple_max_r (p q : positive) :
+    Ple q (PArith.BinPos.Pos.max p q) := by
+  unfold Ple PArith.BinPos.Pos.le PArith.BinPos.Pos.max
+  split <;> omega
+
+theorem max_reg_function_params : max_reg_function_paramsStatement := by
+  intro f r hr
+  have hfold : ∀ (l : List reg) (n : positive), r ∈ l ∨ Ple r n →
+      Ple r (l.foldl PArith.BinPos.Pos.max n) := by
+    intro l
+    induction l with
+    | nil =>
+        intro n h
+        simp at h
+        change Ple r n
+        exact h
+    | cons x xs ih =>
+        intro n h
+        simp only [List.foldl]
+        apply ih (PArith.BinPos.Pos.max n x)
+        rcases h with h | h
+        · simp only [List.mem_cons] at h
+          rcases h with h | h
+          · right
+            subst x
+            exact rtl_params_ple_max_r n r
+          · exact Or.inl h
+        · exact Or.inr (Ple_trans r n (PArith.BinPos.Pos.max n x) h
+            (rtl_params_ple_max_l n x))
+  unfold max_reg_function
+  exact Ple_trans r (f.fn_params.foldl PArith.BinPos.Pos.max .xH)
+    (PArith.BinPos.Pos.max (PTree.fold max_reg_instr f.fn_code .xH)
+      (f.fn_params.foldl PArith.BinPos.Pos.max .xH))
+    (hfold f.fn_params .xH (Or.inl hr))
+    (rtl_params_ple_max_r (PTree.fold max_reg_instr f.fn_code .xH)
+      (f.fn_params.foldl PArith.BinPos.Pos.max .xH))
+
+end CompCert4Lean.Backend.RTL
+
+namespace CompCert4Lean.Backend.RTL
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Linking
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+
+private theorem rtl_prog_defmap_find_def_symbol {F V : Type}
+    (p : CompCert4Lean.Common.AST.program F V) (id : ident) (g : globdef F V) :
+    PTree.get id (prog_defmap p) = some g →
+      ∃ b, Genv.find_symbol (Genv.globalenv p) id = some b ∧
+        Genv.find_def (Genv.globalenv p) b = some g := by
+  have hfold : ∀ (l : List (ident × globdef F V))
+      (dm : PTree.t (globdef F V)) (ge : Genv.t F V),
+      (∀ id g, PTree.get id dm = some g →
+        ∃ b, Genv.find_symbol ge id = some b ∧ Genv.find_def ge b = some g) →
+      ∀ id g, PTree.get id
+        (l.foldl (fun m idg => PTree.set idg.1 idg.2 m) dm) = some g →
+        ∃ b, Genv.find_symbol (l.foldl Genv.add_global ge) id = some b ∧
+          Genv.find_def (l.foldl Genv.add_global ge) b = some g := by
+    intro l
+    induction l with
+    | nil =>
+        intro dm ge hinv id g hget
+        exact hinv id g hget
+    | cons idg l ih =>
+        rcases idg with ⟨k, v⟩
+        intro dm ge hinv id g hget
+        apply ih (PTree.set k v dm) (Genv.add_global ge (k, v))
+        · intro x g' hx
+          rw [@PTree.gsspec_proof (globdef F V) x k v dm] at hx
+          cases hEq : peq x k with
+          | left hEq =>
+              subst k
+              rw [hEq] at hx
+              have hvalue : v = g' := Option.some.inj hx
+              subst g'
+              refine ⟨ge.genv_next, ?_, ?_⟩
+              · change PTree.get x (PTree.set x ge.genv_next ge.genv_symb) =
+                  some ge.genv_next
+                rw [@PTree.gsspec_proof _ x x ge.genv_next ge.genv_symb, hEq]
+              · change PTree.get ge.genv_next (PTree.set ge.genv_next v ge.genv_defs) =
+                  some v
+                cases hcase : peq ge.genv_next ge.genv_next with
+                | left _ =>
+                    rw [@PTree.gsspec_proof _ ge.genv_next ge.genv_next v ge.genv_defs,
+                      hcase]
+                | right hne => exact (hne rfl).elim
+          | right hEq =>
+              rw [hEq] at hx
+              rcases hinv x g' hx with ⟨b, hsymbol, hdef⟩
+              refine ⟨b, ?_, ?_⟩
+              · change PTree.get x (PTree.set k ge.genv_next ge.genv_symb) = some b
+                change PTree.get x ge.genv_symb = some b at hsymbol
+                rw [@PTree.gsspec_proof _ x k ge.genv_next ge.genv_symb, hEq]
+                exact hsymbol
+              · have hbne : b ≠ ge.genv_next :=
+                  by
+                    intro heq
+                    subst b
+                    exact (Nat.lt_irrefl _ (ge.genv_defs_range _ hdef))
+                change PTree.get b (PTree.set ge.genv_next v ge.genv_defs) = some g'
+                change PTree.get b ge.genv_defs = some g' at hdef
+                cases hcase : peq b ge.genv_next with
+                | left heq => exact (hbne heq).elim
+                | right _ =>
+                    rw [@PTree.gsspec_proof _ b ge.genv_next v ge.genv_defs, hcase]
+                    exact hdef
+        · simpa only [List.foldl] using hget
+  intro hget
+  apply hfold p.prog_defs (PTree.empty (globdef F V))
+    (Genv.empty_genv F V p.prog_public)
+  · intro x g' hx
+    simp [PTree.get, PTree.empty] at hx
+  · change PTree.get id (prog_defmap p) = some g
+    exact hget
+
+end CompCert4Lean.Backend.RTL
+
+namespace CompCert4Lean.Backend.RTL
+
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Linking
+open CompCert4Lean.Lib.Maps
+
+theorem is_known_runtime_function_sound : is_known_runtime_function_soundStatement := by
+  intro cu prog ros bf rs fd hknown hlink hfind
+  unfold is_known_runtime_function at hknown
+  cases ros with
+  | inl r => simp at hknown
+  | inr id =>
+      cases hdm : PTree.get id (prog_defmap cu) with
+      | none => simp [hdm] at hknown
+      | some gd =>
+          cases gd with
+          | Gvar v => simp [hdm] at hknown
+          | Gfun f =>
+              cases f with
+              | Internal f => simp [hdm] at hknown
+              | External ef =>
+                  cases ef <;> simp [hdm] at hknown
+                  case EF_runtime name sig =>
+                    letI : Linker fundef := Linker_fundef function
+                    letI : Linker Unit := Linker_unit
+                    letI : Linker program := Linker_prog fundef Unit
+                    rcases prog_defmap_linkorder_proof cu prog id
+                      (.Gfun (.External (.EF_runtime name sig))) hlink hdm with
+                      ⟨gd, hprog, horder⟩
+                    cases horder with
+                    | linkorder_def_fun _ _ horder =>
+                        cases horder with
+                        | linkorder_fundef_refl _ =>
+                            rcases rtl_prog_defmap_find_def_symbol prog id
+                              (.Gfun (.External (.EF_runtime name sig))) hprog with
+                              ⟨b, hsymbol, hdef⟩
+                            unfold find_function at hfind
+                            simp only at hfind
+                            rw [hsymbol] at hfind
+                            simp only at hfind
+                            unfold Genv.find_funct_ptr at hfind
+                            rw [hdef] at hfind
+                            cases hfind
+                            exact ⟨name, sig, rfl, hknown⟩
+
+end CompCert4Lean.Backend.RTL

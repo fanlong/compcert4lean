@@ -759,3 +759,70 @@ theorem insert_lenv_lookup2 : insert_lenv_lookup2Statement := by
           exact ih n v' hnth (by omega)
 
 end CompCert4Lean.Backend.CminorSel
+
+namespace CompCert4Lean.Backend.CminorSel
+
+theorem eval_lift_expr
+    [binary64_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 53)
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 24)
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 128)] :
+    eval_lift_exprStatement := by
+  intro xi ge sp e m w le a v heval
+  refine eval_expr_ind3 xi ge sp e m
+    (fun le a v => ∀ p le', insert_lenv le p w le' →
+      eval_expr xi ge sp e m le' (lift_expr p a) v)
+    (fun le al vl => ∀ p le', insert_lenv le p w le' →
+      eval_exprlist xi ge sp e m le' (lift_exprlist p al) vl)
+    (fun le a v => ∀ p le', insert_lenv le p w le' →
+      eval_condexpr xi ge sp e m le' (lift_condexpr p a) v)
+    ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ le a v heval
+  · intro le id v hget p le' hins
+    exact eval_expr.var le' id v hget
+  · intro le op al vl v hargs ih hop p le' hins
+    exact eval_expr.eval_Eop le' op (lift_exprlist p al) vl v (ih p le' hins) hop
+  · intro le chunk addr al vl vaddr v hargs ih haddr hload p le' hins
+    exact eval_expr.eval_Eload le' chunk addr (lift_exprlist p al) vl vaddr v
+      (ih p le' hins) haddr hload
+  · intro le a b c va v hcond ihcond hbranch ihbranch p le' hins
+    apply eval_expr.eval_Econdition le' (lift_condexpr p a) (lift_expr p b)
+      (lift_expr p c) va v (ihcond p le' hins)
+    cases va <;> simpa using ihbranch p le' hins
+  · intro le a b v1 v2 hbound ihbound hbody ihbody p le' hins
+    exact eval_expr.eval_Elet le' (lift_expr p a) (lift_expr (p + 1) b) v1 v2
+      (ihbound p le' hins)
+      (ihbody (p + 1) (v1 :: le') (insert_lenv_S le p w le' v1 hins))
+  · intro le n v hget p le' hins
+    rw [lift_expr]
+    split
+    · apply eval_expr.eval_Eletvar
+      exact insert_lenv_lookup2 le p w le' hins n v hget (by assumption)
+    · apply eval_expr.eval_Eletvar
+      apply insert_lenv_lookup1 le p w le' hins n v hget
+      omega
+  · intro le ef al vl v hargs ih hext p le' hins
+    exact eval_expr.builtin le' ef (lift_exprlist p al) vl v (ih p le' hins) hext
+  · intro le id sg al b ef vl v hsymbol hfun hsig hargs ih hext p le' hins
+    exact eval_expr.external le' id sg (lift_exprlist p al) b ef vl v hsymbol hfun
+      hsig (ih p le' hins) hext
+  · intro le p le' hins
+    exact eval_exprlist.nil le'
+  · intro le a al v vl hhead ihhead htail ihtail p le' hins
+    exact eval_exprlist.cons le' (lift_expr p a) (lift_exprlist p al) v vl
+      (ihhead p le' hins) (ihtail p le' hins)
+  · intro le cond al vl vb hargs ih hcond p le' hins
+    exact eval_condexpr.condition le' cond (lift_exprlist p al) vl vb (ih p le' hins) hcond
+  · intro le a b c va v hcond ihcond hbranch ihbranch p le' hins
+    apply eval_condexpr.eval_CEcondition le' (lift_condexpr p a) (lift_condexpr p b)
+      (lift_condexpr p c) va v (ihcond p le' hins)
+    cases va <;> simpa using ihbranch p le' hins
+  · intro le a b v1 v2 hbound ihbound hbody ihbody p le' hins
+    exact eval_condexpr.eval_CElet le' (lift_expr p a) (lift_condexpr (p + 1) b) v1 v2
+      (ihbound p le' hins)
+      (ihbody (p + 1) (v1 :: le') (insert_lenv_S le p w le' v1 hins))
+
+end CompCert4Lean.Backend.CminorSel

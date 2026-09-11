@@ -852,3 +852,23 @@ theorem add_instr_wf : add_instr_wfStatement := by
   exact addInstrWf s i pc
 
 end CompCert4Lean.Backend.RTLgen
+
+namespace CompCert4Lean.Backend.RTLgen
+
+theorem add_instr_incr : add_instr_incrStatement := by
+  intro s i
+  exact addInstrIncr s i
+
+theorem reserve_instr_wf : reserve_instr_wfStatement := by
+  intro s pc
+  exact reserveInstrWf s pc
+
+theorem reserve_instr_incr : reserve_instr_incrStatement := by
+  intro s
+  exact reserveInstrIncr s
+
+theorem update_instr_wf : update_instr_wfStatement := by
+  intro s n i hlt pc
+  exact updateInstrWf s n i hlt pc
+
+end CompCert4Lean.Backend.RTLgen

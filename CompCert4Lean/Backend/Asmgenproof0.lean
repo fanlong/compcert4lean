@@ -642,3 +642,59 @@ theorem preg_of_data : preg_of_dataStatement := by
   cases r <;> rfl
 
 end CompCert4Lean.Backend.Asmgenproof0
+
+namespace CompCert4Lean.Backend.Asmgenproof0
+
+theorem preg_of_not_SP : preg_of_not_SPStatement := by
+  intro r
+  cases r <;> simp [CompCert4Lean.X86.Asm.preg_of, asmSP, CompCert4Lean.X86.Asm.SP]
+
+theorem nextinstr_inv : nextinstr_invStatement := by
+  intro r rs h
+  unfold CompCert4Lean.X86.Asm.nextinstr CompCert4Lean.X86.Asm.Pregmap.set
+  split
+  · rename_i heq
+    exact (h heq).elim
+  · rfl
+
+theorem undef_regs_other : undef_regs_otherStatement := by
+  intro r rl
+  induction rl with
+  | nil => intro rs h; rfl
+  | cons x xs ih =>
+      intro rs h
+      change CompCert4Lean.X86.Asm.undef_regs xs
+        (CompCert4Lean.X86.Asm.Pregmap.set x CompCert4Lean.Common.Values.Vundef rs) r = rs r
+      calc
+        _ = CompCert4Lean.X86.Asm.Pregmap.set x CompCert4Lean.Common.Values.Vundef rs r :=
+          ih (CompCert4Lean.X86.Asm.Pregmap.set x CompCert4Lean.Common.Values.Vundef rs)
+            (by intro x' hx'; exact h x' (by simp [hx']))
+        _ = rs r := by
+          unfold CompCert4Lean.X86.Asm.Pregmap.set
+          split
+          · rename_i heq
+            exact (h x (by simp) heq).elim
+          · rfl
+
+theorem preg_notin_charact : preg_notin_charactStatement := by
+  intro r rl
+  induction rl with
+  | nil => simp [preg_notin]
+  | cons x xs ih =>
+      cases xs with
+      | nil =>
+          simp [preg_notin]
+      | cons y ys =>
+          simp only [preg_notin]
+          rw [ih]
+          constructor
+          · intro h mr hmr
+            rcases List.mem_cons.mp hmr with hmx | hmr
+            · subst mr; exact h.1
+            · exact h.2 mr hmr
+          · intro h
+            refine ⟨h x (by simp), ?_⟩
+            intro mr hmr
+            exact h mr (List.mem_cons.mpr (Or.inr hmr))
+
+end CompCert4Lean.Backend.Asmgenproof0

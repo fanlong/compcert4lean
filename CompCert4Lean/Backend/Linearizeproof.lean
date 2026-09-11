@@ -669,3 +669,226 @@ theorem not_mem_iff_proof : not_mem_iff := by
     cases htrue
 
 end CompCert4Lean.Backend.Linearizeproof.NodesetFacts
+
+namespace CompCert4Lean.Backend.Linearizeproof
+
+open CompCert4Lean.Backend.LTL
+open CompCert4Lean.Backend.Linear
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Linking
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+
+local instance linearizeLinkerLTLFundef : Linker LTL.fundef :=
+  Linker_fundef LTL.function
+local instance linearizeLinkerLinearFundef : Linker Linear.fundef :=
+  Linker_fundef Linear.function
+local instance linearizeLinkerUnit : Linker Unit := Linker_unit
+local instance linearizeLinkerLTLProgram : Linker LTL.program :=
+  Linker_prog LTL.fundef Unit
+
+private theorem linearize_symbol_add_global
+    (ge1 : Genv.t LTL.fundef Unit) (ge2 : Genv.t Linear.fundef Unit) (id : ident)
+    (hm : ∀ id', PTree.get id' ge2.genv_symb = PTree.get id' ge1.genv_symb)
+    (hn : ge2.genv_next = ge1.genv_next) :
+    ∀ id', PTree.get id'
+      (PTree.set id ge2.genv_next ge2.genv_symb) =
+      PTree.get id'
+      (PTree.set id ge1.genv_next ge1.genv_symb) := by
+  intro id'
+  have h2 := @PTree.getSet_equation _ id' id ge2.genv_next ge2.genv_symb
+  have h1 := @PTree.getSet_equation _ id' id ge1.genv_next ge1.genv_symb
+  by_cases h : id' = id
+  · rw [h2, h1]
+    simp only [dif_pos h]
+    exact congrArg some hn
+  · rw [h2, h1]
+    simp only [dif_neg h]
+    exact hm id'
+
+private theorem linearize_symbol_add_globals
+    (xs : List (ident × globdef LTL.fundef Unit))
+    (ys : List (ident × globdef Linear.fundef Unit))
+    (hxy : list_forall2 (fun a b => a.1 = b.1) xs ys)
+    (ge1 : Genv.t LTL.fundef Unit) (ge2 : Genv.t Linear.fundef Unit)
+    (hm : ∀ id', PTree.get id' ge2.genv_symb = PTree.get id' ge1.genv_symb)
+    (hn : ge2.genv_next = ge1.genv_next) :
+    ∀ id', PTree.get id' (Genv.add_globals ge2 ys).genv_symb =
+      PTree.get id' (Genv.add_globals ge1 xs).genv_symb := by
+  induction hxy generalizing ge1 ge2 with
+  | nil =>
+      intro id'
+      simpa [Genv.add_globals] using hm id'
+  | @cons a xs b ys hab htail ih =>
+      rcases a with ⟨aid, ag⟩
+      rcases b with ⟨bid, bg⟩
+      change aid = bid at hab
+      subst bid
+      simp only [Genv.add_globals, List.foldl_cons]
+      apply ih
+      · intro id'
+        exact linearize_symbol_add_global ge1 ge2 aid hm hn id'
+      · exact congrArg PArith.BinPos.Pos.succ hn
+
+private theorem linearize_match_genvs_add_global
+    (R : globdef LTL.fundef Unit → globdef Linear.fundef Unit → Prop)
+    (ge1 : Genv.t LTL.fundef Unit) (ge2 : Genv.t Linear.fundef Unit)
+    (id : ident) (g1 : globdef LTL.fundef Unit)
+    (g2 : globdef Linear.fundef Unit)
+    (hm : Genv.match_genvs R ge1 ge2) (hg : R g1 g2) :
+    Genv.match_genvs R (Genv.add_global ge1 (id, g1))
+      (Genv.add_global ge2 (id, g2)) := by
+  constructor
+  · exact congrArg PArith.BinPos.Pos.succ hm.mge_next
+  · exact linearize_symbol_add_global ge1 ge2 id hm.mge_symb hm.mge_next
+  · intro b
+    change option_rel R
+      (PTree.get b (PTree.set ge1.genv_next g1 ge1.genv_defs))
+      (PTree.get b (PTree.set ge2.genv_next g2 ge2.genv_defs))
+    have h1 := @PTree.getSet_equation
+      (globdef LTL.fundef Unit) b ge1.genv_next g1 ge1.genv_defs
+    have h2 := @PTree.getSet_equation
+      (globdef Linear.fundef Unit) b ge2.genv_next g2 ge2.genv_defs
+    by_cases h : b = ge1.genv_next
+    · have h' : b = ge2.genv_next := h.trans hm.mge_next.symm
+      rw [h1, h2]
+      simp only [dif_pos h, dif_pos h']
+      exact option_rel.some g1 g2 hg
+    · have h' : b ≠ ge2.genv_next := by
+        intro hb
+        apply h
+        exact hb.trans hm.mge_next
+      rw [h1, h2]
+      simp only [dif_neg h, dif_neg h']
+      exact hm.mge_defs b
+
+private theorem linearize_match_genvs_add_globals
+    (R : globdef LTL.fundef Unit → globdef Linear.fundef Unit → Prop)
+    (xs : List (ident × globdef LTL.fundef Unit))
+    (ys : List (ident × globdef Linear.fundef Unit))
+    (hxy : list_forall2 (fun a b => a.1 = b.1 ∧ R a.2 b.2) xs ys)
+    (ge1 : Genv.t LTL.fundef Unit) (ge2 : Genv.t Linear.fundef Unit)
+    (hm : Genv.match_genvs R ge1 ge2) :
+    Genv.match_genvs R (Genv.add_globals ge1 xs) (Genv.add_globals ge2 ys) := by
+  induction hxy generalizing ge1 ge2 with
+  | nil => simpa [Genv.add_globals] using hm
+  | @cons a xs b ys hab htail ih =>
+      rcases a with ⟨aid, ag⟩
+      rcases b with ⟨bid, bg⟩
+      change aid = bid ∧ R ag bg at hab
+      rcases hab with ⟨rfl, hab⟩
+      simp only [Genv.add_globals, List.foldl_cons]
+      apply ih
+      simpa using (linearize_match_genvs_add_global R ge1 ge2 aid ag bg hm hab)
+
+private theorem linearize_globalenvs_match
+    (service : EnumerationService) (prog : LTL.program)
+    (tprog : Linear.program) (hm : match_prog service prog tprog) :
+    Genv.match_genvs
+      (match_globdef
+        (fun (_ : LTL.program) f tf =>
+          CompCert4Lean.Backend.Linearize.transf_fundef service f = .OK tf)
+        (fun x y : Unit => x = y) prog)
+      (Genv.globalenv prog) (Genv.globalenv tprog) := by
+  letI : Linker LTL.fundef := Linker_fundef LTL.function
+  letI : Linker Linear.fundef := Linker_fundef Linear.function
+  letI : Linker Unit := Linker_unit
+  letI : Linker LTL.program := Linker_prog LTL.fundef Unit
+  let R : globdef LTL.fundef Unit → globdef Linear.fundef Unit → Prop :=
+    match_globdef
+      (fun (_ : LTL.program) f tf =>
+        CompCert4Lean.Backend.Linearize.transf_fundef service f = .OK tf)
+      (fun x y : Unit => x = y) prog
+  have hempty : Genv.match_genvs R
+      (Genv.empty_genv LTL.fundef Unit prog.prog_public)
+      (Genv.empty_genv Linear.fundef Unit tprog.prog_public) := by
+    constructor
+    · rfl
+    · intro id'
+      rfl
+    · intro b
+      exact option_rel.none R
+  have hlist : list_forall2
+      (fun a b => a.1 = b.1 ∧ R a.2 b.2)
+      prog.prog_defs tprog.prog_defs := by
+    unfold match_prog match_program match_program_gen at hm
+    have hlist_of : ∀ (xs : List (ident × globdef LTL.fundef Unit))
+        (ys : List (ident × globdef Linear.fundef Unit)),
+        list_forall2 (match_ident_globdef
+          (fun (_ : LTL.program) f tf =>
+            CompCert4Lean.Backend.Linearize.transf_fundef service f = .OK tf)
+          (fun x y : Unit => x = y) prog) xs ys →
+        list_forall2 (fun a b => a.1 = b.1 ∧ R a.2 b.2) xs ys := by
+      intro xs ys h
+      induction h with
+      | nil => exact list_forall2.nil _
+      | @cons a xs b ys hab htail ih =>
+          apply list_forall2.cons
+          · exact ⟨hab.1, by simpa [R] using hab.2⟩
+          · exact ih
+    exact hlist_of _ _ hm.1
+  have hgenv := linearize_match_genvs_add_globals R
+    prog.prog_defs tprog.prog_defs hlist
+    (Genv.empty_genv LTL.fundef Unit prog.prog_public)
+    (Genv.empty_genv Linear.fundef Unit tprog.prog_public) hempty
+  simpa [Genv.globalenv, R] using hgenv
+
+private theorem linearize_function_ptr_translated
+    (service : EnumerationService) (prog : LTL.program)
+    (tprog : Linear.program) (hm : match_prog service prog tprog)
+    (b : block) (f : LTL.fundef)
+    (hfind : Genv.find_funct_ptr (Genv.globalenv prog) b = some f) :
+    ∃ tf, Genv.find_funct_ptr (Genv.globalenv tprog) b = some tf ∧
+      CompCert4Lean.Backend.Linearize.transf_fundef service f = .OK tf := by
+  have hg := linearize_globalenvs_match service prog tprog hm
+  unfold Genv.find_funct_ptr Genv.find_def at hfind ⊢
+  cases h1 : PTree.get b (Genv.globalenv prog).genv_defs with
+  | none => simp [h1] at hfind
+  | some gd1 =>
+      cases gd1 with
+      | Gfun f1 =>
+          have hf : f1 = f := by simpa [h1] using hfind
+          subst f1
+          cases h2 : PTree.get b (Genv.globalenv tprog).genv_defs with
+          | none =>
+              have hd := hg.mge_defs b
+              simp [h1, h2] at hd
+              cases hd
+          | some gd2 =>
+              cases gd2 with
+              | Gfun f2 =>
+                  have hd := hg.mge_defs b
+                  simp [h1, h2] at hd
+                  cases hd with
+                  | some x y hrel =>
+                      cases hrel with
+                      | match_globdef_fun ctx' f1 f2 horder htrans =>
+                          exact ⟨f2, by simp [h2], htrans⟩
+              | Gvar v2 =>
+                  have hd := hg.mge_defs b
+                  simp [h1, h2] at hd
+                  cases hd with
+                  | some x y hrel => cases hrel
+      | Gvar v1 => simp [h1] at hfind
+
+theorem functions_translated : functions_translatedStatement := by
+  intro service prog tprog hm v f hfind
+  unfold Genv.find_funct at hfind ⊢
+  cases v with
+  | Vundef => simp at hfind
+  | Vint n => simp at hfind
+  | Vlong n => simp at hfind
+  | Vfloat n => simp at hfind
+  | Vsingle n => simp at hfind
+  | Vptr b ofs =>
+      cases hzero : CompCert4Lean.Lib.Integers.Ptrofs.eq ofs
+          CompCert4Lean.Lib.Integers.Ptrofs.zero with
+      | false => simp [hzero] at hfind
+      | true =>
+          simp [hzero] at hfind ⊢
+          exact linearize_function_ptr_translated service prog tprog hm b f hfind
+
+end CompCert4Lean.Backend.Linearizeproof

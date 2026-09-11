@@ -1516,3 +1516,38 @@ theorem Rcompare_sqr (ctx : ExactRealContext) : Rcompare_sqrStatement ctx := by
       exact_Rcompare_gt_aux ctx h]
 
 end CompCert4Lean.Flocq.Core.Raux
+
+namespace CompCert4Lean.Flocq.Core.Raux
+
+theorem IZR_Zpower (ctx : ExactRealContext) : IZR_ZpowerStatement ctx := by
+  intro r e he
+  cases e with
+  | Z0 =>
+      change ctx.spec.ofZ (Zpower r.radix_val Z0) = ctx.spec.one
+      unfold Zpower CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.Zpow_def.Zpower
+      simp only [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.pow]
+      have h : ¬ CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ Z0 < 0 := by
+        simp [CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ]
+      rw [if_neg h]
+      have hpow :
+          ((CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ r.radix_val).pow
+            (CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ Z0).toNat) = (1 : Int) := by
+        have hz : CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ Z0 = (0 : Int) := rfl
+        rw [hz]
+        exact Int.pow_zero _
+      rw [hpow]
+      change ctx.spec.ofZ (Zpos xH) = ctx.spec.one
+      exact ctx.certificate.sourceLaws.ofZ_one
+  | Zpos p =>
+      change ctx.spec.ofZ (Zpower r.radix_val (Zpos p)) =
+        ctx.spec.ofZ (Zpower_pos r.radix_val p)
+      rfl
+  | Zneg p =>
+      exfalso
+      change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ Z0 ≤
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (Zneg p) at he
+      simp [CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ] at he
+      have hp := CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat_positive p
+      omega
+
+end CompCert4Lean.Flocq.Core.Raux

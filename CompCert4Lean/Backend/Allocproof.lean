@@ -2155,3 +2155,53 @@ theorem check_succ_sound : check_succ_soundStatement := by
       | _ => simp [check_succ] at h
 
 end CompCert4Lean.Backend.Allocproof
+
+namespace CompCert4Lean.Backend.Allocproof
+
+namespace ESF
+
+theorem remove_iff_proof : remove_iff := by
+  intro s x y
+  constructor
+  · intro h
+    exact ⟨EqSetM.remove_3 s x y h, fun hxy => EqSetM.remove_1 s x y hxy h⟩
+  · rintro ⟨hy, hxy⟩
+    exact EqSetM.remove_2 s x y hxy hy
+
+theorem add_iff_proof : add_iff := by
+  intro s x y
+  constructor
+  · intro h
+    by_cases hxy : EqSetE.eq x y
+    · exact Or.inl hxy
+    · exact Or.inr (EqSetM.add_3 s x y hxy h)
+  · intro h
+    cases h with
+    | inl hxy => exact EqSetM.add_1 s x y hxy
+    | inr hy => exact EqSetM.add_2 s x y hy
+
+end ESF
+
+end CompCert4Lean.Backend.Allocproof
+
+namespace CompCert4Lean.Backend.Allocproof
+
+open CompCert4Lean.Backend.Allocation
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Backend.LTL
+
+private theorem ebs_opdead_from_parse_local
+    (op : CompCert4Lean.X86.Op.operation)
+    (args : List CompCert4Lean.Backend.Registers.reg)
+    (res : CompCert4Lean.Backend.Registers.reg) (s : RTL.node)
+    (b : LTL.bblock) (mv : moves) (b1 : LTL.bblock)
+    (hmv : extract_moves [] b = (mv, b1))
+    (hs : check_succ s b1 = true) :
+    expand_block_shape (BSopdead op args res mv s) (Iop op args res s) b := by
+  rcases extract_moves_sound b mv b1 hmv with ⟨hwf, hb⟩
+  rcases check_succ_sound s b1 hs with ⟨k, hk⟩
+  subst b1
+  rw [hb]
+  exact ebs_op_dead op args res mv s k hwf
+
+end CompCert4Lean.Backend.Allocproof

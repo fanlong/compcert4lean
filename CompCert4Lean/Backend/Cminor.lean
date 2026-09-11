@@ -624,3 +624,53 @@ def eval_expr_determStatement
         ge sp e m a v' → v' = v
 
 end CompCert4Lean.Backend.Cminor
+
+namespace CompCert4Lean.Backend.Cminor
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem eval_expr_determ
+    [binary64_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)] :
+    eval_expr_determStatement := by
+  intro ge sp e m a v h
+  induction h with
+  | eval_Evar id v hget =>
+      intro v' h'
+      cases h' with
+      | eval_Evar id' v' hget' =>
+          exact Option.some.inj (hget'.symm.trans hget)
+  | eval_Econst cst v heval =>
+      intro v' h'
+      cases h' with
+      | eval_Econst cst' v' heval' =>
+          exact Option.some.inj (heval'.symm.trans heval)
+  | eval_Eunop op a1 v1 v ha1 hop ih1 =>
+      intro v' h'
+      cases h' with
+      | eval_Eunop op' a1' v1' v' ha1' hop' =>
+          have hv1 : v1' = v1 := ih1 v1' ha1'
+          subst v1'
+          exact Option.some.inj (hop'.symm.trans hop)
+  | eval_Ebinop op a1 a2 v1 v2 v ha1 ha2 hop ih1 ih2 =>
+      intro v' h'
+      cases h' with
+      | eval_Ebinop op' a1' a2' v1' v2' v' ha1' ha2' hop' =>
+          have hv1 : v1' = v1 := ih1 v1' ha1'
+          have hv2 : v2' = v2 := ih2 v2' ha2'
+          subst v1'
+          subst v2'
+          exact Option.some.inj (hop'.symm.trans hop)
+  | eval_Eload chunk address vaddr v haddr hload ihaddr =>
+      intro v' h'
+      cases h' with
+      | eval_Eload chunk' address' vaddr' v' haddr' hload' =>
+          have hvaddr : vaddr' = vaddr := ihaddr vaddr' haddr'
+          subst vaddr'
+          exact Option.some.inj (hload'.symm.trans hload)
+
+end CompCert4Lean.Backend.Cminor

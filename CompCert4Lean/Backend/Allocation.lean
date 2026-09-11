@@ -2015,3 +2015,132 @@ def transf_program (cfg : CompilerConfig) (oracle : RegallocOracle)
     (p : RTL.program) : res LTL.program :=
   CompCert4Lean.Common.AST.transform_partial_program
     (transf_fundef cfg oracle) p
+
+namespace EqSet
+
+theorem elements_between_iff_proof : elements_between_iff := by
+  intro above below habove hbelow x s
+  change Raw.InT x (raw_elements_between above below s.this) ↔
+    Raw.InT x s.this ∧ above x = true ∧ below x = true
+  constructor
+  · intro hx
+    have hsubset : ∀ m : Raw.tree, Raw.InT x (raw_elements_between above below m) →
+        Raw.InT x m := by
+      intro m
+      induction m with
+      | Leaf => intro h; exact False.elim ((Raw.In_leaf_iff x).mp h)
+      | Node height left value right left_ih right_ih =>
+          change Raw.InT x (if above value = true then
+            if below value = true then
+              Raw.join (raw_elements_between above below left) value
+                (raw_elements_between above below right)
+            else raw_elements_between above below left
+          else raw_elements_between above below right) → _
+          split
+          next habove_value =>
+            split
+            next hbelow_value =>
+              intro h
+              rcases (Raw.join_spec
+                (raw_elements_between above below left) value
+                (raw_elements_between above below right) x).mp h with h | h | h
+              · exact .IsRoot height left right value h
+              · exact .InLeft height left right value (left_ih h)
+              · exact .InRight height left right value (right_ih h)
+            next =>
+              intro h
+              exact .InLeft height left right value (left_ih h)
+          next =>
+            intro h
+            exact .InRight height left right value (right_ih h)
+    have hprops : ∀ m : Raw.tree, Raw.InT x (raw_elements_between above below m) →
+        above x = true ∧ below x = true := by
+      intro m
+      induction m with
+      | Leaf => intro h; exact False.elim ((Raw.In_leaf_iff x).mp h)
+      | Node height left value right left_ih right_ih =>
+          change Raw.InT x (if above value = true then
+            if below value = true then
+              Raw.join (raw_elements_between above below left) value
+                (raw_elements_between above below right)
+            else raw_elements_between above below left
+          else raw_elements_between above below right) → _
+          split
+          next habove_value =>
+            split
+            next hbelow_value =>
+              intro h
+              rcases (Raw.join_spec
+                (raw_elements_between above below left) value
+                (raw_elements_between above below right) x).mp h with h | h | h
+              · exact ⟨habove value x (Or.inl (E.eq_sym x value h)) habove_value,
+                  hbelow value x (Or.inl (E.eq_sym x value h)) hbelow_value⟩
+              · exact left_ih h
+              · exact right_ih h
+            next => exact left_ih
+          next => exact right_ih
+    exact ⟨hsubset s.this hx, (hprops s.this hx).1, (hprops s.this hx).2⟩
+  · rintro ⟨hx, habove_x, hbelow_x⟩
+    have hmem : ∀ (m : Raw.tree), Raw.bst m → ∀ x,
+        above x = true → below x = true → Raw.InT x m →
+        Raw.InT x (raw_elements_between above below m) := by
+      intro m hm
+      induction hm with
+      | BSLeaf =>
+          intro x _ _ hxin
+          exact False.elim ((Raw.In_leaf_iff x).mp hxin)
+      | BSNode height value left right hleft hright hlt hgt left_ih right_ih =>
+          intro x habove_x hbelow_x hxin
+          change Raw.InT x (if above value = true then
+            if below value = true then
+              Raw.join (raw_elements_between above below left) value
+                (raw_elements_between above below right)
+            else raw_elements_between above below left
+          else raw_elements_between above below right)
+          cases hvalue_above : above value with
+          | false =>
+              rw [Raw.In_node_iff] at hxin
+              cases hxin with
+              | inl hxin_left =>
+                  have hcontra : above value = true :=
+                    habove x value (Or.inr (hlt x hxin_left)) habove_x
+                  rw [hvalue_above] at hcontra
+                  cases hcontra
+              | inr hxin =>
+                  cases hxin with
+                  | inl hxin_eq =>
+                      have hcontra : above value = true :=
+                        habove x value (Or.inl hxin_eq) habove_x
+                      rw [hvalue_above] at hcontra
+                      cases hcontra
+                  | inr hxin_right => exact right_ih x habove_x hbelow_x hxin_right
+          | true =>
+              cases hvalue_below : below value with
+              | false =>
+                  rw [Raw.In_node_iff] at hxin
+                  cases hxin with
+                  | inl hxin_left => exact left_ih x habove_x hbelow_x hxin_left
+                  | inr hxin =>
+                      cases hxin with
+                      | inl hxin_eq =>
+                          have hcontra : below value = true :=
+                            hbelow x value (Or.inl hxin_eq) hbelow_x
+                          rw [hvalue_below] at hcontra
+                          cases hcontra
+                      | inr hxin_right =>
+                          have hcontra : below value = true :=
+                            hbelow x value (Or.inr (hgt x hxin_right)) hbelow_x
+                          rw [hvalue_below] at hcontra
+                          cases hcontra
+              | true =>
+                  apply (Raw.join_spec
+                    (raw_elements_between above below left) value
+                    (raw_elements_between above below right) x).mpr
+                  rw [Raw.In_node_iff] at hxin
+                  rcases hxin with hxin | hxin | hxin
+                  · exact Or.inr (Or.inl (left_ih x habove_x hbelow_x hxin))
+                  · exact Or.inl hxin
+                  · exact Or.inr (Or.inr (right_ih x habove_x hbelow_x hxin))
+    exact hmem s.this s.is_ok.ok x habove_x hbelow_x hx
+
+end EqSet

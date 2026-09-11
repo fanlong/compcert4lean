@@ -683,3 +683,72 @@ theorem fenv_compat_linkorder : fenv_compat_linkorderStatement := by
       | linkorder_fundef_refl _ => exact hget2
 
 end CompCert4Lean.Backend.Inliningspec
+
+namespace CompCert4Lean.Backend.Inliningspec
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Backend.Inlining
+open CompCert4Lean.Lib.Coqlib
+
+private theorem shiftpos_posToNat_formula (x n : positive) :
+    posToNat (shiftpos x n) = posToNat x + posToNat n - 1 := by
+  let nx := posToNat x
+  let nn := posToNat n
+  have hx : 0 < nx := by
+    dsimp [nx]
+    exact posToNat_positive x
+  have hn : 0 < nn := by
+    dsimp [nn]
+    exact posToNat_positive n
+  have hsum : 0 < nx + nn := by omega
+  have hadd : posToNat (PArith.BinPos.Pos.add x n) = nx + nn := by
+    simpa [PArith.BinPos.Pos.add, nx, nn] using posToNat_posOfNat hsum
+  have hne : PArith.BinPos.Pos.add x n ≠ xH := by
+    intro h
+    have h' := hadd
+    rw [h] at h'
+    have hxH : posToNat xH = 1 := rfl
+    omega
+  have hpred := shiftpos_pred_nat_sub_one (PArith.BinPos.Pos.add x n) hne
+  unfold shiftpos
+  rw [hpred, hadd]
+
+theorem shiftpos_diff : shiftpos_diffStatement := by
+  intro x y n hxy h
+  exact hxy (shiftpos_inj x y n h)
+
+theorem shiftpos_above : shiftpos_aboveStatement := by
+  intro x n
+  unfold Ple PArith.BinPos.Pos.le
+  rw [shiftpos_posToNat_formula]
+  have hn := posToNat_positive n
+  have hx := posToNat_positive x
+  omega
+
+theorem shiftpos_not_below : shiftpos_not_belowStatement := by
+  intro x n h
+  unfold Plt PArith.BinPos.Pos.lt at h
+  have habove : posToNat n ≤ posToNat (shiftpos x n) := by
+    rw [shiftpos_posToNat_formula]
+    have hn := posToNat_positive n
+    have hx := posToNat_positive x
+    omega
+  omega
+
+theorem shiftpos_below : shiftpos_belowStatement := by
+  intro x n
+  unfold Plt PArith.BinPos.Pos.lt
+  rw [shiftpos_posToNat_formula]
+  change posToNat x + posToNat n - 1 < posToNat (PArith.BinPos.Pos.add x n)
+  rw [show posToNat (PArith.BinPos.Pos.add x n) =
+      posToNat x + posToNat n by
+    simpa [PArith.BinPos.Pos.add] using
+      posToNat_posOfNat (by
+        have hx := posToNat_positive x
+        have hn := posToNat_positive n
+        omega : 0 < posToNat x + posToNat n)]
+  have hx := posToNat_positive x
+  have hn := posToNat_positive n
+  omega
+
+end CompCert4Lean.Backend.Inliningspec

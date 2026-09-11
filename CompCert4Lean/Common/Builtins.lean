@@ -113,3 +113,36 @@ def lookup_builtin_function_sigStatement : Prop :=
     lookup_builtin_function name sg = some b → builtin_function_sig b = sg
 
 end CompCert4Lean.Common.Builtins
+
+namespace CompCert4Lean.Common.Builtins
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.Builtins0
+open CompCert4Lean.Common.Values
+
+theorem builtin_function_sem_inject
+    [binary64_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)] :
+    builtin_function_sem_injectStatement := by
+  intro b vargs vres f vargs' hsem hinj
+  have hopt := builtin_sem.bs_inject
+    (builtin_function_sem
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) b)
+    f vargs vargs' hinj
+  rw [hsem] at hopt
+  cases htarget : builtin_function_sem
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) b vargs' with
+  | none =>
+      rw [htarget] at hopt
+      simp [val_opt_inject] at hopt
+  | some vres' =>
+      rw [htarget] at hopt
+      exact ⟨vres', rfl, by simpa [val_opt_inject] using hopt⟩
+
+end CompCert4Lean.Common.Builtins

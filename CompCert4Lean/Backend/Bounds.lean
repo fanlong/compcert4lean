@@ -724,3 +724,34 @@ theorem fold_left_ensures : fold_left_ensuresStatement := by
       · exact ih (f a b) htail
 
 end CompCert4Lean.Backend.Bounds
+
+namespace CompCert4Lean.Backend.Bounds
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+namespace RegSet
+
+theorem add_3_proof : add_3 := by
+  intro s x y hne hy
+  exact CompCert4Lean.Lib.FSetAVLplus.Make.add_3 s x y hne hy
+
+end RegSet
+
+theorem record_reg_incr : record_reg_incrStatement := by
+  intro cfg u r r' hr'
+  unfold record_reg
+  split
+  · exact RegSet.add_2_proof u r r' hr'
+  · exact hr'
+
+theorem record_reg_ok : record_reg_okStatement := by
+  intro cfg u r hr
+  unfold record_reg
+  rw [hr]
+  exact RegSet.add_1_proof u r r rfl
+
+theorem max_over_instrs_bound : max_over_instrs_boundStatement := by
+  intro f valu i hi
+  exact max_over_list_bound instruction valu (codeList f) i hi
+
+end CompCert4Lean.Backend.Bounds

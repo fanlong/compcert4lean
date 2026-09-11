@@ -994,3 +994,29 @@ def zero_ext_soundStatement : Prop :=
     ZArith.BinInt.Z.le z0 n → vagree (Val.zero_ext n v) (Val.zero_ext n w) x
 
 end CompCert4Lean.Backend.NeedDomain
+
+namespace CompCert4Lean.Backend.NeedDomain
+
+theorem vagree_same : vagree_sameStatement := by
+  intro v x
+  cases x with
+  | Nothing => trivial
+  | I m =>
+    cases v with
+    | Vint p => intro i _ _; rfl
+    | Vundef => trivial
+    | Vlong p => trivial
+    | Vfloat p => trivial
+    | Vsingle p => trivial
+    | Vptr b ofs => trivial
+  | L m =>
+    cases v with
+    | Vlong p => intro i _ _; rfl
+    | Vundef => trivial
+    | Vint p => trivial
+    | Vfloat p => trivial
+    | Vsingle p => trivial
+    | Vptr b ofs => trivial
+  | All => exact .lessdef_refl _
+
+end CompCert4Lean.Backend.NeedDomain
