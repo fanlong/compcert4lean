@@ -1124,3 +1124,160 @@ theorem eventval_match_determ_2 : eventval_match_determ_2Statement := by
     rfl
 
 end CompCert4Lean.Common.Events
+
+namespace CompCert4Lean.Common.Events
+
+private abbrev eventZAdd :=
+  CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add
+private abbrev eventZToNat :=
+  CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.to_nat
+private abbrev eventZOfNat :=
+  CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat
+private abbrev eventIntOfZ :=
+  CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+private abbrev eventZOne :
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z := .Zpos .xH
+
+theorem unchanged_on_readonly : unchanged_on_readonlyStatement := by
+  intro m1 m2 b ofs n bytes hunch hvalid hload2 hnot
+  cases hd2 : CompCert4Lean.Common.Memory.Mem.range_perm_dec m2 b ofs
+      (eventZAdd ofs n) CompCert4Lean.Common.Memtype.Cur
+        CompCert4Lean.Common.Memtype.Readable with
+  | right hn2 =>
+      have hnone : CompCert4Lean.Common.Memory.Mem.loadbytes m2 b ofs n = none := by
+        rw [CompCert4Lean.Common.Memory.Mem.loadbytes, hd2]
+        rfl
+      rw [hnone] at hload2
+      cases hload2
+  | left hr2 =>
+    have hbytes : CompCert4Lean.Common.Memory.Mem.getN
+          (eventZToNat n) ofs
+          (CompCert4Lean.Lib.Maps.PMap.get b m2.mem_contents) = bytes := by
+      rw [CompCert4Lean.Common.Memory.Mem.loadbytes, hd2] at hload2
+      exact Option.some.inj hload2
+    have hr1 : CompCert4Lean.Common.Memory.Mem.range_perm m1 b ofs
+        (eventZAdd ofs n) CompCert4Lean.Common.Memtype.Cur
+          CompCert4Lean.Common.Memtype.Readable := by
+      intro i hi
+      exact (hunch.unchanged_on_perm b i
+          CompCert4Lean.Common.Memtype.Cur CompCert4Lean.Common.Memtype.Readable
+          (hnot i hi) hvalid).mpr
+        (hr2 i hi)
+    have hgetN : ∀ (start k : Nat) (p : CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z),
+        p = eventZAdd ofs (eventZOfNat start) →
+        start + k ≤ eventZToNat n →
+        CompCert4Lean.Common.Memory.Mem.getN k
+            p
+            (CompCert4Lean.Lib.Maps.PMap.get b m1.mem_contents) =
+          CompCert4Lean.Common.Memory.Mem.getN k
+            p
+            (CompCert4Lean.Lib.Maps.PMap.get b m2.mem_contents) := by
+      intro start k p hp hsk
+      induction k generalizing start p with
+      | zero => rfl
+      | succ k ih =>
+          have hstart : start < eventZToNat n := by omega
+          have hnnonneg : 0 ≤ eventIntOfZ n := by
+            by_cases hn : 0 ≤ eventIntOfZ n
+            · exact hn
+            · have hnlt : ¬ 0 < eventIntOfZ n := by
+                intro h
+                exact hn (Int.le_of_lt h)
+              have hnle : eventIntOfZ n ≤ 0 := Int.le_of_not_gt hnlt
+              have hnzero : eventZToNat n = 0 := by
+                change Int.toNat (eventIntOfZ n) = 0
+                exact Int.toNat_of_nonpos hnle
+              omega
+          have hnpos : 0 < eventIntOfZ n := by
+            have hcast : (Int.ofNat (eventZToNat n) : Int) = eventIntOfZ n := by
+              change Int.ofNat (Int.toNat (eventIntOfZ n)) = eventIntOfZ n
+              exact Int.toNat_of_nonneg hnnonneg
+            have hnNat : 0 < eventZToNat n := by omega
+            have hzpos : (0 : Int) < Int.ofNat (eventZToNat n) :=
+              (Int.ofNat_lt).mpr hnNat
+            rw [hcast] at hzpos
+            exact hzpos
+          have hstartZ : Int.toNat (Int.ofNat start) < Int.toNat (eventIntOfZ n) := by
+            have h := hstart
+            change Int.toNat (Int.ofNat start) < Int.toNat (eventIntOfZ n) at h
+            exact h
+          have hstartInt : (Int.ofNat start : Int) < eventIntOfZ n :=
+            (Int.toNat_lt_toNat hnpos).mp hstartZ
+          have hinterval : zLe ofs p ∧ zLt p (eventZAdd ofs n) := by
+            rw [hp]
+            constructor
+            · change eventIntOfZ ofs ≤ eventIntOfZ
+                (eventZAdd ofs (eventZOfNat start))
+              have hadd : eventIntOfZ (eventZAdd ofs (eventZOfNat start)) =
+                  eventIntOfZ ofs + Int.ofNat start := by
+                simp only [eventZAdd,
+                  CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add,
+                  eventZOfNat,
+                  CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat,
+                  CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+              rw [hadd]
+              have hstartNonneg : (0 : Int) ≤ Int.ofNat start := Int.natCast_nonneg _
+              omega
+            · change eventIntOfZ (eventZAdd ofs (eventZOfNat start)) <
+                eventIntOfZ (eventZAdd ofs n)
+              have hadd1 : eventIntOfZ (eventZAdd ofs (eventZOfNat start)) =
+                  eventIntOfZ ofs + Int.ofNat start := by
+                simp only [eventZAdd,
+                  CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add,
+                  eventZOfNat,
+                  CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat,
+                  CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+              have hadd2 : eventIntOfZ (eventZAdd ofs n) =
+                  eventIntOfZ ofs + eventIntOfZ n := by
+                simp only [eventZAdd,
+                  CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add,
+                  CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+              rw [hadd1, hadd2]
+              omega
+          have hperm1 := hr1 p hinterval
+          have hcont := hunch.unchanged_on_contents
+            b p
+            (hnot _ hinterval) hperm1
+          have hpnext : eventZAdd p eventZOne =
+              eventZAdd ofs (eventZOfNat (start + 1)) := by
+            rw [hp]
+            apply CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective
+            simp only [eventZAdd,
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add,
+              eventZOfNat, eventZOne,
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat,
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+            change eventIntOfZ ofs + Int.ofNat start + (1 : Int) =
+              eventIntOfZ ofs + Int.ofNat (start + 1)
+            simp
+            omega
+          have htail := ih (start + 1) (eventZAdd p eventZOne) hpnext (by omega)
+          simp only [CompCert4Lean.Common.Memory.Mem.getN]
+          rw [hcont.symm]
+          exact congrArg
+            (fun tl => List.cons
+              (CompCert4Lean.Lib.Maps.ZMap.get p
+                (CompCert4Lean.Lib.Maps.PMap.get b m2.mem_contents)) tl) htail
+    have hget :
+        CompCert4Lean.Common.Memory.Mem.getN (eventZToNat n) ofs
+            (CompCert4Lean.Lib.Maps.PMap.get b m1.mem_contents) =
+          CompCert4Lean.Common.Memory.Mem.getN (eventZToNat n) ofs
+            (CompCert4Lean.Lib.Maps.PMap.get b m2.mem_contents) := by
+      have hp0 : ofs = eventZAdd ofs (eventZOfNat 0) := by
+        apply CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective
+        simp only [eventZAdd, eventZOfNat,
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add,
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat,
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+        simp
+      exact hgetN 0 (eventZToNat n) ofs hp0 (by omega)
+    cases hd1 : CompCert4Lean.Common.Memory.Mem.range_perm_dec m1 b ofs
+        (eventZAdd ofs n) CompCert4Lean.Common.Memtype.Cur
+          CompCert4Lean.Common.Memtype.Readable with
+    | left hr1' =>
+        rw [CompCert4Lean.Common.Memory.Mem.loadbytes, hd1]
+        exact congrArg Option.some (hget.trans hbytes)
+    | right hn1 =>
+        exact False.elim (hn1 hr1)
+
+end CompCert4Lean.Common.Events

@@ -1254,3 +1254,60 @@ theorem public_symbol_exists : public_symbol_existsStatement := by
 
 end Genv
 end CompCert4Lean.Common.Globalenvs
+
+namespace CompCert4Lean.Common.Globalenvs
+namespace Genv
+
+theorem shift_symbol_address_32 : shift_symbol_address_32Statement := by
+  intro F V ge id ofs n hptr
+  simp [CompCert4Lean.X86_64.Archi.ptr64] at hptr
+
+theorem shift_symbol_address_64 : shift_symbol_address_64Statement := by
+  intro F V ge id ofs n hptr
+  unfold symbol_address
+  cases hfind : find_symbol ge id with
+  | none => rfl
+  | some b =>
+      simp [hfind, CompCert4Lean.Common.Values.Val.addl,
+        CompCert4Lean.X86_64.Archi.ptr64]
+
+theorem find_funct_inv : find_funct_invStatement := by
+  intro F V ge v f h
+  cases v with
+  | Vundef => simp [find_funct] at h
+  | Vint n => simp [find_funct] at h
+  | Vfloat n => simp [find_funct] at h
+  | Vlong n => simp [find_funct] at h
+  | Vsingle n => simp [find_funct] at h
+  | Vptr b ofs =>
+      unfold find_funct at h
+      by_cases hof : ofs = CompCert4Lean.Lib.Integers.Ptrofs.zero
+      · simp [hof] at h
+        exact ⟨b, by simp [hof]⟩
+      · have heqfalse : CompCert4Lean.Lib.Integers.Ptrofs.eq ofs
+            CompCert4Lean.Lib.Integers.Ptrofs.zero = false := by
+          change decide (ofs.intval =
+            (CompCert4Lean.Lib.Integers.Ptrofs.zero).intval) = false
+          have hneval : ofs.intval ≠
+              (CompCert4Lean.Lib.Integers.Ptrofs.zero).intval := by
+            intro hv
+            apply hof
+            exact CompCert4Lean.Lib.Integers.WordCore.ext hv
+          simp [hneval]
+        change (if CompCert4Lean.Lib.Integers.Ptrofs.eq ofs
+            CompCert4Lean.Lib.Integers.Ptrofs.zero = true then
+              find_funct_ptr ge b else none) = some f at h
+        rw [heqfalse] at h
+        simp at h
+
+theorem find_funct_find_funct_ptr : find_funct_find_funct_ptrStatement := by
+  intro F V ge b
+  have heq : CompCert4Lean.Lib.Integers.Ptrofs.eq
+      CompCert4Lean.Lib.Integers.Ptrofs.zero
+      CompCert4Lean.Lib.Integers.Ptrofs.zero = true := by
+    simp [CompCert4Lean.Lib.Integers.Ptrofs.eq,
+      CompCert4Lean.Lib.Integers.WordCore.eq]
+  simp [find_funct, find_funct_ptr, heq]
+
+end Genv
+end CompCert4Lean.Common.Globalenvs

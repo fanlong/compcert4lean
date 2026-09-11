@@ -687,3 +687,377 @@ def wt_initial_stateStatement : Prop :=
     wt_program cfg p → ∀ s, initial_state p s → wt_state cfg s
 
 end CompCert4Lean.Backend.RTLtyping
+
+namespace CompCert4Lean.Backend.RTLtyping.S
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.Unityping
+open CompCert4Lean.Common.Unityping.UniSolver
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Common.Errors
+
+private theorem rtl_pget_set_same {A : Type}
+    (i : positive) (v : A) (m : PTree.t A) :
+    PTree.get i (PTree.set i v m) = some v := by
+  have h := CompCert4Lean.Lib.Maps.PTree.gsspec_proof i i v m
+  cases hpeq : peq i i with
+  | left hEq => simpa [hpeq] using h
+  | right hNe => exact False.elim (hNe rfl)
+
+private theorem rtl_pget_set_other {A : Type}
+    (i j : positive) (v : A) (m : PTree.t A) (hne : i ≠ j) :
+    PTree.get i (PTree.set j v m) = PTree.get i m := by
+  have h := CompCert4Lean.Lib.Maps.PTree.gsspec_proof i j v m
+  cases hpeq : peq i j with
+  | left hEq => exact False.elim (hne hEq)
+  | right hNe => simpa [hpeq] using h
+
+private theorem rtl_move_sound_aux : move_sound := by
+  intro te e r1 r2 e' changed h hs
+  unfold S.move CompCert4Lean.Common.Unityping.UniSolver.move at h
+  cases hp : peq r1 r2 with
+  | left hEq =>
+      simp [hp] at h
+      cases h
+      exact hEq ▸ rfl
+  | right hNe =>
+      cases h1 : PTree.get r1 (te_typ e) with
+      | none =>
+          cases h2 : PTree.get r2 (te_typ e) with
+          | none =>
+              rw [hp, h1, h2] at h
+              cases h
+              apply hs.2 r1 r2
+              change (r1, r2) ∈ (r1, r2) :: te_equ e
+              exact List.mem_cons_self
+          | some ty2 =>
+              rw [hp, h1, h2] at h
+              cases h
+              have hu1 := rtl_pget_set_same r1 ty2 (te_typ e)
+              have hu2 := rtl_pget_set_other r2 r1 ty2 (te_typ e) hNe.symm
+              have htr1 : te r1 = ty2 := hs.1 r1 ty2 (by
+                change PTree.get r1 (PTree.set r1 ty2 (te_typ e)) = some ty2
+                exact hu1)
+              have htr2 : te r2 = ty2 := hs.1 r2 ty2 (by
+                change PTree.get r2 (PTree.set r1 ty2 (te_typ e)) = some ty2
+                exact hu2.trans h2)
+              exact htr1.trans htr2.symm
+      | some ty1 =>
+          cases h2 : PTree.get r2 (te_typ e) with
+          | none =>
+              rw [hp, h1, h2] at h
+              cases h
+              have hu1 := rtl_pget_set_other r1 r2 ty1 (te_typ e) hNe
+              have hu2 := rtl_pget_set_same r2 ty1 (te_typ e)
+              have htr1 : te r1 = ty1 := hs.1 r1 ty1 (by
+                change PTree.get r1 (PTree.set r2 ty1 (te_typ e)) = some ty1
+                exact hu1.trans h1)
+              have htr2 : te r2 = ty1 := hs.1 r2 ty1 (by
+                change PTree.get r2 (PTree.set r2 ty1 (te_typ e)) = some ty1
+                exact hu2)
+              exact htr1.trans htr2.symm
+          | some ty2 =>
+              rw [hp, h1, h2] at h
+              cases hEq : rtlTypeAlgebra.eq ty1 ty2 with
+              | left hty =>
+                simp [hEq] at h
+                have he' : e' = e := h.2.symm
+                subst e'
+                have htr1 := hs.1 r1 ty1 (by exact h1)
+                have htr2 := hs.1 r2 ty2 (by exact h2)
+                exact htr1.trans (hty.trans htr2.symm)
+              | right hty =>
+                simp [hEq] at h
+
+end CompCert4Lean.Backend.RTLtyping.S
+
+namespace CompCert4Lean.Backend.RTLtyping.S
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.Unityping
+open CompCert4Lean.Common.Unityping.UniSolver
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Common.Errors
+
+private theorem rtl_move_incr_aux :
+    ∀ (te : typassign) (e : typenv) (r1 r2 : positive)
+      (e' : typenv) (changed : Bool),
+      move e r1 r2 = OK (changed, e') → satisf te e' → satisf te e := by
+  intro te e r1 r2 e' changed h hs
+  unfold S.move CompCert4Lean.Common.Unityping.UniSolver.move at h
+  cases hp : peq r1 r2 with
+  | left hEq =>
+      simp [hp] at h
+      rcases h with ⟨rfl, rfl⟩
+      exact hs
+  | right hNe =>
+      cases h1 : PTree.get r1 (te_typ e) with
+      | none =>
+          cases h2 : PTree.get r2 (te_typ e) with
+          | none =>
+              rw [hp, h1, h2] at h
+              cases h
+              constructor
+              · intro x ty hx
+                exact hs.1 x ty hx
+              · intro x y hxy
+                exact hs.2 x y (List.mem_cons_of_mem _ hxy)
+          | some ty2 =>
+              rw [hp, h1, h2] at h
+              cases h
+              constructor
+              · intro x ty hx
+                by_cases hxr : x = r1
+                · subst x
+                  rw [h1] at hx
+                  cases hx
+                · exact hs.1 x ty (by
+                    rw [rtl_pget_set_other x r1 ty2 (te_typ e) hxr]
+                    exact hx)
+              · intro x y hxy
+                exact hs.2 x y hxy
+      | some ty1 =>
+          cases h2 : PTree.get r2 (te_typ e) with
+          | none =>
+              rw [hp, h1, h2] at h
+              cases h
+              constructor
+              · intro x ty hx
+                by_cases hxr : x = r2
+                · subst x
+                  rw [h2] at hx
+                  cases hx
+                · exact hs.1 x ty (by
+                    rw [rtl_pget_set_other x r2 ty1 (te_typ e) hxr]
+                    exact hx)
+              · intro x y hxy
+                exact hs.2 x y hxy
+          | some ty2 =>
+              rw [hp, h1, h2] at h
+              cases hEq : rtlTypeAlgebra.eq ty1 ty2 with
+              | left hty =>
+                  simp [hEq] at h
+                  rcases h with ⟨rfl, rfl⟩
+                  exact hs
+              | right hty =>
+                  simp [hEq] at h
+
+private theorem rtl_solve_rec_incr_aux :
+    ∀ (te : typassign) (q : List (positive × positive))
+      (e : typenv) (changed : Bool) (e' : typenv) (changed' : Bool),
+      CompCert4Lean.Common.Unityping.UniSolver.solve_rec rtlTypeAlgebra
+        e changed q = OK (e', changed') →
+      satisf te e' → satisf te e := by
+  intro te q
+  induction q with
+  | nil =>
+      intro e changed e' changed' h hs
+      simp [CompCert4Lean.Common.Unityping.UniSolver.solve_rec] at h
+      rcases h with ⟨rfl, rfl⟩
+      exact hs
+  | cons a q ih =>
+      rcases a with ⟨r1, r2⟩
+      intro e changed e' changed' h hs
+      simp only [CompCert4Lean.Common.Unityping.UniSolver.solve_rec] at h
+      split at h
+      · cases h
+      · rename_i changed1 e1 hmove
+        exact rtl_move_incr_aux te e r1 r2 e1 changed1 hmove
+          (ih e1 (changed || changed1) e' changed' h hs)
+
+private theorem rtl_solve_rec_sound_aux :
+    ∀ (te : typassign) (r1 r2 : positive)
+      (q : List (positive × positive)) (e : typenv) (changed : Bool)
+      (e' : typenv) (changed' : Bool),
+      CompCert4Lean.Common.Unityping.UniSolver.solve_rec rtlTypeAlgebra
+        e changed q = OK (e', changed') →
+      (r1, r2) ∈ q → satisf te e' → te r1 = te r2 := by
+  intro te r1 r2 q
+  induction q generalizing r1 r2 with
+  | nil =>
+      intro e changed e' changed' h hmem hs
+      cases hmem
+  | cons a q ih =>
+      rcases a with ⟨a1, a2⟩
+      intro e changed e' changed' h hmem hs
+      simp only [CompCert4Lean.Common.Unityping.UniSolver.solve_rec] at h
+      split at h
+      · cases h
+      · rename_i changed1 e1 hmove
+        simp only [List.mem_cons] at hmem
+        rcases hmem with hmem | hmem
+        · injection hmem with hr1 hr2
+          subst r1
+          subst r2
+          exact rtl_move_sound_aux te e a1 a2 e1 changed1 hmove
+            (rtl_solve_rec_incr_aux te q e1 (changed || changed1) e' changed' h hs)
+        · exact ih r1 r2 e1 (changed || changed1) e' changed' h hmem hs
+
+private theorem rtl_move_false_aux :
+    ∀ (e : typenv) (r1 r2 : positive) (e' : typenv),
+      move e r1 r2 = OK (false, e') →
+      te_typ e' = te_typ e ∧
+        makeassign rtlTypeAlgebra e r1 = makeassign rtlTypeAlgebra e r2 := by
+  intro e r1 r2 e' h
+  unfold S.move CompCert4Lean.Common.Unityping.UniSolver.move at h
+  cases hp : peq r1 r2 with
+  | left hEq =>
+      simp [hp] at h
+      rcases h with ⟨rfl, rfl⟩
+      exact ⟨rfl, hEq ▸ rfl⟩
+  | right hNe =>
+      cases h1 : PTree.get r1 (te_typ e) with
+      | none =>
+          cases h2 : PTree.get r2 (te_typ e) with
+          | none =>
+              rw [hp, h1, h2] at h
+              rcases h with ⟨rfl, rfl⟩
+              constructor
+              · rfl
+              · simp [CompCert4Lean.Common.Unityping.UniSolver.makeassign, h1, h2]
+          | some ty2 =>
+              rw [hp, h1, h2] at h
+              cases h
+      | some ty1 =>
+          cases h2 : PTree.get r2 (te_typ e) with
+          | none =>
+              rw [hp, h1, h2] at h
+              cases h
+          | some ty2 =>
+              rw [hp, h1, h2] at h
+              cases hEq : rtlTypeAlgebra.eq ty1 ty2 with
+              | left hty =>
+                  simp [hEq] at h
+                  rcases h with ⟨rfl, rfl⟩
+                  constructor
+                  · rfl
+                  · simp [CompCert4Lean.Common.Unityping.UniSolver.makeassign, h1, h2, hty]
+              | right hty =>
+                  simp [hEq] at h
+
+private theorem rtl_solve_rec_false_aux :
+    ∀ (r1 r2 : positive) (q : List (positive × positive))
+      (e : typenv) (changed : Bool) (e' : typenv),
+      CompCert4Lean.Common.Unityping.UniSolver.solve_rec rtlTypeAlgebra
+        e changed q = OK (e', false) →
+      changed = false ∧
+        ((r1, r2) ∈ q →
+          makeassign rtlTypeAlgebra e r1 = makeassign rtlTypeAlgebra e r2) := by
+  intro r1 r2 q
+  induction q with
+  | nil =>
+      intro e changed e' h
+      simp only [CompCert4Lean.Common.Unityping.UniSolver.solve_rec] at h
+      cases changed with
+      | false =>
+          rcases h with ⟨rfl, rfl⟩
+          exact ⟨rfl, by intro hmem; cases hmem⟩
+      | true =>
+          cases h
+  | cons a q ih =>
+      rcases a with ⟨a1, a2⟩
+      intro e changed e' h
+      simp only [CompCert4Lean.Common.Unityping.UniSolver.solve_rec] at h
+      split at h
+      · cases h
+      · rename_i changed1 e1 hmove
+        have htail := ih e1 (changed || changed1) e' h
+        rcases htail with ⟨hchanged, hmem⟩
+        have hc : changed = false := by
+          cases changed <;> cases changed1 <;> simp_all
+        have hc1 : changed1 = false := by
+          cases changed <;> cases changed1 <;> simp_all
+        subst changed
+        subst changed1
+        have hmf := rtl_move_false_aux e a1 a2 e1 hmove
+        constructor
+        · rfl
+        · intro hmem'
+          simp only [List.mem_cons] at hmem'
+          rcases hmem' with hhead | htailmem
+          · rcases hhead with ⟨rfl, rfl⟩
+            exact hmf.2
+          · have hEq := hmem htailmem
+            unfold CompCert4Lean.Common.Unityping.UniSolver.makeassign at hEq ⊢
+            rw [hmf.1] at hEq
+            exact hEq
+
+private theorem rtl_solve_constraints_incr_aux :
+    ∀ (te : typassign) (e e' : typenv),
+      CompCert4Lean.Common.Unityping.UniSolver.solve_constraints rtlTypeAlgebra e =
+        OK e' → satisf te e' → satisf te e := by
+  intro te e e' h hs
+  let P : typenv → res typenv → Prop := fun e r =>
+    ∀ e', r = OK e' → satisf te e' → satisf te e
+  have hind :=
+    CompCert4Lean.Common.Unityping.UniSolver.solve_constraints_ind
+      rtlTypeAlgebra P
+      (by
+        intro e e' hrec e'' heq hs'
+        cases heq
+        exact hs')
+      (by
+        intro e e' hrec ih e'' heq hs'
+        have hsbase := ih e'' heq hs'
+        have hsorig : satisf te e := by
+          have hs0 := rtl_solve_rec_incr_aux te (te_equ e)
+            { te_typ := te_typ e, te_equ := [] } false e' true hrec hsbase
+          constructor
+          · intro x ty hx
+            exact hs0.1 x ty hx
+          · intro x y hxy
+            exact rtl_solve_rec_sound_aux te x y (te_equ e)
+              { te_typ := te_typ e, te_equ := [] } false e' true hrec hxy hsbase
+        exact hsorig)
+      (by
+        intro e message hrec e'' heq hs'
+        cases heq)
+      e
+  exact hind e' h hs
+
+private theorem rtl_solve_constraints_sound_aux :
+    ∀ (e e' : typenv),
+      CompCert4Lean.Common.Unityping.UniSolver.solve_constraints rtlTypeAlgebra e =
+        OK e' →
+      satisf (makeassign rtlTypeAlgebra e') e' := by
+  intro e e' h
+  let P : typenv → res typenv → Prop := fun _ r =>
+    ∀ e', r = OK e' →
+      satisf (makeassign rtlTypeAlgebra e') e'
+  have hind :=
+    CompCert4Lean.Common.Unityping.UniSolver.solve_constraints_ind
+      rtlTypeAlgebra P
+      (by
+        intro e e' hrec e'' heq
+        cases heq
+        constructor
+        · intro x ty hx
+          simp [CompCert4Lean.Common.Unityping.UniSolver.makeassign, hx]
+        · intro x y hxy
+          have hf := rtl_solve_rec_false_aux x y (te_equ e)
+            { te_typ := te_typ e, te_equ := [] } false e' hrec
+          have heq' := hf.2 hxy
+          simpa [CompCert4Lean.Common.Unityping.UniSolver.makeassign] using heq')
+      (by
+        intro e e' hrec ih e'' heq
+        have hs := ih e'' heq
+        exact hs)
+      (by
+        intro e message hrec e' heq
+        cases heq)
+      e
+  exact hind e' h
+
+theorem solve_sound_proof : solve_sound := by
+  intro e te h
+  unfold S.solve CompCert4Lean.Common.Unityping.UniSolver.solve at h
+  split at h
+  · cases h
+  · rename_i e' hconstraints
+    rcases h with ⟨rfl⟩
+    exact rtl_solve_constraints_incr_aux (makeassign rtlTypeAlgebra e') e e'
+      hconstraints (rtl_solve_constraints_sound_aux e e' hconstraints)
+
+end CompCert4Lean.Backend.RTLtyping.S

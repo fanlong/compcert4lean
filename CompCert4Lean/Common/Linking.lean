@@ -880,3 +880,27 @@ theorem Linker_varinit_linkorder_trans_proof :
   exact Linker_varinit.linkorder_trans x y z hxy hyz
 
 end CompCert4Lean.Common.Linking
+
+namespace CompCert4Lean.Common.Linking
+
+theorem Linker_varinit_linkorder_refl_proof :
+    Linker_varinit_linkorder_reflStatement := by
+  intro x
+  exact Linker_varinit.linkorder_refl x
+
+theorem Linker_varinit_link_linkorder_proof :
+    Linker_varinit_link_linkorderStatement := by
+  intro x y z hlink
+  exact Linker_varinit.link_linkorder x y z hlink
+
+theorem Linker_vardef_linkorder_refl_proof :
+    Linker_vardef_linkorder_reflStatement := by
+  intro V LV x
+  exact (Linker_vardef V).linkorder_refl x
+
+theorem Linker_vardef_linkorder_trans_proof :
+    Linker_vardef_linkorder_transStatement := by
+  intro V LV x y z hxy hyz
+  exact (Linker_vardef V).linkorder_trans x y z hxy hyz
+
+end CompCert4Lean.Common.Linking

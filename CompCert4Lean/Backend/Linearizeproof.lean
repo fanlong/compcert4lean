@@ -892,3 +892,11 @@ theorem functions_translated : functions_translatedStatement := by
           exact linearize_function_ptr_translated service prog tprog hm b f hfind
 
 end CompCert4Lean.Backend.Linearizeproof
+
+namespace CompCert4Lean.Backend.Linearizeproof
+
+theorem function_ptr_translated : function_ptr_translatedStatement := by
+  intro service prog tprog hm v f hfind
+  exact linearize_function_ptr_translated service prog tprog hm v f hfind
+
+end CompCert4Lean.Backend.Linearizeproof

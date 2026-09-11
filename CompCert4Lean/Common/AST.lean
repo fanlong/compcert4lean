@@ -633,3 +633,107 @@ theorem proj_xtype_of_chunk : proj_xtype_of_chunkStatement := by
   cases chunk <;> rfl
 
 end CompCert4Lean.Common.AST
+
+namespace CompCert4Lean.Common.AST
+
+theorem chunk_of_Tptr : chunk_of_TptrStatement := by
+  rfl
+
+private theorem init_data_size_nonneg (i : init_data) :
+    zLe z0 (init_data_size i) := by
+  cases i with
+  | Init_int8 _ =>
+      change (0 : Int) ≤ 1
+      omega
+  | Init_int16 _ =>
+      change (0 : Int) ≤ 2
+      omega
+  | Init_int32 _ =>
+      change (0 : Int) ≤ 4
+      omega
+  | Init_int64 _ =>
+      change (0 : Int) ≤ 8
+      omega
+  | Init_float32 _ =>
+      change (0 : Int) ≤ 4
+      omega
+  | Init_float64 _ =>
+      change (0 : Int) ≤ 8
+      omega
+  | Init_addrof _ _ =>
+      simp [init_data_size, CompCert4Lean.X86_64.Archi.ptr64,
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat]
+      change (0 : Int) ≤ 8
+      omega
+  | Init_space n =>
+      exact CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.le_max_r n z0
+
+theorem init_data_size_pos : init_data_size_posStatement := by
+  intro i
+  exact init_data_size_nonneg i
+
+theorem init_data_list_size_pos : init_data_list_size_posStatement := by
+  intro il
+  induction il with
+  | nil =>
+      change (0 : Int) ≤ 0
+      omega
+  | cons i il ih =>
+      change (0 : Int) ≤
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add
+            (init_data_size i) (init_data_list_size il))
+      simp only [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add,
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+      have hi := init_data_size_nonneg i
+      have hil := ih
+      change 0 ≤ CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (init_data_size i) at hi
+      change 0 ≤ CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (init_data_list_size il) at hil
+      exact Int.add_nonneg hi hil
+
+end CompCert4Lean.Common.AST
+
+namespace CompCert4Lean.Common.AST
+
+private theorem ast_get_foldl_mem_or_initial {A : Type} :
+    ∀ (l : List (CompCert4Lean.Foundation.Numbers.Rocq.Coq.positive × A))
+      (m : CompCert4Lean.Lib.Maps.PTree.tree A)
+      (k : CompCert4Lean.Foundation.Numbers.Rocq.Coq.positive) (v : A),
+      CompCert4Lean.Lib.Maps.PTree.get k
+          (List.foldl (fun m kv => CompCert4Lean.Lib.Maps.PTree.set kv.1 kv.2 m) m l) =
+        some v →
+      (k, v) ∈ l ∨ CompCert4Lean.Lib.Maps.PTree.get k m = some v := by
+  intro l
+  induction l with
+  | nil =>
+      intro m k v h
+      exact Or.inr h
+  | cons p l ih =>
+      intro m k v h
+      rcases p with ⟨j, w⟩
+      have htail :
+          CompCert4Lean.Lib.Maps.PTree.get k
+              (List.foldl
+                (fun m kv => CompCert4Lean.Lib.Maps.PTree.set kv.1 kv.2 m)
+                (CompCert4Lean.Lib.Maps.PTree.set j w m) l) = some v := by
+        simpa only [List.foldl] using h
+      rcases ih (CompCert4Lean.Lib.Maps.PTree.set j w m) k v htail with hmem | hinit
+      · exact Or.inl (List.mem_cons_of_mem (j, w) hmem)
+      · by_cases hkj : k = j
+        · subst k
+          have hwv : w = v := Option.some.inj (by
+            simpa [CompCert4Lean.Lib.Maps.PTree.getSet_equation] using hinit)
+          subst v
+          exact Or.inl (by simp)
+        · exact Or.inr (by
+            simpa [CompCert4Lean.Lib.Maps.PTree.getSet_equation, hkj] using hinit)
+
+theorem in_prog_defmap : in_prog_defmapStatement := by
+  intro F V p id g h
+  have h' := ast_get_foldl_mem_or_initial (A := globdef F V) p.prog_defs
+    (CompCert4Lean.Lib.Maps.PTree.empty (globdef F V)) id g h
+  rcases h' with hmem | hempty
+  · exact hmem
+  · simp [CompCert4Lean.Lib.Maps.PTree.empty, CompCert4Lean.Lib.Maps.PTree.get] at hempty
+
+end CompCert4Lean.Common.AST

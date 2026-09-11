@@ -1223,3 +1223,431 @@ theorem rhs_valid_exten : rhs_valid_extenStatement := by
   | builtin_valid sp bf args => exact builtin_valid sp bf args
 
 end CompCert4Lean.Backend.CSEproof
+
+namespace CompCert4Lean.Backend.CSEproof
+
+open CompCert4Lean.Backend.CSEdomain
+
+theorem equation_holds_exten
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    equation_holds_extenStatement := by
+  intro valu1 upto valu2 hagree ge sp m e heq hwf
+  cases e with
+  | Eq l strict r =>
+      cases hwf with
+      | intro hl hr =>
+          cases heq with
+          | eq_holds_strict _ _ hev hvalid =>
+              apply eq_holds_strict
+              · rw [hagree l hl]
+                apply rhs_eval_to_exten valu1 upto valu2 hagree ge sp m r (valu1 l)
+                  hev hr
+              · apply rhs_valid_exten valu1 upto valu2 hagree ge sp r hvalid
+                exact hr
+          | eq_holds_lessdef _ _ v hev hle hvalid =>
+              apply eq_holds_lessdef l r v
+              · apply rhs_eval_to_exten valu1 upto valu2 hagree ge sp m r v hev
+                exact hr
+              · rw [hagree l hl]
+                exact hle
+              · apply rhs_valid_exten valu1 upto valu2 hagree ge sp r hvalid
+                exact hr
+
+end CompCert4Lean.Backend.CSEproof
+
+namespace CompCert4Lean.Backend.CSEproof
+
+open CompCert4Lean.Backend.CSEdomain
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Lib.Coqlib
+
+theorem valnum_reg_holds
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    valnum_reg_holdsStatement := by
+  intro valu1 ge sp rs m n r n' v hnum hval
+  unfold CompCert4Lean.Backend.CSEdomain.valnum at *
+  change positive at r
+  change Regmap.t CompCert4Lean.Common.Values.val at rs
+  unfold CSE.valnum_reg at hval
+  cases hget : PTree.get r n.num_reg with
+  | some v' =>
+      simp [hget] at hval
+      cases hval
+      letI : DecidableEq positive := fun a b =>
+        match peq a b with
+        | .left h => isTrue h
+        | .right h => isFalse h
+      refine ⟨valu1, hnum, ?_, ?_, ?_, ?_⟩
+      · exact hnum.num_holds_reg r _ hget
+      · exact valu_agree_refl valu1 n.num_next
+      · exact hnum.num_holds_wf.wf_num_reg r _ hget
+      · exact Ple_refl _
+  | none =>
+      simp [hget] at hval
+      cases hval
+      let valu2 : valuation := fun vn =>
+        match peq vn n.num_next with
+        | .left _ => PMap.get r rs
+        | .right _ => valu1 vn
+      have hagree : valu_agree valu1 valu2 n.num_next := by
+        intro vn hvn
+        simp only [valu2]
+        cases hpeq : peq vn n.num_next with
+        | left heq => exact False.elim ((Plt_ne _ _ hvn) heq)
+        | right _ => rfl
+      have hpleSucc : Ple n.num_next (PArith.BinPos.Pos.succ n.num_next) := by
+        exact Nat.le_of_lt (Plt_succ _)
+      have hreg_same : PTree.get r (PTree.set r n.num_next n.num_reg) = some n.num_next := by
+        have h := @PTree.gsspec_proof CompCert4Lean.Backend.CSEdomain.valnum
+          r r n.num_next n.num_reg
+        cases hpeq : peq r r with
+        | left _ => simpa [hpeq] using h
+        | right hne => exact False.elim (hne rfl)
+      have hreg_other : ∀ r0 : positive, r0 ≠ r →
+          PTree.get r0 (PTree.set r n.num_next n.num_reg) = PTree.get r0 n.num_reg := by
+        intro r0 hne
+        have h := @PTree.gsspec_proof CompCert4Lean.Backend.CSEdomain.valnum
+          r0 r n.num_next n.num_reg
+        cases hpeq : peq r0 r with
+        | left heq => exact False.elim (hne heq)
+        | right _ => simpa [hpeq, PTree.t] using h
+      have hval_same : PTree.get n.num_next
+          (PTree.set n.num_next [r] n.num_val.2) = some [r] := by
+        have h := PTree.gsspec_proof n.num_next n.num_next [r] n.num_val.2
+        cases hpeq : peq n.num_next n.num_next with
+        | left _ => simpa [hpeq] using h
+        | right hne => exact False.elim (hne rfl)
+      have hval_other : ∀ v0 : positive, v0 ≠ n.num_next →
+          PTree.get v0 (PTree.set n.num_next [r] n.num_val.2) =
+            PTree.get v0 n.num_val.2 := by
+        intro v0 hne
+        change PTree.get v0 (PTree.set n.num_next [r]
+          (show PTree.t (List positive) from n.num_val.2)) =
+          PTree.get v0 (show PTree.t (List positive) from n.num_val.2)
+        have h := PTree.gsspec_proof v0 n.num_next [r] n.num_val.2
+        cases hpeq : peq v0 n.num_next with
+        | left heq => exact False.elim (hne heq)
+        | right _ => simpa [hpeq, PTree.t] using h
+      refine ⟨valu2, ?_, ?_, hagree, ?_, ?_⟩
+      · constructor
+        · constructor
+          · intro e he
+            exact wf_equation_incr n.num_next (PArith.BinPos.Pos.succ n.num_next) e
+              (hnum.num_holds_wf.wf_num_eqs e he) hpleSucc
+          · intro r0 v0 hget0
+            change positive at v0
+            cases hreg : peq r0 r with
+            | left heq =>
+              subst r0
+              rw [hreg_same] at hget0
+              cases hget0
+              exact Plt_succ (show positive from n.num_next)
+            | right hne =>
+              rw [hreg_other r0 hne] at hget0
+              exact Plt_trans_succ _ _
+                (hnum.num_holds_wf.wf_num_reg r0 v0 (by simpa using hget0))
+          · intro r0 v0 hr0
+            change positive at r0
+            change r0 ∈ PMap.get v0 (PMap.set n.num_next [r] n.num_val) at hr0
+            change PTree.get r0 (PTree.set r n.num_next n.num_reg) = some v0
+            unfold PMap.get PMap.set at hr0
+            cases hv : peq v0 n.num_next with
+            | left hev =>
+                subst v0
+                rw [hval_same] at hr0
+                change r0 ∈ [r] at hr0
+                simp at hr0
+                cases hreg : peq r0 r with
+                | left heq => subst r0; exact hreg_same
+                | right hne => exact False.elim (hne (by simpa using hr0))
+            | right hne =>
+                rw [hval_other v0 hne] at hr0
+                simp [hv] at hr0
+                cases hreg : peq r0 r with
+                | left heq =>
+                    subst r0
+                    have hold := hnum.num_holds_wf.wf_num_val r v0 (by
+                      change r ∈ PMap.get v0 n.num_val
+                      exact hr0)
+                    rw [hget] at hold
+                    cases hold
+                | right hneReg =>
+                    rw [hreg_other r0 hneReg]
+                    exact hnum.num_holds_wf.wf_num_val r0 v0 hr0
+        · intro e he
+          exact equation_holds_exten valu1 n.num_next valu2 hagree ge sp m e
+            (hnum.num_holds_eq e he)
+            (hnum.num_holds_wf.wf_num_eqs e he)
+        · intro r0 v0 hget0
+          change PMap.get r0 rs = valu2 v0
+          change positive at r0
+          unfold valu2
+          cases hreg : peq r0 r with
+          | left heq =>
+            subst r0
+            rw [hreg_same] at hget0
+            cases hget0
+            cases hv : peq n.num_next n.num_next with
+            | left _ => simp [valu2, hv]
+            | right hne => exact False.elim (hne rfl)
+          | right hne =>
+            rw [hreg_other r0 hne] at hget0
+            have hvneq : v0 ≠ n.num_next := by
+              intro hv
+              exact (Plt_ne _ _ (hnum.num_holds_wf.wf_num_reg r0 v0 hget0)) hv
+            cases hv : peq v0 n.num_next with
+            | left hvEq => exact False.elim (hvneq hvEq)
+            | right _ =>
+                simp [valu2, hv]
+                exact hnum.num_holds_reg r0 v0 hget0
+      · unfold valu2
+        cases hpeq : peq n.num_next n.num_next with
+        | left heq => simp [hpeq]
+        | right hne => exact False.elim (hne rfl)
+      · exact Plt_succ _
+      · exact hpleSucc
+
+end CompCert4Lean.Backend.CSEproof
+
+namespace CompCert4Lean.Backend.CSEproof
+
+open CompCert4Lean.Backend.CSEdomain
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Lib.Coqlib
+
+theorem valnum_regs_holds
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    valnum_regs_holdsStatement := by
+  intro rl valu1 ge sp rs m n n' vl hnum hval
+  have pltPle : ∀ (a b c : positive), Plt a b → Ple b c → Plt a c := by
+    intro a b c hab hbc
+    change PArith.BinPos.Pos.to_nat a < PArith.BinPos.Pos.to_nat b at hab
+    change PArith.BinPos.Pos.to_nat b ≤ PArith.BinPos.Pos.to_nat c at hbc
+    change PArith.BinPos.Pos.to_nat a < PArith.BinPos.Pos.to_nat c
+    exact Nat.lt_of_lt_of_le hab hbc
+  induction rl generalizing valu1 n n' vl with
+  | nil =>
+      simp [CSE.valnum_regs] at hval
+      cases hval
+      subst n'
+      subst vl
+      refine ⟨valu1, hnum, ?_, valu_agree_refl valu1 n.num_next, ?_, ?_⟩
+      · rfl
+      · intro v hv
+        cases hv
+      · exact Ple_refl _
+  | cons a rl ih =>
+      cases h1 : CSE.valnum_reg n a with
+      | mk n1 v1 =>
+          cases h2 : CSE.valnum_regs n1 rl with
+          | mk n2 vs =>
+              simp [CSE.valnum_regs, h1, h2] at hval
+              cases hval
+              subst n'
+              subst vl
+              obtain ⟨valu2, hn2, heq1, hag12, hlt1, hle1⟩ :=
+                valnum_reg_holds valu1 ge sp rs m n a n1 v1 hnum h1
+              obtain ⟨valu3, hn3, heq2, hag23, hlt2, hle2⟩ :=
+                ih (valu1 := valu2) (n := n1) (n' := n2) (vl := vs)
+                  hn2 h2
+              refine ⟨valu3, hn3, ?_, ?_, ?_, ?_⟩
+              · simp only [List.map]
+                rw [heq2, heq1, ← hag23 v1 hlt1]
+              · intro v hv
+                exact (hag23 v (pltPle _ _ _ hv hle1)).trans (hag12 v hv)
+              · intro v hv
+                simp only [List.mem_cons] at hv
+                rcases hv with hv | hv
+                · subst v
+                  exact pltPle _ _ _ hlt1 hle2
+                · exact hlt2 v hv
+              · exact Ple_trans _ _ _ hle1 hle2
+
+end CompCert4Lean.Backend.CSEproof
+
+namespace CompCert4Lean.Backend.CSEproof
+
+open CompCert4Lean.Backend.CSEdomain
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Builtins
+open CompCert4Lean.Common.Events
+
+theorem valnum_builtin_arg_holds
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    valnum_builtin_arg_holdsStatement := by
+  intro ge sp rs m a v heval valu1 n n' a' hnum hval
+  have pltPle : ∀ (x y z : positive), Plt x y → Ple y z → Plt x z := by
+    intro x y z hxy hyz
+    change PArith.BinPos.Pos.to_nat x < PArith.BinPos.Pos.to_nat y at hxy
+    change PArith.BinPos.Pos.to_nat y ≤ PArith.BinPos.Pos.to_nat z at hyz
+    change PArith.BinPos.Pos.to_nat x < PArith.BinPos.Pos.to_nat z
+    exact Nat.lt_of_lt_of_le hxy hyz
+  induction heval generalizing valu1 n n' a' with
+  | eval_BA x =>
+      cases hreg : CSE.valnum_reg n x with
+      | mk n1 v1 =>
+        simp [CSE.valnum_builtin_arg, hreg] at hval
+        cases hval
+        subst n'
+        subst a'
+        obtain ⟨valu2, hn2, hget, hag, hlt, hle⟩ :=
+          valnum_reg_holds valu1 ge sp rs m n x n1 v1 hnum hreg
+        refine ⟨valu2, hn2, ?_, hag, ?_, hle⟩
+        · rw [hget]
+          exact eval_BA v1
+        · intro vn hvn
+          simp [params_of_builtin_arg] at hvn
+          subst vn
+          exact hlt
+  | eval_BA_int n0 =>
+      simp [CSE.valnum_builtin_arg] at hval
+      cases hval
+      subst n'
+      subst a'
+      refine ⟨valu1, hnum, ?_, ?_, ?_, ?_⟩
+      · exact eval_BA_int n0
+      · exact valu_agree_refl valu1 n.num_next
+      · simp [params_of_builtin_arg]
+      · exact Ple_refl _
+  | eval_BA_long n0 =>
+      simp [CSE.valnum_builtin_arg] at hval
+      cases hval
+      subst n'
+      subst a'
+      refine ⟨valu1, hnum, ?_, ?_, ?_, ?_⟩
+      · exact eval_BA_long n0
+      · exact valu_agree_refl valu1 n.num_next
+      · simp [params_of_builtin_arg]
+      · exact Ple_refl _
+  | eval_BA_float n0 =>
+      simp [CSE.valnum_builtin_arg] at hval
+      cases hval
+      subst n'
+      subst a'
+      refine ⟨valu1, hnum, ?_, ?_, ?_, ?_⟩
+      · exact eval_BA_float n0
+      · exact valu_agree_refl valu1 n.num_next
+      · simp [params_of_builtin_arg]
+      · exact Ple_refl _
+  | eval_BA_single n0 =>
+      simp [CSE.valnum_builtin_arg] at hval
+      cases hval
+      subst n'
+      subst a'
+      refine ⟨valu1, hnum, ?_, ?_, ?_, ?_⟩
+      · exact eval_BA_single n0
+      · exact valu_agree_refl valu1 n.num_next
+      · simp [params_of_builtin_arg]
+      · exact Ple_refl _
+  | eval_BA_loadstack chunk ofs v0 hload =>
+      simp [CSE.valnum_builtin_arg] at hval
+      cases hval
+      subst n'
+      subst a'
+      refine ⟨valu1, hnum, ?_, ?_, ?_, ?_⟩
+      · exact eval_BA_loadstack chunk ofs v0 hload
+      · exact valu_agree_refl valu1 n.num_next
+      · simp [params_of_builtin_arg]
+      · exact Ple_refl _
+  | eval_BA_addrstack ofs =>
+      simp [CSE.valnum_builtin_arg] at hval
+      cases hval
+      subst n'
+      subst a'
+      refine ⟨valu1, hnum, ?_, ?_, ?_, ?_⟩
+      · exact eval_BA_addrstack ofs
+      · exact valu_agree_refl valu1 n.num_next
+      · simp [params_of_builtin_arg]
+      · exact Ple_refl _
+  | eval_BA_loadglobal chunk id ofs v0 hload =>
+      simp [CSE.valnum_builtin_arg] at hval
+      cases hval
+      subst n'
+      subst a'
+      refine ⟨valu1, hnum, ?_, ?_, ?_, ?_⟩
+      · exact eval_BA_loadglobal chunk id ofs v0 hload
+      · exact valu_agree_refl valu1 n.num_next
+      · simp [params_of_builtin_arg]
+      · exact Ple_refl _
+  | eval_BA_addrglobal id ofs =>
+      simp [CSE.valnum_builtin_arg] at hval
+      cases hval
+      subst n'
+      subst a'
+      refine ⟨valu1, hnum, ?_, ?_, ?_, ?_⟩
+      · exact eval_BA_addrglobal id ofs
+      · exact valu_agree_refl valu1 n.num_next
+      · simp [params_of_builtin_arg]
+      · exact Ple_refl _
+  | eval_BA_splitlong hi lo vhi vlo hhi hlo ihhi ihlo =>
+      cases h1 : CSE.valnum_builtin_arg n hi with
+      | mk n1 hi' =>
+        cases h2 : CSE.valnum_builtin_arg n1 lo with
+        | mk n2 lo' =>
+          simp [CSE.valnum_builtin_arg, h1, h2] at hval
+          cases hval
+          subst n'
+          subst a'
+          obtain ⟨valu2, hn2, heval_hi, hag12, hlt_hi, hle1⟩ :=
+            ihhi (valu1 := valu1) (n := n) (n' := n1) (a' := hi') hnum h1
+          obtain ⟨valu3, hn3, heval_lo, hag23, hlt_lo, hle2⟩ :=
+            ihlo (valu1 := valu2) (n := n1) (n' := n2) (a' := lo') hn2 h2
+          refine ⟨valu3, hn3, ?_, ?_, ?_, ?_⟩
+          · apply eval_BA_splitlong hi' lo' vhi vlo
+            · apply builtin_arg_val_exten valu2 n1.num_next valu3 hag23
+                ge sp m hi' vhi heval_hi
+              intro vn hvn
+              exact hlt_hi vn hvn
+            · exact heval_lo
+          · intro vn hvn
+            exact (hag23 vn (pltPle vn n.num_next n1.num_next hvn hle1)).trans
+              (hag12 vn hvn)
+          · intro vn hvn
+            change vn ∈ params_of_builtin_arg hi' ++ params_of_builtin_arg lo' at hvn
+            rcases List.mem_append.mp hvn with hleft | hright
+            · exact pltPle vn n1.num_next n2.num_next (hlt_hi vn hleft) hle2
+            · exact hlt_lo vn hright
+          · exact Ple_trans _ _ _ hle1 hle2
+  | eval_BA_addptr a1 a2 v1 v2 h1eval h2eval ih1 ih2 =>
+      cases h1 : CSE.valnum_builtin_arg n a1 with
+      | mk n1 a1' =>
+        cases h2 : CSE.valnum_builtin_arg n1 a2 with
+        | mk n2 a2' =>
+          simp [CSE.valnum_builtin_arg, h1, h2] at hval
+          cases hval
+          subst n'
+          subst a'
+          obtain ⟨valu2, hn2, heval_a1, hag12, hlt_a1, hle1⟩ :=
+            ih1 (valu1 := valu1) (n := n) (n' := n1) (a' := a1') hnum h1
+          obtain ⟨valu3, hn3, heval_a2, hag23, hlt_a2, hle2⟩ :=
+            ih2 (valu1 := valu2) (n := n1) (n' := n2) (a' := a2') hn2 h2
+          refine ⟨valu3, hn3, ?_, ?_, ?_, ?_⟩
+          · apply eval_BA_addptr a1' a2' v1 v2
+            · apply builtin_arg_val_exten valu2 n1.num_next valu3 hag23
+                ge sp m a1' v1 heval_a1
+              intro vn hvn
+              exact hlt_a1 vn hvn
+            · exact heval_a2
+          · intro vn hvn
+            exact (hag23 vn (pltPle vn n.num_next n1.num_next hvn hle1)).trans
+              (hag12 vn hvn)
+          · intro vn hvn
+            change vn ∈ params_of_builtin_arg a1' ++ params_of_builtin_arg a2' at hvn
+            rcases List.mem_append.mp hvn with hleft | hright
+            · exact pltPle vn n1.num_next n2.num_next (hlt_a1 vn hleft) hle2
+            · exact hlt_a2 vn hright
+          · exact Ple_trans _ _ _ hle1 hle2
+
+end CompCert4Lean.Backend.CSEproof

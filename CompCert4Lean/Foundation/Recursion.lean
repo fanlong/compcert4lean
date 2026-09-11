@@ -193,3 +193,49 @@ theorem lt_wf_ind : lt_wf_indStatement := by
 end Arith.Wf_nat
 end Rocq.Coq
 end CompCert4Lean.Foundation.Recursion
+
+namespace CompCert4Lean.Foundation.Recursion
+namespace Rocq.Coq
+
+namespace Init.Wf
+
+def well_founded_induction_type : well_founded_induction_typeStatement := by
+  intro A R Rwf P step a
+  exact Fix Rwf P step a
+
+theorem well_founded_ind : well_founded_indStatement := by
+  intro A R Rwf P step a
+  exact (_root_.WellFounded.induction
+    (⟨fun x => toLeanAcc (Rwf x)⟩ : _root_.WellFounded R) a step)
+
+theorem Fix_eq : Fix_eqStatement := by
+  intro A R Rwf P F F_ext x
+  simpa [Fix] using
+    (_root_.WellFounded.fix_eq
+      (⟨fun a => toLeanAcc (Rwf a)⟩ : _root_.WellFounded R) F x)
+
+end Init.Wf
+
+namespace Wellfounded.Inverse_Image
+
+theorem wf_inverse_image : wf_inverse_imageStatement := by
+  intro A B R f Rwf
+  have acc_inverse :
+      ∀ (b : B), Init.Wf.Acc R b →
+        ∀ (x : A), b = f x →
+          Init.Wf.Acc (fun x y : A => R (f x) (f y)) x := by
+    intro b hb
+    induction hb with
+    | Acc_intro b h ih =>
+        intro x hx
+        apply Init.Wf.Acc_intro x
+        intro y hy
+        apply ih (f y) ?_ y rfl
+        simpa [hx] using hy
+  intro x
+  exact acc_inverse (f x) (Rwf (f x)) x rfl
+
+end Wellfounded.Inverse_Image
+
+end Rocq.Coq
+end CompCert4Lean.Foundation.Recursion
