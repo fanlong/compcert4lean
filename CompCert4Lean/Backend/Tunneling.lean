@@ -501,3 +501,136 @@ theorem repr_empty_proof : repr_empty := by
   exact M.gempty M.elt aM
 
 end CompCert4Lean.Backend.Tunneling.U
+
+namespace CompCert4Lean.Backend.Tunneling.U
+
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.Lib.UnionFind
+
+private theorem pg_tunnel_map_get_set {M : MAP} {A : Type} (x y : M.elt)
+    (v : A) (m : M.t A) :
+    M.get x (M.set y v m) = if _h : x = y then some v else M.get x m := by
+  rw [M.gsspec]
+  cases hxy : M.elt_eq x y with
+  | left h => simp [h]
+  | right h => simp [h]
+
+private theorem pg_tunnel_repr_res_none {M : MAP} (uf : UF.t M) (a : UF.elt M) :
+    M.get (UF.repr M uf a) uf.m = none := by
+  apply uf.mwf.induction a
+  intro x ih
+  rw [UF.repr_unroll_proof M uf x]
+  cases h : M.get x uf.m with
+  | none => simpa [h]
+  | some y => simpa [h] using ih y (by
+      change M.get x uf.m = some y
+      exact h)
+
+private theorem pg_tunnel_repr_canonical {M : MAP} (uf : UF.t M) (a : UF.elt M) :
+    UF.repr M uf (UF.repr M uf a) = UF.repr M uf a := by
+  rw [UF.repr_none_proof M uf (UF.repr M uf a) (pg_tunnel_repr_res_none uf a)]
+
+private theorem pg_tunnel_repr_none {M : MAP} (uf : UF.t M) (a : UF.elt M)
+    (h : M.get a uf.m = none) : UF.repr M uf a = a :=
+  UF.repr_none_proof M uf a h
+
+private theorem pg_tunnel_repr_some {M : MAP} (uf : UF.t M) (a a' : UF.elt M)
+    (h : M.get a uf.m = some a') : UF.repr M uf a = UF.repr M uf a' :=
+  UF.repr_some_proof M uf a a' h
+
+private theorem pg_tunnel_repr_identify_1 {M : MAP} (uf : UF.t M) (a b : UF.elt M)
+    (ha : M.get a uf.m = none) (hn : UF.repr M uf b ≠ a) (x : UF.elt M)
+    (hx : UF.repr M uf x ≠ a) :
+    UF.repr M (UF.identify M uf a b ha hn) x = UF.repr M uf x := by
+  revert hx
+  apply (UF.identify M uf a b ha hn).mwf.induction x
+  intro x ih hx
+  rw [UF.repr_unroll_proof M (UF.identify M uf a b ha hn) x]
+  cases hnew : M.get x (UF.identify M uf a b ha hn).m with
+  | none =>
+      simp only [hnew]
+      change M.get x (M.set a b uf.m) = none at hnew
+      rw [pg_tunnel_map_get_set] at hnew
+      by_cases hxa : x = a
+      · subst x
+        simp at hnew
+      · simp [hxa] at hnew
+        exact (pg_tunnel_repr_none uf x hnew).symm
+  | some y =>
+      simp only [hnew]
+      change M.get x (M.set a b uf.m) = some y at hnew
+      rw [pg_tunnel_map_get_set] at hnew
+      by_cases hxa : x = a
+      · subst x
+        simp at hnew
+        subst y
+        exact False.elim (hx (pg_tunnel_repr_none uf a ha))
+      · simp [hxa] at hnew
+        have hy : UF.repr M uf y ≠ a := by
+          intro hya
+          apply hx
+          exact (pg_tunnel_repr_some uf x y hnew).trans hya
+        exact (ih y (by
+          change M.get x (M.set a b uf.m) = some y
+          rw [pg_tunnel_map_get_set]
+          simp [hxa, hnew]) hy).trans (pg_tunnel_repr_some uf x y hnew).symm
+
+private theorem pg_tunnel_repr_identify_2 {M : MAP} (uf : UF.t M) (a b : UF.elt M)
+    (ha : M.get a uf.m = none) (hn : UF.repr M uf b ≠ a) (x : UF.elt M)
+    (hx : UF.repr M uf x = a) :
+    UF.repr M (UF.identify M uf a b ha hn) x = UF.repr M uf b := by
+  revert hx
+  apply (UF.identify M uf a b ha hn).mwf.induction x
+  intro x ih hx
+  rw [UF.repr_unroll_proof M (UF.identify M uf a b ha hn) x]
+  cases hnew : M.get x (UF.identify M uf a b ha hn).m with
+  | none =>
+      simp only [hnew]
+      change M.get x (M.set a b uf.m) = none at hnew
+      rw [pg_tunnel_map_get_set] at hnew
+      by_cases hxa : x = a
+      · subst x
+        simp at hnew
+      · simp [hxa] at hnew
+        exact False.elim (hxa ((pg_tunnel_repr_none uf x hnew).symm.trans hx))
+  | some y =>
+      simp only [hnew]
+      change M.get x (M.set a b uf.m) = some y at hnew
+      rw [pg_tunnel_map_get_set] at hnew
+      by_cases hxa : x = a
+      · subst x
+        simp at hnew
+        subst y
+        exact pg_tunnel_repr_identify_1 uf a b ha hn b hn
+      · simp [hxa] at hnew
+        apply ih y (by
+          change M.get x (M.set a b uf.m) = some y
+          rw [pg_tunnel_map_get_set]
+          simp [hxa, hnew])
+        exact (pg_tunnel_repr_some uf x y hnew).symm.trans hx
+
+private theorem pg_tunnel_repr_union_1 {M : MAP} (uf : UF.t M) (a b x : UF.elt M)
+    (hx : UF.repr M uf x ≠ UF.repr M uf a) :
+    UF.repr M (UF.union M uf a b) x = UF.repr M uf x := by
+  unfold UF.union
+  dsimp
+  split <;> rename_i h
+  · rfl
+  · apply pg_tunnel_repr_identify_1
+    exact hx
+
+private theorem pg_tunnel_repr_union_3 {M : MAP} (uf : UF.t M) (a b : UF.elt M) :
+    UF.repr M (UF.union M uf a b) b = UF.repr M uf b := by
+  by_cases h : UF.repr M uf a = UF.repr M uf b
+  · unfold UF.union
+    dsimp
+    simp [h]
+  · exact pg_tunnel_repr_union_1 uf a b b (Ne.symm h)
+
+theorem repr_union_3_proof : repr_union_3 := by
+  intro uf a b
+  cases uf
+  unfold U.repr U.union
+  apply pg_tunnel_repr_union_3
+
+end CompCert4Lean.Backend.Tunneling.U

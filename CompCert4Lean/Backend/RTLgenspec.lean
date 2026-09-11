@@ -610,3 +610,176 @@ theorem new_reg_not_in_map : new_reg_not_in_mapStatement := by
   exact Nat.lt_irrefl _ hvalid
 
 end CompCert4Lean.Backend.RTLgenspec
+
+namespace CompCert4Lean.Backend.RTLgenspec
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Foundation.Logic.Support
+open CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.List
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Backend.RTLgen
+open CompCert4Lean.X86.Op
+
+private theorem rtlgenspec_add_var_valid_map
+    (s1 s2 : RTLgen.state) (map mapPrime : RTLgen.mapping) (name : ident) (r : reg)
+    (i : RTLgen.state_incr s1 s2) :
+    RTLgen.add_var map name s1 = .OK (r, mapPrime) s2 i →
+    map_valid map s1 → map_valid mapPrime s2 := by
+  intro h hvalid
+  cases map with
+  | mk mapVars mapLetvars =>
+    unfold PTree.t at mapVars
+    unfold CompCert4Lean.Common.AST.ident at name
+    unfold CompCert4Lean.Backend.Registers.reg at *
+    change RTLgen.bind RTLgen.new_reg
+      (fun r => RTLgen.ret (r,
+        ({ map_vars := PTree.set name r mapVars, map_letvars := mapLetvars } : RTLgen.mapping)))
+      s1 = RTLgen.res.OK (r, mapPrime) s2 i at h
+    dsimp [RTLgen.bind] at h
+    rw [show RTLgen.new_reg s1 = .OK s1.st_nextreg _ _ from rfl] at h
+    simp [RTLgen.ret] at h
+    cases h
+    unfold map_valid at hvalid ⊢
+    intro r hin
+    unfold CompCert4Lean.Backend.Registers.reg at r
+    unfold reg_in_map at hin
+    change Plt r (PArith.BinPos.Pos.succ s1.st_nextreg)
+    rcases hin with ⟨id, hget⟩ | hmem
+    · change PTree.get id (PTree.set name s1.st_nextreg mapVars) = some r at hget
+      rw [PTree.getSet_equation] at hget
+      by_cases hid : id = name
+      · subst id
+        simp at hget
+        cases hget
+        exact Plt_succ _
+      · simp [hid] at hget
+        exact Plt_trans_succ r s1.st_nextreg (hvalid r (Or.inl ⟨id, hget⟩))
+    · exact Plt_trans_succ r s1.st_nextreg (hvalid r (Or.inr hmem))
+
+theorem add_var_valid : add_var_validStatement := by
+  intro s1 s2 map1 map2 name r i h hmap
+  have hmap2 := rtlgenspec_add_var_valid_map s1 s2 map1 map2 name r i h hmap
+  have hr : reg_valid r s2 := by
+    cases map1 with
+    | mk mapVars mapLetvars =>
+      unfold PTree.t at mapVars
+      unfold CompCert4Lean.Common.AST.ident at name
+      unfold CompCert4Lean.Backend.Registers.reg at *
+      change RTLgen.bind RTLgen.new_reg
+        (fun r => RTLgen.ret (r,
+          ({ map_vars := PTree.set name r mapVars, map_letvars := mapLetvars } : RTLgen.mapping)))
+        s1 = RTLgen.res.OK (r, map2) s2 i at h
+      dsimp [RTLgen.bind] at h
+      rw [show RTLgen.new_reg s1 = .OK s1.st_nextreg _ _ from rfl] at h
+      simp [RTLgen.ret] at h
+      cases h
+      exact Plt_succ _
+  exact ⟨hr, hmap2⟩
+
+end CompCert4Lean.Backend.RTLgenspec
+
+namespace CompCert4Lean.Backend.RTLgenspec
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Foundation.Logic.Support
+open CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.List
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Backend.RTLgen
+open CompCert4Lean.X86.Op
+
+theorem init_mapping_valid : init_mapping_validStatement := by
+  intro s r hin
+  unfold reg_in_map RTLgen.init_mapping at hin
+  rcases hin with ⟨id, hget⟩ | hmem
+  · simp [PTree.get, PTree.empty] at hget
+  · simp at hmem
+
+theorem add_letvar_valid : add_letvar_validStatement := by
+  intro map s r hmap hvalid r' hin
+  unfold RTLgen.add_letvar at hin
+  unfold reg_in_map at hin
+  rcases hin with ⟨id, hget⟩ | hmem
+  · exact hmap r' (Or.inl ⟨id, hget⟩)
+  · simp only [List.mem_cons] at hmem
+    rcases hmem with heq | htail
+    · subst r'
+      exact hvalid
+    · exact hmap r' (Or.inr htail)
+
+end CompCert4Lean.Backend.RTLgenspec
+
+namespace CompCert4Lean.Backend.RTLgenspec
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Foundation.Logic.Support
+open CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.List
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Backend.RTLgen
+open CompCert4Lean.X86.Op
+
+theorem add_vars_valid : add_vars_validStatement := by
+  unfold add_vars_validStatement
+  intro namel s1 s2 map1 map2 rl i
+  induction namel generalizing s1 s2 map1 map2 rl i with
+  | nil =>
+      intro h hmap
+      change RTLgen.ret ([], map1) s1 = .OK (rl, map2) s2 i at h
+      simp [RTLgen.ret] at h
+      rcases h with ⟨⟨hrl, hmap2⟩, hs⟩
+      cases hrl
+      cases hmap2
+      cases hs
+      constructor
+      · intro r hmem
+        simp at hmem
+      · exact hmap
+  | cons name names ih =>
+      intro h hvalid
+      change RTLgen.bind (RTLgen.add_vars map1 names)
+        (fun x => RTLgen.bind (RTLgen.add_var x.2 name)
+          (fun y => RTLgen.ret (y.1 :: x.1, y.2))) s1 = .OK (rl, map2) s2 i at h
+      cases hrec : RTLgen.add_vars map1 names s1 with
+      | Error msg =>
+          simp [RTLgen.bind, hrec] at h
+      | OK x sm hincr =>
+          cases x with
+          | mk rlmid mapmid =>
+              simp [RTLgen.bind, hrec] at h
+              cases hvar : RTLgen.add_var mapmid name sm with
+              | Error msg =>
+                  simp [hvar] at h
+              | OK x sn hinc =>
+                  cases x with
+                  | mk rnew mapnew =>
+                      simp [RTLgen.ret, hvar] at h
+                      rcases h with ⟨⟨hrl, hmap⟩, hs⟩
+                      have hrecvalid := ih (s1 := s1) (s2 := sm) (map1 := map1)
+                        (map2 := mapmid) (rl := rlmid) (i := hincr) hrec hvalid
+                      have haddvalid := add_var_valid (s1 := sm) (s2 := sn)
+                        (map1 := mapmid) (map2 := mapnew) (name := name) (r := rnew)
+                        (i := hinc) hvar hrecvalid.2
+                      constructor
+                      · simpa only [hrl, hmap, hs] using
+                          (regs_valid_cons rnew rlmid sn haddvalid.1
+                            (regs_valid_incr sm sn rlmid hinc hrecvalid.1))
+                      · simpa only [hmap, hs] using haddvalid.2
+
+end CompCert4Lean.Backend.RTLgenspec

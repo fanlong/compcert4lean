@@ -855,3 +855,31 @@ end R
 end ISet
 
 end CompCert4Lean.Lib.IntvSets
+
+namespace CompCert4Lean.Lib.IntvSets
+
+namespace ISet
+
+theorem In_empty : In_emptyStatement := by
+  intro x
+  change ¬ R.In x R.t.Nil
+  simp [R.In]
+
+namespace R
+
+theorem add_ok : add_okStatement := by
+  intro s hs l0 h0 hlt
+  exact addOk hs l0 h0 hlt
+
+theorem remove_ok : remove_okStatement := by
+  intro l0 h0 hlt s hs
+  exact removeOk l0 h0 hlt hs
+
+theorem inter_ok : inter_okStatement := by
+  intro s1 hs1 s2 hs2
+  exact interOk s1 s2 hs1 hs2
+
+end R
+end ISet
+
+end CompCert4Lean.Lib.IntvSets

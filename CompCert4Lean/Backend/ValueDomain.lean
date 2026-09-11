@@ -2307,3 +2307,115 @@ theorem pmatch_top' : pmatch_top'Statement := by
   exact pmatch_ge bc b ofs Ptop p (pge.pge_top p) h
 
 end CompCert4Lean.Backend.ValueDomain
+
+namespace CompCert4Lean.Backend.ValueDomain
+
+private theorem plub_gl_gl_comm_aux (i j : Common.AST.ident) (o p : CompCert4Lean.Lib.Integers.ptrofs) :
+    (if i = j then if o = p then Gl i o else Glo i else Glob) =
+      (if j = i then if p = o then Gl j p else Glo j else Glob) := by
+  by_cases hij : i = j
+  · subst j
+    by_cases hop : o = p
+    · subst p; simp
+    · simp [hop, Ne.symm hop]
+  · have hji : ¬j = i := Ne.symm hij
+    simp [hij, hji]
+
+private theorem plub_glo_glo_comm_aux (i j : Common.AST.ident) :
+    (if i = j then Glo i else Glob) = (if j = i then Glo j else Glob) := by
+  by_cases hij : i = j
+  · subst j; simp
+  · have hji : ¬j = i := Ne.symm hij
+    simp [hij, hji]
+
+private theorem plub_glo_rhs_comm_aux (i j : Common.AST.ident) :
+    (if i = j then Glo j else Glob) = (if j = i then Glo j else Glob) := by
+  by_cases hij : i = j
+  · subst j; simp
+  · have hji : ¬j = i := Ne.symm hij
+    simp [hij, hji]
+
+private theorem plub_glo_lhs_comm_aux (i j : Common.AST.ident) :
+    (if i = j then Glo i else Glob) = (if j = i then Glo i else Glob) := by
+  by_cases hij : i = j
+  · subst j; simp
+  · have hji : ¬j = i := Ne.symm hij
+    simp [hij, hji]
+
+private theorem plub_stk_stk_comm_aux (o p : CompCert4Lean.Lib.Integers.ptrofs) :
+    (if o = p then Stk o else Stack) = (if p = o then Stk p else Stack) := by
+  by_cases hop : o = p
+  · subst p; simp
+  · have hpo : ¬p = o := Ne.symm hop
+    simp [hop, hpo]
+
+theorem plub_comm : plub_commStatement := by
+  intro p q
+  cases p <;> cases q <;> simp only [plub]
+  case Gl.Gl i o j p => exact plub_gl_gl_comm_aux i j o p
+  case Gl.Glo i o j => exact plub_glo_rhs_comm_aux i j
+  case Glo.Gl i j o => exact plub_glo_lhs_comm_aux i j
+  case Glo.Glo i j => exact plub_glo_glo_comm_aux i j
+  case Stk.Stk o p => exact plub_stk_stk_comm_aux o p
+
+private theorem pge_gl_gl_lub_aux (i j : Common.AST.ident) (o p : CompCert4Lean.Lib.Integers.ptrofs) :
+    pge (if i = j then if o = p then Gl i o else Glo i else Glob) (Gl i o) := by
+  by_cases hij : i = j
+  · subst j
+    by_cases hop : o = p
+    · subst p; simp; exact pge.pge_refl _
+    · simp [hop]
+      exact pge.gloGl _ _
+  · simp [hij]
+    exact pge.globGl _ _
+
+private theorem pge_gl_glo_lub_aux (i j : Common.AST.ident) (o : CompCert4Lean.Lib.Integers.ptrofs) :
+    pge (if i = j then Glo j else Glob) (Gl i o) := by
+  by_cases hij : i = j
+  · subst j; simp; exact pge.gloGl _ _
+  · simp [hij]; exact pge.globGl _ _
+
+private theorem pge_glo_gl_lub_aux (i j : Common.AST.ident) (o : CompCert4Lean.Lib.Integers.ptrofs) :
+    pge (if i = j then Glo i else Glob) (Glo i) := by
+  by_cases hij : i = j
+  · subst j; simp; exact pge.pge_refl _
+  · simp [hij]; exact pge.globGlo _
+
+private theorem pge_glo_glo_lub_aux (i j : Common.AST.ident) :
+    pge (if i = j then Glo i else Glob) (Glo i) := by
+  by_cases hij : i = j
+  · subst j; simp; exact pge.pge_refl _
+  · simp [hij]; exact pge.globGlo _
+
+private theorem pge_stk_stk_lub_aux (o p : CompCert4Lean.Lib.Integers.ptrofs) :
+    pge (if o = p then Stk o else Stack) (Stk o) := by
+  by_cases hop : o = p
+  · subst p; simp; exact pge.pge_refl _
+  · simp [hop]; exact pge.stackStk _
+
+theorem pge_lub_l : pge_lub_lStatement := by
+  intro p q
+  cases p <;> cases q <;> simp only [plub]
+  all_goals try constructor
+  case Gl.Gl i o j p => exact pge_gl_gl_lub_aux i j o p
+  case Gl.Glo i o j => exact pge_gl_glo_lub_aux i j o
+  case Glo.Gl i j o => exact pge_glo_gl_lub_aux i j o
+  case Glo.Glo i j => exact pge_glo_glo_lub_aux i j
+  case Stk.Stk o p => exact pge_stk_stk_lub_aux o p
+
+theorem pge_lub_r : pge_lub_rStatement := by
+  intro p q
+  rw [show plub p q = plub q p by
+    cases p <;> cases q <;> simp only [plub]
+    case Gl.Gl i o j p => exact plub_gl_gl_comm_aux i j o p
+    case Gl.Glo i o j => exact plub_glo_rhs_comm_aux i j
+    case Glo.Gl i j o => exact plub_glo_lhs_comm_aux i j
+    case Glo.Glo i j => exact plub_glo_glo_comm_aux i j
+    case Stk.Stk o p => exact plub_stk_stk_comm_aux o p]
+  exact pge_lub_l q p
+
+theorem pmatch_lub_l : pmatch_lub_lStatement := by
+  intro bc b ofs p q h
+  exact pmatch_ge bc b ofs (plub p q) p (pge_lub_l p q) h
+
+end CompCert4Lean.Backend.ValueDomain

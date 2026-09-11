@@ -1153,3 +1153,72 @@ theorem senv_preserved : senv_preservedStatement := by
                     rfl
 
 end CompCert4Lean.Backend.Inliningproof
+
+namespace CompCert4Lean.Backend.Inliningproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Backend.Inlining
+open CompCert4Lean.Backend.Inliningspec
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Linking
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+
+private theorem inlining_function_ptr_translated_local
+    (cfg : InliningConfig) (prog tprog : program)
+    (hm : match_prog cfg prog tprog) :
+    ∀ b f, Genv.find_funct_ptr (Genv.globalenv prog) b = some f →
+      ∃ cu f', Genv.find_funct_ptr (Genv.globalenv tprog) b = some f' ∧
+        transf_fundef (funenv_program cfg cu) f = .OK f' ∧ rtlLinkorder cu prog := by
+  intro b f hfind
+  have hg := inlining_senv_globalenvs_match cfg prog tprog hm
+  unfold Genv.find_funct_ptr Genv.find_def at hfind ⊢
+  cases hsrc : PTree.get b (Genv.globalenv prog).genv_defs with
+  | none => simp [hsrc] at hfind
+  | some gd =>
+      cases gd with
+      | Gfun f0 =>
+          simp [hsrc] at hfind
+          subst f0
+          have hrel := hg.mge_defs b
+          rw [hsrc] at hrel
+          cases htgt : PTree.get b (Genv.globalenv tprog).genv_defs with
+          | none => rw [htgt] at hrel; cases hrel
+          | some tgd =>
+              rw [htgt] at hrel
+              cases tgd with
+              | Gfun tf =>
+                  cases hrel with
+                  | some _ _ hfun =>
+                      cases hfun with
+                      | match_globdef_fun cu _ _ horder htrans =>
+                          refine ⟨cu, tf, ?_, htrans, horder⟩
+                          simp [Genv.find_funct_ptr, Genv.find_def, htgt]
+              | Gvar v =>
+                  cases hrel with
+                  | some _ _ hfun => cases hfun
+      | Gvar v => simp [hsrc] at hfind
+
+theorem functions_translated : functions_translatedStatement := by
+  intro cfg prog tprog hm v f hfind
+  cases v with
+  | Vptr b ofs =>
+      by_cases heq : CompCert4Lean.Lib.Integers.Ptrofs.eq ofs
+          CompCert4Lean.Lib.Integers.Ptrofs.zero = true
+      · unfold Genv.find_funct at hfind ⊢
+        simp [heq] at hfind ⊢
+        have hptr : Genv.find_funct_ptr (Genv.globalenv prog) b = some f := hfind
+        obtain ⟨cu, tf, hptrt, htrans, horder⟩ :=
+          inlining_function_ptr_translated_local cfg prog tprog hm b f hptr
+        exact ⟨cu, tf, hptrt, htrans, horder⟩
+      · unfold Genv.find_funct at hfind
+        simp [heq] at hfind
+  | Vundef => simp [Genv.find_funct] at hfind
+  | Vint n => simp [Genv.find_funct] at hfind
+  | Vlong n => simp [Genv.find_funct] at hfind
+  | Vfloat n => simp [Genv.find_funct] at hfind
+  | Vsingle n => simp [Genv.find_funct] at hfind
+
+end CompCert4Lean.Backend.Inliningproof

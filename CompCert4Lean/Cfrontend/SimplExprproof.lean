@@ -793,3 +793,225 @@ theorem typeof_context : typeof_contextStatement := by
   cases h <;> intro e1 e2 heq <;> simp_all [Csyntax.typeof]
 
 end CompCert4Lean.Cfrontend.SimplExprproof
+
+namespace CompCert4Lean.Cfrontend.SimplExprproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Linking
+open CompCert4Lean.Cfrontend.Ctypes
+open CompCert4Lean.Cfrontend.Csyntax
+open CompCert4Lean.Cfrontend.Clight
+open CompCert4Lean.Cfrontend.SimplExprspec
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+
+theorem comp_env_preserved :
+    ∀ [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+      [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)],
+      comp_env_preservedStatement := by
+  intro binary64_certificate binary32_certificate
+  intro p tp hmatch
+  have htypes : tp.prog_types = p.prog_types := hmatch.2
+  change tp.prog_comp_env = p.prog_comp_env
+  have hp : Ctypes.build_composite_env p.prog_types = .OK p.prog_comp_env :=
+    p.prog_comp_env_eq
+  have htp : Ctypes.build_composite_env tp.prog_types = .OK tp.prog_comp_env :=
+    tp.prog_comp_env_eq
+  rw [htypes] at htp
+  apply CompCert4Lean.Common.Errors.res.OK.inj
+  exact htp.symm.trans hp
+
+private theorem simplexpr_symbol_add_global
+    {A B V W : Type} (ge1 : Genv.t A V) (ge2 : Genv.t B W) (id : ident)
+    (hm : ∀ id', PTree.get id' ge2.genv_symb = PTree.get id' ge1.genv_symb)
+    (hn : ge2.genv_next = ge1.genv_next) :
+    ∀ id', PTree.get id' (PTree.set id ge2.genv_next ge2.genv_symb) =
+      PTree.get id' (PTree.set id ge1.genv_next ge1.genv_symb) := by
+  intro id'
+  have h2 := @PTree.getSet_equation _ id' id ge2.genv_next ge2.genv_symb
+  have h1 := @PTree.getSet_equation _ id' id ge1.genv_next ge1.genv_symb
+  by_cases h : id' = id
+  · rw [h2, h1]
+    simp only [dif_pos h]
+    exact congrArg some hn
+  · rw [h2, h1]
+    simp only [dif_neg h]
+    exact hm id'
+
+private theorem simplexpr_match_genvs_add_global
+    {A B V W : Type} (R : globdef A V → globdef B W → Prop)
+    (ge1 : Genv.t A V) (ge2 : Genv.t B W) (id : ident)
+    (g1 : globdef A V) (g2 : globdef B W)
+    (hm : Genv.match_genvs R ge1 ge2) (hg : R g1 g2) :
+    Genv.match_genvs R (Genv.add_global ge1 (id, g1))
+      (Genv.add_global ge2 (id, g2)) := by
+  constructor
+  · exact congrArg PArith.BinPos.Pos.succ hm.mge_next
+  · exact simplexpr_symbol_add_global ge1 ge2 id hm.mge_symb hm.mge_next
+  · intro b
+    change option_rel R
+      (PTree.get b (PTree.set ge1.genv_next g1 ge1.genv_defs))
+      (PTree.get b (PTree.set ge2.genv_next g2 ge2.genv_defs))
+    have h1 := @PTree.getSet_equation (globdef A V) b ge1.genv_next g1 ge1.genv_defs
+    have h2 := @PTree.getSet_equation (globdef B W) b ge2.genv_next g2 ge2.genv_defs
+    by_cases h : b = ge1.genv_next
+    · have h' : b = ge2.genv_next := h.trans hm.mge_next.symm
+      rw [h1, h2]
+      simp only [dif_pos h, dif_pos h']
+      exact option_rel.some g1 g2 hg
+    · have h' : b ≠ ge2.genv_next := by
+        intro hb
+        apply h
+        exact hb.trans hm.mge_next
+      rw [h1, h2]
+      simp only [dif_neg h, dif_neg h']
+      exact hm.mge_defs b
+
+private theorem simplexpr_match_genvs_add_globals
+    {A B V W : Type} (R : globdef A V → globdef B W → Prop)
+    (xs : List (ident × globdef A V)) (ys : List (ident × globdef B W))
+    (hxy : list_forall2 (fun a b => a.1 = b.1 ∧ R a.2 b.2) xs ys)
+    (ge1 : Genv.t A V) (ge2 : Genv.t B W) (hm : Genv.match_genvs R ge1 ge2) :
+    Genv.match_genvs R (Genv.add_globals ge1 xs) (Genv.add_globals ge2 ys) := by
+  induction hxy generalizing ge1 ge2 with
+  | nil => simpa [Genv.add_globals] using hm
+  | @cons a xs b ys hab htail ih =>
+      rcases a with ⟨aid, ag⟩
+      rcases b with ⟨bid, bg⟩
+      change aid = bid ∧ R ag bg at hab
+      rcases hab with ⟨rfl, hab⟩
+      simp only [Genv.add_globals, List.foldl_cons]
+      apply ih
+      exact simplexpr_match_genvs_add_global R ge1 ge2 aid ag bg hm hab
+
+private theorem simplexpr_globalenv_match
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (p : cprogram) (tp : tprogram) (hmatch : match_prog p tp) :
+    Genv.match_genvs
+      (fun gd1 gd2 => match gd1, gd2 with
+        | .Gfun f, .Gfun tf => ∃ cu, Ctypes.linkorder_program cu p ∧
+            @tr_fundef binary64_certificate binary32_certificate cu f tf
+        | .Gvar v, .Gvar tv =>
+            v.gvar_info = tv.gvar_info ∧ v.gvar_init = tv.gvar_init ∧
+              v.gvar_readonly = tv.gvar_readonly ∧ v.gvar_volatile = tv.gvar_volatile
+        | _, _ => False)
+      (Genv.globalenv (Ctypes.program_of_program p))
+      (Genv.globalenv (Ctypes.program_of_program tp)) := by
+  let R : globdef cfundef type → globdef tfundef type → Prop :=
+    fun gd1 gd2 => match gd1, gd2 with
+      | .Gfun f, .Gfun tf => ∃ cu, Ctypes.linkorder_program cu p ∧
+          @tr_fundef binary64_certificate binary32_certificate cu f tf
+      | .Gvar v, .Gvar tv =>
+          v.gvar_info = tv.gvar_info ∧ v.gvar_init = tv.gvar_init ∧
+            v.gvar_readonly = tv.gvar_readonly ∧ v.gvar_volatile = tv.gvar_volatile
+      | _, _ => False
+  have hempty : Genv.match_genvs R
+      (Genv.empty_genv cfundef type p.prog_public)
+      (Genv.empty_genv tfundef type tp.prog_public) := by
+    constructor
+    · rfl
+    · intro id
+      rfl
+    · intro b
+      exact option_rel.none R
+  have hlist : list_forall2 (fun a b => a.1 = b.1 ∧ R a.2 b.2)
+      (Ctypes.program_of_program p).prog_defs
+      (Ctypes.program_of_program tp).prog_defs := by
+    change list_forall2 (fun a b => a.1 = b.1 ∧
+      (match a.2, b.2 with
+        | .Gfun f, .Gfun tf => ∃ cu, Ctypes.linkorder_program cu p ∧
+            @tr_fundef binary64_certificate binary32_certificate cu f tf
+        | .Gvar v, .Gvar tv =>
+            v.gvar_info = tv.gvar_info ∧ v.gvar_init = tv.gvar_init ∧
+              v.gvar_readonly = tv.gvar_readonly ∧ v.gvar_volatile = tv.gvar_volatile
+        | _, _ => False))
+      (Ctypes.program_of_program p).prog_defs
+      (Ctypes.program_of_program tp).prog_defs
+    exact hmatch.1.1
+  exact simplexpr_match_genvs_add_globals R
+    (Ctypes.program_of_program p).prog_defs
+    (Ctypes.program_of_program tp).prog_defs hlist _ _ hempty
+
+private theorem simplexpr_add_globals_public
+    {A V : Type} (ge : Genv.t A V) (gl : List (ident × globdef A V)) :
+    (Genv.add_globals ge gl).genv_public = ge.genv_public := by
+  induction gl generalizing ge with
+  | nil => rfl
+  | cons idg gl ih =>
+      simp only [Genv.add_globals, List.foldl_cons]
+      simpa [Genv.add_globals, Genv.add_global] using ih (Genv.add_global ge idg)
+
+theorem symbols_preserved :
+    ∀ [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+      [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)],
+      symbols_preservedStatement := by
+  intro binary64_certificate binary32_certificate p tp hmatch s
+  exact (simplexpr_globalenv_match p tp hmatch).mge_symb s
+
+theorem senv_preserved :
+    ∀ [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+      [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)],
+      senv_preservedStatement := by
+  intro binary64_certificate binary32_certificate p tp hmatch
+  have hg := simplexpr_globalenv_match p tp hmatch
+  unfold Senv.equiv
+  constructor
+  · intro id
+    exact hg.mge_symb id
+  constructor
+  · intro id
+    change Genv.public_symbol (Genv.globalenv (Ctypes.program_of_program tp)) id =
+      Genv.public_symbol (Genv.globalenv (Ctypes.program_of_program p)) id
+    have ht0 := simplexpr_add_globals_public
+      (Genv.empty_genv tfundef type tp.prog_public)
+      (Ctypes.program_of_program tp).prog_defs
+    have hp0 := simplexpr_add_globals_public
+      (Genv.empty_genv cfundef type p.prog_public)
+      (Ctypes.program_of_program p).prog_defs
+    have ht : (Genv.globalenv (Ctypes.program_of_program tp)).genv_public = tp.prog_public := by
+      unfold Genv.globalenv
+      exact ht0
+    have hp : (Genv.globalenv (Ctypes.program_of_program p)).genv_public = p.prog_public := by
+      unfold Genv.globalenv
+      exact hp0
+    have hpub : tp.prog_public = p.prog_public := by
+      simpa [Ctypes.program_of_program] using hmatch.1.2.2
+    unfold Genv.public_symbol
+    cases hs : Genv.find_symbol (Genv.globalenv (Ctypes.program_of_program tp)) id with
+    | none =>
+        have hs' : Genv.find_symbol (Genv.globalenv (Ctypes.program_of_program p)) id = none := by
+          exact (hg.mge_symb id).symm.trans hs
+        simp [hs']
+    | some b =>
+        have hs' : Genv.find_symbol (Genv.globalenv (Ctypes.program_of_program p)) id = some b := by
+          exact (hg.mge_symb id).symm.trans hs
+        simp [hs', ht, hp, hpub]
+  · intro b
+    change Genv.block_is_volatile (Genv.globalenv (Ctypes.program_of_program tp)) b =
+      Genv.block_is_volatile (Genv.globalenv (Ctypes.program_of_program p)) b
+    unfold Genv.block_is_volatile Genv.find_var_info Genv.find_def
+    cases h1 : PTree.get b (Genv.globalenv (Ctypes.program_of_program p)).genv_defs with
+    | none =>
+        cases h2 : PTree.get b (Genv.globalenv (Ctypes.program_of_program tp)).genv_defs with
+        | none => rfl
+        | some gd2 =>
+            have hd := hg.mge_defs b
+            rw [h1, h2] at hd
+            cases hd
+    | some gd1 =>
+        cases h2 : PTree.get b (Genv.globalenv (Ctypes.program_of_program tp)).genv_defs with
+        | none =>
+            have hd := hg.mge_defs b
+            rw [h1, h2] at hd
+            cases hd
+        | some gd2 =>
+            have hd := hg.mge_defs b
+            rw [h1, h2] at hd
+            cases hd with
+            | some hrel =>
+                cases gd1 <;> cases gd2 <;> simp_all
+
+end CompCert4Lean.Cfrontend.SimplExprproof

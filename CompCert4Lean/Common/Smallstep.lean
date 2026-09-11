@@ -1308,3 +1308,47 @@ theorem star_trans : star_transStatement := by
         exact _root_.List.append_assoc t1 t2 t3)
 
 end CompCert4Lean.Common.Smallstep
+
+namespace CompCert4Lean.Common.Smallstep
+
+open CompCert4Lean.Common.Events
+
+theorem star_left : star_leftStatement := by
+  intro genv state step ge s1 t1 s2 t2 s3 t hstep hstar htrace
+  exact star_step s1 t1 hstep hstar htrace
+
+theorem star_right : star_rightStatement := by
+  intro genv state step ge s1 t1 s2 t2 s3 t hstar hstep htrace
+  exact star_trans genv state step ge s1 t1 s2 hstar t2 s3 t
+    (star_one genv state step ge s2 t2 s3 hstep) htrace
+
+theorem star_E0_ind : star_E0_indStatement := by
+  intro genv state step ge P BASE REC
+  have H : ∀ (s1 : state) (t : trace) (s2 : state),
+      star step ge s1 t s2 → t = E0 → P s1 s2 := by
+    intro s1 t s2 hstar
+    induction hstar with
+    | star_refl s =>
+        intro _
+        exact BASE s
+    | @star_step s1 t1 s2 t2 s3 t hstep hstar htrace ih =>
+        intro ht
+        subst t
+        cases t1 with
+        | nil =>
+            cases t2 with
+            | nil =>
+                exact REC s1 s2 s3 hstep (ih rfl)
+            | cons e t2 =>
+                cases ht
+        | cons e t1 =>
+            cases t2 <;> cases ht
+  intro s1 s2 hstar
+  exact H s1 E0 s2 hstar rfl
+
+theorem plus_one : plus_oneStatement := by
+  intro genv state step ge s1 t s2 hstep
+  exact plus_left s1 t hstep (star_refl step ge s2)
+    (_root_.List.append_nil t).symm
+
+end CompCert4Lean.Common.Smallstep

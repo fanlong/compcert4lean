@@ -563,3 +563,23 @@ theorem Decidable_or_obligation_1 : Decidable_or_obligation_1Statement := by
   exact (Decidable_or P Q dP dQ).spec
 
 end CompCert4Lean.Lib.Decidableplus
+
+namespace CompCert4Lean.Lib.Decidableplus
+
+theorem Decidable_implies_obligation_1 : Decidable_implies_obligation_1Statement := by
+  intro P Q dP dQ
+  exact (Decidable_implies P Q dP dQ).spec
+
+theorem Decidable_eq_obligation_1 : Decidable_eq_obligation_1Statement := by
+  intro A eqdec x y
+  exact (Decidable_eq eqdec x y).spec
+
+theorem Decidable_eq_bool_obligation_1 : Decidable_eq_bool_obligation_1Statement := by
+  intro x y
+  exact (Decidable_eq_bool x y).spec
+
+theorem Decidable_eq_nat_obligation_1 : Decidable_eq_nat_obligation_1Statement := by
+  intro x y
+  exact (Decidable_eq_nat x y).spec
+
+end CompCert4Lean.Lib.Decidableplus

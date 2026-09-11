@@ -735,3 +735,27 @@ theorem inbetween_float_bounds (ctx : ExactRealContext) :
   exact inbetween_bounds ctx _ _ (bracket_float_endpoint_lt ctx beta m e) _ _ hx
 
 end CompCert4Lean.Flocq.Calc.Bracket
+
+namespace CompCert4Lean.Flocq.Calc.Bracket
+
+theorem ordered_steps :
+    ∀ (ctx : ExactRealContext), ordered_stepsStatement ctx := by
+  intro ctx start step hstep k
+  apply CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.Raxioms.Rplus_lt_compat_l
+    ctx start
+  apply CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.Rmult_lt_compat_r
+    ctx step
+  exact hstep
+  apply CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.IZR_lt
+    ctx k (Zadd k Zone)
+  change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ k <
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (Zadd k Zone)
+  have hZone : CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ Zone = (1 : Int) := by
+    rfl
+  simp only [Zadd,
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add]
+  rw [CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+  rw [hZone]
+  omega
+
+end CompCert4Lean.Flocq.Calc.Bracket
