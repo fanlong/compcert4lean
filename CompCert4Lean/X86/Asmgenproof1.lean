@@ -534,3 +534,68 @@ def int64_sub_overflowStatement : Prop :=
        else CompCert4Lean.Lib.Integers.Int.zero)
 
 end CompCert4Lean.X86.Asmgenproof1
+
+namespace CompCert4Lean.X86.Asmgenproof1
+
+theorem nextinstr_nf_inv : nextinstr_nf_invStatement := by
+  intro r rs h
+  unfold CompCert4Lean.X86.Asm.nextinstr_nf
+  rw [CompCert4Lean.Backend.Asmgenproof0.nextinstr_inv]
+  · apply CompCert4Lean.Backend.Asmgenproof0.undef_regs_other
+    intro r' hr' hne
+    cases r <;> cases r' <;> simp_all
+  · cases r <;> simp_all
+
+theorem nextinstr_nf_inv1 : nextinstr_nf_inv1Statement := by
+  intro r rs hr
+  apply nextinstr_nf_inv r rs
+  cases r <;> simp_all [CompCert4Lean.X86.Asm.data_preg]
+
+theorem agree_nextinstr_nf : agree_nextinstr_nfStatement := by
+  intro ms sp rs h
+  constructor
+  · have hp : CompCert4Lean.X86.Asm.nextinstr_nf rs (.IR .RSP) = rs (.IR .RSP) :=
+      nextinstr_nf_inv (.IR .RSP) rs (by simp)
+    exact hp.trans h.agree_sp
+  · exact h.agree_sp_def
+  · intro mr
+    have hm := h.agree_mregs mr
+    rw [nextinstr_nf_inv1 (CompCert4Lean.X86.Asm.preg_of mr) rs
+      (CompCert4Lean.Backend.Asmgenproof0.preg_of_data mr)]
+    exact hm
+
+theorem mk_mov_correct
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    mk_mov_correctStatement := by
+  intro ge fn rd rs k c rs1 m h
+  cases rd <;> cases rs <;> simp [CompCert4Lean.X86.Asmgen.mk_mov] at h
+  all_goals try { cases h }
+  all_goals injection h with hc
+  all_goals subst c
+  case IR.IR rd rs =>
+    refine ⟨CompCert4Lean.X86.Asm.nextinstr
+      (CompCert4Lean.X86.Asm.Pregmap.set (.IR rd)
+        (CompCert4Lean.X86.Asm.Pregmap.get (.IR rs) rs1) rs1), ?_, ?_, ?_⟩
+    · constructor <;> rfl
+    · simp [CompCert4Lean.X86.Asm.nextinstr, CompCert4Lean.X86.Asm.Pregmap.set]
+      change rs1 (.IR rs) = rs1 (.IR rs)
+      rfl
+    · intro r hr hne
+      cases r <;> simp_all [CompCert4Lean.X86.Asm.nextinstr,
+        CompCert4Lean.X86.Asm.Pregmap.set, CompCert4Lean.X86.Asm.Pregmap.get,
+        CompCert4Lean.X86.Asm.data_preg]
+  case FR.FR rd rs =>
+    refine ⟨CompCert4Lean.X86.Asm.nextinstr
+      (CompCert4Lean.X86.Asm.Pregmap.set (.FR rd)
+        (CompCert4Lean.X86.Asm.Pregmap.get (.FR rs) rs1) rs1), ?_, ?_, ?_⟩
+    · constructor <;> rfl
+    · simp [CompCert4Lean.X86.Asm.nextinstr, CompCert4Lean.X86.Asm.Pregmap.set]
+      change rs1 (.FR rs) = rs1 (.FR rs)
+      rfl
+    · intro r hr hne
+      cases r <;> simp_all [CompCert4Lean.X86.Asm.nextinstr,
+        CompCert4Lean.X86.Asm.Pregmap.set, CompCert4Lean.X86.Asm.Pregmap.get,
+        CompCert4Lean.X86.Asm.data_preg]
+
+end CompCert4Lean.X86.Asmgenproof1

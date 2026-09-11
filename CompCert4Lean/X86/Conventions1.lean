@@ -215,3 +215,49 @@ def parameter_needs_normalization (_t : xtype) : Bool :=
   false
 
 end CompCert4Lean.X86.Conventions1
+
+namespace CompCert4Lean.X86.Conventions1
+
+theorem loc_result_type : loc_result_typeStatement := by
+  intro sig
+  cases h : sig.sig_res <;>
+    simp [loc_result, loc_result_64, loc_result_32,
+      CompCert4Lean.Common.AST.proj_sig_res,
+      CompCert4Lean.Common.AST.proj_xtype,
+      CompCert4Lean.Common.AST.Tptr,
+      CompCert4Lean.Common.AST.typ_rpair,
+      CompCert4Lean.X86_64.Archi.ptr64,
+      CompCert4Lean.X86.Machregs.mreg_type,
+      CompCert4Lean.Common.AST.subtype, h]
+
+theorem loc_result_caller_save : loc_result_caller_saveStatement := by
+  intro cfg sig
+  cases h : sig.sig_res <;>
+    simp [loc_result, loc_result_64, loc_result_32,
+      CompCert4Lean.Common.AST.proj_sig_res,
+      CompCert4Lean.Common.AST.proj_xtype,
+      CompCert4Lean.Common.AST.Tptr,
+      CompCert4Lean.Common.AST.forall_rpair,
+      CompCert4Lean.X86_64.Archi.ptr64,
+      CompCert4Lean.X86.Machregs.mreg_type,
+      is_callee_save, h]
+
+theorem loc_result_pair : loc_result_pairStatement := by
+  intro sig
+  cases h : sig.sig_res <;>
+    simp [loc_result, loc_result_64, loc_result_32,
+      CompCert4Lean.Common.AST.proj_sig_res,
+      CompCert4Lean.Common.AST.proj_xtype,
+      CompCert4Lean.Common.AST.Tptr,
+      CompCert4Lean.X86_64.Archi.ptr64, h]
+
+theorem loc_result_exten : loc_result_extenStatement := by
+  intro s1 s2 h
+  cases s1 with
+  | mk args1 res1 cc1 =>
+    cases s2 with
+    | mk args2 res2 cc2 =>
+      cases h
+      rfl
+
+end CompCert4Lean.X86.Conventions1
