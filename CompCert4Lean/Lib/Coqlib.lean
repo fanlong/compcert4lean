@@ -659,3 +659,26 @@ theorem Ple_trans : Ple_transStatement := by
   exact Nat.le_trans hpq hqr
 
 end CompCert4Lean.Lib.Coqlib
+
+namespace CompCert4Lean.Lib.Coqlib
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem Plt_Ple : Plt_PleStatement := by
+  intro p q hpq
+  exact Nat.le_of_lt hpq
+
+theorem Ple_succ : Ple_succStatement := by
+  intro p
+  exact Plt_Ple p (PArith.BinPos.Pos.succ p) (Plt_succ p)
+
+theorem Plt_Ple_trans : Plt_Ple_transStatement := by
+  intro p q r hpq hqr
+  exact Nat.lt_of_lt_of_le hpq hqr
+
+theorem Plt_wf : Plt_wfStatement := by
+  exact InvImage.wf
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.PArith.BinPos.Pos.to_nat
+    Nat.lt_wfRel.wf
+
+end CompCert4Lean.Lib.Coqlib

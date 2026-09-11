@@ -1117,3 +1117,90 @@ def ZArith.BinInt.Z.max_case :
 
 end Rocq.Coq
 end CompCert4Lean.Foundation.Numbers
+
+namespace CompCert4Lean.Foundation.Numbers
+namespace Rocq.Coq
+
+theorem ZArith.BinInt.Z.add_0_r :
+    ZArith.BinInt.Z.add_0_rStatement := by
+  intro n
+  apply intOfZ_injective
+  change intOfZ (zOfInt (intOfZ n + 0)) = intOfZ n
+  rw [intOfZ_zOfInt]
+  simp
+
+theorem ZArith.BinInt.Z.lt_gt :
+    ZArith.BinInt.Z.lt_gtStatement := by
+  intro n m h
+  exact h
+
+theorem ZArith.Zbool.Zle_cases :
+    ZArith.Zbool.Zle_casesStatement := by
+  intro n m
+  by_cases h : intOfZ n ≤ intOfZ m
+  · have h' : ZArith.BinInt.Z.le n m := h
+    simp [ZArith.BinInt.Z.leb, h, h']
+  · simp [ZArith.BinInt.Z.leb, h]
+    exact Int.lt_of_not_ge h
+
+theorem ZArith.BinInt.Z.sqrtrem_spec :
+    ZArith.BinInt.Z.sqrtrem_specStatement := by
+  intro n hn
+  change 0 ≤ intOfZ n at hn
+  cases n with
+  | Z0 =>
+      dsimp [ZArith.BinInt.Z.sqrtrem]
+      constructor
+      · apply intOfZ_injective
+        simp only [ZArith.BinInt.Z.add, ZArith.BinInt.Z.mul, intOfZ_zOfInt]
+        change (0:Int) =
+          (↑(Nat.sqrt 0) : Int) * ↑(Nat.sqrt 0) +
+          ↑(0 - Nat.sqrt 0 * Nat.sqrt 0)
+        simp [Nat.sqrt]
+      constructor
+      · unfold ZArith.BinInt.Z.le
+        change (0:Int) ≤ intOfZ (zOfInt (Int.ofNat (0 - Nat.sqrt 0 * Nat.sqrt 0)))
+        rw [intOfZ_zOfInt]
+        exact Int.ofNat_zero_le _
+      · unfold ZArith.BinInt.Z.le
+        unfold ZArith.BinInt.Z.mul
+        simp only [intOfZ_zOfInt]
+        change (↑(0 - Nat.sqrt 0 * Nat.sqrt 0) : Int) ≤
+          (↑(posToNat (xO xH)) : Int) * ↑(Nat.sqrt 0)
+        rw [← Int.natCast_mul]
+        apply Int.ofNat_le.mpr
+        simp [Nat.sqrt, posToNat]
+  | Zpos p =>
+      dsimp [ZArith.BinInt.Z.sqrtrem]
+      have hsq : Nat.sqrt (posToNat p) * Nat.sqrt (posToNat p) ≤ posToNat p := Nat.sqrt_le _
+      have hlt : posToNat p < (Nat.sqrt (posToNat p) + 1) * (Nat.sqrt (posToNat p) + 1) := Nat.lt_succ_sqrt _
+      constructor
+      · apply intOfZ_injective
+        simp only [ZArith.BinInt.Z.add, ZArith.BinInt.Z.mul, intOfZ_zOfInt]
+        change (↑(posToNat p) : Int) =
+          ↑(Nat.sqrt (posToNat p)) * ↑(Nat.sqrt (posToNat p)) +
+          ↑(posToNat p - Nat.sqrt (posToNat p) * Nat.sqrt (posToNat p))
+        rw [← Int.natCast_mul, ← Int.natCast_add]
+        exact congrArg (fun x : Nat => (↑x : Int)) (by simpa [Nat.add_comm] using (Nat.sub_add_cancel hsq).symm)
+      constructor
+      · unfold ZArith.BinInt.Z.le
+        change (0:Int) ≤ intOfZ (zOfInt (Int.ofNat (posToNat p - Nat.sqrt (posToNat p) * Nat.sqrt (posToNat p))))
+        rw [intOfZ_zOfInt]
+        exact Int.ofNat_zero_le _
+      · unfold ZArith.BinInt.Z.le
+        unfold ZArith.BinInt.Z.mul
+        simp only [intOfZ_zOfInt]
+        change (↑(posToNat p - Nat.sqrt (posToNat p) * Nat.sqrt (posToNat p)) : Int) ≤
+          (↑(posToNat (xO xH)) : Int) * ↑(Nat.sqrt (posToNat p))
+        rw [← Int.natCast_mul]
+        apply Int.ofNat_le.mpr
+        simp only [posToNat]
+        simp only [Nat.add_mul, Nat.mul_add, Nat.one_mul, Nat.mul_one] at hlt
+        omega
+  | Zneg p =>
+      have hp := posToNat_positive p
+      have : ¬ (0 ≤ intOfZ (Zneg p)) := by simp [intOfZ]; omega
+      exact (this hn).elim
+
+end Rocq.Coq
+end CompCert4Lean.Foundation.Numbers

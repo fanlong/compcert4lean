@@ -659,3 +659,132 @@ theorem transf_program_match : ∀ cfg, transf_program_matchStatement cfg := by
   · exact ⟨rfl, rfl⟩
 
 end CompCert4Lean.Backend.Constpropproof
+
+namespace CompCert4Lean.Backend.Constpropproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Linking
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+
+variable
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+
+private theorem constprop_symbols_add_global
+    (ge1 ge2 : Genv.t fundef Unit) (id : ident)
+    (hm : ∀ id', PTree.get (show positive from id') ge2.genv_symb =
+      PTree.get (show positive from id') ge1.genv_symb)
+    (hn : ge2.genv_next = ge1.genv_next) :
+    ∀ id', PTree.get (show positive from id')
+        (PTree.set (show positive from id) ge2.genv_next ge2.genv_symb) =
+      PTree.get (show positive from id')
+        (PTree.set (show positive from id) ge1.genv_next ge1.genv_symb) := by
+  intro id'
+  have h2 := @PTree.getSet_equation _ (show positive from id')
+    (show positive from id) ge2.genv_next ge2.genv_symb
+  have h1 := @PTree.getSet_equation _ (show positive from id')
+    (show positive from id) ge1.genv_next ge1.genv_symb
+  by_cases h : id' = id
+  · rw [h2, h1]
+    simp only [dif_pos h]
+    exact congrArg some hn
+  · rw [h2, h1]
+    simp only [dif_neg h]
+    exact hm id'
+
+private theorem constprop_symbols_add_globals
+    (ge : Genv.t fundef Unit) (tge : Genv.t fundef Unit)
+    (hnext : tge.genv_next = ge.genv_next)
+    (hsym : ∀ s, Genv.find_symbol tge s = Genv.find_symbol ge s) :
+    ∀ (l : List (ident × globdef fundef Unit))
+      (tl : List (ident × globdef fundef Unit)),
+      list_forall2 (fun x y => x.1 = y.1) l tl →
+      ∀ s, Genv.find_symbol (Genv.add_globals tge tl) s =
+        Genv.find_symbol (Genv.add_globals ge l) s := by
+  intro l tl hlist
+  induction hlist generalizing ge tge with
+  | nil =>
+      simpa [Genv.add_globals] using hsym
+  | cons x y hxy htail ih =>
+      cases x with
+      | mk id gd =>
+          cases y with
+          | mk tid tgd =>
+              have hid : id = tid := hxy
+              subst tid
+              have hnext' :
+                  (Genv.add_global tge (id, tgd)).genv_next =
+                    (Genv.add_global ge (id, gd)).genv_next := by
+                change PArith.BinPos.Pos.succ tge.genv_next =
+                  PArith.BinPos.Pos.succ ge.genv_next
+                exact congrArg _ hnext
+              have hsym' : ∀ s,
+                  Genv.find_symbol (Genv.add_global tge (id, tgd)) s =
+                    Genv.find_symbol (Genv.add_global ge (id, gd)) s := by
+                intro s
+                by_cases hs : s = id
+                · change PTree.get (show positive from s)
+                      (PTree.set (show positive from id) tge.genv_next tge.genv_symb) =
+                    PTree.get (show positive from s)
+                      (PTree.set (show positive from id) ge.genv_next ge.genv_symb)
+                  calc
+                    _ = (if h : (show positive from s) = (show positive from id) then
+                        some tge.genv_next else
+                          PTree.get (show positive from s) tge.genv_symb) :=
+                      @PTree.getSet_equation _ (show positive from s)
+                        (show positive from id) tge.genv_next tge.genv_symb
+                    _ = (if h : (show positive from s) = (show positive from id) then
+                        some ge.genv_next else
+                          PTree.get (show positive from s) ge.genv_symb) := by
+                      by_cases hcase : (show positive from s) = (show positive from id)
+                      · simp only [dif_pos hcase]
+                        exact congrArg some hnext
+                      · exact False.elim (hcase hs)
+                    _ = _ := (@PTree.getSet_equation _ (show positive from s)
+                      (show positive from id) ge.genv_next ge.genv_symb).symm
+                · change PTree.get (show positive from s)
+                      (PTree.set (show positive from id) tge.genv_next tge.genv_symb) =
+                    PTree.get (show positive from s)
+                      (PTree.set (show positive from id) ge.genv_next ge.genv_symb)
+                  exact (constprop_symbols_add_global ge tge id
+                    (fun id' => hsym id') hnext s)
+              simpa [Genv.add_globals] using ih
+                (Genv.add_global ge (id, gd))
+                (Genv.add_global tge (id, tgd)) hnext' hsym'
+
+theorem symbols_preserved : ∀ cfg, symbols_preservedStatement cfg := by
+  letI : Linker fundef := Linker_fundef function
+  letI : Linker Unit := Linker_unit
+  letI : Linker program := Linker_prog fundef Unit
+  intro cfg prog tprog hm id
+  unfold match_prog CompCert4Lean.Common.Linking.match_program at hm
+  rcases hm with ⟨hdefs, hmain, hpublic⟩
+  have hlist_of : ∀ (xs ys : List (ident × globdef fundef Unit)),
+      list_forall2 (@match_ident_globdef program fundef Unit fundef Unit
+        (Linker_prog fundef Unit)
+        (fun (cu : program) f tf => tf =
+          CompCert4Lean.Backend.Constprop.transf_fundef
+            (binary64_certificate := binary64_certificate)
+            (binary32_certificate := binary32_certificate) cfg
+            (CompCert4Lean.Backend.ValueAnalysis.romem_for cfg cu) f)
+        (fun x y : Unit => x = y) prog) xs ys →
+      list_forall2 (fun x y => x.1 = y.1) xs ys := by
+    intro xs ys h
+    induction h with
+    | nil => exact list_forall2.nil _
+    | @cons x xs y ys hxy htail ih =>
+        exact list_forall2.cons x y hxy.1 ih
+  have hdefs' := hlist_of prog.prog_defs tprog.prog_defs hdefs
+  unfold Genv.globalenv
+  apply constprop_symbols_add_globals
+    (Genv.empty_genv fundef Unit prog.prog_public)
+    (Genv.empty_genv fundef Unit tprog.prog_public)
+  · rfl
+  · intro id'
+    rfl
+  · exact hdefs'
+
+end CompCert4Lean.Backend.Constpropproof

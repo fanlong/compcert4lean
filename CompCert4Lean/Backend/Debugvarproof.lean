@@ -445,3 +445,22 @@ theorem transf_code_match : transf_code_matchStatement := by
       | _ => exact generic
 
 end CompCert4Lean.Backend.Debugvarproof
+
+namespace CompCert4Lean.Backend.Debugvarproof
+
+open CompCert4Lean.Backend.Debugvar
+open CompCert4Lean.Backend.Linear
+
+theorem transf_function_match : transf_function_matchStatement := by
+  intro cfg f tf h
+  unfold CompCert4Lean.Backend.Debugvar.transf_function at h
+  cases hfun : CompCert4Lean.Backend.Debugvar.ana_function cfg f with
+  | none =>
+      simp [hfun] at h
+  | some lm =>
+      simp [hfun] at h
+      cases h
+      apply match_function.intro
+      exact transf_code_match cfg lm f.fn_code (some top)
+
+end CompCert4Lean.Backend.Debugvarproof

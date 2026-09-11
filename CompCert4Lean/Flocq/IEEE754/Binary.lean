@@ -725,3 +725,36 @@ theorem binary32_normalize_certificate_proof :
   exact BinarySingleNaN.is_nan_binary_normalize
 
 end CompCert4Lean.Flocq.IEEE754.Binary
+
+namespace CompCert4Lean.Flocq.IEEE754.Binary
+
+theorem build_nan_result_obligation_proof :
+    ∀ {prec emax : Z}, build_nan_result_obligation (prec := prec) (emax := emax) := by
+  intro prec emax x
+  rcases x with ⟨x, hx⟩
+  cases x with
+  | B754_nan s pl =>
+      simpa [build_nan, BinaryFloatCertificate, B2FF, valid_binary] using hx.2
+  | B754_zero s => simp [is_nan] at hx
+  | B754_infinity s => simp [is_nan] at hx
+  | B754_finite s m e => simp [is_nan] at hx
+
+end CompCert4Lean.Flocq.IEEE754.Binary
+
+namespace CompCert4Lean.Flocq.IEEE754.Binary
+
+theorem BSN2B_result_obligation_proof :
+    ∀ {prec emax : Z}, BSN2B_result_obligation (prec := prec) (emax := emax) := by
+  intro prec emax nan x
+  rcases nan with ⟨nan, hnan⟩
+  rcases x with ⟨x, hx⟩
+  cases x with
+  | B754_nan =>
+      exact build_nan_result_obligation_proof ⟨nan, hnan⟩
+  | B754_zero s => rfl
+  | B754_infinity s => rfl
+  | B754_finite s m e =>
+      change bounded0 prec emax m e = true at hx
+      simpa [BSN2B, BinaryFloatCertificate, B2FF, valid_binary, B2SF] using hx
+
+end CompCert4Lean.Flocq.IEEE754.Binary
