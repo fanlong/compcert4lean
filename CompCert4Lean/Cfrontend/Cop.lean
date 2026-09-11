@@ -1341,3 +1341,93 @@ namespace CompCert4Lean.Cfrontend.Cop
 theorem bool_val_inj : bool_val_injStatement := bool_val_inj_aux
 
 end CompCert4Lean.Cfrontend.Cop
+
+namespace CompCert4Lean.Cfrontend.Cop
+
+theorem sem_cast_inj :
+    ∀ [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+      [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)],
+      sem_cast_injStatement := by
+  intro _binary64_certificate _binary32_certificate f m m' hweak v1 ty1 ty v tv1 hsem hinj
+  unfold sem_cast at hsem ⊢
+  cases hclass : classify_cast ty1 ty <;>
+    rw [hclass] at hsem <;>
+    cases hinj <;>
+    simp_all [cast_int_int, cast_int_float, cast_int_single, cast_int_long,
+      cast_float_int, cast_single_int, cast_long_float, cast_long_single,
+      cast_float_long, cast_single_long] <;>
+    try { subst v; constructor }
+  case cast_case_pointer.inject_int =>
+    rcases hsem with ⟨_, hv⟩
+    subst v
+    exact Common.Values.Val.inject.inject_int _
+  case cast_case_pointer.inject_long =>
+    rcases hsem with ⟨_, hv⟩
+    subst v
+    exact Common.Values.Val.inject.inject_long _
+  case cast_case_pointer.inject_ptr b1 ofs1 b2 ofs2 delta hmap hofs =>
+    subst v
+    have hp : Common.Values.Val.inject f (Common.Values.Vptr b1 ofs1)
+        (Common.Values.Vptr b2 ofs2) :=
+      Common.Values.Val.inject.inject_ptr b1 ofs1 b2 ofs2 delta hmap hofs
+    simpa [hofs] using hp
+  case cast_case_f2i.inject_float sz2 si f0 =>
+    rcases hsem with ⟨i, hi, hv⟩
+    subst v
+    refine ⟨Common.Values.Vint (cast_int_int sz2 si i), ?_, ?_⟩
+    · exact ⟨i, hi, rfl⟩
+    · exact Common.Values.Val.inject.inject_int _
+  case cast_case_s2i.inject_single sz2 si f0 =>
+    rcases hsem with ⟨i, hi, hv⟩
+    subst v
+    refine ⟨Common.Values.Vint (cast_int_int sz2 si i), ?_, ?_⟩
+    · exact ⟨i, hi, rfl⟩
+    · exact Common.Values.Val.inject.inject_int _
+  case cast_case_f2l.inject_float si f0 =>
+    rcases hsem with ⟨i, hi, hv⟩
+    subst v
+    refine ⟨Common.Values.Vlong i, ?_, ?_⟩
+    · exact ⟨i, hi, rfl⟩
+    · exact Common.Values.Val.inject.inject_long _
+  case cast_case_s2l.inject_single si f0 =>
+    rcases hsem with ⟨i, hi, hv⟩
+    subst v
+    refine ⟨Common.Values.Vlong i, ?_, ?_⟩
+    · exact ⟨i, hi, rfl⟩
+    · exact Common.Values.Val.inject.inject_long _
+  case cast_case_i2bool.inject_ptr b1 ofs1 b2 ofs2 delta hmap hofs =>
+    rcases hsem with ⟨hptr, hvalid, hv⟩
+    have hvalid' := hweak b1 ofs1 b2 delta hmap hvalid
+    subst v
+    refine ⟨Common.Values.Vone, ?_, ?_⟩
+    · exact ⟨by simpa [hofs] using hvalid', rfl⟩
+    · exact Common.Values.Val.inject.inject_int _
+  case cast_case_l2bool.inject_ptr b1 ofs1 b2 ofs2 delta hmap hofs =>
+    rcases hsem with ⟨hptr, hvalid, hv⟩
+    have hvalid' := hweak b1 ofs1 b2 delta hmap hvalid
+    subst v
+    refine ⟨Common.Values.Vone, ?_, ?_⟩
+    · exact ⟨by simpa [hofs] using hvalid', rfl⟩
+    · exact Common.Values.Val.inject.inject_int _
+  case cast_case_struct.inject_ptr b1 ofs1 b2 ofs2 delta hmap hofs =>
+    rcases hsem with ⟨hid, hv⟩
+    subst v
+    have hp : Common.Values.Val.inject f (Common.Values.Vptr b1 ofs1)
+        (Common.Values.Vptr b2 ofs2) :=
+      Common.Values.Val.inject.inject_ptr b1 ofs1 b2 ofs2 delta hmap hofs
+    simpa [hofs] using hp
+  case cast_case_union.inject_ptr b1 ofs1 b2 ofs2 delta hmap hofs =>
+    rcases hsem with ⟨hid, hv⟩
+    subst v
+    have hp : Common.Values.Val.inject f (Common.Values.Vptr b1 ofs1)
+        (Common.Values.Vptr b2 ofs2) :=
+      Common.Values.Val.inject.inject_ptr b1 ofs1 b2 ofs2 delta hmap hofs
+    simpa [hofs] using hp
+  case cast_case_void.inject_ptr b1 ofs1 b2 ofs2 delta hmap hofs =>
+    subst v
+    have hp : Common.Values.Val.inject f (Common.Values.Vptr b1 ofs1)
+        (Common.Values.Vptr b2 ofs2) :=
+      Common.Values.Val.inject.inject_ptr b1 ofs1 b2 ofs2 delta hmap hofs
+    simpa [hofs] using hp
+
+end CompCert4Lean.Cfrontend.Cop

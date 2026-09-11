@@ -2069,3 +2069,40 @@ theorem perm_cur_max : perm_cur_maxStatement := by
 end Mem
 
 end CompCert4Lean.Common.Memory
+
+namespace CompCert4Lean.Common.Memory
+
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.Lib.Coqlib
+
+namespace Mem
+
+theorem perm_cur : perm_curStatement := by
+  intro m b ofs k p hperm
+  cases k with
+  | Max => exact perm_cur_max m b ofs p hperm
+  | Cur => exact hperm
+
+theorem perm_max : perm_maxStatement := by
+  intro m b ofs k p hperm
+  cases k with
+  | Max => exact hperm
+  | Cur => exact perm_cur_max m b ofs p hperm
+
+theorem perm_valid_block : perm_valid_blockStatement := by
+  intro m b ofs k p hperm
+  cases hplt : CompCert4Lean.Lib.Coqlib.plt b m.nextblock with
+  | left hvalid => exact hvalid
+  | right hnot =>
+      unfold perm at hperm
+      rw [m.nextblock_noaccess b ofs k hnot] at hperm
+      simp [perm_order'] at hperm
+
+theorem range_perm_implies : range_perm_impliesStatement := by
+  intro m b lo hi k p1 p2 hperm horder ofs hof
+  exact perm_implies m b ofs k p1 p2 (hperm ofs hof) horder
+
+end Mem
+
+end CompCert4Lean.Common.Memory

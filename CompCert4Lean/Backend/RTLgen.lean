@@ -872,3 +872,15 @@ theorem update_instr_wf : update_instr_wfStatement := by
   exact updateInstrWf s n i hlt pc
 
 end CompCert4Lean.Backend.RTLgen
+
+namespace CompCert4Lean.Backend.RTLgen
+
+theorem update_instr_incr : update_instr_incrStatement := by
+  intro s n i hlt hempty
+  exact updateInstrIncr s n i hlt hempty
+
+theorem new_reg_incr : new_reg_incrStatement := by
+  intro s
+  exact newRegIncr s
+
+end CompCert4Lean.Backend.RTLgen

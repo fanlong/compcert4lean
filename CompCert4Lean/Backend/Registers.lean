@@ -796,3 +796,34 @@ theorem gsspec_proof : gsspec := by
 end Regmap
 
 end CompCert4Lean.Backend.Registers
+
+namespace CompCert4Lean.Backend.Registers
+
+theorem regs_lessdef_regs : regs_lessdef_regsStatement := by
+  intro rs1 rs2 hrs rl
+  induction rl with
+  | nil =>
+      exact CompCert4Lean.Common.Values.Val.lessdef_list.lessdef_list_nil
+  | cons r rl ih =>
+      exact CompCert4Lean.Common.Values.Val.lessdef_list.lessdef_list_cons _ _ _ _ (hrs r) ih
+
+theorem set_reg_lessdef : set_reg_lessdefStatement := by
+  intro r v1 v2 rs1 rs2 hv hrs r0
+  rw [Regmap.gsspec_proof, Regmap.gsspec_proof]
+  cases CompCert4Lean.Lib.Coqlib.peq r0 r with
+  | left h =>
+      exact hv
+  | right h =>
+      exact hrs r0
+
+theorem set_res_lessdef : set_res_lessdefStatement := by
+  intro res v1 v2 rs1 rs2 hv hrs
+  cases res with
+  | BR r =>
+      exact set_reg_lessdef r v1 v2 rs1 rs2 hv hrs
+  | BR_none =>
+      exact hrs
+  | BR_splitlong hi lo =>
+      exact hrs
+
+end CompCert4Lean.Backend.Registers

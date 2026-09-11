@@ -869,3 +869,31 @@ theorem repr_canonical_proof :
 end UF
 
 end CompCert4Lean.Lib.UnionFind
+
+namespace CompCert4Lean.Lib.UnionFind
+
+namespace UF
+
+theorem repr_some_diff_proof :
+    ∀ (M : MAP), repr_some_diffStatement M := by
+  intro M uf a a' h
+  exact repr_some_diff_calc M uf a a' h
+
+theorem sameclass_refl_proof :
+    ∀ (M : MAP), sameclass_reflStatement M := by
+  intro M uf a
+  rfl
+
+theorem sameclass_sym_proof :
+    ∀ (M : MAP), sameclass_symStatement M := by
+  intro M uf a b h
+  exact h.symm
+
+theorem sameclass_trans_proof :
+    ∀ (M : MAP), sameclass_transStatement M := by
+  intro M uf a b c hab hbc
+  exact hab.trans hbc
+
+end UF
+
+end CompCert4Lean.Lib.UnionFind
