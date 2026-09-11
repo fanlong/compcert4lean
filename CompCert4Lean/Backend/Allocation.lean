@@ -2144,3 +2144,12 @@ theorem elements_between_iff_proof : elements_between_iff := by
     exact hmem s.this s.is_ok.ok x habove_x hbelow_x hx
 
 end EqSet
+
+namespace EqSet
+
+theorem mem_between_2_proof : mem_between_2 := by
+  intro above below habove hbelow x s hx habove_x hbelow_x
+  exact CompCert4Lean.Lib.FSetAVLplus.Make.mem_between_2 E above below habove
+    hbelow x s hx habove_x hbelow_x
+
+end EqSet
