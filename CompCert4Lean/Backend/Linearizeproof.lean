@@ -900,3 +900,117 @@ theorem function_ptr_translated : function_ptr_translatedStatement := by
   exact linearize_function_ptr_translated service prog tprog hm v f hfind
 
 end CompCert4Lean.Backend.Linearizeproof
+
+namespace CompCert4Lean.Backend.Linearizeproof
+
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Linking
+open CompCert4Lean.Lib.Maps
+
+theorem sig_preserved : sig_preservedStatement := by
+  intro service f tf htrans
+  cases f with
+  | Internal f =>
+      unfold CompCert4Lean.Backend.Linearize.transf_fundef at htrans
+      simp only [CompCert4Lean.Common.AST.transf_partial_fundef] at htrans
+      cases htf : CompCert4Lean.Backend.Linearize.transf_function service f with
+      | Error msg => rw [htf] at htrans; cases htrans
+      | OK tf' =>
+          rw [htf] at htrans
+          cases htrans
+          unfold CompCert4Lean.Backend.Linearize.transf_function at htf
+          cases henum : CompCert4Lean.Backend.Linearize.enumerate service f with
+          | Error msg => simp [henum] at htf
+          | OK enum =>
+              simp [henum] at htf
+              cases htf
+              rfl
+  | External ef =>
+      unfold CompCert4Lean.Backend.Linearize.transf_fundef at htrans
+      cases htrans
+      rfl
+
+theorem stacksize_preserved : stacksize_preservedStatement := by
+  intro service f tf htrans
+  unfold CompCert4Lean.Backend.Linearize.transf_function at htrans
+  cases henum : CompCert4Lean.Backend.Linearize.enumerate service f with
+  | Error msg => simp [henum] at htrans
+  | OK enum =>
+      simp [henum] at htrans
+      cases htrans
+      rfl
+
+theorem symbols_preserved : symbols_preservedStatement := by
+  letI : Linker LTL.fundef := Linker_fundef LTL.function
+  letI : Linker Linear.fundef := Linker_fundef Linear.function
+  letI : Linker Unit := Linker_unit
+  letI : Linker LTL.program := Linker_prog LTL.fundef Unit
+  intro service prog tprog hm id
+  have hg := linearize_globalenvs_match service prog tprog hm
+  simpa [Genv.find_symbol, Genv.globalenv] using hg.mge_symb id
+
+private theorem linearize_add_globals_public {F V : Type}
+    (ge : Genv.t F V) (gl : List (ident × globdef F V)) :
+    (Genv.add_globals ge gl).genv_public = ge.genv_public := by
+  induction gl generalizing ge with
+  | nil => rfl
+  | cons x xs ih =>
+      simp only [Genv.add_globals, List.foldl]
+      exact ih (Genv.add_global ge x)
+
+theorem senv_preserved : senv_preservedStatement := by
+  letI : Linker LTL.fundef := Linker_fundef LTL.function
+  letI : Linker Linear.fundef := Linker_fundef Linear.function
+  letI : Linker Unit := Linker_unit
+  letI : Linker LTL.program := Linker_prog LTL.fundef Unit
+  intro service prog tprog hm
+  unfold Senv.equiv
+  constructor
+  · intro id
+    exact symbols_preserved service prog tprog hm id
+  constructor
+  · intro id
+    change Genv.public_symbol (Genv.globalenv tprog) id =
+      Genv.public_symbol (Genv.globalenv prog) id
+    have ht : (Genv.globalenv tprog).genv_public = tprog.prog_public := by
+      unfold Genv.globalenv
+      exact linearize_add_globals_public _ _
+    have hp : (Genv.globalenv prog).genv_public = prog.prog_public := by
+      unfold Genv.globalenv
+      exact linearize_add_globals_public _ _
+    unfold Genv.public_symbol
+    rw [symbols_preserved service prog tprog hm id, ht, hp]
+    unfold match_prog match_program match_program_gen at hm
+    rw [hm.2.2]
+  · intro b
+    change Genv.block_is_volatile (Genv.globalenv tprog) b =
+      Genv.block_is_volatile (Genv.globalenv prog) b
+    have hg := linearize_globalenvs_match service prog tprog hm
+    unfold Genv.block_is_volatile Genv.find_var_info Genv.find_def
+    cases h1 : PTree.get b (Genv.globalenv prog).genv_defs with
+    | none =>
+        cases h2 : PTree.get b (Genv.globalenv tprog).genv_defs with
+        | none => rfl
+        | some gd2 =>
+            have hd := hg.mge_defs b
+            simp [h1, h2] at hd
+            cases hd
+    | some gd1 =>
+        cases h2 : PTree.get b (Genv.globalenv tprog).genv_defs with
+        | none =>
+            have hd := hg.mge_defs b
+            simp [h1, h2] at hd
+            cases hd
+        | some gd2 =>
+            have hd := hg.mge_defs b
+            simp [h1, h2] at hd
+            cases hd with
+            | some x y hrel =>
+                cases hrel with
+                | match_globdef_fun ctx' f1 f2 horder htrans => rfl
+                | match_globdef_var v1 v2 hvar =>
+                    cases hvar
+                    rfl
+
+end CompCert4Lean.Backend.Linearizeproof
