@@ -1059,3 +1059,30 @@ theorem function_ptr_translated :
           | some _ _ hrel => cases hrel
 
 end CompCert4Lean.Cfrontend.SimplExprproof
+
+namespace CompCert4Lean.Cfrontend.SimplExprproof
+
+open CompCert4Lean.Common.Globalenvs
+
+theorem functions_translated :
+    ∀ [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+      [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)],
+      functions_translatedStatement := by
+  intro binary64_certificate binary32_certificate p tp hmatch v f hfind
+  cases v with
+  | Vptr b ofs =>
+      simp only [Genv.find_funct] at hfind ⊢
+      split at hfind <;> rename_i heq
+      · have hptr : Genv.find_funct_ptr (Csem.globalenv p).genv_genv b = some f := by
+          simpa [heq] using hfind
+        obtain ⟨cu, tf, hptrt, htrans, hlink⟩ :=
+          function_ptr_translated p tp hmatch b f hptr
+        exact ⟨cu, tf, by simpa [heq, hptrt], htrans, hlink⟩
+      · cases hfind
+  | Vundef => simp [Genv.find_funct] at hfind
+  | Vint n => simp [Genv.find_funct] at hfind
+  | Vfloat n => simp [Genv.find_funct] at hfind
+  | Vlong n => simp [Genv.find_funct] at hfind
+  | Vsingle n => simp [Genv.find_funct] at hfind
+
+end CompCert4Lean.Cfrontend.SimplExprproof

@@ -1510,3 +1510,16 @@ theorem optge_refl : optge_reflStatement := by
   | some l => exact optge_some (LATlaws.ge_refl l l (LATlaws.eq_refl l))
 
 end CompCert4Lean.Backend.Kildall.Dataflow_Solver
+
+namespace CompCert4Lean.Backend.Kildall.Dataflow_Solver
+
+theorem optge_trans : optge_transStatement := by
+  intro LAT LATlaws ol1 ol2 ol3 h12 h23
+  cases h23 with
+  | optge_none _ => exact optge_none ol1
+  | optge_some h23 =>
+      cases h12 with
+      | optge_some h12 =>
+          exact optge_some (LATlaws.ge_trans _ _ _ h12 h23)
+
+end CompCert4Lean.Backend.Kildall.Dataflow_Solver

@@ -1034,3 +1034,24 @@ theorem Zceil_plus (ctx : ExactRealContext) : Zceil_plusStatement ctx := by
   rw [hfloor, round_odd_zopp_add_opp]
 
 end CompCert4Lean.Flocq.Prop.Round_odd
+
+namespace CompCert4Lean.Flocq.Prop.Round_odd
+
+open CompCert4Lean.Flocq.Core
+
+theorem Zeven_abs : Zeven_absStatement := by
+  intro z
+  change decide (Int.natAbs
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (Zabs z)) % 2 = 0) =
+    decide (Int.natAbs
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ z) % 2 = 0)
+  have hz : CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (Zabs z) =
+      Int.ofNat (Int.natAbs
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ z)) := by
+    change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.abs z) = _
+    exact CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt _
+  rw [hz]
+  simp
+
+end CompCert4Lean.Flocq.Prop.Round_odd

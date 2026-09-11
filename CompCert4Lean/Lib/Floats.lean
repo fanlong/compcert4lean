@@ -980,3 +980,114 @@ theorem normalized_nan : normalized_nanStatement := by
       omega
 
 end CompCert4Lean.Lib.Floats
+
+namespace CompCert4Lean.Lib.Floats
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Flocq.IEEE754
+open CompCert4Lean.Lib
+
+private theorem quiet_nan_digits2_pos_nat (q : positive) :
+    PArith.BinPos.Pos.to_nat
+        (CompCert4Lean.Lib.Floats.Model.Rocq.Coq.Floats.SpecFloat.digits2_pos q) =
+      Nat.log2 (PArith.BinPos.Pos.to_nat q) + 1 := by
+  have hsucc (q : positive) :
+      PArith.BinPos.Pos.to_nat
+          (CompCert4Lean.Lib.Floats.Model.Rocq.Coq.Floats.SpecFloat.posSucc q) =
+        PArith.BinPos.Pos.to_nat q + 1 := by
+    induction q with
+    | xH => rfl
+    | xI q ih =>
+        change 2 * PArith.BinPos.Pos.to_nat
+            (CompCert4Lean.Lib.Floats.Model.Rocq.Coq.Floats.SpecFloat.posSucc q) =
+          2 * PArith.BinPos.Pos.to_nat q + 1 + 1
+        rw [ih]
+        omega
+    | xO q ih =>
+        change PArith.BinPos.Pos.to_nat (.xI q) =
+          2 * PArith.BinPos.Pos.to_nat q + 1
+        rfl
+  induction q with
+  | xH => decide
+  | xO q ih =>
+      rw [show CompCert4Lean.Lib.Floats.Model.Rocq.Coq.Floats.SpecFloat.digits2_pos
+            (.xO q) =
+            CompCert4Lean.Lib.Floats.Model.Rocq.Coq.Floats.SpecFloat.posSucc
+              (CompCert4Lean.Lib.Floats.Model.Rocq.Coq.Floats.SpecFloat.digits2_pos q) by rfl,
+        hsucc, ih]
+      simp only [PArith.BinPos.Pos.to_nat,
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat]
+      have hqne : CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat q ≠ 0 :=
+        Nat.ne_of_gt (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat_positive q)
+      rw [Nat.log2_two_mul hqne]
+  | xI q ih =>
+      rw [show CompCert4Lean.Lib.Floats.Model.Rocq.Coq.Floats.SpecFloat.digits2_pos
+            (.xI q) =
+            CompCert4Lean.Lib.Floats.Model.Rocq.Coq.Floats.SpecFloat.posSucc
+              (CompCert4Lean.Lib.Floats.Model.Rocq.Coq.Floats.SpecFloat.digits2_pos q) by rfl,
+        hsucc, ih]
+      simp only [PArith.BinPos.Pos.to_nat,
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat]
+      let k : Nat := CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat q
+      have hk : 0 < k := by exact
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat_positive q
+      have hlog : Nat.log2 (2 * k + 1) = Nat.log2 k + 1 := by
+        apply (Nat.log2_eq_iff (Nat.ne_of_gt (by omega : 0 < 2 * k + 1))).2
+        have hlow := Nat.log2_self_le (Nat.ne_of_gt hk)
+        have hhigh := (Nat.log2_lt (Nat.ne_of_gt hk)).1
+          (Nat.lt_succ_self (Nat.log2 k))
+        constructor <;> rw [Nat.pow_succ] <;> omega
+      change Nat.log2 k + 1 + 1 = Nat.log2 (2 * k + 1) + 1
+      rw [hlog]
+
+theorem quiet_nan_64_proof : quiet_nan_64_proofStatement := by
+  intro p
+  unfold Binary.nan_pl quiet_nan_64_payload
+  change (if intOfZ (Zpos
+      (CompCert4Lean.Lib.Floats.Model.Rocq.Coq.Floats.SpecFloat.digits2_pos
+        (PArith.BinPos.Pos.of_nat
+          ((Nat.lor (PArith.BinPos.Pos.to_nat p) (2 ^ 51)) % (2 ^ 52))))) <
+      intOfZ z53 then true else false) = true
+  let q : Nat := (Nat.lor (PArith.BinPos.Pos.to_nat p) (2 ^ 51)) % (2 ^ 52)
+  have hq_lt : q < 2 ^ 52 := by
+    dsimp [q]
+    exact Nat.mod_lt _ (Nat.two_pow_pos 52)
+  have hq_pos : 0 < q := by
+    have hbit : q.testBit 51 = true := by
+      simp only [q]
+      rw [Nat.testBit_mod_two_pow]
+      change (true && (Nat.lor (PArith.BinPos.Pos.to_nat p) (2 ^ 51)).testBit 51) = true
+      rw [Nat.lor_eq, Nat.testBit_or]
+      rw [Nat.testBit_two_pow_self]
+      exact Bool.or_true _
+    have hh := Nat.ge_two_pow_of_testBit hbit
+    have hpow : 0 < 2 ^ 51 := Nat.two_pow_pos 51
+    omega
+  have hq_log : Nat.log2 q < 52 :=
+    (Nat.log2_lt (Nat.ne_of_gt hq_pos)).2 hq_lt
+  have hdigits_q :
+      PArith.BinPos.Pos.to_nat
+          (CompCert4Lean.Lib.Floats.Model.Rocq.Coq.Floats.SpecFloat.digits2_pos
+            (PArith.BinPos.Pos.of_nat q)) = Nat.log2 q + 1 := by
+    rw [quiet_nan_digits2_pos_nat]
+    change Nat.log2 (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posOfNat q)) + 1 = Nat.log2 q + 1
+    rw [CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat_posOfNat hq_pos]
+  have hdigits_lt : Nat.log2 q + 1 < 53 := by omega
+  change (if intOfZ (Zpos
+      (CompCert4Lean.Lib.Floats.Model.Rocq.Coq.Floats.SpecFloat.digits2_pos
+        (PArith.BinPos.Pos.of_nat q))) < intOfZ z53 then true else false) = true
+  have hdigits_int :
+      intOfZ (Zpos
+        (CompCert4Lean.Lib.Floats.Model.Rocq.Coq.Floats.SpecFloat.digits2_pos
+          (PArith.BinPos.Pos.of_nat q))) = Int.ofNat (Nat.log2 q + 1) := by
+    exact congrArg Int.ofNat hdigits_q
+  rw [hdigits_int]
+  have hz53 : intOfZ z53 = (53 : Int) := by decide
+  rw [hz53]
+  have hltInt : Int.ofNat (Nat.log2 q + 1) < (53 : Int) := by
+    change (Nat.log2 q : Int) + 1 < (53 : Int)
+    exact_mod_cast hdigits_lt
+  rw [if_pos hltInt]
+
+end CompCert4Lean.Lib.Floats

@@ -1464,3 +1464,218 @@ theorem transl_lbl_stmt_2 : transl_lbl_stmt_2Statement := by
               rw [ihrest trs hrest]
 
 end CompCert4Lean.Cfrontend.Cshmgenproof
+
+namespace CompCert4Lean.Cfrontend.Cshmgenproof
+
+open CompCert4Lean.Cfrontend.Cshmgen
+open CompCert4Lean.Cfrontend.Csharpminor
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.Common.Values
+
+theorem make_longconst_correct
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    make_longconst_correctStatement := by
+  intro ge n e le m
+  apply Csharpminor.eval_Econst
+  rfl
+
+theorem make_cmpu_ne_zero_correct
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    make_cmpu_ne_zero_correctStatement := by
+  intro ge e le m a n ha
+  have hdefault :
+      Csharpminor.eval_expr ge e le m
+        (Csharpminor.Ebinop (.Ocmpu .Cne) a
+          (make_intconst CompCert4Lean.Lib.Integers.Int.zero))
+        (.Vint (if CompCert4Lean.Lib.Integers.Int.eq n
+            CompCert4Lean.Lib.Integers.Int.zero then
+          CompCert4Lean.Lib.Integers.Int.zero else
+          CompCert4Lean.Lib.Integers.Int.one)) := by
+    apply Csharpminor.eval_Ebinop
+    · exact ha
+    · apply Csharpminor.eval_Econst
+      rfl
+    · cases hEq : decide (n.intval =
+        CompCert4Lean.Lib.Integers.Int.zero.intval) <;>
+        simp [Csharpminor.eval_binop, CompCert4Lean.Backend.Cminor.eval_binop,
+          CompCert4Lean.Common.Values.Val.cmpu,
+          CompCert4Lean.Common.Values.Val.cmpu_bool,
+          CompCert4Lean.Lib.Integers.Int.cmpu, hEq,
+          CompCert4Lean.Lib.Integers.Int.eq,
+          CompCert4Lean.Lib.Integers.WordCore.cmpu,
+          CompCert4Lean.Lib.Integers.WordCore.eq,
+          CompCert4Lean.Common.Values.Val.of_optbool,
+          CompCert4Lean.Common.Values.Vtrue,
+          CompCert4Lean.Common.Values.Vfalse]
+  have h_of_optbool : ∀ ob : Option Bool,
+      CompCert4Lean.Common.Values.Val.of_optbool ob = .Vint n →
+        n = if CompCert4Lean.Lib.Integers.Int.eq n
+            CompCert4Lean.Lib.Integers.Int.zero then
+          CompCert4Lean.Lib.Integers.Int.zero else
+          CompCert4Lean.Lib.Integers.Int.one := by
+    intro ob h
+    cases ob with
+    | none => simp [CompCert4Lean.Common.Values.Val.of_optbool] at h
+    | some b =>
+        cases b with
+        | false =>
+            change CompCert4Lean.Common.Values.Vint
+                CompCert4Lean.Lib.Integers.Int.zero = .Vint n at h
+            cases h
+            rfl
+        | true =>
+            change CompCert4Lean.Common.Values.Vint
+                CompCert4Lean.Lib.Integers.Int.one = .Vint n at h
+            cases h
+            by_cases hEq : CompCert4Lean.Lib.Integers.Int.eq
+                CompCert4Lean.Lib.Integers.Int.one
+                CompCert4Lean.Lib.Integers.Int.zero = true
+            · have hz : CompCert4Lean.Lib.Integers.Int.one.intval =
+                  CompCert4Lean.Lib.Integers.Int.zero.intval := by
+                simpa [CompCert4Lean.Lib.Integers.Int.eq,
+                  CompCert4Lean.Lib.Integers.WordCore.eq] using hEq
+              exact False.elim ((by decide :
+                CompCert4Lean.Lib.Integers.Int.one ≠
+                  CompCert4Lean.Lib.Integers.Int.zero)
+                (CompCert4Lean.Lib.Integers.WordCore.ext hz))
+            · simp [hEq]
+  have h_of_bool : ∀ b : Bool,
+      CompCert4Lean.Common.Values.Val.of_bool b = .Vint n →
+        n = if CompCert4Lean.Lib.Integers.Int.eq n
+            CompCert4Lean.Lib.Integers.Int.zero then
+          CompCert4Lean.Lib.Integers.Int.zero else
+          CompCert4Lean.Lib.Integers.Int.one := by
+    intro b h
+    cases b with
+    | false =>
+        change CompCert4Lean.Common.Values.Vint
+            CompCert4Lean.Lib.Integers.Int.zero = .Vint n at h
+        cases h
+        rfl
+    | true =>
+        change CompCert4Lean.Common.Values.Vint
+            CompCert4Lean.Lib.Integers.Int.one = .Vint n at h
+        cases h
+        by_cases hEq : CompCert4Lean.Lib.Integers.Int.eq
+            CompCert4Lean.Lib.Integers.Int.one
+            CompCert4Lean.Lib.Integers.Int.zero = true
+        · have hz : CompCert4Lean.Lib.Integers.Int.one.intval =
+              CompCert4Lean.Lib.Integers.Int.zero.intval := by
+            simpa [CompCert4Lean.Lib.Integers.Int.eq,
+              CompCert4Lean.Lib.Integers.WordCore.eq] using hEq
+          exact False.elim ((by decide :
+            CompCert4Lean.Lib.Integers.Int.one ≠
+              CompCert4Lean.Lib.Integers.Int.zero)
+            (CompCert4Lean.Lib.Integers.WordCore.ext hz))
+        · simp [hEq]
+  cases a with
+  | Evar id => exact hdefault
+  | Eaddrof id => exact hdefault
+  | Econst cst => exact hdefault
+  | Eunop op a1 => exact hdefault
+  | Eload chunk addr => exact hdefault
+  | Ebinop op a1 a2 =>
+      cases op with
+      | Ocmp cmp =>
+          cases ha with
+          | eval_Ebinop _ _ _ v1 v2 _ h1 h2 hop =>
+              have hop0 := hop
+              change some (CompCert4Lean.Common.Values.Val.cmp cmp v1 v2) =
+                some (.Vint n) at hop
+              injection hop with hv
+              have hn := h_of_optbool _ hv
+              apply Csharpminor.eval_Ebinop
+              · exact h1
+              · exact h2
+              · rw [← hn]
+                exact hop0
+      | Ocmpu cmp =>
+          cases ha with
+          | eval_Ebinop _ _ _ v1 v2 _ h1 h2 hop =>
+              have hop0 := hop
+              change some (CompCert4Lean.Common.Values.Val.cmpu
+                (CompCert4Lean.Common.Memory.Mem.valid_pointer m) cmp v1 v2) =
+                some (.Vint n) at hop
+              injection hop with hv
+              have hn := h_of_optbool _ hv
+              apply Csharpminor.eval_Ebinop
+              · exact h1
+              · exact h2
+              · rw [← hn]
+                exact hop0
+      | Ocmpf cmp =>
+          cases ha with
+          | eval_Ebinop _ _ _ v1 v2 _ h1 h2 hop =>
+              have hop0 := hop
+              change some (CompCert4Lean.Common.Values.Val.cmpf cmp v1 v2) =
+                some (.Vint n) at hop
+              injection hop with hv
+              have hn := h_of_optbool _ hv
+              apply Csharpminor.eval_Ebinop
+              · exact h1
+              · exact h2
+              · rw [← hn]
+                exact hop0
+      | Ocmpfs cmp =>
+          cases ha with
+          | eval_Ebinop _ _ _ v1 v2 _ h1 h2 hop =>
+              have hop0 := hop
+              change some (CompCert4Lean.Common.Values.Val.cmpfs cmp v1 v2) =
+                some (.Vint n) at hop
+              injection hop with hv
+              have hn := h_of_optbool _ hv
+              apply Csharpminor.eval_Ebinop
+              · exact h1
+              · exact h2
+              · rw [← hn]
+                exact hop0
+      | Ocmpl cmp =>
+          cases ha with
+          | eval_Ebinop _ _ _ v1 v2 _ h1 h2 hop =>
+              have hop0 := hop
+              change Option.map CompCert4Lean.Common.Values.Val.of_bool
+                  (CompCert4Lean.Common.Values.Val.cmpl_bool cmp v1 v2) =
+                some (.Vint n) at hop
+              cases hbool : CompCert4Lean.Common.Values.Val.cmpl_bool cmp v1 v2 with
+              | none => simp [hbool] at hop
+              | some b =>
+                  have hb : CompCert4Lean.Common.Values.Val.of_bool b = .Vint n := by
+                    simpa [hbool] using hop
+                  have hn := h_of_bool b hb
+                  apply Csharpminor.eval_Ebinop
+                  · exact h1
+                  · exact h2
+                  · rw [← hn]
+                    exact hop0
+      | Ocmplu cmp =>
+          cases ha with
+          | eval_Ebinop _ _ _ v1 v2 _ h1 h2 hop =>
+              have hop0 := hop
+              change Option.map CompCert4Lean.Common.Values.Val.of_bool
+                  (CompCert4Lean.Common.Values.Val.cmplu_bool
+                    (CompCert4Lean.Common.Memory.Mem.valid_pointer m) cmp v1 v2) =
+                some (.Vint n) at hop
+              cases hbool : CompCert4Lean.Common.Values.Val.cmplu_bool
+                  (CompCert4Lean.Common.Memory.Mem.valid_pointer m) cmp v1 v2 with
+              | none => simp [hbool] at hop
+              | some b =>
+                  have hb : CompCert4Lean.Common.Values.Val.of_bool b = .Vint n := by
+                    simpa [hbool] using hop
+                  have hn := h_of_bool b hb
+                  apply Csharpminor.eval_Ebinop
+                  · exact h1
+                  · exact h2
+                  · rw [← hn]
+                    exact hop0
+      | _ => exact hdefault
+
+theorem make_cmpu_ne_zero_correct_ptr
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    make_cmpu_ne_zero_correct_ptrStatement := by
+  intro ge e le m a b i ha hptr hvalid
+  simp [CompCert4Lean.X86_64.Archi.ptr64] at hptr
+
+end CompCert4Lean.Cfrontend.Cshmgenproof

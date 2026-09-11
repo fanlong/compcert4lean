@@ -1174,3 +1174,150 @@ theorem Zquot_mul : Zquot_mulStatement := by
     rw [show intOfZ z0 = 0 by rfl, Int.add_zero, zOfInt_intOfZ]
 
 end CompCert4Lean.Backend.SelectDivproof
+
+namespace CompCert4Lean.Backend.SelectDivproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Backend.SelectDiv
+
+theorem divu_mul_params_sound : divu_mul_params_soundStatement := by
+  unfold divu_mul_params_soundStatement divu_mul_params
+  intro d m' p'
+  have zlt_true_local : ∀ a b : CCZ,
+      boolOfSumbool (CompCert4Lean.Lib.Coqlib.zlt a b) = true → zLt a b := by
+    intro a b h
+    cases hz : CompCert4Lean.Lib.Coqlib.zlt a b with
+    | left hp => exact hp
+    | right hn => simp [boolOfSumbool, hz] at h
+  have zle_true_local : ∀ a b : CCZ,
+      boolOfSumbool (CompCert4Lean.Lib.Coqlib.zle a b) = true → zLe a b := by
+    intro a b h
+    cases hz : CompCert4Lean.Lib.Coqlib.zle a b with
+    | left hp => exact hp
+    | right hn => simp [boolOfSumbool, hz] at h
+  generalize hfind : find_div_mul_params _ _ d _ = r
+  cases r with
+  | none => simp_all
+  | some q =>
+    cases q with
+    | mk p m =>
+      dsimp
+      split
+      case isFalse => simp_all
+      case isTrue hcond =>
+        simp only [Bool.and_eq_true] at hcond
+        rcases hcond with ⟨hcond, hP32⟩
+        rcases hcond with ⟨hcond, hP0⟩
+        rcases hcond with ⟨hcond, hML⟩
+        rcases hcond with ⟨hcond, hM⟩
+        rcases hcond with ⟨hcond, hHI⟩
+        rcases hcond with ⟨hD, hLO⟩
+        intro hp
+        cases hp
+        have hD' := zlt_true_local _ _ hD
+        have hLO' := zle_true_local _ _ hLO
+        have hHI' := zle_true_local _ _ hHI
+        have hM' := zle_true_local _ _ hM
+        have hML' := zlt_true_local _ _ hML
+        have hP0' := zle_true_local _ _ hP0
+        have hP32' := zlt_true_local _ _ hP32
+        refine ⟨⟨hM', hML'⟩, ⟨hP0', hP32'⟩, ?_⟩
+        intro n hn
+        apply zdiv_mul_pos_local z32 (by
+          change (0 : Int) ≤ 32
+          omega) d hD' _ _ hP0'
+          ⟨hLO', hHI'⟩ n hn
+
+theorem divs_mul_params_sound : divs_mul_params_soundStatement := by
+  unfold divs_mul_params_soundStatement divs_mul_params
+  intro d m' p'
+  have zlt_true_local : ∀ a b : CCZ,
+      boolOfSumbool (CompCert4Lean.Lib.Coqlib.zlt a b) = true → zLt a b := by
+    intro a b h
+    cases hz : CompCert4Lean.Lib.Coqlib.zlt a b with
+    | left hp => exact hp
+    | right hn => simp [boolOfSumbool, hz] at h
+  have zle_true_local : ∀ a b : CCZ,
+      boolOfSumbool (CompCert4Lean.Lib.Coqlib.zle a b) = true → zLe a b := by
+    intro a b h
+    cases hz : CompCert4Lean.Lib.Coqlib.zle a b with
+    | left hp => exact hp
+    | right hn => simp [boolOfSumbool, hz] at h
+  generalize hfind : find_div_mul_params _ _ d _ = r
+  cases r with
+  | none => simp_all
+  | some q =>
+    cases q with
+    | mk p m =>
+      dsimp
+      split
+      case isFalse => simp_all
+      case isTrue hcond =>
+        simp only [Bool.and_eq_true] at hcond
+        rcases hcond with ⟨hcond, hP32⟩
+        rcases hcond with ⟨hcond, hP0⟩
+        rcases hcond with ⟨hcond, hML⟩
+        rcases hcond with ⟨hcond, hM⟩
+        rcases hcond with ⟨hcond, hHI⟩
+        rcases hcond with ⟨hD, hLO⟩
+        intro hp
+        cases hp
+        have hD' := zlt_true_local _ _ hD
+        have hLO' := zlt_true_local _ _ hLO
+        have hHI' := zle_true_local _ _ hHI
+        have hM' := zle_true_local _ _ hM
+        have hML' := zlt_true_local _ _ hML
+        have hP0' := zle_true_local _ _ hP0
+        have hP32' := zlt_true_local _ _ hP32
+        refine ⟨⟨hM', hML'⟩, ⟨hP0', hP32'⟩, ?_⟩
+        intro n hn
+        have hN : zLe z0 (zSub z32 z1) := by
+          change (0 : Int) ≤ 31
+          omega
+        have hL : zLe z0 (zAdd (zSub p z32) z1) := by
+          change 0 ≤ intOfZ (zAdd (zSub p z32) z1)
+          simp only [zAdd, zSub, ZArith.BinInt.Z.add, ZArith.BinInt.Z.sub,
+            intOfZ_zOfInt]
+          change 0 ≤ intOfZ (zSub p z32) at hP0'
+          simp only [zSub, ZArith.BinInt.Z.sub, intOfZ_zOfInt] at hP0'
+          have hz1 : intOfZ z1 = 1 := by rfl
+          rw [hz1]
+          omega
+        have harg :
+            zAdd (zSub z32 z1) (zAdd (zSub p z32) z1) =
+              zAdd z32 (zSub p z32) := by
+          apply intOfZ_injective
+          simp only [zAdd, zSub, ZArith.BinInt.Z.add, ZArith.BinInt.Z.sub,
+            intOfZ_zOfInt]
+          omega
+        have hLO2 : zLt
+            (two_p (zAdd (zSub z32 z1)
+              (zAdd (zSub p z32) z1))) (zMul m' d) := by
+          simpa [harg] using hLO'
+        have hHI2 : zLe (zMul m' d)
+            (zAdd (two_p (zAdd (zSub z32 z1)
+              (zAdd (zSub p z32) z1)))
+              (two_p (zAdd (zSub p z32) z1))) := by
+          rw [harg]
+          exact hHI'
+        have hnupper : zLt n (two_p (zSub z32 z1)) := by
+          change intOfZ n < intOfZ (two_p (zSub z32 z1))
+          have hz : intOfZ (zSub z32 z1) = 31 := by
+            simp only [zSub, ZArith.BinInt.Z.sub, intOfZ_zOfInt]
+            rfl
+          have heq : intOfZ (two_p (zSub z32 z1)) =
+              intOfZ (CompCert4Lean.Lib.Integers.Int.half_modulus) := by
+            rfl
+          have hmax := hn.2
+          change intOfZ n ≤ intOfZ (CompCert4Lean.Lib.Integers.Int.max_signed) at hmax
+          unfold CompCert4Lean.Lib.Integers.Int.max_signed
+            CompCert4Lean.Lib.Integers.Int.half_modulus at hmax
+          simp only [ZArith.BinInt.Z.sub, intOfZ_zOfInt] at hmax
+          change intOfZ n ≤ intOfZ (CompCert4Lean.Lib.Integers.Int.half_modulus) - 1 at hmax
+          rw [heq]
+          omega
+        have hz := Zquot_mul (zSub z32 z1) hN d hD' _
+          (zAdd (zSub p z32) z1) hL ⟨hLO2, hHI2⟩ n ⟨hn.1, hnupper⟩
+        simpa [harg] using hz
+
+end CompCert4Lean.Backend.SelectDivproof
