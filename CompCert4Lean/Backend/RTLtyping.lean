@@ -1061,3 +1061,9 @@ theorem solve_sound_proof : solve_sound := by
       hconstraints (rtl_solve_constraints_sound_aux e e' hconstraints)
 
 end CompCert4Lean.Backend.RTLtyping.S
+
+namespace CompCert4Lean.Backend.RTLtyping.S
+
+theorem move_sound_proof : move_sound := rtl_move_sound_aux
+
+end CompCert4Lean.Backend.RTLtyping.S

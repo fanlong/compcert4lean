@@ -908,3 +908,65 @@ theorem sep_assoc : sep_assocStatement := by
   · exact sep_assoc_2 P Q R
 
 end CompCert4Lean.Common.Separation
+
+namespace CompCert4Lean.Common.Separation
+
+private theorem massert_eqv_trans_scc085 {P Q R : massert}
+    (hPQ : massert_eqv P Q) (hQR : massert_eqv Q R) : massert_eqv P R := by
+  constructor
+  · constructor
+    · intro m h
+      exact hQR.1.1 m (hPQ.1.1 m h)
+    · intro b ofs h
+      exact hPQ.1.2 b ofs (hQR.1.2 b ofs h)
+  · constructor
+    · intro m h
+      exact hPQ.2.1 m (hQR.2.1 m h)
+    · intro b ofs h
+      exact hQR.2.2 b ofs (hPQ.2.2 b ofs h)
+
+private theorem sepconj_eqv_right_scc085 {P Q R : massert} (hQR : massert_eqv Q R) :
+    massert_eqv (sepconj P Q) (sepconj P R) := by
+  constructor
+  · constructor
+    · intro m h
+      refine ⟨h.1, hQR.1.1 m h.2.1, ?_⟩
+      intro b ofs hP hR
+      exact h.2.2 b ofs hP (hQR.1.2 b ofs hR)
+    · intro b ofs h
+      cases h with
+      | inl hP => exact Or.inl hP
+      | inr hR => exact Or.inr (hQR.1.2 b ofs hR)
+  · constructor
+    · intro m h
+      refine ⟨h.1, hQR.2.1 m h.2.1, ?_⟩
+      intro b ofs hP hQ
+      exact h.2.2 b ofs hP (hQR.2.2 b ofs hQ)
+    · intro b ofs h
+      cases h with
+      | inl hP => exact Or.inl hP
+      | inr hQ => exact Or.inr (hQR.2.2 b ofs hQ)
+
+theorem sep_swap23 : sep_swap23Statement := by
+  intro P Q R S
+  exact sepconj_eqv_right_scc085 (P := P) (sep_swap Q R S)
+
+theorem sep_swap34 : sep_swap34Statement := by
+  intro P Q R S T
+  exact sepconj_eqv_right_scc085 (P := P)
+    (sepconj_eqv_right_scc085 (P := Q) (sep_swap R S T))
+
+theorem sep_swap45 : sep_swap45Statement := by
+  intro P Q R S T U
+  exact sepconj_eqv_right_scc085 (P := P)
+    (sepconj_eqv_right_scc085 (P := Q)
+      (sepconj_eqv_right_scc085 (P := R) (sep_swap S T U)))
+
+theorem sep_swap3 : sep_swap3Statement := by
+  intro P Q R S
+  exact massert_eqv_trans_scc085 (sep_swap P Q (sepconj R S))
+    (massert_eqv_trans_scc085
+      (sepconj_eqv_right_scc085 (P := Q) (sep_swap P R S))
+      (sep_swap Q R (sepconj P S)))
+
+end CompCert4Lean.Common.Separation

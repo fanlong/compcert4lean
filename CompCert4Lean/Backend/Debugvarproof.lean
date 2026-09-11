@@ -464,3 +464,169 @@ theorem transf_function_match : transf_function_matchStatement := by
       exact transf_code_match cfg lm f.fn_code (some top)
 
 end CompCert4Lean.Backend.Debugvarproof
+
+namespace CompCert4Lean.Backend.Debugvarproof
+
+open CompCert4Lean.Backend.Debugvar
+open CompCert4Lean.Backend.Linear
+
+theorem find_label_add_delta_ranges : find_label_add_delta_rangesStatement := by
+  intro lbl c before after
+  unfold add_delta_ranges
+  cases hdelta : delta_state before after with
+  | mk killed born =>
+      have hstart : ∀ (vi : CompCert4Lean.Common.AST.ident × debuginfo) (c : code),
+          find_label lbl (add_start_range vi c) = find_label lbl c := by
+        intro vi c
+        simp [add_start_range, find_label, is_label]
+      have hend : ∀ (vi : CompCert4Lean.Common.AST.ident × debuginfo) (c : code),
+          find_label lbl (add_end_range vi c) = find_label lbl c := by
+        intro vi c
+        simp [add_end_range, find_label, is_label]
+      have hstarts : ∀ (xs : List (CompCert4Lean.Common.AST.ident × debuginfo)) (c : code),
+          find_label lbl (xs.foldr add_start_range c) = find_label lbl c := by
+        intro xs
+        induction xs with
+        | nil => intro c; rfl
+        | cons x xs ih =>
+            intro c
+            rw [List.foldr_cons, hstart, ih]
+      have hends : ∀ (xs : List (CompCert4Lean.Common.AST.ident × debuginfo)) (c : code),
+          find_label lbl (xs.foldr add_end_range c) = find_label lbl c := by
+        intro xs
+        induction xs with
+        | nil => intro c; rfl
+        | cons x xs ih =>
+            intro c
+            rw [List.foldr_cons, hend, ih]
+      rw [hends killed, hstarts born]
+
+theorem find_label_match_rec : find_label_match_recStatement := by
+  intro lbl c' c tc hmatch hfind
+  induction hmatch with
+  | nil =>
+      simp [find_label] at hfind
+  | @cons i before after c tc htail ih =>
+      simp only [find_label] at hfind
+      by_cases hil : is_label lbl i
+      · simp [hil] at hfind
+        subst c'
+        refine ⟨before, after, tc, ?_, htail⟩
+        simp [find_label, hil]
+      · simp [hil] at hfind
+        rcases ih hfind with ⟨before', after', tc', hfind', hmatch'⟩
+        refine ⟨before', after', tc', ?_, hmatch'⟩
+        have hadd : find_label lbl (add_delta_ranges before after tc) =
+            find_label lbl tc := find_label_add_delta_ranges lbl tc before after
+        change find_label lbl (i :: add_delta_ranges before after tc) = _
+        simp only [find_label, hil]
+        rw [hadd]
+        exact hfind'
+
+theorem find_label_match : find_label_matchStatement := by
+  intro f tf lbl c hmatch hfind
+  cases hmatch with
+  | intro tc hcode =>
+      exact find_label_match_rec lbl c f.fn_code tc hcode hfind
+
+end CompCert4Lean.Backend.Debugvarproof
+
+namespace CompCert4Lean.Backend.Debugvarproof
+
+open CompCert4Lean.Backend.Debugvar
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Linking
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Lib.Coqlib
+
+private theorem debugvar_symbol_add_global
+    (ge1 ge2 : Genv.t CompCert4Lean.Backend.Linear.fundef Unit) (id : ident)
+    (hm : ∀ id', CompCert4Lean.Lib.Maps.PTree.get id' ge2.genv_symb =
+      CompCert4Lean.Lib.Maps.PTree.get id' ge1.genv_symb)
+    (hn : ge2.genv_next = ge1.genv_next) :
+    ∀ id', CompCert4Lean.Lib.Maps.PTree.get id'
+      (CompCert4Lean.Lib.Maps.PTree.set id ge2.genv_next ge2.genv_symb) =
+      CompCert4Lean.Lib.Maps.PTree.get id'
+      (CompCert4Lean.Lib.Maps.PTree.set id ge1.genv_next ge1.genv_symb) := by
+  intro id'
+  have h2 := @CompCert4Lean.Lib.Maps.PTree.getSet_equation _ id' id
+      ge2.genv_next ge2.genv_symb
+  have h1 := @CompCert4Lean.Lib.Maps.PTree.getSet_equation _ id' id
+      ge1.genv_next ge1.genv_symb
+  by_cases h : id' = id
+  · rw [h2, h1]
+    simp only [dif_pos h]
+    exact congrArg some hn
+  · rw [h2, h1]
+    simp only [dif_neg h]
+    exact hm id'
+
+private theorem debugvar_symbol_add_globals
+    (xs ys : List (ident × globdef CompCert4Lean.Backend.Linear.fundef Unit))
+    (hxy : list_forall2 (fun a b => a.1 = b.1) xs ys)
+    (ge1 ge2 : Genv.t CompCert4Lean.Backend.Linear.fundef Unit)
+    (hm : ∀ id', CompCert4Lean.Lib.Maps.PTree.get id' ge2.genv_symb =
+      CompCert4Lean.Lib.Maps.PTree.get id' ge1.genv_symb)
+    (hn : ge2.genv_next = ge1.genv_next) :
+    ∀ id', CompCert4Lean.Lib.Maps.PTree.get id'
+      (Genv.add_globals ge2 ys).genv_symb =
+      CompCert4Lean.Lib.Maps.PTree.get id'
+      (Genv.add_globals ge1 xs).genv_symb := by
+  induction hxy generalizing ge1 ge2 with
+  | nil =>
+      intro id'
+      simpa [Genv.add_globals] using hm id'
+  | @cons a xs b ys hab htail ih =>
+      rcases a with ⟨aid, ag⟩
+      rcases b with ⟨bid, bg⟩
+      change aid = bid at hab
+      subst bid
+      simp only [Genv.add_globals, List.foldl_cons]
+      apply ih
+      · intro id'
+        exact debugvar_symbol_add_global ge1 ge2 aid hm hn id'
+      · exact congrArg PArith.BinPos.Pos.succ hn
+
+theorem symbols_preserved : symbols_preservedStatement := by
+  intro cfg prog tprog hm id
+  letI : Linker CompCert4Lean.Backend.Linear.fundef :=
+    Linker_fundef CompCert4Lean.Backend.Linear.function
+  letI : Linker (CompCert4Lean.Common.AST.program
+      CompCert4Lean.Backend.Linear.fundef Unit) :=
+    Linker_prog CompCert4Lean.Backend.Linear.fundef Unit
+  unfold match_prog match_program match_program_gen at hm
+  have hlist_of : ∀ (xs ys : List (ident × globdef
+      CompCert4Lean.Backend.Linear.fundef Unit)),
+      list_forall2 (@match_ident_globdef
+        (CompCert4Lean.Common.AST.program CompCert4Lean.Backend.Linear.fundef Unit)
+        CompCert4Lean.Backend.Linear.fundef Unit
+        CompCert4Lean.Backend.Linear.fundef Unit
+        (Linker_prog CompCert4Lean.Backend.Linear.fundef Unit)
+        (fun _ f tf => CompCert4Lean.Backend.Debugvar.transf_fundef cfg f = .OK tf)
+        (fun x y : Unit => x = y) prog) xs ys →
+      list_forall2 (fun a b => a.1 = b.1) xs ys := by
+    intro xs ys h
+    induction h with
+    | nil => exact list_forall2.nil _
+    | @cons a xs b ys hab htail ih =>
+        apply list_forall2.cons
+        · exact hab.1
+        · exact ih
+  have hlist := hlist_of prog.prog_defs tprog.prog_defs hm.1
+  have hempty : ∀ id',
+      CompCert4Lean.Lib.Maps.PTree.get id'
+        (Genv.empty_genv CompCert4Lean.Backend.Linear.fundef Unit tprog.prog_public).genv_symb =
+      CompCert4Lean.Lib.Maps.PTree.get id'
+        (Genv.empty_genv CompCert4Lean.Backend.Linear.fundef Unit prog.prog_public).genv_symb := by
+    intro id'
+    rfl
+  have hnext :
+      (Genv.empty_genv CompCert4Lean.Backend.Linear.fundef Unit tprog.prog_public).genv_next =
+      (Genv.empty_genv CompCert4Lean.Backend.Linear.fundef Unit prog.prog_public).genv_next := rfl
+  have hsymb := debugvar_symbol_add_globals prog.prog_defs tprog.prog_defs
+    hlist (Genv.empty_genv CompCert4Lean.Backend.Linear.fundef Unit prog.prog_public)
+    (Genv.empty_genv CompCert4Lean.Backend.Linear.fundef Unit tprog.prog_public) hempty hnext id
+  simpa [Genv.find_symbol, Genv.globalenv] using hsymb
+
+end CompCert4Lean.Backend.Debugvarproof

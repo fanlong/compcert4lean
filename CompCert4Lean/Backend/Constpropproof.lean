@@ -788,3 +788,173 @@ theorem symbols_preserved : ∀ cfg, symbols_preservedStatement cfg := by
   · exact hdefs'
 
 end CompCert4Lean.Backend.Constpropproof
+
+namespace CompCert4Lean.Backend.Constpropproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Linking
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+
+variable
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+
+private theorem constprop_match_genvs_add_global
+    (R : globdef fundef Unit → globdef fundef Unit → Prop)
+    (ge1 ge2 : Genv.t fundef Unit) (id : ident)
+    (g1 g2 : globdef fundef Unit)
+    (hm : Genv.match_genvs R ge1 ge2) (hg : R g1 g2) :
+    Genv.match_genvs R (Genv.add_global ge1 (id, g1))
+      (Genv.add_global ge2 (id, g2)) := by
+  constructor
+  · change PArith.BinPos.Pos.succ ge2.genv_next =
+      PArith.BinPos.Pos.succ ge1.genv_next
+    exact congrArg PArith.BinPos.Pos.succ hm.mge_next
+  · intro id'
+    change PTree.get id' (PTree.set id ge2.genv_next ge2.genv_symb) =
+      PTree.get id' (PTree.set id ge1.genv_next ge1.genv_symb)
+    rw [@PTree.getSet_equation _
+      (show CompCert4Lean.Foundation.Numbers.Rocq.Coq.positive from id')
+      (show CompCert4Lean.Foundation.Numbers.Rocq.Coq.positive from id)
+      ge2.genv_next ge2.genv_symb,
+      @PTree.getSet_equation _
+        (show CompCert4Lean.Foundation.Numbers.Rocq.Coq.positive from id')
+        (show CompCert4Lean.Foundation.Numbers.Rocq.Coq.positive from id)
+        ge1.genv_next ge1.genv_symb]
+    by_cases h : id' = id
+    · simp only [dif_pos h]
+      exact congrArg some hm.mge_next
+    · simp only [dif_neg h]
+      exact hm.mge_symb id'
+  · intro b
+    change option_rel R
+      (PTree.get b (PTree.set ge1.genv_next g1 ge1.genv_defs))
+      (PTree.get b (PTree.set ge2.genv_next g2 ge2.genv_defs))
+    have h1 := @PTree.getSet_equation (globdef fundef Unit)
+      b ge1.genv_next g1 ge1.genv_defs
+    have h2 := @PTree.getSet_equation (globdef fundef Unit)
+      b ge2.genv_next g2 ge2.genv_defs
+    by_cases h : b = ge1.genv_next
+    · have h' : b = ge2.genv_next := h.trans hm.mge_next.symm
+      rw [h1, h2]
+      simp only [dif_pos h, dif_pos h']
+      exact option_rel.some g1 g2 hg
+    · have h' : b ≠ ge2.genv_next := by
+        intro hb
+        apply h
+        exact hb.trans hm.mge_next
+      rw [h1, h2]
+      simp only [dif_neg h, dif_neg h']
+      exact hm.mge_defs b
+
+private theorem constprop_match_genvs_add_globals
+    (R : globdef fundef Unit → globdef fundef Unit → Prop)
+    (xs ys : List (ident × globdef fundef Unit))
+    (hxy : list_forall2 (fun a b => a.1 = b.1 ∧ R a.2 b.2) xs ys)
+    (ge1 ge2 : Genv.t fundef Unit) (hm : Genv.match_genvs R ge1 ge2) :
+    Genv.match_genvs R (Genv.add_globals ge1 xs) (Genv.add_globals ge2 ys) := by
+  induction hxy generalizing ge1 ge2 with
+  | nil => simpa [Genv.add_globals] using hm
+  | @cons a xs b ys hab htail ih =>
+      rcases a with ⟨aid, ag⟩
+      rcases b with ⟨bid, bg⟩
+      change aid = bid ∧ R ag bg at hab
+      rcases hab with ⟨rfl, hab⟩
+      simp only [Genv.add_globals, List.foldl_cons]
+      apply ih
+      simpa using (constprop_match_genvs_add_global R ge1 ge2 aid ag bg hm hab)
+
+private theorem constprop_globalenvs_match
+    (cfg : CompilerConfig) (prog tprog : program)
+    (hm : match_prog cfg prog tprog) :
+    Genv.match_genvs
+      (@match_globdef program fundef Unit fundef Unit
+        (@Linker_prog fundef Unit (Linker_fundef function) Linker_unit)
+        (fun (cu : program) f tf =>
+          tf = CompCert4Lean.Backend.Constprop.transf_fundef
+            (binary64_certificate := binary64_certificate)
+            (binary32_certificate := binary32_certificate) cfg
+            (CompCert4Lean.Backend.ValueAnalysis.romem_for cfg cu) f)
+        (fun x y : Unit => x = y) prog)
+      (Genv.globalenv prog) (Genv.globalenv tprog) := by
+  let R : globdef fundef Unit → globdef fundef Unit → Prop :=
+    @match_globdef program fundef Unit fundef Unit
+      (@Linker_prog fundef Unit (Linker_fundef function) Linker_unit)
+      (fun (cu : program) f tf =>
+        tf = CompCert4Lean.Backend.Constprop.transf_fundef
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate) cfg
+          (CompCert4Lean.Backend.ValueAnalysis.romem_for cfg cu) f)
+      (fun x y : Unit => x = y) prog
+  unfold match_prog match_program match_program_gen at hm
+  have hempty : Genv.match_genvs R
+      (Genv.empty_genv fundef Unit prog.prog_public)
+      (Genv.empty_genv fundef Unit tprog.prog_public) := by
+    constructor
+    · rfl
+    · intro id'
+      rfl
+    · intro b
+      exact option_rel.none R
+  have hlist_of : ∀ (xs ys : List (ident × globdef fundef Unit)),
+      list_forall2 (@match_ident_globdef program fundef Unit fundef Unit
+        (@Linker_prog fundef Unit (Linker_fundef function) Linker_unit)
+        (fun (cu : program) f tf =>
+          tf = CompCert4Lean.Backend.Constprop.transf_fundef
+            (binary64_certificate := binary64_certificate)
+            (binary32_certificate := binary32_certificate) cfg
+            (CompCert4Lean.Backend.ValueAnalysis.romem_for cfg cu) f)
+        (fun x y : Unit => x = y) prog) xs ys →
+      list_forall2 (fun a b => a.1 = b.1 ∧ R a.2 b.2) xs ys := by
+    intro xs ys h
+    induction h with
+    | nil => exact list_forall2.nil _
+    | @cons a xs b ys hab htail ih =>
+        apply list_forall2.cons
+        · exact ⟨hab.1, by simpa [R] using hab.2⟩
+        · exact ih
+  have hlist := hlist_of prog.prog_defs tprog.prog_defs hm.1
+  exact constprop_match_genvs_add_globals R prog.prog_defs tprog.prog_defs
+    hlist _ _ hempty
+
+theorem function_ptr_translated : ∀ cfg, function_ptr_translatedStatement cfg := by
+  letI : Linker fundef := Linker_fundef function
+  letI : Linker Unit := Linker_unit
+  letI : Linker program := Linker_prog fundef Unit
+  intro cfg prog tprog hm b f hfind
+  have hg := constprop_globalenvs_match cfg prog tprog hm
+  unfold Genv.find_funct_ptr Genv.find_def at hfind ⊢
+  cases h1 : PTree.get b (Genv.globalenv prog).genv_defs with
+  | none => simp [h1] at hfind
+  | some gd1 =>
+      cases gd1 with
+      | Gfun f1 =>
+          have hf : f1 = f := by simpa [h1] using hfind
+          subst f1
+          cases h2 : PTree.get b (Genv.globalenv tprog).genv_defs with
+          | none =>
+              have hd := hg.mge_defs b
+              simp [h1, h2] at hd
+              cases hd
+          | some gd2 =>
+              cases gd2 with
+              | Gfun f2 =>
+                  have hd := hg.mge_defs b
+                  simp [h1, h2] at hd
+                  cases hd with
+                  | some x y hrel =>
+                      cases hrel with
+                      | match_globdef_fun ctx' f1 f2 horder htrans =>
+                          refine ⟨ctx', ?_, horder⟩
+                          simpa [h2, htrans]
+              | Gvar v2 =>
+                  have hd := hg.mge_defs b
+                  simp [h1, h2] at hd
+                  cases hd with
+                  | some x y hrel => cases hrel
+      | Gvar v1 => simp [h1] at hfind
+
+end CompCert4Lean.Backend.Constpropproof

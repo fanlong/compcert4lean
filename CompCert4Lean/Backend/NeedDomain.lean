@@ -1033,3 +1033,11 @@ theorem vagree_lessdef : vagree_lessdefStatement := by
       exact CompCert4Lean.Common.Values.Val.lessdef_undef w
 
 end CompCert4Lean.Backend.NeedDomain
+
+namespace CompCert4Lean.Backend.NeedDomain
+
+theorem lessdef_vagree : lessdef_vagreeStatement := by
+  intro v w h
+  exact h
+
+end CompCert4Lean.Backend.NeedDomain

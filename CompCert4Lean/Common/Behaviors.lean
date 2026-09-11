@@ -662,3 +662,15 @@ theorem behavior_improves_trans : behavior_improves_transStatement := by
           rw [hb3, ← behavior_app_assoc]
 
 end CompCert4Lean.Common.Behaviors
+
+namespace CompCert4Lean.Common.Behaviors
+
+open CompCert4Lean.Common.Events
+
+theorem behavior_improves_bot : behavior_improves_botStatement := by
+  intro beh
+  right
+  refine ⟨E0, rfl, ?_⟩
+  exact ⟨beh, (behavior_app_E0 beh).symm⟩
+
+end CompCert4Lean.Common.Behaviors

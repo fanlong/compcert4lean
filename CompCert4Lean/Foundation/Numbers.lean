@@ -1204,3 +1204,25 @@ theorem ZArith.BinInt.Z.sqrtrem_spec :
 
 end Rocq.Coq
 end CompCert4Lean.Foundation.Numbers
+
+namespace CompCert4Lean.Foundation.Numbers
+namespace Rocq.Coq
+
+theorem Arith.PeanoNat.Nat.eqb_refl :
+    Arith.PeanoNat.Nat.eqb_reflStatement := by
+  intro x
+  simp [Arith.PeanoNat.Nat.eqb]
+
+theorem Arith.PeanoNat.Nat.lt_0_succ :
+    Arith.PeanoNat.Nat.lt_0_succStatement := by
+  intro n
+  exact Nat.zero_lt_succ n
+
+theorem ZArith.Zorder.Zplus_le_reg_r :
+    ZArith.Zorder.Zplus_le_reg_rStatement := by
+  intro n m p h
+  simp only [ZArith.BinInt.Z.le, ZArith.BinInt.Z.add, intOfZ_zOfInt] at h
+  exact (Int.add_le_add_iff_right (intOfZ p)).mp h
+
+end Rocq.Coq
+end CompCert4Lean.Foundation.Numbers

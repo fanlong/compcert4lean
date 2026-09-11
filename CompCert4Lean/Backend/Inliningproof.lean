@@ -1222,3 +1222,11 @@ theorem functions_translated : functions_translatedStatement := by
   | Vsingle n => simp [Genv.find_funct] at hfind
 
 end CompCert4Lean.Backend.Inliningproof
+
+namespace CompCert4Lean.Backend.Inliningproof
+
+theorem function_ptr_translated : function_ptr_translatedStatement := by
+  intro cfg prog tprog hm b f hfind
+  exact inlining_function_ptr_translated_local cfg prog tprog hm b f hfind
+
+end CompCert4Lean.Backend.Inliningproof

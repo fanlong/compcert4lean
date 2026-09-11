@@ -783,3 +783,91 @@ theorem add_vars_valid : add_vars_validStatement := by
                       · simpa only [hmap, hs] using haddvalid.2
 
 end CompCert4Lean.Backend.RTLgenspec
+
+namespace CompCert4Lean.Backend.RTLgenspec
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Foundation.Logic.Support
+open CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.List
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Backend.RTLgen
+open CompCert4Lean.X86.Op
+
+theorem new_reg_target_ok : new_reg_target_okStatement := by
+  intro map pr s1 a r s2 i hmap hpr hnew
+  apply target_reg_ok.target_reg_other
+  · exact new_reg_not_in_map s1 s2 map r i hnew hmap
+  · intro hrmem
+    have hv := hpr r hrmem
+    simp only [RTLgen.new_reg] at hnew
+    injection hnew with hr hs
+    rw [← hr] at hv
+    change CompCert4Lean.Foundation.Numbers.Rocq.Coq.PArith.BinPos.Pos.to_nat s1.st_nextreg <
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.PArith.BinPos.Pos.to_nat s1.st_nextreg at hv
+    exact Nat.lt_irrefl _ hv
+
+theorem tr_move_incr : tr_move_incrStatement := by
+  intro s1 s2 hin ns rs nd rd htr
+  cases htr with
+  | tr_move_0 => exact tr_move.tr_move_0 _ _
+  | tr_move_1 nd rd h =>
+      apply tr_move.tr_move_1
+      exact instr_at_incr s1 s2 _ _ hin h
+
+private theorem rtlgenspec_getElem?_nth_error {A : Type} (l : List A) (n : Nat) (x : A)
+    (h : l[n]? = some x) : nth_error l n = some x := by
+  induction l generalizing n with
+  | nil => simp at h ⊢
+  | cons a t ih =>
+      cases n with
+      | zero => simpa [nth_error] using h
+      | succ n =>
+          apply ih
+          simpa [nth_error] using h
+
+theorem alloc_reg_target_ok : alloc_reg_target_okStatement := by
+  intro map pr s1 a r s2 i hmap hpr halloc
+  cases a with
+  | Evar id =>
+      cases hfind : PTree.get id map.map_vars with
+      | none =>
+          simp [RTLgen.alloc_reg, RTLgen.find_var, hfind] at halloc
+          cases halloc
+      | some r0 =>
+          simp [RTLgen.alloc_reg, RTLgen.find_var, hfind, RTLgen.ret] at halloc
+          rcases halloc with ⟨hr, hs⟩
+          cases hr
+          cases hs
+          exact target_reg_ok.target_reg_var id r hfind
+  | Eletvar idx =>
+      cases hfind : map.map_letvars[idx]? with
+      | none =>
+          simp [RTLgen.alloc_reg, RTLgen.find_letvar, hfind] at halloc
+          cases halloc
+      | some r0 =>
+          simp [RTLgen.alloc_reg, RTLgen.find_letvar, hfind, RTLgen.ret] at halloc
+          rcases halloc with ⟨hr, hs⟩
+          cases hr
+          cases hs
+          apply target_reg_ok.target_reg_letvar idx r
+          exact rtlgenspec_getElem?_nth_error map.map_letvars idx r hfind
+  | Eop op args =>
+      exact new_reg_target_ok map pr s1 (.Eop op args) r s2 i hmap hpr halloc
+  | Eload chunk addr args =>
+      exact new_reg_target_ok map pr s1 (.Eload chunk addr args) r s2 i hmap hpr halloc
+  | Econdition cond ifso ifnot =>
+      exact new_reg_target_ok map pr s1 (.Econdition cond ifso ifnot) r s2 i hmap hpr halloc
+  | Elet bound body =>
+      exact new_reg_target_ok map pr s1 (.Elet bound body) r s2 i hmap hpr halloc
+  | Ebuiltin ef args =>
+      exact new_reg_target_ok map pr s1 (.Ebuiltin ef args) r s2 i hmap hpr halloc
+  | Eexternal id sig args =>
+      exact new_reg_target_ok map pr s1 (.Eexternal id sig args) r s2 i hmap hpr halloc
+
+end CompCert4Lean.Backend.RTLgenspec

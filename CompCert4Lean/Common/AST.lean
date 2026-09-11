@@ -737,3 +737,152 @@ theorem in_prog_defmap : in_prog_defmapStatement := by
   · simp [CompCert4Lean.Lib.Maps.PTree.empty, CompCert4Lean.Lib.Maps.PTree.get] at hempty
 
 end CompCert4Lean.Common.AST
+
+namespace CompCert4Lean.Common.AST
+
+private theorem transf_globdefs_ok {A B V : Type} (transf_fun : A → B)
+    (l : List (ident × globdef A V)) :
+    transf_globdefs (fun _ f => CompCert4Lean.Common.Errors.OK (transf_fun f))
+        (fun _ v => CompCert4Lean.Common.Errors.OK v) l =
+      CompCert4Lean.Common.Errors.OK (l.map (transform_program_globdef transf_fun)) := by
+  induction l with
+  | nil => rfl
+  | cons head tail ih =>
+      rcases head with ⟨id, gd⟩
+      cases gd with
+      | Gfun f => simp [transf_globdefs, transform_program_globdef, ih]
+      | Gvar v => simp [transf_globdefs, transf_globvar, transform_program_globdef, ih]
+
+theorem transform_program_partial_program : transform_program_partial_programStatement := by
+  intro A B V transf_fun p
+  unfold transform_partial_program transform_partial_program2 transform_program
+  rw [transf_globdefs_ok]
+
+theorem in_regs_of_rpairs : in_regs_of_rpairsStatement := by
+  intro A x p hx l hp
+  induction l with
+  | nil => cases hp
+  | cons q l ih =>
+      simp only [List.mem_cons] at hp
+      rcases hp with rfl | hp
+      · change x ∈ regs_of_rpair p ++ regs_of_rpairs l
+        exact List.mem_append_left _ hx
+      · simp only [regs_of_rpairs]
+        exact List.mem_append_right _ (ih hp)
+
+end CompCert4Lean.Common.AST
+
+namespace CompCert4Lean.Common.AST
+
+private theorem ast_get_foldl_preserve {A : Type} :
+    ∀ (l : List (CompCert4Lean.Foundation.Numbers.Rocq.Coq.positive × A))
+      (m : CompCert4Lean.Lib.Maps.PTree.tree A)
+      (k : CompCert4Lean.Foundation.Numbers.Rocq.Coq.positive),
+      k ∉ l.map Prod.fst →
+      CompCert4Lean.Lib.Maps.PTree.get k
+          (List.foldl (fun m kv => CompCert4Lean.Lib.Maps.PTree.set kv.1 kv.2 m) m l) =
+        CompCert4Lean.Lib.Maps.PTree.get k m := by
+  intro l
+  induction l with
+  | nil =>
+      intro m k h
+      rfl
+  | cons p l ih =>
+      intro m k h
+      rcases p with ⟨j, w⟩
+      have hne : k ≠ j := by
+        intro hkj
+        apply h
+        simp [hkj]
+      have htail : k ∉ l.map Prod.fst := by
+        intro hmem
+        apply h
+        simp [hmem]
+      change CompCert4Lean.Lib.Maps.PTree.get k
+          (List.foldl
+            (fun m kv => CompCert4Lean.Lib.Maps.PTree.set kv.1 kv.2 m)
+            (CompCert4Lean.Lib.Maps.PTree.set j w m) l) =
+        CompCert4Lean.Lib.Maps.PTree.get k m
+      rw [ih (CompCert4Lean.Lib.Maps.PTree.set j w m) k htail]
+      simpa [CompCert4Lean.Lib.Maps.PTree.getSet_equation, hne]
+
+private theorem ast_get_foldl_dom {A : Type} :
+    ∀ (l : List (CompCert4Lean.Foundation.Numbers.Rocq.Coq.positive × A))
+      (m : CompCert4Lean.Lib.Maps.PTree.tree A)
+      (k : CompCert4Lean.Foundation.Numbers.Rocq.Coq.positive),
+      k ∈ l.map Prod.fst →
+      ∃ v, CompCert4Lean.Lib.Maps.PTree.get k
+          (List.foldl (fun m kv => CompCert4Lean.Lib.Maps.PTree.set kv.1 kv.2 m) m l) =
+        some v := by
+  intro l
+  induction l with
+  | nil =>
+      intro m k h
+      cases h
+  | cons p l ih =>
+      intro m k h
+      rcases p with ⟨j, w⟩
+      simp only [List.map_cons, List.mem_cons] at h
+      rcases h with hhead | htail
+      · subst k
+        by_cases htailmem : j ∈ l.map Prod.fst
+        · simpa only [List.foldl] using
+            ih (CompCert4Lean.Lib.Maps.PTree.set j w m) j htailmem
+        · have hp := ast_get_foldl_preserve l
+              (CompCert4Lean.Lib.Maps.PTree.set j w m) j htailmem
+          refine ⟨w, ?_⟩
+          have hset : CompCert4Lean.Lib.Maps.PTree.get j
+                (CompCert4Lean.Lib.Maps.PTree.set j w m) = some w := by
+            simp [CompCert4Lean.Lib.Maps.PTree.getSet_equation]
+          rw [hset] at hp
+          simpa only [List.foldl] using hp
+      · simpa only [List.foldl] using
+          ih (CompCert4Lean.Lib.Maps.PTree.set j w m) k htail
+
+private theorem ast_get_foldl_norepet {A : Type} :
+    ∀ (l : List (CompCert4Lean.Foundation.Numbers.Rocq.Coq.positive × A))
+      (m : CompCert4Lean.Lib.Maps.PTree.tree A)
+      (k : CompCert4Lean.Foundation.Numbers.Rocq.Coq.positive) (v : A),
+      CompCert4Lean.Lib.Coqlib.list_norepet (l.map Prod.fst) →
+      (k, v) ∈ l →
+      CompCert4Lean.Lib.Maps.PTree.get k
+          (List.foldl (fun m kv => CompCert4Lean.Lib.Maps.PTree.set kv.1 kv.2 m) m l) =
+        some v := by
+  intro l
+  induction l with
+  | nil =>
+      intro m k v hnr hmem
+      cases hmem
+  | cons p l ih =>
+      intro m k v hnr hmem
+      simp only [List.mem_cons] at hmem
+      rcases hmem with hhead | htail
+      · rcases hhead with rfl
+        have hnot : k ∉ l.map Prod.fst := by
+          cases hnr with
+          | cons _ hnot _ => exact hnot
+        have hpres := ast_get_foldl_preserve l
+            (CompCert4Lean.Lib.Maps.PTree.set k v m) k hnot
+        have hset : CompCert4Lean.Lib.Maps.PTree.get k
+              (CompCert4Lean.Lib.Maps.PTree.set k v m) = some v := by
+          simp [CompCert4Lean.Lib.Maps.PTree.getSet_equation]
+        rw [hset] at hpres
+        simpa only [List.foldl] using hpres
+      · rcases p with ⟨j, w⟩
+        have htailnr : CompCert4Lean.Lib.Coqlib.list_norepet (l.map Prod.fst) := by
+          cases hnr with
+          | cons _ _ htailnr => exact htailnr
+        have hstep := ih (CompCert4Lean.Lib.Maps.PTree.set j w m) k v htailnr htail
+        simpa only [List.foldl] using hstep
+
+theorem prog_defmap_dom : prog_defmap_domStatement := by
+  intro F V p id hmem
+  exact ast_get_foldl_dom p.prog_defs
+    (CompCert4Lean.Lib.Maps.PTree.empty (globdef F V)) id hmem
+
+theorem prog_defmap_norepet : prog_defmap_norepetStatement := by
+  intro F V p id g hnr hmem
+  exact ast_get_foldl_norepet p.prog_defs
+    (CompCert4Lean.Lib.Maps.PTree.empty (globdef F V)) id g hnr hmem
+
+end CompCert4Lean.Common.AST

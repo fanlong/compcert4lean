@@ -1716,3 +1716,45 @@ theorem get_helpers_correct :
   all_goals assumption
 
 end CompCert4Lean.Backend.Selectionproof
+
+namespace CompCert4Lean.Backend.Selectionproof
+
+private theorem helper_declared_linkorder
+    (p p' : CompCert4Lean.Backend.Cminor.program)
+    (id : CompCert4Lean.Common.AST.ident)
+    (name : CompCert4Lean.Foundation.RocqString.Rocq.Coq.Strings.String.string)
+    (sg : CompCert4Lean.Common.AST.signature)
+    (hdecl : CompCert4Lean.Backend.SplitLongproof.helper_declared p id name sg)
+    (hlink : CompCert4Lean.Common.Linking.linkorder p p') :
+    CompCert4Lean.Backend.SplitLongproof.helper_declared p' id name sg := by
+  unfold CompCert4Lean.Backend.SplitLongproof.helper_declared at hdecl ⊢
+  rcases CompCert4Lean.Common.Linking.prog_defmap_linkorder_proof
+      p p' id (.Gfun (.External (.EF_runtime name sg))) hlink hdecl with
+    ⟨gd, hget, hgd⟩
+  cases hgd with
+  | linkorder_def_fun _ _ hfd =>
+      cases hfd with
+      | linkorder_fundef_refl _ => exact hget
+
+theorem helper_functions_declared_linkorder :
+    CompCert4Lean.Backend.Selectionproof.helper_functions_declared_linkorderStatement := by
+  intro p p' hf hdecl hlink
+  unfold CompCert4Lean.Backend.SplitLongproof.helper_functions_declared at hdecl ⊢
+  rcases hdecl with ⟨h1, h2, h3, h4, h5, h6, h7, h8, h9, h10, h11, h12, h13, h14, h15⟩
+  exact ⟨helper_declared_linkorder p p' _ _ _ h1 hlink,
+    helper_declared_linkorder p p' _ _ _ h2 hlink,
+    helper_declared_linkorder p p' _ _ _ h3 hlink,
+    helper_declared_linkorder p p' _ _ _ h4 hlink,
+    helper_declared_linkorder p p' _ _ _ h5 hlink,
+    helper_declared_linkorder p p' _ _ _ h6 hlink,
+    helper_declared_linkorder p p' _ _ _ h7 hlink,
+    helper_declared_linkorder p p' _ _ _ h8 hlink,
+    helper_declared_linkorder p p' _ _ _ h9 hlink,
+    helper_declared_linkorder p p' _ _ _ h10 hlink,
+    helper_declared_linkorder p p' _ _ _ h11 hlink,
+    helper_declared_linkorder p p' _ _ _ h12 hlink,
+    helper_declared_linkorder p p' _ _ _ h13 hlink,
+    helper_declared_linkorder p p' _ _ _ h14 hlink,
+    helper_declared_linkorder p p' _ _ _ h15 hlink⟩
+
+end CompCert4Lean.Backend.Selectionproof

@@ -904,3 +904,27 @@ theorem Linker_vardef_linkorder_trans_proof :
   exact (Linker_vardef V).linkorder_trans x y z hxy hyz
 
 end CompCert4Lean.Common.Linking
+
+namespace CompCert4Lean.Common.Linking
+
+theorem Linker_vardef_link_linkorder_proof :
+    Linker_vardef_link_linkorderStatement := by
+  intro V LV x y z hlink
+  exact (Linker_vardef V).link_linkorder x y z hlink
+
+theorem Linker_unit_linkorder_refl_proof :
+    Linker_unit_linkorder_reflStatement := by
+  intro x
+  exact Linker_unit.linkorder_refl x
+
+theorem Linker_unit_linkorder_trans_proof :
+    Linker_unit_linkorder_transStatement := by
+  intro x y z hxy hyz
+  exact Linker_unit.linkorder_trans x y z hxy hyz
+
+theorem Linker_unit_link_linkorder_proof :
+    Linker_unit_link_linkorderStatement := by
+  intro x y z hlink
+  exact Linker_unit.link_linkorder x y z hlink
+
+end CompCert4Lean.Common.Linking

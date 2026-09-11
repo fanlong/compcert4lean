@@ -634,3 +634,14 @@ theorem repr_union_3_proof : repr_union_3 := by
   apply pg_tunnel_repr_union_3
 
 end CompCert4Lean.Backend.Tunneling.U
+
+namespace CompCert4Lean.Backend.Tunneling.U
+
+theorem repr_union_1_proof : repr_union_1 := by
+  intro uf a b x hx
+  cases uf
+  unfold U.repr U.union
+  apply pg_tunnel_repr_union_1
+  exact hx
+
+end CompCert4Lean.Backend.Tunneling.U

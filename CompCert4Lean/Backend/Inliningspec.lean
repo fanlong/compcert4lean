@@ -752,3 +752,49 @@ theorem shiftpos_below : shiftpos_belowStatement := by
   omega
 
 end CompCert4Lean.Backend.Inliningspec
+
+namespace CompCert4Lean.Backend.Inliningspec
+
+theorem mlist_iter2_fold : mlist_iter2_foldStatement := by
+  intro A B f l
+  induction l with
+  | nil =>
+      intro s
+      refine ⟨CompCert4Lean.Backend.Inlining.sincr_refl s, ?_⟩
+      rfl
+  | cons p l ih =>
+      rcases p with ⟨x, y⟩
+      intro s
+      unfold mlist_iter2 CompCert4Lean.Backend.Inlining.bind
+      generalize hxy : f x y s = r
+      cases r with
+      | R _ s1 i1 =>
+          obtain ⟨i2, hi2⟩ := ih s1
+          have hfold :
+              List.foldl
+                  (fun a p =>
+                    match f p.1 p.2 a with
+                    | CompCert4Lean.Backend.Inlining.R _ s2 _ => s2)
+                  s ((x, y) :: l) =
+                List.foldl
+                  (fun a p =>
+                    match f p.1 p.2 a with
+                    | CompCert4Lean.Backend.Inlining.R _ s2 _ => s2)
+                  s1 l := by
+            simp [hxy]
+          refine ⟨?_, ?_⟩
+          · rw [hfold]
+            exact CompCert4Lean.Backend.Inlining.sincr_trans _ _ _ i1 i2
+          · have hstate0 : (f x y s).2 = s1 := by
+              rw [hxy]
+            have hstate : (mlist_iter2 f l s1).2 =
+                List.foldl
+                  (fun a p =>
+                    match f p.1 p.2 a with
+                    | CompCert4Lean.Backend.Inlining.R _ s2 _ => s2)
+                  s1 l :=
+              congrArg (fun r => r.2) hi2
+            simp
+            rw [hstate, hstate0]
+
+end CompCert4Lean.Backend.Inliningspec

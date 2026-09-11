@@ -1528,3 +1528,34 @@ theorem match_env_update_res : match_env_update_resStatement := by
       exact match_env_update_temp map e le rs r tv hmatch hfresh
 
 end CompCert4Lean.Backend.RTLgenproof
+
+namespace CompCert4Lean.Backend.RTLgenproof
+
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Backend.RTLgen
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Maps
+
+theorem match_env_bind_letvar : match_env_bind_letvarStatement := by
+  intro map e le rs r v hmatch hless
+  constructor
+  · exact hmatch.me_vars
+  · exact Val.lessdef_list_cons v (Regmap.get r rs) le
+      (map.map_letvars.map (fun r => Regmap.get r rs)) hless hmatch.me_letvars
+
+theorem match_env_unbind_letvar : match_env_unbind_letvarStatement := by
+  intro map e le rs r v hmatch
+  constructor
+  · exact hmatch.me_vars
+  · cases hmatch.me_letvars with
+    | lessdef_list_cons _ _ _ _ _ htail => exact htail
+
+theorem match_env_empty : match_env_emptyStatement := by
+  intro map hmap
+  constructor
+  · intro id v henv
+    simp [PTree.get, PTree.empty] at henv
+  · simpa [hmap] using (Val.lessdef_list_nil : Val.lessdef_list [] [])
+
+end CompCert4Lean.Backend.RTLgenproof

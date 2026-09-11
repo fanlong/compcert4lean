@@ -806,3 +806,133 @@ theorem max_over_slots_of_funct_bound : max_over_slots_of_funct_boundStatement :
   · exact max_over_instrs_bound f (max_over_slots_of_instr valu) i hi
 
 end CompCert4Lean.Backend.Bounds
+
+namespace CompCert4Lean.Backend.Bounds
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+private theorem max_over_list_pos_aux {A : Type} (valu : A → Z) :
+    ∀ (l : List A) (z : Z),
+      zLe z (List.foldl (fun m y => zMax m (valu y)) z l) := by
+  intro l
+  induction l with
+  | nil =>
+      intro z
+      exact zLe_refl z
+  | cons a l ih =>
+      intro z
+      simp only [List.foldl]
+      exact zLe_trans z (zMax z (valu a)) _
+        (zLe_max_left z (valu a)) (ih (zMax z (valu a)))
+
+theorem max_over_list_pos : max_over_list_posStatement := by
+  intro A valu l
+  change zLe z0 (max_over_list valu l)
+  unfold max_over_list
+  exact max_over_list_pos_aux valu l z0
+
+namespace RegSet
+
+theorem elements_1_proof : elements_1 := by
+  intro s x hx
+  exact CompCert4Lean.Lib.FSetAVLplus.Make.elements_1 s x hx
+
+end RegSet
+
+end CompCert4Lean.Backend.Bounds
+
+namespace CompCert4Lean.Backend.Bounds
+
+theorem record_regs_of_instr_incr : record_regs_of_instr_incrStatement := by
+  intro cfg r' u i hr'
+  cases i with
+  | Lgetstack sl ofs ty dst =>
+      exact record_reg_incr cfg u dst r' hr'
+  | Lsetstack src sl ofs ty =>
+      exact record_reg_incr cfg u src r' hr'
+  | Lop op args res =>
+      exact record_reg_incr cfg u res r' hr'
+  | Lload chunk addr args dst =>
+      exact record_reg_incr cfg u dst r' hr'
+  | Lstore chunk addr args src =>
+      exact hr'
+  | Lcall sig ros =>
+      exact hr'
+  | Ltailcall sig ros =>
+      exact hr'
+  | Lbuiltin ef args res =>
+      apply record_regs_incr cfg r'
+        (CompCert4Lean.X86.Machregs.destroyed_by_builtin ef) _
+      apply record_regs_incr cfg r'
+        (CompCert4Lean.Common.AST.params_of_builtin_res res) u
+      exact hr'
+  | Llabel lbl =>
+      exact hr'
+  | Lgoto lbl =>
+      exact hr'
+  | Lcond cond args lbl =>
+      exact hr'
+  | Ljumptable arg tbl =>
+      exact hr'
+  | Lreturn =>
+      exact hr'
+
+end CompCert4Lean.Backend.Bounds
+
+namespace CompCert4Lean.Backend.Bounds
+
+theorem record_regs_of_instr_ok : record_regs_of_instr_okStatement := by
+  intro cfg r' u i
+  cases i with
+  | Lgetstack sl ofs ty dst =>
+      intro hdef hsave
+      subst r'
+      exact record_reg_ok cfg u dst hsave
+  | Lsetstack src sl ofs ty =>
+      intro hdef
+      cases hdef
+  | Lop op args res =>
+      intro hdef hsave
+      subst r'
+      exact record_reg_ok cfg u res hsave
+  | Lload chunk addr args dst =>
+      intro hdef hsave
+      subst r'
+      exact record_reg_ok cfg u dst hsave
+  | Lstore chunk addr args src =>
+      intro hdef
+      cases hdef
+  | Lcall sig ros =>
+      intro hdef
+      cases hdef
+  | Ltailcall sig ros =>
+      intro hdef
+      cases hdef
+  | Lbuiltin ef args res =>
+      intro hdef hsave
+      rcases hdef with hparams | hdestroyed
+      · apply record_regs_incr cfg r'
+          (CompCert4Lean.X86.Machregs.destroyed_by_builtin ef) _
+        exact record_regs_ok cfg r'
+          (CompCert4Lean.Common.AST.params_of_builtin_res res) u hparams hsave
+      · exact record_regs_ok cfg r'
+          (CompCert4Lean.X86.Machregs.destroyed_by_builtin ef)
+          (record_regs cfg u (CompCert4Lean.Common.AST.params_of_builtin_res res))
+          hdestroyed hsave
+  | Llabel lbl =>
+      intro hdef
+      cases hdef
+  | Lgoto lbl =>
+      intro hdef
+      cases hdef
+  | Lcond cond args lbl =>
+      intro hdef
+      cases hdef
+  | Ljumptable arg tbl =>
+      intro hdef
+      cases hdef
+  | Lreturn =>
+      intro hdef
+      cases hdef
+
+end CompCert4Lean.Backend.Bounds

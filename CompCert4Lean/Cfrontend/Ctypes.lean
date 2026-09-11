@@ -1810,3 +1810,96 @@ theorem bitsizeof_struct_incr : bitsizeof_struct_incrStatement := by
       exact Int.le_trans (next_field_incr env current a) (ih (next_field env current a))
 
 end CompCert4Lean.Cfrontend.Ctypes
+
+namespace CompCert4Lean.Cfrontend.Ctypes
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+private theorem suffix_intOfZ_two_power_nat (n : Nat) :
+    intOfZ (two_power_nat n) = (2 : Int) ^ n := by
+  unfold two_power_nat ZArith.Zpower.two_power_nat
+  unfold ZArith.BinInt.Z.pow ZArith.BinInt.Z.of_nat
+  simp only [intOfZ_zOfInt]
+  have h2 : intOfZ (Zpos (.xO .xH)) = (2 : Int) := by decide
+  rw [h2]
+  split
+  · next h => exact (Int.not_lt_of_ge (Int.natCast_nonneg _) h).elim
+  · next h => rw [intOfZ_zOfInt]; rfl
+
+private theorem suffix_two_power_nat_ge_eight (n : Nat) (h : 4 ≤ n) :
+    (8 : Int) ≤ intOfZ (two_power_nat n) := by
+  rw [suffix_intOfZ_two_power_nat]
+  have hp : ∀ m : Nat, (2 : Int) ^ m = Int.ofNat (2 ^ m) := by
+    intro m
+    induction m with
+    | zero => rfl
+    | succ m ih =>
+        rw [Int.pow_succ, ih]
+        rfl
+  rw [hp n]
+  change Int.ofNat 8 ≤ Int.ofNat (2 ^ n)
+  exact Int.ofNat_le.mpr
+    (Nat.le_trans (by decide) (Nat.pow_le_pow_right (by decide) h))
+
+private theorem suffix_min_eight_two_power_nat (n : Nat) (h : 4 ≤ n) :
+    zMin (zOfNat 8) (two_power_nat n) = zOfNat 8 := by
+  unfold zMin ZArith.BinInt.Z.min
+  split
+  · rfl
+  · next hnot =>
+      exfalso
+      exact hnot (by
+        change (8 : Int) ≤ intOfZ (two_power_nat n)
+        exact suffix_two_power_nat_ge_eight n h)
+
+theorem alignof_blockcopy_1248 : alignof_blockcopy_1248Statement := by
+  intro env t
+  cases t with
+  | Tvoid => exact Or.inl rfl
+  | Tint sz _ _ =>
+      cases sz with
+      | I8 => exact Or.inl rfl
+      | I16 => exact Or.inr (Or.inl rfl)
+      | I32 => exact Or.inr (Or.inr (Or.inl rfl))
+      | IBool => exact Or.inl rfl
+  | Tlong _ _ => exact Or.inr (Or.inr (Or.inr rfl))
+  | Tfloat sz _ =>
+      cases sz with
+      | F32 => exact Or.inr (Or.inr (Or.inl rfl))
+      | F64 => exact Or.inr (Or.inr (Or.inr rfl))
+  | Tpointer _ _ =>
+      simp [alignof_blockcopy, CompCert4Lean.X86_64.Archi.ptr64]
+  | Tarray t _ _ => exact alignof_blockcopy_1248 env t
+  | Tfunction _ _ _ => exact Or.inl rfl
+  | Tstruct id _ =>
+      simp only [alignof_blockcopy]
+      cases hget : CompCert4Lean.Lib.Maps.PTree.get id env with
+      | none => exact Or.inl rfl
+      | some co =>
+          change zMin (zOfNat 8) co.co_alignof = zOfNat 1 ∨
+            zMin (zOfNat 8) co.co_alignof = zOfNat 2 ∨
+              zMin (zOfNat 8) co.co_alignof = zOfNat 4 ∨
+                zMin (zOfNat 8) co.co_alignof = zOfNat 8
+          rcases co.co_alignof_two_p with ⟨n, hn⟩
+          rw [hn]
+          by_cases hsmall : n < 4
+          · have hcases : n = 0 ∨ n = 1 ∨ n = 2 ∨ n = 3 := by omega
+            rcases hcases with rfl | rfl | rfl | rfl <;> decide
+          · exact Or.inr (Or.inr (Or.inr (suffix_min_eight_two_power_nat n (by omega))))
+  | Tunion id _ =>
+      simp only [alignof_blockcopy]
+      cases hget : CompCert4Lean.Lib.Maps.PTree.get id env with
+      | none => exact Or.inl rfl
+      | some co =>
+          change zMin (zOfNat 8) co.co_alignof = zOfNat 1 ∨
+            zMin (zOfNat 8) co.co_alignof = zOfNat 2 ∨
+              zMin (zOfNat 8) co.co_alignof = zOfNat 4 ∨
+                zMin (zOfNat 8) co.co_alignof = zOfNat 8
+          rcases co.co_alignof_two_p with ⟨n, hn⟩
+          rw [hn]
+          by_cases hsmall : n < 4
+          · have hcases : n = 0 ∨ n = 1 ∨ n = 2 ∨ n = 3 := by omega
+            rcases hcases with rfl | rfl | rfl | rfl <;> decide
+          · exact Or.inr (Or.inr (Or.inr (suffix_min_eight_two_power_nat n (by omega))))
+
+end CompCert4Lean.Cfrontend.Ctypes

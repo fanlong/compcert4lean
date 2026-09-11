@@ -2419,3 +2419,57 @@ theorem pmatch_lub_l : pmatch_lub_lStatement := by
   exact pmatch_ge bc b ofs (plub p q) p (pge_lub_l p q) h
 
 end CompCert4Lean.Backend.ValueDomain
+
+namespace CompCert4Lean.Backend.ValueDomain
+
+theorem pmatch_lub_r : pmatch_lub_rStatement := by
+  intro bc b ofs p q h
+  exact pmatch_ge bc b ofs (plub p q) q (pge_lub_r p q) h
+
+theorem vmatch_ifptr : vmatch_ifptrStatement := by
+  intro bc v p h
+  cases v with
+  | Vundef => exact vmatch.ifptrUndef p
+  | Vint i => exact vmatch.ifptrInt i p
+  | Vlong i => exact vmatch.ifptrLong i p
+  | Vfloat f => exact vmatch.ifptrFloat f p
+  | Vsingle f => exact vmatch.ifptrSingle f p
+  | Vptr b ofs => exact vmatch.ifptrPtr b ofs p (h b ofs rfl)
+
+end CompCert4Lean.Backend.ValueDomain
+
+namespace CompCert4Lean.Backend.ValueDomain
+
+theorem plub_least : plub_leastStatement := by
+  intro r p q hp hq
+  cases r <;> cases p <;> cases q <;> cases hp <;> cases hq <;>
+    simp_all [plub]
+  all_goals try constructor
+  all_goals (try split <;> try simp_all <;> try constructor)
+  all_goals (try split <;> try simp_all <;> try constructor)
+  all_goals first
+    | exact pge.gloGl _ _
+    | exact pge.globGl _ _
+    | exact pge.globGlo _
+    | exact pge.nsGl _ _
+    | exact pge.nsGlo _
+    | exact pge.nsGlob
+    | exact pge.stackStk _
+    | exact pge.pge_refl _
+    | exact pge.bot _
+    | exact pge.pge_top _
+
+end CompCert4Lean.Backend.ValueDomain
+
+namespace CompCert4Lean.Backend.ValueDomain
+
+theorem pincl_ge : pincl_geStatement := by
+  intro p q h
+  cases p <;> cases q <;> simp [pincl] at h
+  all_goals try subst_vars
+  all_goals try constructor
+  all_goals rcases h with ⟨h1, h2⟩
+  all_goals subst_vars
+  all_goals constructor
+
+end CompCert4Lean.Backend.ValueDomain

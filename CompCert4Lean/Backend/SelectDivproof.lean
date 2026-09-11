@@ -648,3 +648,60 @@ def eval_divfsStatement
         Val.lessdef (Val.divfs x y) v
 
 end CompCert4Lean.Backend.SelectDivproof
+
+namespace CompCert4Lean.Backend.SelectDivproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem Zdiv_unique_2 : Zdiv_unique_2Statement := by
+  intro x y q hy h
+  have hdiv : zDiv x y = zOfInt
+      (if intOfZ y = 0 then 0 else if 0 < intOfZ y then Int.ediv (intOfZ x) (intOfZ y) else
+        let d := -intOfZ y
+        let q' := Int.ediv (intOfZ x) d
+        let r := Int.emod (intOfZ x) d
+        if r = 0 then -q' else -(q' + 1)) := by
+    cases x <;> cases y <;> rfl
+  rw [hdiv]
+  apply intOfZ_injective
+  simp only [intOfZ_zOfInt]
+  have hyInt : 0 < intOfZ y := hy
+  have hy0 : intOfZ y ≠ 0 := Int.ne_of_gt hyInt
+  simp only [hy0, if_false, if_pos hyInt]
+  have hsub : intOfZ (zSub (zMul y q) x) = intOfZ y * intOfZ q - intOfZ x := by
+    change intOfZ (zOfInt (intOfZ (zOfInt (intOfZ y * intOfZ q)) - intOfZ x)) = _
+    simp only [intOfZ_zOfInt]
+  have hqsub : intOfZ (zSub q z1) = intOfZ q - 1 := by
+    change intOfZ (zOfInt (intOfZ q - intOfZ z1)) = _
+    rw [intOfZ_zOfInt]
+    rfl
+  have hR : 0 < intOfZ y * intOfZ q - intOfZ x ∧
+      intOfZ y * intOfZ q - intOfZ x ≤ intOfZ y := by
+    have h1 : intOfZ z0 < intOfZ (zSub (zMul y q) x) := h.1
+    have h2 : intOfZ (zSub (zMul y q) x) ≤ intOfZ y := h.2
+    rw [show intOfZ z0 = 0 by rfl, hsub] at h1
+    rw [hsub] at h2
+    exact ⟨h1, h2⟩
+  rw [hqsub]
+  let r : Int := intOfZ y * intOfZ q - intOfZ x
+  have hrpos : 0 < r := hR.1
+  have hrle : r ≤ intOfZ y := hR.2
+  have hrnonneg : 0 ≤ intOfZ y - r := by omega
+  have hrlt : intOfZ y - r < intOfZ y := by omega
+  have hrepr : intOfZ x = (intOfZ q - 1) * intOfZ y + (intOfZ y - r) := by
+    calc
+      intOfZ x = intOfZ y * intOfZ q - r := by dsimp [r]; omega
+      _ = intOfZ y * (intOfZ q - 1) + (intOfZ y - r) := by
+        rw [Int.mul_sub, Int.mul_one]
+        omega
+      _ = (intOfZ q - 1) * intOfZ y + (intOfZ y - r) := by
+        rw [Int.mul_comm]
+  have hu := (Int.ediv_emod_unique (a := intOfZ x) (b := intOfZ y)
+    (q := intOfZ q - 1) (r := intOfZ y - r) hyInt).mpr ?_
+  · exact hu.1
+  exact ⟨by
+    rw [Int.add_comm]
+    rw [Int.mul_comm (intOfZ y) (intOfZ q - 1)]
+    exact hrepr.symm, hrnonneg, hrlt⟩
+
+end CompCert4Lean.Backend.SelectDivproof
