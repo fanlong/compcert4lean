@@ -1275,3 +1275,92 @@ theorem and_assoc : and_assocStatement := by
 
 end Val
 end CompCert4Lean.Common.Values
+
+namespace CompCert4Lean.Common.Values
+
+namespace Val
+
+private theorem or_assoc_repr_val_of_lt (n : Nat)
+    (hn : n < 2 ^ CompCert4Lean.Lib.Integers.Int.wordsize) :
+    (CompCert4Lean.Lib.Integers.WordCore.repr CompCert4Lean.Lib.Integers.Int.wordsize
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat n)).val = n := by
+  have hn0 : (0 : Int) ≤ n := Int.natCast_nonneg n
+  have hnmax : (n : Int) ≤ (2 ^ CompCert4Lean.Lib.Integers.Int.wordsize : Nat) - 1 := by omega
+  have hnat : CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat n) =
+      (n : Int) := by
+    simpa [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat] using
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt (Int.ofNat n))
+  have hmax : CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+      CompCert4Lean.Lib.Integers.Int.max_unsigned =
+      (2 ^ CompCert4Lean.Lib.Integers.Int.wordsize : Int) - 1 := by rfl
+  have hu : CompCert4Lean.Lib.Integers.Int.unsigned
+      (CompCert4Lean.Lib.Integers.Int.repr
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat n)) =
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat n := by
+    apply CompCert4Lean.Lib.Integers.Int.unsigned_repr_proof_api
+    constructor
+    · change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z0 ≤
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat n)
+      rw [show CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z0 = 0 by rfl, hnat]
+      exact hn0
+    · change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat n) ≤
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+          CompCert4Lean.Lib.Integers.Int.max_unsigned
+      rw [hnat, hmax]
+      exact hnmax
+  change CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.to_nat
+    ((CompCert4Lean.Lib.Integers.WordCore.repr CompCert4Lean.Lib.Integers.Int.wordsize
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat n)).intval) = n
+  change CompCert4Lean.Lib.Integers.Int.unsigned
+      (CompCert4Lean.Lib.Integers.Int.repr
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat n)) = _ at hu
+  change CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.to_nat
+    (CompCert4Lean.Lib.Integers.Int.unsigned
+      (CompCert4Lean.Lib.Integers.Int.repr
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat n))) = n
+  rw [hu]
+  exact CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.Znat.Nat2Z.id n
+
+theorem or_assoc : or_assocStatement := by
+  intro x y z
+  cases x <;> cases y <;> cases z <;> simp [or]
+  rename_i a b c
+  apply CompCert4Lean.Lib.Integers.WordCore.ext_of_val_eq
+  change (CompCert4Lean.Lib.Integers.WordCore.or
+      (CompCert4Lean.Lib.Integers.WordCore.or _ _) _).val =
+    (CompCert4Lean.Lib.Integers.WordCore.or _
+      (CompCert4Lean.Lib.Integers.WordCore.or _ _)).val
+  simp only [CompCert4Lean.Lib.Integers.WordCore.or]
+  have ha : a.val < 2 ^ CompCert4Lean.Lib.Integers.Int.wordsize := a.toFin.isLt
+  have hb : b.val < 2 ^ CompCert4Lean.Lib.Integers.Int.wordsize := b.toFin.isLt
+  have hc : c.val < 2 ^ CompCert4Lean.Lib.Integers.Int.wordsize := c.toFin.isLt
+  change
+    (CompCert4Lean.Lib.Integers.WordCore.repr CompCert4Lean.Lib.Integers.Int.wordsize
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat
+        (Nat.lor
+          (CompCert4Lean.Lib.Integers.WordCore.Word.val
+            (CompCert4Lean.Lib.Integers.WordCore.repr CompCert4Lean.Lib.Integers.Int.wordsize
+              (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat
+                (Nat.lor a.val b.val)))) c.val))).val =
+      (CompCert4Lean.Lib.Integers.WordCore.repr CompCert4Lean.Lib.Integers.Int.wordsize
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat
+          (Nat.lor a.val
+            (CompCert4Lean.Lib.Integers.WordCore.Word.val
+              (CompCert4Lean.Lib.Integers.WordCore.repr CompCert4Lean.Lib.Integers.Int.wordsize
+                (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat
+                  (Nat.lor b.val c.val))))))).val
+  simp only [or_assoc_repr_val_of_lt (Nat.lor a.val b.val) (Nat.or_lt_two_pow ha hb),
+    or_assoc_repr_val_of_lt (Nat.lor b.val c.val) (Nat.or_lt_two_pow hb hc),
+    or_assoc_repr_val_of_lt (Nat.lor (Nat.lor a.val b.val) c.val)
+      (Nat.or_lt_two_pow (Nat.or_lt_two_pow ha hb) hc),
+    or_assoc_repr_val_of_lt (Nat.lor a.val (Nat.lor b.val c.val))
+      (Nat.or_lt_two_pow ha (Nat.or_lt_two_pow hb hc))]
+  exact Nat.or_assoc _ _ _
+
+end Val
+end CompCert4Lean.Common.Values
