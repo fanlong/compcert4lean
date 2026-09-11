@@ -1234,3 +1234,172 @@ theorem transl_alignof : transl_alignofStatement := by
     exact (transl_alignof_stable_local cunit.prog_comp_env prog.prog_comp_env henv t hcomplete).symm
 
 end CompCert4Lean.Cfrontend.Cshmgenproof
+
+namespace CompCert4Lean.Cfrontend.Cshmgenproof
+
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Cfrontend.Clight
+open CompCert4Lean.Cfrontend.Cshmgen
+open CompCert4Lean.Cfrontend.Csharpminor
+open CompCert4Lean.Cfrontend.Ctypes
+open CompCert4Lean.Lib.Maps
+
+private theorem alignof_blockcopy_stable_local (env1 env2 : composite_env)
+    (henv : forall id co, PTree.get id env1 = some co -> PTree.get id env2 = some co) :
+    forall t, Ctypes.complete_type env1 t = true →
+      Ctypes.alignof_blockcopy env1 t = Ctypes.alignof_blockcopy env2 t := by
+  intro t hcomplete
+  induction t using Ctypes.type.rec (motive_2 := fun _ => True) with
+  | Tvoid => rfl
+  | Tint s sg a => cases s <;> rfl
+  | Tlong sg a => rfl
+  | Tfloat s a => cases s <;> rfl
+  | Tpointer t a => rfl
+  | Tarray t n a ih =>
+      simp only [Ctypes.complete_type] at hcomplete
+      exact ih hcomplete
+  | Tfunction args res cc ihargs ihres => rfl
+  | Tstruct id a =>
+      cases hget : PTree.get id env1 with
+      | none => simp [Ctypes.complete_type, hget] at hcomplete
+      | some co =>
+          have hget2 := henv id co hget
+          simp [Ctypes.alignof_blockcopy, hget, hget2]
+  | Tunion id a =>
+      cases hget : PTree.get id env1 with
+      | none => simp [Ctypes.complete_type, hget] at hcomplete
+      | some co =>
+          have hget2 := henv id co hget
+          simp [Ctypes.alignof_blockcopy, hget, hget2]
+  | nil => trivial
+  | cons head tail ihhead ihtail => trivial
+
+theorem transl_alignof_blockcopy : transl_alignof_blockcopyStatement := by
+  intro cunit prog t sz hlink hsize
+  rcases hlink with ⟨_, henv⟩
+  unfold Cshmgen.sizeof at hsize
+  cases hcomplete : Ctypes.complete_type cunit.prog_comp_env t with
+  | false =>
+    simp [hcomplete] at hsize
+    cases hsize
+  | true =>
+    simp [hcomplete] at hsize
+    cases hsize
+    constructor
+    · exact (transl_sizeof_stable_local cunit.prog_comp_env prog.prog_comp_env
+        henv t hcomplete).symm
+    · exact alignof_blockcopy_stable_local cunit.prog_comp_env prog.prog_comp_env
+        henv t hcomplete
+
+end CompCert4Lean.Cfrontend.Cshmgenproof
+
+namespace CompCert4Lean.Cfrontend.Cshmgenproof
+
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Cfrontend.Clight
+open CompCert4Lean.Cfrontend.Cshmgen
+open CompCert4Lean.Cfrontend.Csharpminor
+
+theorem transl_lbl_stmt_1 : transl_lbl_stmt_1Statement := by
+  intro ce tyret nbrk ncnt n sl tsl h
+  have hdefault : ∀ sl tsl,
+      transl_lbl_stmt ce tyret nbrk ncnt sl = .OK tsl →
+      transl_lbl_stmt ce tyret nbrk ncnt (Clight.select_switch_default sl) =
+        .OK (Csharpminor.select_switch_default tsl) := by
+    intro sl
+    induction sl using Clight.labeled_statements.rec
+      (motive_1 := fun _ => True) with
+    | Sskip | Sassign _ _ | Sset _ _ | Scall _ _ _ | Sbuiltin _ _ _ _
+    | Ssequence _ _ _ _ | Sifthenelse _ _ _ _ _ | Sloop _ _ _ _
+    | Sbreak | Scontinue | Sreturn _ | Sswitch _ _ _ | Slabel _ _ _ | Sgoto _ =>
+        trivial
+    | LSnil =>
+        intro tsl h
+        simp [Clight.select_switch_default, Csharpminor.select_switch_default] at *
+        cases h
+        rfl
+    | LScons lbl stmt rest ihstmt ihrest =>
+        intro tsl h
+        cases lbl with
+        | none =>
+            simp only [Cshmgen.transl_lbl_stmt] at h
+            cases hstmt : transl_statement ce tyret nbrk ncnt stmt with
+            | Error msg => simp [hstmt] at h
+            | OK tstmt =>
+                cases hrest : transl_lbl_stmt ce tyret nbrk ncnt rest with
+                | Error msg => simp [hstmt, hrest] at h
+                | OK trest =>
+                    simp [hstmt, hrest] at h
+                    cases h
+                    simp [Clight.select_switch_default, Csharpminor.select_switch_default,
+                      Cshmgen.transl_lbl_stmt, hstmt, hrest]
+        | some l =>
+            simp only [Cshmgen.transl_lbl_stmt] at h
+            cases hstmt : transl_statement ce tyret nbrk ncnt stmt with
+            | Error msg => simp [hstmt] at h
+            | OK tstmt =>
+                cases hrest : transl_lbl_stmt ce tyret nbrk ncnt rest with
+                | Error msg => simp [hstmt, hrest] at h
+                | OK trest =>
+                    simp [hstmt, hrest] at h
+                    cases h
+                    simpa [Clight.select_switch_default, Csharpminor.select_switch_default] using
+                      (ihrest trest hrest)
+  have hcase : ∀ sl tsl,
+      transl_lbl_stmt ce tyret nbrk ncnt sl = .OK tsl →
+      match Clight.select_switch_case n sl with
+      | none => Csharpminor.select_switch_case n tsl = none
+      | some sl' => ∃ tsl',
+          Csharpminor.select_switch_case n tsl = some tsl' ∧
+          transl_lbl_stmt ce tyret nbrk ncnt sl' = .OK tsl' := by
+    intro sl
+    induction sl using Clight.labeled_statements.rec
+      (motive_1 := fun _ => True) with
+    | Sskip | Sassign _ _ | Sset _ _ | Scall _ _ _ | Sbuiltin _ _ _ _
+    | Ssequence _ _ _ _ | Sifthenelse _ _ _ _ _ | Sloop _ _ _ _
+    | Sbreak | Scontinue | Sreturn _ | Sswitch _ _ _ | Slabel _ _ _ | Sgoto _ =>
+        trivial
+    | LSnil =>
+        intro tsl h
+        simp only [Cshmgen.transl_lbl_stmt] at h
+        cases h
+        simp [Clight.select_switch_case, Csharpminor.select_switch_case]
+    | LScons lbl stmt rest ihstmt ihrest =>
+        intro tsl h
+        simp only [Cshmgen.transl_lbl_stmt] at h
+        cases hstmt : transl_statement ce tyret nbrk ncnt stmt with
+        | Error msg => simp [hstmt] at h
+        | OK tstmt =>
+            cases hrest : transl_lbl_stmt ce tyret nbrk ncnt rest with
+            | Error msg => simp [hstmt, hrest] at h
+            | OK trest =>
+                simp [hstmt, hrest] at h
+                cases h
+                cases lbl with
+                | none => exact ihrest trest hrest
+                | some l =>
+                    simp only [Clight.select_switch_case, Csharpminor.select_switch_case]
+                    cases hz : CompCert4Lean.Lib.Coqlib.zeq l n with
+                    | left heq =>
+                        subst n
+                        exact ⟨Csharpminor.LScons (some l) tstmt trest, rfl,
+                          by simp [Cshmgen.transl_lbl_stmt, hstmt, hrest]⟩
+                    | right hneq =>
+                        exact ihrest trest hrest
+  unfold Clight.select_switch
+  cases hsel : Clight.select_switch_case n sl with
+  | some sl' =>
+      have hinfo := hcase sl tsl h
+      rw [hsel] at hinfo
+      rcases hinfo with ⟨tsl', hts, htrans⟩
+      unfold Csharpminor.select_switch
+      rw [hts]
+      exact htrans
+  | none =>
+      have hinfo := hcase sl tsl h
+      rw [hsel] at hinfo
+      unfold Csharpminor.select_switch
+      rw [hinfo]
+      exact hdefault sl tsl h
+
+end CompCert4Lean.Cfrontend.Cshmgenproof
