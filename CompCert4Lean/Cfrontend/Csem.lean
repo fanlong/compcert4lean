@@ -694,3 +694,139 @@ def semantics_single_eventsStatement
         (binary32_certificate := binary32_certificate) xi p)
 
 end CompCert4Lean.Cfrontend.Csem
+
+namespace CompCert4Lean.Cfrontend.Csem
+
+open CompCert4Lean.Common
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.ExternalCalls
+open CompCert4Lean.Common.Smallstep
+
+private theorem csem_external_call_trace_length
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (xi : ExternalCalls) (ef : CompCert4Lean.Common.AST.external_function) :
+    ∀ ge vargs m t vres m',
+      external_call
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) xi ef ge vargs m t vres m' →
+      t.length ≤ 1 := by
+  intro ge vargs m t vres m' h
+  cases ef with
+  | EF_external name sg =>
+      exact (xi.external.properties name sg).ec_trace_length ge vargs m t vres m' h
+  | EF_builtin name sg =>
+      change builtin_or_external_sem xi name sg ge vargs m t vres m' at h
+      unfold builtin_or_external_sem at h
+      cases hlookup : CompCert4Lean.Common.Builtins.lookup_builtin_function name sg with
+      | none =>
+          rw [hlookup] at h
+          exact (xi.external.properties name sg).ec_trace_length ge vargs m t vres m' h
+      | some bf =>
+          rw [hlookup] at h
+          cases h
+          simp [CompCert4Lean.Common.Events.E0]
+  | EF_runtime name sg =>
+      change builtin_or_external_sem xi name sg ge vargs m t vres m' at h
+      unfold builtin_or_external_sem at h
+      cases hlookup : CompCert4Lean.Common.Builtins.lookup_builtin_function name sg with
+      | none =>
+          rw [hlookup] at h
+          exact (xi.external.properties name sg).ec_trace_length ge vargs m t vres m' h
+      | some bf =>
+          rw [hlookup] at h
+          cases h
+          simp [CompCert4Lean.Common.Events.E0]
+  | EF_vload chunk =>
+      cases h with
+      | volatile_load_sem_intro _ _ _ _ _ hv =>
+          cases hv <;> simp [CompCert4Lean.Common.Events.trace, CompCert4Lean.Common.Events.E0]
+  | EF_vstore chunk =>
+      cases h with
+      | volatile_store_sem_intro _ _ _ _ _ _ hv =>
+          cases hv <;> simp [CompCert4Lean.Common.Events.trace, CompCert4Lean.Common.Events.E0]
+  | EF_malloc => cases h <;> simp [CompCert4Lean.Common.Events.trace, CompCert4Lean.Common.Events.E0]
+  | EF_free => cases h <;> simp [CompCert4Lean.Common.Events.trace, CompCert4Lean.Common.Events.E0]
+  | EF_memcpy sz al => cases h <;> simp [CompCert4Lean.Common.Events.trace, CompCert4Lean.Common.Events.E0]
+  | EF_annot id text targs => cases h <;> simp [CompCert4Lean.Common.Events.trace, CompCert4Lean.Common.Events.E0]
+  | EF_annot_val id text targ => cases h <;> simp [CompCert4Lean.Common.Events.trace, CompCert4Lean.Common.Events.E0]
+  | EF_inline_asm text sg clobbers =>
+      exact (xi.inlineAssembly.properties text sg).ec_trace_length ge vargs m t vres m' h
+  | EF_debug kind text targs => cases h <;> simp [CompCert4Lean.Common.Events.trace, CompCert4Lean.Common.Events.E0]
+
+private theorem csem_volatile_load_trace_length
+    (ge : CompCert4Lean.Common.Globalenvs.Senv.t)
+    (chunk : CompCert4Lean.Common.AST.memory_chunk)
+    (m : mem) (b : block) (ofs : ptrofs)
+    (t : CompCert4Lean.Common.Events.trace) (v : val) :
+    volatile_load ge chunk m b ofs t v → t.length ≤ 1 := by
+  intro h
+  cases h <;> simp [CompCert4Lean.Common.Events.trace, CompCert4Lean.Common.Events.E0]
+
+private theorem csem_volatile_store_trace_length
+    (ge : CompCert4Lean.Common.Globalenvs.Senv.t)
+    (chunk : CompCert4Lean.Common.AST.memory_chunk)
+    (m : mem) (b : block) (ofs : ptrofs) (v : val)
+    (t : CompCert4Lean.Common.Events.trace) (m' : mem) :
+    volatile_store ge chunk m b ofs v t m' → t.length ≤ 1 := by
+  intro h
+  cases h <;> simp [CompCert4Lean.Common.Events.trace, CompCert4Lean.Common.Events.E0]
+
+private theorem csem_deref_loc_trace_length
+    (ge : genv) (ty : type) (m : mem) (b : block) (ofs : ptrofs)
+    (bf : bitfield) (t : CompCert4Lean.Common.Events.trace) (v : val) :
+    deref_loc ge ty m b ofs bf t v → t.length ≤ 1 := by
+  intro h
+  cases ty <;> cases h <;> try decide
+  all_goals
+    apply csem_volatile_load_trace_length <;> assumption
+
+private theorem csem_assign_loc_trace_length
+    (ge : genv) (ty : type) (m : mem) (b : block) (ofs : ptrofs)
+    (bf : bitfield) (v : val) (t : CompCert4Lean.Common.Events.trace) (m' : mem) (v' : val) :
+    assign_loc ge ty m b ofs bf v t m' v' → t.length ≤ 1 := by
+  intro h
+  cases ty <;> cases h <;> try decide
+  all_goals
+    apply csem_volatile_store_trace_length <;> assumption
+
+private theorem csem_rred_trace_length
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (xi : ExternalCalls) (ge : genv) (a : expr) (m : mem) (t : CompCert4Lean.Common.Events.trace)
+    (a' : expr) (m' : mem) :
+    rred
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) xi ge a m t a' m' →
+    t.length ≤ 1 := by
+  intro h
+  cases h with
+  | rvalof h => exact csem_deref_loc_trace_length _ _ _ _ _ _ _ _ h
+  | assign _ h => exact csem_assign_loc_trace_length _ _ _ _ _ _ _ _ _ _ h
+  | assignop h => exact csem_deref_loc_trace_length _ _ _ _ _ _ _ _ h
+  | postincr h _ => exact csem_deref_loc_trace_length _ _ _ _ _ _ _ _ h
+  | builtin _ h =>
+      apply csem_external_call_trace_length xi
+      exact h
+  | _ => simp [CompCert4Lean.Common.Events.trace, CompCert4Lean.Common.Events.E0]
+
+theorem semantics_single_events
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    semantics_single_eventsStatement := by
+  intro xi p s t s' h
+  change t.length ≤ 1
+  change (estep xi (globalenv p) s t s' ∨ sstep xi (globalenv p) s t s') at h
+  cases h with
+  | inl h =>
+      cases h with
+      | step_rred h _ => exact csem_rred_trace_length xi _ _ _ _ _ _ h
+      | _ => simp [CompCert4Lean.Common.Events.trace, CompCert4Lean.Common.Events.E0]
+  | inr h =>
+      cases h with
+      | externalFunction h =>
+          apply csem_external_call_trace_length xi
+          exact h
+      | _ => simp [CompCert4Lean.Common.Events.trace, CompCert4Lean.Common.Events.E0]
+
+end CompCert4Lean.Cfrontend.Csem

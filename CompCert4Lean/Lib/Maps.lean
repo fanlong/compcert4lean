@@ -2515,3 +2515,51 @@ theorem gss : gssStatement := by
 end PTree
 
 end CompCert4Lean.Lib.Maps
+
+namespace CompCert4Lean.Lib.Maps
+
+namespace PTree
+
+theorem gso : gsoStatement := by
+  intro A i j x m hij
+  simpa [hij] using (getSet_equation i j x m)
+
+theorem unroll_tree_rec : unroll_tree_recStatement := by
+  intro A B emptyCase node l o r h
+  cases l <;> cases o <;> cases r <;>
+    simp_all [not_trivially_empty, Node, tree_rec, tree_rec']
+
+theorem tree'_not_empty : tree'_not_emptyStatement := by
+  intro A m
+  induction m with
+  | Node001 r ih =>
+      rcases ih with ⟨i, hi⟩
+      exact ⟨.xI i, hi⟩
+  | Node010 x =>
+      exact ⟨.xH, by simp [get']⟩
+  | Node011 x r ih =>
+      exact ⟨.xH, by simp [get']⟩
+  | Node100 l ih =>
+      rcases ih with ⟨i, hi⟩
+      exact ⟨.xO i, hi⟩
+  | Node101 l r ihl ihr =>
+      rcases ihl with ⟨i, hi⟩
+      exact ⟨.xO i, hi⟩
+  | Node110 l x ih =>
+      exact ⟨.xH, by simp [get']⟩
+  | Node111 l x r ihl ihr =>
+      exact ⟨.xH, by simp [get']⟩
+
+theorem extensionality_empty : extensionality_emptyStatement := by
+  intro A m h
+  cases m with
+  | Empty => rfl
+  | Nodes m =>
+      rcases tree'_not_empty m with ⟨i, hi⟩
+      exfalso
+      apply hi
+      exact h i
+
+end PTree
+
+end CompCert4Lean.Lib.Maps
