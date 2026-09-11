@@ -1020,3 +1020,16 @@ theorem vagree_same : vagree_sameStatement := by
   | All => exact .lessdef_refl _
 
 end CompCert4Lean.Backend.NeedDomain
+
+namespace CompCert4Lean.Backend.NeedDomain
+
+theorem vagree_lessdef : vagree_lessdefStatement := by
+  intro v w x h
+  cases h with
+  | lessdef_refl v =>
+      exact vagree_same v x
+  | lessdef_undef v =>
+      cases x <;> simp [vagree, iVagree, lVagree]
+      exact CompCert4Lean.Common.Values.Val.lessdef_undef w
+
+end CompCert4Lean.Backend.NeedDomain

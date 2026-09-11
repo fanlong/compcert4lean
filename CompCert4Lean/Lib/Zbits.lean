@@ -343,3 +343,63 @@ theorem eqmod_small_eq : eqmod_small_eqStatement := by
       omega
 
 end CompCert4Lean.Lib.Zbits
+
+namespace CompCert4Lean.Lib.Zbits
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem eqmod_add : eqmod_addStatement := by
+  intro modul a b c d h₁ h₂
+  unfold eqmod at h₁ h₂ ⊢
+  rcases h₁ with ⟨k₁, hk₁⟩
+  rcases h₂ with ⟨k₂, hk₂⟩
+  refine ⟨zAdd k₁ k₂, ?_⟩
+  apply intOfZ_injective
+  simp only [zAdd, zMul, ZArith.BinInt.Z.add, ZArith.BinInt.Z.mul] at hk₁ hk₂ ⊢
+  have hk₁' := congrArg intOfZ hk₁
+  have hk₂' := congrArg intOfZ hk₂
+  simp only [intOfZ_zOfInt] at hk₁' hk₂' ⊢
+  change intOfZ a + intOfZ c =
+    (intOfZ k₁ + intOfZ k₂) * intOfZ modul + (intOfZ b + intOfZ d)
+  change intOfZ a = intOfZ k₁ * intOfZ modul + intOfZ b at hk₁'
+  change intOfZ c = intOfZ k₂ * intOfZ modul + intOfZ d at hk₂'
+  rw [hk₁', hk₂']
+  rw [Int.add_mul]
+  omega
+
+theorem eqmod_neg : eqmod_negStatement := by
+  intro modul x y h
+  unfold eqmod at h ⊢
+  rcases h with ⟨k, hk⟩
+  refine ⟨zOpp k, ?_⟩
+  apply intOfZ_injective
+  simp only [zOpp, zAdd, zMul, ZArith.BinInt.Z.opp,
+    ZArith.BinInt.Z.add, ZArith.BinInt.Z.mul] at hk ⊢
+  have hk' := congrArg intOfZ hk
+  simp only [intOfZ_zOfInt] at hk' ⊢
+  change -intOfZ x = -intOfZ k * intOfZ modul + -intOfZ y
+  change intOfZ x = intOfZ k * intOfZ modul + intOfZ y at hk'
+  rw [hk']
+  rw [Int.neg_add, Int.neg_mul]
+
+theorem eqmod_mult : eqmod_multStatement := by
+  intro modul a b c d h₁ h₂
+  unfold eqmod at h₁ h₂ ⊢
+  rcases h₁ with ⟨k₁, hk₁⟩
+  rcases h₂ with ⟨k₂, hk₂⟩
+  refine ⟨zAdd (zAdd (zMul (zMul k₁ k₂) modul) (zMul k₁ d)) (zMul c k₂), ?_⟩
+  apply intOfZ_injective
+  simp only [zAdd, zMul, ZArith.BinInt.Z.add, ZArith.BinInt.Z.mul] at hk₁ hk₂ ⊢
+  have hk₁' := congrArg intOfZ hk₁
+  have hk₂' := congrArg intOfZ hk₂
+  simp only [intOfZ_zOfInt] at hk₁' hk₂' ⊢
+  change intOfZ a * intOfZ b =
+    (intOfZ k₁ * intOfZ k₂ * intOfZ modul + intOfZ k₁ * intOfZ d + intOfZ c * intOfZ k₂) * intOfZ modul +
+      intOfZ c * intOfZ d
+  change intOfZ a = intOfZ k₁ * intOfZ modul + intOfZ c at hk₁'
+  change intOfZ b = intOfZ k₂ * intOfZ modul + intOfZ d at hk₂'
+  rw [hk₁', hk₂']
+  simp [Int.mul_add, Int.add_mul, Int.mul_assoc, Int.mul_comm, Int.mul_left_comm,
+    Int.add_assoc, Int.add_comm, Int.add_left_comm]
+
+end CompCert4Lean.Lib.Zbits
