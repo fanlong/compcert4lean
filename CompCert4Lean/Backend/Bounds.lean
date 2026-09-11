@@ -755,3 +755,54 @@ theorem max_over_instrs_bound : max_over_instrs_boundStatement := by
   exact max_over_list_bound instruction valu (codeList f) i hi
 
 end CompCert4Lean.Backend.Bounds
+
+namespace CompCert4Lean.Backend.Bounds
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem record_reg_only : record_reg_onlyStatement := by
+  intro cfg u r hu
+  unfold only_callee_saves at hu ⊢
+  intro r' hr'
+  unfold record_reg at hr'
+  split at hr'
+  · by_cases hEq : r' = r
+    · subst r'
+      assumption
+    · apply hu r'
+      apply RegSet.add_3_proof u r r'
+      · intro h
+        exact hEq h.symm
+      · exact hr'
+  · exact hu r' hr'
+
+theorem record_regs_incr : record_regs_incrStatement := by
+  intro cfg r' rl u hr'
+  unfold record_regs
+  apply fold_left_preserves
+  · intro acc r hacc
+    exact record_reg_incr cfg acc r r' hacc
+  · exact hr'
+
+theorem record_regs_ok : record_regs_okStatement := by
+  intro cfg r rl u hmem hsave
+  unfold record_regs
+  apply fold_left_ensures
+    (A := regset)
+    (f := fun acc r' => record_reg cfg acc r')
+    (P := fun acc => RegSet.In r acc) (b0 := r)
+  · intro acc r' hacc
+    exact record_reg_incr cfg acc r' r hacc
+  · intro acc
+    exact record_reg_ok cfg acc r hsave
+  · exact hmem
+
+theorem max_over_slots_of_funct_bound : max_over_slots_of_funct_boundStatement := by
+  intro f valu i s hi hs
+  unfold max_over_slots_of_funct
+  apply zLe_trans (valu s) (max_over_slots_of_instr valu i) _
+  · unfold max_over_slots_of_instr
+    exact max_over_list_bound _ valu (slots_of_instr i) s hs
+  · exact max_over_instrs_bound f (max_over_slots_of_instr valu) i hi
+
+end CompCert4Lean.Backend.Bounds
