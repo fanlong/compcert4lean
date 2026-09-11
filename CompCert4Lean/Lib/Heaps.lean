@@ -1294,3 +1294,119 @@ theorem gt_heap_trans (E : OrderedType) : gt_heap_transStatement E := by
       exact ⟨iha hgt.1, le_lt_trans E y x z hyx hgt.2.1, ihb hgt.2.2⟩
 
 end CompCert4Lean.Lib.Heaps.SplayHeapSet.R
+
+namespace CompCert4Lean.Lib.Heaps.SplayHeapSet.R
+
+theorem partition_lt (E : OrderedType) : partition_ltStatement E := by
+  unfold partition_ltStatement
+  intro x pivot h hlt
+  exact partitionLtProof E x pivot h hlt
+
+theorem partition_gt (E : OrderedType) : partition_gtStatement E := by
+  unfold partition_gtStatement
+  intro x pivot h hgt
+  exact partitionGtProof E x pivot h hgt
+
+theorem partition_split (E : OrderedType) : partition_splitStatement E := by
+  unfold partition_splitStatement
+  intro pivot h hbst
+  exact partitionSplitProof E pivot h hbst
+
+private def inPartitionSize {E : OrderedType} : heap E → Nat
+  | .Empty => 0
+  | .Node l _ r => inPartitionSize l + inPartitionSize r + 1
+
+private theorem inPartitionAux (E : OrderedType) (x pivot : E.t)
+    (hneq : ¬ E.eq x pivot) :
+    ∀ n (h : heap E), inPartitionSize h ≤ n →
+      (In E x h ↔ In E x (partition E pivot h).1 ∨
+        In E x (partition E pivot h).2) := by
+  intro n
+  induction n with
+  | zero =>
+      intro h hs
+      cases h with
+      | Empty => simp [In, partition]
+      | Node l y r => simp [inPartitionSize] at hs
+  | succ n ih =>
+      intro h hs
+      cases h with
+      | Empty => simp [In, partition]
+      | Node a y b =>
+          cases hcmp : E.compare y pivot with
+          | EQ heq =>
+              have hxy : ¬ E.eq x y := by
+                intro hxy
+                exact hneq (E.eq_trans x y pivot hxy heq)
+              simp only [partitionEq E pivot a y b hcmp, In]
+              simp_all [or_assoc, or_left_comm, or_comm]
+          | LT hlt =>
+              cases b with
+              | Empty =>
+                  simp only [partitionLtEmpty E pivot a y hcmp, In]
+                  simp_all [or_assoc, or_left_comm, or_comm]
+              | Node b1 z b2 =>
+                  cases hzcmp : E.compare z pivot with
+                  | EQ heq =>
+                      have hxz : ¬ E.eq x z := by
+                        intro hxz
+                        exact hneq (E.eq_trans x z pivot hxz heq)
+                      simp only [partitionLtEq E pivot a y b1 z b2 hcmp hzcmp, In]
+                      simp_all [or_assoc, or_left_comm, or_comm]
+                  | LT hzl =>
+                      have hrec := ih b2
+                        (by simp [inPartitionSize] at hs ⊢; omega)
+                      cases hp : partition E pivot b2 with
+                      | mk small big =>
+                          rw [hp] at hrec
+                          simp only [partitionLtLt E pivot a y b1 z b2 hcmp hzcmp,
+                            hp, In] at hrec ⊢
+                          simp_all [or_assoc, or_left_comm, or_comm]
+                  | GT hzg =>
+                      have hrec := ih b1
+                        (by simp [inPartitionSize] at hs ⊢; omega)
+                      cases hp : partition E pivot b1 with
+                      | mk small big =>
+                          rw [hp] at hrec
+                          simp only [partitionLtGt E pivot a y b1 z b2 hcmp hzcmp,
+                            hp, In] at hrec ⊢
+                          simp_all [or_assoc, or_left_comm, or_comm]
+          | GT hgt =>
+              cases a with
+              | Empty =>
+                  simp only [partitionGtEmpty E pivot y b hcmp, In]
+                  simp_all [or_assoc, or_left_comm, or_comm]
+              | Node a1 z a2 =>
+                  cases hzcmp : E.compare z pivot with
+                  | EQ heq =>
+                      have hxz : ¬ E.eq x z := by
+                        intro hxz
+                        exact hneq (E.eq_trans x z pivot hxz heq)
+                      simp only [partitionGtEq E pivot a1 z a2 y b hcmp hzcmp, In]
+                      simp_all [or_assoc, or_left_comm, or_comm]
+                  | LT hzl =>
+                      have hrec := ih a2
+                        (by simp [inPartitionSize] at hs ⊢; omega)
+                      cases hp : partition E pivot a2 with
+                      | mk small big =>
+                          rw [hp] at hrec
+                          simp only [partitionGtLt E pivot a1 z a2 y b hcmp hzcmp,
+                            hp, In] at hrec ⊢
+                          simp_all [or_assoc, or_left_comm, or_comm]
+                  | GT hzg =>
+                      have hrec := ih a1
+                        (by simp [inPartitionSize] at hs ⊢; omega)
+                      cases hp : partition E pivot a1 with
+                      | mk small big =>
+                          rw [hp] at hrec
+                          simp only [partitionGtGt E pivot a1 z a2 y b hcmp hzcmp,
+                            hp, In] at hrec ⊢
+                          simp_all [or_assoc, or_left_comm, or_comm]
+
+theorem In_partition (E : OrderedType) : In_partitionStatement E := by
+  unfold In_partitionStatement
+  intro x pivot hneq h hbst
+  exact inPartitionAux E x pivot hneq (inPartitionSize h) h
+    (Nat.le_refl _)
+
+end CompCert4Lean.Lib.Heaps.SplayHeapSet.R

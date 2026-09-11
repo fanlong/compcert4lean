@@ -820,3 +820,93 @@ theorem move_sound : move_soundStatement := by
                   simp [hEq] at h
 
 end CompCert4Lean.Common.Unityping.UniSolver
+
+namespace CompCert4Lean.Common.Unityping.UniSolver
+
+theorem solve_rec_incr : solve_rec_incrStatement := by
+  intro T te q e changed e' changed' h hs
+  induction q generalizing e changed e' changed' with
+  | nil =>
+      simp [solve_rec] at h
+      rcases h with ⟨rfl, rfl⟩
+      exact hs
+  | cons a q ih =>
+      rcases a with ⟨r1, r2⟩
+      simp only [solve_rec] at h
+      split at h
+      · cases h
+      · rename_i changed1 e1 hmove
+        have htail := ih (e := e1) (changed := changed || changed1)
+          (e' := e') (changed' := changed') h hs
+        exact move_incr T te e r1 r2 e1 changed1 hmove htail
+
+end CompCert4Lean.Common.Unityping.UniSolver
+
+namespace CompCert4Lean.Common.Unityping.UniSolver
+
+theorem solve_rec_sound : solve_rec_soundStatement := by
+  intro T te r1 r2 q e changed e' changed' h hmem hs
+  induction q generalizing e changed e' changed' with
+  | nil =>
+      cases hmem
+  | cons a q ih =>
+      rcases a with ⟨r3, r4⟩
+      simp only [solve_rec] at h
+      split at h
+      · cases h
+      · rename_i changed1 e1 hmove
+        have hs1 : satisf T te e1 :=
+          solve_rec_incr T te q e1 (changed || changed1) e' changed' h hs
+        cases hmem with
+        | head =>
+          exact move_sound T te e r1 r2 e1 changed1 hmove hs1
+        | tail =>
+          exact ih (e := e1) (changed := changed || changed1)
+            (e' := e') (changed' := changed') h (by assumption) hs
+
+end CompCert4Lean.Common.Unityping.UniSolver
+
+namespace CompCert4Lean.Common.Unityping.UniSolver
+
+open CompCert4Lean.Foundation.Logic
+open CompCert4Lean.Foundation.Logic.Rocq.Coq.Init.Datatypes
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.Common.Errors
+
+theorem move_false : move_falseStatement := by
+  intro T e r1 r2 e' h
+  unfold move at h
+  cases hp : peq r1 r2 with
+  | left hEq =>
+      simp [hp] at h
+      rcases h with ⟨rfl, rfl⟩
+      exact ⟨rfl, by simp [makeassign, hEq]⟩
+  | right hNe =>
+      cases h1 : PTree.get r1 (te_typ e) with
+      | none =>
+          cases h2 : PTree.get r2 (te_typ e) with
+          | none =>
+              rw [hp, h1, h2] at h
+              rcases h with ⟨rfl, rfl⟩
+              exact ⟨rfl, by simp [makeassign, h1, h2]⟩
+          | some ty2 =>
+              rw [hp, h1, h2] at h
+              cases h
+      | some ty1 =>
+          cases h2 : PTree.get r2 (te_typ e) with
+          | none =>
+              rw [hp, h1, h2] at h
+              cases h
+          | some ty2 =>
+              rw [hp, h1, h2] at h
+              cases hEq : T.eq ty1 ty2 with
+              | left hty =>
+                  simp [hEq] at h
+                  rcases h with ⟨rfl, rfl⟩
+                  exact ⟨rfl, by simp [makeassign, h1, h2, hty]⟩
+              | right hty =>
+                  simp [hEq] at h
+
+end CompCert4Lean.Common.Unityping.UniSolver

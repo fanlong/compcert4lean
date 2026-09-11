@@ -1488,3 +1488,15 @@ theorem pick_some : pick_someStatement := by
       exact hresult
 
 end CompCert4Lean.Backend.Kildall.NodeSetForward
+
+namespace CompCert4Lean.Backend.Kildall.NodeSetForward
+
+theorem law_obligation_proof : law_obligation := by
+  constructor
+  · exact empty_spec
+  · exact add_spec
+  · exact pick_none
+  · exact pick_some
+  · exact all_nodes_spec
+
+end CompCert4Lean.Backend.Kildall.NodeSetForward

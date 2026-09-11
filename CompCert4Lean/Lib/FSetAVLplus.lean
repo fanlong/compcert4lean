@@ -985,3 +985,11 @@ theorem mem_between_2 : mem_between_2Statement := by
     above_monotone below_monotone x s.this s.is_ok.ok hx habove hbelow
 
 end CompCert4Lean.Lib.FSetAVLplus.Make
+
+namespace CompCert4Lean.Lib.FSetAVLplus.Make
+
+theorem In_raw_elements_between_1 : In_raw_elements_between_1Statement := by
+  intro X above_low_bound below_high_bound x m hx
+  exact in_raw_elements_between above_low_bound below_high_bound x m hx
+
+end CompCert4Lean.Lib.FSetAVLplus.Make

@@ -798,3 +798,53 @@ theorem mlist_iter2_fold : mlist_iter2_foldStatement := by
             rw [hstate, hstate0]
 
 end CompCert4Lean.Backend.Inliningspec
+
+namespace CompCert4Lean.Backend.Inliningspec
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Backend.Inlining
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+
+theorem ptree_mfold_spec : ptree_mfold_specStatement := by
+  intro A f t s x s' i h
+  rcases mlist_iter2_fold positive A f (CompCert4Lean.Lib.Maps.PTree.elements t) s with ⟨i', hi'⟩
+  unfold ptree_mfold at h
+  rw [CompCert4Lean.Lib.Maps.PTree.fold_spec_proof] at h
+  let stepR : res (A := Unit) (s := s) → (positive × A) → res (A := Unit) (s := s) := fun a p =>
+    match a with
+    | R _ s1 h1 =>
+        match f p.1 p.2 s1 with
+        | R _ s2 h2 => R () s2 (Inlining.sincr_trans _ _ _ h1 h2)
+  let stepS : state → (positive × A) → state := fun a p =>
+    match f p.1 p.2 a with
+    | R _ s2 _ => s2
+  change List.foldl stepR (R () s (.intro (Nat.le_refl _) (Nat.le_refl _) (Int.le_refl _)))
+      (CompCert4Lean.Lib.Maps.PTree.elements t) = R x s' i at h
+  have fold_state_aux : ∀ (l : List (positive × A)) (s0 : state)
+      (h0 : sincr s s0),
+      (match List.foldl stepR (R () s0 h0) l with
+       | R _ sf _ => sf) = List.foldl stepS s0 l := by
+    intro l
+    induction l with
+    | nil => intro s0 h0; rfl
+    | cons p l ih =>
+        intro s0 h0
+        simp only [List.foldl]
+        cases hf : f p.1 p.2 s0 with
+        | R u s1 h1 =>
+            have hi := ih s1 (Inlining.sincr_trans s s0 s1 h0 h1)
+            simpa [stepR, stepS, hf] using hi
+  have fold_state :
+      (match List.foldl stepR (R () s (.intro (Nat.le_refl _) (Nat.le_refl _) (Int.le_refl _)))
+          (CompCert4Lean.Lib.Maps.PTree.elements t) with
+       | R _ sf _ => sf) =
+        List.foldl stepS s (CompCert4Lean.Lib.Maps.PTree.elements t) :=
+    fold_state_aux _ s (.intro (Nat.le_refl _) (Nat.le_refl _) (Int.le_refl _))
+  have hs : List.foldl stepS s (CompCert4Lean.Lib.Maps.PTree.elements t) = s' := by
+    have hstate := congrArg (fun q => match q with | R _ sf _ => sf) h
+    simpa [fold_state] using hstate
+  cases hs
+  exact ⟨i', hi'⟩
+
+end CompCert4Lean.Backend.Inliningspec

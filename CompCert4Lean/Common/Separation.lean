@@ -970,3 +970,31 @@ theorem sep_swap3 : sep_swap3Statement := by
       (sep_swap Q R (sepconj P S)))
 
 end CompCert4Lean.Common.Separation
+
+namespace CompCert4Lean.Common.Separation
+
+theorem sep_swap4 : sep_swap4Statement := by
+  intro P Q R S T
+  exact massert_eqv_trans_scc085 (sep_swap P Q (sepconj R (sepconj S T)))
+    (massert_eqv_trans_scc085
+      (sepconj_eqv_right_scc085 (P := Q) (sep_swap3 P R S T))
+      (sep_swap Q S (sepconj R (sepconj P T))))
+
+theorem sep_swap5 : sep_swap5Statement := by
+  intro P Q R S T U
+  exact massert_eqv_trans_scc085 (sep_swap P Q (sepconj R (sepconj S (sepconj T U))))
+    (massert_eqv_trans_scc085
+      (sepconj_eqv_right_scc085 (P := Q) (sep_swap4 P R S T U))
+      (sep_swap Q T (sepconj R (sepconj S (sepconj P U)))))
+
+theorem sep_drop : sep_dropStatement := by
+  intro P Q m h
+  exact h.2.1
+
+theorem sep_drop2 : sep_drop2Statement := by
+  intro P Q R m h
+  refine ⟨h.1, h.2.1.2.1, ?_⟩
+  intro b ofs hP hR
+  exact h.2.2 b ofs hP (Or.inr hR)
+
+end CompCert4Lean.Common.Separation

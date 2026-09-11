@@ -769,3 +769,102 @@ theorem agree_set_mreg_parallel : agree_set_mreg_parallelStatement := by
     simp [CompCert4Lean.X86.Asm.Pregmap.set, hne]
 
 end CompCert4Lean.Backend.Asmgenproof0
+
+namespace CompCert4Lean.Backend.Asmgenproof0
+
+theorem agree_set_other : agree_set_otherStatement := by
+  intro ms sp rs r v hagree hdata
+  apply agree_exten ms sp rs
+  · exact hagree
+  · intro r' hdata'
+    unfold CompCert4Lean.X86.Asm.Pregmap.set
+    split
+    · rename_i heq
+      subst r'
+      simp [hdata] at hdata'
+    · rfl
+
+theorem agree_nextinstr : agree_nextinstrStatement := by
+  intro ms sp rs hagree
+  unfold CompCert4Lean.X86.Asm.nextinstr
+  apply agree_set_other ms sp rs CompCert4Lean.X86.Asm.PC
+    (CompCert4Lean.Common.Values.Val.offset_ptr (rs asmPC)
+      CompCert4Lean.Lib.Integers.Ptrofs.one) hagree
+  rfl
+
+private theorem loword_lessdef_aux :
+    ∀ v v', CompCert4Lean.Common.Values.Val.lessdef v v' →
+      CompCert4Lean.Common.Values.Val.lessdef
+        (CompCert4Lean.Common.Values.Val.loword v)
+        (CompCert4Lean.Common.Values.Val.loword v') := by
+  intro v v' h
+  cases h with
+  | lessdef_refl v => exact CompCert4Lean.Common.Values.Val.lessdef.lessdef_refl _
+  | lessdef_undef v => exact CompCert4Lean.Common.Values.Val.lessdef.lessdef_undef _
+
+private theorem hiword_lessdef_aux :
+    ∀ v v', CompCert4Lean.Common.Values.Val.lessdef v v' →
+      CompCert4Lean.Common.Values.Val.lessdef
+        (CompCert4Lean.Common.Values.Val.hiword v)
+        (CompCert4Lean.Common.Values.Val.hiword v') := by
+  intro v v' h
+  cases h with
+  | lessdef_refl v => exact CompCert4Lean.Common.Values.Val.lessdef.lessdef_refl _
+  | lessdef_undef v => exact CompCert4Lean.Common.Values.Val.lessdef.lessdef_undef _
+
+theorem agree_set_pair : agree_set_pairStatement := by
+  intro sp p v v' ms rs hagree hv
+  cases p with
+  | One r =>
+      simpa [CompCert4Lean.Backend.Mach.set_pair,
+        CompCert4Lean.X86.Asm.set_pair, CompCert4Lean.Common.AST.map_rpair] using
+        (agree_set_mreg_parallel ms sp rs r v v' hagree hv)
+  | Twolong rhi rlo =>
+      have hhi := agree_set_mreg_parallel ms sp rs rhi
+        (CompCert4Lean.Common.Values.Val.hiword v)
+        (CompCert4Lean.Common.Values.Val.hiword v') hagree
+        (hiword_lessdef_aux v v' hv)
+      have hlo := agree_set_mreg_parallel
+        (CompCert4Lean.Backend.Mach.Regmap.set rhi
+          (CompCert4Lean.Common.Values.Val.hiword v) ms)
+        sp
+        (CompCert4Lean.X86.Asm.Pregmap.set
+          (CompCert4Lean.X86.Asm.preg_of rhi)
+          (CompCert4Lean.Common.Values.Val.hiword v') rs)
+        rlo (CompCert4Lean.Common.Values.Val.loword v)
+          (CompCert4Lean.Common.Values.Val.loword v') hhi
+        (loword_lessdef_aux v v' hv)
+      simpa [CompCert4Lean.Backend.Mach.set_pair,
+        CompCert4Lean.X86.Asm.set_pair, CompCert4Lean.Common.AST.map_rpair] using hlo
+
+theorem agree_undef_nondata_regs : agree_undef_nondata_regsStatement := by
+  intro ms sp rl rs hagree hnondata
+  induction rl generalizing rs with
+  | nil => exact hagree
+  | cons r rl ih =>
+      change agree ms sp
+        (CompCert4Lean.X86.Asm.undef_regs rl
+          (CompCert4Lean.X86.Asm.Pregmap.set r
+            CompCert4Lean.Common.Values.Vundef rs))
+      apply ih (rs := CompCert4Lean.X86.Asm.Pregmap.set r
+        CompCert4Lean.Common.Values.Vundef rs)
+      · have hset : agree ms sp
+            (CompCert4Lean.X86.Asm.Pregmap.set r
+              CompCert4Lean.Common.Values.Vundef rs) := by
+          exact agree_exten ms sp rs
+            (CompCert4Lean.X86.Asm.Pregmap.set r
+              CompCert4Lean.Common.Values.Vundef rs) hagree (by
+                intro r' hdata
+                unfold CompCert4Lean.X86.Asm.Pregmap.set
+                split
+                · rename_i heq
+                  subst r'
+                  have hfalse : CompCert4Lean.X86.Asm.data_preg r = false :=
+                    hnondata r (by simp)
+                  simp [hfalse] at hdata
+                · rfl)
+        exact hset
+      · intro r' hr'
+        exact hnondata r' (by simp [hr'])
+
+end CompCert4Lean.Backend.Asmgenproof0

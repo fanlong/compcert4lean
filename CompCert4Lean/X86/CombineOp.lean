@@ -1474,3 +1474,280 @@ def R_combine_cond_correct : R_combine_cond_correctStatement := by
                 (R_combine_cond_12 _ [x] _ rfl [x] rfl (by simp_all))
 
 end CompCert4Lean.X86.CombineOp
+
+namespace CompCert4Lean.X86.CombineOp
+
+open CompCert4Lean.Backend.CSEdomain
+open CompCert4Lean.X86.Op
+
+def R_combine_op_correct : R_combine_op_correctStatement := by
+  intro get op args res hres
+  subst res
+  have mkNone : ∀ (op0 : operation) (args0 : List valnum),
+      (match op0 with
+       | .Oandimm _ | .Oorimm _ | .Oxorimm _ |
+         .Oandlimm _ | .Oorlimm _ | .Oxorlimm _ =>
+           match args0 with
+           | [_] => False
+           | _ => True
+       | .Olea _ | .Oleal _ | .Ocmp _ => False
+       | .Osel _ _ =>
+           match args0 with
+           | _ :: _ :: _ => False
+           | _ => True
+       | _ => True) →
+      R_combine_op get op0 args0 none := by
+    intro op0 args0 h
+    exact R_combine_op_25 op0 args0 op0 rfl args0 rfl h
+  cases op with
+  | Olea addr =>
+      cases haddr : combine_addr_32 get addr args with
+      | none =>
+          simpa [combine_op, haddr] using
+            (R_combine_op_1 (.Olea addr) args addr rfl args rfl haddr)
+      | some p =>
+          rcases p with ⟨addr', args'⟩
+          simpa [combine_op, haddr] using
+            (R_combine_op_0 (.Olea addr) args addr rfl args rfl addr' args' haddr)
+  | Oleal addr =>
+      cases haddr : combine_addr_64 get addr args with
+      | none =>
+          simpa [combine_op, haddr] using
+            (R_combine_op_3 (.Oleal addr) args addr rfl args rfl haddr)
+      | some p =>
+          rcases p with ⟨addr', args'⟩
+          simpa [combine_op, haddr] using
+            (R_combine_op_2 (.Oleal addr) args addr rfl args rfl addr' args' haddr)
+  | Oandimm n =>
+      cases args with
+      | nil =>
+          simpa [combine_op] using (mkNone (.Oandimm n) [] (by simp))
+      | cons x xs =>
+          cases xs with
+          | nil =>
+              cases hg : get x with
+              | none =>
+                  simpa [combine_op, hg] using
+                    (R_combine_op_5 (.Oandimm n) [x] n rfl x rfl none hg (by simp))
+              | some r =>
+                  cases r with
+                  | Load chunk addr vl p =>
+                      simpa [combine_op, hg] using
+                        (R_combine_op_5 (.Oandimm n) [x] n rfl x rfl _ hg (by simp))
+                  | Builtin bf bargs =>
+                      simpa [combine_op, hg] using
+                        (R_combine_op_5 (.Oandimm n) [x] n rfl x rfl _ hg (by simp))
+                  | Op op ys =>
+                      cases op with
+                      | Oandimm m =>
+                          simpa [combine_op, hg] using
+                            (R_combine_op_4 (.Oandimm n) [x] n rfl x rfl m ys hg)
+                      | _ =>
+                          simpa [combine_op, hg] using
+                            (R_combine_op_5 (.Oandimm n) [x] n rfl x rfl _ hg (by simp))
+          | cons y ys =>
+              simpa [combine_op] using (mkNone (.Oandimm n) (x :: y :: ys) (by simp))
+  | Oorimm n =>
+      cases args with
+      | nil =>
+          simpa [combine_op] using (mkNone (.Oorimm n) [] (by simp))
+      | cons x xs =>
+          cases xs with
+          | nil =>
+              cases hg : get x with
+              | none =>
+                  simpa [combine_op, hg] using
+                    (R_combine_op_7 (.Oorimm n) [x] n rfl x rfl none hg (by simp))
+              | some r =>
+                  cases r with
+                  | Load chunk addr vl p =>
+                      simpa [combine_op, hg] using
+                        (R_combine_op_7 (.Oorimm n) [x] n rfl x rfl _ hg (by simp))
+                  | Builtin bf bargs =>
+                      simpa [combine_op, hg] using
+                        (R_combine_op_7 (.Oorimm n) [x] n rfl x rfl _ hg (by simp))
+                  | Op op ys =>
+                      cases op with
+                      | Oorimm m =>
+                          simpa [combine_op, hg] using
+                            (R_combine_op_6 (.Oorimm n) [x] n rfl x rfl m ys hg)
+                      | _ =>
+                          simpa [combine_op, hg] using
+                            (R_combine_op_7 (.Oorimm n) [x] n rfl x rfl _ hg (by simp))
+          | cons y ys =>
+              simpa [combine_op] using (mkNone (.Oorimm n) (x :: y :: ys) (by simp))
+  | Oxorimm n =>
+      cases args with
+      | nil =>
+          simpa [combine_op] using (mkNone (.Oxorimm n) [] (by simp))
+      | cons x xs =>
+          cases xs with
+          | nil =>
+              cases hg : get x with
+              | none =>
+                  simpa [combine_op, hg] using
+                    (R_combine_op_9 (.Oxorimm n) [x] n rfl x rfl none hg (by simp))
+              | some r =>
+                  cases r with
+                  | Load chunk addr vl p =>
+                      simpa [combine_op, hg] using
+                        (R_combine_op_9 (.Oxorimm n) [x] n rfl x rfl _ hg (by simp))
+                  | Builtin bf bargs =>
+                      simpa [combine_op, hg] using
+                        (R_combine_op_9 (.Oxorimm n) [x] n rfl x rfl _ hg (by simp))
+                  | Op op ys =>
+                      cases op with
+                      | Oxorimm m =>
+                          simpa [combine_op, hg] using
+                            (R_combine_op_8 (.Oxorimm n) [x] n rfl x rfl m ys hg)
+                      | _ =>
+                          simpa [combine_op, hg] using
+                            (R_combine_op_9 (.Oxorimm n) [x] n rfl x rfl _ hg (by simp))
+          | cons y ys =>
+              simpa [combine_op] using (mkNone (.Oxorimm n) (x :: y :: ys) (by simp))
+  | Oandlimm n =>
+      cases args with
+      | nil =>
+          simpa [combine_op] using (mkNone (.Oandlimm n) [] (by simp))
+      | cons x xs =>
+          cases xs with
+          | nil =>
+              cases hg : get x with
+              | none =>
+                  simpa [combine_op, hg] using
+                    (R_combine_op_11 (.Oandlimm n) [x] n rfl x rfl none hg (by simp))
+              | some r =>
+                  cases r with
+                  | Load chunk addr vl p =>
+                      simpa [combine_op, hg] using
+                        (R_combine_op_11 (.Oandlimm n) [x] n rfl x rfl _ hg (by simp))
+                  | Builtin bf bargs =>
+                      simpa [combine_op, hg] using
+                        (R_combine_op_11 (.Oandlimm n) [x] n rfl x rfl _ hg (by simp))
+                  | Op op ys =>
+                      cases op with
+                      | Oandlimm m =>
+                          simpa [combine_op, hg] using
+                            (R_combine_op_10 (.Oandlimm n) [x] n rfl x rfl m ys hg)
+                      | _ =>
+                          simpa [combine_op, hg] using
+                            (R_combine_op_11 (.Oandlimm n) [x] n rfl x rfl _ hg (by simp))
+          | cons y ys =>
+              simpa [combine_op] using (mkNone (.Oandlimm n) (x :: y :: ys) (by simp))
+  | Oorlimm n =>
+      cases args with
+      | nil =>
+          simpa [combine_op] using (mkNone (.Oorlimm n) [] (by simp))
+      | cons x xs =>
+          cases xs with
+          | nil =>
+              cases hg : get x with
+              | none =>
+                  simpa [combine_op, hg] using
+                    (R_combine_op_13 (.Oorlimm n) [x] n rfl x rfl none hg (by simp))
+              | some r =>
+                  cases r with
+                  | Load chunk addr vl p =>
+                      simpa [combine_op, hg] using
+                        (R_combine_op_13 (.Oorlimm n) [x] n rfl x rfl _ hg (by simp))
+                  | Builtin bf bargs =>
+                      simpa [combine_op, hg] using
+                        (R_combine_op_13 (.Oorlimm n) [x] n rfl x rfl _ hg (by simp))
+                  | Op op ys =>
+                      cases op with
+                      | Oorlimm m =>
+                          simpa [combine_op, hg] using
+                            (R_combine_op_12 (.Oorlimm n) [x] n rfl x rfl m ys hg)
+                      | _ =>
+                          simpa [combine_op, hg] using
+                            (R_combine_op_13 (.Oorlimm n) [x] n rfl x rfl _ hg (by simp))
+          | cons y ys =>
+              simpa [combine_op] using (mkNone (.Oorlimm n) (x :: y :: ys) (by simp))
+  | Oxorlimm n =>
+      cases args with
+      | nil =>
+          simpa [combine_op] using (mkNone (.Oxorlimm n) [] (by simp))
+      | cons x xs =>
+          cases xs with
+          | nil =>
+              cases hg : get x with
+              | none =>
+                  simpa [combine_op, hg] using
+                    (R_combine_op_15 (.Oxorlimm n) [x] n rfl x rfl none hg (by simp))
+              | some r =>
+                  cases r with
+                  | Load chunk addr vl p =>
+                      simpa [combine_op, hg] using
+                        (R_combine_op_15 (.Oxorlimm n) [x] n rfl x rfl _ hg (by simp))
+                  | Builtin bf bargs =>
+                      simpa [combine_op, hg] using
+                        (R_combine_op_15 (.Oxorlimm n) [x] n rfl x rfl _ hg (by simp))
+                  | Op op ys =>
+                      cases op with
+                      | Oxorlimm m =>
+                          simpa [combine_op, hg] using
+                            (R_combine_op_14 (.Oxorlimm n) [x] n rfl x rfl m ys hg)
+                      | _ =>
+                          simpa [combine_op, hg] using
+                            (R_combine_op_15 (.Oxorlimm n) [x] n rfl x rfl _ hg (by simp))
+          | cons y ys =>
+              simpa [combine_op] using (mkNone (.Oxorlimm n) (x :: y :: ys) (by simp))
+  | Ocmp cond =>
+      cases hcc : combine_cond' cond args with
+      | some b =>
+          cases b with
+          | false =>
+              simpa [combine_op, hcc] using
+                (R_combine_op_17 (.Ocmp cond) args cond rfl args rfl false hcc rfl)
+          | true =>
+              simpa [combine_op, hcc] using
+                (R_combine_op_16 (.Ocmp cond) args cond rfl args rfl true hcc rfl)
+      | none =>
+          cases hcond : combine_cond get cond args with
+          | some p =>
+              rcases p with ⟨cond', args'⟩
+              simpa [combine_op, hcc, hcond] using
+                (R_combine_op_18 (.Ocmp cond) args cond rfl args rfl hcc cond' args' hcond)
+          | none =>
+              simpa [combine_op, hcc, hcond] using
+                (R_combine_op_19 (.Ocmp cond) args cond rfl args rfl hcc hcond)
+  | Osel cond ty =>
+      cases args with
+      | nil =>
+          simpa [combine_op] using (mkNone (.Osel cond ty) [] (by simp))
+      | cons x xs =>
+          cases xs with
+          | nil =>
+              simpa [combine_op] using (mkNone (.Osel cond ty) [x] (by simp))
+          | cons y rest =>
+              cases hcc : combine_cond' cond rest with
+              | some b =>
+                  cases b with
+                  | false =>
+                      simpa [combine_op, hcc] using
+                        (R_combine_op_21 (.Osel cond ty) (x :: y :: rest) cond ty rfl x y rest rfl false hcc rfl)
+                  | true =>
+                      simpa [combine_op, hcc] using
+                        (R_combine_op_20 (.Osel cond ty) (x :: y :: rest) cond ty rfl x y rest rfl true hcc rfl)
+              | none =>
+                  cases heq : eq_valnum x y with
+                  | left hxy =>
+                      simpa [combine_op, hcc, heq] using
+                        (R_combine_op_22 (.Osel cond ty) (x :: y :: rest) cond ty rfl x y rest rfl hcc hxy heq)
+                  | right hxy =>
+                      cases hcond : combine_cond get cond rest with
+                      | some p =>
+                          rcases p with ⟨cond', args'⟩
+                          simpa [combine_op, hcc, heq, hcond] using
+                            (R_combine_op_23 (.Osel cond ty) (x :: y :: rest) cond ty rfl x y rest rfl hcc hxy heq cond' args' hcond)
+                      | none =>
+                          simpa [combine_op, hcc, heq, hcond] using
+                            (R_combine_op_24 (.Osel cond ty) (x :: y :: rest) cond ty rfl x y rest rfl hcc hxy heq hcond)
+  | _ =>
+      cases args with
+      | nil =>
+          simpa [combine_op] using (mkNone _ [] (by simp))
+      | cons x xs =>
+          simpa [combine_op] using (mkNone _ (x :: xs) (by simp))
+
+end CompCert4Lean.X86.CombineOp

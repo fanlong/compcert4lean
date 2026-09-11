@@ -2271,3 +2271,83 @@ theorem for_all_between_iff_proof : for_all_between_iff := by
     exact raw_for_all_between_2_aux pred above below s.this s.is_ok.ok hall
 
 end EqSet
+
+namespace EqSet2
+
+theorem for_all_between_iff_proof : for_all_between_iff := by
+  intro pred above below hpred hab hbl s
+  constructor
+  · intro hraw x hx hax hbx
+    have aux : ∀ (m : Raw.tree), Raw.bst m →
+        ∀ (x : elt), raw_for_all_between pred above below m = true →
+          Raw.InT x m → above x = true → below x = true → pred x = true := by
+      intro m hbst
+      induction hbst with
+      | BSLeaf =>
+          intro x hraw hx
+          cases hx
+      | @BSNode info value left right hleft hright hlt hgt ihl ihr =>
+          intro x hraw hx hax hbx
+          change CompCert4Lean.Lib.FSetAVLplus.Make.raw_for_all_between
+            pred above below (CompCert4Lean.Lib.MSetGenTree.tree.Node info left value right) = true at hraw
+          rw [CompCert4Lean.Lib.FSetAVLplus.Make.raw_for_all_between.eq_2] at hraw
+          split at hraw
+          next hav =>
+            split at hraw
+            next hbv =>
+              have hs : (raw_for_all_between pred above below left = true ∧
+                  pred value = true) ∧ raw_for_all_between pred above below right = true := by
+                simpa only [Bool.and_eq_true] using hraw
+              rcases (Raw.In_node_iff info left value right x).mp hx with hleftx | hxv | hrightx
+              · exact ihl x hs.1.1 hleftx hax hbx
+              · rw [← hpred value x (E.eq_sym x value hxv)]
+                exact hs.1.2
+              · exact ihr x hs.2 hrightx hax hbx
+            next hbv =>
+              rcases (Raw.In_node_iff info left value right x).mp hx with hleftx | hxv | hrightx
+              · exact ihl x hraw hleftx hax hbx
+              · have hbad := hbl x value (Or.inl hxv) hbx
+                exact False.elim (hbv hbad)
+              · have hbad := hbl x value (Or.inr (hgt x hrightx)) hbx
+                exact False.elim (hbv hbad)
+          next hav =>
+            rcases (Raw.In_node_iff info left value right x).mp hx with hleftx | hxv | hrightx
+            · have hbad := hab x value (Or.inr (hlt x hleftx)) hax
+              exact False.elim (hav hbad)
+            · have hbad := hab x value (Or.inl hxv) hax
+              exact False.elim (hav hbad)
+            · exact ihr x hraw hrightx hax hbx
+    exact aux s.this s.is_ok.ok x hraw hx hax hbx
+  · intro h
+    have aux : ∀ (m : Raw.tree), Raw.bst m →
+        (∀ x, Raw.InT x m → above x = true → below x = true → pred x = true) →
+          raw_for_all_between pred above below m = true := by
+      intro m hbst
+      induction hbst with
+      | BSLeaf =>
+          intro h
+          rfl
+      | @BSNode info value left right hleft hright hlt hgt ihl ihr =>
+          intro h
+          change CompCert4Lean.Lib.FSetAVLplus.Make.raw_for_all_between
+            pred above below (CompCert4Lean.Lib.MSetGenTree.tree.Node info left value right) = true
+          rw [CompCert4Lean.Lib.FSetAVLplus.Make.raw_for_all_between.eq_2]
+          split
+          next hav =>
+            split
+            next hbv =>
+              simp only [Bool.and_eq_true]
+              exact ⟨⟨ihl (fun x hx hax hbx =>
+                  h x (.InLeft info left right value hx) hax hbx),
+                h value (.IsRoot info left right value (E.eq_refl value)) hav hbv⟩,
+                ihr (fun x hx hax hbx =>
+                  h x (.InRight info left right value hx) hax hbx)⟩
+            next hbv =>
+              exact ihl (fun x hx hax hbx =>
+                h x (.InLeft info left right value hx) hax hbx)
+          next hav =>
+            exact ihr (fun x hx hax hbx =>
+              h x (.InRight info left right value hx) hax hbx)
+    exact aux s.this s.is_ok.ok h
+
+end EqSet2

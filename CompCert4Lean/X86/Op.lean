@@ -1135,3 +1135,30 @@ theorem eval_negate_condition : eval_negate_conditionStatement := by
           | cons v3 vl => cases cond <;> rfl
 
 end CompCert4Lean.X86.Op
+
+namespace CompCert4Lean.X86.Op
+
+open CompCert4Lean.Common.Values
+
+theorem type_add : type_addStatement := by
+  intro v1 v2
+  cases v1 <;> cases v2 <;>
+    simp [Val.add, Val.has_type, CompCert4Lean.X86_64.Archi.ptr64]
+
+theorem type_addl : type_addlStatement := by
+  intro v1 v2
+  cases v1 <;> cases v2 <;>
+    simp [Val.addl, Val.has_type, CompCert4Lean.X86_64.Archi.ptr64]
+
+theorem eval_addressing_Ainstack_inv : eval_addressing_Ainstack_invStatement := by
+  intro F V genv sp ofs vl v h
+  cases vl with
+  | nil =>
+      simp [eval_addressing, eval_addressing64,
+        CompCert4Lean.X86_64.Archi.ptr64] at h
+      exact ⟨rfl, h ▸ rfl⟩
+  | cons x xs =>
+      simp [eval_addressing, eval_addressing64,
+        CompCert4Lean.X86_64.Archi.ptr64] at h
+
+end CompCert4Lean.X86.Op

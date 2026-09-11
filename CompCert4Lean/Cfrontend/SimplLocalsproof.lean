@@ -1384,3 +1384,19 @@ theorem match_transf_program : match_transf_programStatement := by
       · exact (congrArg (fun q : Clight.program => q.prog_types) hEq).symm
 
 end CompCert4Lean.Cfrontend.SimplLocalsproof
+
+namespace CompCert4Lean.Cfrontend.SimplLocalsproof
+
+theorem comp_env_preserved : comp_env_preservedStatement := by
+  intro cfg p tp hmatch
+  have htypes : tp.prog_types = p.prog_types := hmatch.2
+  change tp.prog_comp_env = p.prog_comp_env
+  have hp : Ctypes.build_composite_env p.prog_types = .OK p.prog_comp_env :=
+    p.prog_comp_env_eq
+  have htp : Ctypes.build_composite_env tp.prog_types = .OK tp.prog_comp_env :=
+    tp.prog_comp_env_eq
+  rw [htypes] at htp
+  apply CompCert4Lean.Common.Errors.res.OK.inj
+  exact htp.symm.trans hp
+
+end CompCert4Lean.Cfrontend.SimplLocalsproof

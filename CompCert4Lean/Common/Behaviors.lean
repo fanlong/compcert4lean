@@ -674,3 +674,19 @@ theorem behavior_improves_bot : behavior_improves_botStatement := by
   exact ⟨beh, (behavior_app_E0 beh).symm⟩
 
 end CompCert4Lean.Common.Behaviors
+
+namespace CompCert4Lean.Common.Behaviors
+
+open CompCert4Lean.Common.Events
+
+theorem behavior_improves_app : behavior_improves_appStatement := by
+  intro t beh1 beh2 h
+  rcases h with h | ⟨t', hwrong, ⟨beh', hprefix⟩⟩
+  · subst beh2
+    exact Or.inl rfl
+  · subst beh1
+    refine Or.inr ⟨Eapp t t', rfl, beh', ?_⟩
+    rw [hprefix]
+    exact (behavior_app_assoc t t' beh').symm
+
+end CompCert4Lean.Common.Behaviors

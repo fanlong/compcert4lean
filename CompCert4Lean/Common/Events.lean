@@ -1281,3 +1281,35 @@ theorem unchanged_on_readonly : unchanged_on_readonlyStatement := by
         exact False.elim (hn1 hr1)
 
 end CompCert4Lean.Common.Events
+
+namespace CompCert4Lean.Common.Events
+
+theorem eventval_match_receptive : eventval_match_receptiveStatement := by
+  intro ge ev1 ty v1 ev2 hm hv1 hv2 hty
+  cases hm with
+  | ev_match_int i =>
+      cases ev2 <;> simp [eventval_type, CompCert4Lean.Common.AST.Tptr,
+        CompCert4Lean.X86_64.Archi.ptr64] at hty
+      · exact ⟨CompCert4Lean.Common.Values.Vint _, ev_match_int _⟩
+  | ev_match_long i =>
+      cases ev2 <;> simp [eventval_type, CompCert4Lean.Common.AST.Tptr,
+        CompCert4Lean.X86_64.Archi.ptr64] at hty
+      · exact ⟨CompCert4Lean.Common.Values.Vlong _, ev_match_long _⟩
+      · rcases ge.public_symbol_exists _ hv2 with ⟨b, hb⟩
+        exact ⟨CompCert4Lean.Common.Values.Vptr b _, ev_match_ptr _ _ _ hv2 hb⟩
+  | ev_match_float f =>
+      cases ev2 <;> simp [eventval_type, CompCert4Lean.Common.AST.Tptr,
+        CompCert4Lean.X86_64.Archi.ptr64] at hty
+      · exact ⟨CompCert4Lean.Common.Values.Vfloat _, ev_match_float _⟩
+  | ev_match_single f =>
+      cases ev2 <;> simp [eventval_type, CompCert4Lean.Common.AST.Tptr,
+        CompCert4Lean.X86_64.Archi.ptr64] at hty
+      · exact ⟨CompCert4Lean.Common.Values.Vsingle _, ev_match_single _⟩
+  | ev_match_ptr id b ofs pub find =>
+      cases ev2 <;> simp [eventval_type, CompCert4Lean.Common.AST.Tptr,
+        CompCert4Lean.X86_64.Archi.ptr64] at hty
+      · exact ⟨CompCert4Lean.Common.Values.Vlong _, ev_match_long _⟩
+      · rcases ge.public_symbol_exists _ hv2 with ⟨b', hb'⟩
+        exact ⟨CompCert4Lean.Common.Values.Vptr b' _, ev_match_ptr _ _ _ hv2 hb'⟩
+
+end CompCert4Lean.Common.Events

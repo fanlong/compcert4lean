@@ -682,3 +682,55 @@ theorem Plt_wf : Plt_wfStatement := by
     Nat.lt_wfRel.wf
 
 end CompCert4Lean.Lib.Coqlib
+
+namespace CompCert4Lean.Lib.Coqlib
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+private theorem coqlib_posToNat_pred_double_lt (p : positive) :
+    posToNat (PArith.BinPos.Pos.pred_double p) < 2 * posToNat p := by
+  induction p with
+  | xH => simp [PArith.BinPos.Pos.pred_double, posToNat]
+  | xI p ih =>
+      simp [PArith.BinPos.Pos.pred_double, posToNat] <;> omega
+  | xO p ih =>
+      simp [PArith.BinPos.Pos.pred_double, posToNat] <;> omega
+
+theorem Ppred_Plt : Ppred_PltStatement := by
+  intro x hx
+  cases x with
+  | xH => exact False.elim (hx rfl)
+  | xI p =>
+      change PArith.BinPos.Pos.to_nat (PArith.BinPos.Pos.pred (xI p)) <
+        PArith.BinPos.Pos.to_nat (xI p)
+      simp [PArith.BinPos.Pos.pred, PArith.BinPos.Pos.to_nat,
+        posToNat]
+  | xO p =>
+      change PArith.BinPos.Pos.to_nat (PArith.BinPos.Pos.pred (xO p)) <
+        PArith.BinPos.Pos.to_nat (xO p)
+      simpa [PArith.BinPos.Pos.pred, PArith.BinPos.Pos.to_nat,
+        posToNat] using coqlib_posToNat_pred_double_lt p
+
+theorem zeq_true : zeq_trueStatement := by
+  intro A x a b
+  cases h : zeq x x with
+  | left heq => rfl
+  | right hne => exact False.elim (hne rfl)
+
+theorem zeq_false : zeq_falseStatement := by
+  intro A x y a b hxy
+  cases h : zeq x y with
+  | left heq => exact False.elim (hxy heq)
+  | right hne => rfl
+
+theorem zlt_true : zlt_trueStatement := by
+  intro A x y a b hxy
+  cases h : zlt x y with
+  | left hlt => rfl
+  | right hge =>
+      exfalso
+      change intOfZ x < intOfZ y at hxy
+      change intOfZ y ≤ intOfZ x at hge
+      omega
+
+end CompCert4Lean.Lib.Coqlib

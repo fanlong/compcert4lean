@@ -1230,3 +1230,95 @@ theorem function_ptr_translated : function_ptr_translatedStatement := by
   exact inlining_function_ptr_translated_local cfg prog tprog hm b f hfind
 
 end CompCert4Lean.Backend.Inliningproof
+
+namespace CompCert4Lean.Backend.Inliningproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Backend.Inlining
+open CompCert4Lean.Backend.Inliningspec
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Errors
+open CompCert4Lean.Lib.Coqlib
+
+def Plt_Ple_dec : Plt_Ple_decStatement := fun p q =>
+  if h : posToNat p < posToNat q then
+    .left h
+  else
+    .right (Nat.le_of_not_gt h)
+
+theorem sreg_below_diff : sreg_below_diffStatement := by
+  intro ctx r r' hlt heq
+  have habove := CompCert4Lean.Backend.Inliningspec.shiftpos_above r ctx.dreg
+  unfold sreg at heq
+  rw [heq] at habove
+  exact (Nat.not_lt_of_ge habove) hlt
+
+theorem context_below_lt : context_below_ltStatement := by
+  intro ctx1 ctx2 r hbelow hr
+  unfold context_below at hbelow
+  unfold Ple PArith.BinPos.Pos.le at hr
+  unfold Plt PArith.BinPos.Pos.lt
+  unfold sreg
+  have hshift := CompCert4Lean.Backend.Inliningspec.shiftpos_below r ctx1.dreg
+  have hadd : posToNat (PArith.BinPos.Pos.add r ctx1.dreg) =
+      posToNat r + posToNat ctx1.dreg := by
+    simpa [PArith.BinPos.Pos.add] using posToNat_posOfNat (by
+      have hrpos := posToNat_positive r
+      have hdpos := posToNat_positive ctx1.dreg
+      omega : 0 < posToNat r + posToNat ctx1.dreg)
+  have hadd' : posToNat (PArith.BinPos.Pos.add ctx1.dreg ctx1.mreg) =
+      posToNat ctx1.dreg + posToNat ctx1.mreg := by
+    simpa [PArith.BinPos.Pos.add] using posToNat_posOfNat (by
+      have hdpos := posToNat_positive ctx1.dreg
+      have hmpos := posToNat_positive ctx1.mreg
+      omega : 0 < posToNat ctx1.dreg + posToNat ctx1.mreg)
+  change posToNat (PArith.BinPos.Pos.add ctx1.dreg ctx1.mreg) ≤ posToNat ctx2.dreg at hbelow
+  change posToNat r ≤ posToNat ctx1.mreg at hr
+  change posToNat (shiftpos r ctx1.dreg) <
+    posToNat (PArith.BinPos.Pos.add r ctx1.dreg) at hshift
+  change posToNat (shiftpos r ctx1.dreg) < posToNat ctx2.dreg
+  rw [hadd] at hshift
+  rw [hadd'] at hbelow
+  have hd1 : 0 < posToNat ctx1.dreg := posToNat_positive ctx1.dreg
+  have hm1 : 0 < posToNat ctx1.mreg := posToNat_positive ctx1.mreg
+  have hd2 : 0 < posToNat ctx2.dreg := posToNat_positive ctx2.dreg
+  omega
+
+theorem sig_function_translated : sig_function_translatedStatement := by
+  intro cfg cunit f f' h
+  cases f with
+  | Internal fn =>
+      have hsig : ∀ (fn fn' : function),
+          CompCert4Lean.Backend.Inlining.transf_function
+              (funenv_program cfg cunit) fn = .OK fn' →
+            fn'.fn_sig = fn.fn_sig := by
+        intro fn fn' htr
+        unfold CompCert4Lean.Backend.Inlining.transf_function at htr
+        split at htr
+        · split at htr
+          · cases htr
+            rfl
+          · simp at htr
+      unfold CompCert4Lean.Backend.Inlining.transf_fundef
+        CompCert4Lean.Common.AST.transf_partial_fundef at h
+      cases htr : CompCert4Lean.Backend.Inlining.transf_function
+          (funenv_program cfg cunit) fn with
+      | Error msg => simp [htr] at h
+      | OK out =>
+          simp [htr] at h
+          cases h
+          exact hsig fn out htr
+  | External ef =>
+      cases f' with
+      | Internal fn' =>
+          unfold CompCert4Lean.Backend.Inlining.transf_fundef
+            CompCert4Lean.Common.AST.transf_partial_fundef at h
+          cases h
+      | External ef' =>
+          unfold CompCert4Lean.Backend.Inlining.transf_fundef
+            CompCert4Lean.Common.AST.transf_partial_fundef at h
+          cases h
+          rfl
+
+end CompCert4Lean.Backend.Inliningproof

@@ -830,3 +830,21 @@ theorem addlist_workset_incl : addlist_workset_inclStatement := by
         (ih (CompCert4Lean.Backend.Unusedglob.add_workset id w))
 
 end CompCert4Lean.Backend.Unusedglobproof
+
+namespace CompCert4Lean.Backend.Unusedglobproof
+
+theorem add_ref_function_incl : add_ref_function_inclStatement := by
+  intro f w
+  unfold CompCert4Lean.Backend.Unusedglob.add_ref_function
+  apply CompCert4Lean.Lib.Maps.PTree_Properties.fold_rec_proof
+    (P := fun _ a => workset_incl w a)
+  · intro m m' a _ h
+    exact h
+  · exact workset_incl_refl w
+  · intro m a k i _ _ h
+    exact workset_incl_trans w a
+      (CompCert4Lean.Backend.Unusedglob.add_ref_instruction a k i)
+      h (addlist_workset_incl
+        (CompCert4Lean.Backend.Unusedglob.ref_instruction i) a)
+
+end CompCert4Lean.Backend.Unusedglobproof

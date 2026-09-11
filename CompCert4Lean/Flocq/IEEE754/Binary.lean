@@ -758,3 +758,20 @@ theorem BSN2B_result_obligation_proof :
       simpa [BSN2B, BinaryFloatCertificate, B2FF, valid_binary, B2SF] using hx
 
 end CompCert4Lean.Flocq.IEEE754.Binary
+
+namespace CompCert4Lean.Flocq.IEEE754.Binary
+
+theorem Bopp_result_obligation_proof :
+    ∀ {prec emax : Z}, Bopp_result_obligation (prec := prec) (emax := emax) := by
+  intro prec emax opp_nan x
+  rcases x with ⟨x, hx⟩
+  cases x with
+  | B754_nan s pl =>
+      exact build_nan_result_obligation_proof (opp_nan (.B754_nan s pl))
+  | B754_zero s => rfl
+  | B754_infinity s => rfl
+  | B754_finite s m e =>
+      change bounded (prec := prec) (emax := emax) m e = true at hx
+      simpa [Bopp, BinaryFloatCertificate, B2FF, valid_binary] using hx
+
+end CompCert4Lean.Flocq.IEEE754.Binary

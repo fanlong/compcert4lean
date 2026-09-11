@@ -1067,3 +1067,121 @@ namespace CompCert4Lean.Backend.RTLtyping.S
 theorem move_sound_proof : move_sound := rtl_move_sound_aux
 
 end CompCert4Lean.Backend.RTLtyping.S
+
+namespace CompCert4Lean.Backend.RTLtyping
+open CompCert4Lean.Foundation.Logic
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Errors
+open CompCert4Lean.Common.Unityping
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+
+namespace S
+
+private theorem rtl_set_sound_helper : S.set_sound := by
+  intro te x ty e e' h hs
+  unfold S.set UniSolver.set at h
+  rcases hs with ⟨hmap, heq⟩
+  cases hget : PTree.get x (UniSolver.te_typ e) with
+  | none =>
+      simp [hget] at h
+      cases h
+      apply hmap x ty
+      simpa using
+        (PTree.getSet_equation (A := rtlTypeAlgebra.t) x x ty (UniSolver.te_typ e))
+  | some ty' =>
+      simp only [hget] at h
+      cases he : rtlTypeAlgebra.eq ty ty' with
+      | left hty =>
+        simp [he] at h
+        cases h
+        exact (hmap x ty' (by simpa [hget])).trans hty.symm
+      | right hne =>
+        simp [he] at h
+
+private theorem rtl_set_incr_helper :
+    ∀ (te : S.typassign) (x : positive) (ty : RTLtypes.t)
+      (e e' : S.typenv), S.set e x ty = OK e' → S.satisf te e' → S.satisf te e := by
+  intro te x ty e e' h hs
+  unfold S.set UniSolver.set at h
+  rcases hs with ⟨hmap, heq⟩
+  cases hget : PTree.get x (UniSolver.te_typ e) with
+  | some ty' =>
+      simp only [hget] at h
+      cases he : rtlTypeAlgebra.eq ty ty' with
+      | left hty =>
+          simp [he] at h
+          cases h
+          exact ⟨hmap, heq⟩
+      | right hne => simp [he] at h
+  | none =>
+      simp [hget] at h
+      cases h
+      constructor
+      · intro y ty' hy
+        apply hmap y ty'
+        change PTree.get y (PTree.set x ty (UniSolver.te_typ e)) = some ty'
+        by_cases hxy : y = x
+        · subst y
+          exact False.elim (by simpa [hget] using hy)
+        · have hset := PTree.getSet_equation (A := rtlTypeAlgebra.t) y x ty (UniSolver.te_typ e)
+          have hpres : @Eq (Option rtlTypeAlgebra.t)
+              (PTree.get y (PTree.set x ty (UniSolver.te_typ e)))
+              (PTree.get y (UniSolver.te_typ e)) := by simpa [hxy] using hset
+          exact hpres.trans hy
+      · intro y z hyz
+        exact heq y z hyz
+
+private theorem rtl_set_list_incr_helper :
+    ∀ (te : S.typassign) (xs : List positive) (tys : List RTLtypes.t)
+      (e e' : S.typenv), S.set_list e xs tys = OK e' → S.satisf te e' → S.satisf te e := by
+  intro te xs tys e e' h hs
+  induction xs generalizing e e' tys with
+  | nil =>
+      cases tys <;> simp [S.set_list, UniSolver.set_list] at h
+      cases h
+      exact hs
+  | cons x xs ih =>
+      cases tys with
+      | nil => simp [S.set_list, UniSolver.set_list] at h
+      | cons ty tys =>
+          simp only [S.set_list, UniSolver.set_list] at h
+          cases hse : UniSolver.set rtlTypeAlgebra e x (ty : rtlTypeAlgebra.t) with
+          | Error msg => simp [hse] at h
+          | OK e1 =>
+              simp [hse] at h
+              apply rtl_set_incr_helper te x ty e e1 hse
+              exact ih (e := e1) (e' := e') (tys := tys) h hs
+
+theorem set_list_sound_proof : S.set_list_sound := by
+  intro te xs tys e e' h hs
+  induction xs generalizing e e' tys with
+  | nil =>
+      cases tys with
+      | nil =>
+          simp [S.set_list, UniSolver.set_list] at h
+          cases h
+          rfl
+      | cons ty tys => simp [S.set_list, UniSolver.set_list] at h
+  | cons x xs ih =>
+      cases tys with
+      | nil => simp [S.set_list, UniSolver.set_list] at h
+      | cons ty tys =>
+          cases hse : UniSolver.set rtlTypeAlgebra e x (ty : rtlTypeAlgebra.t) with
+          | Error msg =>
+              simp only [S.set_list, UniSolver.set_list] at h
+              rw [hse] at h
+              cases h
+          | OK e1 =>
+            simp only [S.set_list, UniSolver.set_list] at h
+            rw [hse] at h
+            simp at h
+            have hty : te x = ty := by
+              apply rtl_set_sound_helper te x ty e e1 hse
+              exact rtl_set_list_incr_helper te xs tys e1 e' h hs
+            have htail := ih (e := e1) (e' := e') (tys := tys) h hs
+            exact List.cons_eq_cons.mpr ⟨hty, htail⟩
+
+end S
+end CompCert4Lean.Backend.RTLtyping

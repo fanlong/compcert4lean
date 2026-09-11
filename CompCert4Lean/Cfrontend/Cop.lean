@@ -1431,3 +1431,13 @@ theorem sem_cast_inj :
     simpa [hofs] using hp
 
 end CompCert4Lean.Cfrontend.Cop
+
+namespace CompCert4Lean.Cfrontend.Cop
+
+theorem sem_shift_inject : sem_shift_injectStatement := by
+  intro f sem_int sem_long v1 t1 v2 t2 v v1' v2' hsem hinj1 hinj2
+  cases hclass : classify_shift t1 t2 <;> simp [sem_shift, hclass] at hsem ⊢
+  all_goals
+    cases hinj1 <;> cases hinj2 <;> simp_all <;> rcases hsem with ⟨_, rfl⟩ <;> constructor
+
+end CompCert4Lean.Cfrontend.Cop

@@ -548,3 +548,32 @@ theorem wt_setres : wt_setresStatement := by
         · exact hrs
 
 end CompCert4Lean.Backend.Lineartyping
+
+namespace CompCert4Lean.Backend.Lineartyping
+
+theorem wt_find_label : wt_find_labelStatement := by
+  intro cfg f lbl c hwt hfind
+  unfold wt_function at hwt
+  have aux : ∀ (code : LinearCode), wt_code cfg f code = true →
+      ∀ c, Linear.find_label lbl code = some c → wt_code cfg f c = true := by
+    intro code
+    induction code with
+    | nil =>
+        intro hwt c hfind
+        simp [Linear.find_label] at hfind
+    | cons i il ih =>
+        intro hwt c hfind
+        simp only [Linear.find_label] at hfind
+        have hwt' : wt_instr cfg f i = true ∧ wt_code cfg f il = true := by
+          simpa [wt_code, listForallb,
+            CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.List.forallb] using hwt
+        by_cases hl : Linear.is_label lbl i
+        · simp [hl] at hfind
+          have hc : il = c := Option.some.inj hfind
+          subst c
+          exact hwt'.2
+        · simp [hl] at hfind
+          exact ih hwt'.2 c hfind
+  exact aux f.fn_code hwt c hfind
+
+end CompCert4Lean.Backend.Lineartyping

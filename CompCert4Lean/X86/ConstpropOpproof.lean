@@ -532,3 +532,14 @@ def op_strength_reduction_correctStatement
           Val.lessdef v w
 
 end CompCert4Lean.X86.ConstpropOpproof
+
+namespace CompCert4Lean.X86.ConstpropOpproof
+
+theorem eval_Olea_ptr
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    @eval_Olea_ptrStatement binary64_certificate binary32_certificate := by
+  intro ge sp m a el
+  rfl
+
+end CompCert4Lean.X86.ConstpropOpproof

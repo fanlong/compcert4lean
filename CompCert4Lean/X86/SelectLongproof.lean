@@ -412,3 +412,15 @@ def is_longconst_soundStatement
     x = .Vlong n
 
 end CompCert4Lean.X86.SelectLongproof
+
+namespace CompCert4Lean.X86.SelectLongproof
+
+theorem eval_longconst
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    eval_longconstStatement := by
+  intro xi prog sp e m le n
+  exact CompCert4Lean.Backend.CminorSel.eval_expr.eval_Eop le (.Olongconst n) (.Enil) []
+    (.Vlong n) (CompCert4Lean.Backend.CminorSel.eval_exprlist.nil le) rfl
+
+end CompCert4Lean.X86.SelectLongproof

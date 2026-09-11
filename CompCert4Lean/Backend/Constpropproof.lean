@@ -958,3 +958,27 @@ theorem function_ptr_translated : ∀ cfg, function_ptr_translatedStatement cfg 
       | Gvar v1 => simp [h1] at hfind
 
 end CompCert4Lean.Backend.Constpropproof
+
+namespace CompCert4Lean.Backend.Constpropproof
+
+open CompCert4Lean.Backend.Constprop
+open CompCert4Lean.Backend.ValueAnalysis
+open CompCert4Lean.Backend.ValueDomain
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Builtins
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Values
+open CompCert4Lean.X86.Op
+
+theorem builtin_arg_strength_reduction_correct :
+    ∀ (cfg : CompCert4Lean.Config.CompilerConfig),
+      builtin_arg_strength_reduction_correctStatement cfg := by
+  intro cfg prog bc sp m rs ae a v c hmatch hev
+  unfold builtin_arg_strength_reduction
+  by_cases hok : builtin_arg_ok (builtin_arg_reduction cfg ae a) c = true
+  · rw [if_pos hok]
+    exact builtin_arg_reduction_correct cfg prog bc sp m rs ae hmatch a v hev
+  · rw [if_neg hok]
+    exact hev
+
+end CompCert4Lean.Backend.Constpropproof

@@ -705,3 +705,201 @@ theorem Zdiv_unique_2 : Zdiv_unique_2Statement := by
     exact hrepr.symm, hrnonneg, hrlt⟩
 
 end CompCert4Lean.Backend.SelectDivproof
+
+namespace CompCert4Lean.Backend.SelectDivproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+private theorem zdiv_pos_int (a b : CCZ) (hb : 0 < intOfZ b) :
+    zDiv a b = zOfInt (Int.ediv (intOfZ a) (intOfZ b)) := by
+  change zOfInt (if intOfZ b = 0 then 0 else if 0 < intOfZ b then
+    Int.ediv (intOfZ a) (intOfZ b) else
+      let d := -intOfZ b
+      let q := Int.ediv (intOfZ a) d
+      let r := Int.emod (intOfZ a) d
+      if r = 0 then -q else -(q + 1)) = _
+  simp [Int.ne_of_gt hb, hb]
+
+theorem Zdiv_mul_opp : Zdiv_mul_oppStatement := by
+  intro N hN d hd m l hl hbounds n hn
+  have hN' : 0 ≤ intOfZ N := hN
+  have hl' : 0 ≤ intOfZ l := hl
+  have hd' : 0 < intOfZ d := hd
+  have hE : 0 ≤ intOfZ (zAdd N l) := by
+    change 0 ≤ intOfZ (zOfInt (intOfZ N + intOfZ l))
+    rw [intOfZ_zOfInt]
+    omega
+  have hT : 0 < intOfZ (two_p (zAdd N l)) := by
+    unfold two_p ZArith.Zpower.two_p ZArith.BinInt.Z.pow
+    rw [if_neg (Int.not_lt_of_ge hE)]
+    simp only [intOfZ_zOfInt]
+    exact Int.pow_pos (by decide)
+  have hLO : intOfZ (two_p (zAdd N l)) < intOfZ m * intOfZ d := by
+    have h := hbounds.1
+    change intOfZ (two_p (zAdd N l)) <
+      intOfZ (zOfInt (intOfZ m * intOfZ d)) at h
+    simpa only [intOfZ_zOfInt] using h
+  have hHI : intOfZ m * intOfZ d ≤
+      intOfZ (two_p (zAdd N l)) + intOfZ (two_p l) := by
+    have h := hbounds.2
+    change intOfZ (zOfInt (intOfZ m * intOfZ d)) ≤
+      intOfZ (zOfInt (intOfZ (two_p (zAdd N l)) + intOfZ (two_p l))) at h
+    simpa only [intOfZ_zOfInt] using h
+  have hM : 0 ≤ intOfZ m := by
+    by_cases hm : 0 ≤ intOfZ m
+    · exact hm
+    · have hm' : intOfZ m < 0 := Int.lt_of_not_ge hm
+      have hprod : intOfZ m * intOfZ d ≤ 0 :=
+        Int.mul_nonpos_of_nonpos_of_nonneg (Int.le_of_lt hm') (Int.le_of_lt hd')
+      omega
+  have hX : 0 < intOfZ n := hn.1
+  have hXN : intOfZ n ≤ intOfZ (two_p N) := hn.2
+  have hdivn := zdiv_pos_int n d hd'
+  have hdivneg := zdiv_pos_int (zMul m (zOpp n)) (two_p (zAdd N l)) hT
+  rw [hdivn, hdivneg]
+  apply intOfZ_injective
+  simp only [intOfZ_zOfInt]
+  simp only [zSub, zOpp, ZArith.BinInt.Z.sub, ZArith.BinInt.Z.opp, intOfZ_zOfInt]
+  change Int.ediv (intOfZ n) (intOfZ d) =
+    -(Int.ediv (intOfZ (zMul m (zOpp n))) (intOfZ (two_p (zAdd N l)))) - 1
+  have hnum : intOfZ (zMul m (zOpp n)) = -(intOfZ m * intOfZ n) := by
+    simp only [zMul, zOpp, ZArith.BinInt.Z.mul, ZArith.BinInt.Z.opp,
+      intOfZ_zOfInt]
+    exact Int.mul_neg _ _
+  rw [hnum]
+  let q : Int := Int.ediv (intOfZ n) (intOfZ d)
+  let r : Int := Int.emod (intOfZ n) (intOfZ d)
+  have hrnonneg : 0 ≤ r := by
+    dsimp [r]
+    exact Int.emod_nonneg _ (Int.ne_of_gt hd')
+  have hrlt : r < intOfZ d := by
+    dsimp [r]
+    exact Int.emod_lt_of_pos _ hd'
+  have hdecomp : intOfZ n = q * intOfZ d + r := by
+    dsimp [q, r]
+    exact (Int.ediv_mul_add_emod (intOfZ n) (intOfZ d)).symm
+  have hkpos : 0 < intOfZ m * intOfZ d - intOfZ (two_p (zAdd N l)) := by
+    omega
+  have hkle : intOfZ m * intOfZ d - intOfZ (two_p (zAdd N l)) ≤ intOfZ (two_p l) := by
+    omega
+  have hEq :
+      (intOfZ m * intOfZ n - intOfZ (two_p (zAdd N l)) * q) * intOfZ d =
+        (intOfZ m * intOfZ d - intOfZ (two_p (zAdd N l))) * intOfZ n +
+    intOfZ (two_p (zAdd N l)) * r := by
+    rw [hdecomp]
+    simp only [Int.mul_add, Int.add_mul, Int.mul_sub, Int.sub_mul,
+      Int.mul_assoc, Int.mul_comm, Int.mul_left_comm,
+      Int.add_assoc, Int.add_comm, Int.add_left_comm, Int.sub_eq_add_neg,
+      Int.mul_neg, Int.neg_mul]
+    omega
+  have htwoN : intOfZ (two_p N) = Int.pow 2 (Int.toNat (intOfZ N)) := by
+    unfold two_p ZArith.Zpower.two_p ZArith.BinInt.Z.pow
+    rw [if_neg (Int.not_lt_of_ge hN')]
+    simp only [intOfZ_zOfInt]
+    have hbase : intOfZ (Zpos (.xO .xH)) = (2 : Int) := by decide
+    rw [hbase]
+  have htwoL : intOfZ (two_p l) = Int.pow 2 (Int.toNat (intOfZ l)) := by
+    unfold two_p ZArith.Zpower.two_p ZArith.BinInt.Z.pow
+    rw [if_neg (Int.not_lt_of_ge hl')]
+    simp only [intOfZ_zOfInt]
+    have hbase : intOfZ (Zpos (.xO .xH)) = (2 : Int) := by decide
+    rw [hbase]
+  have htwoE : intOfZ (two_p (zAdd N l)) =
+      Int.pow 2 (Int.toNat (intOfZ (zAdd N l))) := by
+    unfold two_p ZArith.Zpower.two_p ZArith.BinInt.Z.pow
+    rw [if_neg (Int.not_lt_of_ge hE)]
+    simp only [intOfZ_zOfInt]
+    have hbase : intOfZ (Zpos (.xO .xH)) = (2 : Int) := by decide
+    rw [hbase]
+  have hEl : intOfZ (zAdd N l) = intOfZ N + intOfZ l := by
+    simp only [zAdd, ZArith.BinInt.Z.add, intOfZ_zOfInt]
+  have hpow : intOfZ (two_p (zAdd N l)) =
+      intOfZ (two_p l) * intOfZ (two_p N) := by
+    rw [htwoE, hEl, htwoL, htwoN, Int.toNat_add hN' hl']
+    calc
+      Int.pow 2 ((intOfZ N).toNat + (intOfZ l).toNat) =
+          Int.pow 2 (intOfZ N).toNat * Int.pow 2 (intOfZ l).toNat :=
+        Int.pow_add 2 _ _
+      _ = Int.pow 2 (intOfZ l).toNat * Int.pow 2 (intOfZ N).toNat := by
+        rw [Int.mul_comm]
+  have hPpos : 0 < intOfZ (two_p l) := by
+    rw [htwoL]
+    exact Int.pow_pos (by decide)
+  have hPNnonneg : 0 ≤ intOfZ (two_p N) := by
+    rw [htwoN]
+    exact Int.pow_nonneg (by decide)
+  have hkn_le :
+      (intOfZ m * intOfZ d - intOfZ (two_p (zAdd N l))) * intOfZ n ≤
+        intOfZ (two_p (zAdd N l)) := by
+    have h1 := Int.mul_le_mul_of_nonneg_right hkle (Int.le_of_lt hX)
+    have h2 := Int.mul_le_mul_of_nonneg_left hXN (Int.le_of_lt hPpos)
+    calc
+      (intOfZ m * intOfZ d - intOfZ (two_p (zAdd N l))) * intOfZ n ≤
+          intOfZ (two_p l) * intOfZ n := h1
+      _ ≤ intOfZ (two_p l) * intOfZ (two_p N) := h2
+      _ = intOfZ (two_p (zAdd N l)) := hpow.symm
+  have hrle : r ≤ intOfZ d - 1 := by omega
+  have htr_le : intOfZ (two_p (zAdd N l)) * r ≤
+      intOfZ (two_p (zAdd N l)) * intOfZ d - intOfZ (two_p (zAdd N l)) := by
+    have h := Int.mul_le_mul_of_nonneg_left hrle (Int.le_of_lt hT)
+    rw [Int.mul_sub, Int.mul_one] at h
+    exact h
+  have hsum_le :
+      (intOfZ m * intOfZ d - intOfZ (two_p (zAdd N l))) * intOfZ n +
+          intOfZ (two_p (zAdd N l)) * r ≤
+        intOfZ (two_p (zAdd N l)) * intOfZ d := by
+    omega
+  have hApos : 0 < intOfZ m * intOfZ n -
+      intOfZ (two_p (zAdd N l)) * q := by
+    have hprod : 0 <
+        (intOfZ m * intOfZ n - intOfZ (two_p (zAdd N l)) * q) * intOfZ d := by
+      rw [hEq]
+      have hkx : 0 <
+          (intOfZ m * intOfZ d - intOfZ (two_p (zAdd N l))) * intOfZ n :=
+        Int.mul_pos hkpos hX
+      have htr : 0 ≤ intOfZ (two_p (zAdd N l)) * r :=
+        Int.mul_nonneg (Int.le_of_lt hT) hrnonneg
+      omega
+    have hnonpos : ¬ (intOfZ m * intOfZ n -
+        intOfZ (two_p (zAdd N l)) * q ≤ 0) := by
+      intro hbad
+      have hbad' := Int.mul_nonpos_of_nonpos_of_nonneg hbad (Int.le_of_lt hd')
+      omega
+    exact Int.lt_of_not_ge hnonpos
+  have hAle : intOfZ m * intOfZ n -
+      intOfZ (two_p (zAdd N l)) * q ≤ intOfZ (two_p (zAdd N l)) := by
+    have hmul :
+        (intOfZ m * intOfZ n - intOfZ (two_p (zAdd N l)) * q) * intOfZ d ≤
+          intOfZ (two_p (zAdd N l)) * intOfZ d := by
+      rw [hEq]
+      exact hsum_le
+    exact Int.le_of_mul_le_mul_right hmul hd'
+  have hnegdecomp :
+      -(intOfZ m * intOfZ n) =
+        (-q - 1) * intOfZ (two_p (zAdd N l)) +
+          (intOfZ (two_p (zAdd N l)) -
+            (intOfZ m * intOfZ n - intOfZ (two_p (zAdd N l)) * q)) := by
+    simp only [Int.mul_sub, Int.mul_add, Int.add_mul, Int.sub_mul,
+      Int.mul_assoc, Int.mul_comm, Int.mul_left_comm,
+      Int.add_assoc, Int.add_comm, Int.add_left_comm, Int.sub_eq_add_neg,
+      Int.mul_neg, Int.neg_mul]
+    omega
+  have hnegquot := (Int.ediv_emod_unique
+      (a := -(intOfZ m * intOfZ n))
+      (b := intOfZ (two_p (zAdd N l)))
+      (q := -q - 1)
+      (r := intOfZ (two_p (zAdd N l)) -
+        (intOfZ m * intOfZ n - intOfZ (two_p (zAdd N l)) * q)) hT).mpr ?_
+  · change q = -((-(intOfZ m * intOfZ n)).ediv
+      (intOfZ (two_p (zAdd N l)))) - 1
+    have hqneg : Int.ediv (-(intOfZ m * intOfZ n))
+        (intOfZ (two_p (zAdd N l))) = -q - 1 := hnegquot.1
+    rw [hqneg]
+    omega
+  · refine ⟨?_, ?_, ?_⟩
+    · rw [Int.add_comm, Int.mul_comm]
+      exact hnegdecomp.symm
+    · omega
+    · omega
+
+end CompCert4Lean.Backend.SelectDivproof

@@ -617,3 +617,14 @@ def eval_platform_builtinStatement
       ∃ v', eval_expr (binary64_certificate := binary64_certificate) (binary32_certificate := binary32_certificate) xi ge sp e m le a v' ∧ Val.lessdef v v'
 
 end CompCert4Lean.X86.SelectOpproof
+
+namespace CompCert4Lean.X86.SelectOpproof
+
+theorem eval_Olea_ptr
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    eval_Olea_ptrStatement := by
+  intro ge sp a el m
+  rfl
+
+end CompCert4Lean.X86.SelectOpproof

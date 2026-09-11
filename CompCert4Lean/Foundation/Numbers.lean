@@ -1226,3 +1226,65 @@ theorem ZArith.Zorder.Zplus_le_reg_r :
 
 end Rocq.Coq
 end CompCert4Lean.Foundation.Numbers
+
+namespace CompCert4Lean.Foundation.Numbers
+namespace Rocq.Coq
+
+theorem ZArith.Zdiv.Z_div_mod_eq_full :
+    ZArith.Zdiv.Z_div_mod_eq_fullStatement := by
+  intro a b
+  apply intOfZ_injective
+  dsimp [ZArith.BinInt.Z.add, ZArith.BinInt.Z.mul,
+    ZArith.BinInt.Z.div, ZArith.BinInt.Z.modulo, intOfZ_zOfInt]
+  simp only [intOfZ_zOfInt]
+  unfold ZArith.BinInt.Z.zDivEucl ZArith.BinInt.Z.zModEucl
+  by_cases hb0 : intOfZ b = 0
+  · simp [hb0]
+  by_cases hbpos : 0 < intOfZ b
+  · simp only [hb0, hbpos, if_false, if_true]
+    calc
+      intOfZ a =
+          (intOfZ a).ediv (intOfZ b) * intOfZ b +
+            (intOfZ a).emod (intOfZ b) :=
+        (Int.ediv_mul_add_emod (intOfZ a) (intOfZ b)).symm
+      _ = intOfZ b * (intOfZ a).ediv (intOfZ b) +
+            (intOfZ a).emod (intOfZ b) := by rw [Int.mul_comm]
+  · have hbneg : intOfZ b < 0 := by omega
+    simp only [hb0, hbpos, if_false]
+    by_cases hr : (intOfZ a).emod (-intOfZ b) = 0
+    · simp only [hr, if_true]
+      calc
+        intOfZ a =
+            (intOfZ a).ediv (-intOfZ b) * (-intOfZ b) := by
+          have hde :
+              (intOfZ a).ediv (-intOfZ b) * (-intOfZ b) +
+                (intOfZ a).emod (-intOfZ b) = intOfZ a :=
+            Int.ediv_mul_add_emod (intOfZ a) (-intOfZ b)
+          rw [hr, Int.add_zero] at hde
+          exact hde.symm
+        _ = intOfZ b * -(intOfZ a).ediv (-intOfZ b) + 0 := by
+          calc
+            (intOfZ a).ediv (-intOfZ b) * (-intOfZ b) =
+                -((intOfZ a).ediv (-intOfZ b) * intOfZ b) :=
+              Int.mul_neg _ _
+            _ = -(intOfZ b * (intOfZ a).ediv (-intOfZ b)) := by
+              exact congrArg Int.neg (Int.mul_comm _ _)
+            _ = intOfZ b * -(intOfZ a).ediv (-intOfZ b) :=
+              (Int.mul_neg _ _).symm
+            _ = intOfZ b * -(intOfZ a).ediv (-intOfZ b) + 0 := by
+              exact (Int.add_zero _).symm
+    · simp only [hr, if_false]
+      calc
+        intOfZ a =
+            (intOfZ a).ediv (-intOfZ b) * (-intOfZ b) +
+              (intOfZ a).emod (-intOfZ b) := by
+          exact (Int.ediv_mul_add_emod (intOfZ a) (-intOfZ b)).symm
+        _ = intOfZ b * -((intOfZ a).ediv (-intOfZ b) + 1) +
+              ((intOfZ a).emod (-intOfZ b) - (-intOfZ b)) := by
+          simp only [Int.sub_eq_add_neg, Int.mul_neg, Int.neg_add,
+            Int.mul_add, Int.mul_one, Int.mul_neg_one, Int.neg_neg]
+          rw [Int.mul_comm ((intOfZ a).ediv (-intOfZ b)) (intOfZ b)]
+          omega
+
+end Rocq.Coq
+end CompCert4Lean.Foundation.Numbers

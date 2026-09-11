@@ -630,3 +630,245 @@ theorem symbols_preserved : symbols_preservedStatement := by
   simpa [Genv.find_symbol, Genv.globalenv] using hsymb
 
 end CompCert4Lean.Backend.Debugvarproof
+
+namespace CompCert4Lean.Backend.Debugvarproof
+
+open CompCert4Lean.Backend.Debugvar
+open CompCert4Lean.Backend.Linear
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Linking
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Lib.Coqlib
+
+private theorem debugvar_match_genvs_add_global
+    (R : globdef fundef Unit → globdef fundef Unit → Prop)
+    (ge1 ge2 : Genv.t fundef Unit) (id : ident)
+    (g1 g2 : globdef fundef Unit)
+    (hm : Genv.match_genvs R ge1 ge2) (hrel : R g1 g2) :
+    Genv.match_genvs R (Genv.add_global ge1 (id, g1))
+      (Genv.add_global ge2 (id, g2)) := by
+  constructor
+  · exact congrArg PArith.BinPos.Pos.succ hm.mge_next
+  · exact debugvar_symbol_add_global ge1 ge2 id hm.mge_symb hm.mge_next
+  · intro b
+    change option_rel R
+      (CompCert4Lean.Lib.Maps.PTree.get b
+        (CompCert4Lean.Lib.Maps.PTree.set ge1.genv_next g1 ge1.genv_defs))
+      (CompCert4Lean.Lib.Maps.PTree.get b
+        (CompCert4Lean.Lib.Maps.PTree.set ge2.genv_next g2 ge2.genv_defs))
+    have h1 := @CompCert4Lean.Lib.Maps.PTree.getSet_equation _ b
+      ge1.genv_next g1 ge1.genv_defs
+    have h2 := @CompCert4Lean.Lib.Maps.PTree.getSet_equation _ b
+      ge2.genv_next g2 ge2.genv_defs
+    by_cases h : b = ge1.genv_next
+    · have h' : b = ge2.genv_next := h.trans hm.mge_next.symm
+      rw [h1, h2]
+      simp only [dif_pos h, dif_pos h']
+      exact option_rel.some g1 g2 hrel
+    · have h' : b ≠ ge2.genv_next := by
+        intro hb
+        apply h
+        exact hb.trans hm.mge_next
+      rw [h1, h2]
+      simp only [dif_neg h, dif_neg h']
+      exact hm.mge_defs b
+
+private theorem debugvar_match_genvs_add_globals
+    (R : globdef fundef Unit → globdef fundef Unit → Prop)
+    (xs ys : List (ident × globdef fundef Unit))
+    (hxy : list_forall2 (fun a b => a.1 = b.1 ∧ R a.2 b.2) xs ys)
+    (ge1 ge2 : Genv.t fundef Unit) (hm : Genv.match_genvs R ge1 ge2) :
+    Genv.match_genvs R (Genv.add_globals ge1 xs) (Genv.add_globals ge2 ys) := by
+  induction hxy generalizing ge1 ge2 with
+  | nil => simpa [Genv.add_globals] using hm
+  | @cons a xs b ys hab htail ih =>
+      rcases a with ⟨aid, ag⟩
+      rcases b with ⟨bid, bg⟩
+      rcases hab with ⟨habid, habg⟩
+      change aid = bid at habid
+      subst bid
+      simp only [Genv.add_globals, List.foldl_cons]
+      apply ih
+      simpa using (debugvar_match_genvs_add_global R ge1 ge2 aid ag bg hm habg)
+
+private theorem debugvar_add_globals_public
+    (ge : Genv.t fundef Unit) (gl : List (ident × globdef fundef Unit)) :
+    (Genv.add_globals ge gl).genv_public = ge.genv_public := by
+  induction gl generalizing ge with
+  | nil => rfl
+  | cons idg gl ih =>
+      simp only [Genv.add_globals, List.foldl_cons]
+      simpa [Genv.add_globals, Genv.add_global] using ih (Genv.add_global ge idg)
+
+private theorem debugvar_globalenvs_match
+    (cfg : CompilerConfig)
+    (prog tprog : CompCert4Lean.Common.AST.program fundef Unit)
+    (hm : match_prog cfg prog tprog) :
+    Genv.match_genvs
+      (@match_globdef (CompCert4Lean.Common.AST.program fundef Unit)
+        fundef Unit fundef Unit
+        (@Linker_prog fundef Unit (Linker_fundef function) Linker_unit)
+        (fun (_ : CompCert4Lean.Common.AST.program fundef Unit) f tf =>
+          CompCert4Lean.Backend.Debugvar.transf_fundef cfg f = .OK tf)
+        (fun _ _ : Unit => True) prog)
+      (Genv.globalenv prog) (Genv.globalenv tprog) := by
+  letI : Linker fundef := Linker_fundef function
+  letI : Linker (CompCert4Lean.Common.AST.program fundef Unit) :=
+    Linker_prog fundef Unit
+  unfold match_prog match_program match_program_gen at hm
+  let R : globdef fundef Unit → globdef fundef Unit → Prop :=
+    match_globdef
+      (fun (_ : CompCert4Lean.Common.AST.program fundef Unit) f tf =>
+        CompCert4Lean.Backend.Debugvar.transf_fundef cfg f = .OK tf)
+      (fun _ _ : Unit => True) prog
+  have hempty : Genv.match_genvs R
+      (Genv.empty_genv fundef Unit prog.prog_public)
+      (Genv.empty_genv fundef Unit tprog.prog_public) := by
+    constructor
+    · rfl
+    · intro id'
+      rfl
+    · intro b
+      exact option_rel.none R
+  have hlist_of : ∀ (xs ys : List (ident × globdef fundef Unit)),
+      list_forall2 (match_ident_globdef
+        (fun (_ : CompCert4Lean.Common.AST.program fundef Unit) f tf =>
+          CompCert4Lean.Backend.Debugvar.transf_fundef cfg f = .OK tf)
+        (fun x y : Unit => x = y) prog) xs ys →
+      list_forall2 (fun a b => a.1 = b.1 ∧ R a.2 b.2) xs ys := by
+    intro xs ys h
+    induction h with
+    | nil => exact list_forall2.nil _
+    | @cons a xs b ys hab htail ih =>
+        apply list_forall2.cons
+        · constructor
+          · exact hab.1
+          · simpa [R] using hab.2
+        · exact ih
+  have hlist := hlist_of prog.prog_defs tprog.prog_defs hm.1
+  exact debugvar_match_genvs_add_globals R prog.prog_defs tprog.prog_defs
+    hlist _ _ hempty
+
+theorem function_ptr_translated : function_ptr_translatedStatement := by
+  intro cfg prog tprog hm b f hfind
+  have hg := debugvar_globalenvs_match cfg prog tprog hm
+  unfold Genv.find_funct_ptr Genv.find_def at hfind ⊢
+  cases h1 : CompCert4Lean.Lib.Maps.PTree.get b (Genv.globalenv prog).genv_defs with
+  | none => simp [h1] at hfind
+  | some gd1 =>
+      cases gd1 with
+      | Gfun f1 =>
+          have hf : f1 = f := by simpa [h1] using hfind
+          subst f1
+          cases h2 : CompCert4Lean.Lib.Maps.PTree.get b (Genv.globalenv tprog).genv_defs with
+          | none =>
+              have hd := hg.mge_defs b
+              simp [h1, h2] at hd
+              cases hd
+          | some gd2 =>
+              cases gd2 with
+              | Gfun f2 =>
+                  have hd := hg.mge_defs b
+                  simp [h1, h2] at hd
+                  cases hd with
+                  | some x y hrel =>
+                      cases hrel with
+                      | match_globdef_fun ctx' f1 f2 horder htrans =>
+                          simpa using htrans
+              | Gvar v2 =>
+                  have hd := hg.mge_defs b
+                  simp [h1, h2] at hd
+                  cases hd with
+                  | some x y hrel => cases hrel
+      | Gvar v1 => simp [h1] at hfind
+
+theorem functions_translated : functions_translatedStatement := by
+  intro cfg prog tprog hm v f hfind
+  unfold Genv.find_funct at hfind ⊢
+  cases v with
+  | Vundef => simp at hfind
+  | Vint n => simp at hfind
+  | Vlong n => simp at hfind
+  | Vfloat n => simp at hfind
+  | Vsingle n => simp at hfind
+  | Vptr b ofs =>
+      cases hzero : CompCert4Lean.Lib.Integers.Ptrofs.eq ofs
+          CompCert4Lean.Lib.Integers.Ptrofs.zero with
+      | false => simp [hzero] at hfind
+      | true =>
+          simp [hzero] at hfind ⊢
+          exact function_ptr_translated cfg prog tprog hm b f hfind
+
+theorem senv_preserved : senv_preservedStatement := by
+  intro cfg prog tprog hm
+  unfold Senv.equiv
+  constructor
+  · intro id
+    exact symbols_preserved cfg prog tprog hm id
+  constructor
+  · intro id
+    change Genv.public_symbol (Genv.globalenv tprog) id =
+      Genv.public_symbol (Genv.globalenv prog) id
+    have ht : (Genv.globalenv tprog).genv_public = tprog.prog_public := by
+      unfold Genv.globalenv
+      exact debugvar_add_globals_public _ _
+    have hp : (Genv.globalenv prog).genv_public = prog.prog_public := by
+      unfold Genv.globalenv
+      exact debugvar_add_globals_public _ _
+    unfold Genv.public_symbol
+    rw [symbols_preserved cfg prog tprog hm id]
+    unfold match_prog match_program match_program_gen at hm
+    rw [ht, hp, hm.2.2]
+  · intro b
+    change Genv.block_is_volatile (Genv.globalenv tprog) b =
+      Genv.block_is_volatile (Genv.globalenv prog) b
+    have hg := debugvar_globalenvs_match cfg prog tprog hm
+    unfold Genv.block_is_volatile Genv.find_var_info Genv.find_def
+    cases h1 : CompCert4Lean.Lib.Maps.PTree.get b (Genv.globalenv prog).genv_defs with
+    | none =>
+        cases h2 : CompCert4Lean.Lib.Maps.PTree.get b (Genv.globalenv tprog).genv_defs with
+        | none => rfl
+        | some gd2 =>
+            have hd := hg.mge_defs b
+            simp [h1, h2] at hd
+            cases hd
+    | some gd1 =>
+        cases h2 : CompCert4Lean.Lib.Maps.PTree.get b (Genv.globalenv tprog).genv_defs with
+        | none =>
+            have hd := hg.mge_defs b
+            simp [h1, h2] at hd
+            cases hd
+        | some gd2 =>
+            have hd := hg.mge_defs b
+            simp [h1, h2] at hd
+            cases hd with
+            | some x y hrel =>
+                cases hrel with
+                | match_globdef_fun ctx' f1 f2 horder htrans => rfl
+                | match_globdef_var v1 v2 hvar =>
+                    cases hvar
+                    rfl
+
+theorem sig_preserved : sig_preservedStatement := by
+  intro cfg f tf h
+  unfold CompCert4Lean.Backend.Debugvar.transf_fundef
+    CompCert4Lean.Common.AST.transf_partial_fundef at h
+  cases f with
+  | Internal f =>
+      cases hfun : CompCert4Lean.Backend.Debugvar.transf_function cfg f with
+      | Error msg => simp [hfun] at h
+      | OK tf' =>
+          simp [hfun] at h
+          cases h
+          cases hAna : CompCert4Lean.Backend.Debugvar.ana_function cfg f with
+          | none => simp [CompCert4Lean.Backend.Debugvar.transf_function, hAna] at hfun
+          | some lm =>
+              simp [CompCert4Lean.Backend.Debugvar.transf_function, hAna] at hfun
+              cases hfun
+              rfl
+  | External ef =>
+      cases h
+      rfl
+
+end CompCert4Lean.Backend.Debugvarproof

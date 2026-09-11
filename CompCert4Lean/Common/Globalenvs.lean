@@ -1311,3 +1311,19 @@ theorem find_funct_find_funct_ptr : find_funct_find_funct_ptrStatement := by
 
 end Genv
 end CompCert4Lean.Common.Globalenvs
+
+namespace CompCert4Lean.Common.Globalenvs
+namespace Genv
+
+theorem find_funct_ptr_iff : find_funct_ptr_iffStatement := by
+  intro F V ge b f
+  unfold find_funct_ptr
+  cases h : find_def ge b with
+  | none => simp [h]
+  | some gd =>
+      cases gd with
+      | Gfun f' => simp [h]
+      | Gvar v => simp [h]
+
+end Genv
+end CompCert4Lean.Common.Globalenvs

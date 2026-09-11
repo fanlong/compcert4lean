@@ -645,3 +645,45 @@ theorem repr_union_1_proof : repr_union_1 := by
   exact hx
 
 end CompCert4Lean.Backend.Tunneling.U
+
+namespace CompCert4Lean.Backend.Tunneling.U
+
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.Lib.UnionFind
+
+private theorem pg_tunnel_repr_union_2_b4 {M : MAP} (uf : UF.t M)
+    (a b x : UF.elt M)
+    (hx : UF.repr M uf x = UF.repr M uf a) :
+    UF.repr M (UF.union M uf a b) x = UF.repr M uf b := by
+  unfold UF.union
+  dsimp
+  split
+  · next heq => exact hx.trans heq
+  · next heq =>
+      exact (pg_tunnel_repr_identify_2 uf (UF.repr M uf a) (UF.repr M uf b)
+        _ _ x hx).trans (pg_tunnel_repr_canonical uf b)
+
+private theorem pg_tunnel_sameclass_union_2_b4 {M : MAP} (uf : UF.t M)
+    (a b x y : UF.elt M)
+    (hxy : UF.repr M uf x = UF.repr M uf y) :
+    UF.repr M (UF.union M uf a b) x = UF.repr M (UF.union M uf a b) y := by
+  by_cases hx : UF.repr M uf x = UF.repr M uf a
+  · rw [pg_tunnel_repr_union_2_b4 uf a b x hx]
+    rw [pg_tunnel_repr_union_2_b4 uf a b y (hxy.symm.trans hx)]
+  · rw [pg_tunnel_repr_union_1 uf a b x hx]
+    rw [pg_tunnel_repr_union_1 uf a b y (by
+      intro hy
+      exact hx (hxy.trans hy))]
+    exact hxy
+
+theorem sameclass_union_2_proof : sameclass_union_2 := by
+  intro uf a b x y hxy
+  cases uf
+  change U.repr _ x = U.repr _ y at hxy
+  change U.repr (U.union _ a b) x = U.repr (U.union _ a b) y
+  unfold U.repr at hxy
+  unfold U.repr U.union
+  apply pg_tunnel_sameclass_union_2_b4
+  exact hxy
+
+end CompCert4Lean.Backend.Tunneling.U

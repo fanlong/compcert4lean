@@ -303,3 +303,11 @@ theorem Zpower_ge_0 : Zpower_ge_0Statement := by
       simp [CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ]
 
 end CompCert4Lean.Flocq.Core.Zaux
+
+namespace CompCert4Lean.Flocq.Core.Zaux
+
+theorem eqbool_irrelevance : eqbool_irrelevanceStatement := by
+  intro b h1 h2
+  exact Subsingleton.elim h1 h2
+
+end CompCert4Lean.Flocq.Core.Zaux

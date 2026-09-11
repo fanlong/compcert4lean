@@ -1758,3 +1758,64 @@ theorem helper_functions_declared_linkorder :
     helper_declared_linkorder p p' _ _ _ h15 hlink⟩
 
 end CompCert4Lean.Backend.Selectionproof
+
+namespace CompCert4Lean.Backend.Selectionproof
+
+private theorem list_forall2_mem_left
+    {A B : Type} {P : A → B → Prop} :
+    ∀ {xs : List A} {ys : List B},
+      CompCert4Lean.Lib.Coqlib.list_forall2 P xs ys → ∀ {x : A}, x ∈ xs →
+        ∃ y : B, y ∈ ys ∧ P x y := by
+  intro xs ys h
+  induction h with
+  | nil =>
+      intro x hx
+      cases hx
+  | cons a b hp ht ih =>
+      intro x hx
+      cases hx with
+      | head as =>
+          exact ⟨b, by simp, hp⟩
+      | tail b' hx' =>
+          rcases ih hx' with ⟨y, hy, hpy⟩
+          exact ⟨y, by simp [hy], hpy⟩
+
+variable [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+variable [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+variable [binary64_inverse_certificate : BexactInverseCertificate (zOfNat 53) (zOfNat 1024)]
+variable [binary32_inverse_certificate : BexactInverseCertificate (zOfNat 24) (zOfNat 128)]
+
+theorem wt_prog
+    (cfg : CompilerConfig) (oracle : SelectionOracle) :
+    wt_progStatement cfg oracle := by
+  intro prog tprog hmatch
+  unfold CompCert4Lean.Backend.Cminortyping.wt_program
+  intro i f hmem
+  unfold match_prog CompCert4Lean.Common.Linking.match_program at hmatch
+  rcases hmatch with ⟨hdefs, _, _⟩
+  rcases list_forall2_mem_left hdefs hmem with ⟨ig', hi', hgd⟩
+  rcases ig' with ⟨i', gd'⟩
+  simp only [CompCert4Lean.Common.Linking.match_ident_globdef] at hgd
+  rcases hgd with ⟨hid, hglob⟩
+  cases f with
+  | Internal fn =>
+      cases gd' with
+      | Gfun tfn =>
+          cases hglob with
+          | match_globdef_fun ctx' f1 f2 hlink hfun =>
+              unfold match_fundef at hfun
+              rcases hfun with ⟨hf, hhelpers, hsel⟩
+              cases ht : CompCert4Lean.Backend.Cminortyping.type_function fn with
+              | Error msg =>
+                  simp [CompCert4Lean.Backend.Selection.sel_fundef,
+                    CompCert4Lean.Common.AST.transf_partial_fundef,
+                    CompCert4Lean.Backend.Selection.sel_function, ht] at hsel
+              | OK env =>
+                  apply CompCert4Lean.Backend.Cminortyping.wt_fundef_internal
+                  exact CompCert4Lean.Backend.Cminortyping.type_function_sound fn env ht
+      | Gvar v =>
+          cases hglob
+  | External ef =>
+      exact CompCert4Lean.Backend.Cminortyping.wt_fundef_external ef
+
+end CompCert4Lean.Backend.Selectionproof

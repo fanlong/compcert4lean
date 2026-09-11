@@ -1651,3 +1651,71 @@ theorem valnum_builtin_arg_holds
           · exact Ple_trans _ _ _ hle1 hle2
 
 end CompCert4Lean.Backend.CSEproof
+
+namespace CompCert4Lean.Backend.CSEproof
+
+open CompCert4Lean.Backend.CSEdomain
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Builtins
+open CompCert4Lean.Common.Events
+
+theorem valnum_builtin_args_holds
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    valnum_builtin_args_holdsStatement := by
+  intro ge sp rs m al vl hargs
+  unfold eval_builtin_args at hargs ⊢
+  have pltPle : ∀ (x y z : positive), Plt x y → Ple y z → Plt x z := by
+    intro x y z hxy hyz
+    change PArith.BinPos.Pos.to_nat x < PArith.BinPos.Pos.to_nat y at hxy
+    change PArith.BinPos.Pos.to_nat y ≤ PArith.BinPos.Pos.to_nat z at hyz
+    change PArith.BinPos.Pos.to_nat x < PArith.BinPos.Pos.to_nat z
+    exact Nat.lt_of_lt_of_le hxy hyz
+  induction hargs with
+  | nil =>
+      intro valu1 n n' al' hnum hval
+      simp [CSE.valnum_builtin_args] at hval
+      cases hval
+      subst n'
+      subst al'
+      refine ⟨valu1, hnum, ?_, valu_agree_refl valu1 n.num_next, ?_, ?_⟩
+      · exact list_forall2.nil _
+      · intro v hv
+        cases hv
+      · exact Ple_refl _
+  | cons =>
+      rename_i a1 al b1 bl ha hal ih
+      intro valu1 n n' al' hnum hval
+      cases h1 : CSE.valnum_builtin_arg n a1 with
+      | mk n1 a1' =>
+          cases h2 : CSE.valnum_builtin_args n1 al with
+          | mk n2 al'' =>
+              simp [CSE.valnum_builtin_args, h1, h2] at hval
+              cases hval
+              subst n'
+              subst al'
+              obtain ⟨valu2, hn2, heval1, hag12, hlt1, hle1⟩ :=
+                valnum_builtin_arg_holds ge sp rs m a1 b1 ha valu1 n n1 a1' hnum h1
+              obtain ⟨valu3, hn3, heval2, hag23, hlt2, hle2⟩ :=
+                ih valu2 n1 n2 al'' hn2 h2
+              refine ⟨valu3, hn3, ?_, ?_, ?_, ?_⟩
+              · apply list_forall2.cons
+                · apply builtin_arg_val_exten valu2 n1.num_next valu3 hag23 ge sp m
+                    a1' b1 heval1
+                  intro vn hvn
+                  exact hlt1 vn hvn
+                · exact heval2
+              · intro vn hvn
+                exact (hag23 vn (pltPle _ _ _ hvn hle1)).trans (hag12 vn hvn)
+              · intro vn hvn
+                change vn ∈ params_of_builtin_arg a1' ++ params_of_builtin_args al'' at hvn
+                rcases List.mem_append.mp hvn with hleft | hright
+                · exact pltPle _ _ _ (hlt1 vn hleft) hle2
+                · exact hlt2 vn hright
+              · exact Ple_trans _ _ _ hle1 hle2
+
+end CompCert4Lean.Backend.CSEproof

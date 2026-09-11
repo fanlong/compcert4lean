@@ -871,3 +871,147 @@ theorem alloc_reg_target_ok : alloc_reg_target_okStatement := by
       exact new_reg_target_ok map pr s1 (.Eexternal id sig args) r s2 i hmap hpr halloc
 
 end CompCert4Lean.Backend.RTLgenspec
+
+namespace CompCert4Lean.Backend.RTLgenspec
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Foundation.Logic.Support
+open CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.List
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Backend.RTLgen
+open CompCert4Lean.X86.Op
+
+private theorem rtlgenspec_alloc_reg_valid
+    (map : RTLgen.mapping) (a : expr) (r : reg)
+    (s1 s2 : RTLgen.state) (i : RTLgen.state_incr s1 s2) :
+    map_valid map s1 →
+    RTLgen.alloc_reg map a s1 = .OK r s2 i →
+    reg_valid r s2 := by
+  intro hmap halloc
+  cases a with
+  | Evar id =>
+      cases hfind : PTree.get id map.map_vars with
+      | none =>
+          simp [RTLgen.alloc_reg, RTLgen.find_var, hfind] at halloc
+          cases halloc
+      | some r0 =>
+          simp [RTLgen.alloc_reg, RTLgen.find_var, hfind, RTLgen.ret] at halloc
+          rcases halloc with ⟨hr, hs⟩
+          cases hr
+          cases hs
+          exact hmap r (Or.inl ⟨id, hfind⟩)
+  | Eletvar idx =>
+      cases hfind : map.map_letvars[idx]? with
+      | none =>
+          simp [RTLgen.alloc_reg, RTLgen.find_letvar, hfind] at halloc
+          cases halloc
+      | some r0 =>
+          simp [RTLgen.alloc_reg, RTLgen.find_letvar, hfind, RTLgen.ret] at halloc
+          rcases halloc with ⟨hr, hs⟩
+          cases hr
+          cases hs
+          rcases (List.getElem?_eq_some_iff.mp hfind) with ⟨hi, hx⟩
+          exact hmap r (Or.inr (List.mem_of_getElem hx))
+  | Eop op args =>
+      simp only [RTLgen.alloc_reg, RTLgen.new_reg] at halloc
+      injection halloc with hr hs
+      cases hr
+      cases hs
+      exact Plt_succ _
+
+  | Eload chunk addr args =>
+      simp only [RTLgen.alloc_reg, RTLgen.new_reg] at halloc
+      injection halloc with hr hs
+      cases hr
+      cases hs
+      exact Plt_succ _
+  | Econdition cond ifso ifnot =>
+      simp only [RTLgen.alloc_reg, RTLgen.new_reg] at halloc
+      injection halloc with hr hs
+      cases hr
+      cases hs
+      exact Plt_succ _
+  | Elet bound body =>
+      simp only [RTLgen.alloc_reg, RTLgen.new_reg] at halloc
+      injection halloc with hr hs
+      cases hr
+      cases hs
+      exact Plt_succ _
+  | Ebuiltin ef args =>
+      simp only [RTLgen.alloc_reg, RTLgen.new_reg] at halloc
+      injection halloc with hr hs
+      cases hr
+      cases hs
+      exact Plt_succ _
+  | Eexternal id sig args =>
+      simp only [RTLgen.alloc_reg, RTLgen.new_reg] at halloc
+      injection halloc with hr hs
+      cases hr
+      cases hs
+      exact Plt_succ _
+
+private theorem rtlgenspec_map_valid_incr
+    (map : RTLgen.mapping) (s1 s2 : RTLgen.state)
+    (i : RTLgen.state_incr s1 s2) :
+    map_valid map s1 → map_valid map s2 := by
+  intro hmap r hr
+  exact reg_valid_incr r s1 s2 i (hmap r hr)
+
+theorem alloc_regs_target_ok : alloc_regs_target_okStatement := by
+  intro map al pr s1 rl s2 i hmap hpr halloc
+  refine exprlist.rec
+      (motive_1 := fun _ => True)
+      (motive_2 := fun al => ∀ (map : RTLgen.mapping) (pr : List reg)
+        (s1 : RTLgen.state) (rl : List reg) (s2 : RTLgen.state)
+        (i : RTLgen.state_incr s1 s2),
+        map_valid map s1 → regs_valid pr s1 →
+        RTLgen.alloc_regs map al s1 = .OK rl s2 i →
+        target_regs_ok map pr al rl)
+      (motive_3 := fun _ => True)
+      (fun _ => trivial)
+      (fun _ _ _ => trivial)
+      (fun _ _ _ _ => trivial)
+      (fun _ _ _ _ _ _ => trivial)
+      (fun _ _ _ _ => trivial)
+      (fun _ => trivial)
+      (fun _ _ _ => trivial)
+      (fun _ _ _ _ => trivial)
+      (fun map pr s1 rl s2 i hmap hpr halloc => by
+        change RTLgen.ret [] s1 = .OK rl s2 i at halloc
+        cases halloc
+        exact target_regs_ok.target_regs_nil map pr)
+      (fun a al _ ih map pr s1 rl s2 i hmap hpr halloc => by
+        change RTLgen.bind (RTLgen.alloc_reg map a)
+          (fun r => RTLgen.bind (RTLgen.alloc_regs map al)
+            (fun rl => RTLgen.ret (r :: rl))) s1 = .OK rl s2 i at halloc
+        cases hreg : RTLgen.alloc_reg map a s1 with
+        | Error msg => simp [RTLgen.bind, hreg] at halloc
+        | OK r sm hincr =>
+            simp [RTLgen.bind, hreg] at halloc
+            cases htail : RTLgen.alloc_regs map al sm with
+            | Error msg => simp [RTLgen.bind, htail] at halloc
+            | OK rlmid sn hinc =>
+                simp [RTLgen.bind, htail, RTLgen.ret] at halloc
+                rcases halloc with ⟨hrl, hs⟩
+                cases hrl
+                cases hs
+                have hhead := alloc_reg_target_ok map pr s1 a r sm hincr hmap hpr hreg
+                have hrvalid := rtlgenspec_alloc_reg_valid map a r s1 sm hincr hmap hreg
+                have hmap' := rtlgenspec_map_valid_incr map s1 sm hincr hmap
+                have hprsm := regs_valid_incr s1 sm pr hincr hpr
+                have hpr' : regs_valid (r :: pr) sm :=
+                  regs_valid_cons r pr sm hrvalid hprsm
+                have htailvalid := ih map (r :: pr) sm rlmid s2 hinc hmap' hpr' htail
+                exact target_regs_ok.target_regs_cons map pr a al r rlmid hhead htailvalid)
+      (fun _ _ _ => trivial)
+      (fun _ _ _ _ _ _ => trivial)
+      (fun _ _ _ _ => trivial)
+      al map pr s1 rl s2 i hmap hpr halloc
+
+end CompCert4Lean.Backend.RTLgenspec

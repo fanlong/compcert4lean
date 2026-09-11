@@ -2025,3 +2025,43 @@ theorem slot_outgoing_argument_valid : slot_outgoing_argument_validStatement := 
     | right hp => exact False.elim (hp hmod)
 
 end CompCert4Lean.Backend.Stackingproof
+
+namespace CompCert4Lean.Backend.Stackingproof
+
+theorem load_result_inject : load_result_injectStatement := by
+  intro j ty v v' hinj hty
+  cases hinj with
+  | inject_int i =>
+      cases ty <;>
+        simp [CompCert4Lean.Common.AST.chunk_of_type,
+          CompCert4Lean.Common.Values.Val.load_result,
+          CompCert4Lean.Common.Values.Val.has_type] at hty ⊢ <;>
+        first | contradiction | exact CompCert4Lean.Common.Values.Val.inject_int j i
+  | inject_long i =>
+      cases ty <;>
+        simp [CompCert4Lean.Common.AST.chunk_of_type,
+          CompCert4Lean.Common.Values.Val.load_result,
+          CompCert4Lean.Common.Values.Val.has_type] at hty ⊢ <;>
+        first | contradiction | exact CompCert4Lean.Common.Values.Val.inject_long j i
+  | inject_float f =>
+      cases ty <;>
+        simp [CompCert4Lean.Common.AST.chunk_of_type,
+          CompCert4Lean.Common.Values.Val.load_result,
+          CompCert4Lean.Common.Values.Val.has_type] at hty ⊢ <;>
+        first | contradiction | exact CompCert4Lean.Common.Values.Val.inject_float j f
+  | inject_single f =>
+      cases ty <;>
+        simp [CompCert4Lean.Common.AST.chunk_of_type,
+          CompCert4Lean.Common.Values.Val.load_result,
+          CompCert4Lean.Common.Values.Val.has_type] at hty ⊢ <;>
+        first | contradiction | exact CompCert4Lean.Common.Values.Val.inject_single j f
+  | inject_ptr b1 ofs1 b2 ofs2 delta hmap hofs =>
+      cases ty <;>
+        simp [CompCert4Lean.Common.AST.chunk_of_type,
+          CompCert4Lean.Common.Values.Val.load_result,
+          CompCert4Lean.Common.Values.Val.has_type, hty] at hty ⊢ <;>
+        first | contradiction | exact CompCert4Lean.Common.Values.Val.inject_ptr j b1 ofs1 b2 ofs2 delta hmap hofs
+  | val_inject_undef v =>
+      exact CompCert4Lean.Common.Values.Val.val_inject_undef j _
+
+end CompCert4Lean.Backend.Stackingproof

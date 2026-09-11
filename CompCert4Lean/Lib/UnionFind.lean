@@ -897,3 +897,34 @@ theorem sameclass_trans_proof :
 end UF
 
 end CompCert4Lean.Lib.UnionFind
+
+namespace CompCert4Lean.Lib.UnionFind
+
+namespace UF
+
+theorem sameclass_repr_proof :
+    ∀ (M : MAP), sameclass_reprStatement M := by
+  intro M uf a
+  change repr M uf a = repr M uf (repr M uf a)
+  exact (repr_canonical_calc M uf a).symm
+
+theorem wf_empty_proof :
+    ∀ (M : MAP), wf_emptyStatement M := by
+  intro M
+  exact (empty M).mwf
+
+theorem repr_empty_proof :
+    ∀ (M : MAP), repr_emptyStatement M := by
+  intro M a
+  exact repr_none_calc M (empty M) a (mapGet_empty M a)
+
+theorem sameclass_empty_proof :
+    ∀ (M : MAP), sameclass_emptyStatement M := by
+  intro M a b h
+  change repr M (empty M) a = repr M (empty M) b at h
+  rw [repr_empty_proof M a, repr_empty_proof M b] at h
+  exact h
+
+end UF
+
+end CompCert4Lean.Lib.UnionFind

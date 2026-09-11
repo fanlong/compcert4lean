@@ -1435,3 +1435,88 @@ theorem sig_preserved : sig_preservedStatement := by
       rfl
 
 end CompCert4Lean.Cfrontend.Cminorgenproof
+
+namespace CompCert4Lean.Cfrontend.Cminorgenproof
+
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.Lib.Coqlib
+
+private abbrev proofBlock := CompCert4Lean.Foundation.Numbers.Rocq.Coq.positive
+private abbrev proofZ := CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z
+
+private theorem pmap_get_set_same_local {A : Type} (i : proofBlock) (x : A)
+    (m : PMap.t A) : PMap.get i (PMap.set i x m) = x := by
+  change (match PTree.get i (PTree.set i x m.2) with
+    | some y => y | none => m.1) = x
+  rw [PTree.gsspec_proof]
+  cases hpeq : peq i i with
+  | left h => simp [hpeq]
+  | right h => exact False.elim (h rfl)
+
+private theorem pmap_get_set_other_local {A : Type} (i j : proofBlock) (x : A)
+    (m : PMap.t A) (h : i ≠ j) : PMap.get i (PMap.set j x m) = PMap.get i m := by
+  change (match PTree.get i (PTree.set j x m.2) with
+    | some y => y | none => m.1) =
+    (match PTree.get i m.2 with | some y => y | none => m.1)
+  rw [PTree.gsspec_proof]
+  cases hpeq : peq i j with
+  | left hij => exact False.elim (h hij)
+  | right hne => simp [hpeq]
+
+private theorem perm_of_free (m m1 : Mem.mem) (b' : proofBlock) (lo hi : proofZ)
+    (hfree : Mem.free m b' lo hi = some m1) :
+    ∀ (b : proofBlock) (ofs : proofZ)
+      (k : CompCert4Lean.Common.Memtype.perm_kind)
+      (p : CompCert4Lean.Common.Memtype.permission),
+      Mem.perm m1 b ofs k p → Mem.perm m b ofs k p := by
+  intro b ofs k p hp
+  unfold Mem.free at hfree
+  split at hfree
+  next hcond =>
+    injection hfree with hm1
+    subst m1
+    unfold Mem.perm at hp ⊢
+    by_cases hb : b = b'
+    · subst b
+      change Mem.perm_order' ((PMap.get b' (PMap.set b'
+        (fun (ofs : proofZ) (k : CompCert4Lean.Common.Memtype.perm_kind) => _)
+        m.mem_access)) ofs k) p at hp
+      rw [pmap_get_set_same_local] at hp
+      split at hp
+      · change False at hp
+        exact False.elim hp
+      · exact hp
+    · dsimp [Mem.unchecked_free] at hp
+      change Mem.perm_order' ((PMap.get b (PMap.set b'
+        (fun (ofs : proofZ) (k : CompCert4Lean.Common.Memtype.perm_kind) => _)
+        m.mem_access)) ofs k) p at hp
+      rw [pmap_get_set_other_local _ _ _ _ hb] at hp
+      exact hp
+  next hcond => cases hfree
+
+theorem perm_freelist : perm_freelistStatement := by
+  intro fbl
+  induction fbl with
+  | nil =>
+      intro m m' b ofs k p hfree hp
+      simp [Mem.free_list] at hfree
+      cases hfree
+      exact hp
+  | cons x rest ih =>
+      intro m m' b ofs k p hfree hp
+      change (match Mem.free m x.1 x.2.1 x.2.2 with
+        | none => none
+        | some m1 => Mem.free_list m1 rest) = some m' at hfree
+      cases hfm : Mem.free m x.1 x.2.1 x.2.2 with
+      | none =>
+          rw [hfm] at hfree
+          cases hfree
+      | some m1 =>
+          rw [hfm] at hfree
+          have hrest : Mem.free_list m1 rest = some m' := hfree
+          have hp1 : Mem.perm m1 b ofs k p := ih m1 m' b ofs k p hrest hp
+          exact perm_of_free m m1 x.1 x.2.1 x.2.2 hfm b ofs k p hp1
+
+end CompCert4Lean.Cfrontend.Cminorgenproof

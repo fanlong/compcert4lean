@@ -699,3 +699,45 @@ def transl_fundef_specStatement
     tr_fundef p fd tfd
 
 end CompCert4Lean.Cfrontend.SimplExprspec
+
+namespace CompCert4Lean.Cfrontend.SimplExprspec
+
+private theorem agree_mono {A B : Type} {xs ys : List A} {f g : A → B}
+    (hsub : ∀ x, x ∈ xs → x ∈ ys)
+    (h : ∀ x, x ∈ ys → f x = g x) :
+    ∀ x, x ∈ xs → f x = g x := by
+  intro x hx
+  exact h x (hsub x hx)
+
+theorem tr_exprlist_invariant
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    tr_exprlist_invariantStatement := by
+  intro ce le rl sl al tmps h
+  intro le' hle
+  revert le' hle
+  let P1 := fun (dst : destination) (r : cexpr) (sl : List statement)
+      (a : expr) (tmps : List ident) (_ : tr_expr ce le dst r sl a tmps) =>
+      ∀ le', (∀ x, x ∈ tmps →
+        CompCert4Lean.Lib.Maps.PTree.get x le' = CompCert4Lean.Lib.Maps.PTree.get x le) →
+        tr_expr ce le' dst r sl a tmps
+  let P2 := fun (rl : cexprlist) (sl : List statement)
+      (al : List expr) (tmps : List ident) (_ : tr_exprlist ce le rl sl al tmps) =>
+      ∀ le', (∀ x, x ∈ tmps →
+        CompCert4Lean.Lib.Maps.PTree.get x le' = CompCert4Lean.Lib.Maps.PTree.get x le) →
+        tr_exprlist ce le' rl sl al tmps
+  refine tr_exprlist.rec (motive_1 := P1) (motive_2 := P2)
+    ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_
+    ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_
+    ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ h
+  all_goals
+    intros <;> dsimp [P1, P2, Included] at * <;> intro le' hle <;> constructor <;>
+      try solve_by_elim [agree_mono] <;>
+      try (intro tge e le1 m hle1; solve_by_elim [agree_mono])
+  all_goals
+    intro tge e le1 m hle1
+    apply_assumption
+    intro id hid
+    exact Eq.trans (hle1 id hid) (hle id hid)
+
+end CompCert4Lean.Cfrontend.SimplExprspec

@@ -616,3 +616,61 @@ theorem OrderedLoc.eq_sym : OrderedLoc.eq_symStatement := by
   exact h.symm
 
 end CompCert4Lean.Backend.Locations
+
+namespace CompCert4Lean.Backend.Locations
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem OrderedLoc.lt_trans : OrderedLoc.lt_transStatement := by
+  have zlt_trans : ∀ a b c : Z, zLt a b → zLt b c → zLt a c := by
+    intro a b c hab hbc
+    change intOfZ a < intOfZ b at hab
+    change intOfZ b < intOfZ c at hbc
+    change intOfZ a < intOfZ c
+    exact Int.lt_trans hab hbc
+  intro x y z hxy hyz
+  cases x with
+  | R r1 =>
+      cases y with
+      | R r2 =>
+          cases z with
+          | R r3 =>
+              exact CompCert4Lean.Lib.Coqlib.Plt_trans _ _ _ hxy hyz
+          | S sl3 ofs3 ty3 =>
+              exact trivial
+      | S sl2 ofs2 ty2 =>
+          cases z with
+          | R r3 =>
+              exact hyz.elim
+          | S sl3 ofs3 ty3 =>
+              exact trivial
+  | S sl1 ofs1 ty1 =>
+      cases y with
+      | R r2 =>
+          exact hxy.elim
+      | S sl2 ofs2 ty2 =>
+          cases z with
+          | R r3 =>
+              exact hyz.elim
+          | S sl3 ofs3 ty3 =>
+              rcases hxy with hxy | ⟨hsl12, hxy⟩
+              · rcases hyz with hyz | ⟨hsl23, hyz⟩
+                · exact Or.inl (OrderedSlot.lt_trans_proof _ _ _ hxy hyz)
+                · exact Or.inl (by simpa [hsl23] using hxy)
+              · rcases hyz with hyz | ⟨hsl23, hyz⟩
+                · exact Or.inl (by simpa [hsl12] using hyz)
+                · right
+                  constructor
+                  · exact hsl12.trans hsl23
+                  · rcases hxy with hxy | ⟨hofs12, hxy⟩
+                    · rcases hyz with hyz | ⟨hofs23, hyz⟩
+                      · exact Or.inl (zlt_trans _ _ _ hxy hyz)
+                      · exact Or.inl (by simpa [hofs23] using hxy)
+                    · rcases hyz with hyz | ⟨hofs23, hyz⟩
+                      · exact Or.inl (by simpa [hofs12] using hyz)
+                      · right
+                        constructor
+                        · exact hofs12.trans hofs23
+                        · exact OrderedTyp.lt_trans_proof _ _ _ hxy hyz
+
+end CompCert4Lean.Backend.Locations

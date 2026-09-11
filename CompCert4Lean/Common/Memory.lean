@@ -2106,3 +2106,15 @@ theorem range_perm_implies : range_perm_impliesStatement := by
 end Mem
 
 end CompCert4Lean.Common.Memory
+
+namespace CompCert4Lean.Common.Memory
+
+namespace Mem
+
+theorem range_perm_max : range_perm_maxStatement := by
+  intro m b lo hi k p hperm ofs hof
+  exact perm_max m b ofs k p (hperm ofs hof)
+
+end Mem
+
+end CompCert4Lean.Common.Memory

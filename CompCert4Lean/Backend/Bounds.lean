@@ -936,3 +936,59 @@ theorem record_regs_of_instr_ok : record_regs_of_instr_okStatement := by
       cases hdef
 
 end CompCert4Lean.Backend.Bounds
+
+namespace CompCert4Lean.Backend.Bounds
+
+theorem record_regs_only : record_regs_onlyStatement := by
+  intro cfg rl u hu
+  unfold record_regs
+  apply fold_left_preserves
+  · intro acc r hacc
+    exact record_reg_only cfg acc r hacc
+  · exact hu
+
+end CompCert4Lean.Backend.Bounds
+
+namespace CompCert4Lean.Backend.Bounds
+
+theorem record_regs_of_function_ok : record_regs_of_function_okStatement := by
+  intro cfg f r i hi hdef hsave
+  unfold record_regs_of_function
+  apply fold_left_ensures
+    (A := regset)
+    (f := fun acc i' => record_regs_of_instr cfg acc i')
+    (P := fun acc => RegSet.In r acc) (b0 := i)
+  · intro acc i' hacc
+    exact record_regs_of_instr_incr cfg r acc i' hacc
+  · intro acc
+    exact record_regs_of_instr_ok cfg r acc i hdef hsave
+  · exact hi
+
+end CompCert4Lean.Backend.Bounds
+
+namespace CompCert4Lean.Backend.Bounds
+
+theorem local_slot_bound : local_slot_boundStatement := by
+  intro cfg f i ofs ty hi hs
+  unfold function_bounds
+  change zLe (zAdd ofs (CompCert4Lean.Backend.Locations.typesize ty))
+    (max_over_slots_of_funct f local_slot)
+  change zLe (local_slot (.Local, ofs, ty))
+    (max_over_slots_of_funct f local_slot)
+  exact max_over_slots_of_funct_bound f local_slot i (.Local, ofs, ty) hi hs
+
+end CompCert4Lean.Backend.Bounds
+
+namespace CompCert4Lean.Backend.Bounds
+
+theorem outgoing_slot_bound : outgoing_slot_boundStatement := by
+  intro cfg f i ofs ty hi hs
+  unfold function_bounds
+  change zLe (outgoing_slot (.Outgoing, ofs, ty))
+    (zMax (max_over_instrs f (outgoing_space cfg))
+      (max_over_slots_of_funct f outgoing_slot))
+  apply zLe_trans _ (max_over_slots_of_funct f outgoing_slot) _
+  · exact max_over_slots_of_funct_bound f outgoing_slot i (.Outgoing, ofs, ty) hi hs
+  · exact zLe_max_right _ _
+
+end CompCert4Lean.Backend.Bounds
