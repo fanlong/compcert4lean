@@ -758,3 +758,46 @@ theorem functions_transl : functions_translStatement := by
   exact hfind'
 
 end CompCert4Lean.X86.Asmgenproof
+
+namespace CompCert4Lean.X86.Asmgenproof
+
+theorem transf_function_no_overflow : transf_function_no_overflowStatement := by
+  intro f tf h
+  unfold CompCert4Lean.X86.Asmgen.transf_function at h
+  cases htf : CompCert4Lean.X86.Asmgen.transl_function f with
+  | Error msg =>
+      rw [htf] at h
+      cases h
+  | OK tf0 =>
+      rw [htf] at h
+      change
+        (match CompCert4Lean.Lib.Coqlib.zlt
+            CompCert4Lean.Lib.Integers.Ptrofs.max_unsigned
+            (CompCert4Lean.Lib.Coqlib.list_length_z tf0.fn_code) with
+          | .left _ => _
+          | .right _ => _) =
+          CompCert4Lean.Common.Errors.OK tf at h
+      cases hz : CompCert4Lean.Lib.Coqlib.zlt
+          CompCert4Lean.Lib.Integers.Ptrofs.max_unsigned
+          (CompCert4Lean.Lib.Coqlib.list_length_z tf0.fn_code) with
+      | left hlt =>
+          rw [hz] at h
+          cases h
+      | right hge =>
+          rw [hz] at h
+          cases h
+          exact hge
+
+theorem loadind_label : loadind_labelStatement := by
+  intro base ofs ty dst k c h
+  cases ty <;> cases hdst : CompCert4Lean.X86.Asm.preg_of dst <;>
+    simp [CompCert4Lean.X86.Asmgen.loadind, hdst] at h <;>
+    cases h <;>
+    simp [CompCert4Lean.Backend.Asmgenproof0.tail_nolabel,
+      CompCert4Lean.Backend.Asmgenproof0.find_label,
+      CompCert4Lean.Lib.Coqlib.is_tail,
+      CompCert4Lean.X86.Asm.is_label] <;>
+    exact CompCert4Lean.Lib.Coqlib.is_tail.cons _
+      (CompCert4Lean.Lib.Coqlib.is_tail.refl _)
+
+end CompCert4Lean.X86.Asmgenproof

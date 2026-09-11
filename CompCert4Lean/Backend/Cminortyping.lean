@@ -1475,3 +1475,536 @@ theorem type_assign_sound : type_assign_soundStatement := by
               exact hty.symm ▸ wt_Eload te chunk a1 hrec
 
 end CompCert4Lean.Backend.Cminortyping
+
+namespace CompCert4Lean.Backend.Cminortyping
+
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Errors
+open CompCert4Lean.Backend.Cminor
+
+theorem opt_set_sound : opt_set_soundStatement := by
+  intro te optid sg e e' h hs
+  unfold opt_set at h
+  cases optid with
+  | none =>
+      simp at h
+      cases h
+      trivial
+  | some id =>
+      unfold wt_opt_assign
+      exact (S.set_sound_proof te id (proj_sig_res sg) e e' h hs).symm
+
+end CompCert4Lean.Backend.Cminortyping
+
+namespace CompCert4Lean.Backend.Cminortyping
+
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Errors
+open CompCert4Lean.Backend.Cminor
+
+private theorem type_assign_incr_aux :
+    ∀ (te : S.typassign) (id : ident) (a : expr) (e e' : S.typenv),
+      type_assign e id a = OK e' → S.satisf te e' → S.satisf te e := by
+  intro te id a
+  cases a with
+  | Evar id' =>
+      intro e e' h hs
+      cases hmove : S.move e id id' with
+      | Error message =>
+          simp [type_assign, hmove] at h
+      | OK result =>
+          rcases result with ⟨changed, e1⟩
+          simp [type_assign, hmove] at h
+          cases h
+          exact S.move_incr_aux te e id id' e' changed hmove hs
+  | Econst c =>
+      intro e e' h hs
+      cases hset : S.set e id (type_constant c) with
+      | Error message =>
+          simp [type_assign, hset] at h
+      | OK e1 =>
+          simp [type_assign, hset] at h
+          cases h
+          exact S.set_incr_aux te id (type_constant c) e e' hset hs
+  | Eunop op a1 =>
+      intro e e' h hs
+      rcases hOp : type_unop op with ⟨targ, tres⟩
+      cases h1 : type_expr e a1 targ with
+      | Error message =>
+          simp [type_assign, hOp, h1] at h
+      | OK e1 =>
+          cases hset : S.set e1 id tres with
+          | Error message =>
+              simp [type_assign, hOp, h1, hset] at h
+          | OK e2 =>
+              simp [type_assign, hOp, h1, hset] at h
+              cases h
+              exact type_expr_incr_aux te a1 targ e e1 h1
+                (S.set_incr_aux te id tres e1 e' hset hs)
+  | Ebinop op a1 a2 =>
+      intro e e' h hs
+      rcases hOp : type_binop op with ⟨⟨targ1, targ2⟩, tres⟩
+      cases h1 : type_expr e a1 targ1 with
+      | Error message =>
+          simp [type_assign, hOp, h1] at h
+      | OK e1 =>
+          cases h2 : type_expr e1 a2 targ2 with
+          | Error message =>
+              simp [type_assign, hOp, h1, h2] at h
+          | OK e2 =>
+              cases hset : S.set e2 id tres with
+              | Error message =>
+                  simp [type_assign, hOp, h1, h2, hset] at h
+              | OK e3 =>
+                  simp [type_assign, hOp, h1, h2, hset] at h
+                  cases h
+                  have hs2 := S.set_incr_aux te id tres e2 e' hset hs
+                  have hs1 := type_expr_incr_aux te a2 targ2 e1 e2 h2 hs2
+                  exact type_expr_incr_aux te a1 targ1 e e1 h1 hs1
+  | Eload chunk a1 =>
+      intro e e' h hs
+      cases h1 : type_expr e a1 Tptr with
+      | Error message =>
+          simp [type_assign, h1] at h
+      | OK e1 =>
+          cases hset : S.set e1 id (type_of_chunk chunk) with
+          | Error message =>
+              simp [type_assign, h1, hset] at h
+          | OK e2 =>
+              simp [type_assign, h1, hset] at h
+              cases h
+              exact type_expr_incr_aux te a1 Tptr e e1 h1
+                (S.set_incr_aux te id (type_of_chunk chunk) e1 e' hset hs)
+
+private theorem opt_set_incr_aux :
+    ∀ (te : S.typassign) (optid : Option ident) (ty : typ) (e e' : S.typenv),
+      opt_set e optid ty = OK e' → S.satisf te e' → S.satisf te e := by
+  intro te optid ty e e' h hs
+  cases optid with
+  | none =>
+      simp [opt_set] at h
+      cases h
+      exact hs
+  | some id =>
+      exact S.set_incr_aux te id ty e e' h hs
+
+end CompCert4Lean.Backend.Cminortyping
+
+namespace CompCert4Lean.Backend.Cminortyping
+
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Errors
+open CompCert4Lean.Backend.Cminor
+
+private theorem type_stmt_incr_aux :
+    ∀ (te : S.typassign) (tret : xtype) (s : stmt) (e e' : S.typenv),
+      type_stmt tret e s = OK e' → S.satisf te e' → S.satisf te e := by
+  intro te tret s
+  induction s with
+  | Sskip =>
+      intro e e' h hs
+      simp [type_stmt] at h
+      cases h
+      exact hs
+  | Sassign id a =>
+      intro e e' h hs
+      simp [type_stmt] at h
+      exact type_assign_incr_aux te id a e e' h hs
+  | Sstore chunk address value =>
+      intro e e' h hs
+      cases h1 : type_expr e address Tptr with
+      | Error message =>
+          simp [type_stmt, h1] at h
+      | OK e1 =>
+          cases h2 : type_expr e1 value (type_of_chunk chunk) with
+          | Error message =>
+              simp [type_stmt, h1, h2] at h
+          | OK e2 =>
+              simp [type_stmt, h1, h2] at h
+              cases h
+              exact type_expr_incr_aux te address Tptr e e1 h1
+                (type_expr_incr_aux te value (type_of_chunk chunk) e1 e' h2 hs)
+  | Scall result sig callee args =>
+      intro e e' h hs
+      cases h1 : type_expr e callee Tptr with
+      | Error message =>
+          simp [type_stmt, h1] at h
+      | OK e1 =>
+          cases h2 : type_exprlist e1 args (proj_sig_args sig) with
+          | Error message =>
+              simp [type_stmt, h1, h2] at h
+          | OK e2 =>
+              cases h3 : opt_set e2 result (proj_sig_res sig) with
+              | Error message =>
+                  simp [type_stmt, h1, h2, h3] at h
+              | OK e3 =>
+                  simp [type_stmt, h1, h2, h3] at h
+                  cases h
+                  have hs2 := opt_set_incr_aux te result (proj_sig_res sig)
+                    e2 e' h3 hs
+                  have hs1 := type_exprlist_incr_aux te args (proj_sig_args sig)
+                    e1 e2 h2 hs2
+                  exact type_expr_incr_aux te callee Tptr e e1 h1 hs1
+  | Stailcall sig callee args =>
+      intro e e' h hs
+      by_cases hEq : sig.sig_res = tret
+      ·
+          cases h1 : type_expr e callee Tptr with
+          | Error message =>
+              simp [type_stmt, hEq, h1] at h
+          | OK e1 =>
+              cases h2 : type_exprlist e1 args (proj_sig_args sig) with
+              | Error message =>
+                  simp [type_stmt, hEq, h1, h2] at h
+              | OK e2 =>
+                  simp [type_stmt, hEq, h1, h2] at h
+                  cases h
+                  exact type_expr_incr_aux te callee Tptr e e1 h1
+                    (type_exprlist_incr_aux te args (proj_sig_args sig)
+                      e1 e' h2 hs)
+      · simp [type_stmt, hEq, assertion_failed] at h
+  | Sbuiltin result ef args =>
+      intro e e' h hs
+      cases h1 : type_exprlist e args (proj_sig_args (ef_sig ef)) with
+      | Error message =>
+          simp [type_stmt, h1] at h
+      | OK e1 =>
+          cases h2 : opt_set e1 result (proj_sig_res (ef_sig ef)) with
+          | Error message =>
+              simp [type_stmt, h1, h2] at h
+          | OK e2 =>
+              simp [type_stmt, h1, h2] at h
+              cases h
+              exact type_exprlist_incr_aux te args (proj_sig_args (ef_sig ef))
+                e e1 h1
+                (opt_set_incr_aux te result (proj_sig_res (ef_sig ef))
+                  e1 e' h2 hs)
+  | Sseq first second ih1 ih2 =>
+      intro e e' h hs
+      cases h1 : type_stmt tret e first with
+      | Error message =>
+          simp [type_stmt, h1] at h
+      | OK e1 =>
+          cases h2 : type_stmt tret e1 second with
+          | Error message =>
+              simp [type_stmt, h1, h2] at h
+          | OK e2 =>
+              simp [type_stmt, h1, h2] at h
+              cases h
+              exact ih1 e e1 h1 (ih2 e1 e' h2 hs)
+  | Sifthenelse condition ifso ifnot ih1 ih2 =>
+      intro e e' h hs
+      cases h1 : type_expr e condition Tint with
+      | Error message =>
+          simp [type_stmt, h1] at h
+      | OK e1 =>
+          cases h2 : type_stmt tret e1 ifso with
+          | Error message =>
+              simp [type_stmt, h1, h2] at h
+          | OK e2 =>
+              cases h3 : type_stmt tret e2 ifnot with
+              | Error message =>
+                  simp [type_stmt, h1, h2, h3] at h
+              | OK e3 =>
+                  simp [type_stmt, h1, h2, h3] at h
+                  cases h
+                  have hs2 := ih2 e2 e' h3 hs
+                  have hs1 := ih1 e1 e2 h2 hs2
+                  exact type_expr_incr_aux te condition Tint e e1 h1 hs1
+  | Sloop body ih =>
+      intro e e' h hs
+      simp [type_stmt] at h
+      exact ih e e' h hs
+  | Sblock body ih =>
+      intro e e' h hs
+      simp [type_stmt] at h
+      exact ih e e' h hs
+  | Sexit depth =>
+      intro e e' h hs
+      simp [type_stmt] at h
+      cases h
+      exact hs
+  | Sswitch isLong argument cases default =>
+      intro e e' h hs
+      cases isLong with
+      | false =>
+          cases h1 : type_expr e argument Tint with
+          | Error message =>
+              simp [type_stmt, h1] at h
+          | OK e1 =>
+              simp [type_stmt, h1] at h
+              cases h
+              exact type_expr_incr_aux te argument Tint e e' h1 hs
+      | true =>
+          cases h1 : type_expr e argument Tlong with
+          | Error message =>
+              simp [type_stmt, h1] at h
+          | OK e1 =>
+              simp [type_stmt, h1] at h
+              cases h
+              exact type_expr_incr_aux te argument Tlong e e' h1 hs
+  | Sreturn value =>
+      intro e e' h hs
+      cases value with
+      | none =>
+          simp [type_stmt] at h
+          cases h
+          exact hs
+      | some a =>
+          simp [type_stmt] at h
+          exact type_expr_incr_aux te a (proj_xtype tret) e e' h hs
+  | Slabel label body ih =>
+      intro e e' h hs
+      simp [type_stmt] at h
+      exact ih e e' h hs
+  | Sgoto label =>
+      intro e e' h hs
+      simp [type_stmt] at h
+      cases h
+      exact hs
+
+end CompCert4Lean.Backend.Cminortyping
+
+namespace CompCert4Lean.Backend.Cminortyping
+
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Errors
+open CompCert4Lean.Backend.Cminor
+
+theorem type_stmt_sound : type_stmt_soundStatement := by
+  intro te tret s
+  induction s with
+  | Sskip =>
+      intro e e' h hs
+      simp [type_stmt] at h
+      cases h
+      exact wt_Sskip te tret
+  | Sassign id a =>
+      intro e e' h hs
+      simp [type_stmt] at h
+      exact wt_Sassign te tret id a (type_assign_sound te id a e e' h hs)
+  | Sstore chunk address value =>
+      intro e e' h hs
+      cases h1 : type_expr e address Tptr with
+      | Error message =>
+          simp [type_stmt, h1] at h
+      | OK e1 =>
+          cases h2 : type_expr e1 value (type_of_chunk chunk) with
+          | Error message =>
+              simp [type_stmt, h1, h2] at h
+          | OK e2 =>
+              simp [type_stmt, h1, h2] at h
+              cases h
+              have hs1 := type_expr_incr_aux te value (type_of_chunk chunk)
+                e1 e' h2 hs
+              exact wt_Sstore te tret chunk address value
+                (type_expr_sound te address Tptr e e1 h1 hs1)
+                (type_expr_sound te value (type_of_chunk chunk) e1 e' h2 hs)
+  | Scall result sig callee args =>
+      intro e e' h hs
+      cases h1 : type_expr e callee Tptr with
+      | Error message =>
+          simp [type_stmt, h1] at h
+      | OK e1 =>
+          cases h2 : type_exprlist e1 args (proj_sig_args sig) with
+          | Error message =>
+              simp [type_stmt, h1, h2] at h
+          | OK e2 =>
+              cases h3 : opt_set e2 result (proj_sig_res sig) with
+              | Error message =>
+                  simp [type_stmt, h1, h2, h3] at h
+              | OK e3 =>
+                  simp [type_stmt, h1, h2, h3] at h
+                  cases h
+                  have hs2 := opt_set_incr_aux te result (proj_sig_res sig)
+                    e2 e' h3 hs
+                  have hs1 := type_exprlist_incr_aux te args (proj_sig_args sig)
+                    e1 e2 h2 hs2
+                  exact wt_Scall te tret result sig callee args
+                    (type_expr_sound te callee Tptr e e1 h1 hs1)
+                    (type_exprlist_sound te args (proj_sig_args sig) e1 e2 h2 hs2)
+                    (opt_set_sound te result sig e2 e' h3 hs)
+  | Stailcall sig callee args =>
+      intro e e' h hs
+      by_cases hEq : sig.sig_res = tret
+      · cases h1 : type_expr e callee Tptr with
+        | Error message =>
+            simp [type_stmt, hEq, h1] at h
+        | OK e1 =>
+            cases h2 : type_exprlist e1 args (proj_sig_args sig) with
+            | Error message =>
+                simp [type_stmt, hEq, h1, h2] at h
+            | OK e2 =>
+                simp [type_stmt, hEq, h1, h2] at h
+                cases h
+                have hs1 := type_exprlist_incr_aux te args (proj_sig_args sig)
+                  e1 e' h2 hs
+                exact wt_Stailcall te tret sig callee args
+                  (type_expr_sound te callee Tptr e e1 h1 hs1)
+                  (type_exprlist_sound te args (proj_sig_args sig) e1 e' h2 hs)
+                  hEq
+      · simp [type_stmt, hEq, assertion_failed] at h
+  | Sbuiltin result ef args =>
+      intro e e' h hs
+      cases h1 : type_exprlist e args (proj_sig_args (ef_sig ef)) with
+      | Error message =>
+          simp [type_stmt, h1] at h
+      | OK e1 =>
+          cases h2 : opt_set e1 result (proj_sig_res (ef_sig ef)) with
+          | Error message =>
+              simp [type_stmt, h1, h2] at h
+          | OK e2 =>
+              simp [type_stmt, h1, h2] at h
+              cases h
+              have hsl := opt_set_incr_aux te result (proj_sig_res (ef_sig ef))
+                e1 e' h2 hs
+              exact wt_Sbuiltin te tret result ef args
+                (type_exprlist_sound te args (proj_sig_args (ef_sig ef)) e e1 h1 hsl)
+                (opt_set_sound te result (ef_sig ef) e1 e' h2 hs)
+  | Sseq first second ih1 ih2 =>
+      intro e e' h hs
+      cases h1 : type_stmt tret e first with
+      | Error message =>
+          simp [type_stmt, h1] at h
+      | OK e1 =>
+          cases h2 : type_stmt tret e1 second with
+          | Error message =>
+              simp [type_stmt, h1, h2] at h
+          | OK e2 =>
+              simp [type_stmt, h1, h2] at h
+              cases h
+              exact wt_Sseq te tret first second
+                (ih1 e e1 h1 (type_stmt_incr_aux te tret second e1 e' h2 hs))
+                (ih2 e1 e' h2 hs)
+  | Sifthenelse condition ifso ifnot ih1 ih2 =>
+      intro e e' h hs
+      cases h1 : type_expr e condition Tint with
+      | Error message =>
+          simp [type_stmt, h1] at h
+      | OK e1 =>
+          cases h2 : type_stmt tret e1 ifso with
+          | Error message =>
+              simp [type_stmt, h1, h2] at h
+          | OK e2 =>
+              cases h3 : type_stmt tret e2 ifnot with
+              | Error message =>
+                  simp [type_stmt, h1, h2, h3] at h
+              | OK e3 =>
+                  simp [type_stmt, h1, h2, h3] at h
+                  cases h
+                  have hte2 := type_stmt_incr_aux te tret ifnot e2 e' h3 hs
+                  have hte1 := type_stmt_incr_aux te tret ifso e1 e2 h2 hte2
+                  exact wt_Sifthenelse te tret condition ifso ifnot
+                    (type_expr_sound te condition Tint e e1 h1 hte1)
+                    (ih1 e1 e2 h2 hte2) (ih2 e2 e' h3 hs)
+  | Sloop body ih =>
+      intro e e' h hs
+      simp [type_stmt] at h
+      exact wt_Sloop te tret body (ih e e' h hs)
+  | Sblock body ih =>
+      intro e e' h hs
+      simp [type_stmt] at h
+      exact wt_Sblock te tret body (ih e e' h hs)
+  | Sexit depth =>
+      intro e e' h hs
+      simp [type_stmt] at h
+      cases h
+      exact wt_Sexit te tret depth
+  | Sswitch isLong argument cases default =>
+      intro e e' h hs
+      cases isLong with
+      | false =>
+          cases h1 : type_expr e argument Tint with
+          | Error message =>
+              simp [type_stmt, h1] at h
+          | OK e1 =>
+              simp [type_stmt, h1] at h
+              cases h
+              exact wt_Sswitch te tret false argument cases default
+                (type_expr_sound te argument Tint e e' h1 hs)
+      | true =>
+          cases h1 : type_expr e argument Tlong with
+          | Error message =>
+              simp [type_stmt, h1] at h
+          | OK e1 =>
+              simp [type_stmt, h1] at h
+              cases h
+              exact wt_Sswitch te tret true argument cases default
+                (type_expr_sound te argument Tlong e e' h1 hs)
+  | Sreturn value =>
+      intro e e' h hs
+      cases value with
+      | none =>
+          simp [type_stmt] at h
+          cases h
+          exact wt_Sreturn_none te tret
+      | some a =>
+          simp [type_stmt] at h
+          exact wt_Sreturn_some te tret a
+            (type_expr_sound te a (proj_xtype tret) e e' h hs)
+  | Slabel label body ih =>
+      intro e e' h hs
+      simp [type_stmt] at h
+      exact wt_Slabel te tret label body (ih e e' h hs)
+  | Sgoto label =>
+      intro e e' h hs
+      simp [type_stmt] at h
+      cases h
+      exact wt_Sgoto te tret label
+
+end CompCert4Lean.Backend.Cminortyping
+
+namespace CompCert4Lean.Backend.Cminortyping
+
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Errors
+open CompCert4Lean.Backend.Cminor
+
+theorem type_function_sound : type_function_soundStatement := by
+  intro f env h
+  unfold type_function at h
+  cases h1 : S.set_list S.initial f.fn_params (proj_sig_args f.fn_sig) with
+  | Error message =>
+      simp [h1] at h
+  | OK e1 =>
+      cases h2 : type_stmt f.fn_sig.sig_res e1 f.fn_body with
+      | Error message =>
+          simp [h1, h2] at h
+      | OK e2 =>
+          cases h3 : S.solve e2 with
+          | Error message =>
+              simp [h1, h2, h3] at h
+          | OK envSolved =>
+              have htype := h
+              simp [type_function, h1, h2, h3] at h
+              injection h with henv
+              subst env
+              have hs2 : S.satisf envSolved e2 :=
+                S.solve_sound_proof e2 envSolved h3
+              have hs1 : S.satisf envSolved e1 :=
+                type_stmt_incr_aux envSolved f.fn_sig.sig_res f.fn_body e1 e2 h2 hs2
+              exact wt_function_intro envSolved f htype
+                (S.set_list_sound_proof envSolved f.fn_params
+                  (proj_sig_args f.fn_sig) S.initial e1 h1 hs1)
+                (type_stmt_sound envSolved f.fn_sig.sig_res f.fn_body e1 e2 h2 hs2)
+
+end CompCert4Lean.Backend.Cminortyping
+
+namespace CompCert4Lean.Backend.Cminortyping
+
+open CompCert4Lean.Backend.Cminor
+
+theorem wt_is_call_cont : wt_is_call_contStatement := by
+  intro env tret k hwt
+  cases hwt with
+  | wt_cont_Kseq env tret s k hstmt hcont =>
+      intro hcall
+      simp [is_call_cont] at hcall
+  | wt_cont_Kblock env tret k hcont =>
+      intro hcall
+      simp [is_call_cont] at hcall
+  | wt_cont_other env tret k hcall =>
+      intro _
+      exact hcall
+
+end CompCert4Lean.Backend.Cminortyping
