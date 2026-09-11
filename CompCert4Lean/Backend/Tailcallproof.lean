@@ -825,3 +825,21 @@ theorem functions_translated : functions_translatedStatement := by
           exact tailcall_function_ptr_translated cfg prog tprog hm b f hfind
 
 end CompCert4Lean.Backend.Tailcallproof
+
+namespace CompCert4Lean.Backend.Tailcallproof
+open CompCert4Lean.Backend.Tailcall
+open CompCert4Lean.Common.AST
+theorem sig_preserved : sig_preservedStatement := by
+  intro cfg f
+  cases f with
+  | Internal fn =>
+      simp only [CompCert4Lean.Backend.Tailcall.transf_fundef, CompCert4Lean.Common.AST.transf_fundef,
+        CompCert4Lean.Backend.RTL.funsig, CompCert4Lean.Backend.Tailcall.transf_function,
+        CompCert4Lean.Backend.RTL.transf_function]
+      split <;> rfl
+  | External ef => rfl
+theorem stacksize_preserved : stacksize_preservedStatement := by
+  intro cfg f
+  unfold CompCert4Lean.Backend.Tailcall.transf_function
+  split <;> rfl
+end CompCert4Lean.Backend.Tailcallproof

@@ -2163,3 +2163,49 @@ theorem wt_env_set_locals : wt_env_set_localsStatement := by
       · exact True.intro
 
 end CompCert4Lean.Backend.Cminortyping
+
+namespace CompCert4Lean.Backend.Cminortyping
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.Backend.Cminor
+
+theorem def_set_locals : def_set_localsStatement := by
+  intro id il e hdef
+  induction il generalizing e with
+  | nil =>
+      rcases hdef with ⟨v, hv⟩ | hid
+      · exact ⟨v, hv⟩
+      · cases hid
+  | cons i il ih =>
+      cases hp : peq id i with
+      | left heq =>
+          subst id
+          refine ⟨Vundef, ?_⟩
+          change PTree.get i (PTree.set i Vundef (set_locals il e)) = some Vundef
+          have hgs := PTree.gsspec_proof
+            (A := val) i i Vundef (set_locals il e)
+          simpa [hp] using hgs
+      | right hne =>
+          rcases hdef with hget | hid
+          · rcases ih (e := e) (Or.inl hget) with ⟨v, hv⟩
+            refine ⟨v, ?_⟩
+            change PTree.get id (PTree.set i Vundef (set_locals il e)) = some v
+            have hgs := PTree.gsspec_proof
+              (A := val) id i Vundef (set_locals il e)
+            rw [hgs]
+            simpa [hp] using hv
+          · simp only [List.mem_cons] at hid
+            rcases hid with rfl | hid
+            · exact False.elim (hne rfl)
+            · rcases ih (e := e) (Or.inr hid) with ⟨v, hv⟩
+              refine ⟨v, ?_⟩
+              change PTree.get id (PTree.set i Vundef (set_locals il e)) = some v
+              have hgs := PTree.gsspec_proof
+                (A := val) id i Vundef (set_locals il e)
+              rw [hgs]
+              simpa [hp] using hv
+
+end CompCert4Lean.Backend.Cminortyping

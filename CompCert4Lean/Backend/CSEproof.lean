@@ -1738,3 +1738,21 @@ theorem eval_builtin_args_trivial : eval_builtin_args_trivialStatement := by
       · exact ih
 
 end CompCert4Lean.Backend.CSEproof
+
+namespace CompCert4Lean.Backend.CSEproof
+theorem find_valnum_rhs'_charact : find_valnum_rhs'_charactStatement := by
+  intro rh v eqs
+  induction eqs with
+  | nil => simp [CSE.find_valnum_rhs']
+  | cons e eqs ih =>
+      cases e with
+      | Eq v' strict rh' =>
+          simp only [CSE.find_valnum_rhs']
+          intro hv
+          by_cases h : CSEdomain.compat_rhs rh rh'
+          · have hv' : v' = v := by simpa [h] using hv
+            cases hv'
+            exact ⟨strict, rh', List.mem_cons_self, CSEdomain.compat_rhs_sound rh rh' h⟩
+          · obtain ⟨s, r'', hm, hc⟩ := ih (by rw [if_neg h] at hv; exact hv)
+            exact ⟨s, r'', List.mem_cons_of_mem _ hm, hc⟩
+end CompCert4Lean.Backend.CSEproof

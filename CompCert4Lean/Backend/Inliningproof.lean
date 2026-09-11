@@ -1571,3 +1571,25 @@ theorem agree_regs_invariant : agree_regs_invariantStatement := by
     exact habove r0 hr0
 
 end CompCert4Lean.Backend.Inliningproof
+
+namespace CompCert4Lean.Backend.Inliningproof
+open CompCert4Lean.Backend.Inlining
+open CompCert4Lean.Backend.Inliningspec
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+
+theorem agree_regs_init : agree_regs_initStatement := by
+  intro F ctx rs
+  unfold agree_regs
+  constructor
+  · intro r hr
+    rw [@Regmap.gi_proof val (r : CompCert4Lean.Backend.Registers.reg) Vundef]
+    exact Val.val_inject_undef F _
+  · intro r hr
+    rw [@Regmap.gi_proof val (r : CompCert4Lean.Backend.Registers.reg) Vundef]
+
+end CompCert4Lean.Backend.Inliningproof

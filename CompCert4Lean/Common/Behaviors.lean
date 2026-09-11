@@ -878,3 +878,13 @@ theorem reacts_forever_reactive_rec : reacts_forever_reactive_recStatement := by
     hpred
 
 end CompCert4Lean.Common.Behaviors
+
+namespace CompCert4Lean.Common.Behaviors
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.Smallstep
+theorem reacts_forever_reactive : reacts_forever_reactiveStatement := by
+  intro L s0 reacts
+  let h0 : Star L s0 E0 s0 := star_refl (step L) (globalenv L) s0
+  refine ⟨traceinf_of_traceinf' (build_traceinf' L reacts h0), ?_⟩
+  exact reacts_forever_reactive_rec L s0 reacts s0 E0 h0
+end CompCert4Lean.Common.Behaviors

@@ -1300,3 +1300,20 @@ theorem type_builtin_arg_sound : type_builtin_arg_soundStatement := by
       simpa [type_of_builtin_arg] using hty.symm
 
 end CompCert4Lean.Backend.RTLtyping
+
+namespace CompCert4Lean.Backend.RTLtyping
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Common.AST
+
+theorem type_builtin_res_sound : type_builtin_res_soundStatement := by
+  intro e a ty e' te h hs
+  cases a with
+  | BR r => exact S.set_sound_proof te r ty e e' h hs
+  | BR_none =>
+      have ht := type_expect_sound e ty Tint e' h
+      simpa [type_of_builtin_res] using ht.symm
+  | BR_splitlong hi lo =>
+      have ht := type_expect_sound e ty Tint e' h
+      simpa [type_of_builtin_res] using ht.symm
+
+end CompCert4Lean.Backend.RTLtyping

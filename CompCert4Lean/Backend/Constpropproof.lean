@@ -1015,3 +1015,20 @@ theorem functions_translated : ∀ cfg, functions_translatedStatement cfg := by
           exact function_ptr_translated cfg prog tprog hm b f hfind
 
 end CompCert4Lean.Backend.Constpropproof
+
+namespace CompCert4Lean.Backend.Constpropproof
+
+open CompCert4Lean.Backend.Constprop
+open CompCert4Lean.Backend.RTL
+
+variable
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+
+theorem sig_function_translated : ∀ cfg, sig_function_translatedStatement cfg := by
+  intro cfg rm f
+  cases f with
+  | Internal fn => rfl
+  | External ef => rfl
+
+end CompCert4Lean.Backend.Constpropproof

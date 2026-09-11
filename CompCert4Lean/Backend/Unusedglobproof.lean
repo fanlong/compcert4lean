@@ -896,3 +896,24 @@ theorem add_ref_definition_incl : add_ref_definition_inclStatement := by
       | Gvar gv => exact add_ref_globvar_incl gv w
 
 end CompCert4Lean.Backend.Unusedglobproof
+
+namespace CompCert4Lean.Backend.Unusedglobproof
+
+theorem initial_workset_incl : initial_workset_inclStatement := by
+  intro p
+  unfold CompCert4Lean.Backend.Unusedglob.initial_workset
+  have hfold : ∀ l w, l.foldl
+      (fun w id => CompCert4Lean.Backend.Unusedglob.add_workset id w) w =
+      CompCert4Lean.Backend.Unusedglob.addlist_workset l w := by
+    intro l
+    induction l with
+    | nil => intro w; rfl
+    | cons id rest ih =>
+        intro w
+        simp [List.foldl, CompCert4Lean.Backend.Unusedglob.addlist_workset, ih]
+  rw [hfold]
+  apply workset_incl_trans _ _ _
+  · exact addlist_workset_incl p.prog_public _
+  · exact add_workset_incl p.prog_main _
+
+end CompCert4Lean.Backend.Unusedglobproof

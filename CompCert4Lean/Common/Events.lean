@@ -1337,3 +1337,12 @@ theorem known_builtin_sem_inject
       exact ⟨vres', known_builtin_sem_intro vargs' vres' m' evaluation', hinj'⟩
 
 end CompCert4Lean.Common.Events
+
+namespace CompCert4Lean.Common.Events
+
+theorem eventval_match_type : eventval_match_typeStatement := by
+  intro ge ev ty v h
+  cases h <;> unfold CompCert4Lean.Common.Values.Val.has_type <;>
+    simp [CompCert4Lean.Common.AST.Tptr, CompCert4Lean.X86_64.Archi.ptr64]
+
+end CompCert4Lean.Common.Events

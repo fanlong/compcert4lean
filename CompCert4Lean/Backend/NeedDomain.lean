@@ -1081,3 +1081,23 @@ theorem vagree_lessdef_list : vagree_lessdef_listStatement := by
             (vagree_lessdef v1 v2 nv1 hhead) (ih nvl)
 
 end CompCert4Lean.Backend.NeedDomain
+
+namespace CompCert4Lean.Backend.NeedDomain
+
+theorem nge_agree : nge_agreeStatement := by
+  intro v w x y hge hagree
+  cases hge with
+  | nge_nothing y =>
+      exact vagree_lessdef v w y hagree
+  | nge_all x =>
+      trivial
+  | nge_int m1 m2 hmask =>
+      cases v <;> cases w <;> simp [vagree, iVagree] at *
+      intro i hi hm2
+      exact hagree i hi (hmask i hi.1 hi.2 hm2)
+  | nge_long m1 m2 hmask =>
+      cases v <;> cases w <;> simp [vagree, lVagree] at *
+      intro i hi hm2
+      exact hagree i hi (hmask i hi.1 hi.2 hm2)
+
+end CompCert4Lean.Backend.NeedDomain

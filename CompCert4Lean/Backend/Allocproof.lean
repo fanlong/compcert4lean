@@ -2411,3 +2411,14 @@ theorem satisf_incr : satisf_incrStatement := by
   exact hs q (hsub q hq)
 
 end CompCert4Lean.Backend.Allocproof
+
+namespace CompCert4Lean.Backend.Allocproof
+
+open CompCert4Lean.Backend.Allocation
+
+theorem add_equation_lessdef : add_equation_lessdefStatement := by
+  intro rs ls q e hsat
+  apply hsat q
+  exact EqSet.add_1 e.eqs1 q q (EqSet.E.eq_refl q)
+
+end CompCert4Lean.Backend.Allocproof

@@ -1196,3 +1196,26 @@ theorem match_transform_partial_program :
     rfl
 
 end CompCert4Lean.Common.Linking
+
+namespace CompCert4Lean.Common.Linking
+
+theorem match_transform_program :
+    match_transform_programStatement := by
+  intro A B V LA LV transf p
+  apply match_transform_program_contextual
+    (match_fundef := fun _ f tf => tf = transf f)
+    (transf_fun := transf) (p := p)
+  intro f
+  rfl
+
+theorem pass_identity_pass_match_link_proof :
+    pass_identity_pass_match_linkStatement := by
+  intro l
+  exact (pass_identity l).pass_match_link
+
+theorem pass_compose_pass_match_link_proof :
+    pass_compose_pass_match_linkStatement := by
+  intro l1 l2 l3 pass pass'
+  exact (pass_compose pass pass').pass_match_link
+
+end CompCert4Lean.Common.Linking

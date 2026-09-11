@@ -998,3 +998,9 @@ theorem sep_drop2 : sep_drop2Statement := by
   exact h.2.2 b ofs hP (Or.inr hR)
 
 end CompCert4Lean.Common.Separation
+
+namespace CompCert4Lean.Common.Separation
+
+theorem sep_proj2 : sep_proj2Statement := sep_drop
+
+end CompCert4Lean.Common.Separation
