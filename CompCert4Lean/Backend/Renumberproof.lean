@@ -540,3 +540,251 @@ theorem renum_cfg_nodes : renum_cfg_nodesStatement := by
                 (CompCert4Lean.Backend.Renumber.renum_instr f v) a hyy').trans hres)
 
 end CompCert4Lean.Backend.Renumberproof
+
+namespace CompCert4Lean.Backend.Renumberproof
+
+theorem sig_preserved : sig_preservedStatement := by
+  intro f
+  cases f <;> rfl
+
+end CompCert4Lean.Backend.Renumberproof
+
+namespace CompCert4Lean.Backend.Renumberproof
+
+private theorem renumberproof_map1_get {A B : Type} (f : A → B) (i : CompCert4Lean.Lib.Maps.PTree.elt)
+    (m : CompCert4Lean.Lib.Maps.PTree.t A) :
+    CompCert4Lean.Lib.Maps.PTree.get i (CompCert4Lean.Lib.Maps.PTree.map1 f m) =
+      Option.map f (CompCert4Lean.Lib.Maps.PTree.get i m) := by
+  cases m with
+  | Empty => rfl
+  | Nodes m =>
+      revert i
+      induction m with
+      | Node001 r ih =>
+          intro i
+          cases i with
+          | xH => rfl
+          | xO q => rfl
+          | xI q => exact ih q
+      | Node010 x => intro i; cases i <;> rfl
+      | Node011 x r ih =>
+          intro i
+          cases i with
+          | xH => rfl
+          | xO q => rfl
+          | xI q => exact ih q
+      | Node100 l ih =>
+          intro i
+          cases i with
+          | xH => rfl
+          | xO q => exact ih q
+          | xI q => rfl
+      | Node101 l r ihl ihr =>
+          intro i
+          cases i with
+          | xH => rfl
+          | xO q => exact ihl q
+          | xI q => exact ihr q
+      | Node110 l x ih =>
+          intro i
+          cases i with
+          | xH => rfl
+          | xO q => exact ih q
+          | xI q => rfl
+      | Node111 l x r ihl ihr =>
+          intro i
+          cases i with
+          | xH => rfl
+          | xO q => exact ihl q
+          | xI q => exact ihr q
+
+theorem reach_succ : reach_succStatement := by
+  intro f pc i s hcode hsucc hreach
+  apply CompCert4Lean.Lib.Postorder.reachable_succ pc
+    (CompCert4Lean.Backend.RTL.successors_instr i) s hreach
+  · unfold CompCert4Lean.Backend.RTL.successors_map
+    change CompCert4Lean.Lib.Maps.PTree.get pc
+      (CompCert4Lean.Lib.Maps.PTree.map1
+        (fun j : CompCert4Lean.Backend.RTL.instruction =>
+          (CompCert4Lean.Backend.RTL.successors_instr j :
+            List CompCert4Lean.Lib.Postorder.node)) f.fn_code) =
+      some (CompCert4Lean.Backend.RTL.successors_instr i :
+        List CompCert4Lean.Lib.Postorder.node)
+    have hmap := renumberproof_map1_get
+      (fun j : CompCert4Lean.Backend.RTL.instruction =>
+        (CompCert4Lean.Backend.RTL.successors_instr j :
+          List CompCert4Lean.Lib.Postorder.node)) pc
+      (show CompCert4Lean.Lib.Maps.PTree.tree
+        CompCert4Lean.Backend.RTL.instruction from f.fn_code)
+    simpa [hcode] using hmap
+  · exact hsucc
+
+end CompCert4Lean.Backend.Renumberproof
+
+namespace CompCert4Lean.Backend.Renumberproof
+
+theorem find_function_translated : find_function_translatedStatement := by
+  intro prog tprog hmatch ros rs fd hfind
+  cases ros with
+  | inl r =>
+      exact functions_translated prog tprog hmatch
+        (CompCert4Lean.Backend.Registers.Regmap.get r rs) fd hfind
+  | inr symb =>
+      change
+        (match CompCert4Lean.Common.Globalenvs.Genv.find_symbol
+            (CompCert4Lean.Common.Globalenvs.Genv.globalenv prog) symb with
+        | none => none
+        | some b =>
+            CompCert4Lean.Common.Globalenvs.Genv.find_funct_ptr
+              (CompCert4Lean.Common.Globalenvs.Genv.globalenv prog) b) = some fd at hfind
+      change
+        (match CompCert4Lean.Common.Globalenvs.Genv.find_symbol
+            (CompCert4Lean.Common.Globalenvs.Genv.globalenv tprog) symb with
+        | none => none
+        | some b =>
+            CompCert4Lean.Common.Globalenvs.Genv.find_funct_ptr
+              (CompCert4Lean.Common.Globalenvs.Genv.globalenv tprog) b) =
+          some (CompCert4Lean.Backend.Renumber.transf_fundef fd)
+      cases hs : CompCert4Lean.Common.Globalenvs.Genv.find_symbol
+          (CompCert4Lean.Common.Globalenvs.Genv.globalenv prog) symb with
+      | none => simp [hs] at hfind
+      | some b =>
+          have hs' := symbols_preserved prog tprog hmatch symb
+          rw [hs', hs]
+          exact function_ptr_translated prog tprog hmatch b fd
+            (by simpa [hs] using hfind)
+
+end CompCert4Lean.Backend.Renumberproof
+
+namespace CompCert4Lean.Backend.Renumberproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Linking
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+
+private def renumberproof_volatile_next_rel
+    (ge tge : CompCert4Lean.Common.Globalenvs.Genv.t fundef Unit) : Prop :=
+  ge.genv_next = tge.genv_next ∧
+    ∀ b, Genv.block_is_volatile ge b = Genv.block_is_volatile tge b
+
+private theorem renumberproof_volatile_next_add
+    [Linker program]
+    {prog : program} {ge tge : CompCert4Lean.Common.Globalenvs.Genv.t fundef Unit}
+    {id tid : ident} {g tg : globdef fundef Unit}
+    (hrel : renumberproof_volatile_next_rel ge tge)
+    (hitem : match_ident_globdef
+      (fun _ f tf => tf = CompCert4Lean.Backend.Renumber.transf_fundef f)
+      (fun x y : Unit => x = y) prog (id, g) (tid, tg)) :
+    renumberproof_volatile_next_rel
+      (Genv.add_global ge (id, g)) (Genv.add_global tge (tid, tg)) := by
+  rcases hrel with ⟨hnext, hvol⟩
+  rcases hitem with ⟨hid, hm⟩
+  change id = tid at hid
+  subst tid
+  constructor
+  · simp only [Genv.add_global]
+    rw [hnext]
+  · intro b
+    change positive at b
+    unfold Genv.block_is_volatile Genv.find_var_info Genv.find_def Genv.add_global
+    by_cases hb : b = ge.genv_next
+    · subst b
+      have hs : PTree.get (show positive from ge.genv_next)
+          (PTree.set ge.genv_next g ge.genv_defs) = some g :=
+        renum_ptree_get_set_same (show positive from ge.genv_next) g ge.genv_defs
+      have ht : PTree.get (show positive from tge.genv_next)
+          (PTree.set tge.genv_next tg tge.genv_defs) = some tg :=
+        renum_ptree_get_set_same (show positive from tge.genv_next) tg tge.genv_defs
+      rw [hs]
+      rw [hnext]
+      rw [ht]
+      cases hm with
+      | match_globdef_fun ctx' f1 f2 horder htrans => rfl
+      | match_globdef_var v1 v2 hvar =>
+          cases hvar
+          rfl
+    · have htneq : b ≠ tge.genv_next := by
+        intro heq
+        apply hb
+        rw [hnext]
+        exact heq
+      have hs : PTree.get b (PTree.set (show positive from ge.genv_next) g ge.genv_defs) =
+          PTree.get b ge.genv_defs :=
+        renum_ptree_get_set_other b (show positive from ge.genv_next) g ge.genv_defs hb
+      have ht : PTree.get b (PTree.set (show positive from tge.genv_next) tg tge.genv_defs) =
+          PTree.get b tge.genv_defs :=
+        renum_ptree_get_set_other b (show positive from tge.genv_next) tg tge.genv_defs htneq
+      rw [hs, ht]
+      exact hvol b
+
+private theorem renumberproof_volatile_next_add_globals
+    [Linker program]
+    {prog : program}
+    (gl tgl : List (ident × globdef fundef Unit))
+    (hlist : list_forall2
+      (match_ident_globdef
+        (fun _ f tf => tf = CompCert4Lean.Backend.Renumber.transf_fundef f)
+        (fun x y : Unit => x = y) prog) gl tgl) :
+    ∀ ge tge, renumberproof_volatile_next_rel ge tge →
+      renumberproof_volatile_next_rel
+        (Genv.add_globals ge gl) (Genv.add_globals tge tgl) := by
+  induction hlist with
+  | nil =>
+      intro ge tge hrel
+      simpa [Genv.add_globals] using hrel
+  | cons hd thd hhd htl ih =>
+      intro ge tge hrel
+      simp only [Genv.add_globals, List.foldl]
+      apply ih
+      exact renumberproof_volatile_next_add hrel hhd
+
+private theorem renumberproof_add_globals_public {F V : Type}
+    (ge : Genv.t F V) (gl : List (ident × globdef F V)) :
+    (Genv.add_globals ge gl).genv_public = ge.genv_public := by
+  induction gl generalizing ge with
+  | nil => rfl
+  | cons x xs ih =>
+      simp only [Genv.add_globals, List.foldl]
+      exact ih (Genv.add_global ge x)
+
+theorem senv_preserved : senv_preservedStatement := by
+  letI : Linker fundef := Linker_fundef function
+  letI : Linker Unit := Linker_unit
+  letI : Linker program := Linker_prog fundef Unit
+  intro prog tprog hmatch
+  unfold Senv.equiv
+  constructor
+  · intro id
+    exact symbols_preserved prog tprog hmatch id
+  constructor
+  · intro id
+    change Genv.public_symbol (Genv.globalenv tprog) id =
+      Genv.public_symbol (Genv.globalenv prog) id
+    have ht : (Genv.globalenv tprog).genv_public = tprog.prog_public := by
+      unfold Genv.globalenv
+      exact renumberproof_add_globals_public _ _
+    have hp : (Genv.globalenv prog).genv_public = prog.prog_public := by
+      unfold Genv.globalenv
+      exact renumberproof_add_globals_public _ _
+    unfold Genv.public_symbol
+    rw [symbols_preserved prog tprog hmatch id, ht, hp]
+    rw [hmatch.2.2]
+  · intro b
+    change positive at b
+    have hinit : renumberproof_volatile_next_rel
+        (Genv.empty_genv fundef Unit prog.prog_public)
+        (Genv.empty_genv fundef Unit tprog.prog_public) := by
+      constructor
+      · rfl
+      · intro b
+        simp [Genv.empty_genv, Genv.block_is_volatile, Genv.find_var_info,
+          Genv.find_def, PTree.get, PTree.empty]
+    have hrel := renumberproof_volatile_next_add_globals
+      prog.prog_defs tprog.prog_defs hmatch.1 _ _ hinit
+    exact (hrel.2 b).symm
+
+end CompCert4Lean.Backend.Renumberproof
