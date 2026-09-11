@@ -954,3 +954,23 @@ theorem inj_num_opt_inject : inj_num_opt_injectStatement := by
   | some x => exact injNumInject j t x
 
 end CompCert4Lean.Common.Builtins0
+
+namespace CompCert4Lean.Common.Builtins0
+
+theorem proj_num_wt : proj_num_wtStatement := by
+  intro tres t k1 v h
+  exact projNumWellTyped tres t k1 v h
+
+theorem proj_num_inject : proj_num_injectStatement := by
+  intro j t k1 v k1' v' hk hv
+  exact projNumInject j t k1 v k1' v' hk hv
+
+theorem proj_num_opt_wt : proj_num_opt_wtStatement := by
+  intro tres t k0 k1 v h0 hk
+  exact projNumOptWellTyped tres t k0 k1 v h0 hk
+
+theorem proj_num_opt_inject : proj_num_opt_injectStatement := by
+  intro j k0 t k1 v k1' v' h0 hk hv
+  exact projNumOptInject j k0 t k1 v k1' v' h0 hk hv
+
+end CompCert4Lean.Common.Builtins0

@@ -1735,3 +1735,68 @@ theorem context_kind : context_kindStatement := by
   all_goals rfl
 
 end CompCert4Lean.Cfrontend.Cstrategy
+
+namespace CompCert4Lean.Cfrontend.Cstrategy
+
+open CompCert4Lean.Common.Events
+
+theorem safe_imm_safe
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    safe_imm_safeStatement := by
+  unfold safe_imm_safeStatement
+  intro xi ge f C a k e m K hs hcontext
+  apply Classical.byContradiction
+  intro hnot
+  have hstuck :
+      CompCert4Lean.Cfrontend.Csem.step
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) xi ge
+        (.ExprState f (C a) k e m) E0 .Stuckstate := by
+    exact Or.inl (CompCert4Lean.Cfrontend.Csem.estep.step_stuck hcontext hnot)
+  have hstar :
+      CompCert4Lean.Common.Smallstep.star
+        (CompCert4Lean.Cfrontend.Csem.step
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate) xi)
+        ge (CompCert4Lean.Cfrontend.Csem.ExprState f (C a) k e m) E0
+          CompCert4Lean.Cfrontend.Csem.Stuckstate := by
+    exact CompCert4Lean.Common.Smallstep.star_one _ _ _ ge
+      (CompCert4Lean.Cfrontend.Csem.ExprState f (C a) k e m) E0
+      CompCert4Lean.Cfrontend.Csem.Stuckstate hstuck
+  rcases hs CompCert4Lean.Cfrontend.Csem.Stuckstate hstar with ⟨r, hfinal⟩ | ⟨t, s'', hstep⟩
+  · cases hfinal
+  · rcases hstep with hstep | hstep <;> cases hstep
+
+theorem safe_steps
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    safe_stepsStatement := by
+  unfold safe_stepsStatement safe
+  intro xi ge s s' hs hstar s'' hstar'
+  apply hs s''
+  exact CompCert4Lean.Common.Smallstep.star_trans
+    (genv := genv) (state := state)
+    (step := CompCert4Lean.Cfrontend.Csem.step
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) xi)
+    (ge := ge) (s1 := s) (t1 := E0) (s2 := s') hstar
+    (t2 := E0) (s3 := s'') (t := E0) hstar' rfl
+
+theorem rred_kind
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    rred_kindStatement := by
+  unfold rred_kindStatement
+  intro xi ge a m t a' m' h
+  cases h <;> rfl
+
+theorem callred_kind
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    callred_kindStatement := by
+  unfold callred_kindStatement
+  intro ge a m fd args ty h
+  cases h <;> rfl
+
+end CompCert4Lean.Cfrontend.Cstrategy

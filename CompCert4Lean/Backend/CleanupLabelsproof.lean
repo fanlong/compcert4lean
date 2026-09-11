@@ -851,3 +851,155 @@ theorem find_function_translated : find_function_translatedStatement := by
           exact function_ptr_translated prog tprog hm b f (by simpa [hs] using hfind)
 
 end CompCert4Lean.Backend.CleanupLabelsproof
+
+namespace CompCert4Lean.Backend.CleanupLabelsproof
+
+open CompCert4Lean.Backend.CleanupLabels
+open CompCert4Lean.Backend.Linear
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Linking
+open CompCert4Lean.Lib.Coqlib
+
+theorem find_label_incl : find_label_inclStatement := by
+  intro lbl c
+  induction c with
+  | nil =>
+      intro c' h
+      simp [CompCert4Lean.Backend.Linear.find_label] at h
+  | cons i c ih =>
+      intro c' h
+      change (if CompCert4Lean.Backend.Linear.is_label lbl i then some c
+        else CompCert4Lean.Backend.Linear.find_label lbl c) = some c' at h
+      by_cases hi : CompCert4Lean.Backend.Linear.is_label lbl i = true
+      · simp [hi] at h
+        cases h
+        exact CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.List.incl_tl _
+          (CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.List.incl_refl _)
+      · simp [hi] at h
+        exact CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.List.incl_tl i (ih c' h)
+
+theorem match_parent_locset : match_parent_locsetStatement := by
+  intro s ts h
+  induction h with
+  | nil => rfl
+  | cons a1 b1 hab hrest ih =>
+      cases hab
+      rfl
+
+end CompCert4Lean.Backend.CleanupLabelsproof
+
+namespace CompCert4Lean.Backend.CleanupLabelsproof
+
+open CompCert4Lean.Backend.CleanupLabels
+open CompCert4Lean.Backend.Linear
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Linking
+open CompCert4Lean.Lib.Coqlib
+
+theorem find_label_commut : find_label_commutStatement := by
+  intro lbl bto hl
+  intro c
+  induction c with
+  | nil =>
+      intro c' h
+      simp [CompCert4Lean.Backend.Linear.find_label] at h
+  | cons i c ih =>
+      intro c' h
+      have hrem := remove_unused_labels_cons bto i c
+      rw [hrem]
+      cases i with
+      | Llabel l =>
+          cases hp : CompCert4Lean.Lib.Coqlib.peq lbl l with
+          | left heq =>
+              subst l
+              simp [CompCert4Lean.Backend.Linear.find_label,
+                CompCert4Lean.Backend.Linear.is_label, hp] at h
+              cases h
+              simp [CompCert4Lean.Backend.Linear.find_label,
+                CompCert4Lean.Backend.Linear.is_label, hp]
+              have hmem : Labelset.mem lbl bto = true :=
+                Labelset.mem_1_proof bto lbl hl
+              simp [hmem, CompCert4Lean.Backend.Linear.find_label,
+                CompCert4Lean.Backend.Linear.is_label, hp]
+          | right hne =>
+              simp [CompCert4Lean.Backend.Linear.find_label,
+                CompCert4Lean.Backend.Linear.is_label, hp] at h
+              by_cases hmem : Labelset.mem l bto = true
+              · simp [hmem, CompCert4Lean.Backend.Linear.find_label,
+                  CompCert4Lean.Backend.Linear.is_label, hp]
+                exact ih c' h
+              · simp [hmem]
+                exact ih c' h
+      | Lgetstack sl ofs ty dst =>
+          simp [CompCert4Lean.Backend.Linear.find_label,
+            CompCert4Lean.Backend.Linear.is_label] at h ⊢
+          exact ih c' h
+      | Lsetstack src sl ofs ty =>
+          simp [CompCert4Lean.Backend.Linear.find_label,
+            CompCert4Lean.Backend.Linear.is_label] at h ⊢
+          exact ih c' h
+      | Lop op args res =>
+          simp [CompCert4Lean.Backend.Linear.find_label,
+            CompCert4Lean.Backend.Linear.is_label] at h ⊢
+          exact ih c' h
+      | Lload chunk addr args dst =>
+          simp [CompCert4Lean.Backend.Linear.find_label,
+            CompCert4Lean.Backend.Linear.is_label] at h ⊢
+          exact ih c' h
+      | Lstore chunk addr args src =>
+          simp [CompCert4Lean.Backend.Linear.find_label,
+            CompCert4Lean.Backend.Linear.is_label] at h ⊢
+          exact ih c' h
+      | Lcall sig ros =>
+          simp [CompCert4Lean.Backend.Linear.find_label,
+            CompCert4Lean.Backend.Linear.is_label] at h ⊢
+          exact ih c' h
+      | Ltailcall sig ros =>
+          simp [CompCert4Lean.Backend.Linear.find_label,
+            CompCert4Lean.Backend.Linear.is_label] at h ⊢
+          exact ih c' h
+      | Lbuiltin ef args res =>
+          simp [CompCert4Lean.Backend.Linear.find_label,
+            CompCert4Lean.Backend.Linear.is_label] at h ⊢
+          exact ih c' h
+      | Lgoto l =>
+          simp [CompCert4Lean.Backend.Linear.find_label,
+            CompCert4Lean.Backend.Linear.is_label] at h ⊢
+          exact ih c' h
+      | Lcond cond args l =>
+          simp [CompCert4Lean.Backend.Linear.find_label,
+            CompCert4Lean.Backend.Linear.is_label] at h ⊢
+          exact ih c' h
+      | Ljumptable arg tbl =>
+          simp [CompCert4Lean.Backend.Linear.find_label,
+            CompCert4Lean.Backend.Linear.is_label] at h ⊢
+          exact ih c' h
+      | Lreturn =>
+          simp [CompCert4Lean.Backend.Linear.find_label,
+            CompCert4Lean.Backend.Linear.is_label] at h ⊢
+          exact ih c' h
+
+end CompCert4Lean.Backend.CleanupLabelsproof
+
+namespace CompCert4Lean.Backend.CleanupLabelsproof
+
+open CompCert4Lean.Backend.CleanupLabels
+open CompCert4Lean.Backend.Linear
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Linking
+open CompCert4Lean.Lib.Coqlib
+
+theorem find_label_translated : find_label_translatedStatement := by
+  intro f i c' lbl c hinc hfind hbranch
+  change find_label lbl
+      (remove_unused_labels (labels_branched_to f.fn_code) f.fn_code) =
+    some (remove_unused_labels (labels_branched_to f.fn_code) c)
+  apply find_label_commut lbl (labels_branched_to f.fn_code)
+  exact labels_branched_to_correct f.fn_code i lbl
+    (hinc i (List.mem_cons_self)) hbranch
+  exact hfind
+
+end CompCert4Lean.Backend.CleanupLabelsproof

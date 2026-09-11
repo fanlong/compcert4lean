@@ -245,3 +245,55 @@ theorem Decidable_complete_alt : Decidable_complete_altStatement := by
 
 end Rocq.Coq.Classes.DecidableClass
 end CompCert4Lean.Foundation.Ordered
+
+namespace CompCert4Lean.Foundation.Ordered
+namespace Rocq.Coq.Sorting.Permutation
+
+theorem Permutation_sym : Permutation_symStatement := by
+  intro A l l' h
+  induction h with
+  | perm_nil => exact perm_nil _
+  | perm_skip x h ih => exact perm_skip x ih
+  | perm_swap x y l => exact perm_swap y x l
+  | perm_trans h₁ h₂ ih₁ ih₂ => exact perm_trans ih₂ ih₁
+
+theorem Permutation_in : Permutation_inStatement := by
+  intro A l l' x h
+  induction h with
+  | perm_nil =>
+      intro hx
+      exact (_root_.List.not_mem_nil hx).elim
+  | perm_skip a h ih =>
+      intro hx
+      cases (_root_.List.mem_cons.mp hx) with
+      | inl hhead =>
+          subst x
+          exact _root_.List.Mem.head _
+      | inr htail => exact _root_.List.Mem.tail _ (ih htail)
+  | perm_swap a b l =>
+      intro hx
+      cases (_root_.List.mem_cons.mp hx) with
+      | inl hhead =>
+          subst x
+          exact _root_.List.Mem.tail _ (_root_.List.Mem.head _)
+      | inr htail =>
+          cases (_root_.List.mem_cons.mp htail) with
+          | inl hhead =>
+              subst x
+              exact _root_.List.Mem.head _
+          | inr htail' =>
+              exact _root_.List.Mem.tail _ (_root_.List.Mem.tail _ htail')
+  | perm_trans h₁ h₂ ih₁ ih₂ =>
+      intro hx
+      exact ih₂ (ih₁ hx)
+
+theorem Permutation_map : Permutation_mapStatement := by
+  intro A B f l l' h
+  induction h with
+  | perm_nil => exact perm_nil _
+  | perm_skip x h ih => exact perm_skip (f x) ih
+  | perm_swap x y l => exact perm_swap (f x) (f y) (_root_.List.map f l)
+  | perm_trans h₁ h₂ ih₁ ih₂ => exact perm_trans ih₁ ih₂
+
+end Rocq.Coq.Sorting.Permutation
+end CompCert4Lean.Foundation.Ordered

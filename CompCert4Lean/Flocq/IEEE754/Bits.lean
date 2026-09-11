@@ -227,3 +227,230 @@ theorem binary_float_of_bits_result_obligation_proof :
   exact (binary_float_of_bits mw ew Hmw Hew Hmax x Hx).2
 
 end CompCert4Lean.Flocq.IEEE754.Bits
+
+namespace CompCert4Lean.Flocq.IEEE754.Bits
+
+open CompCert4Lean.Flocq.Core
+
+private abbrev bits_intOfZ :=
+  CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+
+private theorem bits_zadd_int (a b : Z) :
+    bits_intOfZ (Zadd a b) = bits_intOfZ a + bits_intOfZ b := by
+  change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ a +
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ b)) =
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ a +
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ b
+  exact CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt _
+
+private theorem bits_zpow_int (a n : Z) (hn : 0 ≤ bits_intOfZ n) :
+    bits_intOfZ (Zpower a n) =
+      (bits_intOfZ a) ^ (Int.toNat (bits_intOfZ n)) := by
+  change bits_intOfZ
+    (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.pow a n) = _
+  unfold CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.pow
+  split
+  · rename_i h
+    have hn' : 0 ≤ CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ n := hn
+    omega
+  · rename_i h
+    change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt _) = _
+    rw [CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+    rfl
+
+private theorem bits_zshift_int (a n : Z) (hn : 0 ≤ bits_intOfZ n) :
+    bits_intOfZ (Zshiftl a n) =
+      bits_intOfZ a * 2 ^ (Int.toNat (bits_intOfZ n)) := by
+  change bits_intOfZ
+    (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.shiftl a n) = _
+  unfold CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.shiftl
+  split
+  · rename_i h
+    change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt _) = _
+    rw [CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+    rfl
+  · rename_i h
+    have hn' : 0 ≤ CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ n := hn
+    omega
+
+private theorem bits_zpow_two_int (n : Z) (hn : 0 ≤ bits_intOfZ n) :
+    bits_intOfZ (Zpower Ztwo n) = 2 ^ (Int.toNat (bits_intOfZ n)) := by
+  rw [bits_zpow_int Ztwo n hn]
+  simp [CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ,
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat]
+
+private theorem bits_zjoin_int (mw ew : Z) (s : Bool) (m e : Z)
+    (hmw : 0 ≤ bits_intOfZ mw) :
+    bits_intOfZ (join_bits mw ew s m e) =
+      ((if s then bits_intOfZ (Zpower Ztwo ew) else 0) + bits_intOfZ e) *
+        2 ^ Int.toNat (bits_intOfZ mw) + bits_intOfZ m := by
+  rw [show join_bits mw ew s m e =
+      Zadd (Zshiftl (Zadd (if s then Zpower Ztwo ew else Z0) e) mw) m by rfl]
+  rw [bits_zadd_int, bits_zshift_int _ _ hmw, bits_zadd_int]
+  by_cases hs : s = true
+  · simp [hs]
+  · simp [hs, CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ]
+
+theorem join_bits_range : join_bits_rangeStatement := by
+  intro mw ew s m e Hm He
+  change 0 ≤ bits_intOfZ m ∧
+    bits_intOfZ m < bits_intOfZ (Zpower Ztwo mw) at Hm
+  change 0 ≤ bits_intOfZ e ∧
+    bits_intOfZ e < bits_intOfZ (Zpower Ztwo ew) at He
+  have hmw : 0 ≤ bits_intOfZ mw := by
+    cases mw with
+    | Z0 => simp [CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ]
+    | Zpos p => simp [CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ]
+    | Zneg p =>
+      have hpow : bits_intOfZ (Zpower Ztwo (.Zneg p)) = 0 := by
+        simp [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.pow,
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ,
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat_positive]
+      rw [hpow] at Hm
+      simp [CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ] at *
+      omega
+  have hew : 0 ≤ bits_intOfZ ew := by
+    cases ew with
+    | Z0 => simp [CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ]
+    | Zpos p => simp [CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ]
+    | Zneg p =>
+      have hpow : bits_intOfZ (Zpower Ztwo (.Zneg p)) = 0 := by
+        simp [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.pow,
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ,
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat_positive]
+      rw [hpow] at He
+      simp [CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ] at *
+      omega
+  rw [bits_zpow_two_int mw hmw] at Hm
+  rw [bits_zpow_two_int ew hew] at He
+  have hpe : bits_intOfZ (Zpower Ztwo ew) =
+      2 ^ Int.toNat (bits_intOfZ ew) := bits_zpow_two_int ew hew
+  change 0 ≤ bits_intOfZ (join_bits mw ew s m e) ∧
+    bits_intOfZ (join_bits mw ew s m e) <
+      bits_intOfZ (Zpower Ztwo (Zadd (Zadd mw ew) Zone))
+  rw [bits_zjoin_int mw ew s m e hmw]
+  simp only [hpe]
+  have hsumadd :
+      bits_intOfZ (Zadd (Zadd mw ew) Zone) =
+        bits_intOfZ mw + bits_intOfZ ew + 1 := by
+    rw [bits_zadd_int, bits_zadd_int]
+    simp [CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ,
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat]
+  have hMcast :
+      (Int.ofNat (Int.toNat (bits_intOfZ mw)) : Int) = bits_intOfZ mw :=
+    Int.toNat_of_nonneg hmw
+  have hEcast :
+      (Int.ofNat (Int.toNat (bits_intOfZ ew)) : Int) = bits_intOfZ ew :=
+    Int.toNat_of_nonneg hew
+  have hsum : 0 ≤ bits_intOfZ (Zadd (Zadd mw ew) Zone) := by
+    rw [hsumadd]
+    omega
+  rw [bits_zpow_two_int (Zadd (Zadd mw ew) Zone) hsum]
+  have hsumcast :
+      (Int.ofNat (Int.toNat
+        (bits_intOfZ (Zadd (Zadd mw ew) Zone))) : Int) =
+        bits_intOfZ (Zadd (Zadd mw ew) Zone) :=
+    Int.toNat_of_nonneg hsum
+  have hexp :
+      Int.toNat (bits_intOfZ (Zadd (Zadd mw ew) Zone)) =
+        Int.toNat (bits_intOfZ mw) + Int.toNat (bits_intOfZ ew) + 1 := by
+    apply Int.ofNat_inj.mp
+    calc
+      (Int.ofNat (Int.toNat
+        (bits_intOfZ (Zadd (Zadd mw ew) Zone))) : Int) =
+          bits_intOfZ (Zadd (Zadd mw ew) Zone) := hsumcast
+      _ = bits_intOfZ mw + bits_intOfZ ew + 1 := hsumadd
+      _ = (Int.ofNat (Int.toNat (bits_intOfZ mw)) : Int) +
+          (Int.ofNat (Int.toNat (bits_intOfZ ew)) : Int) + 1 := by
+            rw [hMcast, hEcast]
+      _ = Int.ofNat (Int.toNat (bits_intOfZ mw) +
+          Int.toNat (bits_intOfZ ew) + 1) := by simp
+  rw [hexp]
+  have hApos : 0 < (2 : Int) ^ Int.toNat (bits_intOfZ mw) :=
+    Int.pow_pos (by omega)
+  have hBpos : 0 < (2 : Int) ^ Int.toNat (bits_intOfZ ew) :=
+    Int.pow_pos (by omega)
+  have hA0 : 0 ≤ (2 : Int) ^ Int.toNat (bits_intOfZ mw) :=
+    Int.le_of_lt hApos
+  have hB0 : 0 ≤ (2 : Int) ^ Int.toNat (bits_intOfZ ew) :=
+    Int.le_of_lt hBpos
+  have htarget :
+      2 ^ (Int.toNat (bits_intOfZ mw) + Int.toNat (bits_intOfZ ew) + 1) =
+        (2 * (2 : Int) ^ Int.toNat (bits_intOfZ ew)) *
+          (2 : Int) ^ Int.toNat (bits_intOfZ mw) := by
+    rw [Int.pow_add, Int.pow_add]
+    simp [Int.pow_succ, Int.mul_comm, Int.mul_left_comm]
+  rw [htarget]
+  cases s with
+  | false =>
+      simp
+      constructor
+      · exact Int.add_nonneg (Int.mul_nonneg He.1 hA0) Hm.1
+      · have h1 : bits_intOfZ e * (2 : Int) ^ Int.toNat (bits_intOfZ mw) ≤
+              ((2 : Int) ^ Int.toNat (bits_intOfZ ew) - 1) *
+                (2 : Int) ^ Int.toNat (bits_intOfZ mw) := by
+          apply Int.mul_le_mul_of_nonneg_right
+          omega
+          exact hA0
+        have hmle : bits_intOfZ m ≤
+            (2 : Int) ^ Int.toNat (bits_intOfZ mw) - 1 := by omega
+        have h2 : ((2 : Int) ^ Int.toNat (bits_intOfZ ew) - 1) *
+              (2 : Int) ^ Int.toNat (bits_intOfZ mw) + bits_intOfZ m <
+            ((2 : Int) ^ Int.toNat (bits_intOfZ ew) + 1) *
+              (2 : Int) ^ Int.toNat (bits_intOfZ mw) := by
+          have hident : ((2 : Int) ^ Int.toNat (bits_intOfZ ew) - 1) *
+                (2 : Int) ^ Int.toNat (bits_intOfZ mw) +
+                ((2 : Int) ^ Int.toNat (bits_intOfZ mw) - 1) =
+              (2 : Int) ^ Int.toNat (bits_intOfZ ew) *
+                (2 : Int) ^ Int.toNat (bits_intOfZ mw) - 1 := by
+            rw [Int.sub_mul, Int.one_mul]
+            omega
+          have htarget2 : ((2 : Int) ^ Int.toNat (bits_intOfZ ew) + 1) *
+                (2 : Int) ^ Int.toNat (bits_intOfZ mw) =
+              (2 : Int) ^ Int.toNat (bits_intOfZ ew) *
+                (2 : Int) ^ Int.toNat (bits_intOfZ mw) +
+                (2 : Int) ^ Int.toNat (bits_intOfZ mw) := by
+            rw [Int.add_mul, Int.one_mul]
+          omega
+        have hsumlt : bits_intOfZ e *
+              (2 : Int) ^ Int.toNat (bits_intOfZ mw) + bits_intOfZ m <
+            ((2 : Int) ^ Int.toNat (bits_intOfZ ew) + 1) *
+              (2 : Int) ^ Int.toNat (bits_intOfZ mw) := by omega
+        have hBone : (1 : Int) ≤
+            (2 : Int) ^ Int.toNat (bits_intOfZ ew) := by omega
+        have hbound : ((2 : Int) ^ Int.toNat (bits_intOfZ ew) + 1) *
+              (2 : Int) ^ Int.toNat (bits_intOfZ mw) ≤
+            (2 * (2 : Int) ^ Int.toNat (bits_intOfZ ew)) *
+              (2 : Int) ^ Int.toNat (bits_intOfZ mw) := by
+          apply Int.mul_le_mul_of_nonneg_right
+          omega
+          exact hA0
+        exact Int.lt_of_lt_of_le hsumlt hbound
+  | true =>
+      simp
+      constructor
+      · exact Int.add_nonneg
+          (Int.mul_nonneg (Int.add_nonneg hB0 He.1) hA0) Hm.1
+      · have h1 : ((2 : Int) ^ Int.toNat (bits_intOfZ ew) + bits_intOfZ e) *
+              (2 : Int) ^ Int.toNat (bits_intOfZ mw) ≤
+            (2 * (2 : Int) ^ Int.toNat (bits_intOfZ ew) - 1) *
+              (2 : Int) ^ Int.toNat (bits_intOfZ mw) := by
+          apply Int.mul_le_mul_of_nonneg_right
+          omega
+          exact hA0
+        have hmle : bits_intOfZ m ≤
+            (2 : Int) ^ Int.toNat (bits_intOfZ mw) - 1 := by omega
+        have hident : (2 * (2 : Int) ^ Int.toNat (bits_intOfZ ew) - 1) *
+              (2 : Int) ^ Int.toNat (bits_intOfZ mw) +
+              ((2 : Int) ^ Int.toNat (bits_intOfZ mw) - 1) =
+            (2 * (2 : Int) ^ Int.toNat (bits_intOfZ ew)) *
+              (2 : Int) ^ Int.toNat (bits_intOfZ mw) - 1 := by
+          rw [Int.sub_mul, Int.one_mul]
+          omega
+        omega
+
+end CompCert4Lean.Flocq.IEEE754.Bits
