@@ -2008,3 +2008,85 @@ theorem wt_is_call_cont : wt_is_call_contStatement := by
       exact hcall
 
 end CompCert4Lean.Backend.Cminortyping
+
+namespace CompCert4Lean.Backend.Cminortyping
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.Backend.Cminor
+
+theorem call_cont_wt : call_cont_wtStatement := by
+  intro env tret k hwt
+  let motive1 : ∀ (k : cont) (tret : xtype), wt_cont_call k tret → Prop :=
+    fun k tret _ => wt_cont_call (call_cont k) tret
+  let motive2 : ∀ (env : typenv) (tret : xtype) (k : cont),
+      wt_cont env tret k → Prop :=
+    fun _ tret k _ => wt_cont_call (call_cont k) tret
+  exact @wt_cont.rec motive1 motive2
+    wt_cont_Kstop
+    (fun optid f sp e k tret env WT_FN WT_CONT WT_ENV DEF_ENV WT_DEST ih =>
+      wt_cont_Kcall optid f sp e k tret env WT_FN WT_CONT WT_ENV DEF_ENV WT_DEST)
+    (fun env tret s k WT_STMT WT_CONT ih => ih)
+    (fun env tret k WT_CONT ih => ih)
+    (fun env tret k WT_CALL ih => ih)
+    env tret k hwt
+
+theorem wt_env_assign : wt_env_assignStatement := by
+  intro env id e v henv hv i w hi
+  have hgs := CompCert4Lean.Lib.Maps.PTree.gsspec_proof
+    (A := val) i id v e
+  cases hp : peq i id with
+  | left hEq =>
+      subst i
+      have hsame : PTree.get id (PTree.set id v e) = some v := by
+        simpa [hp] using hgs
+      rw [hsame] at hi
+      cases hi
+      exact hv
+  | right hNe =>
+      rw [hgs] at hi
+      exact henv i w (by simpa [hp] using hi)
+
+theorem def_env_assign : def_env_assignStatement := by
+  intro f e id v hdef i hi
+  have hgs := CompCert4Lean.Lib.Maps.PTree.gsspec_proof
+    (A := val) i id v e
+  cases hp : peq i id with
+  | left hEq =>
+      subst i
+      refine ⟨v, ?_⟩
+      simpa [hp] using hgs
+  | right hNe =>
+      rcases hdef i hi with ⟨w, hw⟩
+      refine ⟨w, ?_⟩
+      rw [hgs]
+      simp [hp, hw]
+
+theorem wt_env_set_params : wt_env_set_paramsStatement := by
+  intro env il vl h
+  induction il generalizing vl with
+  | nil =>
+      cases vl with
+      | nil =>
+          intro i v hi
+          have hempty : PTree.get i (PTree.empty val) = none :=
+            CompCert4Lean.Lib.Maps.PTree.gempty val i
+          rw [show set_params [] [] = PTree.empty val by rfl, hempty] at hi
+          cases hi
+      | cons v vl =>
+          cases h
+  | cons i il ih =>
+      cases vl with
+      | nil =>
+          cases h
+      | cons v vl =>
+          change Val.has_type v (env i) ∧
+            Val.has_type_list vl (List.map env il) at h
+          apply wt_env_assign env i (set_params vl il) v
+          · exact ih vl h.2
+          · exact h.1
+
+end CompCert4Lean.Backend.Cminortyping

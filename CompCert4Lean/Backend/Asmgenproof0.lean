@@ -725,3 +725,47 @@ theorem sp_val : sp_valStatement := by
   exact hagree.agree_sp.symm
 
 end CompCert4Lean.Backend.Asmgenproof0
+
+namespace CompCert4Lean.Backend.Asmgenproof0
+
+theorem ireg_val : ireg_valStatement := by
+  intro ms sp rs r r' hagree hreg
+  rw [← ireg_of_eq r r' hreg]
+  exact hagree.agree_mregs r
+
+theorem agree_exten : agree_extenStatement := by
+  intro ms sp rs rs' hagree hext
+  refine ⟨?_, hagree.agree_sp_def, ?_⟩
+  · rw [hext asmSP (by rfl)]
+    exact hagree.agree_sp
+  · intro r
+    rw [hext (CompCert4Lean.X86.Asm.preg_of r) (preg_of_data r)]
+    exact hagree.agree_mregs r
+
+theorem agree_set_mreg : agree_set_mregStatement := by
+  intro ms sp rs r v rs' hagree hv hother
+  refine ⟨?_, hagree.agree_sp_def, ?_⟩
+  · rw [hother asmSP (by rfl) (by exact Ne.symm (preg_of_not_SP r))]
+    exact hagree.agree_sp
+  · intro r0
+    unfold CompCert4Lean.Backend.Mach.Regmap.set
+    cases hEq : CompCert4Lean.Backend.Mach.Regmap.elt_eq r0 r with
+    | left heq =>
+      subst r0
+      exact hv
+    | right hne =>
+      rw [hother (CompCert4Lean.X86.Asm.preg_of r0) (preg_of_data r0)]
+      · exact hagree.agree_mregs r0
+      · intro hp
+        exact hne (preg_of_injective r0 r hp)
+
+theorem agree_set_mreg_parallel : agree_set_mreg_parallelStatement := by
+  intro ms sp rs r v v' hagree hv
+  apply agree_set_mreg ms sp rs r v
+    (CompCert4Lean.X86.Asm.Pregmap.set
+      (CompCert4Lean.X86.Asm.preg_of r) v' rs) hagree
+  · simpa [CompCert4Lean.X86.Asm.Pregmap.set] using hv
+  · intro r' _ hne
+    simp [CompCert4Lean.X86.Asm.Pregmap.set, hne]
+
+end CompCert4Lean.Backend.Asmgenproof0

@@ -1003,3 +1003,17 @@ theorem find_label_translated : find_label_translatedStatement := by
   exact hfind
 
 end CompCert4Lean.Backend.CleanupLabelsproof
+
+namespace CompCert4Lean.Backend.CleanupLabelsproof
+
+open CompCert4Lean.Backend.Linear
+
+theorem transf_final_states : transf_final_statesStatement := by
+  intro st1 st2 r hmatch hfinal
+  cases hfinal
+  cases hmatch
+  case final_state_intro.return rs m hresult ts stacks =>
+    cases stacks
+    exact final_state.final_state_intro rs m r hresult
+
+end CompCert4Lean.Backend.CleanupLabelsproof

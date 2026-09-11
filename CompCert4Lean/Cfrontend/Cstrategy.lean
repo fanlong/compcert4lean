@@ -1800,3 +1800,76 @@ theorem callred_kind
   cases h <;> rfl
 
 end CompCert4Lean.Cfrontend.Cstrategy
+
+namespace CompCert4Lean.Cfrontend.Cstrategy
+
+theorem lred_invert
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    lred_invertStatement := by
+  unfold lred_invertStatement
+  intro xi ge e l m l' m' h
+  cases h with
+  | varLocal h => exact ⟨_, Or.inl h⟩
+  | varGlobal hlocal hglobal => exact ⟨_, Or.inr ⟨hlocal, hglobal⟩⟩
+  | deref => exact ⟨_, _, rfl⟩
+  | fieldStruct hcomposite hoffset =>
+      exact ⟨_, _, rfl, _, _, _, hcomposite, hoffset⟩
+  | fieldUnion hcomposite hoffset =>
+      exact ⟨_, _, rfl, _, _, _, hcomposite, hoffset⟩
+
+theorem rred_invert
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    rred_invertStatement := by
+  unfold rred_invertStatement
+  intro xi ge e r m t r' m' h
+  cases h with
+  | rvalof hderef => exact ⟨rfl, _, _, hderef⟩
+  | addrof => exact rfl
+  | unop hsem => exact ⟨_, hsem⟩
+  | binop hsem => exact ⟨_, hsem⟩
+  | cast hsem => exact ⟨_, hsem⟩
+  | red_seqand_true hbool => exact ⟨_, hbool⟩
+  | red_seqand_false hbool => exact ⟨_, hbool⟩
+  | red_seqor_true hbool => exact ⟨_, hbool⟩
+  | red_seqor_false hbool => exact ⟨_, hbool⟩
+  | condition hbool => exact ⟨_, hbool⟩
+  | sizeof => exact trivial
+  | alignof => exact trivial
+  | assign hcast hassign => exact ⟨_, _, _, _, rfl, hcast, hassign⟩
+  | assignop hderef => exact ⟨_, _, rfl, hderef⟩
+  | postincr hderef hop => exact ⟨_, _, rfl, hderef⟩
+  | comma htype => exact htype
+  | paren hcast => exact ⟨_, hcast⟩
+  | builtin hargs hexternal =>
+      intro _
+      exact ⟨_, _, _, _, hargs, hexternal⟩
+
+theorem imm_safe_kind
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    imm_safe_kindStatement := by
+  unfold imm_safe_kindStatement
+  intro xi ge e k a m h
+  cases h with
+  | value => rfl
+  | location => rfl
+  | localRed hred hcontext =>
+      exact context_kind _ .LV k _ hcontext (lred_kind ge e _ _ _ _ hred)
+  | rvalRed hred hcontext =>
+      exact context_kind _ .RV k _ hcontext (rred_kind xi ge _ _ _ _ _ hred)
+  | callRed hred hcontext =>
+      exact context_kind _ .RV k _ hcontext (callred_kind ge _ _ _ _ _ hred)
+
+theorem safe_expr_kind
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    safe_expr_kindStatement := by
+  unfold safe_expr_kindStatement
+  intro xi ge fromKind C f a k e m hcontext hs
+  apply imm_safe_kind
+  exact safe_imm_safe (xi := xi) (ge := ge) (f := f) (C := C) (a := a)
+    (k := k) (e := e) (m := m) (K := fromKind) hs hcontext
+
+end CompCert4Lean.Cfrontend.Cstrategy

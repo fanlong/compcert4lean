@@ -2153,3 +2153,121 @@ theorem mem_between_2_proof : mem_between_2 := by
     hbelow x s hx habove_x hbelow_x
 
 end EqSet
+
+namespace EqSet
+
+private theorem raw_for_all_between_1_aux :
+    ∀ (pred above below : elt → Bool),
+      PredCompat pred → AboveMonotone above → BelowMonotone below →
+      ∀ (m : Raw.tree), Raw.bst m → ∀ x,
+        raw_for_all_between pred above below m = true →
+          Raw.InT x m → above x = true → below x = true → pred x = true := by
+  intro pred above below hpred habove hbelow m hm
+  induction hm with
+  | BSLeaf =>
+      intro x _ hx _ _
+      exact False.elim ((Raw.In_leaf_iff x).mp hx)
+  | BSNode height value left right hleft hright hlt hgt left_ih right_ih =>
+      intro x hfa hx habove_x hbelow_x
+      change (if above value = true then
+        if below value = true then
+          raw_for_all_between pred above below left && pred value &&
+            raw_for_all_between pred above below right
+        else raw_for_all_between pred above below left
+      else raw_for_all_between pred above below right) = true at hfa
+      cases hvalue_above : above value with
+      | false =>
+          simp [hvalue_above] at hfa
+          rw [Raw.In_node_iff] at hx
+          rcases hx with hx_left | hx_value | hx_right
+          · have hcontra : above value = true :=
+              habove x value (Or.inr (hlt x hx_left)) habove_x
+            rw [hvalue_above] at hcontra
+            cases hcontra
+          · have hcontra : above value = true :=
+              habove x value (Or.inl hx_value) habove_x
+            rw [hvalue_above] at hcontra
+            cases hcontra
+          · exact right_ih x hfa hx_right habove_x hbelow_x
+      | true =>
+          cases hvalue_below : below value with
+          | false =>
+              simp [hvalue_above, hvalue_below] at hfa
+              rw [Raw.In_node_iff] at hx
+              rcases hx with hx_left | hx_value | hx_right
+              · exact left_ih x hfa hx_left habove_x hbelow_x
+              · have hcontra : below value = true :=
+                  hbelow x value (Or.inl hx_value) hbelow_x
+                rw [hvalue_below] at hcontra
+                cases hcontra
+              · have hcontra : below value = true :=
+                  hbelow x value (Or.inr (hgt x hx_right)) hbelow_x
+                rw [hvalue_below] at hcontra
+                cases hcontra
+          | true =>
+              simp [hvalue_above, hvalue_below] at hfa
+              have hfa' :
+                  raw_for_all_between pred above below left = true ∧
+                    pred value = true ∧
+                      raw_for_all_between pred above below right = true := by
+                simpa only [Bool.and_eq_true, and_assoc] using hfa
+              rcases hfa' with ⟨hleft_fa, hvalue_fa, hright_fa⟩
+              rw [Raw.In_node_iff] at hx
+              rcases hx with hx_left | hx_value | hx_right
+              · exact left_ih x hleft_fa hx_left habove_x hbelow_x
+              · simpa [hpred x value hx_value] using hvalue_fa
+              · exact right_ih x hright_fa hx_right habove_x hbelow_x
+
+private theorem raw_for_all_between_2_aux :
+    ∀ (pred above below : elt → Bool),
+      ∀ (m : Raw.tree), Raw.bst m →
+        (∀ x, Raw.InT x m → above x = true → below x = true → pred x = true) →
+          raw_for_all_between pred above below m = true := by
+  intro pred above below m hm
+  induction hm with
+  | BSLeaf => intro hall; rfl
+  | BSNode height value left right hleft hright hlt hgt left_ih right_ih =>
+      intro hall
+      change (if above value = true then
+        if below value = true then
+          raw_for_all_between pred above below left && pred value &&
+            raw_for_all_between pred above below right
+        else raw_for_all_between pred above below left
+      else raw_for_all_between pred above below right) = true
+      cases hvalue_above : above value with
+      | false =>
+          simp [hvalue_above]
+          apply right_ih
+          intro x hx habove_x hbelow_x
+          exact hall x (.InRight height left right value hx) habove_x hbelow_x
+      | true =>
+          cases hvalue_below : below value with
+          | false =>
+              simp [hvalue_above, hvalue_below]
+              apply left_ih
+              intro x hx habove_x hbelow_x
+              exact hall x (.InLeft height left right value hx) habove_x hbelow_x
+          | true =>
+              simp only [↓reduceIte]
+              rw [Bool.and_eq_true, Bool.and_eq_true]
+              refine ⟨⟨?_, ?_⟩, ?_⟩
+              · apply left_ih
+                intro x hx habove_x hbelow_x
+                exact hall x (.InLeft height left right value hx) habove_x hbelow_x
+              · exact hall value (.IsRoot height left right value (E.eq_refl value))
+                  hvalue_above hvalue_below
+              · apply right_ih
+                intro x hx habove_x hbelow_x
+                exact hall x (.InRight height left right value hx) habove_x hbelow_x
+
+theorem for_all_between_iff_proof : for_all_between_iff := by
+  intro pred above below hpred habove hbelow s
+  change raw_for_all_between pred above below s.this = true ↔ _
+  constructor
+  · intro hfa x hx habove_x hbelow_x
+    exact raw_for_all_between_1_aux pred above below hpred habove hbelow
+      s.this s.is_ok.ok x hfa hx habove_x hbelow_x
+  · intro hall
+    exact raw_for_all_between_2_aux pred above below s.this s.is_ok.ok hall
+
+end EqSet

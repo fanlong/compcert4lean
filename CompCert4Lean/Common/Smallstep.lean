@@ -1352,3 +1352,34 @@ theorem plus_one : plus_oneStatement := by
     (_root_.List.append_nil t).symm
 
 end CompCert4Lean.Common.Smallstep
+
+namespace CompCert4Lean.Common.Smallstep
+
+open CompCert4Lean.Common.Events
+
+theorem plus_two : plus_twoStatement := by
+  intro genv state step ge s1 t1 s2 t2 s3 t hstep1 hstep2 htrace
+  exact plus_left s1 t1 hstep1
+    (star_one genv state step ge s2 t2 s3 hstep2) htrace
+
+theorem plus_three : plus_threeStatement := by
+  intro genv state step ge s1 t1 s2 t2 s3 t3 s4 t hstep1 hstep2 hstep3 htrace
+  exact plus_left s1 t1 hstep1
+    (star_two genv state step ge s2 t2 s3 t3 s4 (Eapp t2 t3) hstep2 hstep3 rfl)
+    htrace
+
+theorem plus_four : plus_fourStatement := by
+  intro genv state step ge s1 t1 s2 t2 s3 t3 s4 t4 s5 t
+    hstep1 hstep2 hstep3 hstep4 htrace
+  exact plus_left s1 t1 hstep1
+    (star_three genv state step ge s2 t2 s3 t3 s4 t4 s5
+      (Eapp t2 (Eapp t3 t4)) hstep2 hstep3 hstep4 rfl)
+    htrace
+
+theorem plus_star : plus_starStatement := by
+  intro genv state step ge s1 t s2 hplus
+  cases hplus with
+  | plus_left t1 s2 t2 s3 t hstep hstar htrace =>
+      exact star_step s1 t1 hstep hstar htrace
+
+end CompCert4Lean.Common.Smallstep

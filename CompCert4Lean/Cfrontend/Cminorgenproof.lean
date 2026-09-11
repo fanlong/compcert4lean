@@ -1397,3 +1397,41 @@ theorem functions_translated : functions_translatedStatement := by
   | Vsingle n => simp [Genv.find_funct] at hfind
 
 end CompCert4Lean.Cfrontend.Cminorgenproof
+
+namespace CompCert4Lean.Cfrontend.Cminorgenproof
+
+private theorem sig_preserved_transl_function :
+    ∀ f tf, CompCert4Lean.Cfrontend.Cminorgen.transl_function f =
+      CompCert4Lean.Common.Errors.OK tf → tf.fn_sig = f.fn_sig := by
+  intro f tf h
+  unfold CompCert4Lean.Cfrontend.Cminorgen.transl_function at h
+  cases hbuild : CompCert4Lean.Cfrontend.Cminorgen.build_compilenv f with
+  | mk cenv stacksize =>
+      rw [hbuild] at h
+      dsimp at h
+      split at h
+      next hle => exact sig_preserved_body f tf cenv stacksize h
+      next hgt => cases h
+
+theorem sig_preserved : sig_preservedStatement := by
+  intro f tf h
+  cases f with
+  | Internal f =>
+      unfold CompCert4Lean.Cfrontend.Cminorgen.transl_fundef at h
+      unfold CompCert4Lean.Common.AST.transf_partial_fundef at h
+      dsimp at h
+      cases htf : CompCert4Lean.Cfrontend.Cminorgen.transl_function f with
+      | Error msg => rw [htf] at h; cases h
+      | OK tf' =>
+          rw [htf] at h
+          cases h
+          change tf'.fn_sig = f.fn_sig
+          exact sig_preserved_transl_function f tf' htf
+  | External ef =>
+      change CompCert4Lean.Common.Errors.OK
+          (CompCert4Lean.Common.AST.External ef) =
+        CompCert4Lean.Common.Errors.OK tf at h
+      cases h
+      rfl
+
+end CompCert4Lean.Cfrontend.Cminorgenproof

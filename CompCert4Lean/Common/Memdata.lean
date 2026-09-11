@@ -810,3 +810,16 @@ theorem align_le_divides : align_le_dividesStatement := by
     | exact ⟨z8, by rfl⟩
 
 end CompCert4Lean.Common.Memdata
+
+namespace CompCert4Lean.Common.Memdata
+
+theorem length_bytes_of_int : length_bytes_of_intStatement := by
+  exact fun n x => length_bytes_of_int_proof_api n x
+
+theorem rev_if_be_length : rev_if_be_lengthStatement := by
+  exact fun l => rev_if_be_length_proof_api l
+
+theorem encode_int_length : encode_int_lengthStatement := by
+  exact fun sz x => encode_int_length_proof_api sz x
+
+end CompCert4Lean.Common.Memdata

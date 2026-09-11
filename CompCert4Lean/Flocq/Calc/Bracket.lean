@@ -759,3 +759,86 @@ theorem ordered_steps :
   omega
 
 end CompCert4Lean.Flocq.Calc.Bracket
+
+namespace CompCert4Lean.Flocq.Calc.Bracket
+
+theorem inbetween_step_not_Eq (ctx : ExactRealContext) :
+    inbetween_step_not_EqStatement ctx := by
+  intro start step nb_steps hstep x k l l' hx hk hcmp
+  have hk_izr : Rlt ctx (IZR ctx Z0) (IZR ctx k) :=
+    CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.IZR_lt
+      ctx Z0 k hk.1
+  have hkmul : Rlt ctx (IZR ctx Z0)
+      (Rmult ctx (IZR ctx k) step) :=
+    CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.Rmult_lt_0_compat
+      ctx (IZR ctx k) step hk_izr hstep
+  have hstart_lower' : Rlt ctx
+      (Rplus ctx start (IZR ctx Z0))
+      (Rplus ctx start (Rmult ctx (IZR ctx k) step)) :=
+    CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.Raxioms.Rplus_lt_compat_l
+      ctx start (IZR ctx Z0) (Rmult ctx (IZR ctx k) step) hkmul
+  have hstart_lower : Rlt ctx start
+      (Rplus ctx start (Rmult ctx (IZR ctx k) step)) := by
+    change ctx.spec.lt start
+      (ctx.spec.add start (ctx.spec.mul (ctx.spec.ofZ k) step))
+    change ctx.spec.lt
+      (ctx.spec.add start (ctx.spec.ofZ Z0))
+      (ctx.spec.add start (ctx.spec.mul (ctx.spec.ofZ k) step)) at hstart_lower'
+    rw [ctx.certificate.sourceLaws.ofZ_zero,
+      ctx.certificate.orderedField.add_zero] at hstart_lower'
+    exact hstart_lower'
+  have hinner := inbetween_bounds ctx
+      (Rplus ctx start (Rmult ctx (IZR ctx k) step))
+      (Rplus ctx start (Rmult ctx (IZR ctx (Zadd k Zone)) step))
+      (ordered_steps ctx start step hstep k) x l hx
+  have hlower : Rlt ctx start x :=
+    CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.Rlt_le_trans
+      ctx start
+        (Rplus ctx start (Rmult ctx (IZR ctx k) step)) x
+      hstart_lower hinner.1
+  have hk1_le : Zle (Zadd k Zone) nb_steps := by
+    change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (Zadd k Zone) ≤
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ nb_steps
+    simp only [Zadd,
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add]
+    rw [CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+    have hZone : CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ Zone =
+        (1 : Int) := by rfl
+    rw [hZone]
+    change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ k + 1 ≤
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ nb_steps
+    have hk_int := hk.2
+    change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ k <
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ nb_steps at hk_int
+    omega
+  have hk1_izr_le : Rle ctx
+      (IZR ctx (Zadd k Zone)) (IZR ctx nb_steps) :=
+    CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.IZR_le
+      ctx (Zadd k Zone) nb_steps hk1_le
+  have hstep_le : Rle ctx (IZR ctx Z0) step :=
+    CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.Rlt_le
+      ctx (IZR ctx Z0) step hstep
+  have hkmul_le : Rle ctx
+      (Rmult ctx (IZR ctx (Zadd k Zone)) step)
+      (Rmult ctx (IZR ctx nb_steps) step) :=
+    CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.Rmult_le_compat_r
+      ctx step (IZR ctx (Zadd k Zone)) (IZR ctx nb_steps)
+      hstep_le hk1_izr_le
+  have hupper_le : Rle ctx
+      (Rplus ctx start (Rmult ctx (IZR ctx (Zadd k Zone)) step))
+      (Rplus ctx start (Rmult ctx (IZR ctx nb_steps) step)) :=
+    CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.Rplus_le_compat_l
+      ctx start _ _ hkmul_le
+  have hupper : Rlt ctx x
+      (Rplus ctx start (Rmult ctx (IZR ctx nb_steps) step)) :=
+    CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.Rlt_le_trans
+      ctx x
+        (Rplus ctx start (Rmult ctx (IZR ctx (Zadd k Zone)) step))
+        (Rplus ctx start (Rmult ctx (IZR ctx nb_steps) step))
+      hinner.2 hupper_le
+  apply inbetween_Inexact l'
+  · exact ⟨hlower, hupper⟩
+  · rw [middle_range]
+    exact hcmp
+
+end CompCert4Lean.Flocq.Calc.Bracket

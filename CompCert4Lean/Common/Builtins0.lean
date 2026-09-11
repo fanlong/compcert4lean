@@ -974,3 +974,32 @@ theorem proj_num_opt_inject : proj_num_opt_injectStatement := by
   exact projNumOptInject j k0 t k1 v k1' v' h0 hk hv
 
 end CompCert4Lean.Common.Builtins0
+
+namespace CompCert4Lean.Common.Builtins0
+
+theorem lookup_builtin_sig : lookup_builtin_sigStatement := by
+  intro A sig_of name sg b l
+  induction l with
+  | nil =>
+      intro h
+      simp [lookup_builtin] at *
+  | cons head rest ih =>
+      rcases head with ⟨n, b'⟩
+      intro h
+      simp only [lookup_builtin] at h
+      cases hname :
+          CompCert4Lean.Foundation.RocqString.Rocq.Coq.Strings.String.string_dec name n with
+      | left hnameeq =>
+          cases hsg : CompCert4Lean.Common.AST.signature_eq sg (sig_of b') with
+          | left hsgeq =>
+              simp [hname, hsg] at *
+              cases h
+              exact hsgeq.symm
+          | right hsgneq =>
+              simp [hname, hsg] at h
+              exact ih h
+      | right hnameneq =>
+          simp [hname] at h
+          exact ih h
+
+end CompCert4Lean.Common.Builtins0
