@@ -879,3 +879,20 @@ theorem add_ref_globvar_incl : add_ref_globvar_inclStatement := by
       · exact ih (CompCert4Lean.Backend.Unusedglob.add_ref_init_data w i)
 
 end CompCert4Lean.Backend.Unusedglobproof
+
+namespace CompCert4Lean.Backend.Unusedglobproof
+
+theorem add_ref_definition_incl : add_ref_definition_inclStatement := by
+  intro pm id w
+  unfold CompCert4Lean.Backend.Unusedglob.add_ref_definition
+  cases h : CompCert4Lean.Lib.Maps.PTree.get id pm with
+  | none => exact workset_incl_refl w
+  | some gd =>
+      cases gd with
+      | Gfun fd =>
+          cases fd with
+          | Internal f => exact add_ref_function_incl f w
+          | External ef => exact workset_incl_refl w
+      | Gvar gv => exact add_ref_globvar_incl gv w
+
+end CompCert4Lean.Backend.Unusedglobproof

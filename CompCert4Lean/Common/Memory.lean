@@ -2118,3 +2118,19 @@ theorem range_perm_max : range_perm_maxStatement := by
 end Mem
 
 end CompCert4Lean.Common.Memory
+
+namespace CompCert4Lean.Common.Memory
+
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memtype
+
+namespace Mem
+
+theorem valid_access_implies : valid_access_impliesStatement := by
+  intro m chunk b ofs p1 p2 hvalid horder
+  exact ⟨range_perm_implies m b ofs (zAdd ofs (size_chunk chunk)) Cur p1 p2 hvalid.1 horder,
+    hvalid.2⟩
+
+end Mem
+
+end CompCert4Lean.Common.Memory
