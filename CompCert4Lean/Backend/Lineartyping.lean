@@ -589,3 +589,110 @@ theorem wt_parent_locset : wt_parent_locsetStatement := by
       simpa [Linear.parent_locset] using hwtrs
 
 end CompCert4Lean.Backend.Lineartyping
+
+namespace CompCert4Lean.Backend.Lineartyping
+
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Backend.Linear
+open CompCert4Lean.Backend.Locations
+open CompCert4Lean.Lib.Integers
+
+private theorem find_def_add_globals_local {F V : Type}
+    (gl : List (ident × globdef F V)) (ge : Genv.t F V)
+    (b : CompCert4Lean.Common.Values.block)
+    (g : globdef F V) :
+    Genv.find_def (Genv.add_globals ge gl) b = some g →
+      (∃ id, (id, g) ∈ gl) ∨ Genv.find_def ge b = some g := by
+  induction gl generalizing ge with
+  | nil =>
+      intro h
+      exact Or.inr h
+  | cons idg tl ih =>
+      intro h
+      have hstep := ih (ge := Genv.add_global ge idg) h
+      rcases hstep with hmem | hprev
+      · rcases hmem with ⟨id', hmem⟩
+        exact Or.inl ⟨id', by simp [hmem]⟩
+      · rcases idg with ⟨id, gd⟩
+        simp only [Genv.add_global, Genv.find_def] at hprev
+        by_cases hb : b = ge.genv_next
+        · subst b
+          have hval : (some gd : Option (globdef F V)) = some g :=
+            (CompCert4Lean.Lib.Maps.PTree.gss ge.genv_next gd ge.genv_defs).symm.trans hprev
+          have hg : gd = g := Option.some.inj hval
+          subst g
+          exact Or.inl ⟨id, by simp⟩
+        · have hprev' := CompCert4Lean.Lib.Maps.PTree.gso
+              gd ge.genv_defs hb
+          have hprev'' := hprev'.symm.trans hprev
+          exact Or.inr (by simpa [Genv.find_def] using hprev'')
+
+theorem wt_find_function : wt_find_functionStatement := by
+  intro cfg p hprog ros rs f hfind
+  unfold Linear.find_function at hfind
+  cases ros with
+  | inl r =>
+      have hinv := Genv.find_funct_inv (F := LinearFundef) (V := Unit)
+        (Genv.globalenv p) (rs (R r)) f hfind
+      rcases hinv with ⟨b, hb⟩
+      have hfun : Genv.find_funct (Genv.globalenv p)
+          (Vptr b (CompCert4Lean.Lib.Integers.Ptrofs.zero)) = some f := by
+        rw [← hb]
+        exact hfind
+      have hptr : Genv.find_funct_ptr (Genv.globalenv p) b = some f := by
+        rw [Genv.find_funct_find_funct_ptr] at hfun
+        exact hfun
+      unfold Genv.find_funct_ptr at hptr
+      cases hd : Genv.find_def (Genv.globalenv p) b with
+      | none => simp [hd] at hptr
+      | some gd =>
+          cases gd with
+          | Gfun f' =>
+              have hf : f' = f := Option.some.inj (by simpa [hd] using hptr)
+              subst f'
+              have hmem : ∃ id, (id, Gfun f) ∈ p.prog_defs := by
+                have hcases := find_def_add_globals_local (gl := p.prog_defs)
+                  (ge := Genv.empty_genv LinearFundef Unit p.prog_public) (b := b)
+                  (g := Gfun f) (by simpa [Genv.globalenv] using hd)
+                rcases hcases with hcases | hempty
+                · exact hcases
+                · have : False := by
+                    simpa [Genv.empty_genv, Genv.find_def,
+                      CompCert4Lean.Lib.Maps.PTree.empty,
+                      CompCert4Lean.Lib.Maps.PTree.get] using hempty
+                  contradiction
+              rcases hmem with ⟨id, hmem⟩
+              exact hprog id f (by simpa using hmem)
+          | Gvar v => simp [hd] at hptr
+  | inr symb =>
+      cases hs : Genv.find_symbol (Genv.globalenv p) symb with
+      | none => simp [hs] at hfind
+      | some b =>
+          have hptr : Genv.find_funct_ptr (Genv.globalenv p) b = some f := by
+            simpa [hs] using hfind
+          unfold Genv.find_funct_ptr at hptr
+          cases hd : Genv.find_def (Genv.globalenv p) b with
+          | none => simp [hd] at hptr
+          | some gd =>
+              cases gd with
+              | Gfun f' =>
+                  have hf : f' = f := Option.some.inj (by simpa [hd] using hptr)
+                  subst f'
+                  have hmem : ∃ id, (id, Gfun f) ∈ p.prog_defs := by
+                    have hcases := find_def_add_globals_local (gl := p.prog_defs)
+                      (ge := Genv.empty_genv LinearFundef Unit p.prog_public) (b := b)
+                      (g := Gfun f) (by simpa [Genv.globalenv] using hd)
+                    rcases hcases with hcases | hempty
+                    · exact hcases
+                    · have : False := by
+                        simpa [Genv.empty_genv, Genv.find_def,
+                          CompCert4Lean.Lib.Maps.PTree.empty,
+                          CompCert4Lean.Lib.Maps.PTree.get] using hempty
+                      contradiction
+                  rcases hmem with ⟨id, hmem⟩
+                  exact hprog id f (by simpa using hmem)
+              | Gvar v => simp [hd] at hptr
+
+end CompCert4Lean.Backend.Lineartyping

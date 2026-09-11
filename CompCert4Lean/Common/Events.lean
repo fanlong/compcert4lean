@@ -1313,3 +1313,27 @@ theorem eventval_match_receptive : eventval_match_receptiveStatement := by
         exact ⟨CompCert4Lean.Common.Values.Vptr b' _, ev_match_ptr _ _ _ hv2 hb'⟩
 
 end CompCert4Lean.Common.Events
+
+namespace CompCert4Lean.Common.Events
+
+theorem known_builtin_sem_inject
+    [binary64_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 53)
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 24)
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 128)] :
+    known_builtin_sem_injectStatement := by
+  intro bf ge vargs m1 t vres m2 f ge' vargs' m' hsem hinj
+  cases hsem with
+  | known_builtin_sem_intro vargs vres evaluation =>
+      obtain ⟨vres', evaluation', hinj'⟩ :=
+        CompCert4Lean.Common.Builtins.builtin_function_sem_inject
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate)
+          bf vargs vres f vargs' evaluation hinj
+      exact ⟨vres', known_builtin_sem_intro vargs' vres' m' evaluation', hinj'⟩
+
+end CompCert4Lean.Common.Events

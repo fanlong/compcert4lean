@@ -1061,3 +1061,23 @@ theorem lessdef_vagree_list : lessdef_vagree_listStatement := by
                 (lessdef_vagree v1 v2 hv) (ih vl2 htail)
 
 end CompCert4Lean.Backend.NeedDomain
+
+namespace CompCert4Lean.Backend.NeedDomain
+
+theorem vagree_lessdef_list : vagree_lessdef_listStatement := by
+  intro vl1 vl2 h
+  induction h with
+  | lessdef_list_nil =>
+      intro nvl
+      exact vagree_list.vagree_list_nil nvl
+  | lessdef_list_cons v1 v2 vl1 vl2 hhead htail ih =>
+      intro nvl
+      cases nvl with
+      | nil =>
+          exact vagree_list.vagree_list_default v1 vl1 v2 vl2
+            (vagree_lessdef v1 v2 All hhead) (ih [])
+      | cons nv1 nvl =>
+          exact vagree_list.vagree_list_cons v1 vl1 v2 vl2 nv1 nvl
+            (vagree_lessdef v1 v2 nv1 hhead) (ih nvl)
+
+end CompCert4Lean.Backend.NeedDomain
