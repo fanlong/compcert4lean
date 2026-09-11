@@ -1374,3 +1374,103 @@ theorem R_combine_cond_complete : R_combine_cond_completeStatement := by
       split <;> simp_all
 
 end CompCert4Lean.X86.CombineOp
+
+namespace CompCert4Lean.X86.CombineOp
+
+def R_combine_cond_correct : R_combine_cond_correctStatement := by
+  intro get cond args res hres
+  subst res
+  cases args with
+  | nil =>
+      simpa [combine_cond] using
+        (R_combine_cond_12 cond [] cond rfl [] rfl (by
+        cases cond with
+        | Ccompimm c n => cases c <;> simp
+        | Ccompuimm c n => cases c <;> simp
+        | _ => simp))
+  | cons x xs =>
+      cases xs with
+      | cons y ys =>
+          simpa [combine_cond] using
+            (R_combine_cond_12 cond (x :: y :: ys) cond rfl (x :: y :: ys) rfl (by
+            cases cond with
+            | Ccompimm c n => cases c <;> simp
+            | Ccompuimm c n => cases c <;> simp
+            | _ => simp))
+      | nil =>
+          cases cond with
+          | Ccompimm c n =>
+              cases c with
+              | Cne =>
+                  cases h0 : CompCert4Lean.Lib.Integers.Int.eq_dec n
+                      CompCert4Lean.Lib.Integers.Int.zero with
+                  | left hzero =>
+                      simpa [combine_cond, h0] using
+                        (R_combine_cond_0 _ _ n rfl x rfl hzero h0)
+                  | right hne =>
+                      cases h1 : CompCert4Lean.Lib.Integers.Int.eq_dec n
+                          CompCert4Lean.Lib.Integers.Int.one with
+                      | left hone =>
+                          simpa [combine_cond, h0, h1] using
+                            (R_combine_cond_1 _ _ n rfl x rfl hne h0 hone h1)
+                      | right hone =>
+                          simpa [combine_cond, h0, h1] using
+                            (R_combine_cond_2 _ _ n rfl x rfl hne h0 hone h1)
+              | Ceq =>
+                  cases h0 : CompCert4Lean.Lib.Integers.Int.eq_dec n
+                      CompCert4Lean.Lib.Integers.Int.zero with
+                  | left hzero =>
+                      simpa [combine_cond, h0] using
+                        (R_combine_cond_3 _ _ n rfl x rfl hzero h0)
+                  | right hne =>
+                      cases h1 : CompCert4Lean.Lib.Integers.Int.eq_dec n
+                          CompCert4Lean.Lib.Integers.Int.one with
+                      | left hone =>
+                          simpa [combine_cond, h0, h1] using
+                            (R_combine_cond_4 _ _ n rfl x rfl hne h0 hone h1)
+                      | right hone =>
+                          simpa [combine_cond, h0, h1] using
+                            (R_combine_cond_5 _ _ n rfl x rfl hne h0 hone h1)
+              | _ =>
+                  simpa [combine_cond] using
+                    (R_combine_cond_12 _ [x] _ rfl [x] rfl (by simp_all))
+          | Ccompuimm c n =>
+              cases c with
+              | Cne =>
+                  cases h0 : CompCert4Lean.Lib.Integers.Int.eq_dec n
+                      CompCert4Lean.Lib.Integers.Int.zero with
+                  | left hzero =>
+                      simpa [combine_cond, h0] using
+                        (R_combine_cond_6 _ _ n rfl x rfl hzero h0)
+                  | right hne =>
+                      cases h1 : CompCert4Lean.Lib.Integers.Int.eq_dec n
+                          CompCert4Lean.Lib.Integers.Int.one with
+                      | left hone =>
+                          simpa [combine_cond, h0, h1] using
+                            (R_combine_cond_7 _ _ n rfl x rfl hne h0 hone h1)
+                      | right hone =>
+                          simpa [combine_cond, h0, h1] using
+                            (R_combine_cond_8 _ _ n rfl x rfl hne h0 hone h1)
+              | Ceq =>
+                  cases h0 : CompCert4Lean.Lib.Integers.Int.eq_dec n
+                      CompCert4Lean.Lib.Integers.Int.zero with
+                  | left hzero =>
+                      simpa [combine_cond, h0] using
+                        (R_combine_cond_9 _ _ n rfl x rfl hzero h0)
+                  | right hne =>
+                      cases h1 : CompCert4Lean.Lib.Integers.Int.eq_dec n
+                          CompCert4Lean.Lib.Integers.Int.one with
+                      | left hone =>
+                          simpa [combine_cond, h0, h1] using
+                            (R_combine_cond_10 _ _ n rfl x rfl hne h0 hone h1)
+                      | right hone =>
+                          simpa [combine_cond, h0, h1] using
+                            (R_combine_cond_11 _ _ n rfl x rfl hne h0 hone h1)
+              | _ =>
+                  simpa [combine_cond] using
+                    (R_combine_cond_12 _ [x] _ rfl [x] rfl (by simp_all))
+          | _ =>
+              simpa [combine_cond] using
+                (R_combine_cond_12 _ [x] _ rfl [x] rfl (by simp_all))
+
+end CompCert4Lean.X86.CombineOp

@@ -466,3 +466,84 @@ theorem combine_comparison_cmpu_sound : combine_comparison_cmpu_soundStatement :
       cases hcombine
 
 end CompCert4Lean.Backend.CSEdomain
+
+namespace CompCert4Lean.Backend.CSEdomain
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Integers
+
+private theorem cse_int64_lt_self (n : CompCert4Lean.Lib.Integers.Int64.int) :
+    CompCert4Lean.Lib.Integers.WordCore.lt n n = false := by
+  unfold CompCert4Lean.Lib.Integers.WordCore.lt
+  run_tac
+    Lean.Elab.Tactic.liftMetaTactic fun goal => goal.withContext do
+      let target ← goal.getType
+      let target' ← Lean.Meta.transform target (pre := fun e => do
+        match e.getAppFn.constName? with
+        | some name =>
+            if Lean.Name.isPrefixOf `_private name then
+              let e' ← Lean.Meta.withTransparency .all <| Lean.Meta.whnf e
+              return Lean.TransformStep.done e'
+            else
+              return Lean.TransformStep.continue
+        | none => return Lean.TransformStep.continue)
+      let goal ← Lean.Meta.withTransparency .all <| goal.change target'
+      return [goal]
+  cases h : CompCert4Lean.Lib.Coqlib.zlt
+      (CompCert4Lean.Lib.Integers.WordCore.signed n)
+      (CompCert4Lean.Lib.Integers.WordCore.signed n) with
+  | left hlt => exact (Int.lt_irrefl _ hlt).elim
+  | right hge => rfl
+
+private theorem cse_cmpl_bool_self (c : CompCert4Lean.Lib.Integers.comparison)
+    (v : val) (res : Bool) :
+    Val.cmpl_bool c v v = some res →
+      res = (match c with
+        | .Ceq | .Cle | .Cge => true
+        | .Cne | .Clt | .Cgt => false) := by
+  intro h
+  cases v with
+  | Vundef => simp [Val.cmpl_bool] at h
+  | Vint n => simp [Val.cmpl_bool] at h
+  | Vlong n =>
+      cases c with
+      | Ceq =>
+          simpa [Val.cmpl_bool, CompCert4Lean.Lib.Integers.Int64.cmp,
+            CompCert4Lean.Lib.Integers.WordCore.cmp,
+            CompCert4Lean.Lib.Integers.WordCore.eq] using h
+      | Cne =>
+          simpa [Val.cmpl_bool, CompCert4Lean.Lib.Integers.Int64.cmp,
+            CompCert4Lean.Lib.Integers.WordCore.cmp,
+            CompCert4Lean.Lib.Integers.WordCore.eq] using h
+      | Clt =>
+          simpa [Val.cmpl_bool, CompCert4Lean.Lib.Integers.Int64.cmp,
+            CompCert4Lean.Lib.Integers.WordCore.cmp, cse_int64_lt_self] using h
+      | Cle =>
+          simpa [Val.cmpl_bool, CompCert4Lean.Lib.Integers.Int64.cmp,
+            CompCert4Lean.Lib.Integers.WordCore.cmp, cse_int64_lt_self] using h
+      | Cgt =>
+          simpa [Val.cmpl_bool, CompCert4Lean.Lib.Integers.Int64.cmp,
+            CompCert4Lean.Lib.Integers.WordCore.cmp, cse_int64_lt_self] using h
+      | Cge =>
+          simpa [Val.cmpl_bool, CompCert4Lean.Lib.Integers.Int64.cmp,
+            CompCert4Lean.Lib.Integers.WordCore.cmp, cse_int64_lt_self] using h
+  | Vfloat f => simp [Val.cmpl_bool] at h
+  | Vsingle f => simp [Val.cmpl_bool] at h
+  | Vptr b o => simp [Val.cmpl_bool] at h
+
+theorem combine_comparison_cmpl_sound : combine_comparison_cmpl_soundStatement := by
+  intro valu c x y res res' hcombine hcmp
+  unfold combine_comparison at hcombine
+  cases hEq : eq_valnum x y with
+  | left hxy =>
+      subst y
+      have hc := cse_cmpl_bool_self c (valu x) res hcmp
+      rw [hEq] at hcombine
+      injection hcombine with hcomb
+      exact hc.trans hcomb
+  | right hxy =>
+      rw [hEq] at hcombine
+      cases hcombine
+
+end CompCert4Lean.Backend.CSEdomain
