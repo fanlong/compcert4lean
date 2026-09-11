@@ -2774,3 +2774,128 @@ theorem mul_add_distr_r_proof : mul_add_distr_r := by
       Int.add_emod _ _ _
 
 end CompCert4Lean.Lib.Integers.Int
+
+namespace CompCert4Lean.Lib.Integers.Int
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem shl_zero_proof : shl_zero := by
+  intro x
+  change WordCore.shl x (WordCore.zero wordsize) = x
+  apply WordCore.ext
+  change (WordCore.repr wordsize
+    (zShiftl (unsigned x) (unsigned (WordCore.zero wordsize)))).intval = x.intval
+  have hz : unsigned (WordCore.zero wordsize) =
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.Numbers.BinNums.Z.Z0 := by
+    rfl
+  rw [hz]
+  rw [show zShiftl (unsigned x)
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.Numbers.BinNums.Z.Z0 = unsigned x by
+    unfold zShiftl CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.shiftl
+    rw [show intOfZ Numbers.BinNums.Z.Z0 = 0 by rfl]
+    rw [if_pos (by omega)]
+    simp only [Int.toNat_zero]
+    rw [show Int.pow 2 0 = 1 by rfl]
+    simp
+    exact zOfInt_intOfZ _]
+  change (WordCore.repr wordsize (unsigned x)).intval = x.intval
+  have hx0 : ZArith.BinInt.Z.le
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.Numbers.BinNums.Z.Z0 (unsigned x) := by
+    have h := x.intrange.1
+    change (-1 : Int) <
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ x.intval at h
+    change 0 ≤ CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ x.intval
+    omega
+  have hxmax : ZArith.BinInt.Z.le (unsigned x) max_unsigned := by
+    have h := x.intrange.2
+    change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ x.intval <
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ modulus at h
+    change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ x.intval ≤
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ max_unsigned
+    change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ x.intval ≤
+      (2 ^ wordsize : Int) - 1
+    change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ x.intval <
+      (2 ^ wordsize : Int) at h
+    omega
+  exact unsigned_repr_proof_api (unsigned x) ⟨hx0, hxmax⟩
+
+theorem swap_cmpu_proof : swap_cmpu := by
+  intro c x y
+  cases c <;> simp [cmpu, WordCore.cmpu, swap_comparison, WordCore.eq, eq_comm]
+
+private theorem suffix_zshiftr_div (x y : Z)
+    (hx : zLe zZero x) (hy : zLe zZero y) :
+    zShiftr x y = zDiv x (zTwoP y) := by
+  change 0 ≤ intOfZ x at hx
+  change 0 ≤ intOfZ y at hy
+  have hpow : intOfZ (zTwoP y) =
+      Int.pow 2 (Int.toNat (intOfZ y)) := by
+    unfold zTwoP two_p CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.Zpower.two_p
+    change intOfZ (if intOfZ y < 0 then Numbers.BinNums.Z.Z0 else
+      zOfInt (Int.pow (intOfZ (Numbers.BinNums.Z.Zpos (.xO .xH)))
+        (Int.toNat (intOfZ y)))) = _
+    rw [if_neg (by omega)]
+    rw [intOfZ_zOfInt]
+    rfl
+  apply intOfZ_injective
+  simp [zShiftr, zDiv,
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.shiftr,
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.div,
+    hx, hy]
+  rw [intOfZ_zOfInt, intOfZ_zOfInt]
+  rw [hpow]
+  change (Int.ediv (intOfZ x) (Int.pow 2 (Int.toNat (intOfZ y)))) =
+    (if Int.pow 2 (Int.toNat (intOfZ y)) = 0 then 0
+      else if 0 < Int.pow 2 (Int.toNat (intOfZ y)) then
+        Int.ediv (intOfZ x) (Int.pow 2 (Int.toNat (intOfZ y)))
+      else
+        let d := -(Int.pow 2 (Int.toNat (intOfZ y)))
+        let q := Int.ediv (intOfZ x) d
+        let r := Int.emod (intOfZ x) d
+        if r = 0 then -q else -(q + 1))
+  have hp : 0 < Int.pow 2 (Int.toNat (intOfZ y)) := by
+    exact Int.pow_pos (by omega)
+  simp [hp, Int.ne_of_gt hp]
+
+theorem shru_div_two_p_proof : shru_div_two_p := by
+  intro x y
+  change WordCore.repr wordsize
+      (zShiftr (unsigned x) (unsigned y)) =
+    WordCore.repr wordsize (zDiv (unsigned x) (zTwoP (unsigned y)))
+  have hx : zLe zZero (unsigned x) := by
+    have h := x.intrange.1
+    change (-1 : Int) < intOfZ x.intval at h
+    change 0 ≤ intOfZ x.intval
+    omega
+  have hy : zLe zZero (unsigned y) := by
+    have h := y.intrange.1
+    change (-1 : Int) < intOfZ y.intval at h
+    change 0 ≤ intOfZ y.intval
+    omega
+  rw [suffix_zshiftr_div (unsigned x) (unsigned y) hx hy]
+
+theorem eqm_samerepr_proof : eqm_samerepr := by
+  intro x y h
+  apply WordCore.ext_of_val_eq
+  rw [show x = zOfInt (intOfZ x) by exact (zOfInt_intOfZ x).symm,
+    show y = zOfInt (intOfZ y) by exact (zOfInt_intOfZ y).symm]
+  change (WordCore.repr wordsize (zOfInt (intOfZ x))).val =
+    (WordCore.repr wordsize (zOfInt (intOfZ y))).val
+  rw [WordCore.val_repr, WordCore.val_repr]
+  have hm : intOfZ modulus = (2 ^ wordsize : Int) := by
+    unfold modulus
+    rw [WordCore.twoPowerNat_eq_zOfNat_twoPow]
+    rfl
+  unfold eqm WordCore.eqm Zbits.eqmod at h
+  rcases h with ⟨k, hk⟩
+  have hk' := congrArg intOfZ hk
+  simp only [zAdd, zMul, ZArith.BinInt.Z.add, ZArith.BinInt.Z.mul,
+    intOfZ_zOfInt] at hk'
+  change intOfZ x = intOfZ k * intOfZ modulus + intOfZ y at hk'
+  have hrem : intOfZ x % intOfZ modulus = intOfZ y % intOfZ modulus := by
+    rw [hk', Int.add_emod, Int.mul_emod]
+    simp
+  rw [hm] at hrem
+  exact congrArg Int.toNat hrem
+
+end CompCert4Lean.Lib.Integers.Int

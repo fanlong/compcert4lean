@@ -2147,3 +2147,19 @@ theorem def_set_params : def_set_paramsStatement := by
               simpa [hp] using hw
 
 end CompCert4Lean.Backend.Cminortyping
+
+namespace CompCert4Lean.Backend.Cminortyping
+
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Backend.Cminor
+
+theorem wt_env_set_locals : wt_env_set_localsStatement := by
+  intro env il e henv
+  induction il with
+  | nil => exact henv
+  | cons i il ih =>
+      apply wt_env_assign env i (set_locals il e) Vundef
+      · exact ih
+      · exact True.intro
+
+end CompCert4Lean.Backend.Cminortyping

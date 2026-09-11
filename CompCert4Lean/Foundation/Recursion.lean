@@ -239,3 +239,34 @@ end Wellfounded.Inverse_Image
 
 end Rocq.Coq
 end CompCert4Lean.Foundation.Recursion
+
+namespace CompCert4Lean.Foundation.Recursion
+namespace Rocq.Coq
+namespace Wellfounded.Transitive_Closure
+
+theorem wf_clos_trans : wf_clos_transStatement := by
+  intro A R Rwf
+  have acc_clos : ∀ (x : A), Init.Wf.Acc R x →
+      Init.Wf.Acc
+        (_root_.CompCert4Lean.Foundation.Ordered.Rocq.Coq.Relations.Relation_Operators.clos_trans
+          A R) x := by
+    intro x hx
+    induction hx with
+    | Acc_intro x h ih =>
+        apply Init.Wf.Acc_intro x
+        intro y hy
+        induction hy with
+        | t_step y x hR =>
+            exact ih y hR
+        | t_trans y z x h1 h2 ih1 ih2 =>
+            have hz : Init.Wf.Acc
+                (_root_.CompCert4Lean.Foundation.Ordered.Rocq.Coq.Relations.Relation_Operators.clos_trans
+                  A R) z := ih2 h ih
+            cases hz with
+            | Acc_intro z hz => exact hz y h1
+  intro x
+  exact acc_clos x (Rwf x)
+
+end Wellfounded.Transitive_Closure
+end Rocq.Coq
+end CompCert4Lean.Foundation.Recursion

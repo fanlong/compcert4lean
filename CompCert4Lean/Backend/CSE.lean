@@ -1120,3 +1120,22 @@ theorem fixpoint_solution_proof
     code successors transf entrypoint res n instr s hfix hcode hsucc
 
 end CompCert4Lean.Backend.CSE.Solver
+
+namespace CompCert4Lean.Backend.CSE.Solver
+
+theorem law_obligation_proof
+    [binary64_certificate : CompCert4Lean.Backend.CSE.Binary64NormalizeCertificate]
+    [binary32_certificate : CompCert4Lean.Backend.CSE.Binary32NormalizeCertificate] :
+    CompCert4Lean.Backend.CSE.Solver.law_obligation
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) := by
+  constructor
+  · intro x valu genv sp rs m hholds
+    exact CompCert4Lean.Backend.CSEdomain.empty_numbering_holds
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      valu genv sp rs m
+  · intro x valu genv sp rs m hholds
+    exact hholds
+
+end CompCert4Lean.Backend.CSE.Solver

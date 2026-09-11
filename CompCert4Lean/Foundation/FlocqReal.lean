@@ -1510,3 +1510,100 @@ theorem Rplus_lt_reg_r (ctx : ExactRealContext) :
 end RIneq
 end Rocq.Coq.Reals
 end CompCert4Lean.Foundation.FlocqReal
+
+namespace CompCert4Lean.Foundation.FlocqReal
+namespace Rocq.Coq.Reals
+
+namespace Raxioms
+
+theorem Rmult_comm (ctx : ExactRealContext) :
+    Rmult_commStatement ctx := by
+  intro r1 r2
+  change ctx.spec.mul r1 r2 = ctx.spec.mul r2 r1
+  exact ctx.certificate.orderedField.mul_comm r1 r2
+
+theorem Rinv_l (ctx : ExactRealContext) :
+    Rinv_lStatement ctx := by
+  intro r hr
+  have hrne : r ≠ ctx.spec.zero := by
+    intro hzero
+    apply hr
+    calc
+      r = ctx.spec.zero := hzero
+      _ = ctx.spec.ofZ Z0 := ctx.certificate.sourceLaws.ofZ_zero.symm
+  change ctx.spec.mul (ctx.spec.inv r) r =
+    ctx.spec.ofZ (Zpos xH)
+  rw [ctx.certificate.sourceLaws.ofZ_one]
+  exact ctx.certificate.orderedField.inv_mul_cancel r hrne
+
+end Raxioms
+end Rocq.Coq.Reals
+end CompCert4Lean.Foundation.FlocqReal
+
+namespace CompCert4Lean.Foundation.FlocqReal
+namespace Rocq.Coq.Reals
+namespace RIneq
+
+theorem Rlt_Rminus_proof :
+    ∀ (ctx : ExactRealContext) (a b : ctx.spec.carrier)
+      (_h : ExactReal.Rlt ctx.spec a b), Rlt_Rminus ctx a b _h := by
+  intro ctx a b h
+  change ctx.spec.lt ctx.spec.zero (ctx.spec.add b (ctx.spec.neg a))
+  rw [← ctx.certificate.sourceLaws.ofZ_zero]
+  exact (Rlt_0_minus_proof ctx a b).mpr h
+
+private theorem flocqReal_Rmult_lt_reg_l (ctx : ExactRealContext)
+    (r r1 r2 : ctx.spec.carrier)
+    (hr : ctx.spec.lt ctx.spec.zero r)
+    (h : ctx.spec.lt (ctx.spec.mul r r1) (ctx.spec.mul r r2)) :
+    ctx.spec.lt r1 r2 := by
+  have hr0 : ctx.spec.lt (ExactReal.IZR ctx.spec Z0) r := by
+    change ctx.spec.lt (ctx.spec.ofZ Z0) r
+    rw [ctx.certificate.sourceLaws.ofZ_zero]
+    exact hr
+  have hinv0 : ctx.spec.lt (ExactReal.IZR ctx.spec Z0) (ctx.spec.inv r) := by
+    exact Rinv_0_lt_compat ctx r hr0
+  have hinv0' : ctx.spec.lt ctx.spec.zero (ctx.spec.inv r) := by
+    rw [← ctx.certificate.sourceLaws.ofZ_zero]
+    exact hinv0
+  have hrne : r ≠ ctx.spec.zero := by
+    intro hzero
+    subst r
+    exact ctx.certificate.orderedField.lt_irrefl _ hr
+  have hmul := ctx.certificate.orderedField.mul_lt_compat_l
+    (ctx.spec.inv r) (ctx.spec.mul r r1) (ctx.spec.mul r r2) hinv0' h
+  have hleft : ctx.spec.mul (ctx.spec.inv r) (ctx.spec.mul r r1) = r1 := by
+    calc
+      ctx.spec.mul (ctx.spec.inv r) (ctx.spec.mul r r1) =
+          ctx.spec.mul (ctx.spec.mul (ctx.spec.inv r) r) r1 := by
+            rw [ctx.certificate.orderedField.mul_assoc]
+      _ = ctx.spec.mul ctx.spec.one r1 := by
+            rw [ctx.certificate.orderedField.inv_mul_cancel r hrne]
+      _ = r1 := ctx.certificate.orderedField.one_mul _
+  have hright : ctx.spec.mul (ctx.spec.inv r) (ctx.spec.mul r r2) = r2 := by
+    calc
+      ctx.spec.mul (ctx.spec.inv r) (ctx.spec.mul r r2) =
+          ctx.spec.mul (ctx.spec.mul (ctx.spec.inv r) r) r2 := by
+            rw [ctx.certificate.orderedField.mul_assoc]
+      _ = ctx.spec.mul ctx.spec.one r2 := by
+            rw [ctx.certificate.orderedField.inv_mul_cancel r hrne]
+      _ = r2 := ctx.certificate.orderedField.one_mul _
+  rw [hleft, hright] at hmul
+  exact hmul
+
+theorem Rmult_lt_reg_r (ctx : ExactRealContext) :
+    Rmult_lt_reg_rStatement ctx := by
+  intro r r1 r2 hr h
+  have hr' : ctx.spec.lt ctx.spec.zero r := by
+    rw [← ctx.certificate.sourceLaws.ofZ_zero]
+    exact hr
+  have h' : ctx.spec.lt (ctx.spec.mul r r1) (ctx.spec.mul r r2) := by
+    change ctx.spec.lt (ctx.spec.mul r1 r) (ctx.spec.mul r2 r) at h
+    rw [ctx.certificate.orderedField.mul_comm r1 r,
+      ctx.certificate.orderedField.mul_comm r2 r] at h
+    exact h
+  exact flocqReal_Rmult_lt_reg_l ctx r r1 r2 hr' h'
+
+end RIneq
+end Rocq.Coq.Reals
+end CompCert4Lean.Foundation.FlocqReal

@@ -1065,3 +1065,50 @@ theorem record_regs_of_instr_only : record_regs_of_instr_onlyStatement := by
       exact hu
 
 end CompCert4Lean.Backend.Bounds
+
+namespace CompCert4Lean.Backend.Bounds
+
+namespace RegSet
+
+theorem elements_3w_proof : elements_3w := by
+  intro s
+  exact CompCert4Lean.Lib.FSetAVLplus.Make.elements_3w s
+
+end RegSet
+
+theorem slots_of_locs_charact : slots_of_locs_charactStatement := by
+  intro sl ofs ty l
+  induction l with
+  | nil => simp [slots_of_locs]
+  | cons a l ih =>
+      cases a with
+      | R r => simpa [slots_of_locs] using ih
+      | S sl' ofs' ty' =>
+          simp [slots_of_locs, ih]
+
+theorem mreg_is_within_bounds : mreg_is_within_boundsStatement := by
+  intro cfg f i hi r hdef
+  unfold mreg_within_bounds
+  intro hsave
+  change r ∈ RegSet.elements (record_regs_of_function cfg f)
+  have hmem : RegSet.In r (record_regs_of_function cfg f) :=
+    record_regs_of_function_ok cfg f r i hi hdef hsave
+  have hlisted := RegSet.elements_1_proof (record_regs_of_function cfg f) r hmem
+  change CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.SetoidList.InA
+      RegSet.EOrder.eq r (RegSet.elements (record_regs_of_function cfg f)) at hlisted
+  have hlisted' :=
+    (CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.SetoidList.InA_alt
+      RegSet.EOrder.eq r (RegSet.elements (record_regs_of_function cfg f))).mp hlisted
+  rcases hlisted' with ⟨r', heq, hmem'⟩
+  change r = r' at heq
+  subst r'
+  exact hmem'
+
+theorem slot_is_within_bounds : slot_is_within_boundsStatement := by
+  intro cfg f i hi sl ty ofs hs
+  cases sl with
+  | Local => exact local_slot_bound cfg f i ofs ty hi hs
+  | Incoming => trivial
+  | Outgoing => exact outgoing_slot_bound cfg f i ofs ty hi hs
+
+end CompCert4Lean.Backend.Bounds

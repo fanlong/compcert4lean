@@ -1067,3 +1067,132 @@ theorem match_program_main : match_program_mainStatement := by
   exact hmatch.2.1
 
 end CompCert4Lean.Common.Linking
+
+namespace CompCert4Lean.Common.Linking
+
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Common.AST
+
+private theorem transf_globdefs_match
+    {C F1 V1 F2 V2 : Type} [LC : Linker C]
+    (match_fundef : C → F1 → F2 → Prop)
+    (match_varinfo : V1 → V2 → Prop)
+    (transf_fun : ident → F1 → CompCert4Lean.Common.Errors.res F2)
+    (transf_var : ident → V1 → CompCert4Lean.Common.Errors.res V2)
+    (ctx : C)
+    (hf : ∀ i f tf, transf_fun i f = .OK tf → match_fundef ctx f tf)
+    (hv : ∀ i v tv, transf_var i v = .OK tv → match_varinfo v tv) :
+    ∀ (l : List (ident × globdef F1 V1))
+      (l' : List (ident × globdef F2 V2)),
+      CompCert4Lean.Common.AST.transf_globdefs transf_fun transf_var l = .OK l' →
+      list_forall2 (match_ident_globdef match_fundef match_varinfo ctx) l l' := by
+  intro l
+  induction l with
+  | nil =>
+      intro l' h
+      cases h
+      exact list_forall2_nil _
+  | cons head tail ih =>
+      intro l' h
+      rcases head with ⟨i, gd⟩
+      cases gd with
+      | Gfun f =>
+          cases htf : transf_fun i f with
+          | Error msg =>
+              simp [CompCert4Lean.Common.AST.transf_globdefs, htf] at h
+          | OK tf =>
+              cases htail : CompCert4Lean.Common.AST.transf_globdefs
+                  transf_fun transf_var tail with
+              | Error msg =>
+                  simp [CompCert4Lean.Common.AST.transf_globdefs, htf, htail] at h
+              | OK tail' =>
+                  simp [CompCert4Lean.Common.AST.transf_globdefs, htf, htail] at h
+                  cases h
+                  apply list_forall2.cons
+                  · constructor
+                    · rfl
+                    · exact @match_globdef_fun C F1 V1 F2 V2 LC
+                        match_fundef match_varinfo ctx ctx f tf
+                        (linkorder_refl _) (hf i f tf htf)
+                  · exact ih tail' htail
+      | Gvar v =>
+          cases htv : transf_var i v.gvar_info with
+          | Error msg =>
+              simp [CompCert4Lean.Common.AST.transf_globdefs,
+                CompCert4Lean.Common.AST.transf_globvar, htv] at h
+          | OK tv =>
+              cases htail : CompCert4Lean.Common.AST.transf_globdefs
+                  transf_fun transf_var tail with
+              | Error msg =>
+                  simp [CompCert4Lean.Common.AST.transf_globdefs,
+                    CompCert4Lean.Common.AST.transf_globvar, htv, htail] at h
+              | OK tail' =>
+                  simp [CompCert4Lean.Common.AST.transf_globdefs,
+                    CompCert4Lean.Common.AST.transf_globvar, htv, htail] at h
+                  cases h
+                  apply list_forall2.cons
+                  · constructor
+                    · rfl
+                    · apply match_globdef_var
+                      exact match_globvar_intro _ _ _ _ _ _
+                        (hv i v.gvar_info tv htv)
+                  · exact ih tail' htail
+
+theorem match_transform_partial_program2 :
+    match_transform_partial_program2Statement := by
+  intro C F1 V1 F2 V2 LC LF LV match_fundef match_varinfo transf_fun transf_var ctx p tp htrans hf hv
+  unfold CompCert4Lean.Common.AST.transform_partial_program2 at htrans
+  cases hdefs : CompCert4Lean.Common.AST.transf_globdefs transf_fun transf_var p.prog_defs with
+  | Error msg => simp [hdefs] at htrans
+  | OK defs =>
+      simp [hdefs] at htrans
+      cases htrans
+      constructor
+      · exact transf_globdefs_match match_fundef match_varinfo transf_fun transf_var ctx hf hv
+          p.prog_defs defs hdefs
+      · exact ⟨rfl, rfl⟩
+
+theorem match_transform_partial_program_contextual :
+    match_transform_partial_program_contextualStatement := by
+  intro A B V LA LV match_fundef transf_fun p tp htrans hf
+  apply match_transform_partial_program2
+    (C := program A V) (F1 := A) (V1 := V) (F2 := B) (V2 := V)
+    (match_fundef := match_fundef) (match_varinfo := Eq)
+    (transf_fun := fun _ f => transf_fun f)
+    (transf_var := fun _ v => .OK v) (ctx := p) (p := p) (tp := tp)
+  · exact htrans
+  · intro i f tf h
+    exact hf f tf h
+  · intro i v tv h
+    cases h
+    rfl
+
+theorem match_transform_program_contextual :
+    match_transform_program_contextualStatement := by
+  intro A B V LA LV match_fundef transf_fun p hf
+  apply match_transform_partial_program_contextual
+    (match_fundef := match_fundef)
+    (transf_fun := fun f => .OK (transf_fun f))
+    (p := p) (tp := transform_program transf_fun p)
+  · exact CompCert4Lean.Common.AST.transform_program_partial_program A B V transf_fun p
+  · intro f tf htf
+    cases htf
+    exact hf f
+
+theorem match_transform_partial_program :
+    match_transform_partial_programStatement := by
+  intro A B V LA LV transf_fun p tp htrans
+  apply match_transform_partial_program2
+    (C := program A V) (F1 := A) (V1 := V) (F2 := B) (V2 := V)
+    (match_fundef := fun _ f tf => transf_fun f = .OK tf)
+    (match_varinfo := Eq)
+    (transf_fun := fun _ f => transf_fun f)
+    (transf_var := fun _ v => .OK v) (ctx := p) (p := p) (tp := tp)
+  · exact htrans
+  · intro i f tf h
+    exact h
+  · intro i v tv h
+    cases h
+    rfl
+
+end CompCert4Lean.Common.Linking

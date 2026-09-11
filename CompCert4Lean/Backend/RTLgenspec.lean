@@ -1281,3 +1281,733 @@ theorem tr_exprlist_incr : tr_exprlist_incrStatement := by
     htr
 
 end CompCert4Lean.Backend.RTLgenspec
+namespace CompCert4Lean.Backend.RTLgenspec
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Foundation.Logic.Support
+open CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.List
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Backend.RTLgen
+open CompCert4Lean.X86.Op
+
+private theorem test_alloc_reg_valid
+    (map : RTLgen.mapping) (a : expr) (r : reg)
+    (s1 s2 : RTLgen.state) (i : state_incr s1 s2) :
+    map_valid map s1 →
+    RTLgen.alloc_reg map a s1 = .OK r s2 i →
+    reg_valid r s2 := by
+  intro hmap halloc
+  cases a with
+  | Evar id =>
+      cases hfind : PTree.get id map.map_vars with
+      | none => simp [RTLgen.alloc_reg, RTLgen.find_var, RTLgen.error, hfind] at halloc
+      | some r0 =>
+          simp [RTLgen.alloc_reg, RTLgen.find_var, hfind, RTLgen.ret] at halloc
+          rcases halloc with ⟨hr, hs⟩
+          cases hr
+          cases hs
+          exact hmap r (Or.inl ⟨id, hfind⟩)
+  | Eletvar idx =>
+      cases hfind : map.map_letvars[idx]? with
+      | none => simp [RTLgen.alloc_reg, RTLgen.find_letvar, RTLgen.error, hfind] at halloc
+      | some r0 =>
+          simp [RTLgen.alloc_reg, RTLgen.find_letvar, hfind, RTLgen.ret] at halloc
+          rcases halloc with ⟨hr, hs⟩
+          cases hr
+          cases hs
+          rcases (List.getElem?_eq_some_iff.mp hfind) with ⟨hi, hx⟩
+          exact hmap r (Or.inr (List.mem_of_getElem hx))
+  | Eop op args =>
+      simp only [RTLgen.alloc_reg, RTLgen.new_reg] at halloc
+      injection halloc with hr hs
+      cases hr
+      cases hs
+      exact Plt_succ _
+  | Eload chunk addr args =>
+      simp only [RTLgen.alloc_reg, RTLgen.new_reg] at halloc
+      injection halloc with hr hs
+      cases hr
+      cases hs
+      exact Plt_succ _
+  | Econdition cond ifso ifnot =>
+      simp only [RTLgen.alloc_reg, RTLgen.new_reg] at halloc
+      injection halloc with hr hs
+      cases hr
+      cases hs
+      exact Plt_succ _
+  | Elet bound body =>
+      simp only [RTLgen.alloc_reg, RTLgen.new_reg] at halloc
+      injection halloc with hr hs
+      cases hr
+      cases hs
+      exact Plt_succ _
+  | Ebuiltin ef args =>
+      simp only [RTLgen.alloc_reg, RTLgen.new_reg] at halloc
+      injection halloc with hr hs
+      cases hr
+      cases hs
+      exact Plt_succ _
+  | Eexternal id sig args =>
+      simp only [RTLgen.alloc_reg, RTLgen.new_reg] at halloc
+      injection halloc with hr hs
+      cases hr
+      cases hs
+      exact Plt_succ _
+
+private theorem test_map_valid_incr
+    (map : RTLgen.mapping) (s1 s2 : RTLgen.state) (i : state_incr s1 s2) :
+    map_valid map s1 → map_valid map s2 := by
+  intro hmap r hr
+  exact reg_valid_incr r s1 s2 i (hmap r hr)
+
+private theorem test_add_instr_code
+    (s : RTLgen.state) (ins : RTL.instruction) (n : RTL.node)
+    (s' : RTLgen.state) (i : state_incr s s') :
+    RTLgen.add_instr ins s = .OK n s' i →
+    PTree.get n s'.st_code = some ins := by
+  intro h
+  simp [RTLgen.add_instr] at h
+  injection h with hn hs
+  cases hn
+  cases hs
+  change PTree.get s.st_nextnode
+    (PTree.set s.st_nextnode ins (show PTree.t RTL.instruction from s.st_code)) = some ins
+  have hx := PTree.getSet_equation (A := RTL.instruction)
+    s.st_nextnode s.st_nextnode ins s.st_code
+  rw [hx]
+  simp
+
+private theorem test_new_reg_valid
+    (s : RTLgen.state) (r : reg) (s' : RTLgen.state) (i : state_incr s s') :
+    RTLgen.new_reg s = .OK r s' i → reg_valid r s' := by
+  intro h
+  simp [RTLgen.new_reg] at h
+  injection h with hr hs
+  cases hr
+  cases hs
+  exact Plt_succ _
+
+private theorem test_new_reg_fresh
+    (s : RTLgen.state) (r : reg) (s' : RTLgen.state) (i : state_incr s s') :
+    RTLgen.new_reg s = .OK r s' i → reg_fresh r s := by
+  intro h
+  simp [RTLgen.new_reg] at h
+  injection h with hr hs
+  cases hr
+  cases hs
+  unfold reg_fresh
+  intro hlt
+  change PArith.BinPos.Pos.to_nat s.st_nextreg <
+    PArith.BinPos.Pos.to_nat s.st_nextreg at hlt
+  exact Nat.lt_irrefl _ hlt
+
+private theorem test_getElem_nth {A : Type} (l : List A) (n : Nat) (x : A)
+    (h : l[n]? = some x) : nth_error l n = some x := by
+  induction l generalizing n with
+  | nil => simp at h ⊢
+  | cons a t ih =>
+      cases n with
+      | zero => simpa [nth_error] using h
+      | succ n =>
+          apply ih
+          simpa [nth_error] using h
+
+private theorem test_alloc_regs_valid
+    (map : RTLgen.mapping) (al : exprlist) (rl : List reg)
+    (s1 s2 : RTLgen.state) (i : state_incr s1 s2) :
+    map_valid map s1 →
+    RTLgen.alloc_regs map al s1 = .OK rl s2 i →
+    regs_valid rl s2 := by
+  intro hmap halloc
+  refine exprlist.rec
+      (motive_1 := fun _ => True)
+      (motive_2 := fun al => ∀ (map : RTLgen.mapping) (rl : List reg)
+        (s1 s2 : RTLgen.state) (i : state_incr s1 s2),
+        map_valid map s1 →
+        RTLgen.alloc_regs map al s1 = .OK rl s2 i →
+        regs_valid rl s2)
+      (motive_3 := fun _ => True)
+      (fun _ => trivial)
+      (fun _ _ _ => trivial)
+      (fun _ _ _ _ => trivial)
+      (fun _ _ _ _ _ _ => trivial)
+      (fun _ _ _ _ => trivial)
+      (fun _ => trivial)
+      (fun _ _ _ => trivial)
+      (fun _ _ _ _ => trivial)
+      (fun map rl s1 s2 i hmap halloc => by
+        change RTLgen.ret [] s1 = .OK rl s2 i at halloc
+        simp [RTLgen.ret] at halloc
+        rcases halloc with ⟨hrl, hs⟩
+        cases hrl
+        cases hs
+        intro r hmem
+        simp at hmem)
+      (fun a al ihhead ihtail map rl s1 s2 i hmap halloc => by
+        change RTLgen.bind (RTLgen.alloc_reg map a)
+          (fun r => RTLgen.bind (RTLgen.alloc_regs map al)
+            (fun rl => RTLgen.ret (r :: rl))) s1 = .OK rl s2 i at halloc
+        cases hreg : RTLgen.alloc_reg map a s1 with
+        | Error msg => simp [RTLgen.bind, hreg] at halloc
+        | OK r sm hincr =>
+            simp [RTLgen.bind, hreg] at halloc
+            cases htail : RTLgen.alloc_regs map al sm with
+            | Error msg => simp [RTLgen.bind, htail] at halloc
+            | OK rlmid sn hinc =>
+                simp [RTLgen.bind, htail, RTLgen.ret] at halloc
+                rcases halloc with ⟨hrl, hs⟩
+                cases hrl
+                cases hs
+                have hrvalid := test_alloc_reg_valid map a r s1 sm hincr hmap hreg
+                have hmap' := test_map_valid_incr map s1 sm hincr hmap
+                have htailvalid := ihtail map rlmid sm s2 hinc hmap' htail
+                exact regs_valid_cons r rlmid s2
+                  (reg_valid_incr r sm s2 hinc hrvalid) htailvalid)
+      (fun _ _ _ => trivial)
+      (fun _ _ _ _ _ _ => trivial)
+      (fun _ _ _ _ => trivial)
+      al map rl s1 s2 i hmap halloc
+
+mutual
+  private def aux_expr (a : expr) (map : RTLgen.mapping) (rd : reg) (nd : RTL.node)
+      (s : RTLgen.state) (ns : RTL.node) (s' : RTLgen.state) (pr : List reg)
+      (INCR : state_incr s s') :
+      RTLgen.transl_expr map a rd nd s = .OK ns s' INCR →
+      map_valid map s → target_reg_ok map pr a rd → regs_valid pr s → reg_valid rd s →
+      tr_expr s'.st_code map pr a ns nd rd none := by
+    intro TR WF OK VALID VALID2
+    cases a with
+    | Evar id =>
+        cases hfind : PTree.get id map.map_vars with
+        | none =>
+            change RTLgen.bind (RTLgen.find_var map id)
+              (fun r => RTLgen.add_move r rd nd) s = _ at TR
+            simp [RTLgen.find_var, hfind, RTLgen.error, RTLgen.bind] at TR
+        | some r0 =>
+            change RTLgen.bind (RTLgen.find_var map id)
+              (fun r => RTLgen.add_move r rd nd) s = _ at TR
+            rw [show RTLgen.find_var map id = RTLgen.ret r0 by simp [RTLgen.find_var, hfind]] at TR
+            simp [RTLgen.bind] at TR
+            by_cases hr : r0 = rd
+            · simp [RTLgen.add_move, hr, RTLgen.ret, RTLgen.bind] at TR
+              rcases TR with ⟨hns, hs⟩
+              cases hns
+              cases hs
+              cases hr
+              apply tr_expr.tr_Evar
+              · exact hfind
+              · left; exact ⟨rfl, rfl⟩
+              · exact tr_move.tr_move_0 _ _
+            · simp [RTLgen.add_move, hr, RTLgen.add_instr, RTLgen.ret, RTLgen.bind] at TR
+              injection TR with hns hs
+              cases hns
+              cases hs
+              apply tr_expr.tr_Evar
+              · exact hfind
+              · cases OK with
+                | target_reg_var id' r' hmap' =>
+                    exfalso
+                    have he : (some r0 : Option reg) = some rd := hfind.symm.trans hmap'
+                    exact hr (Option.some.inj he)
+                | target_reg_other a' r' hmap' hpr' =>
+                    exact Or.inr ⟨reg_map_ok.reg_map_ok_novar map rd hmap', hpr'⟩
+              · apply tr_move.tr_move_1
+                change PTree.get s.st_nextnode
+                  (PTree.set s.st_nextnode (RTL.instruction.Iop Omove [r0] rd nd) s.st_code) = _
+                have hx := PTree.getSet_equation (A := RTL.instruction)
+                  s.st_nextnode s.st_nextnode (RTL.instruction.Iop Omove [r0] rd nd) s.st_code
+                rw [hx]
+                simp
+    | Eop op al =>
+        change RTLgen.bind (RTLgen.alloc_regs map al)
+          (fun rl => RTLgen.bind (RTLgen.add_instr (RTL.instruction.Iop op rl rd nd))
+            (fun no => RTLgen.transl_exprlist map al rl no)) s = .OK ns s' INCR at TR
+        cases halloc : RTLgen.alloc_regs map al s with
+        | Error msg => simp [RTLgen.bind, halloc] at TR
+        | OK rl sm hincr =>
+            simp [RTLgen.bind, halloc] at TR
+            cases hadd : RTLgen.add_instr (RTL.instruction.Iop op rl rd nd) sm with
+            | Error msg => simp [RTLgen.bind, hadd] at TR
+            | OK no sn hinstr =>
+                simp [RTLgen.bind, hadd] at TR
+                cases htail : RTLgen.transl_exprlist map al rl no sn with
+                | Error msg => simp [RTLgen.bind, htail] at TR
+                | OK ns2 sfin htailincr =>
+                    simp [RTLgen.bind, htail, RTLgen.ret] at TR
+                    rcases TR with ⟨hns, hs⟩
+                    cases hns
+                    cases hs
+                    apply tr_expr.tr_Eop
+                    have hssn := RTLgen.state_incr_trans s sm sn hincr hinstr
+                    have hmap_sn := test_map_valid_incr map s sn hssn WF
+                    have hpr_sn := regs_valid_incr s sn pr hssn VALID
+                    have hrl_sm := test_alloc_regs_valid map al rl s sm hincr WF halloc
+                    have hrl_sn := regs_valid_incr sm sn rl hinstr hrl_sm
+                    · exact aux_list al map rl no sn ns s' pr htailincr
+                        htail hmap_sn
+                        (alloc_regs_target_ok map al pr s rl sm hincr WF VALID halloc)
+                        hpr_sn hrl_sn
+                    · exact instr_at_incr sn s' no _ htailincr
+                        (test_add_instr_code sm (RTL.instruction.Iop op rl rd nd) no sn hinstr hadd)
+                    · cases OK with
+                      | target_reg_other a' r' hmap' hpr' =>
+                          exact reg_map_ok.reg_map_ok_novar map rd hmap'
+                    · cases OK with
+                      | target_reg_other a' r' hmap' hpr' => exact hpr'
+    | Eload chunk addr al =>
+        change RTLgen.bind (RTLgen.alloc_regs map al)
+          (fun rl => RTLgen.bind (RTLgen.add_instr (RTL.instruction.Iload chunk addr rl rd nd))
+            (fun no => RTLgen.transl_exprlist map al rl no)) s = .OK ns s' INCR at TR
+        cases halloc : RTLgen.alloc_regs map al s with
+        | Error msg => simp [RTLgen.bind, halloc] at TR
+        | OK rl sm hincr =>
+            simp [RTLgen.bind, halloc] at TR
+            cases hadd : RTLgen.add_instr (RTL.instruction.Iload chunk addr rl rd nd) sm with
+            | Error msg => simp [RTLgen.bind, hadd] at TR
+            | OK no sn hinstr =>
+                simp [RTLgen.bind, hadd] at TR
+                cases htail : RTLgen.transl_exprlist map al rl no sn with
+                | Error msg => simp [RTLgen.bind, htail] at TR
+                | OK ns2 sfin htailincr =>
+                    simp [RTLgen.bind, htail, RTLgen.ret] at TR
+                    rcases TR with ⟨hns, hs⟩
+                    cases hns
+                    cases hs
+                    apply tr_expr.tr_Eload
+                    have hssn := RTLgen.state_incr_trans s sm sn hincr hinstr
+                    have hmap_sn := test_map_valid_incr map s sn hssn WF
+                    have hpr_sn := regs_valid_incr s sn pr hssn VALID
+                    have hrl_sm := test_alloc_regs_valid map al rl s sm hincr WF halloc
+                    have hrl_sn := regs_valid_incr sm sn rl hinstr hrl_sm
+                    · exact aux_list al map rl no sn ns s' pr htailincr
+                        htail hmap_sn
+                        (alloc_regs_target_ok map al pr s rl sm hincr WF VALID halloc)
+                        hpr_sn hrl_sn
+                    · exact instr_at_incr sn s' no _ htailincr
+                        (test_add_instr_code sm (RTL.instruction.Iload chunk addr rl rd nd) no sn hinstr hadd)
+                    · cases OK with
+                      | target_reg_other a' r' hmap' hpr' =>
+                          exact reg_map_ok.reg_map_ok_novar map rd hmap'
+                    · cases OK with
+                      | target_reg_other a' r' hmap' hpr' => exact hpr'
+    | Econdition a ifso ifnot =>
+        change RTLgen.bind (RTLgen.transl_expr map ifnot rd nd)
+          (fun nfalse => RTLgen.bind (RTLgen.transl_expr map ifso rd nd)
+            (fun ntrue => RTLgen.transl_condexpr map a ntrue nfalse)) s = .OK ns s' INCR at TR
+        cases hfalse : RTLgen.transl_expr map ifnot rd nd s with
+        | Error msg => simp [RTLgen.bind, hfalse] at TR
+        | OK nfalse s0 hfalseIncr =>
+            simp [RTLgen.bind, hfalse] at TR
+            cases htrue : RTLgen.transl_expr map ifso rd nd s0 with
+            | Error msg => simp [RTLgen.bind, htrue] at TR
+            | OK ntrue s1 htrueIncr =>
+                simp [RTLgen.bind, htrue] at TR
+                cases hcond : RTLgen.transl_condexpr map a ntrue nfalse s1 with
+                | Error msg => simp [RTLgen.bind, hcond] at TR
+                | OK ns2 sfin hcondIncr =>
+                    simp [RTLgen.bind, hcond, RTLgen.ret] at TR
+                    rcases TR with ⟨hns, hs⟩
+                    cases hns
+                    cases hs
+                    have hfalseTo : state_incr s0 s' :=
+                      RTLgen.state_incr_trans s0 s1 s' htrueIncr hcondIncr
+                    have htrueTo : state_incr s1 s' := hcondIncr
+                    have hmap0 := test_map_valid_incr map s s0 hfalseIncr WF
+                    have hmap1 := test_map_valid_incr map s0 s1 htrueIncr hmap0
+                    have hpr0 := regs_valid_incr s s0 pr hfalseIncr VALID
+                    have hpr1 := regs_valid_incr s0 s1 pr htrueIncr hpr0
+                    have hrd0 := reg_valid_incr rd s s0 hfalseIncr VALID2
+                    have hrd1 := reg_valid_incr rd s0 s1 htrueIncr hrd0
+                    have hOKmap : ¬ reg_in_map map rd := by
+                      cases OK with
+                      | target_reg_other a' r' hmap' hpr' => exact hmap'
+                    have hOKpr : ¬ rd ∈ pr := by
+                      cases OK with
+                      | target_reg_other a' r' hmap' hpr' => exact hpr'
+                    apply tr_expr.tr_Econdition
+                    · exact aux_cond a map ntrue nfalse s1 ns s' pr hcondIncr
+                        hcond hmap1 hpr1
+                    · exact tr_expr_incr s1 s' hcondIncr map pr ifso ntrue nd rd none
+                        (aux_expr ifso map rd nd s0 ntrue s1 pr htrueIncr htrue hmap0
+                          (target_reg_ok.target_reg_other ifso rd hOKmap hOKpr)
+                          hpr0 hrd0)
+                    · exact tr_expr_incr s0 s' hfalseTo map pr ifnot nfalse nd rd none
+                        (aux_expr ifnot map rd nd s nfalse s0 pr hfalseIncr hfalse WF
+                          (target_reg_ok.target_reg_other ifnot rd hOKmap hOKpr)
+                          VALID VALID2)
+    | Elet b c =>
+        change RTLgen.bind RTLgen.new_reg
+          (fun r => RTLgen.bind (RTLgen.transl_expr (RTLgen.add_letvar map r) c rd nd)
+            (fun nc => RTLgen.transl_expr map b r nc)) s = .OK ns s' INCR at TR
+        cases hnew : RTLgen.new_reg s with
+        | Error msg => simp [RTLgen.bind, hnew] at TR
+        | OK r s0 hnewIncr =>
+            simp [RTLgen.bind, hnew] at TR
+            cases hbody : RTLgen.transl_expr (RTLgen.add_letvar map r) c rd nd s0 with
+            | Error msg => simp [RTLgen.bind, hbody] at TR
+            | OK nc s1 hbodyIncr =>
+                simp [RTLgen.bind, hbody] at TR
+                cases hbound : RTLgen.transl_expr map b r nc s1 with
+                | Error msg => simp [RTLgen.bind, hbound] at TR
+                | OK ns2 sfin hboundIncr =>
+                    simp [RTLgen.bind, hbound, RTLgen.ret] at TR
+                    rcases TR with ⟨hns, hs⟩
+                    cases hns
+                    cases hs
+                    have hr0 := test_new_reg_valid s r s0 hnewIncr hnew
+                    have hmap0 := test_map_valid_incr map s s0 hnewIncr WF
+                    have hmapLet := add_letvar_valid map s0 r hmap0
+                        (by exact hr0)
+                    have hmap1 := test_map_valid_incr (RTLgen.add_letvar map r)
+                        s0 s1 hbodyIncr hmapLet
+                    have hmap1orig := test_map_valid_incr map s s1
+                        (RTLgen.state_incr_trans s s0 s1 hnewIncr hbodyIncr) WF
+                    have hpr0 := regs_valid_incr s s0 pr hnewIncr VALID
+                    have hpr1 := regs_valid_incr s0 s1 pr hbodyIncr hpr0
+                    have hrd0 := reg_valid_incr rd s s0 hnewIncr VALID2
+                    have hrd1 := reg_valid_incr rd s0 s1 hbodyIncr hrd0
+                    have hr1 := reg_valid_incr r s0 s1 hbodyIncr hr0
+                    have hOKmap : ¬ reg_in_map map rd := by
+                      cases OK with
+                      | target_reg_other a' r' hmap' hpr' => exact hmap'
+                    have hOKpr : ¬ rd ∈ pr := by
+                      cases OK with
+                      | target_reg_other a' r' hmap' hpr' => exact hpr'
+                    have hrd_ne : rd ≠ r := by
+                      intro heq
+                      subst rd
+                      exact valid_fresh_absurd r s VALID2
+                        (test_new_reg_fresh s r s0 hnewIncr hnew)
+                    have hOKmapLet : ¬ reg_in_map (RTLgen.add_letvar map r) rd := by
+                      intro hin
+                      unfold RTLgen.add_letvar reg_in_map at hin
+                      rcases hin with ⟨id, hget⟩ | hmem
+                      · exact hOKmap (Or.inl ⟨id, hget⟩)
+                      · simp only [List.mem_cons] at hmem
+                        rcases hmem with heq | htail
+                        · exact hrd_ne heq
+                        · exact hOKmap (Or.inr htail)
+                    have hr_not_map : ¬ reg_in_map map r :=
+                      new_reg_not_in_map s s0 map r hnewIncr hnew WF
+                    have hr_fresh_s : reg_fresh r s := test_new_reg_fresh s r s0 hnewIncr hnew
+                    have hr_not_pr : ¬ r ∈ pr := by
+                      intro hmem
+                      exact valid_fresh_absurd r s (VALID r hmem) hr_fresh_s
+                    apply tr_expr.tr_Elet
+                    · exact hr_not_map
+                    · exact aux_expr b map r nc s1 ns s' pr hboundIncr hbound hmap1orig
+                        (target_reg_ok.target_reg_other b r hr_not_map hr_not_pr)
+                        (regs_valid_incr s s1 pr
+                          (RTLgen.state_incr_trans s s0 s1 hnewIncr hbodyIncr) VALID) hr1
+                    · exact tr_expr_incr s1 s' hboundIncr
+                        (RTLgen.add_letvar map r) pr c nc nd rd none
+                        (aux_expr c (RTLgen.add_letvar map r) rd nd s0 nc s1 pr
+                          hbodyIncr hbody hmapLet
+                          (target_reg_ok.target_reg_other c rd hOKmapLet hOKpr)
+                          hpr0 hrd0)
+    | Eletvar n =>
+        change RTLgen.bind (RTLgen.find_letvar map n)
+          (fun r => RTLgen.add_move r rd nd) s = .OK ns s' INCR at TR
+        cases hfind : map.map_letvars[n]? with
+        | none => simp [RTLgen.find_letvar, RTLgen.error, RTLgen.bind, hfind] at TR
+        | some r0 =>
+            rw [show RTLgen.find_letvar map n = RTLgen.ret r0 by
+              simp [RTLgen.find_letvar, hfind]] at TR
+            simp [RTLgen.bind] at TR
+            by_cases hr : r0 = rd
+            · simp [RTLgen.add_move, hr, RTLgen.ret] at TR
+              rcases TR with ⟨hns, hs⟩
+              cases hns
+              cases hs
+              have hlet0 := test_getElem_nth map.map_letvars n r0 hfind
+              cases hr
+              apply tr_expr.tr_Eletvar
+              · exact hlet0
+              · left; exact ⟨rfl, rfl⟩
+              · exact tr_move.tr_move_0 _ _
+            · simp [RTLgen.add_move, hr, RTLgen.add_instr, RTLgen.ret] at TR
+              injection TR with hns hs
+              cases hns
+              cases hs
+              apply tr_expr.tr_Eletvar
+              · exact test_getElem_nth map.map_letvars n r0 hfind
+              · cases OK with
+                | target_reg_letvar idx r' hlet' =>
+                    exfalso
+                    have hlet0 := test_getElem_nth map.map_letvars n r0 hfind
+                    have he : (some r0 : Option reg) = some rd := hlet0.symm.trans hlet'
+                    exact hr (Option.some.inj he)
+                | target_reg_other a' r' hmap' hpr' =>
+                    exact Or.inr ⟨reg_map_ok.reg_map_ok_novar map rd hmap', hpr'⟩
+              · apply tr_move.tr_move_1
+                change PTree.get s.st_nextnode
+                  (PTree.set s.st_nextnode (RTL.instruction.Iop Omove [r0] rd nd) s.st_code) = _
+                have hx := PTree.getSet_equation (A := RTL.instruction)
+                  s.st_nextnode s.st_nextnode (RTL.instruction.Iop Omove [r0] rd nd) s.st_code
+                rw [hx]
+                simp
+    | Ebuiltin ef al =>
+        change RTLgen.bind (RTLgen.alloc_regs map al)
+          (fun rl => RTLgen.bind (RTLgen.add_instr (RTL.instruction.Ibuiltin ef (rl.map BA) (BR rd) nd))
+            (fun no => RTLgen.transl_exprlist map al rl no)) s = .OK ns s' INCR at TR
+        cases halloc : RTLgen.alloc_regs map al s with
+        | Error msg => simp [RTLgen.bind, halloc] at TR
+        | OK rl sm hincr =>
+            simp [RTLgen.bind, halloc] at TR
+            cases hadd : RTLgen.add_instr (RTL.instruction.Ibuiltin ef (rl.map BA) (BR rd) nd) sm with
+            | Error msg => simp [RTLgen.bind, hadd] at TR
+            | OK no sn hinstr =>
+                simp [RTLgen.bind, hadd] at TR
+                cases htail : RTLgen.transl_exprlist map al rl no sn with
+                | Error msg => simp [RTLgen.bind, htail] at TR
+                | OK ns2 sfin htailincr =>
+                    simp [RTLgen.bind, htail, RTLgen.ret] at TR
+                    rcases TR with ⟨hns, hs⟩
+                    cases hns
+                    cases hs
+                    apply tr_expr.tr_Ebuiltin
+                    have hssn := RTLgen.state_incr_trans s sm sn hincr hinstr
+                    have hmap_sn := test_map_valid_incr map s sn hssn WF
+                    have hpr_sn := regs_valid_incr s sn pr hssn VALID
+                    have hrl_sm := test_alloc_regs_valid map al rl s sm hincr WF halloc
+                    have hrl_sn := regs_valid_incr sm sn rl hinstr hrl_sm
+                    · exact aux_list al map rl no sn ns s' pr htailincr
+                        htail hmap_sn
+                        (alloc_regs_target_ok map al pr s rl sm hincr WF VALID halloc)
+                        hpr_sn hrl_sn
+                    · exact instr_at_incr sn s' no _ htailincr
+                        (test_add_instr_code sm (RTL.instruction.Ibuiltin ef (rl.map BA) (BR rd) nd)
+                          no sn hinstr hadd)
+                    · cases OK with
+                      | target_reg_other a' r' hmap' hpr' =>
+                          exact reg_map_ok.reg_map_ok_novar map rd hmap'
+                    · cases OK with
+                      | target_reg_other a' r' hmap' hpr' => exact hpr'
+    | Eexternal id sg al =>
+        change RTLgen.bind (RTLgen.alloc_regs map al)
+          (fun rl => RTLgen.bind (RTLgen.add_instr (RTL.instruction.Icall sg (.inr id) rl rd nd))
+            (fun no => RTLgen.transl_exprlist map al rl no)) s = .OK ns s' INCR at TR
+        cases halloc : RTLgen.alloc_regs map al s with
+        | Error msg => simp [RTLgen.bind, halloc] at TR
+        | OK rl sm hincr =>
+            simp [RTLgen.bind, halloc] at TR
+            cases hadd : RTLgen.add_instr (RTL.instruction.Icall sg (.inr id) rl rd nd) sm with
+            | Error msg => simp [RTLgen.bind, hadd] at TR
+            | OK no sn hinstr =>
+                simp [RTLgen.bind, hadd] at TR
+                cases htail : RTLgen.transl_exprlist map al rl no sn with
+                | Error msg => simp [RTLgen.bind, htail] at TR
+                | OK ns2 sfin htailincr =>
+                    simp [RTLgen.bind, htail, RTLgen.ret] at TR
+                    rcases TR with ⟨hns, hs⟩
+                    cases hns
+                    cases hs
+                    apply tr_expr.tr_Eexternal
+                    have hssn := RTLgen.state_incr_trans s sm sn hincr hinstr
+                    have hmap_sn := test_map_valid_incr map s sn hssn WF
+                    have hpr_sn := regs_valid_incr s sn pr hssn VALID
+                    have hrl_sm := test_alloc_regs_valid map al rl s sm hincr WF halloc
+                    have hrl_sn := regs_valid_incr sm sn rl hinstr hrl_sm
+                    · exact aux_list al map rl no sn ns s' pr htailincr
+                        htail hmap_sn
+                        (alloc_regs_target_ok map al pr s rl sm hincr WF VALID halloc)
+                        hpr_sn hrl_sn
+                    · exact instr_at_incr sn s' no _ htailincr
+                        (test_add_instr_code sm (RTL.instruction.Icall sg (.inr id) rl rd nd)
+                          no sn hinstr hadd)
+                    · cases OK with
+                      | target_reg_other a' r' hmap' hpr' =>
+                          exact reg_map_ok.reg_map_ok_novar map rd hmap'
+                    · cases OK with
+                      | target_reg_other a' r' hmap' hpr' => exact hpr'
+  private def aux_list (al : exprlist) (map : RTLgen.mapping) (rl : List reg) (nd : RTL.node)
+      (s : RTLgen.state) (ns : RTL.node) (s' : RTLgen.state) (pr : List reg)
+      (INCR : state_incr s s') :
+      RTLgen.transl_exprlist map al rl nd s = .OK ns s' INCR →
+      map_valid map s → target_regs_ok map pr al rl → regs_valid pr s → regs_valid rl s →
+        tr_exprlist s'.st_code map pr al ns nd rl := by
+    intro TR WF OK VALID VALID2
+    cases al with
+    | Enil =>
+        cases rl with
+        | nil =>
+            change RTLgen.ret nd s = .OK ns s' INCR at TR
+            simp [RTLgen.ret] at TR
+            rcases TR with ⟨hns, hs⟩
+            cases hns
+            cases hs
+            exact tr_exprlist.tr_Enil _ _ _
+        | cons r rs =>
+            change RTLgen.error _ s = .OK ns s' INCR at TR
+            simp [RTLgen.error] at TR
+    | Econs b bs =>
+        cases rl with
+        | nil =>
+            change RTLgen.error _ s = .OK ns s' INCR at TR
+            simp [RTLgen.error] at TR
+        | cons r rs =>
+            change RTLgen.bind (RTLgen.transl_exprlist map bs rs nd)
+              (fun no => RTLgen.transl_expr map b r no) s = .OK ns s' INCR at TR
+            cases htail : RTLgen.transl_exprlist map bs rs nd s with
+            | Error msg => simp [RTLgen.bind, htail] at TR
+            | OK no sm htailIncr =>
+                simp [RTLgen.bind, htail] at TR
+                cases hhead : RTLgen.transl_expr map b r no sm with
+                | Error msg => simp [RTLgen.bind, hhead] at TR
+                | OK ns2 sfin hheadIncr =>
+                    simp [RTLgen.bind, hhead, RTLgen.ret] at TR
+                    rcases TR with ⟨hns, hs⟩
+                    cases hns
+                    cases hs
+                    cases OK with
+                    | target_regs_cons pr0 b0 bs0 r0 rs0 hheadOK htailOK =>
+                        have hr_s : reg_valid r s := VALID2 r (by simp)
+                        have hrs_s : regs_valid rs s := by
+                          intro x hx
+                          exact VALID2 x (by simp [hx])
+                        have hmap_sm := test_map_valid_incr map s sm htailIncr WF
+                        have hpr_sm := regs_valid_incr s sm pr htailIncr VALID
+                        have hr_sm := reg_valid_incr r s sm htailIncr hr_s
+                        have htailproof := aux_list bs map rs nd s no sm (r :: pr)
+                          htailIncr htail WF htailOK (regs_valid_cons r pr s hr_s VALID) hrs_s
+                        apply tr_exprlist.tr_Econs
+                        · exact aux_expr b map r no sm ns s' pr hheadIncr hhead
+                            hmap_sm hheadOK hpr_sm hr_sm
+                        · exact tr_exprlist_incr sm s' hheadIncr map (r :: pr) bs no nd rs
+                            htailproof
+  private def aux_cond (a : condexpr) (map : RTLgen.mapping) (ntrue nfalse : RTL.node)
+      (s : RTLgen.state) (ns : RTL.node) (s' : RTLgen.state) (pr : List reg)
+      (INCR : state_incr s s') :
+      RTLgen.transl_condexpr map a ntrue nfalse s = .OK ns s' INCR →
+      map_valid map s → regs_valid pr s →
+        tr_condition s'.st_code map pr a ns ntrue nfalse := by
+    intro TR WF VALID
+    cases a with
+    | CEcond cond bl =>
+        change RTLgen.bind (RTLgen.alloc_regs map bl)
+          (fun rl => RTLgen.bind (RTLgen.add_instr (RTL.instruction.Icond cond rl ntrue nfalse))
+            (fun nt => RTLgen.transl_exprlist map bl rl nt)) s = .OK ns s' INCR at TR
+        cases halloc : RTLgen.alloc_regs map bl s with
+        | Error msg => simp [RTLgen.bind, halloc] at TR
+        | OK rl sm hincr =>
+            simp [RTLgen.bind, halloc] at TR
+            cases hadd : RTLgen.add_instr (RTL.instruction.Icond cond rl ntrue nfalse) sm with
+            | Error msg => simp [RTLgen.bind, hadd] at TR
+            | OK nt sn hinstr =>
+                simp [RTLgen.bind, hadd] at TR
+                cases htail : RTLgen.transl_exprlist map bl rl nt sn with
+                | Error msg => simp [RTLgen.bind, htail] at TR
+                | OK ns2 sfin htailIncr =>
+                    simp [RTLgen.bind, htail, RTLgen.ret] at TR
+                    rcases TR with ⟨hns, hs⟩
+                    cases hns
+                    cases hs
+                    apply tr_condition.tr_CEcond
+                    have hssn := RTLgen.state_incr_trans s sm sn hincr hinstr
+                    have hmap_sn := test_map_valid_incr map s sn hssn WF
+                    have hpr_sn := regs_valid_incr s sn pr hssn VALID
+                    have hrl_sm := test_alloc_regs_valid map bl rl s sm hincr WF halloc
+                    have hrl_sn := regs_valid_incr sm sn rl hinstr hrl_sm
+                    · exact aux_list bl map rl nt sn ns s' pr htailIncr
+                        htail hmap_sn
+                        (alloc_regs_target_ok map bl pr s rl sm hincr WF VALID halloc)
+                        hpr_sn hrl_sn
+                    · exact instr_at_incr sn s' nt _ htailIncr
+                        (test_add_instr_code sm (RTL.instruction.Icond cond rl ntrue nfalse)
+                          nt sn hinstr hadd)
+    | CEcondition a b c =>
+        change RTLgen.bind (RTLgen.transl_condexpr map c ntrue nfalse)
+          (fun nc => RTLgen.bind (RTLgen.transl_condexpr map b ntrue nfalse)
+            (fun nb => RTLgen.transl_condexpr map a nb nc)) s = .OK ns s' INCR at TR
+        cases hc : RTLgen.transl_condexpr map c ntrue nfalse s with
+        | Error msg => simp [RTLgen.bind, hc] at TR
+        | OK nc s0 hcIncr =>
+            simp [RTLgen.bind, hc] at TR
+            cases hb : RTLgen.transl_condexpr map b ntrue nfalse s0 with
+            | Error msg => simp [RTLgen.bind, hb] at TR
+            | OK nb s1 hbIncr =>
+                simp [RTLgen.bind, hb] at TR
+                cases ha : RTLgen.transl_condexpr map a nb nc s1 with
+                | Error msg => simp [RTLgen.bind, ha] at TR
+                | OK ns2 sfin haIncr =>
+                    simp [RTLgen.bind, ha, RTLgen.ret] at TR
+                    rcases TR with ⟨hns, hs⟩
+                    cases hns
+                    cases hs
+                    have hmap0 := test_map_valid_incr map s s0 hcIncr WF
+                    have hmap1 := test_map_valid_incr map s0 s1 hbIncr hmap0
+                    have hpr0 := regs_valid_incr s s0 pr hcIncr VALID
+                    have hpr1 := regs_valid_incr s0 s1 pr hbIncr hpr0
+                    have hcaTo : state_incr s0 s' :=
+                      RTLgen.state_incr_trans s0 s1 s' hbIncr haIncr
+                    have hA := aux_cond a map nb nc s1 ns s' pr haIncr ha hmap1 hpr1
+                    have hB := tr_condition_incr s1 s' haIncr map pr b nb ntrue nfalse
+                      (aux_cond b map ntrue nfalse s0 nb s1 pr hbIncr hb hmap0 hpr0)
+                    have hC := tr_condition_incr s0 s' hcaTo map pr c nc ntrue nfalse
+                      (aux_cond c map ntrue nfalse s nc s0 pr hcIncr hc WF VALID)
+                    exact tr_condition.tr_CEcondition map pr a b c ns ntrue nfalse nb nc hA hB hC
+    | CElet b c =>
+        change RTLgen.bind RTLgen.new_reg
+          (fun r => RTLgen.bind (RTLgen.transl_condexpr (RTLgen.add_letvar map r) c ntrue nfalse)
+            (fun nc => RTLgen.transl_expr map b r nc)) s = .OK ns s' INCR at TR
+        cases hnew : RTLgen.new_reg s with
+        | Error msg => simp [RTLgen.bind, hnew] at TR
+        | OK r s0 hnewIncr =>
+            simp [RTLgen.bind, hnew] at TR
+            cases hbody : RTLgen.transl_condexpr (RTLgen.add_letvar map r) c ntrue nfalse s0 with
+            | Error msg => simp [RTLgen.bind, hbody] at TR
+            | OK nc s1 hbodyIncr =>
+                simp [RTLgen.bind, hbody] at TR
+                cases hbound : RTLgen.transl_expr map b r nc s1 with
+                | Error msg => simp [RTLgen.bind, hbound] at TR
+                | OK ns2 sfin hboundIncr =>
+                    simp [RTLgen.bind, hbound, RTLgen.ret] at TR
+                    rcases TR with ⟨hns, hs⟩
+                    cases hns
+                    cases hs
+                    have hr0 := test_new_reg_valid s r s0 hnewIncr hnew
+                    have hmap0 := test_map_valid_incr map s s0 hnewIncr WF
+                    have hmapLet := add_letvar_valid map s0 r hmap0 hr0
+                    have hmap1 := test_map_valid_incr (RTLgen.add_letvar map r)
+                        s0 s1 hbodyIncr hmapLet
+                    have hmap1orig := test_map_valid_incr map s s1
+                        (RTLgen.state_incr_trans s s0 s1 hnewIncr hbodyIncr) WF
+                    have hpr0 := regs_valid_incr s s0 pr hnewIncr VALID
+                    have hpr1 := regs_valid_incr s0 s1 pr hbodyIncr hpr0
+                    have hr1 := reg_valid_incr r s0 s1 hbodyIncr hr0
+                    have hr_not_map : ¬ reg_in_map map r :=
+                      new_reg_not_in_map s s0 map r hnewIncr hnew WF
+                    have hr_fresh_s : reg_fresh r s := test_new_reg_fresh s r s0 hnewIncr hnew
+                    have hr_not_pr : ¬ r ∈ pr := by
+                      intro hmem
+                      exact valid_fresh_absurd r s (VALID r hmem) hr_fresh_s
+                    have hbodyProof := tr_condition_incr s1 s' hboundIncr
+                      (RTLgen.add_letvar map r) pr c nc ntrue nfalse
+                      (aux_cond c (RTLgen.add_letvar map r) ntrue nfalse s0 nc s1 pr
+                        hbodyIncr hbody hmapLet hpr0)
+                    exact tr_condition.tr_CElet map pr b c ns ntrue nfalse r nc
+                      hr_not_map
+                      (aux_expr b map r nc s1 ns s' pr hboundIncr hbound hmap1orig
+                        (target_reg_ok.target_reg_other b r hr_not_map hr_not_pr)
+                        hpr1 hr1)
+                      hbodyProof
+end
+
+private theorem test_mutual :
+    transl_expr_charactStatement ∧ transl_exprlist_charactStatement ∧ transl_condexpr_charactStatement := by
+  exact ⟨aux_expr, aux_list, aux_cond⟩
+
+
+theorem transl_expr_charact : transl_expr_charactStatement := test_mutual.1
+
+theorem transl_exprlist_charact : transl_exprlist_charactStatement := test_mutual.2.1
+
+theorem transl_condexpr_charact : transl_condexpr_charactStatement := test_mutual.2.2
+
+end CompCert4Lean.Backend.RTLgenspec

@@ -1191,3 +1191,112 @@ namespace CompCert4Lean.Backend.RTLtyping.S
 theorem set_sound_proof : S.set_sound := rtl_set_sound_helper
 
 end CompCert4Lean.Backend.RTLtyping.S
+
+namespace CompCert4Lean.Backend.RTLtyping
+
+theorem type_expect_sound : type_expect_soundStatement := by
+  intro e ty1 ty2 e' h
+  unfold type_expect at h
+  cases hEq : typEq ty1 ty2 with
+  | left heq =>
+      simpa [hEq] using heq
+  | right hne =>
+      simp [hEq] at h
+
+end CompCert4Lean.Backend.RTLtyping
+
+namespace CompCert4Lean.Backend.RTLtyping
+
+theorem type_ros_sound : type_ros_soundStatement := by
+  intro e ros e' te h hs
+  cases ros with
+  | inl r =>
+      unfold type_ros at h
+      exact S.set_sound_proof te r CompCert4Lean.Common.AST.Tptr e e' h hs
+  | inr _ =>
+      trivial
+
+end CompCert4Lean.Backend.RTLtyping
+
+namespace CompCert4Lean.Backend.RTLtyping
+
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Common.Errors
+open CompCert4Lean.Lib.Maps
+
+private theorem check_successor_sound_aux (f : function) (s : node) (x : Unit) :
+    check_successor f s = OK x → valid_successor f s := by
+  intro h
+  unfold check_successor at h
+  cases hget : PTree.get s f.fn_code with
+  | none =>
+      simp [hget] at h
+  | some i =>
+      simp [hget] at h
+      exact ⟨i, hget⟩
+
+theorem check_successors_sound : check_successors_soundStatement := by
+  intro f sl
+  induction sl with
+  | nil =>
+      intro x h s hs
+      simp at hs
+  | cons a rest ih =>
+      intro x h s hs
+      unfold check_successors at h
+      cases hcs : check_successor f a with
+      | Error message =>
+          simp [hcs] at h
+      | OK ua =>
+          simp [hcs] at h
+          have hhead := check_successor_sound_aux f a ua hcs
+          simp only [List.mem_cons] at hs
+          rcases hs with rfl | hs
+          · exact hhead
+          · exact ih x h s hs
+
+end CompCert4Lean.Backend.RTLtyping
+
+namespace CompCert4Lean.Backend.RTLtyping
+
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Errors
+
+theorem type_builtin_arg_sound : type_builtin_arg_soundStatement := by
+  intro e a ty e' te h hs
+  cases a with
+  | BA r =>
+      exact S.set_sound_proof te r ty e e' h hs
+  | BA_int n =>
+      have hty := type_expect_sound e ty Tint e' h
+      simpa [type_of_builtin_arg] using hty.symm
+  | BA_long n =>
+      have hty := type_expect_sound e ty Tlong e' h
+      simpa [type_of_builtin_arg] using hty.symm
+  | BA_float n =>
+      have hty := type_expect_sound e ty Tfloat e' h
+      simpa [type_of_builtin_arg] using hty.symm
+  | BA_single n =>
+      have hty := type_expect_sound e ty Tsingle e' h
+      simpa [type_of_builtin_arg] using hty.symm
+  | BA_loadstack chunk ofs =>
+      have hty := type_expect_sound e ty (type_of_chunk chunk) e' h
+      simpa [type_of_builtin_arg] using hty.symm
+  | BA_addrstack ofs =>
+      have hty := type_expect_sound e ty Tptr e' h
+      simpa [type_of_builtin_arg] using hty.symm
+  | BA_loadglobal chunk id ofs =>
+      have hty := type_expect_sound e ty (type_of_chunk chunk) e' h
+      simpa [type_of_builtin_arg] using hty.symm
+  | BA_addrglobal id ofs =>
+      have hty := type_expect_sound e ty Tptr e' h
+      simpa [type_of_builtin_arg] using hty.symm
+  | BA_splitlong hi lo =>
+      have hty := type_expect_sound e ty Tlong e' h
+      simpa [type_of_builtin_arg] using hty.symm
+  | BA_addptr a1 a2 =>
+      have hty := type_expect_sound e ty Tptr e' h
+      simpa [type_of_builtin_arg] using hty.symm
+
+end CompCert4Lean.Backend.RTLtyping

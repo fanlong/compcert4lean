@@ -574,3 +574,198 @@ theorem F2R_mult (ctx : ExactRealContext) : F2R_multStatement ctx := by
         _ = _ := (ctx.certificate.orderedField.mul_assoc _ _ _).symm
 
 end CompCert4Lean.Flocq.Calc.Operations
+
+namespace CompCert4Lean.Flocq.Calc.Operations
+
+private theorem operations_zsub_nonneg (e' e : Z)
+    (h : CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.le e' e) :
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.le
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.Z0 (Zsub e e') := by
+  change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ e' ≤
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ e at h
+  change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.Z0 ≤
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (Zsub e e')
+  simp only [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.sub,
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+  have hz0 : CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.Z0 = (0 : Int) := by
+    rfl
+  rw [hz0]
+  omega
+
+private theorem operations_zsub_add_cancel (e' e : Z) :
+    Zadd (Zsub e e') e' = e := by
+  apply CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective
+  simp only [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add,
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.sub,
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+  omega
+
+private theorem operations_f2r_change_exp (ctx : ExactRealContext)
+    (beta : radix) (e' m e : Z)
+    (h : CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.le e' e) :
+    Exact.F2R ctx (Float beta m e) =
+      Exact.F2R ctx (Float beta (Zmul m (Zpower (beta : Z) (Zsub e e'))) e') := by
+  change ctx.spec.mul (ctx.spec.ofZ m)
+      (CompCert4Lean.Flocq.Core.Raux.Exact.bpow ctx beta e) =
+    ctx.spec.mul (ctx.spec.ofZ (Zmul m (Zpower (beta : Z) (Zsub e e'))))
+      (CompCert4Lean.Flocq.Core.Raux.Exact.bpow ctx beta e')
+  change ctx.spec.mul (CompCert4Lean.Flocq.Core.Raux.Exact.IZR ctx m)
+      (CompCert4Lean.Flocq.Core.Raux.Exact.bpow ctx beta e) =
+    ctx.spec.mul
+      (CompCert4Lean.Flocq.Core.Raux.Exact.IZR ctx
+        (Zmul m (Zpower (beta : Z) (Zsub e e'))))
+      (CompCert4Lean.Flocq.Core.Raux.Exact.bpow ctx beta e')
+  have hmul :=
+    CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.mult_IZR ctx m
+      (Zpower (beta : Z) (Zsub e e'))
+  have hmul' :
+      CompCert4Lean.Flocq.Core.Raux.Exact.IZR ctx
+          (Zmul m (Zpower (beta : Z) (Zsub e e'))) =
+        ctx.spec.mul (CompCert4Lean.Flocq.Core.Raux.Exact.IZR ctx m)
+          (CompCert4Lean.Flocq.Core.Raux.Exact.IZR ctx
+            (Zpower (beta : Z) (Zsub e e'))) := by
+    exact hmul
+  have hpow := CompCert4Lean.Flocq.Core.Raux.IZR_Zpower ctx beta
+    (Zsub e e') (operations_zsub_nonneg e' e h)
+  rw [hmul', hpow]
+  calc
+    ctx.spec.mul (CompCert4Lean.Flocq.Core.Raux.Exact.IZR ctx m)
+        (CompCert4Lean.Flocq.Core.Raux.Exact.bpow ctx beta e) =
+      ctx.spec.mul (CompCert4Lean.Flocq.Core.Raux.Exact.IZR ctx m)
+        (CompCert4Lean.Flocq.Core.Raux.Exact.bpow ctx beta
+          (Zadd (Zsub e e') e')) := by
+      rw [operations_zsub_add_cancel e' e]
+    _ = ctx.spec.mul (CompCert4Lean.Flocq.Core.Raux.Exact.IZR ctx m)
+        (ctx.spec.mul
+          (CompCert4Lean.Flocq.Core.Raux.Exact.bpow ctx beta (Zsub e e'))
+          (CompCert4Lean.Flocq.Core.Raux.Exact.bpow ctx beta e')) := by
+      rw [CompCert4Lean.Flocq.Core.Raux.bpow_plus ctx beta (Zsub e e') e']
+      change ctx.spec.mul (CompCert4Lean.Flocq.Core.Raux.Exact.IZR ctx m)
+        (ctx.spec.mul
+          (CompCert4Lean.Flocq.Core.Raux.Exact.bpow ctx beta (Zsub e e'))
+          (CompCert4Lean.Flocq.Core.Raux.Exact.bpow ctx beta e')) = _
+      rfl
+    _ = ctx.spec.mul
+        (ctx.spec.mul (CompCert4Lean.Flocq.Core.Raux.Exact.IZR ctx m)
+          (CompCert4Lean.Flocq.Core.Raux.Exact.bpow ctx beta (Zsub e e')))
+        (CompCert4Lean.Flocq.Core.Raux.Exact.bpow ctx beta e') := by
+      rw [ctx.certificate.orderedField.mul_assoc]
+
+theorem F2R_plus (ctx : ExactRealContext) : F2R_plusStatement ctx := by
+  intro beta f1 f2
+  rcases f1 with ⟨m1, e1⟩
+  rcases f2 with ⟨m2, e2⟩
+  simp only [Fplus, Falign]
+  split
+  · next hle =>
+      have hle' :
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.le e1 e2 := by
+        simpa [Zle_bool,
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.leb,
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.le] using hle
+      change ctx.spec.mul (ctx.spec.ofZ (Zadd m1
+          (Zmul m2 (Zpower (beta : Z) (Zsub e2 e1)))))
+          (CompCert4Lean.Flocq.Core.Raux.Exact.bpow ctx beta e1) =
+        ctx.spec.add
+          (ctx.spec.mul (ctx.spec.ofZ m1)
+            (CompCert4Lean.Flocq.Core.Raux.Exact.bpow ctx beta e1))
+          (ctx.spec.mul (ctx.spec.ofZ m2)
+            (CompCert4Lean.Flocq.Core.Raux.Exact.bpow ctx beta e2))
+      rw [ctx.certificate.sourceLaws.ofZ_add]
+      have hchange := operations_f2r_change_exp ctx beta e1 m2 e2 hle'
+      change ctx.spec.mul (ctx.spec.ofZ m2)
+          (CompCert4Lean.Flocq.Core.Raux.Exact.bpow ctx beta e2) =
+        ctx.spec.mul (ctx.spec.ofZ
+          (Zmul m2 (Zpower (beta : Z) (Zsub e2 e1))))
+          (CompCert4Lean.Flocq.Core.Raux.Exact.bpow ctx beta e1) at hchange
+      calc
+        ctx.spec.mul (ctx.spec.add (ctx.spec.ofZ m1)
+            (ctx.spec.ofZ (Zmul m2 (Zpower (beta : Z) (Zsub e2 e1)))))
+            (CompCert4Lean.Flocq.Core.Raux.Exact.bpow ctx beta e1) =
+          ctx.spec.mul (CompCert4Lean.Flocq.Core.Raux.Exact.bpow ctx beta e1)
+            (ctx.spec.add (ctx.spec.ofZ m1)
+              (ctx.spec.ofZ (Zmul m2 (Zpower (beta : Z) (Zsub e2 e1))))) :=
+            ctx.certificate.orderedField.mul_comm _ _
+        _ = ctx.spec.add
+            (ctx.spec.mul (CompCert4Lean.Flocq.Core.Raux.Exact.bpow ctx beta e1)
+              (ctx.spec.ofZ m1))
+            (ctx.spec.mul (CompCert4Lean.Flocq.Core.Raux.Exact.bpow ctx beta e1)
+              (ctx.spec.ofZ (Zmul m2 (Zpower (beta : Z) (Zsub e2 e1))))) :=
+          ctx.certificate.orderedField.left_distrib _ _ _
+        _ = ctx.spec.add
+            (ctx.spec.mul (ctx.spec.ofZ m1)
+              (CompCert4Lean.Flocq.Core.Raux.Exact.bpow ctx beta e1))
+            (ctx.spec.mul (ctx.spec.ofZ m2)
+              (CompCert4Lean.Flocq.Core.Raux.Exact.bpow ctx beta e2)) := by
+          rw [ctx.certificate.orderedField.mul_comm
+            (CompCert4Lean.Flocq.Core.Raux.Exact.bpow ctx beta e1)
+            (ctx.spec.ofZ m1)]
+          rw [ctx.certificate.orderedField.mul_comm
+            (CompCert4Lean.Flocq.Core.Raux.Exact.bpow ctx beta e1)
+            (ctx.spec.ofZ (Zmul m2 (Zpower (beta : Z) (Zsub e2 e1))))]
+          exact congrArg
+            (fun t => ctx.spec.add
+              (ctx.spec.mul (ctx.spec.ofZ m1)
+                (CompCert4Lean.Flocq.Core.Raux.Exact.bpow ctx beta e1)) t)
+            hchange.symm
+  · next hnot =>
+      change ctx.spec.mul (ctx.spec.ofZ
+          (Zadd (Zmul m1 (Zpower (beta : Z) (Zsub e1 e2))) m2))
+          (CompCert4Lean.Flocq.Core.Raux.Exact.bpow ctx beta e2) =
+        ctx.spec.add
+          (ctx.spec.mul (ctx.spec.ofZ m1)
+            (CompCert4Lean.Flocq.Core.Raux.Exact.bpow ctx beta e1))
+          (ctx.spec.mul (ctx.spec.ofZ m2)
+            (CompCert4Lean.Flocq.Core.Raux.Exact.bpow ctx beta e2))
+      have hle :
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.le e2 e1 := by
+        have hnot' : ¬ (CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ e1 ≤
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ e2) := by
+          simpa [Zle_bool,
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.leb,
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.le] using hnot
+        change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ e2 ≤
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ e1
+        omega
+      rw [ctx.certificate.sourceLaws.ofZ_add]
+      have hchange := operations_f2r_change_exp ctx beta e2 m1 e1 hle
+      change ctx.spec.mul (ctx.spec.ofZ m1)
+          (CompCert4Lean.Flocq.Core.Raux.Exact.bpow ctx beta e1) =
+        ctx.spec.mul (ctx.spec.ofZ
+          (Zmul m1 (Zpower (beta : Z) (Zsub e1 e2))))
+          (CompCert4Lean.Flocq.Core.Raux.Exact.bpow ctx beta e2) at hchange
+      calc
+        ctx.spec.mul (ctx.spec.add (ctx.spec.ofZ
+            (Zmul m1 (Zpower (beta : Z) (Zsub e1 e2))))
+            (ctx.spec.ofZ m2))
+            (CompCert4Lean.Flocq.Core.Raux.Exact.bpow ctx beta e2) =
+          ctx.spec.mul (CompCert4Lean.Flocq.Core.Raux.Exact.bpow ctx beta e2)
+            (ctx.spec.add (ctx.spec.ofZ
+              (Zmul m1 (Zpower (beta : Z) (Zsub e1 e2))))
+              (ctx.spec.ofZ m2)) :=
+            ctx.certificate.orderedField.mul_comm _ _
+        _ = ctx.spec.add
+            (ctx.spec.mul (CompCert4Lean.Flocq.Core.Raux.Exact.bpow ctx beta e2)
+              (ctx.spec.ofZ (Zmul m1 (Zpower (beta : Z) (Zsub e1 e2)))))
+            (ctx.spec.mul (CompCert4Lean.Flocq.Core.Raux.Exact.bpow ctx beta e2)
+              (ctx.spec.ofZ m2)) :=
+          ctx.certificate.orderedField.left_distrib _ _ _
+        _ = ctx.spec.add
+            (ctx.spec.mul (ctx.spec.ofZ m1)
+              (CompCert4Lean.Flocq.Core.Raux.Exact.bpow ctx beta e1))
+            (ctx.spec.mul (ctx.spec.ofZ m2)
+              (CompCert4Lean.Flocq.Core.Raux.Exact.bpow ctx beta e2)) := by
+          rw [ctx.certificate.orderedField.mul_comm
+            (CompCert4Lean.Flocq.Core.Raux.Exact.bpow ctx beta e2)
+            (ctx.spec.ofZ (Zmul m1 (Zpower (beta : Z) (Zsub e1 e2))))]
+          rw [ctx.certificate.orderedField.mul_comm
+            (CompCert4Lean.Flocq.Core.Raux.Exact.bpow ctx beta e2)
+            (ctx.spec.ofZ m2)]
+          exact congrArg (fun t => ctx.spec.add t
+            (ctx.spec.mul (ctx.spec.ofZ m2)
+              (CompCert4Lean.Flocq.Core.Raux.Exact.bpow ctx beta e2)))
+            hchange.symm
+
+end CompCert4Lean.Flocq.Calc.Operations
