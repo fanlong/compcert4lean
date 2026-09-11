@@ -992,3 +992,76 @@ theorem outgoing_slot_bound : outgoing_slot_boundStatement := by
   · exact zLe_max_right _ _
 
 end CompCert4Lean.Backend.Bounds
+
+namespace CompCert4Lean.Backend.Bounds
+
+namespace RegSet
+
+theorem empty_1_proof : empty_1 := by
+  exact CompCert4Lean.Lib.FSetAVLplus.Make.empty_1
+
+end RegSet
+
+end CompCert4Lean.Backend.Bounds
+
+namespace CompCert4Lean.Backend.Bounds
+
+theorem max_over_slots_of_funct_pos : max_over_slots_of_funct_posStatement := by
+  intro f valu
+  unfold max_over_slots_of_funct max_over_instrs
+  exact max_over_list_pos _ (max_over_slots_of_instr valu) (codeList f)
+
+theorem size_arguments_bound : size_arguments_boundStatement := by
+  intro cfg f sig ros hi
+  unfold function_bounds
+  change zLe (CompCert4Lean.Backend.Conventions.size_arguments cfg sig)
+    (zMax (max_over_instrs f (outgoing_space cfg))
+      (max_over_slots_of_funct f outgoing_slot))
+  apply zLe_trans _ (max_over_instrs f (outgoing_space cfg)) _
+  · change zLe (outgoing_space cfg (Linear.Lcall sig ros))
+      (max_over_instrs f (outgoing_space cfg))
+    exact max_over_instrs_bound f (outgoing_space cfg) (Linear.Lcall sig ros) hi
+  · exact zLe_max_left _ _
+
+theorem record_regs_of_instr_only : record_regs_of_instr_onlyStatement := by
+  intro cfg u i hu
+  cases i with
+  | Lgetstack sl ofs ty r =>
+      exact record_reg_only cfg u r hu
+  | Lsetstack r sl ofs ty =>
+      exact record_reg_only cfg u r hu
+  | Lop op args res =>
+      exact record_reg_only cfg u res hu
+  | Lload chunk addr args dst =>
+      exact record_reg_only cfg u dst hu
+  | Lstore chunk addr args src =>
+      exact hu
+  | Lcall sig ros =>
+      exact hu
+  | Ltailcall sig ros =>
+      exact hu
+  | Lbuiltin ef args res =>
+      change only_callee_saves cfg
+        (record_regs cfg (record_regs cfg u
+          (CompCert4Lean.Common.AST.params_of_builtin_res res))
+          (CompCert4Lean.X86.Machregs.destroyed_by_builtin ef))
+      unfold record_regs
+      apply fold_left_preserves
+      · intro acc r hacc
+        exact record_reg_only cfg acc r hacc
+      · apply fold_left_preserves
+        · intro acc r hacc
+          exact record_reg_only cfg acc r hacc
+        · exact hu
+  | Llabel lbl =>
+      exact hu
+  | Lgoto lbl =>
+      exact hu
+  | Lcond cond args lbl =>
+      exact hu
+  | Ljumptable arg tbl =>
+      exact hu
+  | Lreturn =>
+      exact hu
+
+end CompCert4Lean.Backend.Bounds

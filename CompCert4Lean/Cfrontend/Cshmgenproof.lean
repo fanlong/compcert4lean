@@ -1403,3 +1403,64 @@ theorem transl_lbl_stmt_1 : transl_lbl_stmt_1Statement := by
       exact hdefault sl tsl h
 
 end CompCert4Lean.Cfrontend.Cshmgenproof
+
+namespace CompCert4Lean.Cfrontend.Cshmgenproof
+
+open CompCert4Lean.Cfrontend.Cshmgen
+open CompCert4Lean.Cfrontend.Csharpminor
+
+theorem make_intconst_correct
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    make_intconst_correctStatement := by
+  intro ge n e le m
+  apply Csharpminor.eval_Econst
+  rfl
+
+theorem make_floatconst_correct
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    make_floatconst_correctStatement := by
+  intro ge n e le m
+  apply Csharpminor.eval_Econst
+  rfl
+
+theorem make_singleconst_correct
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    make_singleconst_correctStatement := by
+  intro ge n e le m
+  apply Csharpminor.eval_Econst
+  rfl
+
+theorem transl_lbl_stmt_2 : transl_lbl_stmt_2Statement := by
+  intro ce tyret nbrk ncnt sl
+  induction sl using Clight.labeled_statements.rec
+      (motive_1 := fun _ => True) with
+  | Sskip | Sassign _ _ | Sset _ _ | Scall _ _ _ | Sbuiltin _ _ _ _
+  | Ssequence _ _ _ _ | Sifthenelse _ _ _ _ _ | Sloop _ _ _ _
+  | Sbreak | Scontinue | Sreturn _ | Sswitch _ _ _ | Slabel _ _ _ | Sgoto _ =>
+      trivial
+  | LSnil =>
+      intro tsl h
+      simp only [Cshmgen.transl_lbl_stmt] at h
+      cases h
+      rfl
+  | LScons n s rest ihstmt ihrest =>
+      intro tsl h
+      simp only [Cshmgen.transl_lbl_stmt] at h
+      cases hstmt : transl_statement ce tyret nbrk ncnt s with
+      | Error msg =>
+          simp [hstmt] at h
+      | OK ts =>
+          cases hrest : transl_lbl_stmt ce tyret nbrk ncnt rest with
+          | Error msg =>
+              simp [hstmt, hrest] at h
+          | OK trs =>
+              simp [hstmt, hrest] at h
+              cases h
+              simp only [Clight.seq_of_labeled_statement, Csharpminor.seq_of_lbl_stmt,
+                Cshmgen.transl_statement, hstmt]
+              rw [ihrest trs hrest]
+
+end CompCert4Lean.Cfrontend.Cshmgenproof

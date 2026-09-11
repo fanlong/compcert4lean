@@ -2351,3 +2351,265 @@ theorem for_all_between_iff_proof : for_all_between_iff := by
     exact aux s.this s.is_ok.ok h
 
 end EqSet2
+
+namespace EqSet2
+
+theorem mem_between_2_proof : mem_between_2 := by
+  intro above below hab hbl x s hx hax hbx
+  have aux : ∀ (m : Raw.tree), Raw.bst m →
+      ∀ (x : elt), Raw.InT x m → above x = true → below x = true →
+        raw_mem_between above below m = true := by
+    intro m hbst
+    induction hbst with
+    | BSLeaf =>
+        intro x hx
+        cases hx
+    | @BSNode info value left right hleft hright hlt hgt ihl ihr =>
+        intro x hx hax hbx
+        change CompCert4Lean.Lib.FSetAVLplus.Make.raw_mem_between above below
+          (CompCert4Lean.Lib.MSetGenTree.tree.Node info left value right) = true
+        rw [CompCert4Lean.Lib.FSetAVLplus.Make.raw_mem_between.eq_2]
+        split
+        next hav =>
+          split
+          next hbv => rfl
+          next hnbv =>
+            rw [Raw.In_node_iff] at hx
+            rcases hx with hx | hx | hx
+            · exact ihl x hx hax hbx
+            · have hbv' := hbl x value (Or.inl hx) hbx
+              exact False.elim (hnbv hbv')
+            · have hbv' := hbl x value (Or.inr (hgt x hx)) hbx
+              exact False.elim (hnbv hbv')
+        next hnav =>
+          rw [Raw.In_node_iff] at hx
+          rcases hx with hx | hx | hx
+          · have hav' := hab x value (Or.inr (hlt x hx)) hax
+            exact False.elim (hnav hav')
+          · have hav' := hab x value (Or.inl hx) hax
+            exact False.elim (hnav hav')
+          · exact ihr x hx hax hbx
+  exact aux s.this s.is_ok.ok x hx hax hbx
+
+private theorem eqset2_elements_between_subset
+    (above below : elt → Bool) :
+    ∀ (m : Raw.tree) (x : elt),
+      Raw.InT x (raw_elements_between above below m) → Raw.InT x m := by
+  intro m
+  induction m with
+  | Leaf =>
+      intro x hx
+      cases hx
+  | Node info left value right ihl ihr =>
+      intro x hx
+      change Raw.InT x
+        (CompCert4Lean.Lib.FSetAVLplus.Make.raw_elements_between above below
+          (CompCert4Lean.Lib.MSetGenTree.tree.Node info left value right)) at hx
+      rw [CompCert4Lean.Lib.FSetAVLplus.Make.raw_elements_between.eq_2] at hx
+      split at hx
+      next hav =>
+        split at hx
+        next hbv =>
+          rcases (Raw.join_spec
+            (raw_elements_between above below left) value
+            (raw_elements_between above below right) x).mp hx with hroot | hleft | hright
+          · exact .IsRoot info left right value hroot
+          · exact .InLeft info left right value (ihl x hleft)
+          · exact .InRight info left right value (ihr x hright)
+        next hbv => exact .InLeft info left right value (ihl x hx)
+      next hav => exact .InRight info left right value (ihr x hx)
+
+private theorem eqset2_elements_between_bounds
+    (above below : elt → Bool)
+    (hab : AboveMonotone above) (hbl : BelowMonotone below) :
+    ∀ (m : Raw.tree) (x : elt),
+      Raw.InT x (raw_elements_between above below m) →
+        above x = true ∧ below x = true := by
+  intro m
+  induction m with
+  | Leaf =>
+      intro x hx
+      cases hx
+  | Node info left value right ihl ihr =>
+      intro x hx
+      change Raw.InT x
+        (CompCert4Lean.Lib.FSetAVLplus.Make.raw_elements_between above below
+          (CompCert4Lean.Lib.MSetGenTree.tree.Node info left value right)) at hx
+      rw [CompCert4Lean.Lib.FSetAVLplus.Make.raw_elements_between.eq_2] at hx
+      split at hx
+      next hav =>
+        split at hx
+        next hbv =>
+          rcases (Raw.join_spec
+            (raw_elements_between above below left) value
+            (raw_elements_between above below right) x).mp hx with hroot | hleft | hright
+          · exact ⟨hab value x (Or.inl (E.eq_sym x value hroot)) hav,
+              hbl value x (Or.inl (E.eq_sym x value hroot)) hbv⟩
+          · exact ihl x hleft
+          · exact ihr x hright
+        next hbv => exact ihl x hx
+      next hav => exact ihr x hx
+
+private theorem eqset2_elements_between_in
+    (above below : elt → Bool)
+    (hab : AboveMonotone above) (hbl : BelowMonotone below) :
+    ∀ (m : Raw.tree) (x : elt), Raw.bst m → Raw.InT x m →
+      above x = true → below x = true →
+        Raw.InT x (raw_elements_between above below m) := by
+  intro m
+  intro x hbst
+  induction hbst with
+  | BSLeaf =>
+      intro hx
+      cases hx
+  | @BSNode info value left right hleft hright hlt hgt ihl ihr =>
+      intro hx hax hbx
+      change Raw.InT x
+        (CompCert4Lean.Lib.FSetAVLplus.Make.raw_elements_between above below
+          (CompCert4Lean.Lib.MSetGenTree.tree.Node info left value right))
+      rw [CompCert4Lean.Lib.FSetAVLplus.Make.raw_elements_between.eq_2]
+      split
+      next hav =>
+        split
+        next hbv =>
+          apply (Raw.join_spec
+            (raw_elements_between above below left) value
+            (raw_elements_between above below right) x).mpr
+          rcases (Raw.In_node_iff info left value right x).mp hx with hleftx | hxv | hrightx
+          · exact Or.inr (Or.inl (ihl hleftx hax hbx))
+          · exact Or.inl hxv
+          · exact Or.inr (Or.inr (ihr hrightx hax hbx))
+        next hbv =>
+          rcases (Raw.In_node_iff info left value right x).mp hx with hleftx | hxv | hrightx
+          · exact ihl hleftx hax hbx
+          · have hbad := hbl x value (Or.inl hxv) hbx
+            exact False.elim (hbv hbad)
+          · have hbad := hbl x value (Or.inr (hgt x hrightx)) hbx
+            exact False.elim (hbv hbad)
+      next hav =>
+        rcases (Raw.In_node_iff info left value right x).mp hx with hleftx | hxv | hrightx
+        · have hbad := hab x value (Or.inr (hlt x hleftx)) hax
+          exact False.elim (hav hbad)
+        · have hbad := hab x value (Or.inl hxv) hax
+          exact False.elim (hav hbad)
+        · exact ihr hrightx hax hbx
+
+theorem elements_between_iff_proof : elements_between_iff := by
+  intro above below hab hbl x s
+  change Raw.InT x
+      (raw_elements_between above below s.this) ↔
+    Raw.InT x s.this ∧ above x = true ∧ below x = true
+  constructor
+  · intro hx
+    exact ⟨eqset2_elements_between_subset above below s.this x hx,
+      (eqset2_elements_between_bounds above below hab hbl s.this x hx)⟩
+  · rintro ⟨hx, hax, hbx⟩
+    exact eqset2_elements_between_in above below hab hbl s.this x s.is_ok.ok hx hax hbx
+
+end EqSet2
+
+namespace DS
+
+theorem law_obligation_proof : law_obligation := by
+  constructor
+  · constructor
+    · intro x
+      cases x with
+      | OK a => exact EqSet.eq_refl a
+      | Error _ => trivial
+    · intro x y h
+      cases x with
+      | OK a =>
+          cases y with
+          | OK b => exact EqSet.eq_sym a b h
+          | Error _ => exact False.elim h
+      | Error _ =>
+          cases y with
+          | OK _ => trivial
+          | Error _ => trivial
+    · intro x y z hxy hyz
+      cases x with
+      | Error _ =>
+          cases y with
+          | Error _ =>
+              cases z with
+              | Error _ => trivial
+              | OK _ =>
+                  change False at hyz
+                  exact False.elim hyz
+          | OK _ =>
+              change False at hxy
+              exact False.elim hxy
+      | OK a =>
+          cases y with
+          | Error _ =>
+              change False at hxy
+              exact False.elim hxy
+          | OK b =>
+              cases z with
+              | Error _ =>
+                  change False at hyz
+                  exact False.elim hyz
+              | OK c => exact EqSet.eq_trans a b c hxy hyz
+    · intro x y h
+      cases x with
+      | OK a =>
+          cases y with
+          | OK b => exact EqSet.equal_2 a b h
+          | Error _ =>
+              change false = true at h
+              cases h
+      | Error _ =>
+          cases y with
+          | OK _ =>
+              change false = true at h
+              cases h
+          | Error _ => trivial
+    · intro x y h
+      cases x with
+      | OK a =>
+          cases y with
+          | OK b =>
+              intro q hq
+              exact (h q).mpr hq
+          | Error _ => exact False.elim h
+      | Error _ => trivial
+    · intro x y z hxy hyz
+      cases x with
+      | Error _ => trivial
+      | OK a =>
+          cases y with
+          | Error _ => exact False.elim hxy
+          | OK b =>
+              cases z with
+              | Error _ => exact False.elim hyz
+              | OK c =>
+                  intro q hq
+                  exact hxy q (hyz q hq)
+    · intro x
+      cases x with
+      | OK a =>
+          intro q hq
+          exact False.elim (EqSet.empty_1 q hq)
+      | Error _ => trivial
+    · intro x y
+      cases x with
+      | OK a =>
+          cases y with
+          | OK b =>
+              intro q hq
+              exact EqSet.union_2 a b q hq
+          | Error _ => trivial
+      | Error _ => trivial
+    · intro x y
+      cases x with
+      | OK a =>
+          cases y with
+          | OK b =>
+              intro q hq
+              exact EqSet.union_3 a b q hq
+          | Error _ => trivial
+      | Error _ => trivial
+  · exact CompCert4Lean.Backend.Kildall.NodeSetBackward.law_obligation_proof
+
+end DS

@@ -1719,3 +1719,22 @@ theorem valnum_builtin_args_holds
               · exact Ple_trans _ _ _ hle1 hle2
 
 end CompCert4Lean.Backend.CSEproof
+
+namespace CompCert4Lean.Backend.CSEproof
+
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Lib.Coqlib
+
+theorem eval_builtin_args_trivial : eval_builtin_args_trivialStatement := by
+  intro ge sp rs m rl
+  unfold eval_builtin_args
+  induction rl with
+  | nil => exact list_forall2.nil _
+  | cons r rl ih =>
+      simp only [List.map]
+      apply list_forall2.cons
+      · exact eval_BA r
+      · exact ih
+
+end CompCert4Lean.Backend.CSEproof

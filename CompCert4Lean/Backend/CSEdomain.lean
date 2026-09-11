@@ -693,3 +693,119 @@ theorem combine_comparison_cmplu_sound : combine_comparison_cmplu_soundStatement
       cases hcombine
 
 end CompCert4Lean.Backend.CSEdomain
+
+namespace CompCert4Lean.Backend.CSEdomain
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.List
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Builtins
+open CompCert4Lean.X86.Op
+
+private theorem cse_boolOfSumbool_true {P Q : Prop}
+    (d : Sumbool P Q) (h : boolOfSumbool d = true) : P := by
+  cases d with
+  | left hp => exact hp
+  | right hn => simp [boolOfSumbool] at h
+
+theorem rhs_compat_sym : rhs_compat_symStatement := by
+  intro rh1 rh2 h
+  cases h with
+  | rhs_compat_op op vl => exact rhs_compat_op op vl
+  | rhs_compat_load chunk addr vl p1 p2 =>
+      exact rhs_compat_load chunk addr vl p2 p1
+  | rhs_compat_builtin bf args => exact rhs_compat_builtin bf args
+
+theorem compat_rhs_sound : compat_rhs_soundStatement := by
+  intro r1 r2 h
+  cases r1 with
+  | Op op1 vl1 =>
+      cases r2 with
+      | Op op2 vl2 =>
+          change (boolOfSumbool (eq_operation op1 op2) &&
+            boolOfSumbool (eq_list_valnum vl1 vl2)) = true at h
+          rw [Bool.and_eq_true] at h
+          have hop : op1 = op2 := cse_boolOfSumbool_true _ h.1
+          have hvl : vl1 = vl2 := cse_boolOfSumbool_true _ h.2
+          cases hop
+          cases hvl
+          exact rhs_compat_op op1 vl1
+      | Load chunk2 addr2 vl2 p2 => cases h
+      | Builtin bf2 args2 => cases h
+  | Load chunk1 addr1 vl1 p1 =>
+      cases r2 with
+      | Op op2 vl2 => cases h
+      | Load chunk2 addr2 vl2 p2 =>
+          change ((boolOfSumbool (chunk_eq chunk1 chunk2) &&
+            boolOfSumbool (eq_addressing addr1 addr2)) &&
+            boolOfSumbool (eq_list_valnum vl1 vl2)) = true at h
+          rw [Bool.and_eq_true, Bool.and_eq_true] at h
+          have hchunk : chunk1 = chunk2 := cse_boolOfSumbool_true _ h.1.1
+          have haddr : addr1 = addr2 := cse_boolOfSumbool_true _ h.1.2
+          have hvl : vl1 = vl2 := cse_boolOfSumbool_true _ h.2
+          cases hchunk
+          cases haddr
+          cases hvl
+          exact rhs_compat_load chunk1 addr1 vl1 p1 p2
+      | Builtin bf2 args2 => cases h
+  | Builtin bf1 args1 =>
+      cases r2 with
+      | Op op2 vl2 => cases h
+      | Load chunk2 addr2 vl2 p2 => cases h
+      | Builtin bf2 args2 =>
+          change (boolOfSumbool (eq_builtin_function bf1 bf2) &&
+            boolOfSumbool (list_eq_dec (eq_builtin_arg eq_valnum) args1 args2)) = true at h
+          rw [Bool.and_eq_true] at h
+          have hbf : bf1 = bf2 := cse_boolOfSumbool_true _ h.1
+          have hargs : args1 = args2 := cse_boolOfSumbool_true _ h.2
+          cases hbf
+          cases hargs
+          exact rhs_compat_builtin bf1 args1
+
+theorem rhs_eval_to_compat
+    [binary64_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)] :
+    rhs_eval_to_compatStatement := by
+  intro valu ge sp m rh v rh' hev hcompat
+  cases hev with
+  | op_eval_to op vl v hEval =>
+      cases hcompat with
+      | rhs_compat_op op vl => exact op_eval_to op vl v hEval
+  | load_eval_to chunk addr vl a v p hAddr hLoad =>
+      cases hcompat with
+      | rhs_compat_load chunk addr vl p1 p2 =>
+          exact load_eval_to chunk addr vl a v p2 hAddr hLoad
+  | builtin_eval_to bf args vargs v hArgs hSem =>
+      cases hcompat with
+      | rhs_compat_builtin bf args =>
+          exact builtin_eval_to bf args vargs v hArgs hSem
+
+theorem empty_numbering_holds
+    [binary64_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)] :
+    empty_numbering_holdsStatement := by
+  intro valu ge sp rs m
+  constructor
+  · constructor
+    · intro e he
+      cases he
+    · intro r v h
+      simpa [empty_numbering, CompCert4Lean.Lib.Maps.PTree.get,
+        CompCert4Lean.Lib.Maps.PTree.empty] using h
+    · intro r v h
+      cases h
+  · intro e he
+    cases he
+  · intro r v h
+    simpa [empty_numbering, CompCert4Lean.Lib.Maps.PTree.get,
+      CompCert4Lean.Lib.Maps.PTree.empty] using h
+
+end CompCert4Lean.Backend.CSEdomain

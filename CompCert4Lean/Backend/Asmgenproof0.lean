@@ -868,3 +868,126 @@ theorem agree_undef_nondata_regs : agree_undef_nondata_regsStatement := by
         exact hnondata r' (by simp [hr'])
 
 end CompCert4Lean.Backend.Asmgenproof0
+
+namespace CompCert4Lean.Backend.Asmgenproof0
+
+theorem agree_change_sp : agree_change_spStatement := by
+  intro ms sp rs sp' hagree hsp'
+  refine ⟨?_, hsp', ?_⟩
+  · change (if asmSP = asmSP then sp' else rs asmSP) = sp'
+    simp
+  · intro r
+    change CompCert4Lean.Common.Values.Val.lessdef (ms r)
+      (if CompCert4Lean.X86.Asm.preg_of r = asmSP then sp'
+      else rs (CompCert4Lean.X86.Asm.preg_of r))
+    split
+    · rename_i heq
+      exact (preg_of_not_SP r heq).elim
+    · exact hagree.agree_mregs r
+
+end CompCert4Lean.Backend.Asmgenproof0
+
+namespace CompCert4Lean.Backend.Asmgenproof0
+
+theorem agree_undef_regs : agree_undef_regsStatement := by
+  intro ms sp rl rs rs' hagree hother
+  refine ⟨?_, hagree.agree_sp_def, ?_⟩
+  · have hsp : preg_notin asmSP rl := by
+      apply (preg_notin_charact asmSP rl).2
+      intro mr hmr hEq
+      exact (preg_of_not_SP mr hEq.symm).elim
+    calc
+      rs' asmSP = rs asmSP := hother asmSP (by rfl) hsp
+      _ = sp := hagree.agree_sp
+  · intro r
+    by_cases hr : r ∈ rl
+    · have hundef :=
+        CompCert4Lean.Backend.Mach.undef_regs_same_proof r rl ms hr
+      rw [hundef]
+      exact CompCert4Lean.Common.Values.Val.lessdef.lessdef_undef _
+    · have hkeep :=
+        CompCert4Lean.Backend.Mach.undef_regs_other_proof r rl ms hr
+      rw [hkeep]
+      have hnotin : preg_notin (CompCert4Lean.X86.Asm.preg_of r) rl := by
+        apply (preg_notin_charact (CompCert4Lean.X86.Asm.preg_of r) rl).2
+        intro mr hmr hEq
+        exact hr (by
+          have hEq' : r = mr := preg_of_injective r mr hEq
+          simpa [hEq'] using hmr)
+      rw [hother (CompCert4Lean.X86.Asm.preg_of r)
+        (preg_of_data r) hnotin]
+      exact hagree.agree_mregs r
+
+theorem agree_set_undef_mreg : agree_set_undef_mregStatement := by
+  intro ms sp rs r v rl rs' hagree hv hother
+  let rs0 := CompCert4Lean.X86.Asm.Pregmap.set
+    (CompCert4Lean.X86.Asm.preg_of r) (rs (CompCert4Lean.X86.Asm.preg_of r)) rs'
+  refine agree_set_mreg
+    (CompCert4Lean.Backend.Mach.undef_regs rl ms) sp rs0 r v rs' ?_ hv ?_
+  · apply agree_undef_regs ms sp rl rs rs0 hagree
+    intro r' hdata hnotin
+    simp only [rs0, CompCert4Lean.X86.Asm.Pregmap.set]
+    split
+    · rename_i heq
+      subst r'
+      rfl
+    · rename_i hne
+      exact hother r' hdata hne hnotin
+  · intro r' hdata hne
+    simp [rs0, CompCert4Lean.X86.Asm.Pregmap.set, hne]
+
+theorem agree_undef_caller_save_regs : agree_undef_caller_save_regsStatement := by
+  intro cfg ms sp rs hagree
+  refine ⟨?_, hagree.agree_sp_def, ?_⟩
+  · have hnomem : ¬ Foundation.Logic.Rocq.Coq.Lists.List.In asmSP
+        (List.map CompCert4Lean.X86.Asm.preg_of
+          (List.filter
+            (fun mr => CompCert4Lean.X86.Conventions1.is_callee_save cfg mr)
+            CompCert4Lean.X86.Machregs.all_mregs)) := by
+      intro h
+      rcases _root_.List.mem_map.mp h with ⟨mr, hmr, heq⟩
+      exact (preg_of_not_SP mr heq).elim
+    unfold CompCert4Lean.X86.Asm.undef_caller_save_regs
+    dsimp
+    cases hIn : CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.List.in_dec
+        CompCert4Lean.X86.Asm.PregEq.eq asmSP
+        (List.map CompCert4Lean.X86.Asm.preg_of
+          (List.filter
+            (fun mr => CompCert4Lean.X86.Conventions1.is_callee_save cfg mr)
+            CompCert4Lean.X86.Machregs.all_mregs)) with
+    | left h => exact (hnomem h).elim
+    | right h =>
+        cases hEq : CompCert4Lean.X86.Asm.PregEq.eq asmSP asmSP with
+        | left heq => exact hagree.agree_sp
+        | right hne => exact (hne rfl).elim
+  · intro r
+    cases hsave : CompCert4Lean.X86.Conventions1.is_callee_save cfg r with
+    | false =>
+        simp [CompCert4Lean.Backend.Mach.undef_caller_save_regs, hsave]
+        exact CompCert4Lean.Common.Values.Val.lessdef.lessdef_undef _
+    | true =>
+        have hmem_filter : r ∈ List.filter
+            (fun mr => CompCert4Lean.X86.Conventions1.is_callee_save cfg mr)
+            CompCert4Lean.X86.Machregs.all_mregs := by
+          exact _root_.List.mem_filter.mpr
+            ⟨CompCert4Lean.X86.Machregs.all_mregs_complete r, hsave⟩
+        have hmem_saved : CompCert4Lean.X86.Asm.preg_of r ∈ List.map
+            CompCert4Lean.X86.Asm.preg_of
+            (List.filter
+              (fun mr => CompCert4Lean.X86.Conventions1.is_callee_save cfg mr)
+              CompCert4Lean.X86.Machregs.all_mregs) := by
+          exact _root_.List.mem_map.mpr ⟨r, hmem_filter, rfl⟩
+        unfold CompCert4Lean.Backend.Mach.undef_caller_save_regs
+        unfold CompCert4Lean.X86.Asm.undef_caller_save_regs
+        dsimp
+        simp [hsave]
+        cases hIn : CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.List.in_dec
+            CompCert4Lean.X86.Asm.PregEq.eq (CompCert4Lean.X86.Asm.preg_of r)
+            (List.map CompCert4Lean.X86.Asm.preg_of
+              (List.filter
+                (fun mr => CompCert4Lean.X86.Conventions1.is_callee_save cfg mr)
+                CompCert4Lean.X86.Machregs.all_mregs)) with
+        | left h => exact hagree.agree_mregs r
+        | right h => exact (h hmem_saved).elim
+
+end CompCert4Lean.Backend.Asmgenproof0

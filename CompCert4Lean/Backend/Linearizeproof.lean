@@ -1014,3 +1014,38 @@ theorem senv_preserved : senv_preservedStatement := by
                     rfl
 
 end CompCert4Lean.Backend.Linearizeproof
+
+namespace CompCert4Lean.Backend.Linearizeproof
+
+open CompCert4Lean.Common.Globalenvs
+
+theorem find_function_translated : find_function_translatedStatement := by
+  intro service prog tprog hm ros ls f hfind
+  cases ros with
+  | inl r =>
+      unfold CompCert4Lean.Backend.LTL.find_function at hfind
+      unfold CompCert4Lean.Backend.Linear.find_function
+      exact functions_translated service prog tprog hm
+        (ls (CompCert4Lean.Backend.Locations.R r)) f hfind
+  | inr symb =>
+      unfold CompCert4Lean.Backend.LTL.find_function at hfind
+      unfold CompCert4Lean.Backend.Linear.find_function
+      change
+        (match Genv.find_symbol (Genv.globalenv prog) symb with
+        | none => none
+        | some b => Genv.find_funct_ptr (Genv.globalenv prog) b) = some f at hfind
+      change
+        ∃ tf,
+          (match Genv.find_symbol (Genv.globalenv tprog) symb with
+          | none => none
+          | some b => Genv.find_funct_ptr (Genv.globalenv tprog) b) = some tf ∧
+            CompCert4Lean.Backend.Linearize.transf_fundef service f = .OK tf
+      cases hs : Genv.find_symbol (Genv.globalenv prog) symb with
+      | none => simp [hs] at hfind
+      | some b =>
+          have hs' := symbols_preserved service prog tprog hm symb
+          rw [hs', hs]
+          exact function_ptr_translated service prog tprog hm b f
+            (by simpa [hs] using hfind)
+
+end CompCert4Lean.Backend.Linearizeproof

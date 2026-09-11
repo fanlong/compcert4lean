@@ -982,3 +982,36 @@ theorem builtin_arg_strength_reduction_correct :
     exact hev
 
 end CompCert4Lean.Backend.Constpropproof
+
+namespace CompCert4Lean.Backend.Constpropproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Linking
+open CompCert4Lean.Lib.Integers
+
+variable
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+
+theorem functions_translated : ∀ cfg, functions_translatedStatement cfg := by
+  letI : Linker fundef := Linker_fundef function
+  letI : Linker Unit := Linker_unit
+  letI : Linker program := Linker_prog fundef Unit
+  intro cfg prog tprog hm v f hfind
+  unfold Genv.find_funct at hfind ⊢
+  cases v with
+  | Vundef => simp at hfind
+  | Vint n => simp at hfind
+  | Vlong n => simp at hfind
+  | Vfloat n => simp at hfind
+  | Vsingle n => simp at hfind
+  | Vptr b ofs =>
+      cases hzero : Ptrofs.eq ofs Ptrofs.zero with
+      | false => simp [hzero] at hfind
+      | true =>
+          simp [hzero] at hfind ⊢
+          exact function_ptr_translated cfg prog tprog hm b f hfind
+
+end CompCert4Lean.Backend.Constpropproof

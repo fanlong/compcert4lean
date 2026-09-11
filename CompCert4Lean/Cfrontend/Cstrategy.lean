@@ -1873,3 +1873,18 @@ theorem safe_expr_kind
     (k := k) (e := e) (m := m) (K := fromKind) hs hcontext
 
 end CompCert4Lean.Cfrontend.Cstrategy
+
+namespace CompCert4Lean.Cfrontend.Cstrategy
+
+theorem callred_invert
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    callred_invertStatement := by
+  unfold callred_invertStatement
+  intro xi ge e r fd args ty m h
+  cases h with
+  | call hfind hcast htype hclass =>
+      intro _
+      exact ⟨_, _, _, _, _, hclass, hfind, hcast, htype⟩
+
+end CompCert4Lean.Cfrontend.Cstrategy

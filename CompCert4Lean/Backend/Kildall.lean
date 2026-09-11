@@ -1500,3 +1500,13 @@ theorem law_obligation_proof : law_obligation := by
   · exact all_nodes_spec
 
 end CompCert4Lean.Backend.Kildall.NodeSetForward
+
+namespace CompCert4Lean.Backend.Kildall.Dataflow_Solver
+
+theorem optge_refl : optge_reflStatement := by
+  intro LAT LATlaws ol
+  cases ol with
+  | none => exact optge_none none
+  | some l => exact optge_some (LATlaws.ge_refl l l (LATlaws.eq_refl l))
+
+end CompCert4Lean.Backend.Kildall.Dataflow_Solver

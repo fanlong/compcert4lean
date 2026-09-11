@@ -1146,3 +1146,112 @@ theorem aregs_sound : aregs_soundStatement := by
       exact .cons _ _ (h r) ih
 
 end CompCert4Lean.Backend.ValueAnalysis
+
+namespace CompCert4Lean.Backend.ValueAnalysis
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Backend.ValueDomain
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+
+private theorem value_analysis_set_result_ae_get_self
+    (p : positive) (v : aval) (x : AE.t)
+    (hx : x ≠ AE.Bot) (hv : v ≠ Vbot) :
+    AE.get p (AE.set p v x) = v := by
+  cases x with
+  | Bot => exact False.elim (hx rfl)
+  | Top_except t =>
+      by_cases htop : v = Vtop
+      · subst v
+        have hvtop : ¬ Vtop = Vbot := by intro h; cases h
+        simp only [AE.set, AE.get, if_neg hvtop, if_true]
+        change (PTree.get p (PTree.remove p t)).getD Vtop = Vtop
+        have h := PTree.grs_proof p t
+        simp [h]
+      · simp only [AE.set, AE.get, if_neg hv, if_neg htop]
+        change (PTree.get p (PTree.set p v t)).getD Vtop = v
+        have h := PTree.gsspec_proof (A := aval) p p v t
+        simp [CompCert4Lean.Lib.Coqlib.peq, PArith.BinPos.Pos.eq_dec] at h
+        rw [h]
+        simp
+
+theorem set_builtin_res_sound : set_builtin_res_soundStatement := by
+  intro bc rs ae v av res hEm hVm
+  change CompCert4Lean.Backend.Registers.Regmap.t
+    CompCert4Lean.Common.Values.val at rs
+  cases res with
+  | BR r =>
+      change positive at r
+      intro r'
+      change positive at r'
+      by_cases hr : r' = r
+      · subst r'
+        have hrg : Regmap.get r (Regmap.set r v rs) = v :=
+          Regmap.gss_proof _ _ _ _
+        have hav : av ≠ Vbot := by
+          intro h
+          subst av
+          cases hVm
+        have hae : AE.get r (AE.set r av ae) = av := by
+          cases ae with
+          | Bot =>
+              have h : vmatch bc (Regmap.get r rs) Vbot := by
+                simpa [AE.get] using hEm r
+              generalize hx : Regmap.get r rs = vv at h
+              cases vv <;> cases h
+          | Top_except t =>
+              by_cases hvb : av = Vbot
+              · subst av; cases hVm
+              · by_cases hvt : av = Vtop
+                · subst av
+                  have hvtop : ¬ Vtop = Vbot := by intro h; cases h
+                  simp only [AE.set, AE.get, if_neg hvtop, if_true]
+                  change (PTree.get r (PTree.remove r t)).getD Vtop = Vtop
+                  have h := PTree.grs_proof r t
+                  rw [h]
+                  simp
+                · simp only [AE.set, AE.get, if_neg hvb, if_neg hvt]
+                  change (PTree.get r (PTree.set r av t)).getD Vtop = av
+                  have h := PTree.gsspec_proof (A := aval) r r av t
+                  simp [CompCert4Lean.Lib.Coqlib.peq, PArith.BinPos.Pos.eq_dec] at h
+                  rw [h]
+                  simp
+        change vmatch bc (Regmap.get r (Regmap.set r v rs))
+          (AE.get r (AE.set r av ae))
+        rw [hrg, hae]
+        exact hVm
+      · have hs := hEm r'
+        have hrg : Regmap.get r' (Regmap.set r v rs) = Regmap.get r' rs := by
+          apply Regmap.gso_proof
+          exact hr
+        have hae : AE.get r' (AE.set r av ae) = AE.get r' ae := by
+          cases ae with
+          | Bot => rfl
+          | Top_except t =>
+              by_cases hvb : av = Vbot
+              · subst av; cases hVm
+              · by_cases hvt : av = Vtop
+                · subst av
+                  have hvtop : ¬ Vtop = Vbot := by intro h; cases h
+                  simp only [AE.set, AE.get, if_neg hvtop, if_true]
+                  change (PTree.get r' (PTree.remove r t)).getD Vtop =
+                    (PTree.get r' t).getD Vtop
+                  have h := PTree.gro_proof (m := t) (by exact hr)
+                  rw [h]
+                · simp only [AE.set, AE.get, if_neg hvb, if_neg hvt]
+                  change (PTree.get r' (PTree.set r av t)).getD Vtop =
+                    (PTree.get r' t).getD Vtop
+                  have h := PTree.gsspec_proof (A := aval) r' r av t
+                  simp [CompCert4Lean.Lib.Coqlib.peq, PArith.BinPos.Pos.eq_dec, hr] at h
+                  rw [h]
+        change vmatch bc (Regmap.get r' (Regmap.set r v rs))
+          (AE.get r' (AE.set r av ae))
+        rw [hrg, hae]
+        exact hs
+  | BR_none => exact hEm
+  | BR_splitlong hi lo => exact hEm
+end CompCert4Lean.Backend.ValueAnalysis

@@ -2090,3 +2090,60 @@ theorem wt_env_set_params : wt_env_set_paramsStatement := by
           · exact h.1
 
 end CompCert4Lean.Backend.Cminortyping
+
+namespace CompCert4Lean.Backend.Cminortyping
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.Backend.Cminor
+
+theorem def_set_params : def_set_paramsStatement := by
+  intro id il vl hid
+  induction il generalizing vl with
+  | nil => cases hid
+  | cons i il ih =>
+      cases vl with
+      | nil =>
+          cases hp : peq id i with
+          | left heq =>
+              subst id
+              refine ⟨Vundef, ?_⟩
+              change PTree.get i (PTree.set i Vundef (set_params [] il)) = some Vundef
+              have hgs := PTree.gsspec_proof
+                (A := val) i i Vundef (set_params [] il)
+              simpa [hp] using hgs
+          | right hne =>
+              have hid' : id ∈ il := by
+                simp only [List.mem_cons] at hid
+                exact hid.resolve_left (fun heq => hne heq)
+              rcases ih (vl := []) hid' with ⟨v, hv⟩
+              refine ⟨v, ?_⟩
+              change PTree.get id (PTree.set i Vundef (set_params [] il)) = some v
+              have hgs := PTree.gsspec_proof
+                (A := val) id i Vundef (set_params [] il)
+              rw [hgs]
+              simpa [hp] using hv
+      | cons v vl =>
+          cases hp : peq id i with
+          | left heq =>
+              subst id
+              refine ⟨v, ?_⟩
+              change PTree.get i (PTree.set i v (set_params vl il)) = some v
+              have hgs := PTree.gsspec_proof
+                (A := val) i i v (set_params vl il)
+              simpa [hp] using hgs
+          | right hne =>
+              have hid' : id ∈ il := by
+                simp only [List.mem_cons] at hid
+                exact hid.resolve_left (fun heq => hne heq)
+              rcases ih (vl := vl) hid' with ⟨w, hw⟩
+              refine ⟨w, ?_⟩
+              change PTree.get id (PTree.set i v (set_params vl il)) = some w
+              have hgs := PTree.gsspec_proof
+                (A := val) id i v (set_params vl il)
+              rw [hgs]
+              simpa [hp] using hw
+
+end CompCert4Lean.Backend.Cminortyping

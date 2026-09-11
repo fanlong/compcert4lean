@@ -872,3 +872,72 @@ theorem sig_preserved : sig_preservedStatement := by
       rfl
 
 end CompCert4Lean.Backend.Debugvarproof
+
+namespace CompCert4Lean.Backend.Debugvarproof
+
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Backend.Debugvar
+open CompCert4Lean.Backend.Linear
+open CompCert4Lean.Common.Smallstep
+
+theorem find_function_translated : find_function_translatedStatement := by
+  intro cfg prog tprog hm ros ls f hfind
+  unfold CompCert4Lean.Backend.Linear.find_function at hfind ⊢
+  cases ros with
+  | inl r =>
+      exact functions_translated cfg prog tprog hm
+        (ls (CompCert4Lean.Backend.Locations.R r)) f hfind
+  | inr symb =>
+      change
+        (match Genv.find_symbol (Genv.globalenv prog) symb with
+        | none => none
+        | some b => Genv.find_funct_ptr (Genv.globalenv prog) b) = some f at hfind
+      simp only [Sum.rec] at ⊢
+      cases hs : Genv.find_symbol (Genv.globalenv prog) symb with
+      | none => simp [hs] at hfind
+      | some b =>
+          have hs' := symbols_preserved cfg prog tprog hm symb
+          rw [hs', hs]
+          exact function_ptr_translated cfg prog tprog hm b f
+            (by simpa [hs] using hfind)
+
+theorem parent_locset_match : parent_locset_matchStatement := by
+  intro s ts hmatch
+  cases hmatch with
+  | nil => rfl
+  | cons a b hframe htail =>
+      cases hframe
+      rfl
+
+theorem can_eval_safe_arg : can_eval_safe_argStatement := by
+  intro tprog rs sp m a hsafe
+  induction a with
+  | BA x =>
+      exact ⟨rs x, eval_BA x⟩
+  | BA_int n =>
+      exact ⟨Vint n, eval_BA_int n⟩
+  | BA_long n =>
+      exact ⟨Vlong n, eval_BA_long n⟩
+  | BA_float n =>
+      exact ⟨Vfloat n, eval_BA_float n⟩
+  | BA_single n =>
+      exact ⟨Vsingle n, eval_BA_single n⟩
+  | BA_loadstack chunk ofs =>
+      exact False.elim hsafe
+  | BA_addrstack ofs =>
+      exact False.elim hsafe
+  | BA_loadglobal chunk id ofs =>
+      exact False.elim hsafe
+  | BA_addrglobal id ofs =>
+      exact False.elim hsafe
+  | BA_splitlong hi lo ihi ilo =>
+      rcases hsafe with ⟨hhi, hlo⟩
+      rcases ihi hhi with ⟨vhi, ehi⟩
+      rcases ilo hlo with ⟨vlo, elo⟩
+      exact ⟨Val.longofwords vhi vlo, eval_BA_splitlong hi lo vhi vlo ehi elo⟩
+  | BA_addptr a1 a2 =>
+      exact False.elim hsafe
+
+end CompCert4Lean.Backend.Debugvarproof

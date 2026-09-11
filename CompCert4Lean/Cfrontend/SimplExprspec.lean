@@ -741,3 +741,33 @@ theorem tr_exprlist_invariant
     exact Eq.trans (hle1 id hid) (hle id hid)
 
 end CompCert4Lean.Cfrontend.SimplExprspec
+
+namespace CompCert4Lean.Cfrontend.SimplExprspec
+
+theorem tr_expr_monotone
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    tr_expr_monotoneStatement := by
+  intro ce le dst r sl a tmps h
+  intro tmps' htmps
+  revert tmps' htmps
+  let P1 := fun (dst : destination) (r : cexpr) (sl : List statement)
+      (a : expr) (tmps : List ident) (_ : tr_expr ce le dst r sl a tmps) =>
+      ∀ tmps', Included tmps tmps' → tr_expr ce le dst r sl a tmps'
+  let P2 := fun (rl : cexprlist) (sl : List statement)
+      (al : List expr) (tmps : List ident) (_ : tr_exprlist ce le rl sl al tmps) =>
+      ∀ tmps', Included tmps tmps' → tr_exprlist ce le rl sl al tmps'
+  refine tr_expr.rec (motive_1 := P1) (motive_2 := P2)
+    ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_
+    ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_
+    ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ h
+  all_goals
+    intros <;> dsimp [P1, P2, Included] at * <;> intro tmps' htmps' <;>
+      constructor <;> try solve_by_elim
+  all_goals
+    intro tge e le' m hle'
+    apply_assumption
+    intro id hid
+    exact hle' id (htmps' id hid)
+
+end CompCert4Lean.Cfrontend.SimplExprspec

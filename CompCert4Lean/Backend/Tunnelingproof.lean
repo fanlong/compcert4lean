@@ -1009,3 +1009,178 @@ noncomputable def record_branches_correct : record_branches_correctStatement := 
   exact Classical.choice hfold
 
 end CompCert4Lean.Backend.Tunnelingproof
+
+namespace CompCert4Lean.Backend.Tunnelingproof
+
+open CompCert4Lean.Backend.Tunneling
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Linking
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+
+private abbrev tunneling_fundef := CompCert4Lean.Backend.LTL.fundef
+
+private theorem tunneling_symbol_add_global
+    (ge1 ge2 : Genv.t tunneling_fundef Unit) (id : ident)
+    (hm : ∀ id', PTree.get id' ge2.genv_symb = PTree.get id' ge1.genv_symb)
+    (hn : ge2.genv_next = ge1.genv_next) :
+    ∀ id', PTree.get id' (PTree.set id ge2.genv_next ge2.genv_symb) =
+      PTree.get id' (PTree.set id ge1.genv_next ge1.genv_symb) := by
+  intro id'
+  have h2 := @PTree.getSet_equation _ id' id ge2.genv_next ge2.genv_symb
+  have h1 := @PTree.getSet_equation _ id' id ge1.genv_next ge1.genv_symb
+  by_cases h : id' = id
+  · rw [h2, h1]
+    simp only [dif_pos h]
+    exact congrArg some hn
+  · rw [h2, h1]
+    simp only [dif_neg h]
+    exact hm id'
+
+private theorem tunneling_match_genvs_add_global
+    (R : globdef tunneling_fundef Unit → globdef tunneling_fundef Unit → Prop)
+    (ge1 ge2 : Genv.t tunneling_fundef Unit) (id : ident)
+    (g1 g2 : globdef tunneling_fundef Unit)
+    (hm : Genv.match_genvs R ge1 ge2) (hg : R g1 g2) :
+    Genv.match_genvs R (Genv.add_global ge1 (id, g1))
+      (Genv.add_global ge2 (id, g2)) := by
+  constructor
+  · exact congrArg PArith.BinPos.Pos.succ hm.mge_next
+  · exact tunneling_symbol_add_global ge1 ge2 id hm.mge_symb hm.mge_next
+  · intro b
+    change option_rel R
+      (PTree.get b (PTree.set ge1.genv_next g1 ge1.genv_defs))
+      (PTree.get b (PTree.set ge2.genv_next g2 ge2.genv_defs))
+    have h1 := @PTree.getSet_equation (globdef tunneling_fundef Unit) b
+      ge1.genv_next g1 ge1.genv_defs
+    have h2 := @PTree.getSet_equation (globdef tunneling_fundef Unit) b
+      ge2.genv_next g2 ge2.genv_defs
+    by_cases h : b = ge1.genv_next
+    · have h' : b = ge2.genv_next := h.trans hm.mge_next.symm
+      rw [h1, h2]
+      simp only [dif_pos h, dif_pos h']
+      exact option_rel.some g1 g2 hg
+    · have h' : b ≠ ge2.genv_next := by
+        intro hb
+        apply h
+        exact hb.trans hm.mge_next
+      rw [h1, h2]
+      simp only [dif_neg h, dif_neg h']
+      exact hm.mge_defs b
+
+private theorem tunneling_match_genvs_add_globals
+    (R : globdef tunneling_fundef Unit → globdef tunneling_fundef Unit → Prop)
+    (xs ys : List (ident × globdef tunneling_fundef Unit))
+    (hxy : list_forall2 (fun a b => a.1 = b.1 ∧ R a.2 b.2) xs ys)
+    (ge1 ge2 : Genv.t tunneling_fundef Unit) (hm : Genv.match_genvs R ge1 ge2) :
+    Genv.match_genvs R (Genv.add_globals ge1 xs) (Genv.add_globals ge2 ys) := by
+  induction hxy generalizing ge1 ge2 with
+  | nil => simpa [Genv.add_globals] using hm
+  | @cons a xs b ys hab htail ih =>
+      rcases a with ⟨aid, ag⟩
+      rcases b with ⟨bid, bg⟩
+      change aid = bid ∧ R ag bg at hab
+      rcases hab with ⟨rfl, hab⟩
+      simp only [Genv.add_globals, List.foldl_cons]
+      apply ih
+      simpa using (tunneling_match_genvs_add_global R ge1 ge2 aid ag bg hm hab)
+
+private theorem tunneling_globalenvs_match
+    (prog tprog : CompCert4Lean.Backend.LTL.program)
+    (hm : match_prog prog tprog) :
+    Genv.match_genvs
+      (@match_globdef (CompCert4Lean.Backend.LTL.program)
+        tunneling_fundef Unit tunneling_fundef Unit
+        (@Linker_prog tunneling_fundef Unit
+          (Linker_fundef CompCert4Lean.Backend.LTL.function) Linker_unit)
+        (fun (_ : CompCert4Lean.Backend.LTL.program) f tf =>
+          tf = tunnel_fundef f)
+        (fun x y : Unit => x = y) prog)
+      (Genv.globalenv prog) (Genv.globalenv tprog) := by
+  letI : Linker tunneling_fundef :=
+    Linker_fundef CompCert4Lean.Backend.LTL.function
+  letI : Linker (CompCert4Lean.Backend.LTL.program) :=
+    Linker_prog tunneling_fundef Unit
+  unfold match_prog match_program match_program_gen at hm
+  let R : globdef tunneling_fundef Unit → globdef tunneling_fundef Unit → Prop :=
+    match_globdef
+      (fun (_ : CompCert4Lean.Backend.LTL.program) f tf =>
+        tf = tunnel_fundef f)
+      (fun x y : Unit => x = y) prog
+  have hempty : Genv.match_genvs R
+      (Genv.empty_genv tunneling_fundef Unit prog.prog_public)
+      (Genv.empty_genv tunneling_fundef Unit tprog.prog_public) := by
+    constructor
+    · rfl
+    · intro id'
+      rfl
+    · intro b
+      exact option_rel.none R
+  have hlist_of : ∀ (xs ys : List (ident × globdef tunneling_fundef Unit)),
+      list_forall2 (match_ident_globdef
+        (fun (_ : CompCert4Lean.Backend.LTL.program) f tf =>
+          tf = tunnel_fundef f)
+        (fun x y : Unit => x = y) prog) xs ys →
+      list_forall2 (fun a b => a.1 = b.1 ∧ R a.2 b.2) xs ys := by
+    intro xs ys h
+    induction h with
+    | nil => exact list_forall2.nil _
+    | @cons a xs b ys hab htail ih =>
+        apply list_forall2.cons
+        · constructor
+          · exact hab.1
+          · simpa [R, tunneling_fundef] using hab.2
+        · exact ih
+  have hlist := hlist_of prog.prog_defs tprog.prog_defs hm.1
+  exact tunneling_match_genvs_add_globals R prog.prog_defs tprog.prog_defs
+    hlist _ _ hempty
+
+theorem functions_translated : functions_translatedStatement := by
+  intro prog tprog hm v f hfind
+  have hg := tunneling_globalenvs_match prog tprog hm
+  unfold Genv.find_funct at hfind ⊢
+  cases v with
+  | Vundef => simp at hfind
+  | Vint n => simp at hfind
+  | Vlong n => simp at hfind
+  | Vfloat n => simp at hfind
+  | Vsingle n => simp at hfind
+  | Vptr b ofs =>
+      cases hzero : CompCert4Lean.Lib.Integers.Ptrofs.eq ofs
+          CompCert4Lean.Lib.Integers.Ptrofs.zero with
+      | false => simp [hzero] at hfind
+      | true =>
+          simp [hzero] at hfind ⊢
+          unfold Genv.find_funct_ptr Genv.find_def at hfind ⊢
+          cases h1 : PTree.get b (Genv.globalenv prog).genv_defs with
+          | none => simp [h1] at hfind
+          | some gd1 =>
+              cases gd1 with
+              | Gfun f1 =>
+                  have hf : f1 = f := by simpa [h1] using hfind
+                  subst f1
+                  cases h2 : PTree.get b (Genv.globalenv tprog).genv_defs with
+                  | none =>
+                      have hd := hg.mge_defs b
+                      simp [h1, h2] at hd
+                      cases hd
+                  | some gd2 =>
+                      cases gd2 with
+                      | Gfun f2 =>
+                          have hd := hg.mge_defs b
+                          simp [h1, h2] at hd
+                          cases hd with
+                          | some x y hrel =>
+                              cases hrel with
+                              | match_globdef_fun ctx' f1 f2 horder htrans =>
+                                  simpa using htrans
+                      | Gvar v2 =>
+                          have hd := hg.mge_defs b
+                          simp [h1, h2] at hd
+                          cases hd with
+                          | some x y hrel => cases hrel
+              | Gvar v1 => simp [h1] at hfind
+
+end CompCert4Lean.Backend.Tunnelingproof

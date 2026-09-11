@@ -2473,3 +2473,34 @@ theorem pincl_ge : pincl_geStatement := by
   all_goals constructor
 
 end CompCert4Lean.Backend.ValueDomain
+
+namespace CompCert4Lean.Backend.ValueDomain
+
+theorem vmatch_top : vmatch_topStatement := by
+  intro bc v x h
+  cases h with
+  | vmatch_i i => exact vmatch.ifptrInt i Ptop
+  | vmatch_iu i => exact vmatch.ifptrInt i Ptop
+  | iuUndef i => exact vmatch.ifptrUndef Ptop
+  | uns p i n _ _ => exact vmatch.ifptrInt i Ptop
+  | vmatch_Uns_undef p n => exact vmatch.ifptrUndef Ptop
+  | sgn p i n _ _ => exact vmatch.ifptrInt i Ptop
+  | sgnUndef p n => exact vmatch.ifptrUndef Ptop
+  | long i => exact vmatch.ifptrLong i Ptop
+  | float f => exact vmatch.ifptrFloat f Ptop
+  | single f => exact vmatch.ifptrSingle f Ptop
+  | numUndef p => exact vmatch.ifptrUndef Ptop
+  | numInt i p => exact vmatch.ifptrInt i Ptop
+  | numLong i p => exact vmatch.ifptrLong i Ptop
+  | numFloat f p => exact vmatch.ifptrFloat f Ptop
+  | numSingle f p => exact vmatch.ifptrSingle f Ptop
+  | ptr b ofs p hp => exact vmatch.ifptrPtr b ofs Ptop (pmatch_top' bc b ofs p hp)
+  | ptrUndef p => exact vmatch.ifptrUndef Ptop
+  | ifptrUndef p => exact vmatch.ifptrUndef Ptop
+  | ifptrInt i p => exact vmatch.ifptrInt i Ptop
+  | ifptrLong i p => exact vmatch.ifptrLong i Ptop
+  | ifptrFloat f p => exact vmatch.ifptrFloat f Ptop
+  | ifptrSingle f p => exact vmatch.ifptrSingle f Ptop
+  | ifptrPtr b ofs p hp => exact vmatch.ifptrPtr b ofs Ptop (pmatch_top' bc b ofs p hp)
+
+end CompCert4Lean.Backend.ValueDomain

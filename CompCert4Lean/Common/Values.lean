@@ -1443,3 +1443,28 @@ theorem xor_assoc : xor_assocStatement := by
 
 end Val
 end CompCert4Lean.Common.Values
+
+namespace CompCert4Lean.Common.Values
+
+open CompCert4Lean.Common.AST
+
+namespace Val
+
+theorem Vnullptr_has_type : Vnullptr_has_typeStatement := by
+  change Val.has_type Vnullptr CompCert4Lean.Common.AST.Tptr
+  cases hptr : CompCert4Lean.X86_64.Archi.ptr64 <;>
+    simp [Vnullptr, CompCert4Lean.Common.AST.Tptr, Val.has_type, hptr]
+
+private theorem has_subtype_local (ty1 ty2 : CompCert4Lean.Common.AST.typ) (v : val) :
+    CompCert4Lean.Common.AST.subtype ty1 ty2 = true → Val.has_type v ty1 → Val.has_type v ty2 := by
+  intro hsub hv
+  cases ty1 <;> cases ty2 <;> cases v <;>
+    simp [CompCert4Lean.Common.AST.subtype, Val.has_type] at hsub hv ⊢
+  all_goals exact hv
+
+theorem has_subtype : has_subtypeStatement := by
+  intro ty1 ty2 v hsub hv
+  exact has_subtype_local ty1 ty2 v hsub hv
+
+end Val
+end CompCert4Lean.Common.Values

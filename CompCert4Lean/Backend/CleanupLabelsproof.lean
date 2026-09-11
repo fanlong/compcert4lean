@@ -1017,3 +1017,139 @@ theorem transf_final_states : transf_final_statesStatement := by
     exact final_state.final_state_intro rs m r hresult
 
 end CompCert4Lean.Backend.CleanupLabelsproof
+
+namespace CompCert4Lean.Backend.CleanupLabelsproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Backend.CleanupLabels
+open CompCert4Lean.Backend.Linear
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Linking
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Coqlib
+
+private theorem cleanup_initial_store_init_data
+    {prog tprog : program}
+    (hsymb : ∀ id,
+      Genv.find_symbol (Genv.globalenv tprog) id =
+        Genv.find_symbol (Genv.globalenv prog) id)
+    (m : mem) (b : positive) (p : Z) (i : init_data) :
+    Genv.store_init_data (Genv.globalenv prog) m b p i =
+      Genv.store_init_data (Genv.globalenv tprog) m b p i := by
+  cases i with
+  | Init_addrof symb ofs =>
+      simp [Genv.store_init_data, hsymb symb]
+  | _ => rfl
+
+private theorem cleanup_initial_store_init_data_list
+    {prog tprog : program}
+    (hsymb : ∀ id,
+      Genv.find_symbol (Genv.globalenv tprog) id =
+        Genv.find_symbol (Genv.globalenv prog) id) :
+    ∀ (m : mem) (b : positive) (p : Z) (il : List init_data),
+      Genv.store_init_data_list (Genv.globalenv prog) m b p il =
+        Genv.store_init_data_list (Genv.globalenv tprog) m b p il := by
+  intro m b p il
+  induction il generalizing m b p with
+  | nil => rfl
+  | cons i rest ih =>
+      simp only [Genv.store_init_data_list]
+      rw [cleanup_initial_store_init_data hsymb]
+      cases h : Genv.store_init_data (Genv.globalenv tprog) m b p i with
+      | none => simp [h]
+      | some m' =>
+          simp only [h]
+          exact ih m' b (ZArith.BinInt.Z.add p (init_data_size i))
+
+private theorem cleanup_initial_alloc_global
+    [Linker program]
+    {prog tprog : program}
+    (hsymb : ∀ id,
+      Genv.find_symbol (Genv.globalenv tprog) id =
+        Genv.find_symbol (Genv.globalenv prog) id)
+    {id : ident} {gd tg : globdef fundef Unit}
+    (hgd : match_globdef
+      (fun _ f tf =>
+        tf = CompCert4Lean.Backend.CleanupLabels.transf_fundef f)
+      (fun x y : Unit => x = y) prog gd tg)
+    (m : mem) :
+    Genv.alloc_global (Genv.globalenv prog) m (id, gd) =
+      Genv.alloc_global (Genv.globalenv tprog) m (id, tg) := by
+  cases hgd with
+  | match_globdef_fun ctx' f1 f2 horder htrans =>
+      rfl
+  | match_globdef_var v1 v2 hvar =>
+      cases hvar with
+      | match_globvar_intro info1 info2 init ro vol hinfo =>
+          cases hinfo
+          simp only [Genv.alloc_global]
+          simp [cleanup_initial_store_init_data_list hsymb]
+
+private theorem cleanup_initial_alloc_globals
+    [Linker program]
+    {prog tprog : program}
+    (hsymb : ∀ id,
+      Genv.find_symbol (Genv.globalenv tprog) id =
+        Genv.find_symbol (Genv.globalenv prog) id)
+    (gl tgl : List (ident × globdef fundef Unit))
+    (hlist : list_forall2
+      (match_ident_globdef
+        (fun _ f tf =>
+          tf = CompCert4Lean.Backend.CleanupLabels.transf_fundef f)
+        (fun x y : Unit => x = y) prog) gl tgl) :
+    ∀ (m m' : mem),
+      Genv.alloc_globals (Genv.globalenv prog) m gl = some m' →
+        Genv.alloc_globals (Genv.globalenv tprog) m tgl = some m' := by
+  induction hlist with
+  | nil =>
+      intro m m' h
+      simpa [Genv.alloc_globals] using h
+  | cons hd thd hhd htl ih =>
+      intro m m' h
+      rcases hhd with ⟨hid, hgd⟩
+      rcases hd with ⟨id, gd⟩
+      rcases thd with ⟨tid, tgd⟩
+      have halloc :
+          Genv.alloc_global (Genv.globalenv prog) m (id, gd) =
+            Genv.alloc_global (Genv.globalenv tprog) m (tid, tgd) := by
+        change id = tid at hid
+        subst tid
+        exact cleanup_initial_alloc_global hsymb hgd m
+      simp only [Genv.alloc_globals] at h ⊢
+      rw [halloc] at h
+      cases ha : Genv.alloc_global (Genv.globalenv tprog) m (tid, tgd) with
+      | none => simp [ha] at h
+      | some m1 =>
+          simp only [ha] at h ⊢
+          exact ih m1 m' h
+
+theorem transf_initial_states : transf_initial_statesStatement := by
+  letI : Linker fundef := Linker_fundef function
+  letI : Linker Unit := Linker_unit
+  letI : Linker program := Linker_prog fundef Unit
+  intro prog tprog hmatch st1 hinit
+  cases hinit with
+  | initial_state_intro b f m0 hmem hsymb hfun hsig =>
+      refine ⟨Callstate []
+        (CompCert4Lean.Backend.CleanupLabels.transf_fundef f)
+        (CompCert4Lean.Backend.Locations.Locmap.init Vundef) m0, ?_, ?_⟩
+      · apply initial_state.initial_state_intro b
+          (CompCert4Lean.Backend.CleanupLabels.transf_fundef f) m0
+        · unfold Genv.init_mem at hmem ⊢
+          exact cleanup_initial_alloc_globals
+            (fun id => symbols_preserved prog tprog hmatch id)
+            prog.prog_defs tprog.prog_defs hmatch.1 Mem.empty m0 hmem
+        · change Genv.find_symbol (Genv.globalenv tprog) tprog.prog_main = some b
+          rw [hmatch.2.1]
+          rw [symbols_preserved prog tprog hmatch prog.prog_main]
+          exact hsymb
+        · exact function_ptr_translated prog tprog hmatch b f hfun
+        · rw [sig_function_translated]
+          exact hsig
+      · exact match_states.call [] f
+          (CompCert4Lean.Backend.Locations.Locmap.init Vundef) m0 []
+          (list_forall2.nil _)
+
+end CompCert4Lean.Backend.CleanupLabelsproof

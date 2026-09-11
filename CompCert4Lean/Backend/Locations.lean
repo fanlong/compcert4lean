@@ -674,3 +674,23 @@ theorem OrderedLoc.lt_trans : OrderedLoc.lt_transStatement := by
                         · exact OrderedTyp.lt_trans_proof _ _ _ hxy hyz
 
 end CompCert4Lean.Backend.Locations
+
+namespace CompCert4Lean.Backend.Locations
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem OrderedLoc.lt_not_eq : OrderedLoc.lt_not_eqStatement := by
+  intro x y hxy heq
+  subst y
+  cases x with
+  | R r =>
+      exact CompCert4Lean.Lib.Coqlib.Plt_strict _ hxy
+  | S sl ofs ty =>
+      rcases hxy with hslot | ⟨_, hrest⟩
+      · exact OrderedSlot.lt_not_eq_proof _ _ hslot rfl
+      · rcases hrest with hofs | ⟨_, hty⟩
+        · change intOfZ ofs < intOfZ ofs at hofs
+          exact (Int.lt_irrefl _ hofs)
+        · exact OrderedTyp.lt_not_eq_proof _ _ hty rfl
+
+end CompCert4Lean.Backend.Locations

@@ -2205,3 +2205,199 @@ private theorem ebs_opdead_from_parse_local
   exact ebs_op_dead op args res mv s k hwf
 
 end CompCert4Lean.Backend.Allocproof
+
+namespace CompCert4Lean.Backend.Allocproof
+
+namespace ESP
+
+noncomputable def fold_rec_proof : fold_rec := by
+  intro A P f i s hEmpty hStep
+  have of_list_in :
+      ∀ (l : List EqSetE.t) (x : EqSetE.t),
+        EqSetM.In x (List.foldr EqSetM.add EqSetM.empty l) ↔
+          CompCert4Lean.Lib.FSetInterface.InA EqSetE.eq x l := by
+    intro l
+    induction l with
+    | nil =>
+        intro x
+        constructor
+        · intro hx
+          exact False.elim (EqSetM.empty_1 x hx)
+        · intro hx
+          cases hx
+    | cons y l ih =>
+        intro x
+        simp only [List.foldr]
+        constructor
+        · intro hx
+          rw [CompCert4Lean.Backend.Allocproof.ESF.add_iff_proof] at hx
+          rcases hx with hxy | hxl
+          · exact CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.SetoidList.InA.cons_hd y l
+              (EqSetE.eq_sym _ _ hxy)
+          · exact CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.SetoidList.InA.cons_tl y l ((ih x).mp hxl)
+        · intro hx
+          cases hx with
+          | cons_hd _ _ hxy =>
+              apply (CompCert4Lean.Backend.Allocproof.ESF.add_iff_proof _ y x).mpr
+              exact Or.inl (EqSetE.eq_sym _ _ hxy)
+          | cons_tl _ _ hxl =>
+              apply (CompCert4Lean.Backend.Allocproof.ESF.add_iff_proof _ y x).mpr
+              exact Or.inr ((ih x).mpr hxl)
+  have inA_append :
+      ∀ (l₁ l₂ : List EqSetE.t) (x : EqSetE.t),
+        CompCert4Lean.Lib.FSetInterface.InA EqSetE.eq x (l₁ ++ l₂) ↔
+          CompCert4Lean.Lib.FSetInterface.InA EqSetE.eq x l₁ ∨
+            CompCert4Lean.Lib.FSetInterface.InA EqSetE.eq x l₂ := by
+    intro l₁ l₂ x
+    change CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.SetoidList.InA
+        EqSetE.eq x (l₁ ++ l₂) ↔
+      CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.SetoidList.InA
+          EqSetE.eq x l₁ ∨
+        CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.SetoidList.InA
+          EqSetE.eq x l₂
+    rw [CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.SetoidList.InA_alt,
+      CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.SetoidList.InA_alt,
+      CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.SetoidList.InA_alt]
+    constructor
+    · rintro ⟨y, hxy, hy⟩
+      rcases List.mem_append.mp hy with hy₁ | hy₂
+      · exact Or.inl ⟨y, hxy, hy₁⟩
+      · exact Or.inr ⟨y, hxy, hy₂⟩
+    · rintro (⟨y, hxy, hy⟩ | ⟨y, hxy, hy⟩)
+      · exact ⟨y, hxy, List.mem_append.mpr (Or.inl hy)⟩
+      · exact ⟨y, hxy, List.mem_append.mpr (Or.inr hy)⟩
+  have inA_reverse :
+      ∀ (l : List EqSetE.t) (x : EqSetE.t),
+        CompCert4Lean.Lib.FSetInterface.InA EqSetE.eq x l.reverse ↔
+          CompCert4Lean.Lib.FSetInterface.InA EqSetE.eq x l := by
+    intro l x
+    change CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.SetoidList.InA
+        EqSetE.eq x l.reverse ↔
+      CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.SetoidList.InA EqSetE.eq x l
+    rw [CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.SetoidList.InA_alt,
+      CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.SetoidList.InA_alt]
+    constructor
+    · rintro ⟨y, hxy, hy⟩
+      exact ⟨y, hxy, List.mem_reverse.mp hy⟩
+    · rintro ⟨y, hxy, hy⟩
+      exact ⟨y, hxy, List.mem_reverse.mpr hy⟩
+  have nodup_append_single :
+      ∀ (l : List EqSetE.t) (x : EqSetE.t),
+        CompCert4Lean.Lib.FSetInterface.NoDupA EqSetE.eq l →
+          ¬ CompCert4Lean.Lib.FSetInterface.InA EqSetE.eq x l →
+          CompCert4Lean.Lib.FSetInterface.NoDupA EqSetE.eq (l ++ [x]) := by
+    intro l
+    induction l with
+    | nil =>
+        intro x _ _
+        apply CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.SetoidList.NoDupA.cons
+        · intro h
+          cases h
+        · exact CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.SetoidList.NoDupA.nil
+    | cons y l ih =>
+        intro x hnd hnot
+        cases hnd with
+        | cons hny htail =>
+            apply CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.SetoidList.NoDupA.cons
+            · intro hy
+              rcases (inA_append l [x] y).mp hy with hyL | hyX
+              · exact hny hyL
+              · cases hyX with
+                | cons_hd _ _ hyx =>
+                    exact hnot (CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.SetoidList.InA.cons_hd
+                      y l (EqSetE.eq_sym _ _ hyx))
+                | cons_tl _ _ hyx => cases hyx
+            · exact ih x htail (by
+                intro hx
+                exact hnot (CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.SetoidList.InA.cons_tl y l hx))
+  have nodup_reverse :
+      ∀ (l : List EqSetE.t),
+        CompCert4Lean.Lib.FSetInterface.NoDupA EqSetE.eq l →
+          CompCert4Lean.Lib.FSetInterface.NoDupA EqSetE.eq l.reverse := by
+    intro l
+    induction l with
+    | nil =>
+        intro _
+        exact CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.SetoidList.NoDupA.nil
+    | cons y l ih =>
+        intro hnd
+        cases hnd with
+        | cons hny htail =>
+            have hnot : ¬ CompCert4Lean.Lib.FSetInterface.InA EqSetE.eq y l.reverse := by
+              intro hy
+              exact hny ((inA_reverse l y).mp hy)
+            have h := nodup_append_single l.reverse y (ih htail) hnot
+            simpa [List.reverse_cons] using h
+  rw [EqSetM.fold_1]
+  rw [List.foldl_eq_foldr_reverse]
+  let l : List EqSetE.t := (EqSetM.elements s).reverse
+  have hsame : ∀ x, EqSetM.In x s ↔
+      CompCert4Lean.Lib.FSetInterface.InA EqSetE.eq x l := by
+    intro x
+    constructor
+    · intro hx
+      exact (inA_reverse (EqSetM.elements s) x).mpr
+        ((EqSetM.elements_1 s x) hx)
+    · intro hx
+      exact (EqSetM.elements_2 s x) ((inA_reverse (EqSetM.elements s) x).mp hx)
+  have hnd : CompCert4Lean.Lib.FSetInterface.NoDupA EqSetE.eq l := by
+    exact nodup_reverse (EqSetM.elements s) (EqSetM.elements_3w s)
+  have nodup_cons_inv :
+      ∀ (x : EqSetE.t) (l : List EqSetE.t),
+        CompCert4Lean.Lib.FSetInterface.NoDupA EqSetE.eq (x :: l) →
+          (¬ CompCert4Lean.Lib.FSetInterface.InA EqSetE.eq x l ∧
+            CompCert4Lean.Lib.FSetInterface.NoDupA EqSetE.eq l) := by
+    intro x l h
+    cases h with
+    | cons hnot htail => exact ⟨hnot, htail⟩
+  have fold_ind :
+      ∀ (l : List EqSetE.t) (s₀ : EqSetM.t),
+        (∀ x, EqSetM.In x s₀ ↔
+          CompCert4Lean.Lib.FSetInterface.InA EqSetE.eq x l) →
+        (∀ x, CompCert4Lean.Lib.FSetInterface.InA EqSetE.eq x l →
+          EqSetM.In x s) →
+        CompCert4Lean.Lib.FSetInterface.NoDupA EqSetE.eq l →
+        P s₀ (List.foldr (fun x a => f x a) i l) := by
+    intro l
+    induction l with
+    | nil =>
+        intro s₀ hsame₀ _ _
+        apply hEmpty
+        intro x hx
+        cases (hsame₀ x).mp hx
+    | cons x l ih =>
+        intro s₀ hsame₀ hsource₀ hnd₀
+        have hnd' := nodup_cons_inv x l hnd₀
+        have hnot := hnd'.1
+        have htail := hnd'.2
+        apply hStep x (List.foldr (fun x a => f x a) i l)
+              (List.foldr EqSetM.add EqSetM.empty l) s₀
+        · exact hsource₀ x
+                (CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.SetoidList.InA.cons_hd
+                  x l (EqSetE.eq_refl x))
+        · intro hx
+          exact hnot ((of_list_in l x).mp hx)
+        · intro y
+          constructor
+          · intro hy
+            cases (hsame₀ y).mp hy with
+            | cons_hd _ _ hxy => exact Or.inl (EqSetE.eq_sym _ _ hxy)
+            | cons_tl _ _ hyl => exact Or.inr ((of_list_in l y).mpr hyl)
+          · intro hy
+            rcases hy with hyx | hyl
+            · exact (hsame₀ y).mpr
+                    (CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.SetoidList.InA.cons_hd
+                      x l (EqSetE.eq_sym _ _ hyx))
+            · exact (hsame₀ y).mpr
+                    (CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.SetoidList.InA.cons_tl
+                      x l ((of_list_in l y).mp hyl))
+        · exact ih (List.foldr EqSetM.add EqSetM.empty l)
+            (fun y => of_list_in l y)
+            (fun y hyl => hsource₀ y
+              (CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.SetoidList.InA.cons_tl
+                x l hyl)) htail
+  exact fold_ind l s hsame (fun x hx => (hsame x).mpr hx) hnd
+
+end ESP
+
+end CompCert4Lean.Backend.Allocproof

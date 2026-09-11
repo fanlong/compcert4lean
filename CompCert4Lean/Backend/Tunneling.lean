@@ -687,3 +687,40 @@ theorem sameclass_union_2_proof : sameclass_union_2 := by
   exact hxy
 
 end CompCert4Lean.Backend.Tunneling.U
+
+namespace CompCert4Lean.Backend.Tunneling.U
+
+theorem repr_union_2_proof : repr_union_2 := by
+  intro uf a b x hx
+  cases uf
+  change U.repr _ x = U.repr _ a at hx
+  change U.repr (U.union _ a b) x = U.repr _ b
+  unfold U.repr at hx
+  unfold U.repr U.union
+  apply pg_tunnel_repr_union_2_b4
+  exact hx
+
+end CompCert4Lean.Backend.Tunneling.U
+
+namespace CompCert4Lean.Backend.Tunneling
+
+def record_conds_rec : record_conds_recStatement := by
+  intro P hchanged hunchanged cu
+  exact _root_.WellFounded.fix (C := fun cu => P cu (record_conds cu))
+    recordCondsRel_wf (fun cu ih => by
+    unfold record_conds
+    rw [recordCondsCore_equation]
+    generalize hresult : record_conds_1 cu = result
+    rcases result with ⟨cu', changed⟩
+    cases changed with
+    | false =>
+        apply hunchanged cu cu' false hresult
+        rfl
+    | true =>
+        apply hchanged cu cu' true hresult rfl
+        apply ih cu'
+        unfold recordCondsRel
+        simpa [hresult] using
+          (recordCondsTermination (cu := cu) (by simpa [hresult]))) cu
+
+end CompCert4Lean.Backend.Tunneling

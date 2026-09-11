@@ -952,3 +952,118 @@ theorem Linker_prog_linkorder_refl_proof :
   exact (Linker_prog F V).linkorder_refl x
 
 end CompCert4Lean.Common.Linking
+
+namespace CompCert4Lean.Common.Linking
+
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Common.AST
+
+private theorem pTree_set_related
+    {A B : Type} (R : A → B → Prop)
+    (m1 : CompCert4Lean.Lib.Maps.PTree.tree A)
+    (m2 : CompCert4Lean.Lib.Maps.PTree.tree B)
+    (hm : ∀ k, option_rel R
+      (CompCert4Lean.Lib.Maps.PTree.get k m1)
+      (CompCert4Lean.Lib.Maps.PTree.get k m2))
+    (i : CompCert4Lean.Foundation.Numbers.Rocq.Coq.positive) (a : A) (b : B)
+    (hab : R a b) :
+    ∀ k, option_rel R
+      (CompCert4Lean.Lib.Maps.PTree.get k
+        (CompCert4Lean.Lib.Maps.PTree.set i a m1))
+      (CompCert4Lean.Lib.Maps.PTree.get k
+        (CompCert4Lean.Lib.Maps.PTree.set i b m2)) := by
+  intro k
+  by_cases hki : k = i
+  · subst k
+    simp only [CompCert4Lean.Lib.Maps.PTree.getSet_equation, dif_pos rfl]
+    exact CompCert4Lean.Lib.Coqlib.option_rel.some a b hab
+  · have hki' : ¬ k = i := hki
+    simp only [CompCert4Lean.Lib.Maps.PTree.getSet_equation, dif_neg hki,
+      dif_neg hki']
+    exact hm k
+
+private theorem pTree_fold_related
+    {A B : Type} (R : A → B → Prop)
+    (m1 : CompCert4Lean.Lib.Maps.PTree.t A)
+    (m2 : CompCert4Lean.Lib.Maps.PTree.t B)
+    (hm : ∀ k, option_rel R
+      (CompCert4Lean.Lib.Maps.PTree.get k m1)
+      (CompCert4Lean.Lib.Maps.PTree.get k m2)) :
+    ∀ (l1 : List (CompCert4Lean.Foundation.Numbers.Rocq.Coq.positive × A))
+      (l2 : List (CompCert4Lean.Foundation.Numbers.Rocq.Coq.positive × B)),
+      list_forall2 (fun ka kb => ka.1 = kb.1 ∧ R ka.2 kb.2) l1 l2 →
+      ∀ k, option_rel R
+        (CompCert4Lean.Lib.Maps.PTree.get k
+          (List.foldl
+            (fun m kv => CompCert4Lean.Lib.Maps.PTree.set kv.1 kv.2 m) m1 l1))
+        (CompCert4Lean.Lib.Maps.PTree.get k
+          (List.foldl
+            (fun m kv => CompCert4Lean.Lib.Maps.PTree.set kv.1 kv.2 m) m2 l2)) := by
+  intro l1 l2 h
+  induction h generalizing m1 m2 with
+  | nil =>
+      intro k
+      simpa only [List.foldl] using hm k
+  | @cons a1 l1 a2 l2 hab htail ih =>
+      rcases a1 with ⟨i, a⟩
+      rcases a2 with ⟨j, b⟩
+      change i = j ∧ R a b at hab
+      rcases hab with ⟨hij, hab⟩
+      subst j
+      intro k
+      change option_rel R
+        (CompCert4Lean.Lib.Maps.PTree.get k
+          (List.foldl
+            (fun m kv => CompCert4Lean.Lib.Maps.PTree.set kv.1 kv.2 m)
+            (CompCert4Lean.Lib.Maps.PTree.set i a m1) l1))
+        (CompCert4Lean.Lib.Maps.PTree.get k
+          (List.foldl
+            (fun m kv => CompCert4Lean.Lib.Maps.PTree.set kv.1 kv.2 m)
+            (CompCert4Lean.Lib.Maps.PTree.set i b m2) l2))
+      apply ih
+      · intro k'
+        exact pTree_set_related R m1 m2 hm i a b hab k'
+
+theorem Linker_prog_linkorder_trans_proof :
+    Linker_prog_linkorder_transStatement := by
+  intro F V LF LV x y z hxy hyz
+  exact (Linker_prog F V).linkorder_trans x y z hxy hyz
+
+theorem Linker_prog_link_linkorder_proof :
+    Linker_prog_link_linkorderStatement := by
+  intro F V LF LV x y z hlink
+  exact (Linker_prog F V).link_linkorder x y z hlink
+
+theorem match_program_defmap : match_program_defmapStatement := by
+  intro C F1 V1 F2 V2 LC match_fundef match_varinfo ctx p1 p2 hmatch id
+  change option_rel (match_globdef match_fundef match_varinfo ctx)
+    (CompCert4Lean.Lib.Maps.PTree.get id (prog_defmap p1))
+    (CompCert4Lean.Lib.Maps.PTree.get id (prog_defmap p2))
+  change option_rel (match_globdef match_fundef match_varinfo ctx)
+    (CompCert4Lean.Lib.Maps.PTree.get id
+      (CompCert4Lean.Lib.Maps.PTree_Properties.of_list p1.prog_defs))
+    (CompCert4Lean.Lib.Maps.PTree.get id
+      (CompCert4Lean.Lib.Maps.PTree_Properties.of_list p2.prog_defs))
+  change option_rel (match_globdef match_fundef match_varinfo ctx)
+    (CompCert4Lean.Lib.Maps.PTree.get id
+      (List.foldl
+        (fun m kv => CompCert4Lean.Lib.Maps.PTree.set kv.1 kv.2 m)
+        (CompCert4Lean.Lib.Maps.PTree.empty _) p1.prog_defs))
+    (CompCert4Lean.Lib.Maps.PTree.get id
+      (List.foldl
+        (fun m kv => CompCert4Lean.Lib.Maps.PTree.set kv.1 kv.2 m)
+        (CompCert4Lean.Lib.Maps.PTree.empty _) p2.prog_defs))
+  exact pTree_fold_related
+    (R := match_globdef match_fundef match_varinfo ctx)
+    (m1 := CompCert4Lean.Lib.Maps.PTree.empty _)
+    (m2 := CompCert4Lean.Lib.Maps.PTree.empty _)
+    (hm := by
+      intro k
+      exact CompCert4Lean.Lib.Coqlib.option_rel.none _)
+    p1.prog_defs p2.prog_defs hmatch.1 id
+
+theorem match_program_main : match_program_mainStatement := by
+  intro F1 V1 F2 V2 LF LV match_fundef match_varinfo p1 p2 hmatch
+  exact hmatch.2.1
+
+end CompCert4Lean.Common.Linking

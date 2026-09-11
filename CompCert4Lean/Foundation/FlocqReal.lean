@@ -1466,3 +1466,47 @@ theorem Rlt_0_minus_proof (ctx : ExactRealContext) :
 end RIneq
 end Rocq.Coq.Reals
 end CompCert4Lean.Foundation.FlocqReal
+
+namespace CompCert4Lean.Foundation.FlocqReal
+namespace Rocq.Coq.Reals
+
+namespace Raxioms
+
+theorem Rmult_assoc (ctx : ExactRealContext) :
+    Rmult_assocStatement ctx := by
+  intro r1 r2 r3
+  exact ctx.certificate.orderedField.mul_assoc r1 r2 r3
+
+end Raxioms
+
+namespace RIneq
+
+theorem Rlt_irrefl (ctx : ExactRealContext) :
+    Rlt_irreflStatement ctx := by
+  intro r
+  exact ctx.certificate.orderedField.lt_irrefl r
+
+theorem Rplus_lt_reg_l (ctx : ExactRealContext) :
+    Rplus_lt_reg_lStatement ctx := by
+  intro r r1 r2 h
+  have h' := ctx.certificate.orderedField.add_lt_compat_l
+    (ctx.spec.neg r) (ctx.spec.add r r1) (ctx.spec.add r r2) h
+  rw [← ctx.certificate.orderedField.add_assoc,
+    ctx.certificate.orderedField.neg_add_cancel,
+    ctx.certificate.orderedField.zero_add,
+    ← ctx.certificate.orderedField.add_assoc,
+    ctx.certificate.orderedField.neg_add_cancel,
+    ctx.certificate.orderedField.zero_add] at h'
+  exact h'
+
+theorem Rplus_lt_reg_r (ctx : ExactRealContext) :
+    Rplus_lt_reg_rStatement ctx := by
+  intro r r1 r2 h
+  change ctx.spec.lt (ctx.spec.add r1 r) (ctx.spec.add r2 r) at h
+  rw [ctx.certificate.orderedField.add_comm r1 r,
+    ctx.certificate.orderedField.add_comm r2 r] at h
+  exact Rplus_lt_reg_l ctx r r1 r2 h
+
+end RIneq
+end Rocq.Coq.Reals
+end CompCert4Lean.Foundation.FlocqReal

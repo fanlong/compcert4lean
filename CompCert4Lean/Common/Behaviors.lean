@@ -690,3 +690,55 @@ theorem behavior_improves_app : behavior_improves_appStatement := by
     exact (behavior_app_assoc t t' beh').symm
 
 end CompCert4Lean.Common.Behaviors
+
+namespace CompCert4Lean.Common.Behaviors
+
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.Smallstep
+
+private theorem state_behaves_star_forever_reactive
+    {genv state : Type}
+    (step : genv → state → trace → state → Prop) (ge : genv)
+    (s1 : state) (t : trace) (s2 : state) (T : traceinf)
+    (hstar : star step ge s1 t s2)
+    (hforever : forever_reactive step ge s2 T) :
+    forever_reactive step ge s1 (Eappinf t T) := by
+  refine forever_reactive_casesOn (step := step) (ge := ge)
+    (motive := fun s T =>
+      star step ge s1 t s → forever_reactive step ge s1 (Eappinf t T)) ?_ hforever hstar
+  intro s2' s3 t' T' hstar' hnonempty htail hprefix
+  have hstar'' : star step ge s1 (Eapp t t') s3 :=
+    star_trans genv state step ge s1 t s2' hprefix t' s3 (Eapp t t') hstar' rfl
+  have hnonempty'' : Eapp t t' ≠ E0 := by
+    intro h
+    cases t with
+    | nil =>
+        change t' = E0 at h
+        exact hnonempty h
+    | cons ev t => cases h
+  have hassoc : Eappinf (Eapp t t') T' = Eappinf t (Eappinf t' T') :=
+    behavior_eappinf_assoc t t' T'
+  rw [← hassoc]
+  exact forever_reactive_intro hstar'' hnonempty'' htail
+
+theorem state_behaves_app : state_behaves_appStatement := by
+  intro L s1 t s2 beh hstar hbeh
+  cases hbeh with
+  | state_terminates t' s' r hstar' hfinal =>
+      exact state_behaves.state_terminates (Eapp t t') s' r
+        (star_trans L.genvtype L.state (step L) (globalenv L) s1 t s2 hstar t' s' (Eapp t t') hstar' rfl)
+        hfinal
+  | state_diverges t' s' hstar' hforever =>
+      exact state_behaves.state_diverges (Eapp t t') s'
+        (star_trans L.genvtype L.state (step L) (globalenv L) s1 t s2 hstar t' s' (Eapp t t') hstar' rfl)
+        hforever
+  | state_reacts T hforever =>
+      exact state_behaves.state_reacts (Eappinf t T)
+        (state_behaves_star_forever_reactive (step L) (globalenv L)
+          s1 t s2 T hstar hforever)
+  | state_goes_wrong t' s' hstar' hnostep hnofinal =>
+      exact state_behaves.state_goes_wrong (Eapp t t') s'
+        (star_trans L.genvtype L.state (step L) (globalenv L) s1 t s2 hstar t' s' (Eapp t t') hstar' rfl)
+        hnostep hnofinal
+
+end CompCert4Lean.Common.Behaviors

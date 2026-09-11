@@ -1327,3 +1327,19 @@ theorem find_funct_ptr_iff : find_funct_ptr_iffStatement := by
 
 end Genv
 end CompCert4Lean.Common.Globalenvs
+
+namespace CompCert4Lean.Common.Globalenvs
+namespace Genv
+
+theorem find_var_info_iff : find_var_info_iffStatement := by
+  intro F V ge b v
+  unfold find_var_info
+  cases h : find_def ge b with
+  | none => simp [h]
+  | some gd =>
+      cases gd with
+      | Gfun f => simp [h]
+      | Gvar v' => simp [h]
+
+end Genv
+end CompCert4Lean.Common.Globalenvs

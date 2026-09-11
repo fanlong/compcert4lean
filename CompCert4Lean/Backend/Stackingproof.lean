@@ -2065,3 +2065,18 @@ theorem load_result_inject : load_result_injectStatement := by
       exact CompCert4Lean.Common.Values.Val.val_inject_undef j _
 
 end CompCert4Lean.Backend.Stackingproof
+
+namespace CompCert4Lean.Backend.Stackingproof
+
+theorem unfold_transf_function : unfold_transf_functionStatement := by
+  intro cfg f tf htf
+  unfold CompCert4Lean.Backend.Stacking.transf_function at htf
+  dsimp at htf
+  split at htf
+  · contradiction
+  · split at htf
+    · contradiction
+    · cases htf
+      rfl
+
+end CompCert4Lean.Backend.Stackingproof

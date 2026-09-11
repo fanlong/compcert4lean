@@ -577,3 +577,15 @@ theorem wt_find_label : wt_find_labelStatement := by
   exact aux f.fn_code hwt c hfind
 
 end CompCert4Lean.Backend.Lineartyping
+
+namespace CompCert4Lean.Backend.Lineartyping
+
+theorem wt_parent_locset : wt_parent_locsetStatement := by
+  intro cfg s hstk
+  induction hstk with
+  | wt_callstack_nil =>
+      simpa [Linear.parent_locset, wt_initStatement] using wt_init
+  | @wt_callstack_cons f sp rs c s hstk hwtf hwtc hwtrs ih =>
+      simpa [Linear.parent_locset] using hwtrs
+
+end CompCert4Lean.Backend.Lineartyping

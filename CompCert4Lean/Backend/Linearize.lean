@@ -894,3 +894,41 @@ theorem empty_1_proof : empty_1 := by
   exact CompCert4Lean.Lib.FSetAVLplus.Make.empty_1
 
 end CompCert4Lean.Backend.Linearize.Nodeset
+
+namespace CompCert4Lean.Backend.Linearize.DS
+
+theorem law_obligation_proof : law_obligation := by
+  constructor
+  · constructor
+    · intro x
+      rfl
+    · intro x y h
+      exact h.symm
+    · intro x y z hxy hyz
+      exact hxy.trans hyz
+    · intro x y h
+      exact CompCert4Lean.Foundation.Logic.Rocq.Coq.Bool.Bool.eqb_prop x y
+        (by simpa [L, booleanLattice,
+          CompCert4Lean.Lib.Lattice.LBoolean.beq] using h)
+    · intro x y h
+      exact Or.inl h
+    · intro x y z hxy hyz
+      rcases hxy with hxy | hxy
+      · rcases hyz with hyz | hyz
+        · exact Or.inl (hxy.trans hyz)
+        · exact Or.inr (hxy ▸ hyz)
+      · exact Or.inr hxy
+    · intro x
+      change x = false ∨ x = true
+      cases x
+      · exact Or.inl rfl
+      · exact Or.inr rfl
+    · intro x y
+      change (x || y) = x ∨ (x || y) = true
+      cases x <;> cases y <;> simp
+    · intro x y
+      change (x || y) = y ∨ (x || y) = true
+      cases x <;> cases y <;> simp
+  · exact CompCert4Lean.Backend.Kildall.NodeSetForward.law_obligation_proof
+
+end CompCert4Lean.Backend.Linearize.DS

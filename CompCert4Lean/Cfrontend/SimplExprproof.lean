@@ -1015,3 +1015,47 @@ theorem senv_preserved :
                 cases gd1 <;> cases gd2 <;> simp_all
 
 end CompCert4Lean.Cfrontend.SimplExprproof
+
+namespace CompCert4Lean.Cfrontend.SimplExprproof
+
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Lib.Coqlib
+
+theorem function_ptr_translated :
+    ∀ [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+      [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)],
+      function_ptr_translatedStatement := by
+  intro binary64_certificate binary32_certificate p tp hmatch b f hfind
+  have hg := simplexpr_globalenv_match p tp hmatch
+  have hsrc : Genv.find_def (Genv.globalenv (Ctypes.program_of_program p)) b =
+      some (.Gfun f) :=
+    (Genv.find_funct_ptr_iff _ _
+      (Genv.globalenv (Ctypes.program_of_program p)) b f).mp hfind
+  cases htarget : Genv.find_def (Genv.globalenv (Ctypes.program_of_program tp)) b with
+  | none =>
+      have hd := hg.mge_defs b
+      change option_rel _
+        (Genv.find_def (Genv.globalenv (Ctypes.program_of_program p)) b)
+        (Genv.find_def (Genv.globalenv (Ctypes.program_of_program tp)) b) at hd
+      rw [hsrc, htarget] at hd
+      cases hd
+  | some gd' =>
+      have hd := hg.mge_defs b
+      change option_rel _
+        (Genv.find_def (Genv.globalenv (Ctypes.program_of_program p)) b)
+        (Genv.find_def (Genv.globalenv (Ctypes.program_of_program tp)) b) at hd
+      rw [hsrc, htarget] at hd
+      cases gd' with
+      | Gfun tf =>
+          cases hd with
+          | some _ _ hrel =>
+              rcases hrel with ⟨cu, hcu, htr⟩
+              refine ⟨cu, tf, ?_, htr, hcu⟩
+              change Genv.find_funct_ptr
+                (Genv.globalenv (Ctypes.program_of_program tp)) b = some tf
+              simp [Genv.find_funct_ptr, htarget]
+      | Gvar _ =>
+          cases hd with
+          | some _ _ hrel => cases hrel
+
+end CompCert4Lean.Cfrontend.SimplExprproof

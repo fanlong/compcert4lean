@@ -1903,3 +1903,11 @@ theorem alignof_blockcopy_1248 : alignof_blockcopy_1248Statement := by
           · exact Or.inr (Or.inr (Or.inr (suffix_min_eight_two_power_nat n (by omega))))
 
 end CompCert4Lean.Cfrontend.Ctypes
+
+namespace CompCert4Lean.Cfrontend.Ctypes
+
+theorem sizeof_composite_pos : sizeof_composite_posStatement := by
+  intro env su ms
+  exact sizeof_composite_nonneg env su ms
+
+end CompCert4Lean.Cfrontend.Ctypes

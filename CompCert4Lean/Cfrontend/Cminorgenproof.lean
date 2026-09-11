@@ -1520,3 +1520,44 @@ theorem perm_freelist : perm_freelistStatement := by
           exact perm_of_free m m1 x.1 x.2.1 x.2.2 hfm b ofs k p hp1
 
 end CompCert4Lean.Cfrontend.Cminorgenproof
+
+namespace CompCert4Lean.Cfrontend.Cminorgenproof
+
+open CompCert4Lean.Common.Memory
+
+private theorem nextblock_free_local (m : Mem.mem) (b : proofBlock) (lo hi : proofZ)
+    (m' : Mem.mem) (hfree : Mem.free m b lo hi = some m') :
+    m'.nextblock = m.nextblock := by
+  unfold Mem.free at hfree
+  split at hfree
+  next hcond =>
+    injection hfree with hm'
+    subst m'
+    rfl
+  next hcond =>
+    cases hfree
+
+theorem nextblock_freelist : nextblock_freelistStatement := by
+  intro fbl
+  induction fbl with
+  | nil =>
+      intro m m' hfree
+      simp [Mem.free_list] at hfree
+      cases hfree
+      rfl
+  | cons x rest ih =>
+      intro m m' hfree
+      change (match Mem.free m x.1 x.2.1 x.2.2 with
+        | none => none
+        | some m1 => Mem.free_list m1 rest) = some m' at hfree
+      cases hfm : Mem.free m x.1 x.2.1 x.2.2 with
+      | none =>
+          rw [hfm] at hfree
+          cases hfree
+      | some m1 =>
+          rw [hfm] at hfree
+          have hrest : Mem.free_list m1 rest = some m' := hfree
+          have hnext : m'.nextblock = m1.nextblock := ih m1 m' hrest
+          exact hnext.trans (nextblock_free_local m x.1 x.2.1 x.2.2 m1 hfm)
+
+end CompCert4Lean.Cfrontend.Cminorgenproof

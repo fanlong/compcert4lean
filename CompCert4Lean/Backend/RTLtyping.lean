@@ -1185,3 +1185,9 @@ theorem set_list_sound_proof : S.set_list_sound := by
 
 end S
 end CompCert4Lean.Backend.RTLtyping
+
+namespace CompCert4Lean.Backend.RTLtyping.S
+
+theorem set_sound_proof : S.set_sound := rtl_set_sound_helper
+
+end CompCert4Lean.Backend.RTLtyping.S

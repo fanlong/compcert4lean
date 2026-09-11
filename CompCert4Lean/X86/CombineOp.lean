@@ -1751,3 +1751,66 @@ def R_combine_op_correct : R_combine_op_correctStatement := by
           simpa [combine_op] using (mkNone _ (x :: xs) (by simp))
 
 end CompCert4Lean.X86.CombineOp
+
+namespace CompCert4Lean.X86.CombineOp
+
+open CompCert4Lean.Backend.CSEdomain
+open CompCert4Lean.X86.Op
+
+theorem R_combine_op_complete : R_combine_op_completeStatement := by
+  intro get op args res h
+  cases h <;> subst_vars <;> simp [combine_op, *]
+  case R_combine_op_5 =>
+    cases hg : get _ with
+    | none => simp [combine_op, hg]
+    | some r =>
+        cases r with
+        | Load chunk addr vl p => simp [combine_op, hg]
+        | Builtin bf bargs => simp [combine_op, hg]
+        | Op op ys => cases op <;> simp_all [combine_op, hg]
+  case R_combine_op_7 =>
+    cases hg : get _ with
+    | none => simp [combine_op, hg]
+    | some r =>
+        cases r with
+        | Load chunk addr vl p => simp [combine_op, hg]
+        | Builtin bf bargs => simp [combine_op, hg]
+        | Op op ys => cases op <;> simp_all [combine_op, hg]
+  case R_combine_op_9 =>
+    cases hg : get _ with
+    | none => simp [combine_op, hg]
+    | some r =>
+        cases r with
+        | Load chunk addr vl p => simp [combine_op, hg]
+        | Builtin bf bargs => simp [combine_op, hg]
+        | Op op ys => cases op <;> simp_all [combine_op, hg]
+  case R_combine_op_11 =>
+    cases hg : get _ with
+    | none => simp [combine_op, hg]
+    | some r =>
+        cases r with
+        | Load chunk addr vl p => simp [combine_op, hg]
+        | Builtin bf bargs => simp [combine_op, hg]
+        | Op op ys => cases op <;> simp_all [combine_op, hg]
+  case R_combine_op_13 =>
+    cases hg : get _ with
+    | none => simp [combine_op, hg]
+    | some r =>
+        cases r with
+        | Load chunk addr vl p => simp [combine_op, hg]
+        | Builtin bf bargs => simp [combine_op, hg]
+        | Op op ys => cases op <;> simp_all [combine_op, hg]
+  case R_combine_op_15 =>
+    cases hg : get _ with
+    | none => simp [combine_op, hg]
+    | some r =>
+        cases r with
+        | Load chunk addr vl p => simp [combine_op, hg]
+        | Builtin bf bargs => simp [combine_op, hg]
+        | Op op ys => cases op <;> simp_all [combine_op, hg]
+  case R_combine_op_25 =>
+    rename_i op0 args0 hbad
+    cases op0 <;> cases args0 <;> simp_all [combine_op]
+    all_goals cases ‹List valnum› <;> simp_all [combine_op]
+
+end CompCert4Lean.X86.CombineOp

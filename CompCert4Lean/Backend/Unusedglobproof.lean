@@ -848,3 +848,34 @@ theorem add_ref_function_incl : add_ref_function_inclStatement := by
         (CompCert4Lean.Backend.Unusedglob.ref_instruction i) a)
 
 end CompCert4Lean.Backend.Unusedglobproof
+
+namespace CompCert4Lean.Backend.Unusedglobproof
+
+theorem add_ref_globvar_incl : add_ref_globvar_inclStatement := by
+  intro gv w
+  unfold CompCert4Lean.Backend.Unusedglob.add_ref_globvar
+  revert w
+  induction gv.gvar_init with
+  | nil =>
+      intro w
+      exact workset_incl_refl w
+  | cons i il ih =>
+      intro w
+      simp only [List.foldl]
+      apply workset_incl_trans w
+        (CompCert4Lean.Backend.Unusedglob.add_ref_init_data w i)
+        (List.foldl CompCert4Lean.Backend.Unusedglob.add_ref_init_data
+          (CompCert4Lean.Backend.Unusedglob.add_ref_init_data w i) il)
+      · unfold CompCert4Lean.Backend.Unusedglob.add_ref_init_data
+        cases i with
+        | Init_addrof id ofs => exact add_workset_incl id w
+        | Init_int8 value => exact workset_incl_refl w
+        | Init_int16 value => exact workset_incl_refl w
+        | Init_int32 value => exact workset_incl_refl w
+        | Init_int64 value => exact workset_incl_refl w
+        | Init_float32 value => exact workset_incl_refl w
+        | Init_float64 value => exact workset_incl_refl w
+        | Init_space size => exact workset_incl_refl w
+      · exact ih (CompCert4Lean.Backend.Unusedglob.add_ref_init_data w i)
+
+end CompCert4Lean.Backend.Unusedglobproof

@@ -1322,3 +1322,53 @@ theorem sig_function_translated : sig_function_translatedStatement := by
           rfl
 
 end CompCert4Lean.Backend.Inliningproof
+
+namespace CompCert4Lean.Backend.Inliningproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Backend.Inlining
+open CompCert4Lean.Backend.Inliningspec
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+
+theorem agree_val_reg_gen : agree_val_reg_genStatement := by
+  intro F ctx rs rs' r hregs
+  rcases hregs with ⟨hbelow, habove⟩
+  cases Plt_Ple_dec ctx.mreg r with
+  | left hlt =>
+      exact Or.inl ⟨hlt, habove r hlt⟩
+  | right hle =>
+      exact Or.inr ⟨hle, hbelow r hle⟩
+
+theorem agree_val_regs_gen : agree_val_regs_genStatement := by
+  intro F ctx rs rs' rl hregs
+  induction rl with
+  | nil =>
+      exact list_forall2.nil _
+  | cons r rl ih =>
+      apply list_forall2.cons
+      · exact agree_val_reg_gen F ctx rs rs' r hregs
+      · exact ih
+
+theorem agree_val_reg : agree_val_regStatement := by
+  intro F ctx rs rs' r hregs
+  have hchar := agree_val_reg_gen F ctx rs rs' r hregs
+  rcases hchar with ⟨hlt, heq⟩ | ⟨hle, hinj⟩
+  · rw [heq]
+    exact Val.val_inject_undef _ _
+  · exact hinj
+
+theorem agree_val_regs : agree_val_regsStatement := by
+  intro F ctx rs rs' rl hregs
+  induction rl with
+  | nil =>
+      exact Val.inject_list_nil _
+  | cons r rl ih =>
+      apply Val.inject_list_cons
+      · exact agree_val_reg F ctx rs rs' r hregs
+      · exact ih
+
+end CompCert4Lean.Backend.Inliningproof

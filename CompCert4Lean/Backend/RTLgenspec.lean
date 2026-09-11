@@ -1015,3 +1015,269 @@ theorem alloc_regs_target_ok : alloc_regs_target_okStatement := by
       al map pr s1 rl s2 i hmap hpr halloc
 
 end CompCert4Lean.Backend.RTLgenspec
+
+namespace CompCert4Lean.Backend.RTLgenspec
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Foundation.Logic.Support
+open CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.List
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Backend.RTLgen
+open CompCert4Lean.X86.Op
+
+theorem add_move_charact : add_move_charactStatement := by
+  intro s ns rs nd rd s' i h
+  by_cases heq : rs = rd
+  · simp [RTLgen.add_move, heq, RTLgen.ret] at h
+    rcases h with ⟨hns, hs⟩
+    cases hns
+    cases hs
+    cases heq
+    exact tr_move.tr_move_0 _ _
+  · simp [RTLgen.add_move, heq, RTLgen.add_instr, RTLgen.ret] at h
+    injection h with hns hs
+    cases hns
+    cases hs
+    apply tr_move.tr_move_1
+    change PTree.get s.st_nextnode
+      (PTree.set s.st_nextnode (RTL.instruction.Iop Omove [rs] rd nd) s.st_code) = _
+    have hx := PTree.getSet_equation (A := RTL.instruction)
+      s.st_nextnode s.st_nextnode (RTL.instruction.Iop Omove [rs] rd nd) s.st_code
+    rw [hx]
+    simp
+
+end CompCert4Lean.Backend.RTLgenspec
+
+namespace CompCert4Lean.Backend.RTLgenspec
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Foundation.Logic.Support
+open CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.List
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Backend.RTLgen
+open CompCert4Lean.X86.Op
+
+theorem tr_expr_incr : tr_expr_incrStatement := by
+  intro s1 s2 EXT map pr a ns nd rd dst htr
+  refine tr_expr.rec
+    (motive_1 := fun map pr a ns nd rd dst _ =>
+      tr_expr s2.st_code map pr a ns nd rd dst)
+    (motive_2 := fun map pr a ns nt nf _ =>
+      tr_condition s2.st_code map pr a ns nt nf)
+    (motive_3 := fun map pr al ns nd rl _ =>
+      tr_exprlist s2.st_code map pr al ns nd rl)
+    (fun map pr id ns nd r rd dst hmap hok hmove => by
+      apply tr_expr.tr_Evar
+      · exact hmap
+      · exact hok
+      · exact tr_move_incr s1 s2 EXT ns r nd rd hmove)
+    (fun map pr op al ns nd rd n1 rl dst hargs hcode hmap hpr ih => by
+      apply tr_expr.tr_Eop
+      · exact ih
+      · exact instr_at_incr s1 s2 n1 _ EXT hcode
+      · exact hmap
+      · exact hpr)
+    (fun map pr chunk addr al ns nd rd n1 rl dst hargs hcode hmap hpr ih => by
+      apply tr_expr.tr_Eload
+      · exact ih
+      · exact instr_at_incr s1 s2 n1 _ EXT hcode
+      · exact hmap
+      · exact hpr)
+    (fun map pr a ifso ifnot ns nd rd nt nf dst hcond htrue hfalse ihc iht ihf => by
+      apply tr_expr.tr_Econdition
+      · exact ihc
+      · exact iht
+      · exact ihf)
+    (fun map pr b1 b2 ns nd rd n1 r dst hfresh hbound hbody ihb ihbody => by
+      apply tr_expr.tr_Elet
+      · exact hfresh
+      · exact ihb
+      · exact ihbody)
+    (fun map pr n ns nd rd r dst hlet hok hmove => by
+      apply tr_expr.tr_Eletvar
+      · exact hlet
+      · exact hok
+      · exact tr_move_incr s1 s2 EXT ns r nd rd hmove)
+    (fun map pr ef al ns nd rd dst n1 rl hargs hcode hmap hpr ih => by
+      apply tr_expr.tr_Ebuiltin
+      · exact ih
+      · exact instr_at_incr s1 s2 n1 _ EXT hcode
+      · exact hmap
+      · exact hpr)
+    (fun map pr id sg al ns nd rd dst n1 rl hargs hcode hmap hpr ih => by
+      apply tr_expr.tr_Eexternal
+      · exact ih
+      · exact instr_at_incr s1 s2 n1 _ EXT hcode
+      · exact hmap
+      · exact hpr)
+    (fun map pr cond bl ns nt nf n1 rl hargs hcode ih => by
+      apply tr_condition.tr_CEcond
+      · exact ih
+      · exact instr_at_incr s1 s2 n1 _ EXT hcode)
+    (fun map pr a1 a2 a3 ns nt nf n2 n3 h1 h2 h3 ih1 ih2 ih3 => by
+      apply tr_condition.tr_CEcondition
+      · exact ih1
+      · exact ih2
+      · exact ih3)
+    (fun map pr a b ns nt nf r n1 hfresh hbound hbody ihb ihbody => by
+      apply tr_condition.tr_CElet
+      · exact hfresh
+      · exact ihb
+      · exact ihbody)
+    (fun map pr n => by exact tr_exprlist.tr_Enil _ _ _)
+    (fun map pr a1 al ns nd r1 rl n1 hhead htail ihhead ihtail => by
+      apply tr_exprlist.tr_Econs
+      · exact ihhead
+      · exact ihtail)
+    htr -- tr_expr_end
+
+end CompCert4Lean.Backend.RTLgenspec
+
+namespace CompCert4Lean.Backend.RTLgenspec
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Foundation.Logic.Support
+open CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.List
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Backend.RTLgen
+open CompCert4Lean.X86.Op
+
+theorem tr_condition_incr : tr_condition_incrStatement := by
+  intro s1 s2 EXT map pr a ns nt nf htr
+  refine tr_condition.rec
+    (motive_1 := fun map pr a ns nd rd dst h =>
+      tr_expr s2.st_code map pr a ns nd rd dst)
+    (motive_2 := fun map pr a ns nt nf h =>
+      tr_condition s2.st_code map pr a ns nt nf)
+    (motive_3 := fun map pr al ns nd rl h =>
+      tr_exprlist s2.st_code map pr al ns nd rl)
+    (fun map pr id ns nd r rd dst hmap hok hmove => by
+      exact tr_expr_incr s1 s2 EXT map pr (.Evar id) ns nd rd dst
+        (tr_expr.tr_Evar map pr id ns nd r rd dst hmap hok hmove))
+    (fun map pr op al ns nd rd n1 rl dst hargs hcode hmap hpr ih => by
+      exact tr_expr_incr s1 s2 EXT map pr (.Eop op al) ns nd rd dst
+        (tr_expr.tr_Eop map pr op al ns nd rd n1 rl dst hargs hcode hmap hpr))
+    (fun map pr chunk addr al ns nd rd n1 rl dst hargs hcode hmap hpr ih => by
+      exact tr_expr_incr s1 s2 EXT map pr (.Eload chunk addr al) ns nd rd dst
+        (tr_expr.tr_Eload map pr chunk addr al ns nd rd n1 rl dst hargs hcode hmap hpr))
+    (fun map pr a ifso ifnot ns nd rd nt nf dst hcond htrue hfalse ihc iht ihf => by
+      exact tr_expr_incr s1 s2 EXT map pr (.Econdition a ifso ifnot) ns nd rd dst
+        (tr_expr.tr_Econdition map pr a ifso ifnot ns nd rd nt nf dst hcond htrue hfalse))
+    (fun map pr b1 b2 ns nd rd n1 r dst hfresh hbound hbody ihb ihbody => by
+      exact tr_expr_incr s1 s2 EXT map pr (.Elet b1 b2) ns nd rd dst
+        (tr_expr.tr_Elet map pr b1 b2 ns nd rd n1 r dst hfresh hbound hbody))
+    (fun map pr n ns nd rd r dst hlet hok hmove => by
+      exact tr_expr_incr s1 s2 EXT map pr (.Eletvar n) ns nd rd dst
+        (tr_expr.tr_Eletvar map pr n ns nd rd r dst hlet hok hmove))
+    (fun map pr ef al ns nd rd dst n1 rl hargs hcode hmap hpr ih => by
+      exact tr_expr_incr s1 s2 EXT map pr (.Ebuiltin ef al) ns nd rd dst
+        (tr_expr.tr_Ebuiltin map pr ef al ns nd rd dst n1 rl hargs hcode hmap hpr))
+    (fun map pr id sg al ns nd rd dst n1 rl hargs hcode hmap hpr ih => by
+      exact tr_expr_incr s1 s2 EXT map pr (.Eexternal id sg al) ns nd rd dst
+        (tr_expr.tr_Eexternal map pr id sg al ns nd rd dst n1 rl hargs hcode hmap hpr))
+    (fun map pr cond bl ns nt nf n1 rl hargs hcode ih => by
+      apply tr_condition.tr_CEcond
+      · exact ih
+      · exact instr_at_incr s1 s2 n1 _ EXT hcode)
+    (fun map pr a1 a2 a3 ns nt nf n2 n3 h1 h2 h3 ih1 ih2 ih3 => by
+      apply tr_condition.tr_CEcondition
+      · exact ih1
+      · exact ih2
+      · exact ih3)
+    (fun map pr a b ns nt nf r n1 hfresh hbound hbody ihb ihbody => by
+      apply tr_condition.tr_CElet
+      · exact hfresh
+      · exact ihb
+      · exact ihbody)
+    (fun map pr n => by exact tr_exprlist.tr_Enil _ _ _)
+    (fun map pr a1 al ns nd r1 rl n1 hhead htail ihhead ihtail => by
+      apply tr_exprlist.tr_Econs
+      · exact ihhead
+      · exact ihtail)
+    htr
+
+end CompCert4Lean.Backend.RTLgenspec
+
+namespace CompCert4Lean.Backend.RTLgenspec
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Foundation.Logic.Support
+open CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.List
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Backend.RTLgen
+open CompCert4Lean.X86.Op
+
+theorem tr_exprlist_incr : tr_exprlist_incrStatement := by
+  intro s1 s2 EXT map pr al ns nd rl htr
+  refine tr_exprlist.rec
+    (motive_1 := fun map pr a ns nd rd dst h =>
+      tr_expr s2.st_code map pr a ns nd rd dst)
+    (motive_2 := fun map pr a ns nt nf h =>
+      tr_condition s2.st_code map pr a ns nt nf)
+    (motive_3 := fun map pr al ns nd rl h =>
+      tr_exprlist s2.st_code map pr al ns nd rl)
+    (fun map pr id ns nd r rd dst hmap hok hmove => by
+      exact tr_expr_incr s1 s2 EXT map pr (.Evar id) ns nd rd dst
+        (tr_expr.tr_Evar map pr id ns nd r rd dst hmap hok hmove))
+    (fun map pr op al ns nd rd n1 rl dst hargs hcode hmap hpr ih => by
+      exact tr_expr_incr s1 s2 EXT map pr (.Eop op al) ns nd rd dst
+        (tr_expr.tr_Eop map pr op al ns nd rd n1 rl dst hargs hcode hmap hpr))
+    (fun map pr chunk addr al ns nd rd n1 rl dst hargs hcode hmap hpr ih => by
+      exact tr_expr_incr s1 s2 EXT map pr (.Eload chunk addr al) ns nd rd dst
+        (tr_expr.tr_Eload map pr chunk addr al ns nd rd n1 rl dst hargs hcode hmap hpr))
+    (fun map pr a ifso ifnot ns nd rd nt nf dst hcond htrue hfalse ihc iht ihf => by
+      exact tr_expr_incr s1 s2 EXT map pr (.Econdition a ifso ifnot) ns nd rd dst
+        (tr_expr.tr_Econdition map pr a ifso ifnot ns nd rd nt nf dst hcond htrue hfalse))
+    (fun map pr b1 b2 ns nd rd n1 r dst hfresh hbound hbody ihb ihbody => by
+      exact tr_expr_incr s1 s2 EXT map pr (.Elet b1 b2) ns nd rd dst
+        (tr_expr.tr_Elet map pr b1 b2 ns nd rd n1 r dst hfresh hbound hbody))
+    (fun map pr n ns nd rd r dst hlet hok hmove => by
+      exact tr_expr_incr s1 s2 EXT map pr (.Eletvar n) ns nd rd dst
+        (tr_expr.tr_Eletvar map pr n ns nd rd r dst hlet hok hmove))
+    (fun map pr ef al ns nd rd dst n1 rl hargs hcode hmap hpr ih => by
+      exact tr_expr_incr s1 s2 EXT map pr (.Ebuiltin ef al) ns nd rd dst
+        (tr_expr.tr_Ebuiltin map pr ef al ns nd rd dst n1 rl hargs hcode hmap hpr))
+    (fun map pr id sg al ns nd rd dst n1 rl hargs hcode hmap hpr ih => by
+      exact tr_expr_incr s1 s2 EXT map pr (.Eexternal id sg al) ns nd rd dst
+        (tr_expr.tr_Eexternal map pr id sg al ns nd rd dst n1 rl hargs hcode hmap hpr))
+    (fun map pr cond bl ns nt nf n1 rl hargs hcode ih => by
+      exact tr_condition_incr s1 s2 EXT map pr (.CEcond cond bl) ns nt nf
+        (tr_condition.tr_CEcond map pr cond bl ns nt nf n1 rl hargs hcode))
+    (fun map pr a1 a2 a3 ns nt nf n2 n3 h1 h2 h3 ih1 ih2 ih3 => by
+      exact tr_condition_incr s1 s2 EXT map pr (.CEcondition a1 a2 a3) ns nt nf
+        (tr_condition.tr_CEcondition map pr a1 a2 a3 ns nt nf n2 n3 h1 h2 h3))
+    (fun map pr a b ns nt nf r n1 hfresh hbound hbody ihb ihbody => by
+      exact tr_condition_incr s1 s2 EXT map pr (.CElet a b) ns nt nf
+        (tr_condition.tr_CElet map pr a b ns nt nf r n1 hfresh hbound hbody))
+    (fun map pr n => by exact tr_exprlist.tr_Enil _ _ _)
+    (fun map pr a1 al ns nd r1 rl n1 hhead htail ihhead ihtail => by
+      apply tr_exprlist.tr_Econs
+      · exact ihhead
+      · exact ihtail)
+    htr
+
+end CompCert4Lean.Backend.RTLgenspec

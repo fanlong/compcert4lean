@@ -227,3 +227,71 @@ theorem get_op_sound
   | op_eval_to _ => assumption
 
 end CompCert4Lean.X86.CombineOpproof
+
+namespace CompCert4Lean.X86.CombineOpproof
+
+open CompCert4Lean.X86.CombineOp
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.X86.Op
+open CompCert4Lean.Backend.CSEdomain
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Values
+
+theorem combine_compimm_eq_1_sound
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    combine_compimm_eq_1_soundStatement := by
+  intro ge sp m get valu get_sound x cond args hcombine
+  cases hget : get x with
+  | none =>
+      simp [combine_compimm_eq_1, hget] at hcombine
+  | some r =>
+      cases r with
+      | Load chunk addr vl p =>
+          simp [combine_compimm_eq_1, hget] at hcombine
+      | Builtin bf args0 =>
+          simp [combine_compimm_eq_1, hget] at hcombine
+      | Op op ys =>
+          cases op with
+          | Ocmp c =>
+              simp [combine_compimm_eq_1, hget] at hcombine
+              have hcond : c = cond := congrArg Prod.fst hcombine
+              have hargs : ys = args := congrArg Prod.snd hcombine
+              rw [← hcond, ← hargs]
+              have hev := get_op_sound ge sp m get valu get_sound x (.Ocmp c) ys hget
+              change some (Val.of_optbool (eval_condition c (List.map valu ys) m)) =
+                some (valu x) at hev
+              cases he : eval_condition c (List.map valu ys) m with
+              | none =>
+                  rw [he] at hev
+                  change some Vundef = some (valu x) at hev
+                  have hx : Vundef = valu x := Option.some.inj hev
+                  rw [← hx]
+                  simp [Val.cmp_bool, Val.cmpu_bool]
+              | some b =>
+                  rw [he] at hev
+                  cases b
+                  · change some Vfalse = some (valu x) at hev
+                    have hx : Vfalse = valu x := Option.some.inj hev
+                    rw [← hx]
+                    have hzeroone : CompCert4Lean.Lib.Integers.Int.cmp
+                        .Ceq CompCert4Lean.Lib.Integers.Int.zero
+                        CompCert4Lean.Lib.Integers.Int.one = false := by decide
+                    have hzerooneu : CompCert4Lean.Lib.Integers.Int.cmpu
+                        .Ceq CompCert4Lean.Lib.Integers.Int.zero
+                        CompCert4Lean.Lib.Integers.Int.one = false := by decide
+                    simp [Vfalse, Val.cmp_bool, Val.cmpu_bool, hzeroone, hzerooneu]
+                  · change some Vtrue = some (valu x) at hev
+                    have hx : Vtrue = valu x := Option.some.inj hev
+                    rw [← hx]
+                    have honeone : CompCert4Lean.Lib.Integers.Int.cmp
+                        .Ceq CompCert4Lean.Lib.Integers.Int.one
+                        CompCert4Lean.Lib.Integers.Int.one = true := by decide
+                    have honeoneu : CompCert4Lean.Lib.Integers.Int.cmpu
+                        .Ceq CompCert4Lean.Lib.Integers.Int.one
+                        CompCert4Lean.Lib.Integers.Int.one = true := by decide
+                    simp [Vtrue, Val.cmp_bool, Val.cmpu_bool, honeone, honeoneu]
+          | _ =>
+              simp [combine_compimm_eq_1, hget] at hcombine
+
+end CompCert4Lean.X86.CombineOpproof
