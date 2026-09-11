@@ -1346,3 +1346,21 @@ theorem eventval_match_type : eventval_match_typeStatement := by
     simp [CompCert4Lean.Common.AST.Tptr, CompCert4Lean.X86_64.Archi.ptr64]
 
 end CompCert4Lean.Common.Events
+
+namespace CompCert4Lean.Common.Events
+theorem eventval_match_determ_1 : eventval_match_determ_1Statement := by
+  intro ge ev ty v1 v2 h1 h2
+  cases h1 <;> cases h2 <;> simp_all
+theorem eventval_match_valid : eventval_match_validStatement := by
+  intro ge ev ty v h
+  cases h <;> simp [eventval_valid] <;> assumption
+theorem eventval_list_match_lessdef : eventval_list_match_lessdefStatement := by
+  intro ge evl tyl vl1 hmatch
+  induction hmatch with
+  | evl_match_nil => intro vl2 h; cases h; exact evl_match_nil
+  | evl_match_cons ev1 evl ty1 tyl v1 vl1 hm ht ih =>
+      intro vl2 hld
+      cases hld with
+      | lessdef_list_cons _ v2 _ vl2 hh htld =>
+          exact evl_match_cons _ _ _ _ _ _ (by cases hm <;> cases hh <;> constructor <;> assumption) (ih vl2 htld)
+end CompCert4Lean.Common.Events

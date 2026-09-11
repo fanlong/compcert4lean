@@ -1607,3 +1607,17 @@ theorem Rmult_lt_reg_r (ctx : ExactRealContext) :
 end RIneq
 end Rocq.Coq.Reals
 end CompCert4Lean.Foundation.FlocqReal
+
+namespace CompCert4Lean.Foundation.FlocqReal
+namespace Rocq.Coq.Reals.Raxioms
+
+theorem Rmult_lt_compat_l :
+    ∀ (ctx : ExactRealContext), Rmult_lt_compat_lStatement ctx := by
+  intro ctx r r1 r2 hr h12
+  have hr' : ctx.spec.lt ctx.spec.zero r := by
+    rw [← ctx.certificate.sourceLaws.ofZ_zero]
+    exact hr
+  exact ctx.certificate.orderedField.mul_lt_compat_l r r1 r2 hr' h12
+
+end Rocq.Coq.Reals.Raxioms
+end CompCert4Lean.Foundation.FlocqReal

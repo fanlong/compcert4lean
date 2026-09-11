@@ -2100,3 +2100,13 @@ theorem size_no_overflow : size_no_overflowStatement := by
       exact hge
 
 end CompCert4Lean.Backend.Stackingproof
+
+namespace CompCert4Lean.Backend.Stackingproof
+theorem contains_locations_obligation_1 : contains_locations_obligation_1Statement := by
+  intro return_address_offset tprog j sp pos bound sl ls m m' hm hunch
+  exact (contains_locations return_address_offset tprog j sp pos bound sl ls).m_invar m m' hm hunch
+theorem contains_locations_obligation_2 : contains_locations_obligation_2Statement := by
+  intro j sp pos bound sl ls m b ofs hm hfoot
+  rcases hfoot with ⟨rfl, hlo, hhi⟩
+  exact validBlockOfPerm (hm.2.2.2.1 ofs ⟨hlo, hhi⟩)
+end CompCert4Lean.Backend.Stackingproof
