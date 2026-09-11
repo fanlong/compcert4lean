@@ -1304,3 +1304,44 @@ theorem Rmult_le_compat_r (ctx : ExactRealContext) :
 end RIneq
 end Rocq.Coq.Reals
 end CompCert4Lean.Foundation.FlocqReal
+
+namespace CompCert4Lean.Foundation.FlocqReal
+namespace Rocq.Coq.Reals
+
+namespace RIneq
+
+theorem Rmult_1_r (ctx : ExactRealContext) :
+    Rmult_1_rStatement ctx := by
+  intro r
+  change ctx.spec.mul r (ctx.spec.ofZ
+    (_root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.Zpos
+      _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.xH)) = r
+  rw [ctx.certificate.sourceLaws.ofZ_one]
+  exact ctx.certificate.orderedField.mul_one r
+
+theorem plus_IZR (ctx : ExactRealContext) :
+    plus_IZRStatement ctx := by
+  intro n m
+  exact ctx.certificate.sourceLaws.ofZ_add n m
+
+end RIneq
+
+namespace Raxioms
+
+theorem Rmult_1_l (ctx : ExactRealContext) :
+    Rmult_1_lStatement ctx := by
+  intro r
+  change ctx.spec.mul (ctx.spec.ofZ
+    (_root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.Zpos
+      _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.xH)) r = r
+  rw [ctx.certificate.sourceLaws.ofZ_one]
+  exact ctx.certificate.orderedField.one_mul r
+
+theorem Rlt_trans (ctx : ExactRealContext) :
+    Rlt_transStatement ctx := by
+  intro r1 r2 r3 h12 h23
+  exact ctx.certificate.orderedField.lt_trans r1 r2 r3 h12 h23
+
+end Raxioms
+end Rocq.Coq.Reals
+end CompCert4Lean.Foundation.FlocqReal

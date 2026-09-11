@@ -887,3 +887,10 @@ theorem fixpoint_entry_proof (laws : law_obligation) : fixpoint_entry laws := by
   exact PTree.gss ep ev (PTree.empty L.t)
 
 end CompCert4Lean.Backend.Linearize.DS
+
+namespace CompCert4Lean.Backend.Linearize.Nodeset
+
+theorem empty_1_proof : empty_1 := by
+  exact CompCert4Lean.Lib.FSetAVLplus.Make.empty_1
+
+end CompCert4Lean.Backend.Linearize.Nodeset

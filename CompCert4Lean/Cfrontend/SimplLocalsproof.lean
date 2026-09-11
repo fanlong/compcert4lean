@@ -1291,3 +1291,96 @@ theorem simpl_find_label_ls : simpl_find_label_lsStatement := by
   exact H ls
 
 end CompCert4Lean.Cfrontend.SimplLocalsproof
+
+namespace CompCert4Lean.Cfrontend.SimplLocalsproof
+
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Errors
+open CompCert4Lean.Common.Linking
+open CompCert4Lean.Cfrontend.Clight
+open CompCert4Lean.Cfrontend.SimplLocals
+open CompCert4Lean.Lib.Coqlib
+
+private theorem simplLocals_transf_globdefs_match
+    (cfg : CompilerConfig) (p : Clight.program) :
+    ∀ (l : List (ident × CompCert4Lean.Common.AST.globdef Clight.fundef Ctypes.type))
+      (defs : List (ident × CompCert4Lean.Common.AST.globdef Clight.fundef Ctypes.type)),
+      transf_globdefs (fun _ f => transf_fundef cfg f) (fun _ v => .OK v) l = .OK defs →
+      list_forall2
+        (match_ident_globdef
+          (fun _ f tf => transf_fundef cfg f = .OK tf) Eq
+          (Ctypes.program_of_program p)) l defs := by
+  intro l
+  induction l with
+  | nil =>
+      intro defs hdefs
+      simp [transf_globdefs] at hdefs
+      subst defs
+      exact list_forall2.nil _
+  | cons hd tl ih =>
+      intro defs hdefs
+      cases hd with
+      | mk id gd =>
+          cases gd with
+          | Gfun f =>
+              cases htf : transf_fundef cfg f with
+              | Error msg => simp [transf_globdefs, htf] at hdefs
+              | OK tf =>
+                  cases htail : transf_globdefs
+                      (fun _ f => transf_fundef cfg f) (fun _ v => .OK v) tl with
+                  | Error msg => simp [transf_globdefs, htf, htail] at hdefs
+                  | OK defsTail =>
+                      simp [transf_globdefs, htf, htail] at hdefs
+                      subst defs
+                      apply list_forall2.cons
+                      · constructor
+                        · rfl
+                        · apply match_globdef_fun (ctx' := Ctypes.program_of_program p)
+                          · exact linkorder_refl _
+                          · exact htf
+                      · exact ih defsTail htail
+          | Gvar v =>
+              cases v with
+              | mk info init readonly volatile =>
+                  cases htail : transf_globdefs
+                      (fun _ f => transf_fundef cfg f) (fun _ v => .OK v) tl with
+                  | Error msg => simp [transf_globdefs, transf_globvar, htail] at hdefs
+                  | OK defsTail =>
+                      simp [transf_globdefs, transf_globvar, htail] at hdefs
+                      subst defs
+                      apply list_forall2.cons
+                      · constructor
+                        · rfl
+                        · apply match_globdef_var
+                          exact match_globvar_intro _ _ _ _ _ _ rfl
+                      · exact ih defsTail htail
+
+theorem match_transf_program : match_transf_programStatement := by
+  intro cfg p tp h
+  unfold transf_program at h
+  unfold match_prog
+  unfold transform_partial_program transform_partial_program2 at h
+  cases hdefs : transf_globdefs
+      (fun _ f => transf_fundef cfg f) (fun _ v => .OK v)
+      (Ctypes.program_of_program p).prog_defs with
+  | Error msg => simp [hdefs] at h
+  | OK defs =>
+      simp [hdefs] at h
+      injection h with hEq
+      unfold match_program match_program_gen
+      have hdefsEq : (Ctypes.program_of_program tp).prog_defs = defs := by
+        exact (congrArg (fun q : Clight.program => q.prog_defs) hEq).symm
+      have hmainEq : (Ctypes.program_of_program tp).prog_main =
+          (Ctypes.program_of_program p).prog_main := by
+        exact (congrArg (fun q : Clight.program => q.prog_main) hEq).symm
+      have hpublicEq : (Ctypes.program_of_program tp).prog_public =
+          (Ctypes.program_of_program p).prog_public := by
+        exact (congrArg (fun q : Clight.program => q.prog_public) hEq).symm
+      apply And.intro
+      · apply And.intro
+        · rw [hdefsEq]
+          exact simplLocals_transf_globdefs_match cfg p _ _ hdefs
+        · exact ⟨hmainEq, hpublicEq⟩
+      · exact (congrArg (fun q : Clight.program => q.prog_types) hEq).symm
+
+end CompCert4Lean.Cfrontend.SimplLocalsproof

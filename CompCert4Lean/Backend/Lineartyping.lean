@@ -505,3 +505,46 @@ theorem wt_setpair : wt_setpairStatement := by
         · exact hrs
 
 end CompCert4Lean.Backend.Lineartyping
+
+namespace CompCert4Lean.Backend.Lineartyping
+
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Backend.Locations
+open CompCert4Lean.X86.Machregs
+
+private theorem val_has_type_subtype_local :
+    ∀ (ty1 ty2 : typ) (v : val),
+      subtype ty1 ty2 = true → Val.has_type v ty1 → Val.has_type v ty2 := by
+  intro ty1 ty2 v hsub hv
+  cases ty1 <;> cases ty2 <;> cases v <;>
+    simp [CompCert4Lean.Common.AST.subtype,
+      CompCert4Lean.Common.Values.Val.has_type,
+      CompCert4Lean.X86_64.Archi.ptr64] at hsub hv ⊢
+
+theorem wt_setres : wt_setresStatement := by
+  intro res
+  induction res with
+  | BR r =>
+      intro ty v rs hres hv hrs
+      apply wt_setreg
+      · apply val_has_type_subtype_local ty (mreg_type r) v
+        · simpa [wt_builtin_res] using hres
+        · exact hv
+      · exact hrs
+  | BR_none =>
+      intro ty v rs hres hv hrs
+      exact hrs
+  | BR_splitlong hi lo ih_hi ih_lo =>
+      intro ty v rs hres hv hrs
+      simp [wt_builtin_res] at hres
+      change wt_locset (Locmap.setres lo (Val.loword v)
+        (Locmap.setres hi (Val.hiword v) rs))
+      apply ih_lo Tint (Val.loword v)
+        (Locmap.setres hi (Val.hiword v) rs) hres.2
+      · cases v <;> trivial
+      · apply ih_hi Tint (Val.hiword v) rs hres.1
+        · cases v <;> trivial
+        · exact hrs
+
+end CompCert4Lean.Backend.Lineartyping

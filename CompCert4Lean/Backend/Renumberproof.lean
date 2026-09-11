@@ -788,3 +788,16 @@ theorem senv_preserved : senv_preservedStatement := by
     exact (hrel.2 b).symm
 
 end CompCert4Lean.Backend.Renumberproof
+
+
+namespace CompCert4Lean.Backend.Renumberproof
+
+theorem transf_final_states : transf_final_statesStatement := by
+  intro S1 S2 r hmatch hfinal
+  cases hfinal
+  cases hmatch
+  rename_i stk' stacks
+  cases stacks
+  constructor
+
+end CompCert4Lean.Backend.Renumberproof
