@@ -459,3 +459,35 @@ theorem is_longconst_sound
       rfl
 
 end CompCert4Lean.X86.SelectLongproof
+
+namespace CompCert4Lean.X86.SelectLongproof
+
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.X86.Op
+open CompCert4Lean.X86.SelectLong
+
+theorem eval_intoflong
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    @eval_intoflongStatement binary64_certificate binary32_certificate := by
+  unfold eval_intoflongStatement unary_constructor_sound
+  intro xi prog sp e m le a x h
+  unfold intoflong
+  cases hmatch : is_longconst a with
+  | some n =>
+      simp only [hmatch]
+      refine ⟨.Vint (CompCert4Lean.Lib.Integers.Int.repr (CompCert4Lean.Lib.Integers.Int64.unsigned n)), ?_, ?_⟩
+      · apply eval_expr.eval_Eop le (Ointconst _) Enil [] _ (eval_exprlist.nil le)
+        rfl
+      · rw [is_longconst_sound xi prog sp e m x a n le hmatch h]
+        exact Val.lessdef_refl _
+  | none =>
+      simp only [hmatch]
+      refine ⟨Val.loword x, ?_, .lessdef_refl _⟩
+      apply eval_expr.eval_Eop le Olowlong (Econs a Enil) [x] _
+      · apply eval_exprlist.cons le a Enil x [] h (eval_exprlist.nil le)
+      · rfl
+
+end CompCert4Lean.X86.SelectLongproof

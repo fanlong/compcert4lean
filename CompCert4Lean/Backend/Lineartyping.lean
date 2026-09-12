@@ -764,3 +764,22 @@ theorem wt_state_getstack : wt_state_getstackStatement := by
   exact htypes.2
 
 end CompCert4Lean.Backend.Lineartyping
+
+namespace CompCert4Lean.Backend.Lineartyping
+
+theorem wt_state_setstack : wt_state_setstackStatement := by
+  intro cfg s f sp sl ofs ty r c rs m hstate
+  cases hstate
+  rename_i WTSTK WTF WTC WTRS
+  have hparts :
+      wt_instr cfg f (Linear.Lsetstack r sl ofs ty) = true ∧
+        listForallb (wt_instr cfg f) c = true := by
+    simpa [wt_code, listForallb,
+      CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.List.forallb] using WTC
+  have htypes :
+      slot_valid cfg f sl ofs ty = true ∧
+        slot_writable sl = true := by
+    simpa [wt_instr, Bool.and_eq_true] using hparts.1
+  exact htypes
+
+end CompCert4Lean.Backend.Lineartyping

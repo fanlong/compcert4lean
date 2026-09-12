@@ -2054,3 +2054,98 @@ theorem eval_simple_rvalue_safe
     hs (eval_simple_rvalue_steps xi ge f k e m a v h C hC)
 
 end CompCert4Lean.Cfrontend.Cstrategy
+
+namespace CompCert4Lean.Cfrontend.Cstrategy
+
+open CompCert4Lean.Cfrontend.Csem
+open CompCert4Lean.Common.Smallstep
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Cfrontend.Csyntax
+
+theorem eval_simple_lvalue_steps
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    eval_simple_lvalue_stepsStatement := by
+  unfold eval_simple_lvalue_stepsStatement
+  intro xi ge f k e m a b ofs bf h
+  have hrsteps : ∀ {a v}, eval_simple_rvalue ge e m a v →
+      ∀ C, context .RV .RV C →
+        star (Csem.step (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate) xi) ge
+          (.ExprState f (C a) k e m) E0
+          (.ExprState f (C (.Eval v (typeof a))) k e m) := by
+    intro a v h
+    exact eval_simple_rvalue_steps xi ge f k e m a v h
+  exact eval_simple_lvalue.rec
+    (motive_1 := fun a b ofs bf _ =>
+      ∀ C, context .LV .RV C →
+        star (Csem.step (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate) xi) ge
+          (.ExprState f (C a) k e m) E0
+          (.ExprState f (C (.Eloc b ofs bf (typeof a))) k e m))
+    (motive_2 := fun a v _ =>
+      ∀ C, context .RV .RV C →
+        star (Csem.step (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate) xi) ge
+          (.ExprState f (C a) k e m) E0
+          (.ExprState f (C (.Eval v (typeof a))) k e m))
+    (fun C _ => star_refl _ ge _)
+    (fun hlocal => fun C hC =>
+      star_one _ _ _ ge _ E0 _ (Or.inl (Csem.estep.step_lred
+        (Csem.lred.varLocal hlocal) hC)))
+    (fun hlocal hglobal => fun C hC =>
+      star_one _ _ _ ge _ E0 _ (Or.inl (Csem.estep.step_lred
+        (Csem.lred.varGlobal hlocal hglobal) hC)))
+    (fun hr ihr => fun C hC =>
+      star_trans (genv := genv) (state := state)
+        (step := Csem.step (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate) xi)
+        (ge := ge) (s1 := _) (t1 := E0) (s2 := _)
+        (ihr (fun x => C (.Ederef x _))
+          (context_compose .LV .RV C hC .RV (fun x => .Ederef x _)
+            (.deref (.ctx_top .RV))))
+        (t2 := E0) (s3 := _) (t := E0)
+        (star_one _ _ _ ge _ E0 _ (Or.inl (Csem.estep.step_lred
+          Csem.lred.deref hC))) rfl)
+    (fun {r f ty b ofs id co a delta bf} hr htype hco hoff ihr => fun C hC => by
+      have hih := ihr (fun x => C (.Efield x f ty))
+        (context_compose .LV .RV C hC .RV (fun x => .Efield x f ty)
+          (.field (f := f) (ty := ty) (.ctx_top .RV)))
+      rw [htype] at hih
+      exact star_trans (genv := genv) (state := state)
+        (step := Csem.step (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate) xi)
+        (ge := ge) (s1 := _) (t1 := E0) (s2 := _)
+        hih
+        (t2 := E0) (s3 := _) (t := E0)
+        (star_one _ _ _ ge _ E0 _ (Or.inl (Csem.estep.step_lred
+          (Csem.lred.fieldStruct hco hoff) hC))) rfl)
+    (fun {r f ty b ofs id co a delta bf} hr htype hoff hco ihr => fun C hC => by
+      have hih := ihr (fun x => C (.Efield x f ty))
+        (context_compose .LV .RV C hC .RV (fun x => .Efield x f ty)
+          (.field (f := f) (ty := ty) (.ctx_top .RV)))
+      rw [htype] at hih
+      exact star_trans (genv := genv) (state := state)
+        (step := Csem.step (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate) xi)
+        (ge := ge) (s1 := _) (t1 := E0) (s2 := _)
+        hih
+        (t2 := E0) (s3 := _) (t := E0)
+        (star_one _ _ _ ge _ E0 _ (Or.inl (Csem.estep.step_lred
+          (Csem.lred.fieldUnion hco hoff) hC))) rfl)
+    (fun {v ty} => hrsteps (eval_simple_rvalue.esr_val))
+    (fun {b ofs bf l ty v} hl htype hvolatile hderef ih =>
+      hrsteps (eval_simple_rvalue.esr_rvalof hl htype hvolatile hderef))
+    (fun {b ofs l ty} hl ih =>
+      hrsteps (eval_simple_rvalue.esr_addrof hl))
+    (fun {op r1 ty v1 v} hr hop ih =>
+      hrsteps (eval_simple_rvalue.esr_unop hr hop))
+    (fun {op r1 r2 ty v1 v2 v} hr1 hr2 hbin ih1 ih2 =>
+      hrsteps (eval_simple_rvalue.esr_binop hr1 hr2 hbin))
+    (fun {ty r1 v1 v} hr hcast ih =>
+      hrsteps (eval_simple_rvalue.esr_cast hr hcast))
+    (fun {ty1 ty} => hrsteps (eval_simple_rvalue.esr_sizeof))
+    (fun {ty1 ty} => hrsteps (eval_simple_rvalue.esr_alignof))
+    h
+
+end CompCert4Lean.Cfrontend.Cstrategy

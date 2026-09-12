@@ -1814,3 +1814,41 @@ theorem reg_valnum_sound
       exact hnum.num_holds_reg r v hget
 
 end CompCert4Lean.Backend.CSEproof
+
+namespace CompCert4Lean.Backend.CSEproof
+
+open CompCert4Lean.Backend.CSE
+
+theorem regs_valnums_sound
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    regs_valnums_soundStatement := by
+  intro n valu ge sp rs m vl
+  induction vl with
+  | nil =>
+      intro rl hholds hregs
+      simp [CSE.regs_valnums] at hregs
+      cases hregs
+      rfl
+  | cons v vs ih =>
+      intro rl hholds hregs
+      simp only [CSE.regs_valnums] at hregs
+      cases hrv : CSE.reg_valnum n v with
+      | none =>
+          simp [hrv] at hregs
+      | some r1 =>
+          cases hrest : CSE.regs_valnums n vs with
+          | none =>
+              simp [hrv, hrest] at hregs
+          | some rl1 =>
+              simp [hrv, hrest] at hregs
+              cases hregs
+              have hhead : Registers.Regmap.get r1 rs = valu v :=
+                CompCert4Lean.Backend.CSEproof.reg_valnum_sound
+                  n v r1 valu ge sp rs m hrv hholds
+              change Registers.Regmap.get r1 rs :: List.map (fun r => Registers.Regmap.get r rs) rl1 =
+                valu v :: List.map valu vs
+              rw [hhead]
+              exact congrArg (fun xs => valu v :: xs) (ih rl1 hholds hrest)
+
+end CompCert4Lean.Backend.CSEproof

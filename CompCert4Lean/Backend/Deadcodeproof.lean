@@ -1162,3 +1162,170 @@ theorem add_need_all_lessdef : add_need_all_lessdefStatement := by
   exact hr
 
 end CompCert4Lean.Backend.Deadcodeproof
+
+namespace CompCert4Lean.Backend.Deadcodeproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Backend.NeedDomain
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.Lib.Integers
+open Lean Elab Tactic Meta
+
+private def privateName (suffix : String) : Name :=
+  let p := Name.str (Name.str (Name.str (Name.str Name.anonymous "_private") "CompCert4Lean") "Lib") "Integers"
+  let base := Name.num p 0
+  suffix.splitOn "." |>.foldl Name.str base
+
+private theorem residue_zOfNat_local (bits n : Nat) :
+    (WordCore.repr bits (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat n)).val = n % (2 ^ bits) := by
+  run_tac
+    let lctx ← getLCtx
+    let bitsF := (lctx.findFromUserName? `bits).get!
+    let nF := (lctx.findFromUserName? `n).get!
+    let bitsE := mkFVar bitsF.fvarId
+    let nE := mkFVar nF.fvarId
+    let z := mkApp (mkConst ``CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat) nE
+    let e1 := mkApp2 (mkConst (privateName "CompCert4Lean.Lib.Integers.WordCore.val_repr_residue")) bitsE z
+    let e2 := mkApp2 (mkConst (privateName "CompCert4Lean.Lib.Integers.WordCore.residue_zOfNat")) bitsE nE
+    let t1 ← inferType e1
+    let t2 ← inferType e2
+    let (α, lhs, mid) := match_expr t1 with
+      | _root_.Eq α lhs mid => (α, lhs, mid)
+      | _ => panic! "not eq1"
+    let (_, _, rhs) := match_expr t2 with
+      | _root_.Eq _ mid' rhs => (α, mid', rhs)
+      | _ => panic! "not eq2"
+    let eqtrans := mkConst ``Eq.trans [.succ .zero]
+    let e := mkAppN eqtrans #[α, lhs, mid, rhs, e1, e2]
+    closeMainGoal Name.anonymous e
+
+private theorem int_or_val_local (x y : Int.int) :
+    (Int.or x y).val = Nat.lor x.val y.val % (2 ^ Int.wordsize) := by
+  unfold Int.or WordCore.or
+  exact residue_zOfNat_local Int.wordsize (Nat.lor x.val y.val)
+
+private theorem int64_or_val_local (x y : Int64.int) :
+    (Int64.or x y).val = Nat.lor x.val y.val % (2 ^ Int64.wordsize) := by
+  unfold Int64.or WordCore.or
+  exact residue_zOfNat_local Int64.wordsize (Nat.lor x.val y.val)
+
+private theorem word_val_lt_local (x : Int.int) : x.val < 2 ^ Int.wordsize := by
+  run_tac
+    let lctx ← getLCtx
+    let xF := (lctx.findFromUserName? `x).get!
+    let xE := mkFVar xF.fvarId
+    let e ← mkAppM (privateName "CompCert4Lean.Lib.Integers.WordCore.val_lt") #[xE]
+    closeMainGoal Name.anonymous e
+
+private theorem word64_val_lt_local (x : Int64.int) : x.val < 2 ^ Int64.wordsize := by
+  run_tac
+    let lctx ← getLCtx
+    let xF := (lctx.findFromUserName? `x).get!
+    let xE := mkFVar xF.fvarId
+    let e ← mkAppM (privateName "CompCert4Lean.Lib.Integers.WordCore.val_lt") #[xE]
+    closeMainGoal Name.anonymous e
+
+private theorem nat_or_mod_testbit (a b w k : Nat) (ha : a < 2 ^ w) (hb : b < 2 ^ w) :
+    (Nat.lor a b % 2 ^ w).testBit k = (a.testBit k || b.testBit k) := by
+  rw [Nat.testBit_mod_two_pow]
+  by_cases hk : k < w
+  · simp only [hk]
+    simpa using (Nat.testBit_or a b k)
+  · have hkw : w ≤ k := Nat.le_of_not_gt hk
+    have hpow : 2 ^ w ≤ 2 ^ k := Nat.pow_le_pow_right (by decide) hkw
+    have ha' : a < 2 ^ k := Nat.lt_of_lt_of_le ha hpow
+    have hb' : b < 2 ^ k := Nat.lt_of_lt_of_le hb hpow
+    have hfa := Nat.testBit_lt_two_pow ha'
+    have hfb := Nat.testBit_lt_two_pow hb'
+    simp [hk, hfa, hfb]
+
+private theorem int_or_testbit_local (x y : Int.int) (i : Z) :
+    Int.testbit (Int.or x y) i = (Int.testbit x i || Int.testbit y i) := by
+  cases i with
+  | Zneg p => rfl
+  | Z0 =>
+      simp only [Int.testbit, WordCore.testbit]
+      change Nat.testBit (Int.or x y).val 0 = (Nat.testBit x.val 0 || Nat.testBit y.val 0)
+      rw [int_or_val_local]
+      exact nat_or_mod_testbit x.val y.val Int.wordsize 0
+        (word_val_lt_local x) (word_val_lt_local y)
+  | Zpos p =>
+      simp only [Int.testbit, WordCore.testbit]
+      change Nat.testBit (Int.or x y).val _ = _
+      rw [int_or_val_local]
+      exact nat_or_mod_testbit x.val y.val Int.wordsize _
+        (word_val_lt_local x) (word_val_lt_local y)
+
+private theorem int64_or_testbit_local (x y : Int64.int) (i : Z) :
+    Int64.testbit (Int64.or x y) i = (Int64.testbit x i || Int64.testbit y i) := by
+  cases i with
+  | Zneg p => rfl
+  | Z0 =>
+      simp only [Int64.testbit, WordCore.testbit]
+      change Nat.testBit (Int64.or x y).val 0 = (Nat.testBit x.val 0 || Nat.testBit y.val 0)
+      rw [int64_or_val_local]
+      exact nat_or_mod_testbit x.val y.val Int64.wordsize 0
+        (word64_val_lt_local x) (word64_val_lt_local y)
+  | Zpos p =>
+      simp only [Int64.testbit, WordCore.testbit]
+      change Nat.testBit (Int64.or x y).val _ = _
+      rw [int64_or_val_local]
+      exact nat_or_mod_testbit x.val y.val Int64.wordsize _
+        (word64_val_lt_local x) (word64_val_lt_local y)
+
+private theorem nge_lub_r_local : ∀ x y : nval, nge (nlub x y) y := by
+  intro x y
+  cases y with
+  | Nothing =>
+      cases x with
+      | Nothing => exact nge.nge_all Nothing
+      | I m => exact nge.nge_all (I m)
+      | L m => exact nge.nge_all (L m)
+      | All => exact nge.nge_all All
+  | All =>
+      cases x <;> exact nge.nge_nothing All
+  | I m2 =>
+      cases x with
+      | Nothing =>
+          apply nge.nge_int m2 m2
+          intro i hi hm
+          exact hm
+      | I m1 =>
+          apply nge.nge_int (Int.or m1 m2) m2
+          intro i hi hm
+          rw [int_or_testbit_local]
+          exact Bool.or_eq_true_iff.mpr (Or.inr hm)
+      | L m1 => exact nge.nge_nothing (I m2)
+      | All => exact nge.nge_nothing (I m2)
+  | L m2 =>
+      cases x with
+      | Nothing =>
+          apply nge.nge_long m2 m2
+          intro i hi hm
+          exact hm
+      | I m1 => exact nge.nge_nothing (L m2)
+      | L m1 =>
+          apply nge.nge_long (Int64.or m1 m2) m2
+          intro i hi hm
+          rw [int64_or_testbit_local]
+          exact Bool.or_eq_true_iff.mpr (Or.inr hm)
+      | All => exact nge.nge_nothing (L m2)
+
+theorem add_need_eagree : add_need_eagreeStatement := by
+  intro e e' r nv ne h r0
+  change eagree e e' (NE.set r (nlub nv (NE.get r ne)) ne) at h
+  have hr := h r0
+  rw [ne_get_set_local r r0 (nlub nv (NE.get r ne)) ne] at hr
+  cases hp : peq r0 r with
+  | left hEq =>
+      subst r0
+      simp only [hp] at hr
+      exact nge_agree _ _ _ _ (nge_lub_r_local nv (NE.get r ne)) hr
+  | right hNe =>
+      simp only [hp] at hr
+      exact hr
+
+end CompCert4Lean.Backend.Deadcodeproof

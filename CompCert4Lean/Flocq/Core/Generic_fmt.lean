@@ -513,3 +513,17 @@ theorem canonical_generic_format : ∀ ctx magnitude, canonical_generic_formatSt
     rfl
 
 end CompCert4Lean.Flocq.Core.Generic_fmt
+
+namespace CompCert4Lean.Flocq.Core.Generic_fmt
+
+theorem canonical_0 : ∀ ctx magnitude, canonical_0Statement ctx magnitude := by
+  intro ctx magnitude beta fexp
+  unfold Exact.canonical
+  change Exact.cexp ctx magnitude beta fexp (Exact.R0 ctx) =
+    Exact.cexp ctx magnitude beta fexp (Exact.F2R ctx (Float beta Z0
+      (Exact.cexp ctx magnitude beta fexp (Exact.R0 ctx))))
+  have hzero := CompCert4Lean.Flocq.Core.Float_prop.F2R_0 ctx beta
+    (Exact.cexp ctx magnitude beta fexp (Exact.R0 ctx))
+  exact congrArg (Exact.cexp ctx magnitude beta fexp) hzero.symm
+
+end CompCert4Lean.Flocq.Core.Generic_fmt

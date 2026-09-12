@@ -820,3 +820,26 @@ theorem two_p_monotone : two_p_monotoneStatement := by
   exact coqlib_nat_pow_two_mono _ _ hnat
 
 end CompCert4Lean.Lib.Coqlib
+
+namespace CompCert4Lean.Lib.Coqlib
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem Zmax_spec : Zmax_specStatement := by
+  intro x y
+  by_cases h : intOfZ y < intOfZ x
+  · have hle : ¬ intOfZ x ≤ intOfZ y := by omega
+    rw [ZArith.BinInt.Z.max, if_neg hle]
+    cases hz : zlt y x with
+    | left hlt => rfl
+    | right hge =>
+        exfalso
+        change intOfZ x ≤ intOfZ y at hge
+        omega
+  · have hle : intOfZ x ≤ intOfZ y := Int.le_of_not_gt h
+    rw [ZArith.BinInt.Z.max, if_pos hle]
+    cases hz : zlt y x with
+    | left hlt => exact False.elim (h hlt)
+    | right hge => rfl
+
+end CompCert4Lean.Lib.Coqlib

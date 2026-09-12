@@ -1373,3 +1373,86 @@ theorem locmap_undef_regs_lessdef : locmap_undef_regs_lessdefStatement := by
       · exact Val.lessdef_refl _
 
 end CompCert4Lean.Backend.Tunnelingproof
+
+namespace CompCert4Lean.Backend.Tunnelingproof
+
+open CompCert4Lean.Backend.Tunneling
+open CompCert4Lean.Backend.LTL
+open CompCert4Lean.Backend.Locations
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.AST
+
+private theorem tunneling_longofwords_lessdef
+    (v1 v2 v1' v2' : val) :
+    Val.lessdef v1 v1' → Val.lessdef v2 v2' →
+      Val.lessdef (Val.longofwords v1 v2) (Val.longofwords v1' v2') := by
+  intro h1 h2
+  cases h1 with
+  | lessdef_undef => exact Val.lessdef_undef _
+  | lessdef_refl x =>
+      cases h2 with
+      | lessdef_undef =>
+          cases v1 <;> exact Val.lessdef_undef _
+      | lessdef_refl y => exact Val.lessdef_refl _
+
+private theorem tunneling_loword_lessdef (v v' : val) :
+    Val.lessdef v v' → Val.lessdef (Val.loword v) (Val.loword v') := by
+  intro h
+  cases h with
+  | lessdef_undef => exact Val.lessdef_undef _
+  | lessdef_refl x => exact Val.lessdef_refl _
+
+private theorem tunneling_hiword_lessdef (v v' : val) :
+    Val.lessdef v v' → Val.lessdef (Val.hiword v) (Val.hiword v') := by
+  intro h
+  cases h with
+  | lessdef_undef => exact Val.lessdef_undef _
+  | lessdef_refl x => exact Val.lessdef_refl _
+
+theorem locmap_undef_regs_lessdef_1 : locmap_undef_regs_lessdef_1Statement := by
+  intro rl
+  induction rl with
+  | nil =>
+      intro ls1 ls2 hls
+      exact hls
+  | cons r rl ih =>
+      intro ls1 ls2 hls
+      apply locmap_set_undef_lessdef
+      exact ih ls1 ls2 hls
+
+theorem locmap_getpair_lessdef : locmap_getpair_lessdefStatement := by
+  intro p ls1 ls2 hls
+  cases p with
+  | One l => exact hls l
+  | Twolong lhi llo =>
+      unfold Locmap.getpair
+      apply tunneling_longofwords_lessdef
+      · exact hls lhi
+      · exact hls llo
+
+theorem locmap_getpairs_lessdef : locmap_getpairs_lessdefStatement := by
+  intro pl
+  induction pl with
+  | nil =>
+      intro ls1 ls2 hls
+      exact Val.lessdef_list_nil
+  | cons p pl ih =>
+      intro ls1 ls2 hls
+      apply Val.lessdef_list_cons
+      · exact locmap_getpair_lessdef p ls1 ls2 hls
+      · exact ih ls1 ls2 hls
+
+theorem locmap_setpair_lessdef : locmap_setpair_lessdefStatement := by
+  intro p ls1 ls2 v1 v2 hls hv
+  cases p with
+  | One r =>
+      exact locmap_set_lessdef ls1 ls2 v1 v2 (R r) hls hv
+  | Twolong rhi rlo =>
+      unfold Locmap.setpair
+      apply locmap_set_lessdef
+      · apply locmap_set_lessdef
+        · exact hls
+        · exact tunneling_hiword_lessdef v1 v2 hv
+      · exact tunneling_loword_lessdef v1 v2 hv
+
+end CompCert4Lean.Backend.Tunnelingproof

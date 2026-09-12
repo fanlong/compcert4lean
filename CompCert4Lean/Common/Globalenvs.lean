@@ -1564,3 +1564,43 @@ theorem find_symbol_inversion : find_symbol_inversionStatement := by
 
 end Genv
 end CompCert4Lean.Common.Globalenvs
+
+namespace CompCert4Lean.Common.Globalenvs
+namespace Genv
+
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem find_def_inversion : find_def_inversionStatement := by
+  intro F V p b g hfind
+  unfold globalenv at hfind
+  let P : t F V → Prop := fun ge =>
+    find_def ge b = some g → ∃ id, (id, g) ∈ p.prog_defs
+  have hpres : ∀ (ge : t F V) (id : ident) (gd : globdef F V),
+      P ge → (id, gd) ∈ p.prog_defs → P (add_global ge (id, gd)) := by
+    intro ge id gd hP hmem hnew
+    change find_def ge b = some g → ∃ id, (id, g) ∈ p.prog_defs at hP
+    change PTree.get (show positive from b)
+      (PTree.set (show positive from ge.genv_next) gd ge.genv_defs) = some g at hnew
+    by_cases hnext : b = ge.genv_next
+    · subst b
+      have hs := ptreeGetSetSame (show positive from ge.genv_next) gd ge.genv_defs
+      have hgd : gd = g := Option.some.inj (hs.symm.trans hnew)
+      subst gd
+      exact ⟨id, hmem⟩
+    · have ho := ptreeGetSetOther (show positive from b)
+          (show positive from ge.genv_next) gd ge.genv_defs hnext
+      have hold : PTree.get (show positive from b) ge.genv_defs = some g :=
+        ho.symm.trans hnew
+      exact hP hold
+  have hbase : P (empty_genv F V p.prog_public) := by
+    unfold P find_def empty_genv
+    intro h
+    simp [PTree.get, PTree.empty] at h
+  have hall := add_globals_preserves F V P p.prog_defs
+      (empty_genv F V p.prog_public) hpres hbase
+  exact hall hfind
+
+end Genv
+end CompCert4Lean.Common.Globalenvs

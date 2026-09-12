@@ -1179,3 +1179,77 @@ theorem instr_is_within_bounds : instr_is_within_boundsStatement := by
   | Lreturn => trivial
 
 end CompCert4Lean.Backend.Bounds
+
+namespace CompCert4Lean.Backend.Bounds
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.X86.Machregs
+
+private abbrev bounds_z1 : Z := .Zpos .xH
+
+private def bounds_intDivEucl (a b : Int) : Int :=
+  if b = 0 then 0
+  else if 0 < b then Int.ediv a b
+  else
+    let d := -b
+    let q := Int.ediv a d
+    let r := Int.emod a d
+    if r = 0 then -q else -(q + 1)
+
+private theorem bounds_zDiv_from_int (x y : Z) :
+    ZArith.BinInt.Z.div x y = zOfInt (bounds_intDivEucl (intOfZ x) (intOfZ y)) := by
+  cases x <;> cases y <;> rfl
+
+private theorem bounds_align_le (x y : Z) (hy : ZArith.BinInt.Z.gt y z0) :
+    zLe x (align x y) := by
+  change intOfZ x ≤ intOfZ (ZArith.BinInt.Z.mul
+    (ZArith.BinInt.Z.div
+      (ZArith.BinInt.Z.sub (ZArith.BinInt.Z.add x y) bounds_z1) y) y)
+  rw [bounds_zDiv_from_int]
+  simp only [ZArith.BinInt.Z.mul, intOfZ_zOfInt]
+  simp only [ZArith.BinInt.Z.sub, ZArith.BinInt.Z.add, intOfZ_zOfInt]
+  have hyInt : 0 < intOfZ y := hy
+  have hy0 : intOfZ y ≠ 0 := Int.ne_of_gt hyInt
+  simp only [bounds_intDivEucl, hy0, if_false, if_pos hyInt]
+  have hu := (Int.ediv_emod_unique hyInt).mp
+    (show Int.ediv (intOfZ x + intOfZ y - 1) (intOfZ y) =
+        Int.ediv (intOfZ x + intOfZ y - 1) (intOfZ y) ∧
+      (intOfZ x + intOfZ y - 1) % intOfZ y =
+        (intOfZ x + intOfZ y - 1) % intOfZ y from ⟨rfl, rfl⟩)
+  have hz1 : intOfZ bounds_z1 = 1 := by rfl
+  have hbound : intOfZ x ≤ intOfZ y *
+      ((intOfZ x + intOfZ y - 1).ediv (intOfZ y)) := by
+    omega
+  simpa [Int.mul_comm, hz1] using hbound
+
+private theorem bounds_typesize_pos (ty : typ) :
+    ZArith.BinInt.Z.gt (typesize ty) z0 := by
+  cases ty <;>
+    simp only [typesize, ZArith.BinInt.Z.gt, ZArith.BinInt.Z.lt, intOfZ,
+      ZArith.BinInt.Z.of_nat, zOfInt]
+  all_goals exact Int.natCast_pos.mpr (posToNat_positive _)
+
+theorem size_callee_save_area_rec_incr : size_callee_save_area_rec_incrStatement := by
+  intro l ofs
+  induction l generalizing ofs with
+  | nil => exact zLe_refl ofs
+  | cons r l ih =>
+      simp only [size_callee_save_area_rec]
+      have hty := bounds_typesize_pos (mreg_type r)
+      have hstep := bounds_align_le ofs (typesize (mreg_type r)) hty
+      have hty0 : zLe z0 (typesize (mreg_type r)) := by
+        change intOfZ z0 ≤ intOfZ (typesize (mreg_type r))
+        exact Int.le_of_lt (show intOfZ z0 < intOfZ (typesize (mreg_type r)) from hty)
+      have hadd : zLe (align ofs (typesize (mreg_type r)))
+          (ZArith.BinInt.Z.add (align ofs (typesize (mreg_type r))) (typesize (mreg_type r))) := by
+        change intOfZ (align ofs (typesize (mreg_type r))) ≤
+          intOfZ (ZArith.BinInt.Z.add (align ofs (typesize (mreg_type r))) (typesize (mreg_type r)))
+        simp only [ZArith.BinInt.Z.add, intOfZ_zOfInt]
+        exact Int.le_add_of_nonneg_right
+          (show 0 ≤ intOfZ (typesize (mreg_type r)) from hty0)
+      exact zLe_trans ofs (align ofs (typesize (mreg_type r))) _ hstep
+        (zLe_trans (align ofs (typesize (mreg_type r))) _ _ hadd (ih _))
+
+end CompCert4Lean.Backend.Bounds
