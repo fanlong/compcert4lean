@@ -1159,3 +1159,62 @@ theorem debug_strength_reduction_correct :
           simpa [debug_strength_reduction] using htail'
 
 end CompCert4Lean.Backend.Constpropproof
+
+namespace CompCert4Lean.Backend.Constpropproof
+
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Common.Values
+
+theorem init_regs_lessdef : init_regs_lessdefStatement := by
+  intro params
+  induction params with
+  | nil =>
+      intro vl vl' h
+      cases vl with
+      | nil =>
+          cases vl' with
+          | nil =>
+              intro r
+              change Val.lessdef (Regmap.get r (Regmap.init Vundef))
+                (Regmap.get r (Regmap.init Vundef))
+              rw [Regmap.gi_proof]
+              exact Val.lessdef.lessdef_refl _
+          | cons v' vs' => cases h
+      | cons v vs =>
+          cases vl' with
+          | nil => cases h
+          | cons v' vs' =>
+              intro r
+              change Val.lessdef (Regmap.get r (Regmap.init Vundef))
+                (Regmap.get r (Regmap.init Vundef))
+              rw [Regmap.gi_proof]
+              exact Val.lessdef.lessdef_refl _
+  | cons r params ih =>
+      intro vl vl' h
+      cases vl with
+      | nil =>
+          cases vl' with
+          | nil =>
+              intro r0
+              change Val.lessdef (Regmap.get r0 (Regmap.init Vundef))
+                (Regmap.get r0 (Regmap.init Vundef))
+              rw [Regmap.gi_proof]
+              exact Val.lessdef.lessdef_refl _
+          | cons v' vs' =>
+              cases h
+      | cons v vs =>
+          cases vl' with
+          | nil =>
+              cases h
+          | cons v' vs' =>
+              cases h with
+              | lessdef_list_cons v₁ v₂ vl₁ vl₂ hv htail =>
+                  change regs_lessdef
+                    (Regmap.set r v (init_regs vs params))
+                    (Regmap.set r v' (init_regs vs' params))
+                  exact set_reg_lessdef r v v'
+                    (init_regs vs params) (init_regs vs' params)
+                    hv (ih vs vs' htail)
+
+end CompCert4Lean.Backend.Constpropproof
