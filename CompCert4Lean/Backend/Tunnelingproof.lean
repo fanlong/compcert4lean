@@ -1456,3 +1456,100 @@ theorem locmap_setpair_lessdef : locmap_setpair_lessdefStatement := by
       · exact tunneling_loword_lessdef v1 v2 hv
 
 end CompCert4Lean.Backend.Tunnelingproof
+
+namespace CompCert4Lean.Backend.Tunnelingproof
+
+open CompCert4Lean.Backend.Tunneling
+open CompCert4Lean.Backend.LTL
+open CompCert4Lean.Backend.Locations
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.AST
+
+theorem locmap_setres_lessdef : locmap_setres_lessdefStatement := by
+  intro res
+  induction res with
+  | BR r =>
+      intro ls1 ls2 v1 v2 hls hv
+      simpa [Locmap.setres] using
+        (locmap_set_lessdef ls1 ls2 v1 v2 (R r) hls hv)
+  | BR_none =>
+      intro ls1 ls2 v1 v2 hls hv
+      simpa [Locmap.setres] using hls
+  | BR_splitlong hi lo ih_hi ih_lo =>
+      intro ls1 ls2 v1 v2 hls hv
+      apply ih_lo
+      · exact ih_hi ls1 ls2 (Val.hiword v1) (Val.hiword v2) hls
+          (tunneling_hiword_lessdef v1 v2 hv)
+      · exact tunneling_loword_lessdef v1 v2 hv
+
+theorem locmap_undef_caller_save_regs_lessdef :
+    locmap_undef_caller_save_regs_lessdefStatement := by
+  intro cfg ls1 ls2 hls l
+  cases l with
+  | R r =>
+      simp only [CompCert4Lean.Backend.LTL.undef_caller_save_regs]
+      split
+      · exact hls (R r)
+      · exact Val.lessdef_undef _
+  | S sl ofs ty =>
+      cases sl with
+      | Local => exact hls (S .Local ofs ty)
+      | Incoming => exact hls (S .Incoming ofs ty)
+      | Outgoing => exact Val.lessdef_undef _
+
+theorem call_regs_lessdef : call_regs_lessdefStatement := by
+  intro ls1 ls2 hls l
+  cases l with
+  | R r =>
+      simpa [CompCert4Lean.Backend.LTL.call_regs] using hls (R r)
+  | S sl ofs ty =>
+      cases sl with
+      | Local => exact Val.lessdef_undef _
+      | Incoming =>
+          simpa [CompCert4Lean.Backend.LTL.call_regs] using
+            hls (S .Outgoing ofs ty)
+      | Outgoing => exact Val.lessdef_undef _
+
+end CompCert4Lean.Backend.Tunnelingproof
+
+namespace CompCert4Lean.Backend.Tunnelingproof
+
+open CompCert4Lean.Backend.Tunneling
+open CompCert4Lean.Backend.LTL
+open CompCert4Lean.Backend.Locations
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Globalenvs
+
+theorem find_function_translated : find_function_translatedStatement := by
+  intro prog tprog hm ros ls tls fd hls hfind
+  cases ros with
+  | inl r =>
+      unfold CompCert4Lean.Backend.LTL.find_function at hfind ⊢
+      simp only [Sum.rec] at hfind ⊢
+      have hinv := Genv.find_funct_inv (F := fundef) (V := Unit)
+        (Genv.globalenv prog) (ls (R r)) fd hfind
+      rcases hinv with ⟨b, hptr⟩
+      have hld := hls (R r)
+      rw [hptr] at hld
+      have hEq : tls (R r) = ls (R r) := by
+        rw [hptr]
+        generalize heq : tls (R r) = v at hld
+        cases hld with
+        | lessdef_refl v' => rfl
+      rw [hEq]
+      have htranslated := functions_translated prog tprog hm
+        (ls (R r)) fd hfind
+      exact htranslated
+  | inr symb =>
+      unfold CompCert4Lean.Backend.LTL.find_function at hfind ⊢
+      simp only [Sum.rec] at hfind ⊢
+      cases hs : Genv.find_symbol (Genv.globalenv prog) symb with
+      | none => simp [hs] at hfind
+      | some b =>
+          have hs' := symbols_preserved prog tprog hm symb
+          rw [hs', hs]
+          exact function_ptr_translated prog tprog hm b fd
+            (by simpa [hs] using hfind)
+
+end CompCert4Lean.Backend.Tunnelingproof
