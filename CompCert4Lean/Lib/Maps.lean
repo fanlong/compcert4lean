@@ -2909,3 +2909,74 @@ theorem beq_correct_bool : beq_correct_boolStatement := by
 end PTree
 
 end CompCert4Lean.Lib.Maps
+
+namespace CompCert4Lean.Lib.Maps
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+namespace PTree
+
+theorem prev_append_prev : prev_append_prevStatement := by
+  intro i j
+  induction i generalizing j with
+  | xH => rfl
+  | xI i ih =>
+      change prev (prev_append i (xI j)) = prev_append j (xI i)
+      rw [ih (xI j)]
+      rfl
+  | xO i ih =>
+      change prev (prev_append i (xO j)) = prev_append j (xO i)
+      rw [ih (xO j)]
+      rfl
+
+theorem prev_append_inj : prev_append_injStatement := by
+  intro i
+  induction i with
+  | xH =>
+      intro j j' h
+      exact h
+  | xI i ih =>
+      intro j j' h
+      have h' : xI j = xI j' := ih (xI j) (xI j') (by simpa [prev_append] using h)
+      cases h'
+      rfl
+  | xO i ih =>
+      intro j j' h
+      have h' : xO j = xO j' := ih (xO j) (xO j') (by simpa [prev_append] using h)
+      cases h'
+      rfl
+
+theorem beq_correct_proof : beq_correctStatement := by
+  intro A beqA m₁ m₂
+  change PTree.beq beqA m₁ m₂ = true ↔
+    ∀ x : elt,
+      match PTree.get x m₁, PTree.get x m₂ with
+      | none, none => True
+      | some y₁, some y₂ => beqA y₁ y₂ = true
+      | _, _ => False
+  rw [beq_correct_bool]
+  constructor <;> intro h x
+  · have hx := h x
+    cases h₁ : PTree.get x m₁ with
+    | none =>
+        cases h₂ : PTree.get x m₂ with
+        | none => trivial
+        | some y₂ => simp [beqOptBool_pg, h₁, h₂] at hx
+    | some y₁ =>
+        cases h₂ : PTree.get x m₂ with
+        | none => simp [beqOptBool_pg, h₁, h₂] at hx
+        | some y₂ => simpa [h₁, h₂] using hx
+  · have hx := h x
+    cases h₁ : PTree.get x m₁ with
+    | none =>
+        cases h₂ : PTree.get x m₂ with
+        | none => rfl
+        | some y₂ => exact (by simpa [h₁, h₂] using hx : False).elim
+    | some y₁ =>
+        cases h₂ : PTree.get x m₂ with
+        | none => exact (by simpa [h₁, h₂] using hx : False).elim
+        | some y₂ => simpa [h₁, h₂] using hx
+
+end PTree
+
+end CompCert4Lean.Lib.Maps

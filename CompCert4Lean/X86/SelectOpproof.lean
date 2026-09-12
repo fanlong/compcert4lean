@@ -650,3 +650,90 @@ theorem eval_addrstack
     simp [eval_addressing64, CompCert4Lean.X86_64.Archi.ptr64]
 
 end CompCert4Lean.X86.SelectOpproof
+
+namespace CompCert4Lean.X86.SelectOpproof
+
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.Common.Values
+open CompCert4Lean.X86.Op
+open CompCert4Lean.X86.SelectOp
+
+private theorem not_xor_word_local (n : CompCert4Lean.Lib.Integers.int) :
+    CompCert4Lean.Lib.Integers.Int.not n =
+      CompCert4Lean.Lib.Integers.Int.xor n CompCert4Lean.Lib.Integers.Int.mone := by
+  have hmone :
+      (CompCert4Lean.Lib.Integers.WordCore.mone
+        CompCert4Lean.Lib.Integers.Int.wordsize).val =
+        2 ^ CompCert4Lean.Lib.Integers.Int.wordsize - 1 := by
+    rfl
+  apply CompCert4Lean.Lib.Integers.WordCore.ext_of_val_eq
+  simp [CompCert4Lean.Lib.Integers.Int.not,
+    CompCert4Lean.Lib.Integers.Int.xor,
+    CompCert4Lean.Lib.Integers.Int.mone,
+    CompCert4Lean.Lib.Integers.WordCore.not,
+    CompCert4Lean.Lib.Integers.WordCore.xor,
+    CompCert4Lean.Lib.Integers.WordCore.repr,
+    CompCert4Lean.Lib.Integers.WordCore.Word.val]
+  simp only [CompCert4Lean.Lib.Integers.WordCore.Word.val] at hmone
+  rw [hmone]
+
+private theorem not_xor_val_local (v : val) :
+    Val.notint v = Val.xor v (.Vint CompCert4Lean.Lib.Integers.Int.mone) := by
+  cases v with
+  | Vundef => rfl
+  | Vint n =>
+      simp only [Val.notint, Val.xor]
+      exact congrArg Vint (not_xor_word_local n)
+  | Vlong _ => rfl
+  | Vfloat _ => rfl
+  | Vsingle _ => rfl
+  | Vptr _ _ => rfl
+
+theorem eval_notint
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    eval_notintStatement := by
+  intro xi ge sp e m le a x h
+  cases hcase : notint_match a with
+  | notint_case1 n =>
+      cases h with
+      | eval_Eop le op al vl v hargs hop =>
+          cases hargs with
+          | nil _ =>
+              change some (.Vint n) = some x at hop
+              cases hop
+              refine ⟨.Vint (CompCert4Lean.Lib.Integers.Int.not n), ?_, ?_⟩
+              · apply eval_Eop le (Ointconst (CompCert4Lean.Lib.Integers.Int.not n)) Enil []
+                · exact eval_exprlist.nil le
+                · rfl
+              · exact Val.lessdef_refl _
+  | notint_case2 n e1 =>
+      cases h with
+      | eval_Eop le' op al vl v hargs hop =>
+          cases hargs with
+          | cons _ a' al' v1 vl' hhead htail =>
+              cases htail with
+              | nil _ =>
+                  change some (Val.xor v1 (.Vint n)) = some x at hop
+                  cases hop
+                  refine ⟨Val.xor v1 (.Vint (CompCert4Lean.Lib.Integers.Int.not n)), ?_, ?_⟩
+                  · apply eval_Eop le (Oxorimm (CompCert4Lean.Lib.Integers.Int.not n))
+                      (Econs e1 Enil) [v1] (Val.xor v1 (.Vint (CompCert4Lean.Lib.Integers.Int.not n)))
+                    · apply eval_exprlist.cons le e1 Enil v1 [] hhead
+                      exact eval_exprlist.nil le
+                    · rfl
+                  · have hid :
+                        Val.notint (Val.xor v1 (.Vint n)) =
+                          Val.xor v1 (.Vint (CompCert4Lean.Lib.Integers.Int.not n)) := by
+                      rw [not_xor_val_local, Val.xor_assoc]
+                      rw [← not_xor_val_local (.Vint n)]
+                      rfl
+                    exact hid ▸ Val.lessdef_refl _
+  | notint_default e1 =>
+      refine ⟨Val.notint x, ?_, Val.lessdef_refl _⟩
+      simp only [notint, hcase]
+      apply eval_Eop le Onot (Econs a Enil) [x] (Val.notint x)
+      · exact eval_exprlist.cons le a Enil x [] h (eval_exprlist.nil le)
+      · rfl
+
+end CompCert4Lean.X86.SelectOpproof
