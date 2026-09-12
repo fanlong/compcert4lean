@@ -1604,3 +1604,16 @@ theorem find_def_inversion : find_def_inversionStatement := by
 
 end Genv
 end CompCert4Lean.Common.Globalenvs
+
+namespace CompCert4Lean.Common.Globalenvs
+namespace Genv
+
+open CompCert4Lean.Common.AST
+
+theorem find_funct_ptr_inversion : find_funct_ptr_inversionStatement := by
+  intro F V p b f hfind
+  apply find_def_inversion (p := p) (b := b) (g := Gfun f)
+  exact (find_funct_ptr_iff (F := F) (V := V) (ge := globalenv p) (b := b) (f := f)).mp hfind
+
+end Genv
+end CompCert4Lean.Common.Globalenvs

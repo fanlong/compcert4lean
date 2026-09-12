@@ -2053,3 +2053,47 @@ theorem alignof_composite_stable : alignof_composite_stableStatement := by
           ih hcomplete.2]
 
 end CompCert4Lean.Cfrontend.Ctypes
+
+namespace CompCert4Lean.Cfrontend.Ctypes
+
+theorem next_field_stable : next_field_stableStatement := by
+  intro env env' henv pos m hcomplete
+  cases m with
+  | Member_plain id t =>
+      simp only [next_field, bitalignof, bitsizeof]
+      rw [alignof_stable env env' henv t hcomplete,
+        sizeof_stable env env' henv t hcomplete]
+  | Member_bitfield id sz sg a width padding =>
+      rfl
+
+theorem bitsizeof_struct_stable : bitsizeof_struct_stableStatement := by
+  intro env env' henv ms pos hcomplete
+  induction ms generalizing pos with
+  | nil => rfl
+  | cons m ms ih =>
+      simp only [complete_members, Bool.and_eq_true] at hcomplete
+      simp only [bitsizeof_struct]
+      rw [next_field_stable env env' henv pos m hcomplete.1]
+      exact ih (next_field env pos m) hcomplete.2
+
+theorem sizeof_union_stable : sizeof_union_stableStatement := by
+  intro env env' henv ms hcomplete
+  induction ms with
+  | nil => rfl
+  | cons m ms ih =>
+      simp only [complete_members, Bool.and_eq_true] at hcomplete
+      simp only [sizeof_union]
+      rw [sizeof_stable env env' henv (type_member m) hcomplete.1,
+        ih hcomplete.2]
+
+theorem sizeof_composite_stable : sizeof_composite_stableStatement := by
+  intro env env' henv su ms hcomplete
+  cases su with
+  | Struct =>
+      simp only [sizeof_composite, sizeof_struct]
+      rw [bitsizeof_struct_stable env env' henv ms z0 hcomplete]
+  | Union =>
+      simp only [sizeof_composite]
+      exact sizeof_union_stable env env' henv ms hcomplete
+
+end CompCert4Lean.Cfrontend.Ctypes

@@ -1663,3 +1663,15 @@ theorem match_temps_assign : match_temps_assignStatement := by
       simp [hp, hte]
 
 end CompCert4Lean.Cfrontend.Cminorgenproof
+
+namespace CompCert4Lean.Cfrontend.Cminorgenproof
+
+theorem match_bounds_invariant : match_bounds_invariantStatement := by
+  intro e m1 m2 h hm id b sz ofs p he hp
+  exact h id b sz ofs p he (hm id b sz ofs p he hp)
+
+theorem is_reachable_from_env_dec : is_reachable_from_env_decStatement := by
+  intro f e sp ofs
+  exact Classical.em (is_reachable_from_env f e sp ofs)
+
+end CompCert4Lean.Cfrontend.Cminorgenproof

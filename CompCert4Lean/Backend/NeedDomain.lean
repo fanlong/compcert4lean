@@ -1101,3 +1101,153 @@ theorem nge_agree : nge_agreeStatement := by
       exact hagree i hi (hmask i hi.1 hi.2 hm2)
 
 end CompCert4Lean.Backend.NeedDomain
+namespace CompCert4Lean.Backend.NeedDomain
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Lib.Integers
+open Lean Elab Tactic Meta
+
+private def iagreePrivateName (suffix : String) : Name :=
+  let p := Name.str (Name.str (Name.str (Name.str Name.anonymous "_private") "CompCert4Lean") "Lib") "Integers"
+  let base := Name.num p 0
+  suffix.splitOn "." |>.foldl Name.str base
+
+private theorem iagreeValReprOfNat (bits n : Nat) :
+    (WordCore.repr bits (ZArith.BinInt.Z.of_nat n)).val = n % (2 ^ bits) := by
+  run_tac
+    let lctx ← getLCtx
+    let bitsF := (lctx.findFromUserName? `bits).get!
+    let nF := (lctx.findFromUserName? `n).get!
+    let bitsE := mkFVar bitsF.fvarId
+    let nE := mkFVar nF.fvarId
+    let z := mkApp (mkConst ``CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat) nE
+    let e1 := mkApp2 (mkConst (iagreePrivateName "CompCert4Lean.Lib.Integers.WordCore.val_repr_residue")) bitsE z
+    let e2 := mkApp2 (mkConst (iagreePrivateName "CompCert4Lean.Lib.Integers.WordCore.residue_zOfNat")) bitsE nE
+    let t1 ← inferType e1
+    let t2 ← inferType e2
+    let (α, lhs, mid) := match_expr t1 with
+      | _root_.Eq α lhs mid => (α, lhs, mid)
+      | _ => panic! "unexpected first equality"
+    let (_, _, rhs) := match_expr t2 with
+      | _root_.Eq _ middle rhs => (α, middle, rhs)
+      | _ => panic! "unexpected second equality"
+    let eqtrans := mkConst ``Eq.trans [.succ .zero]
+    let e := mkAppN eqtrans #[α, lhs, mid, rhs, e1, e2]
+    closeMainGoal Name.anonymous e
+
+private theorem iagreeWordValLt (a : Int.int) : a.val < 2 ^ Int.wordsize := by
+  run_tac
+    let lctx ← getLCtx
+    let aF := (lctx.findFromUserName? `a).get!
+    let aE := mkFVar aF.fvarId
+    let e ← mkAppM (iagreePrivateName "CompCert4Lean.Lib.Integers.WordCore.val_lt") #[aE]
+    closeMainGoal Name.anonymous e
+
+private theorem iagreeAndVal (a b : Int.int) :
+    (Int.and a b).val = Nat.land a.val b.val := by
+  change (WordCore.repr Int.wordsize (ZArith.BinInt.Z.of_nat (Nat.land a.val b.val))).val = _
+  rw [iagreeValReprOfNat]
+  change Nat.land a.val b.val % (2 ^ Int.wordsize) = Nat.land a.val b.val
+  apply Nat.mod_eq_of_lt
+  exact Nat.and_lt_two_pow _ (iagreeWordValLt b)
+
+private theorem iagreeTestbitPos (a : Int.int) (p : positive) :
+    Int.testbit a (.Zpos p) = a.val.testBit (posToNat p) := by
+  simp only [Int.testbit, WordCore.testbit]
+  run_tac
+    let lctx ← getLCtx
+    let aF := (lctx.findFromUserName? `a).get!
+    let pF := (lctx.findFromUserName? `p).get!
+    let aE := mkFVar aF.fvarId
+    let pE := mkFVar pF.fvarId
+    let e ← mkAppM (iagreePrivateName "CompCert4Lean.Lib.Integers.WordCore.positiveToNat_eq_posToNat") #[pE]
+    let natTy := mkConst ``Nat
+    let aval ← mkAppM ``CompCert4Lean.Lib.Integers.WordCore.Word.val #[aE]
+    let f := mkLambda `k BinderInfo.default natTy
+      (mkApp2 (mkConst ``Nat.testBit) aval (mkBVar 0))
+    let ce ← mkAppM ``congrArg #[f, e]
+    closeMainGoal Name.anonymous ce
+
+private theorem iagreeTestbitZero (a : Int.int) :
+    Int.testbit a .Z0 = a.val.testBit 0 := by
+  rfl
+
+private theorem iagreeNatLandTestbit (a b k : Nat) :
+    (Nat.land a b).testBit k = (a.testBit k && b.testBit k) := by
+  change (a &&& b).testBit k = _
+  exact Nat.testBit_and a b k
+
+theorem iagree_and_eq : iagree_and_eqStatement := by
+  intro x y mask
+  constructor
+  · intro hagree
+    apply WordCore.ext_of_val_eq
+    apply Nat.eq_of_testBit_eq
+    intro k
+    rw [iagreeAndVal, iagreeAndVal, iagreeNatLandTestbit, iagreeNatLandTestbit]
+    cases k with
+    | zero =>
+        by_cases hmask : mask.val.testBit 0 = true
+        · have hxy := hagree (.Z0) (by
+            constructor
+            · change (0 : Int) ≤ 0
+              omega
+            · change (0 : Int) < 32
+              omega) (by
+                rw [iagreeTestbitZero]
+                exact hmask)
+          rw [iagreeTestbitZero, iagreeTestbitZero] at hxy
+          simp [hmask, hxy]
+        · have hmask' : mask.val.testBit 0 = false := Bool.eq_false_iff.mpr hmask
+          simp [hmask']
+    | succ k =>
+        let p := posOfNat (Nat.succ k)
+        have hp : posToNat p = Nat.succ k :=
+          posToNat_posOfNat (Nat.succ_pos k)
+        by_cases hlt : Nat.succ k < 32
+        · by_cases hmask : mask.val.testBit (Nat.succ k) = true
+          · have hxy := hagree (.Zpos p) (by
+              constructor
+              · change (0 : Int) ≤ Int.ofNat (posToNat p)
+                exact Int.natCast_nonneg _
+              · change (Int.ofNat (posToNat p) : Int) < Int.ofNat 32
+                rw [hp]
+                exact Int.ofNat_lt.mpr hlt) (by
+                  rw [iagreeTestbitPos, hp]
+                  exact hmask)
+            rw [iagreeTestbitPos, iagreeTestbitPos, hp] at hxy
+            simp [hmask, hxy]
+          · have hmask' : mask.val.testBit (Nat.succ k) = false :=
+              Bool.eq_false_iff.mpr hmask
+            simp [hmask']
+        · have hpow : 2 ^ Int.wordsize ≤ 2 ^ (Nat.succ k) :=
+            Nat.pow_le_pow_right (by decide) (Nat.le_of_not_gt hlt)
+          have hmasklt : mask.val < 2 ^ (Nat.succ k) :=
+            Nat.lt_of_lt_of_le (iagreeWordValLt mask) hpow
+          have hmask' : mask.val.testBit (Nat.succ k) = false :=
+            Nat.testBit_lt_two_pow hmasklt
+          simp [hmask']
+  · intro hand i hirange hmask
+    have hval := congrArg WordCore.Word.val hand
+    rw [iagreeAndVal, iagreeAndVal] at hval
+    cases i with
+    | Zneg p =>
+        cases hmask
+    | Z0 =>
+        have hm : mask.val.testBit 0 = true := by
+          simpa [iagreeTestbitZero] using hmask
+        have hbit := congrArg (fun n : Nat => n.testBit 0) hval
+        rw [iagreeNatLandTestbit, iagreeNatLandTestbit] at hbit
+        have hxy : x.val.testBit 0 = y.val.testBit 0 := by
+          simpa [hm] using hbit
+        simpa [iagreeTestbitZero] using hxy
+    | Zpos p =>
+        have hm : mask.val.testBit (posToNat p) = true := by
+          simpa [iagreeTestbitPos] using hmask
+        have hbit := congrArg (fun n : Nat => n.testBit (posToNat p)) hval
+        rw [iagreeNatLandTestbit, iagreeNatLandTestbit] at hbit
+        have hxy : x.val.testBit (posToNat p) = y.val.testBit (posToNat p) := by
+          simpa [hm] using hbit
+        simpa [iagreeTestbitPos] using hxy
+
+end CompCert4Lean.Backend.NeedDomain

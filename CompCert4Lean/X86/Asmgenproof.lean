@@ -912,3 +912,17 @@ theorem mk_jcc_label : mk_jcc_labelStatement := by
           (CompCert4Lean.Lib.Coqlib.is_tail.refl _))
 
 end CompCert4Lean.X86.Asmgenproof
+
+namespace CompCert4Lean.X86.Asmgenproof
+
+theorem mk_sel_label : mk_sel_labelStatement := by
+  intro xc rd r2 k c h
+  cases xc <;> simp [CompCert4Lean.X86.Asmgen.mk_sel] at h <;> cases h
+  all_goals
+    simp [CompCert4Lean.Backend.Asmgenproof0.tail_nolabel,
+      CompCert4Lean.Backend.Asmgenproof0.find_label,
+      CompCert4Lean.X86.Asm.is_label]
+    repeat' apply CompCert4Lean.Lib.Coqlib.is_tail.cons
+    exact CompCert4Lean.Lib.Coqlib.is_tail.refl _
+
+end CompCert4Lean.X86.Asmgenproof

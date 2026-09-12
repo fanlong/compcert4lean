@@ -737,3 +737,37 @@ theorem eval_notint
       · rfl
 
 end CompCert4Lean.X86.SelectOpproof
+
+namespace CompCert4Lean.X86.SelectOpproof
+
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.Common.Values
+open CompCert4Lean.X86.Op
+open CompCert4Lean.X86.SelectOp
+
+theorem eval_negint
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    eval_negintStatement := by
+  intro xi ge sp e m le a x h
+  cases hcase : negint_match a with
+  | negint_case1 n =>
+      cases h with
+      | eval_Eop le' op al vl v hargs hop =>
+          cases hargs with
+          | nil _ =>
+              change some (.Vint n) = some x at hop
+              cases hop
+              refine ⟨.Vint (CompCert4Lean.Lib.Integers.Int.neg n), ?_, ?_⟩
+              · apply eval_Eop le (Ointconst (CompCert4Lean.Lib.Integers.Int.neg n)) Enil []
+                · exact eval_exprlist.nil le
+                · rfl
+              · exact Val.lessdef_refl _
+  | negint_default e1 =>
+      refine ⟨Val.neg x, ?_, Val.lessdef_refl _⟩
+      simp only [negint, hcase]
+      apply eval_Eop le Oneg (Econs a Enil) [x] (Val.neg x)
+      · exact eval_exprlist.cons le a Enil x [] h (eval_exprlist.nil le)
+      · rfl
+
+end CompCert4Lean.X86.SelectOpproof
