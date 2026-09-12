@@ -491,3 +491,43 @@ theorem eval_intoflong
       · rfl
 
 end CompCert4Lean.X86.SelectLongproof
+
+namespace CompCert4Lean.X86.SelectLongproof
+open CompCert4Lean.Common.AST CompCert4Lean.Common.Values CompCert4Lean.Backend.CminorSel CompCert4Lean.X86.Op CompCert4Lean.X86.SelectLong
+theorem eval_longofintu
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    @eval_longofintuStatement binary64_certificate binary32_certificate := by
+  unfold eval_longofintuStatement unary_constructor_sound
+  intro xi prog sp e m le a x h
+  unfold longofintu
+  cases hmatch : CompCert4Lean.Backend.SplitLong.is_intconst a with
+  | none =>
+      refine ⟨Val.longofintu x, ?_, Val.lessdef_refl _⟩
+      apply eval_expr.eval_Eop le Ocast32unsigned (Econs a Enil) [x] _
+      · exact eval_exprlist.cons le a Enil x [] h (eval_exprlist.nil le)
+      · rfl
+  | some n =>
+      refine ⟨.Vlong (CompCert4Lean.Lib.Integers.Int64.repr (CompCert4Lean.Lib.Integers.Int.unsigned n)), ?_, ?_⟩
+      · apply eval_expr.eval_Eop le (Olongconst _) Enil [] _ (eval_exprlist.nil le); rfl
+      · have ha : a = Eop (Ointconst n) Enil := by
+          cases a with
+          | Evar id => simp [CompCert4Lean.Backend.SplitLong.is_intconst] at hmatch
+          | Eop op args =>
+              cases op <;> cases args <;>
+                simp [CompCert4Lean.Backend.SplitLong.is_intconst] at hmatch ⊢ <;>
+                try { cases hmatch; rfl }
+          | Eload chunk addr args => simp [CompCert4Lean.Backend.SplitLong.is_intconst] at hmatch
+          | Econdition c b d => simp [CompCert4Lean.Backend.SplitLong.is_intconst] at hmatch
+          | Elet b d => simp [CompCert4Lean.Backend.SplitLong.is_intconst] at hmatch
+          | Eletvar i => simp [CompCert4Lean.Backend.SplitLong.is_intconst] at hmatch
+          | Ebuiltin ef args => simp [CompCert4Lean.Backend.SplitLong.is_intconst] at hmatch
+          | Eexternal id sg args => simp [CompCert4Lean.Backend.SplitLong.is_intconst] at hmatch
+        subst a
+        cases h with
+        | eval_Eop _ _ _ _ _ hargs hop =>
+            cases hargs
+            change some (.Vint n) = some x at hop
+            cases hop
+            exact Val.lessdef_refl _
+end CompCert4Lean.X86.SelectLongproof

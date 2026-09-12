@@ -1253,3 +1253,64 @@ theorem size_callee_save_area_rec_incr : size_callee_save_area_rec_incrStatement
         (zLe_trans (align ofs (typesize (mreg_type r))) _ _ hadd (ih _))
 
 end CompCert4Lean.Backend.Bounds
+
+namespace CompCert4Lean.Backend.Bounds
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Backend.Linear
+open CompCert4Lean.Lib.Coqlib
+
+theorem function_bounds_bound_local_pos_proof :
+    ∀ (cfg : CompCert4Lean.Config.CompilerConfig) (f : CompCert4Lean.Backend.Linear.function),
+      bound_local_pos cfg (function_bounds cfg f) := by
+  intro cfg f
+  unfold bound_local_pos function_bounds
+  change zLe z0 (max_over_slots_of_funct f local_slot)
+  exact max_over_slots_of_funct_pos f local_slot
+
+theorem function_bounds_bound_outgoing_pos_proof :
+    ∀ (cfg : CompCert4Lean.Config.CompilerConfig) (f : CompCert4Lean.Backend.Linear.function),
+      bound_outgoing_pos cfg (function_bounds cfg f) := by
+  intro cfg f
+  unfold bound_outgoing_pos function_bounds
+  change zLe z0 (zMax (max_over_instrs f (outgoing_space cfg))
+    (max_over_slots_of_funct f outgoing_slot))
+  have hleft : zLe z0 (max_over_instrs f (outgoing_space cfg)) := by
+    unfold max_over_instrs
+    exact max_over_list_pos _ _ _
+  exact zLe_trans z0 (max_over_instrs f (outgoing_space cfg)) _ hleft
+    (zLe_max_left _ _)
+
+theorem function_bounds_bound_stack_data_pos_proof :
+    ∀ (cfg : CompCert4Lean.Config.CompilerConfig) (f : CompCert4Lean.Backend.Linear.function),
+      bound_stack_data_pos cfg (function_bounds cfg f) := by
+  intro cfg f
+  unfold bound_stack_data_pos function_bounds
+  change zLe z0 (zMax f.fn_stacksize z0)
+  exact zLe_max_right _ _
+
+private theorem bounds_nodupA_to_norepet (l : List RegSet.elt) :
+    CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.SetoidList.NoDupA
+      RegSet.EOrder.eq l → CompCert4Lean.Lib.Coqlib.list_norepet l := by
+  intro h
+  induction h with
+  | nil => exact CompCert4Lean.Lib.Coqlib.list_norepet.nil _
+  | @cons x l hnot htail ih =>
+      apply CompCert4Lean.Lib.Coqlib.list_norepet.cons x
+      · intro hx
+        apply hnot
+        apply (CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.SetoidList.InA_alt
+          RegSet.EOrder.eq x l).2
+        exact ⟨x, rfl, hx⟩
+      · exact ih
+
+theorem function_bounds_used_callee_save_norepet_proof :
+    ∀ (cfg : CompCert4Lean.Config.CompilerConfig) (f : CompCert4Lean.Backend.Linear.function),
+      used_callee_save_norepet cfg (function_bounds cfg f) := by
+  intro cfg f
+  unfold used_callee_save_norepet function_bounds
+  apply bounds_nodupA_to_norepet
+  exact RegSet.elements_3w_proof (record_regs_of_function cfg f)
+
+end CompCert4Lean.Backend.Bounds

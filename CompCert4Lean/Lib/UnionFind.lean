@@ -970,3 +970,15 @@ theorem identify_wf_proof :
 
 end UF
 end CompCert4Lean.Lib.UnionFind
+
+namespace CompCert4Lean.Lib.UnionFind
+namespace UF
+
+theorem union_not_same_class_proof :
+    ∀ (M : MAP), union_not_same_classStatement M := by
+  intro M uf a b hne h
+  apply hne
+  exact h.symm.trans (repr_canonical_calc M uf b)
+
+end UF
+end CompCert4Lean.Lib.UnionFind
