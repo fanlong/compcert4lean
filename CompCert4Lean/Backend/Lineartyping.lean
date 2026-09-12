@@ -744,3 +744,23 @@ theorem wt_initial_state : wt_initial_stateStatement := by
         simp [agree_outgoing_arguments, Linear.parent_locset, Locmap.init]
 
 end CompCert4Lean.Backend.Lineartyping
+
+namespace CompCert4Lean.Backend.Lineartyping
+
+theorem wt_state_getstack : wt_state_getstackStatement := by
+  intro cfg s f sp sl ofs ty rd c rs m hstate
+  cases hstate
+  rename_i WTSTK WTF WTC WTRS
+  have hparts :
+      wt_instr cfg f (Linear.Lgetstack sl ofs ty rd) = true ∧
+        listForallb (wt_instr cfg f) c = true := by
+    simpa [wt_code, listForallb,
+      CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.List.forallb] using WTC
+  have htypes :
+      CompCert4Lean.Common.AST.subtype ty
+          (CompCert4Lean.X86.Machregs.mreg_type rd) = true ∧
+        slot_valid cfg f sl ofs ty = true := by
+    simpa [wt_instr, Bool.and_eq_true] using hparts.1
+  exact htypes.2
+
+end CompCert4Lean.Backend.Lineartyping

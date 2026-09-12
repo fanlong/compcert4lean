@@ -812,3 +812,73 @@ theorem storeind_label : storeind_labelStatement := by
   all_goals apply CompCert4Lean.Lib.Coqlib.is_tail.cons <;>
     exact CompCert4Lean.Lib.Coqlib.is_tail.refl _
 end CompCert4Lean.X86.Asmgenproof
+
+namespace CompCert4Lean.X86.Asmgenproof
+
+private theorem asmgenproof_tail_nolabel_if
+    (p : Bool) (k c₁ c₂ : AsmCode)
+    (h₁ : CompCert4Lean.Backend.Asmgenproof0.tail_nolabel k c₁)
+    (h₂ : CompCert4Lean.Backend.Asmgenproof0.tail_nolabel k c₂) :
+    CompCert4Lean.Backend.Asmgenproof0.tail_nolabel k (if p then c₁ else c₂) := by
+  cases p <;> simp_all
+
+private theorem asmgenproof_mk_setcc_base_label :
+    ∀ (xc : Extcond) (rd : Ireg) (k : AsmCode),
+      CompCert4Lean.Backend.Asmgenproof0.tail_nolabel k
+        (CompCert4Lean.X86.Asmgen.mk_setcc_base xc rd k) := by
+  intro xc rd k
+  cases xc with
+  | Cond_base c =>
+      simp only [CompCert4Lean.X86.Asmgen.mk_setcc_base]
+      constructor
+      · exact CompCert4Lean.Lib.Coqlib.is_tail.cons _
+          (CompCert4Lean.Lib.Coqlib.is_tail.refl _)
+      · intro lbl
+        simp [CompCert4Lean.Backend.Asmgenproof0.find_label,
+          CompCert4Lean.X86.Asm.is_label]
+  | Cond_or c1 c2 =>
+      simp only [CompCert4Lean.X86.Asmgen.mk_setcc_base]
+      apply asmgenproof_tail_nolabel_if
+      · constructor
+        · exact CompCert4Lean.Lib.Coqlib.is_tail.cons _
+            (CompCert4Lean.Lib.Coqlib.is_tail.cons _
+              (CompCert4Lean.Lib.Coqlib.is_tail.cons _
+                (CompCert4Lean.Lib.Coqlib.is_tail.refl _)))
+        · intro lbl
+          simp [CompCert4Lean.Backend.Asmgenproof0.find_label,
+            CompCert4Lean.X86.Asm.is_label]
+      · constructor
+        · exact CompCert4Lean.Lib.Coqlib.is_tail.cons _
+            (CompCert4Lean.Lib.Coqlib.is_tail.cons _
+              (CompCert4Lean.Lib.Coqlib.is_tail.cons _
+                (CompCert4Lean.Lib.Coqlib.is_tail.refl _)))
+        · intro lbl
+          simp [CompCert4Lean.Backend.Asmgenproof0.find_label,
+            CompCert4Lean.X86.Asm.is_label]
+  | Cond_and c1 c2 =>
+      simp only [CompCert4Lean.X86.Asmgen.mk_setcc_base]
+      apply asmgenproof_tail_nolabel_if
+      · constructor
+        · exact CompCert4Lean.Lib.Coqlib.is_tail.cons _
+            (CompCert4Lean.Lib.Coqlib.is_tail.cons _
+              (CompCert4Lean.Lib.Coqlib.is_tail.cons _
+                (CompCert4Lean.Lib.Coqlib.is_tail.refl _)))
+        · intro lbl
+          simp [CompCert4Lean.Backend.Asmgenproof0.find_label,
+            CompCert4Lean.X86.Asm.is_label]
+      · constructor
+        · exact CompCert4Lean.Lib.Coqlib.is_tail.cons _
+            (CompCert4Lean.Lib.Coqlib.is_tail.cons _
+              (CompCert4Lean.Lib.Coqlib.is_tail.cons _
+                (CompCert4Lean.Lib.Coqlib.is_tail.refl _)))
+        · intro lbl
+          simp [CompCert4Lean.Backend.Asmgenproof0.find_label,
+            CompCert4Lean.X86.Asm.is_label]
+
+theorem mk_setcc_label : mk_setcc_labelStatement := by
+  intro xc rd k
+  unfold CompCert4Lean.X86.Asmgen.mk_setcc
+  simp [CompCert4Lean.X86_64.Archi.ptr64]
+  exact asmgenproof_mk_setcc_base_label xc rd k
+
+end CompCert4Lean.X86.Asmgenproof

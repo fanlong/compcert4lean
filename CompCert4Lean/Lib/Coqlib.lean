@@ -790,3 +790,33 @@ theorem two_power_nat_two_p : two_power_nat_two_pStatement := by
   rfl
 
 end CompCert4Lean.Lib.Coqlib
+
+namespace CompCert4Lean.Lib.Coqlib
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+private theorem coqlib_nat_pow_two_mono :
+    ∀ m n : Nat, m ≤ n → (2 : Int) ^ m ≤ (2 : Int) ^ n := by
+  intro m n h
+  induction h with
+  | refl => exact Int.le_refl _
+  | @step n h ih =>
+      apply Int.le_trans ih
+      rw [Int.pow_succ]
+      have hp : 0 ≤ (2 : Int) ^ n := Int.pow_nonneg (by omega)
+      omega
+
+theorem two_p_monotone : two_p_monotoneStatement := by
+  intro x y h
+  change intOfZ (two_p x) ≤ intOfZ (two_p y)
+  change 0 ≤ intOfZ x ∧ intOfZ x ≤ intOfZ y at h
+  have hnat : Int.toNat (intOfZ x) ≤ Int.toNat (intOfZ y) :=
+    Int.toNat_le_toNat h.2
+  unfold two_p ZArith.Zpower.two_p ZArith.BinInt.Z.pow
+  rw [if_neg (by omega), if_neg (by omega)]
+  simp only [intOfZ_zOfInt]
+  change (2 : Int) ^ (Int.toNat (intOfZ x)) ≤
+    (2 : Int) ^ (Int.toNat (intOfZ y))
+  exact coqlib_nat_pow_two_mono _ _ hnat
+
+end CompCert4Lean.Lib.Coqlib

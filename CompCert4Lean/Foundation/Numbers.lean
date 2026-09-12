@@ -1307,3 +1307,15 @@ theorem Arith.PeanoNat.Nat.add_0_r :
 
 end Rocq.Coq
 end CompCert4Lean.Foundation.Numbers
+
+namespace CompCert4Lean.Foundation.Numbers
+namespace Rocq.Coq
+
+theorem Arith.PeanoNat.Nat.add_lt_mono_r :
+    Arith.PeanoNat.Nat.add_lt_mono_rStatement := by
+  intro n m p
+  unfold Arith.PeanoNat.Nat.lt
+  exact (Nat.add_lt_add_iff_right (k := p) (n := n) (m := m)).symm
+
+end Rocq.Coq
+end CompCert4Lean.Foundation.Numbers

@@ -1519,3 +1519,48 @@ theorem find_def_symbol : find_def_symbolStatement := by
 
 end Genv
 end CompCert4Lean.Common.Globalenvs
+
+namespace CompCert4Lean.Common.Globalenvs
+namespace Genv
+
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Lib.Maps
+
+theorem find_symbol_inversion : find_symbol_inversionStatement := by
+  intro F V p x b hfind
+  unfold globalenv at hfind
+  let P : t F V → Prop := fun ge =>
+    find_symbol ge x = some b → x ∈ CompCert4Lean.Common.AST.prog_defs_names p
+  have hpres : ∀ (ge : t F V) (id : CompCert4Lean.Common.AST.ident)
+      (g : CompCert4Lean.Common.AST.globdef F V),
+      P ge → (id, g) ∈ p.prog_defs → P (add_global ge (id, g)) := by
+    intro ge id g hP hin
+    change find_symbol (add_global ge (id, g)) x = some b →
+      x ∈ CompCert4Lean.Common.AST.prog_defs_names p
+    intro hnew
+    unfold P at hP
+    unfold find_symbol at hnew
+    change PTree.get x
+      (PTree.set id ge.genv_next ge.genv_symb) = some b at hnew
+    by_cases heq : x = id
+    · subst x
+      have hmem : id ∈ CompCert4Lean.Common.AST.prog_defs_names p := by
+        change id ∈ p.prog_defs.map Prod.fst
+        exact _root_.List.mem_map.mpr ⟨(id, g), hin, rfl⟩
+      exact hmem
+    · have hgetold : PTree.get x ge.genv_symb = some b := by
+        exact (PTree.gso ge.genv_next ge.genv_symb heq).symm.trans hnew
+      exact hP hgetold
+  have hbase : P (empty_genv F V p.prog_public) := by
+    change find_symbol (empty_genv F V p.prog_public) x = some b →
+      x ∈ CompCert4Lean.Common.AST.prog_defs_names p
+    intro hbase
+    unfold find_symbol at hbase
+    change none = some b at hbase
+    cases hbase
+  have h := add_globals_preserves F V P p.prog_defs
+      (empty_genv F V p.prog_public) hpres hbase
+  exact h hfind
+
+end Genv
+end CompCert4Lean.Common.Globalenvs

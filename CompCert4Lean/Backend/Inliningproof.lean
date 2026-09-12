@@ -1682,3 +1682,108 @@ theorem agree_regs_init_regs : agree_regs_init_regsStatement := by
                     htailAgree hv hr
 
 end CompCert4Lean.Backend.Inliningproof
+
+namespace CompCert4Lean.Backend.Inliningproof
+
+open CompCert4Lean.Backend.Inlining
+open CompCert4Lean.Backend.Inliningspec
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.Smallstep
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+
+private theorem tr_moves_nil_pc (c : code) (pc1 pc2 : node) (srcs : List reg) :
+    tr_moves c pc1 srcs [] pc2 → pc1 = pc2 := by
+  intro h
+  cases h with
+  | tr_moves_nil => rfl
+
+theorem tr_moves_init_regs
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    tr_moves_init_regsStatement := by
+  intro xi tprog F stk f sp m ctx1 ctx2 hctx
+  intro rdsts
+  induction rdsts with
+  | nil =>
+      intro rsrcs vl pc1 pc2 rs1 htr hdst hvl
+      have hpc : pc1 = pc2 := tr_moves_nil_pc f.fn_code pc1 pc2 (sregs ctx1 rsrcs) htr
+      subst pc2
+      refine ⟨rs1, ?_, ?_, ?_⟩
+      · exact star_refl _ _ _
+      · cases vl <;> exact agree_regs_init F ctx2 rs1
+      · intro r hr
+        rfl
+  | cons a rdsts ih =>
+      intro rsrcs vl pc1 pc2 rs1 htr hdst hvl
+      cases hvl with
+      | nil =>
+          simp only [sregs, List.map] at htr
+          cases htr with
+          | tr_moves_nil =>
+              refine ⟨rs1, ?_, ?_, ?_⟩
+              · exact star_refl _ _ _
+              · change agree_regs F ctx2 (Regmap.init Vundef) rs1
+                exact agree_regs_init F ctx2 rs1
+              · intro r hr
+                rfl
+      | cons v r hv htail =>
+          rename_i vl_tail rsrcs_tail
+          simp only [sregs, List.map] at htr
+          cases htr with
+          | tr_moves_cons =>
+              rename_i htr' hcode
+              have hdst_a : Ple a ctx2.mreg := hdst a (List.mem_cons_self)
+              have hdst_tail : ∀ r, r ∈ rdsts → Ple r ctx2.mreg := by
+                intro r hr
+                exact hdst r (List.mem_cons_of_mem a hr)
+              have ih_result := ih _ _ _ _ rs1 htr' hdst_tail htail
+              rcases ih_result with ⟨rs2, hstar, hagree, hbelow⟩
+              refine ⟨Regmap.set (sreg ctx2 a) (Regmap.get (sreg ctx1 r) rs2) rs2, ?_, ?_, ?_⟩
+              · exact star_right
+                  (genv := RTL.genv) (state := RTL.state) (step := RTL.step xi)
+                  (ge := CompCert4Lean.Common.Globalenvs.Genv.globalenv tprog)
+                  (s1 := State stk f sp pc1 rs1 m) (t1 := E0)
+                  (s2 := _)
+                  (t2 := E0)
+                  (s3 := State stk f sp pc2 (Regmap.set (sreg ctx2 a)
+                    (Regmap.get (sreg ctx1 r) rs2) rs2) m) (t := E0)
+                  hstar (by
+                    apply RTL.step.exec_Iop
+                    · exact hcode
+                    · rfl) rfl
+              · change agree_regs F ctx2
+                  (Regmap.set a v (init_regs vl_tail rdsts))
+                  (Regmap.set (sreg ctx2 a) (Regmap.get (sreg ctx1 r) rs2) rs2)
+                rcases hv with ⟨hbelow_src, hvundef⟩ | ⟨hsrcle, hvis⟩
+                · subst v
+                  exact agree_set_reg_undef F ctx2
+                    (init_regs vl_tail rdsts) rs2 a (Regmap.get (sreg ctx1 r) rs2) hagree
+                · apply agree_set_reg F ctx2
+                    (init_regs vl_tail rdsts) rs2 a v (Regmap.get (sreg ctx1 r) rs2) hagree
+                  · have hsrcbelow : Plt (sreg ctx1 r) ctx2.dreg := by
+                      exact context_below_lt ctx1 ctx2 r hctx hsrcle
+                    have heq := hbelow (sreg ctx1 r) hsrcbelow
+                    rw [heq]
+                    exact hvis
+                  · exact hdst_a
+              · intro r0 hr
+                rw [@Regmap.gsspec_proof val r0 (sreg ctx2 a)
+                  (Regmap.get (sreg ctx1 r) rs2) rs2]
+                cases peq r0 (sreg ctx2 a) with
+                | left h =>
+                    have hdiff : sreg ctx2 a ≠ r0 := by
+                      exact sreg_below_diff ctx2 a r0 hr
+                    exact False.elim (hdiff h.symm)
+                | right h =>
+                    simpa [h] using hbelow r0 hr
+          | tr_moves_nil =>
+              rename_i hcase
+              simp at hcase
+
+end CompCert4Lean.Backend.Inliningproof

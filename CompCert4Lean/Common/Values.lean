@@ -1498,3 +1498,34 @@ theorem normalize_idem : normalize_idemStatement := by
 
 end Val
 end CompCert4Lean.Common.Values
+
+namespace CompCert4Lean.Common.Values
+namespace Val
+
+theorem norm_bool_cases : norm_bool_casesStatement := by
+  intro v
+  unfold norm_bool
+  unfold is_bool
+  by_cases h₁ : v = Vtrue
+  · simp [eq, h₁, boolOfSumbool]
+  · by_cases h₂ : v = Vfalse
+    · simp [eq, h₁, h₂, boolOfSumbool]
+    · simp [eq, h₁, h₂, boolOfSumbool]
+
+theorem load_result_type : load_result_typeStatement := by
+  intro chunk v
+  cases chunk <;> cases v <;>
+    simp [load_result, has_type, CompCert4Lean.Common.AST.type_of_chunk,
+      CompCert4Lean.X86_64.Archi.ptr64]
+  case Mbool.Vint n =>
+    rcases norm_bool_cases (Vint (intZeroExt (zOfNat 8) n)) with h | h | h <;>
+      simp [h, has_type, Vfalse, Vtrue]
+
+theorem load_result_same : load_result_sameStatement := by
+  intro v ty h
+  cases v <;> cases ty <;>
+    simp [has_type, load_result, CompCert4Lean.Common.AST.chunk_of_type,
+      CompCert4Lean.X86_64.Archi.ptr64] at h ⊢
+
+end Val
+end CompCert4Lean.Common.Values

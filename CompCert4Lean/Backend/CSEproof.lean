@@ -1788,3 +1788,29 @@ theorem find_valnum_num_charact : find_valnum_num_charactStatement := by
                   exact List.mem_cons_of_mem _ (ih h)
 
 end CompCert4Lean.Backend.CSEproof
+
+namespace CompCert4Lean.Backend.CSEproof
+
+open CompCert4Lean.Backend.CSEdomain
+open CompCert4Lean.Lib.Maps
+
+theorem reg_valnum_sound
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    reg_valnum_soundStatement := by
+  intro n v r valu ge sp rs m hreg hnum
+  unfold CSE.reg_valnum at hreg
+  cases h : PMap.get v n.num_val with
+  | nil =>
+      simp [h] at hreg
+  | cons r1 rl =>
+      simp [h] at hreg
+      cases hreg
+      have hmem : r ∈ PMap.get v n.num_val := by
+        rw [h]
+        exact List.mem_cons_self
+      have hget : PTree.get r n.num_reg = some v :=
+        hnum.num_holds_wf.wf_num_val r v hmem
+      exact hnum.num_holds_reg r v hget
+
+end CompCert4Lean.Backend.CSEproof

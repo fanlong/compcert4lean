@@ -2116,3 +2116,63 @@ theorem functions_translated : functions_translatedStatement cfg oracle := by
                           simp [Genv.find_funct, Genv.find_funct_ptr, heq, ht]
 
 end CompCert4Lean.Backend.Selectionproof
+
+namespace CompCert4Lean.Backend.Selectionproof
+
+variable [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+variable [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+variable [binary64_inverse_certificate : BexactInverseCertificate (zOfNat 53) (zOfNat 1024)]
+variable [binary32_inverse_certificate : BexactInverseCertificate (zOfNat 24) (zOfNat 128)]
+variable (cfg : CompilerConfig) (oracle : SelectionOracle)
+
+theorem sig_function_translated : sig_function_translatedStatement cfg oracle := by
+  intro cu f tf hmatch
+  unfold match_fundef at hmatch
+  rcases hmatch with ⟨hf, hhelpers, hsel⟩
+  have sel_function_sig : ∀ (fn : Cminor.function) (tf' : CminorSel.function),
+      CompCert4Lean.Backend.Selection.sel_function cfg oracle
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        (binary64_inverse_certificate := binary64_inverse_certificate)
+        (binary32_inverse_certificate := binary32_inverse_certificate)
+        (CompCert4Lean.Common.AST.prog_defmap cu) hf fn = .OK tf' →
+      tf'.fn_sig = fn.fn_sig := by
+    intro fn tf' htrans
+    unfold CompCert4Lean.Backend.Selection.sel_function at htrans
+    cases ht : CompCert4Lean.Backend.Cminortyping.type_function fn with
+    | Error msg => simp [ht] at htrans
+    | OK env =>
+        cases hs : CompCert4Lean.Backend.Selection.sel_stmt cfg oracle
+            (binary64_certificate := binary64_certificate)
+            (binary32_certificate := binary32_certificate)
+            (binary64_inverse_certificate := binary64_inverse_certificate)
+            (binary32_inverse_certificate := binary32_inverse_certificate)
+            (CompCert4Lean.Common.AST.prog_defmap cu)
+            (CompCert4Lean.Backend.Selection.known_id fn) env fn.fn_body .Sskip with
+        | Error msg => simp [ht, hs] at htrans
+        | OK body' =>
+            simp [ht, hs] at htrans
+            cases htrans
+            rfl
+  cases f with
+  | Internal fn =>
+      unfold CompCert4Lean.Backend.Selection.sel_fundef
+        CompCert4Lean.Common.AST.transf_partial_fundef at hsel
+      cases htrans : CompCert4Lean.Backend.Selection.sel_function cfg oracle
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate)
+          (binary64_inverse_certificate := binary64_inverse_certificate)
+          (binary32_inverse_certificate := binary32_inverse_certificate)
+          (CompCert4Lean.Common.AST.prog_defmap cu) hf fn with
+      | Error msg => simp [htrans] at hsel
+      | OK tf' =>
+          simp [htrans] at hsel
+          cases hsel
+          exact sel_function_sig fn tf' htrans
+  | External ef =>
+      simp [CompCert4Lean.Backend.Selection.sel_fundef,
+        CompCert4Lean.Common.AST.transf_partial_fundef] at hsel
+      cases hsel
+      rfl
+
+end CompCert4Lean.Backend.Selectionproof

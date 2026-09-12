@@ -326,3 +326,26 @@ theorem Zwf_well_founded : Zwf_well_foundedStatement := by
   exact H (Int.toNat (intOfZ a - intOfZ c) + 1) a (Or.inl (Nat.lt_succ_self _))
 
 end CompCert4Lean.Foundation.Recursion.Rocq.Coq.ZArith.Zwf
+
+namespace CompCert4Lean.Foundation.Recursion
+namespace Rocq.Coq.ZArith.Zwf
+
+open _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt
+
+theorem Zwf_up_well_founded : Zwf_up_well_foundedStatement := by
+  intro c
+  apply _root_.CompCert4Lean.Foundation.Recursion.Rocq.Coq.Arith.Wf_nat.well_founded_lt_compat
+    (A := Z) (f := fun z => Int.toNat (intOfZ c - intOfZ z)) (R := Zwf_up c)
+  intro x y hxy
+  unfold Zwf_up at hxy
+  rcases hxy with ⟨hyx, hxc⟩
+  change intOfZ y < intOfZ x at hyx
+  change intOfZ x ≤ intOfZ c at hxc
+  change Int.toNat (intOfZ c - intOfZ x) <
+    Int.toNat (intOfZ c - intOfZ y)
+  apply (Int.toNat_lt_toNat (by omega : 0 < intOfZ c - intOfZ y)).2
+  omega
+
+end Rocq.Coq.ZArith.Zwf
+end CompCert4Lean.Foundation.Recursion

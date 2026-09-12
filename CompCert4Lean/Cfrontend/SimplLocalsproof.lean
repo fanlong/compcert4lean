@@ -1766,3 +1766,55 @@ theorem type_of_fundef_preserved : type_of_fundef_preservedStatement := by
           · cases htrans
 
 end CompCert4Lean.Cfrontend.SimplLocalsproof
+
+namespace CompCert4Lean.Cfrontend.SimplLocalsproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Lib.Coqlib
+
+private theorem simpllocalsproof_val_inject_incr
+    {f f' : meminj} {v v' : val}
+    (hinc : inject_incr f f') (hval : Val.inject f v v') :
+    Val.inject f' v v' := by
+  cases hval with
+  | inject_int n => exact Val.inject.inject_int n
+  | inject_long n => exact Val.inject.inject_long n
+  | inject_float x => exact Val.inject.inject_float x
+  | inject_single x => exact Val.inject.inject_single x
+  | inject_ptr b ofs b' ofs' delta hmap hofs =>
+      exact Val.inject.inject_ptr b ofs b' ofs' delta (hinc b b' delta hmap) hofs
+  | val_inject_undef => exact Val.inject.val_inject_undef _
+
+theorem match_envs_invariant : match_envs_invariantStatement := by
+  intro f cenv e le m lo hi te tle tlo thi f' m' hme hload hincr hinv1 hinv2
+  rcases hme with ⟨hvars, htemps, hinj, hrange, htrange, hmapped, hflat, hlo, htlo⟩
+  refine ⟨?_, ?_, hinj, hrange, htrange, ?_, ?_, hlo, htlo⟩
+  · intro id
+    cases hvars id with
+    | match_var_lifted b ty chunk v tv henv htenv hlift hmap hmode hload0 htlenv hv =>
+        have hbounds : Ple lo b ∧ Plt b hi := hrange id b ty henv
+        have hmap' : f' b = none := by
+          rw [hinv1 b hbounds, hmap]
+        have hload' : Mem.load chunk m' b (.Z0 : Z) = some v :=
+          hload b chunk v hmap hbounds hload0
+        exact match_var_lifted b ty chunk v tv henv htenv hlift hmap' hmode hload'
+          htlenv (simpllocalsproof_val_inject_incr hincr hv)
+    | match_var_not_lifted b ty b' henv htenv hnlocal hmap =>
+        exact match_var_not_lifted b ty b' henv htenv hnlocal
+          (hincr b b' (.Z0 : Z) hmap)
+    | match_var_not_local henv htenv hnlocal =>
+        exact match_var_not_local henv htenv hnlocal
+  · intro id v hle
+    rcases htemps id v hle with ⟨⟨tv, htle, hv⟩, hcenv⟩
+    exact ⟨⟨tv, htle, simpllocalsproof_val_inject_incr hincr hv⟩, hcenv⟩
+  · intro id b' ty hte
+    rcases hmapped id b' ty hte with ⟨b, hmap, henv⟩
+    exact ⟨b, hincr b b' (.Z0 : Z) hmap, henv⟩
+  · intro id b' ty b delta hte hmap'
+    have hmap : f b = some (b', delta) :=
+      (hinv2 b b' delta hmap' (htrange id b' ty hte)).symm.trans hmap'
+    exact hflat id b' ty b delta hte hmap
+
+end CompCert4Lean.Cfrontend.SimplLocalsproof

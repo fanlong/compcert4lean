@@ -1651,3 +1651,110 @@ theorem propagate_succ_charact : propagate_succ_charactStatement := by
             exact hnone
 
 end CompCert4Lean.Backend.Kildall.Dataflow_Solver
+
+namespace CompCert4Lean.Backend.Kildall.Dataflow_Solver
+
+open CompCert4Lean.Lib.Maps
+
+theorem propagate_succ_list_charact : propagate_succ_list_charactStatement := by
+  intro LAT NS LATlaws NSlaws out l
+  induction l with
+  | nil =>
+      intro st
+      change
+        (∀ n, n ∈ [] → optge LAT (PTree.get n st.aval) (some out)) ∧
+          (∀ n, n ∉ [] → PTree.get n st.aval = PTree.get n st.aval) ∧
+          (∀ n, optge LAT (PTree.get n st.aval) (PTree.get n st.aval)) ∧
+          (∀ n, NS.In n st.worklist ∨ PTree.get n st.aval = PTree.get n st.aval) ∧
+          (∀ n', NS.In n' st.worklist → NS.In n' st.worklist) ∧
+          (∀ n', NS.In n' st.worklist → n' ∈ [] ∨ NS.In n' st.worklist) ∧
+          (∀ n', st.visited n' → st.visited n') ∧
+          (∀ n', st.visited n' → NS.In n' st.worklist ∨ st.visited n') ∧
+          (∀ n', PTree.get n' st.aval = none → PTree.get n' st.aval ≠ none →
+            st.visited n')
+      refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+      · intro n hn; cases hn
+      · intro n hn; rfl
+      · intro n; exact optge_refl LATlaws _
+      · intro n; exact Or.inr rfl
+      · intro n' hn'; exact hn'
+      · intro n' hn'; exact Or.inr hn'
+      · intro n' hn'; exact hn'
+      · intro n' hn'; exact Or.inr hn'
+      · intro n' hnone hsome; exact False.elim (hsome hnone)
+  | cons a l ih =>
+      intro st
+      let st1 := propagate_succ st out a
+      let st2 := propagate_succ_list st1 out l
+      change
+        (∀ n, n ∈ a :: l → optge LAT (PTree.get n st2.aval) (some out)) ∧
+          (∀ n, n ∉ a :: l → PTree.get n st2.aval = PTree.get n st.aval) ∧
+          (∀ n, optge LAT (PTree.get n st2.aval) (PTree.get n st.aval)) ∧
+          (∀ n, NS.In n st2.worklist ∨ PTree.get n st2.aval = PTree.get n st.aval) ∧
+          (∀ n', NS.In n' st.worklist → NS.In n' st2.worklist) ∧
+          (∀ n', NS.In n' st2.worklist → n' ∈ a :: l ∨ NS.In n' st.worklist) ∧
+          (∀ n', st.visited n' → st2.visited n') ∧
+          (∀ n', st2.visited n' → NS.In n' st2.worklist ∨ st.visited n') ∧
+          (∀ n', PTree.get n' st.aval = none → PTree.get n' st2.aval ≠ none →
+            st2.visited n')
+      have hA := propagate_succ_charact (LAT := LAT) (NS := NS) LATlaws NSlaws st out a
+      have hB := ih st1
+      rcases hA with ⟨A1, A2, A3, A4, A5, A6, A7, A8, A9⟩
+      rcases hB with ⟨B1, B2, B3, B4, B5, B6, B7, B8, B9⟩
+      refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+      · intro n hn
+        simp only [List.mem_cons] at hn
+        rcases hn with hna | hn
+        · cases hna
+          exact optge_trans LATlaws _ _ _ (B3 a) A1
+        · exact B1 n hn
+      · intro n hn
+        have hnL : n ∉ l := by
+          intro h
+          exact hn (by simp [h])
+        have hna : a ≠ n := by
+          intro h
+          exact hn (by simp [h])
+        exact (B2 n hnL).trans (A2 n hna)
+      · intro n
+        exact optge_trans LATlaws _ _ _ (B3 n) (A3 n)
+      · intro n
+        rcases B4 n with h | h
+        · exact Or.inl h
+        · by_cases hna : n = a
+          · rcases A4 with ha | ha
+            · exact Or.inl (by simpa [hna] using B5 a ha)
+            · have h' : PTree.get n st2.aval = PTree.get n st1.aval := by
+                simpa [hna] using h
+              have ha' : PTree.get n st1.aval = PTree.get n st.aval := by
+                simpa [hna] using ha
+              exact Or.inr (h'.trans ha')
+          · exact Or.inr (h.trans (A2 n (fun e => hna e.symm)))
+      · intro n' hn'
+        exact B5 n' (A5 n' hn')
+      · intro n' hn'
+        rcases B6 n' hn' with h | h
+        · exact Or.inl (List.mem_cons_of_mem a h)
+        · rcases A6 n' h with ha | ha
+          · exact Or.inl (ha ▸ List.mem_cons_self)
+          · exact Or.inr ha
+      · intro n' hn'
+        exact B7 n' (A7 n' hn')
+      · intro n' hn'
+        rcases B8 n' hn' with h | h
+        · exact Or.inl h
+        · rcases A8 n' h with ha | ha
+          · exact Or.inl (B5 n' ha)
+          · exact Or.inr ha
+      · intro n' hnone hsome
+        cases hst1 : PTree.get n' st1.aval with
+        | none =>
+            exact B9 n' hst1 hsome
+        | some v =>
+            apply B7 n'
+            apply A9 n' hnone
+            intro hnone1
+            rw [hst1] at hnone1
+            cases hnone1
+
+end CompCert4Lean.Backend.Kildall.Dataflow_Solver

@@ -1029,3 +1029,210 @@ theorem In_raw_elements_between_2 : In_raw_elements_between_2Statement := by
       next _ => exact right_ih hx
 
 end CompCert4Lean.Lib.FSetAVLplus.Make
+
+namespace CompCert4Lean.Lib.FSetAVLplus.Make
+
+private theorem in_raw_elements_between_3_aux
+    (above_low_bound below_high_bound : X.t → Bool)
+    (above_monotone : AboveMonotone above_low_bound)
+    (below_monotone : BelowMonotone below_high_bound) :
+    ∀ (x : X.t) (m : Raw.tree X),
+      Raw.bst m → Raw.InT x m → above_low_bound x = true →
+        below_high_bound x = true →
+          Raw.InT x (raw_elements_between above_low_bound below_high_bound m) := by
+  intro x m hbst
+  induction hbst generalizing x with
+  | BSLeaf =>
+      intro hx
+      cases hx
+  | BSNode info value left right hleft hright hlt hgt left_ih right_ih =>
+      intro hx habove hbelow
+      rw [Raw.In_node_iff] at hx
+      rw [raw_elements_between]
+      cases hvalue_above : above_low_bound value with
+      | false =>
+          cases hx with
+          | inl hleft_mem =>
+              have hcontra : above_low_bound value = true :=
+                above_monotone x value (Or.inr (hlt x hleft_mem)) habove
+              rw [hvalue_above] at hcontra
+              cases hcontra
+          | inr hx' =>
+              cases hx' with
+              | inl hxeq =>
+                  have hcontra : above_low_bound value = true :=
+                    above_monotone x value (Or.inl hxeq) habove
+                  rw [hvalue_above] at hcontra
+                  cases hcontra
+              | inr hright_mem =>
+                  exact right_ih x hright_mem habove hbelow
+      | true =>
+          cases hvalue_below : below_high_bound value with
+          | false =>
+              cases hx with
+              | inl hleft_mem =>
+                  exact left_ih x hleft_mem habove hbelow
+              | inr hx' =>
+                  cases hx' with
+                  | inl hxeq =>
+                      have hcontra : below_high_bound value = true :=
+                        below_monotone x value (Or.inl hxeq) hbelow
+                      rw [hvalue_below] at hcontra
+                      cases hcontra
+                  | inr hright_mem =>
+                      have hcontra : below_high_bound value = true :=
+                        below_monotone x value (Or.inr (hgt x hright_mem)) hbelow
+                      rw [hvalue_below] at hcontra
+                      cases hcontra
+          | true =>
+              apply (Raw.join_spec
+                (raw_elements_between above_low_bound below_high_bound left)
+                value
+                (raw_elements_between above_low_bound below_high_bound right)
+                x).mpr
+              cases hx with
+              | inl hleft_mem =>
+                  exact Or.inr (Or.inl (left_ih x hleft_mem habove hbelow))
+              | inr hx' =>
+                  cases hx' with
+                  | inl hxeq => exact Or.inl hxeq
+                  | inr hright_mem =>
+                      exact Or.inr (Or.inr (right_ih x hright_mem habove hbelow))
+
+theorem elements_between_iff : elements_between_iffStatement := by
+  intro X above_low_bound below_high_bound above_monotone below_monotone
+    x s
+  change Raw.InT x (raw_elements_between above_low_bound below_high_bound s.this) ↔
+    Raw.InT x s.this ∧ above_low_bound x = true ∧ below_high_bound x = true
+  constructor
+  · intro hx
+    exact ⟨in_raw_elements_between above_low_bound below_high_bound x s.this hx,
+      In_raw_elements_between_2 X above_low_bound below_high_bound
+        above_monotone below_monotone x s.this hx⟩
+  · rintro ⟨hx, habove, hbelow⟩
+    exact in_raw_elements_between_3_aux above_low_bound below_high_bound
+      above_monotone below_monotone x s.this s.is_ok.ok hx habove hbelow
+
+end CompCert4Lean.Lib.FSetAVLplus.Make
+
+namespace CompCert4Lean.Lib.FSetAVLplus.Make
+
+theorem raw_for_all_between_1 : raw_for_all_between_1Statement := by
+  intro X pred above_low_bound below_high_bound pred_compat above_monotone
+    below_monotone x m hbst
+  induction hbst generalizing x with
+  | BSLeaf =>
+      intro hfor hx habove hbelow
+      cases hx
+  | BSNode info value left right hleft hright hlt hgt left_ih right_ih =>
+      intro hfor hx habove hbelow
+      rw [Raw.In_node_iff] at hx
+      cases hvalue_above : above_low_bound value with
+      | false =>
+          simp [raw_for_all_between, hvalue_above] at hfor
+          cases hx with
+          | inl hleft_mem =>
+              have hcontra : above_low_bound value = true :=
+                above_monotone x value (Or.inr (hlt x hleft_mem)) habove
+              rw [hvalue_above] at hcontra
+              cases hcontra
+          | inr hx' =>
+              cases hx' with
+              | inl hxeq =>
+                  have hcontra : above_low_bound value = true :=
+                    above_monotone x value (Or.inl hxeq) habove
+                  rw [hvalue_above] at hcontra
+                  cases hcontra
+              | inr hright_mem =>
+                  exact right_ih x hfor hright_mem habove hbelow
+      | true =>
+          cases hvalue_below : below_high_bound value with
+          | false =>
+              simp [raw_for_all_between, hvalue_above, hvalue_below] at hfor
+              cases hx with
+              | inl hleft_mem =>
+                  exact left_ih x hfor hleft_mem habove hbelow
+              | inr hx' =>
+                  cases hx' with
+                  | inl hxeq =>
+                      have hcontra : below_high_bound value = true :=
+                        below_monotone x value (Or.inl hxeq) hbelow
+                      rw [hvalue_below] at hcontra
+                      cases hcontra
+                  | inr hright_mem =>
+                      have hcontra : below_high_bound value = true :=
+                        below_monotone x value (Or.inr (hgt x hright_mem)) hbelow
+                      rw [hvalue_below] at hcontra
+                      cases hcontra
+          | true =>
+              simp [raw_for_all_between, hvalue_above, hvalue_below] at hfor
+              rcases hfor with ⟨⟨hleft_for, hpred_value⟩, hright_for⟩
+              cases hx with
+              | inl hleft_mem =>
+                  exact left_ih x hleft_for hleft_mem habove hbelow
+              | inr hx' =>
+                  cases hx' with
+                  | inl hxeq =>
+                      rw [pred_compat x value hxeq]
+                      exact hpred_value
+                  | inr hright_mem =>
+                      exact right_ih x hright_for hright_mem habove hbelow
+
+end CompCert4Lean.Lib.FSetAVLplus.Make
+
+namespace CompCert4Lean.Lib.FSetAVLplus.Make
+
+theorem raw_for_all_between_2 : raw_for_all_between_2Statement := by
+  intro X pred above_low_bound below_high_bound m hbst
+  induction hbst with
+  | BSLeaf =>
+      intro hforall
+      simp [raw_for_all_between]
+  | BSNode info value left right hleft hright hlt hgt left_ih right_ih =>
+      intro hforall
+      cases hvalue_above : above_low_bound value with
+      | false =>
+          simp [raw_for_all_between, hvalue_above]
+          apply right_ih
+          intro x hx habove hbelow
+          exact hforall x (.InRight info left right value hx) habove hbelow
+      | true =>
+          cases hvalue_below : below_high_bound value with
+          | false =>
+              simp [raw_for_all_between, hvalue_above, hvalue_below]
+              apply left_ih
+              intro x hx habove hbelow
+              exact hforall x (.InLeft info left right value hx) habove hbelow
+          | true =>
+              simp [raw_for_all_between, hvalue_above, hvalue_below]
+              constructor
+              · constructor
+                · apply left_ih
+                  intro x hx habove hbelow
+                  exact hforall x (.InLeft info left right value hx) habove hbelow
+                · exact hforall value (.IsRoot info left right value (X.eq_refl value))
+                    hvalue_above hvalue_below
+              · apply right_ih
+                intro x hx habove hbelow
+                exact hforall x (.InRight info left right value hx) habove hbelow
+
+end CompCert4Lean.Lib.FSetAVLplus.Make
+
+namespace CompCert4Lean.Lib.FSetAVLplus.Make
+
+theorem for_all_between_iff : for_all_between_iffStatement := by
+  intro X pred above_low_bound below_high_bound pred_compat above_monotone
+    below_monotone s
+  change raw_for_all_between pred above_low_bound below_high_bound s.this = true ↔
+    ∀ x, Raw.InT x s.this → above_low_bound x = true →
+      below_high_bound x = true → pred x = true
+  constructor
+  · intro hfor x hx habove hbelow
+    exact raw_for_all_between_1 X pred above_low_bound below_high_bound
+      pred_compat above_monotone below_monotone x s.this s.is_ok.ok
+      hfor hx habove hbelow
+  · intro hforall
+    exact raw_for_all_between_2 X pred above_low_bound below_high_bound
+      s.this s.is_ok.ok hforall
+
+end CompCert4Lean.Lib.FSetAVLplus.Make

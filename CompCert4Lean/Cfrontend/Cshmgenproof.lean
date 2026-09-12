@@ -1714,3 +1714,393 @@ theorem make_cast_int_correct
       exact make_cmpu_ne_zero_correct ge e le m a n ha
 
 end CompCert4Lean.Cfrontend.Cshmgenproof
+
+namespace CompCert4Lean.Cfrontend.Cshmgenproof
+
+open CompCert4Lean.Cfrontend.Cshmgen
+
+theorem make_cast_correct
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    make_cast_correctStatement := by
+  intro ge e le m a b v ty1 ty2 v' hmake ha hsem
+  unfold make_cast at hmake
+  unfold CompCert4Lean.Cfrontend.Cop.sem_cast at hsem
+  cases hclass : CompCert4Lean.Cfrontend.Cop.classify_cast ty1 ty2 <;>
+    simp [hclass] at hmake hsem
+  case cast_case_pointer =>
+    subst b
+    cases v with
+    | Vint n => simp [CompCert4Lean.X86_64.Archi.ptr64] at hsem
+    | Vlong n =>
+        simp [CompCert4Lean.X86_64.Archi.ptr64] at hsem
+        rcases hsem with ⟨_, rfl⟩
+        exact ha
+    | Vfloat f => simp [CompCert4Lean.X86_64.Archi.ptr64] at hsem
+    | Vsingle f => simp [CompCert4Lean.X86_64.Archi.ptr64] at hsem
+    | Vptr b ofs =>
+        simp [CompCert4Lean.X86_64.Archi.ptr64] at hsem
+        rcases hsem with ⟨_, rfl⟩
+        exact ha
+    | Vundef => simp [CompCert4Lean.X86_64.Archi.ptr64] at hsem
+  case cast_case_i2i sz2 si2 =>
+    cases v with
+    | Vint n =>
+        simp at hsem
+        cases hsem
+        subst b
+        exact make_cast_int_correct ge e le m a n sz2 si2 ha
+    | Vlong n | Vfloat n | Vsingle n | Vptr n _ | Vundef => simp at hsem
+  case cast_case_f2f =>
+    subst b
+    cases v with
+    | Vfloat f => simp at hsem; cases hsem; exact ha
+    | Vint n | Vlong n | Vsingle n | Vptr n _ | Vundef => simp at hsem
+  case cast_case_s2i sz2 si2 =>
+    cases v with
+    | Vsingle f =>
+      cases si2 with
+      | Signed =>
+        cases hcast : CompCert4Lean.Cfrontend.Cop.cast_single_int .Signed f with
+        | none => simp [hcast] at hsem
+        | some i =>
+            simp [hcast] at hsem
+            cases hsem
+            subst b
+            apply make_cast_int_correct
+            apply Csharpminor.eval_Eunop
+            · exact ha
+            · unfold Csharpminor.eval_unop CompCert4Lean.Backend.Cminor.eval_unop
+              simpa [CompCert4Lean.Cfrontend.Cop.cast_single_int,
+                CompCert4Lean.Common.Values.Val.intofsingle] using hcast
+      | Unsigned =>
+        cases hcast : CompCert4Lean.Cfrontend.Cop.cast_single_int .Unsigned f with
+        | none => simp [hcast] at hsem
+        | some i =>
+            simp [hcast] at hsem
+            cases hsem
+            subst b
+            apply make_cast_int_correct
+            apply Csharpminor.eval_Eunop
+            · exact ha
+            · unfold Csharpminor.eval_unop CompCert4Lean.Backend.Cminor.eval_unop
+              simpa [CompCert4Lean.Cfrontend.Cop.cast_single_int,
+                CompCert4Lean.Common.Values.Val.intuofsingle] using hcast
+    | Vint n | Vlong n | Vfloat n | Vptr n _ | Vundef => simp at hsem
+  case cast_case_l2i sz2 si2 =>
+    cases v with
+    | Vlong n =>
+        simp at hsem
+        cases hsem
+        subst b
+        apply make_cast_int_correct
+        apply Csharpminor.eval_Eunop
+        · exact ha
+        · unfold Csharpminor.eval_unop CompCert4Lean.Backend.Cminor.eval_unop
+          rfl
+    | Vint n | Vfloat n | Vsingle n | Vptr n _ | Vundef => simp at hsem
+  case cast_case_f2l si2 =>
+    cases v with
+    | Vfloat f =>
+      cases si2 with
+      | Signed =>
+        cases hcast : CompCert4Lean.Cfrontend.Cop.cast_float_long .Signed f with
+        | none => simp [hcast] at hsem
+        | some i =>
+            simp [hcast] at hsem
+            cases hsem
+            subst b
+            apply Csharpminor.eval_Eunop
+            · exact ha
+            · unfold Csharpminor.eval_unop CompCert4Lean.Backend.Cminor.eval_unop
+              simpa [CompCert4Lean.Cfrontend.Cop.cast_float_long,
+                CompCert4Lean.Common.Values.Val.longoffloat] using hcast
+      | Unsigned =>
+        cases hcast : CompCert4Lean.Cfrontend.Cop.cast_float_long .Unsigned f with
+        | none => simp [hcast] at hsem
+        | some i =>
+            simp [hcast] at hsem
+            cases hsem
+            subst b
+            apply Csharpminor.eval_Eunop
+            · exact ha
+            · unfold Csharpminor.eval_unop CompCert4Lean.Backend.Cminor.eval_unop
+              simpa [CompCert4Lean.Cfrontend.Cop.cast_float_long,
+                CompCert4Lean.Common.Values.Val.longuoffloat] using hcast
+    | Vint n | Vlong n | Vsingle n | Vptr n _ | Vundef => simp at hsem
+  case cast_case_s2l si2 =>
+    cases v with
+    | Vsingle f =>
+      cases si2 with
+      | Signed =>
+        cases hcast : CompCert4Lean.Cfrontend.Cop.cast_single_long .Signed f with
+        | none => simp [hcast] at hsem
+        | some i =>
+            simp [hcast] at hsem
+            cases hsem
+            subst b
+            apply Csharpminor.eval_Eunop
+            · exact ha
+            · unfold Csharpminor.eval_unop CompCert4Lean.Backend.Cminor.eval_unop
+              simpa [CompCert4Lean.Cfrontend.Cop.cast_single_long,
+                CompCert4Lean.Common.Values.Val.longofsingle] using hcast
+      | Unsigned =>
+        cases hcast : CompCert4Lean.Cfrontend.Cop.cast_single_long .Unsigned f with
+        | none => simp [hcast] at hsem
+        | some i =>
+            simp [hcast] at hsem
+            cases hsem
+            subst b
+            apply Csharpminor.eval_Eunop
+            · exact ha
+            · unfold Csharpminor.eval_unop CompCert4Lean.Backend.Cminor.eval_unop
+              simpa [CompCert4Lean.Cfrontend.Cop.cast_single_long,
+                CompCert4Lean.Common.Values.Val.longuofsingle] using hcast
+    | Vint n | Vlong n | Vfloat n | Vptr n _ | Vundef => simp at hsem
+  case cast_case_i2bool =>
+    cases v with
+    | Vint n =>
+        simp at hsem
+        cases hsem
+        subst b
+        exact make_cmpu_ne_zero_correct ge e le m a n ha
+    | Vptr b ofs => simp [CompCert4Lean.X86_64.Archi.ptr64] at hsem
+    | Vlong n | Vfloat n | Vsingle n | Vundef => simp at hsem
+  case cast_case_l2bool =>
+    cases v with
+    | Vlong n =>
+        simp at hsem
+        cases hsem
+        subst b
+        apply Csharpminor.eval_Ebinop
+        · exact ha
+        · exact make_longconst_correct ge CompCert4Lean.Lib.Integers.Int64.zero e le m
+        · change Option.map CompCert4Lean.Common.Values.Val.of_bool
+            (CompCert4Lean.Common.Values.Val.cmplu_bool
+              (CompCert4Lean.Common.Memory.Mem.valid_pointer m) .Cne
+              (.Vlong n) (.Vlong CompCert4Lean.Lib.Integers.Int64.zero)) = _
+          cases hEq : decide (n.intval =
+              CompCert4Lean.Lib.Integers.Int64.zero.intval) <;>
+            simp [CompCert4Lean.Common.Values.Val.cmplu_bool,
+              CompCert4Lean.Common.Values.Val.of_bool,
+              CompCert4Lean.Lib.Integers.Int64.cmpu,
+              CompCert4Lean.Lib.Integers.Int64.eq,
+              CompCert4Lean.Lib.Integers.WordCore.cmpu,
+              CompCert4Lean.Lib.Integers.WordCore.eq,
+              CompCert4Lean.Common.Values.Vtrue,
+              CompCert4Lean.Common.Values.Vfalse, hEq]
+    | Vptr b ofs =>
+        simp [CompCert4Lean.X86_64.Archi.ptr64] at hsem
+        rcases hsem with ⟨hv, rfl⟩
+        cases hmake
+        apply Csharpminor.eval_Ebinop
+        · exact ha
+        · exact make_longconst_correct ge CompCert4Lean.Lib.Integers.Int64.zero e le m
+        · change Option.map CompCert4Lean.Common.Values.Val.of_bool
+            (CompCert4Lean.Common.Values.Val.cmplu_bool
+              (CompCert4Lean.Common.Memory.Mem.valid_pointer m) .Cne
+              (.Vptr b ofs) (.Vlong CompCert4Lean.Lib.Integers.Int64.zero)) =
+            some CompCert4Lean.Common.Values.Vone
+          simp [CompCert4Lean.Common.Memory.Mem.weak_valid_pointer,
+            CompCert4Lean.Common.Values.Vtrue,
+            CompCert4Lean.Common.Values.Vfalse] at hv ⊢
+          simp [CompCert4Lean.Common.Values.Val.cmplu_bool,
+            CompCert4Lean.Common.Values.Val.of_bool,
+            CompCert4Lean.X86_64.Archi.ptr64, hv,
+            CompCert4Lean.Common.Values.Vone,
+            CompCert4Lean.Common.Values.Val.cmp_different_blocks,
+            CompCert4Lean.Lib.Integers.Int64.eq,
+            CompCert4Lean.Lib.Integers.WordCore.eq,
+            CompCert4Lean.Common.Values.Vtrue,
+            CompCert4Lean.Common.Values.Vfalse]
+    | Vint n | Vfloat n | Vsingle n | Vundef => simp at hsem
+  case cast_case_f2bool =>
+    cases v with
+    | Vfloat f =>
+        simp at hsem
+        cases hsem
+        subst b
+        apply Csharpminor.eval_Ebinop
+        · exact ha
+        · exact make_floatconst_correct ge CompCert4Lean.Lib.Floats.Float.zero e le m
+        · change some (CompCert4Lean.Common.Values.Val.cmpf .Cne
+            (.Vfloat f) (.Vfloat CompCert4Lean.Lib.Floats.Float.zero)) = _
+          cases hcmp : CompCert4Lean.Lib.Floats.Float.compare f
+              CompCert4Lean.Lib.Floats.Float.zero with
+          | none =>
+              simp [CompCert4Lean.Common.Values.Val.cmpf,
+                CompCert4Lean.Common.Values.Val.cmpf_bool,
+                CompCert4Lean.Common.Values.Val.of_optbool,
+                CompCert4Lean.Lib.Floats.Float.cmp,
+                CompCert4Lean.Lib.Floats.cmp_of_comparison,
+                CompCert4Lean.Common.Values.Vtrue,
+                CompCert4Lean.Common.Values.Vfalse, hcmp]
+          | some c =>
+              cases c <;>
+                simp [CompCert4Lean.Common.Values.Val.cmpf,
+                  CompCert4Lean.Common.Values.Val.cmpf_bool,
+                  CompCert4Lean.Common.Values.Val.of_optbool,
+                  CompCert4Lean.Lib.Floats.Float.cmp,
+                  CompCert4Lean.Lib.Floats.cmp_of_comparison,
+                  CompCert4Lean.Common.Values.Vtrue,
+                  CompCert4Lean.Common.Values.Vfalse, hcmp]
+    | Vint n | Vlong n | Vsingle n | Vptr n _ | Vundef => simp at hsem
+  case cast_case_s2bool =>
+    cases v with
+    | Vsingle f =>
+        simp at hsem
+        cases hsem
+        subst b
+        apply Csharpminor.eval_Ebinop
+        · exact ha
+        · exact make_singleconst_correct ge CompCert4Lean.Lib.Floats.Float32.zero e le m
+        · change some (CompCert4Lean.Common.Values.Val.cmpfs .Cne
+            (.Vsingle f) (.Vsingle CompCert4Lean.Lib.Floats.Float32.zero)) = _
+          cases hcmp : CompCert4Lean.Lib.Floats.Float32.compare f
+              CompCert4Lean.Lib.Floats.Float32.zero with
+          | none =>
+              simp [CompCert4Lean.Common.Values.Val.cmpfs,
+                CompCert4Lean.Common.Values.Val.cmpfs_bool,
+                CompCert4Lean.Common.Values.Val.of_optbool,
+                CompCert4Lean.Lib.Floats.Float32.cmp,
+                CompCert4Lean.Lib.Floats.cmp_of_comparison,
+                CompCert4Lean.Common.Values.Vtrue,
+                CompCert4Lean.Common.Values.Vfalse, hcmp]
+          | some c =>
+              cases c <;>
+                simp [CompCert4Lean.Common.Values.Val.cmpfs,
+                  CompCert4Lean.Common.Values.Val.cmpfs_bool,
+                  CompCert4Lean.Common.Values.Val.of_optbool,
+                  CompCert4Lean.Lib.Floats.Float32.cmp,
+                  CompCert4Lean.Lib.Floats.cmp_of_comparison,
+                  CompCert4Lean.Common.Values.Vtrue,
+                  CompCert4Lean.Common.Values.Vfalse, hcmp]
+    | Vint n | Vlong n | Vfloat n | Vptr n _ | Vundef => simp at hsem
+  case cast_case_struct id1 id2 =>
+    subst b
+    cases v with
+    | Vptr b ofs =>
+        by_cases h : id1 = id2 <;> simp [h] at hsem
+        · cases hsem
+          exact ha
+    | Vint n | Vlong n | Vfloat n | Vsingle n | Vundef => simp at hsem
+  case cast_case_union id1 id2 =>
+    subst b
+    cases v with
+    | Vptr b ofs =>
+        by_cases h : id1 = id2 <;> simp [h] at hsem
+        · cases hsem
+          exact ha
+    | Vint n | Vlong n | Vfloat n | Vsingle n | Vundef => simp at hsem
+  case cast_case_s2s =>
+    subst b
+    cases v with
+    | Vsingle f => simp at hsem; cases hsem; exact ha
+    | Vint n | Vlong n | Vfloat n | Vptr n _ | Vundef => simp at hsem
+  case cast_case_l2l =>
+    subst b
+    cases v with
+    | Vlong n => simp at hsem; cases hsem; exact ha
+    | Vint n | Vfloat n | Vsingle n | Vptr n _ | Vundef => simp at hsem
+  case cast_case_void =>
+    subst b
+    cases hsem
+    exact ha
+  case cast_case_f2s =>
+    cases v with
+    | Vfloat f =>
+        simp at hsem
+        cases hsem
+        subst b
+        apply Csharpminor.eval_Eunop
+        · exact ha
+        · rfl
+    | Vint n | Vlong n | Vsingle n | Vptr n _ | Vundef => simp at hsem
+  case cast_case_s2f =>
+    cases v with
+    | Vsingle f =>
+        simp at hsem
+        cases hsem
+        subst b
+        apply Csharpminor.eval_Eunop
+        · exact ha
+        · rfl
+    | Vint n | Vlong n | Vfloat n | Vptr n _ | Vundef => simp at hsem
+  case cast_case_i2f si1 =>
+    cases si1 <;> cases v <;> simp [make_floatofint, CompCert4Lean.Cfrontend.Cop.cast_int_float] at hmake hsem ⊢
+    all_goals
+      cases hsem
+      subst b
+      apply Csharpminor.eval_Eunop
+      · exact ha
+      · unfold Csharpminor.eval_unop CompCert4Lean.Backend.Cminor.eval_unop
+        rfl
+  case cast_case_i2s si1 =>
+    cases si1 <;> cases v <;> simp [make_singleofint, CompCert4Lean.Cfrontend.Cop.cast_int_single] at hmake hsem ⊢
+    all_goals
+      cases hsem
+      subst b
+      apply Csharpminor.eval_Eunop
+      · exact ha
+      · unfold Csharpminor.eval_unop CompCert4Lean.Backend.Cminor.eval_unop
+        rfl
+  case cast_case_i2l si1 =>
+    cases si1 <;> cases v <;> simp [make_longofint, CompCert4Lean.Cfrontend.Cop.cast_int_long] at hmake hsem ⊢
+    all_goals
+      cases hsem
+      subst b
+      apply Csharpminor.eval_Eunop
+      · exact ha
+      · unfold Csharpminor.eval_unop CompCert4Lean.Backend.Cminor.eval_unop
+        rfl
+  case cast_case_l2f si1 =>
+    cases si1 <;> cases v <;> simp [make_floatoflong, CompCert4Lean.Cfrontend.Cop.cast_long_float] at hmake hsem ⊢
+    all_goals
+      cases hsem
+      subst b
+      apply Csharpminor.eval_Eunop
+      · exact ha
+      · unfold Csharpminor.eval_unop CompCert4Lean.Backend.Cminor.eval_unop
+        rfl
+  case cast_case_l2s si1 =>
+    cases si1 <;> cases v <;> simp [make_singleoflong, CompCert4Lean.Cfrontend.Cop.cast_long_single] at hmake hsem ⊢
+    all_goals
+      cases hsem
+      subst b
+      apply Csharpminor.eval_Eunop
+      · exact ha
+      · unfold Csharpminor.eval_unop CompCert4Lean.Backend.Cminor.eval_unop
+        rfl
+  case cast_case_f2i sz2 si2 =>
+    cases v with
+    | Vfloat f =>
+      cases si2 with
+      | Signed =>
+        cases hcast : CompCert4Lean.Cfrontend.Cop.cast_float_int .Signed f with
+        | none => simp [hcast] at hsem
+        | some i =>
+            simp [hcast] at hsem
+            cases hsem
+            subst b
+            apply make_cast_int_correct
+            apply Csharpminor.eval_Eunop
+            · exact ha
+            · unfold Csharpminor.eval_unop CompCert4Lean.Backend.Cminor.eval_unop
+              simpa [CompCert4Lean.Cfrontend.Cop.cast_float_int,
+                CompCert4Lean.Common.Values.Val.intoffloat] using hcast
+      | Unsigned =>
+        cases hcast : CompCert4Lean.Cfrontend.Cop.cast_float_int .Unsigned f with
+        | none => simp [hcast] at hsem
+        | some i =>
+            simp [hcast] at hsem
+            cases hsem
+            subst b
+            apply make_cast_int_correct
+            apply Csharpminor.eval_Eunop
+            · exact ha
+            · unfold Csharpminor.eval_unop CompCert4Lean.Backend.Cminor.eval_unop
+              simpa [CompCert4Lean.Cfrontend.Cop.cast_float_int,
+                CompCert4Lean.Common.Values.Val.intuoffloat] using hcast
+    | Vint n | Vlong n | Vsingle n | Vptr n _ | Vundef => simp at hsem
+
+end CompCert4Lean.Cfrontend.Cshmgenproof

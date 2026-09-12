@@ -1137,3 +1137,45 @@ theorem record_regs_of_function_only : record_regs_of_function_onlyStatement := 
     exact (RegSet.empty_1_proof r hr).elim
 
 end CompCert4Lean.Backend.Bounds
+
+namespace CompCert4Lean.Backend.Bounds
+
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Backend.Linear
+
+theorem instr_is_within_bounds : instr_is_within_boundsStatement := by
+  intro cfg f i hi
+  cases i with
+  | Lgetstack sl ofs ty r =>
+      have hm : mreg_within_bounds cfg (function_bounds cfg f) r :=
+        mreg_is_within_bounds cfg f (Lgetstack sl ofs ty r) hi r rfl
+      have hs : slot_within_bounds (function_bounds cfg f) sl ofs ty :=
+        slot_is_within_bounds cfg f (Lgetstack sl ofs ty r) hi sl ty ofs
+          (by simp [slots_of_instr])
+      exact ⟨hs, hm⟩
+  | Lsetstack src sl ofs ty =>
+      exact slot_is_within_bounds cfg f (Lsetstack src sl ofs ty) hi sl ty ofs
+        (by simp [slots_of_instr])
+  | Lop op args res =>
+      exact mreg_is_within_bounds cfg f (Lop op args res) hi res rfl
+  | Lload chunk addr args dst =>
+      exact mreg_is_within_bounds cfg f (Lload chunk addr args dst) hi dst rfl
+  | Lstore chunk addr args src => trivial
+  | Lcall sig ros =>
+      exact size_arguments_bound cfg f sig ros hi
+  | Ltailcall sig ros => trivial
+  | Lbuiltin ef args res =>
+      constructor
+      · intro r hr
+        exact mreg_is_within_bounds cfg f (Lbuiltin ef args res) hi r
+          hr
+      · intro sl ofs ty hs
+        apply slot_is_within_bounds cfg f (Lbuiltin ef args res) hi sl ty ofs
+        exact (slots_of_locs_charact sl ofs ty (params_of_builtin_args args)).mpr hs
+  | Llabel lbl => trivial
+  | Lgoto lbl => trivial
+  | Lcond cond args lbl => trivial
+  | Ljumptable arg tbl => trivial
+  | Lreturn => trivial
+
+end CompCert4Lean.Backend.Bounds

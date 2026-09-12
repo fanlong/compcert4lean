@@ -942,3 +942,27 @@ theorem In_remove : In_removeStatement := by
 end ISet
 
 end CompCert4Lean.Lib.IntvSets
+
+namespace CompCert4Lean.Lib.IntvSets
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+namespace ISet
+
+theorem contains_spec : contains_specStatement := by
+  intro l h s
+  by_cases hlt : ZArith.BinInt.Z.ltb l h = true
+  · have hlh : ZArith.BinInt.Z.lt l h := by
+      simp [ZArith.BinInt.Z.ltb, ZArith.BinInt.Z.lt] at hlt ⊢
+      exact hlt
+    simpa [contains, hlt, In] using (R.contains_In l h hlh s.1 s.2)
+  · simp [contains, hlt]
+    intro x hlx hxh
+    exfalso
+    simp [ZArith.BinInt.Z.ltb, ZArith.BinInt.Z.lt,
+      ZArith.BinInt.Z.le] at hlt hlx hxh ⊢
+    omega
+
+end ISet
+
+end CompCert4Lean.Lib.IntvSets

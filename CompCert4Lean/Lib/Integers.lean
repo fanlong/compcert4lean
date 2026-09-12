@@ -2912,3 +2912,79 @@ theorem sub_idem_proof : sub_idem := by
   rfl
 
 end CompCert4Lean.Lib.Integers.Int
+
+namespace CompCert4Lean.Lib.Integers.Int
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+private theorem suffix_two_p_nonneg (n : Z) (hn : zLe zZero n) :
+    zTwoP n = zOfInt (Int.ofNat (2 ^ zToNat n)) := by
+  change 0 ≤ intOfZ n at hn
+  cases n with
+  | Z0 => rfl
+  | Zpos exponent =>
+      have hexp : ¬(Int.ofNat (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat exponent) < 0) := _root_.Int.not_lt.mpr (_root_.Int.natCast_nonneg _)
+      simp only [zTwoP, two_p, CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.Zpower.two_p, zToNat, CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.to_nat, CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat, CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ, CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat, hexp, if_false]
+      apply congrArg CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt
+      change (2 : Int) ^ CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat exponent = (2 : Int) ^ CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat exponent
+      rfl
+  | Zneg exponent =>
+      have hpos := CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat_positive exponent
+      simp [CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ] at hn
+      omega
+
+private theorem suffix_mask_val (n : Z) (hn : zLe zZero n) :
+    (WordCore.repr wordsize (zSub (zTwoP n) zOne)).val = (2 ^ zToNat n - 1) % (2 ^ wordsize) := by
+  have htwo := suffix_two_p_nonneg n hn
+  have hsub_nat (a b : Nat) (hba : b ≤ a) : zSub (zOfNat a) (zOfNat b) = zOfNat (a - b) := by
+    apply intOfZ_injective
+    simp only [zSub, ZArith.BinInt.Z.sub, zOfNat, ZArith.BinInt.Z.of_nat, CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+    exact (Int.ofNat_sub hba).symm
+  have hsub : zSub (zTwoP n) zOne = zOfNat (2 ^ zToNat n - 1) := by
+    have hq : 1 ≤ 2 ^ zToNat n := Nat.one_le_two_pow
+    have hqrepr : zOfInt (Int.ofNat (2 ^ zToNat n)) = zOfNat (2 ^ zToNat n) := by rfl
+    have hOne : zOne = zOfNat 1 := by rfl
+    rw [htwo, hqrepr, hOne, hsub_nat _ _ hq]
+  rw [hsub]
+  change (WordCore.repr wordsize (zOfNat (2 ^ zToNat n - 1))).val = _
+  have hznat : zOfNat (2 ^ zToNat n - 1) = zOfInt (Int.ofNat (2 ^ zToNat n - 1)) := by rfl
+  rw [hznat, WordCore.val_repr_residue, WordCore.residue_zOfNat]
+
+private theorem suffix_and_val (x y : int) : (WordCore.and x y).val = Nat.land x.val y.val := by
+  unfold WordCore.and
+  have hz : zOfNat (Nat.land x.val y.val) = zOfInt (Int.ofNat (Nat.land x.val y.val)) := by rfl
+  rw [hz, WordCore.val_repr_residue, WordCore.residue_zOfNat]
+  exact Nat.mod_eq_of_lt (Nat.and_lt_two_pow _ (WordCore.val_lt y))
+
+private theorem suffix_nat_zero_ext_and (a k w : Nat) (ha : a < 2 ^ w) : (a % (2 ^ k)) % (2 ^ w) = Nat.land a ((2 ^ k - 1) % (2 ^ w)) := by
+  by_cases hkw : k ≤ w
+  · have hpow : 2 ^ k ≤ 2 ^ w := Nat.pow_le_pow_right Nat.zero_lt_two hkw
+    have hklt : 2 ^ k - 1 < 2 ^ w := by omega
+    rw [Nat.mod_eq_of_lt (Nat.lt_of_lt_of_le (Nat.mod_lt _ (Nat.two_pow_pos k)) hpow), Nat.mod_eq_of_lt hklt]
+    exact (Nat.and_two_pow_sub_one_eq_mod a k).symm
+  · have hwk : w ≤ k := Nat.le_of_not_ge hkw
+    have hpow : 2 ^ w ≤ 2 ^ k := Nat.pow_le_pow_right Nat.zero_lt_two hwk
+    have h1 : a % (2 ^ k) = a := Nat.mod_eq_of_lt (Nat.lt_of_lt_of_le ha hpow)
+    have h2 : a % (2 ^ w) = a := Nat.mod_eq_of_lt ha
+    rw [h1, h2]
+    have hmask : (2 ^ k - 1) % (2 ^ w) = 2 ^ w - 1 := by
+      have hpoww : 0 < 2 ^ w := Nat.two_pow_pos w
+      have hpowd : 0 < 2 ^ (k - w) := Nat.two_pow_pos _
+      have hkpow : 2 ^ k = 2 ^ w * 2 ^ (k - w) := by rw [← Nat.pow_add]; congr 1; omega
+      have hdecomp : 2 ^ k - 1 = 2 ^ w * (2 ^ (k - w) - 1) + (2 ^ w - 1) := by
+        rw [hkpow, Nat.mul_sub_left_distrib]
+        have hmul : 2 ^ w ≤ 2 ^ w * 2 ^ (k - w) := Nat.le_mul_of_pos_right _ hpowd
+        omega
+      rw [hdecomp, Nat.add_comm, Nat.add_mul_mod_self_left]
+      exact Nat.mod_eq_of_lt (by omega)
+    rw [hmask]
+    exact (Nat.and_two_pow_sub_one_of_lt_two_pow ha).symm
+
+theorem zero_ext_and_proof : zero_ext_and := by
+  intro n x hn
+  change WordCore.zero_ext n x = WordCore.and x (WordCore.repr wordsize (zSub (zTwoP n) zOne))
+  apply WordCore.ext_of_val_eq
+  change (zero_ext n x).val = (WordCore.and x (WordCore.repr wordsize (zSub (zTwoP n) zOne))).val
+  rw [zero_ext_val n x hn, suffix_and_val, suffix_mask_val n hn]
+  exact suffix_nat_zero_ext_and x.val (zToNat n) wordsize (WordCore.val_lt x)
+
+end CompCert4Lean.Lib.Integers.Int

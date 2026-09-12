@@ -1297,3 +1297,79 @@ theorem sig_preserved : sig_preservedStatement := by
   cases f <;> rfl
 
 end CompCert4Lean.Backend.Tunnelingproof
+
+namespace CompCert4Lean.Backend.Tunnelingproof
+
+open CompCert4Lean.Backend.Tunneling
+open CompCert4Lean.Backend.LTL
+open CompCert4Lean.Backend.Locations
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.AST
+
+private theorem tunneling_load_result_lessdef
+    (chunk : CompCert4Lean.Common.AST.memory_chunk)
+    (v1 v2 : val) : Val.lessdef v1 v2 →
+      Val.lessdef (Val.load_result chunk v1) (Val.load_result chunk v2) := by
+  intro h
+  cases h with
+  | lessdef_refl v => exact Val.lessdef_refl _
+  | lessdef_undef =>
+      cases chunk <;> cases v2 <;>
+        exact Val.lessdef_undef _
+
+theorem reglist_lessdef : reglist_lessdefStatement := by
+  intro rl ls1 ls2 hls
+  induction rl with
+  | nil => exact Val.lessdef_list_nil
+  | cons r rl ih =>
+      exact Val.lessdef_list_cons _ _ _ _ (hls (R r)) ih
+
+theorem locmap_set_lessdef : locmap_set_lessdefStatement := by
+  intro ls1 ls2 v1 v2 l hls hv l'
+  unfold Locmap.set
+  cases heq : Loc.eq l l' with
+  | left hll =>
+      subst l'
+      cases l with
+      | R r => simpa [Locmap.set, heq] using hv
+      | S sl ofs ty =>
+          exact tunneling_load_result_lessdef (chunk_of_type ty) v1 v2 hv
+  | right hdiff =>
+      cases hdif : Loc.diff_dec l l' with
+      | left hdiff' =>
+          have hbase := hls l'
+          simpa [Locmap.set, heq, hdiff, hdif] using hbase
+      | right hndiff =>
+          exact Val.lessdef_refl _
+
+theorem locmap_set_undef_lessdef : locmap_set_undef_lessdefStatement := by
+  intro ls1 ls2 l hls l'
+  unfold Locmap.set
+  cases heq : Loc.eq l l' with
+  | left hll =>
+      subst l'
+      cases l with
+      | R r => exact Val.lessdef_undef _
+      | S sl ofs ty =>
+          cases ty <;> exact Val.lessdef_undef _
+  | right hneq =>
+      cases hdif : Loc.diff_dec l l' with
+      | left hdiff =>
+          have hbase := hls l'
+          simpa [Locmap.set, heq, hneq, hdif] using hbase
+      | right hndiff =>
+          exact Val.lessdef_undef _
+
+theorem locmap_undef_regs_lessdef : locmap_undef_regs_lessdefStatement := by
+  intro rl
+  induction rl with
+  | nil =>
+      intro ls1 ls2 hls
+      exact hls
+  | cons r rl ih =>
+      intro ls1 ls2 hls
+      apply locmap_set_lessdef
+      · exact ih ls1 ls2 hls
+      · exact Val.lessdef_refl _
+
+end CompCert4Lean.Backend.Tunnelingproof

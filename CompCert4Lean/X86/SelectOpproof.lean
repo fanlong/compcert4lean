@@ -628,3 +628,25 @@ theorem eval_Olea_ptr
   rfl
 
 end CompCert4Lean.X86.SelectOpproof
+
+namespace CompCert4Lean.X86.SelectOpproof
+
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.Common.Values
+open CompCert4Lean.X86.Op
+open CompCert4Lean.X86.SelectOp
+
+theorem eval_addrstack
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    eval_addrstackStatement := by
+  intro xi ge sp e m le ofs
+  refine ⟨Val.offset_ptr sp ofs, ?_, Val.lessdef_refl _⟩
+  apply CompCert4Lean.Backend.CminorSel.eval_expr.eval_Eop le
+    (Olea_ptr (Ainstack ofs)) Enil [] (Val.offset_ptr sp ofs)
+  · exact CompCert4Lean.Backend.CminorSel.eval_exprlist.nil le
+  · change eval_addressing64 ge sp (.Ainstack ofs) [] =
+      some (Val.offset_ptr sp ofs)
+    simp [eval_addressing64, CompCert4Lean.X86_64.Archi.ptr64]
+
+end CompCert4Lean.X86.SelectOpproof

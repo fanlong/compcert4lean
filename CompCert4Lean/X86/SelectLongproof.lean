@@ -424,3 +424,38 @@ theorem eval_longconst
     (.Vlong n) (CompCert4Lean.Backend.CminorSel.eval_exprlist.nil le) rfl
 
 end CompCert4Lean.X86.SelectLongproof
+
+namespace CompCert4Lean.X86.SelectLongproof
+
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.X86.Op
+open CompCert4Lean.X86.SelectLong
+
+theorem is_longconst_sound
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    @is_longconst_soundStatement binary64_certificate binary32_certificate := by
+  unfold is_longconst_soundStatement
+  intro xi prog sp env0 mem0 val0 expr0 int64n lenv hconst heval
+  have ha : expr0 = Eop (Olongconst int64n) Enil := by
+    cases expr0 with
+    | Evar id => simp [is_longconst] at hconst
+    | Eop op args =>
+        cases op <;> cases args <;> simp [is_longconst] at hconst ⊢ <;> cases hconst <;> rfl
+    | Eload chunk addr args => simp [is_longconst] at hconst
+    | Econdition c b d => simp [is_longconst] at hconst
+    | Elet b d => simp [is_longconst] at hconst
+    | Eletvar i => simp [is_longconst] at hconst
+    | Ebuiltin ef args => simp [is_longconst] at hconst
+    | Eexternal id sg args => simp [is_longconst] at hconst
+  subst expr0
+  cases heval with
+  | eval_Eop _ _ _ vl _ hargs hop =>
+      cases hargs
+      change some (CompCert4Lean.Common.Values.val.Vlong int64n) = some val0 at hop
+      cases hop
+      rfl
+
+end CompCert4Lean.X86.SelectLongproof

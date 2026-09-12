@@ -1020,3 +1020,11 @@ theorem sep_pick3 : sep_pick3Statement := by
   exact h.2.1.2.1.1
 
 end CompCert4Lean.Common.Separation
+
+namespace CompCert4Lean.Common.Separation
+
+theorem sep_pick4 : sep_pick4Statement := by
+  intro P Q R S T m h
+  exact h.2.1.2.1.2.1.1
+
+end CompCert4Lean.Common.Separation

@@ -1385,3 +1385,35 @@ theorem eventval_list_match_determ_2 : eventval_list_match_determ_2Statement := 
           rfl
 
 end CompCert4Lean.Common.Events
+
+namespace CompCert4Lean.Common.Events
+
+theorem eventval_match_same_type : eventval_match_same_typeStatement := by
+  intro ge ev1 ty v1 ev2 v2 h1 h2
+  cases h1 <;> cases h2 <;> rfl
+
+theorem eventval_list_match_preserved : eventval_list_match_preservedStatement := by
+  intro ge1 ge2 hp hs evl tyl vl h
+  induction h with
+  | evl_match_nil => exact evl_match_nil
+  | evl_match_cons ev1 evl ty1 tyl v1 vl hm ht ih =>
+      exact evl_match_cons _ _ _ _ _ _
+        (eventval_match_preserved ge1 ge2 hp hs ev1 ty1 v1 hm) ih
+
+theorem volatile_load_preserved : volatile_load_preservedStatement := by
+  intro ge1 ge2 chunk m b ofs t v heq hload
+  cases hload with
+  | volatile_load_vol id ev v hvol hfind hmatch =>
+      apply volatile_load_vol
+      · rw [heq.2.2 b]
+        exact hvol
+      · rw [heq.1 id]
+        exact hfind
+      · exact eventval_match_preserved ge1 ge2 heq.2.1 heq.1 ev (CompCert4Lean.Common.AST.type_of_chunk chunk) v hmatch
+  | volatile_load_nonvol v hnot hload =>
+      apply volatile_load_nonvol
+      · rw [heq.2.2 b]
+        exact hnot
+      · exact hload
+
+end CompCert4Lean.Common.Events

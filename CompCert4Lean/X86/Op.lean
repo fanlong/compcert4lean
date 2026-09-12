@@ -1162,3 +1162,95 @@ theorem eval_addressing_Ainstack_inv : eval_addressing_Ainstack_invStatement := 
         CompCert4Lean.X86_64.Archi.ptr64] at h
 
 end CompCert4Lean.X86.Op
+
+namespace CompCert4Lean.X86.Op
+
+theorem is_move_operation_correct : is_move_operation_correctStatement := by
+  intro A op args a h
+  cases op <;> cases args with
+  | nil => simp [is_move_operation] at h
+  | cons x xs =>
+      cases xs with
+      | nil => simpa [is_move_operation] using h
+      | cons y ys => simp [is_move_operation] at h
+
+theorem eval_shift_stack_addressing32 : eval_shift_stack_addressing32Statement := by
+  intro F V ge sp addr vl delta
+  cases addr <;> cases vl <;>
+    simp [eval_addressing32, shift_stack_addressing,
+      CompCert4Lean.X86_64.Archi.ptr64]
+
+theorem type_of_addressing32_sound : type_of_addressing32_soundStatement := by
+  intro A V genv addr vl sp v h
+  have type_add_local : ∀ v1 v2 : val,
+      CompCert4Lean.Common.Values.Val.has_type
+        (CompCert4Lean.Common.Values.Val.add v1 v2)
+        CompCert4Lean.Common.AST.Tint := by
+    intro v1 v2
+    cases v1 <;> cases v2 <;>
+      simp [CompCert4Lean.Common.Values.Val.add,
+        CompCert4Lean.Common.Values.Val.has_type,
+        CompCert4Lean.X86_64.Archi.ptr64]
+  cases addr with
+  | Aindexed ofs =>
+      cases vl with
+      | nil => simp [eval_addressing32] at h
+      | cons v1 vl =>
+          cases vl with
+          | nil =>
+              simp [eval_addressing32] at h
+              cases h
+              exact type_add_local _ _
+          | cons v2 vl => simp [eval_addressing32] at h
+  | Aindexed2 ofs =>
+      cases vl with
+      | nil => simp [eval_addressing32] at h
+      | cons v1 vl =>
+          cases vl with
+          | nil => simp [eval_addressing32] at h
+          | cons v2 vl =>
+              cases vl with
+              | nil =>
+                  simp [eval_addressing32] at h
+                  cases h
+                  exact type_add_local _ _
+              | cons v3 vl => simp [eval_addressing32] at h
+  | Ascaled scale ofs =>
+      cases vl with
+      | nil => simp [eval_addressing32] at h
+      | cons v1 vl =>
+          cases vl with
+          | nil =>
+              simp [eval_addressing32] at h
+              cases h
+              exact type_add_local _ _
+          | cons v2 vl => simp [eval_addressing32] at h
+  | Aindexed2scaled scale ofs =>
+      cases vl with
+      | nil => simp [eval_addressing32] at h
+      | cons v1 vl =>
+          cases vl with
+          | nil => simp [eval_addressing32] at h
+          | cons v2 vl =>
+              cases vl with
+              | nil =>
+                  simp [eval_addressing32] at h
+                  cases h
+                  exact type_add_local _ _
+              | cons v3 vl => simp [eval_addressing32] at h
+  | Aglobal id ofs =>
+      cases vl <;> simp [eval_addressing32, CompCert4Lean.X86_64.Archi.ptr64] at h
+  | Abased id ofs =>
+      cases vl with
+      | nil => simp [eval_addressing32, CompCert4Lean.X86_64.Archi.ptr64] at h
+      | cons v1 vl =>
+          cases vl <;> simp [eval_addressing32, CompCert4Lean.X86_64.Archi.ptr64] at h
+  | Abasedscaled scale id ofs =>
+      cases vl with
+      | nil => simp [eval_addressing32, CompCert4Lean.X86_64.Archi.ptr64] at h
+      | cons v1 vl =>
+          cases vl <;> simp [eval_addressing32, CompCert4Lean.X86_64.Archi.ptr64] at h
+  | Ainstack ofs =>
+      cases vl <;> simp [eval_addressing32, CompCert4Lean.X86_64.Archi.ptr64] at h
+
+end CompCert4Lean.X86.Op

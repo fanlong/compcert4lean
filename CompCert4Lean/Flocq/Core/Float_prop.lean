@@ -862,3 +862,13 @@ theorem F2R_cond_Zopp : ∀ (ctx : ExactRealContext), F2R_cond_ZoppStatement ctx
       exact fp_mul_neg_left ctx _ _
 
 end CompCert4Lean.Flocq.Core.Float_prop
+
+namespace CompCert4Lean.Flocq.Core.Float_prop
+
+theorem F2R_0 : ∀ (ctx : ExactRealContext), F2R_0Statement ctx := by
+  intro ctx beta e
+  change ctx.spec.mul (ctx.spec.ofZ Z0) (Exact.bpow ctx beta e) = ctx.spec.zero
+  rw [ctx.certificate.sourceLaws.ofZ_zero,
+    ctx.certificate.orderedField.zero_mul]
+
+end CompCert4Lean.Flocq.Core.Float_prop

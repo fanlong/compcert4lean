@@ -2209,3 +2209,49 @@ theorem def_set_locals : def_set_localsStatement := by
               simpa [hp] using hv
 
 end CompCert4Lean.Backend.Cminortyping
+
+namespace CompCert4Lean.Backend.Cminortyping
+
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Backend.Cminor
+
+theorem type_constant_sound : type_constant_soundStatement := by
+  intro p sp cst v h
+  cases cst with
+  | Ointconst n =>
+      simp [eval_constant] at h
+      cases h
+      change Val.has_type (Vint n) CompCert4Lean.Common.AST.Tint
+      exact True.intro
+  | Ofloatconst n =>
+      simp [eval_constant] at h
+      cases h
+      change Val.has_type (Vfloat n) CompCert4Lean.Common.AST.Tfloat
+      exact True.intro
+  | Osingleconst n =>
+      simp [eval_constant] at h
+      cases h
+      change Val.has_type (Vsingle n) CompCert4Lean.Common.AST.Tsingle
+      exact True.intro
+  | Olongconst n =>
+      simp [eval_constant] at h
+      cases h
+      change Val.has_type (Vlong n) CompCert4Lean.Common.AST.Tlong
+      exact True.intro
+  | Oaddrsymbol symbol offset =>
+      simp [eval_constant] at h
+      cases h
+      cases hfind : CompCert4Lean.Common.Globalenvs.Genv.find_symbol
+          (CompCert4Lean.Common.Globalenvs.Genv.globalenv p) symbol <;>
+        simp [CompCert4Lean.Common.Globalenvs.Genv.symbol_address,
+          hfind,
+          type_constant, Val.has_type, CompCert4Lean.Common.AST.Tptr,
+          CompCert4Lean.X86_64.Archi.ptr64]
+  | Oaddrstack offset =>
+      simp [eval_constant] at h
+      cases h
+      cases sp <;>
+        simp [Val.offset_ptr, type_constant, Val.has_type,
+          CompCert4Lean.Common.AST.Tptr, CompCert4Lean.X86_64.Archi.ptr64]
+
+end CompCert4Lean.Backend.Cminortyping

@@ -944,3 +944,45 @@ theorem binary64_exact_inverse_certificate_proof :
     · exact hupper
 
 end CompCert4Lean.Lib.IEEE754_extra
+
+namespace CompCert4Lean.Lib.IEEE754_extra
+
+open CompCert4Lean.Flocq.IEEE754
+
+theorem Bexact_inverse_result_obligation_proof :
+    ∀ {prec emax : Z} [Prec_gt_0 prec] [Prec_lt_emax prec emax]
+      [Bexact_inverse_certificate prec emax],
+      Bexact_inverse_result_obligation (prec := prec) (emax := emax) := by
+  intro prec emax hp he certificate f f' hresult
+  rcases f with ⟨f, hf⟩
+  cases f with
+  | B754_zero s => simp [Bexact_inverse] at hresult
+  | B754_infinity s => simp [Bexact_inverse] at hresult
+  | B754_nan s p => simp [Bexact_inverse] at hresult
+  | B754_finite s m e =>
+      by_cases hm : m = Bexact_inverse_mantissa (prec := prec)
+      · let e' := Zsub (Zopp e) (Zmul (Zsub prec Zone) Ztwo)
+        cases hmin :
+            _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.ZArith_dec.Z_le_dec
+              (emin prec emax) e' with
+        | left hemin =>
+            cases hmax :
+                _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.ZArith_dec.Z_le_dec
+                  e' emax with
+            | left hemax =>
+                have hout : f' = Binary.B754_finite s m e' := by
+                  simpa [Bexact_inverse, hm, e', hmin, hmax] using hresult.symm
+                subst f'
+                have hbounded :
+                    Binary.B754_finiteObligation (prec := prec) (emax := emax) m e' :=
+                  certificate.obligation (Binary.B754_finite s m e) s m e hf rfl hm (by
+                    simpa [e'] using hemin)
+                simpa [Binary.BinaryFloatCertificate, Binary.B2FF, Binary.valid_binary,
+                  Binary.B754_finiteObligation] using hbounded
+            | right hnmax =>
+                simp [Bexact_inverse, hm, e', hmin, hmax] at hresult
+        | right hnmin =>
+            simp [Bexact_inverse, hm, e', hmin] at hresult
+      · simp [Bexact_inverse, hm] at hresult
+
+end CompCert4Lean.Lib.IEEE754_extra

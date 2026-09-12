@@ -439,3 +439,61 @@ theorem Zeven_ex : Zeven_exStatement := by
             CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat]
 
 end CompCert4Lean.Flocq.Core.Zaux
+
+namespace CompCert4Lean.Flocq.Core.Zaux
+
+theorem Zpower_Zpower_nat : Zpower_Zpower_natStatement := by
+  intro b e he
+  cases e with
+  | Z0 =>
+      rfl
+  | Zpos p =>
+      have habs : Zabs_nat (.Zpos p) =
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p := by
+        unfold Zabs_nat
+        change Int.toNat (CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt
+            (Int.natAbs (CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (.Zpos p))))) =
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p
+        rw [CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+        change Int.toNat (Int.natAbs (Int.ofNat
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p))) =
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p
+        have hp0 : (0 : Int) ≤ Int.ofNat
+            (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p) := by simp
+        rw [Int.natAbs_of_nonneg hp0]
+        exact Int.toNat_natCast _
+      rw [habs]
+      change Zpower b (.Zpos p) =
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.pow b
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat
+            (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p))
+      unfold Zpower
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.Zpow_def.Zpower
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.pow
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat
+      have hleft : ¬ CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (.Zpos p) < 0 := by
+        simp [CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ]
+      have hright : ¬ CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt
+            (Int.ofNat (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p))) < 0 := by
+        rw [CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+        simp
+      rw [if_neg hleft, if_neg hright]
+      rw [CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+      have hnat : Int.toNat (CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (.Zpos p)) =
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p := by
+        rfl
+      rw [hnat]
+      rfl
+  | Zneg p =>
+      exfalso
+      change (0 : Int) ≤ -Int.ofNat
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p) at he
+      have hp := CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat_positive p
+      have hp' : (0 : Int) < Int.ofNat
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p) := by
+        simpa [Int.ofNat_eq_coe] using (Int.natCast_pos.mpr hp)
+      omega
+
+end CompCert4Lean.Flocq.Core.Zaux

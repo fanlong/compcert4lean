@@ -851,3 +851,81 @@ theorem funct_ptr_translated : funct_ptr_translatedStatement := by
   exact tailcall_function_ptr_translated cfg prog tprog hm b f hfind
 
 end CompCert4Lean.Backend.Tailcallproof
+
+namespace CompCert4Lean.Backend.Tailcallproof
+
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Linking
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.List
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.Lib.Maps
+
+private theorem tailcall_add_globals_public {F V : Type}
+    (ge : Genv.t F V) (gl : List (ident × globdef F V)) :
+    (Genv.add_globals ge gl).genv_public = ge.genv_public := by
+  induction gl generalizing ge with
+  | nil => rfl
+  | cons x xs ih =>
+      simp only [Genv.add_globals, List.foldl]
+      exact ih (Genv.add_global ge x)
+
+theorem senv_preserved : senv_preservedStatement := by
+  intro cfg prog tprog hm
+  unfold Senv.equiv
+  have hg := tailcall_globalenvs_match cfg prog tprog hm
+  constructor
+  · intro id
+    change Genv.find_symbol (Genv.globalenv tprog) id =
+      Genv.find_symbol (Genv.globalenv prog) id
+    exact hg.mge_symb id
+  constructor
+  · intro id
+    change Genv.public_symbol (Genv.globalenv tprog) id =
+      Genv.public_symbol (Genv.globalenv prog) id
+    have ht : (Genv.globalenv tprog).genv_public = tprog.prog_public := by
+      unfold Genv.globalenv
+      exact tailcall_add_globals_public _ _
+    have hp : (Genv.globalenv prog).genv_public = prog.prog_public := by
+      unfold Genv.globalenv
+      exact tailcall_add_globals_public _ _
+    unfold Genv.public_symbol
+    rw [show Genv.find_symbol (Genv.globalenv tprog) id =
+      Genv.find_symbol (Genv.globalenv prog) id by
+      simpa [Genv.find_symbol] using hg.mge_symb id]
+    unfold match_prog match_program match_program_gen at hm
+    rw [ht, hp, hm.2.2]
+  · intro b
+    change Genv.block_is_volatile (Genv.globalenv tprog) b =
+      Genv.block_is_volatile (Genv.globalenv prog) b
+    unfold Genv.block_is_volatile Genv.find_var_info Genv.find_def
+    cases h1 : PTree.get b (Genv.globalenv prog).genv_defs with
+    | none =>
+        cases h2 : PTree.get b (Genv.globalenv tprog).genv_defs with
+        | none => rfl
+        | some gd2 =>
+            have hd := hg.mge_defs b
+            simp [h1, h2] at hd
+            cases hd
+    | some gd1 =>
+        cases h2 : PTree.get b (Genv.globalenv tprog).genv_defs with
+        | none =>
+            have hd := hg.mge_defs b
+            simp [h1, h2] at hd
+            cases hd
+        | some gd2 =>
+            have hd := hg.mge_defs b
+            simp [h1, h2] at hd
+            cases hd with
+            | some x y hrel =>
+                cases hrel with
+                | match_globdef_fun ctx' f1 f2 horder htrans => rfl
+                | match_globdef_var v1 v2 hvar =>
+                    cases hvar
+                    rfl
+
+end CompCert4Lean.Backend.Tailcallproof

@@ -2637,3 +2637,275 @@ theorem set2 : set2Statement := by
 end PTree
 
 end CompCert4Lean.Lib.Maps
+
+namespace CompCert4Lean.Lib.Maps
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+namespace PTree
+
+private def beqOptBool_pg {A : Type} (beqA : A → A → Bool) :
+    Option A → Option A → Bool
+  | none, none => true
+  | some a₁, some a₂ => beqA a₁ a₂
+  | _, _ => false
+
+private theorem bool_and_true_pg {a b : Bool} (h : a && b = true) :
+    a = true ∧ b = true := by
+  cases a <;> cases b <;> simp_all
+
+private theorem beqNode_pg {A : Type} (beqA : A → A → Bool)
+    (l₁ : PTree.t A) (o₁ : Option A) (r₁ : PTree.t A)
+    (l₂ : PTree.t A) (o₂ : Option A) (r₂ : PTree.t A)
+    (h₁ : PTree.not_trivially_empty l₁ o₁ r₁)
+    (h₂ : PTree.not_trivially_empty l₂ o₂ r₂) :
+    PTree.beq beqA (PTree.Node l₁ o₁ r₁) (PTree.Node l₂ o₂ r₂) =
+      ((PTree.beq beqA l₁ l₂ && beqOptBool_pg beqA o₁ o₂) &&
+        PTree.beq beqA r₁ r₂) := by
+  cases l₁ <;> cases o₁ <;> cases r₁ <;>
+    cases l₂ <;> cases o₂ <;> cases r₂ <;>
+      simp_all [PTree.Node, PTree.not_trivially_empty, PTree.beq,
+        PTree.beq', beqOptBool_pg, Bool.and_assoc, Bool.and_left_comm,
+        Bool.and_comm]
+
+private theorem nodeWitness_pg {A : Type} (l : PTree.t A) (o : Option A)
+    (r : PTree.t A) (h : PTree.not_trivially_empty l o r) :
+    ∃ p v, PTree.get p (PTree.Node l o r) = some v := by
+  have hne : PTree.Node l o r ≠ .Empty := by
+    intro hn
+    cases l <;> cases o <;> cases r <;>
+      simp_all [PTree.Node, PTree.not_trivially_empty]
+  cases hnode : PTree.Node l o r with
+  | Empty => exact (hne hnode).elim
+  | Nodes m =>
+      rcases PTree.tree'_not_empty m with ⟨p, hp⟩
+      cases hm : PTree.get' p m with
+      | none => exact (hp hm).elim
+      | some v => exact ⟨p, v, by simpa [hnode, PTree.get] using hm⟩
+
+private theorem getNodeAt_pg {A : Type} (i : positive) (l : PTree.t A)
+    (o : Option A) (r : PTree.t A) :
+    PTree.get i (PTree.Node l o r) =
+      match i with
+      | .xH => o
+      | .xO p => PTree.get p l
+      | .xI p => PTree.get p r := by
+  cases i <;> cases l <;> cases o <;> cases r <;> rfl
+
+end PTree
+
+end CompCert4Lean.Lib.Maps
+
+namespace CompCert4Lean.Lib.Maps
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+namespace PTree
+
+private theorem beq_true_pointwise_pg {A : Type} (beqA : A → A → Bool) :
+    ∀ (m₁ m₂ : PTree.t A),
+      PTree.beq beqA m₁ m₂ = true →
+        ∀ x, beqOptBool_pg beqA (PTree.get x m₁) (PTree.get x m₂) = true := by
+  intro m₁ m₂ h
+  cases m₁ with
+  | Empty =>
+      cases m₂ with
+      | Empty => intro x; simp [beqOptBool_pg, PTree.get]
+      | Nodes m₂ => simp [PTree.beq] at h
+  | Nodes m₁ =>
+      cases m₂ with
+      | Empty => simp [PTree.beq] at h
+      | Nodes m₂ =>
+          induction m₁ generalizing m₂ with
+          | Node001 r ih =>
+              cases m₂ with
+              | Node001 r₂ =>
+                  simp only [PTree.beq, PTree.beq'] at h
+                  intro x
+                  cases x with
+                  | xH => simp [beqOptBool_pg, PTree.get, PTree.get']
+                  | xO q => simp [beqOptBool_pg, PTree.get, PTree.get']
+                  | xI q => simpa [beqOptBool_pg, PTree.get, PTree.get'] using ih r₂ h q
+              | _ => simp [PTree.beq, PTree.beq'] at h
+          | Node010 x₁ =>
+              cases m₂ with
+              | Node010 x₂ =>
+                  have hx : beqA x₁ x₂ = true := by
+                    simpa [PTree.beq, PTree.beq'] using h
+                  intro x
+                  cases x with
+                  | xH => simpa [beqOptBool_pg, PTree.get, PTree.get'] using hx
+                  | xO q => simp [beqOptBool_pg, PTree.get, PTree.get']
+                  | xI q => simp [beqOptBool_pg, PTree.get, PTree.get']
+              | _ => simp [PTree.beq, PTree.beq'] at h
+          | Node011 x₁ r ih =>
+              cases m₂ with
+              | Node011 x₂ r₂ =>
+                  have hparts := bool_and_true_pg (by simpa [PTree.beq, PTree.beq'] using h)
+                  have hx : beqA x₁ x₂ = true := hparts.1
+                  have hr : PTree.beq beqA (.Nodes r) (.Nodes r₂) = true := by
+                    simpa [PTree.beq, PTree.beq'] using hparts.2
+                  intro x
+                  cases x with
+                  | xH => simpa [beqOptBool_pg, PTree.get, PTree.get'] using hx
+                  | xO q => simp [beqOptBool_pg, PTree.get, PTree.get']
+                  | xI q => simpa [beqOptBool_pg, PTree.get, PTree.get'] using ih r₂ hr q
+              | _ => simp [PTree.beq, PTree.beq'] at h
+          | Node100 l ih =>
+              cases m₂ with
+              | Node100 l₂ =>
+                  have hl : PTree.beq beqA (.Nodes l) (.Nodes l₂) = true := by
+                    simpa [PTree.beq, PTree.beq'] using h
+                  intro x
+                  cases x with
+                  | xH => simp [beqOptBool_pg, PTree.get, PTree.get']
+                  | xO q => simpa [beqOptBool_pg, PTree.get, PTree.get'] using ih l₂ hl q
+                  | xI q => simp [beqOptBool_pg, PTree.get, PTree.get']
+              | _ => simp [PTree.beq, PTree.beq'] at h
+          | Node101 l r ihl ihr =>
+              cases m₂ with
+              | Node101 l₂ r₂ =>
+                  have hparts := bool_and_true_pg (by simpa [PTree.beq, PTree.beq'] using h)
+                  have hl : PTree.beq beqA (.Nodes l) (.Nodes l₂) = true := by
+                    simpa [PTree.beq, PTree.beq'] using hparts.1
+                  have hr : PTree.beq beqA (.Nodes r) (.Nodes r₂) = true := by
+                    simpa [PTree.beq, PTree.beq'] using hparts.2
+                  intro x
+                  cases x with
+                  | xH => simp [beqOptBool_pg, PTree.get, PTree.get']
+                  | xO q => simpa [beqOptBool_pg, PTree.get, PTree.get'] using ihl l₂ hl q
+                  | xI q => simpa [beqOptBool_pg, PTree.get, PTree.get'] using ihr r₂ hr q
+              | _ => simp [PTree.beq, PTree.beq'] at h
+          | Node110 l x₁ ih =>
+              cases m₂ with
+              | Node110 l₂ x₂ =>
+                  have hparts := bool_and_true_pg (by simpa [PTree.beq, PTree.beq'] using h)
+                  have hx : beqA x₁ x₂ = true := hparts.1
+                  have hl : PTree.beq beqA (.Nodes l) (.Nodes l₂) = true := by
+                    simpa [PTree.beq, PTree.beq'] using hparts.2
+                  intro x
+                  cases x with
+                  | xH => simpa [beqOptBool_pg, PTree.get, PTree.get'] using hx
+                  | xO q => simpa [beqOptBool_pg, PTree.get, PTree.get'] using ih l₂ hl q
+                  | xI q => simp [beqOptBool_pg, PTree.get, PTree.get']
+              | _ => simp [PTree.beq, PTree.beq'] at h
+          | Node111 l x₁ r ihl ihr =>
+              cases m₂ with
+              | Node111 l₂ x₂ r₂ =>
+                  have hbool :
+                      (beqA x₁ x₂ && PTree.beq' beqA l l₂) &&
+                        PTree.beq' beqA r r₂ = true := by
+                    simpa [PTree.beq, PTree.beq'] using h
+                  have hparts₁ := bool_and_true_pg hbool
+                  have hleft : (beqA x₁ x₂ && PTree.beq' beqA l l₂) = true := hparts₁.1
+                  have hparts₂ : beqA x₁ x₂ = true ∧ PTree.beq' beqA l l₂ = true :=
+                    by
+                      cases hA : beqA x₁ x₂ with
+                      | false => simp [hA] at hleft
+                      | true =>
+                          cases hL : PTree.beq' beqA l l₂ with
+                          | false => simp [hA, hL] at hleft
+                          | true => exact ⟨rfl, rfl⟩
+                  have hx : beqA x₁ x₂ = true := hparts₂.1
+                  have hl : PTree.beq beqA (.Nodes l) (.Nodes l₂) = true := by
+                    simpa [PTree.beq, PTree.beq'] using hparts₂.2
+                  have hr : PTree.beq beqA (.Nodes r) (.Nodes r₂) = true := by
+                    simpa [PTree.beq, PTree.beq'] using hparts₁.2
+                  intro x
+                  cases x with
+                  | xH => simpa [beqOptBool_pg, PTree.get, PTree.get'] using hx
+                  | xO q => simpa [beqOptBool_pg, PTree.get, PTree.get'] using ihl l₂ hl q
+                  | xI q => simpa [beqOptBool_pg, PTree.get, PTree.get'] using ihr r₂ hr q
+              | _ => simp [PTree.beq, PTree.beq'] at h
+
+end PTree
+
+end CompCert4Lean.Lib.Maps
+
+namespace CompCert4Lean.Lib.Maps
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+namespace PTree
+
+private theorem extensional_beq_true_pg {A : Type} (beqA : A → A → Bool) :
+    ∀ (m₁ m₂ : PTree.t A),
+      (∀ x, beqOptBool_pg beqA (PTree.get x m₁) (PTree.get x m₂) = true) →
+        PTree.beq beqA m₁ m₂ = true := by
+  intro m₁
+  have hP : PLift (∀ m₂ : PTree.t A,
+      (∀ x, beqOptBool_pg beqA (PTree.get x m₁) (PTree.get x m₂) = true) →
+        PTree.beq beqA m₁ m₂ = true) := by
+    refine PTree.tree_ind
+        (P := fun m₁ => PLift (∀ m₂ : PTree.t A,
+          (∀ x, beqOptBool_pg beqA (PTree.get x m₁) (PTree.get x m₂) = true) →
+            PTree.beq beqA m₁ m₂ = true)) ?_ ?_ m₁
+    · refine ⟨?_⟩
+      intro m₂ H
+      cases m₂ with
+      | Empty => rfl
+      | Nodes m₂ =>
+          rcases PTree.tree'_not_empty m₂ with ⟨p, hp⟩
+          cases hm : PTree.get' p m₂ with
+          | none => exact (hp hm).elim
+          | some v =>
+              have hx := H p
+              simp [PTree.get, hm, beqOptBool_pg] at hx
+    · intro l il o r ir hne
+      refine ⟨?_⟩
+      intro m₂
+      have hP₂ : PLift (
+          (∀ x, beqOptBool_pg beqA (PTree.get x (PTree.Node l o r))
+              (PTree.get x m₂) = true) →
+            PTree.beq beqA (PTree.Node l o r) m₂ = true) := by
+        refine PTree.tree_ind
+            (P := fun m₂ => PLift (
+              (∀ x, beqOptBool_pg beqA (PTree.get x (PTree.Node l o r))
+                  (PTree.get x m₂) = true) →
+                PTree.beq beqA (PTree.Node l o r) m₂ = true)) ?_ ?_ m₂
+        · refine ⟨?_⟩
+          intro H
+          rcases nodeWitness_pg l o r hne with ⟨p, v, hv⟩
+          have hx := H p
+          rw [hv] at hx
+          simpa [PTree.get, beqOptBool_pg] using hx
+        · intro l₂ il₂ o₂ r₂ ir₂ hne₂
+          refine ⟨?_⟩
+          intro H
+          have hleft : ∀ p,
+              beqOptBool_pg beqA (PTree.get p l) (PTree.get p l₂) = true := by
+            intro p
+            have hx := H (.xO p)
+            rw [getNodeAt_pg (.xO p) l o r,
+              getNodeAt_pg (.xO p) l₂ o₂ r₂] at hx
+            simpa [beqOptBool_pg] using hx
+          have hroot : beqOptBool_pg beqA o o₂ = true := by
+            have hx := H .xH
+            rw [getNodeAt_pg .xH l o r,
+              getNodeAt_pg .xH l₂ o₂ r₂] at hx
+            simpa [beqOptBool_pg] using hx
+          have hright : ∀ p,
+              beqOptBool_pg beqA (PTree.get p r) (PTree.get p r₂) = true := by
+            intro p
+            have hx := H (.xI p)
+            rw [getNodeAt_pg (.xI p) l o r,
+              getNodeAt_pg (.xI p) l₂ o₂ r₂] at hx
+            simpa [beqOptBool_pg] using hx
+          have hleft_beq := PLift.down il l₂ hleft
+          have hright_beq := PLift.down ir r₂ hright
+          rw [beqNode_pg beqA l o r l₂ o₂ r₂ hne hne₂]
+          simp [hleft_beq, hroot, hright_beq]
+      exact PLift.down hP₂
+  exact PLift.down hP
+
+theorem beq_correct_bool : beq_correct_boolStatement := by
+  intro A beqA m₁ m₂
+  change PTree.beq beqA m₁ m₂ = true ↔
+    ∀ x, beqOptBool_pg beqA (PTree.get x m₁) (PTree.get x m₂) = true
+  constructor
+  · exact beq_true_pointwise_pg beqA m₁ m₂
+  · exact extensional_beq_true_pg beqA m₁ m₂
+
+end PTree
+
+end CompCert4Lean.Lib.Maps

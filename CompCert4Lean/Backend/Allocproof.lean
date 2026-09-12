@@ -2551,3 +2551,164 @@ theorem val_longofwords_eq_1 : val_longofwords_eq_1Statement := by
   simp [CompCert4Lean.X86_64.Archi.ptr64] at hptr
 
 end CompCert4Lean.Backend.Allocproof
+
+namespace CompCert4Lean.Backend.Allocproof
+
+theorem val_longofwords_eq_2 : val_longofwords_eq_2Statement := by
+  intro v hv hsplit
+  apply val_longofwords_eq_1 v hv
+  exact CompCert4Lean.X86_64.Archi.splitlong_ptr32 hsplit
+
+end CompCert4Lean.Backend.Allocproof
+
+namespace CompCert4Lean.Backend.Allocproof
+
+open CompCert4Lean.Backend.Allocation
+
+theorem add_equation_ros_satisf : add_equation_ros_satisfStatement := by
+  intro rs ls ros mos e e' hrun hsat
+  cases ros with
+  | inl r =>
+      cases mos with
+      | inl mr =>
+          simp [add_equation_ros] at hrun
+          rcases hrun with ⟨rfl, rfl⟩
+          exact add_equation_satisf rs ls
+            { ekind := .Full, ereg := r, eloc := .R mr } e hsat
+      | inr id => simp [add_equation_ros] at hrun
+  | inr id =>
+      cases mos with
+      | inl mr => simp [add_equation_ros] at hrun
+      | inr id' =>
+          simp [add_equation_ros] at hrun
+          rcases hrun with ⟨_, rfl⟩
+          exact hsat
+
+end CompCert4Lean.Backend.Allocproof
+
+namespace CompCert4Lean.Backend.Allocproof
+
+open CompCert4Lean.Backend.Allocation
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem select_reg_l_monotone : select_reg_l_monotoneStatement := by
+  intro r q1 q2 hord hsel
+  unfold select_reg_l PArith.BinPos.Pos.leb at hsel ⊢
+  have hrle : PArith.BinPos.Pos.to_nat r ≤
+      PArith.BinPos.Pos.to_nat q1.ereg := by
+    split at hsel
+    · exact ‹PArith.BinPos.Pos.to_nat r ≤ PArith.BinPos.Pos.to_nat q1.ereg›
+    · simp at hsel
+  rcases hord with rfl | hlt
+  · exact hsel
+  · rcases hlt with hreg | ⟨hreq, _⟩
+    · have hreg' : PArith.BinPos.Pos.to_nat q1.ereg <
+          PArith.BinPos.Pos.to_nat q2.ereg := hreg
+      have hqle : PArith.BinPos.Pos.to_nat r ≤
+          PArith.BinPos.Pos.to_nat q2.ereg := Nat.le_trans hrle (Nat.le_of_lt hreg')
+      split
+      · rfl
+      · exfalso
+        exact ‹¬ PArith.BinPos.Pos.to_nat r ≤
+          PArith.BinPos.Pos.to_nat q2.ereg› hqle
+    · rw [← hreq]
+      exact hsel
+
+end CompCert4Lean.Backend.Allocproof
+
+namespace CompCert4Lean.Backend.Allocproof
+
+open CompCert4Lean.Backend.Allocation
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Backend.Registers
+
+private theorem allocproof_longofwords_lessdef
+    (v1 v2 v1' v2' : val) :
+    Val.lessdef v1 v1' → Val.lessdef v2 v2' →
+      Val.lessdef (Val.longofwords v1 v2) (Val.longofwords v1' v2') := by
+  intro h1 h2
+  cases h1 with
+  | lessdef_refl v1 =>
+      cases h2 with
+      | lessdef_refl v2 => exact Val.lessdef_refl _
+      | lessdef_undef v2' =>
+          simpa [Val.longofwords] using
+            (Val.lessdef_undef (Val.longofwords v1 v2'))
+  | lessdef_undef v1' =>
+      simpa [Val.longofwords] using
+        (Val.lessdef_undef (Val.longofwords v1' v2'))
+
+theorem add_equations_args_lessdef : add_equations_args_lessdefStatement := by
+  intro rs ls rl tyl ll e e' hrun hsat htypes
+  induction rl generalizing tyl ll e e' with
+  | nil =>
+      cases tyl with
+      | nil =>
+          cases ll with
+          | nil =>
+              simp [add_equations_args] at hrun
+              cases hrun
+              exact Val.lessdef_list_nil
+          | cons p ps => simp [add_equations_args] at hrun
+      | cons ty tys =>
+          cases ll <;> simp [add_equations_args] at hrun
+  | cons r rl ih =>
+      cases tyl with
+      | nil =>
+          cases ll <;> simp [add_equations_args] at hrun
+      | cons ty tys =>
+          cases ll with
+          | nil => simp [add_equations_args] at hrun
+          | cons p ps =>
+              cases p with
+              | One l =>
+                  simp only [add_equations_args] at hrun
+                  rcases htypes with ⟨hty, htypes⟩
+                  apply Val.lessdef_list_cons
+                  · apply add_equation_lessdef (rs := rs) (ls := ls)
+                      (q := { ekind := .Full, ereg := r, eloc := l }) (e := e)
+                    exact add_equations_args_satisf (rs := rs) (ls := ls)
+                      (rl := rl) (tyl := tys) (ll := ps)
+                      (e := add_equation { ekind := .Full, ereg := r, eloc := l } e)
+                      (e' := e') hrun hsat
+                  · exact ih (tyl := tys) (ll := ps)
+                      (e := add_equation { ekind := .Full, ereg := r, eloc := l } e)
+                      (e' := e') hrun hsat htypes
+              | Twolong hi lo =>
+                  by_cases hty : ty = Tlong
+                  · subst ty
+                    simp [add_equations_args] at hrun
+                    rcases hrun with ⟨hptr, hrun⟩
+                    rcases htypes with ⟨hty, htypes⟩
+                    apply Val.lessdef_list_cons
+                    · change Val.lessdef (Regmap.get r rs)
+                        (Val.longofwords (ls hi) (ls lo))
+                      rw [← val_longofwords_eq_1 (Regmap.get r rs) hty hptr]
+                      apply allocproof_longofwords_lessdef
+                      · exact add_equation_lessdef (rs := rs) (ls := ls)
+                          (q := { ekind := .High, ereg := r, eloc := hi }) (e := e) <|
+                            add_equation_satisf rs ls
+                              { ekind := .Low, ereg := r, eloc := lo }
+                              (add_equation { ekind := .High, ereg := r, eloc := hi } e)
+                              (add_equations_args_satisf (rs := rs) (ls := ls)
+                                (rl := rl) (tyl := tys) (ll := ps)
+                                (e := add_equation { ekind := .Low, ereg := r, eloc := lo }
+                                  (add_equation { ekind := .High, ereg := r, eloc := hi } e))
+                                (e' := e') hrun hsat)
+                      · exact add_equation_lessdef (rs := rs) (ls := ls)
+                          (q := { ekind := .Low, ereg := r, eloc := lo })
+                          (e := add_equation { ekind := .High, ereg := r, eloc := hi } e) <| by
+                            exact add_equations_args_satisf (rs := rs) (ls := ls)
+                              (rl := rl) (tyl := tys) (ll := ps)
+                              (e := add_equation { ekind := .Low, ereg := r, eloc := lo }
+                                (add_equation { ekind := .High, ereg := r, eloc := hi } e))
+                              (e' := e') hrun hsat
+                    · exact ih (tyl := tys) (ll := ps)
+                        (e := add_equation { ekind := .Low, ereg := r, eloc := lo }
+                          (add_equation { ekind := .High, ereg := r, eloc := hi } e))
+                        (e' := e') hrun hsat htypes
+                  · simp [add_equations_args, hty] at hrun
+
+end CompCert4Lean.Backend.Allocproof

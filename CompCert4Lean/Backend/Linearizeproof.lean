@@ -1299,3 +1299,156 @@ theorem find_label_unique : find_label_uniqueStatement := by
             exact False.elim (hu (linearize_is_tail_in _ _ _ htail'))
 
 end CompCert4Lean.Backend.Linearizeproof
+
+namespace CompCert4Lean.Backend.Linearizeproof
+
+open CompCert4Lean.Backend.Linear
+open CompCert4Lean.Backend.Linearize
+
+theorem find_label_add_branch : find_label_add_branchStatement := by
+  intro lbl k s
+  unfold add_branch
+  by_cases h : starts_with s k
+  · simp [h]
+  · simp [h, Linear.find_label, Linear.is_label]
+
+private theorem find_label_cond_add_branch
+    (lbl : Linear.label) (k : Linear.code)
+    (cond : CompCert4Lean.X86.Op.condition)
+    (args : List CompCert4Lean.X86.Machregs.mreg)
+    (s1 s2 : CompCert4Lean.Backend.LTL.node) :
+    Linear.find_label lbl
+        (if starts_with s1 k then
+          Linear.Lcond (CompCert4Lean.X86.Op.negate_condition cond) args s2 ::
+            add_branch s1 k
+        else
+          Linear.Lcond cond args s1 :: add_branch s2 k) =
+      Linear.find_label lbl k := by
+  by_cases h : starts_with s1 k = true
+  · simp [h, Linear.find_label, Linear.is_label]
+    exact find_label_add_branch lbl k s1
+  · simp [h, Linear.find_label, Linear.is_label]
+    exact find_label_add_branch lbl k s2
+
+theorem find_label_lin_block : find_label_lin_blockStatement := by
+  intro lbl k b
+  induction b with
+  | nil => rfl
+  | cons a b ih =>
+      cases a <;>
+        simp [linearize_block, Linear.find_label, Linear.is_label,
+          ih, find_label_add_branch]
+      all_goals
+        first
+        | exact find_label_add_branch lbl k _
+        | exact find_label_cond_add_branch lbl k _ _ _ _
+
+private theorem linearize_body_fold_left_append
+    {A B : Type} (f : A → B → B) (acc : B) (xs ys : List A) :
+    CompCert4Lean.Lib.Coqlib.list_fold_left f acc (xs ++ ys) =
+      CompCert4Lean.Lib.Coqlib.list_fold_left f
+        (CompCert4Lean.Lib.Coqlib.list_fold_left f acc xs) ys := by
+  induction xs generalizing acc with
+  | nil => rfl
+  | cons x xs ih =>
+      simp only [List.cons_append, CompCert4Lean.Lib.Coqlib.list_fold_left]
+      exact ih (f x acc)
+
+private theorem linearize_body_fold_right_cons
+    (f : LTL.function) (pc : LTL.node) (enum : List LTL.node) :
+    CompCert4Lean.Lib.Coqlib.list_fold_right (linearize_node f) (pc :: enum) [] =
+      linearize_node f pc
+        (CompCert4Lean.Lib.Coqlib.list_fold_right (linearize_node f) enum []) := by
+  unfold CompCert4Lean.Lib.Coqlib.list_fold_right
+  rw [List.reverse_cons]
+  rw [linearize_body_fold_left_append (linearize_node f) ([] : Linear.code)
+    (List.reverse enum) [pc]]
+  rfl
+
+theorem linearize_body_cons : linearize_body_consStatement := by
+  intro f pc enum
+  unfold linearize_body
+  rw [linearize_body_fold_right_cons]
+  unfold linearize_node
+  rfl
+
+end CompCert4Lean.Backend.Linearizeproof
+
+namespace CompCert4Lean.Backend.Linearizeproof
+
+open CompCert4Lean.Backend.Linear
+open CompCert4Lean.Backend.Linearize
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Smallstep
+open CompCert4Lean.Lib.Coqlib
+
+private theorem starts_with_is_tail_cons_left {A : Type} (x : A) (c1 c2 : List A) :
+    is_tail (x :: c1) c2 -> is_tail c1 c2 := by
+  induction c2 with
+  | nil =>
+      intro h
+      cases h
+  | cons i c2 ih =>
+      intro h
+      cases h with
+      | refl _ => exact is_tail.cons x (is_tail.refl c1)
+      | cons _ htail => exact is_tail.cons _ (ih htail)
+
+theorem starts_with_correct
+    [binary64_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 53)
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 24)
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 128)] :
+    starts_with_correctStatement := by
+  intro cfg xi tprog lbl c1
+  induction c1 with
+  | nil =>
+      intro c2 c3 s f sp ls m htail huniq hstart hfind
+      simp [starts_with] at hstart
+  | cons a c1 ih =>
+      intro c2 c3 s f sp ls m htail huniq hstart hfind
+      cases a with
+      | Llabel l =>
+          simp only [starts_with] at hstart
+          cases hpeq : CompCert4Lean.Lib.Coqlib.peq lbl l with
+          | left heq =>
+              subst l
+              have hc := find_label_unique lbl c1 c2 c3 htail huniq hfind
+              subst c3
+              apply CompCert4Lean.Common.Smallstep.plus_left
+                (Linear.State s f sp (Linear.Llabel lbl :: c1) ls m)
+                CompCert4Lean.Common.Events.E0
+              · exact CompCert4Lean.Backend.Linear.step.exec_Llabel
+                  s f sp lbl c1 ls m
+              · exact CompCert4Lean.Common.Smallstep.star_refl _ _ _
+              · rfl
+          | right hne =>
+              apply CompCert4Lean.Common.Smallstep.plus_left
+                (Linear.State s f sp (Linear.Llabel l :: c1) ls m)
+                CompCert4Lean.Common.Events.E0
+              · exact CompCert4Lean.Backend.Linear.step.exec_Llabel
+                  s f sp l c1 ls m
+              · exact CompCert4Lean.Common.Smallstep.plus_star _ _ _ _ _ _ _
+                  (ih c2 c3 s f sp ls m
+                    (starts_with_is_tail_cons_left _ _ _ htail)
+                    huniq
+                    (by simpa [hpeq] using hstart) hfind)
+              · rfl
+      | Lgetstack sl ofs ty dst => simp [starts_with] at hstart
+      | Lsetstack src sl ofs ty => simp [starts_with] at hstart
+      | Lop op args res => simp [starts_with] at hstart
+      | Lload chunk addr args dst => simp [starts_with] at hstart
+      | Lstore chunk addr args src => simp [starts_with] at hstart
+      | Lcall sig ros => simp [starts_with] at hstart
+      | Ltailcall sig ros => simp [starts_with] at hstart
+      | Lbuiltin ef args res => simp [starts_with] at hstart
+      | Lgoto l => simp [starts_with] at hstart
+      | Lcond cond args l => simp [starts_with] at hstart
+      | Ljumptable arg tbl => simp [starts_with] at hstart
+      | Lreturn => simp [starts_with] at hstart
+
+end CompCert4Lean.Backend.Linearizeproof

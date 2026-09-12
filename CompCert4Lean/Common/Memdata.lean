@@ -831,3 +831,24 @@ theorem length_inj_bytes : length_inj_bytesStatement := by
   simp [inj_bytes]
 
 end CompCert4Lean.Common.Memdata
+
+namespace CompCert4Lean.Common.Memdata
+
+theorem encode_val_length : encode_val_lengthStatement := by
+  have hinj : ∀ (n : Nat) (v : val) (q : quantity),
+      (inj_value_rec n v q).length = n := by
+    intro n v q
+    induction n with
+    | zero => rfl
+    | succ n ih => simp [inj_value_rec, ih]
+  have hbytes : ∀ (bl : List byte), (inj_bytes bl).length = bl.length := by
+    intro bl
+    simp [inj_bytes]
+  intro chunk v
+  cases v <;> cases chunk <;>
+    simp [encode_val, inj_value, inj_value_rec, size_chunk_nat, size_chunk,
+      zToNat, z1, z2, z4, z8, size_quantity_nat, hinj, hbytes,
+      encode_int_length_proof_api]
+  all_goals by_cases h : CompCert4Lean.X86_64.Archi.ptr64 = true <;> simp [h]
+
+end CompCert4Lean.Common.Memdata

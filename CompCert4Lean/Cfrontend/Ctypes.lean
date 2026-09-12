@@ -2004,3 +2004,34 @@ theorem complete_type_stable : complete_type_stableStatement := by
   | cons head tail ihhead ihtail => trivial
 
 end CompCert4Lean.Cfrontend.Ctypes
+
+namespace CompCert4Lean.Cfrontend.Ctypes
+
+theorem rank_type_stable : rank_type_stableStatement := by
+  intro env env' henv t hcomplete
+  induction t using type.rec (motive_2 := fun _ => True) with
+  | Tvoid => rfl
+  | Tint sz sg a => cases sz <;> rfl
+  | Tlong sg a => rfl
+  | Tfloat sz a => cases sz <;> rfl
+  | Tpointer t a => rfl
+  | Tarray t n a ih =>
+      simp only [complete_type] at hcomplete
+      simp [rank_type, ih hcomplete]
+  | Tfunction args res cc ihargs ihres => rfl
+  | Tstruct id a =>
+      cases hget : CompCert4Lean.Lib.Maps.PTree.get id env with
+      | none => simp [complete_type, hget] at hcomplete
+      | some co =>
+          have hget' := henv id co hget
+          simp [rank_type, hget, hget']
+  | Tunion id a =>
+      cases hget : CompCert4Lean.Lib.Maps.PTree.get id env with
+      | none => simp [complete_type, hget] at hcomplete
+      | some co =>
+          have hget' := henv id co hget
+          simp [rank_type, hget, hget']
+  | nil => trivial
+  | cons head tail ihhead ihtail => trivial
+
+end CompCert4Lean.Cfrontend.Ctypes

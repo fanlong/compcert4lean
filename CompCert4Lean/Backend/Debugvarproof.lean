@@ -1191,3 +1191,17 @@ theorem transf_initial_states : transf_initial_statesStatement := by
           (list_forall2.nil _) htrans
 
 end CompCert4Lean.Backend.Debugvarproof
+
+namespace CompCert4Lean.Backend.Debugvarproof
+
+open CompCert4Lean.Backend.Linear
+
+theorem transf_final_states : transf_final_statesStatement := by
+  intro cfg st1 st2 r hmatch hfinal
+  cases hfinal
+  cases hmatch
+  case final_state_intro.return rs m hresult ts stacks =>
+    cases stacks
+    exact final_state.final_state_intro rs m r hresult
+
+end CompCert4Lean.Backend.Debugvarproof

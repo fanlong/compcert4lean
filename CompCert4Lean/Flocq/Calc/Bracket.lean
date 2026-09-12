@@ -975,3 +975,146 @@ theorem inbetween_step_Hi :
     exact bracket_Rcompare_gt ctx hmiddle_x
 
 end CompCert4Lean.Flocq.Calc.Bracket
+
+namespace CompCert4Lean.Flocq.Calc.Bracket
+
+private theorem bracket_Rcompare_plus_l (ctx : ExactRealContext)
+    (z x y : R ctx) :
+    Rcompare ctx (Rplus ctx z x) (Rplus ctx z y) = Rcompare ctx x y := by
+  change CompCert4Lean.Flocq.Core.Raux.Exact.Rcompare ctx
+      (ctx.spec.add z x) (ctx.spec.add z y) =
+    CompCert4Lean.Flocq.Core.Raux.Exact.Rcompare ctx x y
+  rcases ctx.certificate.total_order x y with h | h
+  · rcases h with hlt | heq
+    · have hadd := ctx.certificate.orderedField.add_lt_compat_l z x y hlt
+      have hleft :
+          CompCert4Lean.Flocq.Core.Raux.Exact.Rcompare ctx
+              (ctx.spec.add z x) (ctx.spec.add z y) = Lt :=
+        bracket_Rcompare_lt ctx hadd
+      have hright :
+          CompCert4Lean.Flocq.Core.Raux.Exact.Rcompare ctx x y = Lt :=
+        bracket_Rcompare_lt ctx hlt
+      rw [hleft, hright]
+    · subst y
+      have hleft :
+          CompCert4Lean.Flocq.Core.Raux.Exact.Rcompare ctx
+              (ctx.spec.add z x) (ctx.spec.add z x) = Eq :=
+        bracket_Rcompare_eq ctx rfl
+      have hright :
+          CompCert4Lean.Flocq.Core.Raux.Exact.Rcompare ctx x x = Eq :=
+        bracket_Rcompare_eq ctx rfl
+      rw [hleft, hright]
+  · have hadd := ctx.certificate.orderedField.add_lt_compat_l z y x h
+    have hleft :
+        CompCert4Lean.Flocq.Core.Raux.Exact.Rcompare ctx
+            (ctx.spec.add z x) (ctx.spec.add z y) = Gt :=
+      bracket_Rcompare_gt ctx hadd
+    have hright :
+        CompCert4Lean.Flocq.Core.Raux.Exact.Rcompare ctx x y = Gt :=
+      bracket_Rcompare_gt ctx h
+    rw [hleft, hright]
+
+theorem inbetween_step_Lo_Mi_Eq_odd :
+    ∀ (ctx : ExactRealContext), inbetween_step_Lo_Mi_Eq_oddStatement ctx := by
+  intro ctx start step nb_steps hstep hnb x k hx hEq
+  apply inbetween_step_not_Eq ctx start step nb_steps hstep x k loc_Exact Lt hx
+  · have hkpos : Zlt Z0 k := by
+      change (0 : Int) <
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ k
+      have hnb' := hnb
+      rw [← hEq] at hnb'
+      change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ Zone <
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+          (Zadd (Zmul Ztwo k) Zone) at hnb'
+      simp only [Zadd, Zmul,
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add,
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.mul,
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt] at hnb'
+      have htwo_int :
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ Ztwo = (2 : Int) := by
+        rfl
+      have hone_int :
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ Zone = (1 : Int) := by
+        rfl
+      rw [htwo_int, hone_int] at hnb'
+      omega
+    constructor
+    · exact hkpos
+    · change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ k <
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ nb_steps
+      have hkpos_int := hkpos
+      change (0 : Int) <
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ k at hkpos_int
+      rw [← hEq]
+      simp only [Zadd, Zmul,
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add,
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.mul,
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+      have htwo_int :
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ Ztwo = (2 : Int) := by
+        rfl
+      have hone_int :
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ Zone = (1 : Int) := by
+        rfl
+      rw [htwo_int, hone_int]
+      omega
+  · cases hx with
+    | inbetween_Exact hxeq =>
+        rw [hxeq]
+        rw [bracket_Rcompare_plus_l ctx]
+        have hstep0 : Rlt ctx (R0 ctx) step := by
+          change ctx.spec.lt ctx.spec.zero step
+          change ctx.spec.lt (ctx.spec.ofZ Z0) step at hstep
+          rw [ctx.certificate.sourceLaws.ofZ_zero] at hstep
+          exact hstep
+        rw [bracket_Rcompare_mult_r ctx step _ _ hstep0]
+        change CompCert4Lean.Flocq.Core.Raux.Exact.Rcompare ctx
+            (ctx.spec.ofZ k)
+            (CompCert4Lean.Flocq.Core.Raux.Exact.Rdiv ctx
+              (ctx.spec.ofZ nb_steps)
+              (CompCert4Lean.Flocq.Core.Raux.Exact.Rtwo ctx)) = Lt
+        rw [CompCert4Lean.Flocq.Core.Raux.Rcompare_half_r ctx]
+        have hz2 : IZR ctx Ztwo = Rtwo ctx := by
+          change ctx.spec.ofZ Ztwo =
+            ctx.spec.add ctx.spec.one ctx.spec.one
+          have hZtwo : Ztwo = Zadd Zone Zone := by
+            rfl
+          rw [hZtwo, ctx.certificate.sourceLaws.ofZ_add,
+            ctx.certificate.sourceLaws.ofZ_one]
+        have hz2' :
+            CompCert4Lean.Flocq.Core.Raux.Exact.Rtwo ctx =
+              ctx.spec.ofZ Ztwo := by
+          exact hz2.symm
+        rw [hz2']
+        have hmult :=
+          CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.mult_IZR
+            ctx Ztwo k
+        change ctx.spec.ofZ (Zmul Ztwo k) =
+          ctx.spec.mul (ctx.spec.ofZ Ztwo) (ctx.spec.ofZ k) at hmult
+        change CompCert4Lean.Flocq.Core.Raux.Exact.Rcompare ctx
+            (ctx.spec.mul (ctx.spec.ofZ Ztwo) (ctx.spec.ofZ k))
+            (ctx.spec.ofZ nb_steps) = Lt
+        rw [← hmult]
+        rw [← hEq]
+        apply bracket_Rcompare_lt ctx
+        apply
+          CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.IZR_lt
+            ctx (Zmul Ztwo k) (Zadd (Zmul Ztwo k) Zone)
+        change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+            (Zmul Ztwo k) <
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+            (Zadd (Zmul Ztwo k) Zone)
+        simp only [Zadd, Zmul,
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add,
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.mul,
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+        have htwo_int :
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ Ztwo = (2 : Int) := by
+          rfl
+        have hone_int :
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ Zone = (1 : Int) := by
+          rfl
+        rw [htwo_int, hone_int]
+        omega
+
+end CompCert4Lean.Flocq.Calc.Bracket

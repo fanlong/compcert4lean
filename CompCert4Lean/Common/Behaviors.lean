@@ -974,3 +974,21 @@ theorem state_behaves_exists : state_behaves_existsStatement := by
           (by intro r hfinal_r; exact hfinal ⟨r, hfinal_r⟩)⟩
 
 end CompCert4Lean.Common.Behaviors
+
+namespace CompCert4Lean.Common.Behaviors
+
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.Smallstep
+
+theorem program_behaves_exists : program_behaves_existsStatement := by
+  intro L
+  classical
+  by_cases hinit : ∃ s : state L, initial_state L s
+  · rcases hinit with ⟨s, hs⟩
+    obtain ⟨beh, hbeh⟩ := state_behaves_exists L s
+    exact ⟨beh, program_behaves.program_runs s beh hs hbeh⟩
+  · refine ⟨Goes_wrong E0, program_behaves.program_goes_initially_wrong ?_⟩
+    intro s hs
+    exact hinit ⟨s, hs⟩
+
+end CompCert4Lean.Common.Behaviors

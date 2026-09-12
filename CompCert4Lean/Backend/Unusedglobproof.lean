@@ -1043,3 +1043,55 @@ theorem seen_add_ref_definition : seen_add_ref_definitionStatement := by
       exact hfold gv.gvar_init w (Or.inr hmem)
 
 end CompCert4Lean.Backend.Unusedglobproof
+
+namespace CompCert4Lean.Backend.Unusedglobproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Backend.Unusedglob
+open CompCert4Lean.Common.AST
+
+theorem seen_main_initial_workset : seen_main_initial_worksetStatement := by
+  intro p
+  unfold CompCert4Lean.Backend.Unusedglob.initial_workset
+  exact seen_add_workset p.prog_main
+    (p.prog_public.foldl
+      (fun w id => CompCert4Lean.Backend.Unusedglob.add_workset id w)
+      { w_seen := CompCert4Lean.Backend.Unusedglob.IS.empty, w_todo := [] })
+
+theorem seen_public_initial_workset : seen_public_initial_worksetStatement := by
+  intro p id hid
+  unfold CompCert4Lean.Backend.Unusedglob.initial_workset
+  apply seen_workset_incl _ _ id
+    (add_workset_incl p.prog_main _)
+  have hEq : ∀ (l : List ident) (w : workset),
+      l.foldl (fun w id => CompCert4Lean.Backend.Unusedglob.add_workset id w) w =
+        CompCert4Lean.Backend.Unusedglob.addlist_workset l w := by
+    intro l
+    induction l with
+    | nil => intro w; rfl
+    | cons x xs ih =>
+        intro w
+        simp only [List.foldl,
+          CompCert4Lean.Backend.Unusedglob.addlist_workset]
+        exact ih (CompCert4Lean.Backend.Unusedglob.add_workset x w)
+  have hfold : ∀ (l : List ident) (w : workset),
+      id ∈ l → IS.In id
+        (l.foldl (fun w id => CompCert4Lean.Backend.Unusedglob.add_workset id w) w).w_seen := by
+    intro l
+    induction l with
+    | nil => intro w h; cases h
+    | cons x xs ih =>
+        intro w h
+        simp only [List.mem_cons] at h
+        simp only [List.foldl]
+        rcases h with rfl | h
+        · rw [hEq]
+          exact seen_workset_incl _ _ id
+            (addlist_workset_incl xs
+              (CompCert4Lean.Backend.Unusedglob.add_workset id w))
+            (seen_add_workset id w)
+        · exact ih (CompCert4Lean.Backend.Unusedglob.add_workset x w) h
+  exact hfold p.prog_public
+    { w_seen := CompCert4Lean.Backend.Unusedglob.IS.empty, w_todo := [] } hid
+
+end CompCert4Lean.Backend.Unusedglobproof

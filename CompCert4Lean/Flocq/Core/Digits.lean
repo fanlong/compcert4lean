@@ -268,3 +268,224 @@ theorem Zdigits_gt_0 : Zdigits_gt_0Statement := by
           CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat]) (digits2_Pnat p)
 
 end CompCert4Lean.Flocq.Core.Digits
+namespace CompCert4Lean.Flocq.Core.Digits
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt
+private theorem digits_int_pow_mono (b : Int) (hb : 1 ≤ b) : ∀ {m n : Nat}, m ≤ n → b ^ m ≤ b ^ n := by
+  intro m n hmn
+  induction n with
+  | zero =>
+      have hm : m = 0 := Nat.eq_zero_of_le_zero hmn
+      subst m
+      exact Int.le_refl _
+  | succ n ih =>
+      by_cases heq : m = Nat.succ n
+      · subst m
+        exact Int.le_refl _
+      · have hmlt : m < Nat.succ n := Nat.lt_of_le_of_ne hmn heq
+        have hmle : m ≤ n := Nat.le_of_lt_succ hmlt
+        have hbn : 0 ≤ b ^ n := Int.pow_nonneg (by omega)
+        have hstep : b ^ n ≤ b ^ n * b := by
+          have hh := Int.mul_le_mul_of_nonneg_left hb hbn
+          simpa using hh
+        rw [Int.pow_succ]
+        exact Int.le_trans (ih hmle) hstep
+
+private theorem digits_power_le_of_exp_lt
+    (beta : radix) (b : Int) (hb : 1 ≤ b)
+    (e : Z) (j : Nat) (p : Int)
+    (he : intOfZ e < Int.ofNat j)
+    (hj : 1 ≤ j)
+    (hlower : b ^ (j - 1) ≤ p)
+    (hbrel : intOfZ (beta : Z) = b) :
+    intOfZ (Zpower (beta : Z) e) ≤ p := by
+  cases e with
+  | Z0 =>
+      have hmono : b ^ 0 ≤ b ^ (j - 1) := digits_int_pow_mono b hb (Nat.zero_le _)
+      have hpow : b ^ 0 = 1 := by simp
+      have h1 : (1 : Int) ≤ p := by
+        rw [← hpow]
+        exact Int.le_trans hmono hlower
+      change intOfZ (Zpower (beta : Z) Z0) ≤ p
+      change intOfZ (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.pow (beta : Z) Z0) ≤ p
+      unfold CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.pow
+      have hz : ¬ (intOfZ (Z0 : Z) < 0) := by simp [intOfZ]
+      rw [if_neg hz]
+      rw [intOfZ_zOfInt]
+      have hto : (intOfZ (Z0 : Z)).toNat = 0 := rfl
+      rw [hto]
+      have hzpow : (intOfZ (beta : Z)).pow 0 = 1 := by
+        change @HPow.hPow Int Nat Int _ (intOfZ (beta : Z)) 0 = 1
+        simp
+      rw [hzpow]
+      exact h1
+  | Zneg q =>
+      have hnonneg : 0 ≤ b ^ (j - 1) := Int.pow_nonneg (by omega)
+      have hpnonneg : 0 ≤ p := Int.le_trans hnonneg hlower
+      change intOfZ (Zpower (beta : Z) (.Zneg q)) ≤ p
+      change intOfZ (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.pow (beta : Z) (.Zneg q)) ≤ p
+      have heqneg : ¬ (0 ≤ intOfZ (.Zneg q : Z)) := by
+        change ¬ (0 ≤ -Int.ofNat (posToNat q))
+        have hq : 0 < posToNat q := posToNat_positive q
+        have hpos : 0 < Int.ofNat (posToNat q) := Int.natCast_pos.mpr hq
+        intro h
+        exact (Int.not_le_of_gt hpos) (Int.neg_nonneg.mp h)
+      have helt : intOfZ (.Zneg q : Z) < 0 := Int.lt_of_not_ge heqneg
+      unfold CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.pow
+      rw [if_pos helt]
+      change intOfZ (Z0 : Z) ≤ p
+      simpa [intOfZ] using hpnonneg
+  | Zpos q =>
+      have hnlt : posToNat q < j := by
+        change Int.ofNat (posToNat q) < Int.ofNat j at he
+        exact Int.ofNat_lt.mp he
+      have hnle : posToNat q ≤ j - 1 := by omega
+      have hmono : b ^ (posToNat q) ≤ b ^ (j - 1) := digits_int_pow_mono b hb hnle
+      have hpowrel : intOfZ (Zpower (beta : Z) (.Zpos q)) = b ^ (posToNat q) := by
+        change intOfZ (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.pow (beta : Z) (.Zpos q)) = _
+        have heq : ¬ (intOfZ (.Zpos q : Z) < 0) := by
+          change ¬ (Int.ofNat (posToNat q) < 0)
+          exact Int.not_lt_of_ge (Int.ofNat_nonneg _)
+        unfold CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.pow
+        rw [if_neg heq]
+        have hto : (intOfZ (.Zpos q : Z)).toNat = posToNat q := rfl
+        rw [hto]
+        rw [intOfZ_zOfInt]
+        rw [hbrel]
+        rfl
+      rw [hpowrel]
+      exact Int.le_trans hmono hlower
+
+private theorem digits_intOfZ_add (a b : Z) :
+    intOfZ (Zadd a b) = intOfZ a + intOfZ b := by
+  simp only [Zadd,
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add,
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+
+private theorem digits_intOfZ_mul (a b : Z) :
+    intOfZ (Zmul a b) = intOfZ a * intOfZ b := by
+  simp only [Zmul,
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.mul,
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+
+private theorem digits_aux_lower
+    (beta : radix) (b : Int) (hb : 1 ≤ b)
+    (p nb pow : Z) (j k : Nat)
+    (hbrel : intOfZ (beta : Z) = b)
+    (hnb : intOfZ nb = Int.ofNat j)
+    (hpow : intOfZ pow = b ^ j)
+    (hj : 1 ≤ j)
+    (hlower : b ^ (j - 1) ≤ intOfZ p) :
+    ∀ e : Z, Zlt e (Zdigits_aux beta p nb pow k) →
+      intOfZ (Zpower (beta : Z) e) ≤ intOfZ p := by
+  induction k generalizing nb pow j with
+  | zero =>
+      intro e he
+      change intOfZ e < intOfZ nb at he
+      have he' : intOfZ e < Int.ofNat j := by
+        rw [← hnb]
+        exact he
+      exact digits_power_le_of_exp_lt beta b hb e j (intOfZ p) he' hj hlower hbrel
+  | succ k ih =>
+      intro e he
+      simp only [Zdigits_aux] at he
+      split at he
+      · rename_i hcond
+        have he' : intOfZ e < Int.ofNat j := by
+          rw [← hnb]
+          exact he
+        exact digits_power_le_of_exp_lt beta b hb e j (intOfZ p) he' hj hlower hbrel
+      · rename_i hcond
+        have hnlt : ¬ (intOfZ p < intOfZ pow) := by
+            intro hlt
+            apply hcond
+            change (if intOfZ p < intOfZ pow then true else false) = true
+            simp [hlt]
+        have hpow_le : intOfZ pow ≤ intOfZ p := Int.le_of_not_gt hnlt
+        have hnb' : intOfZ (Zadd nb Zone) = Int.ofNat (j + 1) := by
+          rw [digits_intOfZ_add, hnb]
+          rfl
+        have hpow' : intOfZ (Zmul (beta : Z) pow) = b ^ (j + 1) := by
+          rw [digits_intOfZ_mul, hbrel, hpow]
+          change b * b ^ j = b ^ (j + 1)
+          rw [Int.pow_succ]
+          exact Int.mul_comm _ _
+        have hlower' : b ^ ((j + 1) - 1) ≤ intOfZ p := by
+          have hh : b ^ j ≤ intOfZ p := by
+            rw [← hpow]
+            exact hpow_le
+          simpa using hh
+        have hj' : 1 ≤ j + 1 := by omega
+        exact ih (nb := Zadd nb Zone) (pow := Zmul (beta : Z) pow)
+          (j := j + 1) hnb' hpow' hj' hlower' e he
+
+private theorem digits_abs_pos (p : positive) : Zabs (.Zpos p : Z) = .Zpos p := by
+  apply CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective
+  change intOfZ (zOfInt (Int.natAbs (Int.ofNat (posToNat p)))) =
+    Int.ofNat (posToNat p)
+  rw [intOfZ_zOfInt]
+  exact Int.natAbs_of_nonneg (Int.natCast_nonneg _)
+
+private theorem digits_abs_neg (p : positive) : Zabs (.Zneg p : Z) = .Zpos p := by
+  apply CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective
+  change intOfZ (zOfInt (Int.natAbs (-Int.ofNat (posToNat p)))) =
+    Int.ofNat (posToNat p)
+  rw [intOfZ_zOfInt]
+  simp
+
+theorem Zpower_le_Zdigits : Zpower_le_ZdigitsStatement := by
+  intro beta e x h
+  have hb : 1 ≤ intOfZ (beta : Z) := by
+    have hp := beta.radix_prop
+    change (if intOfZ (Ztwo : Z) ≤ intOfZ (beta : Z) then true else false) = true at hp
+    have htwo : intOfZ (Ztwo : Z) = 2 := by simp [intOfZ, posToNat]
+    split at hp <;> simp_all <;> omega
+  cases x with
+  | Z0 =>
+      change intOfZ e < intOfZ (Z0 : Z) at h
+      cases e with
+      | Z0 => simp at h
+      | Zpos p =>
+          have hf : False := (Int.not_lt_of_ge (Int.ofNat_nonneg _)) h
+          exact hf.elim
+      | Zneg q =>
+          change intOfZ (Zpower (beta : Z) (.Zneg q)) ≤ intOfZ (Zabs (Z0 : Z))
+          have heqneg : ¬ (0 ≤ intOfZ (.Zneg q : Z)) := by
+            change ¬ (0 ≤ -Int.ofNat (posToNat q))
+            have hq : 0 < posToNat q := posToNat_positive q
+            have hpos : 0 < Int.ofNat (posToNat q) := Int.natCast_pos.mpr hq
+            intro hh
+            exact (Int.not_le_of_gt hpos) (Int.neg_nonneg.mp hh)
+          have helt : intOfZ (.Zneg q : Z) < 0 := Int.lt_of_not_ge heqneg
+          change intOfZ (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.pow (beta : Z) (.Zneg q)) ≤ _
+          unfold CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.pow
+          rw [if_pos helt]
+          change (0 : Int) ≤ 0
+          omega
+  | Zpos p =>
+      change intOfZ e < intOfZ (Zdigits_aux beta (.Zpos p) Zone (beta : Z) (digits2_Pnat p)) at h
+      change intOfZ (Zpower (beta : Z) e) ≤ intOfZ (Zabs (.Zpos p : Z))
+      rw [digits_abs_pos]
+      have hp : 0 < posToNat p := posToNat_positive p
+      have hlower : (intOfZ (beta : Z)) ^ (1 - 1) ≤ intOfZ (.Zpos p : Z) := by
+        have hpos : 0 < Int.ofNat (posToNat p) := Int.natCast_pos.mpr hp
+        have hone : (intOfZ (beta : Z)) ^ (1 - 1) = 1 := by simp
+        rw [hone]
+        change 1 ≤ Int.ofNat (posToNat p)
+        omega
+      exact digits_aux_lower beta (intOfZ (beta : Z)) hb (.Zpos p) Zone (beta : Z) 1 (digits2_Pnat p)
+        rfl rfl (by rw [Int.pow_one]) (by omega) hlower e h
+  | Zneg p =>
+      change intOfZ e < intOfZ (Zdigits_aux beta (.Zpos p) Zone (beta : Z) (digits2_Pnat p)) at h
+      change intOfZ (Zpower (beta : Z) e) ≤ intOfZ (Zabs (.Zneg p : Z))
+      rw [digits_abs_neg]
+      have hp : 0 < posToNat p := posToNat_positive p
+      have hlower : (intOfZ (beta : Z)) ^ (1 - 1) ≤ intOfZ (.Zpos p : Z) := by
+        have hpos : 0 < Int.ofNat (posToNat p) := Int.natCast_pos.mpr hp
+        have hone : (intOfZ (beta : Z)) ^ (1 - 1) = 1 := by simp
+        rw [hone]
+        change 1 ≤ Int.ofNat (posToNat p)
+        omega
+      exact digits_aux_lower beta (intOfZ (beta : Z)) hb (.Zpos p) Zone (beta : Z) 1 (digits2_Pnat p)
+        rfl rfl (by rw [Int.pow_one]) (by omega) hlower e h
+end CompCert4Lean.Flocq.Core.Digits

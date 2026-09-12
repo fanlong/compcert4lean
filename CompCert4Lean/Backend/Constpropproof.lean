@@ -1057,3 +1057,105 @@ theorem builtin_args_strength_reduction_correct :
       · exact ih cl.tail
 
 end CompCert4Lean.Backend.Constpropproof
+
+namespace CompCert4Lean.Backend.Constpropproof
+
+open CompCert4Lean.Backend.Constprop
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Backend.ValueAnalysis
+open CompCert4Lean.Backend.ValueDomain
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Coqlib
+
+theorem debug_strength_reduction_correct :
+    ∀ (cfg : CompCert4Lean.Config.CompilerConfig),
+      debug_strength_reduction_correctStatement cfg := by
+  intro cfg prog bc sp m rs ae hmatch al vl hev
+  induction hev with
+  | nil =>
+      exact ⟨[], list_forall2_nil _⟩
+  | @cons a1 al b1 vl ha htail ih =>
+      obtain ⟨vl', hvl'⟩ := ih
+      have htail' : eval_builtin_args
+          (Genv.to_senv (Genv.globalenv prog)) (fun r => Regmap.get r rs)
+          sp m (a1 :: debug_strength_reduction cfg ae al) (b1 :: vl') := by
+        exact list_forall2.cons a1 b1 ha hvl'
+      have hred : eval_builtin_arg
+          (Genv.to_senv (Genv.globalenv prog)) (fun r => Regmap.get r rs)
+          sp m (builtin_arg_reduction cfg ae a1) b1 :=
+        builtin_arg_reduction_correct cfg prog bc sp m rs ae hmatch a1 b1 ha
+      cases a1 with
+      | BA r =>
+          cases harg : builtin_arg_reduction cfg ae (.BA r) with
+          | BA_int n =>
+              refine ⟨b1 :: b1 :: vl', ?_⟩
+              simp [debug_strength_reduction, harg]
+              exact list_forall2.cons _ _ (by simpa [harg] using hred) htail'
+          | BA_long n =>
+              refine ⟨b1 :: b1 :: vl', ?_⟩
+              simp [debug_strength_reduction, harg]
+              exact list_forall2.cons _ _ (by simpa [harg] using hred) htail'
+          | BA_float n =>
+              refine ⟨b1 :: b1 :: vl', ?_⟩
+              simp [debug_strength_reduction, harg]
+              exact list_forall2.cons _ _ (by simpa [harg] using hred) htail'
+          | BA_single n =>
+              refine ⟨b1 :: b1 :: vl', ?_⟩
+              simp [debug_strength_reduction, harg]
+              exact list_forall2.cons _ _ (by simpa [harg] using hred) htail'
+          | BA r' =>
+              refine ⟨b1 :: vl', ?_⟩
+              simpa [debug_strength_reduction, harg] using htail'
+          | BA_loadstack chunk ofs =>
+              refine ⟨b1 :: vl', ?_⟩
+              simpa [debug_strength_reduction, harg] using htail'
+          | BA_addrstack ofs =>
+              refine ⟨b1 :: vl', ?_⟩
+              simpa [debug_strength_reduction, harg] using htail'
+          | BA_loadglobal chunk id ofs =>
+              refine ⟨b1 :: vl', ?_⟩
+              simpa [debug_strength_reduction, harg] using htail'
+          | BA_addrglobal id =>
+              refine ⟨b1 :: vl', ?_⟩
+              simpa [debug_strength_reduction, harg] using htail'
+          | BA_splitlong hi lo =>
+              refine ⟨b1 :: vl', ?_⟩
+              simpa [debug_strength_reduction, harg] using htail'
+          | BA_addptr a1 a2 =>
+              refine ⟨b1 :: vl', ?_⟩
+              simpa [debug_strength_reduction, harg] using htail'
+      | BA_int n =>
+          refine ⟨b1 :: vl', ?_⟩
+          simpa [debug_strength_reduction] using htail'
+      | BA_long n =>
+          refine ⟨b1 :: vl', ?_⟩
+          simpa [debug_strength_reduction] using htail'
+      | BA_float n =>
+          refine ⟨b1 :: vl', ?_⟩
+          simpa [debug_strength_reduction] using htail'
+      | BA_single n =>
+          refine ⟨b1 :: vl', ?_⟩
+          simpa [debug_strength_reduction] using htail'
+      | BA_loadstack chunk ofs =>
+          refine ⟨b1 :: vl', ?_⟩
+          simpa [debug_strength_reduction] using htail'
+      | BA_addrstack ofs =>
+          refine ⟨b1 :: vl', ?_⟩
+          simpa [debug_strength_reduction] using htail'
+      | BA_loadglobal chunk id ofs =>
+          refine ⟨b1 :: vl', ?_⟩
+          simpa [debug_strength_reduction] using htail'
+      | BA_addrglobal id =>
+          refine ⟨b1 :: vl', ?_⟩
+          simpa [debug_strength_reduction] using htail'
+      | BA_splitlong hi lo =>
+          refine ⟨b1 :: vl', ?_⟩
+          simpa [debug_strength_reduction] using htail'
+      | BA_addptr a1 a2 =>
+          refine ⟨b1 :: vl', ?_⟩
+          simpa [debug_strength_reduction] using htail'
+
+end CompCert4Lean.Backend.Constpropproof

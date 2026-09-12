@@ -910,3 +910,44 @@ theorem move_false : move_falseStatement := by
                   simp [hEq] at h
 
 end CompCert4Lean.Common.Unityping.UniSolver
+
+namespace CompCert4Lean.Common.Unityping.UniSolver
+
+open CompCert4Lean.Common.Errors
+
+private theorem solve_constraints_incr_aux :
+    ∀ (T : TYPE_ALGEBRA) (te : typassign T) (e e' : typenv T),
+      solve_constraints T e = OK e' → satisf T te e' → satisf T te e := by
+  intro T te e e' h hs
+  let P : typenv T → res (typenv T) → Prop := fun e r =>
+    ∀ e', r = OK e' → satisf T te e' → satisf T te e
+  have hind :=
+    solve_constraints_ind T P
+      (by
+        intro e e' hrec e'' heq hs'
+        cases heq
+        exact hs')
+      (by
+        intro e e' hrec ih e'' heq hs'
+        have hsbase := ih e'' heq hs'
+        have hsorig : satisf T te e := by
+          have hs0 := solve_rec_incr T te (te_equ e)
+            { te_typ := te_typ e, te_equ := [] } false e' true hrec hsbase
+          constructor
+          · intro x ty hx
+            exact hs0.1 x ty hx
+          · intro x y hxy
+            exact solve_rec_sound T te x y (te_equ e)
+              { te_typ := te_typ e, te_equ := [] } false e' true hrec hxy hsbase
+        exact hsorig)
+      (by
+        intro e message hrec e'' heq hs'
+        cases heq)
+      e
+  exact hind e' h hs
+
+theorem solve_constraints_incr : solve_constraints_incrStatement := by
+  intro T te e e' h hs
+  exact solve_constraints_incr_aux T te e e' h hs
+
+end CompCert4Lean.Common.Unityping.UniSolver

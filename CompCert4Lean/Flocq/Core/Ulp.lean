@@ -944,3 +944,30 @@ theorem ulp_le_id : ∀ (ctx : ExactRealContext) (magnitude : Exact.Magnitude ct
   exact hcomp
 
 end CompCert4Lean.Flocq.Core.Ulp
+
+namespace CompCert4Lean.Flocq.Core.Ulp
+
+private theorem ulp_succ_opp_neg_neg (ctx : ExactRealContext)
+    (x : ctx.spec.carrier) : ctx.spec.neg (ctx.spec.neg x) = x := by
+  calc
+    ctx.spec.neg (ctx.spec.neg x) =
+        ctx.spec.add (ctx.spec.neg (ctx.spec.neg x)) ctx.spec.zero :=
+      (ctx.certificate.orderedField.add_zero _).symm
+    _ = ctx.spec.add (ctx.spec.neg (ctx.spec.neg x))
+        (ctx.spec.add (ctx.spec.neg x) x) := by
+      rw [ctx.certificate.orderedField.neg_add_cancel]
+    _ = ctx.spec.add
+        (ctx.spec.add (ctx.spec.neg (ctx.spec.neg x)) (ctx.spec.neg x)) x := by
+      rw [ctx.certificate.orderedField.add_assoc]
+    _ = ctx.spec.add ctx.spec.zero x := by
+      rw [ctx.certificate.orderedField.neg_add_cancel]
+    _ = x := ctx.certificate.orderedField.zero_add _
+
+theorem succ_opp :
+    ∀ (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx),
+      succ_oppStatement ctx magnitude := by
+  intro ctx magnitude beta fexp x
+  unfold Exact.pred
+  exact (ulp_succ_opp_neg_neg ctx _).symm
+
+end CompCert4Lean.Flocq.Core.Ulp

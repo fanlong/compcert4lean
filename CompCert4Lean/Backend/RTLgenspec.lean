@@ -2047,3 +2047,41 @@ theorem alloc_optreg_map_ok : alloc_optreg_map_okStatement := by
           rfl
 
 end CompCert4Lean.Backend.RTLgenspec
+
+namespace CompCert4Lean.Backend.RTLgenspec
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Foundation.Logic.Support
+open CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.List
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Backend.RTLgen
+open CompCert4Lean.X86.Op
+
+theorem tr_exitexpr_incr : tr_exitexpr_incrStatement := by
+  intro s1 s2 EXT map a ns nexits htr
+  induction htr with
+  | tr_XEcond map x n nexits h =>
+      exact tr_exitexpr.tr_XEcond map x n nexits h
+  | tr_XEjumptable map a tbl ns nexits n1 r tbl' hjt harg hcode =>
+      apply tr_exitexpr.tr_XEjumptable
+      · exact hjt
+      · exact tr_expr_incr s1 s2 EXT map [] a ns n1 r none harg
+      · exact instr_at_incr s1 s2 n1 _ EXT hcode
+  | tr_XEcondition map a1 a2 a3 ns nexits n2 n3 hcond h2 h3 ih2 ih3 =>
+      apply tr_exitexpr.tr_XEcondition
+      · exact tr_condition_incr s1 s2 EXT map [] a1 ns n2 n3 hcond
+      · exact ih2
+      · exact ih3
+  | tr_XElet map a b ns nexits r n1 hfresh hbound hbody ihbody =>
+      apply tr_exitexpr.tr_XElet
+      · exact hfresh
+      · exact tr_expr_incr s1 s2 EXT map [] a ns n1 r none hbound
+      · exact ihbody
+
+end CompCert4Lean.Backend.RTLgenspec

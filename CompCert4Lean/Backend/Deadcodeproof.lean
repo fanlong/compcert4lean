@@ -1066,3 +1066,99 @@ theorem magree_valid_access : magree_valid_accessStatement := by
   · exact hvalid.2
 
 end CompCert4Lean.Backend.Deadcodeproof
+
+namespace CompCert4Lean.Backend.Deadcodeproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Backend.NeedDomain
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+
+private theorem pgetsetN_local (q r : positive) (v : NVal.t) (m : NE.t) :
+    PTree.get q (PTree.set r v m) =
+      match peq q r with | .left _ => some v | .right _ => PTree.get q m := by
+  exact @PTree.gsspec_proof NVal.t q r v m
+
+private theorem premoveN_local (q r : positive) (m : NE.t) :
+    PTree.get q (PTree.remove r m) =
+      if h : q = r then none else PTree.get q m := by
+  exact @PTree.getRemove_equation NVal.t q r m
+
+private theorem peq_self_local (r : positive) : peq r r = .left rfl := by
+  cases h : peq r r with
+  | left heq => cases heq; rfl
+  | right hne => exact False.elim (hne rfl)
+
+private theorem ne_get_set_local (r q : positive) (v : nval) (ne : nenv) :
+    NE.get q (NE.set r v ne) =
+      match peq q r with | .left _ => (v : NVal.t) | .right _ => NE.get q ne := by
+  cases v with
+  | Nothing =>
+      have hbeq : NVal.beq Nothing NVal.bot = true := by rfl
+      unfold NE.get NE.set
+      rw [hbeq]
+      simp only [↓reduceIte]
+      have hs := premoveN_local q r ne
+      rw [hs]
+      cases h : peq q r with
+      | left hqr => subst r; simp [NVal.bot] <;> rfl
+      | right hqr => simp [hqr]
+  | I m =>
+      have hbeq : NVal.beq (I m) NVal.bot = false := by rfl
+      unfold NE.get NE.set
+      rw [hbeq]
+      simp only [Bool.false_eq_true, ↓reduceIte]
+      have hs := pgetsetN_local q r (I m : NVal.t) ne
+      rw [hs]
+      cases h : peq q r with
+      | left hqr => simp only [h]; rfl
+      | right hqr => simp only [h]
+  | L m =>
+      have hbeq : NVal.beq (L m) NVal.bot = false := by rfl
+      unfold NE.get NE.set
+      rw [hbeq]
+      simp only [Bool.false_eq_true, ↓reduceIte]
+      have hs := pgetsetN_local q r (L m : NVal.t) ne
+      rw [hs]
+      cases h : peq q r with
+      | left hqr => simp only [h]; rfl
+      | right hqr => simp only [h]
+  | All =>
+      have hbeq : NVal.beq All NVal.bot = false := by rfl
+      unfold NE.get NE.set
+      rw [hbeq]
+      simp only [Bool.false_eq_true, ↓reduceIte]
+      have hs := pgetsetN_local q r (All : NVal.t) ne
+      rw [hs]
+      cases h : peq q r with
+      | left hqr =>
+          simp only [h]
+          change (All : NVal.t) = All
+          rfl
+      | right hqr => simp only [h]
+
+theorem add_need_all_eagree : add_need_all_eagreeStatement := by
+  intro e e' r ne h r0
+  change eagree e e' (NE.set r All ne) at h
+  have hr := h r0
+  rw [ne_get_set_local r r0 All ne] at hr
+  cases hp : peq r0 r with
+  | left hEq =>
+      simp only [hp] at hr
+      exact nge_agree _ _ _ _ (nge.nge_nothing _) hr
+  | right hNe =>
+      simp only [hp] at hr
+      exact hr
+
+theorem add_need_all_lessdef : add_need_all_lessdefStatement := by
+  intro e e' r ne h
+  change eagree e e' (NE.set r All ne) at h
+  have hr := h r
+  rw [ne_get_set_local r r All ne] at hr
+  rw [peq_self_local r] at hr
+  change Val.lessdef (Regmap.get r e) (Regmap.get r e') at hr
+  exact hr
+
+end CompCert4Lean.Backend.Deadcodeproof

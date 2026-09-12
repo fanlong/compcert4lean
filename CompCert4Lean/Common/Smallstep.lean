@@ -1428,3 +1428,22 @@ theorem plus_right' : plus_right'Statement := by
     (plus_star genv state step ge s1 t1 s2 hplus) hstep htrace
 
 end CompCert4Lean.Common.Smallstep
+
+namespace CompCert4Lean.Common.Smallstep
+
+open CompCert4Lean.Common.Events
+
+theorem plus_star_trans : plus_star_transStatement := by
+  intro genv state step ge s1 t1 s2 t2 s3 t hplus hstar htrace
+  cases hplus with
+  | plus_left t1' s2' t2' s3' t' hstep hstar' htrace' =>
+      apply plus_left s1 t1' hstep
+      · exact star_trans genv state step ge s2' t2' s2 hstar'
+          t2 s3 (Eapp t2' t2) hstar rfl
+      · calc
+          t = Eapp t1 t2 := htrace
+          _ = Eapp (Eapp t1' t2') t2 := by rw [htrace']
+          _ = Eapp t1' (Eapp t2' t2) := by
+            exact _root_.List.append_assoc t1' t2' t2
+
+end CompCert4Lean.Common.Smallstep

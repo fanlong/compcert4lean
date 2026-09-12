@@ -1426,3 +1426,24 @@ theorem insert_bst : ∀ (E : OrderedType), insert_bstStatement E := by
   exact insertBstProof E x h hbst
 
 end CompCert4Lean.Lib.Heaps.SplayHeapSet.R
+
+namespace CompCert4Lean.Lib.Heaps.SplayHeapSet.R
+
+theorem In_insert : ∀ (E : OrderedType), In_insertStatement E := by
+  intro E x h y hbst
+  unfold insert
+  cases hp : partition E x h with
+  | mk a b =>
+      cases E.eq_dec y x with
+      | left heq =>
+          simp only [hp]
+          change (In E y a ∨ E.eq y x ∨ In E y b) ↔ _
+          simp [heq]
+      | right hneq =>
+          have hpart := In_partition E y x hneq h hbst
+          rw [hp] at hpart
+          simp only [hp]
+          change (In E y a ∨ E.eq y x ∨ In E y b) ↔ _
+          simp [hneq, hpart]
+
+end CompCert4Lean.Lib.Heaps.SplayHeapSet.R

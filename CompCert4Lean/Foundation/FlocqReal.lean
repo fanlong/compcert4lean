@@ -1642,3 +1642,24 @@ theorem Req_dec :
 
 end Rocq.Coq.Reals.RIneq
 end CompCert4Lean.Foundation.FlocqReal
+
+namespace CompCert4Lean.Foundation.FlocqReal
+namespace Rocq.Coq.Reals.RIneq
+
+theorem Rmult_plus_distr_r (ctx : ExactRealContext) :
+    Rmult_plus_distr_rStatement ctx := by
+  intro r1 r2 r3
+  change ctx.spec.mul (ctx.spec.add r1 r2) r3 =
+    ctx.spec.add (ctx.spec.mul r1 r3) (ctx.spec.mul r2 r3)
+  calc
+    ctx.spec.mul (ctx.spec.add r1 r2) r3 =
+        ctx.spec.mul r3 (ctx.spec.add r1 r2) := by
+      rw [ctx.certificate.orderedField.mul_comm]
+    _ = ctx.spec.add (ctx.spec.mul r3 r1) (ctx.spec.mul r3 r2) :=
+      ctx.certificate.orderedField.left_distrib r3 r1 r2
+    _ = ctx.spec.add (ctx.spec.mul r1 r3) (ctx.spec.mul r2 r3) := by
+      rw [ctx.certificate.orderedField.mul_comm r3 r1,
+        ctx.certificate.orderedField.mul_comm r3 r2]
+
+end Rocq.Coq.Reals.RIneq
+end CompCert4Lean.Foundation.FlocqReal

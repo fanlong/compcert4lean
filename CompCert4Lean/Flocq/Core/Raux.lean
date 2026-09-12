@@ -2217,3 +2217,60 @@ theorem Rinv_le : ∀ (ctx : ExactRealContext), Rinv_leStatement ctx := by
     exact ((ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp hmul_lt_one).2 hmul_le |>.elim
 
 end CompCert4Lean.Flocq.Core.Raux
+
+namespace CompCert4Lean.Flocq.Core.Raux
+
+private theorem pg_neg_neg (ctx : ExactRealContext) (x : ctx.spec.carrier) :
+    ctx.spec.neg (ctx.spec.neg x) = x := by
+  calc
+    ctx.spec.neg (ctx.spec.neg x) =
+        ctx.spec.add (ctx.spec.neg (ctx.spec.neg x)) ctx.spec.zero :=
+      (ctx.certificate.orderedField.add_zero _).symm
+    _ = ctx.spec.add (ctx.spec.neg (ctx.spec.neg x))
+        (ctx.spec.add (ctx.spec.neg x) x) := by
+      rw [ctx.certificate.orderedField.neg_add_cancel]
+    _ = ctx.spec.add
+        (ctx.spec.add (ctx.spec.neg (ctx.spec.neg x)) (ctx.spec.neg x)) x := by
+      rw [ctx.certificate.orderedField.add_assoc]
+    _ = ctx.spec.add ctx.spec.zero x := by
+      rw [ctx.certificate.orderedField.neg_add_cancel]
+    _ = x := ctx.certificate.orderedField.zero_add _
+
+private theorem pg_neg_lt_of_neg_lt (ctx : ExactRealContext)
+    {a b : ctx.spec.carrier} (h : ctx.spec.lt (ctx.spec.neg b) a) :
+    ctx.spec.lt (ctx.spec.neg a) b := by
+  rcases ctx.certificate.total_order (ctx.spec.neg a) b with hab | hba
+  · rcases hab with hab | heq
+    · exact hab
+    · subst b
+      rw [pg_neg_neg ctx a] at h
+      exact (ctx.certificate.orderedField.lt_irrefl _ h).elim
+  · have hleft := ctx.certificate.orderedField.add_lt_compat_l
+      a b (ctx.spec.neg a) hba
+    rw [ctx.certificate.orderedField.add_comm a (ctx.spec.neg a),
+      ctx.certificate.orderedField.neg_add_cancel] at hleft
+    have hright := ctx.certificate.orderedField.add_lt_compat_l
+      b (ctx.spec.neg b) a h
+    rw [ctx.certificate.orderedField.add_comm b (ctx.spec.neg b),
+      ctx.certificate.orderedField.neg_add_cancel,
+      ctx.certificate.orderedField.add_comm b a] at hright
+    exact (ctx.certificate.orderedField.lt_irrefl _
+      (ctx.certificate.orderedField.lt_trans _ _ _ hright hleft)).elim
+
+theorem Rabs_lt : ∀ (ctx : ExactRealContext), Rabs_ltStatement ctx := by
+  intro ctx x y hxy
+  change ctx.spec.lt (ctx.spec.abs x) y
+  rcases ctx.certificate.total_order x ctx.spec.zero with hx | hx
+  · rcases hx with hxneg | hxeq
+    · rw [ctx.certificate.sourceLaws.abs_negative x hxneg]
+      exact pg_neg_lt_of_neg_lt ctx hxy.1
+    · subst x
+      rw [ctx.certificate.sourceLaws.abs_nonnegative _
+        (ctx.certificate.orderedField.le_refl _)]
+      exact hxy.2
+  · have hxle : ctx.spec.le ctx.spec.zero x :=
+      (ctx.certificate.orderedField.lt_iff_le_not_le _ _ |>.mp hx).1
+    rw [ctx.certificate.sourceLaws.abs_nonnegative x hxle]
+    exact hxy.2
+
+end CompCert4Lean.Flocq.Core.Raux
