@@ -1447,3 +1447,110 @@ theorem In_insert : ∀ (E : OrderedType), In_insertStatement E := by
           simp [hneq, hpart]
 
 end CompCert4Lean.Lib.Heaps.SplayHeapSet.R
+
+namespace CompCert4Lean.Lib.Heaps.SplayHeapSet.R
+
+theorem deleteMin_bst : ∀ (E : OrderedType), deleteMin_bstStatement E := by
+  intro E h hbst
+  exact deleteMinBstProof E h hbst
+
+end CompCert4Lean.Lib.Heaps.SplayHeapSet.R
+
+namespace CompCert4Lean.Lib.Heaps.SplayHeapSet.R
+
+theorem gt_heap_In : ∀ (E : OrderedType), gt_heap_InStatement E := by
+  intro E x y h
+  induction h with
+  | Empty =>
+      intro hgt hin
+      cases hin
+  | Node a z b iha ihb =>
+      intro hgt hin
+      rcases hin with hin | hin | hin
+      · exact iha hgt.1 hin
+      · exact ltLeTrans E hgt.2.1 (Or.inl (E.eq_sym y z hin))
+      · exact ihb hgt.2.2 hin
+
+private def inDeleteMinSize {E : OrderedType} : heap E → Nat
+  | .Empty => 0
+  | .Node l _ r => inDeleteMinSize l + inDeleteMinSize r + 1
+
+private theorem inDeleteMinAux (E : OrderedType) (y x : E.t) :
+    ∀ n (h : heap E), inDeleteMinSize h ≤ n →
+      findMin E h = some x →
+        (In E y h ↔ E.eq y x ∨ In E y (deleteMin E h)) := by
+  intro n
+  induction n with
+  | zero =>
+      intro h hs hfind
+      cases h with
+      | Empty => simp [findMin] at hfind
+      | Node l z r => simp [inDeleteMinSize] at hs
+  | succ n ih =>
+      intro h hs hfind
+      cases h with
+      | Empty => simp [findMin] at hfind
+      | Node l z r =>
+          cases l with
+          | Empty =>
+              have hx : z = x := by simpa [findMin] using hfind
+              subst x
+              simp [In, deleteMin]
+          | Node a x1 b1 =>
+              cases a with
+              | Empty =>
+                  have hx : x1 = x := by simpa [findMin] using hfind
+                  subst x
+                  simp [In, deleteMin, or_assoc, or_left_comm, or_comm]
+              | Node a0 x0 b0 =>
+                  have hfind0 : findMin E (.Node a0 x0 b0) = some x := by
+                    simpa [findMin] using hfind
+                  have hrec := ih (.Node a0 x0 b0)
+                    (by simp [inDeleteMinSize] at hs ⊢; omega) hfind0
+                  have htop := or_congr hrec (Iff.rfl :
+                    (E.eq y x1 ∨ In E y b1 ∨ E.eq y z ∨ In E y r) ↔
+                      (E.eq y x1 ∨ In E y b1 ∨ E.eq y z ∨ In E y r))
+                  simpa [In, deleteMin, or_assoc, or_left_comm, or_comm] using htop
+
+theorem In_deleteMin : ∀ (E : OrderedType), In_deleteMinStatement E := by
+  intro E y x h hfind
+  exact inDeleteMinAux E y x (inDeleteMinSize h) h (Nat.le_refl _) hfind
+
+end CompCert4Lean.Lib.Heaps.SplayHeapSet.R
+
+namespace CompCert4Lean.Lib.Heaps.SplayHeapSet.R
+
+theorem findMin_min : ∀ (E : OrderedType), findMin_minStatement E := by
+  intro E x h
+  induction h with
+  | Empty =>
+      intro hfind hbst y hin
+      simp [findMin] at hfind
+  | Node a z b iha ihb =>
+      cases a with
+      | Empty =>
+          intro hfind hbst y hin
+          have hx : z = x := by simpa [findMin] using hfind
+          subst x
+          have hin' : E.eq y z ∨ In E y b := by simpa [In] using hin
+          rcases hin' with hin | hin
+          · exact Or.inl (E.eq_sym y z hin)
+          · exact Or.inr (gt_heap_In E z y b hbst.2.2.2 hin)
+      | Node a1 x1 b1 =>
+          intro hfind hbst y hin
+          have hfinda : findMin E (Node a1 x1 b1) = some x := by
+            simpa [findMin] using hfind
+          have hxyA : ∀ w, In E w (Node a1 x1 b1) → le E x w :=
+            iha hfinda hbst.1
+          have hxx1 : le E x x1 :=
+            hxyA x1 (Or.inr (Or.inl (E.eq_refl x1)))
+          have hxz : le E x z :=
+            Or.inr (le_lt_trans E x x1 z hxx1 hbst.2.2.1.2.1)
+          change In E y (Node a1 x1 b1) ∨ E.eq y z ∨ In E y b at hin
+          rcases hin with hin | hin | hin
+          · exact hxyA y hin
+          · exact le_trans E x z y hxz (Or.inl (E.eq_sym y z hin))
+          · exact le_trans E x z y hxz
+              (Or.inr (gt_heap_In E z y b hbst.2.2.2 hin))
+
+end CompCert4Lean.Lib.Heaps.SplayHeapSet.R

@@ -1329,3 +1329,57 @@ theorem add_need_eagree : add_need_eagreeStatement := by
       exact hr
 
 end CompCert4Lean.Backend.Deadcodeproof
+
+namespace CompCert4Lean.Backend.Deadcodeproof
+
+open CompCert4Lean.Backend.Deadcode
+open CompCert4Lean.Backend.NeedDomain
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.Lib.Maps
+
+private theorem nge_lub_l_local : ∀ x y : nval, nge (nlub x y) x := by
+  intro x y
+  cases x with
+  | Nothing => exact nge.nge_all y
+  | All =>
+      cases y <;> exact nge.nge_nothing All
+  | I m1 =>
+      cases y with
+      | Nothing =>
+          apply nge.nge_int m1 m1
+          intro i hi hm
+          exact hm
+      | I m2 =>
+          apply nge.nge_int (Int.or m1 m2) m1
+          intro i hi hm
+          rw [int_or_testbit_local]
+          exact Bool.or_eq_true_iff.mpr (Or.inl hm)
+      | L m => exact nge.nge_nothing (I m1)
+      | All => exact nge.nge_nothing (I m1)
+  | L m1 =>
+      cases y with
+      | Nothing =>
+          apply nge.nge_long m1 m1
+          intro i hi hm
+          exact hm
+      | I m => exact nge.nge_nothing (L m1)
+      | L m2 =>
+          apply nge.nge_long (Int64.or m1 m2) m1
+          intro i hi hm
+          rw [int64_or_testbit_local]
+          exact Bool.or_eq_true_iff.mpr (Or.inl hm)
+      | All => exact nge.nge_nothing (L m1)
+
+theorem add_need_vagree : add_need_vagreeStatement := by
+  intro e e' r nv ne h
+  change eagree e e' (NE.set r (nlub nv (NE.get r ne)) ne) at h
+  have hr := h r
+  rw [ne_get_set_local r r (nlub nv (NE.get r ne)) ne] at hr
+  rw [peq_self_local r] at hr
+  exact nge_agree _ _ _ _ (nge_lub_l_local nv (NE.get r ne)) hr
+
+end CompCert4Lean.Backend.Deadcodeproof
