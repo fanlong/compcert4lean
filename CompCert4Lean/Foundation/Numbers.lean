@@ -1330,3 +1330,39 @@ theorem Arith.PeanoNat.Nat.eqb_eq :
 
 end Rocq.Coq
 end CompCert4Lean.Foundation.Numbers
+
+namespace CompCert4Lean.Foundation.Numbers
+namespace Rocq.Coq
+
+theorem Init.Peano.plus_n_Sm :
+    Init.Peano.plus_n_SmStatement := by
+  intro n m
+  exact (Nat.add_succ n m).symm
+
+theorem Init.Peano.le_0_n :
+    Init.Peano.le_0_nStatement := by
+  intro n
+  exact Nat.zero_le n
+
+theorem Init.Peano.le_n_S :
+    Init.Peano.le_n_SStatement := by
+  intro n m h
+  exact Nat.succ_le_succ h
+
+theorem PArith.BinPos.Pos.compare_refl :
+    PArith.BinPos.Pos.compare_reflStatement := by
+  intro x
+  unfold PArith.BinPos.Pos.compare
+  change (if posToNat x < posToNat x then (Lt : comparison)
+    else if posToNat x = posToNat x then (Eq : comparison)
+    else (Gt : comparison)) = (Eq : comparison)
+  split
+  · rename_i h
+    exact (Nat.lt_irrefl _ h).elim
+  · split
+    · rfl
+    · rename_i hlt heq
+      exact (heq rfl).elim
+
+end Rocq.Coq
+end CompCert4Lean.Foundation.Numbers

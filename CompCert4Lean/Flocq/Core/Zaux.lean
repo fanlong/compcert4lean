@@ -659,3 +659,21 @@ theorem Zeven_Zpower_odd : Zeven_Zpower_oddStatement := by
       omega
 
 end CompCert4Lean.Flocq.Core.Zaux
+
+namespace CompCert4Lean.Flocq.Core.Zaux
+
+theorem radix_gt_1 : radix_gt_1Statement := by
+  intro r
+  change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ Zone <
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ r.radix_val
+  have hp := r.radix_prop
+  change (if CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (Ztwo : Z) ≤ CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ r.radix_val then true else false) = true at hp
+  have hone : CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ Zone = (1 : Int) := by decide
+  have htwo : CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (Ztwo : Z) = (2 : Int) := by decide
+  rw [hone]
+  rw [htwo] at hp
+  split at hp
+  · omega
+  · simp at hp
+
+end CompCert4Lean.Flocq.Core.Zaux

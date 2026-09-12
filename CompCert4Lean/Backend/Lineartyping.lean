@@ -783,3 +783,56 @@ theorem wt_state_setstack : wt_state_setstackStatement := by
   exact htypes
 
 end CompCert4Lean.Backend.Lineartyping
+
+namespace CompCert4Lean.Backend.Lineartyping
+
+theorem wt_state_tailcall : wt_state_tailcallStatement := by
+  intro cfg s f sp sg ros c rs m hstate
+  cases hstate
+  rename_i WTSTK WTF WTC WTRS
+  have hparts :
+      boolOfSumbool (CompCert4Lean.Lib.Coqlib.zeq
+          (CompCert4Lean.Backend.Conventions.size_arguments cfg sg)
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.Z0)) = true ∧
+        listForallb (wt_instr cfg f) c = true := by
+    simpa [wt_code, wt_instr, listForallb,
+      CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.List.forallb] using WTC
+  cases hdec : CompCert4Lean.Lib.Coqlib.zeq
+      (CompCert4Lean.Backend.Conventions.size_arguments cfg sg)
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.Z0) with
+  | left hzero => exact hzero
+  | right hne => simp [boolOfSumbool, hdec] at hparts
+
+end CompCert4Lean.Backend.Lineartyping
+
+namespace CompCert4Lean.Backend.Lineartyping
+
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Backend.Locations
+
+theorem wt_state_builtin : wt_state_builtinStatement := by
+  intro cfg s f sp ef args res c rs m hstate
+  cases hstate
+  rename_i WTSTK WTF WTC WTRS
+  have hparts :
+      (wt_builtin_res (proj_sig_res (ef_sig ef)) res = true ∧
+        listForallb (loc_valid cfg f) (params_of_builtin_args args) = true) ∧
+        listForallb (wt_instr cfg f) c = true := by
+    simpa [wt_code, wt_instr, listForallb,
+      CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.List.forallb] using WTC
+  exact hparts.1.2
+
+theorem wt_callstate_wt_regs : wt_callstate_wt_regsStatement := by
+  intro cfg s f rs m hstate r
+  cases hstate
+  rename_i WTSTK WTFD WTRS AGCS AGARGS
+  exact WTRS (R r)
+
+theorem wt_callstate_agree : wt_callstate_agreeStatement := by
+  intro cfg s f rs m hstate
+  cases hstate
+  rename_i WTSTK WTFD WTRS AGCS AGARGS
+  exact ⟨AGCS, AGARGS⟩
+
+end CompCert4Lean.Backend.Lineartyping

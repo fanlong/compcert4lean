@@ -578,3 +578,67 @@ theorem Zshiftin_inj : Zshiftin_injStatement := by
     exact ⟨rfl, by apply intOfZ_injective; omega⟩
 
 end CompCert4Lean.Lib.Zbits
+
+namespace CompCert4Lean.Lib.Zbits
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem Zdecomp : ZdecompStatement := by
+  intro x
+  rw [Zshiftin_spec]
+  apply intOfZ_injective
+  simp only [zAdd, zMul, zZero, one, two,
+    ZArith.BinInt.Z.add, ZArith.BinInt.Z.mul, intOfZ_zOfInt]
+  have htwo : intOfZ (zPos (xO xH)) = (2 : Int) := by decide
+  rw [htwo]
+  have hdiv := congrArg intOfZ
+    (ZArith.Zdiv.Z_div_mod_eq_full x (zPos (xO xH)))
+  simp only [ZArith.BinInt.Z.add, ZArith.BinInt.Z.mul,
+    intOfZ_zOfInt] at hdiv
+  rw [htwo] at hdiv
+  have hmod : intOfZ (ZArith.BinInt.Z.modulo x (zPos (xO xH))) =
+      intOfZ x % 2 := by
+    change intOfZ (zOfInt (
+      if intOfZ (zPos (xO xH)) = 0 then intOfZ x
+      else if 0 < intOfZ (zPos (xO xH)) then
+        Int.emod (intOfZ x) (intOfZ (zPos (xO xH)))
+      else
+        let d := -intOfZ (zPos (xO xH))
+        let r := Int.emod (intOfZ x) d
+        if r = 0 then 0 else r - d)) = _
+    simp [htwo]
+    rw [intOfZ_zOfInt]
+    rfl
+  cases hodd : zOdd x
+  · have heven : ZArith.BinInt.Z.even x = true := by
+      simpa [zOdd, ZArith.BinInt.Z.odd] using hodd
+    have hpar : Int.natAbs (intOfZ x) % 2 = 0 := by
+      exact of_decide_eq_true (by simpa [ZArith.BinInt.Z.even] using heven)
+    have hrem : intOfZ x % 2 = 0 := by
+      rcases Int.emod_two_eq (intOfZ x) with hr | hr
+      · exact hr
+      · have hp := Int.natAbs_emod_two (intOfZ x)
+        rw [hr] at hp
+        simp at hp
+        omega
+    have hmod0 : intOfZ (ZArith.BinInt.Z.modulo x (zPos (xO xH))) = 0 := by
+      rw [hmod, hrem]
+    change intOfZ x = 2 * intOfZ (ZArith.BinInt.Z.div x (zPos (xO xH))) + 0
+    simpa [hmod0] using hdiv
+  · have heven : ZArith.BinInt.Z.even x = false := by
+      simpa [zOdd, ZArith.BinInt.Z.odd] using hodd
+    have hpar : ¬ Int.natAbs (intOfZ x) % 2 = 0 := by
+      exact of_decide_eq_false (by simpa [ZArith.BinInt.Z.even] using heven)
+    have hrem : intOfZ x % 2 = 1 := by
+      rcases Int.emod_two_eq (intOfZ x) with hr | hr
+      · have hp := Int.natAbs_emod_two (intOfZ x)
+        rw [hr] at hp
+        simp at hp
+        exact (hpar hp).elim
+      · exact hr
+    have hmod1 : intOfZ (ZArith.BinInt.Z.modulo x (zPos (xO xH))) = 1 := by
+      rw [hmod, hrem]
+    change intOfZ x = 2 * intOfZ (ZArith.BinInt.Z.div x (zPos (xO xH))) + 1
+    simpa [hmod1] using hdiv
+
+end CompCert4Lean.Lib.Zbits
