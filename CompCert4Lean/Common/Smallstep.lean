@@ -1406,3 +1406,14 @@ theorem plus_right : plus_rightStatement := by
             exact _root_.List.append_assoc t1' t2' t2
 
 end CompCert4Lean.Common.Smallstep
+
+namespace CompCert4Lean.Common.Smallstep
+
+open CompCert4Lean.Common.Events
+
+theorem plus_left' : plus_left'Statement := by
+  intro genv state step ge s1 t1 s2 t2 s3 t hstep hplus htrace
+  exact plus_left s1 t1 hstep
+    (plus_star genv state step ge s2 t2 s3 hplus) htrace
+
+end CompCert4Lean.Common.Smallstep

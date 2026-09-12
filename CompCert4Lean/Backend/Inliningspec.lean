@@ -1025,3 +1025,16 @@ theorem add_moves_spec : add_moves_specStatement := by
                   (RTL.Iop X86.Op.Omove [src] dst pc2) s.st_code
 
 end CompCert4Lean.Backend.Inliningspec
+
+namespace CompCert4Lean.Backend.Inliningspec
+
+open CompCert4Lean.Backend.Inlining
+open CompCert4Lean.Lib.Maps
+
+theorem set_instr_other : set_instr_otherStatement := by
+  intro pc instr s x s' i pc' h hne
+  simp [Inlining.set_instr] at h
+  cases h
+  exact CompCert4Lean.Lib.Maps.PTree.gso instr s.st_code hne
+
+end CompCert4Lean.Backend.Inliningspec

@@ -775,3 +775,29 @@ theorem Bopp_result_obligation_proof :
       simpa [Bopp, BinaryFloatCertificate, B2FF, valid_binary] using hx
 
 end CompCert4Lean.Flocq.IEEE754.Binary
+
+namespace CompCert4Lean.Flocq.IEEE754.Binary
+
+theorem Babs_result_obligation_proof :
+    ∀ {prec emax : Z}, Babs_result_obligation (prec := prec) (emax := emax) := by
+  intro prec emax abs_nan x
+  rcases x with ⟨x, hx⟩
+  cases x with
+  | B754_nan s pl =>
+      exact build_nan_result_obligation_proof (abs_nan (.B754_nan s pl))
+  | B754_infinity s => rfl
+  | B754_finite s m e =>
+      change bounded (prec := prec) (emax := emax) m e = true at hx
+      simpa [Babs, BinaryFloatCertificate, B2FF, valid_binary] using hx
+  | B754_zero s => rfl
+
+end CompCert4Lean.Flocq.IEEE754.Binary
+
+namespace CompCert4Lean.Flocq.IEEE754.Binary
+
+theorem FF2BCertificateStatement_proof :
+    ∀ {prec emax : Z}, FF2BCertificateStatement (prec := prec) (emax := emax) := by
+  intro prec emax x hx
+  exact (FF2B x hx).2
+
+end CompCert4Lean.Flocq.IEEE754.Binary

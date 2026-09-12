@@ -1086,3 +1086,15 @@ theorem functions_translated :
   | Vsingle n => simp [Genv.find_funct] at hfind
 
 end CompCert4Lean.Cfrontend.SimplExprproof
+
+namespace CompCert4Lean.Cfrontend.SimplExprproof
+
+theorem function_return_preserved :
+    ∀ [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+      [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)],
+      function_return_preservedStatement := by
+  intro binary64_certificate binary32_certificate ce f tf h
+  cases h with
+  | tr_function_intro _ hreturn _ _ _ => exact hreturn
+
+end CompCert4Lean.Cfrontend.SimplExprproof

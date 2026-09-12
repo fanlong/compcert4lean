@@ -1112,3 +1112,15 @@ theorem slot_is_within_bounds : slot_is_within_boundsStatement := by
   | Outgoing => exact outgoing_slot_bound cfg f i ofs ty hi hs
 
 end CompCert4Lean.Backend.Bounds
+
+namespace CompCert4Lean.Backend.Bounds
+
+namespace RegSet
+
+theorem elements_2_proof : elements_2 := by
+  intro s x hx
+  exact CompCert4Lean.Lib.FSetAVLplus.Make.elements_2 s x hx
+
+end RegSet
+
+end CompCert4Lean.Backend.Bounds

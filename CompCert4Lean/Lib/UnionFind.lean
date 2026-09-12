@@ -928,3 +928,12 @@ theorem sameclass_empty_proof :
 end UF
 
 end CompCert4Lean.Lib.UnionFind
+
+namespace CompCert4Lean.Lib.UnionFind
+namespace UF
+theorem identify_order_proof :
+    ∀ (M : MAP), identify_orderStatement M := by
+  intro M uf a b a_canon x y
+  exact identify_order_calc M uf a b a_canon x y
+end UF
+end CompCert4Lean.Lib.UnionFind

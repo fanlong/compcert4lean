@@ -2130,3 +2130,18 @@ theorem mag_sqrt :
   simpa [e, s] using hfinal
 
 end CompCert4Lean.Flocq.Core.Raux
+
+namespace CompCert4Lean.Flocq.Core.Raux
+
+theorem exp_le : ∀ (ctx : ExactRealContext), exp_leStatement ctx := by
+  intro ctx x y hxy
+  by_cases hyx : Exact.Rle ctx y x
+  · have hxy' : x = y := ctx.certificate.orderedField.le_antisymm _ _ hxy hyx
+    subst y
+    exact ctx.certificate.orderedField.le_refl _
+  · have hlt : Exact.Rlt ctx x y :=
+      (ctx.certificate.orderedField.lt_iff_le_not_le _ _).2 ⟨hxy, hyx⟩
+    have hs := ctx.certificate.exp.strict_monotone x y hlt
+    exact (ctx.certificate.orderedField.lt_iff_le_not_le _ _).1 hs |>.1
+
+end CompCert4Lean.Flocq.Core.Raux

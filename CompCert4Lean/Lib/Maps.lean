@@ -2563,3 +2563,25 @@ theorem extensionality_empty : extensionality_emptyStatement := by
 end PTree
 
 end CompCert4Lean.Lib.Maps
+
+namespace CompCert4Lean.Lib.Maps
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+namespace PTree
+
+private theorem gsident_tree'_proof {A : Type} (i : positive) (m : tree' A) {v : A} :
+    get' i m = some v → set' i v m = m := by
+  induction m generalizing i v <;> cases i <;> simp_all [get', set']
+
+theorem gsident : gsidentStatement := by
+  intro A i m v h
+  cases m with
+  | Empty => simp [get] at h
+  | Nodes m =>
+      simp only [get, set] at h ⊢
+      rw [gsident_tree'_proof i m h]
+
+end PTree
+
+end CompCert4Lean.Lib.Maps

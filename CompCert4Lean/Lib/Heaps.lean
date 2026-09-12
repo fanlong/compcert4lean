@@ -1410,3 +1410,11 @@ theorem In_partition (E : OrderedType) : In_partitionStatement E := by
     (Nat.le_refl _)
 
 end CompCert4Lean.Lib.Heaps.SplayHeapSet.R
+
+namespace CompCert4Lean.Lib.Heaps.SplayHeapSet.R
+
+theorem partition_bst (E : OrderedType) : partition_bstStatement E := by
+  intro pivot h hbst
+  exact partitionBstProof E pivot h hbst
+
+end CompCert4Lean.Lib.Heaps.SplayHeapSet.R

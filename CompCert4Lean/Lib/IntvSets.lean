@@ -901,3 +901,24 @@ theorem In_interval : In_intervalStatement := by
 end ISet
 
 end CompCert4Lean.Lib.IntvSets
+
+namespace CompCert4Lean.Lib.IntvSets
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+namespace ISet
+
+theorem In_add : In_addStatement := by
+  intro x l h s
+  by_cases hlt : ZArith.BinInt.Z.ltb l h = true
+  · simp [add, hlt]
+    exact R.inAdd x s.2 l h
+  · simp [add, hlt]
+    intro hlx hxh
+    simp [ZArith.BinInt.Z.ltb, ZArith.BinInt.Z.lt,
+      ZArith.BinInt.Z.le] at hlt hxh hlx ⊢
+    omega
+
+end ISet
+
+end CompCert4Lean.Lib.IntvSets

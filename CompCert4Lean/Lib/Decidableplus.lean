@@ -624,3 +624,28 @@ theorem Decidable_forall_in_list_obligation_1 :
   exact (Decidable_forall_in_list A l P dP).spec
 
 end CompCert4Lean.Lib.Decidableplus
+
+namespace CompCert4Lean.Lib.Decidableplus
+
+theorem Decidable_exists_in_list_obligation_1 :
+    Decidable_exists_in_list_obligation_1Statement := by
+  intro A l P dP
+  exact (Decidable_exists_in_list A l P dP).spec
+
+theorem Decidable_forall_obligation_1 :
+    Decidable_forall_obligation_1Statement := by
+  intro T fT P dP
+  exact (Decidable_forall T fT P dP).spec
+
+theorem Decidable_exists_obligation_1 :
+    Decidable_exists_obligation_1Statement := by
+  intro T fT P dP
+  exact (Decidable_exists T fT P dP).spec
+
+theorem Finite_bool_obligation_1 : Finite_bool_obligation_1Statement := by
+  intro x
+  cases x with
+  | false => exact _root_.List.Mem.head _
+  | true => exact _root_.List.Mem.tail false (_root_.List.Mem.head _)
+
+end CompCert4Lean.Lib.Decidableplus

@@ -1004,3 +1004,11 @@ namespace CompCert4Lean.Common.Separation
 theorem sep_proj2 : sep_proj2Statement := sep_drop
 
 end CompCert4Lean.Common.Separation
+
+namespace CompCert4Lean.Common.Separation
+
+theorem sep_pick2 : sep_pick2Statement := by
+  intro P Q R m h
+  exact h.2.1.1
+
+end CompCert4Lean.Common.Separation

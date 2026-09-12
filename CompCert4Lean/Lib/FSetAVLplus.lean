@@ -1001,3 +1001,31 @@ theorem raw_elements_between_ok : raw_elements_between_okStatement := by
   exact raw_elements_between_bst above_low_bound below_high_bound m hbst
 
 end CompCert4Lean.Lib.FSetAVLplus.Make
+
+namespace CompCert4Lean.Lib.FSetAVLplus.Make
+
+theorem In_raw_elements_between_2 : In_raw_elements_between_2Statement := by
+  intro X above_low_bound below_high_bound above_monotone below_monotone
+  intro x m
+  induction m with
+  | Leaf => intro hx; cases hx
+  | Node info left value right left_ih right_ih =>
+      intro hx
+      change Raw.InT x (raw_elements_between above_low_bound below_high_bound
+        (CompCert4Lean.Lib.MSetGenTree.tree.Node info left value right)) at hx
+      rw [raw_elements_between.eq_2] at hx
+      split at hx
+      next habove_value =>
+        split at hx
+        next hbelow_value =>
+          rcases (Raw.join_spec (raw_elements_between above_low_bound below_high_bound left)
+            value (raw_elements_between above_low_bound below_high_bound right) x).mp hx with
+            hroot | hleft | hright
+          · exact ⟨above_monotone value x (Or.inl (X.eq_sym x value hroot)) habove_value,
+              below_monotone value x (Or.inl (X.eq_sym x value hroot)) hbelow_value⟩
+          · exact left_ih hleft
+          · exact right_ih hright
+        next _ => exact left_ih hx
+      next _ => exact right_ih hx
+
+end CompCert4Lean.Lib.FSetAVLplus.Make

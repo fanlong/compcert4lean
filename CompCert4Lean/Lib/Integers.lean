@@ -2899,3 +2899,16 @@ theorem eqm_samerepr_proof : eqm_samerepr := by
   exact congrArg Int.toNat hrem
 
 end CompCert4Lean.Lib.Integers.Int
+
+namespace CompCert4Lean.Lib.Integers.Int
+
+theorem sub_idem_proof : sub_idem := by
+  intro x
+  change WordCore.sub x x = WordCore.zero wordsize
+  apply WordCore.ext_of_val_eq
+  apply Int.ofNat.inj
+  rw [WordCore.sub_val_int]
+  simp
+  rfl
+
+end CompCert4Lean.Lib.Integers.Int

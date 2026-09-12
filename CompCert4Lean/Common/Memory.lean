@@ -2134,3 +2134,22 @@ theorem valid_access_implies : valid_access_impliesStatement := by
 end Mem
 
 end CompCert4Lean.Common.Memory
+
+namespace CompCert4Lean.Common.Memory
+
+open CompCert4Lean.Common.Memtype
+
+namespace Mem
+
+theorem valid_pointer_nonempty_perm : valid_pointer_nonempty_permStatement := by
+  intro m b ofs
+  unfold valid_pointer
+  cases h : perm_dec m b ofs Cur Memtype.Nonempty with
+  | left hp =>
+      simp [boolOfSumbool, h, hp]
+  | right hp =>
+      simp [boolOfSumbool, h, hp]
+
+end Mem
+
+end CompCert4Lean.Common.Memory

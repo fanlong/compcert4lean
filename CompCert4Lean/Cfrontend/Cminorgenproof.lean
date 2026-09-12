@@ -1618,3 +1618,20 @@ theorem free_list_freeable : free_list_freeableStatement := by
                         (hrange ofs hof)
 
 end CompCert4Lean.Cfrontend.Cminorgenproof
+
+namespace CompCert4Lean.Cfrontend.Cminorgenproof
+
+theorem match_temps_invariant : match_temps_invariantStatement := by
+  intro f f' le te hmatch hincr id v hget
+  rcases hmatch id v hget with ⟨v', hget', hinject⟩
+  refine ⟨v', hget', ?_⟩
+  cases hinject with
+  | inject_int i => exact .inject_int i
+  | inject_long i => exact .inject_long i
+  | inject_float x => exact .inject_float x
+  | inject_single x => exact .inject_single x
+  | inject_ptr b1 ofs1 b2 ofs2 delta hmap hoff =>
+      exact .inject_ptr b1 ofs1 b2 ofs2 delta (hincr b1 b2 delta hmap) hoff
+  | val_inject_undef => exact .val_inject_undef _
+
+end CompCert4Lean.Cfrontend.Cminorgenproof

@@ -801,3 +801,14 @@ theorem loadind_label : loadind_labelStatement := by
       (CompCert4Lean.Lib.Coqlib.is_tail.refl _)
 
 end CompCert4Lean.X86.Asmgenproof
+
+namespace CompCert4Lean.X86.Asmgenproof
+theorem storeind_label : storeind_labelStatement := by
+  intro base ofs ty src k c h
+  cases ty <;> cases hsrc : CompCert4Lean.X86.Asm.preg_of src <;>
+    simp [CompCert4Lean.X86.Asmgen.storeind, hsrc] at h <;> cases h <;>
+    simp [CompCert4Lean.Backend.Asmgenproof0.tail_nolabel,
+      CompCert4Lean.Backend.Asmgenproof0.find_label, CompCert4Lean.X86.Asm.is_label]
+  all_goals apply CompCert4Lean.Lib.Coqlib.is_tail.cons <;>
+    exact CompCert4Lean.Lib.Coqlib.is_tail.refl _
+end CompCert4Lean.X86.Asmgenproof

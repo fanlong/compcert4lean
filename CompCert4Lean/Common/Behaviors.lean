@@ -888,3 +888,24 @@ theorem reacts_forever_reactive : reacts_forever_reactiveStatement := by
   refine ⟨traceinf_of_traceinf' (build_traceinf' L reacts h0), ?_⟩
   exact reacts_forever_reactive_rec L s0 reacts s0 E0 h0
 end CompCert4Lean.Common.Behaviors
+
+namespace CompCert4Lean.Common.Behaviors
+
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.Smallstep
+
+theorem diverges_forever_silent : diverges_forever_silentStatement := by
+  intro L s0 H
+  let pred : state L → Prop := fun s =>
+    ∃ t, star (step L) (globalenv L) s0 t s
+  refine forever_silent.coinduct (step L) (globalenv L) pred ?_ s0 ?_
+  · intro s hs
+    rcases hs with ⟨t, hreach⟩
+    obtain ⟨s', hstep⟩ := H s t hreach
+    refine ⟨s', hstep, ?_⟩
+    exact ⟨Eapp t E0,
+      star_right L.genvtype (state L) (step L) (globalenv L)
+        s0 t s E0 s' (Eapp t E0) hreach hstep rfl⟩
+  · exact ⟨E0, star_refl (step L) (globalenv L) s0⟩
+
+end CompCert4Lean.Common.Behaviors

@@ -1593,3 +1593,34 @@ theorem agree_regs_init : agree_regs_initStatement := by
     rw [@Regmap.gi_proof val (r : CompCert4Lean.Backend.Registers.reg) Vundef]
 
 end CompCert4Lean.Backend.Inliningproof
+
+namespace CompCert4Lean.Backend.Inliningproof
+
+open CompCert4Lean.Backend.Inlining
+open CompCert4Lean.Backend.Inliningspec
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Common.Values
+
+private theorem val_inject_incr_local (F F' : Val.meminj) (v v' : val)
+    (hinc : inject_incr F F') (hval : Val.inject F v v') :
+    Val.inject F' v v' := by
+  cases hval with
+  | inject_int i => exact Val.inject.inject_int i
+  | inject_long i => exact Val.inject.inject_long i
+  | inject_float f => exact Val.inject.inject_float f
+  | inject_single f => exact Val.inject.inject_single f
+  | inject_ptr b1 ofs1 b2 ofs2 delta hmap hofs =>
+      exact Val.inject.inject_ptr b1 ofs1 b2 ofs2 delta (hinc b1 b2 delta hmap) hofs
+  | val_inject_undef v' => exact Val.inject.val_inject_undef v'
+
+theorem agree_regs_incr : agree_regs_incrStatement := by
+  intro F ctx rs1 rs2 F' hag hinc
+  unfold agree_regs at *
+  rcases hag with ⟨hbelow, habove⟩
+  constructor
+  · intro r hr
+    exact val_inject_incr_local F F' _ _ hinc (hbelow r hr)
+  · exact habove
+
+end CompCert4Lean.Backend.Inliningproof

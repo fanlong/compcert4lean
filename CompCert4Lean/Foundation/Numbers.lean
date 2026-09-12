@@ -1288,3 +1288,11 @@ theorem ZArith.Zdiv.Z_div_mod_eq_full :
 
 end Rocq.Coq
 end CompCert4Lean.Foundation.Numbers
+
+namespace CompCert4Lean.Foundation.Numbers.Rocq.Coq.Arith.PeanoNat.Nat
+
+theorem sub_add : sub_addStatement := by
+  intro n m h
+  exact Nat.sub_add_cancel h
+
+end CompCert4Lean.Foundation.Numbers.Rocq.Coq.Arith.PeanoNat.Nat

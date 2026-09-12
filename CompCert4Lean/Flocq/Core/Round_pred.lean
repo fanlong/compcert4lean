@@ -309,3 +309,13 @@ theorem Rnd_DN_pt_idempotent : Rnd_DN_pt_idempotentStatement := by
   · exact H.2.2 x Hx (ctx.certificate.orderedField.le_refl x)
 
 end CompCert4Lean.Flocq.Core.Round_pred
+
+namespace CompCert4Lean.Flocq.Core.Round_pred
+
+theorem Rnd_UP_pt_idempotent : Rnd_UP_pt_idempotentStatement := by
+  intro ctx F x f H Hx
+  apply ctx.certificate.orderedField.le_antisymm
+  · exact H.2.2 x Hx (ctx.certificate.orderedField.le_refl x)
+  · exact H.2.1
+
+end CompCert4Lean.Flocq.Core.Round_pred

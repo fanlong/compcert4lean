@@ -2422,3 +2422,13 @@ theorem add_equation_lessdef : add_equation_lessdefStatement := by
   exact EqSet.add_1 e.eqs1 q q (EqSet.E.eq_refl q)
 
 end CompCert4Lean.Backend.Allocproof
+
+namespace CompCert4Lean.Backend.Allocproof
+
+open CompCert4Lean.Backend.Allocation
+
+theorem add_equation_satisf : add_equation_satisfStatement := by
+  intro rs ls q e hsat q' hq'
+  exact hsat q' (EqSet.add_2 e.eqs1 q q' hq')
+
+end CompCert4Lean.Backend.Allocproof
