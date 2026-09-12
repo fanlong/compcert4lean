@@ -1818,3 +1818,41 @@ theorem fixpoint_from_charact : fixpoint_from_charactStatement := by
   exact hprop start res hfix (steps_base start)
 
 end CompCert4Lean.Backend.Kildall.Dataflow_Solver
+
+namespace CompCert4Lean.Backend.Kildall.Dataflow_Solver
+
+open CompCert4Lean.Lib.Maps
+
+theorem step_incr : step_incrStatement := by
+  intro A LAT NS LATlaws NSlaws code successors transf n s1 s2 hstep
+  unfold step at hstep
+  cases hpick : NS.pick s1.worklist with
+  | none =>
+      simp only [hpick] at hstep
+      cases hstep
+  | some pair =>
+      rcases pair with ⟨p, rem⟩
+      cases hcode : PTree.get p code with
+      | none =>
+          simp only [hpick, hcode] at hstep
+          injection hstep with hs2
+          subst s2
+          constructor
+          · exact optge_refl LATlaws _
+          · intro hv
+            exact hv
+      | some instr =>
+          simp only [hpick, hcode] at hstep
+          injection hstep with hs2
+          subst s2
+          have hprop := propagate_succ_list_charact
+            (LAT := LAT) (NS := NS) LATlaws NSlaws
+            (transf p (abstr_value p s1)) (successors instr)
+            ({ aval := s1.aval, worklist := rem, visited := s1.visited } : state LAT NS)
+          rcases hprop with ⟨A1, A2, A3, A4, A5, A6, A7, A8, A9⟩
+          constructor
+          · exact A3 n
+          · intro hv
+            exact A7 n hv
+
+end CompCert4Lean.Backend.Kildall.Dataflow_Solver

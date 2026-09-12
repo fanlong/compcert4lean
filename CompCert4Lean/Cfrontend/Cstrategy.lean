@@ -2149,3 +2149,23 @@ theorem eval_simple_lvalue_steps
     h
 
 end CompCert4Lean.Cfrontend.Cstrategy
+
+namespace CompCert4Lean.Cfrontend.Cstrategy
+
+open CompCert4Lean.Cfrontend.Csem
+open CompCert4Lean.Common.Smallstep
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Cfrontend.Csyntax
+
+theorem eval_simple_lvalue_safe
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    eval_simple_lvalue_safeStatement := by
+  unfold eval_simple_lvalue_safeStatement
+  intro xi ge f k e m C a b ofs bf h hC hs
+  exact safe_steps (xi := xi) (ge := ge)
+    (s := .ExprState f (C a) k e m)
+    (s' := .ExprState f (C (.Eloc b ofs bf (typeof a))) k e m)
+    hs (eval_simple_lvalue_steps xi ge f k e m a b ofs bf h C hC)
+
+end CompCert4Lean.Cfrontend.Cstrategy

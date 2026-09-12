@@ -1325,3 +1325,308 @@ theorem iter_expand_instr_unchanged : iter_expand_instr_unchangedStatement := by
                       exact List.mem_cons.mpr (Or.inl (heq ▸ rfl)))
 
 end CompCert4Lean.Backend.Inliningspec
+
+namespace CompCert4Lean.Backend.Inliningspec
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Backend.Inlining
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+
+private theorem inliningspec_xelements_append {A : Type}
+    (m : PTree.tree' A) (i : positive) (k1 k2 : List (positive × A)) :
+    PTree.xelements' m i (k1 ++ k2) =
+      PTree.xelements' m i k1 ++ k2 := by
+  induction m generalizing i k1 k2 with
+  | Node001 r ih => exact ih (xI i) k1 k2
+  | Node010 x => simp [PTree.xelements']
+  | Node011 x r ih => simp [PTree.xelements', ih, List.append_assoc]
+  | Node100 l ih => exact ih (xO i) k1 k2
+  | Node101 l r ihl ihr =>
+      simp [PTree.xelements', ihl, ihr, List.append_assoc]
+  | Node110 l x ih =>
+      change PTree.xelements' l (xO i) ((PTree.prev i, x) :: (k1 ++ k2)) =
+        PTree.xelements' l (xO i) ((PTree.prev i, x) :: k1) ++ k2
+      exact ih (xO i) ((PTree.prev i, x) :: k1) k2
+  | Node111 l x r ihl ihr =>
+      simp only [PTree.xelements']
+      rw [ihr (xI i) k1 k2]
+      exact ihl (xO i) ((PTree.prev i, x) :: PTree.xelements' r (xI i) k1) k2
+
+private theorem inliningspec_key_form {A : Type} (m : PTree.tree' A) (i : positive)
+    (p : positive × A) (h : p ∈ PTree.xelements' m i []) :
+    ∃ j, p.1 = PTree.prev_append i j := by
+  induction m generalizing i p with
+  | Node001 r ih =>
+      have hr := ih (xI i) p (by simpa [PTree.xelements'] using h)
+      rcases hr with ⟨j, hj⟩
+      exact ⟨xI j, by simpa [PTree.prev_append] using hj⟩
+  | Node010 x =>
+      rcases p with ⟨k, v⟩
+      simp [PTree.xelements'] at h
+      rcases h with ⟨rfl, rfl⟩
+      exact ⟨xH, rfl⟩
+  | Node011 x r ih =>
+      rcases p with ⟨k, v⟩
+      simp [PTree.xelements'] at h
+      rcases h with h | h
+      · have hp : (k, v) = (PTree.prev i, x) := by simpa using h
+        rcases hp with ⟨rfl, rfl⟩
+        exact ⟨xH, rfl⟩
+      · have hr := ih (xI i) (k, v) h
+        rcases hr with ⟨j, hj⟩
+        exact ⟨xI j, by simpa [PTree.prev_append] using hj⟩
+  | Node100 l ih =>
+      have hl := ih (xO i) p (by simpa [PTree.xelements'] using h)
+      rcases hl with ⟨j, hj⟩
+      exact ⟨xO j, by simpa [PTree.prev_append] using hj⟩
+  | Node101 l r ihl ihr =>
+      change p ∈ PTree.xelements' l (xO i) (PTree.xelements' r (xI i) []) at h
+      rw [show PTree.xelements' l (xO i) (PTree.xelements' r (xI i) []) =
+          PTree.xelements' l (xO i) [] ++ PTree.xelements' r (xI i) [] by
+            simpa using inliningspec_xelements_append l (xO i) []
+              (PTree.xelements' r (xI i) [])] at h
+      simp only [List.mem_append] at h
+      rcases h with h | h
+      · have hl := ihl (xO i) p h
+        rcases hl with ⟨j, hj⟩
+        exact ⟨xO j, by simpa [PTree.prev_append] using hj⟩
+      · have hr := ihr (xI i) p h
+        rcases hr with ⟨j, hj⟩
+        exact ⟨xI j, by simpa [PTree.prev_append] using hj⟩
+  | Node110 l x ih =>
+      rcases p with ⟨k, v⟩
+      change (k, v) ∈ PTree.xelements' l (xO i) [(PTree.prev i, x)] at h
+      rw [show PTree.xelements' l (xO i) [(PTree.prev i, x)] =
+          PTree.xelements' l (xO i) [] ++ [(PTree.prev i, x)] by
+            simpa using inliningspec_xelements_append l (xO i) []
+              [(PTree.prev i, x)]] at h
+      simp only [List.mem_append] at h
+      rcases h with h | h
+      · have hl := ih (xO i) (k, v) h
+        rcases hl with ⟨j, hj⟩
+        exact ⟨xO j, by simpa [PTree.prev_append] using hj⟩
+      · have hp : (k, v) = (PTree.prev i, x) := by simpa using h
+        rcases hp with ⟨rfl, rfl⟩
+        exact ⟨xH, rfl⟩
+  | Node111 l x r ihl ihr =>
+      rcases p with ⟨k, v⟩
+      change (k, v) ∈ PTree.xelements' l (xO i)
+        ((PTree.prev i, x) :: PTree.xelements' r (xI i) []) at h
+      rw [show PTree.xelements' l (xO i)
+          ((PTree.prev i, x) :: PTree.xelements' r (xI i) []) =
+          PTree.xelements' l (xO i) [] ++
+            ((PTree.prev i, x) :: PTree.xelements' r (xI i) []) by
+              simpa using inliningspec_xelements_append l (xO i) []
+                ((PTree.prev i, x) :: PTree.xelements' r (xI i) [])] at h
+      simp only [List.mem_append] at h
+      rcases h with h | h
+      · have hl := ihl (xO i) (k, v) h
+        rcases hl with ⟨j, hj⟩
+        exact ⟨xO j, by simpa [PTree.prev_append] using hj⟩
+      · simp only [List.mem_cons] at h
+        rcases h with h | h
+        · have hp : (k, v) = (PTree.prev i, x) := by simpa using h
+          rcases hp with ⟨rfl, rfl⟩
+          exact ⟨xH, rfl⟩
+        · have hr := ihr (xI i) (k, v) h
+          rcases hr with ⟨j, hj⟩
+          exact ⟨xI j, by simpa [PTree.prev_append] using hj⟩
+
+private theorem inliningspec_prev_append_injective (i : positive) :
+    Function.Injective (PTree.prev_append i) := by
+  induction i with
+  | xH => intro j k h; exact h
+  | xI i ih =>
+      intro j k h
+      have h' : xI j = xI k := ih h
+      cases h'
+      rfl
+  | xO i ih =>
+      intro j k h
+      have h' : xO j = xO k := ih h
+      cases h'
+      rfl
+
+private theorem inliningspec_keys_disjoint {A B : Type}
+    (l : PTree.tree' A) (r : PTree.tree' B) (i : positive) :
+    ∀ k, k ∈ (PTree.xelements' l (xO i) []).map Prod.fst →
+      k ∉ (PTree.xelements' r (xI i) []).map Prod.fst := by
+  intro k hl hr
+  rcases List.mem_map.mp hl with ⟨p, hp, rfl⟩
+  rcases List.mem_map.mp hr with ⟨q, hq, hkey⟩
+  rcases inliningspec_key_form l (xO i) p hp with ⟨j, hj⟩
+  rcases inliningspec_key_form r (xI i) q hq with ⟨k, hk⟩
+  have heq : PTree.prev_append i (xO j) = PTree.prev_append i (xI k) := by
+    calc
+      PTree.prev_append i (xO j) = p.1 := by simpa [PTree.prev_append] using hj.symm
+      _ = q.1 := hkey.symm
+      _ = PTree.prev_append i (xI k) := by simpa [PTree.prev_append] using hk
+  have hbits : xO j = xI k := inliningspec_prev_append_injective i heq
+  cases hbits
+
+private theorem inliningspec_key_not_in_xO {A : Type} (l : PTree.tree' A) (i : positive) :
+    PTree.prev i ∉ (PTree.xelements' l (xO i) []).map Prod.fst := by
+  intro h
+  rcases List.mem_map.mp h with ⟨p, hp, hkey⟩
+  rcases inliningspec_key_form l (xO i) p hp with ⟨j, hj⟩
+  have heq : PTree.prev_append i xH = PTree.prev_append i (xO j) := by
+    calc
+      PTree.prev_append i xH = PTree.prev i := by rfl
+      _ = p.1 := hkey.symm
+      _ = PTree.prev_append (xO i) j := hj
+      _ = PTree.prev_append i (xO j) := by rfl
+  have hbits : xH = xO j := inliningspec_prev_append_injective i heq
+  cases hbits
+
+private theorem inliningspec_key_not_in_xI {A : Type} (r : PTree.tree' A) (i : positive) :
+    PTree.prev i ∉ (PTree.xelements' r (xI i) []).map Prod.fst := by
+  intro h
+  rcases List.mem_map.mp h with ⟨p, hp, hkey⟩
+  rcases inliningspec_key_form r (xI i) p hp with ⟨j, hj⟩
+  have heq : PTree.prev_append i xH = PTree.prev_append i (xI j) := by
+    calc
+      PTree.prev_append i xH = PTree.prev i := by rfl
+      _ = p.1 := hkey.symm
+      _ = PTree.prev_append (xI i) j := hj
+      _ = PTree.prev_append i (xI j) := by rfl
+  have hbits : xH = xI j := inliningspec_prev_append_injective i heq
+  cases hbits
+
+private theorem inliningspec_keys_nodup {A : Type} (m : PTree.tree' A) (i : positive) :
+    ((PTree.xelements' m i []).map Prod.fst).Nodup := by
+  induction m generalizing i with
+  | Node001 r ih => exact ih (xI i)
+  | Node010 x => simp [PTree.xelements']
+  | Node011 x r ih =>
+      simp only [PTree.xelements', List.map_cons, List.nodup_cons]
+      exact ⟨by
+        intro h
+        rcases List.mem_map.mp h with ⟨p, hp, hkey⟩
+        exact inliningspec_key_not_in_xI r i (by simpa [hkey] using h), ih (xI i)⟩
+  | Node100 l ih => exact ih (xO i)
+  | Node101 l r ihl ihr =>
+      change ((PTree.xelements' l (xO i) (PTree.xelements' r (xI i) [])).map Prod.fst).Nodup
+      rw [show PTree.xelements' l (xO i) (PTree.xelements' r (xI i) []) =
+          PTree.xelements' l (xO i) [] ++ PTree.xelements' r (xI i) [] by
+            simpa using inliningspec_xelements_append l (xO i) []
+              (PTree.xelements' r (xI i) [])]
+      simp only [List.map_append, List.nodup_append]
+      exact ⟨ihl (xO i), ihr (xI i), by
+        intro a ha b hb hEq
+        exact inliningspec_keys_disjoint l r i a ha (by simpa [hEq] using hb)⟩
+  | Node110 l x ih =>
+      change ((PTree.xelements' l (xO i) [(PTree.prev i, x)]).map Prod.fst).Nodup
+      rw [show PTree.xelements' l (xO i) [(PTree.prev i, x)] =
+          PTree.xelements' l (xO i) [] ++ [(PTree.prev i, x)] by
+            simpa using inliningspec_xelements_append l (xO i) []
+              [(PTree.prev i, x)]]
+      simp only [List.map_append, List.map_singleton]
+      rw [List.nodup_append]
+      refine ⟨ih (xO i), by simp, ?_⟩
+      intro k hk b hb hkb
+      have hb' : b = PTree.prev i := by simpa using hb
+      have hkroot : k = PTree.prev i := hkb.trans hb'
+      subst b
+      apply inliningspec_key_not_in_xO l i
+      rcases List.mem_map.mp hk with ⟨p, hp, hpk⟩
+      exact List.mem_map.mpr ⟨p, hp, hpk.trans hkroot⟩
+  | Node111 l x r ihl ihr =>
+      change ((PTree.xelements' l (xO i)
+        ((PTree.prev i, x) :: PTree.xelements' r (xI i) [])).map Prod.fst).Nodup
+      rw [show PTree.xelements' l (xO i)
+          ((PTree.prev i, x) :: PTree.xelements' r (xI i) []) =
+          PTree.xelements' l (xO i) [] ++
+            ((PTree.prev i, x) :: PTree.xelements' r (xI i) []) by
+              simpa using inliningspec_xelements_append l (xO i) []
+                ((PTree.prev i, x) :: PTree.xelements' r (xI i) [])]
+      simp only [List.map_append]
+      rw [List.nodup_append]
+      have htail : ((PTree.prev i, x) :: PTree.xelements' r (xI i) []).map Prod.fst |>.Nodup := by
+        simp only [List.map_cons, List.nodup_cons]
+        exact ⟨inliningspec_key_not_in_xI r i, ihr (xI i)⟩
+      refine ⟨ihl (xO i), htail, ?_⟩
+      intro k hk b hb hkb
+      simp only [List.map_cons, List.mem_cons] at hb
+      rcases hb with hroot | hright
+      · apply inliningspec_key_not_in_xO l i
+        rcases List.mem_map.mp hk with ⟨p, hp, hpk⟩
+        exact List.mem_map.mpr ⟨p, hp, hpk.trans (hkb.trans hroot)⟩
+      · exact inliningspec_keys_disjoint l r i k hk (by simpa [hkb] using hright)
+
+private theorem inliningspec_elements_nodup {A : Type} (m : PTree.t A) :
+    ((PTree.elements m).map Prod.fst).Nodup := by
+  cases m with
+  | Empty => simp [PTree.elements, PTree.xelements]
+  | Nodes m => simpa [PTree.elements, PTree.xelements] using inliningspec_keys_nodup m xH
+
+private theorem inliningspec_nodup_to_norepet {A : Type} :
+    ∀ l : List A, l.Nodup → list_norepet l
+  | [], _ => .nil _
+  | a :: l, h =>
+      .cons a (by
+        intro ha
+        exact (List.nodup_cons.mp h).1 ha)
+        (inliningspec_nodup_to_norepet l (List.nodup_cons.mp h).2)
+
+theorem expand_cfg_rec_unchanged : expand_cfg_rec_unchangedStatement := by
+  intro fe rec hrec ctx f s x s' i pc h hbelow hlt
+  unfold expand_cfg_rec at h
+  cases hreq : request_stack (zAdd ctx.dstk ctx.mstk) s with
+  | R u s0 i0 =>
+      simp only [Inlining.bind] at h
+      rw [hreq] at h
+      cases hfold : ptree_mfold (expand_instr fe rec ctx) f.fn_code s0 with
+      | R z s1 i1 =>
+          simp [Inlining.bind, hfold] at h
+          cases z
+          subst s'
+          have hcode : s0.st_code = s.st_code := by
+            simpa [request_stack] using (congrArg (fun r => r.2.st_code) hreq).symm
+          have hnext : s0.st_nextnode = s.st_nextnode := by
+            simpa [request_stack] using (congrArg (fun r => r.2.st_nextnode) hreq).symm
+          have hbelow0 : Ple ctx.dpc s0.st_nextnode := by
+            rw [hnext]
+            exact hbelow
+          have hlt0 : Plt pc s0.st_nextnode := by
+            exact Plt_Ple_trans pc ctx.dpc s0.st_nextnode hlt hbelow0
+          have hspec := ptree_mfold_spec _ _
+            f.fn_code s0 () s1 i1 hfold
+          rcases hspec with ⟨i', hiter⟩
+          have hnot : pc ∉ List.map (spc ctx)
+              (List.map Prod.fst (PTree.elements f.fn_code)) := by
+            intro hmem
+            rcases List.mem_map.mp hmem with ⟨p, hp, hpc⟩
+            rcases List.mem_map.mp hp with ⟨q, hq, hpq⟩
+            rcases q with ⟨pc1, instr1⟩
+            subst p
+            subst pc
+            apply shiftpos_not_below pc1 ctx.dpc
+            exact hlt
+          have hiter' := iter_expand_instr_unchanged fe rec hrec ctx pc
+            (PTree.elements f.fn_code) s0 () s1 i' hiter hbelow0 hlt0 hnot
+            (inliningspec_nodup_to_norepet _ (inliningspec_elements_nodup _))
+          calc
+            PTree.get pc s1.st_code = PTree.get pc s0.st_code := hiter'
+            _ = PTree.get pc s.st_code := by simpa [hcode]
+
+theorem min_alignment_pos : min_alignment_posStatement := by
+  intro sz
+  unfold min_alignment
+  split
+  · simp only [ZArith.BinInt.Z.gt, ZArith.BinInt.Z.lt, intOfZ,
+      ZArith.BinInt.Z.of_nat, zOfInt]
+    exact Int.natCast_pos.mpr (posToNat_positive _)
+  · split
+    · simp only [ZArith.BinInt.Z.gt, ZArith.BinInt.Z.lt, intOfZ,
+        ZArith.BinInt.Z.of_nat, zOfInt]
+      exact Int.natCast_pos.mpr (posToNat_positive _)
+    · split
+      · simp only [ZArith.BinInt.Z.gt, ZArith.BinInt.Z.lt, intOfZ,
+          ZArith.BinInt.Z.of_nat, zOfInt]
+        exact Int.natCast_pos.mpr (posToNat_positive _)
+      · simp only [ZArith.BinInt.Z.gt, ZArith.BinInt.Z.lt, intOfZ,
+          ZArith.BinInt.Z.of_nat, zOfInt]
+        exact Int.natCast_pos.mpr (posToNat_positive _)
+
+end CompCert4Lean.Backend.Inliningspec

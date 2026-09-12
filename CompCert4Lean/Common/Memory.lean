@@ -2319,3 +2319,62 @@ theorem setN_other : setN_otherStatement := by
 end Mem
 
 end CompCert4Lean.Common.Memory
+
+namespace CompCert4Lean.Common.Memory
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Lib.Maps
+
+namespace Mem
+
+private theorem pmap_get_set_same_memproof {A : Type} (i : positive) (x : A)
+    (m : PMap.t A) : PMap.get i (PMap.set i x m) = x := by
+  change (match PTree.get i (PTree.set i x m.2) with
+    | some y => y
+    | none => m.1) = x
+  rw [PTree.gsspec_proof]
+  cases hpeq : CompCert4Lean.Lib.Coqlib.peq i i with
+  | left _ => simp
+  | right hne => exact False.elim (hne rfl)
+
+theorem getN_setN_same : getN_setN_sameStatement := by
+  intro vl
+  induction vl with
+  | nil =>
+      intro p c
+      rfl
+  | cons v rest ih =>
+      intro p c
+      have hneq : ∀ r,
+          zLe (zAdd p z1) r ∧
+              zLt r (zAdd (zAdd p z1) (zOfNat rest.length)) → r ≠ p := by
+        intro r hr
+        rcases hr with ⟨hrlo, _⟩
+        intro hrp
+        subst r
+        change intOfZ (zAdd p z1) ≤ intOfZ p at hrlo
+        rw [intOfZ_add_one] at hrlo
+        omega
+      have hhead :
+          ZMap.get p (setN rest (zAdd p z1) (ZMap.set p v c)) =
+            ZMap.get p (ZMap.set p v c) := by
+        apply setN_other
+        intro r hr
+        exact hneq r hr
+      calc
+        getN (List.length (v :: rest)) p (setN (v :: rest) p c) =
+            ZMap.get p (setN rest (zAdd p z1) (ZMap.set p v c)) ::
+              getN rest.length (zAdd p z1)
+                (setN rest (zAdd p z1) (ZMap.set p v c)) := by
+                rfl
+        _ = ZMap.get p (ZMap.set p v c) :: rest := by
+          rw [hhead, ih]
+        _ = v :: rest := by
+          congr 1
+          change PMap.get (ZIndexed.index p)
+            (PMap.set (ZIndexed.index p) v c) = v
+          exact pmap_get_set_same_memproof _ _ _
+
+end Mem
+
+end CompCert4Lean.Common.Memory

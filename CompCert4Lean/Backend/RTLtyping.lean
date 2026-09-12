@@ -2077,3 +2077,184 @@ theorem type_instr_sound : type_instr_soundStatement := by
                   (S.set_sound_proof te r (proj_sig_res f.fn_sig) e e1 hset hs)
 
 end CompCert4Lean.Backend.RTLtyping
+
+namespace CompCert4Lean.Backend.RTLtyping
+
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.Errors
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+
+theorem wt_regset_assign : wt_regset_assignStatement := by
+  intro env rs v r hrs hv r0
+  unfold wt_regset at hrs
+  change CompCert4Lean.Foundation.Numbers.Rocq.Coq.positive at r0 r
+  change CompCert4Lean.Backend.Registers.Regmap.t val at rs
+  rcases rs with ⟨d, m⟩
+  dsimp [CompCert4Lean.Backend.Registers.Regmap.get,
+    CompCert4Lean.Lib.Maps.PMap.get] at hrs
+  change Val.has_type
+    (CompCert4Lean.Backend.Registers.Regmap.get r0
+      (CompCert4Lean.Backend.Registers.Regmap.set r v (d, m))) (env r0)
+  dsimp [CompCert4Lean.Backend.Registers.Regmap.get,
+    CompCert4Lean.Backend.Registers.Regmap.set,
+    CompCert4Lean.Lib.Maps.PMap.get,
+    CompCert4Lean.Lib.Maps.PMap.set]
+  rw [CompCert4Lean.Lib.Maps.PTree.gsspec_proof]
+  cases h : peq r0 r with
+  | left hEq =>
+      cases hEq
+      exact hv
+  | right hNe =>
+      exact hrs r0
+
+theorem wt_regset_list : wt_regset_listStatement := by
+  intro env rs hrs rl
+  induction rl with
+  | nil =>
+      change True
+      exact True.intro
+  | cons r rl ih =>
+      change Val.has_type (Regmap.get r rs) (env r) ∧
+        Val.has_type_list (List.map (fun r => Regmap.get r rs) rl)
+          (List.map env rl)
+      exact ⟨hrs r, ih⟩
+
+end CompCert4Lean.Backend.RTLtyping
+
+namespace CompCert4Lean.Backend.RTLtyping
+
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Common.Errors
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.Backend.RTL
+
+theorem type_code_sound : type_code_soundStatement := by
+  intro cfg f pc i e e' te hcode hget hs
+  revert hget hs
+  let P : PTree.t instruction → res InferEnv → Prop := fun c re =>
+    match re with
+    | Error _ => True
+    | OK env =>
+        PTree.get pc c = some i → S.satisf te env → wt_instr cfg f te i
+  change P f.fn_code (OK e')
+  rw [← hcode]
+  unfold type_code
+  apply CompCert4Lean.Lib.Maps.PTree_Properties.fold_rec_proof
+    (V := instruction) (A := res InferEnv)
+    (f := fun re pc instr =>
+      match re with
+      | Error _ => re
+      | OK env =>
+          match type_instr cfg f env instr with
+          | Error message => Error (MSG atPCText :: POS pc :: MSG colonSpaceText :: message)
+          | OK env' => OK env')
+    (P := P) (init := OK e) (mFinal := f.fn_code)
+  · intro c c' a hext hP
+    cases a with
+    | Error msg => exact True.intro
+    | OK env =>
+        simp only [P] at hP ⊢
+        intro hget' hs'
+        apply hP
+        · rw [hext pc]
+          exact hget'
+        · exact hs'
+  · intro hget'
+    have hempty : PTree.get pc (PTree.empty instruction) = none := by
+      cases pc <;> rfl
+    rw [hempty] at hget'
+    cases hget'
+  · intro c a k v hnone hfinal hP
+    cases a with
+    | Error msg => exact True.intro
+    | OK env =>
+        cases hti : type_instr cfg f env v with
+        | Error msg => simp [hti, P]
+        | OK env' =>
+            simp [hti]
+            simp only [P] at hP ⊢
+            intro hget' hs'
+            change CompCert4Lean.Foundation.Numbers.Rocq.Coq.positive at pc k
+            rw [CompCert4Lean.Lib.Maps.PTree.getSet_equation] at hget'
+            by_cases hEq : pc = k
+            · subst k
+              simp at hget'
+              cases hget'
+              exact type_instr_sound cfg f env i env' te hti hs'
+            · simp [hEq] at hget'
+              exact hP hget'
+                (type_instr_incr cfg f env v env' te hti hs')
+
+end CompCert4Lean.Backend.RTLtyping
+
+namespace CompCert4Lean.Backend.RTLtyping
+
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Errors
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+
+theorem type_function_correct : type_function_correctStatement := by
+  intro cfg f env h
+  unfold type_function at h
+  cases hcode : type_code cfg f S.initial with
+  | Error msg =>
+      simp [hcode] at h
+  | OK e1 =>
+      simp [hcode] at h
+      cases hset : S.set_list e1
+          (show List CompCert4Lean.Foundation.Numbers.Rocq.Coq.positive from f.fn_params)
+          (proj_sig_args f.fn_sig) with
+      | Error msg =>
+          simp [hset] at h
+      | OK e2 =>
+          simp [hset] at h
+          cases hsolve : S.solve e2 with
+          | Error msg =>
+              simp [hsolve] at h
+          | OK te =>
+              simp [hsolve] at h
+              cases hparams : check_params_norepet f.fn_params with
+              | Error msg =>
+                  simp [hparams] at h
+              | OK uparams =>
+                  simp [hparams] at h
+                  cases hsucc : check_successor f f.fn_entrypoint with
+                  | Error msg =>
+                      simp [hsucc] at h
+                  | OK usucc =>
+                      simp [hsucc] at h
+                      injection h with hte
+                      subst env
+                      have hsat : S.satisf te e2 :=
+                        S.solve_sound_proof e2 te hsolve
+                      have hsat1 : S.satisf te e1 :=
+                        CompCert4Lean.Common.Unityping.UniSolver.set_list_incr
+                          rtlTypeAlgebra te
+                          (show List CompCert4Lean.Foundation.Numbers.Rocq.Coq.positive from f.fn_params)
+                          (proj_sig_args f.fn_sig) e1 e2 hset hsat
+                      have hparams' :=
+                        S.set_list_sound_proof te
+                          (show List CompCert4Lean.Foundation.Numbers.Rocq.Coq.positive from f.fn_params)
+                          (proj_sig_args f.fn_sig) e1 e2 hset hsat
+                      have hentry : valid_successor f f.fn_entrypoint :=
+                        check_successor_sound_aux f f.fn_entrypoint usucc hsucc
+                      refine wt_function.mk_wt_function ?_ ?_ ?_ hentry
+                      · exact hparams'
+                      · unfold check_params_norepet at hparams
+                        cases hn : CompCert4Lean.Lib.Coqlib.list_norepet_dec
+                            Reg.eq f.fn_params with
+                        | left hnorep =>
+                            simpa [hn] using hnorep
+                        | right hbad =>
+                            simp [hn] at hparams
+                      · intro pc i hi
+                        exact type_code_sound cfg f pc i S.initial e1 te hcode hi hsat1
+
+end CompCert4Lean.Backend.RTLtyping

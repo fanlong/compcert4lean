@@ -843,3 +843,16 @@ theorem Zmax_spec : Zmax_specStatement := by
     | right hge => rfl
 
 end CompCert4Lean.Lib.Coqlib
+
+namespace CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+theorem Zmax_bound_l : Zmax_bound_lStatement := by
+  intro x y z hxy
+  change intOfZ x ≤ intOfZ (ZArith.BinInt.Z.max y z)
+  change intOfZ x ≤ intOfZ y at hxy
+  by_cases hyz : intOfZ y ≤ intOfZ z
+  · simp [ZArith.BinInt.Z.max, hyz]
+    exact Int.le_trans hxy hyz
+  · simp [ZArith.BinInt.Z.max, hyz]
+    exact hxy
+end CompCert4Lean.Lib.Coqlib
