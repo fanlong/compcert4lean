@@ -524,3 +524,38 @@ theorem Rnd_N_pt_DN_UP : Rnd_N_pt_DN_UPStatement := by
     exact ctx.certificate.orderedField.le_trans _ _ _ Hu hugx'
 
 end CompCert4Lean.Flocq.Core.Round_pred
+
+namespace CompCert4Lean.Flocq.Core.Round_pred
+
+theorem Rnd_N_pt_DN : Rnd_N_pt_DNStatement := by
+  intro ctx F x d u Hd Hu Hx
+  have hdx : ExactSpec.Rle ctx (ExactSpec.Rminus ctx d x) ctx.spec.zero :=
+    pg_sub_nonpos_of_le ctx d x Hd.2.1
+  have habs : ExactSpec.Rabs ctx (ExactSpec.Rminus ctx d x) =
+      ExactSpec.Rminus ctx x d := by
+    calc
+      ExactSpec.Rabs ctx (ExactSpec.Rminus ctx d x) =
+          ctx.spec.neg (ExactSpec.Rminus ctx d x) :=
+        pg_abs_neg_of_le ctx _ hdx
+      _ = ExactSpec.Rminus ctx x d := pg_neg_minus ctx d x
+  refine Rnd_N_pt_DN_UP ctx F x d u d Hd.1 Hd Hu ?_ ?_
+  · rw [habs]
+    exact ctx.certificate.orderedField.le_refl _
+  · rw [habs]
+    exact Hx
+
+theorem satisfies_any_eq : satisfies_any_eqStatement := by
+  intro ctx F1 F2 Heq H
+  rcases H with ⟨H0, Hsym, Htotal⟩
+  refine satisfies_any.Satisfies_any F2 ?_ ?_ ?_
+  · exact (Heq (ExactSpec.R0 ctx)).mp H0
+  · intro x Hx
+    exact (Heq (ExactSpec.Ropp ctx x)).mp (Hsym x ((Heq x).mpr Hx))
+  · intro x
+    rcases Htotal x with ⟨f, Hf⟩
+    rcases Hf with ⟨Hff, Hfx, Hmin⟩
+    refine ⟨f, (Heq f).mp Hff, Hfx, ?_⟩
+    intro g Hg Hgx
+    exact Hmin g ((Heq g).mpr Hg) Hgx
+
+end CompCert4Lean.Flocq.Core.Round_pred

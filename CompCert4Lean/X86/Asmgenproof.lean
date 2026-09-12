@@ -882,3 +882,33 @@ theorem mk_setcc_label : mk_setcc_labelStatement := by
   exact asmgenproof_mk_setcc_base_label xc rd k
 
 end CompCert4Lean.X86.Asmgenproof
+
+namespace CompCert4Lean.X86.Asmgenproof
+
+theorem mk_jcc_label : mk_jcc_labelStatement := by
+  intro xc lbl k
+  cases xc with
+  | Cond_base c =>
+      simp [CompCert4Lean.X86.Asmgen.mk_jcc,
+        CompCert4Lean.Backend.Asmgenproof0.tail_nolabel,
+        CompCert4Lean.Backend.Asmgenproof0.find_label,
+        CompCert4Lean.X86.Asm.is_label]
+      exact CompCert4Lean.Lib.Coqlib.is_tail.cons _
+        (CompCert4Lean.Lib.Coqlib.is_tail.refl _)
+  | Cond_and c1 c2 =>
+      simp [CompCert4Lean.X86.Asmgen.mk_jcc,
+        CompCert4Lean.Backend.Asmgenproof0.tail_nolabel,
+        CompCert4Lean.Backend.Asmgenproof0.find_label,
+        CompCert4Lean.X86.Asm.is_label]
+      exact CompCert4Lean.Lib.Coqlib.is_tail.cons _
+        (CompCert4Lean.Lib.Coqlib.is_tail.refl _)
+  | Cond_or c1 c2 =>
+      simp [CompCert4Lean.X86.Asmgen.mk_jcc,
+        CompCert4Lean.Backend.Asmgenproof0.tail_nolabel,
+        CompCert4Lean.Backend.Asmgenproof0.find_label,
+        CompCert4Lean.X86.Asm.is_label]
+      exact CompCert4Lean.Lib.Coqlib.is_tail.cons _
+        (CompCert4Lean.Lib.Coqlib.is_tail.cons _
+          (CompCert4Lean.Lib.Coqlib.is_tail.refl _))
+
+end CompCert4Lean.X86.Asmgenproof

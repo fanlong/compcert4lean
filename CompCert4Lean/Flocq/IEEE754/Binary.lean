@@ -801,3 +801,49 @@ theorem FF2BCertificateStatement_proof :
   exact (FF2B x hx).2
 
 end CompCert4Lean.Flocq.IEEE754.Binary
+
+namespace CompCert4Lean.Flocq.IEEE754.Binary
+
+theorem BSN2B'_result_obligation_proof :
+    ∀ {prec emax : Z}, BSN2B'_result_obligation (prec := prec) (emax := emax) := by
+  intro prec emax x Nx
+  rcases x with ⟨x, hx⟩
+  cases x with
+  | B754_zero s => rfl
+  | B754_infinity s => rfl
+  | B754_nan => simp [BinarySingleNaN.is_nan] at Nx
+  | B754_finite s m e =>
+      change bounded0 prec emax m e = true at hx
+      simpa [BSN2B', BinaryFloatCertificate, B2FF, valid_binary] using hx
+
+end CompCert4Lean.Flocq.IEEE754.Binary
+
+namespace CompCert4Lean.Flocq.IEEE754.Binary
+
+theorem B2BSN_result_obligation_proof :
+    ∀ {prec emax : Z}, B2BSN_result_obligation (prec := prec) (emax := emax) := by
+  intro prec emax x
+  rcases x with ⟨x, hx⟩
+  cases x with
+  | B754_zero s => rfl
+  | B754_infinity s => rfl
+  | B754_nan s pl => rfl
+  | B754_finite s m e =>
+      change bounded0 prec emax m e = true at hx
+      change bounded0 prec emax m e = true
+      exact hx
+
+end CompCert4Lean.Flocq.IEEE754.Binary
+
+namespace CompCert4Lean.Flocq.IEEE754.Binary
+
+theorem fexp_correct_certificate_proof :
+    ∀ (prec emax : Z) [Core.FLX.Prec_gt_0 prec]
+      [BinarySingleNaN.Prec_lt_emax prec emax],
+      FexpCorrectCertificate prec emax := by
+  intro prec emax prec_gt_0 prec_lt_emax
+  constructor
+  exact CompCert4Lean.Flocq.Core.FLT.FLT_exp_valid
+    (BinarySingleNaN.emin0 prec emax) prec (h := prec_gt_0)
+
+end CompCert4Lean.Flocq.IEEE754.Binary

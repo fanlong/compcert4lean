@@ -1028,3 +1028,29 @@ theorem sep_pick4 : sep_pick4Statement := by
   exact h.2.1.2.1.2.1.1
 
 end CompCert4Lean.Common.Separation
+
+namespace CompCert4Lean.Common.Separation
+
+theorem sep_pick5 : sep_pick5Statement := by
+  intro P Q R S T U m h
+  exact h.2.1.2.1.2.1.2.1.1
+
+theorem sep_preserved : sep_preservedStatement := by
+  intro m m' P Q h hP hQ
+  exact ⟨hP h.1, hQ h.2.1, h.2.2⟩
+
+theorem pure_obligation_2 : pure_obligation_2Statement := by
+  intro m b h
+  exact False.elim h
+
+theorem sep_pure : sep_pureStatement := by
+  intro P Q m
+  constructor
+  · intro h
+    exact ⟨h.1, h.2.1⟩
+  · intro h
+    exact ⟨h.1, h.2, by
+      intro b ofs hP hQ
+      exact False.elim hP⟩
+
+end CompCert4Lean.Common.Separation

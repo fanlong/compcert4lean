@@ -959,3 +959,14 @@ theorem identify_Acc_proof :
 
 end UF
 end CompCert4Lean.Lib.UnionFind
+
+namespace CompCert4Lean.Lib.UnionFind
+namespace UF
+
+theorem identify_wf_proof :
+    ∀ (M : MAP), identify_wfStatement M := by
+  intro M uf a b a_canon not_same_class
+  exact identify_wf_calc M uf a b a_canon not_same_class
+
+end UF
+end CompCert4Lean.Lib.UnionFind

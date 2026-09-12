@@ -2712,3 +2712,103 @@ theorem add_equations_args_lessdef : add_equations_args_lessdefStatement := by
                   · simp [add_equations_args, hty] at hrun
 
 end CompCert4Lean.Backend.Allocproof
+
+namespace CompCert4Lean.Backend.Allocproof
+
+open CompCert4Lean.Backend.Allocation
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem select_reg_h_monotone : select_reg_h_monotoneStatement := by
+  intro r q1 q2 hord hsel
+  unfold select_reg_h PArith.BinPos.Pos.leb at hsel ⊢
+  have hreq : PArith.BinPos.Pos.to_nat q1.ereg ≤
+      PArith.BinPos.Pos.to_nat r := by
+    split at hsel
+    · exact ‹PArith.BinPos.Pos.to_nat q1.ereg ≤
+        PArith.BinPos.Pos.to_nat r›
+    · simp at hsel
+  rcases hord with rfl | hlt
+  · exact hsel
+  · rcases hlt with hreg | ⟨hreg, _⟩
+    · have hreg' : PArith.BinPos.Pos.to_nat q2.ereg <
+          PArith.BinPos.Pos.to_nat q1.ereg := hreg
+      have hqle : PArith.BinPos.Pos.to_nat q2.ereg ≤
+          PArith.BinPos.Pos.to_nat r :=
+        Nat.le_trans (Nat.le_of_lt hreg') hreq
+      split
+      · rfl
+      · exfalso
+        exact ‹¬ PArith.BinPos.Pos.to_nat q2.ereg ≤
+          PArith.BinPos.Pos.to_nat r› hqle
+    · rw [hreg]
+      exact hsel
+
+theorem select_reg_charact : select_reg_charactStatement := by
+  intro r q
+  unfold select_reg_l select_reg_h PArith.BinPos.Pos.leb
+  constructor
+  · intro h
+    rcases h with ⟨hl, hh⟩
+    have hl' : PArith.BinPos.Pos.to_nat r ≤
+        PArith.BinPos.Pos.to_nat q.ereg := by
+      split at hl
+      · exact ‹PArith.BinPos.Pos.to_nat r ≤
+          PArith.BinPos.Pos.to_nat q.ereg›
+      · simp at hl
+    have hh' : PArith.BinPos.Pos.to_nat q.ereg ≤
+        PArith.BinPos.Pos.to_nat r := by
+      split at hh
+      · exact ‹PArith.BinPos.Pos.to_nat q.ereg ≤
+          PArith.BinPos.Pos.to_nat r›
+      · simp at hh
+    change posToNat r ≤ posToNat q.ereg at hl'
+    change posToNat q.ereg ≤ posToNat r at hh'
+    apply posToNat_injective
+    omega
+  · intro h
+    have hq : q.ereg = r := h
+    simp [hq]
+
+theorem reg_unconstrained_sound : reg_unconstrained_soundStatement := by
+  intro r e q hunc hq
+  intro heq
+  have hboth : select_reg_l r q = true ∧ select_reg_h r q = true :=
+    (select_reg_charact r q).2 heq
+  have habove : ∀ x1 x2,
+      OrderedEquation.eq x1 x2 ∨ OrderedEquation.lt x1 x2 →
+      select_reg_l r x1 = true → select_reg_l r x2 = true := by
+    intro x1 x2 hlt hx
+    exact select_reg_l_monotone r x1 x2 hlt hx
+  have hbelow : ∀ x1 x2,
+      OrderedEquation.eq x1 x2 ∨ OrderedEquation.lt x2 x1 →
+      select_reg_h r x1 = true → select_reg_h r x2 = true := by
+    intro x1 x2 hlt hx
+    exact select_reg_h_monotone r x1 x2 hlt hx
+  have hmem : EqSet.mem_between (select_reg_l r) (select_reg_h r) e.eqs1 = true :=
+    EqSet.mem_between_2_proof (select_reg_l r) (select_reg_h r)
+      habove hbelow q e.eqs1 hq hboth.1 hboth.2
+  unfold reg_unconstrained at hunc
+  simp [hmem] at hunc
+
+end CompCert4Lean.Backend.Allocproof
+
+namespace CompCert4Lean.Backend.Allocproof
+
+open CompCert4Lean.Backend.Allocation
+open CompCert4Lean.Common.Values
+
+theorem reg_unconstrained_satisf : reg_unconstrained_satisfStatement := by
+  intro r e rs ls v hunc hsat
+  unfold satisf at hsat ⊢
+  intro q hq
+  by_cases heq : q.ereg = r
+  · exact False.elim ((reg_unconstrained_sound r e q hunc hq) heq)
+  · have hget : CompCert4Lean.Backend.Registers.Regmap.get q.ereg
+        (CompCert4Lean.Backend.Registers.Regmap.set r v rs) =
+        CompCert4Lean.Backend.Registers.Regmap.get q.ereg rs :=
+      CompCert4Lean.Backend.Registers.Regmap.gso_proof val q.ereg r v rs heq
+    rw [hget]
+    exact hsat q hq
+
+end CompCert4Lean.Backend.Allocproof
