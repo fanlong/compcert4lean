@@ -1675,3 +1675,19 @@ theorem is_reachable_from_env_dec : is_reachable_from_env_decStatement := by
   exact Classical.em (is_reachable_from_env f e sp ofs)
 
 end CompCert4Lean.Cfrontend.Cminorgenproof
+
+namespace CompCert4Lean.Cfrontend.Cminorgenproof
+
+theorem padding_freeable_invariant : padding_freeable_invariantStatement := by
+  intro f1 e tm1 sp sz cenv lo hi f2 tm2 hfree henv htm hmap ofs hof
+  rcases hfree ofs hof with hperm | hreach
+  · exact Or.inl (htm ofs hperm)
+  · cases hreach with
+    | @is_reachable_intro id b bsz delta hget hf1 hdelta =>
+      have hb := henv.me_bounded id b bsz hget
+      have hf2 : f2 b = some (sp, delta) := by
+        rw [hmap b hb.2]
+        exact hf1
+      exact Or.inr (is_reachable_intro hget hf2 hdelta)
+
+end CompCert4Lean.Cfrontend.Cminorgenproof

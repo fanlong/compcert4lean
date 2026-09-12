@@ -1852,3 +1852,123 @@ theorem regs_valnums_sound
               exact congrArg (fun xs => valu v :: xs) (ih rl1 hholds hrest)
 
 end CompCert4Lean.Backend.CSEproof
+
+namespace CompCert4Lean.Backend.CSEproof
+
+open CompCert4Lean.Backend.CSEdomain
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Values
+
+private theorem cse_eval_builtin_arg_determ
+    {A : Type} (ge : Senv.t)
+    (e : A → val) (sp : val) (m : mem) {a : builtin_arg A} {v : val}
+    (h : eval_builtin_arg ge e sp m a v) :
+    ∀ {v' : val}, eval_builtin_arg ge e sp m a v' → v' = v := by
+  induction h with
+  | eval_BA x =>
+      intro v' h'
+      cases h'
+      rfl
+  | eval_BA_int n =>
+      intro v' h'
+      cases h'
+      rfl
+  | eval_BA_long n =>
+      intro v' h'
+      cases h'
+      rfl
+  | eval_BA_float n =>
+      intro v' h'
+      cases h'
+      rfl
+  | eval_BA_single n =>
+      intro v' h'
+      cases h'
+      rfl
+  | eval_BA_loadstack chunk ofs v load =>
+      intro v' h'
+      cases h' with
+      | eval_BA_loadstack _ _ v' load' =>
+          exact Option.some.inj (load'.symm.trans load)
+  | eval_BA_addrstack ofs =>
+      intro v' h'
+      cases h'
+      rfl
+  | eval_BA_loadglobal chunk id ofs v load =>
+      intro v' h'
+      cases h' with
+      | eval_BA_loadglobal _ _ _ v' load' =>
+          exact Option.some.inj (load'.symm.trans load)
+  | eval_BA_addrglobal id =>
+      intro v' h'
+      cases h'
+      rfl
+  | eval_BA_splitlong hi lo vhi vlo hhi hlo ihhi ihlo =>
+      intro v' h'
+      cases h' with
+      | eval_BA_splitlong _ _ vhi' vlo' hhi' hlo' =>
+          have hhi_eq : vhi' = vhi := ihhi hhi'
+          have hlo_eq : vlo' = vlo := ihlo hlo'
+          cases hhi_eq
+          cases hlo_eq
+          rfl
+  | eval_BA_addptr a1 a2 v1 v2 h1 h2 ih1 ih2 =>
+      intro v' h'
+      cases h' with
+      | eval_BA_addptr _ _ v1' v2' h1' h2' =>
+          have h1_eq : v1' = v1 := ih1 h1'
+          have h2_eq : v2' = v2 := ih2 h2'
+          cases h1_eq
+          cases h2_eq
+          rfl
+
+private theorem cse_eval_builtin_args_determ
+    {A : Type} (ge : Senv.t)
+    (e : A → val) (sp : val) (m : mem)
+    {al : List (builtin_arg A)} {vl : List val}
+    (h : eval_builtin_args ge e sp m al vl) :
+    ∀ {vl' : List val}, eval_builtin_args ge e sp m al vl' → vl' = vl := by
+  unfold eval_builtin_args at h ⊢
+  induction h with
+  | nil =>
+      intro vl' h'
+      cases h'
+      rfl
+  | cons a1 b1 hp ht ih =>
+      intro vl' h'
+      cases h' with
+      | cons _ b1' hp' ht' =>
+          have hb : b1' = b1 := cse_eval_builtin_arg_determ ge e sp m hp hp'
+          have ht_eq : _ := ih ht'
+          cases hb
+          cases ht_eq
+          rfl
+
+theorem rhs_eval_to_inj
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    rhs_eval_to_injStatement := by
+  intro valu ge sp m rh v1 v2 h1 h2
+  induction h1 with
+  | op_eval_to op vl v hEval =>
+      cases h2 with
+      | op_eval_to _ _ v2 hEval2 =>
+          exact Option.some.inj (hEval.symm.trans hEval2)
+  | load_eval_to chunk addr vl a v p hAddr hLoad =>
+      cases h2 with
+      | load_eval_to _ _ _ a2 v2 _ hAddr2 hLoad2 =>
+          have ha : a2 = a := Option.some.inj (hAddr2.symm.trans hAddr)
+          subst a2
+          exact Option.some.inj (hLoad.symm.trans hLoad2)
+  | builtin_eval_to bf args vargs v hArgs hSem =>
+      cases h2 with
+      | builtin_eval_to _ _ vargs2 v2 hArgs2 hSem2 =>
+          have hvargs : vargs2 = vargs :=
+            cse_eval_builtin_args_determ (Genv.to_senv ge) valu sp m hArgs hArgs2
+          subst vargs2
+          exact Option.some.inj (hSem.symm.trans hSem2)
+
+end CompCert4Lean.Backend.CSEproof

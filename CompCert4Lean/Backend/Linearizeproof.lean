@@ -1609,3 +1609,33 @@ theorem find_label_lin : find_label_linStatement := by
         _ = some (linearize_block b k) := hk
 
 end CompCert4Lean.Backend.Linearizeproof
+
+namespace CompCert4Lean.Backend.Linearizeproof
+
+open CompCert4Lean.Backend.Linear
+open CompCert4Lean.Backend.Linearize
+
+theorem label_in_lin_rec : label_in_lin_recStatement := by
+  intro f lbl enum h
+  induction enum with
+  | nil =>
+      simp [linearize_body, CompCert4Lean.Lib.Coqlib.list_fold_right,
+        CompCert4Lean.Lib.Coqlib.list_fold_left] at h
+      cases h
+  | cons a enum ih =>
+      rw [linearize_body_cons] at h
+      cases hcode : CompCert4Lean.Lib.Maps.PTree.get a f.fn_code with
+      | none =>
+          apply List.Mem.tail a
+          apply ih
+          simpa [hcode] using h
+      | some b =>
+          simp only [hcode] at h
+          cases h with
+          | head => exact List.Mem.head enum
+          | tail _ htail =>
+              apply List.Mem.tail a
+              apply ih
+              exact label_in_lin_block lbl _ b htail
+
+end CompCert4Lean.Backend.Linearizeproof

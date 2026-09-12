@@ -1818,3 +1818,100 @@ theorem match_envs_invariant : match_envs_invariantStatement := by
     exact hflat id b' ty b delta hte hmap
 
 end CompCert4Lean.Cfrontend.SimplLocalsproof
+
+namespace CompCert4Lean.Cfrontend.SimplLocalsproof
+
+theorem val_casted_load_result : val_casted_load_resultStatement := by
+  intro v ty chunk hcast hmode
+  cases hcast with
+  | val_casted_int sz si attr n hcast =>
+      cases sz <;> cases si <;> simp [CompCert4Lean.Cfrontend.Ctypes.access_mode] at hmode
+      · cases hmode
+        simpa [CompCert4Lean.Common.Values.Val.load_result,
+          CompCert4Lean.Cfrontend.Cop.cast_int_int] using congrArg
+            CompCert4Lean.Common.Values.val.Vint hcast
+      · cases hmode
+        simpa [CompCert4Lean.Common.Values.Val.load_result,
+          CompCert4Lean.Cfrontend.Cop.cast_int_int] using congrArg
+            CompCert4Lean.Common.Values.val.Vint hcast
+      · cases hmode
+        simpa [CompCert4Lean.Common.Values.Val.load_result,
+          CompCert4Lean.Cfrontend.Cop.cast_int_int] using congrArg
+            CompCert4Lean.Common.Values.val.Vint hcast
+      · cases hmode
+        simpa [CompCert4Lean.Common.Values.Val.load_result,
+          CompCert4Lean.Cfrontend.Cop.cast_int_int] using congrArg
+            CompCert4Lean.Common.Values.val.Vint hcast
+      · cases hmode
+        simpa [CompCert4Lean.Common.Values.Val.load_result,
+          CompCert4Lean.Cfrontend.Cop.cast_int_int] using congrArg
+            CompCert4Lean.Common.Values.val.Vint hcast
+      · cases hmode
+        simpa [CompCert4Lean.Common.Values.Val.load_result,
+          CompCert4Lean.Cfrontend.Cop.cast_int_int] using congrArg
+            CompCert4Lean.Common.Values.val.Vint hcast
+      · cases hmode
+        by_cases hn : CompCert4Lean.Lib.Integers.Int.eq n
+            CompCert4Lean.Lib.Integers.Int.zero
+        · simp [CompCert4Lean.Common.Values.Val.load_result,
+            CompCert4Lean.Cfrontend.Cop.cast_int_int, hn] at hcast ⊢
+          cases hcast
+          rfl
+        · simp [CompCert4Lean.Common.Values.Val.load_result,
+            CompCert4Lean.Cfrontend.Cop.cast_int_int, hn] at hcast ⊢
+          cases hcast
+          rfl
+      · cases hmode
+        by_cases hn : CompCert4Lean.Lib.Integers.Int.eq n
+            CompCert4Lean.Lib.Integers.Int.zero
+        · simp [CompCert4Lean.Common.Values.Val.load_result,
+            CompCert4Lean.Cfrontend.Cop.cast_int_int, hn] at hcast ⊢
+          cases hcast
+          rfl
+        · simp [CompCert4Lean.Common.Values.Val.load_result,
+            CompCert4Lean.Cfrontend.Cop.cast_int_int, hn] at hcast ⊢
+          cases hcast
+          rfl
+  | val_casted_float attr n =>
+      simp [CompCert4Lean.Cfrontend.Ctypes.access_mode] at hmode
+      cases hmode
+      rfl
+  | val_casted_single attr n =>
+      simp [CompCert4Lean.Cfrontend.Ctypes.access_mode] at hmode
+      cases hmode
+      rfl
+  | val_casted_long si attr n =>
+      simp [CompCert4Lean.Cfrontend.Ctypes.access_mode] at hmode
+      cases hmode
+      rfl
+  | val_casted_ptr_ptr b ofs ty attr =>
+      simp [CompCert4Lean.Cfrontend.Ctypes.access_mode,
+        CompCert4Lean.Common.AST.Mptr,
+        CompCert4Lean.X86_64.Archi.ptr64] at hmode
+      cases hmode
+      simp [CompCert4Lean.Common.Values.Val.load_result,
+        CompCert4Lean.X86_64.Archi.ptr64]
+  | val_casted_int_ptr n ty attr hptr64 =>
+      simp [CompCert4Lean.Cfrontend.Ctypes.access_mode,
+        CompCert4Lean.Common.AST.Mptr, hptr64] at hmode
+      cases hmode
+      rfl
+  | val_casted_ptr_int b ofs si attr hptr64 =>
+      simp [CompCert4Lean.X86_64.Archi.ptr64] at hptr64
+  | val_casted_long_ptr n ty attr hptr64 =>
+      simp [CompCert4Lean.Cfrontend.Ctypes.access_mode,
+        CompCert4Lean.Common.AST.Mptr, hptr64] at hmode
+      cases hmode
+      rfl
+  | val_casted_ptr_long b ofs si attr hptr64 =>
+      simp [CompCert4Lean.Cfrontend.Ctypes.access_mode, hptr64] at hmode
+      cases hmode
+      rfl
+  | val_casted_struct id attr b ofs =>
+      cases hmode
+  | val_casted_union id attr b ofs =>
+      cases hmode
+  | val_casted_void v =>
+      cases hmode
+
+end CompCert4Lean.Cfrontend.SimplLocalsproof

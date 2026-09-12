@@ -1095,3 +1095,210 @@ theorem seen_public_initial_workset : seen_public_initial_worksetStatement := by
     { w_seen := CompCert4Lean.Backend.Unusedglob.IS.empty, w_todo := [] } hid
 
 end CompCert4Lean.Backend.Unusedglobproof
+
+namespace CompCert4Lean.Backend.Unusedglobproof
+
+open CompCert4Lean.Backend.Unusedglob
+open CompCert4Lean.Common.AST
+
+theorem used_globals_incl : used_globals_inclStatement := by
+  intro p u h
+  unfold CompCert4Lean.Backend.Unusedglob.used_globals at h
+  have hprop := CompCert4Lean.Lib.Iteration.PrimIter.iterate_prop
+    workset IS.t
+    (CompCert4Lean.Backend.Unusedglob.iter_step
+      (CompCert4Lean.Common.AST.prog_defmap p))
+    (fun w => IS.Subset (initial_workset p).w_seen w.w_seen)
+    (fun u => IS.Subset (initial_workset p).w_seen u)
+    (by
+      intro w hw
+      cases hstep : CompCert4Lean.Backend.Unusedglob.iter_step
+          (CompCert4Lean.Common.AST.prog_defmap p) w with
+      | inl u =>
+          simp only
+          unfold CompCert4Lean.Backend.Unusedglob.iter_step at hstep
+          cases htodo : w.w_todo with
+          | nil =>
+              simp [htodo] at hstep
+              cases hstep
+              exact hw
+          | cons id rem =>
+              simp [htodo] at hstep
+      | inr w' =>
+          simp only
+          unfold CompCert4Lean.Backend.Unusedglob.iter_step at hstep
+          cases htodo : w.w_todo with
+          | nil =>
+              simp [htodo] at hstep
+          | cons id rem =>
+              simp only [htodo] at hstep
+              injection hstep with hw'
+              subst w'
+              intro x hx
+              exact seen_workset_incl
+                { w_seen := w.w_seen, w_todo := rem }
+                (CompCert4Lean.Backend.Unusedglob.add_ref_definition
+                  (CompCert4Lean.Common.AST.prog_defmap p) id
+                  { w_seen := w.w_seen, w_todo := rem })
+                x
+                (add_ref_definition_incl
+                  (CompCert4Lean.Common.AST.prog_defmap p) id
+                  { w_seen := w.w_seen, w_todo := rem })
+                (hw x hx))
+  unfold CompCert4Lean.Lib.Iteration.PrimIter.iterate_propStatement at hprop
+  exact hprop (initial_workset p) u h (by
+    intro id hid
+    exact hid)
+
+end CompCert4Lean.Backend.Unusedglobproof
+
+namespace CompCert4Lean.Backend.Unusedglobproof
+
+open CompCert4Lean.Backend.Unusedglob
+
+theorem filter_globdefs_accu : filter_globdefs_accuStatement := by
+  intro defs
+  induction defs with
+  | nil =>
+      intro accu1 accu2 u
+      rfl
+  | cons idg rest ih =>
+      intro accu1 accu2 u
+      cases idg with
+      | mk id gd =>
+          unfold CompCert4Lean.Backend.Unusedglob.filter_globdefs
+          split
+          · simpa [List.cons_append] using
+              ih ((id, gd) :: accu1) accu2
+                (CompCert4Lean.Backend.Unusedglob.IS.remove id u)
+          · simpa [List.cons_append] using ih accu1 accu2 u
+
+theorem filter_globdefs_nil : filter_globdefs_nilStatement := by
+  intro u accu defs
+  simpa using (filter_globdefs_accu defs [] accu u)
+
+end CompCert4Lean.Backend.Unusedglobproof
+
+namespace CompCert4Lean.Backend.Unusedglobproof
+
+open CompCert4Lean.Backend.Unusedglob
+open CompCert4Lean.Common.AST
+
+theorem used_globals_valid : used_globals_validStatement := by
+  intro p u h hdef
+  have hsound : used_set_closed p u := by
+    unfold CompCert4Lean.Backend.Unusedglob.used_globals at h
+    have hprop := CompCert4Lean.Lib.Iteration.PrimIter.iterate_prop
+      workset IS.t
+      (CompCert4Lean.Backend.Unusedglob.iter_step
+        (CompCert4Lean.Common.AST.prog_defmap p))
+      (fun w => workset_invariant p w)
+      (fun u => used_set_closed p u)
+      (by
+        intro w hw
+        cases hstep : CompCert4Lean.Backend.Unusedglob.iter_step
+            (CompCert4Lean.Common.AST.prog_defmap p) w with
+        | inl u' =>
+            simp only
+            unfold CompCert4Lean.Backend.Unusedglob.iter_step at hstep
+            cases htodo : w.w_todo with
+            | nil =>
+                simp [htodo] at hstep
+                cases hstep
+                unfold used_set_closed
+                intro id gd id' hseen hget href
+                apply hw id gd id' hseen
+                · rw [htodo]
+                  exact List.not_mem_nil
+                · exact hget
+                · exact href
+            | cons id rem =>
+                simp [htodo] at hstep
+        | inr w' =>
+            simp only
+            unfold CompCert4Lean.Backend.Unusedglob.iter_step at hstep
+            cases htodo : w.w_todo with
+            | nil =>
+                simp [htodo] at hstep
+            | cons id rem =>
+                simp only [htodo] at hstep
+                injection hstep with hw'
+                subst w'
+                unfold workset_invariant at hw ⊢
+                intro id0 gd id' hseen hnot_todo hget href
+                have hwi := add_ref_definition_incl
+                  (CompCert4Lean.Common.AST.prog_defmap p) id
+                  { w_seen := w.w_seen, w_todo := rem }
+                cases hwi with
+                | workset_incl_intro seen todo track =>
+                    by_cases heq : id = id0
+                    · subst id0
+                      exact seen_add_ref_definition
+                        (CompCert4Lean.Common.AST.prog_defmap p) id gd id'
+                        { w_seen := w.w_seen, w_todo := rem } hget href
+                    · have htrack := track id0 hseen
+                      rcases htrack with hbase | hnew
+                      · have hnot_rem : ¬ id0 ∈ rem := by
+                          intro hrem
+                          exact hnot_todo (todo id0 hrem)
+                        have hnot_orig : ¬ id0 ∈ w.w_todo := by
+                          intro horig
+                          have horig'' : id0 ∈ id :: rem := by
+                            simpa [htodo] using horig
+                          have horig' : id0 = id ∨ id0 ∈ rem :=
+                            List.mem_cons.mp horig''
+                          rcases horig' with horig | horig
+                          · exact heq horig.symm
+                          · exact hnot_rem horig
+                        have hout := hw id0 gd id' hbase hnot_orig hget href
+                        exact seen_workset_incl
+                          { w_seen := w.w_seen, w_todo := rem }
+                          (CompCert4Lean.Backend.Unusedglob.add_ref_definition
+                            (CompCert4Lean.Common.AST.prog_defmap p) id
+                            { w_seen := w.w_seen, w_todo := rem })
+                          id' (workset_incl_intro seen todo track) hout
+                      · exact False.elim (hnot_todo hnew))
+    unfold CompCert4Lean.Lib.Iteration.PrimIter.iterate_propStatement at hprop
+    exact hprop (initial_workset p) u h (by
+      unfold workset_invariant
+      intro id gd id' hseen hnot_todo hget href
+      have hwi := initial_workset_incl p
+      cases hwi with
+      | workset_incl_intro seen todo track =>
+          rcases track id hseen with hempty | htodo
+          · exact False.elim
+              (CompCert4Lean.Backend.Unusedglob.IS.empty_1_proof id hempty)
+          · exact False.elim (hnot_todo htodo))
+  have hincl := used_globals_incl p u h
+  constructor
+  · exact hsound
+  · exact hincl p.prog_main (seen_main_initial_workset p)
+  · intro id hid
+    exact hincl id (seen_public_initial_workset p id hid)
+  · intro id hid
+    have hall := (ISF.for_all_iff_proof u (global_defined p
+      (CompCert4Lean.Common.AST.prog_defmap p)) (by
+        intro x y hxy
+        change x = y at hxy
+        subst y
+        rfl))
+    have hpred := hall.mpr hdef
+    have hdefined := hpred id hid
+    unfold CompCert4Lean.Backend.Unusedglob.global_defined at hdefined
+    cases hget : CompCert4Lean.Lib.Maps.PTree.get id
+        (CompCert4Lean.Common.AST.prog_defmap p) with
+    | none =>
+        simp [hget] at hdefined
+        cases hEq : CompCert4Lean.Common.AST.ident_eq id p.prog_main with
+        | left heq =>
+            simp [hEq] at hdefined
+            exact Or.inr heq
+        | right hne =>
+            simp [hEq] at hdefined
+    | some gd =>
+        left
+        have hmem := CompCert4Lean.Common.AST.in_prog_defmap
+          (CompCert4Lean.Backend.RTL.fundef) Unit p id gd hget
+        exact List.mem_map.mpr ⟨(id, gd), hmem, rfl⟩
+
+end CompCert4Lean.Backend.Unusedglobproof

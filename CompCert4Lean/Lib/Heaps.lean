@@ -1554,3 +1554,81 @@ theorem findMin_min : ∀ (E : OrderedType), findMin_minStatement E := by
               (Or.inr (gt_heap_In E z y b hbst.2.2.2 hin))
 
 end CompCert4Lean.Lib.Heaps.SplayHeapSet.R
+
+namespace CompCert4Lean.Lib.Heaps.SplayHeapSet.R
+
+theorem findMin_empty (E : OrderedType) : findMin_emptyStatement E := by
+  intro h hne
+  induction h with
+  | Empty => exact False.elim (hne rfl)
+  | Node a x b ih =>
+      cases a with
+      | Empty => simp [findMin]
+      | Node a1 x1 b1 =>
+          apply ih
+          intro heq
+          apply hne
+          cases heq
+
+end CompCert4Lean.Lib.Heaps.SplayHeapSet.R
+
+namespace CompCert4Lean.Lib.Heaps.SplayHeapSet.R
+
+theorem deleteMax_gt (E : OrderedType) : deleteMax_gtStatement E := by
+  intro x h hgt
+  exact deleteMaxGtProof E x h hgt
+
+theorem deleteMax_bst (E : OrderedType) : deleteMax_bstStatement E := by
+  intro h hbst
+  exact deleteMaxBstProof E h hbst
+
+end CompCert4Lean.Lib.Heaps.SplayHeapSet.R
+
+namespace CompCert4Lean.Lib.Heaps.SplayHeapSet.R
+
+private def inDeleteMaxSize {E : OrderedType} : heap E → Nat
+  | .Empty => 0
+  | .Node l _ r => inDeleteMaxSize l + inDeleteMaxSize r + 1
+
+private theorem inDeleteMaxAux (E : OrderedType) (y x : E.t) :
+    ∀ n (h : heap E), inDeleteMaxSize h ≤ n →
+      findMax E h = some x →
+        (In E y h ↔ E.eq y x ∨ In E y (deleteMax E h)) := by
+  intro n
+  induction n with
+  | zero =>
+      intro h hs hfind
+      cases h with
+      | Empty => simp [findMax] at hfind
+      | Node l z r => simp [inDeleteMaxSize] at hs
+  | succ n ih =>
+      intro h hs hfind
+      cases h with
+      | Empty => simp [findMax] at hfind
+      | Node l z r =>
+          cases r with
+          | Empty =>
+              have hx : z = x := by simpa [findMax] using hfind
+              subst x
+              simp [In, deleteMax, or_assoc, or_left_comm, or_comm]
+          | Node b y1 c =>
+              cases c with
+              | Empty =>
+                  have hx : y1 = x := by simpa [findMax] using hfind
+                  subst x
+                  simp [In, deleteMax, or_assoc, or_left_comm, or_comm]
+              | Node a0 x0 b0 =>
+                  have hfind0 : findMax E (.Node a0 x0 b0) = some x := by
+                    simpa [findMax] using hfind
+                  have hrec := ih (.Node a0 x0 b0)
+                    (by simp [inDeleteMaxSize] at hs ⊢; omega) hfind0
+                  have htop := or_congr (Iff.rfl :
+                    (In E y l ∨ E.eq y z ∨ In E y b ∨ E.eq y y1) ↔
+                      (In E y l ∨ E.eq y z ∨ In E y b ∨ E.eq y y1)) hrec
+                  simpa [In, deleteMax, or_assoc, or_left_comm, or_comm] using htop
+
+theorem In_deleteMax (E : OrderedType) : In_deleteMaxStatement E := by
+  intro y x h hfind
+  exact inDeleteMaxAux E y x (inDeleteMaxSize h) h (Nat.le_refl _) hfind
+
+end CompCert4Lean.Lib.Heaps.SplayHeapSet.R

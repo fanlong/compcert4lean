@@ -1366,3 +1366,45 @@ theorem PArith.BinPos.Pos.compare_refl :
 
 end Rocq.Coq
 end CompCert4Lean.Foundation.Numbers
+
+namespace CompCert4Lean.Foundation.Numbers
+namespace Rocq.Coq
+
+theorem PArith.BinPos.Pos.leb_refl :
+    PArith.BinPos.Pos.leb_reflStatement := by
+  intro x
+  unfold PArith.BinPos.Pos.leb
+  simp
+
+theorem PArith.BinPos.Pos.lt_irrefl :
+    PArith.BinPos.Pos.lt_irreflStatement := by
+  intro x h
+  exact Nat.lt_irrefl _ h
+
+theorem PArith.BinPos.Pos.pred_double_succ :
+    PArith.BinPos.Pos.pred_double_succStatement := by
+  intro p
+  induction p with
+  | xH => rfl
+  | xI q ih => simp [PArith.BinPos.Pos.succ, PArith.BinPos.Pos.pred_double, ih]
+  | xO q ih => rfl
+
+theorem PArith.BinPos.Pos.compare_gt_iff :
+    PArith.BinPos.Pos.compare_gt_iffStatement := by
+  intro x y
+  unfold PArith.BinPos.Pos.compare PArith.BinPos.Pos.lt
+  change (if posToNat x < posToNat y then (Lt : comparison)
+    else if posToNat x = posToNat y then (Eq : comparison)
+    else (Gt : comparison)) = (Gt : comparison) ↔
+      posToNat y < posToNat x
+  by_cases hxy : posToNat x < posToNat y
+  · have hnot : ¬ posToNat y < posToNat x :=
+      Nat.not_lt_of_ge (Nat.le_of_lt hxy)
+    simp [hxy, hnot]
+  · by_cases heq : posToNat x = posToNat y
+    · simp [hxy, heq]
+    · have hyx : posToNat y < posToNat x := by omega
+      simp [hxy, heq, hyx]
+
+end Rocq.Coq
+end CompCert4Lean.Foundation.Numbers

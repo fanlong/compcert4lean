@@ -1787,3 +1787,13 @@ theorem tr_moves_init_regs
               simp at hcase
 
 end CompCert4Lean.Backend.Inliningproof
+
+namespace CompCert4Lean.Backend.Inliningproof
+
+open CompCert4Lean.Common.Memory
+
+theorem range_private_perms : range_private_permsStatement := by
+  intro F m m' sp lo hi h ofs hof
+  exact (h ofs hof).1
+
+end CompCert4Lean.Backend.Inliningproof

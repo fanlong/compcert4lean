@@ -1218,3 +1218,138 @@ theorem init_regs_lessdef : init_regs_lessdefStatement := by
                     hv (ih vs vs' htail)
 
 end CompCert4Lean.Backend.Constpropproof
+
+namespace CompCert4Lean.Backend.Constpropproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Backend.Constprop
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Backend.ValueAnalysis
+open CompCert4Lean.Backend.ValueDomain
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Values
+
+variable
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+
+private theorem transf_ros_lessdef_eq_of_find
+    (p : program) (fd : fundef) (v v' : val)
+    (hfind : Genv.find_funct (Genv.globalenv p) v = some fd)
+    (hld : Val.lessdef v v') : v = v' := by
+  cases hld with
+  | lessdef_refl v => rfl
+  | lessdef_undef v => simp [Genv.find_funct] at hfind
+
+open CompCert4Lean.Lib.Integers
+
+theorem transf_ros_correct : ∀ cfg, transf_ros_correctStatement cfg := by
+  intro cfg prog tprog hm bc rs ae ros f rs' hgenv hmatch hfind hregs
+  cases ros with
+  | inr id =>
+      simp [CompCert4Lean.Backend.Constprop.transf_ros,
+        CompCert4Lean.Backend.RTL.find_function] at hfind ⊢
+      rw [symbols_preserved cfg prog tprog hm id]
+      cases hs : Genv.find_symbol (Genv.globalenv prog) id with
+      | none => simp [hs] at hfind
+      | some b =>
+          simp [hs] at hfind ⊢
+          exact function_ptr_translated cfg prog tprog hm b f hfind
+  | inl r =>
+      have hfind' : Genv.find_funct (Genv.globalenv prog) (Regmap.get r rs) = some f := by
+        simpa [CompCert4Lean.Backend.RTL.find_function] using hfind
+      have hreg : Regmap.get r rs = Regmap.get r rs' :=
+        transf_ros_lessdef_eq_of_find prog f (Regmap.get r rs) (Regmap.get r rs')
+          hfind' (hregs r)
+      have hdefault := functions_translated cfg prog tprog hm (Regmap.get r rs) f hfind'
+      have hvm := hmatch r
+      change vmatch bc (Regmap.get r rs) (areg ae r) at hvm
+      cases ha : areg ae r with
+      | Vbot =>
+          simpa [CompCert4Lean.Backend.Constprop.transf_ros, ha, hreg,
+            CompCert4Lean.Backend.RTL.find_function] using hdefault
+      | I n =>
+          simpa [CompCert4Lean.Backend.Constprop.transf_ros, ha, hreg,
+            CompCert4Lean.Backend.RTL.find_function] using hdefault
+      | IU n =>
+          simpa [CompCert4Lean.Backend.Constprop.transf_ros, ha, hreg,
+            CompCert4Lean.Backend.RTL.find_function] using hdefault
+      | Uns p n =>
+          simpa [CompCert4Lean.Backend.Constprop.transf_ros, ha, hreg,
+            CompCert4Lean.Backend.RTL.find_function] using hdefault
+      | Sgn p n =>
+          simpa [CompCert4Lean.Backend.Constprop.transf_ros, ha, hreg,
+            CompCert4Lean.Backend.RTL.find_function] using hdefault
+      | L n =>
+          simpa [CompCert4Lean.Backend.Constprop.transf_ros, ha, hreg,
+            CompCert4Lean.Backend.RTL.find_function] using hdefault
+      | F n =>
+          simpa [CompCert4Lean.Backend.Constprop.transf_ros, ha, hreg,
+            CompCert4Lean.Backend.RTL.find_function] using hdefault
+      | FS n =>
+          simpa [CompCert4Lean.Backend.Constprop.transf_ros, ha, hreg,
+            CompCert4Lean.Backend.RTL.find_function] using hdefault
+      | Num p =>
+          simpa [CompCert4Lean.Backend.Constprop.transf_ros, ha, hreg,
+            CompCert4Lean.Backend.RTL.find_function] using hdefault
+      | Ifptr p =>
+          simpa [CompCert4Lean.Backend.Constprop.transf_ros, ha, hreg,
+            CompCert4Lean.Backend.RTL.find_function] using hdefault
+      | Ptr p =>
+          cases p with
+          | Pbot => simpa [CompCert4Lean.Backend.Constprop.transf_ros, ha, hreg,
+              CompCert4Lean.Backend.RTL.find_function] using hdefault
+          | Glo id' => simpa [CompCert4Lean.Backend.Constprop.transf_ros, ha, hreg,
+              CompCert4Lean.Backend.RTL.find_function] using hdefault
+          | Glob => simpa [CompCert4Lean.Backend.Constprop.transf_ros, ha, hreg,
+              CompCert4Lean.Backend.RTL.find_function] using hdefault
+          | Stk ofs' => simpa [CompCert4Lean.Backend.Constprop.transf_ros, ha, hreg,
+              CompCert4Lean.Backend.RTL.find_function] using hdefault
+          | Stack => simpa [CompCert4Lean.Backend.Constprop.transf_ros, ha, hreg,
+              CompCert4Lean.Backend.RTL.find_function] using hdefault
+          | Nonstack => simpa [CompCert4Lean.Backend.Constprop.transf_ros, ha, hreg,
+              CompCert4Lean.Backend.RTL.find_function] using hdefault
+          | Ptop => simpa [CompCert4Lean.Backend.Constprop.transf_ros, ha, hreg,
+              CompCert4Lean.Backend.RTL.find_function] using hdefault
+          | Gl id ofs =>
+              cases hzero : Ptrofs.eq ofs Ptrofs.zero with
+              | false =>
+                  simpa [CompCert4Lean.Backend.Constprop.transf_ros, ha, hzero, hreg,
+                    CompCert4Lean.Backend.RTL.find_function] using hdefault
+              | true =>
+                  have hvm' : vmatch bc (Regmap.get r rs) (Ptr (Gl id ofs)) := by
+                    rw [← ha]
+                    exact hvm
+                  generalize hv : Regmap.get r rs = vv at hvm' hfind'
+                  cases hvm' with
+                  | ptr b ofs' p hpm =>
+                      cases hpm with
+                      | gl hbc =>
+                          have hsym := hgenv.1 id b
+                          have hfindsym : Genv.find_symbol (Genv.globalenv prog) id = some b :=
+                            hsym.mpr (by assumption)
+                          have hfindptr : Genv.find_funct_ptr (Genv.globalenv prog) b = some f := by
+                            unfold Genv.find_funct at hfind'
+                            simp [hzero] at hfind'
+                            exact hfind'
+                          rcases function_ptr_translated cfg prog tprog hm b f hfindptr with
+                            ⟨cu, hfindptr', hlink⟩
+                          refine ⟨cu, ?_, hlink⟩
+                          have hros :
+                              CompCert4Lean.Backend.Constprop.transf_ros ae (Sum.inl r) =
+                                Sum.inr id := by
+                            simp [CompCert4Lean.Backend.Constprop.transf_ros, ha, hzero]
+                          rw [hros]
+                          change (match Genv.find_symbol (Genv.globalenv tprog) id with
+                            | none => none
+                            | some b => Genv.find_funct_ptr (Genv.globalenv tprog) b) =
+                            some (CompCert4Lean.Backend.Constprop.transf_fundef cfg
+                              (CompCert4Lean.Backend.ValueAnalysis.romem_for cfg cu) f)
+                          rw [symbols_preserved cfg prog tprog hm id, hfindsym]
+                          exact hfindptr'
+                  | ptrUndef p =>
+                      simp [Genv.find_funct] at hfind'
+
+end CompCert4Lean.Backend.Constpropproof

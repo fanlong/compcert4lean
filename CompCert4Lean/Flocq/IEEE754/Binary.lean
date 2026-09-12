@@ -847,3 +847,20 @@ theorem fexp_correct_certificate_proof :
     (BinarySingleNaN.emin0 prec emax) prec (h := prec_gt_0)
 
 end CompCert4Lean.Flocq.IEEE754.Binary
+
+namespace CompCert4Lean.Flocq.IEEE754.Binary
+
+theorem B2SF_B2BSN :
+    ∀ {prec emax : Z}, B2SF_B2BSNStatement (prec := prec) (emax := emax) := by
+  intro prec emax x
+  rcases x with ⟨x, hx⟩
+  cases x <;> rfl
+
+theorem B2R_B2BSN :
+    ∀ {prec emax : Z} (ctx : ExactRealContext),
+      B2R_B2BSNStatement (prec := prec) (emax := emax) ctx := by
+  intro prec emax ctx x
+  rcases x with ⟨x, hx⟩
+  cases x <;> rfl
+
+end CompCert4Lean.Flocq.IEEE754.Binary

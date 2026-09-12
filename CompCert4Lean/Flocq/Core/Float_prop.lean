@@ -892,3 +892,33 @@ theorem ge_0_F2R : ∀ (ctx : ExactRealContext), ge_0_F2RStatement ctx := by
   exact h
 
 end CompCert4Lean.Flocq.Core.Float_prop
+
+namespace CompCert4Lean.Flocq.Core.Float_prop
+
+theorem le_0_F2R : ∀ (ctx : ExactRealContext), le_0_F2RStatement ctx := by
+  intro ctx beta m e h
+  apply le_F2R ctx beta e m Z0
+  rw [F2R_0 ctx beta e]
+  exact h
+
+theorem gt_0_F2R : ∀ (ctx : ExactRealContext), gt_0_F2RStatement ctx := by
+  intro ctx beta m e h
+  apply lt_F2R ctx beta e Z0 m
+  rw [F2R_0 ctx beta e]
+  exact h
+
+theorem lt_0_F2R : ∀ (ctx : ExactRealContext), lt_0_F2RStatement ctx := by
+  intro ctx beta m e h
+  apply lt_F2R ctx beta e m Z0
+  rw [F2R_0 ctx beta e]
+  exact h
+
+theorem F2R_ge_0 : ∀ (ctx : ExactRealContext), F2R_ge_0Statement ctx := by
+  intro ctx beta f hf
+  cases f with
+  | Float m e =>
+      rw [← F2R_0 ctx beta e]
+      apply F2R_le ctx beta Z0 m e
+      exact hf
+
+end CompCert4Lean.Flocq.Core.Float_prop

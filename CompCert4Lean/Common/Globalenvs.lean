@@ -1617,3 +1617,19 @@ theorem find_funct_ptr_inversion : find_funct_ptr_inversionStatement := by
 
 end Genv
 end CompCert4Lean.Common.Globalenvs
+
+namespace CompCert4Lean.Common.Globalenvs
+namespace Genv
+
+theorem find_funct_inversion : find_funct_inversionStatement := by
+  intro F V p v f hfind
+  rcases find_funct_inv (F := F) (V := V) (ge := globalenv p) (v := v) (f := f) hfind with
+    ⟨b, hv⟩
+  subst v
+  have hptr : find_funct_ptr (globalenv p) b = some f := by
+    exact (find_funct_find_funct_ptr (F := F) (V := V) (ge := globalenv p) (b := b)).symm.trans hfind
+  apply find_funct_ptr_inversion (F := F) (V := V) (p := p) (b := b) (f := f)
+  exact hptr
+
+end Genv
+end CompCert4Lean.Common.Globalenvs

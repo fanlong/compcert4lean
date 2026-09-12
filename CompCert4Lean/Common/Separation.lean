@@ -1133,3 +1133,99 @@ theorem range_drop_left : range_drop_leftStatement := by
   exact hs.2.1
 
 end CompCert4Lean.Common.Separation
+
+namespace CompCert4Lean.Common.Separation
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Integers
+
+theorem range_drop_right : range_drop_rightStatement := by
+  intro b lo hi P mid m hmid h
+  exact sep_drop2 (range b lo mid) (range b mid hi) P m
+    (range_split b lo hi P mid m hmid h)
+
+theorem range_preserved : range_preservedStatement := by
+  intro m m' b lo hi hpred hperm
+  refine ⟨hpred.1, hpred.2.1, ?_⟩
+  intro i k p hi'
+  exact hperm i k p hi' (hpred.2.2 i k p hi')
+
+theorem contains_obligation_2 : contains_obligation_2Statement := by
+  intro chunk b ofs spec m b' ofs' hpred hfoot
+  exact (contains chunk b ofs spec).m_valid m b' ofs' hpred hfoot
+
+private theorem scc085_div_eq (a b : Z) :
+    ZArith.BinInt.Z.div a b =
+      zOfInt (if intOfZ b = 0 then 0 else if 0 < intOfZ b then
+        Int.ediv (intOfZ a) (intOfZ b)
+      else
+        let d := -intOfZ b
+        let q := Int.ediv (intOfZ a) d
+        let r := Int.emod (intOfZ a) d
+        if r = 0 then -q else -(q + 1)) := by
+  rfl
+
+private theorem scc085_align_le (x y : Z)
+    (hy : ZArith.BinInt.Z.lt ZArith.BinInt.Z.Z0 y) :
+    ZArith.BinInt.Z.le x (align x y) := by
+  unfold ZArith.BinInt.Z.le align ZArith.BinInt.Z.mul
+  rw [scc085_div_eq]
+  simp only [intOfZ_zOfInt]
+  unfold ZArith.BinInt.Z.sub ZArith.BinInt.Z.add
+  simp only [intOfZ_zOfInt]
+  have hyInt : 0 < intOfZ y := hy
+  have hyNe : intOfZ y ≠ 0 := by omega
+  rw [if_neg hyNe, if_pos hyInt]
+  have h1 : intOfZ (Zpos xH) = 1 := by rfl
+  rw [h1]
+  change intOfZ x ≤ ((intOfZ x + intOfZ y - 1) / intOfZ y) * intOfZ y
+  have hrem := Int.ediv_mul_add_emod (intOfZ x + intOfZ y - 1) (intOfZ y)
+  have hnonneg := Int.emod_nonneg (intOfZ x + intOfZ y - 1) hyNe
+  have hlt := Int.emod_lt_of_pos (intOfZ x + intOfZ y - 1) hyInt
+  omega
+
+private theorem scc085_range_drop_right_no_lo :
+    ∀ b lo hi P mid m,
+      ZArith.BinInt.Z.le mid hi →
+      (sepconj (range b lo hi) P).m_pred m →
+      (sepconj (range b lo mid) P).m_pred m := by
+  intro b lo hi P mid m hmid h
+  refine ⟨?_, h.2.1, ?_⟩
+  · change ZArith.BinInt.Z.le ZArith.BinInt.Z.Z0 lo ∧
+      ZArith.BinInt.Z.le mid Ptrofs.modulus ∧
+      (∀ i k p, ZArith.BinInt.Z.le lo i ∧
+        ZArith.BinInt.Z.lt i mid → Mem.perm m b i k p)
+    refine ⟨h.1.1, ?_, ?_⟩
+    · have hhi := h.1.2.1
+      change intOfZ mid ≤ intOfZ hi at hmid
+      change intOfZ hi ≤ intOfZ Ptrofs.modulus at hhi
+      change intOfZ mid ≤ intOfZ Ptrofs.modulus
+      omega
+    · intro i k p hi'
+      apply h.1.2.2 i k p
+      refine ⟨hi'.1, ?_⟩
+      change intOfZ mid ≤ intOfZ hi at hmid
+      change intOfZ lo ≤ intOfZ i ∧ intOfZ i < intOfZ mid at hi'
+      change intOfZ i < intOfZ hi
+      omega
+  · intro b' ofs hR hP
+    rcases hR with ⟨hb, hlo, hlt⟩
+    apply h.2.2 b' ofs
+    · refine ⟨hb, hlo, ?_⟩
+      change intOfZ mid ≤ intOfZ hi at hmid
+      change intOfZ ofs < intOfZ mid at hlt
+      change intOfZ ofs < intOfZ hi
+      omega
+    · exact hP
+
+theorem range_split_2 : range_split_2Statement := by
+  intro b lo hi P mid al m hmid hal h
+  have hmidAlign : ZArith.BinInt.Z.le mid (align mid al) :=
+    scc085_align_le mid al hal
+  exact scc085_range_drop_right_no_lo b lo (align mid al)
+    (sepconj (range b (align mid al) hi) P) mid m hmidAlign
+    (range_split b lo hi P (align mid al) m hmid h)
+
+end CompCert4Lean.Common.Separation

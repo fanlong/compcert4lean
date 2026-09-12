@@ -1695,3 +1695,98 @@ theorem Rmult_le_pos (ctx : ExactRealContext) :
 end RIneq
 end Rocq.Coq.Reals
 end CompCert4Lean.Foundation.FlocqReal
+
+namespace CompCert4Lean.Foundation.FlocqReal
+namespace Rocq.Coq.Reals
+namespace RIneq
+
+theorem Rle_0_sqr (ctx : ExactRealContext) :
+    Rle_0_sqrStatement ctx := by
+  intro r
+  change ctx.spec.le (ctx.spec.ofZ Z0) (ctx.spec.mul r r)
+  have neg_mul_right (x y : ctx.spec.carrier) :
+      ctx.spec.mul x (ctx.spec.neg y) = ctx.spec.neg (ctx.spec.mul x y) := by
+    have hcancel :
+        ctx.spec.add (ctx.spec.mul x (ctx.spec.neg y))
+            (ctx.spec.mul x y) = ctx.spec.zero := by
+      rw [← ctx.certificate.orderedField.left_distrib,
+        ctx.certificate.orderedField.neg_add_cancel,
+        ctx.certificate.orderedField.mul_zero]
+    symm
+    calc
+      ctx.spec.neg (ctx.spec.mul x y) =
+          ctx.spec.add (ctx.spec.neg (ctx.spec.mul x y)) ctx.spec.zero :=
+        (ctx.certificate.orderedField.add_zero _).symm
+      _ = ctx.spec.add (ctx.spec.neg (ctx.spec.mul x y))
+          (ctx.spec.add (ctx.spec.mul x (ctx.spec.neg y)) (ctx.spec.mul x y)) := by
+        rw [hcancel]
+      _ = ctx.spec.add (ctx.spec.neg (ctx.spec.mul x y))
+          (ctx.spec.add (ctx.spec.mul x y) (ctx.spec.mul x (ctx.spec.neg y))) := by
+        rw [ctx.certificate.orderedField.add_comm
+          (ctx.spec.mul x (ctx.spec.neg y)) (ctx.spec.mul x y)]
+      _ = ctx.spec.add
+          (ctx.spec.add (ctx.spec.neg (ctx.spec.mul x y)) (ctx.spec.mul x y))
+          (ctx.spec.mul x (ctx.spec.neg y)) := by
+        rw [ctx.certificate.orderedField.add_assoc]
+      _ = ctx.spec.add ctx.spec.zero (ctx.spec.mul x (ctx.spec.neg y)) := by
+        rw [ctx.certificate.orderedField.neg_add_cancel]
+      _ = ctx.spec.mul x (ctx.spec.neg y) :=
+        ctx.certificate.orderedField.zero_add _
+  have neg_neg (x : ctx.spec.carrier) :
+      ctx.spec.neg (ctx.spec.neg x) = x := by
+    calc
+      ctx.spec.neg (ctx.spec.neg x) =
+          ctx.spec.add (ctx.spec.neg (ctx.spec.neg x)) ctx.spec.zero :=
+        (ctx.certificate.orderedField.add_zero _).symm
+      _ = ctx.spec.add (ctx.spec.neg (ctx.spec.neg x))
+          (ctx.spec.add (ctx.spec.neg x) x) := by
+        rw [ctx.certificate.orderedField.neg_add_cancel]
+      _ = ctx.spec.add
+          (ctx.spec.add (ctx.spec.neg (ctx.spec.neg x)) (ctx.spec.neg x)) x := by
+        rw [ctx.certificate.orderedField.add_assoc]
+      _ = ctx.spec.add ctx.spec.zero x := by
+        rw [ctx.certificate.orderedField.neg_add_cancel]
+      _ = x := ctx.certificate.orderedField.zero_add _
+  have neg_sqr (r : ctx.spec.carrier) :
+      ctx.spec.mul (ctx.spec.neg r) (ctx.spec.neg r) = ctx.spec.mul r r := by
+    calc
+      ctx.spec.mul (ctx.spec.neg r) (ctx.spec.neg r) =
+          ctx.spec.neg (ctx.spec.mul (ctx.spec.neg r) r) :=
+        neg_mul_right (ctx.spec.neg r) r
+      _ = ctx.spec.neg (ctx.spec.mul r (ctx.spec.neg r)) := by
+        rw [ctx.certificate.orderedField.mul_comm]
+      _ = ctx.spec.neg (ctx.spec.neg (ctx.spec.mul r r)) := by
+        rw [neg_mul_right]
+      _ = ctx.spec.mul r r := neg_neg _
+  rcases ctx.certificate.total_order ctx.spec.zero r with h | h
+  · rcases h with hpos | hzero
+    · have hr : ctx.spec.le ctx.spec.zero r :=
+        (ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp hpos |>.1
+      have hr0 : ctx.spec.le (ctx.spec.ofZ Z0) r := by
+        rw [ctx.certificate.sourceLaws.ofZ_zero]
+        exact hr
+      exact Rmult_le_pos ctx r r hr0 hr0
+    · subst r
+      rw [ctx.certificate.sourceLaws.ofZ_zero,
+        ctx.certificate.orderedField.zero_mul]
+      exact ctx.certificate.orderedField.le_refl _
+  · have hposneg : ctx.spec.lt ctx.spec.zero (ctx.spec.neg r) := by
+      have h' := ctx.certificate.orderedField.add_lt_compat_l
+        (ctx.spec.neg r) r ctx.spec.zero h
+      rw [ctx.certificate.orderedField.neg_add_cancel,
+        ctx.certificate.orderedField.add_zero] at h'
+      exact h'
+    have hr : ctx.spec.le ctx.spec.zero (ctx.spec.neg r) :=
+      (ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp hposneg |>.1
+    have hr0 : ctx.spec.le (ctx.spec.ofZ Z0) (ctx.spec.neg r) := by
+      rw [ctx.certificate.sourceLaws.ofZ_zero]
+      exact hr
+    have hs := Rmult_le_pos ctx (ctx.spec.neg r) (ctx.spec.neg r) hr0 hr0
+    change ctx.spec.le (ctx.spec.ofZ Z0)
+      (ctx.spec.mul (ctx.spec.neg r) (ctx.spec.neg r)) at hs
+    rw [neg_sqr] at hs
+    exact hs
+
+end RIneq
+end Rocq.Coq.Reals
+end CompCert4Lean.Foundation.FlocqReal

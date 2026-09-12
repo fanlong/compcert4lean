@@ -1319,3 +1319,29 @@ theorem inbetween_step_Mi_Mi_even :
         rw [hdiv_eq]
 
 end CompCert4Lean.Flocq.Calc.Bracket
+
+namespace CompCert4Lean.Flocq.Calc.Bracket
+
+theorem inbetween_unique :
+    ∀ (ctx : ExactRealContext), inbetween_uniqueStatement ctx := by
+  intro ctx d u x l l' h h'
+  cases h with
+  | inbetween_Exact hd =>
+      cases h' with
+      | inbetween_Exact hd' => rfl
+      | inbetween_Inexact _ hb _ =>
+          exfalso
+          rw [hd] at hb
+          exact (ctx.certificate.orderedField.lt_irrefl _ hb.1)
+  | inbetween_Inexact c hb hm =>
+      cases h' with
+      | inbetween_Exact hd' =>
+          exfalso
+          rw [hd'] at hb
+          exact (ctx.certificate.orderedField.lt_irrefl _ hb.1)
+      | inbetween_Inexact c' hb' hm' =>
+          have hc : c = c' := by simpa [hm] using hm'
+          cases hc
+          rfl
+
+end CompCert4Lean.Flocq.Calc.Bracket

@@ -2393,3 +2393,36 @@ theorem Rcompare_not_Lt (ctx : ExactRealContext) : Rcompare_not_LtStatement ctx 
   exact ((ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp hlt).2 hyx
 
 end CompCert4Lean.Flocq.Core.Raux
+
+namespace CompCert4Lean.Flocq.Core.Raux
+
+theorem Rcompare_not_Lt_inv (ctx : ExactRealContext) :
+    Rcompare_not_Lt_invStatement ctx := by
+  intro x y hcmp
+  rcases ctx.certificate.total_order x y with hxy | hyx
+  · rcases hxy with hlt | heq
+    · exact (hcmp (Rcompare_Lt ctx x y hlt)).elim
+    · subst y
+      exact ctx.certificate.orderedField.le_refl _
+  · exact (ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp hyx |>.1
+
+theorem Rcompare_Eq (ctx : ExactRealContext) :
+    Rcompare_EqStatement ctx := by
+  intro x y hxy
+  subst y
+  exact exact_Rcompare_eq_aux ctx rfl
+
+theorem Rcompare_Eq_inv (ctx : ExactRealContext) :
+    Rcompare_Eq_invStatement ctx := by
+  intro x y hcmp
+  have hspec := Rcompare_spec ctx x y
+  rw [hcmp] at hspec
+  cases hspec with
+  | Rcompare_Eq_ heq => exact heq
+
+theorem Rcompare_Gt (ctx : ExactRealContext) :
+    Rcompare_GtStatement ctx := by
+  intro x y hyx
+  exact exact_Rcompare_gt_aux ctx hyx
+
+end CompCert4Lean.Flocq.Core.Raux

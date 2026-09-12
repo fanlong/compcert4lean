@@ -1314,3 +1314,34 @@ theorem function_bounds_used_callee_save_norepet_proof :
   exact RegSet.elements_3w_proof (record_regs_of_function cfg f)
 
 end CompCert4Lean.Backend.Bounds
+
+namespace CompCert4Lean.Backend.Bounds
+
+theorem function_bounds_used_callee_save_prop_proof :
+    ∀ (cfg : CompCert4Lean.Config.CompilerConfig) (f : CompCert4Lean.Backend.Linear.function),
+      used_callee_save_prop cfg (function_bounds cfg f) := by
+  intro cfg f
+  unfold used_callee_save_prop function_bounds
+  intro r hr
+  have hlisted :
+      CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.SetoidList.InA
+        RegSet.EOrder.eq r (RegSet.elements (record_regs_of_function cfg f)) := by
+    exact (CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.SetoidList.InA_alt
+      RegSet.EOrder.eq r (RegSet.elements (record_regs_of_function cfg f))).mpr
+      ⟨r, rfl, hr⟩
+  have hmem : RegSet.In r (record_regs_of_function cfg f) :=
+    RegSet.elements_2_proof (record_regs_of_function cfg f) r hlisted
+  exact (record_regs_of_function_only cfg f) r hmem
+
+theorem function_is_within_bounds :
+    function_is_within_boundsStatement := by
+  intro cfg f i hi
+  exact instr_is_within_bounds cfg f i hi
+
+theorem size_callee_save_area_incr :
+    size_callee_save_area_incrStatement := by
+  intro cfg b ofs
+  unfold size_callee_save_area
+  exact size_callee_save_area_rec_incr b.used_callee_save ofs
+
+end CompCert4Lean.Backend.Bounds

@@ -2980,3 +2980,99 @@ theorem beq_correct_proof : beq_correctStatement := by
 end PTree
 
 end CompCert4Lean.Lib.Maps
+
+namespace CompCert4Lean.Lib.Maps
+
+namespace PTree
+
+theorem gmap' : gmap'Statement := by
+  intro A B f i j m
+  induction i generalizing j m with
+  | xH =>
+      cases m <;> rfl
+  | xO i ih =>
+      cases m with
+      | Node001 r => rfl
+      | Node010 x => rfl
+      | Node011 x r => rfl
+      | Node100 l =>
+          simpa [map', get', prev_append] using ih (.xO j) l
+      | Node101 l r =>
+          simpa [map', get', prev_append] using ih (.xO j) l
+      | Node110 l x =>
+          simpa [map', get', prev_append] using ih (.xO j) l
+      | Node111 l x r =>
+          simpa [map', get', prev_append] using ih (.xO j) l
+  | xI i ih =>
+      cases m with
+      | Node001 r =>
+          simpa [map', get', prev_append] using ih (.xI j) r
+      | Node010 x => rfl
+      | Node011 x r =>
+          simpa [map', get', prev_append] using ih (.xI j) r
+      | Node100 l => rfl
+      | Node101 l r =>
+          simpa [map', get', prev_append] using ih (.xI j) r
+      | Node110 l x => rfl
+      | Node111 l x r =>
+          simpa [map', get', prev_append] using ih (.xI j) r
+
+theorem gmap : gmapStatement := by
+  intro A B f i m
+  cases m with
+  | Empty => rfl
+  | Nodes m =>
+      change get' i (map' f m .xH) =
+        Option.map (f i) (get' i m)
+      rw [gmap']
+      change Option.map (f (prev (prev i))) (get' i m) =
+        Option.map (f i) (get' i m)
+      rw [prev_involutive]
+
+theorem gmap1 : gmap1Statement := by
+  intro A B f i m
+  cases m with
+  | Empty => rfl
+  | Nodes m =>
+      induction m generalizing i with
+      | Node001 r ih =>
+          cases i with
+          | xH => rfl
+          | xO q => rfl
+          | xI q => exact ih q
+      | Node010 x =>
+          cases i <;> rfl
+      | Node011 x r ih =>
+          cases i with
+          | xH => rfl
+          | xO q => rfl
+          | xI q => exact ih q
+      | Node100 l ih =>
+          cases i with
+          | xH => rfl
+          | xO q => exact ih q
+          | xI q => rfl
+      | Node101 l r ihl ihr =>
+          cases i with
+          | xH => rfl
+          | xO q => exact ihl q
+          | xI q => exact ihr q
+      | Node110 l x ih =>
+          cases i with
+          | xH => rfl
+          | xO q => exact ih q
+          | xI q => rfl
+      | Node111 l x r ihl ihr =>
+          cases i with
+          | xH => rfl
+          | xO q => exact ihl q
+          | xI q => exact ihr q
+
+theorem gmap_filter1 : gmap_filter1Statement := by
+  intro A B f m i
+  rw [get_map_filter1_proof]
+  cases h : get i m <;> simp [h, Option.bind]
+
+end PTree
+
+end CompCert4Lean.Lib.Maps

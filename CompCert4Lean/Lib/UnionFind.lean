@@ -982,3 +982,43 @@ theorem union_not_same_class_proof :
 
 end UF
 end CompCert4Lean.Lib.UnionFind
+
+namespace CompCert4Lean.Lib.UnionFind
+namespace UF
+
+theorem repr_identify_1_proof :
+    ∀ (M : MAP), repr_identify_1Statement M := by
+  intro M uf a b a_canon not_same_class x
+  apply uf.mwf.induction x
+  intro x ih hneq
+  rw [repr_unroll_calc M uf x]
+  cases hget : mapGet M x uf.m with
+  | some y =>
+      rw [repr_unroll_calc M (identify M uf a b a_canon not_same_class) x]
+      change (match mapGet M x (mapSet M a b uf.m) with
+        | some a' => repr M (identify M uf a b a_canon not_same_class) a'
+        | none => x) = repr M uf y
+      rw [mapGet_set]
+      by_cases hxa : x = a
+      · subst x
+        rw [a_canon] at hget
+        cases hget
+      · rw [dif_neg hxa, hget]
+        exact ih y hget (by
+          intro hya
+          apply hneq
+          exact (repr_some_calc M uf x y hget).trans hya)
+  | none =>
+      rw [repr_unroll_calc M (identify M uf a b a_canon not_same_class) x]
+      change (match mapGet M x (mapSet M a b uf.m) with
+        | some a' => repr M (identify M uf a b a_canon not_same_class) a'
+        | none => x) = x
+      rw [mapGet_set]
+      by_cases hxa : x = a
+      · subst x
+        simp [a_canon]
+        exact False.elim (hneq (repr_none_calc M uf a a_canon))
+      · simp [hxa, hget]
+
+end UF
+end CompCert4Lean.Lib.UnionFind

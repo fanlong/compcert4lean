@@ -1050,3 +1050,42 @@ theorem solve_sound : solve_soundStatement := by
         (solve_constraints_sound T e e' hc)
 
 end CompCert4Lean.Common.Unityping.UniSolver
+
+namespace CompCert4Lean.Common.Unityping.UniSolver
+
+open CompCert4Lean.Lib.Maps
+
+theorem set_complete : set_completeStatement := by
+  intro T te e x ty hs htx
+  unfold set
+  split
+  · rename_i hnone
+    refine ⟨{ te_typ := PTree.set x ty (te_typ e), te_equ := te_equ e }, ?_, ?_⟩
+    · simp [hnone]
+    · constructor
+      · intro y ty' hy
+        by_cases hxy : y = x
+        · subst y
+          have hget : PTree.get x (PTree.set x ty (te_typ e)) = some ty :=
+            PTree.gss x ty (te_typ e)
+          rw [hget] at hy
+          cases hy
+          exact htx
+        · have hget := PTree.gso (i := y) (j := x) (x := ty) (m := te_typ e) hxy
+          rw [hget] at hy
+          exact hs.1 y ty' hy
+      · intro y z hy
+        exact hs.2 y z hy
+  · rename_i ty' hsome
+    split
+    · rename_i heq
+      subst ty'
+      refine ⟨e, ?_, hs⟩
+      simp [hsome, heq]
+    · cases hs with
+      | intro hmap hconstraints =>
+          have hty' : te x = ty' := hmap x ty' hsome
+          exfalso
+          exact ‹ty ≠ ty'› (htx.symm.trans hty')
+
+end CompCert4Lean.Common.Unityping.UniSolver

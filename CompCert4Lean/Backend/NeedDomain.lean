@@ -1251,3 +1251,27 @@ theorem iagree_and_eq : iagree_and_eqStatement := by
         simpa [iagreeTestbitPos] using hxy
 
 end CompCert4Lean.Backend.NeedDomain
+
+namespace CompCert4Lean.Backend.NeedDomain
+
+theorem iagree_mone : iagree_moneStatement := by
+  intro p q h
+  have hand : CompCert4Lean.Lib.Integers.Int.and p
+      CompCert4Lean.Lib.Integers.Int.mone =
+      CompCert4Lean.Lib.Integers.Int.and q CompCert4Lean.Lib.Integers.Int.mone :=
+    (iagree_and_eq p q CompCert4Lean.Lib.Integers.Int.mone).mp h
+  have hval := congrArg (fun z => z.val) hand
+  rw [iagreeAndVal, iagreeAndVal] at hval
+  have hp : p.val < 2 ^ CompCert4Lean.Lib.Integers.Int.wordsize :=
+    iagreeWordValLt p
+  have hq : q.val < 2 ^ CompCert4Lean.Lib.Integers.Int.wordsize :=
+    iagreeWordValLt q
+  have hmone : CompCert4Lean.Lib.Integers.Int.mone.val =
+      2 ^ CompCert4Lean.Lib.Integers.Int.wordsize - 1 := by
+    rfl
+  rw [hmone, Nat.land_eq,
+    Nat.and_two_pow_sub_one_of_lt_two_pow hp, Nat.land_eq,
+    Nat.and_two_pow_sub_one_of_lt_two_pow hq] at hval
+  exact CompCert4Lean.Lib.Integers.WordCore.ext_of_val_eq hval
+
+end CompCert4Lean.Backend.NeedDomain

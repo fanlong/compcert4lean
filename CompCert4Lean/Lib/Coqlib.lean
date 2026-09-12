@@ -856,3 +856,69 @@ theorem Zmax_bound_l : Zmax_bound_lStatement := by
   · simp [ZArith.BinInt.Z.max, hyz]
     exact hxy
 end CompCert4Lean.Lib.Coqlib
+
+namespace CompCert4Lean.Lib.Coqlib
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem Zmax_bound_r : Zmax_bound_rStatement := by
+  intro x y z hxz
+  change intOfZ x ≤ intOfZ (ZArith.BinInt.Z.max y z)
+  change intOfZ x ≤ intOfZ z at hxz
+  by_cases hyz : intOfZ y ≤ intOfZ z
+  · simp [ZArith.BinInt.Z.max, hyz]
+    exact hxz
+  · simp [ZArith.BinInt.Z.max, hyz]
+    exact Int.le_trans hxz (Int.le_of_not_le hyz)
+
+theorem Z_div_mod_eq : Z_div_mod_eqStatement := by
+  intro a b hb
+  exact CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.Zdiv.Z_div_mod_eq_full a b
+
+theorem Zmod_unique : Zmod_uniqueStatement := by
+  intro x y a b hxy hrange
+  change 0 ≤ intOfZ b ∧ intOfZ b < intOfZ y at hrange
+  have hy : 0 < intOfZ y := by omega
+  have hxy' := congrArg intOfZ hxy
+  simp only [ZArith.BinInt.Z.add, ZArith.BinInt.Z.mul,
+    intOfZ_zOfInt] at hxy'
+  have hform : intOfZ b + intOfZ y * intOfZ a = intOfZ x := by
+    calc
+      intOfZ b + intOfZ y * intOfZ a = intOfZ a * intOfZ y + intOfZ b := by
+        rw [Int.mul_comm (intOfZ y) (intOfZ a), Int.add_comm]
+      _ = intOfZ x := hxy'.symm
+  have hu := (Int.ediv_emod_unique (a := intOfZ x) (b := intOfZ y)
+    (q := intOfZ a) (r := intOfZ b) hy).mpr
+    ⟨hform, hrange.1, hrange.2⟩
+  apply intOfZ_injective
+  simp only [ZArith.BinInt.Z.modulo, intOfZ_zOfInt]
+  change (if intOfZ y = 0 then intOfZ x
+    else if 0 < intOfZ y then Int.emod (intOfZ x) (intOfZ y) else _) = _
+  have hy0 : intOfZ y ≠ 0 := Int.ne_of_gt hy
+  simp [hy, hy0]
+  exact hu.2
+
+theorem Zdiv_unique : Zdiv_uniqueStatement := by
+  intro x y a b hxy hrange
+  change 0 ≤ intOfZ b ∧ intOfZ b < intOfZ y at hrange
+  have hy : 0 < intOfZ y := by omega
+  have hxy' := congrArg intOfZ hxy
+  simp only [ZArith.BinInt.Z.add, ZArith.BinInt.Z.mul,
+    intOfZ_zOfInt] at hxy'
+  have hform : intOfZ b + intOfZ y * intOfZ a = intOfZ x := by
+    calc
+      intOfZ b + intOfZ y * intOfZ a = intOfZ a * intOfZ y + intOfZ b := by
+        rw [Int.mul_comm (intOfZ y) (intOfZ a), Int.add_comm]
+      _ = intOfZ x := hxy'.symm
+  have hu := (Int.ediv_emod_unique (a := intOfZ x) (b := intOfZ y)
+    (q := intOfZ a) (r := intOfZ b) hy).mpr
+    ⟨hform, hrange.1, hrange.2⟩
+  apply intOfZ_injective
+  simp only [ZArith.BinInt.Z.div, intOfZ_zOfInt]
+  change (if intOfZ y = 0 then 0
+    else if 0 < intOfZ y then Int.ediv (intOfZ x) (intOfZ y) else _) = _
+  have hy0 : intOfZ y ≠ 0 := Int.ne_of_gt hy
+  simp [hy, hy0]
+  exact hu.1
+
+end CompCert4Lean.Lib.Coqlib

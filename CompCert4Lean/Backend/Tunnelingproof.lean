@@ -1553,3 +1553,292 @@ theorem find_function_translated : find_function_translatedStatement := by
             (by simpa [hs] using hfind)
 
 end CompCert4Lean.Backend.Tunnelingproof
+
+namespace CompCert4Lean.Backend.Tunnelingproof
+
+open CompCert4Lean.Backend.Tunneling
+open CompCert4Lean.Backend.LTL
+open CompCert4Lean.Backend.Locations
+open CompCert4Lean.Common.Values
+
+theorem return_regs_lessdef : return_regs_lessdefStatement := by
+  intro cfg caller1 callee1 caller2 callee2 hcaller hcallee l
+  cases l with
+  | R r =>
+      simp only [CompCert4Lean.Backend.LTL.return_regs]
+      split
+      · exact hcaller (R r)
+      · exact hcallee (R r)
+  | S sl ofs ty =>
+      cases sl with
+      | Local => exact hcaller (S .Local ofs ty)
+      | Incoming => exact hcaller (S .Incoming ofs ty)
+      | Outgoing => exact Val.lessdef_undef _
+
+theorem match_parent_locset : match_parent_locsetStatement := by
+  intro s ts h
+  induction h with
+  | nil =>
+      intro l
+      exact Val.lessdef.lessdef_refl _
+  | cons a1 b1 hab hrest ih =>
+      cases hab
+      assumption
+
+end CompCert4Lean.Backend.Tunnelingproof
+
+namespace CompCert4Lean.Backend.Tunnelingproof
+
+open CompCert4Lean.Backend.Tunneling
+open CompCert4Lean.Backend.LTL
+open CompCert4Lean.Backend.Locations
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Linking
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+open Lean Elab Tactic Meta
+
+private def tunnelingPrivateName (suffix : String) : Name :=
+  let p := Name.str (Name.str (Name.str (Name.str Name.anonymous "_private") "CompCert4Lean") "Lib") "Integers"
+  let base := Name.num p 0
+  suffix.splitOn "." |>.foldl Name.str base
+
+private theorem tunneling_wordcore_add_val {bits : Nat}
+    (x y : CompCert4Lean.Lib.Integers.WordCore.Word bits) :
+    (CompCert4Lean.Lib.Integers.WordCore.add x y).val =
+      (x.val + y.val) % (2 ^ bits) := by
+  run_tac
+    let lctx ← getLCtx
+    let xF := (lctx.findFromUserName? `x).get!
+    let yF := (lctx.findFromUserName? `y).get!
+    let e ← mkAppM
+      (tunnelingPrivateName "CompCert4Lean.Lib.Integers.WordCore.add_val")
+      #[mkFVar xF.fvarId, mkFVar yF.fvarId]
+    closeMainGoal Name.anonymous e
+
+private theorem tunneling_wordcore_zero_val (bits : Nat) :
+    (CompCert4Lean.Lib.Integers.WordCore.zero bits).val = 0 := by
+  unfold CompCert4Lean.Lib.Integers.WordCore.zero
+  run_tac
+    let lctx ← getLCtx
+    let bF := (lctx.findFromUserName? `bits).get!
+    let e ← mkAppM
+      (tunnelingPrivateName "CompCert4Lean.Lib.Integers.WordCore.val_repr_residue")
+      #[mkFVar bF.fvarId,
+        mkConst ``CompCert4Lean.Foundation.Numbers.Rocq.Coq.Numbers.BinNums.Z.Z0]
+    closeMainGoal Name.anonymous e
+
+private theorem tunneling_wordcore_val_lt {bits : Nat}
+    (x : CompCert4Lean.Lib.Integers.WordCore.Word bits) :
+    x.val < 2 ^ bits := by
+  run_tac
+    let lctx ← getLCtx
+    let xF := (lctx.findFromUserName? `x).get!
+    let e ← mkAppM
+      (tunnelingPrivateName "CompCert4Lean.Lib.Integers.WordCore.val_lt")
+      #[mkFVar xF.fvarId]
+    closeMainGoal Name.anonymous e
+
+private theorem tunneling_ptrofs_add_zero
+    (ofs : CompCert4Lean.Lib.Integers.Ptrofs.int) :
+    CompCert4Lean.Lib.Integers.Ptrofs.add ofs
+      (CompCert4Lean.Lib.Integers.Ptrofs.repr (.Z0 : Z)) = ofs := by
+  change CompCert4Lean.Lib.Integers.WordCore.add ofs
+    (CompCert4Lean.Lib.Integers.WordCore.zero
+      CompCert4Lean.Lib.Integers.Ptrofs.wordsize) = ofs
+  apply CompCert4Lean.Lib.Integers.WordCore.ext_of_val_eq
+  rw [tunneling_wordcore_add_val, tunneling_wordcore_zero_val, Nat.add_zero]
+  exact Nat.mod_eq_of_lt (tunneling_wordcore_val_lt ofs)
+
+private theorem tunneling_val_inject_refl (v : val) :
+    Val.inject inject_id v v := by
+  cases v with
+  | Vint i => exact Val.inject.inject_int _
+  | Vlong i => exact Val.inject.inject_long _
+  | Vfloat f => exact Val.inject.inject_float _
+  | Vsingle f => exact Val.inject.inject_single _
+  | Vptr b ofs =>
+      apply Val.inject.inject_ptr
+      · rfl
+      · exact (tunneling_ptrofs_add_zero ofs).symm
+  | Vundef => exact Val.inject.val_inject_undef _
+
+private theorem tunneling_memval_inject_refl (mv : memval) :
+    memval_inject inject_id mv mv := by
+  cases mv with
+  | Byte n => exact memval_inject.byte _ _
+  | Fragment v q n =>
+      exact memval_inject.fragment _ _ _ _ _ (tunneling_val_inject_refl v)
+  | Undef => exact memval_inject.undef _ _
+
+private theorem tunneling_mem_extends_refl (m : mem) : Mem.extends m m := by
+  refine ⟨rfl, ?_, ?_⟩
+  · refine ⟨?_, ?_, ?_⟩
+    · intro b1 b2 delta ofs k p hmap hp
+      have hpair : (b1, (.Z0 : Z)) = (b2, delta) := by
+        simpa [CompCert4Lean.Common.Values.inject_id] using Option.some.inj hmap
+      cases hpair
+      change Mem.perm m b1 (ZArith.BinInt.Z.add ofs (.Z0 : Z)) k p
+      have hzadd : ZArith.BinInt.Z.add ofs (.Z0 : Z) = ofs := by
+        apply intOfZ_injective
+        change intOfZ (zOfInt (intOfZ ofs + 0)) = intOfZ ofs
+        rw [intOfZ_zOfInt]
+        simp
+      rw [hzadd]
+      exact hp
+    · intro b1 b2 delta chunk ofs p hmap hp
+      have hpair : (b1, (.Z0 : Z)) = (b2, delta) := by
+        simpa [CompCert4Lean.Common.Values.inject_id] using Option.some.inj hmap
+      cases hpair
+      refine ⟨.Z0, ?_⟩
+      apply intOfZ_injective
+      change 0 = intOfZ (ZArith.BinInt.Z.mul
+        (CompCert4Lean.Common.Memdata.align_chunk chunk) (.Z0 : Z))
+      change 0 = intOfZ (zOfInt (intOfZ
+        (CompCert4Lean.Common.Memdata.align_chunk chunk) * 0))
+      rw [intOfZ_zOfInt]
+      simp
+    · intro b1 ofs b2 delta hmap hp
+      have hpair : (b1, (.Z0 : Z)) = (b2, delta) := by
+        simpa [CompCert4Lean.Common.Values.inject_id] using Option.some.inj hmap
+      cases hpair
+      change memval_inject inject_id
+        (ZMap.get ofs (PMap.get b1 m.mem_contents))
+        (ZMap.get (ZArith.BinInt.Z.add ofs (.Z0 : Z))
+          (PMap.get b1 m.mem_contents))
+      have hzadd : ZArith.BinInt.Z.add ofs (.Z0 : Z) = ofs := by
+        apply intOfZ_injective
+        change intOfZ (zOfInt (intOfZ ofs + 0)) = intOfZ ofs
+        rw [intOfZ_zOfInt]
+        simp
+      rw [hzadd]
+      exact tunneling_memval_inject_refl _
+  · intro b ofs k p hp
+    exact Or.inl hp
+
+private theorem tunneling_initial_store_init_data
+    {prog tprog : program}
+    (hsymb : ∀ id,
+      Genv.find_symbol (Genv.globalenv tprog) id =
+        Genv.find_symbol (Genv.globalenv prog) id)
+    (m : mem) (b : positive) (p : Z) (i : init_data) :
+    Genv.store_init_data (Genv.globalenv prog) m b p i =
+      Genv.store_init_data (Genv.globalenv tprog) m b p i := by
+  cases i with
+  | Init_addrof symb ofs =>
+      simp [Genv.store_init_data, hsymb symb]
+  | _ => rfl
+
+private theorem tunneling_initial_store_init_data_list
+    {prog tprog : program}
+    (hsymb : ∀ id,
+      Genv.find_symbol (Genv.globalenv tprog) id =
+        Genv.find_symbol (Genv.globalenv prog) id) :
+    ∀ (m : mem) (b : positive) (p : Z) (il : List init_data),
+      Genv.store_init_data_list (Genv.globalenv prog) m b p il =
+        Genv.store_init_data_list (Genv.globalenv tprog) m b p il := by
+  intro m b p il
+  induction il generalizing m b p with
+  | nil => rfl
+  | cons i rest ih =>
+      simp only [Genv.store_init_data_list]
+      rw [tunneling_initial_store_init_data hsymb]
+      cases h : Genv.store_init_data (Genv.globalenv tprog) m b p i with
+      | none => simp [h]
+      | some m' =>
+          simp only [h]
+          exact ih m' b (ZArith.BinInt.Z.add p (init_data_size i))
+
+private theorem tunneling_initial_alloc_global
+    [Linker program]
+    {prog tprog : program}
+    (hsymb : ∀ id,
+      Genv.find_symbol (Genv.globalenv tprog) id =
+        Genv.find_symbol (Genv.globalenv prog) id)
+    {id : ident} {gd tg : globdef fundef Unit}
+    (hgd : match_globdef
+      (fun _ f tf => tf = tunnel_fundef f)
+      (fun x y : Unit => x = y) prog gd tg)
+    (m : mem) :
+    Genv.alloc_global (Genv.globalenv prog) m (id, gd) =
+      Genv.alloc_global (Genv.globalenv tprog) m (id, tg) := by
+  cases hgd with
+  | match_globdef_fun ctx' f1 f2 horder htrans => rfl
+  | match_globdef_var v1 v2 hvar =>
+      cases hvar with
+      | match_globvar_intro info1 info2 init ro vol hinfo =>
+          cases hinfo
+          simp only [Genv.alloc_global]
+          simp [tunneling_initial_store_init_data_list hsymb]
+
+private theorem tunneling_initial_alloc_globals
+    [Linker program]
+    {prog tprog : program}
+    (hsymb : ∀ id,
+      Genv.find_symbol (Genv.globalenv tprog) id =
+        Genv.find_symbol (Genv.globalenv prog) id)
+    (gl tgl : List (ident × globdef fundef Unit))
+    (hlist : list_forall2
+      (match_ident_globdef
+        (fun _ f tf => tf = tunnel_fundef f)
+        (fun x y : Unit => x = y) prog) gl tgl) :
+    ∀ (m m' : mem),
+      Genv.alloc_globals (Genv.globalenv prog) m gl = some m' →
+        Genv.alloc_globals (Genv.globalenv tprog) m tgl = some m' := by
+  induction hlist with
+  | nil =>
+      intro m m' h
+      simpa [Genv.alloc_globals] using h
+  | cons hd thd hhd htl ih =>
+      intro m m' h
+      rcases hhd with ⟨hid, hgd⟩
+      rcases hd with ⟨id, gd⟩
+      rcases thd with ⟨tid, tgd⟩
+      have halloc :
+          Genv.alloc_global (Genv.globalenv prog) m (id, gd) =
+            Genv.alloc_global (Genv.globalenv tprog) m (tid, tgd) := by
+        change id = tid at hid
+        subst tid
+        exact tunneling_initial_alloc_global hsymb hgd m
+      simp only [Genv.alloc_globals] at h ⊢
+      rw [halloc] at h
+      cases ha : Genv.alloc_global (Genv.globalenv tprog) m (tid, tgd) with
+      | none => simp [ha] at h
+      | some m1 =>
+          simp only [ha] at h ⊢
+          exact ih m1 m' h
+
+theorem transf_initial_states : transf_initial_statesStatement := by
+  letI : Linker fundef := Linker_fundef function
+  letI : Linker Unit := Linker_unit
+  letI : Linker program := Linker_prog fundef Unit
+  intro prog tprog hmatch st1 hinit
+  cases hinit with
+  | intro b f m0 hmem hsymb hfun hsig =>
+      refine ⟨Callstate [] (tunnel_fundef f)
+        (Locmap.init Vundef) m0, ?_, ?_⟩
+      · apply initial_state.intro b (tunnel_fundef f) m0
+        · unfold Genv.init_mem at hmem ⊢
+          exact tunneling_initial_alloc_globals
+            (fun id => symbols_preserved prog tprog hmatch id)
+            prog.prog_defs tprog.prog_defs hmatch.1 Mem.empty m0 hmem
+        · change Genv.find_symbol (Genv.globalenv tprog) tprog.prog_main = some b
+          rw [hmatch.2.1]
+          rw [symbols_preserved prog tprog hmatch prog.prog_main]
+          exact hsymb
+        · exact function_ptr_translated prog tprog hmatch b f hfun
+        · rw [sig_preserved f]
+          exact hsig
+      · exact match_states.call [] f (Locmap.init Vundef) m0 []
+          (Locmap.init Vundef) m0 (list_forall2.nil _) (by
+            intro l
+            exact Val.lessdef.lessdef_refl _)
+          (tunneling_mem_extends_refl m0)
+
+end CompCert4Lean.Backend.Tunnelingproof

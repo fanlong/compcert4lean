@@ -1529,3 +1529,15 @@ theorem load_result_same : load_result_sameStatement := by
 
 end Val
 end CompCert4Lean.Common.Values
+
+namespace CompCert4Lean.Common.Values
+namespace Val
+
+theorem bool_of_val_of_optbool : bool_of_val_of_optboolStatement := by
+  intro ob b h
+  cases ob with
+  | none => cases h
+  | some x => cases x <;> cases h <;> rfl
+
+end Val
+end CompCert4Lean.Common.Values

@@ -1132,3 +1132,199 @@ theorem set_res_other : set_res_otherStatement := by
   exact hrec res r v rs hdata
 
 end CompCert4Lean.Backend.Asmgenproof0
+
+namespace CompCert4Lean.Backend.Asmgenproof0
+
+theorem code_tail_pos : code_tail_posStatement := by
+  intro pos c1 c2 h
+  induction h with
+  | base c =>
+      exact CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.le_refl _
+  | @step pos i c1 c2 h ih =>
+      change 0 ≤ CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add pos
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.Zpos
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.xH))
+      change 0 ≤ CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ pos at ih
+      simp only [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add,
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+      have hone : CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.Zpos
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.xH) = 1 := by rfl
+      rw [hone]
+      omega
+
+end CompCert4Lean.Backend.Asmgenproof0
+
+namespace CompCert4Lean.Backend.Asmgenproof0
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+private theorem list_length_z_aux_eq (l : List AsmInstruction) (n : Z) :
+    intOfZ (CompCert4Lean.Lib.Coqlib.list_length_z_aux l n) =
+      intOfZ n + intOfZ (CompCert4Lean.Lib.Coqlib.list_length_z l) := by
+  induction l generalizing n with
+  | nil =>
+      simp [CompCert4Lean.Lib.Coqlib.list_length_z_aux,
+        CompCert4Lean.Lib.Coqlib.list_length_z, intOfZ]
+  | cons a tl ih =>
+      simp only [CompCert4Lean.Lib.Coqlib.list_length_z_aux,
+        CompCert4Lean.Lib.Coqlib.list_length_z]
+      rw [ih (ZArith.BinInt.Z.succ n),
+        ih (ZArith.BinInt.Z.succ ZArith.BinInt.Z.Z0)]
+      have hone : intOfZ (Zpos xH) = 1 := by rfl
+      simp only [ZArith.BinInt.Z.succ, ZArith.BinInt.Z.add,
+        intOfZ_zOfInt, hone]
+      simp only [intOfZ]
+      omega
+
+private theorem list_length_z_aux_nonneg :
+    ∀ {α : Type} (l : List α) (n : Z),
+      0 ≤ intOfZ n → 0 ≤ intOfZ
+        (CompCert4Lean.Lib.Coqlib.list_length_z_aux l n) := by
+  intro α l
+  induction l with
+  | nil =>
+      intro n hn
+      simpa [CompCert4Lean.Lib.Coqlib.list_length_z_aux] using hn
+  | cons a tl ih =>
+      intro n hn
+      apply ih
+      change 0 ≤ intOfZ (ZArith.BinInt.Z.add n (Zpos xH))
+      simp only [ZArith.BinInt.Z.add, intOfZ_zOfInt]
+      have hone : intOfZ (Zpos xH) = 1 := by rfl
+      rw [hone]
+      omega
+
+private theorem list_length_z_nonneg (l : AsmCode) :
+    0 ≤ intOfZ (CompCert4Lean.Lib.Coqlib.list_length_z l) := by
+  exact list_length_z_aux_nonneg l ZArith.BinInt.Z.Z0 (by exact Int.le_refl _)
+
+theorem code_tail_bounds_1 : code_tail_bounds_1Statement := by
+  intro fn ofs c h
+  induction h with
+  | base c =>
+      constructor
+      · exact CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.le_refl _
+      · exact list_length_z_nonneg c
+  | @step pos i c1 c2 h ih =>
+      change 0 ≤ intOfZ (ZArith.BinInt.Z.add pos (Zpos xH)) ∧
+        intOfZ (ZArith.BinInt.Z.add pos (Zpos xH)) ≤
+          intOfZ (CompCert4Lean.Lib.Coqlib.list_length_z (i :: c1))
+      change 0 ≤ intOfZ pos ∧ intOfZ pos ≤
+          intOfZ (CompCert4Lean.Lib.Coqlib.list_length_z c1) at ih
+      simp only [ZArith.BinInt.Z.add, intOfZ_zOfInt]
+      have hone : intOfZ (Zpos xH) = 1 := by rfl
+      rw [hone]
+      simp only [CompCert4Lean.Lib.Coqlib.list_length_z,
+        CompCert4Lean.Lib.Coqlib.list_length_z_aux]
+      rw [list_length_z_aux_eq c1 (ZArith.BinInt.Z.succ ZArith.BinInt.Z.Z0)]
+      simp only [ZArith.BinInt.Z.succ, ZArith.BinInt.Z.add,
+        intOfZ_zOfInt, hone]
+      simp only [intOfZ]
+      change 0 ≤ intOfZ pos + 1 ∧
+        intOfZ pos + 1 ≤ 1 + intOfZ
+          (CompCert4Lean.Lib.Coqlib.list_length_z c1)
+      omega
+
+private theorem code_tail_bounds_2_aux :
+    ∀ (fn : AsmCode) (ofs : Z) (c : AsmCode), code_tail ofs fn c →
+      ∀ (i : AsmInstruction) (c' : AsmCode), c = i :: c' →
+        0 ≤ intOfZ ofs ∧ intOfZ ofs < intOfZ
+          (CompCert4Lean.Lib.Coqlib.list_length_z fn) := by
+  intro fn ofs c h
+  induction h with
+  | base c =>
+      intro i c' heq
+      subst c
+      change List AsmInstruction at c'
+      constructor
+      · exact Int.le_refl _
+      · simp only [CompCert4Lean.Lib.Coqlib.list_length_z,
+          CompCert4Lean.Lib.Coqlib.list_length_z_aux]
+        have hlen := list_length_z_nonneg c'
+        have hone : intOfZ (Zpos xH) = 1 := by rfl
+        rw [list_length_z_aux_eq c' (ZArith.BinInt.Z.succ ZArith.BinInt.Z.Z0)]
+        simp only [ZArith.BinInt.Z.succ, ZArith.BinInt.Z.add,
+          intOfZ_zOfInt, hone]
+        have hz0 : intOfZ ZArith.BinInt.Z.Z0 = 0 := by rfl
+        rw [hz0]
+        omega
+  | @step pos i0 c1 c2 h ih =>
+      intro i c' heq
+      have hi := ih i c' heq
+      constructor
+      · simp only [ZArith.BinInt.Z.add, intOfZ_zOfInt]
+        have hone : intOfZ (Zpos xH) = 1 := by rfl
+        rw [hone]
+        omega
+      · simp only [ZArith.BinInt.Z.add, intOfZ_zOfInt]
+        have hone : intOfZ (Zpos xH) = 1 := by rfl
+        rw [hone]
+        simp only [CompCert4Lean.Lib.Coqlib.list_length_z,
+          CompCert4Lean.Lib.Coqlib.list_length_z_aux]
+        rw [list_length_z_aux_eq c1 (ZArith.BinInt.Z.succ ZArith.BinInt.Z.Z0)]
+        simp only [ZArith.BinInt.Z.succ, ZArith.BinInt.Z.add,
+          intOfZ_zOfInt]
+        change intOfZ pos + 1 < 1 + intOfZ
+          (CompCert4Lean.Lib.Coqlib.list_length_z c1)
+        omega
+
+theorem code_tail_bounds_2 : code_tail_bounds_2Statement := by
+  intro fn ofs i c h
+  have h' := code_tail_bounds_2_aux fn ofs (i :: c) h i c rfl
+  exact h'
+
+private theorem find_instr_tail_aux :
+    ∀ (c1 : AsmCode) (pos : Z) (ctail : AsmCode),
+      code_tail pos c1 ctail →
+      ∀ (i : AsmInstruction) (c2 : AsmCode), ctail = i :: c2 →
+        CompCert4Lean.X86.Asm.find_instr pos c1 = some i := by
+  intro c1 pos ctail h
+  induction h with
+  | base c =>
+      intro i c2 heq
+      subst c
+      change some i = some i
+      rfl
+  | @step pos a c1 c2 h ih =>
+      intro i c2' heq
+      have hp := code_tail_pos pos c1 c2 h
+      simp only [CompCert4Lean.X86.Asm.find_instr]
+      have hne : ZArith.BinInt.Z.add pos (Zpos xH) ≠ Z0 := by
+        intro hz
+        have hz' : intOfZ pos + 1 = 0 := by
+          have hz'' := congrArg intOfZ hz
+          rw [show intOfZ Z0 = 0 by rfl] at hz''
+          simpa [ZArith.BinInt.Z.add, intOfZ_zOfInt,
+            show intOfZ (Zpos xH) = 1 by rfl] using hz''
+        have hp' : 0 ≤ intOfZ pos := hp
+        omega
+      cases hzq : CompCert4Lean.Lib.Coqlib.zeq
+          (ZArith.BinInt.Z.add pos (Zpos xH)) Z0 with
+      | left heqz =>
+          exact (hne heqz).elim
+      | right heqz =>
+        simp only [hzq]
+        have heq' : ZArith.BinInt.Z.sub
+            (ZArith.BinInt.Z.add pos (Zpos xH))
+            (ZArith.BinInt.Z.of_nat 1) = pos := by
+          apply CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective
+          simp only [ZArith.BinInt.Z.sub, ZArith.BinInt.Z.add,
+            ZArith.BinInt.Z.of_nat, intOfZ_zOfInt]
+          have hone : intOfZ (Zpos xH) = 1 := by rfl
+          rw [hone]
+          have h1 : (Int.ofNat 1) = 1 := by rfl
+          rw [h1]
+          omega
+        change CompCert4Lean.X86.Asm.find_instr
+          (ZArith.BinInt.Z.sub (ZArith.BinInt.Z.add pos (Zpos xH))
+            (ZArith.BinInt.Z.of_nat 1)) c1 = some i
+        rw [heq']
+        exact ih i c2' heq
+
+theorem find_instr_tail : find_instr_tailStatement := by
+  intro c1 i c2 pos h
+  exact find_instr_tail_aux c1 pos (i :: c2) h i c2 rfl
+
+end CompCert4Lean.Backend.Asmgenproof0

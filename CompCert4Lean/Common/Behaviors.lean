@@ -992,3 +992,299 @@ theorem program_behaves_exists : program_behaves_existsStatement := by
     exact hinit ⟨s, hs⟩
 
 end CompCert4Lean.Common.Behaviors
+
+namespace CompCert4Lean.Common.Behaviors
+
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.Smallstep
+
+private theorem behaviors_eapp_eq_nil_left {t1 t2 : trace}
+    (h : Eapp t1 t2 = E0) : t1 = E0 := by
+  cases t1 with
+  | nil => rfl
+  | cons ev t => cases h
+
+private theorem behaviors_simulation_star
+    (L1 L2 : semantics) (index : Type)
+    (order : index → index → Prop)
+    (match_states : index → state L1 → state L2 → Prop)
+    (props : fsim_properties L1 L2 index order match_states)
+    (s1 : state L1) (t : trace) (s1' : state L1)
+    (hstar : star (step L1) (globalenv L1) s1 t s1') :
+    ∀ i s2, match_states i s1 s2 →
+      ∃ i' s2', star (step L2) (globalenv L2) s2 t s2' ∧
+        match_states i' s1' s2' := by
+  induction hstar with
+  | star_refl s =>
+      intro i s2 hmatch
+      exact ⟨i, s2, star_refl (step L2) (globalenv L2) s2, hmatch⟩
+  | star_step s1 t1 s2 t2 s3 t hstep htail htrace ih =>
+      intro i s2x hmatch
+      obtain ⟨i', s2', hsim, hmatch'⟩ :=
+        props.fsim_simulation s1 t1 s2 hstep i s2x hmatch
+      obtain ⟨i'', s2'', htail', hmatch''⟩ := ih i' s2' hmatch'
+      rcases hsim with hplus | ⟨hstar', _⟩
+      · exact ⟨i'', s2'',
+          star_trans L2.genvtype (state L2) (step L2) (globalenv L2)
+            s2x t1 s2'
+            (plus_star L2.genvtype (state L2) (step L2) (globalenv L2)
+              s2x t1 s2' hplus)
+            t2 s2'' t htail' htrace,
+          hmatch''⟩
+      · exact ⟨i'', s2'',
+          star_trans L2.genvtype (state L2) (step L2) (globalenv L2)
+            s2x t1 s2' hstar' t2 s2'' t htail' htrace,
+          hmatch''⟩
+
+private theorem behaviors_forever_silent_N_inv
+    {genv state A : Type}
+    (step : genv → state → trace → state → Prop)
+    (order : A → A → Prop) (ge : genv)
+    (wf : WellFounded order) :
+    ∀ a s, forever_silent_N step order ge a s →
+      ∃ s' a', step ge s E0 s' ∧ forever_silent_N step order ge a' s' := by
+  intro a
+  apply wf.induction a
+  intro a ih
+  intro s hN
+  have prefixN : ∀ (b : A) (s1 s2 : state) (t : trace),
+          star step ge s1 t s2 → t = E0 →
+          forever_silent_N step order ge b s2 →
+          forever_silent_N step order ge b s1 := by
+        intro b s1 s2 t hstar ht htail
+        induction hstar with
+        | star_refl s => exact htail
+        | @star_step s1 t1 s2 t2 s3 t hstep hrest htrace ihrest =>
+            have happ : Eapp t1 t2 = E0 := by simpa [htrace] using ht
+            have ht1 : t1 = E0 := behaviors_eapp_eq_nil_left happ
+            subst t1
+            have ht2 : t2 = E0 := by
+              rw [show Eapp E0 t2 = t2 by exact _root_.List.nil_append t2] at happ
+              exact happ
+            subst t2
+            exact forever_silent_N_plus b
+              (plus_left s1 E0 hstep hrest rfl) htail
+  have starHead : ∀ (s1 s3 : state) (t : trace),
+          star step ge s1 t s3 → t = E0 →
+          ∀ a2, order a2 a →
+            forever_silent_N step order ge a2 s3 →
+            ∃ s2 a', step ge s1 E0 s2 ∧
+              forever_silent_N step order ge a' s2 := by
+    intro s1 s3 t hstar ht
+    induction hstar with
+    | star_refl s =>
+        intro a2 horder htail
+        exact ih a2 horder s htail
+    | @star_step s1 t1 s2 t2 s3 t hstep hrest htrace ihrest =>
+        intro a2 horder htail
+        have happ : Eapp t1 t2 = E0 := by simpa [htrace] using ht
+        have ht1 : t1 = E0 := behaviors_eapp_eq_nil_left happ
+        subst t1
+        have ht2 : t2 = E0 := by
+          rw [show Eapp E0 t2 = t2 by exact _root_.List.nil_append t2] at happ
+          exact happ
+        subst t2
+        exact ⟨s2, a, hstep,
+          forever_silent_N_star a hrest horder htail⟩
+  have plusHead : ∀ (s1 s3 : state) (t : trace),
+          plus step ge s1 t s3 → t = E0 →
+          ∀ a2, forever_silent_N step order ge a2 s3 →
+            ∃ s2 a', step ge s1 E0 s2 ∧
+              forever_silent_N step order ge a' s2 := by
+    intro s1 s3 t hplus ht
+    cases hplus with
+    | plus_left =>
+        rename_i t1 s2 t2 hstep htrace hrest
+        intro a2 htail
+        have happ : Eapp t1 t2 = E0 := by simpa [htrace] using ht
+        have ht1 : t1 = E0 := behaviors_eapp_eq_nil_left happ
+        subst t1
+        have ht2 : t2 = E0 := by
+          rw [show Eapp E0 t2 = t2 by exact _root_.List.nil_append t2] at happ
+          exact happ
+        subst t2
+        exact ⟨s2, a2, hstep,
+          prefixN a2 s2 s3 E0 hrest rfl htail⟩
+  cases hN with
+  | forever_silent_N_star =>
+      rename_i s2 a2 htail horder hstar
+      exact starHead s s2 E0 hstar rfl a2 horder htail
+  | forever_silent_N_plus =>
+      rename_i s2 a2 htail hplus
+      exact plusHead s s2 E0 hplus rfl a2 htail
+
+private theorem behaviors_forever_silent_N_forever
+    {genv state A : Type}
+    (step : genv → state → trace → state → Prop)
+    (order : A → A → Prop) (ge : genv)
+    (wf : WellFounded order) :
+    ∀ a s, forever_silent_N step order ge a s →
+      forever_silent step ge s := by
+  intro a s hN
+  let pred : state → Prop := fun s => ∃ a, forever_silent_N step order ge a s
+  have hpred : pred s := ⟨a, hN⟩
+  exact forever_silent.coinduct step ge pred
+    (by
+      intro s hs
+      rcases hs with ⟨a, hN⟩
+      obtain ⟨s', a', hstep, hN'⟩ :=
+        behaviors_forever_silent_N_inv step order ge wf a s hN
+      exact ⟨s', hstep, ⟨a', hN'⟩⟩)
+    s hpred
+
+private theorem behaviors_simulation_forever_silent
+    (L1 L2 : semantics) (index : Type)
+    (order : index → index → Prop)
+    (match_states : index → state L1 → state L2 → Prop)
+    (props : fsim_properties L1 L2 index order match_states) :
+    ∀ i s1 s2, forever_silent (step L1) (globalenv L1) s1 →
+      match_states i s1 s2 →
+      forever_silent (step L2) (globalenv L2) s2 := by
+  intro i s1 s2 hforever hmatch
+  let pred : index → state L2 → Prop := fun i s2 =>
+    ∃ s1, match_states i s1 s2 ∧
+      forever_silent (step L1) (globalenv L1) s1
+  have hN : forever_silent_N (step L2) order (globalenv L2) i s2 :=
+    forever_silent_N.coinduct (step L2) order (globalenv L2) pred
+      (by
+        intro i s2 hs
+        rcases hs with ⟨s1, hmatch, hforever⟩
+        exact (forever_silent_casesOn
+          (step := step L1) (ge := globalenv L1)
+          (motive := fun s1 => match_states i s1 s2 →
+            (∃ s2' i', star (step L2) (globalenv L2) s2 E0 s2' ∧
+              order i' i ∧
+              (∃ s1', match_states i' s1' s2' ∧
+                forever_silent (step L1) (globalenv L1) s1')) ∨
+            (∃ s2' i', plus (step L2) (globalenv L2) s2 E0 s2' ∧
+              (∃ s1', match_states i' s1' s2' ∧
+                forever_silent (step L1) (globalenv L1) s1')))
+          (by
+            intro s1' s1next hstep htail hmatch
+            obtain ⟨i', s2', hsim, hmatch'⟩ :=
+              props.fsim_simulation s1' E0 s1next hstep i s2 hmatch
+            rcases hsim with hplus | ⟨hstar, horder⟩
+            · exact Or.inr ⟨s2', i', hplus,
+                ⟨s1next, hmatch', htail⟩⟩
+            · exact Or.inl ⟨s2', i', hstar, horder,
+                ⟨s1next, hmatch', htail⟩⟩)
+          hforever) hmatch)
+      i s2 ⟨s1, hmatch, hforever⟩
+  exact behaviors_forever_silent_N_forever
+    (step L2) order (globalenv L2) props.fsim_order_wf i s2 hN
+
+private theorem behaviors_simulation_forever_reactive
+    (L1 L2 : semantics) (index : Type)
+    (order : index → index → Prop)
+    (match_states : index → state L1 → state L2 → Prop)
+    (props : fsim_properties L1 L2 index order match_states) :
+    ∀ i s1 s2 T, forever_reactive (step L1) (globalenv L1) s1 T →
+      match_states i s1 s2 →
+      forever_reactive (step L2) (globalenv L2) s2 T := by
+  intro i s1 s2 T hforever hmatch
+  let pred : state L2 → traceinf → Prop := fun s2 T =>
+    ∃ i s1, match_states i s1 s2 ∧
+      forever_reactive (step L1) (globalenv L1) s1 T
+  exact forever_reactive.coinduct (step L2) (globalenv L2) pred
+    (by
+      intro s2 T hs
+      rcases hs with ⟨i, s1, hmatch, hforever⟩
+      exact (forever_reactive_casesOn
+        (step := step L1) (ge := globalenv L1)
+        (motive := fun s1 T => match_states i s1 s2 →
+          ∃ s2' t T',
+            star (step L2) (globalenv L2) s2 t s2' ∧
+              t ≠ E0 ∧
+              (∃ i' s1', match_states i' s1' s2' ∧
+                forever_reactive (step L1) (globalenv L1) s1' T') ∧
+              (T = Eappinf t T'))
+        (by
+          intro s1 s1' t T' hstar hnonempty htail hmatch
+          obtain ⟨i', s2', hstar', hmatch'⟩ :=
+            behaviors_simulation_star L1 L2 index order match_states props
+              s1 t s1' hstar i s2 hmatch
+          exact ⟨s2', t, T', hstar', hnonempty,
+            ⟨i', s1', hmatch', htail⟩, rfl⟩)
+        hforever hmatch))
+    s2 T ⟨i, s1, hmatch, hforever⟩
+
+private theorem behaviors_forward_simulation_state_behaves
+    (L1 L2 : semantics) (index : Type)
+    (order : index → index → Prop)
+    (match_states : index → state L1 → state L2 → Prop)
+    (props : fsim_properties L1 L2 index order match_states) :
+    ∀ i s1 s2 (beh1 : program_behavior),
+      match_states i s1 s2 → state_behaves L1 s1 beh1 →
+      ∃ beh2, state_behaves L2 s2 beh2 ∧
+        behavior_improves beh1 beh2 := by
+  intro i s1 s2 beh1 hmatch hbeh1
+  cases hbeh1 with
+  | state_terminates t s1' r hstar hfinal =>
+      obtain ⟨i', s2', hstar', hmatch'⟩ :=
+        behaviors_simulation_star L1 L2 index order match_states props
+          s1 t s1' hstar i s2 hmatch
+      exact ⟨Terminates t r,
+        state_behaves.state_terminates t s2' r hstar'
+          (props.fsim_match_final_states i' s1' s2' r hmatch' hfinal),
+        behavior_improves_refl (Terminates t r)⟩
+  | state_diverges t s1' hstar hforever =>
+      obtain ⟨i', s2', hstar', hmatch'⟩ :=
+        behaviors_simulation_star L1 L2 index order match_states props
+          s1 t s1' hstar i s2 hmatch
+      exact ⟨Diverges t,
+        state_behaves.state_diverges t s2' hstar'
+          (behaviors_simulation_forever_silent L1 L2 index order match_states
+            props i' s1' s2' hforever hmatch'),
+        behavior_improves_refl (Diverges t)⟩
+  | state_reacts T hforever =>
+      exact ⟨Reacts T,
+        state_behaves.state_reacts T
+          (behaviors_simulation_forever_reactive L1 L2 index order match_states
+            props i s1 s2 T hforever hmatch),
+        behavior_improves_refl (Reacts T)⟩
+  | state_goes_wrong t s1' hstar hnostep hnofinal =>
+      obtain ⟨i', s2', hstar', hmatch'⟩ :=
+        behaviors_simulation_star L1 L2 index order match_states props
+          s1 t s1' hstar i s2 hmatch
+      obtain ⟨beh2, hbeh2⟩ := state_behaves_exists L2 s2'
+      refine ⟨behavior_app t beh2,
+        state_behaves_app L2 s2 t s2' beh2 hstar' hbeh2, ?_⟩
+      have himp := behavior_improves_app t (Goes_wrong E0) beh2
+        (behavior_improves_bot beh2)
+      change behavior_improves (Goes_wrong (Eapp t E0))
+        (behavior_app t beh2) at himp
+      have ht : Eapp t E0 = t := _root_.List.append_nil t
+      rw [ht] at himp
+      exact himp
+
+theorem forward_simulation_behavior_improves :
+    forward_simulation_behavior_improvesStatement := by
+  intro L1 L2 hsim
+  cases hsim with
+  | @Forward_simulation index order match_states props =>
+      intro beh1 hbeh1
+      cases hbeh1 with
+      | program_runs s1 beh1 hinit hbehaves =>
+          obtain ⟨i, s2, hinit2, hmatch⟩ :=
+            props.fsim_match_initial_states s1 hinit
+          obtain ⟨beh2, hbehaves2, himproves⟩ :=
+            behaviors_forward_simulation_state_behaves L1 L2 index order
+              match_states props i s1 s2 beh1 hmatch hbehaves
+          exact ⟨beh2,
+            program_behaves.program_runs s2 beh2 hinit2 hbehaves2,
+            himproves⟩
+      | program_goes_initially_wrong hnoinit =>
+          classical
+          by_cases hinit2 : ∃ s2, initial_state L2 s2
+          · rcases hinit2 with ⟨s2, hinit2⟩
+            obtain ⟨beh2, hbehaves2⟩ := state_behaves_exists L2 s2
+            exact ⟨beh2,
+              program_behaves.program_runs s2 beh2 hinit2 hbehaves2,
+              behavior_improves_bot beh2⟩
+          · refine ⟨Goes_wrong E0,
+              program_behaves.program_goes_initially_wrong ?_,
+              behavior_improves_refl (Goes_wrong E0)⟩
+            intro s hs
+            exact hinit2 ⟨s, hs⟩
+
+end CompCert4Lean.Common.Behaviors

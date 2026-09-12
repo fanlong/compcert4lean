@@ -642,3 +642,523 @@ theorem Zdecomp : ZdecompStatement := by
     simpa [hmod1] using hdiv
 
 end CompCert4Lean.Lib.Zbits
+namespace CompCert4Lean.Lib.Zbits
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+private theorem zbits_nat_testbit_double_zero (a : Nat) :
+    Nat.testBit (2 * a) 0 = false := by
+  rw [Nat.testBit_zero]
+  simp
+
+private theorem zbits_nat_testbit_succ_double_zero (a : Nat) :
+    Nat.testBit (2 * a + 1) 0 = true := by
+  rw [Nat.testBit_zero]
+  simp
+
+private theorem zbits_nat_testbit_double_succ (a j : Nat) :
+    Nat.testBit (2 * a) (j + 1) = Nat.testBit a j := by
+  rw [Nat.testBit_succ]
+  congr 1
+  omega
+
+private theorem zbits_nat_testbit_succ_double_succ (a j : Nat) :
+    Nat.testBit (2 * a + 1) (j + 1) = Nat.testBit a j := by
+  rw [Nat.testBit_succ]
+  congr 1
+  omega
+
+private theorem zbits_nat_testbit_pred_double_zero (a : Nat) (ha : 0 < a) :
+    Nat.testBit (2 * a - 1) 0 = true := by
+  rw [Nat.testBit_zero]
+  have h : (2 * a - 1) % 2 = 1 := by omega
+  simp [h]
+
+private theorem zbits_nat_testbit_pred_double_succ (a j : Nat) (ha : 0 < a) :
+    Nat.testBit (2 * a - 1) (j + 1) = Nat.testBit (a - 1) j := by
+  rw [Nat.testBit_succ]
+  have h : (2 * a - 1) / 2 = a - 1 := by omega
+  rw [h]
+
+private theorem zbits_nat_testbit_pred_double_pred_succ (a j : Nat) (ha : 0 < a) :
+    Nat.testBit ((2 * a - 1) - 1) (j + 1) = Nat.testBit (a - 1) j := by
+  have h : (2 * a - 1) - 1 = 2 * (a - 1) := by omega
+  rw [h]
+  exact zbits_nat_testbit_double_succ (a - 1) j
+
+private theorem zbits_double_pos (q : positive) :
+    zDouble (Zpos q) = Zpos (PArith.BinPos.Pos.of_nat (2 * posToNat q)) := by
+  apply intOfZ_injective
+  simp only [zDouble, ZArith.BinInt.Z.double, zMul, ZArith.BinInt.Z.mul,
+    intOfZ_zOfInt]
+  simp only [intOfZ, posToNat]
+  have hq : 0 < 2 * posToNat q := by
+    have := posToNat_positive q
+    omega
+  have hpos : posToNat (PArith.BinPos.Pos.of_nat (2 * posToNat q)) =
+      2 * posToNat q := by
+    simpa [PArith.BinPos.Pos.of_nat] using posToNat_posOfNat hq
+  rw [hpos]
+  simp [Int.mul_neg, Int.natCast_mul]
+
+private theorem zbits_double_neg (q : positive) :
+    zDouble (Zneg q) = Zneg (PArith.BinPos.Pos.of_nat (2 * posToNat q)) := by
+  apply intOfZ_injective
+  simp only [zDouble, ZArith.BinInt.Z.double, zMul, ZArith.BinInt.Z.mul,
+    intOfZ_zOfInt]
+  simp only [intOfZ, posToNat]
+  have hq : 0 < 2 * posToNat q := by
+    have := posToNat_positive q
+    omega
+  have hpos : posToNat (PArith.BinPos.Pos.of_nat (2 * posToNat q)) =
+      2 * posToNat q := by
+    simpa [PArith.BinPos.Pos.of_nat] using posToNat_posOfNat hq
+  rw [hpos]
+  simp [Int.mul_neg, Int.natCast_mul]
+
+private theorem zbits_succ_double_pos (q : positive) :
+    zSuccDouble (Zpos q) = Zpos (PArith.BinPos.Pos.of_nat (2 * posToNat q + 1)) := by
+  apply intOfZ_injective
+  simp only [zSuccDouble, ZArith.BinInt.Z.succ_double, zSucc,
+    ZArith.BinInt.Z.succ, zDouble, ZArith.BinInt.Z.double, zMul,
+    ZArith.BinInt.Z.mul, zAdd, ZArith.BinInt.Z.add,
+    intOfZ_zOfInt]
+  simp only [intOfZ, posToNat]
+  have hq : 0 < 2 * posToNat q + 1 := by
+    have := posToNat_positive q
+    omega
+  have hpos : posToNat (PArith.BinPos.Pos.of_nat (2 * posToNat q + 1)) =
+      2 * posToNat q + 1 := by
+    simpa [PArith.BinPos.Pos.of_nat] using posToNat_posOfNat hq
+  rw [hpos]
+  simp [Int.natCast_mul, Int.natCast_add]
+
+private theorem zbits_succ_double_neg (q : positive) :
+    zSuccDouble (Zneg q) = Zneg (PArith.BinPos.Pos.of_nat (2 * posToNat q - 1)) := by
+  have hq : 0 < posToNat q := posToNat_positive q
+  have hq' : 0 < 2 * posToNat q - 1 := by omega
+  apply intOfZ_injective
+  simp only [zSuccDouble, ZArith.BinInt.Z.succ_double, zSucc,
+    ZArith.BinInt.Z.succ, zDouble, ZArith.BinInt.Z.double, zMul,
+    ZArith.BinInt.Z.mul, zAdd, ZArith.BinInt.Z.add,
+    intOfZ_zOfInt]
+  simp only [intOfZ, posToNat]
+  have hpos : posToNat (PArith.BinPos.Pos.of_nat (2 * posToNat q - 1)) =
+      2 * posToNat q - 1 := by
+    simpa [PArith.BinPos.Pos.of_nat] using posToNat_posOfNat hq'
+  rw [hpos]
+  have hsub : (Int.ofNat (2 * posToNat q - 1) : Int) =
+      Int.ofNat (2 * posToNat q) - 1 := by
+    simpa [Int.ofNat_eq_natCast] using
+      (Int.ofNat_sub (m := 1) (n := 2 * posToNat q) (by omega))
+  rw [hsub]
+  simp [Int.mul_neg, Int.natCast_mul]
+  omega
+
+private theorem zbits_pred_pos_xH :
+    zPred (Zpos xH) = zZero := by rfl
+
+private theorem zbits_pred_pos (p : positive) (hp : 1 < posToNat p) :
+    zPred (Zpos p) = Zpos (PArith.BinPos.Pos.of_nat (posToNat p - 1)) := by
+  have hp' : 0 < posToNat p - 1 := by omega
+  apply intOfZ_injective
+  simp only [zPred, ZArith.BinInt.Z.pred, ZArith.BinInt.Z.sub,
+    intOfZ_zOfInt]
+  simp only [intOfZ, posToNat]
+  have hpos : posToNat (PArith.BinPos.Pos.of_nat (posToNat p - 1)) =
+      posToNat p - 1 := by
+    simpa [PArith.BinPos.Pos.of_nat] using posToNat_posOfNat hp'
+  rw [hpos]
+  have hsub : (Int.ofNat (posToNat p - 1) : Int) =
+      Int.ofNat (posToNat p) - 1 := by
+    simpa [Int.ofNat_eq_natCast] using
+      (Int.ofNat_sub (m := 1) (n := posToNat p) (by omega))
+  rw [hsub]
+  simp [Int.natCast_mul]
+
+private theorem zbits_testbit_pos_index (q : positive) (N : Nat) (hN : 0 < N) :
+    zTestbit (Zpos q) (Zpos (PArith.BinPos.Pos.of_nat N)) =
+      Nat.testBit (posToNat q) N := by
+  have hidx : posToNat (PArith.BinPos.Pos.of_nat N) = N := by
+    simpa [PArith.BinPos.Pos.of_nat] using posToNat_posOfNat hN
+  simp [zTestbit, ZArith.BinInt.Z.testbit, hidx]
+
+private theorem zbits_testbit_neg_index (q : positive) (N : Nat) (hN : 0 < N) :
+    zTestbit (Zneg q) (Zpos (PArith.BinPos.Pos.of_nat N)) =
+      !(Nat.testBit (posToNat q - 1) N) := by
+  have hidx : posToNat (PArith.BinPos.Pos.of_nat N) = N := by
+    simpa [PArith.BinPos.Pos.of_nat] using posToNat_posOfNat hN
+  simp [zTestbit, ZArith.BinInt.Z.testbit, hidx]
+
+private theorem zbits_testbit_pos_raw (q p : positive) :
+    zTestbit (Zpos q) (Zpos p) = Nat.testBit (posToNat q) (posToNat p) := by
+  rfl
+
+private theorem zbits_testbit_neg_raw (q p : positive) :
+    zTestbit (Zneg q) (Zpos p) = !(Nat.testBit (posToNat q - 1) (posToNat p)) := by
+  rfl
+
+private theorem zbits_testbit_pos_zero (q : positive) :
+    zTestbit (Zpos q) zZero = Nat.testBit (posToNat q) 0 := by
+  simp only [zTestbit, ZArith.BinInt.Z.testbit, ZArith.BinInt.Z.odd,
+    ZArith.BinInt.Z.even, intOfZ]
+  rw [Nat.testBit_zero]
+  rcases Nat.mod_two_eq_zero_or_one (posToNat q) with h | h <;> simp [h]
+
+private theorem zbits_testbit_neg_zero (q : positive) :
+    zTestbit (Zneg q) zZero = !(Nat.testBit (posToNat q - 1) 0) := by
+  simp only [zTestbit, ZArith.BinInt.Z.testbit, ZArith.BinInt.Z.odd,
+    ZArith.BinInt.Z.even, intOfZ]
+  rw [Nat.testBit_zero]
+  have hq : 0 < posToNat q := posToNat_positive q
+  rcases Nat.mod_two_eq_zero_or_one (posToNat q) with h | h <;> simp [h] <;> omega
+
+private theorem zbits_testbit_pos_one (q : positive) :
+    zTestbit (Zpos q) (Zpos xH) = Nat.testBit (posToNat q) 1 := by
+  rfl
+
+private theorem zbits_testbit_neg_one (q : positive) :
+    zTestbit (Zneg q) (Zpos xH) = !(Nat.testBit (posToNat q - 1) 1) := by
+  rfl
+
+private theorem zbits_odd_double_pos (q : positive) :
+    ZArith.BinInt.Z.odd (Zpos (PArith.BinPos.Pos.of_nat (2 * posToNat q))) = false := by
+  have hq : 0 < 2 * posToNat q := by
+    have := posToNat_positive q
+    omega
+  have hidx : posToNat (PArith.BinPos.Pos.of_nat (2 * posToNat q)) =
+      2 * posToNat q := by
+    simpa [PArith.BinPos.Pos.of_nat] using posToNat_posOfNat hq
+  simp only [ZArith.BinInt.Z.odd, ZArith.BinInt.Z.even, intOfZ, hidx]
+  simp [Int.natAbs] <;> omega
+
+private theorem zbits_odd_double_neg (q : positive) :
+    ZArith.BinInt.Z.odd (Zneg (PArith.BinPos.Pos.of_nat (2 * posToNat q))) = false := by
+  have hq : 0 < 2 * posToNat q := by
+    have := posToNat_positive q
+    omega
+  have hidx : posToNat (PArith.BinPos.Pos.of_nat (2 * posToNat q)) =
+      2 * posToNat q := by
+    simpa [PArith.BinPos.Pos.of_nat] using posToNat_posOfNat hq
+  simp only [ZArith.BinInt.Z.odd, ZArith.BinInt.Z.even, intOfZ, hidx]
+  rw [Int.natAbs_neg]
+  simp [Int.natAbs] <;> omega
+
+private theorem zbits_odd_succ_double_pos (q : positive) :
+    ZArith.BinInt.Z.odd (Zpos (PArith.BinPos.Pos.of_nat (2 * posToNat q + 1))) = true := by
+  have hq : 0 < 2 * posToNat q + 1 := by
+    have := posToNat_positive q
+    omega
+  have hidx : posToNat (PArith.BinPos.Pos.of_nat (2 * posToNat q + 1)) =
+      2 * posToNat q + 1 := by
+    simpa [PArith.BinPos.Pos.of_nat] using posToNat_posOfNat hq
+  simp only [ZArith.BinInt.Z.odd, ZArith.BinInt.Z.even, intOfZ, hidx]
+  simp [Int.natAbs] <;> omega
+
+private theorem zbits_odd_succ_double_neg (q : positive) :
+    ZArith.BinInt.Z.odd (Zneg (PArith.BinPos.Pos.of_nat (2 * posToNat q - 1))) = true := by
+  have hq : 0 < posToNat q := posToNat_positive q
+  have hq' : 0 < 2 * posToNat q - 1 := by omega
+  have hidx : posToNat (PArith.BinPos.Pos.of_nat (2 * posToNat q - 1)) =
+      2 * posToNat q - 1 := by
+    simpa [PArith.BinPos.Pos.of_nat] using posToNat_posOfNat hq'
+  simp only [ZArith.BinInt.Z.odd, ZArith.BinInt.Z.even, intOfZ, hidx]
+  rw [Int.natAbs_neg]
+  simp [Int.natAbs] <;> omega
+
+private theorem zbits_double_shift_pos (x : Z) (p : positive) (hp : 1 < posToNat p) :
+    zTestbit (zDouble x) (Zpos p) =
+      zTestbit x (Zpos (PArith.BinPos.Pos.of_nat (posToNat p - 1))) := by
+  cases p with
+  | xH => simp [posToNat] at hp
+  | xI r =>
+      have hr : 0 < posToNat r := posToNat_positive r
+      have hri : posToNat (xI r) = 2 * posToNat r + 1 := rfl
+      cases x with
+      | Z0 => rfl
+      | Zpos q =>
+          have hq : 0 < posToNat q := posToNat_positive q
+          rw [zbits_double_pos]
+          simp only [zTestbit, ZArith.BinInt.Z.testbit]
+          have hleft : posToNat (PArith.BinPos.Pos.of_nat (2 * posToNat q)) =
+              2 * posToNat q := by
+            simpa [PArith.BinPos.Pos.of_nat] using posToNat_posOfNat (by omega : 0 < 2 * posToNat q)
+          have hright : posToNat (PArith.BinPos.Pos.of_nat
+              (posToNat (xI r) - 1)) = 2 * posToNat r := by
+            rw [hri]
+            simpa [PArith.BinPos.Pos.of_nat] using
+              posToNat_posOfNat (by omega : 0 < 2 * posToNat r)
+          rw [hleft, hright, hri]
+          exact zbits_nat_testbit_double_succ _ _
+      | Zneg q =>
+          have hq : 0 < posToNat q := posToNat_positive q
+          rw [zbits_double_neg]
+          simp only [zTestbit, ZArith.BinInt.Z.testbit]
+          have hleft : posToNat (PArith.BinPos.Pos.of_nat (2 * posToNat q)) =
+              2 * posToNat q := by
+            simpa [PArith.BinPos.Pos.of_nat] using posToNat_posOfNat (by omega : 0 < 2 * posToNat q)
+          have hright : posToNat (PArith.BinPos.Pos.of_nat
+              (posToNat (xI r) - 1)) = 2 * posToNat r := by
+            rw [hri]
+            simpa [PArith.BinPos.Pos.of_nat] using
+              posToNat_posOfNat (by omega : 0 < 2 * posToNat r)
+          rw [hleft, hright, hri]
+          exact congrArg Bool.not (zbits_nat_testbit_pred_double_succ
+            (posToNat q) (2 * posToNat r) (posToNat_positive q))
+  | xO r =>
+      have hr : 0 < posToNat r := posToNat_positive r
+      have hro : posToNat (xO r) = 2 * posToNat r := rfl
+      have hj : 0 < 2 * posToNat r - 1 := by omega
+      cases x with
+      | Z0 => rfl
+      | Zpos q =>
+          have hq : 0 < posToNat q := posToNat_positive q
+          rw [zbits_double_pos]
+          simp only [zTestbit, ZArith.BinInt.Z.testbit]
+          have hleft : posToNat (PArith.BinPos.Pos.of_nat (2 * posToNat q)) =
+              2 * posToNat q := by
+            simpa [PArith.BinPos.Pos.of_nat] using posToNat_posOfNat (by omega : 0 < 2 * posToNat q)
+          have hright : posToNat (PArith.BinPos.Pos.of_nat
+              (posToNat (xO r) - 1)) = 2 * posToNat r - 1 := by
+            rw [hro]
+            simpa [PArith.BinPos.Pos.of_nat] using posToNat_posOfNat hj
+          rw [hleft, hright, hro]
+          have heq : 2 * posToNat r = (2 * posToNat r - 1) + 1 := by omega
+          rw [heq]
+          exact zbits_nat_testbit_double_succ _ _
+      | Zneg q =>
+          have hq : 0 < posToNat q := posToNat_positive q
+          rw [zbits_double_neg]
+          simp only [zTestbit, ZArith.BinInt.Z.testbit]
+          have hleft : posToNat (PArith.BinPos.Pos.of_nat (2 * posToNat q)) =
+              2 * posToNat q := by
+            simpa [PArith.BinPos.Pos.of_nat] using posToNat_posOfNat (by omega : 0 < 2 * posToNat q)
+          have hright : posToNat (PArith.BinPos.Pos.of_nat
+              (posToNat (xO r) - 1)) = 2 * posToNat r - 1 := by
+            rw [hro]
+            simpa [PArith.BinPos.Pos.of_nat] using posToNat_posOfNat hj
+          rw [hleft, hright, hro]
+          have heq : 2 * posToNat r = (2 * posToNat r - 1) + 1 := by omega
+          rw [heq]
+          have hs : (2 * posToNat r - 1 + 1 - 1) = 2 * posToNat r - 1 := by omega
+          rw [hs]
+          exact congrArg Bool.not (zbits_nat_testbit_pred_double_succ
+            (posToNat q) (2 * posToNat r - 1) (posToNat_positive q))
+
+private theorem zbits_succ_double_shift_pos (x : Z) (p : positive) (hp : 1 < posToNat p) :
+    zTestbit (zSuccDouble x) (Zpos p) =
+      zTestbit x (Zpos (PArith.BinPos.Pos.of_nat (posToNat p - 1))) := by
+  cases p with
+  | xH => simp [posToNat] at hp
+  | xI r =>
+      have hr : 0 < posToNat r := posToNat_positive r
+      have hri : posToNat (xI r) = 2 * posToNat r + 1 := rfl
+      cases x with
+      | Z0 =>
+          simp [zSuccDouble, ZArith.BinInt.Z.succ_double, zSucc,
+            ZArith.BinInt.Z.succ, zDouble, ZArith.BinInt.Z.double,
+            zMul, ZArith.BinInt.Z.mul, zAdd, ZArith.BinInt.Z.add,
+            zTestbit, ZArith.BinInt.Z.testbit, ZArith.BinInt.Z.odd,
+            ZArith.BinInt.Z.even, intOfZ, zOfInt, posToNat]
+          apply Nat.testBit_lt_two_pow
+          apply Nat.one_lt_two_pow
+          omega
+      | Zpos q =>
+          have hq : 0 < posToNat q := posToNat_positive q
+          rw [zbits_succ_double_pos]
+          simp only [zTestbit, ZArith.BinInt.Z.testbit]
+          have hleft : posToNat (PArith.BinPos.Pos.of_nat (2 * posToNat q + 1)) =
+              2 * posToNat q + 1 := by
+            simpa [PArith.BinPos.Pos.of_nat] using posToNat_posOfNat (by omega : 0 < 2 * posToNat q + 1)
+          have hright : posToNat (PArith.BinPos.Pos.of_nat
+              (posToNat (xI r) - 1)) = 2 * posToNat r := by
+            rw [hri]
+            simpa [PArith.BinPos.Pos.of_nat] using
+              posToNat_posOfNat (by omega : 0 < 2 * posToNat r)
+          rw [hleft, hright, hri]
+          exact zbits_nat_testbit_succ_double_succ _ _
+      | Zneg q =>
+          have hq : 0 < posToNat q := posToNat_positive q
+          rw [zbits_succ_double_neg]
+          simp only [zTestbit, ZArith.BinInt.Z.testbit]
+          have hleft : posToNat (PArith.BinPos.Pos.of_nat (2 * posToNat q - 1)) =
+              2 * posToNat q - 1 := by
+            simpa [PArith.BinPos.Pos.of_nat] using posToNat_posOfNat (by omega : 0 < 2 * posToNat q - 1)
+          have hright : posToNat (PArith.BinPos.Pos.of_nat
+              (posToNat (xI r) - 1)) = 2 * posToNat r := by
+            rw [hri]
+            simpa [PArith.BinPos.Pos.of_nat] using
+              posToNat_posOfNat (by omega : 0 < 2 * posToNat r)
+          rw [hleft, hright, hri]
+          exact congrArg Bool.not (zbits_nat_testbit_pred_double_pred_succ
+            (posToNat q) (2 * posToNat r) (posToNat_positive q))
+  | xO r =>
+      have hr : 0 < posToNat r := posToNat_positive r
+      have hro : posToNat (xO r) = 2 * posToNat r := rfl
+      have hj : 0 < 2 * posToNat r - 1 := by omega
+      cases x with
+      | Z0 =>
+          simp [zSuccDouble, ZArith.BinInt.Z.succ_double, zSucc,
+            ZArith.BinInt.Z.succ, zDouble, ZArith.BinInt.Z.double,
+            zMul, ZArith.BinInt.Z.mul, zAdd, ZArith.BinInt.Z.add,
+            zTestbit, ZArith.BinInt.Z.testbit, ZArith.BinInt.Z.odd,
+            ZArith.BinInt.Z.even, intOfZ, zOfInt, posToNat]
+          apply Nat.testBit_lt_two_pow
+          apply Nat.one_lt_two_pow
+          omega
+      | Zpos q =>
+          have hq : 0 < posToNat q := posToNat_positive q
+          rw [zbits_succ_double_pos]
+          simp only [zTestbit, ZArith.BinInt.Z.testbit]
+          have hleft : posToNat (PArith.BinPos.Pos.of_nat (2 * posToNat q + 1)) =
+              2 * posToNat q + 1 := by
+            simpa [PArith.BinPos.Pos.of_nat] using posToNat_posOfNat (by omega : 0 < 2 * posToNat q + 1)
+          have hright : posToNat (PArith.BinPos.Pos.of_nat
+              (posToNat (xO r) - 1)) = 2 * posToNat r - 1 := by
+            rw [hro]
+            simpa [PArith.BinPos.Pos.of_nat] using posToNat_posOfNat hj
+          rw [hleft, hright, hro]
+          have heq : 2 * posToNat r = (2 * posToNat r - 1) + 1 := by omega
+          rw [heq]
+          exact zbits_nat_testbit_succ_double_succ _ _
+      | Zneg q =>
+          have hq : 0 < posToNat q := posToNat_positive q
+          rw [zbits_succ_double_neg]
+          simp only [zTestbit, ZArith.BinInt.Z.testbit]
+          have hleft : posToNat (PArith.BinPos.Pos.of_nat (2 * posToNat q - 1)) =
+              2 * posToNat q - 1 := by
+            simpa [PArith.BinPos.Pos.of_nat] using posToNat_posOfNat (by omega : 0 < 2 * posToNat q - 1)
+          have hright : posToNat (PArith.BinPos.Pos.of_nat
+              (posToNat (xO r) - 1)) = 2 * posToNat r - 1 := by
+            rw [hro]
+            simpa [PArith.BinPos.Pos.of_nat] using posToNat_posOfNat hj
+          rw [hleft, hright, hro]
+          have heq : (2 * posToNat q - 1 - 1) = 2 * (posToNat q - 1) := by omega
+          rw [heq]
+          have heq' : 2 * posToNat r = (2 * posToNat r - 1) + 1 := by omega
+          rw [heq']
+          exact congrArg Bool.not (zbits_nat_testbit_double_succ
+            (posToNat q - 1) (2 * posToNat r - 1))
+
+theorem Ztestbit_shiftin : Ztestbit_shiftinStatement := by
+  intro b x n hn
+  cases n with
+  | Zneg p =>
+      have hp : 0 < posToNat p := posToNat_positive p
+      simp [ZArith.BinInt.Z.le, intOfZ] at hn
+      omega
+  | Z0 =>
+      simp [sumboolSelect, zeqDec, CompCert4Lean.Lib.Coqlib.zeq,
+        ZArith.BinInt.Z.eq_dec]
+      cases b with
+      | false =>
+          rw [show Zshiftin false x = zDouble x by rfl]
+          cases x with
+          | Z0 => rfl
+          | Zpos q =>
+              rw [zbits_double_pos]
+              exact zbits_odd_double_pos q
+          | Zneg q =>
+              rw [zbits_double_neg]
+              exact zbits_odd_double_neg q
+      | true =>
+          rw [show Zshiftin true x = zSuccDouble x by rfl]
+          cases x with
+          | Z0 => rfl
+          | Zpos q =>
+              rw [zbits_succ_double_pos]
+              exact zbits_odd_succ_double_pos q
+          | Zneg q =>
+              rw [zbits_succ_double_neg]
+              exact zbits_odd_succ_double_neg q
+  | Zpos p =>
+      simp [sumboolSelect, zeqDec, CompCert4Lean.Lib.Coqlib.zeq,
+        ZArith.BinInt.Z.eq_dec]
+      cases p with
+      | xH =>
+          rw [zbits_pred_pos_xH]
+          cases b with
+          | false =>
+              rw [show Zshiftin false x = zDouble x by rfl]
+              cases x with
+              | Z0 => rfl
+              | Zpos q =>
+                  rw [zbits_double_pos]
+                  have hq : 0 < 2 * posToNat q := by
+                    have := posToNat_positive q
+                    omega
+                  have hidx : posToNat (PArith.BinPos.Pos.of_nat (2 * posToNat q)) =
+                      2 * posToNat q := by
+                    simpa [PArith.BinPos.Pos.of_nat] using posToNat_posOfNat hq
+                  rw [zbits_testbit_pos_one, zbits_testbit_pos_zero]
+                  rw [hidx]
+                  exact zbits_nat_testbit_double_succ _ 0
+              | Zneg q =>
+                  rw [zbits_double_neg]
+                  have hq : 0 < 2 * posToNat q := by
+                    have := posToNat_positive q
+                    omega
+                  have hidx : posToNat (PArith.BinPos.Pos.of_nat (2 * posToNat q)) =
+                      2 * posToNat q := by
+                    simpa [PArith.BinPos.Pos.of_nat] using posToNat_posOfNat hq
+                  rw [zbits_testbit_neg_one, zbits_testbit_neg_zero]
+                  rw [hidx]
+                  exact congrArg Bool.not (zbits_nat_testbit_pred_double_succ
+                    (posToNat q) 0 (posToNat_positive q))
+          | true =>
+              rw [show Zshiftin true x = zSuccDouble x by rfl]
+              cases x with
+              | Z0 => rfl
+              | Zpos q =>
+                  rw [zbits_succ_double_pos]
+                  have hq : 0 < 2 * posToNat q + 1 := by
+                    have := posToNat_positive q
+                    omega
+                  have hidx : posToNat (PArith.BinPos.Pos.of_nat (2 * posToNat q + 1)) =
+                      2 * posToNat q + 1 := by
+                    simpa [PArith.BinPos.Pos.of_nat] using posToNat_posOfNat hq
+                  rw [zbits_testbit_pos_one, zbits_testbit_pos_zero]
+                  rw [hidx]
+                  exact zbits_nat_testbit_succ_double_succ _ 0
+              | Zneg q =>
+                  rw [zbits_succ_double_neg]
+                  have hq : 0 < 2 * posToNat q - 1 := by
+                    have := posToNat_positive q
+                    omega
+                  have hidx : posToNat (PArith.BinPos.Pos.of_nat (2 * posToNat q - 1)) =
+                      2 * posToNat q - 1 := by
+                    simpa [PArith.BinPos.Pos.of_nat] using posToNat_posOfNat hq
+                  rw [zbits_testbit_neg_one, zbits_testbit_neg_zero]
+                  rw [hidx]
+                  exact congrArg Bool.not (zbits_nat_testbit_pred_double_pred_succ
+                    (posToNat q) 0 (posToNat_positive q))
+      | xI q =>
+          have hp : 1 < posToNat (xI q) := by
+            simp [posToNat]
+            have := posToNat_positive q
+            omega
+          rw [zbits_pred_pos _ hp]
+          cases b with
+          | false =>
+              rw [show Zshiftin false x = zDouble x by rfl]
+              exact zbits_double_shift_pos x (xI q) hp
+          | true =>
+              rw [show Zshiftin true x = zSuccDouble x by rfl]
+              exact zbits_succ_double_shift_pos x (xI q) hp
+      | xO q =>
+          have hp : 1 < posToNat (xO q) := by
+            simp [posToNat]
+            have := posToNat_positive q
+            omega
+          rw [zbits_pred_pos _ hp]
+          cases b with
+          | false =>
+              rw [show Zshiftin false x = zDouble x by rfl]
+              exact zbits_double_shift_pos x (xO q) hp
+          | true =>
+              rw [show Zshiftin true x = zSuccDouble x by rfl]
+              exact zbits_succ_double_shift_pos x (xO q) hp
+
+end CompCert4Lean.Lib.Zbits
+
+namespace CompCert4Lean.Lib.Zbits

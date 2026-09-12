@@ -1255,3 +1255,46 @@ theorem set_builtin_res_sound : set_builtin_res_soundStatement := by
   | BR_none => exact hEm
   | BR_splitlong hi lo => exact hEm
 end CompCert4Lean.Backend.ValueAnalysis
+
+namespace CompCert4Lean.Backend.ValueAnalysis
+
+theorem pmatch_no_stack : pmatch_no_stackStatement := by
+  intro bc hnostack b ofs p hpm
+  cases hpm with
+  | gl id hbc =>
+      apply CompCert4Lean.Backend.ValueDomain.pmatch.nonstack
+      · exact hnostack b
+      · intro hi
+        have h' : CompCert4Lean.Backend.ValueDomain.BCglob id = CompCert4Lean.Backend.ValueDomain.BCinvalid := by simpa [hbc] using hi
+        cases h'
+  | glo id hbc =>
+      apply CompCert4Lean.Backend.ValueDomain.pmatch.nonstack
+      · exact hnostack b
+      · intro hi
+        have h' : CompCert4Lean.Backend.ValueDomain.BCglob id = CompCert4Lean.Backend.ValueDomain.BCinvalid := by simpa [hbc] using hi
+        cases h'
+  | glob id hbc =>
+      apply CompCert4Lean.Backend.ValueDomain.pmatch.nonstack
+      · exact hnostack b
+      · intro hi
+        have h' : CompCert4Lean.Backend.ValueDomain.BCglob id = CompCert4Lean.Backend.ValueDomain.BCinvalid := by simpa [hbc] using hi
+        cases h'
+  | stk hbc => exact False.elim (hnostack b hbc)
+  | stack hbc => exact False.elim (hnostack b hbc)
+  | nonstack hns hni => exact CompCert4Lean.Backend.ValueDomain.pmatch.nonstack hns hni
+  | top hni =>
+      apply CompCert4Lean.Backend.ValueDomain.pmatch.nonstack
+      · exact hnostack b
+      · exact hni
+
+theorem vmatch_no_stack : vmatch_no_stackStatement := by
+  intro bc hnostack v x hvm
+  apply CompCert4Lean.Backend.ValueDomain.vmatch_ifptr bc v
+    CompCert4Lean.Backend.ValueDomain.Nonstack
+  intro b ofs hv
+  subst v
+  cases hvm with
+  | ptr b ofs p hpm => exact pmatch_no_stack bc hnostack b ofs p hpm
+  | ifptrPtr b ofs p hpm => exact pmatch_no_stack bc hnostack b ofs p hpm
+
+end CompCert4Lean.Backend.ValueAnalysis

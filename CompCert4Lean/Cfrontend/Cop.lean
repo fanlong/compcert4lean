@@ -1441,3 +1441,120 @@ theorem sem_shift_inject : sem_shift_injectStatement := by
     cases hinj1 <;> cases hinj2 <;> simp_all <;> rcases hsem with ⟨_, rfl⟩ <;> constructor
 
 end CompCert4Lean.Cfrontend.Cop
+
+namespace CompCert4Lean.Cfrontend.Cop
+
+theorem cast_val_casted :
+    ∀ [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+      [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)],
+      cast_val_castedStatement := by
+  intro _binary64_certificate _binary32_certificate v ty m h
+  cases h with
+  | val_casted_int sz si attr n hcast =>
+      cases sz with
+      | I8 =>
+          cases si <;>
+            simpa [sem_cast, classify_cast, cast_int_int,
+              CompCert4Lean.X86_64.Archi.ptr64] using hcast
+      | I16 =>
+          cases si <;>
+            simpa [sem_cast, classify_cast, cast_int_int,
+              CompCert4Lean.X86_64.Archi.ptr64] using hcast
+      | I32 =>
+          simp [sem_cast, classify_cast, cast_int_int,
+            CompCert4Lean.X86_64.Archi.ptr64]
+      | IBool =>
+          cases si <;>
+            cases hb : boolEqInt n Int.zero <;>
+              simpa [sem_cast, classify_cast, cast_int_int,
+                CompCert4Lean.X86_64.Archi.ptr64, hb] using hcast
+  | val_casted_float attr n =>
+      simp [sem_cast, classify_cast, CompCert4Lean.X86_64.Archi.ptr64]
+  | val_casted_single attr n =>
+      simp [sem_cast, classify_cast, CompCert4Lean.X86_64.Archi.ptr64]
+  | val_casted_long si attr n =>
+      simp [sem_cast, classify_cast, CompCert4Lean.X86_64.Archi.ptr64]
+  | val_casted_ptr_ptr b ofs ty attr =>
+      simp [sem_cast, classify_cast, CompCert4Lean.X86_64.Archi.ptr64]
+  | val_casted_int_ptr n ty attr hptr64 =>
+      simp [CompCert4Lean.X86_64.Archi.ptr64] at hptr64
+  | val_casted_ptr_int b ofs si attr hptr64 =>
+      simp [CompCert4Lean.X86_64.Archi.ptr64] at hptr64
+  | val_casted_long_ptr n ty attr hptr64 =>
+      simp [sem_cast, classify_cast, CompCert4Lean.X86_64.Archi.ptr64]
+  | val_casted_ptr_long b ofs si attr hptr64 =>
+      simp [sem_cast, classify_cast, CompCert4Lean.X86_64.Archi.ptr64]
+  | val_casted_struct id attr b ofs =>
+      simp [sem_cast, classify_cast, CompCert4Lean.X86_64.Archi.ptr64]
+  | val_casted_union id attr b ofs =>
+      simp [sem_cast, classify_cast, CompCert4Lean.X86_64.Archi.ptr64]
+  | val_casted_void v =>
+      simp [sem_cast, classify_cast, CompCert4Lean.X86_64.Archi.ptr64]
+
+theorem val_casted_has_argtype : val_casted_has_argtypeStatement := by
+  intro v ty h
+  cases h with
+  | val_casted_int sz si attr n hcast =>
+      cases sz with
+      | I8 =>
+          cases si with
+          | Signed =>
+              change n = Int.sign_ext (zOfNat 8) n
+              exact hcast.symm
+          | Unsigned =>
+              change n = Int.zero_ext (zOfNat 8) n
+              exact hcast.symm
+      | I16 =>
+          cases si with
+          | Signed =>
+              change n = Int.sign_ext (zOfNat 16) n
+              exact hcast.symm
+          | Unsigned =>
+              change n = Int.zero_ext (zOfNat 16) n
+              exact hcast.symm
+      | I32 =>
+          simp [CompCert4Lean.Cfrontend.Ctypes.argtype_of_type,
+            CompCert4Lean.Common.Values.Val.has_argtype]
+      | IBool =>
+          cases hb : boolEqInt n Int.zero with
+          | false =>
+              right
+              simpa [hb, cast_int_int] using hcast.symm
+          | true =>
+              left
+              simpa [hb, cast_int_int] using hcast.symm
+  | val_casted_float attr n =>
+      simp [CompCert4Lean.Cfrontend.Ctypes.argtype_of_type,
+        CompCert4Lean.Common.Values.Val.has_argtype]
+  | val_casted_single attr n =>
+      simp [CompCert4Lean.Cfrontend.Ctypes.argtype_of_type,
+        CompCert4Lean.Common.Values.Val.has_argtype]
+  | val_casted_long si attr n =>
+      simp [CompCert4Lean.Cfrontend.Ctypes.argtype_of_type,
+        CompCert4Lean.Common.Values.Val.has_argtype]
+  | val_casted_ptr_ptr b ofs ty attr =>
+      simp [CompCert4Lean.Cfrontend.Ctypes.argtype_of_type,
+        CompCert4Lean.Common.Values.Val.has_argtype]
+  | val_casted_int_ptr n ty attr hptr64 =>
+      simp [CompCert4Lean.Cfrontend.Ctypes.argtype_of_type,
+        CompCert4Lean.Common.Values.Val.has_argtype, hptr64]
+  | val_casted_ptr_int b ofs si attr hptr64 =>
+      simp [CompCert4Lean.Cfrontend.Ctypes.argtype_of_type,
+        CompCert4Lean.Common.Values.Val.has_argtype, hptr64]
+  | val_casted_long_ptr n ty attr hptr64 =>
+      simp [CompCert4Lean.Cfrontend.Ctypes.argtype_of_type,
+        CompCert4Lean.Common.Values.Val.has_argtype, hptr64]
+  | val_casted_ptr_long b ofs si attr hptr64 =>
+      simp [CompCert4Lean.Cfrontend.Ctypes.argtype_of_type,
+        CompCert4Lean.Common.Values.Val.has_argtype, hptr64]
+  | val_casted_struct id attr b ofs =>
+      simp [CompCert4Lean.Cfrontend.Ctypes.argtype_of_type,
+        CompCert4Lean.Common.Values.Val.has_argtype]
+  | val_casted_union id attr b ofs =>
+      simp [CompCert4Lean.Cfrontend.Ctypes.argtype_of_type,
+        CompCert4Lean.Common.Values.Val.has_argtype]
+  | val_casted_void v =>
+      simp [CompCert4Lean.Cfrontend.Ctypes.argtype_of_type,
+        CompCert4Lean.Common.Values.Val.has_argtype]
+
+end CompCert4Lean.Cfrontend.Cop

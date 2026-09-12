@@ -1286,3 +1286,66 @@ theorem In_raw_partition_between_3 : In_raw_partition_between_3Statement := by
         exact right_ih hx
 
 end CompCert4Lean.Lib.FSetAVLplus.Make
+
+namespace CompCert4Lean.Lib.FSetAVLplus.Make
+
+theorem In_raw_partition_between_4 : In_raw_partition_between_4Statement := by
+  intro X above_low_bound below_high_bound above_monotone below_monotone x m hbst
+  induction hbst generalizing x with
+  | BSLeaf =>
+      intro hx
+      cases hx
+  | BSNode info value left right hleft hright hlt hgt left_ih right_ih =>
+      intro hx
+      rw [raw_partition_between] at hx
+      split at hx
+      next hvalue_above =>
+        split at hx
+        next hvalue_below =>
+          rcases (Raw.concat_spec
+            (raw_partition_between above_low_bound below_high_bound left).2
+            (raw_partition_between above_low_bound below_high_bound right).2
+            x).mp hx with hleft_mem | hright_mem
+          · exact left_ih x hleft_mem
+          · exact right_ih x hright_mem
+        next hnot_below =>
+          have hvalue_below : below_high_bound value = false := by
+            cases h : below_high_bound value <;> simp_all
+          have hbelow_false : ∀ y, X.eq y value ∨ X.lt value y →
+              below_high_bound y = false := by
+            intro y hy
+            cases hbelow_y : below_high_bound y with
+            | false => exact rfl
+            | true =>
+                have hcontra : below_high_bound value = true :=
+                  below_monotone y value hy hbelow_y
+                rw [hvalue_below] at hcontra
+                cases hcontra
+          rcases (Raw.join_spec
+            (raw_partition_between above_low_bound below_high_bound left).2
+            value right x).mp hx with hroot | hleft_mem | hright_mem
+          · exact Or.inr (hbelow_false x (Or.inl hroot))
+          · exact left_ih x hleft_mem
+          · exact Or.inr (hbelow_false x (Or.inr (hgt x hright_mem)))
+      next hnot_above =>
+        have hvalue_above : above_low_bound value = false := by
+          cases h : above_low_bound value <;> simp_all
+        have habove_false : ∀ y, X.eq y value ∨ X.lt y value →
+            above_low_bound y = false := by
+            intro y hy
+            cases habove_y : above_low_bound y with
+          | false => exact rfl
+          | true =>
+              have hcontra : above_low_bound value = true :=
+                above_monotone y value hy habove_y
+              rw [hvalue_above] at hcontra
+              cases hcontra
+        rcases (Raw.join_spec
+          left value
+          (raw_partition_between above_low_bound below_high_bound right).2
+          x).mp hx with hroot | hleft_mem | hright_mem
+        · exact Or.inl (habove_false x (Or.inl hroot))
+        · exact Or.inl (habove_false x (Or.inr (hlt x hleft_mem)))
+        · exact right_ih x hright_mem
+
+end CompCert4Lean.Lib.FSetAVLplus.Make

@@ -1193,3 +1193,59 @@ theorem typeof_Eaddrof' : typeof_Eaddrof'Statement := by
   | _ => rfl
 
 end CompCert4Lean.Cfrontend.SimplExprproof
+
+namespace CompCert4Lean.Cfrontend.SimplExprproof
+
+open CompCert4Lean.Cfrontend.SimplExpr
+
+theorem tr_simple_nil :
+    ∀ [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+      [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)],
+      tr_simple_nilStatement := by
+  intro binary64_certificate binary32_certificate cunit
+  constructor
+  · intro le dst r sl a tmps h
+    let P1 := fun (dst : destination) (r : cexpr) (sl : List Clight.statement)
+        (a : Clight.expr) (tmps : List ident)
+        (_ : SimplExprspec.tr_expr cunit.prog_comp_env le dst r sl a tmps) =>
+        (dst = .For_val ∨ dst = .For_effects) → Cstrategy.simple r = true → sl = []
+    let P2 := fun (rl : cexprlist) (sl : List Clight.statement)
+        (al : List Clight.expr) (tmps : List ident)
+        (_ : SimplExprspec.tr_exprlist cunit.prog_comp_env le rl sl al tmps) =>
+        Cstrategy.simplelist rl = true → sl = []
+    refine SimplExprspec.tr_expr.rec (motive_1 := P1) (motive_2 := P2)
+      ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_
+      ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_
+      ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_
+      h
+    all_goals
+      intros <;> dsimp [P1, P2] at * <;>
+        simp_all [Cstrategy.simple, Cstrategy.simplelist, SimplExprspec.final]
+    all_goals
+      rintro (rfl | rfl) <;>
+        simp_all [Cstrategy.simple, Cstrategy.simplelist, SimplExprspec.final]
+    all_goals
+      try (intro hs hv; cases ‹SimplExprspec.tr_rvalof _ _ _ _ _ _› <;> simp_all)
+  · intro le rl sl al tmps h
+    let P1 := fun (dst : destination) (r : cexpr) (sl : List Clight.statement)
+        (a : Clight.expr) (tmps : List ident)
+        (_ : SimplExprspec.tr_expr cunit.prog_comp_env le dst r sl a tmps) =>
+        (dst = .For_val ∨ dst = .For_effects) → Cstrategy.simple r = true → sl = []
+    let P2 := fun (rl : cexprlist) (sl : List Clight.statement)
+        (al : List Clight.expr) (tmps : List ident)
+        (_ : SimplExprspec.tr_exprlist cunit.prog_comp_env le rl sl al tmps) =>
+        Cstrategy.simplelist rl = true → sl = []
+    refine SimplExprspec.tr_exprlist.rec (motive_1 := P1) (motive_2 := P2)
+      ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_
+      ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_
+      ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ h
+    all_goals
+      intros <;> dsimp [P1, P2] at * <;>
+        simp_all [Cstrategy.simple, Cstrategy.simplelist, SimplExprspec.final]
+    all_goals
+      rintro (rfl | rfl) <;>
+        simp_all [Cstrategy.simple, Cstrategy.simplelist, SimplExprspec.final]
+    all_goals
+      try (intro hs hv; cases ‹SimplExprspec.tr_rvalof _ _ _ _ _ _› <;> simp_all)
+
+end CompCert4Lean.Cfrontend.SimplExprproof

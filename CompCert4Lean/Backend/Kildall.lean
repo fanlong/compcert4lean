@@ -1856,3 +1856,28 @@ theorem step_incr : step_incrStatement := by
             exact A7 n hv
 
 end CompCert4Lean.Backend.Kildall.Dataflow_Solver
+
+namespace CompCert4Lean.Backend.Kildall.Dataflow_Solver
+
+open CompCert4Lean.Lib.Maps
+
+theorem steps_incr : steps_incrStatement := by
+  intro A LAT NS LATlaws NSlaws code successors transf n s1 s2 hsteps
+  induction hsteps with
+  | steps_base =>
+      constructor
+      · exact optge_refl LATlaws _
+      · intro hv
+        exact hv
+  | steps_right =>
+      rename_i s2' s3' hprev hstep ih
+      have hstep' := step_incr (LAT := LAT) (NS := NS) LATlaws NSlaws
+        code successors transf n s2' s3' hstep
+      rcases ih with ⟨hprev_ge, hprev_vis⟩
+      rcases hstep' with ⟨hstep_ge, hstep_vis⟩
+      constructor
+      · exact optge_trans LATlaws _ _ _ hstep_ge hprev_ge
+      · intro hv
+        exact hstep_vis (hprev_vis hv)
+
+end CompCert4Lean.Backend.Kildall.Dataflow_Solver

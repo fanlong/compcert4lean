@@ -1488,3 +1488,34 @@ theorem star_plus_trans : star_plus_transStatement := by
             exact _root_.List.append_assoc t1' t2' t2
 
 end CompCert4Lean.Common.Smallstep
+
+namespace CompCert4Lean.Common.Smallstep
+
+open CompCert4Lean.Common.Events
+
+theorem plus_ind2 : plus_ind2Statement := by
+  intro genv state step ge P BASE IND
+  have H : ∀ (s1 : state) (t : trace) (s2 : state),
+      star step ge s1 t s2 →
+      ∀ (s0 : state) (t0 : trace),
+        step ge s0 t0 s1 → P s0 (Eapp t0 t) s2 := by
+    intro s1 t s2 hstar
+    induction hstar with
+    | star_refl s =>
+        intro s0 t0 hstep
+        rw [show Eapp t0 E0 = t0 by exact _root_.List.append_nil t0]
+        exact BASE s0 t0 s hstep
+    | @star_step s1 t1 s2 t2 s3 t hstep hstar htrace ih =>
+        intro s0 t0 hstep0
+        subst t
+        apply IND s0 t0 s1 (Eapp t1 t2) s3 (Eapp t0 (Eapp t1 t2)) hstep0
+        · exact plus_left s1 t1 hstep hstar rfl
+        · exact ih s1 t1 hstep
+        · exact rfl
+  intro s1 t s2 hplus
+  cases hplus with
+  | plus_left t1 s2 t2 s3 t hstep hstar htrace =>
+      subst t
+      exact H _ _ _ hstar _ _ hstep
+
+end CompCert4Lean.Common.Smallstep

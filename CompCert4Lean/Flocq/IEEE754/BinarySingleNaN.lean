@@ -1275,3 +1275,12 @@ theorem fexp_emax :
     rw [hthree]
     omega
   simp [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.max, hnot]
+
+end CompCert4Lean.Flocq.IEEE754.BinarySingleNaN
+
+namespace CompCert4Lean.Flocq.IEEE754.BinarySingleNaN
+
+theorem is_nan_SF_B2SF :
+    ∀ {prec emax : Z}, is_nan_SF_B2SFStatement (prec := prec) (emax := emax) := by
+  intro prec emax x Hx
+  cases x <;> rfl

@@ -2378,3 +2378,57 @@ theorem getN_setN_same : getN_setN_sameStatement := by
 end Mem
 
 end CompCert4Lean.Common.Memory
+
+namespace CompCert4Lean.Common.Memory
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Lib.Maps
+
+namespace Mem
+
+theorem getN_exten : getN_extenStatement := by
+  intro c1 c2 n
+  induction n with
+  | zero =>
+      intro p h
+      rfl
+  | succ n ih =>
+      intro p h
+      have hhead : ZMap.get p c1 = ZMap.get p c2 := by
+        apply h p
+        constructor
+        · change intOfZ p ≤ intOfZ p
+          omega
+        · change intOfZ p < intOfZ (zAdd p (zOfNat (Nat.succ n)))
+          have hnat : Int.ofNat (Nat.succ n) = Int.ofNat n + 1 := by
+            simpa using (Int.ofNat_add_ofNat n 1).symm
+          rw [intOfZ_zadd_mem, intOfZ_zofnat_mem, hnat]
+          have hnonneg : (0 : Int) ≤ Int.ofNat n := Int.natCast_nonneg _
+          omega
+      have htail :
+          getN n (zAdd p z1) c1 = getN n (zAdd p z1) c2 := by
+        apply ih (p := zAdd p z1)
+        intro i hi
+        apply h i
+        rcases hi with ⟨hi_lo, hi_hi⟩
+        constructor
+        · change intOfZ p ≤ intOfZ i
+          change intOfZ (zAdd p z1) ≤ intOfZ i at hi_lo
+          rw [intOfZ_add_one] at hi_lo
+          omega
+        · change intOfZ i < intOfZ (zAdd p (zOfNat (Nat.succ n)))
+          change intOfZ i < intOfZ (zAdd (zAdd p z1) (zOfNat n)) at hi_hi
+          have hnat : Int.ofNat (Nat.succ n) = Int.ofNat n + 1 := by
+            simpa using (Int.ofNat_add_ofNat n 1).symm
+          rw [intOfZ_zadd_mem, intOfZ_zofnat_mem, hnat]
+          rw [intOfZ_zadd_mem, intOfZ_zadd_mem, intOfZ_zofnat_mem] at hi_hi
+          have hz1 : intOfZ z1 = (1 : Int) := by rfl
+          rw [hz1] at hi_hi
+          omega
+      change ZMap.get p c1 :: getN n (zAdd p z1) c1 =
+        ZMap.get p c2 :: getN n (zAdd p z1) c2
+      rw [hhead, htail]
+
+end Mem
+
+end CompCert4Lean.Common.Memory

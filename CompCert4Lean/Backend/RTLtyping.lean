@@ -2258,3 +2258,14 @@ theorem type_function_correct : type_function_correctStatement := by
                         exact type_code_sound cfg f pc i S.initial e1 te hcode hi hsat1
 
 end CompCert4Lean.Backend.RTLtyping
+
+namespace CompCert4Lean.Backend.RTLtyping
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Common.Values
+theorem wt_regset_setres : wt_regset_setresStatement := by
+  intro env rs v res hrs hv
+  cases res with
+  | BR r =>
+      exact wt_regset_assign env rs v r hrs (by simpa [type_of_builtin_res] using hv)
+  | _ => exact hrs
+end CompCert4Lean.Backend.RTLtyping

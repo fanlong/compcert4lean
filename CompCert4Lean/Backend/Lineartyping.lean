@@ -836,3 +836,13 @@ theorem wt_callstate_agree : wt_callstate_agreeStatement := by
   exact ⟨AGCS, AGARGS⟩
 
 end CompCert4Lean.Backend.Lineartyping
+
+namespace CompCert4Lean.Backend.Lineartyping
+
+theorem wt_returnstate_agree : wt_returnstate_agreeStatement := by
+  intro cfg s rs m hstate
+  cases hstate with
+  | wt_return_state s rs m WTSTK WTRS AGCS UOUT =>
+      exact And.intro AGCS UOUT
+
+end CompCert4Lean.Backend.Lineartyping

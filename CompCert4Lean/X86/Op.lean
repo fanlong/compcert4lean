@@ -1254,3 +1254,148 @@ theorem type_of_addressing32_sound : type_of_addressing32_soundStatement := by
       cases vl <;> simp [eval_addressing32, CompCert4Lean.X86_64.Archi.ptr64] at h
 
 end CompCert4Lean.X86.Op
+
+namespace CompCert4Lean.X86.Op
+
+open Lean Elab Tactic Meta
+
+private def suffixPrivateName (suffix : String) : Name :=
+  let p := Name.str (Name.str (Name.str (Name.str Name.anonymous "_private") "CompCert4Lean") "Lib") "Integers"
+  let base := Name.num p 0
+  suffix.splitOn "." |>.foldl Name.str base
+
+private theorem suffixWordValRepr (bits : Nat) (i : Int) :
+    (CompCert4Lean.Lib.Integers.WordCore.repr bits
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt i)).val =
+      Int.toNat (i % ((2 ^ bits : Nat) : Int)) := by
+  run_tac
+    let lctx ← getLCtx
+    let bitsF := (lctx.findFromUserName? `bits).get!
+    let iF := (lctx.findFromUserName? `i).get!
+    let bitsE := mkFVar bitsF.fvarId
+    let iE := mkFVar iF.fvarId
+    let e ← mkAppM
+      (suffixPrivateName "CompCert4Lean.Lib.Integers.WordCore.val_repr")
+      #[bitsE, iE]
+    closeMainGoal Name.anonymous e
+
+private theorem suffixPtrofsReprUnsigned (x : Ptrofs) :
+    CompCert4Lean.Lib.Integers.Ptrofs.repr
+        (CompCert4Lean.Lib.Integers.Ptrofs.unsigned x) = x := by
+  have hx0 : CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.le
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.Numbers.BinNums.Z0
+      (CompCert4Lean.Lib.Integers.Ptrofs.unsigned x) := by
+    have h := x.intrange.1
+    change (-1 : Int) <
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ x.intval at h
+    change 0 ≤ CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ x.intval
+    omega
+  have hxlt : CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ x.intval <
+      (Int.ofNat (2 ^ CompCert4Lean.Lib.Integers.Ptrofs.wordsize)) := by
+    have h := x.intrange.2
+    change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ x.intval <
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+        CompCert4Lean.Lib.Integers.Ptrofs.modulus at h
+    change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ x.intval <
+      (Int.ofNat (2 ^ CompCert4Lean.Lib.Integers.Ptrofs.wordsize)) at h
+    exact h
+  apply CompCert4Lean.Lib.Integers.WordCore.ext_of_val_eq
+  change
+    (CompCert4Lean.Lib.Integers.WordCore.repr
+      CompCert4Lean.Lib.Integers.Ptrofs.wordsize x.intval).val = x.val
+  have hz :
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ x.intval) = x.intval :=
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt_intOfZ _
+  rw [← hz, suffixWordValRepr]
+  have hmod :
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ x.intval %
+          ((2 ^ CompCert4Lean.Lib.Integers.Ptrofs.wordsize : Nat) : Int) =
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ x.intval :=
+    Int.emod_eq_of_lt (show 0 ≤
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ x.intval by exact hx0) hxlt
+  rw [hmod]
+  have hvalz :
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.to_nat x.intval) =
+        x.intval :=
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.Znat.Z2Nat.id x.intval (by
+      change 0 ≤ CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ x.intval
+      exact hx0)
+  have hint :
+      Int.ofNat
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.to_nat x.intval) =
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ x.intval := by
+    have h := congrArg CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ hvalz
+    simpa only [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat,
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt] using h
+  have hnat :
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.to_nat x.intval =
+        Int.toNat (CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ x.intval) := by
+    rw [← Int.toNat_of_nonneg (show 0 ≤
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ x.intval by exact hx0)] at hint
+    exact Int.ofNat.inj hint
+  change Int.toNat (CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ x.intval) =
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.to_nat x.intval
+  exact hnat.symm
+
+private theorem suffixPtrofsAddZero (x : Ptrofs) :
+    CompCert4Lean.Lib.Integers.Ptrofs.add x
+        CompCert4Lean.Lib.Integers.Ptrofs.zero = x := by
+  rw [CompCert4Lean.Lib.Integers.Ptrofs.add_commut_proof_api]
+  change CompCert4Lean.Lib.Integers.Ptrofs.repr
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add
+        (CompCert4Lean.Lib.Integers.Ptrofs.unsigned
+          CompCert4Lean.Lib.Integers.Ptrofs.zero)
+        (CompCert4Lean.Lib.Integers.Ptrofs.unsigned x)) = x
+  have hzero :
+      CompCert4Lean.Lib.Integers.Ptrofs.unsigned
+          CompCert4Lean.Lib.Integers.Ptrofs.zero =
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.Numbers.BinNums.Z0 := by
+    rfl
+  rw [hzero,
+    show CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.Numbers.BinNums.Z0
+        (CompCert4Lean.Lib.Integers.Ptrofs.unsigned x) =
+      CompCert4Lean.Lib.Integers.Ptrofs.unsigned x by
+      change CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.Numbers.BinNums.Z0 +
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ x.intval) = x.intval
+      rw [show CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.Numbers.BinNums.Z0 =
+            (0 : Int) by rfl, Int.zero_add]
+      exact CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt_intOfZ _]
+  exact suffixPtrofsReprUnsigned x
+
+theorem eval_shift_stack_addressing64 : eval_shift_stack_addressing64Statement := by
+  intro F V ge sp addr vl delta
+  have hzero (i : Ptrofs) :
+      CompCert4Lean.Lib.Integers.Ptrofs.add
+          CompCert4Lean.Lib.Integers.Ptrofs.zero
+          (CompCert4Lean.Lib.Integers.Ptrofs.add i
+            (CompCert4Lean.Lib.Integers.Ptrofs.repr delta)) =
+        CompCert4Lean.Lib.Integers.Ptrofs.add
+          (CompCert4Lean.Lib.Integers.Ptrofs.repr delta) i := by
+    rw [CompCert4Lean.Lib.Integers.Ptrofs.add_commut_proof_api]
+    rw [suffixPtrofsAddZero]
+    exact CompCert4Lean.Lib.Integers.Ptrofs.add_commut_proof_api _ _
+  cases addr <;>
+    induction vl with
+    | nil =>
+        simp [eval_addressing64, shift_stack_addressing,
+          CompCert4Lean.X86_64.Archi.ptr64, CompCert4Lean.Common.Values.Val.offset_ptr,
+          hzero]
+    | cons v vl ih =>
+        cases vl with
+        | nil =>
+            simp [eval_addressing64, shift_stack_addressing,
+              CompCert4Lean.X86_64.Archi.ptr64, CompCert4Lean.Common.Values.Val.offset_ptr,
+              hzero]
+        | cons v2 vl =>
+            cases vl <;>
+              simp [eval_addressing64, shift_stack_addressing,
+                CompCert4Lean.X86_64.Archi.ptr64, CompCert4Lean.Common.Values.Val.offset_ptr,
+                hzero]
+
+end CompCert4Lean.X86.Op

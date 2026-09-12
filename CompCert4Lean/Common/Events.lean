@@ -1417,3 +1417,28 @@ theorem volatile_load_preserved : volatile_load_preservedStatement := by
       · exact hload
 
 end CompCert4Lean.Common.Events
+
+namespace CompCert4Lean.Common.Events
+
+theorem volatile_load_receptive : volatile_load_receptiveStatement := by
+  intro ge chunk m b ofs t1 t2 v1 hload htr
+  cases hload with
+  | volatile_load_vol id ev v hvol hfind hmatch =>
+      cases htr with
+      | match_traces_vload chunk id ofs ev1 ev2 hv1 hv2 hty =>
+          obtain ⟨v', hm'⟩ :=
+            eventval_match_receptive ge ev (CompCert4Lean.Common.AST.type_of_chunk chunk)
+              v ev2 hmatch hv1 hv2 hty
+          refine ⟨CompCert4Lean.Common.Values.Val.load_result chunk v', ?_⟩
+          apply volatile_load_vol
+          · exact hvol
+          · exact hfind
+          · exact hm'
+  | volatile_load_nonvol v hnot hload =>
+      cases htr
+      refine ⟨v1, ?_⟩
+      apply volatile_load_nonvol
+      · exact hnot
+      · exact hload
+
+end CompCert4Lean.Common.Events

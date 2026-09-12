@@ -926,3 +926,259 @@ theorem mk_sel_label : mk_sel_labelStatement := by
     exact CompCert4Lean.Lib.Coqlib.is_tail.refl _
 
 end CompCert4Lean.X86.Asmgenproof
+
+namespace CompCert4Lean.X86.Asmgenproof
+
+private theorem asmgenproof_tail_nolabel_cons (k : AsmCode)
+    (i : CompCert4Lean.X86.Asm.instruction)
+    (hi : ∀ lbl, CompCert4Lean.X86.Asm.is_label lbl i = false) :
+    CompCert4Lean.Backend.Asmgenproof0.tail_nolabel k (i :: k) := by
+  constructor
+  · exact CompCert4Lean.Lib.Coqlib.is_tail.cons _
+      (CompCert4Lean.Lib.Coqlib.is_tail.refl _)
+  · intro lbl
+    simp [CompCert4Lean.Backend.Asmgenproof0.find_label, hi]
+
+private theorem asmgenproof_bind_ireg_cons
+    (a : Mreg) (k c : AsmCode) (mk : Ireg → CompCert4Lean.X86.Asm.instruction)
+    (hi : ∀ r lbl, CompCert4Lean.X86.Asm.is_label lbl (mk r) = false) :
+    CompCert4Lean.Common.Errors.bind
+      (CompCert4Lean.X86.Asmgen.ireg_of a)
+      (fun r => .OK (mk r :: k)) = .OK c →
+      CompCert4Lean.Backend.Asmgenproof0.tail_nolabel k c := by
+  intro h
+  cases hr : CompCert4Lean.X86.Asmgen.ireg_of a with
+  | Error msg =>
+      simp [hr, CompCert4Lean.Common.Errors.bind] at h
+  | OK r =>
+      simp [hr, CompCert4Lean.Common.Errors.bind] at h
+      cases h
+      apply asmgenproof_tail_nolabel_cons k (mk r)
+      intro lbl
+      exact hi r lbl
+
+private theorem asmgenproof_bind_ireg2_cons
+    (a1 a2 : Mreg) (k c : AsmCode)
+    (mk : Ireg → Ireg → CompCert4Lean.X86.Asm.instruction)
+    (hi : ∀ r1 r2 lbl, CompCert4Lean.X86.Asm.is_label lbl (mk r1 r2) = false) :
+    CompCert4Lean.Common.Errors.bind
+      (CompCert4Lean.X86.Asmgen.ireg_of a1)
+      (fun r1 => CompCert4Lean.Common.Errors.bind
+        (CompCert4Lean.X86.Asmgen.ireg_of a2)
+        (fun r2 => .OK (mk r1 r2 :: k))) = .OK c →
+      CompCert4Lean.Backend.Asmgenproof0.tail_nolabel k c := by
+  intro h
+  cases hr1 : CompCert4Lean.X86.Asmgen.ireg_of a1 with
+  | Error msg =>
+      simp [hr1, CompCert4Lean.Common.Errors.bind] at h
+  | OK r1 =>
+      cases hr2 : CompCert4Lean.X86.Asmgen.ireg_of a2 with
+      | Error msg =>
+          simp [hr1, hr2, CompCert4Lean.Common.Errors.bind] at h
+      | OK r2 =>
+          simp [hr1, hr2, CompCert4Lean.Common.Errors.bind] at h
+          cases h
+          apply asmgenproof_tail_nolabel_cons k (mk r1 r2)
+          intro lbl
+          exact hi r1 r2 lbl
+
+private theorem asmgenproof_bind_freg2_cons
+    (a1 a2 : Mreg) (k c : AsmCode)
+    (mk : CompCert4Lean.X86.Asm.freg → CompCert4Lean.X86.Asm.freg →
+      CompCert4Lean.X86.Asm.instruction)
+    (hi : ∀ r1 r2 lbl, CompCert4Lean.X86.Asm.is_label lbl (mk r1 r2) = false) :
+    CompCert4Lean.Common.Errors.bind
+      (CompCert4Lean.X86.Asmgen.freg_of a1)
+      (fun r1 => CompCert4Lean.Common.Errors.bind
+        (CompCert4Lean.X86.Asmgen.freg_of a2)
+        (fun r2 => .OK (mk r1 r2 :: k))) = .OK c →
+      CompCert4Lean.Backend.Asmgenproof0.tail_nolabel k c := by
+  intro h
+  cases hr1 : CompCert4Lean.X86.Asmgen.freg_of a1 with
+  | Error msg =>
+      simp [hr1, CompCert4Lean.Common.Errors.bind] at h
+  | OK r1 =>
+      cases hr2 : CompCert4Lean.X86.Asmgen.freg_of a2 with
+      | Error msg =>
+          simp [hr1, hr2, CompCert4Lean.Common.Errors.bind] at h
+      | OK r2 =>
+          simp [hr1, hr2, CompCert4Lean.Common.Errors.bind] at h
+          cases h
+          apply asmgenproof_tail_nolabel_cons k (mk r1 r2)
+          intro lbl
+          exact hi r1 r2 lbl
+
+theorem transl_cond_label : transl_cond_labelStatement := by
+  intro cond args k c h
+  cases args with
+  | nil => simp [CompCert4Lean.X86.Asmgen.transl_cond] at h <;> cases h
+  | cons a1 rest =>
+      cases rest with
+      | nil =>
+          cases cond with
+          | Ccomp cmp => simp [CompCert4Lean.X86.Asmgen.transl_cond] at h <;> cases h
+          | Ccompu cmp => simp [CompCert4Lean.X86.Asmgen.transl_cond] at h <;> cases h
+          | Ccompimm cmp n =>
+              apply asmgenproof_bind_ireg_cons a1 k c
+                (fun r => (if CompCert4Lean.Lib.Integers.Int.eq n
+                  CompCert4Lean.Lib.Integers.Int.zero then
+                  .Ptestl_rr r r else .Pcmpl_ri r n))
+                (by intro r lbl; split <;> simp [CompCert4Lean.X86.Asm.is_label])
+              change CompCert4Lean.Common.Errors.bind
+                (CompCert4Lean.X86.Asmgen.ireg_of a1)
+                (fun r => .OK ((if CompCert4Lean.Lib.Integers.Int.eq n
+                  CompCert4Lean.Lib.Integers.Int.zero then
+                  .Ptestl_rr r r else .Pcmpl_ri r n) :: k)) = .OK c at h
+              exact h
+          | Ccompuimm cmp n =>
+              apply asmgenproof_bind_ireg_cons a1 k c
+                (fun r => .Pcmpl_ri r n)
+                (by intro r lbl; simp [CompCert4Lean.X86.Asm.is_label])
+              change CompCert4Lean.Common.Errors.bind
+                (CompCert4Lean.X86.Asmgen.ireg_of a1)
+                (fun r => .OK (.Pcmpl_ri r n :: k)) = .OK c at h
+              exact h
+          | Ccompl cmp => simp [CompCert4Lean.X86.Asmgen.transl_cond] at h <;> cases h
+          | Ccomplu cmp => simp [CompCert4Lean.X86.Asmgen.transl_cond] at h <;> cases h
+          | Ccomplimm cmp n =>
+              apply asmgenproof_bind_ireg_cons a1 k c
+                (fun r => (if CompCert4Lean.Lib.Integers.Int64.eq n
+                  CompCert4Lean.Lib.Integers.Int64.zero then
+                  .Ptestq_rr r r else .Pcmpq_ri r n))
+                (by intro r lbl; split <;> simp [CompCert4Lean.X86.Asm.is_label])
+              change CompCert4Lean.Common.Errors.bind
+                (CompCert4Lean.X86.Asmgen.ireg_of a1)
+                (fun r => .OK ((if CompCert4Lean.Lib.Integers.Int64.eq n
+                  CompCert4Lean.Lib.Integers.Int64.zero then
+                  .Ptestq_rr r r else .Pcmpq_ri r n) :: k)) = .OK c at h
+              exact h
+          | Ccompluimm cmp n =>
+              apply asmgenproof_bind_ireg_cons a1 k c
+                (fun r => .Pcmpq_ri r n)
+                (by intro r lbl; simp [CompCert4Lean.X86.Asm.is_label])
+              change CompCert4Lean.Common.Errors.bind
+                (CompCert4Lean.X86.Asmgen.ireg_of a1)
+                (fun r => .OK (.Pcmpq_ri r n :: k)) = .OK c at h
+              exact h
+          | Ccompf cmp => simp [CompCert4Lean.X86.Asmgen.transl_cond] at h <;> cases h
+          | Cnotcompf cmp => simp [CompCert4Lean.X86.Asmgen.transl_cond] at h <;> cases h
+          | Ccompfs cmp => simp [CompCert4Lean.X86.Asmgen.transl_cond] at h <;> cases h
+          | Cnotcompfs cmp => simp [CompCert4Lean.X86.Asmgen.transl_cond] at h <;> cases h
+          | Cmaskzero n =>
+              apply asmgenproof_bind_ireg_cons a1 k c
+                (fun r => .Ptestl_ri r n)
+                (by intro r lbl; simp [CompCert4Lean.X86.Asm.is_label])
+              change CompCert4Lean.Common.Errors.bind
+                (CompCert4Lean.X86.Asmgen.ireg_of a1)
+                (fun r => .OK (.Ptestl_ri r n :: k)) = .OK c at h
+              exact h
+          | Cmasknotzero n =>
+              apply asmgenproof_bind_ireg_cons a1 k c
+                (fun r => .Ptestl_ri r n)
+                (by intro r lbl; simp [CompCert4Lean.X86.Asm.is_label])
+              change CompCert4Lean.Common.Errors.bind
+                (CompCert4Lean.X86.Asmgen.ireg_of a1)
+                (fun r => .OK (.Ptestl_ri r n :: k)) = .OK c at h
+              exact h
+      | cons a2 rest2 =>
+          cases rest2 with
+          | cons a3 rest3 =>
+              simp [CompCert4Lean.X86.Asmgen.transl_cond] at h <;> cases h
+          | nil =>
+              cases cond with
+              | Ccomp cmp =>
+                  apply asmgenproof_bind_ireg2_cons a1 a2 k c
+                    (fun r1 r2 => .Pcmpl_rr r1 r2)
+                    (by intro r1 r2 lbl; simp [CompCert4Lean.X86.Asm.is_label])
+                  change CompCert4Lean.Common.Errors.bind
+                    (CompCert4Lean.X86.Asmgen.ireg_of a1)
+                    (fun r1 => CompCert4Lean.Common.Errors.bind
+                      (CompCert4Lean.X86.Asmgen.ireg_of a2)
+                      (fun r2 => .OK (.Pcmpl_rr r1 r2 :: k))) = .OK c at h
+                  exact h
+              | Ccompu cmp =>
+                  apply asmgenproof_bind_ireg2_cons a1 a2 k c
+                    (fun r1 r2 => .Pcmpl_rr r1 r2)
+                    (by intro r1 r2 lbl; simp [CompCert4Lean.X86.Asm.is_label])
+                  change CompCert4Lean.Common.Errors.bind
+                    (CompCert4Lean.X86.Asmgen.ireg_of a1)
+                    (fun r1 => CompCert4Lean.Common.Errors.bind
+                      (CompCert4Lean.X86.Asmgen.ireg_of a2)
+                      (fun r2 => .OK (.Pcmpl_rr r1 r2 :: k))) = .OK c at h
+                  exact h
+              | Ccompl cmp =>
+                  apply asmgenproof_bind_ireg2_cons a1 a2 k c
+                    (fun r1 r2 => .Pcmpq_rr r1 r2)
+                    (by intro r1 r2 lbl; simp [CompCert4Lean.X86.Asm.is_label])
+                  change CompCert4Lean.Common.Errors.bind
+                    (CompCert4Lean.X86.Asmgen.ireg_of a1)
+                    (fun r1 => CompCert4Lean.Common.Errors.bind
+                      (CompCert4Lean.X86.Asmgen.ireg_of a2)
+                      (fun r2 => .OK (.Pcmpq_rr r1 r2 :: k))) = .OK c at h
+                  exact h
+              | Ccomplu cmp =>
+                  apply asmgenproof_bind_ireg2_cons a1 a2 k c
+                    (fun r1 r2 => .Pcmpq_rr r1 r2)
+                    (by intro r1 r2 lbl; simp [CompCert4Lean.X86.Asm.is_label])
+                  change CompCert4Lean.Common.Errors.bind
+                    (CompCert4Lean.X86.Asmgen.ireg_of a1)
+                    (fun r1 => CompCert4Lean.Common.Errors.bind
+                      (CompCert4Lean.X86.Asmgen.ireg_of a2)
+                      (fun r2 => .OK (.Pcmpq_rr r1 r2 :: k))) = .OK c at h
+                  exact h
+              | Ccompf cmp =>
+                  apply asmgenproof_bind_freg2_cons a1 a2 k c
+                    (fun r1 r2 => CompCert4Lean.X86.Asmgen.floatcomp cmp r1 r2)
+                    (by intro r1 r2 lbl; cases cmp <;>
+                      simp [CompCert4Lean.X86.Asmgen.floatcomp,
+                        CompCert4Lean.X86.Asm.is_label])
+                  change CompCert4Lean.Common.Errors.bind
+                    (CompCert4Lean.X86.Asmgen.freg_of a1)
+                    (fun r1 => CompCert4Lean.Common.Errors.bind
+                      (CompCert4Lean.X86.Asmgen.freg_of a2)
+                      (fun r2 => .OK (CompCert4Lean.X86.Asmgen.floatcomp cmp r1 r2 :: k))) = .OK c at h
+                  exact h
+              | Cnotcompf cmp =>
+                  apply asmgenproof_bind_freg2_cons a1 a2 k c
+                    (fun r1 r2 => CompCert4Lean.X86.Asmgen.floatcomp cmp r1 r2)
+                    (by intro r1 r2 lbl; cases cmp <;>
+                      simp [CompCert4Lean.X86.Asmgen.floatcomp,
+                        CompCert4Lean.X86.Asm.is_label])
+                  change CompCert4Lean.Common.Errors.bind
+                    (CompCert4Lean.X86.Asmgen.freg_of a1)
+                    (fun r1 => CompCert4Lean.Common.Errors.bind
+                      (CompCert4Lean.X86.Asmgen.freg_of a2)
+                      (fun r2 => .OK (CompCert4Lean.X86.Asmgen.floatcomp cmp r1 r2 :: k))) = .OK c at h
+                  exact h
+              | Ccompfs cmp =>
+                  apply asmgenproof_bind_freg2_cons a1 a2 k c
+                    (fun r1 r2 => CompCert4Lean.X86.Asmgen.floatcomp32 cmp r1 r2)
+                    (by intro r1 r2 lbl; cases cmp <;>
+                      simp [CompCert4Lean.X86.Asmgen.floatcomp32,
+                        CompCert4Lean.X86.Asm.is_label])
+                  change CompCert4Lean.Common.Errors.bind
+                    (CompCert4Lean.X86.Asmgen.freg_of a1)
+                    (fun r1 => CompCert4Lean.Common.Errors.bind
+                      (CompCert4Lean.X86.Asmgen.freg_of a2)
+                      (fun r2 => .OK (CompCert4Lean.X86.Asmgen.floatcomp32 cmp r1 r2 :: k))) = .OK c at h
+                  exact h
+              | Cnotcompfs cmp =>
+                  apply asmgenproof_bind_freg2_cons a1 a2 k c
+                    (fun r1 r2 => CompCert4Lean.X86.Asmgen.floatcomp32 cmp r1 r2)
+                    (by intro r1 r2 lbl; cases cmp <;>
+                      simp [CompCert4Lean.X86.Asmgen.floatcomp32,
+                        CompCert4Lean.X86.Asm.is_label])
+                  change CompCert4Lean.Common.Errors.bind
+                    (CompCert4Lean.X86.Asmgen.freg_of a1)
+                    (fun r1 => CompCert4Lean.Common.Errors.bind
+                      (CompCert4Lean.X86.Asmgen.freg_of a2)
+                      (fun r2 => .OK (CompCert4Lean.X86.Asmgen.floatcomp32 cmp r1 r2 :: k))) = .OK c at h
+                  exact h
+              | Ccompimm cmp n => simp [CompCert4Lean.X86.Asmgen.transl_cond] at h <;> cases h
+              | Ccompuimm cmp n => simp [CompCert4Lean.X86.Asmgen.transl_cond] at h <;> cases h
+              | Ccomplimm cmp n => simp [CompCert4Lean.X86.Asmgen.transl_cond] at h <;> cases h
+              | Ccompluimm cmp n => simp [CompCert4Lean.X86.Asmgen.transl_cond] at h <;> cases h
+              | Cmaskzero n => simp [CompCert4Lean.X86.Asmgen.transl_cond] at h <;> cases h
+              | Cmasknotzero n => simp [CompCert4Lean.X86.Asmgen.transl_cond] at h <;> cases h
+
+end CompCert4Lean.X86.Asmgenproof

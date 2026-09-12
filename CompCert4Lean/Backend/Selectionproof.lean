@@ -2209,3 +2209,82 @@ theorem stackspace_function_translated
           rfl
 
 end CompCert4Lean.Backend.Selectionproof
+
+namespace CompCert4Lean.Backend.Selectionproof
+
+private theorem helper_declared_preserved
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    [binary64_inverse_certificate : BexactInverseCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_inverse_certificate : BexactInverseCertificate (zOfNat 24) (zOfNat 128)]
+    (cfg : CompilerConfig) (oracle : SelectionOracle)
+    (prog : CminorProgram) (tprog : CminorSelProgram)
+    (hm : match_prog cfg oracle prog tprog)
+    (id : CompCert4Lean.Common.AST.ident)
+    (name : RocqString) (sg : CompCert4Lean.Common.AST.signature)
+    (hdecl : CompCert4Lean.Backend.SplitLongproof.helper_declared prog id name sg) :
+    CompCert4Lean.Backend.SplitLongproof.helper_declared tprog id name sg := by
+  change CompCert4Lean.Foundation.Numbers.Rocq.Coq.positive at id
+  unfold CompCert4Lean.Backend.SplitLongproof.helper_declared at hdecl ⊢
+  have hrel := @CompCert4Lean.Common.Linking.match_program_defmap
+    CminorProgram CminorFundef Unit CminorSelFundef Unit
+    cminorProgramLinker
+    (fun (cunit : CminorProgram) f tf => match_fundef cfg oracle
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      (binary64_inverse_certificate := binary64_inverse_certificate)
+      (binary32_inverse_certificate := binary32_inverse_certificate) cunit f tf)
+    (fun x y : Unit => x = y) prog prog tprog hm id
+  generalize hsrc : CompCert4Lean.Lib.Maps.PTree.get id
+      (CompCert4Lean.Common.AST.prog_defmap prog) = src at hrel
+  generalize htgt : CompCert4Lean.Lib.Maps.PTree.get id
+      (CompCert4Lean.Common.AST.prog_defmap tprog) = tgt at hrel
+  cases hrel with
+  | none =>
+      have hcontra := hsrc.symm.trans hdecl
+      cases hcontra
+  | some g1 g2 hglob =>
+      have hg1 : g1 = .Gfun (.External (.EF_runtime name sg)) := by
+        apply Option.some.inj
+        exact hsrc.symm.trans hdecl
+      subst g1
+      cases hglob with
+      | match_globdef_fun ctx' f1 f2 horder hfun =>
+          unfold match_fundef at hfun
+          rcases hfun with ⟨hf, hhelpers, hsel⟩
+          simp [CompCert4Lean.Backend.Selection.sel_fundef,
+            CompCert4Lean.Common.AST.transf_partial_fundef] at hsel
+          cases hsel
+          exact htgt
+
+theorem helper_functions_preserved
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    [binary64_inverse_certificate : BexactInverseCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_inverse_certificate : BexactInverseCertificate (zOfNat 24) (zOfNat 128)] :
+    ∀ (cfg : CompilerConfig) (oracle : SelectionOracle),
+      helper_functions_preservedStatement
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        (binary64_inverse_certificate := binary64_inverse_certificate)
+        (binary32_inverse_certificate := binary32_inverse_certificate) cfg oracle := by
+  intro cfg oracle prog tprog hm hf hdecl
+  unfold CompCert4Lean.Backend.SplitLongproof.helper_functions_declared at hdecl ⊢
+  rcases hdecl with ⟨h1, h2, h3, h4, h5, h6, h7, h8, h9, h10, h11, h12, h13, h14, h15⟩
+  exact ⟨helper_declared_preserved cfg oracle prog tprog hm _ _ _ h1,
+    helper_declared_preserved cfg oracle prog tprog hm _ _ _ h2,
+    helper_declared_preserved cfg oracle prog tprog hm _ _ _ h3,
+    helper_declared_preserved cfg oracle prog tprog hm _ _ _ h4,
+    helper_declared_preserved cfg oracle prog tprog hm _ _ _ h5,
+    helper_declared_preserved cfg oracle prog tprog hm _ _ _ h6,
+    helper_declared_preserved cfg oracle prog tprog hm _ _ _ h7,
+    helper_declared_preserved cfg oracle prog tprog hm _ _ _ h8,
+    helper_declared_preserved cfg oracle prog tprog hm _ _ _ h9,
+    helper_declared_preserved cfg oracle prog tprog hm _ _ _ h10,
+    helper_declared_preserved cfg oracle prog tprog hm _ _ _ h11,
+    helper_declared_preserved cfg oracle prog tprog hm _ _ _ h12,
+    helper_declared_preserved cfg oracle prog tprog hm _ _ _ h13,
+    helper_declared_preserved cfg oracle prog tprog hm _ _ _ h14,
+    helper_declared_preserved cfg oracle prog tprog hm _ _ _ h15⟩
+
+end CompCert4Lean.Backend.Selectionproof

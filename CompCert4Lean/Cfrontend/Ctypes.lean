@@ -2097,3 +2097,63 @@ theorem sizeof_composite_stable : sizeof_composite_stableStatement := by
       exact sizeof_union_stable env env' henv ms hcomplete
 
 end CompCert4Lean.Cfrontend.Ctypes
+
+namespace CompCert4Lean.Cfrontend.Ctypes
+
+theorem complete_members_stable : complete_members_stableStatement := by
+  intro env env' henv ms hcomplete
+  induction ms with
+  | nil => rfl
+  | cons m ms ih =>
+      simp only [complete_members, Bool.and_eq_true] at hcomplete ⊢
+      exact ⟨complete_type_stable env env' henv (type_member m) hcomplete.1,
+        ih hcomplete.2⟩
+
+theorem rank_members_stable : rank_members_stableStatement := by
+  intro env env' henv ms hcomplete
+  induction ms with
+  | nil => rfl
+  | cons m ms ih =>
+      simp only [complete_members, Bool.and_eq_true] at hcomplete
+      cases m with
+      | Member_plain id t =>
+          simp only [rank_members]
+          rw [rank_type_stable env env' henv t hcomplete.1,
+            ih hcomplete.2]
+      | Member_bitfield id sz sg a width padding =>
+          simp only [rank_members]
+          exact ih hcomplete.2
+
+theorem layout_field_stable : layout_field_stableStatement := by
+  intro env env' henv pos m hcomplete
+  cases m with
+  | Member_plain id t =>
+      simp only [layout_field, bitalignof]
+      rw [alignof_stable env env' henv t hcomplete]
+  | Member_bitfield id sz sg a width padding =>
+      rfl
+
+theorem field_offset_stable : field_offset_stableStatement := by
+  intro env env' henv f ms hcomplete
+  have aux : ∀ (xs : members) (pos : CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z),
+      complete_members env xs = true →
+        field_offset_rec env' f xs pos = field_offset_rec env f xs pos := by
+    intro xs
+    induction xs with
+    | nil =>
+        intro pos hxs
+        rfl
+    | cons m ms ih =>
+        intro pos hxs
+        simp only [complete_members, Bool.and_eq_true] at hxs
+        cases hident : CompCert4Lean.Common.AST.ident_eq f (name_member m) with
+        | left hEq =>
+            simp only [field_offset_rec, hident]
+            exact layout_field_stable env env' henv pos m hxs.1
+        | right hNe =>
+            simp only [field_offset_rec, hident]
+            rw [next_field_stable env env' henv pos m hxs.1]
+            exact ih (next_field env pos m) hxs.2
+  exact aux ms z0 hcomplete
+
+end CompCert4Lean.Cfrontend.Ctypes

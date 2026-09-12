@@ -677,3 +677,57 @@ theorem radix_gt_1 : radix_gt_1Statement := by
   · simp at hp
 
 end CompCert4Lean.Flocq.Core.Zaux
+
+namespace CompCert4Lean.Flocq.Core.Zaux
+
+theorem Zpower_gt_1 : Zpower_gt_1Statement := by
+  intro r p hp
+  cases p with
+  | Z0 =>
+      change (0 : Int) < 0 at hp
+      omega
+  | Zneg q =>
+      exfalso
+      change (0 : Int) < -Int.ofNat
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat q) at hp
+      have hq := CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat_positive q
+      have hq' : (0 : Int) < Int.ofNat
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat q) :=
+        Int.natCast_pos.mpr hq
+      omega
+  | Zpos q =>
+      change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ Zone <
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+          (Zpower r.radix_val (.Zpos q))
+      have hbase : (1 : Int) <
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ r.radix_val := by
+        exact radix_gt_1 r
+      have ha_pos : (0 : Int) <
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ r.radix_val :=
+        Int.lt_trans (by decide) hbase
+      have hpow_gt : ∀ n : Nat, 0 < n →
+          (1 : Int) <
+            (CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ r.radix_val) ^ n := by
+        intro n
+        induction n with
+        | zero =>
+            intro hn
+            omega
+        | succ n ih =>
+            intro hn
+            rw [Int.pow_succ]
+            cases n with
+            | zero =>
+                simpa [Int.pow] using hbase
+            | succ n =>
+                have hmul := Int.mul_lt_mul_of_pos_right (ih (by omega)) ha_pos
+                exact Int.lt_trans hbase (by simpa using hmul)
+      unfold Zpower CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.Zpow_def.Zpower
+      unfold CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.pow
+      have hcond : ¬ CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (.Zpos q : Z) < 0 := by
+        simp [CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ]
+      rw [if_neg hcond, CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+      apply hpow_gt
+      exact CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat_positive q
+
+end CompCert4Lean.Flocq.Core.Zaux

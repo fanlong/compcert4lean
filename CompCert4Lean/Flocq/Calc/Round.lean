@@ -1113,3 +1113,105 @@ theorem inbetween_int_ZR_sign (ctx : ExactRealContext) :
           ((ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp hbounds.1).1 hbounds.2
 
 end CompCert4Lean.Flocq.Calc.Round
+
+namespace CompCert4Lean.Flocq.Calc.Round
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+private theorem pg_zdiv_zero (p : Z) (hp : Zlt Z0 p) : Zdiv Z0 p = Z0 := by
+  have hmod : CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.modulo Z0 p = Z0 := by
+    exact CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.mod_small
+      Z0 p ⟨by simp [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.le], hp⟩
+  have hdivmod :=
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.Zdiv.Z_div_mod_eq_full Z0 p
+  rw [hmod] at hdivmod
+  apply intOfZ_injective
+  change intOfZ (Zdiv Z0 p) = intOfZ Z0
+  have hprod : intOfZ p * intOfZ (Zdiv Z0 p) = 0 := by
+    have hdivmod_int := congrArg intOfZ hdivmod
+    simp only [Zadd, Zmul,
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add,
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.mul,
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt] at hdivmod_int
+    have hzero : intOfZ Z0 = (0 : Int) := rfl
+    change intOfZ p * intOfZ (Zdiv Z0 p) = 0
+    rw [hzero] at hdivmod_int
+    simpa using hdivmod_int.symm
+  have hp0 : intOfZ p ≠ 0 := by
+    change ¬ intOfZ p = 0
+    intro hp0
+    have : ¬ (intOfZ p > 0) := by omega
+    exact this hp
+  have hz : intOfZ (Zdiv Z0 p) = 0 := by
+    exact (Int.mul_eq_zero.mp hprod).resolve_left hp0
+  simpa [CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ] using hz
+
+theorem truncate_0 : truncate_0Statement := by
+  intro beta fexp e l
+  unfold truncate
+  dsimp
+  split
+  · dsimp [truncate_aux,
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.div]
+    by_cases hp : Zpower beta.radix_val
+        (Zsub (fexp (Zadd (Zdigits beta Z0) e)) e) = Z0
+    · rw [hp]
+      rfl
+    · apply pg_zdiv_zero
+      have hnonneg := CompCert4Lean.Flocq.Core.Zaux.Zpower_ge_0 beta
+        (Zsub (fexp (Zadd (Zdigits beta Z0) e)) e)
+      change (0 : Int) ≤ intOfZ (Zpower beta.radix_val
+        (Zsub (fexp (Zadd (Zdigits beta Z0) e)) e)) at hnonneg
+      change (0 : Int) < intOfZ (Zpower beta.radix_val
+        (Zsub (fexp (Zadd (Zdigits beta Z0) e)) e))
+      have hne : intOfZ (Zpower beta.radix_val
+          (Zsub (fexp (Zadd (Zdigits beta Z0) e)) e)) ≠ 0 := by
+        intro hz
+        apply hp
+        apply intOfZ_injective
+        simpa [CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ] using hz
+      omega
+  · rfl
+
+end CompCert4Lean.Flocq.Calc.Round
+
+namespace CompCert4Lean.Flocq.Calc.Round
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+private theorem pg_rcompare_lt (ctx : ExactRealContext)
+    {x y : ctx.spec.carrier} (hxy : ctx.spec.lt x y) :
+    CompCert4Lean.Flocq.Core.Raux.Exact.Rcompare ctx x y = Lt := by
+  unfold CompCert4Lean.Flocq.Core.Raux.Exact.Rcompare
+  unfold CompCert4Lean.Foundation.FlocqReal.ExactReal.total_order_T
+  cases hdec : ctx.spec.lt_dec x y with
+  | left _ => rfl
+  | right hnxy => exact (hnxy hxy).elim
+
+private theorem pg_rcompare_eq (ctx : ExactRealContext)
+    {x y : ctx.spec.carrier} (hxy : x = y) :
+    CompCert4Lean.Flocq.Core.Raux.Exact.Rcompare ctx x y = Eq := by
+  subst y
+  cases hdec : ctx.spec.lt_dec x x with
+  | left hlt => exact (ctx.certificate.orderedField.lt_irrefl x hlt).elim
+  | right _ =>
+      simp [CompCert4Lean.Flocq.Core.Raux.Exact.Rcompare,
+        CompCert4Lean.Foundation.FlocqReal.ExactReal.total_order_T, hdec]
+
+private theorem pg_rcompare_gt (ctx : ExactRealContext)
+    {x y : ctx.spec.carrier} (hyx : ctx.spec.lt y x) :
+    CompCert4Lean.Flocq.Core.Raux.Exact.Rcompare ctx x y = Gt := by
+  have hnxy : ¬ctx.spec.lt x y := by
+    intro hxy
+    exact ctx.certificate.orderedField.lt_irrefl x
+      (ctx.certificate.orderedField.lt_trans x y x hxy hyx)
+  unfold CompCert4Lean.Flocq.Core.Raux.Exact.Rcompare
+  unfold CompCert4Lean.Foundation.FlocqReal.ExactReal.total_order_T
+  cases hxy : ctx.spec.lt_dec x y with
+  | left hlt => exact (hnxy hlt).elim
+  | right _ =>
+      cases hyx_dec : ctx.spec.lt_dec y x with
+      | left _ => rfl
+      | right hnyx => exact (hnyx hyx).elim
+
+end CompCert4Lean.Flocq.Calc.Round

@@ -1613,3 +1613,58 @@ theorem divls_mul_params_sound : divls_mul_params_soundStatement := by
         simpa [harg] using hz
 
 end CompCert4Lean.Backend.SelectDivproof
+
+namespace CompCert4Lean.Backend.SelectDivproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Backend.SelectDiv
+
+theorem divlu_mul_params_sound : divlu_mul_params_soundStatement := by
+  unfold divlu_mul_params_soundStatement divlu_mul_params
+  intro d m' p'
+  have zlt_true_local : ∀ a b : CCZ,
+      boolOfSumbool (CompCert4Lean.Lib.Coqlib.zlt a b) = true → zLt a b := by
+    intro a b h
+    cases hz : CompCert4Lean.Lib.Coqlib.zlt a b with
+    | left hp => exact hp
+    | right hn => simp [boolOfSumbool, hz] at h
+  have zle_true_local : ∀ a b : CCZ,
+      boolOfSumbool (CompCert4Lean.Lib.Coqlib.zle a b) = true → zLe a b := by
+    intro a b h
+    cases hz : CompCert4Lean.Lib.Coqlib.zle a b with
+    | left hp => exact hp
+    | right hn => simp [boolOfSumbool, hz] at h
+  generalize hfind : find_div_mul_params _ _ d _ = r
+  cases r with
+  | none => simp_all
+  | some q =>
+    cases q with
+    | mk p m =>
+      dsimp
+      split
+      case isFalse => simp_all
+      case isTrue hcond =>
+        simp only [Bool.and_eq_true] at hcond
+        rcases hcond with ⟨hcond, hP64⟩
+        rcases hcond with ⟨hcond, hP0⟩
+        rcases hcond with ⟨hcond, hML⟩
+        rcases hcond with ⟨hcond, hM⟩
+        rcases hcond with ⟨hcond, hHI⟩
+        rcases hcond with ⟨hD, hLO⟩
+        intro hp
+        cases hp
+        have hD' := zlt_true_local _ _ hD
+        have hLO' := zle_true_local _ _ hLO
+        have hHI' := zle_true_local _ _ hHI
+        have hM' := zle_true_local _ _ hM
+        have hML' := zlt_true_local _ _ hML
+        have hP0' := zle_true_local _ _ hP0
+        have hP64' := zlt_true_local _ _ hP64
+        refine ⟨⟨hM', hML'⟩, ⟨hP0', hP64'⟩, ?_⟩
+        intro n hn
+        apply zdiv_mul_pos_local z64 (by
+          change (0 : Int) ≤ 64
+          omega) d hD' _ _ hP0'
+          ⟨hLO', hHI'⟩ n hn
+
+end CompCert4Lean.Backend.SelectDivproof
