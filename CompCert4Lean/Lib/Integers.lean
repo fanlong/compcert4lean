@@ -2988,3 +2988,16 @@ theorem zero_ext_and_proof : zero_ext_and := by
   exact suffix_nat_zero_ext_and x.val (zToNat n) wordsize (WordCore.val_lt x)
 
 end CompCert4Lean.Lib.Integers.Int
+
+namespace CompCert4Lean.Lib.Integers.Int
+
+theorem unsigned_repr_wordsize_proof : unsigned_repr_wordsize := by
+  unfold unsigned_repr_wordsize iwordsize zwordsize
+  apply unsigned_repr_proof_api
+  constructor
+  · change (0 : Int) ≤ 32
+    omega
+  · change (32 : Int) ≤ (2 ^ wordsize : Int) - 1
+    decide
+
+end CompCert4Lean.Lib.Integers.Int

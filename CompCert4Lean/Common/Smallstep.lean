@@ -1447,3 +1447,20 @@ theorem plus_star_trans : plus_star_transStatement := by
             exact _root_.List.append_assoc t1' t2' t2
 
 end CompCert4Lean.Common.Smallstep
+
+namespace CompCert4Lean.Common.Smallstep
+open CompCert4Lean.Common.Events
+
+theorem plus_trans : plus_transStatement := by
+  intro genv state step ge s1 t1 s2 t2 s3 t hplus1 hplus2 htrace
+  exact plus_star_trans genv state step ge s1 t1 s2 t2 s3 t hplus1
+    (plus_star genv state step ge s2 t2 s3 hplus2) htrace
+
+theorem star_inv : star_invStatement := by
+  intro genv state step ge s1 t s2 h
+  cases h with
+  | star_refl s => exact Or.inl ⟨rfl, rfl⟩
+  | star_step s1 t1 s2 t2 s3 t hstep hstar htrace =>
+      exact Or.inr (plus_left s1 t1 hstep hstar htrace)
+
+end CompCert4Lean.Common.Smallstep

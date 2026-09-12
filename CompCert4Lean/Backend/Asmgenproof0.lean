@@ -991,3 +991,144 @@ theorem agree_undef_caller_save_regs : agree_undef_caller_save_regsStatement := 
         | right h => exact (h hmem_saved).elim
 
 end CompCert4Lean.Backend.Asmgenproof0
+
+namespace CompCert4Lean.Backend.Asmgenproof0
+
+theorem builtin_arg_match : builtin_arg_matchStatement := by
+  intro ge rs sp m a v h
+  induction h with
+  | eval_BA x =>
+      simpa [CompCert4Lean.Common.AST.map_builtin_arg] using
+        (@CompCert4Lean.Common.Events.eval_BA _ ge rs sp m
+          (CompCert4Lean.X86.Asm.preg_of x))
+  | eval_BA_int n =>
+      simpa [CompCert4Lean.Common.AST.map_builtin_arg] using
+        (@CompCert4Lean.Common.Events.eval_BA_int _ ge rs sp m n)
+  | eval_BA_long n =>
+      simpa [CompCert4Lean.Common.AST.map_builtin_arg] using
+        (@CompCert4Lean.Common.Events.eval_BA_long _ ge rs sp m n)
+  | eval_BA_float n =>
+      simpa [CompCert4Lean.Common.AST.map_builtin_arg] using
+        (@CompCert4Lean.Common.Events.eval_BA_float _ ge rs sp m n)
+  | eval_BA_single n =>
+      simpa [CompCert4Lean.Common.AST.map_builtin_arg] using
+        (@CompCert4Lean.Common.Events.eval_BA_single _ ge rs sp m n)
+  | eval_BA_loadstack chunk ofs v load =>
+      simpa [CompCert4Lean.Common.AST.map_builtin_arg] using
+        (@CompCert4Lean.Common.Events.eval_BA_loadstack _ ge rs sp m
+          chunk ofs v load)
+  | eval_BA_addrstack ofs =>
+      simpa [CompCert4Lean.Common.AST.map_builtin_arg] using
+        (@CompCert4Lean.Common.Events.eval_BA_addrstack _ ge rs sp m ofs)
+  | eval_BA_loadglobal chunk id ofs v load =>
+      simpa [CompCert4Lean.Common.AST.map_builtin_arg] using
+        (@CompCert4Lean.Common.Events.eval_BA_loadglobal _ ge rs sp m
+          chunk id ofs v load)
+  | eval_BA_addrglobal id ofs =>
+      simpa [CompCert4Lean.Common.AST.map_builtin_arg] using
+        (@CompCert4Lean.Common.Events.eval_BA_addrglobal _ ge rs sp m id ofs)
+  | eval_BA_splitlong hi lo vhi vlo eval_hi eval_lo ih_hi ih_lo =>
+      simpa [CompCert4Lean.Common.AST.map_builtin_arg] using
+        (@CompCert4Lean.Common.Events.eval_BA_splitlong _ ge rs sp m
+          (CompCert4Lean.Common.AST.map_builtin_arg
+            CompCert4Lean.X86.Asm.preg_of hi)
+          (CompCert4Lean.Common.AST.map_builtin_arg
+            CompCert4Lean.X86.Asm.preg_of lo)
+          vhi vlo ih_hi ih_lo)
+  | eval_BA_addptr a1 a2 v1 v2 eval_a1 eval_a2 ih_a1 ih_a2 =>
+      simpa [CompCert4Lean.Common.AST.map_builtin_arg] using
+        (@CompCert4Lean.Common.Events.eval_BA_addptr _ ge rs sp m
+          (CompCert4Lean.Common.AST.map_builtin_arg
+            CompCert4Lean.X86.Asm.preg_of a1)
+          (CompCert4Lean.Common.AST.map_builtin_arg
+            CompCert4Lean.X86.Asm.preg_of a2)
+          v1 v2 ih_a1 ih_a2)
+
+theorem agree_set_res : agree_set_resStatement := by
+  intro res ms sp rs v v' hagree hv
+  have hrec : ∀ (res : CompCert4Lean.Common.AST.builtin_res
+        CompCert4Lean.X86.Machregs.mreg)
+      (ms : CompCert4Lean.Backend.Mach.regset)
+      (rs : CompCert4Lean.X86.Asm.regset)
+      (v v' : CompCert4Lean.Common.Values.val),
+      agree ms sp rs →
+      CompCert4Lean.Common.Values.Val.lessdef v v' →
+      agree (CompCert4Lean.Backend.Mach.set_res res v ms) sp
+        (CompCert4Lean.X86.Asm.set_res
+          (CompCert4Lean.Common.AST.map_builtin_res
+            CompCert4Lean.X86.Asm.preg_of res) v' rs) := by
+    intro res
+    induction res with
+    | BR r =>
+        intro ms rs v v' hagree hv
+        apply agree_set_mreg ms sp rs r v
+          (CompCert4Lean.X86.Asm.Pregmap.set
+            (CompCert4Lean.X86.Asm.preg_of r) v' rs) hagree
+        · simpa [CompCert4Lean.X86.Asm.Pregmap.set] using hv
+        · intro r' hdata hne
+          simp [CompCert4Lean.X86.Asm.Pregmap.set, hne]
+    | BR_none =>
+        intro ms rs v v' hagree hv
+        simpa [CompCert4Lean.Common.AST.map_builtin_res,
+          CompCert4Lean.Backend.Mach.set_res,
+          CompCert4Lean.X86.Asm.set_res] using hagree
+    | BR_splitlong hi lo ih_hi ih_lo =>
+        intro ms rs v v' hagree hv
+        have hhi := ih_hi ms rs
+          (CompCert4Lean.Common.Values.Val.hiword v)
+          (CompCert4Lean.Common.Values.Val.hiword v') hagree
+          (hiword_lessdef_aux v v' hv)
+        have hlo := ih_lo
+          (CompCert4Lean.Backend.Mach.set_res hi
+            (CompCert4Lean.Common.Values.Val.hiword v) ms)
+          (CompCert4Lean.X86.Asm.set_res
+            (CompCert4Lean.Common.AST.map_builtin_res
+              CompCert4Lean.X86.Asm.preg_of hi)
+            (CompCert4Lean.Common.Values.Val.hiword v') rs)
+          (CompCert4Lean.Common.Values.Val.loword v)
+          (CompCert4Lean.Common.Values.Val.loword v') hhi
+          (loword_lessdef_aux v v' hv)
+        simpa [CompCert4Lean.Common.AST.map_builtin_res,
+          CompCert4Lean.Backend.Mach.set_res,
+          CompCert4Lean.X86.Asm.set_res] using hlo
+  exact hrec res ms rs v v' hagree hv
+
+theorem set_res_other : set_res_otherStatement := by
+  intro r res v rs hdata
+  have hrec : ∀ (res : CompCert4Lean.Common.AST.builtin_res
+        CompCert4Lean.X86.Machregs.mreg)
+      (r : CompCert4Lean.X86.Asm.preg)
+      (v : CompCert4Lean.Common.Values.val)
+      (rs : CompCert4Lean.X86.Asm.regset),
+      CompCert4Lean.X86.Asm.data_preg r = false →
+      CompCert4Lean.X86.Asm.set_res
+        (CompCert4Lean.Common.AST.map_builtin_res
+          CompCert4Lean.X86.Asm.preg_of res) v rs r = rs r := by
+    intro res
+    induction res with
+    | BR r' =>
+        intro r v rs hdata
+        by_cases heq : r = CompCert4Lean.X86.Asm.preg_of r'
+        · subst r
+          have hp := preg_of_data r'
+          have hfalse : false = true := hdata.symm.trans hp
+          cases hfalse
+        · simp [CompCert4Lean.Common.AST.map_builtin_res,
+            CompCert4Lean.X86.Asm.set_res,
+            CompCert4Lean.X86.Asm.Pregmap.set, heq]
+    | BR_none =>
+        intro r v rs hdata
+        rfl
+    | BR_splitlong hi lo ih_hi ih_lo =>
+        intro r v rs hdata
+        have hhi := ih_hi r (CompCert4Lean.Common.Values.Val.hiword v) rs hdata
+        have hlo := ih_lo r (CompCert4Lean.Common.Values.Val.loword v)
+          (CompCert4Lean.X86.Asm.set_res
+            (CompCert4Lean.Common.AST.map_builtin_res
+              CompCert4Lean.X86.Asm.preg_of hi)
+            (CompCert4Lean.Common.Values.Val.hiword v) rs) hdata
+        simpa [CompCert4Lean.X86.Asm.set_res,
+          CompCert4Lean.Common.AST.map_builtin_res, hhi] using hlo
+  exact hrec res r v rs hdata
+
+end CompCert4Lean.Backend.Asmgenproof0

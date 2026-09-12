@@ -1370,3 +1370,17 @@ theorem Float32.abs_nan_result_obligation_proof : Float32.abs_nan_result_obligat
     constructor <;> rfl
 
 end CompCert4Lean.Lib.Floats
+
+namespace CompCert4Lean.Lib.Floats
+
+theorem default_nan_64_result_obligation_proof : default_nan_64_result_obligation := by
+  unfold default_nan_64_result_obligation
+  unfold default_nan_64 quiet_nan_64 quiet_nan_64_payload
+  unfold CompCert4Lean.X86_64.Archi.default_nan_64 mkNaN64 decode64
+  constructor
+  · rfl
+  · unfold CompCert4Lean.Flocq.IEEE754.Binary.BinaryFloatCertificate
+    unfold CompCert4Lean.Flocq.IEEE754.Binary.valid_binary
+    decide
+
+end CompCert4Lean.Lib.Floats

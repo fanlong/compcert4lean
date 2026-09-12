@@ -1758,3 +1758,63 @@ theorem propagate_succ_list_charact : propagate_succ_list_charactStatement := by
             cases hnone1
 
 end CompCert4Lean.Backend.Kildall.Dataflow_Solver
+
+namespace CompCert4Lean.Backend.Kildall.Dataflow_Solver
+
+open CompCert4Lean.Lib.Maps
+
+theorem fixpoint_from_charact : fixpoint_from_charactStatement := by
+  intro A LAT NS LATlaws NSlaws code successors transf start res hfix
+  unfold fixpoint_from at hfix
+  have hprop := CompCert4Lean.Lib.Iteration.PrimIter.iterate_prop
+    (state LAT NS) (PMapT LAT.t)
+    (step code successors transf)
+    (fun st => steps code successors transf start st)
+    (fun result => ∃ st, steps code successors transf start st ∧
+      NS.pick st.worklist = none ∧ result = (LAT.bot, st.aval))
+    (by
+      intro st hst
+      cases hstep : step code successors transf st with
+      | inl result =>
+          unfold step at hstep
+          cases hpick : NS.pick st.worklist with
+          | none =>
+              simp only [hpick] at hstep
+              injection hstep with hresult
+              subst result
+              exact ⟨st, hst, hpick, rfl⟩
+          | some pair =>
+              cases pair with
+              | mk n rem =>
+                  cases hcode : PTree.get n code with
+                  | none =>
+                      simp only [hpick, hcode] at hstep
+                      cases hstep
+                  | some instr =>
+                      simp only [hpick, hcode] at hstep
+                      cases hstep
+      | inr st' =>
+          have hstep_orig := hstep
+          unfold step at hstep
+          cases hpick : NS.pick st.worklist with
+          | none =>
+              simp only [hpick] at hstep
+              cases hstep
+          | some pair =>
+              cases pair with
+              | mk n rem =>
+                  cases hcode : PTree.get n code with
+                  | none =>
+                      simp only [hpick, hcode] at hstep
+                      injection hstep with hst'
+                      subst st'
+                      exact steps_right start st _ hst hstep_orig
+                  | some instr =>
+                      simp only [hpick, hcode] at hstep
+                      injection hstep with hst'
+                      subst st'
+                      exact steps_right start st _ hst hstep_orig)
+  unfold CompCert4Lean.Lib.Iteration.PrimIter.iterate_propStatement at hprop
+  exact hprop start res hfix (steps_base start)
+
+end CompCert4Lean.Backend.Kildall.Dataflow_Solver

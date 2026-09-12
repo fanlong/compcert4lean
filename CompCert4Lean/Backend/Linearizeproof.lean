@@ -1452,3 +1452,160 @@ theorem starts_with_correct
       | Lreturn => simp [starts_with] at hstart
 
 end CompCert4Lean.Backend.Linearizeproof
+
+namespace CompCert4Lean.Backend.Linearizeproof
+
+open CompCert4Lean.Backend.Linear
+open CompCert4Lean.Backend.Linearize
+
+theorem label_in_add_branch : label_in_add_branchStatement := by
+  intro lbl s k h
+  unfold add_branch at h
+  by_cases hs : starts_with s k
+  · simpa [hs] using h
+  · simp only [hs] at h
+    cases h with
+    | tail _ htail => exact htail
+
+end CompCert4Lean.Backend.Linearizeproof
+
+namespace CompCert4Lean.Backend.Linearizeproof
+
+open CompCert4Lean.Backend.Linear
+open CompCert4Lean.Backend.Linearize
+
+theorem label_in_lin_block : label_in_lin_blockStatement := by
+  intro lbl k b h
+  induction b with
+  | nil => exact h
+  | cons a b ih =>
+      cases a with
+      | Lop op args res =>
+          simp only [linearize_block] at h
+          cases h with
+          | tail _ htail => exact ih htail
+      | Lload chunk addr args dst =>
+          simp only [linearize_block] at h
+          cases h with
+          | tail _ htail => exact ih htail
+      | Lgetstack sl ofs ty dst =>
+          simp only [linearize_block] at h
+          cases h with
+          | tail _ htail => exact ih htail
+      | Lsetstack src sl ofs ty =>
+          simp only [linearize_block] at h
+          cases h with
+          | tail _ htail => exact ih htail
+      | Lstore chunk addr args src =>
+          simp only [linearize_block] at h
+          cases h with
+          | tail _ htail => exact ih htail
+      | Lcall sig ros =>
+          simp only [linearize_block] at h
+          cases h with
+          | tail _ htail => exact ih htail
+      | Ltailcall sig ros =>
+          simp only [linearize_block] at h
+          cases h with
+          | tail _ htail => exact htail
+      | Lbuiltin ef args res =>
+          simp only [linearize_block] at h
+          cases h with
+          | tail _ htail => exact ih htail
+      | Lbranch s =>
+          simp only [linearize_block] at h
+          exact label_in_add_branch lbl s k h
+      | Lcond cond args s1 s2 =>
+          simp only [linearize_block] at h
+          by_cases hs : starts_with s1 k
+          · simp only [hs] at h
+            cases h with
+            | tail _ htail => exact label_in_add_branch lbl s1 k htail
+          · simp only [hs] at h
+            cases h with
+            | tail _ htail => exact label_in_add_branch lbl s2 k htail
+      | Ljumptable arg tbl =>
+          simp only [linearize_block] at h
+          cases h with
+          | tail _ htail => exact htail
+      | Lreturn =>
+          simp only [linearize_block] at h
+          cases h with
+          | tail _ htail => exact htail
+
+end CompCert4Lean.Backend.Linearizeproof
+
+namespace CompCert4Lean.Backend.Linearizeproof
+
+open CompCert4Lean.Backend.Linear
+open CompCert4Lean.Backend.Linearize
+
+theorem find_label_lin_rec : find_label_lin_recStatement := by
+  intro f enum
+  induction enum with
+  | nil =>
+      intro pc b hmem
+      cases hmem
+  | cons a enum ih =>
+      intro pc b hmem hcode
+      rw [linearize_body_cons]
+      cases hpeq : CompCert4Lean.Lib.Coqlib.peq a pc with
+      | left heq =>
+          subst a
+          refine ⟨linearize_body f enum, ?_⟩
+          rw [hcode]
+          simp [Linear.find_label, Linear.is_label, hpeq]
+      | right hne =>
+          have hmem' : List.Mem pc enum := by
+            cases hmem with
+            | head => exact False.elim (hne rfl)
+            | tail _ htail => exact htail
+          rcases ih pc b hmem' hcode with ⟨k, hk⟩
+          cases hget : CompCert4Lean.Lib.Maps.PTree.get a f.fn_code with
+          | none =>
+              exact ⟨k, by simpa [hget] using hk⟩
+          | some b' =>
+              have hne' : ¬ pc = a := by
+                intro heq
+                exact hne heq.symm
+              cases hpeq' : CompCert4Lean.Lib.Coqlib.peq pc a with
+              | left heq' => exact False.elim (hne' heq')
+              | right hneq' =>
+                  refine ⟨k, ?_⟩
+                  simp [Linear.find_label, Linear.is_label, hpeq']
+                  have hfl := find_label_lin_block
+                    (show Linear.label from pc) (linearize_body f enum) b'
+                  rw [hfl]
+                  exact hk
+
+end CompCert4Lean.Backend.Linearizeproof
+
+namespace CompCert4Lean.Backend.Linearizeproof
+
+open CompCert4Lean.Backend.Linear
+open CompCert4Lean.Backend.Linearize
+
+theorem find_label_lin : find_label_linStatement := by
+  intro service f tf pc b htrans hcode hreach
+  unfold CompCert4Lean.Backend.Linearize.transf_function at htrans
+  cases henum : enumerate service f with
+  | Error msg =>
+      simp [henum] at htrans
+  | OK enum =>
+      simp [henum] at htrans
+      cases htrans
+      have hmem := enumerate_complete service f enum pc b henum hcode hreach
+      rcases find_label_lin_rec f enum pc b hmem hcode with ⟨k, hk⟩
+      refine ⟨k, ?_⟩
+      change Linear.find_label (show Linear.label from pc)
+        (add_branch f.fn_entrypoint (linearize_body f enum)) = _
+      calc
+        Linear.find_label (show Linear.label from pc)
+            (add_branch f.fn_entrypoint (linearize_body f enum)) =
+            Linear.find_label (show Linear.label from pc)
+              (linearize_body f enum) :=
+          find_label_add_branch (show Linear.label from pc)
+            (linearize_body f enum) f.fn_entrypoint
+        _ = some (linearize_block b k) := hk
+
+end CompCert4Lean.Backend.Linearizeproof

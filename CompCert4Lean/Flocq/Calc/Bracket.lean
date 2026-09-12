@@ -1118,3 +1118,107 @@ theorem inbetween_step_Lo_Mi_Eq_odd :
         omega
 
 end CompCert4Lean.Flocq.Calc.Bracket
+
+namespace CompCert4Lean.Flocq.Calc.Bracket
+
+theorem inbetween_step_Hi_Mi_even :
+    ∀ (ctx : ExactRealContext), inbetween_step_Hi_Mi_evenStatement ctx := by
+  intro ctx start step nb_steps hstep hnb x k l hx hl hEq
+  apply inbetween_step_not_Eq ctx start step nb_steps hstep x k l Gt hx
+  · have hkpos : Zlt Z0 k := by
+      change (0 : Int) <
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ k
+      have hnb' := hnb
+      rw [← hEq] at hnb'
+      change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ Zone <
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (Zmul Ztwo k) at hnb'
+      simp only [Zmul,
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.mul,
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt] at hnb'
+      have htwo_int :
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ Ztwo = (2 : Int) := by
+        rfl
+      have hone_int :
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ Zone = (1 : Int) := by
+        rfl
+      rw [htwo_int, hone_int] at hnb'
+      omega
+    constructor
+    · exact hkpos
+    · change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ k <
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ nb_steps
+      have hkpos_int := hkpos
+      change (0 : Int) <
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ k at hkpos_int
+      rw [← hEq]
+      simp only [Zmul,
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.mul,
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+      have htwo_int :
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ Ztwo = (2 : Int) := by
+        rfl
+      rw [htwo_int]
+      omega
+  · apply bracket_Rcompare_gt ctx
+    have hxbounds := inbetween_bounds_not_Eq ctx
+      (Rplus ctx start (Rmult ctx (IZR ctx k) step))
+      (Rplus ctx start (Rmult ctx (IZR ctx (Zadd k Zone)) step)) x l hx hl
+    have hmid_eq :
+        Rplus ctx start
+          (Rmult ctx (Rdiv ctx (IZR ctx nb_steps) (Rtwo ctx)) step) =
+          Rplus ctx start (Rmult ctx (IZR ctx k) step) := by
+      have hdiv_eq :
+          Rdiv ctx (IZR ctx nb_steps) (Rtwo ctx) = IZR ctx k := by
+        change ctx.spec.div (ctx.spec.ofZ nb_steps)
+            (ctx.spec.add ctx.spec.one ctx.spec.one) = ctx.spec.ofZ k
+        rw [ctx.certificate.orderedField.div_eq_mul_inv]
+        rw [← hEq]
+        have hmult :=
+          CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.mult_IZR
+            ctx Ztwo k
+        change ctx.spec.ofZ (Zmul Ztwo k) =
+          ctx.spec.mul (ctx.spec.ofZ Ztwo) (ctx.spec.ofZ k) at hmult
+        rw [hmult]
+        have hz2 : ctx.spec.ofZ Ztwo =
+            ctx.spec.add ctx.spec.one ctx.spec.one := by
+          have hZtwo : Ztwo = Zadd Zone Zone := by
+            rfl
+          rw [hZtwo, ctx.certificate.sourceLaws.ofZ_add,
+            ctx.certificate.sourceLaws.ofZ_one]
+        rw [hz2]
+        calc
+          ctx.spec.mul
+              (ctx.spec.mul (ctx.spec.add ctx.spec.one ctx.spec.one)
+                (ctx.spec.ofZ k))
+              (ctx.spec.inv (ctx.spec.add ctx.spec.one ctx.spec.one)) =
+            ctx.spec.mul (ctx.spec.add ctx.spec.one ctx.spec.one)
+              (ctx.spec.mul (ctx.spec.ofZ k)
+                (ctx.spec.inv (ctx.spec.add ctx.spec.one ctx.spec.one))) :=
+            ctx.certificate.orderedField.mul_assoc _ _ _
+          _ = ctx.spec.mul (ctx.spec.add ctx.spec.one ctx.spec.one)
+              (ctx.spec.mul (ctx.spec.inv
+                (ctx.spec.add ctx.spec.one ctx.spec.one))
+                (ctx.spec.ofZ k)) := by
+            congr 1
+            exact ctx.certificate.orderedField.mul_comm _ _
+          _ = ctx.spec.mul
+              (ctx.spec.mul (ctx.spec.add ctx.spec.one ctx.spec.one)
+                (ctx.spec.inv (ctx.spec.add ctx.spec.one ctx.spec.one)))
+              (ctx.spec.ofZ k) := by
+            exact (ctx.certificate.orderedField.mul_assoc _ _ _).symm
+          _ = ctx.spec.mul
+              (ctx.spec.mul (ctx.spec.inv
+                (ctx.spec.add ctx.spec.one ctx.spec.one))
+                (ctx.spec.add ctx.spec.one ctx.spec.one))
+              (ctx.spec.ofZ k) := by
+            congr 1
+            exact ctx.certificate.orderedField.mul_comm _ _
+          _ = ctx.spec.mul ctx.spec.one (ctx.spec.ofZ k) := by
+            rw [ctx.certificate.orderedField.inv_mul_cancel _
+              (middle_two_ne_zero ctx)]
+          _ = ctx.spec.ofZ k := ctx.certificate.orderedField.one_mul _
+      rw [hdiv_eq]
+    rw [hmid_eq]
+    exact hxbounds.1
+
+end CompCert4Lean.Flocq.Calc.Bracket

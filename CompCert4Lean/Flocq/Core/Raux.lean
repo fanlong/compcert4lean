@@ -2274,3 +2274,89 @@ theorem Rabs_lt : ∀ (ctx : ExactRealContext), Rabs_ltStatement ctx := by
     exact hxy.2
 
 end CompCert4Lean.Flocq.Core.Raux
+
+namespace CompCert4Lean.Flocq.Core.Raux
+
+private theorem pg_lt_of_lt_of_le (ctx : ExactRealContext)
+    {a b c : ctx.spec.carrier} (hab : ctx.spec.lt a b)
+    (hbc : ctx.spec.le b c) : ctx.spec.lt a c := by
+  apply (ctx.certificate.orderedField.lt_iff_le_not_le _ _).mpr
+  constructor
+  · exact ctx.certificate.orderedField.le_trans _ _ _
+      ((ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp hab).1 hbc
+  · intro hca
+    exact ((ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp hab).2
+      (ctx.certificate.orderedField.le_trans _ _ _ hbc hca)
+
+theorem Rabs_lt_inv : ∀ (ctx : ExactRealContext), Rabs_lt_invStatement ctx := by
+  intro ctx x y hxy
+  change ctx.spec.lt (ctx.spec.abs x) y at hxy
+  rcases ctx.certificate.total_order x ctx.spec.zero with hx | hx
+  · rcases hx with hxneg | hxeq
+    · have habs : ctx.spec.abs x = ctx.spec.neg x :=
+        ctx.certificate.sourceLaws.abs_negative x hxneg
+      have hneg : ctx.spec.lt (ctx.spec.neg y) x := by
+        exact pg_neg_lt_of_neg_lt ctx (by simpa [habs] using hxy)
+      have hxle0 : ctx.spec.le x ctx.spec.zero :=
+        (ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp hxneg |>.1
+      have hnegx : ctx.spec.lt ctx.spec.zero (ctx.spec.neg x) := by
+        have h := ctx.certificate.orderedField.add_lt_compat_l
+          (ctx.spec.neg x) x ctx.spec.zero hxneg
+        rw [ctx.certificate.orderedField.neg_add_cancel,
+          ctx.certificate.orderedField.add_zero] at h
+        exact h
+      have hx_abs : ctx.spec.le x (ctx.spec.abs x) := by
+        rw [habs]
+        exact ctx.certificate.orderedField.le_trans _ _ _ hxle0
+          ((ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp hnegx).1
+      have hsecond : ctx.spec.lt x y := by
+        apply (ctx.certificate.orderedField.lt_iff_le_not_le _ _).mpr
+        constructor
+        · exact ctx.certificate.orderedField.le_trans _ _ _ hx_abs
+            ((ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp hxy).1
+        · intro hyx
+          exact ((ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp hxy).2
+            (ctx.certificate.orderedField.le_trans _ _ _ hyx hx_abs)
+      exact ⟨hneg, hsecond⟩
+    · subst x
+      have habs : ctx.spec.abs ctx.spec.zero = ctx.spec.zero :=
+        ctx.certificate.sourceLaws.abs_nonnegative _
+          (ctx.certificate.orderedField.le_refl _)
+      have hzero_y : ctx.spec.lt ctx.spec.zero y := by
+        simpa [habs] using hxy
+      have hneg_y : ctx.spec.lt (ctx.spec.neg y) ctx.spec.zero := by
+        have h := ctx.certificate.orderedField.add_lt_compat_l
+          (ctx.spec.neg y) ctx.spec.zero y hzero_y
+        rw [ctx.certificate.orderedField.add_zero,
+          ctx.certificate.orderedField.neg_add_cancel] at h
+        exact h
+      exact ⟨hneg_y, hzero_y⟩
+  · have hxle : ctx.spec.le ctx.spec.zero x :=
+      (ctx.certificate.orderedField.lt_iff_le_not_le _ _ |>.mp hx).1
+    have habs : ctx.spec.abs x = x :=
+      ctx.certificate.sourceLaws.abs_nonnegative x hxle
+    have hnonneg_abs : ctx.spec.le ctx.spec.zero (ctx.spec.abs x) := by
+      rw [habs]
+      exact hxle
+    have hxy_le : ctx.spec.le (ctx.spec.abs x) y :=
+      (ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp hxy |>.1
+    have hypos : ctx.spec.lt ctx.spec.zero y := by
+      apply (ctx.certificate.orderedField.lt_iff_le_not_le _ _).mpr
+      constructor
+      · exact ctx.certificate.orderedField.le_trans _ _ _ hnonneg_abs hxy_le
+      · intro hy0
+        exact (ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp hxy |>.2
+          (ctx.certificate.orderedField.le_trans _ _ _ hy0 hnonneg_abs)
+    have hneg_y : ctx.spec.lt (ctx.spec.neg y) ctx.spec.zero := by
+      have h := ctx.certificate.orderedField.add_lt_compat_l
+        (ctx.spec.neg y) ctx.spec.zero y hypos
+      rw [ctx.certificate.orderedField.add_zero,
+        ctx.certificate.orderedField.neg_add_cancel] at h
+      exact h
+    have hfirst : ctx.spec.lt (ctx.spec.neg y) x := by
+      apply pg_lt_of_lt_of_le ctx hneg_y hxle
+    have hsecond : ctx.spec.lt x y := by
+      simpa [habs] using hxy
+    exact ⟨hfirst, hsecond⟩
+
+end CompCert4Lean.Flocq.Core.Raux

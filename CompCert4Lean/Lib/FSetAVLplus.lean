@@ -1236,3 +1236,53 @@ theorem for_all_between_iff : for_all_between_iffStatement := by
       s.this s.is_ok.ok hforall
 
 end CompCert4Lean.Lib.FSetAVLplus.Make
+
+namespace CompCert4Lean.Lib.FSetAVLplus.Make
+
+theorem In_raw_partition_between_1 : In_raw_partition_between_1Statement := by
+  intro X above_low_bound below_high_bound x m hx
+  exact (raw_partition_between_subset above_low_bound below_high_bound m).1 x hx
+
+theorem In_raw_partition_between_2 : In_raw_partition_between_2Statement := by
+  intro X above_low_bound below_high_bound x m hx
+  exact (raw_partition_between_subset above_low_bound below_high_bound m).2 x hx
+
+theorem raw_partition_between_ok : raw_partition_between_okStatement := by
+  intro X above_low_bound below_high_bound m hbst
+  exact raw_partition_between_bst above_low_bound below_high_bound m hbst
+
+end CompCert4Lean.Lib.FSetAVLplus.Make
+
+namespace CompCert4Lean.Lib.FSetAVLplus.Make
+
+theorem In_raw_partition_between_3 : In_raw_partition_between_3Statement := by
+  intro X above_low_bound below_high_bound above_monotone below_monotone
+  intro x m
+  induction m with
+  | Leaf =>
+      intro hx
+      cases hx
+  | Node info left value right left_ih right_ih =>
+      intro hx
+      rw [raw_partition_between] at hx
+      split at hx
+      next hvalue_above =>
+        split at hx
+        next hvalue_below =>
+          rcases (Raw.join_spec
+            (raw_partition_between above_low_bound below_high_bound left).1
+            value
+            (raw_partition_between above_low_bound below_high_bound right).1
+            x).mp hx with hroot | hleft | hright
+          · exact ⟨above_monotone value x (Or.inl (X.eq_sym x value hroot))
+                hvalue_above,
+              below_monotone value x (Or.inl (X.eq_sym x value hroot))
+                hvalue_below⟩
+          · exact left_ih hleft
+          · exact right_ih hright
+        next _ =>
+          exact left_ih hx
+      next _ =>
+        exact right_ih hx
+
+end CompCert4Lean.Lib.FSetAVLplus.Make

@@ -1052,3 +1052,276 @@ theorem set_instr_same : set_instr_sameStatement := by
   exact CompCert4Lean.Lib.Maps.PTree.gss pc instr s.st_code
 
 end CompCert4Lean.Backend.Inliningspec
+
+namespace CompCert4Lean.Backend.Inliningspec
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Backend.Inlining
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+
+private theorem inline_function_unchanged_below :
+    ∀ (fe : funenv)
+      (rec : ∀ fe', size_fenv fe' < size_fenv fe → context → function → mon Unit),
+      (∀ fe' L ctx f s x s' i pc,
+        rec fe' L ctx f s = R x s' i →
+        Ple ctx.dpc s.st_nextnode → Plt pc ctx.dpc →
+        PTree.get pc s'.st_code = PTree.get pc s.st_code) →
+      ∀ ctx id f (lookup : PTree.get id fe = some f) args retpc retreg
+        s x s' i pc,
+        inline_function fe rec ctx id f lookup args retpc retreg s = R x s' i →
+        Ple ctx.dpc s.st_nextnode → Plt pc s.st_nextnode →
+        PTree.get pc s'.st_code = PTree.get pc s.st_code := by
+  intro fe rec hrec ctx id f lookup args retpc retreg s x s' i pc h
+    hbelow hlt
+  unfold inline_function at h
+  simp [Inlining.bind, reserve_nodes, reserve_regs] at h
+  let rs : Inlining.state :=
+    { st_nextreg := PArith.BinPos.Pos.add s.st_nextreg (max_reg_function f)
+      st_nextnode := PArith.BinPos.Pos.add s.st_nextnode (max_pc_function f)
+      st_code := s.st_code
+      st_stksize := s.st_stksize }
+  generalize hrec' : rec (PTree.remove id fe) _
+      (callcontext ctx s.st_nextnode s.st_nextreg (max_reg_function f)
+        f.fn_stacksize retpc retreg) f rs = rr at h
+  cases rr with
+  | R u s3 i3 =>
+      cases hmove : add_moves (sregs ctx args)
+          (sregs (callcontext ctx s.st_nextnode s.st_nextreg (max_reg_function f)
+            f.fn_stacksize retpc retreg) f.fn_params)
+          (spc (callcontext ctx s.st_nextnode s.st_nextreg (max_reg_function f)
+            f.fn_stacksize retpc retreg) f.fn_entrypoint) s3 with
+      | R n s4 i4 =>
+          simp [hmove] at h
+          rcases h with ⟨_, hs⟩
+          subst s'
+          have hpleAdd : Ple s.st_nextnode rs.st_nextnode := by
+            change posToNat s.st_nextnode ≤
+              posToNat (PArith.BinPos.Pos.add s.st_nextnode (max_pc_function f))
+            change posToNat s.st_nextnode ≤
+              posToNat (posOfNat (posToNat s.st_nextnode + posToNat (max_pc_function f)))
+            have hpos : 0 < posToNat s.st_nextnode + posToNat (max_pc_function f) :=
+              Nat.add_pos_left (posToNat_positive s.st_nextnode) _
+            rw [posToNat_posOfNat hpos]
+            omega
+          have hrecpc := hrec (PTree.remove id fe) _
+            (callcontext ctx s.st_nextnode s.st_nextreg (max_reg_function f)
+              f.fn_stacksize retpc retreg)
+            f rs u s3 i3 pc hrec'
+            (by
+              change Ple s.st_nextnode rs.st_nextnode
+              exact hpleAdd)
+            (by
+              change Plt pc s.st_nextnode
+              exact hlt)
+          have hmove := add_moves_unchanged
+            (sregs ctx args)
+            (sregs (callcontext ctx s.st_nextnode s.st_nextreg (max_reg_function f)
+              f.fn_stacksize retpc retreg) f.fn_params)
+            (spc (callcontext ctx s.st_nextnode s.st_nextreg (max_reg_function f)
+              f.fn_stacksize retpc retreg) f.fn_entrypoint)
+            s3 n s4 i4 pc hmove
+            (Or.inl (Plt_Ple_trans pc s.st_nextnode s3.st_nextnode hlt
+              (Ple_trans s.st_nextnode rs.st_nextnode s3.st_nextnode hpleAdd i3.2)))
+          exact hmove.trans (hrecpc.trans rfl)
+
+private theorem inline_tail_function_unchanged_below :
+    ∀ (fe : funenv)
+      (rec : ∀ fe', size_fenv fe' < size_fenv fe → context → function → mon Unit),
+      (∀ fe' L ctx f s x s' i pc,
+        rec fe' L ctx f s = R x s' i →
+        Ple ctx.dpc s.st_nextnode → Plt pc ctx.dpc →
+        PTree.get pc s'.st_code = PTree.get pc s.st_code) →
+      ∀ ctx id f (lookup : PTree.get id fe = some f) args
+        s x s' i pc,
+        inline_tail_function fe rec ctx id f lookup args s = R x s' i →
+        Ple ctx.dpc s.st_nextnode → Plt pc s.st_nextnode →
+        PTree.get pc s'.st_code = PTree.get pc s.st_code := by
+  intro fe rec hrec ctx id f lookup args s x s' i pc h hbelow hlt
+  unfold inline_tail_function at h
+  simp [Inlining.bind, reserve_nodes, reserve_regs] at h
+  let rs : Inlining.state :=
+    { st_nextreg := PArith.BinPos.Pos.add s.st_nextreg (max_reg_function f)
+      st_nextnode := PArith.BinPos.Pos.add s.st_nextnode (max_pc_function f)
+      st_code := s.st_code
+      st_stksize := s.st_stksize }
+  generalize hrec' : rec (PTree.remove id fe) _
+      (tailcontext ctx s.st_nextnode s.st_nextreg (max_reg_function f)
+        f.fn_stacksize) f rs = rr at h
+  cases rr with
+  | R u s3 i3 =>
+      cases hmove : add_moves (sregs ctx args)
+          (sregs (tailcontext ctx s.st_nextnode s.st_nextreg (max_reg_function f)
+            f.fn_stacksize) f.fn_params)
+          (spc (tailcontext ctx s.st_nextnode s.st_nextreg (max_reg_function f)
+            f.fn_stacksize) f.fn_entrypoint) s3 with
+      | R n s4 i4 =>
+          simp [hmove] at h
+          rcases h with ⟨_, hs⟩
+          subst s'
+          have hpleAdd : Ple s.st_nextnode rs.st_nextnode := by
+            change posToNat s.st_nextnode ≤
+              posToNat (PArith.BinPos.Pos.add s.st_nextnode (max_pc_function f))
+            change posToNat s.st_nextnode ≤
+              posToNat (posOfNat (posToNat s.st_nextnode + posToNat (max_pc_function f)))
+            have hpos : 0 < posToNat s.st_nextnode + posToNat (max_pc_function f) :=
+              Nat.add_pos_left (posToNat_positive s.st_nextnode) _
+            rw [posToNat_posOfNat hpos]
+            omega
+          have hrecpc := hrec (PTree.remove id fe) _
+            (tailcontext ctx s.st_nextnode s.st_nextreg (max_reg_function f)
+              f.fn_stacksize)
+            f rs u s3 i3 pc hrec'
+            (by
+              change Ple s.st_nextnode rs.st_nextnode
+              exact hpleAdd)
+            (by
+              change Plt pc s.st_nextnode
+              exact hlt)
+          have hmove := add_moves_unchanged
+            (sregs ctx args)
+            (sregs (tailcontext ctx s.st_nextnode s.st_nextreg (max_reg_function f)
+              f.fn_stacksize) f.fn_params)
+            (spc (tailcontext ctx s.st_nextnode s.st_nextreg (max_reg_function f)
+              f.fn_stacksize) f.fn_entrypoint)
+            s3 n s4 i4 pc hmove
+            (Or.inl (Plt_Ple_trans pc s.st_nextnode s3.st_nextnode hlt
+              (Ple_trans s.st_nextnode rs.st_nextnode s3.st_nextnode hpleAdd i3.2)))
+          exact hmove.trans (hrecpc.trans rfl)
+
+private theorem expand_instr_unchanged_aux :
+    ∀ (fe : funenv)
+      (rec : ∀ fe', size_fenv fe' < size_fenv fe → context → function → mon Unit),
+      (∀ fe' L ctx f s x s' i pc,
+        rec fe' L ctx f s = R x s' i →
+        Ple ctx.dpc s.st_nextnode → Plt pc ctx.dpc →
+        PTree.get pc s'.st_code = PTree.get pc s.st_code) →
+      ∀ ctx pc instr s x s' i pc',
+        expand_instr fe rec ctx pc instr s = R x s' i →
+        Ple ctx.dpc s.st_nextnode → Plt pc' s.st_nextnode → pc' ≠ spc ctx pc →
+        PTree.get pc' s'.st_code = PTree.get pc' s.st_code := by
+  intro fe rec hrec ctx pc instr s x s' i pc' h hbelow hlt hne
+  unfold expand_instr at h
+  cases instr with
+  | Inop succ =>
+      change set_instr (spc ctx pc) _ s = R x s' i at h
+      exact set_instr_other (spc ctx pc) _ s x s' i pc' h hne
+  | Iop op args result succ =>
+      change set_instr (spc ctx pc) _ s = R x s' i at h
+      exact set_instr_other (spc ctx pc) _ s x s' i pc' h hne
+  | Iload chunk addr args dst succ =>
+      change set_instr (spc ctx pc) _ s = R x s' i at h
+      exact set_instr_other (spc ctx pc) _ s x s' i pc' h hne
+  | Istore chunk addr args src succ =>
+      change set_instr (spc ctx pc) _ s = R x s' i at h
+      exact set_instr_other (spc ctx pc) _ s x s' i pc' h hne
+  | Ibuiltin ef args result succ =>
+      change set_instr (spc ctx pc) _ s = R x s' i at h
+      exact set_instr_other (spc ctx pc) _ s x s' i pc' h hne
+  | Icond cond args ifso ifnot =>
+      change set_instr (spc ctx pc) _ s = R x s' i at h
+      exact set_instr_other (spc ctx pc) _ s x s' i pc' h hne
+  | Ijumptable arg tbl =>
+      change set_instr (spc ctx pc) _ s = R x s' i at h
+      exact set_instr_other (spc ctx pc) _ s x s' i pc' h hne
+  | Ireturn result =>
+      cases hret : ctx.retinfo with
+      | none =>
+          simp only [hret] at h
+          exact set_instr_other (spc ctx pc) _ s x s' i pc' h hne
+      | some returnInfo =>
+          simp only [hret] at h
+          exact set_instr_other (spc ctx pc) _ s x s' i pc' h hne
+  | Icall sig ros args result succ =>
+      cases hcan : can_inline fe ros with
+      | Cannot_inline =>
+          simp only [hcan] at h
+          exact set_instr_other (spc ctx pc) _ s x s' i pc' h hne
+      | Can_inline id f target lookup =>
+          simp only [hcan] at h
+          unfold Inlining.bind at h
+          cases hi : inline_function fe rec ctx id f lookup args succ result s with
+          | R next s1 i1 =>
+              rw [hi] at h
+              cases hs : set_instr (spc ctx pc) (Inop next) s1 with
+              | R u s2 i2 =>
+                  have hs_eq : s2 = s' := by
+                    have hstate := congrArg (fun r => r.2) h
+                    simpa [Inlining.bind, hi, hs] using hstate
+                  subst s'
+                  have hinline := inline_function_unchanged_below fe rec hrec ctx id f lookup
+                    args succ result s next s1 i1 pc' hi hbelow hlt
+                  exact (set_instr_other (spc ctx pc) (Inop next) s1 u s2 i2 pc'
+                    hs hne).trans hinline
+  | Itailcall sig ros args =>
+      cases hcan : can_inline fe ros with
+      | Cannot_inline =>
+          cases hret : ctx.retinfo with
+          | none =>
+              simp only [hcan, hret] at h
+              exact set_instr_other (spc ctx pc) _ s x s' i pc' h hne
+          | some returnInfo =>
+              simp only [hcan, hret] at h
+              exact set_instr_other (spc ctx pc) _ s x s' i pc' h hne
+      | Can_inline id f target lookup =>
+          simp only [hcan] at h
+          unfold Inlining.bind at h
+          cases hi : inline_tail_function fe rec ctx id f lookup args s with
+          | R next s1 i1 =>
+              rw [hi] at h
+              cases hs : set_instr (spc ctx pc) (Inop next) s1 with
+              | R u s2 i2 =>
+                  have hs_eq : s2 = s' := by
+                    have hstate := congrArg (fun r => r.2) h
+                    simpa [Inlining.bind, hi, hs] using hstate
+                  subst s'
+                  have hinline := inline_tail_function_unchanged_below fe rec hrec ctx id f lookup
+                    args s next s1 i1 pc' hi hbelow hlt
+                  exact (set_instr_other (spc ctx pc) (Inop next) s1 u s2 i2 pc'
+                    hs hne).trans hinline
+
+theorem iter_expand_instr_unchanged : iter_expand_instr_unchangedStatement := by
+  intro fe rec hrec ctx pc l s x s' i h hbelow hlt hnot hnr
+  cases x
+  induction l generalizing s with
+  | nil =>
+      simp [mlist_iter2] at h
+      cases h
+      rfl
+  | cons a l ih =>
+      rcases a with ⟨pc1, instr1⟩
+      change Inlining.bind (expand_instr fe rec ctx pc1 instr1)
+          (fun _ => mlist_iter2 (expand_instr fe rec ctx) l) s = R () s' i at h
+      cases hstep : expand_instr fe rec ctx pc1 instr1 s with
+      | R y s1 i1 =>
+          simp only [Inlining.bind] at h
+          rw [hstep] at h
+          cases htail : mlist_iter2 (expand_instr fe rec ctx) l s1 with
+          | R z s2 i2 =>
+            simp [Inlining.bind, htail] at h
+            cases z
+            subst s'
+            have hlt1 : Plt pc s1.st_nextnode :=
+              Plt_Ple_trans pc s.st_nextnode s1.st_nextnode hlt i1.2
+            have hbelow1 : Ple ctx.dpc s1.st_nextnode :=
+              Ple_trans ctx.dpc s.st_nextnode s1.st_nextnode hbelow i1.2
+            change list_norepet (pc1 :: List.map Prod.fst l) at hnr
+            cases hnr with
+            | cons _ hhd hnr' =>
+              simp only [List.map_cons] at hnot
+              have hnot' : pc ∉ List.map (spc ctx) (List.map Prod.fst l) := by
+                intro hin
+                apply hnot
+                exact List.mem_cons.mpr (Or.inr hin)
+              have htail' := ih s1 i2 hbelow1 hlt1 hnot' hnr' htail
+              calc
+                PTree.get pc s2.st_code = PTree.get pc s1.st_code := htail'
+                _ = PTree.get pc s.st_code :=
+                  expand_instr_unchanged_aux fe rec hrec ctx pc1 instr1 s Unit.unit s1 i1 pc
+                    hstep hbelow hlt (by
+                      intro heq
+                      apply hnot
+                      exact List.mem_cons.mpr (Or.inl (heq ▸ rfl)))
+
+end CompCert4Lean.Backend.Inliningspec

@@ -1319,3 +1319,14 @@ theorem Arith.PeanoNat.Nat.add_lt_mono_r :
 
 end Rocq.Coq
 end CompCert4Lean.Foundation.Numbers
+
+namespace CompCert4Lean.Foundation.Numbers
+namespace Rocq.Coq
+
+theorem Arith.PeanoNat.Nat.eqb_eq :
+    Arith.PeanoNat.Nat.eqb_eqStatement := by
+  intro n m
+  simp [Arith.PeanoNat.Nat.eqb]
+
+end Rocq.Coq
+end CompCert4Lean.Foundation.Numbers

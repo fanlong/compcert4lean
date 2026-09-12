@@ -1768,3 +1768,312 @@ theorem type_instr_incr : type_instr_incrStatement := by
                   rtlTypeAlgebra te r (proj_sig_res f.fn_sig) e e1 hset hs
 
 end CompCert4Lean.Backend.RTLtyping
+
+namespace CompCert4Lean.Backend.RTLtyping
+
+open CompCert4Lean.Backend.Conventions
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Errors
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.X86.Op
+
+theorem type_instr_sound : type_instr_soundStatement := by
+  intro cfg f e i e' te h hs
+  cases i with
+  | Inop s =>
+      unfold type_instr at h
+      cases hcs : check_successor f s with
+      | Error msg => simp [hcs] at h
+      | OK u =>
+          simp [hcs] at h
+          exact wt_Inop s (check_successor_sound_aux f s u hcs)
+  | Iop op args dest s =>
+      unfold type_instr at h
+      cases hcs : check_successor f s with
+      | Error msg => simp [hcs] at h
+      | OK u =>
+          simp [hcs] at h
+          cases hm : is_move op with
+          | true =>
+              have hop : op = Omove := by
+                cases op <;> simp [is_move] at hm ⊢
+              subst op
+              cases args with
+              | nil => simp [is_move] at h
+              | cons arg rest =>
+                  cases rest with
+                  | nil =>
+                      cases hmove : S.move e dest arg with
+                      | Error msg => simp [is_move, hmove] at h
+                      | OK result =>
+                          simp [is_move, hmove] at h
+                          have heq : result.2 = e' := by simpa using h
+                          subst e'
+                          exact wt_Iopmove arg dest s
+                            (S.move_sound_proof te e dest arg result.2 result.1 hmove hs)
+                            (check_successor_sound_aux f s u hcs)
+                  | cons arg2 rest2 => simp [is_move] at h
+          | false =>
+              simp [hm] at h
+              cases hset : S.set_list e args (type_of_operation op).1 with
+              | Error msg => rw [hset] at h; cases h
+              | OK e1 =>
+                  rw [hset] at h
+                  simp at h
+                  cases hres : S.set e1 dest (type_of_operation op).2 with
+                  | Error msg => rw [hres] at h; cases h
+                  | OK e2 =>
+                      have heq : e2 = e' := by simpa [hres] using h
+                      subst e'
+                      have hs1 : S.satisf te e1 :=
+                        CompCert4Lean.Common.Unityping.UniSolver.set_incr
+                          rtlTypeAlgebra te dest (type_of_operation op).2 e1 e2 hres hs
+                      exact wt_Iop op args dest s
+                        (by intro hop; subst op; simp [is_move] at hm)
+                        (S.set_list_sound_proof te args (type_of_operation op).1
+                          e e1 hset hs1)
+                        (S.set_sound_proof te dest (type_of_operation op).2 e1 e2 hres hs)
+                        (check_successor_sound_aux f s u hcs)
+  | Iload chunk addr args dest s =>
+      unfold type_instr at h
+      cases hcs : check_successor f s with
+      | Error msg => simp [hcs] at h
+      | OK u =>
+          simp [hcs] at h
+          cases hset : S.set_list e args (type_of_addressing addr) with
+          | Error msg => rw [hset] at h; cases h
+          | OK e1 =>
+              rw [hset] at h
+              simp at h
+              cases hres : S.set e1 dest (type_of_chunk chunk) with
+              | Error msg => rw [hres] at h; cases h
+              | OK e2 =>
+                  have heq : e2 = e' := by simpa [hres] using h
+                  subst e'
+                  have hs1 : S.satisf te e1 :=
+                    CompCert4Lean.Common.Unityping.UniSolver.set_incr
+                      rtlTypeAlgebra te dest (type_of_chunk chunk) e1 e2 hres hs
+                  exact wt_Iload chunk addr args dest s
+                    (S.set_list_sound_proof te args (type_of_addressing addr)
+                      e e1 hset hs1)
+                    (S.set_sound_proof te dest (type_of_chunk chunk) e1 e2 hres hs)
+                    (check_successor_sound_aux f s u hcs)
+  | Istore chunk addr args src s =>
+      unfold type_instr at h
+      cases hcs : check_successor f s with
+      | Error msg => simp [hcs] at h
+      | OK u =>
+          simp [hcs] at h
+          cases hset : S.set_list e args (type_of_addressing addr) with
+          | Error msg => rw [hset] at h; cases h
+          | OK e1 =>
+              rw [hset] at h
+              simp at h
+              cases hres : S.set e1 src (type_of_chunk chunk) with
+              | Error msg => rw [hres] at h; cases h
+              | OK e2 =>
+                  have heq : e2 = e' := by simpa [hres] using h
+                  subst e'
+                  have hs1 : S.satisf te e1 :=
+                    CompCert4Lean.Common.Unityping.UniSolver.set_incr
+                      rtlTypeAlgebra te src (type_of_chunk chunk) e1 e2 hres hs
+                  exact wt_Istore chunk addr args src s
+                    (S.set_list_sound_proof te args (type_of_addressing addr)
+                      e e1 hset hs1)
+                    (S.set_sound_proof te src (type_of_chunk chunk) e1 e2 hres hs)
+                    (check_successor_sound_aux f s u hcs)
+  | Icall sg ros args dest s =>
+      unfold type_instr at h
+      cases hcs : check_successor f s with
+      | Error msg => simp [hcs] at h
+      | OK u =>
+          simp [hcs] at h
+          cases hros : type_ros e ros with
+          | Error msg => rw [hros] at h; cases h
+          | OK e1 =>
+              rw [hros] at h
+              simp at h
+              cases hset : S.set_list e1 args (proj_sig_args sg) with
+              | Error msg => rw [hset] at h; cases h
+              | OK e2 =>
+                  rw [hset] at h
+                  simp at h
+                  cases hres : S.set e2 dest (proj_sig_res sg) with
+                  | Error msg => rw [hres] at h; cases h
+                  | OK e3 =>
+                      have heq : e3 = e' := by simpa [hres] using h
+                      subst e'
+                      have hs2 : S.satisf te e2 :=
+                        CompCert4Lean.Common.Unityping.UniSolver.set_incr
+                          rtlTypeAlgebra te dest (proj_sig_res sg) e2 e3 hres hs
+                      have hs1 : S.satisf te e1 :=
+                        CompCert4Lean.Common.Unityping.UniSolver.set_list_incr
+                          rtlTypeAlgebra te args (proj_sig_args sg) e1 e2 hset hs2
+                      exact wt_Icall sg ros args dest s
+                        (type_ros_sound e ros e1 te hros hs1)
+                        (S.set_list_sound_proof te args (proj_sig_args sg)
+                          e1 e2 hset hs2)
+                        (S.set_sound_proof te dest (proj_sig_res sg) e2 e3 hres hs)
+                        (check_successor_sound_aux f s u hcs)
+  | Itailcall sg ros args =>
+      change (match type_ros e ros with
+        | Error message => Error message
+        | OK e1 =>
+            match S.set_list e1 args (proj_sig_args sg) with
+            | Error message => Error message
+            | OK e2 =>
+                if sg.sig_res = f.fn_sig.sig_res then
+                  if tailcall_is_possible cfg sg then OK e2
+                  else Error (msg tailcallNotPossibleText)
+                else Error (msg badTailcallReturnText)) = OK e' at h
+      cases hros : type_ros e ros with
+      | Error msg => rw [hros] at h; cases h
+      | OK e1 =>
+          rw [hros] at h
+          simp at h
+          cases hset : S.set_list e1 args (proj_sig_args sg) with
+          | Error msg => rw [hset] at h; cases h
+          | OK e2 =>
+              rw [hset] at h
+              simp at h
+              by_cases hEq : sg.sig_res = f.fn_sig.sig_res
+              · cases hposs : tailcall_is_possible cfg sg with
+                | false => simp [hEq, hposs] at h
+                | true =>
+                    simp [hEq, hposs] at h
+                    have heq : e2 = e' := by simpa using h
+                    subst e'
+                    have hs1 : S.satisf te e1 :=
+                      CompCert4Lean.Common.Unityping.UniSolver.set_list_incr
+                        rtlTypeAlgebra te args (proj_sig_args sg) e1 e2 hset hs
+                    exact wt_Itailcall sg ros args
+                      (type_ros_sound e ros e1 te hros hs1)
+                      (S.set_list_sound_proof te args (proj_sig_args sg)
+                        e1 e2 hset hs)
+                      hEq
+                      (tailcall_is_possible_correct cfg sg hposs)
+              · simp [hEq] at h
+  | Ibuiltin ef args dest s =>
+      change (match check_successor f s with
+        | Error message => Error message
+        | OK _ =>
+            match (match ef with
+              | .EF_annot _ _ _ | .EF_debug _ _ _ => OK e
+              | _ => type_builtin_args e args (proj_sig_args (ef_sig ef))) with
+            | Error message => Error message
+            | OK e1 => type_builtin_res e1 dest (proj_sig_res (ef_sig ef))) = OK e' at h
+      cases hcs : check_successor f s with
+      | Error msg => rw [hcs] at h; cases h
+      | OK u =>
+          rw [hcs] at h
+          cases hargs : (match ef with
+              | .EF_annot _ _ _ | .EF_debug _ _ _ => OK e
+              | _ => type_builtin_args e args (proj_sig_args (ef_sig ef))) with
+          | Error msg => rw [hargs] at h; cases h
+          | OK e1 =>
+              rw [hargs] at h
+              simp at h
+              cases hres : type_builtin_res e1 dest (proj_sig_res (ef_sig ef)) with
+              | Error msg => rw [hres] at h; cases h
+              | OK e2 =>
+                  have heq : e2 = e' := by simpa [hres] using h
+                  subst e'
+                  have hs1 : S.satisf te e1 :=
+                    type_builtin_res_incr_aux e1 dest (proj_sig_res (ef_sig ef))
+                      e2 te hres hs
+                  refine wt_Ibuiltin ef args dest s ?_ ?_
+                    (check_successor_sound_aux f s u hcs)
+                  · cases ef <;> simp_all
+                    all_goals
+                      exact type_builtin_args_sound args _ e e1 te hargs hs1
+                  · exact type_builtin_res_sound e1 dest
+                      (proj_sig_res (ef_sig ef)) e2 te hres hs
+  | Icond cond args s1 s2 =>
+      change (match check_successor f s1 with
+        | Error message => Error message
+        | OK _ =>
+            match check_successor f s2 with
+            | Error message => Error message
+            | OK _ => S.set_list e args (type_of_condition cond)) = OK e' at h
+      cases hcs1 : check_successor f s1 with
+      | Error msg => rw [hcs1] at h; cases h
+      | OK u1 =>
+          rw [hcs1] at h
+          cases hcs2 : check_successor f s2 with
+          | Error msg => rw [hcs2] at h; cases h
+          | OK u2 =>
+              rw [hcs2] at h
+              cases hset : S.set_list e args (type_of_condition cond) with
+              | Error msg => rw [hset] at h; cases h
+              | OK e1 =>
+                  have heq : e1 = e' := by simpa [hset] using h
+                  subst e'
+                  exact wt_Icond cond args s1 s2
+                    (S.set_list_sound_proof te args (type_of_condition cond)
+                      e e1 hset hs)
+                    (check_successor_sound_aux f s1 u1 hcs1)
+                    (check_successor_sound_aux f s2 u2 hcs2)
+  | Ijumptable arg tbl =>
+      change (match check_successors f tbl with
+        | Error message => Error message
+        | OK _ =>
+            match S.set e arg Tint with
+            | Error message => Error message
+            | OK e1 =>
+                match zle
+                    (ZArith.BinInt.Z.mul (list_length_z tbl)
+                      (ZArith.BinInt.Z.of_nat 4))
+                    CompCert4Lean.Lib.Integers.Int.max_unsigned with
+                | .left _ => OK e1
+                | .right _ => Error (msg jumptableTooBigText)) = OK e' at h
+      cases hcs : check_successors f tbl with
+      | Error msg => rw [hcs] at h; cases h
+      | OK u =>
+          rw [hcs] at h
+          cases hset : S.set e arg Tint with
+          | Error msg => rw [hset] at h; cases h
+          | OK e1 =>
+              rw [hset] at h
+              cases hz : zle
+                  (ZArith.BinInt.Z.mul (list_length_z tbl)
+                    (ZArith.BinInt.Z.of_nat 4))
+                  CompCert4Lean.Lib.Integers.Int.max_unsigned with
+              | left hle =>
+                  simp [hz] at h
+                  have heq : e1 = e' := by simpa using h
+                  subst e'
+                  exact wt_Ijumptable arg tbl
+                    (S.set_sound_proof te arg Tint e e1 hset hs)
+                    (check_successors_sound f tbl u hcs)
+                    hle
+              | right hgt => simp [hz] at h
+  | Ireturn res =>
+      cases res with
+      | none =>
+          change (if f.fn_sig.sig_res = Xvoid then OK e
+            else Error (msg badReturnText)) = OK e' at h
+          by_cases hvoid : f.fn_sig.sig_res = Xvoid
+          · simp [hvoid] at h
+            exact wt_Ireturn_none hvoid
+          · simp [hvoid] at h
+      | some r =>
+          change (if f.fn_sig.sig_res = Xvoid then Error (msg badReturnText)
+            else S.set e r (proj_sig_res f.fn_sig)) = OK e' at h
+          by_cases hvoid : f.fn_sig.sig_res = Xvoid
+          · simp [hvoid] at h
+          · simp [hvoid] at h
+            cases hset : S.set e r (proj_sig_res f.fn_sig) with
+            | Error msg => rw [hset] at h; cases h
+            | OK e1 =>
+                have heq : e1 = e' := by simpa [hset] using h
+                subst e'
+                exact wt_Ireturn_some r (proj_sig_res f.fn_sig) hvoid
+                  (S.set_sound_proof te r (proj_sig_res f.fn_sig) e e1 hset hs)
+                  (S.set_sound_proof te r (proj_sig_res f.fn_sig) e e1 hset hs)
+
+end CompCert4Lean.Backend.RTLtyping

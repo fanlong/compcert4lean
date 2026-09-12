@@ -951,3 +951,86 @@ theorem solve_constraints_incr : solve_constraints_incrStatement := by
   exact solve_constraints_incr_aux T te e e' h hs
 
 end CompCert4Lean.Common.Unityping.UniSolver
+
+namespace CompCert4Lean.Common.Unityping.UniSolver
+
+open CompCert4Lean.Foundation.Logic
+open CompCert4Lean.Foundation.Logic.Rocq.Coq.Init.Datatypes
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.Common.Errors
+
+private theorem solve_rec_false_aux (T : TYPE_ALGEBRA) :
+    ∀ (r1 r2 : positive) (q : List constraint)
+      (e : typenv T) (changed : Bool) (e' : typenv T),
+      solve_rec T e changed q = OK (e', false) →
+      changed = false ∧
+        ((r1, r2) ∈ q →
+          makeassign T e r1 = makeassign T e r2) := by
+  intro r1 r2 q
+  induction q with
+  | nil =>
+      intro e changed e' h
+      simp only [solve_rec] at h
+      cases changed with
+      | false =>
+          rcases h with ⟨rfl, rfl⟩
+          exact ⟨rfl, by intro hmem; cases hmem⟩
+      | true =>
+          cases h
+  | cons a q ih =>
+      rcases a with ⟨a1, a2⟩
+      intro e changed e' h
+      simp only [solve_rec] at h
+      split at h
+      · cases h
+      · rename_i changed1 e1 hmove
+        have htail := ih e1 (changed || changed1) e' h
+        rcases htail with ⟨hchanged, hmem⟩
+        have hc : changed = false := by
+          cases changed <;> cases changed1 <;> simp_all
+        have hc1 : changed1 = false := by
+          cases changed <;> cases changed1 <;> simp_all
+        subst changed
+        subst changed1
+        have hmf := move_false T e a1 a2 e1 hmove
+        constructor
+        · rfl
+        · intro hmem'
+          cases hmem' with
+          | head =>
+            exact hmf.2
+          | tail =>
+            have hEq := hmem (by assumption)
+            unfold makeassign at hEq ⊢
+            rw [hmf.1] at hEq
+            exact hEq
+
+theorem solve_constraints_sound : solve_constraints_soundStatement := by
+  intro T e e' h
+  let P : typenv T → res (typenv T) → Prop := fun _ r =>
+    ∀ e', r = OK e' → satisf T (makeassign T e') e'
+  have hind :=
+    solve_constraints_ind T P
+      (by
+        intro e e' hrec e'' heq
+        cases heq
+        constructor
+        · intro x ty hx
+          simp [makeassign, hx]
+        · intro x y hxy
+          have hf := solve_rec_false_aux T x y (te_equ e)
+            { te_typ := te_typ e, te_equ := [] } false e' hrec
+          have heq' := hf.2 hxy
+          simpa [makeassign] using heq')
+      (by
+        intro e e' hrec ih e'' heq
+        exact ih e'' heq)
+      (by
+        intro e message hrec e' heq
+        cases heq)
+      e
+  exact hind e' h
+
+end CompCert4Lean.Common.Unityping.UniSolver

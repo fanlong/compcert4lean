@@ -872,3 +872,13 @@ theorem F2R_0 : ∀ (ctx : ExactRealContext), F2R_0Statement ctx := by
     ctx.certificate.orderedField.zero_mul]
 
 end CompCert4Lean.Flocq.Core.Float_prop
+
+namespace CompCert4Lean.Flocq.Core.Float_prop
+
+theorem eq_0_F2R : ∀ (ctx : ExactRealContext), eq_0_F2RStatement ctx := by
+  intro ctx beta m e h
+  apply eq_F2R ctx beta e m Z0
+  rw [F2R_0 ctx beta e]
+  exact h
+
+end CompCert4Lean.Flocq.Core.Float_prop

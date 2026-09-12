@@ -971,3 +971,16 @@ theorem succ_opp :
   exact (ulp_succ_opp_neg_neg ctx _).symm
 
 end CompCert4Lean.Flocq.Core.Ulp
+
+namespace CompCert4Lean.Flocq.Core.Ulp
+
+theorem pred_opp :
+    ∀ (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx),
+      pred_oppStatement ctx magnitude := by
+  intro ctx magnitude beta fexp x
+  unfold Exact.pred
+  exact congrArg ctx.spec.neg
+    (congrArg (fun y => Exact.succ ctx magnitude beta fexp y)
+      (ulp_succ_opp_neg_neg ctx x))
+
+end CompCert4Lean.Flocq.Core.Ulp

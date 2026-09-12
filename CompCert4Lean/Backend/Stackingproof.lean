@@ -2110,3 +2110,61 @@ theorem contains_locations_obligation_2 : contains_locations_obligation_2Stateme
   rcases hfoot with ⟨rfl, hlo, hhi⟩
   exact validBlockOfPerm (hm.2.2.2.1 ofs ⟨hlo, hhi⟩)
 end CompCert4Lean.Backend.Stackingproof
+
+namespace CompCert4Lean.Backend.Stackingproof
+
+open CompCert4Lean.Backend.Linear
+open CompCert4Lean.Backend.Mach
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem valid_access_location : valid_access_locationStatement := by
+  intro m sp pos bound ofs ty p hpos hperm hofs hbound halign
+  refine ⟨?_, ?_⟩
+  · intro i hi
+    exact Mem.perm_implies m sp i Cur Freeable p
+      (hperm i (locationChunkRange pos bound ofs i ty hofs hbound hi))
+      (perm_F_any p)
+  · exact locationAligned pos ofs ty hpos halign
+
+theorem initial_locations : initial_locationsStatement := by
+  intro return_address_offset tprog j sp pos bound P sl ls m hmem hpos hls
+  rcases hmem with ⟨hrange, hP, hdisj⟩
+  rcases hrange with ⟨hpos0, hmax, hperm⟩
+  refine ⟨⟨hpos, hpos0, ?_, ?_, ?_⟩, hP, ?_⟩
+  · exact hmax
+  · intro i hi
+    exact hperm i Cur Freeable hi
+  · intro ofs ty hofs hbound halign
+    have hvalid : Mem.valid_access m (chunk_of_type ty) sp
+        (zAdd pos (zMul z4 ofs)) Freeable := by
+      exact valid_access_location m sp pos bound ofs ty Freeable hpos
+        (fun i hi => hperm i Cur Freeable hi) hofs hbound halign
+    have hvalidR : Mem.valid_access m (chunk_of_type ty) sp
+        (zAdd pos (zMul z4 ofs)) Readable := by
+      exact Mem.valid_access_implies m (chunk_of_type ty) sp
+        (zAdd pos (zMul z4 ofs)) Freeable Readable hvalid (perm_F_any Readable)
+    generalize hdecEq : Mem.valid_access_dec m (chunk_of_type ty) sp
+      (zAdd pos (zMul z4 ofs)) Readable = hdec
+    cases hdec with
+    | left hd =>
+        let v0 := decode_val (chunk_of_type ty)
+          (Mem.getN (size_chunk_nat (chunk_of_type ty))
+            (zAdd pos (zMul z4 ofs))
+            (CompCert4Lean.Lib.Maps.PMap.get sp m.mem_contents))
+        refine ⟨v0, ?_, ?_⟩
+        · unfold Mem.load
+          rw [hdecEq]
+          change (if true then some v0 else none) = some v0
+          rfl
+        · rw [hls]
+          exact Val.val_inject_undef j _
+    | right hnd => exact (hnd hvalidR).elim
+  · exact hdisj
+
+end CompCert4Lean.Backend.Stackingproof

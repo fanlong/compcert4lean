@@ -1170,3 +1170,26 @@ theorem typeof_Ederef' : typeof_Ederef'Statement := by
   | _ => rfl
 
 end CompCert4Lean.Cfrontend.SimplExprproof
+
+namespace CompCert4Lean.Cfrontend.SimplExprproof
+
+open CompCert4Lean.Cfrontend.SimplExpr
+
+theorem typeof_Eaddrof' : typeof_Eaddrof'Statement := by
+  intro a t
+  unfold Eaddrof'
+  cases a with
+  | Ederef a' ty' =>
+      change Clight.typeof
+        (if CompCert4Lean.Lib.Coqlib.proj_sumbool
+            (Ctypes.type_eq t (Clight.typeof a')) = true then a'
+          else .Eaddrof (.Ederef a' ty') t) = t
+      cases hte : Ctypes.type_eq t (Clight.typeof a') with
+      | left heq =>
+          simp [hte, CompCert4Lean.Lib.Coqlib.proj_sumbool, heq]
+      | right hneq =>
+          simp [CompCert4Lean.Lib.Coqlib.proj_sumbool]
+          rfl
+  | _ => rfl
+
+end CompCert4Lean.Cfrontend.SimplExprproof

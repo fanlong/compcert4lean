@@ -2035,3 +2035,21 @@ theorem rank_type_stable : rank_type_stableStatement := by
   | cons head tail ihhead ihtail => trivial
 
 end CompCert4Lean.Cfrontend.Ctypes
+
+namespace CompCert4Lean.Cfrontend.Ctypes
+
+theorem alignof_composite_stable : alignof_composite_stableStatement := by
+  intro env env' henv ms hcomplete
+  induction ms with
+  | nil => rfl
+  | cons m ms ih =>
+      simp only [complete_members, Bool.and_eq_true] at hcomplete
+      simp only [alignof_composite]
+      by_cases hpadding : member_is_padding m
+      · simp only [hpadding, ↓reduceIte]
+        exact ih hcomplete.2
+      · simp only [hpadding, ↓reduceIte]
+        rw [alignof_stable env env' henv (type_member m) hcomplete.1,
+          ih hcomplete.2]
+
+end CompCert4Lean.Cfrontend.Ctypes

@@ -544,3 +544,37 @@ theorem P_mod_two_p_range : P_mod_two_p_rangeStatement := by
           omega
 
 end CompCert4Lean.Lib.Zbits
+
+namespace CompCert4Lean.Lib.Zbits
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem Zshiftin_inj : Zshiftin_injStatement := by
+  intro b1 x1 b2 x2 h
+  rw [Zshiftin_spec, Zshiftin_spec] at h
+  have htwo : intOfZ (CompCert4Lean.Foundation.Numbers.Rocq.Coq.Numbers.BinNums.Z.Zpos
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.Numbers.BinNums.positive.xO
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.Numbers.BinNums.positive.xH)) = (2 : Int) := by
+    decide
+  have hzero : intOfZ CompCert4Lean.Foundation.Numbers.Rocq.Coq.Numbers.BinNums.Z.Z0 = (0 : Int) := by
+    decide
+  have hone : intOfZ (CompCert4Lean.Foundation.Numbers.Rocq.Coq.Numbers.BinNums.Z.Zpos
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.Numbers.BinNums.positive.xH) = (1 : Int) := by
+    decide
+  cases b1 <;> cases b2
+  · have hi := congrArg intOfZ h
+    simp [ZArith.BinInt.Z.add, ZArith.BinInt.Z.mul, intOfZ_zOfInt, htwo, hzero, hone] at hi
+    exact ⟨rfl, by apply intOfZ_injective; omega⟩
+  · have hi := congrArg intOfZ h
+    simp [ZArith.BinInt.Z.add, ZArith.BinInt.Z.mul, intOfZ_zOfInt, htwo, hzero, hone] at hi
+    have : False := by omega
+    exact this.elim
+  · have hi := congrArg intOfZ h
+    simp [ZArith.BinInt.Z.add, ZArith.BinInt.Z.mul, intOfZ_zOfInt, htwo, hzero, hone] at hi
+    have : False := by omega
+    exact this.elim
+  · have hi := congrArg intOfZ h
+    simp [ZArith.BinInt.Z.add, ZArith.BinInt.Z.mul, intOfZ_zOfInt, htwo, hzero, hone] at hi
+    exact ⟨rfl, by apply intOfZ_injective; omega⟩
+
+end CompCert4Lean.Lib.Zbits

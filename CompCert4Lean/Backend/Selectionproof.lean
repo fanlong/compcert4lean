@@ -2176,3 +2176,36 @@ theorem sig_function_translated : sig_function_translatedStatement cfg oracle :=
       rfl
 
 end CompCert4Lean.Backend.Selectionproof
+
+
+namespace CompCert4Lean.Backend.Selectionproof
+
+theorem stackspace_function_translated
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    [binary64_inverse_certificate : BexactInverseCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_inverse_certificate : BexactInverseCertificate (zOfNat 24) (zOfNat 128)] :
+    ∀ (cfg : CompilerConfig) (oracle : SelectionOracle),
+      stackspace_function_translatedStatement
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        (binary64_inverse_certificate := binary64_inverse_certificate)
+        (binary32_inverse_certificate := binary32_inverse_certificate) cfg oracle := by
+  intro cfg oracle dm hf f tf h
+  unfold CompCert4Lean.Backend.Selection.sel_function at h
+  cases ht : CompCert4Lean.Backend.Cminortyping.type_function f with
+  | Error msg => simp [ht] at h
+  | OK env =>
+      cases hs : CompCert4Lean.Backend.Selection.sel_stmt cfg oracle
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate)
+          (binary64_inverse_certificate := binary64_inverse_certificate)
+          (binary32_inverse_certificate := binary32_inverse_certificate)
+          dm (CompCert4Lean.Backend.Selection.known_id f) env f.fn_body .Sskip with
+      | Error msg => simp [ht, hs] at h
+      | OK body' =>
+          simp [ht, hs] at h
+          cases h
+          rfl
+
+end CompCert4Lean.Backend.Selectionproof

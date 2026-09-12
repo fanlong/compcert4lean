@@ -852,3 +852,25 @@ theorem encode_val_length : encode_val_lengthStatement := by
   all_goals by_cases h : CompCert4Lean.X86_64.Archi.ptr64 = true <;> simp [h]
 
 end CompCert4Lean.Common.Memdata
+
+namespace CompCert4Lean.Common.Memdata
+
+theorem decode_val_undef : decode_val_undefStatement := by
+  intro bl chunk
+  cases chunk <;>
+    simp [decode_val, proj_bytes, proj_value,
+      CompCert4Lean.Common.Values.Val.load_result]
+
+end CompCert4Lean.Common.Memdata
+
+namespace CompCert4Lean.Common.Memdata
+
+theorem decode_encode_val_similar : decode_encode_val_similarStatement := by
+  intro v1 chunk1 chunk2 v2 hty hsz hde
+  cases chunk1 <;> cases chunk2 <;> cases v1 <;>
+    simp [CompCert4Lean.Common.AST.type_of_chunk, size_chunk,
+      decode_encode_val, CompCert4Lean.Common.Values.Val.load_result,
+      z1, z2, z4, z8] at hty hsz hde ⊢ <;>
+    first | exact hde | contradiction
+
+end CompCert4Lean.Common.Memdata
