@@ -2255,3 +2255,25 @@ theorem type_constant_sound : type_constant_soundStatement := by
           CompCert4Lean.Common.AST.Tptr, CompCert4Lean.X86_64.Archi.ptr64]
 
 end CompCert4Lean.Backend.Cminortyping
+
+namespace CompCert4Lean.Backend.Cminortyping
+
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Backend.Cminor
+
+theorem type_unop_sound
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    type_unop_soundStatement := by
+  intro op v1 v h
+  cases op <;> cases v1 <;> cases v <;>
+    simp [eval_unop, type_unop, Val.zero_ext, Val.sign_ext, Val.negint,
+      Val.notint, Val.negf, Val.absf, Val.negfs, Val.absfs,
+      Val.singleoffloat, Val.floatofsingle, Val.intoffloat, Val.intuoffloat,
+      Val.floatofint, Val.floatofintu, Val.intofsingle, Val.intuofsingle,
+      Val.singleofint, Val.singleofintu, Val.negl, Val.notl, Val.loword,
+      Val.longofint, Val.longofintu, Val.longoffloat, Val.longuoffloat,
+      Val.floatoflong, Val.floatoflongu, Val.longofsingle, Val.longuofsingle,
+      Val.singleoflong, Val.singleoflongu, Val.has_type] at h ⊢
+
+end CompCert4Lean.Backend.Cminortyping

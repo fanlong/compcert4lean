@@ -489,3 +489,20 @@ theorem Zpower_le_Zdigits : Zpower_le_ZdigitsStatement := by
       exact digits_aux_lower beta (intOfZ (beta : Z)) hb (.Zpos p) Zone (beta : Z) 1 (digits2_Pnat p)
         rfl rfl (by rw [Int.pow_one]) (by omega) hlower e h
 end CompCert4Lean.Flocq.Core.Digits
+
+namespace CompCert4Lean.Flocq.Core.Digits
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem Zdigits_le_Zpower : Zdigits_le_ZpowerStatement := by
+  intro beta e x h
+  change intOfZ (Zdigits beta x) ≤ intOfZ e
+  by_cases hle : intOfZ (Zdigits beta x) ≤ intOfZ e
+  · exact hle
+  · have hlt : intOfZ e < intOfZ (Zdigits beta x) := Int.lt_of_not_ge hle
+    have hbound := Zpower_le_Zdigits beta e x hlt
+    change intOfZ (Zpower (beta : Z) e) ≤ intOfZ (Zabs x) at hbound
+    change intOfZ (Zabs x) < intOfZ (Zpower (beta : Z) e) at h
+    omega
+
+end CompCert4Lean.Flocq.Core.Digits
