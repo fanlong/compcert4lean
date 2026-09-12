@@ -1034,3 +1034,19 @@ theorem solve_constraints_sound : solve_constraints_soundStatement := by
   exact hind e' h
 
 end CompCert4Lean.Common.Unityping.UniSolver
+
+namespace CompCert4Lean.Common.Unityping.UniSolver
+
+theorem solve_sound : solve_soundStatement := by
+  intro T e te h
+  unfold solve at h
+  cases hc : solve_constraints T e with
+  | Error message =>
+      simp [hc] at h
+  | OK e' =>
+      simp [hc] at h
+      cases h
+      exact solve_constraints_incr T (makeassign T e') e e' hc
+        (solve_constraints_sound T e e' hc)
+
+end CompCert4Lean.Common.Unityping.UniSolver
