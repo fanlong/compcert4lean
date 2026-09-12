@@ -1054,3 +1054,82 @@ theorem sep_pure : sep_pureStatement := by
       exact False.elim hP⟩
 
 end CompCert4Lean.Common.Separation
+
+namespace CompCert4Lean.Common.Separation
+
+theorem range_obligation_1 : range_obligation_1Statement := by
+  intro b lo hi m m' hpred hunch
+  exact (range b lo hi).m_invar m m' hpred hunch
+
+theorem range_obligation_2 : range_obligation_2Statement := by
+  intro b lo hi m b' ofs hpred hfoot
+  exact (range b lo hi).m_valid m b' ofs hpred hfoot
+
+end CompCert4Lean.Common.Separation
+
+namespace CompCert4Lean.Common.Separation
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Lib.Integers
+
+theorem range_split : range_splitStatement := by
+  intro b lo hi P mid m hmid h
+  refine ⟨?_, ?_, ?_⟩
+  · change zLe z0 lo ∧ zLe mid Ptrofs.modulus ∧
+      (∀ i k p, zLe lo i ∧ zLt i mid → Mem.perm m b i k p)
+    refine ⟨h.1.1, ?_, ?_⟩
+    · have hhi := h.1.2.1
+      unfold zLe ZArith.BinInt.Z.le at hmid hhi ⊢
+      omega
+    · intro i k p hi'
+      apply h.1.2.2 i k p
+      refine ⟨hi'.1, ?_⟩
+      unfold zLe ZArith.BinInt.Z.le at hmid hi'
+      unfold zLt ZArith.BinInt.Z.lt at hi' ⊢
+      omega
+  · change (range b mid hi).m_pred m ∧ P.m_pred m ∧
+      disjoint_footprint (range b mid hi) P
+    refine ⟨?_, h.2.1, ?_⟩
+    · change zLe z0 mid ∧ zLe hi Ptrofs.modulus ∧
+        (∀ i k p, zLe mid i ∧ zLt i hi → Mem.perm m b i k p)
+      refine ⟨?_, h.1.2.1, ?_⟩
+      · have hlo := h.1.1
+        unfold zLe ZArith.BinInt.Z.le at hmid hlo ⊢
+        omega
+      · intro i k p hi'
+        apply h.1.2.2 i k p
+        refine ⟨?_, hi'.2⟩
+        have hmi := hi'.1
+        unfold zLe ZArith.BinInt.Z.le at hmid hmi ⊢
+        omega
+    · intro b' ofs hR hP
+      rcases hR with ⟨hb, hmid', hlt⟩
+      apply h.2.2 b' ofs
+      · refine ⟨hb, ?_, hlt⟩
+        unfold zLe ZArith.BinInt.Z.le at hmid hmid' ⊢
+        omega
+      · exact hP
+  · intro b' ofs hleft hright
+    cases hright with
+    | inl hrightRange =>
+        rcases hleft with ⟨hb1, hlo1, hlt1⟩
+        rcases hrightRange with ⟨hb2, hmid2, hlt2⟩
+        unfold zLe ZArith.BinInt.Z.le at hmid2
+        unfold zLt ZArith.BinInt.Z.lt at hlt1
+        omega
+    | inr hP =>
+        rcases hleft with ⟨hb1, hlo1, hlt1⟩
+        apply h.2.2 b' ofs
+        · refine ⟨hb1, hlo1, ?_⟩
+          unfold zLe ZArith.BinInt.Z.le at hmid
+          unfold zLt ZArith.BinInt.Z.lt at hlt1 ⊢
+          omega
+        · exact hP
+
+theorem range_drop_left : range_drop_leftStatement := by
+  intro b lo hi P mid m hmid h
+  have hs := range_split b lo hi P mid m hmid h
+  exact hs.2.1
+
+end CompCert4Lean.Common.Separation
