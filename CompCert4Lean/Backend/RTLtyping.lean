@@ -1317,3 +1317,117 @@ theorem type_builtin_res_sound : type_builtin_res_soundStatement := by
       simpa [type_of_builtin_res] using ht.symm
 
 end CompCert4Lean.Backend.RTLtyping
+
+namespace CompCert4Lean.Backend.RTLtyping
+
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Errors
+
+private theorem type_expect_incr_aux :
+    ∀ (e : InferEnv) (ty1 ty2 : typ) (e' : InferEnv) (te : TypeAssign),
+    type_expect e ty1 ty2 = OK e' →
+      S.satisf te e' → S.satisf te e := by
+  intro e ty1 ty2 e' te h hs
+  unfold type_expect at h
+  cases hEq : typEq ty1 ty2 with
+  | left heq =>
+      simp [hEq] at h
+      cases h
+      exact hs
+  | right hne =>
+      simp [hEq] at h
+
+private theorem type_builtin_arg_incr_aux :
+    ∀ (e : InferEnv) (a : builtin_arg reg) (ty : typ)
+      (e' : InferEnv) (te : TypeAssign),
+    type_builtin_arg e a ty = OK e' →
+      S.satisf te e' → S.satisf te e := by
+  intro e a ty e' te h hs
+  cases a with
+  | BA r =>
+      change positive at r
+      exact CompCert4Lean.Common.Unityping.UniSolver.set_incr
+        rtlTypeAlgebra te r ty e e' h hs
+  | BA_int _ =>
+      exact type_expect_incr_aux e ty Tint e' te (by simpa [type_builtin_arg] using h) hs
+  | BA_long _ =>
+      exact type_expect_incr_aux e ty Tlong e' te (by simpa [type_builtin_arg] using h) hs
+  | BA_float _ =>
+      exact type_expect_incr_aux e ty Tfloat e' te (by simpa [type_builtin_arg] using h) hs
+  | BA_single _ =>
+      exact type_expect_incr_aux e ty Tsingle e' te (by simpa [type_builtin_arg] using h) hs
+  | BA_loadstack chunk _ =>
+      exact type_expect_incr_aux e ty (type_of_chunk chunk) e' te
+        (by simpa [type_builtin_arg] using h) hs
+  | BA_addrstack _ =>
+      exact type_expect_incr_aux e ty Tptr e' te (by simpa [type_builtin_arg] using h) hs
+  | BA_loadglobal chunk _ _ =>
+      exact type_expect_incr_aux e ty (type_of_chunk chunk) e' te
+        (by simpa [type_builtin_arg] using h) hs
+  | BA_addrglobal _ _ =>
+      exact type_expect_incr_aux e ty Tptr e' te (by simpa [type_builtin_arg] using h) hs
+  | BA_splitlong _ _ =>
+      exact type_expect_incr_aux e ty Tlong e' te (by simpa [type_builtin_arg] using h) hs
+  | BA_addptr _ _ =>
+      exact type_expect_incr_aux e ty Tptr e' te (by simpa [type_builtin_arg] using h) hs
+
+private theorem type_builtin_args_incr_aux :
+    ∀ (al : List (builtin_arg reg)) (tyl : List typ)
+      (e e' : InferEnv) (te : TypeAssign),
+    type_builtin_args e al tyl = OK e' →
+      S.satisf te e' → S.satisf te e := by
+  intro al tyl e e' te h hs
+  induction al generalizing tyl e e' with
+  | nil =>
+      cases tyl with
+      | nil =>
+          simp [type_builtin_args] at h
+          cases h
+          exact hs
+      | cons ty tys =>
+          simp [type_builtin_args] at h
+  | cons a args ih =>
+      cases tyl with
+      | nil =>
+          simp [type_builtin_args] at h
+      | cons ty tys =>
+          cases harg : type_builtin_arg e a ty with
+          | Error message =>
+              simp [type_builtin_args, harg] at h
+          | OK e1 =>
+              simp [type_builtin_args, harg] at h
+              apply type_builtin_arg_incr_aux e a ty e1 te harg
+              exact ih (tyl := tys) (e := e1) (e' := e') h hs
+
+theorem type_builtin_args_sound : type_builtin_args_soundStatement := by
+  intro al tyl e e' te h hs
+  induction al generalizing tyl e e' with
+  | nil =>
+      cases tyl with
+      | nil =>
+          simp [type_builtin_args] at h
+          cases h
+          rfl
+      | cons ty tys =>
+          simp [type_builtin_args] at h
+  | cons a args ih =>
+      cases tyl with
+      | nil =>
+          simp [type_builtin_args] at h
+      | cons ty tys =>
+          cases harg : type_builtin_arg e a ty with
+          | Error message =>
+              simp [type_builtin_args, harg] at h
+          | OK e1 =>
+              simp [type_builtin_args, harg] at h
+              have hs1 : S.satisf te e1 := by
+                exact type_builtin_args_incr_aux args tys e1 e' te h hs
+              have hhead := type_builtin_arg_sound e a ty e1 te harg hs1
+              have htail := ih (tyl := tys) (e := e1) (e' := e') h hs
+              simp only [List.map]
+              exact List.cons_eq_cons.mpr ⟨hhead, htail⟩
+
+end CompCert4Lean.Backend.RTLtyping

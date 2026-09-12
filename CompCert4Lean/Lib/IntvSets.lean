@@ -922,3 +922,23 @@ theorem In_add : In_addStatement := by
 end ISet
 
 end CompCert4Lean.Lib.IntvSets
+
+namespace CompCert4Lean.Lib.IntvSets
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+namespace ISet
+
+theorem In_remove : In_removeStatement := by
+  intro x l h s
+  by_cases hlt : ZArith.BinInt.Z.ltb l h = true
+  · simpa [remove, In, hlt] using (R.In_remove x l h s.1 s.2)
+  · simp [remove, hlt]
+    intro _ hlx hxh
+    simp [ZArith.BinInt.Z.ltb, ZArith.BinInt.Z.lt,
+      ZArith.BinInt.Z.le] at hlt hlx hxh ⊢
+    omega
+
+end ISet
+
+end CompCert4Lean.Lib.IntvSets

@@ -843,3 +843,11 @@ theorem stacksize_preserved : stacksize_preservedStatement := by
   unfold CompCert4Lean.Backend.Tailcall.transf_function
   split <;> rfl
 end CompCert4Lean.Backend.Tailcallproof
+
+namespace CompCert4Lean.Backend.Tailcallproof
+
+theorem funct_ptr_translated : funct_ptr_translatedStatement := by
+  intro cfg prog tprog hm b f hfind
+  exact tailcall_function_ptr_translated cfg prog tprog hm b f hfind
+
+end CompCert4Lean.Backend.Tailcallproof

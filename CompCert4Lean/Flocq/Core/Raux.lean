@@ -2145,3 +2145,75 @@ theorem exp_le : ∀ (ctx : ExactRealContext), exp_leStatement ctx := by
     exact (ctx.certificate.orderedField.lt_iff_le_not_le _ _).1 hs |>.1
 
 end CompCert4Lean.Flocq.Core.Raux
+
+namespace CompCert4Lean.Flocq.Core.Raux
+
+theorem Rinv_le : ∀ (ctx : ExactRealContext), Rinv_leStatement ctx := by
+  intro ctx x y hx hxy
+  change ctx.spec.lt ctx.spec.zero x at hx
+  change ctx.spec.le x y at hxy
+  have hxle : ctx.spec.le ctx.spec.zero x :=
+    (ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp hx |>.1
+  have hxnot : ¬ctx.spec.le x ctx.spec.zero :=
+    (ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp hx |>.2
+  have hyle : ctx.spec.le ctx.spec.zero y :=
+    ctx.certificate.orderedField.le_trans _ _ _ hxle hxy
+  have hynot : ¬ctx.spec.le y ctx.spec.zero := by
+    intro hyx
+    exact hxnot (ctx.certificate.orderedField.le_trans _ _ _ hxy hyx)
+  have hy : ctx.spec.lt ctx.spec.zero y :=
+    (ctx.certificate.orderedField.lt_iff_le_not_le _ _).mpr ⟨hyle, hynot⟩
+  have hxne : x ≠ ctx.spec.zero := by
+    intro hzero
+    subst x
+    exact ctx.certificate.orderedField.lt_irrefl _ hx
+  have hyne : y ≠ ctx.spec.zero := by
+    intro hzero
+    subst y
+    exact ctx.certificate.orderedField.lt_irrefl _ hy
+  have hx_ofZ : ctx.spec.lt (ctx.spec.ofZ Z0) x := by
+    rw [ctx.certificate.sourceLaws.ofZ_zero]
+    exact hx
+  have hinvx_ofZ : ctx.spec.lt (ctx.spec.ofZ Z0) (ctx.spec.inv x) :=
+    CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.Rinv_0_lt_compat
+      ctx x hx_ofZ
+  have hinvx : ctx.spec.lt ctx.spec.zero (ctx.spec.inv x) := by
+    rw [← ctx.certificate.sourceLaws.ofZ_zero]
+    exact hinvx_ofZ
+  change ctx.spec.le (ctx.spec.inv y) (ctx.spec.inv x)
+  rcases ctx.certificate.total_order (ctx.spec.inv y) (ctx.spec.inv x) with h | h
+  · rcases h with hlt | heq
+    · exact (ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp hlt |>.1
+    · rw [heq]
+      exact ctx.certificate.orderedField.le_refl _
+  · have hinvxy : ctx.spec.lt (ctx.spec.inv x) (ctx.spec.inv y) := h
+    have hmul_lt := ctx.certificate.orderedField.mul_lt_compat_l
+      y (ctx.spec.inv x) (ctx.spec.inv y) hy hinvxy
+    have hmul_eq : ctx.spec.mul y (ctx.spec.inv y) = ctx.spec.one := by
+      rw [ctx.certificate.orderedField.mul_comm y (ctx.spec.inv y),
+        ctx.certificate.orderedField.inv_mul_cancel y hyne]
+    have hmul_lt_one : ctx.spec.lt
+        (ctx.spec.mul y (ctx.spec.inv x)) ctx.spec.one := by
+      rw [← hmul_eq]
+      exact hmul_lt
+    have hmul_le : ctx.spec.le
+        (ctx.spec.mul x (ctx.spec.inv x)) (ctx.spec.mul y (ctx.spec.inv x)) := by
+      rcases ctx.certificate.total_order x y with hxy' | hyx'
+      · rcases hxy' with hlt | heq
+        · have hmul := ctx.certificate.orderedField.mul_lt_compat_l
+            (ctx.spec.inv x) x y hinvx hlt
+          have hmul' : ctx.spec.lt
+              (ctx.spec.mul x (ctx.spec.inv x))
+              (ctx.spec.mul y (ctx.spec.inv x)) := by
+            rw [ctx.certificate.orderedField.mul_comm x (ctx.spec.inv x),
+              ctx.certificate.orderedField.mul_comm y (ctx.spec.inv x)]
+            exact hmul
+          exact (ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp hmul' |>.1
+        · subst y
+          exact ctx.certificate.orderedField.le_refl _
+      · exact ((ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp hyx').2 hxy |>.elim
+    rw [ctx.certificate.orderedField.mul_comm x (ctx.spec.inv x),
+      ctx.certificate.orderedField.inv_mul_cancel x hxne] at hmul_le
+    exact ((ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp hmul_lt_one).2 hmul_le |>.elim
+
+end CompCert4Lean.Flocq.Core.Raux

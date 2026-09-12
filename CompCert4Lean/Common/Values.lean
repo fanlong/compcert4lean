@@ -1468,3 +1468,33 @@ theorem has_subtype : has_subtypeStatement := by
 
 end Val
 end CompCert4Lean.Common.Values
+
+namespace CompCert4Lean.Common.Values
+
+namespace Val
+
+theorem has_proj_xtype : has_proj_xtypeStatement := by
+  intro v t h
+  cases t <;> cases v <;>
+    simp [has_rettype, has_type, CompCert4Lean.Common.AST.proj_xtype,
+      CompCert4Lean.Common.AST.Tptr,
+      CompCert4Lean.X86_64.Archi.ptr64] at h ⊢
+
+theorem has_inj_type : has_inj_typeStatement := by
+  intro v t h
+  cases v <;> cases t <;>
+    simp [has_type, has_rettype, CompCert4Lean.Common.AST.inj_type,
+      CompCert4Lean.X86_64.Archi.ptr64] at h ⊢
+
+theorem normalize_type : normalize_typeStatement := by
+  intro v ty
+  cases v <;> cases ty <;>
+    simp [normalize, has_type, CompCert4Lean.X86_64.Archi.ptr64]
+
+theorem normalize_idem : normalize_idemStatement := by
+  intro v ty h
+  cases v <;> cases ty <;>
+    simp [normalize, has_type, CompCert4Lean.X86_64.Archi.ptr64] at h ⊢
+
+end Val
+end CompCert4Lean.Common.Values

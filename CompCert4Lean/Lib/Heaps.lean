@@ -1418,3 +1418,11 @@ theorem partition_bst (E : OrderedType) : partition_bstStatement E := by
   exact partitionBstProof E pivot h hbst
 
 end CompCert4Lean.Lib.Heaps.SplayHeapSet.R
+
+namespace CompCert4Lean.Lib.Heaps.SplayHeapSet.R
+
+theorem insert_bst : ∀ (E : OrderedType), insert_bstStatement E := by
+  intro E x h hbst
+  exact insertBstProof E x h hbst
+
+end CompCert4Lean.Lib.Heaps.SplayHeapSet.R

@@ -870,3 +870,273 @@ theorem divu_modu_exists : divu_modu_existsStatement := by
     constructor <;> rfl
 
 end CompCert4Lean.X86.Asmgenproof1
+namespace CompCert4Lean.X86.Asmgenproof1
+
+theorem divlu_modlu_exists : divlu_modlu_existsStatement := by
+  intro v1 v2 h
+  cases v1 <;> cases v2 <;>
+    simp [CompCert4Lean.Common.Values.Val.divlu,
+      CompCert4Lean.Common.Values.Val.modlu] at h ⊢
+  case Vlong.Vlong n d =>
+    have hd : d ≠ CompCert4Lean.Lib.Integers.Int64.zero := by
+      intro hd
+      subst d
+      simp [CompCert4Lean.Lib.Integers.Int64.eq,
+        CompCert4Lean.Lib.Integers.WordCore.eq] at h
+    refine ⟨CompCert4Lean.Lib.Integers.Int64.divu n d,
+      CompCert4Lean.Lib.Integers.Int64.modu n d, ?_, ⟨h, rfl⟩, h, rfl⟩
+    have hn0 : (0 : Int) ≤
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+          (CompCert4Lean.Lib.Integers.Int64.unsigned n) := by
+      have hn := n.intrange.1
+      change (-1 : Int) <
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ n.intval at hn
+      change 0 ≤
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ n.intval
+      omega
+    have hnmax :
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+            (CompCert4Lean.Lib.Integers.Int64.unsigned n) ≤
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+            CompCert4Lean.Lib.Integers.Int64.max_unsigned := by
+      have hn := n.intrange.2
+      change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ n.intval <
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+          CompCert4Lean.Lib.Integers.Int64.modulus at hn
+      change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ n.intval ≤
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+          CompCert4Lean.Lib.Integers.Int64.modulus - 1
+      omega
+    have hd0 : (0 : Int) ≤
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+          (CompCert4Lean.Lib.Integers.Int64.unsigned d) := by
+      have hd' := d.intrange.1
+      change (-1 : Int) <
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ d.intval at hd'
+      change 0 ≤
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ d.intval
+      omega
+    have hdpos : (0 : Int) <
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+          (CompCert4Lean.Lib.Integers.Int64.unsigned d) := by
+      have hdne :
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+              (CompCert4Lean.Lib.Integers.Int64.unsigned d) ≠ 0 := by
+        intro hzero
+        apply hd
+        apply CompCert4Lean.Lib.Integers.WordCore.ext
+        apply CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective
+        change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ d.intval = 0 at hzero
+        have hz0 :
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+                CompCert4Lean.Lib.Integers.Int64.zero.intval = 0 := by
+          rfl
+        exact hzero.trans hz0.symm
+      omega
+    have hqint :
+        Int.ediv
+            (CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+              (CompCert4Lean.Lib.Integers.Int64.unsigned n))
+            (CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+              (CompCert4Lean.Lib.Integers.Int64.unsigned d)) ≤
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+            CompCert4Lean.Lib.Integers.Int64.max_unsigned := by
+      apply Int.ediv_le_of_le_mul hdpos
+      have hnd := Int.mul_le_mul_of_nonneg_left
+        (show (1 : Int) ≤
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+            (CompCert4Lean.Lib.Integers.Int64.unsigned d) by omega) hn0
+      have hmaxd := Int.mul_le_mul_of_nonneg_right hnmax (Int.le_of_lt hdpos)
+      have hnd' :
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+              (CompCert4Lean.Lib.Integers.Int64.unsigned n) ≤
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+              (CompCert4Lean.Lib.Integers.Int64.unsigned n) *
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+                (CompCert4Lean.Lib.Integers.Int64.unsigned d) := by
+        simpa using hnd
+      exact Int.le_trans hnd' hmaxd
+    have hqz :
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.le
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.div_eucl
+            (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add
+              (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.mul
+                (CompCert4Lean.Lib.Integers.Int64.unsigned
+                  CompCert4Lean.Lib.Integers.Int64.zero)
+                CompCert4Lean.Lib.Integers.Int64.modulus)
+              (CompCert4Lean.Lib.Integers.Int64.unsigned n))
+            (CompCert4Lean.Lib.Integers.Int64.unsigned d)).1
+          CompCert4Lean.Lib.Integers.Int64.max_unsigned := by
+      let a : CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z :=
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.mul
+            (CompCert4Lean.Lib.Integers.Int64.unsigned
+              CompCert4Lean.Lib.Integers.Int64.zero)
+            CompCert4Lean.Lib.Integers.Int64.modulus)
+          (CompCert4Lean.Lib.Integers.Int64.unsigned n)
+      let b : CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z :=
+        CompCert4Lean.Lib.Integers.Int64.unsigned d
+      let q : CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z :=
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.div_eucl a b).1
+      let r : CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z :=
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.div_eucl a b).2
+      have hzzero :
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+              (CompCert4Lean.Lib.Integers.Int64.unsigned
+                CompCert4Lean.Lib.Integers.Int64.zero) = 0 := by
+        rfl
+      have hz0 :
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.Z0 = 0 := by
+        rfl
+      have ha0 : (0 : Int) ≤
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ a := by
+        dsimp [a]
+        simp only [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add,
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.mul,
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+        rw [hzzero]
+        omega
+      have hamax :
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ a ≤
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+              CompCert4Lean.Lib.Integers.Int64.max_unsigned := by
+        dsimp [a]
+        simp only [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add,
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.mul,
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+        rw [hzzero]
+        omega
+      have hbpos : (0 : Int) <
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ b := by
+        dsimp [b]
+        exact hdpos
+      have hrem :=
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.modulo_range
+          a b (by exact hbpos)
+      have hr0 : (0 : Int) ≤
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ r := by
+        simpa [r,
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.div_eucl,
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.le,
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt, hz0] using hrem.1
+      have hrlt :
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ r <
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ b := by
+        simpa [r,
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.div_eucl,
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.lt] using hrem.2
+      have heq :=
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.Zdiv.Z_div_mod_eq_full
+          a b
+      have heq' :
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ a =
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ b *
+                CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ q +
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ r := by
+        have heq0 :
+            a =
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add
+                (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.mul
+                  b (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.div a b))
+                (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.modulo a b) := by
+          simpa [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.div_eucl] using heq
+        have hi := congrArg
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ heq0
+        simp only [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add,
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.mul] at hi
+        repeat rw [CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt] at hi
+        simpa [q, r,
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.div_eucl] using hi
+      have hq0 : (0 : Int) ≤
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ q := by
+        by_cases hq : (0 : Int) ≤
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ q
+        · exact hq
+        · exfalso
+          have hqneg' :
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ q ≤ -1 := by omega
+          have hprod :
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ b *
+                  CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ q ≤
+                -CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ b := by
+            have hh := Int.mul_le_mul_of_nonneg_left hqneg' (Int.le_of_lt hbpos)
+            simpa using hh
+          have hsum :
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ b *
+                  CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ q +
+                CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ r < 0 := by
+            omega
+          omega
+      have hqmul :
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ b *
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ q ≤
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ a := by
+        omega
+      have hb1 : (1 : Int) ≤
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ b := by omega
+      have hqle_mul :
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ q ≤
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ b *
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ q := by
+        have hh := Int.mul_le_mul_of_nonneg_left hb1 hq0
+        simpa [Int.mul_comm] using hh
+      have hqle :
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ q ≤
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+              CompCert4Lean.Lib.Integers.Int64.max_unsigned :=
+        Int.le_trans hqle_mul (Int.le_trans hqmul hamax)
+      simpa [a, b, q,
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.div_eucl,
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.le] using hqle
+    have hzle :
+        CompCert4Lean.Lib.Coqlib.zle
+            (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.div_eucl
+              (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add
+                (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.mul
+                  (CompCert4Lean.Lib.Integers.Int64.unsigned
+                    CompCert4Lean.Lib.Integers.Int64.zero)
+                  CompCert4Lean.Lib.Integers.Int64.modulus)
+                (CompCert4Lean.Lib.Integers.Int64.unsigned n))
+              (CompCert4Lean.Lib.Integers.Int64.unsigned d)).1
+            CompCert4Lean.Lib.Integers.Int64.max_unsigned =
+          .left hqz := by
+      cases he : CompCert4Lean.Lib.Coqlib.zle
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.div_eucl
+            (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add
+              (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.mul
+                (CompCert4Lean.Lib.Integers.Int64.unsigned
+                  CompCert4Lean.Lib.Integers.Int64.zero)
+                CompCert4Lean.Lib.Integers.Int64.modulus)
+              (CompCert4Lean.Lib.Integers.Int64.unsigned n))
+            (CompCert4Lean.Lib.Integers.Int64.unsigned d)).1
+          CompCert4Lean.Lib.Integers.Int64.max_unsigned with
+      | left hp => rfl
+      | right hp =>
+          exact (Int.not_lt_of_ge hqz hp).elim
+    have hsumz :
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add
+            (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.mul
+              (CompCert4Lean.Lib.Integers.Int64.unsigned
+                CompCert4Lean.Lib.Integers.Int64.zero)
+              CompCert4Lean.Lib.Integers.Int64.modulus)
+            (CompCert4Lean.Lib.Integers.Int64.unsigned n) =
+          CompCert4Lean.Lib.Integers.Int64.unsigned n := by
+      apply CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective
+      simp only [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add,
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.mul,
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+      have hzero_u :
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+              (CompCert4Lean.Lib.Integers.Int64.unsigned
+                CompCert4Lean.Lib.Integers.Int64.zero) = 0 := by rfl
+      rw [hzero_u]
+      omega
+    unfold CompCert4Lean.Lib.Integers.Int64.divmodu2
+    simp [CompCert4Lean.Lib.Integers.Int64.eq_dec, hd, hqz]
+    rw [hzle]
+    simp [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.div_eucl,
+      CompCert4Lean.Lib.Integers.Int64.divu,
+      CompCert4Lean.Lib.Integers.Int64.modu, hsumz]
+    constructor <;> rfl
+end CompCert4Lean.X86.Asmgenproof1

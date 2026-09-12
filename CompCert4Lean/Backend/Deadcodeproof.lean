@@ -1055,3 +1055,14 @@ theorem magree_storebytes_left : magree_storebytes_leftStatement := by
     cases hstore
 
 end CompCert4Lean.Backend.Deadcodeproof
+
+namespace CompCert4Lean.Backend.Deadcodeproof
+
+theorem magree_valid_access : magree_valid_accessStatement := by
+  intro m1 m2 P chunk b ofs p hma hvalid
+  constructor
+  · intro ofs' hofs'
+    exact hma.ma_perm b ofs' CompCert4Lean.Common.Memtype.Cur p (hvalid.1 ofs' hofs')
+  · exact hvalid.2
+
+end CompCert4Lean.Backend.Deadcodeproof

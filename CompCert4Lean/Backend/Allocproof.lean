@@ -2432,3 +2432,122 @@ theorem add_equation_satisf : add_equation_satisfStatement := by
   exact hsat q' (EqSet.add_2 e.eqs1 q q' hq')
 
 end CompCert4Lean.Backend.Allocproof
+
+namespace CompCert4Lean.Backend.Allocproof
+
+open CompCert4Lean.Backend.Allocation
+
+theorem add_equations_satisf : add_equations_satisfStatement := by
+  intro rs ls rl ml e e' hrun hsat
+  induction rl generalizing ml e e' with
+  | nil =>
+      cases ml with
+      | nil =>
+          simp [add_equations] at hrun
+          cases hrun
+          exact hsat
+      | cons m ms =>
+          simp [add_equations] at hrun
+  | cons r rl ih =>
+      cases ml with
+      | nil =>
+          simp [add_equations] at hrun
+      | cons m ms =>
+          simp only [add_equations] at hrun
+          have hmid : satisf rs ls
+              (add_equation { ekind := .Full, ereg := r, eloc := .R m } e) :=
+            ih (ml := ms)
+              (e := add_equation { ekind := .Full, ereg := r, eloc := .R m } e)
+              (e' := e') hrun hsat
+          exact add_equation_satisf rs ls
+            { ekind := .Full, ereg := r, eloc := .R m } e hmid
+
+end CompCert4Lean.Backend.Allocproof
+
+namespace CompCert4Lean.Backend.Allocproof
+
+open CompCert4Lean.Backend.Allocation
+open CompCert4Lean.Common.Values
+
+theorem add_equations_lessdef : add_equations_lessdefStatement := by
+  intro rs ls rl ml e e' hrun hsat
+  induction rl generalizing ml e e' with
+  | nil =>
+      cases ml with
+      | nil =>
+          exact Val.lessdef_list_nil
+      | cons m ms =>
+          simp [add_equations] at hrun
+  | cons r rl ih =>
+      cases ml with
+      | nil =>
+          simp [add_equations] at hrun
+      | cons m ms =>
+          simp only [add_equations] at hrun
+          apply Val.lessdef_list_cons
+          · apply add_equation_lessdef (rs := rs) (ls := ls)
+              (q := { ekind := .Full, ereg := r, eloc := .R m }) (e := e)
+            exact add_equations_satisf (rs := rs) (ls := ls) (rl := rl)
+              (ml := ms)
+              (e := add_equation { ekind := .Full, ereg := r, eloc := .R m } e)
+              (e' := e') hrun hsat
+          · exact ih (ml := ms)
+              (e := add_equation { ekind := .Full, ereg := r, eloc := .R m } e)
+              (e' := e') hrun hsat
+
+end CompCert4Lean.Backend.Allocproof
+
+namespace CompCert4Lean.Backend.Allocproof
+
+open CompCert4Lean.Backend.Allocation
+open CompCert4Lean.Common.AST
+
+theorem add_equations_args_satisf : add_equations_args_satisfStatement := by
+  intro rs ls rl tyl ll e e' hrun hsat
+  induction rl generalizing tyl ll e e' with
+  | nil =>
+      cases tyl with
+      | nil =>
+          cases ll with
+          | nil =>
+              simp [add_equations_args] at hrun
+              cases hrun
+              exact hsat
+          | cons p ps =>
+              simp [add_equations_args] at hrun
+      | cons ty tys =>
+          cases ll <;> simp [add_equations_args] at hrun
+  | cons r rl ih =>
+      cases tyl with
+      | nil =>
+          cases ll <;> simp [add_equations_args] at hrun
+      | cons ty tys =>
+          cases ll with
+          | nil =>
+              simp [add_equations_args] at hrun
+          | cons p ps =>
+              cases p with
+              | One l =>
+                  simp only [add_equations_args] at hrun
+                  have hmid : satisf rs ls
+                      (add_equation { ekind := .Full, ereg := r, eloc := l } e) :=
+                    ih (tyl := tys) (ll := ps)
+                      (e := add_equation { ekind := .Full, ereg := r, eloc := l } e)
+                      (e' := e') hrun hsat
+                  exact add_equation_satisf rs ls
+                    { ekind := .Full, ereg := r, eloc := l } e hmid
+              | Twolong hi lo =>
+                  by_cases hty : ty = Tlong
+                  · simp [add_equations_args, hty,
+                      CompCert4Lean.X86_64.Archi.ptr64] at hrun
+                  · simp [add_equations_args, hty] at hrun
+
+end CompCert4Lean.Backend.Allocproof
+
+namespace CompCert4Lean.Backend.Allocproof
+
+theorem val_longofwords_eq_1 : val_longofwords_eq_1Statement := by
+  intro v hv hptr
+  simp [CompCert4Lean.X86_64.Archi.ptr64] at hptr
+
+end CompCert4Lean.Backend.Allocproof

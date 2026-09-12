@@ -1679,3 +1679,38 @@ theorem make_cmpu_ne_zero_correct_ptr
   simp [CompCert4Lean.X86_64.Archi.ptr64] at hptr
 
 end CompCert4Lean.Cfrontend.Cshmgenproof
+
+namespace CompCert4Lean.Cfrontend.Cshmgenproof
+
+theorem make_cast_int_correct
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    make_cast_int_correctStatement := by
+  intro ge e le m a n sz si ha
+  cases sz with
+  | I8 =>
+      cases si with
+      | Signed =>
+          apply Csharpminor.eval_Eunop
+          · exact ha
+          · rfl
+      | Unsigned =>
+          apply Csharpminor.eval_Eunop
+          · exact ha
+          · rfl
+  | I16 =>
+      cases si with
+      | Signed =>
+          apply Csharpminor.eval_Eunop
+          · exact ha
+          · rfl
+      | Unsigned =>
+          apply Csharpminor.eval_Eunop
+          · exact ha
+          · rfl
+  | I32 =>
+      exact ha
+  | IBool =>
+      exact make_cmpu_ne_zero_correct ge e le m a n ha
+
+end CompCert4Lean.Cfrontend.Cshmgenproof

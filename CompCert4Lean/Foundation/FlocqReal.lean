@@ -1621,3 +1621,24 @@ theorem Rmult_lt_compat_l :
 
 end Rocq.Coq.Reals.Raxioms
 end CompCert4Lean.Foundation.FlocqReal
+
+namespace CompCert4Lean.Foundation.FlocqReal
+namespace Rocq.Coq.Reals.RIneq
+
+theorem Req_dec :
+    ∀ (ctx : ExactRealContext), Req_decStatement ctx := by
+  intro ctx r1 r2
+  rcases ctx.certificate.total_order r1 r2 with h | h
+  · rcases h with hlt | heq
+    · exact Or.inr (by
+        intro heq'
+        subst r2
+        exact ctx.certificate.orderedField.lt_irrefl _ hlt)
+    · exact Or.inl heq
+  · exact Or.inr (by
+      intro heq'
+      subst r2
+      exact ctx.certificate.orderedField.lt_irrefl _ h)
+
+end Rocq.Coq.Reals.RIneq
+end CompCert4Lean.Foundation.FlocqReal

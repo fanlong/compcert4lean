@@ -1523,3 +1523,131 @@ theorem optge_trans : optge_transStatement := by
           exact optge_some (LATlaws.ge_trans _ _ _ h12 h23)
 
 end CompCert4Lean.Backend.Kildall.Dataflow_Solver
+
+namespace CompCert4Lean.Backend.Kildall.Dataflow_Solver
+
+open CompCert4Lean.Lib.Maps
+
+theorem propagate_succ_charact : propagate_succ_charactStatement := by
+  intro LAT NS LATlaws NSlaws st out n
+  unfold propagate_succ
+  cases hget : PTree.get n st.aval with
+  | none =>
+      simp only [hget]
+      refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+      · have hset : PTree.get n (PTree.set n out st.aval) = some out := by
+          simpa using PTree.getSet_equation n n out st.aval
+        rw [hset]
+        exact optge_refl LATlaws (some out)
+      · intro s hne
+        have hsn : s ≠ n := fun h => hne h.symm
+        simpa [hsn] using PTree.getSet_equation s n out st.aval
+      · intro s
+        by_cases heq : s = n
+        · subst s
+          have hset : PTree.get n (PTree.set n out st.aval) = some out := by
+            simpa using PTree.getSet_equation n n out st.aval
+          rw [hset, hget]
+          exact optge_none (some out)
+        · have hset : PTree.get s (PTree.set n out st.aval) = PTree.get s st.aval := by
+            simpa [heq] using PTree.getSet_equation s n out st.aval
+          rw [hset]
+          exact optge_refl LATlaws _
+      · exact Or.inl ((NSlaws.add_spec n n st.worklist).mpr (Or.inl rfl))
+      · intro n' hn'
+        exact (NSlaws.add_spec n n' st.worklist).mpr (Or.inr hn')
+      · intro n' hn'
+        rcases (NSlaws.add_spec n n' st.worklist).mp hn' with h | h
+        · exact Or.inl h.symm
+        · exact Or.inr h
+      · intro n' hn'
+        exact Or.inr hn'
+      · intro n' hn'
+        rcases hn' with h | h
+        · exact Or.inl ((NSlaws.add_spec n n' st.worklist).mpr (Or.inl h.symm))
+        · exact Or.inr h
+      · intro n' hnone hsome
+        by_cases heq : n' = n
+        · subst n'
+          exact Or.inl rfl
+        · have hsame : PTree.get n' (PTree.set n out st.aval) = PTree.get n' st.aval := by
+            simpa [heq] using PTree.getSet_equation n' n out st.aval
+          apply False.elim
+          apply hsome
+          rw [hsame]
+          exact hnone
+  | some oldl =>
+      by_cases hbeq : LAT.beq oldl (LAT.lub oldl out) = true
+      · simp only [hbeq, ↓reduceIte]
+        refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+        · rw [hget]
+          apply optge_some
+          apply LATlaws.ge_trans oldl (LAT.lub oldl out) out
+          · exact LATlaws.ge_refl oldl (LAT.lub oldl out)
+              (LATlaws.beq_correct oldl (LAT.lub oldl out) hbeq)
+          · exact LATlaws.ge_lub_right oldl out
+        · intro s hne
+          trivial
+        · exact fun s => optge_refl LATlaws _
+        · exact Or.inr hget
+        · exact fun n' h => h
+        · exact fun n' h => Or.inr h
+        · exact fun n' h => h
+        · exact fun n' h => Or.inr h
+        · intro n' hnone hsome
+          exact False.elim (hsome hnone)
+      · have hfalse : LAT.beq oldl (LAT.lub oldl out) = false :=
+          Bool.eq_false_iff.mpr hbeq
+        simp only [hfalse, Bool.false_eq_true, ↓reduceIte]
+        refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+        · have hset : PTree.get n (PTree.set n (LAT.lub oldl out) st.aval) =
+            some (LAT.lub oldl out) := by
+            simpa using PTree.getSet_equation n n (LAT.lub oldl out) st.aval
+          rw [hset]
+          apply optge_some
+          exact LATlaws.ge_lub_right oldl out
+        · intro s hne
+          have hsn : s ≠ n := fun h => hne h.symm
+          simpa [hsn] using PTree.getSet_equation s n (LAT.lub oldl out) st.aval
+        · intro s
+          by_cases heq : s = n
+          · subst s
+            have hset : PTree.get n (PTree.set n (LAT.lub oldl out) st.aval) =
+                some (LAT.lub oldl out) := by
+                simpa using PTree.getSet_equation n n (LAT.lub oldl out) st.aval
+            rw [hset, hget]
+            apply optge_some
+            exact LATlaws.ge_lub_left oldl out
+          · have hset : PTree.get s (PTree.set n (LAT.lub oldl out) st.aval) =
+              PTree.get s st.aval := by
+              simpa [heq] using PTree.getSet_equation s n (LAT.lub oldl out) st.aval
+            rw [hset]
+            exact optge_refl LATlaws _
+        · exact Or.inl ((NSlaws.add_spec n n st.worklist).mpr (Or.inl rfl))
+        · intro n' hn'
+          exact (NSlaws.add_spec n n' st.worklist).mpr (Or.inr hn')
+        · intro n' hn'
+          rcases (NSlaws.add_spec n n' st.worklist).mp hn' with h | h
+          · exact Or.inl h.symm
+          · exact Or.inr h
+        · intro n' hn'
+          exact Or.inr hn'
+        · intro n' hn'
+          rcases hn' with h | h
+          · exact Or.inl ((NSlaws.add_spec n n' st.worklist).mpr (Or.inl h.symm))
+          · exact Or.inr h
+        · intro n' hnone hsome
+          by_cases heq : n' = n
+          · subst n'
+            rw [hget] at hnone
+            cases hnone
+          · have hsame : PTree.get n' (PTree.set n (LAT.lub oldl out) st.aval) =
+              PTree.get n' st.aval := by
+              simpa [heq] using
+                PTree.getSet_equation n' n (LAT.lub oldl out) st.aval
+            apply False.elim
+            apply hsome
+            rw [hsame]
+            exact hnone
+
+end CompCert4Lean.Backend.Kildall.Dataflow_Solver

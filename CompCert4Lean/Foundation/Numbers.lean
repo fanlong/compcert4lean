@@ -1296,3 +1296,14 @@ theorem sub_add : sub_addStatement := by
   exact Nat.sub_add_cancel h
 
 end CompCert4Lean.Foundation.Numbers.Rocq.Coq.Arith.PeanoNat.Nat
+
+namespace CompCert4Lean.Foundation.Numbers
+namespace Rocq.Coq
+
+theorem Arith.PeanoNat.Nat.add_0_r :
+    Arith.PeanoNat.Nat.add_0_rStatement := by
+  intro n
+  exact Nat.add_zero n
+
+end Rocq.Coq
+end CompCert4Lean.Foundation.Numbers

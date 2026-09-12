@@ -917,3 +917,129 @@ theorem initial_workset_incl : initial_workset_inclStatement := by
   · exact add_workset_incl p.prog_main _
 
 end CompCert4Lean.Backend.Unusedglobproof
+
+namespace CompCert4Lean.Backend.Unusedglobproof
+
+theorem seen_add_workset : seen_add_worksetStatement := by
+  intro id w
+  unfold CompCert4Lean.Backend.Unusedglob.add_workset
+  split
+  · exact CompCert4Lean.Backend.Unusedglob.IS.mem_2_proof _ _ ‹_›
+  · exact CompCert4Lean.Backend.Unusedglob.IS.add_1_proof _ _ _ rfl
+
+theorem seen_addlist_workset : seen_addlist_worksetStatement := by
+  intro id l w hid
+  induction l generalizing w with
+  | nil => cases hid
+  | cons x xs ih =>
+      simp only [List.mem_cons] at hid
+      simp only [CompCert4Lean.Backend.Unusedglob.addlist_workset]
+      rcases hid with rfl | hid
+      · exact seen_workset_incl _ _ id
+          (addlist_workset_incl xs (CompCert4Lean.Backend.Unusedglob.add_workset id w))
+          (seen_add_workset id w)
+      · exact ih (CompCert4Lean.Backend.Unusedglob.add_workset x w) hid
+
+end CompCert4Lean.Backend.Unusedglobproof
+
+namespace CompCert4Lean.Backend.Unusedglobproof
+
+theorem seen_add_ref_function : seen_add_ref_functionStatement := by
+  intro id f w href
+  unfold ref_function at href
+  unfold CompCert4Lean.Backend.Unusedglob.add_ref_function
+  let P : CompCert4Lean.Lib.Maps.PTree.t CompCert4Lean.Backend.RTL.instruction →
+      CompCert4Lean.Backend.Unusedglob.workset → Prop := fun m a =>
+    ∀ id, (∃ pc i, CompCert4Lean.Lib.Maps.PTree.get pc m = some i ∧
+      id ∈ CompCert4Lean.Backend.Unusedglob.ref_instruction i) →
+      CompCert4Lean.Backend.Unusedglob.IS.In id a.w_seen
+  have hfold : P f.fn_code
+      (CompCert4Lean.Lib.Maps.PTree.fold
+        CompCert4Lean.Backend.Unusedglob.add_ref_instruction f.fn_code w) := by
+    apply CompCert4Lean.Lib.Maps.PTree_Properties.fold_rec_proof
+      (P := P)
+    · intro m m' a hext hP id h
+      rcases h with ⟨pc, i, hget, hrefi⟩
+      apply hP id
+      exact ⟨pc, i, by rw [hext pc]; exact hget, hrefi⟩
+    · intro id h
+      rcases h with ⟨pc, i, hget, hrefi⟩
+      simp [CompCert4Lean.Lib.Maps.PTree.empty,
+        CompCert4Lean.Lib.Maps.PTree.get] at hget
+    · intro m a k i hnone hfinal hP id h
+      rcases h with ⟨pc, j, hget, hrefj⟩
+      rw [CompCert4Lean.Lib.Maps.PTree.getSet_equation] at hget
+      split at hget
+      · rename_i hpk
+        subst pc
+        cases hget
+        unfold CompCert4Lean.Backend.Unusedglob.add_ref_instruction
+        exact seen_addlist_workset id
+          (CompCert4Lean.Backend.Unusedglob.ref_instruction i)
+          a hrefj
+      · unfold CompCert4Lean.Backend.Unusedglob.add_ref_instruction
+        apply seen_workset_incl _ _ id
+          (addlist_workset_incl
+            (CompCert4Lean.Backend.Unusedglob.ref_instruction i) a)
+        exact hP id ⟨pc, j, hget, hrefj⟩
+  exact hfold id href
+
+end CompCert4Lean.Backend.Unusedglobproof
+
+namespace CompCert4Lean.Backend.Unusedglobproof
+
+theorem seen_add_ref_definition : seen_add_ref_definitionStatement := by
+  intro pm id gd id' w hget href
+  unfold CompCert4Lean.Backend.Unusedglob.add_ref_definition
+  rw [hget]
+  cases gd with
+  | Gfun fd =>
+      cases fd with
+      | Internal f => exact seen_add_ref_function id' f w href
+      | External ef => cases href
+  | Gvar gv =>
+      rcases href with ⟨ofs, hmem⟩
+      unfold CompCert4Lean.Backend.Unusedglob.add_ref_globvar
+      have hfold : ∀ (l : List CompCert4Lean.Common.AST.init_data)
+          (w : CompCert4Lean.Backend.Unusedglob.workset),
+          CompCert4Lean.Backend.Unusedglob.IS.In id' w.w_seen ∨
+            CompCert4Lean.Common.AST.init_data.Init_addrof id' ofs ∈ l →
+          CompCert4Lean.Backend.Unusedglob.IS.In id' (List.foldl
+            CompCert4Lean.Backend.Unusedglob.add_ref_init_data w l).w_seen := by
+        intro l
+        induction l with
+        | nil =>
+            intro w h
+            cases h with
+            | inl hw => exact hw
+            | inr hm => cases hm
+        | cons i rest ih =>
+            intro w h
+            simp only [List.foldl]
+            rcases h with hw | hm
+            · apply ih (CompCert4Lean.Backend.Unusedglob.add_ref_init_data w i)
+              left
+              unfold CompCert4Lean.Backend.Unusedglob.add_ref_init_data
+              cases i with
+              | Init_addrof id0 ofs0 =>
+                  exact seen_workset_incl _ _ id'
+                    (add_workset_incl id0 w) hw
+              | Init_int8 value => exact hw
+              | Init_int16 value => exact hw
+              | Init_int32 value => exact hw
+              | Init_int64 value => exact hw
+              | Init_float32 value => exact hw
+              | Init_float64 value => exact hw
+              | Init_space size => exact hw
+            · simp only [List.mem_cons] at hm
+              rcases hm with rfl | hm
+              · apply ih (CompCert4Lean.Backend.Unusedglob.add_ref_init_data w
+                  (CompCert4Lean.Common.AST.init_data.Init_addrof id' ofs))
+                left
+                unfold CompCert4Lean.Backend.Unusedglob.add_ref_init_data
+                exact seen_add_workset id' w
+              · exact ih (CompCert4Lean.Backend.Unusedglob.add_ref_init_data w i)
+                  (Or.inr hm)
+      exact hfold gv.gvar_init w (Or.inr hmem)
+
+end CompCert4Lean.Backend.Unusedglobproof

@@ -1049,3 +1049,253 @@ theorem find_function_translated : find_function_translatedStatement := by
             (by simpa [hs] using hfind)
 
 end CompCert4Lean.Backend.Linearizeproof
+
+namespace CompCert4Lean.Backend.Linearizeproof
+
+open CompCert4Lean.Backend.Linearize
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Lib.Maps
+
+theorem check_reachable_correct : check_reachable_correctStatement := by
+  intro f reach s
+  have hfold : ∀ (l : List (LTL.node × LTL.bblock)) (ok : Bool),
+      List.foldl
+          (fun a p => check_reachable_aux reach s a p.1 p.2) ok l = true ->
+      ok = true /\
+        (∀ pc i, List.Mem (pc, i) l -> PMap.get pc reach = true ->
+          Nodeset.In pc s) := by
+    intro l
+    induction l with
+    | nil =>
+        intro ok h
+        constructor
+        · simpa using h
+        · intro pc i hmem
+          cases hmem
+    | cons p l ih =>
+        intro ok h
+        rcases p with ⟨pc1, i1⟩
+        simp only [List.foldl] at h
+        have hrest := ih (check_reachable_aux reach s ok pc1 i1) h
+        rcases hrest with ⟨hokrest, hmemrest⟩
+        constructor
+        · unfold check_reachable_aux at hokrest
+          cases hpc : PMap.get pc1 reach with
+          | false => simpa [hpc] using hokrest
+          | true =>
+              have hparts : ok && Nodeset.mem pc1 s = true := by
+                simpa [hpc] using hokrest
+              exact (Bool.and_eq_true_iff.mp hparts).1
+        · intro pc i hmem hreach
+          cases hmem with
+          | head =>
+            unfold check_reachable_aux at hokrest
+            cases hpc : PMap.get pc1 reach with
+            | false => simp [hpc] at hreach
+            | true =>
+                have hparts : ok && Nodeset.mem pc1 s = true := by
+                  simpa [hpc] using hokrest
+                have hmem : Nodeset.mem pc1 s = true := by
+                  simpa using (Bool.and_eq_true_iff.mp hparts).2
+                exact CompCert4Lean.Backend.Linearize.Nodeset.mem_2_proof s pc1 hmem
+          | tail _ htail => exact hmemrest pc i htail hreach
+  intro pc i hcheck hcode hreach
+  have hspec := CompCert4Lean.Lib.Maps.PTree.fold_spec_proof
+    (A := LTL.bblock) (B := Bool)
+    (check_reachable_aux reach s) true f.fn_code
+  have hlist : List.foldl
+      (fun a p => check_reachable_aux reach s a p.1 p.2) true
+      (PTree.elements f.fn_code) = true := by
+    rw [← hspec]
+    exact hcheck
+  rcases hfold (PTree.elements f.fn_code) true hlist with ⟨_, hall⟩
+  apply hall pc i
+  · exact PTree.elements_correct_proof f.fn_code pc (v := i) hcode
+  · exact hreach
+
+end CompCert4Lean.Backend.Linearizeproof
+
+namespace CompCert4Lean.Backend.Linearizeproof
+
+open CompCert4Lean.Backend.Linearize
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+
+private theorem linearize_nodeset_of_list_correct_aux :
+    nodeset_of_list_correctStatement := by
+  intro l
+  induction l with
+  | nil =>
+      intro s s' h
+      cases h
+      refine ⟨CompCert4Lean.Lib.Coqlib.list_norepet.nil _, ?_, ?_⟩
+      · intro pc
+        constructor
+        · intro hin
+          exact Or.inl hin
+        · intro hor
+          cases hor with
+          | inl hin => exact hin
+          | inr hmem => cases hmem
+      · intro pc hmem
+        cases hmem
+  | cons a l ih =>
+      intro s s' h
+      cases hmem : Nodeset.mem a s with
+      | true =>
+          simp only [nodeset_of_list, hmem] at h
+          cases h
+      | false =>
+          simp only [nodeset_of_list, hmem] at h
+          have hi := ih (Nodeset.add a s) s' h
+          rcases hi with ⟨hnr, heq, hdisj⟩
+          refine ⟨?_, ?_, ?_⟩
+          · apply CompCert4Lean.Lib.Coqlib.list_norepet.cons a
+            · intro ha
+              exact hdisj a ha
+                (CompCert4Lean.Lib.FSetAVLplus.Make.add_1 s a a rfl)
+            · exact hnr
+          · intro pc
+            constructor
+            · intro hin
+              rcases (heq pc).mp hin with hadd | htail
+              · rcases (NodesetFacts.add_iff_proof (s := s) a pc).mp hadd with ha | hs
+                · subst pc
+                  exact Or.inr (List.Mem.head l)
+                · exact Or.inl hs
+              · exact Or.inr (List.Mem.tail a htail)
+            · intro hor
+              rcases hor with hs | hlist
+              · exact (heq pc).mpr (Or.inl
+                    (CompCert4Lean.Lib.FSetAVLplus.Make.add_2 s a pc hs))
+              · cases hlist with
+                | head =>
+                    exact (heq a).mpr (Or.inl
+                      (CompCert4Lean.Lib.FSetAVLplus.Make.add_1 s a a rfl))
+                | tail _ htail =>
+                    exact (heq pc).mpr (Or.inr htail)
+          · intro pc htail
+            cases htail with
+            | head =>
+                intro hs
+                have hm := CompCert4Lean.Lib.FSetAVLplus.Make.mem_1 s a hs
+                change Nodeset.mem a s = true at hm
+                rw [hmem] at hm
+                cases hm
+            | tail _ htail =>
+                intro hs
+                exact hdisj pc htail
+                  (CompCert4Lean.Lib.FSetAVLplus.Make.add_2 s a pc hs)
+
+theorem enumerate_complete : enumerate_completeStatement := by
+  intro service f enum pc i henum hcode hreach
+  unfold enumerate enumerateWithProposal at henum
+  dsimp [enumerate_aux] at henum
+  cases hnodes : nodeset_of_list (service f) Nodeset.empty with
+  | Error msg =>
+      simp [hnodes] at henum
+  | OK s =>
+      cases hcheck : check_reachable f (reachable f) s with
+      | false =>
+          simp [hnodes, hcheck] at henum
+      | true =>
+          simp [hnodes, hcheck] at henum
+          cases henum
+          have hs := check_reachable_correct f (reachable f) s pc i hcheck hcode hreach
+          have hprops := linearize_nodeset_of_list_correct_aux
+            (service f) Nodeset.empty s hnodes
+          rcases (hprops.2.1 pc).mp hs with hempty | hmem
+          · exact False.elim
+              (CompCert4Lean.Backend.Linearize.Nodeset.empty_1_proof pc hempty)
+          · exact hmem
+
+theorem enumerate_norepet : enumerate_norepetStatement := by
+  intro service f enum henum
+  unfold enumerate enumerateWithProposal at henum
+  dsimp [enumerate_aux] at henum
+  cases hnodes : nodeset_of_list (service f) Nodeset.empty with
+  | Error msg =>
+      simp [hnodes] at henum
+  | OK s =>
+      cases hcheck : check_reachable f (reachable f) s with
+      | false =>
+          simp [hnodes, hcheck] at henum
+      | true =>
+          simp [hnodes, hcheck] at henum
+          cases henum
+          exact (linearize_nodeset_of_list_correct_aux
+            (service f) Nodeset.empty s hnodes).1
+
+end CompCert4Lean.Backend.Linearizeproof
+
+namespace CompCert4Lean.Backend.Linearizeproof
+
+open CompCert4Lean.Backend.Linear
+open CompCert4Lean.Backend.Linearize
+
+private theorem linearize_is_tail_in {A : Type} (x : A) (c1 c2 : List A) :
+    CompCert4Lean.Lib.Coqlib.is_tail (x :: c1) c2 -> List.Mem x c2 := by
+  intro h
+  induction c2 with
+  | nil => cases h
+  | cons a c2 ih =>
+      cases h with
+      | refl _ => exact List.Mem.head c1
+      | cons _ htail => exact List.Mem.tail _ (ih htail)
+
+private theorem linearize_is_tail_head {A : Type} (x a : A) (c1 c2 : List A) :
+    CompCert4Lean.Lib.Coqlib.is_tail (x :: c1) (a :: c2) ->
+      (a = x ∧ c1 = c2) ∨ CompCert4Lean.Lib.Coqlib.is_tail (x :: c1) c2 := by
+  intro h
+  cases h with
+  | refl _ => exact Or.inl ⟨rfl, rfl⟩
+  | cons i htail => exact Or.inr htail
+
+private theorem linearize_unique_labels_tail (i : Linear.instruction)
+    (c : Linear.code) : unique_labels (i :: c) -> unique_labels c := by
+  intro h
+  cases i <;> simp_all [unique_labels]
+
+theorem find_label_unique : find_label_uniqueStatement := by
+  intro lbl c1 c2
+  induction c2 with
+  | nil =>
+      intro c3 htail huniq hfind
+      change (none : Option Linear.code) = some _ at hfind
+      cases hfind
+  | cons a c2 ih =>
+      intro c3 htail huniq hfind
+      change (if CompCert4Lean.Backend.Linear.is_label lbl a then
+          some (show Linear.code from c2)
+        else CompCert4Lean.Backend.Linear.find_label lbl (show Linear.code from c2)) =
+        some _ at hfind
+      cases hlabel : CompCert4Lean.Backend.Linear.is_label lbl a with
+      | false =>
+          simp [hlabel] at hfind
+          rcases linearize_is_tail_head (Linear.Llabel lbl) a c1 c2 htail with
+            ⟨haeq, hceq⟩ | htail'
+          · subst a
+            cases hpeq : CompCert4Lean.Lib.Coqlib.peq lbl lbl with
+            | left heq => simp [CompCert4Lean.Backend.Linear.is_label, hpeq] at hlabel
+            | right hne => exact False.elim (hne rfl)
+          · exact ih c3 htail' (linearize_unique_labels_tail a c2 huniq) hfind
+      | true =>
+          simp [hlabel] at hfind
+          cases hfind
+          have haeq : a = Linear.Llabel lbl := by
+            have hc := CompCert4Lean.Backend.Linear.is_label_correct lbl a
+            simpa [hlabel] using hc
+          rcases linearize_is_tail_head (Linear.Llabel lbl) a c1 c2 htail with
+            ⟨haeq', hceq⟩ | htail'
+          · cases haeq'
+            cases hceq
+            rfl
+          · subst a
+            have hu : ¬ List.Mem (Linear.Llabel lbl) c2 := by
+              have hu' : ¬ List.Mem (Linear.Llabel lbl) c2 ∧ unique_labels c2 := by
+                simpa [unique_labels] using huniq
+              exact hu'.1
+            exact False.elim (hu (linearize_is_tail_in _ _ _ htail'))
+
+end CompCert4Lean.Backend.Linearizeproof

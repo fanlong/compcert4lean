@@ -1124,3 +1124,16 @@ theorem elements_2_proof : elements_2 := by
 end RegSet
 
 end CompCert4Lean.Backend.Bounds
+
+namespace CompCert4Lean.Backend.Bounds
+
+theorem record_regs_of_function_only : record_regs_of_function_onlyStatement := by
+  intro cfg f
+  unfold record_regs_of_function
+  apply fold_left_preserves
+  · intro acc i hacc
+    exact record_regs_of_instr_only cfg acc i hacc
+  · intro r hr
+    exact (RegSet.empty_1_proof r hr).elim
+
+end CompCert4Lean.Backend.Bounds

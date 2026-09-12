@@ -1032,3 +1032,28 @@ theorem sig_function_translated : ∀ cfg, sig_function_translatedStatement cfg 
   | External ef => rfl
 
 end CompCert4Lean.Backend.Constpropproof
+
+namespace CompCert4Lean.Backend.Constpropproof
+
+open CompCert4Lean.Backend.Constprop
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Coqlib
+
+theorem builtin_args_strength_reduction_correct :
+    ∀ (cfg : CompCert4Lean.Config.CompilerConfig),
+      builtin_args_strength_reduction_correctStatement cfg := by
+  intro cfg prog bc sp m rs ae hmatch al vl hev cl
+  unfold eval_builtin_args at hev ⊢
+  induction hev generalizing cl with
+  | nil => exact list_forall2_nil _
+  | @cons a al v vl ha htail ih =>
+      unfold CompCert4Lean.Backend.Constprop.builtin_args_strength_reduction
+      apply list_forall2.cons
+      · exact builtin_arg_strength_reduction_correct cfg prog bc sp m rs ae a v
+          (cl.headD OK_default) hmatch ha
+      · exact ih cl.tail
+
+end CompCert4Lean.Backend.Constpropproof

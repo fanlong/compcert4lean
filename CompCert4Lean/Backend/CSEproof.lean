@@ -1756,3 +1756,35 @@ theorem find_valnum_rhs'_charact : find_valnum_rhs'_charactStatement := by
           · obtain ⟨s, r'', hm, hc⟩ := ih (by rw [if_neg h] at hv; exact hv)
             exact ⟨s, r'', List.mem_cons_of_mem _ hm, hc⟩
 end CompCert4Lean.Backend.CSEproof
+
+namespace CompCert4Lean.Backend.CSEproof
+
+open CompCert4Lean.Backend.CSEdomain
+open CompCert4Lean.Lib.Coqlib
+
+theorem find_valnum_num_charact : find_valnum_num_charactStatement := by
+  intro v r eqs
+  induction eqs with
+  | nil =>
+      simp [CSE.find_valnum_num]
+  | cons e eqs ih =>
+      cases e with
+      | Eq v' strict r' =>
+          simp only [CSE.find_valnum_num]
+          intro h
+          cases hs : strict with
+          | false =>
+              simp [hs] at h
+              exact List.mem_cons_of_mem _ (ih h)
+          | true =>
+              cases hp : peq v v' with
+              | left hv =>
+                  simp [hs, hp] at h
+                  cases h
+                  subst v'
+                  exact List.mem_cons_self
+              | right hne =>
+                  simp [hs, hp] at h
+                  exact List.mem_cons_of_mem _ (ih h)
+
+end CompCert4Lean.Backend.CSEproof

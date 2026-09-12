@@ -2051,3 +2051,68 @@ theorem senv_preserved : senv_preservedStatement cfg oracle := by
                     rfl
 
 end CompCert4Lean.Backend.Selectionproof
+
+namespace CompCert4Lean.Backend.Selectionproof
+
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Lib.Integers
+
+variable [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+variable [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+variable [binary64_inverse_certificate : BexactInverseCertificate (zOfNat 53) (zOfNat 1024)]
+variable [binary32_inverse_certificate : BexactInverseCertificate (zOfNat 24) (zOfNat 128)]
+variable (cfg : CompilerConfig) (oracle : SelectionOracle)
+
+theorem functions_translated : functions_translatedStatement cfg oracle := by
+  intro prog tprog hm v v' f hfind hld
+  cases v with
+  | Vundef => simp [Genv.find_funct] at hfind
+  | Vint n => simp [Genv.find_funct] at hfind
+  | Vfloat n => simp [Genv.find_funct] at hfind
+  | Vlong n => simp [Genv.find_funct] at hfind
+  | Vsingle n => simp [Genv.find_funct] at hfind
+  | Vptr b ofs =>
+      cases hld with
+      | lessdef_refl _ =>
+          change (if Ptrofs.eq ofs Ptrofs.zero = true then
+            Genv.find_funct_ptr (Genv.globalenv prog) b else none) = some f at hfind
+          cases heq : Ptrofs.eq ofs Ptrofs.zero with
+          | false => simp [heq] at hfind
+          | true =>
+              simp only [heq] at hfind
+              have hge := selection_globalenvs_match cfg oracle prog tprog hm
+              unfold Genv.find_funct_ptr at hfind
+              have hsrc : Genv.find_def (Genv.globalenv prog) b = some (.Gfun f) := by
+                cases hfd : Genv.find_def (Genv.globalenv prog) b with
+                | none => simp [hfd] at hfind
+                | some gd =>
+                    cases gd with
+                    | Gfun f0 =>
+                        simp [hfd] at hfind
+                        subst f0
+                        rfl
+                    | Gvar gv => simp [hfd] at hfind
+              cases ht : Genv.find_def (Genv.globalenv tprog) b with
+              | none =>
+                  have hdefs := hge.mge_defs b
+                  change CompCert4Lean.Lib.Coqlib.option_rel _
+                    (Genv.find_def (Genv.globalenv prog) b)
+                    (Genv.find_def (Genv.globalenv tprog) b) at hdefs
+                  rw [hsrc, ht] at hdefs
+                  cases hdefs
+              | some gd2 =>
+                  have hdefs := hge.mge_defs b
+                  change CompCert4Lean.Lib.Coqlib.option_rel _
+                    (Genv.find_def (Genv.globalenv prog) b)
+                    (Genv.find_def (Genv.globalenv tprog) b) at hdefs
+                  rw [hsrc, ht] at hdefs
+                  cases hdefs with
+                  | some g1 g2 hrel =>
+                      cases hrel with
+                      | match_globdef_fun cu f1 f2 horder hmatch =>
+                          refine ⟨cu, f2, ?_, hmatch, horder⟩
+                          simp [Genv.find_funct, Genv.find_funct_ptr, heq, ht]
+
+end CompCert4Lean.Backend.Selectionproof

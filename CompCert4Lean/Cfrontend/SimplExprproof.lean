@@ -1098,3 +1098,52 @@ theorem function_return_preserved :
   | tr_function_intro _ hreturn _ _ _ => exact hreturn
 
 end CompCert4Lean.Cfrontend.SimplExprproof
+
+namespace CompCert4Lean.Cfrontend.SimplExprproof
+
+open CompCert4Lean.Cfrontend.SimplExpr
+
+theorem eval_Ederef' :
+    ∀ [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+      [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)],
+      eval_Ederef'Statement := by
+  intro binary64_certificate binary32_certificate ge e le m a t l ofs h
+  unfold Ederef'
+  cases a with
+  | Eaddrof a' ty' =>
+      change Clight.eval_lvalue ge e le m
+        (if CompCert4Lean.Lib.Coqlib.proj_sumbool
+            (Ctypes.type_eq t (Clight.typeof a')) = true then a'
+          else .Ederef (.Eaddrof a' ty') t) l ofs .Full
+      by_cases hc : CompCert4Lean.Lib.Coqlib.proj_sumbool
+          (Ctypes.type_eq t (Clight.typeof a')) = true
+      · simp [hc]
+        cases h with
+        | eval_Eaddrof _ _ _ _ hlvalue => exact hlvalue
+        | eval_Elvalue _ _ _ _ _ hlvalue hderef => cases hlvalue
+      · simp [hc]
+        exact Clight.eval_lvalue.eval_Ederef _ _ _ _ h
+  | _ => exact Clight.eval_lvalue.eval_Ederef _ _ _ _ h
+
+theorem eval_Eaddrof' :
+    ∀ [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+      [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)],
+      eval_Eaddrof'Statement := by
+  intro binary64_certificate binary32_certificate ge e le m a t l ofs h
+  unfold Eaddrof'
+  cases a with
+  | Ederef a' ty' =>
+      change Clight.eval_expr ge e le m
+        (if CompCert4Lean.Lib.Coqlib.proj_sumbool
+            (Ctypes.type_eq t (Clight.typeof a')) = true then a'
+          else .Eaddrof (.Ederef a' ty') t) (.Vptr l ofs)
+      by_cases hc : CompCert4Lean.Lib.Coqlib.proj_sumbool
+          (Ctypes.type_eq t (Clight.typeof a')) = true
+      · simp [hc]
+        cases h with
+        | eval_Ederef _ _ _ _ ha => exact ha
+      · simp [hc]
+        exact Clight.eval_expr.eval_Eaddrof _ _ _ _ h
+  | _ => exact Clight.eval_expr.eval_Eaddrof _ _ _ _ h
+
+end CompCert4Lean.Cfrontend.SimplExprproof

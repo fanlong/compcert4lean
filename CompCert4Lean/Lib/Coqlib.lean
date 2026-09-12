@@ -780,3 +780,13 @@ theorem two_power_nat_pos : two_power_nat_posStatement := by
     exact Int.pow_pos (by decide)
 
 end CompCert4Lean.Lib.Coqlib
+
+namespace CompCert4Lean.Lib.Coqlib
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem two_power_nat_two_p : two_power_nat_two_pStatement := by
+  intro n
+  rfl
+
+end CompCert4Lean.Lib.Coqlib

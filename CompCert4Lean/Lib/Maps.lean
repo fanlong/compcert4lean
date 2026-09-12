@@ -2585,3 +2585,55 @@ theorem gsident : gsidentStatement := by
 end PTree
 
 end CompCert4Lean.Lib.Maps
+
+namespace CompCert4Lean.Lib.Maps
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+namespace PTree
+
+private theorem set'_set0_set2_proof {A : Type} (i : positive) (x y : A) :
+    set' i y (set0 i x) = set0 i y := by
+  induction i with
+  | xH => rfl
+  | xO i ih => simpa [set0, set'] using congrArg Node100 ih
+  | xI i ih => simpa [set0, set'] using congrArg Node001 ih
+
+private theorem set'_set2_proof {A : Type} (i : positive) (x y : A) (m : tree' A) :
+    set' i y (set' i x m) = set' i y m := by
+  induction i generalizing m with
+  | xH => cases m <;> rfl
+  | xO i ih =>
+      cases m with
+      | Node001 r => simpa [set'] using
+          (congrArg (fun l => Node101 l r) (set'_set0_set2_proof i x y))
+      | Node010 z => simpa [set'] using
+          (congrArg (fun l => Node110 l z) (set'_set0_set2_proof i x y))
+      | Node011 z r => simpa [set'] using
+          (congrArg (fun l => Node111 l z r) (set'_set0_set2_proof i x y))
+      | Node100 l => simpa [set'] using congrArg Node100 (ih l)
+      | Node101 l r => simpa [set'] using congrArg (fun l => Node101 l r) (ih l)
+      | Node110 l z => simpa [set'] using congrArg (fun l => Node110 l z) (ih l)
+      | Node111 l z r => simpa [set'] using congrArg (fun l => Node111 l z r) (ih l)
+  | xI i ih =>
+      cases m with
+      | Node001 r => simpa [set'] using congrArg Node001 (ih r)
+      | Node010 z => simpa [set'] using
+          (congrArg (fun r => Node011 z r) (set'_set0_set2_proof i x y))
+      | Node011 z r => simpa [set'] using congrArg (fun r => Node011 z r) (ih r)
+      | Node100 l => simpa [set'] using
+          (congrArg (fun r => Node101 l r) (set'_set0_set2_proof i x y))
+      | Node101 l r => simpa [set'] using congrArg (fun r => Node101 l r) (ih r)
+      | Node110 l z => simpa [set'] using
+          (congrArg (fun r => Node111 l z r) (set'_set0_set2_proof i x y))
+      | Node111 l z r => simpa [set'] using congrArg (fun r => Node111 l z r) (ih r)
+
+theorem set2 : set2Statement := by
+  intro A i m v1 v2
+  cases m with
+  | Empty => simpa [set] using congrArg Nodes (set'_set0_set2_proof i v1 v2)
+  | Nodes m => simpa [set] using congrArg Nodes (set'_set2_proof i v1 v2 m)
+
+end PTree
+
+end CompCert4Lean.Lib.Maps

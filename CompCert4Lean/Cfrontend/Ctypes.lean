@@ -1973,3 +1973,34 @@ theorem sizeof_stable : sizeof_stableStatement := by
   | cons head tail ihhead ihtail => trivial
 
 end CompCert4Lean.Cfrontend.Ctypes
+
+namespace CompCert4Lean.Cfrontend.Ctypes
+
+theorem complete_type_stable : complete_type_stableStatement := by
+  intro env env' henv t hcomplete
+  induction t using type.rec (motive_2 := fun _ => True) with
+  | Tvoid => simp only [complete_type] at hcomplete; exact Bool.noConfusion hcomplete
+  | Tint sz sg a => simp [complete_type]
+  | Tlong sg a => simp [complete_type]
+  | Tfloat sz a => simp [complete_type]
+  | Tpointer t a => simp [complete_type]
+  | Tarray t n a ih =>
+      simp only [complete_type] at hcomplete ⊢
+      exact ih hcomplete
+  | Tfunction args res cc => simp only [complete_type] at hcomplete; exact Bool.noConfusion hcomplete
+  | Tstruct id a =>
+      cases hget : CompCert4Lean.Lib.Maps.PTree.get id env with
+      | none => simp [complete_type, hget] at hcomplete
+      | some co =>
+          have hget' := henv id co hget
+          simp [complete_type, hget, hget']
+  | Tunion id a =>
+      cases hget : CompCert4Lean.Lib.Maps.PTree.get id env with
+      | none => simp [complete_type, hget] at hcomplete
+      | some co =>
+          have hget' := henv id co hget
+          simp [complete_type, hget, hget']
+  | nil => trivial
+  | cons head tail ihhead ihtail => trivial
+
+end CompCert4Lean.Cfrontend.Ctypes

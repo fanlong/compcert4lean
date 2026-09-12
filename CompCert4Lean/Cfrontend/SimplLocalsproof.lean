@@ -1733,3 +1733,36 @@ theorem senv_preserved : senv_preservedStatement := by
                     rfl
 
 end CompCert4Lean.Cfrontend.SimplLocalsproof
+
+namespace CompCert4Lean.Cfrontend.SimplLocalsproof
+
+theorem type_of_fundef_preserved : type_of_fundef_preservedStatement := by
+  intro cfg fd tfd h
+  cases fd with
+  | External ef args result cc =>
+      simp [CompCert4Lean.Cfrontend.SimplLocals.transf_fundef] at h
+      cases h
+      rfl
+  | Internal f =>
+      unfold CompCert4Lean.Cfrontend.SimplLocals.transf_fundef at h
+      cases htrans : CompCert4Lean.Cfrontend.SimplLocals.transf_function cfg f with
+      | Error msg =>
+          simp [htrans] at h
+      | OK transformed =>
+          simp [htrans] at h
+          cases h
+          simp [CompCert4Lean.Cfrontend.Clight.type_of_fundef,
+            CompCert4Lean.Cfrontend.Clight.type_of_function] at ⊢
+          unfold CompCert4Lean.Cfrontend.SimplLocals.transf_function at htrans
+          split at htrans
+          · cases hbody : CompCert4Lean.Cfrontend.SimplLocals.simpl_stmt cfg
+                (CompCert4Lean.Cfrontend.SimplLocals.cenv_for f) f.fn_body with
+            | Error message =>
+                simp [hbody] at htrans
+            | OK body' =>
+                simp [hbody] at htrans
+                cases htrans
+                simp
+          · cases htrans
+
+end CompCert4Lean.Cfrontend.SimplLocalsproof

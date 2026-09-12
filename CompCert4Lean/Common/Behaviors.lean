@@ -909,3 +909,68 @@ theorem diverges_forever_silent : diverges_forever_silentStatement := by
   · exact ⟨E0, star_refl (step L) (globalenv L) s0⟩
 
 end CompCert4Lean.Common.Behaviors
+
+namespace CompCert4Lean.Common.Behaviors
+
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.Smallstep
+open CompCert4Lean.Lib.Integers
+
+theorem state_behaves_exists : state_behaves_existsStatement := by
+  intro L s0
+  classical
+  by_cases hstep_all :
+      ∀ (s1 : state L) (t1 : trace),
+        Star L s0 t1 s1 → ∃ s2 : state L, ∃ t2 : trace, Step L s1 t2 s2
+  · by_cases hsilent :
+        ∃ s1 : state L, ∃ t1 : trace,
+          Star L s0 t1 s1 ∧
+            (∀ (s2 : state L) (t2 : trace),
+              Star L s1 t2 s2 → ∃ s3 : state L, Step L s2 E0 s3)
+    · rcases hsilent with ⟨s1, t1, hreach, hsilent_tail⟩
+      exact ⟨Diverges t1,
+        state_behaves.state_diverges t1 s1 hreach
+          (diverges_forever_silent L s1 hsilent_tail)⟩
+    · obtain ⟨T, hreactive⟩ := reacts_forever_reactive L s0 (by
+        intro s1 t1 hreach
+        have hnot :
+            ¬ (∀ (s2 : state L) (t2 : trace),
+              Star L s1 t2 s2 → ∃ s3 : state L, Step L s2 E0 s3) := by
+          intro hcontra
+          exact hsilent ⟨s1, t1, hreach, hcontra⟩
+        obtain ⟨s2, hnot_t2⟩ := Classical.not_forall.mp hnot
+        obtain ⟨t2, hnot_imp⟩ := Classical.not_forall.mp hnot_t2
+        obtain ⟨hreach2, hnozero⟩ :=
+          CompCert4Lean.Foundation.Logic.Rocq.Coq.Logic.Classical_Prop.imply_to_and _ _ hnot_imp
+        have hstep := hstep_all s2 (Eapp t1 t2) (star_trans
+          L.genvtype L.state (step L) (globalenv L)
+          s0 t1 s1 hreach t2 s2 (Eapp t1 t2) hreach2 rfl)
+        rcases hstep with ⟨s3, t3, hstep3⟩
+        refine ⟨s3, Eapp t2 t3, ?_, ?_⟩
+        · exact star_right L.genvtype L.state (step L) (globalenv L)
+            s1 t2 s2 t3 s3 (Eapp t2 t3) hreach2 hstep3 rfl
+        · intro hempty
+          obtain ⟨ht2, ht3⟩ :=
+            CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.List.app_eq_nil
+              t2 t3 hempty
+          apply hnozero
+          refine Exists.intro s3 ?_
+          simpa [E0, ht3] using hstep3
+        )
+      exact ⟨Reacts T, state_behaves.state_reacts T hreactive⟩
+  · obtain ⟨s1, hnot_t1⟩ := Classical.not_forall.mp hstep_all
+    obtain ⟨t1, hnot_imp⟩ := Classical.not_forall.mp hnot_t1
+    obtain ⟨hreach, hnostep_exists⟩ :=
+      CompCert4Lean.Foundation.Logic.Rocq.Coq.Logic.Classical_Prop.imply_to_and _ _ hnot_imp
+    have hnostep : Nostep L s1 := by
+      intro t s2 hstep
+      exact hnostep_exists (by exact ⟨s2, t, hstep⟩)
+    by_cases hfinal : ∃ r : int, final_state L s1 r
+    · rcases hfinal with ⟨r, hfinal⟩
+      exact ⟨Terminates t1 r,
+        state_behaves.state_terminates t1 s1 r hreach hfinal⟩
+    · exact ⟨Goes_wrong t1,
+        state_behaves.state_goes_wrong t1 s1 hreach hnostep
+          (by intro r hfinal_r; exact hfinal ⟨r, hfinal_r⟩)⟩
+
+end CompCert4Lean.Common.Behaviors

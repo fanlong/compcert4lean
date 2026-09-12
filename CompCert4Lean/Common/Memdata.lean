@@ -823,3 +823,11 @@ theorem encode_int_length : encode_int_lengthStatement := by
   exact fun sz x => encode_int_length_proof_api sz x
 
 end CompCert4Lean.Common.Memdata
+
+namespace CompCert4Lean.Common.Memdata
+
+theorem length_inj_bytes : length_inj_bytesStatement := by
+  intro bl
+  simp [inj_bytes]
+
+end CompCert4Lean.Common.Memdata

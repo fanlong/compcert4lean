@@ -2153,3 +2153,169 @@ theorem valid_pointer_nonempty_perm : valid_pointer_nonempty_permStatement := by
 end Mem
 
 end CompCert4Lean.Common.Memory
+
+namespace CompCert4Lean.Common.Memory
+
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memtype
+
+namespace Mem
+
+theorem valid_pointer_valid_access : valid_pointer_valid_accessStatement := by
+  intro m b ofs
+  rw [valid_pointer_nonempty_perm]
+  constructor
+  · intro hp
+    constructor
+    · intro ofs' hof
+      change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ ofs ≤
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ ofs' ∧
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ ofs' <
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+            (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add ofs
+              (size_chunk CompCert4Lean.Common.AST.Mint8unsigned)) at hof
+      simp [size_chunk,
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add,
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat,
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt] at hof
+      have heq : ofs' = ofs := by
+        apply CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective
+        omega
+      subst ofs'
+      exact hp
+    · exact ⟨ofs, by
+        change ofs =
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt
+            (CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+                (CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt (Int.ofNat 1)) *
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ ofs)
+        rw [CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+        simpa using (CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt_intOfZ ofs).symm
+        ⟩
+  · rintro ⟨hr, _⟩
+    exact hr ofs (by
+      constructor
+      · change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ ofs ≤
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ ofs
+        omega
+      · change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ ofs <
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+            (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add ofs
+              (size_chunk CompCert4Lean.Common.AST.Mint8unsigned))
+        simp [size_chunk,
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add,
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat,
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+        omega
+      )
+
+theorem weak_valid_pointer_spec : weak_valid_pointer_specStatement := by
+  intro m b ofs
+  simp [weak_valid_pointer]
+
+theorem valid_pointer_implies : valid_pointer_impliesStatement := by
+  intro m b ofs h
+  apply (weak_valid_pointer_spec m b ofs).2
+  exact Or.inl h
+
+end Mem
+
+end CompCert4Lean.Common.Memory
+
+namespace CompCert4Lean.Common.Memory
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Lib.Maps
+
+namespace Mem
+
+private theorem pmap_get_set_other_memproof {A : Type} (i j : positive) (x : A)
+    (m : PMap.t A) (h : i ≠ j) : PMap.get i (PMap.set j x m) = PMap.get i m := by
+  change (match PTree.get i (PTree.set j x m.2) with
+    | some y => y
+    | none => m.1) =
+    (match PTree.get i m.2 with
+    | some y => y
+    | none => m.1)
+  rw [PTree.gsspec_proof]
+  cases hpeq : CompCert4Lean.Lib.Coqlib.peq i j with
+  | left hij => exact False.elim (h hij)
+  | right hne => simp [hpeq]
+
+private theorem zmap_get_set_other_memproof {A : Type} (i j : Z) (x : A)
+    (m : ZMap.t A) (h : i ≠ j) : ZMap.get i (ZMap.set j x m) = ZMap.get i m := by
+  apply pmap_get_set_other_memproof (ZIndexed.index i) (ZIndexed.index j) x m
+  intro hij
+  apply h
+  exact ZIndexed.index_inj i j hij
+
+private theorem intOfZ_zadd_mem (x y : Z) :
+    intOfZ (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add x y) =
+      intOfZ x + intOfZ y := by
+  change intOfZ (zOfInt (intOfZ x + intOfZ y)) = intOfZ x + intOfZ y
+  rw [intOfZ_zOfInt]
+
+private theorem intOfZ_zofnat_mem (n : Nat) :
+    intOfZ (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat n) =
+      Int.ofNat n := by
+  change intOfZ (zOfInt (Int.ofNat n)) = Int.ofNat n
+  rw [intOfZ_zOfInt]
+
+theorem setN_other : setN_otherStatement := by
+  intro vl
+  induction vl with
+  | nil =>
+      intro c p q h
+      rfl
+  | cons v rest ih =>
+      intro c p q h
+      simp only [List.length_cons] at h
+      have hTail : ∀ r,
+          zLe (zAdd p z1) r ∧
+              zLt r (zAdd (zAdd p z1) (zOfNat rest.length)) → r ≠ q := by
+        intro r hr
+        rcases hr with ⟨hrlo, hrhi⟩
+        apply h r
+        constructor
+        · change intOfZ p ≤ intOfZ r
+          change intOfZ (zAdd p z1) ≤ intOfZ r at hrlo
+          rw [intOfZ_add_one] at hrlo
+          omega
+        · change intOfZ r < intOfZ (zAdd p (zOfNat (List.length (v :: rest))))
+          change intOfZ r < intOfZ (zAdd (zAdd p z1) (zOfNat rest.length)) at hrhi
+          have hnat : Int.ofNat (rest.length + 1) = Int.ofNat rest.length + 1 := by
+            simpa using (Int.ofNat_add_ofNat rest.length 1).symm
+          rw [show (v :: rest).length = rest.length + 1 by rfl]
+          rw [intOfZ_zadd_mem, intOfZ_zofnat_mem, hnat]
+          rw [intOfZ_zadd_mem, intOfZ_zadd_mem, intOfZ_zofnat_mem] at hrhi
+          have hz1 : intOfZ z1 = (1 : Int) := by rfl
+          rw [hz1] at hrhi
+          omega
+      have hs := ih (ZMap.set p v c) (zAdd p z1) q hTail
+      have hneq : q ≠ p := by
+        intro heq
+        subst q
+        have hbad : p ≠ p := h p (by
+          constructor
+          · change intOfZ p ≤ intOfZ p
+            omega
+          · change intOfZ p < intOfZ (zAdd p (zOfNat (List.length (v :: rest))))
+            rw [intOfZ_zadd_mem, intOfZ_zofnat_mem]
+            have hnat : Int.ofNat (rest.length + 1) = Int.ofNat rest.length + 1 := by
+              simpa using (Int.ofNat_add_ofNat rest.length 1).symm
+            rw [show (v :: rest).length = rest.length + 1 by rfl]
+            rw [hnat]
+            have hnonneg : (0 : Int) ≤ Int.ofNat rest.length := Int.natCast_nonneg _
+            omega)
+        exact hbad rfl
+      calc
+        ZMap.get q (setN (v :: rest) p c) =
+            ZMap.get q (setN rest (zAdd p z1) (ZMap.set p v c)) := by rfl
+        _ = ZMap.get q (ZMap.set p v c) := hs
+        _ = ZMap.get q c := zmap_get_set_other_memproof q p v c hneq
+
+end Mem
+
+end CompCert4Lean.Common.Memory

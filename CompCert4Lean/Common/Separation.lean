@@ -1012,3 +1012,11 @@ theorem sep_pick2 : sep_pick2Statement := by
   exact h.2.1.1
 
 end CompCert4Lean.Common.Separation
+
+namespace CompCert4Lean.Common.Separation
+
+theorem sep_pick3 : sep_pick3Statement := by
+  intro P Q R S m h
+  exact h.2.1.2.1.1
+
+end CompCert4Lean.Common.Separation

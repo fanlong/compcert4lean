@@ -222,3 +222,49 @@ theorem Zdigits_abs : Zdigits_absStatement := by
     rfl
 
 end CompCert4Lean.Flocq.Core.Digits
+
+namespace CompCert4Lean.Flocq.Core.Digits
+
+private theorem digits_intOfZ_add_one_pos (nb : Z)
+    (hnb : 0 < CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ nb) :
+    0 < CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (Zadd nb Zone) := by
+  simp only [Zadd,
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add,
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+  change 0 < CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ nb + 1
+  omega
+
+private theorem digits_Zdigits_aux_pos (beta : radix) (p nb pow : Z) :
+    0 < CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ nb →
+      ∀ k : Nat, 0 < CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+        (Zdigits_aux beta p nb pow k) := by
+  intro hnb k
+  induction k generalizing nb pow with
+  | zero => simpa [Zdigits_aux] using hnb
+  | succ k ih =>
+      simp only [Zdigits_aux]
+      split
+      · exact hnb
+      · apply ih
+        exact digits_intOfZ_add_one_pos nb hnb
+
+theorem Zdigits_gt_0 : Zdigits_gt_0Statement := by
+  intro beta n hn
+  cases n with
+  | Z0 => exact False.elim (hn rfl)
+  | Zpos p =>
+      change 0 < CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+        (Zdigits beta (.Zpos p))
+      unfold Zdigits
+      exact digits_Zdigits_aux_pos beta (.Zpos p) Zone (beta : Z)
+        (by simp [CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ,
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat]) (digits2_Pnat p)
+  | Zneg p =>
+      change 0 < CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+        (Zdigits beta (.Zneg p))
+      unfold Zdigits
+      exact digits_Zdigits_aux_pos beta (.Zpos p) Zone (beta : Z)
+        (by simp [CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ,
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat]) (digits2_Pnat p)
+
+end CompCert4Lean.Flocq.Core.Digits

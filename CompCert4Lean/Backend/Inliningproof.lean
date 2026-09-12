@@ -1624,3 +1624,61 @@ theorem agree_regs_incr : agree_regs_incrStatement := by
   · exact habove
 
 end CompCert4Lean.Backend.Inliningproof
+
+namespace CompCert4Lean.Backend.Inliningproof
+
+open CompCert4Lean.Backend.Inlining
+open CompCert4Lean.Backend.Inliningspec
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem agree_regs_init_regs : agree_regs_init_regsStatement := by
+  intro F ctx rl
+  induction rl with
+  | nil =>
+      intro vl vl' hvl hrl
+      cases vl with
+      | nil =>
+          cases vl' with
+          | nil =>
+              exact agree_regs_init F ctx _
+          | cons v' vl' =>
+              cases hvl
+      | cons v vl =>
+          cases vl' with
+          | nil =>
+              cases hvl
+          | cons v' vl' =>
+              exact agree_regs_init F ctx _
+  | cons r rl ih =>
+      intro vl vl' hvl hrl
+      cases vl with
+      | nil =>
+          cases vl' with
+          | nil =>
+              exact agree_regs_init F ctx _
+          | cons v' vl' =>
+              cases hvl
+      | cons v vl =>
+          cases vl' with
+          | nil =>
+              cases hvl
+          | cons v' vl' =>
+              cases hvl with
+              | inject_list_cons _ _ _ _ hv htail =>
+                  have hr : CompCert4Lean.Lib.Coqlib.Ple r ctx.mreg := by
+                    exact hrl r (List.mem_cons_self)
+                  have hrl' : ∀ r0, r0 ∈ rl → CompCert4Lean.Lib.Coqlib.Ple r0 ctx.mreg := by
+                    intro r0 hr0
+                    exact hrl r0 (List.mem_cons_of_mem r hr0)
+                  have htailAgree := ih vl vl' htail hrl'
+                  change agree_regs F ctx
+                    (Regmap.set r v (init_regs vl rl))
+                    (Regmap.set (sreg ctx r) v' (init_regs vl' (sregs ctx rl)))
+                  exact agree_set_reg F ctx
+                    (init_regs vl rl) (init_regs vl' (sregs ctx rl)) r v v'
+                    htailAgree hv hr
+
+end CompCert4Lean.Backend.Inliningproof

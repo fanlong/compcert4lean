@@ -1635,3 +1635,31 @@ theorem match_temps_invariant : match_temps_invariantStatement := by
   | val_inject_undef => exact .val_inject_undef _
 
 end CompCert4Lean.Cfrontend.Cminorgenproof
+
+namespace CompCert4Lean.Cfrontend.Cminorgenproof
+
+open CompCert4Lean.Lib.Maps
+
+theorem match_temps_assign : match_temps_assignStatement := by
+  intro f le te id v tv hmatch hinj id' v' hget
+  have hgs_le := CompCert4Lean.Lib.Maps.PTree.gsspec_proof (A := val) id' id v le
+  have hgs_te := CompCert4Lean.Lib.Maps.PTree.gsspec_proof (A := val) id' id tv te
+  cases hp : CompCert4Lean.Lib.Coqlib.peq id' id with
+  | left hEq =>
+      subst id'
+      have hsource : PTree.get id (PTree.set id v le) = some v := by
+        simpa [hp] using hgs_le
+      rw [hsource] at hget
+      cases hget
+      refine ⟨tv, ?_, hinj⟩
+      simpa [hp] using hgs_te
+  | right hNe =>
+      rw [hgs_le] at hget
+      have hget' : PTree.get id' le = some v' := by
+        simpa [hp] using hget
+      rcases hmatch id' v' hget' with ⟨v'', hte, hinj'⟩
+      refine ⟨v'', ?_, hinj'⟩
+      rw [hgs_te]
+      simp [hp, hte]
+
+end CompCert4Lean.Cfrontend.Cminorgenproof

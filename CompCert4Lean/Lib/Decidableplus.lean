@@ -649,3 +649,27 @@ theorem Finite_bool_obligation_1 : Finite_bool_obligation_1Statement := by
   | true => exact _root_.List.Mem.tail false (_root_.List.Mem.head _)
 
 end CompCert4Lean.Lib.Decidableplus
+
+namespace CompCert4Lean.Lib.Decidableplus
+
+theorem Finite_pair_obligation_1 : Finite_pair_obligation_1Statement := by
+  intro A B fA fB x
+  rcases x with ⟨a, b⟩
+  change (a, b) ∈
+    ((Finite.Finite_elements (self := fA)).flatMap
+      (fun x => (Finite.Finite_elements (self := fB)).map (fun y => (x, y))))
+  rw [_root_.List.mem_flatMap]
+  exact ⟨a, Finite.Finite_elements_spec (self := fA) a,
+    _root_.List.mem_map.mpr
+      ⟨b, Finite.Finite_elements_spec (self := fB) b, rfl⟩⟩
+
+theorem Finite_option_obligation_1 : Finite_option_obligation_1Statement := by
+  intro A fA x
+  cases x with
+  | none => exact _root_.List.Mem.head _
+  | some a =>
+      exact _root_.List.Mem.tail none
+        (_root_.List.mem_map.mpr
+          ⟨a, Finite.Finite_elements_spec (self := fA) a, rfl⟩)
+
+end CompCert4Lean.Lib.Decidableplus

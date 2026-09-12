@@ -2011,3 +2011,39 @@ theorem transl_exprlist_charact : transl_exprlist_charactStatement := test_mutua
 theorem transl_condexpr_charact : transl_condexpr_charactStatement := test_mutual.2.2
 
 end CompCert4Lean.Backend.RTLgenspec
+
+namespace CompCert4Lean.Backend.RTLgenspec
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Foundation.Logic.Support
+open CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.List
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Backend.RTLgen
+open CompCert4Lean.X86.Op
+
+theorem alloc_optreg_map_ok : alloc_optreg_map_okStatement := by
+  intro map optid s1 r s2 i hmap halloc
+  cases optid with
+  | none =>
+      apply reg_map_ok.reg_map_ok_novar
+      exact new_reg_not_in_map s1 s2 map r i halloc hmap
+  | some id =>
+      apply reg_map_ok.reg_map_ok_somevar
+      change RTLgen.find_var map id s1 = .OK r s2 i at halloc
+      cases hfind : PTree.get id map.map_vars with
+      | none =>
+          simp [RTLgen.find_var, RTLgen.error, hfind] at halloc
+      | some r0 =>
+          simp [RTLgen.find_var, hfind, RTLgen.ret] at halloc
+          rcases halloc with ⟨hr, hs⟩
+          cases hr
+          cases hs
+          rfl
+
+end CompCert4Lean.Backend.RTLgenspec

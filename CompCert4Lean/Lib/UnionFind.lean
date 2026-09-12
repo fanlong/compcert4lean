@@ -937,3 +937,14 @@ theorem identify_order_proof :
   exact identify_order_calc M uf a b a_canon x y
 end UF
 end CompCert4Lean.Lib.UnionFind
+
+namespace CompCert4Lean.Lib.UnionFind
+namespace UF
+
+theorem identify_Acc_b_proof :
+    ∀ (M : MAP), identify_Acc_bStatement M := by
+  intro M uf a b a_canon x _hacc hneq
+  exact identify_Acc_b_calc M uf a b x a_canon hneq
+
+end UF
+end CompCert4Lean.Lib.UnionFind

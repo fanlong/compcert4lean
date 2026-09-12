@@ -696,3 +696,51 @@ theorem wt_find_function : wt_find_functionStatement := by
               | Gvar v => simp [hd] at hptr
 
 end CompCert4Lean.Backend.Lineartyping
+
+namespace CompCert4Lean.Backend.Lineartyping
+
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Backend.Conventions
+open CompCert4Lean.Backend.Locations
+
+theorem wt_initial_state : wt_initial_stateStatement := by
+  intro cfg p hprog S hinit
+  cases hinit with
+  | initial_state_intro b f m0 hmem hsymb hfun hsig =>
+      have hfun' : Genv.find_def (Genv.globalenv p) b = some (Gfun f) := by
+        unfold Genv.find_funct_ptr at hfun
+        cases hd : Genv.find_def (Genv.globalenv p) b with
+        | none => simp [hd] at hfun
+        | some gd =>
+            cases gd with
+            | Gfun f' =>
+                have hf : f' = f := Option.some.inj (by simpa [hd] using hfun)
+                subst f'
+                simpa [hd]
+            | Gvar v => simp [hd] at hfun
+      have hmemdef : (∃ id, (id, Gfun f) ∈ p.prog_defs) := by
+        have hcases := find_def_add_globals_local
+          (gl := p.prog_defs)
+          (ge := Genv.empty_genv LinearFundef Unit p.prog_public)
+          (b := b) (g := Gfun f)
+          (by simpa [Genv.globalenv] using hfun')
+        rcases hcases with hcases | hempty
+        · exact hcases
+        · have : False := by
+            simpa [Genv.empty_genv, Genv.find_def,
+              CompCert4Lean.Lib.Maps.PTree.empty,
+              CompCert4Lean.Lib.Maps.PTree.get] using hempty
+          contradiction
+      rcases hmemdef with ⟨id, hid⟩
+      refine wt_call_state [] f (Locmap.init Vundef) m0 ?_ ?_ ?_ ?_ ?_
+      · exact wt_callstack_nil
+      · exact hprog id f hid
+      · exact wt_init
+      · intro ty ofs
+        simp [agree_callee_save, Linear.parent_locset, Locmap.init]
+      · intro ty ofs
+        simp [agree_outgoing_arguments, Linear.parent_locset, Locmap.init]
+
+end CompCert4Lean.Backend.Lineartyping

@@ -1417,3 +1417,14 @@ theorem plus_left' : plus_left'Statement := by
     (plus_star genv state step ge s2 t2 s3 hplus) htrace
 
 end CompCert4Lean.Common.Smallstep
+
+namespace CompCert4Lean.Common.Smallstep
+
+open CompCert4Lean.Common.Events
+
+theorem plus_right' : plus_right'Statement := by
+  intro genv state step ge s1 t1 s2 t2 s3 t hplus hstep htrace
+  exact plus_right genv state step ge s1 t1 s2 t2 s3 t
+    (plus_star genv state step ge s1 t1 s2 hplus) hstep htrace
+
+end CompCert4Lean.Common.Smallstep

@@ -1364,3 +1364,24 @@ theorem eventval_list_match_lessdef : eventval_list_match_lessdefStatement := by
       | lessdef_list_cons _ v2 _ vl2 hh htld =>
           exact evl_match_cons _ _ _ _ _ _ (by cases hm <;> cases hh <;> constructor <;> assumption) (ih vl2 htld)
 end CompCert4Lean.Common.Events
+
+namespace CompCert4Lean.Common.Events
+
+theorem eventval_list_match_determ_2 : eventval_list_match_determ_2Statement := by
+  intro ge evl1 tyl vl h1
+  induction h1 with
+  | evl_match_nil =>
+      intro evl2 h2
+      cases h2
+      rfl
+  | evl_match_cons ev1 evl ty1 tyl v1 vl hm ht ih =>
+      intro evl2 h2
+      cases h2 with
+      | evl_match_cons ev2 evl2 ty2 tyl2 v2 vl2 hm2 ht2 =>
+          have hev : ev1 = ev2 := eventval_match_determ_2 ge ev1 ev2 ty1 v1 hm hm2
+          have htail : evl = evl2 := ih evl2 ht2
+          cases hev
+          cases htail
+          rfl
+
+end CompCert4Lean.Common.Events

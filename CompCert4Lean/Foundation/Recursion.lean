@@ -270,3 +270,59 @@ theorem wf_clos_trans : wf_clos_transStatement := by
 end Wellfounded.Transitive_Closure
 end Rocq.Coq
 end CompCert4Lean.Foundation.Recursion
+
+namespace CompCert4Lean.Foundation.Recursion
+namespace Rocq.Coq.ZArith.Zwf
+
+open _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt
+
+theorem Zwf_well_founded : Zwf_well_foundedStatement := by
+  intro c
+  have H : ∀ (n : Nat) (a : Z),
+      Int.toNat (intOfZ a - intOfZ c) < n ∨ intOfZ a < intOfZ c →
+      Init.Wf.Acc (Zwf c) a := by
+    intro n
+    induction n with
+    | zero =>
+        intro a ha
+        rcases ha with ha | ha
+        · omega
+        · apply Init.Wf.Acc_intro a
+          intro b hab
+          unfold Zwf at hab
+          rcases hab with ⟨hca, hba⟩
+          change intOfZ c ≤ intOfZ a at hca
+          change intOfZ b < intOfZ a at hba
+          omega
+    | succ n ih =>
+        intro a ha
+        rcases ha with ha | ha
+        · apply Init.Wf.Acc_intro a
+          intro b hab
+          unfold Zwf at hab
+          rcases hab with ⟨hca, hba⟩
+          change intOfZ c ≤ intOfZ a at hca
+          change intOfZ b < intOfZ a at hba
+          by_cases hbc : intOfZ b < intOfZ c
+          · exact ih b (Or.inr hbc)
+          · apply ih b
+            left
+            have hcb : intOfZ c ≤ intOfZ b := by omega
+            have hdiffb : 0 ≤ intOfZ b - intOfZ c := by omega
+            have hdiffa : 0 ≤ intOfZ a - intOfZ c := by omega
+            have hltInt : intOfZ b - intOfZ c < intOfZ a - intOfZ c := by omega
+            have hposA : 0 < intOfZ a - intOfZ c := by omega
+            have hltNat := (Int.toNat_lt_toNat hposA).2 hltInt
+            exact Nat.lt_of_lt_of_le hltNat (Nat.lt_succ_iff.mp ha)
+        · apply Init.Wf.Acc_intro a
+          intro b hab
+          unfold Zwf at hab
+          rcases hab with ⟨hca, hba⟩
+          change intOfZ c ≤ intOfZ a at hca
+          change intOfZ b < intOfZ a at hba
+          omega
+  intro a
+  exact H (Int.toNat (intOfZ a - intOfZ c) + 1) a (Or.inl (Nat.lt_succ_self _))
+
+end CompCert4Lean.Foundation.Recursion.Rocq.Coq.ZArith.Zwf

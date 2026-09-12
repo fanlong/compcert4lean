@@ -847,3 +847,18 @@ theorem F2R_Zabs : ∀ (ctx : ExactRealContext), F2R_ZabsStatement ctx := by
             (Exact.bpow ctx beta e)) := congrArg ctx.spec.abs hneg.symm
 
 end CompCert4Lean.Flocq.Core.Float_prop
+
+namespace CompCert4Lean.Flocq.Core.Float_prop
+
+theorem F2R_cond_Zopp : ∀ (ctx : ExactRealContext), F2R_cond_ZoppStatement ctx := by
+  intro ctx beta b m e
+  cases b with
+  | false =>
+      rfl
+  | true =>
+      change ctx.spec.mul (ctx.spec.ofZ (Zopp m)) (Exact.bpow ctx beta e) =
+        ctx.spec.neg (ctx.spec.mul (ctx.spec.ofZ m) (Exact.bpow ctx beta e))
+      rw [ctx.certificate.sourceLaws.ofZ_neg]
+      exact fp_mul_neg_left ctx _ _
+
+end CompCert4Lean.Flocq.Core.Float_prop

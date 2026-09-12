@@ -1231,3 +1231,47 @@ theorem is_nan_binary_normalize :
       exact binary_round_not_nan (prec := prec) (emax := emax) m true p ex
 
 end CompCert4Lean.Flocq.IEEE754.BinarySingleNaN
+
+namespace CompCert4Lean.Flocq.IEEE754.BinarySingleNaN
+
+theorem Bsign_SF2B :
+    ∀ {prec emax : Z}, Bsign_SF2BStatement (prec := prec) (emax := emax) := by
+  intro prec emax x H
+  cases x <;> rfl
+
+theorem B2SF_inj :
+    ∀ {prec emax : Z}, B2SF_injStatement (prec := prec) (emax := emax) := by
+  intro prec emax x y hx hy hxy
+  cases x <;> cases y <;> simp [B2SF] at hxy ⊢ <;> assumption
+
+theorem fexp_emax :
+    ∀ {prec emax : Z} [Core.FLX.Prec_gt_0 prec] [Prec_lt_emax prec emax],
+      fexp (prec := prec) (emax := emax) emax = Zsub emax prec := by
+  intro prec emax hp he
+  change CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.max (Zsub emax prec)
+    (Zsub (Zsub (Zpos (.xI .xH)) emax) prec) = Zsub emax prec
+  have zsub_int : ∀ a b : Z,
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (Zsub a b) =
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ a -
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ b := by
+    intro a b
+    change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ a -
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ b)) = _
+    simp only [CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+  have hp' : 0 < CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ prec := by
+    exact Core.FLX.prec_gt_0 prec
+  have he' : CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ prec <
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ emax := by
+    exact he.prec_lt_emax
+  have hthree : CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (Zpos (.xI .xH)) = 3 := by
+    simp [CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ,
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat]
+  have hnot : ¬ CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (Zsub emax prec) ≤
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+        (Zsub (Zsub (Zpos (.xI .xH)) emax) prec) := by
+    rw [zsub_int, zsub_int, zsub_int]
+    rw [hthree]
+    omega
+  simp [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.max, hnot]
