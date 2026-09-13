@@ -1291,3 +1291,36 @@ theorem range_contains : range_containsStatement := by
   exact hpred.2.2 b' ofs' hfoot hP
 
 end CompCert4Lean.Common.Separation
+
+namespace CompCert4Lean.Common.Separation
+
+theorem mconj_obligation_1 : mconj_obligation_1Statement := by
+  intro P Q m m' hpred hunch
+  exact ⟨
+    P.m_invar m m' hpred.1
+      (unchangedOnRestrict (fun b ofs h => Or.inl h) hunch),
+    Q.m_invar m m' hpred.2
+      (unchangedOnRestrict (fun b ofs h => Or.inr h) hunch)
+  ⟩
+
+theorem mconj_obligation_2 : mconj_obligation_2Statement := by
+  intro P Q m b ofs hpred hfoot
+  cases hfoot with
+  | inl hP => exact P.m_valid m b ofs hpred.1 hP
+  | inr hQ => exact Q.m_valid m b ofs hpred.2 hQ
+
+theorem mconj_intro : mconj_introStatement := by
+  intro P Q R m hPR hQR
+  refine ⟨⟨hPR.1, hQR.1⟩, hPR.2.1, ?_⟩
+  intro b ofs hPQ hR
+  cases hPQ with
+  | inl hP => exact hPR.2.2 b ofs hP hR
+  | inr hQ => exact hQR.2.2 b ofs hQ hR
+
+theorem mconj_proj1 : mconj_proj1Statement := by
+  intro P Q R m h
+  refine ⟨h.1.1, h.2.1, ?_⟩
+  intro b ofs hP hR
+  exact h.2.2 b ofs (Or.inl hP) hR
+
+end CompCert4Lean.Common.Separation

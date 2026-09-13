@@ -1539,3 +1539,126 @@ theorem op_depends_on_memory_correct
               cases rest2 <;> rfl
 
 end CompCert4Lean.X86.Op
+
+namespace CompCert4Lean.X86.Op
+
+open CompCert4Lean.Common.Values
+
+private theorem suffix_add_inject (f : meminj) (v1 v1' v2 v2' : val) :
+    Val.inject f v1 v1' → Val.inject f v2 v2' →
+      Val.inject f (Val.add v1 v2) (Val.add v1' v2') := by
+  intro h1 h2
+  cases h1 <;> cases h2 <;>
+    simp [CompCert4Lean.Common.Values.Val.add,
+      CompCert4Lean.X86_64.Archi.ptr64] <;>
+    constructor <;> try assumption
+  all_goals
+    subst_vars
+    rw [CompCert4Lean.Lib.Integers.Ptrofs.add_assoc_proof_api,
+      CompCert4Lean.Lib.Integers.Ptrofs.add_commut_proof_api]
+
+private theorem suffix_mul_inject (f : meminj) (v1 v1' v2 v2' : val) :
+    Val.inject f v1 v1' → Val.inject f v2 v2' →
+      Val.inject f (Val.mul v1 v2) (Val.mul v1' v2') := by
+  intro h1 h2
+  cases h1 <;> cases h2 <;>
+    simp [CompCert4Lean.Common.Values.Val.mul] <;> constructor
+
+theorem eval_addressing32_inj : eval_addressing32_injStatement := by
+  intro F1 F2 V1 V2 ge1 ge2 f addr sp1 vl1 sp2 vl2 v1 hglobals hsp hvl heval
+  cases hvl with
+  | inject_list_nil =>
+      cases addr <;>
+        simp [eval_addressing32, CompCert4Lean.X86_64.Archi.ptr64] at heval
+  | inject_list_cons a a' ta ta' ha htail =>
+      cases htail with
+      | inject_list_nil =>
+          cases addr with
+          | Aindexed n =>
+              simp [eval_addressing32, CompCert4Lean.X86_64.Archi.ptr64] at heval ⊢
+              subst v1
+              exact suffix_add_inject f a a' _ _ ha (Val.inject.inject_int _)
+          | Ascaled scale ofs =>
+              simp [eval_addressing32, CompCert4Lean.X86_64.Archi.ptr64] at heval ⊢
+              subst v1
+              apply suffix_add_inject f _ _ _ _
+              · exact suffix_mul_inject f a a' _ _ ha (Val.inject.inject_int _)
+              · exact Val.inject.inject_int _
+          | Abased id ofs =>
+              simp [eval_addressing32, CompCert4Lean.X86_64.Archi.ptr64] at heval ⊢
+          | Abasedscaled scale id ofs =>
+              simp [eval_addressing32, CompCert4Lean.X86_64.Archi.ptr64] at heval ⊢
+          | Ainstack ofs =>
+              simp [eval_addressing32, CompCert4Lean.X86_64.Archi.ptr64] at heval ⊢
+          | _ => simp [eval_addressing32, CompCert4Lean.X86_64.Archi.ptr64] at heval
+      | inject_list_cons b b' tb tb' hb htail2 =>
+          cases htail2 with
+          | inject_list_nil =>
+              cases addr with
+              | Aindexed2 n =>
+                  simp [eval_addressing32, CompCert4Lean.X86_64.Archi.ptr64] at heval ⊢
+                  subst v1
+                  apply suffix_add_inject f _ _ _ _
+                  · apply suffix_add_inject f a a' b b' ha hb
+                  · exact Val.inject.inject_int _
+              | Aindexed2scaled scale ofs =>
+                  simp [eval_addressing32, CompCert4Lean.X86_64.Archi.ptr64] at heval ⊢
+                  subst v1
+                  apply suffix_add_inject f _ _ _ _
+                  · exact ha
+                  · apply suffix_add_inject f _ _ _ _
+                    · exact suffix_mul_inject f b b' _ _ hb (Val.inject.inject_int _)
+                    · exact Val.inject.inject_int _
+              | _ => simp [eval_addressing32, CompCert4Lean.X86_64.Archi.ptr64] at heval
+          | inject_list_cons c c' tc tc' hc htail3 =>
+              cases addr <;>
+                simp [eval_addressing32, CompCert4Lean.X86_64.Archi.ptr64] at heval
+
+end CompCert4Lean.X86.Op
+
+namespace CompCert4Lean.X86.Op
+
+theorem eval_addressing_preserved : eval_addressing_preservedStatement := by
+  intro F1 F2 V1 V2 ge1 ge2 hfind sp addr vl
+  unfold eval_addressing
+  by_cases hptr : CompCert4Lean.X86_64.Archi.ptr64
+  · simp [hptr]
+    exact eval_addressing64_preserved F1 F2 V1 V2 ge1 ge2 hfind sp addr vl
+  · simp [hptr]
+    exact eval_addressing32_preserved F1 F2 V1 V2 ge1 ge2 hfind sp addr vl
+
+theorem eval_operation_preserved
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    eval_operation_preservedStatement := by
+  intro F1 F2 V1 V2 ge1 ge2 hfind sp op vl m
+  cases op with
+  | Oindirectsymbol id =>
+      cases vl with
+      | nil =>
+          change some (CompCert4Lean.Common.Globalenvs.Genv.symbol_address ge2 id
+              CompCert4Lean.Lib.Integers.Ptrofs.zero) =
+            some (CompCert4Lean.Common.Globalenvs.Genv.symbol_address ge1 id
+              CompCert4Lean.Lib.Integers.Ptrofs.zero)
+          congr 1
+          unfold CompCert4Lean.Common.Globalenvs.Genv.symbol_address
+          rw [hfind]
+      | cons v tail => rfl
+  | Olea addr =>
+      change eval_addressing32 ge2 sp addr vl = eval_addressing32 ge1 sp addr vl
+      exact eval_addressing32_preserved F1 F2 V1 V2 ge1 ge2 hfind sp addr vl
+  | Oleal addr =>
+      change eval_addressing64 ge2 sp addr vl = eval_addressing64 ge1 sp addr vl
+      exact eval_addressing64_preserved F1 F2 V1 V2 ge1 ge2 hfind sp addr vl
+  | _ =>
+      cases vl with
+      | nil => rfl
+      | cons v tail =>
+          cases tail with
+          | nil => rfl
+          | cons v2 tail =>
+              cases tail with
+              | nil => rfl
+              | cons v3 tail => rfl
+
+end CompCert4Lean.X86.Op
