@@ -2288,3 +2288,81 @@ theorem helper_functions_preserved
     helper_declared_preserved cfg oracle prog tprog hm _ _ _ h15⟩
 
 end CompCert4Lean.Backend.Selectionproof
+
+namespace CompCert4Lean.Backend.Selectionproof
+
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.Backend.Selection
+open CompCert4Lean.X86.Op
+open CompCert4Lean.Lib.Integers
+
+theorem eval_condexpr_of_expr
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    eval_condexpr_of_exprStatement := by
+  intro xi tprog sp e m a le v b
+  let P : CminorSel.expr → CminorSel.condexpr → Prop := fun a ce =>
+    ∀ (le : CminorSel.letenv) (v : val) (b : Bool),
+      CminorSel.eval_expr
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        xi (Genv.globalenv tprog) sp e m le a v →
+      Val.bool_of_val v b →
+      CminorSel.eval_condexpr
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        xi (Genv.globalenv tprog) sp e m le ce b
+  have hP : ∀ a : CminorSel.expr, P a (condexpr_of_expr a) := by
+    apply CompCert4Lean.Backend.Selection.condexpr_of_expr_ind
+    · intro ex c el hex
+      subst ex
+      intro le' v' b' hev hbv
+      cases hev with
+      | eval_Eop =>
+          rename_i vl hargs hop
+          apply eval_condexpr.condition le' c el vl b'
+          · exact hargs
+          · have hopt : eval_condition c vl m = some b' := by
+              change some (Val.of_optbool (eval_condition c vl m)) = some v' at hop
+              have hv : Val.of_optbool (eval_condition c vl m) = v' := by
+                exact Option.some.inj hop
+              have hbv' : Val.bool_of_val (Val.of_optbool (eval_condition c vl m)) b' := by
+                simpa [hv] using hbv
+              exact Val.bool_of_val_of_optbool _ _ hbv'
+            exact hopt
+    · intro ex ca eb ec hex ihb ihc
+      subst ex
+      intro le' v' b' hev hbv
+      cases hev with
+      | eval_Econdition =>
+          rename_i va hcond hbranch
+          apply eval_condexpr.eval_CEcondition le' ca (condexpr_of_expr eb)
+            (condexpr_of_expr ec) va b'
+          · exact hcond
+          · cases va with
+            | false => exact ihc le' v' b' (by simpa using hbranch) hbv
+            | true => exact ihb le' v' b' (by simpa using hbranch) hbv
+    · intro ex ea eb hex ihe
+      subst ex
+      intro le' v' b' hev hbv
+      cases hev with
+      | eval_Elet =>
+          rename_i v1 hbound hbody
+          apply eval_condexpr.eval_CElet le' ea (condexpr_of_expr eb) v1 b'
+          · exact hbound
+          · exact ihe (v1 :: le') v' b' hbody hbv
+    · intro ex x hex hnot
+      subst ex
+      intro le' v' b' hev hbv
+      cases hbv with
+      | bool_of_val_int n =>
+          apply eval_condexpr.condition le' (.Ccompuimm .Cne Int.zero)
+            (.Econs x .Enil) [Vint n] (!(Int.eq n Int.zero))
+          · exact eval_exprlist.cons le' x .Enil (Vint n) [] hev (eval_exprlist.nil le')
+          · rfl
+  exact hP a le v b
+
+end CompCert4Lean.Backend.Selectionproof

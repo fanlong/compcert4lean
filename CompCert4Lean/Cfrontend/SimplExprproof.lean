@@ -1249,3 +1249,133 @@ theorem tr_simple_nil :
       try (intro hs hv; cases ‹SimplExprspec.tr_rvalof _ _ _ _ _ _› <;> simp_all)
 
 end CompCert4Lean.Cfrontend.SimplExprproof
+
+namespace CompCert4Lean.Cfrontend.SimplExprproof
+
+theorem tr_simple_expr_nil :
+    ∀ [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+      [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)],
+      tr_simple_expr_nilStatement := by
+  intro binary64_certificate binary32_certificate cunit le dst r sl a tmps h hdst hsimple
+  exact (tr_simple_nil (binary64_certificate := binary64_certificate)
+    (binary32_certificate := binary32_certificate) cunit).1
+    le dst r sl a tmps h hdst hsimple
+
+end CompCert4Lean.Cfrontend.SimplExprproof
+
+namespace CompCert4Lean.Cfrontend.SimplExprproof
+
+open CompCert4Lean.Cfrontend.SimplExpr
+
+private theorem simplexpr_volatile_store_preserved
+    (ge1 ge2 : CompCert4Lean.Common.Globalenvs.Senv.t)
+    (chunk : CompCert4Lean.Common.AST.memory_chunk)
+    (m1 : mem) (b : block) (ofs : ptrofs) (v : val) (t : trace) (m2 : mem)
+    (heq : CompCert4Lean.Common.Globalenvs.Senv.equiv ge1 ge2)
+    (hstore : CompCert4Lean.Common.Events.volatile_store ge1 chunk m1 b ofs v t m2) :
+    CompCert4Lean.Common.Events.volatile_store ge2 chunk m1 b ofs v t m2 := by
+  cases hstore with
+  | volatile_store_vol id ev v is_volatile find_symbol eventval_matches =>
+      apply CompCert4Lean.Common.Events.volatile_store_vol
+      · rw [heq.2.2 b]
+        exact is_volatile
+      · rw [heq.1 _]
+        exact find_symbol
+      · exact CompCert4Lean.Common.Events.eventval_match_preserved
+          ge1 ge2 heq.2.1 heq.1 ev _
+            (CompCert4Lean.Common.Values.Val.load_result chunk v) eventval_matches
+  | volatile_store_nonvol v m' not_volatile store =>
+      apply CompCert4Lean.Common.Events.volatile_store_nonvol
+      · rw [heq.2.2 b]
+        exact not_volatile
+      · exact store
+
+theorem assign_loc_translated :
+    ∀ [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+      [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)],
+      assign_loc_translatedStatement := by
+  intro binary64_certificate binary32_certificate p tp hmatch ty m b ofs bf v t m' v' h
+  cases h with
+  | value hmode hvol hstore =>
+      simp [chunk_for_volatile_type, hvol, hmode]
+      exact Clight.assign_loc_value _ _ _ hmode hstore
+  | volatile hmode hvol hstore =>
+      simp [chunk_for_volatile_type, hvol, hmode]
+      exact simplexpr_volatile_store_preserved _ _ _ _ _ _ _ _ _
+        (senv_preserved (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate) p tp hmatch)
+        hstore
+  | copy hmode halignSource halignTarget hseparated hload hstore =>
+      have henv : (Clight.globalenv tp).genv_cenv = (Csem.globalenv p).genv_cenv := by
+        exact comp_env_preserved (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate) p tp hmatch
+      simp [chunk_for_volatile_type, Ctypes.type_is_volatile, hmode]
+      rw [henv]
+      apply Clight.assign_loc_copy _ _ _ _ hmode
+      · intro hsize
+        exact halignSource
+      · intro hsize
+        exact halignTarget
+      · exact hseparated
+      · exact hload
+      · exact hstore
+  | bitfield hstore =>
+      unfold chunk_for_volatile_type
+      by_cases hvol : Ctypes.type_is_volatile ty = true
+      · simp [hvol]
+        cases hmode : Ctypes.access_mode ty <;> simp [hmode]
+        all_goals exact Clight.assign_loc_bitfield _ _ _ _ _ _ _ hstore
+      · simp [hvol]
+        exact Clight.assign_loc_bitfield _ _ _ _ _ _ _ hstore
+
+end CompCert4Lean.Cfrontend.SimplExprproof
+
+namespace CompCert4Lean.Cfrontend.SimplExprproof
+
+open CompCert4Lean.Cfrontend.SimplExpr
+
+theorem deref_loc_translated :
+    ∀ [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+      [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)],
+      deref_loc_translatedStatement := by
+  intro binary64_certificate binary32_certificate p tp hmatch ty m b ofs bf t v h
+  cases h with
+  | value hmode hvol hload =>
+      simp [chunk_for_volatile_type, hvol, hmode]
+      exact Clight.deref_loc_value _ _ hmode hload
+  | volatile hmode hvol hload =>
+      simp [chunk_for_volatile_type, hvol, hmode]
+      exact CompCert4Lean.Common.Events.volatile_load_preserved
+        (ge1 := CompCert4Lean.Common.Globalenvs.Genv.to_senv (Csem.globalenv p).genv_genv)
+        (ge2 := CompCert4Lean.Common.Globalenvs.Genv.to_senv (Clight.globalenv tp).genv_genv)
+        (chunk := _) (m := m) (b := b) (ofs := ofs) (t := t) (v := v)
+        (senv_preserved (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate) p tp hmatch)
+        hload
+  | reference hmode =>
+      simp [chunk_for_volatile_type, hmode]
+      exact Clight.deref_loc_reference hmode
+  | copy hmode =>
+      simp [chunk_for_volatile_type, hmode]
+      exact Clight.deref_loc_copy hmode
+  | bitfield hload =>
+      cases hvol : Ctypes.type_is_volatile ty with
+      | false =>
+          simp [chunk_for_volatile_type, hvol]
+          exact Clight.deref_loc_bitfield _ _ _ _ _ hload
+      | true =>
+          cases hmode : Ctypes.access_mode ty with
+          | By_value chunk =>
+              simp [chunk_for_volatile_type, hvol, hmode]
+              exact Clight.deref_loc_bitfield _ _ _ _ _ hload
+          | By_reference =>
+              simp [chunk_for_volatile_type, hvol, hmode]
+              exact Clight.deref_loc_bitfield _ _ _ _ _ hload
+          | By_copy =>
+              simp [chunk_for_volatile_type, hvol, hmode]
+              exact Clight.deref_loc_bitfield _ _ _ _ _ hload
+          | By_nothing =>
+              simp [chunk_for_volatile_type, hvol, hmode]
+              exact Clight.deref_loc_bitfield _ _ _ _ _ hload
+
+end CompCert4Lean.Cfrontend.SimplExprproof

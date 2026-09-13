@@ -874,3 +874,82 @@ theorem decode_encode_val_similar : decode_encode_val_similarStatement := by
     first | exact hde | contradiction
 
 end CompCert4Lean.Common.Memdata
+
+namespace CompCert4Lean.Common.Memdata
+
+theorem encode_val_int8_signed_unsigned : encode_val_int8_signed_unsignedStatement := by
+  intro v
+  cases v <;> rfl
+
+theorem encode_val_int16_signed_unsigned : encode_val_int16_signed_unsignedStatement := by
+  intro v
+  cases v <;> rfl
+
+theorem decode_val_type : decode_val_typeStatement := by
+  intro chunk cl
+  cases h : proj_bytes cl with
+  | none =>
+      cases chunk with
+      | Mbool => simp [decode_val, h, CompCert4Lean.Common.Values.Val.has_type,
+          CompCert4Lean.Common.AST.type_of_chunk]
+      | Mint8signed => simp [decode_val, h, CompCert4Lean.Common.Values.Val.has_type,
+          CompCert4Lean.Common.AST.type_of_chunk]
+      | Mint8unsigned => simp [decode_val, h, CompCert4Lean.Common.Values.Val.has_type,
+          CompCert4Lean.Common.AST.type_of_chunk]
+      | Mint16signed => simp [decode_val, h, CompCert4Lean.Common.Values.Val.has_type,
+          CompCert4Lean.Common.AST.type_of_chunk]
+      | Mint16unsigned => simp [decode_val, h, CompCert4Lean.Common.Values.Val.has_type,
+          CompCert4Lean.Common.AST.type_of_chunk]
+      | Mint32 =>
+          by_cases hp : CompCert4Lean.X86_64.Archi.ptr64
+          · simp [decode_val, h, hp, CompCert4Lean.Common.Values.Val.has_type,
+              CompCert4Lean.Common.AST.type_of_chunk]
+          · simpa [decode_val, h, hp] using
+              (CompCert4Lean.Common.Values.Val.load_result_type
+                CompCert4Lean.Common.AST.Mint32 (proj_value Q32 cl))
+      | Mint64 =>
+          by_cases hp : CompCert4Lean.X86_64.Archi.ptr64
+          · simpa [decode_val, h, hp] using
+              (CompCert4Lean.Common.Values.Val.load_result_type
+                CompCert4Lean.Common.AST.Mint64 (proj_value Q64 cl))
+          · simp [decode_val, h, hp, CompCert4Lean.Common.Values.Val.has_type,
+              CompCert4Lean.Common.AST.type_of_chunk]
+      | Mfloat32 => simp [decode_val, h, CompCert4Lean.Common.Values.Val.has_type,
+          CompCert4Lean.Common.AST.type_of_chunk]
+      | Mfloat64 => simp [decode_val, h, CompCert4Lean.Common.Values.Val.has_type,
+          CompCert4Lean.Common.AST.type_of_chunk]
+      | Many32 =>
+          simpa [decode_val, h] using
+            (CompCert4Lean.Common.Values.Val.load_result_type
+              CompCert4Lean.Common.AST.Many32 (proj_value Q32 cl))
+      | Many64 =>
+          simpa [decode_val, h] using
+            (CompCert4Lean.Common.Values.Val.load_result_type
+              CompCert4Lean.Common.AST.Many64 (proj_value Q64 cl))
+  | some bl =>
+      cases chunk with
+      | Mbool =>
+          by_cases hb : Values.Val.is_bool
+              (Values.Vint (intZeroExt z8 (CCInt.repr (decode_int bl)))) = true <;>
+            simp [decode_val, h, Values.Val.norm_bool,
+              Values.Val.has_type, AST.type_of_chunk, hb]
+      | Mint8signed =>
+          simp [decode_val, h, Values.Val.has_type, AST.type_of_chunk,
+            Values.Val.sign_ext]
+      | Mint8unsigned =>
+          simp [decode_val, h, Values.Val.has_type, AST.type_of_chunk,
+            Values.Val.zero_ext]
+      | Mint16signed =>
+          simp [decode_val, h, Values.Val.has_type, AST.type_of_chunk,
+            Values.Val.sign_ext]
+      | Mint16unsigned =>
+          simp [decode_val, h, Values.Val.has_type, AST.type_of_chunk,
+            Values.Val.zero_ext]
+      | Mint32 => simp [decode_val, h, Values.Val.has_type, AST.type_of_chunk]
+      | Mint64 => simp [decode_val, h, Values.Val.has_type, AST.type_of_chunk]
+      | Mfloat32 => simp [decode_val, h, Values.Val.has_type, AST.type_of_chunk]
+      | Mfloat64 => simp [decode_val, h, Values.Val.has_type, AST.type_of_chunk]
+      | Many32 => simp [decode_val, h, Values.Val.has_type, AST.type_of_chunk]
+      | Many64 => simp [decode_val, h, Values.Val.has_type, AST.type_of_chunk]
+
+end CompCert4Lean.Common.Memdata

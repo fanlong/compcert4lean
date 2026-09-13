@@ -922,3 +922,38 @@ theorem F2R_ge_0 : ∀ (ctx : ExactRealContext), F2R_ge_0Statement ctx := by
       exact hf
 
 end CompCert4Lean.Flocq.Core.Float_prop
+
+namespace CompCert4Lean.Flocq.Core.Float_prop
+
+theorem F2R_le_0 : ∀ (ctx : ExactRealContext), F2R_le_0Statement ctx := by
+  intro ctx beta f hf
+  cases f with
+  | Float m e =>
+      rw [← F2R_0 ctx beta e]
+      apply F2R_le ctx beta m Z0 e
+      exact hf
+
+theorem F2R_lt_0 : ∀ (ctx : ExactRealContext), F2R_lt_0Statement ctx := by
+  intro ctx beta f hf
+  cases f with
+  | Float m e =>
+      rw [← F2R_0 ctx beta e]
+      apply F2R_lt ctx beta e m Z0
+      exact hf
+
+theorem F2R_neq_0 : ∀ (ctx : ExactRealContext), F2R_neq_0Statement ctx := by
+  intro ctx beta f hf hzero
+  apply hf
+  cases f with
+  | Float m e =>
+      apply eq_0_F2R ctx beta m e
+      exact hzero
+
+theorem F2R_bpow : ∀ (ctx : ExactRealContext), F2R_bpowStatement ctx := by
+  intro ctx beta e
+  change ctx.spec.mul (ctx.spec.ofZ Zone) (Exact.bpow ctx beta e) =
+    Exact.bpow ctx beta e
+  rw [ctx.certificate.sourceLaws.ofZ_one,
+    ctx.certificate.orderedField.one_mul]
+
+end CompCert4Lean.Flocq.Core.Float_prop

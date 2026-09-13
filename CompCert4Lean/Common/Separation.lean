@@ -1229,3 +1229,19 @@ theorem range_split_2 : range_split_2Statement := by
     (range_split b lo hi P (align mid al) m hmid h)
 
 end CompCert4Lean.Common.Separation
+
+namespace CompCert4Lean.Common.Separation
+
+theorem contains_obligation_1 : contains_obligation_1Statement := by
+  intro chunk b ofs spec m m' hpred hunch
+  exact (contains chunk b ofs spec).m_invar m m' hpred hunch
+
+theorem contains_no_overflow : contains_no_overflowStatement := by
+  intro spec m chunk b ofs hpred
+  exact hpred.1
+
+theorem load_rule : load_ruleStatement := by
+  intro spec m chunk b ofs hpred
+  exact hpred.2.2
+
+end CompCert4Lean.Common.Separation
