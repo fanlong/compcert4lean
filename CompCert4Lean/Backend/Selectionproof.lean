@@ -2366,3 +2366,59 @@ theorem eval_condexpr_of_expr
   exact hP a le v b
 
 end CompCert4Lean.Backend.Selectionproof
+
+namespace CompCert4Lean.Backend.Selectionproof
+
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.Backend.Selection
+open CompCert4Lean.X86.Op
+open CompCert4Lean.Lib.Integers
+
+theorem eval_condition_of_expr
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    eval_condition_of_exprStatement := by
+  intro xi tprog sp e m a le v b
+  let P : CminorSel.expr -> Prod condition CminorSel.exprlist -> Prop := fun a c =>
+    forall le' v' b',
+      CminorSel.eval_expr
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        xi (Genv.globalenv tprog) sp e m le' a v' ->
+      Val.bool_of_val v' b' ->
+      exists vl,
+        CminorSel.eval_exprlist
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate)
+          xi (Genv.globalenv tprog) sp e m le' c.2 vl /\
+        eval_condition c.1 vl m = some b'
+  have hP : forall a : CminorSel.expr, P a (condition_of_expr a) := by
+    apply CompCert4Lean.Backend.Selection.condition_of_expr_ind
+    · intro ex c el hex
+      subst ex
+      intro le' v' b' hev hbv
+      cases hev with
+      | eval_Eop =>
+          rename_i vl hargs hop
+          refine Exists.intro vl (And.intro hargs ?_)
+          change some (Val.of_optbool (eval_condition c vl m)) = some v' at hop
+          have hv : Val.of_optbool (eval_condition c vl m) = v' :=
+            Option.some.inj hop
+          have hbv' : Val.bool_of_val (Val.of_optbool (eval_condition c vl m)) b' := by
+            simpa [hv] using hbv
+          exact Val.bool_of_val_of_optbool _ _ hbv'
+    · intro ex x hex hnot
+      subst ex
+      intro le' v' b' hev hbv
+      cases hbv with
+      | bool_of_val_int n =>
+          refine Exists.intro [Vint n] (And.intro ?_ ?_)
+          · exact CminorSel.eval_exprlist.cons le' x .Enil (Vint n) [] hev
+              (CminorSel.eval_exprlist.nil le')
+          · rfl
+  exact hP a le v b
+
+end CompCert4Lean.Backend.Selectionproof

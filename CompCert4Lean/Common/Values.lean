@@ -1554,3 +1554,24 @@ theorem norm_bool_idem : norm_bool_idemStatement := by
 
 end Val
 end CompCert4Lean.Common.Values
+
+namespace CompCert4Lean.Common.Values
+namespace Val
+
+theorem add_commut : add_commutStatement := by
+  intro x y
+  cases x <;> cases y <;>
+    simp [add, CompCert4Lean.X86_64.Archi.ptr64]
+  case Vint.Vint a b =>
+    change CompCert4Lean.Lib.Integers.WordCore.repr 32
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add a.intval b.intval) =
+      CompCert4Lean.Lib.Integers.WordCore.repr 32
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add b.intval a.intval)
+    apply congrArg (CompCert4Lean.Lib.Integers.WordCore.repr 32)
+    apply CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective
+    simp only [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add,
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+    exact Int.add_comm _ _
+
+end Val
+end CompCert4Lean.Common.Values

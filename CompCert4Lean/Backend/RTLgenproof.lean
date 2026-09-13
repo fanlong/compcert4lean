@@ -1923,3 +1923,37 @@ theorem senv_preserved : senv_preservedStatement := by
                     rfl
 
 end CompCert4Lean.Backend.RTLgenproof
+
+namespace CompCert4Lean.Backend.RTLgenproof
+
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.Smallstep
+
+theorem tr_move_correct
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    tr_move_correctStatement := by
+  intro xi tprog r1 ns r2 nd cs f sp rs m hmove
+  cases hmove with
+  | tr_move_0 =>
+      refine ⟨rs, ?_, ?_, ?_⟩
+      · exact CompCert4Lean.Common.Smallstep.star_refl _ _ _
+      · rfl
+      · intro r' hr'
+        rfl
+  | tr_move_1 =>
+      refine ⟨Regmap.set r2 (Regmap.get r1 rs) rs, ?_, ?_, ?_⟩
+      · apply CompCert4Lean.Common.Smallstep.star_one
+        apply RTL.step.exec_Iop (op := .Omove) (args := [r1])
+        · rename_i hcode
+          exact hcode
+        · rfl
+      · exact Regmap.gss_proof CompCert4Lean.Common.Values.val r2 (Regmap.get r1 rs) rs
+      · intro r' hne
+        exact Regmap.gso_proof CompCert4Lean.Common.Values.val r' r2
+          (Regmap.get r1 rs) rs hne
+
+end CompCert4Lean.Backend.RTLgenproof

@@ -2453,3 +2453,38 @@ theorem getN_setN_disjoint : getN_setN_disjointStatement := by
 end Mem
 
 end CompCert4Lean.Common.Memory
+
+namespace CompCert4Lean.Common.Memory
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Lib.Maps
+
+namespace Mem
+
+theorem getN_setN_outside : getN_setN_outsideStatement := by
+  intro vl q c n p h
+  apply getN_setN_disjoint vl q c n p
+  exact CompCert4Lean.Lib.Intv.disjoint_range _ _ h
+
+theorem setN_default : setN_defaultStatement := by
+  intro vl q c
+  exact setNDefault vl q c
+
+theorem nextblock_empty : nextblock_emptyStatement := by
+  rfl
+
+theorem valid_access_load : valid_access_loadStatement := by
+  intro m chunk b ofs hvalid
+  refine ⟨CompCert4Lean.Common.Memdata.decode_val chunk
+      (getN (CompCert4Lean.Common.Memdata.size_chunk_nat chunk) ofs
+        (PMap.get b m.mem_contents)), ?_⟩
+  unfold load
+  cases hdec : valid_access_dec m chunk b ofs CompCert4Lean.Common.Memtype.Readable with
+  | left hproof =>
+      simp [boolOfSumbool, hdec]
+  | right hnproof =>
+      exact False.elim (hnproof hvalid)
+
+end Mem
+
+end CompCert4Lean.Common.Memory
