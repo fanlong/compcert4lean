@@ -2441,3 +2441,164 @@ theorem fixpoint_invariant : fixpoint_invariantStatement := by
       simpa [abstr_value, hget] using hfinal pc
 
 end CompCert4Lean.Backend.Kildall.Dataflow_Solver
+
+namespace CompCert4Lean.Backend.Kildall
+
+theorem reachable_predecessors : reachable_predecessorsStatement := by
+  intro A code successors p q hreach
+  induction hreach with
+  | reachable_refl n =>
+      exact reachable_refl n
+  | reachable_left n1 n2 n3 i hcode hsucc htail ih =>
+      rcases make_predecessors_correct_2 code successors n1 i n2 hcode hsucc with
+        ⟨l, hget, hmem⟩
+      exact reachable_right (make_predecessors code successors) (fun l => l)
+        n3 n2 n1 l ih hget hmem
+
+end CompCert4Lean.Backend.Kildall
+
+namespace CompCert4Lean.Backend.Kildall.Backward_Dataflow_Solver
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Foundation.Recursion.Rocq.Coq.Init.Wf
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+
+theorem exit_points_charact : exit_points_charactStatement := by
+  intro A NS code NSlaws successors n
+  let P : PTreeT A → NS.t → Prop := fun m ep =>
+    NS.In n ep ↔
+      ∃ i, PTree.get n m = some i ∧ sequential_node code successors n i = false
+  unfold exit_points
+  have hfold : P code
+      (PTree.fold (fun ep pc instr =>
+        if sequential_node code successors pc instr then ep else NS.add pc ep)
+        code NS.empty) := by
+    apply PTree_Properties.fold_rec_proof
+    · intro m m' ep hext hP
+      change NS.In n ep ↔
+        ∃ i, PTree.get n m' = some i ∧
+          sequential_node code successors n i = false
+      change NS.In n ep ↔
+        ∃ i, PTree.get n m = some i ∧
+          sequential_node code successors n i = false at hP
+      rw [← hext n]
+      exact hP
+    · change NS.In n NS.empty ↔
+        ∃ i, PTree.get n (PTree.empty A) = some i ∧
+          sequential_node code successors n i = false
+      constructor
+      · intro h
+        exact (NSlaws.empty_spec n h).elim
+      · rintro ⟨i, hi, _⟩
+        rw [PTree.gempty] at hi
+        cases hi
+    · intro m ep k v hnone hfinal hP
+      cases hseq : sequential_node code successors k v with
+      | true =>
+          change NS.In n ep ↔
+            ∃ i, PTree.get n (PTree.set k v m) = some i ∧
+              sequential_node code successors n i = false
+          cases hpeq : peq n k with
+          | left heq =>
+              subst n
+              have hset : PTree.get k (PTree.set k v m) = some v := by
+                simpa using (PTree.getSet_equation k k v m)
+              rw [hset]
+              constructor
+              · intro h
+                rcases hP.mp h with ⟨i, hi, hs⟩
+                rw [hnone] at hi
+                cases hi
+              · rintro ⟨i, hi, hs⟩
+                cases hi
+                have hbad : true = false := hseq.symm.trans hs
+                cases hbad
+          | right hne =>
+              have hset : PTree.get n (PTree.set k v m) = PTree.get n m := by
+                simpa only [dif_neg hne] using
+                  (PTree.getSet_equation n k v m)
+              rw [hset]
+              exact hP
+      | false =>
+          change NS.In n (NS.add k ep) ↔
+            ∃ i, PTree.get n (PTree.set k v m) = some i ∧
+              sequential_node code successors n i = false
+          cases hpeq : peq n k with
+          | left heq =>
+              subst n
+              have hset : PTree.get k (PTree.set k v m) = some v := by
+                simpa using (PTree.getSet_equation k k v m)
+              rw [hset]
+              constructor
+              · intro _
+                exact ⟨v, by simp, hseq⟩
+              · intro _
+                rw [NSlaws.add_spec]
+                exact Or.inl rfl
+          | right hne =>
+              have hset : PTree.get n (PTree.set k v m) = PTree.get n m := by
+                simpa only [dif_neg hne] using
+                  (PTree.getSet_equation n k v m)
+              have hkne : k ≠ n := fun h => hne h.symm
+              rw [hset, NSlaws.add_spec]
+              simp only [hkne, false_or]
+              exact hP
+  exact hfold
+
+end CompCert4Lean.Backend.Kildall.Backward_Dataflow_Solver
+
+namespace CompCert4Lean.Backend.Kildall.Backward_Dataflow_Solver
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Foundation.Recursion.Rocq.Coq.Init.Wf
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+
+theorem reachable_exit_points : reachable_exit_pointsStatement := by
+  intro A NS code NSlaws successors pc i hcode
+  revert i hcode
+  apply well_founded_ind (R := Plt)
+    (P := fun pc => ∀ i, PTree.get pc code = some i →
+      ∃ x, NS.In x (exit_points NS code successors) ∧
+        reachable code successors pc x)
+    (a := pc)
+  · have hwf : _root_.WellFounded Plt := by
+      exact Plt_wf
+    exact @Coe.coe _ _
+      (CompCert4Lean.Foundation.Recursion.Rocq.Coq.Init.Wf.instCoeWellFoundedWell_founded)
+      hwf
+  · intro pc HR i hpc
+    cases hseq : sequential_node code successors pc i with
+    | true =>
+        have hany := (List.any_eq_true.mp hseq)
+        rcases hany with ⟨s, hs, hpred⟩
+        cases hget : PTree.get s code with
+        | none =>
+            simp [hget] at hpred
+        | some i' =>
+            simp [hget] at hpred
+            cases hplt : plt s pc with
+            | left hlt =>
+                rcases HR s hlt i' hget with ⟨x, hx, hreach⟩
+                exact ⟨x, hx, reachable_left pc s x i hpc hs hreach⟩
+            | right hnlt =>
+                simp [hplt] at hpred
+    | false =>
+        exact ⟨pc, (exit_points_charact NS code NSlaws successors pc).2
+          ⟨i, hpc, hseq⟩, reachable_refl pc⟩
+
+end CompCert4Lean.Backend.Kildall.Backward_Dataflow_Solver
+
+namespace CompCert4Lean.Backend.Kildall.Backward_Dataflow_Solver
+
+open CompCert4Lean.Lib.Maps
+
+theorem reachable_exit_points_predecessor :
+    reachable_exit_points_predecessorStatement := by
+  intro A NS code NSlaws successors pc i hcode
+  rcases reachable_exit_points NS code NSlaws successors pc i hcode with
+    ⟨x, hx, hreach⟩
+  exact ⟨x, hx, reachable_predecessors code successors pc x hreach⟩
+
+end CompCert4Lean.Backend.Kildall.Backward_Dataflow_Solver

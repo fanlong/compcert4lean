@@ -1324,3 +1324,13 @@ theorem mconj_proj1 : mconj_proj1Statement := by
   exact h.2.2 b ofs (Or.inl hP) hR
 
 end CompCert4Lean.Common.Separation
+
+namespace CompCert4Lean.Common.Separation
+
+theorem mconj_proj2 : mconj_proj2Statement := by
+  intro P Q R m h
+  refine ⟨h.1.2, h.2.1, ?_⟩
+  intro b ofs hQ hR
+  exact h.2.2 b ofs (Or.inr hQ) hR
+
+end CompCert4Lean.Common.Separation

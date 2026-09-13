@@ -1436,3 +1436,76 @@ theorem eval_addrmode_indexed : eval_addrmode_indexedStatement := by
   | Vsingle n => simp [hv] at h
 
 end CompCert4Lean.X86.Asmgenproof1
+
+namespace CompCert4Lean.X86.Asmgenproof1
+
+private def asmgenproof1Destroyed
+    (ty : CompCert4Lean.Common.AST.typ)
+    (p : CompCert4Lean.X86.Asm.preg) : List CompCert4Lean.X86.Asm.preg :=
+  match ty, p with
+  | .Tsingle, .ST0 | .Tfloat, .ST0 => [.ST0]
+  | _, _ => []
+
+theorem storeind_correct
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    storeind_correctStatement := by
+  intro ge fn base ofs ty src k rs c m m' hmk hstore
+  let addr : CompCert4Lean.X86.Asm.addrmode :=
+    .Addrmode (some base) none
+      (Sum.inl (CompCert4Lean.Lib.Integers.Ptrofs.unsigned ofs))
+  have haddr :
+      CompCert4Lean.X86.Asm.eval_addrmode ge addr rs =
+        CompCert4Lean.Common.Values.Val.offset_ptr
+          (rs (.IR base)) ofs := by
+    apply CompCert4Lean.X86.Asmgenproof1.eval_addrmode_indexed
+    cases h : rs (.IR base) <;>
+      simp_all [CompCert4Lean.Common.Values.Val.offset_ptr,
+        CompCert4Lean.Common.Memory.Mem.storev]
+  have hstore' :
+      CompCert4Lean.Common.Memory.Mem.storev
+          (CompCert4Lean.Common.AST.chunk_of_type ty) m
+          (CompCert4Lean.X86.Asm.eval_addrmode ge addr rs)
+          (rs (CompCert4Lean.X86.Asm.preg_of src)) = some m' := by
+    rw [haddr]
+    exact hstore
+  let destroyed : List CompCert4Lean.X86.Asm.preg :=
+    asmgenproof1Destroyed ty (CompCert4Lean.X86.Asm.preg_of src)
+  unfold CompCert4Lean.X86.Asmgen.storeind at hmk
+  cases ty <;> cases src <;>
+    simp [CompCert4Lean.X86.Asmgen.storeind,
+      CompCert4Lean.X86.Asm.preg_of,
+      CompCert4Lean.X86_64.Archi.ptr64] at hmk
+  all_goals try { contradiction }
+  all_goals injection hmk with hc; subst c
+  all_goals
+    refine ⟨CompCert4Lean.X86.Asm.nextinstr_nf
+      (CompCert4Lean.X86.Asm.undef_regs
+        destroyed rs), ?_, ?_⟩
+    · apply CompCert4Lean.Backend.Asmgenproof0.exec_straight_one
+      · change (match CompCert4Lean.Common.Memory.Mem.storev _ m
+          (CompCert4Lean.X86.Asm.eval_addrmode ge addr rs) _ with
+        | some m' => CompCert4Lean.X86.Asm.Next
+            (CompCert4Lean.X86.Asm.nextinstr_nf
+              (CompCert4Lean.X86.Asm.undef_regs destroyed rs)) m'
+        | none => CompCert4Lean.X86.Asm.Stuck) =
+          CompCert4Lean.X86.Asm.Next
+            (CompCert4Lean.X86.Asm.nextinstr_nf
+              (CompCert4Lean.X86.Asm.undef_regs destroyed rs)) m'
+        simp only [CompCert4Lean.X86.Asm.Pregmap.get]
+        dsimp [addr, destroyed, asmgenproof1Destroyed,
+          CompCert4Lean.X86.Asm.preg_of,
+          CompCert4Lean.Common.AST.chunk_of_type] at hstore' ⊢
+        try simp [CompCert4Lean.X86_64.Archi.ptr64] at ⊢
+        rw [hstore']
+      · rfl
+    · intro r hr hnotin
+      rw [nextinstr_nf_inv1 r _ hr]
+      apply CompCert4Lean.Backend.Asmgenproof0.undef_regs_other
+      intro r' hr'
+      simp_all [destroyed, asmgenproof1Destroyed,
+        CompCert4Lean.X86.Machregs.destroyed_by_setstack,
+        CompCert4Lean.Backend.Asmgenproof0.preg_notin,
+        CompCert4Lean.X86.Asm.preg_of]
+
+end CompCert4Lean.X86.Asmgenproof1

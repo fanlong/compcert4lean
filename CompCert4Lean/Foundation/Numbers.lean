@@ -1657,3 +1657,44 @@ theorem PArith.BinPos.Pos.lt_trans :
 
 end Rocq.Coq
 end CompCert4Lean.Foundation.Numbers
+
+namespace CompCert4Lean.Foundation.Numbers
+namespace Rocq.Coq
+
+theorem PArith.BinPos.Pos.le_refl :
+    PArith.BinPos.Pos.le_reflStatement := by
+  intro p
+  unfold PArith.BinPos.Pos.le
+  exact Nat.le_refl _
+
+theorem PArith.BinPos.Pos.lt_le_trans :
+    PArith.BinPos.Pos.lt_le_transStatement := by
+  intro n m p hnm hmp
+  unfold PArith.BinPos.Pos.lt at hnm ⊢
+  unfold PArith.BinPos.Pos.le at hmp
+  exact Nat.lt_of_lt_of_le hnm hmp
+
+theorem PArith.BinPos.Pos.le_trans :
+    PArith.BinPos.Pos.le_transStatement := by
+  intro n m p hnm hmp
+  unfold PArith.BinPos.Pos.le at hnm hmp ⊢
+  exact Nat.le_trans hnm hmp
+
+theorem PArith.BinPos.Pplus_one_succ_l :
+    PArith.BinPos.Pplus_one_succ_lStatement := by
+  intro p
+  apply posToNat_injective
+  calc
+    posToNat (PArith.BinPos.Pos.succ p) = posToNat p + 1 :=
+      PArith.BinPos.Pos.posToNat_succ p
+    _ = 1 + posToNat p := Nat.add_comm _ _
+    _ = posToNat (PArith.BinPos.Pos.add xH p) := by
+      symm
+      unfold PArith.BinPos.Pos.add
+      apply posToNat_posOfNat
+      have hp := posToNat_positive p
+      simp only [posToNat]
+      omega
+
+end Rocq.Coq
+end CompCert4Lean.Foundation.Numbers

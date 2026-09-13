@@ -3463,3 +3463,179 @@ theorem gro_proof : gro := by
 end ZTree
 
 end CompCert4Lean.Lib.Maps
+
+namespace CompCert4Lean.Lib.Maps
+
+namespace PTree_Properties
+
+private theorem nodup_of_list_norepet {A : Type} :
+    ∀ (l : List A), PTree.list_norepet l → l.Nodup := by
+  intro l h
+  induction h with
+  | nil => exact List.nodup_nil
+  | cons hd hnot htail ih =>
+      exact List.nodup_cons.mpr ⟨hnot, ih⟩
+
+theorem of_list_norepet_proof : of_list_norepet := by
+  intro A l k v hnr hmem
+  have hnodup : (l.map Prod.fst).Nodup :=
+    nodup_of_list_norepet _ hnr
+  change PTree.get k (set_list (PTree.empty A) l) = some v
+  exact get_set_list_some (PTree.empty A) l k v hnodup hmem
+
+end PTree_Properties
+
+end CompCert4Lean.Lib.Maps
+
+namespace CompCert4Lean.Lib.Maps
+
+namespace PTree_Properties
+
+noncomputable def fold_ind_proof : fold_ind := by
+  intro V A f P init mFinal hbase hrec
+  have hnodup_of_norepet : ∀ {X : Type} (l : List X),
+      PTree.list_norepet l → l.Nodup := by
+    intro X l h
+    induction h with
+    | nil => exact List.nodup_nil
+    | cons hd hnot htail ih =>
+        exact List.nodup_cons.mpr ⟨hnot, ih⟩
+  have hnorepet_reverse : ∀ {X : Type} (l : List X),
+      PTree.list_norepet l → PTree.list_norepet l.reverse := by
+    intro X l h
+    have hn : l.Nodup := hnodup_of_norepet l h
+    have hnr : l.reverse.Nodup := by
+      apply List.pairwise_reverse.mpr
+      exact hn.imp (by
+        intro a b hab hba
+        exact hab hba.symm)
+    have hnorepet_of_nodup : ∀ {Y : Type} (xs : List Y),
+        xs.Nodup → PTree.list_norepet xs := by
+      intro Y xs hx
+      induction xs with
+      | nil => exact CompCert4Lean.Lib.Coqlib.list_norepet.nil _
+      | cons hd tl ih =>
+          have hc := List.nodup_cons.mp hx
+          exact CompCert4Lean.Lib.Coqlib.list_norepet.cons hd hc.1 (ih hc.2)
+    exact hnorepet_of_nodup _ hnr
+  have hprocess : ∀ (l : List (PTree.elt × V)),
+      (∀ k v, (k, v) ∈ l → PTree.get k mFinal = some v) →
+      PTree.list_norepet (l.map Prod.fst) →
+      (∀ m, (∀ k v, (k, v) ∈ l ↔ PTree.get k m = some v) →
+        Nonempty (P m (List.foldr (fun p a => f a p.1 p.2) init l))) := by
+    intro l
+    induction l with
+    | nil =>
+        intro hfinal hnr m heq
+        apply Nonempty.intro
+        apply hbase m
+        intro k
+        cases hget : PTree.get k m with
+        | none => rfl
+        | some v =>
+            have hmem : (k, v) ∈ ([] : List (PTree.elt × V)) :=
+              (heq k v).mpr hget
+            cases hmem
+    | cons p l ih =>
+        rcases p with ⟨k, v⟩
+        intro hfinal hnr m heq
+        have hnr' : PTree.list_norepet (k :: l.map Prod.fst) := by
+          simpa using hnr
+        cases hnr' with
+        | cons _ hnot htail =>
+            have hfinalhead : PTree.get k mFinal = some v := by
+              apply hfinal k v
+              simp
+            have hgethead : PTree.get k m = some v := by
+              apply (heq k v).mp
+              simp
+            have hrest : ∀ k' v', (k', v') ∈ l ↔
+                PTree.get k' (PTree.remove k m) = some v' := by
+              intro k' v'
+              cases hEq : PTree.elt_eq k' k with
+              | left hEq' =>
+                  subst k'
+                  have hzero : PTree.get k (PTree.remove k m) = none :=
+                    PTree.grs_proof (A := V) k m
+                  constructor
+                  · intro hmem
+                    exfalso
+                    apply hnot
+                    exact List.mem_map.mpr ⟨(k, v'), hmem, rfl⟩
+                  · intro hget
+                    rw [hzero] at hget
+                    cases hget
+              | right hne =>
+                  have hgr : PTree.get k' (PTree.remove k m) = PTree.get k' m :=
+                    PTree.gro_proof (A := V) (i := k') (j := k) m hne
+                  constructor
+                  · intro hmem
+                    have hmget : PTree.get k' m = some v' :=
+                      (heq k' v').mp (by simp [hmem])
+                    exact hgr.trans hmget
+                  · intro hget
+                    have hmget : PTree.get k' m = some v' := hgr.symm.trans hget
+                    have hmemfull : (k', v') ∈ (k, v) :: l :=
+                      (heq k' v').mpr hmget
+                    simp only [List.mem_cons] at hmemfull
+                    rcases hmemfull with hhead | htail
+                    · cases hhead
+                      exact (hne rfl).elim
+                    · exact htail
+            have hPm : Nonempty (P (PTree.remove k m)
+                (List.foldr (fun p a => f a p.1 p.2) init l)) :=
+              ih (by
+                intro k' v' hmem
+                exact hfinal k' v' (List.mem_cons_of_mem _ hmem)) htail
+                (PTree.remove k m) hrest
+            rcases hPm with ⟨ha⟩
+            have hs := hrec m
+              (List.foldr (fun (p : PTree.elt × V) (a : A) => f a p.1 p.2) init l)
+              k v hgethead hfinalhead ha
+            exact Nonempty.intro (by simpa [List.foldr] using hs)
+  have hfinal_membership :
+      ∀ k v, (k, v) ∈ (PTree.elements mFinal).reverse ↔
+        PTree.get k mFinal = some v := by
+    intro k v
+    constructor
+    · intro hmem
+      apply PTree.elements_complete_proof (m := mFinal) k v
+      exact List.mem_reverse.mp hmem
+    · intro hget
+      apply List.mem_reverse.mpr
+      exact PTree.elements_correct_proof (m := mFinal) (i := k) hget
+  have hnr_elements :
+      PTree.list_norepet ((PTree.elements mFinal).reverse.map Prod.fst) := by
+    simpa using
+      (hnorepet_reverse (l := (PTree.elements mFinal).map Prod.fst)
+        (PTree.elements_keys_norepet mFinal))
+  have hp := hprocess (PTree.elements mFinal).reverse
+    (by
+      intro k v hmem
+      exact (hfinal_membership k v).mp hmem)
+    hnr_elements mFinal hfinal_membership
+  have hfold := PTree.fold_spec_proof (A := V) (B := A) f init mFinal
+  rw [hfold]
+  rw [List.foldl_eq_foldr_reverse]
+  exact Classical.choice hp
+
+end PTree_Properties
+
+end CompCert4Lean.Lib.Maps
+
+namespace CompCert4Lean.Lib.Maps
+
+namespace ZTree
+
+theorem gss_proof : gss := by
+  intro A i x m
+  exact PTree.gss (A := A) (ZIndexed.index i) x m
+
+theorem gcombine_proof : gcombine := by
+  intro A B C f hnone m₁ m₂ i
+  exact PTree.gcombine_proof (A := A) (B := B) (C := C) f hnone m₁ m₂
+    (ZIndexed.index i)
+
+end ZTree
+
+end CompCert4Lean.Lib.Maps

@@ -1749,3 +1749,381 @@ theorem Float32.binop_nan_result_obligation_proof : Float32.binop_nan_result_obl
       (Float32.cons_pl x (Float32.cons_pl y [])))
 
 end CompCert4Lean.Lib.Floats
+
+namespace CompCert4Lean.Lib.Floats
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Flocq.IEEE754
+open CompCert4Lean.Lib
+
+private theorem zmod_nat_f64 (a b : Nat) (hb : 0 < b) :
+    ZArith.BinInt.Z.modulo (ZArith.BinInt.Z.of_nat a)
+        (ZArith.BinInt.Z.of_nat b) = ZArith.BinInt.Z.of_nat (a % b) := by
+  have hdecomp :
+      ZArith.BinInt.Z.of_nat a =
+        ZArith.BinInt.Z.add (ZArith.BinInt.Z.of_nat (a % b))
+          (ZArith.BinInt.Z.mul (ZArith.BinInt.Z.of_nat (a / b))
+            (ZArith.BinInt.Z.of_nat b)) := by
+    apply intOfZ_injective
+    simp only [ZArith.BinInt.Z.of_nat, ZArith.BinInt.Z.add,
+      ZArith.BinInt.Z.mul, intOfZ_zOfInt]
+    calc
+      Int.ofNat a = Int.ofNat (a % b + b * (a / b)) := by
+        congr 1
+        exact (Nat.mod_add_div a b).symm
+      _ = Int.ofNat (a % b + (a / b) * b) := by rw [Nat.mul_comm]
+  rw [hdecomp, ZArith.BinInt.Z.modulo_add_mul]
+  apply ZArith.BinInt.Z.mod_small
+  constructor
+  · change intOfZ ZArith.BinInt.Z.Z0 ≤ intOfZ (ZArith.BinInt.Z.of_nat (a % b))
+    simp only [ZArith.BinInt.Z.of_nat, intOfZ_zOfInt]
+    change (0 : Int) ≤ Int.ofNat (a % b)
+    exact Int.ofNat_nonneg _
+  · change intOfZ (ZArith.BinInt.Z.of_nat (a % b)) <
+      intOfZ (ZArith.BinInt.Z.of_nat b)
+    simp only [ZArith.BinInt.Z.of_nat, intOfZ_zOfInt]
+    exact (Int.ofNat_lt).2 (Nat.mod_lt a hb)
+
+private theorem zdiv_nat_f64 (a b : Nat) (hb : 0 < b) :
+    ZArith.BinInt.Z.div (ZArith.BinInt.Z.of_nat a)
+        (ZArith.BinInt.Z.of_nat b) = ZArith.BinInt.Z.of_nat (a / b) := by
+  have hiden :=
+    ZArith.Zdiv.Z_div_mod_eq_full
+      (ZArith.BinInt.Z.of_nat a) (ZArith.BinInt.Z.of_nat b)
+  rw [zmod_nat_f64 a b hb] at hiden
+  have hiden' := congrArg intOfZ hiden
+  simp only [ZArith.BinInt.Z.of_nat, ZArith.BinInt.Z.add,
+    ZArith.BinInt.Z.mul, intOfZ_zOfInt] at hiden'
+  have hcast : Int.ofNat a = Int.ofNat b * Int.ofNat (a / b) + Int.ofNat (a % b) := by
+    calc
+      Int.ofNat a = Int.ofNat (a % b + b * (a / b)) := by
+        congr 1
+        exact (Nat.mod_add_div a b).symm
+      _ = Int.ofNat (b * (a / b) + a % b) := by rw [Nat.add_comm]
+      _ = Int.ofNat b * Int.ofNat (a / b) + Int.ofNat (a % b) := by
+        simp
+  have hsum : Int.ofNat b * intOfZ
+        (ZArith.BinInt.Z.div (ZArith.BinInt.Z.of_nat a)
+          (ZArith.BinInt.Z.of_nat b)) + Int.ofNat (a % b) =
+      Int.ofNat b * Int.ofNat (a / b) + Int.ofNat (a % b) := hiden'.symm.trans hcast
+  have hprod : Int.ofNat b * intOfZ
+        (ZArith.BinInt.Z.div (ZArith.BinInt.Z.of_nat a)
+          (ZArith.BinInt.Z.of_nat b)) = Int.ofNat b * Int.ofNat (a / b) := by
+    apply Int.add_left_cancel (a := Int.ofNat (a % b))
+    simpa [Int.add_comm] using hsum
+  apply intOfZ_injective
+  have hbI : Int.ofNat b ≠ 0 := (Int.ofNat_ne_zero).2 (Nat.ne_of_gt hb)
+  have hqcast : intOfZ
+        (ZArith.BinInt.Z.of_nat (a / b)) = Int.ofNat (a / b) := by
+    exact intOfZ_zOfInt _
+  exact Int.eq_of_mul_eq_mul_left hbI (hprod.trans (by rw [hqcast]))
+
+private theorem expand_nan_pos_bounds (p : positive)
+    (h : Binary.nan_pl (prec := z24) p = true) :
+    0 < PArith.BinPos.Pos.to_nat (PArith.BinPos.Pos.shiftl_nat p 29) ∧
+      PArith.BinPos.Pos.to_nat (PArith.BinPos.Pos.shiftl_nat p 29) < 2 ^ 52 := by
+  have hp : 0 < PArith.BinPos.Pos.to_nat p :=
+    posToNat_positive p
+  have hdigits := quiet_nan_digits2_pos_nat p
+  unfold Binary.nan_pl at h
+  change (if intOfZ (Zpos
+      (CompCert4Lean.Lib.Floats.Model.Rocq.Coq.Floats.SpecFloat.digits2_pos p)) <
+      intOfZ z24 then true else false) = true at h
+  simp at h
+  change Int.ofNat (PArith.BinPos.Pos.to_nat
+      (CompCert4Lean.Lib.Floats.Model.Rocq.Coq.Floats.SpecFloat.digits2_pos p)) <
+    24 at h
+  rw [hdigits] at h
+  have hlog : Nat.log2 (PArith.BinPos.Pos.to_nat p) < 23 := by
+    change Int.ofNat (Nat.log2 (PArith.BinPos.Pos.to_nat p) + 1) < 24 at h
+    have hnat : Nat.log2 (PArith.BinPos.Pos.to_nat p) + 1 < 24 :=
+      (Int.ofNat_lt).mp h
+    omega
+  have hp_lt : PArith.BinPos.Pos.to_nat p < 2 ^ 23 := by
+    exact (Nat.log2_lt (Nat.ne_of_gt hp)).1 (by omega)
+  unfold PArith.BinPos.Pos.shiftl_nat
+  have hshiftpos : 0 < PArith.BinPos.Pos.to_nat p * 2 ^ 29 :=
+    Nat.mul_pos hp (Nat.two_pow_pos 29)
+  change 0 < posToNat (posOfNat (posToNat p * 2 ^ 29)) ∧
+    posToNat (posOfNat (posToNat p * 2 ^ 29)) < 2 ^ 52
+  have hshiftpos' : 0 < posToNat p * 2 ^ 29 := by exact hshiftpos
+  rw [posToNat_posOfNat hshiftpos']
+  constructor
+  · exact hshiftpos
+  · have hmul := Nat.mul_lt_mul_of_pos_right hp_lt (Nat.two_pow_pos 29)
+    rw [show (2 ^ 23 : Nat) * 2 ^ 29 = 2 ^ 52 by
+      rw [← Nat.pow_add]] at hmul
+    exact hmul
+
+private theorem test_nan_aux64_false (q : Nat) (hq : 0 < q) (hqlt : q < 2 ^ 52) :
+    CompCert4Lean.Flocq.IEEE754.Bits.binary_float_of_bits_aux
+        (ZArith.BinInt.Z.of_nat 52)
+        (ZArith.BinInt.Z.of_nat 11)
+        (ZArith.BinInt.Z.of_nat (9218868437227405312 + q)) =
+      CompCert4Lean.Flocq.IEEE754.Binary.F754_nan false
+        (PArith.BinPos.Pos.of_nat q) := by
+  unfold CompCert4Lean.Flocq.IEEE754.Bits.binary_float_of_bits_aux
+  unfold CompCert4Lean.Flocq.IEEE754.Bits.split_bits
+  dsimp only
+  have h52 : CompCert4Lean.Flocq.IEEE754.Bits.Zpower
+      CompCert4Lean.Flocq.IEEE754.Bits.Ztwo (ZArith.BinInt.Z.of_nat 52) =
+      ZArith.BinInt.Z.of_nat 4503599627370496 := by decide
+  have h11 : CompCert4Lean.Flocq.IEEE754.Bits.Zpower
+      CompCert4Lean.Flocq.IEEE754.Bits.Ztwo (ZArith.BinInt.Z.of_nat 11) =
+      ZArith.BinInt.Z.of_nat 2048 := by decide
+  rw [h52, h11]
+  have hdiv : (9218868437227405312 + q) / 4503599627370496 = 2047 := by
+    have hbase : 9218868437227405312 = 2047 * 4503599627370496 := by decide
+    rw [hbase, Nat.add_comm, Nat.mul_comm 2047 4503599627370496,
+      Nat.add_mul_div_left q 2047 (by omega), Nat.div_eq_of_lt hqlt]
+  have hmod : (9218868437227405312 + q) % 4503599627370496 = q := by
+    have hbase : 9218868437227405312 = 2047 * 4503599627370496 := by decide
+    rw [hbase, Nat.add_comm, Nat.mul_comm 2047 4503599627370496,
+      Nat.add_mul_mod_self_left q 4503599627370496 2047, Nat.mod_eq_of_lt hqlt]
+  have hzdiv : CompCert4Lean.Flocq.IEEE754.Bits.Zdiv
+      (ZArith.BinInt.Z.of_nat (9218868437227405312 + q))
+      (ZArith.BinInt.Z.of_nat 4503599627370496) =
+      ZArith.BinInt.Z.of_nat 2047 := by
+    change ZArith.BinInt.Z.div
+      (ZArith.BinInt.Z.of_nat (9218868437227405312 + q))
+      (ZArith.BinInt.Z.of_nat 4503599627370496) = _
+    rw [zdiv_nat_f64 (9218868437227405312 + q) 4503599627370496 (by decide), hdiv]
+  rw [hzdiv]
+  have hzmod2047 : CompCert4Lean.Flocq.IEEE754.Bits.Zmod
+      (ZArith.BinInt.Z.of_nat 2047) (ZArith.BinInt.Z.of_nat 2048) =
+      ZArith.BinInt.Z.of_nat 2047 := by
+    change ZArith.BinInt.Z.modulo
+      (ZArith.BinInt.Z.of_nat 2047) (ZArith.BinInt.Z.of_nat 2048) = _
+    exact zmod_nat_f64 2047 2048 (by decide)
+  rw [hzmod2047]
+  have hz : CompCert4Lean.Flocq.IEEE754.Bits.Zeq_bool
+      (ZArith.BinInt.Z.of_nat 2047)
+      CompCert4Lean.Flocq.IEEE754.Bits.Z0 = false := by decide
+  rw [hz]
+  have hsub : ZArith.BinInt.Z.sub (ZArith.BinInt.Z.of_nat 2048)
+      CompCert4Lean.Flocq.IEEE754.Bits.Zone =
+      ZArith.BinInt.Z.of_nat 2047 := by decide
+  have heq : CompCert4Lean.Flocq.IEEE754.Bits.Zeq_bool
+      (ZArith.BinInt.Z.of_nat 2047)
+      (ZArith.BinInt.Z.sub (ZArith.BinInt.Z.of_nat 2048)
+        CompCert4Lean.Flocq.IEEE754.Bits.Zone) = true := by
+    rw [hsub]
+    decide
+  have hzmod : CompCert4Lean.Flocq.IEEE754.Bits.Zmod
+      (ZArith.BinInt.Z.of_nat (9218868437227405312 + q))
+      (ZArith.BinInt.Z.of_nat 4503599627370496) =
+      ZArith.BinInt.Z.of_nat q := by
+    change ZArith.BinInt.Z.modulo
+      (ZArith.BinInt.Z.of_nat (9218868437227405312 + q))
+      (ZArith.BinInt.Z.of_nat 4503599627370496) = _
+    rw [zmod_nat_f64 (9218868437227405312 + q) 4503599627370496 (by decide), hmod]
+  rw [heq, hzmod]
+  have hqz : ZArith.BinInt.Z.of_nat q = Zpos (PArith.BinPos.Pos.of_nat q) := by
+    apply intOfZ_injective
+    simp only [ZArith.BinInt.Z.of_nat, intOfZ_zOfInt]
+    exact congrArg Int.ofNat (posToNat_posOfNat hq).symm
+  rw [hqz]
+  have hsign : CompCert4Lean.Flocq.IEEE754.Bits.Zle_bool
+      (CompCert4Lean.Flocq.IEEE754.Bits.Zmul
+        (ZArith.BinInt.Z.of_nat 4503599627370496)
+        (ZArith.BinInt.Z.of_nat 2048))
+      (ZArith.BinInt.Z.of_nat (9218868437227405312 + q)) = false := by
+    apply CompCert4Lean.Flocq.Core.Zaux.Zle_bool_false
+    change intOfZ (ZArith.BinInt.Z.of_nat (9218868437227405312 + q)) <
+      intOfZ (ZArith.BinInt.Z.mul
+        (ZArith.BinInt.Z.of_nat 4503599627370496)
+        (ZArith.BinInt.Z.of_nat 2048))
+    simp only [ZArith.BinInt.Z.of_nat, ZArith.BinInt.Z.mul, intOfZ_zOfInt]
+    rw [show Int.ofNat 4503599627370496 * Int.ofNat 2048 =
+      Int.ofNat 9223372036854775808 by decide]
+    have hfull : 9218868437227405312 + q < 9223372036854775808 := by omega
+    have hfullInt := (Int.ofNat_lt).2 hfull
+    exact hfullInt
+  rw [hsign]
+  simp
+
+private theorem test_nan_aux64_true (q : Nat) (hq : 0 < q) (hqlt : q < 2 ^ 52) :
+    CompCert4Lean.Flocq.IEEE754.Bits.binary_float_of_bits_aux
+        (ZArith.BinInt.Z.of_nat 52)
+        (ZArith.BinInt.Z.of_nat 11)
+        (ZArith.BinInt.Z.of_nat (18442240474082181120 + q)) =
+      CompCert4Lean.Flocq.IEEE754.Binary.F754_nan true
+        (PArith.BinPos.Pos.of_nat q) := by
+  unfold CompCert4Lean.Flocq.IEEE754.Bits.binary_float_of_bits_aux
+  unfold CompCert4Lean.Flocq.IEEE754.Bits.split_bits
+  dsimp only
+  have h52 : CompCert4Lean.Flocq.IEEE754.Bits.Zpower
+      CompCert4Lean.Flocq.IEEE754.Bits.Ztwo (ZArith.BinInt.Z.of_nat 52) =
+      ZArith.BinInt.Z.of_nat 4503599627370496 := by decide
+  have h11 : CompCert4Lean.Flocq.IEEE754.Bits.Zpower
+      CompCert4Lean.Flocq.IEEE754.Bits.Ztwo (ZArith.BinInt.Z.of_nat 11) =
+      ZArith.BinInt.Z.of_nat 2048 := by decide
+  rw [h52, h11]
+  have hdiv : (18442240474082181120 + q) / 4503599627370496 = 4095 := by
+    have hbase : 18442240474082181120 = 4095 * 4503599627370496 := by decide
+    rw [hbase, Nat.add_comm, Nat.mul_comm 4095 4503599627370496,
+      Nat.add_mul_div_left q 4095 (by omega), Nat.div_eq_of_lt hqlt]
+  have hmod : (18442240474082181120 + q) % 4503599627370496 = q := by
+    have hbase : 18442240474082181120 = 4095 * 4503599627370496 := by decide
+    rw [hbase, Nat.add_comm, Nat.mul_comm 4095 4503599627370496,
+      Nat.add_mul_mod_self_left q 4503599627370496 4095, Nat.mod_eq_of_lt hqlt]
+  have hzdiv : CompCert4Lean.Flocq.IEEE754.Bits.Zdiv
+      (ZArith.BinInt.Z.of_nat (18442240474082181120 + q))
+      (ZArith.BinInt.Z.of_nat 4503599627370496) =
+      ZArith.BinInt.Z.of_nat 4095 := by
+    change ZArith.BinInt.Z.div
+      (ZArith.BinInt.Z.of_nat (18442240474082181120 + q))
+      (ZArith.BinInt.Z.of_nat 4503599627370496) = _
+    rw [zdiv_nat_f64 (18442240474082181120 + q) 4503599627370496 (by decide), hdiv]
+  rw [hzdiv]
+  have hzmod4095 : CompCert4Lean.Flocq.IEEE754.Bits.Zmod
+      (ZArith.BinInt.Z.of_nat 4095) (ZArith.BinInt.Z.of_nat 2048) =
+      ZArith.BinInt.Z.of_nat 2047 := by
+    change ZArith.BinInt.Z.modulo
+      (ZArith.BinInt.Z.of_nat 4095) (ZArith.BinInt.Z.of_nat 2048) = _
+    exact zmod_nat_f64 4095 2048 (by decide)
+  rw [hzmod4095]
+  have hz : CompCert4Lean.Flocq.IEEE754.Bits.Zeq_bool
+      (ZArith.BinInt.Z.of_nat 2047)
+      CompCert4Lean.Flocq.IEEE754.Bits.Z0 = false := by decide
+  rw [hz]
+  have hsub : ZArith.BinInt.Z.sub (ZArith.BinInt.Z.of_nat 2048)
+      CompCert4Lean.Flocq.IEEE754.Bits.Zone =
+      ZArith.BinInt.Z.of_nat 2047 := by decide
+  have heq : CompCert4Lean.Flocq.IEEE754.Bits.Zeq_bool
+      (ZArith.BinInt.Z.of_nat 2047)
+      (ZArith.BinInt.Z.sub (ZArith.BinInt.Z.of_nat 2048)
+        CompCert4Lean.Flocq.IEEE754.Bits.Zone) = true := by
+    rw [hsub]
+    decide
+  have hzmod : CompCert4Lean.Flocq.IEEE754.Bits.Zmod
+      (ZArith.BinInt.Z.of_nat (18442240474082181120 + q))
+      (ZArith.BinInt.Z.of_nat 4503599627370496) =
+      ZArith.BinInt.Z.of_nat q := by
+    change ZArith.BinInt.Z.modulo
+      (ZArith.BinInt.Z.of_nat (18442240474082181120 + q))
+      (ZArith.BinInt.Z.of_nat 4503599627370496) = _
+    rw [zmod_nat_f64 (18442240474082181120 + q) 4503599627370496 (by decide), hmod]
+  rw [heq, hzmod]
+  have hqz : ZArith.BinInt.Z.of_nat q = Zpos (PArith.BinPos.Pos.of_nat q) := by
+    apply intOfZ_injective
+    simp only [ZArith.BinInt.Z.of_nat, intOfZ_zOfInt]
+    exact congrArg Int.ofNat (posToNat_posOfNat hq).symm
+  rw [hqz]
+  have hsign : CompCert4Lean.Flocq.IEEE754.Bits.Zle_bool
+      (CompCert4Lean.Flocq.IEEE754.Bits.Zmul
+        (ZArith.BinInt.Z.of_nat 4503599627370496)
+        (ZArith.BinInt.Z.of_nat 2048))
+      (ZArith.BinInt.Z.of_nat (18442240474082181120 + q)) = true := by
+    apply CompCert4Lean.Flocq.Core.Zaux.Zle_bool_true
+    change intOfZ (ZArith.BinInt.Z.mul
+        (ZArith.BinInt.Z.of_nat 4503599627370496)
+        (ZArith.BinInt.Z.of_nat 2048)) ≤
+      intOfZ (ZArith.BinInt.Z.of_nat (18442240474082181120 + q))
+    simp only [ZArith.BinInt.Z.of_nat, ZArith.BinInt.Z.mul, intOfZ_zOfInt]
+    rw [show Int.ofNat 4503599627370496 * Int.ofNat 2048 =
+      Int.ofNat 9223372036854775808 by decide]
+    exact (Int.ofNat_le).2 (by omega)
+  rw [hsign]
+  simp
+
+private theorem decode64_mkNaN (s : Bool) (q : Nat) (hq : 0 < q) (hqlt : q < 2 ^ 52) :
+    decode64 (mkNaN64 s (PArith.BinPos.Pos.of_nat q)) =
+      (CompCert4Lean.Flocq.IEEE754.Binary.B754_nan s
+        (PArith.BinPos.Pos.of_nat q) : CompCert4Lean.Flocq.IEEE754.Bits.binary64) := by
+  cases s with
+  | false =>
+      unfold decode64 mkNaN64
+      dsimp only
+      have hpayload : PArith.BinPos.Pos.to_nat (PArith.BinPos.Pos.of_nat q) = q := by
+        change posToNat (posOfNat q) = q
+        exact posToNat_posOfNat hq
+      rw [hpayload, Nat.mod_eq_of_lt hqlt]
+      have hexp : (2 ^ 11 - 1) * 2 ^ 52 = 9218868437227405312 := by decide
+      rw [hexp]
+      simp only [Bool.false_eq_true, ↓reduceIte]
+      rw [BitVec.toNat_ofNat]
+      have hsum : 9218868437227405312 + q < 2 ^ 64 := by omega
+      rw [Nat.mod_eq_of_lt hsum]
+      unfold CompCert4Lean.Flocq.IEEE754.Bits.b64_of_bits_unchecked
+      unfold CompCert4Lean.Flocq.IEEE754.Bits.binary_float_of_bits_unchecked
+      unfold CompCert4Lean.Flocq.IEEE754.Binary.FF2B_unchecked
+      rw [test_nan_aux64_false q hq hqlt]
+  | true =>
+      unfold decode64 mkNaN64
+      dsimp only
+      have hpayload : PArith.BinPos.Pos.to_nat (PArith.BinPos.Pos.of_nat q) = q := by
+        change posToNat (posOfNat q) = q
+        exact posToNat_posOfNat hq
+      rw [hpayload, Nat.mod_eq_of_lt hqlt]
+      have hexp : (2 ^ 11 - 1) * 2 ^ 52 = 9218868437227405312 := by decide
+      rw [hexp]
+      have hbase : 2 ^ 63 + 9218868437227405312 = 18442240474082181120 := by decide
+      simp
+      have hsum : 18442240474082181120 + q < 2 ^ 64 := by omega
+      rw [Nat.mod_eq_of_lt hsum]
+      unfold CompCert4Lean.Flocq.IEEE754.Bits.b64_of_bits_unchecked
+      unfold CompCert4Lean.Flocq.IEEE754.Bits.binary_float_of_bits_unchecked
+      unfold CompCert4Lean.Flocq.IEEE754.Binary.FF2B_unchecked
+      rw [test_nan_aux64_true q hq hqlt]
+
+private theorem nan_pl_posOfNat_lt_52 (q : Nat) (hq : 0 < q) (hqlt : q < 2 ^ 52) :
+    CompCert4Lean.Flocq.IEEE754.Binary.nan_pl (prec := z53)
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.PArith.BinPos.Pos.of_nat q) = true := by
+  unfold CompCert4Lean.Flocq.IEEE754.Binary.nan_pl
+  change (if CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.Zpos
+        (CompCert4Lean.Lib.Floats.Model.Rocq.Coq.Floats.SpecFloat.digits2_pos
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.PArith.BinPos.Pos.of_nat q))) <
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ z53 then true else false) = true
+  have hqlog : Nat.log2 q < 52 :=
+    (Nat.log2_lt (Nat.ne_of_gt hq)).2 hqlt
+  have hdigits :
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.PArith.BinPos.Pos.to_nat
+          (CompCert4Lean.Lib.Floats.Model.Rocq.Coq.Floats.SpecFloat.digits2_pos
+            (CompCert4Lean.Foundation.Numbers.Rocq.Coq.PArith.BinPos.Pos.of_nat q)) =
+        Nat.log2 q + 1 := by
+    rw [quiet_nan_digits2_pos_nat]
+    change Nat.log2
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posOfNat q)) + 1 =
+      Nat.log2 q + 1
+    rw [CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat_posOfNat hq]
+  have hdigitsInt : CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.Zpos
+        (CompCert4Lean.Lib.Floats.Model.Rocq.Coq.Floats.SpecFloat.digits2_pos
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.PArith.BinPos.Pos.of_nat q))) =
+      Int.ofNat (Nat.log2 q + 1) := by
+    exact congrArg Int.ofNat hdigits
+  rw [hdigitsInt]
+  have hz53 : CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ z53 = (53 : Int) := by
+    decide
+  rw [hz53]
+  apply if_pos
+  exact (Int.ofNat_lt).2 (by omega : Nat.log2 q + 1 < 53)
+
+theorem Float.expand_nan_result_obligation_proof : Float.expand_nan_result_obligation := by
+  intro s p h
+  have hq := expand_nan_pos_bounds p h
+  unfold Float.expand_nan
+  have hpayload : PArith.BinPos.Pos.of_nat
+      (PArith.BinPos.Pos.to_nat (Float.expand_nan_payload p)) =
+      Float.expand_nan_payload p :=
+    posOfNat_posToNat (Float.expand_nan_payload p)
+  rw [← hpayload]
+  have hdecode := decode64_mkNaN s
+      (PArith.BinPos.Pos.to_nat (Float.expand_nan_payload p))
+      hq.1 hq.2
+  rw [hdecode]
+  constructor
+  · rfl
+  · unfold CompCert4Lean.Flocq.IEEE754.Binary.BinaryFloatCertificate
+    unfold CompCert4Lean.Flocq.IEEE754.Binary.B2FF
+    unfold CompCert4Lean.Flocq.IEEE754.Binary.valid_binary
+    change CompCert4Lean.Flocq.IEEE754.Binary.nan_pl (prec := z53)
+      (PArith.BinPos.Pos.of_nat
+        (PArith.BinPos.Pos.to_nat (Float.expand_nan_payload p))) = true
+    exact nan_pl_posOfNat_lt_52
+      (PArith.BinPos.Pos.to_nat (Float.expand_nan_payload p)) hq.1 hq.2
+
+end CompCert4Lean.Lib.Floats
