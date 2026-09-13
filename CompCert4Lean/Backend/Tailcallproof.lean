@@ -1195,3 +1195,18 @@ theorem transf_initial_states : transf_initial_statesStatement := by
           (tailcall_mem_extends_refl m0)
 
 end CompCert4Lean.Backend.Tailcallproof
+
+namespace CompCert4Lean.Backend.Tailcallproof
+
+open CompCert4Lean.Backend.RTL
+
+theorem transf_final_states : transf_final_statesStatement := by
+  intro cfg prog tprog hprog st1 st2 r hmatch hfinal
+  cases hfinal
+  cases hmatch
+  cases ‹match_stackframes cfg [] _›
+  cases ‹CompCert4Lean.Common.Values.Val.lessdef
+      (CompCert4Lean.Common.Values.Vint r) _›
+  exact final_state.intro r _
+
+end CompCert4Lean.Backend.Tailcallproof

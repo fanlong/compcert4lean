@@ -1187,3 +1187,57 @@ theorem mk_intconv_correct
         CompCert4Lean.X86.Asm.data_preg]
 
 end CompCert4Lean.X86.Asmgenproof1
+
+namespace CompCert4Lean.X86.Asmgenproof1
+
+theorem addressing_mentions_correct : addressing_mentions_correctStatement := by
+  intro ge a r rs1 rs2 hag hm
+  cases a with
+  | Addrmode base ofs c =>
+    cases base with
+    | none =>
+      cases ofs with
+      | none => rfl
+      | some p =>
+        rcases p with ⟨r', sc⟩
+        simp [CompCert4Lean.X86.Asmgen.addressing_mentions] at hm
+        have hne : r' ≠ r := by
+          intro heq
+          subst r'
+          change decide (r = r) = false at hm
+          simp at hm
+        unfold CompCert4Lean.X86.Asm.eval_addrmode32
+        simp only [CompCert4Lean.X86.Asm.Pregmap.get]
+        rw [hag r' hne]
+    | some b =>
+      cases ofs with
+      | none =>
+        simp [CompCert4Lean.X86.Asmgen.addressing_mentions] at hm
+        have hne : b ≠ r := by
+          intro heq
+          subst b
+          change decide (r = r) = false at hm
+          simp at hm
+        unfold CompCert4Lean.X86.Asm.eval_addrmode32
+        simp only [CompCert4Lean.X86.Asm.Pregmap.get]
+        rw [hag b hne]
+      | some p =>
+        rcases p with ⟨r', sc⟩
+        simp [CompCert4Lean.X86.Asmgen.addressing_mentions] at hm
+        have hbne : b ≠ r := by
+          intro heq
+          subst b
+          have hfalse := hm.1
+          change decide (r = r) = false at hfalse
+          simp at hfalse
+        have hone : r' ≠ r := by
+          intro heq
+          subst r'
+          have hfalse := hm.2
+          change decide (r = r) = false at hfalse
+          simp at hfalse
+        unfold CompCert4Lean.X86.Asm.eval_addrmode32
+        simp only [CompCert4Lean.X86.Asm.Pregmap.get]
+        rw [hag b hbne, hag r' hone]
+
+end CompCert4Lean.X86.Asmgenproof1

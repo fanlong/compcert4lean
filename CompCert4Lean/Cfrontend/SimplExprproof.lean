@@ -1379,3 +1379,173 @@ theorem deref_loc_translated :
               exact Clight.deref_loc_bitfield _ _ _ _ _ hload
 
 end CompCert4Lean.Cfrontend.SimplExprproof
+
+namespace CompCert4Lean.Cfrontend.SimplExprproof
+
+open CompCert4Lean.Cfrontend.SimplExprspec
+open CompCert4Lean.Cfrontend.Ctypes
+open CompCert4Lean.Lib.Maps
+
+private theorem simplexpr_add_composite_defs_consistent :
+    ∀ (defs : List Ctypes.composite_definition) (env1 env2 : Ctypes.composite_env),
+      Ctypes.add_composite_definitions env1 defs = .OK env2 →
+      Ctypes.composite_env_consistent env1 →
+      Ctypes.composite_env_consistent env2 := by
+  intro defs
+  induction defs with
+  | nil =>
+      intro env1 env2 hadd hbase
+      simp only [Ctypes.add_composite_definitions] at hadd
+      cases hadd
+      exact hbase
+  | cons d defs ih =>
+      intro env1 env2 hadd hbase
+      change PTree.tree Ctypes.composite at env1 env2
+      cases d with
+      | Composite id su ms a =>
+          cases hco : Ctypes.composite_of_def env1 id su ms a with
+          | Error msg =>
+              simp [Ctypes.add_composite_definitions, hco] at hadd
+          | OK co =>
+              have hrest :
+                  Ctypes.add_composite_definitions (PTree.set id co env1) defs =
+                    .OK env2 := by
+                simpa [Ctypes.add_composite_definitions, hco] using hadd
+              have hco_cons : Ctypes.composite_consistent env1 co :=
+                Ctypes.composite_of_def_consistent env1 id su ms a co hco
+              have hnone : PTree.get
+                  (show CompCert4Lean.Foundation.Numbers.Rocq.Coq.positive from id)
+                  env1 = none := by
+                unfold Ctypes.composite_of_def at hco
+                split at hco
+                · rename_i hdup
+                  cases hco
+                · rename_i hnone
+                  exact hnone
+              have hincr : ∀ j cj, PTree.get j env1 = some cj →
+                  PTree.get j (PTree.set id co env1) = some cj := by
+                intro j cj hj
+                have hs := PTree.getSet_equation (A := Ctypes.composite)
+                  j (show CompCert4Lean.Foundation.Numbers.Rocq.Coq.positive from id)
+                  co env1
+                rw [hs]
+                split
+                · rename_i hEq
+                  exfalso
+                  cases hEq
+                  have hbad : (none : Option Ctypes.composite) = some cj :=
+                    hnone.symm.trans hj
+                  cases hbad
+                · exact hj
+              have hset : Ctypes.composite_env_consistent (PTree.set id co env1) := by
+                intro j cj hj
+                have hspec := PTree.getSet_equation (A := Ctypes.composite)
+                  (show CompCert4Lean.Foundation.Numbers.Rocq.Coq.positive from j)
+                  (show CompCert4Lean.Foundation.Numbers.Rocq.Coq.positive from id)
+                  co env1
+                rw [hspec] at hj
+                split at hj
+                · rename_i hEq
+                  cases hEq
+                  cases hj
+                  exact Ctypes.composite_consistent_stable env1
+                    (PTree.set id co env1) hincr co hco_cons
+                · exact Ctypes.composite_consistent_stable env1
+                    (PTree.set id co env1) hincr cj (hbase j cj hj)
+              exact ih (PTree.set id co env1) env2 hrest hset
+
+private theorem simplexpr_cenv_consistent
+    (cunit : cprogram) :
+    Ctypes.composite_env_consistent cunit.prog_comp_env := by
+  have hempty : Ctypes.composite_env_consistent
+      (show Ctypes.composite_env from PTree.empty Ctypes.composite) := by
+    intro id co hget
+    change PTree.get (show CompCert4Lean.Foundation.Numbers.Rocq.Coq.positive from id)
+      (PTree.empty Ctypes.composite) = some co at hget
+    simp only [PTree.empty, PTree.get] at hget
+    cases hget
+  exact simplexpr_add_composite_defs_consistent cunit.prog_types
+    (show Ctypes.composite_env from PTree.empty Ctypes.composite)
+    cunit.prog_comp_env cunit.prog_comp_env_eq hempty
+
+private theorem simplexpr_cenv_inclusion_for_bitfield
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (p : cprogram) (tp : tprogram) (cunit : cprogram)
+    (hmatch : match_prog p tp)
+    (hlink : Ctypes.linkorder_program cunit p) :
+    ∀ id co, PTree.get id cunit.prog_comp_env = some co →
+      PTree.get id (Clight.globalenv tp).genv_cenv = some co := by
+  intro id co hget
+  have hp := hlink.2 id co hget
+  have henv : (Clight.globalenv tp).genv_cenv =
+      (Csem.globalenv p).genv_cenv :=
+    comp_env_preserved (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) p tp hmatch
+  rw [henv]
+  exact hp
+
+private theorem simplexpr_bitfield_composite_lookup
+    (cunit : cprogram)
+    (tp : tprogram)
+    (hinc : ∀ id co, PTree.get id cunit.prog_comp_env = some co →
+      PTree.get id (Clight.globalenv tp).genv_cenv = some co)
+    (id : CompCert4Lean.Foundation.Numbers.Rocq.Coq.positive) (co co' : Ctypes.composite)
+    (hget : PTree.get id (Clight.globalenv tp).genv_cenv = some co)
+    (hget' : PTree.get id cunit.prog_comp_env = some co') :
+    co' = co ∧ complete_members cunit.prog_comp_env co'.co_members = true := by
+  have hget'' := hinc id co' hget'
+  have heq : co' = co := Option.some.inj (hget''.symm.trans hget)
+  have hconsistent : composite_env_consistent cunit.prog_comp_env :=
+    simplexpr_cenv_consistent cunit
+  have hco := hconsistent id co' hget'
+  exact ⟨heq, hco.co_consistent_complete⟩
+
+theorem is_bitfield_access_sound :
+    ∀ [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+      [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)],
+      is_bitfield_access_soundStatement := by
+  intro binary64_certificate binary32_certificate p tp hmatch cunit hlink
+  have hinc := simplexpr_cenv_inclusion_for_bitfield
+    (binary64_certificate := binary64_certificate)
+    (binary32_certificate := binary32_certificate) p tp cunit hmatch hlink
+  intro e le m a b ofs bf bf' hEval htr
+  cases hEval with
+  | eval_Evar_local id loc ty hfind =>
+      simpa [tr_is_bitfield_access] using htr
+  | eval_Evar_global id loc ty hlocal hglobal =>
+      simpa [tr_is_bitfield_access] using htr
+  | eval_Ederef a ty loc ofs ha =>
+      simpa [tr_is_bitfield_access] using htr
+  | eval_Efield_struct a id ty loc ofs structId co att delta bf ha htype hcomposite hoffset =>
+      simp only [tr_is_bitfield_access] at htr
+      rw [htype] at htr
+      rcases htr with ⟨co', ofs', hcomposite', hoffset'⟩
+      rcases simplexpr_bitfield_composite_lookup cunit tp hinc structId co co'
+        hcomposite hcomposite' with ⟨hEq, hcomplete⟩
+      subst co'
+      have hstable := Ctypes.field_offset_stable
+        cunit.prog_comp_env (Clight.globalenv tp).genv_cenv hinc id
+        (Ctypes.composite.co_members co)
+        hcomplete
+      have hpairs : (delta, bf) = (ofs', bf') :=
+        CompCert4Lean.Common.Errors.res.OK.inj
+          (hoffset.symm.trans (hstable.trans hoffset'))
+      exact (congrArg Prod.snd hpairs).symm
+  | eval_Efield_union a id ty loc ofs unionId co att delta bf ha htype hcomposite hoffset =>
+      simp only [tr_is_bitfield_access] at htr
+      rw [htype] at htr
+      rcases htr with ⟨co', ofs', hcomposite', hoffset'⟩
+      rcases simplexpr_bitfield_composite_lookup cunit tp hinc unionId co co'
+        hcomposite hcomposite' with ⟨hEq, hcomplete⟩
+      subst co'
+      have hstable := Ctypes.union_field_offset_stable
+        cunit.prog_comp_env (Clight.globalenv tp).genv_cenv hinc id
+        (Ctypes.composite.co_members co)
+        hcomplete
+      have hpairs : (delta, bf) = (ofs', bf') :=
+        CompCert4Lean.Common.Errors.res.OK.inj
+          (hoffset.symm.trans (hstable.trans hoffset'))
+      exact (congrArg Prod.snd hpairs).symm
+
+end CompCert4Lean.Cfrontend.SimplExprproof

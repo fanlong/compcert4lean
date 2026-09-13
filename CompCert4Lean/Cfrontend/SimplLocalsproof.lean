@@ -1923,3 +1923,20 @@ theorem val_casted_inject : val_casted_injectStatement := by
   cases hinj <;> cases hcast <;> constructor <;> assumption
 
 end CompCert4Lean.Cfrontend.SimplLocalsproof
+
+namespace CompCert4Lean.Cfrontend.SimplLocalsproof
+
+theorem forall2_val_casted_inject : forall2_val_casted_injectStatement := by
+  intro f vl vl' hinj
+  induction hinj with
+  | inject_list_nil =>
+      intro tyl hcast
+      cases hcast
+      exact .nil _
+  | inject_list_cons v1 v2 vl1 vl2 hhead htail ih =>
+      intro tyl hcast
+      cases hcast with
+      | cons _ _ hty htys =>
+          exact .cons _ _ (val_casted_inject f v1 v2 _ hhead hty) (ih _ htys)
+
+end CompCert4Lean.Cfrontend.SimplLocalsproof

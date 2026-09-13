@@ -1972,3 +1972,112 @@ theorem rhs_eval_to_inj
           exact Option.some.inj (hSem.symm.trans hSem2)
 
 end CompCert4Lean.Backend.CSEproof
+
+namespace CompCert4Lean.Backend.CSEproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Backend.CSEdomain
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.Lib.Coqlib
+
+private theorem cse_pmap_get_set {A : Type} (i j : positive) (x : A)
+    (m : PMap.t A) :
+    PMap.get i (PMap.set j x m) =
+      match peq i j with
+      | .left _ => x
+      | .right _ => PMap.get i m := by
+  unfold PMap.get PMap.set
+  rw [PTree.gsspec_proof]
+  cases h : peq i j with
+  | left hij => simp [h]
+  | right hne => simp [h]
+
+private theorem cse_forget_reg_charact
+    (n : CSEdomain.numbering)
+    (rd r : reg)
+    (v : positive) :
+    wf_numbering n →
+    r ∈ PMap.get v (CSE.forget_reg n rd) →
+    r ≠ rd ∧ r ∈ PMap.get v n.num_val := by
+  intro hnum hmem
+  change positive at v
+  unfold CSE.forget_reg at hmem
+  cases hget : PTree.get rd n.num_reg with
+  | none =>
+      have hmem' : r ∈ PMap.get v n.num_val := by
+        simpa [hget] using hmem
+      constructor
+      · intro hrd
+        subst r
+        have hreg := hnum.wf_num_val rd v hmem'
+        rw [hget] at hreg
+        cases hreg
+      · exact hmem'
+  | some v0 =>
+      change positive at v0
+      rw [hget] at hmem
+      rw [cse_pmap_get_set] at hmem
+      cases hv : peq v v0 with
+      | left hvv =>
+          subst v
+          simp only [hv] at hmem
+          have hrem :=
+            CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.List.in_remove
+              peq (PMap.get v0 n.num_val) r rd hmem
+          exact ⟨hrem.2, hrem.1⟩
+      | right hvv =>
+          simp only [hv] at hmem
+          constructor
+          · intro hrd
+            subst r
+            have hreg := hnum.wf_num_val rd v hmem
+            rw [hget] at hreg
+            cases hreg
+            exact (hvv rfl).elim
+          · exact hmem
+
+theorem update_reg_charact
+    :
+    update_reg_charactStatement := by
+  intro n rd vd r v hnum hmem
+  change positive at vd v
+  dsimp [CSE.update_reg] at hmem
+  rw [cse_pmap_get_set] at hmem
+  cases hv : peq v vd with
+  | left hvv =>
+      subst v
+      simp only [hv] at hmem
+      rcases List.mem_cons.mp hmem with hhead | htail
+      · subst r
+        change CSEdomain.valnum at vd
+        have hset := @PTree.gsspec_proof valnum rd rd vd n.num_reg
+        cases hrd : peq rd rd with
+        | left _ => simpa [hrd] using hset
+        | right hne => exact (hne rfl).elim
+      ·
+        have hforget := cse_forget_reg_charact n rd r vd hnum htail
+        change CSEdomain.valnum at vd
+        have hset := @PTree.gsspec_proof valnum r rd vd n.num_reg
+        cases hrd : peq r rd with
+        | left heq => exact (hforget.1 heq).elim
+        | right hne =>
+            have hreg := hnum.wf_num_val r vd hforget.2
+            have hset' : PTree.get r (PTree.set rd vd n.num_reg) =
+                PTree.get r n.num_reg := by
+              simpa [hrd] using hset
+            exact hset'.trans hreg
+  | right hvv =>
+      simp only [hv] at hmem
+      have hforget := cse_forget_reg_charact n rd r v hnum hmem
+      change CSEdomain.valnum at v vd
+      have hset := @PTree.gsspec_proof valnum r rd vd n.num_reg
+      cases hrd : peq r rd with
+      | left heq => exact (hforget.1 heq).elim
+      | right hne =>
+          have hreg := hnum.wf_num_val r v hforget.2
+          have hset' : PTree.get r (PTree.set rd vd n.num_reg) =
+              PTree.get r n.num_reg := by
+            simpa [hrd] using hset
+          exact hset'.trans hreg
+
+end CompCert4Lean.Backend.CSEproof
