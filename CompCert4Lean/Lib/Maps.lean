@@ -3639,3 +3639,112 @@ theorem gcombine_proof : gcombine := by
 end ZTree
 
 end CompCert4Lean.Lib.Maps
+
+namespace CompCert4Lean.Lib.Maps
+
+namespace PTree_Properties
+
+theorem in_of_list_proof : in_of_list := by
+  have hrec : ∀ {A : Type} (k : PTree.elt) (v : A)
+      (l : List (PTree.elt × A)) (m : PTree.t A),
+      PTree.get k (List.foldl (fun m₀ kv => PTree.set kv.1 kv.2 m₀) m l) = some v →
+        (k, v) ∈ l ∨ PTree.get k m = some v := by
+    intro A k v l
+    induction l with
+    | nil =>
+        intro m h
+        change PTree.tree A at m
+        right
+        change PTree.get k m = some v at h
+        exact h
+    | cons p l ih =>
+        rcases p with ⟨k₁, v₁⟩
+        intro m h
+        change PTree.tree A at m
+        change CompCert4Lean.Foundation.Numbers.Rocq.Coq.positive at k k₁
+        change PTree.tree A at m
+        have htail :
+            PTree.get k
+                (List.foldl (fun m₀ kv => PTree.set kv.1 kv.2 m₀)
+                  (PTree.set k₁ v₁ m) l) = some v := by
+          change PTree.get k
+              (List.foldl (fun m₀ kv => PTree.set kv.1 kv.2 m₀)
+                (PTree.set k₁ v₁ m) l) = some v at h
+          exact h
+        have hstep := ih (PTree.set k₁ v₁ m) htail
+        rcases hstep with hmem | hget
+        · left
+          exact List.mem_cons_of_mem _ hmem
+        · by_cases hkk : k = k₁
+          · left
+            subst k
+            change PTree.get k₁ (PTree.set k₁ v₁ m) = some v at hget
+            have hs : PTree.get k₁ (PTree.set k₁ v₁ m) = some v₁ :=
+              PTree.gss (A := A) k₁ v₁ m
+            have hv : v₁ = v := Option.some.inj (hs.symm.trans hget)
+            exact List.mem_cons.mpr (Or.inl (Prod.ext rfl hv.symm))
+          · right
+            simpa [PTree.getSet_equation, hkk] using hget
+  intro A l k v h
+  have h' :
+      PTree.get k
+          (List.foldl (fun m₀ kv => PTree.set kv.1 kv.2 m₀)
+            (PTree.empty A) l) = some v := by
+    change PTree.get k
+      (List.foldl (fun m₀ kv => PTree.set kv.1 kv.2 m₀)
+        (PTree.empty A) l) = some v at h
+    exact h
+  have hres := hrec k v l (PTree.empty A) h'
+  rcases hres with hmem | hget
+  · exact hmem
+  · have hempty : PTree.get k (PTree.empty A) = none := PTree.gempty A k
+    rw [hempty] at hget
+    cases hget
+
+theorem of_list_dom_proof : of_list_dom := by
+  have hrec : ∀ {A : Type} (k : CompCert4Lean.Foundation.Numbers.Rocq.Coq.positive)
+      (l : List (CompCert4Lean.Foundation.Numbers.Rocq.Coq.positive × A)) (m : PTree.tree A),
+      k ∈ l.map Prod.fst ∨ (∃ v, PTree.get k m = some v) →
+        ∃ v, PTree.get k
+          (List.foldl (fun m₀ kv => PTree.set kv.1 kv.2 m₀) m l) = some v := by
+    intro A k l
+    induction l with
+    | nil =>
+        intro m h
+        rcases h with hmem | ⟨v, hget⟩
+        · cases hmem
+        · exact ⟨v, hget⟩
+    | cons p l ih =>
+        rcases p with ⟨k₁, v₁⟩
+        intro m h
+        have htail :
+            k ∈ l.map Prod.fst ∨
+              (∃ v, PTree.get k (PTree.set k₁ v₁ m) = some v) := by
+          rcases h with hmem | hbase
+          · simp only [List.map_cons, List.mem_cons] at hmem
+            rcases hmem with hEq | hmem
+            · right
+              subst k
+              exact ⟨v₁, PTree.gss k₁ v₁ m⟩
+            · left
+              exact hmem
+          · rcases hbase with ⟨v, hget⟩
+            by_cases hEq : k = k₁
+            · right
+              subst k
+              exact ⟨v₁, PTree.gss k₁ v₁ m⟩
+            · right
+              exact ⟨v, by
+                simpa [PTree.getSet_equation, hEq] using hget⟩
+        have hres := ih (PTree.set k₁ v₁ m) htail
+        simpa [List.foldl] using hres
+  intro A l k hmem
+  have hres := hrec k l (PTree.empty A) (Or.inl hmem)
+  change ∃ v, PTree.get k
+    (List.foldl (fun m₀ kv => PTree.set kv.1 kv.2 m₀)
+      (PTree.empty A) l) = some v
+  exact hres
+
+end PTree_Properties
+
+end CompCert4Lean.Lib.Maps

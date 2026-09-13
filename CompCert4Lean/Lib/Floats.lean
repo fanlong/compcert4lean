@@ -2127,3 +2127,133 @@ theorem Float.expand_nan_result_obligation_proof : Float.expand_nan_result_oblig
       (PArith.BinPos.Pos.to_nat (Float.expand_nan_payload p)) hq.1 hq.2
 
 end CompCert4Lean.Lib.Floats
+
+namespace CompCert4Lean.Lib.Floats
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Flocq.IEEE754
+open CompCert4Lean.Lib
+
+private theorem quiet_nan_64_payload_bounds (p : positive) :
+    0 < PArith.BinPos.Pos.to_nat (quiet_nan_64_payload p) ∧
+      PArith.BinPos.Pos.to_nat (quiet_nan_64_payload p) < 2 ^ 52 := by
+  unfold quiet_nan_64_payload
+  have hmod : (Nat.lor (PArith.BinPos.Pos.to_nat p) (2 ^ 51)) % (2 ^ 52) < 2 ^ 52 :=
+    Nat.mod_lt _ (Nat.two_pow_pos 52)
+  have hbit : ((Nat.lor (PArith.BinPos.Pos.to_nat p) (2 ^ 51)) % (2 ^ 52)).testBit 51 = true := by
+    rw [Nat.testBit_mod_two_pow]
+    simp only [Nat.lor_eq, Nat.testBit_or, Nat.testBit_two_pow_self, Bool.or_true]
+    decide
+  have hge := Nat.ge_two_pow_of_testBit hbit
+  have hpow : 0 < 2 ^ 51 := Nat.two_pow_pos 51
+  have hrpos : 0 < (Nat.lor (PArith.BinPos.Pos.to_nat p) (2 ^ 51)) % (2 ^ 52) := by
+    omega
+  change 0 < posToNat (posOfNat ((Nat.lor (PArith.BinPos.Pos.to_nat p) (2 ^ 51)) % (2 ^ 52))) ∧
+    posToNat (posOfNat ((Nat.lor (PArith.BinPos.Pos.to_nat p) (2 ^ 51)) % (2 ^ 52))) < 2 ^ 52
+  rw [posToNat_posOfNat hrpos]
+  exact ⟨hrpos, hmod⟩
+
+private theorem decode64_quiet_nan (s : Bool) (p : positive) :
+    decode64 (quiet_nan_64 (s, p)) =
+      (CompCert4Lean.Flocq.IEEE754.Binary.B754_nan s
+        (quiet_nan_64_payload p) : CompCert4Lean.Flocq.IEEE754.Bits.binary64) := by
+  have hbounds := quiet_nan_64_payload_bounds p
+  have hpayload :
+      PArith.BinPos.Pos.of_nat (PArith.BinPos.Pos.to_nat (quiet_nan_64_payload p)) =
+        quiet_nan_64_payload p :=
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.posOfNat_posToNat
+      (quiet_nan_64_payload p)
+  cases s with
+  | false =>
+      unfold quiet_nan_64
+      rw [← hpayload]
+      exact decode64_mkNaN false
+        (PArith.BinPos.Pos.to_nat (quiet_nan_64_payload p)) hbounds.1 hbounds.2
+  | true =>
+      unfold quiet_nan_64
+      rw [← hpayload]
+      exact decode64_mkNaN true
+        (PArith.BinPos.Pos.to_nat (quiet_nan_64_payload p)) hbounds.1 hbounds.2
+
+private theorem quiet_nan_64_result_obligation_proof_local : quiet_nan_64_result_obligation := by
+  intro sp
+  rw [decode64_quiet_nan sp.1 sp.2]
+  constructor
+  · rfl
+  · unfold CompCert4Lean.Flocq.IEEE754.Binary.BinaryFloatCertificate
+    unfold CompCert4Lean.Flocq.IEEE754.Binary.B2FF
+    unfold CompCert4Lean.Flocq.IEEE754.Binary.valid_binary
+    have hpayload :
+        PArith.BinPos.Pos.of_nat (PArith.BinPos.Pos.to_nat (quiet_nan_64_payload sp.2)) =
+          quiet_nan_64_payload sp.2 :=
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.posOfNat_posToNat
+        (quiet_nan_64_payload sp.2)
+    change CompCert4Lean.Flocq.IEEE754.Binary.nan_pl (prec := z53)
+      (quiet_nan_64_payload sp.2) = true
+    rw [← hpayload]
+    exact nan_pl_posOfNat_lt_52
+      (PArith.BinPos.Pos.to_nat (quiet_nan_64_payload sp.2))
+      (quiet_nan_64_payload_bounds sp.2).1
+      (quiet_nan_64_payload_bounds sp.2).2
+
+theorem quiet_nan_64_result_obligation_proof : quiet_nan_64_result_obligation :=
+  quiet_nan_64_result_obligation_proof_local
+
+theorem Float.neg_nan_result_obligation_proof : Float.neg_nan_result_obligation := by
+  intro f hf
+  unfold Float.neg_nan
+  split
+  · rename_i hnan
+    have hparts : (exponent64 f == (2 ^ 11 - 1)) = true ∧
+        (fraction64 f != 0) = true := by
+      simpa only [isNaN64, Bool.and_eq_true] using hnan
+    have hq : 0 < fraction64 f := by
+      have hne : fraction64 f ≠ 0 := by simpa using hparts.2
+      omega
+    have hqlt : fraction64 f < 2 ^ 52 := by
+      unfold fraction64
+      exact Nat.mod_lt _ (Nat.two_pow_pos 52)
+    unfold payload64
+    cases hs : sign64 f with
+    | false =>
+        simp only [Bool.not_false]
+        rw [decode64_mkNaN true (fraction64 f) hq hqlt]
+        constructor
+        · rfl
+        · unfold CompCert4Lean.Flocq.IEEE754.Binary.BinaryFloatCertificate
+          unfold CompCert4Lean.Flocq.IEEE754.Binary.B2FF
+          unfold CompCert4Lean.Flocq.IEEE754.Binary.valid_binary
+          change CompCert4Lean.Flocq.IEEE754.Binary.nan_pl (prec := z53)
+              (PArith.BinPos.Pos.of_nat (fraction64 f)) = true
+          exact nan_pl_posOfNat_lt_52 (fraction64 f) hq hqlt
+    | true =>
+        simp only [Bool.not_true]
+        rw [decode64_mkNaN false (fraction64 f) hq hqlt]
+        constructor
+        · rfl
+        · unfold CompCert4Lean.Flocq.IEEE754.Binary.BinaryFloatCertificate
+          unfold CompCert4Lean.Flocq.IEEE754.Binary.B2FF
+          unfold CompCert4Lean.Flocq.IEEE754.Binary.valid_binary
+          change CompCert4Lean.Flocq.IEEE754.Binary.nan_pl (prec := z53)
+              (PArith.BinPos.Pos.of_nat (fraction64 f)) = true
+          exact nan_pl_posOfNat_lt_52 (fraction64 f) hq hqlt
+  · exact default_nan_64_result_obligation_proof
+
+theorem Float.of_single_nan_result_obligation_proof : Float.of_single_nan_result_obligation := by
+  intro f hf
+  unfold Float.of_single_nan
+  split
+  · rename_i hnan
+    simp only [CompCert4Lean.X86_64.Archi.float_conversion_default_nan, Bool.false_eq_true,
+      ↓reduceIte]
+    exact quiet_nan_64_result_obligation_proof_local
+      (sign32 f, Float.expand_nan_payload (payload32 f))
+  · exact default_nan_64_result_obligation_proof
+
+theorem Float.unop_nan_result_obligation_proof : Float.unop_nan_result_obligation := by
+  intro x hx
+  unfold Float.unop_nan
+  exact quiet_nan_64_result_obligation_proof_local
+    (CompCert4Lean.X86_64.Archi.choose_nan_64 (Float.cons_pl x []))
+
+end CompCert4Lean.Lib.Floats
