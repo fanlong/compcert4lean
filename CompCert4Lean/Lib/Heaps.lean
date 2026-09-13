@@ -1632,3 +1632,20 @@ theorem In_deleteMax (E : OrderedType) : In_deleteMaxStatement E := by
   exact inDeleteMaxAux E y x (inDeleteMaxSize h) h (Nat.le_refl _) hfind
 
 end CompCert4Lean.Lib.Heaps.SplayHeapSet.R
+
+namespace CompCert4Lean.Lib.Heaps.SplayHeapSet.R
+
+theorem lt_heap_In : ∀ (E : OrderedType), lt_heap_InStatement E := by
+  intro E x y h
+  induction h with
+  | Empty =>
+      intro hlt hin
+      cases hin
+  | Node a z b iha ihb =>
+      intro hlt hin
+      rcases hin with hin | hin | hin
+      · exact iha hlt.1 hin
+      · exact leLtTrans E (Or.inl hin) hlt.2.1
+      · exact ihb hlt.2.2 hin
+
+end CompCert4Lean.Lib.Heaps.SplayHeapSet.R

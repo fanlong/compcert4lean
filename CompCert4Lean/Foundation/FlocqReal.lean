@@ -1819,3 +1819,26 @@ theorem sqrt_Rsqr :
 end R_sqrt
 end Rocq.Coq.Reals
 end CompCert4Lean.Foundation.FlocqReal
+
+namespace CompCert4Lean.Foundation.FlocqReal
+namespace Rocq.Coq.Reals
+namespace R_sqrt
+
+theorem Rsqr_sqrt :
+    ∀ (ctx : ExactRealContext), Rsqr_sqrtStatement ctx := by
+  intro ctx x hx
+  change ctx.spec.mul (ExactReal.sqrt ctx.spec x) (ExactReal.sqrt ctx.spec x) = x
+  have hx' : ctx.spec.le ctx.spec.zero x := by
+    change ctx.spec.le (ctx.spec.ofZ Z0) x at hx
+    rw [ctx.certificate.sourceLaws.ofZ_zero] at hx
+    exact hx
+  unfold ExactReal.sqrt
+  cases hdec : ctx.spec.lt_dec x ctx.spec.zero with
+  | left hlt =>
+      exact ((ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp hlt).2 hx' |>.elim
+  | right _ =>
+      exact ctx.certificate.sqrt.sqr x hx'
+
+end R_sqrt
+end Rocq.Coq.Reals
+end CompCert4Lean.Foundation.FlocqReal
