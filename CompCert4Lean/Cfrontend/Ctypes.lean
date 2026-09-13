@@ -2245,3 +2245,94 @@ theorem composite_of_def_consistent : composite_of_def_consistentStatement := by
           exact ⟨by simpa using hcomplete, rfl, rfl, rfl⟩
 
 end CompCert4Lean.Cfrontend.Ctypes
+
+namespace CompCert4Lean.Cfrontend.Ctypes
+
+private theorem build_composite_env_consistent_aux :
+    ∀ (defs : List composite_definition) (env1 env2 : composite_env),
+      add_composite_definitions env1 defs = .OK env2 →
+      composite_env_consistent env1 →
+      composite_env_consistent env2 := by
+  intro defs
+  induction defs with
+  | nil =>
+      intro env1 env2 hadd hbase
+      simp only [add_composite_definitions] at hadd
+      cases hadd
+      exact hbase
+  | cons d defs ih =>
+      intro env1 env2 hadd hbase
+      change CompCert4Lean.Lib.Maps.PTree.tree composite at env1 env2
+      cases d with
+      | Composite id su ms a =>
+          cases hco : composite_of_def env1 id su ms a with
+          | Error msg =>
+              simp [add_composite_definitions, hco] at hadd
+          | OK co =>
+              have hrest :
+                  add_composite_definitions (CompCert4Lean.Lib.Maps.PTree.set id co env1) defs =
+                    .OK env2 := by
+                simpa [add_composite_definitions, hco] using hadd
+              have hco_cons : composite_consistent env1 co :=
+                composite_of_def_consistent env1 id su ms a co hco
+              have hnone : CompCert4Lean.Lib.Maps.PTree.get
+                  (show CompCert4Lean.Foundation.Numbers.Rocq.Coq.positive from id)
+                  env1 = none := by
+                unfold composite_of_def at hco
+                split at hco
+                · rename_i hdup
+                  cases hco
+                · rename_i hnone
+                  exact hnone
+              have hincr : ∀ j cj, CompCert4Lean.Lib.Maps.PTree.get j env1 = some cj →
+                  CompCert4Lean.Lib.Maps.PTree.get j
+                    (CompCert4Lean.Lib.Maps.PTree.set id co env1) = some cj := by
+                intro j cj hj
+                have hs := CompCert4Lean.Lib.Maps.PTree.getSet_equation
+                  (A := composite) j
+                  (show CompCert4Lean.Foundation.Numbers.Rocq.Coq.positive from id)
+                  co env1
+                rw [hs]
+                split
+                · rename_i hEq
+                  exfalso
+                  cases hEq
+                  have hbad : (none : Option composite) = some cj :=
+                    hnone.symm.trans hj
+                  cases hbad
+                · exact hj
+              have hset : composite_env_consistent
+                  (CompCert4Lean.Lib.Maps.PTree.set id co env1) := by
+                intro j cj hj
+                have hspec := CompCert4Lean.Lib.Maps.PTree.getSet_equation
+                  (A := composite)
+                  (show CompCert4Lean.Foundation.Numbers.Rocq.Coq.positive from j)
+                  (show CompCert4Lean.Foundation.Numbers.Rocq.Coq.positive from id)
+                  co env1
+                rw [hspec] at hj
+                split at hj
+                · rename_i hEq
+                  cases hEq
+                  cases hj
+                  exact composite_consistent_stable env1
+                    (CompCert4Lean.Lib.Maps.PTree.set id co env1) hincr co hco_cons
+                · exact composite_consistent_stable env1
+                    (CompCert4Lean.Lib.Maps.PTree.set id co env1) hincr cj (hbase j cj hj)
+              exact ih (CompCert4Lean.Lib.Maps.PTree.set id co env1) env2 hrest hset
+
+theorem build_composite_env_consistent : build_composite_env_consistentStatement := by
+  unfold build_composite_env_consistentStatement build_composite_env
+  intro defs env hadd
+  have hempty : composite_env_consistent
+      (show composite_env from CompCert4Lean.Lib.Maps.PTree.empty composite) := by
+    intro id co hget
+    change CompCert4Lean.Lib.Maps.PTree.get
+      (show CompCert4Lean.Foundation.Numbers.Rocq.Coq.positive from id)
+      (CompCert4Lean.Lib.Maps.PTree.empty composite) = some co at hget
+    simp only [CompCert4Lean.Lib.Maps.PTree.empty, CompCert4Lean.Lib.Maps.PTree.get] at hget
+    cases hget
+  exact build_composite_env_consistent_aux defs
+    (show composite_env from CompCert4Lean.Lib.Maps.PTree.empty composite)
+    env hadd hempty
+
+end CompCert4Lean.Cfrontend.Ctypes
