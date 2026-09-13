@@ -1334,3 +1334,15 @@ theorem mconj_proj2 : mconj_proj2Statement := by
   exact h.2.2 b ofs (Or.inr hQ) hR
 
 end CompCert4Lean.Common.Separation
+
+namespace CompCert4Lean.Common.Separation
+
+theorem frame_mconj : frame_mconjStatement := by
+  intro P P' Q R m m' h hP' hQ
+  refine ⟨⟨hP'.1, hQ⟩, hP'.2.1, ?_⟩
+  intro b ofs hfoot hR
+  cases hfoot with
+  | inl hP'foot => exact hP'.2.2 b ofs hP'foot hR
+  | inr hQfoot => exact h.2.2 b ofs (Or.inr hQfoot) hR
+
+end CompCert4Lean.Common.Separation
