@@ -2675,3 +2675,404 @@ theorem composite_consistent_unique : composite_consistent_uniqueStatement := by
   congr
 
 end CompCert4Lean.Cfrontend.Ctypes
+
+namespace CompCert4Lean.Cfrontend.Ctypes
+
+theorem composite_of_def_stable : composite_of_def_stableStatement := by
+  unfold composite_of_def_stableStatement
+  intro env env' henv id su m a co hnone hco
+  have hco_cons : composite_consistent env co :=
+    composite_of_def_consistent env id su m a co hco
+  cases hget : CompCert4Lean.Lib.Maps.PTree.get id env with
+  | some existing =>
+      have hget' := henv id existing hget
+      rw [hget'] at hnone
+      cases hnone
+  | none =>
+      cases hcomplete : complete_members env m with
+      | false =>
+          unfold composite_of_def at hco
+          rw [hget, hcomplete] at hco
+          cases hco
+      | true =>
+          have hco' := hco
+          unfold composite_of_def at hco'
+          rw [hget, hcomplete] at hco'
+          have hco_val :
+              { co_su := su
+                co_members := m
+                co_attr := a
+                co_sizeof := align (sizeof_composite env su m)
+                  (align_attr a (alignof_composite env m))
+                co_alignof := align_attr a (alignof_composite env m)
+                co_rank := rank_members env m
+                co_sizeof_pos := _
+                co_alignof_two_p := _
+                co_sizeof_alignof := _ } = co :=
+            CompCert4Lean.Common.Errors.res.OK.inj hco'
+          have hsu : co.co_su = su :=
+            (congrArg (fun c : composite => c.co_su) hco_val).symm
+          have hm : co.co_members = m :=
+            (congrArg (fun c : composite => c.co_members) hco_val).symm
+          have ha : co.co_attr = a :=
+            (congrArg (fun c : composite => c.co_attr) hco_val).symm
+          have hstable : composite_consistent env' co :=
+            composite_consistent_stable env env' henv co hco_cons
+          simpa only [hsu, hm, ha] using
+            (composite_of_def_eq env' id co hstable hnone)
+
+end CompCert4Lean.Cfrontend.Ctypes
+
+namespace CompCert4Lean.Cfrontend.Ctypes
+
+private theorem composite_of_def_fields :
+    ∀ (env : composite_env) (id : ident) (su : struct_or_union)
+      (ms : members) (a : attr) (co : composite),
+      composite_of_def env id su ms a = .OK co →
+      co.co_members = ms ∧ co.co_attr = a ∧ co.co_su = su := by
+  intro env id su ms a co hco
+  unfold composite_of_def at hco
+  cases hget : CompCert4Lean.Lib.Maps.PTree.get id env with
+  | some existing =>
+      rw [hget] at hco
+      cases hco
+  | none =>
+      cases hcomplete : complete_members env ms with
+      | false =>
+          rw [hget, hcomplete] at hco
+          cases hco
+      | true =>
+          rw [hget, hcomplete] at hco
+          cases hco
+          exact ⟨rfl, rfl, rfl⟩
+
+private theorem composite_of_def_none :
+    ∀ (env : composite_env) (id : ident) (su : struct_or_union)
+      (ms : members) (a : attr) (co : composite),
+      composite_of_def env id su ms a = .OK co →
+      CompCert4Lean.Lib.Maps.PTree.get id env = none := by
+  intro env id su ms a co hco
+  unfold composite_of_def at hco
+  split at hco
+  · rename_i hdup
+    cases hco
+  · rename_i hnone
+    exact hnone
+
+private theorem ptree_get_set_spec (i j : CompCert4Lean.Foundation.Numbers.Rocq.Coq.positive)
+    (x : composite) (m : CompCert4Lean.Lib.Maps.PTree.tree composite) :
+    CompCert4Lean.Lib.Maps.PTree.get i (CompCert4Lean.Lib.Maps.PTree.set j x m) =
+      match CompCert4Lean.Lib.Coqlib.peq i j with
+      | .left _ => some x
+      | .right _ => CompCert4Lean.Lib.Maps.PTree.get i m :=
+  CompCert4Lean.Lib.Maps.PTree.gsspec_proof i j x m
+
+noncomputable def link_add_composite_definitions : link_add_composite_definitionsStatement := by
+  unfold link_add_composite_definitionsStatement
+  intro l0 env0 hbuild l
+  induction l with
+  | nil =>
+      intro env1 env1' env2 hadd agree1 agree0 agree2 unique
+      change CompCert4Lean.Lib.Maps.PTree.tree composite at env1 env1' env2
+      simp only [add_composite_definitions] at hadd
+      cases hadd
+      refine ⟨env2, ?_, agree1, agree0⟩
+      rfl
+  | cons d ds ih =>
+      intro env1 env1' env2 hadd agree1 agree0 agree2 unique
+      cases d with
+      | Composite id su ms a =>
+          change CompCert4Lean.Foundation.Numbers.Rocq.Coq.positive at id
+          simp only [add_composite_definitions] at hadd
+          cases hco : composite_of_def env1 id su ms a with
+          | Error msg =>
+              simp [hco] at hadd
+          | OK co =>
+              simp only [hco] at hadd
+              have hnone1 :
+                  CompCert4Lean.Lib.Maps.PTree.get id env1 = none :=
+                composite_of_def_none env1 id su ms a co hco
+              have hfields : co.co_members = ms ∧ co.co_attr = a ∧ co.co_su = su :=
+                composite_of_def_fields env1 id su ms a co hco
+              cases hdec : CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.List.in_dec
+                  CompCert4Lean.Common.AST.ident_eq id (l0.map name_composite_def) with
+              | left hmem =>
+                  have hmem0 : Composite id su ms a ∈ l0 := by
+                    rcases _root_.List.mem_map.mp hmem with ⟨cd, hcd, hname⟩
+                    have heq := unique cd (Composite id su ms a) hcd
+                      (_root_.List.Mem.head ds) hname.symm
+                    cases heq
+                    exact hcd
+                  have hchar := build_composite_env_charact id su ms a l0 env0
+                    hbuild hmem0
+                  let co0 := Classical.choose hchar
+                  have hchar' := Classical.choose_spec hchar
+                  have hget0 := hchar'.1
+                  have hmembers0 := hchar'.2.1
+                  have hattr0 := hchar'.2.2.1
+                  have hsu0 := hchar'.2.2.2
+                  have hcons0 : composite_consistent env0 co0 :=
+                    build_composite_env_consistent l0 env0 hbuild id co0 hget0
+                  have hcons0' : composite_consistent env2 co0 :=
+                    composite_consistent_stable env0 env2 agree0 co0 hcons0
+                  have hcons1 : composite_consistent env2 co :=
+                    composite_consistent_stable env1 env2 agree1 co
+                      (composite_of_def_consistent env1 id su ms a co hco)
+                  have hcoeq : co0 = co :=
+                    composite_consistent_unique env2 co0 co hcons0' hcons1
+                      (hsu0.trans hfields.2.2.symm)
+                      (hmembers0.trans hfields.1.symm)
+                      (hattr0.trans hfields.2.1.symm)
+                  have hset_agree1 :
+                      ∀ j cj,
+                        CompCert4Lean.Lib.Maps.PTree.get j
+                            (CompCert4Lean.Lib.Maps.PTree.set id co env1) = some cj →
+                          CompCert4Lean.Lib.Maps.PTree.get j env2 = some cj := by
+                    intro j cj hj
+                    have hs := ptree_get_set_spec j id co
+                      (show CompCert4Lean.Lib.Maps.PTree.tree composite from env1)
+                    rw [hs] at hj
+                    cases hpeq : CompCert4Lean.Lib.Coqlib.peq j id with
+                    | left heq =>
+                        subst j
+                        simp [hpeq] at hj
+                        cases hj
+                        simpa [hcoeq] using agree0 id co0 hget0
+                    | right hne =>
+                        apply agree1 j cj
+                        simpa [hpeq] using hj
+                  have hunique_tail :
+                      ∀ cd1 cd2, cd1 ∈ l0 → cd2 ∈ ds →
+                        name_composite_def cd2 = name_composite_def cd1 → cd2 = cd1 := by
+                    intro cd1 cd2 hcd1 hcd2 hnames
+                    exact unique cd1 cd2 hcd1 (_root_.List.Mem.tail _ hcd2) hnames
+                  have hset_agree2 :
+                      ∀ j,
+                        CompCert4Lean.Lib.Maps.PTree.get j env2 =
+                          match CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.List.in_dec
+                              CompCert4Lean.Common.AST.ident_eq j (l0.map name_composite_def) with
+                          | .left _ => CompCert4Lean.Lib.Maps.PTree.get j env0
+                          | .right _ =>
+                              CompCert4Lean.Lib.Maps.PTree.get j
+                                (CompCert4Lean.Lib.Maps.PTree.set id co env1) := by
+                    intro j
+                    have hagree := agree2 j
+                    cases hpeq : CompCert4Lean.Lib.Coqlib.peq j id with
+                    | left heq =>
+                        subst j
+                        cases hdec' : CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.List.in_dec
+                            CompCert4Lean.Common.AST.ident_eq id (l0.map name_composite_def) with
+                        | left h =>
+                            simpa [hdec', hpeq] using hagree
+                        | right h =>
+                            exact (h hmem).elim
+                    | right hne =>
+                        cases hdec' : CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.List.in_dec
+                            CompCert4Lean.Common.AST.ident_eq j (l0.map name_composite_def) with
+                        | left h =>
+                            simpa [hdec', hpeq] using hagree
+                        | right h =>
+                            rw [ptree_get_set_spec j id co
+                              (show CompCert4Lean.Lib.Maps.PTree.tree composite from env1)]
+                            simpa [hdec', hpeq] using hagree
+                  have hrec := ih (env1 := CompCert4Lean.Lib.Maps.PTree.set id co env1)
+                    (env1' := env1') (env2 := env2) hadd hset_agree1 agree0 hset_agree2
+                    hunique_tail
+                  change CompCert4Lean.Common.AST.ident at id
+                  have hfilter :
+                      filter_redefs l0 (Composite id su ms a :: ds) =
+                        filter_redefs l0 ds := by
+                    unfold filter_redefs
+                    dsimp
+                    unfold CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.List.filter
+                    rw [_root_.List.filter_cons]
+                    cases hhead : CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.List.in_dec
+                        CompCert4Lean.Common.AST.ident_eq
+                          (name_composite_def (Composite id su ms a))
+                          (l0.map name_composite_def) with
+                    | left hp => simp [hhead]
+                    | right hp =>
+                        have hmem' :
+                            CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.List.In id
+                              (l0.map name_composite_def) := by
+                          exact hmem
+                        have :
+                            CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.List.In
+                              (name_composite_def (Composite id su ms a))
+                              (l0.map name_composite_def) := by
+                          exact hmem'
+                        exact (hp this).elim
+                  rcases hrec with ⟨env2', hadd2, hagree1', hagree0'⟩
+                  refine ⟨env2', ?_, hagree1', hagree0'⟩
+                  rw [hfilter]
+                  exact hadd2
+              | right hmem =>
+                  have hnone0 :
+                      CompCert4Lean.Lib.Maps.PTree.get id env0 = none := by
+                    cases h0 : CompCert4Lean.Lib.Maps.PTree.get id env0 with
+                    | none => rfl
+                    | some co0 =>
+                        have hdom := build_composite_env_domain env0 l0 id co0 hbuild h0
+                        exact (hmem (_root_.List.mem_map.mpr
+                          ⟨Composite id co0.co_su co0.co_members co0.co_attr, hdom, rfl⟩)).elim
+                  have hnone2 :
+                      CompCert4Lean.Lib.Maps.PTree.get id env2 = none := by
+                    rw [agree2 id]
+                    cases hdec' : CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.List.in_dec
+                        CompCert4Lean.Common.AST.ident_eq id (l0.map name_composite_def) with
+                    | left h => exact (hmem h).elim
+                    | right h => simp [hdec', hnone1]
+                  have hco2 : composite_of_def env2 id su ms a = .OK co :=
+                    composite_of_def_stable env1 env2 agree1 id su ms a co hnone2 hco
+                  have hset_agree1 :
+                      ∀ j cj,
+                        CompCert4Lean.Lib.Maps.PTree.get j
+                            (CompCert4Lean.Lib.Maps.PTree.set id co env1) = some cj →
+                          CompCert4Lean.Lib.Maps.PTree.get j
+                            (CompCert4Lean.Lib.Maps.PTree.set id co env2) = some cj := by
+                    intro j cj hj
+                    have hs1 := ptree_get_set_spec j id co
+                      (show CompCert4Lean.Lib.Maps.PTree.tree composite from env1)
+                    have hs2 := ptree_get_set_spec j id co
+                      (show CompCert4Lean.Lib.Maps.PTree.tree composite from env2)
+                    rw [hs1] at hj
+                    rw [hs2]
+                    cases hpeq : CompCert4Lean.Lib.Coqlib.peq j id with
+                    | left heq =>
+                        subst j
+                        simpa [hpeq] using hj
+                    | right hne =>
+                        apply agree1 j cj
+                        simpa [hpeq] using hj
+                  have hset_agree0 :
+                      ∀ j cj, CompCert4Lean.Lib.Maps.PTree.get j env0 = some cj →
+                        CompCert4Lean.Lib.Maps.PTree.get j
+                            (CompCert4Lean.Lib.Maps.PTree.set id co env2) = some cj := by
+                    intro j cj hj
+                    have hs2 := ptree_get_set_spec j id co
+                      (show CompCert4Lean.Lib.Maps.PTree.tree composite from env2)
+                    rw [hs2]
+                    cases hpeq : CompCert4Lean.Lib.Coqlib.peq j id with
+                    | left heq =>
+                        subst j
+                        exact (by rw [hnone0] at hj; cases hj)
+                    | right hne =>
+                        simpa [hpeq] using agree0 j cj hj
+                  have hset_agree2 :
+                      ∀ j,
+                        CompCert4Lean.Lib.Maps.PTree.get j
+                            (CompCert4Lean.Lib.Maps.PTree.set id co env2) =
+                          match CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.List.in_dec
+                              CompCert4Lean.Common.AST.ident_eq j (l0.map name_composite_def) with
+                          | .left _ => CompCert4Lean.Lib.Maps.PTree.get j env0
+                          | .right _ =>
+                              CompCert4Lean.Lib.Maps.PTree.get j
+                                (CompCert4Lean.Lib.Maps.PTree.set id co env1) := by
+                    intro j
+                    have hs2 := ptree_get_set_spec j id co
+                      (show CompCert4Lean.Lib.Maps.PTree.tree composite from env2)
+                    rw [hs2]
+                    cases hpeq : CompCert4Lean.Lib.Coqlib.peq j id with
+                    | left heq =>
+                        subst j
+                        cases hdec' : CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.List.in_dec
+                            CompCert4Lean.Common.AST.ident_eq id (l0.map name_composite_def) with
+                        | left h => exact (hmem h).elim
+                        | right h =>
+                            rw [ptree_get_set_spec id id co
+                              (show CompCert4Lean.Lib.Maps.PTree.tree composite from env1)]
+                            simp [hdec', hpeq, hnone1]
+                    | right hne =>
+                        have hs1 := ptree_get_set_spec j id co
+                          (show CompCert4Lean.Lib.Maps.PTree.tree composite from env1)
+                        cases hdec' : CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.List.in_dec
+                            CompCert4Lean.Common.AST.ident_eq j (l0.map name_composite_def) with
+                        | left h =>
+                            simpa [hdec', hpeq] using agree2 j
+                        | right h =>
+                            rw [hs1]
+                            simpa [hdec', hpeq] using agree2 j
+                  have hunique_tail :
+                      ∀ cd1 cd2, cd1 ∈ l0 → cd2 ∈ ds →
+                        name_composite_def cd2 = name_composite_def cd1 → cd2 = cd1 := by
+                    intro cd1 cd2 hcd1 hcd2 hnames
+                    exact unique cd1 cd2 hcd1 (_root_.List.Mem.tail _ hcd2) hnames
+                  have hrec := ih (env1 := CompCert4Lean.Lib.Maps.PTree.set id co env1)
+                    (env1' := env1') (env2 := CompCert4Lean.Lib.Maps.PTree.set id co env2)
+                    hadd hset_agree1 hset_agree0 hset_agree2 hunique_tail
+                  change CompCert4Lean.Common.AST.ident at id
+                  have hfilter :
+                      filter_redefs l0 (Composite id su ms a :: ds) =
+                        Composite id su ms a :: filter_redefs l0 ds := by
+                    unfold filter_redefs
+                    dsimp
+                    unfold CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.List.filter
+                    rw [_root_.List.filter_cons]
+                    cases hhead : CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.List.in_dec
+                        CompCert4Lean.Common.AST.ident_eq
+                          (name_composite_def (Composite id su ms a))
+                          (l0.map name_composite_def) with
+                    | left hp =>
+                        have hp' :
+                            CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.List.In id
+                              (l0.map name_composite_def) := by
+                          simpa only [name_composite_def] using hp
+                        exact (hmem hp').elim
+                    | right hp => simp [hhead]
+                  rcases hrec with ⟨env2', hadd2, hagree1', hagree0'⟩
+                  refine ⟨env2', ?_, hagree1', hagree0'⟩
+                  rw [hfilter]
+                  simp only [add_composite_definitions, hco2]
+                  exact hadd2
+
+end CompCert4Lean.Cfrontend.Ctypes
+
+namespace CompCert4Lean.Cfrontend.Ctypes
+
+noncomputable def link_build_composite_env_proof : link_build_composite_envStatement := by
+  unfold link_build_composite_envStatement
+  intro l1 l2 l env1 env2 hbuild1 hbuild2 hlink
+  have hinv := link_composite_def_inv_proof l1 l2 l hlink
+  have hunique := hinv.1
+  have hlist := hinv.2.1
+  have hresult := link_add_composite_definitions
+    (l0 := l1) (env0 := env1) hbuild1
+    (l := l2) (env1 := CompCert4Lean.Lib.Maps.PTree.empty composite)
+    (env1' := env2) (env2 := env1)
+    (by simpa [build_composite_env] using hbuild2)
+    (by
+      intro id co hget
+      simp only [CompCert4Lean.Lib.Maps.PTree.empty,
+        CompCert4Lean.Lib.Maps.PTree.get] at hget
+      cases hget)
+    (by
+      intro id co hget
+      exact hget)
+    (by
+      intro id
+      cases hdec : CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.List.in_dec
+          CompCert4Lean.Common.AST.ident_eq id (l1.map name_composite_def) with
+      | left hmem => simp [hdec]
+      | right hmem =>
+          cases hget : CompCert4Lean.Lib.Maps.PTree.get id env1 with
+          | none =>
+              simp only [CompCert4Lean.Lib.Maps.PTree.empty,
+                CompCert4Lean.Lib.Maps.PTree.get]
+          | some co =>
+              have hdom := build_composite_env_domain env1 l1 id co hbuild1 hget
+              have hmap :
+                  CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.List.In id
+                    (l1.map name_composite_def) := by
+                apply _root_.List.mem_map.mpr
+                exact ⟨Composite id co.co_su co.co_members co.co_attr, hdom, rfl⟩
+              exact (hmem hmap).elim)
+    hunique
+  rcases hresult with ⟨env, hadd, hsecond, hfirst⟩
+  refine ⟨env, ?_, hfirst, hsecond⟩
+  rw [hlist]
+  unfold build_composite_env
+  exact (add_composite_definitions_append l1 (filter_redefs l1 l2)
+    (CompCert4Lean.Lib.Maps.PTree.empty composite) env).2
+    ⟨env1, hbuild1, hadd⟩
+
+end CompCert4Lean.Cfrontend.Ctypes

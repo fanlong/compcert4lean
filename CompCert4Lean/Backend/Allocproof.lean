@@ -3585,3 +3585,161 @@ theorem subst_reg_satisf : subst_reg_satisfStatement := by
     exact hsat q hmem
 
 end CompCert4Lean.Backend.Allocproof
+
+namespace CompCert4Lean.Backend.Allocproof
+
+open CompCert4Lean.Backend.Allocation
+
+theorem in_subst_reg_kind : in_subst_reg_kindStatement := by
+  intro r1 k1 r2 k2 q e hq
+  let elt : EqSet.t :=
+    EqSet.elements_between (select_reg_l r1) (select_reg_h r1) e.eqs1
+  have helt : ∀ x, EqSet.In x elt ↔ EqSet.In x e ∧ x.ereg = r1 := by
+    intro x
+    exact in_elements_between_1 r1 e.eqs1 x
+  let f : EqSet.elt → eqs → eqs := fun x out =>
+    match IndexedEqKind.eq x.ekind k1 with
+    | .left _ =>
+        add_equation { ekind := k2, ereg := r2, eloc := x.eloc }
+          (remove_equation x out)
+    | .right _ => out
+  have hfold : EqSet.fold f elt e = subst_reg_kind r1 k1 r2 k2 e := by
+    unfold subst_reg_kind
+    apply congrArg (fun g => EqSet.fold g elt e)
+    funext x out
+    cases x with
+    | mk ekind ereg eloc =>
+        cases h : IndexedEqKind.eq ekind k1 with
+        | left heq =>
+            dsimp [f]
+            rw [h]
+            change (if true = true then
+              add_equation { ekind := k2, ereg := r2, eloc := eloc }
+                (remove_equation { ekind := ekind, ereg := ereg, eloc := eloc } out) else out) =
+              add_equation { ekind := k2, ereg := r2, eloc := eloc }
+                (remove_equation { ekind := ekind, ereg := ereg, eloc := eloc } out)
+            simp
+        | right hneq =>
+            dsimp [f]
+            rw [h]
+            change (if false = true then
+              add_equation { ekind := k2, ereg := r2, eloc := eloc }
+                (remove_equation { ekind := ekind, ereg := ereg, eloc := eloc } out) else out) = out
+            simp
+  have hP : EqSet.In q elt → q.ekind = k1 →
+      EqSet.In { ekind := k2, ereg := r2, eloc := q.eloc }
+        (EqSet.fold f elt e).eqs1 := by
+    have hP' := ESP.fold_rec_proof eqs
+      (fun s a => {h : EqSet.In q s → q.ekind = k1 →
+        EqSet.In { ekind := k2, ereg := r2, eloc := q.eloc } a.eqs1 // True})
+      f e elt
+      (by
+        intro s hs
+        refine ⟨?_, trivial⟩
+        intro hmem _
+        exact False.elim (hs q hmem))
+      (by
+        intro x a s' s'' hx hnot hadd hPa
+        refine ⟨?_, trivial⟩
+        intro hqmem hkq
+        rcases (hadd q).mp hqmem with hqx | hqold
+        · subst x
+          cases hkind : IndexedEqKind.eq q.ekind k1 with
+          | left heq =>
+              simp only [f, hkind]
+              apply (ESF.add_iff_proof _ _ _).mpr
+              left
+              exact EqSetE.eq_refl _
+          | right hneq =>
+              exact False.elim (hneq hkq)
+        · have hqnew : EqSet.In
+              { ekind := k2, ereg := r2, eloc := q.eloc } a.eqs1 :=
+            hPa.1 hqold hkq
+          cases hkind : IndexedEqKind.eq x.ekind k1 with
+          | left heq =>
+              simp only [f, hkind]
+              by_cases hxeq : ESF.ESF.E.eq x
+                  { ekind := k2, ereg := r2, eloc := q.eloc }
+              · apply (ESF.add_iff_proof _ _ _).mpr
+                left
+                cases hxeq
+                exact EqSetE.eq_refl _
+              · apply (ESF.add_iff_proof _ _ _).mpr
+                right
+                apply (ESF.remove_iff_proof _ _ _).mpr
+                exact ⟨hqnew, hxeq⟩
+          | right hneq =>
+              simp only [f, hkind]
+              exact hqnew)
+    exact hP'.1
+  have hQ : (¬ EqSet.In q elt ∨ q.ekind ≠ k1) →
+      EqSet.In q (EqSet.fold f elt e).eqs1 := by
+    have hQ' := ESP.fold_rec_proof eqs
+      (fun s a => {h : (¬ EqSet.In q s ∨ q.ekind ≠ k1) →
+        EqSet.In q a.eqs1 // True})
+      f e elt
+      (by
+        intro s hs
+        refine ⟨?_, trivial⟩
+        intro _
+        exact hq)
+      (by
+        intro x a s' s'' hx hnot hadd hPa
+        refine ⟨?_, trivial⟩
+        intro hcond
+        rcases hcond with hnotq | hqk
+        · have hqnot : ¬ EqSet.In q s' := by
+            intro hq'
+            exact hnotq ((hadd q).mpr (Or.inr hq'))
+          have hqa : EqSet.In q a.eqs1 :=
+            hPa.1 (Or.inl hqnot)
+          cases hkind : IndexedEqKind.eq x.ekind k1 with
+          | left heq =>
+              simp only [f, hkind]
+              have hxeq : ¬ EqSetE.eq x q := by
+                intro hxq
+                apply hnotq
+                apply (hadd q).mpr
+                left
+                exact hxq
+              apply (ESF.add_iff_proof _ _ _).mpr
+              right
+              apply (ESF.remove_iff_proof _ _ _).mpr
+              exact ⟨hqa, hxeq⟩
+          | right hneq =>
+              simp only [f, hkind]
+              exact hqa
+        · have hqa : EqSet.In q a.eqs1 :=
+            hPa.1 (Or.inr hqk)
+          cases hkind : IndexedEqKind.eq x.ekind k1 with
+          | left heq =>
+              simp only [f, hkind]
+              have hxeq : ¬ EqSetE.eq x q := by
+                intro hxq
+                apply hqk
+                rw [← hxq]
+                exact heq
+              apply (ESF.add_iff_proof _ _ _).mpr
+              right
+              apply (ESF.remove_iff_proof _ _ _).mpr
+              exact ⟨hqa, hxeq⟩
+          | right hneq =>
+              simp only [f, hkind]
+              exact hqa)
+    exact hQ'.1
+  by_cases hqe : EqSet.In q elt
+  · by_cases hqk : q.ekind = k1
+    · left
+      refine ⟨?_, ?_⟩
+      · have hr : q.ereg = r1 := (helt q).mp hqe |>.2
+        exact Prod.ext hr hqk
+      · rw [← hfold]
+        exact hP hqe hqk
+    · right
+      rw [← hfold]
+      exact hQ (Or.inr hqk)
+  · right
+    rw [← hfold]
+    exact hQ (Or.inl hqe)
+
+end CompCert4Lean.Backend.Allocproof
