@@ -1463,3 +1463,27 @@ theorem filter_globdefs_map_2 : filter_globdefs_map_2Statement := by
         exact ih u m1 m2 hmem hget
 
 end CompCert4Lean.Backend.Unusedglobproof
+
+namespace CompCert4Lean.Backend.Unusedglobproof
+
+open CompCert4Lean.Backend.Unusedglob
+
+theorem filter_globdefs_map : filter_globdefs_mapStatement := by
+  intro id u defs
+  unfold CompCert4Lean.Lib.Maps.PTree_Properties.of_list
+  cases hmem : IS.mem id u with
+  | true =>
+      simp only [if_true]
+      have h := filter_globdefs_map_2 id defs.reverse u
+        (CompCert4Lean.Lib.Maps.PTree.empty _)
+        (CompCert4Lean.Lib.Maps.PTree.empty _)
+        hmem rfl
+      rw [List.reverse_reverse] at h
+      exact h
+  | false =>
+      apply filter_globdefs_map_1 id defs.reverse u
+        (CompCert4Lean.Lib.Maps.PTree.empty _)
+      · exact hmem
+      · exact CompCert4Lean.Lib.Maps.PTree.gempty _ _
+
+end CompCert4Lean.Backend.Unusedglobproof

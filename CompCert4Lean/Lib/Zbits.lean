@@ -1181,3 +1181,31 @@ theorem Ztestbit_base : Ztestbit_baseStatement := by
     exact Int.le_refl _
   rw [Ztestbit_eq zZero x hzero]
   rfl
+
+theorem Ztestbit_succ : Ztestbit_succStatement := by
+  intro n x hn
+  have hn' : 0 ≤ intOfZ n := by
+    exact hn
+  have hsucc : zLe zZero (zSucc n) := by
+    change 0 ≤ intOfZ (zSucc n)
+    unfold zSucc ZArith.BinInt.Z.succ ZArith.BinInt.Z.add
+    simp only [intOfZ_zOfInt]
+    change 0 ≤ intOfZ n + 1
+    omega
+  have hne : zSucc n ≠ zZero := by
+    intro h
+    have h' := congrArg intOfZ h
+    unfold zSucc ZArith.BinInt.Z.succ ZArith.BinInt.Z.add at h'
+    simp only [intOfZ_zOfInt] at h'
+    change intOfZ n + 1 = 0 at h'
+    omega
+  have hpred : zPred (zSucc n) = n := by
+    apply intOfZ_injective
+    unfold zPred ZArith.BinInt.Z.pred zSucc ZArith.BinInt.Z.succ
+      ZArith.BinInt.Z.sub ZArith.BinInt.Z.add
+    simp only [intOfZ_zOfInt]
+    change intOfZ n + 1 - 1 = intOfZ n
+    omega
+  rw [Ztestbit_eq (zSucc n) x hsucc]
+  simp [sumboolSelect, zeqDec, CompCert4Lean.Lib.Coqlib.zeq,
+    ZArith.BinInt.Z.eq_dec, hne, hpred]
