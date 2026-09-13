@@ -1465,3 +1465,104 @@ theorem volatile_store_preserved : volatile_store_preservedStatement := by
       · exact hstore
 
 end CompCert4Lean.Common.Events
+
+namespace CompCert4Lean.Common.Events
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.Lib.Maps
+
+private theorem volatile_store_pmap_same {A : Type}
+    (i : CompCert4Lean.Foundation.Numbers.Rocq.Coq.positive) (x : A)
+    (m : PMap.t A) : PMap.get i (PMap.set i x m) = x := by
+  change (match PTree.get i (PTree.set i x m.2) with
+    | some y => y
+    | none => m.1) = x
+  rw [PTree.gsspec_proof]
+  cases h : CompCert4Lean.Lib.Coqlib.peq i i with
+  | left _ => simp [h]
+  | right hn => exact False.elim (hn rfl)
+
+private theorem volatile_store_pmap_other {A : Type}
+    (i j : CompCert4Lean.Foundation.Numbers.Rocq.Coq.positive) (x : A)
+    (m : PMap.t A) (hij : i ≠ j) :
+    PMap.get i (PMap.set j x m) = PMap.get i m := by
+  change (match PTree.get i (PTree.set j x m.2) with
+    | some y => y
+    | none => m.1) =
+    (match PTree.get i m.2 with
+    | some y => y
+    | none => m.1)
+  rw [PTree.gsspec_proof]
+  cases h : CompCert4Lean.Lib.Coqlib.peq i j with
+  | left heq => exact False.elim (hij heq)
+  | right _ => simp [h]
+
+theorem volatile_store_readonly : volatile_store_readonlyStatement := by
+  intro ge chunk m1 b ofs v t m2 hstore
+  cases hstore with
+  | volatile_store_vol id ev v hvol hfind hmatch =>
+      exact {
+        unchanged_on_nextblock := CompCert4Lean.Lib.Coqlib.Ple_refl _
+        unchanged_on_perm := by
+          intro b ofs k p _ _
+          rfl
+        unchanged_on_contents := by
+          intro b ofs _ _
+          rfl }
+  | volatile_store_nonvol =>
+      rename_i hnot hstore
+      unfold CompCert4Lean.Common.Memory.Mem.store at hstore
+      cases hdec : CompCert4Lean.Common.Memory.Mem.valid_access_dec m1 chunk b
+          (Ptrofs.unsigned ofs) Writable with
+      | left hvalid =>
+        simp [hdec] at hstore
+        have hm2 := hstore.2
+        subst m2
+        let contents := CompCert4Lean.Common.Memory.Mem.setN (Memdata.encode_val chunk v)
+          (Ptrofs.unsigned ofs) (PMap.get b m1.mem_contents)
+        refine {
+          unchanged_on_nextblock := CompCert4Lean.Lib.Coqlib.Ple_refl _
+          unchanged_on_perm := by
+            intro b' ofs' k p _ _
+            rfl
+          unchanged_on_contents := by
+            intro b' ofs' hP hReadable
+            by_cases hbb : b' = b
+            · subst b'
+              change ZMap.get ofs'
+                (PMap.get b (PMap.set b contents m1.mem_contents)) =
+                ZMap.get ofs' (PMap.get b m1.mem_contents)
+              have hbget :
+                  PMap.get b (PMap.set b contents m1.mem_contents) = contents :=
+                volatile_store_pmap_same b contents m1.mem_contents
+              rw [hbget]
+              apply CompCert4Lean.Common.Memory.Mem.setN_other
+              intro i hi hEq
+              subst i
+              have hi' := hi
+              rw [Memdata.encode_val_length chunk v] at hi'
+              have hi'' :
+                  zLe (Ptrofs.unsigned ofs) ofs' ∧
+                    zLt ofs'
+                      (zAdd (Ptrofs.unsigned ofs) (Memdata.size_chunk chunk)) := by
+                cases chunk <;>
+                  simpa [Memdata.size_chunk, Memdata.size_chunk_nat] using hi'
+              exact hP (CompCert4Lean.Common.Memory.Mem.perm_cur_max m1 b ofs'
+                Writable (hvalid.1 _ hi''))
+            · have hbget : PMap.get b' (PMap.set b contents m1.mem_contents) =
+                  PMap.get b' m1.mem_contents :=
+                volatile_store_pmap_other b' b contents m1.mem_contents hbb
+              rw [hbget] }
+      | right hinvalid =>
+        simp [hdec] at hstore
+        have hbad := hstore.1
+        have hfalse : (false : Bool) = true := by
+          change (false : Bool) = true at hbad
+          exact hbad
+        cases hfalse
+
+end CompCert4Lean.Common.Events

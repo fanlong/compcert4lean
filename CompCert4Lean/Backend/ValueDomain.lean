@@ -2526,3 +2526,155 @@ theorem usize_pos : usize_posStatement := by
         CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat_positive]
 
 end CompCert4Lean.Backend.ValueDomain
+
+namespace CompCert4Lean.Backend.ValueDomain
+
+theorem vge_trans : vge_transStatement := by
+  intro x y z hxy hyz
+  have zLe_trans_local (a b c : CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z) :
+      zLe a b → zLe b c → zLe a c := by
+    intro hab hbc
+    change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ a ≤
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ b at hab
+    change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ b ≤
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ c at hbc
+    change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ a ≤
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ c
+    exact Int.le_trans hab hbc
+  have zLt_le_trans_local (a b c : CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z) :
+      zLt a b → zLe b c → zLt a c := by
+    intro hab hbc
+    change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ a <
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ b at hab
+    change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ b ≤
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ c at hbc
+    change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ a <
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ c
+    exact Int.lt_of_lt_of_le hab hbc
+  have zLe_lt_trans_local (a b c : CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z) :
+      zLe a b → zLt b c → zLt a c := by
+    intro hab hbc
+    change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ a ≤
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ b at hab
+    change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ b <
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ c at hbc
+    change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ a <
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ c
+    exact Int.lt_of_le_of_lt hab hbc
+  have is_uns_mon_local
+      (n m : CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z) (i : int) :
+      is_uns n i → zLe n m → is_uns m i := by
+    intro hni hnm k hk hmk
+    apply hni k hk
+    exact zLe_trans_local n m k hnm hmk
+  have is_sgn_mon_local
+      (n m : CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z) (i : int) :
+      is_sgn n i → zLe n m → is_sgn m i := by
+    intro hni hnm k hk hmk
+    apply hni k hk
+    change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (zSub n z1) ≤
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ k
+    change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (zSub m z1) ≤
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ k at hmk
+    change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ n ≤
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ m at hnm
+    simp only [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.sub,
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt] at hmk ⊢
+    omega
+  have is_uns_sgn_local
+      (n m : CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z) (i : int) :
+      is_uns n i → zLt n m → is_sgn m i := by
+    intro hni hnm k hk hmk
+    have hz0 : CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ z0 = 0 := by rfl
+    have hz1 : CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ z1 = 1 := by rfl
+    have hzw : CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ Int.zwordsize = 32 := by rfl
+    have hnk : zLe n k := by
+      change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ n ≤
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ k
+      change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ n <
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ m at hnm
+      change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (zSub m z1) ≤
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ k at hmk
+      simp only [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.sub,
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt, hz1, hzw] at hmk ⊢
+      omega
+    have htop : zLe n (zSub Int.zwordsize z1) := by
+      change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ n ≤
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (zSub Int.zwordsize z1)
+      change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ n <
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ m at hnm
+      change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (zSub m z1) ≤
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ k at hmk
+      simp only [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.sub,
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt, hz1, hzw] at hmk ⊢
+      have hk0 := hk.1
+      have hkw := hk.2
+      change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ z0 ≤
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ k at hk0
+      change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ k <
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ Int.zwordsize at hkw
+      rw [hz0] at hk0
+      rw [hzw] at hkw
+      omega
+    have hkm : zLe z0 k ∧ zLt k Int.zwordsize := hk
+    have hb0 := hni k hkm hnk
+    have htopbits := hni (zSub Int.zwordsize z1)
+      (by
+        constructor
+        · change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ z0 ≤
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (zSub Int.zwordsize z1)
+          simp only [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.sub,
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt, hz0, hz1, hzw]
+          omega
+        · change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (zSub Int.zwordsize z1) <
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ Int.zwordsize
+          simp only [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.sub,
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt, hz1, hzw]
+          omega)
+      htop
+    rw [hb0, htopbits]
+  induction hxy generalizing z <;> cases hyz <;>
+    first
+    | exact vge.bot _
+    | exact vge.int _
+    | exact vge.long _
+    | exact vge.float _
+    | exact vge.single _
+    | exact vge.iu _
+    | exact vge.iuInt _
+    | exact vge.unsInt _ _ _ (by assumption) (by assumption)
+    | exact vge.vge_uns_iu _ _ _ (by assumption) (by assumption)
+    | exact vge.sgnInt _ _ _ (by assumption) (by assumption)
+    | exact vge.sgnIU _ _ _ (by assumption) (by assumption)
+    | exact vge.numInt _ _
+    | exact vge.numLong _ _
+    | exact vge.numFloat _ _
+    | exact vge.numSingle _ _
+    | exact vge.numIU _ _
+    | exact vge.ifptrInt _ _
+    | exact vge.ifptrLong _ _
+    | exact vge.ifptrFloat _ _
+    | exact vge.ifptrSingle _ _
+    | exact vge.ifptrIU _ _
+    | constructor <;> try assumption
+    | apply vge.vge_uns_uns <;> try assumption
+    | apply vge.sgnSgn <;> try assumption
+    | apply vge.sgnUns <;> try assumption
+    | apply vge.numUns <;> try assumption
+    | apply vge.numSgn <;> try assumption
+    | apply vge.numNum <;> try assumption
+    | apply vge.ptrPtr <;> try assumption
+    | apply vge.ifptrPtr <;> try assumption
+    | apply vge.ifptrIfptr <;> try assumption
+    | apply vge.ifptrUns <;> try assumption
+    | apply vge.ifptrSgn <;> try assumption
+    | apply vge.ifptrNum <;> try assumption
+  all_goals try { apply pge_trans <;> assumption }
+  all_goals try { apply is_uns_mon_local <;> assumption }
+  all_goals try { apply is_sgn_mon_local <;> assumption }
+  all_goals try { apply zLe_trans_local <;> assumption }
+  all_goals try { apply zLt_le_trans_local <;> assumption }
+  all_goals try { apply zLe_lt_trans_local <;> assumption }
+  all_goals try { apply is_uns_sgn_local <;> assumption }
+
+end CompCert4Lean.Backend.ValueDomain

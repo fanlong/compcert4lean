@@ -1298,3 +1298,162 @@ theorem iagree_zero : iagree_zeroStatement := by
       cases hmask
 
 end CompCert4Lean.Backend.NeedDomain
+
+namespace CompCert4Lean.Backend.NeedDomain
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Lib.Integers
+
+private theorem iagreeNotVal (a : Int.int) :
+    (Int.not a).val = Nat.xor a.val (2 ^ Int.wordsize - 1) := by
+  change (WordCore.repr Int.wordsize
+    (ZArith.BinInt.Z.of_nat (Nat.xor a.val (2 ^ Int.wordsize - 1)))).val = _
+  rw [iagreeValReprOfNat]
+  apply Nat.mod_eq_of_lt
+  apply Nat.xor_lt_two_pow
+  · exact iagreeWordValLt a
+  · have hp : 0 < 2 ^ Int.wordsize := Nat.two_pow_pos _
+    omega
+
+private theorem iagreeNotTestbit (a : Int.int) (i : Z)
+    (hirange : ZArith.BinInt.Z.le z0 i ∧ ZArith.BinInt.Z.lt i Int.zwordsize) :
+    Int.testbit (Int.not a) i = !(Int.testbit a i) := by
+  cases i with
+  | Zneg p =>
+      exfalso
+      have h := hirange.1
+      change (0 : Int) ≤ -Int.ofNat (posToNat p) at h
+      have hp : (0 : Int) < Int.ofNat (posToNat p) := by
+        exact Int.natCast_pos.mpr (posToNat_positive p)
+      omega
+  | Z0 =>
+      rw [iagreeTestbitZero (Int.not a), iagreeTestbitZero a]
+      rw [iagreeNotVal]
+      rw [Nat.xor_eq]
+      rw [Nat.testBit_xor]
+      have hmask : (2 ^ Int.wordsize - 1).testBit 0 = true := by
+        rw [Nat.testBit_two_pow_sub_one]
+        decide
+      simp [hmask]
+  | Zpos p =>
+      rw [iagreeTestbitPos (Int.not a) p, iagreeTestbitPos a p]
+      rw [iagreeNotVal]
+      rw [Nat.xor_eq]
+      rw [Nat.testBit_xor]
+      have hkZ := hirange.2
+      change Int.ofNat (posToNat p) < Int.ofNat Int.wordsize at hkZ
+      have hk : posToNat p < Int.wordsize := Int.ofNat_lt.mp hkZ
+      have hmask : (2 ^ Int.wordsize - 1).testBit (posToNat p) = true := by
+        rw [Nat.testBit_two_pow_sub_one]
+        simp [hk]
+      simp [hmask]
+
+theorem iagree_not : iagree_notStatement := by
+  intro x y m h i hirange hmask
+  rw [iagreeNotTestbit x i hirange, iagreeNotTestbit y i hirange]
+  exact congrArg Bool.not (h i hirange hmask)
+
+private theorem iagreeNotInvolutive (a : Int.int) :
+    Int.not (Int.not a) = a := by
+  apply WordCore.ext_of_val_eq
+  rw [iagreeNotVal, iagreeNotVal]
+  rw [Nat.xor_eq, Nat.xor_eq]
+  rw [Nat.xor_assoc]
+  simp
+
+theorem iagree_not' : iagree_not'Statement := by
+  intro x y m h i hirange hmask
+  have h' : iagree (Int.not (Int.not x)) (Int.not (Int.not y)) m :=
+    iagree_not (Int.not x) (Int.not y) m h
+  have hbits := h' i hirange hmask
+  rw [iagreeNotInvolutive, iagreeNotInvolutive] at hbits
+  exact hbits
+
+end CompCert4Lean.Backend.NeedDomain
+
+namespace CompCert4Lean.Backend.NeedDomain
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Lib.Integers
+
+private theorem iagreeAndAssoc (a b c : Int.int) :
+    Int.and (Int.and a b) c = Int.and a (Int.and b c) := by
+  apply WordCore.ext_of_val_eq
+  rw [iagreeAndVal, iagreeAndVal, iagreeAndVal, iagreeAndVal]
+  rw [Nat.land_eq, Nat.land_eq, Nat.land_eq, Nat.land_eq]
+  exact Nat.and_assoc _ _ _
+
+private theorem iagreeAndComm (a b : Int.int) :
+    Int.and a b = Int.and b a := by
+  apply WordCore.ext_of_val_eq
+  rw [iagreeAndVal, iagreeAndVal]
+  rw [Nat.land_eq, Nat.land_eq]
+  exact Nat.and_comm _ _
+
+theorem iagree_and : iagree_andStatement := by
+  intro x y n m h
+  apply (iagree_and_eq (Int.and x n) (Int.and y n) m).mpr
+  have hh : Int.and x (Int.and m n) = Int.and y (Int.and m n) :=
+    (iagree_and_eq x y (Int.and m n)).mp h
+  calc
+    Int.and (Int.and x n) m = Int.and x (Int.and n m) :=
+      iagreeAndAssoc x n m
+    _ = Int.and x (Int.and m n) := by rw [iagreeAndComm n m]
+    _ = Int.and y (Int.and m n) := hh
+    _ = Int.and y (Int.and n m) := by rw [iagreeAndComm m n]
+    _ = Int.and (Int.and y n) m := (iagreeAndAssoc y n m).symm
+
+end CompCert4Lean.Backend.NeedDomain
+
+namespace CompCert4Lean.Backend.NeedDomain
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Lib.Integers
+
+private theorem iagreeOrVal (a b : Int.int) :
+    (Int.or a b).val = Nat.lor a.val b.val := by
+  change (WordCore.repr Int.wordsize
+    (ZArith.BinInt.Z.of_nat (Nat.lor a.val b.val))).val = _
+  rw [iagreeValReprOfNat]
+  apply Nat.mod_eq_of_lt
+  exact Nat.or_lt_two_pow (iagreeWordValLt a) (iagreeWordValLt b)
+
+private theorem iagreeAndTestbit (a b : Int.int) (i : Z) :
+    Int.testbit (Int.and a b) i = (Int.testbit a i && Int.testbit b i) := by
+  cases i with
+  | Zneg p => rfl
+  | Z0 =>
+      rw [iagreeTestbitZero (Int.and a b), iagreeTestbitZero a,
+        iagreeTestbitZero b]
+      rw [iagreeAndVal, Nat.land_eq, Nat.testBit_and]
+  | Zpos p =>
+      rw [iagreeTestbitPos (Int.and a b) p, iagreeTestbitPos a p,
+        iagreeTestbitPos b p]
+      rw [iagreeAndVal, Nat.land_eq, Nat.testBit_and]
+
+private theorem iagreeOrTestbit (a b : Int.int) (i : Z) :
+    Int.testbit (Int.or a b) i = (Int.testbit a i || Int.testbit b i) := by
+  cases i with
+  | Zneg p => rfl
+  | Z0 =>
+      rw [iagreeTestbitZero (Int.or a b), iagreeTestbitZero a,
+        iagreeTestbitZero b]
+      rw [iagreeOrVal, Nat.lor_eq, Nat.testBit_or]
+  | Zpos p =>
+      rw [iagreeTestbitPos (Int.or a b) p, iagreeTestbitPos a p,
+        iagreeTestbitPos b p]
+      rw [iagreeOrVal, Nat.lor_eq, Nat.testBit_or]
+
+theorem iagree_or : iagree_orStatement := by
+  intro x y n m h i hirange hmask
+  rw [iagreeOrTestbit, iagreeOrTestbit]
+  by_cases hn : Int.testbit n i = true
+  · simp [hn]
+  · have hn' : Int.testbit n i = false := Bool.eq_false_iff.mpr hn
+    have hmn : Int.testbit (Int.and m (Int.not n)) i = true := by
+      rw [iagreeAndTestbit, iagreeNotTestbit n i hirange]
+      simp [hmask, hn']
+    have hxy := h i hirange hmn
+    simp [hn', hxy]
+
+end CompCert4Lean.Backend.NeedDomain

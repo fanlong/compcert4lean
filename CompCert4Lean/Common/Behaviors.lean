@@ -1307,3 +1307,15 @@ theorem forward_simulation_same_safe_behavior :
     simp [not_wrong] at hnotwrong
 
 end CompCert4Lean.Common.Behaviors
+
+namespace CompCert4Lean.Common.Behaviors
+
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.Smallstep
+
+theorem safe_along_safe :
+    safe_along_safeStatement := by
+  intro L1 s b hsafe s' hstar
+  exact hsafe E0 s' b hstar (behavior_app_E0 b).symm
+
+end CompCert4Lean.Common.Behaviors
