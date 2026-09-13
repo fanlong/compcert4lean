@@ -2298,3 +2298,31 @@ theorem wt_init_regs : wt_init_regsStatement := by
           exact wt_regset_assign env (init_regs vs rl) v r (ih vs hvs) hv
 
 end CompCert4Lean.Backend.RTLtyping
+
+namespace CompCert4Lean.Backend.RTLtyping
+
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Values
+
+theorem wt_exec_Iload : wt_exec_IloadStatement := by
+  intro cfg env f chunk addr args dst s m a v rs hwt hload hrs
+  cases a with
+  | Vptr b ofs =>
+      cases hwt with
+      | wt_Iload chunk addr args dst s hargs hdst hsucc =>
+          apply wt_regset_assign env rs v dst hrs
+          rw [hdst]
+          have hload' : Mem.load chunk m b
+              (CompCert4Lean.Lib.Integers.Ptrofs.unsigned ofs) = some v := by
+            simpa [Mem.loadv] using hload
+          exact Mem.load_type m chunk b
+            (CompCert4Lean.Lib.Integers.Ptrofs.unsigned ofs) v hload'
+  | Vundef => simp [Mem.loadv] at hload
+  | Vint n => simp [Mem.loadv] at hload
+  | Vlong n => simp [Mem.loadv] at hload
+  | Vfloat n => simp [Mem.loadv] at hload
+  | Vsingle n => simp [Mem.loadv] at hload
+
+end CompCert4Lean.Backend.RTLtyping

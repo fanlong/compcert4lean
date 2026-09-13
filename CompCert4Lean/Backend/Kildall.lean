@@ -1995,3 +1995,73 @@ theorem steps_state_good : steps_state_goodStatement := by
                 LATlaws NSlaws code successors transf s2 n rem instr hpick hcode ih
 
 end CompCert4Lean.Backend.Kildall.Dataflow_Solver
+
+namespace CompCert4Lean.Backend.Kildall.Dataflow_Solver
+
+open CompCert4Lean.Lib.Maps
+
+theorem start_state_good : start_state_goodStatement := by
+  intro A LAT NS LATlaws NSlaws code successors transf enode eval
+  dsimp [start_state]
+  constructor
+  · intro n hnvis
+    subst n
+    exact Or.inl ((NSlaws.add_spec enode enode NS.empty).mpr (Or.inl rfl))
+  · intro n v hget
+    change PTree.get n (PTree.set enode eval
+      (PTree.empty LAT.t : PTree.tree LAT.t)) = some v at hget
+    change n = enode
+    have hset := PTree.getSet_equation n enode eval
+      (PTree.empty LAT.t : PTree.tree LAT.t)
+    rw [hset] at hget
+    split at hget
+    · subst n
+      exact rfl
+    · have hempty : PTree.get n (PTree.empty LAT.t) = none := PTree.gempty LAT.t n
+      rw [hempty] at hget
+      cases hget
+
+theorem start_state_nodeset_good : start_state_nodeset_goodStatement := by
+  intro A LAT NS LATlaws NSlaws code successors transf enodes
+  dsimp [start_state_nodeset]
+  constructor
+  · intro n hnvis
+    exact Or.inl hnvis
+  · intro n v hget
+    change PTree.get n (PTree.empty LAT.t) = some v at hget
+    rw [PTree.gempty] at hget
+    cases hget
+
+theorem start_state_allnodes_good : start_state_allnodes_goodStatement := by
+  intro A LAT NS LATlaws NSlaws code successors transf
+  dsimp [start_state_allnodes]
+  constructor
+  · intro n hnvis
+    rcases hnvis with ⟨instr, hcode⟩
+    exact Or.inl (NSlaws.all_nodes_spec A code n instr hcode)
+  · intro n v hget
+    change PTree.get n (PTree.empty LAT.t) = some v at hget
+    rw [PTree.gempty] at hget
+    cases hget
+
+theorem reachable_visited : reachable_visitedStatement := by
+  intro A LAT NS LATlaws NSlaws code successors transf st hgood hpick p q hreach
+  rcases hgood with ⟨hstable, hdefined⟩
+  induction hreach with
+  | reachable_refl n =>
+      intro hp
+      exact hp
+  | reachable_left n1 n2 n3 i hcode hsucc htail ih =>
+      intro hp
+      apply ih
+      rcases hstable n1 hp with hwork | hstable'
+      · exact False.elim ((NSlaws.pick_none st.worklist n1 hpick) hwork)
+      · have hge := hstable' i n2 hcode hsucc
+        cases hval : PTree.get n2 st.aval with
+        | none =>
+            rw [hval] at hge
+            cases hge
+        | some v =>
+            exact hdefined n2 v hval
+
+end CompCert4Lean.Backend.Kildall.Dataflow_Solver

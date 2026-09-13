@@ -2456,3 +2456,81 @@ theorem Rcompare_sym (ctx : ExactRealContext) :
     rfl
 
 end CompCert4Lean.Flocq.Core.Raux
+
+namespace CompCert4Lean.Flocq.Core.Raux
+
+/-! Negation reverses the exact strict order. -/
+private theorem exact_neg_lt_neg_iff (ctx : ExactRealContext)
+    {x y : ctx.spec.carrier} :
+    ctx.spec.lt (ctx.spec.neg x) (ctx.spec.neg y) ↔ ctx.spec.lt y x := by
+  constructor
+  · intro h
+    have h1 := ctx.certificate.orderedField.add_lt_compat_l
+      x (ctx.spec.neg x) (ctx.spec.neg y) h
+    have hx0 : ctx.spec.add x (ctx.spec.neg x) = ctx.spec.zero := by
+      rw [ctx.certificate.orderedField.add_comm,
+        ctx.certificate.orderedField.neg_add_cancel]
+    rw [hx0] at h1
+    have h2 := ctx.certificate.orderedField.add_lt_compat_l
+      y ctx.spec.zero (ctx.spec.add x (ctx.spec.neg y)) h1
+    rw [ctx.certificate.orderedField.add_zero] at h2
+    have hyx : ctx.spec.add y (ctx.spec.add x (ctx.spec.neg y)) = x := by
+      calc
+        ctx.spec.add y (ctx.spec.add x (ctx.spec.neg y)) =
+            ctx.spec.add (ctx.spec.add y x) (ctx.spec.neg y) := by
+              rw [ctx.certificate.orderedField.add_assoc]
+        _ = ctx.spec.add (ctx.spec.add x y) (ctx.spec.neg y) := by
+              rw [ctx.certificate.orderedField.add_comm y x]
+        _ = ctx.spec.add x (ctx.spec.add y (ctx.spec.neg y)) := by
+              rw [← ctx.certificate.orderedField.add_assoc]
+        _ = ctx.spec.add x ctx.spec.zero := by
+              rw [show ctx.spec.add y (ctx.spec.neg y) = ctx.spec.zero by
+                rw [ctx.certificate.orderedField.add_comm,
+                  ctx.certificate.orderedField.neg_add_cancel]]
+        _ = x := ctx.certificate.orderedField.add_zero _
+    rw [hyx] at h2
+    exact h2
+  · intro h
+    have h1 := ctx.certificate.orderedField.add_lt_compat_l
+      (ctx.spec.neg y) y x h
+    rw [ctx.certificate.orderedField.neg_add_cancel] at h1
+    have h2 := ctx.certificate.orderedField.add_lt_compat_l
+      (ctx.spec.neg x) ctx.spec.zero (ctx.spec.add (ctx.spec.neg y) x) h1
+    rw [ctx.certificate.orderedField.add_zero] at h2
+    have hxy : ctx.spec.add (ctx.spec.neg x)
+        (ctx.spec.add (ctx.spec.neg y) x) = ctx.spec.neg y := by
+      calc
+        ctx.spec.add (ctx.spec.neg x)
+            (ctx.spec.add (ctx.spec.neg y) x) =
+            ctx.spec.add (ctx.spec.add (ctx.spec.neg x) (ctx.spec.neg y)) x := by
+              rw [ctx.certificate.orderedField.add_assoc]
+        _ = ctx.spec.add (ctx.spec.add (ctx.spec.neg y) (ctx.spec.neg x)) x := by
+              rw [ctx.certificate.orderedField.add_comm
+                (ctx.spec.neg x) (ctx.spec.neg y)]
+        _ = ctx.spec.add (ctx.spec.neg y)
+            (ctx.spec.add (ctx.spec.neg x) x) := by
+              rw [← ctx.certificate.orderedField.add_assoc]
+        _ = ctx.spec.add (ctx.spec.neg y) ctx.spec.zero := by
+              rw [ctx.certificate.orderedField.neg_add_cancel]
+        _ = ctx.spec.neg y := ctx.certificate.orderedField.add_zero _
+    rw [hxy] at h2
+    exact h2
+
+theorem Rcompare_opp (ctx : ExactRealContext) :
+    Rcompare_oppStatement ctx := by
+  intro x y
+  rcases ctx.certificate.total_order y x with hyx | hxy
+  · rcases hyx with hyx | heq
+    ·
+      have hneg := exact_neg_lt_neg_iff ctx |>.2 hyx
+      rw [Rcompare_Lt ctx (Exact.Ropp ctx x) (Exact.Ropp ctx y) hneg,
+        Rcompare_Lt ctx y x hyx]
+    · subst y
+      rw [Rcompare_Eq ctx (Exact.Ropp ctx x) (Exact.Ropp ctx x) rfl,
+        Rcompare_Eq ctx x x rfl]
+  ·
+      have hneg := exact_neg_lt_neg_iff ctx |>.2 hxy
+      rw [Rcompare_Gt ctx (Exact.Ropp ctx x) (Exact.Ropp ctx y) hneg,
+        Rcompare_Gt ctx y x hxy]
+
+end CompCert4Lean.Flocq.Core.Raux

@@ -1385,3 +1385,48 @@ theorem inbetween_mult_reg :
   exact hscaled
 
 end CompCert4Lean.Flocq.Calc.Bracket
+
+namespace CompCert4Lean.Flocq.Calc.Bracket
+
+theorem inbetween_float_unique :
+    ∀ (ctx : ExactRealContext), inbetween_float_uniqueStatement ctx := by
+  intro ctx beta x e m l m' l' h h'
+  have hb := inbetween_float_bounds ctx beta x m e l h
+  have hb' := inbetween_float_bounds ctx beta x m' e l' h'
+  have hmm1 : Zlt m (Zadd m' Zone) := by
+    apply CompCert4Lean.Flocq.Core.Float_prop.lt_F2R ctx beta e m
+      (Zadd m' Zone)
+    exact
+      CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.Rle_lt_trans
+        ctx _ x _ hb.1 hb'.2
+  have hmm2 : Zlt m' (Zadd m Zone) := by
+    apply CompCert4Lean.Flocq.Core.Float_prop.lt_F2R ctx beta e m'
+      (Zadd m Zone)
+    exact
+      CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.Rle_lt_trans
+        ctx _ x _ hb'.1 hb.2
+  have hmm1' := hmm1
+  have hmm2' := hmm2
+  change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ m <
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (Zadd m' Zone) at hmm1'
+  change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ m' <
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (Zadd m Zone) at hmm2'
+  simp only [Zadd,
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add,
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt] at hmm1' hmm2'
+  have hZone :
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ Zone = (1 : Int) := by
+    rfl
+  rw [hZone] at hmm1' hmm2'
+  have hmm : m = m' := by
+    apply CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective
+    omega
+  rw [← hmm] at h'
+  unfold inbetween_float at h h'
+  have hloc : l = l' := by
+    exact inbetween_unique ctx
+      (F2R ctx (Float beta m e))
+      (F2R ctx (Float beta (Zadd m Zone) e)) x l l' h h'
+  exact ⟨hmm, hloc⟩
+
+end CompCert4Lean.Flocq.Calc.Bracket

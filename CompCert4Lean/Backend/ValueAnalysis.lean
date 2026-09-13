@@ -1311,3 +1311,257 @@ theorem smatch_no_stack : smatch_no_stackStatement := by
     exact pmatch_no_stack bc hnostack b' ofs' p (hbytes ofs b' ofs' q i h)
 
 end CompCert4Lean.Backend.ValueAnalysis
+
+namespace CompCert4Lean.Backend.ValueAnalysis
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Backend.ValueDomain
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Maps
+
+private theorem anonymize_genv_match_exten
+    (ge : genv) (bc1 bc2 : block_classification)
+    (hge : genv_match bc1 ge)
+    (hglob : ∀ b id, bc1 b = BCglob id ↔ bc2 b = BCglob id)
+    (hother : ∀ b, bc1 b = BCother → bc2 b = BCother) :
+    genv_match bc2 ge := by
+  rcases hge with ⟨hsym, hbelow⟩
+  constructor
+  · intro id b
+    rw [← hglob b id]
+    exact hsym id b
+  · intro b hb
+    have h := hbelow b hb
+    constructor
+    · intro hi
+      cases hbc : bc1 b with
+      | BCinvalid => exact False.elim (h.1 (by simpa [hbc]))
+      | BCglob id =>
+          have hg' : bc2 b = BCglob id := (hglob b id).1 hbc
+          exact False.elim (by simpa [hg'] using hi)
+      | BCstack => exact False.elim (h.2 (by simpa [hbc]))
+      | BCother =>
+          have ho := hother b hbc
+          exact False.elim (by simpa [ho] using hi)
+    · intro hs
+      cases hbc : bc1 b with
+      | BCinvalid => exact False.elim (h.1 (by simpa [hbc]))
+      | BCglob id =>
+          have hg' : bc2 b = BCglob id := (hglob b id).1 hbc
+          exact False.elim (by simpa [hg'] using hs)
+      | BCstack => exact False.elim (h.2 (by simpa [hbc]))
+      | BCother =>
+          have ho := hother b hbc
+          exact False.elim (by simpa [ho] using hs)
+
+private theorem anonymize_romatch_exten
+    (bc1 bc2 : block_classification) (m : mem) (rm : romem)
+    (hrom : romatch bc1 m rm)
+    (hglob : ∀ b id, bc2 b = BCglob id ↔ bc1 b = BCglob id) :
+    romatch bc2 m rm := by
+  intro b id ab hbc2 hget
+  have hbc1 : bc1 b = BCglob id := (hglob b id).1 hbc2
+  rcases hrom b id ab hbc1 hget with ⟨hpg, hbm, hperm⟩
+  have hPM : ∀ b' ofs p,
+      pmatch bc1 b' ofs p → pmatch bc1 b' ofs ab.ab_summary →
+        pmatch bc2 b' ofs p := by
+    intro b' ofs p hp hsum
+    have hglobp : pmatch bc1 b' ofs Glob :=
+      CompCert4Lean.Backend.ValueDomain.pmatch_ge bc1 b' ofs Glob
+        ab.ab_summary hpg hsum
+    cases hp with
+    | gl id' hbc1' =>
+        exact pmatch.gl id' ((hglob b' id').2 hbc1')
+    | glo id' hbc1' =>
+        exact pmatch.glo id' ((hglob b' id').2 hbc1')
+    | glob id' hbc1' =>
+        exact pmatch.glob id' ((hglob b' id').2 hbc1')
+    | stk hbc1' =>
+        cases hglobp with
+        | glob id'' hbc1'' =>
+            exact False.elim (by simpa [hbc1'] using hbc1'')
+    | stack hbc1' =>
+        cases hglobp with
+        | glob id'' hbc1'' =>
+            exact False.elim (by simpa [hbc1'] using hbc1'')
+    | nonstack hns hni =>
+        cases hglobp with
+        | glob id'' hbc1'' =>
+            have hbc2' : bc2 b' = BCglob id'' := (hglob b' id'').2 hbc1''
+            exact pmatch.nonstack (by simpa [hbc2']) (by simpa [hbc2'])
+    | top hni =>
+        cases hglobp with
+        | glob id'' hbc1'' =>
+            have hbc2' : bc2 b' = BCglob id'' := (hglob b' id'').2 hbc1''
+            exact pmatch.top (by simpa [hbc2'])
+  have hVM : ∀ v x,
+      vmatch bc1 v x → vmatch bc1 v (Ifptr ab.ab_summary) →
+        vmatch bc2 v x := by
+    intro v x hv hsum
+    cases hv with
+    | vmatch_i i => exact vmatch.vmatch_i i
+    | vmatch_iu i => exact vmatch.vmatch_iu i
+    | iuUndef i => exact vmatch.iuUndef i
+    | uns p i n hz hi => exact vmatch.uns p i n hz hi
+    | vmatch_Uns_undef p n => exact vmatch.vmatch_Uns_undef p n
+    | sgn p i n hz hi => exact vmatch.sgn p i n hz hi
+    | sgnUndef p n => exact vmatch.sgnUndef p n
+    | long i => exact vmatch.long i
+    | float f => exact vmatch.float f
+    | single f => exact vmatch.single f
+    | numUndef p => exact vmatch.numUndef p
+    | numInt i p => exact vmatch.numInt i p
+    | numLong i p => exact vmatch.numLong i p
+    | numFloat f p => exact vmatch.numFloat f p
+    | numSingle f p => exact vmatch.numSingle f p
+    | ptr b' ofs p hp =>
+        cases hsum with
+        | ifptrPtr _ _ q hq =>
+            exact vmatch.ptr b' ofs p (hPM b' ofs p hp hq)
+    | ptrUndef p => exact vmatch.ptrUndef p
+    | ifptrUndef p => exact vmatch.ifptrUndef p
+    | ifptrInt i p => exact vmatch.ifptrInt i p
+    | ifptrLong i p => exact vmatch.ifptrLong i p
+    | ifptrFloat f p => exact vmatch.ifptrFloat f p
+    | ifptrSingle f p => exact vmatch.ifptrSingle f p
+    | ifptrPtr b' ofs p hp =>
+        cases hsum with
+        | ifptrPtr _ _ q hq =>
+            exact vmatch.ifptrPtr b' ofs p (hPM b' ofs p hp hq)
+  refine ⟨hpg, ?_, hperm⟩
+  rcases hbm with ⟨hsm, hload⟩
+  refine ⟨?_, ?_⟩
+  · rcases hsm with ⟨hsmLoad, hsmBytes⟩
+    refine ⟨?_, ?_⟩
+    · intro chunk ofs v h
+      exact hVM v _ (hsmLoad chunk ofs v h) (hsmLoad chunk ofs v h)
+    · intro ofs b' ofs' q i h
+      exact hPM b' ofs' ab.ab_summary
+        (hsmBytes ofs b' ofs' q i h) (hsmBytes ofs b' ofs' q i h)
+  · intro chunk ofs v h
+    exact hVM v _ (hload chunk ofs v h) (hsm.1 chunk ofs v h)
+
+private theorem anonymize_smatch_top
+    (bc bc' : block_classification) (m : mem)
+    (hVM : ∀ v x, vmatch bc v x → vmatch bc' v Vtop)
+    (hPM : ∀ b ofs p, pmatch bc b ofs p → pmatch bc' b ofs Ptop) :
+    ∀ b p, smatch bc m b p → smatch bc' m b Ptop := by
+  intro b p hsm
+  rcases hsm with ⟨hload, hbytes⟩
+  constructor
+  · intro chunk ofs v h
+    exact hVM v _ (hload chunk ofs v h)
+  · intro ofs b' ofs' q i h
+    exact hPM b' ofs' p (hbytes ofs b' ofs' q i h)
+
+theorem anonymize_stack : anonymize_stackStatement := by
+  intro m sp bc ge rm am hgenv hrom hmm hsp
+  let f : block → block_class := fun b => if b = sp then BCother else bc b
+  have hstack : ∀ b1 b2, f b1 = BCstack → f b2 = BCstack → b1 = b2 := by
+    intro b1 b2 h1 h2
+    by_cases hb1 : b1 = sp
+    · subst b1; simp [f] at h1
+    · by_cases hb2 : b2 = sp
+      · subst b2; simp [f] at h2
+      · have h1' : bc b1 = BCstack := by simpa [f, hb1] using h1
+        have h2' : bc b2 = BCstack := by simpa [f, hb2] using h2
+        exact bc.bc_stack b1 b2 h1' h2'
+  have hglobuniq : ∀ b1 b2 id, f b1 = BCglob id → f b2 = BCglob id → b1 = b2 := by
+    intro b1 b2 id h1 h2
+    have h1' : bc b1 = BCglob id := by
+      by_cases hb : b1 = sp
+      · subst b1; simp [f] at h1
+      · simpa [f, hb] using h1
+    have h2' : bc b2 = BCglob id := by
+      by_cases hb : b2 = sp
+      · subst b2; simp [f] at h2
+      · simpa [f, hb] using h2
+    exact bc.bc_glob b1 b2 id h1' h2'
+  let bc' : block_classification :=
+    { bc_img := f, bc_stack := hstack, bc_glob := hglobuniq }
+  have hPM : ∀ b ofs p, pmatch bc b ofs p → pmatch bc' b ofs Ptop := by
+    intro b ofs p hp
+    apply CompCert4Lean.Backend.ValueDomain.pmatch.top
+    by_cases hb : b = sp
+    · subst b; simp [bc', f]
+    · have hni : bc b ≠ BCinvalid := by
+        cases hp with
+        | gl _ h => intro hi; rw [h] at hi; cases hi
+        | glo _ h => intro hi; rw [h] at hi; cases hi
+        | glob _ h => intro hi; rw [h] at hi; cases hi
+        | stk h => intro hi; rw [h] at hi; cases hi
+        | stack h => intro hi; rw [h] at hi; cases hi
+        | nonstack _ h => exact h
+        | top h => exact h
+      simpa [bc', f, hb] using hni
+  have hVM : ∀ v x, vmatch bc v x → vmatch bc' v Vtop := by
+    intro v x hv
+    apply CompCert4Lean.Backend.ValueDomain.vmatch_ifptr bc' v
+    intro b ofs hptr
+    subst v
+    cases hv with
+    | ptr _ _ _ hp => exact hPM _ _ _ hp
+    | ifptrPtr _ _ _ hp => exact hPM _ _ _ hp
+  have hSM : ∀ b p, smatch bc m b p → smatch bc' m b Ptop :=
+    anonymize_smatch_top bc bc' m hVM hPM
+  have hglob_eq : ∀ b id, bc b = BCglob id ↔ bc' b = BCglob id := by
+    intro b id
+    by_cases hb : b = sp
+    · subst b; simp [bc', f, hsp]
+    · simp [bc', f, hb]
+  have hglob_eq_rev : ∀ b id, bc' b = BCglob id ↔ bc b = BCglob id := by
+    intro b id; exact Iff.symm (hglob_eq b id)
+  have hgenv' : genv_match bc' ge :=
+    anonymize_genv_match_exten ge bc bc' hgenv hglob_eq
+      (by
+        intro b hb
+        by_cases h : b = sp
+        · subst b; rw [hsp] at hb; cases hb
+        · simp [bc', f, h, hb])
+  have hrom' : romatch bc' m rm :=
+    anonymize_romatch_exten bc bc' m rm hrom hglob_eq_rev
+  have hnostack' : bc_nostack bc' := by
+    intro b hb
+    by_cases h : b = sp
+    · subst b; simp [bc', f] at hb
+    · by_cases hs : bc b = BCstack
+      · have heq : b = sp := bc.bc_stack b sp hs hsp
+        exact False.elim (h heq)
+      · have hbc : bc b = bc' b := by simpa [bc', f, h]
+        apply hs
+        exact hbc.symm ▸ hb
+  have hsp' : bc' sp = BCother := by simp [bc', f]
+  have hsame : ∀ b, b ≠ sp → bc' b = bc b := by
+    intro b hb; simp [bc', f, hb]
+  have hmm' : mmatch bc' m mtop := by
+    constructor
+    · intro b hb
+      exact False.elim (hnostack' b hb)
+    · intro id ab b hb hget
+      change positive at id
+      change PTree.get id (PTree.empty ablock) = some ab at hget
+      have hempty : PTree.get id (PTree.empty ablock) = none :=
+        PTree.gempty ablock id
+      rw [hempty] at hget
+      cases hget
+    · intro b hbStack hbInvalid
+      have hni : bc b ≠ BCinvalid := by
+        by_cases h : b = sp
+        · subst b; simp [hsp]
+        · intro hi; apply hbInvalid; simpa [bc', f, h] using hi
+      exact hSM b am.am_top (hmm.mmatch_top b hni)
+    · intro b hbInvalid
+      have hni : bc b ≠ BCinvalid := by
+        by_cases h : b = sp
+        · subst b; simp [hsp]
+        · intro hi; apply hbInvalid; simpa [bc', f, h] using hi
+      exact hSM b am.am_top (hmm.mmatch_top b hni)
+    · intro b hbInvalid
+      have hni : bc b ≠ BCinvalid := by
+        by_cases h : b = sp
+        · subst b; simp [hsp]
+        · intro hi; apply hbInvalid; simpa [bc', f, h] using hi
+      exact hmm.mmatch_below b hni
+  exact ⟨bc', hnostack', hsp', hsame, hVM, hgenv', hrom', hmm'⟩
+
+end CompCert4Lean.Backend.ValueAnalysis

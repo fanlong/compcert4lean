@@ -2276,3 +2276,84 @@ theorem can_eval_simple_list
           exact .esrl_cons hr hhead (ih _ _ htailcast)
 
 end CompCert4Lean.Cfrontend.Cstrategy
+
+namespace CompCert4Lean.Cfrontend.Cstrategy
+
+open CompCert4Lean.Cfrontend.Csem
+
+theorem contextlist'_head : contextlist'_headStatement := by
+  unfold contextlist'_headStatement
+  intro rl C h
+  cases h with
+  | @contextlist'_call r1 rl0 ty C0 hcontext =>
+      have hargs : contextlist .RV (fun x => exprlist_app rl0 (.Econs x rl)) := by
+        exact exprlist_app_context rl0 rl
+      have hcall : context .RV .RV
+          (fun x => .Ecall r1 (exprlist_app rl0 (.Econs x rl)) ty) :=
+        .callRight hargs
+      exact context_compose .RV .RV C0 hcontext .RV _ hcall
+  | @contextlist'_builtin ef tyargs rl0 ty C0 hcontext =>
+      have hargs : contextlist .RV (fun x => exprlist_app rl0 (.Econs x rl)) := by
+        exact exprlist_app_context rl0 rl
+      have hcall : context .RV .RV
+          (fun x => .Ebuiltin ef tyargs (exprlist_app rl0 (.Econs x rl)) ty) :=
+        .builtin hargs
+      exact context_compose .RV .RV C0 hcontext .RV _ hcall
+
+theorem contextlist'_tail : contextlist'_tailStatement := by
+  unfold contextlist'_tailStatement
+  intro r1 C h
+  cases h with
+  | @contextlist'_call r0 rl0 ty C0 hcontext =>
+      have happ : (fun x => C0 (.Ecall r0 (exprlist_app rl0 (.Econs r1 x)) ty)) =
+          (fun x => C0 (.Ecall r0
+            (exprlist_app (exprlist_app rl0 (.Econs r1 .Enil)) x) ty)) := by
+        funext x
+        congr 2
+        simpa only [exprlist_app] using
+          (exprlist_app_assoc (.Econs r1 .Enil) x rl0).symm
+      rw [happ]
+      exact .contextlist'_call hcontext
+  | @contextlist'_builtin ef tyargs rl0 ty C0 hcontext =>
+      have happ : (fun x => C0 (.Ebuiltin ef tyargs (exprlist_app rl0 (.Econs r1 x)) ty)) =
+          (fun x => C0 (.Ebuiltin ef tyargs
+            (exprlist_app (exprlist_app rl0 (.Econs r1 .Enil)) x) ty)) := by
+        funext x
+        congr 2
+        simpa only [exprlist_app] using
+          (exprlist_app_assoc (.Econs r1 .Enil) x rl0).symm
+      rw [happ]
+      exact .contextlist'_builtin hcontext
+
+end CompCert4Lean.Cfrontend.Cstrategy
+
+namespace CompCert4Lean.Cfrontend.Cstrategy
+
+open CompCert4Lean.Cfrontend.Csem
+open CompCert4Lean.Common.Smallstep
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Cfrontend.Csyntax
+
+theorem eval_simple_list_steps
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    eval_simple_list_stepsStatement := by
+  unfold eval_simple_list_stepsStatement
+  intro xi ge f k e m rl vl h
+  induction h with
+  | esrl'_nil =>
+      intro C hC
+      exact star_refl _ ge _
+  | @esrl'_cons r rl v vl hr htail ih =>
+      intro C hC
+      exact star_trans (genv := genv) (state := state)
+        (step := Csem.step (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate) xi)
+        (ge := ge) (s1 := _) (t1 := E0) (s2 := _)
+        (eval_simple_rvalue_steps xi ge f k e m r v hr
+          (fun x => C (.Econs x rl)) (contextlist'_head rl C hC))
+        (t2 := E0) (s3 := _) (t := E0)
+        (ih (fun x => C (.Econs (.Eval v (typeof r)) x))
+          (contextlist'_tail (.Eval v (typeof r)) C hC)) rfl
+
+end CompCert4Lean.Cfrontend.Cstrategy

@@ -3163,3 +3163,179 @@ theorem elements_keys_norepet : elements_keys_norepetStatement := by
 
 end PTree
 end CompCert4Lean.Lib.Maps
+
+namespace CompCert4Lean.Lib.Maps
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Lib.Coqlib
+
+namespace PTree
+
+private theorem list_forall2_append_local {A B : Type} {P : A → B → Prop}
+    {a1 : List A} {b1 : List B} {a2 : List A} {b2 : List B} :
+      list_forall2 P a1 b1 → list_forall2 P a2 b2 →
+        list_forall2 P (a1 ++ a2) (b1 ++ b2) := by
+  intro h1
+  induction h1 with
+  | nil =>
+      intro h2
+      simpa using h2
+  | cons a1 b1 hp ht ih =>
+      intro h2
+      simp only [List.cons_append]
+      exact CompCert4Lean.Lib.Coqlib.list_forall2.cons a1 b1 hp (ih h2)
+
+private theorem elements_canonical_order'_aux {A B : Type} (R : A → B → Prop) :
+    ∀ (m : tree A) (i : CompCert4Lean.Foundation.Numbers.Rocq.Coq.positive)
+      (n : tree B),
+      (∀ j, option_rel R (get j m) (get j n)) →
+      list_forall2 (fun p q => p.1 = q.1 ∧ R p.2 q.2)
+        (xelements m i) (xelements n i) := by
+  intro m
+  have hP : PLift (∀ (i : CompCert4Lean.Foundation.Numbers.Rocq.Coq.positive)
+      (n : tree B),
+      (∀ j, option_rel R (get j m) (get j n)) →
+      list_forall2 (fun p q => p.1 = q.1 ∧ R p.2 q.2)
+        (xelements m i) (xelements n i)) := by
+    refine tree_ind
+        (P := fun m => PLift (∀ (i : CompCert4Lean.Foundation.Numbers.Rocq.Coq.positive)
+          (n : tree B),
+          (∀ j, option_rel R (get j m) (get j n)) →
+          list_forall2 (fun p q => p.1 = q.1 ∧ R p.2 q.2)
+            (xelements m i) (xelements n i))) ?_ ?_ m
+    · refine ⟨?_⟩
+      intro i n REL
+      cases n with
+      | Empty => exact list_forall2_nil _
+      | Nodes n' =>
+          have hnone : ∀ j, get j (.Nodes n' : tree B) = none := by
+            intro j
+            cases h : get j (.Nodes n' : tree B) with
+            | none => rfl
+            | some y =>
+                have hget : get' j n' = some y := by
+                  simpa [get] using h
+                have h' : option_rel R none (get' j n') := by
+                  have hrel := REL j
+                  change option_rel R none (get' j n') at hrel
+                  exact hrel
+                rw [hget] at h'
+                cases h'
+          have hn : (.Nodes n' : tree B) = .Empty :=
+            extensionality_empty _ hnone
+          cases hn
+    · intro l ihl o r ihr hne
+      refine ⟨?_⟩
+      intro i n
+      have hP₂ : PLift (
+          (∀ j, option_rel R (get j (Node l o r)) (get j n)) →
+          list_forall2 (fun p q => p.1 = q.1 ∧ R p.2 q.2)
+            (xelements (Node l o r) i) (xelements n i)) := by
+        refine tree_ind
+          (P := fun n => PLift (
+            (∀ j, option_rel R (get j (Node l o r)) (get j n)) →
+            list_forall2 (fun p q => p.1 = q.1 ∧ R p.2 q.2)
+              (xelements (Node l o r) i) (xelements n i))) ?_ ?_ n
+        · refine ⟨?_⟩
+          intro REL
+          have hmnone : ∀ j, get j (Node l o r) = none := by
+            intro j
+            cases h : get j (Node l o r) with
+            | none => rfl
+            | some x =>
+                have h' : option_rel R (some x) none := by
+                  have hrel := REL j
+                  rw [h] at hrel
+                  simpa [get] using hrel
+                cases h'
+          have hm : Node l o r = (.Empty : tree A) :=
+            extensionality_empty _ hmnone
+          have hne' : Node l o r ≠ (.Empty : tree A) := by
+            intro hzero
+            cases l <;> cases o <;> cases r <;>
+              simp_all [Node, not_trivially_empty]
+          exact (hne' hm).elim
+        · intro l2 ihl2 o2 r2 ihr2 hne2
+          refine ⟨?_⟩
+          intro REL
+          have hleft : ∀ j, option_rel R (get j l) (get j l2) := by
+            intro j
+            have h := REL (.xO j)
+            rw [gNode_proof, gNode_proof] at h
+            simpa using h
+          have hroot : option_rel R o o2 := by
+            have h := REL .xH
+            rw [gNode_proof, gNode_proof] at h
+            simpa using h
+          have hright : ∀ j, option_rel R (get j r) (get j r2) := by
+            intro j
+            have h := REL (.xI j)
+            rw [gNode_proof, gNode_proof] at h
+            simpa using h
+          have hl := PLift.down ihl (xO i) l2 hleft
+          have hr := PLift.down ihr (xI i) r2 hright
+          have hmid :
+              list_forall2 (fun p q => p.1 = q.1 ∧ R p.2 q.2)
+                (match o with | none => [] | some x => [(prev i, x)])
+                (match o2 with | none => [] | some y => [(prev i, y)]) := by
+            cases hroot with
+            | none => exact list_forall2_nil _
+            | some x y hxy =>
+                exact CompCert4Lean.Lib.Coqlib.list_forall2.cons _ _ ⟨rfl, hxy⟩
+                  (list_forall2_nil _)
+          rw [xelements_Node, xelements_Node]
+          exact list_forall2_append_local
+            (list_forall2_append_local hl hmid) hr
+      exact PLift.down hP₂
+  exact PLift.down hP
+
+theorem elements_canonical_order' : elements_canonical_order'Statement := by
+  intro A B R m n REL
+  exact elements_canonical_order'_aux R m
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.xH n REL
+
+theorem elements_canonical_order : elements_canonical_orderStatement := by
+  intro A B R m n hmn hnm
+  apply elements_canonical_order'
+  intro i
+  cases hm : get i m with
+  | none =>
+      cases hn : get i n with
+      | none => exact option_rel.none R
+      | some y =>
+          rcases hnm i y (by simpa [hn]) with ⟨x, hx, hxy⟩
+          have hfalse : False := by
+            simpa [hm] using hx
+          exact hfalse.elim
+  | some x =>
+      cases hn : get i n with
+      | none =>
+          rcases hmn i x (by simpa [hm]) with ⟨y, hy, hxy⟩
+          have hfalse : False := by
+            simpa [hn] using hy
+          exact hfalse.elim
+      | some y =>
+          rcases hmn i x (by simpa [hm]) with ⟨y', hy', hxy⟩
+          have hyy : y' = y := (Option.some.inj (by simpa [hn] using hy')).symm
+          subst y'
+          exact option_rel.some x y hxy
+
+theorem fold'_xelements' : fold'_xelements'Statement := by
+  intro A B f m i v l
+  induction m generalizing i v l <;>
+    simp_all [fold', xelements', List.foldl, List.foldl_append,
+      Nat.add_assoc, Nat.add_comm, Nat.add_left_comm]
+  all_goals rw [foldl_step']
+  all_goals simp_all [List.foldl_append]
+
+end PTree
+
+namespace PMap
+
+theorem gi : giStatement := by
+  intro A i x
+  rfl
+
+end PMap
+
+end CompCert4Lean.Lib.Maps

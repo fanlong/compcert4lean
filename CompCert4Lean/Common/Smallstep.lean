@@ -1774,3 +1774,141 @@ theorem forward_simulation_step : forward_simulation_stepStatement := by
   exact plus_left s2 t hstep (star_refl _ _ s2') (_root_.List.append_nil t).symm
 
 end CompCert4Lean.Common.Smallstep
+
+namespace CompCert4Lean.Common.Smallstep
+
+open CompCert4Lean.Lib.Coqlib
+
+private theorem smallstep_wf_lex_ord {A B : Type}
+    (ordA : A → A → Prop) (ordB : B → B → Prop)
+    (hA : WellFounded ordA) (hB : WellFounded ordB) :
+    WellFounded (lex_ord ordA ordB) := by
+  apply Subrelation.wf (r := Prod.Lex ordA ordB)
+  · intro a b h
+    cases h with
+    | left a1 b1 a2 b2 hab => exact Prod.Lex.left b1 b2 hab
+    | right a b1 b2 hbb => exact Prod.Lex.right a hbb
+  · exact (Prod.lex { rel := ordA, wf := hA } { rel := ordB, wf := hB }).wf
+
+theorem forward_simulation_opt : forward_simulation_optStatement := by
+  intro L1 L2 hpublic match_states hinit hfinal measure hsim
+  refine forward_simulation_star L1 L2 hpublic match_states hinit hfinal measure ?_
+  intro s1 t s1' hs s2 hm
+  have hh := hsim s1 t s1' hs s2 hm
+  cases hh with
+  | inl hh =>
+      rcases hh with ⟨s2', hstep, hm'⟩
+      exact Or.inl ⟨s2', plus_left _ _ hstep (star_refl _ _ s2')
+        (_root_.List.append_nil t).symm, hm'⟩
+  | inr hh =>
+      rcases hh with ⟨hdec, htrace, hm'⟩
+      exact Or.inr ⟨hdec, htrace, hm'⟩
+
+theorem forward_simulation_eventually : forward_simulation_eventuallyStatement := by
+  intro L1 L2 index order match_states horder hinit hfinal hsim hpublic
+  refine @Forward_simulation L1 L2 (index × Nat) (lex_ord order Nat.lt)
+    (fun i s1 s2 => eventually (step L1) (final_state L1) (globalenv L1)
+      i.2 s1 (fun s1' => match_states i.1 s1' s2)) ?_
+  refine {
+    fsim_order_wf := smallstep_wf_lex_ord order Nat.lt horder
+      Nat.lt_wfRel.wf
+    fsim_match_initial_states := ?_
+    fsim_match_final_states := ?_
+    fsim_simulation := ?_
+    fsim_public_preserved := hpublic
+  }
+  · intro s1 hs1
+    rcases hinit s1 hs1 with ⟨i, s2, hs2, hm⟩
+    exact ⟨(i, 0), s2, hs2, eventually_now _ _ _ s1 _ hm⟩
+  · intro ⟨i, n⟩ s1 s2 r hev hs1
+    cases hev with
+    | eventually_now _ _ hP =>
+        exact hfinal i s1 s2 r hP hs1
+    | eventually_later s hnot _ _ =>
+        exact False.elim (hnot r hs1)
+  · intro s1 t s1' hs ⟨i, n⟩ s2 hev
+    cases hev with
+    | eventually_now _ _ hP =>
+        rcases hsim s1 t s1' hs i s2 hP with
+          ⟨n', i', s2', hdiagram, hev'⟩
+        refine ⟨(i', n'), s2', ?_⟩
+        rcases hdiagram with hplus | ⟨hstar, hord⟩
+        · exact ⟨Or.inl hplus, hev'⟩
+        · exact ⟨Or.inr ⟨hstar, lex_ord_left _ _ _ _ _ _ hord⟩, hev'⟩
+    | @eventually_later n s P hnot htrace hnext =>
+        have hev' := hnext t s1' hs
+        have ht := htrace t s1' hs
+        subst t
+        refine ⟨(i, n), s2, ?_⟩
+        exact ⟨Or.inr ⟨star_refl _ _ s2,
+          lex_ord_right order Nat.lt i n n.succ (Nat.lt_succ_self n)⟩,
+          hev'⟩
+
+theorem forward_simulation_eventually_plus :
+    forward_simulation_eventually_plusStatement := by
+  intro L1 L2 match_states hpublic hinit hfinal hsim
+  refine forward_simulation_eventually L1 L2 Nat Nat.lt
+    (fun _ s1 s2 => match_states s1 s2) Nat.lt_wfRel.wf ?_ ?_ ?_ hpublic
+  · intro s1 hs1
+    rcases hinit s1 hs1 with ⟨s2, hs2, hm⟩
+    exact ⟨0, s2, hs2, hm⟩
+  · intro i s1 s2 r hm hs1
+    exact hfinal s1 s2 r hm hs1
+  · intro s1 t s1' hs i s2 hm
+    rcases hsim s1 t s1' hs s2 hm with ⟨n, s2', hplus, hev⟩
+    exact ⟨n, 0, s2', Or.inl hplus, hev⟩
+
+theorem forward_simulation_eventually_star_wf :
+    forward_simulation_eventually_star_wfStatement := by
+  intro L1 L2 match_states hpublic hinit hfinal order horder hsim
+  refine @Forward_simulation L1 L2 (Nat × state L1)
+    (lex_ord Nat.lt order)
+    (fun i s1 s2 => i.2 = s1 ∧
+      eventually (step L1) (final_state L1) (globalenv L1)
+        i.1 s1 (fun s1' => match_states s1' s2)) ?_
+  refine {
+    fsim_order_wf := smallstep_wf_lex_ord Nat.lt order Nat.lt_wfRel.wf horder
+    fsim_match_initial_states := ?_
+    fsim_match_final_states := ?_
+    fsim_simulation := ?_
+    fsim_public_preserved := hpublic
+  }
+  · intro s1 hs1
+    rcases hinit s1 hs1 with ⟨s2, hs2, hm⟩
+    exact ⟨(0, s1), s2, hs2,
+      ⟨rfl, eventually_now _ _ _ s1 _ hm⟩⟩
+  · intro ⟨n, s11⟩ s1 s2 r hm hs1
+    rcases hm with ⟨heq, hev⟩
+    change s11 = s1 at heq
+    subst s11
+    cases hev with
+    | eventually_now _ _ hP =>
+        exact hfinal s1 s2 r hP hs1
+    | eventually_later s hnot _ _ =>
+        exact False.elim (hnot r hs1)
+  · intro s1 t s1' hs ⟨n, s11⟩ s2 hm
+    rcases hm with ⟨heq, hev⟩
+    change s11 = s1 at heq
+    subst s11
+    cases hev with
+    | eventually_now _ _ hP =>
+        rcases hsim s1 t s1' hs s2 hP with
+          (⟨s2', hdiagram, hm'⟩ | ⟨n', s2', hplus, hev'⟩)
+        · refine ⟨(0, s1'), s2', ?_⟩
+          rcases hdiagram with hplus' | ⟨hstar, hord⟩
+          · exact ⟨Or.inl hplus', ⟨rfl, eventually_now _ _ _ s1' _ hm'⟩⟩
+          · exact ⟨Or.inr ⟨hstar,
+              lex_ord_right Nat.lt order 0 s1' s1 hord⟩,
+              ⟨rfl, eventually_now _ _ _ s1' _ hm'⟩⟩
+        · refine ⟨(n', s1'), s2', ?_⟩
+          exact ⟨Or.inl hplus, ⟨rfl, hev'⟩⟩
+    | @eventually_later n s P hnot htrace hnext =>
+        have hev' := hnext t s1' hs
+        have ht := htrace t s1' hs
+        subst t
+        refine ⟨(n, s1'), s2, ?_⟩
+        exact ⟨Or.inr ⟨star_refl _ _ s2,
+          lex_ord_left Nat.lt order n s1' n.succ s1 (Nat.lt_succ_self n)⟩,
+          ⟨rfl, hev'⟩⟩
+
+end CompCert4Lean.Common.Smallstep

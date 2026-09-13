@@ -1946,3 +1946,41 @@ theorem find_inlined_function : find_inlined_functionStatement := by
   exact Option.some.inj (hfind.symm.trans hptr)
 
 end CompCert4Lean.Backend.Inliningproof
+
+namespace CompCert4Lean.Backend.Inliningproof
+
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Common.Events
+
+theorem range_private_extcall : range_private_extcallStatement := by
+  intro F F' m1 m2 m1' m2' sp base hi hpriv hperm hunch hinj hincr hsep hvalid
+  unfold range_private loc_private at hpriv ⊢
+  intro ofs hofs
+  have horig := hpriv ofs hofs
+  constructor
+  · have hloc : loc_out_of_reach F m1 sp ofs := by
+      intro b delta hmap
+      exact horig.2 b delta hmap
+    exact (hunch.unchanged_on_perm sp ofs Cur Freeable hloc hvalid).mp horig.1
+  · intro b delta hF' hnot
+    cases hF : F b with
+    | some p =>
+        rcases p with ⟨b', delta'⟩
+        have hinc := hincr b b' delta' hF
+        have hpairs : (b', delta') = (sp, delta) :=
+          Option.some.inj (hinc.symm.trans hF')
+        rcases hpairs with ⟨rfl, rfl⟩
+        have hbvalid : Mem.valid_block m1 b := by
+          by_cases hb : Mem.valid_block m1 b
+          · exact hb
+          · have hnone := hinj.mi_freeblocks b hb
+            rw [hF] at hnone
+            cases hnone
+        have hp1 := hperm b (zSub ofs delta) Nonempty hbvalid hnot
+        exact horig.2 b delta hF hp1
+    | none =>
+        have hsep' := hsep b sp delta hF hF'
+        exact hsep'.2 hvalid
+
+end CompCert4Lean.Backend.Inliningproof

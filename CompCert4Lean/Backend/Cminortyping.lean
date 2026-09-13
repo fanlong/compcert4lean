@@ -2315,3 +2315,105 @@ theorem wt_initial_state : wt_initial_stateStatement := by
       exact wt_call_state f [] Kstop m0 hfd hargs hcont
 
 end CompCert4Lean.Backend.Cminortyping
+
+namespace CompCert4Lean.Backend.Cminortyping
+
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.Backend.Cminor
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.Globalenvs
+
+private theorem known_id_fold_sound :
+    ∀ (l : List ident) (ki : known_idents) (id : ident) (x : Unit),
+      PTree.get id (l.foldl (fun k i => PTree.set i () k) ki) = some x →
+        id ∈ l ∨ PTree.get id ki = some x := by
+  intro l
+  induction l with
+  | nil =>
+      intro ki id x h
+      exact Or.inr h
+  | cons i l ih =>
+      intro ki id x h
+      rcases ih (ki := PTree.set i () ki) (id := id) (x := x) h with
+        hmem | hset
+      · exact Or.inl (by simp only [List.mem_cons]; exact Or.inr hmem)
+      · have hg := PTree.gsspec_proof (A := Unit) id i () ki
+        cases hp : peq id i with
+        | left heq =>
+            exact Or.inl (by simp only [List.mem_cons]; exact Or.inl heq)
+        | right hne =>
+            rw [hg] at hset
+            exact Or.inr (by simpa [hp, hne] using hset)
+
+theorem known_id_sound_1 : known_id_sound_1Statement := by
+  intro f id x h
+  simp only [known_id] at h
+  cases known_id_fold_sound f.fn_vars
+      (f.fn_params.foldl (fun k i => PTree.set i () k) (PTree.empty Unit)) id x h with
+  | inl hvars => exact Or.inr hvars
+  | inr hparams =>
+      cases known_id_fold_sound f.fn_params (PTree.empty Unit) id x hparams with
+      | inl h => exact Or.inl h
+      | inr h =>
+          have he := PTree.gempty (A := Unit) id
+          rw [he] at h
+          cases h
+
+theorem known_id_sound_2 : known_id_sound_2Statement := by
+  intro f id h
+  unfold is_known at h
+  cases hg : PTree.get id (known_id f) with
+  | none => simp [hg] at h
+  | some x =>
+      apply known_id_sound_1 f id x
+      simpa [hg] using h
+
+theorem eval_safe_expr
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    eval_safe_exprStatement := by
+  intro ge f sp e m a
+  refine @CompCert4Lean.Backend.Cminor.expr.rec
+    (fun a =>
+      def_env f e → safe_expr (known_id f) a = true →
+        ∃ v, eval_expr ge sp e m a v) ?_ ?_ ?_ ?_ ?_ a
+  · intro id hdef hs
+    have hk : is_known (known_id f) id = true := by
+      simpa [safe_expr] using hs
+    have hmem := known_id_sound_2 f id hk
+    rcases hdef id hmem with ⟨v, hv⟩
+    exact ⟨v, CompCert4Lean.Backend.Cminor.eval_expr.eval_Evar id v hv⟩
+  · intro cst _ _
+    cases cst with
+    | Ointconst n => exact ⟨Vint n, CompCert4Lean.Backend.Cminor.eval_expr.eval_Econst _ _ rfl⟩
+    | Ofloatconst n => exact ⟨Vfloat n, CompCert4Lean.Backend.Cminor.eval_expr.eval_Econst _ _ rfl⟩
+    | Osingleconst n => exact ⟨Vsingle n, CompCert4Lean.Backend.Cminor.eval_expr.eval_Econst _ _ rfl⟩
+    | Olongconst n => exact ⟨Vlong n, CompCert4Lean.Backend.Cminor.eval_expr.eval_Econst _ _ rfl⟩
+    | Oaddrsymbol symbol offset =>
+        exact ⟨Genv.symbol_address ge symbol offset,
+          CompCert4Lean.Backend.Cminor.eval_expr.eval_Econst _ _ rfl⟩
+    | Oaddrstack offset =>
+        exact ⟨Val.offset_ptr sp offset,
+          CompCert4Lean.Backend.Cminor.eval_expr.eval_Econst _ _ rfl⟩
+  · intro op a1 ih hdef hs
+    simp [safe_expr, Bool.and_eq_true] at hs
+    rcases ih hdef hs.2 with ⟨v1, hv1⟩
+    cases hval : eval_unop op v1 with
+    | none => cases op <;> simp [safe_unop, eval_unop] at hs hval
+    | some v => exact ⟨v,
+        CompCert4Lean.Backend.Cminor.eval_expr.eval_Eunop op a1 v1 v hv1 hval⟩
+  · intro op a1 a2 ih1 ih2 hdef hs
+    simp [safe_expr, Bool.and_eq_true] at hs
+    rcases ih1 hdef hs.1.2 with ⟨v1, hv1⟩
+    rcases ih2 hdef hs.2 with ⟨v2, hv2⟩
+    cases hval : eval_binop op v1 v2 m with
+    | none => cases op <;> simp [safe_binop, eval_binop] at hs hval
+    | some v => exact ⟨v,
+        CompCert4Lean.Backend.Cminor.eval_expr.eval_Ebinop op a1 a2 v1 v2 v hv1 hv2 hval⟩
+  · intro chunk address ih _ hs
+    simp [safe_expr] at hs
+
+end CompCert4Lean.Backend.Cminortyping

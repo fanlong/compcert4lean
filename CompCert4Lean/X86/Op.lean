@@ -1442,3 +1442,11 @@ theorem eval_shift_stack_operation
               cases tail <;> rfl
 
 end CompCert4Lean.X86.Op
+
+namespace CompCert4Lean.X86.Op
+
+theorem eval_offset_addressing : eval_offset_addressingStatement := by
+  intro F V ge sp addr args delta addr' v hoff heval hptr
+  simp [CompCert4Lean.X86_64.Archi.ptr64] at hptr
+
+end CompCert4Lean.X86.Op

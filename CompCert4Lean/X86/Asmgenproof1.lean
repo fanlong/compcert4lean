@@ -1241,3 +1241,35 @@ theorem addressing_mentions_correct : addressing_mentions_correctStatement := by
         rw [hag b hbne, hag r' hone]
 
 end CompCert4Lean.X86.Asmgenproof1
+
+namespace CompCert4Lean.X86.Asmgenproof1
+
+open CompCert4Lean.Backend.Asmgenproof0
+open CompCert4Lean.Common.AST
+open CompCert4Lean.X86.Asm
+
+theorem mk_storebyte_correct
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    mk_storebyte_correctStatement := by
+  intro ge fn addr r k c rs1 m1 m2 hmk hstore
+  unfold CompCert4Lean.X86.Asmgen.mk_storebyte at hmk
+  simp [CompCert4Lean.X86_64.Archi.ptr64] at hmk
+  injection hmk with hc
+  subst c
+  refine ⟨CompCert4Lean.X86.Asm.nextinstr_nf rs1, ?_, ?_⟩
+  · apply exec_straight_one
+    · change (match CompCert4Lean.Common.Memory.Mem.storev Mint8unsigned m1
+          (eval_addrmode ge addr rs1)
+          (rs1 (.IR r)) with
+        | some m' => CompCert4Lean.X86.Asm.Next
+            (nextinstr_nf (undef_regs [] rs1)) m'
+        | none => CompCert4Lean.X86.Asm.Stuck) =
+          CompCert4Lean.X86.Asm.Next (nextinstr_nf rs1) m2
+      simp only [CompCert4Lean.X86.Asm.undef_regs]
+      rw [hstore]
+    · rfl
+  · intro r' hr' hnotin
+    exact nextinstr_nf_inv1 r' rs1 hr'
+
+end CompCert4Lean.X86.Asmgenproof1

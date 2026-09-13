@@ -939,3 +939,57 @@ theorem canonical_unique : ∀ ctx magnitude, canonical_uniqueStatement ctx magn
           rfl
 
 end CompCert4Lean.Flocq.Core.Generic_fmt
+
+namespace CompCert4Lean.Flocq.Core.Generic_fmt
+
+private theorem pg_scaled_mantissa_exp_cancel (e : Z) :
+    Zadd e (Zopp e) = Z0 := by
+  apply CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective
+  change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (Zadd e (Zopp e)) =
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ Z0
+  simp only [Zadd, Zopp,
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add,
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.opp,
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+  change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ e +
+    -CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ e = 0
+  omega
+
+theorem scaled_mantissa_generic :
+    ∀ ctx magnitude, scaled_mantissa_genericStatement ctx magnitude := by
+  intro ctx magnitude beta fexp x hformat
+  let m := Exact.Ztrunc ctx
+    (Exact.scaled_mantissa ctx magnitude beta fexp x)
+  let e := Exact.cexp ctx magnitude beta fexp x
+  have hx : x = Exact.F2R ctx (Float beta m e) := by
+    simpa [Exact.generic_format, m, e] using hformat
+  change Exact.Rmult ctx x (Exact.bpow ctx beta (Zopp e)) = Exact.IZR ctx m
+  calc
+    Exact.Rmult ctx x (Exact.bpow ctx beta (Zopp e)) =
+        Exact.Rmult ctx
+          (Exact.F2R ctx (Float beta m e))
+          (Exact.bpow ctx beta (Zopp e)) := by rw [hx]
+    _ = Exact.Rmult ctx
+          (Exact.Rmult ctx (Exact.IZR ctx m) (Exact.bpow ctx beta e))
+          (Exact.bpow ctx beta (Zopp e)) := by
+      rfl
+    _ = Exact.Rmult ctx (Exact.IZR ctx m)
+          (Exact.Rmult ctx (Exact.bpow ctx beta e)
+            (Exact.bpow ctx beta (Zopp e))) := by
+      exact ctx.certificate.orderedField.mul_assoc
+        (Exact.IZR ctx m) (Exact.bpow ctx beta e)
+        (Exact.bpow ctx beta (Zopp e))
+    _ = Exact.Rmult ctx (Exact.IZR ctx m)
+          (Exact.bpow ctx beta (Zadd e (Zopp e))) := by
+      have hpow := CompCert4Lean.Flocq.Core.Raux.bpow_plus ctx beta e (Zopp e)
+      change Exact.bpow ctx beta (Zadd e (Zopp e)) =
+        Exact.Rmult ctx (Exact.bpow ctx beta e)
+          (Exact.bpow ctx beta (Zopp e)) at hpow
+      rw [hpow]
+    _ = Exact.Rmult ctx (Exact.IZR ctx m) (Exact.bpow ctx beta Z0) := by
+      rw [pg_scaled_mantissa_exp_cancel]
+    _ = Exact.IZR ctx m := by
+      change ctx.spec.mul (Exact.IZR ctx m) ctx.spec.one = _
+      exact ctx.certificate.orderedField.mul_one _
+
+end CompCert4Lean.Flocq.Core.Generic_fmt

@@ -1718,3 +1718,107 @@ theorem unique_labels_lin_rec : unique_labels_lin_recStatement := by
           · exact unique_labels_lin_block (linearize_body f enum) b (ih htail)
 
 end CompCert4Lean.Backend.Linearizeproof
+
+namespace CompCert4Lean.Backend.Linearizeproof
+
+open CompCert4Lean.Backend.Linear
+open CompCert4Lean.Backend.Linearize
+open CompCert4Lean.Lib.Coqlib
+
+theorem is_tail_find_label : is_tail_find_labelStatement := by
+  intro lbl c2 c1
+  induction c1 with
+  | nil =>
+      simp [Linear.find_label]
+  | cons a c1 ih =>
+      cases hlabel : Linear.is_label lbl a with
+      | true =>
+          simp [Linear.find_label, hlabel]
+          intro h
+          cases h
+          exact is_tail.cons _ (is_tail.refl _)
+      | false =>
+          simp [Linear.find_label, hlabel]
+          intro h
+          exact is_tail.cons _ (ih h)
+
+theorem is_tail_add_branch : is_tail_add_branchStatement := by
+  intro lbl c1 c2 h
+  unfold add_branch at h
+  by_cases hs : starts_with lbl c1
+  · simpa [hs] using h
+  · apply starts_with_is_tail_cons_left _ _ _
+    simpa [hs] using h
+
+theorem is_tail_lin_block : is_tail_lin_blockStatement := by
+  intro b c1 c2
+  induction b with
+  | nil =>
+      intro h
+      exact h
+  | cons a b ih =>
+      cases a with
+      | Lop op args res =>
+          intro h
+          apply ih
+          exact starts_with_is_tail_cons_left _ _ _ h
+      | Lload chunk addr args dst =>
+          intro h
+          apply ih
+          exact starts_with_is_tail_cons_left _ _ _ h
+      | Lgetstack sl ofs ty dst =>
+          intro h
+          apply ih
+          exact starts_with_is_tail_cons_left _ _ _ h
+      | Lsetstack src sl ofs ty =>
+          intro h
+          apply ih
+          exact starts_with_is_tail_cons_left _ _ _ h
+      | Lstore chunk addr args src =>
+          intro h
+          apply ih
+          exact starts_with_is_tail_cons_left _ _ _ h
+      | Lcall sig ros =>
+          intro h
+          apply ih
+          exact starts_with_is_tail_cons_left _ _ _ h
+      | Ltailcall sig ros =>
+          intro h
+          exact starts_with_is_tail_cons_left _ _ _ h
+      | Lbuiltin ef args res =>
+          intro h
+          apply ih
+          exact starts_with_is_tail_cons_left _ _ _ h
+      | Lbranch s =>
+          intro h
+          exact is_tail_add_branch s c1 c2 h
+      | Lcond cond args s1 s2 =>
+          intro h
+          by_cases hs : starts_with s1 c1
+          · apply is_tail_add_branch s1 c1 c2
+            simp only [linearize_block, hs] at h
+            exact starts_with_is_tail_cons_left _ _ _ h
+          · apply is_tail_add_branch s2 c1 c2
+            simp only [linearize_block, hs] at h
+            exact starts_with_is_tail_cons_left _ _ _ h
+      | Ljumptable arg tbl =>
+          intro h
+          exact starts_with_is_tail_cons_left _ _ _ h
+      | Lreturn =>
+          intro h
+          exact starts_with_is_tail_cons_left _ _ _ h
+
+theorem unique_labels_transf_function : unique_labels_transf_functionStatement := by
+  intro service f tf htrans
+  unfold CompCert4Lean.Backend.Linearize.transf_function at htrans
+  cases henum : enumerate service f with
+  | Error msg =>
+      simp [henum] at htrans
+  | OK enum =>
+      simp [henum] at htrans
+      cases htrans
+      apply unique_labels_add_branch
+      apply unique_labels_lin_rec
+      exact enumerate_norepet service f enum henum
+
+end CompCert4Lean.Backend.Linearizeproof

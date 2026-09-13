@@ -2186,3 +2186,39 @@ theorem make_absfloat_correct
     | Vint n | Vfloat n | Vsingle n | Vptr n _ | Vundef => simp at hsem
 
 end CompCert4Lean.Cfrontend.Cshmgenproof
+
+namespace CompCert4Lean.Cfrontend.Cshmgenproof
+
+open CompCert4Lean.Cfrontend.Cshmgen
+open CompCert4Lean.Cfrontend.Csharpminor
+
+theorem make_notint_correct
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    make_notint_correctStatement := by
+  intro ge a tya c va v e le m hsem hmake hval
+  unfold CompCert4Lean.Cfrontend.Cop.sem_notint at hsem
+  unfold make_notint at hmake
+  cases hclass : CompCert4Lean.Cfrontend.Cop.classify_notint tya <;>
+    simp [hclass] at hsem hmake
+  case notint_case_i sg =>
+    cases va with
+    | Vint n =>
+        cases hsem
+        cases hmake
+        apply Csharpminor.eval_Eunop
+        · exact hval
+        · unfold Csharpminor.eval_unop CompCert4Lean.Backend.Cminor.eval_unop
+          rfl
+    | Vlong n | Vfloat n | Vsingle n | Vptr n _ | Vundef => simp at hsem
+  case notint_case_l sg =>
+    cases va with
+    | Vlong n =>
+        cases hsem
+        cases hmake
+        apply Csharpminor.eval_Eunop
+        · exact hval
+        · unfold Csharpminor.eval_unop CompCert4Lean.Backend.Cminor.eval_unop
+          rfl
+    | Vint n | Vfloat n | Vsingle n | Vptr n _ | Vundef => simp at hsem
+end CompCert4Lean.Cfrontend.Cshmgenproof

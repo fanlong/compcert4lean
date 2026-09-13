@@ -1884,3 +1884,97 @@ theorem sqrt_mult :
 end R_sqrt
 end Rocq.Coq.Reals
 end CompCert4Lean.Foundation.FlocqReal
+
+namespace CompCert4Lean.Foundation.FlocqReal
+namespace Rocq.Coq.Reals
+namespace DiscrR
+
+theorem IZR_eq :
+    ∀ (ctx : ExactRealContext), IZR_eqStatement ctx := by
+  intro ctx z1 z2 h
+  subst z2
+  rfl
+
+end DiscrR
+end Rocq.Coq.Reals
+end CompCert4Lean.Foundation.FlocqReal
+
+namespace CompCert4Lean.Foundation.FlocqReal
+namespace Rocq.Coq.Reals
+namespace Rbasic_fun
+
+theorem Rabs_pos_eq :
+    ∀ (ctx : ExactRealContext), Rabs_pos_eqStatement ctx := by
+  intro ctx x hx
+  change ctx.spec.abs x = x
+  change ctx.spec.le (ctx.spec.ofZ Z0) x at hx
+  rw [ctx.certificate.sourceLaws.ofZ_zero] at hx
+  exact ctx.certificate.sourceLaws.abs_nonnegative x hx
+
+end Rbasic_fun
+end Rocq.Coq.Reals
+end CompCert4Lean.Foundation.FlocqReal
+
+namespace CompCert4Lean.Foundation.FlocqReal
+namespace Rocq.Coq.Reals
+namespace Exp_prop
+
+theorem exp_plus :
+    ∀ (ctx : ExactRealContext), exp_plusStatement ctx := by
+  intro ctx x y
+  change ctx.spec.exp (ctx.spec.add x y) =
+    ctx.spec.mul (ctx.spec.exp x) (ctx.spec.exp y)
+  exact ctx.certificate.exp.add x y
+
+end Exp_prop
+end Rocq.Coq.Reals
+end CompCert4Lean.Foundation.FlocqReal
+
+namespace CompCert4Lean.Foundation.FlocqReal
+namespace Rocq.Coq.Reals
+namespace R_sqrt
+
+theorem sqrt_lt_1 :
+    ∀ (ctx : ExactRealContext), sqrt_lt_1Statement ctx := by
+  intro ctx x y hx hy hxy
+  change ctx.spec.le (ctx.spec.ofZ Z0) x at hx
+  change ctx.spec.le (ctx.spec.ofZ Z0) y at hy
+  change ctx.spec.lt x y at hxy
+  change ctx.spec.lt (ExactReal.sqrt ctx.spec x)
+    (ExactReal.sqrt ctx.spec y)
+  rw [ctx.certificate.sourceLaws.ofZ_zero] at hx hy
+  have sqrt_eq (z : ctx.spec.carrier) (hz : ctx.spec.le ctx.spec.zero z) :
+      ExactReal.sqrt ctx.spec z = ctx.spec.sqrt z := by
+    unfold ExactReal.sqrt
+    cases hdec : ctx.spec.lt_dec z ctx.spec.zero with
+    | left hlt =>
+        exact ((ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp hlt).2 hz |>.elim
+    | right _ => simp [hdec]
+  have hrootx := sqrt_eq x hx
+  have hrooty := sqrt_eq y hy
+  have hxy_le : ctx.spec.le x y :=
+    (ctx.certificate.orderedField.lt_iff_le_not_le x y).mp hxy |>.1
+  have hle := ctx.certificate.sqrt.monotone x y hx hxy_le
+  have hle' : ctx.spec.le (ExactReal.sqrt ctx.spec x)
+      (ExactReal.sqrt ctx.spec y) := by
+    simpa [hrootx, hrooty] using hle
+  apply (ctx.certificate.orderedField.lt_iff_le_not_le _ _).mpr
+  refine ⟨hle', ?_⟩
+  intro hrev
+  have hrev' : ctx.spec.le (ctx.spec.sqrt y) (ctx.spec.sqrt x) := by
+    simpa [hrootx, hrooty] using hrev
+  have heq : ctx.spec.sqrt x = ctx.spec.sqrt y :=
+    ctx.certificate.orderedField.le_antisymm _ _ hle hrev'
+  have hsqx := ctx.certificate.sqrt.sqr x hx
+  have hsqy := ctx.certificate.sqrt.sqr y hy
+  have hxy_eq : x = y := by
+    calc
+      x = ctx.spec.mul (ctx.spec.sqrt x) (ctx.spec.sqrt x) := hsqx.symm
+      _ = ctx.spec.mul (ctx.spec.sqrt y) (ctx.spec.sqrt y) := by rw [heq]
+      _ = y := hsqy
+  subst y
+  exact ctx.certificate.orderedField.lt_irrefl x hxy
+
+end R_sqrt
+end Rocq.Coq.Reals
+end CompCert4Lean.Foundation.FlocqReal

@@ -3394,3 +3394,88 @@ theorem loc_unconstrained_sound : loc_unconstrained_soundStatement := by
           simp [hmem] at hunc
 
 end CompCert4Lean.Backend.Allocproof
+
+namespace CompCert4Lean.Backend.Allocproof
+
+open CompCert4Lean.Backend.Allocation
+open CompCert4Lean.Backend.Locations
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Common.Values
+
+theorem loc_unconstrained_satisf : loc_unconstrained_satisfStatement := by
+  intro rs ls k r mr e v
+  dsimp
+  intro hsat hunc hld
+  unfold satisf at hsat ⊢
+  intro q hq
+  let q0 : equation := { ekind := k, ereg := r, eloc := R mr }
+  by_cases heq : q = q0
+  · subst q
+    dsimp [q0]
+    have hset : Locmap.set (R mr) v ls (R mr) = v := by
+      simpa using (Locmap.gss (R mr) v ls)
+    rw [hset]
+    exact hld
+  · have hqrem : EqSet.In q (remove_equation q0 e).eqs1 := by
+      unfold remove_equation
+      apply EqSet.remove_2 e.eqs1 q0 q
+      · intro h
+        exact heq h.symm
+      · exact hq
+    have hdiff : Loc.diff (R mr) q.eloc :=
+      loc_unconstrained_sound (R mr) (remove_equation q0 e) q hunc hqrem
+    rw [Locmap.gso (R mr) v ls q.eloc hdiff]
+    exact hsat q hqrem
+
+theorem reg_loc_unconstrained_sound : reg_loc_unconstrained_soundStatement := by
+  intro r l e q hunc hq
+  have hboth : reg_unconstrained r e = true ∧ loc_unconstrained l e = true := by
+    simpa [reg_loc_unconstrained] using hunc
+  exact ⟨reg_unconstrained_sound r e q hboth.1 hq,
+    loc_unconstrained_sound l e q hboth.2 hq⟩
+
+theorem parallel_assignment_satisf : parallel_assignment_satisfStatement := by
+  intro k r mr e rs ls v v'
+  dsimp
+  intro hld hunc hsat
+  unfold satisf at hsat ⊢
+  intro q hq
+  let q0 : equation := { ekind := k, ereg := r, eloc := R mr }
+  have hunc' : reg_unconstrained r (remove_equation q0 e) = true ∧
+      loc_unconstrained (R mr) (remove_equation q0 e) = true := by
+    simpa [reg_loc_unconstrained, q0] using hunc
+  by_cases heq : q = q0
+  · subst q
+    dsimp [q0]
+    have hregset : Regmap.get r (Regmap.set r v rs) = v := by
+      exact Regmap.gss_proof val r v rs
+    have hlocset : Locmap.set (R mr) v' ls (R mr) = v' := by
+      simpa using (Locmap.gss (R mr) v' ls)
+    rw [hregset, hlocset]
+    exact hld
+  · have hqrem : EqSet.In q (remove_equation q0 e).eqs1 := by
+      unfold remove_equation
+      apply EqSet.remove_2 e.eqs1 q0 q
+      · intro h
+        exact heq h.symm
+      · exact hq
+    have hreg : q.ereg ≠ r := reg_unconstrained_sound r
+      (remove_equation q0 e) q hunc'.1 hqrem
+    have hloc : Loc.diff (R mr) q.eloc := loc_unconstrained_sound (R mr)
+      (remove_equation q0 e) q hunc'.2 hqrem
+    rw [Regmap.gso_proof val q.ereg r v rs hreg]
+    rw [Locmap.gso (R mr) v' ls q.eloc hloc]
+    exact hsat q hqrem
+
+theorem in_elements_between_1 : in_elements_between_1Statement := by
+  intro r1 s q
+  rw [EqSet.elements_between_iff_proof (select_reg_l r1) (select_reg_h r1)
+    (select_reg_l_monotone r1) (select_reg_h_monotone r1)]
+  constructor
+  · rintro ⟨hmem, hl, hh⟩
+    exact ⟨hmem, (select_reg_charact r1 q).1 ⟨hl, hh⟩⟩
+  · rintro ⟨hmem, heq⟩
+    have hb := (select_reg_charact r1 q).2 heq
+    exact ⟨hmem, hb.1, hb.2⟩
+
+end CompCert4Lean.Backend.Allocproof

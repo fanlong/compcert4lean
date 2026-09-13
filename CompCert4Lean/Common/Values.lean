@@ -1588,3 +1588,88 @@ theorem add_assoc : add_assocStatement := by
 
 end Val
 end CompCert4Lean.Common.Values
+
+namespace CompCert4Lean.Common.Values
+namespace Val
+
+theorem add_permut : add_permutStatement := by
+  intro x y z
+  cases x <;> cases y <;> cases z <;>
+    simp [add, CompCert4Lean.X86_64.Archi.ptr64]
+  case Vint.Vint.Vint a b c =>
+    change Int.add a (Int.add b c) = Int.add b (Int.add a c)
+    calc
+      Int.add a (Int.add b c) = Int.add (Int.add a b) c :=
+        (CompCert4Lean.Lib.Integers.Int.add_assoc_proof a b c).symm
+      _ = Int.add (Int.add b a) c := by
+        have h := add_commut (Vint a) (Vint b)
+        have h' : Int.add a b = Int.add b a := by
+          injection h
+        exact congrArg (fun q => Int.add q c) h'
+      _ = Int.add b (Int.add a c) :=
+        CompCert4Lean.Lib.Integers.Int.add_assoc_proof b a c
+
+end Val
+end CompCert4Lean.Common.Values
+
+namespace CompCert4Lean.Common.Values
+namespace Val
+
+theorem add_permut_4 : add_permut_4Statement := by
+  intro x y z t
+  calc
+    add (add x y) (add z t) = add x (add y (add z t)) :=
+      add_assoc x y (add z t)
+    _ = add x (add z (add y t)) := by
+      exact congrArg (fun q => add x q) (add_permut y z t)
+    _ = add (add x z) (add y t) :=
+      (add_assoc x z (add y t)).symm
+
+end Val
+end CompCert4Lean.Common.Values
+
+namespace CompCert4Lean.Common.Values
+namespace Val
+
+theorem sub_add_opp : sub_add_oppStatement := by
+  intro x y
+  cases x <;> simp [sub, add, CompCert4Lean.X86_64.Archi.ptr64]
+  case Vint a =>
+    exact CompCert4Lean.Lib.Integers.Int.sub_add_opp_proof a y
+
+end Val
+end CompCert4Lean.Common.Values
+
+namespace CompCert4Lean.Common.Values
+namespace Val
+
+private theorem int_add_commut_local (a b : CompCert4Lean.Lib.Integers.int) :
+    Int.add a b = Int.add b a := by
+  have h := add_commut (Vint a) (Vint b)
+  injection h
+
+private theorem int_sub_add_l_local
+    (x y z : CompCert4Lean.Lib.Integers.int) :
+    Int.sub (Int.add x y) z = Int.add (Int.sub x z) y := by
+  calc
+    Int.sub (Int.add x y) z = Int.add (Int.add x y) (Int.neg z) :=
+      CompCert4Lean.Lib.Integers.Int.sub_add_opp_proof (Int.add x y) z
+    _ = Int.add x (Int.add y (Int.neg z)) :=
+      CompCert4Lean.Lib.Integers.Int.add_assoc_proof x y (Int.neg z)
+    _ = Int.add x (Int.add (Int.neg z) y) := by
+      exact congrArg (fun q => Int.add x q) (int_add_commut_local y (Int.neg z))
+    _ = Int.add (Int.add x (Int.neg z)) y :=
+      (CompCert4Lean.Lib.Integers.Int.add_assoc_proof x (Int.neg z) y).symm
+    _ = Int.add (Int.sub x z) y := by
+      exact congrArg (fun q => Int.add q y)
+        (CompCert4Lean.Lib.Integers.Int.sub_add_opp_proof x z).symm
+
+theorem sub_add_l : sub_add_lStatement := by
+  intro v1 v2 i
+  cases v1 <;> cases v2 <;>
+    simp [sub, add, CompCert4Lean.X86_64.Archi.ptr64]
+  case Vint.Vint a b =>
+    exact int_sub_add_l_local a i b
+
+end Val
+end CompCert4Lean.Common.Values
