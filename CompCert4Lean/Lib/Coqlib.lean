@@ -1253,3 +1253,54 @@ theorem list_nth_z_in : list_nth_z_inStatement := by
         exact List.mem_cons_of_mem hd (ih (ZArith.BinInt.Z.pred n) x h)
 
 end CompCert4Lean.Lib.Coqlib
+
+namespace CompCert4Lean.Lib.Coqlib
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem list_nth_z_map : list_nth_z_mapStatement := by
+  intro A B f l
+  induction l with
+  | nil =>
+      intro n
+      rfl
+  | cons hd tl ih =>
+      intro n
+      simp only [List.map, list_nth_z, option_map]
+      split
+      · rfl
+      · exact ih (ZArith.BinInt.Z.pred n)
+
+theorem list_map_exten : list_map_extenStatement := by
+  intro A B f f' l h
+  induction l with
+  | nil => rfl
+  | cons hd tl ih =>
+      simp only [List.map]
+      have hhd : f' hd = f hd := (h hd (by simp)).symm
+      have htl : List.map f' tl = List.map f tl := by
+        apply ih
+        intro x hx
+        exact h x (by simp [hx])
+      simp [hhd, htl]
+
+theorem list_map_compose : list_map_composeStatement := by
+  intro A B C f g l
+  induction l with
+  | nil => rfl
+  | cons hd tl ih =>
+      simp only [List.map]
+      rw [ih]
+
+theorem list_in_map_inv : list_in_map_invStatement := by
+  intro A B f l y h
+  induction l with
+  | nil => simp at h
+  | cons hd tl ih =>
+      simp only [List.map, List.mem_cons] at h
+      rcases h with hhead | htail
+      · exact ⟨hd, hhead, by simp⟩
+      · obtain ⟨x, hfx, hxl⟩ := ih htail
+        exact ⟨x, hfx, by simp [hxl]⟩
+
+end CompCert4Lean.Lib.Coqlib

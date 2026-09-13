@@ -1673,3 +1673,179 @@ theorem init_meminj_eq : init_meminj_eqStatement := by
   simp [hfind']
 
 end CompCert4Lean.Backend.Unusedglobproof
+
+namespace CompCert4Lean.Backend.Unusedglobproof
+
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Backend.Unusedglob
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Lib.Maps
+
+theorem init_meminj_invert : init_meminj_invertStatement := by
+  intro p tp b b' delta h
+  unfold init_meminj at h
+  cases hinv : Genv.invert_symbol (Genv.globalenv p) b with
+  | none => simp [hinv] at h
+  | some id =>
+      cases hfind : Genv.find_symbol (Genv.globalenv tp) id with
+      | none => simp [hinv, hfind] at h
+      | some b'' =>
+          have hpair : (b'', z0) = (b', delta) := by
+            exact Option.some.inj (by simpa [hinv, hfind] using h)
+          cases hpair
+          refine ⟨rfl, id, ?_, hfind⟩
+          exact Genv.invert_find_symbol (F := RTL.fundef) (V := Unit)
+            (ge := Genv.globalenv p) (id := id) (b := b) hinv
+
+end CompCert4Lean.Backend.Unusedglobproof
+
+namespace CompCert4Lean.Backend.Unusedglobproof
+
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Common.Globalenvs
+
+open CompCert4Lean.Backend.Unusedglob
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Lib.Maps
+
+theorem init_meminj_preserves_globals : init_meminj_preserves_globalsStatement := by
+  intro p tp used hvalid hmatch
+  constructor
+  · intro id b b' delta hmap hfind
+    have hinv := init_meminj_invert p tp b b' delta hmap
+    rcases hinv with ⟨hdelta, id1, hfind1, hfind2⟩
+    have hid : id1 = id :=
+      (Genv.globalenv p).genv_vars_inj id1 id hfind1 hfind
+    subst id1
+    exact ⟨hdelta, hfind2⟩
+  · intro id b hkept hfind
+    rcases transform_find_symbol_1 p tp used hmatch id b hfind hkept with
+      ⟨b', hfind'⟩
+    exact ⟨b', hfind', init_meminj_eq p tp id b b' hfind hfind'⟩
+  · intro id b' hfind'
+    rcases transform_find_symbol_2 p tp used hmatch id b' hfind' with
+      ⟨hkept, b, hfind⟩
+    exact ⟨b, hfind, init_meminj_eq p tp id b b' hfind hfind'⟩
+  · intro b b' delta gd hmap hdef
+    have hinv := init_meminj_invert p tp b b' delta hmap
+    rcases hinv with ⟨hdelta, id, hfind, hfind'⟩
+    have hkept : kept used id :=
+      (transform_find_symbol_2 p tp used hmatch id b' hfind').1
+    have hget : PTree.get id (prog_defmap p) = some gd :=
+      (Genv.find_def_symbol (F := RTL.fundef) (V := Unit)
+        (p := p) (id := id) (g := gd)).2 ⟨b, hfind, hdef⟩
+    have hmem : IS.mem id used = true :=
+      CompCert4Lean.Backend.Unusedglob.IS.mem_1_proof used id hkept
+    have hget' : PTree.get id (prog_defmap tp) = some gd := by
+      rw [match_prog_def hmatch id]
+      simp [hmem, hget]
+    rcases (Genv.find_def_symbol (F := RTL.fundef) (V := Unit)
+      (p := tp) (id := id) (g := gd)).mp hget' with ⟨b1, hfind1, hdef1⟩
+    have hb : b' = b1 := Option.some.inj (hfind'.symm.trans hfind1)
+    subst b1
+    exact ⟨hdef1, hdelta, by
+      intro id' href
+      exact kept_closed p used hvalid id gd id' hkept hget
+        href⟩
+  · intro b b' delta gd hmap hdef'
+    have hinv := init_meminj_invert p tp b b' delta hmap
+    rcases hinv with ⟨hdelta, id, hfind, hfind'⟩
+    have hget' : PTree.get id (prog_defmap tp) = some gd :=
+      (Genv.find_def_symbol (F := RTL.fundef) (V := Unit)
+        (p := tp) (id := id) (g := gd)).2 ⟨b', hfind', hdef'⟩
+    rw [match_prog_def hmatch id] at hget'
+    cases hmem : IS.mem id used with
+    | false => simp [hmem] at hget'
+    | true =>
+        have hget : PTree.get id (prog_defmap p) = some gd := by
+          simpa [hmem] using hget'
+        rcases (Genv.find_def_symbol (F := RTL.fundef) (V := Unit)
+          (p := p) (id := id) (g := gd)).mp hget with ⟨b1, hfind1, hdef1⟩
+        have hb : b = b1 := Option.some.inj (hfind.symm.trans hfind1)
+        subst b1
+        exact ⟨hdef1, hdelta⟩
+
+end CompCert4Lean.Backend.Unusedglobproof
+
+namespace CompCert4Lean.Backend.Unusedglobproof
+
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Backend.Unusedglob
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Maps
+open Lean Elab Tactic Meta
+
+private def unusedglobPrivateName (suffix : String) : Name :=
+  let p := Name.str (Name.str (Name.str (Name.str Name.anonymous "_private") "CompCert4Lean") "Lib") "Integers"
+  let base := Name.num p 0
+  suffix.splitOn "." |>.foldl Name.str base
+
+private theorem unusedglob_wordcore_add_val {bits : Nat}
+    (x y : CompCert4Lean.Lib.Integers.WordCore.Word bits) :
+    (CompCert4Lean.Lib.Integers.WordCore.add x y).val =
+      (x.val + y.val) % (2 ^ bits) := by
+  run_tac
+    let lctx ← getLCtx
+    let xF := (lctx.findFromUserName? `x).get!
+    let yF := (lctx.findFromUserName? `y).get!
+    let e ← mkAppM
+      (unusedglobPrivateName "CompCert4Lean.Lib.Integers.WordCore.add_val")
+      #[mkFVar xF.fvarId, mkFVar yF.fvarId]
+    closeMainGoal Name.anonymous e
+
+private theorem unusedglob_wordcore_zero_val (bits : Nat) :
+    (CompCert4Lean.Lib.Integers.WordCore.zero bits).val = 0 := by
+  unfold CompCert4Lean.Lib.Integers.WordCore.zero
+  run_tac
+    let lctx ← getLCtx
+    let bF := (lctx.findFromUserName? `bits).get!
+    let e ← mkAppM
+      (unusedglobPrivateName "CompCert4Lean.Lib.Integers.WordCore.val_repr_residue")
+      #[mkFVar bF.fvarId,
+        mkConst ``CompCert4Lean.Foundation.Numbers.Rocq.Coq.Numbers.BinNums.Z.Z0]
+    closeMainGoal Name.anonymous e
+
+private theorem unusedglob_wordcore_val_lt
+    (x : CompCert4Lean.Lib.Integers.WordCore.Word bits) :
+    x.val < 2 ^ bits := by
+  run_tac
+    let lctx ← getLCtx
+    let xF := (lctx.findFromUserName? `x).get!
+    let e ← mkAppM
+      (unusedglobPrivateName "CompCert4Lean.Lib.Integers.WordCore.val_lt")
+      #[mkFVar xF.fvarId]
+    closeMainGoal Name.anonymous e
+
+private theorem unusedglob_ptrofs_add_zero_repr
+    (ofs : CompCert4Lean.Lib.Integers.Ptrofs.int) :
+    CompCert4Lean.Lib.Integers.Ptrofs.add ofs
+      (CompCert4Lean.Lib.Integers.Ptrofs.repr
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.Numbers.BinNums.Z.Z0)) = ofs := by
+  change CompCert4Lean.Lib.Integers.WordCore.add ofs
+    (CompCert4Lean.Lib.Integers.WordCore.zero
+      CompCert4Lean.Lib.Integers.Ptrofs.wordsize) = ofs
+  apply CompCert4Lean.Lib.Integers.WordCore.ext_of_val_eq
+  rw [unusedglob_wordcore_add_val, unusedglob_wordcore_zero_val, Nat.add_zero]
+  exact Nat.mod_eq_of_lt (unusedglob_wordcore_val_lt ofs)
+
+theorem symbol_address_inject : symbol_address_injectStatement := by
+  intro p tp used j id ofs hj hkept
+  change Val.inject j
+    (Genv.symbol_address (Genv.globalenv p) id ofs)
+    (Genv.symbol_address (Genv.globalenv tp) id ofs)
+  unfold Genv.symbol_address
+  cases hfind : Genv.find_symbol (Genv.globalenv p) id with
+  | none =>
+      simp only [hfind]
+      exact Val.val_inject_undef j _
+  | some b =>
+      rcases hj.symbols_inject_2 id b hkept hfind with
+        ⟨b', hfind', hmap⟩
+      simp only [hfind, hfind']
+      refine Val.inject_ptr j b ofs b' ofs z0 hmap ?_
+      exact (unusedglob_ptrofs_add_zero_repr ofs).symm
+
+end CompCert4Lean.Backend.Unusedglobproof
