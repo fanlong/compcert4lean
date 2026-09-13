@@ -1517,3 +1517,25 @@ theorem generic_format_opp :
     exact congrArg (Exact.Ropp ctx) hx
 
 end CompCert4Lean.Flocq.Core.Generic_fmt
+
+namespace CompCert4Lean.Flocq.Core.Generic_fmt
+
+theorem generic_format_abs :
+    ∀ ctx magnitude, generic_format_absStatement ctx magnitude := by
+  intro ctx magnitude beta fexp x hx
+  change Exact.generic_format ctx magnitude beta fexp (ctx.spec.abs x)
+  rcases ctx.certificate.total_order x ctx.spec.zero with h | h
+  · rcases h with hxneg | hzero
+    · rw [ctx.certificate.sourceLaws.abs_negative x hxneg]
+      change Exact.generic_format ctx magnitude beta fexp (Exact.Ropp ctx x)
+      exact generic_format_opp ctx magnitude beta fexp x hx
+    · subst x
+      rw [ctx.certificate.sourceLaws.abs_nonnegative _
+        (ctx.certificate.orderedField.le_refl _)]
+      exact hx
+  · have hxle : ctx.spec.le ctx.spec.zero x :=
+      (ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp h |>.1
+    rw [ctx.certificate.sourceLaws.abs_nonnegative x hxle]
+    exact hx
+
+end CompCert4Lean.Flocq.Core.Generic_fmt
