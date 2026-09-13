@@ -1634,3 +1634,65 @@ theorem star_forever_reactive : star_forever_reactiveStatement := by
     hforever) rfl
 
 end CompCert4Lean.Common.Smallstep
+
+namespace CompCert4Lean.Common.Smallstep
+
+theorem eventually_trans : eventually_transStatement := by
+  intro genv state step final_state ge n1 s1 P1 n2 P2 hev hcont
+  induction n1 generalizing s1 with
+  | zero =>
+      cases hev with
+      | eventually_now _ _ hP =>
+          simpa using hcont s1 hP
+  | succ n ih =>
+      cases hev with
+      | eventually_later s hfinal htrace hnext =>
+          rw [Nat.succ_add]
+          apply eventually_later
+          · exact hfinal
+          · intro t s' hstep
+            exact htrace t s' hstep
+          · intro t s' hstep
+            exact ih s' (hnext t s' hstep)
+
+theorem eventually_implies : eventually_impliesStatement := by
+  intro genv state step final_state ge n s P1 P2 hev himp
+  have h := eventually_trans genv state step final_state ge n s P1 0 P2 hev
+    (fun s0 hP => eventually_now step final_state ge s0 P2 (himp s0 hP))
+  simpa using h
+
+theorem eventually_and_invariant : eventually_and_invariantStatement := by
+  intro genv state step final_state ge Inv n s P hinv hev hInv
+  induction n generalizing s with
+  | zero =>
+      cases hev with
+      | eventually_now _ _ hP =>
+          exact eventually_now step final_state ge s
+            (fun s' => P s' ∧ Inv s') ⟨hP, hInv⟩
+  | succ n ih =>
+      cases hev with
+      | eventually_later s hfinal htrace hnext =>
+          apply eventually_later
+          · exact hfinal
+          · intro t s' hstep
+            exact htrace t s' hstep
+          · intro t s' hstep
+            apply ih s' (hnext t s' hstep)
+            exact hinv s t s' hstep hInv
+
+theorem fsim_simulation' : fsim_simulation'Statement := by
+  intro L1 L2 index order match_states props i s1 t s1' hstep s2 hmatch
+  rcases fsim_simulation props s1 t s1' hstep i s2 hmatch with
+    ⟨i', s2', hdiagram, hmatch'⟩
+  cases hdiagram with
+  | inl hplus =>
+      exact Or.inl ⟨i', s2', hplus, hmatch'⟩
+  | inr hstar_order =>
+      rcases hstar_order with ⟨hstar, horder⟩
+      cases hstar with
+      | star_refl s =>
+          exact Or.inr ⟨i', horder, rfl, hmatch'⟩
+      | star_step _ _ _ _ _ _ hstep' hstar' htrace =>
+          exact Or.inl ⟨i', _, plus_left _ _ hstep' hstar' htrace, hmatch'⟩
+
+end CompCert4Lean.Common.Smallstep

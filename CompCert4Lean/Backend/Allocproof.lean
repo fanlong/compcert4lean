@@ -2961,3 +2961,411 @@ theorem select_loc_h_monotone : select_loc_h_monotoneStatement := by
               simp [hcmp1] at hsel
 
 end CompCert4Lean.Backend.Allocproof
+
+namespace CompCert4Lean.Backend.Allocproof
+
+open CompCert4Lean.Backend.Allocation
+open CompCert4Lean.Backend.Locations
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+private theorem allocproof_orderedloc_outside_interval_diff :
+    ∀ l l' : Locations.loc,
+      Locations.OrderedLoc.lt l'
+          (Locations.OrderedLoc.diff_low_bound l) ∨
+        Locations.OrderedLoc.lt (Locations.OrderedLoc.diff_high_bound l) l' →
+      Locations.Loc.diff l l' := by
+  intro l l' h
+  cases l with
+  | R r =>
+      cases l' with
+      | R r' =>
+          rcases h with h | h
+          · intro heq
+            subst r'
+            exact CompCert4Lean.Lib.Coqlib.Plt_strict _ h
+          · intro heq
+            subst r'
+            exact CompCert4Lean.Lib.Coqlib.Plt_strict _ h
+      | S sl ofs ty =>
+          trivial
+  | S sl ofs ty =>
+      cases l' with
+      | R r =>
+          trivial
+      | S sl' ofs' ty' =>
+          have zlt_int : ∀ a b : CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z,
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.lt a b →
+                CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ a <
+                  CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ b := by
+            intro a b hab
+            exact hab
+          have zle_int : ∀ a b : CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z,
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.le a b →
+                CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ a ≤
+                  CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ b := by
+            intro a b hab
+            exact hab
+          have zadd_int : ∀ a b : CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z,
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+                  (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add a b) =
+                CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ a +
+                  CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ b := by
+            intro a b
+            simp [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add,
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+          have zsub_int : ∀ a b : CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z,
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+                  (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.sub a b) =
+                CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ a -
+                  CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ b := by
+            intro a b
+            simp [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.sub,
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+          have zone_int :
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+                  (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 1) = 1 := by
+            simp [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat,
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+          have zofnat_int : ∀ n : Nat,
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+                  (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat n) =
+                Int.ofNat n := by
+            intro n
+            simp [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat,
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+          by_cases hslots : sl = sl'
+          · subst sl'
+            have hslotlt : ¬ Locations.OrderedSlot.lt sl sl := by
+              intro hh
+              exact Locations.OrderedSlot.lt_not_eq_proof sl sl hh rfl
+            simp [Locations.OrderedLoc.lt, hslotlt,
+              Locations.OrderedLoc.diff_low_bound,
+              Locations.OrderedLoc.diff_high_bound, Locations.Loc.diff] at h ⊢
+            rcases h with h | h
+            · rcases h with h | ⟨heq, hty⟩
+              · right
+                have hz :
+                    CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.le
+                      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add ofs'
+                        (Locations.typesize ty')) ofs := by
+                  change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+                      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add ofs'
+                        (Locations.typesize ty')) ≤
+                    CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ ofs
+                  rw [zadd_int]
+                  have h' := zlt_int _ _ h
+                  rw [zsub_int, zone_int] at h'
+                  cases ty' <;>
+                    simp [Locations.typesize, zofnat_int] at * <;>
+                    omega
+                exact hz
+              · have hsize :
+                    CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+                        (Locations.typesize ty') ≤ 1 := by
+                  cases ty' with
+                  | Tint =>
+                      change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+                          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 1) ≤ 1
+                      rw [zofnat_int]
+                      exact Int.le_refl _
+                  | Tfloat =>
+                      exfalso
+                      change 5 < 4 at hty
+                      omega
+                  | Tlong =>
+                      exfalso
+                      change 6 < 4 at hty
+                      omega
+                  | Tsingle =>
+                      change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+                          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 1) ≤ 1
+                      rw [zofnat_int]
+                      exact Int.le_refl _
+                  | Tany32 =>
+                      change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+                          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 1) ≤ 1
+                      rw [zofnat_int]
+                      exact Int.le_refl _
+                  | Tany64 =>
+                      exfalso
+                      change 4 < 4 at hty
+                      omega
+                right
+                have hz :
+                    CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.le
+                      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add
+                        ofs' (Locations.typesize ty')) ofs := by
+                  change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+                      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add
+                        ofs' (Locations.typesize ty')) ≤
+                    CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ ofs
+                  rw [heq, zadd_int, zsub_int, zone_int]
+                  omega
+                exact hz
+            · rcases h with h | ⟨heq, hty⟩
+              · left
+                have hz :
+                    CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.le
+                      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add ofs
+                        (Locations.typesize ty)) ofs' := by
+                  change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+                      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add ofs
+                        (Locations.typesize ty)) ≤
+                    CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ ofs'
+                  rw [zadd_int]
+                  have h' := zlt_int _ _ h
+                  rw [zsub_int, zadd_int, zone_int] at h'
+                  omega
+                exact hz
+              · exfalso
+                cases ty' <;>
+                  first
+                  | (revert hty; decide)
+                  | contradiction
+          · exact Or.inl hslots
+
+
+private theorem allocproof_orderedloc_diff_outside_interval :
+    ∀ l l' : Locations.loc,
+      Locations.Loc.diff l l' →
+        Locations.OrderedLoc.lt l'
+            (Locations.OrderedLoc.diff_low_bound l) ∨
+          Locations.OrderedLoc.lt (Locations.OrderedLoc.diff_high_bound l) l' := by
+  intro l l' h
+  cases l with
+  | R r =>
+      cases l' with
+      | R r' =>
+          cases hc : Locations.OrderedLoc.compare (R r') (R r) with
+          | LT hlt => exact Or.inl hlt
+          | EQ heq =>
+              exfalso
+              apply h
+              cases heq
+              rfl
+          | GT hgt => exact Or.inr hgt
+      | S sl ofs ty =>
+          exact Or.inr trivial
+  | S sl ofs ty =>
+      cases l' with
+      | R r =>
+          exact Or.inl trivial
+      | S sl' ofs' ty' =>
+          have zlt_int : ∀ a b : CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z,
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.lt a b →
+                CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ a <
+                  CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ b := by
+            intro a b hab
+            exact hab
+          have zle_int : ∀ a b : CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z,
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.le a b →
+                CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ a ≤
+                  CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ b := by
+            intro a b hab
+            exact hab
+          have zadd_int : ∀ a b : CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z,
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+                  (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add a b) =
+                CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ a +
+                  CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ b := by
+            intro a b
+            simp [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add,
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+          have zsub_int : ∀ a b : CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z,
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+                  (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.sub a b) =
+                CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ a -
+                  CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ b := by
+            intro a b
+            simp [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.sub,
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+          have zone_int :
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+                  (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 1) = 1 := by
+            simp [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat,
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+          have zofnat_int : ∀ n : Nat,
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+                  (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat n) =
+                Int.ofNat n := by
+            intro n
+            simp [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat,
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+          by_cases hslots : sl = sl'
+          · subst sl'
+            simp [Locations.Loc.diff] at h
+            have h' := Or.symm h
+            rcases h' with h | h
+            · have hbefore :
+                  CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ ofs' +
+                      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (Locations.typesize ty') ≤
+                    CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ ofs := by
+                have hh := zle_int _ _ h
+                simpa [zadd_int] using hh
+              left
+              unfold Locations.OrderedLoc.lt
+              right
+              constructor
+              · exact rfl
+              · by_cases hlt :
+                    CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ ofs' <
+                      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ ofs - 1
+                · left
+                  change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ ofs' <
+                    CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+                      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.sub ofs
+                        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 1))
+                  rw [zsub_int, zone_int]
+                  exact hlt
+                · right
+                  constructor
+                  · apply CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective
+                    change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ ofs' =
+                        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+                          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.sub ofs
+                            (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 1))
+                    have hsize :
+                        1 ≤ CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+                          (Locations.typesize ty') := by
+                      cases ty' <;>
+                        first
+                        | (change 1 ≤ 1; exact Int.le_refl _)
+                        | (change 1 ≤ 2; omega)
+                    have hle :
+                        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ ofs - 1 ≤
+                          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ ofs' :=
+                      Int.le_of_not_gt hlt
+                    have hbefore :
+                        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ ofs' +
+                            CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+                              (Locations.typesize ty') ≤
+                          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ ofs := by
+                      have hh := zle_int _ _ h
+                      simpa [zadd_int] using hh
+                    have heq :
+                        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ ofs' =
+                          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ ofs - 1 := by
+                      omega
+                    rw [zsub_int, zone_int]
+                    exact heq
+                  · cases ty' with
+                    | Tint =>
+                        change posToNat (posOfNat 2) < posToNat (posOfNat 4)
+                        rw [posToNat_posOfNat (by omega), posToNat_posOfNat (by omega)]
+                        omega
+                    | Tfloat =>
+                        exfalso
+                        have hsz :
+                            CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+                              (Locations.typesize Common.AST.Tfloat) = 2 := by
+                          change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+                            (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 2) = 2
+                          rw [zofnat_int]
+                          rfl
+                        omega
+                    | Tlong =>
+                        exfalso
+                        have hsz :
+                            CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+                              (Locations.typesize Common.AST.Tlong) = 2 := by
+                          change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+                            (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 2) = 2
+                          rw [zofnat_int]
+                          rfl
+                        omega
+                    | Tsingle =>
+                        change posToNat (posOfNat 3) < posToNat (posOfNat 4)
+                        rw [posToNat_posOfNat (by omega), posToNat_posOfNat (by omega)]
+                        omega
+                    | Tany32 =>
+                        change posToNat (posOfNat 1) < posToNat (posOfNat 4)
+                        rw [posToNat_posOfNat (by omega), posToNat_posOfNat (by omega)]
+                        omega
+                    | Tany64 =>
+                        exfalso
+                        have hsz :
+                            CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+                              (Locations.typesize Common.AST.Tany64) = 2 := by
+                          change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+                            (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 2) = 2
+                          rw [zofnat_int]
+                          rfl
+                        omega
+            · right
+              unfold Locations.OrderedLoc.lt
+              right
+              constructor
+              · exact rfl
+              · left
+                change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+                    (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.sub
+                      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add ofs
+                        (Locations.typesize ty))
+                      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 1)) <
+                  CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ ofs'
+                have hh := zle_int _ _ h
+                rw [zsub_int, zadd_int, zone_int] at ⊢
+                rw [zadd_int] at hh
+                omega
+          · cases hc : Locations.OrderedSlot.compare sl' sl with
+            | LT hlt => exact Or.inl (Or.inl hlt)
+            | EQ heq => exact False.elim (hslots heq.symm)
+            | GT hgt => exact Or.inr (Or.inl hgt)
+
+
+theorem select_loc_charact : select_loc_charactStatement := by
+  intro l q
+  unfold select_loc_l select_loc_h
+  constructor
+  · intro h
+    rcases h with h | h
+    · cases hcmp : Locations.OrderedLoc.compare q.eloc
+          (Locations.OrderedLoc.diff_low_bound l) with
+      | LT hlt =>
+          exact allocproof_orderedloc_outside_interval_diff l q.eloc
+            (Or.inl hlt)
+      | EQ heq => simp [hcmp] at h
+      | GT hgt => simp [hcmp] at h
+    · cases hcmp : Locations.OrderedLoc.compare q.eloc
+          (Locations.OrderedLoc.diff_high_bound l) with
+      | LT hlt => simp [hcmp] at h
+      | EQ heq => simp [hcmp] at h
+      | GT hgt =>
+          exact allocproof_orderedloc_outside_interval_diff l q.eloc
+            (Or.inr hgt)
+  · intro h
+    rcases allocproof_orderedloc_diff_outside_interval l q.eloc h with h | h
+    · left
+      cases hcmp : Locations.OrderedLoc.compare q.eloc
+          (Locations.OrderedLoc.diff_low_bound l) with
+      | LT hlt => simp [hcmp]
+      | EQ heq =>
+          exact False.elim (Locations.OrderedLoc.lt_not_eq
+            q.eloc (Locations.OrderedLoc.diff_low_bound l) h heq)
+      | GT hgt =>
+          exfalso
+          have hcycle : Locations.OrderedLoc.lt q.eloc q.eloc :=
+            Locations.OrderedLoc.lt_trans q.eloc
+              (Locations.OrderedLoc.diff_low_bound l) q.eloc h hgt
+          exact Locations.OrderedLoc.lt_not_eq q.eloc q.eloc hcycle rfl
+    · right
+      cases hcmp : Locations.OrderedLoc.compare q.eloc
+          (Locations.OrderedLoc.diff_high_bound l) with
+      | LT hlt =>
+          exfalso
+          have hcycle : Locations.OrderedLoc.lt
+              (Locations.OrderedLoc.diff_high_bound l)
+              (Locations.OrderedLoc.diff_high_bound l) :=
+            Locations.OrderedLoc.lt_trans
+              (Locations.OrderedLoc.diff_high_bound l) q.eloc
+              (Locations.OrderedLoc.diff_high_bound l) h hlt
+          exact Locations.OrderedLoc.lt_not_eq
+            (Locations.OrderedLoc.diff_high_bound l)
+            (Locations.OrderedLoc.diff_high_bound l) hcycle rfl
+      | EQ heq =>
+          exact False.elim (Locations.OrderedLoc.lt_not_eq
+            (Locations.OrderedLoc.diff_high_bound l) q.eloc h heq.symm)
+      | GT hgt => simp [hcmp]
+
+
+end CompCert4Lean.Backend.Allocproof

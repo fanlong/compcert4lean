@@ -1653,3 +1653,31 @@ theorem unique_labels_add_branch : unique_labels_add_branchStatement := by
   · simpa [hs, unique_labels] using huniq
 
 end CompCert4Lean.Backend.Linearizeproof
+
+namespace CompCert4Lean.Backend.Linearizeproof
+open CompCert4Lean.Backend.Linear
+open CompCert4Lean.Backend.Linearize
+theorem unique_labels_lin_block : unique_labels_lin_blockStatement := by
+  intro k b huniq
+  induction b with
+  | nil => exact huniq
+  | cons a b ih =>
+      cases a with
+      | Lop _ _ _ | Lload _ _ _ _ | Lgetstack _ _ _ _ | Lsetstack _ _ _ _
+      | Lstore _ _ _ _ | Lcall _ _ | Lbuiltin _ _ _ =>
+          simp only [linearize_block]
+          exact ih
+      | Ltailcall _ _ | Ljumptable _ _ | Lreturn =>
+          simp only [linearize_block]
+          exact huniq
+      | Lbranch s =>
+          simp only [linearize_block]
+          exact unique_labels_add_branch s k huniq
+      | Lcond cond args s1 s2 =>
+          simp only [linearize_block]
+          by_cases hs : starts_with s1 k
+          · simp only [hs]
+            exact unique_labels_add_branch s1 k huniq
+          · simp only [hs]
+            exact unique_labels_add_branch s2 k huniq
+end CompCert4Lean.Backend.Linearizeproof

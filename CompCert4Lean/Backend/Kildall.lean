@@ -1940,3 +1940,25 @@ theorem step_state_good : step_state_goodStatement := by
         exact A7 n (hdefined n old hold)
 
 end CompCert4Lean.Backend.Kildall.Dataflow_Solver
+
+namespace CompCert4Lean.Backend.Kildall.Dataflow_Solver
+
+theorem step_state_good_2 : step_state_good_2Statement := by
+  intro A LAT NS LATlaws NSlaws code successors transf st pc rem hgood hpick hcode
+  rcases hgood with ⟨hstable, hdefined⟩
+  constructor
+  · intro n hnvis
+    rcases hstable n hnvis with hwork | hstable'
+    · rcases (NSlaws.pick_some st.worklist pc rem hpick n).mp hwork with hpc | hrem
+      · subst n
+        right
+        intro i s hget hsucc
+        rw [hcode] at hget
+        cases hget
+      · exact Or.inl hrem
+    · right
+      exact hstable'
+  · intro n v hget
+    exact hdefined n v hget
+
+end CompCert4Lean.Backend.Kildall.Dataflow_Solver
