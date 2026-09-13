@@ -1769,3 +1769,209 @@ theorem is_intconst_sound
   | Eexternal id sg al => simp at hconst
 
 end CompCert4Lean.Backend.SelectDivproof
+
+namespace CompCert4Lean.Backend.SelectDivproof
+
+open Lean Elab Tactic Meta
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+private theorem int64_unsigned_repr_local (z : CCZ)
+    (hz : zLe z0 z ∧ zLe z CompCert4Lean.Lib.Integers.Int64.max_unsigned) :
+    int64Unsigned (int64Repr z) = z := by
+  have hzi : z = zOfInt (intOfZ z) := (zOfInt_intOfZ z).symm
+  rw [hzi]
+  change (CompCert4Lean.Lib.Integers.WordCore.repr 64 (zOfInt (intOfZ z))).intval =
+    zOfInt (intOfZ z)
+  let w := CompCert4Lean.Lib.Integers.WordCore.repr 64 (zOfInt (intOfZ z))
+  have hi : w.val = (intOfZ z % ((2 ^ 64 : Nat) : Int)).toNat := by
+    dsimp [w]
+    run_tac
+      let env ← getEnv
+      let some (n, _) := env.constants.toList.find?
+          (fun (n, _) => (toString n).endsWith "WordCore.val_repr")
+        | throwError "frozen WordCore.val_repr helper not found"
+      let stx := Lean.mkIdent n
+      let arg := Lean.mkIdent `z
+      evalTactic
+        (← `(tactic| exact $stx 64
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ $arg)))
+  have hwi : w.intval = ZArith.BinInt.Z.of_nat w.val := by
+    run_tac
+      let env ← getEnv
+      let some (n, _) := env.constants.toList.find?
+          (fun (n, _) => (toString n).endsWith "WordCore.intval_eq_zOfNat_val")
+        | throwError "frozen WordCore.intval_eq_zOfNat_val helper not found"
+      let stx := Lean.mkIdent n
+      let arg := Lean.mkIdent `w
+      evalTactic (← `(tactic| exact $stx $arg))
+  change w.intval = _
+  rw [hwi, hi]
+  have hznonneg : 0 ≤ intOfZ z := hz.1
+  have hzmax := hz.2
+  have hzlt : intOfZ z < ((2 ^ 64 : Nat) : Int) := by
+    change intOfZ z ≤ intOfZ CompCert4Lean.Lib.Integers.Int64.max_unsigned at hzmax
+    change intOfZ z ≤ (2 ^ 64 : Int) - 1 at hzmax
+    omega
+  rw [Int.emod_eq_of_lt hznonneg hzlt]
+  change zOfInt (↑(Int.toNat (intOfZ z)) : Int) = _
+  rw [Int.toNat_of_nonneg hznonneg]
+
+theorem divlu_mul_shift : divlu_mul_shiftStatement := by
+  intro x y m p hparams
+  have hs := divlu_mul_params_sound (int64Unsigned y) m p hparams
+  rcases hs with ⟨hm, hp, hdiv⟩
+  refine ⟨hp, ?_⟩
+  change CompCert4Lean.Lib.Integers.Int64.divu x y =
+    CompCert4Lean.Lib.Integers.Int64.shru'
+      (CompCert4Lean.Lib.Integers.Int64.mulhu x
+        (CompCert4Lean.Lib.Integers.Int64.repr m))
+      (CompCert4Lean.Lib.Integers.Int.repr p)
+  have hshift := int64_shru'_div_two_p
+    (CompCert4Lean.Lib.Integers.Int64.mulhu x
+      (CompCert4Lean.Lib.Integers.Int64.repr m))
+    (CompCert4Lean.Lib.Integers.Int.repr p)
+  change CompCert4Lean.Lib.Integers.Int64.shru'
+      (CompCert4Lean.Lib.Integers.Int64.mulhu x
+        (CompCert4Lean.Lib.Integers.Int64.repr m))
+      (CompCert4Lean.Lib.Integers.Int.repr p) =
+    CompCert4Lean.Lib.Integers.Int64.repr
+      (zDiv
+        (CompCert4Lean.Lib.Integers.Int64.unsigned
+          (CompCert4Lean.Lib.Integers.Int64.mulhu x
+            (CompCert4Lean.Lib.Integers.Int64.repr m)))
+        (two_p
+          (CompCert4Lean.Lib.Integers.Int.unsigned
+            (CompCert4Lean.Lib.Integers.Int.repr p)))) at hshift
+  rw [hshift]
+  unfold CompCert4Lean.Lib.Integers.Int64.divu
+    CompCert4Lean.Lib.Integers.WordCore.divu
+    CompCert4Lean.Lib.Integers.Int64.mulhu
+  change CompCert4Lean.Lib.Integers.Int64.repr
+      (zDiv (int64Unsigned x) (int64Unsigned y)) =
+    CompCert4Lean.Lib.Integers.Int64.repr
+      (zDiv
+        (int64Unsigned
+          (int64Repr
+            (zDiv (zMul (int64Unsigned x) (int64Unsigned (int64Repr m)))
+              CompCert4Lean.Lib.Integers.Int64.modulus)))
+        (two_p (intUnsigned (intRepr p))))
+  have hm0 : zLe z0 m := hm.1
+  have hm_lt : zLt m CompCert4Lean.Lib.Integers.Int64.modulus := hm.2
+  have hmmax : zLe m CompCert4Lean.Lib.Integers.Int64.max_unsigned := by
+    change intOfZ m ≤ intOfZ CompCert4Lean.Lib.Integers.Int64.max_unsigned
+    change intOfZ m ≤ intOfZ CompCert4Lean.Lib.Integers.Int64.modulus - 1
+    change intOfZ m < intOfZ CompCert4Lean.Lib.Integers.Int64.modulus at hm_lt
+    omega
+  have hmrepr : int64Unsigned (int64Repr m) = m := by
+    exact int64_unsigned_repr_local m ⟨hm0, hmmax⟩
+  have hp0 : zLe z0 p := hp.1
+  have hp_lt : zLt p z64 := hp.2
+  have hpmax : zLe p CompCert4Lean.Lib.Integers.Int.max_unsigned := by
+    change intOfZ p ≤ intOfZ CompCert4Lean.Lib.Integers.Int.max_unsigned
+    change intOfZ p ≤ intOfZ CompCert4Lean.Lib.Integers.Int.modulus - 1
+    change intOfZ p < intOfZ z64 at hp_lt
+    have hz64 : intOfZ z64 = (64 : Int) := by rfl
+    have hmodpow : intOfZ CompCert4Lean.Lib.Integers.Int.modulus =
+        (2 ^ 32 : Int) := by rfl
+    rw [hz64] at hp_lt
+    rw [hmodpow]
+    have hconst : (64 : Int) ≤ (2 ^ 32 : Int) - 1 := by decide
+    omega
+  have hprepr : intUnsigned (intRepr p) = p := by
+    exact CompCert4Lean.Lib.Integers.Int.unsigned_repr_proof_api p ⟨hp0, hpmax⟩
+  rw [hmrepr, hprepr]
+  have hx0 : zLe z0 (int64Unsigned x) := by
+    have h := x.intrange.1
+    change (-1 : Int) < intOfZ (int64Unsigned x) at h
+    change 0 ≤ intOfZ (int64Unsigned x)
+    omega
+  have hxlt : zLt (int64Unsigned x) CompCert4Lean.Lib.Integers.Int64.modulus :=
+    x.intrange.2
+  have hmodpow : intOfZ CompCert4Lean.Lib.Integers.Int64.modulus =
+      (2 ^ 64 : Int) := by rfl
+  have hmodpos : 0 < intOfZ CompCert4Lean.Lib.Integers.Int64.modulus := by
+    rw [hmodpow]
+    exact Int.pow_pos (by decide)
+  have hnum0 : 0 ≤ intOfZ (zMul (int64Unsigned x) m) := by
+    simp only [zMul, ZArith.BinInt.Z.mul, intOfZ_zOfInt]
+    exact Int.mul_nonneg hx0 hm0
+  have hnum_lt : intOfZ (zMul (int64Unsigned x) m) <
+      intOfZ CompCert4Lean.Lib.Integers.Int64.modulus *
+        intOfZ CompCert4Lean.Lib.Integers.Int64.modulus := by
+    simp only [zMul, ZArith.BinInt.Z.mul, intOfZ_zOfInt]
+    have hA : intOfZ (int64Unsigned x) * intOfZ m ≤
+        intOfZ CompCert4Lean.Lib.Integers.Int64.modulus * intOfZ m :=
+      Int.mul_le_mul_of_nonneg_right (Int.le_of_lt hxlt) hm0
+    have hB : intOfZ CompCert4Lean.Lib.Integers.Int64.modulus * intOfZ m <
+        intOfZ CompCert4Lean.Lib.Integers.Int64.modulus *
+          intOfZ CompCert4Lean.Lib.Integers.Int64.modulus :=
+      Int.mul_lt_mul_of_pos_left hm_lt hmodpos
+    exact Int.lt_of_le_of_lt hA hB
+  have hq0 : zLe z0
+      (zDiv (zMul (int64Unsigned x) m)
+        CompCert4Lean.Lib.Integers.Int64.modulus) := by
+    rw [zdiv_pos_int_local (zMul (int64Unsigned x) m)
+      CompCert4Lean.Lib.Integers.Int64.modulus hmodpos]
+    change 0 ≤ intOfZ (zOfInt _)
+    simp only [intOfZ_zOfInt]
+    exact Int.ediv_nonneg hnum0 (Int.le_of_lt hmodpos)
+  have hq_lt : zLt
+      (zDiv (zMul (int64Unsigned x) m)
+        CompCert4Lean.Lib.Integers.Int64.modulus)
+      CompCert4Lean.Lib.Integers.Int64.modulus := by
+    rw [zdiv_pos_int_local (zMul (int64Unsigned x) m)
+      CompCert4Lean.Lib.Integers.Int64.modulus hmodpos]
+    change intOfZ (zOfInt _) < intOfZ CompCert4Lean.Lib.Integers.Int64.modulus
+    simp only [intOfZ_zOfInt]
+    exact Int.ediv_lt_of_lt_mul hmodpos hnum_lt
+  have hqmax : zLe
+      (zDiv (zMul (int64Unsigned x) m)
+        CompCert4Lean.Lib.Integers.Int64.modulus)
+      CompCert4Lean.Lib.Integers.Int64.max_unsigned := by
+    change intOfZ
+        (zDiv (zMul (int64Unsigned x) m)
+          CompCert4Lean.Lib.Integers.Int64.modulus) ≤
+      intOfZ CompCert4Lean.Lib.Integers.Int64.max_unsigned
+    change intOfZ
+        (zDiv (zMul (int64Unsigned x) m)
+          CompCert4Lean.Lib.Integers.Int64.modulus) ≤
+      intOfZ CompCert4Lean.Lib.Integers.Int64.modulus - 1
+    change intOfZ
+        (zDiv (zMul (int64Unsigned x) m)
+          CompCert4Lean.Lib.Integers.Int64.modulus) <
+      intOfZ CompCert4Lean.Lib.Integers.Int64.modulus at hq_lt
+    omega
+  have hqrepr : int64Unsigned
+      (int64Repr (zDiv (zMul (int64Unsigned x) m)
+        CompCert4Lean.Lib.Integers.Int64.modulus)) =
+      zDiv (zMul (int64Unsigned x) m)
+        CompCert4Lean.Lib.Integers.Int64.modulus := by
+    exact int64_unsigned_repr_local _ ⟨hq0, hqmax⟩
+  rw [hqrepr]
+  have hp0i : 0 ≤ intOfZ p := hp0
+  have htp : 0 < intOfZ (two_p p) := by
+    unfold two_p ZArith.Zpower.two_p ZArith.BinInt.Z.pow
+    rw [if_neg (Int.not_lt_of_ge hp0i)]
+    simp only [intOfZ_zOfInt]
+    have hbase : intOfZ (Zpos (.xO .xH)) = (2 : Int) := by decide
+    rw [hbase]
+    exact Int.pow_pos (by decide)
+  have hnest := zdiv_zdiv_pos_local (zMul (int64Unsigned x) m)
+    CompCert4Lean.Lib.Integers.Int64.modulus (two_p p) hmodpos htp
+  rw [hnest]
+  have hmodz64 : two_p z64 = CompCert4Lean.Lib.Integers.Int64.modulus := by rfl
+  have hden : zMul CompCert4Lean.Lib.Integers.Int64.modulus (two_p p) =
+      two_p (zAdd z64 p) := by
+    rw [← hmodz64]
+    have hz640 : 0 ≤ intOfZ z64 := by
+      change 0 ≤ (64 : Int)
+      omega
+    exact (two_p_add_local z64 p hz640 hp0i).symm
+  rw [hden]
+  have hdivx := hdiv (int64Unsigned x) ⟨hx0, hxlt⟩
+  have hmulcomm : zMul (int64Unsigned x) m = zMul m (int64Unsigned x) := by
+    apply intOfZ_injective
+    simp only [zMul, ZArith.BinInt.Z.mul, intOfZ_zOfInt, Int.mul_comm]
+  rw [hdivx, hmulcomm]
+
+end CompCert4Lean.Backend.SelectDivproof

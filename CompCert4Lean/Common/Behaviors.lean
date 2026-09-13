@@ -1735,3 +1735,145 @@ theorem atomic_forward_simulation :
     · rfl
 
 end CompCert4Lean.Common.Behaviors
+
+namespace CompCert4Lean.Common.Behaviors
+
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.Smallstep
+
+theorem atomic_star_star_gen :
+    atomic_star_star_genStatement := by
+  intro L ts1 t ts2 hstar
+  induction hstar with
+  | star_refl s =>
+      refine ⟨E0, star_refl _ _ s.2, ?_⟩
+      cases s with
+      | mk tr st =>
+          induction tr with
+          | nil => rfl
+          | cons ev tr ih =>
+              exact congrArg (List.cons ev) ih
+  | @star_step s1 t1 s2 t2 s3 t hstep htail htrace ih =>
+      cases hstep with
+      | atomic_step_silent s s' hstep =>
+          rcases ih with ⟨t', hstar', heq⟩
+          refine ⟨t', ?_, ?_⟩
+          · exact star_step s E0 hstep hstar' rfl
+          · rw [htrace]
+            change Eapp E0 t' = Eapp t2 s3.1
+            exact heq
+      | atomic_step_start s ev t0 s' hstep =>
+          rcases ih with ⟨t', hstar', heq⟩
+          refine ⟨ev :: Eapp t0 t', ?_, ?_⟩
+          · exact star_step s (ev :: t0) hstep hstar' rfl
+          · rw [htrace]
+            change ev :: Eapp t0 t' = ev :: Eapp t2 s3.1
+            exact congrArg (List.cons ev) heq
+      | atomic_step_continue ev t0 s hout =>
+          rcases ih with ⟨t', hstar', heq⟩
+          refine ⟨t', hstar', ?_⟩
+          rw [htrace]
+          change ev :: Eapp t0 t' = ev :: Eapp t2 s3.1
+          exact congrArg (List.cons ev) heq
+
+end CompCert4Lean.Common.Behaviors
+
+namespace CompCert4Lean.Common.Behaviors
+
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.Smallstep
+
+theorem atomic_star_star :
+    atomic_star_starStatement := by
+  intro L s1 t s2 hstar
+  obtain ⟨t', hstar', heq⟩ :=
+    atomic_star_star_gen L (E0, s1) t (E0, s2) hstar
+  have app_nil : ∀ u : trace, Eapp u E0 = u := by
+    intro u
+    induction u with
+    | nil => rfl
+    | cons ev u ih =>
+        exact congrArg (List.cons ev) ih
+  have hleft : Eapp E0 t' = t' := eappNilLeft t'
+  have hright : Eapp t E0 = t := app_nil t
+  rw [hleft, hright] at heq
+  simpa [heq] using hstar'
+
+end CompCert4Lean.Common.Behaviors
+
+namespace CompCert4Lean.Common.Behaviors
+
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.Smallstep
+
+theorem atomic_forever_silent_forever_silent :
+    atomic_forever_silent_forever_silentStatement := by
+  intro L s h
+  cases s with
+  | mk tr st =>
+      have htr : tr = E0 := by
+        exact forever_silent_casesOn
+          (step := step (atomic L)) (ge := globalenv (atomic L))
+          (motive := fun sa => sa.1 = E0)
+          (by
+            intro sa sa2 hstep htail
+            cases hstep with
+            | atomic_step_silent s0 s' hsrc => rfl)
+          h
+      subst tr
+      let pred : state L → Prop := fun s0 =>
+        ForeverSilent (atomic L) (E0, s0)
+      have hpred : pred st := h
+      exact forever_silent.coinduct (step L) (globalenv L) pred
+        (by
+          intro s0 hs
+          exact forever_silent_casesOn
+            (step := step (atomic L)) (ge := globalenv (atomic L))
+            (motive := fun sa => sa = (E0, s0) →
+              ∃ s', step L (globalenv L) s0 E0 s' ∧ pred s')
+            (by
+              intro sa sa2 hstep htail hsa
+              cases hsa
+              cases hstep with
+              | atomic_step_silent s0' s' hsrc =>
+                  exact ⟨s', hsrc, htail⟩)
+            hs rfl)
+        st hpred
+
+end CompCert4Lean.Common.Behaviors
+
+namespace CompCert4Lean.Common.Behaviors
+
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.Smallstep
+
+theorem star_atomic_output_trace :
+    star_atomic_output_traceStatement := by
+  intro L hwb s t t' s' hstar
+  have hprop :
+      ∀ (ts1 : state (atomic L)) (u : trace)
+        (ts2 : state (atomic L)),
+        Star (atomic L) ts1 u ts2 →
+        output_trace ts1.1 → output_trace ts2.1 := by
+    intro ts1 u ts2 hs
+    induction hs with
+    | star_refl s =>
+        intro hout
+        exact hout
+    | @star_step s1 t1 s2 t2 s3 u hstep htail htrace ih =>
+        intro hout
+        cases hstep with
+        | atomic_step_silent s s' hsrc =>
+            apply ih
+            simp [E0, output_trace]
+        | atomic_step_start s ev t0 s' hsrc =>
+            apply ih
+            have hw := hwb s (ev :: t0) s' hsrc
+            exact hw
+        | atomic_step_continue ev t0 s hout' =>
+            apply ih
+            exact hout'.2
+  apply hprop (E0, s) t (t', s') hstar
+  simp [E0, output_trace]
+
+end CompCert4Lean.Common.Behaviors
