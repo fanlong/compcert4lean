@@ -1257,3 +1257,13 @@ theorem solve_constraints_complete : solve_constraints_completeStatement := by
   exact hind hs
 
 end CompCert4Lean.Common.Unityping.UniSolver
+
+namespace CompCert4Lean.Common.Unityping.UniSolver
+
+theorem solve_complete : solve_completeStatement := by
+  intro T te e hs
+  obtain ⟨e', hsolve, _hs'⟩ := solve_constraints_complete T te e hs
+  refine ⟨makeassign T e', ?_⟩
+  simp [solve, hsolve]
+
+end CompCert4Lean.Common.Unityping.UniSolver
