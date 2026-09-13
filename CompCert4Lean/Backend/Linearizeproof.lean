@@ -1836,3 +1836,32 @@ theorem match_parent_locset : match_parent_locsetStatement := by
           rfl
 
 end CompCert4Lean.Backend.Linearizeproof
+
+namespace CompCert4Lean.Backend.Linearizeproof
+
+open CompCert4Lean.Backend.Linear
+open CompCert4Lean.Backend.Linearize
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Smallstep
+
+theorem add_branch_correct
+    [binary64_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 53)
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 24)
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 128)] :
+    add_branch_correctStatement := by
+  intro cfg xi service tprog lbl c k s f tf sp ls m htrans htail hfind
+  unfold add_branch
+  by_cases hs : starts_with lbl k
+  · simp only [hs]
+    exact starts_with_correct cfg xi tprog lbl k tf.fn_code c s tf sp ls m
+      htail (unique_labels_transf_function service f tf htrans) hs hfind
+  · simp only [hs]
+    apply plus_one
+    exact Linear.step.exec_Lgoto s tf sp lbl k ls m c hfind
+
+end CompCert4Lean.Backend.Linearizeproof

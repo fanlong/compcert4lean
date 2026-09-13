@@ -1487,3 +1487,133 @@ theorem filter_globdefs_map : filter_globdefs_mapStatement := by
       · exact CompCert4Lean.Lib.Maps.PTree.gempty _ _
 
 end CompCert4Lean.Backend.Unusedglobproof
+
+namespace CompCert4Lean.Backend.Unusedglobproof
+
+open CompCert4Lean.Backend.Unusedglob
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Lib.Coqlib
+
+private theorem list_norepet_append_singleton {A : Type} (l : List A) (a : A)
+    (hnr : CompCert4Lean.Lib.Coqlib.list_norepet l)
+    (hnot : ¬ a ∈ l) :
+    CompCert4Lean.Lib.Coqlib.list_norepet (l ++ [a]) := by
+  induction l with
+  | nil =>
+      exact CompCert4Lean.Lib.Coqlib.list_norepet.cons a (by simp)
+        (CompCert4Lean.Lib.Coqlib.list_norepet.nil _)
+  | cons hd tl ih =>
+      cases hnr with
+      | cons _ hhd htl =>
+          simpa only [List.cons_append] using
+            (CompCert4Lean.Lib.Coqlib.list_norepet.cons hd (by
+              intro hmem
+              apply hhd
+              rcases List.mem_append.mp hmem with hmem | hmem
+              · exact hmem
+              · have heq : hd = a := List.mem_singleton.mp hmem
+                exact False.elim (hnot (by simp [heq])))
+              (ih htl (by
+                intro hmem
+                exact hnot (by simp [hmem]))))
+
+private theorem filter_globdefs_domain_local :
+    ∀ (id : CompCert4Lean.Common.AST.ident)
+      (l : List (CompCert4Lean.Common.AST.ident ×
+        CompCert4Lean.Common.AST.globdef CompCert4Lean.Backend.RTL.fundef Unit))
+      (u : IS.t),
+      id ∈ (filter_globdefs u [] l).map Prod.fst →
+        IS.In id u ∧ id ∈ l.map Prod.fst := by
+  intro id l
+  induction l generalizing id with
+  | nil =>
+      intro u h
+      exfalso
+      simpa [CompCert4Lean.Backend.Unusedglob.filter_globdefs] using h
+  | cons idg l ih =>
+      rcases idg with ⟨id1, gd1⟩
+      intro u h
+      unfold CompCert4Lean.Backend.Unusedglob.filter_globdefs at h
+      split at h
+      · rename_i hmem
+        rw [filter_globdefs_nil, List.map_append] at h
+        rcases (List.mem_append.mp h) with htail | hhead
+        · have hdom := ih id
+            (CompCert4Lean.Backend.Unusedglob.IS.remove id1 u) htail
+          have hremove := (ISF.remove_iff_proof u id1 id).mp hdom.1
+          exact ⟨hremove.1, by simp [hdom.2]⟩
+        · have heq : id = id1 := List.mem_singleton.mp hhead
+          subst id
+          exact ⟨CompCert4Lean.Backend.Unusedglob.IS.mem_2_proof u id1 hmem, by simp⟩
+      · have hdom := ih id u h
+        exact ⟨hdom.1, by simp [hdom.2]⟩
+
+theorem filter_globdefs_unique_names : filter_globdefs_unique_namesStatement := by
+  intro l u
+  induction l generalizing u with
+  | nil =>
+      exact CompCert4Lean.Lib.Coqlib.list_norepet.nil _
+  | cons idg l ih =>
+      rcases idg with ⟨id1, gd1⟩
+      unfold CompCert4Lean.Backend.Unusedglob.filter_globdefs
+      split
+      · rename_i hmem
+        rw [filter_globdefs_nil]
+        simp only [List.map_append, List.map_cons, List.map_nil]
+        apply list_norepet_append_singleton
+        · exact ih (CompCert4Lean.Backend.Unusedglob.IS.remove id1 u)
+        · intro hmem'
+          have hdom := filter_globdefs_domain_local id1 l
+            (CompCert4Lean.Backend.Unusedglob.IS.remove id1 u) hmem'
+          have hremove := (ISF.remove_iff_proof u id1 id1).mp hdom.1
+          exact hremove.2 rfl
+      · exact ih u
+
+end CompCert4Lean.Backend.Unusedglobproof
+
+namespace CompCert4Lean.Backend.Unusedglobproof
+
+open CompCert4Lean.Backend.Unusedglob
+open CompCert4Lean.Common.AST
+
+theorem transf_program_match : transf_program_matchStatement := by
+  intro p tp htrans
+  unfold CompCert4Lean.Backend.Unusedglob.transform_program at htrans
+  cases hused : CompCert4Lean.Backend.Unusedglob.used_globals p
+      (CompCert4Lean.Common.AST.prog_defmap p) with
+  | none => simp [hused] at htrans
+  | some used =>
+      cases hdef : CompCert4Lean.Backend.Unusedglob.IS.for_all
+          (CompCert4Lean.Backend.Unusedglob.global_defined p
+            (CompCert4Lean.Common.AST.prog_defmap p)) used with
+      | false => simp [hused, hdef] at htrans
+      | true =>
+          simp [hused, hdef] at htrans
+          cases htrans
+          refine ⟨used, ?_, ?_⟩
+          · apply used_globals_valid p used
+            · exact hused
+            · exact hdef
+          · constructor
+            · rfl
+            · rfl
+            · intro id
+              exact filter_globdefs_map id used p.prog_defs
+            · exact filter_globdefs_unique_names p.prog_defs.reverse used
+
+end CompCert4Lean.Backend.Unusedglobproof
+
+namespace CompCert4Lean.Backend.Unusedglobproof
+
+theorem kept_closed : kept_closedStatement := by
+  intro p used hvalid id gd id' hkept hget href
+  unfold kept at hkept ⊢
+  exact hvalid.used_closed id gd id' hkept hget href
+
+theorem kept_main : kept_mainStatement := by
+  intro p used hvalid
+  unfold kept
+  exact hvalid.used_main
+
+end CompCert4Lean.Backend.Unusedglobproof

@@ -1298,3 +1298,83 @@ theorem eqmod_same_bits : eqmod_same_bitsStatement := by
       rw [hk']
       simp [Int.mul_add, Int.add_mul, Int.mul_assoc, Int.mul_comm, Int.mul_left_comm,
         Int.add_assoc, Int.add_comm, Int.add_left_comm]
+
+theorem same_bits_eqmod : same_bits_eqmodStatement := by
+  intro n
+  induction n with
+  | zero =>
+      intro x y i _ hi
+      rcases hi with ⟨hi0, hiltn⟩
+      change 0 ≤ intOfZ i at hi0
+      change intOfZ i < intOfZ (zOfNat 0) at hiltn
+      unfold zOfNat ZArith.BinInt.Z.of_nat at hiltn
+      simp only [intOfZ_zOfInt] at hiltn
+      have hzeroNat : Int.ofNat 0 = (0 : Int) := by decide
+      rw [hzeroNat] at hiltn
+      omega
+  | succ n ih =>
+      intro x y i hxy hi
+      rcases hi with ⟨hi0, hilti⟩
+      have hpow : two_power_nat (Nat.succ n) = zDouble (two_power_nat n) :=
+        zbits_two_power_nat_succ n
+      change eqmod (two_power_nat (Nat.succ n)) x y at hxy
+      rw [hpow] at hxy
+      rcases hxy with ⟨k, hk⟩
+      have hshift :
+          Zshiftin (zOdd x) (zDiv2 x) =
+            Zshiftin (zOdd y) (zAdd (zMul k (two_power_nat n)) (zDiv2 y)) := by
+        have hshift' := hk
+        rw [Zdecomp x, Zdecomp y] at hshift'
+        calc
+          Zshiftin (zOdd x) (zDiv2 x) =
+              zAdd (zMul k (zDouble (two_power_nat n)))
+                (Zshiftin (zOdd y) (zDiv2 y)) := hshift'
+          _ = Zshiftin (zOdd y) (zAdd (zMul k (two_power_nat n)) (zDiv2 y)) := by
+            rw [Zshiftin_spec, Zshiftin_spec]
+            apply intOfZ_injective
+            simp only [zAdd, zMul, zDouble, ZArith.BinInt.Z.add,
+              ZArith.BinInt.Z.mul, ZArith.BinInt.Z.double, intOfZ_zOfInt]
+            simp [Int.mul_add, Int.add_mul, Int.mul_assoc, Int.mul_comm,
+              Int.mul_left_comm, Int.add_assoc, Int.add_comm, Int.add_left_comm]
+      have hparts := Zshiftin_inj _ _ _ _ hshift
+      have hodd : zOdd x = zOdd y := hparts.1
+      have hdiv : eqmod (two_power_nat n) (zDiv2 x) (zDiv2 y) := by
+        refine ⟨k, ?_⟩
+        exact hparts.2
+      rw [Ztestbit_eq i x hi0, Ztestbit_eq i y hi0]
+      cases hz : zeqDec i zZero with
+      | left hzero =>
+          simp [sumboolSelect, hzero, hodd]
+      | right hzero =>
+          simp [sumboolSelect, hzero, hodd]
+          have hneZ : i ≠ zZero := hzero
+          have hne : intOfZ i ≠ (0 : Int) := by
+            intro h
+            apply hneZ
+            apply intOfZ_injective
+            rw [h]
+            decide
+          apply ih (zDiv2 x) (zDiv2 y) (zPred i) hdiv
+          constructor
+          · change 0 ≤ intOfZ (zPred i)
+            unfold zPred ZArith.BinInt.Z.pred ZArith.BinInt.Z.sub
+            simp only [intOfZ_zOfInt]
+            change (0 : Int) ≤ intOfZ i - 1
+            have hi0' : 0 ≤ intOfZ i := hi0
+            have hpos : 0 < intOfZ i := by omega
+            omega
+          · change intOfZ (zPred i) < intOfZ (zOfNat n)
+            unfold zPred ZArith.BinInt.Z.pred ZArith.BinInt.Z.sub
+            simp only [intOfZ_zOfInt]
+            change intOfZ i - 1 < intOfZ (zOfNat n)
+            have hnat : intOfZ (zOfNat n) = Int.ofNat n := by
+              unfold zOfNat ZArith.BinInt.Z.of_nat
+              simp only [intOfZ_zOfInt]
+            rw [hnat]
+            have hi' : intOfZ i < intOfZ (zOfNat (Nat.succ n)) := hilti
+            unfold zOfNat ZArith.BinInt.Z.of_nat at hi'
+            simp only [intOfZ_zOfInt] at hi'
+            have hsucc : Int.ofNat (Nat.succ n) = Int.ofNat n + 1 := by
+              simpa only [Int.ofNat_eq_coe] using (Int.natCast_succ n)
+            rw [hsucc] at hi'
+            omega
