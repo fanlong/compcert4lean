@@ -1071,3 +1071,93 @@ theorem Zdivide_interval : Zdivide_intervalStatement := by
     omega
 
 end CompCert4Lean.Lib.Coqlib
+
+namespace CompCert4Lean.Lib.Coqlib
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem Z_to_nat_max : Z_to_nat_maxStatement := by
+  intro z
+  apply intOfZ_injective
+  simp only [ZArith.BinInt.Z.of_nat, ZArith.BinInt.Z.to_nat, intOfZ_zOfInt]
+  change (Int.toNat (intOfZ z) : Int) = _
+  rw [Int.ofNat_toNat]
+  have hz0 : intOfZ Z0 = (0 : Int) := rfl
+  by_cases h : intOfZ z ≤ 0
+  · rw [Int.max_eq_right h]
+    unfold ZArith.BinInt.Z.max
+    have h' : intOfZ z ≤ intOfZ Z0 := by rw [hz0]; exact h
+    simp [h, hz0]
+  · have hp : 0 ≤ intOfZ z := by omega
+    rw [Int.max_eq_left hp]
+    unfold ZArith.BinInt.Z.max
+    have h' : ¬ intOfZ z ≤ intOfZ Z0 := by rw [hz0]; exact h
+    simp [h, hz0]
+
+theorem align_le : align_leStatement := by
+  intro x y hy
+  change intOfZ x ≤ intOfZ (align x y)
+  unfold align
+  let a : Z := ZArith.BinInt.Z.sub (ZArith.BinInt.Z.add x y) (Zpos xH)
+  have hdiv := Z_div_mod_eq a y hy
+  have hmod := ZArith.Zdiv.Z_mod_lt a y hy
+  change 0 ≤ intOfZ (ZArith.BinInt.Z.modulo a y) ∧
+    intOfZ (ZArith.BinInt.Z.modulo a y) < intOfZ y at hmod
+  have hdiv' := congrArg intOfZ hdiv
+  simp only [ZArith.BinInt.Z.add, ZArith.BinInt.Z.mul,
+    intOfZ_zOfInt] at hdiv'
+  have hbase : intOfZ a = intOfZ x + intOfZ y - 1 := by
+    dsimp [a]
+    unfold ZArith.BinInt.Z.sub ZArith.BinInt.Z.add
+    simp only [intOfZ_zOfInt]
+    have hxH : intOfZ (Zpos xH) = (1 : Int) := rfl
+    rw [hxH]
+  rw [hbase] at hdiv'
+  rw [Int.mul_comm (intOfZ y)] at hdiv'
+  change intOfZ x ≤ intOfZ (ZArith.BinInt.Z.mul (ZArith.BinInt.Z.div a y) y)
+  have hprod : intOfZ (ZArith.BinInt.Z.mul (ZArith.BinInt.Z.div a y) y) =
+      intOfZ (ZArith.BinInt.Z.div a y) * intOfZ y := by
+    change intOfZ (zOfInt (intOfZ (ZArith.BinInt.Z.div a y) * intOfZ y)) = _
+    rw [intOfZ_zOfInt]
+  rw [hprod]
+  have hy' : 0 < intOfZ y := hy
+  omega
+
+theorem align_divides : align_dividesStatement := by
+  intro x y hy
+  refine ⟨ZArith.BinInt.Z.div (ZArith.BinInt.Z.sub (ZArith.BinInt.Z.add x y) (Zpos xH)) y, ?_⟩
+  unfold align
+  apply intOfZ_injective
+  simp only [ZArith.BinInt.Z.mul, intOfZ_zOfInt]
+  exact Int.mul_comm _ _
+
+theorem floor_interval : floor_intervalStatement := by
+  intro x y hy
+  unfold floor
+  change intOfZ (ZArith.BinInt.Z.mul (ZArith.BinInt.Z.div x y) y) ≤ intOfZ x ∧
+    intOfZ x < intOfZ (ZArith.BinInt.Z.add
+      (ZArith.BinInt.Z.mul (ZArith.BinInt.Z.div x y) y) y)
+  have hdiv := Z_div_mod_eq x y hy
+  have hmod := ZArith.Zdiv.Z_mod_lt x y hy
+  change 0 ≤ intOfZ (ZArith.BinInt.Z.modulo x y) ∧
+    intOfZ (ZArith.BinInt.Z.modulo x y) < intOfZ y at hmod
+  have hdiv' := congrArg intOfZ hdiv
+  simp only [ZArith.BinInt.Z.add, ZArith.BinInt.Z.mul,
+    intOfZ_zOfInt] at hdiv'
+  rw [Int.mul_comm (intOfZ y)] at hdiv'
+  have hprod : intOfZ (ZArith.BinInt.Z.mul (ZArith.BinInt.Z.div x y) y) =
+      intOfZ (ZArith.BinInt.Z.div x y) * intOfZ y := by
+    change intOfZ (zOfInt (intOfZ (ZArith.BinInt.Z.div x y) * intOfZ y)) = _
+    rw [intOfZ_zOfInt]
+  rw [hprod]
+  have hadd : intOfZ (ZArith.BinInt.Z.add
+      (ZArith.BinInt.Z.mul (ZArith.BinInt.Z.div x y) y) y) =
+      intOfZ (ZArith.BinInt.Z.div x y) * intOfZ y + intOfZ y := by
+    unfold ZArith.BinInt.Z.add
+    rw [intOfZ_zOfInt]
+    rw [hprod]
+  rw [hadd]
+  have hy' : 0 < intOfZ y := hy
+  constructor <;> omega
+
+end CompCert4Lean.Lib.Coqlib

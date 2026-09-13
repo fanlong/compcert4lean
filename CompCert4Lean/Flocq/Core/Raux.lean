@@ -2426,3 +2426,15 @@ theorem Rcompare_Gt (ctx : ExactRealContext) :
   exact exact_Rcompare_gt_aux ctx hyx
 
 end CompCert4Lean.Flocq.Core.Raux
+
+namespace CompCert4Lean.Flocq.Core.Raux
+
+theorem Rcompare_Gt_inv (ctx : ExactRealContext) :
+    Rcompare_Gt_invStatement ctx := by
+  intro x y hcmp
+  have hspec := Rcompare_spec ctx x y
+  rw [hcmp] at hspec
+  cases hspec with
+  | Rcompare_Gt_ hyx => exact hyx
+
+end CompCert4Lean.Flocq.Core.Raux
