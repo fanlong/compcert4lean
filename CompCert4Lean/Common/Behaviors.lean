@@ -1467,3 +1467,176 @@ theorem backward_simulation_star :
           hmatch''⟩
 
 end CompCert4Lean.Common.Behaviors
+
+namespace CompCert4Lean.Common.Behaviors
+
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.Smallstep
+
+theorem backward_simulation_forever_reactive :
+    backward_simulation_forever_reactiveStatement := by
+  intro L1 L2 index order match_states props
+  intro i s1 s2 T hforever hmatch hsafe
+  let pred : state L1 → traceinf → Prop := fun s1 T =>
+    ∃ i s2, ForeverReactive L2 s2 T ∧ match_states i s1 s2 ∧
+      safe_along_behavior L1 s1 (Reacts T)
+  exact forever_reactive.coinduct (step L1) (globalenv L1) pred
+    (by
+      intro s1 T hs
+      rcases hs with ⟨i, s2, hforever, hmatch, hsafe⟩
+      exact forever_reactive_casesOn
+        (step := step L2) (ge := globalenv L2)
+        (motive := fun s2 T =>
+          match_states i s1 s2 → safe_along_behavior L1 s1 (Reacts T) →
+            ∃ s1' t T',
+              Star L1 s1 t s1' ∧ t ≠ E0 ∧ pred s1' T' ∧
+                T = Eappinf t T')
+        (by
+          intro s2 s2' t T' hstar hnonempty htail hmatch hsafe
+          obtain ⟨i', s1', hstar', hmatch'⟩ :=
+            backward_simulation_star L1 L2 index order match_states props
+              s2 t s2' hstar i s1 (Reacts T') hmatch (by
+                simpa [behavior_app] using hsafe)
+          have hsafetail : safe_along_behavior L1 s1' (Reacts T') := by
+            apply star_safe_along L1 s1 (Reacts (Eappinf t T')) t s1'
+              (Reacts T') hsafe hstar' rfl
+          refine ⟨s1', t, T', hstar', hnonempty, ?_, rfl⟩
+          exact ⟨i', s2', htail, hmatch', hsafetail⟩)
+        hforever hmatch hsafe)
+    s1 T ⟨i, s2, hforever, hmatch, hsafe⟩
+
+end CompCert4Lean.Common.Behaviors
+
+namespace CompCert4Lean.Common.Behaviors
+
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.Smallstep
+open CompCert4Lean.Lib.Integers
+
+theorem backward_simulation_state_behaves :
+    backward_simulation_state_behavesStatement := by
+  intro L1 L2 index order match_states props
+  intro i s1 s2 beh2 hmatch hbeh2
+  classical
+  by_cases hsafe : safe_along_behavior L1 s1 beh2
+  · refine ⟨beh2, ?_, behavior_improves_refl beh2⟩
+    cases hbeh2 with
+    | state_terminates t s2' r hstar hfinal =>
+        have hEq : Terminates t r = behavior_app t (Terminates E0 r) := by
+          change Terminates t r = Terminates (List.append t []) r
+          exact congrArg (fun t => Terminates t r)
+            (_root_.List.append_nil t).symm
+        rw [hEq] at hsafe
+        obtain ⟨i', s1', hstar', hmatch'⟩ :=
+          backward_simulation_star L1 L2 index order match_states props
+            s2 t s2' hstar i s1 (Terminates E0 r) hmatch (by
+              simpa [behavior_app] using hsafe)
+        have hsafe' : safe L1 s1' := by
+          apply safe_along_safe L1 s1' (Terminates E0 r)
+          apply star_safe_along L1 s1 (Terminates (Eapp t E0) r) t s1'
+            (Terminates E0 r) hsafe hstar' rfl
+        obtain ⟨s1'', hstarE0, hfinal'⟩ :=
+            props.bsim_match_final_states i' s2' r hmatch' hsafe' hfinal
+        refine state_behaves.state_terminates t s1'' r ?_ hfinal'
+        have htrans :=
+          star_trans L1.genvtype L1.state (step L1) (globalenv L1)
+            s1 t s1' hstar' E0 s1'' (Eapp t E0) hstarE0 rfl
+        have ht : Eapp t E0 = t := _root_.List.append_nil t
+        rw [ht] at htrans
+        exact htrans
+    | state_diverges t s2' hstar hforever =>
+        have hEq : Diverges t = behavior_app t (Diverges E0) := by
+          change Diverges t = Diverges (List.append t [])
+          exact congrArg Diverges (_root_.List.append_nil t).symm
+        rw [hEq] at hsafe
+        obtain ⟨i', s1', hstar', hmatch'⟩ :=
+          backward_simulation_star L1 L2 index order match_states props
+            s2 t s2' hstar i s1 (Diverges E0) hmatch (by
+              simpa [behavior_app] using hsafe)
+        refine state_behaves.state_diverges t s1' hstar' ?_
+        apply backward_simulation_forever_silent L1 L2 index order
+          match_states props i' s1' s2' hforever hmatch'
+        apply safe_along_safe L1 s1' (Diverges E0)
+        apply star_safe_along L1 s1 (Diverges (Eapp t E0)) t s1'
+          (Diverges E0) hsafe hstar' rfl
+    | state_reacts T hforever =>
+        exact state_behaves.state_reacts T
+          (backward_simulation_forever_reactive L1 L2 index order
+            match_states props i s1 s2 T hforever hmatch hsafe)
+    | state_goes_wrong t s2' hstar hnostep hnofinal =>
+        have hEq : Goes_wrong t = behavior_app t (Goes_wrong E0) := by
+          change Goes_wrong t = Goes_wrong (List.append t [])
+          exact congrArg Goes_wrong (_root_.List.append_nil t).symm
+        rw [hEq] at hsafe
+        obtain ⟨i', s1', hstar', hmatch'⟩ :=
+          backward_simulation_star L1 L2 index order match_states props
+            s2 t s2' hstar i s1 (Goes_wrong E0) hmatch (by
+              simpa [behavior_app] using hsafe)
+        have hsafe' : safe L1 s1' := by
+          apply safe_along_safe L1 s1' (Goes_wrong E0)
+          apply star_safe_along L1 s1 (Goes_wrong (Eapp t E0)) t s1'
+            (Goes_wrong E0) hsafe hstar' rfl
+        have hprogress := props.bsim_progress i' s2' hmatch' hsafe'
+        rcases hprogress with ⟨r, hfinal⟩ | ⟨t', s2'', hstep⟩
+        · exact False.elim (hnofinal r hfinal)
+        · exact False.elim (hnostep t' s2'' hstep)
+  · obtain ⟨t, s1', hprefix, hstar, hnostep, hnofinal⟩ :=
+      not_safe_along_behavior L1 s1 beh2 hsafe
+    refine ⟨Goes_wrong t,
+      state_behaves.state_goes_wrong t s1' hstar hnostep hnofinal, ?_⟩
+    exact Or.inr ⟨t, rfl, hprefix⟩
+
+end CompCert4Lean.Common.Behaviors
+
+namespace CompCert4Lean.Common.Behaviors
+
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.Smallstep
+
+theorem backward_simulation_behavior_improves :
+    backward_simulation_behavior_improvesStatement := by
+  intro L1 L2 hsim beh2 hbeh2
+  cases hsim with
+  | @Backward_simulation index order match_states props =>
+      cases hbeh2 with
+      | program_runs s2 beh2 hinit2 hbehaves2 =>
+          classical
+          by_cases hinit1 : ∃ s1, initial_state L1 s1
+          · rcases hinit1 with ⟨s1, hinit1⟩
+            obtain ⟨i, s1', hinit1', hmatch⟩ :=
+              props.bsim_match_initial_states s1 s2 hinit1 hinit2
+            obtain ⟨beh1, hbehaves1, himproves⟩ :=
+              backward_simulation_state_behaves L1 L2 index order
+                match_states props i s1' s2 beh2 hmatch hbehaves2
+            exact ⟨beh1,
+              program_behaves.program_runs s1' beh1 hinit1' hbehaves1,
+              himproves⟩
+          · refine ⟨Goes_wrong E0,
+              program_behaves.program_goes_initially_wrong ?_,
+              behavior_improves_bot beh2⟩
+            intro s hs
+            exact hinit1 ⟨s, hs⟩
+      | program_goes_initially_wrong hnoinit2 =>
+          refine ⟨Goes_wrong E0,
+            program_behaves.program_goes_initially_wrong ?_,
+            behavior_improves_refl (Goes_wrong E0)⟩
+          intro s1 hs1
+          obtain ⟨s2, hs2⟩ := props.bsim_initial_states_exist s1 hs1
+          exact hnoinit2 s2 hs2
+
+end CompCert4Lean.Common.Behaviors
+
+namespace CompCert4Lean.Common.Behaviors
+
+theorem backward_simulation_same_safe_behavior :
+    backward_simulation_same_safe_behaviorStatement := by
+  intro L1 L2 hsim hsafe beh hbeh
+  obtain ⟨beh', hbeh', himproves⟩ :=
+    backward_simulation_behavior_improves L1 L2 hsim beh hbeh
+  rcases himproves with heq | ⟨t, hwrong, hprefix⟩
+  · simpa [heq] using hbeh'
+  · subst beh'
+    have hbad := hsafe (Goes_wrong t) hbeh'
+    simp [not_wrong] at hbad
+
+end CompCert4Lean.Common.Behaviors

@@ -2343,3 +2343,34 @@ theorem expand_cfg_rec_spec : expand_cfg_rec_specStatement := by
             exact Int.le_trans (Int.le_trans hsum0 i1.3) hsize
 
 end CompCert4Lean.Backend.Inliningspec
+
+namespace CompCert4Lean.Backend.Inliningspec
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Foundation.Recursion.Rocq.Coq.Init.Wf
+open CompCert4Lean.Foundation.Recursion.Rocq.Coq.Arith.Wf_nat
+open CompCert4Lean.Backend.Inlining
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.Lib.Wfsimpl
+
+theorem expand_cfg_unchanged : expand_cfg_unchangedStatement := by
+  intro fe0
+  apply well_founded_ind (R := ltof _ size_fenv)
+    (P := fun fe => ∀ ctx f s x s' i pc,
+      expand_cfg fe ctx f s = R x s' i →
+      Ple ctx.dpc s.st_nextnode → Plt pc ctx.dpc →
+      PTree.get pc s'.st_code = PTree.get pc s.st_code)
+  · exact well_founded_ltof _ _
+  · intro fe ih ctx f s x s' i pc h hbelow hlt
+    unfold expand_cfg at h
+    rw [unroll_Fixm] at h
+    apply expand_cfg_rec_unchanged fe
+      (fun fe' _ => expand_cfg fe')
+    · intro fe' L ctx' f' s0 x0 s1 i0 pc' hrec' hbelow' hlt'
+      exact ih fe' L ctx' f' s0 x0 s1 i0 pc' hrec' hbelow' hlt'
+    · exact h
+    · exact hbelow
+    · exact hlt
+
+end CompCert4Lean.Backend.Inliningspec

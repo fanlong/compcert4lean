@@ -1719,3 +1719,113 @@ theorem match_callstack_match_globalenvs : match_callstack_match_globalenvsState
       exact ih
 
 end CompCert4Lean.Cfrontend.Cminorgenproof
+
+namespace CompCert4Lean.Cfrontend.Cminorgenproof
+
+open CompCert4Lean.Common.Values
+
+theorem match_callstack_invariant : match_callstack_invariantStatement := by
+  intro prog f1 m1 tm1 f2 m2 tm2 cs bound tbound hmatch
+  induction hmatch with
+  | mcs_nil hglobal hlo htl =>
+      intro hincr hmem hfree hsame himage
+      cases hglobal with
+      | mk domain image symbols functions varinfos =>
+          apply match_callstack.mcs_nil
+          · apply match_globalenvs.mk
+            · intro b hb
+              rw [hsame b (CompCert4Lean.Lib.Coqlib.Plt_Ple_trans _ _ _ hb hlo)]
+              exact domain b hb
+            · intro b1 b2 delta hmap hb
+              apply image b1 b2 delta
+              · exact himage b1 b2 delta hmap
+                  (CompCert4Lean.Lib.Coqlib.Plt_Ple_trans _ _ _ hb htl)
+              · exact hb
+            · exact symbols
+            · exact functions
+            · exact varinfos
+          · exact hlo
+          · exact htl
+  | @cons cenv tf e le te sp lo hi cs bound tbound hbound hsp htemps henv hbounds hfree htail ih =>
+      intro hincr hmem hfree' hsame himage
+      have henv' : match_env f2 cenv e sp lo hi := by
+        refine {
+          me_vars := ?_,
+          me_low_high := henv.me_low_high,
+          me_bounded := henv.me_bounded,
+          me_inv := ?_,
+          me_incr := ?_ }
+        · intro id
+          have hvar := henv.me_vars id
+          cases he : CompCert4Lean.Lib.Maps.PTree.get id e with
+          | none =>
+              cases hc : CompCert4Lean.Lib.Maps.PTree.get id cenv with
+              | none =>
+                  rw [he, hc] at hvar
+                  exact .global
+              | some ofs =>
+                  rw [he, hc] at hvar
+                  cases hvar
+          | some bs =>
+              cases bs with
+              | mk b sz =>
+                  cases hc : CompCert4Lean.Lib.Maps.PTree.get id cenv with
+                  | none =>
+                      rw [he, hc] at hvar
+                      cases hvar
+                  | some ofs =>
+                      rw [he, hc] at hvar
+                      cases hvar with
+                      | «local» hptr =>
+                          cases hptr with
+                          | inject_ptr =>
+                              rename_i delta hmap hofs
+                              exact .local (.inject_ptr b
+                                CompCert4Lean.Lib.Integers.Ptrofs.zero
+                                sp
+                                (CompCert4Lean.Lib.Integers.Ptrofs.repr ofs)
+                                delta
+                                (hincr b sp delta hmap) hofs)
+        · intro b delta hmap
+          exact henv.me_inv b delta
+            (himage b sp delta hmap hsp)
+        · intro b tb delta hmap hlt
+          have hlt' : CompCert4Lean.Lib.Coqlib.Plt b bound :=
+            CompCert4Lean.Lib.Coqlib.Plt_Ple_trans _ _ _ hlt
+              (CompCert4Lean.Lib.Coqlib.Ple_trans _ _ _ henv.me_low_high hbound)
+          apply henv.me_incr b tb delta
+          · rw [← hsame b hlt']
+            exact hmap
+          · exact hlt
+      apply match_callstack.cons hbound hsp
+      · exact match_temps_invariant f1 f2 le te htemps hincr
+      · exact henv'
+      · apply match_bounds_invariant e m1 m2 hbounds
+        intro id b sz ofs p hget hperm
+        apply hmem b ofs p
+          (CompCert4Lean.Lib.Coqlib.Plt_Ple_trans _ _ _
+            (henv.me_bounded _ _ _ hget).2 hbound)
+          hperm
+      · apply padding_freeable_invariant f1 e tm1 sp tf.fn_stackspace cenv lo hi f2 tm2
+          hfree henv
+        · intro ofs hperm
+          exact hfree' sp ofs hsp hperm
+        · intro b hb
+          exact hsame b (CompCert4Lean.Lib.Coqlib.Plt_Ple_trans _ _ _ hb hbound)
+      · apply ih hincr
+        · intro b ofs p hlt hperm
+          exact hmem b ofs p
+            (CompCert4Lean.Lib.Coqlib.Plt_Ple_trans _ _ _ hlt
+              (CompCert4Lean.Lib.Coqlib.Ple_trans _ _ _ henv.me_low_high hbound)) hperm
+        · intro sp' ofs hlt hperm
+          exact hfree' sp' ofs
+            (CompCert4Lean.Lib.Coqlib.Plt_trans _ _ _ hlt hsp) hperm
+        · intro b hlt
+          exact hsame b
+            (CompCert4Lean.Lib.Coqlib.Plt_Ple_trans _ _ _ hlt
+              (CompCert4Lean.Lib.Coqlib.Ple_trans _ _ _ henv.me_low_high hbound))
+        · intro b b' delta hmap hlt
+          exact himage b b' delta hmap
+            (CompCert4Lean.Lib.Coqlib.Plt_trans _ _ _ hlt hsp)
+
+end CompCert4Lean.Cfrontend.Cminorgenproof
