@@ -579,3 +579,126 @@ theorem eval_longofint
             exact Val.lessdef_refl _
 
 end CompCert4Lean.X86.SelectLongproof
+
+namespace CompCert4Lean.X86.SelectLongproof
+
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.X86.Op
+open CompCert4Lean.X86.SelectLong
+
+open Lean Elab Tactic Meta
+
+private def suffixPrivateName (suffix : String) : Name :=
+  let p := Name.str (Name.str (Name.str (Name.str Name.anonymous "_private") "CompCert4Lean") "Lib") "Integers"
+  let base := Name.num p 0
+  suffix.splitOn "." |>.foldl Name.str base
+
+private theorem suffixWordValRepr64 (bits : Nat) (i : Int) :
+    (CompCert4Lean.Lib.Integers.WordCore.repr bits
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt i)).val =
+      Int.toNat (i % ((2 ^ bits : Nat) : Int)) := by
+  run_tac
+    let lctx ← getLCtx
+    let bitsF := (lctx.findFromUserName? `bits).get!
+    let iF := (lctx.findFromUserName? `i).get!
+    let bitsE := mkFVar bitsF.fvarId
+    let iE := mkFVar iF.fvarId
+    let e ← mkAppM
+      (suffixPrivateName "CompCert4Lean.Lib.Integers.WordCore.val_repr")
+      #[bitsE, iE]
+    closeMainGoal Name.anonymous e
+
+private theorem repr_val_of_lt64 (n : Nat) (hn : n < 2 ^ 64) :
+    (CompCert4Lean.Lib.Integers.WordCore.repr 64
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat n)).val = n := by
+  rw [show CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat n =
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt (Int.ofNat n) by rfl,
+    suffixWordValRepr64]
+  have hmod :
+      Int.ofNat n % ((2 ^ 64 : Nat) : Int) = Int.ofNat n := by
+    apply Int.emod_eq_of_lt
+    · exact Int.natCast_nonneg n
+    · exact Int.ofNat_lt.mpr hn
+  rw [hmod]
+  rfl
+
+private theorem not_val64 (n : CompCert4Lean.Lib.Integers.int64) :
+    (CompCert4Lean.Lib.Integers.Int64.not n).val =
+      Nat.xor n.val (2 ^ 64 - 1) := by
+  unfold CompCert4Lean.Lib.Integers.Int64.not
+    CompCert4Lean.Lib.Integers.WordCore.not
+  apply repr_val_of_lt64
+  apply Nat.xor_lt_two_pow
+  · exact n.toFin.isLt
+  · change 2 ^ 64 - 1 < 2 ^ 64
+    have hp : 0 < 2 ^ (64 : Nat) := Nat.two_pow_pos _
+    omega
+
+private theorem not64_involutive (n : CompCert4Lean.Lib.Integers.int64) :
+    CompCert4Lean.Lib.Integers.Int64.not
+        (CompCert4Lean.Lib.Integers.Int64.not n) = n := by
+  apply CompCert4Lean.Lib.Integers.WordCore.ext_of_val_eq
+  rw [not_val64, not_val64]
+  calc
+    Nat.xor (Nat.xor n.val (2 ^ 64 - 1)) (2 ^ 64 - 1) =
+        Nat.xor n.val (Nat.xor (2 ^ 64 - 1) (2 ^ 64 - 1)) :=
+      Nat.xor_assoc _ _ _
+    _ = n.val := by simp
+
+private theorem notl_lessdef_involutive (v : val) :
+    Val.lessdef (Val.notl (Val.notl v)) v := by
+  cases v with
+  | Vundef => exact Val.lessdef_refl _
+  | Vint _ => exact Val.lessdef_undef _
+  | Vlong n =>
+      simp only [Val.notl]
+      change Val.lessdef
+        (.Vlong (CompCert4Lean.Lib.Integers.Int64.not
+          (CompCert4Lean.Lib.Integers.Int64.not n))) (.Vlong n)
+      rw [not64_involutive]
+      exact Val.lessdef_refl _
+  | Vfloat _ => exact Val.lessdef_undef _
+  | Vsingle _ => exact Val.lessdef_undef _
+  | Vptr _ _ => exact Val.lessdef_undef _
+
+theorem eval_notl
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    @eval_notlStatement binary64_certificate binary32_certificate := by
+  unfold eval_notlStatement unary_constructor_sound
+  intro xi prog sp e m le a x h
+  cases hmatch : notl_match a with
+  | notl_case1 n =>
+      cases h with
+      | eval_Eop le' op al vl v hargs hop =>
+          cases hargs with
+          | nil _ =>
+              change some (.Vlong n) = some x at hop
+              cases hop
+              refine ⟨.Vlong (CompCert4Lean.Lib.Integers.Int64.not n), ?_, ?_⟩
+              · apply eval_expr.eval_Eop le (Olongconst (CompCert4Lean.Lib.Integers.Int64.not n)) Enil []
+                · exact eval_exprlist.nil le
+                · rfl
+              · exact Val.lessdef_refl _
+  | notl_case2 t1 =>
+      cases h with
+      | eval_Eop le' op al vl v hargs hop =>
+          cases hargs with
+          | cons _ a' al' v1 vl' hhead htail =>
+              cases htail with
+              | nil _ =>
+                  change some (Val.notl v1) = some x at hop
+                  cases hop
+                  refine ⟨v1, ?_, ?_⟩
+                  · simpa [notl, hmatch] using hhead
+                  · exact notl_lessdef_involutive _
+  | notl_default e1 =>
+      refine ⟨Val.notl x, ?_, Val.lessdef_refl _⟩
+      simp only [notl, hmatch]
+      apply eval_expr.eval_Eop le Onotl (Econs a Enil) [x] (Val.notl x)
+      · exact eval_exprlist.cons le a Enil x [] h (eval_exprlist.nil le)
+      · rfl
+
+end CompCert4Lean.X86.SelectLongproof

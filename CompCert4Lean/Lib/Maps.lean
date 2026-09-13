@@ -3076,3 +3076,43 @@ theorem gmap_filter1 : gmap_filter1Statement := by
 end PTree
 
 end CompCert4Lean.Lib.Maps
+
+namespace CompCert4Lean.Lib.Maps
+
+namespace PTree
+
+theorem xelements'_append : xelements'_appendStatement := by
+  intro A m i k1 k2
+  exact xelements'_append_equation m i k1 k2
+
+theorem xelements_Node : xelements_NodeStatement := by
+  intro A l o r i
+  cases l <;> cases o <;> cases r <;>
+    simp [Node, xelements, xelements']
+  all_goals
+    rw [← xelements'_append_equation]
+    simp
+
+theorem xelements_correct : xelements_correctStatement := by
+  intro A m i j v h
+  cases m with
+  | Empty => simp [get] at h
+  | Nodes m' =>
+      have h' : get' i m' = some v := by simpa [get] using h
+      have hc := get_xelements'_correct m' i j v [] h'
+      simpa [xelements] using hc
+
+theorem in_xelements : in_xelementsStatement := by
+  intro A m i k v h
+  cases m with
+  | Empty => simp [xelements] at h
+  | Nodes m' =>
+      have h' : (k, v) ∈ xelements' m' i [] := by
+        simpa [xelements] using h
+      rcases in_xelements'_complete m' i (k, v) h' with ⟨j, hk, hget⟩
+      refine ⟨j, hk, ?_⟩
+      simpa [get] using hget
+
+end PTree
+
+end CompCert4Lean.Lib.Maps

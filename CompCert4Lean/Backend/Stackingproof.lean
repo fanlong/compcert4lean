@@ -2168,3 +2168,147 @@ theorem initial_locations : initial_locationsStatement := by
   · exact hdisj
 
 end CompCert4Lean.Backend.Stackingproof
+
+namespace CompCert4Lean.Backend.Stackingproof
+
+open CompCert4Lean.X86.Machregs
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Backend.Locations
+open CompCert4Lean.Common.Separation
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem contains_callee_saves_exten : contains_callee_saves_extenStatement := by
+  intro j sp ls ls' rl
+  induction rl with
+  | nil =>
+      intro pos hls
+      constructor <;> constructor
+      · intro m h
+        exact h
+      · intro b ofs h
+        exact h
+      · intro m h
+        exact h
+      · intro b ofs h
+        exact h
+  | cons r rs ih =>
+      intro pos hls
+      let ty := mreg_type r
+      let sz := CompCert4Lean.Common.AST.typesize ty
+      let pos' := align pos sz
+      have hls_tail : ∀ r', r' ∈ rs → ls' (R r') = ls (R r') := by
+        intro r' hr'
+        exact hls r' (by simp [hr'])
+      have htail : massert_eqv
+          (contains_callee_saves j sp (ZArith.BinInt.Z.add pos' sz) rs ls)
+          (contains_callee_saves j sp (ZArith.BinInt.Z.add pos' sz) rs ls') :=
+        ih (ZArith.BinInt.Z.add pos' sz) hls_tail
+      constructor
+      · constructor
+        · intro m hpred
+          rcases hpred with ⟨hhead, hrest, hdisj⟩
+          refine ⟨?_, htail.1.1 m hrest, ?_⟩
+          · simpa [hls r (by simp)] using hhead
+          · intro b ofs hhead' hrest'
+            exact hdisj b ofs hhead' (htail.1.2 b ofs hrest')
+        · intro b ofs hfoot
+          cases hfoot with
+          | inl h => exact Or.inl h
+          | inr h => exact Or.inr (htail.1.2 b ofs h)
+      · constructor
+        · intro m hpred
+          rcases hpred with ⟨hhead, hrest, hdisj⟩
+          refine ⟨?_, htail.2.1 m hrest, ?_⟩
+          · simpa [hls r (by simp)] using hhead
+          · intro b ofs hhead' hrest'
+            exact hdisj b ofs hhead' (htail.2.2 b ofs hrest')
+        · intro b ofs hfoot
+          cases hfoot with
+          | inl h => exact Or.inl h
+          | inr h => exact Or.inr (htail.2.2 b ofs h)
+
+end CompCert4Lean.Backend.Stackingproof
+
+namespace CompCert4Lean.Backend.Stackingproof
+
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.Separation
+
+private theorem stackingproof_val_inject_incr
+    (j j' : CompCert4Lean.Common.Values.Val.meminj)
+    (v v' : CompCert4Lean.Common.Values.val)
+    (hinc : inject_incr j j') (hval : Val.inject j v v') :
+    Val.inject j' v v' := by
+  cases hval with
+  | inject_int i => exact Val.inject.inject_int i
+  | inject_long i => exact Val.inject.inject_long i
+  | inject_float f => exact Val.inject.inject_float f
+  | inject_single f => exact Val.inject.inject_single f
+  | inject_ptr b1 ofs1 b2 ofs2 delta hmap hofs =>
+      exact Val.inject.inject_ptr b1 ofs1 b2 ofs2 delta (hinc b1 b2 delta hmap) hofs
+  | val_inject_undef v' => exact Val.inject.val_inject_undef v'
+
+private theorem stackingproof_lessdef_inject
+    (j : CompCert4Lean.Common.Values.Val.meminj)
+    (a b v : CompCert4Lean.Common.Values.val)
+    (hless : Val.lessdef a b) (hinj : Val.inject j b v) :
+    Val.inject j a v := by
+  cases hless with
+  | lessdef_refl a => exact hinj
+  | lessdef_undef b => exact Val.inject.val_inject_undef v
+
+theorem contains_locations_exten : contains_locations_extenStatement := by
+  intro return_address_offset tprog ls ls' j sp pos bound sl hls
+  constructor
+  · intro m hpred
+    rcases hpred with ⟨hdiv, hpos, hover, hperm, hload⟩
+    refine ⟨hdiv, hpos, hover, hperm, ?_⟩
+    intro ofs ty hofs hbound halign
+    rcases hload ofs ty hofs hbound halign with ⟨v, hv, hinj⟩
+    exact ⟨v, hv, stackingproof_lessdef_inject j _ _ _ (hls ofs ty) hinj⟩
+  · intro b ofs hfoot
+    exact hfoot
+
+theorem contains_locations_incr : contains_locations_incrStatement := by
+  intro return_address_offset tprog j j' sp pos bound sl ls hinc
+  constructor
+  · intro m hpred
+    rcases hpred with ⟨hdiv, hpos, hover, hperm, hload⟩
+    refine ⟨hdiv, hpos, hover, hperm, ?_⟩
+    intro ofs ty hofs hbound halign
+    rcases hload ofs ty hofs hbound halign with ⟨v, hv, hinj⟩
+    exact ⟨v, hv, stackingproof_val_inject_incr j j' _ _ hinc hinj⟩
+  · intro b ofs hfoot
+    exact hfoot
+
+theorem contains_callee_saves_incr : contains_callee_saves_incrStatement := by
+  intro j j' sp ls hinc rl
+  induction rl with
+  | nil =>
+      intro pos
+      constructor
+      · intro m h
+        exact h
+      · intro b ofs hfoot
+        exact hfoot
+  | cons r rs ih =>
+      intro pos
+      let ty := CompCert4Lean.X86.Machregs.mreg_type r
+      let sz := CompCert4Lean.Common.AST.typesize ty
+      let pos' := CompCert4Lean.Lib.Coqlib.align pos sz
+      have htail := ih (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add pos' sz)
+      constructor
+      · intro m hpred
+        rcases hpred with ⟨hhead, hrest, hdisj⟩
+        refine ⟨?_, htail.1 m hrest, ?_⟩
+        · rcases hhead with ⟨hrange, hvalid, v, hload, hinj⟩
+          refine ⟨hrange, hvalid, v, hload, ?_⟩
+          exact stackingproof_val_inject_incr j j' _ _ hinc hinj
+        · intro b ofs hhead' hrest'
+          exact hdisj b ofs hhead' (htail.2 b ofs hrest')
+      · intro b ofs hfoot
+        cases hfoot with
+        | inl h => exact Or.inl h
+        | inr h => exact Or.inr (htail.2 b ofs h)
+
+end CompCert4Lean.Backend.Stackingproof

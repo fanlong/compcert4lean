@@ -922,3 +922,152 @@ theorem Zdiv_unique : Zdiv_uniqueStatement := by
   exact hu.1
 
 end CompCert4Lean.Lib.Coqlib
+
+namespace CompCert4Lean.Lib.Coqlib
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem Z_to_nat_neg : Z_to_nat_negStatement := by
+  intro n hn
+  exact Int.toNat_of_nonpos hn
+
+theorem Zdiv_Zdiv : Zdiv_ZdivStatement := by
+  intro a b c hb hc
+  have div_eq_ediv : ∀ (x y : Z), 0 < intOfZ y →
+      intOfZ (ZArith.BinInt.Z.div x y) = Int.ediv (intOfZ x) (intOfZ y) := by
+    intro x y hy
+    have hy0 : intOfZ y ≠ 0 := Int.ne_of_gt hy
+    have hrem_nonneg : 0 ≤ (intOfZ x).emod (intOfZ y) :=
+      Int.emod_nonneg _ hy0
+    have hrem_lt : (intOfZ x).emod (intOfZ y) < intOfZ y :=
+      Int.emod_lt_of_pos _ hy
+    have hxy : x = ZArith.BinInt.Z.add
+        (ZArith.BinInt.Z.mul (zOfInt ((intOfZ x).ediv (intOfZ y))) y)
+        (zOfInt ((intOfZ x).emod (intOfZ y))) := by
+      apply intOfZ_injective
+      simp only [ZArith.BinInt.Z.add, ZArith.BinInt.Z.mul, intOfZ_zOfInt]
+      exact (Int.ediv_mul_add_emod (intOfZ x) (intOfZ y)).symm
+    have hq := CompCert4Lean.Lib.Coqlib.Zdiv_unique x y
+      (zOfInt ((intOfZ x).ediv (intOfZ y)))
+      (zOfInt ((intOfZ x).emod (intOfZ y))) hxy
+      ⟨by
+        unfold ZArith.BinInt.Z.le
+        rw [show intOfZ ZArith.BinInt.Z.Z0 = (0 : Int) by rfl,
+          intOfZ_zOfInt]
+        exact hrem_nonneg,
+        by
+        unfold ZArith.BinInt.Z.lt
+        rw [intOfZ_zOfInt]
+        exact hrem_lt⟩
+    simpa only [intOfZ_zOfInt] using congrArg intOfZ hq
+  have hb' : 0 < intOfZ b := hb
+  have hc' : 0 < intOfZ c := hc
+  have hbc' : 0 < intOfZ (ZArith.BinInt.Z.mul b c) := by
+    simp only [ZArith.BinInt.Z.mul, intOfZ_zOfInt]
+    exact Int.mul_pos hb' hc'
+  have hleft := div_eq_ediv (ZArith.BinInt.Z.div a b) c hc'
+  have hinner := div_eq_ediv a b hb'
+  have hright := div_eq_ediv a (ZArith.BinInt.Z.mul b c) hbc'
+  have hright' :
+      intOfZ (ZArith.BinInt.Z.div a (ZArith.BinInt.Z.mul b c)) =
+        (intOfZ a).ediv (intOfZ b * intOfZ c) := by
+    simpa only [ZArith.BinInt.Z.mul, intOfZ_zOfInt] using hright
+  apply intOfZ_injective
+  rw [hleft, hinner, hright']
+  change ((intOfZ a / intOfZ b) / intOfZ c) =
+    intOfZ a / (intOfZ b * intOfZ c)
+  rw [Int.ediv_ediv]
+  simp [Int.not_lt_of_ge (Int.le_of_lt hb')]
+
+end CompCert4Lean.Lib.Coqlib
+
+namespace CompCert4Lean.Lib.Coqlib
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+private theorem coqlib_zdiv_eq_ediv_pos (x y : Z) (hy : 0 < intOfZ y) :
+    intOfZ (ZArith.BinInt.Z.div x y) = Int.ediv (intOfZ x) (intOfZ y) := by
+  have hy0 : intOfZ y ≠ 0 := Int.ne_of_gt hy
+  have hrem_nonneg : 0 ≤ (intOfZ x).emod (intOfZ y) :=
+    Int.emod_nonneg _ hy0
+  have hrem_lt : (intOfZ x).emod (intOfZ y) < intOfZ y :=
+    Int.emod_lt_of_pos _ hy
+  have hxy : x = ZArith.BinInt.Z.add
+      (ZArith.BinInt.Z.mul (zOfInt ((intOfZ x).ediv (intOfZ y))) y)
+      (zOfInt ((intOfZ x).emod (intOfZ y))) := by
+    apply intOfZ_injective
+    simp only [ZArith.BinInt.Z.add, ZArith.BinInt.Z.mul, intOfZ_zOfInt]
+    exact (Int.ediv_mul_add_emod (intOfZ x) (intOfZ y)).symm
+  have hq := CompCert4Lean.Lib.Coqlib.Zdiv_unique x y
+    (zOfInt ((intOfZ x).ediv (intOfZ y)))
+    (zOfInt ((intOfZ x).emod (intOfZ y))) hxy
+    ⟨by
+      unfold ZArith.BinInt.Z.le
+      rw [show intOfZ ZArith.BinInt.Z.Z0 = (0 : Int) by rfl,
+        intOfZ_zOfInt]
+      exact hrem_nonneg,
+      by
+      unfold ZArith.BinInt.Z.lt
+      rw [intOfZ_zOfInt]
+      exact hrem_lt⟩
+  simpa only [intOfZ_zOfInt] using congrArg intOfZ hq
+
+theorem Zdiv_interval_1 : Zdiv_interval_1Statement := by
+  intro lo hi a b hlo hhi hb hab
+  change intOfZ lo ≤ 0 at hlo
+  change 0 < intOfZ hi at hhi
+  change 0 < intOfZ b at hb
+  have hab' : intOfZ lo * intOfZ b ≤ intOfZ a ∧
+      intOfZ a < intOfZ hi * intOfZ b := by
+    simpa only [ZArith.BinInt.Z.le, ZArith.BinInt.Z.lt,
+      ZArith.BinInt.Z.mul, intOfZ_zOfInt] using hab
+  change intOfZ lo ≤ intOfZ (ZArith.BinInt.Z.div a b) ∧
+    intOfZ (ZArith.BinInt.Z.div a b) < intOfZ hi
+  rw [coqlib_zdiv_eq_ediv_pos a b hb]
+  constructor
+  · exact (Int.le_ediv_iff_mul_le hb).2 hab'.1
+  · exact (Int.ediv_lt_iff_lt_mul hb).2 hab'.2
+
+end CompCert4Lean.Lib.Coqlib
+
+namespace CompCert4Lean.Lib.Coqlib
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem Zdivide_interval : Zdivide_intervalStatement := by
+  intro a b c hc hab hca hcb
+  change 0 < intOfZ c at hc
+  have hab' : 0 ≤ intOfZ a ∧ intOfZ a < intOfZ b := by
+    constructor
+    · simpa [ZArith.BinInt.Z.le, intOfZ] using hab.1
+    · simpa only [ZArith.BinInt.Z.lt] using hab.2
+  rcases hca with ⟨ka, hka⟩
+  rcases hcb with ⟨kb, hkb⟩
+  have hka' : intOfZ a = intOfZ c * intOfZ ka := by
+    simpa only [ZArith.BinInt.Z.mul, intOfZ_zOfInt] using congrArg intOfZ hka
+  have hkb' : intOfZ b = intOfZ c * intOfZ kb := by
+    simpa only [ZArith.BinInt.Z.mul, intOfZ_zOfInt] using congrArg intOfZ hkb
+  have hkl_mul : intOfZ c * intOfZ ka < intOfZ c * intOfZ kb := by
+    calc
+      intOfZ c * intOfZ ka = intOfZ a := hka'.symm
+      _ < intOfZ b := hab'.2
+      _ = intOfZ c * intOfZ kb := hkb'
+  have hkl : intOfZ ka < intOfZ kb := (Int.mul_lt_mul_left hc).mp hkl_mul
+  have hkl_succ : intOfZ ka + 1 ≤ intOfZ kb := by omega
+  have hmul : intOfZ c * (intOfZ ka + 1) ≤ intOfZ c * intOfZ kb :=
+    (Int.mul_le_mul_left hc).2 hkl_succ
+  have hsum : intOfZ a + intOfZ c ≤ intOfZ b := by
+    calc
+      intOfZ a + intOfZ c = intOfZ c * (intOfZ ka + 1) := by
+        rw [hka']
+        simp [Int.mul_add, Int.mul_one]
+      _ ≤ intOfZ b := by
+        rw [hkb']
+        exact hmul
+  constructor
+  · exact hab.1
+  · unfold ZArith.BinInt.Z.le ZArith.BinInt.Z.sub
+    rw [intOfZ_zOfInt]
+    omega
+
+end CompCert4Lean.Lib.Coqlib

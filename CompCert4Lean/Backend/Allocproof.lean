@@ -2879,3 +2879,85 @@ theorem select_loc_l_monotone : select_loc_l_monotoneStatement := by
           simp
 
 end CompCert4Lean.Backend.Allocproof
+
+namespace CompCert4Lean.Backend.Allocproof
+
+open CompCert4Lean.Backend.Allocation
+open CompCert4Lean.Backend.Locations
+
+theorem select_loc_h_monotone : select_loc_h_monotoneStatement := by
+  intro l q1 q2 hord hsel
+  unfold select_loc_h at hsel ⊢
+  rcases hord with heq | hlt
+  · subst q2
+    exact hsel
+  · have hloc : Locations.OrderedLoc.lt q2.eloc q1.eloc ∨
+        q2.eloc = q1.eloc := by
+      rcases hlt with hltloc | hrest
+      · exact Or.inl hltloc
+      · exact Or.inr hrest.1
+    rcases hloc with hltloc | hloc
+    · cases hcmp2 : Locations.OrderedLoc.compare q2.eloc
+          (Locations.OrderedLoc.diff_high_bound l) with
+      | LT hq2lt =>
+          simp
+      | EQ hq2eq =>
+          simp
+      | GT hq2gt =>
+          have hq1lt : Locations.OrderedLoc.lt
+              (Locations.OrderedLoc.diff_high_bound l) q1.eloc :=
+            Locations.OrderedLoc.lt_trans
+              (Locations.OrderedLoc.diff_high_bound l) q2.eloc q1.eloc
+              hq2gt hltloc
+          cases hcmp1 : Locations.OrderedLoc.compare q1.eloc
+                (Locations.OrderedLoc.diff_high_bound l) with
+          | LT hq1lt' =>
+              exfalso
+              have hcycle : Locations.OrderedLoc.lt
+                  (Locations.OrderedLoc.diff_high_bound l)
+                  (Locations.OrderedLoc.diff_high_bound l) :=
+                Locations.OrderedLoc.lt_trans
+                  (Locations.OrderedLoc.diff_high_bound l) q1.eloc
+                  (Locations.OrderedLoc.diff_high_bound l) hq1lt hq1lt'
+              exact Locations.OrderedLoc.lt_not_eq
+                (Locations.OrderedLoc.diff_high_bound l)
+                (Locations.OrderedLoc.diff_high_bound l) hcycle rfl
+          | EQ hq1eq =>
+              exfalso
+              exact Locations.OrderedLoc.lt_not_eq
+                (Locations.OrderedLoc.diff_high_bound l) q1.eloc
+                hq1lt hq1eq.symm
+          | GT hq1gt =>
+              exfalso
+              simp [hcmp1] at hsel
+    · cases hcmp2 : Locations.OrderedLoc.compare q2.eloc
+          (Locations.OrderedLoc.diff_high_bound l) with
+      | LT hq2lt =>
+          simp
+      | EQ hq2eq =>
+          simp
+      | GT hq2gt =>
+          exfalso
+          have hq1gt : Locations.OrderedLoc.lt
+              (Locations.OrderedLoc.diff_high_bound l) q1.eloc := by
+            simpa [hloc] using hq2gt
+          cases hcmp1 : Locations.OrderedLoc.compare q1.eloc
+                (Locations.OrderedLoc.diff_high_bound l) with
+          | LT hq1lt =>
+              have hcycle : Locations.OrderedLoc.lt
+                  (Locations.OrderedLoc.diff_high_bound l)
+                  (Locations.OrderedLoc.diff_high_bound l) :=
+                Locations.OrderedLoc.lt_trans
+                  (Locations.OrderedLoc.diff_high_bound l) q1.eloc
+                  (Locations.OrderedLoc.diff_high_bound l) hq1gt hq1lt
+              exact Locations.OrderedLoc.lt_not_eq
+                (Locations.OrderedLoc.diff_high_bound l)
+                (Locations.OrderedLoc.diff_high_bound l) hcycle rfl
+          | EQ hq1eq =>
+              exact Locations.OrderedLoc.lt_not_eq
+                (Locations.OrderedLoc.diff_high_bound l) q1.eloc
+                hq1gt hq1eq.symm
+          | GT hq1gt =>
+              simp [hcmp1] at hsel
+
+end CompCert4Lean.Backend.Allocproof

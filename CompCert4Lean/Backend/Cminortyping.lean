@@ -2277,3 +2277,41 @@ theorem type_unop_sound
       Val.singleoflong, Val.singleoflongu, Val.has_type] at h ⊢
 
 end CompCert4Lean.Backend.Cminortyping
+
+namespace CompCert4Lean.Backend.Cminortyping
+
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.AST
+
+theorem wt_find_funct : wt_find_functStatement := by
+  intro p hwtp v fd hfind
+  rcases (@Genv.find_funct_inversion _ _ p v fd hfind) with ⟨id, hmem⟩
+  exact hwtp id fd hmem
+
+end CompCert4Lean.Backend.Cminortyping
+
+namespace CompCert4Lean.Backend.Cminortyping
+
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Backend.Cminor
+
+theorem wt_initial_state : wt_initial_stateStatement := by
+  intro p hwtp s hs
+  cases hs with
+  | initial_state_intro b f m0 hmem hsymbol hfun hsig =>
+      have hfd : wt_fundef f := by
+        rcases (@Genv.find_funct_ptr_inversion _ _ p b f hfun) with
+          ⟨id, hmemdef⟩
+        exact hwtp id f hmemdef
+      have hargs : Val.has_type_list [] (proj_sig_args (funsig f)) := by
+        rw [hsig]
+        change True
+        exact True.intro
+      have hcont : wt_cont_call Kstop (funsig f).sig_res := by
+        rw [hsig]
+        exact wt_cont_Kstop
+      exact wt_call_state f [] Kstop m0 hfd hargs hcont
+
+end CompCert4Lean.Backend.Cminortyping

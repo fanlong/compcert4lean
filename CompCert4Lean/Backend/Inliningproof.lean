@@ -1797,3 +1797,126 @@ theorem range_private_perms : range_private_permsStatement := by
   exact (h ofs hof).1
 
 end CompCert4Lean.Backend.Inliningproof
+
+namespace CompCert4Lean.Backend.Inliningproof
+
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+
+private theorem pmap_get_set_spec_local {A : Type} (i j : positive) (x : A)
+    (m : PMap.t A) :
+    PMap.get i (PMap.set j x m) = if h : i = j then x else PMap.get i m := by
+  unfold PMap.get PMap.set
+  rw [PTree.gsspec_proof]
+  cases h : peq i j with
+  | left hij => simp [hij]
+  | right hne => simp [h, hne]
+
+private theorem mem_perm_alloc_inv_local
+    (m : mem) (lo hi : Z) (m2 : mem) (b : positive)
+    (halloc : Mem.alloc m lo hi = (m2, b))
+    (b' : CompCert4Lean.Common.Values.block) (ofs : Z) (k : perm_kind) (p : permission)
+    (hperm : Mem.perm m2 b' ofs k p) :
+    match eq_block b' b with
+    | .left _ => zLe lo ofs ∧ zLt ofs hi
+    | .right _ => Mem.perm m b' ofs k p := by
+  unfold Mem.alloc at halloc
+  cases halloc
+  let fresh : positive := m.nextblock
+  cases heq : eq_block b' m.nextblock with
+  | left hbeq =>
+      subst b'
+      simp only [Mem.perm] at hperm
+      rw [pmap_get_set_spec_local] at hperm
+      simp at hperm
+      unfold Mem.perm_order' at hperm
+      split at hperm
+      · rename_i hIn
+        split at hIn
+        · rename_i hRange
+          simp only [heq]
+          change (ZArith.BinInt.Z.leb lo ofs &&
+            ZArith.BinInt.Z.ltb ofs hi) = true at hRange
+          simp only [Bool.and_eq_true] at hRange
+          constructor
+          · change intOfZ lo ≤ intOfZ ofs
+            simpa [ZArith.BinInt.Z.leb] using hRange.1
+          · change intOfZ ofs < intOfZ hi
+            simpa [ZArith.BinInt.Z.ltb] using hRange.2
+        · simp at hIn
+      · simp at hperm
+  | right hbneq =>
+      simp only [Mem.perm] at hperm
+      change Mem.perm_order'
+        ((PMap.get (show positive from b')
+          (PMap.set (show positive from m.nextblock) _ m.mem_access)) ofs k) p at hperm
+      rw [pmap_get_set_spec_local] at hperm
+      have hbneq' : (show positive from b') ≠ (show positive from m.nextblock) := by
+        intro h
+        apply hbneq
+        exact h
+      simp [hbneq, hbneq'] at hperm
+      simpa [heq, hbneq, Mem.perm] using hperm
+
+theorem range_private_alloc_left : range_private_alloc_leftStatement := by
+  intro F m m' sp' base hi sz m1 sp F1 hpriv halloc hmap hsame
+  unfold range_private loc_private at hpriv ⊢
+  intro ofs hofs
+  rcases hofs with ⟨hofs_lo, hofs_hi⟩
+  have hz0 : intOfZ zZero = 0 := by rfl
+  have hmax0 : zLe zZero (ZArith.BinInt.Z.max sz zZero) := by
+    change 0 ≤ intOfZ (ZArith.BinInt.Z.max sz zZero)
+    by_cases h : intOfZ sz ≤ 0
+    · simp [ZArith.BinInt.Z.max, h, hz0]
+    · simp [ZArith.BinInt.Z.max, h, Int.le_of_not_le h, hz0]
+  have hofs_lo' : intOfZ base + intOfZ (ZArith.BinInt.Z.max sz zZero) ≤ intOfZ ofs := by
+    simpa only [zLe, zAdd, ZArith.BinInt.Z.le, ZArith.BinInt.Z.add,
+      intOfZ_zOfInt] using hofs_lo
+  have hbase : zLe base ofs := by
+    change intOfZ base ≤ intOfZ ofs
+    have hnonneg : 0 ≤ intOfZ (ZArith.BinInt.Z.max sz zZero) := by
+      simpa only [zLe, ZArith.BinInt.Z.le, hz0] using hmax0
+    omega
+  have horig := hpriv ofs ⟨hbase, hofs_hi⟩
+  constructor
+  · exact horig.1
+  · intro b delta hF1 hnot
+    cases hb : eq_block b sp with
+    | left hbeq =>
+        subst b
+        have hdelta : delta = base := by
+          rw [hmap] at hF1
+          cases hF1
+          rfl
+        subst delta
+        have hinv := mem_perm_alloc_inv_local m zZero sz m1 sp halloc
+          sp (zSub ofs base) Max Nonempty hnot
+        have hinv' : zLe zZero (zSub ofs base) ∧ zLt (zSub ofs base) sz := by
+          simpa [hb] using hinv
+        have hmax : zLe sz (ZArith.BinInt.Z.max sz zZero) := by
+          change intOfZ sz ≤ intOfZ (ZArith.BinInt.Z.max sz zZero)
+          by_cases h : intOfZ sz ≤ 0
+          · simp [ZArith.BinInt.Z.max, h, hz0]
+          · simp [ZArith.BinInt.Z.max, h, Int.le_of_not_le h, hz0]
+        have hlt := hinv'.2
+        have hlt' : intOfZ ofs - intOfZ base < intOfZ sz := by
+          simpa only [zLt, zSub, ZArith.BinInt.Z.lt, ZArith.BinInt.Z.sub,
+            intOfZ_zOfInt] using hlt
+        have hmax' : intOfZ sz ≤ intOfZ (ZArith.BinInt.Z.max sz zZero) := by
+          simpa only [zLe, ZArith.BinInt.Z.le] using hmax
+        omega
+    | right hbneq =>
+        have hF : F b = some (sp', delta) := by
+          rw [← hsame b hbneq]
+          exact hF1
+        have hinv := mem_perm_alloc_inv_local m zZero sz m1 sp halloc
+          b (zSub ofs delta) Max Nonempty hnot
+        have hm : Mem.perm m b (zSub ofs delta) Max Nonempty := by
+          simpa [hb, hF] using hinv
+        exact horig.2 b delta hF hm
+
+end CompCert4Lean.Backend.Inliningproof

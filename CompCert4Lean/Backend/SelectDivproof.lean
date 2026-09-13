@@ -1668,3 +1668,48 @@ theorem divlu_mul_params_sound : divlu_mul_params_soundStatement := by
           ⟨hLO', hHI'⟩ n hn
 
 end CompCert4Lean.Backend.SelectDivproof
+
+namespace CompCert4Lean.Backend.SelectDivproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+private theorem zshiftr_div_two_p_local (x y : CCZ) (hy : zLe z0 y) :
+    zShiftr x y = zDiv x (two_p y) := by
+  change 0 ≤ intOfZ y at hy
+  have hpow : intOfZ (two_p y) =
+      Int.pow 2 (Int.toNat (intOfZ y)) := by
+    unfold two_p ZArith.Zpower.two_p ZArith.BinInt.Z.pow
+    rw [if_neg (by omega)]
+    simp only [intOfZ_zOfInt]
+    have hbase : intOfZ (Zpos (.xO .xH)) = (2 : Int) := by decide
+    rw [hbase]
+  apply intOfZ_injective
+  simp [zShiftr, zDiv,
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.shiftr,
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.div, hy]
+  rw [intOfZ_zOfInt, intOfZ_zOfInt, hpow]
+  change Int.ediv (intOfZ x) (Int.pow 2 (Int.toNat (intOfZ y))) =
+    (if Int.pow 2 (Int.toNat (intOfZ y)) = 0 then 0
+      else if 0 < Int.pow 2 (Int.toNat (intOfZ y)) then
+        Int.ediv (intOfZ x) (Int.pow 2 (Int.toNat (intOfZ y)))
+      else
+        let d := -(Int.pow 2 (Int.toNat (intOfZ y)))
+        let q := Int.ediv (intOfZ x) d
+        let r := Int.emod (intOfZ x) d
+        if r = 0 then -q else -(q + 1))
+  have hp : 0 < Int.pow 2 (Int.toNat (intOfZ y)) := by
+    exact Int.pow_pos (by omega)
+  simp [hp, Int.ne_of_gt hp]
+
+theorem int64_shr'_div_two_p : int64_shr'_div_two_pStatement := by
+  intro x y
+  unfold int64Shr' CompCert4Lean.Lib.Integers.Int64.shr'
+  change int64Repr (zShiftr (int64Signed x) (intUnsigned y)) = _
+  rw [zshiftr_div_two_p_local (int64Signed x) (intUnsigned y)]
+  exact (show zLe z0 (intUnsigned y) from by
+    have h := y.intrange.1
+    change (-1 : Int) < intOfZ y.intval at h
+    change 0 ≤ intOfZ y.intval
+    omega)
+
+end CompCert4Lean.Backend.SelectDivproof

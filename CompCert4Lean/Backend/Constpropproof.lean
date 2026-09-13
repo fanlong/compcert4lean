@@ -1353,3 +1353,121 @@ theorem transf_ros_correct : ∀ cfg, transf_ros_correctStatement cfg := by
                       simp [Genv.find_funct] at hfind'
 
 end CompCert4Lean.Backend.Constpropproof
+
+namespace CompCert4Lean.Backend.Constpropproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Backend.Constprop
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Backend.ValueAnalysis
+open CompCert4Lean.Backend.ValueDomain
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Builtins
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.ExternalCalls
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.X86.ConstpropOp
+open CompCert4Lean.X86.Machregs
+open CompCert4Lean.X86.Op
+
+variable
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+
+theorem match_states_succ : ∀ (cfg : CompilerConfig), match_states_succStatement cfg := by
+  intro cfg prog s f sp pc rs m s' rs' m' cu hlink hstacks hregs hmem
+  exact match_states_intro (binary64_certificate := binary64_certificate)
+    (binary32_certificate := binary32_certificate) cfg prog s sp pc rs m f s' pc rs' m' cu 0
+    hlink hstacks (match_pc_base f rs m 0 pc) hregs hmem
+
+theorem transf_instr_at : ∀ (cfg : CompilerConfig), transf_instr_atStatement cfg := by
+  intro cfg rm f pc i hi
+  unfold CompCert4Lean.Backend.Constprop.transf_function
+  change PTree.get (show positive from pc)
+      (PTree.map
+        (CompCert4Lean.Backend.Constprop.transf_instr
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate) cfg f
+          (CompCert4Lean.Backend.ValueAnalysis.analyze
+            (binary64_certificate := binary64_certificate)
+            (binary32_certificate := binary32_certificate) cfg rm f) rm)
+        f.fn_code) = _
+  rw [@PTree.gmap instruction instruction
+    (CompCert4Lean.Backend.Constprop.transf_instr
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) cfg f
+      (CompCert4Lean.Backend.ValueAnalysis.analyze
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) cfg rm f) rm)
+    (show positive from pc) f.fn_code]
+  simpa [hi]
+
+end CompCert4Lean.Backend.Constpropproof
+
+namespace CompCert4Lean.Backend.Constpropproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Backend.Constprop
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Backend.ValueAnalysis
+open CompCert4Lean.Backend.ValueDomain
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Builtins
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.ExternalCalls
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.Lib.Maps
+
+variable
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+
+theorem builtin_strength_reduction_correct :
+    ∀ (cfg : CompilerConfig), builtin_strength_reduction_correctStatement cfg := by
+  intro cfg xi prog sp bc ae rs ef args vargs m t vres m' hmatch hargs hcall
+  have hdefault : ∀ cl,
+      ∃ vargs',
+        eval_builtin_args (Genv.to_senv (Genv.globalenv prog))
+          (fun r => Regmap.get r rs) sp m
+          (CompCert4Lean.Backend.Constprop.builtin_args_strength_reduction cfg ae args cl) vargs' ∧
+        external_call (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate) xi ef
+          (Genv.to_senv (Genv.globalenv prog)) vargs' m t vres m' := by
+    intro cl
+    refine ⟨vargs, ?_, hcall⟩
+    exact builtin_args_strength_reduction_correct cfg prog bc sp m rs ae hmatch args vargs hargs cl
+  unfold CompCert4Lean.Backend.Constprop.builtin_strength_reduction
+  cases ef with
+  | EF_debug kind text targs =>
+      obtain ⟨vargs', hvals⟩ :=
+        debug_strength_reduction_correct cfg prog bc sp m rs ae hmatch args vargs hargs
+      refine ⟨vargs', hvals, ?_⟩
+      cases hcall with
+      | extcall_debug_sem_intro =>
+          exact extcall_debug_sem_intro _ _
+  | EF_external name sg => exact hdefault _
+  | EF_builtin name sg => exact hdefault _
+  | EF_runtime name sg => exact hdefault _
+  | EF_vload chunk => exact hdefault _
+  | EF_vstore chunk => exact hdefault _
+  | EF_malloc => exact hdefault _
+  | EF_free => exact hdefault _
+  | EF_memcpy sz al => exact hdefault _
+  | EF_annot kind text targs => exact hdefault _
+  | EF_annot_val kind text targ => exact hdefault _
+  | EF_inline_asm text sg clobbers => exact hdefault _
+
+end CompCert4Lean.Backend.Constpropproof
+
+

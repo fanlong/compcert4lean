@@ -2157,3 +2157,91 @@ theorem field_offset_stable : field_offset_stableStatement := by
   exact aux ms z0 hcomplete
 
 end CompCert4Lean.Cfrontend.Ctypes
+
+namespace CompCert4Lean.Cfrontend.Ctypes
+
+theorem union_field_offset_stable : union_field_offset_stableStatement := by
+  intro env env' henv f ms hcomplete
+  induction ms with
+  | nil => rfl
+  | cons m ms ih =>
+      simp only [complete_members, Bool.and_eq_true] at hcomplete
+      cases hident : CompCert4Lean.Common.AST.ident_eq f (name_member m) with
+      | left hEq =>
+          simp only [union_field_offset, hident]
+          exact layout_field_stable env env' henv z0 m hcomplete.1
+      | right hNe =>
+          simp only [union_field_offset, hident]
+          exact ih hcomplete.2
+
+end CompCert4Lean.Cfrontend.Ctypes
+
+namespace CompCert4Lean.Cfrontend.Ctypes
+
+theorem add_composite_definitions_incr : add_composite_definitions_incrStatement := by
+  unfold add_composite_definitions_incrStatement composite_env
+  intro id co defs env1 env2 hadd hget
+  induction defs generalizing env1 env2 with
+  | nil =>
+      simp only [add_composite_definitions] at hadd
+      cases hadd
+      exact hget
+  | cons d defs ih =>
+      cases d with
+      | Composite did su ms a =>
+          change CompCert4Lean.Foundation.Numbers.Rocq.Coq.positive at did
+          simp only [add_composite_definitions] at hadd
+          cases hco : composite_of_def env1 did su ms a with
+          | Error msg =>
+              simp [hco] at hadd
+          | OK co' =>
+              simp only [hco] at hadd
+              apply ih (env1 := CompCert4Lean.Lib.Maps.PTree.set did co' env1)
+                (env2 := env2) hadd
+              rw [CompCert4Lean.Lib.Maps.PTree.gsspec_proof]
+              cases hpeq : CompCert4Lean.Lib.Coqlib.peq id did with
+              | left heq =>
+                  subst did
+                  simp only [hget]
+                  have hcontra : composite_of_def env1 id su ms a ≠ .OK co' := by
+                    unfold composite_of_def
+                    rw [hget]
+                    simp
+                  exact False.elim (hcontra hco)
+              | right hne =>
+                  exact hget
+
+end CompCert4Lean.Cfrontend.Ctypes
+
+namespace CompCert4Lean.Cfrontend.Ctypes
+
+theorem composite_consistent_stable : composite_consistent_stableStatement := by
+  intro env env' henv co hco
+  rcases hco with ⟨hcomplete, halignof, hsizeof, hrank⟩
+  refine ⟨complete_members_stable env env' henv co.co_members hcomplete, ?_, ?_, ?_⟩
+  · rw [halignof, alignof_composite_stable env env' henv _ hcomplete]
+  · rw [hsizeof, sizeof_composite_stable env env' henv _ _ hcomplete]
+  · rw [hrank, rank_members_stable env env' henv _ hcomplete]
+
+end CompCert4Lean.Cfrontend.Ctypes
+
+namespace CompCert4Lean.Cfrontend.Ctypes
+
+theorem composite_of_def_consistent : composite_of_def_consistentStatement := by
+  intro env id su ms a co hco
+  unfold composite_of_def at hco
+  cases hget : CompCert4Lean.Lib.Maps.PTree.get id env with
+  | some existing =>
+      rw [hget] at hco
+      cases hco
+  | none =>
+      cases hcomplete : complete_members env ms with
+      | false =>
+          rw [hget, hcomplete] at hco
+          cases hco
+      | true =>
+          rw [hget, hcomplete] at hco
+          cases hco
+          exact ⟨by simpa using hcomplete, rfl, rfl, rfl⟩
+
+end CompCert4Lean.Cfrontend.Ctypes

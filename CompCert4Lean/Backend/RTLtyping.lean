@@ -2269,3 +2269,32 @@ theorem wt_regset_setres : wt_regset_setresStatement := by
       exact wt_regset_assign env rs v r hrs (by simpa [type_of_builtin_res] using hv)
   | _ => exact hrs
 end CompCert4Lean.Backend.RTLtyping
+
+namespace CompCert4Lean.Backend.RTLtyping
+
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Common.Values
+
+theorem wt_init_regs : wt_init_regsStatement := by
+  intro env rl args hargs
+  induction rl generalizing args with
+  | nil =>
+      cases args with
+      | nil =>
+          intro r
+          change Val.has_type (Regmap.get r (Regmap.init Vundef)) (env r)
+          rw [Regmap.gi_proof]
+          exact True.intro
+      | cons v vs =>
+          cases hargs
+  | cons r rl ih =>
+      cases args with
+      | nil =>
+          cases hargs
+      | cons v vs =>
+          have hv : Val.has_type v (env r) := hargs.1
+          have hvs : Val.has_type_list vs (List.map env rl) := hargs.2
+          exact wt_regset_assign env (init_regs vs rl) v r (ih vs hvs) hv
+
+end CompCert4Lean.Backend.RTLtyping
