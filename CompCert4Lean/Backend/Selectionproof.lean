@@ -2422,3 +2422,201 @@ theorem eval_condition_of_expr
   exact hP a le v b
 
 end CompCert4Lean.Backend.Selectionproof
+
+namespace CompCert4Lean.Backend.Selectionproof
+
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.Backend.Selection
+open CompCert4Lean.X86.Op
+open CompCert4Lean.X86.SelectOp
+
+open Lean Elab Tactic Meta
+
+private def selectionPrivateName (suffix : String) : Name :=
+  let p := Name.str (Name.str (Name.str (Name.str Name.anonymous "_private") "CompCert4Lean") "Lib") "Integers"
+  let base := Name.num p 0
+  suffix.splitOn "." |>.foldl Name.str base
+
+private theorem selection_wordcore_add_val {bits : Nat}
+    (x y : CompCert4Lean.Lib.Integers.WordCore.Word bits) :
+    (CompCert4Lean.Lib.Integers.WordCore.add x y).val =
+      (x.val + y.val) % (2 ^ bits) := by
+  run_tac
+    let lctx ← getLCtx
+    let xF := (lctx.findFromUserName? `x).get!
+    let yF := (lctx.findFromUserName? `y).get!
+    let e ← mkAppM
+      (selectionPrivateName "CompCert4Lean.Lib.Integers.WordCore.add_val")
+      #[mkFVar xF.fvarId, mkFVar yF.fvarId]
+    closeMainGoal Name.anonymous e
+
+private theorem selection_wordcore_zero_val (bits : Nat) :
+    (CompCert4Lean.Lib.Integers.WordCore.zero bits).val = 0 := by
+  unfold CompCert4Lean.Lib.Integers.WordCore.zero
+  run_tac
+    let lctx ← getLCtx
+    let bF := (lctx.findFromUserName? `bits).get!
+    let e ← mkAppM
+      (selectionPrivateName "CompCert4Lean.Lib.Integers.WordCore.val_repr_residue")
+      #[mkFVar bF.fvarId,
+        mkConst ``CompCert4Lean.Foundation.Numbers.Rocq.Coq.Numbers.BinNums.Z.Z0]
+    closeMainGoal Name.anonymous e
+
+private theorem selection_wordcore_val_lt {bits : Nat}
+    (x : CompCert4Lean.Lib.Integers.WordCore.Word bits) :
+    x.val < 2 ^ bits := by
+  run_tac
+    let lctx ← getLCtx
+    let xF := (lctx.findFromUserName? `x).get!
+    let e ← mkAppM
+      (selectionPrivateName "CompCert4Lean.Lib.Integers.WordCore.val_lt")
+      #[mkFVar xF.fvarId]
+    closeMainGoal Name.anonymous e
+
+private theorem selection_ptrofs_add_zero
+    (ofs : CompCert4Lean.Lib.Integers.Ptrofs.int) :
+    CompCert4Lean.Lib.Integers.Ptrofs.add ofs
+      (CompCert4Lean.Lib.Integers.Ptrofs.repr
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.Numbers.BinNums.Z.Z0)) = ofs := by
+  change CompCert4Lean.Lib.Integers.WordCore.add ofs
+    (CompCert4Lean.Lib.Integers.WordCore.zero
+      CompCert4Lean.Lib.Integers.Ptrofs.wordsize) = ofs
+  apply CompCert4Lean.Lib.Integers.WordCore.ext_of_val_eq
+  rw [selection_wordcore_add_val, selection_wordcore_zero_val, Nat.add_zero]
+  exact Nat.mod_eq_of_lt (selection_wordcore_val_lt ofs)
+
+theorem eval_store
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    eval_storeStatement := by
+  intro xi tprog sp e m chunk a1 a2 v1 v2 f k m' h1 h2 hstore
+  cases v1 with
+  | Vundef => simp [Mem.storev] at hstore
+  | Vint n => simp [Mem.storev] at hstore
+  | Vlong n => simp [Mem.storev] at hstore
+  | Vfloat f => simp [Mem.storev] at hstore
+  | Vsingle f => simp [Mem.storev] at hstore
+  | Vptr b ofs =>
+      cases hcase : addressing_match a1 with
+      | addressing_case1 addr args =>
+          have hadd :
+              CompCert4Lean.X86.SelectOp.addressing chunk (Eop (.Olea addr) args) =
+                (.Aindexed (zOfNat 0), Econs (Eop (.Olea addr) args) Enil) := by
+            simp [CompCert4Lean.X86.SelectOp.addressing, addressing_match,
+              CompCert4Lean.X86_64.Archi.ptr64]
+            rfl
+          have haddr :
+              eval_addressing (Genv.globalenv tprog) sp (.Aindexed (zOfNat 0))
+                [Vptr b ofs] = some (Vptr b ofs) := by
+            simp [eval_addressing, eval_addressing64,
+              CompCert4Lean.X86_64.Archi.ptr64, Val.addl,
+              CompCert4Lean.Lib.Integers.Ptrofs.of_int64,
+              CompCert4Lean.Lib.Integers.Int64.repr]
+            rw [show CompCert4Lean.Lib.Integers.Ptrofs.repr
+                (CompCert4Lean.Lib.Integers.Int64.unsigned
+                  (CompCert4Lean.Lib.Integers.WordCore.repr
+                    CompCert4Lean.Lib.Integers.Int64.wordsize (zOfNat 0))) =
+                CompCert4Lean.Lib.Integers.Ptrofs.repr
+                  (CompCert4Lean.Foundation.Numbers.Rocq.Coq.Numbers.BinNums.Z.Z0) by rfl]
+            exact selection_ptrofs_add_zero ofs
+          unfold CompCert4Lean.Backend.Selection.store
+          rw [hadd]
+          apply CminorSel.step.step_store
+          · exact eval_exprlist.cons [] (Eop (.Olea addr) args) Enil
+              (Vptr b ofs) [] h1 (eval_exprlist.nil [])
+          · exact h2
+          · exact haddr
+          · exact hstore
+      | addressing_case2 addr args =>
+          by_cases hvalid : addressing_valid addr
+          · cases h1 with
+            | eval_Eop le' op al vl vv hargs hop =>
+                have hadd :
+                    CompCert4Lean.X86.SelectOp.addressing chunk (Eop (.Oleal addr) args) =
+                      (addr, args) := by
+                  simp [CompCert4Lean.X86.SelectOp.addressing, addressing_match,
+                    hvalid, CompCert4Lean.X86_64.Archi.ptr64]
+                have haddr :
+                    eval_addressing (Genv.globalenv tprog) sp addr vl =
+                      some (Vptr b ofs) := by
+                  change eval_addressing64 (Genv.globalenv tprog) sp addr vl =
+                    some (Vptr b ofs)
+                  change eval_addressing64 (Genv.globalenv tprog) sp addr vl =
+                    some (Vptr b ofs) at hop
+                  exact hop
+                unfold CompCert4Lean.Backend.Selection.store
+                rw [hadd]
+                apply CminorSel.step.step_store
+                · exact hargs
+                · exact h2
+                · exact haddr
+                · exact hstore
+          · have hadd :
+                CompCert4Lean.X86.SelectOp.addressing chunk (Eop (.Oleal addr) args) =
+                  (.Aindexed (zOfNat 0), Econs (Eop (.Oleal addr) args) Enil) := by
+              simp [CompCert4Lean.X86.SelectOp.addressing, addressing_match, hvalid,
+                CompCert4Lean.X86_64.Archi.ptr64]
+              rfl
+            have haddr :
+                eval_addressing (Genv.globalenv tprog) sp (.Aindexed (zOfNat 0))
+                  [Vptr b ofs] = some (Vptr b ofs) := by
+              simp [eval_addressing, eval_addressing64,
+                CompCert4Lean.X86_64.Archi.ptr64, Val.addl,
+                CompCert4Lean.Lib.Integers.Ptrofs.of_int64,
+                CompCert4Lean.Lib.Integers.Int64.repr]
+              rw [show CompCert4Lean.Lib.Integers.Ptrofs.repr
+                  (CompCert4Lean.Lib.Integers.Int64.unsigned
+                    (CompCert4Lean.Lib.Integers.WordCore.repr
+                      CompCert4Lean.Lib.Integers.Int64.wordsize (zOfNat 0))) =
+                  CompCert4Lean.Lib.Integers.Ptrofs.repr
+                    (CompCert4Lean.Foundation.Numbers.Rocq.Coq.Numbers.BinNums.Z.Z0) by rfl]
+              exact selection_ptrofs_add_zero ofs
+            unfold CompCert4Lean.Backend.Selection.store
+            rw [hadd]
+            apply CminorSel.step.step_store
+            · exact eval_exprlist.cons [] (Eop (.Oleal addr) args) Enil
+                (Vptr b ofs) [] h1 (eval_exprlist.nil [])
+            · exact h2
+            · exact haddr
+            · exact hstore
+      | addressing_default _ =>
+          have hadd :
+              CompCert4Lean.X86.SelectOp.addressing chunk a1 =
+                (.Aindexed (zOfNat 0), Econs a1 Enil) := by
+            unfold CompCert4Lean.X86.SelectOp.addressing
+            cases a1 with
+            | Eop op args =>
+                cases op <;>
+                  simp [addressing_match, CompCert4Lean.X86_64.Archi.ptr64] at hcase ⊢ <;>
+                  rfl
+            | _ =>
+                simp [addressing_match, CompCert4Lean.X86_64.Archi.ptr64] at hcase ⊢ <;>
+                  rfl
+          have haddr :
+              eval_addressing (Genv.globalenv tprog) sp (.Aindexed (zOfNat 0))
+                [Vptr b ofs] = some (Vptr b ofs) := by
+            simp [eval_addressing, eval_addressing64,
+              CompCert4Lean.X86_64.Archi.ptr64, Val.addl,
+              CompCert4Lean.Lib.Integers.Ptrofs.of_int64,
+              CompCert4Lean.Lib.Integers.Int64.repr]
+            rw [show CompCert4Lean.Lib.Integers.Ptrofs.repr
+                (CompCert4Lean.Lib.Integers.Int64.unsigned
+                  (CompCert4Lean.Lib.Integers.WordCore.repr
+                    CompCert4Lean.Lib.Integers.Int64.wordsize (zOfNat 0))) =
+                CompCert4Lean.Lib.Integers.Ptrofs.repr
+                  (CompCert4Lean.Foundation.Numbers.Rocq.Coq.Numbers.BinNums.Z.Z0) by rfl]
+            exact selection_ptrofs_add_zero ofs
+          unfold CompCert4Lean.Backend.Selection.store
+          rw [hadd]
+          apply CminorSel.step.step_store
+          · exact eval_exprlist.cons [] a1 Enil (Vptr b ofs) [] h1
+              (eval_exprlist.nil [])
+          · exact h2
+          · exact haddr
+          · exact hstore
+
+end CompCert4Lean.Backend.Selectionproof

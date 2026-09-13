@@ -2222,3 +2222,144 @@ theorem make_cast_correct
       exact hcast
 
 end CompCert4Lean.Cfrontend.SimplLocalsproof
+
+namespace CompCert4Lean.Cfrontend.SimplLocalsproof
+
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Smallstep
+open CompCert4Lean.Cfrontend.Clight
+open CompCert4Lean.Cfrontend.SimplLocals
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+
+theorem bind_parameter_temps_inv : bind_parameter_temps_invStatement := by
+  intro id params args le le' hbind hnot
+  induction params generalizing args le le' with
+  | nil =>
+      cases args <;> simp [bind_parameter_temps] at hbind
+      cases hbind
+      rfl
+  | cons p params ih =>
+      cases p with
+      | mk id1 ty1 =>
+          cases args with
+          | nil => simp [bind_parameter_temps] at hbind
+          | cons v args =>
+              simp only [bind_parameter_temps] at hbind
+              have hnot' : id ∉ var_names params := by
+                intro hin
+                apply hnot
+                simp only [var_names, List.map_cons, List.mem_cons]
+                have hin' : id ∈ List.map Prod.fst params := by simpa [var_names] using hin
+                exact Or.inr hin'
+              have hi := ih (args := args) (le := PTree.set id1 v le) (le' := le') hbind hnot'
+              have hget : PTree.get id (PTree.set id1 v le) = PTree.get id le := by
+                apply PTree.gso
+                intro heq
+                apply hnot
+                simp [var_names, heq]
+              exact hi.trans hget
+end CompCert4Lean.Cfrontend.SimplLocalsproof
+
+namespace CompCert4Lean.Cfrontend.SimplLocalsproof
+open CompCert4Lean.Common.Smallstep
+open CompCert4Lean.Cfrontend.Clight
+open CompCert4Lean.Cfrontend.SimplLocals
+open CompCert4Lean.Driver.Compopts
+open CompCert4Lean.Lib.Maps
+
+theorem step_add_debug_vars
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    step_add_debug_varsStatement := by
+  intro cfg xi tprog f s e le m vars k h
+  unfold add_debug_vars
+  by_cases hd : CompCert4Lean.Driver.Compopts.debug cfg = true
+  · rw [hd]
+    induction vars with
+    | nil =>
+        exact star_refl _ _ _
+    | cons p vars ih =>
+        cases p with
+        | mk id ty =>
+            have hb : ∃ b, PTree.get id e = some (b, ty) := h id ty (List.mem_cons_self)
+            rcases hb with ⟨b, hbe⟩
+            have hrest := fun id' ty' (hm : (id', ty') ∈ vars) =>
+              h id' ty' (List.mem_cons_of_mem _ hm)
+            apply star_left
+            · exact CompCert4Lean.Cfrontend.Clight.step.step_seq f
+                (Sdebug_var id ty) (List.foldr add_debug_var s vars) k e le m
+            · apply star_left
+              · exact step_Sdebug_var xi tprog f id ty
+                  (.Kseq (List.foldr add_debug_var s vars) k) e le m b hbe
+              · apply star_left
+                · exact CompCert4Lean.Cfrontend.Clight.step.step_skip_seq f
+                    (List.foldr add_debug_var s vars) k e le m
+                · exact ih hrest
+                · rfl
+              · rfl
+            · rfl
+  · simp [hd]
+    exact star_refl _ _ _
+end CompCert4Lean.Cfrontend.SimplLocalsproof
+
+namespace CompCert4Lean.Cfrontend.SimplLocalsproof
+open CompCert4Lean.Common.Smallstep
+open CompCert4Lean.Cfrontend.Clight
+open CompCert4Lean.Cfrontend.SimplLocals
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.Driver.Compopts
+
+theorem step_add_debug_params
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    step_add_debug_paramsStatement := by
+  intro cfg xi tprog f s k e le m params vl le1 hnr hcast hbind
+  unfold add_debug_params
+  by_cases hd : CompCert4Lean.Driver.Compopts.debug cfg = true
+  · rw [hd]
+    induction params generalizing vl le1 le with
+    | nil =>
+        cases vl with
+        | nil =>
+            cases hcast
+            cases hbind
+            exact star_refl _ _ _
+        | cons v vl =>
+            cases hcast
+    | cons p params ih =>
+        cases p with
+        | mk id ty =>
+            cases vl with
+            | nil => cases hcast
+            | cons v vl =>
+                cases hcast with
+                | cons _ _ hvc hvcTail =>
+                    cases hnr with
+                    | cons _ hnotmem hnrTail =>
+                        have hidnot : id ∉ var_names params := by
+                            intro hm
+                            exact hnotmem (by simpa [var_names] using hm)
+                        have hle' := bind_parameter_temps_inv id params vl
+                            (PTree.set id v le1) le hbind hidnot
+                        have hget : PTree.get id le = some v := by
+                            exact hle'.trans (PTree.gss id v le1)
+                        have hrest := ih (le := le) (vl := vl)
+                            (le1 := PTree.set id v le1) hnrTail hvcTail hbind
+                        apply star_left
+                        · exact CompCert4Lean.Cfrontend.Clight.step.step_seq f
+                            (Sdebug_temp id ty) (List.foldr add_debug_param s params) k e le m
+                        · apply star_left
+                          · exact step_Sdebug_temp xi tprog f id ty
+                              (.Kseq (List.foldr add_debug_param s params) k) e le m v hget hvc
+                          · apply star_left
+                            · exact CompCert4Lean.Cfrontend.Clight.step.step_skip_seq f
+                                (List.foldr add_debug_param s params) k e le m
+                            · exact hrest
+                            · rfl
+                          · rfl
+                        · rfl
+  · simp [hd]
+    exact star_refl _ _ _
+end CompCert4Lean.Cfrontend.SimplLocalsproof

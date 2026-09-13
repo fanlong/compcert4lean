@@ -1822,3 +1822,17 @@ theorem unique_labels_transf_function : unique_labels_transf_functionStatement :
       exact enumerate_norepet service f enum henum
 
 end CompCert4Lean.Backend.Linearizeproof
+
+namespace CompCert4Lean.Backend.Linearizeproof
+
+theorem match_parent_locset : match_parent_locsetStatement := by
+  intro service s ts h
+  induction h with
+  | nil =>
+      rfl
+  | cons a1 b1 hab hrest ih =>
+      cases hab with
+      | match_stackframe_intro f sp bb ls tf c htrans hreach htail =>
+          rfl
+
+end CompCert4Lean.Backend.Linearizeproof

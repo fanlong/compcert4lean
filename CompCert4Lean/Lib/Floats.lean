@@ -1739,3 +1739,13 @@ theorem Float.to_single_nan_result_obligation_proof : Float.to_single_nan_result
   · exact default_nan_32_result_obligation_proof
 
 end CompCert4Lean.Lib.Floats
+
+namespace CompCert4Lean.Lib.Floats
+
+theorem Float32.binop_nan_result_obligation_proof : Float32.binop_nan_result_obligation := by
+  intro x y _hx _hy
+  exact quiet_nan_32_result_obligation_proof_local
+    (CompCert4Lean.X86_64.Archi.choose_nan_32
+      (Float32.cons_pl x (Float32.cons_pl y [])))
+
+end CompCert4Lean.Lib.Floats

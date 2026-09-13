@@ -1273,3 +1273,166 @@ theorem mk_storebyte_correct
     exact nextinstr_nf_inv1 r' rs1 hr'
 
 end CompCert4Lean.X86.Asmgenproof1
+
+namespace CompCert4Lean.X86.Asmgenproof1
+
+open Lean Elab Tactic Meta
+
+private def asmgenproof1PrivateName (suffix : String) : Name :=
+  let p := Name.str (Name.str (Name.str (Name.str Name.anonymous "_private") "CompCert4Lean") "Lib") "Integers"
+  let base := Name.num p 0
+  suffix.splitOn "." |>.foldl Name.str base
+
+private theorem asmgenproof1WordValRepr (bits : Nat) (i : Int) :
+    (CompCert4Lean.Lib.Integers.WordCore.repr bits
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt i)).val =
+      Int.toNat (i % ((2 ^ bits : Nat) : Int)) := by
+  run_tac
+    let lctx ← getLCtx
+    let bitsF := (lctx.findFromUserName? `bits).get!
+    let iF := (lctx.findFromUserName? `i).get!
+    let e ← mkAppM
+      (asmgenproof1PrivateName "CompCert4Lean.Lib.Integers.WordCore.val_repr")
+      #[mkFVar bitsF.fvarId, mkFVar iF.fvarId]
+    closeMainGoal Name.anonymous e
+
+private theorem asmgenproof1PtrofsReprUnsigned (x : Ptrofs) :
+    CompCert4Lean.Lib.Integers.Ptrofs.repr
+        (CompCert4Lean.Lib.Integers.Ptrofs.unsigned x) = x := by
+  have hx0 : CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.le
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.Numbers.BinNums.Z0
+      (CompCert4Lean.Lib.Integers.Ptrofs.unsigned x) := by
+    have h := x.intrange.1
+    change (-1 : Int) <
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ x.intval at h
+    change 0 ≤ CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ x.intval
+    omega
+  have hxlt : CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ x.intval <
+      (Int.ofNat (2 ^ CompCert4Lean.Lib.Integers.Ptrofs.wordsize)) := by
+    have h := x.intrange.2
+    change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ x.intval <
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+        CompCert4Lean.Lib.Integers.Ptrofs.modulus at h
+    change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ x.intval <
+      (Int.ofNat (2 ^ CompCert4Lean.Lib.Integers.Ptrofs.wordsize)) at h
+    exact h
+  apply CompCert4Lean.Lib.Integers.WordCore.ext_of_val_eq
+  change
+    (CompCert4Lean.Lib.Integers.WordCore.repr
+      CompCert4Lean.Lib.Integers.Ptrofs.wordsize x.intval).val = x.val
+  have hz :
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ x.intval) = x.intval :=
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt_intOfZ _
+  rw [← hz, asmgenproof1WordValRepr]
+  have hmod :
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ x.intval %
+          ((2 ^ CompCert4Lean.Lib.Integers.Ptrofs.wordsize : Nat) : Int) =
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ x.intval :=
+    Int.emod_eq_of_lt (show 0 ≤
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ x.intval by exact hx0) hxlt
+  rw [hmod]
+  have hvalz :
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.to_nat x.intval) =
+        x.intval :=
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.Znat.Z2Nat.id x.intval (by
+      change 0 ≤ CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ x.intval
+      exact hx0)
+  have hint :
+      Int.ofNat
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.to_nat x.intval) =
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ x.intval := by
+    have h := congrArg CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ hvalz
+    simpa only [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat,
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt] using h
+  have hnat :
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.to_nat x.intval =
+        Int.toNat (CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ x.intval) := by
+    rw [← Int.toNat_of_nonneg (show 0 ≤
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ x.intval by exact hx0)] at hint
+    exact Int.ofNat.inj hint
+  change Int.toNat (CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ x.intval) =
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.to_nat x.intval
+  exact hnat.symm
+
+private theorem asmgenproof1WordCoreAddVal {bits : Nat}
+    (x y : CompCert4Lean.Lib.Integers.WordCore.Word bits) :
+    (CompCert4Lean.Lib.Integers.WordCore.add x y).val =
+      (x.val + y.val) % (2 ^ bits) := by
+  run_tac
+    let lctx ← getLCtx
+    let xF := (lctx.findFromUserName? `x).get!
+    let yF := (lctx.findFromUserName? `y).get!
+    let e ← mkAppM
+      (asmgenproof1PrivateName "CompCert4Lean.Lib.Integers.WordCore.add_val")
+      #[mkFVar xF.fvarId, mkFVar yF.fvarId]
+    closeMainGoal Name.anonymous e
+
+private theorem asmgenproof1WordCoreZeroVal (bits : Nat) :
+    (CompCert4Lean.Lib.Integers.WordCore.zero bits).val = 0 := by
+  unfold CompCert4Lean.Lib.Integers.WordCore.zero
+  change (CompCert4Lean.Lib.Integers.WordCore.repr bits
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt (0 : Int))).val = 0
+  simpa using (asmgenproof1WordValRepr bits (0 : Int))
+
+private theorem asmgenproof1WordCoreValLt
+    (x : CompCert4Lean.Lib.Integers.WordCore.Word bits) : x.val < 2 ^ bits := by
+  run_tac
+    let lctx ← getLCtx
+    let xF := (lctx.findFromUserName? `x).get!
+    let e ← mkAppM
+      (asmgenproof1PrivateName "CompCert4Lean.Lib.Integers.WordCore.val_lt")
+      #[mkFVar xF.fvarId]
+    closeMainGoal Name.anonymous e
+
+private theorem asmgenproof1Int64AddZero (x : CompCert4Lean.Lib.Integers.Int64.int) :
+    CompCert4Lean.Lib.Integers.Int64.add
+        CompCert4Lean.Lib.Integers.Int64.zero x = x := by
+  change CompCert4Lean.Lib.Integers.WordCore.add
+    (CompCert4Lean.Lib.Integers.WordCore.zero
+      CompCert4Lean.Lib.Integers.Int64.wordsize) x = x
+  apply CompCert4Lean.Lib.Integers.WordCore.ext_of_val_eq
+  rw [asmgenproof1WordCoreAddVal, asmgenproof1WordCoreZeroVal]
+  simpa only [Nat.zero_add] using
+    (Nat.mod_eq_of_lt (asmgenproof1WordCoreValLt x))
+
+theorem eval_addrmode_indexed : eval_addrmode_indexedStatement := by
+  intro ge base ofs rs h
+  unfold CompCert4Lean.X86.Asm.eval_addrmode
+  unfold CompCert4Lean.X86.Asm.eval_addrmode64
+  cases hv : rs (.IR base) with
+  | Vptr b o =>
+      have hconv :
+          CompCert4Lean.Lib.Integers.Ptrofs.of_int64
+              (CompCert4Lean.Lib.Integers.Int64.repr
+                (CompCert4Lean.Lib.Integers.Ptrofs.unsigned ofs)) = ofs := by
+        have hrepr := asmgenproof1PtrofsReprUnsigned ofs
+        have hu0 := congrArg CompCert4Lean.Lib.Integers.WordCore.unsigned hrepr
+        have hu :
+            CompCert4Lean.Lib.Integers.Int64.unsigned
+                (CompCert4Lean.Lib.Integers.Int64.repr
+                  (CompCert4Lean.Lib.Integers.Ptrofs.unsigned ofs)) =
+              CompCert4Lean.Lib.Integers.Ptrofs.unsigned ofs := by
+          simpa [CompCert4Lean.Lib.Integers.Int64.unsigned,
+            CompCert4Lean.Lib.Integers.Int64.repr,
+            CompCert4Lean.Lib.Integers.Int64.wordsize,
+            CompCert4Lean.Lib.Integers.Ptrofs.repr,
+            CompCert4Lean.Lib.Integers.Ptrofs.unsigned,
+            CompCert4Lean.Lib.Integers.Ptrofs.wordsize,
+            CompCert4Lean.Lib.Integers.Wordsize_Ptrofs.wordsize,
+            CompCert4Lean.X86_64.Archi.ptr64] using hu0
+        unfold CompCert4Lean.Lib.Integers.Ptrofs.of_int64
+        rw [hu]
+        exact hrepr
+      simp [CompCert4Lean.X86.Asm.Pregmap.get, CompCert4Lean.X86_64.Archi.ptr64, hv,
+        CompCert4Lean.Common.Values.Val.offset_ptr,
+        CompCert4Lean.Common.Values.Val.addl,
+        asmgenproof1Int64AddZero, hconv]
+  | Vundef => simp [hv] at h
+  | Vint n => simp [hv] at h
+  | Vlong n => simp [hv] at h
+  | Vfloat n => simp [hv] at h
+  | Vsingle n => simp [hv] at h
+
+end CompCert4Lean.X86.Asmgenproof1

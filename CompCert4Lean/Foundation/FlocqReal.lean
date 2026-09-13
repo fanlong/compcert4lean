@@ -1978,3 +1978,33 @@ theorem sqrt_lt_1 :
 end R_sqrt
 end Rocq.Coq.Reals
 end CompCert4Lean.Foundation.FlocqReal
+
+namespace CompCert4Lean.Foundation.FlocqReal
+namespace Rocq.Coq.Reals
+namespace RIneq
+
+theorem Req_ge :
+    ∀ (ctx : ExactRealContext), Req_geStatement ctx := by
+  intro ctx r1 r2 h
+  subst r2
+  exact ctx.certificate.orderedField.le_refl r1
+
+theorem Rlt_not_eq :
+    ∀ (ctx : ExactRealContext), Rlt_not_eqStatement ctx := by
+  intro ctx r1 r2 hlt heq
+  subst r2
+  exact ctx.certificate.orderedField.lt_irrefl r1 hlt
+
+theorem Rgt_ge :
+    ∀ (ctx : ExactRealContext), Rgt_geStatement ctx := by
+  intro ctx r1 r2 hgt
+  exact (ctx.certificate.orderedField.lt_iff_le_not_le r2 r1).mp hgt |>.1
+
+theorem Rle_ge :
+    ∀ (ctx : ExactRealContext), Rle_geStatement ctx := by
+  intro ctx r1 r2 hle
+  exact hle
+
+end RIneq
+end Rocq.Coq.Reals
+end CompCert4Lean.Foundation.FlocqReal

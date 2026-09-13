@@ -1450,3 +1450,92 @@ theorem eval_offset_addressing : eval_offset_addressingStatement := by
   simp [CompCert4Lean.X86_64.Archi.ptr64] at hptr
 
 end CompCert4Lean.X86.Op
+
+namespace CompCert4Lean.X86.Op
+
+theorem eval_addressing32_preserved : eval_addressing32_preservedStatement := by
+  intro F1 F2 V1 V2 ge1 ge2 hfind sp addr vl
+  cases addr <;>
+    induction vl with
+    | nil => simp [eval_addressing32, CompCert4Lean.Common.Globalenvs.Genv.symbol_address, hfind]
+    | cons v vl ih =>
+        cases vl with
+        | nil => simp [eval_addressing32, CompCert4Lean.Common.Globalenvs.Genv.symbol_address, hfind]
+        | cons v2 vl =>
+            cases vl <;> simp [eval_addressing32, CompCert4Lean.Common.Globalenvs.Genv.symbol_address, hfind]
+
+theorem eval_addressing64_preserved : eval_addressing64_preservedStatement := by
+  intro F1 F2 V1 V2 ge1 ge2 hfind sp addr vl
+  cases addr <;>
+    induction vl with
+    | nil => simp [eval_addressing64, CompCert4Lean.Common.Globalenvs.Genv.symbol_address, hfind]
+    | cons v vl ih =>
+        cases vl with
+        | nil => simp [eval_addressing64, CompCert4Lean.Common.Globalenvs.Genv.symbol_address, hfind]
+        | cons v2 vl =>
+            cases vl <;> simp [eval_addressing64, CompCert4Lean.Common.Globalenvs.Genv.symbol_address, hfind]
+
+theorem condition_depends_on_memory_correct : condition_depends_on_memory_correctStatement := by
+  intro c args m1 m2 h
+  cases c <;>
+    cases args with
+    | nil =>
+        simp [condition_depends_on_memory, eval_condition,
+          CompCert4Lean.X86_64.Archi.ptr64,
+          CompCert4Lean.Common.Values.Val.cmpu_bool,
+          CompCert4Lean.Common.Values.Val.cmplu_bool] at h ⊢
+    | cons a rest =>
+        cases rest with
+        | nil =>
+            simp [condition_depends_on_memory, eval_condition,
+              CompCert4Lean.X86_64.Archi.ptr64,
+              CompCert4Lean.Common.Values.Val.cmpu_bool,
+              CompCert4Lean.Common.Values.Val.cmplu_bool] at h ⊢
+        | cons b rest2 =>
+            cases rest2 with
+            | nil =>
+                cases a <;> cases b <;>
+                  simp [condition_depends_on_memory, eval_condition,
+                    CompCert4Lean.X86_64.Archi.ptr64,
+                    CompCert4Lean.Common.Values.Val.cmpu_bool,
+                    CompCert4Lean.Common.Values.Val.cmplu_bool] at h ⊢
+            | cons d rest3 =>
+                simp [condition_depends_on_memory, eval_condition,
+                  CompCert4Lean.X86_64.Archi.ptr64,
+                  CompCert4Lean.Common.Values.Val.cmpu_bool,
+                  CompCert4Lean.Common.Values.Val.cmplu_bool] at h ⊢
+
+theorem op_depends_on_memory_correct
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    op_depends_on_memory_correctStatement := by
+  intro F V ge sp op args m1 m2 h
+  cases op with
+  | Ocmp c =>
+      have hc := condition_depends_on_memory_correct c args m1 m2 h
+      change some (CompCert4Lean.Common.Values.Val.of_optbool (eval_condition c args m1)) =
+        some (CompCert4Lean.Common.Values.Val.of_optbool (eval_condition c args m2))
+      rw [hc]
+  | Osel c ty =>
+      cases args with
+      | nil => rfl
+      | cons v1 rest =>
+          cases rest with
+          | nil => rfl
+          | cons v2 rest2 =>
+              have hc := condition_depends_on_memory_correct c rest2 m1 m2 h
+              change some (CompCert4Lean.Common.Values.Val.select
+                  (eval_condition c rest2 m1) v1 v2 ty) =
+                some (CompCert4Lean.Common.Values.Val.select
+                  (eval_condition c rest2 m2) v1 v2 ty)
+              rw [hc]
+  | _ =>
+      cases args with
+      | nil => rfl
+      | cons a rest =>
+          cases rest with
+          | nil => rfl
+          | cons b rest2 =>
+              cases rest2 <;> rfl
+
+end CompCert4Lean.X86.Op

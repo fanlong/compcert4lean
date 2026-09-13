@@ -2409,3 +2409,88 @@ theorem build_composite_env_charact : build_composite_env_charactStatement := by
     (CompCert4Lean.Lib.Maps.PTree.empty composite) env hbuild id su ms a hmem
 
 end CompCert4Lean.Cfrontend.Ctypes
+
+namespace CompCert4Lean.Cfrontend.Ctypes
+
+private theorem add_composite_definitions_domain_aux :
+    ∀ (defs : List composite_definition) (env0 env : composite_env)
+      (id : ident) (co : composite),
+      add_composite_definitions env0 defs = .OK env →
+      CompCert4Lean.Lib.Maps.PTree.get id env = some co →
+      CompCert4Lean.Lib.Maps.PTree.get id env0 = some co ∨
+        Composite id co.co_su co.co_members co.co_attr ∈ defs := by
+  intro defs
+  induction defs with
+  | nil =>
+      intro env0 env id co hadd hget
+      simp only [add_composite_definitions] at hadd
+      cases hadd
+      exact Or.inl hget
+  | cons d defs ih =>
+      intro env0 env id co hadd hget
+      cases d with
+      | Composite did su ms a =>
+          simp only [add_composite_definitions] at hadd
+          cases hco : composite_of_def env0 did su ms a with
+          | Error msg =>
+              simp [hco] at hadd
+          | OK co' =>
+              have hrest :
+                  add_composite_definitions
+                      (CompCert4Lean.Lib.Maps.PTree.set did co' env0) defs =
+                    .OK env := by
+                simpa [hco] using hadd
+              have hfields :
+                  co'.co_members = ms ∧ co'.co_attr = a ∧ co'.co_su = su := by
+                unfold composite_of_def at hco
+                cases hget0 : CompCert4Lean.Lib.Maps.PTree.get did env0 with
+                | some existing =>
+                    rw [hget0] at hco
+                    cases hco
+                | none =>
+                    cases hcomplete : complete_members env0 ms with
+                    | false =>
+                        rw [hget0, hcomplete] at hco
+                        cases hco
+                    | true =>
+                        rw [hget0, hcomplete] at hco
+                        cases hco
+                        exact ⟨rfl, rfl, rfl⟩
+              have hstep := ih (CompCert4Lean.Lib.Maps.PTree.set did co' env0)
+                env id co hrest hget
+              cases hstep with
+              | inr htail =>
+                  exact Or.inr (by simp [htail])
+              | inl hbase =>
+                  have hset := CompCert4Lean.Lib.Maps.PTree.getSet_equation
+                    (A := composite) id did co' env0
+                  rw [hset] at hbase
+                  split at hbase
+                  · rename_i heq
+                    cases hbase
+                    subst id
+                    exact Or.inr (by
+                      simp only [List.mem_cons]
+                      left
+                      cases hfields.2.2
+                      cases hfields.1
+                      cases hfields.2.1
+                      rfl)
+                  · exact Or.inl hbase
+
+theorem build_composite_env_domain : build_composite_env_domainStatement := by
+  unfold build_composite_env_domainStatement build_composite_env
+  intro env defs id co hbuild hget
+  have hresult := add_composite_definitions_domain_aux defs
+    (CompCert4Lean.Lib.Maps.PTree.empty composite) env id co hbuild hget
+  cases hresult with
+  | inl hempty =>
+      change CompCert4Lean.Lib.Maps.PTree.get id
+        (CompCert4Lean.Lib.Maps.PTree.empty composite) = some co at hempty
+      simp only [CompCert4Lean.Lib.Maps.PTree.empty,
+        CompCert4Lean.Lib.Maps.PTree.get] at hempty
+      cases hempty
+  | inr hdefs =>
+      exact hdefs
+
+end CompCert4Lean.Cfrontend.Ctypes

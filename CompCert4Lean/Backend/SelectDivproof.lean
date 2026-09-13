@@ -1713,3 +1713,59 @@ theorem int64_shr'_div_two_p : int64_shr'_div_two_pStatement := by
     omega)
 
 end CompCert4Lean.Backend.SelectDivproof
+
+namespace CompCert4Lean.Backend.SelectDivproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem int64_shru'_div_two_p : int64_shru'_div_two_pStatement := by
+  intro x y
+  unfold int64Shru' CompCert4Lean.Lib.Integers.Int64.shru'
+  change int64Repr (zShiftr (int64Unsigned x) (intUnsigned y)) = _
+  rw [zshiftr_div_two_p_local (int64Unsigned x) (intUnsigned y)]
+  exact (show zLe z0 (intUnsigned y) from by
+    have h := y.intrange.1
+    change (-1 : Int) < intOfZ y.intval at h
+    change 0 ≤ intOfZ y.intval
+    omega)
+
+end CompCert4Lean.Backend.SelectDivproof
+
+namespace CompCert4Lean.Backend.SelectDivproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Backend.CminorSel
+
+theorem is_intconst_sound
+    [binary64_certificate : BinaryNormalizeCertificate (ZArith.BinInt.Z.of_nat 53)
+      (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (ZArith.BinInt.Z.of_nat 24)
+      (ZArith.BinInt.Z.of_nat 128)] :
+    is_intconst_soundStatement := by
+  intro xi prog sp e m v a n le hconst hev
+  unfold CompCert4Lean.Backend.SelectDiv.is_intconst at hconst
+  cases a with
+  | Evar id => simp at hconst
+  | Eop op al =>
+      cases op with
+      | Ointconst n' =>
+          cases hconst
+          cases hev with
+          | eval_Eop le' op' al' vl v' hargs hop =>
+              cases hargs with
+              | nil _ =>
+                  change some (.Vint n) = some v at hop
+                  cases hop
+                  rfl
+              | cons _ _ _ _ _ _ _ =>
+                  change (none : Option CompCert4Lean.Common.Values.val) = some v at hop
+                  contradiction
+      | _ => simp at hconst
+  | Eload chunk addr al => simp at hconst
+  | Econdition a b c => simp at hconst
+  | Elet a b => simp at hconst
+  | Eletvar n' => simp at hconst
+  | Ebuiltin ef al => simp at hconst
+  | Eexternal id sg al => simp at hconst
+
+end CompCert4Lean.Backend.SelectDivproof

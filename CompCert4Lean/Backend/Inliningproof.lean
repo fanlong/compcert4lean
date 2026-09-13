@@ -1984,3 +1984,83 @@ theorem range_private_extcall : range_private_extcallStatement := by
         exact hsep'.2 hvalid
 
 end CompCert4Lean.Backend.Inliningproof
+
+namespace CompCert4Lean.Backend.Inliningproof
+
+open CompCert4Lean.Backend.Inlining
+open CompCert4Lean.Backend.Inliningspec
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Linking
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+
+private theorem inlining_ptrofs_add_zero_repr :
+    CompCert4Lean.Lib.Integers.Ptrofs.add
+        CompCert4Lean.Lib.Integers.Ptrofs.zero
+        (CompCert4Lean.Lib.Integers.Ptrofs.repr zZero) =
+      CompCert4Lean.Lib.Integers.Ptrofs.zero := by
+  rfl
+
+theorem find_function_agree : find_function_agreeStatement := by
+  intro cfg prog tprog hm ros rs fd F ctx rs' bound hfind hregs hgenv
+  cases ros with
+  | inl r =>
+      simp only [CompCert4Lean.Backend.RTL.find_function, Sum.rec, sros] at hfind ⊢
+      have hinv := Genv.find_funct_inv (F := fundef) (V := Unit)
+        (ge := Genv.globalenv prog) (v := Regmap.get r rs) (f := fd) hfind
+      rcases hinv with ⟨b, hv⟩
+      have hfind_v : Genv.find_funct (Genv.globalenv prog)
+          (Vptr b CompCert4Lean.Lib.Integers.Ptrofs.zero) = some fd := by
+        simpa [hv] using hfind
+      have hptr : Genv.find_funct_ptr (Genv.globalenv prog) b = some fd := by
+        exact (Genv.find_funct_find_funct_ptr (F := fundef) (V := Unit)
+          (ge := Genv.globalenv prog) (b := b)).symm.trans hfind_v
+      rcases hgenv with ⟨hdom, himage, hsymbols, hfunctions, hvarinfos⟩
+      have hb : Plt b bound := hfunctions b fd hptr
+      have hmap : F b = some (b, zZero) := hdom b hb
+      have hinj0 := agree_val_reg F ctx rs rs' r hregs
+      rw [hv] at hinj0
+      generalize hval : Regmap.get (sreg ctx r) rs' = v at hinj0 ⊢
+      cases v with
+      | Vundef => cases hinj0
+      | Vint i => cases hinj0
+      | Vlong i => cases hinj0
+      | Vfloat f => cases hinj0
+      | Vsingle f => cases hinj0
+      | Vptr b2 ofs2 =>
+          have hinj : Val.inject F (Vptr b CompCert4Lean.Lib.Integers.Ptrofs.zero) (Vptr b2 ofs2) := by
+            exact hinj0
+          cases hinj with
+          | inject_ptr _ _ _ _ delta hF hofs =>
+              have hp : (b2, delta) = (b, zZero) :=
+                Option.some.inj (hF.symm.trans hmap)
+              have hbs : b2 = b := congrArg Prod.fst hp
+              have hdelta : delta = zZero := congrArg Prod.snd hp
+              subst b2
+              subst delta
+              have hofs0 : ofs2 = CompCert4Lean.Lib.Integers.Ptrofs.zero := by
+                rw [hofs]
+                exact inlining_ptrofs_add_zero_repr
+              rw [hofs0]
+              exact functions_translated cfg prog tprog hm
+                (Vptr b CompCert4Lean.Lib.Integers.Ptrofs.zero) fd hfind_v
+  | inr id =>
+      simp only [CompCert4Lean.Backend.RTL.find_function, Sum.rec, sros] at hfind ⊢
+      cases hs : Genv.find_symbol (Genv.globalenv prog) id with
+      | none => simp [hs] at hfind
+      | some b =>
+          have hptr : Genv.find_funct_ptr (Genv.globalenv prog) b = some fd := by
+            simpa [hs] using hfind
+          obtain ⟨cu, fd', hptr', htrans, horder⟩ :=
+            function_ptr_translated cfg prog tprog hm b fd hptr
+          have hst : Genv.find_symbol (Genv.globalenv tprog) id = some b := by
+            rw [symbols_preserved cfg prog tprog hm id]
+            exact hs
+          refine ⟨cu, fd', ?_, htrans, horder⟩
+          simpa [hs, hst] using hptr'
+
+end CompCert4Lean.Backend.Inliningproof

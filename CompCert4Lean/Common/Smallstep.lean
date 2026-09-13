@@ -1912,3 +1912,168 @@ theorem forward_simulation_eventually_star_wf :
           ⟨rfl, hev'⟩⟩
 
 end CompCert4Lean.Common.Smallstep
+
+namespace CompCert4Lean.Common.Smallstep
+
+open CompCert4Lean.Common.Events
+
+theorem simulation_plus : simulation_plusStatement := by
+  intro L1 L2 index order match_states props s1 t s1' hplus
+  let P : state L1 → trace → state L1 → Prop := fun s1 t s1' =>
+    ∀ i s2, match_states i s1 s2 →
+      (∃ i' s2', plus (step L2) (globalenv L2) s2 t s2' ∧
+          match_states i' s1' s2') ∨
+        (∃ i',
+          _root_.CompCert4Lean.Foundation.Ordered.Rocq.Coq.Relations.Relation_Operators.clos_trans
+            index order i' i ∧ t = E0 ∧ match_states i' s1' s2)
+  have hP : ∀ (s1 : state L1) (t : trace) (s1' : state L1),
+      plus (step L1) (globalenv L1) s1 t s1' → P s1 t s1' := by
+    intro s1 t s1' h
+    refine plus_ind2 L1.genvtype L1.state L1.step L1.globalenv P ?_ ?_ s1 t s1' h
+    · intro s1 t s2 hstep i s2' hm
+      rcases fsim_simulation' L1 L2 index order match_states props
+          i s1 t s2 hstep s2' hm with
+        (⟨i', s2'', hplus, hmatch⟩ | ⟨i', horder, htrace, hmatch⟩)
+      · exact Or.inl ⟨i', s2'', hplus, hmatch⟩
+      · exact Or.inr ⟨i',
+          _root_.CompCert4Lean.Foundation.Ordered.Rocq.Coq.Relations.Relation_Operators.clos_trans.t_step
+            _ _ _ _ horder, htrace, hmatch⟩
+    · intro s1 t1 s2 t2 s3 t hstep hplus ih htrace
+      intro i s2' hm
+      rcases fsim_simulation' L1 L2 index order match_states props
+          i s1 t1 s2 hstep s2' hm with
+        (⟨i', s2'', hplus1, hmatch1⟩ | ⟨i', horder1, htrace1, hmatch1⟩)
+      · rcases ih i' s2'' hmatch1 with
+          (⟨i'', s2''', hplus2, hmatch2⟩ |
+            ⟨i'', horder2, htrace2, hmatch2⟩)
+        · left
+          refine ⟨i'', s2''', ?_, hmatch2⟩
+          subst t
+          exact plus_star_trans _ _ _ _ s2' t1 s2'' t2 s2'''
+            (Eapp t1 t2) hplus1 (plus_star _ _ _ _ _ _ _ hplus2) rfl
+        · left
+          refine ⟨i'', s2'', ?_, hmatch2⟩
+          subst t2
+          subst t
+          rw [show Eapp t1 E0 = t1 by exact _root_.List.append_nil t1]
+          exact hplus1
+      · rcases ih i' s2' hmatch1 with
+          (⟨i'', s2'', hplus2, hmatch2⟩ |
+            ⟨i'', horder2, htrace2, hmatch2⟩)
+        · left
+          refine ⟨i'', s2'', ?_, hmatch2⟩
+          subst t1
+          subst t
+          rw [show Eapp E0 t2 = t2 by exact _root_.List.nil_append t2]
+          exact hplus2
+        · right
+          refine ⟨i'', ?_, ?_, hmatch2⟩
+          · exact _root_.CompCert4Lean.Foundation.Ordered.Rocq.Coq.Relations.Relation_Operators.clos_trans.t_trans
+              _ _ _ _ _ horder2
+              (_root_.CompCert4Lean.Foundation.Ordered.Rocq.Coq.Relations.Relation_Operators.clos_trans.t_step
+                _ _ _ _ horder1)
+          · subst t1
+            subst t2
+            subst t
+            rw [show Eapp E0 E0 = E0 by exact _root_.List.nil_append E0]
+  exact hP s1 t s1' hplus
+
+end CompCert4Lean.Common.Smallstep
+
+namespace CompCert4Lean.Common.Smallstep
+
+open CompCert4Lean.Common.Events
+
+theorem simulation_star : simulation_starStatement := by
+  intro L1 L2 index order match_states props s1 t s1' hstar
+  induction hstar with
+  | star_refl s =>
+      intro i s2 hm
+      exact ⟨i, s2, star_refl _ _ s2, hm⟩
+  | @star_step s1 t1 s2 t2 s3 t hstep htail htrace ih =>
+      intro i s2' hm
+      rcases fsim_simulation props s1 t1 s2 hstep i s2' hm with
+        ⟨i', s2'', hdiag, hmatch⟩
+      rcases ih i' s2'' hmatch with
+        ⟨i'', s2''', htail', hmatch'⟩
+      refine ⟨i'', s2''', ?_, hmatch'⟩
+      cases hdiag with
+      | inl hplus =>
+          subst t
+          exact star_trans _ _ _ _ s2' t1 s2''
+            (plus_star _ _ _ _ _ _ _ hplus)
+            t2 s2''' (Eapp t1 t2) htail' rfl
+      | inr hstar_order =>
+          subst t
+          exact star_trans _ _ _ _ s2' t1 s2'' hstar_order.1
+            t2 s2''' (Eapp t1 t2) htail' rfl
+
+end CompCert4Lean.Common.Smallstep
+
+namespace CompCert4Lean.Common.Smallstep
+
+open CompCert4Lean.Common.Events
+
+theorem simulation_forever_silent :
+    simulation_forever_silentStatement := by
+  intro L1 L2 index order match_states props i s1 s2 hforever hmatch
+  let pred : index → state L2 → Prop := fun i s2 =>
+    ∃ s1, match_states i s1 s2 ∧
+      forever_silent (step L1) (globalenv L1) s1
+  have hN : forever_silent_N (step L2) order (globalenv L2) i s2 :=
+    forever_silent_N.coinduct (step L2) order (globalenv L2) pred
+      (by
+        intro i s2 hs
+        rcases hs with ⟨s1, hmatch, hforever⟩
+        exact forever_silent_casesOn
+          (step := step L1) (ge := globalenv L1)
+          (motive := fun s1 =>
+            match_states i s1 s2 →
+              (∃ s2' i', star (step L2) (globalenv L2) s2 E0 s2' ∧
+                order i' i ∧ pred i' s2') ∨
+              (∃ s2' i', plus (step L2) (globalenv L2) s2 E0 s2' ∧
+                pred i' s2'))
+          (by
+            intro s1' s1next hstep htail hmatch
+            obtain ⟨i', s2', hsim, hmatch'⟩ :=
+              props.fsim_simulation s1' E0 s1next hstep i s2 hmatch
+            rcases hsim with hplus | ⟨hstar, horder⟩
+            · exact Or.inr ⟨s2', i', hplus,
+                ⟨s1next, hmatch', htail⟩⟩
+            · exact Or.inl ⟨s2', i', hstar, horder,
+                ⟨s1next, hmatch', htail⟩⟩)
+          hforever hmatch)
+      i s2 ⟨s1, hmatch, hforever⟩
+  exact forever_silent_N_forever
+    L2.genvtype L2.state (step L2) index order
+      props.fsim_order_wf (globalenv L2) i s2 hN
+
+end CompCert4Lean.Common.Smallstep
+
+namespace CompCert4Lean.Common.Smallstep
+
+theorem forward_simulation_eventually_star :
+    forward_simulation_eventually_starStatement := by
+  intro L1 L2 hpublic match_states hinit hfinal measure hsim
+  apply forward_simulation_eventually_star_wf L1 L2 hpublic match_states hinit hfinal
+    (CompCert4Lean.Foundation.Recursion.Rocq.Coq.Arith.Wf_nat.ltof
+      (state L1) measure)
+  · have hacc : ∀ n (a : state L1), measure a < n →
+        Acc (fun x y : state L1 => measure x < measure y) a := by
+      intro n
+      induction n with
+      | zero =>
+          intro a ha
+          exact False.elim (Nat.not_lt_zero _ ha)
+      | succ n ih =>
+          intro a ha
+          apply Acc.intro a
+          intro b hab
+          apply ih b
+          exact Nat.lt_of_lt_of_le hab (Nat.le_of_lt_succ ha)
+    exact WellFounded.intro (fun a =>
+      hacc (Nat.succ (measure a)) a (Nat.lt_succ_self _))
+  · intro s1 t s1' hs s2 hm
+    exact hsim s1 t s1' hs s2 hm
+
+end CompCert4Lean.Common.Smallstep

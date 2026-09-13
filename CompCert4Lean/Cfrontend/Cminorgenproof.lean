@@ -1829,3 +1829,20 @@ theorem match_callstack_invariant : match_callstack_invariantStatement := by
             (CompCert4Lean.Lib.Coqlib.Plt_trans _ _ _ hlt hsp)
 
 end CompCert4Lean.Cfrontend.Cminorgenproof
+
+namespace CompCert4Lean.Cfrontend.Cminorgenproof
+
+theorem match_callstack_incr_bound : match_callstack_incr_boundStatement := by
+  intro prog f m tm cs bound tbound bound' tbound' hstack hbound htbound
+  cases hstack with
+  | mcs_nil hglobal hlo htl =>
+      exact match_callstack.mcs_nil hglobal
+        (CompCert4Lean.Lib.Coqlib.Ple_trans _ _ _ hlo hbound)
+        (CompCert4Lean.Lib.Coqlib.Ple_trans _ _ _ htl htbound)
+  | cons hhi hsp htemps henv hbounds hfree htail =>
+      exact match_callstack.cons
+        (CompCert4Lean.Lib.Coqlib.Ple_trans _ _ _ hhi hbound)
+        (CompCert4Lean.Lib.Coqlib.Plt_Ple_trans _ _ _ hsp htbound)
+        htemps henv hbounds hfree htail
+
+end CompCert4Lean.Cfrontend.Cminorgenproof

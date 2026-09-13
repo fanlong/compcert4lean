@@ -1209,3 +1209,92 @@ theorem Ztestbit_succ : Ztestbit_succStatement := by
   rw [Ztestbit_eq (zSucc n) x hsucc]
   simp [sumboolSelect, zeqDec, CompCert4Lean.Lib.Coqlib.zeq,
     ZArith.BinInt.Z.eq_dec, hne, hpred]
+
+theorem eqmod_same_bits : eqmod_same_bitsStatement := by
+  intro n
+  induction n with
+  | zero =>
+      intro x y _
+      refine ⟨zAdd x (zOpp y), ?_⟩
+      apply intOfZ_injective
+      simp only [zAdd, zOpp, zMul, zbits_two_power_nat_zero,
+        ZArith.BinInt.Z.add, ZArith.BinInt.Z.opp,
+        ZArith.BinInt.Z.mul, intOfZ_zOfInt]
+      have hone : intOfZ (Zpos xH) = (1 : Int) := by decide
+      rw [hone]
+      simp only [Int.mul_one]
+      omega
+  | succ n ih =>
+      intro x y hbits
+      have hbits_div :
+          ∀ i : Z, zLe zZero i ∧ zLt i (zOfNat n) →
+            zTestbit (zDiv2 x) i = zTestbit (zDiv2 y) i := by
+        intro i hi
+        rcases hi with ⟨hi_nonneg, hi_lt⟩
+        have hi0 : zLe zZero (zSucc i) := by
+          change 0 ≤ intOfZ (zSucc i)
+          unfold zSucc ZArith.BinInt.Z.succ ZArith.BinInt.Z.add
+          simp only [intOfZ_zOfInt]
+          change 0 ≤ intOfZ i + 1
+          have hi' : 0 ≤ intOfZ i := hi_nonneg
+          omega
+        have hiltn : zLt (zSucc i) (zOfNat (Nat.succ n)) := by
+          change intOfZ (zSucc i) < intOfZ (zOfNat (Nat.succ n))
+          unfold zSucc ZArith.BinInt.Z.succ ZArith.BinInt.Z.add
+          simp only [intOfZ_zOfInt]
+          have hone : intOfZ (Zpos xH) = (1 : Int) := by decide
+          have hnat : intOfZ (zOfNat (Nat.succ n)) = Int.ofNat (Nat.succ n) := by
+            unfold zOfNat ZArith.BinInt.Z.of_nat
+            simp only [intOfZ_zOfInt]
+          rw [hone, hnat]
+          have hi' : intOfZ i < Int.ofNat n := by
+            change intOfZ i < intOfZ (zOfNat n) at hi_lt
+            unfold zOfNat ZArith.BinInt.Z.of_nat at hi_lt
+            simpa only [intOfZ_zOfInt] using hi_lt
+          have hsucc : Int.ofNat (Nat.succ n) = Int.ofNat n + 1 := by
+            simpa only [Int.ofNat_eq_coe] using (Int.natCast_succ n)
+          rw [hsucc]
+          omega
+        rw [← Ztestbit_succ i x hi_nonneg, ← Ztestbit_succ i y hi_nonneg]
+        exact hbits (zSucc i) ⟨hi0, hiltn⟩
+      have hdiv : eqmod (two_power_nat n) (zDiv2 x) (zDiv2 y) :=
+        ih (zDiv2 x) (zDiv2 y) hbits_div
+      rcases hdiv with ⟨k, hk⟩
+      have hbit0 : zTestbit x zZero = zTestbit y zZero := by
+        apply hbits zZero
+        constructor
+        · change 0 ≤ intOfZ zZero
+          simp only [zZero, intOfZ]
+          omega
+        · change intOfZ zZero < intOfZ (zOfNat (Nat.succ n))
+          have hzero : intOfZ zZero = (0 : Int) := by decide
+          have hnat : intOfZ (zOfNat (Nat.succ n)) = Int.ofNat (Nat.succ n) := by
+            unfold zOfNat ZArith.BinInt.Z.of_nat
+            simp only [intOfZ_zOfInt]
+          rw [hzero, hnat]
+          have hsucc : Int.ofNat (Nat.succ n) = Int.ofNat n + 1 := by
+            simpa only [Int.ofNat_eq_coe] using (Int.natCast_succ n)
+          rw [hsucc]
+          have hnnonneg : (0 : Int) ≤ Int.ofNat n := Int.ofNat_nonneg n
+          omega
+      have hodd : zOdd x = zOdd y := by
+        rw [Ztestbit_base, Ztestbit_base] at hbit0
+        exact hbit0
+      refine ⟨k, ?_⟩
+      change x = zAdd (zMul k (two_power_nat (Nat.succ n))) y
+      rw [zbits_two_power_nat_succ, Zdecomp x, Zdecomp y,
+        Zshiftin_spec, Zshiftin_spec]
+      simp only [hodd]
+      apply intOfZ_injective
+      simp only [zAdd, zMul, zDouble, ZArith.BinInt.Z.add,
+        ZArith.BinInt.Z.mul, ZArith.BinInt.Z.double, intOfZ_zOfInt]
+      have hk' := congrArg intOfZ hk
+      simp only [zAdd, zMul, ZArith.BinInt.Z.add,
+        ZArith.BinInt.Z.mul, intOfZ_zOfInt] at hk'
+      change intOfZ (zDiv2 x) = intOfZ k * intOfZ (two_power_nat n) +
+        intOfZ (zDiv2 y) at hk'
+      have htwo : intOfZ two = (2 : Int) := by decide
+      rw [htwo]
+      rw [hk']
+      simp [Int.mul_add, Int.add_mul, Int.mul_assoc, Int.mul_comm, Int.mul_left_comm,
+        Int.add_assoc, Int.add_comm, Int.add_left_comm]

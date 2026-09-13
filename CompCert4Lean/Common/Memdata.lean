@@ -1440,3 +1440,280 @@ theorem proj_value_inject : proj_value_injectStatement := by
                           exact hval
 
 end CompCert4Lean.Common.Memdata
+
+namespace CompCert4Lean.Common.Memdata
+
+theorem inj_bytes_inject : inj_bytes_injectStatement := by
+  intro f bl
+  induction bl with
+  | nil => constructor
+  | cons b bl ih =>
+      simp only [inj_bytes, List.map_cons]
+      constructor
+      · exact memval_inject.byte f b
+      · exact ih
+
+theorem repeat_Undef_inject_any : repeat_Undef_inject_anyStatement := by
+  intro f vl
+  induction vl with
+  | nil => constructor
+  | cons v vl ih =>
+      simp only [List.length_cons, List.replicate_succ]
+      constructor
+      · exact memval_inject.undef f v
+      · exact ih
+
+end CompCert4Lean.Common.Memdata
+
+namespace CompCert4Lean.Common.Memdata
+
+open CompCert4Lean.Common.Values
+
+theorem proj_value_undef : proj_value_undefStatement := by
+  intro q vl huv
+  cases vl with
+  | nil => rfl
+  | cons mv rest =>
+      cases mv with
+      | Undef => rfl
+      | Byte b => rfl
+      | Fragment v q' n =>
+          change (if check_value (size_quantity_nat q) v q
+              (Fragment v q' n :: rest) = true then v else Vundef) = Vundef
+          simp [check_value_undef (size_quantity_nat q) q v _ huv]
+
+end CompCert4Lean.Common.Memdata
+
+namespace CompCert4Lean.Common.Memdata
+
+open CompCert4Lean.Common.Values
+
+private theorem memdata_load_result_inject_local :
+    ∀ (f : meminj) chunk v1 v2,
+      Val.inject f v1 v2 →
+        Val.inject f (Val.load_result chunk v1) (Val.load_result chunk v2) := by
+  intro f chunk v1 v2 h
+  cases h with
+  | inject_int i =>
+      cases chunk with
+      | Mbool =>
+          by_cases hb : Val.is_bool (Vint (intZeroExt z8 i)) = true
+          · simp [Val.load_result, Val.norm_bool, hb]
+            exact Val.inject.inject_int _
+          · simp [Val.load_result, Val.norm_bool, hb]
+            exact Val.inject.val_inject_undef _
+      | Mint8signed =>
+          simp [Val.load_result]
+          exact Val.inject.inject_int _
+      | Mint8unsigned =>
+          simp [Val.load_result]
+          exact Val.inject.inject_int _
+      | Mint16signed =>
+          simp [Val.load_result]
+          exact Val.inject.inject_int _
+      | Mint16unsigned =>
+          simp [Val.load_result]
+          exact Val.inject.inject_int _
+      | Mint32 =>
+          exact Val.inject.inject_int _
+      | Mint64 =>
+          simp [Val.load_result]
+          exact Val.inject.val_inject_undef _
+      | Mfloat32 =>
+          simp [Val.load_result]
+          exact Val.inject.val_inject_undef _
+      | Mfloat64 =>
+          simp [Val.load_result]
+          exact Val.inject.val_inject_undef _
+      | Many32 =>
+          exact Val.inject.inject_int _
+      | Many64 =>
+          exact Val.inject.inject_int _
+  | inject_long i =>
+      cases chunk <;>
+        simp [Val.load_result] <;>
+        first | exact Val.inject.inject_long _ | exact Val.inject.val_inject_undef _
+  | inject_float x =>
+      cases chunk <;>
+        simp [Val.load_result] <;>
+        first | exact Val.inject.inject_float _ | exact Val.inject.val_inject_undef _
+  | inject_single x =>
+      cases chunk <;>
+        simp [Val.load_result] <;>
+        first | exact Val.inject.inject_single _ | exact Val.inject.val_inject_undef _
+  | inject_ptr b1 ofs1 b2 ofs2 delta hmap hofs =>
+      cases chunk with
+      | Mbool =>
+          simp [Val.load_result, CompCert4Lean.X86_64.Archi.ptr64]
+          exact Val.inject.val_inject_undef _
+      | Mint8signed =>
+          simp [Val.load_result, CompCert4Lean.X86_64.Archi.ptr64]
+          exact Val.inject.val_inject_undef _
+      | Mint8unsigned =>
+          simp [Val.load_result, CompCert4Lean.X86_64.Archi.ptr64]
+          exact Val.inject.val_inject_undef _
+      | Mint16signed =>
+          simp [Val.load_result, CompCert4Lean.X86_64.Archi.ptr64]
+          exact Val.inject.val_inject_undef _
+      | Mint16unsigned =>
+          simp [Val.load_result, CompCert4Lean.X86_64.Archi.ptr64]
+          exact Val.inject.val_inject_undef _
+      | Mint32 =>
+          simp [Val.load_result, CompCert4Lean.X86_64.Archi.ptr64]
+          exact Val.inject.val_inject_undef _
+      | Mint64 =>
+          exact Val.inject.inject_ptr b1 ofs1 b2 ofs2 delta hmap hofs
+      | Mfloat32 =>
+          simp [Val.load_result, CompCert4Lean.X86_64.Archi.ptr64]
+          exact Val.inject.val_inject_undef _
+      | Mfloat64 =>
+          simp [Val.load_result, CompCert4Lean.X86_64.Archi.ptr64]
+          exact Val.inject.val_inject_undef _
+      | Many32 =>
+          simp [Val.load_result, CompCert4Lean.X86_64.Archi.ptr64]
+          exact Val.inject.val_inject_undef _
+      | Many64 =>
+          exact Val.inject.inject_ptr b1 ofs1 b2 ofs2 delta hmap hofs
+  | val_inject_undef v =>
+      cases chunk <;> exact Val.inject.val_inject_undef _
+
+end CompCert4Lean.Common.Memdata
+
+namespace CompCert4Lean.Common.Memdata
+
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.AST
+
+theorem decode_val_inject : decode_val_injectStatement := by
+  intro f vl1 vl2 chunk hrel
+  cases hp1 : proj_bytes vl1 with
+  | some bl1 =>
+      have hp2' := proj_bytes_inject f vl1 vl2 hrel bl1 hp1
+      cases hp2 : proj_bytes vl2 with
+      | none => simp [hp2] at hp2'
+      | some bl2 =>
+          have hbl : bl2 = bl1 := Option.some.inj (hp2.symm.trans hp2')
+          subst bl2
+          cases chunk with
+          | Mbool =>
+              by_cases hb : Val.is_bool
+                  (Vint (intZeroExt z8 (CCInt.repr (decode_int bl1)))) = true
+              · simp [decode_val, hp1, hp2, Val.norm_bool, hb]
+                exact Val.inject.inject_int _
+              · simp [decode_val, hp1, hp2, Val.norm_bool, hb]
+                exact Val.inject.val_inject_undef _
+          | Mint8signed =>
+              simp [decode_val, hp1, hp2]
+              exact Val.inject.inject_int _
+          | Mint8unsigned =>
+              simp [decode_val, hp1, hp2]
+              exact Val.inject.inject_int _
+          | Mint16signed =>
+              simp [decode_val, hp1, hp2]
+              exact Val.inject.inject_int _
+          | Mint16unsigned =>
+              simp [decode_val, hp1, hp2]
+              exact Val.inject.inject_int _
+          | Mint32 =>
+              simp [decode_val, hp1, hp2]
+              exact Val.inject.inject_int _
+          | Mint64 =>
+              simp [decode_val, hp1, hp2]
+              exact Val.inject.inject_long _
+          | Mfloat32 =>
+              simp [decode_val, hp1, hp2]
+              exact Val.inject.inject_single _
+          | Mfloat64 =>
+              simp [decode_val, hp1, hp2]
+              exact Val.inject.inject_float _
+          | Many32 =>
+              simp [decode_val, hp1, hp2]
+              exact Val.inject.val_inject_undef _
+          | Many64 =>
+              simp [decode_val, hp1, hp2]
+              exact Val.inject.val_inject_undef _
+  | none =>
+      cases hp2 : proj_bytes vl2 with
+      | none =>
+          cases chunk with
+          | Mbool =>
+              simp [decode_val, hp1, hp2, CompCert4Lean.X86_64.Archi.ptr64]
+              exact Val.inject.val_inject_undef _
+          | Mint8signed =>
+              simp [decode_val, hp1, hp2, CompCert4Lean.X86_64.Archi.ptr64]
+              exact Val.inject.val_inject_undef _
+          | Mint8unsigned =>
+              simp [decode_val, hp1, hp2, CompCert4Lean.X86_64.Archi.ptr64]
+              exact Val.inject.val_inject_undef _
+          | Mint16signed =>
+              simp [decode_val, hp1, hp2, CompCert4Lean.X86_64.Archi.ptr64]
+              exact Val.inject.val_inject_undef _
+          | Mint16unsigned =>
+              simp [decode_val, hp1, hp2, CompCert4Lean.X86_64.Archi.ptr64]
+              exact Val.inject.val_inject_undef _
+          | Mint32 =>
+              simp [decode_val, hp1, hp2, CompCert4Lean.X86_64.Archi.ptr64]
+              exact Val.inject.val_inject_undef _
+          | Mint64 =>
+              simpa [decode_val, hp1, hp2, CompCert4Lean.X86_64.Archi.ptr64] using
+                (memdata_load_result_inject_local f Mint64
+                  (proj_value Q64 vl1) (proj_value Q64 vl2)
+                  (proj_value_inject f Q64 vl1 vl2 hrel))
+          | Mfloat32 =>
+              simp [decode_val, hp1, hp2, CompCert4Lean.X86_64.Archi.ptr64]
+              exact Val.inject.val_inject_undef _
+          | Mfloat64 =>
+              simp [decode_val, hp1, hp2, CompCert4Lean.X86_64.Archi.ptr64]
+              exact Val.inject.val_inject_undef _
+          | Many32 =>
+              simpa [decode_val, hp1, hp2] using
+                (memdata_load_result_inject_local f Many32
+                  (proj_value Q32 vl1) (proj_value Q32 vl2)
+                  (proj_value_inject f Q32 vl1 vl2 hrel))
+          | Many64 =>
+              simpa [decode_val, hp1, hp2] using
+                (memdata_load_result_inject_local f Many64
+                  (proj_value Q64 vl1) (proj_value Q64 vl2)
+                  (proj_value_inject f Q64 vl1 vl2 hrel))
+      | some bl2 =>
+          have hp2ne : proj_bytes vl2 ≠ none := by simp [hp2]
+          have hu : Undef ∈ vl1 := proj_bytes_not_inject f vl1 vl2 hrel hp1 hp2ne
+          have hq32 : proj_value Q32 vl1 = Vundef := proj_value_undef Q32 vl1 hu
+          have hq64 : proj_value Q64 vl1 = Vundef := proj_value_undef Q64 vl1 hu
+          cases chunk with
+          | Mbool =>
+              simp [decode_val, hp1, hp2, CompCert4Lean.X86_64.Archi.ptr64]
+              exact Val.inject.val_inject_undef _
+          | Mint8signed =>
+              simp [decode_val, hp1, hp2, CompCert4Lean.X86_64.Archi.ptr64]
+              exact Val.inject.val_inject_undef _
+          | Mint8unsigned =>
+              simp [decode_val, hp1, hp2, CompCert4Lean.X86_64.Archi.ptr64]
+              exact Val.inject.val_inject_undef _
+          | Mint16signed =>
+              simp [decode_val, hp1, hp2, CompCert4Lean.X86_64.Archi.ptr64]
+              exact Val.inject.val_inject_undef _
+          | Mint16unsigned =>
+              simp [decode_val, hp1, hp2, CompCert4Lean.X86_64.Archi.ptr64]
+              exact Val.inject.val_inject_undef _
+          | Mint32 =>
+              simp [decode_val, hp1, hp2, CompCert4Lean.X86_64.Archi.ptr64]
+              exact Val.inject.val_inject_undef _
+          | Mint64 =>
+              simpa [decode_val, Val.load_result, hp1, hp2,
+                CompCert4Lean.X86_64.Archi.ptr64, hq64] using
+                (Val.inject.val_inject_undef (decode_val Mint64 vl2))
+          | Mfloat32 =>
+              simp [decode_val, hp1, hp2, CompCert4Lean.X86_64.Archi.ptr64]
+              exact Val.inject.val_inject_undef _
+          | Mfloat64 =>
+              simp [decode_val, hp1, hp2, CompCert4Lean.X86_64.Archi.ptr64]
+              exact Val.inject.val_inject_undef _
+          | Many32 =>
+              simpa [decode_val, Val.load_result, hp1, hp2, hq32] using
+                (Val.inject.val_inject_undef (decode_val Many32 vl2))
+          | Many64 =>
+              simpa [decode_val, Val.load_result, hp1, hp2, hq64] using
+                (Val.inject.val_inject_undef (decode_val Many64 vl2))
+
+end CompCert4Lean.Common.Memdata

@@ -1666,3 +1666,12 @@ theorem findMax_empty (E : OrderedType) : findMax_emptyStatement E := by
           cases heq
 
 end CompCert4Lean.Lib.Heaps.SplayHeapSet.R
+
+namespace CompCert4Lean.Lib.Heaps.SplayHeapSet
+
+theorem In_empty (E : OrderedType) : In_emptyStatement E := by
+  intro x
+  change ¬ R.In E x R.Empty
+  simp [R.In]
+
+end CompCert4Lean.Lib.Heaps.SplayHeapSet

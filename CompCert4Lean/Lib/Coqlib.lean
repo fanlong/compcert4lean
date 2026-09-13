@@ -1190,3 +1190,22 @@ theorem list_length_z_aux_shift : list_length_z_aux_shiftStatement := by
       exact h
 
 end CompCert4Lean.Lib.Coqlib
+
+namespace CompCert4Lean.Lib.Coqlib
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem list_length_z_cons : list_length_z_consStatement := by
+  intro A hd tl
+  unfold list_length_z
+  simp only [list_length_z_aux]
+  have h := list_length_z_aux_shift A tl (ZArith.BinInt.Z.succ ZArith.BinInt.Z.Z0)
+    ZArith.BinInt.Z.Z0
+  rw [h]
+  apply congrArg (ZArith.BinInt.Z.add (list_length_z_aux tl ZArith.BinInt.Z.Z0))
+  apply intOfZ_injective
+  simp only [ZArith.BinInt.Z.sub, ZArith.BinInt.Z.succ,
+    ZArith.BinInt.Z.add, intOfZ_zOfInt]
+  rfl
+
+end CompCert4Lean.Lib.Coqlib

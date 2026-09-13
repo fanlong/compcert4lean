@@ -890,3 +890,24 @@ theorem B2FF_inj :
   cases x <;> cases y <;> simp [B2FF] at hxy ⊢ <;> exact hxy
 
 end CompCert4Lean.Flocq.IEEE754.Binary
+
+namespace CompCert4Lean.Flocq.IEEE754.Binary
+
+theorem is_finite_B2BSN :
+    ∀ {prec emax : Z}, is_finite_B2BSNStatement (prec := prec) (emax := emax) := by
+  intro prec emax x
+  rcases x with ⟨x, hx⟩
+  cases x <;> rfl
+
+theorem B2R_build_nan :
+    ∀ {prec emax : Z} (ctx : ExactRealContext),
+      B2R_build_nanStatement (prec := prec) (emax := emax) ctx := by
+  intro prec emax ctx x
+  rcases x with ⟨x, hx⟩
+  cases x with
+  | B754_nan s pl => rfl
+  | B754_zero s => simp [is_nan] at hx
+  | B754_infinity s => simp [is_nan] at hx
+  | B754_finite s m e => simp [is_nan] at hx
+
+end CompCert4Lean.Flocq.IEEE754.Binary

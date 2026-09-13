@@ -2326,3 +2326,22 @@ theorem wt_exec_Iload : wt_exec_IloadStatement := by
   | Vsingle n => simp [Mem.loadv] at hload
 
 end CompCert4Lean.Backend.RTLtyping
+
+namespace CompCert4Lean.Backend.RTLtyping
+
+theorem wt_instr_at : wt_instr_atStatement := by
+  intro cfg f env pc i hfunction hget
+  exact hfunction.wt_instrs pc i hget
+
+theorem wt_stackframes_change_sig : wt_stackframes_change_sigStatement := by
+  intro cfg s sg1 sg2 hsig hstack
+  cases hstack with
+  | wt_stackframes_nil _ hres =>
+      exact wt_stackframes_nil sg2 (hsig.symm.trans hres)
+  | wt_stackframes_cons _ _ _ _ _ _ _ _ hfunction hregset hres htail =>
+      refine wt_stackframes_cons _ _ _ _ _ _ _ _ hfunction hregset ?_ htail
+      unfold CompCert4Lean.Common.AST.proj_sig_res
+      rw [← hsig]
+      exact hres
+
+end CompCert4Lean.Backend.RTLtyping

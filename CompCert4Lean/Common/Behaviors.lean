@@ -1640,3 +1640,98 @@ theorem backward_simulation_same_safe_behavior :
     simp [not_wrong] at hbad
 
 end CompCert4Lean.Common.Behaviors
+
+namespace CompCert4Lean.Common.Behaviors
+
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.Smallstep
+
+theorem atomic_finish :
+    atomic_finishStatement := by
+  intro L s t ht
+  induction t with
+  | nil =>
+      exact star_refl _ _ (E0, s)
+  | cons ev t ih =>
+      rcases ht with ⟨hev, ht⟩
+      apply star_step (ev :: t, s) [ev]
+      · exact atomic_step_continue L (globalenv L) s ⟨hev, ht⟩
+      · exact ih ht
+      · rfl
+
+end CompCert4Lean.Common.Behaviors
+
+namespace CompCert4Lean.Common.Behaviors
+
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.Smallstep
+
+theorem step_atomic_plus :
+    step_atomic_plusStatement := by
+  intro L hwb s1 t s2 hstep
+  cases t with
+  | nil =>
+      apply plus_left (E0, s1) E0
+      · exact atomic_step_silent L (globalenv L) s1 s2 hstep
+      · exact star_refl _ _ (E0, s2)
+      · rfl
+  | cons ev t =>
+      have ht : output_trace t := hwb s1 (ev :: t) s2 hstep
+      apply plus_left (E0, s1) [ev]
+      · exact atomic_step_start L (globalenv L) s1 ev t s2 hstep
+      · exact atomic_finish L s2 t ht
+      · rfl
+
+end CompCert4Lean.Common.Behaviors
+
+namespace CompCert4Lean.Common.Behaviors
+
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.Smallstep
+
+theorem star_atomic_star :
+    star_atomic_starStatement := by
+  intro L hwb s1 t s2 hstar
+  induction hstar with
+  | star_refl s =>
+      exact star_refl _ _ (E0, s)
+  | @star_step s1 t1 s2 t2 s3 t hstep htail htrace ih =>
+      have hplus : Plus (atomic L) (E0, s1) t1 (E0, s2) :=
+        step_atomic_plus L hwb s1 t1 s2 hstep
+      exact star_trans (atomic L).genvtype (state (atomic L))
+        (step (atomic L)) (globalenv (atomic L)) (E0, s1) t1 (E0, s2)
+        (plus_star (atomic L).genvtype (state (atomic L)) (step (atomic L))
+          (globalenv (atomic L)) (E0, s1) t1 (E0, s2) hplus)
+        t2 (E0, s3) t ih htrace
+
+end CompCert4Lean.Common.Behaviors
+
+namespace CompCert4Lean.Common.Behaviors
+
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.Smallstep
+
+theorem atomic_forward_simulation :
+    atomic_forward_simulationStatement := by
+  intro L hwb
+  let ms : state L → state (atomic L) → Prop :=
+    fun s ts => ts = (E0, s)
+  apply forward_simulation_plus L (atomic L) (by
+    intro id
+    rfl) ms
+  · intro s hs
+    refine ⟨(E0, s), ?_, ?_⟩
+    · exact ⟨hs, rfl⟩
+    · rfl
+  · intro s1 s2 r hmatch hfinal
+    change s2 = (E0, s1) at hmatch
+    subst s2
+    exact ⟨hfinal, rfl⟩
+  · intro s1 t s1' hstep s2 hmatch
+    change s2 = (E0, s1) at hmatch
+    subst s2
+    refine ⟨(E0, s1'), ?_, ?_⟩
+    · exact step_atomic_plus L hwb s1 t s1' hstep
+    · rfl
+
+end CompCert4Lean.Common.Behaviors

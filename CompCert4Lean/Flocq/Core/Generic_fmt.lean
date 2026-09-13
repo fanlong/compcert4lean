@@ -993,3 +993,50 @@ theorem scaled_mantissa_generic :
       exact ctx.certificate.orderedField.mul_one _
 
 end CompCert4Lean.Flocq.Core.Generic_fmt
+
+namespace CompCert4Lean.Flocq.Core.Generic_fmt
+
+private theorem pg_scaled_mantissa_exp_cancel_left (e : Z) :
+    Zadd (Zopp e) e = Z0 := by
+  apply CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective
+  change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (Zadd (Zopp e) e) =
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ Z0
+  simp only [Zadd, Zopp,
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add,
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.opp,
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+  change -CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ e +
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ e = 0
+  omega
+
+theorem scaled_mantissa_mult_bpow :
+    ∀ ctx magnitude, scaled_mantissa_mult_bpowStatement ctx magnitude := by
+  intro ctx magnitude beta fexp x
+  unfold Exact.scaled_mantissa
+  let e := Exact.cexp ctx magnitude beta fexp x
+  change Exact.Rmult ctx
+      (Exact.Rmult ctx x (Exact.bpow ctx beta (Zopp e)))
+      (Exact.bpow ctx beta e) = x
+  calc
+    Exact.Rmult ctx
+        (Exact.Rmult ctx x (Exact.bpow ctx beta (Zopp e)))
+        (Exact.bpow ctx beta e) =
+        Exact.Rmult ctx x
+          (Exact.Rmult ctx (Exact.bpow ctx beta (Zopp e))
+            (Exact.bpow ctx beta e)) := by
+      exact ctx.certificate.orderedField.mul_assoc x
+        (Exact.bpow ctx beta (Zopp e)) (Exact.bpow ctx beta e)
+    _ = Exact.Rmult ctx x
+        (Exact.bpow ctx beta (Zadd (Zopp e) e)) := by
+      have hpow := CompCert4Lean.Flocq.Core.Raux.bpow_plus ctx beta (Zopp e) e
+      change Exact.bpow ctx beta (Zadd (Zopp e) e) =
+        Exact.Rmult ctx (Exact.bpow ctx beta (Zopp e))
+          (Exact.bpow ctx beta e) at hpow
+      rw [hpow]
+    _ = Exact.Rmult ctx x (Exact.bpow ctx beta Z0) := by
+      rw [pg_scaled_mantissa_exp_cancel_left]
+    _ = x := by
+      change ctx.spec.mul x ctx.spec.one = x
+      exact ctx.certificate.orderedField.mul_one _
+
+end CompCert4Lean.Flocq.Core.Generic_fmt

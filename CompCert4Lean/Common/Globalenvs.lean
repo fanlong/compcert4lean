@@ -2000,3 +2000,237 @@ theorem store_init_data_list_perm : store_init_data_list_permStatement := by
 
 end Genv
 end CompCert4Lean.Common.Globalenvs
+
+namespace CompCert4Lean.Common.Globalenvs
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+
+namespace Genv
+
+private theorem pg_unchanged_on_refl (P : block → Z → Prop) (m : mem) :
+    Mem.unchanged_on P m m := by
+  exact {
+    unchanged_on_nextblock := Ple_refl _
+    unchanged_on_perm := by
+      intro b ofs k prm hP hvalid
+      rfl
+    unchanged_on_contents := by
+      intro b ofs hP hread
+      rfl }
+
+private theorem pg_unchanged_on_trans (P : block → Z → Prop)
+    (m1 m2 m3 : mem) (h12 : Mem.unchanged_on P m1 m2)
+    (h23 : Mem.unchanged_on P m2 m3) : Mem.unchanged_on P m1 m3 := by
+  exact {
+    unchanged_on_nextblock :=
+      Ple_trans _ _ _ h12.unchanged_on_nextblock h23.unchanged_on_nextblock
+    unchanged_on_perm := by
+      intro b ofs k prm hP hvalid
+      have hvalid2 : Mem.valid_block m2 b :=
+        Plt_Ple_trans _ _ _ hvalid h12.unchanged_on_nextblock
+      exact (h12.unchanged_on_perm b ofs k prm hP hvalid).trans
+        (h23.unchanged_on_perm b ofs k prm hP hvalid2)
+    unchanged_on_contents := by
+      intro b ofs hP hread
+      have hread2 : Mem.perm m2 b ofs Cur Readable :=
+        (h12.unchanged_on_perm b ofs Cur Readable hP
+          (Mem.perm_valid_block m1 b ofs Cur Readable hread)).mp hread
+      exact (h23.unchanged_on_contents b ofs hP hread2).trans
+        (h12.unchanged_on_contents b ofs hP hread) }
+
+private theorem pg_pmap_get_set_same {A : Type} (i : positive) (x : A)
+    (m : PMap.t A) : PMap.get i (PMap.set i x m) = x := by
+  change (match PTree.get i (PTree.set i x m.2) with
+    | some y => y
+    | none => m.1) = x
+  rw [PTree.gsspec_proof]
+  cases h : peq i i with
+  | left _ => simp [h]
+  | right hn => exact False.elim (hn rfl)
+
+private theorem pg_pmap_get_set_other {A : Type} (i j : positive) (x : A)
+    (m : PMap.t A) (hij : i ≠ j) :
+    PMap.get i (PMap.set j x m) = PMap.get i m := by
+  change (match PTree.get i (PTree.set j x m.2) with
+    | some y => y
+    | none => m.1) =
+    (match PTree.get i m.2 with
+    | some y => y
+    | none => m.1)
+  rw [PTree.gsspec_proof]
+  cases h : peq i j with
+  | left heq => exact False.elim (hij heq)
+  | right _ => simp [h]
+
+private theorem pg_store_unchanged_on (P : block → Z → Prop)
+    (chunk : memory_chunk) (m : mem) (b : block) (ofs : Z) (v : val)
+    (m' : mem) (hstore : Mem.store chunk m b ofs v = some m')
+    (houtside : ∀ i, zLe ofs i ∧ zLt i (zAdd ofs (size_chunk chunk)) → ¬ P b i) :
+    Mem.unchanged_on P m m' := by
+  unfold Mem.store at hstore
+  split at hstore
+  · cases hstore
+    let contents := Mem.setN (encode_val chunk v) ofs (PMap.get b m.mem_contents)
+    exact {
+      unchanged_on_nextblock := Ple_refl _
+      unchanged_on_perm := by
+        intro b' ofs' k prm hP hvalid'
+        rfl
+      unchanged_on_contents := by
+        intro b' ofs' hP hread
+        by_cases hbb : b' = b
+        · subst b'
+          change ZMap.get ofs'
+            (PMap.get b (PMap.set b contents m.mem_contents)) =
+            ZMap.get ofs' (PMap.get b m.mem_contents)
+          have hbget : PMap.get b (PMap.set b contents m.mem_contents) = contents :=
+            pg_pmap_get_set_same b contents m.mem_contents
+          rw [hbget]
+          apply Mem.setN_other
+          intro i hi heq
+          subst i
+          apply houtside ofs'
+          · have hi' := hi
+            rw [encode_val_length chunk v] at hi'
+            cases chunk <;> simpa [size_chunk, size_chunk_nat] using hi'
+          · exact hP
+        · rw [pg_pmap_get_set_other _ _ _ _ hbb] }
+  · cases hstore
+
+theorem store_zeros_unchanged : store_zeros_unchangedStatement := by
+  intro P
+  let Q : mem → block → Z → Z → Option mem → Prop :=
+    fun m0 b0 p0 n0 result =>
+      match result with
+      | some m1 =>
+          (∀ houtside : ∀ i, zLe p0 i ∧ zLt i (zAdd p0 n0) → ¬ P b0 i,
+            Mem.unchanged_on P m0 m1)
+      | none => True
+  have hQ : ∀ m0 b0 p0 n0, Q m0 b0 p0 n0 (store_zeros m0 b0 p0 n0) := by
+    apply store_zeros_ind (P := Q)
+    · intro m0 b0 p0 n0 x hx
+      intro houtside
+      exact pg_unchanged_on_refl P m0
+    · intro m0 b0 p0 n0 x hx m1 hstore hrec
+      cases hresult : store_zeros m1 b0 (zAdd p0 z1) (zSub n0 z1) with
+      | none => trivial
+      | some m2 =>
+          rw [hresult] at hrec
+          intro houtside
+          apply pg_unchanged_on_trans P m0 m1 m2
+          · apply pg_store_unchanged_on P Mint8unsigned m0 b0 p0 Vzero m1 hstore
+            intro i hi
+            apply houtside i
+            change intOfZ p0 ≤ intOfZ i ∧ intOfZ i < intOfZ (zAdd p0 n0)
+            change intOfZ p0 ≤ intOfZ i ∧
+              intOfZ i < intOfZ (zAdd p0 (size_chunk Mint8unsigned)) at hi
+            change 0 < intOfZ n0 at x
+            have hsize : size_chunk Mint8unsigned = z1 := rfl
+            rw [hsize] at hi
+            simp only [zAdd, ZArith.BinInt.Z.add, intOfZ_zOfInt] at hi ⊢
+            have hone : intOfZ z1 = 1 := rfl
+            rw [hone] at hi
+            omega
+          · apply hrec
+            intro i hi
+            apply houtside i
+            change intOfZ p0 ≤ intOfZ i ∧ intOfZ i < intOfZ (zAdd p0 n0)
+            change intOfZ (zAdd p0 z1) ≤ intOfZ i ∧
+              intOfZ i < intOfZ (zAdd (zAdd p0 z1) (zSub n0 z1)) at hi
+            simp only [zAdd, zSub, ZArith.BinInt.Z.add, ZArith.BinInt.Z.sub,
+              intOfZ_zOfInt] at hi ⊢
+            have hone : intOfZ z1 = 1 := rfl
+            rw [hone] at hi
+            omega
+    · intro m0 b0 p0 n0 x hx hnone
+      trivial
+  intro m b p n m' hstore houtside
+  have h := hQ m b p n
+  rw [hstore] at h
+  exact h houtside
+
+theorem store_init_data_unchanged : store_init_data_unchangedStatement := by
+  intro F V ge P b i m p m' hstore houtside
+  cases i with
+  | Init_int8 n =>
+      exact pg_store_unchanged_on P Mint8unsigned m b p (Vint n) m' hstore
+        (by simpa [init_data_size, size_chunk] using houtside)
+  | Init_int16 n =>
+      exact pg_store_unchanged_on P Mint16unsigned m b p (Vint n) m' hstore
+        (by simpa [init_data_size, size_chunk] using houtside)
+  | Init_int32 n =>
+      exact pg_store_unchanged_on P Mint32 m b p (Vint n) m' hstore
+        (by simpa [init_data_size, size_chunk] using houtside)
+  | Init_int64 n =>
+      exact pg_store_unchanged_on P Mint64 m b p (Vlong n) m' hstore
+        (by simpa [init_data_size, size_chunk] using houtside)
+  | Init_float32 n =>
+      exact pg_store_unchanged_on P Mfloat32 m b p (Vsingle n) m' hstore
+        (by simpa [init_data_size, size_chunk] using houtside)
+  | Init_float64 n =>
+      exact pg_store_unchanged_on P Mfloat64 m b p (Vfloat n) m' hstore
+        (by simpa [init_data_size, size_chunk] using houtside)
+  | Init_space n =>
+      change some m = some m' at hstore
+      cases hstore
+      exact pg_unchanged_on_refl P m
+  | Init_addrof id ofs =>
+      change (match find_symbol ge id with
+        | none => none
+        | some b' => Mem.store Mptr m b p (Vptr b' ofs)) = some m' at hstore
+      cases hfind : find_symbol ge id with
+      | none => simp [hfind] at hstore
+      | some b' =>
+          simp [hfind] at hstore
+          exact pg_store_unchanged_on P Mptr m b p (Vptr b' ofs) m' hstore
+            (by
+              intro i hi
+              apply houtside i
+              rcases hi with ⟨hlo, hhi⟩
+              have hsize : init_data_size (Init_addrof id ofs) = size_chunk Mptr := by
+                rfl
+              exact ⟨hlo, by simpa [hsize] using hhi⟩)
+
+theorem store_init_data_list_unchanged : store_init_data_list_unchangedStatement := by
+  intro F V ge P b il
+  induction il with
+  | nil =>
+      intro m p m' hstore houtside
+      change some m = some m' at hstore
+      cases hstore
+      exact pg_unchanged_on_refl P m
+  | cons i rest ih =>
+      intro m p m' hstore houtside
+      change (match store_init_data ge m b p i with
+        | none => none
+        | some m1 => store_init_data_list ge m1 b (zAdd p (init_data_size i)) rest) =
+          some m' at hstore
+      cases hhead : store_init_data ge m b p i with
+      | none => simp [hhead] at hstore
+      | some m1 =>
+          have htail : store_init_data_list ge m1 b (zAdd p (init_data_size i)) rest =
+              some m' := by
+            simpa [hhead] using hstore
+          apply pg_unchanged_on_trans P m m1 m'
+          · apply store_init_data_unchanged F V ge P b i m p m1 hhead
+            intro ofs hi
+            exact houtside ofs hi.1
+          · apply ih m1 (zAdd p (init_data_size i)) m' htail
+            intro ofs hlo
+            apply houtside ofs
+            change intOfZ p ≤ intOfZ ofs
+            change intOfZ (zAdd p (init_data_size i)) ≤ intOfZ ofs at hlo
+            have hnonneg := init_data_size_pos i
+            change 0 ≤ intOfZ (init_data_size i) at hnonneg
+            simp only [zAdd, ZArith.BinInt.Z.add, intOfZ_zOfInt] at hlo
+            omega
+
+end Genv
+end CompCert4Lean.Common.Globalenvs

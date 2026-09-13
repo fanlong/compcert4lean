@@ -2222,3 +2222,307 @@ theorem make_notint_correct
           rfl
     | Vint n | Vfloat n | Vsingle n | Vptr n _ | Vundef => simp at hsem
 end CompCert4Lean.Cfrontend.Cshmgenproof
+
+namespace CompCert4Lean.Cfrontend.Cshmgenproof
+
+theorem make_binarith_correct
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    make_binarith_correctStatement := by
+  intro ge sem_int sem_long sem_float sem_single iop iopu fop sop lop lopu
+  intro hi hiu hl hlu hf hs
+  change Csharpminor.binary_operation at iop iopu fop sop lop lopu
+  intro a tya b tyb c va vb v e le m hsem hmake h1 h2
+  unfold Cshmgen.make_binarith at hmake
+  unfold Cop.sem_binarith at hsem
+  cases hclass : Cop.classify_binarith tya tyb <;>
+    simp [hclass] at hsem hmake
+  case bin_case_i sg =>
+    let ty := Cop.binarith_type (.bin_case_i sg)
+    cases hca : Cop.sem_cast va tya ty m with
+    | none =>
+      have hca' : Cop.sem_cast va tya (Cop.binarith_type (.bin_case_i sg)) m = none :=
+        by simpa [ty] using hca
+      rw [hca'] at hsem
+      simp at hsem
+    | some va' =>
+      cases hcb : Cop.sem_cast vb tyb ty m with
+      | none =>
+        have hca' : Cop.sem_cast va tya (Cop.binarith_type (.bin_case_i sg)) m = some va' :=
+          by simpa [ty] using hca
+        have hcb' : Cop.sem_cast vb tyb (Cop.binarith_type (.bin_case_i sg)) m = none :=
+          by simpa [ty] using hcb
+        rw [hca', hcb'] at hsem
+        simp at hsem
+      | some vb' =>
+        cases hma : Cshmgen.make_cast tya ty a with
+        | Error msg =>
+          have hma' : Cshmgen.make_cast tya (Cop.binarith_type (.bin_case_i sg)) a =
+              .Error msg := by simpa [ty] using hma
+          rw [hma'] at hmake
+          simp at hmake
+        | OK ea =>
+          cases hmb : Cshmgen.make_cast tyb ty b with
+          | Error msg =>
+            have hma' : Cshmgen.make_cast tya (Cop.binarith_type (.bin_case_i sg)) a =
+                .OK ea := by simpa [ty] using hma
+            have hmb' : Cshmgen.make_cast tyb (Cop.binarith_type (.bin_case_i sg)) b =
+                .Error msg := by simpa [ty] using hmb
+            rw [hma'] at hmake
+            rw [hmb'] at hmake
+            simp at hmake
+          | OK eb =>
+            have hva' : T_eval_expr ge e le m ea va' :=
+              make_cast_correct ge e le m a ea va tya ty va' hma h1 hca
+            have hvb' : T_eval_expr ge e le m eb vb' :=
+              make_cast_correct ge e le m b eb vb tyb ty vb' hmb h2 hcb
+            have hca' : Cop.sem_cast va tya (Cop.binarith_type (.bin_case_i sg)) m =
+                some va' := by simpa [ty] using hca
+            have hcb' : Cop.sem_cast vb tyb (Cop.binarith_type (.bin_case_i sg)) m =
+                some vb' := by simpa [ty] using hcb
+            rw [hca', hcb'] at hsem
+            have hma' : Cshmgen.make_cast tya (Cop.binarith_type (.bin_case_i sg)) a =
+                .OK ea := by simpa [ty] using hma
+            have hmb' : Cshmgen.make_cast tyb (Cop.binarith_type (.bin_case_i sg)) b =
+                .OK eb := by simpa [ty] using hmb
+            rw [hma', hmb'] at hmake
+            cases sg with
+            | Signed =>
+              simp at hmake
+              cases hmake
+              cases va' with
+              | Vint na =>
+                cases vb' with
+                | Vint nb =>
+                  simp at hsem
+                  apply Csharpminor.eval_Ebinop iop ea eb _ _ _ hva' hvb'
+                  rw [hi]
+                  exact hsem
+                | Vlong _ | Vfloat _ | Vsingle _ | Vptr _ _ | Vundef => simp at hsem
+              | Vlong _ | Vfloat _ | Vsingle _ | Vptr _ _ | Vundef => simp at hsem
+            | Unsigned =>
+              simp at hmake
+              cases hmake
+              cases va' with
+              | Vint na =>
+                cases vb' with
+                | Vint nb =>
+                  simp at hsem
+                  apply Csharpminor.eval_Ebinop iopu ea eb _ _ _ hva' hvb'
+                  rw [hiu]
+                  exact hsem
+                | Vlong _ | Vfloat _ | Vsingle _ | Vptr _ _ | Vundef => simp at hsem
+              | Vlong _ | Vfloat _ | Vsingle _ | Vptr _ _ | Vundef => simp at hsem
+  case bin_case_l sg =>
+    let ty := Cop.binarith_type (.bin_case_l sg)
+    cases hca : Cop.sem_cast va tya ty m with
+    | none =>
+      have hca' : Cop.sem_cast va tya (Cop.binarith_type (.bin_case_l sg)) m = none :=
+        by simpa [ty] using hca
+      rw [hca'] at hsem
+      simp at hsem
+    | some va' =>
+      cases hcb : Cop.sem_cast vb tyb ty m with
+      | none =>
+        have hca' : Cop.sem_cast va tya (Cop.binarith_type (.bin_case_l sg)) m = some va' :=
+          by simpa [ty] using hca
+        have hcb' : Cop.sem_cast vb tyb (Cop.binarith_type (.bin_case_l sg)) m = none :=
+          by simpa [ty] using hcb
+        rw [hca', hcb'] at hsem
+        simp at hsem
+      | some vb' =>
+        cases hma : Cshmgen.make_cast tya ty a with
+        | Error msg =>
+          have hma' : Cshmgen.make_cast tya (Cop.binarith_type (.bin_case_l sg)) a =
+              .Error msg := by simpa [ty] using hma
+          rw [hma'] at hmake
+          simp at hmake
+        | OK ea =>
+          cases hmb : Cshmgen.make_cast tyb ty b with
+          | Error msg =>
+            have hma' : Cshmgen.make_cast tya (Cop.binarith_type (.bin_case_l sg)) a =
+                .OK ea := by simpa [ty] using hma
+            have hmb' : Cshmgen.make_cast tyb (Cop.binarith_type (.bin_case_l sg)) b =
+                .Error msg := by simpa [ty] using hmb
+            rw [hma'] at hmake
+            rw [hmb'] at hmake
+            simp at hmake
+          | OK eb =>
+            have hva' : T_eval_expr ge e le m ea va' :=
+              make_cast_correct ge e le m a ea va tya ty va' hma h1 hca
+            have hvb' : T_eval_expr ge e le m eb vb' :=
+              make_cast_correct ge e le m b eb vb tyb ty vb' hmb h2 hcb
+            have hca' : Cop.sem_cast va tya (Cop.binarith_type (.bin_case_l sg)) m =
+                some va' := by simpa [ty] using hca
+            have hcb' : Cop.sem_cast vb tyb (Cop.binarith_type (.bin_case_l sg)) m =
+                some vb' := by simpa [ty] using hcb
+            have hma' : Cshmgen.make_cast tya (Cop.binarith_type (.bin_case_l sg)) a =
+                .OK ea := by simpa [ty] using hma
+            have hmb' : Cshmgen.make_cast tyb (Cop.binarith_type (.bin_case_l sg)) b =
+                .OK eb := by simpa [ty] using hmb
+            rw [hca', hcb'] at hsem
+            rw [hma', hmb'] at hmake
+            cases sg with
+            | Signed =>
+              simp at hmake
+              cases hmake
+              cases va' with
+              | Vlong na =>
+                cases vb' with
+                | Vlong nb =>
+                  simp at hsem
+                  apply Csharpminor.eval_Ebinop lop ea eb _ _ _ hva' hvb'
+                  rw [hl]
+                  exact hsem
+                | Vint _ | Vfloat _ | Vsingle _ | Vptr _ _ | Vundef => simp at hsem
+              | Vint _ | Vfloat _ | Vsingle _ | Vptr _ _ | Vundef => simp at hsem
+            | Unsigned =>
+              simp at hmake
+              cases hmake
+              cases va' with
+              | Vlong na =>
+                cases vb' with
+                | Vlong nb =>
+                  simp at hsem
+                  apply Csharpminor.eval_Ebinop lopu ea eb _ _ _ hva' hvb'
+                  rw [hlu]
+                  exact hsem
+                | Vint _ | Vfloat _ | Vsingle _ | Vptr _ _ | Vundef => simp at hsem
+              | Vint _ | Vfloat _ | Vsingle _ | Vptr _ _ | Vundef => simp at hsem
+  case bin_case_f =>
+    let ty := Cop.binarith_type (.bin_case_f)
+    cases hca : Cop.sem_cast va tya ty m with
+    | none =>
+      have hca' : Cop.sem_cast va tya (Cop.binarith_type (.bin_case_f)) m = none :=
+        by simpa [ty] using hca
+      rw [hca'] at hsem
+      simp at hsem
+    | some va' =>
+      cases hcb : Cop.sem_cast vb tyb ty m with
+      | none =>
+        have hca' : Cop.sem_cast va tya (Cop.binarith_type (.bin_case_f)) m = some va' :=
+          by simpa [ty] using hca
+        have hcb' : Cop.sem_cast vb tyb (Cop.binarith_type (.bin_case_f)) m = none :=
+          by simpa [ty] using hcb
+        rw [hca', hcb'] at hsem
+        simp at hsem
+      | some vb' =>
+        cases hma : Cshmgen.make_cast tya ty a with
+        | Error msg =>
+          have hma' : Cshmgen.make_cast tya (Cop.binarith_type (.bin_case_f)) a =
+              .Error msg := by simpa [ty] using hma
+          rw [hma'] at hmake
+          simp at hmake
+        | OK ea =>
+          cases hmb : Cshmgen.make_cast tyb ty b with
+          | Error msg =>
+            have hma' : Cshmgen.make_cast tya (Cop.binarith_type (.bin_case_f)) a =
+                .OK ea := by simpa [ty] using hma
+            have hmb' : Cshmgen.make_cast tyb (Cop.binarith_type (.bin_case_f)) b =
+                .Error msg := by simpa [ty] using hmb
+            rw [hma'] at hmake
+            rw [hmb'] at hmake
+            simp at hmake
+          | OK eb =>
+            have hva' : T_eval_expr ge e le m ea va' :=
+              make_cast_correct ge e le m a ea va tya ty va' hma h1 hca
+            have hvb' : T_eval_expr ge e le m eb vb' :=
+              make_cast_correct ge e le m b eb vb tyb ty vb' hmb h2 hcb
+            have hca' : Cop.sem_cast va tya (Cop.binarith_type (.bin_case_f)) m =
+                some va' := by simpa [ty] using hca
+            have hcb' : Cop.sem_cast vb tyb (Cop.binarith_type (.bin_case_f)) m =
+                some vb' := by simpa [ty] using hcb
+            have hma' : Cshmgen.make_cast tya (Cop.binarith_type (.bin_case_f)) a =
+                .OK ea := by simpa [ty] using hma
+            have hmb' : Cshmgen.make_cast tyb (Cop.binarith_type (.bin_case_f)) b =
+                .OK eb := by simpa [ty] using hmb
+            rw [hca', hcb'] at hsem
+            rw [hma', hmb'] at hmake
+            simp at hmake
+            cases hmake
+            cases va' with
+            | Vfloat na =>
+              cases vb' with
+              | Vfloat nb =>
+                simp at hsem
+                apply Csharpminor.eval_Ebinop fop ea eb _ _ _ hva' hvb'
+                rw [hf]
+                exact hsem
+              | Vint _ | Vlong _ | Vsingle _ | Vptr _ _ | Vundef => simp at hsem
+            | Vint _ | Vlong _ | Vsingle _ | Vptr _ _ | Vundef => simp at hsem
+  case bin_case_s =>
+    let ty := Cop.binarith_type (.bin_case_s)
+    cases hca : Cop.sem_cast va tya ty m with
+    | none =>
+      have hca' : Cop.sem_cast va tya (Cop.binarith_type (.bin_case_s)) m = none :=
+        by simpa [ty] using hca
+      rw [hca'] at hsem
+      simp at hsem
+    | some va' =>
+      cases hcb : Cop.sem_cast vb tyb ty m with
+      | none =>
+        have hca' : Cop.sem_cast va tya (Cop.binarith_type (.bin_case_s)) m = some va' :=
+          by simpa [ty] using hca
+        have hcb' : Cop.sem_cast vb tyb (Cop.binarith_type (.bin_case_s)) m = none :=
+          by simpa [ty] using hcb
+        rw [hca', hcb'] at hsem
+        simp at hsem
+      | some vb' =>
+        cases hma : Cshmgen.make_cast tya ty a with
+        | Error msg =>
+          have hma' : Cshmgen.make_cast tya (Cop.binarith_type (.bin_case_s)) a =
+              .Error msg := by simpa [ty] using hma
+          rw [hma'] at hmake
+          simp at hmake
+        | OK ea =>
+          cases hmb : Cshmgen.make_cast tyb ty b with
+          | Error msg =>
+            have hma' : Cshmgen.make_cast tya (Cop.binarith_type (.bin_case_s)) a =
+                .OK ea := by simpa [ty] using hma
+            have hmb' : Cshmgen.make_cast tyb (Cop.binarith_type (.bin_case_s)) b =
+                .Error msg := by simpa [ty] using hmb
+            rw [hma'] at hmake
+            rw [hmb'] at hmake
+            simp at hmake
+          | OK eb =>
+            have hva' : T_eval_expr ge e le m ea va' :=
+              make_cast_correct ge e le m a ea va tya ty va' hma h1 hca
+            have hvb' : T_eval_expr ge e le m eb vb' :=
+              make_cast_correct ge e le m b eb vb tyb ty vb' hmb h2 hcb
+            have hca' : Cop.sem_cast va tya (Cop.binarith_type (.bin_case_s)) m =
+                some va' := by simpa [ty] using hca
+            have hcb' : Cop.sem_cast vb tyb (Cop.binarith_type (.bin_case_s)) m =
+                some vb' := by simpa [ty] using hcb
+            have hma' : Cshmgen.make_cast tya (Cop.binarith_type (.bin_case_s)) a =
+                .OK ea := by simpa [ty] using hma
+            have hmb' : Cshmgen.make_cast tyb (Cop.binarith_type (.bin_case_s)) b =
+                .OK eb := by simpa [ty] using hmb
+            rw [hca', hcb'] at hsem
+            rw [hma', hmb'] at hmake
+            simp at hmake
+            cases hmake
+            cases va' with
+            | Vsingle na =>
+              cases vb' with
+              | Vsingle nb =>
+                simp at hsem
+                apply Csharpminor.eval_Ebinop sop ea eb _ _ _ hva' hvb'
+                rw [hs]
+                exact hsem
+              | Vint _ | Vlong _ | Vfloat _ | Vptr _ _ | Vundef => simp at hsem
+            | Vint _ | Vlong _ | Vfloat _ | Vptr _ _ | Vundef => simp at hsem
+  case bin_default =>
+    cases hca : Cop.sem_cast va tya (Cop.binarith_type (.bin_default)) m with
+    | none =>
+      rw [hca] at hsem
+      simp at hsem
+    | some va' =>
+      cases hcb : Cop.sem_cast vb tyb (Cop.binarith_type (.bin_default)) m with
+      | none =>
+        rw [hca, hcb] at hsem
+        simp at hsem
+      | some vb' =>
+        rw [hca, hcb] at hsem
+        simp at hsem
+
+end CompCert4Lean.Cfrontend.Cshmgenproof

@@ -1070,3 +1070,17 @@ theorem Zpower_lt_Zpower : Zpower_lt_ZpowerStatement := by
   exact (Int.not_lt_of_ge hp) h
 
 end CompCert4Lean.Flocq.Core.Zaux
+
+namespace CompCert4Lean.Flocq.Core.Zaux
+
+theorem Zle_bool_spec : Zle_bool_specStatement := by
+  intro x y
+  change Zle_bool_prop x y (if
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ x ≤
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ y then true else false)
+  by_cases h : CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ x ≤
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ y
+  · simpa [h] using (Zle_bool_true_ h)
+  · simpa [h] using (Zle_bool_false_ (Int.lt_of_not_ge h))
+
+end CompCert4Lean.Flocq.Core.Zaux

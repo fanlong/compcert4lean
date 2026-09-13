@@ -1507,3 +1507,93 @@ theorem PArith.BinPos.Pos.leb_le :
 
 end Rocq.Coq
 end CompCert4Lean.Foundation.Numbers
+
+namespace CompCert4Lean.Foundation.Numbers
+namespace Rocq.Coq
+
+private theorem comparisonOfNat_antisym (a b : Nat) :
+    CompOpp (comparisonOfNat a b) = comparisonOfNat b a := by
+  unfold comparisonOfNat
+  by_cases hab : a < b
+  · have hba : ¬ b < a := Nat.not_lt_of_ge (Nat.le_of_lt hab)
+    have hne : a ≠ b := by omega
+    have hne' : b ≠ a := by omega
+    simp only [if_pos hab, if_neg hba, if_neg hne']
+    rfl
+  · by_cases heq : a = b
+    · subst b
+      simp only [if_neg hab, if_pos rfl]
+      rfl
+    · have hba : b < a := by omega
+      have hne : b ≠ a := by omega
+      simp only [if_neg hab, if_neg heq, if_pos hba]
+      rfl
+
+private theorem compare_antisym_aux (p q : positive) :
+    CompOpp (PArith.BinPos.Pos.compare p q) =
+      PArith.BinPos.Pos.compare q p := by
+  unfold PArith.BinPos.Pos.compare
+  exact comparisonOfNat_antisym (posToNat p) (posToNat q)
+
+private theorem compare_eq_iff_aux (p q : positive) :
+    PArith.BinPos.Pos.compare p q = Eq ↔
+      PArith.BinPos.Pos.compare q p = Eq := by
+  constructor
+  · intro h
+    have h' := compare_antisym_aux p q
+    rw [h] at h'
+    change Eq = PArith.BinPos.Pos.compare q p at h'
+    exact h'.symm
+  · intro h
+    have h' := compare_antisym_aux q p
+    rw [h] at h'
+    change Eq = PArith.BinPos.Pos.compare p q at h'
+    exact h'.symm
+
+theorem PArith.BinPos.Pcompare_antisym_proof :
+    PArith.BinPos.Pcompare_antisym := by
+  intro p q c
+  cases c with
+  | Eq =>
+      exact compare_antisym_aux p q
+  | Lt =>
+      by_cases h : PArith.BinPos.Pos.compare p q = Eq
+      · have h' : PArith.BinPos.Pos.compare q p = Eq :=
+          compare_eq_iff_aux p q |>.mp h
+        change CompOpp (if PArith.BinPos.Pos.compare p q = Eq then Lt
+          else PArith.BinPos.Pos.compare p q) =
+          (if PArith.BinPos.Pos.compare q p = Eq then Gt
+          else PArith.BinPos.Pos.compare q p)
+        simp only [if_pos h, if_pos h']
+        rfl
+      · have h' : PArith.BinPos.Pos.compare q p ≠ Eq := by
+          intro hq
+          exact h (compare_eq_iff_aux p q |>.mpr hq)
+        change CompOpp (if PArith.BinPos.Pos.compare p q = Eq then Lt
+          else PArith.BinPos.Pos.compare p q) =
+          (if PArith.BinPos.Pos.compare q p = Eq then Gt
+          else PArith.BinPos.Pos.compare q p)
+        simp only [if_neg h, if_neg h']
+        exact compare_antisym_aux p q
+  | Gt =>
+      by_cases h : PArith.BinPos.Pos.compare p q = Eq
+      · have h' : PArith.BinPos.Pos.compare q p = Eq :=
+          compare_eq_iff_aux p q |>.mp h
+        change CompOpp (if PArith.BinPos.Pos.compare p q = Eq then Gt
+          else PArith.BinPos.Pos.compare p q) =
+          (if PArith.BinPos.Pos.compare q p = Eq then Lt
+          else PArith.BinPos.Pos.compare q p)
+        simp only [if_pos h, if_pos h']
+        rfl
+      · have h' : PArith.BinPos.Pos.compare q p ≠ Eq := by
+          intro hq
+          exact h (compare_eq_iff_aux p q |>.mpr hq)
+        change CompOpp (if PArith.BinPos.Pos.compare p q = Eq then Gt
+          else PArith.BinPos.Pos.compare p q) =
+          (if PArith.BinPos.Pos.compare q p = Eq then Lt
+          else PArith.BinPos.Pos.compare q p)
+        simp only [if_neg h, if_neg h']
+        exact compare_antisym_aux p q
+
+end Rocq.Coq
+end CompCert4Lean.Foundation.Numbers

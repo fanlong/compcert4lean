@@ -2065,3 +2065,184 @@ theorem reachable_visited : reachable_visitedStatement := by
             exact hdefined n2 v hval
 
 end CompCert4Lean.Backend.Kildall.Dataflow_Solver
+
+namespace CompCert4Lean.Backend.Kildall.Dataflow_Solver
+
+open CompCert4Lean.Lib.Maps
+
+theorem fixpoint_solution : fixpoint_solutionStatement := by
+  intro A LAT NS LATlaws NSlaws code successors transf ep ev res n instr s hfix hcode hsucc hbot
+  unfold fixpoint at hfix
+  have hchar := fixpoint_from_charact (LAT := LAT) (NS := NS)
+    LATlaws NSlaws code successors transf
+    (@start_state LAT NS ep ev) res hfix
+  rcases hchar with ⟨st, hsteps, hpick, hres⟩
+  have hgood := steps_state_good (LAT := LAT) (NS := NS)
+    LATlaws NSlaws code successors transf
+    (@start_state LAT NS ep ev) st hsteps
+    (start_state_good (LAT := LAT) (NS := NS) LATlaws NSlaws
+      code successors transf ep ev)
+  rcases hgood with ⟨hstable, hdefined⟩
+  rw [hres]
+  unfold PMap.get
+  dsimp
+  cases hval : PTree.get n st.aval with
+  | none =>
+      simp only [hval]
+      apply LATlaws.ge_trans _ LAT.bot _
+      · exact LATlaws.ge_bot _
+      · exact LATlaws.ge_refl _ _ (LATlaws.eq_sym _ _ (hbot n))
+  | some v =>
+      have hv := hdefined n v hval
+      rcases hstable n hv with hwork | hstable'
+      · exact False.elim ((NSlaws.pick_none st.worklist n hpick) hwork)
+      · have hs := hstable' instr s hcode hsucc
+        change optge LAT (PTree.get s st.aval) (some (transf n (abstr_value n st))) at hs
+        unfold abstr_value at hs
+        rw [hval] at hs
+        cases hS : PTree.get s st.aval with
+        | none =>
+            simp only [hS] at hs
+            cases hs
+        | some w =>
+            simp only [hS] at hs
+            cases hs with
+            | optge_some h =>
+                simpa [hS] using h
+
+theorem fixpoint_entry : fixpoint_entryStatement := by
+  intro A LAT NS LATlaws NSlaws code successors transf ep ev res hfix
+  unfold fixpoint at hfix
+  have hchar := fixpoint_from_charact (LAT := LAT) (NS := NS)
+    LATlaws NSlaws code successors transf
+    (@start_state LAT NS ep ev) res hfix
+  rcases hchar with ⟨st, hsteps, hpick, hres⟩
+  have hincr := steps_incr (LAT := LAT) (NS := NS)
+    LATlaws NSlaws code successors transf ep
+    (@start_state LAT NS ep ev) st hsteps
+  rcases hincr with ⟨hge, hvis⟩
+  have hstart : PTree.get ep
+      (@start_state LAT NS ep ev).aval = some ev := by
+    dsimp [start_state]
+    simpa using (PTree.getSet_equation ep ep ev (PTree.empty LAT.t))
+  rw [hstart] at hge
+  cases hval : PTree.get ep st.aval with
+  | none =>
+      simp only [hval] at hge
+      cases hge
+  | some w =>
+      rw [hval] at hge
+      cases hge with
+      | optge_some hgw =>
+          rw [hres]
+          unfold PMap.get
+          dsimp
+          simp only [hval]
+          exact hgw
+
+theorem fixpoint_allnodes_solution : fixpoint_allnodes_solutionStatement := by
+  intro A LAT NS LATlaws NSlaws code successors transf res n instr s hfix hcode hsucc
+  unfold fixpoint_allnodes at hfix
+  have hchar := fixpoint_from_charact (LAT := LAT) (NS := NS)
+    LATlaws NSlaws code successors transf
+    (start_state_allnodes NS code) res hfix
+  rcases hchar with ⟨st, hsteps, hpick, hres⟩
+  have hgood := steps_state_good (LAT := LAT) (NS := NS)
+    LATlaws NSlaws code successors transf
+    (start_state_allnodes NS code) st hsteps
+    (start_state_allnodes_good (LAT := LAT) (NS := NS) LATlaws NSlaws
+      code successors transf)
+  have hincr := steps_incr (LAT := LAT) (NS := NS)
+    LATlaws NSlaws code successors transf n
+    (start_state_allnodes NS code) st hsteps
+  rcases hincr with ⟨hinc, hvis⟩
+  have hnvis : st.visited n := by
+    apply hvis
+    exact ⟨instr, hcode⟩
+  rcases hgood with ⟨hstable, hdefined⟩
+  rcases hstable n hnvis with hwork | hstable'
+  · exact False.elim ((NSlaws.pick_none st.worklist n hpick) hwork)
+  · have hs := hstable' instr s hcode hsucc
+    rw [hres]
+    unfold PMap.get
+    dsimp
+    unfold abstr_value at hs
+    cases hN : PTree.get n st.aval with
+    | none =>
+        rw [hN] at hs
+        simp only [hN]
+        cases hS : PTree.get s st.aval with
+        | none =>
+            simp only [hS] at hs ⊢
+            cases hs
+        | some w =>
+            simp only [hS] at hs ⊢
+            cases hs with
+            | optge_some h => exact h
+    | some v =>
+        rw [hN] at hs
+        simp only [hN]
+        cases hS : PTree.get s st.aval with
+        | none =>
+            simp only [hS] at hs ⊢
+            cases hs
+        | some w =>
+            simp only [hS] at hs ⊢
+            cases hs with
+            | optge_some h => exact h
+
+theorem fixpoint_nodeset_solution : fixpoint_nodeset_solutionStatement := by
+  intro A LAT NS LATlaws NSlaws code successors transf enodes res e n instr s hfix henodes hreach hcode hsucc
+  unfold fixpoint_nodeset at hfix
+  have hchar := fixpoint_from_charact (LAT := LAT) (NS := NS)
+    LATlaws NSlaws code successors transf
+    (start_state_nodeset NS enodes) res hfix
+  rcases hchar with ⟨st, hsteps, hpick, hres⟩
+  have hgood := steps_state_good (LAT := LAT) (NS := NS)
+    LATlaws NSlaws code successors transf
+    (start_state_nodeset NS enodes) st hsteps
+    (start_state_nodeset_good (LAT := LAT) (NS := NS) LATlaws NSlaws
+      code successors transf enodes)
+  have hincr := steps_incr (LAT := LAT) (NS := NS)
+    LATlaws NSlaws code successors transf e
+    (start_state_nodeset NS enodes) st hsteps
+  rcases hincr with ⟨hinc, hvis⟩
+  have hevis : (@start_state_nodeset LAT NS enodes).visited e := henodes
+  have hnvis : st.visited n := by
+    apply reachable_visited (LAT := LAT) (NS := NS)
+      LATlaws NSlaws code successors transf st hgood hpick e
+      n hreach
+    exact hvis hevis
+  rcases hgood with ⟨hstable, hdefined⟩
+  rcases hstable n hnvis with hwork | hstable'
+  · exact False.elim ((NSlaws.pick_none st.worklist n hpick) hwork)
+  · have hs := hstable' instr s hcode hsucc
+    rw [hres]
+    unfold PMap.get
+    dsimp
+    unfold abstr_value at hs
+    cases hN : PTree.get n st.aval with
+    | none =>
+        rw [hN] at hs
+        simp only [hN]
+        cases hS : PTree.get s st.aval with
+        | none =>
+            simp only [hS] at hs ⊢
+            cases hs
+        | some w =>
+            simp only [hS] at hs ⊢
+            cases hs with
+            | optge_some h => exact h
+    | some v =>
+        rw [hN] at hs
+        simp only [hN]
+        cases hS : PTree.get s st.aval with
+        | none =>
+            simp only [hS] at hs ⊢
+            cases hs
+        | some w =>
+            simp only [hS] at hs ⊢
+            cases hs with
+            | optge_some h => exact h
+
+end CompCert4Lean.Backend.Kildall.Dataflow_Solver

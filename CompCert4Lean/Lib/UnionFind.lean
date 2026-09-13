@@ -1268,3 +1268,83 @@ theorem sameclass_merge_proof :
 
 end UF
 end CompCert4Lean.Lib.UnionFind
+
+namespace CompCert4Lean.Lib.UnionFind
+namespace UF
+
+theorem path_ord_canonical_proof :
+    ∀ (M : MAP), path_ord_canonicalStatement M := by
+  intro M uf x y hrepr hpath
+  change mapGet M x uf.m = some y at hpath
+  have hnone := repr_res_none_calc M uf x
+  rw [hrepr] at hnone
+  rw [hnone] at hpath
+  cases hpath
+
+end UF
+end CompCert4Lean.Lib.UnionFind
+
+namespace CompCert4Lean.Lib.UnionFind
+namespace UF
+
+theorem path_ord_merge_1_proof :
+    ∀ (M : MAP), path_ord_merge_1Statement M := by
+  intro M uf a b x y hpath
+  change mapGet M y uf.m = some x at hpath
+  unfold merge
+  dsimp
+  by_cases hab : repr M uf a = repr M uf b
+  · simp only [dif_pos hab]
+    change mapGet M y uf.m = some x
+    exact hpath
+  · simp only [dif_neg hab]
+    change mapGet M y (mapSet M (repr M uf a) b uf.m) = some x
+    rw [mapGet_set]
+    by_cases hya : y = repr M uf a
+    · subst y
+      have hnone := repr_res_none_calc M uf a
+      rw [hpath] at hnone
+      cases hnone
+    · simp [hya, hpath]
+
+end UF
+end CompCert4Lean.Lib.UnionFind
+
+namespace CompCert4Lean.Lib.UnionFind
+namespace UF
+
+theorem path_ord_merge_2_proof :
+    ∀ (M : MAP), path_ord_merge_2Statement M := by
+  intro M uf a b hneq
+  change mapGet M (repr M uf a) (merge M uf a b).m = some b
+  unfold merge
+  dsimp
+  by_cases hab : repr M uf a = repr M uf b
+  · exact False.elim (hneq hab)
+  · simp only [dif_neg hab]
+    change mapGet M (repr M uf a)
+      (mapSet M (repr M uf a) b uf.m) = some b
+    rw [mapGet_set]
+    simp
+
+end UF
+end CompCert4Lean.Lib.UnionFind
+
+namespace CompCert4Lean.Lib.UnionFind
+namespace UF
+
+theorem pathlen_unroll_proof :
+    ∀ (M : MAP), pathlen_unrollStatement M := by
+  intro M uf a
+  unfold pathlen
+  rw [WellFounded.fix_eq]
+  cases h : getlink M uf.m a with
+  | inleft h' =>
+      cases h' with
+      | mk a' ha =>
+          simp [F_pathlen, h, ha]
+  | inright hnone =>
+      simp [F_pathlen, h, hnone]
+
+end UF
+end CompCert4Lean.Lib.UnionFind

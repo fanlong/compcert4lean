@@ -2550,3 +2550,309 @@ theorem add_op_holds
           exact hres
 
 end CompCert4Lean.Backend.CSEproof
+
+namespace CompCert4Lean.Backend.CSEproof
+
+theorem set_res_unknown_holds
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    set_res_unknown_holdsStatement := by
+  intro valu ge sp rs m n r v hnum
+  cases r with
+  | BR rd =>
+      exact set_unknown_holds valu ge sp rs m n rd v hnum
+  | BR_none =>
+      simpa [CompCert4Lean.Backend.Registers.regmap_setres, CSE.set_res_unknown] using hnum
+  | BR_splitlong hi lo =>
+      simpa [CompCert4Lean.Backend.Registers.regmap_setres, CSE.set_res_unknown] using hnum
+
+end CompCert4Lean.Backend.CSEproof
+
+namespace CompCert4Lean.Backend.CSEproof
+
+open CompCert4Lean.Backend.CSEdomain
+
+theorem kill_eqs_charact : kill_eqs_charactStatement := by
+  intro pred l strict r eqs
+  induction eqs with
+  | nil =>
+      simp [CSE.kill_eqs]
+  | cons e eqs ih =>
+      cases e with
+      | Eq l' strict' r' =>
+          simp only [CSE.kill_eqs]
+          cases hpred : pred r' with
+          | true =>
+              intro hmem
+              have hmem' : Eq l strict r ∈ CSE.kill_eqs pred eqs := by
+                simpa [hpred] using hmem
+              obtain ⟨hfalse, hin⟩ := ih hmem'
+              exact ⟨hfalse, List.mem_cons_of_mem _ hin⟩
+          | false =>
+              intro hmem
+              simp [hpred] at hmem
+              rcases hmem with hhead | htail
+              · rcases hhead with ⟨hl, hs, hr⟩
+                subst r
+                subst l
+                subst strict
+                exact ⟨hpred, List.mem_cons_self⟩
+              · obtain ⟨hfalse, hin⟩ := ih htail
+                exact ⟨hfalse, List.mem_cons_of_mem _ hin⟩
+
+end CompCert4Lean.Backend.CSEproof
+
+namespace CompCert4Lean.Backend.CSEproof
+
+open CompCert4Lean.Backend.CSEdomain
+
+theorem kill_equations_hold
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    kill_equations_holdStatement := by
+  intro valu ge sp rs m n pred m' hnum htrans
+  unfold CSE.kill_equations
+  constructor
+  · constructor
+    · intro e he
+      cases e with
+      | Eq l strict r =>
+          have hc := kill_eqs_charact pred l strict r n.num_eqs he
+          exact hnum.num_holds_wf.wf_num_eqs _ hc.2
+    · exact hnum.num_holds_wf.wf_num_reg
+    · exact hnum.num_holds_wf.wf_num_val
+  · intro e he
+    cases e with
+    | Eq l strict r =>
+        have hc := kill_eqs_charact pred l strict r n.num_eqs he
+        have hold := hnum.num_holds_eq _ hc.2
+        cases hold with
+        | eq_holds_strict _ _ hev hvalid =>
+            exact equation_holds.eq_holds_strict l r
+              (htrans r (valu l) hc.1 hvalid hev) hvalid
+        | eq_holds_lessdef _ _ v hev hld hvalid =>
+            exact equation_holds.eq_holds_lessdef l r v
+              (htrans r v hc.1 hvalid hev) hld hvalid
+  · exact hnum.num_holds_reg
+
+end CompCert4Lean.Backend.CSEproof
+
+namespace CompCert4Lean.Backend.CSEproof
+
+open CompCert4Lean.Backend.CSEdomain
+open CompCert4Lean.Common.Events
+open CompCert4Lean.X86.Op
+
+private theorem cse_cmpu_bool_ptr64
+    (p q : CompCert4Lean.Common.Values.block →
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z → Bool)
+    (c : CompCert4Lean.Lib.Integers.comparison)
+    (v1 v2 : CompCert4Lean.Common.Values.val) :
+    CompCert4Lean.Common.Values.Val.cmpu_bool p c v1 v2 =
+      CompCert4Lean.Common.Values.Val.cmpu_bool q c v1 v2 := by
+  cases v1 <;> cases v2 <;>
+    simp [CompCert4Lean.Common.Values.Val.cmpu_bool,
+      CompCert4Lean.X86_64.Archi.ptr64]
+
+private theorem cse_condition_memory_independent
+    (c : condition) (args : List CompCert4Lean.Common.Values.val)
+    (m m' : CompCert4Lean.Common.Memory.mem) :
+    condition_depends_on_memory c = false →
+      eval_condition c args m = eval_condition c args m' := by
+  intro hdep
+  cases args with
+  | nil =>
+      cases c <;>
+        simp [condition_depends_on_memory, eval_condition,
+          CompCert4Lean.X86_64.Archi.ptr64, cse_cmpu_bool_ptr64] at hdep ⊢ <;>
+        exact cse_cmpu_bool_ptr64 _ _ _ _ _
+  | cons a rest =>
+      cases rest with
+      | nil =>
+          cases c <;>
+            simp [condition_depends_on_memory, eval_condition,
+              CompCert4Lean.X86_64.Archi.ptr64, cse_cmpu_bool_ptr64] at hdep ⊢ <;>
+            exact cse_cmpu_bool_ptr64 _ _ _ _ _
+      | cons b rest =>
+          cases rest with
+          | nil =>
+              cases c <;>
+                simp [condition_depends_on_memory, eval_condition,
+                  CompCert4Lean.X86_64.Archi.ptr64, cse_cmpu_bool_ptr64] at hdep ⊢ <;>
+                exact cse_cmpu_bool_ptr64 _ _ _ _ _
+          | cons d rest =>
+              cases c <;>
+                simp [condition_depends_on_memory, eval_condition,
+                  CompCert4Lean.X86_64.Archi.ptr64, cse_cmpu_bool_ptr64] at hdep ⊢ <;>
+                exact cse_cmpu_bool_ptr64 _ _ _ _ _
+
+set_option maxHeartbeats 1000000 in
+private theorem cse_operation_memory_independent
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (F V : Type)
+    (ge : CompCert4Lean.Common.Globalenvs.Genv.t F V)
+    (sp : CompCert4Lean.Common.Values.val) (op : operation)
+    (args : List CompCert4Lean.Common.Values.val)
+    (m m' : CompCert4Lean.Common.Memory.mem) :
+    op_depends_on_memory op = false →
+      eval_operation
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) ge sp op args m =
+      eval_operation
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) ge sp op args m' := by
+  intro hdep
+  cases op with
+  | Ocmp c =>
+      have hcond := cse_condition_memory_independent c args m m' hdep
+      cases args with
+      | nil =>
+          change some (CompCert4Lean.Common.Values.Val.of_optbool
+            (eval_condition c [] m)) =
+            some (CompCert4Lean.Common.Values.Val.of_optbool
+              (eval_condition c [] m'))
+          exact congrArg
+            (fun x => some (CompCert4Lean.Common.Values.Val.of_optbool x)) hcond
+      | cons a rest =>
+          cases rest with
+          | nil =>
+              change some (CompCert4Lean.Common.Values.Val.of_optbool
+                (eval_condition c [a] m)) =
+                some (CompCert4Lean.Common.Values.Val.of_optbool
+                  (eval_condition c [a] m'))
+              exact congrArg
+                (fun x => some (CompCert4Lean.Common.Values.Val.of_optbool x)) hcond
+          | cons b rest =>
+              cases rest with
+              | nil =>
+                  change some (CompCert4Lean.Common.Values.Val.of_optbool
+                    (eval_condition c [a, b] m)) =
+                    some (CompCert4Lean.Common.Values.Val.of_optbool
+                      (eval_condition c [a, b] m'))
+                  exact congrArg
+                    (fun x => some (CompCert4Lean.Common.Values.Val.of_optbool x)) hcond
+              | cons d rest =>
+                  change some (CompCert4Lean.Common.Values.Val.of_optbool
+                    (eval_condition c (a :: b :: d :: rest) m)) =
+                    some (CompCert4Lean.Common.Values.Val.of_optbool
+                      (eval_condition c (a :: b :: d :: rest) m'))
+                  exact congrArg
+                    (fun x => some (CompCert4Lean.Common.Values.Val.of_optbool x)) hcond
+  | Osel c ty =>
+      cases args with
+      | nil =>
+          change none = none
+          rfl
+      | cons v1 rest =>
+          cases rest with
+          | nil =>
+              change none = none
+              rfl
+          | cons v2 rest =>
+              have hcond := cse_condition_memory_independent c rest m m' hdep
+              change some (CompCert4Lean.Common.Values.Val.select
+                (eval_condition c rest m) v1 v2 ty) =
+                some (CompCert4Lean.Common.Values.Val.select
+                  (eval_condition c rest m') v1 v2 ty)
+              exact congrArg
+                (fun x => some (CompCert4Lean.Common.Values.Val.select x v1 v2 ty)) hcond
+  | _ =>
+      cases args with
+      | nil => rfl
+      | cons a rest =>
+          cases rest with
+          | nil => rfl
+          | cons b rest =>
+              cases rest with
+              | nil => rfl
+              | cons c rest => rfl
+
+private theorem cse_builtin_arg_memory_independent
+    {A : Type} (m' : CompCert4Lean.Common.Memory.mem)
+    (ge : CompCert4Lean.Common.Globalenvs.Senv.t)
+    (e : A → CompCert4Lean.Common.Values.val)
+    (sp : CompCert4Lean.Common.Values.val)
+    (m : CompCert4Lean.Common.Memory.mem)
+    (ba : CompCert4Lean.Common.AST.builtin_arg A)
+    (v : CompCert4Lean.Common.Values.val) :
+    eval_builtin_arg ge e sp m ba v →
+    builtin_arg_depends_on_memory ba = false →
+    eval_builtin_arg ge e sp m' ba v := by
+  intro harg hdep
+  cases harg with
+  | eval_BA x => exact eval_BA x
+  | eval_BA_int n => exact eval_BA_int n
+  | eval_BA_long n => exact eval_BA_long n
+  | eval_BA_float n => exact eval_BA_float n
+  | eval_BA_single n => exact eval_BA_single n
+  | eval_BA_loadstack chunk ofs v hload => cases hdep
+  | eval_BA_addrstack ofs => exact eval_BA_addrstack ofs
+  | eval_BA_loadglobal chunk id ofs v hload => cases hdep
+  | eval_BA_addrglobal id ofs => exact eval_BA_addrglobal id ofs
+  | eval_BA_splitlong hi lo vhi vlo hhi hlo =>
+      simp [builtin_arg_depends_on_memory] at hdep
+      exact eval_BA_splitlong hi lo vhi vlo
+        (cse_builtin_arg_memory_independent m' ge e sp m hi vhi hhi hdep.1)
+        (cse_builtin_arg_memory_independent m' ge e sp m lo vlo hlo hdep.2)
+  | eval_BA_addptr a1 a2 v1 v2 h1 h2 =>
+      simp [builtin_arg_depends_on_memory] at hdep
+      exact eval_BA_addptr a1 a2 v1 v2
+        (cse_builtin_arg_memory_independent m' ge e sp m a1 v1 h1 hdep.1)
+        (cse_builtin_arg_memory_independent m' ge e sp m a2 v2 h2 hdep.2)
+
+private theorem cse_builtin_args_memory_independent
+    {A : Type} (m' : CompCert4Lean.Common.Memory.mem)
+    (ge : CompCert4Lean.Common.Globalenvs.Senv.t)
+    (e : A → CompCert4Lean.Common.Values.val)
+    (sp : CompCert4Lean.Common.Values.val)
+    (m : CompCert4Lean.Common.Memory.mem)
+    (bal : List (CompCert4Lean.Common.AST.builtin_arg A))
+    (vl : List CompCert4Lean.Common.Values.val) :
+    eval_builtin_args ge e sp m bal vl →
+    builtin_args_depends_on_memory bal = false →
+    eval_builtin_args ge e sp m' bal vl := by
+  intro hargs hdep
+  induction hargs with
+  | nil => exact CompCert4Lean.Lib.Coqlib.list_forall2.nil _
+  | cons ba v hba hrest ih =>
+      simp [builtin_args_depends_on_memory] at hdep
+      apply CompCert4Lean.Lib.Coqlib.list_forall2.cons
+      · exact cse_builtin_arg_memory_independent m' ge e sp m ba v hba hdep.1
+      · exact ih hdep.2
+
+end CompCert4Lean.Backend.CSEproof
+
+namespace CompCert4Lean.Backend.CSEproof
+
+open CompCert4Lean.Backend.CSEdomain
+open CompCert4Lean.Common.Events
+open CompCert4Lean.X86.Op
+
+theorem kill_all_loads_hold
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    kill_all_loads_holdStatement := by
+  intro valu ge sp rs m n m' hnum
+  apply kill_equations_hold valu ge sp rs m n CSE.filter_loads m' hnum
+  intro rh v hpred hvalid hev
+  cases rh with
+  | Op op vl =>
+      cases hev with
+      | op_eval_to op vl v hEval =>
+          have hop := cse_operation_memory_independent
+            (F := RTL.fundef) (V := Unit) ge sp op (List.map valu vl) m m' hpred
+          exact rhs_eval_to.op_eval_to op vl v (by rw [← hop]; exact hEval)
+  | Load chunk addr vl p =>
+      simp [CSE.filter_loads] at hpred
+  | Builtin bf args =>
+      cases hev with
+      | builtin_eval_to bf args vargs v hArgs hSem =>
+          have hargs' : builtin_args_depends_on_memory args = false := by
+            simpa [CSE.filter_loads] using hpred
+          have hArgs' := cse_builtin_args_memory_independent m'
+            (CompCert4Lean.Common.Globalenvs.Genv.to_senv ge) valu sp m args vargs
+            hArgs hargs'
+          exact rhs_eval_to.builtin_eval_to bf args vargs v hArgs' hSem
+
+end CompCert4Lean.Backend.CSEproof

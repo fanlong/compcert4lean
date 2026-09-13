@@ -2374,3 +2374,61 @@ theorem expand_cfg_unchanged : expand_cfg_unchangedStatement := by
     · exact hlt
 
 end CompCert4Lean.Backend.Inliningspec
+
+namespace CompCert4Lean.Backend.Inliningspec
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Foundation.Recursion.Rocq.Coq.Init.Wf
+open CompCert4Lean.Foundation.Recursion.Rocq.Coq.Arith.Wf_nat
+open CompCert4Lean.Backend.Inlining
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.Lib.Wfsimpl
+
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Common.AST
+
+theorem expand_cfg_spec : expand_cfg_specStatement := by
+  intro fenv stacksize fe0
+  apply well_founded_ind (R := ltof _ size_fenv)
+    (P := fun fe =>
+      ∀ ctx f s x s' i c,
+        expand_cfg fe ctx f s = R x s' i →
+        fenv_agree fenv fe →
+        Ple (PArith.BinPos.Pos.add ctx.dpc (max_pc_function f)) s.st_nextnode →
+        ctx.mreg = max_reg_function f →
+        Ple (PArith.BinPos.Pos.add ctx.dreg ctx.mreg) s.st_nextreg →
+        zGe ctx.mstk Z0 →
+        ctx.mstk = ZArith.BinInt.Z.max f.fn_stacksize Z0 →
+        ZArith.BinInt.Z.divide (min_alignment f.fn_stacksize) ctx.dstk →
+        zGe ctx.dstk Z0 →
+        zLe s'.st_stksize stacksize →
+        (∀ pc', Ple ctx.dpc pc' → Plt pc' s'.st_nextnode →
+          PTree.get pc' c = PTree.get pc' s'.st_code) →
+        tr_funbody fenv stacksize ctx f c)
+  · exact well_founded_ltof _ _
+  · intro fe ih ctx f s x s' i c h hfe
+    intro hbelow hmreg hreg hstk hstk_eq hdiv hdstk hsize hunch
+    unfold expand_cfg at h
+    rw [unroll_Fixm] at h
+    apply expand_cfg_rec_spec fenv stacksize fe hfe
+      (fun fe' _ => expand_cfg fe')
+    · intro fe' L ctx' f' s0 x0 s1 i0 pc' hrec' hbelow' hlt'
+      exact expand_cfg_unchanged fe' ctx' f' s0 x0 s1 i0 pc' hrec' hbelow' hlt'
+    · intro fe' L ctx' f' s0 x0 s1 i0 c' hrec' hfe' hbelow' hmreg'
+        hreg' hstk' hstk_eq' hdiv' hdstk' hsize' hunch'
+      exact ih fe' L ctx' f' s0 x0 s1 i0 c' hrec' hfe' hbelow' hmreg'
+        hreg' hstk' hstk_eq' hdiv' hdstk' hsize' hunch'
+    · exact h
+    · exact hbelow
+    · exact hmreg
+    · exact hreg
+    · exact hstk
+    · exact hstk_eq
+    · exact hdiv
+    · exact hdstk
+    · exact hsize
+    · intro pc' hpc' hlt'
+      exact hunch pc' hpc' hlt'
+
+end CompCert4Lean.Backend.Inliningspec

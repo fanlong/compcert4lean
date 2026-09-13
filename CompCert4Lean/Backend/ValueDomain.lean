@@ -2819,3 +2819,21 @@ theorem is_uns_1 : is_uns_1Statement := by
           exact hnbit.trans hZeroBit.symm
 
 end CompCert4Lean.Backend.ValueDomain
+
+namespace CompCert4Lean.Backend.ValueDomain
+
+theorem vmatch_Uns_1 : vmatch_Uns_1Statement := by
+  intro bc p v h
+  cases h with
+  | uns p i n hn hi =>
+      right
+      rcases is_uns_1 i hi with hzero | hone
+      · left
+        rw [hzero]
+      · right
+        rw [hone]
+  | vmatch_Uns_undef p n =>
+      left
+      rfl
+
+end CompCert4Lean.Backend.ValueDomain

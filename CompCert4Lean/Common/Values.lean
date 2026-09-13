@@ -1673,3 +1673,137 @@ theorem sub_add_l : sub_add_lStatement := by
 
 end Val
 end CompCert4Lean.Common.Values
+
+namespace CompCert4Lean.Common.Values
+namespace Val
+
+theorem mul_commut : mul_commutStatement := by
+  intro x y
+  cases x <;> cases y <;>
+    simp [mul]
+  case Vint.Vint a b =>
+    change CompCert4Lean.Lib.Integers.WordCore.repr 32
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.mul a.intval b.intval) =
+      CompCert4Lean.Lib.Integers.WordCore.repr 32
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.mul b.intval a.intval)
+    apply congrArg (CompCert4Lean.Lib.Integers.WordCore.repr 32)
+    apply CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective
+    simp only [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.mul,
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+    exact Int.mul_comm _ _
+
+theorem mul_add_distr_r : mul_add_distr_rStatement := by
+  intro x y z
+  cases x <;> cases y <;> cases z <;>
+    simp [mul, add, CompCert4Lean.X86_64.Archi.ptr64]
+  case Vint.Vint.Vint a b c =>
+    exact CompCert4Lean.Lib.Integers.Int.mul_add_distr_r_proof a b c
+
+theorem mul_add_distr_l : mul_add_distr_lStatement := by
+  intro x y z
+  calc
+    mul (add x y) z = mul z (add x y) := mul_commut _ _
+    _ = add (mul z x) (mul z y) := mul_add_distr_r _ _ _
+    _ = add (mul x z) (mul y z) := by
+      rw [mul_commut z x, mul_commut z y]
+
+end Val
+end CompCert4Lean.Common.Values
+
+namespace CompCert4Lean.Common.Values
+namespace Val
+
+private theorem int_sub_self_local (x : CompCert4Lean.Lib.Integers.int) :
+    Int.sub x x = Int.zero := by
+  change CompCert4Lean.Lib.Integers.WordCore.repr 32
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.sub x.intval x.intval) =
+    CompCert4Lean.Lib.Integers.WordCore.repr 32
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.Numbers.BinNums.Z.Z0
+  apply congrArg (CompCert4Lean.Lib.Integers.WordCore.repr 32)
+  apply CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective
+  simp only [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.sub,
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+  exact Int.sub_self _
+
+private theorem int_add_zero_l_local (x : CompCert4Lean.Lib.Integers.int) :
+    Int.add Int.zero x = x := by
+  calc
+    Int.add Int.zero x = Int.add x Int.zero := int_add_commut_local _ _
+    _ = x := CompCert4Lean.Lib.Integers.Int.add_zero_proof x
+
+private theorem int_add_neg_self_local (x : CompCert4Lean.Lib.Integers.int) :
+    Int.add x (Int.neg x) = Int.zero := by
+  calc
+    Int.add x (Int.neg x) = Int.sub x x :=
+      (CompCert4Lean.Lib.Integers.Int.sub_add_opp_proof x x).symm
+    _ = Int.zero := int_sub_self_local x
+
+private theorem int_add_neg_self_left_local (x : CompCert4Lean.Lib.Integers.int) :
+    Int.add (Int.neg x) x = Int.zero := by
+  calc
+    Int.add (Int.neg x) x = Int.add x (Int.neg x) := int_add_commut_local _ _
+    _ = Int.zero := int_add_neg_self_local x
+
+private theorem int_add_permut_local
+    (x y z : CompCert4Lean.Lib.Integers.int) :
+    Int.add x (Int.add y z) = Int.add y (Int.add x z) := by
+  calc
+    Int.add x (Int.add y z) = Int.add (Int.add x y) z :=
+      (CompCert4Lean.Lib.Integers.Int.add_assoc_proof x y z).symm
+    _ = Int.add (Int.add y x) z := by rw [int_add_commut_local x y]
+    _ = Int.add y (Int.add x z) :=
+      CompCert4Lean.Lib.Integers.Int.add_assoc_proof y x z
+
+private theorem int_neg_unique_local
+    (a b : CompCert4Lean.Lib.Integers.int) (h : Int.add a b = Int.zero) :
+    b = Int.neg a := by
+  calc
+    b = Int.add Int.zero b := (int_add_zero_l_local b).symm
+    _ = Int.add (Int.add (Int.neg a) a) b := by
+      rw [int_add_neg_self_left_local a]
+    _ = Int.add (Int.neg a) (Int.add a b) :=
+      CompCert4Lean.Lib.Integers.Int.add_assoc_proof (Int.neg a) a b
+    _ = Int.add (Int.neg a) Int.zero := by rw [h]
+    _ = Int.neg a := CompCert4Lean.Lib.Integers.Int.add_zero_proof (Int.neg a)
+
+private theorem int_neg_add_distr_local
+    (y z : CompCert4Lean.Lib.Integers.int) :
+    Int.neg (Int.add y z) = Int.add (Int.neg y) (Int.neg z) := by
+  apply Eq.symm
+  apply int_neg_unique_local
+  calc
+    Int.add (Int.add y z) (Int.add (Int.neg y) (Int.neg z)) =
+        Int.add y (Int.add z (Int.add (Int.neg y) (Int.neg z))) :=
+      CompCert4Lean.Lib.Integers.Int.add_assoc_proof y z _
+    _ = Int.add y (Int.add (Int.neg y) (Int.add z (Int.neg z))) := by
+      exact congrArg (fun q => Int.add y q)
+        (int_add_permut_local z (Int.neg y) (Int.neg z))
+    _ = Int.add (Int.add y (Int.neg y)) (Int.add z (Int.neg z)) :=
+      (CompCert4Lean.Lib.Integers.Int.add_assoc_proof y (Int.neg y) _).symm
+    _ = Int.add Int.zero Int.zero := by
+      rw [int_add_neg_self_local y, int_add_neg_self_local z]
+    _ = Int.zero := CompCert4Lean.Lib.Integers.Int.add_zero_proof Int.zero
+
+private theorem int_sub_add_r_local
+    (x y z : CompCert4Lean.Lib.Integers.int) :
+    Int.sub x (Int.add y z) = Int.add (Int.sub x y) (Int.neg z) := by
+  calc
+    Int.sub x (Int.add y z) = Int.add x (Int.neg (Int.add y z)) :=
+      CompCert4Lean.Lib.Integers.Int.sub_add_opp_proof x (Int.add y z)
+    _ = Int.add x (Int.add (Int.neg y) (Int.neg z)) := by
+      rw [int_neg_add_distr_local]
+    _ = Int.add (Int.add x (Int.neg y)) (Int.neg z) :=
+      (CompCert4Lean.Lib.Integers.Int.add_assoc_proof x (Int.neg y) (Int.neg z)).symm
+    _ = Int.add (Int.sub x y) (Int.neg z) := by
+      exact congrArg (fun q => Int.add q (Int.neg z))
+        (CompCert4Lean.Lib.Integers.Int.sub_add_opp_proof x y).symm
+
+theorem sub_add_r : sub_add_rStatement := by
+  intro v1 v2 i
+  cases v1 <;> cases v2 <;>
+    simp [sub, add, CompCert4Lean.X86_64.Archi.ptr64]
+  case Vint.Vint a b =>
+    exact int_sub_add_r_local a b i
+
+end Val
+end CompCert4Lean.Common.Values

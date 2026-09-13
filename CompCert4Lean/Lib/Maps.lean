@@ -3339,3 +3339,48 @@ theorem gi : giStatement := by
 end PMap
 
 end CompCert4Lean.Lib.Maps
+
+namespace CompCert4Lean.Lib.Maps
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Lib.Coqlib
+
+namespace PMap
+
+theorem gss : gssStatement := by
+  intro A i x m
+  cases m with
+  | mk d tree =>
+      have hget : PTree.get i (PTree.set i x tree) = some x :=
+        PTree.gss (A := A) i x tree
+      simp [hget, get, set]
+
+theorem gso : gsoStatement := by
+  intro A i j x m hij
+  cases m with
+  | mk d tree =>
+      have hget : PTree.get i (PTree.set j x tree) = PTree.get i tree :=
+        PTree.gso (A := A) (i := i) (j := j) x tree hij
+      simp [hget, get, set]
+
+theorem gsspec : gsspecStatement := by
+  intro A i j x m
+  cases h : CompCert4Lean.Lib.Coqlib.peq i j with
+  | left hij =>
+      subst j
+      simpa [h] using (gss (A := A) i x m)
+  | right hne =>
+      simpa [h] using (gso (A := A) (i := i) (j := j) x m hne)
+
+theorem gmap_proof : gmapStatement := by
+  intro A B f i m
+  cases m with
+  | mk d tree =>
+      have hmap : PTree.get i (PTree.map1 f tree) = Option.map f (PTree.get i tree) :=
+        PTree.gmap1 f i tree
+      simp [hmap, map, get]
+      cases h : PTree.get i tree <;> simp [h]
+
+end PMap
+
+end CompCert4Lean.Lib.Maps

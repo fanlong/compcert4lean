@@ -1912,3 +1912,124 @@ theorem iagree_shl : iagree_shlStatement := by
     exact hmask
 
 end CompCert4Lean.Backend.NeedDomain
+
+namespace CompCert4Lean.Backend.NeedDomain
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Lib.Integers
+
+private theorem test_iagreeBitsAbove (a : Int.int) (k : Z)
+    (hk : ZArith.BinInt.Z.le Int.zwordsize k) :
+    Int.testbit a k = false := by
+  cases k with
+  | Zneg p =>
+      exfalso
+      have h := hk
+      have h32 : (0 : Int) < Int.ofNat 32 := by decide
+      change (Int.ofNat 32 : Int) ≤
+        -(Int.ofNat (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p)) at h
+      have hp := test_posToNat_pos p
+      have hp' : (0 : Int) < Int.ofNat
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p) :=
+        Int.natCast_pos.mpr hp
+      omega
+  | Z0 =>
+      exfalso
+      have h := hk
+      have h32 : (0 : Int) < Int.ofNat 32 := by decide
+      change (Int.ofNat 32 : Int) ≤ 0 at h
+      omega
+  | Zpos p =>
+      rw [iagreeTestbitPos]
+      have h := hk
+      change (Int.ofNat 32 : Int) ≤ Int.ofNat
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p) at h
+      have hk' : 32 ≤
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p :=
+        Int.ofNat_le.mp h
+      have hpow : 2 ^ Int.wordsize ≤
+          2 ^ CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p := by
+        exact Nat.pow_le_pow_right (by decide) hk'
+      exact Nat.testBit_lt_two_pow
+        (Nat.lt_of_lt_of_le (iagreeWordValLt a) hpow)
+
+theorem iagree_shru : iagree_shruStatement := by
+  intro x y m n h i hirange hmask
+  have hnnonneg :
+      0 ≤ CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+        (Int.unsigned n) := by
+    have h := n.intrange.1
+    change (-1 : Int) <
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+        (Int.unsigned n) at h
+    omega
+  by_cases hlt : ZArith.BinInt.Z.lt
+      (ZArith.BinInt.Z.add i (Int.unsigned n)) Int.zwordsize
+  · have hkrange :
+        ZArith.BinInt.Z.le z0
+            (ZArith.BinInt.Z.add i (Int.unsigned n)) ∧
+        ZArith.BinInt.Z.lt
+            (ZArith.BinInt.Z.add i (Int.unsigned n)) Int.zwordsize := by
+      constructor
+      · change 0 ≤
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+            (ZArith.BinInt.Z.add i (Int.unsigned n))
+        have hi0 := hirange.1
+        change 0 ≤ CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ i at hi0
+        simp only [ZArith.BinInt.Z.add,
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+        omega
+      · exact hlt
+    have hknlt : ¬ ZArith.BinInt.Z.lt
+        (ZArith.BinInt.Z.add i (Int.unsigned n)) (Int.unsigned n) := by
+      intro hbad
+      have hi0 := hirange.1
+      change 0 ≤ CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ i at hi0
+      change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+          (ZArith.BinInt.Z.add i (Int.unsigned n)) <
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+          (Int.unsigned n) at hbad
+      simp only [ZArith.BinInt.Z.add,
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt] at hbad
+      omega
+    have hsub : ZArith.BinInt.Z.sub
+        (ZArith.BinInt.Z.add i (Int.unsigned n)) (Int.unsigned n) = i := by
+      apply CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective
+      simp only [ZArith.BinInt.Z.add, ZArith.BinInt.Z.sub,
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+      omega
+    have hmask' : Int.testbit (Int.shl m n)
+        (ZArith.BinInt.Z.add i (Int.unsigned n)) = true := by
+      rw [test_iagreeShlTestbit_high m n
+        (ZArith.BinInt.Z.add i (Int.unsigned n)) hkrange hknlt, hsub]
+      exact hmask
+    have hxy := h (ZArith.BinInt.Z.add i (Int.unsigned n)) hkrange hmask'
+    rw [test_iagreeShruTestbit x n i hirange,
+      test_iagreeShruTestbit y n i hirange]
+    exact hxy
+  · have hkabove : ZArith.BinInt.Z.le Int.zwordsize
+        (ZArith.BinInt.Z.add i (Int.unsigned n)) := by
+      change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ Int.zwordsize ≤
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+          (ZArith.BinInt.Z.add i (Int.unsigned n))
+      have hnot := hlt
+      change ¬ CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+          (ZArith.BinInt.Z.add i (Int.unsigned n)) <
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ Int.zwordsize at hnot
+      have hwsize :
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ Int.zwordsize =
+            Int.ofNat 32 := by
+        change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+          (ZArith.BinInt.Z.of_nat 32) = Int.ofNat 32
+        rw [ZArith.BinInt.Z.of_nat,
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+      rw [hwsize] at hnot ⊢
+      simp only [ZArith.BinInt.Z.add,
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt] at hnot ⊢
+      omega
+    rw [test_iagreeShruTestbit x n i hirange,
+      test_iagreeShruTestbit y n i hirange,
+      test_iagreeBitsAbove x _ hkabove,
+      test_iagreeBitsAbove y _ hkabove]
+
+end CompCert4Lean.Backend.NeedDomain

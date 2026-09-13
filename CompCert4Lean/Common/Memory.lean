@@ -2521,3 +2521,127 @@ theorem load_type : load_typeStatement := by
 end Mem
 
 end CompCert4Lean.Common.Memory
+
+namespace CompCert4Lean.Common.Memory
+
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+
+namespace Mem
+
+theorem loadbytes_range_perm : loadbytes_range_permStatement := by
+  intro m b ofs len bytes hload
+  unfold loadbytes at hload
+  cases hdec : range_perm_dec m b ofs (zAdd ofs len) Cur Readable with
+  | left hperm =>
+      exact hperm
+  | right hnperm =>
+      simp [boolOfSumbool, hdec] at hload
+
+theorem loadbytes_load : loadbytes_loadStatement := by
+  intro chunk m b ofs bytes hload halign
+  unfold loadbytes at hload
+  unfold load
+  cases hdec : range_perm_dec m b ofs (zAdd ofs (size_chunk chunk)) Cur Readable with
+  | right hnperm =>
+      simp [boolOfSumbool, hdec] at hload
+  | left hperm =>
+      have hbytes : bytes = getN (zToNat (size_chunk chunk)) ofs
+          (PMap.get b m.mem_contents) := by
+        simpa [boolOfSumbool, hdec] using hload.symm
+      cases halign' : zdivide_dec (align_chunk chunk) ofs with
+      | right hnalign =>
+          exact False.elim (hnalign halign)
+      | left halign_dec =>
+          simp [valid_access_dec, boolOfSumbool, hdec, halign', hbytes,
+            size_chunk_nat]
+
+theorem load_bool_int8_unsigned : load_bool_int8_unsignedStatement := by
+  intro m b ofs
+  unfold load
+  change
+    (if boolOfSumbool (valid_access_dec m Mbool b ofs Readable) then
+        some (decode_val Mbool (getN 1 ofs (PMap.get b m.mem_contents)))
+      else none) =
+      option_map Val.norm_bool
+        (if boolOfSumbool (valid_access_dec m Mint8unsigned b ofs Readable) then
+            some (decode_val Mint8unsigned (getN 1 ofs (PMap.get b m.mem_contents)))
+          else none)
+  have hbool_eq :
+      boolOfSumbool (valid_access_dec m Mbool b ofs Readable) =
+        boolOfSumbool (valid_access_dec m Mint8unsigned b ofs Readable) := by
+    have hs : size_chunk Mbool = size_chunk Mint8unsigned := by rfl
+    have ha : align_chunk Mbool = align_chunk Mint8unsigned := by rfl
+    have hvalid_bool (chunk : AST.memory_chunk) :
+        boolOfSumbool (valid_access_dec m chunk b ofs Readable) =
+          (boolOfSumbool
+              (range_perm_dec m b ofs (zAdd ofs (size_chunk chunk)) Cur Readable) &&
+            boolOfSumbool (zdivide_dec (align_chunk chunk) ofs)) := by
+      unfold valid_access_dec
+      cases hr : range_perm_dec m b ofs (zAdd ofs (size_chunk chunk)) Cur Readable with
+      | right hn => simp [hr, boolOfSumbool]
+      | left hp =>
+          cases hd : zdivide_dec (align_chunk chunk) ofs with
+          | left h => simp [hr, hd, boolOfSumbool]
+          | right h => simp [hr, hd, boolOfSumbool]
+    have hrange :
+        boolOfSumbool
+              (range_perm_dec m b ofs (zAdd ofs (size_chunk Mbool)) Cur Readable) =
+          boolOfSumbool
+              (range_perm_dec m b ofs (zAdd ofs (size_chunk Mint8unsigned)) Cur Readable) := by
+      cases hp : range_perm_dec m b ofs (zAdd ofs (size_chunk Mbool)) Cur Readable with
+      | left hpp =>
+          have hpp' : range_perm m b ofs (zAdd ofs (size_chunk Mint8unsigned)) Cur Readable := by
+            simpa [hs] using hpp
+          cases hq : range_perm_dec m b ofs (zAdd ofs (size_chunk Mint8unsigned)) Cur Readable with
+          | left _ => rfl
+          | right hn => exact False.elim (hn hpp')
+      | right hnp =>
+          have hnp' : ¬ range_perm m b ofs (zAdd ofs (size_chunk Mint8unsigned)) Cur Readable := by
+            intro hq
+            apply hnp
+            simpa [hs] using hq
+          cases hq : range_perm_dec m b ofs (zAdd ofs (size_chunk Mint8unsigned)) Cur Readable with
+          | left hp => exact False.elim (hnp' hp)
+          | right _ => rfl
+    have hdivide :
+        boolOfSumbool (zdivide_dec (align_chunk Mbool) ofs) =
+          boolOfSumbool (zdivide_dec (align_chunk Mint8unsigned) ofs) := by
+      cases hp : zdivide_dec (align_chunk Mbool) ofs with
+      | left hpp =>
+          have hpp' : zDivide (align_chunk Mint8unsigned) ofs := by
+            simpa [ha] using hpp
+          cases hq : zdivide_dec (align_chunk Mint8unsigned) ofs with
+          | left _ => rfl
+          | right hn => exact False.elim (hn hpp')
+      | right hnp =>
+          have hnp' : ¬ zDivide (align_chunk Mint8unsigned) ofs := by
+            intro hq
+            apply hnp
+            simpa [ha] using hq
+          cases hq : zdivide_dec (align_chunk Mint8unsigned) ofs with
+          | left hp => exact False.elim (hnp' hp)
+          | right _ => rfl
+    rw [hvalid_bool Mbool, hvalid_bool Mint8unsigned, hrange, hdivide]
+  rw [hbool_eq]
+  cases hbool : boolOfSumbool (valid_access_dec m Mint8unsigned b ofs Readable) with
+  | false =>
+      simp [hbool]
+      rfl
+  | true =>
+      have hdecode : decode_val Mbool (getN 1 ofs (PMap.get b m.mem_contents)) =
+          Val.norm_bool (decode_val Mint8unsigned
+            (getN 1 ofs (PMap.get b m.mem_contents))) := by
+        unfold decode_val
+        cases hp : proj_bytes (getN 1 ofs (PMap.get b m.mem_contents)) with
+        | none => simp [hp, Val.norm_bool]
+        | some bl => simp [hp]
+      simpa [hbool, option_map, hdecode]
+
+end Mem
+
+end CompCert4Lean.Common.Memory
