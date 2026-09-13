@@ -1940,3 +1940,20 @@ theorem forall2_val_casted_inject : forall2_val_casted_injectStatement := by
           exact .cons _ _ (val_casted_inject f v1 v2 _ hhead hty) (ih _ htys)
 
 end CompCert4Lean.Cfrontend.SimplLocalsproof
+
+namespace CompCert4Lean.Cfrontend.SimplLocalsproof
+
+theorem val_casted_list_params : val_casted_list_paramsStatement := by
+  intro params vl hcast
+  induction params generalizing vl with
+  | nil =>
+      cases hcast
+      exact .nil _
+  | cons p ps ih =>
+      cases p with
+      | mk id ty =>
+          cases hcast with
+          | cons _ _ _ _ hhead htail =>
+              exact .cons _ _ hhead (ih _ htail)
+
+end CompCert4Lean.Cfrontend.SimplLocalsproof
