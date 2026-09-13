@@ -1442,3 +1442,26 @@ theorem volatile_load_receptive : volatile_load_receptiveStatement := by
       · exact hload
 
 end CompCert4Lean.Common.Events
+
+namespace CompCert4Lean.Common.Events
+
+theorem volatile_store_preserved : volatile_store_preservedStatement := by
+  intro ge1 ge2 chunk m1 b ofs v t m2 heq hstore
+  cases hstore with
+  | volatile_store_vol id ev v hvol hfind hmatch =>
+      apply volatile_store_vol
+      · rw [heq.2.2 b]
+        exact hvol
+      · rw [heq.1 id]
+        exact hfind
+      · exact eventval_match_preserved ge1 ge2 heq.2.1 heq.1 ev
+          (CompCert4Lean.Common.AST.type_of_chunk chunk)
+          (CompCert4Lean.Common.Values.Val.load_result chunk v) hmatch
+  | volatile_store_nonvol =>
+      rename_i hnot hstore
+      apply volatile_store_nonvol
+      · rw [heq.2.2 b]
+        exact hnot
+      · exact hstore
+
+end CompCert4Lean.Common.Events

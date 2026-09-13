@@ -1633,3 +1633,31 @@ theorem find_funct_inversion : find_funct_inversionStatement := by
 
 end Genv
 end CompCert4Lean.Common.Globalenvs
+
+namespace CompCert4Lean.Common.Globalenvs
+namespace Genv
+
+theorem find_funct_ptr_prop : find_funct_ptr_propStatement := by
+  intro F V P p b f hP hfind
+  rcases find_funct_ptr_inversion (F := F) (V := V) (p := p) (b := b) (f := f) hfind with
+    ⟨id, hmem⟩
+  exact hP id f hmem
+
+theorem find_funct_prop : find_funct_propStatement := by
+  intro F V P p v f hP hfind
+  rcases find_funct_inversion (F := F) (V := V) (p := p) (v := v) (f := f) hfind with
+    ⟨id, hmem⟩
+  exact hP id f hmem
+
+theorem global_addresses_distinct : global_addresses_distinctStatement := by
+  intro F V ge id1 id2 b1 b2 hids h1 h2 hbeq
+  apply hids
+  subst b2
+  exact ge.genv_vars_inj id1 id2 h1 h2
+
+theorem invert_find_symbol : invert_find_symbolStatement := by
+  intro F V ge id b hinvert
+  exact invertFindSymbolProof ge id b hinvert
+
+end Genv
+end CompCert4Lean.Common.Globalenvs

@@ -2104,3 +2104,85 @@ theorem make_cast_correct
     | Vint n | Vlong n | Vsingle n | Vptr n _ | Vundef => simp at hsem
 
 end CompCert4Lean.Cfrontend.Cshmgenproof
+
+namespace CompCert4Lean.Cfrontend.Cshmgenproof
+
+open CompCert4Lean.Cfrontend.Cshmgen
+open CompCert4Lean.Cfrontend.Csharpminor
+
+theorem make_absfloat_correct
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    make_absfloat_correctStatement := by
+  intro ge a tya c va v e le m hsem hmake hval
+  unfold CompCert4Lean.Cfrontend.Cop.sem_absfloat at hsem
+  unfold make_absfloat at hmake
+  cases hclass : CompCert4Lean.Cfrontend.Cop.classify_neg tya <;>
+    simp [hclass] at hsem hmake
+  case neg_case_i sg =>
+    cases va with
+    | Vint n =>
+        cases hsem
+        cases hmake
+        have hconv : T_eval_expr ge e le m (make_floatofint a sg)
+            (.Vfloat (CompCert4Lean.Cfrontend.Cop.cast_int_float sg n)) := by
+          cases sg <;>
+            simp [make_floatofint, CompCert4Lean.Cfrontend.Cop.cast_int_float]
+          · apply Csharpminor.eval_Eunop
+            · exact hval
+            · rfl
+          · apply Csharpminor.eval_Eunop
+            · exact hval
+            · rfl
+        apply Csharpminor.eval_Eunop
+        · exact hconv
+        · unfold Csharpminor.eval_unop CompCert4Lean.Backend.Cminor.eval_unop
+          rfl
+    | Vlong n | Vfloat n | Vsingle n | Vptr n _ | Vundef => simp at hsem
+  case neg_case_f =>
+    cases va with
+    | Vfloat f =>
+        cases hsem
+        cases hmake
+        apply Csharpminor.eval_Eunop
+        · exact hval
+        · unfold Csharpminor.eval_unop CompCert4Lean.Backend.Cminor.eval_unop
+          rfl
+    | Vint n | Vlong n | Vsingle n | Vptr n _ | Vundef => simp at hsem
+  case neg_case_s =>
+    cases va with
+    | Vsingle f =>
+        cases hsem
+        cases hmake
+        have hconv : T_eval_expr ge e le m (make_floatofsingle a)
+            (.Vfloat (CompCert4Lean.Lib.Floats.Float.of_single f)) := by
+          apply Csharpminor.eval_Eunop
+          · exact hval
+          · rfl
+        apply Csharpminor.eval_Eunop
+        · exact hconv
+        · unfold Csharpminor.eval_unop CompCert4Lean.Backend.Cminor.eval_unop
+          rfl
+    | Vint n | Vlong n | Vfloat n | Vptr n _ | Vundef => simp at hsem
+  case neg_case_l sg =>
+    cases va with
+    | Vlong n =>
+        cases hsem
+        cases hmake
+        have hconv : T_eval_expr ge e le m (make_floatoflong a sg)
+            (.Vfloat (CompCert4Lean.Cfrontend.Cop.cast_long_float sg n)) := by
+          cases sg <;>
+            simp [make_floatoflong, CompCert4Lean.Cfrontend.Cop.cast_long_float]
+          · apply Csharpminor.eval_Eunop
+            · exact hval
+            · rfl
+          · apply Csharpminor.eval_Eunop
+            · exact hval
+            · rfl
+        apply Csharpminor.eval_Eunop
+        · exact hconv
+        · unfold Csharpminor.eval_unop CompCert4Lean.Backend.Cminor.eval_unop
+          rfl
+    | Vint n | Vfloat n | Vsingle n | Vptr n _ | Vundef => simp at hsem
+
+end CompCert4Lean.Cfrontend.Cshmgenproof

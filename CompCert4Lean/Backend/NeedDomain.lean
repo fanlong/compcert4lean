@@ -1275,3 +1275,26 @@ theorem iagree_mone : iagree_moneStatement := by
   exact CompCert4Lean.Lib.Integers.WordCore.ext_of_val_eq hval
 
 end CompCert4Lean.Backend.NeedDomain
+
+namespace CompCert4Lean.Backend.NeedDomain
+
+theorem iagree_zero : iagree_zeroStatement := by
+  intro p q i hirange hmask
+  cases i with
+  | Zneg p => cases hmask
+  | Z0 =>
+      have hz : CompCert4Lean.Lib.Integers.Int.testbit
+          CompCert4Lean.Lib.Integers.Int.zero .Z0 = false := by rfl
+      rw [hz] at hmask
+      cases hmask
+  | Zpos p =>
+      have hz : CompCert4Lean.Lib.Integers.Int.testbit
+          CompCert4Lean.Lib.Integers.Int.zero (.Zpos p) = false := by
+        have hval : CompCert4Lean.Lib.Integers.Int.zero.val = 0 := by rfl
+        change Nat.testBit CompCert4Lean.Lib.Integers.Int.zero.val _ = false
+        rw [hval]
+        exact Nat.zero_testBit _
+      rw [hz] at hmask
+      cases hmask
+
+end CompCert4Lean.Backend.NeedDomain

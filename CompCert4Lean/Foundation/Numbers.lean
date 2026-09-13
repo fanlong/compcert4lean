@@ -1408,3 +1408,74 @@ theorem PArith.BinPos.Pos.compare_gt_iff :
 
 end Rocq.Coq
 end CompCert4Lean.Foundation.Numbers
+
+namespace CompCert4Lean.Foundation.Numbers
+namespace Rocq.Coq
+
+theorem PArith.BinPos.Pos.posToNat_succ (p : positive) :
+    posToNat (PArith.BinPos.Pos.succ p) = posToNat p + 1 := by
+  induction p with
+  | xH => simp [PArith.BinPos.Pos.succ, posToNat]
+  | xI q ih => simp [PArith.BinPos.Pos.succ, posToNat, ih] <;> omega
+  | xO q ih => simp [PArith.BinPos.Pos.succ, posToNat]
+
+theorem PArith.BinPos.Pos.succ_pred_or :
+    PArith.BinPos.Pos.succ_pred_orStatement := by
+  intro p
+  cases p with
+  | xH => exact Or.inl rfl
+  | xI q => exact Or.inr rfl
+  | xO q =>
+      right
+      change PArith.BinPos.Pos.succ (PArith.BinPos.Pos.pred_double q) = .xO q
+      induction q with
+      | xH => rfl
+      | xI r ih => rfl
+      | xO r ih => simp [PArith.BinPos.Pos.pred_double, PArith.BinPos.Pos.succ, ih]
+
+theorem PArith.BinPos.Pos.add_1_r :
+    PArith.BinPos.Pos.add_1_rStatement := by
+  intro p
+  apply posToNat_injective
+  calc
+    posToNat (PArith.BinPos.Pos.add p xH) = posToNat p + posToNat xH := by
+      unfold PArith.BinPos.Pos.add
+      apply posToNat_posOfNat
+      have hp := posToNat_positive p
+      simp [posToNat]
+    _ = posToNat (PArith.BinPos.Pos.succ p) := by
+      simpa [posToNat] using (PArith.BinPos.Pos.posToNat_succ p).symm
+
+theorem PArith.BinPos.Pos.mul_comm :
+    PArith.BinPos.Pos.mul_commStatement := by
+  intro p q
+  apply posToNat_injective
+  calc
+    posToNat (PArith.BinPos.Pos.mul p q) = posToNat p * posToNat q := by
+      unfold PArith.BinPos.Pos.mul
+      apply posToNat_posOfNat
+      have hp := posToNat_positive p
+      have hq := posToNat_positive q
+      exact Nat.mul_pos hp hq
+    _ = posToNat q * posToNat p := Nat.mul_comm _ _
+    _ = posToNat (PArith.BinPos.Pos.mul q p) := by
+      symm
+      unfold PArith.BinPos.Pos.mul
+      apply posToNat_posOfNat
+      have hp := posToNat_positive p
+      have hq := posToNat_positive q
+      exact Nat.mul_pos hq hp
+
+private theorem natIter_comp_succ {A : Type} (f : A → A) (n : Nat) (x : A) :
+    natIter f n (f x) = f (natIter f n x) := by
+  induction n generalizing x with
+  | zero => rfl
+  | succ n ih => simp [natIter, ih]
+
+theorem PArith.BinPos.Pos.iter_succ :
+    PArith.BinPos.Pos.iter_succStatement := by
+  intro p A f x
+  unfold PArith.BinPos.Pos.iter
+  rw [PArith.BinPos.Pos.posToNat_succ]
+  change natIter f (posToNat p) (f x) = f (natIter f (posToNat p) x)
+  exact natIter_comp_succ f (posToNat p) x

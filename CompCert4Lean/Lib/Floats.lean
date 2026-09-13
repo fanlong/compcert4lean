@@ -1398,3 +1398,264 @@ theorem default_nan_32_result_obligation_proof : default_nan_32_result_obligatio
     decide
 
 end CompCert4Lean.Lib.Floats
+
+namespace CompCert4Lean.Lib.Floats
+private theorem test_nan_aux_true (q : Nat) (hq : 0 < q) (hqlt : q < 2 ^ 23) :
+    CompCert4Lean.Flocq.IEEE754.Bits.binary_float_of_bits_aux
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 23)
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 8)
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat
+          (4286578688 + q)) =
+      CompCert4Lean.Flocq.IEEE754.Binary.F754_nan true
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.PArith.BinPos.Pos.of_nat q) := by
+  unfold CompCert4Lean.Flocq.IEEE754.Bits.binary_float_of_bits_aux
+  unfold CompCert4Lean.Flocq.IEEE754.Bits.split_bits
+  have zmod_nat (a b : Nat) (hb : 0 < b) :
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.modulo
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat a)
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat b) =
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat (a % b) := by
+    have hdecomp :
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat a =
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add
+            (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat (a % b))
+            (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.mul
+              (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat (a / b))
+              (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat b)) := by
+      apply CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective
+      simp only [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat,
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add,
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.mul,
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+      calc
+        Int.ofNat a = Int.ofNat (a % b + b * (a / b)) := by
+          congr 1
+          exact (Nat.mod_add_div a b).symm
+        _ = Int.ofNat (a % b + (a / b) * b) := by rw [Nat.mul_comm]
+    rw [hdecomp,
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.modulo_add_mul]
+    apply CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.mod_small
+    constructor
+    · change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.Z0 ≤
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat (a % b))
+      rw [show CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.Z0 = 0 by rfl]
+      simp only [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat,
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+      exact Int.natCast_nonneg _
+    · change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat (a % b)) <
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat b)
+      simp only [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat,
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+      exact (Int.ofNat_lt).2 (Nat.mod_lt a hb)
+  have zdiv_nat (a b : Nat) (hb : 0 < b) :
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.div
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat a)
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat b) =
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat (a / b) := by
+    have hiden :=
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.Zdiv.Z_div_mod_eq_full
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat a)
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat b)
+    rw [zmod_nat a b hb] at hiden
+    have hiden' := congrArg CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ hiden
+    simp only [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat,
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add,
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.mul,
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt] at hiden'
+    have hcast : Int.ofNat a = Int.ofNat b * Int.ofNat (a / b) + Int.ofNat (a % b) := by
+      have hn : a = b * (a / b) + a % b := by
+        calc
+          a = a % b + b * (a / b) := (Nat.mod_add_div a b).symm
+          _ = b * (a / b) + a % b := by rw [Nat.add_comm]
+      have hi := congrArg (fun n : Nat => (n : Int)) hn
+      simp only [Int.natCast_mul, Int.natCast_add] at hi
+      exact hi
+    have hsum : Int.ofNat b *
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+            (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.div
+              (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat a)
+              (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat b)) +
+          Int.ofNat (a % b) =
+        Int.ofNat b * Int.ofNat (a / b) + Int.ofNat (a % b) := hiden'.symm.trans hcast
+    have hprod : Int.ofNat b *
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+            (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.div
+              (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat a)
+              (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat b)) =
+        Int.ofNat b * Int.ofNat (a / b) := by
+      apply Int.add_left_cancel (a := Int.ofNat (a % b))
+      simpa [Int.add_comm] using hsum
+    apply CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective
+    have hbI : Int.ofNat b ≠ 0 := (Int.ofNat_ne_zero).2 (Nat.ne_of_gt hb)
+    have hqcast :
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+            (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat (a / b)) =
+          Int.ofNat (a / b) := by
+      exact CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt _
+    exact Int.eq_of_mul_eq_mul_left hbI (hprod.trans (by rw [hqcast]))
+  have h23 : CompCert4Lean.Flocq.IEEE754.Bits.Zpower
+      CompCert4Lean.Flocq.IEEE754.Bits.Ztwo
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 23) =
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 8388608 := by decide
+  have h8 : CompCert4Lean.Flocq.IEEE754.Bits.Zpower
+      CompCert4Lean.Flocq.IEEE754.Bits.Ztwo
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 8) =
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 256 := by decide
+  rw [h23, h8]
+  dsimp only
+  change (if CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.Zbool.Zeq_bool _ _ then _ else _) = _
+  change (if CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.Zbool.Zeq_bool
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.modulo
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.div _ _) _) _ then _ else _) = _
+  rw [zdiv_nat (4286578688 + q) 8388608 (by omega)]
+  rw [zmod_nat ((4286578688 + q) / 8388608) 256 (by omega)]
+  change (if CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.Zbool.Zeq_bool _ _ then
+      match CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.modulo _ _ with
+      | .Z0 => _ | .Zpos px => _ | .Zneg px => _
+    else _) = _
+  rw [zmod_nat (4286578688 + q) 8388608 (by omega)]
+  have hqmod : (4286578688 + q) % 8388608 = q := by
+    have hbase : 4286578688 = 511 * 8388608 := by decide
+    rw [hbase, Nat.add_comm, Nat.mul_comm 511 8388608,
+      Nat.add_mul_mod_self_left, Nat.mod_eq_of_lt hqlt]
+  have hqdiv : (4286578688 + q) / 8388608 = 511 := by
+    have hbase : 4286578688 = 511 * 8388608 := by decide
+    rw [hbase, Nat.add_comm, Nat.mul_comm 511 8388608,
+      Nat.add_mul_div_left q 511 (by omega),
+      Nat.div_eq_of_lt hqlt]
+  rw [hqmod, hqdiv]
+  simp only [show 511 % 256 = 255 by decide]
+  have hz255 :
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 255 =
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.sub
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 256)
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.Zpos .xH) := by decide
+  have hqz :
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat q =
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.Zpos
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.PArith.BinPos.Pos.of_nat q) := by
+    apply CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective
+    simp only [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat,
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+    exact congrArg Int.ofNat
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat_posOfNat hq).symm
+  rw [hz255, hqz]
+  simp only [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.Zbool.Zeq_bool]
+  simp
+  have hsign : CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.leb
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.mul
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 8388608)
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 256))
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat (4286578688 + q)) = true := by
+    unfold CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.leb
+    simp only [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.mul,
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat,
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+    rw [if_pos]
+    have hfull : 2147483648 ≤ 4286578688 + q := by omega
+    have hfullInt := (Int.ofNat_le).2 hfull
+    rw [show Int.ofNat 8388608 * Int.ofNat 256 = Int.ofNat 2147483648 by decide]
+    exact hfullInt
+  simp only [CompCert4Lean.Flocq.IEEE754.Bits.Zle_bool,
+    CompCert4Lean.Flocq.IEEE754.Bits.Zmul, hsign]
+  simp only [CompCert4Lean.Flocq.IEEE754.Bits.Zmod,
+    CompCert4Lean.Flocq.IEEE754.Bits.Zdiv,
+    CompCert4Lean.Flocq.IEEE754.Bits.Zsub,
+    CompCert4Lean.Flocq.IEEE754.Bits.Zone,
+    CompCert4Lean.Flocq.IEEE754.Bits.Z0,
+    CompCert4Lean.Flocq.IEEE754.Bits.Zadd]
+  rw [← hz255]
+  rw [zdiv_nat (4286578688 + q) 8388608 (by omega)]
+  rw [zmod_nat ((4286578688 + q) / 8388608) 256 (by omega)]
+  rw [hqdiv, show 511 % 256 = 255 by decide]
+  rw [zmod_nat (4286578688 + q) 8388608 (by omega), hqmod, hqz]
+  have h255ne : CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 255 ≠
+      CompCert4Lean.Flocq.Core.Zaux.Z0 := by decide
+  rw [if_neg h255ne]
+  have h255eq : CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 255 =
+      CompCert4Lean.Flocq.Core.Zaux.Zsub
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 256)
+        CompCert4Lean.Flocq.Core.Zaux.Zone := by decide
+  rw [if_pos h255eq]
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Flocq.IEEE754
+open CompCert4Lean.Lib
+
+private theorem decode32_mkNaN_true (q : Nat) (hq : 0 < q) (hqlt : q < 2 ^ 23) :
+    decode32
+        (mkNaN32 true
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.PArith.BinPos.Pos.of_nat q)) =
+      (CompCert4Lean.Flocq.IEEE754.Binary.B754_nan true
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.PArith.BinPos.Pos.of_nat q) :
+        CompCert4Lean.Flocq.IEEE754.Bits.binary32) := by
+  unfold decode32 mkNaN32
+  dsimp only
+  have hpayload :
+      PArith.BinPos.Pos.to_nat
+          (PArith.BinPos.Pos.of_nat q) = q := by
+    change posToNat (posOfNat q) = q
+    exact posToNat_posOfNat hq
+  rw [hpayload, Nat.mod_eq_of_lt hqlt]
+  simp only [if_true]
+  rw [show (2 ^ 8 - 1) * 2 ^ 23 = 2139095040 by decide]
+  have hbase : 2 ^ 31 + 2139095040 = 4286578688 := by decide
+  rw [hbase, BitVec.toNat_ofNat]
+  have hsum : 4286578688 + q < 2 ^ 32 := by omega
+  rw [Nat.mod_eq_of_lt hsum]
+  unfold CompCert4Lean.Flocq.IEEE754.Bits.b32_of_bits_unchecked
+  unfold CompCert4Lean.Flocq.IEEE754.Bits.binary_float_of_bits_unchecked
+  unfold CompCert4Lean.Flocq.IEEE754.Binary.FF2B_unchecked
+  rw [test_nan_aux_true q hq hqlt]
+
+theorem Float32.neg_nan_result_obligation_proof : Float32.neg_nan_result_obligation := by
+  intro f hf
+  unfold Float32.neg_nan
+  split
+  · rename_i hnan
+    have hparts : (exponent32 f == (2 ^ 8 - 1)) = true ∧
+        (fraction32 f != 0) = true := by
+      simpa only [isNaN32, Bool.and_eq_true] using hnan
+    have hq : 0 < fraction32 f := by
+      have hne : fraction32 f ≠ 0 := by simpa using hparts.2
+      omega
+    have hqlt : fraction32 f < 2 ^ 23 := by
+      unfold fraction32
+      exact Nat.mod_lt _ (Nat.two_pow_pos 23)
+    unfold payload32
+    cases hs : sign32 f with
+    | false =>
+        simp only [Bool.not_false]
+        rw [decode32_mkNaN_true (fraction32 f) hq hqlt]
+        constructor
+        · rfl
+        · unfold CompCert4Lean.Flocq.IEEE754.Binary.BinaryFloatCertificate
+          unfold CompCert4Lean.Flocq.IEEE754.Binary.B2FF
+          unfold CompCert4Lean.Flocq.IEEE754.Binary.valid_binary
+          change CompCert4Lean.Flocq.IEEE754.Binary.nan_pl (prec := z24)
+              (CompCert4Lean.Foundation.Numbers.Rocq.Coq.PArith.BinPos.Pos.of_nat
+                (fraction32 f)) = true
+          exact nan_pl_posOfNat_lt_23 (fraction32 f) hq hqlt
+    | true =>
+        simp only [Bool.not_true]
+        rw [decode32_mkNaN_false (fraction32 f) hq hqlt]
+        constructor
+        · rfl
+        · unfold CompCert4Lean.Flocq.IEEE754.Binary.BinaryFloatCertificate
+          unfold CompCert4Lean.Flocq.IEEE754.Binary.B2FF
+          unfold CompCert4Lean.Flocq.IEEE754.Binary.valid_binary
+          change CompCert4Lean.Flocq.IEEE754.Binary.nan_pl (prec := z24)
+              (CompCert4Lean.Foundation.Numbers.Rocq.Coq.PArith.BinPos.Pos.of_nat
+                (fraction32 f)) = true
+          exact nan_pl_posOfNat_lt_23 (fraction32 f) hq hqlt
+  · unfold default_nan_32 quiet_nan_32 quiet_nan_32_payload
+    unfold CompCert4Lean.X86_64.Archi.default_nan_32
+    dsimp only
+    constructor <;> rfl
+
+end CompCert4Lean.Lib.Floats

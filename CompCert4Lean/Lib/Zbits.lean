@@ -1162,3 +1162,12 @@ theorem Ztestbit_shiftin : Ztestbit_shiftinStatement := by
 end CompCert4Lean.Lib.Zbits
 
 namespace CompCert4Lean.Lib.Zbits
+
+theorem Ztestbit_eq : Ztestbit_eqStatement := by
+  intro n x hn
+  calc
+    zTestbit x n = zTestbit (Zshiftin (zOdd x) (zDiv2 x)) n :=
+      congrArg (fun y => zTestbit y n) (Zdecomp x)
+    _ = sumboolSelect (zeqDec n zZero) (zOdd x)
+        (zTestbit (zDiv2 x) (zPred n)) :=
+      Ztestbit_shiftin (zOdd x) (zDiv2 x) n hn

@@ -1298,3 +1298,16 @@ theorem vmatch_no_stack : vmatch_no_stackStatement := by
   | ifptrPtr b ofs p hpm => exact pmatch_no_stack bc hnostack b ofs p hpm
 
 end CompCert4Lean.Backend.ValueAnalysis
+
+namespace CompCert4Lean.Backend.ValueAnalysis
+
+theorem smatch_no_stack : smatch_no_stackStatement := by
+  intro bc hnostack m b p hsm
+  rcases hsm with ⟨hload, hbytes⟩
+  constructor
+  · intro chunk ofs v h
+    exact vmatch_no_stack bc hnostack v _ (hload chunk ofs v h)
+  · intro ofs b' ofs' q i h
+    exact pmatch_no_stack bc hnostack b' ofs' p (hbytes ofs b' ofs' q i h)
+
+end CompCert4Lean.Backend.ValueAnalysis

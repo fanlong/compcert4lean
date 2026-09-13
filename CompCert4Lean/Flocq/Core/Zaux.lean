@@ -731,3 +731,49 @@ theorem Zpower_gt_1 : Zpower_gt_1Statement := by
       exact CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat_positive q
 
 end CompCert4Lean.Flocq.Core.Zaux
+
+namespace CompCert4Lean.Flocq.Core.Zaux
+
+theorem Zpower_gt_0 : Zpower_gt_0Statement := by
+  intro r p hp
+  cases p with
+  | Z0 =>
+      change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ Z0 <
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (Zpower r.radix_val Z0)
+      have hzero : CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ Z0 = (0 : Int) := by
+        decide
+      rw [hzero]
+      unfold Zpower CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.Zpow_def.Zpower
+      have hcond : ¬ CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (Z0 : Z) < 0 := by
+        simp [CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ]
+      simp only [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.pow, hcond,
+        ↓reduceIte]
+      rw [CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+      change (0 : Int) <
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ r.radix_val) ^ (0 : Nat)
+      simp
+  | Zpos q =>
+      change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ Z0 <
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+          (Zpower r.radix_val (.Zpos q))
+      have hzero : CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ Z0 = (0 : Int) := by
+        decide
+      rw [hzero]
+      unfold Zpower CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.Zpow_def.Zpower
+      have hcond : ¬ CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (.Zpos q : Z) < 0 := by
+        simp [CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ]
+      simp only [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.pow, hcond,
+        ↓reduceIte]
+      rw [CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+      exact Int.pow_pos (radix_gt_0 r)
+  | Zneg q =>
+      exfalso
+      change (0 : Int) ≤ -Int.ofNat
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat q) at hp
+      have hq := CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat_positive q
+      have hq' : (0 : Int) < Int.ofNat
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat q) :=
+        Int.natCast_pos.mpr hq
+      omega
+
+end CompCert4Lean.Flocq.Core.Zaux

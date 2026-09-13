@@ -1541,3 +1541,16 @@ theorem bool_of_val_of_optbool : bool_of_val_of_optboolStatement := by
 
 end Val
 end CompCert4Lean.Common.Values
+
+namespace CompCert4Lean.Common.Values
+namespace Val
+
+theorem norm_bool_idem : norm_bool_idemStatement := by
+  intro v
+  unfold norm_bool
+  by_cases h : is_bool v
+  · simp [h]
+  · simp [h]
+
+end Val
+end CompCert4Lean.Common.Values

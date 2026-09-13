@@ -1881,3 +1881,62 @@ theorem steps_incr : steps_incrStatement := by
         exact hstep_vis (hprev_vis hv)
 
 end CompCert4Lean.Backend.Kildall.Dataflow_Solver
+
+namespace CompCert4Lean.Backend.Kildall.Dataflow_Solver
+
+open CompCert4Lean.Lib.Maps
+
+theorem step_state_good : step_state_goodStatement := by
+  intro A LAT NS LATlaws NSlaws code successors transf st pc rem instr hpick hcode hgood
+  rcases hgood with ⟨hstable, hdefined⟩
+  have hprop := propagate_succ_list_charact (LAT := LAT) (NS := NS) LATlaws NSlaws
+    (transf pc (abstr_value pc st)) (successors instr)
+    ({ aval := st.aval, worklist := rem, visited := st.visited } : state LAT NS)
+  rcases hprop with ⟨A1, A2, A3, A4, A5, A6, A7, A8, A9⟩
+  constructor
+  · intro n hnvis
+    rcases A8 n hnvis with hnwork | hnvis
+    · exact Or.inl hnwork
+    · rcases A4 n with hnwork | haval
+      · exact Or.inl hnwork
+      · have haval' : PTree.get n
+            (propagate_succ_list
+              { aval := st.aval, worklist := rem, visited := st.visited }
+              (transf pc (abstr_value pc st)) (successors instr)).aval =
+            PTree.get n st.aval := haval
+        have habstr : abstr_value n
+            (propagate_succ_list
+              { aval := st.aval, worklist := rem, visited := st.visited }
+              (transf pc (abstr_value pc st)) (successors instr)) =
+            abstr_value n st := by
+          exact congrArg (fun ov : Option LAT.t =>
+            match ov with
+            | none => LAT.bot
+            | some v => v) haval'
+        rcases hstable n hnvis with hwork | hstable
+        · rcases (NSlaws.pick_some st.worklist pc rem hpick n).mp hwork with hpc | hrem
+          · subst n
+            right
+            rw [habstr]
+            intro i s hget hsucc
+            have hinstr : i = instr := by
+              rw [hcode] at hget
+              exact (Option.some.inj hget).symm
+            subst i
+            simpa using A1 s hsucc
+          · exact Or.inl (A5 n hrem)
+        · right
+          rw [habstr]
+          intro i s hget hsucc
+          exact optge_trans LATlaws _ _ _ (A3 s) (hstable i s hget hsucc)
+  · intro n v hget
+    cases hold : PTree.get n st.aval with
+    | none =>
+        exact A9 n hold (by
+          intro hnone
+          rw [hnone] at hget
+          cases hget)
+    | some old =>
+        exact A7 n (hdefined n old hold)
+
+end CompCert4Lean.Backend.Kildall.Dataflow_Solver

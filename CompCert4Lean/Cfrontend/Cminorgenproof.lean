@@ -1691,3 +1691,19 @@ theorem padding_freeable_invariant : padding_freeable_invariantStatement := by
       exact Or.inr (is_reachable_intro hget hf2 hdelta)
 
 end CompCert4Lean.Cfrontend.Cminorgenproof
+
+namespace CompCert4Lean.Cfrontend.Cminorgenproof
+
+theorem inj_preserves_globals : inj_preserves_globalsStatement := by
+  intro prog f hi hmatch
+  cases hmatch with
+  | mk domain image symbols functions varinfos =>
+      refine ⟨?_, ?_, ?_⟩
+      · intro id b hsym
+        exact domain b (symbols id b hsym)
+      · intro b gv hvar
+        exact domain b (varinfos b gv hvar)
+      · intro b1 b2 delta gv hvar hinj
+        exact (image b1 b2 delta hinj (varinfos b2 gv hvar)).symm
+
+end CompCert4Lean.Cfrontend.Cminorgenproof

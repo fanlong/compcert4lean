@@ -1399,3 +1399,12 @@ theorem eval_shift_stack_addressing64 : eval_shift_stack_addressing64Statement :
                 hzero]
 
 end CompCert4Lean.X86.Op
+
+namespace CompCert4Lean.X86.Op
+
+theorem eval_shift_stack_addressing : eval_shift_stack_addressingStatement := by
+  intro F V ge sp addr vl delta
+  simp [eval_addressing, CompCert4Lean.X86_64.Archi.ptr64]
+  exact eval_shift_stack_addressing64 F V ge sp addr vl delta
+
+end CompCert4Lean.X86.Op

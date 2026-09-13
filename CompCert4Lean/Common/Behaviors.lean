@@ -1288,3 +1288,22 @@ theorem forward_simulation_behavior_improves :
             exact hinit2 ⟨s, hs⟩
 
 end CompCert4Lean.Common.Behaviors
+
+namespace CompCert4Lean.Common.Behaviors
+
+open CompCert4Lean.Common.Events
+
+theorem forward_simulation_same_safe_behavior :
+    forward_simulation_same_safe_behaviorStatement := by
+  intro L1 L2 hsim beh hbeh hnotwrong
+  obtain ⟨beh2, hbeh2, himproves⟩ :
+      ∃ beh2 : program_behavior,
+        program_behaves L2 beh2 ∧ behavior_improves beh beh2 :=
+    forward_simulation_behavior_improves L1 L2 hsim beh hbeh
+  rcases himproves with heq | ⟨t, hwrong, hprefix⟩
+  · rw [heq]
+    exact hbeh2
+  · subst beh
+    simp [not_wrong] at hnotwrong
+
+end CompCert4Lean.Common.Behaviors

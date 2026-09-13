@@ -1519,3 +1519,118 @@ theorem plus_ind2 : plus_ind2Statement := by
       exact H _ _ _ hstar _ _ hstep
 
 end CompCert4Lean.Common.Smallstep
+
+namespace CompCert4Lean.Common.Smallstep
+
+open CompCert4Lean.Common.Events
+
+theorem star_starN : star_starNStatement := by
+  intro genv state step ge s t s' hstar
+  induction hstar with
+  | star_refl s =>
+      exact ⟨0, starN.refl s⟩
+  | @star_step s1 t1 s2 t2 s3 t hstep htail htrace ih =>
+      obtain ⟨n, hn⟩ := ih
+      refine ⟨n + 1, ?_⟩
+      exact @starN.step genv state step ge n s1 t t1 s2 t2 s3 hstep hn htrace
+
+private theorem Eapp_eq_E0_inv_local : ∀ t1 t2 : trace,
+    Eapp t1 t2 = E0 → t1 = E0 ∧ t2 = E0 := by
+  intro t1 t2 h
+  cases t1 with
+  | nil =>
+      constructor
+      · rfl
+      · change List.append ([] : List event) t2 = [] at h
+        exact (List.eq_nil_of_append_eq_nil h).2
+  | cons e t1 =>
+      cases h
+
+theorem forever_silent_N_inv : forever_silent_N_invStatement := by
+  intro genv state step A order hWf ge a s h
+  revert s h
+  apply _root_.WellFounded.induction hWf a
+  intro acur ih s1 hfs
+  refine (forever_silent_N_casesOn (motive := fun a' s' =>
+    a' = acur → ∃ s'' a'', step ge s' E0 s'' ∧
+      forever_silent_N step order ge a'' s'')
+    (hstar := by
+      intro s0 s2 a0 a2 hstar horder htail ha
+      subst a0
+      cases hstar with
+      | star_refl _ =>
+          exact ih a2 horder _ htail
+      | star_step s0' t1 s1' t2 s2' t hstep hstar' htrace =>
+          obtain ⟨ht1, ht2⟩ := Eapp_eq_E0_inv_local t1 t2 htrace.symm
+          subst t1
+          subst t2
+          exact ⟨_, acur, hstep,
+            forever_silent_N_star acur hstar' horder htail⟩)
+    (hplus := by
+      intro s0 s2 a0 a2 hplus htail ha
+      subst a0
+      cases hplus with
+      | plus_left t1 s1' t2 s2' t hstep hstar htrace =>
+          obtain ⟨ht1, ht2⟩ := Eapp_eq_E0_inv_local t1 t2 htrace.symm
+          subst t1
+          subst t2
+          cases hstar with
+          | star_refl _ =>
+              exact ⟨_, a2, hstep, htail⟩
+          | @star_step ss1 tt1 ss2 tt2 ss3 tt hstep' hstar' htrace' =>
+              obtain ⟨ht1', ht2'⟩ := Eapp_eq_E0_inv_local tt1 tt2 htrace'.symm
+              subst tt1
+              subst tt2
+              have hplus' : plus step ge s1' E0 s2 := by
+                exact plus_left s1' E0 hstep' hstar' (by
+                  change ([] : List event) = List.append [] []
+                  rfl)
+              exact ⟨_, a2, hstep,
+                forever_silent_N_plus a2 hplus' htail⟩)
+    hfs) rfl
+
+theorem forever_silent_N_forever : forever_silent_N_foreverStatement := by
+  intro genv state step A order hWf ge a s hN
+  let pred : state → Prop := fun s =>
+    ∃ a, forever_silent_N step order ge a s
+  have hpred : pred s := ⟨a, hN⟩
+  exact forever_silent.coinduct step ge pred
+    (by
+      intro s0 hs
+      rcases hs with ⟨a0, hN0⟩
+      obtain ⟨s', a', hstep, hN'⟩ :=
+        forever_silent_N_inv genv state step A order hWf ge a0 s0 hN0
+      exact ⟨s', hstep, ⟨a', hN'⟩⟩)
+    s hpred
+
+private theorem Eappinf_assoc_local : ∀ (t1 t2 : trace) (T : traceinf),
+    Eappinf (Eapp t1 t2) T = Eappinf t1 (Eappinf t2 T) := by
+  intro t1 t2 T
+  induction t1 with
+  | nil => rfl
+  | cons e t1 ih =>
+      exact congrArg (Econsinf e) ih
+
+theorem star_forever_reactive : star_forever_reactiveStatement := by
+  intro genv state step ge s1 t s2 T hstar hforever
+  refine (forever_reactive_casesOn
+    (motive := fun s' T' => s' = s2 →
+      forever_reactive step ge s1 (Eappinf t T'))
+    (by
+      intro s2' s3 t2 T2 hstar2 hnonempty htail
+      intro hs
+      subst s2'
+      have hcomp : star step ge s1 (Eapp t t2) s3 := by
+        exact star_trans genv state step ge s1 t s2 hstar t2 s3
+          (Eapp t t2) hstar2 rfl
+      have hnonempty' : Eapp t t2 ≠ E0 := by
+        intro hzero
+        exact hnonempty (Eapp_eq_E0_inv_local t t2 hzero |>.2)
+      have hresult :
+          forever_reactive step ge s1 (Eappinf (Eapp t t2) T2) :=
+        forever_reactive_intro hcomp hnonempty' htail
+      rw [Eappinf_assoc_local] at hresult
+      exact hresult)
+    hforever) rfl
+
+end CompCert4Lean.Common.Smallstep

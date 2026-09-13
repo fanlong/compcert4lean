@@ -929,3 +929,269 @@ theorem senv_preserved : senv_preservedStatement := by
                     rfl
 
 end CompCert4Lean.Backend.Tailcallproof
+
+namespace CompCert4Lean.Backend.Tailcallproof
+
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Linking
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.List
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.Lib.Integers
+open Lean Elab Tactic Meta
+
+private def tailcallPrivateName (suffix : String) : Name :=
+  let p := Name.str (Name.str (Name.str (Name.str Name.anonymous "_private") "CompCert4Lean") "Lib") "Integers"
+  let base := Name.num p 0
+  suffix.splitOn "." |>.foldl Name.str base
+
+private theorem tailcall_wordcore_add_val {bits : Nat}
+    (x y : CompCert4Lean.Lib.Integers.WordCore.Word bits) :
+    (CompCert4Lean.Lib.Integers.WordCore.add x y).val =
+      (x.val + y.val) % (2 ^ bits) := by
+  run_tac
+    let lctx ← getLCtx
+    let xF := (lctx.findFromUserName? `x).get!
+    let yF := (lctx.findFromUserName? `y).get!
+    let e ← mkAppM
+      (tailcallPrivateName "CompCert4Lean.Lib.Integers.WordCore.add_val")
+      #[mkFVar xF.fvarId, mkFVar yF.fvarId]
+    closeMainGoal Name.anonymous e
+
+private theorem tailcall_wordcore_zero_val (bits : Nat) :
+    (CompCert4Lean.Lib.Integers.WordCore.zero bits).val = 0 := by
+  unfold CompCert4Lean.Lib.Integers.WordCore.zero
+  run_tac
+    let lctx ← getLCtx
+    let bF := (lctx.findFromUserName? `bits).get!
+    let e ← mkAppM
+      (tailcallPrivateName "CompCert4Lean.Lib.Integers.WordCore.val_repr_residue")
+      #[mkFVar bF.fvarId,
+        mkConst ``CompCert4Lean.Foundation.Numbers.Rocq.Coq.Numbers.BinNums.Z.Z0]
+    closeMainGoal Name.anonymous e
+
+private theorem tailcall_wordcore_val_lt {bits : Nat}
+    (x : CompCert4Lean.Lib.Integers.WordCore.Word bits) :
+    x.val < 2 ^ bits := by
+  run_tac
+    let lctx ← getLCtx
+    let xF := (lctx.findFromUserName? `x).get!
+    let e ← mkAppM
+      (tailcallPrivateName "CompCert4Lean.Lib.Integers.WordCore.val_lt")
+      #[mkFVar xF.fvarId]
+    closeMainGoal Name.anonymous e
+
+private theorem tailcall_ptrofs_add_zero (x : CompCert4Lean.Lib.Integers.Ptrofs.int) :
+    CompCert4Lean.Lib.Integers.Ptrofs.add x
+        CompCert4Lean.Lib.Integers.Ptrofs.zero = x := by
+  change CompCert4Lean.Lib.Integers.WordCore.add x
+    (CompCert4Lean.Lib.Integers.WordCore.zero
+      CompCert4Lean.Lib.Integers.Ptrofs.wordsize) = x
+  apply CompCert4Lean.Lib.Integers.WordCore.ext_of_val_eq
+  rw [tailcall_wordcore_add_val, tailcall_wordcore_zero_val]
+  exact Nat.mod_eq_of_lt (tailcall_wordcore_val_lt x)
+
+private theorem tailcall_symbols_preserved
+    (cfg : CompilerConfig) (prog tprog : program)
+    (hm : match_prog cfg prog tprog) :
+    ∀ id, Genv.find_symbol (Genv.globalenv tprog) id =
+      Genv.find_symbol (Genv.globalenv prog) id := by
+  intro id
+  exact (tailcall_globalenvs_match cfg prog tprog hm).mge_symb id
+
+private theorem tailcall_initial_store_init_data
+    {prog tprog : program}
+    (hsymb : ∀ id,
+      Genv.find_symbol (Genv.globalenv tprog) id =
+        Genv.find_symbol (Genv.globalenv prog) id)
+    (m : _) (b : _) (p : Z) (i : init_data) :
+    Genv.store_init_data (Genv.globalenv prog) m b p i =
+      Genv.store_init_data (Genv.globalenv tprog) m b p i := by
+  cases i with
+  | Init_addrof symb ofs =>
+      simp [Genv.store_init_data, hsymb symb]
+  | _ => rfl
+
+private theorem tailcall_initial_store_init_data_list
+    {prog tprog : program}
+    (hsymb : ∀ id,
+      Genv.find_symbol (Genv.globalenv tprog) id =
+        Genv.find_symbol (Genv.globalenv prog) id) :
+    ∀ (m : _) (b : _) (p : Z) (il : List init_data),
+      Genv.store_init_data_list (Genv.globalenv prog) m b p il =
+        Genv.store_init_data_list (Genv.globalenv tprog) m b p il := by
+  intro m b p il
+  induction il generalizing m b p with
+  | nil => rfl
+  | cons i rest ih =>
+      simp only [Genv.store_init_data_list]
+      rw [tailcall_initial_store_init_data hsymb]
+      cases h : Genv.store_init_data (Genv.globalenv tprog) m b p i with
+      | none => simp [h]
+      | some m' =>
+          simp only [h]
+          exact ih m' b (ZArith.BinInt.Z.add p (init_data_size i))
+
+private theorem tailcall_initial_alloc_global
+    (cfg : CompilerConfig)
+    [Linker program]
+    {prog tprog : program}
+    (hsymb : ∀ id,
+      Genv.find_symbol (Genv.globalenv tprog) id =
+        Genv.find_symbol (Genv.globalenv prog) id)
+    {id : ident} {gd tg : globdef fundef Unit}
+    (hgd : match_globdef
+      (fun (_ : RTL.program) f tf =>
+        tf = CompCert4Lean.Backend.Tailcall.transf_fundef cfg f)
+      (fun x y : Unit => x = y) prog gd tg)
+    (m : _) :
+    Genv.alloc_global (Genv.globalenv prog) m (id, gd) =
+      Genv.alloc_global (Genv.globalenv tprog) m (id, tg) := by
+  cases hgd with
+  | match_globdef_fun ctx' f1 f2 horder htrans => rfl
+  | match_globdef_var v1 v2 hvar =>
+      cases hvar with
+      | match_globvar_intro info1 info2 init ro vol hinfo =>
+          cases hinfo
+          simp only [Genv.alloc_global, CompCert4Lean.Common.Values.block]
+          congr 1
+          funext m2
+          congr 1
+          exact tailcall_initial_store_init_data_list hsymb _ _ _ _
+
+private theorem tailcall_initial_alloc_globals
+    (cfg : CompilerConfig)
+    [Linker program]
+    {prog tprog : program}
+    (hsymb : ∀ id,
+      Genv.find_symbol (Genv.globalenv tprog) id =
+        Genv.find_symbol (Genv.globalenv prog) id)
+    (gl tgl : List (ident × globdef fundef Unit))
+    (hlist : list_forall2
+      (match_ident_globdef
+        (fun (_ : RTL.program) f tf =>
+          tf = CompCert4Lean.Backend.Tailcall.transf_fundef cfg f)
+        (fun x y : Unit => x = y) prog) gl tgl) :
+    ∀ (m m' : _),
+      Genv.alloc_globals (Genv.globalenv prog) m gl = some m' →
+        Genv.alloc_globals (Genv.globalenv tprog) m tgl = some m' := by
+  induction hlist with
+  | nil =>
+      intro m m' h
+      simpa [Genv.alloc_globals] using h
+  | cons hd thd hhd htl ih =>
+      intro m m' h
+      rcases hhd with ⟨hid, hgd⟩
+      rcases hd with ⟨id, gd⟩
+      rcases thd with ⟨tid, tgd⟩
+      have halloc :
+          Genv.alloc_global (Genv.globalenv prog) m (id, gd) =
+            Genv.alloc_global (Genv.globalenv tprog) m (tid, tgd) := by
+        change id = tid at hid
+        subst tid
+        exact tailcall_initial_alloc_global cfg hsymb hgd m
+      simp only [Genv.alloc_globals] at h ⊢
+      rw [halloc] at h
+      cases ha : Genv.alloc_global (Genv.globalenv tprog) m (tid, tgd) with
+      | none => simp [ha] at h
+      | some m1 =>
+          simp only [ha] at h ⊢
+          exact ih m1 m' h
+
+private theorem tailcall_val_inject_refl (v : val) :
+    Val.inject inject_id v v := by
+  cases v with
+  | Vint i => exact Val.inject.inject_int _
+  | Vlong i => exact Val.inject.inject_long _
+  | Vfloat f => exact Val.inject.inject_float _
+  | Vsingle f => exact Val.inject.inject_single _
+  | Vptr b ofs =>
+      apply Val.inject.inject_ptr
+      · rfl
+      · exact (tailcall_ptrofs_add_zero ofs).symm
+  | Vundef => exact Val.inject.val_inject_undef _
+
+private theorem tailcall_mem_extends_refl
+    (m : CompCert4Lean.Common.Memory.mem) : Mem.extends m m := by
+  refine ⟨rfl, ?_, ?_⟩
+  · refine ⟨?_, ?_, ?_⟩
+    · intro b1 b2 delta ofs k p hmap hp
+      have hpair : (b1, (.Z0 : Z)) = (b2, delta) := by
+        simpa [CompCert4Lean.Common.Values.inject_id] using Option.some.inj hmap
+      cases hpair
+      change Mem.perm m b1 (ZArith.BinInt.Z.add ofs (.Z0 : Z)) k p
+      have hzadd : ZArith.BinInt.Z.add ofs (.Z0 : Z) = ofs := by
+        apply intOfZ_injective
+        change intOfZ (zOfInt (intOfZ ofs + 0)) = intOfZ ofs
+        rw [intOfZ_zOfInt]
+        simp
+      rw [hzadd]
+      exact hp
+    · intro b1 b2 delta chunk ofs p hmap hp
+      have hpair : (b1, (.Z0 : Z)) = (b2, delta) := by
+        simpa [CompCert4Lean.Common.Values.inject_id] using Option.some.inj hmap
+      cases hpair
+      refine ⟨.Z0, ?_⟩
+      apply intOfZ_injective
+      change 0 = intOfZ (ZArith.BinInt.Z.mul
+        (CompCert4Lean.Common.Memdata.align_chunk chunk) (.Z0 : Z))
+      change 0 = intOfZ (zOfInt (intOfZ
+        (CompCert4Lean.Common.Memdata.align_chunk chunk) * 0))
+      rw [intOfZ_zOfInt]
+      simp
+    · intro b1 ofs b2 delta hmap hp
+      have hpair : (b1, (.Z0 : Z)) = (b2, delta) := by
+        simpa [CompCert4Lean.Common.Values.inject_id] using Option.some.inj hmap
+      cases hpair
+      change memval_inject inject_id
+        (ZMap.get ofs (PMap.get b1 m.mem_contents))
+        (ZMap.get (ZArith.BinInt.Z.add ofs (.Z0 : Z))
+          (PMap.get b1 m.mem_contents))
+      have hzadd : ZArith.BinInt.Z.add ofs (.Z0 : Z) = ofs := by
+        apply intOfZ_injective
+        change intOfZ (zOfInt (intOfZ ofs + 0)) = intOfZ ofs
+        rw [intOfZ_zOfInt]
+        simp
+      rw [hzadd]
+      cases hmv : ZMap.get ofs (PMap.get b1 m.mem_contents) with
+      | Byte n => exact memval_inject.byte _ _
+      | Fragment v q n =>
+          exact memval_inject.fragment _ _ _ _ _ (tailcall_val_inject_refl v)
+      | Undef => exact memval_inject.undef _ _
+  · intro b ofs k p hp
+    exact Or.inl hp
+
+theorem transf_initial_states : transf_initial_statesStatement := by
+  letI : Linker fundef := Linker_fundef function
+  letI : Linker Unit := Linker_unit
+  letI : Linker program := Linker_prog fundef Unit
+  intro cfg prog tprog hmatch st1 hinit
+  cases hinit with
+  | intro b f m0 hmem hsymb hfun hsig =>
+      refine ⟨Callstate [] (CompCert4Lean.Backend.Tailcall.transf_fundef cfg f) [] m0, ?_, ?_⟩
+      · apply initial_state.intro b
+          (CompCert4Lean.Backend.Tailcall.transf_fundef cfg f) m0
+        · unfold Genv.init_mem at hmem ⊢
+          apply tailcall_initial_alloc_globals cfg (prog := prog) (tprog := tprog)
+            (tailcall_symbols_preserved cfg prog tprog hmatch)
+            prog.prog_defs tprog.prog_defs hmatch.1
+            CompCert4Lean.Common.Memory.Mem.empty m0
+          exact hmem
+        · change Genv.find_symbol (Genv.globalenv tprog) tprog.prog_main = some b
+          rw [hmatch.2.1]
+          rw [tailcall_symbols_preserved cfg prog tprog hmatch prog.prog_main]
+          exact hsymb
+        · exact funct_ptr_translated cfg prog tprog hmatch b f hfun
+        · rw [sig_preserved cfg f]
+          exact hsig
+      · exact match_states_call [] f [] m0 [] [] m0
+          match_stackframes_nil (Val.lessdef_list.lessdef_list_nil)
+          (tailcall_mem_extends_refl m0)
+
+end CompCert4Lean.Backend.Tailcallproof

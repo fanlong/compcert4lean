@@ -1140,3 +1140,50 @@ theorem divlu_modlu_exists : divlu_modlu_existsStatement := by
       CompCert4Lean.Lib.Integers.Int64.modu, hsumz]
     constructor <;> rfl
 end CompCert4Lean.X86.Asmgenproof1
+
+namespace CompCert4Lean.X86.Asmgenproof1
+
+open CompCert4Lean.Backend.Asmgenproof0
+open CompCert4Lean.X86.Asm
+
+theorem mk_intconv_correct
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    mk_intconv_correctStatement := by
+  intro ge fn mk sem rd rs k c rs1 m hmk hstep
+  unfold CompCert4Lean.X86.Asmgen.mk_intconv at hmk
+  split at hmk
+  · injection hmk with hc
+    subst c
+    refine ⟨CompCert4Lean.X86.Asm.nextinstr
+      (CompCert4Lean.X86.Asm.Pregmap.set (.IR rd) (sem (rs1 (.IR rs))) rs1), ?_, ?_, ?_⟩
+    · apply exec_straight_one
+      · exact hstep fn rd rs rs1 m
+      · rfl
+    · simp [CompCert4Lean.X86.Asm.nextinstr, CompCert4Lean.X86.Asm.Pregmap.set]
+    · intro r hr hrd hrax
+      cases r <;> simp_all [CompCert4Lean.X86.Asm.nextinstr,
+        CompCert4Lean.X86.Asm.Pregmap.set, CompCert4Lean.X86.Asm.Pregmap.get,
+        CompCert4Lean.X86.Asm.data_preg]
+  · injection hmk with hc
+    subst c
+    let rs_mid := CompCert4Lean.X86.Asm.nextinstr
+      (CompCert4Lean.X86.Asm.Pregmap.set (.IR .RAX) (rs1 (.IR rs)) rs1)
+    let rs_final := CompCert4Lean.X86.Asm.nextinstr
+      (CompCert4Lean.X86.Asm.Pregmap.set (.IR rd) (sem (rs_mid (.IR .RAX))) rs_mid)
+    refine ⟨rs_final, ?_, ?_, ?_⟩
+    · apply exec_straight_step (rs2 := rs_mid) (m2 := m)
+      · rfl
+      · rfl
+      · apply exec_straight_one
+        · exact hstep fn rd .RAX rs_mid m
+        · rfl
+    · dsimp [rs_final, rs_mid]
+      simp [CompCert4Lean.X86.Asm.nextinstr, CompCert4Lean.X86.Asm.Pregmap.set]
+    · intro r hr hrd hrax
+      dsimp [rs_final, rs_mid]
+      cases r <;> simp_all [CompCert4Lean.X86.Asm.nextinstr,
+        CompCert4Lean.X86.Asm.Pregmap.set, CompCert4Lean.X86.Asm.Pregmap.get,
+        CompCert4Lean.X86.Asm.data_preg]
+
+end CompCert4Lean.X86.Asmgenproof1

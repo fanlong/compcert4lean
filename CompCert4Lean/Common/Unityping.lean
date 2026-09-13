@@ -1089,3 +1089,171 @@ theorem set_complete : set_completeStatement := by
           exact ‹ty ≠ ty'› (htx.symm.trans hty')
 
 end CompCert4Lean.Common.Unityping.UniSolver
+
+namespace CompCert4Lean.Common.Unityping.UniSolver
+
+theorem set_list_complete : set_list_completeStatement := by
+  intro T te xl tyl e hs hmap
+  induction xl generalizing tyl e with
+  | nil =>
+      cases tyl with
+      | nil =>
+          refine ⟨e, ?_, hs⟩
+          rfl
+      | cons ty tys =>
+          cases hmap
+  | cons x xs ih =>
+      cases tyl with
+      | nil =>
+          cases hmap
+      | cons ty tys =>
+          cases hmap
+          obtain ⟨e1, hset, hs1⟩ := set_complete T te e x (te x) hs rfl
+          obtain ⟨e2, htail, hs2⟩ := ih (tyl := List.map te xs) (e := e1) hs1 rfl
+          refine ⟨e2, ?_, hs2⟩
+          simp only [set_list]
+          rw [hset]
+          exact htail
+
+end CompCert4Lean.Common.Unityping.UniSolver
+
+namespace CompCert4Lean.Common.Unityping.UniSolver
+
+open CompCert4Lean.Lib.Coqlib
+
+theorem move_complete : move_completeStatement := by
+  intro T te e r1 r2 hs hte
+  unfold move
+  cases hp : peq r1 r2 with
+  | left hEq =>
+      simp only
+      exact ⟨false, e, rfl, hs⟩
+  | right hNe =>
+      cases h1 : CompCert4Lean.Lib.Maps.PTree.get r1
+          (show CompCert4Lean.Lib.Maps.PTree.tree T.t from te_typ e) with
+      | none =>
+          cases h2 : CompCert4Lean.Lib.Maps.PTree.get r2
+              (show CompCert4Lean.Lib.Maps.PTree.tree T.t from te_typ e) with
+          | none =>
+              simp only
+              refine ⟨false, { te_typ := te_typ e, te_equ := (r1, r2) :: te_equ e }, rfl, ?_⟩
+              exact ⟨hs.1, fun x y hxy => by
+                cases hxy with
+                | head => exact hte
+                | tail => exact hs.2 x y (by assumption)⟩
+          | some ty2 =>
+              simp only
+              have htx : te r1 = ty2 := hte.trans (hs.1 r2 ty2 h2)
+              obtain ⟨e', hset, hs'⟩ := set_complete T te e r1 ty2 hs htx
+              have hset' := hset
+              simp [set, h1] at hset'
+              cases hset'
+              exact ⟨true, _, rfl, hs'⟩
+      | some ty1 =>
+          cases h2 : CompCert4Lean.Lib.Maps.PTree.get r2
+              (show CompCert4Lean.Lib.Maps.PTree.tree T.t from te_typ e) with
+          | none =>
+              simp only
+              have htx : te r2 = ty1 := hte.symm.trans (hs.1 r1 ty1 h1)
+              obtain ⟨e', hset, hs'⟩ := set_complete T te e r2 ty1 hs htx
+              have hset' := hset
+              simp [set, h2] at hset'
+              cases hset'
+              exact ⟨true, _, rfl, hs'⟩
+          | some ty2 =>
+              cases heq : T.eq ty1 ty2 with
+              | left hty =>
+                  simp only
+                  rw [heq]
+                  exact ⟨false, e, rfl, hs⟩
+              | right hty =>
+                  exfalso
+                  apply hty
+                  exact (hs.1 r1 ty1 h1).symm.trans (hte.trans (hs.1 r2 ty2 h2))
+
+end CompCert4Lean.Common.Unityping.UniSolver
+
+namespace CompCert4Lean.Common.Unityping.UniSolver
+
+theorem solve_rec_complete : solve_rec_completeStatement := by
+  intro T te q e changed hs hq
+  induction q generalizing e changed with
+  | nil =>
+      exact ⟨e, changed, rfl, hs⟩
+  | cons a q ih =>
+      rcases a with ⟨r1, r2⟩
+      have hpair : te r1 = te r2 := hq r1 r2 (List.mem_cons_self)
+      obtain ⟨changed1, e1, hmove, hs1⟩ :=
+        move_complete T te e r1 r2 hs hpair
+      have hq' : ∀ a b, (a, b) ∈ q → te a = te b := by
+        intro a b hab
+        exact hq a b (List.mem_cons_of_mem _ hab)
+      obtain ⟨e', changed', hrec, hs'⟩ :=
+        ih (e := e1) (changed := changed || changed1) hs1 hq'
+      refine ⟨e', changed', ?_, hs'⟩
+      simp only [solve_rec]
+      rw [hmove]
+      exact hrec
+
+end CompCert4Lean.Common.Unityping.UniSolver
+
+namespace CompCert4Lean.Common.Unityping.UniSolver
+
+open CompCert4Lean.Common.Errors
+
+theorem solve_constraints_complete : solve_constraints_completeStatement := by
+  intro T te e hs
+  let P : typenv T → res (typenv T) → Prop := fun e r =>
+    satisf T te e → ∃ e', r = OK e' ∧ satisf T te e'
+  have hind := solve_constraints_ind T P
+    (by
+      intro e e' hrec
+      change satisf T te e → ∃ e'', OK e = OK e'' ∧ satisf T te e''
+      intro hs'
+      exact ⟨e, rfl, hs'⟩)
+    (by
+      intro e e' hrec ih
+      change satisf T te e → ∃ e'', solve_constraints T e' = OK e'' ∧ satisf T te e''
+      intro hs'
+      have hs0 : satisf T te { te_typ := te_typ e, te_equ := [] } := by
+        constructor
+        · intro x ty hx
+          exact hs'.1 x ty hx
+        · intro x y hxy
+          cases hxy
+      have hq0 : ∀ r1 r2, (r1, r2) ∈ te_equ e → te r1 = te r2 := by
+        intro r1 r2 hmem
+        exact hs'.2 r1 r2 hmem
+      obtain ⟨e1, changed1, hcomp, hs1⟩ :=
+        solve_rec_complete T te (te_equ e)
+          { te_typ := te_typ e, te_equ := [] } false hs0 hq0
+      have hpair : (e1, changed1) = (e', true) := by
+        have hok : OK (e1, changed1) = (OK (e', true) : res (typenv T × Bool)) :=
+          hcomp.symm.trans hrec
+        cases hok
+        rfl
+      cases hpair
+      exact ih hs1)
+    (by
+      intro e message hrec
+      change satisf T te e → ∃ e'', Error message = OK e'' ∧ satisf T te e''
+      intro hs'
+      have hs0 : satisf T te { te_typ := te_typ e, te_equ := [] } := by
+        constructor
+        · intro x ty hx
+          exact hs'.1 x ty hx
+        · intro x y hxy
+          cases hxy
+      have hq0 : ∀ r1 r2, (r1, r2) ∈ te_equ e → te r1 = te r2 := by
+        intro r1 r2 hmem
+        exact hs'.2 r1 r2 hmem
+      obtain ⟨e1, changed1, hcomp, hs1⟩ :=
+        solve_rec_complete T te (te_equ e)
+          { te_typ := te_typ e, te_equ := [] } false hs0 hq0
+      have herr : (OK (e1, changed1) : res (typenv T × Bool)) = Error message :=
+        hcomp.symm.trans hrec
+      cases herr)
+    e
+  exact hind hs
+
+end CompCert4Lean.Common.Unityping.UniSolver

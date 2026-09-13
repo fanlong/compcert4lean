@@ -1284,3 +1284,50 @@ theorem is_nan_SF_B2SF :
     ∀ {prec emax : Z}, is_nan_SF_B2SFStatement (prec := prec) (emax := emax) := by
   intro prec emax x Hx
   cases x <;> rfl
+
+theorem B2R_Bopp :
+    ∀ {prec emax : Z} (ctx : ExactRealContext),
+      B2R_BoppStatement (prec := prec) (emax := emax) ctx := by
+  intro prec emax ctx x Hx
+  have hneg0 : Exact.Ropp ctx (Exact.R0 ctx) = Exact.R0 ctx := by
+    change ctx.spec.neg ctx.spec.zero = ctx.spec.zero
+    calc
+      ctx.spec.neg ctx.spec.zero = ctx.spec.add (ctx.spec.neg ctx.spec.zero) ctx.spec.zero :=
+        (ctx.certificate.orderedField.add_zero _).symm
+      _ = ctx.spec.zero := ctx.certificate.orderedField.neg_add_cancel _
+  cases x with
+  | B754_nan => simpa [Bopp, B2R, Exact.B2R] using hneg0.symm
+  | B754_infinity s => simpa [Bopp, B2R, Exact.B2R] using hneg0.symm
+  | B754_zero s => simpa [Bopp, B2R, Exact.B2R] using hneg0.symm
+  | B754_finite s m e =>
+      cases s with
+      | false =>
+          change Exact.F2R ctx (Float radix2 (Zopp (Zpos m)) e) =
+            Exact.Ropp ctx (Exact.F2R ctx (Float radix2 (Zpos m) e))
+          exact CompCert4Lean.Flocq.Core.Float_prop.F2R_Zopp ctx radix2 (Zpos m) e
+      | true =>
+          have hnegneg : ∀ y : Exact.R ctx, Exact.Ropp ctx (Exact.Ropp ctx y) = y := by
+            intro y
+            change ctx.spec.neg (ctx.spec.neg y) = y
+            calc
+              ctx.spec.neg (ctx.spec.neg y) =
+                  ctx.spec.add (ctx.spec.neg (ctx.spec.neg y)) ctx.spec.zero :=
+                (ctx.certificate.orderedField.add_zero _).symm
+              _ = ctx.spec.add (ctx.spec.neg (ctx.spec.neg y))
+                  (ctx.spec.add (ctx.spec.neg y) y) := by
+                rw [ctx.certificate.orderedField.neg_add_cancel]
+              _ = ctx.spec.add
+                  (ctx.spec.add (ctx.spec.neg (ctx.spec.neg y)) (ctx.spec.neg y)) y := by
+                rw [ctx.certificate.orderedField.add_assoc]
+              _ = ctx.spec.add ctx.spec.zero y := by
+                rw [ctx.certificate.orderedField.neg_add_cancel]
+              _ = y := ctx.certificate.orderedField.zero_add _
+          change Exact.F2R ctx (Float radix2 (Zpos m) e) =
+            Exact.Ropp ctx (Exact.F2R ctx (Float radix2 (Zopp (Zpos m)) e))
+          have hF :=
+            CompCert4Lean.Flocq.Core.Float_prop.F2R_Zopp ctx radix2 (Zpos m) e
+          have hF' : Exact.F2R ctx (Float radix2 (Zopp (Zpos m)) e) =
+              Exact.Ropp ctx (Exact.F2R ctx (Float radix2 (Zpos m) e)) := by
+            exact hF
+          rw [hF']
+          exact (hnegneg _).symm

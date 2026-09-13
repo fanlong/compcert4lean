@@ -3305,3 +3305,68 @@ theorem shru_lt_zero_proof : shru_lt_zero := by
     rw [hq]
 
 end CompCert4Lean.Lib.Integers.Int
+
+namespace CompCert4Lean.Lib.Integers.Int
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem add_zero_proof : add_zero := by
+  intro x
+  change WordCore.add x (WordCore.zero wordsize) = x
+  apply WordCore.ext_of_val_eq
+  rw [WordCore.add_val]
+  change (x.val + 0) % (2 ^ wordsize) = x.val
+  rw [Nat.add_zero, Nat.mod_eq_of_lt (WordCore.val_lt x)]
+
+theorem eq_sym_proof : eq_sym := by
+  intro x y
+  change decide (x.intval = y.intval) = decide (y.intval = x.intval)
+  by_cases h : x.intval = y.intval
+  · simp [h]
+  · have h' : ¬ y.intval = x.intval := by
+      intro hyx
+      exact h hyx.symm
+    simp [h, h']
+
+theorem not_ltu_proof : not_ltu := by
+  intro x y
+  change !(zltSelect (unsigned y) (unsigned x) true false) =
+    (zltSelect (unsigned x) (unsigned y) true false ||
+      decide (x.intval = y.intval))
+  cases hxy : CompCert4Lean.Lib.Coqlib.zlt (unsigned y) (unsigned x) with
+  | left hlt =>
+      cases hrev : CompCert4Lean.Lib.Coqlib.zlt (unsigned x) (unsigned y) with
+      | left hrevlt =>
+          exact (Int.lt_asymm hlt hrevlt).elim
+      | right hrevge =>
+          have hne : x.intval ≠ y.intval := by
+            intro heq
+            have hlt' : intOfZ (unsigned y) < intOfZ (unsigned x) := hlt
+            change intOfZ y.intval < intOfZ x.intval at hlt'
+            rw [heq] at hlt'
+            exact (Int.lt_irrefl _ hlt').elim
+          have heq : eq x y = false := by
+            change decide (x.intval = y.intval) = false
+            simp [hne]
+          simp [zltSelect, sumboolSelect, hxy, hrev, heq, hne]
+  | right hge =>
+      cases hrev : CompCert4Lean.Lib.Coqlib.zlt (unsigned x) (unsigned y) with
+      | left hrevlt =>
+          simp [zltSelect, sumboolSelect, hxy, hrev]
+      | right hrevge =>
+          have hge' : intOfZ (unsigned x) ≤ intOfZ (unsigned y) := by
+            change intOfZ (unsigned x) ≤ intOfZ (unsigned y)
+            exact hge
+          have hrevge' : intOfZ (unsigned y) ≤ intOfZ (unsigned x) := by
+            change intOfZ (unsigned y) ≤ intOfZ (unsigned x)
+            exact hrevge
+          have huv : unsigned y = unsigned x := by
+            apply intOfZ_injective
+            exact Int.le_antisymm hrevge' hge'
+          have heqv : x.intval = y.intval := by
+            simpa only [unsigned, WordCore.unsigned] using huv.symm
+          have heq : eq x y = true := by
+            change decide (x.intval = y.intval) = true
+            rw [heqv]
+            simp
+          simp [zltSelect, sumboolSelect, hxy, hrev, heq, heqv]

@@ -1088,3 +1088,18 @@ theorem Zpos_digits2_pos : Zpos_digits2_posStatement := by
   rw [hnat]
 
 end CompCert4Lean.Flocq.Core.Digits
+
+namespace CompCert4Lean.Flocq.Core.Digits
+
+theorem Zdigits2_Zdigits : Zdigits2_ZdigitsStatement := by
+  intro n
+  cases n with
+  | Z0 => rfl
+  | Zpos p => exact Zpos_digits2_pos p
+  | Zneg p =>
+      change Zpos (digits2_pos p) = Zdigits radix2 (.Zneg p)
+      rw [← Zdigits_abs radix2 (.Zneg p)]
+      rw [digits_Zabs_neg]
+      exact Zpos_digits2_pos p
+
+end CompCert4Lean.Flocq.Core.Digits

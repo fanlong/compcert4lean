@@ -2432,3 +2432,24 @@ theorem getN_exten : getN_extenStatement := by
 end Mem
 
 end CompCert4Lean.Common.Memory
+
+namespace CompCert4Lean.Common.Memory
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Lib.Maps
+
+namespace Mem
+
+theorem getN_setN_disjoint : getN_setN_disjointStatement := by
+  intro vl q c n p hdis
+  apply getN_exten
+  intro i hi
+  apply setN_other
+  intro r hr
+  intro hri
+  subst r
+  exact hdis i hi hr
+
+end Mem
+
+end CompCert4Lean.Common.Memory
