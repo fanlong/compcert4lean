@@ -2357,3 +2357,21 @@ theorem eval_simple_list_steps
           (contextlist'_tail (.Eval v (typeof r)) C hC)) rfl
 
 end CompCert4Lean.Cfrontend.Cstrategy
+
+namespace CompCert4Lean.Cfrontend.Cstrategy
+
+theorem rval_list_all_values : rval_list_all_valuesStatement := by
+  unfold rval_list_all_valuesStatement
+  intro vl
+  induction vl with
+  | nil =>
+      intro rl
+      cases rl <;> simp [rval_list, exprlist_all_values]
+  | cons v vl ih =>
+      intro rl
+      cases rl with
+      | Enil => simp [rval_list, exprlist_all_values]
+      | Econs r rl =>
+          simpa [rval_list, exprlist_all_values] using ih rl
+
+end CompCert4Lean.Cfrontend.Cstrategy

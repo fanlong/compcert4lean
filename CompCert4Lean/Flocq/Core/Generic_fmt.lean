@@ -1040,3 +1040,13 @@ theorem scaled_mantissa_mult_bpow :
       exact ctx.certificate.orderedField.mul_one _
 
 end CompCert4Lean.Flocq.Core.Generic_fmt
+
+namespace CompCert4Lean.Flocq.Core.Generic_fmt
+
+theorem scaled_mantissa_0 :
+    ∀ ctx magnitude, scaled_mantissa_0Statement ctx magnitude := by
+  intro ctx magnitude beta fexp
+  unfold Exact.scaled_mantissa
+  exact ctx.certificate.orderedField.zero_mul _
+
+end CompCert4Lean.Flocq.Core.Generic_fmt

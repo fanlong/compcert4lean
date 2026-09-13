@@ -2077,3 +2077,12 @@ theorem forward_simulation_eventually_star :
     exact hsim s1 t s1' hs s2 hm
 
 end CompCert4Lean.Common.Smallstep
+
+namespace CompCert4Lean.Common.Smallstep
+theorem sd_determ_1 : sd_determ_1Statement := by
+  intro L hdet s t1 s1 t2 s2 h1 h2
+  exact (hdet.sd_determ s t1 s1 t2 s2 h1 h2).1
+theorem sd_determ_2 : sd_determ_2Statement := by
+  intro L hdet s t s1 s2 h1 h2
+  exact (hdet.sd_determ s t s1 t s2 h1 h2).2 rfl
+end CompCert4Lean.Common.Smallstep
