@@ -2203,3 +2203,71 @@ theorem compose_forward_simulations :
               (props.fsim_public_preserved id)
 
 end CompCert4Lean.Common.Smallstep
+
+namespace CompCert4Lean.Common.Smallstep
+
+open CompCert4Lean.Common.Events
+
+theorem bsim_simulation' : bsim_simulation'Statement := by
+  intro L1 L2 index order match_states props i s2 t s2p hstep s1 hmatch hsafe
+  obtain ⟨i1, s1', hdiagram, hmatch'⟩ :=
+    props.bsim_simulation s2 t s2p hstep i hmatch hsafe
+  rcases hdiagram with hplus | ⟨hstar, horder⟩
+  · exact Or.inl ⟨i1, s1', hplus, hmatch'⟩
+  · cases hstar with
+    | star_refl s =>
+        exact Or.inr ⟨i1, horder, rfl, hmatch'⟩
+    | star_step s1 t1 s2 t2 s3 t hstep1 hstar1 htrace =>
+        exact Or.inl ⟨i1, s1', plus_left s1 t1 hstep1 hstar1 htrace, hmatch'⟩
+
+theorem bsim_E0_star : bsim_E0_starStatement := by
+  intro L1 L2 index order match_states props s2 s2p hstar
+  apply star_E0_ind L2.genvtype L2.state (step L2) (globalenv L2)
+    (fun a b => ∀ i s1, match_states i s1 a → safe L1 s1 →
+      ∃ i1 s1p, star (step L1) (globalenv L1) s1 E0 s1p ∧
+        match_states i1 s1p b)
+  · intro s i s1 hmatch hsafe
+    exact ⟨i, s1, star_refl _ _ s1, hmatch⟩
+  · intro a b c hstep ih i s1 hmatch hsafe
+    obtain hdiagram := bsim_simulation' L1 L2 index order match_states props
+      i a E0 b hstep s1 hmatch hsafe
+    rcases hdiagram with hplus | ⟨i1, horder, htrace, hmatch1⟩
+    · obtain ⟨i1, s1m, hplus1, hmatch1⟩ := hplus
+      have hsafe1 : safe L1 s1m := by
+        intro s1p hs1p
+        exact hsafe s1p (star_trans _ _ _ _ s1 E0 s1m
+          (plus_star _ _ _ _ _ _ _ hplus1) E0 s1p E0 hs1p rfl)
+      obtain ⟨i2, s1p, hstar2, hmatch2⟩ :=
+        ih i1 s1m hmatch1 hsafe1
+      exact ⟨i2, s1p, star_trans _ _ _ _ s1 E0 s1m
+        (plus_star _ _ _ _ _ _ _ hplus1) E0 s1p E0 hstar2 rfl, hmatch2⟩
+    · obtain ⟨i2, s1p, hstar2, hmatch2⟩ := ih i1 s1 hmatch1 hsafe
+      exact ⟨i2, s1p, hstar2, hmatch2⟩
+  · exact hstar
+
+theorem star_safe : star_safeStatement := by
+  intro L s s' hprefix hsafe s2 hsuffix
+  exact hsafe s2 (star_trans L.genvtype L.state (step L) (globalenv L)
+    s E0 s' hprefix E0 s2 E0 hsuffix rfl)
+
+theorem backward_simulation_plus : backward_simulation_plusStatement := by
+  intro L1 L2 hpublic match_states hinitial hmatch_initial hmatch_final hprogress hsimulation
+  apply Backward_simulation (fun _ _ : Unit => False)
+    (fun _ s1 s2 => match_states s1 s2)
+  constructor
+  · exact WellFounded.intro (fun a => Acc.intro a (fun b h => False.elim h))
+  · intro s1 hinit
+    exact hinitial s1 hinit
+  · intro s1 s2 hinit1 hinit2
+    obtain ⟨s1p, hinitp, hmatch⟩ := hmatch_initial s1 s2 hinit1 hinit2
+    exact ⟨(), s1p, hinitp, hmatch⟩
+  · intro i s1 s2 r hmatch hsafe hfinal
+    exact ⟨s1, star_refl _ _ s1, hmatch_final s1 s2 r hmatch hfinal⟩
+  · intro i s1 s2 hmatch hsafe
+    exact hprogress s1 s2 hmatch hsafe
+  · intro s2 t s2p hstep i s1 hmatch hsafe
+    obtain ⟨s1p, hplus, hmatchp⟩ := hsimulation s2 t s2p hstep s1 hmatch hsafe
+    exact ⟨(), s1p, Or.inl hplus, hmatchp⟩
+  · exact hpublic
+
+end CompCert4Lean.Common.Smallstep
