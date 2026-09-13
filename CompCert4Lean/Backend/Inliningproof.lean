@@ -1920,3 +1920,29 @@ theorem range_private_alloc_left : range_private_alloc_leftStatement := by
         exact horig.2 b delta hF hm
 
 end CompCert4Lean.Backend.Inliningproof
+
+namespace CompCert4Lean.Backend.Inliningproof
+
+open CompCert4Lean.Backend.Inlining
+open CompCert4Lean.Backend.Inliningspec
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Lib.Maps
+
+theorem find_inlined_function : find_inlined_functionStatement := by
+  intro prog fenv id rs fd f hcompat hfind hget
+  have hdef := hcompat id f hget
+  have hs := (Genv.find_def_symbol (F := fundef) (V := Unit)
+    (p := prog) (id := id) (g := (Gfun (Internal f)))).mp hdef
+  rcases hs with ⟨b, hsym, hfun⟩
+  unfold find_function at hfind
+  simp only [Sum.rec] at hfind
+  rw [hsym] at hfind
+  have hptr : Genv.find_funct_ptr (Genv.globalenv prog) b = some (Internal f) :=
+    (Genv.find_funct_ptr_iff (F := fundef) (V := Unit)
+      (ge := Genv.globalenv prog) (b := b) (f := Internal f)).mpr hfun
+  exact Option.some.inj (hfind.symm.trans hptr)
+
+end CompCert4Lean.Backend.Inliningproof

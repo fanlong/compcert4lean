@@ -1411,3 +1411,20 @@ theorem In_raw_partition_between_5 : In_raw_partition_between_5Statement := by
           · exact right_ih' x hright_mem habove hbelow
 
 end CompCert4Lean.Lib.FSetAVLplus.Make
+
+namespace CompCert4Lean.Lib.FSetAVLplus.Make
+
+theorem partition_between_iff_1 : partition_between_iff_1Statement := by
+  intro X above_low_bound below_high_bound above_monotone below_monotone x s
+  change Raw.InT x (raw_partition_between above_low_bound below_high_bound s.this).1 ↔
+    Raw.InT x s.this ∧ above_low_bound x = true ∧ below_high_bound x = true
+  constructor
+  · intro hx
+    exact ⟨In_raw_partition_between_1 X above_low_bound below_high_bound x s.this hx,
+      In_raw_partition_between_3 X above_low_bound below_high_bound
+        above_monotone below_monotone x s.this hx⟩
+  · rintro ⟨hx, habove, hbelow⟩
+    exact In_raw_partition_between_5 X above_low_bound below_high_bound
+      above_monotone below_monotone x s.this s.is_ok.ok hx habove hbelow
+
+end CompCert4Lean.Lib.FSetAVLplus.Make

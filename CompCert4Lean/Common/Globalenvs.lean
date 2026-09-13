@@ -1694,3 +1694,168 @@ theorem globalenv_public : globalenv_publicStatement := by
 
 end Genv
 end CompCert4Lean.Common.Globalenvs
+
+namespace CompCert4Lean.Common.Globalenvs
+
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+private theorem mem_store_nextblock {chunk : memory_chunk}
+    (m : mem) (b : block) (ofs : Z) (v : val) (m' : mem)
+    (h : Mem.store chunk m b ofs v = some m') : m'.nextblock = m.nextblock := by
+  unfold Mem.store at h
+  split at h
+  · cases h
+    rfl
+  · cases h
+
+private theorem mem_alloc_nextblock (m : mem) (lo hi : Z) (m' : mem) (b : block)
+    (h : Mem.alloc m lo hi = (m', b)) : m'.nextblock = posSucc m.nextblock := by
+  unfold Mem.alloc at h
+  cases h
+  rfl
+
+private theorem mem_drop_nextblock (m : mem) (b : block) (lo hi : Z) (p : permission)
+    (m' : mem) (h : Mem.drop_perm m b lo hi p = some m') : m'.nextblock = m.nextblock := by
+  unfold Mem.drop_perm at h
+  split at h
+  · cases h
+    rfl
+  · cases h
+
+private theorem store_init_data_nextblock {F V : Type} (ge : Genv.t F V)
+    (m : mem) (b : block) (p : Z) (i : init_data) (m' : mem)
+    (h : Genv.store_init_data ge m b p i = some m') : m'.nextblock = m.nextblock := by
+  cases i with
+  | Init_int8 n =>
+      change Mem.store Mint8unsigned m b p (Vint n) = some m' at h
+      exact mem_store_nextblock (m := m) (b := b) (ofs := p) (v := Vint n) (m' := m') h
+  | Init_int16 n =>
+      change Mem.store Mint16unsigned m b p (Vint n) = some m' at h
+      exact mem_store_nextblock (m := m) (b := b) (ofs := p) (v := Vint n) (m' := m') h
+  | Init_int32 n =>
+      change Mem.store Mint32 m b p (Vint n) = some m' at h
+      exact mem_store_nextblock (m := m) (b := b) (ofs := p) (v := Vint n) (m' := m') h
+  | Init_int64 n =>
+      change Mem.store Mint64 m b p (Vlong n) = some m' at h
+      exact mem_store_nextblock (m := m) (b := b) (ofs := p) (v := Vlong n) (m' := m') h
+  | Init_float32 n =>
+      change Mem.store Mfloat32 m b p (Vsingle n) = some m' at h
+      exact mem_store_nextblock (m := m) (b := b) (ofs := p) (v := Vsingle n) (m' := m') h
+  | Init_float64 n =>
+      change Mem.store Mfloat64 m b p (Vfloat n) = some m' at h
+      exact mem_store_nextblock (m := m) (b := b) (ofs := p) (v := Vfloat n) (m' := m') h
+  | Init_addrof id ofs =>
+      change (match Genv.find_symbol ge id with
+        | none => none
+        | some b' => Mem.store Mptr m b p (Vptr b' ofs)) = some m' at h
+      cases hfind : Genv.find_symbol ge id with
+      | none => simp [hfind] at h
+      | some b' =>
+          simp [hfind] at h
+          exact mem_store_nextblock (m := m) (b := b) (ofs := p)
+            (v := Vptr b' ofs) (m' := m') h
+  | Init_space n =>
+      change some m = some m' at h
+      cases h
+      rfl
+
+namespace Genv
+
+theorem block_is_volatile_below : block_is_volatile_belowStatement := by
+  intro F V ge b h
+  exact blockIsVolatileBelowProof ge b h
+
+theorem store_zeros_nextblock : store_zeros_nextblockStatement := by
+  intro m b p n m' h
+  let P : mem → block → Z → Z → Option mem → Prop := fun m0 _ _ _ result =>
+    match result with
+    | some m1 => m1.nextblock = m0.nextblock
+    | none => True
+  have hP : ∀ m0 b0 p0 n0, P m0 b0 p0 n0 (store_zeros m0 b0 p0 n0) := by
+    apply store_zeros_ind (P := P)
+    · intro m0 b0 p0 n0 x hx
+      rfl
+    · intro m0 b0 p0 n0 x hx m1 hstore hrec
+      cases hresult : store_zeros m1 b0 (zAdd p0 z1) (ZArith.BinInt.Z.sub n0 z1) with
+      | none => trivial
+      | some m2 =>
+          rw [hresult] at hrec
+          change m2.nextblock = m0.nextblock
+          exact hrec.trans (mem_store_nextblock (m := m0) (b := b0) (ofs := p0)
+            (v := Vzero) (m' := m1) hstore)
+    · intro m0 b0 p0 n0 x hx hnone
+      trivial
+  have hs := hP m b p n
+  rw [h] at hs
+  exact hs
+
+theorem store_init_data_list_nextblock : store_init_data_list_nextblockStatement := by
+  intro F V ge idl
+  induction idl with
+  | nil =>
+      intro b m p m' h
+      change some m = some m' at h
+      cases h
+      rfl
+  | cons i rest ih =>
+      intro b m p m' h
+      change (match store_init_data ge m b p i with
+        | none => none
+        | some m1 => store_init_data_list ge m1 b (zAdd p (init_data_size i)) rest) = some m' at h
+      cases hstore : store_init_data ge m b p i with
+      | none => simp [hstore] at h
+      | some m1 =>
+          have hlist : store_init_data_list ge m1 b (zAdd p (init_data_size i)) rest = some m' := by
+            simpa [hstore] using h
+          have hnext := ih (b := b) (m := m1) (p := zAdd p (init_data_size i))
+            (m' := m') hlist
+          exact hnext.trans (store_init_data_nextblock ge m b p i m1 hstore)
+
+theorem alloc_global_nextblock : alloc_global_nextblockStatement := by
+  intro F V ge g m m' h
+  rcases g with ⟨id, gd⟩
+  cases gd with
+  | Gfun f =>
+      unfold alloc_global at h
+      cases halloc : Mem.alloc m z0 z1 with
+      | mk m1 b =>
+          have hdrop : Mem.drop_perm m1 b z0 z1 Nonempty = some m' := by
+            simpa [halloc] using h
+          exact (mem_drop_nextblock (m := m1) (b := b) (lo := z0)
+            (hi := z1) (p := Nonempty) (m' := m') hdrop).trans
+            (mem_alloc_nextblock (m := m) (lo := z0) (hi := z1)
+              (m' := m1) (b := b) halloc)
+  | Gvar v =>
+      let init := v.gvar_init
+      let sz := init_data_list_size init
+      unfold alloc_global at h
+      dsimp [init, sz] at h
+      cases halloc : Mem.alloc m z0 (init_data_list_size v.gvar_init) with
+      | mk m1 b =>
+          cases hzeros : store_zeros m1 b z0 (init_data_list_size v.gvar_init) with
+          | none => simp [halloc, hzeros] at h
+          | some m2 =>
+              cases hlist : store_init_data_list ge m2 b z0 v.gvar_init with
+              | none => simp [halloc, hzeros, hlist] at h
+              | some m3 =>
+                  have hdrop : Mem.drop_perm m3 b z0
+                      (init_data_list_size v.gvar_init) (perm_globvar v) = some m' := by
+                    simpa [halloc, hzeros, hlist] using h
+                  have hdropnext := mem_drop_nextblock (m := m3) (b := b)
+                    (lo := z0) (hi := init_data_list_size v.gvar_init)
+                    (p := perm_globvar v) (m' := m') hdrop
+                  have hlistnext := store_init_data_list_nextblock F V ge
+                    v.gvar_init b m2 z0 m3 hlist
+                  have hzerosnext := store_zeros_nextblock m1 b z0
+                    (init_data_list_size v.gvar_init) m2 hzeros
+                  have hallocnext := mem_alloc_nextblock (m := m)
+                    (lo := z0) (hi := init_data_list_size v.gvar_init)
+                    (m' := m1) (b := b) halloc
+                  exact hdropnext.trans (hlistnext.trans (hzerosnext.trans hallocnext))
+
+end Genv
+end CompCert4Lean.Common.Globalenvs

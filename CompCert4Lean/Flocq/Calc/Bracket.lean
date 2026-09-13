@@ -1345,3 +1345,43 @@ theorem inbetween_unique :
           rfl
 
 end CompCert4Lean.Flocq.Calc.Bracket
+
+namespace CompCert4Lean.Flocq.Calc.Bracket
+
+private theorem bracket_mul_inv_right (ctx : ExactRealContext)
+    (x s : R ctx) (hsne : s ≠ ctx.spec.zero) :
+    Rmult ctx (Rmult ctx x s)
+        (CompCert4Lean.Flocq.Core.Raux.Exact.Rinv ctx s) = x := by
+  change ctx.spec.mul (ctx.spec.mul x s) (ctx.spec.inv s) = x
+  rw [ctx.certificate.orderedField.mul_assoc,
+    ctx.certificate.orderedField.mul_comm s (ctx.spec.inv s),
+    ctx.certificate.orderedField.inv_mul_cancel s hsne,
+    ctx.certificate.orderedField.mul_one]
+
+theorem inbetween_mult_reg :
+    ∀ (ctx : ExactRealContext), inbetween_mult_regStatement ctx := by
+  intro ctx x d u l s hs hbetween
+  have hs0 : Rlt ctx (R0 ctx) s := by
+    change ctx.spec.lt ctx.spec.zero s
+    have hzero : IZR ctx Z0 = ctx.spec.zero :=
+      ctx.certificate.sourceLaws.ofZ_zero
+    rw [← hzero]
+    exact hs
+  have hsne : s ≠ ctx.spec.zero := by
+    intro hzero
+    subst s
+    exact ctx.certificate.orderedField.lt_irrefl _ hs0
+  have hs_inv : Rlt ctx (IZR ctx Z0)
+      (CompCert4Lean.Flocq.Core.Raux.Exact.Rinv ctx s) :=
+    CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.Rinv_0_lt_compat
+      ctx s hs
+  have hscaled :=
+    inbetween_mult_compat ctx
+      (Rmult ctx x s) (Rmult ctx d s) (Rmult ctx u s) l
+      (CompCert4Lean.Flocq.Core.Raux.Exact.Rinv ctx s) hs_inv hbetween
+  rw [bracket_mul_inv_right ctx x s hsne,
+    bracket_mul_inv_right ctx d s hsne,
+    bracket_mul_inv_right ctx u s hsne] at hscaled
+  exact hscaled
+
+end CompCert4Lean.Flocq.Calc.Bracket

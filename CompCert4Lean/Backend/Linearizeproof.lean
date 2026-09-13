@@ -1681,3 +1681,40 @@ theorem unique_labels_lin_block : unique_labels_lin_blockStatement := by
           · simp only [hs]
             exact unique_labels_add_branch s2 k huniq
 end CompCert4Lean.Backend.Linearizeproof
+
+namespace CompCert4Lean.Backend.Linearizeproof
+
+open CompCert4Lean.Backend.Linear
+open CompCert4Lean.Backend.Linearize
+open CompCert4Lean.Lib.Coqlib
+
+theorem unique_labels_lin_rec : unique_labels_lin_recStatement := by
+  intro f enum
+  induction enum with
+  | nil =>
+      intro hnr
+      simp [linearize_body, CompCert4Lean.Lib.Coqlib.list_fold_right,
+        CompCert4Lean.Lib.Coqlib.list_fold_left, unique_labels]
+  | cons a enum ih =>
+      intro hnr
+      have htail : list_norepet enum := by
+        cases hnr with
+        | cons _ _ h => exact h
+      rw [linearize_body_cons]
+      cases hcode : CompCert4Lean.Lib.Maps.PTree.get a f.fn_code with
+      | none =>
+          simp only [hcode]
+          exact ih htail
+      | some b =>
+          simp only [hcode, unique_labels]
+          constructor
+          · intro hmem
+            have hmem' := label_in_lin_block
+              (show Linear.label from a) (linearize_body f enum) b hmem
+            have hmem'' := label_in_lin_rec f
+              (show Linear.label from a) enum hmem'
+            cases hnr with
+            | cons _ hnot _ => exact hnot hmem''
+          · exact unique_labels_lin_block (linearize_body f enum) b (ih htail)
+
+end CompCert4Lean.Backend.Linearizeproof

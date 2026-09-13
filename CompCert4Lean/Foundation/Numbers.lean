@@ -1479,3 +1479,17 @@ theorem PArith.BinPos.Pos.iter_succ :
   rw [PArith.BinPos.Pos.posToNat_succ]
   change natIter f (posToNat p) (f x) = f (natIter f (posToNat p) x)
   exact natIter_comp_succ f (posToNat p) x
+
+end Rocq.Coq
+end CompCert4Lean.Foundation.Numbers
+
+namespace CompCert4Lean.Foundation.Numbers
+namespace Rocq.Coq
+
+theorem PArith.BinPos.Pos.eqb_eq :
+    PArith.BinPos.Pos.eqb_eqStatement := by
+  intro p q
+  simp [PArith.BinPos.Pos.eqb]
+
+end Rocq.Coq
+end CompCert4Lean.Foundation.Numbers

@@ -1076,3 +1076,89 @@ theorem repr_union_1_proof :
 
 end UF
 end CompCert4Lean.Lib.UnionFind
+
+namespace CompCert4Lean.Lib.UnionFind
+namespace UF
+
+theorem repr_union_3_proof :
+    ∀ (M : MAP), repr_union_3Statement M := by
+  intro M uf a b
+  unfold union
+  dsimp
+  by_cases hab : repr M uf a = repr M uf b
+  · simp [hab]
+  · simp only [dif_neg hab]
+    apply repr_identify_1_proof M uf (repr M uf a) (repr M uf b)
+      (repr_res_none_calc M uf a)
+    · intro hba
+      apply hab
+      exact hba.symm
+
+end UF
+end CompCert4Lean.Lib.UnionFind
+
+namespace CompCert4Lean.Lib.UnionFind
+namespace UF
+
+theorem repr_union_2_proof :
+    ∀ (M : MAP), repr_union_2Statement M := by
+  intro M uf a b x h
+  unfold union
+  dsimp
+  by_cases hab : repr M uf a = repr M uf b
+  · simp [hab, h]
+  · simp only [dif_neg hab]
+    have ha : mapGet M (repr M uf a) uf.m = none :=
+      repr_res_none_calc M uf a
+    have hneq : repr M uf (repr M uf b) ≠ repr M uf a := by
+      intro hrepr
+      apply hab
+      calc
+        repr M uf a = repr M uf (repr M uf b) := hrepr.symm
+        _ = repr M uf b := repr_canonical_calc M uf b
+    have hi := repr_identify_2_proof M uf (repr M uf a) (repr M uf b) ha hneq x h
+    exact hi.trans (repr_canonical_calc M uf b)
+
+end UF
+end CompCert4Lean.Lib.UnionFind
+
+namespace CompCert4Lean.Lib.UnionFind
+namespace UF
+
+theorem sameclass_union_1_proof :
+    ∀ (M : MAP), sameclass_union_1Statement M := by
+  intro M uf a b
+  change repr M (union M uf a b) a = repr M (union M uf a b) b
+  have ha := repr_union_2_proof M uf a b a rfl
+  have hb := repr_union_3_proof M uf a b
+  exact ha.trans hb.symm
+
+end UF
+end CompCert4Lean.Lib.UnionFind
+
+namespace CompCert4Lean.Lib.UnionFind
+namespace UF
+
+theorem sameclass_union_2_proof :
+    ∀ (M : MAP), sameclass_union_2Statement M := by
+  intro M uf a b x y hxy
+  change repr M (union M uf a b) x = repr M (union M uf a b) y
+  change repr M uf x = repr M uf y at hxy
+  by_cases hx : repr M uf x = repr M uf a
+  · by_cases hy : repr M uf y = repr M uf a
+    · have hux := repr_union_2_proof M uf a b x hx
+      have huy := repr_union_2_proof M uf a b y hy
+      exact hux.trans huy.symm
+    · exfalso
+      apply hy
+      exact hxy.symm.trans hx
+  · by_cases hy : repr M uf y = repr M uf a
+    · exfalso
+      apply hx
+      exact hxy.trans hy
+    · have hux := repr_union_1_proof M uf a b x hx
+      have huy := repr_union_1_proof M uf a b y hy
+      exact hux.trans (hxy.trans huy.symm)
+
+end UF
+end CompCert4Lean.Lib.UnionFind

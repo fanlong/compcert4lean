@@ -1408,3 +1408,37 @@ theorem eval_shift_stack_addressing : eval_shift_stack_addressingStatement := by
   exact eval_shift_stack_addressing64 F V ge sp addr vl delta
 
 end CompCert4Lean.X86.Op
+
+namespace CompCert4Lean.X86.Op
+
+theorem eval_shift_stack_operation
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    eval_shift_stack_operationStatement := by
+  intro F V ge sp op vl m delta
+  cases op with
+  | Olea addr =>
+      change eval_addressing32 ge
+          (.Vptr sp CompCert4Lean.Lib.Integers.Ptrofs.zero)
+          (shift_stack_addressing delta addr) vl =
+        eval_addressing32 ge
+          (.Vptr sp (CompCert4Lean.Lib.Integers.Ptrofs.repr delta)) addr vl
+      exact eval_shift_stack_addressing32 F V ge sp addr vl delta
+  | Oleal addr =>
+      change eval_addressing64 ge
+          (.Vptr sp CompCert4Lean.Lib.Integers.Ptrofs.zero)
+          (shift_stack_addressing delta addr) vl =
+        eval_addressing64 ge
+          (.Vptr sp (CompCert4Lean.Lib.Integers.Ptrofs.repr delta)) addr vl
+      exact eval_shift_stack_addressing64 F V ge sp addr vl delta
+  | _ =>
+      simp only [shift_stack_operation]
+      cases vl with
+      | nil => rfl
+      | cons v tail =>
+          cases tail with
+          | nil => rfl
+          | cons v2 tail =>
+              cases tail <;> rfl
+
+end CompCert4Lean.X86.Op

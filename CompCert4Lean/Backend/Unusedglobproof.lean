@@ -1373,3 +1373,93 @@ theorem filter_globdefs_map_1 : filter_globdefs_map_1Statement := by
       · exact ih u m1 hmem hget
 
 end CompCert4Lean.Backend.Unusedglobproof
+
+namespace CompCert4Lean.Backend.Unusedglobproof
+
+open CompCert4Lean.Backend.Unusedglob
+
+theorem filter_globdefs_map_2 : filter_globdefs_map_2Statement := by
+  intro id l u m1 m2
+  unfold CompCert4Lean.Backend.Unusedglob.prog_map at m1 m2
+  unfold CompCert4Lean.Lib.Maps.PTree.t at m1 m2
+  induction l generalizing u m1 m2 with
+  | nil =>
+      intro hmem hget
+      simpa [CompCert4Lean.Backend.Unusedglob.filter_globdefs,
+        List.foldl] using hget
+  | cons idg l ih =>
+      intro hmem hget
+      rcases idg with ⟨id1, gd1⟩
+      unfold CompCert4Lean.Backend.Unusedglob.filter_globdefs
+      split
+      · rename_i hbranch
+        rw [filter_globdefs_nil]
+        simp only [List.reverse_cons]
+        change CompCert4Lean.Lib.Maps.PTree.get id
+          (List.foldl
+            (fun (m : CompCert4Lean.Lib.Maps.PTree.tree
+                (CompCert4Lean.Common.AST.globdef CompCert4Lean.Backend.RTL.fundef Unit))
+                (idg : CompCert4Lean.Common.AST.ident ×
+                  CompCert4Lean.Common.AST.globdef CompCert4Lean.Backend.RTL.fundef Unit) =>
+              CompCert4Lean.Lib.Maps.PTree.set
+                (show CompCert4Lean.Foundation.Numbers.Rocq.Coq.positive from idg.1)
+                idg.2 m)
+            m1
+            (filter_globdefs (IS.remove (show IS.elt from id1) u) [] l ++ [(id1, gd1)])) =
+          CompCert4Lean.Lib.Maps.PTree.get
+            (show CompCert4Lean.Foundation.Numbers.Rocq.Coq.positive from id)
+            (List.foldl
+              (fun (m : CompCert4Lean.Lib.Maps.PTree.tree
+                  (CompCert4Lean.Common.AST.globdef CompCert4Lean.Backend.RTL.fundef Unit))
+                  (idg : CompCert4Lean.Common.AST.ident ×
+                    CompCert4Lean.Common.AST.globdef CompCert4Lean.Backend.RTL.fundef Unit) =>
+                CompCert4Lean.Lib.Maps.PTree.set
+                  (show CompCert4Lean.Foundation.Numbers.Rocq.Coq.positive from idg.1)
+                  idg.2 m)
+              m2 (List.reverse l ++ [(id1, gd1)]))
+        rw [List.foldl_append]
+        rw [List.foldl_append]
+        simp only [List.foldl]
+        change CompCert4Lean.Lib.Maps.PTree.get
+            (show CompCert4Lean.Foundation.Numbers.Rocq.Coq.positive from id)
+            (CompCert4Lean.Lib.Maps.PTree.set
+              (show CompCert4Lean.Foundation.Numbers.Rocq.Coq.positive from id1)
+              gd1 _) =
+          CompCert4Lean.Lib.Maps.PTree.get
+            (show CompCert4Lean.Foundation.Numbers.Rocq.Coq.positive from id)
+            (CompCert4Lean.Lib.Maps.PTree.set
+              (show CompCert4Lean.Foundation.Numbers.Rocq.Coq.positive from id1)
+              gd1 _)
+        rw [CompCert4Lean.Lib.Maps.PTree.getSet_equation,
+          CompCert4Lean.Lib.Maps.PTree.getSet_equation]
+        split
+        · rfl
+        · rename_i hne
+          apply ih (IS.remove (show IS.elt from id1) u) m1 m2
+          · change CompCert4Lean.Backend.Unusedglobproof.ISF.ISF.M.mem id
+              (CompCert4Lean.Backend.Unusedglobproof.ISF.ISF.M.remove
+                (show CompCert4Lean.Backend.Unusedglobproof.ISF.ISF.elt from id1) u) = true
+            have hremove := ISF.remove_b_proof (s := u)
+              (x := (show ISF.elt from id1)) (y := id)
+            rw [hremove]
+            have heq_false : ISF.eqb (show ISF.elt from id1) id = false := by
+              cases h : ISF.ISF.E.eq_dec (show ISF.elt from id1) id with
+              | left h' => exact False.elim (hne h'.symm)
+              | right h' =>
+                  simp [ISF.eqb, CompCert4Lean.Lib.FSetFacts.WFacts_fun.eqb, h]
+            have hmem0 : ISF.ISF.M.mem id u = true := by
+              exact hmem
+            simp [hmem0, heq_false]
+          · exact hget
+      · rename_i hbranch
+        have hne : id ≠ id1 := by
+          intro heq
+          subst id1
+          simp [hmem] at hbranch
+        simp only [List.reverse_cons]
+        rw [List.foldl_append]
+        simp only [List.foldl]
+        rw [CompCert4Lean.Lib.Maps.PTree.gso _ _ hne]
+        exact ih u m1 m2 hmem hget
+
+end CompCert4Lean.Backend.Unusedglobproof

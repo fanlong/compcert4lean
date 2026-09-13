@@ -1957,3 +1957,98 @@ theorem tr_move_correct
           (Regmap.get r1 rs) rs hne
 
 end CompCert4Lean.Backend.RTLgenproof
+
+namespace CompCert4Lean.Backend.RTLgenproof
+
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Backend.RTLgen
+open CompCert4Lean.Backend.RTLgenspec
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.Smallstep
+open CompCert4Lean.Common.Values
+
+private theorem rtlgenproof_match_env_same_move
+    (map : RTLgen.mapping) (e : CompCert4Lean.Backend.Cminor.env)
+    (le : letenv) (rs rs' : regset) (r rd : reg)
+    (hmatch : match_env map e le rs)
+    (heq : rd = r)
+    (hresult : Regmap.get rd rs' = Regmap.get r rs)
+    (hstable : ∀ r', r' ≠ rd → Regmap.get r' rs' = Regmap.get r' rs) :
+    match_env map e le rs' := by
+  apply match_env_invariant map e le rs rs' hmatch
+  intro r' hr'
+  by_cases hrd : r' = rd
+  · subst r'
+    simpa [heq] using hresult
+  · exact hstable r' hrd
+
+private theorem rtlgenproof_match_env_updated_move
+    (map : RTLgen.mapping) (e : CompCert4Lean.Backend.Cminor.env)
+    (le : letenv) (rs rs' : regset) (dst : Option ident)
+    (r rd : reg) (v tv : val)
+    (hmatch : match_env map e le rs)
+    (hless : Val.lessdef v tv)
+    (hwf : map_wf map)
+    (hok : reg_map_ok map rd dst)
+    (hresult : Regmap.get rd rs' = tv)
+    (hstable : ∀ r', r' ≠ rd → Regmap.get r' rs' = Regmap.get r' rs) :
+    match_env map (CompCert4Lean.Backend.Cminor.set_optvar dst v e) le rs' := by
+  have hset : match_env map
+      (CompCert4Lean.Backend.Cminor.set_optvar dst v e) le
+      (Regmap.set rd tv rs) :=
+    match_env_update_dest map e le rs dst rd v tv hless hwf hok hmatch
+  apply match_env_invariant map
+    (CompCert4Lean.Backend.Cminor.set_optvar dst v e) le
+    (Regmap.set rd tv rs) rs' hset
+  intro r' hr'
+  by_cases hrd : r' = rd
+  · subst r'
+    rw [Regmap.gss_proof val rd tv rs]
+    exact hresult
+  · rw [Regmap.gso_proof val r' rd tv rs hrd]
+    exact hstable r' hrd
+
+theorem transl_expr_Evar_correct
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    transl_expr_Evar_correctStatement := by
+  intro xi tprog sp e m le id v henv
+  unfold transl_expr_prop
+  intro tge tm cs f map pr ns nd rd rs dst hwf htr hmatch hext
+  cases htr with
+  | @tr_Evar map pr id ns nd r rd dst hmap hok hmove =>
+      have hvar := match_env_find_var map e le rs id v _ hmatch henv hmap
+      obtain ⟨rs', hstar, hresult, hstable⟩ :=
+        tr_move_correct xi tprog _ _ _ _ cs f sp rs tm hmove
+      have hlessResult : Val.lessdef v (Regmap.get rd rs') := by
+        rw [hresult]
+        exact hvar
+      have hcase : (rd = r) ∨ (¬ rd ∈ pr) := by
+        rcases hok with ⟨hopt, _⟩ | ⟨_, hpr⟩
+        · exact Or.inl hopt
+        · exact Or.inr hpr
+      refine ⟨rs', tm, hstar, ?_, ?_, ?_, ?_⟩
+      · rcases hok with ⟨hopt, hdst⟩ | ⟨hok, hpr⟩
+        · subst rd
+          simpa [hdst, CompCert4Lean.Backend.Cminor.set_optvar] using
+            rtlgenproof_match_env_same_move
+            map e le rs rs' _ _ hmatch rfl hresult hstable
+        · exact rtlgenproof_match_env_updated_move map e le rs rs' dst r rd v
+            (Regmap.get rd rs') hmatch hlessResult hwf hok rfl hstable
+      · exact hlessResult
+      · intro r' hr'
+        rcases hcase with hrd | hpr
+        · by_cases heq : r' = rd
+          · subst r'
+            simpa [hrd] using hresult
+          · exact hstable r' heq
+        · exact hstable r' (by
+            intro heq
+            subst r'
+            exact hpr hr')
+      · exact hext
+
+end CompCert4Lean.Backend.RTLgenproof

@@ -1842,3 +1842,45 @@ theorem Rsqr_sqrt :
 end R_sqrt
 end Rocq.Coq.Reals
 end CompCert4Lean.Foundation.FlocqReal
+
+namespace CompCert4Lean.Foundation.FlocqReal
+namespace Rocq.Coq.Reals
+namespace R_sqrt
+
+theorem sqrt_mult :
+    ∀ (ctx : ExactRealContext), sqrt_multStatement ctx := by
+  intro ctx x y hx hy
+  change ExactReal.sqrt ctx.spec (ctx.spec.mul x y) =
+    ctx.spec.mul (ExactReal.sqrt ctx.spec x) (ExactReal.sqrt ctx.spec y)
+  have hx' : ctx.spec.le ctx.spec.zero x := by
+    change ctx.spec.le (ctx.spec.ofZ Z0) x at hx
+    rw [ctx.certificate.sourceLaws.ofZ_zero] at hx
+    exact hx
+  have hy' : ctx.spec.le ctx.spec.zero y := by
+    change ctx.spec.le (ctx.spec.ofZ Z0) y at hy
+    rw [ctx.certificate.sourceLaws.ofZ_zero] at hy
+    exact hy
+  have hxy' : ctx.spec.le ctx.spec.zero (ctx.spec.mul x y) := by
+    have h := RIneq.Rmult_le_pos ctx x y hx hy
+    change ctx.spec.le (ctx.spec.ofZ Z0) (ctx.spec.mul x y) at h
+    rw [ctx.certificate.sourceLaws.ofZ_zero] at h
+    exact h
+  unfold ExactReal.sqrt
+  cases hxydec : ctx.spec.lt_dec (ctx.spec.mul x y) ctx.spec.zero with
+  | left hxylt =>
+      exact (((ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp hxylt).2 hxy').elim
+  | right _ =>
+      cases hxdec : ctx.spec.lt_dec x ctx.spec.zero with
+      | left hxlt =>
+          exact (((ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp hxlt).2 hx').elim
+      | right _ =>
+          cases hydec : ctx.spec.lt_dec y ctx.spec.zero with
+          | left hylt =>
+              exact (((ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp hylt).2 hy').elim
+          | right _ =>
+              simpa [hxydec, hxdec, hydec] using
+                ctx.certificate.sourceLaws.sqrt_mult x y hx' hy'
+
+end R_sqrt
+end Rocq.Coq.Reals
+end CompCert4Lean.Foundation.FlocqReal

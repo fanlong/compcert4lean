@@ -2438,3 +2438,21 @@ theorem Rcompare_Gt_inv (ctx : ExactRealContext) :
   | Rcompare_Gt_ hyx => exact hyx
 
 end CompCert4Lean.Flocq.Core.Raux
+
+namespace CompCert4Lean.Flocq.Core.Raux
+
+theorem Rcompare_sym (ctx : ExactRealContext) :
+    Rcompare_symStatement ctx := by
+  intro x y
+  rcases ctx.certificate.total_order y x with hyx | hxy
+  · rcases hyx with hyx | heq
+    · rw [exact_Rcompare_gt_aux ctx hyx,
+        exact_Rcompare_lt_aux ctx hyx]
+      rfl
+    · subst y
+      rw [exact_Rcompare_eq_aux ctx rfl]
+      rfl
+  · rw [exact_Rcompare_lt_aux ctx hxy, exact_Rcompare_gt_aux ctx hxy]
+    rfl
+
+end CompCert4Lean.Flocq.Core.Raux

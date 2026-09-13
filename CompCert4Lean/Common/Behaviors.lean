@@ -1319,3 +1319,151 @@ theorem safe_along_safe :
   exact hsafe E0 s' b hstar (behavior_app_E0 b).symm
 
 end CompCert4Lean.Common.Behaviors
+
+namespace CompCert4Lean.Common.Behaviors
+
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.Smallstep
+
+theorem star_safe_along :
+    star_safe_alongStatement := by
+  intro L1 s b t1 s' b2 hsafe hstar hEq
+  intro t2 s'' b3 hstar' hEq'
+  apply hsafe (Eapp t1 t2) s'' b3
+  · exact star_trans L1.genvtype L1.state (step L1) (globalenv L1)
+      s t1 s' hstar t2 s'' (Eapp t1 t2) hstar' rfl
+  · rw [hEq, hEq', behavior_app_assoc]
+
+end CompCert4Lean.Common.Behaviors
+
+namespace CompCert4Lean.Common.Behaviors
+
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.Smallstep
+
+theorem not_safe_along_behavior :
+    not_safe_along_behaviorStatement := by
+  intro L1 s b hnot
+  classical
+  obtain ⟨t1, hnot⟩ := Classical.not_forall.mp hnot
+  obtain ⟨s', hnot⟩ := Classical.not_forall.mp hnot
+  obtain ⟨b2, hnot⟩ := Classical.not_forall.mp hnot
+  have hstarEq : Star L1 s t1 s' := (Classical.not_imp.mp hnot).1
+  have hrest : ¬ (b = behavior_app t1 b2 →
+      (∃ r, final_state L1 s' r) ∨
+        (∃ (t2 : trace) (s'' : state L1), Step L1 s' t2 s'')) :=
+    (Classical.not_imp.mp hnot).2
+  have hbeq : b = behavior_app t1 b2 := (Classical.not_imp.mp hrest).1
+  have hdisj : ¬ ((∃ r, final_state L1 s' r) ∨
+      (∃ (t2 : trace) (s'' : state L1), Step L1 s' t2 s'')) :=
+    (Classical.not_imp.mp hrest).2
+  have hnofinal : ¬ ∃ r, final_state L1 s' r := (not_or.mp hdisj).1
+  have hnostep : ¬ ∃ (t2 : trace) (s'' : state L1), Step L1 s' t2 s'' :=
+    (not_or.mp hdisj).2
+  refine ⟨t1, s', ?_, hstarEq, ?_, ?_⟩
+  · exact ⟨b2, hbeq⟩
+  · intro t2 s'' hstep
+    exact hnostep ⟨t2, s'', hstep⟩
+  · intro r hfinal
+    exact hnofinal ⟨r, hfinal⟩
+
+end CompCert4Lean.Common.Behaviors
+
+namespace CompCert4Lean.Common.Behaviors
+
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.Smallstep
+
+private theorem safe_after_E0_star
+    (L : semantics) (s s' : state L)
+    (hstar : Star L s E0 s') (hsafe : safe L s) : safe L s' := by
+  intro s'' htail
+  apply hsafe s''
+  exact star_trans L.genvtype L.state (step L) (globalenv L)
+    s E0 s' hstar E0 s'' E0 htail rfl
+
+theorem backward_simulation_forever_silent :
+    backward_simulation_forever_silentStatement := by
+  intro L1 L2 index order match_states props
+  intro i s1 s2 hforever hmatch hsafe
+  let pred : index → state L1 → Prop := fun i s1 =>
+    ∃ s2, ForeverSilent L2 s2 ∧ match_states i s1 s2 ∧ safe L1 s1
+  have hN : forever_silent_N (step L1) order (globalenv L1) i s1 :=
+    forever_silent_N.coinduct (step L1) order (globalenv L1) pred
+      (by
+        intro i s1 hs
+        rcases hs with ⟨s2, hforever, hmatch, hsafe⟩
+        exact forever_silent_casesOn
+          (step := step L2) (ge := globalenv L2)
+          (motive := fun s2 =>
+            match_states i s1 s2 → safe L1 s1 →
+              (∃ s1' i', Star L1 s1 E0 s1' ∧ order i' i ∧
+                pred i' s1') ∨
+              (∃ s1' i', Plus L1 s1 E0 s1' ∧ pred i' s1'))
+          (by
+            intro s2 s2' hstep htail hmatch hsafe
+            obtain ⟨i', s1', hdiag, hmatch'⟩ :=
+              props.bsim_simulation s2 E0 s2' hstep i hmatch hsafe
+            rcases hdiag with hplus | ⟨hstar, horder⟩
+            · exact Or.inr ⟨s1', i', hplus,
+                ⟨s2', htail, hmatch',
+                  safe_after_E0_star L1 s1 s1'
+                    (plus_star L1.genvtype L1.state (step L1)
+                      (globalenv L1) s1 E0 s1' hplus) hsafe⟩⟩
+            · exact Or.inl ⟨s1', i', hstar, horder,
+                ⟨s2', htail, hmatch',
+                  safe_after_E0_star L1 s1 s1' hstar hsafe⟩⟩)
+          hforever hmatch hsafe)
+      i s1 ⟨s2, hforever, hmatch, hsafe⟩
+  exact forever_silent_N_forever
+    L1.genvtype L1.state (step L1) index order
+      props.bsim_order_wf (globalenv L1) i s1 hN
+
+end CompCert4Lean.Common.Behaviors
+
+namespace CompCert4Lean.Common.Behaviors
+
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.Smallstep
+
+theorem backward_simulation_star :
+    backward_simulation_starStatement := by
+  intro L1 L2 index order match_states props
+  intro s2 t s2' hstar
+  induction hstar with
+  | star_refl s2 =>
+      intro i s1 b hmatch hsafe
+      exact ⟨i, s1, star_refl (step L1) (globalenv L1) s1, hmatch⟩
+  | @star_step s2 t1 s2mid t2 s2' t hstep htail htrace ih =>
+      intro i s1 b hmatch hsafe
+      obtain ⟨i', s1', hdiag, hmatch'⟩ :=
+        props.bsim_simulation s2 t1 s2mid hstep i hmatch
+          (safe_along_safe L1 s1 (behavior_app t b) hsafe)
+      rcases hdiag with hplus | ⟨hstar1, horder⟩
+      · have hstar1' : Star L1 s1 t1 s1' :=
+          plus_star L1.genvtype L1.state (step L1) (globalenv L1)
+            s1 t1 s1' hplus
+        obtain ⟨i'', s1'', htail', hmatch''⟩ :=
+          ih i' s1' b hmatch' (by
+            apply star_safe_along L1 s1 (behavior_app t b) t1 s1'
+              (behavior_app t2 b) hsafe hstar1'
+            rw [htrace, behavior_app_assoc])
+        exact ⟨i'', s1'',
+          (by
+            simpa [htrace] using
+              (star_trans L1.genvtype L1.state (step L1) (globalenv L1)
+                s1 t1 s1' hstar1' t2 s1'' (Eapp t1 t2) htail' rfl)),
+          hmatch''⟩
+      · obtain ⟨i'', s1'', htail', hmatch''⟩ :=
+          ih i' s1' b hmatch' (by
+            apply star_safe_along L1 s1 (behavior_app t b) t1 s1'
+              (behavior_app t2 b) hsafe hstar1
+            rw [htrace, behavior_app_assoc])
+        exact ⟨i'', s1'',
+          (by
+            simpa [htrace] using
+              (star_trans L1.genvtype L1.state (step L1) (globalenv L1)
+                s1 t1 s1' hstar1 t2 s1'' (Eapp t1 t2) htail' rfl)),
+          hmatch''⟩
+
+end CompCert4Lean.Common.Behaviors

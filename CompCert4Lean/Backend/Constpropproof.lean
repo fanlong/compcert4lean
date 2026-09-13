@@ -1471,3 +1471,199 @@ theorem builtin_strength_reduction_correct :
 end CompCert4Lean.Backend.Constpropproof
 
 
+namespace CompCert4Lean.Backend.Constpropproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Backend.Constprop
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Backend.ValueDomain
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.X86.ConstpropOp
+open CompCert4Lean.X86.Op
+open Lean Elab Tactic Meta
+
+variable
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+
+private theorem constprop_ptrofs_eq_of_eq_true {x y : Ptrofs.int}
+    (h : Ptrofs.eq x y = true) : x = y := by
+  unfold Ptrofs.eq WordCore.eq at h
+  apply WordCore.ext
+  exact of_decide_eq_true h
+
+private def constpropPrivateName (suffix : String) : Name :=
+  let p := Name.str (Name.str (Name.str (Name.str Name.anonymous "_private") "CompCert4Lean") "Lib") "Integers"
+  let base := Name.num p 0
+  suffix.splitOn "." |>.foldl Name.str base
+
+private theorem constprop_wordcore_add_val {bits : Nat}
+    (x y : WordCore.Word bits) :
+    (WordCore.add x y).val = (x.val + y.val) % (2 ^ bits) := by
+  run_tac
+    let lctx ← getLCtx
+    let xF := (lctx.findFromUserName? `x).get!
+    let yF := (lctx.findFromUserName? `y).get!
+    let e ← mkAppM
+      (constpropPrivateName "CompCert4Lean.Lib.Integers.WordCore.add_val")
+      #[mkFVar xF.fvarId, mkFVar yF.fvarId]
+    closeMainGoal Name.anonymous e
+
+private theorem constprop_wordcore_zero_val (bits : Nat) :
+    (WordCore.zero bits).val = 0 := by
+  unfold WordCore.zero
+  run_tac
+    let lctx ← getLCtx
+    let bF := (lctx.findFromUserName? `bits).get!
+    let e ← mkAppM
+      (constpropPrivateName "CompCert4Lean.Lib.Integers.WordCore.val_repr_residue")
+      #[mkFVar bF.fvarId,
+        mkConst ``CompCert4Lean.Foundation.Numbers.Rocq.Coq.Numbers.BinNums.Z.Z0]
+    closeMainGoal Name.anonymous e
+
+private theorem constprop_wordcore_val_lt {bits : Nat}
+    (x : WordCore.Word bits) : x.val < 2 ^ bits := by
+  run_tac
+    let lctx ← getLCtx
+    let xF := (lctx.findFromUserName? `x).get!
+    let e ← mkAppM
+      (constpropPrivateName "CompCert4Lean.Lib.Integers.WordCore.val_lt")
+      #[mkFVar xF.fvarId]
+    closeMainGoal Name.anonymous e
+
+private theorem constprop_ptrofs_add_zero_l (x : Ptrofs.int) :
+    Ptrofs.add Ptrofs.zero x = x := by
+  change WordCore.add (WordCore.zero Ptrofs.wordsize) x = x
+  apply WordCore.ext_of_val_eq
+  rw [constprop_wordcore_add_val, constprop_wordcore_zero_val, Nat.zero_add]
+  exact Nat.mod_eq_of_lt (constprop_wordcore_val_lt x)
+
+theorem const_for_result_correct :
+    ∀ (cfg : CompilerConfig), const_for_result_correctStatement cfg := by
+  intro cfg prog tprog hprog a op bc v sp m hconst hvm hstack hgenv
+  cases a with
+  | Vbot => simp [CompCert4Lean.X86.ConstpropOp.const_for_result] at hconst
+  | I n =>
+      simp [CompCert4Lean.X86.ConstpropOp.const_for_result] at hconst
+      cases hconst
+      cases hvm
+      exact ⟨Vint n, rfl, Val.lessdef_refl _⟩
+  | IU n =>
+      simp [CompCert4Lean.X86.ConstpropOp.const_for_result] at hconst
+      cases hconst
+      cases hvm with
+      | vmatch_iu => exact ⟨Vint n, rfl, Val.lessdef_refl _⟩
+      | iuUndef => exact ⟨Vint n, rfl, Val.lessdef_undef _⟩
+  | Uns p n => simp [CompCert4Lean.X86.ConstpropOp.const_for_result] at hconst
+  | Sgn p n => simp [CompCert4Lean.X86.ConstpropOp.const_for_result] at hconst
+  | L n =>
+      simp [CompCert4Lean.X86.ConstpropOp.const_for_result,
+        CompCert4Lean.X86_64.Archi.ptr64] at hconst
+      cases hconst
+      cases hvm
+      exact ⟨Vlong n, rfl, Val.lessdef_refl _⟩
+  | F f =>
+      cases hgen : CompCert4Lean.Driver.Compopts.generate_float_constants cfg with
+      | false => simp [CompCert4Lean.X86.ConstpropOp.const_for_result, hgen] at hconst
+      | true =>
+          simp [CompCert4Lean.X86.ConstpropOp.const_for_result, hgen] at hconst
+          cases hconst
+          cases hvm
+          exact ⟨Vfloat f, rfl, Val.lessdef_refl _⟩
+  | FS f =>
+      cases hgen : CompCert4Lean.Driver.Compopts.generate_float_constants cfg with
+      | false => simp [CompCert4Lean.X86.ConstpropOp.const_for_result, hgen] at hconst
+      | true =>
+          simp [CompCert4Lean.X86.ConstpropOp.const_for_result, hgen] at hconst
+          cases hconst
+          cases hvm
+          exact ⟨Vsingle f, rfl, Val.lessdef_refl _⟩
+  | Num p => simp [CompCert4Lean.X86.ConstpropOp.const_for_result] at hconst
+  | Ifptr p => simp [CompCert4Lean.X86.ConstpropOp.const_for_result] at hconst
+  | Ptr p =>
+      cases p with
+      | Pbot => simp [CompCert4Lean.X86.ConstpropOp.const_for_result,
+          CompCert4Lean.X86_64.Archi.ptr64] at hconst
+      | Glo id => simp [CompCert4Lean.X86.ConstpropOp.const_for_result] at hconst
+      | Glob => simp [CompCert4Lean.X86.ConstpropOp.const_for_result] at hconst
+      | Stack => simp [CompCert4Lean.X86.ConstpropOp.const_for_result] at hconst
+      | Nonstack => simp [CompCert4Lean.X86.ConstpropOp.const_for_result] at hconst
+      | Ptop => simp [CompCert4Lean.X86.ConstpropOp.const_for_result] at hconst
+      | Gl id ofs =>
+          by_cases hrel : CompCert4Lean.X86.SelectOp.symbol_is_relocatable
+              cfg.relocation id = true
+          · by_cases hzero : Ptrofs.eq ofs Ptrofs.zero = true
+            · simp [CompCert4Lean.X86.ConstpropOp.const_for_result, hrel, hzero] at hconst
+              cases hconst
+              have hz : ofs = Ptrofs.zero :=
+                constprop_ptrofs_eq_of_eq_true hzero
+              subst ofs
+              cases hvm with
+              | ptrUndef =>
+                  exact ⟨Genv.symbol_address (Genv.globalenv tprog) id Ptrofs.zero,
+                    rfl, Val.lessdef_undef _⟩
+              | ptr b ofs p hp =>
+                  cases hp with
+                  | gl id hbc =>
+                      have hfind : Genv.find_symbol (Genv.globalenv prog) id = some b :=
+                        (hgenv.1 id b).mpr hbc
+                      have hfind' : Genv.find_symbol (Genv.globalenv tprog) id = some b := by
+                        rw [symbols_preserved cfg prog tprog hprog id]
+                        exact hfind
+                      have haddr : Genv.symbol_address (Genv.globalenv tprog)
+                          id Ptrofs.zero = Vptr b Ptrofs.zero := by
+                        simp [Genv.symbol_address, hfind']
+                      refine ⟨Genv.symbol_address (Genv.globalenv tprog) id Ptrofs.zero,
+                        rfl, ?_⟩
+                      rw [haddr]
+                      exact Val.lessdef_refl _
+            · simp [CompCert4Lean.X86.ConstpropOp.const_for_result, hrel, hzero] at hconst
+          · simp [CompCert4Lean.X86.ConstpropOp.const_for_result, hrel,
+              CompCert4Lean.X86_64.Archi.ptr64,
+              CompCert4Lean.X86.ConstpropOp.Olea_ptr] at hconst
+            cases hconst
+            cases hvm with
+            | ptrUndef =>
+                exact ⟨Genv.symbol_address (Genv.globalenv tprog) id ofs,
+                  rfl, Val.lessdef_undef _⟩
+            | ptr b ofs' p hp =>
+                cases hp with
+                | gl id hbc =>
+                    have hfind : Genv.find_symbol (Genv.globalenv prog) id = some b :=
+                      (hgenv.1 id b).mpr hbc
+                    have hfind' : Genv.find_symbol (Genv.globalenv tprog) id = some b := by
+                      rw [symbols_preserved cfg prog tprog hprog id]
+                      exact hfind
+                    have haddr : Genv.symbol_address (Genv.globalenv tprog)
+                        id ofs = Vptr b ofs := by
+                      simp [Genv.symbol_address, hfind']
+                    refine ⟨Genv.symbol_address (Genv.globalenv tprog) id ofs,
+                      rfl, ?_⟩
+                    rw [haddr]
+                    exact Val.lessdef_refl _
+      | Stk ofs =>
+          simp [CompCert4Lean.X86.ConstpropOp.const_for_result,
+            CompCert4Lean.X86_64.Archi.ptr64,
+            CompCert4Lean.X86.ConstpropOp.Olea_ptr] at hconst
+          cases hconst
+          cases hvm with
+          | ptrUndef =>
+              exact ⟨Val.offset_ptr (Vptr sp Ptrofs.zero) ofs,
+                rfl, Val.lessdef_undef _⟩
+          | ptr b ofs' p hp =>
+              cases hp with
+              | stk hbc =>
+                  have hb : b = sp := bc.bc_stack b sp hbc hstack
+                  subst b
+                  refine ⟨Vptr sp ofs, ?_, ?_⟩
+                  · change some (Val.offset_ptr (Vptr sp Ptrofs.zero) ofs) =
+                      some (Vptr sp ofs)
+                    simp only [Val.offset_ptr]
+                    rw [constprop_ptrofs_add_zero_l]
+                  · exact Val.lessdef_refl _
+
+end CompCert4Lean.Backend.Constpropproof

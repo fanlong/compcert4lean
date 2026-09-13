@@ -1575,3 +1575,16 @@ theorem add_commut : add_commutStatement := by
 
 end Val
 end CompCert4Lean.Common.Values
+
+namespace CompCert4Lean.Common.Values
+namespace Val
+
+theorem add_assoc : add_assocStatement := by
+  intro x y z
+  cases x <;> cases y <;> cases z <;>
+    simp [add, CompCert4Lean.X86_64.Archi.ptr64]
+  case Vint.Vint.Vint a b c =>
+    exact CompCert4Lean.Lib.Integers.Int.add_assoc_proof a b c
+
+end Val
+end CompCert4Lean.Common.Values

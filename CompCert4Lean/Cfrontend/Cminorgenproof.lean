@@ -1707,3 +1707,15 @@ theorem inj_preserves_globals : inj_preserves_globalsStatement := by
         exact (image b1 b2 delta hinj (varinfos b2 gv hvar)).symm
 
 end CompCert4Lean.Cfrontend.Cminorgenproof
+
+namespace CompCert4Lean.Cfrontend.Cminorgenproof
+
+theorem match_callstack_match_globalenvs : match_callstack_match_globalenvsStatement := by
+  intro prog f m tm cs bound tbound hmatch
+  induction hmatch with
+  | mcs_nil hglobal _ _ =>
+      exact ⟨_, hglobal⟩
+  | cons _ _ _ _ _ _ _ ih =>
+      exact ih
+
+end CompCert4Lean.Cfrontend.Cminorgenproof
