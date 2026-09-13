@@ -911,3 +911,48 @@ theorem B2R_build_nan :
   | B754_finite s m e => simp [is_nan] at hx
 
 end CompCert4Lean.Flocq.IEEE754.Binary
+
+namespace CompCert4Lean.Flocq.IEEE754.Binary
+
+theorem is_finite_build_nan :
+    ∀ {prec emax : Z}, is_finite_build_nanStatement (prec := prec) (emax := emax) := by
+  intro prec emax x
+  rcases x with ⟨x, hx⟩
+  cases x with
+  | B754_nan s pl => rfl
+  | B754_zero s => simp [is_nan] at hx
+  | B754_infinity s => simp [is_nan] at hx
+  | B754_finite s m e => simp [is_nan] at hx
+
+theorem is_nan_build_nan :
+    ∀ {prec emax : Z}, is_nan_build_nanStatement (prec := prec) (emax := emax) := by
+  intro prec emax x
+  rcases x with ⟨x, hx⟩
+  cases x with
+  | B754_nan s pl => rfl
+  | B754_zero s => simp [is_nan] at hx
+  | B754_infinity s => simp [is_nan] at hx
+  | B754_finite s m e => simp [is_nan] at hx
+
+theorem B2BSN_BSN2B :
+    ∀ {prec emax : Z}, B2BSN_BSN2BStatement (prec := prec) (emax := emax) := by
+  intro prec emax nan x
+  rcases nan with ⟨nan, hnan⟩
+  rcases x with ⟨x, hx⟩
+  cases nan with
+  | B754_nan s pl => cases x <;> rfl
+  | B754_zero s => simp [is_nan] at hnan
+  | B754_infinity s => simp [is_nan] at hnan
+  | B754_finite s m e => simp [is_nan] at hnan
+
+theorem Bsign_B2BSN :
+    ∀ {prec emax : Z}, Bsign_B2BSNStatement (prec := prec) (emax := emax) := by
+  intro prec emax x hn
+  rcases x with ⟨x, hx⟩
+  cases x with
+  | B754_nan s pl => simp [is_nan] at hn
+  | B754_zero s => rfl
+  | B754_infinity s => rfl
+  | B754_finite s m e => rfl
+
+end CompCert4Lean.Flocq.IEEE754.Binary

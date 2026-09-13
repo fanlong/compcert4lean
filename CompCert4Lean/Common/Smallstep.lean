@@ -2122,3 +2122,84 @@ theorem simulation_forever_reactive :
     s2 T ⟨i, s1, hmatch, hforever⟩
 
 end CompCert4Lean.Common.Smallstep
+
+namespace CompCert4Lean.Common.Smallstep
+
+open CompCert4Lean.Common.Events
+
+open CompCert4Lean.Lib.Coqlib
+
+theorem compose_forward_simulations :
+    compose_forward_simulationsStatement := by
+  intro L1 L2 L3 S12 S23
+  cases S12 with
+  | Forward_simulation order match_states props =>
+      cases S23 with
+      | Forward_simulation order' match_states' props' =>
+          let ff_order := lex_ord
+            (_root_.CompCert4Lean.Foundation.Ordered.Rocq.Coq.Relations.Relation_Operators.clos_trans
+              _ order') order
+          let ff_match_states : (_ × _) → state L1 → state L3 → Prop :=
+            fun i s1 s3 =>
+              ∃ s2, match_states i.2 s1 s2 ∧ match_states' i.1 s2 s3
+          refine @Forward_simulation L1 L3 (_ × _) ff_order ff_match_states ?_
+          refine {
+            fsim_order_wf := ?_
+            fsim_match_initial_states := ?_
+            fsim_match_final_states := ?_
+            fsim_simulation := ?_
+            fsim_public_preserved := ?_ }
+          · have hclosure : WellFounded
+                (_root_.CompCert4Lean.Foundation.Ordered.Rocq.Coq.Relations.Relation_Operators.clos_trans
+                  _ order') := by
+              have hsource :=
+                CompCert4Lean.Foundation.Recursion.Rocq.Coq.Wellfounded.Transitive_Closure.wf_clos_trans
+                  _ _ (props'.fsim_order_wf :
+                    CompCert4Lean.Foundation.Recursion.Rocq.Coq.Init.Wf.well_founded order')
+              have convert : ∀ (a : _) ,
+                  CompCert4Lean.Foundation.Recursion.Rocq.Coq.Init.Wf.Acc
+                    (_root_.CompCert4Lean.Foundation.Ordered.Rocq.Coq.Relations.Relation_Operators.clos_trans
+                      _ order') a →
+                  Acc (_root_.CompCert4Lean.Foundation.Ordered.Rocq.Coq.Relations.Relation_Operators.clos_trans
+                    _ order') a := by
+                intro a ha
+                induction ha with
+                | Acc_intro x h ih =>
+                    exact Acc.intro x (fun y hy => ih y hy)
+              exact ⟨fun a => convert a (hsource a)⟩
+            exact smallstep_wf_lex_ord _ _ hclosure props.fsim_order_wf
+          · intro s1 hs1
+            rcases props.fsim_match_initial_states s1 hs1 with
+              ⟨i1, s2, hs2, hm12⟩
+            rcases props'.fsim_match_initial_states s2 hs2 with
+              ⟨i2, s3, hs3, hm23⟩
+            exact ⟨(i2, i1), s3, hs3, ⟨s2, hm12, hm23⟩⟩
+          · intro i s1 s3 r hm hr
+            rcases hm with ⟨s2, hm12, hm23⟩
+            exact props'.fsim_match_final_states i.1 s2 s3 r hm23
+              (props.fsim_match_final_states i.2 s1 s2 r hm12 hr)
+          · intro s1 t s1' hs ⟨i2, i1⟩ s3 hm
+            rcases hm with ⟨s2, hm12, hm23⟩
+            rcases fsim_simulation' L1 L2 _ _ _ props i1 s1 t s1' hs s2 hm12 with
+              (⟨i1', s2', hdiag12, hm12'⟩ |
+                ⟨i1', horder1, htrace1, hm12'⟩)
+            · rcases simulation_plus L2 L3 _ _ _ props' s2 t s2' hdiag12 i2 s3 hm23 with
+                (⟨i2', s3', hplus23, hm23'⟩ |
+                  ⟨i2', horder2, htrace2, hm23'⟩)
+              · exact ⟨(i2', i1'), s3',
+                  ⟨Or.inl hplus23, ⟨s2', hm12', hm23'⟩⟩⟩
+              · subst t
+                exact ⟨(i2', i1'), s3,
+                  ⟨Or.inr ⟨star_refl _ _ s3,
+                    lex_ord_left _ _ _ _ _ _ horder2⟩,
+                   ⟨s2', hm12', hm23'⟩⟩⟩
+            · subst t
+              exact ⟨(i2, i1'), s3,
+                ⟨Or.inr ⟨star_refl _ _ s3,
+                  lex_ord_right _ _ i2 i1' i1 horder1⟩,
+                 ⟨s2, hm12', hm23⟩⟩⟩
+          · intro id
+            exact props'.fsim_public_preserved id |>.trans
+              (props.fsim_public_preserved id)
+
+end CompCert4Lean.Common.Smallstep

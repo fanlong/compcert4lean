@@ -1547,3 +1547,55 @@ theorem pathlen_gt_merge_proof :
 
 end UF
 end CompCert4Lean.Lib.UnionFind
+
+namespace CompCert4Lean.Lib.UnionFind
+namespace UF
+
+theorem find_x_obligation_5 :
+    ∀ (M : MAP), find_x_obligation_5Statement M := by
+  intro M uf a
+  dsimp
+  intro h
+  exact ⟨(repr_none_calc M uf a h.symm).symm, fun _ => rfl⟩
+
+theorem find_x_obligation_6 :
+    ∀ (M : MAP), find_x_obligation_6Statement M := by
+  intro M uf
+  exact (uf.mwf :
+    CompCert4Lean.Foundation.Recursion.Rocq.Coq.Init.Wf.well_founded
+      (order M uf.m))
+
+theorem repr_compress_proof :
+    ∀ (M : MAP), repr_compressStatement M := by
+  intro M uf a b h1 h2 x
+  exact repr_compress_calc M uf a b h1 h2 x
+
+theorem find_x_obligation_4 :
+    ∀ (M : MAP), find_x_obligation_4Statement M := by
+  intro M uf a find_x find_x_obligation_1 find_x_obligation_2 find_x_obligation_3
+  dsimp
+  intro a' h₀ b uf' h
+  let r := find_x a' (find_x_obligation_1 uf a a' h₀)
+  change (b, uf') = r.1 at h
+  have hrrepr : r.1.1 = repr M uf a' := r.2.1
+  have hrunchanged : ∀ x, repr M r.1.2 x = repr M uf x := r.2.2
+  have hb : b = r.1.1 := by simpa using congrArg Prod.fst h
+  have huf : uf' = r.1.2 := by simpa using congrArg Prod.snd h
+  have hne := find_x_obligation_2 uf a find_x find_x_obligation_1 a' h₀ b uf' h
+  have hrepr := find_x_obligation_3 uf a find_x find_x_obligation_1 a' h₀ b uf' h
+  have hrepr' : repr M uf' a = b := hrepr
+  have hfirst : b = repr M uf a := by
+    calc
+      b = repr M uf' a := hrepr'.symm
+      _ = repr M r.1.2 a := congrArg (fun q => repr M q a) huf
+      _ = repr M uf a := hrunchanged a
+  constructor
+  · exact hfirst
+  · intro x
+    have hu : repr M uf' x = repr M r.1.2 x :=
+      congrArg (fun q => repr M q x) huf
+    exact (repr_compress_calc M uf' a b hne hrepr' x).trans
+      (hu.trans (hrunchanged x))
+
+end UF
+end CompCert4Lean.Lib.UnionFind

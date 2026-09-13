@@ -2645,3 +2645,61 @@ theorem load_bool_int8_unsigned : load_bool_int8_unsignedStatement := by
 end Mem
 
 end CompCert4Lean.Common.Memory
+
+namespace CompCert4Lean.Common.Memory
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+
+namespace Mem
+
+theorem load_loadbytes : load_loadbytesStatement := by
+  intro chunk m b ofs v hload
+  refine ⟨getN (size_chunk_nat chunk) ofs (PMap.get b m.mem_contents), ?_, ?_⟩
+  · have hperm : range_perm m b ofs (zAdd ofs (size_chunk chunk)) Cur Readable :=
+      (load_valid_access m chunk b ofs v hload).1
+    unfold loadbytes
+    cases hdec : range_perm_dec m b ofs (zAdd ofs (size_chunk chunk)) Cur Readable with
+    | left _ => simp [boolOfSumbool, hdec, size_chunk_nat]
+    | right hnot => exact False.elim (hnot hperm)
+  · exact load_result chunk m b ofs v hload
+
+theorem getN_length : getN_lengthStatement := by
+  intro c n p
+  induction n generalizing p with
+  | zero => rfl
+  | succ n ih => simp [getN, ih]
+
+theorem loadbytes_length : loadbytes_lengthStatement := by
+  intro m b ofs n bytes hload
+  unfold loadbytes at hload
+  cases hdec : range_perm_dec m b ofs (zAdd ofs n) Cur Readable with
+  | left _ =>
+      simp [boolOfSumbool, hdec] at hload
+      subst bytes
+      exact getN_length (PMap.get b m.mem_contents) (zToNat n) ofs
+  | right _ => simp [boolOfSumbool, hdec] at hload
+
+theorem loadbytes_empty : loadbytes_emptyStatement := by
+  intro m b ofs n hn
+  unfold loadbytes
+  have hperm : range_perm m b ofs (zAdd ofs n) Cur Readable := by
+    apply range_perm_vacuous
+    change intOfZ (zAdd ofs n) ≤ intOfZ ofs
+    change intOfZ (zOfInt (intOfZ ofs + intOfZ n)) ≤ intOfZ ofs
+    rw [intOfZ_zOfInt]
+    change intOfZ n ≤ 0 at hn
+    omega
+  have hnat : zToNat n = 0 := Z_to_nat_neg n hn
+  cases hdec : range_perm_dec m b ofs (zAdd ofs n) Cur Readable with
+  | left _ => simp [boolOfSumbool, hdec, hnat, getN]
+  | right hnot => exact False.elim (hnot hperm)
+
+end Mem
+
+end CompCert4Lean.Common.Memory

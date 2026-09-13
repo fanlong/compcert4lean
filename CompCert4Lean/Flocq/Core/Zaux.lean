@@ -1109,3 +1109,20 @@ theorem Zle_bool_false : Zle_bool_falseStatement := by
   simp [hn]
 
 end CompCert4Lean.Flocq.Core.Zaux
+
+namespace CompCert4Lean.Flocq.Core.Zaux
+
+theorem Zlt_bool_spec : Zlt_bool_specStatement := by
+  intro x y
+  change Zlt_bool_prop x y (if
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ x <
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ y then true else false)
+  by_cases h : CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ x <
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ y
+  · simpa [h] using (Zlt_bool_true_ h)
+  · have hle : CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ y ≤
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ x :=
+      Int.le_of_not_gt h
+    simpa [h] using (Zlt_bool_false_ hle)
+
+end CompCert4Lean.Flocq.Core.Zaux
