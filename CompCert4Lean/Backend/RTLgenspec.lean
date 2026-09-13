@@ -2085,3 +2085,84 @@ theorem tr_exitexpr_incr : tr_exitexpr_incrStatement := by
       · exact ihbody
 
 end CompCert4Lean.Backend.RTLgenspec
+
+namespace CompCert4Lean.Backend.RTLgenspec
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Foundation.Logic.Support
+open CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.List
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Backend.RTLgen
+open CompCert4Lean.X86.Op
+
+private theorem rtlgenspec_transl_exit_charact
+    (nexits : List RTL.node) (n : Nat) (s : RTLgen.state)
+    (ne : RTL.node) (s' : RTLgen.state) (incr : state_incr s s') :
+    RTLgen.transl_exit nexits n s = .OK ne s' incr →
+      nth_error nexits n = some ne ∧ s' = s := by
+  intro h
+  cases hget : nexits[n]? with
+  | none =>
+      simp [RTLgen.transl_exit, hget, RTLgen.error] at h
+  | some ne0 =>
+      have hnth := rtlgenspec_getElem?_nth_error nexits n _ hget
+      simp [RTLgen.transl_exit, hget, RTLgen.ret] at h
+      rcases h with ⟨hne, hs⟩
+      cases hne
+      cases hs
+      exact ⟨hnth, rfl⟩
+
+theorem transl_jumptable_charact : transl_jumptable_charactStatement := by
+  intro nexits tbl
+  induction tbl with
+  | nil =>
+      intro s nl s' incr h
+      change RTLgen.ret [] s = .OK nl s' incr at h
+      cases h
+      constructor
+      · intro v act hv
+        simp [tr_jumptable, CompCert4Lean.Lib.Coqlib.list_nth_z] at hv
+      · rfl
+  | cons t tl ih =>
+      intro s nl s' incr h
+      change RTLgen.bind (RTLgen.transl_exit nexits t)
+          (fun n1 => RTLgen.bind (RTLgen.transl_jumptable nexits tl)
+            (fun nl' => RTLgen.ret (n1 :: nl'))) s = .OK nl s' incr at h
+      cases hfirst : RTLgen.transl_exit nexits t s with
+      | Error msg =>
+          simp [RTLgen.bind, hfirst] at h
+      | OK n1 sm i1 =>
+          simp [RTLgen.bind, hfirst] at h
+          cases htail : RTLgen.transl_jumptable nexits tl sm with
+          | Error msg =>
+              simp [RTLgen.bind, htail] at h
+          | OK nlmid sn i2 =>
+              simp [RTLgen.bind, htail, RTLgen.ret] at h
+              rcases h with ⟨hnl, hs⟩
+              cases hnl
+              cases hs
+              have hfirst' := rtlgenspec_transl_exit_charact nexits t s n1 sm i1 hfirst
+              have htail' := ih sm nlmid s' i2 htail
+              constructor
+              · intro v act hv
+                cases hz : zeq v Z0 with
+                | left hv0 =>
+                    cases hv0
+                    have hvt : (some t : Option Nat) = some act := by
+                      simpa [CompCert4Lean.Lib.Coqlib.list_nth_z, hz] using hv
+                    cases hvt
+                    exact ⟨n1, by simp [CompCert4Lean.Lib.Coqlib.list_nth_z, hz], hfirst'.1⟩
+                | right hv0 =>
+                    have hv' : list_nth_z tl (ZArith.BinInt.Z.pred v) = some act := by
+                      simpa [CompCert4Lean.Lib.Coqlib.list_nth_z, hz] using hv
+                    rcases htail'.1 (ZArith.BinInt.Z.pred v) act hv' with ⟨n, hn, ha⟩
+                    exact ⟨n, by simpa [CompCert4Lean.Lib.Coqlib.list_nth_z, hz] using hn, ha⟩
+              · exact htail'.2.trans hfirst'.2
+
+end CompCert4Lean.Backend.RTLgenspec

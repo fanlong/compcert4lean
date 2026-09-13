@@ -1639,3 +1639,17 @@ theorem label_in_lin_rec : label_in_lin_recStatement := by
               exact label_in_lin_block lbl _ b htail
 
 end CompCert4Lean.Backend.Linearizeproof
+
+namespace CompCert4Lean.Backend.Linearizeproof
+
+open CompCert4Lean.Backend.Linear
+open CompCert4Lean.Backend.Linearize
+
+theorem unique_labels_add_branch : unique_labels_add_branchStatement := by
+  intro lbl k huniq
+  unfold add_branch
+  by_cases hs : starts_with lbl k
+  · simp [hs, huniq]
+  · simpa [hs, unique_labels] using huniq
+
+end CompCert4Lean.Backend.Linearizeproof
