@@ -2602,3 +2602,81 @@ theorem reachable_exit_points_predecessor :
   exact ⟨x, hx, reachable_predecessors code successors pc x hreach⟩
 
 end CompCert4Lean.Backend.Kildall.Backward_Dataflow_Solver
+
+namespace CompCert4Lean.Backend.Kildall.Backward_Dataflow_Solver
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+
+theorem fixpoint_solution : fixpoint_solutionStatement := by
+  intro A LAT NS LATlaws NSlaws code successors transf res n instr s hfix hcode hsucc hbot
+  rcases make_predecessors_correct_2 code successors n instr s hcode hsucc with
+    ⟨l, hpred, hn⟩
+  cases hcode_s : PTree.get s code with
+  | none =>
+      apply LATlaws.ge_trans (PMap.get n res) LAT.bot
+        (transf s (PMap.get s res))
+      · exact LATlaws.ge_bot _
+      · exact LATlaws.ge_refl _ _ (LATlaws.eq_sym _ _ (hbot s _ hcode_s))
+  | some instr_s =>
+      rcases reachable_exit_points_predecessor NS code NSlaws successors s
+        instr_s hcode_s with ⟨ep, hep, hreach⟩
+      unfold fixpoint at hfix
+      exact Dataflow_Solver.fixpoint_nodeset_solution
+        (LAT := LAT) (NS := NS) LATlaws NSlaws
+        (make_predecessors code successors) (fun l => l) transf
+        (exit_points NS code successors) res ep s l n hfix hep hreach hpred hn
+
+theorem fixpoint_allnodes_solution : fixpoint_allnodes_solutionStatement := by
+  intro A LAT NS LATlaws NSlaws code successors transf res n instr s hfix hcode hsucc
+  rcases make_predecessors_correct_2 code successors n instr s hcode hsucc with
+    ⟨l, hpred, hn⟩
+  unfold fixpoint_allnodes at hfix
+  exact Dataflow_Solver.fixpoint_allnodes_solution
+    (LAT := LAT) (NS := NS) LATlaws NSlaws
+    (make_predecessors code successors) (fun l => l) transf res s l n hfix hpred hn
+
+end CompCert4Lean.Backend.Kildall.Backward_Dataflow_Solver
+
+namespace CompCert4Lean.Backend.Kildall.BBlock_solver
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Lib.Maps
+
+theorem predecessors_correct : predecessors_correctStatement := by
+  intro A code successors n instr s hcode hsucc
+  unfold predecessors
+  exact make_predecessors_correct_1 code successors n instr s hcode hsucc
+
+theorem multiple_predecessors : multiple_predecessorsStatement := by
+  intro A entrypoint code successors s n1 instr1 n2 instr2
+    hcode1 hsucc1 hcode2 hsucc2 hneq
+  have hpred1 := predecessors_correct code successors n1 instr1 s hcode1 hsucc1
+  have hpred2 := predecessors_correct code successors n2 instr2 s hcode2 hsucc2
+  change n1 ∈ successors_list (make_predecessors code successors) s at hpred1
+  change n2 ∈ successors_list (make_predecessors code successors) s at hpred2
+  unfold basic_block_map is_basic_block_head
+  split
+  · rfl
+  · rename_i hentry
+    unfold successors_list at hpred1 hpred2
+    cases hpreds : PTree.get s (make_predecessors code successors) with
+    | none =>
+        rw [hpreds] at hpred1
+        simp at hpred1
+    | some preds =>
+        cases preds with
+        | nil =>
+            rw [hpreds] at hpred1
+            simp at hpred1
+        | cons pred preds =>
+            cases preds with
+            | nil =>
+                rw [hpreds] at hpred1 hpred2
+                simp at hpred1 hpred2
+                exact False.elim (hneq (hpred1.trans hpred2.symm))
+            | cons pred' preds =>
+                simp [successors_list, hpreds]
+
+end CompCert4Lean.Backend.Kildall.BBlock_solver

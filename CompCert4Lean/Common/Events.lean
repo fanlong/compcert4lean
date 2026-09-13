@@ -1580,3 +1580,81 @@ theorem volatile_store_receptive : volatile_store_receptiveStatement := by
       rfl
 
 end CompCert4Lean.Common.Events
+
+namespace CompCert4Lean.Common.Events
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Lib.Integers
+
+private theorem extcall_debug_unchanged_on_refl (P : block → Z → Prop) (m : mem) :
+    Mem.unchanged_on P m m := by
+  exact {
+    unchanged_on_nextblock := CompCert4Lean.Lib.Coqlib.Ple_refl _
+    unchanged_on_perm := by
+      intro b ofs k p _ _
+      rfl
+    unchanged_on_contents := by
+      intro b ofs _ _
+      rfl }
+
+theorem extcall_debug_ok : extcall_debug_okStatement := by
+  intro targs
+  refine {
+    ec_well_typed := ?_
+    ec_symbols_preserved := ?_
+    ec_valid_block := ?_
+    ec_max_perm := ?_
+    ec_readonly := ?_
+    ec_mem_extends := ?_
+    ec_mem_inject := ?_
+    ec_trace_length := ?_
+    ec_receptive := ?_
+    ec_determ := ?_ }
+  · intro ge vargs m1 t vres m2 hsem
+    cases hsem
+    simp [Val.has_rettype]
+  · intro ge1 ge2 vargs m1 t vres m2 _ hsem
+    cases hsem
+    exact extcall_debug_sem_intro _ _
+  · intro ge vargs m1 t vres m2 b hsem hb
+    cases hsem
+    exact hb
+  · intro ge vargs m1 t vres m2 b ofs p hsem hb hp
+    cases hsem
+    exact hp
+  · intro ge vargs m1 t vres m2 b ofs n bytes hsem hb hload hreadonly
+    cases hsem
+    exact hload
+  · intro ge vargs m1 t vres m2 m1' vargs' hsem hext hless
+    cases hsem
+    refine ⟨.Vundef, m1', extcall_debug_sem_intro _ _, .lessdef_refl _, hext, ?_⟩
+    exact extcall_debug_unchanged_on_refl (loc_out_of_bounds m1) m1'
+  · intro ge1 ge2 vargs m1 t vres m2 f m1' vargs' hsymbols hsem hinj hvlist
+    cases hsem
+    refine ⟨f, .Vundef, m1', extcall_debug_sem_intro _ _, .val_inject_undef _, hinj, ?_, ?_, ?_, ?_⟩
+    · exact extcall_debug_unchanged_on_refl (loc_unmapped f) m1
+    · exact extcall_debug_unchanged_on_refl (loc_out_of_reach f m1) m1'
+    · intro b b' delta h
+      exact h
+    · intro b1 b2 delta hnone hsome
+      rw [hnone] at hsome
+      cases hsome
+  · intro ge vargs m t vres m' hsem
+    cases hsem
+    simp [E0]
+  · intro ge vargs m t1 vres1 m1 t2 hsem hmatch
+    cases hsem
+    cases hmatch
+    exact ⟨.Vundef, m, extcall_debug_sem_intro _ _⟩
+  · intro ge vargs m t1 vres1 m1 t2 vres2 m2 hsem1 hsem2
+    cases hsem1
+    cases hsem2
+    exact ⟨match_traces_E0, by intro; exact ⟨rfl, rfl⟩⟩
+
+end CompCert4Lean.Common.Events

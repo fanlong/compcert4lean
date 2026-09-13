@@ -1698,3 +1698,39 @@ theorem PArith.BinPos.Pplus_one_succ_l :
 
 end Rocq.Coq
 end CompCert4Lean.Foundation.Numbers
+
+namespace CompCert4Lean.Foundation.Numbers
+namespace Rocq.Coq
+
+theorem PArith.Pnat.Pos2Nat.inj_xO :
+    PArith.Pnat.Pos2Nat.inj_xOStatement := by
+  intro p
+  change posToNat (xO p) = 2 * posToNat p
+  simp [posToNat]
+
+theorem PArith.Pnat.Pos2Nat.inj_xI :
+    PArith.Pnat.Pos2Nat.inj_xIStatement := by
+  intro p
+  change posToNat (xI p) = Nat.succ (Nat.mul 2 (posToNat p))
+  simp [posToNat] <;> omega
+
+theorem PArith.Pnat.lt_O_nat_of_P_proof :
+    PArith.Pnat.lt_O_nat_of_P := by
+  intro p
+  exact posToNat_positive p
+
+theorem PArith.Pnat.nat_of_P_lt_Lt_compare_morphism :
+    PArith.Pnat.nat_of_P_lt_Lt_compare_morphismStatement := by
+  intro p q h
+  change posToNat p < posToNat q
+  change (if posToNat p < posToNat q then (Lt : comparison)
+      else if posToNat p = posToNat q then (Eq : comparison)
+      else (Gt : comparison)) = (Lt : comparison) at h
+  by_cases hpq : posToNat p < posToNat q
+  · exact hpq
+  · by_cases heq : posToNat p = posToNat q
+    · simp [hpq, heq] at h
+    · simp [hpq, heq] at h
+
+end Rocq.Coq
+end CompCert4Lean.Foundation.Numbers

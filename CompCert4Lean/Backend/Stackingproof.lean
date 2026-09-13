@@ -2475,3 +2475,26 @@ theorem frame_undef_regs : frame_undef_regsStatement := by
       simpa [CompCert4Lean.Backend.LTL.undef_regs] using hset
 
 end CompCert4Lean.Backend.Stackingproof
+
+namespace CompCert4Lean.Backend.Stackingproof
+open CompCert4Lean.Backend.Bounds
+open CompCert4Lean.Backend.Locations
+open CompCert4Lean.Backend.Linear
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+
+ theorem agree_reg : agree_regStatement := by
+  intro j ls rs r h
+  exact h r
+
+ theorem agree_reglist : agree_reglistStatement := by
+  intro j ls rs rl h
+  induction rl with
+  | nil => exact Val.inject_list_nil j
+  | cons r rl ih =>
+      simp [CompCert4Lean.Backend.LTL.reglist]
+      exact Val.inject_list_cons j (ls (R r)) (rs r)
+        (LTL.reglist ls rl) (rl.map rs)
+        (CompCert4Lean.Backend.Stackingproof.agree_reg j ls rs r h) (ih)
+
+end CompCert4Lean.Backend.Stackingproof

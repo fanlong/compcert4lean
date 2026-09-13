@@ -1352,3 +1352,153 @@ theorem id_p_ulp_le_bpow :
   exact hmain
 
 end CompCert4Lean.Flocq.Core.Ulp
+
+namespace CompCert4Lean.Flocq.Core.Ulp
+
+theorem pred_pos_lt_id :
+    ∀ (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx),
+      pred_pos_lt_idStatement ctx magnitude := by
+  intro ctx magnitude beta fexp x hx
+  unfold Exact.pred_pos
+  split
+  · rename_i hbranch
+    change ctx.spec.lt
+      (CompCert4Lean.Foundation.FlocqReal.ExactReal.Rminus ctx.spec x
+        (Exact.bpow ctx beta (fexp (Zsub (Exact.mag ctx magnitude beta x) Zone)))) x
+    change ctx.spec.lt
+      (ctx.spec.add x (ctx.spec.neg
+        (Exact.bpow ctx beta
+          (fexp (Zsub (Exact.mag ctx magnitude beta x) Zone))))) x
+    have hlt := ctx.certificate.orderedField.add_lt_compat_l
+      (ctx.spec.neg (Exact.bpow ctx beta
+        (fexp (Zsub (Exact.mag ctx magnitude beta x) Zone))))
+      ctx.spec.zero
+      (Exact.bpow ctx beta (fexp (Zsub (Exact.mag ctx magnitude beta x) Zone)))
+      (ulp_bpow_gt_0 ctx beta _)
+    rw [ctx.certificate.orderedField.neg_add_cancel,
+      ctx.certificate.orderedField.add_zero] at hlt
+    have hmain := ctx.certificate.orderedField.add_lt_compat_l x _ _ hlt
+    rw [ctx.certificate.orderedField.add_zero] at hmain
+    exact hmain
+  · rename_i hbranch
+    change ctx.spec.lt
+      (CompCert4Lean.Foundation.FlocqReal.ExactReal.Rminus ctx.spec x
+        (Exact.ulp ctx magnitude beta fexp x)) x
+    change ctx.spec.lt
+      (ctx.spec.add x (ctx.spec.neg (Exact.ulp ctx magnitude beta fexp x))) x
+    have hxne : x ≠ Exact.R0 ctx := by
+      intro hzero
+      exact hx (by simpa [hzero])
+    have hlt := ctx.certificate.orderedField.add_lt_compat_l
+      (ctx.spec.neg (Exact.ulp ctx magnitude beta fexp x))
+      ctx.spec.zero (Exact.ulp ctx magnitude beta fexp x)
+      (by
+        rw [ulp_neq_0 ctx magnitude beta fexp x hxne]
+        exact CompCert4Lean.Flocq.Core.Raux.bpow_gt_0 ctx beta _)
+    rw [ctx.certificate.orderedField.neg_add_cancel,
+      ctx.certificate.orderedField.add_zero] at hlt
+    have hmain := ctx.certificate.orderedField.add_lt_compat_l x _ _ hlt
+    rw [ctx.certificate.orderedField.add_zero] at hmain
+    exact hmain
+
+private theorem ulp_neg_lt_neg (ctx : ExactRealContext) {x y : ctx.spec.carrier}
+    (hxy : ctx.spec.lt x y) :
+    ctx.spec.lt (ctx.spec.neg y) (ctx.spec.neg x) := by
+  have h1 := ctx.certificate.orderedField.add_lt_compat_l
+    (ctx.spec.neg x) x y hxy
+  rw [ctx.certificate.orderedField.neg_add_cancel] at h1
+  have h2 := ctx.certificate.orderedField.add_lt_compat_l
+    (ctx.spec.neg y) ctx.spec.zero (ctx.spec.add (ctx.spec.neg x) y) h1
+  rw [ctx.certificate.orderedField.add_zero] at h2
+  have hxy' : ctx.spec.add (ctx.spec.neg y)
+      (ctx.spec.add (ctx.spec.neg x) y) = ctx.spec.neg x := by
+    calc
+      ctx.spec.add (ctx.spec.neg y)
+          (ctx.spec.add (ctx.spec.neg x) y) =
+          ctx.spec.add (ctx.spec.add (ctx.spec.neg y) (ctx.spec.neg x)) y := by
+            rw [ctx.certificate.orderedField.add_assoc]
+      _ = ctx.spec.add (ctx.spec.add (ctx.spec.neg x) (ctx.spec.neg y)) y := by
+            rw [ctx.certificate.orderedField.add_comm
+              (ctx.spec.neg y) (ctx.spec.neg x)]
+      _ = ctx.spec.add (ctx.spec.neg x)
+          (ctx.spec.add (ctx.spec.neg y) y) := by
+            rw [← ctx.certificate.orderedField.add_assoc]
+      _ = ctx.spec.add (ctx.spec.neg x) ctx.spec.zero := by
+            rw [ctx.certificate.orderedField.neg_add_cancel]
+      _ = ctx.spec.neg x := ctx.certificate.orderedField.add_zero _
+  rw [hxy'] at h2
+  exact h2
+
+private theorem ulp_neg_neg (ctx : ExactRealContext) (x : ctx.spec.carrier) :
+    ctx.spec.neg (ctx.spec.neg x) = x := by
+  calc
+    ctx.spec.neg (ctx.spec.neg x) =
+        ctx.spec.add (ctx.spec.neg (ctx.spec.neg x)) ctx.spec.zero :=
+      (ctx.certificate.orderedField.add_zero _).symm
+    _ = ctx.spec.add (ctx.spec.neg (ctx.spec.neg x))
+        (ctx.spec.add (ctx.spec.neg x) x) := by
+      rw [ctx.certificate.orderedField.neg_add_cancel]
+    _ = ctx.spec.add
+        (ctx.spec.add (ctx.spec.neg (ctx.spec.neg x)) (ctx.spec.neg x)) x := by
+      rw [ctx.certificate.orderedField.add_assoc]
+    _ = ctx.spec.add ctx.spec.zero x := by
+      rw [ctx.certificate.orderedField.neg_add_cancel]
+    _ = x := ctx.certificate.orderedField.zero_add _
+
+theorem succ_gt_id :
+    ∀ (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx),
+      succ_gt_idStatement ctx magnitude := by
+  intro ctx magnitude beta fexp x hx
+  unfold Exact.succ
+  split
+  · rename_i hbranch
+    change ctx.spec.lt x (ctx.spec.add x (Exact.ulp ctx magnitude beta fexp x))
+    have hpos : ctx.spec.lt ctx.spec.zero
+        (Exact.ulp ctx magnitude beta fexp x) := by
+      rw [ulp_neq_0 ctx magnitude beta fexp x hx]
+      exact CompCert4Lean.Flocq.Core.Raux.bpow_gt_0 ctx beta _
+    have hlt := ctx.certificate.orderedField.add_lt_compat_l x
+      ctx.spec.zero (Exact.ulp ctx magnitude beta fexp x) hpos
+    rw [ctx.certificate.orderedField.add_zero] at hlt
+    exact hlt
+  · rename_i hbranch
+    change ctx.spec.lt x
+      (ctx.spec.neg (Exact.pred_pos ctx magnitude beta fexp (ctx.spec.neg x)))
+    have hxneg : ctx.spec.neg x ≠ Exact.R0 ctx := by
+      intro hzero
+      apply hx
+      have hneg0 : ctx.spec.neg (Exact.R0 ctx) = Exact.R0 ctx := by
+        change ctx.spec.neg ctx.spec.zero = ctx.spec.zero
+        have h := ctx.certificate.orderedField.neg_add_cancel ctx.spec.zero
+        rw [ctx.certificate.orderedField.add_zero] at h
+        exact h
+      have h := congrArg ctx.spec.neg hzero
+      rw [ulp_neg_neg ctx x, hneg0] at h
+      exact h
+    have hpred := pred_pos_lt_id ctx magnitude beta fexp (ctx.spec.neg x) hxneg
+    have hneg := ulp_neg_lt_neg ctx hpred
+    rw [ulp_neg_neg ctx x] at hneg
+    exact hneg
+
+theorem pred_lt_id :
+    ∀ (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx),
+      pred_lt_idStatement ctx magnitude := by
+  intro ctx magnitude beta fexp x hx
+  unfold Exact.pred
+  have hxneg : ctx.spec.neg x ≠ Exact.R0 ctx := by
+    intro hzero
+    apply hx
+    have hneg0 : ctx.spec.neg (Exact.R0 ctx) = Exact.R0 ctx := by
+      change ctx.spec.neg ctx.spec.zero = ctx.spec.zero
+      have h := ctx.certificate.orderedField.neg_add_cancel ctx.spec.zero
+      rw [ctx.certificate.orderedField.add_zero] at h
+      exact h
+    have h := congrArg ctx.spec.neg hzero
+    rw [ulp_neg_neg ctx x, hneg0] at h
+    exact h
+  have hsucc := succ_gt_id ctx magnitude beta fexp (ctx.spec.neg x) hxneg
+  have hneg := ulp_neg_lt_neg ctx hsucc
+  rw [ulp_neg_neg ctx x] at hneg
+  exact hneg
+
+end CompCert4Lean.Flocq.Core.Ulp
