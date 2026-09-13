@@ -1406,3 +1406,30 @@ theorem add_needs_all_lessdef : add_needs_all_lessdefStatement := by
         exact add_need_all_eagree e e' r (add_needs_all rs ne) h
 
 end CompCert4Lean.Backend.Deadcodeproof
+
+namespace CompCert4Lean.Backend.Deadcodeproof
+
+open CompCert4Lean.Backend.Deadcode
+open CompCert4Lean.Backend.NeedDomain
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Maps
+
+theorem add_needs_vagree : add_needs_vagreeStatement := by
+  intro rl
+  induction rl with
+  | nil =>
+      intro nvl e e' ne h
+      exact vagree_list.vagree_list_nil nvl
+  | cons r rs ih =>
+      intro nvl e e' ne h
+      cases nvl with
+      | nil =>
+          apply vagree_lessdef_list
+          exact add_needs_all_lessdef (r :: rs) e e' ne h
+      | cons nv nvs =>
+          apply vagree_list.vagree_list_cons
+          · exact add_need_vagree e e' r nv (add_needs rs nvs ne) h
+          · exact ih nvs e e' ne (add_need_eagree e e' r nv (add_needs rs nvs ne) h)
+
+end CompCert4Lean.Backend.Deadcodeproof

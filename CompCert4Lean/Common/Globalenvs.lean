@@ -1661,3 +1661,36 @@ theorem invert_find_symbol : invert_find_symbolStatement := by
 
 end Genv
 end CompCert4Lean.Common.Globalenvs
+
+namespace CompCert4Lean.Common.Globalenvs
+namespace Genv
+
+theorem find_invert_symbol : find_invert_symbolStatement := by
+  intro F V ge id b hfind
+  exact findInvertSymbolProof ge id b hfind
+
+theorem genv_next_add_globals : genv_next_add_globalsStatement := by
+  intro F V gl ge
+  induction gl generalizing ge with
+  | nil => rfl
+  | cons x gl ih =>
+      change (add_globals (add_global ge x) gl).genv_next =
+        advance_next gl (add_global ge x).genv_next
+      exact ih (ge := add_global ge x)
+
+theorem genv_public_add_globals : genv_public_add_globalsStatement := by
+  intro F V gl ge
+  induction gl generalizing ge with
+  | nil => rfl
+  | cons x gl ih =>
+      change (add_globals (add_global ge x) gl).genv_public =
+        (add_global ge x).genv_public
+      exact ih (ge := add_global ge x)
+
+theorem globalenv_public : globalenv_publicStatement := by
+  intro F V p
+  unfold globalenv
+  exact genv_public_add_globals F V p.prog_defs (empty_genv F V p.prog_public)
+
+end Genv
+end CompCert4Lean.Common.Globalenvs

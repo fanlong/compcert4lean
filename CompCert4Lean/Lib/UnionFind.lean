@@ -1059,3 +1059,20 @@ theorem repr_identify_2_proof :
 
 end UF
 end CompCert4Lean.Lib.UnionFind
+
+namespace CompCert4Lean.Lib.UnionFind
+namespace UF
+
+theorem repr_union_1_proof :
+    ∀ (M : MAP), repr_union_1Statement M := by
+  intro M uf a b x hneq
+  unfold union
+  dsimp
+  by_cases hab : repr M uf a = repr M uf b
+  · simp [hab]
+  · simp only [dif_neg hab]
+    apply repr_identify_1_proof M uf (repr M uf a) (repr M uf b) _ _ x
+    exact hneq
+
+end UF
+end CompCert4Lean.Lib.UnionFind
