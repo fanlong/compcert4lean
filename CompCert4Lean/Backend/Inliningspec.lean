@@ -2432,3 +2432,17 @@ theorem expand_cfg_spec : expand_cfg_specStatement := by
       exact hunch pc' hpc' hlt'
 
 end CompCert4Lean.Backend.Inliningspec
+
+namespace CompCert4Lean.Backend.Inliningspec
+
+open CompCert4Lean.Backend.Inlining
+
+theorem tr_function_linkorder : tr_function_linkorderStatement := by
+  intro cunit prog f f' horder htr
+  cases htr with
+  | tr_function_intro fenv f f' ctx hcompat hbody hdstk hret hsig hparams hentry hstack =>
+      exact CompCert4Lean.Backend.Inliningspec.tr_function.tr_function_intro prog fenv f f' ctx
+        (fenv_compat_linkorder cunit prog fenv horder hcompat)
+        hbody hdstk hret hsig hparams hentry hstack
+
+end CompCert4Lean.Backend.Inliningspec
