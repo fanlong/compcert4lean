@@ -2071,3 +2071,65 @@ theorem Rle_trans :
 end RIneq
 end Rocq.Coq.Reals
 end CompCert4Lean.Foundation.FlocqReal
+
+namespace CompCert4Lean.Foundation.FlocqReal
+namespace Rocq.Coq.Reals
+namespace RIneq
+
+theorem Rgt_trans :
+    ∀ (ctx : ExactRealContext), Rgt_transStatement ctx := by
+  intro ctx r1 r2 r3 h12 h23
+  exact ctx.certificate.orderedField.lt_trans r3 r2 r1 h23 h12
+
+def Rle_dec :
+    ∀ (ctx : ExactRealContext), Rle_decStatement ctx := by
+  intro ctx r1 r2
+  cases h21 : ctx.spec.lt_dec r2 r1 with
+  | left hlt21 =>
+      exact .right (by
+        intro hle
+        exact ((ctx.certificate.orderedField.lt_iff_le_not_le r2 r1).mp hlt21).2 hle)
+  | right hn21 =>
+      cases h12 : ctx.spec.lt_dec r1 r2 with
+      | left hlt12 =>
+          exact .left ((ctx.certificate.orderedField.lt_iff_le_not_le r1 r2).mp hlt12 |>.1)
+      | right hn12 =>
+          exact .left (by
+            rcases ctx.certificate.total_order r1 r2 with h | h
+            · rcases h with hlt | heq
+              · exact (hn12 hlt).elim
+              · subst r2
+                exact ctx.certificate.orderedField.le_refl r1
+            · exact (hn21 h).elim)
+
+def Rlt_le_dec :
+    ∀ (ctx : ExactRealContext), Rlt_le_decStatement ctx := by
+  intro ctx r1 r2
+  cases h12 : ctx.spec.lt_dec r1 r2 with
+  | left hlt12 => exact .left hlt12
+  | right hn12 =>
+      exact .right (by
+        rcases ctx.certificate.total_order r1 r2 with h | h
+        · rcases h with hlt | heq
+          · exact (hn12 hlt).elim
+          · subst r2
+            exact ctx.certificate.orderedField.le_refl r1
+        · exact (ctx.certificate.orderedField.lt_iff_le_not_le r2 r1).mp h |>.1)
+
+def Rle_lt_dec :
+    ∀ (ctx : ExactRealContext), Rle_lt_decStatement ctx := by
+  intro ctx r1 r2
+  cases h21 : ctx.spec.lt_dec r2 r1 with
+  | left hlt21 => exact .right hlt21
+  | right hn21 =>
+      exact .left (by
+        rcases ctx.certificate.total_order r1 r2 with h | h
+        · rcases h with hlt | heq
+          · exact (ctx.certificate.orderedField.lt_iff_le_not_le r1 r2).mp hlt |>.1
+          · subst r2
+            exact ctx.certificate.orderedField.le_refl r1
+        · exact (hn21 h).elim)
+
+end RIneq
+end Rocq.Coq.Reals
+end CompCert4Lean.Foundation.FlocqReal
