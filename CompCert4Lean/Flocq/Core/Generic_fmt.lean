@@ -915,3 +915,27 @@ theorem canonical_abs : ∀ ctx magnitude, canonical_absStatement ctx magnitude 
   exact hcanon
 
 end CompCert4Lean.Flocq.Core.Generic_fmt
+
+namespace CompCert4Lean.Flocq.Core.Generic_fmt
+
+theorem canonical_unique : ∀ ctx magnitude, canonical_uniqueStatement ctx magnitude := by
+  intro ctx magnitude beta fexp f1 f2 h1 h2 h
+  cases f1 with
+  | Float m1 e1 =>
+      cases f2 with
+      | Float m2 e2 =>
+          unfold Exact.canonical at h1 h2
+          have he : e1 = e2 := by
+            calc
+              e1 = Exact.cexp ctx magnitude beta fexp
+                  (Exact.F2R ctx (Float beta m1 e1)) := h1
+              _ = Exact.cexp ctx magnitude beta fexp
+                  (Exact.F2R ctx (Float beta m2 e2)) := by rw [h]
+              _ = e2 := h2.symm
+          subst e2
+          have hm : m1 = m2 :=
+            CompCert4Lean.Flocq.Core.Float_prop.eq_F2R ctx beta e1 m1 m2 h
+          subst m2
+          rfl
+
+end CompCert4Lean.Flocq.Core.Generic_fmt

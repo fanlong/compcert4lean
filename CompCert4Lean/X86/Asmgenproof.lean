@@ -1290,3 +1290,77 @@ theorem transl_load_label : transl_load_labelStatement := by
       cases hrest
 
 end CompCert4Lean.X86.Asmgenproof
+
+namespace CompCert4Lean.X86.Asmgenproof
+
+private theorem asmgenproof_mk_storebyte_label_local
+    (am : CompCert4Lean.X86.Asm.addrmode) (r : CompCert4Lean.X86.Asm.ireg)
+    (k c : AsmCode) :
+    CompCert4Lean.X86.Asmgen.mk_storebyte am r k = .OK c →
+      CompCert4Lean.Backend.Asmgenproof0.tail_nolabel k c := by
+  intro h
+  unfold CompCert4Lean.X86.Asmgen.mk_storebyte at h
+  simp [CompCert4Lean.X86_64.Archi.ptr64] at h
+  cases h
+  constructor
+  · exact CompCert4Lean.Lib.Coqlib.is_tail.cons _
+      (CompCert4Lean.Lib.Coqlib.is_tail.refl _)
+  · intro lbl
+    simp [CompCert4Lean.Backend.Asmgenproof0.find_label,
+      CompCert4Lean.X86.Asm.is_label]
+
+private theorem asmgenproof_bind_mk_storebyte_label_local
+    (am : CompCert4Lean.X86.Asm.addrmode) (src : Mreg)
+    (k c : AsmCode) :
+    CompCert4Lean.Common.Errors.bind
+      (CompCert4Lean.X86.Asmgen.ireg_of src)
+      (fun r => CompCert4Lean.X86.Asmgen.mk_storebyte am r k) = .OK c →
+      CompCert4Lean.Backend.Asmgenproof0.tail_nolabel k c := by
+  intro h
+  cases hr : CompCert4Lean.X86.Asmgen.ireg_of src with
+  | Error msg =>
+      simp [hr, CompCert4Lean.Common.Errors.bind] at h
+  | OK r =>
+      simp [hr, CompCert4Lean.Common.Errors.bind] at h
+      exact asmgenproof_mk_storebyte_label_local am r k c h
+
+theorem transl_store_label : transl_store_labelStatement := by
+  intro chunk addr args src k c h
+  unfold CompCert4Lean.X86.Asmgen.transl_store at h
+  change CompCert4Lean.Common.Errors.bind
+    (CompCert4Lean.X86.Asmgen.transl_addressing addr args) (fun am => _) = .OK c at h
+  obtain ⟨am, ham, hrest⟩ := CompCert4Lean.Common.Errors.bind_inversion _ _ _ _ _ h
+  cases chunk with
+  | Mbool => cases hrest
+  | Mint8unsigned => exact asmgenproof_bind_mk_storebyte_label_local am src k c hrest
+  | Mint8signed => cases hrest
+  | Mint16unsigned =>
+      apply asmgenproof_bind_cons_local CompCert4Lean.X86.Asmgen.ireg_of src k c
+        (fun r => .Pmovw_mr am r)
+        (by intro r lbl; simp [CompCert4Lean.X86.Asm.is_label])
+      exact hrest
+  | Mint16signed => cases hrest
+  | Mint32 =>
+      apply asmgenproof_bind_cons_local CompCert4Lean.X86.Asmgen.ireg_of src k c
+        (fun r => .Pmovl_mr am r)
+        (by intro r lbl; simp [CompCert4Lean.X86.Asm.is_label])
+      exact hrest
+  | Mint64 =>
+      apply asmgenproof_bind_cons_local CompCert4Lean.X86.Asmgen.ireg_of src k c
+        (fun r => .Pmovq_mr am r)
+        (by intro r lbl; simp [CompCert4Lean.X86.Asm.is_label])
+      exact hrest
+  | Mfloat32 =>
+      apply asmgenproof_bind_cons_local CompCert4Lean.X86.Asmgen.freg_of src k c
+        (fun r => .Pmovss_mf am r)
+        (by intro r lbl; simp [CompCert4Lean.X86.Asm.is_label])
+      exact hrest
+  | Mfloat64 =>
+      apply asmgenproof_bind_cons_local CompCert4Lean.X86.Asmgen.freg_of src k c
+        (fun r => .Pmovsd_mf am r)
+        (by intro r lbl; simp [CompCert4Lean.X86.Asm.is_label])
+      exact hrest
+  | Many32 => cases hrest
+  | Many64 => cases hrest
+
+end CompCert4Lean.X86.Asmgenproof

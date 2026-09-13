@@ -953,3 +953,317 @@ theorem decode_val_type : decode_val_typeStatement := by
       | Many64 => simp [decode_val, h, Values.Val.has_type, AST.type_of_chunk]
 
 end CompCert4Lean.Common.Memdata
+
+namespace CompCert4Lean.Common.Memdata
+
+open CompCert4Lean.Common.Values
+
+private theorem val_inject_incr_local :
+    ∀ (f f' : meminj) (v v' : val),
+      inject_incr f f' → Val.inject f v v' → Val.inject f' v v' := by
+  intro f f' v v' hinc hinj
+  cases hinj with
+  | inject_int i => exact Val.inject.inject_int i
+  | inject_long i => exact Val.inject.inject_long i
+  | inject_float x => exact Val.inject.inject_float x
+  | inject_single x => exact Val.inject.inject_single x
+  | inject_ptr b1 ofs1 b2 ofs2 delta hmap hofs =>
+      exact Val.inject.inject_ptr b1 ofs1 b2 ofs2 delta (hinc b1 b2 delta hmap) hofs
+  | val_inject_undef _ => exact Val.inject.val_inject_undef _
+
+theorem memval_inject_incr : memval_inject_incrStatement := by
+  intro f f' v1 v2 hrel hinc
+  cases hrel with
+  | byte n => exact memval_inject.byte f' n
+  | fragment v1 v2 q n hv =>
+      exact memval_inject.fragment f' v1 v2 q n
+        (val_inject_incr_local f f' v1 v2 hinc hv)
+  | undef => exact memval_inject.undef f' _
+
+theorem proj_bytes_inject : proj_bytes_injectStatement := by
+  intro f vl vl' hrel
+  induction hrel with
+  | nil =>
+      intro bl h
+      simpa [proj_bytes] using h
+  | @cons a al b bl hab htail ih =>
+      intro out h
+      cases hab with
+      | byte n =>
+          cases hp : proj_bytes al with
+          | none => simp [proj_bytes, hp] at h
+          | some tail =>
+              have htail' := ih tail hp
+              have hout : out = n :: tail := by
+                simpa [proj_bytes, hp] using h.symm
+              subst out
+              simp [proj_bytes, htail']
+      | fragment v1 v2 q n hv => simp [proj_bytes] at h
+      | undef mv => simp [proj_bytes] at h
+
+end CompCert4Lean.Common.Memdata
+
+namespace CompCert4Lean.Common.Memdata
+
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.AST
+
+theorem encode_val_shape : encode_val_shapeStatement := by
+  intro chunk v
+  have hA : ∀ (v : val) (mv : memval) (q : quantity) (n : Nat),
+      n < size_quantity_nat q → mv ∈ inj_value_rec n v q →
+      ∃ j, mv = Fragment v q j ∧ Nat.succ j ≠ size_quantity_nat q := by
+    intro v mv q n hn hmem
+    induction n with
+    | zero => simp [inj_value_rec] at hmem
+    | succ n ih =>
+        simp only [inj_value_rec, List.mem_cons] at hmem
+        rcases hmem with hmem | hmem
+        · subst mv
+          exact ⟨n, rfl, by omega⟩
+        · exact ih (by omega) hmem
+  have hB : ∀ (v : val) (chunk : memory_chunk) (q : quantity),
+      q = quantity_chunk chunk →
+      (chunk = Mint32 ∨ chunk = Many32 ∨ chunk = Mint64 ∨ chunk = Many64) →
+      shape_encoding chunk v (inj_value q v) := by
+    intro v chunk q hq hchunk
+    unfold inj_value
+    obtain ⟨n, hn⟩ := size_quantity_nat_pos q
+    rw [hn]
+    simp only [inj_value_rec]
+    apply shape_encoding.fragment
+    · exact hchunk
+    · exact hq
+    · exact hn.symm
+    · intro mv hmem
+      exact hA v mv q n (by omega) hmem
+  have hC : ∀ (v : val) (chunk : memory_chunk) (bl : List byte),
+      (match v with
+       | Vint _ | Vlong _ | Vfloat _ | Vsingle _ => True
+       | _ => False) →
+      (inj_bytes bl).length = size_chunk_nat chunk →
+      shape_encoding chunk v (inj_bytes bl) := by
+    intro v chunk bl hv hlen
+    cases bl with
+    | nil =>
+        have hp := size_chunk_nat_pos chunk
+        simp [inj_bytes] at hlen
+        rcases hp with ⟨k, hk⟩
+        omega
+    | cons b bl =>
+        apply shape_encoding.bytes
+        · exact hv
+        · intro mv hmem
+          have hm : mv ∈ List.map memval.Byte bl := by
+            simpa [inj_bytes] using hmem
+          obtain ⟨b', _, hb'⟩ := List.mem_map.mp hm
+          exact ⟨b', hb'.symm⟩
+  have hD : ∀ (v : val) (chunk : memory_chunk),
+      shape_encoding chunk v (List.replicate (size_chunk_nat chunk) Undef) := by
+    intro v chunk
+    obtain ⟨n, hn⟩ := size_chunk_nat_pos chunk
+    rw [hn]
+    simp only [List.replicate_succ]
+    apply shape_encoding.undef
+    intro mv hmem
+    exact (List.mem_replicate.mp hmem).2
+  have hlen := encode_val_length chunk v
+  cases v <;> cases chunk <;>
+    simp only [encode_val] at hlen ⊢ <;>
+    first
+    | exact hB _ _ _ rfl (by simp)
+    | exact hC _ _ _ trivial hlen
+    | exact hD _ _
+
+end CompCert4Lean.Common.Memdata
+
+namespace CompCert4Lean.Common.Memdata
+
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.AST
+
+theorem decode_val_shape : decode_val_shapeStatement := by
+  intro chunk mv1 mvl
+  have hA : ∀ (mv : memval) (mvs : List memval) (bs : List byte),
+      proj_bytes mvs = some bs → mv ∈ mvs → ∃ b, mv = Byte b := by
+    intro mv mvs
+    induction mvs generalizing mv with
+    | nil =>
+        intro bs hp hm
+        simp at hm
+    | cons a mvs ih =>
+        intro bs hp hm
+        cases a with
+        | Undef => simp [proj_bytes] at hp
+        | Fragment v q i => simp [proj_bytes] at hp
+        | Byte b =>
+            cases ht : proj_bytes mvs with
+            | none => simp [proj_bytes, ht] at hp
+            | some bs' =>
+                have hm' : mv = Byte b ∨ mv ∈ mvs := by
+                  simpa using (List.mem_cons.mp hm)
+                rcases hm' with rfl | hm'
+                · exact ⟨b, rfl⟩
+                · exact ih mv bs' ht hm'
+  have hB : ∀ (v : val) (q : quantity) (mv : memval) (n : Nat)
+      (mvs : List memval),
+      check_value n v q mvs = true → mv ∈ mvs →
+      n < size_quantity_nat q →
+      ∃ j, mv = Fragment v q j ∧ Nat.succ j ≠ size_quantity_nat q := by
+    intro v q mv n mvs
+    induction n generalizing mvs mv with
+    | zero =>
+        intro hc hm hn
+        cases mvs with
+        | nil => simp at hm
+        | cons m mvs => simp [check_value] at hc
+    | succ n ih =>
+        intro hc hm hn
+        cases mvs with
+        | nil => simp [check_value] at hc
+        | cons m mvs =>
+            cases m with
+            | Undef => simp [check_value] at hc
+            | Byte b => simp [check_value] at hc
+            | Fragment v' q' n' =>
+                simp only [check_value] at hc
+                simp only [Bool.and_eq_true] at hc
+                rcases hc with ⟨⟨⟨hv, hq⟩, hn'⟩, htail⟩
+                cases heq : Val.eq v v' with
+                | left hveq =>
+                    cases hqeq : quantity_eq q q' with
+                    | left hqq =>
+                        have hneq : n = n' := by simpa using hn'
+                        subst v'
+                        subst q'
+                        subst n'
+                        have hm' : mv = Fragment v q n ∨ mv ∈ mvs := by
+                          simpa using (List.mem_cons.mp hm)
+                        rcases hm' with rfl | hm'
+                        · exact ⟨n, rfl, by omega⟩
+                        · exact ih mv mvs htail hm' (by omega)
+                    | right _ => simp [sumboolBool, hqeq] at hq
+                | right _ => simp [sumboolBool, heq] at hv
+  have hU : ∀ (mvs : List memval),
+      shape_decoding chunk mvs (Val.load_result chunk Vundef) := by
+    intro mvs
+    have hu : Val.load_result chunk Vundef = Vundef := by
+      cases chunk <;> rfl
+    rw [hu]
+    exact shape_decoding.shape_decoding_u chunk mvs
+  have hU0 : ∀ (c : memory_chunk) (mvs : List memval),
+      shape_decoding c mvs Vundef := by
+    intro c mvs
+    exact shape_decoding.shape_decoding_u c mvs
+  have hNormNoPtr : ∀ (x : val),
+      (match Val.norm_bool x with | Vptr _ _ => False | _ => True) := by
+    intro x
+    cases x with
+    | Vundef => simp [Val.norm_bool]
+    | Vint n =>
+        unfold Val.norm_bool
+        split
+        · cases h : Val.is_bool (Vint n) <;> simp [h] at *
+        · trivial
+    | Vlong n =>
+        unfold Val.norm_bool
+        split
+        · cases h : Val.is_bool (Vlong n) <;> simp [h] at *
+        · trivial
+    | Vfloat f =>
+        unfold Val.norm_bool
+        split
+        · cases h : Val.is_bool (Vfloat f) <;> simp [h] at *
+        · trivial
+    | Vsingle f =>
+        unfold Val.norm_bool
+        split
+        · cases h : Val.is_bool (Vsingle f) <;> simp [h] at *
+        · trivial
+    | Vptr b ofs =>
+        have hb : Val.is_bool (Vptr b ofs) = false := by
+          rfl
+        simp [Val.norm_bool, hb]
+  have hC : ∀ (q : quantity), size_quantity_nat q = size_chunk_nat chunk →
+      (chunk = Mint32 ∨ chunk = Many32 ∨ chunk = Mint64 ∨ chunk = Many64) →
+      shape_decoding chunk (mv1 :: mvl)
+        (Val.load_result chunk (proj_value q (mv1 :: mvl))) := by
+    intro q hsz hchunk
+    obtain ⟨k, hk⟩ := size_quantity_nat_pos q
+    unfold proj_value
+    cases mv1 with
+    | Undef => exact hU (Undef :: mvl)
+    | Byte b => exact hU (Byte b :: mvl)
+    | Fragment v q' n =>
+        rw [hk]
+        cases hc : check_value (Nat.succ k) v q (Fragment v q' n :: mvl) with
+        | false =>
+            have hcn : ¬ check_value (Nat.succ k) v q
+                (Fragment v q' n :: mvl) = true := by simp [hc]
+            simpa [hc] using hU (Fragment v q' n :: mvl)
+        | true =>
+            simp [hc]
+            simp only [check_value] at hc
+            simp only [Bool.and_eq_true] at hc
+            rcases hc with ⟨⟨⟨hv, hq⟩, hn⟩, htail⟩
+            cases hqeq : quantity_eq q q' with
+            | left hqq =>
+                subst q'
+                have hn' : k = n := by simpa using hn
+                have hqc : q = quantity_chunk chunk := by
+                  rcases hchunk with rfl | rfl | rfl | rfl <;>
+                    cases q <;>
+                    simp [quantity_chunk, size_quantity_nat, size_chunk_nat, size_chunk,
+                      zToNat, z1, z2, z4, z8] at hsz ⊢
+                  all_goals omega
+                have htail' : ∀ mv, mv ∈ mvl →
+                    ∃ j, mv = Fragment v q j ∧ Nat.succ j ≠ size_quantity_nat q := by
+                  intro mv hm
+                  exact hB v q mv k mvl htail hm (by omega)
+                apply shape_decoding.fragment
+                · exact hchunk
+                · exact hqc
+                · omega
+                · exact htail'
+            | right _ => simp [sumboolBool, hqeq] at hq
+  cases hp : proj_bytes (mv1 :: mvl) with
+  | some bl =>
+      obtain ⟨b, hb⟩ := hA mv1 (mv1 :: mvl) bl hp (by simp)
+      subst mv1
+      cases ht : proj_bytes mvl with
+      | none => simp [proj_bytes, ht] at hp
+      | some bl' =>
+          cases chunk <;> simp only [decode_val, hp]
+          all_goals apply shape_decoding.shape_decoding_b
+          all_goals
+            first
+            | exact hNormNoPtr _
+            | (change True; trivial)
+            | (intro mv hm; exact hA mv mvl bl' ht hm)
+  | none =>
+      cases chunk with
+      | Mbool | Mint8signed | Mint8unsigned | Mint16signed | Mint16unsigned |
+        Mfloat32 | Mfloat64 =>
+          simpa [decode_val, hp] using hU0 _ _
+      | Mint32 =>
+          by_cases hptr : CompCert4Lean.X86_64.Archi.ptr64 = true
+          · simpa [decode_val, hp, hptr] using hU0 _ _
+          · simpa [decode_val, hp, hptr] using
+              hC Q32 (by simp [size_quantity_nat, size_chunk_nat, size_chunk, zToNat,
+                z1, z2, z4, z8]) (by simp)
+      | Mint64 =>
+          by_cases hptr : CompCert4Lean.X86_64.Archi.ptr64 = true
+          · simpa [decode_val, hp, hptr] using
+              hC Q64 (by simp [size_quantity_nat, size_chunk_nat, size_chunk, zToNat,
+                z1, z2, z4, z8]) (by simp)
+          · simpa [decode_val, hp, hptr] using hU0 _ _
+      | Many32 =>
+          simpa [decode_val, hp] using
+            hC Q32 (by simp [size_quantity_nat, size_chunk_nat, size_chunk, zToNat,
+              z1, z2, z4, z8]) (by simp)
+      | Many64 =>
+          simpa [decode_val, hp] using
+            hC Q64 (by simp [size_quantity_nat, size_chunk_nat, size_chunk, zToNat,
+              z1, z2, z4, z8]) (by simp)
+
+end CompCert4Lean.Common.Memdata

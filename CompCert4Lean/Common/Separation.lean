@@ -1245,3 +1245,49 @@ theorem load_rule : load_ruleStatement := by
   exact hpred.2.2
 
 end CompCert4Lean.Common.Separation
+
+namespace CompCert4Lean.Common.Separation
+
+theorem contains_imp : contains_impStatement := by
+  intro spec1 spec2 chunk b ofs himp
+  constructor
+  · intro m hpred
+    rcases hpred with ⟨hbounds, hvalid, v, hload, hspec⟩
+    exact ⟨hbounds, hvalid, v, hload, himp v hspec⟩
+  · intro b' ofs' hfoot
+    exact hfoot
+
+end CompCert4Lean.Common.Separation
+
+namespace CompCert4Lean.Common.Separation
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Lib.Integers
+
+theorem range_contains : range_containsStatement := by
+  intro chunk b ofs P m hpred hdiv
+  have hrange := hpred.1
+  have hmax : zLe ofs Ptrofs.max_unsigned := by
+    have hupper := hrange.2.1
+    have hsize := size_chunk_pos chunk
+    unfold zLe ZArith.BinInt.Z.le at hupper ⊢
+    change (0 : Int) < intOfZ (size_chunk chunk) at hsize
+    unfold zAdd ZArith.BinInt.Z.add at hupper
+    rw [intOfZ_zOfInt] at hupper
+    change intOfZ ofs ≤ intOfZ Ptrofs.modulus - 1
+    omega
+  have hfree : Mem.valid_access m chunk b ofs Freeable := by
+    refine ⟨?_, hdiv⟩
+    intro i hi
+    exact hrange.2.2 i Cur Freeable hi
+  have hread : Mem.valid_access m chunk b ofs Readable :=
+    Mem.valid_access_implies m chunk b ofs Freeable Readable hfree (perm_F_any Readable)
+  rcases Mem.valid_access_load m chunk b ofs hread with ⟨v, hload⟩
+  refine ⟨⟨⟨hrange.1, hmax⟩, hfree, ⟨v, hload, True.intro⟩⟩, hpred.2.1, ?_⟩
+  intro b' ofs' hfoot hP
+  exact hpred.2.2 b' ofs' hfoot hP
+
+end CompCert4Lean.Common.Separation
