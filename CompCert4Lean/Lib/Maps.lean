@@ -3384,3 +3384,37 @@ theorem gmap_proof : gmapStatement := by
 end PMap
 
 end CompCert4Lean.Lib.Maps
+
+namespace CompCert4Lean.Lib.Maps
+
+namespace PMap
+
+theorem set2 : set2Statement := by
+  intro A i x y m
+  cases m with
+  | mk d tree =>
+      simp only [set]
+      exact congrArg (fun tr => (d, tr)) (PTree.set2 (A := A) i tree x y)
+
+end PMap
+
+namespace ZMap
+
+theorem gi_proof : gi := by
+  intro A x i
+  exact PMap.gi (A := A) (ZIndexed.index i) x
+
+theorem gss_proof : gss := by
+  intro A i x m
+  exact PMap.gss (A := A) (ZIndexed.index i) x m
+
+theorem gso_proof : gso := by
+  intro A i j x m hij
+  apply PMap.gso (A := A) (i := ZIndexed.index i) (j := ZIndexed.index j) x m
+  intro heq
+  apply hij
+  exact ZIndexed.index_inj i j heq
+
+end ZMap
+
+end CompCert4Lean.Lib.Maps
