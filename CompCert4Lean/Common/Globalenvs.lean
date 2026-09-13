@@ -2234,3 +2234,102 @@ theorem store_init_data_list_unchanged : store_init_data_list_unchangedStatement
 
 end Genv
 end CompCert4Lean.Common.Globalenvs
+
+namespace CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Linking
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.Lib.Integers
+
+namespace Genv
+
+theorem init_data_size_addrof : init_data_size_addrofStatement := by
+  intro id ofs
+  rfl
+
+private theorem pg_intOfZ_zadd (x y : Z) :
+    intOfZ (zAdd x y) = intOfZ x + intOfZ y := by
+  change intOfZ (zOfInt (intOfZ x + intOfZ y)) = intOfZ x + intOfZ y
+  rw [intOfZ_zOfInt]
+
+private theorem pg_zadd_lt (x y : Z) (hy : zLt z0 y) : zLt x (zAdd x y) := by
+  change intOfZ x < intOfZ (zAdd x y)
+  rw [pg_intOfZ_zadd]
+  change 0 < intOfZ y at hy
+  omega
+
+private theorem pg_zle_trans {x y z : Z} (hxy : zLe x y) (hyz : zLe y z) :
+    zLe x z := by
+  change intOfZ x ≤ intOfZ y at hxy
+  change intOfZ y ≤ intOfZ z at hyz
+  change intOfZ x ≤ intOfZ z
+  omega
+
+private theorem pg_zlt_zle {x y z : Z} (hxy : zLt x y) (hyz : zLe y z) :
+    zLt x z := by
+  change intOfZ x < intOfZ y at hxy
+  change intOfZ y ≤ intOfZ z at hyz
+  change intOfZ x < intOfZ z
+  omega
+
+private theorem pg_load_unchanged_on
+    (P : block → Z → Prop) (m m' : mem) (chunk : memory_chunk)
+    (b : block) (p : Z) (v : val)
+    (hunch : Mem.unchanged_on P m m')
+    (hP : ∀ i, zLe p i ∧ zLt i (zAdd p (size_chunk chunk)) → P b i)
+    (hload : Mem.load chunk m b p = some v) :
+    Mem.load chunk m' b p = some v := by
+  have hvacc := Mem.load_valid_access m chunk b p v hload
+  have hpvalid := hvacc.1 p ⟨by
+    change intOfZ p ≤ intOfZ p
+    omega, pg_zadd_lt p (size_chunk chunk) (Memdata.size_chunk_pos chunk)⟩
+  have hvb := Mem.perm_valid_block m b p Cur Readable hpvalid
+  have hrange : Mem.range_perm m' b p (zAdd p (size_chunk chunk)) Cur Readable := by
+    intro q hq
+    apply (hunch.unchanged_on_perm b q Cur Readable (hP q hq) hvb).mp
+    exact hvacc.1 q hq
+  have hvalid' : Mem.valid_access m' chunk b p Readable := ⟨hrange, hvacc.2⟩
+  have hgetN :
+      Mem.getN (size_chunk_nat chunk) p (PMap.get b m'.mem_contents) =
+        Mem.getN (size_chunk_nat chunk) p (PMap.get b m.mem_contents) := by
+    apply Mem.getN_exten
+    intro q hq
+    apply hunch.unchanged_on_contents b q
+    · apply hP q
+      constructor
+      · exact hq.1
+      · have hsize := Memdata.size_chunk_conv chunk
+        simpa [hsize] using hq.2
+    · apply hvacc.1 q
+      constructor
+      · exact hq.1
+      · have hsize := Memdata.size_chunk_conv chunk
+        simpa [hsize] using hq.2
+  rcases Mem.valid_access_load m' chunk b p hvalid' with ⟨v', hload'⟩
+  have hres' := Mem.load_result chunk m' b p v' hload'
+  have hres := Mem.load_result chunk m b p v hload
+  have heq : v' = v := by
+    calc
+      v' = decode_val chunk
+          (Mem.getN (size_chunk_nat chunk) p (PMap.get b m'.mem_contents)) := hres'
+      _ = decode_val chunk
+          (Mem.getN (size_chunk_nat chunk) p (PMap.get b m.mem_contents)) := by rw [hgetN]
+      _ = v := hres.symm
+  simpa [heq] using hload'
+
+theorem read_as_zero_unchanged : read_as_zero_unchangedStatement := by
+  intro P m b ofs len m' hzero hunch hP chunk p hlo hhi halign
+  apply pg_load_unchanged_on P m m' chunk b p _ hunch
+  · intro i hi
+    apply hP i
+    exact ⟨pg_zle_trans hlo hi.1, pg_zlt_zle hi.2 hhi⟩
+  · exact hzero chunk p hlo hhi halign
+
+end Genv
+end CompCert4Lean.Common.Globalenvs

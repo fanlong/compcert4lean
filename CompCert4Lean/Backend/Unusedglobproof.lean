@@ -1617,3 +1617,59 @@ theorem kept_main : kept_mainStatement := by
   exact hvalid.used_main
 
 end CompCert4Lean.Backend.Unusedglobproof
+
+namespace CompCert4Lean.Backend.Unusedglobproof
+
+open CompCert4Lean.Backend.Unusedglob
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Lib.Maps
+
+theorem kept_public : kept_publicStatement := by
+  intro p used hvalid id hid
+  exact hvalid.used_public id hid
+
+theorem transform_find_symbol_1 : transform_find_symbol_1Statement := by
+  intro p tp used hmatch id b hfind hkept
+  have hdom : id ∈ prog_defs_names p :=
+    Genv.find_symbol_inversion (F := RTL.fundef) (V := Unit)
+      (p := p) (x := id) (b := b) hfind
+  rcases prog_defmap_dom (F := RTL.fundef) (V := Unit) p id hdom with
+    ⟨gd, hget⟩
+  have hget' : PTree.get id (prog_defmap tp) = some gd := by
+    rw [match_prog_def hmatch id]
+    have hmem : IS.mem id used = true :=
+      CompCert4Lean.Backend.Unusedglob.IS.mem_1_proof used id hkept
+    simp [hmem, hget]
+  rcases (Genv.find_def_symbol (F := RTL.fundef) (V := Unit)
+      (p := tp) (id := id) (g := gd)).mp hget' with ⟨b', hsym, _⟩
+  exact ⟨b', hsym⟩
+
+theorem transform_find_symbol_2 : transform_find_symbol_2Statement := by
+  intro p tp used hmatch id b hfind
+  have hdom : id ∈ prog_defs_names tp :=
+    Genv.find_symbol_inversion (F := RTL.fundef) (V := Unit)
+      (p := tp) (x := id) (b := b) hfind
+  rcases prog_defmap_dom (F := RTL.fundef) (V := Unit) tp id hdom with
+    ⟨gd, hget_tp⟩
+  have hrel := match_prog_def hmatch id
+  rw [hget_tp] at hrel
+  cases hmem : IS.mem id used with
+  | false => simp [hmem] at hrel
+  | true =>
+      have hget_p : PTree.get id (prog_defmap p) = some gd := by
+        simpa [hmem] using hrel.symm
+      have hkept : kept used id :=
+        CompCert4Lean.Backend.Unusedglob.IS.mem_2_proof used id hmem
+      rcases (Genv.find_def_symbol (F := RTL.fundef) (V := Unit)
+          (p := p) (id := id) (g := gd)).mp hget_p with ⟨b', hsym, _⟩
+      exact ⟨hkept, ⟨b', hsym⟩⟩
+
+theorem init_meminj_eq : init_meminj_eqStatement := by
+  intro p tp id b b' hfind hfind'
+  unfold init_meminj
+  rw [Genv.find_invert_symbol (F := RTL.fundef) (V := Unit)
+      (ge := Genv.globalenv p) (id := id) (b := b) hfind]
+  simp [hfind']
+
+end CompCert4Lean.Backend.Unusedglobproof

@@ -1876,3 +1876,195 @@ theorem encode_val_inject : encode_val_injectStatement := by
               (inj_value_inject f Vundef _ Q64 (Val.inject.val_inject_undef _))
 
 end CompCert4Lean.Common.Memdata
+
+namespace CompCert4Lean.Common.Memdata
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+open Lean Elab Tactic Meta
+
+private def memdataPrivateName (suffix : String) : Name :=
+  let p := Name.str (Name.str (Name.str (Name.str Name.anonymous "_private") "CompCert4Lean") "Lib") "Integers"
+  let base := Name.num p 0
+  suffix.splitOn "." |>.foldl Name.str base
+
+private theorem memdata_wordcore_add_val {bits : Nat}
+    (x y : CompCert4Lean.Lib.Integers.WordCore.Word bits) :
+    (CompCert4Lean.Lib.Integers.WordCore.add x y).val =
+      (x.val + y.val) % (2 ^ bits) := by
+  run_tac
+    let lctx ← getLCtx
+    let xF := (lctx.findFromUserName? `x).get!
+    let yF := (lctx.findFromUserName? `y).get!
+    let e ← mkAppM
+      (memdataPrivateName "CompCert4Lean.Lib.Integers.WordCore.add_val")
+      #[mkFVar xF.fvarId, mkFVar yF.fvarId]
+    closeMainGoal Name.anonymous e
+
+private theorem memdata_wordcore_zero_val (bits : Nat) :
+    (CompCert4Lean.Lib.Integers.WordCore.zero bits).val = 0 := by
+  unfold CompCert4Lean.Lib.Integers.WordCore.zero
+  run_tac
+    let lctx ← getLCtx
+    let bF := (lctx.findFromUserName? `bits).get!
+    let e ← mkAppM
+      (memdataPrivateName "CompCert4Lean.Lib.Integers.WordCore.val_repr_residue")
+      #[mkFVar bF.fvarId,
+        mkConst ``CompCert4Lean.Foundation.Numbers.Rocq.Coq.Numbers.BinNums.Z.Z0]
+    closeMainGoal Name.anonymous e
+
+private theorem memdata_wordcore_val_lt
+    (x : CompCert4Lean.Lib.Integers.WordCore.Word
+      CompCert4Lean.Lib.Integers.Ptrofs.wordsize) :
+    x.val < 2 ^ CompCert4Lean.Lib.Integers.Ptrofs.wordsize := by
+  run_tac
+    let lctx ← getLCtx
+    let xF := (lctx.findFromUserName? `x).get!
+    let e ← mkAppM
+      (memdataPrivateName "CompCert4Lean.Lib.Integers.WordCore.val_lt")
+      #[mkFVar xF.fvarId]
+    closeMainGoal Name.anonymous e
+
+private theorem memdata_ptrofs_add_zero
+    (ofs : CompCert4Lean.Lib.Integers.Ptrofs.int) :
+    CompCert4Lean.Lib.Integers.Ptrofs.add ofs
+      (CompCert4Lean.Lib.Integers.Ptrofs.repr
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.Numbers.BinNums.Z.Z0)) = ofs := by
+  change CompCert4Lean.Lib.Integers.WordCore.add ofs
+    (CompCert4Lean.Lib.Integers.WordCore.zero
+      CompCert4Lean.Lib.Integers.Ptrofs.wordsize) = ofs
+  apply CompCert4Lean.Lib.Integers.WordCore.ext_of_val_eq
+  rw [memdata_wordcore_add_val, memdata_wordcore_zero_val, Nat.add_zero]
+  exact Nat.mod_eq_of_lt (memdata_wordcore_val_lt ofs)
+
+theorem memval_lessdef_refl : memval_lessdef_reflStatement := by
+  intro mv
+  cases mv with
+  | Undef =>
+      exact memval_inject.undef CompCert4Lean.Common.Values.inject_id Undef
+  | Byte b =>
+      exact memval_inject.byte CompCert4Lean.Common.Values.inject_id b
+  | Fragment v q i =>
+      apply memval_inject.fragment
+      cases v with
+      | Vundef => exact CompCert4Lean.Common.Values.Val.inject.val_inject_undef _
+      | Vint n => exact CompCert4Lean.Common.Values.Val.inject.inject_int _
+      | Vlong n => exact CompCert4Lean.Common.Values.Val.inject.inject_long _
+      | Vfloat f => exact CompCert4Lean.Common.Values.Val.inject.inject_float _
+      | Vsingle f => exact CompCert4Lean.Common.Values.Val.inject.inject_single _
+      | Vptr b ofs =>
+          apply CompCert4Lean.Common.Values.Val.inject.inject_ptr
+          · rfl
+          · symm
+            exact memdata_ptrofs_add_zero ofs
+
+theorem int_of_bytes_range : int_of_bytes_rangeStatement := by
+  intro l
+  exact int_of_bytes_range_proof_api l
+
+theorem int_of_bytes_append : int_of_bytes_appendStatement := by
+  have hadd0 (x : Z) : zAdd z0 x = x := by
+    apply CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective
+    simp only [zAdd, ZArith.BinInt.Z.add,
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+    simp [CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ]
+  have hmul0 (x : Z) : zMul x z0 = z0 := by
+    apply CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective
+    simp only [zMul, ZArith.BinInt.Z.mul,
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+    simp [CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ]
+  have hmul1 (x : Z) : zMul x (zOfNat 1) = x := by
+    apply CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective
+    simp only [zMul, zOfNat, ZArith.BinInt.Z.mul,
+      ZArith.BinInt.Z.of_nat,
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+    simp
+  have hmulZeroNat : zMul (zOfNat 0) z8 = zOfNat 0 := by
+    apply CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective
+    simp only [zMul, zOfNat, z8, ZArith.BinInt.Z.mul,
+      ZArith.BinInt.Z.of_nat,
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+    simp
+  have hpow0 : zTwoP (zMul (zOfNat 0) z8) = zOfNat 1 := by
+    rw [hmulZeroNat]
+    apply CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective
+    have hz1 : CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (zOfNat 1) =
+        Int.ofNat 1 := by
+      change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt (Int.ofNat 1)) = Int.ofNat 1
+      rw [CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+    rw [hz1]
+    simpa [zTwoP] using (intOfZ_two_p_zOfNat 0)
+  intro l2 l1
+  induction l1 with
+  | nil =>
+      simp only [List.nil_append, List.length_nil]
+      simp only [int_of_bytes]
+      rw [hpow0, hmul1, hadd0]
+  | cons b l ih =>
+      simp only [List.cons_append, int_of_bytes, List.length_cons]
+      rw [ih]
+      have hpow : CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+          (zTwoP (zMul (zOfNat (l.length + 1)) z8)) =
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+            (zTwoP (zMul (zOfNat l.length) z8)) * 256 := by
+        rw [show zMul (zOfNat (l.length + 1)) z8 =
+          zOfNat (l.length * 8 + 8) by
+            apply CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective
+            simp only [zMul, zOfNat, z8,
+              ZArith.BinInt.Z.mul,
+              ZArith.BinInt.Z.of_nat,
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+            change ((l.length + 1 : Nat) : Int) * 8 =
+              ((l.length * 8 + 8 : Nat) : Int)
+            omega]
+        rw [intOfZ_two_p_zOfNat]
+        have hrest : zMul (zOfNat l.length) z8 = zOfNat (l.length * 8) := by
+          apply CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective
+          simp only [zMul, zOfNat, z8,
+            ZArith.BinInt.Z.mul,
+            ZArith.BinInt.Z.of_nat,
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+          change ((l.length : Nat) : Int) * 8 =
+            ((l.length * 8 : Nat) : Int)
+          omega
+        rw [hrest, intOfZ_two_p_zOfNat]
+        rw [_root_.Int.pow_add]
+        simp
+      have hpowZ : zTwoP (zMul (zOfNat (l.length + 1)) z8) =
+          zMul (zTwoP (zMul (zOfNat l.length) z8)) z256 := by
+        apply CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective
+        rw [hpow]
+        simp [zMul, z256, ZArith.BinInt.Z.mul,
+          ZArith.BinInt.Z.of_nat,
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+      rw [hpowZ]
+      apply CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective
+      simp only [zAdd, zMul, z256, ZArith.BinInt.Z.add,
+        ZArith.BinInt.Z.mul, ZArith.BinInt.Z.of_nat,
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+      rw [Int.add_mul, Int.mul_assoc]
+      simp [Int.add_assoc]
+
+theorem length_proj_bytes : length_proj_bytesStatement := by
+  intro l
+  induction l with
+  | nil =>
+      intro b h
+      cases h
+      simp
+  | cons a l ih =>
+      intro b h
+      cases a with
+      | Undef => simp [proj_bytes] at h
+      | Fragment v q i => simp [proj_bytes] at h
+      | Byte b =>
+          cases hp : proj_bytes l with
+          | none => simp [proj_bytes, hp] at h
+          | some bl =>
+              simp [proj_bytes, hp] at h
+              cases h
+              have hlen := ih bl hp
+              simp [hlen]
+
+end CompCert4Lean.Common.Memdata

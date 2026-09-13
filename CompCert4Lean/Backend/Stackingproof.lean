@@ -2312,3 +2312,166 @@ theorem contains_callee_saves_incr : contains_callee_saves_incrStatement := by
         | inr h => exact Or.inr (htail.2 b ofs h)
 
 end CompCert4Lean.Backend.Stackingproof
+
+namespace CompCert4Lean.Backend.Stackingproof
+
+open CompCert4Lean.Common.Separation
+open CompCert4Lean.Backend.Bounds
+open CompCert4Lean.X86.Stacklayout
+open CompCert4Lean.Backend.Locations
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Memdata
+
+private theorem stackingproof_massert_imp_sepconj
+    {P P' Q Q' : massert}
+    (hP : massert_imp P P') (hQ : massert_imp Q Q') :
+    massert_imp (sepconj P Q) (sepconj P' Q') := by
+  constructor
+  · intro m h
+    refine ⟨hP.1 m h.1, hQ.1 m h.2.1, ?_⟩
+    intro b ofs hP'foot hQ'foot
+    exact h.2.2 b ofs (hP.2 b ofs hP'foot) (hQ.2 b ofs hQ'foot)
+  · intro b ofs hfoot
+    cases hfoot with
+    | inl h => exact Or.inl (hP.2 b ofs h)
+    | inr h => exact Or.inr (hQ.2 b ofs h)
+
+private theorem stackingproof_massert_imp_mconj
+    {P P' Q Q' : massert}
+    (hP : massert_imp P P') (hQ : massert_imp Q Q') :
+    massert_imp (mconj P Q) (mconj P' Q') := by
+  constructor
+  · intro m h
+    exact ⟨hP.1 m h.1, hQ.1 m h.2⟩
+  · intro b ofs hfoot
+    cases hfoot with
+    | inl h => exact Or.inl (hP.2 b ofs h)
+    | inr h => exact Or.inr (hQ.2 b ofs h)
+
+theorem frame_contents_exten : frame_contents_extenStatement := by
+  intro return_address_offset tprog cfg f bound_local_pos bound_outgoing_pos
+    bound_stack_data_pos used_callee_save_norepet used_callee_save_prop
+    ls ls0 ls' ls0' j sp parent retaddr P m hlocal hout hcallee hm
+  let b := function_bounds cfg f
+  let fe := make_env cfg b
+  have hlocal' : massert_imp
+      (contains_locations return_address_offset tprog j sp fe.fe_ofs_local
+        b.bound_local Local ls)
+      (contains_locations return_address_offset tprog j sp fe.fe_ofs_local
+        b.bound_local Local ls') :=
+    contains_locations_exten return_address_offset tprog ls ls' j sp
+      fe.fe_ofs_local b.bound_local Local hlocal
+  have hout' : massert_imp
+      (contains_locations return_address_offset tprog j sp (fe_ofs_arg cfg)
+        b.bound_outgoing Outgoing ls)
+      (contains_locations return_address_offset tprog j sp (fe_ofs_arg cfg)
+        b.bound_outgoing Outgoing ls') :=
+    contains_locations_exten return_address_offset tprog ls ls' j sp
+      (fe_ofs_arg cfg) b.bound_outgoing Outgoing hout
+  have hcallee' : massert_imp
+      (contains_callee_saves j sp fe.fe_ofs_callee_save b.used_callee_save ls0)
+      (contains_callee_saves j sp fe.fe_ofs_callee_save b.used_callee_save ls0') :=
+    (contains_callee_saves_exten j sp ls0 ls0' b.used_callee_save
+      fe.fe_ofs_callee_save hcallee).1
+  have hlink : massert_imp
+      (hasvalue Mptr sp fe.fe_ofs_link parent)
+      (hasvalue Mptr sp fe.fe_ofs_link parent) := by
+    constructor
+    · intro m hm
+      exact hm
+    · intro b' ofs' hfoot
+      exact hfoot
+  have hret : massert_imp
+      (hasvalue Mptr sp fe.fe_ofs_retaddr retaddr)
+      (hasvalue Mptr sp fe.fe_ofs_retaddr retaddr) := by
+    constructor
+    · intro m hm
+      exact hm
+    · intro b' ofs' hfoot
+      exact hfoot
+  have hframe1 : massert_imp
+      (frame_contents_1 return_address_offset tprog cfg f
+        bound_local_pos bound_outgoing_pos bound_stack_data_pos
+        used_callee_save_norepet used_callee_save_prop j sp ls ls0 parent retaddr)
+      (frame_contents_1 return_address_offset tprog cfg f
+        bound_local_pos bound_outgoing_pos bound_stack_data_pos
+        used_callee_save_norepet used_callee_save_prop j sp ls' ls0' parent retaddr) := by
+    exact stackingproof_massert_imp_sepconj hlocal'
+      (stackingproof_massert_imp_sepconj hout'
+        (stackingproof_massert_imp_sepconj hlink
+          (stackingproof_massert_imp_sepconj hret hcallee')))
+  have hframe : massert_imp
+      (frame_contents return_address_offset tprog cfg f
+        bound_local_pos bound_outgoing_pos bound_stack_data_pos
+        used_callee_save_norepet used_callee_save_prop j sp ls ls0 parent retaddr)
+      (frame_contents return_address_offset tprog cfg f
+        bound_local_pos bound_outgoing_pos bound_stack_data_pos
+        used_callee_save_norepet used_callee_save_prop j sp ls' ls0' parent retaddr) := by
+    exact stackingproof_massert_imp_mconj hframe1 (by
+      constructor
+      · intro x hx
+        exact hx
+      · intro b' ofs' hfoot
+        exact hfoot)
+  exact (stackingproof_massert_imp_sepconj hframe (by
+    constructor
+    · intro x hx
+      exact hx
+    · intro b' ofs' hfoot
+      exact hfoot)).1 m hm
+
+end CompCert4Lean.Backend.Stackingproof
+
+namespace CompCert4Lean.Backend.Stackingproof
+
+open CompCert4Lean.Backend.Bounds
+open CompCert4Lean.Backend.Locations
+open CompCert4Lean.Backend.Linear
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+
+theorem frame_set_reg : frame_set_regStatement := by
+  intro return_address_offset tprog cfg f bound_local_pos bound_outgoing_pos
+    bound_stack_data_pos used_callee_save_norepet used_callee_save_prop
+    r v j sp ls ls0 parent retaddr m P hm
+  refine frame_contents_exten return_address_offset tprog cfg f
+    bound_local_pos bound_outgoing_pos bound_stack_data_pos
+    used_callee_save_norepet used_callee_save_prop ls ls0
+    (Locmap.set (R r) v ls) ls0 j sp parent retaddr P m ?_ ?_ ?_ hm
+  · intro ofs ty
+    rw [show Locmap.set (R r) v ls (S Local ofs ty) = ls (S Local ofs ty) by
+      apply Locmap.gso
+      simp [Loc.diff]]
+    exact Val.lessdef_refl _
+  · intro ofs ty
+    rw [show Locmap.set (R r) v ls (S Outgoing ofs ty) = ls (S Outgoing ofs ty) by
+      apply Locmap.gso
+      simp [Loc.diff]]
+    exact Val.lessdef_refl _
+  · intro r' hr'
+    rfl
+
+end CompCert4Lean.Backend.Stackingproof
+
+namespace CompCert4Lean.Backend.Stackingproof
+
+open CompCert4Lean.Backend.Bounds
+open CompCert4Lean.Backend.LTL
+
+theorem frame_undef_regs : frame_undef_regsStatement := by
+  intro return_address_offset tprog cfg f bound_local_pos bound_outgoing_pos
+    bound_stack_data_pos used_callee_save_norepet used_callee_save_prop
+    j sp ls ls0 parent retaddr m P rl hm
+  induction rl with
+  | nil =>
+      simpa [CompCert4Lean.Backend.LTL.undef_regs] using hm
+  | cons r rl ih =>
+      have htail := ih
+      have hset := frame_set_reg return_address_offset tprog cfg f
+        bound_local_pos bound_outgoing_pos bound_stack_data_pos
+        used_callee_save_norepet used_callee_save_prop r
+        CompCert4Lean.Common.Values.Vundef j sp
+        (CompCert4Lean.Backend.LTL.undef_regs rl ls) ls0 parent retaddr m P htail
+      simpa [CompCert4Lean.Backend.LTL.undef_regs] using hset
+
+end CompCert4Lean.Backend.Stackingproof

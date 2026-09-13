@@ -3130,3 +3130,19 @@ theorem vmatch_ge : vmatch_geStatement := by
   all_goals try { apply pmatch_ge <;> assumption }
 
 end CompCert4Lean.Backend.ValueDomain
+
+namespace CompCert4Lean.Backend.ValueDomain
+
+theorem vge_sgn_sgn' : vge_sgn_sgn'Statement := by
+  intro p n
+  unfold sgn
+  by_cases h8 : zle n (zOfNat 8) = true
+  · simp only [if_pos h8]
+    exact vge.sgnSgn p (zOfNat 8) p n (zle_true_prop_for_inval h8) (pge.pge_refl p)
+  · by_cases h16 : zle n (zOfNat 16) = true
+    · simp only [if_neg h8, if_pos h16]
+      exact vge.sgnSgn p (zOfNat 16) p n (zle_true_prop_for_inval h16) (pge.pge_refl p)
+    · simp only [if_neg h8, if_neg h16]
+      exact vge.numSgn p p n (pge.pge_refl p)
+
+end CompCert4Lean.Backend.ValueDomain

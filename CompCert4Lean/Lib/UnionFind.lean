@@ -1483,3 +1483,67 @@ theorem pathlen_merge_proof :
 
 end UF
 end CompCert4Lean.Lib.UnionFind
+
+namespace CompCert4Lean.Lib.UnionFind
+namespace UF
+
+theorem compress_order_proof :
+    ∀ (M : MAP), compress_orderStatement M := by
+  intro M uf a b x y hxy
+  change mapGet M x (mapSet M a b uf.m) = some y at hxy
+  rw [mapGet_set] at hxy
+  by_cases hxa : x = a
+  · subst x
+    simp at hxy
+    exact Or.inr ⟨rfl, by simpa using hxy.symm⟩
+  · simp only [dif_neg hxa] at hxy
+    exact Or.inl hxy
+
+end UF
+end CompCert4Lean.Lib.UnionFind
+
+namespace CompCert4Lean.Lib.UnionFind
+namespace UF
+
+theorem compress_Acc_proof :
+    ∀ (M : MAP), compress_AccStatement M := by
+  intro M uf a b a_diff_b a_repr_b x _hx
+  exact compress_Acc_calc M uf a b x a_diff_b a_repr_b
+
+theorem compress_wf_proof :
+    ∀ (M : MAP), compress_wfStatement M := by
+  intro M uf a b a_diff_b a_repr_b
+  exact compress_wf_calc M uf a b a_diff_b a_repr_b
+
+end UF
+end CompCert4Lean.Lib.UnionFind
+
+namespace CompCert4Lean.Lib.UnionFind
+namespace UF
+
+theorem pathlen_gt_merge_proof :
+    ∀ (M : MAP), pathlen_gt_mergeStatement M := by
+  intro M uf a b x y hrepr hgt
+  simp only [pathlen_merge_proof M uf a b x, pathlen_merge_proof M uf a b y]
+  cases hEq : M.elt_eq (repr M uf a) (repr M uf b) with
+  | left _ => exact hgt
+  | right _ =>
+      simp only [hEq]
+      cases hEqx : M.elt_eq (repr M uf x) (repr M uf a) with
+      | left hx =>
+          cases hEqy : M.elt_eq (repr M uf y) (repr M uf a) with
+          | left hy =>
+              simp only [hEqx, hEqy]
+              omega
+          | right hy =>
+              exact False.elim (hy (hrepr ▸ hx))
+      | right hx =>
+          cases hEqy : M.elt_eq (repr M uf y) (repr M uf a) with
+          | left hy =>
+              exact False.elim (hx (hrepr.symm ▸ hy))
+          | right hy =>
+              simp only [hEqx, hEqy]
+              exact hgt
+
+end UF
+end CompCert4Lean.Lib.UnionFind

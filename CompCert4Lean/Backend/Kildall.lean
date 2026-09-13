@@ -2310,3 +2310,134 @@ theorem make_predecessors_correct_2 : make_predecessors_correct_2Statement := by
   | none => simp [hget] at hpred
 
 end CompCert4Lean.Backend.Kildall
+
+namespace CompCert4Lean.Backend.Kildall.Dataflow_Solver
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Lib.Maps
+
+theorem fixpoint_invariant : fixpoint_invariantStatement := by
+  intro A LAT NS LATlaws NSlaws code successors transf ep ev P P_bot P_lub P_transf
+    P_entry res pc hfix
+  let inv : state LAT NS → Prop := fun st => ∀ x, P (abstr_value x st)
+  have hstart : inv (@start_state LAT NS ep ev) := by
+    intro x
+    change P (match PTree.get x
+      (PTree.set ep ev (PTree.empty LAT.t : PTree.tree LAT.t)) with
+      | none => LAT.bot
+      | some v => v)
+    rw [PTree.gsspec_proof]
+    cases hpeq : CompCert4Lean.Lib.Coqlib.peq x ep with
+    | left heq =>
+        subst x
+        simp only [hpeq]
+        exact P_entry
+    | right hne =>
+        simp only [hpeq]
+        rw [PTree.gempty]
+        exact P_bot
+  have hprop : ∀ (st : state LAT NS) (v : LAT.t) (n : positive),
+      inv st → P v → inv (propagate_succ st v n) := by
+    intro st v n hst hv x
+    change P (abstr_value x (propagate_succ st v n))
+    unfold propagate_succ
+    cases hget : PTree.get n st.aval with
+    | none =>
+        change P (match PTree.get x
+          (PTree.set n v (st.aval : PTree.tree LAT.t)) with
+          | none => LAT.bot
+          | some w => w)
+        rw [PTree.gsspec_proof]
+        cases hpeq : CompCert4Lean.Lib.Coqlib.peq x n with
+        | left heq =>
+            subst x
+            simp only [hpeq]
+            exact hv
+        | right hne =>
+            simp only [hpeq]
+            simpa [abstr_value] using hst x
+    | some oldl =>
+        by_cases hbeq : LAT.beq oldl (LAT.lub oldl v) = true
+        · simp only [hget, hbeq, ↓reduceIte]
+          exact hst x
+        · have hfalse : LAT.beq oldl (LAT.lub oldl v) = false :=
+            Bool.eq_false_iff.mpr hbeq
+          simp only [hget, hfalse, Bool.false_eq_true, ↓reduceIte]
+          change P (match PTree.get x
+            (PTree.set n (LAT.lub oldl v) (st.aval : PTree.tree LAT.t)) with
+            | none => LAT.bot
+            | some w => w)
+          rw [PTree.gsspec_proof]
+          cases hpeq : CompCert4Lean.Lib.Coqlib.peq x n with
+          | left heq =>
+              subst x
+              simp only [hpeq]
+              apply P_lub
+              · simpa [abstr_value, hget] using hst n
+              · exact hv
+          | right hne =>
+              simp only [hpeq]
+              simpa [abstr_value] using hst x
+  have hlist : ∀ (l : List positive) (st : state LAT NS) (v : LAT.t),
+      inv st → P v → inv (propagate_succ_list st v l) := by
+    intro l
+    induction l with
+    | nil =>
+        intro st v hst hv
+        simpa [propagate_succ_list] using hst
+    | cons n rem ih =>
+        intro st v hst hv
+        exact ih (propagate_succ st v n) v (hprop st v n hst hv) hv
+  have hsteps_rule : ∀ (st1 st2 : state LAT NS),
+      steps code successors transf st1 st2 → inv st1 → inv st2 := by
+    intro st1 st2 hrun
+    induction hrun with
+    | steps_base =>
+        intro hst
+        exact hst
+    | steps_right s2 s3 hprev hstep ih =>
+        intro hst
+        unfold step at hstep
+        cases hpick : NS.pick s2.worklist with
+        | none =>
+            simp only [hpick] at hstep
+            cases hstep
+        | some pair =>
+            rcases pair with ⟨n, rem⟩
+            cases hcode : PTree.get n code with
+            | none =>
+                simp only [hpick, hcode] at hstep
+                injection hstep with hs3
+                subst s3
+                exact ih hst
+            | some instr =>
+                simp only [hpick, hcode] at hstep
+                injection hstep with hs3
+                subst s3
+                have hst' : inv
+                    ({ aval := s2.aval, worklist := rem, visited := s2.visited } :
+                      state LAT NS) := by
+                  change ∀ x, P (abstr_value x s2)
+                  exact ih hst
+                have htrans : P (transf n (abstr_value n s2)) :=
+                  P_transf n instr (abstr_value n s2) hcode (ih hst n)
+                exact hlist (successors instr)
+                  ({ aval := s2.aval, worklist := rem, visited := s2.visited } :
+                    state LAT NS)
+                  (transf n (abstr_value n s2)) hst' htrans
+  unfold fixpoint at hfix
+  have hchar := fixpoint_from_charact (LAT := LAT) (NS := NS)
+    LATlaws NSlaws code successors transf (@start_state LAT NS ep ev) res hfix
+  rcases hchar with ⟨st, hrun, hpick, hres⟩
+  have hfinal : inv st := hsteps_rule _ _ hrun hstart
+  rw [hres]
+  unfold PMap.get
+  cases hget : PTree.get pc st.aval with
+  | none =>
+      simp only [hget]
+      simpa [abstr_value, hget] using hfinal pc
+  | some v =>
+      simp only [hget]
+      simpa [abstr_value, hget] using hfinal pc
+
+end CompCert4Lean.Backend.Kildall.Dataflow_Solver

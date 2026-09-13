@@ -1232,3 +1232,24 @@ theorem list_length_z_pos : list_length_z_posStatement := by
       omega
 
 end CompCert4Lean.Lib.Coqlib
+
+namespace CompCert4Lean.Lib.Coqlib
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem list_nth_z_in : list_nth_z_inStatement := by
+  intro A l
+  induction l with
+  | nil =>
+      intro n x h
+      simp [list_nth_z] at h
+  | cons hd tl ih =>
+      intro n x h
+      simp only [list_nth_z] at h
+      split at h
+      next hzero =>
+        simp_all
+      next hnonzero =>
+        exact List.mem_cons_of_mem hd (ih (ZArith.BinInt.Z.pred n) x h)
+
+end CompCert4Lean.Lib.Coqlib

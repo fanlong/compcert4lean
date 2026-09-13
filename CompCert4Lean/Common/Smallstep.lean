@@ -2086,3 +2086,39 @@ theorem sd_determ_2 : sd_determ_2Statement := by
   intro L hdet s t s1 s2 h1 h2
   exact (hdet.sd_determ s t s1 t s2 h1 h2).2 rfl
 end CompCert4Lean.Common.Smallstep
+
+namespace CompCert4Lean.Common.Smallstep
+
+open CompCert4Lean.Common.Events
+
+theorem simulation_forever_reactive :
+    simulation_forever_reactiveStatement := by
+  intro L1 L2 index order match_states props
+  intro i s1 s2 T hforever hmatch
+  let pred : state L2 → traceinf → Prop := fun s2 T =>
+    ∃ i s1, match_states i s1 s2 ∧
+      forever_reactive (step L1) (globalenv L1) s1 T
+  exact forever_reactive.coinduct (step L2) (globalenv L2) pred
+    (by
+      intro s2 T hs
+      rcases hs with ⟨i, s1, hmatch, hforever⟩
+      exact (forever_reactive_casesOn
+        (step := step L1) (ge := globalenv L1)
+        (motive := fun s1 T => match_states i s1 s2 →
+          ∃ s2' t T',
+            star (step L2) (globalenv L2) s2 t s2' ∧
+              t ≠ E0 ∧
+              (∃ i' s1', match_states i' s1' s2' ∧
+                forever_reactive (step L1) (globalenv L1) s1' T') ∧
+              (T = Eappinf t T'))
+        (by
+          intro s1 s1' t T' hstar hnonempty htail hmatch
+          obtain ⟨i', s2', hstar', hmatch'⟩ :=
+            simulation_star L1 L2 index order match_states props
+              s1 t s1' hstar i s2 hmatch
+          exact ⟨s2', t, T', hstar', hnonempty,
+            ⟨i', s1', hmatch', htail⟩, rfl⟩)
+        hforever hmatch))
+    s2 T ⟨i, s1, hmatch, hforever⟩
+
+end CompCert4Lean.Common.Smallstep

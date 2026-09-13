@@ -2093,3 +2093,113 @@ theorem transl_expr_Econdition_correct
           _ = Regmap.get r rs := hstable1 r hr
 
 end CompCert4Lean.Backend.RTLgenproof
+
+namespace CompCert4Lean.Backend.RTLgenproof
+
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Coqlib
+
+theorem eval_builtin_args_trivial : eval_builtin_args_trivialStatement := by
+  intro ge rs sp m rl
+  unfold eval_builtin_args
+  induction rl with
+  | nil => exact list_forall2.nil _
+  | cons r rl ih =>
+      simp only [List.map]
+      apply list_forall2.cons
+      · exact eval_BA r
+      · exact ih
+
+end CompCert4Lean.Backend.RTLgenproof
+
+namespace CompCert4Lean.Backend.RTLgenproof
+
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Backend.RTLgen
+open CompCert4Lean.Backend.RTLgenspec
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.Common.Smallstep
+open CompCert4Lean.Common.Values
+
+theorem transl_expr_Eletvar_correct
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    transl_expr_Eletvar_correctStatement := by
+  intro xi tprog sp e m le n v hle
+  unfold transl_expr_prop
+  intro tge tm cs f map pr ns nd rd rs dst hwf htr hmatch hext
+  cases htr with
+  | tr_Eletvar map pr n ns nd rd r dst hlet hok hmove =>
+      have hvar := match_env_find_letvar map e le rs n v r hmatch hle hlet
+      obtain ⟨rs', hstar, hresult, hstable⟩ :=
+        tr_move_correct xi tprog _ _ _ _ cs f sp rs tm hmove
+      have hlessResult : Val.lessdef v (Regmap.get rd rs') := by
+        rw [hresult]
+        exact hvar
+      have hcase : (rd = r) ∨ (¬ rd ∈ pr) := by
+        rcases hok with ⟨hopt, _⟩ | ⟨_, hpr⟩
+        · exact Or.inl hopt
+        · exact Or.inr hpr
+      refine ⟨rs', tm, hstar, ?_, hlessResult, ?_, hext⟩
+      · rcases hok with ⟨hopt, hdst⟩ | ⟨hok, hpr⟩
+        · subst rd
+          simpa [hdst, CompCert4Lean.Backend.Cminor.set_optvar] using
+            rtlgenproof_match_env_same_move
+            map e le rs rs' _ _ hmatch rfl hresult hstable
+        · exact rtlgenproof_match_env_updated_move map e le rs rs' dst r rd v
+            (Regmap.get rd rs') hmatch hlessResult hwf hok rfl hstable
+      · intro r' hr'
+        rcases hcase with hrd | hpr
+        · by_cases heq : r' = rd
+          · subst r'
+            simpa [hrd] using hresult
+          · exact hstable r' heq
+        · exact hstable r' (by
+            intro heq
+            subst r'
+            exact hpr hr')
+
+end CompCert4Lean.Backend.RTLgenproof
+
+namespace CompCert4Lean.Backend.RTLgenproof
+
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Backend.RTLgen
+open CompCert4Lean.Backend.RTLgenspec
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.Common.Smallstep
+open CompCert4Lean.Common.Values
+
+theorem transl_expr_Elet_correct
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    transl_expr_Elet_correctStatement := by
+  intro xi prog tprog sp e m le a1 a2 v1 v2
+    heval1 htrans1 heval2 htrans2
+  unfold transl_expr_prop at htrans1 htrans2 ⊢
+  intro tge tm cs f map pr ns nd rd rs dst hwf htr hmatch hext
+  cases htr with
+  | tr_Elet map pr b1 b2 ns nd rd n1 r dst hfresh hbound hbody =>
+      have hmapwf : map_wf (RTLgen.add_letvar map r) :=
+        add_letvar_wf map r hwf hfresh
+      have hfirst := htrans1 tm cs f map pr ns n1 r rs none hwf hbound hmatch hext
+      obtain ⟨rs1, tm1, hstar1, hmatch1, hresult1, hstable1, hext1⟩ := hfirst
+      have hboundMatch : match_env (RTLgen.add_letvar map r) e (v1 :: le) rs1 := by
+        exact match_env_bind_letvar map e le rs1 r v1 hmatch1 hresult1
+      have hsecond := htrans2 tm1 cs f (RTLgen.add_letvar map r) pr n1 nd rd rs1 dst
+        hmapwf hbody hboundMatch hext1
+      obtain ⟨rs2, tm2, hstar2, hmatch2, hresult2, hstable2, hext2⟩ := hsecond
+      refine ⟨rs2, tm2, ?_, ?_, hresult2, ?_, hext2⟩
+      · exact star_trans _ _ _ _ _ _ _ hstar1 _ _ _ hstar2 rfl
+      · exact match_env_unbind_letvar map
+          (CompCert4Lean.Backend.Cminor.set_optvar dst v2 e) le rs2 r v1 hmatch2
+      · intro r' hr'
+        calc
+          Regmap.get r' rs2 = Regmap.get r' rs1 := hstable2 r' hr'
+          _ = Regmap.get r' rs := hstable1 r' hr'
+
+end CompCert4Lean.Backend.RTLgenproof

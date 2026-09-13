@@ -1857,3 +1857,237 @@ theorem match_callstack_set_temp : match_callstack_set_tempStatement := by
         henv hbounds hfree hcs
 
 end CompCert4Lean.Cfrontend.Cminorgenproof
+
+namespace CompCert4Lean.Cfrontend.Cminorgenproof
+
+theorem in_blocks_of_env : in_blocks_of_envStatement := by
+  intro e id b sz hget
+  unfold CS.blocks_of_env
+  apply _root_.List.mem_map.mpr
+  refine ⟨(id, (b, sz)), ?_, ?_⟩
+  · exact CompCert4Lean.Lib.Maps.PTree.elements_correct_proof e id hget
+  · rfl
+
+end CompCert4Lean.Cfrontend.Cminorgenproof
+
+namespace CompCert4Lean.Cfrontend.Cminorgenproof
+
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Lib.Maps
+
+private theorem alloc_nextblock_local (m : mem) (lo hi : Z) (m' : mem)
+    (b : CompCert4Lean.Foundation.Numbers.Rocq.Coq.positive)
+    (halloc : Mem.alloc m lo hi = (m', b)) :
+    m'.nextblock = CompCert4Lean.Foundation.Numbers.Rocq.Coq.PArith.BinPos.Pos.succ m.nextblock := by
+  unfold Mem.alloc at halloc
+  have hfirst := congrArg Prod.fst halloc
+  have hnext := congrArg Mem.nextblock hfirst
+  exact hnext.symm
+
+private theorem alloc_result_local (m : mem) (lo hi : Z) (m' : mem)
+    (b : CompCert4Lean.Foundation.Numbers.Rocq.Coq.positive)
+    (halloc : Mem.alloc m lo hi = (m', b)) : b = m.nextblock := by
+  unfold Mem.alloc at halloc
+  exact (congrArg Prod.snd halloc).symm
+
+private theorem perm_alloc_1_local (m : mem) (lo hi : Z) (m' : mem)
+    (b : CompCert4Lean.Foundation.Numbers.Rocq.Coq.positive)
+    (halloc : Mem.alloc m lo hi = (m', b))
+    (b' : CompCert4Lean.Foundation.Numbers.Rocq.Coq.positive) (ofs : Z)
+    (k : CompCert4Lean.Common.Memtype.perm_kind)
+    (p : CompCert4Lean.Common.Memtype.permission)
+    (hperm : Mem.perm m b' ofs k p) : Mem.perm m' b' ofs k p := by
+  unfold Mem.alloc at halloc
+  cases halloc
+  unfold Mem.perm at hperm ⊢
+  by_cases hblock : b' = m.nextblock
+  · subst b'
+    have hnot : ¬ CompCert4Lean.Lib.Coqlib.Plt m.nextblock m.nextblock :=
+      CompCert4Lean.Lib.Coqlib.Plt_strict _
+    rw [m.nextblock_noaccess _ _ _ hnot] at hperm
+    exact False.elim hperm
+  · rw [pmap_get_set_other_local _ _ _ _ hblock]
+    exact hperm
+
+private theorem alloc_contents_old_local (m : mem) (lo hi : Z) (m' : mem)
+    (b : CompCert4Lean.Foundation.Numbers.Rocq.Coq.positive)
+    (halloc : Mem.alloc m lo hi = (m', b))
+    (b' : CompCert4Lean.Foundation.Numbers.Rocq.Coq.positive)
+    (hblock : b' ≠ m.nextblock) :
+    PMap.get b' m'.mem_contents = PMap.get b' m.mem_contents := by
+  unfold Mem.alloc at halloc
+  have hfirst := congrArg Prod.fst halloc
+  have hcontents := congrArg (fun x : mem => x.mem_contents) hfirst
+  rw [← hcontents]
+  exact pmap_get_set_other_local _ _ _ _ hblock
+
+private theorem alloc_access_old_local (m : mem) (lo hi : Z) (m' : mem)
+    (b : CompCert4Lean.Foundation.Numbers.Rocq.Coq.positive)
+    (halloc : Mem.alloc m lo hi = (m', b))
+    (b' : CompCert4Lean.Foundation.Numbers.Rocq.Coq.positive)
+    (hblock : b' ≠ m.nextblock) :
+    PMap.get b' m'.mem_access = PMap.get b' m.mem_access := by
+  unfold Mem.alloc at halloc
+  have hfirst := congrArg Prod.fst halloc
+  have haccess := congrArg (fun x : mem => x.mem_access) hfirst
+  rw [← haccess]
+  exact pmap_get_set_other_local _ _ _ _ hblock
+
+private theorem perm_alloc_old_local (m : mem) (lo hi : Z) (m' : mem)
+    (b : CompCert4Lean.Foundation.Numbers.Rocq.Coq.positive)
+    (halloc : Mem.alloc m lo hi = (m', b))
+    (b' : CompCert4Lean.Foundation.Numbers.Rocq.Coq.positive) (ofs : Z)
+    (k : CompCert4Lean.Common.Memtype.perm_kind)
+    (p : CompCert4Lean.Common.Memtype.permission) (hblock : b' ≠ m.nextblock)
+    (hperm : Mem.perm m' b' ofs k p) : Mem.perm m b' ofs k p := by
+  unfold Mem.perm at hperm ⊢
+  rw [alloc_access_old_local m lo hi m' b halloc b' hblock] at hperm
+  exact hperm
+
+private theorem alloc_right_inject_local (f : meminj) (m tm : mem) (size : Z)
+    (tm' : mem) (sp : CompCert4Lean.Foundation.Numbers.Rocq.Coq.positive)
+    (halloc : Mem.alloc tm z0 size = (tm', sp))
+    (hinj : Mem.inject f m tm) : Mem.inject f m tm' := by
+  refine {
+    mi_inj := ?_,
+    mi_freeblocks := hinj.mi_freeblocks,
+    mi_mappedblocks := ?_,
+    mi_no_overlap := hinj.mi_no_overlap,
+    mi_representable := hinj.mi_representable,
+    mi_perm_inv := ?_ }
+  · refine {
+      mi_perm := ?_,
+      mi_align := hinj.mi_inj.mi_align,
+      mi_memval := ?_ }
+    · intro b1 b2 delta ofs k p hmap hperm
+      exact perm_alloc_1_local tm z0 size tm' sp halloc b2
+        (ZArith.BinInt.Z.add ofs delta) k p
+        (hinj.mi_inj.mi_perm b1 b2 delta ofs k p hmap hperm)
+    · intro b1 ofs b2 delta hmap hperm
+      have hvalid := hinj.mi_mappedblocks b1 b2 delta hmap
+      have hneq : b2 ≠ tm.nextblock := by
+        intro heq
+        subst b2
+        exact CompCert4Lean.Lib.Coqlib.Plt_strict _ hvalid
+      rw [alloc_contents_old_local tm z0 size tm' sp halloc b2 hneq]
+      exact hinj.mi_inj.mi_memval b1 ofs b2 delta hmap hperm
+  · intro b1 b2 delta hmap
+    change CompCert4Lean.Foundation.Numbers.Rocq.Coq.PArith.BinPos.Pos.lt
+      (show CompCert4Lean.Foundation.Numbers.Rocq.Coq.positive from b2) tm'.nextblock
+    rw [alloc_nextblock_local tm z0 size tm' sp halloc]
+    have hvalid : CompCert4Lean.Foundation.Numbers.Rocq.Coq.PArith.BinPos.Pos.lt
+        (show CompCert4Lean.Foundation.Numbers.Rocq.Coq.positive from b2) tm.nextblock := by
+      exact hinj.mi_mappedblocks b1 b2 delta hmap
+    exact CompCert4Lean.Lib.Coqlib.Plt_trans_succ _ _ hvalid
+  · intro b1 ofs b2 delta k p hmap hperm
+    by_cases hnew : b2 = tm.nextblock
+    · have hvalid := hinj.mi_mappedblocks b1 b2 delta hmap
+      exact False.elim (CompCert4Lean.Lib.Coqlib.Plt_strict _ (hnew ▸ hvalid))
+    · exact hinj.mi_perm_inv b1 ofs b2 delta k p hmap
+        (perm_alloc_old_local tm z0 size tm' sp halloc b2
+          (ZArith.BinInt.Z.add ofs delta) k p hnew hperm)
+
+private theorem perm_alloc_2_local (m : mem) (lo hi : Z) (m' : mem)
+    (b : CompCert4Lean.Foundation.Numbers.Rocq.Coq.positive)
+    (halloc : Mem.alloc m lo hi = (m', b))
+    (ofs : Z) (k : CompCert4Lean.Common.Memtype.perm_kind)
+    (hof : ZArith.BinInt.Z.le lo ofs ∧ ZArith.BinInt.Z.lt ofs hi) :
+    Mem.perm m' b ofs k CompCert4Lean.Common.Memtype.Freeable := by
+  unfold Mem.alloc at halloc
+  cases halloc
+  unfold Mem.perm
+  rw [pmap_get_set_same_local]
+  change (Mem.perm_order'
+    (if ZArith.BinInt.Z.leb lo ofs && ZArith.BinInt.Z.ltb ofs hi then
+      some CompCert4Lean.Common.Memtype.Freeable else none)
+    CompCert4Lean.Common.Memtype.Freeable)
+  have hle := hof.1
+  have hlt := hof.2
+  change intOfZ lo ≤ intOfZ ofs at hle
+  change intOfZ ofs < intOfZ hi at hlt
+  have hleB : ZArith.BinInt.Z.leb lo ofs = true := by
+    simp [ZArith.BinInt.Z.leb, hle]
+  have hltB : ZArith.BinInt.Z.ltb ofs hi = true := by
+    simp [ZArith.BinInt.Z.ltb, hlt]
+  simp [hleB, hltB]
+  exact CompCert4Lean.Common.Memtype.perm_refl _
+
+theorem match_callstack_alloc_right : match_callstack_alloc_rightStatement := by
+  intro prog f m tm cs tf tm' sp le te cenv hstack halloc hinj htemps hcenv
+  have halloc' : Mem.alloc tm z0 tf.fn_stackspace = (tm', sp) := halloc
+  have hinj' : Mem.inject f m tm' :=
+    alloc_right_inject_local f m tm tf.fn_stackspace tm' sp halloc' hinj
+  have hsp_eq : sp = tm.nextblock :=
+    alloc_result_local tm z0 tf.fn_stackspace tm' sp halloc'
+  have henv : match_env f cenv CS.empty_env sp m.nextblock m.nextblock := by
+    refine {
+      me_vars := ?_,
+      me_low_high := CompCert4Lean.Lib.Coqlib.Ple_refl _,
+      me_bounded := ?_,
+      me_inv := ?_,
+      me_incr := ?_ }
+    · intro id
+      change match_var f (show CompCert4Lean.Common.Values.block from sp)
+        (PTree.get id (PTree.empty (CompCert4Lean.Common.Values.block × Z)))
+        (PTree.get id cenv)
+      rw [PTree.gempty, hcenv id]
+      exact .global
+    · intro id b sz hget
+      change PTree.get id (PTree.empty (CompCert4Lean.Common.Values.block × Z)) =
+        some (b, sz) at hget
+      rw [PTree.gempty] at hget
+      cases hget
+    · intro b delta hmap
+      have hv := hinj.mi_mappedblocks b sp delta hmap
+      have hnot : ¬ CompCert4Lean.Lib.Coqlib.Plt
+          (show CompCert4Lean.Foundation.Numbers.Rocq.Coq.positive from sp)
+          tm.nextblock := by
+        rw [hsp_eq]
+        exact CompCert4Lean.Lib.Coqlib.Plt_strict _
+      exact False.elim (hnot hv)
+    · intro b tb delta hmap hlt
+      have hv := hinj.mi_mappedblocks b tb delta hmap
+      change CompCert4Lean.Lib.Coqlib.Plt
+        (show CompCert4Lean.Foundation.Numbers.Rocq.Coq.positive from tb) sp
+      rw [hsp_eq]
+      exact hv
+  have hbounds : match_bounds CS.empty_env m := by
+    intro id b sz ofs p hget
+    change PTree.get id (PTree.empty (CompCert4Lean.Common.Values.block × Z)) =
+      some (b, sz) at hget
+    rw [PTree.gempty] at hget
+    cases hget
+  have hpad : padding_freeable f CS.empty_env tm' sp tf.fn_stackspace := by
+    intro ofs hof
+    left
+    exact perm_alloc_2_local tm z0 tf.fn_stackspace tm' sp halloc' ofs
+      CompCert4Lean.Common.Memtype.Cur hof
+  have htail0 : match_callstack prog f m tm' cs m.nextblock tm.nextblock := by
+    apply match_callstack_invariant prog f m tm f m tm' cs m.nextblock tm.nextblock hstack
+    · intro b b' delta hmap
+      exact hmap
+    · intro b ofs p hlt hperm
+      exact hperm
+    · intro sp' ofs hlt hperm
+      exact perm_alloc_1_local tm z0 tf.fn_stackspace tm' sp halloc' sp' ofs
+        CompCert4Lean.Common.Memtype.Cur CompCert4Lean.Common.Memtype.Freeable hperm
+    · intro b hlt
+      rfl
+    · intro b b' delta hmap hlt
+      exact hmap
+  have htail : match_callstack prog f m tm' cs m.nextblock sp := by
+    rw [hsp_eq]
+    exact htail0
+  apply match_callstack.cons
+    (CompCert4Lean.Lib.Coqlib.Ple_refl _)
+  · rw [alloc_nextblock_local tm z0 tf.fn_stackspace tm' sp halloc']
+    rw [hsp_eq]
+    exact CompCert4Lean.Lib.Coqlib.Plt_succ _
+  · exact htemps
+  · exact henv
+  · exact hbounds
+  · exact hpad
+  · exact htail
+
+end CompCert4Lean.Cfrontend.Cminorgenproof

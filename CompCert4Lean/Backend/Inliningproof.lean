@@ -2064,3 +2064,55 @@ theorem find_function_agree : find_function_agreeStatement := by
           simpa [hs, hst] using hptr'
 
 end CompCert4Lean.Backend.Inliningproof
+
+namespace CompCert4Lean.Backend.Inliningproof
+
+theorem match_stacks_ind : match_stacks_indStatement := by
+  intro prog F m m' P Hnil Hcons Htail l l0 b h
+  refine match_stacks.rec (prog := prog) (F := F) (m := m) (m' := m')
+    (motive_1 := fun l l0 b _ => P l l0 b)
+    (motive_2 := fun _ _ _ _ _ _ _ => True) ?_ ?_ ?_ ?_ ?_ h
+  · intro bound1 bound MG BELOW
+    exact Hnil bound1 bound MG BELOW
+  · intro res f sp pc rs stk f' sp' rs' stk' bound fenv ctx MS COMPAT FB AG SP PRIV SSZ1 SSZ2 RES BELOW ih
+    exact Hcons res f sp pc rs stk f' sp' rs' stk' bound fenv ctx MS COMPAT FB AG SP PRIV SSZ1 SSZ2 RES BELOW
+  · intro stk res f' sp' rpc rs' stk' bound ctx MS PRIV SSZ1 SSZ2 RET BELOW ih
+    exact Htail stk res f' sp' rpc rs' stk' bound ctx MS PRIV SSZ1 SSZ2 RET BELOW
+  · intro stk stk' f' ctx sp' rs' MS RET DSTK ih
+    exact True.intro
+  · intro res f sp pc rs stk stk' f' fenv ctx sp' rs' ctx' MS COMPAT FB AG SP PAD RES RET BELOW SBELOW ih
+    exact True.intro
+
+theorem match_stacks_inside_ind : match_stacks_inside_indStatement := by
+  intro prog F m m' P Hbase Hinlined l l0 f c b r h
+  refine match_stacks_inside.rec (prog := prog) (F := F) (m := m) (m' := m')
+    (motive_1 := fun _ _ _ _ => True)
+    (motive_2 := fun l l0 f c b r _ => P l l0 f c b r) ?_ ?_ ?_ ?_ ?_ h
+  · intro bound1 bound MG BELOW
+    exact True.intro
+  · intro res f sp pc rs stk f' sp' rs' stk' bound fenv ctx MS COMPAT FB AG SP PRIV SSZ1 SSZ2 RES BELOW ih
+    exact True.intro
+  · intro stk res f' sp' rpc rs' stk' bound ctx MS PRIV SSZ1 SSZ2 RET BELOW ih
+    exact True.intro
+  · intro stk stk' f' ctx sp' rs' MS RET DSTK ih
+    exact Hbase stk stk' f' ctx sp' rs' MS RET DSTK
+  · intro res f sp pc rs stk stk' f' fenv ctx sp' rs' ctx' MS COMPAT FB AG SP PAD RES RET BELOW SBELOW ih
+    exact Hinlined res f sp pc rs stk stk' f' fenv ctx sp' rs' ctx' MS ih COMPAT FB AG SP PAD RES RET BELOW SBELOW
+
+theorem match_stacks_globalenvs : match_stacks_globalenvsStatement := by
+  intro prog F m m' stk stk' bound h
+  refine match_stacks.rec (prog := prog) (F := F) (m := m) (m' := m')
+    (motive_1 := fun _ _ _ _ => ∃ b, match_globalenvs prog F b)
+    (motive_2 := fun _ _ _ _ _ _ _ => ∃ b, match_globalenvs prog F b) ?_ ?_ ?_ ?_ ?_ h
+  · intro bound1 bound MG BELOW
+    exact ⟨bound1, MG⟩
+  · intro res f sp pc rs stk f' sp' rs' stk' bound fenv ctx MS COMPAT FB AG SP PRIV SSZ1 SSZ2 RES BELOW ih
+    exact ih
+  · intro stk res f' sp' rpc rs' stk' bound ctx MS PRIV SSZ1 SSZ2 RET BELOW ih
+    exact ih
+  · intro stk stk' f' ctx sp' rs' MS RET DSTK ih
+    exact ih
+  · intro res f sp pc rs stk stk' f' fenv ctx sp' rs' ctx' MS COMPAT FB AG SP PAD RES RET BELOW SBELOW ih
+    exact ih
+
+end CompCert4Lean.Backend.Inliningproof

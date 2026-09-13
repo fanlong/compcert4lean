@@ -3418,3 +3418,48 @@ theorem gso_proof : gso := by
 end ZMap
 
 end CompCert4Lean.Lib.Maps
+
+namespace CompCert4Lean.Lib.Maps
+
+namespace ZMap
+
+theorem gsspec_proof : gsspec := by
+  intro A i j x m
+  cases h : elt_eq i j with
+  | left hij =>
+      subst j
+      simpa [h] using (PMap.gss (A := A) (ZIndexed.index i) x m)
+  | right hne =>
+      have hindex : ZIndexed.index i ≠ ZIndexed.index j := by
+        intro heq
+        apply hne
+        exact ZIndexed.index_inj i j heq
+      simpa [h] using
+        (PMap.gso (A := A) (i := ZIndexed.index i) (j := ZIndexed.index j)
+          x m hindex)
+
+end ZMap
+
+namespace ZTree
+
+theorem gso_proof : gso := by
+  intro A i j x m hij
+  apply PTree.gso (A := A) (i := ZIndexed.index i) (j := ZIndexed.index j) x m
+  intro heq
+  apply hij
+  exact ZIndexed.index_inj i j heq
+
+theorem grs_proof : grs := by
+  intro A i m
+  exact PTree.grs_proof (A := A) (ZIndexed.index i) m
+
+theorem gro_proof : gro := by
+  intro A i j m hij
+  apply PTree.gro_proof (A := A) (i := ZIndexed.index i) (j := ZIndexed.index j) m
+  intro heq
+  · apply hij
+    exact ZIndexed.index_inj i j heq
+
+end ZTree
+
+end CompCert4Lean.Lib.Maps

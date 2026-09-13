@@ -2573,3 +2573,105 @@ theorem link_composite_def_inv_proof : link_composite_def_invStatement := by
                     exact (hx1 hy).elim
 
 end CompCert4Lean.Cfrontend.Ctypes
+
+namespace CompCert4Lean.Cfrontend.Ctypes
+
+theorem add_composite_definitions_append : add_composite_definitions_appendStatement := by
+  unfold add_composite_definitions_appendStatement
+  intro l1 l2 env env''
+  induction l1 generalizing env env'' with
+  | nil =>
+      simp only [List.nil_append, add_composite_definitions]
+      constructor
+      · intro h
+        exact ⟨env, rfl, h⟩
+      · rintro ⟨env', h1, h2⟩
+        cases h1
+        exact h2
+  | cons d ds ih =>
+      cases d with
+      | Composite id su ms a =>
+          simp only [List.cons_append, add_composite_definitions]
+          cases hco : composite_of_def env id su ms a with
+          | Error msg =>
+              simp [hco]
+          | OK co =>
+              simp only [hco]
+              exact ih (env := CompCert4Lean.Lib.Maps.PTree.set id co env)
+                (env'' := env'')
+
+theorem composite_eq : composite_eqStatement := by
+  unfold composite_eqStatement
+  intro su1 m1 a1 sz1 al1 r1 pos1 al2p1 szal1 su2 m2 a2 sz2 al2 r2 pos2 al2p2 szal2
+    hsu hm ha hsz hal hr
+  cases hsu
+  cases hm
+  cases ha
+  cases hsz
+  cases hal
+  cases hr
+  have hp : pos1 = pos2 := Subsingleton.elim _ _
+  have hpow : al2p1 = al2p2 := Subsingleton.elim _ _
+  have hdiv : szal1 = szal2 := Subsingleton.elim _ _
+  cases hp
+  cases hpow
+  cases hdiv
+  rfl
+
+theorem composite_of_def_eq : composite_of_def_eqStatement := by
+  unfold composite_of_def_eqStatement
+  intro env id co hco hnone
+  rcases hco with ⟨hcc, hca, hcs, hcr⟩
+  unfold composite_of_def
+  cases hget : CompCert4Lean.Lib.Maps.PTree.get id env with
+  | some existing =>
+      simp [hget] at hnone
+  | none =>
+      cases hcomplete : complete_members env co.co_members with
+      | false =>
+          have hbad : true = false := hcc.symm.trans hcomplete
+          cases hbad
+      | true =>
+          simp only [hget, hcomplete]
+          cases co with
+          | mk su ms a sz al r hp hpow hdiv =>
+              dsimp at hca hcs hcr ⊢
+              have hal : align_attr a (alignof_composite env ms) = al := hca.symm
+              have hsz : align (sizeof_composite env su ms)
+                  (align_attr a (alignof_composite env ms)) = sz := by
+                rw [hal]
+                exact hcs.symm
+              have hrank : rank_members env ms = r := hcr.symm
+              cases hal
+              cases hsz
+              cases hrank
+              congr
+
+theorem composite_consistent_unique : composite_consistent_uniqueStatement := by
+  unfold composite_consistent_uniqueStatement
+  intro env co1 co2 h1 h2 hsu hm ha
+  rcases co1 with ⟨su1, m1, a1, sz1, al1, r1, p1, pow1, div1⟩
+  rcases co2 with ⟨su2, m2, a2, sz2, al2, r2, p2, pow2, div2⟩
+  dsimp at h1 h2 hsu hm ha ⊢
+  cases hsu
+  cases hm
+  cases ha
+  rcases h1 with ⟨hc1, hal_1, hsz_1, hrk_1⟩
+  rcases h2 with ⟨hc2, hal_2, hsz_2, hrk_2⟩
+  have hal : al1 = al2 := by
+    calc
+      al1 = align_attr a1 (alignof_composite env m1) := hal_1
+      _ = al2 := hal_2.symm
+  have hsz : sz1 = sz2 := by
+    calc
+      sz1 = align (sizeof_composite env su1 m1) al1 := hsz_1
+      _ = align (sizeof_composite env su1 m1) al2 := by rw [hal]
+      _ = sz2 := hsz_2.symm
+  have hrk : r1 = r2 := by
+    exact hrk_1.trans hrk_2.symm
+  cases hal
+  cases hsz
+  cases hrk
+  congr
+
+end CompCert4Lean.Cfrontend.Ctypes

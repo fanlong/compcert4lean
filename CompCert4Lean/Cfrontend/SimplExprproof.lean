@@ -1938,3 +1938,108 @@ theorem tr_simple_rvalue :
   simpa [P2] using hrec
 
 end CompCert4Lean.Cfrontend.SimplExprproof
+
+namespace CompCert4Lean.Cfrontend.SimplExprproof
+
+open CompCert4Lean.Cfrontend.SimplExpr
+open CompCert4Lean.Cfrontend.Cstrategy
+open CompCert4Lean.Cfrontend.SimplExprspec
+open CompCert4Lean.Cfrontend.Ctypes
+open CompCert4Lean.Lib.Maps
+
+theorem tr_simple_lvalue :
+    ∀ [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+      [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)],
+      tr_simple_lvalueStatement := by
+  intro binary64_certificate binary32_certificate p tp hmatch cunit e m l b ofs bf hEval
+  intro le sl a tmps htr
+  cases hEval with
+  | esl_loc =>
+      cases htr
+  | esl_var_local hfind =>
+      cases htr with
+      | tr_var =>
+          simp [SimplExprspec.final, Csyntax.typeof, Clight.typeof]
+          exact Clight.eval_lvalue.eval_Evar_local _ _ _ hfind
+  | @esl_var_global x ty b hlocal hglobal =>
+      cases htr with
+      | tr_var =>
+          simp [SimplExprspec.final, Csyntax.typeof, Clight.typeof]
+          apply Clight.eval_lvalue.eval_Evar_global _ _ _ hlocal
+          have hs := symbols_preserved
+            (binary64_certificate := binary64_certificate)
+            (binary32_certificate := binary32_certificate) p tp hmatch
+            (show CompCert4Lean.Common.AST.ident from x)
+          rw [hs]
+          exact hglobal
+  | esl_deref heval =>
+      cases htr with
+      | tr_deref le dst ty' sl1 a1 tmp h1 =>
+          have hi := (tr_simple_rvalue
+            (binary64_certificate := binary64_certificate)
+            (binary32_certificate := binary32_certificate) p tp hmatch
+            cunit e m _ _ heval) le .For_val sl1 a1 tmps h1
+          rcases hi with ⟨hsl, htype, hev⟩
+          rw [hsl]
+          simp only [SimplExprspec.final, List.nil_append]
+          constructor
+          · simp
+          · constructor
+            · simp only [Csyntax.typeof]
+              exact (typeof_Ederef' _ _).symm
+            · apply eval_Ederef'
+              exact hev
+  | esl_field_struct heval htype hcomp hoffset =>
+      cases htr with
+      | tr_field le dst f ty' sl1 a1 tmp h1 =>
+          have hi := (tr_simple_rvalue
+            (binary64_certificate := binary64_certificate)
+            (binary32_certificate := binary32_certificate) p tp hmatch
+            cunit e m _ _ heval) le .For_val sl1 a1 tmps h1
+          rcases hi with ⟨hsl, hty, hev⟩
+          rw [hsl]
+          simp only [SimplExprspec.final, List.nil_append]
+          constructor
+          · simp
+          · constructor
+            · rfl
+            · have henv := comp_env_preserved
+                (binary64_certificate := binary64_certificate)
+                (binary32_certificate := binary32_certificate) p tp hmatch
+              have htype' : Clight.typeof a1 = .Tstruct _ _ :=
+                hty.symm.trans htype
+              apply Clight.eval_lvalue.eval_Efield_struct
+              · exact hev
+              · exact htype'
+              · rw [henv]
+                exact hcomp
+              · rw [henv]
+                exact hoffset
+  | esl_field_union heval htype hoffset hcomp =>
+      cases htr with
+      | tr_field le dst f ty' sl1 a1 tmp h1 =>
+          have hi := (tr_simple_rvalue
+            (binary64_certificate := binary64_certificate)
+            (binary32_certificate := binary32_certificate) p tp hmatch
+            cunit e m _ _ heval) le .For_val sl1 a1 tmps h1
+          rcases hi with ⟨hsl, hty, hev⟩
+          rw [hsl]
+          simp only [SimplExprspec.final, List.nil_append]
+          constructor
+          · simp
+          · constructor
+            · rfl
+            · have henv := comp_env_preserved
+                (binary64_certificate := binary64_certificate)
+                (binary32_certificate := binary32_certificate) p tp hmatch
+              have htype' : Clight.typeof a1 = .Tunion _ _ :=
+                hty.symm.trans htype
+              apply Clight.eval_lvalue.eval_Efield_union
+              · exact hev
+              · exact htype'
+              · rw [henv]
+                exact hcomp
+              · rw [henv]
+                exact hoffset
+
+end CompCert4Lean.Cfrontend.SimplExprproof

@@ -1626,3 +1626,34 @@ theorem PArith.BinPos.Pos.compare_eq_iff :
 
 end Rocq.Coq
 end CompCert4Lean.Foundation.Numbers
+
+namespace CompCert4Lean.Foundation.Numbers
+namespace Rocq.Coq
+
+theorem PArith.BinPos.Pos.compare_antisym :
+    PArith.BinPos.Pos.compare_antisymStatement := by
+  intro p q
+  exact (compare_antisym_aux p q).symm
+
+theorem PArith.BinPos.Pos.lt_succ_r :
+    PArith.BinPos.Pos.lt_succ_rStatement := by
+  intro p q
+  unfold PArith.BinPos.Pos.lt PArith.BinPos.Pos.le
+  rw [PArith.BinPos.Pos.posToNat_succ]
+  omega
+
+theorem PArith.BinPos.Pos.lt_le_incl :
+    PArith.BinPos.Pos.lt_le_inclStatement := by
+  intro p q h
+  change posToNat p < posToNat q at h
+  change posToNat p ≤ posToNat q
+  exact Nat.le_of_lt h
+
+theorem PArith.BinPos.Pos.lt_trans :
+    PArith.BinPos.Pos.lt_transStatement := by
+  intro n m p hnm hmp
+  unfold PArith.BinPos.Pos.lt at hnm hmp ⊢
+  exact Nat.lt_trans hnm hmp
+
+end Rocq.Coq
+end CompCert4Lean.Foundation.Numbers

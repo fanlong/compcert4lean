@@ -1615,3 +1615,64 @@ theorem senv_preserved : ∀ cfg, senv_preservedStatement cfg := by
       exact deadcode_volatile_match _ _ _ prog tprog hge b
 
 end CompCert4Lean.Backend.Deadcodeproof
+
+namespace CompCert4Lean.Backend.Deadcodeproof
+
+open CompCert4Lean.Backend.Deadcode
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Linking
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Backend.ValueAnalysis
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.Lib.Maps
+
+theorem functions_translated
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    ∀ cfg, functions_translatedStatement cfg := by
+  intro cfg prog tprog hm v f hfind
+  letI : Linker fundef := Linker_fundef function
+  letI : Linker Unit := Linker_unit
+  letI : Linker program := Linker_prog fundef Unit
+  unfold match_prog CompCert4Lean.Common.Linking.match_program
+    CompCert4Lean.Common.Linking.match_program_gen at hm
+  have hge := deadcode_globalenv_match
+    (fun (cu : program) f tf =>
+      CompCert4Lean.Backend.Deadcode.transf_fundef
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        cfg (prog_defmap cu) (romem_for cfg cu) f = .OK tf)
+    (fun x y : Unit => x = y) prog prog tprog hm
+  unfold Genv.find_funct at hfind ⊢
+  cases v with
+  | Vundef => simp at hfind
+  | Vint n => simp at hfind
+  | Vlong n => simp at hfind
+  | Vfloat n => simp at hfind
+  | Vsingle n => simp at hfind
+  | Vptr b ofs =>
+      by_cases hz : Ptrofs.eq ofs Ptrofs.zero
+      · simp [hz] at hfind ⊢
+        unfold Genv.find_funct_ptr Genv.find_def at hfind ⊢
+        have hd := hge.mge_defs b
+        generalize hs : PTree.get b (Genv.globalenv prog).genv_defs = src at hfind hd
+        generalize ht : PTree.get b (Genv.globalenv tprog).genv_defs = tgt at hd ⊢
+        cases src with
+        | none => simp at hfind
+        | some gd =>
+            cases gd with
+            | Gfun sf =>
+                simp at hfind
+                cases hfind
+                cases hd with
+                | some gd tg hrel =>
+                    cases hrel with
+                    | match_globdef_fun ctx' f1 f2 horder htrans =>
+                        refine ⟨ctx', f2, ?_, htrans, horder⟩
+                        simp [Genv.find_funct_ptr, Genv.find_def]
+            | Gvar gv => simp at hfind
+      · simp [hz] at hfind
+
+end CompCert4Lean.Backend.Deadcodeproof

@@ -1050,3 +1050,273 @@ theorem scaled_mantissa_0 :
   exact ctx.certificate.orderedField.zero_mul _
 
 end CompCert4Lean.Flocq.Core.Generic_fmt
+
+namespace CompCert4Lean.Flocq.Core.Generic_fmt
+
+private theorem pg_neg_neg (ctx : ExactRealContext) (x : Exact.R ctx) :
+    Exact.Ropp ctx (Exact.Ropp ctx x) = x := by
+  change ctx.spec.neg (ctx.spec.neg x) = x
+  calc
+    ctx.spec.neg (ctx.spec.neg x) =
+        ctx.spec.add (ctx.spec.neg (ctx.spec.neg x)) ctx.spec.zero :=
+      (ctx.certificate.orderedField.add_zero _).symm
+    _ = ctx.spec.add (ctx.spec.neg (ctx.spec.neg x))
+        (ctx.spec.add (ctx.spec.neg x) x) := by
+      rw [ctx.certificate.orderedField.neg_add_cancel]
+    _ = ctx.spec.add
+        (ctx.spec.add (ctx.spec.neg (ctx.spec.neg x)) (ctx.spec.neg x)) x := by
+      rw [ctx.certificate.orderedField.add_assoc]
+    _ = ctx.spec.add ctx.spec.zero x := by
+      rw [ctx.certificate.orderedField.neg_add_cancel]
+    _ = x := ctx.certificate.orderedField.zero_add _
+
+private theorem pg_neg_zero (ctx : ExactRealContext) :
+    Exact.Ropp ctx (Exact.R0 ctx) = Exact.R0 ctx := by
+  change ctx.spec.neg ctx.spec.zero = ctx.spec.zero
+  have h := ctx.certificate.orderedField.neg_add_cancel ctx.spec.zero
+  rw [ctx.certificate.orderedField.add_zero] at h
+  exact h
+
+private theorem pg_abs_opp (ctx : ExactRealContext) (x : Exact.R ctx) :
+    Exact.Rabs ctx (Exact.Ropp ctx x) = Exact.Rabs ctx x := by
+  change ctx.spec.abs (ctx.spec.neg x) = ctx.spec.abs x
+  rcases ctx.certificate.total_order x ctx.spec.zero with h | h
+  · rcases h with hlt | heq
+    · have hneg : ctx.spec.le ctx.spec.zero (ctx.spec.neg x) := by
+        have hh := ctx.certificate.orderedField.add_lt_compat_l
+          (ctx.spec.neg x) x ctx.spec.zero hlt
+        rw [ctx.certificate.orderedField.neg_add_cancel,
+          ctx.certificate.orderedField.add_zero] at hh
+        exact (ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp hh |>.1
+      rw [ctx.certificate.sourceLaws.abs_nonnegative _ hneg,
+        ctx.certificate.sourceLaws.abs_negative x hlt]
+    · subst x
+      exact congrArg (fun z => ctx.spec.abs z) (pg_neg_zero ctx)
+  · have hneglt : ctx.spec.lt (ctx.spec.neg x) ctx.spec.zero := by
+      have hh := ctx.certificate.orderedField.add_lt_compat_l
+        (ctx.spec.neg x) ctx.spec.zero x h
+      rw [ctx.certificate.orderedField.neg_add_cancel,
+        ctx.certificate.orderedField.add_zero] at hh
+      exact hh
+    calc
+      ctx.spec.abs (ctx.spec.neg x) = ctx.spec.neg (ctx.spec.neg x) :=
+        ctx.certificate.sourceLaws.abs_negative _ hneglt
+      _ = x := pg_neg_neg ctx x
+      _ = ctx.spec.abs x :=
+        (ctx.certificate.sourceLaws.abs_nonnegative _
+          ((ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp h |>.1)).symm
+
+private theorem pg_mag_opp (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx)
+    (r : radix) (x : Exact.R ctx) :
+    (CompCert4Lean.Flocq.Core.Raux.Exact.mag magnitude r
+      (Exact.Ropp ctx x)).mag_val =
+      (CompCert4Lean.Flocq.Core.Raux.Exact.mag magnitude r x).mag_val := by
+  by_cases hx : x = Exact.R0 ctx
+  · subst x
+    rw [pg_neg_zero ctx]
+  · have hxa := (CompCert4Lean.Flocq.Core.Raux.Exact.mag magnitude r
+      (Exact.Ropp ctx x)).mag_bound (pg_neg_ne_zero ctx hx)
+    have hxx := (CompCert4Lean.Flocq.Core.Raux.Exact.mag magnitude r x).mag_bound hx
+    have habs := pg_abs_opp ctx x
+    have hxx' :
+        Raux.Exact.Rle ctx
+            (Raux.Exact.bpow ctx r
+              (Raux.Zsub (Raux.Exact.mag magnitude r x).mag_val (Raux.Zpos Raux.xH)))
+            (Raux.Exact.Rabs ctx (Exact.Ropp ctx x)) ∧
+          Raux.Exact.Rlt ctx (Raux.Exact.Rabs ctx (Exact.Ropp ctx x))
+            (Raux.Exact.bpow ctx r (Raux.Exact.mag magnitude r x).mag_val) := by
+      simpa only [habs] using hxx
+    exact pg_mag_unique ctx r (Exact.Ropp ctx x) hxa hxx'
+
+private theorem pg_cexp_opp (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx)
+    (r : radix) (fexp : Z → Z) (x : Exact.R ctx) :
+    Exact.cexp ctx magnitude r fexp (Exact.Ropp ctx x) =
+      Exact.cexp ctx magnitude r fexp x := by
+  unfold Exact.cexp
+  change fexp ((CompCert4Lean.Flocq.Core.Raux.Exact.mag magnitude r
+      (Exact.Ropp ctx x)).mag_val) =
+    fexp ((CompCert4Lean.Flocq.Core.Raux.Exact.mag magnitude r x).mag_val)
+  exact congrArg fexp (pg_mag_opp ctx magnitude r x)
+
+private theorem pg_neg_mul_right (ctx : ExactRealContext) (x y : Exact.R ctx) :
+    ctx.spec.mul (ctx.spec.neg x) y = ctx.spec.neg (ctx.spec.mul x y) := by
+  rw [ctx.certificate.orderedField.mul_comm]
+  have h : ctx.spec.mul y (ctx.spec.neg x) =
+      ctx.spec.neg (ctx.spec.mul y x) := by
+    have hc : ctx.spec.add (ctx.spec.mul y (ctx.spec.neg x))
+        (ctx.spec.mul y x) = ctx.spec.zero := by
+      rw [← ctx.certificate.orderedField.left_distrib,
+        ctx.certificate.orderedField.neg_add_cancel,
+        ctx.certificate.orderedField.mul_zero]
+    symm
+    calc
+      ctx.spec.neg (ctx.spec.mul y x) =
+          ctx.spec.add (ctx.spec.neg (ctx.spec.mul y x)) ctx.spec.zero :=
+        (ctx.certificate.orderedField.add_zero _).symm
+      _ = ctx.spec.add (ctx.spec.neg (ctx.spec.mul y x))
+          (ctx.spec.add (ctx.spec.mul y (ctx.spec.neg x)) (ctx.spec.mul y x)) := by
+        rw [hc]
+      _ = ctx.spec.add
+          (ctx.spec.add (ctx.spec.neg (ctx.spec.mul y x)) (ctx.spec.mul y x))
+          (ctx.spec.mul y (ctx.spec.neg x)) := by
+        rw [ctx.certificate.orderedField.add_assoc,
+          ctx.certificate.orderedField.add_comm
+            (ctx.spec.mul y (ctx.spec.neg x)) (ctx.spec.mul y x)]
+      _ = ctx.spec.add ctx.spec.zero (ctx.spec.mul y (ctx.spec.neg x)) := by
+        rw [ctx.certificate.orderedField.neg_add_cancel]
+      _ = ctx.spec.mul y (ctx.spec.neg x) :=
+        ctx.certificate.orderedField.zero_add _
+  rw [h, ctx.certificate.orderedField.mul_comm]
+
+theorem scaled_mantissa_opp :
+    ∀ ctx magnitude, scaled_mantissa_oppStatement ctx magnitude := by
+  intro ctx magnitude beta fexp x
+  unfold Exact.scaled_mantissa
+  rw [pg_cexp_opp ctx magnitude beta fexp x]
+  change ctx.spec.mul (ctx.spec.neg x)
+      (Exact.bpow ctx beta (Zopp (Exact.cexp ctx magnitude beta fexp x))) =
+    ctx.spec.neg
+      (ctx.spec.mul x (Exact.bpow ctx beta (Zopp (Exact.cexp ctx magnitude beta fexp x))))
+  exact pg_neg_mul_right ctx x _
+
+private theorem pg_mul_neg_right (ctx : ExactRealContext) (x y : Exact.R ctx) :
+    ctx.spec.mul x (ctx.spec.neg y) = ctx.spec.neg (ctx.spec.mul x y) := by
+  calc
+    ctx.spec.mul x (ctx.spec.neg y) =
+        ctx.spec.mul (ctx.spec.neg y) x := ctx.certificate.orderedField.mul_comm _ _
+    _ = ctx.spec.neg (ctx.spec.mul y x) := pg_neg_mul_right ctx y x
+    _ = ctx.spec.neg (ctx.spec.mul x y) := by
+      rw [ctx.certificate.orderedField.mul_comm]
+
+private theorem pg_neg_pos_of_neg (ctx : ExactRealContext) {x : Exact.R ctx}
+    (h : ctx.spec.lt x ctx.spec.zero) :
+    ctx.spec.lt ctx.spec.zero (ctx.spec.neg x) := by
+  have hh := ctx.certificate.orderedField.add_lt_compat_l
+    (ctx.spec.neg x) x ctx.spec.zero h
+  rw [ctx.certificate.orderedField.neg_add_cancel,
+    ctx.certificate.orderedField.add_zero] at hh
+  exact hh
+
+private theorem pg_abs_zero (ctx : ExactRealContext) :
+    Exact.Rabs ctx (Exact.R0 ctx) = Exact.R0 ctx := by
+  change ctx.spec.abs ctx.spec.zero = ctx.spec.zero
+  exact ctx.certificate.sourceLaws.abs_nonnegative _
+    (ctx.certificate.orderedField.le_refl _)
+
+private theorem pg_abs_zero_spec (ctx : ExactRealContext) :
+    ctx.spec.abs ctx.spec.zero = ctx.spec.zero := by
+  exact ctx.certificate.sourceLaws.abs_nonnegative _
+    (ctx.certificate.orderedField.le_refl _)
+
+private theorem pg_abs_mul (ctx : ExactRealContext) (x y : Exact.R ctx) :
+    Exact.Rabs ctx (ctx.spec.mul x y) =
+      ctx.spec.mul (Exact.Rabs ctx x) (Exact.Rabs ctx y) := by
+  change ctx.spec.abs (ctx.spec.mul x y) =
+    ctx.spec.mul (ctx.spec.abs x) (ctx.spec.abs y)
+  rcases ctx.certificate.total_order ctx.spec.zero x with hx | hx
+  · rcases hx with hxpos | hxzero
+    · rcases ctx.certificate.total_order ctx.spec.zero y with hy | hy
+      · rcases hy with hypos | hyzero
+        · have hp : ctx.spec.lt ctx.spec.zero (ctx.spec.mul x y) := by
+            have hh := ctx.certificate.orderedField.mul_lt_compat_l
+              x ctx.spec.zero y hxpos hypos
+            rw [ctx.certificate.orderedField.mul_zero] at hh
+            exact hh
+          rw [ctx.certificate.sourceLaws.abs_nonnegative _
+              ((ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp hp |>.1),
+            ctx.certificate.sourceLaws.abs_nonnegative _
+              ((ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp hxpos |>.1),
+            ctx.certificate.sourceLaws.abs_nonnegative _
+              ((ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp hypos |>.1)]
+        · subst y
+          rw [ctx.certificate.orderedField.mul_zero, pg_abs_zero_spec ctx,
+            ctx.certificate.orderedField.mul_zero]
+      · have hyneg : ctx.spec.lt y ctx.spec.zero := hy
+        have hp : ctx.spec.lt (ctx.spec.mul x y) ctx.spec.zero := by
+          have hh := ctx.certificate.orderedField.mul_lt_compat_l
+            x y ctx.spec.zero hxpos hyneg
+          rw [ctx.certificate.orderedField.mul_zero] at hh
+          exact hh
+        rw [ctx.certificate.sourceLaws.abs_negative _ hp,
+          ctx.certificate.sourceLaws.abs_nonnegative _
+            ((ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp hxpos |>.1),
+          ctx.certificate.sourceLaws.abs_negative _ hyneg,
+          pg_mul_neg_right ctx x y]
+    · subst x
+      rw [ctx.certificate.orderedField.zero_mul, pg_abs_zero_spec ctx,
+        ctx.certificate.orderedField.zero_mul]
+  · have hxneg : ctx.spec.lt x ctx.spec.zero := hx
+    rcases ctx.certificate.total_order ctx.spec.zero y with hy | hy
+    · rcases hy with hypos | hyzero
+      · have hp : ctx.spec.lt (ctx.spec.mul x y) ctx.spec.zero := by
+          have hh := ctx.certificate.orderedField.mul_lt_compat_l
+            y x ctx.spec.zero hypos hxneg
+          rw [ctx.certificate.orderedField.mul_zero] at hh
+          simpa [ctx.certificate.orderedField.mul_comm] using hh
+        rw [ctx.certificate.sourceLaws.abs_negative _ hp,
+          ctx.certificate.sourceLaws.abs_negative _ hxneg,
+          ctx.certificate.sourceLaws.abs_nonnegative _
+            ((ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp hypos |>.1),
+          ← pg_neg_mul_right ctx x y,
+          ctx.certificate.orderedField.mul_comm]
+      · subst y
+        rw [ctx.certificate.orderedField.mul_zero, pg_abs_zero_spec ctx,
+          ctx.certificate.orderedField.mul_zero]
+    · have hyneg : ctx.spec.lt y ctx.spec.zero := hy
+      have hnx : ctx.spec.lt ctx.spec.zero (ctx.spec.neg x) :=
+        pg_neg_pos_of_neg ctx hxneg
+      have hny : ctx.spec.lt ctx.spec.zero (ctx.spec.neg y) :=
+        pg_neg_pos_of_neg ctx hyneg
+      have hpneg : ctx.spec.lt ctx.spec.zero
+          (ctx.spec.mul (ctx.spec.neg x) (ctx.spec.neg y)) := by
+        have hh := ctx.certificate.orderedField.mul_lt_compat_l
+          (ctx.spec.neg x) ctx.spec.zero (ctx.spec.neg y) hnx hny
+        rw [ctx.certificate.orderedField.mul_zero] at hh
+        exact hh
+      have hprod : ctx.spec.mul (ctx.spec.neg x) (ctx.spec.neg y) =
+          ctx.spec.mul x y := by
+        calc
+          ctx.spec.mul (ctx.spec.neg x) (ctx.spec.neg y) =
+              ctx.spec.neg (ctx.spec.mul x (ctx.spec.neg y)) :=
+            pg_neg_mul_right ctx x (ctx.spec.neg y)
+          _ = ctx.spec.neg (ctx.spec.neg (ctx.spec.mul x y)) := by
+            rw [pg_mul_neg_right ctx x y]
+          _ = ctx.spec.mul x y := pg_neg_neg ctx _
+      rw [← hprod,
+        ctx.certificate.sourceLaws.abs_nonnegative _
+          ((ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp hpneg |>.1),
+        ctx.certificate.sourceLaws.abs_negative _ hxneg,
+        ctx.certificate.sourceLaws.abs_negative _ hyneg,
+        hprod]
+
+private theorem pg_cexp_abs (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx)
+    (r : radix) (fexp : Z → Z) (x : Exact.R ctx) :
+    Exact.cexp ctx magnitude r fexp (Exact.Rabs ctx x) =
+      Exact.cexp ctx magnitude r fexp x := by
+  unfold Exact.cexp
+  have hm := pg_mag_abs ctx magnitude r x
+  change fexp ((CompCert4Lean.Flocq.Core.Raux.Exact.mag magnitude r
+      (Exact.Rabs ctx x)).mag_val) =
+    fexp ((CompCert4Lean.Flocq.Core.Raux.Exact.mag magnitude r x).mag_val)
+  exact congrArg fexp hm
+
+private theorem pg_abs_bpow (ctx : ExactRealContext) (r : radix) (e : Z) :
+    Exact.Rabs ctx (Exact.bpow ctx r e) = Exact.bpow ctx r e := by
+  change ctx.spec.abs (Exact.bpow ctx r e) = Exact.bpow ctx r e
+  exact ctx.certificate.sourceLaws.abs_nonnegative _
+    (CompCert4Lean.Flocq.Core.Raux.bpow_ge_0 ctx r e)
+
+theorem scaled_mantissa_abs :
+    ∀ ctx magnitude, scaled_mantissa_absStatement ctx magnitude := by
+  intro ctx magnitude beta fexp x
+  unfold Exact.scaled_mantissa
+  rw [pg_cexp_abs ctx magnitude beta fexp x]
+  change ctx.spec.mul (Exact.Rabs ctx x)
+      (Exact.bpow ctx beta (Zopp (Exact.cexp ctx magnitude beta fexp x))) =
+    Exact.Rabs ctx
+      (ctx.spec.mul x
+        (Exact.bpow ctx beta (Zopp (Exact.cexp ctx magnitude beta fexp x))))
+  rw [pg_abs_mul]
+  rw [pg_abs_bpow]
+
+end CompCert4Lean.Flocq.Core.Generic_fmt

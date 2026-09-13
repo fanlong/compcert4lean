@@ -2043,3 +2043,31 @@ theorem Rnot_lt_le : ∀ (ctx : ExactRealContext), Rnot_lt_leStatement ctx := by
 end RIneq
 end Rocq.Coq.Reals
 end CompCert4Lean.Foundation.FlocqReal
+
+namespace CompCert4Lean.Foundation.FlocqReal
+namespace Rocq.Coq.Reals
+namespace RIneq
+
+theorem Rlt_not_le :
+    ∀ (ctx : ExactRealContext), Rlt_not_leStatement ctx := by
+  intro ctx r1 r2 hlt hle
+  exact ((ctx.certificate.orderedField.lt_iff_le_not_le r2 r1).mp hlt).2 hle
+
+theorem Rle_not_lt :
+    ∀ (ctx : ExactRealContext), Rle_not_ltStatement ctx := by
+  intro ctx r1 r2 hle hlt
+  exact ((ctx.certificate.orderedField.lt_iff_le_not_le r1 r2).mp hlt).2 hle
+
+theorem Rle_antisym :
+    ∀ (ctx : ExactRealContext), Rle_antisymStatement ctx := by
+  intro ctx r1 r2 h12 h21
+  exact ctx.certificate.orderedField.le_antisymm r1 r2 h12 h21
+
+theorem Rle_trans :
+    ∀ (ctx : ExactRealContext), Rle_transStatement ctx := by
+  intro ctx r1 r2 r3 h12 h23
+  exact ctx.certificate.orderedField.le_trans r1 r2 r3 h12 h23
+
+end RIneq
+end Rocq.Coq.Reals
+end CompCert4Lean.Foundation.FlocqReal

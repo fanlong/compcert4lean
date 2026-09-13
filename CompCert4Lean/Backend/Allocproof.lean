@@ -3563,3 +3563,25 @@ theorem in_subst_reg : in_subst_regStatement := by
       hQ hqe⟩
 
 end CompCert4Lean.Backend.Allocproof
+
+namespace CompCert4Lean.Backend.Allocproof
+
+open CompCert4Lean.Backend.Allocation
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Common.Values
+
+theorem subst_reg_satisf : subst_reg_satisfStatement := by
+  intro src dst rs ls e hsat
+  unfold satisf at hsat ⊢
+  intro q hq
+  rcases in_subst_reg dst src q e hq with hq' | hq'
+  · rcases hq' with ⟨hqd, hmem⟩
+    have hval := hsat
+      { ekind := q.ekind, ereg := src, eloc := q.eloc } hmem
+    rw [hqd, Regmap.gss_proof val dst (Regmap.get src rs) rs]
+    simpa using hval
+  · rcases hq' with ⟨hqd, hmem⟩
+    rw [Regmap.gso_proof val q.ereg dst (Regmap.get src rs) rs hqd]
+    exact hsat q hmem
+
+end CompCert4Lean.Backend.Allocproof
