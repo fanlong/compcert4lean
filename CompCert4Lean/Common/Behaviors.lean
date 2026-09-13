@@ -1877,3 +1877,42 @@ theorem star_atomic_output_trace :
   simp [E0, output_trace]
 
 end CompCert4Lean.Common.Behaviors
+
+namespace CompCert4Lean.Common.Behaviors
+
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.Smallstep
+
+theorem tsteps_trans :
+    tsteps_transStatement := by
+  intro genv state step ge S1 S2 h12
+  induction h12 with
+  | tsteps_refl S =>
+      intro S3 h23
+      exact h23
+  | tsteps_left t S1 S2 S3 hstep htail ih =>
+      intro S4 h34
+      exact tsteps_left genv state step ge t S1 S2 S4 hstep
+        (ih S4 h34)
+
+theorem treactive_or_tsilent :
+    treactive_or_tsilentStatement := by
+  intro genv state step ge S
+  classical
+  by_cases h : ∃ S',
+      tsteps genv state step ge S S' ∧ tsilent step ge S'
+  · exact Or.inr h
+  · apply Or.inl
+    intro S1 hS1
+    by_cases hex : ∃ S2 S3 t,
+        tsteps genv state step ge S1 S2 ∧
+          tstep genv state step ge t S2 S3 ∧ t ≠ E0
+    · exact hex
+    · have htsilent : tsilent step ge S1 := by
+        intro S1' t S2 hreach hstep
+        by_cases heq : t = E0
+        · exact heq
+        · exact (hex ⟨S1', S2, t, hreach, hstep, heq⟩).elim
+      exact (h ⟨S1, hS1, htsilent⟩).elim
+
+end CompCert4Lean.Common.Behaviors
