@@ -1267,3 +1267,176 @@ theorem decode_val_shape : decode_val_shapeStatement := by
               z1, z2, z4, z8]) (by simp)
 
 end CompCert4Lean.Common.Memdata
+
+namespace CompCert4Lean.Common.Memdata
+
+theorem check_value_undef : check_value_undefStatement := by
+  intro n q v vl huv
+  induction vl generalizing n with
+  | nil => simp at huv
+  | cons mv rest ih =>
+      cases mv with
+      | Undef =>
+          cases n <;> rfl
+      | Byte b =>
+          cases n <;> rfl
+      | Fragment v' q' i =>
+          simp only [List.mem_cons] at huv
+          rcases huv with hhead | htail
+          · cases hhead
+          · cases n with
+            | zero => rfl
+            | succ n =>
+                simp only [check_value]
+                rw [ih n htail]
+                simp
+
+end CompCert4Lean.Common.Memdata
+
+namespace CompCert4Lean.Common.Memdata
+
+theorem proj_bytes_not_inject : proj_bytes_not_injectStatement := by
+  intro f vl vl' hrel
+  induction hrel with
+  | nil =>
+      intro hnone hsome
+      simp [proj_bytes] at hnone
+  | @cons a al b bl hab htail ih =>
+      intro hnone hsome
+      cases hab with
+      | byte n =>
+          have hnone_tail : proj_bytes al = none := by
+            cases hp : proj_bytes al with
+            | none => rfl
+            | some bs => simp [proj_bytes, hp] at hnone
+          have hsome_tail : proj_bytes bl ≠ none := by
+            intro hp
+            apply hsome
+            simp [proj_bytes, hp]
+          have hu : Undef ∈ al := ih hnone_tail hsome_tail
+          simp [hu]
+      | fragment v1 v2 q n hv =>
+          simp [proj_bytes] at hsome
+      | undef mv =>
+          simp
+
+end CompCert4Lean.Common.Memdata
+
+namespace CompCert4Lean.Common.Memdata
+
+open CompCert4Lean.Common.Values
+
+private theorem val_inject_deterministic_local {f : meminj} {v v1 v2 : val}
+    (h1 : Val.inject f v v1) (h2 : Val.inject f v v2) (hv : v ≠ Vundef) :
+    v1 = v2 := by
+  cases h1 <;> cases h2 <;> simp_all
+
+theorem check_value_inject : check_value_injectStatement := by
+  intro f vl vl' hrel
+  induction hrel with
+  | nil =>
+      intro v v' q n hc hinj hv
+      cases n <;> simp [check_value] at hc ⊢
+  | @cons a al b bl hab htail ih =>
+      intro v v' q n hc hinj hv
+      cases n with
+      | zero => simp [check_value] at hc
+      | succ n =>
+          cases hab with
+          | byte nb => simp [check_value] at hc
+          | undef mv => simp [check_value] at hc
+          | fragment v1 v2 q' i hval =>
+              simp only [check_value] at hc
+              simp only [Bool.and_eq_true] at hc
+              rcases hc with ⟨⟨⟨hv_eq, hq_eq⟩, hi_eq⟩, htailc⟩
+              cases heq : Val.eq v v1 with
+              | right hne => simp [sumboolBool, heq] at hv_eq
+              | left hveq =>
+                  cases hqeq : quantity_eq q q' with
+                  | right hnq => simp [sumboolBool, hqeq] at hq_eq
+                  | left hqq =>
+                      have hi : n = i := by simpa using hi_eq
+                      subst v1
+                      subst q'
+                      subst i
+                      have hv2 : v2 = v' :=
+                        val_inject_deterministic_local hval hinj hv
+                      subst v2
+                      simp only [check_value]
+                      have heqtrue : sumboolBool (Val.eq v' v') = true := by
+                        cases heq' : Val.eq v' v' with
+                        | left h => simp [sumboolBool, heq']
+                        | right h => exact (h rfl).elim
+                      have hqtrue : sumboolBool (quantity_eq q q) = true := by
+                        cases hq' : quantity_eq q q with
+                        | left h => simp [sumboolBool, hq']
+                        | right h => exact (h rfl).elim
+                      simp only [Bool.and_eq_true]
+                      exact ⟨⟨⟨heqtrue, hqtrue⟩, rfl⟩,
+                        ih _ _ _ _ htailc hinj hv⟩
+
+end CompCert4Lean.Common.Memdata
+
+namespace CompCert4Lean.Common.Memdata
+
+open CompCert4Lean.Common.Values
+
+theorem proj_value_inject : proj_value_injectStatement := by
+  intro f q vl1 vl2 hrel
+  induction hrel with
+  | nil =>
+      exact Val.inject.val_inject_undef _
+  | @cons a al b bl hab htail ih =>
+      cases hab with
+      | byte n =>
+          exact Val.inject.val_inject_undef _
+      | undef mv =>
+          exact Val.inject.val_inject_undef _
+      | fragment v1 v2 q' n hval =>
+          simp only [proj_value]
+          obtain ⟨k, hk⟩ := size_quantity_nat_pos q
+          cases hleft : check_value (size_quantity_nat q) v1 q
+              (Fragment v1 q' n :: al) with
+          | false =>
+              exact Val.inject.val_inject_undef _
+          | true =>
+              rw [hk] at hleft ⊢
+              cases hvundef : Val.eq v1 Vundef with
+              | left hv =>
+                  have hv' : v1 = Vundef := hv
+                  subst v1
+                  exact Val.inject.val_inject_undef _
+              | right hvn =>
+                  have hleft' := hleft
+                  simp only [check_value] at hleft'
+                  simp only [Bool.and_eq_true] at hleft'
+                  rcases hleft' with ⟨⟨⟨_, hq_eq⟩, hi_eq⟩, htailc⟩
+                  cases hqeq : quantity_eq q q' with
+                  | right hnq => simp [sumboolBool, hqeq] at hq_eq
+                  | left hqq =>
+                      have hi : k = n := by simpa using hi_eq
+                      subst q'
+                      subst n
+                      have htail' : check_value k v2 q bl = true :=
+                        check_value_inject f al bl htail v1 v2 q k htailc hval hvn
+                      have heqtrue : sumboolBool (Val.eq v2 v2) = true := by
+                        cases heq' : Val.eq v2 v2 with
+                        | left h => simp [sumboolBool, heq']
+                        | right h => exact (h rfl).elim
+                      have hqtrue : sumboolBool (quantity_eq q q) = true := by
+                        cases hq' : quantity_eq q q with
+                        | left h => simp [sumboolBool, hq']
+                        | right h => exact (h rfl).elim
+                      have hright :
+                          check_value (Nat.succ k) v2 q
+                            (Fragment v2 q k :: bl) = true := by
+                        simp only [check_value, Bool.and_eq_true]
+                        exact ⟨⟨⟨heqtrue, hqtrue⟩, rfl⟩, htail'⟩
+                      cases hright' : check_value (Nat.succ k) v2 q
+                          (Fragment v2 q k :: bl) with
+                      | false => simp [hright'] at hright
+                      | true =>
+                          simp [hleft, hright']
+                          exact hval
+
+end CompCert4Lean.Common.Memdata

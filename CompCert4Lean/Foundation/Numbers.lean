@@ -1493,3 +1493,17 @@ theorem PArith.BinPos.Pos.eqb_eq :
 
 end Rocq.Coq
 end CompCert4Lean.Foundation.Numbers
+
+namespace CompCert4Lean.Foundation.Numbers
+namespace Rocq.Coq
+
+theorem PArith.BinPos.Pos.leb_le :
+    PArith.BinPos.Pos.leb_leStatement := by
+  intro p q
+  unfold PArith.BinPos.Pos.leb PArith.BinPos.Pos.le
+  by_cases h : posToNat p ≤ posToNat q
+  · simp [h]
+  · simp [h]
+
+end Rocq.Coq
+end CompCert4Lean.Foundation.Numbers

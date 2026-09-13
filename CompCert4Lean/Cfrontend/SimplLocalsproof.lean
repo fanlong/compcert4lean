@@ -1957,3 +1957,268 @@ theorem val_casted_list_params : val_casted_list_paramsStatement := by
               exact .cons _ _ hhead (ih _ htail)
 
 end CompCert4Lean.Cfrontend.SimplLocalsproof
+
+namespace CompCert4Lean.Cfrontend.SimplLocalsproof
+
+theorem step_Sdebug_var
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    step_Sdebug_varStatement := by
+  intro xi tprog f id ty k e le m b henv
+  unfold CompCert4Lean.Cfrontend.SimplLocals.Sdebug_var
+  change CompCert4Lean.Cfrontend.Clight.step
+    (binary64_certificate := binary64_certificate)
+    (binary32_certificate := binary32_certificate) xi
+    (CompCert4Lean.Cfrontend.Clight.globalenv tprog)
+      (CompCert4Lean.Cfrontend.Clight.function_entry2
+      (CompCert4Lean.Cfrontend.Clight.globalenv tprog)) _ _ _
+  refine CompCert4Lean.Cfrontend.Clight.step.step_builtin
+    (xi := xi)
+    (ge := CompCert4Lean.Cfrontend.Clight.globalenv tprog)
+    (function_entry := CompCert4Lean.Cfrontend.Clight.function_entry2
+      (CompCert4Lean.Cfrontend.Clight.globalenv tprog))
+    (f := f) (result := none)
+    (ef := .EF_debug (.xI (.xO .xH)) id [CompCert4Lean.Common.AST.Tptr])
+    (argTypes := [.Tpointer ty CompCert4Lean.Cfrontend.Ctypes.noattr])
+    (args := [.Eaddrof (.Evar id ty) (.Tpointer ty CompCert4Lean.Cfrontend.Ctypes.noattr)])
+    (k := k) (e := e) (le := le) (m := m)
+    (vargs := [.Vptr b CompCert4Lean.Lib.Integers.Ptrofs.zero])
+    (t := CompCert4Lean.Common.Events.E0) (vres := .Vundef) (m' := m) ?_ ?_
+  · refine CompCert4Lean.Cfrontend.Clight.eval_exprlist.cons
+      (a := .Eaddrof (.Evar id ty) (.Tpointer ty CompCert4Lean.Cfrontend.Ctypes.noattr))
+      (rest := []) (ty := .Tpointer ty CompCert4Lean.Cfrontend.Ctypes.noattr)
+      (types := []) (v1 := .Vptr b CompCert4Lean.Lib.Integers.Ptrofs.zero)
+      (v2 := .Vptr b CompCert4Lean.Lib.Integers.Ptrofs.zero) (values := []) ?_ ?_
+      CompCert4Lean.Cfrontend.Clight.eval_exprlist.nil
+    · exact CompCert4Lean.Cfrontend.Clight.eval_expr.eval_Eaddrof _ _ _ _
+        (CompCert4Lean.Cfrontend.Clight.eval_lvalue.eval_Evar_local _ _ _ henv)
+    · simp [CompCert4Lean.Cfrontend.Cop.sem_cast,
+        CompCert4Lean.Cfrontend.Cop.classify_cast,
+        CompCert4Lean.Cfrontend.Clight.typeof,
+        CompCert4Lean.X86_64.Archi.ptr64]
+  · exact CompCert4Lean.Common.Events.extcall_debug_sem.extcall_debug_sem_intro _ _
+
+end CompCert4Lean.Cfrontend.SimplLocalsproof
+
+namespace CompCert4Lean.Cfrontend.SimplLocalsproof
+
+theorem cast_typeconv
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    cast_typeconvStatement := by
+  intro v ty m h
+  cases h with
+  | val_casted_int sz si attr n hcast =>
+      cases sz <;> cases si <;>
+        simp [CompCert4Lean.Cfrontend.Cop.sem_cast,
+          CompCert4Lean.Cfrontend.Cop.classify_cast,
+          CompCert4Lean.Cfrontend.Ctypes.typeconv,
+          CompCert4Lean.Cfrontend.Ctypes.type_int32s,
+          CompCert4Lean.Cfrontend.Ctypes.remove_attributes,
+          CompCert4Lean.Cfrontend.Ctypes.change_attributes,
+          CompCert4Lean.Cfrontend.Cop.cast_int_int,
+          CompCert4Lean.X86_64.Archi.ptr64]
+  | val_casted_float attr n =>
+      simp [CompCert4Lean.Cfrontend.Cop.sem_cast,
+        CompCert4Lean.Cfrontend.Cop.classify_cast,
+        CompCert4Lean.Cfrontend.Ctypes.typeconv,
+        CompCert4Lean.Cfrontend.Ctypes.type_int32s,
+        CompCert4Lean.Cfrontend.Ctypes.remove_attributes,
+        CompCert4Lean.Cfrontend.Ctypes.change_attributes,
+        CompCert4Lean.X86_64.Archi.ptr64]
+  | val_casted_single attr n =>
+      simp [CompCert4Lean.Cfrontend.Cop.sem_cast,
+        CompCert4Lean.Cfrontend.Cop.classify_cast,
+        CompCert4Lean.Cfrontend.Ctypes.typeconv,
+        CompCert4Lean.Cfrontend.Ctypes.type_int32s,
+        CompCert4Lean.Cfrontend.Ctypes.remove_attributes,
+        CompCert4Lean.Cfrontend.Ctypes.change_attributes,
+        CompCert4Lean.X86_64.Archi.ptr64]
+  | val_casted_long si attr n =>
+      simp [CompCert4Lean.Cfrontend.Cop.sem_cast,
+        CompCert4Lean.Cfrontend.Cop.classify_cast,
+        CompCert4Lean.Cfrontend.Ctypes.typeconv,
+        CompCert4Lean.Cfrontend.Ctypes.type_int32s,
+        CompCert4Lean.Cfrontend.Ctypes.remove_attributes,
+        CompCert4Lean.Cfrontend.Ctypes.change_attributes,
+        CompCert4Lean.X86_64.Archi.ptr64]
+  | val_casted_ptr_ptr b ofs ty attr =>
+      simp [CompCert4Lean.Cfrontend.Cop.sem_cast,
+        CompCert4Lean.Cfrontend.Cop.classify_cast,
+        CompCert4Lean.Cfrontend.Ctypes.typeconv,
+        CompCert4Lean.Cfrontend.Ctypes.type_int32s,
+        CompCert4Lean.Cfrontend.Ctypes.remove_attributes,
+        CompCert4Lean.Cfrontend.Ctypes.change_attributes,
+        CompCert4Lean.X86_64.Archi.ptr64]
+  | val_casted_int_ptr n ty attr hptr64 =>
+      simp [CompCert4Lean.X86_64.Archi.ptr64] at hptr64
+  | val_casted_ptr_int b ofs si attr hptr64 =>
+      simp [CompCert4Lean.X86_64.Archi.ptr64] at hptr64
+  | val_casted_long_ptr n ty attr hptr64 =>
+      simp [CompCert4Lean.Cfrontend.Cop.sem_cast,
+        CompCert4Lean.Cfrontend.Cop.classify_cast,
+        CompCert4Lean.Cfrontend.Ctypes.typeconv,
+        CompCert4Lean.Cfrontend.Ctypes.type_int32s,
+        CompCert4Lean.Cfrontend.Ctypes.remove_attributes,
+        CompCert4Lean.Cfrontend.Ctypes.change_attributes,
+        CompCert4Lean.X86_64.Archi.ptr64, hptr64]
+  | val_casted_ptr_long b ofs si attr hptr64 =>
+      simp [CompCert4Lean.Cfrontend.Cop.sem_cast,
+        CompCert4Lean.Cfrontend.Cop.classify_cast,
+        CompCert4Lean.Cfrontend.Ctypes.typeconv,
+        CompCert4Lean.Cfrontend.Ctypes.type_int32s,
+        CompCert4Lean.Cfrontend.Ctypes.remove_attributes,
+        CompCert4Lean.Cfrontend.Ctypes.change_attributes,
+        CompCert4Lean.X86_64.Archi.ptr64, hptr64]
+  | val_casted_struct id attr b ofs =>
+      simp [CompCert4Lean.Cfrontend.Cop.sem_cast,
+        CompCert4Lean.Cfrontend.Cop.classify_cast,
+        CompCert4Lean.Cfrontend.Ctypes.typeconv,
+        CompCert4Lean.Cfrontend.Ctypes.type_int32s,
+        CompCert4Lean.Cfrontend.Ctypes.remove_attributes,
+        CompCert4Lean.Cfrontend.Ctypes.change_attributes,
+        CompCert4Lean.X86_64.Archi.ptr64]
+  | val_casted_union id attr b ofs =>
+      simp [CompCert4Lean.Cfrontend.Cop.sem_cast,
+        CompCert4Lean.Cfrontend.Cop.classify_cast,
+        CompCert4Lean.Cfrontend.Ctypes.typeconv,
+        CompCert4Lean.Cfrontend.Ctypes.type_int32s,
+        CompCert4Lean.Cfrontend.Ctypes.remove_attributes,
+        CompCert4Lean.Cfrontend.Ctypes.change_attributes,
+        CompCert4Lean.X86_64.Archi.ptr64]
+  | val_casted_void v =>
+      simp [CompCert4Lean.Cfrontend.Cop.sem_cast,
+        CompCert4Lean.Cfrontend.Cop.classify_cast,
+        CompCert4Lean.Cfrontend.Ctypes.typeconv,
+        CompCert4Lean.Cfrontend.Ctypes.type_int32s,
+        CompCert4Lean.Cfrontend.Ctypes.remove_attributes,
+        CompCert4Lean.Cfrontend.Ctypes.change_attributes,
+        CompCert4Lean.X86_64.Archi.ptr64]
+
+end CompCert4Lean.Cfrontend.SimplLocalsproof
+
+namespace CompCert4Lean.Cfrontend.SimplLocalsproof
+
+theorem step_Sdebug_temp
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    step_Sdebug_tempStatement := by
+  intro xi tprog f id ty k e le m v hfind hcasted
+  unfold CompCert4Lean.Cfrontend.SimplLocals.Sdebug_temp
+  change CompCert4Lean.Cfrontend.Clight.step
+    (binary64_certificate := binary64_certificate)
+    (binary32_certificate := binary32_certificate) xi
+    (CompCert4Lean.Cfrontend.Clight.globalenv tprog)
+    (CompCert4Lean.Cfrontend.Clight.function_entry2
+      (CompCert4Lean.Cfrontend.Clight.globalenv tprog)) _ _ _
+  refine CompCert4Lean.Cfrontend.Clight.step.step_builtin
+    (xi := xi)
+    (ge := CompCert4Lean.Cfrontend.Clight.globalenv tprog)
+    (function_entry := CompCert4Lean.Cfrontend.Clight.function_entry2
+      (CompCert4Lean.Cfrontend.Clight.globalenv tprog))
+    (f := f) (result := none)
+    (ef := .EF_debug (.xO .xH) id
+      [CompCert4Lean.Cfrontend.Ctypes.typ_of_type ty])
+    (argTypes := [CompCert4Lean.Cfrontend.Ctypes.typeconv ty])
+    (args := [.Etempvar id ty]) (k := k) (e := e) (le := le) (m := m)
+    (vargs := [v]) (t := CompCert4Lean.Common.Events.E0) (vres := .Vundef) (m' := m) ?_ ?_
+  · refine CompCert4Lean.Cfrontend.Clight.eval_exprlist.cons
+      (a := .Etempvar id ty) (rest := [])
+      (ty := CompCert4Lean.Cfrontend.Ctypes.typeconv ty) (types := [])
+      (v1 := v) (v2 := v) (values := []) ?_ ?_
+      CompCert4Lean.Cfrontend.Clight.eval_exprlist.nil
+    · exact CompCert4Lean.Cfrontend.Clight.eval_expr.eval_Etempvar _ _ _ hfind
+    · exact cast_typeconv v ty m hcasted
+  · exact CompCert4Lean.Common.Events.extcall_debug_sem.extcall_debug_sem_intro _ _
+
+end CompCert4Lean.Cfrontend.SimplLocalsproof
+
+namespace CompCert4Lean.Cfrontend.SimplLocalsproof
+
+theorem make_cast_correct
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    make_cast_correctStatement := by
+  intro tprog e le m a v1 tto v2 ha hsem
+  have hcast : CompCert4Lean.Cfrontend.Clight.eval_expr
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      (CompCert4Lean.Cfrontend.Clight.globalenv tprog) e le m
+      (.Ecast a tto) v2 :=
+    CompCert4Lean.Cfrontend.Clight.eval_expr.cast a tto v1 v2 ha hsem
+  unfold CompCert4Lean.Cfrontend.SimplLocals.make_cast
+  cases hclass : CompCert4Lean.Cfrontend.Cop.classify_cast
+      (CompCert4Lean.Cfrontend.Clight.typeof a) tto with
+  | cast_case_pointer =>
+      simp [CompCert4Lean.Cfrontend.Cop.sem_cast, hclass,
+        CompCert4Lean.X86_64.Archi.ptr64] at hsem
+      cases v1 <;> simp_all [CompCert4Lean.Cfrontend.SimplLocals.make_cast]
+  | cast_case_i2i sz2 si2 =>
+      cases sz2 with
+      | I32 =>
+          simp [CompCert4Lean.Cfrontend.Cop.sem_cast, hclass,
+            CompCert4Lean.Cfrontend.Cop.cast_int_int,
+            CompCert4Lean.X86_64.Archi.ptr64] at hsem
+          cases v1 <;> simp_all [CompCert4Lean.Cfrontend.SimplLocals.make_cast,
+            CompCert4Lean.Cfrontend.Cop.cast_int_int]
+      | I8 =>
+          simpa [CompCert4Lean.Cfrontend.SimplLocals.make_cast] using hcast
+      | I16 =>
+          simpa [CompCert4Lean.Cfrontend.SimplLocals.make_cast] using hcast
+      | IBool =>
+          simpa [CompCert4Lean.Cfrontend.SimplLocals.make_cast] using hcast
+  | cast_case_f2f =>
+      simp [CompCert4Lean.Cfrontend.Cop.sem_cast, hclass] at hsem
+      cases v1 <;> simp_all [CompCert4Lean.Cfrontend.SimplLocals.make_cast]
+  | cast_case_s2s =>
+      simp [CompCert4Lean.Cfrontend.Cop.sem_cast, hclass] at hsem
+      cases v1 <;> simp_all [CompCert4Lean.Cfrontend.SimplLocals.make_cast]
+  | cast_case_l2l =>
+      simp [CompCert4Lean.Cfrontend.Cop.sem_cast, hclass,
+        CompCert4Lean.X86_64.Archi.ptr64] at hsem
+      cases v1 <;> simp_all [CompCert4Lean.Cfrontend.SimplLocals.make_cast]
+  | cast_case_struct id1 id2 =>
+      simp [CompCert4Lean.Cfrontend.Cop.sem_cast, hclass] at hsem
+      cases v1 <;> simp_all [CompCert4Lean.Cfrontend.SimplLocals.make_cast]
+  | cast_case_union id1 id2 =>
+      simp [CompCert4Lean.Cfrontend.Cop.sem_cast, hclass] at hsem
+      cases v1 <;> simp_all [CompCert4Lean.Cfrontend.SimplLocals.make_cast]
+  | cast_case_void =>
+      simp [CompCert4Lean.Cfrontend.Cop.sem_cast, hclass] at hsem
+      cases v1 <;> simp_all [CompCert4Lean.Cfrontend.SimplLocals.make_cast]
+  | cast_case_f2s =>
+      simpa [CompCert4Lean.Cfrontend.SimplLocals.make_cast] using hcast
+  | cast_case_s2f =>
+      simpa [CompCert4Lean.Cfrontend.SimplLocals.make_cast] using hcast
+  | cast_case_i2f si1 =>
+      simpa [CompCert4Lean.Cfrontend.SimplLocals.make_cast] using hcast
+  | cast_case_i2s si1 =>
+      simpa [CompCert4Lean.Cfrontend.SimplLocals.make_cast] using hcast
+  | cast_case_f2i sz2 si2 =>
+      simpa [CompCert4Lean.Cfrontend.SimplLocals.make_cast] using hcast
+  | cast_case_s2i sz2 si2 =>
+      simpa [CompCert4Lean.Cfrontend.SimplLocals.make_cast] using hcast
+  | cast_case_l2bool =>
+      simpa [CompCert4Lean.Cfrontend.SimplLocals.make_cast] using hcast
+  | cast_case_i2bool =>
+      simpa [CompCert4Lean.Cfrontend.SimplLocals.make_cast] using hcast
+  | cast_case_f2bool =>
+      simpa [CompCert4Lean.Cfrontend.SimplLocals.make_cast] using hcast
+  | cast_case_s2bool =>
+      simpa [CompCert4Lean.Cfrontend.SimplLocals.make_cast] using hcast
+  | cast_case_i2l si1 =>
+      simpa [CompCert4Lean.Cfrontend.SimplLocals.make_cast] using hcast
+  | cast_case_l2i sz2 si2 =>
+      simpa [CompCert4Lean.Cfrontend.SimplLocals.make_cast] using hcast
+  | cast_case_l2f si1 =>
+      simpa [CompCert4Lean.Cfrontend.SimplLocals.make_cast] using hcast
+  | cast_case_l2s si1 =>
+      simpa [CompCert4Lean.Cfrontend.SimplLocals.make_cast] using hcast
+  | cast_case_f2l si2 =>
+      simpa [CompCert4Lean.Cfrontend.SimplLocals.make_cast] using hcast
+  | cast_case_s2l si2 =>
+      simpa [CompCert4Lean.Cfrontend.SimplLocals.make_cast] using hcast
+  | cast_case_default =>
+      exact hcast
+
+end CompCert4Lean.Cfrontend.SimplLocalsproof

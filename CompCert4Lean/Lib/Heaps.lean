@@ -1649,3 +1649,20 @@ theorem lt_heap_In : ∀ (E : OrderedType), lt_heap_InStatement E := by
       · exact ihb hlt.2.2 hin
 
 end CompCert4Lean.Lib.Heaps.SplayHeapSet.R
+
+namespace CompCert4Lean.Lib.Heaps.SplayHeapSet.R
+
+theorem findMax_empty (E : OrderedType) : findMax_emptyStatement E := by
+  intro h hne
+  induction h with
+  | Empty => exact False.elim (hne rfl)
+  | Node a x b iha ihb =>
+      cases b with
+      | Empty => simp [findMax]
+      | Node b1 y b2 =>
+          apply ihb
+          intro heq
+          apply hne
+          cases heq
+
+end CompCert4Lean.Lib.Heaps.SplayHeapSet.R

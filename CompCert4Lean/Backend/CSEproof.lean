@@ -2272,3 +2272,281 @@ theorem add_rhs_holds
                 exact hsame r hne ▸ hnum.num_holds_reg r v hget
 
 end CompCert4Lean.Backend.CSEproof
+
+namespace CompCert4Lean.Backend.CSEproof
+
+open CompCert4Lean.Backend.CSEdomain
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.X86.Op
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Builtins
+open CompCert4Lean.Common.Globalenvs
+
+private theorem cse_forget_reg_charact_suffix
+    (n : CSEdomain.numbering)
+    (rd r : reg)
+    (v : positive) :
+    wf_numbering n →
+    r ∈ PMap.get v (CSE.forget_reg n rd) →
+    r ≠ rd ∧ r ∈ PMap.get v n.num_val := by
+  intro hnum hmem
+  change positive at v
+  unfold CSE.forget_reg at hmem
+  cases hget : PTree.get rd n.num_reg with
+  | none =>
+      have hmem' : r ∈ PMap.get v n.num_val := by
+        simpa [hget] using hmem
+      constructor
+      · intro hrd
+        subst r
+        have hreg := hnum.wf_num_val rd v hmem'
+        rw [hget] at hreg
+        cases hreg
+      · exact hmem'
+  | some v0 =>
+      change positive at v0
+      rw [hget] at hmem
+      rw [cse_pmap_get_set] at hmem
+      cases hv : peq v v0 with
+      | left hvv =>
+          subst v
+          simp only [hv] at hmem
+          have hrem :=
+            CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.List.in_remove
+              peq (PMap.get v0 n.num_val) r rd hmem
+          exact ⟨hrem.2, hrem.1⟩
+      | right hvv =>
+          simp only [hv] at hmem
+          constructor
+          · intro hrd
+            subst r
+            have hreg := hnum.wf_num_val rd v hmem
+            rw [hget] at hreg
+            cases hreg
+            exact (hvv rfl).elim
+          · exact hmem
+
+theorem set_unknown_holds
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    set_unknown_holdsStatement := by
+  intro valu ge sp rs m n r v hnum
+  change Regmap.t val at rs
+  constructor
+  · constructor
+    · intro e he
+      exact hnum.num_holds_wf.wf_num_eqs e he
+    · intro r0 v0 hget
+      change Plt v0 n.num_next
+      change PTree.get r0 (PTree.remove r n.num_reg) = some v0 at hget
+      by_cases hne : r0 = r
+      · subst r0
+        have hnone := PTree.grs_proof r n.num_reg
+        rw [hnone] at hget
+        cases hget
+      · have hsame := PTree.gro_proof (m := n.num_reg) hne
+        rw [hsame] at hget
+        exact hnum.num_holds_wf.wf_num_reg r0 v0 hget
+    · intro r0 v0 hmem
+      change r0 ∈ PMap.get v0 (CSE.forget_reg n r) at hmem
+      change PTree.get r0 (PTree.remove r n.num_reg) = some v0
+      have hforget := cse_forget_reg_charact_suffix n r r0 v0 hnum.num_holds_wf hmem
+      by_cases hne : r0 = r
+      · exact (hforget.1 hne).elim
+      · have hsame := PTree.gro_proof (m := n.num_reg) hne
+        rw [hsame]
+        exact hnum.num_holds_wf.wf_num_val r0 v0 hforget.2
+  · intro e he
+    exact hnum.num_holds_eq e he
+  · intro r0 v0 hget
+    change PTree.get r0 (PTree.remove r n.num_reg) = some v0 at hget
+    by_cases hne : r0 = r
+    · subst r0
+      have hnone := PTree.grs_proof r n.num_reg
+      rw [hnone] at hget
+      cases hget
+    · have hsame := PTree.gro_proof (m := n.num_reg) hne
+      rw [hsame] at hget
+      change reg at r0
+      rw [Regmap.gso_proof _ _ _ _ _ hne]
+      exact hnum.num_holds_reg r0 v0 hget
+
+private theorem cse_add_op_move_holds
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (valu1 : valuation) (ge : genv) (sp : val) (rs : regset) (m : mem)
+    (n : numbering) (src dst : reg) (v : val)
+    (hnum : numbering_holds valu1 ge sp rs m n)
+    (heval : eval_operation
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      ge sp Omove [Regmap.get src rs] m = some v) :
+    ∃ valu2, numbering_holds valu2 ge sp (Regmap.set dst v rs) m
+      (CSE.add_op n dst Omove [src]) := by
+  change Regmap.t val at rs
+  have hv : Regmap.get src rs = v := by
+    change some (Regmap.get src rs) = some v at heval
+    exact Option.some.inj heval
+  cases hVN : CSE.valnum_reg n src with
+  | mk n1 vsrc =>
+      rcases valnum_reg_holds valu1 ge sp rs m n src n1 vsrc hnum hVN with
+        ⟨valu2, hnum2, hsrc, hagree, hlt, hple⟩
+      refine ⟨valu2, ?_⟩
+      simp only [CSE.add_op, is_move_operation]
+      rw [hVN]
+      constructor
+      · constructor
+        · intro e he
+          exact hnum2.num_holds_wf.wf_num_eqs e he
+        · intro r0 v0 hget
+          change Plt v0 n1.num_next
+          have hs := @PTree.gsspec_proof valnum r0 dst vsrc n1.num_reg
+          cases hp : peq r0 dst with
+          | left heq =>
+              subst r0
+              rw [hs, hp] at hget
+              cases hget
+              exact hlt
+          | right hne =>
+              rw [hs, hp] at hget
+              exact hnum2.num_holds_wf.wf_num_reg r0 v0 hget
+        · intro r0 v0 hmem
+          exact update_reg_charact n1 dst vsrc r0 v0 hnum2.num_holds_wf hmem
+      · intro e he
+        exact hnum2.num_holds_eq e he
+      · intro r0 v0 hget
+        change reg at r0
+        have hs := @PTree.gsspec_proof valnum r0 dst vsrc n1.num_reg
+        cases hp : peq r0 dst with
+        | left heq =>
+            subst r0
+            rw [hs, hp] at hget
+            cases hget
+            rw [Regmap.gss_proof]
+            exact hv.symm.trans hsrc
+        | right hne =>
+            rw [hs, hp] at hget
+            rw [Regmap.gso_proof _ _ _ _ _ hne]
+            exact hnum2.num_holds_reg r0 v0 hget
+
+theorem add_load_holds
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    add_load_holdsStatement := by
+  intro valu1 ge sp rs m n addr args ap b ofs chunk v dst bc hnum haddr hload hpmatch hgenv hstack
+  change Regmap.t val at rs
+  cases hVN : CSE.valnum_regs n args with
+  | mk n1 vl =>
+      rcases valnum_regs_holds args valu1 ge (Vptr sp CompCert4Lean.Lib.Integers.Ptrofs.zero) rs m n n1 vl hnum hVN with
+        ⟨valu2, hnum2, hmap, hagree, hwf, hple⟩
+      have haddr2 := haddr
+      rw [hmap] at haddr2
+      have hvalid : rhs_valid valu2 ge (Vptr sp CompCert4Lean.Lib.Integers.Ptrofs.zero)
+          (Load chunk addr vl ap) :=
+        rhs_valid.load_valid sp chunk addr vl ap b ofs bc haddr2 hpmatch hgenv hstack
+      have hev0 : rhs_eval_to valu2 ge (Vptr sp CompCert4Lean.Lib.Integers.Ptrofs.zero) m
+          (Load chunk addr vl ap) v :=
+        rhs_eval_to.load_eval_to chunk addr vl (Vptr b ofs) v ap haddr2 hload
+      have hev : rhs_eval_to valu2 ge (Vptr sp CompCert4Lean.Lib.Integers.Ptrofs.zero) m
+          (Load chunk addr vl ap) (Regmap.get dst (Regmap.set dst v rs)) := by
+        rw [Regmap.gss_proof]
+        exact hev0
+      have hwfrhs : wf_rhs n1.num_next (Load chunk addr vl ap) := by
+        intro vn hvn
+        exact hwf vn hvn
+      have hsame : ∀ r, r ≠ dst →
+          Regmap.get r (Regmap.set dst v rs) = Regmap.get r rs := by
+        intro r hne
+        exact Regmap.gso_proof _ _ _ _ _ hne
+      have hres := add_rhs_holds valu2 ge (Vptr sp CompCert4Lean.Lib.Integers.Ptrofs.zero) rs m n1 dst
+        (Load chunk addr vl ap) (Regmap.set dst v rs) hnum2 hvalid hev hwfrhs hsame
+      simp only [CSE.add_load]
+      rw [hVN]
+      exact hres
+
+theorem add_builtin_holds
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    add_builtin_holdsStatement := by
+  intro valu1 ge sp rs m n bf args res vargs vres hnum hargs hsem
+  change Regmap.t val at rs
+  cases res with
+  | BR rd =>
+      cases hVB : CSE.valnum_builtin_args n args with
+      | mk n1 args' =>
+          rcases valnum_builtin_args_holds ge sp rs m args vargs hargs valu1 n n1 args' hnum hVB with
+            ⟨valu2, hnum2, hargs2, hagree, hwf, hple⟩
+          have hvalid : rhs_valid valu2 ge sp (Builtin bf args') :=
+            rhs_valid.builtin_valid sp bf args'
+          have hev0 : rhs_eval_to valu2 ge sp m (Builtin bf args') vres :=
+            rhs_eval_to.builtin_eval_to bf args' vargs vres hargs2 hsem
+          have hev : rhs_eval_to valu2 ge sp m (Builtin bf args')
+              (Regmap.get rd (Regmap.set rd vres rs)) := by
+            rw [Regmap.gss_proof]
+            exact hev0
+          have hwfrhs : wf_rhs n1.num_next (Builtin bf args') := by
+            intro vn hvn
+            exact hwf vn hvn
+          have hsame : ∀ r, r ≠ rd →
+              Regmap.get r (Regmap.set rd vres rs) = Regmap.get r rs := by
+            intro r hne
+            exact Regmap.gso_proof _ _ _ _ _ hne
+          have hres := add_rhs_holds valu2 ge sp rs m n1 rd
+            (Builtin bf args') (Regmap.set rd vres rs) hnum2 hvalid hev hwfrhs hsame
+          simp only [CSE.add_builtin]
+          rw [hVB]
+          exact hres
+  | BR_none =>
+      refine ⟨valu1, ?_⟩
+      simpa [CSE.add_builtin, regmap_setres] using hnum
+  | BR_splitlong hi lo =>
+      refine ⟨valu1, ?_⟩
+      simpa [CSE.add_builtin, regmap_setres] using hnum
+
+theorem add_op_holds
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    add_op_holdsStatement := by
+  intro valu1 ge sp rs m n op args v dst hnum heval
+  change Regmap.t val at rs
+  cases hmove : is_move_operation op args with
+  | some src =>
+      have hshape := @is_move_operation_correct reg op args src hmove
+      rcases hshape with ⟨hop, hargs⟩
+      subst op
+      subst args
+      exact cse_add_op_move_holds valu1 ge sp rs m n src dst v hnum heval
+  | none =>
+      cases hVN : CSE.valnum_regs n args with
+      | mk n1 vl =>
+          rcases valnum_regs_holds args valu1 ge sp rs m n n1 vl hnum hVN with
+            ⟨valu2, hnum2, hmap, hagree, hwf, hple⟩
+          have heval2 := heval
+          rw [hmap] at heval2
+          have hvalid : rhs_valid valu2 ge sp (Op op vl) :=
+            rhs_valid.op_valid sp op vl
+          have hev : rhs_eval_to valu2 ge sp m (Op op vl)
+              (Regmap.get dst (Regmap.set dst v rs)) := by
+            apply rhs_eval_to.op_eval_to
+            rw [Regmap.gss_proof]
+            exact heval2
+          have hwfrhs : wf_rhs n1.num_next (Op op vl) := by
+            intro vn hvn
+            exact hwf vn hvn
+          have hsame : ∀ r, r ≠ dst →
+              Regmap.get r (Regmap.set dst v rs) = Regmap.get r rs := by
+            intro r hne
+            exact Regmap.gso_proof _ _ _ _ _ hne
+          have hres := add_rhs_holds valu2 ge sp rs m n1 dst (Op op vl)
+            (Regmap.set dst v rs) hnum2 hvalid hev hwfrhs hsame
+          simp only [CSE.add_op, hmove]
+          rw [hVN]
+          exact hres
+
+end CompCert4Lean.Backend.CSEproof

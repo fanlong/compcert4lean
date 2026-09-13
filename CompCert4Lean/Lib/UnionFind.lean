@@ -1162,3 +1162,109 @@ theorem sameclass_union_2_proof :
 
 end UF
 end CompCert4Lean.Lib.UnionFind
+
+namespace CompCert4Lean.Lib.UnionFind
+namespace UF
+
+theorem sameclass_union_3_proof :
+    ∀ (M : MAP), sameclass_union_3Statement M := by
+  intro M uf a b x y hxy
+  change repr M (union M uf a b) x = repr M (union M uf a b) y at hxy
+  change repr M uf x = repr M uf y ∨
+      (repr M uf x = repr M uf a ∧ repr M uf y = repr M uf b) ∨
+      (repr M uf x = repr M uf b ∧ repr M uf y = repr M uf a)
+  by_cases hxa : repr M uf x = repr M uf a
+  · by_cases hya : repr M uf y = repr M uf a
+    · exact Or.inl (hxa.trans hya.symm)
+    · right
+      left
+      constructor
+      · exact hxa
+      · have hxu := repr_union_2_proof M uf a b x hxa
+        have hyu := repr_union_1_proof M uf a b y hya
+        exact hyu.symm.trans (hxy.symm.trans hxu)
+  · by_cases hya : repr M uf y = repr M uf a
+    · right
+      right
+      constructor
+      · have hxu := repr_union_1_proof M uf a b x hxa
+        have hyu := repr_union_2_proof M uf a b y hya
+        exact hxu.symm.trans (hxy.trans hyu)
+      · exact hya
+    · left
+      have hxu := repr_union_1_proof M uf a b x hxa
+      have hyu := repr_union_1_proof M uf a b y hya
+      exact hxu.symm.trans (hxy.trans hyu)
+
+end UF
+end CompCert4Lean.Lib.UnionFind
+
+namespace CompCert4Lean.Lib.UnionFind
+namespace UF
+
+theorem path_ord_wellfounded_proof :
+    ∀ (M : MAP), path_ord_wellfoundedStatement M := by
+  intro M uf
+  exact uf.mwf
+
+end UF
+end CompCert4Lean.Lib.UnionFind
+
+namespace CompCert4Lean.Lib.UnionFind
+namespace UF
+
+theorem repr_merge_proof :
+    ∀ (M : MAP), repr_mergeStatement M := by
+  intro M uf a b x
+  unfold merge union
+  dsimp
+  by_cases hab : repr M uf a = repr M uf b
+  · simp [hab]
+  · simp only [dif_neg hab]
+    have hba : repr M uf b ≠ repr M uf a := by
+      intro h
+      exact hab h.symm
+    by_cases hxa : repr M uf x = repr M uf a
+    · have hmerge := repr_identify_2_proof M uf (repr M uf a) b
+        (repr_res_none_calc M uf a) hba x hxa
+      have hunion := repr_identify_2_proof M uf (repr M uf a) (repr M uf b)
+        (repr_res_none_calc M uf a)
+        (by
+          intro h
+          apply hab
+          calc
+            repr M uf a = repr M uf (repr M uf b) := h.symm
+            _ = repr M uf b := repr_canonical_calc M uf b)
+        x hxa
+      calc
+        repr M (identify M uf (repr M uf a) b _ _) x = repr M uf b := hmerge
+        _ = repr M uf (repr M uf b) := (repr_canonical_calc M uf b).symm
+        _ = repr M (identify M uf (repr M uf a) (repr M uf b) _ _) x := hunion.symm
+    · have hmerge := repr_identify_1_proof M uf (repr M uf a) b
+        (repr_res_none_calc M uf a) hba x hxa
+      have hunion := repr_identify_1_proof M uf (repr M uf a) (repr M uf b)
+        (repr_res_none_calc M uf a)
+        (by
+          intro h
+          apply hab
+          calc
+            repr M uf a = repr M uf (repr M uf b) := h.symm
+            _ = repr M uf b := repr_canonical_calc M uf b)
+        x hxa
+      exact hmerge.trans hunion.symm
+
+end UF
+end CompCert4Lean.Lib.UnionFind
+
+namespace CompCert4Lean.Lib.UnionFind
+namespace UF
+
+theorem sameclass_merge_proof :
+    ∀ (M : MAP), sameclass_mergeStatement M := by
+  intro M uf a b x y
+  change repr M (merge M uf a b) x = repr M (merge M uf a b) y ↔
+    repr M (union M uf a b) x = repr M (union M uf a b) y
+  rw [repr_merge_proof M uf a b x, repr_merge_proof M uf a b y]
+
+end UF
+end CompCert4Lean.Lib.UnionFind

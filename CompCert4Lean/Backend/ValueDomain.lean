@@ -2678,3 +2678,144 @@ theorem vge_trans : vge_transStatement := by
   all_goals try { apply is_uns_sgn_local <;> assumption }
 
 end CompCert4Lean.Backend.ValueDomain
+
+namespace CompCert4Lean.Backend.ValueDomain
+
+open Lean Elab Tactic Meta
+
+private def isUns1PrivateName (suffix : String) : Name :=
+  let p := Name.str (Name.str (Name.str (Name.str Name.anonymous "_private") "CompCert4Lean") "Lib") "Integers"
+  let base := Name.num p 0
+  suffix.splitOn "." |>.foldl Name.str base
+
+private theorem is_uns_1_testbit_pos
+    (a : CompCert4Lean.Lib.Integers.int)
+    (p : CompCert4Lean.Foundation.Numbers.Rocq.Coq.positive) :
+    CompCert4Lean.Lib.Integers.Int.testbit a
+        (.Zpos p) = a.val.testBit
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p) := by
+  simp only [CompCert4Lean.Lib.Integers.Int.testbit,
+    CompCert4Lean.Lib.Integers.WordCore.testbit]
+  run_tac
+    let lctx ← getLCtx
+    let aF := (lctx.findFromUserName? `a).get!
+    let pF := (lctx.findFromUserName? `p).get!
+    let aE := mkFVar aF.fvarId
+    let pE := mkFVar pF.fvarId
+    let e ← mkAppM
+      (isUns1PrivateName "CompCert4Lean.Lib.Integers.WordCore.positiveToNat_eq_posToNat") #[pE]
+    let natTy := mkConst ``Nat
+    let aval ← mkAppM ``CompCert4Lean.Lib.Integers.WordCore.Word.val #[aE]
+    let f := mkLambda `k BinderInfo.default natTy
+      (mkApp2 (mkConst ``Nat.testBit) aval (mkBVar 0))
+    let ce ← mkAppM ``congrArg #[f, e]
+    closeMainGoal Name.anonymous ce
+
+theorem is_uns_1 : is_uns_1Statement := by
+  intro n hn
+  by_cases hb : n.val.testBit 0 = true
+  · right
+    apply CompCert4Lean.Lib.Integers.WordCore.ext_of_val_eq
+    apply Nat.eq_of_testBit_eq
+    intro k
+    cases k with
+    | zero =>
+        change n.val.testBit 0 = CompCert4Lean.Lib.Integers.Int.one.val.testBit 0
+        have hone : CompCert4Lean.Lib.Integers.Int.one.val = 1 := by rfl
+        rw [hone]
+        simpa using hb
+    | succ k =>
+        have hnlt : n.val < 2 ^ CompCert4Lean.Lib.Integers.Int.wordsize :=
+          (CompCert4Lean.Lib.Integers.Int.toFin n).isLt
+        have hOneBit : Nat.testBit 1 (Nat.succ k) = false := by
+          apply Nat.testBit_lt_two_pow
+          exact Nat.one_lt_two_pow (Nat.ne_of_gt (Nat.succ_pos k))
+        by_cases hlt : Nat.succ k < CompCert4Lean.Lib.Integers.Int.wordsize
+        · let p := CompCert4Lean.Foundation.Numbers.Rocq.Coq.posOfNat (Nat.succ k)
+          have hp : CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p = Nat.succ k :=
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat_posOfNat (Nat.succ_pos k)
+          have hrange : zLe z0 (.Zpos p) ∧ zLt (.Zpos p) Int.zwordsize := by
+            constructor
+            · change (0 : Int) ≤ Int.ofNat (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p)
+              exact Int.ofNat_nonneg _
+            · change (Int.ofNat (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p) : Int) < Int.ofNat 32
+              rw [hp]
+              exact Int.ofNat_lt.mpr hlt
+          have hge : zLe z1 (.Zpos p) := by
+            change (1 : Int) ≤ Int.ofNat (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p)
+            have hp0 := CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat_positive p
+            change Int.ofNat 1 ≤ Int.ofNat
+              (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p)
+            apply Int.ofNat_le.mpr
+            omega
+          have hbit := hn (.Zpos p) hrange hge
+          have hbit' : n.val.testBit (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p) = false := by
+            change CompCert4Lean.Lib.Integers.Int.testbit n (.Zpos p) = false at hbit
+            rw [is_uns_1_testbit_pos] at hbit
+            exact hbit
+          rw [hp] at hbit'
+          have hone : CompCert4Lean.Lib.Integers.Int.one.val = 1 := by rfl
+          rw [hone]
+          exact hbit'.trans hOneBit.symm
+        · have hpow : 2 ^ CompCert4Lean.Lib.Integers.Int.wordsize ≤
+              2 ^ (Nat.succ k) :=
+            Nat.pow_le_pow_right (by decide) (Nat.le_of_not_gt hlt)
+          have hnbit : n.val.testBit (Nat.succ k) = false :=
+            Nat.testBit_lt_two_pow (Nat.lt_of_lt_of_le hnlt hpow)
+          have hone : CompCert4Lean.Lib.Integers.Int.one.val = 1 := by rfl
+          rw [hone]
+          exact hnbit.trans hOneBit.symm
+  · left
+    apply CompCert4Lean.Lib.Integers.WordCore.ext_of_val_eq
+    apply Nat.eq_of_testBit_eq
+    intro k
+    cases k with
+    | zero =>
+        change n.val.testBit 0 = CompCert4Lean.Lib.Integers.Int.zero.val.testBit 0
+        have hzero : CompCert4Lean.Lib.Integers.Int.zero.val = 0 := by rfl
+        rw [hzero]
+        have hb' : n.val.testBit 0 = false := Bool.eq_false_iff.mpr hb
+        simpa using hb'
+    | succ k =>
+        have hnlt : n.val < 2 ^ CompCert4Lean.Lib.Integers.Int.wordsize :=
+          (CompCert4Lean.Lib.Integers.Int.toFin n).isLt
+        have hZeroBit : Nat.testBit 0 (Nat.succ k) = false := by
+          apply Nat.testBit_lt_two_pow
+          exact Nat.two_pow_pos _
+        by_cases hlt : Nat.succ k < CompCert4Lean.Lib.Integers.Int.wordsize
+        · let p := CompCert4Lean.Foundation.Numbers.Rocq.Coq.posOfNat (Nat.succ k)
+          have hp : CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p = Nat.succ k :=
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat_posOfNat (Nat.succ_pos k)
+          have hrange : zLe z0 (.Zpos p) ∧ zLt (.Zpos p) Int.zwordsize := by
+            constructor
+            · change (0 : Int) ≤ Int.ofNat (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p)
+              exact Int.ofNat_nonneg _
+            · change (Int.ofNat (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p) : Int) < Int.ofNat 32
+              rw [hp]
+              exact Int.ofNat_lt.mpr hlt
+          have hge : zLe z1 (.Zpos p) := by
+            change (1 : Int) ≤ Int.ofNat (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p)
+            have hp0 := CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat_positive p
+            change Int.ofNat 1 ≤ Int.ofNat
+              (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p)
+            apply Int.ofNat_le.mpr
+            omega
+          have hbit := hn (.Zpos p) hrange hge
+          have hbit' : n.val.testBit (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p) = false := by
+            change CompCert4Lean.Lib.Integers.Int.testbit n (.Zpos p) = false at hbit
+            rw [is_uns_1_testbit_pos] at hbit
+            exact hbit
+          rw [hp] at hbit'
+          have hzero : CompCert4Lean.Lib.Integers.Int.zero.val = 0 := by rfl
+          rw [hzero]
+          exact hbit'.trans hZeroBit.symm
+        · have hpow : 2 ^ CompCert4Lean.Lib.Integers.Int.wordsize ≤
+              2 ^ (Nat.succ k) :=
+            Nat.pow_le_pow_right (by decide) (Nat.le_of_not_gt hlt)
+          have hnbit : n.val.testBit (Nat.succ k) = false :=
+            Nat.testBit_lt_two_pow (Nat.lt_of_lt_of_le hnlt hpow)
+          have hzero : CompCert4Lean.Lib.Integers.Int.zero.val = 0 := by rfl
+          rw [hzero]
+          exact hnbit.trans hZeroBit.symm
+
+end CompCert4Lean.Backend.ValueDomain

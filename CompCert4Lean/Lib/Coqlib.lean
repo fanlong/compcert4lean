@@ -1161,3 +1161,32 @@ theorem floor_interval : floor_intervalStatement := by
   constructor <;> omega
 
 end CompCert4Lean.Lib.Coqlib
+
+namespace CompCert4Lean.Lib.Coqlib
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem list_length_z_aux_shift : list_length_z_aux_shiftStatement := by
+  intro A l
+  induction l with
+  | nil =>
+      intro n m
+      apply intOfZ_injective
+      simp only [list_length_z_aux, ZArith.BinInt.Z.add, ZArith.BinInt.Z.sub,
+        intOfZ_zOfInt]
+      simpa [Int.add_comm] using
+        (Int.sub_add_cancel (intOfZ n) (intOfZ m)).symm
+  | cons hd tl ih =>
+      intro n m
+      simp only [list_length_z_aux]
+      have h := ih (ZArith.BinInt.Z.succ n) (ZArith.BinInt.Z.succ m)
+      have hsub : ZArith.BinInt.Z.sub (ZArith.BinInt.Z.succ n)
+          (ZArith.BinInt.Z.succ m) = ZArith.BinInt.Z.sub n m := by
+        apply intOfZ_injective
+        simp only [ZArith.BinInt.Z.succ, ZArith.BinInt.Z.add,
+          ZArith.BinInt.Z.sub, intOfZ_zOfInt]
+        omega
+      rw [hsub] at h
+      exact h
+
+end CompCert4Lean.Lib.Coqlib

@@ -1377,3 +1377,72 @@ theorem transl_code'_transl_code : transl_code'_transl_codeStatement := by
   | OK c => rfl
 
 end CompCert4Lean.Backend.Asmgenproof0
+
+namespace CompCert4Lean.Backend.Asmgenproof0
+
+theorem is_tail_code_tail : is_tail_code_tailStatement := by
+  intro c1 c2 h
+  induction h with
+  | refl c =>
+      exact ⟨CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.Z0,
+        code_tail.base c⟩
+  | @cons i c1 c2 h ih =>
+      rcases ih with ⟨ofs, hofs⟩
+      exact ⟨CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add ofs
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.Zpos
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.xH),
+        code_tail.step ofs i hofs⟩
+
+theorem code_tail_no_bigger : code_tail_no_biggerStatement := by
+  intro pos c1 c2 h
+  induction h with
+  | base c => exact Nat.le_refl _
+  | @step pos i c1 c2 h ih =>
+      change c2.length ≤ c1.length + 1
+      exact Nat.le_trans ih (Nat.le_succ _)
+
+end CompCert4Lean.Backend.Asmgenproof0
+
+namespace CompCert4Lean.Backend.Asmgenproof0
+
+theorem transl_code_tail : transl_code_tailStatement := by
+  intro transl_instr_tail f c1 c2 h
+  induction h with
+  | refl c =>
+      intro tc2 ep2 htrans
+      exact ⟨tc2, ep2, htrans, CompCert4Lean.Lib.Coqlib.is_tail.refl _⟩
+  | @cons i c1 c2 h ih =>
+      intro tc2 ep2 htrans
+      simp only [CompCert4Lean.X86.Asmgen.transl_code] at htrans
+      cases hcode : CompCert4Lean.X86.Asmgen.transl_code f c2
+          (CompCert4Lean.X86.Asmgen.it1_is_parent ep2 i) with
+      | Error msg =>
+          rw [hcode] at htrans
+          change CompCert4Lean.Common.Errors.bind _ _ = _ at htrans
+          obtain ⟨k, hk, hrest⟩ :=
+            CompCert4Lean.Common.Errors.bind_inversion _ _ _ _ _ htrans
+          cases hk
+      | OK k =>
+          rw [hcode] at htrans
+          change CompCert4Lean.Common.Errors.bind _ _ = _ at htrans
+          obtain ⟨k', hk, hrest⟩ :=
+            CompCert4Lean.Common.Errors.bind_inversion _ _ _ _ _ htrans
+          have htail := ih k
+            (CompCert4Lean.X86.Asmgen.it1_is_parent ep2 i) hcode
+          have hk' : k = k' := by cases hk; rfl
+          subst k'
+          have htail_instr := transl_instr_tail f i ep2 k tc2 hrest
+          rcases htail with ⟨tc1, ep1, htrans1, htail1⟩
+          have htrans_tail : ∀ {l1 l2 l3 : AsmCode},
+              CompCert4Lean.Lib.Coqlib.is_tail l1 l2 →
+              CompCert4Lean.Lib.Coqlib.is_tail l2 l3 →
+              CompCert4Lean.Lib.Coqlib.is_tail l1 l3 := by
+            intro l1 l2 l3 h12 h23
+            induction h23 with
+            | refl => exact h12
+            | cons i h23 ih =>
+                exact CompCert4Lean.Lib.Coqlib.is_tail.cons i (ih h12)
+          exact ⟨tc1, ep1, htrans1,
+            htrans_tail htail1 htail_instr⟩
+
+end CompCert4Lean.Backend.Asmgenproof0

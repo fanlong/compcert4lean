@@ -1859,3 +1859,144 @@ theorem alloc_global_nextblock : alloc_global_nextblockStatement := by
 
 end Genv
 end CompCert4Lean.Common.Globalenvs
+
+namespace CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Linking
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.Lib.Integers
+
+namespace Genv
+
+theorem alloc_globals_nextblock : alloc_globals_nextblockStatement := by
+  intro F V ge gl
+  induction gl with
+  | nil =>
+      intro m m' h
+      change some m = some m' at h
+      cases h
+      rfl
+  | cons g rest ih =>
+      intro m m' h
+      change (match alloc_global ge m g with
+        | none => none
+        | some m1 => alloc_globals ge m1 rest) = some m' at h
+      cases halloc : alloc_global ge m g with
+      | none => simp [halloc] at h
+      | some m1 =>
+          have hrest : alloc_globals ge m1 rest = some m' := by
+            simpa [halloc] using h
+          have hnext := ih (m := m1) (m' := m') hrest
+          have hallocnext := Genv.alloc_global_nextblock F V ge g m m1 halloc
+          calc
+            m'.nextblock = advance_next rest m1.nextblock := hnext
+            _ = advance_next rest (posSucc m.nextblock) := by rw [hallocnext]
+            _ = advance_next (g :: rest) m.nextblock := by rfl
+
+private theorem mem_store_perm (chunk : memory_chunk) (m : mem) (b : block)
+    (ofs : Z) (v : val) (m' : mem)
+    (h : Mem.store chunk m b ofs v = some m') :
+    ∀ (k : perm_kind) (prm : permission) (b' : block) (q : Z),
+      Mem.perm m b' q k prm ↔ Mem.perm m' b' q k prm := by
+  unfold Mem.store at h
+  split at h
+  · cases h
+    intro k prm b' q
+    rfl
+  · cases h
+
+theorem store_zeros_perm : store_zeros_permStatement := by
+  let P : mem → block → Z → Z → Option mem → Prop := fun m0 _ _ _ result =>
+    match result with
+    | some m1 =>
+        ∀ (k : perm_kind) (prm : permission) (b' : block) (q : Z),
+          Mem.perm m0 b' q k prm ↔ Mem.perm m1 b' q k prm
+    | none => True
+  have hP : ∀ m0 b0 p0 n0, P m0 b0 p0 n0 (store_zeros m0 b0 p0 n0) := by
+    apply store_zeros_ind (P := P)
+    · intro m0 b0 p0 n0 x hx
+      intro k prm b' q
+      rfl
+    · intro m0 b0 p0 n0 x hx m1 hstore hrec
+      cases hresult : store_zeros m1 b0 (zAdd p0 z1) (ZArith.BinInt.Z.sub n0 z1) with
+      | none => trivial
+      | some m2 =>
+          rw [hresult] at hrec
+          change ∀ (k : perm_kind) (prm : permission) (b' : block) (q : Z),
+            Mem.perm m0 b' q k prm ↔ Mem.perm m2 b' q k prm
+          intro k prm b' q
+          exact (mem_store_perm Mint8unsigned m0 b0 p0 Vzero m1 hstore k prm b' q).trans
+            (hrec k prm b' q)
+    · intro m0 b0 p0 n0 x hx hnone
+      trivial
+  intro k prm b' q m b p n m' h
+  have hs := hP m b p n
+  rw [h] at hs
+  simpa [P] using hs k prm b' q
+
+theorem store_init_data_perm : store_init_data_permStatement := by
+  intro F V ge k prm b' q i b m p m' h
+  cases i with
+  | Init_int8 n =>
+      change Mem.store Mint8unsigned m b p (Vint n) = some m' at h
+      exact mem_store_perm Mint8unsigned m b p (Vint n) m' h k prm b' q
+  | Init_int16 n =>
+      change Mem.store Mint16unsigned m b p (Vint n) = some m' at h
+      exact mem_store_perm Mint16unsigned m b p (Vint n) m' h k prm b' q
+  | Init_int32 n =>
+      change Mem.store Mint32 m b p (Vint n) = some m' at h
+      exact mem_store_perm Mint32 m b p (Vint n) m' h k prm b' q
+  | Init_int64 n =>
+      change Mem.store Mint64 m b p (Vlong n) = some m' at h
+      exact mem_store_perm Mint64 m b p (Vlong n) m' h k prm b' q
+  | Init_float32 n =>
+      change Mem.store Mfloat32 m b p (Vsingle n) = some m' at h
+      exact mem_store_perm Mfloat32 m b p (Vsingle n) m' h k prm b' q
+  | Init_float64 n =>
+      change Mem.store Mfloat64 m b p (Vfloat n) = some m' at h
+      exact mem_store_perm Mfloat64 m b p (Vfloat n) m' h k prm b' q
+  | Init_addrof id ofs =>
+      change (match find_symbol ge id with
+        | none => none
+        | some b'' => Mem.store Mptr m b p (Vptr b'' ofs)) = some m' at h
+      cases hfind : find_symbol ge id with
+      | none => simp [hfind] at h
+      | some b'' =>
+          simp [hfind] at h
+          exact mem_store_perm Mptr m b p (Vptr b'' ofs) m' h k prm b' q
+  | Init_space n =>
+      change some m = some m' at h
+      cases h
+      rfl
+
+theorem store_init_data_list_perm : store_init_data_list_permStatement := by
+  intro F V ge k prm b' q idl
+  induction idl with
+  | nil =>
+      intro b m p m' h
+      change some m = some m' at h
+      cases h
+      rfl
+  | cons i rest ih =>
+      intro b m p m' h
+      change (match store_init_data ge m b p i with
+        | none => none
+        | some m1 => store_init_data_list ge m1 b (zAdd p (init_data_size i)) rest) = some m' at h
+      cases hstore : store_init_data ge m b p i with
+      | none => simp [hstore] at h
+      | some m1 =>
+          have hlist : store_init_data_list ge m1 b (zAdd p (init_data_size i)) rest = some m' := by
+            simpa [hstore] using h
+          have hhead := store_init_data_perm F V ge k prm b' q i b m p m1 hstore
+          have htail := ih (b := b) (m := m1) (p := zAdd p (init_data_size i))
+            (m' := m') hlist
+          exact hhead.trans htail
+
+end Genv
+end CompCert4Lean.Common.Globalenvs
