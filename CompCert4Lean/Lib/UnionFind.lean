@@ -1348,3 +1348,138 @@ theorem pathlen_unroll_proof :
 
 end UF
 end CompCert4Lean.Lib.UnionFind
+
+namespace CompCert4Lean.Lib.UnionFind
+namespace UF
+
+theorem pathlen_none_proof :
+    ∀ (M : MAP), pathlen_noneStatement M := by
+  intro M uf a hnone
+  rw [pathlen_unroll_proof M uf a]
+  simp [hnone]
+
+end UF
+end CompCert4Lean.Lib.UnionFind
+
+namespace CompCert4Lean.Lib.UnionFind
+namespace UF
+
+theorem pathlen_some_proof :
+    ∀ (M : MAP), pathlen_someStatement M := by
+  intro M uf a a' hsome
+  rw [pathlen_unroll_proof M uf a]
+  simp [hsome]
+
+end UF
+end CompCert4Lean.Lib.UnionFind
+
+namespace CompCert4Lean.Lib.UnionFind
+namespace UF
+
+theorem pathlen_zero_proof :
+    ∀ (M : MAP), pathlen_zeroStatement M := by
+  intro M uf a
+  constructor
+  · intro hrepr
+    apply pathlen_none_proof M uf a
+    have hnone := repr_res_none_calc M uf a
+    rw [hrepr] at hnone
+    exact hnone
+  · intro hzero
+    rw [pathlen_unroll_proof M uf a] at hzero
+    cases h : mapGet M a uf.m with
+    | none => exact repr_none_calc M uf a h
+    | some a' => simp [h] at hzero
+
+end UF
+end CompCert4Lean.Lib.UnionFind
+
+namespace CompCert4Lean.Lib.UnionFind
+namespace UF
+
+theorem pathlen_merge_proof :
+    ∀ (M : MAP), pathlen_mergeStatement M := by
+  intro M uf a b x
+  unfold merge
+  dsimp
+  by_cases hab : repr M uf a = repr M uf b
+  · simp only [dif_pos hab]
+    cases hEq : M.elt_eq (repr M uf a) (repr M uf b) with
+    | left h => simp [h]
+    | right h => exact False.elim (h hab)
+  · simp only [dif_neg hab]
+    cases hEq : M.elt_eq (repr M uf a) (repr M uf b) with
+    | left h => exact False.elim (hab h)
+    | right h =>
+      simp only [hEq]
+      let uf' : t M := identify M uf (repr M uf a) b
+        (repr_res_none_calc M uf a)
+        (by
+          intro hba
+          exact hab (by simpa using hba.symm))
+      change pathlen M uf' x = _
+      apply uf'.mwf.induction x
+      intro x0 ih
+      rw [pathlen_unroll_proof M uf' x0]
+      cases hget : mapGet M x0 uf'.m with
+      | some x' =>
+          change Nat.succ (pathlen M uf' x') = _
+          rw [ih x' hget]
+          change mapGet M x0 (mapSet M (repr M uf a) b uf.m) = some x' at hget
+          rw [mapGet_set] at hget
+          by_cases hxa : x0 = repr M uf a
+          · subst x0
+            simp only [dif_pos rfl] at hget
+            cases hget
+            have hcanon := repr_canonical_calc M uf a
+            have hba : repr M uf b ≠ repr M uf a := by
+              intro hba
+              exact hab hba.symm
+            cases e : M.elt_eq (repr M uf b) (repr M uf a) with
+            | left heq => exact False.elim (hba heq)
+            | right hneq =>
+                cases e' : M.elt_eq (repr M uf (repr M uf a)) (repr M uf a) with
+                | left heq' =>
+                    have hzero : pathlen M uf (repr M uf a) = 0 :=
+                      (pathlen_zero_proof M uf (repr M uf a)).mp heq'
+                    simp only [e, e']
+                    omega
+                | right hneq' => exact False.elim (hneq' hcanon)
+          · have hget' : mapGet M x0 uf.m = some x' := by
+              simpa [hxa] using hget
+            have hreprx : repr M uf x0 = repr M uf x' :=
+              repr_some_calc M uf x0 x' hget'
+            rw [pathlen_unroll_proof M uf x0, hget']
+            simp only [hreprx]
+            cases e : M.elt_eq (repr M uf x') (repr M uf a) with
+            | left heq =>
+                cases e0 : M.elt_eq (repr M uf x0) (repr M uf a) with
+                | left heq0 =>
+                    simp only [e, e0]
+                    omega
+                | right hneq0 =>
+                    exact False.elim (hneq0 (hreprx.trans heq))
+            | right hneq =>
+                cases e0 : M.elt_eq (repr M uf x0) (repr M uf a) with
+                | left heq0 =>
+                    exact False.elim (hneq (hreprx.symm.trans heq0))
+                | right hneq0 =>
+                    simp only [e, e0]
+      | none =>
+          change 0 = _
+          change mapGet M x0 (mapSet M (repr M uf a) b uf.m) = none at hget
+          rw [mapGet_set] at hget
+          by_cases hxa : x0 = repr M uf a
+          · subst x0
+            simp at hget
+          · have hnone : mapGet M x0 uf.m = none := by
+              simpa [hxa] using hget
+            have hreprx : repr M uf x0 = x0 := repr_none_calc M uf x0 hnone
+            have hzero : pathlen M uf x0 = 0 :=
+              (pathlen_zero_proof M uf x0).mp hreprx
+            cases hxeq : M.elt_eq (repr M uf x0) (repr M uf a) with
+            | left heq => exact False.elim (hxa (hreprx.symm.trans heq))
+            | right heq => simp [hzero]
+
+end UF
+end CompCert4Lean.Lib.UnionFind

@@ -1675,3 +1675,30 @@ theorem In_empty (E : OrderedType) : In_emptyStatement E := by
   simp [R.In]
 
 end CompCert4Lean.Lib.Heaps.SplayHeapSet
+
+namespace CompCert4Lean.Lib.Heaps.SplayHeapSet
+
+theorem In_insert (E : OrderedType) : In_insertStatement E := by
+  intro x h y
+  unfold In insert
+  exact R.In_insert E x h.1 y h.2
+
+theorem findMin_empty (E : OrderedType) : findMin_emptyStatement E := by
+  intro h y hnone hy
+  unfold findMin at hnone
+  unfold In at hy
+  by_cases hne : h.1 = R.Empty
+  · simpa [hne, R.In] using hy
+  · exact (R.findMin_empty E h.1 hne) hnone
+
+theorem findMin_min (E : OrderedType) : findMin_minStatement E := by
+  intro h x y hfind hy
+  unfold findMin at hfind
+  unfold In at hy
+  simpa [R.le] using (R.findMin_min E x h.1 hfind h.2 y hy)
+
+theorem In_deleteMin (E : OrderedType) : In_deleteMinStatement E := by
+  intro h x y hfind
+  simpa [findMin, In, deleteMin] using (R.In_deleteMin E y x h.1 hfind)
+
+end CompCert4Lean.Lib.Heaps.SplayHeapSet

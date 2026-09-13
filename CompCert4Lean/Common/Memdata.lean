@@ -1717,3 +1717,162 @@ theorem decode_val_inject : decode_val_injectStatement := by
                 (Val.inject.val_inject_undef (decode_val Many64 vl2))
 
 end CompCert4Lean.Common.Memdata
+
+namespace CompCert4Lean.Common.Memdata
+
+theorem repeat_Undef_inject_self : repeat_Undef_inject_selfStatement := by
+  intro f n
+  induction n with
+  | zero => constructor
+  | succ n ih =>
+      simp only [List.replicate_succ]
+      constructor
+      · exact memval_inject.undef f Undef
+      · exact ih
+
+end CompCert4Lean.Common.Memdata
+
+namespace CompCert4Lean.Common.Memdata
+
+theorem repeat_Undef_inject_encode_val : repeat_Undef_inject_encode_valStatement := by
+  intro f chunk v
+  have h := repeat_Undef_inject_any f (encode_val chunk v)
+  have hlen := encode_val_length chunk v
+  rw [hlen] at h
+  exact h
+
+end CompCert4Lean.Common.Memdata
+
+namespace CompCert4Lean.Common.Memdata
+
+open CompCert4Lean.Common.Values
+
+theorem inj_value_inject : inj_value_injectStatement := by
+  intro f v1 v2 q hval
+  have hrec : ∀ (n : Nat) (v1 v2 : val) (q : quantity),
+      Val.inject f v1 v2 →
+        list_forall2 (memval_inject f)
+          (inj_value_rec n v1 q) (inj_value_rec n v2 q) := by
+    intro n
+    induction n with
+    | zero =>
+        intro v1 v2 q h
+        constructor
+    | succ n ih =>
+        intro v1 v2 q h
+        simp only [inj_value_rec]
+        constructor
+        · exact memval_inject.fragment f v1 v2 q n h
+        · exact ih v1 v2 q h
+  exact hrec (size_quantity_nat q) v1 v2 q hval
+
+end CompCert4Lean.Common.Memdata
+
+namespace CompCert4Lean.Common.Memdata
+
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.AST
+
+theorem encode_val_inject : encode_val_injectStatement := by
+  intro f v1 v2 chunk h
+  cases h with
+  | inject_int i =>
+      cases chunk with
+      | Mbool => exact inj_bytes_inject f _
+      | Mint8signed => exact inj_bytes_inject f _
+      | Mint8unsigned => exact inj_bytes_inject f _
+      | Mint16signed => exact inj_bytes_inject f _
+      | Mint16unsigned => exact inj_bytes_inject f _
+      | Mint32 => exact inj_bytes_inject f _
+      | Mint64 => exact repeat_Undef_inject_self f _
+      | Mfloat32 => exact repeat_Undef_inject_self f _
+      | Mfloat64 => exact repeat_Undef_inject_self f _
+      | Many32 => exact inj_value_inject f (Vint i) (Vint i) Q32 (Val.inject.inject_int i)
+      | Many64 => exact inj_value_inject f (Vint i) (Vint i) Q64 (Val.inject.inject_int i)
+  | inject_long i =>
+      cases chunk with
+      | Mbool => exact repeat_Undef_inject_self f _
+      | Mint8signed => exact repeat_Undef_inject_self f _
+      | Mint8unsigned => exact repeat_Undef_inject_self f _
+      | Mint16signed => exact repeat_Undef_inject_self f _
+      | Mint16unsigned => exact repeat_Undef_inject_self f _
+      | Mint32 => exact repeat_Undef_inject_self f _
+      | Mint64 => exact inj_bytes_inject f _
+      | Mfloat32 => exact repeat_Undef_inject_self f _
+      | Mfloat64 => exact repeat_Undef_inject_self f _
+      | Many32 => exact inj_value_inject f (Vlong i) (Vlong i) Q32 (Val.inject.inject_long i)
+      | Many64 => exact inj_value_inject f (Vlong i) (Vlong i) Q64 (Val.inject.inject_long i)
+  | inject_float x =>
+      cases chunk with
+      | Mbool => exact repeat_Undef_inject_self f _
+      | Mint8signed => exact repeat_Undef_inject_self f _
+      | Mint8unsigned => exact repeat_Undef_inject_self f _
+      | Mint16signed => exact repeat_Undef_inject_self f _
+      | Mint16unsigned => exact repeat_Undef_inject_self f _
+      | Mint32 => exact repeat_Undef_inject_self f _
+      | Mint64 => exact repeat_Undef_inject_self f _
+      | Mfloat32 => exact repeat_Undef_inject_self f _
+      | Mfloat64 => exact inj_bytes_inject f _
+      | Many32 => exact inj_value_inject f (Vfloat x) (Vfloat x) Q32 (Val.inject.inject_float x)
+      | Many64 => exact inj_value_inject f (Vfloat x) (Vfloat x) Q64 (Val.inject.inject_float x)
+  | inject_single x =>
+      cases chunk with
+      | Mbool => exact repeat_Undef_inject_self f _
+      | Mint8signed => exact repeat_Undef_inject_self f _
+      | Mint8unsigned => exact repeat_Undef_inject_self f _
+      | Mint16signed => exact repeat_Undef_inject_self f _
+      | Mint16unsigned => exact repeat_Undef_inject_self f _
+      | Mint32 => exact repeat_Undef_inject_self f _
+      | Mint64 => exact repeat_Undef_inject_self f _
+      | Mfloat32 => exact inj_bytes_inject f _
+      | Mfloat64 => exact repeat_Undef_inject_self f _
+      | Many32 => exact inj_value_inject f (Vsingle x) (Vsingle x) Q32 (Val.inject.inject_single x)
+      | Many64 => exact inj_value_inject f (Vsingle x) (Vsingle x) Q64 (Val.inject.inject_single x)
+  | inject_ptr b1 ofs1 b2 ofs2 delta hmap hofs =>
+      cases chunk with
+      | Mbool => exact repeat_Undef_inject_self f _
+      | Mint8signed => exact repeat_Undef_inject_self f _
+      | Mint8unsigned => exact repeat_Undef_inject_self f _
+      | Mint16signed => exact repeat_Undef_inject_self f _
+      | Mint16unsigned => exact repeat_Undef_inject_self f _
+      | Mint32 =>
+          by_cases hp : CompCert4Lean.X86_64.Archi.ptr64 = true
+          · exact repeat_Undef_inject_self f _
+          · simpa [encode_val, hp] using
+              (inj_value_inject f (Vptr b1 ofs1) (Vptr b2 ofs2) Q32
+                (Val.inject.inject_ptr b1 ofs1 b2 ofs2 delta hmap hofs))
+      | Mint64 =>
+          by_cases hp : CompCert4Lean.X86_64.Archi.ptr64 = true
+          · simpa [encode_val, hp] using
+              (inj_value_inject f (Vptr b1 ofs1) (Vptr b2 ofs2) Q64
+                (Val.inject.inject_ptr b1 ofs1 b2 ofs2 delta hmap hofs))
+          · simpa [encode_val, hp] using (repeat_Undef_inject_self f 8)
+      | Mfloat32 => exact repeat_Undef_inject_self f _
+      | Mfloat64 => exact repeat_Undef_inject_self f _
+      | Many32 =>
+          exact inj_value_inject f (Vptr b1 ofs1) (Vptr b2 ofs2) Q32
+            (Val.inject.inject_ptr b1 ofs1 b2 ofs2 delta hmap hofs)
+      | Many64 =>
+          exact inj_value_inject f (Vptr b1 ofs1) (Vptr b2 ofs2) Q64
+            (Val.inject.inject_ptr b1 ofs1 b2 ofs2 delta hmap hofs)
+  | val_inject_undef v =>
+      cases chunk with
+      | Mbool => exact repeat_Undef_inject_encode_val f Mbool _
+      | Mint8signed => exact repeat_Undef_inject_encode_val f Mint8signed _
+      | Mint8unsigned => exact repeat_Undef_inject_encode_val f Mint8unsigned _
+      | Mint16signed => exact repeat_Undef_inject_encode_val f Mint16signed _
+      | Mint16unsigned => exact repeat_Undef_inject_encode_val f Mint16unsigned _
+      | Mint32 => exact repeat_Undef_inject_encode_val f Mint32 _
+      | Mint64 => exact repeat_Undef_inject_encode_val f Mint64 _
+      | Mfloat32 => exact repeat_Undef_inject_encode_val f Mfloat32 _
+      | Mfloat64 => exact repeat_Undef_inject_encode_val f Mfloat64 _
+      | Many32 =>
+          cases v2 <;>
+            simpa [encode_val] using
+              (inj_value_inject f Vundef _ Q32 (Val.inject.val_inject_undef _))
+      | Many64 =>
+          cases v2 <;>
+            simpa [encode_val] using
+              (inj_value_inject f Vundef _ Q64 (Val.inject.val_inject_undef _))
+
+end CompCert4Lean.Common.Memdata

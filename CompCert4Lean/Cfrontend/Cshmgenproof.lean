@@ -2526,3 +2526,99 @@ theorem make_binarith_correct
         simp at hsem
 
 end CompCert4Lean.Cfrontend.Cshmgenproof
+
+namespace CompCert4Lean.Cfrontend.Cshmgenproof
+
+theorem make_mul_correct
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    make_mul_correctStatement := by
+  intro ge
+  apply make_binarith_correct ge
+  · intro x y m
+    rfl
+  · intro x y m
+    rfl
+  · intro x y m
+    rfl
+  · intro x y m
+    rfl
+  · intro x y m
+    rfl
+  · intro x y m
+    rfl
+
+end CompCert4Lean.Cfrontend.Cshmgenproof
+
+namespace CompCert4Lean.Cfrontend.Cshmgenproof
+
+theorem make_binarith_int_correct
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    make_binarith_int_correctStatement := by
+  intro ge sem_int sem_long iop iopu lop lopu hi hiu hl hlu
+  let sem_float : CCFloat → CCFloat → Option val :=
+    fun x y => some (.Vfloat (CompCert4Lean.Lib.Floats.Float.mul x y))
+  let sem_single : CCFloat32 → CCFloat32 → Option val :=
+    fun x y => some (.Vsingle (CompCert4Lean.Lib.Floats.Float32.mul x y))
+  have hf : ∀ (x y : CCFloat) (m : mem),
+      Csharpminor.eval_binop (.Omulf) (.Vfloat x) (.Vfloat y) m = sem_float x y := by
+    intro x y m
+    rfl
+  have hs : ∀ (x y : CCFloat32) (m : mem),
+      Csharpminor.eval_binop (.Omulfs) (.Vsingle x) (.Vsingle y) m = sem_single x y := by
+    intro x y m
+    rfl
+  have hfull := make_binarith_correct ge sem_int sem_long sem_float sem_single
+    iop iopu .Omulf .Omulfs lop lopu hi hiu hl hlu hf hs
+  intro a tya b tyb c va vb v e le m hsem hmake h1 h2
+  unfold Cshmgen.make_binarith_int at hmake
+  unfold Cop.sem_binarith at hsem
+  cases hclass : Cop.classify_binarith tya tyb with
+  | bin_case_i sg =>
+      have hm : Cshmgen.make_binarith_int iop iopu lop lopu a tya b tyb =
+          Cshmgen.make_binarith iop iopu .Omulf .Omulfs lop lopu a tya b tyb := by
+        cases h1c : Cshmgen.make_cast tya (Cop.binarith_type (.bin_case_i sg)) a <;>
+          cases h2c : Cshmgen.make_cast tyb (Cop.binarith_type (.bin_case_i sg)) b <;>
+          cases sg <;>
+          simp [Cshmgen.make_binarith_int, Cshmgen.make_binarith, hclass, h1c, h2c]
+      have hmake' : Cshmgen.make_binarith iop iopu .Omulf .Omulfs lop lopu
+          a tya b tyb = .OK c := by
+        rw [← hm]
+        exact hmake
+      have hsem' : Cop.sem_binarith sem_int sem_long sem_float sem_single
+          va tya vb tyb m = some v := by
+        simpa [Cop.sem_binarith, sem_float, sem_single, hclass] using hsem
+      exact hfull a tya b tyb c va vb v e le m hsem' hmake' h1 h2
+  | bin_case_l sg =>
+      have hm : Cshmgen.make_binarith_int iop iopu lop lopu a tya b tyb =
+          Cshmgen.make_binarith iop iopu .Omulf .Omulfs lop lopu a tya b tyb := by
+        cases h1c : Cshmgen.make_cast tya (Cop.binarith_type (.bin_case_l sg)) a <;>
+          cases h2c : Cshmgen.make_cast tyb (Cop.binarith_type (.bin_case_l sg)) b <;>
+          cases sg <;>
+          simp [Cshmgen.make_binarith_int, Cshmgen.make_binarith, hclass, h1c, h2c]
+      have hmake' : Cshmgen.make_binarith iop iopu .Omulf .Omulfs lop lopu
+          a tya b tyb = .OK c := by
+        rw [← hm]
+        exact hmake
+      have hsem' : Cop.sem_binarith sem_int sem_long sem_float sem_single
+          va tya vb tyb m = some v := by
+        simpa [Cop.sem_binarith, sem_float, sem_single, hclass] using hsem
+      exact hfull a tya b tyb c va vb v e le m hsem' hmake' h1 h2
+  | bin_case_f =>
+      cases h1c : Cshmgen.make_cast tya (Cop.binarith_type (.bin_case_f)) a <;>
+        cases h2c : Cshmgen.make_cast tyb (Cop.binarith_type (.bin_case_f)) b <;>
+        simp [Cshmgen.make_binarith_int, hclass, h1c, h2c] at hmake <;>
+        cases hmake
+  | bin_case_s =>
+      cases h1c : Cshmgen.make_cast tya (Cop.binarith_type (.bin_case_s)) a <;>
+        cases h2c : Cshmgen.make_cast tyb (Cop.binarith_type (.bin_case_s)) b <;>
+        simp [Cshmgen.make_binarith_int, hclass, h1c, h2c] at hmake <;>
+        cases hmake
+  | bin_default =>
+      cases h1c : Cshmgen.make_cast tya (Cop.binarith_type (.bin_default)) a <;>
+        cases h2c : Cshmgen.make_cast tyb (Cop.binarith_type (.bin_default)) b <;>
+        simp [Cshmgen.make_binarith_int, hclass, h1c, h2c] at hmake <;>
+        cases hmake
+
+end CompCert4Lean.Cfrontend.Cshmgenproof

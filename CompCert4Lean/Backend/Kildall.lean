@@ -2246,3 +2246,67 @@ theorem fixpoint_nodeset_solution : fixpoint_nodeset_solutionStatement := by
             | optge_some h => exact h
 
 end CompCert4Lean.Backend.Kildall.Dataflow_Solver
+
+namespace CompCert4Lean.Backend.Kildall
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Lib.Maps
+
+theorem add_successors_correct : add_successors_correctStatement := by
+  intro tolist src pred n s
+  induction tolist generalizing pred with
+  | nil =>
+      intro h
+      simpa [add_successors] using h
+  | cons to rem ih =>
+      intro h
+      simp only [add_successors]
+      apply ih
+      unfold successors_list
+      rw [PTree.gsspec_proof]
+      cases hpeq : CompCert4Lean.Lib.Coqlib.peq s to with
+      | left heq =>
+          subst s
+          simp at h ⊢
+          exact h.elim (fun hn => Or.inl (Or.inr hn))
+            (fun hn => Or.inl (Or.inl hn))
+      | right hne =>
+          simp [hne] at h ⊢
+          exact h
+
+theorem make_predecessors_correct_1 : make_predecessors_correct_1Statement := by
+  intro A code successors n instr s hcode hsucc
+  let P : PTreeT A → PTreeT (List positive) → Prop := fun m pred =>
+    PTree.get n m = some instr → s ∈ successors instr →
+      n ∈ successors_list pred s
+  unfold make_predecessors
+  have hfold : P code
+      (PTree.fold (fun pred pc instr => add_successors pred pc (successors instr))
+        code (PTree.empty (List positive))) := by
+    apply PTree_Properties.fold_rec_proof
+    · intro m m' pred hext hP hcode' hsucc'
+      apply hP
+      rw [hext n]
+      exact hcode'
+      exact hsucc'
+    · intro hn'
+      simp [PTree.empty, PTree.get] at hn'
+    · intro m pred k v hnone hsome hP hcode' hsucc'
+      apply add_successors_correct
+      rw [PTree.getSet_equation] at hcode'
+      split at hcode'
+      · subst n
+        cases hcode'
+        exact Or.inr ⟨rfl, hsucc'⟩
+      · exact Or.inl (hP hcode' hsucc')
+  exact hfold hcode hsucc
+
+theorem make_predecessors_correct_2 : make_predecessors_correct_2Statement := by
+  intro A code successors n instr s hcode hsucc
+  have hpred := make_predecessors_correct_1 code successors n instr s hcode hsucc
+  unfold successors_list at hpred
+  cases hget : PTree.get s (make_predecessors code successors) with
+  | some l => exact ⟨l, rfl, by simpa [hget] using hpred⟩
+  | none => simp [hget] at hpred
+
+end CompCert4Lean.Backend.Kildall

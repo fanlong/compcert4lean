@@ -1846,3 +1846,14 @@ theorem match_callstack_incr_bound : match_callstack_incr_boundStatement := by
         htemps henv hbounds hfree htail
 
 end CompCert4Lean.Cfrontend.Cminorgenproof
+
+namespace CompCert4Lean.Cfrontend.Cminorgenproof
+
+theorem match_callstack_set_temp : match_callstack_set_tempStatement := by
+  intro prog f cenv e le te sp lo hi cs bound tbound m tm tf id v tv hinj hstack
+  cases hstack with
+  | cons hbound hsp htemps henv hbounds hfree hcs =>
+      exact .cons hbound hsp (match_temps_assign f le te id v tv htemps hinj)
+        henv hbounds hfree hcs
+
+end CompCert4Lean.Cfrontend.Cminorgenproof

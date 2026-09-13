@@ -3479,3 +3479,87 @@ theorem in_elements_between_1 : in_elements_between_1Statement := by
     exact ⟨hmem, hb.1, hb.2⟩
 
 end CompCert4Lean.Backend.Allocproof
+
+namespace CompCert4Lean.Backend.Allocproof
+
+open CompCert4Lean.Backend.Allocation
+
+theorem in_subst_reg : in_subst_regStatement := by
+  intro r1 r2 q e hq
+  let f : EqSet.elt → eqs → eqs := fun x out =>
+    add_equation { ekind := x.ekind, ereg := r2, eloc := x.eloc }
+      (remove_equation x out)
+  let elt : EqSet.t :=
+    EqSet.elements_between (select_reg_l r1) (select_reg_h r1) e.eqs1
+  have helt : ∀ x, EqSet.In x elt ↔ EqSet.In x e ∧ x.ereg = r1 := by
+    intro x
+    exact in_elements_between_1 r1 e.eqs1 x
+  have hP : EqSet.In q elt →
+      EqSet.In { ekind := q.ekind, ereg := r2, eloc := q.eloc }
+        (EqSet.fold f elt e).eqs1 := by
+    have hP' := ESP.fold_rec_proof eqs
+      (fun s a => {h : EqSet.In q s →
+        EqSet.In { ekind := q.ekind, ereg := r2, eloc := q.eloc } a.eqs1 // True})
+      f e elt
+      (by
+        intro s hs
+        refine ⟨?_, trivial⟩
+        intro h
+        exact False.elim (hs q h))
+      (by
+        intro x a s' s'' hx hnot hadd hPa
+        refine ⟨?_, trivial⟩
+        intro hqmem
+        rcases (hadd q).mp hqmem with hqx | hqold
+        · apply (ESF.add_iff_proof _ _ _).mpr
+          left
+          cases hqx
+          exact EqSetE.eq_refl _
+        · have hqnew : EqSet.In
+              { ekind := q.ekind, ereg := r2, eloc := q.eloc } a.eqs1 := hPa.1 hqold
+          by_cases hxeq : x = { ekind := q.ekind, ereg := r2, eloc := q.eloc }
+          · apply (ESF.add_iff_proof _ _ _).mpr
+            left
+            cases hxeq
+            exact EqSetE.eq_refl _
+          · apply (ESF.add_iff_proof _ _ _).mpr
+            right
+            apply (ESF.remove_iff_proof _ _ _).mpr
+            exact ⟨hqnew, hxeq⟩)
+    exact hP'.1
+  have hQ : ¬ EqSet.In q elt → EqSet.In q (EqSet.fold f elt e).eqs1 := by
+    have hQ' := ESP.fold_rec_proof eqs
+      (fun s a => {h : ¬ EqSet.In q s → EqSet.In q a.eqs1 // True})
+      f e elt
+      (by
+        intro s hs
+        refine ⟨?_, trivial⟩
+        intro hnot
+        exact hq)
+      (by
+        intro x a s' s'' hx hnot hadd hPa
+        refine ⟨?_, trivial⟩
+        intro hqmem
+        have hqx : ¬ EqSetE.eq x q := by
+          intro hxeq
+          exact hqmem ((hadd q).mpr (Or.inl hxeq))
+        have hqold : ¬ EqSet.In q s' := by
+          intro hq'
+          exact hqmem ((hadd q).mpr (Or.inr hq'))
+        have hqa : EqSet.In q a.eqs1 := hPa.1 hqold
+        apply (ESF.add_iff_proof _ _ _).mpr
+        right
+        apply (ESF.remove_iff_proof _ _ _).mpr
+        exact ⟨hqa, hqx⟩)
+    exact hQ'.1
+  by_cases hqe : EqSet.In q elt
+  · left
+    exact ⟨(helt q).mp hqe |>.2, hP hqe⟩
+  · right
+    exact ⟨by
+      intro heq
+      apply hqe
+      exact (helt q).mpr ⟨hq, heq⟩,
+      hQ hqe⟩
+
+end CompCert4Lean.Backend.Allocproof

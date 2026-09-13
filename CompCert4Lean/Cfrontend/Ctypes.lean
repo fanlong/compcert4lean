@@ -2494,3 +2494,82 @@ theorem build_composite_env_domain : build_composite_env_domainStatement := by
       exact hdefs
 
 end CompCert4Lean.Cfrontend.Ctypes
+
+namespace CompCert4Lean.Cfrontend.Ctypes
+
+theorem link_composite_def_inv_proof : link_composite_def_invStatement := by
+  unfold link_composite_def_invStatement
+  intro l1 l2 l hlink
+  unfold link_composite_defs at hlink
+  cases hq : CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.List.forallb
+      (check_compat_composite l2) l1 with
+  | false =>
+      simp [hq] at hlink
+  | true =>
+      have hcompat : ∀ cd1, cd1 ∈ l1 → check_compat_composite l2 cd1 = true :=
+        (CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.List.forallb_forall
+          (check_compat_composite l2) l1).mp hq
+      have hinv : ∀ cd1 cd2, cd1 ∈ l1 → cd2 ∈ l2 →
+          name_composite_def cd2 = name_composite_def cd1 → cd2 = cd1 := by
+        intro cd1 cd2 hcd1 hcd2 hnames
+        have hc := hcompat cd1 hcd1
+        unfold check_compat_composite at hc
+        have hc2 :=
+          (CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.List.forallb_forall
+            (fun cd' =>
+              match CompCert4Lean.Common.AST.ident_eq
+                (name_composite_def cd') (name_composite_def cd1) with
+              | .left _ => boolOfSumbool (composite_def_eq cd1 cd')
+              | .right _ => true) l2).mp hc cd2 hcd2
+        cases hident : CompCert4Lean.Common.AST.ident_eq
+            (name_composite_def cd2) (name_composite_def cd1) with
+        | left heq =>
+            have hc3 : boolOfSumbool (composite_def_eq cd1 cd2) = true := by
+              simpa [hident] using hc2
+            cases hdeq : composite_def_eq cd1 cd2 with
+            | left hcd => exact hcd.symm
+            | right hcd =>
+                have : (false : Bool) = true := by
+                  simpa [boolOfSumbool, hdeq] using hc3
+                cases this
+        | right hneq =>
+            exact (hneq hnames).elim
+      have hlist : l1 ++ filter_redefs l1 l2 = l := by
+        simpa [hq] using hlink
+      refine ⟨hinv, hlist.symm, ?_⟩
+      intro x
+      rw [← hlist]
+      change CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.List.In x
+          (l1 ++ filter_redefs l1 l2) ↔ _
+      rw [CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.List.in_app_iff]
+      constructor
+      · intro hx
+        cases hx with
+        | inl hx1 => exact Or.inl hx1
+        | inr hxf =>
+            dsimp [filter_redefs] at hxf
+            rw [CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.List.filter_In] at hxf
+            exact Or.inr hxf.1
+      · intro hx
+        cases hx with
+        | inl hx1 => exact Or.inl hx1
+        | inr hx2 =>
+            by_cases hx1 : x ∈ l1
+            · exact Or.inl hx1
+            · right
+              dsimp [filter_redefs]
+              rw [CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.List.filter_In]
+              constructor
+              · exact hx2
+              · cases hdec :
+                  CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.List.in_dec
+                    CompCert4Lean.Common.AST.ident_eq
+                    (name_composite_def x) (l1.map name_composite_def) with
+                | right hnot => simp [hdec]
+                | left hmem =>
+                    rcases _root_.List.mem_map.mp hmem with ⟨y, hy, hname⟩
+                    have hxy := hinv y x hy hx2 hname.symm
+                    cases hxy
+                    exact (hx1 hy).elim
+
+end CompCert4Lean.Cfrontend.Ctypes

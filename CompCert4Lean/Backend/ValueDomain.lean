@@ -2837,3 +2837,296 @@ theorem vmatch_Uns_1 : vmatch_Uns_1Statement := by
       rfl
 
 end CompCert4Lean.Backend.ValueDomain
+
+namespace CompCert4Lean.Backend.ValueDomain
+
+theorem vge_uns_uns' : vge_uns_uns'Statement := by
+  intro p n
+  unfold uns1
+  by_cases h1 : zle n z1 = true
+  · simp only [if_pos h1]
+    exact vge.vge_uns_uns p z1 p n (zle_true_prop_for_inval h1) (pge.pge_refl p)
+  · by_cases h7 : zle n (zOfNat 7) = true
+    · simp only [if_neg h1, if_pos h7]
+      exact vge.vge_uns_uns p (zOfNat 7) p n
+        (zle_true_prop_for_inval h7) (pge.pge_refl p)
+    · by_cases h8 : zle n (zOfNat 8) = true
+      · simp only [if_neg h1, if_neg h7, if_pos h8]
+        exact vge.vge_uns_uns p (zOfNat 8) p n
+          (zle_true_prop_for_inval h8) (pge.pge_refl p)
+      · by_cases h15 : zle n (zOfNat 15) = true
+        · simp only [if_neg h1, if_neg h7, if_neg h8, if_pos h15]
+          exact vge.vge_uns_uns p (zOfNat 15) p n
+            (zle_true_prop_for_inval h15) (pge.pge_refl p)
+        · by_cases h16 : zle n (zOfNat 16) = true
+          · simp only [if_neg h1, if_neg h7, if_neg h8, if_neg h15, if_pos h16]
+            exact vge.vge_uns_uns p (zOfNat 16) p n
+              (zle_true_prop_for_inval h16) (pge.pge_refl p)
+          · simp only [if_neg h1, if_neg h7, if_neg h8, if_neg h15, if_neg h16]
+            exact vge.numUns p p n (pge.pge_refl p)
+
+end CompCert4Lean.Backend.ValueDomain
+
+namespace CompCert4Lean.Backend.ValueDomain
+
+private theorem zMax_comm_for_vlub
+    (x y : CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z) : zMax x y = zMax y x := by
+  apply CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective
+  by_cases h : CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ x ≤
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ y
+  · by_cases h' : CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ y ≤
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ x
+    · have heq := Int.le_antisymm h h'
+      simp [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.max, h, h', heq]
+    · simp [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.max, h, h']
+  · have h' : CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ y ≤
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ x :=
+      Int.le_of_not_le h
+    simp [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.max, h, h']
+
+private theorem vlub_int_comm_local (cstr : int → aval) (i j : int) :
+    vlub_int cstr i j = vlub_int cstr j i := by
+  unfold vlub_int
+  by_cases h : Int.eq i j = true
+  · have h' : Int.eq j i = true := by
+      change decide (j.intval = i.intval) = true
+      change decide (i.intval = j.intval) = true at h
+      simpa [eq_comm] using h
+    change decide (i.intval = j.intval) = true at h
+    have hval : i.intval = j.intval := of_decide_eq_true h
+    have hij : i = j := CompCert4Lean.Lib.Integers.WordCore.ext hval
+    subst j
+    simp
+  · have h' : ¬ Int.eq j i = true := by
+      intro h'
+      apply h
+      change decide (j.intval = i.intval) = true at h'
+      change decide (i.intval = j.intval) = true
+      simpa [eq_comm] using h'
+    by_cases hi : Int.lt i Int.zero = true <;>
+      by_cases hj : Int.lt j Int.zero = true <;>
+        simp [h, h', hi, hj, Bool.or_comm, zMax_comm_for_vlub]
+
+private theorem plub_comm_local (p q : aptr) : plub p q = plub q p := by
+  exact plub_comm p q
+
+private theorem int64_eq_comm_local (i j : int64) : Int64.eq i j = Int64.eq j i := by
+  change decide (i.intval = j.intval) = decide (j.intval = i.intval)
+  by_cases h : i.intval = j.intval
+  · simp [h]
+  · have h' : ¬j.intval = i.intval := by
+      intro h'
+      exact h h'.symm
+    simp [h, h']
+
+private theorem float_eq_comm_local (i j : float) : (i = j) = (j = i) := by
+  by_cases h : i = j
+  · simp [h]
+  · have h' : ¬j = i := Ne.symm h
+    simp [h, h']
+
+private theorem float32_eq_comm_local (i j : float32) : (i = j) = (j = i) := by
+  by_cases h : i = j
+  · simp [h]
+  · have h' : ¬j = i := Ne.symm h
+    simp [h, h']
+
+private theorem vlub_long_comm_local (i j : int64) :
+    (if Int64.eq i j = true then L i else ntop) =
+      (if Int64.eq j i = true then L j else ntop) := by
+  by_cases h : Int64.eq i j = true
+  · have h' : Int64.eq j i = true := by
+      change decide (j.intval = i.intval) = true
+      change decide (i.intval = j.intval) = true at h
+      simpa [eq_comm] using h
+    change decide (i.intval = j.intval) = true at h
+    have hij : i = j := CompCert4Lean.Lib.Integers.WordCore.ext (of_decide_eq_true h)
+    subst j
+    simp
+  · have h' : ¬ Int64.eq j i = true := by
+      intro h'
+      apply h
+      change decide (j.intval = i.intval) = true at h'
+      change decide (i.intval = j.intval) = true
+      simpa [eq_comm] using h'
+    simp [h, h']
+
+private theorem vlub_float_comm_local (i j : float) :
+    (if i = j then F i else ntop) = (if j = i then F j else ntop) := by
+  by_cases h : i = j
+  · subst j
+    simp
+  · have h' : ¬j = i := Ne.symm h
+    simp [h, h']
+
+private theorem vlub_float32_comm_local (i j : float32) :
+    (if i = j then FS i else ntop) = (if j = i then FS j else ntop) := by
+  by_cases h : i = j
+  · subst j
+    simp
+  · have h' : ¬j = i := Ne.symm h
+    simp [h, h']
+
+theorem vlub_comm : vlub_commStatement := by
+  intro cfg v w
+  cases v <;> cases w
+  case I.I i j => simpa only [vlub] using (vlub_int_comm_local I i j)
+  case I.IU i j => simpa only [vlub] using (vlub_int_comm_local IU i j)
+  case IU.I i j => simpa only [vlub] using (vlub_int_comm_local IU i j)
+  case IU.IU i j => simpa only [vlub] using (vlub_int_comm_local IU i j)
+  case L.L i j => simpa only [vlub] using (vlub_long_comm_local i j)
+  case F.F i j => simpa only [vlub] using (vlub_float_comm_local i j)
+  case FS.FS i j => simpa only [vlub] using (vlub_float32_comm_local i j)
+  all_goals
+    simp [vlub, zMax_comm_for_vlub, plub_comm_local, int64_eq_comm_local,
+      float_eq_comm_local, float32_eq_comm_local]
+
+end CompCert4Lean.Backend.ValueDomain
+
+namespace CompCert4Lean.Backend.ValueDomain
+
+theorem vge_uns_i' : vge_uns_i'Statement := by
+  intro p n i hn hi
+  exact vge_trans (uns1 p n) (Uns p n) (I i)
+    (vge_uns_uns' p n) (vge.unsInt p n i hn hi)
+
+end CompCert4Lean.Backend.ValueDomain
+
+namespace CompCert4Lean.Backend.ValueDomain
+
+private theorem zLe_trans_vmatch
+    (a b c : CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z) :
+    zLe a b → zLe b c → zLe a c := by
+  intro hab hbc
+  change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ a ≤
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ b at hab
+  change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ b ≤
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ c at hbc
+  change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ a ≤
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ c
+  exact Int.le_trans hab hbc
+
+private theorem zLt_le_vmatch
+    (a b c : CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z) :
+    zLt a b → zLe b c → zLt a c := by
+  intro hab hbc
+  change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ a <
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ b at hab
+  change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ b ≤
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ c at hbc
+  change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ a <
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ c
+  exact Int.lt_of_lt_of_le hab hbc
+
+private theorem zLt_trans_vmatch
+    (a b c : CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z) :
+    zLt a b → zLt b c → zLt a c := by
+  intro hab hbc
+  change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ a <
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ b at hab
+  change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ b <
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ c at hbc
+  change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ a <
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ c
+  exact Int.lt_trans hab hbc
+
+private theorem zLe_lt_vmatch
+    (a b c : CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z) :
+    zLe a b → zLt b c → zLt a c := by
+  intro hab hbc
+  change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ a ≤
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ b at hab
+  change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ b <
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ c at hbc
+  change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ a <
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ c
+  exact Int.lt_of_le_of_lt hab hbc
+
+private theorem is_uns_mon_vmatch
+    (n m : CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z) (i : int) :
+    is_uns n i → zLe n m → is_uns m i := by
+  intro hni hnm k hk hmk
+  apply hni k hk
+  exact zLe_trans_vmatch n m k hnm hmk
+
+private theorem is_sgn_mon_vmatch
+    (n m : CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z) (i : int) :
+    is_sgn n i → zLe n m → is_sgn m i := by
+  intro hni hnm k hk hmk
+  apply hni k hk
+  change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (zSub n z1) ≤
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ k
+  change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (zSub m z1) ≤
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ k at hmk
+  change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ n ≤
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ m at hnm
+  simp only [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.sub,
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt] at hmk ⊢
+  omega
+
+private theorem is_uns_sgn_vmatch
+    (n m : CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z) (i : int) :
+    is_uns n i → zLt n m → is_sgn m i := by
+  intro hni hnm k hk hmk
+  have hz0 : CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ z0 = 0 := by rfl
+  have hz1 : CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ z1 = 1 := by rfl
+  have hzw : CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ Int.zwordsize = 32 := by rfl
+  have hnk : zLe n k := by
+    change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ n ≤
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ k
+    change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ n <
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ m at hnm
+    change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (zSub m z1) ≤
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ k at hmk
+    simp only [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.sub,
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt, hz1, hzw] at hmk ⊢
+    omega
+  have htop : zLe n (zSub Int.zwordsize z1) := by
+    change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ n ≤
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (zSub Int.zwordsize z1)
+    change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ n <
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ m at hnm
+    change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (zSub m z1) ≤
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ k at hmk
+    simp only [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.sub,
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt, hz1, hzw] at hmk ⊢
+    have hk0 := hk.1
+    have hkw := hk.2
+    change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ z0 ≤
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ k at hk0
+    change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ k <
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ Int.zwordsize at hkw
+    rw [hz0] at hk0
+    rw [hzw] at hkw
+    omega
+  have hb0 := hni k hk hnk
+  have htopbits := hni (zSub Int.zwordsize z1)
+    (by
+      constructor
+      · change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ z0 ≤
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (zSub Int.zwordsize z1)
+        simp only [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.sub,
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt, hz0, hz1, hzw]
+        omega
+      · change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (zSub Int.zwordsize z1) <
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ Int.zwordsize
+        simp only [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.sub,
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt, hz1, hzw]
+        omega)
+    htop
+  rw [hb0, htopbits]
+
+theorem vmatch_ge : vmatch_geStatement := by
+  intro bc v x y hxy hmv
+  induction hxy generalizing v <;> cases hmv <;>
+    try constructor <;> try assumption
+  all_goals try { apply is_uns_mon_vmatch <;> assumption }
+  all_goals try { apply is_sgn_mon_vmatch <;> assumption }
+  all_goals try { apply zLe_trans_vmatch <;> assumption }
+  all_goals try { apply zLt_le_vmatch <;> assumption }
+  all_goals try { apply zLt_trans_vmatch <;> assumption }
+  all_goals try { apply zLe_lt_vmatch <;> assumption }
+  all_goals try { apply is_uns_sgn_vmatch <;> assumption }
+  all_goals try { apply pmatch_ge <;> assumption }
+
+end CompCert4Lean.Backend.ValueDomain

@@ -2008,3 +2008,38 @@ theorem Rle_ge :
 end RIneq
 end Rocq.Coq.Reals
 end CompCert4Lean.Foundation.FlocqReal
+
+namespace CompCert4Lean.Foundation.FlocqReal
+namespace Rocq.Coq.Reals
+namespace RIneq
+
+theorem Rge_le : ∀ (ctx : ExactRealContext), Rge_leStatement ctx := by
+  intro ctx r1 r2 h
+  exact h
+
+theorem Rgt_lt : ∀ (ctx : ExactRealContext), Rgt_ltStatement ctx := by
+  intro ctx r1 r2 h
+  exact h
+
+theorem Rnot_le_lt : ∀ (ctx : ExactRealContext), Rnot_le_ltStatement ctx := by
+  intro ctx r1 r2 hn
+  rcases ctx.certificate.total_order r1 r2 with h | h
+  · rcases h with hlt | heq
+    · exact (hn ((ctx.certificate.orderedField.lt_iff_le_not_le r1 r2).mp hlt).1).elim
+    · subst r2
+      exact (hn (ctx.certificate.orderedField.le_refl r1)).elim
+  · exact (ctx.certificate.orderedField.lt_iff_le_not_le r2 r1).mpr
+      ⟨(ctx.certificate.orderedField.lt_iff_le_not_le r2 r1).mp h |>.1, hn⟩
+
+theorem Rnot_lt_le : ∀ (ctx : ExactRealContext), Rnot_lt_leStatement ctx := by
+  intro ctx r1 r2 hn
+  rcases ctx.certificate.total_order r1 r2 with h | h
+  · rcases h with hlt | heq
+    · exact (hn hlt).elim
+    · subst r2
+      exact ctx.certificate.orderedField.le_refl r1
+  · exact (ctx.certificate.orderedField.lt_iff_le_not_le r2 r1).mp h |>.1
+
+end RIneq
+end Rocq.Coq.Reals
+end CompCert4Lean.Foundation.FlocqReal

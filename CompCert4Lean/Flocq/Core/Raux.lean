@@ -2557,3 +2557,19 @@ theorem Rcompare_plus_r (ctx : ExactRealContext) :
       Rcompare_Gt ctx x y hyx]
 
 end CompCert4Lean.Flocq.Core.Raux
+
+namespace CompCert4Lean.Flocq.Core.Raux
+theorem Rcompare_plus_l (ctx : ExactRealContext) : Rcompare_plus_lStatement ctx := by
+  intro z x y
+  change Exact.Rcompare ctx (ctx.spec.add z x) (ctx.spec.add z y) = _
+  rw [ctx.certificate.orderedField.add_comm z x, ctx.certificate.orderedField.add_comm z y]
+  exact Rcompare_plus_r ctx z x y
+theorem Rcompare_mult_r (ctx : ExactRealContext) : Rcompare_mult_rStatement ctx := by
+  intro z x y hz
+  exact exact_Rcompare_mul_pos_right_aux ctx z x y hz
+theorem Rcompare_mult_l (ctx : ExactRealContext) : Rcompare_mult_lStatement ctx := by
+  intro z x y hz
+  change Exact.Rcompare ctx (ctx.spec.mul z x) (ctx.spec.mul z y) = _
+  rw [ctx.certificate.orderedField.mul_comm z x, ctx.certificate.orderedField.mul_comm z y]
+  exact Rcompare_mult_r ctx z x y hz
+end CompCert4Lean.Flocq.Core.Raux

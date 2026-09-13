@@ -2856,3 +2856,24 @@ theorem kill_all_loads_hold
           exact rhs_eval_to.builtin_eval_to bf args vargs v hArgs' hSem
 
 end CompCert4Lean.Backend.CSEproof
+
+namespace CompCert4Lean.Backend.CSEproof
+
+open CompCert4Lean.Backend.CSEdomain
+
+theorem kill_cheap_computations_hold
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    kill_cheap_computations_holdStatement := by
+  intro valu ge sp rs m n hnum
+  apply kill_equations_hold valu ge sp rs m n CSE.filter_cheap m hnum
+  intro rh v hpred hvalid hev
+  cases rh with
+  | Op op vl =>
+      simp [CSE.filter_cheap] at hpred
+  | Load chunk addr vl p =>
+      simp [CSE.filter_cheap] at hpred
+  | Builtin bf args =>
+      exact hev
+
+end CompCert4Lean.Backend.CSEproof

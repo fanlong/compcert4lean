@@ -1597,3 +1597,32 @@ theorem PArith.BinPos.Pcompare_antisym_proof :
 
 end Rocq.Coq
 end CompCert4Lean.Foundation.Numbers
+
+namespace CompCert4Lean.Foundation.Numbers
+namespace Rocq.Coq
+
+theorem PArith.BinPos.Pos.compare_eq_iff :
+    PArith.BinPos.Pos.compare_eq_iffStatement := by
+  intro p q
+  constructor
+  · intro h
+    unfold PArith.BinPos.Pos.compare at h
+    change (if posToNat p < posToNat q then (Lt : comparison)
+      else if posToNat p = posToNat q then (Eq : comparison)
+      else (Gt : comparison)) = (Eq : comparison) at h
+    by_cases hpq : posToNat p < posToNat q
+    · simp [hpq] at h
+    · by_cases heq : posToNat p = posToNat q
+      · apply posToNat_injective
+        exact heq
+      · simp [hpq, heq] at h
+  · intro hpq
+    cases hpq
+    unfold PArith.BinPos.Pos.compare
+    change (if posToNat p < posToNat p then (Lt : comparison)
+      else if posToNat p = posToNat p then (Eq : comparison)
+      else (Gt : comparison)) = (Eq : comparison)
+    simp
+
+end Rocq.Coq
+end CompCert4Lean.Foundation.Numbers

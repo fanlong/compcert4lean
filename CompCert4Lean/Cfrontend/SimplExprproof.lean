@@ -1549,3 +1549,392 @@ theorem is_bitfield_access_sound :
       exact (congrArg Prod.snd hpairs).symm
 
 end CompCert4Lean.Cfrontend.SimplExprproof
+
+namespace CompCert4Lean.Cfrontend.SimplExprproof
+
+open CompCert4Lean.Cfrontend.SimplExpr
+open CompCert4Lean.Cfrontend.Cstrategy
+open CompCert4Lean.Cfrontend.SimplExprspec
+open CompCert4Lean.Cfrontend.Ctypes
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Cfrontend.Cop
+
+theorem tr_simple_rvalue :
+    ∀ [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+      [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)],
+      tr_simple_rvalueStatement := by
+  intro binary64_certificate binary32_certificate p tp hmatch cunit e m r v hEval
+  let P1 := fun (l : cexpr) (b : block) (ofs : ptrofs) (bf : bitfield)
+      (_ : Cstrategy.eval_simple_lvalue (Csem.globalenv p) e m l b ofs bf) =>
+      ∀ le sl a tmps, tr_expr cunit.prog_comp_env le .For_val l sl a tmps →
+        sl = [] ∧ Csyntax.typeof l = Clight.typeof a ∧
+          Clight.eval_lvalue (Clight.globalenv tp) e le m a b ofs bf
+  let P2 := fun (r : cexpr) (v : val)
+      (_ : Cstrategy.eval_simple_rvalue (Csem.globalenv p) e m r v) =>
+      ∀ le dst sl a tmps, tr_expr cunit.prog_comp_env le dst r sl a tmps →
+      match dst with
+      | .For_val => sl = [] ∧ Csyntax.typeof r = Clight.typeof a ∧
+          Clight.eval_expr (Clight.globalenv tp) e le m a v
+      | .For_effects => sl = []
+      | .For_set sd => ∃ b, sl = do_set sd b ∧
+          Csyntax.typeof r = Clight.typeof b ∧
+          Clight.eval_expr (Clight.globalenv tp) e le m b v
+  have hrec : P2 r v hEval := by
+    refine Cstrategy.eval_simple_rvalue.rec (motive_1 := P1) (motive_2 := P2)
+      (esl_loc := by
+        intro b ofs ty bf
+        dsimp [P1]
+        intro le sl a tmps htr
+        cases htr)
+      (esl_var_local := by
+        intro x ty b hfind
+        dsimp [P1]
+        intro le sl a tmps htr
+        cases htr with
+        | tr_var =>
+            simp [SimplExprspec.final, Csyntax.typeof, Clight.typeof]
+            exact Clight.eval_lvalue.eval_Evar_local _ _ _ hfind)
+      (esl_var_global := by
+        intro x ty b hlocal hglobal
+        dsimp [P1]
+        intro le sl a tmps htr
+        cases htr with
+        | tr_var =>
+            simp [SimplExprspec.final, Csyntax.typeof, Clight.typeof]
+            apply Clight.eval_lvalue.eval_Evar_global _ _ _ hlocal
+            have hs := symbols_preserved
+              (binary64_certificate := binary64_certificate)
+              (binary32_certificate := binary32_certificate) p tp hmatch
+              (show CompCert4Lean.Common.AST.ident from x)
+            rw [hs]
+            exact hglobal)
+      (esl_deref := by
+        intro r ty b ofs heval ih
+        dsimp [P1]
+        intro le sl a tmps htr
+        cases htr with
+        | tr_deref le dst ty' sl1 a1 tmp h1 =>
+          have hi := ih le .For_val sl1 a1 tmps h1
+          rcases hi with ⟨hsl, hty, hev⟩
+          rw [hsl]
+          simp only [SimplExprspec.final, List.nil_append]
+          constructor
+          · simp
+          · constructor
+            · simp only [Csyntax.typeof]
+              exact (typeof_Ederef' _ _).symm
+            · apply eval_Ederef'
+              exact hev)
+      (esl_field_struct := by
+        intro r f ty b ofs id co att delta bf heval htype hcomp hoffset ih
+        dsimp [P1]
+        intro le sl a tmps htr
+        cases htr
+        case tr_field =>
+          have hi := ih le .For_val _ _ _ (by assumption)
+          rcases hi with ⟨hsl, hty, hev⟩
+          rw [hsl]
+          simp only [SimplExprspec.final, List.nil_append]
+          constructor
+          · simp
+          · constructor
+            · rfl
+            · have henv := comp_env_preserved
+                (binary64_certificate := binary64_certificate)
+                (binary32_certificate := binary32_certificate) p tp hmatch
+              have htype' : Clight.typeof _ = .Tstruct id att :=
+                hty.symm.trans htype
+              have hcomp' : PTree.get id (Clight.globalenv tp).genv_cenv = some co := by
+                rw [henv]
+                exact hcomp
+              have hoffset' : field_offset (Clight.globalenv tp).genv_cenv
+                  f co.co_members = .OK (delta, bf) := by
+                rw [henv]
+                exact hoffset
+              apply Clight.eval_lvalue.eval_Efield_struct
+              · exact hev
+              · exact htype'
+              · exact hcomp'
+              · exact hoffset')
+      (esl_field_union := by
+        intro r f ty b ofs id co att delta bf heval htype hoffset hcomp ih
+        dsimp [P1]
+        intro le sl a tmps htr
+        cases htr
+        case tr_field =>
+          have hi := ih le .For_val _ _ _ (by assumption)
+          rcases hi with ⟨hsl, hty, hev⟩
+          rw [hsl]
+          simp only [SimplExprspec.final, List.nil_append]
+          constructor
+          · simp
+          · constructor
+            · rfl
+            · have henv := comp_env_preserved
+                (binary64_certificate := binary64_certificate)
+                (binary32_certificate := binary32_certificate) p tp hmatch
+              have htype' : Clight.typeof _ = .Tunion id att :=
+                hty.symm.trans htype
+              have hcomp' : PTree.get id (Clight.globalenv tp).genv_cenv = some co := by
+                rw [henv]
+                exact hcomp
+              have hoffset' : union_field_offset (Clight.globalenv tp).genv_cenv
+                  f co.co_members = .OK (delta, bf) := by
+                rw [henv]
+                exact hoffset
+              apply Clight.eval_lvalue.eval_Efield_union
+              · exact hev
+              · exact htype'
+              · exact hcomp'
+              · exact hoffset')
+      (esr_val := by
+        intro v ty
+        dsimp [P2]
+        intro le dst sl a tmps htr
+        cases htr with
+        | tr_val_effect => simp
+        | tr_val_value =>
+            simp
+            constructor
+            · exact (by assumption : Clight.typeof _ = _).symm
+            · apply_assumption
+              intro id hid
+              rfl
+        | tr_val_set le sd a0 any tmp htype heval =>
+            simp
+            refine ⟨any, rfl, ?_, ?_⟩
+            · exact heval.symm
+            · apply_assumption
+              intro id hid
+              rfl)
+      (esr_rvalof := by
+        intro b ofs bf l ty v heval hty hvol hderef ih
+        dsimp [P2]
+        intro le dst sl a tmps htr
+        cases htr with
+        | tr_valof le dst ty' tmp sl1 a1 tmp1 sl2 a2 tmp2 h1 h2 hdisjoint hincl1 hincl2 =>
+          cases h2 with
+          | tr_rvalof_nonvol =>
+            have hi := ih le sl1 a tmp1 h1
+            rcases hi with ⟨hsl, htype, hlval⟩
+            have hd := deref_loc_translated
+              (binary64_certificate := binary64_certificate)
+              (binary32_certificate := binary32_certificate) p tp hmatch
+              ty m b ofs bf CompCert4Lean.Common.Events.E0 v hderef
+            simp [chunk_for_volatile_type, hvol] at hd
+            cases dst
+            · rw [hsl]
+              simp only [SimplExprspec.final, List.nil_append]
+              have hta : Clight.typeof a = ty := htype.symm.trans hty.symm
+              constructor
+              · simp
+              · constructor
+                · simp only [Csyntax.typeof]
+                  exact hta.symm
+                · apply Clight.eval_expr.eval_Elvalue
+                  · exact hlval
+                  · simpa [hta] using hd
+            · rw [hsl]
+              simp only [SimplExprspec.final, List.nil_append]
+            · rw [hsl]
+              simp only [SimplExprspec.final, List.nil_append]
+              refine ⟨a, rfl, ?_, ?_⟩
+              · exact hty.trans htype
+              · apply Clight.eval_expr.eval_Elvalue
+                · exact hlval
+                · have hta : Clight.typeof a = ty := htype.symm.trans hty.symm
+                  simpa [hta] using hd
+          | tr_rvalof_vol =>
+            simp_all)
+      (esr_addrof := by
+        intro b ofs l ty heval ih
+        dsimp [P2]
+        intro le dst sl a tmps htr
+        cases htr
+        case tr_addrof =>
+          have hi := ih le _ _ _ (by assumption)
+          rcases hi with ⟨hsl, htype, hlval⟩
+          cases dst
+          · rw [hsl]
+            simp only [SimplExprspec.final, List.nil_append]
+            constructor
+            · simp
+            · constructor
+              · exact (typeof_Eaddrof' _ _).symm
+              · apply eval_Eaddrof'
+                exact hlval
+          · rw [hsl]
+            simp only [SimplExprspec.final, List.nil_append]
+          · rw [hsl]
+            simp only [SimplExprspec.final, List.nil_append]
+            refine ⟨_, rfl, ?_, ?_⟩
+            · exact (typeof_Eaddrof' _ _).symm
+            · apply eval_Eaddrof'
+              exact hlval)
+      (esr_unop := by
+        intro op r1 ty v1 v heval hsem ih
+        dsimp [P2]
+        intro le dst sl a tmps htr
+        cases htr with
+        | tr_unop le dst op' ty' tmp sl1 a1 h1 =>
+          have hi := ih le .For_val sl1 a1 tmps h1
+          rcases hi with ⟨hsl, htype, hev⟩
+          have hsem' : sem_unary_operation op v1 (Clight.typeof a1) m = some v := by
+            rw [← htype]
+            exact hsem
+          cases dst
+          · rw [hsl]
+            simp only [SimplExprspec.final, List.nil_append]
+            constructor
+            · simp
+            · constructor
+              · rfl
+              · apply Clight.eval_expr.unary
+                · exact hev
+                · exact hsem'
+          · rw [hsl]
+            simp only [SimplExprspec.final, List.nil_append]
+          · rw [hsl]
+            simp only [SimplExprspec.final, List.nil_append]
+            refine ⟨_, rfl, ?_, ?_⟩
+            · rfl
+            · apply Clight.eval_expr.unary
+              · exact hev
+              · exact hsem')
+      (esr_binop := by
+        intro op r1 r2 ty v1 v2 v heval1 heval2 hsem ih1 ih2
+        dsimp [P2]
+        intro le dst sl a tmps htr
+        cases htr with
+        | tr_binop le dst op' e2 ty' sl1 a1 tmp1 sl2 a2 tmp2 tmp h1 h2 hdisjoint hincl1 hincl2 =>
+          have hi1 := ih1 le .For_val sl1 a1 tmp1 h1
+          have hi2 := ih2 le .For_val sl2 a2 tmp2 h2
+          rcases hi1 with ⟨hsl1, htype1, hev1⟩
+          rcases hi2 with ⟨hsl2, htype2, hev2⟩
+          have henv := comp_env_preserved
+            (binary64_certificate := binary64_certificate)
+            (binary32_certificate := binary32_certificate) p tp hmatch
+          have hsem' : sem_binary_operation (Clight.globalenv tp).genv_cenv
+              op v1 (Clight.typeof a1) v2 (Clight.typeof a2) m = some v := by
+            rw [henv, ← htype1, ← htype2]
+            exact hsem
+          cases dst
+          · rw [hsl1, hsl2]
+            simp only [SimplExprspec.final, List.nil_append, List.append_nil]
+            constructor
+            · simp
+            · constructor
+              · rfl
+              · apply Clight.eval_expr.binary
+                · exact hev1
+                · exact hev2
+                · exact hsem'
+          · rw [hsl1, hsl2]
+            simp only [SimplExprspec.final, List.nil_append, List.append_nil]
+          · rw [hsl1, hsl2]
+            simp only [SimplExprspec.final, List.nil_append, List.append_nil]
+            refine ⟨_, rfl, ?_, ?_⟩
+            · rfl
+            · apply Clight.eval_expr.binary
+              · exact hev1
+              · exact hev2
+              · exact hsem')
+      (esr_cast := by
+        intro ty r1 v1 v heval hsem ih
+        dsimp [P2]
+        intro le dst sl a tmps htr
+        cases htr with
+        | tr_cast_effects le ty' sl1 a1 any tmp h1 =>
+          simpa using (ih le .For_effects sl a1 tmps h1)
+        | tr_cast_val le dst ty' sl1 a1 tmp h1 =>
+          have hi := ih le .For_val sl1 a1 tmps h1
+          rcases hi with ⟨hsl, htype, hev⟩
+          have hsem' : sem_cast v1 (Clight.typeof a1) ty m = some v := by
+            rw [← htype]
+            exact hsem
+          cases dst
+          · rw [hsl]
+            simp only [SimplExprspec.final, List.nil_append]
+            constructor
+            · simp
+            · constructor
+              · rfl
+              · apply Clight.eval_expr.cast
+                · exact hev
+                · exact hsem'
+          · rw [hsl]
+            simp only [SimplExprspec.final, List.nil_append]
+          · rw [hsl]
+            simp only [SimplExprspec.final, List.nil_append]
+            refine ⟨_, rfl, ?_, ?_⟩
+            · rfl
+            · apply Clight.eval_expr.cast
+              · exact hev
+              · exact hsem')
+      (esr_sizeof := by
+        intro ty1 ty
+        dsimp [P2]
+        intro le dst sl a tmps htr
+        cases htr
+        case tr_sizeof =>
+          have henv := comp_env_preserved
+            (binary64_certificate := binary64_certificate)
+            (binary32_certificate := binary32_certificate) p tp hmatch
+          cases dst
+          · simp only [SimplExprspec.final]
+            constructor
+            · simp
+            · constructor
+              · rfl
+              · simpa only [henv] using
+                  (Clight.eval_expr.sizeof_type
+                    (binary64_certificate := binary64_certificate)
+                    (binary32_certificate := binary32_certificate)
+                    (ge := Clight.globalenv tp)
+                    (e := (show Clight.env from e)) (le := le) (m := m) ty1 ty)
+          · simp only [SimplExprspec.final]
+          · simp only [SimplExprspec.final]
+            refine ⟨_, rfl, ?_, ?_⟩
+            · rfl
+            · simpa only [henv] using
+                (Clight.eval_expr.sizeof_type
+                  (binary64_certificate := binary64_certificate)
+                  (binary32_certificate := binary32_certificate)
+                  (ge := Clight.globalenv tp)
+                  (e := (show Clight.env from e)) (le := le) (m := m) ty1 ty))
+      (esr_alignof := by
+        intro ty1 ty
+        dsimp [P2]
+        intro le dst sl a tmps htr
+        cases htr
+        case tr_alignof =>
+          have henv := comp_env_preserved
+            (binary64_certificate := binary64_certificate)
+            (binary32_certificate := binary32_certificate) p tp hmatch
+          cases dst
+          · simp only [SimplExprspec.final]
+            constructor
+            · simp
+            · constructor
+              · rfl
+              · simpa only [henv] using
+                  (Clight.eval_expr.alignof_type
+                    (binary64_certificate := binary64_certificate)
+                    (binary32_certificate := binary32_certificate)
+                    (ge := Clight.globalenv tp)
+                    (e := (show Clight.env from e)) (le := le) (m := m) ty1 ty)
+          · simp only [SimplExprspec.final]
+          · simp only [SimplExprspec.final]
+            refine ⟨_, rfl, ?_, ?_⟩
+            · rfl
+            · simpa only [henv] using
+                (Clight.eval_expr.alignof_type
+                  (binary64_certificate := binary64_certificate)
+                  (binary32_certificate := binary32_certificate)
+                  (ge := Clight.globalenv tp)
+                  (e := (show Clight.env from e)) (le := le) (m := m) ty1 ty))
+      hEval
+  simpa [P2] using hrec
+
+end CompCert4Lean.Cfrontend.SimplExprproof

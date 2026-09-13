@@ -1209,3 +1209,26 @@ theorem list_length_z_cons : list_length_z_consStatement := by
   rfl
 
 end CompCert4Lean.Lib.Coqlib
+
+namespace CompCert4Lean.Lib.Coqlib
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem list_length_z_pos : list_length_z_posStatement := by
+  intro A l
+  induction l with
+  | nil =>
+      change intOfZ Z0 ≤ intOfZ (list_length_z [])
+      simp [list_length_z, list_length_z_aux]
+  | cons hd tl ih =>
+      rw [list_length_z_cons]
+      unfold ZArith.BinInt.Z.ge ZArith.BinInt.Z.add
+      simp only [intOfZ_zOfInt]
+      have hZero : intOfZ Z0 = 0 := by rfl
+      have htl : 0 ≤ intOfZ (list_length_z tl) := by
+        exact ih
+      have hOne : intOfZ (Zpos xH) = 1 := by
+        rfl
+      omega
+
+end CompCert4Lean.Lib.Coqlib

@@ -1446,3 +1446,167 @@ theorem transl_code_tail : transl_code_tailStatement := by
             htrans_tail htail1 htail_instr⟩
 
 end CompCert4Lean.Backend.Asmgenproof0
+
+namespace CompCert4Lean.Backend.Asmgenproof0
+
+theorem code_tail_unique : code_tail_uniqueStatement := by
+  intro fn c pos pos' h1 h2
+  induction h1 generalizing pos' with
+  | base c =>
+      cases h2 with
+      | base => rfl
+      | @step pos' i c1 c2 h2' =>
+          have hn := code_tail_no_bigger pos' c1 (i :: c1) h2'
+          change Nat.succ c1.length ≤ c1.length at hn
+          omega
+  | @step pos i c1 c2 h ih =>
+      cases h2 with
+      | base =>
+          have hn := code_tail_no_bigger pos c1 (i :: c1) h
+          change Nat.succ c1.length ≤ c1.length at hn
+          omega
+      | @step pos' i' c1' c2' h2' =>
+          have hi := ih pos' h2'
+          cases hi
+          rfl
+
+end CompCert4Lean.Backend.Asmgenproof0
+
+namespace CompCert4Lean.Backend.Asmgenproof0
+
+theorem return_address_offset_correct : return_address_offset_correctStatement := by
+  intro ge b ofs fb f c tf tc ofs' hpc hret
+  cases hpc with
+  | intro b ofs f c ep tf tc hfind htransf hcode htail =>
+      have htail' := hret tf tc htransf hcode
+      have hu := code_tail_unique tf.fn_code tc
+        (CompCert4Lean.Lib.Integers.Ptrofs.unsigned ofs)
+        (CompCert4Lean.Lib.Integers.Ptrofs.unsigned ofs') htail htail'
+      apply CompCert4Lean.Lib.Integers.WordCore.ext
+      exact hu.symm
+
+end CompCert4Lean.Backend.Asmgenproof0
+
+namespace CompCert4Lean.Backend.Asmgenproof0
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem label_pos_code_tail : label_pos_code_tailStatement := by
+  intro lbl c pos c' hfind
+  induction c generalizing pos c' with
+  | nil =>
+      simp [find_label] at hfind
+  | cons a tl ih =>
+      cases hlabel : CompCert4Lean.X86.Asm.is_label lbl a with
+      | true =>
+          simp [find_label, hlabel] at hfind
+          cases hfind
+          refine ⟨ZArith.BinInt.Z.add pos (Zpos xH), ?_, ?_, ?_, ?_⟩
+          · simp [CompCert4Lean.X86.Asm.label_pos, hlabel]
+            rfl
+          · have hsub : ZArith.BinInt.Z.sub
+                (ZArith.BinInt.Z.add pos (Zpos xH)) pos =
+              ZArith.BinInt.Z.add ZArith.BinInt.Z.Z0 (Zpos xH) := by
+                apply CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective
+                simp only [ZArith.BinInt.Z.sub, ZArith.BinInt.Z.add,
+                  CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+                have hz0 : CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+                    ZArith.BinInt.Z.Z0 = 0 := by rfl
+                rw [hz0]
+                omega
+            rw [hsub]
+            exact code_tail.step ZArith.BinInt.Z.Z0 a (code_tail.base tl)
+          · change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ pos <
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+                (ZArith.BinInt.Z.add pos (Zpos xH))
+            simp only [ZArith.BinInt.Z.add,
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+            have hone : CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+                (Zpos xH) = 1 := by rfl
+            rw [hone]
+            have hlen := list_length_z_nonneg tl
+            change 0 ≤ CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+              (CompCert4Lean.Lib.Coqlib.list_length_z tl) at hlen
+            omega
+          · unfold ZArith.BinInt.Z.le
+            simp only [ZArith.BinInt.Z.add,
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+            rw [CompCert4Lean.Lib.Coqlib.list_length_z_cons]
+            simp only [ZArith.BinInt.Z.add,
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+            have hone : CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+                (Zpos xH) = 1 := by rfl
+            rw [hone]
+            have hlen := list_length_z_nonneg tl
+            change 0 ≤ CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+              (CompCert4Lean.Lib.Coqlib.list_length_z tl) at hlen
+            omega
+      | false =>
+          simp [find_label, hlabel] at hfind
+          have hi := ih (ZArith.BinInt.Z.add pos (Zpos xH)) c' hfind
+          rcases hi with ⟨pos', hpos', htail, hlt, hle⟩
+          refine ⟨pos', ?_, ?_, ?_, ?_⟩
+          · simp [CompCert4Lean.X86.Asm.label_pos, hlabel]
+            exact hpos'
+          · have hsub : ZArith.BinInt.Z.sub pos' pos =
+                ZArith.BinInt.Z.add
+                  (ZArith.BinInt.Z.sub pos'
+                    (ZArith.BinInt.Z.add pos (Zpos xH))) (Zpos xH) := by
+                apply CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective
+                simp only [ZArith.BinInt.Z.sub, ZArith.BinInt.Z.add,
+                  CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+                omega
+            rw [hsub]
+            exact code_tail.step _ a htail
+          · change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ pos <
+                CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ pos'
+            change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+                (ZArith.BinInt.Z.add pos (Zpos xH)) <
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ pos' at hlt
+            simp only [ZArith.BinInt.Z.add,
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt] at hlt
+            have hone : CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+                (Zpos xH) = 1 := by rfl
+            rw [hone] at hlt
+            omega
+          · unfold ZArith.BinInt.Z.le
+            simp only [ZArith.BinInt.Z.add,
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+            rw [CompCert4Lean.Lib.Coqlib.list_length_z_cons]
+            simp only [ZArith.BinInt.Z.add,
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+            change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ pos' ≤
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ pos +
+                (CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+                  (CompCert4Lean.Lib.Coqlib.list_length_z tl) + 1)
+            unfold ZArith.BinInt.Z.le at hle
+            simp only [ZArith.BinInt.Z.add,
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt] at hle
+            have hone : CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+                (Zpos xH) = 1 := by rfl
+            rw [hone] at hle
+            omega
+
+end CompCert4Lean.Backend.Asmgenproof0
+
+namespace CompCert4Lean.Backend.Asmgenproof0
+
+theorem tail_nolabel_trans : tail_nolabel_transStatement := by
+  intro c1 c2 c3 h23 h12
+  rcases h23 with ⟨ht23, hl23⟩
+  rcases h12 with ⟨ht12, hl12⟩
+  have htrans : ∀ {l1 l2 l3 : AsmCode},
+      CompCert4Lean.Lib.Coqlib.is_tail l1 l2 →
+      CompCert4Lean.Lib.Coqlib.is_tail l2 l3 →
+      CompCert4Lean.Lib.Coqlib.is_tail l1 l3 := by
+    intro l1 l2 l3 h12' h23'
+    induction h23' with
+    | refl => exact h12'
+    | cons i h23' ih =>
+        exact CompCert4Lean.Lib.Coqlib.is_tail.cons i (ih h12')
+  constructor
+  · exact htrans ht12 ht23
+  · intro lbl
+    rw [hl23, hl12]
+
+end CompCert4Lean.Backend.Asmgenproof0
