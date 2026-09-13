@@ -2345,3 +2345,26 @@ theorem wt_stackframes_change_sig : wt_stackframes_change_sigStatement := by
       exact hres
 
 end CompCert4Lean.Backend.RTLtyping
+
+namespace CompCert4Lean.Backend.RTLtyping
+
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Backend.RTL
+
+theorem wt_initial_state : wt_initial_stateStatement := by
+  intro cfg p hwt s hs
+  cases hs with
+  | intro b f m0 hmem hsymb hfun hsig =>
+      apply wt_state_call
+      · apply wt_stackframes_nil
+        rw [hsig]
+        rfl
+      · exact Genv.find_funct_ptr_prop
+          (F := fundef) (V := Unit) (P := wt_fundef cfg)
+          (p := p) (b := b) (f := f) hwt hfun
+      · rw [hsig]
+        exact True.intro
+
+end CompCert4Lean.Backend.RTLtyping

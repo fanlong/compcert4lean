@@ -1757,3 +1757,86 @@ theorem bounded_lt_emax :
   have hpow_bound := hbpow_le (Zadd (Zpos (digits2_pos mx)) ex) emax Hsum
   exact CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.Rlt_le_trans
     ctx _ _ _ hbound hpow_bound
+
+end CompCert4Lean.Flocq.IEEE754.BinarySingleNaN
+
+namespace CompCert4Lean.Flocq.IEEE754.BinarySingleNaN
+
+private theorem pg_abs_cond_Zopp_pos (s : Bool) (m : positive) :
+    Zabs (cond_Zopp s (Zpos m)) = Zpos m := by
+  cases s with
+  | false =>
+      change Zabs (Zpos m) = Zpos m
+      apply CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective
+      change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.abs
+            (Zpos m)) =
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (Zpos m)
+      unfold CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.abs
+      rw [CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+      simp [CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ]
+  | true =>
+      change Zabs (Zopp (Zpos m)) = Zpos m
+      apply CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective
+      change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.abs
+            (Zopp (Zpos m))) =
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (Zpos m)
+      have hmopp :
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (Zopp (Zpos m)) =
+            -CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (Zpos m) := by
+        change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+            (CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt
+              (-CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (Zpos m))) = _
+        rw [CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+      unfold CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.abs
+      rw [CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+      rw [hmopp]
+      simp only [CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ]
+      rw [Int.natAbs_neg]
+      rfl
+
+theorem abs_B2R_lt_emax :
+    ∀ {prec emax : Z} (ctx : ExactRealContext),
+      abs_B2R_lt_emaxStatement (prec := prec) (emax := emax) ctx := by
+  intro prec emax ctx x Hx
+  have hzero : Exact.Rlt ctx (Exact.Rabs ctx (Exact.R0 ctx))
+      (Exact.bpow ctx radix2 emax) := by
+    have habs : Exact.Rabs ctx (Exact.R0 ctx) = Exact.R0 ctx := by
+      change ctx.spec.abs ctx.spec.zero = ctx.spec.zero
+      exact ctx.certificate.sourceLaws.abs_nonnegative ctx.spec.zero
+        (ctx.certificate.orderedField.le_refl _)
+    rw [habs]
+    exact CompCert4Lean.Flocq.Core.Raux.bpow_gt_0 ctx radix2 emax
+  cases x with
+  | B754_nan => simpa [Exact.B2R] using hzero
+  | B754_infinity s => simpa [Exact.B2R] using hzero
+  | B754_zero s => simpa [Exact.B2R] using hzero
+  | B754_finite s m e =>
+      have hb : bounded (prec := prec) (emax := emax) m e = true := by
+        change valid_binary0 prec emax (S754_finite s m e) = true at Hx
+        change bounded0 prec emax m e = true at Hx
+        exact Hx
+      have hlt := bounded_lt_emax (prec := prec) (emax := emax) ctx m e hb
+      have hz := pg_abs_cond_Zopp_pos s m
+      have hF := CompCert4Lean.Flocq.Core.Float_prop.F2R_Zabs ctx radix2
+        (cond_Zopp s (Zpos m)) e
+      have hrabs : Exact.Rabs ctx
+          (Exact.F2R ctx (Float radix2 (cond_Zopp s (Zpos m)) e)) =
+          Exact.F2R ctx (Float radix2 (Zabs (cond_Zopp s (Zpos m))) e) := by
+        change CompCert4Lean.Flocq.Core.Float_prop.Exact.Rabs ctx
+            (CompCert4Lean.Flocq.Core.Float_prop.Exact.F2R ctx
+              (CompCert4Lean.Flocq.Core.Float_prop.Float radix2
+                (cond_Zopp s (Zpos m)) e)) =
+          CompCert4Lean.Flocq.Core.Float_prop.Exact.F2R ctx
+            (CompCert4Lean.Flocq.Core.Float_prop.Float radix2
+              (Zabs (cond_Zopp s (Zpos m))) e)
+        exact hF.symm
+      change Exact.Rlt ctx
+        (Exact.Rabs ctx
+          (Exact.F2R ctx (Float radix2 (cond_Zopp s (Zpos m)) e)))
+        (Exact.bpow ctx radix2 emax)
+      rw [hrabs, hz]
+      exact hlt
+
+end CompCert4Lean.Flocq.IEEE754.BinarySingleNaN

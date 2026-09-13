@@ -2620,3 +2620,81 @@ theorem eval_store
           · exact hstore
 
 end CompCert4Lean.Backend.Selectionproof
+
+namespace CompCert4Lean.Backend.Selectionproof
+
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.Backend.Selection
+open CompCert4Lean.X86.Op
+open CompCert4Lean.X86.SelectOp
+
+private theorem selection_lessdef_normalize (v : val) (ty : typ) :
+    Val.lessdef (Val.normalize v ty) v := by
+  cases v <;> cases ty <;>
+    simp [Val.normalize, CompCert4Lean.X86_64.Archi.ptr64] <;>
+    first | exact Val.lessdef_refl _ | exact Val.lessdef_undef _
+
+theorem eval_sel_select
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    eval_sel_selectStatement := by
+  intro xi tprog sp e m le aCond aThen aElse vCond vThen vElse b ty
+    hCond hThen hElse hb
+  have hc := eval_condition_of_expr
+    (binary64_certificate := binary64_certificate)
+    (binary32_certificate := binary32_certificate)
+    xi tprog sp e m aCond le vCond b hCond hb
+  cases hshape : condition_of_expr aCond with
+  | mk cond args =>
+      simp only [hshape] at hc
+      rcases hc with ⟨vl, hargs, hcond⟩
+      by_cases hsupported : select_supported ty = true
+      · have hsel : sel_select ty aCond aThen aElse =
+            CompCert4Lean.X86.SelectOp.select ty cond args aThen aElse := by
+          simp [sel_select, hshape, hsupported]
+        rw [hsel]
+        by_cases hswap : select_swap cond = true
+        · have hneg := eval_negate_condition cond vl m
+          have hneg' :
+              eval_condition (negate_condition cond) vl m = some (!b) := by
+            rw [hneg, hcond]
+            rfl
+          refine ⟨Val.select (some b) vThen vElse ty, ?_, Val.lessdef_refl _⟩
+          simp only [CompCert4Lean.X86.SelectOp.select, hswap, ↓reduceIte]
+          apply eval_Eop
+          · exact eval_exprlist.cons le aElse (Econs aThen args) vElse
+              (vThen :: vl) hElse
+              (eval_exprlist.cons le aThen args vThen vl hThen hargs)
+          · change some (Val.select (eval_condition (negate_condition cond) vl m)
+                vElse vThen ty) = some (Val.select (some b) vThen vElse ty)
+            rw [hneg']
+            cases b <;> rfl
+        · refine ⟨Val.select (some b) vThen vElse ty, ?_, Val.lessdef_refl _⟩
+          simp only [CompCert4Lean.X86.SelectOp.select, hswap, ↓reduceIte]
+          apply eval_Eop
+          · exact eval_exprlist.cons le aThen (Econs aElse args) vThen
+              (vElse :: vl) hThen
+              (eval_exprlist.cons le aElse args vElse vl hElse hargs)
+          · change some (Val.select (eval_condition cond vl m) vThen vElse ty) =
+                some (Val.select (some b) vThen vElse ty)
+            rw [hcond]
+      · refine ⟨if b then vThen else vElse, ?_, ?_⟩
+        · have hsel : sel_select ty aCond aThen aElse =
+              .Econdition (condexpr_of_expr aCond) aThen aElse := by
+            simp [sel_select, hshape, hsupported]
+          rw [hsel]
+          apply eval_Econdition
+          · exact eval_condexpr_of_expr
+              (binary64_certificate := binary64_certificate)
+              (binary32_certificate := binary32_certificate)
+              xi tprog sp e m aCond le vCond b hCond hb
+          · cases b
+            · exact hElse
+            · exact hThen
+        · exact selection_lessdef_normalize _ _
+
+end CompCert4Lean.Backend.Selectionproof
