@@ -1328,3 +1328,52 @@ theorem find_instr_tail : find_instr_tailStatement := by
   exact find_instr_tail_aux c1 pos (i :: c2) h i c2 rfl
 
 end CompCert4Lean.Backend.Asmgenproof0
+
+namespace CompCert4Lean.Backend.Asmgenproof0
+
+theorem code_tail_next : code_tail_nextStatement := by
+  intro fn ofs i c h
+  have aux : ∀
+      (ofs : CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z)
+      (fn c : CompCert4Lean.X86.Asm.code), code_tail ofs fn c →
+      ∀ (i : CompCert4Lean.X86.Asm.instruction)
+        (c' : CompCert4Lean.X86.Asm.code), c = i :: c' →
+        code_tail
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add ofs
+            (CompCert4Lean.Foundation.Numbers.Rocq.Coq.Zpos
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.xH)) fn c' := by
+    intro ofs fn c h
+    induction h with
+    | base c =>
+        intro i c' heq
+        subst c
+        exact code_tail.step
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.Z0
+          i (code_tail.base c')
+    | @step pos i0 c1 c2 h ih =>
+        intro i c' heq
+        exact code_tail.step _ i0 (ih i c' heq)
+  exact aux ofs fn (i :: c) h i c rfl
+
+theorem transl_code_rec_transl_code : transl_code_rec_transl_codeStatement := by
+  intro f il ep k
+  induction il generalizing ep k with
+  | nil => rfl
+  | cons i1 il ih =>
+      simp only [CompCert4Lean.X86.Asmgen.transl_code_rec,
+        CompCert4Lean.X86.Asmgen.transl_code]
+      rw [ih]
+      cases hcode : CompCert4Lean.X86.Asmgen.transl_code f il
+          (CompCert4Lean.X86.Asmgen.it1_is_parent ep i1) with
+      | Error msg => rfl
+      | OK c1 => rfl
+
+theorem transl_code'_transl_code : transl_code'_transl_codeStatement := by
+  intro f il ep
+  unfold CompCert4Lean.X86.Asmgen.transl_code'
+  rw [transl_code_rec_transl_code]
+  cases h : CompCert4Lean.X86.Asmgen.transl_code f il ep with
+  | Error msg => rfl
+  | OK c => rfl
+
+end CompCert4Lean.Backend.Asmgenproof0

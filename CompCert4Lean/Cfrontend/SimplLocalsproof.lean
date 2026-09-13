@@ -1915,3 +1915,11 @@ theorem val_casted_load_result : val_casted_load_resultStatement := by
       cases hmode
 
 end CompCert4Lean.Cfrontend.SimplLocalsproof
+
+namespace CompCert4Lean.Cfrontend.SimplLocalsproof
+
+theorem val_casted_inject : val_casted_injectStatement := by
+  intro f v v' ty hinj hcast
+  cases hinj <;> cases hcast <;> constructor <;> assumption
+
+end CompCert4Lean.Cfrontend.SimplLocalsproof
