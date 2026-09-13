@@ -1331,3 +1331,8 @@ theorem B2R_Bopp :
             exact hF
           rw [hF']
           exact (hnegneg _).symm
+
+theorem is_finite_Bopp :
+    ∀ {prec emax : Z}, is_finite_BoppStatement (prec := prec) (emax := emax) := by
+  intro prec emax x Hx
+  cases x <;> rfl
