@@ -2573,3 +2573,76 @@ theorem Rcompare_mult_l (ctx : ExactRealContext) : Rcompare_mult_lStatement ctx 
   rw [ctx.certificate.orderedField.mul_comm z x, ctx.certificate.orderedField.mul_comm z y]
   exact Rcompare_mult_r ctx z x y hz
 end CompCert4Lean.Flocq.Core.Raux
+
+namespace CompCert4Lean.Flocq.Core.Raux
+
+theorem Rmin_compare (ctx : ExactRealContext) :
+    Rmin_compareStatement ctx := by
+  intro x y
+  change ctx.spec.min x y = _
+  rcases ctx.certificate.total_order x y with hxy | hyx
+  · rcases hxy with hlt | heq
+    · have hle : ctx.spec.le x y :=
+        (ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp hlt |>.1
+      rw [ctx.certificate.sourceLaws.min_eq_left _ _ hle,
+        Rcompare_Lt ctx x y hlt]
+    · subst y
+      rw [ctx.certificate.sourceLaws.min_eq_left _ _
+          (ctx.certificate.orderedField.le_refl _),
+        Rcompare_Eq ctx x x rfl]
+  · have hle : ctx.spec.le y x :=
+      (ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp hyx |>.1
+    rw [ctx.certificate.sourceLaws.min_eq_right _ _ hle,
+      Rcompare_Gt ctx x y hyx]
+
+end CompCert4Lean.Flocq.Core.Raux
+
+namespace CompCert4Lean.Flocq.Core.Raux
+
+theorem Rle_bool_spec (ctx : ExactRealContext) :
+    Rle_bool_specStatement ctx := by
+  intro x y
+  change Exact.Rle_bool_prop ctx x y (Exact.Rle_bool ctx x y)
+  unfold Exact.Rle_bool
+  rcases ctx.certificate.total_order x y with hxy | hyx
+  · rcases hxy with hlt | heq
+    · have hle : ctx.spec.le x y :=
+        (ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp hlt |>.1
+      rw [Rcompare_Lt ctx x y hlt]
+      exact Exact.Rle_bool_prop.Rle_bool_true_ hle
+    · subst y
+      rw [Rcompare_Eq ctx x x rfl]
+      exact Exact.Rle_bool_prop.Rle_bool_true_
+        (ctx.certificate.orderedField.le_refl x)
+  · rw [Rcompare_Gt ctx x y hyx]
+    exact Exact.Rle_bool_prop.Rle_bool_false_ hyx
+
+end CompCert4Lean.Flocq.Core.Raux
+
+namespace CompCert4Lean.Flocq.Core.Raux
+
+theorem Rle_bool_true (ctx : ExactRealContext) :
+    Rle_bool_trueStatement ctx := by
+  intro x y hxy
+  change Exact.Rle_bool ctx x y = true
+  unfold Exact.Rle_bool
+  rcases ctx.certificate.total_order x y with hxy' | hyx
+  · rcases hxy' with hlt | heq
+    · rw [Rcompare_Lt ctx x y hlt]
+    · subst y
+      rw [Rcompare_Eq ctx x x rfl]
+  · exact False.elim
+      (((ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp hyx).2 hxy)
+
+end CompCert4Lean.Flocq.Core.Raux
+
+namespace CompCert4Lean.Flocq.Core.Raux
+
+theorem Rle_bool_false (ctx : ExactRealContext) :
+    Rle_bool_falseStatement ctx := by
+  intro x y hxy
+  change Exact.Rle_bool ctx x y = false
+  unfold Exact.Rle_bool
+  rw [Rcompare_Gt ctx x y hxy]
+
+end CompCert4Lean.Flocq.Core.Raux

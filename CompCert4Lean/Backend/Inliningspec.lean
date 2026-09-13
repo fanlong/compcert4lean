@@ -2446,3 +2446,92 @@ theorem tr_function_linkorder : tr_function_linkorderStatement := by
         hbody hdstk hret hsig hparams hentry hstack
 
 end CompCert4Lean.Backend.Inliningspec
+
+namespace CompCert4Lean.Backend.Inliningspec
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Backend.Inlining
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Lib.Coqlib
+
+theorem transf_function_spec : transf_function_specStatement := by
+  intro cfg cunit f f' h
+  unfold CompCert4Lean.Backend.Inlining.transf_function at h
+  cases he : expand_function (funenv_program cfg cunit) f initstate with
+  | R ctx s incr =>
+      rw [he] at h
+      cases hz : zlt s.st_stksize CompCert4Lean.Lib.Integers.Ptrofs.max_unsigned with
+      | left hlt =>
+          simp only [hz] at h
+          cases h
+          simp [Inlining.expand_function, Inlining.bind, Inlining.reserve_nodes,
+            Inlining.reserve_regs, Inlining.ret] at he
+          rcases he with ⟨hctx, hcfg⟩
+          subst ctx
+          cases hce : expand_cfg (funenv_program cfg cunit)
+              (initcontext initstate.st_nextnode initstate.st_nextreg
+                (max_reg_function f) f.fn_stacksize) f
+              { st_nextreg := PArith.BinPos.Pos.add initstate.st_nextreg
+                  (max_reg_function f)
+                st_nextnode := PArith.BinPos.Pos.add initstate.st_nextnode
+                  (max_pc_function f)
+                st_code := initstate.st_code
+                st_stksize := initstate.st_stksize } with
+          | R u s2 i2 =>
+              simp [hce] at hcfg
+              subst s
+              refine @CompCert4Lean.Backend.Inliningspec.tr_function.tr_function_intro
+                cunit (funenv_program cfg cunit) f _
+                (initcontext initstate.st_nextnode initstate.st_nextreg
+                  (max_reg_function f) f.fn_stacksize) ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_
+              · exact funenv_program_compat cfg cunit
+              · apply expand_cfg_spec
+                  (funenv_program cfg cunit) s2.st_stksize
+                  (funenv_program cfg cunit)
+                  (initcontext initstate.st_nextnode initstate.st_nextreg
+                    (max_reg_function f) f.fn_stacksize)
+                  f
+                  { st_nextreg := PArith.BinPos.Pos.add initstate.st_nextreg
+                      (max_reg_function f)
+                    st_nextnode := PArith.BinPos.Pos.add initstate.st_nextnode
+                      (max_pc_function f)
+                    st_code := initstate.st_code
+                    st_stksize := initstate.st_stksize }
+                  u s2 i2 s2.st_code hce
+                · intro id f hget
+                  exact hget
+                · change Ple
+                    (PArith.BinPos.Pos.add initstate.st_nextnode
+                      (max_pc_function f))
+                    (PArith.BinPos.Pos.add initstate.st_nextnode
+                      (max_pc_function f))
+                  exact Nat.le_refl _
+                · rfl
+                · change Ple
+                    (PArith.BinPos.Pos.add initstate.st_nextreg
+                      (max_reg_function f))
+                    (PArith.BinPos.Pos.add initstate.st_nextreg
+                      (max_reg_function f))
+                  exact Nat.le_refl _
+                · exact ZArith.BinInt.Z.le_max_r _ _
+                · rfl
+                · refine ⟨Z0, ?_⟩
+                  simp [initcontext, ZArith.BinInt.Z.mul, intOfZ, zOfInt]
+                · simp [initcontext, zGe, ZArith.BinInt.Z.ge]
+                · exact Int.le_refl _
+                · intro pc' hpc' hlt'
+                  rfl
+              · rfl
+              · rfl
+              · rfl
+              · rfl
+              · rfl
+              · constructor
+                · exact incr.3
+                · exact hlt
+      | right hge =>
+          simp only [hz] at h
+          cases h
+
+end CompCert4Lean.Backend.Inliningspec

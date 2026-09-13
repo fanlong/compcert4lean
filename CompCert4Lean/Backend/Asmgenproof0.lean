@@ -1610,3 +1610,210 @@ theorem tail_nolabel_trans : tail_nolabel_transStatement := by
     rw [hl23, hl12]
 
 end CompCert4Lean.Backend.Asmgenproof0
+
+namespace CompCert4Lean.Backend.Asmgenproof0
+
+theorem exec_straight_trans
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    exec_straight_transStatement := by
+  intro ge fn c1 rs1 m1 c2 rs2 m2 c3 rs3 m3 h12 h23
+  induction h12 with
+  | exec_straight_one i c rs1 m1 rs2 m2 hstep hpc =>
+      apply exec_straight_step
+      · exact hstep
+      · exact hpc
+      · exact h23
+  | exec_straight_step i c rs1 m1 rs2 m2 c' rs3 m3 hstep hpc htail ih =>
+      apply exec_straight_step
+      · exact hstep
+      · exact hpc
+      · exact ih h23
+
+theorem exec_straight_two
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    exec_straight_twoStatement := by
+  intro ge fn i1 i2 c rs1 m1 rs2 m2 rs3 m3 h1 h2 hpc1 hpc2
+  apply exec_straight_step
+  · exact h1
+  · exact hpc1
+  · apply exec_straight_one
+    · exact h2
+    · exact hpc2
+
+theorem exec_straight_three
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    exec_straight_threeStatement := by
+  intro ge fn i1 i2 i3 c rs1 m1 rs2 m2 rs3 m3 rs4 m4 h1 h2 h3 hpc1 hpc2 hpc3
+  apply exec_straight_step
+  · exact h1
+  · exact hpc1
+  · apply exec_straight_two
+    · exact h2
+    · exact h3
+    · exact hpc2
+    · exact hpc3
+
+end CompCert4Lean.Backend.Asmgenproof0
+
+namespace CompCert4Lean.Backend.Asmgenproof0
+
+open Lean Elab Tactic Meta
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.Common.Smallstep
+
+private def asmgenproof_hidden_name (s : String) : Name :=
+  s.splitOn "." |>.foldl
+    (fun n p => if p == "0" then Name.num n 0 else Name.str n p)
+    Name.anonymous
+
+private theorem unsigned_repr_nat_asmgenproof (bits n : Nat) :
+    CompCert4Lean.Lib.Integers.WordCore.unsigned
+      (CompCert4Lean.Lib.Integers.WordCore.repr bits (ZArith.BinInt.Z.of_nat n)) =
+      ZArith.BinInt.Z.of_nat (n % (2 ^ bits)) := by
+  unfold CompCert4Lean.Lib.Integers.WordCore.unsigned
+    CompCert4Lean.Lib.Integers.WordCore.repr
+  run_tac
+    let g ← getMainGoal
+    let ctx ← getLCtx
+    let mut nId? : Option FVarId := none
+    let mut bitsId? : Option FVarId := none
+    for decl in ctx do
+      if decl.userName == `n then nId? := some decl.fvarId
+      if decl.userName == `bits then bitsId? := some decl.fvarId
+    let nId := nId?.get!
+    let bitsId := bitsId?.get!
+    let nm := asmgenproof_hidden_name
+      "_private.CompCert4Lean.Lib.Integers.0.CompCert4Lean.Lib.Integers.WordCore.residue_zOfNat"
+    let th ← mkAppM nm #[mkFVar bitsId, mkFVar nId]
+    let fn := mkConst (asmgenproof_hidden_name
+      "CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat")
+    let pr ← mkAppM ``congrArg #[fn, th]
+    let _ ← g.apply pr
+    pure ()
+
+private theorem unsigned_add_one_asmgenproof (ofs : Ptrofs)
+    (hu : ZArith.BinInt.Z.lt (Ptrofs.unsigned ofs) Ptrofs.max_unsigned) :
+    Ptrofs.unsigned (Ptrofs.add ofs Ptrofs.one) =
+      ZArith.BinInt.Z.add (Ptrofs.unsigned ofs) (ZArith.BinInt.Z.of_nat 1) := by
+  have hnonneg : ZArith.BinInt.Z.le ZArith.BinInt.Z.Z0
+      (Ptrofs.unsigned ofs) := by
+    have h := ofs.intrange.1
+    change (-1 : Int) < intOfZ (Ptrofs.unsigned ofs) at h
+    change 0 ≤ intOfZ (Ptrofs.unsigned ofs)
+    omega
+  have hz : Ptrofs.unsigned ofs =
+      ZArith.BinInt.Z.of_nat (ZArith.BinInt.Z.to_nat (Ptrofs.unsigned ofs)) := by
+    exact (ZArith.Znat.Z2Nat.id _ hnonneg).symm
+  have hsum : ZArith.BinInt.Z.add (Ptrofs.unsigned ofs)
+      (ZArith.BinInt.Z.of_nat 1) =
+      ZArith.BinInt.Z.of_nat
+        (ZArith.BinInt.Z.to_nat (Ptrofs.unsigned ofs) + 1) := by
+    calc
+      ZArith.BinInt.Z.add (Ptrofs.unsigned ofs) (ZArith.BinInt.Z.of_nat 1) =
+          ZArith.BinInt.Z.add
+            (ZArith.BinInt.Z.of_nat
+              (ZArith.BinInt.Z.to_nat (Ptrofs.unsigned ofs)))
+            (ZArith.BinInt.Z.of_nat 1) := by
+              congr 1
+      _ = ZArith.BinInt.Z.of_nat
+          (ZArith.BinInt.Z.to_nat (Ptrofs.unsigned ofs) + 1) := by
+        apply intOfZ_injective
+        simp only [ZArith.BinInt.Z.add, ZArith.BinInt.Z.of_nat,
+          intOfZ_zOfInt]
+        rw [Int.ofNat_eq_natCast, Int.ofNat_eq_natCast, Int.ofNat_eq_natCast]
+        rw [Int.natCast_add]
+  have hmax' : intOfZ (Ptrofs.unsigned ofs) <
+      (2 ^ Ptrofs.wordsize : Int) - 1 := by
+    have hmax := hu
+    change intOfZ (Ptrofs.unsigned ofs) < intOfZ Ptrofs.max_unsigned at hmax
+    have hm : intOfZ Ptrofs.max_unsigned =
+        (2 ^ Ptrofs.wordsize : Int) - 1 := by rfl
+    rw [hm] at hmax
+    exact hmax
+  have hnatlt : ZArith.BinInt.Z.to_nat (Ptrofs.unsigned ofs) + 1 <
+      2 ^ Ptrofs.wordsize := by
+    have hnatcast : Int.ofNat (ZArith.BinInt.Z.to_nat
+        (Ptrofs.unsigned ofs)) = intOfZ (Ptrofs.unsigned ofs) := by
+      have hh := congrArg intOfZ (ZArith.Znat.Z2Nat.id _ hnonneg)
+      simpa only [ZArith.BinInt.Z.of_nat, intOfZ_zOfInt] using hh
+    have hltint : Int.ofNat (ZArith.BinInt.Z.to_nat
+        (Ptrofs.unsigned ofs)) + Int.ofNat 1 <
+        (2 : Int) ^ Ptrofs.wordsize := by
+      rw [hnatcast]
+      change intOfZ (Ptrofs.unsigned ofs) + 1 <
+        (2 : Int) ^ Ptrofs.wordsize
+      omega
+    have hcast : Int.ofNat (ZArith.BinInt.Z.to_nat
+        (Ptrofs.unsigned ofs) + 1) =
+        Int.ofNat (ZArith.BinInt.Z.to_nat (Ptrofs.unsigned ofs)) +
+          Int.ofNat 1 := by
+      rw [Int.ofNat_eq_natCast, Int.ofNat_eq_natCast, Int.ofNat_eq_natCast,
+        Int.natCast_add]
+    have hltint_nat : Int.ofNat (ZArith.BinInt.Z.to_nat
+        (Ptrofs.unsigned ofs) + 1) < Int.ofNat (2 ^ Ptrofs.wordsize) := by
+      rw [hcast]
+      have hpcast : Int.ofNat (2 ^ Ptrofs.wordsize) =
+          (2 : Int) ^ Ptrofs.wordsize := by
+        rw [Int.ofNat_eq_natCast, Int.natCast_pow]
+        rfl
+      rw [hpcast]
+      exact hltint
+    exact Int.ofNat_lt.mp hltint_nat
+  change CompCert4Lean.Lib.Integers.WordCore.unsigned
+      (CompCert4Lean.Lib.Integers.WordCore.repr Ptrofs.wordsize
+        (ZArith.BinInt.Z.add (Ptrofs.unsigned ofs)
+          (Ptrofs.unsigned Ptrofs.one))) = _
+  rw [show Ptrofs.unsigned Ptrofs.one =
+      ZArith.BinInt.Z.of_nat 1 by rfl, hsum]
+  rw [unsigned_repr_nat_asmgenproof]
+  rw [Nat.mod_eq_of_lt hnatlt]
+
+private theorem code_tail_next_int_asmgenproof : code_tail_next_intStatement := by
+  intro fn ofs i c hlen htail
+  have hb := code_tail_bounds_2 fn (Ptrofs.unsigned ofs) i c htail
+  have hltmax : ZArith.BinInt.Z.lt (Ptrofs.unsigned ofs)
+      Ptrofs.max_unsigned :=
+    Int.lt_of_lt_of_le hb.2 hlen
+  have hn := code_tail_next fn (Ptrofs.unsigned ofs) i c htail
+  have hadd := unsigned_add_one_asmgenproof ofs hltmax
+  rw [hadd]
+  exact hn
+
+theorem exec_straight_steps_1
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    exec_straight_steps_1Statement := by
+  intro cfg xi ge fn c rs m c' rs' m'
+  intro hexec hlen
+  induction hexec with
+  | exec_straight_one i c rs1 m1 rs2 m2 hstep hpc' =>
+      intro b ofs hpc hfind htail
+      apply plus_one
+      apply CompCert4Lean.X86.Asm.exec_step_internal
+      · exact hpc
+      · exact hfind
+      · exact find_instr_tail fn.fn_code i c
+          (CompCert4Lean.Lib.Integers.Ptrofs.unsigned ofs) htail
+      · exact hstep
+  | exec_straight_step i c rs1 m1 rs2 m2 c' rs3 m3 hstep hpc' htail' ih =>
+      intro b ofs hpc hfind htail
+      apply plus_left'
+      · apply CompCert4Lean.X86.Asm.exec_step_internal
+        · exact hpc
+        · exact hfind
+        · exact find_instr_tail fn.fn_code i c
+            (CompCert4Lean.Lib.Integers.Ptrofs.unsigned ofs) htail
+        · exact hstep
+      · apply ih b (CompCert4Lean.Lib.Integers.Ptrofs.add ofs
+          CompCert4Lean.Lib.Integers.Ptrofs.one)
+        · rw [hpc', hpc]
+          rfl
+        · exact hfind
+        · exact code_tail_next_int_asmgenproof fn.fn_code ofs i c hlen htail
+      · rfl
+
+end CompCert4Lean.Backend.Asmgenproof0
