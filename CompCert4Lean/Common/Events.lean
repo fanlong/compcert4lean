@@ -1658,3 +1658,14 @@ theorem extcall_debug_ok : extcall_debug_okStatement := by
     exact ⟨match_traces_E0, by intro; exact ⟨rfl, rfl⟩⟩
 
 end CompCert4Lean.Common.Events
+
+namespace CompCert4Lean.Common.Events
+
+theorem unroll_traceinf : unroll_traceinfStatement := by
+  intro T
+  funext n
+  cases n with
+  | zero => rfl
+  | succ n => rfl
+
+end CompCert4Lean.Common.Events

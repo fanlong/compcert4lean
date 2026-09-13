@@ -1769,3 +1769,112 @@ theorem sig_function_translated : ∀ cfg, sig_function_translatedStatement cfg 
       rw [← htf]
 
 end CompCert4Lean.Backend.Deadcodeproof
+
+namespace CompCert4Lean.Backend.Deadcodeproof
+
+variable
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+
+theorem stacksize_translated : ∀ cfg, stacksize_translatedStatement cfg := by
+  intro cfg dm rm f tf h
+  unfold CompCert4Lean.Backend.Deadcode.transf_function at h
+  cases ha : CompCert4Lean.Backend.Deadcode.analyze cfg f dm
+      (CompCert4Lean.Backend.ValueAnalysis.analyze cfg rm f) with
+  | none => simp [ha] at h
+  | some an =>
+      simp only [ha] at h
+      injection h with htf
+      rw [← htf]
+
+omit binary64_certificate binary32_certificate in
+theorem is_int_zero_sound : is_int_zero_soundStatement := by
+  intro nv h
+  cases nv with
+  | Nothing => simp [CompCert4Lean.Backend.Deadcode.is_int_zero] at h
+  | I n =>
+      apply congrArg CompCert4Lean.Backend.NeedDomain.nval.I
+      apply CompCert4Lean.Lib.Integers.WordCore.ext
+      simpa [CompCert4Lean.Backend.Deadcode.is_int_zero,
+        CompCert4Lean.Lib.Integers.Int.eq,
+        CompCert4Lean.Lib.Integers.WordCore.eq] using h
+  | L n => simp [CompCert4Lean.Backend.Deadcode.is_int_zero] at h
+  | All => simp [CompCert4Lean.Backend.Deadcode.is_int_zero] at h
+
+end CompCert4Lean.Backend.Deadcodeproof
+
+namespace CompCert4Lean.Backend.Deadcodeproof
+
+variable
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+
+theorem transf_function_at : ∀ cfg, transf_function_atStatement cfg := by
+  intro cfg cu f tf an pc instr htf han hcode
+  unfold CompCert4Lean.Backend.Deadcode.transf_function at htf
+  dsimp only at htf
+  unfold vanalyze at han
+  rw [han] at htf
+  injection htf with htf
+  rw [← htf]
+  simp only
+  let tr : CompCert4Lean.Foundation.Numbers.Rocq.Coq.positive →
+      CompCert4Lean.Backend.RTL.instruction →
+      CompCert4Lean.Backend.RTL.instruction :=
+    fun p i => CompCert4Lean.Backend.Deadcode.transf_instr cfg
+      (CompCert4Lean.Common.AST.prog_defmap cu)
+      (CompCert4Lean.Backend.ValueAnalysis.analyze cfg
+        (CompCert4Lean.Backend.ValueAnalysis.romem_for cfg cu) f) an p i
+  let code : CompCert4Lean.Lib.Maps.PTree.t
+      CompCert4Lean.Backend.RTL.instruction := f.fn_code
+  have hcode' : CompCert4Lean.Lib.Maps.PTree.get pc code = some instr := hcode
+  change CompCert4Lean.Lib.Maps.PTree.get pc
+      (CompCert4Lean.Lib.Maps.PTree.map tr code) = some (tr pc instr)
+  rw [CompCert4Lean.Lib.Maps.PTree.gmap
+    (A := CompCert4Lean.Backend.RTL.instruction)
+    (B := CompCert4Lean.Backend.RTL.instruction), hcode']
+  rfl
+
+end CompCert4Lean.Backend.Deadcodeproof
+
+namespace CompCert4Lean.Backend.Deadcodeproof
+
+open CompCert4Lean.Backend.Deadcode
+open CompCert4Lean.Backend.NeedDomain
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Values
+
+variable
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+
+theorem find_function_translated : ∀ cfg, find_function_translatedStatement cfg := by
+  intro cfg prog tprog hm ros rs fd trs ne hfind hagree
+  cases ros with
+  | inl r =>
+      change Genv.find_funct (Genv.globalenv prog) (Regmap.get r rs) = some fd at hfind
+      change eagree rs trs (add_need_all r ne) at hagree
+      have hld := add_need_all_lessdef rs trs r ne hagree
+      simp only [CompCert4Lean.Backend.RTL.find_function] at hfind ⊢
+      generalize hsrc : Regmap.get r rs = sv at hfind hld
+      generalize htgt : Regmap.get r trs = tv at hld ⊢
+      cases hld with
+      | lessdef_refl v =>
+          exact functions_translated cfg prog tprog hm sv fd hfind
+      | lessdef_undef v =>
+          simp [Genv.find_funct] at hfind
+  | inr id =>
+      have hsym : Genv.find_symbol (Genv.globalenv tprog) id =
+          Genv.find_symbol (Genv.globalenv prog) id :=
+        (senv_preserved cfg prog tprog hm).1 id
+      simp only [CompCert4Lean.Backend.RTL.find_function] at hfind ⊢
+      rw [hsym]
+      cases hs : Genv.find_symbol (Genv.globalenv prog) id with
+      | none => simp [hs] at hfind
+      | some b =>
+          simp only [hs] at hfind ⊢
+          exact function_ptr_translated cfg prog tprog hm b fd hfind
+
+end CompCert4Lean.Backend.Deadcodeproof

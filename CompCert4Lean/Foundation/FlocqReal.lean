@@ -2182,3 +2182,71 @@ theorem Rplus_opp_l :
 end RIneq
 end Rocq.Coq.Reals
 end CompCert4Lean.Foundation.FlocqReal
+
+namespace CompCert4Lean.Foundation.FlocqReal
+namespace Rocq.Coq.Reals
+namespace RIneq
+
+theorem Rplus_opp_r_uniq :
+    ∀ (ctx : ExactRealContext), Rplus_opp_r_uniqStatement ctx := by
+  intro ctx r1 r2 h
+  change ctx.spec.add r1 r2 = ctx.spec.ofZ Z0 at h
+  have h' : ctx.spec.add (ctx.spec.neg r1) (ctx.spec.add r1 r2) =
+      ctx.spec.add (ctx.spec.neg r1) (ctx.spec.ofZ Z0) :=
+    congrArg (fun x => ctx.spec.add (ctx.spec.neg r1) x) h
+  calc
+    r2 = ctx.spec.add ctx.spec.zero r2 :=
+      (ctx.certificate.orderedField.zero_add r2).symm
+    _ = ctx.spec.add (ctx.spec.add (ctx.spec.neg r1) r1) r2 := by
+      rw [ctx.certificate.orderedField.neg_add_cancel]
+    _ = ctx.spec.add (ctx.spec.neg r1) (ctx.spec.add r1 r2) := by
+      rw [ctx.certificate.orderedField.add_assoc]
+    _ = ctx.spec.add (ctx.spec.neg r1) (ctx.spec.ofZ Z0) := h'
+    _ = ctx.spec.neg r1 := by
+      rw [ctx.certificate.sourceLaws.ofZ_zero,
+        ctx.certificate.orderedField.add_zero]
+
+theorem Rplus_eq_reg_l :
+    ∀ (ctx : ExactRealContext), Rplus_eq_reg_lStatement ctx := by
+  intro ctx r r1 r2 h
+  change ctx.spec.add r r1 = ctx.spec.add r r2 at h
+  have h' : ctx.spec.add (ctx.spec.neg r) (ctx.spec.add r r1) =
+      ctx.spec.add (ctx.spec.neg r) (ctx.spec.add r r2) :=
+    congrArg (fun x => ctx.spec.add (ctx.spec.neg r) x) h
+  calc
+    r1 = ctx.spec.add ctx.spec.zero r1 :=
+      (ctx.certificate.orderedField.zero_add r1).symm
+    _ = ctx.spec.add (ctx.spec.add (ctx.spec.neg r) r) r1 := by
+      rw [ctx.certificate.orderedField.neg_add_cancel]
+    _ = ctx.spec.add (ctx.spec.neg r) (ctx.spec.add r r1) := by
+      rw [ctx.certificate.orderedField.add_assoc]
+    _ = ctx.spec.add (ctx.spec.neg r) (ctx.spec.add r r2) := h'
+    _ = ctx.spec.add (ctx.spec.add (ctx.spec.neg r) r) r2 := by
+      rw [ctx.certificate.orderedField.add_assoc]
+    _ = ctx.spec.add ctx.spec.zero r2 := by
+      rw [ctx.certificate.orderedField.neg_add_cancel]
+    _ = r2 := ctx.certificate.orderedField.zero_add r2
+
+theorem Ropp_0 :
+    ∀ (ctx : ExactRealContext), Ropp_0Statement ctx := by
+  intro ctx
+  change ctx.spec.neg (ctx.spec.ofZ Z0) = ctx.spec.ofZ Z0
+  rw [ctx.certificate.sourceLaws.ofZ_zero]
+  calc
+    ctx.spec.neg ctx.spec.zero =
+        ctx.spec.add (ctx.spec.neg ctx.spec.zero) ctx.spec.zero :=
+      (ctx.certificate.orderedField.add_zero _).symm
+    _ = ctx.spec.zero := ctx.certificate.orderedField.neg_add_cancel _
+
+theorem Ropp_involutive :
+    ∀ (ctx : ExactRealContext), Ropp_involutiveStatement ctx := by
+  intro ctx r
+  change ctx.spec.neg (ctx.spec.neg r) = r
+  have h : ctx.spec.add (ctx.spec.neg r) r = ctx.spec.ofZ Z0 := by
+    rw [ctx.certificate.sourceLaws.ofZ_zero]
+    exact ctx.certificate.orderedField.neg_add_cancel r
+  exact (Rplus_opp_r_uniq ctx (ctx.spec.neg r) r h).symm
+
+end RIneq
+end Rocq.Coq.Reals
+end CompCert4Lean.Foundation.FlocqReal

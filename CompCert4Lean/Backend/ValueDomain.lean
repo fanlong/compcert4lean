@@ -3164,3 +3164,12 @@ theorem vge_sgn_i' : vge_sgn_i'Statement := by
     (vge_sgn_sgn' p n) (vge.sgnInt p n i hn hi)
 
 end CompCert4Lean.Backend.ValueDomain
+
+namespace CompCert4Lean.Backend.ValueDomain
+
+theorem vge_sgn_iu' : vge_sgn_iu'Statement := by
+  intro p n i hn hi
+  exact vge_trans (sgn p n) (Sgn p n) (IU i)
+    (vge_sgn_sgn' p n) (vge.sgnIU p n i hn hi)
+
+end CompCert4Lean.Backend.ValueDomain
