@@ -3370,3 +3370,21 @@ theorem not_ltu_proof : not_ltu := by
             rw [heqv]
             simp
           simp [zltSelect, sumboolSelect, hxy, hrev, heq, heqv]
+
+theorem and_mone_proof : and_mone := by
+  intro x
+  apply WordCore.ext_of_val_eq
+  change (WordCore.and x (WordCore.mone wordsize)).val = x.val
+  rw [suffix_and_val]
+  unfold WordCore.mone
+  rw [WordCore.val_repr_residue]
+  have hz : zOpp zOne = CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt (-1) := by
+    rfl
+  rw [hz, WordCore.residue_zOfInt]
+  have hmask : ((-1 : Int) % Int.ofNat (2 ^ wordsize)).toNat =
+      2 ^ wordsize - 1 := by
+    change ((-1 : Int) % Int.ofNat (2 ^ 32)).toNat = 2 ^ 32 - 1
+    decide
+  change x.val.land ((-1 % Int.ofNat (2 ^ wordsize)).toNat) = x.val
+  rw [hmask]
+  exact Nat.and_two_pow_sub_one_of_lt_two_pow (WordCore.val_lt x)
