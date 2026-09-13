@@ -2116,3 +2116,99 @@ theorem match_stacks_globalenvs : match_stacks_globalenvsStatement := by
     exact ih
 
 end CompCert4Lean.Backend.Inliningproof
+
+namespace CompCert4Lean.Backend.Inliningproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Backend.Inlining
+open CompCert4Lean.Backend.Inliningspec
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Linking
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+
+theorem match_stacks_bound : match_stacks_boundStatement := by
+  intro prog F m m' stk stk' bound bound1 h hbound
+  refine match_stacks.rec (prog := prog) (F := F) (m := m) (m' := m')
+    (motive_1 := fun l l0 b _ => ∀ b1, Ple b b1 → match_stacks prog F m m' l l0 b1)
+    (motive_2 := fun _ _ _ _ _ _ _ => True) ?_ ?_ ?_ ?_ ?_ h bound1 hbound
+  · intro bound0 boundx MG Hbelow btarget Htarget
+    exact match_stacks_nil bound0 btarget MG
+      (Ple_trans bound0 boundx btarget Hbelow (Ple_trans boundx btarget btarget Htarget (Ple_refl _)))
+  · intro res f sp pc rs stk f' sp' rs' stk' boundx fenv ctx MS COMPAT FB AG SP PRIV SSZ1 SSZ2 RES BELOW ih btarget Htarget
+    exact match_stacks_cons res f sp pc rs stk f' sp' rs' stk' btarget fenv ctx MS COMPAT FB AG SP PRIV SSZ1 SSZ2 RES
+      (Plt_Ple_trans sp' boundx btarget BELOW Htarget)
+  · intro stk res f' sp' rpc rs' stk' boundx ctx MS PRIV SSZ1 SSZ2 RET BELOW ih btarget Htarget
+    exact match_stacks_untailcall stk res f' sp' rpc rs' stk' btarget ctx MS PRIV SSZ1 SSZ2 RET
+      (Plt_Ple_trans sp' boundx btarget BELOW Htarget)
+  · intro stk stk' f' ctx sp' rs' MS RET DSTK ih
+    exact True.intro
+  · intro res f sp pc rs stk stk' f' fenv ctx sp' rs' ctx' MS COMPAT FB AG SP PAD RES RET BELOW SBELOW ih
+    exact True.intro
+
+end CompCert4Lean.Backend.Inliningproof
+
+namespace CompCert4Lean.Backend.Inliningproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Backend.Inlining
+open CompCert4Lean.Backend.Inliningspec
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Linking
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+
+theorem match_globalenvs_preserves_globals : match_globalenvs_preserves_globalsStatement := by
+  intro prog F bound h
+  rcases h with ⟨DOMAIN, IMAGE, SYMBOLS, FUNCTIONS, VARINFOS⟩
+  constructor
+  · intro id b hsym
+    exact DOMAIN b (SYMBOLS id b hsym)
+  constructor
+  · intro b gv hvar
+    exact DOMAIN b (VARINFOS b gv hvar)
+  · intro b1 b2 delta gv hvar hmap
+    exact (IMAGE b1 b2 delta hmap (VARINFOS b2 gv hvar)).symm
+
+end CompCert4Lean.Backend.Inliningproof
+
+namespace CompCert4Lean.Backend.Inliningproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Backend.Inlining
+open CompCert4Lean.Backend.Inliningspec
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Linking
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+
+theorem match_stacks_inside_globalenvs : match_stacks_inside_globalenvsStatement := by
+  intro prog F m m' stk stk' f ctx sp rs h
+  refine match_stacks_inside.rec (prog := prog) (F := F) (m := m) (m' := m')
+    (motive_1 := fun _ _ _ _ => ∃ b, match_globalenvs prog F b)
+    (motive_2 := fun _ _ _ _ _ _ _ => ∃ b, match_globalenvs prog F b) ?_ ?_ ?_ ?_ ?_ h
+  · intro bound1 bound MG BELOW
+    exact ⟨bound1, MG⟩
+  · intro res f sp pc rs stk f' sp' rs' stk' bound fenv ctx MS COMPAT FB AG SP PRIV SSZ1 SSZ2 RES BELOW ih
+    exact ih
+  · intro stk res f' sp' rpc rs' stk' bound ctx MS PRIV SSZ1 SSZ2 RET BELOW ih
+    exact ih
+  · intro stk stk' f' ctx sp' rs' MS RET DSTK ih
+    exact ih
+  · intro res f sp pc rs stk stk' f' fenv ctx sp' rs' ctx' MS COMPAT FB AG SP PRIV RES RET BELOW SBELOW ih
+    exact ih
+
+theorem match_stacks_inside_globals : match_stacks_inside_globalsStatement := by
+  intro prog F m m' stk stk' f ctx sp rs h
+  obtain ⟨bound, hbound⟩ := match_stacks_inside_globalenvs prog F m m' stk stk' f ctx sp rs h
+  exact match_globalenvs_preserves_globals prog F bound hbound
+
+end CompCert4Lean.Backend.Inliningproof

@@ -1865,3 +1865,149 @@ theorem add_branch_correct
     exact Linear.step.exec_Lgoto s tf sp lbl k ls m c hfind
 
 end CompCert4Lean.Backend.Linearizeproof
+
+namespace CompCert4Lean.Backend.Linearizeproof
+
+open CompCert4Lean.Backend.Linear
+open CompCert4Lean.Backend.LTL
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Linking
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Values
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Lib.Coqlib
+
+private theorem linearize_initial_store_init_data
+    {prog : LTL.program} {tprog : Linear.program}
+    (hsymb : ∀ id,
+      Genv.find_symbol (Genv.globalenv tprog) id =
+        Genv.find_symbol (Genv.globalenv prog) id)
+    (m : mem) (b : CompCert4Lean.Foundation.Numbers.Rocq.Coq.positive)
+    (p : CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z) (i : init_data) :
+    Genv.store_init_data (Genv.globalenv prog) m b p i =
+      Genv.store_init_data (Genv.globalenv tprog) m b p i := by
+  cases i with
+  | Init_addrof symb ofs =>
+      simp [Genv.store_init_data, hsymb symb]
+  | _ => rfl
+
+private theorem linearize_initial_store_init_data_list
+    {prog : LTL.program} {tprog : Linear.program}
+    (hsymb : ∀ id,
+      Genv.find_symbol (Genv.globalenv tprog) id =
+        Genv.find_symbol (Genv.globalenv prog) id) :
+    ∀ (m : mem) (b : CompCert4Lean.Foundation.Numbers.Rocq.Coq.positive)
+      (p : CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z) (il : List init_data),
+      Genv.store_init_data_list (Genv.globalenv prog) m b p il =
+        Genv.store_init_data_list (Genv.globalenv tprog) m b p il := by
+  intro m b p il
+  induction il generalizing m b p with
+  | nil => rfl
+  | cons i rest ih =>
+      simp only [Genv.store_init_data_list]
+      rw [linearize_initial_store_init_data hsymb]
+      cases h : Genv.store_init_data (Genv.globalenv tprog) m b p i with
+      | none => simp [h]
+      | some m' =>
+          simp only [h]
+          exact ih m' b
+            (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add
+              p (init_data_size i))
+
+private theorem linearize_initial_alloc_global
+    [Linker LTL.program]
+    (service : EnumerationService)
+    {prog : LTL.program} {tprog : Linear.program}
+    (hsymb : ∀ id,
+      Genv.find_symbol (Genv.globalenv tprog) id =
+        Genv.find_symbol (Genv.globalenv prog) id)
+    {id : ident} {gd : globdef LTL.fundef Unit}
+    {tg : globdef Linear.fundef Unit}
+    (hgd : match_globdef
+      (fun (_ : LTL.program) f tf =>
+        CompCert4Lean.Backend.Linearize.transf_fundef service f = .OK tf)
+      (fun x y : Unit => x = y) prog gd tg)
+    (m : mem) :
+    Genv.alloc_global (Genv.globalenv prog) m (id, gd) =
+      Genv.alloc_global (Genv.globalenv tprog) m (id, tg) := by
+  cases hgd with
+  | match_globdef_fun ctx' f1 f2 horder htrans =>
+      rfl
+  | match_globdef_var v1 v2 hvar =>
+      cases hvar with
+      | match_globvar_intro info1 info2 init ro vol hinfo =>
+          cases hinfo
+          simp only [Genv.alloc_global]
+          simp [linearize_initial_store_init_data_list hsymb]
+
+private theorem linearize_initial_alloc_globals
+    [Linker LTL.program]
+    (service : EnumerationService)
+    {prog : LTL.program} {tprog : Linear.program}
+    (hsymb : ∀ id,
+      Genv.find_symbol (Genv.globalenv tprog) id =
+        Genv.find_symbol (Genv.globalenv prog) id)
+    (gl : List (ident × globdef LTL.fundef Unit))
+    (tgl : List (ident × globdef Linear.fundef Unit))
+    (hlist : CompCert4Lean.Lib.Coqlib.list_forall2
+      (match_ident_globdef
+        (fun (_ : LTL.program) f tf =>
+          CompCert4Lean.Backend.Linearize.transf_fundef service f = .OK tf)
+        (fun x y : Unit => x = y) prog) gl tgl) :
+    ∀ (m m' : mem),
+      Genv.alloc_globals (Genv.globalenv prog) m gl = some m' →
+        Genv.alloc_globals (Genv.globalenv tprog) m tgl = some m' := by
+  induction hlist with
+  | nil =>
+      intro m m' h
+      simpa [Genv.alloc_globals] using h
+  | cons hd thd hhd htl ih =>
+      intro m m' h
+      rcases hhd with ⟨hid, hgd⟩
+      rcases hd with ⟨id, gd⟩
+      rcases thd with ⟨tid, tgd⟩
+      have halloc :
+          Genv.alloc_global (Genv.globalenv prog) m (id, gd) =
+            Genv.alloc_global (Genv.globalenv tprog) m (tid, tgd) := by
+        change id = tid at hid
+        subst tid
+        exact linearize_initial_alloc_global service hsymb hgd m
+      simp only [Genv.alloc_globals] at h ⊢
+      rw [halloc] at h
+      cases ha : Genv.alloc_global (Genv.globalenv tprog) m (tid, tgd) with
+      | none => simp [ha] at h
+      | some m1 =>
+          simp only [ha] at h ⊢
+          exact ih m1 m' h
+
+theorem transf_initial_states : transf_initial_statesStatement := by
+  letI : Linker LTL.fundef := Linker_fundef LTL.function
+  letI : Linker Linear.fundef := Linker_fundef Linear.function
+  letI : Linker Unit := Linker_unit
+  letI : Linker LTL.program := Linker_prog LTL.fundef Unit
+  intro service prog tprog hmatch st1 hinit
+  cases hinit with
+  | intro b f m0 hmem hsymb hfun hsig =>
+      rcases function_ptr_translated service prog tprog hmatch b f hfun with
+        ⟨tf, htf, htrans⟩
+      refine ⟨Linear.Callstate [] tf
+        (CompCert4Lean.Backend.Locations.Locmap.init Vundef) m0, ?_, ?_⟩
+      · apply Linear.initial_state.initial_state_intro b tf m0
+        · unfold Genv.init_mem at hmem ⊢
+          exact linearize_initial_alloc_globals service
+            (fun id => symbols_preserved service prog tprog hmatch id)
+            prog.prog_defs tprog.prog_defs hmatch.1 Mem.empty m0 hmem
+        · change Genv.find_symbol (Genv.globalenv tprog) tprog.prog_main = some b
+          rw [hmatch.2.1]
+          rw [symbols_preserved service prog tprog hmatch prog.prog_main]
+          exact hsymb
+        · exact htf
+        · rw [sig_preserved service f tf htrans]
+          exact hsig
+      · exact match_states.match_states_call [] f
+          (CompCert4Lean.Backend.Locations.Locmap.init Vundef) m0 tf []
+          (CompCert4Lean.Lib.Coqlib.list_forall2.nil _) htrans
+
+end CompCert4Lean.Backend.Linearizeproof

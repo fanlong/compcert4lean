@@ -2043,3 +2043,42 @@ theorem tr_simple_lvalue :
                 exact hoffset
 
 end CompCert4Lean.Cfrontend.SimplExprproof
+namespace CompCert4Lean.Cfrontend.SimplExprproof
+
+open CompCert4Lean.Cfrontend.SimplExpr
+open CompCert4Lean.Cfrontend.Cstrategy
+open CompCert4Lean.Cfrontend.SimplExprspec
+open CompCert4Lean.Cfrontend.Ctypes
+open CompCert4Lean.Lib.Maps
+
+theorem tr_simple_exprlist :
+    ∀ [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+      [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)],
+      tr_simple_exprlistStatement := by
+  intro binary64_certificate binary32_certificate p tp hmatch cunit le rl sl al tmps htr
+  intro e m tyl vl hEval
+  induction hEval generalizing sl al tmps with
+  | esrl_nil =>
+      cases htr
+      constructor
+      · rfl
+      · exact Clight.eval_exprlist.nil
+  | @esrl_cons r rl ty tyl v vl v' hr hcast hrest ih =>
+      cases htr with
+      | tr_cons x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12 x13 x14 =>
+          have hi1 := (tr_simple_rvalue
+            (binary64_certificate := binary64_certificate)
+            (binary32_certificate := binary32_certificate) p tp hmatch
+            cunit e m r v' hr) le .For_val x3 x4 x5 x10
+          have hi2 := ih x6 x7 x8 x11
+          rcases hi1 with ⟨hs1, htype1, hev1⟩
+          rcases hi2 with ⟨hs2, hev2⟩
+          constructor
+          · simp [hs1, hs2]
+          · apply Clight.eval_exprlist.cons
+            · exact hev1
+            · rw [← htype1]
+              exact hcast
+            · exact hev2
+
+end CompCert4Lean.Cfrontend.SimplExprproof

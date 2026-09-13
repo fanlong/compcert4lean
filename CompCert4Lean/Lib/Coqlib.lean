@@ -1304,3 +1304,35 @@ theorem list_in_map_inv : list_in_map_invStatement := by
         exact ⟨x, hfx, by simp [hxl]⟩
 
 end CompCert4Lean.Lib.Coqlib
+
+namespace CompCert4Lean.Lib.Coqlib
+
+theorem list_fold_left_app : list_fold_left_appStatement := by
+  intro A B f l1
+  induction l1 with
+  | nil =>
+      intro l2 accu
+      rfl
+  | cons x xs ih =>
+      intro l2 accu
+      simp only [List.cons_append, list_fold_left]
+      exact ih l2 (f x accu)
+
+theorem list_fold_right_eq : list_fold_right_eqStatement := by
+  intro A B f l base
+  cases l with
+  | nil => rfl
+  | cons x xs =>
+      simp only [list_fold_right, List.reverse_cons]
+      rw [list_fold_left_app]
+      rfl
+
+theorem in_app : in_appStatement := by
+  intro A x l1 l2
+  exact List.mem_append
+
+theorem list_disjoint_cons_left : list_disjoint_cons_leftStatement := by
+  intro A a l1 l2 h x y hx hy
+  exact h x y (List.Mem.tail a hx) hy
+
+end CompCert4Lean.Lib.Coqlib

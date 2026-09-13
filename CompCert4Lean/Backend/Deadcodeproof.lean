@@ -1738,3 +1738,34 @@ theorem function_ptr_translated
       | Gvar v1 => simp [h1] at hfind
 
 end CompCert4Lean.Backend.Deadcodeproof
+
+namespace CompCert4Lean.Backend.Deadcodeproof
+
+variable
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+
+theorem sig_function_translated : ∀ cfg, sig_function_translatedStatement cfg := by
+  intro cfg dm rm f tf h
+  cases f with
+  | Internal fn =>
+      let approx := CompCert4Lean.Backend.ValueAnalysis.analyze cfg rm fn
+      cases ha : CompCert4Lean.Backend.Deadcode.analyze cfg fn dm approx with
+      | none =>
+          simp [CompCert4Lean.Backend.Deadcode.transf_fundef,
+            CompCert4Lean.Common.AST.transf_partial_fundef,
+            CompCert4Lean.Backend.Deadcode.transf_function, approx, ha] at h
+      | some an =>
+          simp [CompCert4Lean.Backend.Deadcode.transf_fundef,
+            CompCert4Lean.Common.AST.transf_partial_fundef,
+            CompCert4Lean.Backend.Deadcode.transf_function, approx, ha] at h
+          injection h with htf
+          rw [← htf]
+          rfl
+  | External ef =>
+      simp [CompCert4Lean.Backend.Deadcode.transf_fundef,
+        CompCert4Lean.Common.AST.transf_partial_fundef] at h
+      injection h with htf
+      rw [← htf]
+
+end CompCert4Lean.Backend.Deadcodeproof

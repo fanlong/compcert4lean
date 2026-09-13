@@ -2068,3 +2068,26 @@ theorem length_proj_bytes : length_proj_bytesStatement := by
               simp [hlen]
 
 end CompCert4Lean.Common.Memdata
+
+namespace CompCert4Lean.Common.Memdata
+
+theorem proj_bytes_append : proj_bytes_appendStatement := by
+  intro l2 l1
+  induction l1 with
+  | nil =>
+      cases h : proj_bytes l2 <;> simp [proj_bytes, h]
+  | cons a l ih =>
+      cases a with
+      | Undef => simp [proj_bytes]
+      | Fragment v q i => simp [proj_bytes]
+      | Byte b =>
+          simp only [List.cons_append, proj_bytes]
+          cases hl : proj_bytes l with
+          | none =>
+              rw [ih]
+              simp [hl]
+          | some bl =>
+              rw [ih]
+              cases h2 : proj_bytes l2 <;> simp [hl, h2]
+
+end CompCert4Lean.Common.Memdata

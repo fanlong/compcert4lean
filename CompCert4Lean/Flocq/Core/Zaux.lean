@@ -1126,3 +1126,55 @@ theorem Zlt_bool_spec : Zlt_bool_specStatement := by
     simpa [h] using (Zlt_bool_false_ hle)
 
 end CompCert4Lean.Flocq.Core.Zaux
+
+namespace CompCert4Lean.Flocq.Core.Zaux
+
+theorem Zlt_bool_true : Zlt_bool_trueStatement := by
+  intro x y h
+  change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ x <
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ y at h
+  change (if CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ x <
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ y then true else false) = true
+  simp [h]
+
+theorem Zlt_bool_false : Zlt_bool_falseStatement := by
+  intro x y h
+  change (if CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ x <
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ y then true else false) = false
+  have hn : ¬ CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ x <
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ y := by
+    exact Int.not_lt_of_ge h
+  simp [hn]
+
+theorem Zcompare_spec : Zcompare_specStatement := by
+  intro x y
+  change Zcompare_prop x y (if
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ x <
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ y then Lt else if
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ x =
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ y then Eq else Gt)
+  by_cases hlt : CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ x <
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ y
+  · rw [if_pos hlt]
+    exact Zcompare_Lt_ hlt
+  · by_cases heq : CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ x =
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ y
+    · rw [if_neg hlt, if_pos heq]
+      exact Zcompare_Eq_ (CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective heq)
+    · have hgt : CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ y <
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ x := by
+        omega
+      rw [if_neg hlt, if_neg heq]
+      exact Zcompare_Gt_ hgt
+
+theorem Zcompare_Lt : Zcompare_LtStatement := by
+  intro x y h
+  change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ x <
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ y at h
+  change (if CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ x <
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ y then Lt else if
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ x =
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ y then Eq else Gt) = Lt
+  simp [h]
+
+end CompCert4Lean.Flocq.Core.Zaux

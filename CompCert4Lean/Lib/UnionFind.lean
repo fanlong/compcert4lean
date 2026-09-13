@@ -1599,3 +1599,36 @@ theorem find_x_obligation_4 :
 
 end UF
 end CompCert4Lean.Lib.UnionFind
+
+namespace CompCert4Lean.Lib.UnionFind
+namespace UF
+
+theorem find_repr_proof :
+    ∀ (M : MAP), find_reprStatement M := by
+  intro M uf a
+  exact (find_x M uf a).2.1
+
+theorem find_unchanged_proof :
+    ∀ (M : MAP), find_unchangedStatement M := by
+  intro M uf a x
+  exact (find_x M uf a).2.2 x
+
+theorem sameclass_find_1_proof :
+    ∀ (M : MAP), sameclass_find_1Statement M := by
+  intro M uf a x y
+  change repr M (find M uf a).2 x = repr M (find M uf a).2 y ↔
+    repr M uf x = repr M uf y
+  have hunchanged := (find_x M uf a).2.2
+  change repr M (find_x M uf a).1.2 x = repr M (find_x M uf a).1.2 y ↔
+    repr M uf x = repr M uf y
+  rw [hunchanged x, hunchanged y]
+
+theorem sameclass_find_2_proof :
+    ∀ (M : MAP), sameclass_find_2Statement M := by
+  intro M uf a
+  change repr M uf a = repr M uf (find M uf a).1
+  rw [find_repr_proof M uf a]
+  exact (repr_canonical_calc M uf a).symm
+
+end UF
+end CompCert4Lean.Lib.UnionFind

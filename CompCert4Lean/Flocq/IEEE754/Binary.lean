@@ -956,3 +956,51 @@ theorem Bsign_B2BSN :
   | B754_finite s m e => rfl
 
 end CompCert4Lean.Flocq.IEEE754.Binary
+
+namespace CompCert4Lean.Flocq.IEEE754.Binary
+
+theorem B2BSN_BSN2B' :
+    ∀ {prec emax : Z}, B2BSN_BSN2B'Statement (prec := prec) (emax := emax) := by
+  intro prec emax x Nx
+  rcases x with ⟨x, hx⟩
+  cases x with
+  | B754_zero s => rfl
+  | B754_infinity s => rfl
+  | B754_nan => simp [BinarySingleNaN.is_nan] at Nx
+  | B754_finite s m e => rfl
+
+end CompCert4Lean.Flocq.IEEE754.Binary
+
+namespace CompCert4Lean.Flocq.IEEE754.Binary
+
+theorem Bcompare_swap :
+    ∀ {prec emax : Z}, Bcompare_swapStatement (prec := prec) (emax := emax) := by
+  intro prec emax x y
+  rcases x with ⟨x, hx⟩
+  rcases y with ⟨y, hy⟩
+  unfold Bcompare
+  exact BinarySingleNaN.Bcompare_swap (B2BSN x) (B2BSN y) (by
+    change BinarySingleNaN.BinaryFloatCertificate (B2BSN x)
+    cases x with
+    | B754_zero s => exact hx
+    | B754_infinity s => exact hx
+    | B754_nan s pl => rfl
+    | B754_finite s m e => exact hx) (by
+    change BinarySingleNaN.BinaryFloatCertificate (B2BSN y)
+    cases y with
+    | B754_zero s => exact hy
+    | B754_infinity s => exact hy
+    | B754_nan s pl => rfl
+    | B754_finite s m e => exact hy)
+
+end CompCert4Lean.Flocq.IEEE754.Binary
+
+namespace CompCert4Lean.Flocq.IEEE754.Binary
+
+theorem bounded_lt_emax :
+    ∀ {prec emax : Z} (ctx : ExactRealContext),
+      bounded_lt_emaxStatement (prec := prec) (emax := emax) ctx := by
+  intro prec emax ctx mx ex Hx
+  exact BinarySingleNaN.bounded_lt_emax (prec := prec) (emax := emax) ctx mx ex Hx
+
+end CompCert4Lean.Flocq.IEEE754.Binary

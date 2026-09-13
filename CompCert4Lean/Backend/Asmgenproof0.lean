@@ -1817,3 +1817,74 @@ theorem exec_straight_steps_1
       · rfl
 
 end CompCert4Lean.Backend.Asmgenproof0
+
+namespace CompCert4Lean.Backend.Asmgenproof0
+
+theorem parent_sp_def : parent_sp_defStatement := by
+  intro ge s hs
+  cases hs with
+  | match_stack_nil =>
+      simp [CompCert4Lean.Backend.Mach.parent_sp,
+        CompCert4Lean.Common.Values.Vnullptr,
+        CompCert4Lean.X86_64.Archi.ptr64]
+  | match_stack_cons fb sp ra c s f tf tc hfind hatpc hsp hstacks =>
+      simpa [CompCert4Lean.Backend.Mach.parent_sp] using hsp
+
+theorem parent_ra_def : parent_ra_defStatement := by
+  intro ge s hs
+  cases hs with
+  | match_stack_nil =>
+      simp [CompCert4Lean.Backend.Mach.parent_ra,
+        CompCert4Lean.Common.Values.Vnullptr,
+        CompCert4Lean.X86_64.Archi.ptr64]
+  | match_stack_cons fb sp ra c s f tf tc hfind hatpc hsp hstacks =>
+      intro h
+      change ra = CompCert4Lean.Common.Values.Vundef at h
+      subst ra
+      cases hatpc
+
+private theorem lessdef_eq_of_ne_undef_asmgenproof
+    (x y : Val) (hx : x ≠ CompCert4Lean.Common.Values.Vundef)
+    (h : CompCert4Lean.Common.Values.Val.lessdef x y) : y = x := by
+  cases x with
+  | Vundef => exact (hx rfl).elim
+  | Vint i => cases h with | lessdef_refl => rfl
+  | Vlong i => cases h with | lessdef_refl => rfl
+  | Vfloat f => cases h with | lessdef_refl => rfl
+  | Vsingle f => cases h with | lessdef_refl => rfl
+  | Vptr b o => cases h with | lessdef_refl => rfl
+
+theorem lessdef_parent_sp : lessdef_parent_spStatement := by
+  intro ge s v hs hld
+  exact lessdef_eq_of_ne_undef_asmgenproof
+    (CompCert4Lean.Backend.Mach.parent_sp s) v
+    (parent_sp_def ge s hs) hld
+
+end CompCert4Lean.Backend.Asmgenproof0
+
+namespace CompCert4Lean.Backend.Asmgenproof0
+
+theorem exec_straight_steps_2
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    exec_straight_steps_2Statement := by
+  intro ge fn c rs m c' rs' m' hexec hlen
+  induction hexec with
+  | exec_straight_one i c rs1 m1 rs2 m2 hstep hpc' =>
+      intro b ofs hpc hfind htail
+      refine ⟨CompCert4Lean.Lib.Integers.Ptrofs.add ofs
+        CompCert4Lean.Lib.Integers.Ptrofs.one, ?_, ?_⟩
+      · rw [hpc', hpc]
+        simp [CompCert4Lean.Common.Values.Val.offset_ptr]
+      · exact code_tail_next_int_asmgenproof fn.fn_code ofs i c hlen htail
+  | exec_straight_step i c rs1 m1 rs2 m2 c' rs3 m3 hstep hpc' htail' ih =>
+      intro b ofs hpc hfind htail
+      apply ih b (CompCert4Lean.Lib.Integers.Ptrofs.add ofs
+        CompCert4Lean.Lib.Integers.Ptrofs.one)
+        (by rw [hpc']
+            rw [hpc]
+            simp [CompCert4Lean.Common.Values.Val.offset_ptr])
+        hfind
+        (code_tail_next_int_asmgenproof fn.fn_code ofs i c hlen htail)
+
+end CompCert4Lean.Backend.Asmgenproof0

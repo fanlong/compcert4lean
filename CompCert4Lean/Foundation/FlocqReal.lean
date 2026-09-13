@@ -2133,3 +2133,52 @@ def Rle_lt_dec :
 end RIneq
 end Rocq.Coq.Reals
 end CompCert4Lean.Foundation.FlocqReal
+
+namespace CompCert4Lean.Foundation.FlocqReal
+namespace Rocq.Coq.Reals
+namespace RIneq
+
+def Rle_lt_or_eq_dec :
+    ∀ (ctx : ExactRealContext), Rle_lt_or_eq_decStatement ctx := by
+  intro ctx r1 r2 h12
+  cases hdec : ctx.spec.lt_dec r1 r2 with
+  | left hlt => exact .left hlt
+  | right hnlt =>
+      exact .right (by
+        rcases ctx.certificate.total_order r1 r2 with h | h
+        · rcases h with hlt | heq
+          · exact (hnlt hlt).elim
+          · exact heq
+        · exact (((ctx.certificate.orderedField.lt_iff_le_not_le r2 r1).mp h).2 h12).elim)
+
+theorem Rlt_or_le :
+    ∀ (ctx : ExactRealContext), Rlt_or_leStatement ctx := by
+  intro ctx r1 r2
+  rcases ctx.certificate.total_order r1 r2 with h | h
+  · rcases h with hlt | heq
+    · exact Or.inl hlt
+    · subst r2
+      exact Or.inr (ctx.certificate.orderedField.le_refl r1)
+  · exact Or.inr ((ctx.certificate.orderedField.lt_iff_le_not_le r2 r1).mp h).1
+
+theorem Rle_or_lt :
+    ∀ (ctx : ExactRealContext), Rle_or_ltStatement ctx := by
+  intro ctx r1 r2
+  rcases ctx.certificate.total_order r1 r2 with h | h
+  · rcases h with hlt | heq
+    · exact Or.inl ((ctx.certificate.orderedField.lt_iff_le_not_le r1 r2).mp hlt).1
+    · subst r2
+      exact Or.inl (ctx.certificate.orderedField.le_refl r1)
+  · exact Or.inr h
+
+theorem Rplus_opp_l :
+    ∀ (ctx : ExactRealContext), Rplus_opp_lStatement ctx := by
+  intro ctx r
+  change ctx.spec.add (ctx.spec.neg r) r = ctx.spec.ofZ
+    (_root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.Z0)
+  rw [ctx.certificate.sourceLaws.ofZ_zero]
+  exact ctx.certificate.orderedField.neg_add_cancel r
+
+end RIneq
+end Rocq.Coq.Reals
+end CompCert4Lean.Foundation.FlocqReal

@@ -2579,3 +2579,180 @@ theorem match_callstack_freelist : match_callstack_freelistStatement := by
       refine ⟨tm2, hfree, htail', hinj'⟩
 
 end CompCert4Lean.Cfrontend.Cminorgenproof
+
+namespace CompCert4Lean.Cfrontend.Cminorgenproof
+
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+
+private theorem intOfZ_sub_external (x y : Z) :
+    intOfZ (ZArith.BinInt.Z.sub x y) = intOfZ x - intOfZ y := by
+  change intOfZ (zOfInt (intOfZ x - intOfZ y)) = intOfZ x - intOfZ y
+  rw [intOfZ_zOfInt]
+
+private theorem intOfZ_add_external (x y : Z) :
+    intOfZ (ZArith.BinInt.Z.add x y) = intOfZ x + intOfZ y := by
+  change intOfZ (zOfInt (intOfZ x + intOfZ y)) = intOfZ x + intOfZ y
+  rw [intOfZ_zOfInt]
+
+theorem match_callstack_external_call : match_callstack_external_callStatement := by
+  intro prog f1 f2 m1 m2 m1' m2' hunmapped houtofreach hincr hseparated hmax
+    cs bound tbound hstack hbound htbound
+  induction hstack with
+  | mcs_nil hglobal hlo htl =>
+      cases hglobal with
+      | mk domain image symbols functions varinfos =>
+          apply match_callstack.mcs_nil
+          · apply match_globalenvs.mk
+            · intro b hb
+              exact hincr b b z0 (domain b hb)
+            · intro b1 b2 delta hmap hb2
+              cases hf : f1 b1 with
+              | some p =>
+                  have hf2 : f2 b1 = some p := hincr b1 p.1 p.2 hf
+                  have heq : p = (b2, delta) := Option.some.inj (hf2.symm.trans hmap)
+                  rcases heq with ⟨rfl, rfl⟩
+                  exact image b1 b2 delta hf hb2
+              | none =>
+                  have hs := hseparated b1 b2 delta hf hmap
+                  have hbvalid_lt : Plt b2 m1'.nextblock := by
+                    exact Plt_Ple_trans _ _ _ hb2 (Ple_trans _ _ _ htl htbound)
+                  have hbvalid : Mem.valid_block m1' b2 := by
+                    change Plt b2 m1'.nextblock
+                    exact hbvalid_lt
+                  exact False.elim (hs.2 hbvalid)
+            · exact symbols
+            · exact functions
+            · exact varinfos
+          · exact hlo
+          · exact htl
+  | @cons cenv tf e le te sp lo hi cs bound tbound hbound' hsp htemps henv hbounds hfree htail ih =>
+      apply match_callstack.cons hbound' hsp
+      · exact match_temps_invariant f1 f2 le te htemps hincr
+      · refine {
+          me_vars := ?_,
+          me_low_high := henv.me_low_high,
+          me_bounded := henv.me_bounded,
+          me_inv := ?_,
+          me_incr := ?_ }
+        · intro id
+          have hvar := henv.me_vars id
+          cases he : PTree.get id e with
+          | none =>
+              cases hc : PTree.get id cenv with
+              | none =>
+                  rw [he, hc] at hvar
+                  exact .global
+              | some ofs =>
+                  rw [he, hc] at hvar
+                  cases hvar
+          | some bs =>
+              cases bs with
+              | mk b sz =>
+                  cases hc : PTree.get id cenv with
+                  | none =>
+                      rw [he, hc] at hvar
+                      cases hvar
+                  | some ofs =>
+                      rw [he, hc] at hvar
+                      cases hvar with
+                      | «local» hptr =>
+                          cases hptr with
+                          | inject_ptr =>
+                              rename_i delta hmap hofs
+                              exact .local (.inject_ptr b
+                                CompCert4Lean.Lib.Integers.Ptrofs.zero
+                                sp
+                                (CompCert4Lean.Lib.Integers.Ptrofs.repr ofs)
+                                delta
+                                (hincr b sp delta hmap) hofs)
+        · intro b delta hmap
+          cases hf : f1 b with
+          | some pair =>
+              rcases pair with ⟨b', delta'⟩
+              have hf2 : f2 b = some (b', delta') := hincr b b' delta' hf
+              rw [hf2] at hmap
+              have hpairs : (b', delta') = (sp, delta) := Option.some.inj hmap
+              rcases hpairs with ⟨rfl, rfl⟩
+              exact henv.me_inv b delta hf
+          | none =>
+              have hs := hseparated b sp delta hf hmap
+              have hbvalid_lt : Plt sp m1'.nextblock :=
+                Plt_Ple_trans _ _ _ hsp htbound
+              have hbvalid : Mem.valid_block m1' sp := by
+                change Plt sp m1'.nextblock
+                exact hbvalid_lt
+              exact False.elim (hs.2 hbvalid)
+        · intro b tb delta hmap hlt
+          cases hf : f1 b with
+          | some pair =>
+              rcases pair with ⟨b', delta'⟩
+              have hf2 : f2 b = some (b', delta') := hincr b b' delta' hf
+              rw [hf2] at hmap
+              have hpairs : (b', delta') = (tb, delta) := Option.some.inj hmap
+              rcases hpairs with ⟨rfl, rfl⟩
+              exact henv.me_incr b tb delta hf hlt
+          | none =>
+              have hs := hseparated b tb delta hf hmap
+              have hbvalid : Mem.valid_block m1 b := by
+                change Plt b m1.nextblock
+                exact Plt_Ple_trans _ _ _ hlt
+                  (Ple_trans _ _ _ henv.me_low_high (Ple_trans _ _ _ hbound' hbound))
+              exact False.elim (hs.1 hbvalid)
+      · apply match_bounds_invariant e m1 m2 hbounds
+        intro id b sz ofs p hget hperm
+        apply hmax b ofs p
+        · change Plt b m1.nextblock
+          exact Plt_Ple_trans _ _ _ (henv.me_bounded id b sz hget).2
+            (Ple_trans _ _ _ hbound' hbound)
+        · exact hperm
+      · intro ofs hof
+        by_cases hreach : is_reachable_from_env f1 e sp ofs
+        · cases hreach with
+          | @is_reachable_intro id b sz delta hget hf1 hdelta =>
+              right
+              have hf2 : f2 b = some (sp, delta) := hincr b sp delta hf1
+              exact is_reachable_intro hget hf2 hdelta
+        · have horig := hfree ofs hof
+          cases horig with
+          | inl hperm =>
+              left
+              have hloc : loc_out_of_reach f1 m1 sp ofs := by
+                intro b delta hmap hp
+                apply hreach
+                rcases henv.me_inv b delta hmap with ⟨id, sz, hget⟩
+                have hbounds' := hbounds id b sz
+                  (ZArith.BinInt.Z.sub ofs delta) Nonempty hget hp
+                have hsub := intOfZ_sub_external ofs delta
+                have hlo := hbounds'.1
+                have hhi := hbounds'.2
+                have hle : intOfZ delta ≤ intOfZ ofs := by
+                  change (0 : Int) ≤ intOfZ (ZArith.BinInt.Z.sub ofs delta) at hlo
+                  rw [hsub] at hlo
+                  omega
+                have hlt : intOfZ ofs < intOfZ delta + intOfZ sz := by
+                  change intOfZ (ZArith.BinInt.Z.sub ofs delta) < intOfZ sz at hhi
+                  rw [hsub] at hhi
+                  omega
+                refine is_reachable_intro hget hmap ?_
+                constructor
+                · change intOfZ delta ≤ intOfZ ofs
+                  exact hle
+                · change intOfZ ofs < intOfZ (ZArith.BinInt.Z.add delta sz)
+                  rw [intOfZ_add_external]
+                  exact hlt
+              have hvalid : Mem.valid_block m1' sp := by
+                change Plt sp m1'.nextblock
+                exact Plt_Ple_trans _ _ _ hsp htbound
+              exact (houtofreach.unchanged_on_perm sp ofs Cur Freeable hloc hvalid).mp hperm
+          | inr hreach' => exact False.elim (hreach hreach')
+      · exact ih
+          (Ple_trans _ _ _ henv.me_low_high (Ple_trans _ _ _ hbound' hbound))
+          (Ple_trans _ _ _ (Plt_Ple _ _ hsp) htbound)
+
+end CompCert4Lean.Cfrontend.Cminorgenproof
