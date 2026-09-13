@@ -2169,3 +2169,110 @@ theorem eval_simple_lvalue_safe
     hs (eval_simple_lvalue_steps xi ge f k e m a b ofs bf h C hC)
 
 end CompCert4Lean.Cfrontend.Cstrategy
+
+namespace CompCert4Lean.Cfrontend.Cstrategy
+
+open CompCert4Lean.Cfrontend.Csem
+
+theorem exprlist_app_assoc : exprlist_app_assocStatement := by
+  unfold exprlist_app_assocStatement
+  intro rl2 rl3 rl1
+  refine CompCert4Lean.Cfrontend.Csyntax.exprlist.rec
+    (motive_1 := fun _ => True)
+    (motive_2 := fun rl1 =>
+      exprlist_app (exprlist_app rl1 rl2) rl3 =
+        exprlist_app rl1 (exprlist_app rl2 rl3))
+    (by intros; trivial)
+    (by intros; trivial)
+    (by intros; trivial)
+    (by intros; trivial)
+    (by intros; trivial)
+    (by intros; trivial)
+    (by intros; trivial)
+    (by intros; trivial)
+    (by intros; trivial)
+    (by intros; trivial)
+    (by intros; trivial)
+    (by intros; trivial)
+    (by intros; trivial)
+    (by intros; trivial)
+    (by intros; trivial)
+    (by intros; trivial)
+    (by intros; trivial)
+    (by intros; trivial)
+    (by intros; trivial)
+    (by intros; trivial)
+    (by intros; trivial)
+    (by intros; trivial)
+    (by rfl)
+    (by intros r rl hr ih; simp [exprlist_app, ih])
+    rl1
+
+theorem exprlist_app_context : exprlist_app_contextStatement := by
+  unfold exprlist_app_contextStatement
+  intro rl1 rl2
+  refine CompCert4Lean.Cfrontend.Csyntax.exprlist.rec
+    (motive_1 := fun _ => True)
+    (motive_2 := fun rl1 =>
+      contextlist .RV (fun x => exprlist_app rl1 (.Econs x rl2)))
+    (by intros; trivial)
+    (by intros; trivial)
+    (by intros; trivial)
+    (by intros; trivial)
+    (by intros; trivial)
+    (by intros; trivial)
+    (by intros; trivial)
+    (by intros; trivial)
+    (by intros; trivial)
+    (by intros; trivial)
+    (by intros; trivial)
+    (by intros; trivial)
+    (by intros; trivial)
+    (by intros; trivial)
+    (by intros; trivial)
+    (by intros; trivial)
+    (by intros; trivial)
+    (by intros; trivial)
+    (by intros; trivial)
+    (by intros; trivial)
+    (by intros; trivial)
+    (by intros; trivial)
+    (by simpa only [exprlist_app] using
+      (CompCert4Lean.Cfrontend.Csem.ctx_list_head
+        (k := .RV) (C := fun x => x) (el := rl2)
+        (CompCert4Lean.Cfrontend.Csem.ctx_top .RV)))
+    (by intros r rl hr ih; simpa only [exprlist_app] using
+      (CompCert4Lean.Cfrontend.Csem.ctx_list_tail (e1 := r) ih))
+    rl1
+
+theorem eval_simple_list_implies
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    eval_simple_list_impliesStatement := by
+  unfold eval_simple_list_impliesStatement
+  intro ge e m rl tyl vl h
+  induction h with
+  | esrl_nil =>
+      exact ⟨[], .nil, .esrl'_nil⟩
+  | @esrl_cons r rl ty tyl v vl v' hr hcast htail ih =>
+      rcases ih with ⟨vl', hargs, hsimple⟩
+      exact ⟨v' :: vl', .cons hcast hargs, .esrl'_cons hr hsimple⟩
+
+theorem can_eval_simple_list
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    can_eval_simple_listStatement := by
+  unfold can_eval_simple_listStatement
+  intro ge e m rl vl h
+  induction h with
+  | esrl'_nil =>
+      intro tyl vl' hcast
+      cases hcast
+      exact .esrl_nil
+  | esrl'_cons hr htail ih =>
+      intro tyl vl' hcast
+      cases hcast with
+      | cons hhead htailcast =>
+          exact .esrl_cons hr hhead (ih _ _ htailcast)
+
+end CompCert4Lean.Cfrontend.Cstrategy

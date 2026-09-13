@@ -2488,3 +2488,36 @@ theorem valid_access_load : valid_access_loadStatement := by
 end Mem
 
 end CompCert4Lean.Common.Memory
+
+namespace CompCert4Lean.Common.Memory
+
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Lib.Maps
+
+namespace Mem
+
+theorem load_valid_access : load_valid_accessStatement := by
+  intro m chunk b ofs v hload
+  unfold load at hload
+  cases hdec : valid_access_dec m chunk b ofs Readable with
+  | left hvalid => exact hvalid
+  | right hinvalid => simp [boolOfSumbool, hdec] at hload
+
+theorem load_result : load_resultStatement := by
+  intro chunk m b ofs v hload
+  unfold load at hload
+  cases hdec : valid_access_dec m chunk b ofs Readable with
+  | left hvalid =>
+      simp [boolOfSumbool, hdec] at hload
+      exact hload.symm
+  | right hinvalid => simp [boolOfSumbool, hdec] at hload
+
+theorem load_type : load_typeStatement := by
+  intro m chunk b ofs v hload
+  rw [load_result chunk m b ofs v hload]
+  exact CompCert4Lean.Common.Memdata.decode_val_type chunk _
+
+end Mem
+
+end CompCert4Lean.Common.Memory

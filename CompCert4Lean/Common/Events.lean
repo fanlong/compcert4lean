@@ -1566,3 +1566,17 @@ theorem volatile_store_readonly : volatile_store_readonlyStatement := by
         cases hfalse
 
 end CompCert4Lean.Common.Events
+
+namespace CompCert4Lean.Common.Events
+
+theorem volatile_store_receptive : volatile_store_receptiveStatement := by
+  intro ge chunk m b ofs v t1 m1 t2 hstore hmatch
+  cases hstore with
+  | volatile_store_vol id ev v hvol hfind hmatch' =>
+      cases hmatch with
+      | match_traces_vstore => rfl
+  | volatile_store_nonvol v hnot hstore' =>
+      cases hmatch
+      rfl
+
+end CompCert4Lean.Common.Events

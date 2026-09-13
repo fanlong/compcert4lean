@@ -3369,3 +3369,28 @@ theorem select_loc_charact : select_loc_charactStatement := by
 
 
 end CompCert4Lean.Backend.Allocproof
+
+namespace CompCert4Lean.Backend.Allocproof
+
+open CompCert4Lean.Backend.Allocation
+open CompCert4Lean.Backend.Locations
+
+theorem loc_unconstrained_sound : loc_unconstrained_soundStatement := by
+  intro l e q hunc hq
+  unfold loc_unconstrained at hunc
+  cases hsl : select_loc_l l q with
+  | false =>
+      exact (select_loc_charact l q).1 (Or.inl hsl)
+  | true =>
+      cases hsh : select_loc_h l q with
+      | false =>
+          exact (select_loc_charact l q).1 (Or.inr hsh)
+      | true =>
+          have hmem :
+              EqSet2.mem_between (select_loc_l l) (select_loc_h l) e.eqs2 = true :=
+            EqSet2.mem_between_2_proof (select_loc_l l) (select_loc_h l)
+              (select_loc_l_monotone l) (select_loc_h_monotone l) q e.eqs2
+              ((e.eqs_same q).mpr hq) hsl hsh
+          simp [hmem] at hunc
+
+end CompCert4Lean.Backend.Allocproof

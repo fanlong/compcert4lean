@@ -864,3 +864,29 @@ theorem B2R_B2BSN :
   cases x <;> rfl
 
 end CompCert4Lean.Flocq.IEEE754.Binary
+
+namespace CompCert4Lean.Flocq.IEEE754.Binary
+
+theorem FF2SF_B2FF :
+    ∀ {prec emax : Z}, FF2SF_B2FFStatement (prec := prec) (emax := emax) := by
+  intro prec emax x
+  rcases x with ⟨x, hx⟩
+  cases x <;> rfl
+
+theorem B2FF_FF2B :
+    ∀ {prec emax : Z}, B2FF_FF2BStatement (prec := prec) (emax := emax) := by
+  intro prec emax x Hx
+  cases x <;> rfl
+
+end CompCert4Lean.Flocq.IEEE754.Binary
+
+namespace CompCert4Lean.Flocq.IEEE754.Binary
+
+theorem B2FF_inj :
+    ∀ {prec emax : Z}, B2FF_injStatement (prec := prec) (emax := emax) := by
+  intro prec emax x y hxy
+  rcases x with ⟨x, hx⟩
+  rcases y with ⟨y, hy⟩
+  cases x <;> cases y <;> simp [B2FF] at hxy ⊢ <;> exact hxy
+
+end CompCert4Lean.Flocq.IEEE754.Binary

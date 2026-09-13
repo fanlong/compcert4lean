@@ -2231,3 +2231,115 @@ theorem iter_expand_instr_spec : iter_expand_instr_specStatement := by
                 · exact hmem
 
 end CompCert4Lean.Backend.Inliningspec
+
+namespace CompCert4Lean.Backend.Inliningspec
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Backend.Inlining
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+
+theorem expand_cfg_rec_spec : expand_cfg_rec_specStatement := by
+  intro fenv stacksize fe hfe rec hrec_unchanged hrec_spec
+  intro ctx f s x s' i c h
+  intro hbelow hmreg hreg hstk hstk_eq hdiv hdstk hsize hunch
+  unfold expand_cfg_rec at h
+  cases hreq : request_stack (zAdd ctx.dstk ctx.mstk) s with
+  | R u s0 i0 =>
+      simp only [Inlining.bind] at h
+      rw [hreq] at h
+      cases hfold : ptree_mfold (expand_instr fe rec ctx) f.fn_code s0 with
+      | R z s1 i1 =>
+          simp [hfold] at h
+          cases z
+          subst s'
+          have hcode : s0.st_code = s.st_code := by
+            simpa [request_stack] using (congrArg (fun r => r.2.st_code) hreq).symm
+          have hnext : s0.st_nextnode = s.st_nextnode := by
+            simpa [request_stack] using (congrArg (fun r => r.2.st_nextnode) hreq).symm
+          have hnextreg : s0.st_nextreg = s.st_nextreg := by
+            simpa [request_stack] using (congrArg (fun r => r.2.st_nextreg) hreq).symm
+          have hadd : Ple ctx.dpc (PArith.BinPos.Pos.add ctx.dpc (max_pc_function f)) := by
+            change posToNat ctx.dpc ≤ posToNat (PArith.BinPos.Pos.add ctx.dpc (max_pc_function f))
+            change posToNat ctx.dpc ≤ posToNat (posOfNat (posToNat ctx.dpc + posToNat (max_pc_function f)))
+            rw [posToNat_posOfNat]
+            · exact Nat.le_add_right _ _
+            · exact Nat.add_pos_left (posToNat_positive ctx.dpc) _
+          have hbelow0 : Ple ctx.dpc s0.st_nextnode := by
+            rw [hnext]
+            exact Ple_trans _ _ _ hadd hbelow
+          have hbelow_add0 : Ple (PArith.BinPos.Pos.add ctx.dpc (max_pc_function f))
+              s0.st_nextnode := by
+            rw [hnext]
+            exact hbelow
+          have hspec := ptree_mfold_spec _ _ f.fn_code s0 () s1 i1 hfold
+          rcases hspec with ⟨i', hiter⟩
+          apply tr_funbody.tr_funbody_intro
+          · intro r hr
+            rw [hmreg]
+            exact max_reg_function_params f r hr
+          · intro pc instr hget
+            have hmem : (pc, instr) ∈ PTree.elements f.fn_code :=
+              PTree.elements_correct_proof f.fn_code pc (v := instr) hget
+            have hdefs : ∀ pc instr r, (pc, instr) ∈ PTree.elements f.fn_code →
+                instr_defs instr = some r → Ple r ctx.mreg := by
+              intro pc0 instr0 r hr hd
+              rw [hmreg]
+              exact max_reg_function_def f pc0 instr0 r
+                (PTree.elements_complete_proof _ _ _ hr) hd
+            have hopcs : ∀ pc instr, (pc, instr) ∈ PTree.elements f.fn_code →
+                Plt (spc ctx pc) s0.st_nextnode := by
+              intro pc0 instr0 hm
+              have hc : Ple pc0 (max_pc_function f) :=
+                max_pc_function_sound f pc0 instr0
+                  (PTree.elements_complete_proof _ _ _ hm)
+              have hlt : Plt (spc ctx pc0)
+                  (PArith.BinPos.Pos.add ctx.dpc (max_pc_function f)) := by
+                unfold spc Plt PArith.BinPos.Pos.lt
+                rw [shiftpos_posToNat_formula]
+                rw [show posToNat (PArith.BinPos.Pos.add ctx.dpc (max_pc_function f)) =
+                    posToNat ctx.dpc + posToNat (max_pc_function f) by
+                  simpa [PArith.BinPos.Pos.add] using
+                    posToNat_posOfNat (by
+                      have hd := posToNat_positive ctx.dpc
+                      have hm := posToNat_positive (max_pc_function f)
+                      omega : 0 < posToNat ctx.dpc + posToNat (max_pc_function f))]
+                change posToNat pc0 ≤ posToNat (max_pc_function f) at hc
+                have hd := posToNat_positive ctx.dpc
+                have hp := posToNat_positive pc0
+                have hm := posToNat_positive (max_pc_function f)
+                omega
+              exact Plt_Ple_trans _ _ _ hlt hbelow_add0
+            have hreg0 : Ple (PArith.BinPos.Pos.add ctx.dreg ctx.mreg)
+                s0.st_nextreg := by
+              rw [hnextreg]
+              exact hreg
+            have hunch0 : ∀ pc', Ple s0.st_nextnode pc' → Plt pc' s1.st_nextnode →
+                PTree.get pc' c = PTree.get pc' s1.st_code := by
+              intro pc' hp hlt
+              exact hunch pc' (Ple_trans ctx.dpc s0.st_nextnode pc' hbelow0 hp) hlt
+            have hsame0 : ∀ pc instr, (pc, instr) ∈ PTree.elements f.fn_code →
+                PTree.get (spc ctx pc) c = PTree.get (spc ctx pc) s1.st_code := by
+              intro pc0 instr0 hm
+              have hh : Plt (spc ctx pc0) s1.st_nextnode :=
+                Plt_Ple_trans _ _ _ (hopcs pc0 instr0 hm) i1.2
+              exact hunch (spc ctx pc0) (shiftpos_above pc0 ctx.dpc) hh
+            exact iter_expand_instr_spec fenv stacksize fe hfe rec hrec_unchanged hrec_spec
+              ctx (PTree.elements f.fn_code) s0 () s1 i' c hiter
+              (inliningspec_nodup_to_norepet _ (inliningspec_elements_nodup _))
+              hdefs hopcs hreg0 hstk hdstk hsize hunch0 hsame0 pc instr hmem
+          · exact hstk_eq
+          · exact hdiv
+          · exact hdstk
+          · have hsum0 : zLe (zAdd ctx.dstk ctx.mstk) s0.st_stksize := by
+              have hs0size : s0.st_stksize =
+                  ZArith.BinInt.Z.max s.st_stksize (zAdd ctx.dstk ctx.mstk) := by
+                simpa [request_stack] using
+                  (congrArg (fun r => r.2.st_stksize) hreq).symm
+              rw [hs0size]
+              exact ZArith.BinInt.Z.le_max_r s.st_stksize (zAdd ctx.dstk ctx.mstk)
+            exact Int.le_trans (Int.le_trans hsum0 i1.3) hsize
+
+end CompCert4Lean.Backend.Inliningspec

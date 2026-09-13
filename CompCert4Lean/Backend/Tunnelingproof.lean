@@ -1842,3 +1842,35 @@ theorem transf_initial_states : transf_initial_statesStatement := by
           (tunneling_mem_extends_refl m0)
 
 end CompCert4Lean.Backend.Tunnelingproof
+
+namespace CompCert4Lean.Backend.Tunnelingproof
+
+open CompCert4Lean.Backend.Tunneling
+open CompCert4Lean.Backend.LTL
+open CompCert4Lean.Backend.Locations
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+
+theorem transf_final_states : transf_final_statesStatement := by
+  intro st1 st2 r hmatch hfinal
+  cases hfinal with
+  | intro rs m _ hresult =>
+      cases hmatch with
+      | «return» s ls m ts tls tm hframes hls hmem =>
+          cases hframes
+          have hld := locmap_getpair_lessdef
+            (map_rpair R
+              (CompCert4Lean.X86.Conventions1.loc_result signature_main)) rs tls hls
+          rw [hresult] at hld
+          have htarget : Locmap.getpair
+              (map_rpair R
+                (CompCert4Lean.X86.Conventions1.loc_result signature_main)) tls =
+              Vint r := by
+            generalize hv : Locmap.getpair
+              (map_rpair R
+                (CompCert4Lean.X86.Conventions1.loc_result signature_main)) tls = v at hld
+            cases hld with
+            | lessdef_refl v => rfl
+          exact final_state.intro tls tm r htarget
+
+end CompCert4Lean.Backend.Tunnelingproof

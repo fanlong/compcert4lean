@@ -1962,3 +1962,36 @@ theorem step_state_good_2 : step_state_good_2Statement := by
     exact hdefined n v hget
 
 end CompCert4Lean.Backend.Kildall.Dataflow_Solver
+
+namespace CompCert4Lean.Backend.Kildall.Dataflow_Solver
+
+open CompCert4Lean.Lib.Maps
+
+theorem steps_state_good : steps_state_goodStatement := by
+  intro A LAT NS LATlaws NSlaws code successors transf st1 st2 hsteps hgood
+  induction hsteps with
+  | steps_base =>
+      exact hgood
+  | steps_right s2 s3 hprev hstep ih =>
+      unfold step at hstep
+      cases hpick : NS.pick s2.worklist with
+      | none =>
+          simp only [hpick] at hstep
+          cases hstep
+      | some pair =>
+          rcases pair with ⟨n, rem⟩
+          cases hcode : PTree.get n code with
+          | none =>
+              simp only [hpick, hcode] at hstep
+              injection hstep with hs3
+              subst s3
+              exact step_state_good_2 (LAT := LAT) (NS := NS)
+                LATlaws NSlaws code successors transf s2 n rem ih hpick hcode
+          | some instr =>
+              simp only [hpick, hcode] at hstep
+              injection hstep with hs3
+              subst s3
+              exact step_state_good (LAT := LAT) (NS := NS)
+                LATlaws NSlaws code successors transf s2 n rem instr hpick hcode ih
+
+end CompCert4Lean.Backend.Kildall.Dataflow_Solver

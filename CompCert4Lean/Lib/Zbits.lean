@@ -1171,3 +1171,13 @@ theorem Ztestbit_eq : Ztestbit_eqStatement := by
     _ = sumboolSelect (zeqDec n zZero) (zOdd x)
         (zTestbit (zDiv2 x) (zPred n)) :=
       Ztestbit_shiftin (zOdd x) (zDiv2 x) n hn
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem Ztestbit_base : Ztestbit_baseStatement := by
+  intro x
+  have hzero : zLe zZero zZero := by
+    change intOfZ zZero ≤ intOfZ zZero
+    exact Int.le_refl _
+  rw [Ztestbit_eq zZero x hzero]
+  rfl
