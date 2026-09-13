@@ -1302,3 +1302,74 @@ theorem used_globals_valid : used_globals_validStatement := by
         exact List.mem_map.mpr ⟨(id, gd), hmem, rfl⟩
 
 end CompCert4Lean.Backend.Unusedglobproof
+
+namespace CompCert4Lean.Backend.Unusedglobproof
+
+open CompCert4Lean.Backend.Unusedglob
+
+theorem filter_globdefs_map_1 : filter_globdefs_map_1Statement := by
+  intro id l u m1
+  unfold CompCert4Lean.Backend.Unusedglob.prog_map at m1
+  unfold CompCert4Lean.Lib.Maps.PTree.t at m1
+  induction l generalizing u m1 with
+  | nil =>
+      intro hmem hget
+      simpa [CompCert4Lean.Backend.Unusedglob.filter_globdefs,
+        List.foldl] using hget
+  | cons idg l ih =>
+      intro hmem hget
+      rcases idg with ⟨id1, gd1⟩
+      unfold CompCert4Lean.Backend.Unusedglob.filter_globdefs
+      split
+      · rename_i hbranch
+        have hne : id ≠ id1 := by
+          intro heq
+          subst id1
+          simp [hmem] at hbranch
+        rw [filter_globdefs_nil]
+        change CompCert4Lean.Lib.Maps.PTree.get id
+          (List.foldl
+            (fun (m : CompCert4Lean.Lib.Maps.PTree.tree
+                (CompCert4Lean.Common.AST.globdef CompCert4Lean.Backend.RTL.fundef Unit))
+                (idg : CompCert4Lean.Common.AST.ident ×
+                  CompCert4Lean.Common.AST.globdef CompCert4Lean.Backend.RTL.fundef Unit) =>
+              CompCert4Lean.Lib.Maps.PTree.set
+                (show CompCert4Lean.Foundation.Numbers.Rocq.Coq.positive from idg.1)
+                idg.2 m)
+            m1
+            (filter_globdefs (IS.remove (show IS.elt from id1) u) [] l ++ [(id1, gd1)])) = none
+        rw [List.foldl_append]
+        simp only [List.foldl]
+        have hmem' : IS.mem id (IS.remove (show IS.elt from id1) u) = false := by
+          change CompCert4Lean.Backend.Unusedglobproof.ISF.ISF.M.mem id
+            (CompCert4Lean.Backend.Unusedglobproof.ISF.ISF.M.remove
+              (show CompCert4Lean.Backend.Unusedglobproof.ISF.ISF.elt from id1) u) = false
+          have hremove := ISF.remove_b_proof (s := u)
+            (x := (show ISF.elt from id1)) (y := id)
+          have hmem0 : CompCert4Lean.Backend.Unusedglobproof.ISF.ISF.M.mem id u = false := by
+            exact hmem
+          rw [hremove]
+          simp [hmem0]
+        have hrest := ih (IS.remove (show IS.elt from id1) u) m1 hmem' hget
+        have hset := CompCert4Lean.Lib.Maps.PTree.getSet_equation
+          (A := CompCert4Lean.Common.AST.globdef CompCert4Lean.Backend.RTL.fundef Unit)
+          (show CompCert4Lean.Foundation.Numbers.Rocq.Coq.positive from id)
+          (show CompCert4Lean.Foundation.Numbers.Rocq.Coq.positive from id1)
+          gd1
+          (List.foldl
+            (fun (m : CompCert4Lean.Lib.Maps.PTree.tree
+                (CompCert4Lean.Common.AST.globdef CompCert4Lean.Backend.RTL.fundef Unit))
+                (idg : CompCert4Lean.Common.AST.ident ×
+                  CompCert4Lean.Common.AST.globdef CompCert4Lean.Backend.RTL.fundef Unit) =>
+              CompCert4Lean.Lib.Maps.PTree.set
+                (show CompCert4Lean.Foundation.Numbers.Rocq.Coq.positive from idg.1)
+                idg.2 m)
+            m1 (filter_globdefs (IS.remove (show IS.elt from id1) u) [] l))
+        rw [hset]
+        split
+        · rename_i heq
+          exact False.elim (hne heq)
+        · exact hrest
+      · exact ih u m1 hmem hget
+
+end CompCert4Lean.Backend.Unusedglobproof
