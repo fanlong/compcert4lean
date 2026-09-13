@@ -3116,3 +3116,50 @@ theorem in_xelements : in_xelementsStatement := by
 end PTree
 
 end CompCert4Lean.Lib.Maps
+
+namespace CompCert4Lean.Lib.Maps
+namespace PTree
+
+theorem xkeys_Node : xkeys_NodeStatement := by
+  intro A m1 o m2 i
+  change tree A at m1
+  change tree A at m2
+  change (xelements (Node m1 o m2) i).map Prod.fst =
+    (xelements m1 (.xO i)).map Prod.fst ++
+      (match o with | none => [] | some _ => [prev i]) ++
+      (xelements m2 (.xI i)).map Prod.fst
+  rw [xelements_Node]
+  simp only [List.map_append, List.map_cons, List.map_nil]
+  cases o <;> simp
+
+theorem in_xkeys : in_xkeysStatement := by
+  intro A m i k h
+  unfold xkeys at h
+  rcases List.mem_map.mp h with ⟨p, hp, rfl⟩
+  rcases in_xelements m i p.1 p.2 hp with ⟨j, hj, _⟩
+  exact ⟨j, hj⟩
+
+private theorem list_norepet_of_nodup {A : Type} :
+    ∀ l : List A, l.Nodup → list_norepet l := by
+  intro l h
+  induction l with
+  | nil => exact CompCert4Lean.Lib.Coqlib.list_norepet.nil _
+  | cons a l ih =>
+      have hc := List.nodup_cons.mp h
+      exact CompCert4Lean.Lib.Coqlib.list_norepet.cons a hc.1 (ih hc.2)
+
+theorem xelements_keys_norepet : xelements_keys_norepetStatement := by
+  intro A m i
+  cases m with
+  | Empty => exact CompCert4Lean.Lib.Coqlib.list_norepet.nil _
+  | Nodes m' =>
+      apply list_norepet_of_nodup
+      simpa [xkeys, xelements] using (keys_nodup_xelements' m' i)
+
+theorem elements_keys_norepet : elements_keys_norepetStatement := by
+  intro A m
+  change list_norepet (xkeys m .xH)
+  exact xelements_keys_norepet m .xH
+
+end PTree
+end CompCert4Lean.Lib.Maps
