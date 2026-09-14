@@ -1669,3 +1669,19 @@ theorem unroll_traceinf : unroll_traceinfStatement := by
   | succ n => rfl
 
 end CompCert4Lean.Common.Events
+
+namespace CompCert4Lean.Common.Events
+
+theorem eventval_valid_preserved : eventval_valid_preservedStatement := by
+  intro ge1 ge2 hp ev hev
+  cases ev with
+  | EVint i => simp [eventval_valid]
+  | EVlong i => simp [eventval_valid]
+  | EVfloat f => simp [eventval_valid]
+  | EVsingle f => simp [eventval_valid]
+  | EVptr_global id ofs =>
+      simp only [eventval_valid] at hev ⊢
+      rw [hp id]
+      exact hev
+
+end CompCert4Lean.Common.Events

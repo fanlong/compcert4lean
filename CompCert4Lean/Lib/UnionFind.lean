@@ -1632,3 +1632,15 @@ theorem sameclass_find_2_proof :
 
 end UF
 end CompCert4Lean.Lib.UnionFind
+
+namespace CompCert4Lean.Lib.UnionFind
+namespace UF
+
+theorem sameclass_find_3_proof :
+    ∀ (M : MAP), sameclass_find_3Statement M := by
+  intro M uf a
+  exact (sameclass_find_1_proof M uf a a (find M uf a).1).mpr
+    (sameclass_find_2_proof M uf a)
+
+end UF
+end CompCert4Lean.Lib.UnionFind

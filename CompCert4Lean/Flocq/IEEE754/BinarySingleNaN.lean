@@ -1840,3 +1840,14 @@ theorem abs_B2R_lt_emax :
       exact hlt
 
 end CompCert4Lean.Flocq.IEEE754.BinarySingleNaN
+
+namespace CompCert4Lean.Flocq.IEEE754.BinarySingleNaN
+
+theorem shr_m_shr_record_of_loc :
+    shr_m_shr_record_of_locStatement := by
+  intro m l
+  cases l with
+  | loc_Exact => rfl
+  | loc_Inexact c => cases c <;> rfl
+
+end CompCert4Lean.Flocq.IEEE754.BinarySingleNaN

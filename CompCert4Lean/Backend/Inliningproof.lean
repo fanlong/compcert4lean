@@ -2212,3 +2212,45 @@ theorem match_stacks_inside_globals : match_stacks_inside_globalsStatement := by
   exact match_globalenvs_preserves_globals prog F bound hbound
 
 end CompCert4Lean.Backend.Inliningproof
+
+namespace CompCert4Lean.Backend.Inliningproof
+
+theorem match_stacks_empty : match_stacks_emptyStatement := by
+  intro prog F m m' stk stk' bound h hstk
+  refine match_stacks.rec (prog := prog) (F := F) (m := m) (m' := m')
+    (motive_1 := fun l l0 b _ => l = [] -> l0 = [])
+    (motive_2 := fun l l0 f c b r _ => l = [] -> l0 = [] ∧ c.retinfo = none)
+    ?_ ?_ ?_ ?_ ?_ h hstk
+  · intro bound1 bound MG BELOW hnil
+    exact rfl
+  · intro res f sp pc rs stk f' sp' rs' stk' bound fenv ctx MS COMPAT FB AG SP PRIV SSZ1 SSZ2 RES BELOW ih hnil
+    cases hnil
+  · intro stk res f' sp' rpc rs' stk' bound ctx MS PRIV SSZ1 SSZ2 RET BELOW ih hnil
+    have hinner := ih hnil
+    rw [hinner.2] at RET
+    cases RET
+  · intro stk stk' f' ctx sp' rs' MS RET DSTK ih hnil
+    exact ⟨ih hnil, RET⟩
+  · intro res f sp pc rs stk stk' f' fenv ctx sp' rs' ctx' MS COMPAT FB AG SP PAD RES RET BELOW SBELOW ih hnil
+    cases hnil
+
+theorem match_stacks_inside_empty : match_stacks_inside_emptyStatement := by
+  intro prog F m m' stk stk' f ctx sp rs h hstk
+  refine match_stacks_inside.rec (prog := prog) (F := F) (m := m) (m' := m')
+    (motive_1 := fun l l0 b _ => l = [] -> l0 = [])
+    (motive_2 := fun l l0 f c b r _ => l = [] -> l0 = [] ∧ c.retinfo = none)
+    ?_ ?_ ?_ ?_ ?_ h hstk
+  · intro bound1 bound MG BELOW hnil
+    exact rfl
+  · intro res f sp pc rs stk f' sp' rs' stk' bound fenv ctx MS COMPAT FB AG SP PRIV SSZ1 SSZ2 RES BELOW ih hnil
+    cases hnil
+  · intro stk res f' sp' rpc rs' stk' bound ctx MS PRIV SSZ1 SSZ2 RET BELOW ih hnil
+    have hinner := ih hnil
+    rw [hinner.2] at RET
+    cases RET
+  · intro stk stk' f' ctx sp' rs' MS RET DSTK ih hnil
+    exact ⟨match_stacks_empty prog F m m' stk stk' sp' MS hnil, RET⟩
+  · intro res f sp pc rs stk stk' f' fenv ctx sp' rs' ctx' MS COMPAT FB AG SP PAD RES RET BELOW SBELOW ih hnil
+    cases hnil
+
+end CompCert4Lean.Backend.Inliningproof

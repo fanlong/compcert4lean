@@ -2703,3 +2703,44 @@ theorem loadbytes_empty : loadbytes_emptyStatement := by
 end Mem
 
 end CompCert4Lean.Common.Memory
+
+namespace CompCert4Lean.Common.Memory
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Lib.Maps
+
+namespace Mem
+
+private theorem zadd_succ_nat_memproof (p : Z) (n : Nat) :
+    zAdd (zAdd p z1) (zOfNat n) = zAdd p (zOfNat (Nat.succ n)) := by
+  apply intOfZ_injective
+  simp only [intOfZ_zadd_mem, intOfZ_zofnat_mem]
+  have hnat : Int.ofNat (Nat.succ n) = Int.ofNat n + 1 := by
+    simpa using (Int.ofNat_add_ofNat n 1).symm
+  have hz1 : intOfZ z1 = (1 : Int) := by rfl
+  rw [hnat, hz1]
+  omega
+
+theorem getN_concat : getN_concatStatement := by
+  intro c n1
+  induction n1 with
+  | zero =>
+      intro n2 p
+      have hz0 : zAdd p (zOfNat 0) = p := by
+        apply intOfZ_injective
+        simp only [intOfZ_zadd_mem, intOfZ_zofnat_mem]
+        simp
+      rw [show 0 + n2 = n2 by omega]
+      simp only [getN, List.nil_append]
+      rw [hz0]
+  | succ n1 ih =>
+      intro n2 p
+      rw [show n1 + 1 + n2 = (n1 + n2) + 1 by omega]
+      simp only [getN, List.cons_append]
+      rw [ih]
+      rw [zadd_succ_nat_memproof]
+
+end Mem
+
+end CompCert4Lean.Common.Memory

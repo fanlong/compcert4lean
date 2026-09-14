@@ -1916,3 +1916,222 @@ theorem treactive_or_tsilent :
       exact (h ⟨S1, hS1, htsilent⟩).elim
 
 end CompCert4Lean.Common.Behaviors
+
+namespace CompCert4Lean.Common.Behaviors
+
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.Smallstep
+
+private theorem atomic_reactive_strip :
+    ∀ (L : semantics) (s : state L) (tr : trace) (T : traceinf),
+      ForeverReactive (atomic L) (tr, s) T →
+        ∃ T', ForeverReactive (atomic L) (E0, s) T' ∧
+          T = Eappinf tr T' := by
+  intro L s tr
+  induction tr with
+  | nil =>
+      intro T h
+      exact ⟨T, h, rfl⟩
+  | cons ev tr ih =>
+      intro T h
+      refine forever_reactive_casesOn
+        (step := step (atomic L)) (ge := globalenv (atomic L))
+        (motive := fun sa T => sa = (ev :: tr, s) →
+          ∃ T', ForeverReactive (atomic L) (E0, s) T' ∧
+            T = Eappinf (ev :: tr) T') ?_ h rfl
+      intro sa sb u T0 hstar hne htail hsa
+      cases hsa
+      cases hstar with
+      | star_refl s0 =>
+          exact False.elim (hne rfl)
+      | @star_step s1 t1 s2 t2 s3 u hstep hrest htrace =>
+          cases hstep with
+          | atomic_step_continue ev' tr' s' hout =>
+              have hrest' :
+                  ForeverReactive (atomic L) (tr, s)
+                    (Eappinf t2 T0) := by
+                apply star_forever_reactive
+                  (atomic L).genvtype (state (atomic L))
+                  (step (atomic L)) (globalenv (atomic L))
+                  (tr, s) t2 sb
+                · exact hrest
+                · exact htail
+              obtain ⟨T', hT', heq⟩ := ih (Eappinf t2 T0) hrest'
+              refine ⟨T', hT', ?_⟩
+              rw [htrace]
+              change Econsinf ev (Eappinf t2 T0) =
+                Econsinf ev (Eappinf tr T')
+              exact congrArg (Econsinf ev) heq
+
+end CompCert4Lean.Common.Behaviors
+
+namespace CompCert4Lean.Common.Behaviors
+
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.Smallstep
+
+private theorem atomic_reactive_to_source :
+    ∀ (L : semantics), well_behaved_traces L →
+      ∀ (s : state L) (T : traceinf),
+        ForeverReactive (atomic L) (E0, s) T → ForeverReactive L s T := by
+  intro L hwb s T h
+  let pred : state L → traceinf → Prop := fun s0 T0 =>
+    ForeverReactive (atomic L) (E0, s0) T0
+  exact forever_reactive.coinduct (step L) (globalenv L) pred
+    (by
+      intro s0 T0 hs
+      refine forever_reactive_casesOn
+        (step := step (atomic L)) (ge := globalenv (atomic L))
+        (motive := fun sa T1 => sa = (E0, s0) →
+          ∃ s2 t T2,
+            Star L s0 t s2 ∧ t ≠ E0 ∧ pred s2 T2 ∧
+              T1 = Eappinf t T2) ?_ hs rfl
+      intro sa sb t Ttail hstar hne htail hsa
+      cases hsa
+      cases sb with
+      | mk tr s2 =>
+          obtain ⟨T2, htail0, heq⟩ :=
+            atomic_reactive_strip L s2 tr Ttail htail
+          have hout : output_trace tr := by
+            exact star_atomic_output_trace L hwb s0 t tr s2 hstar
+          have hflush : Star (atomic L) (tr, s2) tr (E0, s2) :=
+            atomic_finish L s2 tr hout
+          have hstar' :
+              Star (atomic L) (E0, s0) (Eapp t tr) (E0, s2) := by
+            exact star_trans (atomic L).genvtype (state (atomic L))
+              (step (atomic L)) (globalenv (atomic L))
+              (E0, s0) t (tr, s2) hstar tr (E0, s2)
+              (Eapp t tr) hflush rfl
+          have hsource : Star L s0 (Eapp t tr) s2 :=
+            atomic_star_star L s0 (Eapp t tr) s2 hstar'
+          have hne' : Eapp t tr ≠ E0 := by
+            intro hz
+            cases t with
+            | nil => exact hne rfl
+            | cons ev t => cases hz
+          refine ⟨s2, Eapp t tr, T2, hsource, hne', ?_, ?_⟩
+          · exact htail0
+          · rw [heq]
+            exact (behavior_eappinf_assoc t tr T2).symm
+    ) s T h
+
+end CompCert4Lean.Common.Behaviors
+
+namespace CompCert4Lean.Common.Behaviors
+
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.Smallstep
+
+theorem atomic_behaviors :
+    atomic_behaviorsStatement := by
+  intro L hwb beh
+  constructor
+  · intro hbeh
+    obtain ⟨beh2, hbeh2, himp⟩ :=
+      forward_simulation_behavior_improves L (atomic L)
+        (atomic_forward_simulation L hwb) beh hbeh
+    rcases himp with heq | ⟨t, hbeq, _⟩
+    · subst beh2
+      exact hbeh2
+    · subst beh
+      cases hbeh with
+      | program_runs s _ hinit hstate =>
+          cases hstate with
+          | state_goes_wrong _ s' hstar hnostep hnofinal =>
+              exact program_behaves.program_runs (E0, s) (Goes_wrong t)
+                ⟨hinit, rfl⟩
+                (state_behaves.state_goes_wrong t (E0, s')
+                  (star_atomic_star L hwb s t s' hstar)
+                  (by
+                    intro u sa ha
+                    change atomic_step L (globalenv L) (E0, s') u sa at ha
+                    cases ha with
+                    | atomic_step_silent s0 s1 hs =>
+                        exact hnostep E0 s1 hs
+                    | atomic_step_start s0 ev tr s1 hs =>
+                        exact hnostep (ev :: tr) s1 hs)
+                  (by
+                    intro r hfinal
+                    exact hnofinal r hfinal.1))
+      | program_goes_initially_wrong hnoinit =>
+          exact program_behaves.program_goes_initially_wrong (by
+            intro sa hinit
+            exact hnoinit sa.2 hinit.1)
+  · intro hbeh
+    cases hbeh with
+    | program_goes_initially_wrong hnoinit =>
+        exact program_behaves.program_goes_initially_wrong (by
+          intro s hinit
+          exact hnoinit (E0, s) ⟨hinit, rfl⟩)
+    | program_runs sa beh hinit hstate =>
+        cases sa with
+        | mk tr s =>
+            have hinit' : initial_state L s := hinit.1
+            have htr : tr = E0 := hinit.2
+            subst tr
+            refine program_behaves.program_runs s beh hinit' ?_
+            cases hstate with
+            | state_terminates t sa' r hstar hfinal =>
+                cases sa' with
+                | mk tr' s' =>
+                    have hfinal' : final_state L s' r := hfinal.1
+                    have htr' : tr' = E0 := hfinal.2
+                    subst tr'
+                    exact state_behaves.state_terminates t s' r
+                      (atomic_star_star L s t s' hstar) hfinal'
+            | state_diverges t sa' hstar hforever =>
+                cases sa' with
+                | mk tr' s' =>
+                    have htr' : tr' = E0 := by
+                      exact forever_silent_casesOn
+                        (step := step (atomic L))
+                        (ge := globalenv (atomic L))
+                        (motive := fun sa => sa.1 = E0)
+                        (by
+                          intro sa0 sa1 hstep htail
+                          cases hstep with
+                          | atomic_step_silent s0 s1 hs => rfl)
+                        hforever
+                    subst tr'
+                    exact state_behaves.state_diverges t s'
+                      (atomic_star_star L s t s' hstar)
+                      (atomic_forever_silent_forever_silent (L := L)
+                        (E0, s') hforever)
+            | state_reacts T hforever =>
+                exact state_behaves.state_reacts T
+                  (atomic_reactive_to_source L hwb s T hforever)
+            | state_goes_wrong t sa' hstar hnostep hnofinal =>
+                cases sa' with
+                | mk tr' s' =>
+                    have htr' : tr' = E0 := by
+                      cases tr' with
+                      | nil => rfl
+                      | cons ev tr =>
+                          exfalso
+                          apply hnostep [ev] (tr, s')
+                          apply atomic_step_continue L
+                            (globalenv L) s'
+                          exact star_atomic_output_trace L hwb s t
+                            (ev :: tr) s' hstar
+                    subst tr'
+                    exact state_behaves.state_goes_wrong t s'
+                      (atomic_star_star L s t s' hstar)
+                      (by
+                        intro u s'' hs
+                        cases u with
+                        | nil =>
+                            apply hnostep E0 (E0, s'')
+                            exact atomic_step_silent L
+                              (globalenv L) s' s'' hs
+                        | cons ev tr =>
+                            apply hnostep [ev] (tr, s'')
+                            exact atomic_step_start L
+                              (globalenv L) s' ev tr s'' hs)
+                      (by
+                        intro r hf
+                        apply hnofinal r
+                        exact ⟨hf, rfl⟩)
+
+end CompCert4Lean.Common.Behaviors
+
+#print axioms CompCert4Lean.Common.Behaviors.atomic_behaviors

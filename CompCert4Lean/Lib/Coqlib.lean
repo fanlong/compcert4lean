@@ -1336,3 +1336,59 @@ theorem list_disjoint_cons_left : list_disjoint_cons_leftStatement := by
   exact h x y (List.Mem.tail a hx) hy
 
 end CompCert4Lean.Lib.Coqlib
+
+namespace CompCert4Lean.Lib.Coqlib
+
+private theorem coqlib_list_norepet_to_nodup {A : Type u} {l : List A} :
+    list_norepet l → l.Nodup := by
+  intro h
+  induction h with
+  | nil => exact List.nodup_nil
+  | cons hd hmem htail ih =>
+      exact (List.nodup_cons).2 ⟨hmem, ih⟩
+
+private theorem coqlib_list_norepet_of_nodup {A : Type u} {l : List A} :
+    l.Nodup → list_norepet l := by
+  intro h
+  cases l with
+  | nil => exact list_norepet.nil A
+  | cons hd tl =>
+      have h' := (List.nodup_cons).mp h
+      exact list_norepet.cons hd h'.1 (coqlib_list_norepet_of_nodup h'.2)
+
+theorem list_disjoint_notin : list_disjoint_notinStatement := by
+  intro A l1 l2 a hdisj ha hb
+  exact hdisj a a ha hb rfl
+
+theorem list_disjoint_sym : list_disjoint_symStatement := by
+  intro A l1 l2 h x y hx hy hxy
+  exact h y x hy hx hxy.symm
+
+theorem list_norepet_app : list_norepet_appStatement := by
+  intro A l1 l2
+  constructor
+  · intro h
+    have hn : (l1 ++ l2).Nodup := coqlib_list_norepet_to_nodup h
+    have hs := (List.nodup_append).mp hn
+    refine ⟨coqlib_list_norepet_of_nodup hs.1,
+      coqlib_list_norepet_of_nodup hs.2.1, ?_⟩
+    intro x y hx hy
+    exact hs.2.2 x hx y hy
+  · rintro ⟨h1, h2, hd⟩
+    apply coqlib_list_norepet_of_nodup
+    apply (List.nodup_append).mpr
+    refine ⟨coqlib_list_norepet_to_nodup h1,
+      coqlib_list_norepet_to_nodup h2, ?_⟩
+    intro x hx y hy
+    exact hd x y hx hy
+
+theorem list_norepet_append_commut : list_norepet_append_commutStatement := by
+  intro A a b h
+  apply coqlib_list_norepet_of_nodup
+  have hs := (List.nodup_append).mp (coqlib_list_norepet_to_nodup h)
+  apply (List.nodup_append).mpr
+  refine ⟨hs.2.1, hs.1, ?_⟩
+  intro x hx y hy hxy
+  exact hs.2.2 y hy x hx hxy.symm
+
+end CompCert4Lean.Lib.Coqlib
