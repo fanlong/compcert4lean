@@ -1800,3 +1800,16 @@ theorem sound_stack_exten
         (GE := geMatch) (AN := analyze) (EM := ematch) (CONTENTS := contents)
 
 end CompCert4Lean.Backend.ValueAnalysis
+
+namespace CompCert4Lean.Backend.ValueAnalysis
+
+theorem sound_state_inv
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    sound_state_invStatement := by
+  intro cfg prog st cunit hstate hlink
+  cases hstate with
+  | sound_state_intro h =>
+      exact h cunit hlink
+
+end CompCert4Lean.Backend.ValueAnalysis
