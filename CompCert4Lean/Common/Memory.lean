@@ -2744,3 +2744,150 @@ theorem getN_concat : getN_concatStatement := by
 end Mem
 
 end CompCert4Lean.Common.Memory
+namespace CompCert4Lean.Common.Memory
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Lib.Maps
+
+namespace Mem
+
+private theorem zToNat_add_nonneg_memproof (a b : Z)
+    (ha : zLe z0 a) (hb : zLe z0 b) :
+    zToNat (zAdd a b) = zToNat a + zToNat b := by
+  change Int.toNat (intOfZ (zAdd a b)) =
+    Int.toNat (intOfZ a) + Int.toNat (intOfZ b)
+  rw [intOfZ_zadd_mem]
+  have ha' : 0 ≤ intOfZ a := ha
+  have hb' : 0 ≤ intOfZ b := hb
+  have hia : Int.ofNat (Int.toNat (intOfZ a)) = intOfZ a :=
+    Int.toNat_of_nonneg ha'
+  have hib : Int.ofNat (Int.toNat (intOfZ b)) = intOfZ b :=
+    Int.toNat_of_nonneg hb'
+  have hsum_nonneg : 0 ≤ intOfZ a + intOfZ b := by omega
+  exact Int.toNat_add ha' hb'
+
+theorem loadbytes_concat : loadbytes_concatStatement := by
+  intro m b ofs n1 n2 bytes1 bytes2 h1 h2 hn1 hn2
+  unfold loadbytes at h1 h2 ⊢
+  cases hdec1 : range_perm_dec m b ofs (zAdd ofs n1) Cur Readable with
+  | right hn => simp [boolOfSumbool, hdec1] at h1
+  | left hr1 =>
+      cases hdec2 : range_perm_dec m b (zAdd ofs n1)
+          (zAdd (zAdd ofs n1) n2) Cur Readable with
+      | right hn => simp [boolOfSumbool, hdec2] at h2
+      | left hr2 =>
+          have hperm : range_perm m b ofs (zAdd ofs (zAdd n1 n2)) Cur Readable := by
+            intro ofs0 hof
+            by_cases hlt : intOfZ ofs0 < intOfZ (zAdd ofs n1)
+            · apply hr1 ofs0
+              constructor
+              · exact hof.1
+              · change intOfZ ofs0 < intOfZ (zAdd ofs n1)
+                exact hlt
+            · apply hr2 ofs0
+              constructor
+              · have hmid : intOfZ (zAdd ofs n1) ≤ intOfZ ofs0 := by omega
+                change intOfZ (zAdd ofs n1) ≤ intOfZ ofs0
+                exact hmid
+              · change intOfZ ofs0 < intOfZ (zAdd (zAdd ofs n1) n2)
+                change intOfZ ofs ≤ intOfZ ofs0 ∧
+                  intOfZ ofs0 < intOfZ (zAdd ofs (zAdd n1 n2)) at hof
+                have hsum :
+                    intOfZ (zAdd (zAdd ofs n1) n2) =
+                      intOfZ (zAdd ofs (zAdd n1 n2)) := by
+                  rw [intOfZ_zadd_mem, intOfZ_zadd_mem,
+                    intOfZ_zadd_mem, intOfZ_zadd_mem]
+                  omega
+                rw [hsum]
+                exact hof.2
+          have hnadd : zToNat (zAdd n1 n2) = zToNat n1 + zToNat n2 :=
+            zToNat_add_nonneg_memproof n1 n2 hn1 hn2
+          simp [boolOfSumbool, hdec1] at h1
+          simp [boolOfSumbool, hdec2] at h2
+          cases hdec3 : range_perm_dec m b ofs (zAdd ofs (zAdd n1 n2)) Cur Readable with
+          | right hn => exact False.elim (hn hperm)
+          | left _ =>
+            simp [boolOfSumbool, hdec3]
+            rw [hnadd]
+            rw [getN_concat]
+            have hn1z : zOfNat (zToNat n1) = n1 :=
+              (ZArith.Znat.Z2Nat.id n1 hn1)
+            rw [hn1z]
+            rw [h1, h2]
+
+theorem loadbytes_split : loadbytes_splitStatement := by
+  intro m b ofs n1 n2 bytes hload hn1 hn2
+  unfold loadbytes at hload ⊢
+  cases hdec : range_perm_dec m b ofs (zAdd ofs (zAdd n1 n2)) Cur Readable with
+  | right hn => simp [boolOfSumbool, hdec] at hload
+  | left hr =>
+      have hr1 : range_perm m b ofs (zAdd ofs n1) Cur Readable := by
+        intro ofs0 hof
+        apply hr ofs0
+        constructor
+        · exact hof.1
+        · change intOfZ ofs0 < intOfZ (zAdd ofs (zAdd n1 n2))
+          change intOfZ ofs ≤ intOfZ ofs0 ∧
+            intOfZ ofs0 < intOfZ (zAdd ofs n1) at hof
+          have hofs :
+              intOfZ (zAdd ofs (zAdd n1 n2)) =
+                intOfZ ofs + intOfZ n1 + intOfZ n2 := by
+            rw [intOfZ_zadd_mem, intOfZ_zadd_mem]
+            simp [Int.add_assoc]
+          have hn2' : (0 : Int) ≤ intOfZ n2 := hn2
+          rw [hofs]
+          have hlt1 : intOfZ ofs0 < intOfZ ofs + intOfZ n1 := by
+            simpa only [intOfZ_zadd_mem] using hof.2
+          omega
+      have hr2 : range_perm m b (zAdd ofs n1)
+          (zAdd (zAdd ofs n1) n2) Cur Readable := by
+        intro ofs0 hof
+        apply hr ofs0
+        constructor
+        · rcases hof with ⟨hoflo, hofhi⟩
+          change intOfZ (zAdd ofs n1) ≤ intOfZ ofs0 at hoflo
+          change intOfZ ofs ≤ intOfZ ofs0
+          have hmid : intOfZ ofs + intOfZ n1 ≤ intOfZ ofs0 := by
+            simpa only [intOfZ_zadd_mem] using hoflo
+          have hn1' : (0 : Int) ≤ intOfZ n1 := hn1
+          omega
+        · rcases hof with ⟨hoflo, hofhi⟩
+          change intOfZ ofs0 < intOfZ (zAdd ofs (zAdd n1 n2))
+          have hupper :
+              intOfZ (zAdd (zAdd ofs n1) n2) =
+                intOfZ (zAdd ofs (zAdd n1 n2)) := by
+            rw [intOfZ_zadd_mem, intOfZ_zadd_mem,
+              intOfZ_zadd_mem, intOfZ_zadd_mem]
+            simp [Int.add_assoc]
+          change intOfZ ofs0 < intOfZ (zAdd (zAdd ofs n1) n2) at hofhi
+          rw [← hupper]
+          exact hofhi
+      have hnadd : zToNat (zAdd n1 n2) = zToNat n1 + zToNat n2 :=
+        zToNat_add_nonneg_memproof n1 n2 hn1 hn2
+      have hn1z : zOfNat (zToNat n1) = n1 :=
+        (ZArith.Znat.Z2Nat.id n1 hn1)
+      simp [boolOfSumbool, hdec] at hload
+      rw [hnadd, getN_concat, hn1z] at hload
+      cases hdec1 : range_perm_dec m b ofs (zAdd ofs n1) Cur Readable with
+      | right hn => exact False.elim (hn hr1)
+      | left _ =>
+          cases hdec2 : range_perm_dec m b (zAdd ofs n1)
+              (zAdd (zAdd ofs n1) n2) Cur Readable with
+          | right hn => exact False.elim (hn hr2)
+          | left _ =>
+              refine ⟨getN (zToNat n1) ofs (PMap.get b m.mem_contents),
+                getN (zToNat n2) (zAdd ofs n1) (PMap.get b m.mem_contents), ?_, ?_, ?_⟩
+              · simp [boolOfSumbool, hdec1]
+              · simp [boolOfSumbool, hdec2]
+              · exact hload.symm
+
+theorem load_int64_split : load_int64_splitStatement := by
+  intro m b ofs v hload hptr
+  simp [CompCert4Lean.X86_64.Archi.ptr64] at hptr
+
+end Mem
+
+end CompCert4Lean.Common.Memory
+
+namespace CompCert4Lean.Common.Memory
