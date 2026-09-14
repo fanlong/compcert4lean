@@ -1835,3 +1835,15 @@ theorem E0_right : E0_rightStatement := by
       rw [ih]
 
 end CompCert4Lean.Common.Events
+
+namespace CompCert4Lean.Common.Events
+
+theorem Eapp_assoc : Eapp_assocStatement := by
+  intro t1 t2 t3
+  induction t1 with
+  | nil => rfl
+  | cons e t ih =>
+      change e :: Eapp (Eapp t t2) t3 = e :: Eapp t (Eapp t2 t3)
+      rw [ih]
+
+end CompCert4Lean.Common.Events
