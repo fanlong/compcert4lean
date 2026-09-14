@@ -1473,3 +1473,276 @@ theorem exec_straight_steps
       · exact hparent
 
 end CompCert4Lean.X86.Asmgenproof
+
+namespace CompCert4Lean.X86.Asmgenproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Linking
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Coqlib
+open Lean Elab Tactic Meta
+
+private def asmgenproofPrivateName (suffix : String) : Name :=
+  let p := Name.str (Name.str (Name.str (Name.str Name.anonymous "_private") "CompCert4Lean") "Lib") "Integers"
+  let base := Name.num p 0
+  suffix.splitOn "." |>.foldl Name.str base
+
+private theorem asmgenproof_wordcore_add_val {bits : Nat}
+    (x y : CompCert4Lean.Lib.Integers.WordCore.Word bits) :
+    (CompCert4Lean.Lib.Integers.WordCore.add x y).val =
+      (x.val + y.val) % (2 ^ bits) := by
+  run_tac
+    let lctx ← getLCtx
+    let xF := (lctx.findFromUserName? `x).get!
+    let yF := (lctx.findFromUserName? `y).get!
+    let e ← mkAppM
+      (asmgenproofPrivateName "CompCert4Lean.Lib.Integers.WordCore.add_val")
+      #[mkFVar xF.fvarId, mkFVar yF.fvarId]
+    closeMainGoal Name.anonymous e
+
+private theorem asmgenproof_wordcore_zero_val (bits : Nat) :
+    (CompCert4Lean.Lib.Integers.WordCore.zero bits).val = 0 := by
+  unfold CompCert4Lean.Lib.Integers.WordCore.zero
+  run_tac
+    let lctx ← getLCtx
+    let bF := (lctx.findFromUserName? `bits).get!
+    let e ← mkAppM
+      (asmgenproofPrivateName "CompCert4Lean.Lib.Integers.WordCore.val_repr_residue")
+      #[mkFVar bF.fvarId,
+        mkConst ``CompCert4Lean.Foundation.Numbers.Rocq.Coq.Numbers.BinNums.Z.Z0]
+    closeMainGoal Name.anonymous e
+
+private theorem asmgenproof_wordcore_val_lt {bits : Nat}
+    (x : CompCert4Lean.Lib.Integers.WordCore.Word bits) :
+    x.val < 2 ^ bits := by
+  run_tac
+    let lctx ← getLCtx
+    let xF := (lctx.findFromUserName? `x).get!
+    let e ← mkAppM
+      (asmgenproofPrivateName "CompCert4Lean.Lib.Integers.WordCore.val_lt")
+      #[mkFVar xF.fvarId]
+    closeMainGoal Name.anonymous e
+
+private theorem asmgenproof_ptrofs_add_zero
+    (x : CompCert4Lean.Lib.Integers.Ptrofs.int) :
+    CompCert4Lean.Lib.Integers.Ptrofs.add x
+        CompCert4Lean.Lib.Integers.Ptrofs.zero = x := by
+  change CompCert4Lean.Lib.Integers.WordCore.add x
+    (CompCert4Lean.Lib.Integers.WordCore.zero
+      CompCert4Lean.Lib.Integers.Ptrofs.wordsize) = x
+  apply CompCert4Lean.Lib.Integers.WordCore.ext_of_val_eq
+  rw [asmgenproof_wordcore_add_val, asmgenproof_wordcore_zero_val, Nat.add_zero]
+  exact Nat.mod_eq_of_lt (asmgenproof_wordcore_val_lt x)
+
+private theorem asmgenproof_initial_store_init_data
+    {prog : MachProgram} {tprog : AsmProgram}
+    (hsymb : ∀ id,
+      Genv.find_symbol (Genv.globalenv tprog) id =
+        Genv.find_symbol (Genv.globalenv prog) id)
+    (m : Mem) (b : CompCert4Lean.Foundation.Numbers.Rocq.Coq.positive)
+    (p : Z) (i : init_data) :
+    Genv.store_init_data (Genv.globalenv prog) m b p i =
+      Genv.store_init_data (Genv.globalenv tprog) m b p i := by
+  cases i with
+  | Init_addrof symb ofs =>
+      simp [Genv.store_init_data, hsymb symb]
+  | _ => rfl
+
+private theorem asmgenproof_initial_store_init_data_list
+    {prog : MachProgram} {tprog : AsmProgram}
+    (hsymb : ∀ id,
+      Genv.find_symbol (Genv.globalenv tprog) id =
+        Genv.find_symbol (Genv.globalenv prog) id) :
+    ∀ (m : Mem) (b : CompCert4Lean.Foundation.Numbers.Rocq.Coq.positive)
+      (p : Z) (il : List init_data),
+      Genv.store_init_data_list (Genv.globalenv prog) m b p il =
+        Genv.store_init_data_list (Genv.globalenv tprog) m b p il := by
+  intro m b p il
+  induction il generalizing m b p with
+  | nil => rfl
+  | cons i rest ih =>
+      simp only [Genv.store_init_data_list]
+      rw [asmgenproof_initial_store_init_data hsymb]
+      cases h : Genv.store_init_data (Genv.globalenv tprog) m b p i with
+      | none => simp [h]
+      | some m' =>
+          simp only [h]
+          exact ih m' b (ZArith.BinInt.Z.add p (init_data_size i))
+
+private theorem asmgenproof_initial_alloc_global
+    [Linker MachProgram]
+    {prog : MachProgram} {tprog : AsmProgram}
+    (hsymb : ∀ id,
+      Genv.find_symbol (Genv.globalenv tprog) id =
+        Genv.find_symbol (Genv.globalenv prog) id)
+    {id : ident} {gd : globdef MachFundef Unit}
+    {tg : globdef AsmFundef Unit}
+    (hgd : match_globdef
+      (fun _ f tf =>
+        CompCert4Lean.X86.Asmgen.transf_fundef f = .OK tf)
+      (fun x y : Unit => x = y) prog gd tg)
+    (m : Mem) :
+    Genv.alloc_global (Genv.globalenv prog) m (id, gd) =
+      Genv.alloc_global (Genv.globalenv tprog) m (id, tg) := by
+  cases hgd with
+  | match_globdef_fun ctx' f1 f2 horder htrans => rfl
+  | match_globdef_var v1 v2 hvar =>
+      cases hvar with
+      | match_globvar_intro info1 info2 init ro vol hinfo =>
+          cases hinfo
+          simp only [Genv.alloc_global]
+          simp [asmgenproof_initial_store_init_data_list (prog := prog) (tprog := tprog) hsymb]
+
+private theorem asmgenproof_val_inject_refl (v : Val) :
+    CompCert4Lean.Common.Values.Val.inject
+      CompCert4Lean.Common.Values.inject_id v v := by
+  cases v with
+  | Vint i => exact CompCert4Lean.Common.Values.Val.inject.inject_int _
+  | Vlong i => exact CompCert4Lean.Common.Values.Val.inject.inject_long _
+  | Vfloat f => exact CompCert4Lean.Common.Values.Val.inject.inject_float _
+  | Vsingle f => exact CompCert4Lean.Common.Values.Val.inject.inject_single _
+  | Vptr b ofs =>
+      apply CompCert4Lean.Common.Values.Val.inject.inject_ptr
+      · rfl
+      · exact (asmgenproof_ptrofs_add_zero ofs).symm
+  | Vundef => exact CompCert4Lean.Common.Values.Val.inject.val_inject_undef _
+
+private theorem asmgenproof_initial_alloc_globals
+    [Linker MachProgram]
+    {prog : MachProgram} {tprog : AsmProgram}
+    (hsymb : ∀ id,
+      Genv.find_symbol (Genv.globalenv tprog) id =
+        Genv.find_symbol (Genv.globalenv prog) id)
+    (gl : List (ident × globdef MachFundef Unit))
+    (tgl : List (ident × globdef AsmFundef Unit))
+    (hlist : list_forall2
+      (match_ident_globdef
+        (fun _ f tf =>
+          CompCert4Lean.X86.Asmgen.transf_fundef f = .OK tf)
+        (fun x y : Unit => x = y) prog) gl tgl) :
+    ∀ (m m' : Mem),
+      Genv.alloc_globals (Genv.globalenv prog) m gl = some m' →
+        Genv.alloc_globals (Genv.globalenv tprog) m tgl = some m' := by
+  induction hlist with
+  | nil =>
+      intro m m' h
+      simpa [Genv.alloc_globals] using h
+  | cons hd thd hhd htl ih =>
+      intro m m' h
+      rcases hhd with ⟨hid, hgd⟩
+      rcases hd with ⟨id, gd⟩
+      rcases thd with ⟨tid, tgd⟩
+      have halloc :
+          Genv.alloc_global (Genv.globalenv prog) m (id, gd) =
+            Genv.alloc_global (Genv.globalenv tprog) m (tid, tgd) := by
+        change id = tid at hid
+        subst tid
+        exact asmgenproof_initial_alloc_global hsymb hgd m
+      simp only [Genv.alloc_globals] at h ⊢
+      rw [halloc] at h
+      cases ha : Genv.alloc_global (Genv.globalenv tprog) m (tid, tgd) with
+      | none => simp [ha] at h
+      | some m1 =>
+          simp only [ha] at h ⊢
+          exact ih m1 m' h
+
+private theorem asmgenproof_mem_extends_refl (m : Mem) :
+    CompCert4Lean.Common.Memory.Mem.extends m m := by
+  refine ⟨rfl, ?_, ?_⟩
+  · refine ⟨?_, ?_, ?_⟩
+    · intro b1 b2 delta ofs k p hmap hp
+      have hpair : (b1, (.Z0 : Z)) = (b2, delta) := by
+        simpa [CompCert4Lean.Common.Values.inject_id] using Option.some.inj hmap
+      cases hpair
+      change Mem.perm m b1 (ZArith.BinInt.Z.add ofs (.Z0 : Z)) k p
+      have hzadd : ZArith.BinInt.Z.add ofs (.Z0 : Z) = ofs := by
+        apply intOfZ_injective
+        change intOfZ (zOfInt (intOfZ ofs + 0)) = intOfZ ofs
+        rw [intOfZ_zOfInt]
+        simp
+      rw [hzadd]
+      exact hp
+    · intro b1 b2 delta chunk ofs p hmap hp
+      have hpair : (b1, (.Z0 : Z)) = (b2, delta) := by
+        simpa [CompCert4Lean.Common.Values.inject_id] using Option.some.inj hmap
+      cases hpair
+      refine ⟨.Z0, ?_⟩
+      apply intOfZ_injective
+      change 0 = intOfZ (ZArith.BinInt.Z.mul
+        (CompCert4Lean.Common.Memdata.align_chunk chunk) (.Z0 : Z))
+      change 0 = intOfZ (zOfInt (intOfZ
+        (CompCert4Lean.Common.Memdata.align_chunk chunk) * 0))
+      rw [intOfZ_zOfInt]
+      simp
+    · intro b1 ofs b2 delta hmap hp
+      have hpair : (b1, (.Z0 : Z)) = (b2, delta) := by
+        simpa [CompCert4Lean.Common.Values.inject_id] using Option.some.inj hmap
+      cases hpair
+      change CompCert4Lean.Common.Memdata.memval_inject inject_id
+        (CompCert4Lean.Lib.Maps.ZMap.get ofs (CompCert4Lean.Lib.Maps.PMap.get b1 m.mem_contents))
+        (CompCert4Lean.Lib.Maps.ZMap.get
+          (ZArith.BinInt.Z.add ofs (.Z0 : Z))
+          (CompCert4Lean.Lib.Maps.PMap.get b1 m.mem_contents))
+      have hzadd : ZArith.BinInt.Z.add ofs (.Z0 : Z) = ofs := by
+        apply intOfZ_injective
+        change intOfZ (zOfInt (intOfZ ofs + 0)) = intOfZ ofs
+        rw [intOfZ_zOfInt]
+        simp
+      rw [hzadd]
+      cases hmv : CompCert4Lean.Lib.Maps.ZMap.get ofs
+          (CompCert4Lean.Lib.Maps.PMap.get b1 m.mem_contents) with
+      | Byte n => exact CompCert4Lean.Common.Memdata.memval_inject.byte _ _
+      | Fragment v q n =>
+          exact CompCert4Lean.Common.Memdata.memval_inject.fragment _ _ _ _ _
+            (asmgenproof_val_inject_refl v)
+      | Undef => exact CompCert4Lean.Common.Memdata.memval_inject.undef _ _
+  · intro b ofs k p hp
+    exact Or.inl hp
+
+theorem transf_initial_states : transf_initial_statesStatement := by
+  letI : Linker MachFundef := Linker_fundef MachFunction
+  letI : Linker Unit := Linker_unit
+  letI : Linker MachProgram := Linker_prog MachFundef Unit
+  intro prog tprog hmatch st1 hinit
+  have hmatch' := hmatch
+  unfold match_prog at hmatch'
+  cases hinit with
+  | initial_state_intro fb m0 hmem hsymb =>
+      let hsymb' : ∀ id,
+          Genv.find_symbol (Genv.globalenv tprog) id =
+            Genv.find_symbol (Genv.globalenv prog) id :=
+        fun id => symbols_preserved prog tprog hmatch id
+      refine ⟨.State (CompCert4Lean.X86.Asm.initial_regset tprog) m0, ?_, ?_⟩
+      · apply CompCert4Lean.X86.Asm.initial_state.initial_state_intro m0
+        unfold Genv.init_mem at hmem ⊢
+        apply asmgenproof_initial_alloc_globals hsymb' prog.prog_defs tprog.prog_defs hmatch'.1
+        exact hmem
+      · apply match_states.match_states_call
+        · exact CompCert4Lean.Backend.Asmgenproof0.match_stack_nil
+        · exact asmgenproof_mem_extends_refl m0
+        · constructor
+          · simpa [CompCert4Lean.X86.Asm.initial_regset,
+              CompCert4Lean.X86.Asm.Pregmap.set,
+              CompCert4Lean.Backend.Mach.parent_sp,
+              CompCert4Lean.X86.Asm.SP]
+          · intro h
+            cases hptr : CompCert4Lean.X86_64.Archi.ptr64 <;>
+              simp [CompCert4Lean.Backend.Mach.parent_sp,
+                CompCert4Lean.Common.Values.Vnullptr, hptr] at h
+          · intro r
+            exact Val.lessdef_undef _
+        · change (CompCert4Lean.X86.Asm.initial_regset tprog) .PC =
+            .Vptr fb CompCert4Lean.Lib.Integers.Ptrofs.zero
+          simp [CompCert4Lean.X86.Asm.initial_regset,
+            CompCert4Lean.X86.Asm.Pregmap.set,
+            Genv.symbol_address, hmatch'.2.1,
+            hsymb' prog.prog_main, hsymb]
+        · simp [CompCert4Lean.X86.Asm.initial_regset,
+            CompCert4Lean.X86.Asm.Pregmap.set,
+            CompCert4Lean.Backend.Mach.parent_ra,
+            CompCert4Lean.Common.Values.Vnullptr]
+
+end CompCert4Lean.X86.Asmgenproof

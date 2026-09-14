@@ -1664,3 +1664,61 @@ theorem ZofB_range_pos {prec emax : Z} [Prec_gt_0 prec] [Prec_lt_emax prec emax]
               (ctx.spec.ofZ (Zadd (Zdiv (Zpos m) (Zpower_pos Ztwo p)) Zone)) at hbounds
           exact hbounds
 end CompCert4Lean.Lib.IEEE754_extra
+
+namespace CompCert4Lean.Lib.IEEE754_extra
+
+open CompCert4Lean.Flocq.Core
+open CompCert4Lean.Flocq.IEEE754
+
+private theorem pg_zsub_as_add (a b : Z) :
+    Zsub a b = Zadd a (Zopp b) := by
+  apply _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective
+  simp only [Zsub, Zadd, Zopp,
+    _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add,
+    _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.sub,
+    _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.opp,
+    _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+  omega
+
+theorem Zfloor_minus : Zfloor_minusStatement := by
+  intro ctx x n
+  let f := Exact.Zfloor ctx x
+  apply CompCert4Lean.Flocq.Core.Raux.Zfloor_imp ctx (Zsub f n)
+    (Exact.Rminus ctx x (Exact.IZR ctx n))
+  constructor
+  · have hf := CompCert4Lean.Flocq.Core.Raux.Zfloor_lb ctx x
+    have hsub :
+        ctx.spec.ofZ (Zsub f n) =
+          ctx.spec.add (ctx.spec.ofZ f) (ctx.spec.neg (ctx.spec.ofZ n)) := by
+      rw [pg_zsub_as_add, ctx.certificate.sourceLaws.ofZ_add,
+        ctx.certificate.sourceLaws.ofZ_neg]
+    change ctx.spec.le (ctx.spec.ofZ (Zsub f n))
+      (ctx.spec.add x (ctx.spec.neg (ctx.spec.ofZ n)))
+    rw [hsub]
+    exact CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.Rplus_le_compat_r
+      ctx (ctx.spec.neg (ctx.spec.ofZ n)) (ctx.spec.ofZ f) x hf
+  · have hf := CompCert4Lean.Flocq.Core.Raux.Zfloor_ub ctx x
+    have hlt := CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.Rplus_lt_compat_r
+      ctx (ctx.spec.neg (ctx.spec.ofZ n)) x
+        (ctx.spec.add (ctx.spec.ofZ f) (ctx.spec.one)) hf
+    have hsub :
+        ctx.spec.ofZ (Zsub f n) =
+          ctx.spec.add (ctx.spec.ofZ f) (ctx.spec.neg (ctx.spec.ofZ n)) := by
+      rw [pg_zsub_as_add, ctx.certificate.sourceLaws.ofZ_add,
+        ctx.certificate.sourceLaws.ofZ_neg]
+    have hone :
+        ctx.spec.ofZ (Zadd (Zsub f n) (Zpos xH)) =
+          ctx.spec.add (ctx.spec.add (ctx.spec.ofZ f)
+            (ctx.spec.neg (ctx.spec.ofZ n))) ctx.spec.one := by
+      rw [ctx.certificate.sourceLaws.ofZ_add,
+        ctx.certificate.sourceLaws.ofZ_one, hsub]
+    change ctx.spec.lt (ctx.spec.add x (ctx.spec.neg (ctx.spec.ofZ n)))
+      (ctx.spec.ofZ (Zadd (Zsub f n) (Zpos xH)))
+    rw [hone]
+    rw [ctx.certificate.orderedField.add_assoc,
+      ctx.certificate.orderedField.add_comm
+        (ctx.spec.neg (ctx.spec.ofZ n)) (ctx.spec.one),
+      ← ctx.certificate.orderedField.add_assoc]
+    exact hlt
+
+end CompCert4Lean.Lib.IEEE754_extra

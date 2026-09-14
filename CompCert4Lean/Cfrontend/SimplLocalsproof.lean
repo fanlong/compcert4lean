@@ -2647,3 +2647,15 @@ theorem compat_cenv_union_r : compat_cenv_union_rStatement := by
   exact compat_union_right atk1 atk2 cenv h
 
 end CompCert4Lean.Cfrontend.SimplLocalsproof
+
+namespace CompCert4Lean.Cfrontend.SimplLocalsproof
+
+open CompCert4Lean.Cfrontend.Clight
+open CompCert4Lean.Cfrontend.Ctypes
+open CompCert4Lean.Cfrontend.SimplLocals
+
+theorem compat_cenv_empty : compat_cenv_emptyStatement := by
+  intro cenv id hid hcid
+  exact (VSet.MFProvider.M.empty_1 id) hid
+
+end CompCert4Lean.Cfrontend.SimplLocalsproof
