@@ -2511,3 +2511,79 @@ theorem cenv_for_gen_domain : cenv_for_gen_domainStatement := by
           exact List.mem_cons.mpr (Or.inr (ih h))
 
 end CompCert4Lean.Cfrontend.SimplLocalsproof
+
+namespace CompCert4Lean.Cfrontend.SimplLocalsproof
+
+open CompCert4Lean.Cfrontend.Clight
+open CompCert4Lean.Cfrontend.Ctypes
+open CompCert4Lean.Cfrontend.SimplLocals
+
+private theorem add_local_variable_charact_aux :
+    ∀ id ty atk cenv id1,
+      VSet.In id1 (add_local_variable atk (id, ty) cenv) ↔
+        VSet.In id1 cenv ∨
+          ∃ chunk, access_mode ty = .By_value chunk ∧ id = id1 ∧
+            VSet.mem id atk = false := by
+  intro id ty atk cenv id1
+  unfold add_local_variable
+  cases hmode : access_mode ty with
+  | By_value chunk =>
+      cases hmem : VSet.mem id atk with
+      | false =>
+          simp only [hmode, hmem, ↓reduceIte]
+          constructor
+          · intro h
+            rcases (VSF.add_iff_proof _ id id1).mp h with heq | hrest
+            · exact Or.inr ⟨chunk, rfl, heq, trivial⟩
+            · exact Or.inl hrest
+          · intro h
+            rcases h with hrest | ⟨chunk', hmode', heq, hmem'⟩
+            · exact (VSF.add_iff_proof _ id id1).mpr (Or.inr hrest)
+            · exact (VSF.add_iff_proof _ id id1).mpr (Or.inl heq)
+      | true =>
+          simp [hmode, hmem]
+  | By_reference => simp [hmode]
+  | By_copy => simp [hmode]
+  | By_nothing => simp [hmode]
+
+theorem cenv_for_gen_by_value : cenv_for_gen_by_valueStatement := by
+  intro atk id ty vars
+  induction vars generalizing id ty with
+  | nil =>
+      intro hin _ _
+      cases hin
+  | cons hd rest ih =>
+      rcases hd with ⟨id1, ty1⟩
+      intro hin hnr hmem
+      cases hin with
+      | head =>
+          cases hnr with
+          | cons _ hnot htail =>
+              have hchar :=
+                (add_local_variable_charact_aux id ty atk
+                  (cenv_for_gen atk rest) id).mp hmem
+              cases hchar with
+              | inl hrest =>
+                  have hdom : id ∈ var_names rest :=
+                    cenv_for_gen_domain atk id rest hrest
+                  exact False.elim (hnot hdom)
+              | inr hex =>
+                  rcases hex with ⟨chunk, hmode, heq, hfalse⟩
+                  exact ⟨chunk, hmode⟩
+      | tail _ htail =>
+          cases hnr with
+          | cons _ hnot hnrTail =>
+              have hchar :=
+                (add_local_variable_charact_aux id1 ty1 atk
+                  (cenv_for_gen atk rest) id).mp hmem
+              cases hchar with
+              | inl hrest => exact ih id ty htail hnrTail hrest
+              | inr hex =>
+                  rcases hex with ⟨chunk, hmode, heq, hfalse⟩
+                  have hdom : id1 ∈ var_names rest :=
+                    by
+                      rw [heq]
+                      exact List.mem_map.mpr ⟨(id, ty), htail, rfl⟩
+                  exact False.elim (hnot hdom)
+
+end CompCert4Lean.Cfrontend.SimplLocalsproof

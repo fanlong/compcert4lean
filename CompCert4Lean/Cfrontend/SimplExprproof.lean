@@ -2108,3 +2108,69 @@ theorem sem_cast_deterministic
       exact h1.symm.trans h2
 
 end CompCert4Lean.Cfrontend.SimplExprproof
+
+namespace CompCert4Lean.Cfrontend.SimplExprproof
+
+open CompCert4Lean.Cfrontend.SimplExpr
+open CompCert4Lean.Cfrontend.Cop
+open CompCert4Lean.Cfrontend.Csyntax
+open CompCert4Lean.Cfrontend.Clight
+open CompCert4Lean.Common.Memory
+
+theorem eval_simpl_expr_sound :
+    ∀ [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+      [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)],
+      eval_simpl_expr_soundStatement := by
+  intro binary64_certificate binary32_certificate tp e le m a v hEval
+  let P : Clight.expr → val → Prop := fun a v =>
+    match eval_simpl_expr a with
+    | some v' => v' = v
+    | none => True
+  let P0 : Clight.expr → block → ptrofs → Ctypes.bitfield → Prop :=
+    fun a _ _ _ => eval_simpl_expr a = none
+  have hP : P a v := by
+    refine Clight.eval_expr.rec
+      (motive_1 := fun a v _ => P a v)
+      (motive_2 := fun a _ _ _ _ => eval_simpl_expr a = none)
+      (const_int := by intro i ty; simp [P, eval_simpl_expr])
+      (const_float := by intro f ty; simp [P, eval_simpl_expr])
+      (const_single := by intro f ty; simp [P, eval_simpl_expr])
+      (const_long := by intro i ty; simp [P, eval_simpl_expr])
+      (eval_Etempvar := by intro id ty v hfind; simp [P, eval_simpl_expr])
+      (eval_Eaddrof := by intro a ty loc ofs hl ih; simp [P, eval_simpl_expr])
+      (unary := by intro op a ty v1 v ha hop ih; simp [P, eval_simpl_expr])
+      (binary := by
+        intro op a1 a2 ty v1 v2 v ha1 ha2 hop ih1 ih2
+        simp [P, eval_simpl_expr])
+      (cast := by
+        intro a ty v1 v ha hcast ih
+        change match eval_simpl_expr (.Ecast a ty) with
+          | some v' => v' = v
+          | none => True
+        simp only [eval_simpl_expr]
+        cases h : eval_simpl_expr a with
+        | none => simp [h]
+        | some v' =>
+            have hv : v' = v1 := by simpa [P, h] using ih
+            subst v1
+            cases hc : sem_cast v' (Clight.typeof a) ty Mem.empty with
+            | none => simp [h, hc]
+            | some v'' =>
+                simp [h, hc]
+                exact (sem_cast_deterministic v' (Clight.typeof a) ty m v Mem.empty v'' hcast hc).symm)
+      (sizeof_type := by intro ty1 ty; simp [P, eval_simpl_expr])
+      (alignof_type := by intro ty1 ty; simp [P, eval_simpl_expr])
+      (eval_Elvalue := by
+        intro a loc ofs bf v hl hd ih
+        simp [P, ih])
+      (eval_Evar_local := by intro id loc ty h; rfl)
+      (eval_Evar_global := by intro id loc ty h1 h2; rfl)
+      (eval_Ederef := by intro a ty loc ofs ha ih; rfl)
+      (eval_Efield_struct := by
+        intro a id ty loc ofs sid co att delta bf ha ht hc ho ih; rfl)
+      (eval_Efield_union := by
+        intro a id ty loc ofs uid co att delta bf ha ht hc ho ih; rfl)
+      hEval
+  simpa [P] using hP
+
+end CompCert4Lean.Cfrontend.SimplExprproof

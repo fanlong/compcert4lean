@@ -1422,3 +1422,16 @@ theorem is_tail_in : is_tail_inStatement := by
       | cons _ htail => exact List.Mem.tail _ (ih htail)
 
 end CompCert4Lean.Lib.Coqlib
+
+namespace CompCert4Lean.Lib.Coqlib
+
+theorem is_tail_cons_left : is_tail_cons_leftStatement := by
+  intro A i c1 c2 h
+  induction c2 with
+  | nil => cases h
+  | cons a c2 ih =>
+      cases h with
+      | refl _ => exact is_tail.cons i (is_tail.refl c1)
+      | cons _ htail => exact is_tail.cons _ (ih htail)
+
+end CompCert4Lean.Lib.Coqlib
