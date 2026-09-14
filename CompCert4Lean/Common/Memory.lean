@@ -2943,3 +2943,43 @@ theorem store_access : store_accessStatement := by
 end Mem
 
 end CompCert4Lean.Common.Memory
+
+namespace CompCert4Lean.Common.Memory
+
+namespace Mem
+
+theorem store_mem_contents : store_mem_contentsStatement := by
+  intro chunk m1 b ofs v m2 hstore
+  unfold store at hstore
+  split at hstore
+  · cases hstore
+    rfl
+  · cases hstore
+
+theorem perm_store_1 : perm_store_1Statement := by
+  intro chunk m1 b ofs v m2 hstore b' ofs' k p hperm
+  unfold store at hstore
+  split at hstore
+  · cases hstore
+    exact hperm
+  · cases hstore
+
+theorem perm_store_2 : perm_store_2Statement := by
+  intro chunk m1 b ofs v m2 hstore b' ofs' k p hperm
+  unfold store at hstore
+  split at hstore
+  · cases hstore
+    exact hperm
+  · cases hstore
+
+theorem nextblock_store : nextblock_storeStatement := by
+  intro chunk m1 b ofs v m2 hstore
+  unfold store at hstore
+  split at hstore
+  · cases hstore
+    rfl
+  · cases hstore
+
+end Mem
+
+end CompCert4Lean.Common.Memory

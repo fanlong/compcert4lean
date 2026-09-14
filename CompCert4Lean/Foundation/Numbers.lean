@@ -2035,3 +2035,21 @@ theorem ZArith.BinInt.Zmult_1_l_proof (n : Z) :
 
 end Rocq.Coq
 end CompCert4Lean.Foundation.Numbers
+
+namespace CompCert4Lean.Foundation.Numbers
+namespace Rocq.Coq
+
+theorem ZArith.BinInt.Z.divide_mul_l :
+    ZArith.BinInt.Z.divide_mul_lStatement := by
+  intro n m p hnm
+  rcases hnm with ⟨k, hk⟩
+  refine ⟨ZArith.BinInt.Z.mul k p, ?_⟩
+  apply intOfZ_injective
+  change intOfZ (ZArith.BinInt.Z.mul m p) =
+    intOfZ (ZArith.BinInt.Z.mul n (ZArith.BinInt.Z.mul k p))
+  rw [hk]
+  simp only [ZArith.BinInt.Z.mul, intOfZ_zOfInt]
+  exact Int.mul_assoc _ _ _
+
+end Rocq.Coq
+end CompCert4Lean.Foundation.Numbers

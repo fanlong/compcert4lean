@@ -2314,3 +2314,24 @@ theorem match_stacks_inside_set_reg : match_stacks_inside_set_regStatement := by
       (Regmap.set q v rs') ctx' (ih q Hq') COMPAT FB AG' SP PRIV RES RET BELOW SBELOW
 
 end CompCert4Lean.Backend.Inliningproof
+
+namespace CompCert4Lean.Backend.Inliningproof
+
+open CompCert4Lean.Backend.Inlining
+open CompCert4Lean.Backend.Inliningspec
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Common.AST
+
+theorem match_stacks_inside_set_res : match_stacks_inside_set_resStatement := by
+  intro prog F m m' stk stk' f ctx sp rs res v h
+  cases res with
+  | BR r =>
+      simpa [regmap_setres, sbuiltinres] using
+        (match_stacks_inside_set_reg prog F m m' stk stk' f ctx sp rs r v h)
+  | BR_none =>
+      simpa [regmap_setres, sbuiltinres] using h
+  | BR_splitlong hi lo =>
+      simpa [regmap_setres, sbuiltinres] using h
+
+end CompCert4Lean.Backend.Inliningproof

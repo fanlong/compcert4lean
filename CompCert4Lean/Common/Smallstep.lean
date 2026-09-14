@@ -2679,3 +2679,87 @@ theorem f2b_progress : f2b_progressStatement := by
           (star_refl _ _ s1) hstep hplus hmatch hmatch'
 
 end CompCert4Lean.Common.Smallstep
+
+namespace CompCert4Lean.Common.Smallstep
+
+open CompCert4Lean.Common.Events
+
+theorem silent_or_not_silent : silent_or_not_silentStatement := by
+  intro t
+  cases t with
+  | nil => exact Or.inl rfl
+  | cons e t => exact Or.inr (by intro h; cases h)
+
+theorem not_silent_length : not_silent_lengthStatement := by
+  intro t1 t2 hlen
+  cases t1 with
+  | nil => exact Or.inl rfl
+  | cons e t1 =>
+      cases t2 with
+      | nil => exact Or.inr rfl
+      | cons e' t2 =>
+          simp [Eapp] at hlen
+
+theorem fsim_simulation_not_E0 : fsim_simulation_not_E0Statement := by
+  intro L1 L2 index order match_states props s1 t s1' hstep hne i s2 hmatch
+  rcases fsim_simulation props s1 t s1' hstep i s2 hmatch with
+    ⟨i', s2', hdiagram, hmatch'⟩
+  cases hdiagram with
+  | inl hplus =>
+      exact ⟨i', s2', hplus, hmatch'⟩
+  | inr hstar_order =>
+      rcases hstar_order with ⟨hstar, horder⟩
+      cases hstar with
+      | star_refl s =>
+          exact False.elim (hne (by rfl))
+      | star_step s1x t1 s2x t2 s2y t hstep' hstar' htrace =>
+          exact ⟨i', _, plus_left _ _ hstep' hstar' htrace, hmatch'⟩
+
+end CompCert4Lean.Common.Smallstep
+
+namespace CompCert4Lean.Common.Smallstep
+
+open CompCert4Lean.Common.Events
+
+theorem f2b_determinacy_inv : f2b_determinacy_invStatement := by
+  intro L1 L2 index order match_states props hdet s2 t' s2' t'' s2'' hstep' hstep''
+  have htrace : match_traces (symbolenv L2) t' t'' :=
+    sd_determ_1 L2 hdet s2 t' s2' t'' s2'' hstep' hstep''
+  have hmatch_preserved : ∀ (ge1 ge2 : CompCert4Lean.Common.Globalenvs.Senv.t),
+      (∀ id, CompCert4Lean.Common.Globalenvs.Senv.public_symbol ge2 id =
+        CompCert4Lean.Common.Globalenvs.Senv.public_symbol ge1 id) →
+      ∀ t1 t2, match_traces ge1 t1 t2 → match_traces ge2 t1 t2 := by
+    intro ge1 ge2 hpublic t1 t2 hm
+    induction hm with
+    | match_traces_E0 => exact match_traces_E0
+    | match_traces_syscall id args res1 res2 valid1 valid2 same_type =>
+        exact match_traces_syscall id args res1 res2
+          (eventval_valid_preserved ge1 ge2 hpublic res1 valid1)
+          (eventval_valid_preserved ge1 ge2 hpublic res2 valid2) same_type
+    | match_traces_vload chunk id ofs res1 res2 valid1 valid2 same_type =>
+        exact match_traces_vload chunk id ofs res1 res2
+          (eventval_valid_preserved ge1 ge2 hpublic res1 valid1)
+          (eventval_valid_preserved ge1 ge2 hpublic res2 valid2) same_type
+    | match_traces_vstore chunk id ofs arg =>
+        exact match_traces_vstore chunk id ofs arg
+    | match_traces_annot id args =>
+        exact match_traces_annot id args
+  rcases silent_or_not_silent t' with ht' | ht'
+  · subst t'
+    cases htrace with
+    | match_traces_E0 =>
+        left
+        refine ⟨rfl, rfl, ?_⟩
+        exact sd_determ_2 L2 hdet s2 E0 s2' s2'' hstep' hstep''
+  · rcases silent_or_not_silent t'' with ht'' | ht''
+    · subst t''
+      cases htrace with
+      | match_traces_E0 => exact False.elim (ht' rfl)
+    · right
+      refine ⟨ht', ht'', ?_⟩
+      apply hmatch_preserved (symbolenv L2) (symbolenv L1)
+      intro id
+      exact (props.fsim_public_preserved id).symm
+      exact htrace
+
+end CompCert4Lean.Common.Smallstep
