@@ -1835,3 +1835,253 @@ theorem valid_pointer_extends : valid_pointer_extendsStatement := by
   exact hp2'
 
 end CompCert4Lean.X86.Op
+
+namespace CompCert4Lean.X86.Op
+
+theorem valid_different_pointers_extends : valid_different_pointers_extendsStatement := by
+  intro m1 b1 ofs1 b2 ofs2 b1' delta1 b2' delta2 hneq hp1 hp2 hmap1 hmap2
+  have hpair1 := Option.some.inj hmap1
+  have hpair2 := Option.some.inj hmap2
+  cases hpair1
+  cases hpair2
+  exact Or.inl hneq
+
+end CompCert4Lean.X86.Op
+
+namespace CompCert4Lean.X86.Op
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem weak_valid_pointer_no_overflow_extends :
+    weak_valid_pointer_no_overflow_extendsStatement := by
+  intro m1 b1 ofs b2 delta hmap hp
+  have hpair := Option.some.inj hmap
+  cases hpair
+  have hrepr :
+      CompCert4Lean.Lib.Integers.Ptrofs.repr
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.Z0 =
+        CompCert4Lean.Lib.Integers.Ptrofs.zero := by
+    rfl
+  have huzero :
+      CompCert4Lean.Lib.Integers.Ptrofs.unsigned
+          CompCert4Lean.Lib.Integers.Ptrofs.zero =
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.Z0 := by
+    rfl
+  rw [hrepr, huzero]
+  have hzadd :
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add
+          (CompCert4Lean.Lib.Integers.Ptrofs.unsigned ofs)
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.Z0 =
+        CompCert4Lean.Lib.Integers.Ptrofs.unsigned ofs := by
+    change zOfInt (intOfZ (CompCert4Lean.Lib.Integers.Ptrofs.unsigned ofs) +
+      intOfZ CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.Z0) =
+      CompCert4Lean.Lib.Integers.Ptrofs.unsigned ofs
+    rw [show intOfZ
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.Z0 =
+          (0 : Int) by rfl, Int.add_zero]
+    exact zOfInt_intOfZ _
+  change CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.le
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.Z0
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add
+        (CompCert4Lean.Lib.Integers.Ptrofs.unsigned ofs)
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.Z0) ∧
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.le
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add
+        (CompCert4Lean.Lib.Integers.Ptrofs.unsigned ofs)
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.Z0)
+      CompCert4Lean.Lib.Integers.Ptrofs.max_unsigned
+  rw [hzadd]
+  constructor
+  · have h := ofs.intrange.1
+    change (-1 : Int) <
+      intOfZ (CompCert4Lean.Lib.Integers.Ptrofs.unsigned ofs) at h
+    change 0 ≤ intOfZ (CompCert4Lean.Lib.Integers.Ptrofs.unsigned ofs)
+    omega
+  · have h := ofs.intrange.2
+    change intOfZ ofs.intval <
+      intOfZ CompCert4Lean.Lib.Integers.Ptrofs.modulus at h
+    change intOfZ ofs.intval ≤ _
+    change intOfZ ofs.intval ≤
+      intOfZ CompCert4Lean.Lib.Integers.Ptrofs.modulus - 1
+    omega
+
+end CompCert4Lean.X86.Op
+
+namespace CompCert4Lean.X86.Op
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+open Lean Elab Tactic Meta
+
+private theorem suffix_mem_valid_pointer_extends_z
+    (m1 m2 : CompCert4Lean.Common.Memory.mem)
+    (hext : CompCert4Lean.Common.Memory.Mem.extends m1 m2)
+    (b : CompCert4Lean.Common.Values.block) (ofs : Z)
+    (hp : CompCert4Lean.Common.Memory.Mem.valid_pointer m1 b ofs = true) :
+    CompCert4Lean.Common.Memory.Mem.valid_pointer m2 b ofs = true := by
+  have hp1 :
+      CompCert4Lean.Common.Memory.Mem.perm m1 b ofs
+        CompCert4Lean.Common.Memtype.perm_kind.Cur
+        CompCert4Lean.Common.Memtype.permission.Nonempty :=
+    (CompCert4Lean.Common.Memory.Mem.valid_pointer_nonempty_perm m1 b ofs).mp hp
+  have hp2 := hext.mext_inj.mi_perm b b
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.Z0 ofs
+      CompCert4Lean.Common.Memtype.perm_kind.Cur
+      CompCert4Lean.Common.Memtype.permission.Nonempty (by rfl) hp1
+  have hzadd :
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add ofs
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.Z0 = ofs := by
+    apply CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective
+    change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ ofs + 0)) =
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ ofs
+    rw [CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+    simp
+  change CompCert4Lean.Common.Memory.Mem.perm m2 b
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add ofs
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.Z0)
+      CompCert4Lean.Common.Memtype.perm_kind.Cur
+      CompCert4Lean.Common.Memtype.permission.Nonempty at hp2
+  rw [hzadd] at hp2
+  exact (CompCert4Lean.Common.Memory.Mem.valid_pointer_nonempty_perm m2 b ofs).mpr hp2
+
+theorem weak_valid_pointer_extends : weak_valid_pointer_extendsStatement := by
+  intro m1 m2 hext b1 ofs b2 delta hmap hp
+  have hpair :
+      (b1, CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.Z0) =
+        (b2, delta) :=
+    Option.some.inj hmap
+  cases hpair
+  have hadd (x : CompCert4Lean.Lib.Integers.Ptrofs.int) :
+      CompCert4Lean.Lib.Integers.Ptrofs.add x
+          CompCert4Lean.Lib.Integers.Ptrofs.zero = x := by
+    run_tac
+      let env ← getEnv
+      let some (n, _) := env.constants.toList.find?
+          (fun (n, _) => (toString n).endsWith "suffixPtrofsAddZero")
+        | throwError "frozen helper not found"
+      let stx := Lean.mkIdent n
+      let arg := Lean.mkIdent `x
+      evalTactic (← `(tactic| exact $stx $arg))
+  have hrepr :
+      CompCert4Lean.Lib.Integers.Ptrofs.repr
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.Z0 =
+        CompCert4Lean.Lib.Integers.Ptrofs.zero := by
+    rfl
+  rw [hrepr, hadd]
+  unfold CompCert4Lean.Common.Memory.Mem.weak_valid_pointer at hp ⊢
+  cases hfirst : CompCert4Lean.Common.Memory.Mem.valid_pointer m1 b1
+      (CompCert4Lean.Lib.Integers.Ptrofs.unsigned ofs) with
+  | false =>
+      cases hsecond : CompCert4Lean.Common.Memory.Mem.valid_pointer m1 b1
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.sub
+            (CompCert4Lean.Lib.Integers.Ptrofs.unsigned ofs)
+            (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.Zpos
+              (.xH))) with
+      | false => simp [hfirst, hsecond] at hp
+      | true =>
+          have hb := suffix_mem_valid_pointer_extends_z m1 m2 hext b1
+            (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.sub
+              (CompCert4Lean.Lib.Integers.Ptrofs.unsigned ofs)
+              (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.Zpos
+                (.xH)))
+            (by simpa [hsecond])
+          simp [hfirst, hsecond, hb]
+  | true =>
+      have hb := suffix_mem_valid_pointer_extends_z m1 m2 hext b1
+        (CompCert4Lean.Lib.Integers.Ptrofs.unsigned ofs)
+        (by simpa [hfirst])
+      simp [hfirst, hb]
+
+end CompCert4Lean.X86.Op
+
+namespace CompCert4Lean.X86.Op
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open Lean Elab Tactic Meta
+
+private theorem suffix_val_inject_lessdef (v1 v2 : CompCert4Lean.Common.Values.val) :
+    CompCert4Lean.Common.Values.Val.lessdef v1 v2 →
+      CompCert4Lean.Common.Values.Val.inject
+        (fun b => some (b, CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.Z0)) v1 v2 := by
+  intro h
+  cases h with
+  | lessdef_refl =>
+      cases v1 with
+      | Vint n => exact CompCert4Lean.Common.Values.Val.inject.inject_int _
+      | Vlong n => exact CompCert4Lean.Common.Values.Val.inject.inject_long _
+      | Vfloat f => exact CompCert4Lean.Common.Values.Val.inject.inject_float _
+      | Vsingle f => exact CompCert4Lean.Common.Values.Val.inject.inject_single _
+      | Vptr b ofs =>
+          have hofs : ofs = CompCert4Lean.Lib.Integers.Ptrofs.add ofs
+              (CompCert4Lean.Lib.Integers.Ptrofs.repr
+                CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.Z0) := by
+            have hrepr :
+                CompCert4Lean.Lib.Integers.Ptrofs.repr
+                    CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.Z0 =
+                  CompCert4Lean.Lib.Integers.Ptrofs.zero := by
+              rfl
+            have hadd (x : CompCert4Lean.Lib.Integers.Ptrofs.int) :
+                CompCert4Lean.Lib.Integers.Ptrofs.add x
+                    CompCert4Lean.Lib.Integers.Ptrofs.zero = x := by
+              run_tac
+                let env ← getEnv
+                let some (n, _) := env.constants.toList.find?
+                    (fun (n, _) => (toString n).endsWith "suffixPtrofsAddZero")
+                  | throwError "frozen helper not found"
+                let stx := Lean.mkIdent n
+                let arg := Lean.mkIdent `x
+                evalTactic (← `(tactic| exact $stx $arg))
+            rw [hrepr, hadd]
+          exact CompCert4Lean.Common.Values.Val.inject.inject_ptr b ofs b ofs
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.Z0
+            (by rfl) hofs
+      | Vundef => exact CompCert4Lean.Common.Values.Val.inject.val_inject_undef _
+  | lessdef_undef =>
+      exact CompCert4Lean.Common.Values.Val.inject.val_inject_undef _
+
+private theorem suffix_val_inject_list_lessdef
+    (vl1 vl2 : List CompCert4Lean.Common.Values.val) :
+    CompCert4Lean.Common.Values.Val.lessdef_list vl1 vl2 →
+      CompCert4Lean.Common.Values.Val.inject_list
+        (fun b => some (b, CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.Z0)) vl1 vl2 := by
+  intro h
+  induction h with
+  | lessdef_list_nil =>
+      exact @CompCert4Lean.Common.Values.Val.inject_list.inject_list_nil
+        (fun b => some (b, CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.Z0))
+  | lessdef_list_cons v1 v2 vl1 vl2 hhead htail ih =>
+      exact @CompCert4Lean.Common.Values.Val.inject_list.inject_list_cons
+        (fun b => some (b, CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.Z0)) v1 v2 vl1 vl2
+        (suffix_val_inject_lessdef v1 v2 hhead) ih
+
+private theorem suffix_weak_valid_pointer_extends_z
+    (m1 m2 : CompCert4Lean.Common.Memory.mem)
+    (hext : CompCert4Lean.Common.Memory.Mem.extends m1 m2)
+    (b : CompCert4Lean.Common.Values.block) (ofs : Z)
+    (hp : CompCert4Lean.Common.Memory.Mem.weak_valid_pointer m1 b ofs = true) :
+    CompCert4Lean.Common.Memory.Mem.weak_valid_pointer m2 b ofs = true := by
+  have hvalid : ∀ (q : CompCert4Lean.Common.Values.block) (r : Z),
+      CompCert4Lean.Common.Memory.Mem.valid_pointer m1 q r = true →
+      CompCert4Lean.Common.Memory.Mem.valid_pointer m2 q r = true := by
+    intro q r h
+    exact suffix_mem_valid_pointer_extends_z m1 m2 hext q r h
+  unfold CompCert4Lean.Common.Memory.Mem.weak_valid_pointer at hp ⊢
+  cases h1 : CompCert4Lean.Common.Memory.Mem.valid_pointer m1 b ofs with
+  | false =>
+      cases h2 : CompCert4Lean.Common.Memory.Mem.valid_pointer m1 b
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.sub ofs
+            (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.Zpos (.xH))) with
+      | false => simp [h1, h2] at hp
+      | true =>
+          have h := hvalid b
+            (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.sub ofs
+              (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.Zpos (.xH)))
+            (by simpa [h2])
+          simp [h1, h2, h]
+  | true =>
+      have h := hvalid b ofs (by simpa [h1])
+      simp [h1, h]
+
+end CompCert4Lean.X86.Op
