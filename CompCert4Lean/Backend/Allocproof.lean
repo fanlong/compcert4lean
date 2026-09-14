@@ -3743,3 +3743,51 @@ theorem in_subst_reg_kind : in_subst_reg_kindStatement := by
     exact hQ (Or.inl hqe)
 
 end CompCert4Lean.Backend.Allocproof
+
+namespace CompCert4Lean.Backend.Allocproof
+
+open CompCert4Lean.Backend.Allocation
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Common.Values
+
+theorem subst_reg_kind_satisf_lowlong :
+    subst_reg_kind_satisf_lowlongStatement := by
+  intro src dst rs ls e e1 hunc hsat
+  unfold satisf at hsat ⊢
+  intro q hq
+  rcases in_subst_reg_kind dst .Full src .Low q e hq with hchanged | hsame
+  · rcases hchanged with ⟨hpair, hmem⟩
+    have hreg : q.ereg = dst := congrArg Prod.fst hpair
+    have hkind : q.ekind = .Full := congrArg Prod.snd hpair
+    have hval := hsat
+      { ekind := .Low, ereg := src, eloc := q.eloc } hmem
+    simpa [hreg, hkind, sel_val,
+      Regmap.gss_proof val dst (Val.loword (Regmap.get src rs)) rs] using hval
+  · have hne : q.ereg ≠ dst :=
+      reg_unconstrained_sound dst (subst_reg_kind dst .Full src .Low e) q
+        hunc hsame
+    rw [Regmap.gso_proof val q.ereg dst
+      (Val.loword (Regmap.get src rs)) rs hne]
+    exact hsat q hsame
+
+theorem subst_reg_kind_satisf_highlong :
+    subst_reg_kind_satisf_highlongStatement := by
+  intro src dst rs ls e e1 hunc hsat
+  unfold satisf at hsat ⊢
+  intro q hq
+  rcases in_subst_reg_kind dst .Full src .High q e hq with hchanged | hsame
+  · rcases hchanged with ⟨hpair, hmem⟩
+    have hreg : q.ereg = dst := congrArg Prod.fst hpair
+    have hkind : q.ekind = .Full := congrArg Prod.snd hpair
+    have hval := hsat
+      { ekind := .High, ereg := src, eloc := q.eloc } hmem
+    simpa [hreg, hkind, sel_val,
+      Regmap.gss_proof val dst (Val.hiword (Regmap.get src rs)) rs] using hval
+  · have hne : q.ereg ≠ dst :=
+      reg_unconstrained_sound dst (subst_reg_kind dst .Full src .High e) q
+        hunc hsame
+    rw [Regmap.gso_proof val q.ereg dst
+      (Val.hiword (Regmap.get src rs)) rs hne]
+    exact hsat q hsame
+
+end CompCert4Lean.Backend.Allocproof
