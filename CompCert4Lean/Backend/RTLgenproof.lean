@@ -2203,3 +2203,71 @@ theorem transl_expr_Elet_correct
           _ = Regmap.get r' rs := hstable1 r' hr'
 
 end CompCert4Lean.Backend.RTLgenproof
+
+namespace CompCert4Lean.Backend.RTLgenproof
+
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Backend.RTLgen
+open CompCert4Lean.Backend.RTLgenspec
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.Common.Smallstep
+open CompCert4Lean.Common.Values
+
+theorem transl_exprlist_Enil_correct
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    transl_exprlist_Enil_correctStatement := by
+  intro xi tprog sp e m le
+  unfold transl_exprlist_prop
+  intro tge tm cs f map pr ns nd rl rs hwf htr hmatch hext
+  cases htr with
+  | tr_Enil map pr n =>
+      refine ⟨rs, tm, ?_, hmatch, ?_, ?_, hext⟩
+      · exact star_refl _ _ _
+      · exact Val.lessdef_list_nil
+      · intro r hr
+        rfl
+
+end CompCert4Lean.Backend.RTLgenproof
+
+namespace CompCert4Lean.Backend.RTLgenproof
+
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Backend.RTLgen
+open CompCert4Lean.Backend.RTLgenspec
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.Common.Smallstep
+open CompCert4Lean.Common.Values
+
+theorem transl_exprlist_Econs_correct
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    transl_exprlist_Econs_correctStatement := by
+  intro xi prog tprog sp e m le a1 al v1 vl
+    heval1 htrans1 heval2 htrans2
+  unfold transl_expr_prop at htrans1
+  unfold transl_exprlist_prop at htrans2 ⊢
+  intro tge tm cs f map pr ns nd rl rs hwf htr hmatch hext
+  cases htr with
+  | tr_Econs map pr a1 al ns nd r1 rl n1 hhead htail =>
+      have hfirst := htrans1 tm cs f map pr ns n1 r1 rs none hwf hhead hmatch hext
+      obtain ⟨rs1, tm1, hstar1, hmatch1, hresult1, hstable1, hext1⟩ := hfirst
+      have htail' := htrans2 tm1 cs f map (r1 :: pr) n1 nd rl rs1
+        hwf htail hmatch1 hext1
+      obtain ⟨rs2, tm2, hstar2, hmatch2, hresult2, hstable2, hext2⟩ := htail'
+      refine ⟨rs2, tm2, ?_, hmatch2, ?_, ?_, hext2⟩
+      · exact star_trans _ _ _ _ _ _ _ hstar1 _ _ _ hstar2 rfl
+      · change Val.lessdef_list (v1 :: vl)
+          (Regmap.get r1 rs2 :: rl.map (fun r => Regmap.get r rs2))
+        apply Val.lessdef_list_cons
+        · rw [hstable2 r1 (by simp)]
+          exact hresult1
+        · simpa using hresult2
+      · intro r hr
+        calc
+          Regmap.get r rs2 = Regmap.get r rs1 := hstable2 r (by simp [hr])
+          _ = Regmap.get r rs := hstable1 r hr
+
+end CompCert4Lean.Backend.RTLgenproof
