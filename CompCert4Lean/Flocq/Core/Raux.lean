@@ -3019,3 +3019,18 @@ theorem Zceil_imp (ctx : ExactRealContext) :
   exact pg_zopp_zopp n
 
 end CompCert4Lean.Flocq.Core.Raux
+
+namespace CompCert4Lean.Flocq.Core.Raux
+
+theorem Zceil_IZR (ctx : ExactRealContext) :
+    Zceil_IZRStatement ctx := by
+  intro n
+  unfold Exact.Zceil
+  change Zopp (Exact.Zfloor ctx (Exact.Ropp ctx (Exact.IZR ctx n))) = n
+  rw [show Exact.Ropp ctx (Exact.IZR ctx n) = Exact.IZR ctx (Zopp n) by
+    change ctx.spec.neg (ctx.spec.ofZ n) = ctx.spec.ofZ (Zopp n)
+    exact (ctx.certificate.sourceLaws.ofZ_neg n).symm]
+  rw [Zfloor_IZR]
+  exact pg_zopp_zopp n
+
+end CompCert4Lean.Flocq.Core.Raux

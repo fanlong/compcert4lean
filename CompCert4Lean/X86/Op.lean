@@ -1763,3 +1763,75 @@ theorem eval_addressing_inj : eval_addressing_injStatement := by
       hglobals hsp hvl heval
 
 end CompCert4Lean.X86.Op
+
+namespace CompCert4Lean.X86.Op
+
+open Lean Elab Tactic Meta
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem valid_pointer_extends : valid_pointer_extendsStatement := by
+  intro m1 m2 hext b1 ofs b2 delta hmap hp
+  have hpair :
+      (b1, CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.Z0) =
+        (b2, delta) :=
+    Option.some.inj hmap
+  cases hpair
+  have hp1 :
+      CompCert4Lean.Common.Memory.Mem.perm m1 b1
+        (CompCert4Lean.Lib.Integers.Ptrofs.unsigned ofs)
+        CompCert4Lean.Common.Memtype.perm_kind.Cur
+        CompCert4Lean.Common.Memtype.permission.Nonempty :=
+    (CompCert4Lean.Common.Memory.Mem.valid_pointer_nonempty_perm m1 b1
+      (CompCert4Lean.Lib.Integers.Ptrofs.unsigned ofs)).mp hp
+  have hp2 := hext.mext_inj.mi_perm b1 b1
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.Z0
+      (CompCert4Lean.Lib.Integers.Ptrofs.unsigned ofs)
+      CompCert4Lean.Common.Memtype.perm_kind.Cur
+      CompCert4Lean.Common.Memtype.permission.Nonempty (by rfl) hp1
+  have hrepr :
+      CompCert4Lean.Lib.Integers.Ptrofs.repr
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.Z0 =
+        CompCert4Lean.Lib.Integers.Ptrofs.zero := by
+    rfl
+  have hzadd :
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add
+          (CompCert4Lean.Lib.Integers.Ptrofs.unsigned ofs)
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.Z0 =
+        CompCert4Lean.Lib.Integers.Ptrofs.unsigned ofs := by
+    change zOfInt (intOfZ (CompCert4Lean.Lib.Integers.Ptrofs.unsigned ofs) +
+      intOfZ CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.Z0) =
+      CompCert4Lean.Lib.Integers.Ptrofs.unsigned ofs
+    rw [show intOfZ
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.Z0 =
+          (0 : Int) by rfl, Int.add_zero]
+    exact zOfInt_intOfZ _
+  have hadd (x : CompCert4Lean.Lib.Integers.Ptrofs.int) :
+      CompCert4Lean.Lib.Integers.Ptrofs.add x
+          CompCert4Lean.Lib.Integers.Ptrofs.zero = x := by
+    run_tac
+      let env ← getEnv
+      let some (n, _) := env.constants.toList.find?
+          (fun (n, _) => (toString n).endsWith "suffixPtrofsAddZero")
+        | throwError "frozen helper not found"
+      let stx := Lean.mkIdent n
+      let arg := Lean.mkIdent `x
+      evalTactic (← `(tactic| exact $stx $arg))
+  rw [hrepr, hadd]
+  have hp2' :
+      CompCert4Lean.Common.Memory.Mem.perm m2 b1
+        (CompCert4Lean.Lib.Integers.Ptrofs.unsigned ofs)
+        CompCert4Lean.Common.Memtype.perm_kind.Cur
+        CompCert4Lean.Common.Memtype.permission.Nonempty := by
+    change CompCert4Lean.Common.Memory.Mem.perm m2 b1
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add
+        (CompCert4Lean.Lib.Integers.Ptrofs.unsigned ofs)
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.Z0)
+      CompCert4Lean.Common.Memtype.perm_kind.Cur
+      CompCert4Lean.Common.Memtype.permission.Nonempty at hp2
+    rw [hzadd] at hp2
+    exact hp2
+  apply (CompCert4Lean.Common.Memory.Mem.valid_pointer_nonempty_perm m2 b1
+      (CompCert4Lean.Lib.Integers.Ptrofs.unsigned ofs)).mpr
+  exact hp2'
+
+end CompCert4Lean.X86.Op

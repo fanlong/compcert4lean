@@ -3213,3 +3213,22 @@ theorem vmatch_vplub_l : vmatch_vplub_lStatement := by
   all_goals try (apply pmatch_lub_l <;> assumption)
 
 end CompCert4Lean.Backend.ValueDomain
+
+namespace CompCert4Lean.Backend.ValueDomain
+
+theorem vpincl_ge : vpincl_geStatement := by
+  intro x p h
+  cases x with
+  | Vbot => exact vge.bot _
+  | I i => exact vge.ifptrInt p i
+  | IU i => exact vge.ifptrIU p i
+  | Uns q n => exact vge.ifptrUns p q n (pincl_ge q p h)
+  | Sgn q n => exact vge.ifptrSgn p q n (pincl_ge q p h)
+  | L i => exact vge.ifptrLong p i
+  | F f => exact vge.ifptrFloat p f
+  | FS f => exact vge.ifptrSingle p f
+  | Num q => exact vge.ifptrNum p q (pincl_ge q p h)
+  | Ptr q => exact vge.ifptrPtr p q (pincl_ge q p h)
+  | Ifptr q => exact vge.ifptrIfptr p q (pincl_ge q p h)
+
+end CompCert4Lean.Backend.ValueDomain

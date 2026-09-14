@@ -2618,3 +2618,12 @@ theorem iagree_eqmod : iagree_eqmodStatement := by
   exact hbits
 
 end CompCert4Lean.Backend.NeedDomain
+
+namespace CompCert4Lean.Backend.NeedDomain
+
+theorem eq_same_bits64 : eq_same_bits64Statement := by
+  intro i x y h
+  subst y
+  rfl
+
+end CompCert4Lean.Backend.NeedDomain
