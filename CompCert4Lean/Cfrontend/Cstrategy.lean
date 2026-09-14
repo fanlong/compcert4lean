@@ -2750,3 +2750,61 @@ theorem deref_loc_trace : deref_loc_traceStatement := by
 
 end CompCert4Lean.Cfrontend.Cstrategy
 
+namespace CompCert4Lean.Cfrontend.Cstrategy
+
+open CompCert4Lean.Cfrontend.Csem
+
+theorem assign_loc_trace : assign_loc_traceStatement := by
+  unfold assign_loc_traceStatement
+  intro ge ty m b ofs bf t v m' v' h
+  cases h with
+  | value hmode hvol hstore => simp [CompCert4Lean.Common.Events.E0]
+  | volatile hmode hvol hstore =>
+      cases hstore <;>
+        simp [CompCert4Lean.Common.Events.trace,
+          CompCert4Lean.Common.Events.E0,
+          CompCert4Lean.Common.Events.output_event]
+  | copy hmode halign' halign hdisj hload hstore =>
+      simp [CompCert4Lean.Common.Events.E0]
+  | bitfield hstore => simp [CompCert4Lean.Common.Events.E0]
+
+theorem deref_loc_receptive : deref_loc_receptiveStatement := by
+  unfold deref_loc_receptiveStatement
+  intro ge ty m b ofs bf ev1 t1 v ev2 h hm
+  have ht : t1 = [] := by
+    have htr := deref_loc_trace ge ty m b ofs bf (ev1 :: t1) v h
+    cases t1 with
+    | nil => rfl
+    | cons ev' tl =>
+        cases tl <;> simp at htr
+  subst t1
+  cases h with
+  | volatile hmode hvol hload =>
+      rcases CompCert4Lean.Common.Events.volatile_load_receptive
+        (CompCert4Lean.Common.Globalenvs.Genv.to_senv ge.genv_genv)
+        _ _ _ _ _ _ _ hload hm with ⟨v', hv⟩
+      exact ⟨rfl, ⟨v', .volatile hmode hvol hv⟩⟩
+
+end CompCert4Lean.Cfrontend.Cstrategy
+
+namespace CompCert4Lean.Cfrontend.Cstrategy
+
+open CompCert4Lean.Cfrontend.Csem
+
+theorem assign_loc_receptive : assign_loc_receptiveStatement := by
+  unfold assign_loc_receptiveStatement
+  intro ge ty m b ofs bf ev1 t1 v m' v' ev2 h hm
+  have ht : t1 = [] := by
+    have htr := assign_loc_trace ge ty m b ofs bf (ev1 :: t1) v m' v' h
+    cases t1 with
+    | nil => rfl
+    | cons ev' tl =>
+        cases tl <;> simp at htr
+  subst t1
+  cases h with
+  | volatile hmode hvol hstore =>
+      exact CompCert4Lean.Common.Events.volatile_store_receptive
+        (CompCert4Lean.Common.Globalenvs.Genv.to_senv ge.genv_genv)
+        _ _ _ _ _ _ _ _ hstore hm
+
+end CompCert4Lean.Cfrontend.Cstrategy

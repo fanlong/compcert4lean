@@ -2809,3 +2809,110 @@ theorem Zfloor_ub (ctx : ExactRealContext) :
   exact hgt
 
 end CompCert4Lean.Flocq.Core.Raux
+
+namespace CompCert4Lean.Flocq.Core.Raux
+
+private theorem pg_lt_IZR (ctx : ExactRealContext) {n m : Z}
+    (h : Exact.Rlt ctx (Exact.IZR ctx n) (Exact.IZR ctx m)) : Zlt n m := by
+  change _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ n <
+    _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ m
+  by_cases hnm :
+      _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ n <
+        _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ m
+  · exact hnm
+  · have hle : _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ m ≤
+        _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ n :=
+      Int.le_of_not_gt hnm
+    rcases Int.lt_or_eq_of_le hle with hlt | heq
+    · have hreal :=
+        CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.IZR_lt
+          ctx m n hlt
+      exact False.elim ((ctx.certificate.orderedField.lt_irrefl _)
+        (ctx.certificate.orderedField.lt_trans _ _ _ hreal h))
+    · have heq' :
+          _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ n =
+            _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ m :=
+        heq.symm
+      have hnmEq : n = m :=
+        _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective heq'
+      subst m
+      exact False.elim ((ctx.certificate.orderedField.lt_irrefl _ h))
+
+theorem Zfloor_lub (ctx : ExactRealContext) :
+    Zfloor_lubStatement ctx := by
+  intro n x hnx
+  have hreal : Exact.Rlt ctx (Exact.IZR ctx n)
+      (Exact.IZR ctx (Zadd (Exact.Zfloor ctx x) (Zpos xH))) := by
+    change ctx.spec.lt (ctx.spec.ofZ n)
+      (ctx.spec.ofZ (Zadd (Exact.Zfloor ctx x) (Zpos xH)))
+    rw [ctx.certificate.sourceLaws.ofZ_add,
+      ctx.certificate.sourceLaws.ofZ_one]
+    exact CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.Rle_lt_trans
+      ctx _ _ _ hnx (Zfloor_ub ctx x)
+  have hlt := pg_lt_IZR ctx hreal
+  change _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ n ≤
+    _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (Exact.Zfloor ctx x)
+  change _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ n <
+    _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+      (Zadd (Exact.Zfloor ctx x) (Zpos xH)) at hlt
+  simp only [_root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add,
+    _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt] at hlt
+  change _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ n <
+    _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (Exact.Zfloor ctx x) + 1 at hlt
+  omega
+
+end CompCert4Lean.Flocq.Core.Raux
+
+namespace CompCert4Lean.Flocq.Core.Raux
+
+theorem Zfloor_imp (ctx : ExactRealContext) :
+    Zfloor_impStatement ctx := by
+  intro n x hnx
+  have hnle := Zfloor_lub ctx n x hnx.1
+  have hreal := CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.Rle_lt_trans
+    ctx _ _ _ (Zfloor_lb ctx x) hnx.2
+  have hlt := pg_lt_IZR ctx hreal
+  have hfle :
+      _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (Exact.Zfloor ctx x) ≤
+        _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ n := by
+    change _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+        (Exact.Zfloor ctx x) <
+      _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+        (Zadd n (Zpos xH)) at hlt
+    simp only [_root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add,
+      _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt] at hlt
+    change _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+        (Exact.Zfloor ctx x) <
+      _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ n + 1 at hlt
+    omega
+  apply _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective
+  change _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+      (Exact.Zfloor ctx x) =
+    _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ n
+  change _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ n ≤
+    _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (Exact.Zfloor ctx x) at hnle
+  omega
+
+theorem Zfloor_IZR (ctx : ExactRealContext) :
+    Zfloor_IZRStatement ctx := by
+  intro n
+  apply Zfloor_imp ctx n (Exact.IZR ctx n)
+  constructor
+  · exact ctx.certificate.orderedField.le_refl _
+  · change ctx.spec.lt (ctx.spec.ofZ n)
+      (ctx.spec.ofZ (Zadd n (Zpos xH)))
+    rw [ctx.certificate.sourceLaws.ofZ_add,
+      ctx.certificate.sourceLaws.ofZ_one]
+    have h := ctx.certificate.orderedField.add_lt_compat_l
+      (ctx.spec.ofZ n) ctx.spec.zero ctx.spec.one
+      (exact_zero_lt_one_aux ctx)
+    rw [ctx.certificate.orderedField.add_zero] at h
+    exact h
+
+theorem Zfloor_le (ctx : ExactRealContext) :
+    Zfloor_leStatement ctx := by
+  intro x y hxy
+  apply Zfloor_lub ctx (Exact.Zfloor ctx x) y
+  exact ctx.certificate.orderedField.le_trans _ _ _ (Zfloor_lb ctx x) hxy
+
+end CompCert4Lean.Flocq.Core.Raux

@@ -2756,3 +2756,25 @@ theorem match_callstack_external_call : match_callstack_external_callStatement :
           (Ple_trans _ _ _ (Plt_Ple _ _ hsp) htbound)
 
 end CompCert4Lean.Cfrontend.Cminorgenproof
+
+namespace CompCert4Lean.Cfrontend.Cminorgenproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+
+theorem cenv_remove_gso : cenv_remove_gsoStatement := by
+  intro id vars cenv hnot
+  induction vars with
+  | nil => rfl
+  | cons v vars ih =>
+      change PTree.get id (PTree.remove v.1 (cenv_remove cenv vars)) = PTree.get id cenv
+      apply Eq.trans (PTree.gro_proof (cenv_remove cenv vars) ?_) (ih ?_)
+      · intro heq
+        apply hnot
+        simpa [heq] using (_root_.List.Mem.head (List.map Prod.fst vars))
+      · intro h
+        apply hnot
+        exact _root_.List.Mem.tail v.1 h
+
+end CompCert4Lean.Cfrontend.Cminorgenproof

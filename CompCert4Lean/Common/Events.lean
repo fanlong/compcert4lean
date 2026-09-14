@@ -1791,3 +1791,35 @@ theorem builtin_arg_depends_on_memory_correct : builtin_arg_depends_on_memory_co
       exact eval_BA_addptr _ _ _ _ h1 h2
 
 end CompCert4Lean.Common.Events
+
+namespace CompCert4Lean.Common.Events
+
+theorem eval_builtin_arg_preserved : eval_builtin_arg_preservedStatement := by
+  intro A F1 V1 F2 V2 ge1 ge2 e sp m hsymbols a v hev
+  have haddr : ∀ id ofs,
+      CompCert4Lean.Common.Globalenvs.Senv.symbol_address (CompCert4Lean.Common.Globalenvs.Genv.to_senv ge2) id ofs =
+        CompCert4Lean.Common.Globalenvs.Senv.symbol_address (CompCert4Lean.Common.Globalenvs.Genv.to_senv ge1) id ofs := by
+    intro id ofs
+    simp only [CompCert4Lean.Common.Globalenvs.Senv.symbol_address, CompCert4Lean.Common.Globalenvs.Genv.to_senv]
+    rw [hsymbols]
+  induction hev with
+  | eval_BA x => exact eval_BA x
+  | eval_BA_int n => exact eval_BA_int n
+  | eval_BA_long n => exact eval_BA_long n
+  | eval_BA_float n => exact eval_BA_float n
+  | eval_BA_single n => exact eval_BA_single n
+  | eval_BA_loadstack chunk ofs v load =>
+      exact eval_BA_loadstack chunk ofs v load
+  | eval_BA_addrstack ofs => exact eval_BA_addrstack ofs
+  | eval_BA_loadglobal chunk id ofs v load =>
+      rw [← haddr id ofs] at load
+      exact eval_BA_loadglobal chunk id ofs v load
+  | eval_BA_addrglobal id ofs =>
+      rw [← haddr id ofs]
+      exact eval_BA_addrglobal id ofs
+  | @eval_BA_splitlong hi lo vhi vlo hhi hlo ihi ilo =>
+      exact eval_BA_splitlong hi lo vhi vlo ihi ilo
+  | @eval_BA_addptr a1 a2 v1 v2 ha1 ha2 iha1 iha2 =>
+      exact eval_BA_addptr a1 a2 v1 v2 iha1 iha2
+
+end CompCert4Lean.Common.Events

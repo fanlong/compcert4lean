@@ -2698,3 +2698,156 @@ theorem eval_sel_select
         · exact selection_lessdef_normalize _ _
 
 end CompCert4Lean.Backend.Selectionproof
+
+namespace CompCert4Lean.Backend.Selectionproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.Backend.Selection
+open CompCert4Lean.Common.Switch
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Integers
+
+private theorem selection_bool_of_bool (b : Bool) :
+    Val.bool_of_val (Val.of_bool b) b := by
+  cases b <;> simp [Val.of_bool, Vtrue, Vfalse]
+  · constructor
+  · constructor
+
+private theorem selection_Rint_inv (i : Z) (v : val) (h : Rint i v) :
+    ∃ n, v = Vint n ∧ i = Int.unsigned n := by
+  cases h
+  exact ⟨_, rfl, rfl⟩
+
+theorem sel_switch_correct_rec
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    sel_switch_correct_recStatement := by
+  intro xi tprog make_cmp_eq make_cmp_ltu make_sub make_to_int modulus R
+    hEq hLt hSub hToInt sp e m varg i x hRi t
+  induction t generalizing sp e m varg i x with
+  | CTaction act =>
+      intro arg le hWF hNth hMatch
+      simp [comptree_match] at hMatch
+      cases hMatch
+      exact eval_exitexpr.exit le act
+  | CTifeq key act cne ih =>
+      intro arg le hWF hNth hMatch
+      cases hWF with
+      | wf_ifeq key act cne hkey hWf =>
+          cases hz : zeq i key with
+          | left hik =>
+              have hcmp := hEq sp e m le (.Eletvar arg) varg i key
+                (eval_expr.eval_Eletvar le arg varg hNth) hRi hkey
+              apply eval_exitexpr.eval_XEcondition le
+                (condexpr_of_expr (make_cmp_eq (.Eletvar arg) key))
+                (.XEexit act)
+                (sel_switch make_cmp_eq make_cmp_ltu make_sub make_to_int arg cne)
+                true x
+              · apply CompCert4Lean.Backend.Selectionproof.eval_condexpr_of_expr
+                · exact hcmp
+                · simpa [hz, proj_sumbool] using selection_bool_of_bool true
+              · simp [comptree_match, hz] at hMatch
+                cases hMatch
+                exact eval_exitexpr.exit _ _
+          | right hik =>
+              have hcmp := hEq sp e m le (.Eletvar arg) varg i key
+                (eval_expr.eval_Eletvar le arg varg hNth) hRi hkey
+              apply eval_exitexpr.eval_XEcondition le
+                (condexpr_of_expr (make_cmp_eq (.Eletvar arg) key))
+                (.XEexit act)
+                (sel_switch make_cmp_eq make_cmp_ltu make_sub make_to_int arg cne)
+                false x
+              · apply CompCert4Lean.Backend.Selectionproof.eval_condexpr_of_expr
+                · exact hcmp
+                · simpa [hz, proj_sumbool] using selection_bool_of_bool false
+              · simp [comptree_match, hz] at hMatch
+                apply ih sp e m varg i x hRi arg le hWf hNth hMatch
+  | CTiflt key clt cge ihl ihr =>
+      intro arg le hWF hNth hMatch
+      cases hWF with
+      | wf_iflt key clt cge hkey hWfl hWfr =>
+          cases hz : zlt i key with
+          | left hil =>
+              have hcmp := hLt sp e m le (.Eletvar arg) varg i key
+                (eval_expr.eval_Eletvar le arg varg hNth) hRi hkey
+              apply eval_exitexpr.eval_XEcondition le
+                (condexpr_of_expr (make_cmp_ltu (.Eletvar arg) key))
+                (sel_switch make_cmp_eq make_cmp_ltu make_sub make_to_int arg clt)
+                (sel_switch make_cmp_eq make_cmp_ltu make_sub make_to_int arg cge)
+                true x
+              · apply CompCert4Lean.Backend.Selectionproof.eval_condexpr_of_expr
+                · exact hcmp
+                · simpa [hz, proj_sumbool] using selection_bool_of_bool true
+              · simp [comptree_match, hz] at hMatch
+                apply ihl sp e m varg i x hRi arg le hWfl hNth hMatch
+          | right hil =>
+              have hcmp := hLt sp e m le (.Eletvar arg) varg i key
+                (eval_expr.eval_Eletvar le arg varg hNth) hRi hkey
+              apply eval_exitexpr.eval_XEcondition le
+                (condexpr_of_expr (make_cmp_ltu (.Eletvar arg) key))
+                (sel_switch make_cmp_eq make_cmp_ltu make_sub make_to_int arg clt)
+                (sel_switch make_cmp_eq make_cmp_ltu make_sub make_to_int arg cge)
+                false x
+              · apply CompCert4Lean.Backend.Selectionproof.eval_condexpr_of_expr
+                · exact hcmp
+                · simpa [hz, proj_sumbool] using selection_bool_of_bool false
+              · simp [comptree_match, hz] at hMatch
+                apply ihr sp e m varg i x hRi arg le hWfr hNth hMatch
+  | CTjumptable ofs sz acts cother ih =>
+      intro arg le hWF hNth hMatch
+      cases hWF with
+      | wf_jumptable ofs sz acts cother hofs hsz hWf =>
+          obtain ⟨v', hv', hRv'⟩ := hSub sp e m le (.Eletvar arg) varg i ofs
+            (eval_expr.eval_Eletvar le arg varg hNth) hRi hofs
+          apply eval_exitexpr.letBinding le
+            (make_sub (.Eletvar arg) ofs)
+            (.XEcondition
+              (condexpr_of_expr (make_cmp_ltu (.Eletvar 0) sz))
+              (.XEjumptable (make_to_int (.Eletvar 0)) acts)
+              (sel_switch make_cmp_eq make_cmp_ltu make_sub make_to_int (arg + 1) cother))
+            v' x
+          · exact hv'
+          · have hzero : CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.List.nth_error
+                (v' :: le) 0 = some v' := by rfl
+            have hcmp := hLt sp e m (v' :: le) (.Eletvar 0) v'
+              (ZArith.BinInt.Z.modulo (ZArith.BinInt.Z.sub i ofs) modulus) sz
+              (eval_expr.eval_Eletvar (v' :: le) 0 v' hzero)
+              hRv' hsz
+            cases hz : zlt (ZArith.BinInt.Z.modulo (ZArith.BinInt.Z.sub i ofs) modulus) sz with
+            | left hinside =>
+                apply eval_exitexpr.eval_XEcondition (v' :: le)
+                  (condexpr_of_expr (make_cmp_ltu (.Eletvar 0) sz))
+                  (.XEjumptable (make_to_int (.Eletvar 0)) acts)
+                  (sel_switch make_cmp_eq make_cmp_ltu make_sub make_to_int (arg + 1) cother)
+                  true x
+                · apply CompCert4Lean.Backend.Selectionproof.eval_condexpr_of_expr
+                  · exact hcmp
+                  · simpa [hz, proj_sumbool] using selection_bool_of_bool true
+                · obtain ⟨v'', hv'', hRv''⟩ := hToInt sp e m (v' :: le)
+                    (.Eletvar 0) v' (ZArith.BinInt.Z.modulo (ZArith.BinInt.Z.sub i ofs) modulus)
+                    (eval_expr.eval_Eletvar (v' :: le) 0 v' hzero) hRv'
+                  obtain ⟨n, hvn, hidx⟩ := selection_Rint_inv _ _ hRv''
+                  subst v''
+                  apply eval_exitexpr.jumptable (v' :: le)
+                    (make_to_int (.Eletvar 0)) acts n x hv''
+                  simpa [comptree_match, hz, hidx] using hMatch
+            | right hout =>
+                apply eval_exitexpr.eval_XEcondition (v' :: le)
+                  (condexpr_of_expr (make_cmp_ltu (.Eletvar 0) sz))
+                  (.XEjumptable (make_to_int (.Eletvar 0)) acts)
+                  (sel_switch make_cmp_eq make_cmp_ltu make_sub make_to_int (arg + 1) cother)
+                  false x
+                · apply CompCert4Lean.Backend.Selectionproof.eval_condexpr_of_expr
+                  · exact hcmp
+                  · simpa [hz, proj_sumbool] using selection_bool_of_bool false
+                · simp [comptree_match, hz] at hMatch
+                  have hNth' : CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.List.nth_error
+                      (v' :: le) (arg + 1) = some varg := by
+                    change CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.List.nth_error
+                      le arg = some varg
+                    exact hNth
+                  apply ih sp e m varg i x hRi (arg + 1) (v' :: le) hWf hNth' hMatch
+
+end CompCert4Lean.Backend.Selectionproof
