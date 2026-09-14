@@ -2529,3 +2529,75 @@ theorem alloc_global_unchanged : alloc_global_unchangedStatement := by
 
 end Genv
 end CompCert4Lean.Common.Globalenvs
+
+namespace CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Linking
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.Lib.Integers
+
+namespace Genv
+
+theorem load_store_init_data_invariant : load_store_init_data_invariantStatement := by
+  intro F V ge m m' b hload il p h
+  induction il generalizing p with
+  | nil => trivial
+  | cons i rest ih =>
+      cases i with
+      | Init_int8 n =>
+          rcases h with ⟨hhead, htail⟩
+          constructor
+          · rw [hload Mint8unsigned p]
+            exact hhead
+          · exact ih (zAdd p (zOfNat 1)) htail
+      | Init_int16 n =>
+          rcases h with ⟨hhead, htail⟩
+          constructor
+          · rw [hload Mint16unsigned p]
+            exact hhead
+          · exact ih (zAdd p (zOfNat 2)) htail
+      | Init_int32 n =>
+          rcases h with ⟨hhead, htail⟩
+          constructor
+          · rw [hload Mint32 p]
+            exact hhead
+          · exact ih (zAdd p (zOfNat 4)) htail
+      | Init_int64 n =>
+          rcases h with ⟨hhead, htail⟩
+          constructor
+          · rw [hload Mint64 p]
+            exact hhead
+          · exact ih (zAdd p (zOfNat 8)) htail
+      | Init_float32 n =>
+          rcases h with ⟨hhead, htail⟩
+          constructor
+          · rw [hload Mfloat32 p]
+            exact hhead
+          · exact ih (zAdd p (zOfNat 4)) htail
+      | Init_float64 n =>
+          rcases h with ⟨hhead, htail⟩
+          constructor
+          · rw [hload Mfloat64 p]
+            exact hhead
+          · exact ih (zAdd p (zOfNat 8)) htail
+      | Init_addrof symb ofs =>
+          rcases h with ⟨⟨b', hsymb, hhead⟩, htail⟩
+          constructor
+          · exact ⟨b', hsymb, by rw [hload Mptr p]; exact hhead⟩
+          · exact ih (zAdd p (size_chunk Mptr)) htail
+      | Init_space n =>
+          rcases h with ⟨hzero, htail⟩
+          constructor
+          · intro chunk q hlo hhi halign
+            rw [hload chunk q]
+            exact hzero chunk q hlo hhi halign
+          · exact ih (zAdd p (zMax n z0)) htail
+
+end Genv
+end CompCert4Lean.Common.Globalenvs
