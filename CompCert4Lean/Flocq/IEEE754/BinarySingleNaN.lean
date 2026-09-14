@@ -1954,3 +1954,195 @@ theorem shr_nat :
       omega
 
 end CompCert4Lean.Flocq.IEEE754.BinarySingleNaN
+
+namespace CompCert4Lean.Flocq.IEEE754.BinarySingleNaN
+
+theorem le_shr1_le :
+    le_shr1_leStatement := by
+  intro mrs hm
+  cases mrs with
+  | mk m r s =>
+      cases m with
+      | Z0 =>
+          refine ⟨?_, ?_, ?_⟩
+          · exact shr1_nonneg _ hm
+          · change (0 : Int) ≤ 0
+            omega
+          · change (0 : Int) < 2
+            omega
+      | Zneg p =>
+          exfalso
+          have hp := CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat_positive p
+          change (0 : Int) ≤ -Int.ofNat
+            (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p) at hm
+          have hp' : (0 : Int) < Int.ofNat
+              (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p) := by
+            exact Int.ofNat_lt.mpr hp
+          omega
+      | Zpos p =>
+          cases p with
+          | xH =>
+              refine ⟨?_, ?_, ?_⟩
+              · exact shr1_nonneg _ hm
+              · change (0 : Int) ≤ 1
+                omega
+              · change (1 : Int) < 2
+                omega
+          | xO p =>
+              refine ⟨?_, ?_, ?_⟩
+              · exact shr1_nonneg _ hm
+              · change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+                    (Zmul Ztwo (Zpos p)) ≤
+                  CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (Zpos p.xO)
+                simp only [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.mul,
+                  CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+                have htwo :
+                    CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ Ztwo = (2 : Int) := by
+                  rfl
+                have hpx :
+                    CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (Zpos p.xO) =
+                      Int.ofNat 2 * CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (Zpos p) := by
+                  change Int.ofNat
+                      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p.xO) =
+                    Int.ofNat 2 * Int.ofNat
+                      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p)
+                  simp only [CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat,
+                    Int.ofNat_eq_natCast, Int.natCast_mul]
+                have hpx' :
+                    CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (Zpos p.xO) =
+                      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ Ztwo *
+                        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (Zpos p) := by
+                  calc
+                    _ = Int.ofNat 2 * CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (Zpos p) := hpx
+                    _ = _ := by
+                      rw [show CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ Ztwo = Int.ofNat 2 by rfl]
+                rw [hpx']
+                exact Int.le_refl _
+              · change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (Zpos p.xO) <
+                  CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+                    (Zmul Ztwo (Zadd (Zpos p) Zone))
+                simp only [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.mul,
+                  CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add,
+                  CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+                have htwo :
+                    CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ Ztwo = (2 : Int) := by
+                  rfl
+                have hzone :
+                    CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ Zone = (1 : Int) := by
+                  rfl
+                have hpx :
+                    CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (Zpos p.xO) =
+                      Int.ofNat 2 * CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (Zpos p) := by
+                  change Int.ofNat
+                      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p.xO) =
+                    Int.ofNat 2 * Int.ofNat
+                      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p)
+                  simp only [CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat,
+                    Int.ofNat_eq_natCast, Int.natCast_mul]
+                have hpx' :
+                    CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (Zpos p.xO) =
+                      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ Ztwo *
+                        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (Zpos p) := by
+                  calc
+                    _ = Int.ofNat 2 * CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (Zpos p) := hpx
+                    _ = _ := by
+                      rw [show CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ Ztwo = Int.ofNat 2 by rfl]
+                have hpos : (0 : Int) <
+                    CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ Ztwo := by
+                  rw [htwo]
+                  exact Int.natCast_pos.mpr (by decide)
+                have hstep :
+                    CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (Zpos p) <
+                      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (Zpos p) +
+                        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ Zone := by
+                  rw [hzone]
+                  exact (Int.add_one_le_iff).mp (Int.le_refl _)
+                rw [hpx']
+                exact Int.mul_lt_mul_of_pos_left hstep hpos
+          | xI p =>
+              refine ⟨?_, ?_, ?_⟩
+              · exact shr1_nonneg _ hm
+              · change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+                    (Zmul Ztwo (Zpos p)) ≤
+                  CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (Zpos p.xI)
+                simp only [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.mul,
+                  CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+                have htwo :
+                    CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ Ztwo = (2 : Int) := by
+                  rfl
+                have hzone :
+                    CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ Zone = (1 : Int) := by
+                  rfl
+                have hpx :
+                    CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (Zpos p.xI) =
+                      Int.ofNat 2 * CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (Zpos p) + Int.ofNat 1 := by
+                  change Int.ofNat
+                      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p.xI) =
+                    Int.ofNat 2 * Int.ofNat
+                      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p) + Int.ofNat 1
+                  simp only [CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat,
+                    Int.ofNat_eq_natCast, Int.natCast_mul, Int.natCast_add]
+                have hpx' :
+                    CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (Zpos p.xI) =
+                      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ Ztwo *
+                        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (Zpos p) +
+                        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ Zone := by
+                  calc
+                    _ = Int.ofNat 2 * CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (Zpos p) + Int.ofNat 1 := hpx
+                    _ = _ := by
+                      rw [show CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ Ztwo = Int.ofNat 2 by rfl,
+                        show CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ Zone = Int.ofNat 1 by rfl]
+                have hnonneg :
+                    CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ Ztwo *
+                        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (Zpos p) ≤
+                      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ Ztwo *
+                          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (Zpos p) +
+                        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ Zone := by
+                  rw [hzone]
+                  exact Int.le_of_lt ((Int.add_one_le_iff).mp (Int.le_refl _))
+                rw [hpx']
+                exact hnonneg
+              · change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (Zpos p.xI) <
+                  CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+                    (Zmul Ztwo (Zadd (Zpos p) Zone))
+                simp only [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.mul,
+                  CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add,
+                  CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+                have htwo :
+                    CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ Ztwo = (2 : Int) := by
+                  rfl
+                have hzone :
+                    CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ Zone = (1 : Int) := by
+                  rfl
+                have hpx :
+                    CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (Zpos p.xI) =
+                      Int.ofNat 2 * CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (Zpos p) + Int.ofNat 1 := by
+                  change Int.ofNat
+                      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p.xI) =
+                    Int.ofNat 2 * Int.ofNat
+                      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p) + Int.ofNat 1
+                  simp only [CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat,
+                    Int.ofNat_eq_natCast, Int.natCast_mul, Int.natCast_add]
+                have hpx' :
+                    CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (Zpos p.xI) =
+                      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ Ztwo *
+                        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (Zpos p) +
+                        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ Zone := by
+                  calc
+                    _ = Int.ofNat 2 * CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (Zpos p) + Int.ofNat 1 := hpx
+                    _ = _ := by
+                      rw [show CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ Ztwo = Int.ofNat 2 by rfl,
+                        show CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ Zone = Int.ofNat 1 by rfl]
+                have htarget :
+                    CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ Ztwo *
+                          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (Zpos p) +
+                        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ Zone <
+                      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ Ztwo *
+                        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (Zpos p) +
+                          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ Zone) := by
+                  rw [htwo, hzone]
+                  omega
+                rw [hpx']
+                exact htarget
+
+end CompCert4Lean.Flocq.IEEE754.BinarySingleNaN

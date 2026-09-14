@@ -1741,3 +1741,62 @@ theorem sound_stack_new_bound
         (GE := ge') (AN := an) (EM := em) (CONTENTS := contents)
 
 end CompCert4Lean.Backend.ValueAnalysis
+
+namespace CompCert4Lean.Backend.ValueAnalysis
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Backend.ValueDomain
+open CompCert4Lean.Lib.Coqlib
+
+theorem sound_stack_exten
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    sound_stack_extenStatement := by
+  intro cfg prog ge bc stk m bound bc1 hstk hbc
+  cases hstk with
+  | sound_stack_nil =>
+      exact sound_stack_nil bc1 m bound
+  | sound_stack_public_call =>
+      rename_i res f sp pc e stk bc0 bound0 ae below spNew geMatch analyze ematch spOld same stkProof incr
+      have hspBelow : Plt sp bound0 := by
+        apply below
+        rw [spNew]
+        intro h
+        cases h
+      have hspBound : Plt sp bound :=
+        Plt_Ple_trans sp bound0 bound hspBelow incr
+      have spNewClass : bc1 sp = BCother := by
+        rw [hbc sp hspBound, spOld]
+      have sameNew : ∀ b, Plt b bound0 → b ≠ sp → bc1 b = bc0 b := by
+        intro b hb hne
+        rw [hbc b (Plt_Ple_trans b bound0 bound hb incr)]
+        exact same b hb hne
+      exact sound_stack_public_call
+        (bc := bc1) (res := res) (f := f) (sp := sp) (pc := pc) (e := e)
+        (stk := stk) (m := m) (bound := bound) (bc' := bc0) (bound' := bound0)
+        (ae := ae) (STK := stkProof) (INCR := incr) (BELOW := below)
+        (SP := spNewClass) (SP' := spNew) (SAME := sameNew)
+        (GE := geMatch) (AN := analyze) (EM := ematch)
+  | sound_stack_private_call =>
+      rename_i res f sp pc e stk bc0 bound0 ae am below spNew geMatch analyze ematch spOld same stkProof contents incr
+      have hspBelow : Plt sp bound0 := by
+        apply below
+        rw [spNew]
+        intro h
+        cases h
+      have hspBound : Plt sp bound :=
+        Plt_Ple_trans sp bound0 bound hspBelow incr
+      have spNewClass : bc1 sp = BCinvalid := by
+        rw [hbc sp hspBound, spOld]
+      have sameNew : ∀ b, Plt b bound0 → b ≠ sp → bc1 b = bc0 b := by
+        intro b hb hne
+        rw [hbc b (Plt_Ple_trans b bound0 bound hb incr)]
+        exact same b hb hne
+      exact sound_stack_private_call
+        (bc := bc1) (res := res) (f := f) (sp := sp) (pc := pc) (e := e)
+        (stk := stk) (m := m) (bound := bound) (bc' := bc0) (bound' := bound0)
+        (ae := ae) (am := am) (STK := stkProof) (INCR := incr) (BELOW := below)
+        (SP := spNewClass) (SP' := spNew) (SAME := sameNew)
+        (GE := geMatch) (AN := analyze) (EM := ematch) (CONTENTS := contents)
+
+end CompCert4Lean.Backend.ValueAnalysis
