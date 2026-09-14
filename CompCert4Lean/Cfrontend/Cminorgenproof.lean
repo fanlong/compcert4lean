@@ -2778,3 +2778,25 @@ theorem cenv_remove_gso : cenv_remove_gsoStatement := by
         exact _root_.List.Mem.tail v.1 h
 
 end CompCert4Lean.Cfrontend.Cminorgenproof
+
+namespace CompCert4Lean.Cfrontend.Cminorgenproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+
+theorem cenv_remove_gss : cenv_remove_gssStatement := by
+  intro id vars cenv hmem
+  induction vars with
+  | nil => cases hmem
+  | cons v vars ih =>
+      change PTree.get id (PTree.remove v.1 (cenv_remove cenv vars)) = none
+      by_cases hhead : id = v.1
+      · subst id
+        exact PTree.grs_proof (cenv_remove cenv vars) (i := v.1)
+      · apply Eq.trans (PTree.gro_proof (cenv_remove cenv vars) hhead) (ih ?_)
+        rcases List.mem_cons.mp hmem with hhead' | htail
+        · exact False.elim (hhead hhead')
+        · exact htail
+
+end CompCert4Lean.Cfrontend.Cminorgenproof

@@ -2695,3 +2695,88 @@ theorem propagate_successors_charact1 : propagate_successors_charact1Statement :
         exact List.mem_cons.mpr (Or.inr hn)
 
 end CompCert4Lean.Backend.Kildall.BBlock_solver
+
+namespace CompCert4Lean.Backend.Kildall.BBlock_solver
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Lib.Maps
+
+private theorem proofgrind_pmap_get_set {LAT : OrderedTop} (i j : positive) (x : LAT.t)
+    (m : result LAT) :
+    PMap.get i (PMap.set j x m) =
+      if _h : i = j then x else PMap.get i m := by
+  change PMap.get i (PMap.set j x m) = _
+  simp only [PMap.get, PMap.set]
+  rw [PTree.gsspec_proof]
+  cases hpeq : CompCert4Lean.Lib.Coqlib.peq i j with
+  | left heq => simp [heq]
+  | right hne => simp [hne]
+
+theorem propagate_successors_charact2 : propagate_successors_charact2Statement := by
+  intro LAT laws bb succs l st n
+  induction succs generalizing st with
+  | nil =>
+      simp only [propagate_successors]
+      constructor
+      · intro h
+        simp at h
+      · intro _
+        exact True.intro
+  | cons s succs ih =>
+      simp only [propagate_successors]
+      split
+      · rename_i hbs
+        constructor
+        · intro hmem hbn
+          rcases List.mem_cons.mp hmem with hns | hmem
+          · subst n
+            simp [hbs] at hbn
+          · exact (ih st).1 hmem hbn
+        · intro h
+          apply (ih st).2
+          rcases h with hnot | hbn
+          · exact Or.inl (by
+              intro hmem
+              exact hnot (List.mem_cons.mpr (Or.inr hmem)))
+          · exact Or.inr hbn
+      · rename_i hbs
+        let st1 : state LAT :=
+          { aval := PMap.set s l st.aval, worklist := s :: st.worklist }
+        constructor
+        · intro hmem hbn
+          rcases List.mem_cons.mp hmem with hns | hmem
+          · subst n
+            constructor
+            · apply propagate_successors_charact1 laws bb succs l st1 s
+              exact List.mem_cons.mpr (Or.inl rfl)
+            · by_cases hrem : s ∈ succs
+              · exact ((ih st1).1 hrem (by simpa using hbn)).2
+              · rw [(ih st1).2 (Or.inl hrem)]
+                dsimp [st1]
+                rw [proofgrind_pmap_get_set]
+                simp
+          · exact (ih st1).1 hmem hbn
+        · intro h
+          rw [(ih st1).2 (by
+            rcases h with hnot | hbn
+            · exact Or.inl (by
+              intro hmem
+              exact hnot (List.mem_cons.mpr (Or.inr hmem)))
+            · exact Or.inr hbn)]
+          rcases h with hnot | hbn
+          · have hne : n ≠ s := by
+              intro heq
+              subst n
+              exact hnot (List.mem_cons.mpr (Or.inl rfl))
+            dsimp [st1]
+            rw [proofgrind_pmap_get_set]
+            simp [hne]
+          · have hne : n ≠ s := by
+              intro heq
+              subst n
+              simp [hbs] at hbn
+            dsimp [st1]
+            rw [proofgrind_pmap_get_set]
+            simp [hne]
+
+end CompCert4Lean.Backend.Kildall.BBlock_solver

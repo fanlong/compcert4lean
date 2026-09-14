@@ -1178,3 +1178,20 @@ theorem Zcompare_Lt : Zcompare_LtStatement := by
   simp [h]
 
 end CompCert4Lean.Flocq.Core.Zaux
+
+namespace CompCert4Lean.Flocq.Core.Zaux
+
+theorem cond_Zopp_negb : cond_Zopp_negbStatement := by
+  intro x y
+  cases x with
+  | false => rfl
+  | true =>
+      change y = Zopp (Zopp y)
+      symm
+      apply CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective
+      simp only [Zopp, CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.opp,
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+      change -(-CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ y) = _
+      omega
+
+end CompCert4Lean.Flocq.Core.Zaux

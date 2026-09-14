@@ -2645,3 +2645,22 @@ theorem make_div_correct
     rfl
 
 end CompCert4Lean.Cfrontend.Cshmgenproof
+
+namespace CompCert4Lean.Cfrontend.Cshmgenproof
+
+theorem make_and_correct
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    make_and_correctStatement := by
+  intro ge
+  apply make_binarith_int_correct ge
+  · intro x y m
+    rfl
+  · intro x y m
+    rfl
+  · intro x y m
+    rfl
+  · intro x y m
+    rfl
+
+end CompCert4Lean.Cfrontend.Cshmgenproof

@@ -1392,3 +1392,11 @@ theorem list_norepet_append_commut : list_norepet_append_commutStatement := by
   exact hs.2.2 y hy x hx hxy.symm
 
 end CompCert4Lean.Lib.Coqlib
+
+namespace CompCert4Lean.Lib.Coqlib
+
+theorem list_norepet_append : list_norepet_appendStatement := by
+  intro A l1 l2 h1 h2 hd
+  exact (list_norepet_app A l1 l2).2 ⟨h1, h2, hd⟩
+
+end CompCert4Lean.Lib.Coqlib

@@ -2304,3 +2304,18 @@ theorem Rmult_eq_reg_r :
 end RIneq
 end Rocq.Coq.Reals
 end CompCert4Lean.Foundation.FlocqReal
+
+namespace CompCert4Lean.Foundation.FlocqReal
+namespace Rocq.Coq.Reals
+namespace RIneq
+
+theorem Rmult_0_r (ctx : ExactRealContext) :
+    Rmult_0_rStatement ctx := by
+  intro r
+  change ctx.spec.mul r (ctx.spec.ofZ Z0) = ctx.spec.ofZ Z0
+  rw [ctx.certificate.sourceLaws.ofZ_zero]
+  exact ctx.certificate.orderedField.mul_zero r
+
+end RIneq
+end Rocq.Coq.Reals
+end CompCert4Lean.Foundation.FlocqReal

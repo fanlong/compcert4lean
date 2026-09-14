@@ -2333,3 +2333,199 @@ theorem read_as_zero_unchanged : read_as_zero_unchangedStatement := by
 
 end Genv
 end CompCert4Lean.Common.Globalenvs
+
+namespace CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Linking
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.Lib.Integers
+namespace Genv
+
+private theorem pg_alloc_unchanged_on (P : positive → Z → Prop)
+    (m : mem) (lo hi : Z) (m' : mem) (b : block)
+    (h : Mem.alloc m lo hi = (m', b)) : Mem.unchanged_on P m m' := by
+  unfold Mem.alloc at h
+  cases h
+  constructor
+  · exact Ple_succ _
+  · intro b' ofs k p hP hvalid
+    have hne : b' ≠ m.nextblock := Plt_ne _ _ hvalid
+    unfold Mem.perm
+    rw [pg_pmap_get_set_other _ _ _ _ hne]
+  · intro b' ofs hP hread
+    have hne : b' ≠ m.nextblock :=
+      Plt_ne _ _ (Mem.perm_valid_block m b' ofs Cur Readable hread)
+    rw [pg_pmap_get_set_other _ _ _ _ hne]
+
+private theorem pg_alloc_fresh (m : mem) (lo hi : Z) (m' : mem) (b : block)
+    (h : Mem.alloc m lo hi = (m', b)) : b = m.nextblock := by
+  unfold Mem.alloc at h
+  cases h
+  rfl
+
+private theorem pg_drop_perm_unchanged_on (P : positive → Z → Prop)
+    (m : mem) (b : positive) (lo hi : Z) (p : permission) (m' : mem)
+    (h : Mem.drop_perm m b lo hi p = some m')
+    (houtside : ∀ i, zLe lo i ∧ zLt i hi → ¬ P b i) :
+    Mem.unchanged_on P m m' := by
+  unfold Mem.drop_perm at h
+  cases hRange : Mem.range_perm_dec m b lo hi Cur Freeable with
+  | right hnone => simp [hRange] at h
+  | left hvalidRange =>
+      simp [hRange] at h
+      cases h
+      constructor
+      · exact Ple_refl _
+      · intro b' ofs k prm hP hvalid
+        unfold Mem.perm
+        by_cases hne : b' = b
+        · subst b'
+          rw [pg_pmap_get_set_same]
+          change Mem.perm_order' ((PMap.get b m.mem_access) ofs k) prm ↔
+            Mem.perm_order' (if (ZArith.BinInt.Z.leb lo ofs &&
+              ZArith.BinInt.Z.ltb ofs hi) = true then some p
+              else (PMap.get b m.mem_access) ofs k) prm
+          by_cases hIn : (ZArith.BinInt.Z.leb lo ofs &&
+              ZArith.BinInt.Z.ltb ofs hi) = true
+          · have hBounds : zLe lo ofs ∧ zLt ofs hi := by
+              change intOfZ lo ≤ intOfZ ofs ∧ intOfZ ofs < intOfZ hi
+              simpa [ZArith.BinInt.Z.leb, ZArith.BinInt.Z.ltb] using hIn
+            exact False.elim (houtside ofs hBounds hP)
+          · simp [hIn]
+        · change Mem.perm_order' ((PMap.get b' m.mem_access) ofs k) prm ↔
+            Mem.perm_order' ((PMap.get b' (PMap.set b _ m.mem_access)) ofs k) prm
+          rw [pg_pmap_get_set_other _ _ _ _ hne]
+      · intro b' ofs hP hread
+        by_cases hne : b' = b
+        · rfl
+        · rfl
+
+private theorem pg_unchanged_on_trans_pos (P : positive → Z → Prop)
+    (m1 m2 m3 : mem) (h12 : Mem.unchanged_on P m1 m2)
+    (h23 : Mem.unchanged_on P m2 m3) : Mem.unchanged_on P m1 m3 := by
+  exact {
+    unchanged_on_nextblock :=
+      Ple_trans _ _ _ h12.unchanged_on_nextblock h23.unchanged_on_nextblock
+    unchanged_on_perm := by
+      intro b ofs k prm hP hvalid
+      have hvalid2 : Mem.valid_block m2 b :=
+        Plt_Ple_trans _ _ _ hvalid h12.unchanged_on_nextblock
+      exact (h12.unchanged_on_perm b ofs k prm hP hvalid).trans
+        (h23.unchanged_on_perm b ofs k prm hP hvalid2)
+    unchanged_on_contents := by
+      intro b ofs hP hread
+      have hread2 : Mem.perm m2 b ofs Cur Readable :=
+        (h12.unchanged_on_perm b ofs Cur Readable hP
+          (Mem.perm_valid_block m1 b ofs Cur Readable hread)).mp hread
+      exact (h23.unchanged_on_contents b ofs hP hread2).trans
+        (h12.unchanged_on_contents b ofs hP hread) }
+
+theorem alloc_global_unchanged : alloc_global_unchangedStatement := by
+  intro F V ge P m id g m' h
+  cases g with
+  | Gfun f =>
+      unfold alloc_global at h
+      cases halloc : Mem.alloc m z0 z1 with
+      | mk m1 b =>
+          have hdrop : Mem.drop_perm m1 b z0 z1 Nonempty = some m' := by
+            simpa [halloc] using h
+          have hb : b = m.nextblock := pg_alloc_fresh m z0 z1 m1 b halloc
+          let Q : positive → Z → Prop := fun b' _ => b' ≠ b
+          have ha := pg_alloc_unchanged_on Q m z0 z1 m1 b halloc
+          have hd := pg_drop_perm_unchanged_on Q m1 b z0 z1 Nonempty m' hdrop (by
+            intro ofs _ hQ
+            exact hQ rfl)
+          have hq := pg_unchanged_on_trans_pos Q m m1 m' ha hd
+          exact {
+            unchanged_on_nextblock := hq.unchanged_on_nextblock
+            unchanged_on_perm := by
+              intro b' ofs k prm hP hvalid
+              have hQ : Q b' ofs := by
+                dsimp [Q]
+                intro heq
+                apply (Plt_strict b')
+                change Plt b' m.nextblock at hvalid
+                rw [← hb, ← heq] at hvalid
+                exact hvalid
+              exact hq.unchanged_on_perm b' ofs k prm hQ hvalid
+            unchanged_on_contents := by
+              intro b' ofs hP hread
+              have hQ : Q b' ofs := by
+                dsimp [Q]
+                intro heq
+                apply (Plt_strict b')
+                have hvb := Mem.perm_valid_block m b' ofs Cur Readable hread
+                change Plt b' m.nextblock at hvb
+                rw [← hb, ← heq] at hvb
+                exact hvb
+              exact hq.unchanged_on_contents b' ofs hQ hread }
+  | Gvar v =>
+      let init := v.gvar_init
+      let sz := init_data_list_size init
+      unfold alloc_global at h
+      dsimp [init, sz] at h
+      cases halloc : Mem.alloc m z0 (init_data_list_size v.gvar_init) with
+      | mk m1 b =>
+          cases hzeros : store_zeros m1 b z0 (init_data_list_size v.gvar_init) with
+          | none => simp [halloc, hzeros] at h
+          | some m2 =>
+              cases hlist : store_init_data_list ge m2 b z0 v.gvar_init with
+              | none => simp [halloc, hzeros, hlist] at h
+              | some m3 =>
+                  have hdrop : Mem.drop_perm m3 b z0
+                      (init_data_list_size v.gvar_init) (perm_globvar v) = some m' := by
+                    simpa [halloc, hzeros, hlist] using h
+                  have hb : b = m.nextblock := pg_alloc_fresh m z0
+                    (init_data_list_size v.gvar_init) m1 b halloc
+                  let Q : positive → Z → Prop := fun b' _ => b' ≠ b
+                  have ha := pg_alloc_unchanged_on Q m z0
+                    (init_data_list_size v.gvar_init) m1 b halloc
+                  have hz := store_zeros_unchanged (P := Q) m1 b z0
+                    (init_data_list_size v.gvar_init) m2 hzeros (by
+                      intro ofs _ hQ
+                      exact hQ rfl)
+                  have hl := store_init_data_list_unchanged F V ge (P := Q)
+                    b v.gvar_init m2 z0 m3 hlist (by
+                      intro ofs _ hQ
+                      exact hQ rfl)
+                  have hd := pg_drop_perm_unchanged_on Q m3 b z0
+                    (init_data_list_size v.gvar_init) (perm_globvar v) m' hdrop (by
+                      intro ofs _ hQ
+                      exact hQ rfl)
+                  have hq12 := pg_unchanged_on_trans_pos Q m m1 m2
+                    ha hz
+                  have hq123 := pg_unchanged_on_trans_pos Q m m2 m3
+                    hq12 hl
+                  have hq := pg_unchanged_on_trans_pos Q m m3 m' hq123 hd
+                  exact {
+                    unchanged_on_nextblock := hq.unchanged_on_nextblock
+                    unchanged_on_perm := by
+                      intro b' ofs k prm hP hvalid
+                      have hQ : Q b' ofs := by
+                        dsimp [Q]
+                        intro heq
+                        apply (Plt_strict b')
+                        change Plt b' m.nextblock at hvalid
+                        rw [← hb, ← heq] at hvalid
+                        exact hvalid
+                      exact hq.unchanged_on_perm b' ofs k prm hQ hvalid
+                    unchanged_on_contents := by
+                      intro b' ofs hP hread
+                      have hQ : Q b' ofs := by
+                        dsimp [Q]
+                        intro heq
+                        apply (Plt_strict b')
+                        have hvb := Mem.perm_valid_block m b' ofs Cur Readable hread
+                        change Plt b' m.nextblock at hvb
+                        rw [← hb, ← heq] at hvb
+                        exact hvb
+                      exact hq.unchanged_on_contents b' ofs hQ hread }
+
+end Genv
+end CompCert4Lean.Common.Globalenvs
