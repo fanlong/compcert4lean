@@ -2981,3 +2981,33 @@ theorem fixpoint_entry : fixpoint_entryStatement := by
   exact hinv.1 entrypoint hhead
 
 end CompCert4Lean.Backend.Kildall.BBlock_solver
+
+namespace CompCert4Lean.Backend.Kildall.BBlock_solver
+
+open CompCert4Lean.Lib.Maps
+
+theorem propagate_successors_P : propagate_successors_PStatement := by
+  intro LAT laws P bb l hl succs
+  induction succs with
+  | nil =>
+      intro st hst pc
+      exact hst pc
+  | cons s succs ih =>
+      intro st hst pc
+      simp only [propagate_successors]
+      split
+      · exact ih st hst pc
+      · rename_i hbb
+        apply ih
+        intro pc'
+        change P (PMap.get pc' (PMap.set s l st.aval))
+        simp only [PMap.get, PMap.set]
+        rw [PTree.gsspec_proof]
+        cases hpeq : CompCert4Lean.Lib.Coqlib.peq pc' s with
+        | left heq =>
+            subst pc'
+            exact hl
+        | right hne =>
+            exact hst pc'
+
+end CompCert4Lean.Backend.Kildall.BBlock_solver
