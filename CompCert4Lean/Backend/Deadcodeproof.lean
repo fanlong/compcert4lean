@@ -1878,3 +1878,106 @@ theorem find_function_translated : ∀ cfg, find_function_translatedStatement cf
           exact function_ptr_translated cfg prog tprog hm b fd hfind
 
 end CompCert4Lean.Backend.Deadcodeproof
+
+namespace CompCert4Lean.Backend.Deadcodeproof
+
+open CompCert4Lean.Backend.Deadcode
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.Lib.Maps
+
+variable
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+
+theorem can_eval_builtin_arg : ∀ cfg, can_eval_builtin_argStatement cfg := by
+  intro cfg prog tprog hm sp e m e' m' P hma
+  have hload : ∀ (chunk : memory_chunk) (addr : val) v,
+      Mem.loadv chunk m addr = some v →
+        ∃ v', Mem.loadv chunk m' addr = some v' := by
+    intro chunk addr v hv
+    cases addr with
+    | Vundef => simp [Mem.loadv] at hv
+    | Vint n => simp [Mem.loadv] at hv
+    | Vlong n => simp [Mem.loadv] at hv
+    | Vfloat n => simp [Mem.loadv] at hv
+    | Vsingle n => simp [Mem.loadv] at hv
+    | Vptr b ofs =>
+        have hvalid := Mem.load_valid_access m chunk b (Ptrofs.unsigned ofs) v hv
+        have hvalid' := magree_valid_access m m' P chunk b
+          (Ptrofs.unsigned ofs) CompCert4Lean.Common.Memtype.Readable hma hvalid
+        rcases Mem.valid_access_load m' chunk b (Ptrofs.unsigned ofs) hvalid' with
+          ⟨v', hv'⟩
+        exact ⟨v', hv'⟩
+  have hsenv := senv_preserved cfg prog tprog hm
+  have hsym : ∀ id ofs,
+      Senv.symbol_address (Genv.to_senv (Genv.globalenv prog)) id ofs =
+        Senv.symbol_address (Genv.to_senv (Genv.globalenv tprog)) id ofs := by
+    intro id ofs
+    unfold Senv.symbol_address
+    rw [hsenv.1 id]
+  intro a v hev
+  induction hev with
+  | eval_BA x =>
+      exact ⟨CompCert4Lean.Backend.Registers.Regmap.get x e', eval_BA x⟩
+  | eval_BA_int n => exact ⟨Vint n, eval_BA_int n⟩
+  | eval_BA_long n => exact ⟨Vlong n, eval_BA_long n⟩
+  | eval_BA_float n => exact ⟨Vfloat n, eval_BA_float n⟩
+  | eval_BA_single n => exact ⟨Vsingle n, eval_BA_single n⟩
+  | eval_BA_loadstack chunk ofs v hv =>
+      rcases hload chunk (Val.offset_ptr (Vptr sp Ptrofs.zero) ofs) v hv with
+        ⟨v', hv'⟩
+      exact ⟨v', eval_BA_loadstack chunk ofs v' hv'⟩
+  | eval_BA_addrstack ofs =>
+      exact ⟨Val.offset_ptr (Vptr sp Ptrofs.zero) ofs,
+        eval_BA_addrstack ofs⟩
+  | eval_BA_loadglobal chunk id ofs v hv =>
+      rw [hsym id ofs] at hv
+      rcases hload chunk (Senv.symbol_address
+        (Genv.to_senv (Genv.globalenv tprog)) id ofs) v hv with ⟨v', hv'⟩
+      exact ⟨v', eval_BA_loadglobal chunk id ofs v' hv'⟩
+  | eval_BA_addrglobal id ofs =>
+      exact ⟨Senv.symbol_address
+        (Genv.to_senv (Genv.globalenv tprog)) id ofs,
+        eval_BA_addrglobal id ofs⟩
+  | eval_BA_splitlong hi lo vhi vlo hhi hlo ihhi ihlo =>
+      rcases ihhi with ⟨vhi', hhi'⟩
+      rcases ihlo with ⟨vlo', hlo'⟩
+      exact ⟨Val.longofwords vhi' vlo', eval_BA_splitlong _ _ _ _ hhi' hlo'⟩
+  | eval_BA_addptr a1 a2 v1 v2 h1 h2 ih1 ih2 =>
+      rcases ih1 with ⟨v1', h1'⟩
+      rcases ih2 with ⟨v2', h2'⟩
+      exact ⟨_, eval_BA_addptr _ _ _ _ h1' h2'⟩
+
+end CompCert4Lean.Backend.Deadcodeproof
+
+namespace CompCert4Lean.Backend.Deadcodeproof
+
+open CompCert4Lean.Backend.Deadcode
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Coqlib
+
+variable
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+
+theorem can_eval_builtin_args : ∀ cfg, can_eval_builtin_argsStatement cfg := by
+  intro cfg prog tprog hm sp e m e' m' P hma al vl hev
+  unfold eval_builtin_args at hev ⊢
+  induction hev with
+  | nil => exact ⟨[], list_forall2.nil _⟩
+  | @cons a1 al v1 vl h1 htail ih =>
+      rcases can_eval_builtin_arg cfg prog tprog hm sp e m e' m' P hma
+        a1 v1 h1 with ⟨v1', hv1'⟩
+      rcases ih with ⟨vl', htail'⟩
+      exact ⟨v1' :: vl', list_forall2.cons _ _ hv1' htail'⟩
+
+end CompCert4Lean.Backend.Deadcodeproof

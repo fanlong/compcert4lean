@@ -2885,3 +2885,85 @@ theorem propagate_successors_invariant : propagate_successors_invariantStatement
           exact hold instr' s hget hsucc
 
 end CompCert4Lean.Backend.Kildall.BBlock_solver
+
+namespace CompCert4Lean.Backend.Kildall.BBlock_solver
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.Lib.Iteration
+
+theorem propagate_successors_invariant_2 : propagate_successors_invariant_2Statement := by
+  intro A LAT entrypoint laws code successors transf pc res rem hcode hinv
+  rcases hinv with ⟨hheads, hstable⟩
+  constructor
+  · intro n hbb
+    exact hheads n hbb
+  · intro n
+    rcases hstable n with hwork | hstable
+    · rcases List.mem_cons.mp hwork with hpc | hrem
+      · subst n
+        right
+        intro instr s hget hsucc
+        rw [hcode] at hget
+        cases hget
+      · exact Or.inl hrem
+    · exact Or.inr hstable
+
+theorem initial_state_invariant : initial_state_invariantStatement := by
+  intro A LAT entrypoint laws code successors transf
+  let bb := basic_block_map entrypoint code successors
+  constructor
+  · intro n hbb
+    cases n <;> rfl
+  · intro n
+    right
+    intro instr s hcode hsucc
+    have hinit : PMap.get s (PMap.init LAT.top) = LAT.top := by
+      cases s <;> rfl
+    rw [hinit]
+    exact laws.top_ge _
+
+private theorem proofgrind_analyze_invariant_aux {A : Type} {LAT : OrderedTop}
+    (entrypoint : positive) (laws : OrderedTopLaws LAT) (code : PTreeT A)
+    (successors : A → List positive) (transf : positive → LAT.t → LAT.t)
+    (res : result LAT) :
+    fixpoint LAT code successors transf entrypoint = some res →
+    state_invariant entrypoint code successors transf { aval := res, worklist := [] } := by
+  unfold fixpoint
+  let bb := basic_block_map entrypoint code successors
+  apply PrimIter.iter_prop (A := state LAT) (B := result LAT)
+    (step := step code successors transf bb)
+    (P := state_invariant entrypoint code successors transf)
+    (Q := fun result => state_invariant entrypoint code successors transf
+      { aval := result, worklist := [] })
+  · intro st hinv
+    cases st with
+    | mk aval worklist =>
+      cases worklist with
+      | nil =>
+        simp only [step]
+        exact hinv
+      | cons pc rem =>
+        cases hcode : PTree.get pc code with
+        | none =>
+          simp only [step, hcode]
+          exact propagate_successors_invariant_2 entrypoint laws code successors transf
+            pc aval rem hcode hinv
+        | some instr =>
+          simp only [step, hcode]
+          exact propagate_successors_invariant entrypoint laws code successors transf
+            pc instr aval rem hcode hinv
+  · exact initial_state_invariant LAT entrypoint laws code successors transf
+
+theorem analyze_invariant : analyze_invariantStatement := by
+  intro A LAT entrypoint laws code successors transf res hfix
+  exact proofgrind_analyze_invariant_aux entrypoint laws code successors transf res hfix
+
+theorem fixpoint_solution : fixpoint_solutionStatement := by
+  intro A LAT entrypoint laws code successors transf res n instr s hfix hcode hsucc
+  have hinv := proofgrind_analyze_invariant_aux entrypoint laws code successors transf res hfix
+  rcases hinv.2 n with hwork | hstable
+  · simp at hwork
+  · exact hstable instr s hcode hsucc
+
+end CompCert4Lean.Backend.Kildall.BBlock_solver

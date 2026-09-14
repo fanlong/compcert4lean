@@ -3411,3 +3411,63 @@ theorem and_commut_proof : and_commut := by
   apply WordCore.ext_of_val_eq
   change (WordCore.and x y).val = (WordCore.and y x).val
   rw [suffix_and_val, suffix_and_val, Nat.land_eq, Nat.land_eq, Nat.and_comm]
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+private theorem suffix_shl_val (x y : int) :
+    (WordCore.shl x y).val = (x.val * 2 ^ y.val) % (2 ^ wordsize) := by
+  change (WordCore.repr wordsize
+    (zShiftl (unsigned x) (unsigned y))).val = _
+  have hunsigned (w : int) :
+      unsigned w = zOfNat w.val := by
+    have hw : zLe zZero (unsigned w) := by
+      have h := w.intrange.1
+      change (-1 : Int) < intOfZ (unsigned w) at h
+      change 0 ≤ intOfZ (unsigned w)
+      omega
+    exact (ZArith.Znat.Z2Nat.id (unsigned w) hw).symm
+  rw [hunsigned x, hunsigned y]
+  rw [show zShiftl (zOfNat x.val) (zOfNat y.val) =
+      zOfNat (x.val * 2 ^ y.val) by
+    unfold zShiftl ZArith.BinInt.Z.shiftl
+    simp only [ZArith.BinInt.Z.of_nat, intOfZ_zOfInt,
+      Int.ofNat_eq_natCast, Int.natCast_nonneg, ↓reduceIte]
+    rw [Int.natCast_mul, Int.natCast_pow]
+    rfl]
+  rw [WordCore.val_repr_residue]
+  have hz : zOfNat (x.val * 2 ^ y.val) =
+      zOfInt (Int.ofNat (x.val * 2 ^ y.val)) := by rfl
+  rw [hz, WordCore.residue_zOfNat]
+
+private theorem suffix_shl_and (x m y : int) :
+    shl (and x m) y = and (shl x y) (shl m y) := by
+  change WordCore.shl (WordCore.and x m) y =
+    WordCore.and (WordCore.shl x y) (WordCore.shl m y)
+  apply WordCore.ext_of_val_eq
+  rw [suffix_shl_val, suffix_and_val]
+  rw [suffix_and_val (WordCore.shl x y) (WordCore.shl m y)]
+  rw [suffix_shl_val x y, suffix_shl_val m y]
+  apply Nat.eq_of_testBit_eq
+  intro i
+  simp only [Nat.land_eq]
+  rw [Nat.testBit_mod_two_pow]
+  rw [Nat.testBit_and]
+  rw [Nat.testBit_mod_two_pow, Nat.testBit_mod_two_pow]
+  rw [← Nat.shiftLeft_eq, ← Nat.shiftLeft_eq, ← Nat.shiftLeft_eq]
+  rw [Nat.testBit_shiftLeft, Nat.testBit_shiftLeft, Nat.testBit_shiftLeft]
+  rw [Nat.testBit_and]
+  by_cases hi : i < wordsize
+  · by_cases hshift : decide (y.val ≤ i) = true
+    · simp [hi, hshift, Bool.and_assoc]
+    · simp [hi, hshift, Bool.and_assoc]
+  · simp [hi]
+
+theorem bitfield_insert_alternative_proof : bitfield_insert_alternative := by
+  dsimp [bitfield_insert_alternative]
+  intro pos width n p hwidth
+  let mask := shl (repr (zSub (zTwoP width) zOne)) (repr pos)
+  change or (shl (zero_ext width p) (repr pos)) (and n (not mask)) =
+    or (and (shl p (repr pos)) mask) (and n (not mask))
+  rw [zero_ext_and_proof width p hwidth]
+  exact congrArg (fun q => or q (and n (not mask)))
+    (suffix_shl_and p (repr (zSub (zTwoP width) zOne)) (repr pos))

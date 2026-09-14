@@ -2022,3 +2022,16 @@ theorem ZArith.BinInt.Z.compare_gt_iff :
 
 end Rocq.Coq
 end CompCert4Lean.Foundation.Numbers
+
+namespace CompCert4Lean.Foundation.Numbers
+namespace Rocq.Coq
+
+theorem ZArith.BinInt.Zmult_1_l_proof (n : Z) :
+    ZArith.BinInt.Zmult_1_l n := by
+  apply intOfZ_injective
+  simp only [ZArith.BinInt.Z.mul, intOfZ_zOfInt]
+  change intOfZ (Zpos xH) * intOfZ n = intOfZ n
+  simp [intOfZ, posToNat]
+
+end Rocq.Coq
+end CompCert4Lean.Foundation.Numbers

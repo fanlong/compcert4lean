@@ -2082,3 +2082,29 @@ theorem tr_simple_exprlist :
             · exact hev2
 
 end CompCert4Lean.Cfrontend.SimplExprproof
+
+namespace CompCert4Lean.Cfrontend.SimplExprproof
+
+open CompCert4Lean.Cfrontend.Cop
+
+theorem sem_cast_deterministic
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    sem_cast_deterministicStatement := by
+  intro v ty ty' m1 v1 m2 v2 h1 h2
+  unfold sem_cast at h1 h2
+  cases hclass : classify_cast ty ty' <;>
+    cases v <;>
+    simp [hclass] at h1 h2
+  all_goals
+    first
+    | exact h1.symm.trans h2
+    | exact h1.2.symm.trans h2.2
+    | exact h1.2.2.symm.trans h2.2.2
+    | rcases h1 with ⟨a, ha, h1⟩
+      rcases h2 with ⟨b, hb, h2⟩
+      have hab : a = b := Option.some.inj (ha.symm.trans hb)
+      subst b
+      exact h1.symm.trans h2
+
+end CompCert4Lean.Cfrontend.SimplExprproof

@@ -1823,3 +1823,15 @@ theorem eval_builtin_arg_preserved : eval_builtin_arg_preservedStatement := by
       exact eval_BA_addptr a1 a2 v1 v2 iha1 iha2
 
 end CompCert4Lean.Common.Events
+
+namespace CompCert4Lean.Common.Events
+
+theorem E0_right : E0_rightStatement := by
+  intro t
+  induction t with
+  | nil => rfl
+  | cons e t ih =>
+      change e :: Eapp t E0 = e :: t
+      rw [ih]
+
+end CompCert4Lean.Common.Events

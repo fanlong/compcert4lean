@@ -1807,3 +1807,17 @@ theorem sub_add_r : sub_add_rStatement := by
 
 end Val
 end CompCert4Lean.Common.Values
+
+namespace CompCert4Lean.Common.Values
+namespace Val
+
+theorem and_commut : and_commutStatement := by
+  intro x y
+  cases x <;> cases y <;>
+    simp [and]
+  case Vint.Vint a b =>
+    change Int.and a b = Int.and b a
+    exact CompCert4Lean.Lib.Integers.Int.and_commut_proof a b
+
+end Val
+end CompCert4Lean.Common.Values

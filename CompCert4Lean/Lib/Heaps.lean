@@ -1714,3 +1714,25 @@ theorem findMax_empty (E : OrderedType) : findMax_emptyStatement E := by
   · exact (R.findMax_empty E h.1 hne) hnone
 
 end CompCert4Lean.Lib.Heaps.SplayHeapSet
+
+namespace CompCert4Lean.Lib.Heaps.PHeap
+
+theorem In_insert_proof : In_insert := by
+  exact CompCert4Lean.Lib.Heaps.SplayHeapSet.In_insert positiveOrder
+
+theorem In_deleteMin_proof : In_deleteMin := by
+  exact CompCert4Lean.Lib.Heaps.SplayHeapSet.In_deleteMin positiveOrder
+
+theorem In_deleteMax_proof : In_deleteMax := by
+  intro h x y hfind
+  change (SplayHeapSet.R.In positiveOrder y h.1 ↔
+    positiveOrder.eq y x ∨
+      SplayHeapSet.R.In positiveOrder y
+        (SplayHeapSet.R.deleteMax positiveOrder h.1))
+  exact CompCert4Lean.Lib.Heaps.SplayHeapSet.R.In_deleteMax
+    positiveOrder y x h.1 hfind
+
+theorem findMax_empty_proof : findMax_empty := by
+  exact CompCert4Lean.Lib.Heaps.SplayHeapSet.findMax_empty positiveOrder
+
+end CompCert4Lean.Lib.Heaps.PHeap

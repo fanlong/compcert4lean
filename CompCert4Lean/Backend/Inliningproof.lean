@@ -2254,3 +2254,63 @@ theorem match_stacks_inside_empty : match_stacks_inside_emptyStatement := by
     cases hnil
 
 end CompCert4Lean.Backend.Inliningproof
+
+namespace CompCert4Lean.Backend.Inliningproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Backend.Inlining
+open CompCert4Lean.Backend.Inliningspec
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Linking
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+
+theorem match_stacks_inside_set_reg : match_stacks_inside_set_regStatement := by
+  intro prog F m m' stk stk' f ctx sp rs r v h
+  refine match_stacks_inside.rec (prog := prog) (F := F) (m := m) (m' := m')
+    (motive_1 := fun _ _ _ _ => True)
+    (motive_2 := fun l l0 f c b rs0 _ =>
+      ∀ q, Ple c.dreg q →
+        match_stacks_inside prog F m m' l l0 f c b (Regmap.set q v rs0)) ?_ ?_ ?_ ?_ ?_ h
+    (sreg ctx r) (CompCert4Lean.Backend.Inliningspec.shiftpos_above r ctx.dreg)
+  · intro bound1 bound MG BELOW
+    exact True.intro
+  · intro res f sp pc rs stk f' sp' rs' stk' bound fenv ctx MS COMPAT FB AG SP PRIV SSZ1 SSZ2 RES BELOW ih
+    exact True.intro
+  · intro stk res f' sp' rpc rs' stk' bound ctx MS PRIV SSZ1 SSZ2 RET BELOW ih
+    exact True.intro
+  · intro stk stk' f' ctx sp' rs' MS RET DSTK ih q Hq
+    exact match_stacks_inside_base stk stk' f' ctx sp' (Regmap.set q v rs') MS RET DSTK
+  · intro res f sp pc rs stk stk' f' fenv ctx sp' rs' ctx' MS COMPAT FB AG SP PRIV RES RET BELOW SBELOW ih q Hq
+    have Hctx'_le_sum : Ple ctx'.dreg (PArith.BinPos.Pos.add ctx'.dreg ctx'.mreg) := by
+      unfold Ple PArith.BinPos.Pos.le
+      have hadd : posToNat (PArith.BinPos.Pos.add ctx'.dreg ctx'.mreg) =
+          posToNat ctx'.dreg + posToNat ctx'.mreg := by
+        simpa [PArith.BinPos.Pos.add] using posToNat_posOfNat (by
+          have hdpos := posToNat_positive ctx'.dreg
+          have hmpos := posToNat_positive ctx'.mreg
+          omega : 0 < posToNat ctx'.dreg + posToNat ctx'.mreg)
+      rw [hadd]
+      omega
+    have Hq' : Ple ctx'.dreg q :=
+      Ple_trans ctx'.dreg (PArith.BinPos.Pos.add ctx'.dreg ctx'.mreg) q Hctx'_le_sum
+        (Ple_trans (PArith.BinPos.Pos.add ctx'.dreg ctx'.mreg) ctx.dreg q BELOW Hq)
+    have AG' : agree_regs F ctx' rs
+        (Regmap.set q v rs') := by
+      apply agree_regs_invariant F ctx' rs rs'
+        (Regmap.set q v rs') AG
+      intro r0 Hbelow Hupper
+      have Hbelow_ctx : Plt r0 ctx.dreg :=
+        Plt_Ple_trans r0 (PArith.BinPos.Pos.add ctx'.dreg ctx'.mreg) ctx.dreg
+          Hupper BELOW
+      have Hlt_q : Plt r0 q := Plt_Ple_trans r0 ctx.dreg q Hbelow_ctx Hq
+      exact Regmap.gso_proof CompCert4Lean.Common.Values.val r0 q v rs'
+        (Plt_ne r0 q Hlt_q)
+    exact match_stacks_inside_inlined res f sp pc rs stk stk' f' fenv ctx sp'
+      (Regmap.set q v rs') ctx' (ih q Hq') COMPAT FB AG' SP PRIV RES RET BELOW SBELOW
+
+end CompCert4Lean.Backend.Inliningproof

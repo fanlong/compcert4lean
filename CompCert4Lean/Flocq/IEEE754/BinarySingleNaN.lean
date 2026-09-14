@@ -1851,3 +1851,106 @@ theorem shr_m_shr_record_of_loc :
   | loc_Inexact c => cases c <;> rfl
 
 end CompCert4Lean.Flocq.IEEE754.BinarySingleNaN
+
+namespace CompCert4Lean.Flocq.IEEE754.BinarySingleNaN
+
+private theorem pg_iter_nat_comp {α : Type} (f : α → α) (n : Nat) (x : α) :
+    CompCert4Lean.Flocq.Core.Zaux.iter_nat f n (f x) =
+      f (CompCert4Lean.Flocq.Core.Zaux.iter_nat f n x) := by
+  induction n generalizing x with
+  | zero => rfl
+  | succ n ih =>
+      simp [CompCert4Lean.Flocq.Core.Zaux.iter_nat, ih]
+
+private theorem pg_iter_nat_add {α : Type} (f : α → α) (p q : Nat) (x : α) :
+    CompCert4Lean.Flocq.Core.Zaux.iter_nat f (p + q) x =
+      CompCert4Lean.Flocq.Core.Zaux.iter_nat f p
+        (CompCert4Lean.Flocq.Core.Zaux.iter_nat f q x) := by
+  induction p with
+  | zero => simp [CompCert4Lean.Flocq.Core.Zaux.iter_nat]
+  | succ p ih =>
+      simp [Nat.succ_add, CompCert4Lean.Flocq.Core.Zaux.iter_nat, ih,
+        pg_iter_nat_comp]
+
+private theorem pg_iter_pos_nat {α : Type} (f : α → α) (p : positive) (x : α) :
+    Lib.Floats.Model.Rocq.Coq.Floats.SpecFloat.iter_pos f p x =
+      CompCert4Lean.Flocq.Core.Zaux.iter_nat f
+        (_root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.PArith.BinPos.Pos.to_nat p) x := by
+  induction p generalizing x with
+  | xH => rfl
+  | xI p ih =>
+      simp only [Lib.Floats.Model.Rocq.Coq.Floats.SpecFloat.iter_pos,
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.PArith.BinPos.Pos.to_nat,
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat]
+      rw [ih, ih]
+      have hadd := (pg_iter_nat_add f
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.PArith.BinPos.Pos.to_nat p)
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.PArith.BinPos.Pos.to_nat p)
+        (f x)).symm
+      rw [hadd]
+      have hcount :
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.PArith.BinPos.Pos.to_nat p +
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.PArith.BinPos.Pos.to_nat p =
+            2 * CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p := by
+        simp only [CompCert4Lean.Foundation.Numbers.Rocq.Coq.PArith.BinPos.Pos.to_nat]
+        omega
+      rw [hcount]
+      rfl
+  | xO p ih =>
+      simp only [Lib.Floats.Model.Rocq.Coq.Floats.SpecFloat.iter_pos,
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.PArith.BinPos.Pos.to_nat,
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat]
+      rw [ih, ih]
+      have hadd := (pg_iter_nat_add f
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.PArith.BinPos.Pos.to_nat p)
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.PArith.BinPos.Pos.to_nat p)
+        x).symm
+      rw [hadd]
+      have hcount :
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.PArith.BinPos.Pos.to_nat p +
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.PArith.BinPos.Pos.to_nat p =
+            2 * CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p := by
+        simp only [CompCert4Lean.Foundation.Numbers.Rocq.Coq.PArith.BinPos.Pos.to_nat]
+        omega
+      rw [hcount]
+
+theorem shr_nat :
+    shr_natStatement := by
+  intro mrs e n hn
+  cases n with
+  | Z0 =>
+      simp [Lib.Floats.Model.Rocq.Coq.Floats.SpecFloat.shr,
+        CompCert4Lean.Flocq.Core.Zaux.iter_nat,
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.to_nat,
+        Zadd,
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add_0_r]
+      constructor
+      · rfl
+      · exact (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add_0_r e).symm
+  | Zpos p =>
+      change shr mrs e (Zpos p) =
+        (CompCert4Lean.Flocq.Core.Zaux.iter_nat shr_1
+          (_root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.to_nat
+            (Zpos p)) mrs,
+          Zadd e (Zpos p))
+      simp only [Lib.Floats.Model.Rocq.Coq.Floats.SpecFloat.shr]
+      have hnat :
+          _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.to_nat
+              (Zpos p) =
+            _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.PArith.BinPos.Pos.to_nat p := by
+        rfl
+      rw [hnat]
+      rw [pg_iter_pos_nat]
+  | Zneg p =>
+      exfalso
+      change 0 ≤
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (Zneg p) at hn
+      simp only [CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ] at hn
+      have hp :=
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat_positive p
+      have hp' : 0 < Int.ofNat
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p) := by
+        exact Int.natCast_pos.mpr hp
+      omega
+
+end CompCert4Lean.Flocq.IEEE754.BinarySingleNaN

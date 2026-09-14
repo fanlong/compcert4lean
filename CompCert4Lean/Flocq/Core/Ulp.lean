@@ -1546,3 +1546,406 @@ theorem pred_le_id :
   exact hneg
 
 end CompCert4Lean.Flocq.Core.Ulp
+
+namespace CompCert4Lean.Flocq.Core.Ulp
+
+private theorem ulp_mag_unique (ctx : ExactRealContext) (r : radix)
+    (x : Exact.R ctx) {e1 e2 : Z}
+    (h1 : Exact.Rle ctx (Exact.bpow ctx r (Zsub e1 Zone)) (Exact.Rabs ctx x) ∧
+      Exact.Rlt ctx (Exact.Rabs ctx x) (Exact.bpow ctx r e1))
+    (h2 : Exact.Rle ctx (Exact.bpow ctx r (Zsub e2 Zone)) (Exact.Rabs ctx x) ∧
+      Exact.Rlt ctx (Exact.Rabs ctx x) (Exact.bpow ctx r e2)) : e1 = e2 := by
+  apply CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective
+  by_cases heq : CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ e1 =
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ e2
+  · exact heq
+  · rcases Int.lt_or_gt_of_ne heq with h12 | h21
+    · have hle : Zle e1 (Zsub e2 Zone) := by
+        change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ e1 ≤
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (Zsub e2 Zone)
+        simp only [Zsub,
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.sub,
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+        change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ e1 ≤
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ e2 - 1
+        omega
+      have hp := idp_bpow_le ctx r hle
+      have hmid := ctx.certificate.orderedField.lt_iff_le_not_le _ _ |>.mp
+        (CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.Rle_lt_trans
+          ctx _ _ _ h2.1 h1.2)
+      exact (hmid.2 hp).elim
+    · have hle : Zle e2 (Zsub e1 Zone) := by
+        change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ e2 ≤
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (Zsub e1 Zone)
+        simp only [Zsub,
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.sub,
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+        change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ e2 ≤
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ e1 - 1
+        omega
+      have hp := idp_bpow_le ctx r hle
+      have hmid := ctx.certificate.orderedField.lt_iff_le_not_le _ _ |>.mp
+        (CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.Rle_lt_trans
+          ctx _ _ _ h1.1 h2.2)
+      exact (hmid.2 hp).elim
+
+private theorem ulp_id_m_ulp_ge_bpow (ctx : ExactRealContext)
+    (magnitude : Exact.Magnitude ctx) (beta : radix) (fexp : Z → Z)
+    (x : Exact.R ctx) (e : Z)
+    (hformat : Exact.generic_format ctx magnitude beta fexp x)
+    (hxulp : x ≠ Exact.ulp ctx magnitude beta fexp x)
+    (hxpow : Exact.Rlt ctx (Exact.bpow ctx beta e) x) :
+    Exact.Rle ctx (Exact.bpow ctx beta e)
+      (Exact.Rminus ctx x (Exact.ulp ctx magnitude beta fexp x)) := by
+  let m := CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Ztrunc ctx
+    (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.scaled_mantissa
+      ctx magnitude beta fexp x)
+  let ce := Exact.cexp ctx magnitude beta fexp x
+  have hxrepr : x = CompCert4Lean.Flocq.Core.Defs.Exact.F2R ctx
+      (CompCert4Lean.Flocq.Core.Defs.Float beta m ce) := by
+    change x = CompCert4Lean.Flocq.Core.Defs.Exact.F2R ctx
+      (CompCert4Lean.Flocq.Core.Defs.Float beta m ce) at hformat
+    exact hformat
+  have hxrepr_fp : x = CompCert4Lean.Flocq.Core.Float_prop.Exact.F2R ctx
+      (CompCert4Lean.Flocq.Core.Float_prop.Float beta m ce) := by
+    change x = CompCert4Lean.Flocq.Core.Float_prop.Exact.F2R ctx
+      (CompCert4Lean.Flocq.Core.Float_prop.Float beta m ce)
+    exact hxrepr
+  have hxne : x ≠ Exact.R0 ctx := by
+    intro hx0
+    have h := hxpow
+    rw [hx0] at h
+    have hb := CompCert4Lean.Flocq.Core.Raux.bpow_gt_0 ctx beta e
+    exact (ctx.certificate.orderedField.lt_irrefl _
+      (ctx.certificate.orderedField.lt_trans _ _ _ hb h)).elim
+  have hulp := ulp_neq_0 ctx magnitude beta fexp x hxne
+  have hmpos : Zlt Z0 m := by
+    apply CompCert4Lean.Flocq.Core.Float_prop.gt_0_F2R ctx beta m ce
+    have hb := CompCert4Lean.Flocq.Core.Raux.bpow_gt_0 ctx beta e
+    have hxpow' : Exact.Rlt ctx (Exact.bpow ctx beta e)
+        (CompCert4Lean.Flocq.Core.Float_prop.Exact.F2R ctx
+          (CompCert4Lean.Flocq.Core.Float_prop.Float beta m ce)) := by
+      rw [← hxrepr_fp]
+      exact hxpow
+    exact ctx.certificate.orderedField.lt_trans _ _ _ hb hxpow'
+  by_cases hmeq : CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ m = 1
+  · have hmz : m = Zone := by
+      apply CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective
+      change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ m = 1
+      exact hmeq
+    have hx_eq : x = Exact.ulp ctx magnitude beta fexp x := by
+      calc
+        x = CompCert4Lean.Flocq.Core.Defs.Exact.F2R ctx
+            (CompCert4Lean.Flocq.Core.Defs.Float beta m ce) := hxrepr
+        _ = Exact.bpow ctx beta ce := by
+          change ctx.spec.mul (ctx.spec.ofZ m) (Exact.bpow ctx beta ce) =
+            Exact.bpow ctx beta ce
+          rw [hmz, ctx.certificate.sourceLaws.ofZ_one,
+            ctx.certificate.orderedField.one_mul]
+        _ = Exact.ulp ctx magnitude beta fexp x := hulp.symm
+    exact (hxulp hx_eq).elim
+  · have hmgt : Zlt Zone m := by
+      change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ Zone <
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ m
+      change (1 : Int) < CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ m
+      have hmpos' : (0 : Int) <
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ m := hmpos
+      omega
+    have hle := CompCert4Lean.Flocq.Core.Float_prop.bpow_le_F2R_m1 ctx
+      beta m ce e hmgt (by
+        rw [← hxrepr_fp]
+        exact hxpow)
+    rw [hulp]
+    have hminus : Exact.Rminus ctx x (Exact.bpow ctx beta ce) =
+        CompCert4Lean.Flocq.Core.Float_prop.Exact.F2R ctx
+          (CompCert4Lean.Flocq.Core.Float_prop.Float beta (Zsub m Zone) ce) := by
+      rw [hxrepr]
+      change ctx.spec.add
+          (ctx.spec.mul (ctx.spec.ofZ m) (Exact.bpow ctx beta ce))
+          (ctx.spec.neg (Exact.bpow ctx beta ce)) =
+        ctx.spec.mul (ctx.spec.ofZ (Zsub m Zone)) (Exact.bpow ctx beta ce)
+      have hzsub : CompCert4Lean.Flocq.Core.Zaux.Zadd m (Zopp Zone) = Zsub m Zone := by
+        apply CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective
+        simp only [CompCert4Lean.Flocq.Core.Zaux.Zadd, Zopp, Zsub,
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add,
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.opp,
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.sub,
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+        omega
+      have hofz : ctx.spec.ofZ (Zsub m Zone) =
+          ctx.spec.add (ctx.spec.ofZ m) (ctx.spec.neg ctx.spec.one) := by
+        rw [← hzsub, ctx.certificate.sourceLaws.ofZ_add,
+          ctx.certificate.sourceLaws.ofZ_neg,
+          ctx.certificate.sourceLaws.ofZ_one]
+      have hnegmul : ctx.spec.mul (ctx.spec.neg ctx.spec.one)
+          (Exact.bpow ctx beta ce) = ctx.spec.neg (Exact.bpow ctx beta ce) := by
+        calc
+          ctx.spec.mul (ctx.spec.neg ctx.spec.one)
+              (Exact.bpow ctx beta ce) =
+              ctx.spec.neg (ctx.spec.mul ctx.spec.one
+                (Exact.bpow ctx beta ce)) := by
+            exact CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.Ropp_mult_distr_l_reverse
+              ctx _ _
+          _ = ctx.spec.neg (Exact.bpow ctx beta ce) := by
+            exact congrArg ctx.spec.neg
+              (ctx.certificate.orderedField.one_mul _)
+      calc
+        ctx.spec.add
+            (ctx.spec.mul (ctx.spec.ofZ m) (Exact.bpow ctx beta ce))
+            (ctx.spec.neg (Exact.bpow ctx beta ce)) =
+            ctx.spec.add
+              (ctx.spec.mul (ctx.spec.ofZ m) (Exact.bpow ctx beta ce))
+              (ctx.spec.mul (ctx.spec.neg ctx.spec.one)
+                (Exact.bpow ctx beta ce)) := by rw [hnegmul]
+        _ = ctx.spec.add
+              (ctx.spec.mul (Exact.bpow ctx beta ce) (ctx.spec.ofZ m))
+              (ctx.spec.mul (Exact.bpow ctx beta ce)
+                (ctx.spec.neg ctx.spec.one)) := by
+          rw [ctx.certificate.orderedField.mul_comm
+            (ctx.spec.ofZ m) (Exact.bpow ctx beta ce),
+            ctx.certificate.orderedField.mul_comm
+              (ctx.spec.neg ctx.spec.one) (Exact.bpow ctx beta ce)]
+        _ = ctx.spec.mul (Exact.bpow ctx beta ce)
+              (ctx.spec.add (ctx.spec.ofZ m) (ctx.spec.neg ctx.spec.one)) := by
+          rw [ctx.certificate.orderedField.left_distrib]
+        _ = ctx.spec.mul (Exact.bpow ctx beta ce)
+              (ctx.spec.ofZ (Zsub m Zone)) := by rw [hofz]
+        _ = ctx.spec.mul (ctx.spec.ofZ (Zsub m Zone))
+              (Exact.bpow ctx beta ce) :=
+          ctx.certificate.orderedField.mul_comm _ _
+    rw [hminus]
+    exact hle
+
+theorem pred_pos_plus_ulp_aux1 :
+    ∀ (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx),
+      pred_pos_plus_ulp_aux1Statement ctx magnitude := by
+  intro ctx magnitude beta fexp x hx hformat hxe
+  let ex : Z := Exact.mag ctx magnitude beta x
+  have hxne : x ≠ Exact.R0 ctx := by
+    intro hx0
+    rw [hx0] at hx
+    exact (ctx.certificate.orderedField.lt_irrefl _ hx).elim
+  have hmag := (CompCert4Lean.Flocq.Core.Raux.Exact.mag magnitude beta x).mag_bound hxne
+  have habs : Exact.Rabs ctx x = x := by
+    change ctx.spec.abs x = x
+    exact ctx.certificate.sourceLaws.abs_nonnegative x
+      ((ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp hx).1
+  have hmag' : Exact.Rle ctx (Exact.bpow ctx beta (Zsub ex Zone)) x ∧
+      Exact.Rlt ctx x (Exact.bpow ctx beta ex) := by
+    simpa only [ex, habs] using hmag
+  have hstrict : Exact.Rlt ctx (Exact.bpow ctx beta (Zsub ex Zone)) x := by
+    apply (ctx.certificate.orderedField.lt_iff_le_not_le _ _).mpr
+    constructor
+    · exact hmag'.1
+    · intro hback
+      have heq := ctx.certificate.orderedField.le_antisymm _ _ hback hmag'.1
+      exact hxe heq
+  have hce : Exact.cexp ctx magnitude beta fexp x = fexp ex := by
+    exact CompCert4Lean.Flocq.Core.Generic_fmt.cexp_fexp_pos ctx magnitude
+      beta fexp x ex hmag'
+  have hxulp : x ≠ Exact.ulp ctx magnitude beta fexp x := by
+    intro heq
+    have hzero : x ≠ Exact.R0 ctx := hxne
+    have hulp := ulp_neq_0 ctx magnitude beta fexp x hzero
+    have hrepr : x = CompCert4Lean.Flocq.Core.Defs.Exact.F2R ctx
+        (CompCert4Lean.Flocq.Core.Defs.Float beta
+          (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Ztrunc ctx
+            (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.scaled_mantissa
+              ctx magnitude beta fexp x))
+          (Exact.cexp ctx magnitude beta fexp x)) := by
+      change x = CompCert4Lean.Flocq.Core.Defs.Exact.F2R ctx
+        (CompCert4Lean.Flocq.Core.Defs.Float beta
+          (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Ztrunc ctx
+            (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.scaled_mantissa
+              ctx magnitude beta fexp x))
+          (Exact.cexp ctx magnitude beta fexp x)) at hformat
+      exact hformat
+    rw [hulp] at heq
+    have hf2r : CompCert4Lean.Flocq.Core.Float_prop.Exact.F2R ctx
+          (CompCert4Lean.Flocq.Core.Float_prop.Float beta
+            (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Ztrunc ctx
+              (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.scaled_mantissa
+                ctx magnitude beta fexp x))
+            (Exact.cexp ctx magnitude beta fexp x)) =
+        CompCert4Lean.Flocq.Core.Float_prop.Exact.F2R ctx
+          (CompCert4Lean.Flocq.Core.Float_prop.Float beta Zone
+            (Exact.cexp ctx magnitude beta fexp x)) := by
+      calc
+        CompCert4Lean.Flocq.Core.Float_prop.Exact.F2R ctx
+            (CompCert4Lean.Flocq.Core.Float_prop.Float beta
+              (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Ztrunc ctx
+                (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.scaled_mantissa
+                  ctx magnitude beta fexp x))
+              (Exact.cexp ctx magnitude beta fexp x)) = x := by
+                exact hrepr.symm
+        _ = Exact.bpow ctx beta (Exact.cexp ctx magnitude beta fexp x) := heq
+        _ = CompCert4Lean.Flocq.Core.Float_prop.Exact.F2R ctx
+              (CompCert4Lean.Flocq.Core.Float_prop.Float beta Zone
+                (Exact.cexp ctx magnitude beta fexp x)) := by
+          exact (CompCert4Lean.Flocq.Core.Float_prop.F2R_bpow ctx beta
+            (Exact.cexp ctx magnitude beta fexp x)).symm
+    have hmz := CompCert4Lean.Flocq.Core.Float_prop.eq_F2R ctx beta
+      (Exact.cexp ctx magnitude beta fexp x)
+      (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Ztrunc ctx
+        (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.scaled_mantissa
+          ctx magnitude beta fexp x)) Zone hf2r
+    have hlowce : Exact.Rle ctx (Exact.bpow ctx beta (Zsub ex Zone))
+        (Exact.bpow ctx beta (Exact.cexp ctx magnitude beta fexp x)) := by
+      have h := hmag'.1
+      rw [heq] at h
+      exact h
+    have huce : Exact.Rlt ctx (Exact.bpow ctx beta
+        (Exact.cexp ctx magnitude beta fexp x)) (Exact.bpow ctx beta ex) := by
+      have h := hmag'.2
+      rw [heq] at h
+      exact h
+    have hce_ge : Zle (Zsub ex Zone)
+        (Exact.cexp ctx magnitude beta fexp x) := by
+      by_cases hge : Zle (Zsub ex Zone)
+          (Exact.cexp ctx magnitude beta fexp x)
+      · exact hge
+      · have hlt : Zlt (Exact.cexp ctx magnitude beta fexp x) (Zsub ex Zone) := by
+          change ¬ CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (Zsub ex Zone) ≤
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+              (Exact.cexp ctx magnitude beta fexp x) at hge
+          change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+              (Exact.cexp ctx magnitude beta fexp x) <
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (Zsub ex Zone)
+          omega
+        have hp := idp_bpow_lt ctx beta hlt
+        have hcontra := (ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp hp |>.2
+        exact False.elim (hcontra hlowce)
+    have hce_lt : Zlt (Exact.cexp ctx magnitude beta fexp x) ex := by
+      by_cases hlt : Zlt (Exact.cexp ctx magnitude beta fexp x) ex
+      · exact hlt
+      · have hge : Zle ex (Exact.cexp ctx magnitude beta fexp x) := by
+          change ¬ CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+              (Exact.cexp ctx magnitude beta fexp x) <
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ ex at hlt
+          change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ ex ≤
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+              (Exact.cexp ctx magnitude beta fexp x)
+          omega
+        have hp := idp_bpow_le ctx beta hge
+        exact False.elim ((ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp
+          huce |>.2 hp)
+    have hce_eq : Exact.cexp ctx magnitude beta fexp x = Zsub ex Zone := by
+      apply CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective
+      change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+          (Exact.cexp ctx magnitude beta fexp x) =
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (Zsub ex Zone)
+      have hge' := hce_ge
+      have hlt' := hce_lt
+      change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (Zsub ex Zone) ≤
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+            (Exact.cexp ctx magnitude beta fexp x) at hge'
+      change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+          (Exact.cexp ctx magnitude beta fexp x) <
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ ex at hlt'
+      simp only [Zsub,
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.sub,
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt] at hge' ⊢
+      have hzone : CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ Zone = 1 := by
+        rfl
+      rw [hzone] at hge'
+      change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+          (Exact.cexp ctx magnitude beta fexp x) =
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ ex - 1
+      omega
+    apply hxe
+    simpa [ex] using heq.trans (congrArg (Exact.bpow ctx beta) hce_eq)
+  let y := Exact.Rminus ctx x (Exact.ulp ctx magnitude beta fexp x)
+  have hylow : Exact.Rle ctx (Exact.bpow ctx beta (Zsub ex Zone)) y := by
+    exact ulp_id_m_ulp_ge_bpow ctx magnitude beta fexp x (Zsub ex Zone)
+      hformat hxulp hstrict
+  have hyupper : Exact.Rlt ctx y (Exact.bpow ctx beta ex) := by
+    have hyle : Exact.Rle ctx y x := by
+      change Exact.Rle ctx (ctx.spec.add x
+        (ctx.spec.neg (Exact.ulp ctx magnitude beta fexp x))) x
+      have hu := ulp_ge_0 ctx magnitude beta fexp x
+      have hneg0 : ctx.spec.neg ctx.spec.zero = ctx.spec.zero := by
+        have h := ctx.certificate.orderedField.neg_add_cancel ctx.spec.zero
+        rw [ctx.certificate.orderedField.add_zero] at h
+        exact h
+      have hneg := ulp_neg_le_neg ctx hu
+      change ctx.spec.le (ctx.spec.neg (Exact.ulp ctx magnitude beta fexp x))
+        (ctx.spec.neg ctx.spec.zero) at hneg
+      rw [hneg0] at hneg
+      have hplus := CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.Rplus_le_compat_l
+        ctx x _ _ hneg
+      change ctx.spec.le (ctx.spec.add x
+          (ctx.spec.neg (Exact.ulp ctx magnitude beta fexp x)))
+        (ctx.spec.add x ctx.spec.zero) at hplus
+      rw [ctx.certificate.orderedField.add_zero] at hplus
+      exact hplus
+    apply (ctx.certificate.orderedField.lt_iff_le_not_le _ _).mpr
+    constructor
+    · exact ctx.certificate.orderedField.le_trans _ _ _ hyle
+        ((ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp hmag'.2).1
+    · intro hback
+      exact ((ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp hmag'.2).2
+        (ctx.certificate.orderedField.le_trans _ _ _ hback hyle)
+  have hyne : y ≠ Exact.R0 ctx := by
+    intro hy0
+    have hsum : ctx.spec.add x
+        (ctx.spec.neg (Exact.ulp ctx magnitude beta fexp x)) = ctx.spec.zero := by
+      exact hy0
+    have hsum' : CompCert4Lean.Foundation.FlocqReal.ExactReal.Rplus ctx.spec x
+        (CompCert4Lean.Foundation.FlocqReal.ExactReal.Ropp ctx.spec
+          (Exact.ulp ctx magnitude beta fexp x)) =
+        CompCert4Lean.Foundation.FlocqReal.ExactReal.IZR ctx.spec
+          CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.Z0 := by
+      change ctx.spec.add x (ctx.spec.neg (Exact.ulp ctx magnitude beta fexp x)) =
+        ctx.spec.ofZ CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.Z0
+      rw [ctx.certificate.sourceLaws.ofZ_zero]
+      exact hsum
+    have hneg_eq := CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.Rplus_opp_r_uniq
+      ctx x (ctx.spec.neg (Exact.ulp ctx magnitude beta fexp x)) hsum'
+    have hxeq : x = Exact.ulp ctx magnitude beta fexp x := by
+      have hh := congrArg ctx.spec.neg hneg_eq
+      have hnn := ulp_neg_neg ctx (Exact.ulp ctx magnitude beta fexp x)
+      have hnx := ulp_neg_neg ctx x
+      change ctx.spec.neg (ctx.spec.neg (Exact.ulp ctx magnitude beta fexp x)) =
+        ctx.spec.neg (ctx.spec.neg x) at hh
+      rw [hnn, hnx] at hh
+      exact hh.symm
+    exact hxulp hxeq
+  have habsy : Exact.Rabs ctx y = y := by
+    change ctx.spec.abs y = y
+    exact ctx.certificate.sourceLaws.abs_nonnegative y
+      ((ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp
+        (CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.Rlt_le_trans
+          ctx _ _ _
+          (CompCert4Lean.Flocq.Core.Raux.bpow_gt_0 ctx beta (Zsub ex Zone))
+          hylow)).1
+  have hylow_abs : Exact.Rle ctx (Exact.bpow ctx beta (Zsub ex Zone))
+      (Exact.Rabs ctx y) := by simpa only [habsy] using hylow
+  have hyupper_abs : Exact.Rlt ctx (Exact.Rabs ctx y)
+      (Exact.bpow ctx beta ex) := by simpa only [habsy] using hyupper
+  have hy_mag : (CompCert4Lean.Flocq.Core.Raux.Exact.mag magnitude beta y).mag_val = ex := by
+    apply CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective
+    have hmy := (CompCert4Lean.Flocq.Core.Raux.Exact.mag magnitude beta y).mag_bound hyne
+    exact congrArg (fun z => CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ z)
+      (ulp_mag_unique ctx beta y
+        hmy
+        ⟨hylow_abs, hyupper_abs⟩)
+  have hce_y : Exact.cexp ctx magnitude beta fexp y = fexp ex := by
+    exact CompCert4Lean.Flocq.Core.Generic_fmt.cexp_fexp_pos ctx magnitude
+      beta fexp y ex ⟨hylow, hyupper⟩
+  have hulp_y : Exact.ulp ctx magnitude beta fexp y =
+      Exact.ulp ctx magnitude beta fexp x := by
+    rw [ulp_neq_0 ctx magnitude beta fexp y hyne,
+      ulp_neq_0 ctx magnitude beta fexp x hxne, hce_y, hce]
+  change Exact.Rplus ctx y (Exact.ulp ctx magnitude beta fexp y) = x
+  rw [hulp_y]
+  change Exact.Rplus ctx
+      (Exact.Rminus ctx x (Exact.ulp ctx magnitude beta fexp x))
+      (Exact.ulp ctx magnitude beta fexp x) = x
+  change ctx.spec.add
+      (ctx.spec.add x (ctx.spec.neg (Exact.ulp ctx magnitude beta fexp x)))
+      (Exact.ulp ctx magnitude beta fexp x) = x
+  rw [ctx.certificate.orderedField.add_assoc,
+    ctx.certificate.orderedField.neg_add_cancel,
+    ctx.certificate.orderedField.add_zero]
+
+end CompCert4Lean.Flocq.Core.Ulp

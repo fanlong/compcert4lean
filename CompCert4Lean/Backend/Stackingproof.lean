@@ -2498,3 +2498,84 @@ open CompCert4Lean.Common.Values
         (CompCert4Lean.Backend.Stackingproof.agree_reg j ls rs r h) (ih)
 
 end CompCert4Lean.Backend.Stackingproof
+
+namespace CompCert4Lean.Backend.Stackingproof
+
+open CompCert4Lean.Backend.Locations
+open CompCert4Lean.Backend.Mach
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+
+private theorem stackingproof_loword_inject :
+    ∀ (j : Val.meminj) v v', Val.inject j v v' →
+      Val.inject j (Val.loword v) (Val.loword v') := by
+  intro j v v' h
+  cases h with
+  | inject_int i => exact Val.val_inject_undef _ _
+  | inject_long i => exact Val.inject_int _ _
+  | inject_float f => exact Val.val_inject_undef _ _
+  | inject_single f => exact Val.val_inject_undef _ _
+  | inject_ptr b1 ofs1 b2 ofs2 delta hmap hofs =>
+      exact Val.val_inject_undef _ _
+  | val_inject_undef v => exact Val.val_inject_undef _ _
+
+private theorem stackingproof_hiword_inject :
+    ∀ (j : Val.meminj) v v', Val.inject j v v' →
+      Val.inject j (Val.hiword v) (Val.hiword v') := by
+  intro j v v' h
+  cases h with
+  | inject_int i => exact Val.val_inject_undef _ _
+  | inject_long i => exact Val.inject_int _ _
+  | inject_float f => exact Val.val_inject_undef _ _
+  | inject_single f => exact Val.val_inject_undef _ _
+  | inject_ptr b1 ofs1 b2 ofs2 delta hmap hofs =>
+      exact Val.val_inject_undef _ _
+  | val_inject_undef v => exact Val.val_inject_undef _ _
+
+private theorem stackingproof_agree_regs_set_reg :
+    ∀ (j : Val.meminj) ls rs r v v',
+      agree_regs j ls rs → Val.inject j v v' →
+      agree_regs j (Locmap.set (R r) v ls) (Regmap.set r v' rs) := by
+  intro j ls rs r v v' hagree hv r'
+  change Locmap.t at ls
+  by_cases heq : r' = r
+  · subst r'
+    have hloc : Locmap.set (R r) v ls (R r) = v := by
+      simpa using (Locmap.gss (R r) v ls)
+    have hreg : Regmap.set r v' rs r = v' := by
+      simpa [Regmap.get] using (Regmap.gss_proof val r v' rs)
+    rw [hloc, hreg]
+    exact hv
+  · have hdiff : Loc.diff (R r) (R r') := by
+      have hne : r ≠ r' := by
+        intro h
+        exact heq h.symm
+      exact hne
+    have hloc : Locmap.set (R r) v ls (R r') = ls (R r') :=
+      Locmap.gso (R r) v ls (R r') hdiff
+    have hreg : Regmap.set r v' rs r' = rs r' := by
+      change Regmap.get r' (Regmap.set r v' rs) = Regmap.get r' rs
+      simpa using (Regmap.gso_proof val r' r v' rs heq)
+    rw [hloc, hreg]
+    exact hagree r'
+
+theorem agree_regs_set_res : agree_regs_set_resStatement := by
+  intro j res
+  induction res with
+  | BR r =>
+      intro v v' ls rs hagree hv
+      exact stackingproof_agree_regs_set_reg j ls rs r v v' hagree hv
+  | BR_none =>
+      intro v v' ls rs hagree hv
+      simpa [Locmap.setres, Mach.set_res] using hagree
+  | BR_splitlong hi lo ih_hi ih_lo =>
+      intro v v' ls rs hagree hv
+      have hhi := ih_hi (Val.hiword v) (Val.hiword v') ls rs hagree
+        (stackingproof_hiword_inject j v v' hv)
+      have hlo := ih_lo (Val.loword v) (Val.loword v')
+        (Locmap.setres hi (Val.hiword v) ls)
+        (Mach.set_res hi (Val.hiword v') rs) hhi
+        (stackingproof_loword_inject j v v' hv)
+      simpa [Locmap.setres, Mach.set_res] using hlo
+
+end CompCert4Lean.Backend.Stackingproof

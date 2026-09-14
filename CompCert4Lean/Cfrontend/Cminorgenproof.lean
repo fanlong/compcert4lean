@@ -2800,3 +2800,199 @@ theorem cenv_remove_gss : cenv_remove_gssStatement := by
         · exact htail
 
 end CompCert4Lean.Cfrontend.Cminorgenproof
+
+namespace CompCert4Lean.Cfrontend.Cminorgenproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.Cfrontend.Cminorgen
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Memdata
+
+theorem block_alignment_pos : block_alignment_posStatement := by
+  intro sz
+  have hpos : ∀ n : Nat, 0 < n →
+      ZArith.BinInt.Z.lt ZArith.BinInt.Z.Z0 (ZArith.BinInt.Z.of_nat n) := by
+    intro n hn
+    unfold ZArith.BinInt.Z.lt
+    simp only [ZArith.BinInt.Z.of_nat, intOfZ_zOfInt]
+    change (0 : Int) < Int.ofNat n
+    exact Int.natCast_pos.mpr hn
+  unfold block_alignment
+  cases h2 : zlt sz (ZArith.BinInt.Z.of_nat 2) with
+  | left h2 =>
+      simp [h2, ZArith.BinInt.Z.lt, z0,
+        ZArith.BinInt.Z.of_nat, intOfZ, zOfInt]
+      exact hpos 1 (by omega)
+  | right h2 =>
+      cases h4 : zlt sz (ZArith.BinInt.Z.of_nat 4) with
+      | left h4 =>
+          simp [h2, h4, ZArith.BinInt.Z.lt, z0,
+            ZArith.BinInt.Z.of_nat, intOfZ, zOfInt]
+          exact hpos 2 (by omega)
+      | right h4 =>
+          cases h8 : zlt sz (ZArith.BinInt.Z.of_nat 8) with
+          | left h8 =>
+              simp [h2, h4, h8, ZArith.BinInt.Z.lt, z0,
+                ZArith.BinInt.Z.of_nat, intOfZ, zOfInt]
+              exact hpos 4 (by omega)
+          | right h8 =>
+              simp [h2, h4, h8, ZArith.BinInt.Z.lt, z0,
+                ZArith.BinInt.Z.of_nat, intOfZ, zOfInt]
+              exact hpos 8 (by omega)
+
+theorem assign_variable_incr : assign_variable_incrStatement := by
+  intro id sz cenv stksz cenv' stksz' h
+  have hstack := congrArg Prod.snd h
+  dsimp [assign_variable] at hstack
+  rw [← hstack]
+  have halign := align_le stksz (block_alignment sz)
+    (block_alignment_pos sz)
+  change intOfZ stksz ≤
+    intOfZ (align stksz (block_alignment sz)) at halign
+  have hmax : ZArith.BinInt.Z.le z0 (zMax z0 sz) :=
+    Zmax_bound_l z0 z0 sz (by
+      change (0 : Int) ≤ 0
+      omega)
+  change intOfZ z0 ≤ intOfZ (zMax z0 sz) at hmax
+  have hz0 : intOfZ z0 = 0 := rfl
+  rw [hz0] at hmax
+  change ZArith.BinInt.Z.le stksz
+    (ZArith.BinInt.Z.add
+      (align stksz (block_alignment sz)) (zMax z0 sz))
+  change intOfZ stksz ≤ intOfZ
+    (ZArith.BinInt.Z.add
+      (align stksz (block_alignment sz)) (zMax z0 sz))
+  have hsum : intOfZ (align stksz (block_alignment sz)) ≤
+    intOfZ (ZArith.BinInt.Z.add
+      (align stksz (block_alignment sz)) (zMax z0 sz)) := by
+    unfold ZArith.BinInt.Z.add
+    simp only [intOfZ_zOfInt]
+    omega
+  exact Int.le_trans halign hsum
+
+theorem inj_offset_aligned_block : inj_offset_aligned_blockStatement := by
+  have htrans : ∀ a b c : Z,
+      ZArith.BinInt.Z.divide a b →
+      ZArith.BinInt.Z.divide b c →
+      ZArith.BinInt.Z.divide a c := by
+    intro a b c hab hbc
+    rcases hab with ⟨k, hk⟩
+    rcases hbc with ⟨l, hl⟩
+    refine ⟨ZArith.BinInt.Z.mul k l, ?_⟩
+    apply intOfZ_injective
+    simp only [ZArith.BinInt.Z.mul, intOfZ_zOfInt] at hk hl ⊢
+    have hk' : intOfZ b = intOfZ a * intOfZ k := by
+      rw [hk, intOfZ_zOfInt]
+    have hl' : intOfZ c = intOfZ b * intOfZ l := by
+      rw [hl, intOfZ_zOfInt]
+    rw [hl', hk']
+    simp [Int.mul_assoc]
+  have hdiv_of : ∀ a k : Nat,
+      ZArith.BinInt.Z.divide
+        (ZArith.BinInt.Z.of_nat a)
+        (ZArith.BinInt.Z.of_nat (a * k)) := by
+    intro a k
+    refine ⟨ZArith.BinInt.Z.of_nat k, ?_⟩
+    apply intOfZ_injective
+    simp [ZArith.BinInt.Z.mul, ZArith.BinInt.Z.of_nat,
+      intOfZ_zOfInt]
+  have hp1 : posToNat (posOfNat 1) = 1 :=
+    posToNat_posOfNat (by omega)
+  have hp2 : posToNat (posOfNat 2) = 2 :=
+    posToNat_posOfNat (by omega)
+  have hp4 : posToNat (posOfNat 4) = 4 :=
+    posToNat_posOfNat (by omega)
+  have hp8 : posToNat (posOfNat 8) = 8 :=
+    posToNat_posOfNat (by omega)
+  have hchunk_block : ∀ (sz : Z) chunk,
+      ZArith.BinInt.Z.le (CompCert4Lean.Common.Memdata.size_chunk chunk) sz →
+      ZArith.BinInt.Z.divide
+        (CompCert4Lean.Common.Memdata.align_chunk chunk)
+        (block_alignment sz) := by
+    intro sz chunk hsize
+    cases hz2 : zlt sz (ZArith.BinInt.Z.of_nat 2) with
+    | left hlt2 =>
+        have hlt2i : intOfZ sz < 2 := by
+          change intOfZ sz < intOfZ (ZArith.BinInt.Z.of_nat 2) at hlt2
+          simpa [ZArith.BinInt.Z.of_nat, intOfZ, zOfInt, hp2] using hlt2
+        cases chunk <;>
+          simp [CompCert4Lean.Common.Memdata.align_chunk,
+            CompCert4Lean.Common.Memdata.size_chunk, block_alignment,
+            hz2, hlt2, z0] at hsize ⊢
+        all_goals first
+        | simpa using hdiv_of 1 1
+        | exfalso
+          simp_all [ZArith.BinInt.Z.le, ZArith.BinInt.Z.lt,
+            ZArith.BinInt.Z.of_nat, intOfZ, zOfInt, hp1, hp2, hp4, hp8,
+            hlt2i]
+          omega
+    | right hge2 =>
+        have hge2i : (2 : Int) ≤ intOfZ sz := by
+          change intOfZ (ZArith.BinInt.Z.of_nat 2) ≤ intOfZ sz at hge2
+          simpa [ZArith.BinInt.Z.of_nat, intOfZ, zOfInt, hp2] using hge2
+        cases hz4 : zlt sz (ZArith.BinInt.Z.of_nat 4) with
+        | left hlt4 =>
+            have hlt4i : intOfZ sz < 4 := by
+              change intOfZ sz < intOfZ (ZArith.BinInt.Z.of_nat 4) at hlt4
+              simpa [ZArith.BinInt.Z.of_nat, intOfZ, zOfInt, hp4] using hlt4
+            cases chunk <;>
+              simp [CompCert4Lean.Common.Memdata.align_chunk,
+                CompCert4Lean.Common.Memdata.size_chunk, block_alignment,
+                hz2, hge2, hz4, hlt4, z0] at hsize ⊢
+            all_goals first
+            | simpa using hdiv_of 1 2
+            | simpa using hdiv_of 2 1
+            | exfalso
+              simp_all [ZArith.BinInt.Z.le, ZArith.BinInt.Z.lt,
+                ZArith.BinInt.Z.of_nat, intOfZ, zOfInt, hp1, hp2, hp4, hp8,
+                hge2i, hlt4i]
+              omega
+        | right hge4 =>
+            have hge4i : (4 : Int) ≤ intOfZ sz := by
+              change intOfZ (ZArith.BinInt.Z.of_nat 4) ≤ intOfZ sz at hge4
+              simpa [ZArith.BinInt.Z.of_nat, intOfZ, zOfInt, hp4] using hge4
+            cases hz8 : zlt sz (ZArith.BinInt.Z.of_nat 8) with
+            | left hlt8 =>
+                have hlt8i : intOfZ sz < 8 := by
+                  change intOfZ sz < intOfZ (ZArith.BinInt.Z.of_nat 8) at hlt8
+                  simpa [ZArith.BinInt.Z.of_nat, intOfZ, zOfInt, hp8] using hlt8
+                cases chunk <;>
+                  simp [CompCert4Lean.Common.Memdata.align_chunk,
+                    CompCert4Lean.Common.Memdata.size_chunk, block_alignment,
+                    hz2, hge2, hz4, hge4, hz8, hlt8, z0] at hsize ⊢
+                all_goals first
+                | simpa using hdiv_of 1 4
+                | simpa using hdiv_of 2 2
+                | simpa using hdiv_of 4 1
+                | exfalso
+                  simp_all [ZArith.BinInt.Z.le, ZArith.BinInt.Z.lt,
+                    ZArith.BinInt.Z.of_nat, intOfZ, zOfInt,
+                    hp1, hp2, hp4, hp8, hge2i, hge4i, hlt8i]
+                  omega
+            | right hge8 =>
+                have hge8i : (8 : Int) ≤ intOfZ sz := by
+                  change intOfZ (ZArith.BinInt.Z.of_nat 8) ≤ intOfZ sz at hge8
+                  simpa [ZArith.BinInt.Z.of_nat, intOfZ, zOfInt, hp8] using hge8
+                cases chunk <;>
+                  simp [CompCert4Lean.Common.Memdata.align_chunk,
+                    CompCert4Lean.Common.Memdata.size_chunk, block_alignment,
+                    hz2, hge2, hz4, hge4, hz8, hge8, z0] at hsize ⊢
+                all_goals first
+                | simpa using hdiv_of 1 8
+                | simpa using hdiv_of 2 4
+                | simpa using hdiv_of 4 2
+                | simpa using hdiv_of 8 1
+                | exfalso
+                  simp_all [ZArith.BinInt.Z.le, ZArith.BinInt.Z.lt,
+                    ZArith.BinInt.Z.of_nat, intOfZ, zOfInt,
+                    hp1, hp2, hp4, hp8, hge2i, hge4i, hge8i]
+                  omega
+  intro stacksize sz chunk hsize
+  apply htrans (CompCert4Lean.Common.Memdata.align_chunk chunk)
+    (block_alignment sz) (align stacksize (block_alignment sz))
+  · exact hchunk_block sz chunk hsize
+  · exact align_divides stacksize (block_alignment sz) (block_alignment_pos sz)
+
+end CompCert4Lean.Cfrontend.Cminorgenproof

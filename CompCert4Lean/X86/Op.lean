@@ -1748,3 +1748,18 @@ theorem eval_addressing64_inj : eval_addressing64_injStatement := by
                 simp [eval_addressing64, CompCert4Lean.X86_64.Archi.ptr64] at heval
 
 end CompCert4Lean.X86.Op
+
+namespace CompCert4Lean.X86.Op
+
+theorem eval_addressing_inj : eval_addressing_injStatement := by
+  intro F1 F2 V1 V2 ge1 ge2 f addr sp1 vl1 sp2 vl2 v1 hglobals hsp hvl heval
+  unfold eval_addressing at heval ⊢
+  by_cases hptr : CompCert4Lean.X86_64.Archi.ptr64
+  · simp [hptr] at heval ⊢
+    exact eval_addressing64_inj F1 F2 V1 V2 ge1 ge2 f addr sp1 vl1 sp2 vl2 v1
+      hglobals hsp hvl heval
+  · simp [hptr] at heval ⊢
+    exact eval_addressing32_inj F1 F2 V1 V2 ge1 ge2 f addr sp1 vl1 sp2 vl2 v1
+      hglobals hsp hvl heval
+
+end CompCert4Lean.X86.Op

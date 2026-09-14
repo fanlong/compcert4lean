@@ -1213,3 +1213,82 @@ theorem abs_cond_Zopp : abs_cond_ZoppStatement := by
         (Int.natAbs_neg (CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ m))
 
 end CompCert4Lean.Flocq.Core.Zaux
+
+namespace CompCert4Lean.Flocq.Core.Zaux
+
+theorem iter_nat_plus : iter_nat_plusStatement := by
+  intro A f p q
+  induction q with
+  | zero =>
+      intro x
+      simp [iter_nat]
+  | succ q ih =>
+      intro x
+      simpa [Nat.add_succ, iter_nat] using ih (f x)
+
+theorem iter_nat_S : iter_nat_SStatement := by
+  intro A f p
+  induction p with
+  | zero =>
+      intro x
+      rfl
+  | succ p ih =>
+      intro x
+      simpa [iter_nat] using ih (f x)
+
+theorem iter_pos_nat : iter_pos_natStatement := by
+  intro A f p
+  induction p with
+  | xH =>
+      intro x
+      rfl
+  | xO p ih =>
+      intro x
+      have hiter := iter_nat_plus f
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.PArith.BinPos.Pos.to_nat p)
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.PArith.BinPos.Pos.to_nat p) x
+      rw [CompCert4Lean.Foundation.Numbers.Rocq.Coq.PArith.Pnat.Pos2Nat.inj_xO]
+      calc
+        iter_pos f (CompCert4Lean.Foundation.Numbers.Rocq.Coq.xO p) x =
+            iter_pos f p (iter_pos f p x) := rfl
+        _ = iter_nat f
+            (CompCert4Lean.Foundation.Numbers.Rocq.Coq.PArith.BinPos.Pos.to_nat p)
+            (iter_nat f
+              (CompCert4Lean.Foundation.Numbers.Rocq.Coq.PArith.BinPos.Pos.to_nat p) x) := by
+          rw [ih, ih]
+        _ = iter_nat f
+            (CompCert4Lean.Foundation.Numbers.Rocq.Coq.PArith.BinPos.Pos.to_nat p +
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.PArith.BinPos.Pos.to_nat p) x :=
+          hiter.symm
+        _ = iter_nat f
+            ((Nat.succ 0).succ.mul
+              (CompCert4Lean.Foundation.Numbers.Rocq.Coq.PArith.BinPos.Pos.to_nat p)) x := by
+          simp [Nat.two_mul]
+  | xI p ih =>
+      intro x
+      have hiter := iter_nat_plus f
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.PArith.BinPos.Pos.to_nat p)
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.PArith.BinPos.Pos.to_nat p) (f x)
+      rw [CompCert4Lean.Foundation.Numbers.Rocq.Coq.PArith.Pnat.Pos2Nat.inj_xI]
+      calc
+        iter_pos f (CompCert4Lean.Foundation.Numbers.Rocq.Coq.xI p) x =
+            iter_pos f p (iter_pos f p (f x)) := rfl
+        _ = iter_nat f
+            (CompCert4Lean.Foundation.Numbers.Rocq.Coq.PArith.BinPos.Pos.to_nat p)
+            (iter_nat f
+              (CompCert4Lean.Foundation.Numbers.Rocq.Coq.PArith.BinPos.Pos.to_nat p) (f x)) := by
+          rw [ih, ih]
+        _ = iter_nat f
+            (CompCert4Lean.Foundation.Numbers.Rocq.Coq.PArith.BinPos.Pos.to_nat p +
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.PArith.BinPos.Pos.to_nat p) (f x) :=
+          hiter.symm
+        _ = iter_nat f
+            (Nat.succ (CompCert4Lean.Foundation.Numbers.Rocq.Coq.PArith.BinPos.Pos.to_nat p +
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.PArith.BinPos.Pos.to_nat p)) x := by
+          rfl
+        _ = iter_nat f
+            (Nat.succ ((Nat.succ 0).succ.mul
+              (CompCert4Lean.Foundation.Numbers.Rocq.Coq.PArith.BinPos.Pos.to_nat p))) x := by
+          simp [Nat.two_mul]
+
+end CompCert4Lean.Flocq.Core.Zaux

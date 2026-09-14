@@ -2942,3 +2942,41 @@ theorem Zceil_ub (ctx : ExactRealContext) :
     exact False.elim (((ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp hneg).2 hfloor)
 
 end CompCert4Lean.Flocq.Core.Raux
+
+namespace CompCert4Lean.Flocq.Core.Raux
+
+private theorem pg_zopp_zopp (z : Z) : Zopp (Zopp z) = z := by
+  apply CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective
+  change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (Zopp (Zopp z)) =
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ z
+  simp only [Zopp,
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.opp,
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+  omega
+
+private theorem pg_neg_le_contravar (ctx : ExactRealContext)
+    {x y : ctx.spec.carrier} (h : ctx.spec.le x y) :
+    ctx.spec.le (ctx.spec.neg y) (ctx.spec.neg x) := by
+  rcases ctx.certificate.total_order (ctx.spec.neg y) (ctx.spec.neg x) with hab | hba
+  · rcases hab with hlt | heq
+    · exact (ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp hlt |>.1
+    · rw [heq]
+      exact ctx.certificate.orderedField.le_refl _
+  · have hyx : ctx.spec.lt y x :=
+      (exact_neg_lt_neg_iff ctx).mp hba
+    exact (((ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp hyx).2 h).elim
+
+theorem Zceil_glb (ctx : ExactRealContext) :
+    Zceil_glbStatement ctx := by
+  intro n x hnx
+  unfold Exact.Zceil
+  apply CompCert4Lean.Flocq.Core.Zaux.Zopp_le_cancel
+  change Zle (Zopp n)
+    (Zopp (Zopp (Exact.Zfloor ctx (Exact.Ropp ctx x))))
+  rw [pg_zopp_zopp]
+  apply Zfloor_lub ctx (Zopp n) (Exact.Ropp ctx x)
+  change ctx.spec.le (ctx.spec.ofZ (Zopp n)) (Exact.Ropp ctx x)
+  rw [ctx.certificate.sourceLaws.ofZ_neg]
+  exact pg_neg_le_contravar ctx hnx
+
+end CompCert4Lean.Flocq.Core.Raux

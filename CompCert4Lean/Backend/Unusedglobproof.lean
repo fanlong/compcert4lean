@@ -1880,3 +1880,28 @@ theorem set_res_inject : set_res_injectStatement := by
   | _ => exact h
 
 end CompCert4Lean.Backend.Unusedglobproof
+
+namespace CompCert4Lean.Backend.Unusedglobproof
+
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Common.Values
+
+private theorem unusedglob_val_inject_incr
+    (f f' : Val.meminj) (v v' : val)
+    (hinc : inject_incr f f') (hval : Val.inject f v v') :
+    Val.inject f' v v' := by
+  cases hval with
+  | inject_int i => exact Val.inject.inject_int i
+  | inject_long i => exact Val.inject.inject_long i
+  | inject_float f => exact Val.inject.inject_float f
+  | inject_single f => exact Val.inject.inject_single f
+  | inject_ptr b1 ofs1 b2 ofs2 delta hmap hofs =>
+      exact Val.inject.inject_ptr b1 ofs1 b2 ofs2 delta
+        (hinc b1 b2 delta hmap) hofs
+  | val_inject_undef v' => exact Val.inject.val_inject_undef v'
+
+theorem regset_inject_incr : regset_inject_incrStatement := by
+  intro f f' rs rs' hreg hinc r
+  exact unusedglob_val_inject_incr f f' _ _ hinc (hreg r)
+
+end CompCert4Lean.Backend.Unusedglobproof

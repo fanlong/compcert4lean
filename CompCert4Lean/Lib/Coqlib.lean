@@ -1409,3 +1409,16 @@ theorem list_norepet_append_left : list_norepet_append_leftStatement := by
   exact hs.1
 
 end CompCert4Lean.Lib.Coqlib
+
+namespace CompCert4Lean.Lib.Coqlib
+
+theorem is_tail_in : is_tail_inStatement := by
+  intro A i c1 c2 h
+  induction c2 with
+  | nil => cases h
+  | cons a c2 ih =>
+      cases h with
+      | refl _ => exact List.Mem.head c1
+      | cons _ htail => exact List.Mem.tail _ (ih htail)
+
+end CompCert4Lean.Lib.Coqlib

@@ -2468,3 +2468,46 @@ theorem match_envs_change_temp : match_envs_change_tempStatement := by
     exact hg.trans htle
 
 end CompCert4Lean.Cfrontend.SimplLocalsproof
+
+namespace CompCert4Lean.Cfrontend.SimplLocalsproof
+
+open CompCert4Lean.Cfrontend.Clight
+open CompCert4Lean.Cfrontend.Ctypes
+open CompCert4Lean.Cfrontend.SimplLocals
+
+theorem cenv_for_gen_domain : cenv_for_gen_domainStatement := by
+  intro atk id vars
+  induction vars with
+  | nil =>
+      intro h
+      exact False.elim (VSet.MFProvider.M.empty_1 id h)
+  | cons hd rest ih =>
+      rcases hd with ⟨id1, ty1⟩
+      intro h
+      change VSet.In id (add_local_variable atk (id1, ty1) (cenv_for_gen atk rest)) at h
+      unfold add_local_variable at h
+      cases hmode : access_mode ty1 with
+      | By_value chunk =>
+          by_cases hmem : VSet.mem id1 atk = true
+          · simp [hmode, hmem] at h
+            exact List.mem_cons.mpr (Or.inr (ih h))
+          · simp [hmode, hmem] at h
+            have hadd := (VSF.add_iff_proof _ id1 id).mp h
+            cases hadd with
+            | inl heq =>
+                have : id1 = id := heq
+                subst id
+                exact List.mem_cons.mpr (Or.inl rfl)
+            | inr hrest =>
+                exact List.mem_cons.mpr (Or.inr (ih hrest))
+      | By_reference =>
+          simp [hmode] at h
+          exact List.mem_cons.mpr (Or.inr (ih h))
+      | By_copy =>
+          simp [hmode] at h
+          exact List.mem_cons.mpr (Or.inr (ih h))
+      | By_nothing =>
+          simp [hmode] at h
+          exact List.mem_cons.mpr (Or.inr (ih h))
+
+end CompCert4Lean.Cfrontend.SimplLocalsproof

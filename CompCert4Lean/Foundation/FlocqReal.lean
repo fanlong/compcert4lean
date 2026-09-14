@@ -2414,3 +2414,115 @@ theorem Ropp_mult_distr_l_reverse (ctx : ExactRealContext) :
 end RIneq
 end Rocq.Coq.Reals
 end CompCert4Lean.Foundation.FlocqReal
+
+namespace CompCert4Lean.Foundation.FlocqReal
+namespace Rocq.Coq.Reals
+namespace RIneq
+
+private theorem exact_neg_add_suffix (ctx : ExactRealContext)
+    (x y : ctx.spec.carrier) :
+    ctx.spec.neg (ctx.spec.add x y) =
+      ctx.spec.add (ctx.spec.neg x) (ctx.spec.neg y) := by
+  have hzero :
+      ctx.spec.add (ctx.spec.add x y)
+          (ctx.spec.add (ctx.spec.neg x) (ctx.spec.neg y)) =
+        ctx.spec.ofZ Z0 := by
+    rw [ctx.certificate.sourceLaws.ofZ_zero]
+    calc
+      ctx.spec.add (ctx.spec.add x y)
+          (ctx.spec.add (ctx.spec.neg x) (ctx.spec.neg y)) =
+          ctx.spec.add x
+            (ctx.spec.add y (ctx.spec.add (ctx.spec.neg x) (ctx.spec.neg y))) :=
+              ctx.certificate.orderedField.add_assoc x y _
+      _ = ctx.spec.add x
+            (ctx.spec.add (ctx.spec.add y (ctx.spec.neg x)) (ctx.spec.neg y)) := by
+              exact congrArg (fun z => ctx.spec.add x z)
+                (ctx.certificate.orderedField.add_assoc y
+                  (ctx.spec.neg x) (ctx.spec.neg y)).symm
+      _ = ctx.spec.add x
+            (ctx.spec.add (ctx.spec.add (ctx.spec.neg x) y) (ctx.spec.neg y)) := by
+              exact congrArg (fun z => ctx.spec.add x
+                (ctx.spec.add z (ctx.spec.neg y)))
+                (ctx.certificate.orderedField.add_comm y (ctx.spec.neg x))
+      _ = ctx.spec.add x
+            (ctx.spec.add (ctx.spec.neg x)
+              (ctx.spec.add y (ctx.spec.neg y))) := by
+              exact congrArg (fun z => ctx.spec.add x z)
+                (ctx.certificate.orderedField.add_assoc
+                  (ctx.spec.neg x) y (ctx.spec.neg y))
+      _ = ctx.spec.add
+            (ctx.spec.add x (ctx.spec.neg x))
+              (ctx.spec.add y (ctx.spec.neg y)) := by
+              exact (ctx.certificate.orderedField.add_assoc x
+                (ctx.spec.neg x) (ctx.spec.add y (ctx.spec.neg y))).symm
+      _ = ctx.spec.add
+            (ctx.spec.add (ctx.spec.neg x) x)
+              (ctx.spec.add (ctx.spec.neg y) y) := by
+              rw [ctx.certificate.orderedField.add_comm x (ctx.spec.neg x),
+                ctx.certificate.orderedField.add_comm y (ctx.spec.neg y)]
+      _ = ctx.spec.add ctx.spec.zero ctx.spec.zero := by
+              rw [ctx.certificate.orderedField.neg_add_cancel,
+                ctx.certificate.orderedField.neg_add_cancel]
+      _ = ctx.spec.zero := ctx.certificate.orderedField.zero_add _
+  exact (Rplus_opp_r_uniq ctx
+    (ctx.spec.add x y)
+    (ctx.spec.add (ctx.spec.neg x) (ctx.spec.neg y)) hzero).symm
+
+theorem Rmult_opp_opp :
+    ∀ (ctx : ExactRealContext), Rmult_opp_oppStatement ctx := by
+  intro ctx r1 r2
+  change ctx.spec.mul (ctx.spec.neg r1) (ctx.spec.neg r2) =
+    ctx.spec.mul r1 r2
+  calc
+    ctx.spec.mul (ctx.spec.neg r1) (ctx.spec.neg r2) =
+        ctx.spec.neg (ctx.spec.mul (ctx.spec.neg r1) r2) := by
+      exact exact_mul_neg_right_suffix ctx (ctx.spec.neg r1) r2
+    _ = ctx.spec.neg (ctx.spec.neg (ctx.spec.mul r1 r2)) := by
+      exact congrArg ctx.spec.neg (Ropp_mult_distr_l_reverse ctx r1 r2)
+    _ = ctx.spec.mul r1 r2 := by
+      exact Ropp_involutive ctx (ctx.spec.mul r1 r2)
+
+theorem Ropp_mult_distr_r_reverse :
+    ∀ (ctx : ExactRealContext), Ropp_mult_distr_r_reverseStatement ctx := by
+  intro ctx r1 r2
+  change ctx.spec.mul r1 (ctx.spec.neg r2) =
+    ctx.spec.neg (ctx.spec.mul r1 r2)
+  exact exact_mul_neg_right_suffix ctx r1 r2
+
+theorem Ropp_minus_distr :
+    ∀ (ctx : ExactRealContext), Ropp_minus_distrStatement ctx := by
+  intro ctx r1 r2
+  change ctx.spec.neg (ctx.spec.add r1 (ctx.spec.neg r2)) =
+    ctx.spec.add r2 (ctx.spec.neg r1)
+  rw [exact_neg_add_suffix ctx r1 (ctx.spec.neg r2)]
+  have hinv := Ropp_involutive ctx r2
+  change ctx.spec.neg (ctx.spec.neg r2) = r2 at hinv
+  rw [hinv]
+  exact ctx.certificate.orderedField.add_comm _ _
+
+theorem Rmult_minus_distr_r :
+    ∀ (ctx : ExactRealContext), Rmult_minus_distr_rStatement ctx := by
+  intro ctx r1 r2 r3
+  change ctx.spec.mul (ctx.spec.add r2 (ctx.spec.neg r3)) r1 =
+    ctx.spec.add (ctx.spec.mul r2 r1)
+      (ctx.spec.neg (ctx.spec.mul r3 r1))
+  calc
+    ctx.spec.mul (ctx.spec.add r2 (ctx.spec.neg r3)) r1 =
+        ctx.spec.mul r1 (ctx.spec.add r2 (ctx.spec.neg r3)) := by
+      rw [ctx.certificate.orderedField.mul_comm]
+    _ = ctx.spec.add (ctx.spec.mul r1 r2)
+        (ctx.spec.mul r1 (ctx.spec.neg r3)) :=
+      ctx.certificate.orderedField.left_distrib r1 r2 (ctx.spec.neg r3)
+    _ = ctx.spec.add (ctx.spec.mul r2 r1)
+        (ctx.spec.mul r1 (ctx.spec.neg r3)) := by
+      rw [ctx.certificate.orderedField.mul_comm r1 r2]
+    _ = ctx.spec.add (ctx.spec.mul r2 r1)
+        (ctx.spec.neg (ctx.spec.mul r1 r3)) := by
+      rw [exact_mul_neg_right_suffix ctx r1 r3]
+    _ = ctx.spec.add (ctx.spec.mul r2 r1)
+        (ctx.spec.neg (ctx.spec.mul r3 r1)) := by
+      rw [ctx.certificate.orderedField.mul_comm r1 r3]
+
+end RIneq
+end Rocq.Coq.Reals
+end CompCert4Lean.Foundation.FlocqReal

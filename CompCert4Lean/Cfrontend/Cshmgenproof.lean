@@ -2664,3 +2664,268 @@ theorem make_and_correct
     rfl
 
 end CompCert4Lean.Cfrontend.Cshmgenproof
+
+namespace CompCert4Lean.Cfrontend.Cshmgenproof
+
+theorem make_xor_correct
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    make_xor_correctStatement := by
+  intro ge
+  apply make_binarith_int_correct ge
+  · intro x y m
+    rfl
+  · intro x y m
+    rfl
+  · intro x y m
+    rfl
+  · intro x y m
+    rfl
+
+end CompCert4Lean.Cfrontend.Cshmgenproof
+
+namespace CompCert4Lean.Cfrontend.Cshmgenproof
+
+open Lean Elab Tactic Meta
+
+private abbrev suffix_Z := CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z
+private abbrev suffix_zZero : suffix_Z :=
+  CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.Z0
+private abbrev suffix_zOfNat : Nat → suffix_Z :=
+  CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat
+private abbrev suffix_zLe : suffix_Z → suffix_Z → Prop :=
+  CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.le
+private abbrev suffix_zLt : suffix_Z → suffix_Z → Prop :=
+  CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.lt
+
+private theorem int64_unsigned_repr_small (z : suffix_Z)
+    (hz : suffix_zLe suffix_zZero z ∧
+      suffix_zLe z CompCert4Lean.Lib.Integers.Int64.max_unsigned) :
+    CompCert4Lean.Lib.Integers.Int64.unsigned
+        (CompCert4Lean.Lib.Integers.Int64.repr z) = z := by
+  have hzi : z = CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ z) :=
+    (CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt_intOfZ z).symm
+  rw [hzi]
+  change (CompCert4Lean.Lib.Integers.WordCore.repr 64
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ z))).intval =
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ z)
+  let w := CompCert4Lean.Lib.Integers.WordCore.repr 64
+    (CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ z))
+  have hi : w.val =
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ z %
+        ((2 ^ 64 : Nat) : Int)).toNat := by
+    dsimp [w]
+    run_tac
+      let env ← getEnv
+      let some (n, _) := env.constants.toList.find?
+          (fun (n, _) => (toString n).endsWith "WordCore.val_repr")
+        | throwError "frozen WordCore.val_repr helper not found"
+      let stx := Lean.mkIdent n
+      let arg := Lean.mkIdent `z
+      evalTactic
+        (← `(tactic| exact $stx 64
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ $arg)))
+  have hwi : w.intval =
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat w.val := by
+    run_tac
+      let env ← getEnv
+      let some (n, _) := env.constants.toList.find?
+          (fun (n, _) => (toString n).endsWith "WordCore.intval_eq_zOfNat_val")
+        | throwError "frozen WordCore.intval_eq_zOfNat_val helper not found"
+      let stx := Lean.mkIdent n
+      let arg := Lean.mkIdent `w
+      evalTactic (← `(tactic| exact $stx $arg))
+  change w.intval = _
+  rw [hwi, hi]
+  have hznonneg : 0 ≤ CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ z := hz.1
+  have hzmax := hz.2
+  have hzlt : CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ z <
+      ((2 ^ 64 : Nat) : Int) := by
+    change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ z ≤
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+        CompCert4Lean.Lib.Integers.Int64.max_unsigned at hzmax
+    change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ z ≤
+      (2 ^ 64 : Int) - 1 at hzmax
+    omega
+  rw [Int.emod_eq_of_lt hznonneg hzlt]
+  change CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt
+      (↑(Int.toNat (CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ z)) : Int) = _
+  rw [Int.toNat_of_nonneg hznonneg]
+
+private theorem int64_ltu_inv_local (x y : CompCert4Lean.Lib.Integers.Int64.int)
+    (h : CompCert4Lean.Lib.Integers.Int64.ltu x y = true) :
+    suffix_zLe suffix_zZero (CompCert4Lean.Lib.Integers.Int64.unsigned x) ∧
+      suffix_zLt (CompCert4Lean.Lib.Integers.Int64.unsigned x)
+        (CompCert4Lean.Lib.Integers.Int64.unsigned y) := by
+  unfold CompCert4Lean.Lib.Integers.Int64.ltu
+    CompCert4Lean.Lib.Integers.WordCore.ltu at h
+  run_tac
+    let env ← getEnv
+    for (n, _) in env.constants.toList do
+      if (toString n).endsWith "Integers.zltSelect" then
+        let stx := Lean.mkIdent n
+        evalTactic (← `(tactic| try unfold $stx at *))
+    for (n, _) in env.constants.toList do
+      if (toString n).endsWith "Integers.sumboolSelect" then
+        let stx := Lean.mkIdent n
+        evalTactic (← `(tactic| try unfold $stx at *))
+  cases hz : CompCert4Lean.Lib.Coqlib.zlt
+      (CompCert4Lean.Lib.Integers.WordCore.unsigned x)
+      (CompCert4Lean.Lib.Integers.WordCore.unsigned y) with
+  | left hxy =>
+      try simp [CompCert4Lean.Lib.Integers.Int64.ltu,
+        CompCert4Lean.Lib.Integers.WordCore.ltu, hz] at h
+      constructor
+      · have hx := x.intrange.1
+        change (-1 : Int) <
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+            (CompCert4Lean.Lib.Integers.Int64.unsigned x) at hx
+        change 0 ≤
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+            (CompCert4Lean.Lib.Integers.Int64.unsigned x)
+        omega
+      · exact hxy
+  | right hxy =>
+      rw [hz] at h
+      simp at h
+
+private theorem int_ltu_of_unsigned_lt (x y : CompCert4Lean.Lib.Integers.Int.int)
+    (h : suffix_zLt (CompCert4Lean.Lib.Integers.Int.unsigned x)
+      (CompCert4Lean.Lib.Integers.Int.unsigned y)) :
+    CompCert4Lean.Lib.Integers.Int.ltu x y = true := by
+  unfold CompCert4Lean.Lib.Integers.Int.ltu
+    CompCert4Lean.Lib.Integers.WordCore.ltu
+  run_tac
+    let env ← getEnv
+    for (n, _) in env.constants.toList do
+      if (toString n).endsWith "Integers.zltSelect" then
+        let stx := Lean.mkIdent n
+        evalTactic (← `(tactic| try unfold $stx at *))
+    for (n, _) in env.constants.toList do
+      if (toString n).endsWith "Integers.sumboolSelect" then
+        let stx := Lean.mkIdent n
+        evalTactic (← `(tactic| try unfold $stx at *))
+  cases hz : CompCert4Lean.Lib.Coqlib.zlt
+      (CompCert4Lean.Lib.Integers.WordCore.unsigned x)
+      (CompCert4Lean.Lib.Integers.WordCore.unsigned y) with
+  | left hxy => rfl
+  | right hxy =>
+      exfalso
+      change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+          (CompCert4Lean.Lib.Integers.Int.unsigned x) <
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+          (CompCert4Lean.Lib.Integers.Int.unsigned y) at h
+      change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+          (CompCert4Lean.Lib.Integers.Int.unsigned y) ≤
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+          (CompCert4Lean.Lib.Integers.Int.unsigned x) at hxy
+      omega
+
+theorem small_shift_amount_1 : small_shift_amount_1Statement := by
+  intro i h
+  have hi := int64_ltu_inv_local i
+    CompCert4Lean.Lib.Integers.Int64.iwordsize h
+  have hword : CompCert4Lean.Lib.Integers.Int64.unsigned
+      CompCert4Lean.Lib.Integers.Int64.iwordsize = suffix_zOfNat 64 := by
+    rfl
+  have hword' : CompCert4Lean.Lib.Integers.Int.unsigned
+      CompCert4Lean.Lib.Integers.Int64.iwordsize' = suffix_zOfNat 64 := by
+    rfl
+  have hlt := hi.2
+  rw [hword] at hlt
+  have hlow : CompCert4Lean.Lib.Integers.Int.unsigned
+      (CompCert4Lean.Lib.Integers.Int64.loword i) =
+      CompCert4Lean.Lib.Integers.Int64.unsigned i := by
+    unfold CompCert4Lean.Lib.Integers.Int64.loword
+    apply CompCert4Lean.Lib.Integers.Int.unsigned_repr_proof_api
+    constructor
+    · exact hi.1
+    · change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+          (CompCert4Lean.Lib.Integers.Int64.unsigned i) ≤
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+          CompCert4Lean.Lib.Integers.Int.max_unsigned
+      change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+          (CompCert4Lean.Lib.Integers.Int64.unsigned i) < 64 at hlt
+      change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+          (CompCert4Lean.Lib.Integers.Int64.unsigned i) ≤
+        (2 ^ 32 : Int) - 1
+      omega
+  constructor
+  · apply int_ltu_of_unsigned_lt
+    rw [hlow, hword']
+    exact hlt
+  · exact hlow.symm
+
+theorem small_shift_amount_2 : small_shift_amount_2Statement := by
+  intro i h
+  have hi := int64_ltu_inv_local i
+    (CompCert4Lean.Lib.Integers.Int64.repr (suffix_zOfNat 32)) h
+  have hword : CompCert4Lean.Lib.Integers.Int64.unsigned
+      (CompCert4Lean.Lib.Integers.Int64.repr (suffix_zOfNat 32)) =
+      suffix_zOfNat 32 := by
+    rfl
+  have hlt := hi.2
+  rw [hword] at hlt
+  have hlow : CompCert4Lean.Lib.Integers.Int.unsigned
+      (CompCert4Lean.Lib.Integers.Int64.loword i) =
+      CompCert4Lean.Lib.Integers.Int64.unsigned i := by
+    unfold CompCert4Lean.Lib.Integers.Int64.loword
+    apply CompCert4Lean.Lib.Integers.Int.unsigned_repr_proof_api
+    constructor
+    · exact hi.1
+    · change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+          (CompCert4Lean.Lib.Integers.Int64.unsigned i) ≤
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+          CompCert4Lean.Lib.Integers.Int.max_unsigned
+      change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+          (CompCert4Lean.Lib.Integers.Int64.unsigned i) < 32 at hlt
+      change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+          (CompCert4Lean.Lib.Integers.Int64.unsigned i) ≤
+        (2 ^ 32 : Int) - 1
+      omega
+  apply int_ltu_of_unsigned_lt
+  rw [hlow]
+  have hiword : CompCert4Lean.Lib.Integers.Int.unsigned
+      CompCert4Lean.Lib.Integers.Int.iwordsize = suffix_zOfNat 32 := by
+    rfl
+  rw [hiword]
+  exact hlt
+
+theorem small_shift_amount_3 : small_shift_amount_3Statement := by
+  intro i h
+  have hi : suffix_zLe suffix_zZero
+      (CompCert4Lean.Lib.Integers.Int.unsigned i) ∧
+      suffix_zLt (CompCert4Lean.Lib.Integers.Int.unsigned i)
+        (CompCert4Lean.Lib.Integers.Int.unsigned
+          CompCert4Lean.Lib.Integers.Int64.iwordsize') := by
+    apply CompCert4Lean.Lib.Integers.Int.ltu_inv_proof
+    exact h
+  have hbound : suffix_zLe suffix_zZero
+      (CompCert4Lean.Lib.Integers.Int.unsigned i) := hi.1
+  have hlt : suffix_zLt (CompCert4Lean.Lib.Integers.Int.unsigned i)
+      (CompCert4Lean.Lib.Integers.Int.unsigned
+        CompCert4Lean.Lib.Integers.Int64.iwordsize') := hi.2
+  have hword : CompCert4Lean.Lib.Integers.Int.unsigned
+      CompCert4Lean.Lib.Integers.Int64.iwordsize' = suffix_zOfNat 64 := by
+    rfl
+  rw [hword] at hlt
+  have hmax : suffix_zLe (CompCert4Lean.Lib.Integers.Int.unsigned i)
+      CompCert4Lean.Lib.Integers.Int64.max_unsigned := by
+    change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+        (CompCert4Lean.Lib.Integers.Int.unsigned i) ≤
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+      CompCert4Lean.Lib.Integers.Int64.max_unsigned
+    change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+        (CompCert4Lean.Lib.Integers.Int.unsigned i) < 64 at hlt
+    change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+        (CompCert4Lean.Lib.Integers.Int.unsigned i) ≤
+      (2 ^ 64 : Int) - 1
+    omega
+  exact int64_unsigned_repr_small (CompCert4Lean.Lib.Integers.Int.unsigned i)
+    ⟨hbound, hmax⟩
+
+end CompCert4Lean.Cfrontend.Cshmgenproof

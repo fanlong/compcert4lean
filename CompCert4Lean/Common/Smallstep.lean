@@ -2637,3 +2637,45 @@ theorem compose_backward_simulation : compose_backward_simulationStatement := by
               (props.bsim_public_preserved id)
 
 end CompCert4Lean.Common.Smallstep
+
+namespace CompCert4Lean.Common.Smallstep
+
+open CompCert4Lean.Common.Events
+
+theorem f2b_progress : f2b_progressStatement := by
+  intro L1 L2 index order match_states props
+  intro i
+  refine props.fsim_order_wf.induction (C := fun i =>
+    ∀ s1 s2, match_states i s1 s2 → safe L1 s1 →
+      f2b_transitions L1 L2 match_states s1 s2) i ?_
+  intro i ih s1 s2 hmatch hsafe
+  rcases hsafe s1 (star_refl _ _ s1) with ⟨r, hfinal⟩ | ⟨t, s1', hstep⟩
+  · exact f2b_trans_final L1 L2 match_states s2 r
+      (star_refl _ _ s1) hfinal
+      (props.fsim_match_final_states i s1 s2 r hmatch hfinal)
+  · obtain ⟨i', s2', hdiagram, hmatch'⟩ :=
+      props.fsim_simulation s1 t s1' hstep i s2 hmatch
+    rcases hdiagram with hplus | ⟨hstar, horder⟩
+    · exact f2b_trans_step L1 L2 match_states s1' i i'
+        (star_refl _ _ s1) hstep hplus hmatch hmatch'
+    · rcases star_inv L2.genvtype L2.state (step L2) (globalenv L2)
+          s2 t s2' hstar with ⟨⟨hs2, ht⟩⟩ | hplus
+      · subst s2'
+        subst t
+        have hsafe' : safe L1 s1' :=
+          star_safe L1 s1 s1' (star_one _ _ _ _ s1 E0 s1' hstep) hsafe
+        rcases ih i' horder s1' s2 hmatch' hsafe' with htrans
+        cases htrans with
+        | f2b_trans_final s1y r hstar1 hfinal1 hfinal2 =>
+            exact f2b_trans_final L1 L2 match_states s2 r
+              (star_left _ _ _ _ s1 E0 s1' E0 s1y E0 hstep hstar1 rfl)
+              hfinal1 hfinal2
+        | f2b_trans_step s1y t2 s1z s2y i1 i2 hstar1 hstep2
+            hplus2 hmatch1 hmatch2 =>
+            exact f2b_trans_step L1 L2 match_states s1z i1 i2
+              (star_left _ _ _ _ s1 E0 s1' E0 s1y E0 hstep hstar1 rfl)
+              hstep2 hplus2 hmatch1 hmatch2
+      · exact f2b_trans_step L1 L2 match_states s1' i i'
+          (star_refl _ _ s1) hstep hplus hmatch hmatch'
+
+end CompCert4Lean.Common.Smallstep

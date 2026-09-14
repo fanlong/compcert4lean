@@ -2927,3 +2927,19 @@ def valid_access_store : valid_access_storeStatement := by
 end Mem
 
 end CompCert4Lean.Common.Memory
+
+namespace CompCert4Lean.Common.Memory
+
+namespace Mem
+
+theorem store_access : store_accessStatement := by
+  intro chunk m1 b ofs v m2 hstore
+  unfold store at hstore
+  split at hstore
+  · cases hstore
+    rfl
+  · cases hstore
+
+end Mem
+
+end CompCert4Lean.Common.Memory

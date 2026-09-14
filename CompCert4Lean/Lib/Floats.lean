@@ -2275,3 +2275,59 @@ theorem Float.expand_nan_proof : Float.expand_nan_proofStatement := by
     (PArith.BinPos.Pos.to_nat (Float.expand_nan_payload p)) hq.1 hq.2
 
 end CompCert4Lean.Lib.Floats
+
+namespace CompCert4Lean.Lib.Floats
+
+namespace Float
+
+private theorem unpacked_mul_comm_worker (a b : _root_.Float.Model.UnpackedFloat) :
+    _root_.Float.Model.UnpackedFloat.mul _root_.Float.Model.Format.binary64 a b =
+      _root_.Float.Model.UnpackedFloat.mul _root_.Float.Model.Format.binary64 b a := by
+  cases a with
+  | notANumber => cases b <;> rfl
+  | infinity sa =>
+      cases b with
+      | notANumber => rfl
+      | infinity sb => cases sa <;> cases sb <;> rfl
+      | zero sb => cases sa <;> cases sb <;> rfl
+      | finite sb mb eb hb => cases sa <;> cases sb <;> rfl
+  | zero sa =>
+      cases b with
+      | notANumber => rfl
+      | infinity sb => cases sa <;> cases sb <;> rfl
+      | zero sb => cases sa <;> cases sb <;> rfl
+      | finite sb mb eb hb => cases sa <;> cases sb <;> rfl
+  | finite sa ma ea ha =>
+      cases b with
+      | notANumber => rfl
+      | infinity sb => cases sa <;> cases sb <;> rfl
+      | zero sb => cases sa <;> cases sb <;> rfl
+      | finite sb mb eb hb =>
+          cases sa <;> cases sb <;>
+            simp [_root_.Float.Model.UnpackedFloat.mul, Nat.mul_comm, Int.add_comm]
+          all_goals rfl
+
+private theorem model_mul_comm_worker (x y : float) :
+    modelBinary64
+      (_root_.Float.Model.UnpackedFloat.mul _root_.Float.Model.Format.binary64) x y =
+      modelBinary64
+      (_root_.Float.Model.UnpackedFloat.mul _root_.Float.Model.Format.binary64) y x := by
+  unfold modelBinary64
+  rw [unpacked_mul_comm_worker]
+
+theorem mul_commut : Float.mul_commutStatement := by
+  intro x y h
+  unfold Float.mul
+  rw [model_mul_comm_worker]
+  by_cases hx : isNaN64 x = true
+  · by_cases hy : isNaN64 y = true
+    · exfalso
+      rcases h with h | h <;> simp_all
+    · simp [finishBinary, binop_nan, cons_pl, hx, hy]
+  · by_cases hy : isNaN64 y = true
+    · simp [finishBinary, binop_nan, cons_pl, hx, hy]
+    · simp [finishBinary, hx, hy]
+
+end Float
+
+end CompCert4Lean.Lib.Floats

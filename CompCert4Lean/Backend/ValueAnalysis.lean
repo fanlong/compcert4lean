@@ -1704,3 +1704,40 @@ theorem hide_stack : hide_stackStatement := by
   exact ⟨bc', hnostack', hsp', hsame, hVM, hgenv', hrom', hmm'⟩
 
 end CompCert4Lean.Backend.ValueAnalysis
+
+namespace CompCert4Lean.Backend.ValueAnalysis
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Backend.ValueDomain
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Coqlib
+
+theorem sound_stack_new_bound
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    sound_stack_new_boundStatement := by
+  intro cfg prog ge bc stk m bound bound' hstk hle
+  cases hstk with
+  | sound_stack_nil =>
+      exact sound_stack_nil bc m bound'
+  | sound_stack_public_call =>
+      rename_i res f sp pc e stk bc0 bound0 ae below sp' ge' an em sp0 same stk0 incr
+      exact sound_stack_public_call
+        (bc := bc) (res := res) (f := f) (sp := sp) (pc := pc) (e := e)
+        (stk := stk) (m := m) (bound := bound') (bc' := bc0) (bound' := bound0)
+        (ae := ae) (STK := stk0)
+        (INCR := Ple_trans bound0 bound bound' incr hle)
+        (BELOW := below) (SP := sp0) (SP' := sp') (SAME := same)
+        (GE := ge') (AN := an) (EM := em)
+  | sound_stack_private_call =>
+      rename_i res f sp pc e stk bc0 bound0 ae am below sp' ge' an em sp0 same stk0 contents incr
+      exact sound_stack_private_call
+        (bc := bc) (res := res) (f := f) (sp := sp) (pc := pc) (e := e)
+        (stk := stk) (m := m) (bound := bound') (bc' := bc0) (bound' := bound0)
+        (ae := ae) (am := am) (STK := stk0)
+        (INCR := Ple_trans bound0 bound bound' incr hle)
+        (BELOW := below) (SP := sp0) (SP' := sp') (SAME := same)
+        (GE := ge') (AN := an) (EM := em) (CONTENTS := contents)
+
+end CompCert4Lean.Backend.ValueAnalysis

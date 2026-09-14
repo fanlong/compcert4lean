@@ -3173,3 +3173,43 @@ theorem vge_sgn_iu' : vge_sgn_iu'Statement := by
     (vge_sgn_sgn' p n) (vge.sgnIU p n i hn hi)
 
 end CompCert4Lean.Backend.ValueDomain
+
+namespace CompCert4Lean.Backend.ValueDomain
+
+theorem match_aptr_of_aval : match_aptr_of_avalStatement := by
+  intro cfg bc b ofs av h
+  cases h <;> simp [aptr_of_aval] <;> assumption
+
+theorem pmatch_vplub : pmatch_vplubStatement := by
+  intro bc b ofs x p h
+  cases x with
+  | Vbot => exact h
+  | I _ => exact h
+  | IU _ => exact h
+  | Uns _ _ => exact h
+  | Sgn _ _ => exact h
+  | L _ => exact h
+  | F _ => exact h
+  | FS _ => exact h
+  | Num _ => exact h
+  | Ptr q => exact pmatch_lub_r bc b ofs q p h
+  | Ifptr q => exact pmatch_lub_r bc b ofs q p h
+
+theorem vmatch_vplub_r : vmatch_vplub_rStatement := by
+  intro bc v x p h
+  cases h with
+  | ifptrUndef => exact vmatch.ifptrUndef (vplub x p)
+  | ifptrInt i => exact vmatch.ifptrInt i (vplub x p)
+  | ifptrLong i => exact vmatch.ifptrLong i (vplub x p)
+  | ifptrFloat f => exact vmatch.ifptrFloat f (vplub x p)
+  | ifptrSingle f => exact vmatch.ifptrSingle f (vplub x p)
+  | ifptrPtr b ofs =>
+      exact vmatch.ifptrPtr b ofs (vplub x p)
+        (pmatch_vplub bc b ofs x p (by assumption))
+
+theorem vmatch_vplub_l : vmatch_vplub_lStatement := by
+  intro bc v x p h
+  cases h <;> simp [vplub] <;> try constructor
+  all_goals try (apply pmatch_lub_l <;> assumption)
+
+end CompCert4Lean.Backend.ValueDomain
