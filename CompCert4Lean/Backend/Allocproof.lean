@@ -4606,3 +4606,100 @@ theorem in_subst_loc_pair : in_subst_loc_pairStatement := by
     exact ⟨hdiff, hQ hqe⟩
 
 end CompCert4Lean.Backend.Allocproof
+
+namespace CompCert4Lean.Backend.Allocproof
+open CompCert4Lean.Backend.Allocation
+open CompCert4Lean.Backend.Locations
+theorem undef_regs_outside : undef_regs_outsideStatement := by
+  intro ml ls l hnot
+  induction ml with
+  | nil => rfl
+  | cons m ms ih =>
+      simp [CompCert4Lean.Backend.LTL.undef_regs] at *
+      rw [Locmap.gso (R m) Common.Values.Vundef
+        (CompCert4Lean.Backend.LTL.undef_regs ms ls) l
+        (Loc.diff_sym l (R m) hnot.1)]
+      exact ih hnot.2
+end CompCert4Lean.Backend.Allocproof
+
+namespace CompCert4Lean.Backend.Allocproof
+open CompCert4Lean.Backend.Allocation
+open CompCert4Lean.Backend.Locations
+theorem can_undef_sound : can_undef_soundStatement := by
+  intro e ml
+  induction ml with
+  | nil =>
+      intro q hcan hq
+      trivial
+  | cons m ms ih =>
+      intro q hcan hq
+      simp [can_undef, Bool.and_eq_true] at hcan
+      refine ⟨Loc.diff_sym (R m) q.eloc
+        (loc_unconstrained_sound (R m) e q hcan.1 hq), ?_⟩
+      apply ih q hcan.2 hq
+end CompCert4Lean.Backend.Allocproof
+
+namespace CompCert4Lean.Backend.Allocproof
+open CompCert4Lean.Backend.Allocation
+open CompCert4Lean.Backend.Locations
+open CompCert4Lean.Common.AST
+theorem long_type_compat_charact : long_type_compat_charactStatement := by
+  intro env l e q hcompat hq
+  unfold long_type_compat at hcompat
+  have hiff := EqSet2.for_all_between_iff_proof
+    (fun q : EqSet2.elt => subtype (env q.ereg) Tlong)
+    (select_loc_l l) (select_loc_h l)
+    (by
+      intro q₁ q₂ hqeq
+      subst q₂
+      rfl)
+    (select_loc_l_monotone l) (select_loc_h_monotone l) e.eqs2
+  rw [hiff] at hcompat
+  cases hll : select_loc_l l q with
+  | false =>
+      right
+      exact (select_loc_charact l q).mp (Or.inl hll)
+  | true =>
+      cases hhh : select_loc_h l q with
+      | false =>
+          right
+          exact (select_loc_charact l q).mp (Or.inr hhh)
+      | true =>
+          left
+          exact hcompat q ((e.eqs_same q).mpr hq) hll hhh
+end CompCert4Lean.Backend.Allocproof
+
+namespace CompCert4Lean.Backend.Allocproof
+open CompCert4Lean.Backend.Allocation
+open CompCert4Lean.Backend.Locations
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.AST
+theorem subst_loc_pair_satisf_makelong :
+    subst_loc_pair_satisf_makelongStatement := by
+  intro env src1 src2 dst rs ls e e' hsubst hcompat hwt hsat hptr
+  unfold satisf at hsat ⊢
+  intro q hq
+  rcases (in_subst_loc_pair (R dst) (R src1) (R src2) q e e' hq hsubst) with
+    ⟨hloc, hkind, hhigh, hlow⟩ | ⟨hdiff, hq'⟩
+  · rw [hloc, hkind]
+    have hlong : subtype (env q.ereg) Tlong = true := by
+      rcases long_type_compat_charact env (R dst) e q hcompat hq with h | h
+      · exact h
+      · exact False.elim ((Loc.diff_not_eq (R dst) q.eloc h) hloc.symm)
+    have hhigh' := hsat _ hhigh
+    have hlow' := hsat _ hlow
+    have hvaltype : Val.has_type (Regmap.get q.ereg rs) Tlong := by
+      apply Val.has_subtype (env q.ereg) Tlong (Regmap.get q.ereg rs) hlong
+      exact hwt q.ereg
+    rw [Locmap.gss (R dst)
+      (Val.longofwords (ls (R src1)) (ls (R src2))) ls]
+    simp only [sel_val]
+    rw [← val_longofwords_eq_1 (Regmap.get q.ereg rs) hvaltype hptr]
+    apply allocproof_longofwords_lessdef
+    · exact hhigh'
+    · exact hlow'
+  · rw [Locmap.gso (R dst)
+      (Val.longofwords (ls (R src1)) (ls (R src2))) ls q.eloc hdiff]
+    exact hsat q hq'
+end CompCert4Lean.Backend.Allocproof
