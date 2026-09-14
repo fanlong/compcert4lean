@@ -1128,3 +1128,247 @@ theorem eval_orlimm
           · rfl
 
 end CompCert4Lean.X86.SelectLongproof
+namespace CompCert4Lean.X86.SelectLongproof
+
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.ExternalCalls
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.X86.Op
+open CompCert4Lean.X86.SelectLong
+
+private theorem int64_xor_val (x y : CCInt64) :
+    (CompCert4Lean.Lib.Integers.Int64.xor x y).val = Nat.xor x.val y.val := by
+  unfold CompCert4Lean.Lib.Integers.Int64.xor CompCert4Lean.Lib.Integers.WordCore.xor
+  exact repr_val_of_lt64 _ (Nat.xor_lt_two_pow x.toFin.isLt y.toFin.isLt)
+
+private theorem int64_xor_commut (x y : CCInt64) :
+    CompCert4Lean.Lib.Integers.Int64.xor x y =
+      CompCert4Lean.Lib.Integers.Int64.xor y x := by
+  apply CompCert4Lean.Lib.Integers.WordCore.ext_of_val_eq
+  rw [int64_xor_val, int64_xor_val]
+  simpa only [Nat.xor_eq] using (Nat.xor_comm x.val y.val)
+
+private theorem int64_xor_assoc (x y z : CCInt64) :
+    CompCert4Lean.Lib.Integers.Int64.xor
+        (CompCert4Lean.Lib.Integers.Int64.xor x y) z =
+      CompCert4Lean.Lib.Integers.Int64.xor x
+        (CompCert4Lean.Lib.Integers.Int64.xor y z) := by
+  apply CompCert4Lean.Lib.Integers.WordCore.ext_of_val_eq
+  rw [int64_xor_val, int64_xor_val, int64_xor_val, int64_xor_val]
+  simpa only [Nat.xor_eq] using (Nat.xor_assoc x.val y.val z.val)
+
+private theorem int64_xor_zero (x : CCInt64) :
+    CompCert4Lean.Lib.Integers.Int64.xor x
+        CompCert4Lean.Lib.Integers.Int64.zero = x := by
+  apply CompCert4Lean.Lib.Integers.WordCore.ext_of_val_eq
+  rw [int64_xor_val]
+  have hz : CompCert4Lean.Lib.Integers.Int64.zero.val = 0 := rfl
+  rw [hz]
+  simpa only [Nat.xor_eq] using (Nat.xor_zero x.val)
+
+private theorem int64_xor_mone (x : CCInt64) :
+    CompCert4Lean.Lib.Integers.Int64.xor x
+        CompCert4Lean.Lib.Integers.Int64.mone =
+      CompCert4Lean.Lib.Integers.Int64.not x := by
+  apply CompCert4Lean.Lib.Integers.WordCore.ext_of_val_eq
+  rw [int64_xor_val]
+  have hm : CompCert4Lean.Lib.Integers.Int64.mone.val = 2 ^ 64 - 1 := rfl
+  rw [hm, not_val64]
+
+private theorem int64_xor_not_swap (x y : CCInt64) :
+    CompCert4Lean.Lib.Integers.Int64.xor
+        (CompCert4Lean.Lib.Integers.Int64.not x) y =
+      CompCert4Lean.Lib.Integers.Int64.xor x
+        (CompCert4Lean.Lib.Integers.Int64.not y) := by
+  rw [← int64_xor_mone x, ← int64_xor_mone y]
+  rw [int64_xor_assoc, int64_xor_commut (CompCert4Lean.Lib.Integers.Int64.mone) y]
+
+private theorem val_xorl_commut (x y : val) :
+    Val.xorl x y = Val.xorl y x := by
+  cases x <;> cases y <;> try rfl
+  case Vlong.Vlong x y =>
+    change Vlong (CompCert4Lean.Lib.Integers.Int64.xor x y) =
+      Vlong (CompCert4Lean.Lib.Integers.Int64.xor y x)
+    rw [int64_xor_commut]
+
+private theorem val_xorl_mone (x : val) :
+    Val.xorl x (.Vlong CompCert4Lean.Lib.Integers.Int64.mone) = Val.notl x := by
+  cases x with
+  | Vundef => rfl
+  | Vint _ => rfl
+  | Vfloat _ => rfl
+  | Vsingle _ => rfl
+  | Vptr _ _ => rfl
+  | Vlong n =>
+      change Vlong (CompCert4Lean.Lib.Integers.Int64.xor n
+        CompCert4Lean.Lib.Integers.Int64.mone) =
+        Vlong (CompCert4Lean.Lib.Integers.Int64.not n)
+      rw [int64_xor_mone]
+
+private theorem val_xorl_assoc_comm (x : val) (n1 n2 : CCInt64) :
+    Val.xorl (Val.xorl x (.Vlong n2)) (.Vlong n1) =
+      Val.xorl x (.Vlong (CompCert4Lean.Lib.Integers.Int64.xor n1 n2)) := by
+  cases x with
+  | Vundef => rfl
+  | Vint _ => rfl
+  | Vfloat _ => rfl
+  | Vsingle _ => rfl
+  | Vptr _ _ => rfl
+  | Vlong x =>
+      change Vlong (CompCert4Lean.Lib.Integers.Int64.xor
+          (CompCert4Lean.Lib.Integers.Int64.xor x n2) n1) =
+        Vlong (CompCert4Lean.Lib.Integers.Int64.xor x
+          (CompCert4Lean.Lib.Integers.Int64.xor n1 n2))
+      calc
+        Vlong (CompCert4Lean.Lib.Integers.Int64.xor
+            (CompCert4Lean.Lib.Integers.Int64.xor x n2) n1) =
+          Vlong (CompCert4Lean.Lib.Integers.Int64.xor x
+            (CompCert4Lean.Lib.Integers.Int64.xor n2 n1)) :=
+          congrArg Vlong (int64_xor_assoc x n2 n1)
+        _ = Vlong (CompCert4Lean.Lib.Integers.Int64.xor x
+            (CompCert4Lean.Lib.Integers.Int64.xor n1 n2)) := by
+          rw [int64_xor_commut n2 n1]
+
+private theorem eval_xorlimm_aux
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    ∀ (xi : ExternalCalls) (prog : program) (sp : val) (e : env) (m : mem)
+      (n : CCInt64),
+      unary_constructor_sound (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) xi prog sp e m (xorlimm n)
+        (fun v => Val.xorl v (.Vlong n)) := by
+  intro xi prog sp e m n le a x h
+  unfold xorlimm
+  by_cases hz : CompCert4Lean.Lib.Integers.Int64.eq n
+      CompCert4Lean.Lib.Integers.Int64.zero = true
+  · have hn := int64_eq_true_zero n hz
+    rw [if_pos hz]
+    refine ⟨x, h, ?_⟩
+    subst n
+    cases x <;> try exact Val.lessdef_undef _
+    change Val.lessdef (.Vlong (CompCert4Lean.Lib.Integers.Int64.xor _
+      CompCert4Lean.Lib.Integers.Int64.zero)) (.Vlong _)
+    rw [int64_xor_zero]
+    exact Val.lessdef_refl _
+  · by_cases hm : CompCert4Lean.Lib.Integers.Int64.eq n
+        CompCert4Lean.Lib.Integers.Int64.mone = true
+    · have hn := int64_eq_true_mone n hm
+      rw [if_neg hz, if_pos hm]
+      subst n
+      obtain ⟨v, hv, hd⟩ := eval_notl xi prog sp e m le a x h
+      refine ⟨v, hv, ?_⟩
+      change Val.lessdef (Val.xorl x (.Vlong
+        CompCert4Lean.Lib.Integers.Int64.mone)) v
+      rw [val_xorl_mone]
+      exact hd
+    · rw [if_neg hz, if_neg hm]
+      cases hmatch : xorlimm_match a with
+      | xorlimm_case1 n2 =>
+          have hx : x = .Vlong n2 := eval_longconst_value xi
+            (Genv.globalenv prog) sp e m le n2 x (by simpa [hmatch] using h)
+          subst x
+          refine ⟨.Vlong (CompCert4Lean.Lib.Integers.Int64.xor n n2), ?_, ?_⟩
+          · exact eval_longconst xi prog sp e m le
+              (CompCert4Lean.Lib.Integers.Int64.xor n n2)
+          · change Val.lessdef
+              (.Vlong (CompCert4Lean.Lib.Integers.Int64.xor n2 n))
+              (.Vlong (CompCert4Lean.Lib.Integers.Int64.xor n n2))
+            rw [int64_xor_commut]
+            exact Val.lessdef_refl _
+      | xorlimm_case2 n2 t2 =>
+          cases h with
+          | eval_Eop le' op al vl v hargs hop =>
+              cases hargs with
+              | cons _ a' al' v1 vl' hhead htail =>
+                  cases htail with
+                  | nil _ =>
+                      change some (Val.xorl v1 (.Vlong n2)) = some x at hop
+                      cases hop
+                      refine ⟨Val.xorl v1
+                        (.Vlong (CompCert4Lean.Lib.Integers.Int64.xor n n2)), ?_, ?_⟩
+                      · apply eval_expr.eval_Eop le
+                          (Oxorlimm (CompCert4Lean.Lib.Integers.Int64.xor n n2))
+                          (Econs t2 Enil) [v1] _
+                        · exact eval_exprlist.cons le t2 Enil v1 []
+                            (by simpa [hmatch] using hhead)
+                            (eval_exprlist.nil le)
+                        · rfl
+                      · change Val.lessdef
+                          (Val.xorl (Val.xorl v1 (.Vlong n2)) (.Vlong n))
+                          (Val.xorl v1
+                            (.Vlong (CompCert4Lean.Lib.Integers.Int64.xor n n2)))
+                        rw [val_xorl_assoc_comm]
+                        exact Val.lessdef_refl _
+      | xorlimm_case3 t2 =>
+          cases h with
+          | eval_Eop le' op al vl v hargs hop =>
+              cases hargs with
+              | cons _ a' al' v1 vl' hhead htail =>
+                  cases htail with
+                  | nil _ =>
+                      change some (Val.notl v1) = some x at hop
+                      cases hop
+                      refine ⟨Val.xorl v1
+                        (.Vlong (CompCert4Lean.Lib.Integers.Int64.not n)), ?_, ?_⟩
+                      · apply eval_expr.eval_Eop le
+                          (Oxorlimm (CompCert4Lean.Lib.Integers.Int64.not n))
+                          (Econs t2 Enil) [v1] _
+                        · exact eval_exprlist.cons le t2 Enil v1 []
+                            (by simpa [hmatch] using hhead)
+                            (eval_exprlist.nil le)
+                        · rfl
+                      · change Val.lessdef
+                          (Val.xorl (Val.notl v1) (.Vlong n))
+                          (Val.xorl v1
+                            (.Vlong (CompCert4Lean.Lib.Integers.Int64.not n)))
+                        cases v1 <;> try exact Val.lessdef_undef _
+                        · change Val.lessdef
+                            (.Vlong (CompCert4Lean.Lib.Integers.Int64.xor
+                              (CompCert4Lean.Lib.Integers.Int64.not _) n))
+                            (.Vlong (CompCert4Lean.Lib.Integers.Int64.xor _
+                              (CompCert4Lean.Lib.Integers.Int64.not n)))
+                          rw [int64_xor_not_swap]
+                          exact Val.lessdef_refl _
+      | xorlimm_default e2 =>
+          refine ⟨Val.xorl x (.Vlong n), ?_, Val.lessdef_refl _⟩
+          apply eval_expr.eval_Eop le (Oxorlimm n) (Econs a Enil) [x]
+            (Val.xorl x (.Vlong n))
+          · exact eval_exprlist.cons le a Enil x [] h (eval_exprlist.nil le)
+          · rfl
+
+theorem eval_xorl
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    @eval_xorlStatement binary64_certificate binary32_certificate := by
+  unfold eval_xorlStatement binary_constructor_sound
+  intro xi prog sp e m le a x b y ha hb
+  cases hmatch : xorl_match a b with
+  | xorl_case1 n1 t2 =>
+      have hx : x = .Vlong n1 := eval_longconst_value xi
+        (Genv.globalenv prog) sp e m le n1 x (by simpa [hmatch] using ha)
+      subst x
+      obtain ⟨v, hv, hd⟩ := eval_xorlimm_aux xi prog sp e m n1 le b y hb
+      refine ⟨v, ?_, ?_⟩
+      · simpa [xorl, hmatch] using hv
+      · rw [val_xorl_commut]
+        exact hd
+  | xorl_case2 t1 n2 =>
+      have hy : y = .Vlong n2 := eval_longconst_value xi
+        (Genv.globalenv prog) sp e m le n2 y (by simpa [hmatch] using hb)
+      subst y
+      obtain ⟨v, hv, hd⟩ := eval_xorlimm_aux xi prog sp e m n2 le a x ha
+      refine ⟨v, ?_, hd⟩
+      simpa [xorl, hmatch] using hv
+  | xorl_default e1 e2 =>
+      refine ⟨Val.xorl x y, ?_, Val.lessdef_refl _⟩
+      simp only [xorl, hmatch]
+      apply eval_expr.eval_Eop le Oxorl (Econs a (Econs b Enil)) [x, y]
+        (Val.xorl x y)
+      · exact eval_exprlist.cons le a (Econs b Enil) x [y] ha
+          (eval_exprlist.cons le b Enil y [] hb (eval_exprlist.nil le))
+      · rfl
+
+end CompCert4Lean.X86.SelectLongproof

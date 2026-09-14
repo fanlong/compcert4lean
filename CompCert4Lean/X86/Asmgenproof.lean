@@ -1364,3 +1364,112 @@ theorem transl_store_label : transl_store_labelStatement := by
   | Many64 => cases hrest
 
 end CompCert4Lean.X86.Asmgenproof
+
+namespace CompCert4Lean.X86.Asmgenproof
+
+private theorem asmgenproof_exec_straight_exec_local
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    exec_straight_execStatement := by
+  intro cfg xi prog tprog hmatch
+  intro fb f c ep tf tc c' rs m rs' m' hatpc hexec
+  generalize hpc : rs .PC = pc at hatpc
+  cases hatpc with
+  | intro fb ofs f c ep tf tc hfind htrans hcode htail =>
+      apply CompCert4Lean.Backend.Asmgenproof0.exec_straight_steps_1
+        (cfg := cfg) (xi := xi)
+        (ge := CompCert4Lean.Common.Globalenvs.Genv.globalenv tprog)
+        (fn := tf) (c := tc) (rs := rs) (m := m)
+        (c' := c') (rs' := rs') (m' := m')
+        (b := fb) (ofs := ofs) hexec
+      · exact transf_function_no_overflow f tf htrans
+      · exact hpc
+      · exact functions_transl prog tprog hmatch fb f tf hfind htrans
+      · exact htail
+
+end CompCert4Lean.X86.Asmgenproof
+
+namespace CompCert4Lean.X86.Asmgenproof
+
+private theorem asmgenproof_exec_straight_at_local
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    exec_straight_atStatement := by
+  intro prog tprog hmatch
+  intro fb f c ep tf tc c' ep' tc' rs m rs' m' hatpc hcode' hexec
+  generalize hpc : rs .PC = pc at hatpc
+  cases hatpc with
+  | intro fb ofs f c ep tf tc hfind htrans hcode htail =>
+      have hfind' :
+          CompCert4Lean.Common.Globalenvs.Genv.find_funct_ptr
+              (CompCert4Lean.Common.Globalenvs.Genv.globalenv tprog) fb =
+            some (.Internal tf) :=
+        functions_transl prog tprog hmatch fb f tf hfind htrans
+      obtain ⟨ofs', hpc', htail'⟩ :=
+        CompCert4Lean.Backend.Asmgenproof0.exec_straight_steps_2
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate)
+          (ge := CompCert4Lean.Common.Globalenvs.Genv.globalenv tprog)
+          (fn := tf) (c := tc) (rs := rs) (m := m)
+          (c' := tc') (rs' := rs') (m' := m')
+          (b := fb) (ofs := ofs) hexec
+          (transf_function_no_overflow f tf htrans)
+          hpc hfind' htail
+      rw [hpc']
+      exact CompCert4Lean.Backend.Asmgenproof0.transl_code_at_pc.intro
+        fb ofs' f c' ep' tf tc' hfind htrans hcode' htail'
+
+end CompCert4Lean.X86.Asmgenproof
+
+namespace CompCert4Lean.X86.Asmgenproof
+
+theorem exec_straight_steps
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    exec_straight_stepsStatement := by
+  intro cfg xi prog tprog hmatch
+  intro s fb f rs1 i ctail ep tf tc m1' m2 m2' sp ms2
+  intro hstack hext hfind hatpc hstep
+  generalize hpc : rs1 .PC = pc at hatpc
+  cases hatpc with
+  | intro fb ofs f _ ep tf tc hfind0 htrans hcode htail =>
+      have hcode_full := hcode
+      change CompCert4Lean.Common.Errors.bind
+          (CompCert4Lean.X86.Asmgen.transl_code f ctail
+            (CompCert4Lean.X86.Asmgen.it1_is_parent ep i))
+          (fun k => CompCert4Lean.X86.Asmgen.transl_instr f i ep k) =
+        .OK tc at hcode
+      obtain ⟨k, htailcode, htrans_instr⟩ :=
+        CompCert4Lean.Common.Errors.bind_inversion _ _ _ _ _ hcode
+      obtain ⟨rs2, hexec_straight, hagree, hparent⟩ :=
+        hstep k tc htrans_instr
+      have hatpc0 :
+          CompCert4Lean.Backend.Asmgenproof0.transl_code_at_pc
+            (CompCert4Lean.Common.Globalenvs.Genv.globalenv prog)
+            (rs1 .PC) fb f (i :: ctail) ep tf tc := by
+        rw [hpc]
+        exact CompCert4Lean.Backend.Asmgenproof0.transl_code_at_pc.intro
+          fb ofs f (i :: ctail) ep tf tc hfind0 htrans hcode_full htail
+      have hplus :=
+        asmgenproof_exec_straight_exec_local
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate)
+          cfg xi prog tprog hmatch fb f (i :: ctail) ep tf tc k rs1 m1' rs2 m2'
+          hatpc0 hexec_straight
+      have hatpc_tail :=
+        asmgenproof_exec_straight_at_local
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate)
+          prog tprog hmatch fb f (i :: ctail) ep tf tc ctail
+          (CompCert4Lean.X86.Asmgen.it1_is_parent ep i) k rs1 m1' rs2 m2'
+          hatpc0 htailcode hexec_straight
+      refine ⟨.State rs2 m2', hplus, ?_⟩
+      apply match_states.match_states_intro
+      · exact hstack
+      · exact hfind0
+      · exact hext
+      · exact hatpc_tail
+      · exact hagree
+      · exact hparent
+
+end CompCert4Lean.X86.Asmgenproof

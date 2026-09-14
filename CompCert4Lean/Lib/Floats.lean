@@ -2257,3 +2257,21 @@ theorem Float.unop_nan_result_obligation_proof : Float.unop_nan_result_obligatio
     (CompCert4Lean.X86_64.Archi.choose_nan_64 (Float.cons_pl x []))
 
 end CompCert4Lean.Lib.Floats
+
+namespace CompCert4Lean.Lib.Floats
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Flocq.IEEE754
+
+theorem Float.expand_nan_proof : Float.expand_nan_proofStatement := by
+  intro p h
+  have hq := expand_nan_pos_bounds p h
+  have hpayload :
+      PArith.BinPos.Pos.of_nat (PArith.BinPos.Pos.to_nat (Float.expand_nan_payload p)) =
+        Float.expand_nan_payload p :=
+    posOfNat_posToNat (Float.expand_nan_payload p)
+  rw [← hpayload]
+  exact nan_pl_posOfNat_lt_52
+    (PArith.BinPos.Pos.to_nat (Float.expand_nan_payload p)) hq.1 hq.2
+
+end CompCert4Lean.Lib.Floats

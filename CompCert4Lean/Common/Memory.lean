@@ -2909,3 +2909,21 @@ theorem loadv_int64_split : loadv_int64_splitStatement := by
   simp [CompCert4Lean.X86_64.Archi.ptr64] at hptr
 end Mem
 end CompCert4Lean.Common.Memory
+
+namespace CompCert4Lean.Common.Memory
+
+namespace Mem
+
+def valid_access_store : valid_access_storeStatement := by
+  intro m1 chunk b ofs v hvalid
+  unfold store
+  cases hdec : valid_access_dec m1 chunk b ofs Memtype.Writable with
+  | left hproof =>
+      simp [boolOfSumbool, hdec]
+      exact ⟨_, rfl⟩
+  | right hnproof =>
+      exact False.elim (hnproof hvalid)
+
+end Mem
+
+end CompCert4Lean.Common.Memory

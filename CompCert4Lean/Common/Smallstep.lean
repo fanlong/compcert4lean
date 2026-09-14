@@ -2393,3 +2393,247 @@ theorem bsim_safe : bsim_safeStatement := by
     (star_safe L1 s1 s1' hstar' hsafe)
 
 end CompCert4Lean.Common.Smallstep
+
+namespace CompCert4Lean.Common.Smallstep
+
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Lib.Coqlib
+
+private theorem smallstep_bb_match_at
+    (L1 L2 L3 : semantics) {index : Type}
+    (match_states : index → state L1 → state L2 → Prop)
+    {index' : Type}
+    (match_states' : index' → state L2 → state L3 → Prop)
+    (i1 : index) (i2 : index') (s1 : state L1) (s2 : state L2)
+    (s3 : state L3)
+    (hmatch1 : match_states i1 s1 s2)
+    (hmatch2 : match_states' i2 s2 s3) :
+    bb_match_states L1 L2 L3 match_states match_states'
+      (i1, i2) s1 s3 :=
+  bb_match_later L1 L2 L3 match_states match_states' i1 i2 s1 s3 hmatch1
+    (star_refl _ _ s2) hmatch2
+
+end CompCert4Lean.Common.Smallstep
+
+namespace CompCert4Lean.Common.Smallstep
+
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Lib.Coqlib
+
+private theorem smallstep_bb_simulation_base :
+    bb_simulation_baseStatement := by
+  intro L1 L2 L3 hsingle index order match_states props index' order' match_states' props'
+    s3 t s3' hstep i1 s1 i2 s2 hmatch1 hmatch2 hsafe
+  have hsafe2 : safe L2 s2 :=
+    bsim_safe L1 L2 index order match_states props i1 s1 s2 hmatch1 hsafe
+  have hdiag23 := bsim_simulation' L2 L3 index' order' match_states' props'
+    i2 s3 t s3' hstep s2 hmatch2 hsafe2
+  cases hdiag23 with
+  | inl hplusDiag =>
+      obtain ⟨i2', s2', hplus23, hmatch23⟩ := hplusDiag
+      have hlen : t.length ≤ 1 := hsingle s3 t s3' hstep
+      have hcases : t = E0 ∨ t.length = 1 := by
+        cases t with
+        | nil => exact Or.inl rfl
+        | cons e tl =>
+            cases tl with
+            | nil => exact Or.inr rfl
+            | cons e' tl => simp at hlen
+      rcases hcases with (rfl | hlen1)
+      · have hsilent := bsim_E0_plus L1 L2 index order match_states props
+          s2 E0 s2' hplus23 rfl i1 s1 hmatch1 hsafe
+        cases hsilent with
+        | inl hsilent =>
+            obtain ⟨i1m, s1m, hplus1m, hmatch1m⟩ := hsilent
+            exact ⟨(i1m, i2'), s1m,
+              ⟨Or.inl hplus1m,
+                smallstep_bb_match_at L1 L2 L3 match_states match_states'
+                  i1m i2' s1m s2' s3' hmatch1m hmatch23⟩⟩
+        | inr hsilent =>
+            obtain ⟨i1m, horder1m, hmatch1m⟩ := hsilent
+            exact ⟨(i1m, i2'), s1,
+              ⟨Or.inr ⟨star_refl _ _ s1,
+                lex_ord_left _ _ _ _ _ _ horder1m⟩,
+                smallstep_bb_match_at L1 L2 L3 match_states match_states'
+                  i1m i2' s1 s2' s3' hmatch1m hmatch23⟩⟩
+      · obtain ⟨s2x, s2y, hstar2x, hstep2, hstar2y⟩ :=
+          star_non_E0_split L2 s2 t s2' (plus_star L2.genvtype L2.state L2.step L2.globalenv
+            s2 t s2' hplus23) hlen1
+        obtain ⟨i1m, s1x, hstar1x, hmatch1x⟩ :=
+          bsim_E0_star L1 L2 index order match_states props s2 s2x
+            hstar2x i1 s1 hmatch1 hsafe
+        have hdiag12 :=
+          bsim_simulation' L1 L2 index order match_states props i1m s2x t s2y
+            hstep2 s1x hmatch1x
+            (star_safe L1 s1 s1x hstar1x hsafe)
+        cases hdiag12 with
+        | inl hplus1 =>
+            obtain ⟨i1n, s1y, hplus1y, hmatch1y⟩ := hplus1
+            exact ⟨(i1n, i2'), s1y,
+              ⟨Or.inl (star_plus_trans _ _ _ _ _ _ _ _ _ _
+                  hstar1x hplus1y (by exact (_root_.List.nil_append t).symm)),
+                bb_match_later L1 L2 L3 match_states match_states' i1n i2' s1y s3'
+                  hmatch1y hstar2y hmatch23⟩⟩
+        | inr horder1 =>
+            obtain ⟨i1n, horder1n, htrace1, hmatch1n⟩ := horder1
+            have htne : t ≠ E0 := by
+              cases t with
+              | nil => simp [E0] at hlen1
+              | cons e tl => intro h; cases h
+            exact False.elim (htne htrace1)
+  | inr horderDiag =>
+      obtain ⟨i2m, horder2m, htrace2, hmatch2m⟩ := horderDiag
+      subst t
+      exact ⟨(i1, i2m), s1,
+        ⟨Or.inr ⟨star_refl _ _ s1,
+          lex_ord_right _ _ i1 i2m i2 horder2m⟩,
+          smallstep_bb_match_at L1 L2 L3 match_states match_states'
+            i1 i2m s1 s2 s3' hmatch1 hmatch2m⟩⟩
+
+end CompCert4Lean.Common.Smallstep
+
+namespace CompCert4Lean.Common.Smallstep
+
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Lib.Coqlib
+
+private theorem smallstep_bb_simulation :
+    bb_simulationStatement := by
+  intro L1 L2 L3 hsingle index order match_states props index' order' match_states' props'
+    s3 t s3' hstep i s1 hmatch hsafe
+  cases hmatch with
+  | bb_match_later i1 i2 s1 s3 s2x s2y hmatch1 hstar2 hmatch2 =>
+      have hstarinv := star_inv _ _ _ _ s2x E0 s2y hstar2
+      cases hstarinv with
+      | inl heq =>
+          rcases heq with ⟨hsame, htrace⟩
+          subst s2y
+          exact smallstep_bb_simulation_base L1 L2 L3 hsingle index order match_states
+            props index' order' match_states' props' s3 t s3' hstep
+            i1 s1 i2 s2x hmatch1 hmatch2 hsafe
+      | inr hplus2 =>
+          have hsilent := bsim_E0_plus L1 L2 index order match_states props
+            s2x E0 s2y hplus2 rfl i1 s1 hmatch1 hsafe
+          cases hsilent with
+          | inl hplus1 =>
+              obtain ⟨i1m, s1m, hplus1m, hmatch1m⟩ := hplus1
+              have hsafe1m : safe L1 s1m :=
+                star_safe L1 s1 s1m
+                  (plus_star L1.genvtype L1.state L1.step L1.globalenv
+                    s1 E0 s1m hplus1m) hsafe
+              obtain ⟨i'', s1'', hresult, hmatch''⟩ :=
+                smallstep_bb_simulation_base L1 L2 L3 hsingle index order match_states
+                  props index' order' match_states' props' s3 t s3' hstep
+                  i1m s1m i2 s2y hmatch1m hmatch2 hsafe1m
+              rcases hresult with hplus | hstar_order
+              · exact ⟨i'', s1'',
+                  ⟨Or.inl (plus_star_trans L1.genvtype L1.state L1.step L1.globalenv
+                      s1 E0 s1m t s1'' t hplus1m
+                      (plus_star L1.genvtype L1.state L1.step L1.globalenv
+                        s1m t s1'' hplus)
+                      (_root_.List.nil_append t).symm), hmatch''⟩⟩
+              · exact ⟨i'', s1'',
+                  ⟨Or.inl (plus_star_trans L1.genvtype L1.state L1.step L1.globalenv
+                      s1 E0 s1m t s1'' t hplus1m hstar_order.1
+                      (_root_.List.nil_append t).symm), hmatch''⟩⟩
+          | inr horder1 =>
+              obtain ⟨i1m, horder1m, hmatch1m⟩ := horder1
+              obtain ⟨i'', s1'', hresult, hmatch''⟩ :=
+                smallstep_bb_simulation_base L1 L2 L3 hsingle index order match_states
+                  props index' order' match_states' props' s3 t s3' hstep
+                  i1m s1 i2 s2y hmatch1m hmatch2 hsafe
+              rcases hresult with hplus | hstar_order
+              · exact ⟨i'', s1'', Or.inl hplus, hmatch''⟩
+              · rcases hstar_order with ⟨hstar, hbb⟩
+                cases hbb with
+                | left a1 b1 a2 b2 hleft =>
+                    exact ⟨_, s1'', Or.inr ⟨hstar,
+                      lex_ord_left _ _ _ _ _ _
+                        (CompCert4Lean.Foundation.Ordered.Rocq.Coq.Relations.Relation_Operators.t_trans
+                          _ _ _ _ _ hleft horder1m)⟩, hmatch''⟩
+                | right _ _ _ hright =>
+                    exact ⟨_, s1'', Or.inr ⟨hstar,
+                      lex_ord_left _ _ _ _ _ _ horder1m⟩, hmatch''⟩
+
+end CompCert4Lean.Common.Smallstep
+
+namespace CompCert4Lean.Common.Smallstep
+
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Lib.Coqlib
+
+theorem compose_backward_simulation : compose_backward_simulationStatement := by
+  intro L1 L2 L3 hsingle hsim12 hsim23
+  cases hsim12 with
+  | @Backward_simulation index order match_states props =>
+      cases hsim23 with
+      | @Backward_simulation index' order' match_states' props' =>
+          apply Backward_simulation
+            (bb_order order order')
+            (bb_match_states L1 L2 L3 match_states match_states')
+          constructor
+          · have hsource :=
+              CompCert4Lean.Foundation.Recursion.Rocq.Coq.Wellfounded.Transitive_Closure.wf_clos_trans
+                _ _ (props.bsim_order_wf :
+                  CompCert4Lean.Foundation.Recursion.Rocq.Coq.Init.Wf.well_founded order)
+            have hconvert : ∀ (a : index),
+                CompCert4Lean.Foundation.Recursion.Rocq.Coq.Init.Wf.Acc
+                  (_root_.CompCert4Lean.Foundation.Ordered.Rocq.Coq.Relations.Relation_Operators.clos_trans
+                    index order) a →
+                Acc (_root_.CompCert4Lean.Foundation.Ordered.Rocq.Coq.Relations.Relation_Operators.clos_trans
+                  index order) a := by
+              intro a ha
+              induction ha with
+              | Acc_intro x h ih =>
+                  exact Acc.intro x (fun y hy => ih y hy)
+            have hclosure : WellFounded
+                (_root_.CompCert4Lean.Foundation.Ordered.Rocq.Coq.Relations.Relation_Operators.clos_trans
+                  index order) := ⟨fun a => hconvert a (hsource a)⟩
+            exact smallstep_wf_lex_ord _ _ hclosure props'.bsim_order_wf
+          · intro s1 hinit
+            obtain ⟨s2, hinit2⟩ := props.bsim_initial_states_exist s1 hinit
+            exact props'.bsim_initial_states_exist s2 hinit2
+          · intro s1 s3 hinit1 hinit3
+            obtain ⟨s2, hinit2⟩ := props.bsim_initial_states_exist s1 hinit1
+            obtain ⟨i2, s2', hinit2', hmatch2⟩ :=
+              props'.bsim_match_initial_states s2 s3 hinit2 hinit3
+            obtain ⟨i1, s1', hinit1', hmatch1⟩ :=
+              props.bsim_match_initial_states s1 s2' hinit1 hinit2'
+            exact ⟨(i1, i2), s1', hinit1',
+              smallstep_bb_match_at L1 L2 L3 match_states match_states'
+                i1 i2 s1' s2' s3 hmatch1 hmatch2⟩
+          · intro i s1 s3 r hmatch hsafe hfinal3
+            cases hmatch with
+            | bb_match_later i1 i2 s1 s3 s2x s2y hmatch1 hstar2 hmatch2 =>
+                have hsafe2x : safe L2 s2x :=
+                  bsim_safe L1 L2 index order match_states props i1 s1 s2x
+                    hmatch1 hsafe
+                have hsafe2y : safe L2 s2y :=
+                  star_safe L2 s2x s2y hstar2 hsafe2x
+                obtain ⟨s2', hstar2', hfinal2⟩ :=
+                  props'.bsim_match_final_states i2 s3 r hmatch2 hsafe2y hfinal3
+                obtain ⟨i1m, s1m, hstar1m, hmatch1m⟩ :=
+                  bsim_E0_star L1 L2 index order match_states props s2x s2'
+                    (star_trans _ _ _ _ s2x E0 s2y hstar2 E0 s2' E0 hstar2' rfl)
+                    i1 s1 hmatch1 hsafe
+                obtain ⟨s1', hstar1', hfinal1⟩ :=
+                  props.bsim_match_final_states i1m s2' r hmatch1m
+                    (star_safe L1 s1 s1m hstar1m hsafe) hfinal2
+                exact ⟨s1',
+                  star_trans _ _ _ _ s1 E0 s1m hstar1m E0 s1' E0 hstar1' rfl,
+                  hfinal1⟩
+          · intro i s1 s3 hmatch hsafe
+            cases hmatch with
+            | bb_match_later i1 i2 s1 s3 s2x s2y hmatch1 hstar2 hmatch2 =>
+                have hsafe2x : safe L2 s2x :=
+                  bsim_safe L1 L2 index order match_states props i1 s1 s2x
+                    hmatch1 hsafe
+                exact props'.bsim_progress i2 s3 hmatch2
+                  (star_safe L2 s2x s2y hstar2 hsafe2x)
+          · exact smallstep_bb_simulation L1 L2 L3 hsingle index order match_states
+              props index' order' match_states' props'
+          · intro id
+            exact props'.bsim_public_preserved id |>.trans
+              (props.bsim_public_preserved id)
+
+end CompCert4Lean.Common.Smallstep
