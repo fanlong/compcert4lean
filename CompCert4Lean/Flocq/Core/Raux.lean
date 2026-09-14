@@ -2980,3 +2980,42 @@ theorem Zceil_glb (ctx : ExactRealContext) :
   exact pg_neg_le_contravar ctx hnx
 
 end CompCert4Lean.Flocq.Core.Raux
+
+namespace CompCert4Lean.Flocq.Core.Raux
+
+theorem Zceil_imp (ctx : ExactRealContext) :
+    Zceil_impStatement ctx := by
+  intro n x hnx
+  unfold Exact.Zceil
+  have hfloor : Exact.Zfloor ctx (Exact.Ropp ctx x) = Zopp n := by
+    apply Zfloor_imp ctx (Zopp n) (Exact.Ropp ctx x)
+    constructor
+    · change ctx.spec.le (ctx.spec.ofZ (Zopp n)) (Exact.Ropp ctx x)
+      rw [ctx.certificate.sourceLaws.ofZ_neg]
+      exact pg_neg_le_contravar ctx hnx.2
+    · change ctx.spec.lt (Exact.Ropp ctx x)
+        (ctx.spec.ofZ (Zadd (Zopp n) (Zpos xH)))
+      rw [ctx.certificate.sourceLaws.ofZ_add,
+        ctx.certificate.sourceLaws.ofZ_neg,
+        ctx.certificate.sourceLaws.ofZ_one]
+      have hneg := (exact_neg_lt_neg_iff ctx).2 hnx.1
+      change ctx.spec.lt (ctx.spec.neg x)
+        (ctx.spec.neg (ctx.spec.ofZ (Zsub n (Zpos xH)))) at hneg
+      change ctx.spec.lt (ctx.spec.neg x)
+        (ctx.spec.neg (ctx.spec.ofZ (Zadd n (Zopp (Zpos xH))))) at hneg
+      rw [ctx.certificate.sourceLaws.ofZ_add,
+        ctx.certificate.sourceLaws.ofZ_neg,
+        ctx.certificate.sourceLaws.ofZ_one] at hneg
+      have hrewrite :=
+        CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.Ropp_minus_distr
+          ctx (ctx.spec.ofZ n) ctx.spec.one
+      change ctx.spec.neg (ctx.spec.add (ctx.spec.ofZ n)
+          (ctx.spec.neg ctx.spec.one)) =
+        ctx.spec.add ctx.spec.one (ctx.spec.neg (ctx.spec.ofZ n)) at hrewrite
+      rw [hrewrite] at hneg
+      rw [ctx.certificate.orderedField.add_comm] at hneg
+      exact hneg
+  rw [hfloor]
+  exact pg_zopp_zopp n
+
+end CompCert4Lean.Flocq.Core.Raux
