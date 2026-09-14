@@ -2425,3 +2425,46 @@ theorem match_envs_set_opttemp : match_envs_set_opttempStatement := by
             exact hg.trans htle
 
 end CompCert4Lean.Cfrontend.SimplLocalsproof
+
+namespace CompCert4Lean.Cfrontend.SimplLocalsproof
+
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Cfrontend.Clight
+open CompCert4Lean.Cfrontend.SimplLocals
+open CompCert4Lean.Lib.Maps
+
+theorem match_envs_change_temp : match_envs_change_tempStatement := by
+  intro f cenv e le m lo hi te tle tlo thi id v hme hle hmem
+  rcases hme with ⟨hvars, htemps, hinj_env, hrange, htrange,
+    hmapped, hflat, hlo, htlo⟩
+  refine ⟨?_, ?_, hinj_env, hrange, htrange, hmapped, hflat, hlo, htlo⟩
+  · intro id0
+    cases hvars id0 with
+    | match_var_lifted b ty chunk v0 tv0 henv htenv hlift hmap hmode hload htlenv hv =>
+        have hne : id0 ≠ id := by
+          intro heq
+          subst id0
+          have hbad : (true : Bool) = false := hlift.symm.trans hmem
+          cases hbad
+        exact match_var_lifted b ty chunk v0 tv0 henv htenv hlift hmap hmode hload
+          (by
+            have hg : PTree.get id0 (PTree.set id v tle) = PTree.get id0 tle :=
+              PTree.gso (A := val) (i := id0) (j := id) v tle hne
+            exact hg.trans htlenv)
+          hv
+    | match_var_not_lifted b ty b' henv htenv hnlocal hmap =>
+        exact match_var_not_lifted b ty b' henv htenv hnlocal hmap
+    | match_var_not_local henv htenv hnlocal =>
+        exact match_var_not_local henv htenv hnlocal
+  · intro id0 v0 hget
+    have hne : id0 ≠ id := by
+      intro heq
+      subst id0
+      simpa [hle] using hget
+    rcases htemps id0 v0 hget with ⟨⟨tv, htle, hv⟩, hcenv⟩
+    refine ⟨⟨tv, ?_, hv⟩, hcenv⟩
+    have hg : PTree.get id0 (PTree.set id v tle) = PTree.get id0 tle :=
+      PTree.gso (A := val) (i := id0) (j := id) v tle hne
+    exact hg.trans htle
+
+end CompCert4Lean.Cfrontend.SimplLocalsproof

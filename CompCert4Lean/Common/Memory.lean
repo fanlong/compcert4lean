@@ -2901,3 +2901,11 @@ theorem addressing_int64_split : addressing_int64_splitStatement := by
 end Mem
 
 end CompCert4Lean.Common.Memory
+
+namespace CompCert4Lean.Common.Memory
+namespace Mem
+theorem loadv_int64_split : loadv_int64_splitStatement := by
+  intro m a v hload hptr
+  simp [CompCert4Lean.X86_64.Archi.ptr64] at hptr
+end Mem
+end CompCert4Lean.Common.Memory

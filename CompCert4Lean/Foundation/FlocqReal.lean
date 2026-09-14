@@ -2264,3 +2264,43 @@ theorem Rmult_eq_compat_l :
 end RIneq
 end Rocq.Coq.Reals
 end CompCert4Lean.Foundation.FlocqReal
+
+namespace CompCert4Lean.Foundation.FlocqReal
+namespace Rocq.Coq.Reals
+namespace RIneq
+
+theorem Rmult_eq_reg_r :
+    ∀ (ctx : ExactRealContext), Rmult_eq_reg_rStatement ctx := by
+  intro ctx r r1 r2 hmul hr
+  change ctx.spec.mul r1 r = ctx.spec.mul r2 r at hmul
+  have hrne : r ≠ ctx.spec.zero := by
+    intro hz
+    apply hr
+    calc
+      r = ctx.spec.zero := hz
+      _ = ctx.spec.ofZ Z0 := ctx.certificate.sourceLaws.ofZ_zero.symm
+  have hmul' :
+      ctx.spec.mul (ctx.spec.inv r) (ctx.spec.mul r1 r) =
+        ctx.spec.mul (ctx.spec.inv r) (ctx.spec.mul r2 r) :=
+    congrArg (fun x => ctx.spec.mul (ctx.spec.inv r) x) hmul
+  calc
+    r1 = ctx.spec.mul ctx.spec.one r1 :=
+      (ctx.certificate.orderedField.one_mul r1).symm
+    _ = ctx.spec.mul (ctx.spec.mul (ctx.spec.inv r) r) r1 := by
+      rw [ctx.certificate.orderedField.inv_mul_cancel r hrne]
+    _ = ctx.spec.mul (ctx.spec.inv r) (ctx.spec.mul r r1) := by
+      rw [ctx.certificate.orderedField.mul_assoc]
+    _ = ctx.spec.mul (ctx.spec.inv r) (ctx.spec.mul r1 r) := by
+      rw [ctx.certificate.orderedField.mul_comm r r1]
+    _ = ctx.spec.mul (ctx.spec.inv r) (ctx.spec.mul r2 r) := hmul'
+    _ = ctx.spec.mul (ctx.spec.inv r) (ctx.spec.mul r r2) := by
+      rw [ctx.certificate.orderedField.mul_comm r2 r]
+    _ = ctx.spec.mul (ctx.spec.mul (ctx.spec.inv r) r) r2 := by
+      rw [ctx.certificate.orderedField.mul_assoc]
+    _ = ctx.spec.mul ctx.spec.one r2 := by
+      rw [ctx.certificate.orderedField.inv_mul_cancel r hrne]
+    _ = r2 := ctx.certificate.orderedField.one_mul r2
+
+end RIneq
+end Rocq.Coq.Reals
+end CompCert4Lean.Foundation.FlocqReal
