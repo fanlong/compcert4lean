@@ -1195,3 +1195,21 @@ theorem cond_Zopp_negb : cond_Zopp_negbStatement := by
       omega
 
 end CompCert4Lean.Flocq.Core.Zaux
+
+namespace CompCert4Lean.Flocq.Core.Zaux
+
+theorem abs_cond_Zopp : abs_cond_ZoppStatement := by
+  intro b m
+  cases b with
+  | false => rfl
+  | true =>
+      change Zabs (Zopp m) = Zabs m
+      simp only [Zabs, Zopp,
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.abs,
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.opp]
+      rw [CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+      exact congrArg
+        (fun n : Nat => CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt (Int.ofNat n))
+        (Int.natAbs_neg (CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ m))
+
+end CompCert4Lean.Flocq.Core.Zaux

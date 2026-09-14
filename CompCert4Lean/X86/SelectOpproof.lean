@@ -771,3 +771,34 @@ theorem eval_negint
       · rfl
 
 end CompCert4Lean.X86.SelectOpproof
+
+namespace CompCert4Lean.X86.SelectOpproof
+
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.Common.Values
+open CompCert4Lean.X86.Op
+open CompCert4Lean.X86.SelectOp
+
+theorem eval_mulhs
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    eval_mulhsStatement := by
+  intro xi ge sp e m le a x b y hxa hxb
+  refine ⟨Val.mulhs x y, ?_, Val.lessdef_refl _⟩
+  apply eval_Eop le Omulhs (Econs a (Econs b Enil)) [x, y] (Val.mulhs x y)
+  · apply eval_exprlist.cons le a (Econs b Enil) x [y] hxa
+    exact eval_exprlist.cons le b Enil y [] hxb (eval_exprlist.nil le)
+  · rfl
+
+theorem eval_mulhu
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    eval_mulhuStatement := by
+  intro xi ge sp e m le a x b y hxa hxb
+  refine ⟨Val.mulhu x y, ?_, Val.lessdef_refl _⟩
+  apply eval_Eop le Omulhu (Econs a (Econs b Enil)) [x, y] (Val.mulhu x y)
+  · apply eval_exprlist.cons le a (Econs b Enil) x [y] hxa
+    exact eval_exprlist.cons le b Enil y [] hxb (eval_exprlist.nil le)
+  · rfl
+
+end CompCert4Lean.X86.SelectOpproof

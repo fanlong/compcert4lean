@@ -1849,3 +1849,34 @@ theorem symbol_address_inject : symbol_address_injectStatement := by
       exact (unusedglob_ptrofs_add_zero_repr ofs).symm
 
 end CompCert4Lean.Backend.Unusedglobproof
+
+namespace CompCert4Lean.Backend.Unusedglobproof
+
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Coqlib
+
+private theorem unusedglob_set_reg_inject_aux :
+    ∀ (f : Val.meminj) (rs rs' : CompCert4Lean.Backend.RTL.regset)
+      (r : reg) (v v' : val),
+      regset_inject f rs rs' → Val.inject f v v' →
+        regset_inject f (Regmap.set r v rs) (Regmap.set r v' rs') := by
+  intro f rs rs' r v v' h hv r0
+  rw [@Regmap.gsspec_proof val r0 r v rs,
+      @Regmap.gsspec_proof val r0 r v' rs']
+  cases peq r0 r with
+  | left heq =>
+      subst r0
+      simp
+      exact hv
+  | right hne =>
+      simp [hne]
+      exact h r0
+
+theorem set_res_inject : set_res_injectStatement := by
+  intro f rs rs' res v v' h hv
+  cases res with
+  | BR r => exact unusedglob_set_reg_inject_aux f rs rs' r v v' h hv
+  | _ => exact h
+
+end CompCert4Lean.Backend.Unusedglobproof

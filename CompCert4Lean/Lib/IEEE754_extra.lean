@@ -1223,3 +1223,444 @@ theorem Ztrunc_range_pos : Ztrunc_range_posStatement := by
     exact pg_ieee_floor_bounds ctx x
 
 end CompCert4Lean.Lib.IEEE754_extra
+namespace CompCert4Lean.Lib.IEEE754_extra
+open CompCert4Lean.Flocq.Core
+open CompCert4Lean.Flocq.IEEE754
+private theorem local_zdiv_nonneg (x y : Z) (hx : Zlt Z0 x) (hy : Zlt Z0 y) :
+    Zle Z0 (Zdiv x y) := by
+  let q : Z := Zdiv x y
+  let r : Z := _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.modulo x y
+  have hdecomp : x = Zadd (Zmul y q) r := by
+    simpa [q, r, Zadd, Zmul] using
+      (_root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.Zdiv.Z_div_mod_eq_full x y)
+  have hrange := _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.Zdiv.Z_mod_lt x y
+    (show _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.gt y Z0 from hy)
+  change (0 : Int) ≤ _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (Zdiv x y)
+  by_cases hqgood : Zle Z0 (Zdiv x y)
+  · exact hqgood
+  · have hq := hqgood
+    have hqneg : _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ q < 0 := by
+      change ¬ (0 : Int) ≤ _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ q at hq
+      exact Int.lt_of_not_ge hq
+    have hypos : (0 : Int) < _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ y := hy
+    have hqle : _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ q ≤ -1 := by
+      have := Int.le_sub_one_of_lt hqneg
+      simpa using this
+    have hmul_le := Int.mul_le_mul_of_nonneg_left hqle (Int.le_of_lt hypos)
+    have hmul_le' : _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ y *
+        _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ q ≤
+        -_root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ y := by
+      simpa using hmul_le
+    have hrem_lt : _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ r <
+        _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ y := hrange.2
+    rw [hdecomp] at hx
+    simp only [Zadd, Zmul,
+      _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add,
+      _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.mul,
+      _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt] at hx
+    change _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ Z0 <
+      _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+        (_root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt
+          (_root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ y *
+            _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ q +
+            _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ r)) at hx
+    simp only [_root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt] at hx
+    change (0 : Int) < _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ y *
+      _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ q +
+      _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ r at hx
+    omega
+
+private theorem local_floor_div (ctx : ExactRealContext) (x y : Z) (hy : Zlt Z0 y) :
+    CompCert4Lean.Flocq.Core.Raux.Exact.Zfloor ctx
+      (CompCert4Lean.Foundation.FlocqReal.ExactReal.Rdiv ctx.spec
+        (CompCert4Lean.Flocq.Core.Raux.Exact.IZR ctx x)
+        (CompCert4Lean.Flocq.Core.Raux.Exact.IZR ctx y)) = Zdiv x y := by
+  let q : Z := Zdiv x y
+  let r : Z := _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.modulo x y
+  have hdecomp : x = Zadd (Zmul y q) r := by
+    simpa [q, r, Zadd, Zmul] using
+      (_root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.Zdiv.Z_div_mod_eq_full x y)
+  have hrange := _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.Zdiv.Z_mod_lt x y
+    (show _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.gt y Z0 from hy)
+  have hq_int : Zle (Zmul y q) x := by
+    change _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (Zmul y q) ≤
+      _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ x
+    rw [hdecomp]
+    simp only [Zadd, Zmul,
+      _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add,
+      _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.mul,
+      _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+    have hr0 : (0 : Int) ≤ _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ r := by
+      exact hrange.1
+    omega
+  have hupper_int : Zlt x (Zmul y (Zadd q Zone)) := by
+    change _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ x <
+      _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (Zmul y (Zadd q Zone))
+    rw [hdecomp]
+    simp only [Zadd, Zmul,
+      _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add,
+      _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.mul,
+      _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+    simp only [Int.mul_add, _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+    have hzone : _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ Zone = (1 : Int) := by rfl
+    rw [hzone]
+    have hrlt : _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ r <
+        _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ y := hrange.2
+    have hyi : 0 < _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ y := hy
+    omega
+  have hypos : ctx.spec.lt ctx.spec.zero (ctx.spec.ofZ y) := by
+    rw [← ctx.certificate.sourceLaws.ofZ_zero]
+    exact CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.IZR_lt ctx Z0 y hy
+  have hyne : ctx.spec.ofZ y ≠ ctx.spec.zero := by
+    intro heq
+    rw [heq] at hypos
+    exact ctx.certificate.orderedField.lt_irrefl _ hypos
+  let ratio := CompCert4Lean.Foundation.FlocqReal.ExactReal.Rdiv ctx.spec
+        (CompCert4Lean.Flocq.Core.Raux.Exact.IZR ctx x)
+        (CompCert4Lean.Flocq.Core.Raux.Exact.IZR ctx y)
+  have hmul_ratio : ctx.spec.mul (ctx.spec.ofZ y) ratio = ctx.spec.ofZ x := by
+    dsimp [ratio, CompCert4Lean.Foundation.FlocqReal.ExactReal.Rdiv]
+    rw [ctx.certificate.orderedField.div_eq_mul_inv]
+    calc
+      ctx.spec.mul (ctx.spec.ofZ y)
+          (ctx.spec.mul (ctx.spec.ofZ x) (ctx.spec.inv (ctx.spec.ofZ y))) =
+          ctx.spec.mul (ctx.spec.ofZ x)
+            (ctx.spec.mul (ctx.spec.ofZ y) (ctx.spec.inv (ctx.spec.ofZ y))) := by
+              rw [← ctx.certificate.orderedField.mul_assoc,
+                ctx.certificate.orderedField.mul_comm (ctx.spec.ofZ y) (ctx.spec.ofZ x),
+                ctx.certificate.orderedField.mul_assoc]
+      _ = ctx.spec.mul (ctx.spec.ofZ x)
+            (ctx.spec.mul (ctx.spec.inv (ctx.spec.ofZ y)) (ctx.spec.ofZ y)) := by
+              exact congrArg (fun z => ctx.spec.mul (ctx.spec.ofZ x) z)
+                (ctx.certificate.orderedField.mul_comm (ctx.spec.ofZ y) (ctx.spec.inv (ctx.spec.ofZ y)))
+      _ = ctx.spec.mul (ctx.spec.ofZ x) ctx.spec.one := by
+              rw [ctx.certificate.orderedField.inv_mul_cancel _ hyne]
+      _ = ctx.spec.ofZ x := ctx.certificate.orderedField.mul_one _
+  have hq_real : ctx.spec.le (ctx.spec.ofZ q) ratio := by
+    rcases ctx.certificate.total_order (ctx.spec.ofZ q) ratio with h | h
+    · rcases h with h | h
+      · exact (ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp h |>.1
+      · rw [h]
+        exact ctx.certificate.orderedField.le_refl _
+    · exfalso
+      have hm := ctx.certificate.orderedField.mul_lt_compat_l (ctx.spec.ofZ y)
+        ratio (ctx.spec.ofZ q) hypos h
+      rw [hmul_ratio] at hm
+      have hmq' : ctx.spec.mul (ctx.spec.ofZ y) (ctx.spec.ofZ q) = ctx.spec.ofZ (Zmul y q) := by
+        exact (CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.mult_IZR ctx y q).symm
+      rw [hmq'] at hm
+      have hqx := CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.IZR_le ctx
+        (Zmul y q) x hq_int
+      change ctx.spec.le (ctx.spec.ofZ (Zmul y q)) (ctx.spec.ofZ x) at hqx
+      exact ((ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp hm).2 hqx
+  have hupper_real : ctx.spec.lt ratio (ctx.spec.ofZ (Zadd q Zone)) := by
+    rcases ctx.certificate.total_order ratio (ctx.spec.ofZ (Zadd q Zone)) with h | h
+    · rcases h with h | h
+      · exact h
+      · exfalso
+        have heqmul := congrArg (fun z => ctx.spec.mul (ctx.spec.ofZ y) z) h
+        rw [hmul_ratio] at heqmul
+        have hmq' : ctx.spec.mul (ctx.spec.ofZ y) (ctx.spec.ofZ (Zadd q Zone)) =
+            ctx.spec.ofZ (Zmul y (Zadd q Zone)) := by
+          exact (CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.mult_IZR ctx y (Zadd q Zone)).symm
+        rw [hmq'] at heqmul
+        have hxu := CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.IZR_lt ctx x
+          (Zmul y (Zadd q Zone)) hupper_int
+        change ctx.spec.lt (ctx.spec.ofZ x) (ctx.spec.ofZ (Zmul y (Zadd q Zone))) at hxu
+        rw [← heqmul] at hxu
+        exact ctx.certificate.orderedField.lt_irrefl _ hxu
+    · exfalso
+      have hm := ctx.certificate.orderedField.mul_lt_compat_l (ctx.spec.ofZ y)
+        (ctx.spec.ofZ (Zadd q Zone)) ratio hypos h
+      rw [hmul_ratio] at hm
+      have hmq' : ctx.spec.mul (ctx.spec.ofZ y) (ctx.spec.ofZ (Zadd q Zone)) =
+          ctx.spec.ofZ (Zmul y (Zadd q Zone)) := by
+        exact (CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.mult_IZR ctx y (Zadd q Zone)).symm
+      rw [hmq'] at hm
+      have hxu := CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.IZR_lt ctx x
+        (Zmul y (Zadd q Zone)) hupper_int
+      exact (ctx.certificate.orderedField.lt_irrefl _
+        (ctx.certificate.orderedField.lt_trans _ _ _ hxu hm)).elim
+  apply CompCert4Lean.Flocq.Core.Raux.Zfloor_imp ctx q ratio
+  constructor
+  · exact hq_real
+  · change ctx.spec.lt ratio (ctx.spec.ofZ (Zadd q (Zpos xH)))
+    exact hupper_real
+
+private theorem local_trunc_div (ctx : ExactRealContext) (x y : Z)
+    (hx : Zle Z0 x) (hy : Zlt Z0 y) :
+    CompCert4Lean.Flocq.Core.Raux.Exact.Ztrunc ctx
+      (CompCert4Lean.Foundation.FlocqReal.ExactReal.Rdiv ctx.spec
+        (CompCert4Lean.Flocq.Core.Raux.Exact.IZR ctx x)
+        (CompCert4Lean.Flocq.Core.Raux.Exact.IZR ctx y)) = Zdiv x y := by
+  have hnonneg : ctx.spec.le ctx.spec.zero
+      (CompCert4Lean.Foundation.FlocqReal.ExactReal.Rdiv ctx.spec
+        (CompCert4Lean.Flocq.Core.Raux.Exact.IZR ctx x)
+        (CompCert4Lean.Flocq.Core.Raux.Exact.IZR ctx y)) := by
+    change ctx.spec.le ctx.spec.zero
+      (ctx.spec.div (ctx.spec.ofZ x) (ctx.spec.ofZ y))
+    rw [ctx.certificate.orderedField.div_eq_mul_inv]
+    have hxin : ctx.spec.le ctx.spec.zero (ctx.spec.ofZ x) := by
+      rw [← ctx.certificate.sourceLaws.ofZ_zero]
+      exact CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.IZR_le ctx Z0 x hx
+    have hypos : ctx.spec.lt ctx.spec.zero (ctx.spec.ofZ y) := by
+      rw [← ctx.certificate.sourceLaws.ofZ_zero]
+      exact CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.IZR_lt ctx Z0 y hy
+    have hypos' : CompCert4Lean.Flocq.Core.Raux.Exact.Rlt ctx
+        (CompCert4Lean.Flocq.Core.Raux.Exact.IZR ctx Z0) (CompCert4Lean.Flocq.Core.Raux.Exact.IZR ctx y) := by
+      change ctx.spec.lt (ctx.spec.ofZ Z0) (ctx.spec.ofZ y)
+      rw [ctx.certificate.sourceLaws.ofZ_zero]
+      exact hypos
+    have hinvle : ctx.spec.le ctx.spec.zero (ctx.spec.inv (ctx.spec.ofZ y)) := by
+      have hi := CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.Rinv_0_lt_compat ctx
+        (ctx.spec.ofZ y) hypos'
+      change ctx.spec.lt (ctx.spec.ofZ Z0) (ctx.spec.inv (ctx.spec.ofZ y)) at hi
+      rw [ctx.certificate.sourceLaws.ofZ_zero] at hi
+      exact (ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp hi |>.1
+    have hxin' : CompCert4Lean.Flocq.Core.Raux.Exact.Rle ctx
+        (CompCert4Lean.Flocq.Core.Raux.Exact.IZR ctx Z0) (CompCert4Lean.Flocq.Core.Raux.Exact.IZR ctx x) := by
+      change ctx.spec.le (ctx.spec.ofZ Z0) (ctx.spec.ofZ x)
+      rw [ctx.certificate.sourceLaws.ofZ_zero]
+      exact hxin
+    have hinvle' : CompCert4Lean.Flocq.Core.Raux.Exact.Rle ctx
+        (CompCert4Lean.Flocq.Core.Raux.Exact.IZR ctx Z0)
+        (CompCert4Lean.Flocq.Core.Raux.Exact.Rinv ctx (CompCert4Lean.Flocq.Core.Raux.Exact.IZR ctx y)) := by
+      change ctx.spec.le (ctx.spec.ofZ Z0) (ctx.spec.inv (ctx.spec.ofZ y))
+      rw [ctx.certificate.sourceLaws.ofZ_zero]
+      exact hinvle
+    have hp := CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.Rmult_le_pos ctx
+      (CompCert4Lean.Flocq.Core.Raux.Exact.IZR ctx x)
+      (CompCert4Lean.Flocq.Core.Raux.Exact.Rinv ctx (CompCert4Lean.Flocq.Core.Raux.Exact.IZR ctx y)) hxin' hinvle'
+    change ctx.spec.le (ctx.spec.ofZ Z0) (ctx.spec.mul (ctx.spec.ofZ x) (ctx.spec.inv (ctx.spec.ofZ y))) at hp
+    rw [ctx.certificate.sourceLaws.ofZ_zero] at hp
+    exact hp
+  unfold CompCert4Lean.Flocq.Core.Raux.Exact.Ztrunc
+  have hb0 : CompCert4Lean.Flocq.Core.Raux.Exact.Rlt_bool ctx
+      (CompCert4Lean.Foundation.FlocqReal.ExactReal.Rdiv ctx.spec
+        (CompCert4Lean.Flocq.Core.Raux.Exact.IZR ctx x)
+        (CompCert4Lean.Flocq.Core.Raux.Exact.IZR ctx y))
+      (CompCert4Lean.Flocq.Core.Raux.Exact.R0 ctx) = false := by
+    apply CompCert4Lean.Flocq.Core.Raux.Rlt_bool_false ctx
+    exact hnonneg
+  rw [hb0]
+  exact local_floor_div ctx x y hy
+theorem ZofB_range_pos {prec emax : Z} [Prec_gt_0 prec] [Prec_lt_emax prec emax] : ZofB_range_posStatement (prec := prec) (emax := emax) := by
+  dsimp [ZofB_range_posStatement, keepPrecisionHypotheses]
+  intro f n hfn hn ctx
+  cases f with
+  | mk f hcert =>
+    cases f with
+    | B754_nan => simp [ZofB] at hfn
+    | B754_infinity s => simp [ZofB] at hfn
+    | B754_zero s =>
+      simp [ZofB] at hfn
+      subst n
+      change Zlt Z0 Z0 at hn
+      change (0 : Int) < 0 at hn
+      omega
+    | B754_finite s m e =>
+      cases e with
+      | Z0 =>
+        simp [ZofB] at hfn
+        cases s with
+        | true =>
+          rw [← hfn] at hn
+          change _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ Z0 <
+            _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+              (Zaux.cond_Zopp true (Zpos m)) at hn
+          simp [Zaux.cond_Zopp, CompCert4Lean.Lib.Floats.Model.Rocq.Coq.Floats.SpecFloat.cond_Zopp,
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.opp,
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt] at hn
+          have hz0 : _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ Z0 = (0 : Int) := by rfl
+          rw [hz0] at hn
+          have hmpos : (0 : Int) < _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (Zpos m) := by
+            simp only [_root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ]
+            change (0 : Int) < Int.ofNat
+              (_root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat m)
+            change Int.ofNat 0 < Int.ofNat
+              (_root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat m)
+            exact Int.ofNat_lt.mpr
+              (_root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat_positive m)
+          omega
+        | false =>
+          simp [Zaux.cond_Zopp, CompCert4Lean.Lib.Floats.Model.Rocq.Coq.Floats.SpecFloat.cond_Zopp] at hfn
+          subst n
+          change Exact.Rle ctx (Exact.IZR ctx (Zpos m))
+            (Exact.Rmult ctx (Exact.IZR ctx (Zpos m))
+              (Exact.bpow ctx Zaux.radix2 Z0)) ∧
+            Exact.Rlt ctx (Exact.Rmult ctx (Exact.IZR ctx (Zpos m))
+              (Exact.bpow ctx Zaux.radix2 Z0))
+              (Exact.IZR ctx (Zadd (Zpos m) Zone))
+          have hbpow : CompCert4Lean.Lib.IEEE754_extra.Exact.bpow ctx
+              Zaux.radix2 Z0 = ctx.spec.one := by rfl
+          rw [hbpow]
+          change ctx.spec.le (ctx.spec.ofZ (Zpos m))
+              (ctx.spec.mul (ctx.spec.ofZ (Zpos m)) ctx.spec.one) ∧
+            ctx.spec.lt (ctx.spec.mul (ctx.spec.ofZ (Zpos m)) ctx.spec.one)
+              (ctx.spec.ofZ (Zadd (Zpos m) Zone))
+          rw [ctx.certificate.orderedField.mul_one]
+          constructor
+          · exact ctx.certificate.orderedField.le_refl _
+          · apply CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.IZR_lt ctx
+            change _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (Zpos m) < _
+            simp [Zadd, _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add,
+              _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+            have hzone : _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ Zone = (1 : Int) := by rfl
+            rw [hzone]
+            omega
+      | Zpos p =>
+        simp [ZofB] at hfn
+        cases s with
+        | true =>
+          rw [← hfn] at hn
+          change _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ Z0 <
+            _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+              (Zmul (Zaux.cond_Zopp true (Zpos m)) (Zpower_pos Ztwo p)) at hn
+          simp [Zaux.cond_Zopp, CompCert4Lean.Lib.Floats.Model.Rocq.Coq.Floats.SpecFloat.cond_Zopp,
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.opp,
+            Zmul,
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.mul,
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt] at hn
+          have hmpos : (0 : Int) < _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (Zpos m) := by
+            simp only [_root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ]
+            change (0 : Int) < Int.ofNat
+              (_root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat m)
+            change Int.ofNat 0 < Int.ofNat
+              (_root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat m)
+            exact Int.ofNat_lt.mpr
+              (_root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat_positive m)
+          have hpbase : Zlt Z0 Ztwo := by
+            change (0 : Int) < 2
+            decide
+          have hpowpos := CompCert4Lean.Flocq.Core.Zaux.Zpower_pos_gt_0 Ztwo p hpbase
+          change (0 : Int) < -_root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (Zpos m) *
+            _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (Zpower_pos Ztwo p) at hn
+          have hnegm : -_root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (Zpos m) < 0 :=
+            Int.neg_neg_of_pos hmpos
+          have hneg : -_root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (Zpos m) *
+              _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (Zpower_pos Ztwo p) < 0 := by
+            exact Int.mul_neg_of_neg_of_pos hnegm hpowpos
+          omega
+        | false =>
+          simp [Zaux.cond_Zopp, CompCert4Lean.Lib.Floats.Model.Rocq.Coq.Floats.SpecFloat.cond_Zopp] at hfn
+          subst n
+          change Exact.Rle ctx (Exact.IZR ctx (Zmul (Zpos m) (Zpower_pos Ztwo p)))
+            (Exact.Rmult ctx (Exact.IZR ctx (Zpos m))
+              (Exact.bpow ctx Zaux.radix2 (Zpos p))) ∧
+            Exact.Rlt ctx (Exact.Rmult ctx (Exact.IZR ctx (Zpos m))
+              (Exact.bpow ctx Zaux.radix2 (Zpos p)))
+              (Exact.IZR ctx (Zadd (Zmul (Zpos m) (Zpower_pos Ztwo p)) Zone))
+          have hbpow : Exact.bpow ctx Zaux.radix2 (Zpos p) =
+              Exact.IZR ctx (Zpower_pos Ztwo p) := by rfl
+          rw [hbpow]
+          change ctx.spec.le (ctx.spec.ofZ (Zmul (Zpos m) (Zpower_pos Ztwo p)))
+              (ctx.spec.mul (ctx.spec.ofZ (Zpos m)) (ctx.spec.ofZ (Zpower_pos Ztwo p))) ∧
+            ctx.spec.lt (ctx.spec.mul (ctx.spec.ofZ (Zpos m)) (ctx.spec.ofZ (Zpower_pos Ztwo p)))
+              (ctx.spec.ofZ (Zadd (Zmul (Zpos m) (Zpower_pos Ztwo p)) Zone))
+          have hmul := CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.mult_IZR ctx
+            (Zpos m) (Zpower_pos Ztwo p)
+          change ctx.spec.ofZ (Zmul (Zpos m) (Zpower_pos Ztwo p)) =
+            ctx.spec.mul (ctx.spec.ofZ (Zpos m)) (ctx.spec.ofZ (Zpower_pos Ztwo p)) at hmul
+          rw [← hmul]
+          constructor
+          · exact ctx.certificate.orderedField.le_refl _
+          · apply CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.IZR_lt ctx
+            change _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+                (Zmul (Zpos m) (Zpower_pos Ztwo p)) < _
+            simp [Zadd, _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add,
+              _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+            have hzone : _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ Zone = (1 : Int) := by rfl
+            rw [hzone]
+            omega
+      | Zneg p =>
+        simp [ZofB] at hfn
+        cases s with
+        | true =>
+          rw [← hfn] at hn
+          change _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ Z0 <
+            _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+              (Zaux.cond_Zopp true (Zdiv (Zpos m) (Zpower_pos Ztwo p))) at hn
+          simp [Zaux.cond_Zopp,
+            CompCert4Lean.Lib.Floats.Model.Rocq.Coq.Floats.SpecFloat.cond_Zopp,
+            _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.opp,
+            _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt] at hn
+          have hmpos : Zlt Z0 (Zpos m) := by
+            change (0 : Int) < _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (Zpos m)
+            simp only [_root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ]
+            change (0 : Int) < Int.ofNat
+              (_root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat m)
+            change Int.ofNat 0 < Int.ofNat
+              (_root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat m)
+            exact Int.ofNat_lt.mpr
+              (_root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat_positive m)
+          have hpbase : Zlt Z0 Ztwo := by
+            change (0 : Int) < 2
+            decide
+          have hpowpos := CompCert4Lean.Flocq.Core.Zaux.Zpower_pos_gt_0 Ztwo p hpbase
+          have hqnonneg := local_zdiv_nonneg (Zpos m) (Zpower_pos Ztwo p)
+            hmpos hpowpos
+          change (0 : Int) < -
+            _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+              (Zdiv (Zpos m) (Zpower_pos Ztwo p)) at hn
+          change (0 : Int) ≤
+            _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+              (Zdiv (Zpos m) (Zpower_pos Ztwo p)) at hqnonneg
+          omega
+        | false =>
+          simp [Zaux.cond_Zopp,
+            CompCert4Lean.Lib.Floats.Model.Rocq.Coq.Floats.SpecFloat.cond_Zopp] at hfn
+          subst n
+          change Exact.Rle ctx (Exact.IZR ctx (Zdiv (Zpos m) (Zpower_pos Ztwo p)))
+            (Exact.Rmult ctx (Exact.IZR ctx (Zpos m))
+              (Exact.bpow ctx Zaux.radix2 (Zneg p))) ∧
+            Exact.Rlt ctx (Exact.Rmult ctx (Exact.IZR ctx (Zpos m))
+              (Exact.bpow ctx Zaux.radix2 (Zneg p)))
+              (Exact.IZR ctx (Zadd (Zdiv (Zpos m) (Zpower_pos Ztwo p)) Zone))
+          have hbpow : Exact.bpow ctx Zaux.radix2 (Zneg p) =
+              Exact.Rinv ctx (Exact.IZR ctx (Zpower_pos Ztwo p)) := by rfl
+          rw [hbpow]
+          change ctx.spec.le (ctx.spec.ofZ (Zdiv (Zpos m) (Zpower_pos Ztwo p)))
+              (ctx.spec.mul (ctx.spec.ofZ (Zpos m))
+                (ctx.spec.inv (ctx.spec.ofZ (Zpower_pos Ztwo p)))) ∧
+            ctx.spec.lt (ctx.spec.mul (ctx.spec.ofZ (Zpos m))
+              (ctx.spec.inv (ctx.spec.ofZ (Zpower_pos Ztwo p))))
+              (ctx.spec.ofZ (Zadd (Zdiv (Zpos m) (Zpower_pos Ztwo p)) Zone))
+          rw [← ctx.certificate.orderedField.div_eq_mul_inv]
+          have hmpos : Zlt Z0 (Zpos m) := by
+            change (0 : Int) < _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (Zpos m)
+            simp only [_root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ]
+            change (0 : Int) < Int.ofNat
+              (_root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat m)
+            change Int.ofNat 0 < Int.ofNat
+              (_root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat m)
+            exact Int.ofNat_lt.mpr
+              (_root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat_positive m)
+          have hpbase : Zlt Z0 Ztwo := by
+            change (0 : Int) < 2
+            decide
+          have hpowpos := CompCert4Lean.Flocq.Core.Zaux.Zpower_pos_gt_0 Ztwo p hpbase
+          have hmle : Zle Z0 (Zpos m) := by
+            change (0 : Int) ≤ _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (Zpos m)
+            exact Int.le_of_lt (by exact hmpos)
+          have htrunc : Exact.Ztrunc ctx
+              (Exact.Rdiv ctx (Exact.IZR ctx (Zpos m))
+                (Exact.IZR ctx (Zpower_pos Ztwo p))) =
+              Zdiv (Zpos m) (Zpower_pos Ztwo p) := by
+            exact local_trunc_div ctx (Zpos m) (Zpower_pos Ztwo p) hmle hpowpos
+          have hpos : Zlt Z0
+              (Exact.Ztrunc ctx (Exact.Rdiv ctx (Exact.IZR ctx (Zpos m))
+              (Exact.IZR ctx (Zpower_pos Ztwo p)))) := by
+            rw [htrunc]
+            exact hn
+          have hbounds := Ztrunc_range_pos ctx
+            (Exact.Rdiv ctx (Exact.IZR ctx (Zpos m))
+              (Exact.IZR ctx (Zpower_pos Ztwo p))) hpos
+          rw [htrunc] at hbounds
+          change ctx.spec.le (ctx.spec.ofZ (Zdiv (Zpos m) (Zpower_pos Ztwo p)))
+              (ctx.spec.div (ctx.spec.ofZ (Zpos m))
+                (ctx.spec.ofZ (Zpower_pos Ztwo p))) ∧
+            ctx.spec.lt (ctx.spec.div (ctx.spec.ofZ (Zpos m))
+              (ctx.spec.ofZ (Zpower_pos Ztwo p)))
+              (ctx.spec.ofZ (Zadd (Zdiv (Zpos m) (Zpower_pos Ztwo p)) Zone)) at hbounds
+          exact hbounds
+end CompCert4Lean.Lib.IEEE754_extra

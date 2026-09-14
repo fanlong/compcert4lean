@@ -2877,3 +2877,32 @@ theorem kill_cheap_computations_hold
       exact hev
 
 end CompCert4Lean.Backend.CSEproof
+
+namespace CompCert4Lean.Backend.CSEproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Backend.CSEdomain
+open CompCert4Lean.Lib.Coqlib
+
+theorem shift_memcpy_eq_wf : shift_memcpy_eq_wfStatement := by
+  intro src sz delta e e' next hshift hwf
+  unfold CSE.shift_memcpy_eq at hshift
+  cases e with
+  | Eq l strict r =>
+      cases r with
+      | Op op vl => simp at hshift
+      | Builtin bf args => simp at hshift
+      | Load chunk addr vl p =>
+          cases addr with
+          | Ainstack ofs =>
+              simp at hshift
+              rcases hshift with ⟨_, rfl⟩
+              change Plt l next ∧ wf_rhs next
+                (.Load chunk (.Ainstack _) [] (.Stk _))
+              exact ⟨hwf.1, by
+                intro v hv
+                cases hv
+                ⟩
+          | _ => simp at hshift
+
+end CompCert4Lean.Backend.CSEproof

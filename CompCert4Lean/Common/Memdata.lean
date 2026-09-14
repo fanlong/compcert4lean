@@ -2091,3 +2091,11 @@ theorem proj_bytes_append : proj_bytes_appendStatement := by
               cases h2 : proj_bytes l2 <;> simp [hl, h2]
 
 end CompCert4Lean.Common.Memdata
+
+namespace CompCert4Lean.Common.Memdata
+
+theorem encode_val_int64 : encode_val_int64Statement := by
+  intro v hptr64
+  simp [CompCert4Lean.X86_64.Archi.ptr64] at hptr64
+
+end CompCert4Lean.Common.Memdata

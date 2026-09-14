@@ -1400,3 +1400,12 @@ theorem list_norepet_append : list_norepet_appendStatement := by
   exact (list_norepet_app A l1 l2).2 ⟨h1, h2, hd⟩
 
 end CompCert4Lean.Lib.Coqlib
+
+namespace CompCert4Lean.Lib.Coqlib
+
+theorem list_norepet_append_left : list_norepet_append_leftStatement := by
+  intro A l1 l2 h
+  have hs := (list_norepet_app A l1 l2).mp h
+  exact hs.1
+
+end CompCert4Lean.Lib.Coqlib

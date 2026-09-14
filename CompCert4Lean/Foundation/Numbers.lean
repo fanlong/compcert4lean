@@ -1997,3 +1997,28 @@ theorem ZArith.BinInt.Z.mul_le_mono_nonpos_l :
 
 end Rocq.Coq
 end CompCert4Lean.Foundation.Numbers
+
+namespace CompCert4Lean.Foundation.Numbers
+namespace Rocq.Coq
+
+theorem ZArith.BinInt.Z.compare_gt_iff :
+    ZArith.BinInt.Z.compare_gt_iffStatement := by
+  intro x y
+  unfold ZArith.BinInt.Z.compare ZArith.BinInt.Z.lt comparisonOfInt
+  change (if intOfZ x < intOfZ y then (Lt : comparison)
+    else if intOfZ x = intOfZ y then (Eq : comparison)
+    else (Gt : comparison)) = (Gt : comparison) ↔
+      intOfZ y < intOfZ x
+  by_cases hxy : intOfZ x < intOfZ y
+  · have hyx : ¬ intOfZ y < intOfZ x :=
+      Int.not_lt_of_ge (Int.le_of_lt hxy)
+    simp [hxy, hyx]
+  · by_cases heq : intOfZ x = intOfZ y
+    · have hyx : ¬ intOfZ y < intOfZ x := by
+        simpa [heq] using hxy
+      simp [hxy, heq, hyx]
+    · have hyx : intOfZ y < intOfZ x := by omega
+      simp [hxy, heq, hyx]
+
+end Rocq.Coq
+end CompCert4Lean.Foundation.Numbers

@@ -1662,3 +1662,89 @@ theorem eval_operation_preserved
               | cons v3 tail => rfl
 
 end CompCert4Lean.X86.Op
+
+namespace CompCert4Lean.X86.Op
+
+open CompCert4Lean.Common.Values
+
+private theorem suffix_mull_inject (f : meminj) (v1 v1' v2 v2' : val) :
+    Val.inject f v1 v1' → Val.inject f v2 v2' →
+      Val.inject f (Val.mull v1 v2) (Val.mull v1' v2') := by
+  intro h1 h2
+  cases h1 <;> cases h2 <;>
+    simp [CompCert4Lean.Common.Values.Val.mull] <;> constructor
+
+private theorem suffix_offset_ptr_inject (f : meminj) (v v' : val) (ofs : Ptrofs) :
+    Val.inject f v v' → Val.inject f (Val.offset_ptr v ofs) (Val.offset_ptr v' ofs) := by
+  intro h
+  cases h with
+  | inject_int i => simpa [Val.offset_ptr] using (Val.val_inject_undef f (Val.offset_ptr (Vint i) ofs))
+  | inject_long i => simpa [Val.offset_ptr] using (Val.val_inject_undef f (Val.offset_ptr (Vlong i) ofs))
+  | inject_float x => simpa [Val.offset_ptr] using (Val.val_inject_undef f (Val.offset_ptr (Vfloat x) ofs))
+  | inject_single x => simpa [Val.offset_ptr] using (Val.val_inject_undef f (Val.offset_ptr (Vsingle x) ofs))
+  | inject_ptr b1 ofs1 b2 ofs2 delta hmap hofs =>
+      simp [Val.offset_ptr]
+      apply Val.inject.inject_ptr b1 _ b2 _ delta hmap
+      subst ofs2
+      simp only [CompCert4Lean.Lib.Integers.Ptrofs.add_commut_proof_api,
+        CompCert4Lean.Lib.Integers.Ptrofs.add_assoc_proof_api]
+  | val_inject_undef v =>
+      simpa [Val.offset_ptr] using (Val.val_inject_undef f (Val.offset_ptr v' ofs))
+
+theorem eval_addressing64_inj : eval_addressing64_injStatement := by
+  intro F1 F2 V1 V2 ge1 ge2 f addr sp1 vl1 sp2 vl2 v1 hglobals hsp hvl heval
+  cases hvl with
+  | inject_list_nil =>
+      cases addr with
+      | Aglobal id ofs =>
+          simp [eval_addressing64, CompCert4Lean.X86_64.Archi.ptr64] at heval ⊢
+          subst v1
+          exact hglobals id ofs (by simp [globals_addressing])
+      | Ainstack ofs =>
+          simp [eval_addressing64, CompCert4Lean.X86_64.Archi.ptr64] at heval ⊢
+          subst v1
+          exact suffix_offset_ptr_inject f sp1 sp2 ofs hsp
+      | _ => simp [eval_addressing64, CompCert4Lean.X86_64.Archi.ptr64] at heval
+  | inject_list_cons a a' ta ta' ha htail =>
+      cases htail with
+      | inject_list_nil =>
+          cases addr with
+          | Aindexed n =>
+              simp [eval_addressing64, CompCert4Lean.X86_64.Archi.ptr64] at heval ⊢
+              subst v1
+              exact Val.addl_inject f a a' _ _ ha (Val.inject.inject_long _)
+          | Ascaled scale ofs =>
+              simp [eval_addressing64, CompCert4Lean.X86_64.Archi.ptr64] at heval ⊢
+              subst v1
+              apply Val.addl_inject f _ _ _ _
+              · exact suffix_mull_inject f a a' _ _ ha (Val.inject.inject_long _)
+              · exact Val.inject.inject_long _
+          | Abased id ofs =>
+              simp [eval_addressing64, CompCert4Lean.X86_64.Archi.ptr64] at heval
+          | Abasedscaled scale id ofs =>
+              simp [eval_addressing64, CompCert4Lean.X86_64.Archi.ptr64] at heval
+          | _ => simp [eval_addressing64, CompCert4Lean.X86_64.Archi.ptr64] at heval
+      | inject_list_cons b b' tb tb' hb htail2 =>
+          cases htail2 with
+          | inject_list_nil =>
+              cases addr with
+              | Aindexed2 n =>
+                  simp [eval_addressing64, CompCert4Lean.X86_64.Archi.ptr64] at heval ⊢
+                  subst v1
+                  apply Val.addl_inject f _ _ _ _
+                  · exact Val.addl_inject f a a' b b' ha hb
+                  · exact Val.inject.inject_long _
+              | Aindexed2scaled scale ofs =>
+                  simp [eval_addressing64, CompCert4Lean.X86_64.Archi.ptr64] at heval ⊢
+                  subst v1
+                  apply Val.addl_inject f _ _ _ _
+                  · exact ha
+                  · apply Val.addl_inject f _ _ _ _
+                    · exact suffix_mull_inject f b b' _ _ hb (Val.inject.inject_long _)
+                    · exact Val.inject.inject_long _
+              | _ => simp [eval_addressing64, CompCert4Lean.X86_64.Archi.ptr64] at heval
+          | inject_list_cons c c' tc tc' hc htail3 =>
+              cases addr <;>
+                simp [eval_addressing64, CompCert4Lean.X86_64.Archi.ptr64] at heval
+
+end CompCert4Lean.X86.Op

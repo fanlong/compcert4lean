@@ -2916,3 +2916,29 @@ theorem Zfloor_le (ctx : ExactRealContext) :
   exact ctx.certificate.orderedField.le_trans _ _ _ (Zfloor_lb ctx x) hxy
 
 end CompCert4Lean.Flocq.Core.Raux
+
+namespace CompCert4Lean.Flocq.Core.Raux
+
+theorem Zceil_ub (ctx : ExactRealContext) :
+    Zceil_ubStatement ctx := by
+  intro x
+  unfold Exact.Zceil
+  change ctx.spec.le x
+      (ctx.spec.ofZ (Zopp (Exact.Zfloor ctx (Exact.Ropp ctx x))))
+  rw [ctx.certificate.sourceLaws.ofZ_neg]
+  have hfloor := Zfloor_lb ctx (Exact.Ropp ctx x)
+  change ctx.spec.le (Exact.IZR ctx (Exact.Zfloor ctx (Exact.Ropp ctx x)))
+      (Exact.Ropp ctx x) at hfloor
+  have le_of_eq : ∀ {a b : ctx.spec.carrier}, a = b → ctx.spec.le a b := by
+    intro a b hab
+    cases hab
+    exact ctx.certificate.orderedField.le_refl _
+  rcases ctx.certificate.total_order x
+      (Exact.Ropp ctx (Exact.IZR ctx (Exact.Zfloor ctx (Exact.Ropp ctx x)))) with h | h
+  · rcases h with hlt | heq
+    · exact (ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp hlt |>.1
+    · exact le_of_eq heq
+  · have hneg := pg_neg_lt_of_neg_lt ctx h
+    exact False.elim (((ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp hneg).2 hfloor)
+
+end CompCert4Lean.Flocq.Core.Raux

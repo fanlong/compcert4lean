@@ -2319,3 +2319,98 @@ theorem Rmult_0_r (ctx : ExactRealContext) :
 end RIneq
 end Rocq.Coq.Reals
 end CompCert4Lean.Foundation.FlocqReal
+
+namespace CompCert4Lean.Foundation.FlocqReal
+namespace Rocq.Coq.Reals
+namespace RIneq
+
+theorem Rmult_eq_0_compat_r (ctx : ExactRealContext) :
+    Rmult_eq_0_compat_rStatement ctx := by
+  intro r1 r2 h
+  change ctx.spec.mul r1 r2 = ctx.spec.ofZ Z0
+  rw [h]
+  change ctx.spec.mul (ctx.spec.ofZ Z0) r2 = ctx.spec.ofZ Z0
+  rw [ctx.certificate.sourceLaws.ofZ_zero]
+  exact ctx.certificate.orderedField.zero_mul r2
+
+private theorem exact_mul_neg_right_suffix (ctx : ExactRealContext)
+    (x y : ctx.spec.carrier) :
+    ctx.spec.mul x (ctx.spec.neg y) = ctx.spec.neg (ctx.spec.mul x y) := by
+  have h : ctx.spec.add (ctx.spec.mul x (ctx.spec.neg y)) (ctx.spec.mul x y) =
+      ctx.spec.zero := by
+    rw [← ctx.certificate.orderedField.left_distrib,
+      ctx.certificate.orderedField.neg_add_cancel,
+      ctx.certificate.orderedField.mul_zero]
+  symm
+  calc
+    ctx.spec.neg (ctx.spec.mul x y) =
+        ctx.spec.add (ctx.spec.neg (ctx.spec.mul x y)) ctx.spec.zero :=
+      (ctx.certificate.orderedField.add_zero _).symm
+    _ = ctx.spec.add (ctx.spec.neg (ctx.spec.mul x y))
+        (ctx.spec.add (ctx.spec.mul x (ctx.spec.neg y)) (ctx.spec.mul x y)) := by
+          rw [h]
+    _ = ctx.spec.add (ctx.spec.neg (ctx.spec.mul x y))
+        (ctx.spec.add (ctx.spec.mul x y) (ctx.spec.mul x (ctx.spec.neg y))) := by
+          rw [ctx.certificate.orderedField.add_comm
+            (ctx.spec.mul x (ctx.spec.neg y))]
+    _ = ctx.spec.add
+        (ctx.spec.add (ctx.spec.neg (ctx.spec.mul x y)) (ctx.spec.mul x y))
+        (ctx.spec.mul x (ctx.spec.neg y)) := by
+          rw [ctx.certificate.orderedField.add_assoc]
+    _ = ctx.spec.add ctx.spec.zero (ctx.spec.mul x (ctx.spec.neg y)) := by
+          rw [ctx.certificate.orderedField.neg_add_cancel]
+    _ = ctx.spec.mul x (ctx.spec.neg y) :=
+      ctx.certificate.orderedField.zero_add _
+
+theorem Rmult_integral (ctx : ExactRealContext) :
+    Rmult_integralStatement ctx := by
+  intro r1 r2 h
+  change ctx.spec.mul r1 r2 = ctx.spec.ofZ Z0 at h
+  by_cases h1 : r1 = ctx.spec.ofZ Z0
+  · exact Or.inl h1
+  · right
+    have h1' : r1 ≠ ctx.spec.zero := by
+      intro hz
+      apply h1
+      calc
+        r1 = ctx.spec.zero := hz
+        _ = ctx.spec.ofZ Z0 := ctx.certificate.sourceLaws.ofZ_zero.symm
+    have hmul := congrArg (fun x => ctx.spec.mul (ctx.spec.inv r1) x) h
+    calc
+      r2 = ctx.spec.mul ctx.spec.one r2 :=
+        (ctx.certificate.orderedField.one_mul r2).symm
+      _ = ctx.spec.mul (ctx.spec.mul (ctx.spec.inv r1) r1) r2 := by
+        rw [ctx.certificate.orderedField.inv_mul_cancel r1 h1']
+      _ = ctx.spec.mul (ctx.spec.inv r1) (ctx.spec.mul r1 r2) := by
+        rw [ctx.certificate.orderedField.mul_assoc]
+      _ = ctx.spec.mul (ctx.spec.inv r1) (ctx.spec.ofZ Z0) := hmul
+      _ = ctx.spec.mul (ctx.spec.inv r1) ctx.spec.zero := by
+        rw [ctx.certificate.sourceLaws.ofZ_zero]
+      _ = ctx.spec.zero := ctx.certificate.orderedField.mul_zero _
+      _ = ctx.spec.ofZ Z0 := ctx.certificate.sourceLaws.ofZ_zero.symm
+
+theorem Rmult_integral_contrapositive_currified (ctx : ExactRealContext) :
+    Rmult_integral_contrapositive_currifiedStatement ctx := by
+  intro r1 r2 h1 h2 hmul
+  change ctx.spec.mul r1 r2 = ctx.spec.ofZ Z0 at hmul
+  rcases Rmult_integral ctx r1 r2 hmul with hzero | hzero
+  · exact h1 hzero
+  · exact h2 hzero
+
+theorem Ropp_mult_distr_l_reverse (ctx : ExactRealContext) :
+    Ropp_mult_distr_l_reverseStatement ctx := by
+  intro r1 r2
+  change ctx.spec.mul (ctx.spec.neg r1) r2 =
+    ctx.spec.neg (ctx.spec.mul r1 r2)
+  calc
+    ctx.spec.mul (ctx.spec.neg r1) r2 =
+        ctx.spec.mul r2 (ctx.spec.neg r1) :=
+      ctx.certificate.orderedField.mul_comm _ _
+    _ = ctx.spec.neg (ctx.spec.mul r2 r1) := by
+      exact exact_mul_neg_right_suffix ctx r2 r1
+    _ = ctx.spec.neg (ctx.spec.mul r1 r2) := by
+      rw [ctx.certificate.orderedField.mul_comm r2 r1]
+
+end RIneq
+end Rocq.Coq.Reals
+end CompCert4Lean.Foundation.FlocqReal
