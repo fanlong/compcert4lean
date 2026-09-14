@@ -1821,3 +1821,30 @@ theorem and_commut : and_commutStatement := by
 
 end Val
 end CompCert4Lean.Common.Values
+
+namespace CompCert4Lean.Common.Values
+namespace Val
+
+theorem or_commut : or_commutStatement := by
+  intro x y
+  cases x <;> cases y <;> simp [or]
+  rename_i a b
+  apply CompCert4Lean.Lib.Integers.WordCore.ext_of_val_eq
+  change (CompCert4Lean.Lib.Integers.WordCore.or a b).val =
+    (CompCert4Lean.Lib.Integers.WordCore.or b a).val
+  simp only [CompCert4Lean.Lib.Integers.WordCore.or]
+  have ha : a.val < 2 ^ CompCert4Lean.Lib.Integers.Int.wordsize := a.toFin.isLt
+  have hb : b.val < 2 ^ CompCert4Lean.Lib.Integers.Int.wordsize := b.toFin.isLt
+  change
+    (CompCert4Lean.Lib.Integers.WordCore.repr CompCert4Lean.Lib.Integers.Int.wordsize
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat
+        (Nat.lor a.val b.val))).val =
+      (CompCert4Lean.Lib.Integers.WordCore.repr CompCert4Lean.Lib.Integers.Int.wordsize
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat
+          (Nat.lor b.val a.val))).val
+  simp only [repr_val_of_lt (Nat.lor a.val b.val) (Nat.or_lt_two_pow ha hb),
+    repr_val_of_lt (Nat.lor b.val a.val) (Nat.or_lt_two_pow hb ha)]
+  exact Nat.or_comm _ _
+
+end Val
+end CompCert4Lean.Common.Values

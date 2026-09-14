@@ -1649,3 +1649,72 @@ theorem mantissa_small_pos :
   exact ⟨hpos, by simpa [p] using hlt⟩
 
 end CompCert4Lean.Flocq.Core.Generic_fmt
+
+namespace CompCert4Lean.Flocq.Core.Generic_fmt
+
+theorem scaled_mantissa_lt_1 :
+    ∀ ctx magnitude, scaled_mantissa_lt_1Statement ctx magnitude := by
+  intro ctx magnitude beta fexp _hvalid x ex hbound hexp
+  by_cases hx0 : x = Exact.R0 ctx
+  · subst x
+    rw [scaled_mantissa_0 ctx magnitude beta fexp, pg_abs_zero]
+    change ctx.spec.lt ctx.spec.zero (ctx.spec.ofZ Zone)
+    rw [ctx.certificate.sourceLaws.ofZ_one]
+    exact pg_zero_lt_one ctx
+  · rw [← scaled_mantissa_abs ctx magnitude beta fexp x]
+    unfold Exact.scaled_mantissa
+    rw [pg_cexp_abs ctx magnitude beta fexp x]
+    unfold Exact.cexp
+    have hm := (CompCert4Lean.Flocq.Core.Raux.Exact.mag magnitude beta x).mag_bound hx0
+    have hmag_le : Zle (Exact.mag magnitude beta x) ex := by
+      change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+          (Exact.mag magnitude beta x) ≤
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ ex
+      by_cases hle :
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+              (Exact.mag magnitude beta x) ≤
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ ex
+      · exact hle
+      · have hlt :
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ ex <
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+                (Exact.mag magnitude beta x) := by omega
+        have hleexp : Zle ex (Zsub (Exact.mag magnitude beta x) Zone) := by
+          change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ ex ≤
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+              (Zsub (Exact.mag magnitude beta x) Zone)
+          simp only [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.sub,
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+          change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ ex ≤
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+              (Exact.mag magnitude beta x) - 1
+          change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ ex <
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+              (Exact.mag magnitude beta x) at hlt
+          omega
+        have hp := pg_bpow_le ctx beta hleexp
+        have hmid :=
+          CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.Rle_lt_trans
+            ctx _ _ _ hm.1 hbound
+        have hnotlt := (ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp hmid |>.2
+        exact (hnotlt hp).elim
+    have hmag_fexp : Zle (Exact.mag magnitude beta x) (fexp ex) := by
+      change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+          (Exact.mag magnitude beta x) ≤
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (fexp ex)
+      change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+          (Exact.mag magnitude beta x) ≤
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ ex at hmag_le
+      change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ ex ≤
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (fexp ex) at hexp
+      exact Int.le_trans hmag_le hexp
+    have hfeq : fexp (Exact.mag magnitude beta x) = fexp ex :=
+      (( _hvalid.valid_exp ex).2 hexp).2 _ hmag_fexp
+    have hmag_fexp' : Zle (Exact.mag magnitude beta x)
+        (fexp (Exact.mag magnitude beta x)) := by
+      rw [hfeq]
+      exact hmag_fexp
+    exact mantissa_small_pos ctx beta fexp (Exact.Rabs ctx x)
+      (Exact.mag magnitude beta x) hm hmag_fexp' |>.2
+
+end CompCert4Lean.Flocq.Core.Generic_fmt

@@ -2335,3 +2335,80 @@ theorem match_stacks_inside_set_res : match_stacks_inside_set_resStatement := by
       simpa [regmap_setres, sbuiltinres] using h
 
 end CompCert4Lean.Backend.Inliningproof
+
+namespace CompCert4Lean.Backend.Inliningproof
+
+open CompCert4Lean.Backend.Inlining
+open CompCert4Lean.Backend.Inliningspec
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Coqlib
+
+private theorem range_private_store_local
+    (F : Val.meminj) (m m' m1 m1' : mem) (sp : block) (lo hi : Z)
+    (chunk chunk' : memory_chunk) (b b' : block) (ofs ofs' : Z) (v v' : val)
+    (hpriv : range_private F m m' sp lo hi)
+    (hs : Mem.store chunk m b ofs v = some m1)
+    (hs' : Mem.store chunk' m' b' ofs' v' = some m1') :
+    range_private F m1 m1' sp lo hi := by
+  unfold range_private loc_private at hpriv ⊢
+  intro p hp
+  rcases hpriv p hp with ⟨hperm, hprivate⟩
+  constructor
+  · exact Mem.perm_store_1 chunk' m' b' ofs' v' m1' hs' sp p .Cur .Freeable hperm
+  · intro b0 delta hmap hbad
+    apply hprivate b0 delta hmap
+    exact Mem.perm_store_2 chunk m b ofs v m1 hs b0 (zSub p delta) .Max .Nonempty hbad
+
+theorem match_stacks_inside_store : match_stacks_inside_storeStatement := by
+  intro prog F m m' stk stk' f' ctx sp' rs' chunk b ofs v m1 chunk' b' ofs' v' m1' h hs hs'
+  refine match_stacks_inside.rec (prog := prog) (F := F) (m := m) (m' := m')
+    (motive_1 := fun l l0 bound _ =>
+      Mem.store chunk m b ofs v = some m1 →
+      Mem.store chunk' m' b' ofs' v' = some m1' →
+      match_stacks prog F m1 m1' l l0 bound)
+    (motive_2 := fun l l0 f c bound r _ =>
+      Mem.store chunk m b ofs v = some m1 →
+      Mem.store chunk' m' b' ofs' v' = some m1' →
+      match_stacks_inside prog F m1 m1' l l0 f c bound r)
+    ?_ ?_ ?_ ?_ ?_ h hs hs'
+  · intro bound1 bound MG BELOW hs hs'
+    exact match_stacks_nil bound1 bound MG BELOW
+  · intro res f sp pc rs l f' sp' rs' l' bound fenv ctx MS COMPAT FB AG SP PRIV SSZ1 SSZ2 RES BELOW ih hs hs'
+    exact match_stacks_cons res f sp pc rs l f' sp' rs' l' bound fenv ctx
+      (ih hs hs') COMPAT FB AG SP
+      (range_private_store_local F m m' m1 m1' sp' (zAdd ctx.dstk ctx.mstk)
+        f'.fn_stacksize chunk chunk' b b' ofs ofs' v v' PRIV hs hs')
+      SSZ1
+      (by
+        intro ofs0 hperm
+        exact SSZ2 ofs0
+          (Mem.perm_store_2 chunk' m' b' ofs' v' m1' hs' sp' ofs0
+            .Max .Nonempty hperm))
+      RES BELOW
+  · intro l res f' sp' rpc rs' l' bound ctx MS PRIV SSZ1 SSZ2 RET BELOW ih hs hs'
+    exact match_stacks_untailcall l res f' sp' rpc rs' l' bound ctx
+      (ih hs hs')
+      (range_private_store_local F m m' m1 m1' sp' ctx.dstk f'.fn_stacksize
+        chunk chunk' b b' ofs ofs' v v' PRIV hs hs')
+      SSZ1
+      (by
+        intro ofs0 hperm
+        exact SSZ2 ofs0
+          (Mem.perm_store_2 chunk' m' b' ofs' v' m1' hs' sp' ofs0
+            .Max .Nonempty hperm))
+      RET BELOW
+  · intro l l' f' c sp' rs' MS RET DSTK ih hs hs'
+    exact match_stacks_inside_base l l' f' c sp' rs' (ih hs hs') RET DSTK
+  · intro res f sp pc rs l l' f' fenv c sp' rs' c' MS COMPAT FB AG SP PAD RES RET BELOW SBELOW ih hs hs'
+    exact match_stacks_inside_inlined res f sp pc rs l l' f' fenv c sp'
+      rs' c' (ih hs hs') COMPAT FB AG SP
+      (range_private_store_local F m m' m1 m1' sp' (zAdd c'.dstk c'.mstk) c.dstk
+        chunk chunk' b b' ofs ofs' v v' PAD hs hs')
+      RES RET BELOW SBELOW
+
+end CompCert4Lean.Backend.Inliningproof
