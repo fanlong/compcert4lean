@@ -2780,3 +2780,108 @@ theorem propagate_successors_charact2 : propagate_successors_charact2Statement :
             simp [hne]
 
 end CompCert4Lean.Backend.Kildall.BBlock_solver
+
+namespace CompCert4Lean.Backend.Kildall.BBlock_solver
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Lib.Maps
+
+private theorem proofgrind_no_self_loop_invariant {A : Type}
+    (entrypoint : positive) (code : PTreeT A) (successors : A → List positive)
+    (n : positive) (instr : A) :
+    PTree.get n code = some instr -> n ∈ successors instr ->
+    basic_block_map entrypoint code successors n = true := by
+  intro hcode hsucc
+  have hpred := predecessors_correct code successors n instr n hcode hsucc
+  change n ∈ successors_list (make_predecessors code successors) n at hpred
+  unfold basic_block_map is_basic_block_head
+  split
+  · rfl
+  · rename_i hentry
+    unfold successors_list at hpred
+    cases hpreds : PTree.get n (make_predecessors code successors) with
+    | none => simp [hpreds] at hpred
+    | some preds =>
+        cases preds with
+        | nil => simp [hpreds] at hpred
+        | cons pred preds =>
+            cases preds with
+            | nil =>
+                simp [hpreds] at hpred
+                subst pred
+                simp [successors_list, hpreds]
+            | cons pred' preds => simp [successors_list, hpreds]
+
+theorem propagate_successors_invariant : propagate_successors_invariantStatement := by
+  intro A LAT entrypoint laws code successors transf pc instr res rem hcode hinv
+  rcases hinv with ⟨hheads, hstable⟩
+  let bb := basic_block_map entrypoint code successors
+  let l := transf pc (PMap.get pc res)
+  let st0 : state LAT := { aval := res, worklist := rem }
+  constructor
+  · intro n hbb
+    rw [(propagate_successors_charact2 laws bb (successors instr) l st0 n).2 (Or.inr hbb)]
+    exact hheads n hbb
+  · intro n
+    by_cases hpc : n = pc
+    · subst n
+      right
+      intro instr' s hget hsucc
+      have hinstr : instr' = instr := Option.some.inj (hget.symm.trans hcode)
+      subst instr'
+      have hmappc := (propagate_successors_charact2 laws bb (successors instr) l st0 pc).2 (by
+        by_cases hself : pc ∈ successors instr
+        · right
+          exact proofgrind_no_self_loop_invariant entrypoint code successors pc instr hcode hself
+        · left
+          exact hself)
+      cases hsbb : bb s with
+      | true =>
+          have hmaps := (propagate_successors_charact2 laws bb (successors instr) l st0 s).2
+            (Or.inr hsbb)
+          rw [hmaps, hmappc, hheads s hsbb]
+          exact laws.top_ge _
+      | false =>
+          have hmaps := (propagate_successors_charact2 laws bb (successors instr) l st0 s).1
+            hsucc hsbb
+          rw [hmaps.2, hmappc]
+          exact laws.refl_ge _
+    · rcases hstable n with hold | hold
+      · left
+        rcases List.mem_cons.mp hold with hnp | hrem
+        · exact False.elim (hpc hnp)
+        · exact propagate_successors_charact1 laws bb (successors instr) l st0 n hrem
+      · by_cases hnsucc : n ∈ successors instr
+        · cases hnbb : bb n with
+          | true =>
+              right
+              intro instr' s hget hsucc
+              have hmapn := (propagate_successors_charact2 laws bb (successors instr) l st0 n).2
+                (Or.inr hnbb)
+              have hmaps := (propagate_successors_charact2 laws bb (successors instr) l st0 s).2 (by
+                by_cases hssucc : s ∈ successors instr
+                · right
+                  exact multiple_predecessors entrypoint code successors s pc instr n instr'
+                    hcode hssucc hget hsucc (by intro h; exact hpc h.symm)
+                · left
+                  exact hssucc)
+              rw [hmaps, hmapn]
+              exact hold instr' s hget hsucc
+          | false =>
+              exact Or.inl ((propagate_successors_charact2 laws bb (successors instr) l st0 n).1
+                hnsucc hnbb).1
+        · right
+          intro instr' s hget hsucc
+          have hmapn := (propagate_successors_charact2 laws bb (successors instr) l st0 n).2
+            (Or.inl hnsucc)
+          have hmaps := (propagate_successors_charact2 laws bb (successors instr) l st0 s).2 (by
+            by_cases hssucc : s ∈ successors instr
+            · right
+              exact multiple_predecessors entrypoint code successors s pc instr n instr'
+                hcode hssucc hget hsucc (by intro h; exact hpc h.symm)
+            · left
+              exact hssucc)
+          rw [hmaps, hmapn]
+          exact hold instr' s hget hsucc
+
+end CompCert4Lean.Backend.Kildall.BBlock_solver
