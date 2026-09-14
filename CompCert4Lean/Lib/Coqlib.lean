@@ -1435,3 +1435,46 @@ theorem is_tail_cons_left : is_tail_cons_leftStatement := by
       | cons _ htail => exact is_tail.cons _ (ih htail)
 
 end CompCert4Lean.Lib.Coqlib
+
+namespace CompCert4Lean.Lib.Coqlib
+
+theorem is_tail_trans : is_tail_transStatement := by
+  intro A l1 l2 h
+  induction h with
+  | refl c =>
+      intro l3 h3
+      exact h3
+  | cons i htail ih =>
+      intro l3 h3
+      exact ih l3 (is_tail_cons_left A i _ l3 h3)
+
+theorem list_forall2_app : list_forall2_appStatement := by
+  intro A B P a2 b2 a1 b1 h1 h2
+  induction h1 with
+  | nil =>
+      simpa using h2
+  | cons a1 b1 hp htail ih =>
+      simp only [List.cons_append]
+      exact list_forall2.cons a1 b1 hp ih
+
+theorem list_forall2_in_left : list_forall2_in_leftStatement := by
+  intro A B P x1 l1 l2 h
+  induction h with
+  | nil =>
+      intro hx
+      cases hx
+  | cons a1 b1 hp htail ih =>
+      intro hx
+      simp only [List.mem_cons] at hx
+      rcases hx with rfl | hx
+      · exact ⟨b1, by simp, hp⟩
+      · obtain ⟨x2, hx2, hpx2⟩ := ih hx
+        exact ⟨x2, by simp [hx2], hpx2⟩
+
+theorem proj_sumbool_true : proj_sumbool_trueStatement := by
+  intro P Q a h
+  cases a with
+  | left hp => exact hp
+  | right hq => cases h
+
+end CompCert4Lean.Lib.Coqlib
