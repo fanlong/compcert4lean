@@ -1539,3 +1539,35 @@ theorem generic_format_abs :
     exact hx
 
 end CompCert4Lean.Flocq.Core.Generic_fmt
+
+namespace CompCert4Lean.Flocq.Core.Generic_fmt
+
+theorem cexp_fexp_pos :
+    ∀ ctx magnitude, cexp_fexp_posStatement ctx magnitude := by
+  intro ctx magnitude beta fexp x ex h
+  have hpow_pos : Exact.Rlt ctx (Exact.R0 ctx)
+      (Exact.bpow ctx beta (Zsub ex Zone)) :=
+    CompCert4Lean.Flocq.Core.Raux.bpow_gt_0 ctx beta (Zsub ex Zone)
+  have hxpos : Exact.Rlt ctx (Exact.R0 ctx) x :=
+    CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.Rlt_le_trans
+      ctx _ _ _ hpow_pos h.1
+  have hx0 : x ≠ Exact.R0 ctx := by
+    intro hxzero
+    subst x
+    exact (ctx.certificate.orderedField.lt_irrefl _ hxpos).elim
+  have hxle : Exact.Rle ctx (Exact.R0 ctx) x :=
+    (ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp hxpos |>.1
+  have habs : Exact.Rabs ctx x = x := by
+    change ctx.spec.abs x = x
+    exact ctx.certificate.sourceLaws.abs_nonnegative x hxle
+  have hposmag :
+      Exact.Rle ctx (Exact.bpow ctx beta (Zsub ex Zone)) (Exact.Rabs ctx x) ∧
+      Exact.Rlt ctx (Exact.Rabs ctx x) (Exact.bpow ctx beta ex) := by
+    simpa only [habs] using h
+  have hmag := (CompCert4Lean.Flocq.Core.Raux.Exact.mag magnitude beta x).mag_bound hx0
+  have heq := pg_mag_unique ctx beta x hposmag hmag
+  unfold Exact.cexp
+  change fexp (CompCert4Lean.Flocq.Core.Raux.Exact.mag magnitude beta x).mag_val = fexp ex
+  exact congrArg fexp heq.symm
+
+end CompCert4Lean.Flocq.Core.Generic_fmt
