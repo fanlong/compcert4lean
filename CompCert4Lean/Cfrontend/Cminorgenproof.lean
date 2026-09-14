@@ -2996,3 +2996,172 @@ theorem inj_offset_aligned_block : inj_offset_aligned_blockStatement := by
   · exact align_divides stacksize (block_alignment sz) (block_alignment_pos sz)
 
 end CompCert4Lean.Cfrontend.Cminorgenproof
+
+namespace CompCert4Lean.Cfrontend.Cminorgenproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.Cfrontend.Cminorgen
+
+theorem assign_variable_sound : assign_variable_soundStatement := by
+  intro cenv1 sz1 id sz cenv2 sz2 vars hassign hnorepet hpos hcompat hsep
+  unfold assign_variable at hassign
+  cases hassign
+  change positive at id
+  change PTree.tree Z at cenv1
+  change List (positive × Z) at vars
+  unfold cenv_compat at hcompat ⊢
+  unfold cenv_separated at hsep ⊢
+  have halign : ZArith.BinInt.Z.le sz1
+      (align sz1 (block_alignment sz)) :=
+    align_le sz1 (block_alignment sz) (block_alignment_pos sz)
+  have hmax : ZArith.BinInt.Z.le ZArith.BinInt.Z.Z0
+      (ZArith.BinInt.Z.max ZArith.BinInt.Z.Z0 sz) :=
+    Zmax_bound_l _ _ _ (ZArith.BinInt.Z.le_refl _)
+  have hadd : ∀ a b c d : Z,
+      ZArith.BinInt.Z.le a b → ZArith.BinInt.Z.le c d →
+      ZArith.BinInt.Z.le
+        (ZArith.BinInt.Z.add a c) (ZArith.BinInt.Z.add b d) := by
+    intro a b c d hab hcd
+    change intOfZ (ZArith.BinInt.Z.add a c) ≤
+      intOfZ (ZArith.BinInt.Z.add b d)
+    simp only [ZArith.BinInt.Z.add, intOfZ_zOfInt]
+    change intOfZ a + intOfZ c ≤ intOfZ b + intOfZ d
+    exact Int.add_le_add (show intOfZ a ≤ intOfZ b from hab)
+      (show intOfZ c ≤ intOfZ d from hcd)
+  have hletrans : ∀ a b c : Z,
+      ZArith.BinInt.Z.le a b → ZArith.BinInt.Z.le b c →
+      ZArith.BinInt.Z.le a c := by
+    intro a b c hab hbc
+    exact Int.le_trans (show intOfZ a ≤ intOfZ b from hab)
+      (show intOfZ b ≤ intOfZ c from hbc)
+  have halign_nonneg : ZArith.BinInt.Z.le ZArith.BinInt.Z.Z0
+      (align sz1 (block_alignment sz)) := by
+    exact hletrans _ _ _ hpos halign
+  constructor
+  · intro id' sz' hin
+    change positive at id'
+    rcases List.mem_append.mp hin with hvar | hnew
+    · rcases hcompat id' sz' hvar with ⟨ofs, hget, hinj, hofs, hbound⟩
+      have hid : id' ≠ id := by
+        intro heq
+        apply hnorepet
+        have hm : id' ∈ List.map Prod.fst vars :=
+          List.mem_map.mpr ⟨(id', sz'), hvar, rfl⟩
+        rw [heq] at hm
+        exact hm
+      refine ⟨ofs,
+        ?_,
+        hinj, hofs, ?_⟩
+      · exact (PTree.gso (A := Z) (i := id') (j := id)
+          (x := align sz1 (block_alignment sz)) (m := cenv1) hid).trans hget
+      · have hright : ZArith.BinInt.Z.le
+            (align sz1 (block_alignment sz))
+            (ZArith.BinInt.Z.add
+              (align sz1 (block_alignment sz))
+              (ZArith.BinInt.Z.max ZArith.BinInt.Z.Z0 sz)) :=
+          by
+            change intOfZ (align sz1 (block_alignment sz)) ≤
+              intOfZ (ZArith.BinInt.Z.add
+                (align sz1 (block_alignment sz))
+                (ZArith.BinInt.Z.max ZArith.BinInt.Z.Z0 sz))
+            simp only [ZArith.BinInt.Z.add, intOfZ_zOfInt]
+            change intOfZ (align sz1 (block_alignment sz)) ≤
+              intOfZ (align sz1 (block_alignment sz)) +
+                intOfZ (ZArith.BinInt.Z.max ZArith.BinInt.Z.Z0 sz)
+            exact Int.le_add_of_nonneg_right hmax
+        exact hletrans _ _ _ hbound
+          (hletrans _ _ _ halign
+            hright)
+    · have hpair := List.mem_singleton.mp hnew
+      have hid' : id' = id := congrArg Prod.fst hpair
+      have hsz' : sz' = sz := congrArg Prod.snd hpair
+      subst id'
+      subst sz'
+      refine ⟨align sz1 (block_alignment sz), PTree.gss _ _ _,
+        inj_offset_aligned_block sz1 sz, halign_nonneg, ?_⟩
+      exact ZArith.BinInt.Z.le_refl _
+  · intro id1 sz1' ofs1 id2 sz2' ofs2 h1 h2 hg1 hg2 hne
+    change positive at id1 id2
+    rcases List.mem_append.mp h1 with h1var | h1new
+    · rcases List.mem_append.mp h2 with h2var | h2new
+      · have hid1 : id1 ≠ id := by
+          intro heq
+          apply hnorepet
+          subst id1
+          exact List.mem_map.mpr ⟨(id, sz1'), h1var, rfl⟩
+        have hid2 : id2 ≠ id := by
+          intro heq
+          apply hnorepet
+          subst id2
+          exact List.mem_map.mpr ⟨(id, sz2'), h2var, rfl⟩
+        rw [PTree.gso (A := Z) (i := id1) (j := id)
+          (x := align sz1 (block_alignment sz)) (m := cenv1) hid1] at hg1
+        rw [PTree.gso (A := Z) (i := id2) (j := id)
+          (x := align sz1 (block_alignment sz)) (m := cenv1) hid2] at hg2
+        exact hsep id1 sz1' ofs1 id2 sz2' ofs2 h1var h2var hg1 hg2 hne
+      · have hpair := List.mem_singleton.mp h2new
+        have hid2eq : id2 = id := congrArg Prod.fst hpair
+        have hsz2eq : sz2' = sz := congrArg Prod.snd hpair
+        subst id2
+        subst sz2'
+        have hcompat' := hcompat id1 sz1' h1var
+        rcases hcompat' with ⟨ofs, hget, _, _, hbound⟩
+        have hid1 : id1 ≠ id := by
+          intro heq
+          apply hnorepet
+          subst id1
+          exact List.mem_map.mpr ⟨(id, sz1'), h1var, rfl⟩
+        rw [PTree.gso (A := Z) (i := id1) (j := id)
+          (x := align sz1 (block_alignment sz)) (m := cenv1) hid1] at hg1
+        have heq : ofs = ofs1 := by simpa [hget] using hg1
+        subst ofs1
+        have heq2 : align sz1 (block_alignment sz) = ofs2 := by
+          have hss : PTree.get id
+              (PTree.set id (align sz1 (block_alignment sz)) cenv1) =
+              some (align sz1 (block_alignment sz)) :=
+            PTree.gss id (align sz1 (block_alignment sz)) cenv1
+          rw [hss] at hg2
+          exact Option.some.inj hg2
+        subst ofs2
+        left
+        have hsmall := hadd ofs ofs sz1'
+          (ZArith.BinInt.Z.max ZArith.BinInt.Z.Z0 sz1')
+          (ZArith.BinInt.Z.le_refl _) (ZArith.BinInt.Z.le_max_r _ _)
+        exact hletrans _ _ _ (hletrans _ _ _ hsmall hbound) halign
+    · rcases List.mem_append.mp h2 with h2var | h2new
+      · have hpair := List.mem_singleton.mp h1new
+        have hid1eq : id1 = id := congrArg Prod.fst hpair
+        have hsz1eq : sz1' = sz := congrArg Prod.snd hpair
+        subst id1
+        subst sz1'
+        have hcompat' := hcompat id2 sz2' h2var
+        rcases hcompat' with ⟨ofs, hget, _, _, hbound⟩
+        have hid2 : id2 ≠ id := by
+          intro heq
+          apply hnorepet
+          subst id2
+          exact List.mem_map.mpr ⟨(id, sz2'), h2var, rfl⟩
+        rw [PTree.gso (A := Z) (i := id2) (j := id)
+          (x := align sz1 (block_alignment sz)) (m := cenv1) hid2] at hg2
+        have heq : ofs = ofs2 := by simpa [hget] using hg2
+        subst ofs2
+        have heq1 : align sz1 (block_alignment sz) = ofs1 := by
+          have hss : PTree.get id
+              (PTree.set id (align sz1 (block_alignment sz)) cenv1) =
+              some (align sz1 (block_alignment sz)) :=
+            PTree.gss id (align sz1 (block_alignment sz)) cenv1
+          rw [hss] at hg1
+          exact Option.some.inj hg1
+        subst ofs1
+        right
+        have hsmall := hadd ofs ofs sz2'
+          (ZArith.BinInt.Z.max ZArith.BinInt.Z.Z0 sz2')
+          (ZArith.BinInt.Z.le_refl _) (ZArith.BinInt.Z.le_max_r _ _)
+        exact hletrans _ _ _ (hletrans _ _ _ hsmall hbound) halign
+      · have hid1 : id1 = id := congrArg Prod.fst (List.mem_singleton.mp h1new)
+        have hid2 : id2 = id := congrArg Prod.fst (List.mem_singleton.mp h2new)
+        exact (hne (hid1.trans hid2.symm)).elim
+
+end CompCert4Lean.Cfrontend.Cminorgenproof

@@ -1856,3 +1856,11 @@ theorem Eapp_E0_inv : Eapp_E0_invStatement := by
   exact List.eq_nil_of_append_eq_nil h
 
 end CompCert4Lean.Common.Events
+
+namespace CompCert4Lean.Common.Events
+
+theorem E0_left_inf : E0_left_infStatement := by
+  intro T
+  rfl
+
+end CompCert4Lean.Common.Events

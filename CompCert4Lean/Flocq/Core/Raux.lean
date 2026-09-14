@@ -3034,3 +3034,65 @@ theorem Zceil_IZR (ctx : ExactRealContext) :
   exact pg_zopp_zopp n
 
 end CompCert4Lean.Flocq.Core.Raux
+
+namespace CompCert4Lean.Flocq.Core.Raux
+
+theorem Zceil_le (ctx : ExactRealContext) :
+    Zceil_leStatement ctx := by
+  intro x y hxy
+  apply Zceil_glb ctx (Exact.Zceil ctx y) x
+  exact ctx.certificate.orderedField.le_trans _ _ _ hxy (Zceil_ub ctx y)
+
+theorem Ztrunc_IZR (ctx : ExactRealContext) :
+    Ztrunc_IZRStatement ctx := by
+  intro n
+  unfold Exact.Ztrunc
+  cases h : Exact.Rlt_bool ctx (Exact.IZR ctx n) (Exact.R0 ctx) with
+  | false => exact Zfloor_IZR ctx n
+  | true => exact Zceil_IZR ctx n
+
+theorem Ztrunc_floor (ctx : ExactRealContext) :
+    Ztrunc_floorStatement ctx := by
+  intro x hx
+  unfold Exact.Ztrunc
+  have hb := Rlt_bool_false ctx x (Exact.R0 ctx) hx
+  simp [hb]
+
+end CompCert4Lean.Flocq.Core.Raux
+
+namespace CompCert4Lean.Flocq.Core.Raux
+
+private theorem pg_zsub_zadd_one_cancel (a : Z) :
+    Zsub (Zadd a (Zpos xH)) (Zpos xH) = a := by
+  apply CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective
+  simp only [Zsub, Zadd,
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.sub,
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add,
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+  omega
+
+theorem Zceil_floor_neq (ctx : ExactRealContext) :
+    Zceil_floor_neqStatement ctx := by
+  intro x hneq
+  apply Zceil_imp ctx (Zadd (Exact.Zfloor ctx x) (Zpos xH)) x
+  constructor
+  · change ctx.spec.lt
+      (ctx.spec.ofZ
+        (Zsub (Zadd (Exact.Zfloor ctx x) (Zpos xH)) (Zpos xH))) x
+    rw [pg_zsub_zadd_one_cancel]
+    have hfloor := Zfloor_lb ctx x
+    change ctx.spec.ofZ (Exact.Zfloor ctx x) ≠ x at hneq
+    have hnot : ¬ ctx.spec.le x (ctx.spec.ofZ (Exact.Zfloor ctx x)) := by
+      intro hle
+      apply hneq
+      exact ctx.certificate.orderedField.le_antisymm _ _ hfloor hle
+    exact (ctx.certificate.orderedField.lt_iff_le_not_le _ _).mpr
+      ⟨hfloor, hnot⟩
+  · change ctx.spec.le x
+      (ctx.spec.ofZ (Zadd (Exact.Zfloor ctx x) (Zpos xH)))
+    rw [ctx.certificate.sourceLaws.ofZ_add,
+      ctx.certificate.sourceLaws.ofZ_one]
+    exact (ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp
+      (Zfloor_ub ctx x) |>.1
+
+end CompCert4Lean.Flocq.Core.Raux

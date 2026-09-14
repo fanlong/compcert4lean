@@ -2685,3 +2685,81 @@ theorem Ropp_lt_contravar :
 end RIneq
 end Rocq.Coq.Reals
 end CompCert4Lean.Foundation.FlocqReal
+
+namespace CompCert4Lean.Foundation.FlocqReal
+namespace Rocq.Coq.Reals
+namespace RIneq
+
+theorem Ropp_le_contravar :
+    ∀ (ctx : ExactRealContext), Ropp_le_contravarStatement ctx := by
+  intro ctx r1 r2 h
+  change ctx.spec.le r2 r1 at h
+  change ctx.spec.le (ctx.spec.neg r1) (ctx.spec.neg r2)
+  rcases ctx.certificate.total_order (ctx.spec.neg r1) (ctx.spec.neg r2) with h' | h'
+  · rcases h' with hlt | heq
+    · exact (ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp hlt |>.1
+    · rw [heq]
+      exact ctx.certificate.orderedField.le_refl _
+  · have hlt : ctx.spec.lt r1 r2 := by
+      have hneg := Ropp_lt_contravar ctx (ctx.spec.neg r1) (ctx.spec.neg r2) h'
+      have hri1 : ctx.spec.neg (ctx.spec.neg r1) = r1 := by
+        change ctx.spec.neg (ctx.spec.neg r1) = r1
+        exact Ropp_involutive ctx r1
+      have hri2 : ctx.spec.neg (ctx.spec.neg r2) = r2 := by
+        change ctx.spec.neg (ctx.spec.neg r2) = r2
+        exact Ropp_involutive ctx r2
+      change ctx.spec.lt
+        (ctx.spec.neg (ctx.spec.neg r1))
+        (ctx.spec.neg (ctx.spec.neg r2)) at hneg
+      rw [hri1, hri2] at hneg
+      exact hneg
+    exact (((ctx.certificate.orderedField.lt_iff_le_not_le r1 r2).mp hlt).2 h).elim
+
+theorem Ropp_lt_cancel :
+    ∀ (ctx : ExactRealContext), Ropp_lt_cancelStatement ctx := by
+  intro ctx r1 r2 h
+  change ctx.spec.lt (ctx.spec.neg r2) (ctx.spec.neg r1) at h
+  have h' := Ropp_lt_contravar ctx (ctx.spec.neg r1) (ctx.spec.neg r2) h
+  have hri1 : ctx.spec.neg (ctx.spec.neg r1) = r1 := by
+    change ctx.spec.neg (ctx.spec.neg r1) = r1
+    exact Ropp_involutive ctx r1
+  have hri2 : ctx.spec.neg (ctx.spec.neg r2) = r2 := by
+    change ctx.spec.neg (ctx.spec.neg r2) = r2
+    exact Ropp_involutive ctx r2
+  change ctx.spec.lt
+    (ctx.spec.neg (ctx.spec.neg r1))
+    (ctx.spec.neg (ctx.spec.neg r2)) at h'
+  rw [hri1, hri2] at h'
+  exact h'
+
+theorem Ropp_0_gt_lt_contravar :
+    ∀ (ctx : ExactRealContext), Ropp_0_gt_lt_contravarStatement ctx := by
+  intro ctx r h
+  change ctx.spec.lt r (ctx.spec.ofZ Z0) at h
+  change ctx.spec.lt (ctx.spec.ofZ Z0) (ctx.spec.neg r)
+  have h' := Ropp_lt_contravar ctx (ctx.spec.ofZ Z0) r h
+  have hzero : ctx.spec.neg (ctx.spec.ofZ Z0) = ctx.spec.ofZ Z0 := by
+    change ctx.spec.neg (ctx.spec.ofZ Z0) = ctx.spec.ofZ Z0
+    exact Ropp_0 ctx
+  change ctx.spec.lt
+    (ctx.spec.neg (ctx.spec.ofZ Z0)) (ctx.spec.neg r) at h'
+  rw [hzero] at h'
+  exact h'
+
+theorem Ropp_lt_gt_0_contravar :
+    ∀ (ctx : ExactRealContext), Ropp_lt_gt_0_contravarStatement ctx := by
+  intro ctx r h
+  change ctx.spec.lt (ctx.spec.ofZ Z0) r at h
+  change ctx.spec.lt (ctx.spec.neg r) (ctx.spec.ofZ Z0)
+  have h' := Ropp_lt_contravar ctx r (ctx.spec.ofZ Z0) h
+  have hzero : ctx.spec.neg (ctx.spec.ofZ Z0) = ctx.spec.ofZ Z0 := by
+    change ctx.spec.neg (ctx.spec.ofZ Z0) = ctx.spec.ofZ Z0
+    exact Ropp_0 ctx
+  change ctx.spec.lt
+    (ctx.spec.neg r) (ctx.spec.neg (ctx.spec.ofZ Z0)) at h'
+  rw [hzero] at h'
+  exact h'
+
+end RIneq
+end Rocq.Coq.Reals
+end CompCert4Lean.Foundation.FlocqReal

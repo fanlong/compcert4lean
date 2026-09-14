@@ -1903,3 +1903,7 @@ theorem free_parallel_rule : free_parallel_ruleStatement := by
         bsrc (zSub ofs dsrc) Max Nonempty hpPost
     · exact hPfoot
   exact ⟨m2', hfree2, ⟨hinjFinal, hP', hdisjFinal⟩⟩
+
+theorem globalenv_inject_obligation_1 : globalenv_inject_obligation_1Statement := by
+  intro F V ge j m m' hpred hunch
+  exact (globalenv_inject ge j).m_invar m m' hpred hunch
