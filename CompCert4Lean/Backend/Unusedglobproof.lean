@@ -1905,3 +1905,159 @@ theorem regset_inject_incr : regset_inject_incrStatement := by
   exact unusedglob_val_inject_incr f f' _ _ hinc (hreg r)
 
 end CompCert4Lean.Backend.Unusedglobproof
+
+namespace CompCert4Lean.Backend.Unusedglobproof
+
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Coqlib
+
+theorem regset_undef_inject : regset_undef_injectStatement := by
+  intro f r
+  change Val.inject f (Regmap.get r (Regmap.init Vundef))
+    (Regmap.get r (Regmap.init Vundef))
+  rw [Regmap.gi_proof]
+  exact Val.val_inject_undef f Vundef
+
+theorem init_regs_inject : init_regs_injectStatement := by
+  intro f args args' hargs params
+  induction hargs generalizing params with
+  | inject_list_nil =>
+      cases params with
+      | nil =>
+          intro r
+          change Val.inject f (Regmap.get r (Regmap.init Vundef))
+            (Regmap.get r (Regmap.init Vundef))
+          rw [Regmap.gi_proof]
+          exact Val.val_inject_undef f Vundef
+      | cons r rs =>
+          intro r0
+          change Val.inject f (Regmap.get r0 (Regmap.init Vundef))
+            (Regmap.get r0 (Regmap.init Vundef))
+          rw [Regmap.gi_proof]
+          exact Val.val_inject_undef f Vundef
+  | inject_list_cons v v' vs vs' hv hvs ih =>
+      cases params with
+      | nil =>
+          intro r
+          change Val.inject f (Regmap.get r (Regmap.init Vundef))
+            (Regmap.get r (Regmap.init Vundef))
+          rw [Regmap.gi_proof]
+          exact Val.val_inject_undef f Vundef
+      | cons r rs =>
+          intro r0
+          change Val.inject f
+            (Regmap.get r0 (Regmap.set r v (RTL.init_regs vs rs)))
+            (Regmap.get r0 (Regmap.set r v' (RTL.init_regs vs' rs)))
+          rw [@Regmap.gsspec_proof val r0 r v (RTL.init_regs vs rs),
+            @Regmap.gsspec_proof val r0 r v' (RTL.init_regs vs' rs)]
+          cases peq r0 r with
+          | left heq =>
+              subst r0
+              simp
+              exact hv
+          | right hne =>
+              simp [hne]
+              exact ih rs r0
+
+theorem match_stacks_preserves_globals : match_stacks_preserves_globalsStatement := by
+  intro p tp used j s ts bound tbound h
+  induction h with
+  | match_stacks_nil bound tbound globals source_bound target_bound =>
+      exact globals
+  | match_stacks_cons res f sp pc rs s tsp trs ts bound tbound stacks refs_kept
+      sp_inject regs below target_below ih =>
+      exact ih
+
+end CompCert4Lean.Backend.Unusedglobproof
+
+namespace CompCert4Lean.Backend.Unusedglobproof
+
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Coqlib
+
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem match_stacks_incr : match_stacks_incrStatement := by
+  intro p tp used j j' hinc s ts bound tbound hstacks
+  induction hstacks with
+  | match_stacks_nil bound tbound globals source_bound target_bound =>
+      intro hnew
+      have same_source : ∀ (b b' : block) (delta : Z),
+          Plt b (Genv.globalenv p).genv_next →
+          j' b = some (b', delta) →
+          j b = some (b', delta) := by
+        intro b b' delta hb hmap
+        cases hj : j b with
+        | none =>
+            have hbounds := hnew b b' delta hj hmap
+            have hbad : Plt b b :=
+              Plt_Ple_trans b (Genv.globalenv p).genv_next b hb
+                (Ple_trans _ _ _ source_bound hbounds.1)
+            exact (Plt_strict b hbad).elim
+        | some pair =>
+            rcases pair with ⟨b1, delta1⟩
+            have heq : (b1, delta1) = (b', delta) :=
+              Option.some.inj ((hinc b b1 delta1 hj).symm.trans hmap)
+            cases heq
+            rfl
+      have same_target : ∀ (b b' : block) (delta : Z),
+          Plt b' (Genv.globalenv tp).genv_next →
+          j' b = some (b', delta) →
+          j b = some (b', delta) := by
+        intro b b' delta hb hmap
+        cases hj : j b with
+        | none =>
+            have hbounds := hnew b b' delta hj hmap
+            have hbad : Plt b' b' :=
+              Plt_Ple_trans b' (Genv.globalenv tp).genv_next b' hb
+                (Ple_trans _ _ _ target_bound hbounds.2)
+            exact (Plt_strict b' hbad).elim
+        | some pair =>
+            rcases pair with ⟨b1, delta1⟩
+            have heq : (b1, delta1) = (b', delta) :=
+              Option.some.inj ((hinc b b1 delta1 hj).symm.trans hmap)
+            cases heq
+            rfl
+      refine match_stacks_nil bound tbound ?_ source_bound target_bound
+      refine {
+        symbols_inject_1 := ?_,
+        symbols_inject_2 := ?_,
+        symbols_inject_3 := ?_,
+        defs_inject := ?_,
+        defs_rev_inject := ?_ }
+      · intro id b b' delta hmap hfind
+        exact globals.symbols_inject_1 id b b' delta
+          (same_source b b' delta ((Genv.globalenv p).genv_symb_range id hfind) hmap)
+          hfind
+      · intro id b hkept hfind
+        rcases globals.symbols_inject_2 id b hkept hfind with
+          ⟨b', hfind', hmap⟩
+        exact ⟨b', hfind', hinc b b' z0 hmap⟩
+      · intro id b' hfind
+        rcases globals.symbols_inject_3 id b' hfind with
+          ⟨b, hfind', hmap⟩
+        exact ⟨b, hfind', hinc b b' z0 hmap⟩
+      · intro b b' delta gd hmap hdef
+        exact globals.defs_inject b b' delta gd
+          (same_source b b' delta ((Genv.globalenv p).genv_defs_range b hdef) hmap)
+          hdef
+      · intro b b' delta gd hmap hdef
+        exact globals.defs_rev_inject b b' delta gd
+          (same_target b b' delta ((Genv.globalenv tp).genv_defs_range b' hdef) hmap)
+          hdef
+  | match_stacks_cons res f sp pc rs s tsp trs ts bound tbound stacks refs_kept
+      sp_inject regs below target_below ih =>
+      intro hnew
+      refine match_stacks_cons res f sp pc rs s tsp trs ts bound tbound
+        (ih ?_) refs_kept (hinc sp tsp z0 sp_inject)
+        (regset_inject_incr j j' rs trs regs hinc) below target_below
+      intro b1 b2 delta hmap hmap'
+      have hbounds := hnew b1 b2 delta hmap hmap'
+      exact ⟨Ple_trans sp bound b1 (Plt_Ple sp bound below) hbounds.1,
+        Ple_trans tsp tbound b2 (Plt_Ple tsp tbound target_below) hbounds.2⟩
+
+end CompCert4Lean.Backend.Unusedglobproof

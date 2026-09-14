@@ -1736,3 +1736,10 @@ theorem findMax_empty_proof : findMax_empty := by
   exact CompCert4Lean.Lib.Heaps.SplayHeapSet.findMax_empty positiveOrder
 
 end CompCert4Lean.Lib.Heaps.PHeap
+
+namespace CompCert4Lean.Lib.Heaps.PHeap
+
+theorem findMin_empty_proof : findMin_empty := by
+  exact CompCert4Lean.Lib.Heaps.SplayHeapSet.findMin_empty positiveOrder
+
+end CompCert4Lean.Lib.Heaps.PHeap

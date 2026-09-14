@@ -4388,3 +4388,39 @@ theorem subst_loc_part_satisf_lowlong :
     exact hsat q hmem
 
 end CompCert4Lean.Backend.Allocproof
+
+namespace CompCert4Lean.Backend.Allocproof
+
+open CompCert4Lean.Backend.Allocation
+open CompCert4Lean.Backend.Locations
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Common.Values
+
+theorem subst_loc_part_satisf_highlong :
+    subst_loc_part_satisf_highlongStatement := by
+  intro src dst rs ls e e' hsubst hsat
+  unfold satisf at hsat ⊢
+  intro q hq
+  change CompCert4Lean.Backend.Registers.Regmap.t val at rs
+  change CompCert4Lean.Backend.Locations.Locmap.t at ls
+  change equation at q
+  rcases in_subst_loc_part (R dst) (R src) High q e e' hq hsubst with hchanged | hsame
+  · rcases hchanged with ⟨hqloc, hqkind, hmem⟩
+    have hval := hsat
+      { ekind := Full, ereg := q.ereg, eloc := R src } hmem
+    have hiword_lessdef_local : ∀ (v v' : val),
+        Val.lessdef v v' → Val.lessdef (Val.hiword v) (Val.hiword v') := by
+      intro v v' hv
+      cases hv with
+      | lessdef_refl v => exact Val.lessdef.lessdef_refl _
+      | lessdef_undef v => exact Val.lessdef.lessdef_undef _
+    have hval' : Val.lessdef (Regmap.get q.ereg rs) (ls (R src)) := by
+      simpa [sel_val] using hval
+    rw [hqloc, hqkind, Locmap.gss]
+    change Val.lessdef (Val.hiword (Regmap.get q.ereg rs)) (Val.hiword (ls (R src)))
+    exact hiword_lessdef_local _ _ hval'
+  · rcases hsame with ⟨hdiff, hmem⟩
+    rw [Locmap.gso _ _ _ _ hdiff]
+    exact hsat q hmem
+
+end CompCert4Lean.Backend.Allocproof

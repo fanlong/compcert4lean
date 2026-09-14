@@ -2526,3 +2526,65 @@ theorem Rmult_minus_distr_r :
 end RIneq
 end Rocq.Coq.Reals
 end CompCert4Lean.Foundation.FlocqReal
+
+namespace CompCert4Lean.Foundation.FlocqReal
+namespace Rocq.Coq.Reals
+namespace RIneq
+
+theorem Rinv_1 :
+    ∀ (ctx : ExactRealContext), Rinv_1Statement ctx := by
+  intro ctx
+  change ctx.spec.inv (ctx.spec.ofZ
+    (_root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.Zpos
+      _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.xH)) =
+    ctx.spec.ofZ
+      (_root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.Zpos
+        _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.xH)
+  rw [ctx.certificate.sourceLaws.ofZ_one]
+  have hone_ne_zero : ctx.spec.one ≠ ctx.spec.zero := by
+    intro h
+    exact ctx.certificate.orderedField.zero_ne_one h.symm
+  calc
+    ctx.spec.inv ctx.spec.one =
+        ctx.spec.mul (ctx.spec.inv ctx.spec.one) ctx.spec.one :=
+      (ctx.certificate.orderedField.mul_one _).symm
+    _ = ctx.spec.one :=
+      ctx.certificate.orderedField.inv_mul_cancel ctx.spec.one hone_ne_zero
+
+theorem Rinv_neq_0_compat :
+    ∀ (ctx : ExactRealContext), Rinv_neq_0_compatStatement ctx := by
+  intro ctx r hr hzero
+  change ctx.spec.inv r = ctx.spec.ofZ
+    (_root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z0) at hzero
+  have hrne : r ≠ ctx.spec.zero := by
+    intro heq
+    apply hr
+    calc
+      r = ctx.spec.zero := heq
+      _ = ctx.spec.ofZ
+          (_root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z0) :=
+        ctx.certificate.sourceLaws.ofZ_zero.symm
+  have hmul := ctx.certificate.orderedField.inv_mul_cancel r hrne
+  rw [hzero, ctx.certificate.sourceLaws.ofZ_zero,
+    ctx.certificate.orderedField.zero_mul] at hmul
+  exact ctx.certificate.orderedField.zero_ne_one hmul
+
+theorem Rplus_lt_compat_r :
+    ∀ (ctx : ExactRealContext), Rplus_lt_compat_rStatement ctx := by
+  intro ctx r r1 r2 h
+  change ctx.spec.lt (ctx.spec.add r1 r) (ctx.spec.add r2 r)
+  rw [ctx.certificate.orderedField.add_comm r1 r,
+    ctx.certificate.orderedField.add_comm r2 r]
+  exact ctx.certificate.orderedField.add_lt_compat_l r r1 r2 h
+
+theorem Rplus_le_compat_r :
+    ∀ (ctx : ExactRealContext), Rplus_le_compat_rStatement ctx := by
+  intro ctx r r1 r2 h
+  change ctx.spec.le (ctx.spec.add r1 r) (ctx.spec.add r2 r)
+  rw [ctx.certificate.orderedField.add_comm r1 r,
+    ctx.certificate.orderedField.add_comm r2 r]
+  exact Rplus_le_compat_l ctx r r1 r2 h
+
+end RIneq
+end Rocq.Coq.Reals
+end CompCert4Lean.Foundation.FlocqReal
