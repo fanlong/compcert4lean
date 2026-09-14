@@ -1734,3 +1734,230 @@ theorem PArith.Pnat.nat_of_P_lt_Lt_compare_morphism :
 
 end Rocq.Coq
 end CompCert4Lean.Foundation.Numbers
+
+namespace CompCert4Lean.Foundation.Numbers
+namespace Rocq.Coq
+
+theorem ZArith.BinInt.Z.mul_le_mono_nonneg_l :
+    ZArith.BinInt.Z.mul_le_mono_nonneg_lStatement := by
+  intro n m p hp hnm
+  change 0 ≤ intOfZ p at hp
+  change intOfZ n ≤ intOfZ m at hnm
+  change intOfZ (ZArith.BinInt.Z.mul p n) ≤
+    intOfZ (ZArith.BinInt.Z.mul p m)
+  simp only [ZArith.BinInt.Z.mul, intOfZ_zOfInt]
+  exact Int.mul_le_mul_of_nonneg_left hnm hp
+
+theorem ZArith.BinInt.Z.mul_le_mono_nonneg_r :
+    ZArith.BinInt.Z.mul_le_mono_nonneg_rStatement := by
+  intro n m p hp hnm
+  change 0 ≤ intOfZ p at hp
+  change intOfZ n ≤ intOfZ m at hnm
+  change intOfZ (ZArith.BinInt.Z.mul n p) ≤
+    intOfZ (ZArith.BinInt.Z.mul m p)
+  simp only [ZArith.BinInt.Z.mul, intOfZ_zOfInt]
+  exact Int.mul_le_mul_of_nonneg_right hnm hp
+
+theorem ZArith.BinInt.Z.divide_add_r :
+    ZArith.BinInt.Z.divide_add_rStatement := by
+  intro n m p hnm hnp
+  rcases hnm with ⟨k, hk⟩
+  rcases hnp with ⟨l, hl⟩
+  refine ⟨ZArith.BinInt.Z.add k l, ?_⟩
+  apply intOfZ_injective
+  simp only [ZArith.BinInt.Z.add, ZArith.BinInt.Z.mul,
+    intOfZ_zOfInt] at hk hl ⊢
+  rw [hk, hl]
+  simpa only [intOfZ_zOfInt] using
+    (Int.mul_add (intOfZ n) (intOfZ k) (intOfZ l)).symm
+
+end Rocq.Coq
+end CompCert4Lean.Foundation.Numbers
+namespace CompCert4Lean.Foundation.Numbers
+namespace Rocq.Coq
+open ZArith.BinInt
+
+private theorem testbit_pos_zero (p : positive) :
+    Z.testbit (Z.Zpos p) Z.Z0 = Nat.testBit (posToNat p) 0 := by
+  simp [Z.testbit, Z.odd, Z.even, intOfZ, Nat.testBit_zero]
+  rcases Nat.mod_two_eq_zero_or_one (posToNat p) with h | h <;> simp [h]
+
+private theorem testbit_pos_pos (p : positive) (i : Nat) :
+    Z.testbit (Z.Zpos p) (Z.Zpos (posOfNat (i+1))) = Nat.testBit (posToNat p) (i+1) := by
+  have hi : posToNat (posOfNat (i+1)) = i+1 := posToNat_posOfNat (Nat.succ_pos i)
+  simp [Z.testbit, hi]
+
+private theorem pos_bits_eq (p q : positive)
+    (h : ∀ n : Z, Z.le Z0 n → Z.testbit (Z.Zpos p) n = Z.testbit (Z.Zpos q) n) :
+    p = q := by
+  have hbits : ∀ i : Nat, Nat.testBit (posToNat p) i = Nat.testBit (posToNat q) i := by
+    intro i
+    cases i with
+    | zero =>
+        have hh := h Z.Z0 (by change (0 : Int) ≤ 0; omega)
+        simpa only [testbit_pos_zero p, testbit_pos_zero q] using hh
+    | succ i =>
+        have hh := h (Z.Zpos (posOfNat (i + 1))) (by
+          change intOfZ Z.Z0 ≤ intOfZ (Z.Zpos (posOfNat (i + 1)))
+          simp [intOfZ, posToNat_posOfNat (Nat.succ_pos i)]
+          omega)
+        simpa only [testbit_pos_pos p i, testbit_pos_pos q i] using hh
+  exact posToNat_injective (Nat.eq_of_testBit_eq hbits)
+
+end Rocq.Coq
+end CompCert4Lean.Foundation.Numbers
+
+namespace CompCert4Lean.Foundation.Numbers
+namespace Rocq.Coq
+open ZArith.BinInt
+
+private theorem testbit_neg_zero (p : positive) :
+    Z.testbit (Z.Zneg p) Z.Z0 = !(Nat.testBit (posToNat p - 1) 0) := by
+  simp [Z.testbit, Z.odd, Z.even, intOfZ, Nat.testBit_zero]
+  rcases Nat.mod_two_eq_zero_or_one (posToNat p) with h | h
+  · have hp := posToNat_positive p
+    simp [h]
+    omega
+  · have hp := posToNat_positive p
+    simp [h]
+    omega
+
+private theorem testbit_neg_pos (p : positive) (i : Nat) :
+    Z.testbit (Z.Zneg p) (Z.Zpos (posOfNat (i+1))) = !(Nat.testBit (posToNat p - 1) (i+1)) := by
+  have hi : posToNat (posOfNat (i+1)) = i+1 := posToNat_posOfNat (Nat.succ_pos i)
+  simp [Z.testbit, hi]
+
+private theorem neg_bits_eq (p q : positive)
+    (h : ∀ n : Z, Z.le Z0 n → Z.testbit (Z.Zneg p) n = Z.testbit (Z.Zneg q) n) :
+    p = q := by
+  have hbits : ∀ i : Nat, Nat.testBit (posToNat p - 1) i = Nat.testBit (posToNat q - 1) i := by
+    intro i
+    cases i with
+    | zero =>
+        have hh := h Z.Z0 (by change (0 : Int) ≤ 0; omega)
+        exact Bool.not_inj (by simpa only [testbit_neg_zero p, testbit_neg_zero q] using hh)
+    | succ i =>
+        have hh := h (Z.Zpos (posOfNat (i + 1))) (by
+          change intOfZ Z.Z0 ≤ intOfZ (Z.Zpos (posOfNat (i + 1)))
+          simp [intOfZ, posToNat_posOfNat (Nat.succ_pos i)]
+          omega)
+        exact Bool.not_inj (by simpa only [testbit_neg_pos p i, testbit_neg_pos q i] using hh)
+  have hpq : posToNat p - 1 = posToNat q - 1 := Nat.eq_of_testBit_eq hbits
+  have hp := posToNat_positive p
+  have hq := posToNat_positive q
+  apply posToNat_injective
+  omega
+
+end Rocq.Coq
+end CompCert4Lean.Foundation.Numbers
+
+namespace CompCert4Lean.Foundation.Numbers
+namespace Rocq.Coq
+open ZArith.BinInt
+
+private theorem testbit_zero_zero : Z.testbit Z.Z0 Z.Z0 = false := by
+  simp [Z.testbit, Z.odd, Z.even, intOfZ]
+
+private theorem testbit_zero_pos (i : Nat) :
+    Z.testbit Z.Z0 (Z.Zpos (posOfNat (i+1))) = false := by
+  simp [Z.testbit]
+
+private theorem nat_bit_false_large (n i : Nat) (hni : n ≤ i) :
+    Nat.testBit n i = false := by
+  apply Nat.testBit_lt_two_pow
+  exact Nat.lt_of_lt_of_le
+    (Nat.lt_pow_self (n := n) (a := 2) (by omega))
+    (Nat.pow_le_pow_right (by omega) hni)
+
+private theorem zero_pos_ne (p : positive)
+    (h : ∀ n : Z, Z.le Z0 n → Z.testbit Z.Z0 n = Z.testbit (Z.Zpos p) n) : False := by
+  have hbits : ∀ i : Nat, Nat.testBit 0 i = Nat.testBit (posToNat p) i := by
+    intro i
+    cases i with
+    | zero =>
+        have hh := h Z.Z0 (by change (0 : Int) ≤ 0; omega)
+        have hh' : false = Nat.testBit (posToNat p) 0 := by
+          simpa only [testbit_zero_zero, testbit_pos_zero p] using hh
+        simpa using hh'
+    | succ i =>
+        have hh := h (Z.Zpos (posOfNat (i + 1))) (by
+          change intOfZ Z.Z0 ≤ intOfZ (Z.Zpos (posOfNat (i + 1)))
+          simp [intOfZ, posToNat_posOfNat (Nat.succ_pos i)]
+          omega)
+        have hh' : false = Nat.testBit (posToNat p) (i + 1) := by
+          simpa only [testbit_zero_pos i, testbit_pos_pos p i] using hh
+        simpa using hh'
+  have hp0 : posToNat p = 0 := Nat.eq_of_testBit_eq (fun i => (hbits i).symm)
+  have hp := posToNat_positive p
+  omega
+
+private theorem zero_neg_ne (p : positive)
+    (h : ∀ n : Z, Z.le Z0 n → Z.testbit Z.Z0 n = Z.testbit (Z.Zneg p) n) : False := by
+  let k := posToNat p
+  have hk : 0 < k := posToNat_positive p
+  have hh := h (Z.Zpos (posOfNat k)) (by
+    change intOfZ Z.Z0 ≤ intOfZ (Z.Zpos (posOfNat k))
+    simp [intOfZ, posToNat_posOfNat hk])
+  have hi : posToNat (posOfNat k) = k := posToNat_posOfNat hk
+  have hbit : Nat.testBit (k - 1) k = false := nat_bit_false_large _ _ (by omega)
+  have htest : Z.testbit (Z.Zneg p) (Z.Zpos (posOfNat k)) = true := by
+    unfold Z.testbit
+    simp [k, hi, hbit]
+  have hzero : Z.testbit Z.Z0 (Z.Zpos (posOfNat k)) = false := by
+    unfold Z.testbit
+    simp [intOfZ, hi]
+  rw [hzero, htest] at hh
+  simp at hh
+
+private theorem pos_neg_ne (p q : positive)
+    (h : ∀ n : Z, Z.le Z0 n → Z.testbit (Z.Zpos p) n = Z.testbit (Z.Zneg q) n) : False := by
+  let np := posToNat p
+  let nq := posToNat q
+  let i := np + nq
+  have hnp : np ≤ i := by dsimp [i]; omega
+  have hnq : nq - 1 ≤ i := by dsimp [i]; omega
+  have hi0 : 0 < i := by dsimp [i]; have hp := posToNat_positive p; have hq := posToNat_positive q; omega
+  have hi : posToNat (posOfNat i) = i := posToNat_posOfNat hi0
+  have hh := h (Z.Zpos (posOfNat i)) (by
+    change intOfZ Z.Z0 ≤ intOfZ (Z.Zpos (posOfNat i))
+    simp [intOfZ, hi])
+  have hpbit : Nat.testBit np i = false := nat_bit_false_large _ _ hnp
+  have hqbit : Nat.testBit (nq - 1) i = false := nat_bit_false_large _ _ hnq
+  have hpbit' : Nat.testBit (posToNat p) i = false := by simpa [np] using hpbit
+  have hqbit' : Nat.testBit (posToNat q - 1) i = false := by simpa [nq] using hqbit
+  unfold Z.testbit at hh
+  simp [hi, hpbit', hqbit'] at hh
+
+end Rocq.Coq
+end CompCert4Lean.Foundation.Numbers
+
+namespace CompCert4Lean.Foundation.Numbers
+namespace Rocq.Coq
+
+theorem ZArith.BinInt.Z.bits_inj' :
+    ZArith.BinInt.Z.bits_inj'Statement := by
+  intro a b h
+  cases a with
+  | Z0 =>
+      cases b with
+      | Z0 => rfl
+      | Zpos q => exact False.elim (zero_pos_ne q h)
+      | Zneg q => exact False.elim (zero_neg_ne q h)
+  | Zpos p =>
+      cases b with
+      | Z0 =>
+          exact False.elim (zero_pos_ne p (fun n hn => (h n hn).symm))
+      | Zpos q =>
+          exact congrArg Zpos (pos_bits_eq p q h)
+      | Zneg q => exact False.elim (pos_neg_ne p q h)
+  | Zneg p =>
+      cases b with
+      | Z0 =>
+          exact False.elim (zero_neg_ne p (fun n hn => (h n hn).symm))
+      | Zpos q =>
+          exact False.elim (pos_neg_ne q p (fun n hn => (h n hn).symm))
+      | Zneg q =>
+          exact congrArg Zneg (neg_bits_eq p q h)
+
+end Rocq.Coq
+end CompCert4Lean.Foundation.Numbers

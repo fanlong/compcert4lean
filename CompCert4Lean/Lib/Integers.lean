@@ -3388,3 +3388,26 @@ theorem and_mone_proof : and_mone := by
   change x.val.land ((-1 % Int.ofNat (2 ^ wordsize)).toNat) = x.val
   rw [hmask]
   exact Nat.and_two_pow_sub_one_of_lt_two_pow (WordCore.val_lt x)
+
+theorem repr_unsigned_proof : repr_unsigned := by
+  intro i
+  have hnonneg : zLe zZero (unsigned i) := by
+    have h := i.intrange.1
+    change (-1 : Int) < intOfZ (unsigned i) at h
+    change 0 ≤ intOfZ (unsigned i)
+    omega
+  have hlt : zLt (unsigned i) modulus := i.intrange.2
+  have hmax : zLe (unsigned i) max_unsigned := by
+    change intOfZ (unsigned i) ≤ intOfZ max_unsigned
+    change intOfZ (unsigned i) < intOfZ modulus at hlt
+    change intOfZ (unsigned i) < (2 ^ wordsize : Int) at hlt
+    change intOfZ (unsigned i) ≤ (2 ^ wordsize : Int) - 1
+    omega
+  apply WordCore.ext
+  exact unsigned_repr_proof_api (unsigned i) ⟨hnonneg, hmax⟩
+
+theorem and_commut_proof : and_commut := by
+  intro x y
+  apply WordCore.ext_of_val_eq
+  change (WordCore.and x y).val = (WordCore.and y x).val
+  rw [suffix_and_val, suffix_and_val, Nat.land_eq, Nat.land_eq, Nat.and_comm]
