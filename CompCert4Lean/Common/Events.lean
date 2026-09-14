@@ -1847,3 +1847,12 @@ theorem Eapp_assoc : Eapp_assocStatement := by
       rw [ih]
 
 end CompCert4Lean.Common.Events
+
+namespace CompCert4Lean.Common.Events
+
+theorem Eapp_E0_inv : Eapp_E0_invStatement := by
+  intro t1 t2 h
+  change List.append t1 t2 = [] at h
+  exact List.eq_nil_of_append_eq_nil h
+
+end CompCert4Lean.Common.Events

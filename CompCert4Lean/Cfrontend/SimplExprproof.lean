@@ -2174,3 +2174,33 @@ theorem eval_simpl_expr_sound :
   simpa [P] using hP
 
 end CompCert4Lean.Cfrontend.SimplExprproof
+
+namespace CompCert4Lean.Cfrontend.SimplExprproof
+
+open CompCert4Lean.Cfrontend.Cop
+
+private theorem empty_weak_valid_pointer_false (b : CompCert4Lean.Common.Values.block)
+    (ofs : CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z) :
+    CompCert4Lean.Common.Memory.Mem.weak_valid_pointer
+      CompCert4Lean.Common.Memory.Mem.empty b ofs = false := by
+  simp [CompCert4Lean.Common.Memory.Mem.weak_valid_pointer,
+    CompCert4Lean.Common.Memory.Mem.valid_pointer,
+    CompCert4Lean.Common.Memory.Mem.empty,
+    CompCert4Lean.Common.Memory.Mem.perm_dec,
+    CompCert4Lean.Common.Memory.Mem.perm_order'_dec,
+    CompCert4Lean.Lib.Maps.PMap.get,
+    CompCert4Lean.Lib.Maps.PMap.init,
+    CompCert4Lean.Lib.Maps.PTree.get,
+    CompCert4Lean.Lib.Maps.PTree.empty]
+  constructor <;> rfl
+
+theorem static_bool_val_sound : static_bool_val_soundStatement := by
+  intro v t m b h
+  cases hc : classify_bool t <;>
+    cases v <;>
+      simp [bool_val, hc, CompCert4Lean.X86_64.Archi.ptr64] at h ⊢ <;>
+    try exact h
+  · rw [empty_weak_valid_pointer_false] at h
+    simp at h
+
+end CompCert4Lean.Cfrontend.SimplExprproof

@@ -2588,3 +2588,100 @@ theorem Rplus_le_compat_r :
 end RIneq
 end Rocq.Coq.Reals
 end CompCert4Lean.Foundation.FlocqReal
+
+namespace CompCert4Lean.Foundation.FlocqReal
+namespace Rocq.Coq.Reals
+namespace RIneq
+
+theorem Rplus_lt_compat :
+    ∀ (ctx : ExactRealContext), Rplus_lt_compatStatement ctx := by
+  intro ctx r1 r2 r3 r4 h12 h34
+  change ctx.spec.lt (ctx.spec.add r1 r3) (ctx.spec.add r2 r4)
+  have h34' : ctx.spec.lt (ctx.spec.add r1 r3) (ctx.spec.add r1 r4) :=
+    ctx.certificate.orderedField.add_lt_compat_l r1 r3 r4 h34
+  have h12' : ctx.spec.lt (ctx.spec.add r1 r4) (ctx.spec.add r2 r4) := by
+    rw [ctx.certificate.orderedField.add_comm r1 r4,
+      ctx.certificate.orderedField.add_comm r2 r4]
+    exact ctx.certificate.orderedField.add_lt_compat_l r4 r1 r2 h12
+  exact ctx.certificate.orderedField.lt_trans _ _ _ h34' h12'
+
+theorem Rplus_le_compat :
+    ∀ (ctx : ExactRealContext), Rplus_le_compatStatement ctx := by
+  intro ctx r1 r2 r3 r4 h12 h34
+  change ctx.spec.le (ctx.spec.add r1 r3) (ctx.spec.add r2 r4)
+  have h34' : ctx.spec.le (ctx.spec.add r1 r3) (ctx.spec.add r1 r4) :=
+    Rplus_le_compat_l ctx r1 r3 r4 h34
+  have h12' : ctx.spec.le (ctx.spec.add r1 r4) (ctx.spec.add r2 r4) := by
+    rw [ctx.certificate.orderedField.add_comm r1 r4,
+      ctx.certificate.orderedField.add_comm r2 r4]
+    exact Rplus_le_compat_l ctx r4 r1 r2 h12
+  exact ctx.certificate.orderedField.le_trans _ _ _ h34' h12'
+
+theorem Rplus_le_reg_r :
+    ∀ (ctx : ExactRealContext), Rplus_le_reg_rStatement ctx := by
+  intro ctx r r1 r2 h
+  change ctx.spec.le (ctx.spec.add r1 r) (ctx.spec.add r2 r) at h
+  have h' :
+      ctx.spec.le
+        (ctx.spec.add (ctx.spec.neg r) (ctx.spec.add r1 r))
+        (ctx.spec.add (ctx.spec.neg r) (ctx.spec.add r2 r)) :=
+    Rplus_le_compat_l ctx (ctx.spec.neg r) (ctx.spec.add r1 r)
+      (ctx.spec.add r2 r) h
+  have hleft :
+      ctx.spec.add (ctx.spec.neg r) (ctx.spec.add r1 r) = r1 := by
+    calc
+      ctx.spec.add (ctx.spec.neg r) (ctx.spec.add r1 r) =
+          ctx.spec.add (ctx.spec.add (ctx.spec.neg r) r) r1 := by
+            rw [ctx.certificate.orderedField.add_comm r1 r,
+              ← ctx.certificate.orderedField.add_assoc]
+      _ = ctx.spec.add ctx.spec.zero r1 := by
+            rw [ctx.certificate.orderedField.neg_add_cancel]
+      _ = r1 := ctx.certificate.orderedField.zero_add _
+  have hright :
+      ctx.spec.add (ctx.spec.neg r) (ctx.spec.add r2 r) = r2 := by
+    calc
+      ctx.spec.add (ctx.spec.neg r) (ctx.spec.add r2 r) =
+          ctx.spec.add (ctx.spec.add (ctx.spec.neg r) r) r2 := by
+            rw [ctx.certificate.orderedField.add_comm r2 r,
+              ← ctx.certificate.orderedField.add_assoc]
+      _ = ctx.spec.add ctx.spec.zero r2 := by
+            rw [ctx.certificate.orderedField.neg_add_cancel]
+      _ = r2 := ctx.certificate.orderedField.zero_add _
+  rw [hleft, hright] at h'
+  exact h'
+
+theorem Ropp_lt_contravar :
+    ∀ (ctx : ExactRealContext), Ropp_lt_contravarStatement ctx := by
+  intro ctx r1 r2 h
+  change ctx.spec.lt (ctx.spec.neg r1) (ctx.spec.neg r2)
+  apply Rplus_lt_reg_r ctx (ctx.spec.add r1 r2)
+      (ctx.spec.neg r1) (ctx.spec.neg r2)
+  have hleft :
+      ctx.spec.add (ctx.spec.neg r1) (ctx.spec.add r1 r2) = r2 := by
+    calc
+      ctx.spec.add (ctx.spec.neg r1) (ctx.spec.add r1 r2) =
+          ctx.spec.add (ctx.spec.add (ctx.spec.neg r1) r1) r2 := by
+            rw [← ctx.certificate.orderedField.add_assoc]
+      _ = ctx.spec.add ctx.spec.zero r2 := by
+            rw [ctx.certificate.orderedField.neg_add_cancel]
+      _ = r2 := ctx.certificate.orderedField.zero_add _
+  have hright :
+      ctx.spec.add (ctx.spec.neg r2) (ctx.spec.add r1 r2) = r1 := by
+    calc
+      ctx.spec.add (ctx.spec.neg r2) (ctx.spec.add r1 r2) =
+          ctx.spec.add (ctx.spec.neg r2) (ctx.spec.add r2 r1) := by
+            rw [ctx.certificate.orderedField.add_comm r1 r2]
+      _ = ctx.spec.add (ctx.spec.add (ctx.spec.neg r2) r2) r1 := by
+            rw [← ctx.certificate.orderedField.add_assoc]
+      _ = ctx.spec.add ctx.spec.zero r1 := by
+            rw [ctx.certificate.orderedField.neg_add_cancel]
+      _ = r1 := ctx.certificate.orderedField.zero_add _
+  change ctx.spec.lt
+    (ctx.spec.add (ctx.spec.neg r1) (ctx.spec.add r1 r2))
+    (ctx.spec.add (ctx.spec.neg r2) (ctx.spec.add r1 r2))
+  rw [hleft, hright]
+  exact h
+
+end RIneq
+end Rocq.Coq.Reals
+end CompCert4Lean.Foundation.FlocqReal

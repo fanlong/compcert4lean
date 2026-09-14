@@ -2630,3 +2630,52 @@ theorem agree_regs_undef_regs : agree_regs_undef_regsStatement := by
         exact ih r0
 
 end CompCert4Lean.Backend.Stackingproof
+
+namespace CompCert4Lean.Backend.Stackingproof
+
+open CompCert4Lean.Backend.Locations
+open CompCert4Lean.Backend.Mach
+open CompCert4Lean.Common.Values
+
+theorem agree_regs_undef_caller_save_regs :
+    agree_regs_undef_caller_save_regsStatement := by
+  intro cfg j ls rs hagree r
+  change Val.inject j
+    (LTL.undef_caller_save_regs cfg ls (R r))
+    (Mach.undef_caller_save_regs cfg rs r)
+  simp only [LTL.undef_caller_save_regs, Mach.undef_caller_save_regs]
+  split
+  · exact hagree r
+  · exact Val.val_inject_undef _ _
+
+theorem agree_regs_set_slot : agree_regs_set_slotStatement := by
+  intro j ls rs sl ofs ty v hagree r
+  change Val.inject j
+    (Locmap.set (S sl ofs ty) v ls (R r)) (rs r)
+  rw [show Locmap.set (S sl ofs ty) v ls (R r) = ls (R r) by
+    apply Locmap.gso
+    simp [Loc.diff]]
+  exact hagree r
+
+theorem agree_regs_inject_incr : agree_regs_inject_incrStatement := by
+  intro j ls rs j' hagree hinc r
+  have hincr_val : ∀ (v v' : CompCert4Lean.Common.Values.val),
+      Val.inject j v v' → Val.inject j' v v' := by
+    intro v v' hval
+    cases hval with
+    | inject_int i => exact Val.inject.inject_int i
+    | inject_long i => exact Val.inject.inject_long i
+    | inject_float f => exact Val.inject.inject_float f
+    | inject_single f => exact Val.inject.inject_single f
+    | inject_ptr b1 ofs1 b2 ofs2 delta hmap hofs =>
+        exact Val.inject.inject_ptr b1 ofs1 b2 ofs2 delta
+          (hinc b1 b2 delta hmap) hofs
+    | val_inject_undef v' => exact Val.inject.val_inject_undef v'
+  exact hincr_val _ _ (hagree r)
+
+theorem agree_regs_call_regs : agree_regs_call_regsStatement := by
+  intro j ls rs hagree r
+  change Val.inject j (LTL.call_regs ls (R r)) (rs r)
+  simpa [LTL.call_regs] using hagree r
+
+end CompCert4Lean.Backend.Stackingproof

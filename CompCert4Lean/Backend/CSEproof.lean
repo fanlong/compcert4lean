@@ -2906,3 +2906,27 @@ theorem shift_memcpy_eq_wf : shift_memcpy_eq_wfStatement := by
           | _ => simp at hshift
 
 end CompCert4Lean.Backend.CSEproof
+
+namespace CompCert4Lean.Backend.CSEproof
+
+theorem add_memcpy_eqs_charact : add_memcpy_eqs_charactStatement := by
+  intro e' src sz delta eqs2 eqs1
+  induction eqs1 with
+  | nil =>
+      intro h
+      exact Or.inl h
+  | cons e eqs ih =>
+      intro h
+      unfold CSE.add_memcpy_eqs at h
+      split at h <;> rename_i hshift
+      · rcases ih h with h2 | ⟨e0, he0, hs⟩
+        · exact Or.inl h2
+        · exact Or.inr ⟨e0, List.mem_cons_of_mem e he0, hs⟩
+      · simp only [List.mem_cons] at h
+        rcases h with rfl | h
+        · exact Or.inr ⟨e, by simp, hshift⟩
+        · rcases ih h with h2 | ⟨e0, he0, hs⟩
+          · exact Or.inl h2
+          · exact Or.inr ⟨e0, List.mem_cons_of_mem e he0, hs⟩
+
+end CompCert4Lean.Backend.CSEproof

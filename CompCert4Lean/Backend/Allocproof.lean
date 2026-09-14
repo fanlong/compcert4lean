@@ -4424,3 +4424,185 @@ theorem subst_loc_part_satisf_highlong :
     exact hsat q hmem
 
 end CompCert4Lean.Backend.Allocproof
+
+namespace CompCert4Lean.Backend.Allocproof
+
+open CompCert4Lean.Backend.Allocation
+open CompCert4Lean.Backend.Locations
+
+theorem in_subst_loc_pair : in_subst_loc_pairStatement := by
+  intro l1 l2 l2' q e e' hq hsubst
+  let elt : EqSet2.t :=
+    EqSet2.elements_between (select_loc_l l1) (select_loc_h l1) e.eqs2
+  let q2 : EqSet2.E.t := q
+  change equation at q2
+  let f : EqSet2.elt → eqs → Option eqs := fun q0 out =>
+    if decide (l1 = q0.eloc) = true then
+      match IndexedEqKind.eq q0.ekind Full with
+      | .left _ =>
+          some (add_equation { ekind := High, ereg := q0.ereg, eloc := l2 }
+            (add_equation { ekind := Low, ereg := q0.ereg, eloc := l2' }
+              (remove_equation q0 out)))
+      | .right _ => none
+    else none
+  have hfold :
+      EqSet2.fold (fun q0 opte => match opte with
+        | none => none
+        | some e0 => f q0 e0) elt (some e) = subst_loc_pair l1 l2 l2' e := by
+    unfold subst_loc_pair
+    apply congrArg (fun g => EqSet2.fold g elt (some e))
+    funext x out
+    cases x with
+    | mk ekind ereg eloc =>
+        cases out with
+        | none => rfl
+        | some out =>
+            cases hloc : decide (l1 = eloc) with
+            | false =>
+                have hne : ¬ l1 = eloc := by
+                  intro heq
+                  subst eloc
+                  simp at hloc
+                simp [f, hloc, hne]
+            | true =>
+                have heq : l1 = eloc := of_decide_eq_true hloc
+                cases hkind : IndexedEqKind.eq ekind Full with
+                | left heqk =>
+                    simp [f, hloc, heq, hkind] <;> rfl
+                | right hneq =>
+                    simp [f, hloc, heq, hkind] <;> rfl
+  have hsubst' :
+      EqSet2.fold (fun q0 opte => match opte with
+        | none => none
+        | some e0 => f q0 e0) elt (some e) = some e' := by
+    rw [hfold]
+    exact hsubst
+  let P : EqSet2M.t → eqs → Prop := fun s0 e0 =>
+    EqSet2.In q2 s0 → q.eloc = l1 ∧ q.ekind = Full ∧
+      EqSet.In ({ ekind := High, ereg := q.ereg, eloc := l2 } : EqSet.elt) e0.eqs1 ∧
+      EqSet.In ({ ekind := Low, ereg := q.ereg, eloc := l2' } : EqSet.elt) e0.eqs1
+  have hP : P elt e' := by
+    apply partial_fold_eqs P f e e' elt hsubst'
+    · intro s' hs' h
+      exact False.elim (hs' q h)
+    · intro x a' a'' s' s'' hx hnot hadd hfa hPa hqmem
+      dsimp [f] at hfa ⊢
+      change equation at x
+      by_cases hxeq : l1 = x.eloc
+      · cases hkind : IndexedEqKind.eq x.ekind Full with
+        | left heqk =>
+            simp [hxeq, hkind] at hfa
+            cases hfa
+            rcases (hadd q2).mp hqmem with hqx | hqold
+            · have hqeq : x = q2 := hqx
+              subst x
+              refine ⟨?_, heqk, ?_, ?_⟩
+              · simpa [q2] using hxeq.symm
+              · apply EqSet.add_1
+                exact EqSet.E.eq_refl _
+              · apply EqSet.add_2
+                apply EqSet.add_1
+                exact EqSet.E.eq_refl _
+            · have hqnew := hPa hqold
+              have hhigh : EqSet.In
+                  ({ ekind := High, ereg := q.ereg, eloc := l2 } : EqSet.elt)
+                  (add_equation { ekind := High, ereg := x.ereg, eloc := l2 }
+                    (add_equation { ekind := Low, ereg := x.ereg, eloc := l2' }
+                      (remove_equation x a'))).eqs1 := by
+                by_cases heqhigh :
+                    ({ ekind := High, ereg := q.ereg, eloc := l2 } : equation) =
+                      { ekind := High, ereg := x.ereg, eloc := l2 }
+                · apply EqSet.add_1
+                  exact heqhigh.symm
+                · apply EqSet.add_2
+                  apply EqSet.add_2
+                  have hxhigh : ¬ EqSet.E.eq x
+                      ({ ekind := High, ereg := q.ereg, eloc := l2 } : equation) := by
+                    intro h
+                    subst x
+                    cases heqk
+                  apply EqSet.remove_2 _ _ _ hxhigh
+                  exact hqnew.2.2.1
+              have hlow : EqSet.In
+                  ({ ekind := Low, ereg := q.ereg, eloc := l2' } : EqSet.elt)
+                  (add_equation { ekind := High, ereg := x.ereg, eloc := l2 }
+                    (add_equation { ekind := Low, ereg := x.ereg, eloc := l2' }
+                      (remove_equation x a'))).eqs1 := by
+                by_cases heqlow :
+                    ({ ekind := Low, ereg := q.ereg, eloc := l2' } : equation) =
+                      { ekind := Low, ereg := x.ereg, eloc := l2' }
+                · apply EqSet.add_2
+                  apply EqSet.add_1
+                  exact heqlow.symm
+                · apply EqSet.add_2
+                  apply EqSet.add_2
+                  have hxlow : ¬ EqSet.E.eq x
+                      ({ ekind := Low, ereg := q.ereg, eloc := l2' } : equation) := by
+                    intro h
+                    subst x
+                    cases heqk
+                  apply EqSet.remove_2 _ _ _ hxlow
+                  exact hqnew.2.2.2
+              exact ⟨hqnew.1, hqnew.2.1, hhigh, hlow⟩
+        | right hneq =>
+            simp [hxeq, hkind] at hfa
+      · simp [hxeq] at hfa
+  let Q : EqSet2M.t → eqs → Prop := fun s0 e0 =>
+    ¬ EqSet2.In q2 s0 → EqSet.In q e0.eqs1
+  have hQ : Q elt e' := by
+    apply partial_fold_eqs Q f e e' elt hsubst'
+    · intro s' hs' _
+      exact hq
+    · intro x a' a'' s' s'' hx hnot hadd hfa hQa hqnot
+      dsimp [f] at hfa ⊢
+      change equation at x
+      by_cases hxeq : l1 = x.eloc
+      · cases hkind : IndexedEqKind.eq x.ekind Full with
+        | left heqk =>
+            simp [hxeq, hkind] at hfa
+            cases hfa
+            have hqx : ¬ EqSet2.In q2 s' := by
+              intro hq'
+              exact hqnot ((hadd q2).mpr (Or.inr hq'))
+            have hqold := hQa hqx
+            have hqnew : ¬ EqSet.E.eq x q := by
+              intro hxeq'
+              exact hqnot ((hadd q2).mpr (Or.inl hxeq'))
+            let qh : equation := { ekind := High, ereg := x.ereg, eloc := l2 }
+            let ql : equation := { ekind := Low, ereg := x.ereg, eloc := l2' }
+            by_cases hq_high : q = qh
+            · subst q
+              apply EqSet.add_1
+              exact EqSet.E.eq_refl _
+            · apply EqSet.add_2
+              by_cases hq_low : q = ql
+              · subst q
+                apply EqSet.add_1
+                exact EqSet.E.eq_refl _
+              · apply EqSet.add_2
+                apply EqSet.remove_2 _ _ _ hqnew
+                exact hqold
+        | right hneq =>
+            simp [hxeq, hkind] at hfa
+      · simp [hxeq] at hfa
+  by_cases hqe : EqSet2.In q2 elt
+  · left
+    exact hP hqe
+  · right
+    have hdiff : Loc.diff l1 q.eloc := by
+      apply (select_loc_charact l1 q).1
+      cases hll : select_loc_l l1 q with
+      | false => exact Or.inl rfl
+      | true =>
+          cases hhh : select_loc_h l1 q with
+          | false => exact Or.inr rfl
+          | true =>
+              exfalso
+              apply hqe
+              exact (EqSet2.elements_between_iff_proof (select_loc_l l1)
+                (select_loc_h l1) (select_loc_l_monotone l1)
+                (select_loc_h_monotone l1) q2 e.eqs2).mpr
+                ⟨(e.eqs_same q).mpr hq, hll, hhh⟩
+    exact ⟨hdiff, hQ hqe⟩
+
+end CompCert4Lean.Backend.Allocproof

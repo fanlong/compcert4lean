@@ -2053,3 +2053,18 @@ theorem ZArith.BinInt.Z.divide_mul_l :
 
 end Rocq.Coq
 end CompCert4Lean.Foundation.Numbers
+
+namespace CompCert4Lean.Foundation.Numbers
+namespace Rocq.Coq
+
+theorem ZArith.BinInt.Z.shiftl_mul_pow2 :
+    ZArith.BinInt.Z.shiftl_mul_pow2Statement := by
+  intro a n hn
+  change 0 ≤ intOfZ n at hn
+  have hneg : ¬ intOfZ n < 0 := by omega
+  unfold ZArith.BinInt.Z.shiftl ZArith.BinInt.Z.mul ZArith.BinInt.Z.pow
+  simp only [if_pos hn, if_neg hneg, intOfZ_zOfInt]
+  rfl
+
+end Rocq.Coq
+end CompCert4Lean.Foundation.Numbers

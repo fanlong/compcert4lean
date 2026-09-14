@@ -2983,3 +2983,39 @@ theorem nextblock_store : nextblock_storeStatement := by
 end Mem
 
 end CompCert4Lean.Common.Memory
+
+namespace CompCert4Lean.Common.Memory
+
+namespace Mem
+
+theorem store_valid_block_1 : store_valid_block_1Statement := by
+  intro chunk m1 b ofs v m2 hstore b' hvalid
+  unfold valid_block at hvalid ⊢
+  have hnext : m2.nextblock = m1.nextblock :=
+    nextblock_store chunk m1 b ofs v m2 hstore
+  rw [hnext]
+  exact hvalid
+
+theorem store_valid_access_1 : store_valid_access_1Statement := by
+  intro chunk m1 b ofs v m2 hstore chunk' b' ofs' p hvalid
+  unfold valid_access at hvalid ⊢
+  rcases hvalid with ⟨hrange, halign⟩
+  constructor
+  · intro ofs0 hof
+    exact perm_store_1 chunk m1 b ofs v m2 hstore b' ofs0 Memtype.Cur p
+      (hrange ofs0 hof)
+  · exact halign
+
+theorem store_valid_access_3 : store_valid_access_3Statement := by
+  intro chunk m1 b ofs v m2 hstore
+  unfold store at hstore
+  cases hdec : valid_access_dec m1 chunk b ofs Memtype.Writable with
+  | left hvalid =>
+      simp [boolOfSumbool, hdec] at hstore
+      exact hvalid
+  | right hnot =>
+      simp [boolOfSumbool, hdec] at hstore
+
+end Mem
+
+end CompCert4Lean.Common.Memory

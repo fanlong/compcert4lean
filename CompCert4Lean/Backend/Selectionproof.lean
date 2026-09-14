@@ -2851,3 +2851,29 @@ theorem sel_switch_correct_rec
                   apply ih sp e m varg i x hRi (arg + 1) (v' :: le) hWf hNth' hMatch
 
 end CompCert4Lean.Backend.Selectionproof
+
+namespace CompCert4Lean.Backend.Selectionproof
+
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Backend.Cminor
+
+theorem eval_unop_lessdef
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    eval_unop_lessdefStatement := by
+  intro op v1 v1' v hEval hld
+  cases hld with
+  | lessdef_refl =>
+      exact ⟨v, hEval, Val.lessdef_refl _⟩
+  | lessdef_undef =>
+      cases op <;> simp [Cminor.eval_unop, Val.zero_ext, Val.sign_ext, Val.negint,
+        Val.notint, Val.negf, Val.absf, Val.negfs, Val.absfs,
+        Val.singleoffloat, Val.floatofsingle, Val.intoffloat, Val.intuoffloat,
+        Val.floatofint, Val.floatofintu, Val.intofsingle, Val.intuofsingle,
+        Val.singleofint, Val.singleofintu, Val.negl, Val.notl, Val.loword,
+        Val.longofint, Val.longofintu, Val.longoffloat, Val.longuoffloat,
+        Val.floatoflong, Val.floatoflongu, Val.longofsingle, Val.longuofsingle,
+        Val.singleoflong, Val.singleoflongu] at hEval ⊢ <;>
+        subst v <;> exact Val.lessdef_undef _
+
+end CompCert4Lean.Backend.Selectionproof

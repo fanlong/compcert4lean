@@ -2061,3 +2061,91 @@ theorem match_stacks_incr : match_stacks_incrStatement := by
         Ple_trans tsp tbound b2 (Plt_Ple tsp tbound target_below) hbounds.2⟩
 
 end CompCert4Lean.Backend.Unusedglobproof
+
+namespace CompCert4Lean.Backend.Unusedglobproof
+
+open CompCert4Lean.Lib.Coqlib
+
+theorem match_stacks_bound : match_stacks_boundStatement := by
+  intro p tp used j s ts bound tbound bound' tbound' hstacks hbound htbound
+  induction hstacks with
+  | match_stacks_nil bound0 tbound0 globals source_bound target_bound =>
+      exact match_stacks_nil bound' tbound' globals
+        (Ple_trans _ _ _ source_bound hbound)
+        (Ple_trans _ _ _ target_bound htbound)
+  | match_stacks_cons res f sp pc rs s tsp trs ts bound0 tbound0 stacks refs_kept
+      sp_inject regs below target_below ih =>
+      exact match_stacks_cons res f sp pc rs s tsp trs ts bound' tbound'
+        stacks
+          refs_kept sp_inject regs
+        (Plt_Ple_trans _ _ _ below hbound)
+        (Plt_Ple_trans _ _ _ target_below htbound)
+
+end CompCert4Lean.Backend.Unusedglobproof
+
+namespace CompCert4Lean.Backend.Unusedglobproof
+
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Values
+
+theorem find_function_inject : find_function_injectStatement := by
+  intro p tp used j ros rs fd trs hglobals hfind hcond
+  cases ros with
+  | inl r =>
+      simp only [CompCert4Lean.Backend.RTL.find_function, Sum.rec] at hfind ⊢
+      have hinv := Genv.find_funct_inv (F := fundef) (V := Unit)
+        (ge := Genv.globalenv p) (v := Regmap.get r rs) (f := fd) hfind
+      rcases hinv with ⟨b, hv⟩
+      have hfind_v : Genv.find_funct (Genv.globalenv p)
+          (Vptr b CompCert4Lean.Lib.Integers.Ptrofs.zero) = some fd := by
+        simpa [hv] using hfind
+      have hptr : Genv.find_funct_ptr (Genv.globalenv p) b = some fd :=
+        (Genv.find_funct_find_funct_ptr (F := fundef) (V := Unit)
+          (ge := Genv.globalenv p) (b := b)).symm.trans hfind_v
+      have hval := hcond r
+      generalize hsrc : Regmap.get r rs = sv at hval
+      generalize htgt : Regmap.get r trs = tv at hval ⊢
+      have hsv : sv = Vptr b CompCert4Lean.Lib.Integers.Ptrofs.zero :=
+        hsrc.symm.trans hv
+      rw [hsv] at hval
+      cases hval with
+      | inject_ptr b1 ofs1 b2 ofs2 delta hmap hofs =>
+          have hdef : Genv.find_def (Genv.globalenv p) b = some (.Gfun fd) :=
+            (Genv.find_funct_ptr_iff (F := fundef) (V := Unit)
+              (ge := Genv.globalenv p) (b := b) (f := fd)).mp hptr
+          have hdefs := hglobals.defs_inject b b2 delta (.Gfun fd) hmap hdef
+          rcases hdefs with ⟨hfind_def, hdelta, hrefs⟩
+          have hptr_t : Genv.find_funct_ptr (Genv.globalenv tp) b2 = some fd :=
+            (Genv.find_funct_ptr_iff (F := fundef) (V := Unit)
+              (ge := Genv.globalenv tp) (b := b2) (f := fd)).mpr hfind_def
+          have hfind_t : Genv.find_funct (Genv.globalenv tp)
+              (Vptr b2 CompCert4Lean.Lib.Integers.Ptrofs.zero) = some fd := by
+            exact (Genv.find_funct_find_funct_ptr (F := fundef) (V := Unit)
+              (ge := Genv.globalenv tp) (b := b2)).trans hptr_t
+          have hofs0 : ofs2 = CompCert4Lean.Lib.Integers.Ptrofs.zero := by
+            rw [hdelta] at hofs
+            rw [hofs]
+            exact unusedglob_ptrofs_add_zero_repr _
+          exact ⟨by simpa [hofs0] using hfind_t, hrefs⟩
+  | inr id =>
+      simp only [CompCert4Lean.Backend.RTL.find_function, Sum.rec] at hfind ⊢
+      cases hs : Genv.find_symbol (Genv.globalenv p) id with
+      | none => simp [hs] at hfind
+      | some b =>
+          have hptr : Genv.find_funct_ptr (Genv.globalenv p) b = some fd := by
+            simpa [hs] using hfind
+          rcases hglobals.symbols_inject_2 id b hcond hs with
+            ⟨b', hsym', hmap⟩
+          have hdef : Genv.find_def (Genv.globalenv p) b = some (.Gfun fd) :=
+            (Genv.find_funct_ptr_iff (F := fundef) (V := Unit)
+              (ge := Genv.globalenv p) (b := b) (f := fd)).mp hptr
+          have hdefs := hglobals.defs_inject b b' z0 (.Gfun fd) hmap hdef
+          rcases hdefs with ⟨hfind_def, hdelta, hrefs⟩
+          have hptr_t : Genv.find_funct_ptr (Genv.globalenv tp) b' = some fd :=
+            (Genv.find_funct_ptr_iff (F := fundef) (V := Unit)
+              (ge := Genv.globalenv tp) (b := b') (f := fd)).mpr hfind_def
+          exact ⟨by simpa [hs, hsym'] using hptr_t, hrefs⟩
+
+end CompCert4Lean.Backend.Unusedglobproof

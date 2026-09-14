@@ -2967,3 +2967,17 @@ theorem fixpoint_solution : fixpoint_solutionStatement := by
   · exact hstable instr s hcode hsucc
 
 end CompCert4Lean.Backend.Kildall.BBlock_solver
+
+namespace CompCert4Lean.Backend.Kildall.BBlock_solver
+
+theorem fixpoint_entry : fixpoint_entryStatement := by
+  intro A LAT entrypoint laws code successors transf res hfix
+  have hinv := analyze_invariant LAT entrypoint laws code successors transf res hfix
+  have hhead : basic_block_map entrypoint code successors entrypoint = true := by
+    unfold basic_block_map is_basic_block_head
+    split
+    · rfl
+    · contradiction
+  exact hinv.1 entrypoint hhead
+
+end CompCert4Lean.Backend.Kildall.BBlock_solver
