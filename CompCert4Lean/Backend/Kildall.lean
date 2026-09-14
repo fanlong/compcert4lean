@@ -2680,3 +2680,18 @@ theorem multiple_predecessors : multiple_predecessorsStatement := by
                 simp [successors_list, hpreds]
 
 end CompCert4Lean.Backend.Kildall.BBlock_solver
+
+namespace CompCert4Lean.Backend.Kildall.BBlock_solver
+
+theorem propagate_successors_charact1 : propagate_successors_charact1Statement := by
+  intro LAT laws bb succs l st n hn
+  induction succs generalizing st with
+  | nil => exact hn
+  | cons s succs ih =>
+      simp only [propagate_successors]
+      split
+      · exact ih st hn
+      · apply ih
+        exact List.mem_cons.mpr (Or.inr hn)
+
+end CompCert4Lean.Backend.Kildall.BBlock_solver

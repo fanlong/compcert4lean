@@ -4002,3 +4002,214 @@ noncomputable def fold_rec_proof : CompCert4Lean.Backend.Allocproof.ESP2.fold_re
 
 end ESP2
 end CompCert4Lean.Backend.Allocproof
+
+namespace CompCert4Lean.Backend.Allocproof
+
+open CompCert4Lean.Backend.Allocation
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Backend.Locations
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Backend.RTLtyping
+
+theorem val_lessdef_normalize : val_lessdef_normalizeStatement := by
+  intro v v' ty hv hld
+  cases hld with
+  | lessdef_refl =>
+      rw [Val.load_result_same v ty hv]
+      exact Val.lessdef_refl _
+  | lessdef_undef =>
+      exact Val.lessdef_undef _
+
+theorem loc_type_compat_charact : loc_type_compat_charactStatement := by
+  intro env l e q hcompat hq
+  unfold loc_type_compat at hcompat
+  have hiff := EqSet2.for_all_between_iff_proof
+    (fun q : EqSet2.elt => CompCert4Lean.Common.AST.subtype
+      (sel_type q.ekind (env q.ereg)) (Loc.type l))
+    (select_loc_l l) (select_loc_h l)
+    (by
+      intro q₁ q₂ hqeq
+      subst q₂
+      rfl)
+    (select_loc_l_monotone l) (select_loc_h_monotone l) e.eqs2
+  rw [hiff] at hcompat
+  cases hll : select_loc_l l q with
+  | false =>
+      right
+      exact (select_loc_charact l q).mp (Or.inl hll)
+  | true =>
+      cases hhh : select_loc_h l q with
+      | false =>
+          right
+          exact (select_loc_charact l q).mp (Or.inr hhh)
+      | true =>
+          left
+          exact hcompat q ((e.eqs_same q).mpr hq) hll hhh
+
+theorem well_typed_move_charact : well_typed_move_charactStatement := by
+  intro env l e k r rs hmove hq hwt
+  unfold well_typed_move at hmove
+  cases l with
+  | R mr => trivial
+  | S sl ofs ty =>
+      have hc := loc_type_compat_charact env (S sl ofs ty) e
+        { ekind := k, ereg := r, eloc := S sl ofs ty } hmove hq
+      rcases hc with hsub | hdiff
+      · apply Val.has_subtype
+        · simpa [Loc.type] using hsub
+        · cases k with
+          | Full => simpa [sel_val, sel_type] using hwt r
+          | Low =>
+              generalize hval : CompCert4Lean.Backend.Registers.Regmap.get r rs = v
+              cases v <;>
+                simp [hval, sel_val, sel_type, Val.loword, Val.has_type]
+          | High =>
+              generalize hval : CompCert4Lean.Backend.Registers.Regmap.get r rs = v
+              cases v <;>
+                simp [hval, sel_val, sel_type, Val.hiword, Val.has_type]
+      · exfalso
+        apply Loc.diff_not_eq (S sl ofs ty) (S sl ofs ty)
+        · simpa using hdiff
+        · rfl
+
+private theorem partial_fold_eqs
+    (P : EqSet2M.t → eqs → Prop)
+    (f : EqSet2.elt → eqs → Option eqs) (init final : eqs) (s : EqSet2M.t) :
+    EqSet2.fold (fun q opte => match opte with
+      | none => none
+      | some e => f q e) s (some init) = some final →
+    (∀ s', EqSet2.Empty s' → P s' init) →
+    (∀ x a' a'' s' s'',
+      EqSet2.In x s → ¬ EqSet2.In x s' → ESP2.Add x s' s'' →
+      f x a' = some a'' → P s' a' → P s'' a'') →
+    P s final := by
+  intro hfold hEmpty hStep
+  let g : EqSet2.elt → Option eqs → Option eqs := fun x oa =>
+    match oa with
+    | none => none
+    | some a => f x a
+  let Q := fun (s : EqSet2M.t) oa =>
+    {h : match oa with
+      | none => True
+      | some a => P s a // True}
+  have hQ := ESP2.fold_rec_proof (A := Option eqs) (P := Q) (f := g)
+      (i := some init) (s := s)
+      (by
+        intro s' hs'
+        exact ⟨hEmpty s' hs', trivial⟩)
+      (by
+        intro x oa s' s'' hx hnot hadd hPa
+        cases oa with
+        | none => exact ⟨trivial, trivial⟩
+        | some a =>
+            cases hfa : f x a with
+            | none =>
+                simp only [g, hfa]
+                exact ⟨trivial, trivial⟩
+            | some a' =>
+                simp only [g, hfa]
+                exact ⟨hStep x a a' s' s'' hx hnot hadd hfa hPa.1, trivial⟩)
+  have hQ' : Q s (some final) := by
+    rw [← hfold]
+    change Q s (EqSet2.fold g s (some init))
+    exact hQ
+  exact hQ'.1
+
+theorem in_subst_loc : in_subst_locStatement := by
+  intro l1 l2 q e e' hq hsubst
+  unfold subst_loc at hsubst
+  let elt : EqSet2.t :=
+    EqSet2.elements_between (select_loc_l l1) (select_loc_h l1) e.eqs2
+  let q2 : EqSet2.E.t := q
+  change equation at q2
+  let f : EqSet2.elt → eqs → Option eqs := fun q0 out =>
+    if decide (l1 = q0.eloc) = true then
+      some (add_equation { ekind := q0.ekind, ereg := q0.ereg, eloc := l2 }
+        (remove_equation q0 out))
+    else none
+  let P : EqSet2M.t → eqs → Prop := fun s0 e0 =>
+    EqSet2.In q2 s0 → q.eloc = l1 ∧
+      EqSet.In ({ q with eloc := l2 } : EqSet.elt) e0.eqs1
+  have hP : P elt e' := by
+    apply partial_fold_eqs P f e e' elt (by
+      change EqSet2.fold (fun q opte => match opte with
+        | none => none
+        | some e => f q e) elt (some e) = some e' at hsubst
+      exact hsubst)
+    · intro s' hs' h
+      exact False.elim (hs' q h)
+    · intro x a' a'' s' s'' hx hnot hadd hfa hPa hqmem
+      dsimp [f] at hfa ⊢
+      change equation at x
+      by_cases hxeq : l1 = x.eloc
+      · simp [hxeq] at hfa
+        cases hfa
+        rcases (hadd q2).mp hqmem with hqx | hqold
+        · have hqeq : x = q2 := hqx
+          subst x
+          refine ⟨?_, ?_⟩
+          · simpa [q2] using hxeq.symm
+          · apply EqSet.add_1
+            exact EqSet.E.eq_refl _
+        · have hqnew := hPa hqold
+          refine ⟨hqnew.1, ?_⟩
+          let qt : equation := { ekind := q.ekind, ereg := q.ereg, eloc := l2 }
+          by_cases hxeq' : x = qt
+          · subst x
+            apply EqSet.add_1
+            exact EqSet.E.eq_refl _
+          · apply EqSet.add_2
+            apply EqSet.remove_2 _ _ _
+            · intro heq
+              apply hxeq'
+              exact heq
+            · exact hqnew.2
+      · simp [hxeq] at hfa
+  let Q : EqSet2M.t → eqs → Prop := fun s0 e0 =>
+    ¬ EqSet2.In q2 s0 → EqSet.In q e0.eqs1
+  have hQ : Q elt e' := by
+    apply partial_fold_eqs Q f e e' elt (by
+      change EqSet2.fold (fun q opte => match opte with
+        | none => none
+        | some e => f q e) elt (some e) = some e' at hsubst
+      exact hsubst)
+    · intro s' hs' _
+      exact hq
+    · intro x a' a'' s' s'' hx hnot hadd hfa hQa hqnot
+      dsimp [f] at hfa ⊢
+      change equation at x
+      by_cases hxeq : l1 = x.eloc
+      · simp [hxeq] at hfa
+        cases hfa
+        have hqx : ¬ EqSet2.In q2 s' := by
+          intro hq'
+          exact hqnot ((hadd q2).mpr (Or.inr hq'))
+        have hqold := hQa hqx
+        have hqnew : ¬ EqSet.E.eq x q := by
+          intro hxeq'
+          exact hqnot ((hadd q2).mpr (Or.inl hxeq'))
+        apply EqSet.add_2
+        apply EqSet.remove_2 _ _ _ hqnew
+        exact hqold
+      · simp [hxeq] at hfa
+  by_cases hqe : EqSet2.In q2 elt
+  · left
+    exact ⟨(hP hqe).1, (hP hqe).2⟩
+  · right
+    have hdiff : Loc.diff l1 q.eloc := by
+      apply (select_loc_charact l1 q).1
+      cases hll : select_loc_l l1 q with
+      | false => exact Or.inl rfl
+      | true =>
+          cases hhh : select_loc_h l1 q with
+          | false => exact Or.inr rfl
+          | true =>
+              exfalso
+              apply hqe
+              exact (EqSet2.elements_between_iff_proof (select_loc_l l1)
+                (select_loc_h l1) (select_loc_l_monotone l1)
+                (select_loc_h_monotone l1) q2 e.eqs2).mpr
+                ⟨(e.eqs_same q).mpr hq, hll, hhh⟩
+    exact ⟨hdiff, hQ hqe⟩
+
+end CompCert4Lean.Backend.Allocproof

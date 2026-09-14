@@ -2300,3 +2300,37 @@ theorem forever_silent_or_reactive :
     · exact htrace
 
 end CompCert4Lean.Common.Behaviors
+
+namespace CompCert4Lean.Common.Behaviors
+
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.Smallstep
+
+theorem behavior_bigstep_terminates :
+    behavior_bigstep_terminatesStatement := by
+  intro B L hsound t r hterm
+  obtain ⟨s1, s2, hinit, hstar, hfinal⟩ :=
+    bigstep_terminates_sound hsound t r hterm
+  exact program_runs hinit (state_terminates L r hstar hfinal)
+
+end CompCert4Lean.Common.Behaviors
+
+namespace CompCert4Lean.Common.Behaviors
+
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.Smallstep
+
+theorem behavior_bigstep_diverges :
+    behavior_bigstep_divergesStatement := by
+  intro B L hsound T hdiv
+  obtain ⟨s1, hinit, hforever⟩ :=
+    bigstep_diverges_sound hsound T hdiv
+  rcases forever_silent_or_reactive L.genvtype L.state L.step L.globalenv s1 T hforever with
+    hreactive | ⟨t, s', T', hstar, hsilent, heq⟩
+  · left
+    exact program_runs hinit (state_reacts L hreactive)
+  · right
+    refine ⟨t, program_runs hinit (state_diverges L hstar hsilent), ?_⟩
+    exact ⟨T', heq⟩
+
+end CompCert4Lean.Common.Behaviors

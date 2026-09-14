@@ -2891,3 +2891,13 @@ end Mem
 end CompCert4Lean.Common.Memory
 
 namespace CompCert4Lean.Common.Memory
+
+namespace Mem
+
+theorem addressing_int64_split : addressing_int64_splitStatement := by
+  intro i hptr hdiv
+  simp [CompCert4Lean.X86_64.Archi.ptr64] at hptr
+
+end Mem
+
+end CompCert4Lean.Common.Memory

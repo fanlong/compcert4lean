@@ -1732,3 +1732,62 @@ theorem eval_builtin_arg_determ : eval_builtin_arg_determStatement := by
           rw [h1, h2]
 
 end CompCert4Lean.Common.Events
+
+namespace CompCert4Lean.Common.Events
+
+theorem E0_left : E0_leftStatement := by
+  intro t
+  rfl
+
+end CompCert4Lean.Common.Events
+
+namespace CompCert4Lean.Common.Events
+
+theorem builtin_arg_depends_on_memory_correct : builtin_arg_depends_on_memory_correctStatement := by
+  intro A m' ge e sp m ba v hev
+  induction hev with
+  | eval_BA x => intro _; exact eval_BA x
+  | eval_BA_int n => intro _; exact eval_BA_int n
+  | eval_BA_long n => intro _; exact eval_BA_long n
+  | eval_BA_float n => intro _; exact eval_BA_float n
+  | eval_BA_single n => intro _; exact eval_BA_single n
+  | eval_BA_loadstack chunk ofs v load =>
+      intro hdep
+      simp only [builtin_arg_depends_on_memory] at hdep
+      cases hdep
+  | eval_BA_addrstack ofs => intro _; exact eval_BA_addrstack ofs
+  | eval_BA_loadglobal chunk id ofs v load =>
+      intro hdep
+      simp only [builtin_arg_depends_on_memory] at hdep
+      cases hdep
+  | eval_BA_addrglobal id ofs => intro _; exact eval_BA_addrglobal id ofs
+  | @eval_BA_splitlong hi lo vhi vlo hhi hlo ihhi ihlo =>
+      intro hdep
+      simp only [builtin_arg_depends_on_memory] at hdep
+      have h1dep : builtin_arg_depends_on_memory hi = false := by
+        cases hhi : builtin_arg_depends_on_memory hi <;>
+          cases hlo : builtin_arg_depends_on_memory lo <;>
+            simp [hhi, hlo] at hdep ⊢
+      have h2dep : builtin_arg_depends_on_memory lo = false := by
+        cases hhi : builtin_arg_depends_on_memory hi <;>
+          cases hlo : builtin_arg_depends_on_memory lo <;>
+            simp [hhi, hlo] at hdep ⊢
+      have h1 := ihhi h1dep
+      have h2 := ihlo h2dep
+      exact eval_BA_splitlong _ _ _ _ h1 h2
+  | @eval_BA_addptr a1 a2 v1 v2 ha1 ha2 iha1 iha2 =>
+      intro hdep
+      simp only [builtin_arg_depends_on_memory] at hdep
+      have h1dep : builtin_arg_depends_on_memory a1 = false := by
+        cases h1' : builtin_arg_depends_on_memory a1 <;>
+          cases h2' : builtin_arg_depends_on_memory a2 <;>
+            simp [h1', h2'] at hdep ⊢
+      have h2dep : builtin_arg_depends_on_memory a2 = false := by
+        cases h1' : builtin_arg_depends_on_memory a1 <;>
+          cases h2' : builtin_arg_depends_on_memory a2 <;>
+            simp [h1', h2'] at hdep ⊢
+      have h1 := iha1 h1dep
+      have h2 := iha2 h2dep
+      exact eval_BA_addptr _ _ _ _ h1 h2
+
+end CompCert4Lean.Common.Events

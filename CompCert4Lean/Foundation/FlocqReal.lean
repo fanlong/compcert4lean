@@ -2250,3 +2250,17 @@ theorem Ropp_involutive :
 end RIneq
 end Rocq.Coq.Reals
 end CompCert4Lean.Foundation.FlocqReal
+
+namespace CompCert4Lean.Foundation.FlocqReal
+namespace Rocq.Coq.Reals
+namespace RIneq
+
+theorem Rmult_eq_compat_l :
+    ∀ (ctx : ExactRealContext), Rmult_eq_compat_lStatement ctx := by
+  intro ctx r r1 r2 h
+  change ctx.spec.mul r r1 = ctx.spec.mul r r2
+  exact congrArg (fun x => ctx.spec.mul r x) h
+
+end RIneq
+end Rocq.Coq.Reals
+end CompCert4Lean.Foundation.FlocqReal

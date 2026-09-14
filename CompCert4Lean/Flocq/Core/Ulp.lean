@@ -1502,3 +1502,47 @@ theorem pred_lt_id :
   exact hneg
 
 end CompCert4Lean.Flocq.Core.Ulp
+
+namespace CompCert4Lean.Flocq.Core.Ulp
+
+private theorem ulp_neg_le_neg (ctx : ExactRealContext)
+    {x y : ctx.spec.carrier} (hxy : ctx.spec.le x y) :
+    ctx.spec.le (ctx.spec.neg y) (ctx.spec.neg x) := by
+  rcases ctx.certificate.total_order x y with h | h
+  · rcases h with hlt | heq
+    · exact (ctx.certificate.orderedField.lt_iff_le_not_le _ _ |>.mp
+        (ulp_neg_lt_neg ctx hlt)).1
+    · subst y
+      exact ctx.certificate.orderedField.le_refl _
+  · exact False.elim
+      ((ctx.certificate.orderedField.lt_iff_le_not_le _ _ |>.mp h).2 hxy)
+
+theorem succ_ge_id :
+    ∀ (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx),
+      succ_ge_idStatement ctx magnitude := by
+  intro ctx magnitude beta fexp x
+  by_cases hx : x = Exact.R0 ctx
+  · subst x
+    unfold Exact.succ
+    have hbool : Exact.Rle_bool ctx (Exact.R0 ctx) (Exact.R0 ctx) = true := by
+      exact CompCert4Lean.Flocq.Core.Raux.Rle_bool_true ctx _ _
+        (ctx.certificate.orderedField.le_refl _)
+    simp only [hbool, ↓reduceIte]
+    change ctx.spec.le ctx.spec.zero
+      (ctx.spec.add ctx.spec.zero (Exact.ulp ctx magnitude beta fexp (Exact.R0 ctx)))
+    rw [ctx.certificate.orderedField.zero_add]
+    exact ulp_ge_0 ctx magnitude beta fexp (Exact.R0 ctx)
+  · exact (ctx.certificate.orderedField.lt_iff_le_not_le _ _ |>.mp
+      (succ_gt_id ctx magnitude beta fexp x hx)).1
+
+theorem pred_le_id :
+    ∀ (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx),
+      pred_le_idStatement ctx magnitude := by
+  intro ctx magnitude beta fexp x
+  unfold Exact.pred
+  have h := succ_ge_id ctx magnitude beta fexp (ctx.spec.neg x)
+  have hneg := ulp_neg_le_neg ctx h
+  rw [ulp_neg_neg ctx x] at hneg
+  exact hneg
+
+end CompCert4Lean.Flocq.Core.Ulp
