@@ -2068,3 +2068,45 @@ theorem ZArith.BinInt.Z.shiftl_mul_pow2 :
 
 end Rocq.Coq
 end CompCert4Lean.Foundation.Numbers
+
+namespace CompCert4Lean.Foundation.Numbers
+namespace Rocq.Coq
+
+theorem ZArith.BinInt.Zmult_1_r_proof (n : Z) :
+    ZArith.BinInt.Zmult_1_r n := by
+  apply intOfZ_injective
+  simp only [ZArith.BinInt.Z.mul, intOfZ_zOfInt]
+  change intOfZ n * intOfZ (Zpos xH) = intOfZ n
+  simp [intOfZ, posToNat]
+
+theorem ZArith.BinInt.Z.lt_sub_0 :
+    ZArith.BinInt.Z.lt_sub_0Statement := by
+  intro n m
+  change intOfZ (ZArith.BinInt.Z.sub n m) < 0 ↔ intOfZ n < intOfZ m
+  simp only [ZArith.BinInt.Z.sub, intOfZ_zOfInt]
+  omega
+
+theorem ZArith.BinInt.Z.mul_divide_mono_l :
+    ZArith.BinInt.Z.mul_divide_mono_lStatement := by
+  intro n m p hnm
+  rcases hnm with ⟨k, hk⟩
+  refine ⟨k, ?_⟩
+  apply intOfZ_injective
+  change intOfZ (ZArith.BinInt.Z.mul p m) =
+    intOfZ (ZArith.BinInt.Z.mul (ZArith.BinInt.Z.mul p n) k)
+  rw [hk]
+  simp only [ZArith.BinInt.Z.mul, intOfZ_zOfInt]
+  exact (Int.mul_assoc (intOfZ p) (intOfZ n) (intOfZ k)).symm
+
+theorem ZArith.BinInt.Z.lt_le_pred :
+    ZArith.BinInt.Z.lt_le_predStatement := by
+  intro n m
+  change intOfZ n < intOfZ m ↔
+    intOfZ n ≤ intOfZ (ZArith.BinInt.Z.pred m)
+  simp only [ZArith.BinInt.Z.pred, ZArith.BinInt.Z.sub, intOfZ_zOfInt]
+  have hxh : intOfZ (Zpos xH) = 1 := by simp [intOfZ, posToNat]
+  rw [hxh]
+  omega
+
+end Rocq.Coq
+end CompCert4Lean.Foundation.Numbers

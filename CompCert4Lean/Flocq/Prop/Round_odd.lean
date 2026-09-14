@@ -1379,3 +1379,265 @@ theorem m_le_u : ∀ (ctx : ExactRealContext) (magnitude : ExactMagnitude ctx),
   simpa only [hright] using hhalf'
 
 end CompCert4Lean.Flocq.Prop.Round_odd
+namespace CompCert4Lean.Flocq.Prop.Round_odd
+open CompCert4Lean.Flocq.Core
+
+theorem m_eq_0 : ∀ (ctx : ExactRealContext) (magnitude : ExactMagnitude ctx),
+    m_eq_0Statement ctx magnitude := by
+  intro ctx magnitude beta hbeta fexp x d u hu hcanon hd0
+  obtain ⟨b, hb⟩ := CompCert4Lean.Flocq.Core.Zaux.Zeven_ex (radix_val beta)
+  have hb' : radix_val beta = CompCert4Lean.Flocq.Core.Zaux.Zadd
+      (CompCert4Lean.Flocq.Core.Zaux.Zmul Ztwo b) CompCert4Lean.Flocq.Core.Zaux.Z0 := by
+    simpa [hbeta] using hb
+  refine ⟨CompCert4Lean.Flocq.Calc.Operations.Fmult
+      (Float beta b (CompCert4Lean.Foundation.Numbers.Rocq.Coq.Zneg .xH)) u, ?_, ?_⟩
+  · have hmul := CompCert4Lean.Flocq.Calc.Operations.F2R_mult ctx beta
+      (Float beta b (CompCert4Lean.Foundation.Numbers.Rocq.Coq.Zneg .xH)) u
+    change CompCert4Lean.Flocq.Calc.Operations.Exact.F2R ctx _ = _
+    rw [hmul]
+    simp only [CompCert4Lean.Flocq.Calc.Operations.Exact.Rmult,
+      CompCert4Lean.Flocq.Calc.Operations.Exact.F2R,
+      CompCert4Lean.Flocq.Core.Defs.Exact.F2R,
+      CompCert4Lean.Flocq.Core.Defs.Fnum,
+      CompCert4Lean.Flocq.Core.Defs.Fexp]
+    change CompCert4Lean.Flocq.Core.Raux.Exact.Rmult ctx
+      (CompCert4Lean.Flocq.Core.Raux.Exact.Rmult ctx
+        (CompCert4Lean.Flocq.Core.Raux.Exact.IZR ctx b)
+        (CompCert4Lean.Flocq.Core.Raux.Exact.bpow ctx beta
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.Zneg .xH)))
+      (CompCert4Lean.Flocq.Core.Raux.Exact.Rmult ctx
+        (CompCert4Lean.Flocq.Core.Raux.Exact.IZR ctx (Fnum u))
+        (CompCert4Lean.Flocq.Core.Raux.Exact.bpow ctx beta (Fexp u))) = _
+    have hpow : CompCert4Lean.Flocq.Core.Raux.Exact.bpow ctx beta
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.Zneg .xH) =
+      ctx.spec.inv (ctx.spec.ofZ (radix_val beta)) := by
+      have hpow_z : CompCert4Lean.Flocq.Core.Zaux.Zpower_pos
+          (radix_val beta) .xH = radix_val beta := by
+        apply CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective
+        simp only [CompCert4Lean.Flocq.Core.Zaux.Zpower_pos,
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.pow_pos,
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+        change (CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+          (radix_val beta)).pow 1 = _
+        exact Int.pow_one _
+      unfold CompCert4Lean.Flocq.Core.Raux.Exact.bpow
+      change ctx.spec.inv (ctx.spec.ofZ
+        (CompCert4Lean.Flocq.Core.Zaux.Zpower_pos (radix_val beta) .xH)) = _
+      rw [hpow_z]
+    rw [hpow]
+    change ctx.spec.mul
+      (ctx.spec.mul (ctx.spec.ofZ b)
+        (ctx.spec.inv (ctx.spec.ofZ (radix_val beta))))
+      (ctx.spec.mul (ctx.spec.ofZ u.1)
+        (CompCert4Lean.Flocq.Core.Raux.Exact.bpow ctx beta u.2)) =
+      ctx.spec.div
+        (ctx.spec.add
+          (ctx.spec.mul (ctx.spec.ofZ d.1)
+            (CompCert4Lean.Flocq.Core.Raux.Exact.bpow ctx beta d.2))
+          (ctx.spec.mul (ctx.spec.ofZ u.1)
+            (CompCert4Lean.Flocq.Core.Raux.Exact.bpow ctx beta u.2)))
+        (ctx.spec.add ctx.spec.one ctx.spec.one)
+    have hd0' : ctx.spec.zero =
+        ctx.spec.mul (ctx.spec.ofZ d.1)
+          (CompCert4Lean.Flocq.Core.Raux.Exact.bpow ctx beta d.2) := by
+      exact hd0
+    rw [← hd0']
+    change _ = ctx.spec.div _ _
+    rw [ctx.certificate.orderedField.div_eq_mul_inv]
+    rw [ctx.certificate.orderedField.zero_add]
+    change ctx.spec.mul
+      (ctx.spec.mul (ctx.spec.ofZ b)
+        (ctx.spec.inv (ctx.spec.ofZ (radix_val beta))))
+      (ctx.spec.mul (ctx.spec.ofZ u.1)
+        (CompCert4Lean.Flocq.Core.Raux.Exact.bpow ctx beta u.2)) =
+      ctx.spec.mul
+        (ctx.spec.mul (ctx.spec.ofZ u.1)
+          (CompCert4Lean.Flocq.Core.Raux.Exact.bpow ctx beta u.2))
+        (ctx.spec.inv (ctx.spec.add ctx.spec.one ctx.spec.one))
+    have hbeta_pos : Rlt ctx (R0 ctx) (IZR ctx (radix_val beta)) := by
+      exact round_odd_izr_positive ctx (radix_val beta)
+        (CompCert4Lean.Flocq.Core.Zaux.radix_gt_0 beta)
+    have hbeta_ne : ctx.spec.ofZ (radix_val beta) ≠ ctx.spec.zero := by
+      intro hz
+      have hp : ctx.spec.lt ctx.spec.zero (ctx.spec.ofZ (radix_val beta)) := hbeta_pos
+      rw [hz] at hp
+      exact (ctx.certificate.orderedField.lt_irrefl _ hp).elim
+    have hbetaR : ctx.spec.ofZ (radix_val beta) =
+        ctx.spec.mul (ctx.spec.ofZ Ztwo) (ctx.spec.ofZ b) := by
+      rw [hb', ctx.certificate.sourceLaws.ofZ_add,
+        ctx.certificate.sourceLaws.ofZ_zero,
+        ctx.certificate.orderedField.add_zero]
+      exact CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.mult_IZR
+        ctx Ztwo b
+    have hb_ne : ctx.spec.ofZ b ≠ ctx.spec.zero := by
+      intro hz
+      apply hbeta_ne
+      rw [hbetaR, hz, ctx.certificate.orderedField.mul_zero]
+    have htwo_pos : ctx.spec.lt ctx.spec.zero
+        (ctx.spec.add ctx.spec.one ctx.spec.one) := by
+      have h := ctx.certificate.orderedField.add_lt_compat_l ctx.spec.one
+        ctx.spec.zero ctx.spec.one (round_odd_zero_lt_one ctx)
+      rw [ctx.certificate.orderedField.add_zero] at h
+      exact ctx.certificate.orderedField.lt_trans _ _ _
+        (round_odd_zero_lt_one ctx) h
+    have htwo_ne : ctx.spec.add ctx.spec.one ctx.spec.one ≠ ctx.spec.zero := by
+      intro hz
+      rw [hz] at htwo_pos
+      exact (ctx.certificate.orderedField.lt_irrefl _ htwo_pos).elim
+    have htwoR : ctx.spec.ofZ Ztwo =
+        ctx.spec.add ctx.spec.one ctx.spec.one := by
+      change ctx.spec.ofZ
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.Zpos (.xO .xH)) = _
+      rw [round_odd_zpos_xO, ctx.certificate.sourceLaws.ofZ_add,
+        ctx.certificate.sourceLaws.ofZ_one]
+    have mul_right_cancel : ∀ (x a c : ctx.spec.carrier),
+        x ≠ ctx.spec.zero → ctx.spec.mul a x = ctx.spec.mul c x → a = c := by
+      intro x a c hx h
+      have hh := congrArg (fun z => ctx.spec.mul (ctx.spec.inv x) z) h
+      have hl : ctx.spec.mul (ctx.spec.inv x) (ctx.spec.mul a x) = a := by
+        calc
+          _ = ctx.spec.mul (ctx.spec.mul (ctx.spec.inv x) a) x :=
+            (ctx.certificate.orderedField.mul_assoc _ _ _).symm
+          _ = ctx.spec.mul (ctx.spec.mul a (ctx.spec.inv x)) x := by
+            exact congrArg (fun z => ctx.spec.mul z x)
+              (ctx.certificate.orderedField.mul_comm _ _)
+          _ = ctx.spec.mul a (ctx.spec.mul (ctx.spec.inv x) x) :=
+            ctx.certificate.orderedField.mul_assoc _ _ _
+          _ = ctx.spec.mul a ctx.spec.one := by
+            rw [ctx.certificate.orderedField.inv_mul_cancel x hx]
+          _ = a := ctx.certificate.orderedField.mul_one _
+      have hr : ctx.spec.mul (ctx.spec.inv x) (ctx.spec.mul c x) = c := by
+        calc
+          _ = ctx.spec.mul (ctx.spec.mul (ctx.spec.inv x) c) x :=
+            (ctx.certificate.orderedField.mul_assoc _ _ _).symm
+          _ = ctx.spec.mul (ctx.spec.mul c (ctx.spec.inv x)) x := by
+            exact congrArg (fun z => ctx.spec.mul z x)
+              (ctx.certificate.orderedField.mul_comm _ _)
+          _ = ctx.spec.mul c (ctx.spec.mul (ctx.spec.inv x) x) :=
+            ctx.certificate.orderedField.mul_assoc _ _ _
+          _ = ctx.spec.mul c ctx.spec.one := by
+            rw [ctx.certificate.orderedField.inv_mul_cancel x hx]
+          _ = c := ctx.certificate.orderedField.mul_one _
+      exact hl.symm.trans (hh.trans hr)
+    have hinvprod : ctx.spec.inv
+        (ctx.spec.mul (ctx.spec.ofZ Ztwo) (ctx.spec.ofZ b)) =
+        ctx.spec.mul (ctx.spec.inv (ctx.spec.ofZ Ztwo))
+          (ctx.spec.inv (ctx.spec.ofZ b)) := by
+      have htwo_ofZ_ne : ctx.spec.ofZ Ztwo ≠ ctx.spec.zero := by
+        rw [htwoR]
+        exact htwo_ne
+      apply mul_right_cancel
+        (ctx.spec.mul (ctx.spec.ofZ Ztwo) (ctx.spec.ofZ b))
+        _ _ (by
+          intro hz
+          have hp : ctx.spec.lt ctx.spec.zero
+              (ctx.spec.ofZ (radix_val beta)) := hbeta_pos
+          rw [hbetaR, hz] at hp
+          exact (ctx.certificate.orderedField.lt_irrefl _ hp).elim)
+      have hprod : ctx.spec.mul
+          (ctx.spec.mul (ctx.spec.inv (ctx.spec.ofZ Ztwo))
+            (ctx.spec.inv (ctx.spec.ofZ b)))
+          (ctx.spec.mul (ctx.spec.ofZ Ztwo) (ctx.spec.ofZ b)) = ctx.spec.one := by
+        calc
+          _ = ctx.spec.mul (ctx.spec.inv (ctx.spec.ofZ Ztwo))
+              (ctx.spec.mul (ctx.spec.inv (ctx.spec.ofZ b))
+                (ctx.spec.mul (ctx.spec.ofZ Ztwo) (ctx.spec.ofZ b))) :=
+            ctx.certificate.orderedField.mul_assoc _ _ _
+          _ = ctx.spec.mul (ctx.spec.inv (ctx.spec.ofZ Ztwo))
+              (ctx.spec.mul (ctx.spec.ofZ Ztwo)
+                (ctx.spec.mul (ctx.spec.inv (ctx.spec.ofZ b))
+                  (ctx.spec.ofZ b))) := by
+            congr 1
+            calc
+              _ = ctx.spec.mul
+                  (ctx.spec.mul (ctx.spec.inv (ctx.spec.ofZ b))
+                    (ctx.spec.ofZ Ztwo)) (ctx.spec.ofZ b) :=
+                (ctx.certificate.orderedField.mul_assoc _ _ _).symm
+              _ = ctx.spec.mul
+                  (ctx.spec.mul (ctx.spec.ofZ Ztwo)
+                    (ctx.spec.inv (ctx.spec.ofZ b))) (ctx.spec.ofZ b) := by
+                exact congrArg (fun z => ctx.spec.mul z (ctx.spec.ofZ b))
+                  (ctx.certificate.orderedField.mul_comm _ _)
+              _ = _ := ctx.certificate.orderedField.mul_assoc _ _ _
+          _ = ctx.spec.mul (ctx.spec.inv (ctx.spec.ofZ Ztwo))
+              (ctx.spec.mul (ctx.spec.ofZ Ztwo) ctx.spec.one) := by
+            rw [ctx.certificate.orderedField.inv_mul_cancel _ hb_ne]
+          _ = ctx.spec.one := by
+            rw [ctx.certificate.orderedField.mul_one,
+              ctx.certificate.orderedField.inv_mul_cancel _ htwo_ofZ_ne]
+      calc
+        ctx.spec.mul (ctx.spec.inv
+            (ctx.spec.mul (ctx.spec.ofZ Ztwo) (ctx.spec.ofZ b)))
+            (ctx.spec.mul (ctx.spec.ofZ Ztwo) (ctx.spec.ofZ b)) = ctx.spec.one :=
+          ctx.certificate.orderedField.inv_mul_cancel _ (by
+            intro hz
+            have hp : ctx.spec.lt ctx.spec.zero
+                (ctx.spec.ofZ (radix_val beta)) := hbeta_pos
+            rw [hbetaR, hz] at hp
+            exact (ctx.certificate.orderedField.lt_irrefl _ hp).elim)
+        _ = ctx.spec.mul
+            (ctx.spec.mul (ctx.spec.inv (ctx.spec.ofZ Ztwo))
+              (ctx.spec.inv (ctx.spec.ofZ b)))
+            (ctx.spec.mul (ctx.spec.ofZ Ztwo) (ctx.spec.ofZ b)) := hprod.symm
+    have hcoef : ctx.spec.mul (ctx.spec.ofZ b)
+        (ctx.spec.inv (ctx.spec.ofZ (radix_val beta))) =
+        ctx.spec.inv (ctx.spec.add ctx.spec.one ctx.spec.one) := by
+      calc
+        _ = ctx.spec.mul (ctx.spec.ofZ b)
+            (ctx.spec.inv (ctx.spec.mul (ctx.spec.ofZ Ztwo) (ctx.spec.ofZ b))) := by
+          rw [hbetaR]
+        _ = ctx.spec.mul (ctx.spec.ofZ b)
+            (ctx.spec.mul (ctx.spec.inv (ctx.spec.ofZ Ztwo))
+              (ctx.spec.inv (ctx.spec.ofZ b))) := by rw [hinvprod]
+        _ = ctx.spec.mul (ctx.spec.inv (ctx.spec.ofZ Ztwo))
+            (ctx.spec.mul (ctx.spec.ofZ b)
+              (ctx.spec.inv (ctx.spec.ofZ b))) := by
+          calc
+            _ = ctx.spec.mul
+                (ctx.spec.mul (ctx.spec.ofZ b)
+                  (ctx.spec.inv (ctx.spec.ofZ Ztwo)))
+                (ctx.spec.inv (ctx.spec.ofZ b)) :=
+              (ctx.certificate.orderedField.mul_assoc _ _ _).symm
+            _ = ctx.spec.mul
+                (ctx.spec.mul (ctx.spec.inv (ctx.spec.ofZ Ztwo))
+                  (ctx.spec.ofZ b))
+                (ctx.spec.inv (ctx.spec.ofZ b)) := by
+              exact congrArg (fun z => ctx.spec.mul z
+                  (ctx.spec.inv (ctx.spec.ofZ b)))
+                (ctx.certificate.orderedField.mul_comm _ _)
+            _ = _ := ctx.certificate.orderedField.mul_assoc _ _ _
+        _ = ctx.spec.mul (ctx.spec.inv (ctx.spec.ofZ Ztwo)) ctx.spec.one := by
+          rw [ctx.certificate.orderedField.mul_comm
+            (ctx.spec.ofZ b) (ctx.spec.inv (ctx.spec.ofZ b)),
+            ctx.certificate.orderedField.inv_mul_cancel _ hb_ne]
+        _ = ctx.spec.inv (ctx.spec.ofZ Ztwo) := ctx.certificate.orderedField.mul_one _
+        _ = ctx.spec.inv (ctx.spec.add ctx.spec.one ctx.spec.one) := by rw [htwoR]
+    rw [hcoef]
+    exact ctx.certificate.orderedField.mul_comm _ _
+  · change CompCert4Lean.Flocq.Core.Defs.Fexp
+      (CompCert4Lean.Flocq.Calc.Operations.Fmult
+        (Float beta b (CompCert4Lean.Foundation.Numbers.Rocq.Coq.Zneg .xH)) u) = _
+    have hu_exp : Fexp u = fexp (mag_val ctx magnitude beta (F2R ctx u)) := by
+      exact hcanon
+    have hz : CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.Zneg .xH) (Fexp u) =
+        Zsub (fexp (mag_val ctx magnitude beta (F2R ctx u))) Zone := by
+      rw [hu_exp]
+      apply CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective
+      simp [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add,
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.opp,
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.sub,
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+      have hzone : CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ Zone = 1 := by decide
+      have hone : CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.Zpos .xH) = 1 := by decide
+      have hneg : CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.Zneg .xH) = -1 := by decide
+      rw [hzone]
+      rw [hneg]
+      omega
+    change CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.Zneg .xH) (Fexp u) = _
+    exact hz
+
+end CompCert4Lean.Flocq.Prop.Round_odd

@@ -2763,3 +2763,36 @@ theorem f2b_determinacy_inv : f2b_determinacy_invStatement := by
       exact htrace
 
 end CompCert4Lean.Common.Smallstep
+
+namespace CompCert4Lean.Common.Smallstep
+
+open CompCert4Lean.Common.Events
+
+theorem f2b_determinacy_star : f2b_determinacy_starStatement := by
+  intro L1 L2 index order match_states props hdet s s1 hsilent
+  apply star_E0_ind L2.genvtype L2.state (step L2) (globalenv L2)
+    (fun a b => ∀ t s2 s3,
+      step L2 (globalenv L2) b t s2 → t ≠ E0 →
+      star (step L2) (globalenv L2) a t s3 →
+      star (step L2) (globalenv L2) b t s3)
+  · intro a t s2 s3 hstep hne hstar
+    exact hstar
+  · intro a b c hstep ih t s2 s3 hstep' hne hstar
+    cases hstar with
+    | star_refl a' =>
+        exact False.elim (hne rfl)
+    | @star_step a' t1 a'' t2 s3' t hfirst htail htrace =>
+        have hdet' := f2b_determinacy_inv L1 L2 index order match_states
+          props hdet a t1 a'' E0 b hfirst hstep
+        rcases hdet' with hsilent' | hnonempty'
+        · rcases hsilent' with ⟨ht1, ht0, haeq⟩
+          subst t1
+          subst a''
+          apply ih t s2 s3 hstep' hne
+          rw [htrace]
+          rw [E0_left]
+          exact htail
+        · exact False.elim (hnonempty'.2.1 rfl)
+  exact hsilent
+
+end CompCert4Lean.Common.Smallstep
