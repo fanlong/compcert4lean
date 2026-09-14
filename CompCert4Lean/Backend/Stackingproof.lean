@@ -2579,3 +2579,54 @@ theorem agree_regs_set_res : agree_regs_set_resStatement := by
       simpa [Locmap.setres, Mach.set_res] using hlo
 
 end CompCert4Lean.Backend.Stackingproof
+
+namespace CompCert4Lean.Backend.Stackingproof
+
+open CompCert4Lean.Backend.Locations
+open CompCert4Lean.Backend.Mach
+open CompCert4Lean.Common.Values
+
+theorem agree_regs_undef_regs : agree_regs_undef_regsStatement := by
+  intro j rl ls rs hagree
+  induction rl with
+  | nil =>
+      simpa [LTL.undef_regs, Mach.undef_regs] using hagree
+  | cons r rl ih =>
+      intro r0
+      by_cases heq : r0 = r
+      · subst r0
+        change Val.inject j
+          (Locmap.set (R r) Vundef (LTL.undef_regs rl ls) (R r))
+          (Regmap.set r Vundef (Mach.undef_regs rl rs) r)
+        have hloc :
+            Locmap.set (R r) Vundef (LTL.undef_regs rl ls) (R r) = Vundef := by
+          simpa using (Locmap.gss (R r) Vundef (LTL.undef_regs rl ls))
+        have hreg :
+            Regmap.set r Vundef (Mach.undef_regs rl rs) r = Vundef := by
+          change Regmap.get r (Regmap.set r Vundef (Mach.undef_regs rl rs)) = Vundef
+          simpa using (Regmap.gss_proof val r Vundef (Mach.undef_regs rl rs))
+        rw [hloc, hreg]
+        exact Val.val_inject_undef _ _
+      · have hdiff : Loc.diff (R r) (R r0) := by
+          have hne : r ≠ r0 := by
+            intro h
+            exact heq h.symm
+          exact hne
+        change Val.inject j
+          (Locmap.set (R r) Vundef (LTL.undef_regs rl ls) (R r0))
+          (Regmap.set r Vundef (Mach.undef_regs rl rs) r0)
+        have hloc :
+            Locmap.set (R r) Vundef (LTL.undef_regs rl ls) (R r0) =
+              (LTL.undef_regs rl ls) (R r0) := by
+          exact Locmap.gso (R r) Vundef (LTL.undef_regs rl ls) (R r0) hdiff
+        have hreg :
+            Regmap.set r Vundef (Mach.undef_regs rl rs) r0 =
+              (Mach.undef_regs rl rs) r0 := by
+          change Regmap.get r0 (Regmap.set r Vundef (Mach.undef_regs rl rs)) =
+            Regmap.get r0 (Mach.undef_regs rl rs)
+          simpa using
+            (Regmap.gso_proof val r0 r Vundef (Mach.undef_regs rl rs) heq)
+        rw [hloc, hreg]
+        exact ih r0
+
+end CompCert4Lean.Backend.Stackingproof
