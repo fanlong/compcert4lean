@@ -2412,3 +2412,348 @@ theorem match_stacks_inside_store : match_stacks_inside_storeStatement := by
       RES RET BELOW SBELOW
 
 end CompCert4Lean.Backend.Inliningproof
+
+namespace CompCert4Lean.Backend.Inliningproof
+
+open CompCert4Lean.Backend.Inlining
+open CompCert4Lean.Backend.Inliningspec
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+
+private theorem zsub_zadd_cancel_local (a d : Z) :
+    zSub (zAdd a d) d = a := by
+  apply intOfZ_injective
+  simp only [zAdd, zSub, ZArith.BinInt.Z.add, ZArith.BinInt.Z.sub,
+    intOfZ_zOfInt]
+  omega
+
+private theorem zsub_add_cancel_local (a d : Z) :
+    zAdd (zSub a d) d = a := by
+  apply intOfZ_injective
+  simp only [zAdd, zSub, ZArith.BinInt.Z.add, ZArith.BinInt.Z.sub,
+    intOfZ_zOfInt]
+  omega
+
+private theorem ple_plt_trans_local (a b c : positive) :
+    Ple a b → Plt b c → Plt a c := by
+  intro hab hbc
+  unfold Ple PArith.BinPos.Pos.le at hab
+  unfold Plt PArith.BinPos.Pos.lt at hbc ⊢
+  omega
+
+private theorem plt_add_right_local (a b : positive) :
+    Plt a (PArith.BinPos.Pos.add a b) := by
+  unfold Plt PArith.BinPos.Pos.lt
+  have hadd : posToNat (PArith.BinPos.Pos.add a b) =
+      posToNat a + posToNat b := by
+    simpa [PArith.BinPos.Pos.add] using posToNat_posOfNat (by
+      have ha := posToNat_positive a
+      have hb := posToNat_positive b
+      omega : 0 < posToNat a + posToNat b)
+  rw [hadd]
+  have hb := posToNat_positive b
+  omega
+
+private theorem range_private_invariant_local : range_private_invariantStatement := by
+  intro F m m' sp lo hi F1 m1 m1' hpriv hinj hperm
+  unfold range_private loc_private at hpriv ⊢
+  intro ofs hofs
+  have hloc := hpriv ofs hofs
+  constructor
+  · exact hperm ofs hloc.1
+  · intro b delta hmap hbad
+    have hmap' := hinj b delta (zSub ofs delta) hmap hbad (by
+      rw [zsub_add_cancel_local]
+      exact hofs)
+    exact hloc.2 b delta hmap'.1 hmap'.2
+
+private theorem match_stacks_invariant_local : match_stacks_invariantStatement := by
+  intro prog F m m' F1 m1 m1' hIncr
+  intro stk stk' bound hstacks
+  refine match_stacks.rec (prog := prog) (F := F) (m := m) (m' := m')
+    (motive_1 := fun l l0 bound _ =>
+      ∀ (INJ : ∀ b1 b2 delta, F1 b1 = some (b2, delta) → Plt b2 bound →
+        F b1 = some (b2, delta))
+        (PERM1 : ∀ b1 b2 delta ofs, F1 b1 = some (b2, delta) → Plt b2 bound →
+          Mem.perm m1 b1 ofs .Max .Nonempty → Mem.perm m b1 ofs .Max .Nonempty)
+        (PERM2 : ∀ b ofs, Plt b bound →
+          Mem.perm m' b ofs .Cur .Freeable → Mem.perm m1' b ofs .Cur .Freeable)
+        (PERM3 : ∀ b ofs k p, Plt b bound →
+          Mem.perm m1' b ofs k p → Mem.perm m' b ofs k p),
+        match_stacks prog F1 m1 m1' l l0 bound)
+    (motive_2 := fun l l0 f c b r _ =>
+      ∀ rs2,
+        (∀ r0, Plt r0 c.dreg → Regmap.get r0 rs2 = Regmap.get r0 r) →
+        (∀ b1 b2 delta, F1 b1 = some (b2, delta) → Ple b2 b →
+          F b1 = some (b2, delta)) →
+        (∀ b1 b2 delta ofs, F1 b1 = some (b2, delta) → Ple b2 b →
+          Mem.perm m1 b1 ofs .Max .Nonempty → Mem.perm m b1 ofs .Max .Nonempty) →
+        (∀ b0 ofs, Ple b0 b → Mem.perm m' b0 ofs .Cur .Freeable →
+          Mem.perm m1' b0 ofs .Cur .Freeable) →
+        (∀ b0 ofs k p, Ple b0 b → Mem.perm m1' b0 ofs k p →
+          Mem.perm m' b0 ofs k p) →
+        match_stacks_inside prog F1 m1 m1' l l0 f c b rs2)
+    ?_ ?_ ?_ ?_ ?_ hstacks
+  · intro bound1 bound0 MG BELOW INJ PERM1 PERM2 PERM3
+    rcases MG with ⟨DOMAIN, IMAGE, SYMBOLS, FUNCTIONS, VARINFOS⟩
+    apply match_stacks_nil bound1 bound0
+    · refine ⟨?_, ?_, SYMBOLS, FUNCTIONS, VARINFOS⟩
+      · intro b hb
+        exact hIncr b b zZero (DOMAIN b hb)
+      · intro b1 b2 delta hmap hlt
+        apply IMAGE b1 b2 delta (INJ b1 b2 delta hmap
+          (Plt_Ple_trans b2 bound1 bound0 hlt BELOW)) hlt
+    · exact BELOW
+  · intro res f sp pc rs l f' sp' rs' l' bound0 fenv ctx MS COMPAT FB AG SP PRIV SSZ1 SSZ2 RES BELOW ih
+    intro INJ PERM1 PERM2 PERM3
+    have MS' := ih rs'
+      (by intro r0 _; rfl)
+      (by
+        intro b1 b2 delta hmap hle
+        exact INJ b1 b2 delta hmap (ple_plt_trans_local b2 sp' bound0 hle BELOW))
+      (by
+        intro b1 b2 delta ofs hmap hle hperm
+        exact PERM1 b1 b2 delta ofs hmap
+          (ple_plt_trans_local b2 sp' bound0 hle BELOW) hperm)
+      (by
+        intro b0 ofs hle hperm
+        exact PERM2 b0 ofs (ple_plt_trans_local b0 sp' bound0 hle BELOW) hperm)
+      (by
+        intro b0 ofs k p hle hperm
+        exact PERM3 b0 ofs k p (ple_plt_trans_local b0 sp' bound0 hle BELOW) hperm)
+    have PRIV' := range_private_invariant_local F m m' sp'
+      (zAdd ctx.dstk ctx.mstk) f'.fn_stacksize F1 m1 m1' PRIV
+      (by
+        intro b1 delta ofs hmap hperm hrange
+        exact ⟨INJ b1 sp' delta hmap BELOW,
+          PERM1 b1 sp' delta ofs hmap BELOW hperm⟩)
+      (by
+        intro ofs hperm
+        exact PERM2 sp' ofs BELOW hperm)
+    apply match_stacks_cons res f sp pc rs l f' sp' rs' l' bound0 fenv ctx
+      MS' COMPAT FB (agree_regs_incr F ctx rs rs' F1 AG hIncr)
+      (hIncr sp sp' ctx.dstk SP) PRIV' SSZ1
+    · intro ofs hperm
+      exact SSZ2 ofs (PERM3 sp' ofs .Max .Nonempty BELOW hperm)
+    · exact RES
+    · exact BELOW
+  · intro l res f' sp' rpc rs' l' bound0 ctx MS PRIV SSZ1 SSZ2 RET BELOW ih
+    intro INJ PERM1 PERM2 PERM3
+    have MS' := ih rs'
+      (by intro r0 _; rfl)
+      (by
+        intro b1 b2 delta hmap hle
+        exact INJ b1 b2 delta hmap (ple_plt_trans_local b2 sp' bound0 hle BELOW))
+      (by
+        intro b1 b2 delta ofs hmap hle hperm
+        exact PERM1 b1 b2 delta ofs hmap
+          (ple_plt_trans_local b2 sp' bound0 hle BELOW) hperm)
+      (by
+        intro b0 ofs hle hperm
+        exact PERM2 b0 ofs (ple_plt_trans_local b0 sp' bound0 hle BELOW) hperm)
+      (by
+        intro b0 ofs k p hle hperm
+        exact PERM3 b0 ofs k p (ple_plt_trans_local b0 sp' bound0 hle BELOW) hperm)
+    have PRIV' := range_private_invariant_local F m m' sp' ctx.dstk f'.fn_stacksize F1 m1 m1' PRIV
+      (by
+        intro b1 delta ofs hmap hperm hrange
+        exact ⟨INJ b1 sp' delta hmap BELOW,
+          PERM1 b1 sp' delta ofs hmap BELOW hperm⟩)
+      (by
+        intro ofs hperm
+        exact PERM2 sp' ofs BELOW hperm)
+    apply match_stacks_untailcall l res f' sp' rpc rs' l' bound0 ctx
+      MS' PRIV' SSZ1
+    · intro ofs hperm
+      exact SSZ2 ofs (PERM3 sp' ofs .Max .Nonempty BELOW hperm)
+    · exact RET
+    · exact BELOW
+  · intro l l' f' c sp' rs' MS RET DSTK ih
+    intro rs2 RS INJ PERM1 PERM2 PERM3
+    apply match_stacks_inside_base l l' f' c sp' rs2
+    · apply ih
+      · intro b1 b2 delta hmap hlt
+        exact INJ b1 b2 delta hmap (Plt_Ple _ _ hlt)
+      · intro b1 b2 delta ofs hmap hlt hperm
+        exact PERM1 b1 b2 delta ofs hmap (Plt_Ple _ _ hlt) hperm
+      · intro b0 ofs hlt hperm
+        exact PERM2 b0 ofs (Plt_Ple _ _ hlt) hperm
+      · intro b0 ofs k p hlt hperm
+        exact PERM3 b0 ofs k p (Plt_Ple _ _ hlt) hperm
+    · exact RET
+    · exact DSTK
+  · intro res f sp pc rs l l' f' fenv c sp' rs' c' MS COMPAT FB AG SP PAD RES RET BELOW SBELOW ih
+    intro rs2 RS INJ PERM1 PERM2 PERM3
+    have MS' := ih rs2
+      (by
+        intro r0 hlt
+        apply RS r0
+        exact Plt_Ple_trans r0 (PArith.BinPos.Pos.add c'.dreg c'.mreg) c.dreg
+          (Plt_trans r0 c'.dreg (PArith.BinPos.Pos.add c'.dreg c'.mreg) hlt
+            (plt_add_right_local c'.dreg c'.mreg)) BELOW)
+      INJ PERM1 PERM2 PERM3
+    have AG0 := agree_regs_invariant F c' rs rs' rs2 AG (by
+      intro r0 hle hlt
+      apply RS r0
+      exact Plt_Ple_trans r0 (PArith.BinPos.Pos.add c'.dreg c'.mreg) c.dreg hlt BELOW)
+    have AG' := agree_regs_incr F c' rs rs2 F1 AG0 hIncr
+    have PAD' := range_private_invariant_local F m m' sp'
+      (zAdd c'.dstk c'.mstk) c.dstk F1 m1 m1' PAD
+      (by
+        intro b1 delta ofs hmap hperm hrange
+        exact ⟨INJ b1 sp' delta hmap (Ple_refl sp'),
+          PERM1 b1 sp' delta ofs hmap (Ple_refl sp') hperm⟩)
+      (by
+        intro ofs hperm
+        exact PERM2 sp' ofs (Ple_refl sp') hperm)
+    exact match_stacks_inside_inlined res f sp pc rs l l' f' fenv c sp' rs2 c'
+      MS' COMPAT FB AG' (hIncr sp sp' c'.dstk SP) PAD' RES RET BELOW SBELOW
+
+private theorem match_stacks_alloc_left_at_bound_local
+    (prog : program) (F : Val.meminj) (m m' : mem)
+    (stk stk' : List stackframe) (bound sp' : block)
+    (hnot : ¬ Plt sp' bound)
+    (h : match_stacks prog F m m' stk stk' bound)
+    (sz : Z) (m1 : mem) (b : block) (F1 : Val.meminj) (delta : Z)
+    (halloc : Mem.alloc m zZero sz = (m1, b))
+    (hIncr : inject_incr F F1)
+    (hmap : F1 b = some (sp', delta))
+    (hsame : ∀ b1, b1 ≠ b → F1 b1 = F b1) :
+    match_stacks prog F1 m1 m' stk stk' bound := by
+  apply match_stacks_invariant_local prog F m m' F1 m1 m' hIncr
+    stk stk' bound h
+  · intro b1 b2 d hF hlt
+    cases hb : eq_block b1 b with
+    | left hbeq =>
+        subst b1
+        rw [hmap] at hF
+        cases hF
+        exact False.elim (hnot hlt)
+    | right hbneq =>
+        rw [← hsame b1 hbneq]
+        exact hF
+  · intro b1 b2 d ofs hF hlt hperm
+    have hinv := mem_perm_alloc_inv_local m zZero sz m1 b halloc
+      b1 ofs .Max .Nonempty hperm
+    cases hb : eq_block b1 b with
+    | left hbeq =>
+        subst b1
+        rw [hmap] at hF
+        cases hF
+        exact False.elim (hnot hlt)
+    | right hbneq =>
+        simpa [hb] using hinv
+  · intro b0 ofs hlt hperm
+    exact hperm
+  · intro b0 ofs k p hlt hperm
+    exact hperm
+
+theorem match_stacks_inside_alloc_left : match_stacks_inside_alloc_leftStatement := by
+  intro prog F m m' stk stk' f' ctx sp' rs' h
+  intro sz m1 b F1 delta halloc hIncr hmap hsame hdelta
+  refine match_stacks_inside.rec (prog := prog) (F := F) (m := m) (m' := m')
+    (motive_1 := fun l l0 bound _ =>
+      (¬ Plt bound bound) →
+      Mem.alloc m zZero sz = (m1, b) → inject_incr F F1 →
+      F1 b = some (bound, delta) →
+      (∀ b1, b1 ≠ b → F1 b1 = F b1) →
+      match_stacks prog F1 m1 m' l l0 bound)
+    (motive_2 := fun l l0 f c bound r _ =>
+      Mem.alloc m zZero sz = (m1, b) → inject_incr F F1 →
+      F1 b = some (bound, delta) →
+      (∀ b1, b1 ≠ b → F1 b1 = F b1) →
+      (¬ Plt bound bound) →
+      zLe c.dstk delta →
+      match_stacks_inside prog F1 m1 m' l l0 f c bound r)
+    ?_ ?_ ?_ ?_ ?_ h halloc hIncr hmap hsame (by exact Plt_strict _) hdelta
+  · intro bound1 bound MG BELOW hnot halloc hIncr hmap hsame
+    exact match_stacks_alloc_left_at_bound_local prog F m m' [] [] bound bound
+      hnot (match_stacks_nil bound1 bound MG BELOW)
+      sz m1 b F1 delta halloc hIncr hmap hsame
+  · intro res f sp pc rs l f' sp' rs' l' bound fenv ctx MS COMPAT FB AG SP PRIV SSZ1 SSZ2 RES BELOW ih
+    intro hnot halloc hIncr hmap hsame
+    exact match_stacks_alloc_left_at_bound_local prog F m m'
+      (Stackframe res f (Vptr sp CompCert4Lean.Lib.Integers.Ptrofs.zero) pc rs :: l)
+      (Stackframe (sreg ctx res)
+        f' (Vptr sp' CompCert4Lean.Lib.Integers.Ptrofs.zero) (spc ctx pc) rs' :: l')
+      bound bound hnot
+      (match_stacks_cons res f sp pc rs l f' sp' rs' l' bound fenv ctx
+        MS COMPAT FB AG SP PRIV SSZ1 SSZ2 RES BELOW)
+      sz m1 b F1 delta halloc hIncr hmap hsame
+  · intro l res f' sp' rpc rs' l' bound ctx MS PRIV SSZ1 SSZ2 RET BELOW ih
+    intro hnot halloc hIncr hmap hsame
+    exact match_stacks_alloc_left_at_bound_local prog F m m'
+      l (Stackframe res f' (Vptr sp' CompCert4Lean.Lib.Integers.Ptrofs.zero) rpc rs' :: l') bound bound hnot
+      (match_stacks_untailcall l res f' sp' rpc rs' l' bound ctx
+        MS PRIV SSZ1 SSZ2 RET BELOW)
+      sz m1 b F1 delta halloc hIncr hmap hsame
+  · intro l l' f' c sp0 rs' MS RET DSTK ih
+    intro halloc hIncr hmap hsame hnot hdelta
+    exact match_stacks_inside_base l l' f' c sp0 rs'
+      (ih hnot halloc hIncr hmap hsame) RET DSTK
+  · intro res f sp pc rs l l' f' fenv c0 sp0 rs' c' MS COMPAT FB AG SP PAD RES RET BELOW SBELOW ih
+    intro halloc hIncr hmap hsame hnot hdelta
+    have hdelta' : zLe c'.dstk delta := by
+      rcases SBELOW with ⟨hmstk, hstack⟩
+      change 0 ≤ intOfZ c'.mstk at hmstk
+      change intOfZ (zAdd c'.dstk c'.mstk) ≤ intOfZ c0.dstk at hstack
+      simp only [zAdd, ZArith.BinInt.Z.add, intOfZ_zOfInt] at hstack
+      change intOfZ c0.dstk ≤ intOfZ delta at hdelta
+      change intOfZ c'.dstk ≤ intOfZ delta
+      omega
+    have MS' := ih halloc hIncr hmap hsame (by exact Plt_strict _) hdelta'
+    have AG' := agree_regs_incr F c' rs rs' F1 AG hIncr
+    have PAD' := range_private_invariant_local F m m' sp0
+      (zAdd c'.dstk c'.mstk) c0.dstk F1 m1 m' PAD
+      (by
+        intro b1 delta0 ofs hmap0 hperm0 hrange
+        cases hb : eq_block b1 b with
+        | left hbeq =>
+            subst b1
+            have hinv := mem_perm_alloc_inv_local m zZero sz m1 b halloc
+              b ofs .Max .Nonempty hperm0
+            have hinv' : zLe zZero ofs ∧ zLt ofs sz := by
+              simpa [hb] using hinv
+            have hnonneg : zLe zZero ofs := hinv'.1
+            have hsum : zLe c0.dstk (zAdd ofs delta0) := by
+              have : zLe c0.dstk delta := hdelta
+              have hdelta0 : delta0 = delta := by
+                rw [hmap] at hmap0
+                cases hmap0
+                rfl
+              subst delta0
+              change intOfZ c0.dstk ≤ intOfZ (zAdd ofs delta)
+              simp only [zAdd, ZArith.BinInt.Z.add, intOfZ_zOfInt]
+              change intOfZ c0.dstk ≤ intOfZ ofs + intOfZ delta
+              change intOfZ c0.dstk ≤ intOfZ delta at this
+              have hofs0 : 0 ≤ intOfZ ofs := by
+                change 0 ≤ intOfZ ofs at hnonneg
+                exact hnonneg
+              omega
+            have hlt' : intOfZ (zAdd ofs delta0) < intOfZ c0.dstk := by
+              have hlt0 := hrange.2
+              change intOfZ (zAdd ofs delta0) < intOfZ c0.dstk at hlt0
+              exact hlt0
+            have hge' : intOfZ c0.dstk ≤ intOfZ (zAdd ofs delta0) := by
+              change intOfZ c0.dstk ≤ intOfZ (zAdd ofs delta0)
+              exact hsum
+            exact False.elim (by omega)
+        | right hbneq =>
+            have hF : F b1 = some (sp0, delta0) := by
+              rw [← hsame b1 hbneq]
+              exact hmap0
+            exact ⟨hF, by
+              have hinv := mem_perm_alloc_inv_local m zZero sz m1 b halloc
+                b1 ofs .Max .Nonempty hperm0
+              simpa [hb] using hinv⟩)
+      (by intro ofs hperm; exact hperm)
+    exact match_stacks_inside_inlined res f sp pc rs l l' f' fenv c0 sp0 rs' c'
+      MS' COMPAT FB AG' (hIncr sp sp0 c'.dstk SP) PAD' RES RET BELOW SBELOW
+
+end CompCert4Lean.Backend.Inliningproof

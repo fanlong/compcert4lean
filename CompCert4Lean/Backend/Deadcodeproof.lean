@@ -1981,3 +1981,34 @@ theorem can_eval_builtin_args : ∀ cfg, can_eval_builtin_argsStatement cfg := b
       exact ⟨v1' :: vl', list_forall2.cons _ _ hv1' htail'⟩
 
 end CompCert4Lean.Backend.Deadcodeproof
+
+namespace CompCert4Lean.Backend.Deadcodeproof
+
+theorem eagree_set_undef : eagree_set_undefStatement := by
+  intro e1 e2 ne r h r'
+  unfold NeedDomain.eagree at h
+  by_cases hr : r' = r
+  · subst r'
+    change NeedDomain.vagree
+      (CompCert4Lean.Lib.Maps.PMap.get r
+        (CompCert4Lean.Lib.Maps.PMap.set r Common.Values.Vundef e1))
+      (CompCert4Lean.Lib.Maps.PMap.get r e2) (NeedDomain.NE.get r ne)
+    have hset : CompCert4Lean.Lib.Maps.PMap.get r
+        (CompCert4Lean.Lib.Maps.PMap.set r Common.Values.Vundef e1) = Common.Values.Vundef := by
+      exact CompCert4Lean.Lib.Maps.PMap.gss (A := Common.Values.val) r
+        Common.Values.Vundef e1
+    rw [hset]
+    cases hn : NeedDomain.NE.get r ne with
+    | Nothing => trivial
+    | I m => change True; trivial
+    | L m => change True; trivial
+    | All => exact Common.Values.Val.lessdef_undef _
+  · change NeedDomain.vagree
+      (CompCert4Lean.Lib.Maps.PMap.get r'
+        (CompCert4Lean.Lib.Maps.PMap.set r Common.Values.Vundef e1))
+      (CompCert4Lean.Lib.Maps.PMap.get r' e2) (NeedDomain.NE.get r' ne)
+    rw [CompCert4Lean.Lib.Maps.PMap.gso (A := Common.Values.val)
+      (i := r') (j := r) (x := Common.Values.Vundef) (m := e1) hr]
+    exact h r'
+
+end CompCert4Lean.Backend.Deadcodeproof

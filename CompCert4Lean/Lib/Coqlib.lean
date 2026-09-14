@@ -1478,3 +1478,36 @@ theorem proj_sumbool_true : proj_sumbool_trueStatement := by
   | right hq => cases h
 
 end CompCert4Lean.Lib.Coqlib
+
+namespace CompCert4Lean.Lib.Coqlib
+
+theorem proj_sumbool_is_true : proj_sumbool_is_trueStatement := by
+  intro P a hp
+  cases a with
+  | left hP => rfl
+  | right hnotP => exact False.elim (hnotP hp)
+
+theorem dec_eq_true : dec_eq_trueStatement := by
+  intro A dec_eq B x ifso ifnot
+  cases h : dec_eq x x with
+  | left heq => rfl
+  | right hne => exact False.elim (hne rfl)
+
+theorem dec_eq_sym : dec_eq_symStatement := by
+  intro A dec_eq B x y ifso ifnot
+  cases h : dec_eq x y with
+  | left hxy =>
+      subst y
+      rw [h]
+  | right hxy =>
+      cases h' : dec_eq y x with
+      | left hyx' => exact False.elim (hxy hyx'.symm)
+      | right _ => rfl
+
+theorem pred_dec_true : pred_dec_trueStatement := by
+  intro P dec A a b hP
+  cases h : dec with
+  | left hdec => rfl
+  | right hnotP => exact False.elim (hnotP hP)
+
+end CompCert4Lean.Lib.Coqlib

@@ -2601,3 +2601,29 @@ theorem load_store_init_data_invariant : load_store_init_data_invariantStatement
 
 end Genv
 end CompCert4Lean.Common.Globalenvs
+
+namespace CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Linking
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.Lib.Integers
+namespace Genv
+
+theorem init_mem_genv_next : init_mem_genv_nextStatement := by
+  intro F V p m hmem
+  unfold init_mem at hmem
+  have hnext := alloc_globals_nextblock (F := F) (V := V)
+    (ge := globalenv p) (gl := p.prog_defs) (m := Mem.empty) (m' := m) hmem
+  have hglobal := genv_next_add_globals (F := F) (V := V)
+    (gl := p.prog_defs) (ge := empty_genv F V p.prog_public)
+  unfold globalenv
+  exact hglobal.trans hnext.symm
+
+end Genv
+end CompCert4Lean.Common.Globalenvs

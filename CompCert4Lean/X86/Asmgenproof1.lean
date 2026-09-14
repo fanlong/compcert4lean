@@ -1509,3 +1509,25 @@ theorem storeind_correct
         CompCert4Lean.X86.Asm.preg_of]
 
 end CompCert4Lean.X86.Asmgenproof1
+
+namespace CompCert4Lean.X86.Asmgenproof1
+
+theorem compare_ints_spec : compare_ints_specStatement := by
+  intro rs v1 v2 m
+  dsimp
+  unfold CompCert4Lean.X86.Asm.nextinstr
+  unfold CompCert4Lean.X86.Asm.compare_ints
+  constructor
+  · simp [CompCert4Lean.X86.Asm.Pregmap.set]
+  constructor
+  · simp [CompCert4Lean.X86.Asm.Pregmap.set]
+  constructor
+  · simp [CompCert4Lean.X86.Asm.Pregmap.set]
+  constructor
+  · simp [CompCert4Lean.X86.Asm.Pregmap.set]
+  · intro r hr
+    cases r <;>
+      simp [CompCert4Lean.X86.Asm.Pregmap.set,
+        CompCert4Lean.X86.Asm.data_preg] at hr ⊢
+
+end CompCert4Lean.X86.Asmgenproof1
