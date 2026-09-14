@@ -1961,3 +1961,39 @@ theorem ZArith.BinInt.Z.bits_inj' :
 
 end Rocq.Coq
 end CompCert4Lean.Foundation.Numbers
+
+namespace CompCert4Lean.Foundation.Numbers
+namespace Rocq.Coq
+
+theorem ZArith.BinInt.Zplus_opp_r_proof (n : Z) : ZArith.BinInt.Zplus_opp_r n := by
+  apply intOfZ_injective
+  simp only [ZArith.BinInt.Z.add, ZArith.BinInt.Z.opp, intOfZ_zOfInt]
+  change intOfZ n + -intOfZ n = 0
+  omega
+
+theorem ZArith.Zorder.Zle_succ_proof (n : Z) : ZArith.Zorder.Zle_succ n := by
+  change intOfZ n ≤ intOfZ (ZArith.BinInt.Z.succ n)
+  simp only [ZArith.BinInt.Z.succ, ZArith.BinInt.Z.add, intOfZ_zOfInt]
+  change intOfZ n ≤ intOfZ n + 1
+  omega
+
+theorem ZArith.BinInt.Z.mul_pos_pos :
+    ZArith.BinInt.Z.mul_pos_posStatement := by
+  intro n m hn hm
+  change 0 < intOfZ n at hn
+  change 0 < intOfZ m at hm
+  change 0 < intOfZ (ZArith.BinInt.Z.mul n m)
+  simp only [ZArith.BinInt.Z.mul, intOfZ_zOfInt]
+  exact Int.mul_pos hn hm
+
+theorem ZArith.BinInt.Z.mul_le_mono_nonpos_l :
+    ZArith.BinInt.Z.mul_le_mono_nonpos_lStatement := by
+  intro n m p hp hnm
+  change intOfZ p ≤ 0 at hp
+  change intOfZ n ≤ intOfZ m at hnm
+  change intOfZ (ZArith.BinInt.Z.mul p m) ≤ intOfZ (ZArith.BinInt.Z.mul p n)
+  simp only [ZArith.BinInt.Z.mul, intOfZ_zOfInt]
+  exact Int.mul_le_mul_of_nonpos_left hp hnm
+
+end Rocq.Coq
+end CompCert4Lean.Foundation.Numbers

@@ -1346,3 +1346,11 @@ theorem frame_mconj : frame_mconjStatement := by
   | inr hQfoot => exact h.2.2 b ofs (Or.inr hQfoot) hR
 
 end CompCert4Lean.Common.Separation
+
+namespace CompCert4Lean.Common.Separation
+
+theorem minjection_obligation_2 : minjection_obligation_2Statement := by
+  intro j m0 m b ofs hinj hfoot
+  exact (minjection j m0).m_valid m b ofs hinj hfoot
+
+end CompCert4Lean.Common.Separation

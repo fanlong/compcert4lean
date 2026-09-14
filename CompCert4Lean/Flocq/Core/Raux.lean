@@ -2687,3 +2687,125 @@ theorem Rlt_bool_false (ctx : ExactRealContext) :
   rfl
 
 end CompCert4Lean.Flocq.Core.Raux
+
+namespace CompCert4Lean.Flocq.Core.Raux
+
+theorem Req_bool_spec (ctx : ExactRealContext) :
+    Req_bool_specStatement ctx := by
+  intro x y
+  rcases ctx.certificate.total_order x y with hxy | hyx
+  · rcases hxy with hlt | heq
+    · unfold Exact.Req_bool
+      unfold Exact.Rcompare
+      unfold CompCert4Lean.Foundation.FlocqReal.ExactReal.total_order_T
+      cases hdec : ctx.spec.lt_dec x y with
+      | left _ =>
+          exact Exact.Req_bool_prop.Req_bool_false_ (by
+            intro heq'
+            subst y
+            exact ctx.certificate.orderedField.lt_irrefl x hlt)
+      | right hn => exact (hn hlt).elim
+    · unfold Exact.Req_bool
+      unfold Exact.Rcompare
+      unfold CompCert4Lean.Foundation.FlocqReal.ExactReal.total_order_T
+      cases hdec : ctx.spec.lt_dec x y with
+      | left hlt => exact (ctx.certificate.orderedField.lt_irrefl x (by simpa [heq] using hlt)).elim
+      | right _ =>
+          cases hdec' : ctx.spec.lt_dec y x with
+          | left hlt => exact (ctx.certificate.orderedField.lt_irrefl x (by simpa [heq] using hlt)).elim
+          | right _ => exact Exact.Req_bool_prop.Req_bool_true_ heq
+  · unfold Exact.Req_bool
+    unfold Exact.Rcompare
+    unfold CompCert4Lean.Foundation.FlocqReal.ExactReal.total_order_T
+    cases hdec : ctx.spec.lt_dec x y with
+    | left hlt => exact (ctx.certificate.orderedField.lt_irrefl x (by
+          exact ctx.certificate.orderedField.lt_trans _ _ _ hlt hyx)).elim
+    | right _ =>
+        cases hdec' : ctx.spec.lt_dec y x with
+        | left _ =>
+            exact Exact.Req_bool_prop.Req_bool_false_ (by
+              intro heq
+              subst y
+              exact ctx.certificate.orderedField.lt_irrefl x hyx)
+        | right hn => exact (hn hyx).elim
+
+theorem Req_bool_false (ctx : ExactRealContext) :
+    Req_bool_falseStatement ctx := by
+  intro x y hxy
+  unfold Exact.Req_bool
+  cases hcmp : Exact.Rcompare ctx x y with
+  | Lt => rfl
+  | Gt => rfl
+  | Eq =>
+      have hs := Req_bool_spec ctx x y
+      unfold Exact.Req_bool at hs
+      rw [hcmp] at hs
+      cases hs with
+      | Req_bool_true_ heq => exact (hxy heq).elim
+
+end CompCert4Lean.Flocq.Core.Raux
+
+namespace CompCert4Lean.Flocq.Core.Raux
+
+theorem Zfloor_lb (ctx : ExactRealContext) :
+    Zfloor_lbStatement ctx := by
+  intro x
+  unfold Exact.Zfloor
+  have hg := ctx.certificate.sourceLaws.up_gap x
+  rw [CompCert4Lean.Foundation.FlocqReal.ExactReal.Rminus] at hg
+  rw [ctx.certificate.sourceLaws.ofZ_one] at hg
+  have h := CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.Rplus_le_compat_l
+      ctx x (ctx.spec.add (ctx.spec.ofZ (ctx.spec.up x)) (ctx.spec.neg x)) ctx.spec.one hg
+  change ctx.spec.le (ctx.spec.add x
+      (ctx.spec.add (ctx.spec.ofZ (ctx.spec.up x)) (ctx.spec.neg x)))
+      (ctx.spec.add x ctx.spec.one) at h
+  have hux : ctx.spec.le (ctx.spec.ofZ (ctx.spec.up x))
+      (ctx.spec.add x ctx.spec.one) := by
+    rw [← ctx.certificate.orderedField.add_assoc,
+      ctx.certificate.orderedField.add_comm x (ctx.spec.ofZ (ctx.spec.up x)),
+      ctx.certificate.orderedField.add_assoc,
+      ctx.certificate.orderedField.add_comm x (ctx.spec.neg x),
+      ctx.certificate.orderedField.neg_add_cancel,
+      ctx.certificate.orderedField.add_zero] at h
+    exact h
+  have htarget := CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.Rplus_le_compat_l
+      ctx (ctx.spec.neg ctx.spec.one) (ctx.spec.ofZ (ctx.spec.up x))
+        (ctx.spec.add x ctx.spec.one) hux
+  change ctx.spec.le (ctx.spec.add (ctx.spec.neg ctx.spec.one)
+      (ctx.spec.ofZ (ctx.spec.up x)))
+      (ctx.spec.add (ctx.spec.neg ctx.spec.one)
+      (ctx.spec.add x ctx.spec.one)) at htarget
+  rw [← ctx.certificate.orderedField.add_assoc,
+      ctx.certificate.orderedField.add_comm (ctx.spec.neg ctx.spec.one) x,
+      ctx.certificate.orderedField.add_assoc,
+      ctx.certificate.orderedField.neg_add_cancel,
+      ctx.certificate.orderedField.add_zero] at htarget
+  rw [ctx.certificate.orderedField.add_comm (ctx.spec.neg ctx.spec.one)
+      (ctx.spec.ofZ (ctx.spec.up x))] at htarget
+  change ctx.spec.le
+    (ctx.spec.ofZ (Zsub (ctx.spec.up x) (Zpos xH))) x
+  change ctx.spec.le
+    (ctx.spec.ofZ (Zadd (ctx.spec.up x) (Zopp (Zpos xH)))) x
+  rw [ctx.certificate.sourceLaws.ofZ_add,
+      ctx.certificate.sourceLaws.ofZ_neg,
+      ctx.certificate.sourceLaws.ofZ_one]
+  exact htarget
+
+theorem Zfloor_ub (ctx : ExactRealContext) :
+    Zfloor_ubStatement ctx := by
+  intro x
+  unfold Exact.Zfloor
+  have hgt := ctx.certificate.sourceLaws.up_gt x
+  change ctx.spec.lt x
+    (ctx.spec.add (ctx.spec.ofZ (Zsub (ctx.spec.up x) (Zpos xH))) ctx.spec.one)
+  change ctx.spec.lt x
+    (ctx.spec.add (ctx.spec.ofZ (Zadd (ctx.spec.up x) (Zopp (Zpos xH)))) ctx.spec.one)
+  rw [ctx.certificate.sourceLaws.ofZ_add,
+      ctx.certificate.sourceLaws.ofZ_neg,
+      ctx.certificate.sourceLaws.ofZ_one,
+      ctx.certificate.orderedField.add_assoc,
+      ctx.certificate.orderedField.neg_add_cancel,
+      ctx.certificate.orderedField.add_zero]
+  exact hgt
+
+end CompCert4Lean.Flocq.Core.Raux

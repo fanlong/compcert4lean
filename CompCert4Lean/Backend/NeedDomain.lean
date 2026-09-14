@@ -2033,3 +2033,318 @@ theorem iagree_shru : iagree_shruStatement := by
       test_iagreeBitsAbove y _ hkabove]
 
 end CompCert4Lean.Backend.NeedDomain
+
+namespace CompCert4Lean.Backend.NeedDomain
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Lib.Integers
+
+private theorem test_ror_val (a n : Int.int) :
+    (Int.ror a n).val =
+      Nat.lor (a.val >>> (n.val % Int.wordsize))
+        (a.val <<< (Int.wordsize - (n.val % Int.wordsize))) %
+        (2 ^ Int.wordsize) := by
+  change (WordCore.repr Int.wordsize
+    (ZArith.BinInt.Z.of_nat
+      (Nat.lor (a.val >>> (n.val % Int.wordsize))
+        (a.val <<< (Int.wordsize - (n.val % Int.wordsize)))))).val = _
+  rw [iagreeValReprOfNat]
+
+private theorem test_ror_bit_nat (a n : Int.int) (k : Nat) (hk : k < 32) :
+    Int.testbit (Int.ror a n) (ZArith.BinInt.Z.of_nat k) =
+      a.val.testBit ((k + n.val % 32) % 32) := by
+  rw [test_iagreeTestbitOfNat, test_ror_val]
+  rw [Nat.testBit_mod_two_pow]
+  have hkdec : decide (k < Int.wordsize) = true := by
+    exact decide_eq_true hk
+  rw [hkdec, Bool.true_and]
+  change ((a.val >>> (n.val % 32)) |||
+      (a.val <<< (32 - (n.val % 32)))).testBit k = _
+  rw [Nat.testBit_or,
+    Nat.testBit_shiftRight, Nat.testBit_shiftLeft]
+  have haval : a.val < 2 ^ 32 := iagreeWordValLt a
+  have hamod : n.val % 32 < 32 := Nat.mod_lt _ (by decide)
+  by_cases hsum : k + n.val % 32 < 32
+  · have hleft : ¬ k ≥ 32 - n.val % 32 := by omega
+    have hleft' : decide (k ≥ 32 - n.val % 32) = false := by
+      exact decide_eq_false hleft
+    rw [hleft', Bool.false_and, Bool.or_false]
+    rw [Nat.mod_eq_of_lt hsum]
+    simp [Nat.add_comm]
+  · have hsum' : 32 ≤ k + n.val % 32 := Nat.le_of_not_gt hsum
+    have hleft : 32 - n.val % 32 ≤ k := by omega
+    have hleft' : decide (k ≥ 32 - n.val % 32) = true := by
+      exact decide_eq_true hleft
+    rw [hleft', Bool.true_and]
+    have hsum'' : 32 ≤ n.val % 32 + k := by omega
+    have hpow : 2 ^ 32 ≤ 2 ^ (n.val % 32 + k) :=
+      Nat.pow_le_pow_right (by decide) hsum''
+    have hright : a.val.testBit (n.val % 32 + k) = false :=
+      Nat.testBit_lt_two_pow (Nat.lt_of_lt_of_le haval hpow)
+    rw [hright, Bool.false_or]
+    have hsub : k - (32 - n.val % 32) =
+        k + n.val % 32 - 32 := by omega
+    rw [hsub]
+    rw [Nat.mod_eq_sub_mod hsum']
+    have hdiff : k + n.val % 32 - 32 < 32 := by omega
+    rw [Nat.mod_eq_of_lt hdiff]
+
+private theorem test_rol_val (a n : Int.int) :
+    (Int.rol a n).val =
+      Nat.lor (a.val <<< (n.val % Int.wordsize))
+        (a.val >>> (Int.wordsize - (n.val % Int.wordsize))) %
+        (2 ^ Int.wordsize) := by
+  change (WordCore.repr Int.wordsize
+    (ZArith.BinInt.Z.of_nat
+      (Nat.lor (a.val <<< (n.val % Int.wordsize))
+        (a.val >>> (Int.wordsize - (n.val % Int.wordsize)))))).val = _
+  rw [iagreeValReprOfNat]
+
+private theorem test_rol_bit_nat (a n : Int.int) (k : Nat) (hk : k < 32) :
+    Int.testbit (Int.rol a n) (ZArith.BinInt.Z.of_nat k) =
+      a.val.testBit ((k + 32 - n.val % 32) % 32) := by
+  rw [test_iagreeTestbitOfNat, test_rol_val]
+  rw [Nat.testBit_mod_two_pow]
+  have hkdec : decide (k < Int.wordsize) = true := by
+    exact decide_eq_true hk
+  rw [hkdec, Bool.true_and]
+  change ((a.val <<< (n.val % 32)) |||
+      (a.val >>> (32 - (n.val % 32)))).testBit k = _
+  rw [Nat.testBit_or, Nat.testBit_shiftLeft, Nat.testBit_shiftRight]
+  have haval : a.val < 2 ^ 32 := iagreeWordValLt a
+  have hamod : n.val % 32 < 32 := Nat.mod_lt _ (by decide)
+  by_cases hge : n.val % 32 ≤ k
+  · have hge' : decide (k ≥ n.val % 32) = true := by
+      exact decide_eq_true hge
+    rw [hge', Bool.true_and]
+    have hright : a.val.testBit (32 - n.val % 32 + k) = false :=
+      Nat.testBit_lt_two_pow (Nat.lt_of_lt_of_le haval (by
+        apply Nat.pow_le_pow_right (by decide)
+        omega))
+    rw [hright, Bool.or_false]
+    have hidx : k + 32 - n.val % 32 =
+        32 + (k - n.val % 32) := by omega
+    have hsub_lt : k - n.val % 32 < 32 := by omega
+    rw [hidx, Nat.add_mod, Nat.mod_eq_of_lt hsub_lt]
+    simp
+    rw [Nat.mod_eq_of_lt hsub_lt]
+  · have hge' : decide (k ≥ n.val % 32) = false := by
+      exact decide_eq_false hge
+    rw [hge', Bool.false_and, Bool.false_or]
+    have hidx_lt : k + 32 - n.val % 32 < 32 := by omega
+    rw [Nat.mod_eq_of_lt hidx_lt]
+    have hidx : 32 - n.val % 32 + k =
+        k + 32 - n.val % 32 := by omega
+    rw [hidx]
+
+private theorem test_rot_index_back (k a : Nat) (hk : k < 32) (ha : a < 32) :
+    (((k + 32 - a) % 32 + a) % 32) = k := by
+  by_cases hge : a ≤ k
+  · have hidx : k + 32 - a = 32 + (k - a) := by omega
+    have hsub_lt : k - a < 32 := by omega
+    have hinner : (32 + (k - a)) % 32 = k - a := by
+      rw [Nat.add_mod]
+      simp
+      exact hsub_lt
+    rw [hidx, hinner, Nat.sub_add_cancel hge,
+      Nat.mod_eq_of_lt hk]
+  · have hidx_lt : k + 32 - a < 32 := by omega
+    rw [Nat.mod_eq_of_lt hidx_lt]
+    have hidx : k + 32 - a + a = 32 + k := by omega
+    rw [hidx, Nat.add_mod]
+    simp [Nat.mod_eq_of_lt hk]
+
+private theorem test_iagree_rol_at (p q m amount : Int.int)
+    (h : iagree p q (Int.ror m amount)) (k : Nat) (hk : k < 32)
+    (hmask : m.val.testBit k = true) :
+    Int.testbit (Int.rol p amount) (ZArith.BinInt.Z.of_nat k) =
+      Int.testbit (Int.rol q amount) (ZArith.BinInt.Z.of_nat k) := by
+  let a := amount.val % 32
+  let j := (k + 32 - a) % 32
+  have ha : a < 32 := by
+    exact Nat.mod_lt _ (by decide)
+  have hj : j < 32 := by
+    exact Nat.mod_lt _ (by decide)
+  have hback : (j + a) % 32 = k := by
+    dsimp [j]
+    exact test_rot_index_back k a hk ha
+  have hmask' : Int.testbit (Int.ror m amount)
+      (ZArith.BinInt.Z.of_nat j) = true := by
+    rw [test_ror_bit_nat m amount j hj]
+    change m.val.testBit ((j + amount.val % 32) % 32) = true
+    rw [show amount.val % 32 = a by rfl, hback]
+    exact hmask
+  have hjrange :
+      ZArith.BinInt.Z.le z0 (ZArith.BinInt.Z.of_nat j) ∧
+      ZArith.BinInt.Z.lt (ZArith.BinInt.Z.of_nat j) Int.zwordsize := by
+    constructor
+    · change 0 ≤
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+            (ZArith.BinInt.Z.of_nat j)
+      simp only [ZArith.BinInt.Z.of_nat,
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+      exact Int.natCast_nonneg _
+    · change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+          (ZArith.BinInt.Z.of_nat j) <
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ Int.zwordsize
+      have hwsize :
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ Int.zwordsize =
+            Int.ofNat 32 := by
+        change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+          (ZArith.BinInt.Z.of_nat 32) = Int.ofNat 32
+        rw [ZArith.BinInt.Z.of_nat,
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+      rw [hwsize]
+      simp only [ZArith.BinInt.Z.of_nat,
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+      exact Int.ofNat_lt.mpr hj
+  have hsrc := h (ZArith.BinInt.Z.of_nat j) hjrange hmask'
+  rw [test_iagreeTestbitOfNat p j, test_iagreeTestbitOfNat q j] at hsrc
+  rw [test_rol_bit_nat p amount k hk, test_rol_bit_nat q amount k hk]
+  change p.val.testBit j = q.val.testBit j
+  exact hsrc
+
+private theorem test_iagree_rol : iagree_rolStatement := by
+  intro p q m amount h i hirange hmask
+  cases i with
+  | Zneg r =>
+      exfalso
+      have h0 := hirange.1
+      change 0 ≤
+        -(Int.ofNat (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat r)) at h0
+      have hr : (0 : Int) < Int.ofNat
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat r) := by
+        exact Int.natCast_pos.mpr
+          (test_posToNat_pos r)
+      omega
+  | Z0 =>
+      have hm : m.val.testBit 0 = true := by
+        simpa [iagreeTestbitZero] using hmask
+      rw [iagreeTestbitZero, iagreeTestbitZero]
+      have ht := test_iagree_rol_at p q m amount h 0 (by decide) hm
+      rw [test_iagreeTestbitOfNat (Int.rol p amount) 0,
+        test_iagreeTestbitOfNat (Int.rol q amount) 0] at ht
+      exact ht
+  | Zpos r =>
+      have hkZ := hirange.2
+      change (Int.ofNat
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat r) : Int) <
+        Int.ofNat 32 at hkZ
+      have hk : CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat r < 32 :=
+        Int.ofNat_lt.mp hkZ
+      have hm : m.val.testBit
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat r) = true := by
+        simpa [iagreeTestbitPos] using hmask
+      rw [iagreeTestbitPos, iagreeTestbitPos]
+      have ht := test_iagree_rol_at p q m amount h
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat r) hk hm
+      rw [test_iagreeTestbitOfNat (Int.rol p amount)
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat r),
+        test_iagreeTestbitOfNat (Int.rol q amount)
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat r)] at ht
+      exact ht
+
+private theorem test_rot_index_forward (k a : Nat) (hk : k < 32) (ha : a < 32) :
+    (((k + a) % 32 + 32 - a) % 32) = k := by
+  by_cases hsum : k + a < 32
+  · rw [Nat.mod_eq_of_lt hsum]
+    have hidx : k + a + 32 - a = 32 + k := by omega
+    rw [hidx, Nat.add_mod]
+    simp [Nat.mod_eq_of_lt hk]
+  · have hsum' : 32 ≤ k + a := Nat.le_of_not_gt hsum
+    have hsub_lt : k + a - 32 < 32 := by omega
+    rw [Nat.mod_eq_sub_mod hsum', Nat.mod_eq_of_lt hsub_lt]
+    have hidx : k + a - 32 + 32 - a = k := by omega
+    rw [hidx, Nat.mod_eq_of_lt hk]
+
+private theorem test_iagree_ror_at (p q m amount : Int.int)
+    (h : iagree p q (Int.rol m amount)) (k : Nat) (hk : k < 32)
+    (hmask : m.val.testBit k = true) :
+    Int.testbit (Int.ror p amount) (ZArith.BinInt.Z.of_nat k) =
+      Int.testbit (Int.ror q amount) (ZArith.BinInt.Z.of_nat k) := by
+  let a := amount.val % 32
+  let j := (k + a) % 32
+  have ha : a < 32 := by
+    exact Nat.mod_lt _ (by decide)
+  have hj : j < 32 := by
+    exact Nat.mod_lt _ (by decide)
+  have hback : (j + 32 - a) % 32 = k := by
+    dsimp [j]
+    exact test_rot_index_forward k a hk ha
+  have hmask' : Int.testbit (Int.rol m amount)
+      (ZArith.BinInt.Z.of_nat j) = true := by
+    rw [test_rol_bit_nat m amount j hj]
+    change m.val.testBit ((j + 32 - amount.val % 32) % 32) = true
+    rw [show amount.val % 32 = a by rfl, hback]
+    exact hmask
+  have hjrange :
+      ZArith.BinInt.Z.le z0 (ZArith.BinInt.Z.of_nat j) ∧
+      ZArith.BinInt.Z.lt (ZArith.BinInt.Z.of_nat j) Int.zwordsize := by
+    constructor
+    · change 0 ≤
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+            (ZArith.BinInt.Z.of_nat j)
+      simp only [ZArith.BinInt.Z.of_nat,
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+      exact Int.natCast_nonneg _
+    · change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+          (ZArith.BinInt.Z.of_nat j) <
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ Int.zwordsize
+      have hwsize :
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ Int.zwordsize =
+            Int.ofNat 32 := by
+        change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+          (ZArith.BinInt.Z.of_nat 32) = Int.ofNat 32
+        rw [ZArith.BinInt.Z.of_nat,
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+      rw [hwsize]
+      simp only [ZArith.BinInt.Z.of_nat,
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+      exact Int.ofNat_lt.mpr hj
+  have hsrc := h (ZArith.BinInt.Z.of_nat j) hjrange hmask'
+  rw [test_iagreeTestbitOfNat p j, test_iagreeTestbitOfNat q j] at hsrc
+  rw [test_ror_bit_nat p amount k hk, test_ror_bit_nat q amount k hk]
+  change p.val.testBit j = q.val.testBit j
+  exact hsrc
+
+theorem iagree_ror : iagree_rorStatement := by
+  intro p q m amount h i hirange hmask
+  cases i with
+  | Zneg r =>
+      exfalso
+      have h0 := hirange.1
+      change 0 ≤
+        -(Int.ofNat (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat r)) at h0
+      have hr : (0 : Int) < Int.ofNat
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat r) := by
+        exact Int.natCast_pos.mpr
+          (test_posToNat_pos r)
+      omega
+  | Z0 =>
+      have hm : m.val.testBit 0 = true := by
+        simpa [iagreeTestbitZero] using hmask
+      rw [iagreeTestbitZero, iagreeTestbitZero]
+      have ht := test_iagree_ror_at p q m amount h 0 (by decide) hm
+      rw [test_iagreeTestbitOfNat (Int.ror p amount) 0,
+        test_iagreeTestbitOfNat (Int.ror q amount) 0] at ht
+      exact ht
+  | Zpos r =>
+      have hkZ := hirange.2
+      change (Int.ofNat
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat r) : Int) <
+        Int.ofNat 32 at hkZ
+      have hk : CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat r < 32 :=
+        Int.ofNat_lt.mp hkZ
+      have hm : m.val.testBit
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat r) = true := by
+        simpa [iagreeTestbitPos] using hmask
+      rw [iagreeTestbitPos, iagreeTestbitPos]
+      have ht := test_iagree_ror_at p q m amount h
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat r) hk hm
+      rw [test_iagreeTestbitOfNat (Int.ror p amount)
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat r),
+        test_iagreeTestbitOfNat (Int.ror q amount)
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat r)] at ht
+      exact ht
+
+end CompCert4Lean.Backend.NeedDomain

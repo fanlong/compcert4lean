@@ -1685,3 +1685,50 @@ theorem eventval_valid_preserved : eventval_valid_preservedStatement := by
       exact hev
 
 end CompCert4Lean.Common.Events
+
+namespace CompCert4Lean.Common.Events
+
+theorem eval_builtin_arg_determ : eval_builtin_arg_determStatement := by
+  intro A ge e sp m a v h
+  induction h with
+  | eval_BA x =>
+      intro v' h'; cases h'; rfl
+  | eval_BA_int n =>
+      intro v' h'; cases h'; rfl
+  | eval_BA_long n =>
+      intro v' h'; cases h'; rfl
+  | eval_BA_float n =>
+      intro v' h'; cases h'; rfl
+  | eval_BA_single n =>
+      intro v' h'; cases h'; rfl
+  | eval_BA_loadstack chunk ofs v load =>
+      intro v' h'
+      cases h' with
+      | eval_BA_loadstack _ _ _ load' =>
+          exact Option.some.inj (load'.symm.trans load)
+  | eval_BA_addrstack ofs =>
+      intro v' h'; cases h'; rfl
+  | eval_BA_loadglobal chunk id ofs v load =>
+      intro v' h'
+      cases h' with
+      | eval_BA_loadglobal _ _ _ _ load' =>
+          exact Option.some.inj (load'.symm.trans load)
+  | eval_BA_addrglobal id ofs =>
+      intro v' h'; cases h'; rfl
+  | @eval_BA_splitlong hi lo vhi vlo hhi hlo ihhi ihlo =>
+      intro v' h'
+      cases h' with
+      | eval_BA_splitlong _ _ _ _ hhi' hlo' =>
+          have h1 := ihhi _ hhi'
+          have h2 := ihlo _ hlo'
+          rw [h1, h2]
+
+  | @eval_BA_addptr a1 a2 v1 v2 ha1 ha2 iha1 iha2 =>
+      intro v' h'
+      cases h' with
+      | eval_BA_addptr _ _ _ _ ha1' ha2' =>
+          have h1 := iha1 _ ha1'
+          have h2 := iha2 _ ha2'
+          rw [h1, h2]
+
+end CompCert4Lean.Common.Events

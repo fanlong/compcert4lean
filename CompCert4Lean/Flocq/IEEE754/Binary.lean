@@ -1004,3 +1004,18 @@ theorem bounded_lt_emax :
   exact BinarySingleNaN.bounded_lt_emax (prec := prec) (emax := emax) ctx mx ex Hx
 
 end CompCert4Lean.Flocq.IEEE754.Binary
+
+namespace CompCert4Lean.Flocq.IEEE754.Binary
+
+theorem eq_binary_overflow_FF2SF :
+    ∀ {prec emax : Z}, eq_binary_overflow_FF2SFStatement (prec := prec) (emax := emax) := by
+  intro prec emax x m s H
+  unfold binary_overflow
+  rw [← H]
+  apply Eq.symm
+  apply SF2FF_FF2SF
+  rw [← is_nan_FF2SF, H]
+  unfold BinarySingleNaN.binary_overflow
+  split <;> rfl
+
+end CompCert4Lean.Flocq.IEEE754.Binary

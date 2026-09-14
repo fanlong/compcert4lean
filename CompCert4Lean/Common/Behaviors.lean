@@ -2135,3 +2135,168 @@ theorem atomic_behaviors :
 end CompCert4Lean.Common.Behaviors
 
 #print axioms CompCert4Lean.Common.Behaviors.atomic_behaviors
+
+namespace CompCert4Lean.Common.Behaviors
+
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.Smallstep
+
+theorem tsteps_star :
+    tsteps_starStatement := by
+  intro genv state step ge S1 S2 hsteps
+  induction hsteps with
+  | tsteps_refl S =>
+      exact ⟨E0, star_refl step ge (state_of_tstate genv state step ge S), rfl⟩
+  | tsteps_left t S1 S2 S3 hstep hsteps ih =>
+      obtain ⟨t', hstar, htrace⟩ := ih
+      cases hstep with
+      | tstep_intro s1 t T s2 hstep hforever =>
+          refine ⟨Eapp t t', ?_, ?_⟩
+          · exact star_step s1 t hstep hstar rfl
+          · change Eappinf t T =
+              Eappinf (Eapp t t')
+                (traceinf_of_tstate genv state step ge S3)
+            change T = Eappinf t'
+              (traceinf_of_tstate genv state step ge S3) at htrace
+            rw [htrace]
+            exact (behavior_eappinf_assoc t t'
+              (traceinf_of_tstate genv state step ge S3)).symm
+
+end CompCert4Lean.Common.Behaviors
+
+namespace CompCert4Lean.Common.Behaviors
+
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.Smallstep
+
+theorem tsilent_forever_silent :
+    tsilent_forever_silentStatement := by
+  intro genv state step ge S hS
+  let pred : state → Prop := fun s =>
+    ∃ S0 : tstate genv state step ge,
+      state_of_tstate genv state step ge S0 = s ∧ tsilent step ge S0
+  have hpred : pred (state_of_tstate genv state step ge S) :=
+    ⟨S, rfl, hS⟩
+  exact forever_silent.coinduct step ge pred
+    (by
+      intro s hs
+      rcases hs with ⟨S0, rfl, hS0⟩
+      cases S0 with
+      | ST s0 T F =>
+          refine forever_casesOn
+            (step := step) (ge := ge)
+            (motive := fun s1 T1 => s1 = s0 → T1 = T →
+              ∃ s2, step ge s0 E0 s2 ∧ pred s2) ?_ F rfl rfl
+          intro s1 t s2 T2 hstep htail hEq hEqT
+          cases hEq
+          cases hEqT
+          have hts : tstep genv state step ge t
+              (tstate.ST s0 (Eappinf t T2)
+                (forever_intro s0 t hstep htail))
+              (tstate.ST s2 T2 htail) :=
+            tstep_intro genv state step ge s0 t T2 s2 hstep htail
+          have ht : t = E0 :=
+            hS0 _ t _ (tsteps_refl genv state step ge _) hts
+          subst t
+          refine ⟨s2, hstep, ?_⟩
+          refine ⟨tstate.ST s2 T2 htail, rfl, ?_⟩
+          intro S1 t1 S2 hreach hstep1
+          exact hS0 _ t1 _
+            (tsteps_left genv state step ge E0
+              (tstate.ST s0 (Eappinf E0 T2)
+                (forever_intro s0 E0 hstep htail))
+              (tstate.ST s2 T2 htail)
+              S1
+              (tstep_intro genv state step ge s0 E0 T2 s2 hstep htail)
+              hreach)
+            hstep1
+    ) (state_of_tstate genv state step ge S) hpred
+
+end CompCert4Lean.Common.Behaviors
+
+namespace CompCert4Lean.Common.Behaviors
+
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.Smallstep
+
+theorem treactive_forever_reactive :
+    treactive_forever_reactiveStatement := by
+  intro genv state step ge S hS
+  let pred : state → traceinf → Prop := fun s T =>
+    ∃ S0 : tstate genv state step ge,
+      state_of_tstate genv state step ge S0 = s ∧
+        traceinf_of_tstate genv state step ge S0 = T ∧
+          treactive step ge S0
+  have hpred : pred (state_of_tstate genv state step ge S)
+      (traceinf_of_tstate genv state step ge S) :=
+    ⟨S, rfl, rfl, hS⟩
+  exact forever_reactive.coinduct step ge pred
+    (by
+      intro s T hs
+      rcases hs with ⟨S0, rfl, hT0, hS0⟩
+      cases hT0
+      obtain ⟨S1, S2, t, hreach, hstep, hne⟩ :=
+        hS0 S0 (tsteps_refl genv state step ge S0)
+      obtain ⟨t', hstar, htrace⟩ :=
+        tsteps_star genv state step ge S0 S1 hreach
+      cases hstep with
+      | tstep_intro s1 t T1 s2 hstep htail =>
+          have hstar'' : star step ge
+              (state_of_tstate genv state step ge S0)
+              (Eapp t' t) s2 := by
+            exact star_right genv state step ge
+              (state_of_tstate genv state step ge S0)
+              t' s1 t s2 (Eapp t' t) hstar hstep rfl
+          have hne' : Eapp t' t ≠ E0 := by
+            intro heq
+            cases t' with
+            | nil => exact hne heq
+            | cons e tr => cases heq
+          have hreactive2 : treactive step ge (tstate.ST s2 T1 htail) := by
+            intro S3 hreach3
+            apply hS0 S3
+            have hbase : tsteps genv state step ge S0
+                (tstate.ST s2 T1 htail) := by
+              apply tsteps_trans genv state step ge S0 _ hreach
+              exact tsteps_left genv state step ge t _
+                (tstate.ST s2 T1 htail) (tstate.ST s2 T1 htail)
+                (tstep_intro genv state step ge s1 t T1 s2 hstep htail)
+                (tsteps_refl genv state step ge _)
+            exact tsteps_trans genv state step ge S0
+              (tstate.ST s2 T1 htail) hbase S3 hreach3
+          refine ⟨s2, Eapp t' t, T1, hstar'', hne', ?_, ?_⟩
+          · exact ⟨tstate.ST s2 T1 htail, rfl, rfl, hreactive2⟩
+          · change traceinf_of_tstate genv state step ge S0 =
+              Eappinf (Eapp t' t) T1
+            change traceinf_of_tstate genv state step ge S0 =
+              Eappinf t' (Eappinf t T1) at htrace
+            rw [htrace]
+            exact (behavior_eappinf_assoc t' t T1).symm
+    ) (state_of_tstate genv state step ge S)
+      (traceinf_of_tstate genv state step ge S) hpred
+
+end CompCert4Lean.Common.Behaviors
+
+namespace CompCert4Lean.Common.Behaviors
+
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.Smallstep
+
+theorem forever_silent_or_reactive :
+    forever_silent_or_reactiveStatement := by
+  intro genv state step ge s T hforever
+  rcases treactive_or_tsilent genv state step ge
+    (tstate.ST s T hforever) with hreactive | ⟨S', hreach, hsilent⟩
+  · left
+    exact treactive_forever_reactive genv state step ge
+      (tstate.ST s T hforever) hreactive
+  · right
+    obtain ⟨t, hstar, htrace⟩ :=
+      tsteps_star genv state step ge (tstate.ST s T hforever) S' hreach
+    refine ⟨t, state_of_tstate genv state step ge S',
+      traceinf_of_tstate genv state step ge S', ?_, ?_, ?_⟩
+    · exact hstar
+    · exact tsilent_forever_silent genv state step ge S' hsilent
+    · exact htrace
+
+end CompCert4Lean.Common.Behaviors
