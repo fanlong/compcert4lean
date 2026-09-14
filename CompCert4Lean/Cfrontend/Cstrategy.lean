@@ -2731,3 +2731,22 @@ theorem decompose_topexpr
   exact h.1 a .RV (fun x => x) (.ctx_top .RV) hs
 
 end CompCert4Lean.Cfrontend.Cstrategy
+
+namespace CompCert4Lean.Cfrontend.Cstrategy
+
+open CompCert4Lean.Cfrontend.Csem
+
+theorem deref_loc_trace : deref_loc_traceStatement := by
+  unfold deref_loc_traceStatement
+  intro ge ty m b ofs bf t v h
+  cases h with
+  | value hmode hvol hload => simp [CompCert4Lean.Common.Events.E0]
+  | volatile hmode hvol hload =>
+      cases hload <;> simp [CompCert4Lean.Common.Events.trace,
+        CompCert4Lean.Common.Events.E0]
+  | reference hmode => simp [CompCert4Lean.Common.Events.E0]
+  | copy hmode => simp [CompCert4Lean.Common.Events.E0]
+  | bitfield hload => simp [CompCert4Lean.Common.Events.E0]
+
+end CompCert4Lean.Cfrontend.Cstrategy
+
