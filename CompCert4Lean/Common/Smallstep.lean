@@ -2796,3 +2796,31 @@ theorem f2b_determinacy_star : f2b_determinacy_starStatement := by
   exact hsilent
 
 end CompCert4Lean.Common.Smallstep
+
+namespace CompCert4Lean.Common.Smallstep
+
+theorem wf_f2b_order : wf_f2b_orderStatement := by
+  apply WellFounded.intro
+  intro x
+  have hbefore : ∀ n, Acc f2b_order (F2BI_before n) := by
+    intro n
+    apply Nat.lt_wfRel.wf.induction n
+    intro n ih
+    apply Acc.intro (F2BI_before n)
+    intro y hy
+    cases hy with
+    | before n m h => exact ih m h
+  have hafter : ∀ n, Acc f2b_order (F2BI_after n) := by
+    intro n
+    apply Nat.lt_wfRel.wf.induction n
+    intro n ih
+    apply Acc.intro (F2BI_after n)
+    intro y hy
+    cases hy with
+    | after n m h => exact ih m h
+    | switch n m => exact hbefore m
+  cases x with
+  | F2BI_before n => exact hbefore n
+  | F2BI_after n => exact hafter n
+
+end CompCert4Lean.Common.Smallstep

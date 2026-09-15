@@ -2085,3 +2085,228 @@ private theorem suffix_weak_valid_pointer_extends_z
       simp [h1, h]
 
 end CompCert4Lean.X86.Op
+
+namespace CompCert4Lean.X86.Op
+
+private theorem suffix_cmp_bool_lessdef
+    (c : CompCert4Lean.Lib.Integers.comparison)
+    (v1 v1' v2 v2' : CompCert4Lean.Common.Values.val) (b : Bool)
+    (h1 : CompCert4Lean.Common.Values.Val.lessdef v1 v1')
+    (h2 : CompCert4Lean.Common.Values.Val.lessdef v2 v2') :
+    CompCert4Lean.Common.Values.Val.cmp_bool c v1 v2 = some b →
+      CompCert4Lean.Common.Values.Val.cmp_bool c v1' v2' = some b := by
+  cases h1 <;> cases h2 <;>
+    simp [CompCert4Lean.Common.Values.Val.cmp_bool] at *
+
+private theorem suffix_cmpl_bool_lessdef
+    (c : CompCert4Lean.Lib.Integers.comparison)
+    (v1 v1' v2 v2' : CompCert4Lean.Common.Values.val) (b : Bool)
+    (h1 : CompCert4Lean.Common.Values.Val.lessdef v1 v1')
+    (h2 : CompCert4Lean.Common.Values.Val.lessdef v2 v2') :
+    CompCert4Lean.Common.Values.Val.cmpl_bool c v1 v2 = some b →
+      CompCert4Lean.Common.Values.Val.cmpl_bool c v1' v2' = some b := by
+  cases h1 <;> cases h2 <;>
+    simp [CompCert4Lean.Common.Values.Val.cmpl_bool] at *
+
+private theorem suffix_cmpu_bool_lessdef
+    (valid_ptr valid_ptr' : CompCert4Lean.Common.Values.block →
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z → Bool)
+    (c : CompCert4Lean.Lib.Integers.comparison)
+    (v1 v1' v2 v2' : CompCert4Lean.Common.Values.val) (b : Bool)
+    (h1 : CompCert4Lean.Common.Values.Val.lessdef v1 v1')
+    (h2 : CompCert4Lean.Common.Values.Val.lessdef v2 v2')
+    (hvalid : ∀ b ofs, valid_ptr b ofs = true → valid_ptr' b ofs = true) :
+    CompCert4Lean.Common.Values.Val.cmpu_bool valid_ptr c v1 v2 = some b →
+      CompCert4Lean.Common.Values.Val.cmpu_bool valid_ptr' c v1' v2' = some b := by
+  cases h1 <;> cases h2 <;>
+    simp [CompCert4Lean.Common.Values.Val.cmpu_bool,
+      CompCert4Lean.X86_64.Archi.ptr64] at *
+
+private theorem suffix_cmplu_bool_lessdef
+    (valid_ptr valid_ptr' : CompCert4Lean.Common.Values.block →
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z → Bool)
+    (c : CompCert4Lean.Lib.Integers.comparison)
+    (v1 v1' v2 v2' : CompCert4Lean.Common.Values.val) (b : Bool)
+    (h1 : CompCert4Lean.Common.Values.Val.lessdef v1 v1')
+    (h2 : CompCert4Lean.Common.Values.Val.lessdef v2 v2')
+    (hvalid : ∀ b ofs, valid_ptr b ofs = true → valid_ptr' b ofs = true)
+    (hweak : ∀ b ofs,
+      (valid_ptr b ofs || valid_ptr b
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.sub ofs
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.Zpos
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.Numbers.BinNums.positive.xH))) = true →
+      (valid_ptr' b ofs || valid_ptr' b
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.sub ofs
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.Zpos
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.Numbers.BinNums.positive.xH))) = true) :
+    CompCert4Lean.Common.Values.Val.cmplu_bool valid_ptr c v1 v2 = some b →
+      CompCert4Lean.Common.Values.Val.cmplu_bool valid_ptr' c v1' v2' = some b := by
+  cases h1 <;> cases h2
+  all_goals simp [CompCert4Lean.Common.Values.Val.cmplu_bool,
+    CompCert4Lean.X86_64.Archi.ptr64] at *
+  all_goals cases v1 <;> cases v2 <;>
+    simp [CompCert4Lean.Common.Values.Val.cmplu_bool,
+      CompCert4Lean.X86_64.Archi.ptr64] at *
+  all_goals
+    repeat first | split
+    all_goals simp_all [hvalid, hweak]
+
+private theorem suffix_cmpf_bool_lessdef
+    (c : CompCert4Lean.Lib.Integers.comparison)
+    (v1 v1' v2 v2' : CompCert4Lean.Common.Values.val) (b : Bool)
+    (h1 : CompCert4Lean.Common.Values.Val.lessdef v1 v1')
+    (h2 : CompCert4Lean.Common.Values.Val.lessdef v2 v2') :
+    CompCert4Lean.Common.Values.Val.cmpf_bool c v1 v2 = some b →
+      CompCert4Lean.Common.Values.Val.cmpf_bool c v1' v2' = some b := by
+  cases h1 <;> cases h2 <;>
+    simp [CompCert4Lean.Common.Values.Val.cmpf_bool] at *
+
+private theorem suffix_cmpfs_bool_lessdef
+    (c : CompCert4Lean.Lib.Integers.comparison)
+    (v1 v1' v2 v2' : CompCert4Lean.Common.Values.val) (b : Bool)
+    (h1 : CompCert4Lean.Common.Values.Val.lessdef v1 v1')
+    (h2 : CompCert4Lean.Common.Values.Val.lessdef v2 v2') :
+    CompCert4Lean.Common.Values.Val.cmpfs_bool c v1 v2 = some b →
+      CompCert4Lean.Common.Values.Val.cmpfs_bool c v1' v2' = some b := by
+  cases h1 <;> cases h2 <;>
+    simp [CompCert4Lean.Common.Values.Val.cmpfs_bool] at *
+
+private theorem suffix_maskzero_bool_lessdef
+    (v1 v2 : CompCert4Lean.Common.Values.val)
+    (mask : CompCert4Lean.Lib.Integers.int) (b : Bool)
+    (h : CompCert4Lean.Common.Values.Val.lessdef v1 v2) :
+    CompCert4Lean.Common.Values.Val.maskzero_bool v1 mask = some b →
+      CompCert4Lean.Common.Values.Val.maskzero_bool v2 mask = some b := by
+  cases h <;> simp [CompCert4Lean.Common.Values.Val.maskzero_bool] at *
+
+private theorem suffix_cmp_bool_lessdef_right
+    (c : CompCert4Lean.Lib.Integers.comparison)
+    (v1 v2 x : CompCert4Lean.Common.Values.val) (b : Bool)
+    (h : CompCert4Lean.Common.Values.Val.lessdef v1 v2) :
+    CompCert4Lean.Common.Values.Val.cmp_bool c v1 x = some b →
+      CompCert4Lean.Common.Values.Val.cmp_bool c v2 x = some b := by
+  exact suffix_cmp_bool_lessdef c v1 v2 x x b h
+    (CompCert4Lean.Common.Values.Val.lessdef.lessdef_refl _)
+
+private theorem suffix_cmpu_bool_lessdef_right
+    (valid_ptr valid_ptr' : CompCert4Lean.Common.Values.block →
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z → Bool)
+    (c : CompCert4Lean.Lib.Integers.comparison)
+    (v1 v2 x : CompCert4Lean.Common.Values.val) (b : Bool)
+    (h : CompCert4Lean.Common.Values.Val.lessdef v1 v2)
+    (hvalid : ∀ b ofs, valid_ptr b ofs = true → valid_ptr' b ofs = true) :
+    CompCert4Lean.Common.Values.Val.cmpu_bool valid_ptr c v1 x = some b →
+      CompCert4Lean.Common.Values.Val.cmpu_bool valid_ptr' c v2 x = some b := by
+  exact suffix_cmpu_bool_lessdef valid_ptr valid_ptr' c v1 v2 x x b h
+    (CompCert4Lean.Common.Values.Val.lessdef.lessdef_refl _) hvalid
+
+private theorem suffix_cmpl_bool_lessdef_right
+    (c : CompCert4Lean.Lib.Integers.comparison)
+    (v1 v2 x : CompCert4Lean.Common.Values.val) (b : Bool)
+    (h : CompCert4Lean.Common.Values.Val.lessdef v1 v2) :
+    CompCert4Lean.Common.Values.Val.cmpl_bool c v1 x = some b →
+      CompCert4Lean.Common.Values.Val.cmpl_bool c v2 x = some b := by
+  exact suffix_cmpl_bool_lessdef c v1 v2 x x b h
+    (CompCert4Lean.Common.Values.Val.lessdef.lessdef_refl _)
+
+private theorem suffix_cmplu_bool_lessdef_right
+    (valid_ptr valid_ptr' : CompCert4Lean.Common.Values.block →
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z → Bool)
+    (c : CompCert4Lean.Lib.Integers.comparison)
+    (v1 v2 x : CompCert4Lean.Common.Values.val) (b : Bool)
+    (h : CompCert4Lean.Common.Values.Val.lessdef v1 v2)
+    (hvalid : ∀ b ofs, valid_ptr b ofs = true → valid_ptr' b ofs = true)
+    (hweak : ∀ b ofs,
+      (valid_ptr b ofs || valid_ptr b
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.sub ofs
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.Zpos
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.Numbers.BinNums.xH))) = true →
+      (valid_ptr' b ofs || valid_ptr' b
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.sub ofs
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.Zpos
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.Numbers.BinNums.xH))) = true) :
+    CompCert4Lean.Common.Values.Val.cmplu_bool valid_ptr c v1 x = some b →
+      CompCert4Lean.Common.Values.Val.cmplu_bool valid_ptr' c v2 x = some b := by
+  exact suffix_cmplu_bool_lessdef valid_ptr valid_ptr' c v1 v2 x x b h
+    (CompCert4Lean.Common.Values.Val.lessdef.lessdef_refl _) hvalid hweak
+
+private theorem suffix_cmpf_bool_lessdef_right
+    (c : CompCert4Lean.Lib.Integers.comparison)
+    (v1 v2 x : CompCert4Lean.Common.Values.val) (b : Bool)
+    (h : CompCert4Lean.Common.Values.Val.lessdef v1 v2) :
+    CompCert4Lean.Common.Values.Val.cmpf_bool c v1 x = some b →
+      CompCert4Lean.Common.Values.Val.cmpf_bool c v2 x = some b := by
+  exact suffix_cmpf_bool_lessdef c v1 v2 x x b h
+    (CompCert4Lean.Common.Values.Val.lessdef.lessdef_refl _)
+
+private theorem suffix_cmpfs_bool_lessdef_right
+    (c : CompCert4Lean.Lib.Integers.comparison)
+    (v1 v2 x : CompCert4Lean.Common.Values.val) (b : Bool)
+    (h : CompCert4Lean.Common.Values.Val.lessdef v1 v2) :
+    CompCert4Lean.Common.Values.Val.cmpfs_bool c v1 x = some b →
+      CompCert4Lean.Common.Values.Val.cmpfs_bool c v2 x = some b := by
+  exact suffix_cmpfs_bool_lessdef c v1 v2 x x b h
+    (CompCert4Lean.Common.Values.Val.lessdef.lessdef_refl _)
+
+private theorem suffix_maskzero_bool_lessdef_right
+    (v1 v2 : CompCert4Lean.Common.Values.val)
+    (mask : CompCert4Lean.Lib.Integers.int) (b : Bool)
+    (h : CompCert4Lean.Common.Values.Val.lessdef v1 v2) :
+    CompCert4Lean.Common.Values.Val.maskzero_bool v1 mask = some b →
+      CompCert4Lean.Common.Values.Val.maskzero_bool v2 mask = some b :=
+  suffix_maskzero_bool_lessdef v1 v2 mask b h
+
+theorem eval_condition_lessdef : eval_condition_lessdefStatement := by
+  intro cond vl1 vl2 b m1 m2 hvl hm heval
+  have hvalid : ∀ (b : CompCert4Lean.Common.Values.block)
+      (ofs : CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z),
+      CompCert4Lean.Common.Memory.Mem.valid_pointer m1 b ofs = true →
+      CompCert4Lean.Common.Memory.Mem.valid_pointer m2 b ofs = true := by
+    intro b ofs h
+    exact suffix_mem_valid_pointer_extends_z m1 m2 hm b ofs h
+  have hweak : ∀ (b : CompCert4Lean.Common.Values.block)
+      (ofs : CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z),
+      (CompCert4Lean.Common.Memory.Mem.valid_pointer m1 b ofs ||
+        CompCert4Lean.Common.Memory.Mem.valid_pointer m1 b
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.sub ofs
+            (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.Zpos
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.Numbers.BinNums.xH))) = true →
+      (CompCert4Lean.Common.Memory.Mem.valid_pointer m2 b ofs ||
+        CompCert4Lean.Common.Memory.Mem.valid_pointer m2 b
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.sub ofs
+            (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.Zpos
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.Numbers.BinNums.xH))) = true := by
+    intro b ofs h
+    exact suffix_weak_valid_pointer_extends_z m1 m2 hm b ofs h
+  cases hvl with
+  | lessdef_list_nil =>
+      cases cond <;> simp [eval_condition] at heval ⊢
+  | lessdef_list_cons v1 v2 vl1 vl2 h1 ht =>
+      cases ht with
+      | lessdef_list_nil =>
+          cases cond <;> simp [eval_condition] at heval ⊢
+          all_goals
+            first
+            | apply suffix_cmp_bool_lessdef_right <;> assumption
+            | apply suffix_cmpu_bool_lessdef_right <;> assumption
+            | apply suffix_cmpl_bool_lessdef_right <;> assumption
+            | apply suffix_cmplu_bool_lessdef_right <;> assumption
+            | apply suffix_cmpf_bool_lessdef_right <;> assumption
+            | apply suffix_cmpfs_bool_lessdef_right <;> assumption
+            | apply suffix_maskzero_bool_lessdef_right <;> assumption
+      | lessdef_list_cons v1' v2' vl1' vl2' h2 ht2 =>
+          cases ht2 with
+          | lessdef_list_nil =>
+              cases cond <;> simp [eval_condition] at heval ⊢
+              all_goals
+                first
+                | apply suffix_cmp_bool_lessdef <;> assumption
+                | apply suffix_cmpu_bool_lessdef <;> assumption
+                | apply suffix_cmpl_bool_lessdef <;> assumption
+                | apply suffix_cmplu_bool_lessdef <;> assumption
+                | apply suffix_cmpf_bool_lessdef <;> assumption
+                | apply suffix_cmpfs_bool_lessdef <;> assumption
+          | lessdef_list_cons v1'' v2'' vl1'' vl2'' h3 ht3 =>
+              cases cond <;> simp [eval_condition] at heval ⊢
+
+end CompCert4Lean.X86.Op

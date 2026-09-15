@@ -2204,3 +2204,13 @@ theorem static_bool_val_sound : static_bool_val_soundStatement := by
     simp at h
 
 end CompCert4Lean.Cfrontend.SimplExprproof
+
+namespace CompCert4Lean.Cfrontend.SimplExprproof
+
+theorem Kseqlist_app : Kseqlist_appStatement := by
+  intro sl1 sl2 k
+  induction sl1 with
+  | nil => rfl
+  | cons s sl ih => simp [Kseqlist, ih]
+
+end CompCert4Lean.Cfrontend.SimplExprproof

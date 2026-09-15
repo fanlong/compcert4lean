@@ -2271,3 +2271,26 @@ theorem transl_exprlist_Econs_correct
           _ = Regmap.get r rs := hstable1 r hr
 
 end CompCert4Lean.Backend.RTLgenproof
+
+namespace CompCert4Lean.Backend.RTLgenproof
+
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.Backend.RTLgen
+
+theorem eval_exprlist_append
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    eval_exprlist_appendStatement := by
+  intro xi prog sp e m le al1 vl1 al2 vl2 h1 h2
+  induction al1 generalizing vl1 with
+  | nil =>
+      cases h1
+      simpa using h2
+  | cons a1 al1 ih =>
+      cases h1 with
+      | cons le' a1' al1' v1 vl hhead htail =>
+          apply CminorSel.eval_exprlist.cons
+          · exact hhead
+          · exact ih vl htail
+
+end CompCert4Lean.Backend.RTLgenproof

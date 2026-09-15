@@ -2110,3 +2110,215 @@ theorem ZArith.BinInt.Z.lt_le_pred :
 
 end Rocq.Coq
 end CompCert4Lean.Foundation.Numbers
+
+namespace CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z
+
+private abbrev boolEq :=
+  _root_.CompCert4Lean.Foundation.Logic.Rocq.Coq.Bool.Bool.eqb
+
+private theorem boolEq_comm (a b : Bool) : boolEq a b = boolEq b a := by
+  cases a <;> cases b <;> rfl
+
+private theorem evenNatAddEq (a b : Nat) :
+    decide ((a + b) % 2 = 0) = boolEq (decide (a % 2 = 0)) (decide (b % 2 = 0)) := by
+  have hmod : (a + b) % 2 = (a % 2 + b % 2) % 2 := Nat.add_mod a b 2
+  rw [hmod]
+  by_cases ha : a % 2 = 0 <;> by_cases hb : b % 2 = 0 <;>
+    simp [ha, hb, _root_.CompCert4Lean.Foundation.Logic.Rocq.Coq.Bool.Bool.eqb]
+  all_goals
+    have ha' : a % 2 < 2 := Nat.mod_lt _ (by decide)
+    have hb' : b % 2 < 2 := Nat.mod_lt _ (by decide)
+    omega
+
+private theorem evenNatSubEq (a b : Nat) (h : b ≤ a) :
+    decide ((a - b) % 2 = 0) = boolEq (decide (a % 2 = 0)) (decide (b % 2 = 0)) := by
+  have hab : a = (a - b) + b := by omega
+  have hmod : a % 2 = ((a - b) % 2 + b % 2) % 2 := by
+    calc
+      a % 2 = ((a - b) + b) % 2 := congrArg (fun x : Nat => x % 2) hab
+      _ = ((a - b) % 2 + b % 2) % 2 := Nat.add_mod (a - b) b 2
+  by_cases ha : a % 2 = 0 <;> by_cases hb : b % 2 = 0 <;>
+    simp [ha, hb, _root_.CompCert4Lean.Foundation.Logic.Rocq.Coq.Bool.Bool.eqb]
+  all_goals
+    have ha' : a % 2 < 2 := Nat.mod_lt _ (by decide)
+    have hb' : b % 2 < 2 := Nat.mod_lt _ (by decide)
+    have hd' : (a - b) % 2 < 2 := Nat.mod_lt _ (by decide)
+    omega
+
+private theorem natAbs_ofNat (n : Nat) : (Int.ofNat n).natAbs = n := by
+  apply Int.natCast_inj.mp
+  simpa using (Int.natAbs_of_nonneg (a := Int.ofNat n) (Int.natCast_nonneg n))
+
+private theorem natAbs_add_nat (a b : Nat) :
+    (Int.ofNat a + Int.ofNat b).natAbs = a + b := by
+  have ha : (0 : Int) ≤ Int.ofNat a := Int.natCast_nonneg a
+  have hb : (0 : Int) ≤ Int.ofNat b := Int.natCast_nonneg b
+  have hsum : (0 : Int) ≤ Int.ofNat a + Int.ofNat b := by omega
+  have h := Int.natAbs_of_nonneg hsum
+  apply Int.natCast_inj.mp
+  simpa using h
+
+private theorem intAddNeg_repr (a b : Nat) (h : a < b) :
+    Int.ofNat a + -Int.ofNat b = -Int.ofNat (b - a) := by
+  have hnat : b - a + a = b := Nat.sub_add_cancel (Nat.le_of_lt h)
+  have hcast : Int.ofNat (b - a) + Int.ofNat a = Int.ofNat b := by
+    change (↑(b - a) : Int) + ↑a = ↑b
+    rw [← Int.natCast_add]
+    exact congrArg Int.ofNat hnat
+  calc
+    Int.ofNat a + -Int.ofNat b = Int.ofNat a + -(Int.ofNat (b - a) + Int.ofNat a) := by rw [hcast]
+    _ = -Int.ofNat (b - a) := by omega
+
+private theorem natAbs_add_neg_nat (a b : Nat) (h : b ≤ a) :
+    (Int.ofNat a + -Int.ofNat b).natAbs = a - b := by
+  have hnat : a - b + b = a := Nat.sub_add_cancel h
+  have hcast : Int.ofNat (a - b) + Int.ofNat b = Int.ofNat a := by
+    change (↑(a - b) : Int) + ↑b = ↑a
+    rw [← Int.natCast_add]
+    exact congrArg Int.ofNat hnat
+  have heq : Int.ofNat a + -Int.ofNat b = Int.ofNat (a - b) := by
+    calc
+      Int.ofNat a + -Int.ofNat b = (Int.ofNat (a - b) + Int.ofNat b) + -Int.ofNat b := by rw [hcast]
+      _ = Int.ofNat (a - b) := by omega
+  rw [heq]
+  exact natAbs_ofNat _
+
+private theorem natAbs_add_neg_nat' (a b : Nat) (h : a < b) :
+    (Int.ofNat a + -Int.ofNat b).natAbs = b - a := by
+  rw [intAddNeg_repr a b h, Int.natAbs_neg, natAbs_ofNat]
+
+private theorem even_zOfInt (i : Int) :
+    even (zOfInt i) = decide (i.natAbs % 2 = 0) := by
+  unfold even
+  rw [intOfZ_zOfInt]
+
+private theorem even_Zpos (p : positive) :
+    even (Zpos p) = decide (posToNat p % 2 = 0) := by
+  unfold even
+  simp only [intOfZ, natAbs_ofNat]
+
+private theorem even_Zneg (p : positive) :
+    even (Zneg p) = decide (posToNat p % 2 = 0) := by
+  unfold even
+  simp only [intOfZ, Int.natAbs_neg, natAbs_ofNat]
+
+private theorem even_Z0 : even Z0 = true := by
+  unfold even
+  rfl
+
+def max_case_strong : max_case_strongStatement := by
+  intro n m P hn hm
+  by_cases h : intOfZ n ≤ intOfZ m
+  · rw [max]
+    simp [h]
+    exact hm h
+  · have h' : intOfZ m ≤ intOfZ n := (Int.le_total _ _).resolve_left h
+    rw [max]
+    simp [h]
+    exact hn h'
+
+theorem divide_refl : divide_reflStatement := by
+  intro n
+  refine ⟨Zpos .xH, ?_⟩
+  change n = zOfInt (intOfZ n * intOfZ (Zpos .xH))
+  have hone : intOfZ (Zpos (.xH)) = 1 := by simp [intOfZ, posToNat]
+  rw [hone, Int.mul_one]
+  exact (zOfInt_intOfZ n).symm
+
+theorem shiftl_0_r : shiftl_0_rStatement := by
+  intro a
+  unfold shiftl
+  rw [if_pos (show (0 : Int) ≤ intOfZ Z0 by
+    change (0 : Int) ≤ 0
+    exact Int.le_refl _)]
+  have hpow : Int.pow 2 (Int.toNat (intOfZ Z0)) = 1 := by
+    change Int.pow 2 0 = 1
+    rfl
+  rw [hpow, Int.mul_one]
+  exact zOfInt_intOfZ a
+
+theorem even_add : even_addStatement := by
+  intro n m
+  unfold add
+  rw [even_zOfInt]
+  cases n with
+  | Z0 =>
+    cases m with
+    | Z0 =>
+      simp only [even_Z0]
+      simp [_root_.CompCert4Lean.Foundation.Logic.Rocq.Coq.Bool.Bool.eqb, intOfZ]
+    | Zpos b =>
+      simp only [even_Z0, even_Zpos]
+      have habs : (intOfZ Z0 + intOfZ (Zpos b)).natAbs = posToNat b := by
+        simpa [intOfZ] using natAbs_add_nat 0 (posToNat b)
+      simp only [habs]
+      simpa [_root_.CompCert4Lean.Foundation.Logic.Rocq.Coq.Bool.Bool.eqb] using evenNatAddEq 0 (posToNat b)
+    | Zneg b =>
+      simp only [even_Z0, even_Zneg]
+      have habs : (intOfZ Z0 + intOfZ (Zneg b)).natAbs = posToNat b := by
+        simp [intOfZ, natAbs_ofNat]
+      simp only [habs]
+      simpa [_root_.CompCert4Lean.Foundation.Logic.Rocq.Coq.Bool.Bool.eqb] using evenNatAddEq 0 (posToNat b)
+  | Zpos a =>
+    cases m with
+    | Z0 =>
+      simp only [even_Zpos, even_Z0]
+      have habs : (intOfZ (Zpos a) + intOfZ Z0).natAbs = posToNat a := by
+        simp [intOfZ, natAbs_ofNat]
+      simp only [habs]
+      simpa [_root_.CompCert4Lean.Foundation.Logic.Rocq.Coq.Bool.Bool.eqb] using evenNatAddEq (posToNat a) 0
+    | Zpos b =>
+      simp only [even_Zpos]
+      have habs : (intOfZ (Zpos a) + intOfZ (Zpos b)).natAbs = posToNat a + posToNat b := by
+        simpa [intOfZ] using natAbs_add_nat (posToNat a) (posToNat b)
+      simp only [habs]
+      simpa [_root_.CompCert4Lean.Foundation.Logic.Rocq.Coq.Bool.Bool.eqb] using evenNatAddEq (posToNat a) (posToNat b)
+    | Zneg b =>
+      simp only [even_Zpos, even_Zneg]
+      by_cases hle : posToNat b ≤ posToNat a
+      · have habs : (intOfZ (Zpos a) + intOfZ (Zneg b)).natAbs = posToNat a - posToNat b := by
+          simpa [intOfZ] using natAbs_add_neg_nat (posToNat a) (posToNat b) hle
+        simp only [habs]
+        exact evenNatSubEq _ _ hle
+      · have hlt : posToNat a < posToNat b := Nat.lt_of_not_ge hle
+        have habs : (intOfZ (Zpos a) + intOfZ (Zneg b)).natAbs = posToNat b - posToNat a := by
+          simpa [intOfZ] using natAbs_add_neg_nat' (posToNat a) (posToNat b) hlt
+        simp only [habs]
+        have hs := evenNatSubEq (posToNat b) (posToNat a) (Nat.le_of_lt hlt)
+        calc
+          decide ((posToNat b - posToNat a) % 2 = 0) = boolEq (decide (posToNat b % 2 = 0)) (decide (posToNat a % 2 = 0)) := hs
+          _ = boolEq (decide (posToNat a % 2 = 0)) (decide (posToNat b % 2 = 0)) := boolEq_comm _ _
+  | Zneg a =>
+    cases m with
+    | Z0 =>
+      simp only [even_Zneg, even_Z0]
+      have habs : (intOfZ (Zneg a) + intOfZ Z0).natAbs = posToNat a := by
+        simp [intOfZ, natAbs_ofNat]
+      simp only [habs]
+      simpa [_root_.CompCert4Lean.Foundation.Logic.Rocq.Coq.Bool.Bool.eqb] using evenNatAddEq (posToNat a) 0
+    | Zpos b =>
+      simp only [even_Zneg, even_Zpos]
+      by_cases hle : posToNat a ≤ posToNat b
+      · have habs : (intOfZ (Zneg a) + intOfZ (Zpos b)).natAbs = posToNat b - posToNat a := by
+          simpa [intOfZ, Int.add_comm] using natAbs_add_neg_nat (posToNat b) (posToNat a) hle
+        simp only [habs]
+        have hs := evenNatSubEq (posToNat b) (posToNat a) hle
+        calc
+          decide ((posToNat b - posToNat a) % 2 = 0) = boolEq (decide (posToNat b % 2 = 0)) (decide (posToNat a % 2 = 0)) := hs
+          _ = boolEq (decide (posToNat a % 2 = 0)) (decide (posToNat b % 2 = 0)) := boolEq_comm _ _
+      · have hlt : posToNat b < posToNat a := Nat.lt_of_not_ge hle
+        have habs : (intOfZ (Zneg a) + intOfZ (Zpos b)).natAbs = posToNat a - posToNat b := by
+          simpa [intOfZ, Int.add_comm] using natAbs_add_neg_nat' (posToNat b) (posToNat a) hlt
+        simp only [habs]
+        exact evenNatSubEq _ _ (Nat.le_of_lt hlt)
+    | Zneg b =>
+      simp only [even_Zneg]
+      have habs : (intOfZ (Zneg a) + intOfZ (Zneg b)).natAbs = posToNat a + posToNat b := by
+        change (-Int.ofNat (posToNat a) + -Int.ofNat (posToNat b)).natAbs = _
+        rw [← Int.neg_add, Int.natAbs_neg]
+        exact natAbs_add_nat _ _
+      simp only [habs]
+      have h := evenNatAddEq (posToNat a) (posToNat b)
+      simpa [_root_.CompCert4Lean.Foundation.Logic.Rocq.Coq.Bool.Bool.eqb] using h
+
+end CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z

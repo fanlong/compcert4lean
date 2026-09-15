@@ -3232,3 +3232,16 @@ theorem vpincl_ge : vpincl_geStatement := by
   | Ifptr q => exact vge.ifptrIfptr p q (pincl_ge q p h)
 
 end CompCert4Lean.Backend.ValueDomain
+
+namespace CompCert4Lean.Backend.ValueDomain
+
+theorem symbol_address_sound : symbol_address_soundStatement := by
+  intro bc ge id ofs hge
+  unfold CompCert4Lean.Common.Globalenvs.Genv.symbol_address
+  cases hfind : CompCert4Lean.Common.Globalenvs.Genv.find_symbol ge id with
+  | none => exact vmatch.ptrUndef (Gl id ofs)
+  | some b =>
+      exact vmatch.ptr b ofs (Gl id ofs)
+        (pmatch.gl id ((hge.1 id b).mp hfind))
+
+end CompCert4Lean.Backend.ValueDomain
