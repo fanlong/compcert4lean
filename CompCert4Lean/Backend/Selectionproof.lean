@@ -2877,3 +2877,32 @@ theorem eval_unop_lessdef
         subst v <;> exact Val.lessdef_undef _
 
 end CompCert4Lean.Backend.Selectionproof
+
+namespace CompCert4Lean.Backend.Selectionproof
+
+open CompCert4Lean.Lib.Maps
+
+theorem set_var_lessdef : set_var_lessdefStatement := by
+  intro e1 e2 id v1 v2 hEnv hVal id0 v1' hGet
+  change CompCert4Lean.Foundation.Numbers.Rocq.Coq.positive at id
+  change CompCert4Lean.Lib.Maps.PTree.tree CompCert4Lean.Common.Values.val at e1 e2
+  rw [CompCert4Lean.Lib.Maps.PTree.getSet_equation] at hGet
+  by_cases hid : id0 = id
+  · subst id0
+    simp at hGet
+    cases hGet
+    exact ⟨v2,
+      CompCert4Lean.Lib.Maps.PTree.gss
+        (A := CompCert4Lean.Common.Values.val) id v2 e2,
+      hVal⟩
+  · simp [hid] at hGet
+    rcases hEnv id0 v1' hGet with ⟨v2', hGet2, hld⟩
+    have hSet2 :
+        CompCert4Lean.Lib.Maps.PTree.get id0
+            (CompCert4Lean.Lib.Maps.PTree.set id v2 e2) =
+          CompCert4Lean.Lib.Maps.PTree.get id0 e2 :=
+      CompCert4Lean.Lib.Maps.PTree.gso
+        (A := CompCert4Lean.Common.Values.val) (i := id0) (j := id) v2 e2 hid
+    exact ⟨v2', by rw [hSet2, hGet2], hld⟩
+
+end CompCert4Lean.Backend.Selectionproof
