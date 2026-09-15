@@ -4703,3 +4703,30 @@ theorem subst_loc_pair_satisf_makelong :
       (Val.longofwords (ls (R src1)) (ls (R src2))) ls q.eloc hdiff]
     exact hsat q hq'
 end CompCert4Lean.Backend.Allocproof
+
+namespace CompCert4Lean.Backend.Allocproof
+open CompCert4Lean.Backend.Allocation
+open CompCert4Lean.Backend.Locations
+theorem can_undef_except_sound : can_undef_except_soundStatement := by
+  intro lx e ml q hcan hq hdiff
+  induction ml with
+  | nil => simp [Loc.notin]
+  | cons m ms ih =>
+      simp [can_undef_except, Bool.and_eq_true, Bool.or_eq_true] at hcan
+      rcases hcan with ⟨hmcase, hrest⟩
+      have hm : Loc.diff q.eloc (R m) := by
+        rcases hmcase with heq | hunc
+        · exact heq ▸ hdiff
+        · exact Loc.diff_sym _ _ (loc_unconstrained_sound (R m) e q hunc hq)
+      exact ⟨hm, ih hrest⟩
+end CompCert4Lean.Backend.Allocproof
+
+namespace CompCert4Lean.Backend.Allocproof
+open CompCert4Lean.Backend.Allocation
+open CompCert4Lean.Backend.Locations
+theorem can_undef_satisf : can_undef_satisfStatement := by
+  intro ml e rs ls hcan hsat q hq
+  have hn := can_undef_sound e ml q hcan hq
+  rw [undef_regs_outside ml ls q.eloc hn]
+  exact hsat q hq
+end CompCert4Lean.Backend.Allocproof
