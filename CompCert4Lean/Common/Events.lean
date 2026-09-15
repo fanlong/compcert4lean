@@ -1929,3 +1929,61 @@ theorem match_traces_preserved : match_traces_preservedStatement := by
       exact match_traces_annot id args
 
 end CompCert4Lean.Common.Events
+
+namespace CompCert4Lean.Common.Events
+
+theorem eval_builtin_args_determ : eval_builtin_args_determStatement := by
+  intro A ge e sp m al vl h
+  intro vl' h'
+  induction h generalizing vl' with
+  | nil =>
+      cases h'
+      rfl
+  | cons a1 b1 hp ht ih =>
+      cases h' with
+      | cons _ b1' hp' ht' =>
+          have hb : b1' = b1 := eval_builtin_arg_determ A ge e sp m a1 b1 hp b1' hp'
+          have ht_eq : _ := ih _ ht'
+          cases hb
+          cases ht_eq
+          rfl
+
+theorem builtin_args_depends_on_memory_correct :
+    builtin_args_depends_on_memory_correctStatement := by
+  intro A m' ge e sp m bal vl hEval hDep
+  unfold eval_builtin_args at hEval ⊢
+  induction bal generalizing vl with
+  | nil =>
+      cases hEval
+      exact CompCert4Lean.Lib.Coqlib.list_forall2.nil _
+  | cons ba bal ih =>
+      cases hEval with
+      | cons _ _ hba hrest =>
+          simp only [builtin_args_depends_on_memory] at hDep
+          have hbaDep : builtin_arg_depends_on_memory ba = false := by
+            cases h1 : builtin_arg_depends_on_memory ba <;>
+              cases h2 : builtin_args_depends_on_memory bal <;>
+                simp [h1, h2] at hDep ⊢
+          have hrestDep : builtin_args_depends_on_memory bal = false := by
+            cases h1 : builtin_arg_depends_on_memory ba <;>
+              cases h2 : builtin_args_depends_on_memory bal <;>
+                simp [h1, h2] at hDep ⊢
+          exact CompCert4Lean.Lib.Coqlib.list_forall2.cons ba _
+            (builtin_arg_depends_on_memory_correct A m' ge e sp m ba _ hba hbaDep)
+            (ih _ hrest hrestDep)
+
+theorem eval_builtin_args_preserved : eval_builtin_args_preservedStatement := by
+  intro A F1 V1 F2 V2 ge1 ge2 e sp m hsymbols al vl hEval
+  unfold eval_builtin_args at hEval ⊢
+  induction al generalizing vl with
+  | nil =>
+      cases hEval
+      exact CompCert4Lean.Lib.Coqlib.list_forall2.nil _
+  | cons ba al ih =>
+      cases hEval with
+      | cons _ _ hba hrest =>
+          exact CompCert4Lean.Lib.Coqlib.list_forall2.cons ba _
+            (eval_builtin_arg_preserved A F1 V1 F2 V2 ge1 ge2 e sp m hsymbols ba _ hba)
+            (ih _ hrest)
+
+end CompCert4Lean.Common.Events

@@ -3245,3 +3245,20 @@ theorem symbol_address_sound : symbol_address_soundStatement := by
         (pmatch.gl id ((hge.1 id b).mp hfind))
 
 end CompCert4Lean.Backend.ValueDomain
+
+namespace CompCert4Lean.Backend.ValueDomain
+
+theorem vmatch_ptr_gl : vmatch_ptr_glStatement := by
+  intro bc ge v id ofs hge hvm
+  cases hvm with
+  | ptr b ofs' p hp =>
+      cases hp with
+      | gl id' hbc =>
+          unfold CompCert4Lean.Common.Globalenvs.Genv.symbol_address
+          rw [show CompCert4Lean.Common.Globalenvs.Genv.find_symbol ge id = some b from
+            (hge.1 id b).mpr hbc]
+          exact CompCert4Lean.Common.Values.Val.lessdef_refl _
+  | ptrUndef p =>
+      exact CompCert4Lean.Common.Values.Val.lessdef_undef _
+
+end CompCert4Lean.Backend.ValueDomain

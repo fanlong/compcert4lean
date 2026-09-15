@@ -2909,3 +2909,12 @@ theorem lagree_not' : lagree_not'Statement := by
   exact hbits
 
 end CompCert4Lean.Backend.NeedDomain
+
+namespace CompCert4Lean.Backend.NeedDomain
+
+theorem lagree_bitwise_binop : lagree_bitwise_binopStatement := by
+  intro sem f hsem x1 x2 y1 y2 m h1 h2 i hi hm
+  rw [hsem x1 x2 i hi, hsem y1 y2 i hi]
+  simp [h1 i hi hm, h2 i hi hm]
+
+end CompCert4Lean.Backend.NeedDomain

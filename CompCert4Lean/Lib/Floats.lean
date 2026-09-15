@@ -2483,3 +2483,16 @@ theorem cmp_swap : Float.cmp_swapStatement := by
 end Float
 
 end CompCert4Lean.Lib.Floats
+
+namespace CompCert4Lean.Lib.Floats
+
+namespace Float
+
+theorem cmp_ne_eq : Float.cmp_ne_eqStatement := by
+  intro f1 f2
+  unfold Float.cmp
+  exact cmp_of_comparison_ne_eq (Float.compare f1 f2)
+
+end Float
+
+end CompCert4Lean.Lib.Floats

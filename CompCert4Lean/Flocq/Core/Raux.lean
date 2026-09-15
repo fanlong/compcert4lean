@@ -3096,3 +3096,34 @@ theorem Zceil_floor_neq (ctx : ExactRealContext) :
       (Zfloor_ub ctx x) |>.1
 
 end CompCert4Lean.Flocq.Core.Raux
+
+namespace CompCert4Lean.Flocq.Core.Raux
+
+theorem Ztrunc_ceil (ctx : ExactRealContext) :
+    Ztrunc_ceilStatement ctx := by
+  intro x hx
+  unfold Exact.Ztrunc
+  cases h : Exact.Rlt_bool ctx x (Exact.R0 ctx) with
+  | true => simp [h]
+  | false =>
+      have hspec := Rlt_bool_spec ctx x (Exact.R0 ctx)
+      rw [h] at hspec
+      cases hspec with
+      | Rlt_bool_false_ hnot =>
+          have hzero : Exact.IZR ctx Z0 = Exact.R0 ctx := by
+            exact ctx.certificate.sourceLaws.ofZ_zero
+          have hx0 : x = Exact.IZR ctx Z0 := by
+            apply ctx.certificate.orderedField.le_antisymm
+            · rw [hzero]
+              exact hx
+            · rw [hzero]
+              exact hnot
+          rw [hx0]
+          have hf : Exact.Zfloor ctx (Exact.IZR ctx Z0) = Z0 :=
+            Zfloor_IZR ctx Z0
+          have hc : Exact.Zceil ctx (Exact.IZR ctx Z0) = Z0 :=
+            Zceil_IZR ctx Z0
+          rw [hf, hc]
+          simp
+
+end CompCert4Lean.Flocq.Core.Raux

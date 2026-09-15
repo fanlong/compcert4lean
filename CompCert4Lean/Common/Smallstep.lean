@@ -2824,3 +2824,19 @@ theorem wf_f2b_order : wf_f2b_orderStatement := by
   | F2BI_after n => exact hafter n
 
 end CompCert4Lean.Common.Smallstep
+
+namespace CompCert4Lean.Common.Smallstep
+
+open CompCert4Lean.Common.Events
+
+theorem f2b_match_after' : f2b_match_after'Statement := by
+  intro L1 L2 index match_states n s2 s2a s1 i hstar hmatch
+  cases hstar with
+  | refl s =>
+      exact f2b_match_states.at i s1 s2 hmatch
+  | step n s t t1 s' t2 s'' hstep htail htrace =>
+      exact f2b_match_states.after n s2 s2a s1 i
+        (@starN.step _ _ (step L2) (globalenv L2) n s2 E0 t1 s' t2 s2a hstep htail htrace)
+        hmatch
+
+end CompCert4Lean.Common.Smallstep

@@ -4730,3 +4730,51 @@ theorem can_undef_satisf : can_undef_satisfStatement := by
   rw [undef_regs_outside ml ls q.eloc hn]
   exact hsat q hq
 end CompCert4Lean.Backend.Allocproof
+
+namespace CompCert4Lean.Backend.Allocproof
+
+open CompCert4Lean.Backend.Allocation
+open CompCert4Lean.Backend.Locations
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Common.Values
+
+theorem subst_loc_undef_satisf : subst_loc_undef_satisfStatement := by
+  intro env src dst rs ls ml e e' hsubst hmove hcan hwt hsat
+  unfold satisf at hsat ⊢
+  intro q hq
+  change equation at q
+  rcases in_subst_loc dst src q e e' hq hsubst with hchanged | hsame
+  · rcases hchanged with ⟨hqloc, hmem⟩
+    subst dst
+    cases q with
+    | mk k r l =>
+        have hchar := well_typed_move_charact env l e k r rs hmove hq hwt
+        cases l with
+        | R mr =>
+            change Val.lessdef (sel_val k (Regmap.get r rs))
+              ((Locmap.set (R mr) (ls src) (LTL.undef_regs ml ls)) (R mr))
+            have hset := Locmap.gss (R mr) (ls src) (LTL.undef_regs ml ls)
+            rw [hset]
+            simpa [sel_val] using (hsat { ekind := k, ereg := r, eloc := src } hmem)
+        | S sl ofs ty =>
+            change Val.lessdef (sel_val k (Regmap.get r rs))
+              ((Locmap.set (S sl ofs ty) (ls src) (LTL.undef_regs ml ls))
+                (S sl ofs ty))
+            have hset := Locmap.gss (S sl ofs ty) (ls src) (LTL.undef_regs ml ls)
+            rw [hset]
+            exact val_lessdef_normalize _ _ _ hchar (by
+              simpa [sel_val] using
+                (hsat { ekind := k, ereg := r, eloc := src } hmem))
+  · rcases hsame with ⟨hdiff, hmem⟩
+    cases q with
+    | mk k r l =>
+        change Val.lessdef (sel_val k (Regmap.get r rs))
+          ((Locmap.set dst (ls src) (LTL.undef_regs ml ls)) l)
+        have hset := Locmap.gso dst (ls src) (LTL.undef_regs ml ls) l hdiff
+        rw [hset]
+        rw [undef_regs_outside ml ls l]
+        · exact hsat { ekind := k, ereg := r, eloc := l } hmem
+        · exact can_undef_except_sound dst e ml { ekind := k, ereg := r, eloc := l }
+            hcan hq (Loc.diff_sym _ _ hdiff)
+
+end CompCert4Lean.Backend.Allocproof

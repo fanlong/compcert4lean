@@ -990,3 +990,40 @@ theorem is_longconst_zero_sound :
       exact is_longconst_sound xi prog sp e m le a x n hmatch heval
 
 end CompCert4Lean.Backend.SplitLongproof
+
+namespace CompCert4Lean.Backend.SplitLongproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Backend.CminorSel
+
+theorem is_intconst_sound
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    is_intconst_soundStatement := by
+  intro xi prog sp e m le a x n hconst hev
+  unfold CompCert4Lean.Backend.SplitLong.is_intconst at hconst
+  cases a with
+  | Evar id => simp at hconst
+  | Eop op al =>
+      cases op with
+      | Ointconst n' =>
+          cases al with
+          | Enil =>
+              cases hconst
+              cases hev with
+              | eval_Eop le' op' al' vl v' hargs hop =>
+                  cases hargs with
+                  | nil _ =>
+                      change some (.Vint n) = some x at hop
+                      cases hop
+                      rfl
+          | Econs a al => simp at hconst
+      | _ => simp at hconst
+  | Eload chunk addr al => simp at hconst
+  | Econdition a b c => simp at hconst
+  | Elet a b => simp at hconst
+  | Eletvar n' => simp at hconst
+  | Ebuiltin ef al => simp at hconst
+  | Eexternal id sg al => simp at hconst
+
+end CompCert4Lean.Backend.SplitLongproof
