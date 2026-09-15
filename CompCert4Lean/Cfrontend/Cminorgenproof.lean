@@ -3598,3 +3598,124 @@ theorem set_params'_inside : set_params'_insideStatement := by
                 simp only [set_params']
 
 end CompCert4Lean.Cfrontend.Cminorgenproof
+
+namespace CompCert4Lean.Cfrontend.Cminorgenproof
+
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.List
+
+theorem set_params_set_params' : set_params_set_params'Statement := by
+  intro il
+  induction il with
+  | nil =>
+      intro vl id hnr
+      cases vl <;> rfl
+  | cons i il ih =>
+      intro vl id hnr
+      cases hnr with
+      | cons _ hnot htail =>
+          cases vl with
+          | nil =>
+              change PTree.get id
+                  (PTree.set i (.Vundef : val) (CM.set_params [] il)) =
+                PTree.get id
+                  (set_params' [] il
+                    (PTree.set i (.Vundef : val) (PTree.empty val)))
+              by_cases hid : id = i
+              · subst id
+                have hout := set_params'_outside i il []
+                  (PTree.set i (.Vundef : val) (PTree.empty val)) hnot
+                calc
+                  PTree.get i
+                      (PTree.set i (.Vundef : val) (CM.set_params [] il)) =
+                      some (.Vundef : val) := PTree.gss i _ _
+                  _ = PTree.get i
+                      (set_params' [] il
+                        (PTree.set i (.Vundef : val) (PTree.empty val))) :=
+                    (hout.trans (PTree.gss i _ _)).symm
+              · by_cases hmem : In id il
+                · have hins := set_params'_inside id il []
+                    (PTree.empty val)
+                    (PTree.set i (.Vundef : val) (PTree.empty val)) hmem
+                  calc
+                    PTree.get id
+                        (PTree.set i (.Vundef : val) (CM.set_params [] il)) =
+                        PTree.get id (CM.set_params [] il) :=
+                      PTree.gso (A := val) (i := id) (j := i)
+                        (.Vundef : val) (show PTree.tree val from CM.set_params [] il) hid
+                    _ = PTree.get id (set_params' [] il (PTree.empty val)) :=
+                      ih [] id htail
+                    _ = PTree.get id
+                        (set_params' [] il
+                          (PTree.set i (.Vundef : val) (PTree.empty val))) :=
+                      hins
+                · have hout1 := set_params'_outside id il []
+                    (PTree.empty val) hmem
+                  have hout2 := set_params'_outside id il []
+                    (PTree.set i (.Vundef : val) (PTree.empty val)) hmem
+                  calc
+                    PTree.get id
+                        (PTree.set i (.Vundef : val) (CM.set_params [] il)) =
+                        PTree.get id (CM.set_params [] il) :=
+                      PTree.gso (A := val) (i := id) (j := i)
+                        (.Vundef : val) (show PTree.tree val from CM.set_params [] il) hid
+                    _ = PTree.get id (set_params' [] il (PTree.empty val)) :=
+                      ih [] id htail
+                    _ = PTree.get id (PTree.empty val) := hout1
+                    _ = PTree.get id
+                        (PTree.set i (.Vundef : val) (PTree.empty val)) :=
+                      (PTree.gso (A := val) (i := id) (j := i)
+                        (.Vundef : val) (PTree.empty val) hid).symm
+                    _ = PTree.get id
+                        (set_params' [] il
+                          (PTree.set i (.Vundef : val) (PTree.empty val))) :=
+                      hout2.symm
+          | cons v vl =>
+              change PTree.get id
+                  (PTree.set i v (CM.set_params vl il)) =
+                PTree.get id
+                  (set_params' vl il (PTree.set i v (PTree.empty val)))
+              by_cases hid : id = i
+              · subst id
+                have hout := set_params'_outside i il vl
+                  (PTree.set i v (PTree.empty val)) hnot
+                calc
+                  PTree.get i
+                      (PTree.set i v (CM.set_params vl il)) =
+                      some v := PTree.gss i _ _
+                  _ = PTree.get i
+                      (set_params' vl il (PTree.set i v (PTree.empty val))) :=
+                    (hout.trans (PTree.gss i _ _)).symm
+              · by_cases hmem : In id il
+                · have hins := set_params'_inside id il vl
+                    (PTree.empty val) (PTree.set i v (PTree.empty val)) hmem
+                  calc
+                    PTree.get id (PTree.set i v (CM.set_params vl il)) =
+                        PTree.get id (CM.set_params vl il) :=
+                      PTree.gso (A := val) (i := id) (j := i) v
+                        (show PTree.tree val from CM.set_params vl il) hid
+                    _ = PTree.get id (set_params' vl il (PTree.empty val)) :=
+                      ih vl id htail
+                    _ = PTree.get id
+                        (set_params' vl il (PTree.set i v (PTree.empty val))) :=
+                      hins
+                · have hout1 := set_params'_outside id il vl
+                    (PTree.empty val) hmem
+                  have hout2 := set_params'_outside id il vl
+                    (PTree.set i v (PTree.empty val)) hmem
+                  calc
+                    PTree.get id (PTree.set i v (CM.set_params vl il)) =
+                        PTree.get id (CM.set_params vl il) :=
+                      PTree.gso (A := val) (i := id) (j := i) v
+                        (show PTree.tree val from CM.set_params vl il) hid
+                    _ = PTree.get id (set_params' vl il (PTree.empty val)) :=
+                      ih vl id htail
+                    _ = PTree.get id (PTree.empty val) := hout1
+                    _ = PTree.get id (PTree.set i v (PTree.empty val)) :=
+                      (PTree.gso (A := val) (i := id) (j := i) v
+                        (PTree.empty val) hid).symm
+                    _ = PTree.get id
+                        (set_params' vl il (PTree.set i v (PTree.empty val))) :=
+                      hout2.symm
+
+end CompCert4Lean.Cfrontend.Cminorgenproof

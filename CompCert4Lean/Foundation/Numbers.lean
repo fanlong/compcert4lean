@@ -2634,3 +2634,16 @@ def ZArith.BinInt.Z.min_case :
 
 end Rocq.Coq
 end CompCert4Lean.Foundation.Numbers
+
+namespace CompCert4Lean.Foundation.Numbers
+namespace Rocq.Coq
+
+theorem ZArith.BinInt.Z.mul_assoc :
+    ZArith.BinInt.Z.mul_assocStatement := by
+  intro n m p
+  apply intOfZ_injective
+  simp only [ZArith.BinInt.Z.mul, intOfZ_zOfInt]
+  exact (Int.mul_assoc _ _ _).symm
+
+end Rocq.Coq
+end CompCert4Lean.Foundation.Numbers

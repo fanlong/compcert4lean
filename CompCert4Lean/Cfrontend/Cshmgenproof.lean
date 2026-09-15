@@ -3588,3 +3588,184 @@ theorem first_bit_range : first_bit_rangeStatement := by
           omega
 
 end CompCert4Lean.Cfrontend.Cshmgenproof
+
+namespace CompCert4Lean.Cfrontend.Cshmgenproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Cfrontend.Clight
+open CompCert4Lean.Cfrontend.Cshmgen
+open CompCert4Lean.Cfrontend.Csharpminor
+open CompCert4Lean.Cfrontend.Ctypes
+
+private abbrev suffix_two_power_nat := ZArith.Zpower.two_power_nat
+private abbrev suffix_zMin := ZArith.BinInt.Z.min
+
+private theorem suffix_intOfZ_two_power_nat (n : Nat) :
+    intOfZ (suffix_two_power_nat n) = (2 : Int) ^ n := by
+  unfold suffix_two_power_nat ZArith.Zpower.two_power_nat
+  unfold ZArith.BinInt.Z.pow ZArith.BinInt.Z.of_nat
+  simp only [intOfZ_zOfInt]
+  have h2 : intOfZ (Zpos (.xO .xH)) = (2 : Int) := by decide
+  rw [h2]
+  split
+  · next h => exact (Int.not_lt_of_ge (Int.natCast_nonneg _) h).elim
+  · rw [intOfZ_zOfInt]
+    rfl
+
+private theorem suffix_two_power_nat_ge_eight (n : Nat) (h : 4 ≤ n) :
+    (8 : Int) ≤ intOfZ (suffix_two_power_nat n) := by
+  rw [suffix_intOfZ_two_power_nat]
+  have hp : ∀ m : Nat, (2 : Int) ^ m = Int.ofNat (2 ^ m) := by
+    intro m
+    induction m with
+    | zero => rfl
+    | succ m ih =>
+        rw [Int.pow_succ, ih]
+        rfl
+  rw [hp n]
+  change Int.ofNat 8 ≤ Int.ofNat (2 ^ n)
+  exact Int.ofNat_le.mpr
+    (Nat.le_trans (by decide) (Nat.pow_le_pow_right (by decide) h))
+
+private theorem suffix_min_eight_two_power_nat (n : Nat) (h : 4 ≤ n) :
+    suffix_zMin (zOfNat 8) (suffix_two_power_nat n) = zOfNat 8 := by
+  unfold suffix_zMin ZArith.BinInt.Z.min
+  split
+  · rfl
+  · next hnot =>
+      exfalso
+      exact hnot (by
+        change (8 : Int) ≤ intOfZ (suffix_two_power_nat n)
+        exact suffix_two_power_nat_ge_eight n h)
+
+private theorem suffix_two_power_succ (n : Nat) :
+    suffix_two_power_nat (n + 1) =
+      ZArith.BinInt.Z.mul (zOfNat 2) (suffix_two_power_nat n) := by
+  apply intOfZ_injective
+  unfold suffix_two_power_nat ZArith.Zpower.two_power_nat
+  simp only [ZArith.BinInt.Z.pow, ZArith.BinInt.Z.of_nat,
+    ZArith.BinInt.Z.mul, intOfZ_zOfInt]
+  have h2 : intOfZ (Zpos (.xO .xH)) = (2 : Int) := by decide
+  rw [h2]
+  have hnonneg_succ : ¬ (Int.ofNat (n + 1) < 0) :=
+    Int.not_lt_of_ge (Int.ofNat_nonneg _)
+  have hnonneg : ¬ (Int.ofNat n < 0) :=
+    Int.not_lt_of_ge (Int.ofNat_nonneg _)
+  simp only [if_neg hnonneg_succ, if_neg hnonneg, intOfZ_zOfInt]
+  change (2 : Int) ^ n.succ = 2 * (2 : Int) ^ n
+  rw [Int.pow_succ]
+  simp [Int.mul_comm]
+
+private theorem suffix_divide_eight_two_power (n : Nat) (h : 3 ≤ n) :
+    ZArith.BinInt.Z.divide (zOfNat 8) (suffix_two_power_nat n) := by
+  induction n with
+  | zero => omega
+  | succ n ih =>
+      by_cases hn : 3 ≤ n
+      · rcases ih hn with ⟨k, hk⟩
+        refine ⟨ZArith.BinInt.Z.mul (zOfNat 2) k, ?_⟩
+        rw [suffix_two_power_succ, hk]
+        apply intOfZ_injective
+        simp [zOfInt_intOfZ, intOfZ_zOfInt, ZArith.BinInt.Z.mul,
+          ZArith.BinInt.Z.of_nat,
+          Int.mul_assoc, Int.mul_comm, Int.mul_left_comm]
+      · have hn2 : n = 2 := by omega
+        subst n
+        refine ⟨zOfNat 1, ?_⟩
+        decide
+
+private theorem suffix_min_align_divides (co : Ctypes.composite) :
+    ZArith.BinInt.Z.divide
+      (suffix_zMin (zOfNat 8) co.co_alignof) co.co_alignof := by
+  rcases co.co_alignof_two_p with ⟨n, hn⟩
+  rw [hn]
+  by_cases hs : n < 4
+  · have hcases : n = 0 ∨ n = 1 ∨ n = 2 ∨ n = 3 := by omega
+    rcases hcases with rfl | rfl | rfl | rfl <;>
+      simp [suffix_zMin, ZArith.BinInt.Z.min] <;>
+      exact ZArith.BinInt.Z.divide_refl _
+  · rw [suffix_min_eight_two_power_nat n (by omega)]
+    exact suffix_divide_eight_two_power n (by omega)
+
+private theorem suffix_sizeof_alignof_blockcopy (env : composite_env) :
+    ∀ t, ZArith.BinInt.Z.divide
+      (alignof_blockcopy env t) (Ctypes.sizeof env t) := by
+  intro t
+  cases t with
+  | Tvoid => exact ZArith.BinInt.Z.divide_refl _
+  | Tint sz sg a => cases sz <;> exact ZArith.BinInt.Z.divide_refl _
+  | Tlong sg a => exact ZArith.BinInt.Z.divide_refl _
+  | Tfloat sz a => cases sz <;> exact ZArith.BinInt.Z.divide_refl _
+  | Tpointer t a =>
+      simp [alignof_blockcopy, Ctypes.sizeof,
+        CompCert4Lean.X86_64.Archi.ptr64]
+      exact ZArith.BinInt.Z.divide_refl _
+  | Tarray t n a =>
+      simpa [alignof_blockcopy, Ctypes.sizeof] using
+        (ZArith.BinInt.Z.divide_mul_l _ _ _ (suffix_sizeof_alignof_blockcopy env t))
+  | Tfunction args res cc => exact ZArith.BinInt.Z.divide_refl _
+  | Tstruct id a =>
+      simp only [alignof_blockcopy, Ctypes.sizeof]
+      cases hget : CompCert4Lean.Lib.Maps.PTree.get id env with
+      | none => exact ZArith.BinInt.Z.divide_0_r _
+      | some co =>
+          exact ZArith.BinInt.Z.divide_trans _ _ _
+            (suffix_min_align_divides co) co.co_sizeof_alignof
+  | Tunion id a =>
+      simp only [alignof_blockcopy, Ctypes.sizeof]
+      cases hget : CompCert4Lean.Lib.Maps.PTree.get id env with
+      | none => exact ZArith.BinInt.Z.divide_0_r _
+      | some co =>
+          exact ZArith.BinInt.Z.divide_trans _ _ _
+            (suffix_min_align_divides co) co.co_sizeof_alignof
+
+theorem make_memcpy_correct
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    make_memcpy_correctStatement := by
+  intro xi cunit prog hlink ge f dst src ty k e le m b ofs v m' s hdst hsrc hassign hmode hmake
+  cases hassign with
+  | assign_loc_copy b' ofs' bytes m' hmode' hsrcAlign hdstAlign hseparated hload hstore =>
+      cases hsize : Cshmgen.sizeof cunit.prog_comp_env ty with
+      | Error msg => simp [Cshmgen.make_memcpy, hsize] at hmake
+      | OK sz =>
+          have hmake' : s = .Sbuiltin none
+              (.EF_memcpy sz (alignof_blockcopy cunit.prog_comp_env ty)) [dst, src] := by
+            simpa [Cshmgen.make_memcpy, hsize] using hmake.symm
+          subst s
+          have htrans := transl_alignof_blockcopy cunit prog ty sz hlink hsize
+          rcases htrans with ⟨hsize_eq, halign_eq⟩
+          apply Csharpminor.step_builtin f none
+            (.EF_memcpy sz (alignof_blockcopy cunit.prog_comp_env ty))
+            [dst, src] k e le m [Vptr b ofs, Vptr b' ofs'] E0 Vundef m'
+          · constructor
+            · exact hdst
+            · constructor
+              · exact hsrc
+              · exact eval_Enil
+          · apply extcall_memcpy_sem_intro
+            · exact Ctypes.alignof_blockcopy_1248 cunit.prog_comp_env ty
+            · rw [hsize_eq]
+              exact Ctypes.sizeof_pos prog.prog_comp_env ty
+            · simpa [halign_eq, hsize_eq] using
+                (suffix_sizeof_alignof_blockcopy prog.prog_comp_env ty)
+            · intro hs
+              rw [halign_eq]
+              apply hsrcAlign
+              simpa [hsize_eq] using hs
+            · intro hs
+              rw [halign_eq]
+              apply hdstAlign
+              simpa [hsize_eq] using hs
+            · simpa [hsize_eq] using hseparated
+            · simpa [hsize_eq] using hload
+            · exact hstore
+  | assign_loc_value v chunk m' hmode' hstore =>
+      have hbad : (By_copy : mode) = By_value chunk := hmode.symm.trans hmode'
+      cases hbad
+
+end CompCert4Lean.Cfrontend.Cshmgenproof

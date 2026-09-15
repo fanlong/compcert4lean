@@ -3454,3 +3454,130 @@ theorem compat_pointer_chunks_true : compat_pointer_chunks_trueStatement := by
 
 end Mem
 end CompCert4Lean.Common.Memory
+
+namespace CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+namespace Mem
+
+theorem load_pointer_store : load_pointer_storeStatement := by
+  intro chunk m1 b ofs v m2 chunk' b' ofs' v_b v_o hstore hload
+  by_cases hb : b' = b
+  · subst b'
+    by_cases hleft : zLe (zAdd ofs' (size_chunk chunk')) ofs
+    · exact Or.inr (Or.inr (Or.inl hleft))
+    by_cases hright : zLe (zAdd ofs (size_chunk chunk)) ofs'
+    · exact Or.inr (Or.inr (Or.inr hright))
+    have hlt1 : zLt ofs (zAdd ofs' (size_chunk chunk')) := by
+      change intOfZ ofs < intOfZ (zAdd ofs' (size_chunk chunk'))
+      change ¬ intOfZ (zAdd ofs' (size_chunk chunk')) ≤ intOfZ ofs at hleft
+      omega
+    have hlt2 : zLt ofs' (zAdd ofs (size_chunk chunk)) := by
+      change intOfZ ofs' < intOfZ (zAdd ofs (size_chunk chunk))
+      change ¬ intOfZ (zAdd ofs (size_chunk chunk)) ≤ intOfZ ofs' at hright
+      omega
+    obtain ⟨mv1, mvl, mv1', mvl', henc, hdec, hcases⟩ :=
+      load_store_overlap chunk m1 b ofs v m2 chunk' ofs' (Vptr v_b v_o)
+        hstore hload hlt1 hlt2
+    have hdec_inv : ∀ (mv : memval) (tail : List memval) (w : val),
+        shape_decoding chunk' (mv :: tail) w →
+        w = Vptr v_b v_o →
+        ∃ vv q i, mv = Fragment vv q i ∧
+          (chunk' = Mint32 ∨ chunk' = Many32 ∨ chunk' = Mint64 ∨ chunk' = Many64) ∧
+          q = quantity_chunk chunk' ∧
+          Nat.succ i = size_quantity_nat q ∧
+          Vptr v_b v_o = Val.load_result chunk' vv := by
+      intro mv tail w hh hw
+      cases hh with
+      | fragment vv q i mvl hch hq hi htail =>
+          exact ⟨vv, q, i, by simp, hch, hq, hi, hw.symm⟩
+      | shape_decoding_b bb mvl vv hv htail =>
+          exfalso
+          simpa [hw] using hv
+      | shape_decoding_u mvl =>
+          cases hw
+    have hdec_tail : ∀ (mv : memval) (head : memval) (tail : List memval) (w : val),
+        shape_decoding chunk' (head :: tail) w →
+        w = Vptr v_b v_o →
+        mv ∈ tail →
+        ∃ vv q j, mv = Fragment vv q j ∧
+          Nat.succ j ≠ size_quantity_nat q := by
+      intro mv head tail w hh hw hm
+      cases hh with
+      | fragment vv q i mvl hch hq hi htail =>
+          obtain ⟨j, hj, hjne⟩ := htail mv hm
+          exact ⟨vv, q, j, hj, hjne⟩
+      | shape_decoding_b bb mvl vv hv htail =>
+          exact False.elim (by simpa [hw] using hv)
+      | shape_decoding_u mvl =>
+          cases hw
+    cases hcases with
+    | inl heq =>
+        rcases heq with ⟨heqofs, heqmv⟩
+        subst ofs'
+        obtain ⟨vv, q, i, hmv, hchunk', hq', hi', hval⟩ :=
+          hdec_inv mv1' mvl' (Vptr v_b v_o) hdec rfl
+        subst mv1'
+        have henc' : v = vv ∧
+            (chunk = Mint32 ∨ chunk = Many32 ∨ chunk = Mint64 ∨ chunk = Many64) ∧
+            q = quantity_chunk chunk := by
+          cases henc with
+          | fragment q0 i0 tail0 hch hq0 hi0 htail0 => simp_all
+          | bytes b0 tail0 hv htail => simp_all
+          | undef tail0 htail => simp_all
+        have hvv : vv = Vptr v_b v_o := by
+          cases chunk' <;> cases vv <;>
+            simp only [Val.load_result, CompCert4Lean.X86_64.Archi.ptr64] at hval
+          all_goals try contradiction
+          all_goals cases hval; rfl
+        have hcomp : compat_pointer_chunks chunk chunk' := by
+          exact compat_pointer_chunks_true chunk chunk' henc'.2.1 hchunk'
+            (by rw [← henc'.2.2, hq'])
+        exact Or.inl ⟨by simpa [hvv] using henc'.1, hcomp, rfl, rfl⟩
+    | inr hrest =>
+        cases hrest with
+        | inl hgt =>
+            rcases hgt with ⟨_, hmem⟩
+            cases henc with
+            | fragment q0 i0 tail0 hch hq0 hi0 htail0 =>
+                obtain ⟨j, hj, hjne⟩ := htail0 mv1' hmem
+                obtain ⟨vv, q', i', hmv, hch', hq', hi', hval'⟩ :=
+                  hdec_inv mv1' mvl' (Vptr v_b v_o) hdec rfl
+                rw [hmv] at hj
+                have hiTmp := hi'
+                have hqTmp := hq'
+                cases hj
+                exact False.elim (hjne (by simpa [hq0, hqTmp] using hiTmp))
+            | bytes b0 tail0 hv htail0 =>
+                obtain ⟨b', hb'⟩ := htail0 mv1' hmem
+                obtain ⟨vv, q', i', hmv, hch', hq', hi', hval'⟩ :=
+                  hdec_inv mv1' mvl' (Vptr v_b v_o) hdec rfl
+                rw [hmv] at hb'
+                cases hb'
+            | undef tail0 htail0 =>
+                have hmveq : mv1' = Undef := htail0 mv1' hmem
+                obtain ⟨vv, q', i', hmv, hch', hq', hi', hval'⟩ :=
+                  hdec_inv mv1' mvl' (Vptr v_b v_o) hdec rfl
+                rw [hmv] at hmveq
+                cases hmveq
+        | inr hlt =>
+            rcases hlt with ⟨_, hmem⟩
+            obtain ⟨jv, qv, j, hj, hjne⟩ :=
+              hdec_tail mv1 mv1' mvl' (Vptr v_b v_o) hdec rfl hmem
+            cases henc with
+            | fragment q0 i0 tail0 hch hq0 hi0 htail0 =>
+                have hi0Tmp := hi0
+                cases hj
+                exact False.elim (hjne (by simpa [hq0] using hi0Tmp))
+            | bytes b0 tail0 hv htail0 =>
+                cases hj
+            | undef tail0 htail0 =>
+                cases hj
+  · exact Or.inr (Or.inl hb)
+
+end Mem
+end CompCert4Lean.Common.Memory

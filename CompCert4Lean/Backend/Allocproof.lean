@@ -6315,3 +6315,40 @@ theorem add_equations_builtin_args_lessdef :
               Val.lessdef_list_cons _ _ _ _ ld' ldlist⟩
 
 end CompCert4Lean.Backend.Allocproof
+
+namespace CompCert4Lean.Backend.Allocproof
+
+open CompCert4Lean.Backend.Allocation
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Common.AST
+
+theorem add_equations_debug_args_satisf :
+    add_equations_debug_args_satisfStatement := by
+  intro env rs ls args args' e e' hrun hsat
+  induction args generalizing args' e e' with
+  | nil =>
+      cases args' with
+      | nil =>
+          simp [add_equations_debug_args] at hrun
+          cases hrun
+          exact hsat
+      | cons a' rest =>
+          simp [add_equations_debug_args] at hrun
+  | cons a rest ih =>
+      cases args' with
+      | nil =>
+          simp [add_equations_debug_args] at hrun
+          rw [hrun]
+          exact hsat
+      | cons a' rest' =>
+          change (match add_equations_builtin_arg env a a' e with
+            | none => add_equations_debug_args env rest (a' :: rest') e
+            | some e1 => add_equations_debug_args env rest rest' e1) = some e' at hrun
+          split at hrun
+          · exact ih (a' :: rest') e e' hrun hsat
+          · rename_i e1 hfirst
+            have hsat1 : satisf rs ls e1 :=
+              ih rest' e1 e' hrun hsat
+            exact add_equations_builtin_arg_satisf env rs ls a a' e e1 hfirst hsat1
+
+end CompCert4Lean.Backend.Allocproof

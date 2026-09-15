@@ -2747,3 +2747,52 @@ theorem eval_shru
             (eval_exprlist.nil le))) rfl
 
 end CompCert4Lean.X86.SelectOpproof
+
+namespace CompCert4Lean.X86.SelectOpproof
+
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.X86.Op
+
+theorem eval_negf
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    eval_negfStatement := by
+  intro xi ge sp e m le a x h
+  refine ⟨Val.negf x, ?_, Val.lessdef_refl _⟩
+  exact eval_expr.eval_Eop le Onegf (Econs a Enil) [x] (Val.negf x)
+    (eval_exprlist.cons le a Enil x [] h (eval_exprlist.nil le)) rfl
+
+theorem eval_absf
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    eval_absfStatement := by
+  intro xi ge sp e m le a x h
+  refine ⟨Val.absf x, ?_, Val.lessdef_refl _⟩
+  exact eval_expr.eval_Eop le Oabsf (Econs a Enil) [x] (Val.absf x)
+    (eval_exprlist.cons le a Enil x [] h (eval_exprlist.nil le)) rfl
+
+theorem eval_addf
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    eval_addfStatement := by
+  intro xi ge sp e m le a x b y ha hb
+  refine ⟨Val.addf x y, ?_, Val.lessdef_refl _⟩
+  exact eval_expr.eval_Eop le Oaddf (Econs a (Econs b Enil)) [x, y]
+    (Val.addf x y)
+    (eval_exprlist.cons le a (Econs b Enil) x [y] ha
+      (eval_exprlist.cons le b Enil y [] hb (eval_exprlist.nil le))) rfl
+
+theorem eval_subf
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    eval_subfStatement := by
+  intro xi ge sp e m le a x b y ha hb
+  refine ⟨Val.subf x y, ?_, Val.lessdef_refl _⟩
+  exact eval_expr.eval_Eop le Osubf (Econs a (Econs b Enil)) [x, y]
+    (Val.subf x y)
+    (eval_exprlist.cons le a (Econs b Enil) x [y] ha
+      (eval_exprlist.cons le b Enil y [] hb (eval_exprlist.nil le))) rfl
+
+end CompCert4Lean.X86.SelectOpproof

@@ -2137,3 +2137,16 @@ theorem round_bounded_small_pos :
     simpa using CompCert4Lean.Flocq.Core.Float_prop.F2R_bpow ctx beta (fexp ex)
 
 end CompCert4Lean.Flocq.Core.Generic_fmt
+
+namespace CompCert4Lean.Flocq.Core.Generic_fmt
+
+theorem round_generic :
+    ∀ ctx magnitude, round_genericStatement ctx magnitude := by
+  intro ctx magnitude beta fexp rnd hrnd x hformat
+  unfold Exact.round
+  have hsm := scaled_mantissa_generic ctx magnitude beta fexp x hformat
+  rw [hsm]
+  rw [hrnd.Zrnd_IZR]
+  exact hformat.symm
+
+end CompCert4Lean.Flocq.Core.Generic_fmt

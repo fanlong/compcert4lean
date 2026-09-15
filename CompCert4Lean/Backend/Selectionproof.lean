@@ -2965,3 +2965,17 @@ theorem set_locals_lessdef : set_locals_lessdefStatement := by
       · exact CompCert4Lean.Common.Values.Val.lessdef_undef _
 
 end CompCert4Lean.Backend.Selectionproof
+
+namespace CompCert4Lean.Backend.Selectionproof
+
+theorem sel_builtin_res_correct : sel_builtin_res_correctStatement := by
+  intro oid v e v' e' hEnv hVal
+  cases oid with
+  | none =>
+      exact hEnv
+  | some id =>
+      apply set_var_lessdef
+      · exact hEnv
+      · exact hVal
+
+end CompCert4Lean.Backend.Selectionproof

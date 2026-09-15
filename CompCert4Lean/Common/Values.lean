@@ -2350,3 +2350,73 @@ theorem mull_commut : mull_commutStatement := by
 
 end Val
 end CompCert4Lean.Common.Values
+
+namespace CompCert4Lean.Common.Values
+namespace Val
+
+open Lean Elab Tactic Meta
+
+private def pg_andl_suffix_private_name (suffix : String) : Name :=
+  let p := Name.str (Name.str (Name.str (Name.str Name.anonymous "_private") "CompCert4Lean") "Lib") "Integers"
+  let base := Name.num p 0
+  suffix.splitOn "." |>.foldl Name.str base
+
+private theorem pg_andl_suffix_word_val_repr64 (bits : Nat) (i : Int) :
+    (CompCert4Lean.Lib.Integers.WordCore.repr bits
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt i)).val =
+      Int.toNat (i % ((2 ^ bits : Nat) : Int)) := by
+  run_tac
+    let lctx ← getLCtx
+    let bitsF := (lctx.findFromUserName? `bits).get!
+    let iF := (lctx.findFromUserName? `i).get!
+    let bitsE := mkFVar bitsF.fvarId
+    let iE := mkFVar iF.fvarId
+    let e ← mkAppM
+      (pg_andl_suffix_private_name "CompCert4Lean.Lib.Integers.WordCore.val_repr")
+      #[bitsE, iE]
+    closeMainGoal Name.anonymous e
+
+private theorem pg_andl_repr_val_of_lt64 (n : Nat) (hn : n < 2 ^ 64) :
+    (CompCert4Lean.Lib.Integers.WordCore.repr 64
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat n)).val = n := by
+  rw [show CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat n =
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt (Int.ofNat n) by rfl,
+    pg_andl_suffix_word_val_repr64]
+  have hmod :
+      Int.ofNat n % ((2 ^ 64 : Nat) : Int) = Int.ofNat n := by
+    apply Int.emod_eq_of_lt
+    · exact Int.natCast_nonneg n
+    · exact Int.ofNat_lt.mpr hn
+  rw [hmod]
+  rfl
+
+private theorem pg_andl_int64_commut
+    (x y : CompCert4Lean.Lib.Integers.Int64.int) :
+    CompCert4Lean.Lib.Integers.Int64.and x y =
+      CompCert4Lean.Lib.Integers.Int64.and y x := by
+  apply CompCert4Lean.Lib.Integers.WordCore.ext_of_val_eq
+  unfold CompCert4Lean.Lib.Integers.Int64.and
+    CompCert4Lean.Lib.Integers.WordCore.and
+  change
+    (CompCert4Lean.Lib.Integers.WordCore.repr 64
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat
+        (Nat.land x.val y.val))).val =
+      (CompCert4Lean.Lib.Integers.WordCore.repr 64
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat
+          (Nat.land y.val x.val))).val
+  rw [pg_andl_repr_val_of_lt64 (Nat.land x.val y.val)
+        (Nat.and_lt_two_pow _ y.toFin.isLt),
+      pg_andl_repr_val_of_lt64 (Nat.land y.val x.val)
+        (Nat.and_lt_two_pow _ x.toFin.isLt)]
+  exact Nat.and_comm _ _
+
+theorem andl_commut : andl_commutStatement := by
+  intro x y
+  cases x <;> cases y <;> try rfl
+  case Vlong.Vlong x y =>
+    change Vlong (CompCert4Lean.Lib.Integers.Int64.and x y) =
+      Vlong (CompCert4Lean.Lib.Integers.Int64.and y x)
+    rw [pg_andl_int64_commut]
+
+end Val
+end CompCert4Lean.Common.Values

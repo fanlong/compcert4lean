@@ -3776,3 +3776,41 @@ theorem create_undef_temps_charact : create_undef_temps_charactStatement := by
                 (.Vundef) (create_undef_temps rest))
 
 end CompCert4Lean.Cfrontend.SimplLocalsproof
+
+namespace CompCert4Lean.Cfrontend.SimplLocalsproof
+
+open CompCert4Lean.Cfrontend.Clight
+open CompCert4Lean.Lib.Maps
+
+theorem create_undef_temps_inv : create_undef_temps_invStatement := by
+  intro vars id v h
+  induction vars with
+  | nil =>
+      have hempty : PTree.get id (PTree.empty CompCert4Lean.Common.Values.val) = none :=
+        PTree.gempty _ _
+      change PTree.get id (PTree.empty CompCert4Lean.Common.Values.val) = some v at h
+      rw [hempty] at h
+      cases h
+  | cons hd rest ih =>
+      rcases hd with ⟨id1, ty1⟩
+      change PTree.get id
+        (PTree.set id1 (.Vundef) (create_undef_temps rest)) = some v at h
+      have hspec := PTree.gsspec_proof (A := CompCert4Lean.Common.Values.val)
+        id id1 (.Vundef) (create_undef_temps rest)
+      rw [hspec] at h
+      cases hp : CompCert4Lean.Lib.Coqlib.peq id id1 with
+      | left heq =>
+          subst id
+          simp only [hp] at h
+          constructor
+          · exact (Option.some.inj h).symm
+          · exact List.mem_cons_self
+      | right hne =>
+          have htail : PTree.get id (create_undef_temps rest) = some v := by
+            simpa [hp] using h
+          rcases ih htail with ⟨hv, hin⟩
+          constructor
+          · exact hv
+          · exact List.mem_cons.mpr (Or.inr hin)
+
+end CompCert4Lean.Cfrontend.SimplLocalsproof

@@ -4041,3 +4041,59 @@ theorem pred_succ_pos :
   exact ctx.certificate.orderedField.le_antisymm _ _ hupper hlower
 
 end CompCert4Lean.Flocq.Core.Ulp
+
+namespace CompCert4Lean.Flocq.Core.Ulp
+
+theorem succ_pred :
+    ∀ (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx),
+      succ_predStatement ctx magnitude := by
+  intro ctx magnitude beta fexp hvalid x hformat
+  rcases ctx.certificate.total_order (Exact.R0 ctx) x with h | h
+  · rcases h with hx | hzero
+    · exact succ_pred_pos ctx magnitude beta fexp hvalid x hformat hx
+    · rw [← hzero, pred_0]
+      rw [succ_opp]
+      rw [pred_ulp_0 ctx magnitude beta fexp hvalid]
+      change ctx.spec.neg ctx.spec.zero = ctx.spec.zero
+      have hz := ctx.certificate.orderedField.neg_add_cancel ctx.spec.zero
+      rw [ctx.certificate.orderedField.add_zero] at hz
+      exact hz
+  · have hxpos : Exact.Rlt ctx (Exact.R0 ctx) (Exact.Ropp ctx x) := by
+      have hneg := ulp_neg_lt_neg ctx h
+      change ctx.spec.lt (ctx.spec.neg ctx.spec.zero) (ctx.spec.neg x) at hneg
+      have hnegzero : ctx.spec.neg ctx.spec.zero = ctx.spec.zero := by
+        have hz := ctx.certificate.orderedField.neg_add_cancel ctx.spec.zero
+        rw [ctx.certificate.orderedField.add_zero] at hz
+        exact hz
+      rw [hnegzero] at hneg
+      exact hneg
+    have hformatneg : Exact.generic_format ctx magnitude beta fexp
+        (Exact.Ropp ctx x) := by
+      exact CompCert4Lean.Flocq.Core.Generic_fmt.generic_format_opp ctx magnitude
+        beta fexp x hformat
+    unfold Exact.pred
+    rw [succ_opp]
+    rw [pred_succ_pos ctx magnitude beta fexp hvalid
+      (Exact.Ropp ctx x) hformatneg hxpos]
+    exact ulp_neg_neg ctx x
+
+theorem pred_succ :
+    ∀ (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx),
+      pred_succStatement ctx magnitude := by
+  intro ctx magnitude beta fexp hvalid x hformat
+  have hsp := succ_pred ctx magnitude beta fexp hvalid
+    (Exact.Ropp ctx x)
+    (CompCert4Lean.Flocq.Core.Generic_fmt.generic_format_opp ctx magnitude
+      beta fexp x hformat)
+  rw [pred_opp, succ_opp] at hsp
+  have hsp' := congrArg (Exact.Ropp ctx) hsp
+  calc
+    Exact.pred ctx magnitude beta fexp (Exact.succ ctx magnitude beta fexp x) =
+        Exact.Ropp ctx (Exact.Ropp ctx
+          (Exact.pred ctx magnitude beta fexp
+            (Exact.succ ctx magnitude beta fexp x))) :=
+      (ulp_neg_neg ctx _).symm
+    _ = Exact.Ropp ctx (Exact.Ropp ctx x) := hsp'
+    _ = x := ulp_neg_neg ctx x
+
+end CompCert4Lean.Flocq.Core.Ulp

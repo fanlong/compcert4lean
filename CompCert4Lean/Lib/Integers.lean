@@ -4647,3 +4647,231 @@ private theorem suffix_signed_shl_one (y : int)
     simpa [hyunsigned] using h
   apply intOfZ_injective
   rw [hs, htwo, intOfZ_zOfInt]
+
+private theorem suffix_tdiv_adjust (a b : Int) (hb : 0 < b) :
+    a.tdiv b = (if a < 0 then (a + b - 1) / b else a / b) := by
+  by_cases ha : 0 ≤ a
+  · have hna : ¬ a < 0 := by omega
+    rw [if_neg hna, Int.tdiv_eq_ediv_of_nonneg ha]
+  · have ha' : a < 0 := by omega
+    rw [if_pos ha']
+    rw [Int.tdiv_cases]
+    simp only [if_neg ha, if_pos (Int.le_of_lt hb)]
+    have hq : (-a) / b * b ≤ -a ∧ -a < (-a) / b * b + b :=
+      (Int.ediv_eq_iff_of_pos hb).mp rfl
+    symm
+    apply (Int.ediv_eq_iff_of_pos hb).mpr
+    constructor <;> simp only [Int.neg_mul] <;> omega
+
+private theorem suffix_zdiv_pos (a b : Z) (hb : 0 < intOfZ b) :
+    zDiv a b = zOfInt (Int.ediv (intOfZ a) (intOfZ b)) := by
+  change zOfInt (if intOfZ b = 0 then 0 else if 0 < intOfZ b then
+    Int.ediv (intOfZ a) (intOfZ b) else
+      let d := -(intOfZ b)
+      let q := Int.ediv (intOfZ a) d
+      let r := Int.emod (intOfZ a) d
+      if r = 0 then -q else -(q + 1)) = _
+  simp [Int.ne_of_gt hb, hb]
+
+private theorem suffix_signed_add_shift (x y : int)
+    (hyv : y.val < wordsize - 1)
+    (hx : intOfZ (signed x) < 0) :
+    intOfZ (signed (add x (sub (shl one y) one))) =
+      intOfZ (signed x) + Int.ofNat (2 ^ y.val) - 1 := by
+  have hshlval : (shl one y).val = 2 ^ y.val := by
+    change (WordCore.shl one y).val = 2 ^ y.val
+    rw [suffix_shl_val]
+    have hone : (one : int).val = 1 := by rfl
+    rw [hone, Nat.one_mul]
+    apply Nat.mod_eq_of_lt
+    have hpowle : 2 ^ y.val ≤ 2 ^ (wordsize - 1) := by
+      apply Nat.pow_le_pow_right Nat.zero_lt_two
+      omega
+    have hhalf : 2 ^ (wordsize - 1) < 2 ^ wordsize := by
+      change 2 ^ 31 < 2 ^ 32
+      decide
+    exact Nat.lt_of_le_of_lt hpowle hhalf
+  have hsubval : (sub (shl one y) one).val = 2 ^ y.val - 1 := by
+    change (WordCore.sub (shl one y) one).val = 2 ^ y.val - 1
+    have hone : (one : int).val = 1 := by rfl
+    rw [WordCore.sub_val, hshlval, hone]
+    have hpow : 1 ≤ 2 ^ y.val := Nat.one_le_two_pow
+    have hlt : 2 ^ y.val - 1 < 2 ^ wordsize := by
+      have hpowle : 2 ^ y.val ≤ 2 ^ (wordsize - 1) := by
+        apply Nat.pow_le_pow_right Nat.zero_lt_two
+        omega
+      have hhalf : 2 ^ (wordsize - 1) < 2 ^ wordsize := by
+        change 2 ^ 31 < 2 ^ 32
+        decide
+      omega
+    have hge : 2 ^ wordsize ≤ 2 ^ wordsize - 1 + 2 ^ y.val := by
+      have hpow : 1 ≤ 2 ^ y.val := Nat.one_le_two_pow
+      omega
+    rw [Nat.mod_eq_sub_mod hge]
+    have heq : 2 ^ wordsize - 1 + 2 ^ y.val - 2 ^ wordsize =
+        2 ^ y.val - 1 := by
+      rw [show 2 ^ wordsize - 1 + 2 ^ y.val =
+          2 ^ wordsize + (2 ^ y.val - 1) by omega]
+      rw [Nat.add_sub_cancel_left]
+    rw [heq, Nat.mod_eq_of_lt]
+    exact hlt
+  have haddval : (add x (sub (shl one y) one)).val =
+      (x.val + (2 ^ y.val - 1)) % 2 ^ wordsize := by
+    change (WordCore.add x (sub (shl one y) one)).val = _
+    rw [WordCore.add_val, hsubval]
+  have hsx := suffix_signed_int x
+  have hst := suffix_signed_int (add x (sub (shl one y) one))
+  have hxlt : ¬ x.val < 2 ^ (wordsize - 1) := by
+    intro hxl
+    rw [hsx, if_pos hxl] at hx
+    have hx' : (0 : Int) ≤ Int.ofNat x.val := Int.natCast_nonneg _
+    omega
+  have hsx' : intOfZ (signed x) =
+      Int.ofNat x.val - Int.ofNat (2 ^ wordsize) := by
+    rw [hsx, if_neg hxlt]
+  have hM : 0 < 2 ^ wordsize := Nat.two_pow_pos _
+  have hH : 2 ^ (wordsize - 1) ≤ 2 ^ wordsize := by
+    apply Nat.pow_le_pow_right Nat.zero_lt_two
+    omega
+  have hnlt : 2 ^ y.val - 1 < 2 ^ (wordsize - 1) := by
+    change 2 ^ y.val - 1 < 2 ^ 31
+    have hpowle : 2 ^ y.val ≤ 2 ^ (wordsize - 1) := by
+      apply Nat.pow_le_pow_right Nat.zero_lt_two
+      omega
+    change 2 ^ y.val ≤ 2 ^ 31 at hpowle
+    omega
+  have hxval_lt : x.val < 2 ^ wordsize := WordCore.val_lt x
+  have hsumlt2 : x.val + (2 ^ y.val - 1) < 2 * 2 ^ wordsize := by
+    omega
+  by_cases hsum : x.val + (2 ^ y.val - 1) < 2 ^ wordsize
+  · have hmod : (x.val + (2 ^ y.val - 1)) % 2 ^ wordsize =
+        x.val + (2 ^ y.val - 1) := Nat.mod_eq_of_lt hsum
+    have htge : 2 ^ (wordsize - 1) ≤
+        x.val + (2 ^ y.val - 1) := by
+      have hxge : 2 ^ (wordsize - 1) ≤ x.val := Nat.le_of_not_gt hxlt
+      omega
+    have hst' : intOfZ (signed (add x (sub (shl one y) one))) =
+        Int.ofNat (x.val + (2 ^ y.val - 1)) - Int.ofNat (2 ^ wordsize) := by
+      have htge' : ¬ (x.val + (2 ^ y.val - 1)) % 2 ^ wordsize <
+          2 ^ (wordsize - 1) := by
+        rw [hmod]
+        omega
+      rw [hst, haddval, if_neg htge', hmod]
+    rw [hsx', hst']
+    have hcastP : Int.ofNat (2 ^ y.val - 1) =
+        Int.ofNat (2 ^ y.val) - 1 := by
+      exact Int.ofNat_sub (Nat.one_le_two_pow)
+    have hcastsum : Int.ofNat (x.val + (2 ^ y.val - 1)) =
+        Int.ofNat x.val + Int.ofNat (2 ^ y.val - 1) := by
+      simpa only [Int.ofNat_eq_natCast] using Int.natCast_add x.val (2 ^ y.val - 1)
+    rw [hcastsum, hcastP]
+    omega
+  · have hsumge : 2 ^ wordsize ≤ x.val + (2 ^ y.val - 1) :=
+      Nat.le_of_not_gt hsum
+    have hsublt : x.val + (2 ^ y.val - 1) - 2 ^ wordsize < 2 ^ wordsize := by
+      omega
+    have hmod : (x.val + (2 ^ y.val - 1)) % 2 ^ wordsize =
+        x.val + (2 ^ y.val - 1) - 2 ^ wordsize := by
+      rw [Nat.mod_eq_sub_mod hsumge, Nat.mod_eq_of_lt hsublt]
+    have htlt : x.val + (2 ^ y.val - 1) - 2 ^ wordsize <
+        2 ^ (wordsize - 1) := by
+      have hsublt' : x.val + (2 ^ y.val - 1) - 2 ^ wordsize <
+          2 ^ y.val - 1 := by
+        omega
+      exact Nat.lt_trans hsublt' hnlt
+    have hst' : intOfZ (signed (add x (sub (shl one y) one))) =
+        Int.ofNat (x.val + (2 ^ y.val - 1) - 2 ^ wordsize) := by
+      have htlt' : (x.val + (2 ^ y.val - 1)) % 2 ^ wordsize <
+          2 ^ (wordsize - 1) := by
+        rw [hmod]
+        exact htlt
+      rw [hst, haddval, if_pos htlt', hmod]
+    rw [hsx', hst']
+    have hcastsub : Int.ofNat (x.val + (2 ^ y.val - 1) - 2 ^ wordsize) =
+        Int.ofNat (x.val + (2 ^ y.val - 1)) - Int.ofNat (2 ^ wordsize) := by
+      exact Int.ofNat_sub hsumge
+    have hcastP : Int.ofNat (2 ^ y.val - 1) =
+        Int.ofNat (2 ^ y.val) - 1 := by
+      exact Int.ofNat_sub (Nat.one_le_two_pow)
+    have hcastsum : Int.ofNat (x.val + (2 ^ y.val - 1)) =
+        Int.ofNat x.val + Int.ofNat (2 ^ y.val - 1) := by
+      simpa only [Int.ofNat_eq_natCast] using Int.natCast_add x.val (2 ^ y.val - 1)
+    rw [hcastsub, hcastsum, hcastP]
+    omega
+
+theorem shrx_shr_proof : shrx_shr := by
+  intro x y hy
+  have hyv := suffix_ltu_last_val y hy
+  have hy0 : zLe zZero (unsigned y) := by
+    have h := y.intrange.1
+    change (-1 : Int) < intOfZ y.intval at h
+    change 0 ≤ intOfZ y.intval
+    omega
+  have hpow := suffix_two_p_nonneg (unsigned y) hy0
+  have htwo : zTwoP (unsigned y) = zOfInt (Int.ofNat (2 ^ y.val)) := by
+    have hyunsigned : unsigned y = zOfNat y.val := by
+      change y.intval = zOfNat y.val
+      exact WordCore.intval_eq_zOfNat_val y
+    simpa [hyunsigned] using hpow
+  have hdpos : 0 < intOfZ (zTwoP (unsigned y)) := by
+    rw [htwo, intOfZ_zOfInt]
+    have htwoInt : (0 : Int) < 2 := by decide
+    exact Int.pow_pos htwoInt
+  have hs := suffix_signed_shl_one y hyv
+  have hdint : intOfZ (zTwoP (unsigned y)) = Int.ofNat (2 ^ y.val) := by
+    rw [htwo, intOfZ_zOfInt]
+  have hltzero : signed zero = zZero := by rfl
+  change WordCore.repr wordsize (zQuot (signed x) (signed (shl one y))) =
+    WordCore.repr wordsize
+      (zShiftr (signed (if lt x zero = true then
+        add x (sub (shl one y) one) else x)) (unsigned y))
+  by_cases hlt : lt x zero = true
+  · have hneg : intOfZ (signed x) < 0 := by
+      change zltSelect (signed x) (signed zero) true false = true at hlt
+      cases hz : CompCert4Lean.Lib.Coqlib.zlt (signed x) (signed zero) with
+      | left hlt' =>
+          change intOfZ (signed x) < intOfZ (signed zero) at hlt'
+          rw [hltzero] at hlt'
+          exact hlt'
+      | right hge =>
+          simp [zltSelect, sumboolSelect, hz] at hlt
+    have hsigned := suffix_signed_add_shift x y hyv hneg
+    have hquot : zQuot (signed x) (zTwoP (unsigned y)) =
+        zDiv (signed (add x (sub (shl one y) one)))
+          (zTwoP (unsigned y)) := by
+      rw [suffix_zdiv_pos _ _ hdpos]
+      apply intOfZ_injective
+      simp only [zQuot, ZArith.BinInt.Z.quot, intOfZ_zOfInt]
+      rw [suffix_tdiv_adjust _ _ hdpos]
+      simp only [if_pos hneg]
+      rw [hsigned, hdint]
+      exact Int.div_def _ _
+    simp [hlt]
+    rw [hs]
+    rw [suffix_zshiftr_div_any _ _ hy0]
+    rw [hquot]
+  · have hnonneg : 0 ≤ intOfZ (signed x) := by
+      have hltfalse : lt x zero = false := by
+        cases hxlt : lt x zero with
+        | false => simpa using hxlt
+        | true => exact (hlt hxlt).elim
+      change zltSelect (signed x) (signed zero) true false = false at hltfalse
+      cases hz : CompCert4Lean.Lib.Coqlib.zlt (signed x) (signed zero) with
+      | left hlt' =>
+          simp [zltSelect, sumboolSelect, hz] at hltfalse
+      | right hge =>
+          change intOfZ (signed zero) ≤ intOfZ (signed x) at hge
+          rw [hltzero] at hge
+          exact hge
+    have hquot : zQuot (signed x) (zTwoP (unsigned y)) =
+        zDiv (signed x) (zTwoP (unsigned y)) := by
+      rw [suffix_zdiv_pos _ _ hdpos]
+      apply intOfZ_injective
+      simp only [zQuot, ZArith.BinInt.Z.quot, intOfZ_zOfInt]
+      rw [suffix_tdiv_adjust _ _ hdpos]
+      rw [if_neg (by omega)]
+      exact Int.div_def _ _
+    rw [if_neg hlt]
+    rw [hs]
+    rw [suffix_zshiftr_div_any _ _ hy0]
+    rw [hquot]

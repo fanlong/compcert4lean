@@ -1573,3 +1573,23 @@ theorem compare_floats_spec : compare_floats_specStatement := by
         CompCert4Lean.X86.Asm.data_preg] at hr ⊢
 
 end CompCert4Lean.X86.Asmgenproof1
+
+namespace CompCert4Lean.X86.Asmgenproof1
+
+theorem compare_floats32_spec : compare_floats32_specStatement := by
+  intro rs n1 n2
+  dsimp
+  unfold CompCert4Lean.X86.Asm.nextinstr
+  unfold CompCert4Lean.X86.Asm.compare_floats32
+  constructor
+  · simp [CompCert4Lean.X86.Asm.Pregmap.set]
+  constructor
+  · simp [CompCert4Lean.X86.Asm.Pregmap.set]
+  constructor
+  · simp [CompCert4Lean.X86.Asm.Pregmap.set]
+  · intro r hr
+    cases r <;>
+      simp [CompCert4Lean.X86.Asm.Pregmap.set,
+        CompCert4Lean.X86.Asm.data_preg] at hr ⊢
+
+end CompCert4Lean.X86.Asmgenproof1

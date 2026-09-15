@@ -2997,3 +2997,19 @@ theorem transl_initial_states : transl_initial_statesStatement := by
           match_stacks_stop Val.lessdef_list_nil (rtlgen_mem_extends_refl m0)
 
 end CompCert4Lean.Backend.RTLgenproof
+
+namespace CompCert4Lean.Backend.RTLgenproof
+
+theorem transl_final_states : transl_final_statesStatement := by
+  intro S R r hmatch hfinal
+  cases hfinal with
+  | intro r m =>
+      cases hmatch with
+      | match_returnstate v tv k m tm cs hs hld mext =>
+          cases hs with
+          | match_stacks_stop =>
+              cases hld with
+              | lessdef_refl =>
+                  exact RTL.final_state.intro r tm
+
+end CompCert4Lean.Backend.RTLgenproof

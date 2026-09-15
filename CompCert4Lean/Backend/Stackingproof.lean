@@ -2942,3 +2942,19 @@ theorem destroyed_by_setstack_function_entry :
   · exact Or.inr hr
 
 end CompCert4Lean.Backend.Stackingproof
+
+namespace CompCert4Lean.Backend.Stackingproof
+
+theorem transl_destroyed_by_op : transl_destroyed_by_opStatement := by
+  intro op fe
+  cases op <;> rfl
+
+theorem transl_destroyed_by_load : transl_destroyed_by_loadStatement := by
+  intro chunk addr fe
+  rfl
+
+theorem transl_destroyed_by_store : transl_destroyed_by_storeStatement := by
+  intro chunk addr fe
+  cases chunk <;> rfl
+
+end CompCert4Lean.Backend.Stackingproof

@@ -3432,3 +3432,12 @@ theorem IZR_Zpower_pos (ctx : ExactRealContext) : IZR_Zpower_posStatement ctx :=
     rw [ctx.certificate.orderedField.mul_comm]
 
 end CompCert4Lean.Flocq.Core.Raux
+
+namespace CompCert4Lean.Flocq.Core.Raux
+
+theorem bpow_powerRZ (ctx : ExactRealContext) :
+    bpow_powerRZStatement ctx := by
+  intro r e
+  exact pg_bpow_powerRZ ctx r e
+
+end CompCert4Lean.Flocq.Core.Raux

@@ -3253,3 +3253,104 @@ theorem symbols_preserved
   simpa [Genv.find_symbol] using hg.mge_symb id
 
 end CompCert4Lean.Backend.CSEproof
+
+namespace CompCert4Lean.Backend.CSEproof
+
+open CompCert4Lean.Backend.CSE
+open CompCert4Lean.Backend.ValueAnalysis
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Linking
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+
+private abbrev CSEproofCompilerConfig := CompCert4Lean.Config.CompilerConfig
+private abbrev CSEproofBinaryNormalizeCertificate :=
+  CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+private abbrev CSEproofZOfNat := ZArith.BinInt.Z.of_nat
+
+variable
+    [binary64_certificate : CSEproofBinaryNormalizeCertificate
+      (CSEproofZOfNat 53) (CSEproofZOfNat 1024)]
+    [binary32_certificate : CSEproofBinaryNormalizeCertificate
+      (CSEproofZOfNat 24) (CSEproofZOfNat 128)]
+
+private theorem cse_add_globals_public {F V : Type}
+    (ge : Genv.t F V) (gl : List (ident × globdef F V)) :
+    (Genv.add_globals ge gl).genv_public = ge.genv_public := by
+  induction gl generalizing ge with
+  | nil => rfl
+  | cons x xs ih =>
+      simp only [Genv.add_globals, List.foldl]
+      exact ih (Genv.add_global ge x)
+
+theorem senv_preserved : ∀ (cfg : CSEproofCompilerConfig),
+    senv_preservedStatement cfg := by
+  intro cfg prog tprog hm
+  letI : Linker CompCert4Lean.Backend.RTL.fundef :=
+    Linker_fundef CompCert4Lean.Backend.RTL.function
+  letI : Linker Unit := Linker_unit
+  letI : Linker CompCert4Lean.Backend.RTL.program :=
+    Linker_prog CompCert4Lean.Backend.RTL.fundef Unit
+  have hg := cse_globalenv_match
+    (fun (cu : CompCert4Lean.Backend.RTL.program) f tf =>
+      CSE.transf_fundef
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        cfg (prog_defmap cu)
+        (CompCert4Lean.Backend.ValueAnalysis.romem_for cfg cu) f = .OK tf)
+    (fun x y : Unit => x = y) prog prog tprog hm
+  unfold Senv.equiv
+  constructor
+  · intro id
+    change Genv.find_symbol (Genv.globalenv tprog) id =
+      Genv.find_symbol (Genv.globalenv prog) id
+    exact hg.mge_symb id
+  constructor
+  · intro id
+    change Genv.public_symbol (Genv.globalenv tprog) id =
+      Genv.public_symbol (Genv.globalenv prog) id
+    have ht : (Genv.globalenv tprog).genv_public = tprog.prog_public := by
+      unfold Genv.globalenv
+      exact cse_add_globals_public _ _
+    have hp : (Genv.globalenv prog).genv_public = prog.prog_public := by
+      unfold Genv.globalenv
+      exact cse_add_globals_public _ _
+    unfold Genv.public_symbol
+    rw [show Genv.find_symbol (Genv.globalenv tprog) id =
+      Genv.find_symbol (Genv.globalenv prog) id by
+      simpa [Genv.find_symbol] using hg.mge_symb id]
+    unfold match_prog CompCert4Lean.Common.Linking.match_program
+      CompCert4Lean.Common.Linking.match_program_gen at hm
+    rw [ht, hp, hm.2.2]
+  · intro b
+    change Genv.block_is_volatile (Genv.globalenv tprog) b =
+      Genv.block_is_volatile (Genv.globalenv prog) b
+    unfold Genv.block_is_volatile Genv.find_var_info Genv.find_def
+    cases h1 : PTree.get b (Genv.globalenv prog).genv_defs with
+    | none =>
+        cases h2 : PTree.get b (Genv.globalenv tprog).genv_defs with
+        | none => rfl
+        | some gd2 =>
+            have hd := hg.mge_defs b
+            simp [h1, h2] at hd
+            cases hd
+    | some gd1 =>
+        cases h2 : PTree.get b (Genv.globalenv tprog).genv_defs with
+        | none =>
+            have hd := hg.mge_defs b
+            simp [h1, h2] at hd
+            cases hd
+        | some gd2 =>
+            have hd := hg.mge_defs b
+            simp [h1, h2] at hd
+            cases hd with
+            | some x y hrel =>
+                cases hrel with
+                | match_globdef_fun ctx' f1 f2 horder htrans => rfl
+                | match_globdef_var v1 v2 hvar =>
+                    cases hvar
+                    rfl
+
+end CompCert4Lean.Backend.CSEproof
