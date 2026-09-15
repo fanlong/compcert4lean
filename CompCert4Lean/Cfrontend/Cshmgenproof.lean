@@ -2945,3 +2945,60 @@ theorem make_cmp_ptr_correct
   · exact hsem
 
 end CompCert4Lean.Cfrontend.Cshmgenproof
+
+namespace CompCert4Lean.Cfrontend.Cshmgenproof
+
+open CompCert4Lean.Cfrontend.Cshmgen
+open CompCert4Lean.Cfrontend.Csharpminor
+
+theorem make_ptrofs_of_int64_correct
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    make_ptrofs_of_int64_correctStatement := by
+  intro ge e le m a i h
+  simp [CompCert4Lean.X86_64.Archi.ptr64]
+  have hi0 : CompCert4Lean.Lib.Integers.Ptrofs.to_int64
+      (CompCert4Lean.Lib.Integers.Ptrofs.of_int64 i) = i := by
+    unfold CompCert4Lean.Lib.Integers.Ptrofs.to_int64
+      CompCert4Lean.Lib.Integers.Ptrofs.of_int64
+    change CompCert4Lean.Lib.Integers.Int64.repr
+        (CompCert4Lean.Lib.Integers.Int64.unsigned
+          (CompCert4Lean.Lib.Integers.Int64.repr
+            (CompCert4Lean.Lib.Integers.Int64.unsigned i))) = i
+    apply CompCert4Lean.Lib.Integers.WordCore.ext
+    have hnonneg : suffix_zLe suffix_zZero
+        (CompCert4Lean.Lib.Integers.Int64.unsigned i) := by
+      have hi := i.intrange.1
+      change (-1 : Int) <
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+            (CompCert4Lean.Lib.Integers.Int64.unsigned i) at hi
+      change 0 ≤ CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+        (CompCert4Lean.Lib.Integers.Int64.unsigned i)
+      omega
+    have hmax : suffix_zLe
+        (CompCert4Lean.Lib.Integers.Int64.unsigned i)
+        CompCert4Lean.Lib.Integers.Int64.max_unsigned := by
+      have hi := i.intrange.2
+      change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+          (CompCert4Lean.Lib.Integers.Int64.unsigned i) <
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+          CompCert4Lean.Lib.Integers.Int64.modulus at hi
+      change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+          (CompCert4Lean.Lib.Integers.Int64.unsigned i) ≤
+        (2 ^ 64 : Int) - 1
+      change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+          (CompCert4Lean.Lib.Integers.Int64.unsigned i) <
+        (2 ^ 64 : Int) at hi
+      omega
+    have hu := int64_unsigned_repr_small
+      (CompCert4Lean.Lib.Integers.Int64.unsigned i) ⟨hnonneg, hmax⟩
+    have hi_repr : CompCert4Lean.Lib.Integers.Int64.repr
+        (CompCert4Lean.Lib.Integers.Int64.unsigned i) = i := by
+      apply CompCert4Lean.Lib.Integers.WordCore.ext
+      exact hu
+    rw [hu]
+    exact congrArg CompCert4Lean.Lib.Integers.WordCore.Word.intval hi_repr
+  rw [hi0]
+  exact h
+
+end CompCert4Lean.Cfrontend.Cshmgenproof

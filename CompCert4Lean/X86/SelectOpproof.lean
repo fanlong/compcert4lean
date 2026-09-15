@@ -1127,3 +1127,21 @@ theorem eval_and
       · rfl
 
 end CompCert4Lean.X86.SelectOpproof
+
+namespace CompCert4Lean.X86.SelectOpproof
+
+theorem eval_same_expr
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    eval_same_exprStatement := by
+  intro xi ge sp e m a1 a2 le v1 v2 hsame h1 h2
+  cases a1 <;> cases a2 <;>
+    simp [CompCert4Lean.X86.SelectOp.same_expr_pure] at hsame
+  subst_vars
+  cases h1 with
+  | var _ _ _ hget1 =>
+      cases h2 with
+      | var _ _ _ hget2 =>
+          exact ⟨rfl, Option.some.inj (hget1.symm.trans hget2)⟩
+
+end CompCert4Lean.X86.SelectOpproof

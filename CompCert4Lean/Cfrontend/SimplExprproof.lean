@@ -2272,3 +2272,69 @@ theorem step_make_set :
       · exact CompCert4Lean.Common.Events.volatile_load_sem_intro _ _ _ _ _ hload
 
 end CompCert4Lean.Cfrontend.SimplExprproof
+
+namespace CompCert4Lean.Cfrontend.SimplExprproof
+
+open CompCert4Lean.Cfrontend.SimplExpr
+
+theorem step_make_assign :
+    ∀ [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+      [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)],
+      step_make_assignStatement := by
+  intro binary64_certificate binary32_certificate xi p tp hmatch
+  intro a1 a2 ty m b ofs bf t v m' v' v2 e le f k hassign hlvalue hrvalue hcast htype
+  have hassign' := assign_loc_translated
+    (binary64_certificate := binary64_certificate)
+    (binary32_certificate := binary32_certificate) p tp hmatch ty m b ofs bf v t m' v' hassign
+  unfold make_assign
+  cases hchunk : chunk_for_volatile_type (Clight.typeof a1) bf with
+  | none =>
+      simp only [hchunk]
+      have hnone : t = CompCert4Lean.Common.Events.E0 ∧
+          Clight.assign_loc (Clight.globalenv tp).genv_cenv ty m b ofs bf v m' := by
+        simpa [← htype, hchunk] using hassign'
+      rcases hnone with ⟨ht, hass⟩
+      rw [ht]
+      change Clight.step
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) xi
+        (Clight.globalenv tp) (Clight.function_entry1 (Clight.globalenv tp)) _ _ _
+      apply Clight.step_assign
+      · exact hlvalue
+      · exact hrvalue
+      · simpa [htype] using hcast
+      · simpa [htype] using hass
+  | some chunk =>
+      simp only [hchunk]
+      have hsome : bf = .Full ∧
+          CompCert4Lean.Common.Events.volatile_store
+            (CompCert4Lean.Common.Globalenvs.Genv.to_senv
+              (Clight.globalenv tp).genv_genv)
+            chunk m b ofs v t m' := by
+        simpa [← htype, hchunk] using hassign'
+      rcases hsome with ⟨rfl, hstore⟩
+      change Clight.step
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate) xi
+        (Clight.globalenv tp) (Clight.function_entry1 (Clight.globalenv tp)) _ _ _
+      apply Clight.step_builtin
+      · refine Clight.eval_exprlist.cons
+          (a := .Eaddrof a1 (.Tpointer (Clight.typeof a1) Ctypes.noattr))
+          (rest := [a2])
+          (ty := .Tpointer (Clight.typeof a1) Ctypes.noattr)
+          (types := [Clight.typeof a1])
+          (v1 := .Vptr b ofs) (v2 := .Vptr b ofs) (values := [v]) ?_ ?_ ?_
+        · exact Clight.eval_Eaddrof a1
+            (.Tpointer (Clight.typeof a1) Ctypes.noattr) b ofs hlvalue
+        · simp [Cop.sem_cast, Cop.classify_cast, Clight.typeof,
+            CompCert4Lean.X86_64.Archi.ptr64]
+        · refine Clight.eval_exprlist.cons
+            (a := a2) (rest := [])
+            (ty := Clight.typeof a1) (types := [])
+            (v1 := v2) (v2 := v) (values := []) ?_ ?_
+            Clight.eval_exprlist.nil
+          · exact hrvalue
+          · simpa [htype] using hcast
+      · exact CompCert4Lean.Common.Events.volatile_store_sem_intro _ _ _ _ _ _ hstore
+
+end CompCert4Lean.Cfrontend.SimplExprproof

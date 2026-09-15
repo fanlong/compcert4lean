@@ -2146,3 +2146,13 @@ theorem le_shr1_le :
                 exact htarget
 
 end CompCert4Lean.Flocq.IEEE754.BinarySingleNaN
+
+namespace CompCert4Lean.Flocq.IEEE754.BinarySingleNaN
+
+theorem is_nan_binary_overflow :
+    ∀ {prec emax : Z},
+      is_nan_binary_overflowStatement (prec := prec) (emax := emax) := by
+  intro prec emax m s
+  exact binary_overflow_not_nan m s
+
+end CompCert4Lean.Flocq.IEEE754.BinarySingleNaN

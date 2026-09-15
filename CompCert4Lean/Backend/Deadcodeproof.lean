@@ -2012,3 +2012,242 @@ theorem eagree_set_undef : eagree_set_undefStatement := by
     exact h r'
 
 end CompCert4Lean.Backend.Deadcodeproof
+
+namespace CompCert4Lean.Backend.Deadcodeproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Backend.Deadcode
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Backend.ValueAnalysis
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Linking
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.Lib.Maps
+open Lean Elab Tactic Meta
+
+variable
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+
+private theorem deadcode_ptrofs_add_zero_l (x : Ptrofs.int) :
+    Ptrofs.add Ptrofs.zero x = x := by
+  change WordCore.add (WordCore.zero Ptrofs.wordsize) x = x
+  apply WordCore.ext_of_val_eq
+  have hadd : (WordCore.add (WordCore.zero Ptrofs.wordsize) x).val =
+      ((WordCore.zero Ptrofs.wordsize).val + x.val) % (2 ^ Ptrofs.wordsize) := by
+    run_tac
+      let lctx ← getLCtx
+      let xF := (lctx.findFromUserName? `x).get!
+      let zeroE ← mkAppM ``CompCert4Lean.Lib.Integers.WordCore.zero
+        #[mkConst ``CompCert4Lean.Lib.Integers.Ptrofs.wordsize]
+      let e ← mkAppM (privateName "CompCert4Lean.Lib.Integers.WordCore.add_val")
+        #[zeroE, mkFVar xF.fvarId]
+      closeMainGoal Name.anonymous e
+  rw [hadd]
+  have hz : (WordCore.zero Ptrofs.wordsize).val = 0 := by
+    change (WordCore.repr Ptrofs.wordsize (zOfNat 0)).val = 0
+    simpa using (residue_zOfNat_local Ptrofs.wordsize 0)
+  rw [hz, Nat.zero_add]
+  exact Nat.mod_eq_of_lt (word64_val_lt_local x)
+
+private theorem deadcode_val_inject_refl (v : val) :
+    Val.inject inject_id v v := by
+  cases v with
+  | Vint i => exact Val.inject.inject_int _
+  | Vlong i => exact Val.inject.inject_long _
+  | Vfloat f => exact Val.inject.inject_float _
+  | Vsingle f => exact Val.inject.inject_single _
+  | Vptr b ofs =>
+      apply Val.inject.inject_ptr
+      · rfl
+      · exact ((Ptrofs.add_commut_proof_api ofs Ptrofs.zero).trans
+          (deadcode_ptrofs_add_zero_l ofs)).symm
+  | Vundef => exact Val.inject.val_inject_undef _
+
+private theorem deadcode_initial_store_init_data
+    {prog tprog : program}
+    (hsymb : ∀ id,
+      Genv.find_symbol (Genv.globalenv tprog) id =
+        Genv.find_symbol (Genv.globalenv prog) id)
+    (m : mem) (b : block) (p : Z) (i : init_data) :
+    Genv.store_init_data (Genv.globalenv prog) m b p i =
+      Genv.store_init_data (Genv.globalenv tprog) m b p i := by
+  cases i with
+  | Init_addrof symb ofs => simp [Genv.store_init_data, hsymb symb]
+  | _ => rfl
+
+private theorem deadcode_initial_store_init_data_list
+    {prog tprog : program}
+    (hsymb : ∀ id,
+      Genv.find_symbol (Genv.globalenv tprog) id =
+        Genv.find_symbol (Genv.globalenv prog) id) :
+    ∀ (m : mem) (b : block) (p : Z) (il : List init_data),
+      Genv.store_init_data_list (Genv.globalenv prog) m b p il =
+        Genv.store_init_data_list (Genv.globalenv tprog) m b p il := by
+  intro m b p il
+  induction il generalizing m b p with
+  | nil => rfl
+  | cons i rest ih =>
+      simp only [Genv.store_init_data_list]
+      rw [deadcode_initial_store_init_data hsymb]
+      cases h : Genv.store_init_data (Genv.globalenv tprog) m b p i with
+      | none => simp [h]
+      | some m' => simp only [h]; exact ih m' b (zAdd p (init_data_size i))
+
+private theorem deadcode_initial_alloc_global
+    (cfg : CompilerConfig) [Linker program]
+    {prog tprog : program}
+    (hsymb : ∀ id,
+      Genv.find_symbol (Genv.globalenv tprog) id =
+        Genv.find_symbol (Genv.globalenv prog) id)
+    {id : ident} {gd tg : globdef fundef Unit}
+    (hgd : match_globdef
+      (fun (cu : program) f tf =>
+        CompCert4Lean.Backend.Deadcode.transf_fundef
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate)
+          cfg (prog_defmap cu) (romem_for cfg cu) f = .OK tf)
+      (fun x y : Unit => x = y) prog gd tg)
+    (m : mem) :
+    Genv.alloc_global (Genv.globalenv prog) m (id, gd) =
+      Genv.alloc_global (Genv.globalenv tprog) m (id, tg) := by
+  cases hgd with
+  | match_globdef_fun ctx' f1 f2 horder htrans => rfl
+  | match_globdef_var v1 v2 hvar =>
+      cases hvar with
+      | match_globvar_intro info1 info2 init ro vol hinfo =>
+          cases hinfo
+          simp only [Genv.alloc_global, CompCert4Lean.Common.Values.block]
+          congr 1
+          funext m2
+          congr 1
+          exact deadcode_initial_store_init_data_list hsymb _ _ _ _
+
+private theorem deadcode_initial_alloc_globals
+    (cfg : CompilerConfig) [Linker program]
+    {prog tprog : program}
+    (hsymb : ∀ id,
+      Genv.find_symbol (Genv.globalenv tprog) id =
+        Genv.find_symbol (Genv.globalenv prog) id)
+    (gl tgl : List (ident × globdef fundef Unit))
+    (hlist : list_forall2
+      (match_ident_globdef
+        (fun (cu : program) f tf =>
+          CompCert4Lean.Backend.Deadcode.transf_fundef
+            (binary64_certificate := binary64_certificate)
+            (binary32_certificate := binary32_certificate)
+            cfg (prog_defmap cu) (romem_for cfg cu) f = .OK tf)
+        (fun x y : Unit => x = y) prog) gl tgl) :
+    ∀ (m m' : mem),
+      Genv.alloc_globals (Genv.globalenv prog) m gl = some m' →
+        Genv.alloc_globals (Genv.globalenv tprog) m tgl = some m' := by
+  induction hlist with
+  | nil => intro m m' h; simpa [Genv.alloc_globals] using h
+  | cons hd thd hhd htl ih =>
+      intro m m' h
+      rcases hhd with ⟨hid, hgd⟩
+      rcases hd with ⟨id, gd⟩
+      rcases thd with ⟨tid, tgd⟩
+      have halloc :
+          Genv.alloc_global (Genv.globalenv prog) m (id, gd) =
+            Genv.alloc_global (Genv.globalenv tprog) m (tid, tgd) := by
+        change id = tid at hid
+        subst tid
+        exact deadcode_initial_alloc_global cfg hsymb hgd m
+      simp only [Genv.alloc_globals] at h ⊢
+      rw [halloc] at h
+      cases ha : Genv.alloc_global (Genv.globalenv tprog) m (tid, tgd) with
+      | none => simp [ha] at h
+      | some m1 => simp only [ha] at h ⊢; exact ih m1 m' h
+
+private theorem deadcode_mem_extends_refl (m : mem) : Mem.extends m m := by
+  refine ⟨rfl, ?_, ?_⟩
+  · refine ⟨?_, ?_, ?_⟩
+    · intro b1 b2 delta ofs k p hmap hp
+      have hpair : (b1, (.Z0 : Z)) = (b2, delta) := by
+        simpa [CompCert4Lean.Common.Values.inject_id] using Option.some.inj hmap
+      cases hpair
+      change Mem.perm m b1 (zAdd ofs (.Z0 : Z)) k p
+      have hz : zAdd ofs (.Z0 : Z) = ofs := by
+        apply intOfZ_injective
+        change intOfZ (zOfInt (intOfZ ofs + 0)) = intOfZ ofs
+        rw [intOfZ_zOfInt]
+        simp
+      rw [hz]
+      exact hp
+    · intro b1 b2 delta chunk ofs p hmap hp
+      have hpair : (b1, (.Z0 : Z)) = (b2, delta) := by
+        simpa [CompCert4Lean.Common.Values.inject_id] using Option.some.inj hmap
+      cases hpair
+      refine ⟨.Z0, ?_⟩
+      apply intOfZ_injective
+      change 0 = intOfZ (ZArith.BinInt.Z.mul (align_chunk chunk) (.Z0 : Z))
+      change 0 = intOfZ (zOfInt (intOfZ (align_chunk chunk) * 0))
+      rw [intOfZ_zOfInt]
+      simp
+    · intro b1 ofs b2 delta hmap hp
+      have hpair : (b1, (.Z0 : Z)) = (b2, delta) := by
+        simpa [CompCert4Lean.Common.Values.inject_id] using Option.some.inj hmap
+      cases hpair
+      change memval_inject inject_id
+        (ZMap.get ofs (PMap.get b1 m.mem_contents))
+        (ZMap.get (zAdd ofs (.Z0 : Z)) (PMap.get b1 m.mem_contents))
+      have hz : zAdd ofs (.Z0 : Z) = ofs := by
+        apply intOfZ_injective
+        change intOfZ (zOfInt (intOfZ ofs + 0)) = intOfZ ofs
+        rw [intOfZ_zOfInt]
+        simp
+      rw [hz]
+      cases hmv : ZMap.get ofs (PMap.get b1 m.mem_contents) with
+      | Byte n => exact memval_inject.byte _ _
+      | Fragment v q n =>
+          exact memval_inject.fragment _ _ _ _ _ (deadcode_val_inject_refl v)
+      | Undef => exact memval_inject.undef _ _
+  · intro b ofs k p hp
+    exact Or.inl hp
+
+theorem transf_initial_states : ∀ cfg, transf_initial_statesStatement cfg := by
+  letI : Linker fundef := Linker_fundef function
+  letI : Linker Unit := Linker_unit
+  letI : Linker program := Linker_prog fundef Unit
+  intro cfg prog tprog hmatch st1 hinit
+  have hge := deadcode_globalenv_match
+    (fun (cu : program) f tf =>
+      CompCert4Lean.Backend.Deadcode.transf_fundef
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        cfg (prog_defmap cu) (romem_for cfg cu) f = .OK tf)
+    (fun x y : Unit => x = y) prog prog tprog hmatch
+  cases hinit with
+  | intro b f m0 hmem hsymb hfun hsig =>
+      rcases function_ptr_translated cfg prog tprog hmatch b f hfun with
+        ⟨cu, tf, hfind, htrans, hlink⟩
+      refine ⟨Callstate [] tf [] m0, ?_, ?_⟩
+      · apply initial_state.intro b tf m0
+        · unfold Genv.init_mem at hmem ⊢
+          apply deadcode_initial_alloc_globals cfg
+            (fun id => hge.mge_symb id)
+            prog.prog_defs tprog.prog_defs hmatch.1
+          exact hmem
+        · change Genv.find_symbol (Genv.globalenv tprog) tprog.prog_main = some b
+          calc
+            Genv.find_symbol (Genv.globalenv tprog) tprog.prog_main =
+                Genv.find_symbol (Genv.globalenv tprog) prog.prog_main := by
+                  rw [hmatch.2.1]
+            _ = Genv.find_symbol (Genv.globalenv prog) prog.prog_main :=
+              hge.mge_symb prog.prog_main
+            _ = some b := hsymb
+        · exact hfind
+        · rw [sig_function_translated cfg (prog_defmap cu) (romem_for cfg cu) f tf htrans]
+          exact hsig
+      · exact match_call_states [] f [] m0 [] tf [] m0 cu
+          (list_forall2.nil _) hlink htrans
+          Val.lessdef_list.lessdef_list_nil (deadcode_mem_extends_refl m0)
+
+end CompCert4Lean.Backend.Deadcodeproof

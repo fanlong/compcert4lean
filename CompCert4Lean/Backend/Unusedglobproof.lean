@@ -2394,3 +2394,36 @@ theorem eval_builtin_arg_inject : eval_builtin_arg_injectStatement := by
       · simp [hp]
         exact Val.addl_inject j v1 v1' v2 v2' hinj1 hinj2
 end CompCert4Lean.Backend.Unusedglobproof
+
+namespace CompCert4Lean.Backend.Unusedglobproof
+
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Coqlib
+
+theorem eval_builtin_args_inject : eval_builtin_args_injectStatement := by
+  intro p tp used rs sp m j rs' sp' m' al vl hEval hsp hglobals hregs hmem hkeep
+  unfold eval_builtin_args at hEval ⊢
+  induction hEval with
+  | nil =>
+      exact ⟨[], list_forall2_nil _, Val.inject_list_nil j⟩
+  | @cons a al v vl ha htail ih =>
+      have hkeep_a : ∀ id, id ∈ globals_of_builtin_arg a → kept used id := by
+        intro id hid
+        apply hkeep id
+        change id ∈ globals_of_builtin_arg a ++ globals_of_builtin_args al
+        exact List.mem_append.mpr (Or.inl hid)
+      obtain ⟨v', ha', hinj⟩ :=
+        eval_builtin_arg_inject p tp used rs sp m j rs' sp' m' a v ha hsp
+          hglobals hregs hmem hkeep_a
+      have hkeep_tail : ∀ id, id ∈ globals_of_builtin_args al → kept used id := by
+        intro id hid
+        apply hkeep id
+        change id ∈ globals_of_builtin_arg a ++ globals_of_builtin_args al
+        exact List.mem_append.mpr (Or.inr hid)
+      obtain ⟨vl', htail', hinjtail⟩ := ih hkeep_tail
+      exact ⟨v' :: vl', list_forall2.cons _ _ ha' htail',
+        Val.inject_list_cons j v v' vl vl' hinj hinjtail⟩
+
+end CompCert4Lean.Backend.Unusedglobproof

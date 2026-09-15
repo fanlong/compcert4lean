@@ -2294,3 +2294,31 @@ theorem eval_exprlist_append
           · exact ih vl htail
 
 end CompCert4Lean.Backend.RTLgenproof
+
+namespace CompCert4Lean.Backend.RTLgenproof
+
+open CompCert4Lean.Lib.Coqlib
+
+theorem lt_state_wf : lt_state_wfStatement := by
+  unfold lt_state_wfStatement
+  unfold lt_state
+  have hlex : WellFounded (lex_ord Nat.lt Nat.lt) := by
+    apply wf_lex_ord
+    · exact Nat.lt_wfRel.wf
+    · exact Nat.lt_wfRel.wf
+  have hacc : ∀ p, Acc (lex_ord Nat.lt Nat.lt) p →
+      ∀ s, measure_state s = p →
+        Acc (fun s1 s2 => lex_ord Nat.lt Nat.lt (measure_state s1) (measure_state s2)) s := by
+    intro p hp
+    induction hp with
+    | intro p hp ih =>
+        intro s hs
+        apply Acc.intro s
+        intro t hts
+        apply ih (measure_state t) ?_ t rfl
+        simpa [hs] using hts
+  apply WellFounded.intro
+  intro s
+  exact hacc (measure_state s) (hlex.apply (measure_state s)) s rfl
+
+end CompCert4Lean.Backend.RTLgenproof

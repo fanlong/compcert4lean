@@ -2363,3 +2363,45 @@ theorem ZArith.Zbool.Zle_bool_refl_proof :
 
 end Rocq.Coq
 end CompCert4Lean.Foundation.Numbers
+
+namespace CompCert4Lean.Foundation.Numbers
+namespace Rocq.Coq
+
+theorem ZArith.BinInt.Z.add_assoc :
+    ZArith.BinInt.Z.add_assocStatement := by
+  intro n m p
+  apply intOfZ_injective
+  simp only [ZArith.BinInt.Z.add, intOfZ_zOfInt]
+  exact (Int.add_assoc (intOfZ n) (intOfZ m) (intOfZ p)).symm
+
+theorem ZArith.Zorder.Zle_or_lt_proof :
+    ∀ (n m : Z), ZArith.Zorder.Zle_or_lt n m := by
+  intro n m
+  change intOfZ n ≤ intOfZ m ∨ intOfZ m < intOfZ n
+  by_cases h : intOfZ n ≤ intOfZ m
+  · exact Or.inl h
+  · exact Or.inr (Int.lt_of_not_ge h)
+
+theorem ZArith.BinInt.Z.quot_1_r :
+    ZArith.BinInt.Z.quot_1_rStatement := by
+  intro a
+  apply intOfZ_injective
+  simp only [ZArith.BinInt.Z.quot, intOfZ_zOfInt]
+  rw [show intOfZ (Zpos xH) = 1 by simp [intOfZ, posToNat]]
+  exact Int.tdiv_one (intOfZ a)
+
+theorem ZArith.BinInt.Z.div_le_mono :
+    ZArith.BinInt.Z.div_le_monoStatement := by
+  intro a b c hc hab
+  change 0 < intOfZ c at hc
+  change intOfZ a ≤ intOfZ b at hab
+  change intOfZ (ZArith.BinInt.Z.div a c) ≤
+    intOfZ (ZArith.BinInt.Z.div b c)
+  simp only [ZArith.BinInt.Z.div, intOfZ_zOfInt]
+  unfold ZArith.BinInt.Z.zDivEucl
+  have hc0 : intOfZ c ≠ 0 := Int.ne_of_gt hc
+  simp only [hc0, if_false, if_pos hc]
+  exact Int.ediv_le_ediv hc hab
+
+end Rocq.Coq
+end CompCert4Lean.Foundation.Numbers

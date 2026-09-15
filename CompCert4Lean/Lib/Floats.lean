@@ -2496,3 +2496,63 @@ theorem cmp_ne_eq : Float.cmp_ne_eqStatement := by
 end Float
 
 end CompCert4Lean.Lib.Floats
+
+namespace CompCert4Lean.Lib.Floats
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Lib
+open Lean Elab Tactic Meta
+
+namespace Float
+
+private def floatPrivateName (suffix : String) : Name :=
+  let p := Name.str (Name.str (Name.str (Name.str Name.anonymous "_private") "CompCert4Lean") "Lib") "Integers"
+  let base := Name.num p 0
+  suffix.splitOn "." |>.foldl Name.str base
+
+private theorem floatValReprOfNat (bits n : Nat) :
+    (CompCert4Lean.Lib.Integers.WordCore.repr bits
+      (ZArith.BinInt.Z.of_nat n)).val = n % (2 ^ bits) := by
+  run_tac
+    let lctx ← getLCtx
+    let bitsF := (lctx.findFromUserName? `bits).get!
+    let nF := (lctx.findFromUserName? `n).get!
+    let bitsE := mkFVar bitsF.fvarId
+    let nE := mkFVar nF.fvarId
+    let z := mkApp
+      (mkConst ``CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat)
+      nE
+    let e1 := mkApp2
+      (mkConst (floatPrivateName
+        "CompCert4Lean.Lib.Integers.WordCore.val_repr_residue")) bitsE z
+    let e2 := mkApp2
+      (mkConst (floatPrivateName
+        "CompCert4Lean.Lib.Integers.WordCore.residue_zOfNat")) bitsE nE
+    let t1 ← inferType e1
+    let t2 ← inferType e2
+    let (α, lhs, mid) := match_expr t1 with
+      | _root_.Eq α lhs mid => (α, lhs, mid)
+      | _ => panic! "unexpected first equality"
+    let (_, _, rhs) := match_expr t2 with
+      | _root_.Eq _ middle rhs => (α, middle, rhs)
+      | _ => panic! "unexpected second equality"
+    let eqtrans := mkConst ``Eq.trans [.succ .zero]
+    let e := mkAppN eqtrans #[α, lhs, mid, rhs, e1, e2]
+    closeMainGoal Name.anonymous e
+
+theorem of_to_bits : Float.of_to_bitsStatement := by
+  intro f
+  apply congrArg (fun b : BitVec 64 => (⟨b⟩ : float))
+  rw [← BitVec.ofFin_toFin f.bits]
+  congr 1
+  apply Fin.ext
+  change (Integers.Int64.ofFin f.bits.toFin).val = f.bits.toNat
+  unfold Integers.Int64.ofFin
+  change (CompCert4Lean.Lib.Integers.WordCore.repr 64
+    (ZArith.BinInt.Z.of_nat f.bits.toFin.val)).val = f.bits.toNat
+  rw [floatValReprOfNat]
+  exact Nat.mod_eq_of_lt f.bits.isLt
+
+end Float
+
+end CompCert4Lean.Lib.Floats

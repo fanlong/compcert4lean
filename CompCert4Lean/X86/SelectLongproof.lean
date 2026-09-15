@@ -1372,3 +1372,38 @@ theorem eval_xorl
       · rfl
 
 end CompCert4Lean.X86.SelectLongproof
+
+namespace CompCert4Lean.X86.SelectLongproof
+
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.ExternalCalls
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.X86.Op
+open CompCert4Lean.X86.SelectLong
+
+theorem eval_negl
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    @eval_neglStatement binary64_certificate binary32_certificate := by
+  unfold eval_neglStatement unary_constructor_sound
+  intro xi prog sp e m le a x h
+  unfold negl
+  cases hmatch : is_longconst a with
+  | some n =>
+      have hx : x = .Vlong n :=
+        is_longconst_sound xi prog sp e m x a n le hmatch h
+      subst x
+      refine ⟨.Vlong (CompCert4Lean.Lib.Integers.Int64.neg n), ?_, ?_⟩
+      · exact eval_longconst xi prog sp e m le
+          (CompCert4Lean.Lib.Integers.Int64.neg n)
+      · exact Val.lessdef_refl _
+  | none =>
+      refine ⟨Val.negl x, ?_, Val.lessdef_refl _⟩
+      apply eval_expr.eval_Eop le Onegl (Econs a Enil) [x] (Val.negl x)
+      · exact eval_exprlist.cons le a Enil x [] h (eval_exprlist.nil le)
+      · rfl
+
+end CompCert4Lean.X86.SelectLongproof

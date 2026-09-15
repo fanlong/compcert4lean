@@ -3295,3 +3295,55 @@ theorem permutation_norepet : permutation_norepetStatement := by
       exact ih₂ (ih₁ hn)
 
 end CompCert4Lean.Cfrontend.Cminorgenproof
+
+namespace CompCert4Lean.Cfrontend.Cminorgenproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Foundation.Ordered.Rocq.Coq.Sorting.Permutation
+open CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.List
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.Cfrontend.Cminorgen
+
+local instance : OfNat Z 0 := ⟨z0⟩
+local instance : LE Z := ⟨ZArith.BinInt.Z.le⟩
+
+theorem build_compilenv_sound : build_compilenv_soundStatement := by
+  intro f cenv sz hbuild hnr
+  unfold build_compilenv at hbuild
+  have hsort : Permutation f.fn_vars (VarSort.sort f.fn_vars) :=
+    VarSort.Permuted_sort_proof f.fn_vars
+  have hmap :
+      Permutation (List.map Prod.fst f.fn_vars)
+        (List.map Prod.fst (VarSort.sort f.fn_vars)) :=
+    Permutation_map Prod.fst hsort
+  have hnr_sort :
+      list_norepet (List.map Prod.fst (VarSort.sort f.fn_vars)) :=
+    permutation_norepet _ _ _ hmap hnr
+  have hcompat0 : cenv_compat (PTree.empty Z) [] z0 := by
+    intro id sz h
+    cases h
+  have hsep0 : cenv_separated (PTree.empty Z) [] := by
+    intro id1 sz1 ofs1 id2 sz2 ofs2 h1 h2 hg1 hg2 hne
+    cases h1
+  have hsorted :
+      cenv_compat cenv (VarSort.sort f.fn_vars) sz ∧
+        cenv_separated cenv (VarSort.sort f.fn_vars) := by
+    apply assign_variables_sound (vars' := VarSort.sort f.fn_vars)
+      (cenv1 := PTree.empty Z) (sz1 := z0)
+      (cenv2 := cenv) (sz2 := sz) (vars := [])
+    · exact hbuild
+    · simpa using hnr_sort
+    · exact ZArith.BinInt.Z.le_refl z0
+    · exact hcompat0
+    · exact hsep0
+  rcases hsorted with ⟨hcompat, hsep⟩
+  constructor
+  · intro id sz' hmem
+    exact hcompat id sz' (Permutation_in (id, sz') hsort hmem)
+  · intro id1 sz1 ofs1 id2 sz2' ofs2 h1 h2 hg1 hg2 hne
+    exact hsep id1 sz1 ofs1 id2 sz2' ofs2
+      (Permutation_in (id1, sz1) hsort h1)
+      (Permutation_in (id2, sz2') hsort h2) hg1 hg2 hne
+
+end CompCert4Lean.Cfrontend.Cminorgenproof

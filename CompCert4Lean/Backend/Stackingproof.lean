@@ -2721,3 +2721,36 @@ theorem caller_save_reg_within_bounds :
   exact hfalse.elim
 
 end CompCert4Lean.Backend.Stackingproof
+
+namespace CompCert4Lean.Backend.Stackingproof
+
+open CompCert4Lean.Backend.Bounds
+open CompCert4Lean.Backend.Locations
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+
+theorem agree_locs_set_res : agree_locs_set_resStatement := by
+  intro return_address_offset tprog cfg f
+    bound_local_pos bound_outgoing_pos bound_stack_data_pos
+    used_callee_save_norepet used_callee_save_prop ls0 res
+  induction res with
+  | BR r =>
+      intro v ls hagree hbound
+      exact agree_locs_set_reg return_address_offset tprog cfg f
+        bound_local_pos bound_outgoing_pos bound_stack_data_pos
+        used_callee_save_norepet used_callee_save_prop ls ls0 r v hagree
+        (hbound r List.mem_cons_self)
+  | BR_none =>
+      intro v ls hagree hbound
+      simpa [Locmap.setres] using hagree
+  | BR_splitlong hi lo ih_hi ih_lo =>
+      intro v ls hagree hbound
+      apply ih_lo (v := Val.loword v)
+        (ls := Locmap.setres hi (Val.hiword v) ls)
+      · apply ih_hi (v := Val.hiword v) (ls := ls) hagree
+        intro r hr
+        exact hbound r (by simp [params_of_builtin_res, List.mem_append, hr])
+      · intro r hr
+        exact hbound r (by simp [params_of_builtin_res, List.mem_append, hr])
+
+end CompCert4Lean.Backend.Stackingproof

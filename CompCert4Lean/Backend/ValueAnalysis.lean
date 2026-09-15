@@ -1813,3 +1813,169 @@ theorem sound_state_inv
       exact h cunit hlink
 
 end CompCert4Lean.Backend.ValueAnalysis
+
+namespace CompCert4Lean.Backend.ValueAnalysis
+
+open CompCert4Lean.Backend.ValueDomain
+
+theorem store_init_data_summary : store_init_data_summaryStatement := by
+  intro cfg ab p id h
+  cases id with
+  | Init_int8 n => simpa [store_init_data, ablock_store, vplub] using h
+  | Init_int16 n => simpa [store_init_data, ablock_store, vplub] using h
+  | Init_int32 n => simpa [store_init_data, ablock_store, vplub] using h
+  | Init_int64 n => simpa [store_init_data, ablock_store, vplub] using h
+  | Init_float32 n =>
+      by_cases hp : CompCert4Lean.Driver.Compopts.propagate_float_constants cfg = true <;>
+        simpa [store_init_data, ablock_store, vplub, ntop, hp] using h
+  | Init_float64 n =>
+      by_cases hp : CompCert4Lean.Driver.Compopts.propagate_float_constants cfg = true <;>
+        simpa [store_init_data, ablock_store, vplub, ntop, hp] using h
+  | Init_addrof symb ofs =>
+      exact plub_least Glob (Gl symb ofs) ab.ab_summary
+        (pge.globGl symb ofs) h
+  | Init_space n => exact h
+
+end CompCert4Lean.Backend.ValueAnalysis
+
+namespace CompCert4Lean.Backend.ValueAnalysis
+
+open CompCert4Lean.Backend.ValueDomain
+
+theorem store_init_data_list_summary : store_init_data_list_summaryStatement := by
+  intro cfg idl
+  induction idl with
+  | nil =>
+      intro ab p h
+      exact h
+  | cons id ids ih =>
+      intro ab p h
+      unfold store_init_data_list
+      apply ih
+      exact store_init_data_summary cfg ab p id h
+
+end CompCert4Lean.Backend.ValueAnalysis
+
+namespace CompCert4Lean.Backend.ValueAnalysis
+
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Backend.ValueDomain
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+
+theorem initial_block_classification : initial_block_classificationStatement := by
+  intro prog m hmem
+  let ge := Genv.globalenv prog
+  let f : positive → block_class := fun b =>
+    match plt b ge.genv_next with
+    | .left _ =>
+        match Genv.invert_symbol ge b with
+        | none => BCother
+        | some id => BCglob id
+    | .right _ => BCinvalid
+  have hstack : ∀ b1 b2, f b1 = BCstack → f b2 = BCstack → b1 = b2 := by
+    intro b1 b2 h1 h2
+    cases hp1 : plt b1 ge.genv_next with
+    | right hn1 => simp [f, hp1] at h1
+    | left ht1 =>
+        cases hi1 : Genv.invert_symbol ge b1 <;>
+          simp [f, hp1, hi1] at h1
+  have hglobuniq : ∀ b1 b2 id, f b1 = BCglob id → f b2 = BCglob id → b1 = b2 := by
+    intro b1 b2 id h1 h2
+    cases hp1 : plt b1 ge.genv_next with
+    | right hn1 => simp [f, hp1] at h1
+    | left ht1 =>
+        cases hi1 : Genv.invert_symbol ge b1 with
+        | none => simp [f, hp1, hi1] at h1
+        | some id1 =>
+            have hid1 : id1 = id := by simpa [f, hp1, hi1] using h1
+            cases hp2 : plt b2 ge.genv_next with
+            | right hn2 => simp [f, hp2] at h2
+            | left ht2 =>
+                cases hi2 : Genv.invert_symbol ge b2 with
+                | none => simp [f, hp2, hi2] at h2
+                | some id2 =>
+                    have hid2 : id2 = id := by simpa [f, hp2, hi2] using h2
+                    subst id1
+                    subst id2
+                    have hs1 : Genv.find_symbol ge id = some b1 :=
+                      Genv.invert_find_symbol _ _ ge id b1 hi1
+                    have hs2 : Genv.find_symbol ge id = some b2 :=
+                      Genv.invert_find_symbol _ _ ge id b2 hi2
+                    exact Option.some.inj (hs1.symm.trans hs2)
+  let bc : block_classification :=
+    { bc_img := f, bc_stack := hstack, bc_glob := hglobuniq }
+  have hgenv : genv_match bc ge := by
+    constructor
+    · intro id b
+      constructor
+      · intro hs
+        have hi : Genv.invert_symbol ge b = some id :=
+          Genv.find_invert_symbol _ _ ge id b hs
+        have hrange : Plt b ge.genv_next := ge.genv_symb_range id hs
+        cases hp : plt b ge.genv_next with
+        | right hn => exact False.elim (hn hrange)
+        | left ht =>
+            cases hi' : Genv.invert_symbol ge b with
+            | none => simp [bc, f, hp, hi'] at hi
+            | some id' =>
+                have : id' = id := by simpa [hi'] using hi
+                simpa [bc, f, hp, hi'] using this
+      · intro hf
+        cases hp : plt b ge.genv_next with
+        | right hn => simp [bc, f, hp] at hf
+        | left ht =>
+            cases hi : Genv.invert_symbol ge b with
+            | none => simp [bc, f, hp, hi] at hf
+            | some id' =>
+                have : id' = id := by simpa [bc, f, hp, hi] using hf
+                subst id'
+                exact Genv.invert_find_symbol _ _ ge id b hi
+    · intro b hb
+      cases hp : plt b ge.genv_next with
+      | right hn => exact False.elim (hn hb)
+      | left ht =>
+          cases hi : Genv.invert_symbol ge b <;>
+            simp [bc, f, hp, hi]
+  have hnext : ge.genv_next = m.nextblock :=
+    Genv.init_mem_genv_next _ _ prog m hmem
+  have hbelow : bc_below bc m.nextblock := by
+    intro b hb
+    have hrange : Plt b ge.genv_next := by
+      cases hp : plt b ge.genv_next with
+      | left ht => exact ht
+      | right hn =>
+          exfalso
+          apply hb
+          simp [bc, f, hp]
+    rw [hnext] at hrange
+    exact hrange
+  have hnostack : bc_nostack bc := by
+    intro b hb
+    cases hp : plt b ge.genv_next with
+    | right hn => simp [bc, f, hp] at hb
+    | left ht =>
+        cases hi : Genv.invert_symbol ge b <;>
+          simp [bc, f, hp, hi] at hb
+  have hglob : ∀ b id, bc b = BCglob id →
+      Genv.find_symbol ge id = some b := by
+    intro b id hb
+    exact hgenv.1 id b |>.mpr hb
+  have hvalid : ∀ b, Mem.valid_block m b → bc b ≠ BCinvalid := by
+    intro b hv hb
+    change Plt b m.nextblock at hv
+    have hrange : Plt b ge.genv_next := by
+      rw [hnext]
+      exact hv
+    cases hp : plt b ge.genv_next with
+    | right hn => exact hn hrange
+    | left ht =>
+        cases hi : Genv.invert_symbol ge b <;>
+          simp [bc, f, hp, hi] at hb
+  exact ⟨bc, hgenv, hbelow, hnostack, hglob, hvalid⟩
+
+end CompCert4Lean.Backend.ValueAnalysis

@@ -3262,3 +3262,117 @@ theorem vmatch_ptr_gl : vmatch_ptr_glStatement := by
       exact CompCert4Lean.Common.Values.Val.lessdef_undef _
 
 end CompCert4Lean.Backend.ValueDomain
+
+namespace CompCert4Lean.Backend.ValueDomain
+
+theorem binop_float_sound : binop_float_soundStatement := by
+  intro bc sem v x w y hxy hwy
+  cases hxy <;> cases hwy <;> simp [binop_float, ntop2, provenance]
+  all_goals first
+    | exact vmatch.float _
+    | exact vmatch.numFloat _ _
+    | exact vmatch.numUndef _
+
+theorem of_optbool_sound : of_optbool_soundStatement := by
+  intro bc ob ab h
+  have hzero : is_uns z1 Int.zero := by
+    intro m hm hle
+    cases m with
+    | Zneg p =>
+        have hnonneg := hm.1
+        change (0 : Int) ≤ -Int.ofNat
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p) at hnonneg
+        have hp : (0 : Int) < Int.ofNat
+            (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p) :=
+          Int.natCast_pos.mpr
+            (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat_positive p)
+        omega
+    | Z0 => rfl
+    | Zpos p =>
+        calc
+          Int.testbit Int.zero (.Zpos p) =
+              Int.zero.val.testBit
+                (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p) :=
+            is_uns_1_testbit_pos Int.zero p
+          _ = false := by
+            have hz : Int.zero.val = 0 := by rfl
+            rw [hz]
+            exact Nat.zero_testBit _
+  have hone : is_uns z1 Int.one := by
+    intro m hm hle
+    cases m with
+    | Zneg p =>
+        have hnonneg := hm.1
+        change (0 : Int) ≤ -Int.ofNat
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p) at hnonneg
+        have hp : (0 : Int) < Int.ofNat
+            (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p) :=
+          Int.natCast_pos.mpr
+            (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat_positive p)
+        omega
+    | Z0 =>
+        change (1 : Int) ≤ 0 at hle
+        omega
+    | Zpos p =>
+        calc
+          Int.testbit Int.one (.Zpos p) =
+              Int.one.val.testBit
+                (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p) :=
+            is_uns_1_testbit_pos Int.one p
+          _ = false := by
+            have ho : Int.one.val = 1 := by rfl
+            rw [ho]
+            have hp := CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat_positive p
+            apply Nat.testBit_lt_two_pow
+            exact Nat.one_lt_two_pow (Nat.ne_of_gt hp)
+  cases h with
+  | noneCase =>
+      simp [CompCert4Lean.Common.Values.Val.of_optbool, of_optbool]
+      exact vmatch.vmatch_Uns_undef _ _
+  | justCase b =>
+      cases b <;>
+        simp [CompCert4Lean.Common.Values.Val.of_optbool, of_optbool] <;>
+        constructor
+  | maybeNone b =>
+      simp [CompCert4Lean.Common.Values.Val.of_optbool, of_optbool]
+      exact vmatch.iuUndef _
+  | maybeSome b =>
+      cases b <;>
+        simp [CompCert4Lean.Common.Values.Val.of_optbool, of_optbool] <;>
+        constructor
+  | topCase ob =>
+      cases ob with
+      | none =>
+          simp [CompCert4Lean.Common.Values.Val.of_optbool, of_optbool]
+          exact vmatch.vmatch_Uns_undef _ _
+      | some b =>
+          cases b with
+          | false =>
+              simp [CompCert4Lean.Common.Values.Val.of_optbool, of_optbool]
+              apply vmatch.uns Pbot Int.zero z1
+              · change (0 : Int) ≤ 1
+                omega
+              · exact hzero
+          | true =>
+              simp [CompCert4Lean.Common.Values.Val.of_optbool, of_optbool]
+              apply vmatch.uns Pbot Int.one z1
+              · change (0 : Int) ≤ 1
+                omega
+              · exact hone
+
+theorem resolve_branch_sound : resolve_branch_soundStatement := by
+  intro b ab b' hcm hres
+  cases hcm with
+  | justCase b =>
+      simp [resolve_branch] at hres
+      exact hres.symm
+  | maybeSome b =>
+      simp [resolve_branch] at hres
+      exact hres.symm
+  | topCase ob => simp [resolve_branch] at hres
+
+theorem add_undef_sound : add_undef_soundStatement := by
+  intro bc v x h
+  cases h <;> simp [add_undef, ntop] <;> constructor <;> assumption
+
+end CompCert4Lean.Backend.ValueDomain

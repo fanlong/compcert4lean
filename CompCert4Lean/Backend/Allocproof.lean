@@ -4778,3 +4778,34 @@ theorem subst_loc_undef_satisf : subst_loc_undef_satisfStatement := by
             hcan hq (Loc.diff_sym _ _ hdiff)
 
 end CompCert4Lean.Backend.Allocproof
+
+namespace CompCert4Lean.Backend.Allocproof
+open CompCert4Lean.Backend.Allocation
+open CompCert4Lean.Common.Values
+
+theorem transfer_use_def_satisf : transfer_use_def_satisfStatement := by
+  intro args resultReg args' resultMreg und e e' rs ls htrans hsat
+  unfold transfer_use_def at htrans
+  let e1 := remove_equation
+    { ekind := .Full, ereg := resultReg, eloc := .R resultMreg } e
+  change ((if (reg_loc_unconstrained resultReg (.R resultMreg) e1 &&
+      can_undef und e1) = true then add_equations args args' e1 else none) = some e') at htrans
+  by_cases hc : (reg_loc_unconstrained resultReg (.R resultMreg) e1 &&
+      can_undef und e1) = true
+  · simp [hc] at htrans
+    have hc' : reg_loc_unconstrained resultReg (.R resultMreg) e1 = true ∧
+        can_undef und e1 = true := by
+      simpa [Bool.and_eq_true] using hc
+    constructor
+    · exact add_equations_lessdef rs ls args args' e1 e' htrans hsat
+    · intro v v' hld
+      apply parallel_assignment_satisf .Full resultReg resultMreg e rs
+        (LTL.undef_regs und ls) v v'
+      · exact hld
+      · simpa [e1, reg_loc_unconstrained] using hc'.1
+      · apply can_undef_satisf und e1 rs ls
+        · simpa [e1, reg_loc_unconstrained] using hc'.2
+        · apply add_equations_satisf rs ls args args' e1 e' htrans hsat
+  · simp [hc] at htrans
+
+end CompCert4Lean.Backend.Allocproof

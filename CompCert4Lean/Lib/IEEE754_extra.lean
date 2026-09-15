@@ -1722,3 +1722,31 @@ theorem Zfloor_minus : Zfloor_minusStatement := by
     exact hlt
 
 end CompCert4Lean.Lib.IEEE754_extra
+
+namespace CompCert4Lean.Lib.IEEE754_extra
+
+theorem ZofB_range_inversion {prec emax : Z} :
+    ZofB_range_inversionStatement (prec := prec) (emax := emax) := by
+  intro f min max n h
+  unfold ZofB_range at h
+  cases hz : ZofB f.1 with
+  | none => simp [hz] at h
+  | some z =>
+    simp [hz] at h
+    rcases h with ⟨⟨hmin, hmax⟩, hzn⟩
+    subst n
+    constructor
+    · have hs : CompCert4Lean.Flocq.Core.Zaux.Zle_bool_prop min z true := by
+        simpa [hmin] using
+          (CompCert4Lean.Flocq.Core.Zaux.Zle_bool_spec min z)
+      cases hs with
+      | Zle_bool_true_ hle => exact hle
+    constructor
+    · have hs : CompCert4Lean.Flocq.Core.Zaux.Zle_bool_prop z max true := by
+        simpa [hmax] using
+          (CompCert4Lean.Flocq.Core.Zaux.Zle_bool_spec z max)
+      cases hs with
+      | Zle_bool_true_ hle => exact hle
+    · rfl
+
+end CompCert4Lean.Lib.IEEE754_extra

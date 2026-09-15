@@ -1557,3 +1557,59 @@ theorem Z_one_bits_powerserie : Z_one_bits_powerserieStatement := by
     exact intOfZ_zOfInt _
   rw [hcast]
   simpa [Int.pow_zero] using hweight
+
+private theorem zb_zadd_one_int (i : Z) :
+    intOfZ (zAdd i one) = intOfZ i + 1 := by
+  simp only [zAdd, ZArith.BinInt.Z.add, intOfZ_zOfInt]
+  have hone : intOfZ one = (1 : Int) := by decide
+  rw [hone]
+
+private theorem zb_zOfNat_int (n : Nat) :
+    intOfZ (zOfNat n) = Int.ofNat n := by
+  exact intOfZ_zOfInt _
+
+private theorem zb_Z_one_bits_range_aux :
+    ∀ (n : Nat) (x i j : Z),
+      j ∈ Z_one_bits n x i →
+        intOfZ i ≤ intOfZ j ∧ intOfZ j < intOfZ i + Int.ofNat n := by
+  intro n
+  induction n with
+  | zero =>
+      intro x i j h
+      simp [Z_one_bits] at h
+  | succ n ih =>
+      intro x i j h
+      have hs : Int.ofNat (Nat.succ n) = Int.ofNat n + 1 := by
+        simpa only [Int.ofNat_eq_natCast] using (Int.natCast_succ n)
+      have hn : (0 : Int) ≤ Int.ofNat n := Int.natCast_nonneg n
+      cases hodd : zOdd x with
+      | false =>
+          simp [Z_one_bits, hodd] at h
+          have hr := ih (zDiv2 x) (zAdd i one) j h
+          rw [zb_zadd_one_int] at hr
+          rw [hs]
+          constructor <;> omega
+      | true =>
+          simp [Z_one_bits, hodd] at h
+          rcases h with hji | h
+          · subst j
+            rw [hs]
+            constructor <;> omega
+          · have hr := ih (zDiv2 x) (zAdd i one) j h
+            rw [zb_zadd_one_int] at hr
+            rw [hs]
+            constructor <;> omega
+
+theorem Z_one_bits_range : Z_one_bits_rangeStatement := by
+  intro n x i h
+  have hr := zb_Z_one_bits_range_aux n x zZero i h
+  have hzero : intOfZ zZero = (0 : Int) := by decide
+  constructor
+  · change intOfZ zZero ≤ intOfZ i
+    rw [hzero]
+    rw [hzero] at hr
+    exact hr.1
+  · change intOfZ i < intOfZ (zOfNat n)
+    rw [zb_zOfNat_int]
+    rw [hzero] at hr
+    omega

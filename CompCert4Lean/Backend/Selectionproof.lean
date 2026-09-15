@@ -2906,3 +2906,45 @@ theorem set_var_lessdef : set_var_lessdefStatement := by
     exact ⟨v2', by rw [hSet2, hGet2], hld⟩
 
 end CompCert4Lean.Backend.Selectionproof
+
+namespace CompCert4Lean.Backend.Selectionproof
+
+open CompCert4Lean.Lib.Maps
+
+theorem set_params_lessdef : set_params_lessdefStatement := by
+  intro il vl1 vl2 hld
+  induction il generalizing vl1 vl2 with
+  | nil =>
+      intro id v hget
+      have hset :
+          CompCert4Lean.Backend.Cminor.set_params vl1 [] =
+            CompCert4Lean.Lib.Maps.PTree.empty CompCert4Lean.Common.Values.val := by
+        cases vl1 <;> rfl
+      have hempty :
+          CompCert4Lean.Lib.Maps.PTree.get id
+              (CompCert4Lean.Lib.Maps.PTree.empty CompCert4Lean.Common.Values.val) = none :=
+        CompCert4Lean.Lib.Maps.PTree.gempty CompCert4Lean.Common.Values.val id
+      rw [hset, hempty] at hget
+      cases hget
+  | cons i il ih =>
+      cases vl1 with
+      | nil =>
+          cases vl2 with
+          | nil =>
+              apply set_var_lessdef
+              · exact ih [] [] CompCert4Lean.Common.Values.Val.lessdef_list_nil
+              · exact CompCert4Lean.Common.Values.Val.lessdef_undef _
+          | cons v2 vl2 =>
+              cases hld
+      | cons v1 vl1 =>
+          cases vl2 with
+          | nil =>
+              cases hld
+          | cons v2 vl2 =>
+              cases hld with
+              | lessdef_list_cons _ _ _ _ hv htail =>
+                  apply set_var_lessdef
+                  · exact ih vl1 vl2 htail
+                  · exact hv
+
+end CompCert4Lean.Backend.Selectionproof

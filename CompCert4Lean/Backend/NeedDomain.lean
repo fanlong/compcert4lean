@@ -2918,3 +2918,58 @@ theorem lagree_bitwise_binop : lagree_bitwise_binopStatement := by
   simp [h1 i hi hm, h2 i hi hm]
 
 end CompCert4Lean.Backend.NeedDomain
+
+namespace CompCert4Lean.Backend.NeedDomain
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Lib.Integers
+
+private theorem lagreeOrValForOr (a b : Int64.int) :
+    (Int64.or a b).val = Nat.lor a.val b.val := by
+  change (WordCore.repr Int64.wordsize
+    (ZArith.BinInt.Z.of_nat (Nat.lor a.val b.val))).val = _
+  rw [lagreeValReprOfNat]
+  apply Nat.mod_eq_of_lt
+  exact Nat.or_lt_two_pow (lagreeWordValLt a) (lagreeWordValLt b)
+
+private theorem lagreeAndTestbitForOr (a b : Int64.int) (i : Z) :
+    Int64.testbit (Int64.and a b) i =
+      (Int64.testbit a i && Int64.testbit b i) := by
+  cases i with
+  | Zneg p => rfl
+  | Z0 =>
+      rw [lagreeTestbitZero (Int64.and a b), lagreeTestbitZero a,
+        lagreeTestbitZero b]
+      rw [lagreeAndVal, Nat.land_eq, Nat.testBit_and]
+  | Zpos p =>
+      rw [lagreeTestbitPos (Int64.and a b) p, lagreeTestbitPos a p,
+        lagreeTestbitPos b p]
+      rw [lagreeAndVal, Nat.land_eq, Nat.testBit_and]
+
+private theorem lagreeOrTestbitForOr (a b : Int64.int) (i : Z) :
+    Int64.testbit (Int64.or a b) i =
+      (Int64.testbit a i || Int64.testbit b i) := by
+  cases i with
+  | Zneg p => rfl
+  | Z0 =>
+      rw [lagreeTestbitZero (Int64.or a b), lagreeTestbitZero a,
+        lagreeTestbitZero b]
+      rw [lagreeOrValForOr, Nat.lor_eq, Nat.testBit_or]
+  | Zpos p =>
+      rw [lagreeTestbitPos (Int64.or a b) p, lagreeTestbitPos a p,
+        lagreeTestbitPos b p]
+      rw [lagreeOrValForOr, Nat.lor_eq, Nat.testBit_or]
+
+theorem lagree_or : lagree_orStatement := by
+  intro x y n m h i hirange hmask
+  rw [lagreeOrTestbitForOr, lagreeOrTestbitForOr]
+  by_cases hn : Int64.testbit n i = true
+  · simp [hn]
+  · have hn' : Int64.testbit n i = false := Bool.eq_false_iff.mpr hn
+    have hmn : Int64.testbit (Int64.and m (Int64.not n)) i = true := by
+      rw [lagreeAndTestbitForOr, lagreeNotTestbitFinal n i hirange]
+      simp [hmask, hn']
+    have hxy := h i hirange hmn
+    simp [hn', hxy]
+
+end CompCert4Lean.Backend.NeedDomain
