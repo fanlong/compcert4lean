@@ -2763,3 +2763,81 @@ theorem Ropp_lt_gt_0_contravar :
 end RIneq
 end Rocq.Coq.Reals
 end CompCert4Lean.Foundation.FlocqReal
+
+namespace CompCert4Lean.Foundation.FlocqReal
+namespace Rocq.Coq.Reals
+namespace RIneq
+
+theorem Ropp_le_cancel :
+    ∀ (ctx : ExactRealContext), Ropp_le_cancelStatement ctx := by
+  intro ctx r1 r2 h
+  change ctx.spec.le (ctx.spec.neg r2) (ctx.spec.neg r1) at h
+  have h' := Ropp_le_contravar ctx (ctx.spec.neg r1) (ctx.spec.neg r2) h
+  change ctx.spec.le
+    (ctx.spec.neg (ctx.spec.neg r1))
+    (ctx.spec.neg (ctx.spec.neg r2)) at h'
+  have hri1 : ctx.spec.neg (ctx.spec.neg r1) = r1 := by
+    change ctx.spec.neg (ctx.spec.neg r1) = r1
+    exact Ropp_involutive ctx r1
+  have hri2 : ctx.spec.neg (ctx.spec.neg r2) = r2 := by
+    change ctx.spec.neg (ctx.spec.neg r2) = r2
+    exact Ropp_involutive ctx r2
+  rw [hri1, hri2] at h'
+  exact h'
+
+theorem Rmult_le_compat_l :
+    ∀ (ctx : ExactRealContext), Rmult_le_compat_lStatement ctx := by
+  intro ctx r r1 r2 hr h12
+  have h := Rmult_le_compat_r ctx r r1 r2 hr h12
+  change ctx.spec.le (ctx.spec.mul r1 r) (ctx.spec.mul r2 r) at h
+  change ctx.spec.le (ctx.spec.mul r r1) (ctx.spec.mul r r2)
+  rw [ctx.certificate.orderedField.mul_comm r r1,
+    ctx.certificate.orderedField.mul_comm r r2]
+  exact h
+
+theorem Rmult_le_compat :
+    ∀ (ctx : ExactRealContext), Rmult_le_compatStatement ctx := by
+  intro ctx r1 r2 r3 r4 h1 h3 h12 h34
+  change ctx.spec.le (ctx.spec.ofZ Z0) r1 at h1
+  change ctx.spec.le (ctx.spec.ofZ Z0) r3 at h3
+  have h1' : ctx.spec.le ctx.spec.zero r1 := by
+    rw [← ctx.certificate.sourceLaws.ofZ_zero]
+    exact h1
+  have h3' : ctx.spec.le ctx.spec.zero r3 := by
+    rw [← ctx.certificate.sourceLaws.ofZ_zero]
+    exact h3
+  have h2 : ctx.spec.le ctx.spec.zero r2 :=
+    ctx.certificate.orderedField.le_trans _ r1 r2 h1' h12
+  have h2z : ctx.spec.le (ctx.spec.ofZ Z0) r2 := by
+    rw [ctx.certificate.sourceLaws.ofZ_zero]
+    exact h2
+  have hleft := Rmult_le_compat_r ctx r3 r1 r2 h3 h12
+  have hright := Rmult_le_compat_l ctx r2 r3 r4 h2z h34
+  change ctx.spec.le (ctx.spec.mul r1 r3) (ctx.spec.mul r2 r3) at hleft
+  change ctx.spec.le (ctx.spec.mul r2 r3) (ctx.spec.mul r2 r4) at hright
+  change ctx.spec.le (ctx.spec.mul r1 r3) (ctx.spec.mul r2 r4)
+  exact ctx.certificate.orderedField.le_trans _ _ _ hleft hright
+
+theorem Rmult_ge_0_gt_0_lt_compat :
+    ∀ (ctx : ExactRealContext), Rmult_ge_0_gt_0_lt_compatStatement ctx := by
+  intro ctx r1 r2 r3 r4 h3 h2 h12 h34
+  change ctx.spec.le (ctx.spec.ofZ Z0) r3 at h3
+  change ctx.spec.lt (ctx.spec.ofZ Z0) r2 at h2
+  have h3' : ctx.spec.le ctx.spec.zero r3 := by
+    rw [← ctx.certificate.sourceLaws.ofZ_zero]
+    exact h3
+  have h2' : ctx.spec.lt ctx.spec.zero r2 := by
+    rw [← ctx.certificate.sourceLaws.ofZ_zero]
+    exact h2
+  have h12le : ctx.spec.le r1 r2 :=
+    (ctx.certificate.orderedField.lt_iff_le_not_le r1 r2).mp h12 |>.1
+  have hleft := Rmult_le_compat_r ctx r3 r1 r2 h3 h12le
+  have hright : ctx.spec.lt (ctx.spec.mul r2 r3) (ctx.spec.mul r2 r4) :=
+    ctx.certificate.orderedField.mul_lt_compat_l r2 r3 r4 h2' h34
+  change ctx.spec.le (ctx.spec.mul r1 r3) (ctx.spec.mul r2 r3) at hleft
+  change ctx.spec.lt (ctx.spec.mul r1 r3) (ctx.spec.mul r2 r4)
+  exact Rle_lt_trans ctx _ _ _ hleft hright
+
+end RIneq
+end Rocq.Coq.Reals
+end CompCert4Lean.Foundation.FlocqReal

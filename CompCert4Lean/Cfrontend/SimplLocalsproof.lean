@@ -2659,3 +2659,31 @@ theorem compat_cenv_empty : compat_cenv_emptyStatement := by
   exact (VSet.MFProvider.M.empty_1 id) hid
 
 end CompCert4Lean.Cfrontend.SimplLocalsproof
+
+namespace CompCert4Lean.Cfrontend.SimplLocalsproof
+
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Cfrontend.Ctypes
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Lib.Coqlib
+
+private theorem alloc_nextblock_local (m : mem) (lo hi : Z) (m' : mem)
+    (b : block) (halloc : Mem.alloc m lo hi = (m', b)) :
+    m'.nextblock = PArith.BinPos.Pos.succ m.nextblock := by
+  unfold Mem.alloc at halloc
+  have hfirst := congrArg Prod.fst halloc
+  have hnext := congrArg Mem.nextblock hfirst
+  exact hnext.symm
+
+theorem alloc_variables_nextblock : alloc_variables_nextblockStatement := by
+  intro ge e m vars e' m' halloc
+  induction halloc with
+  | nil =>
+      exact Ple_refl _
+  | cons e m id ty vars m1 b1 m2 e2 halloc hrest ih =>
+      apply Ple_trans _ m1.nextblock _
+      · rw [alloc_nextblock_local m (.Z0 : Z) (sizeof ge.genv_cenv ty) m1 b1 halloc]
+        exact Ple_succ _
+      · exact ih
+
+end CompCert4Lean.Cfrontend.SimplLocalsproof

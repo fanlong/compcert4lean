@@ -3019,3 +3019,95 @@ theorem store_valid_access_3 : store_valid_access_3Statement := by
 end Mem
 
 end CompCert4Lean.Common.Memory
+
+namespace CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Lib.Maps
+namespace Mem
+
+theorem loadbytes_store_same : loadbytes_store_sameStatement := by
+  intro chunk m1 b ofs v m2 hstore
+  have hv : valid_access m2 chunk b ofs Readable := by
+    apply store_valid_access_1 chunk m1 b ofs v m2 hstore chunk b ofs Readable
+    exact valid_access_implies m1 chunk b ofs Writable Readable
+      (store_valid_access_3 chunk m1 b ofs v m2 hstore) perm_W_R
+  have hrange : range_perm m2 b ofs (zAdd ofs (size_chunk chunk)) Cur Readable := hv.1
+  unfold loadbytes
+  cases hdec : range_perm_dec m2 b ofs (zAdd ofs (size_chunk chunk)) Cur Readable with
+  | right hn => exact False.elim (hn hrange)
+  | left hp =>
+      simp [boolOfSumbool, hdec]
+      rw [store_mem_contents chunk m1 b ofs v m2 hstore, pmapGetSetSame]
+      change getN (size_chunk_nat chunk) ofs
+        (setN (encode_val chunk v) ofs (PMap.get b m1.mem_contents)) =
+        encode_val chunk v
+      rw [← CompCert4Lean.Common.Memdata.encode_val_length]
+      rw [getN_setN_same]
+
+end Mem
+end CompCert4Lean.Common.Memory
+
+namespace CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Lib.Maps
+namespace Mem
+
+theorem load_store_other : load_store_otherStatement := by
+  intro chunk m1 b ofs v m2 hstore chunk' b' ofs' hcond
+  have valid_access_2_to_1 : ∀ {ch b0 o p},
+      valid_access m2 ch b0 o p → valid_access m1 ch b0 o p := by
+    intro ch b0 o p hv
+    unfold valid_access at hv ⊢
+    constructor
+    · intro o0 ho0
+      exact perm_store_2 chunk m1 b ofs v m2 hstore b0 o0 Memtype.Cur p
+        (hv.1 o0 ho0)
+    · exact hv.2
+  unfold load
+  cases hdec1 : valid_access_dec m1 chunk' b' ofs' Readable with
+  | right hn1 =>
+      have hn2 : ¬ valid_access m2 chunk' b' ofs' Readable := by
+        intro h2
+        exact hn1 (valid_access_2_to_1 h2)
+      cases hdec2 : valid_access_dec m2 chunk' b' ofs' Readable with
+      | left h2 => exact False.elim (hn2 h2)
+      | right _ => simp [boolOfSumbool, hdec1, hdec2]
+  | left h1 =>
+      have h2 : valid_access m2 chunk' b' ofs' Readable :=
+        store_valid_access_1 chunk m1 b ofs v m2 hstore chunk' b' ofs' Readable h1
+      cases hdec2 : valid_access_dec m2 chunk' b' ofs' Readable with
+      | right hn2 => exact False.elim (hn2 h2)
+      | left _ =>
+          simp only [boolOfSumbool, hdec1, hdec2, ↓reduceIte]
+          congr 1
+          rw [store_mem_contents chunk m1 b ofs v m2 hstore]
+          by_cases hb : b' = b
+          · subst b'
+            rw [pmapGetSetSame]
+            have hget : getN (size_chunk_nat chunk') ofs'
+                (setN (encode_val chunk v) ofs (PMap.get b m1.mem_contents)) =
+                getN (size_chunk_nat chunk') ofs' (PMap.get b m1.mem_contents) := by
+              apply getN_setN_outside (encode_val chunk v) ofs
+              have hsize : zOfNat (size_chunk_nat chunk') = size_chunk chunk' := by
+                cases chunk' <;> rfl
+              have hsize0 : zOfNat (size_chunk_nat chunk) = size_chunk chunk := by
+                cases chunk <;> rfl
+              rcases hcond with hneq | hleft | hright
+              · exact False.elim (hneq rfl)
+              · left
+                simpa [hsize] using hleft
+              · right
+                have hlen : (encode_val chunk v).length = size_chunk_nat chunk :=
+                  CompCert4Lean.Common.Memdata.encode_val_length chunk v
+                simpa [hsize0, hlen] using hright
+            rw [hget]
+          · rw [pmapGetSetOther _ _ _ _ hb]
+
+end Mem
+end CompCert4Lean.Common.Memory

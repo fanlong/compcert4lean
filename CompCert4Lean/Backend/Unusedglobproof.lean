@@ -2149,3 +2149,248 @@ theorem find_function_inject : find_function_injectStatement := by
           exact ⟨by simpa [hs, hsym'] using hptr_t, hrefs⟩
 
 end CompCert4Lean.Backend.Unusedglobproof
+namespace CompCert4Lean.Backend.Unusedglobproof
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+private abbrev evalInjectZ1 : Z := .Zpos .xH
+private abbrev evalInjectZAdd := ZArith.BinInt.Z.add
+private abbrev evalInjectZOfNat := ZArith.BinInt.Z.of_nat
+
+private theorem evalInjectZAddInt (x y : Z) :
+    intOfZ (evalInjectZAdd x y) = intOfZ x + intOfZ y := by
+  change intOfZ (zOfInt (intOfZ x + intOfZ y)) = _
+  rw [intOfZ_zOfInt]
+
+private theorem evalInjectZOfNatInt (n : Nat) :
+    intOfZ (evalInjectZOfNat n) = (n : Int) := by
+  change intOfZ (zOfInt (Int.ofNat n)) = _
+  rw [intOfZ_zOfInt]
+  rfl
+private theorem evalInjectZAddZero (x : Z) : evalInjectZAdd x .Z0 = x := by
+  apply intOfZ_injective
+  rw [evalInjectZAddInt]
+  have hz : intOfZ (.Z0 : Z) = 0 := by rfl
+  rw [hz, Int.add_zero]
+private theorem evalInjectSizeChunk (chunk : memory_chunk) :
+    size_chunk chunk = evalInjectZOfNat (size_chunk_nat chunk) := by
+  cases chunk <;> rfl
+
+private theorem evalInjectGetN
+    (f : Val.meminj) (m1 m2 : mem) (b1 b2 : block) (delta : Z)
+    (hinj : Mem.inject f m1 m2) (hmap : f b1 = some (b2, delta)) :
+    ∀ n ofs,
+      Mem.range_perm m1 b1 ofs (evalInjectZAdd ofs (evalInjectZOfNat n)) Cur Readable →
+      list_forall2 (memval_inject f)
+        (Mem.getN n ofs (PMap.get b1 m1.mem_contents))
+        (Mem.getN n (evalInjectZAdd ofs delta) (PMap.get b2 m2.mem_contents)) := by
+  intro n
+  induction n with
+  | zero => intro ofs h; constructor
+  | succ n ih =>
+      intro ofs hperm
+      apply list_forall2.cons
+      · apply hinj.mi_inj.mi_memval b1 ofs b2 delta hmap
+        apply hperm
+        constructor
+        · change intOfZ ofs ≤ intOfZ ofs
+          omega
+        · change intOfZ ofs < intOfZ (evalInjectZAdd ofs (evalInjectZOfNat (Nat.succ n)))
+          rw [evalInjectZAddInt, evalInjectZOfNatInt]
+          omega
+      · change list_forall2 (memval_inject f)
+          (Mem.getN n (evalInjectZAdd ofs evalInjectZ1) (PMap.get b1 m1.mem_contents))
+          (Mem.getN n (evalInjectZAdd (evalInjectZAdd ofs delta) evalInjectZ1)
+            (PMap.get b2 m2.mem_contents))
+        have hadd : evalInjectZAdd (evalInjectZAdd ofs delta) evalInjectZ1 =
+            evalInjectZAdd (evalInjectZAdd ofs evalInjectZ1) delta := by
+          apply intOfZ_injective
+          rw [evalInjectZAddInt, evalInjectZAddInt, evalInjectZAddInt, evalInjectZAddInt]
+          have hone : intOfZ evalInjectZ1 = 1 := by decide
+          rw [hone]
+          omega
+        rw [hadd]
+        apply ih (evalInjectZAdd ofs evalInjectZ1)
+        intro q hq
+        rcases hq with ⟨hqlo, hqhi⟩
+        apply hperm
+        constructor
+        · change intOfZ ofs ≤ intOfZ q
+          change intOfZ (evalInjectZAdd ofs evalInjectZ1) ≤ intOfZ q at hqlo
+          rw [evalInjectZAddInt] at hqlo
+          have hone : intOfZ evalInjectZ1 = 1 := by decide
+          rw [hone] at hqlo
+          omega
+        · change intOfZ q < intOfZ (evalInjectZAdd ofs (evalInjectZOfNat (Nat.succ n)))
+          change intOfZ q <
+            intOfZ (evalInjectZAdd (evalInjectZAdd ofs evalInjectZ1) (evalInjectZOfNat n)) at hqhi
+          rw [evalInjectZAddInt, evalInjectZAddInt, evalInjectZOfNatInt] at hqhi
+          rw [evalInjectZAddInt, evalInjectZOfNatInt]
+          have hone : intOfZ evalInjectZ1 = 1 := by decide
+          rw [hone] at hqhi
+          omega
+
+private theorem evalInjectLoadZero
+    (f : Val.meminj) (m1 m2 : mem) (chunk : memory_chunk)
+    (b1 b2 : block) (ofs : Z) (v1 : val) :
+    Mem.inject f m1 m2 →
+    Mem.load chunk m1 b1 ofs = some v1 →
+    f b1 = some (b2, .Z0) →
+    ∃ v2, Mem.load chunk m2 b2 ofs = some v2 ∧ Val.inject f v1 v2 := by
+  intro hinj hload hmap
+  have hacc := Mem.load_valid_access m1 chunk b1 ofs v1 hload
+  have hget : list_forall2 (memval_inject f)
+      (Mem.getN (size_chunk_nat chunk) ofs (PMap.get b1 m1.mem_contents))
+      (Mem.getN (size_chunk_nat chunk) ofs (PMap.get b2 m2.mem_contents)) := by
+    have h := evalInjectGetN f m1 m2 b1 b2 .Z0 hinj hmap
+      (size_chunk_nat chunk) ofs (by
+        rw [← evalInjectSizeChunk]
+        exact hacc.1)
+    rw [evalInjectZAddZero] at h
+    exact h
+  have hacc2 : Mem.valid_access m2 chunk b2 ofs Readable := by
+    constructor
+    · intro q hq
+      have hp := hinj.mi_inj.mi_perm b1 b2 .Z0 q Cur Readable hmap
+        (hacc.1 q hq)
+      simpa only [evalInjectZAddZero] using hp
+    · exact hacc.2
+  have hload1 : decode_val chunk
+      (Mem.getN (size_chunk_nat chunk) ofs (PMap.get b1 m1.mem_contents)) = v1 :=
+    (Mem.load_result chunk m1 b1 ofs v1 hload).symm
+  let v2 := decode_val chunk
+    (Mem.getN (size_chunk_nat chunk) ofs (PMap.get b2 m2.mem_contents))
+  refine ⟨v2, ?_, ?_⟩
+  · unfold Mem.load
+    cases hdec : Mem.valid_access_dec m2 chunk b2 ofs Readable with
+    | left _ =>
+        change (if true then some v2 else none) = some v2
+        simp [v2]
+    | right hn => exact False.elim (hn hacc2)
+  · subst v1
+    exact decode_val_inject f _ _ chunk hget
+
+private theorem evalInjectPtrofsAddZero (ofs : CompCert4Lean.Lib.Integers.Ptrofs.int) :
+    CompCert4Lean.Lib.Integers.Ptrofs.add ofs
+      (CompCert4Lean.Lib.Integers.Ptrofs.repr (.Z0)) = ofs := by
+  exact unusedglob_ptrofs_add_zero_repr ofs
+
+private theorem evalInjectOffsetPtr (f : Val.meminj) (v v' : val) (ofs : Ptrofs.int) :
+    Val.inject f v v' → Val.inject f (Val.offset_ptr v ofs) (Val.offset_ptr v' ofs) := by
+  intro h
+  cases h with
+  | inject_int i => exact Val.val_inject_undef f _
+  | inject_long i => exact Val.val_inject_undef f _
+  | inject_float x => exact Val.val_inject_undef f _
+  | inject_single x => exact Val.val_inject_undef f _
+  | inject_ptr b1 ofs1 b2 ofs2 delta hmap hofs =>
+      simp [Val.offset_ptr]
+      apply Val.inject_ptr f b1 _ b2 _ delta hmap
+      subst ofs2
+      simp only [Ptrofs.add_commut_proof_api, Ptrofs.add_assoc_proof_api]
+  | val_inject_undef v => exact Val.val_inject_undef f _
+
+private theorem evalInjectLongofwords (f : Val.meminj) (v1 v1' v2 v2' : val) :
+    Val.inject f v1 v1' → Val.inject f v2 v2' →
+      Val.inject f (Val.longofwords v1 v2) (Val.longofwords v1' v2') := by
+  intro h1 h2
+  cases h1 <;> cases h2 <;> simp [Val.longofwords] <;> constructor
+
+private theorem evalInjectAdd (f : Val.meminj) (v1 v1' v2 v2' : val) :
+    Val.inject f v1 v1' → Val.inject f v2 v2' →
+      Val.inject f (Val.add v1 v2) (Val.add v1' v2') := by
+  intro h1 h2
+  cases h1 <;> cases h2 <;>
+    simp [Val.add, CompCert4Lean.X86_64.Archi.ptr64] <;>
+    constructor <;> try assumption
+  all_goals
+    subst_vars
+    rw [Ptrofs.add_assoc_proof_api, Ptrofs.add_commut_proof_api]
+
+theorem eval_builtin_arg_inject : eval_builtin_arg_injectStatement := by
+  intro p tp used rs sp m j rs' sp' m' a v hEval hsp hglobals hregs hmem hkeep
+  induction hEval with
+  | eval_BA x =>
+      refine ⟨Regmap.get x rs', eval_BA x, hregs x⟩
+  | eval_BA_int n => exact ⟨Vint n, eval_BA_int n, Val.inject_int j n⟩
+  | eval_BA_long n => exact ⟨Vlong n, eval_BA_long n, Val.inject_long j n⟩
+  | eval_BA_float n => exact ⟨Vfloat n, eval_BA_float n, Val.inject_float j n⟩
+  | eval_BA_single n => exact ⟨Vsingle n, eval_BA_single n, Val.inject_single j n⟩
+  | eval_BA_loadstack chunk ofs v load =>
+      simp [Mem.loadv, Val.offset_ptr] at load
+      rcases evalInjectLoadZero j m m' chunk sp sp'
+          (Ptrofs.unsigned (Ptrofs.add Ptrofs.zero ofs)) v hmem load hsp with
+        ⟨v', hload', hinj'⟩
+      refine ⟨v', ?_, hinj'⟩
+      apply eval_BA_loadstack
+      simpa [Mem.loadv, Val.offset_ptr] using hload'
+  | eval_BA_addrstack ofs =>
+      have hbase : Val.inject j (Vptr sp Ptrofs.zero) (Vptr sp' Ptrofs.zero) :=
+        Val.inject_ptr j sp Ptrofs.zero sp' Ptrofs.zero .Z0 hsp
+          ((evalInjectPtrofsAddZero Ptrofs.zero).symm)
+      refine ⟨Val.offset_ptr (Vptr sp' Ptrofs.zero) ofs, eval_BA_addrstack ofs, ?_⟩
+      exact evalInjectOffsetPtr j _ _ ofs hbase
+  | eval_BA_loadglobal chunk id ofs v load =>
+      have hkid : kept used id := hkeep id (by simp [globals_of_builtin_arg])
+      change Mem.loadv chunk m (Genv.symbol_address (Genv.globalenv p) id ofs) = some v at load
+      unfold Genv.symbol_address at load
+      cases hfind : Genv.find_symbol (Genv.globalenv p) id with
+      | none => simp [hfind, Mem.loadv] at load
+      | some b =>
+          rcases hglobals.symbols_inject_2 id b hkid hfind with ⟨b', hfind', hmap⟩
+          simp only [hfind] at load
+          simp [Mem.loadv] at load
+          rcases evalInjectLoadZero j m m' chunk b b' (Ptrofs.unsigned ofs) v
+              hmem load hmap with ⟨v', hload', hinj'⟩
+          refine ⟨v', ?_, hinj'⟩
+          apply eval_BA_loadglobal
+          change Mem.loadv chunk m' (Genv.symbol_address (Genv.globalenv tp) id ofs) = some v'
+          unfold Genv.symbol_address
+          simp [hfind', Mem.loadv, hload']
+  | eval_BA_addrglobal id ofs =>
+      have hkid : kept used id := hkeep id (by simp [globals_of_builtin_arg])
+      refine ⟨Genv.symbol_address (Genv.globalenv tp) id ofs, ?_, ?_⟩
+      · change eval_builtin_arg (Genv.to_senv (Genv.globalenv tp))
+          (fun r => Regmap.get r rs') (Vptr sp' Ptrofs.zero) m'
+          (BA_addrglobal id ofs) (Senv.symbol_address (Genv.to_senv (Genv.globalenv tp)) id ofs)
+        exact eval_BA_addrglobal id ofs
+      · exact symbol_address_inject p tp used j id ofs hglobals hkid
+  | eval_BA_splitlong hi lo vhi vlo hhi hlo ihhi ihlo =>
+      rcases ihhi (by
+        intro id hid
+        apply hkeep id
+        simp [globals_of_builtin_arg, hid]) with ⟨vhi', hhi', hinjhi⟩
+      rcases ihlo (by
+        intro id hid
+        apply hkeep id
+        simp [globals_of_builtin_arg, hid]) with ⟨vlo', hlo', hinjlo⟩
+      refine ⟨Val.longofwords vhi' vlo', eval_BA_splitlong hi lo vhi' vlo' hhi' hlo', ?_⟩
+      exact evalInjectLongofwords j vhi vhi' vlo vlo' hinjhi hinjlo
+  | eval_BA_addptr a1 a2 v1 v2 h1 h2 ih1 ih2 =>
+      rcases ih1 (by
+        intro id hid
+        apply hkeep id
+        simp [globals_of_builtin_arg, hid]) with ⟨v1', h1', hinj1⟩
+      rcases ih2 (by
+        intro id hid
+        apply hkeep id
+        simp [globals_of_builtin_arg, hid]) with ⟨v2', h2', hinj2⟩
+      refine ⟨if CompCert4Lean.X86_64.Archi.ptr64 then Val.addl v1' v2' else Val.add v1' v2',
+        eval_BA_addptr a1 a2 v1' v2' h1' h2', ?_⟩
+      cases hp : CompCert4Lean.X86_64.Archi.ptr64
+      · simp [hp]
+        exact evalInjectAdd j v1 v1' v2 v2' hinj1 hinj2
+      · simp [hp]
+        exact Val.addl_inject j v1 v1' v2 v2' hinj1 hinj2
+end CompCert4Lean.Backend.Unusedglobproof
