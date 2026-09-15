@@ -1718,3 +1718,19 @@ theorem scaled_mantissa_lt_1 :
       (Exact.mag magnitude beta x) hm hmag_fexp' |>.2
 
 end CompCert4Lean.Flocq.Core.Generic_fmt
+
+namespace CompCert4Lean.Flocq.Core.Generic_fmt
+
+theorem mantissa_DN_small_pos :
+    ∀ ctx, mantissa_DN_small_posStatement ctx := by
+  intro ctx beta fexp x ex hbounds hexp
+  apply CompCert4Lean.Flocq.Core.Raux.Zfloor_imp ctx Z0
+  have h := mantissa_small_pos ctx beta fexp x ex hbounds hexp
+  constructor
+  · have hle := (ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp h.1 |>.1
+    change ctx.spec.le (ctx.spec.ofZ Z0) _
+    rw [ctx.certificate.sourceLaws.ofZ_zero]
+    exact hle
+  · exact h.2
+
+end CompCert4Lean.Flocq.Core.Generic_fmt

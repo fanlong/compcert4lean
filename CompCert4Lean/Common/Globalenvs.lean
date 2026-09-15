@@ -2627,3 +2627,20 @@ theorem init_mem_genv_next : init_mem_genv_nextStatement := by
 
 end Genv
 end CompCert4Lean.Common.Globalenvs
+
+namespace CompCert4Lean.Common.Globalenvs
+namespace Genv
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Lib.Coqlib
+
+theorem find_symbol_not_fresh : find_symbol_not_freshStatement := by
+  intro F V p id b m hmem hfind
+  change Plt b m.nextblock
+  rw [← init_mem_genv_next (F := F) (V := V) (p := p) (m := m) hmem]
+  unfold find_symbol at hfind
+  exact (globalenv p).genv_symb_range id hfind
+
+end Genv
+end CompCert4Lean.Common.Globalenvs

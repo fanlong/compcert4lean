@@ -2331,3 +2331,155 @@ theorem mul_commut : Float.mul_commutStatement := by
 end Float
 
 end CompCert4Lean.Lib.Floats
+
+namespace CompCert4Lean.Lib.Floats
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Flocq.IEEE754
+open CompCert4Lean.Lib
+
+namespace Float
+
+private theorem raw_zcompare_swap (x y : Z) :
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.compare y x =
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.CompOpp
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.compare x y) := by
+  change
+    (if intOfZ y < intOfZ x then Lt else
+      if intOfZ y = intOfZ x then Eq else Gt) =
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.CompOpp
+        (if intOfZ x < intOfZ y then Lt else
+          if intOfZ x = intOfZ y then Eq else Gt)
+  by_cases hxy : intOfZ x < intOfZ y
+  · have hyx : ¬ intOfZ y < intOfZ x := by omega
+    have hne : intOfZ y ≠ intOfZ x := by omega
+    simp [hxy, hyx, hne,
+      CompCert4Lean.Foundation.Logic.Rocq.Coq.Init.Datatypes.CompOpp]
+  · by_cases hxy' : intOfZ x = intOfZ y
+    · have hyx : ¬ intOfZ y < intOfZ x := by omega
+      simp [hxy, hxy', hyx,
+        CompCert4Lean.Foundation.Logic.Rocq.Coq.Init.Datatypes.CompOpp]
+    · have hyx : intOfZ y < intOfZ x := by omega
+      simp [hxy, hxy', hyx,
+        CompCert4Lean.Foundation.Logic.Rocq.Coq.Init.Datatypes.CompOpp]
+
+private theorem raw_poscompare_swap (x y : positive) :
+    CompCert4Lean.Lib.Floats.Model.Rocq.Coq.Floats.SpecFloat.posCompare Eq y x =
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.CompOpp
+        (CompCert4Lean.Lib.Floats.Model.Rocq.Coq.Floats.SpecFloat.posCompare Eq x y) := by
+  change
+    (if posToNat y < posToNat x then Lt else
+      if posToNat y = posToNat x then Eq else Gt) =
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.CompOpp
+        (if posToNat x < posToNat y then Lt else
+          if posToNat x = posToNat y then Eq else Gt)
+  by_cases hxy : posToNat x < posToNat y
+  · have hyx : ¬ posToNat y < posToNat x := by omega
+    have hne : posToNat y ≠ posToNat x := by omega
+    simp [hxy, hyx, hne,
+      CompCert4Lean.Foundation.Logic.Rocq.Coq.Init.Datatypes.CompOpp]
+  · by_cases hxy' : posToNat x = posToNat y
+    · have hyx : ¬ posToNat y < posToNat x := by omega
+      simp [hxy, hxy', hyx,
+        CompCert4Lean.Foundation.Logic.Rocq.Coq.Init.Datatypes.CompOpp]
+    · have hyx : posToNat y < posToNat x := by omega
+      simp [hxy, hxy', hyx,
+        CompCert4Lean.Foundation.Logic.Rocq.Coq.Init.Datatypes.CompOpp]
+
+private theorem raw_sfcompare_swap
+    (x y : CompCert4Lean.Flocq.IEEE754.BinarySingleNaN.spec_float) :
+    CompCert4Lean.Lib.Floats.Model.Rocq.Coq.Floats.SpecFloat.SFcompare y x =
+      match CompCert4Lean.Lib.Floats.Model.Rocq.Coq.Floats.SpecFloat.SFcompare x y with
+      | some c => some (CompCert4Lean.Foundation.Numbers.Rocq.Coq.CompOpp c)
+      | none => none := by
+  cases x with
+  | S754_zero sx =>
+      cases y with
+      | S754_zero sy => rfl
+      | S754_infinity sy => cases sy <;> rfl
+      | S754_nan => rfl
+      | S754_finite sy my ey => cases sy <;> rfl
+  | S754_infinity sx =>
+      cases y with
+      | S754_zero sy => cases sx <;> rfl
+      | S754_infinity sy => cases sx <;> cases sy <;> rfl
+      | S754_nan => rfl
+      | S754_finite sy my ey => cases sx <;> rfl
+  | S754_nan => cases y <;> rfl
+  | S754_finite sx mx ex =>
+      cases y with
+      | S754_zero sy => cases sx <;> rfl
+      | S754_infinity sy => cases sy <;> rfl
+      | S754_nan => rfl
+      | S754_finite sy my ey =>
+          cases sx <;> cases sy
+          · change
+              some (match CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.compare ey ex with
+                | .Eq =>
+                    CompCert4Lean.Lib.Floats.Model.Rocq.Coq.Floats.SpecFloat.posCompare
+                      CompCert4Lean.Foundation.Numbers.Rocq.Coq.Eq my mx
+                | c => c) =
+                some (CompCert4Lean.Foundation.Numbers.Rocq.Coq.CompOpp
+                  (match CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.compare ex ey with
+                  | .Eq =>
+                      CompCert4Lean.Lib.Floats.Model.Rocq.Coq.Floats.SpecFloat.posCompare
+                        CompCert4Lean.Foundation.Numbers.Rocq.Coq.Eq mx my
+                  | c => c))
+            rw [raw_zcompare_swap ex ey]
+            cases h : CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.compare ex ey with
+            | Eq => exact congrArg some (raw_poscompare_swap mx my)
+            | Lt => rfl
+            | Gt => rfl
+          · rfl
+          · rfl
+          · change
+              some (match CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.compare ey ex with
+                | .Eq => CompCert4Lean.Foundation.Numbers.Rocq.Coq.CompOpp
+                    (CompCert4Lean.Lib.Floats.Model.Rocq.Coq.Floats.SpecFloat.posCompare
+                      CompCert4Lean.Foundation.Numbers.Rocq.Coq.Eq my mx)
+                | .Lt => Gt
+                | .Gt => Lt) =
+                some (CompCert4Lean.Foundation.Numbers.Rocq.Coq.CompOpp
+                  (match CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.compare ex ey with
+                  | .Eq => CompCert4Lean.Foundation.Numbers.Rocq.Coq.CompOpp
+                      (CompCert4Lean.Lib.Floats.Model.Rocq.Coq.Floats.SpecFloat.posCompare
+                        CompCert4Lean.Foundation.Numbers.Rocq.Coq.Eq mx my)
+                  | .Lt => Gt
+                  | .Gt => Lt))
+            rw [raw_zcompare_swap ex ey]
+            cases h : CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.compare ex ey with
+            | Eq =>
+                rw [raw_poscompare_swap mx my]
+                cases hpos :
+                    CompCert4Lean.Lib.Floats.Model.Rocq.Coq.Floats.SpecFloat.posCompare
+                      CompCert4Lean.Foundation.Numbers.Rocq.Coq.Eq mx my <;>
+                  rfl
+            | Lt => rfl
+            | Gt => rfl
+
+private theorem raw_bcompare_swap
+    {prec emax : CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z}
+    (x y : CompCert4Lean.Flocq.IEEE754.Binary.binary_float prec emax) :
+    CompCert4Lean.Flocq.IEEE754.Binary.Bcompare y x =
+      match CompCert4Lean.Flocq.IEEE754.Binary.Bcompare x y with
+      | some c => some (CompCert4Lean.Foundation.Numbers.Rocq.Coq.CompOpp c)
+      | none => none := by
+  unfold CompCert4Lean.Flocq.IEEE754.Binary.Bcompare
+  exact raw_sfcompare_swap
+    (CompCert4Lean.Flocq.IEEE754.BinarySingleNaN.B2SF
+      (CompCert4Lean.Flocq.IEEE754.Binary.B2BSN x))
+    (CompCert4Lean.Flocq.IEEE754.BinarySingleNaN.B2SF
+      (CompCert4Lean.Flocq.IEEE754.Binary.B2BSN y))
+
+theorem cmp_swap : Float.cmp_swapStatement := by
+  intro c x y
+  unfold Float.cmp Float.compare
+  have hraw := raw_bcompare_swap (x := decode64 x) (y := decode64 y)
+  rw [hraw]
+  cases h : CompCert4Lean.Flocq.IEEE754.Binary.Bcompare (decode64 x) (decode64 y) with
+  | none => exact cmp_of_comparison_swap c none
+  | some v => cases v <;> exact cmp_of_comparison_swap c (some _)
+
+end Float
+
+end CompCert4Lean.Lib.Floats

@@ -2679,3 +2679,32 @@ theorem agree_regs_call_regs : agree_regs_call_regsStatement := by
   simpa [LTL.call_regs] using hagree r
 
 end CompCert4Lean.Backend.Stackingproof
+
+namespace CompCert4Lean.Backend.Stackingproof
+
+open CompCert4Lean.Backend.Bounds
+open CompCert4Lean.Backend.Locations
+
+theorem agree_locs_set_reg : agree_locs_set_regStatement := by
+  intro return_address_offset tprog cfg f
+    bound_local_pos bound_outgoing_pos bound_stack_data_pos
+    used_callee_save_norepet used_callee_save_prop ls ls0 r v hagree hbound
+  constructor
+  · intro r' hn
+    by_cases heq : r' = r
+    · subst r'
+      exact (hn hbound).elim
+    · have hdiff : Loc.diff (R r) (R r') := by
+        have hne : r ≠ r' := by
+          intro h
+          exact heq h.symm
+        exact hne
+      rw [Locmap.gso (R r) v ls (R r') hdiff]
+      exact agree_unused_reg hagree r' hn
+  · intro ofs ty hin
+    rw [show Locmap.set (R r) v ls (S Incoming ofs ty) = ls (S Incoming ofs ty) by
+      apply Locmap.gso
+      simp [Loc.diff]]
+    exact agree_incoming hagree ofs ty hin
+
+end CompCert4Lean.Backend.Stackingproof

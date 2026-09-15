@@ -1378,3 +1378,182 @@ theorem same_bits_eqmod : same_bits_eqmodStatement := by
               simpa only [Int.ofNat_eq_coe] using (Int.natCast_succ n)
             rw [hsucc] at hi'
             omega
+
+end CompCert4Lean.Lib.Zbits
+
+namespace CompCert4Lean.Lib.Zbits
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+private theorem zb_z_nonneg_repr (x : Z) (hx : zLe zZero x) :
+    x = zOfNat (Int.toNat (intOfZ x)) := by
+  exact (ZArith.Znat.Z2Nat.id x hx).symm
+
+private theorem zb_zdiv2_nat (a : Nat) :
+    zDiv2 (zOfNat a) = zOfNat (a / 2) := by
+  apply intOfZ_injective
+  simp only [zDiv2, ZArith.BinInt.Z.div2, ZArith.BinInt.Z.div,
+    zOfNat, ZArith.BinInt.Z.of_nat, intOfZ_zOfInt]
+  change Int.ediv (Int.ofNat a) (Int.ofNat 2) = Int.ofNat (a / 2)
+  exact Int.ofNat_ediv_ofNat
+
+private theorem zb_nat_abs (a : Nat) :
+    (intOfZ (zOfNat a)).natAbs = a := by
+  have hcast : intOfZ (zOfNat a) = Int.ofNat a := by
+    exact intOfZ_zOfInt (Int.ofNat a)
+  rw [hcast]
+  simp
+
+private theorem zb_zadd_nat (i : Nat) :
+    zAdd (zOfNat i) one = zOfNat (i + 1) := by
+  apply intOfZ_injective
+  simp only [zAdd, zOfNat, ZArith.BinInt.Z.of_nat, one,
+    ZArith.BinInt.Z.add, intOfZ_zOfInt]
+  have hone : intOfZ (Zpos xH) = (1 : Int) := by decide
+  rw [hone]
+  simp
+
+private def zb_nat_one_bits : Nat → Nat → Nat → List Nat
+  | 0, _, _ => []
+  | n + 1, a, i =>
+      if a % 2 = 1 then
+        i :: zb_nat_one_bits n (a / 2) (i + 1)
+      else
+        zb_nat_one_bits n (a / 2) (i + 1)
+
+private theorem zb_Z_one_bits_nat (n a i : Nat) :
+    Z_one_bits n (zOfNat a) (zOfNat i) =
+      List.map zOfNat (zb_nat_one_bits n a i) := by
+  induction n generalizing a i with
+  | zero => rfl
+  | succ n ih =>
+      by_cases h : a % 2 = 0
+      · have hodd : zOdd (zOfNat a) = false := by
+          unfold zOdd ZArith.BinInt.Z.odd ZArith.BinInt.Z.even
+          rw [zb_nat_abs]
+          simp [h]
+        simpa [Z_one_bits, hodd, zb_nat_one_bits, h, zb_zdiv2_nat,
+          zb_zadd_nat] using ih (a / 2) (i + 1)
+      · have hrem : a % 2 = 1 := by omega
+        have hodd : zOdd (zOfNat a) = true := by
+          unfold zOdd ZArith.BinInt.Z.odd ZArith.BinInt.Z.even
+          rw [zb_nat_abs]
+          simp [hrem]
+        have htail := ih (a / 2) (i + 1)
+        simpa [Z_one_bits, hodd, zb_nat_one_bits, hrem, zb_zdiv2_nat,
+          zb_zadd_nat] using congrArg (fun t => zOfNat i :: t) htail
+
+private def zb_nat_powerserie : List Nat → Nat
+  | [] => 0
+  | a :: rest => 2 ^ a + zb_nat_powerserie rest
+
+private theorem zb_two_p_nat (a : Nat) :
+    intOfZ (zTwoP (zOfNat a)) = (2 : Int) ^ a := by
+  unfold zTwoP two_p ZArith.Zpower.two_p ZArith.BinInt.Z.pow
+  rw [if_neg (by
+    simp only [zOfNat, ZArith.BinInt.Z.of_nat, intOfZ_zOfInt]
+    exact Int.not_lt.mpr (Int.natCast_nonneg a))]
+  simp only [intOfZ_zOfInt]
+  have htwo : intOfZ (Zpos (.xO .xH)) = (2 : Int) := by decide
+  rw [htwo]
+  have ha : intOfZ (zOfNat a) = Int.ofNat a := by
+    exact intOfZ_zOfInt (Int.ofNat a)
+  rw [ha]
+  rfl
+
+private theorem zb_powerserie_map (l : List Nat) :
+    intOfZ (powerserie (List.map zOfNat l)) =
+      Int.ofNat (zb_nat_powerserie l) := by
+  induction l with
+  | nil => rfl
+  | cons a rest ih =>
+      simp only [List.map, powerserie, zb_nat_powerserie]
+      simp only [ZArith.BinInt.Z.add, intOfZ_zOfInt]
+      rw [ih, zb_two_p_nat]
+      rfl
+
+private theorem zb_nat_one_bits_weight :
+    ∀ (n a i : Nat), a < 2 ^ n →
+      Int.ofNat a * (2 : Int) ^ i =
+        Int.ofNat (zb_nat_powerserie (zb_nat_one_bits n a i)) := by
+  intro n
+  induction n with
+  | zero =>
+      intro a i ha
+      have ha0 : a = 0 := by omega
+      simp [ha0, zb_nat_one_bits, zb_nat_powerserie]
+  | succ n ih =>
+      intro a i ha
+      by_cases h : a % 2 = 0
+      · have hdiv : a / 2 < 2 ^ n := by
+          apply (Nat.div_lt_iff_lt_mul (k := 2) (x := a) (y := 2 ^ n)
+            (by decide : 0 < 2)).2
+          simpa [Nat.mul_comm, Nat.pow_succ] using ha
+        rw [show zb_nat_one_bits (n + 1) a i =
+            zb_nat_one_bits n (a / 2) (i + 1) by
+              simp [zb_nat_one_bits, h]]
+        rw [← ih (a / 2) (i + 1) hdiv]
+        have hadecomp : a = 2 * (a / 2) := by omega
+        have hadecomp' : (Int.ofNat a) = 2 * Int.ofNat (a / 2) := by
+          have hc := congrArg (fun k : Nat => (k : Int)) hadecomp
+          rw [Int.natCast_mul] at hc
+          exact hc
+        rw [hadecomp', Int.pow_succ]
+        ac_rfl
+      · have hrem : a % 2 = 1 := by omega
+        have hdiv : a / 2 < 2 ^ n := by
+          apply (Nat.div_lt_iff_lt_mul (k := 2) (x := a) (y := 2 ^ n)
+            (by decide : 0 < 2)).2
+          simpa [Nat.mul_comm, Nat.pow_succ] using ha
+        rw [show zb_nat_one_bits (n + 1) a i =
+            i :: zb_nat_one_bits n (a / 2) (i + 1) by
+              simp [zb_nat_one_bits, hrem]]
+        simp only [zb_nat_powerserie, Int.ofNat_eq_natCast, Int.natCast_add]
+        have hih := ih (a / 2) (i + 1) hdiv
+        simp only [Int.ofNat_eq_natCast] at hih
+        rw [← hih]
+        have hadecomp : a = 2 * (a / 2) + 1 := by omega
+        have hadecomp' : (a : Int) = 2 * ((a / 2 : Nat) : Int) + 1 := by
+          have hc := congrArg (fun k : Nat => (k : Int)) hadecomp
+          rw [Int.natCast_add, Int.natCast_mul] at hc
+          exact hc
+        rw [hadecomp', Int.pow_succ, Int.natCast_pow]
+        simp [Int.mul_add, Int.add_mul, Int.mul_assoc, Int.mul_comm,
+          Int.add_comm, Int.add_assoc, Int.mul_left_comm]
+
+private theorem zb_two_power_nat_int :
+    ∀ n : Nat, intOfZ (zTwoPowerNat n) = (2 : Int) ^ n := by
+  intro n
+  change intOfZ (two_power_nat n) = (2 : Int) ^ n
+  induction n with
+  | zero =>
+      rw [zbits_two_power_nat_zero]
+      decide
+  | succ n ih =>
+      rw [zbits_two_power_nat_succ, zbits_double_int, ih, Int.pow_succ]
+      exact Int.mul_comm _ _
+
+theorem Z_one_bits_powerserie : Z_one_bits_powerserieStatement := by
+  intro n x hx
+  have hx0 : zLe zZero x := hx.1
+  have hxrepr : x = zOfNat (Int.toNat (intOfZ x)) :=
+    zb_z_nonneg_repr x hx0
+  rw [hxrepr]
+  change zOfNat (Int.toNat (intOfZ x)) =
+    powerserie (Z_one_bits n (zOfNat (Int.toNat (intOfZ x))) (zOfNat 0))
+  rw [zb_Z_one_bits_nat]
+  have hxlt : Int.toNat (intOfZ x) < 2 ^ n := by
+    have hlt : intOfZ x < intOfZ (zTwoPowerNat n) := hx.2
+    rw [zb_two_power_nat_int] at hlt
+    have hpowcast : (2 : Int) ^ n = Int.ofNat (2 ^ n) := by
+      exact (Int.natCast_pow 2 n).symm
+    rw [hpowcast] at hlt
+    exact (Int.toNat_lt hx0).2 hlt
+  apply intOfZ_injective
+  rw [zb_powerserie_map]
+  have hweight := zb_nat_one_bits_weight n (Int.toNat (intOfZ x)) 0 hxlt
+  have hcast : intOfZ (zOfNat (Int.toNat (intOfZ x))) =
+      Int.ofNat (Int.toNat (intOfZ x)) := by
+    exact intOfZ_zOfInt _
+  rw [hcast]
+  simpa [Int.pow_zero] using hweight

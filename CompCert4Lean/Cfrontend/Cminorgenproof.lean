@@ -3165,3 +3165,92 @@ theorem assign_variable_sound : assign_variable_soundStatement := by
         exact (hne (hid1.trans hid2.symm)).elim
 
 end CompCert4Lean.Cfrontend.Cminorgenproof
+
+namespace CompCert4Lean.Cfrontend.Cminorgenproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.Cfrontend.Cminorgen
+
+local instance : OfNat Z 0 := ⟨ZArith.BinInt.Z.Z0⟩
+local instance : LE Z := ⟨ZArith.BinInt.Z.le⟩
+
+theorem assign_variables_sound : assign_variables_soundStatement := by
+  intro vars' cenv1 sz1 cenv2 sz2 vars
+  induction vars' generalizing cenv1 sz1 cenv2 sz2 vars with
+  | nil =>
+      intro hassign hnorepet hpos hcompat hsep
+      simp [assign_variables] at hassign
+      have hc : cenv1 = cenv2 := hassign.1
+      have hs : sz1 = sz2 := hassign.2
+      subst cenv2
+      subst sz2
+      simpa [List.append_nil] using (And.intro hcompat hsep)
+  | cons hd tl ih =>
+      cases hd with
+      | mk id sz =>
+          intro hassign hnorepet hpos hcompat hsep
+          have hsplit := (list_norepet_app _ _ _).mp hnorepet
+          have hhead := hsplit.1
+          have hvars := hsplit.2.1
+          have hdisj := hsplit.2.2
+          have hid_not_vars : ¬ In id (List.map Prod.fst vars) := by
+            intro hid
+            exact hdisj id id (by simp) hid rfl
+          have hstep : ∃ cenv' sz',
+              assign_variable (cenv1, sz1) (id, sz) = (cenv', sz') := by
+            exact ⟨(assign_variable (cenv1, sz1) (id, sz)).1,
+              (assign_variable (cenv1, sz1) (id, sz)).2, rfl⟩
+          rcases hstep with ⟨cenv', sz', hstep⟩
+          have hassign' : assign_variables (cenv', sz') tl = (cenv2, sz2) := by
+            simpa [assign_variables, hstep] using hassign
+          have hhead' : list_norepet (id :: List.map Prod.fst tl) := by
+            simpa using hhead
+          have hhead_tail : list_norepet (List.map Prod.fst tl) := by
+            cases hhead' with
+            | cons _ _ htail => exact htail
+          have hid_not_tail : ¬ In id (List.map Prod.fst tl) := by
+            cases hhead' with
+            | cons _ hnot _ => exact hnot
+          have hdisj_tail_vars : list_disjoint
+              (List.map Prod.fst tl) (List.map Prod.fst vars) := by
+            intro x y hx hy hxy
+            exact hdisj x y (by simp [hx]) hy hxy
+          have hdisj_tail_new : list_disjoint
+              (List.map Prod.fst tl) (List.map Prod.fst vars ++ [id]) := by
+            intro x y hx hy
+            rcases List.mem_append.mp hy with hyvars | hyid
+            · exact hdisj_tail_vars x y hx hyvars
+            · have hyeq : y = id := List.mem_singleton.mp hyid
+              subst y
+              intro hxy
+              apply hid_not_tail
+              rw [← hxy]
+              exact hx
+          have hnorepet_ih : list_norepet
+              (List.map Prod.fst tl ++
+                List.map Prod.fst (vars ++ [(id, sz)])) := by
+            apply (list_norepet_app _ _ _).2
+            refine ⟨hhead_tail, ?_, ?_⟩
+            · simpa using (list_norepet_append _ _ _ hvars
+                (list_norepet.cons id (by simp) (list_norepet.nil _))
+                (by
+                  intro x y hx hy
+                  have hyeq : y = id := List.mem_singleton.mp hy
+                  subst y
+                  intro hxy
+                  apply hid_not_vars
+                  rw [← hxy]
+                  exact hx))
+            · simpa [List.map_append] using hdisj_tail_new
+          have hpos' : 0 ≤ sz' := by
+            have hincr := assign_variable_incr id sz cenv1 sz1 cenv' sz' hstep
+            exact Int.le_trans hpos hincr
+          have hcompat_sep := assign_variable_sound cenv1 sz1 id sz cenv' sz'
+            vars hstep hid_not_vars hpos hcompat hsep
+          have hrec := ih cenv' sz' cenv2 sz2 (vars ++ [(id, sz)])
+            hassign' hnorepet_ih hpos' hcompat_sep.1 hcompat_sep.2
+          simpa [List.append_assoc] using hrec
+
+end CompCert4Lean.Cfrontend.Cminorgenproof

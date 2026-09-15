@@ -1082,3 +1082,48 @@ theorem eval_andimm
           · rfl
 
 end CompCert4Lean.X86.SelectOpproof
+
+namespace CompCert4Lean.X86.SelectOpproof
+
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.ExternalCalls
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.X86.Op
+open CompCert4Lean.X86.SelectOp
+
+theorem eval_and
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    eval_andStatement := by
+  unfold eval_andStatement binary_constructor_sound
+  intro xi ge sp e m le a x b y ha hb
+  cases hmatch : and_match a b with
+  | and_case1 n1 _t2 =>
+      have hx : x = .Vint n1 := eval_intconst_value_local xi ge sp e m le n1 x
+        (by simpa [hmatch] using ha)
+      subst x
+      obtain ⟨v, hv, hd⟩ := eval_andimm xi ge sp e m n1 le b y hb
+      refine ⟨v, ?_, ?_⟩
+      · simpa [CompCert4Lean.X86.SelectOp.and, hmatch] using hv
+      · rw [CompCert4Lean.Common.Values.Val.and_commut]
+        exact hd
+  | and_case2 _t1 n2 =>
+      have hy : y = .Vint n2 := eval_intconst_value_local xi ge sp e m le n2 y
+        (by simpa [hmatch] using hb)
+      subst y
+      obtain ⟨v, hv, hd⟩ := eval_andimm xi ge sp e m n2 le a x ha
+      refine ⟨v, ?_, ?_⟩
+      · simpa [CompCert4Lean.X86.SelectOp.and, hmatch] using hv
+      · exact hd
+  | and_default e1 e2 =>
+      refine ⟨Val.and x y, ?_, Val.lessdef_refl _⟩
+      simp only [CompCert4Lean.X86.SelectOp.and, hmatch]
+      apply eval_expr.eval_Eop le Oand (Econs a (Econs b Enil)) [x, y]
+        (Val.and x y)
+      · exact eval_exprlist.cons le a (Econs b Enil) x [y] ha
+          (eval_exprlist.cons le b Enil y [] hb (eval_exprlist.nil le))
+      · rfl
+
+end CompCert4Lean.X86.SelectOpproof
