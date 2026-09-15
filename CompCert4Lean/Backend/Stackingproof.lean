@@ -2875,3 +2875,35 @@ theorem agree_locs_return : agree_locs_returnStatement := by
     exact hls'.trans hls
 
 end CompCert4Lean.Backend.Stackingproof
+
+namespace CompCert4Lean.Backend.Stackingproof
+
+theorem destroyed_by_op_caller_save : destroyed_by_op_caller_saveStatement := by
+  intro cfg op
+  unfold no_callee_saves
+  cases op <;> simp [CompCert4Lean.X86.Machregs.destroyed_by_op,
+    CompCert4Lean.X86.Conventions1.is_callee_save]
+
+end CompCert4Lean.Backend.Stackingproof
+
+namespace CompCert4Lean.Backend.Stackingproof
+
+theorem destroyed_by_load_caller_save : destroyed_by_load_caller_saveStatement := by
+  intro cfg chunk addr
+  unfold no_callee_saves
+  rfl
+
+theorem destroyed_by_store_caller_save : destroyed_by_store_caller_saveStatement := by
+  intro cfg chunk addr
+  unfold no_callee_saves
+  by_cases hptr : CompCert4Lean.X86_64.Archi.ptr64 = true <;>
+    cases chunk <;>
+      simp [hptr, CompCert4Lean.X86.Machregs.destroyed_by_store,
+        CompCert4Lean.X86.Conventions1.is_callee_save]
+
+theorem destroyed_by_cond_caller_save : destroyed_by_cond_caller_saveStatement := by
+  intro cfg cond
+  unfold no_callee_saves
+  rfl
+
+end CompCert4Lean.Backend.Stackingproof

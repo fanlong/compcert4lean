@@ -2556,3 +2556,39 @@ theorem of_to_bits : Float.of_to_bitsStatement := by
 end Float
 
 end CompCert4Lean.Lib.Floats
+
+namespace CompCert4Lean.Lib.Floats
+
+namespace Float
+
+theorem ZofB_range_widen : Float.ZofB_range_widenStatement := by
+  intro f n min1 max1 min2 max2 h hmin hmax
+  unfold CompCert4Lean.Lib.IEEE754_extra.ZofB_range at h ⊢
+  cases hz : CompCert4Lean.Lib.IEEE754_extra.ZofB (decode64 f) with
+  | none => simp [hz] at h
+  | some z =>
+    simp [hz] at h ⊢
+    rcases h with ⟨⟨hmin1, hmax1⟩, rfl⟩
+    have hmin1' : CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.le min1 z := by
+      have hs : CompCert4Lean.Flocq.Core.Zaux.Zle_bool_prop min1 z true := by
+        simpa [hmin1] using (CompCert4Lean.Flocq.Core.Zaux.Zle_bool_spec min1 z)
+      cases hs with
+      | Zle_bool_true_ hle => exact hle
+    have hmax1' : CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.le z max1 := by
+      have hs : CompCert4Lean.Flocq.Core.Zaux.Zle_bool_prop z max1 true := by
+        simpa [hmax1] using (CompCert4Lean.Flocq.Core.Zaux.Zle_bool_spec z max1)
+      cases hs with
+      | Zle_bool_true_ hle => exact hle
+    have hmin2' : CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.le min2 z :=
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.le_trans min2 min1 z hmin hmin1'
+    have hmax2' : CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.le z max2 :=
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.le_trans z max1 max2 hmax1' hmax
+    have hbmin : CompCert4Lean.Lib.IEEE754_extra.Zle_bool min2 z = true :=
+      CompCert4Lean.Flocq.Core.Zaux.Zle_bool_true min2 z hmin2'
+    have hbmax : CompCert4Lean.Lib.IEEE754_extra.Zle_bool z max2 = true :=
+      CompCert4Lean.Flocq.Core.Zaux.Zle_bool_true z max2 hmax2'
+    exact ⟨⟨hbmin, hbmax⟩, rfl⟩
+
+end Float
+
+end CompCert4Lean.Lib.Floats
