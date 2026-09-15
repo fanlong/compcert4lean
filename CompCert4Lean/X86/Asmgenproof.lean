@@ -1746,3 +1746,45 @@ theorem transf_initial_states : transf_initial_statesStatement := by
             CompCert4Lean.Common.Values.Vnullptr]
 
 end CompCert4Lean.X86.Asmgenproof
+
+namespace CompCert4Lean.X86.Asmgenproof
+
+theorem transf_final_states : transf_final_statesStatement := by
+  intro prog st1 st2 r hmatch hfinal
+  cases hfinal with
+  | final_state_intro rs m r0 retcode hresult hval =>
+      cases hmatch with
+      | match_states_return s ms m0 m1 rs' hstack hmem hagree hatpc =>
+          apply CompCert4Lean.X86.Asm.final_state.final_state_intro
+          · change rs' .PC = CompCert4Lean.Common.Values.Vnullptr
+            simpa [CompCert4Lean.Backend.Mach.parent_ra] using hatpc
+          · have hr0 : (.AX : CompCert4Lean.X86.Machregs.mreg) = r0 := by
+              simpa [CompCert4Lean.X86.Conventions1.loc_result,
+                CompCert4Lean.X86.Conventions1.loc_result_64,
+                CompCert4Lean.X86.Conventions1.loc_result_32,
+                CompCert4Lean.Common.AST.signature_main,
+                CompCert4Lean.Common.AST.proj_sig_res,
+                CompCert4Lean.Common.AST.proj_xtype,
+                CompCert4Lean.X86_64.Archi.ptr64] using hresult
+            subst r0
+            have hld :=
+              CompCert4Lean.Backend.Asmgenproof0.preg_val
+                rs (CompCert4Lean.Backend.Mach.parent_sp []) rs' .AX hagree
+            have hld' :
+                CompCert4Lean.Common.Values.Val.lessdef
+                  (rs .AX) (rs' (.IR .RAX)) := by
+              simpa [CompCert4Lean.X86.Asm.preg_of] using hld
+            have hld'' :
+                CompCert4Lean.Common.Values.Val.lessdef
+                  (.Vint r) (rs' (.IR .RAX)) := by
+              simpa [hval] using hld'
+            have htarget :
+                ∀ v : CompCert4Lean.Common.Values.val,
+                  CompCert4Lean.Common.Values.Val.lessdef (.Vint r) v →
+                    v = .Vint r := by
+              intro v h
+              cases h with
+              | lessdef_refl v => rfl
+            exact htarget _ hld''
+
+end CompCert4Lean.X86.Asmgenproof

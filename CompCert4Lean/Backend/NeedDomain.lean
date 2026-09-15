@@ -2781,3 +2781,131 @@ theorem lagree_and_eq : lagree_and_eqStatement := by
         simpa [lagreeTestbitPos] using hxy
 
 end CompCert4Lean.Backend.NeedDomain
+
+namespace CompCert4Lean.Backend.NeedDomain
+
+open CompCert4Lean.Lib.Integers
+
+theorem lagree_mone : lagree_moneStatement := by
+  intro p q h
+  have hand : Int64.and p Int64.mone = Int64.and q Int64.mone :=
+    (lagree_and_eq p q Int64.mone).mp h
+  have hval := congrArg (fun z => z.val) hand
+  rw [lagreeAndVal, lagreeAndVal] at hval
+  have hp : p.val < 2 ^ Int64.wordsize := lagreeWordValLt p
+  have hq : q.val < 2 ^ Int64.wordsize := lagreeWordValLt q
+  have hmone : Int64.mone.val = 2 ^ Int64.wordsize - 1 := by
+    rfl
+  rw [hmone, Nat.land_eq,
+    Nat.and_two_pow_sub_one_of_lt_two_pow hp,
+    Nat.land_eq,
+    Nat.and_two_pow_sub_one_of_lt_two_pow hq] at hval
+  exact WordCore.ext_of_val_eq hval
+
+end CompCert4Lean.Backend.NeedDomain
+
+namespace CompCert4Lean.Backend.NeedDomain
+
+open CompCert4Lean.Lib.Integers
+
+private theorem lagreeAndAssocFinal (a b c : Int64.int) :
+    Int64.and (Int64.and a b) c = Int64.and a (Int64.and b c) := by
+  apply WordCore.ext_of_val_eq
+  rw [lagreeAndVal, lagreeAndVal, lagreeAndVal, lagreeAndVal]
+  rw [Nat.land_eq, Nat.land_eq, Nat.land_eq, Nat.land_eq]
+  exact Nat.and_assoc _ _ _
+
+private theorem lagreeAndCommFinal (a b : Int64.int) :
+    Int64.and a b = Int64.and b a := by
+  apply WordCore.ext_of_val_eq
+  rw [lagreeAndVal, lagreeAndVal]
+  rw [Nat.land_eq, Nat.land_eq]
+  exact Nat.and_comm _ _
+
+theorem lagree_and : lagree_andStatement := by
+  intro x y n m h
+  apply (lagree_and_eq (Int64.and x n) (Int64.and y n) m).mpr
+  have hh : Int64.and x (Int64.and m n) = Int64.and y (Int64.and m n) :=
+    (lagree_and_eq x y (Int64.and m n)).mp h
+  calc
+    Int64.and (Int64.and x n) m = Int64.and x (Int64.and n m) :=
+      lagreeAndAssocFinal x n m
+    _ = Int64.and x (Int64.and m n) := by rw [lagreeAndCommFinal n m]
+    _ = Int64.and y (Int64.and m n) := hh
+    _ = Int64.and y (Int64.and n m) := by rw [lagreeAndCommFinal m n]
+    _ = Int64.and (Int64.and y n) m := (lagreeAndAssocFinal y n m).symm
+
+end CompCert4Lean.Backend.NeedDomain
+
+namespace CompCert4Lean.Backend.NeedDomain
+
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+private theorem lagreeNotValFinal (a : Int64.int) :
+    (Int64.not a).val = Nat.xor a.val (2 ^ Int64.wordsize - 1) := by
+  change (WordCore.repr Int64.wordsize
+    (ZArith.BinInt.Z.of_nat (Nat.xor a.val (2 ^ Int64.wordsize - 1)))).val = _
+  rw [lagreeValReprOfNat]
+  apply Nat.mod_eq_of_lt
+  apply Nat.xor_lt_two_pow
+  · exact lagreeWordValLt a
+  · have hp : 0 < 2 ^ Int64.wordsize := Nat.two_pow_pos _
+    omega
+
+private theorem lagreeNotTestbitFinal (a : Int64.int) (i : Z)
+    (hirange : ZArith.BinInt.Z.le z0 i ∧
+      ZArith.BinInt.Z.lt i Int64.zwordsize) :
+    Int64.testbit (Int64.not a) i = !(Int64.testbit a i) := by
+  cases i with
+  | Zneg p =>
+      exfalso
+      have h := hirange.1
+      change (0 : Int) ≤ -Int.ofNat (posToNat p) at h
+      have hp : (0 : Int) < Int.ofNat (posToNat p) := by
+        exact Int.natCast_pos.mpr (posToNat_positive p)
+      omega
+  | Z0 =>
+      rw [lagreeTestbitZero (Int64.not a), lagreeTestbitZero a]
+      rw [lagreeNotValFinal]
+      rw [Nat.xor_eq]
+      rw [Nat.testBit_xor]
+      have hmask : (2 ^ Int64.wordsize - 1).testBit 0 = true := by
+        rw [Nat.testBit_two_pow_sub_one]
+        decide
+      simp [hmask]
+  | Zpos p =>
+      rw [lagreeTestbitPos (Int64.not a) p, lagreeTestbitPos a p]
+      rw [lagreeNotValFinal]
+      rw [Nat.xor_eq]
+      rw [Nat.testBit_xor]
+      have hkZ := hirange.2
+      change Int.ofNat (posToNat p) < Int.ofNat Int64.wordsize at hkZ
+      have hk : posToNat p < Int64.wordsize := Int.ofNat_lt.mp hkZ
+      have hmask : (2 ^ Int64.wordsize - 1).testBit (posToNat p) = true := by
+        rw [Nat.testBit_two_pow_sub_one]
+        simp [hk]
+      simp [hmask]
+
+theorem lagree_not : lagree_notStatement := by
+  intro x y m h i hirange hmask
+  rw [lagreeNotTestbitFinal x i hirange, lagreeNotTestbitFinal y i hirange]
+  exact congrArg Bool.not (h i hirange hmask)
+
+private theorem lagreeNotInvolutiveFinal (a : Int64.int) :
+    Int64.not (Int64.not a) = a := by
+  apply WordCore.ext_of_val_eq
+  rw [lagreeNotValFinal, lagreeNotValFinal]
+  rw [Nat.xor_eq, Nat.xor_eq]
+  rw [Nat.xor_assoc]
+  simp
+
+theorem lagree_not' : lagree_not'Statement := by
+  intro x y m h i hirange hmask
+  have h' : lagree (Int64.not (Int64.not x)) (Int64.not (Int64.not y)) m :=
+    lagree_not (Int64.not x) (Int64.not y) m h
+  have hbits := h' i hirange hmask
+  rw [lagreeNotInvolutiveFinal, lagreeNotInvolutiveFinal] at hbits
+  exact hbits
+
+end CompCert4Lean.Backend.NeedDomain

@@ -2929,3 +2929,19 @@ theorem small_shift_amount_3 : small_shift_amount_3Statement := by
     ⟨hbound, hmax⟩
 
 end CompCert4Lean.Cfrontend.Cshmgenproof
+
+namespace CompCert4Lean.Cfrontend.Cshmgenproof
+
+theorem make_cmp_ptr_correct
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    make_cmp_ptr_correctStatement := by
+  intro ge cmp e le m a va b vb v hsem h1 h2
+  unfold CompCert4Lean.Cfrontend.Cop.cmp_ptr at hsem
+  unfold CompCert4Lean.Cfrontend.Cshmgen.make_cmp_ptr
+  apply Csharpminor.eval_Ebinop
+  · exact h1
+  · exact h2
+  · exact hsem
+
+end CompCert4Lean.Cfrontend.Cshmgenproof

@@ -3011,3 +3011,41 @@ theorem propagate_successors_P : propagate_successors_PStatement := by
             exact hst pc'
 
 end CompCert4Lean.Backend.Kildall.BBlock_solver
+
+namespace CompCert4Lean.Backend.Kildall.BBlock_solver
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.Lib.Iteration
+
+theorem fixpoint_invariant : fixpoint_invariantStatement := by
+  intro A LAT entrypoint laws code successors transf P Ptop Ptransf res pc
+  unfold fixpoint
+  let bb := basic_block_map entrypoint code successors
+  apply PrimIter.iter_prop (A := state LAT) (B := result LAT)
+    (step := step code successors transf bb)
+    (P := Pstate P)
+    (Q := fun result => P (PMap.get pc result))
+  · intro st hst
+    unfold step
+    cases st.worklist with
+    | nil =>
+        exact hst pc
+    | cons n rem =>
+        cases hcode : PTree.get n code with
+        | none =>
+            simp only [hcode]
+            intro pc'
+            exact hst pc'
+        | some instr =>
+            simp only [hcode]
+            apply CompCert4Lean.Backend.Kildall.BBlock_solver.propagate_successors_P
+              laws P bb (transf n (PMap.get n st.aval))
+            · exact Ptransf n instr (PMap.get n st.aval) hcode (hst n)
+            · intro pc'
+              exact hst pc'
+  · intro pc'
+    change P (PMap.get pc' (PMap.init LAT.top))
+    cases pc' <;> exact Ptop
+
+end CompCert4Lean.Backend.Kildall.BBlock_solver
