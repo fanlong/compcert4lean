@@ -4359,3 +4359,72 @@ theorem sign_ext_idem_proof : sign_ext_idem := by
       exact Nat.mod_eq_of_lt (WordCore.val_lt x)
     rw [hrepr] at hsign
     exact congrArg (sign_ext (zOfNat (k + 1))) hsign
+
+theorem add_commut_proof : add_commut := by
+  intro x y
+  change WordCore.add x y = WordCore.add y x
+  apply WordCore.ext_of_val_eq
+  rw [WordCore.add_val, WordCore.add_val, Nat.add_comm]
+
+theorem and_assoc_proof : and_assoc := by
+  intro x y z
+  apply WordCore.ext_of_val_eq
+  change (WordCore.and (WordCore.and x y) z).val =
+    (WordCore.and x (WordCore.and y z)).val
+  rw [suffix_and_val, suffix_and_val, suffix_and_val, suffix_and_val]
+  exact Nat.and_assoc _ _ _
+
+theorem wordsize_max_unsigned_proof : wordsize_max_unsigned := by
+  change (32 : _root_.Int) ≤ (2 ^ 32 : _root_.Int) - 1
+  decide
+
+private theorem suffix_unsigned_repr_eq_exact (x : Z) :
+    unsigned (repr x) = zMod x modulus := by
+  change (WordCore.repr wordsize x).intval = zMod x modulus
+  rw [WordCore.intval_eq_zOfNat_val]
+  have hval : (WordCore.repr wordsize x).val =
+      _root_.Int.toNat
+        (intOfZ x % _root_.Int.ofNat (2 ^ wordsize)) := by
+    have h := WordCore.val_repr wordsize (intOfZ x)
+    rw [zOfInt_intOfZ x] at h
+    simpa only [_root_.Int.ofNat_eq_natCast] using h
+  rw [hval]
+  apply intOfZ_injective
+  have hmpos : (0 : _root_.Int) < intOfZ modulus := by
+    change (0 : _root_.Int) < _root_.Int.ofNat (2 ^ wordsize)
+    exact _root_.Int.natCast_pos.mpr (Nat.two_pow_pos _)
+  have hm : intOfZ modulus = _root_.Int.ofNat (2 ^ wordsize) := by
+    rfl
+  simp only [zOfNat, ZArith.BinInt.Z.of_nat, intOfZ_zOfInt]
+  have hmod : intOfZ (zMod x modulus) =
+      intOfZ x % _root_.Int.ofNat (2 ^ wordsize) := by
+    have hrange := ZArith.BinInt.Z.modulo_range x modulus (by
+      change (0 : _root_.Int) < intOfZ modulus
+      exact hmpos)
+    have hr0 : (0 : _root_.Int) ≤ intOfZ (zMod x modulus) := hrange.1
+    have hrlt : intOfZ (zMod x modulus) < intOfZ modulus := hrange.2
+    have hd := ZArith.Zdiv.Z_div_mod_eq_full x modulus
+    have hdInt := congrArg intOfZ hd
+    simp only [ZArith.BinInt.Z.add, ZArith.BinInt.Z.mul,
+      intOfZ_zOfInt] at hdInt
+    let q := intOfZ (ZArith.BinInt.Z.div x modulus)
+    let r := intOfZ (zMod x modulus)
+    let m := intOfZ modulus
+    have hcalc : intOfZ x % m = r := by
+      calc
+        intOfZ x % m = (m * q + r) % m := congrArg (fun a => a % m) hdInt
+        _ = (r + q * m) % m := by rw [_root_.Int.add_comm, _root_.Int.mul_comm]
+        _ = r % m := _root_.Int.add_mul_emod_self_right r q m
+        _ = r := _root_.Int.emod_eq_of_lt hr0 hrlt
+    simpa [m, r, hm] using hcalc.symm
+  rw [hmod]
+  exact _root_.Int.toNat_of_nonneg
+    (_root_.Int.emod_nonneg (intOfZ x) (_root_.Int.ne_of_gt hmpos))
+
+theorem signed_repr_eq_proof : signed_repr_eq := by
+  intro x
+  change zltSelect (unsigned (repr x)) half_modulus
+      (unsigned (repr x)) (zSub (unsigned (repr x)) modulus) =
+    zltSelect (zMod x modulus) half_modulus (zMod x modulus)
+      (zSub (zMod x modulus) modulus)
+  rw [suffix_unsigned_repr_eq_exact]

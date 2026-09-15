@@ -2853,3 +2853,146 @@ theorem Zm : ∀ (ctx : ExactRealContext) (magnitude : ExactMagnitude ctx),
     exact (hnot hdnonneg).elim
 
 end CompCert4Lean.Flocq.Prop.Round_odd
+
+namespace CompCert4Lean.Flocq.Prop.Round_odd
+
+open CompCert4Lean.Flocq.Core
+
+private theorem round_odd_add_left_cancel_eq_aux (ctx : ExactRealContext)
+    (a b c : R ctx) (h : Rplus ctx a b = Rplus ctx a c) : b = c := by
+  change ctx.spec.add a b = ctx.spec.add a c at h
+  change b = c
+  calc
+    b = ctx.spec.add ctx.spec.zero b :=
+      (ctx.certificate.orderedField.zero_add b).symm
+    _ = ctx.spec.add (ctx.spec.add (ctx.spec.neg a) a) b := by
+      rw [ctx.certificate.orderedField.neg_add_cancel]
+    _ = ctx.spec.add (ctx.spec.neg a) (ctx.spec.add a b) := by
+      rw [ctx.certificate.orderedField.add_assoc]
+    _ = ctx.spec.add (ctx.spec.neg a) (ctx.spec.add a c) :=
+      congrArg (ctx.spec.add (ctx.spec.neg a)) h
+    _ = ctx.spec.add (ctx.spec.add (ctx.spec.neg a) a) c := by
+      rw [ctx.certificate.orderedField.add_assoc]
+    _ = ctx.spec.add ctx.spec.zero c := by
+      rw [ctx.certificate.orderedField.neg_add_cancel]
+    _ = c := ctx.certificate.orderedField.zero_add c
+
+private theorem round_odd_Zrnd_odd_eq_aux (ctx : ExactRealContext) (x : R ctx)
+    (h : x = IZR ctx (Zfloor ctx x)) :
+    Zrnd_odd ctx x = Zfloor ctx x := by
+  unfold Zrnd_odd
+  generalize hdec :
+    CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.Req_EM_T
+      ctx x (IZR ctx (Zfloor ctx x)) = dec
+  cases dec with
+  | left _ => rfl
+  | right hne => exact (hne h).elim
+
+private theorem round_odd_Zrnd_odd_ne_even_aux (ctx : ExactRealContext) (x : R ctx)
+    (hne : x ≠ IZR ctx (Zfloor ctx x)) (heven : Zeven (Zfloor ctx x) = true) :
+    Zrnd_odd ctx x = Zceil ctx x := by
+  unfold Zrnd_odd
+  generalize hdec :
+    CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.Req_EM_T
+      ctx x (IZR ctx (Zfloor ctx x)) = dec
+  cases dec with
+  | left heq => exact (hne heq).elim
+  | right _ => rw [heven]; simp
+
+private theorem round_odd_Zrnd_odd_ne_odd_aux (ctx : ExactRealContext) (x : R ctx)
+    (hne : x ≠ IZR ctx (Zfloor ctx x)) (hodd : Zeven (Zfloor ctx x) = false) :
+    Zrnd_odd ctx x = Zfloor ctx x := by
+  unfold Zrnd_odd
+  generalize hdec :
+    CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.Req_EM_T
+      ctx x (IZR ctx (Zfloor ctx x)) = dec
+  cases dec with
+  | left heq => exact (hne heq).elim
+  | right _ => rw [hodd]; simp
+
+private theorem round_odd_Zrnd_odd_add_integer_aux (ctx : ExactRealContext)
+    (k : Z) (y : R ctx) (hk : Zeven k = true) :
+    IZR ctx (Zrnd_odd ctx (Rplus ctx (IZR ctx k) y)) =
+      Rplus ctx (IZR ctx k) (IZR ctx (Zrnd_odd ctx y)) := by
+  have hfloor := Zfloor_plus ctx k y
+  have hceil := Zceil_plus ctx k y
+  have heven_sum : Zeven (Zadd k (Zfloor ctx y)) = Zeven (Zfloor ctx y) := by
+    change CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.even
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add k
+          (Zfloor ctx y)) =
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.even (Zfloor ctx y)
+    change CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.even k = true at hk
+    rw [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.even_add, hk]
+    simp [CompCert4Lean.Foundation.Logic.Rocq.Coq.Bool.Bool.eqb]
+  by_cases hy : y = IZR ctx (Zfloor ctx y)
+  · have hsum : Rplus ctx (IZR ctx k) y =
+        IZR ctx (Zfloor ctx (Rplus ctx (IZR ctx k) y)) := by
+      rw [hfloor]
+      calc
+        Rplus ctx (IZR ctx k) y =
+            Rplus ctx (IZR ctx k) (IZR ctx (Zfloor ctx y)) :=
+          congrArg (Rplus ctx (IZR ctx k)) hy
+        _ = IZR ctx (Zadd k (Zfloor ctx y)) :=
+          (ctx.certificate.sourceLaws.ofZ_add k (Zfloor ctx y)).symm
+    rw [round_odd_Zrnd_odd_eq_aux ctx y hy,
+      round_odd_Zrnd_odd_eq_aux ctx _ hsum, hfloor]
+    exact ctx.certificate.sourceLaws.ofZ_add k (Zfloor ctx y)
+  · have hsum_ne : Rplus ctx (IZR ctx k) y ≠
+        IZR ctx (Zfloor ctx (Rplus ctx (IZR ctx k) y)) := by
+      intro hsum
+      apply hy
+      rw [hfloor] at hsum
+      have hadd : IZR ctx (Zadd k (Zfloor ctx y)) =
+          Rplus ctx (IZR ctx k) (IZR ctx (Zfloor ctx y)) :=
+        ctx.certificate.sourceLaws.ofZ_add k (Zfloor ctx y)
+      rw [hadd] at hsum
+      exact round_odd_add_left_cancel_eq_aux ctx (IZR ctx k) y
+        (IZR ctx (Zfloor ctx y)) hsum
+    cases heven_y : Zeven (Zfloor ctx y) with
+    | false =>
+        have heven_outer : Zeven
+            (Zfloor ctx (Rplus ctx (IZR ctx k) y)) = false := by
+          rw [hfloor, heven_sum, heven_y]
+        rw [round_odd_Zrnd_odd_ne_odd_aux ctx y hy heven_y,
+          round_odd_Zrnd_odd_ne_odd_aux ctx _ hsum_ne heven_outer,
+          hfloor]
+        exact ctx.certificate.sourceLaws.ofZ_add k (Zfloor ctx y)
+    | true =>
+        have heven_outer : Zeven
+            (Zfloor ctx (Rplus ctx (IZR ctx k) y)) = true := by
+          rw [hfloor, heven_sum, heven_y]
+        rw [round_odd_Zrnd_odd_ne_even_aux ctx y hy heven_y,
+          round_odd_Zrnd_odd_ne_even_aux ctx _ hsum_ne heven_outer,
+          hceil]
+        exact ctx.certificate.sourceLaws.ofZ_add k (Zceil ctx y)
+
+theorem Zrnd_odd_plus' : ∀ (ctx : ExactRealContext),
+    Zrnd_odd_plus'Statement ctx := by
+  intro ctx beta hbeta x y hxy
+  rcases hxy with ⟨n, e, rfl, he⟩
+  have he0 : Zle CompCert4Lean.Flocq.Core.Zaux.Z0 e := by
+    change (0 : Int) ≤ CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ e
+    change (1 : Int) ≤ CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ e at he
+    omega
+  have hepos : Zlt CompCert4Lean.Flocq.Core.Zaux.Z0 e := by
+    change (0 : Int) < CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ e
+    change (1 : Int) ≤ CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ e at he
+    omega
+  let p := CompCert4Lean.Flocq.Core.Zaux.Zpower (radix_val beta) e
+  have hpvalue : IZR ctx p = bpow ctx beta e := by
+    exact CompCert4Lean.Flocq.Core.Raux.IZR_Zpower ctx beta e he0
+  have hpeven : Zeven p = true := by
+    exact round_odd_even_zpower_of_even beta e hepos hbeta
+  let k := CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.mul n p
+  have hkeven : Zeven k = true := by
+    exact round_odd_even_mul_right n p hpeven
+  have hxvalue : Rmult ctx (IZR ctx n) (bpow ctx beta e) = IZR ctx k := by
+    have hmul := CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.mult_IZR
+      ctx n p
+    change IZR ctx k = Rmult ctx (IZR ctx n) (IZR ctx p) at hmul
+    rw [hpvalue] at hmul
+    exact hmul.symm
+  rw [hxvalue]
+  exact round_odd_Zrnd_odd_add_integer_aux ctx k y hkeven
+
+end CompCert4Lean.Flocq.Prop.Round_odd

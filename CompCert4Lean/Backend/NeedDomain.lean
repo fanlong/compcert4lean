@@ -3855,3 +3855,196 @@ private theorem lagreeShrValLowFinal (a : Int64.int) (n : Int.int)
   exact Nat.lt_of_le_of_lt (Nat.div_le_self _ _) (lagreeWordValLt a)
 
 end CompCert4Lean.Backend.NeedDomain
+
+namespace CompCert4Lean.Backend.NeedDomain
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Lib.Integers
+
+private theorem lagreeSignedIntBoundsShrFinal (a : Int64.int) :
+    -(2 ^ (Int64.wordsize - 1) : Int) ≤ intOfZ (Int64.signed a) ∧
+      intOfZ (Int64.signed a) < (2 ^ (Int64.wordsize - 1) : Int) := by
+  by_cases hlow : a.val < 2 ^ (Int64.wordsize - 1)
+  · rw [lagreeSignedLowFinal a hlow]
+    simp only [ZArith.BinInt.Z.of_nat, intOfZ_zOfInt,
+      Int.ofNat_eq_natCast]
+    simp only [Int64.wordsize] at hlow ⊢
+    omega
+  · have hhigh : 2 ^ (Int64.wordsize - 1) ≤ a.val := Nat.le_of_not_gt hlow
+    rw [lagreeSignedHighFinal a hhigh]
+    simp only [ZArith.BinInt.Z.sub, ZArith.BinInt.Z.of_nat, intOfZ_zOfInt,
+      Int.ofNat_eq_natCast, Int.natCast_pow]
+    have haval := lagreeWordValLt a
+    simp only [Int64.wordsize] at hhigh haval ⊢
+    omega
+
+private theorem lagreeBitVecSignedToIntFinal (a : Int64.int) :
+    (BitVec.ofInt Int64.wordsize (intOfZ (Int64.signed a))).toInt =
+      intOfZ (Int64.signed a) := by
+  rw [BitVec.toInt_ofInt]
+  have hb := lagreeSignedIntBoundsShrFinal a
+  simp only [Int64.wordsize] at hb ⊢
+  apply Int.bmod_eq_of_le <;> omega
+
+private theorem lagreeBitVecSignedToNatFinal (a : Int64.int) :
+    (BitVec.ofInt Int64.wordsize (intOfZ (Int64.signed a))).toNat = a.val := by
+  rw [BitVec.toNat_ofInt]
+  by_cases hlow : a.val < 2 ^ (Int64.wordsize - 1)
+  · rw [lagreeSignedLowFinal a hlow]
+    simp only [ZArith.BinInt.Z.of_nat, intOfZ_zOfInt,
+      Int.ofNat_eq_natCast]
+    have haval := lagreeWordValLt a
+    have hcast : (a.val : Int) < ((2 ^ Int64.wordsize : Nat) : Int) := by
+      exact_mod_cast haval
+    have hem : (a.val : Int) % ((2 ^ Int64.wordsize : Nat) : Int) = a.val :=
+      Int.emod_eq_of_lt (Int.natCast_nonneg _) hcast
+    rw [hem]
+    simp
+  · have hhigh : 2 ^ (Int64.wordsize - 1) ≤ a.val := Nat.le_of_not_gt hlow
+    rw [lagreeSignedHighFinal a hhigh]
+    simp only [ZArith.BinInt.Z.sub, ZArith.BinInt.Z.of_nat, intOfZ_zOfInt,
+      Int.ofNat_eq_natCast]
+    rw [Int.sub_emod_right]
+    have haval := lagreeWordValLt a
+    have hcast : (a.val : Int) < ((2 ^ Int64.wordsize : Nat) : Int) := by
+      exact_mod_cast haval
+    have hem : (a.val : Int) % ((2 ^ Int64.wordsize : Nat) : Int) = a.val :=
+      Int.emod_eq_of_lt (Int.natCast_nonneg _) hcast
+    rw [hem]
+    simp
+
+private theorem lagreeShrValBitVecFinal (a : Int64.int) (n : Int.int) :
+    (Int64.shr' a n).val =
+      ((BitVec.ofInt Int64.wordsize
+        (intOfZ (Int64.signed a))).sshiftRight n.val).toNat := by
+  change (WordCore.repr Int64.wordsize
+    (ZArith.BinInt.Z.shiftr (Int64.signed a) (Int.unsigned n))).val = _
+  rw [lagreeIntUnsignedAsNatFinal n]
+  unfold ZArith.BinInt.Z.shiftr
+  simp only [ZArith.BinInt.Z.of_nat, intOfZ_zOfInt,
+    Int.ofNat_eq_natCast, Int.natCast_nonneg, ↓reduceIte]
+  rw [lagreeValReprIntFinal]
+  rw [BitVec.sshiftRight_eq, BitVec.toNat_ofInt,
+    lagreeBitVecSignedToIntFinal]
+  rw [Int.shiftRight_eq_div_pow]
+  simp only [Int.toNat_natCast]
+  have hpow : Int.pow 2 n.val = ((2 ^ n.val : Nat) : Int) :=
+    (Int.natCast_pow 2 n.val).symm
+  rw [hpow]
+  rw [← Int.div_def]
+
+private theorem lagreeShrTestbitNatFinal (a : Int64.int) (n : Int.int)
+    (k : Nat) (hk : k < Int64.wordsize) :
+    Int64.testbit (Int64.shr' a n) (ZArith.BinInt.Z.of_nat k) =
+      Int64.testbit a (ZArith.BinInt.Z.of_nat
+        (if n.val + k < Int64.wordsize then n.val + k
+          else Int64.wordsize - 1)) := by
+  rw [lagreeTestbitOfNatFinal, lagreeShrValBitVecFinal,
+    BitVec.testBit_toNat, BitVec.getLsbD_sshiftRight]
+  have hnle : ¬Int64.wordsize ≤ k := Nat.not_le.mpr hk
+  rw [decide_eq_false hnle, Bool.not_false, Bool.true_and]
+  by_cases hsum : n.val + k < Int64.wordsize
+  · rw [if_pos hsum, lagreeTestbitOfNatFinal]
+    rw [← BitVec.testBit_toNat, lagreeBitVecSignedToNatFinal]
+    rw [if_pos hsum]
+  · rw [if_neg hsum, BitVec.msb_eq_getLsbD_last,
+      lagreeTestbitOfNatFinal]
+    rw [← BitVec.testBit_toNat, lagreeBitVecSignedToNatFinal]
+    rw [if_neg hsum]
+
+private theorem lagreeShlTestbitNatAtFinal (a : Int64.int) (n : Int.int)
+    (k : Nat) (hsum : n.val + k < Int64.wordsize) :
+    Int64.testbit (Int64.shl' a n)
+        (ZArith.BinInt.Z.of_nat (n.val + k)) =
+      Int64.testbit a (ZArith.BinInt.Z.of_nat k) := by
+  rw [lagreeTestbitOfNatFinal, lagreeShlValFinal,
+    Nat.testBit_mod_two_pow]
+  rw [decide_eq_true hsum, Bool.true_and, Nat.testBit_mul_two_pow]
+  have hle : n.val ≤ n.val + k := Nat.le_add_right _ _
+  rw [decide_eq_true hle, Bool.true_and, Nat.add_sub_cancel_left]
+  rw [lagreeTestbitOfNatFinal]
+
+private theorem lagreeMinSignedValFinal :
+    (Int64.repr Int64.min_signed).val = 2 ^ (Int64.wordsize - 1) := by
+  have hmin : Int64.min_signed =
+      zOfInt (-(2 ^ (Int64.wordsize - 1) : Nat) : Int) := by rfl
+  rw [hmin]
+  change (WordCore.repr Int64.wordsize
+    (zOfInt (-(2 ^ (Int64.wordsize - 1) : Nat) : Int))).val = _
+  rw [lagreeValReprIntFinal]
+  simp only [Int64.wordsize]
+  omega
+
+private theorem lagreeMinSignedTopBitFinal :
+    Int64.testbit (Int64.repr Int64.min_signed)
+      (ZArith.BinInt.Z.of_nat (Int64.wordsize - 1)) = true := by
+  rw [lagreeTestbitOfNatFinal, lagreeMinSignedValFinal,
+    Nat.testBit_two_pow_self]
+
+private theorem lagreeNatIndexRangeShrFinal (k : Nat)
+    (hk : k < Int64.wordsize) :
+    ZArith.BinInt.Z.le z0 (ZArith.BinInt.Z.of_nat k) ∧
+      ZArith.BinInt.Z.lt (ZArith.BinInt.Z.of_nat k) Int64.zwordsize := by
+  constructor
+  · change 0 ≤ intOfZ (ZArith.BinInt.Z.of_nat k)
+    simp only [ZArith.BinInt.Z.of_nat, intOfZ_zOfInt]
+    exact Int.natCast_nonneg _
+  · change intOfZ (ZArith.BinInt.Z.of_nat k) < intOfZ Int64.zwordsize
+    simp only [ZArith.BinInt.Z.of_nat, intOfZ_zOfInt]
+    have hw : intOfZ Int64.zwordsize = Int.ofNat Int64.wordsize := by rfl
+    rw [hw]
+    exact Int.ofNat_lt.mpr hk
+
+private theorem lagreeShrAtNatFinal (x y m : Int64.int) (n : Int.int)
+    (h : lagree x y
+      (Int64.or (Int64.shl' m n) (Int64.repr Int64.min_signed)))
+    (k : Nat) (hk : k < Int64.wordsize)
+    (hmask : Int64.testbit m (ZArith.BinInt.Z.of_nat k) = true) :
+    Int64.testbit (Int64.shr' x n) (ZArith.BinInt.Z.of_nat k) =
+      Int64.testbit (Int64.shr' y n) (ZArith.BinInt.Z.of_nat k) := by
+  let j := if n.val + k < Int64.wordsize then n.val + k
+    else Int64.wordsize - 1
+  have hjlt : j < Int64.wordsize := by
+    dsimp [j]
+    split <;> simp only [Int64.wordsize] at * <;> omega
+  have hjrange := lagreeNatIndexRangeShrFinal j hjlt
+  have hjmask : Int64.testbit
+      (Int64.or (Int64.shl' m n) (Int64.repr Int64.min_signed))
+      (ZArith.BinInt.Z.of_nat j) = true := by
+    rw [lagreeOrTestbitForOr]
+    by_cases hsum : n.val + k < Int64.wordsize
+    · have hj : j = n.val + k := by simp [j, hsum]
+      rw [hj, lagreeShlTestbitNatAtFinal m n k hsum, hmask]
+      rfl
+    · have hj : j = Int64.wordsize - 1 := by simp [j, hsum]
+      rw [hj, lagreeMinSignedTopBitFinal]
+      simp
+  have hxy := h (ZArith.BinInt.Z.of_nat j) hjrange hjmask
+  rw [lagreeShrTestbitNatFinal x n k hk,
+    lagreeShrTestbitNatFinal y n k hk]
+  exact hxy
+
+theorem lagree_shr : lagree_shrStatement := by
+  intro x y m n h i hirange hmask
+  cases i with
+  | Zneg p =>
+      exfalso
+      have hi0 := hirange.1
+      change 0 ≤ -(Int.ofNat (posToNat p)) at hi0
+      have hp : (0 : Int) < Int.ofNat (posToNat p) :=
+        Int.natCast_pos.mpr (lagreePosToNatPosFinal p)
+      omega
+  | Z0 =>
+      exact lagreeShrAtNatFinal x y m n h 0 (by decide) hmask
+  | Zpos p =>
+      have hkZ := hirange.2
+      change (Int.ofNat (posToNat p) : Int) < Int.ofNat 64 at hkZ
+      have hk : posToNat p < Int64.wordsize := Int.ofNat_lt.mp hkZ
+      have hz : ZArith.BinInt.Z.of_nat (posToNat p) = .Zpos p := by
+        apply intOfZ_injective
+        simp only [ZArith.BinInt.Z.of_nat, intOfZ_zOfInt]
+        rfl
+      rw [← hz] at hmask ⊢
+      exact lagreeShrAtNatFinal x y m n h (posToNat p) hk hmask
+
+end CompCert4Lean.Backend.NeedDomain

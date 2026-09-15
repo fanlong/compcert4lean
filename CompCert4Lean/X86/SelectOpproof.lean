@@ -2174,3 +2174,402 @@ theorem eval_shrximm
     | Vptr _ _ => cases hz
 
 end CompCert4Lean.X86.SelectOpproof
+
+namespace CompCert4Lean.X86.SelectOpproof
+
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.ExternalCalls
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.X86.Op
+open CompCert4Lean.X86.SelectOp
+
+private theorem int_mul_val_eval_shl_local (x y : CCInt) :
+    (CompCert4Lean.Lib.Integers.Int.mul x y).val =
+      (x.val * y.val) %
+        (2 ^ CompCert4Lean.Lib.Integers.Int.wordsize) := by
+  unfold CompCert4Lean.Lib.Integers.Int.mul WordCore.mul
+  change (WordCore.repr CompCert4Lean.Lib.Integers.Int.wordsize
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.mul
+        x.intval y.intval)).val = _
+  rw [← int_zOfNat_val_local x, ← int_zOfNat_val_local y]
+  have hmul : CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.mul
+      (zOfNat x.val) (zOfNat y.val) =
+      zOfNat (x.val * y.val) := by
+    unfold CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.mul
+    simp only [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat,
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt,
+      Int.ofNat_eq_natCast, Int.natCast_mul]
+  rw [hmul, repr_val_mod_local]
+
+private theorem int_shl_mul_eval_shl_local (x n : CCInt) :
+    CompCert4Lean.Lib.Integers.Int.shl x n =
+      CompCert4Lean.Lib.Integers.Int.mul x
+        (CompCert4Lean.Lib.Integers.Int.shl
+          CompCert4Lean.Lib.Integers.Int.one n) := by
+  apply WordCore.ext_of_val_eq
+  rw [int_shl_val_local, int_mul_val_eval_shl_local,
+    int_shl_val_local]
+  change (x.val * 2 ^ n.val) % (2 ^ 32) =
+    (x.val * ((1 * 2 ^ n.val) % (2 ^ 32))) % (2 ^ 32)
+  simp only [Nat.one_mul, Nat.mul_mod_mod]
+
+private theorem val_shl_mul_eval_shl_local (x : val) (n : CCInt)
+    (hn : CompCert4Lean.Lib.Integers.Int.ltu n
+      CompCert4Lean.Lib.Integers.Int.iwordsize = true) :
+    Val.mul x
+        (.Vint (CompCert4Lean.Lib.Integers.Int.shl
+          CompCert4Lean.Lib.Integers.Int.one n)) =
+      Val.shl x (.Vint n) := by
+  cases x with
+  | Vint x =>
+      simp only [Val.mul, Val.shl, hn, if_true]
+      change CompCert4Lean.Common.Values.val.Vint
+          (CompCert4Lean.Lib.Integers.Int.mul x
+          (CompCert4Lean.Lib.Integers.Int.shl
+            CompCert4Lean.Lib.Integers.Int.one n)) =
+        CompCert4Lean.Common.Values.val.Vint
+          (CompCert4Lean.Lib.Integers.Int.shl x n)
+      exact congrArg (fun q : CCInt =>
+        CompCert4Lean.Common.Values.val.Vint q)
+        (int_shl_mul_eval_shl_local x n).symm
+  | Vundef => rfl
+  | Vlong _ => rfl
+  | Vfloat _ => rfl
+  | Vsingle _ => rfl
+  | Vptr _ _ => rfl
+
+private theorem val_mul_add_zero_eval_shl_local (x : val) (k : CCInt) :
+    Val.add (Val.mul x (.Vint k))
+        (.Vint CompCert4Lean.Lib.Integers.Int.zero) =
+      Val.mul x (.Vint k) := by
+  cases x with
+  | Vint x =>
+      simp only [Val.mul, Val.add]
+      change CompCert4Lean.Common.Values.val.Vint
+          (CompCert4Lean.Lib.Integers.Int.add
+          (CompCert4Lean.Lib.Integers.Int.mul x k)
+          CompCert4Lean.Lib.Integers.Int.zero) =
+        CompCert4Lean.Common.Values.val.Vint
+          (CompCert4Lean.Lib.Integers.Int.mul x k)
+      exact congrArg (fun q : CCInt =>
+        CompCert4Lean.Common.Values.val.Vint q)
+        (CompCert4Lean.Lib.Integers.Int.add_zero_proof _)
+  | Vundef => rfl
+  | Vlong _ => rfl
+  | Vfloat _ => rfl
+  | Vsingle _ => rfl
+  | Vptr _ _ => rfl
+
+private theorem val_shl_add_eval_shl_local (x y : val) (n : CCInt)
+    (hn : CompCert4Lean.Lib.Integers.Int.ltu n
+      CompCert4Lean.Lib.Integers.Int.iwordsize = true) :
+    Val.shl (Val.add x y) (.Vint n) =
+      Val.add
+        (Val.mul x (.Vint (CompCert4Lean.Lib.Integers.Int.shl
+          CompCert4Lean.Lib.Integers.Int.one n)))
+        (Val.shl y (.Vint n)) := by
+  calc
+    Val.shl (Val.add x y) (.Vint n) =
+        Val.mul (Val.add x y)
+          (.Vint (CompCert4Lean.Lib.Integers.Int.shl
+            CompCert4Lean.Lib.Integers.Int.one n)) :=
+      (val_shl_mul_eval_shl_local (Val.add x y) n hn).symm
+    _ = Val.add
+        (Val.mul x (.Vint (CompCert4Lean.Lib.Integers.Int.shl
+          CompCert4Lean.Lib.Integers.Int.one n)))
+        (Val.mul y (.Vint (CompCert4Lean.Lib.Integers.Int.shl
+          CompCert4Lean.Lib.Integers.Int.one n))) :=
+      Val.mul_add_distr_l x y _
+    _ = Val.add
+        (Val.mul x (.Vint (CompCert4Lean.Lib.Integers.Int.shl
+          CompCert4Lean.Lib.Integers.Int.one n)))
+        (Val.shl y (.Vint n)) := by
+      rw [val_shl_mul_eval_shl_local y n hn]
+
+private theorem int_shl_shl_eval_shl_local (x n1 n : CCInt)
+    (hn1 : CompCert4Lean.Lib.Integers.Int.ltu n1
+      CompCert4Lean.Lib.Integers.Int.iwordsize = true)
+    (hn : CompCert4Lean.Lib.Integers.Int.ltu n
+      CompCert4Lean.Lib.Integers.Int.iwordsize = true) :
+    CompCert4Lean.Lib.Integers.Int.shl
+        (CompCert4Lean.Lib.Integers.Int.shl x n1) n =
+      CompCert4Lean.Lib.Integers.Int.shl x
+        (CompCert4Lean.Lib.Integers.Int.add n n1) := by
+  have hn1v := int_ltu_iwordsize_val_local n1 hn1
+  have hnv := int_ltu_iwordsize_val_local n hn
+  change n1.val < 32 at hn1v
+  change n.val < 32 at hnv
+  have hsum : n.val + n1.val <
+      2 ^ CompCert4Lean.Lib.Integers.Int.wordsize := by
+    change n.val + n1.val < 2 ^ 32
+    omega
+  apply WordCore.ext_of_val_eq
+  rw [int_shl_val_local, int_shl_val_local, int_shl_val_local,
+    int_add_val_local', Nat.mod_eq_of_lt hsum]
+  rw [Nat.pow_add]
+  calc
+    (((x.val * 2 ^ n1.val) % (2 ^ 32)) * 2 ^ n.val) % (2 ^ 32) =
+        (x.val * 2 ^ n1.val * 2 ^ n.val) % (2 ^ 32) := by
+      rw [Nat.mul_comm ((x.val * 2 ^ n1.val) % (2 ^ 32)) (2 ^ n.val),
+        Nat.mul_mod_mod,
+        Nat.mul_comm (2 ^ n.val) (x.val * 2 ^ n1.val)]
+    _ = (x.val * (2 ^ n.val * 2 ^ n1.val)) % (2 ^ 32) := by
+      congr 1
+      ac_rfl
+
+private theorem val_shl_shl_eval_shl_local (x : val) (n1 n : CCInt)
+    (hn : CompCert4Lean.Lib.Integers.Int.ltu n
+      CompCert4Lean.Lib.Integers.Int.iwordsize = true)
+    (hadd : CompCert4Lean.Lib.Integers.Int.ltu
+      (CompCert4Lean.Lib.Integers.Int.add n n1)
+      CompCert4Lean.Lib.Integers.Int.iwordsize = true) :
+    Val.lessdef
+      (Val.shl (Val.shl x (.Vint n1)) (.Vint n))
+      (Val.shl x
+        (.Vint (CompCert4Lean.Lib.Integers.Int.add n n1))) := by
+  cases x with
+  | Vint x =>
+      by_cases hn1 : CompCert4Lean.Lib.Integers.Int.ltu n1
+          CompCert4Lean.Lib.Integers.Int.iwordsize = true
+      · simp only [Val.shl, hn1, hn, hadd, if_true]
+        change Val.lessdef
+          (.Vint (CompCert4Lean.Lib.Integers.Int.shl
+            (CompCert4Lean.Lib.Integers.Int.shl x n1) n))
+          (.Vint (CompCert4Lean.Lib.Integers.Int.shl x
+            (CompCert4Lean.Lib.Integers.Int.add n n1)))
+        rw [int_shl_shl_eval_shl_local x n1 n hn1 hn]
+        exact Val.lessdef_refl _
+      · have hn1f : CompCert4Lean.Lib.Integers.Int.ltu n1
+            CompCert4Lean.Lib.Integers.Int.iwordsize = false :=
+          Bool.eq_false_iff.mpr hn1
+        simp only [Val.shl, hn1f, Bool.false_eq_true, if_false]
+        exact Val.lessdef_undef _
+  | Vundef => exact Val.lessdef_undef _
+  | Vlong _ => exact Val.lessdef_undef _
+  | Vfloat _ => exact Val.lessdef_undef _
+  | Vsingle _ => exact Val.lessdef_undef _
+  | Vptr _ _ => exact Val.lessdef_undef _
+
+private theorem eval_lea_indexed_inv_eval_shl_local
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (xi : ExternalCalls) (ge : genv) (sp : val) (e : env) (m : mem)
+    (le : letenv) (t : expr)
+    (ofs : CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z) (x : val)
+    (h : eval_expr xi ge sp e m le
+      (Eop (Olea (Aindexed ofs)) (Econs t Enil)) x) :
+    ∃ v, eval_expr xi ge sp e m le t v ∧
+      x = Val.add v
+        (.Vint (CompCert4Lean.Lib.Integers.Int.repr ofs)) := by
+  cases h with
+  | eval_Eop _ _ _ _ _ hargs hop =>
+      cases hargs with
+      | cons _ _ _ v _ hhead htail =>
+          cases htail with
+          | nil _ =>
+              change some (Val.add v
+                (.Vint (CompCert4Lean.Lib.Integers.Int.repr ofs))) = some x at hop
+              cases hop
+              exact ⟨v, hhead, rfl⟩
+
+private theorem eval_shlimm_for_eval_shl_local
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (xi : ExternalCalls) (ge : genv) (sp : val) (e : env) (m : mem)
+    (n : CCInt) :
+    unary_constructor_sound xi ge sp e m (fun a => shlimm a n)
+      (fun x => Val.shl x (.Vint n)) := by
+  intro le a x ha
+  change ∃ v, eval_expr xi ge sp e m le (shlimm a n) v ∧
+    Val.lessdef (Val.shl x (.Vint n)) v
+  unfold shlimm
+  by_cases hz : CompCert4Lean.Lib.Integers.Int.eq n
+      CompCert4Lean.Lib.Integers.Int.zero = true
+  · rw [if_pos hz]
+    have hn := int_eq_true_zero_local n hz
+    subst n
+    refine ⟨x, ha, ?_⟩
+    cases x with
+    | Vint x =>
+        simp only [Val.shl]
+        change Val.lessdef
+          (if CompCert4Lean.Lib.Integers.Int.ltu
+              CompCert4Lean.Lib.Integers.Int.zero
+              CompCert4Lean.Lib.Integers.Int.iwordsize = true then
+            .Vint (CompCert4Lean.Lib.Integers.Int.shl x
+              CompCert4Lean.Lib.Integers.Int.zero)
+          else .Vundef) (.Vint x)
+        simp only [show CompCert4Lean.Lib.Integers.Int.ltu
+            CompCert4Lean.Lib.Integers.Int.zero
+            CompCert4Lean.Lib.Integers.Int.iwordsize = true by rfl,
+          ]
+        have hi : True := trivial
+        rw [if_pos hi]
+        rw [CompCert4Lean.Lib.Integers.Int.shl_zero_proof]
+        exact Val.lessdef_refl _
+    | _ => exact Val.lessdef_undef _
+  · rw [if_neg hz]
+    by_cases hn : CompCert4Lean.Lib.Integers.Int.ltu n
+        CompCert4Lean.Lib.Integers.Int.iwordsize = true
+    · simp only [hn, Bool.not_true, Bool.false_eq_true, if_false]
+      cases hmatch : shlimm_match a with
+      | shlimm_case1 n1 =>
+          have hx : x = .Vint n1 := eval_intconst_value_local
+            xi ge sp e m le n1 x (by simpa [hmatch] using ha)
+          subst x
+          refine ⟨.Vint (CompCert4Lean.Lib.Integers.Int.shl n1 n), ?_, ?_⟩
+          · exact eval_expr.eval_Eop le
+              (Ointconst (CompCert4Lean.Lib.Integers.Int.shl n1 n))
+              Enil [] _ (eval_exprlist.nil le) rfl
+          · simp only [Val.shl, hn, if_true]
+            exact Val.lessdef_refl _
+      | shlimm_case2 n1 t1 =>
+          obtain ⟨v1, ht1, hx⟩ := eval_shlimm_inv_local
+            xi ge sp e m le t1 n1 x (by simpa [hmatch] using ha)
+          subst x
+          by_cases hadd : CompCert4Lean.Lib.Integers.Int.ltu
+              (CompCert4Lean.Lib.Integers.Int.add n n1)
+              CompCert4Lean.Lib.Integers.Int.iwordsize = true
+          · refine ⟨Val.shl v1
+                (.Vint (CompCert4Lean.Lib.Integers.Int.add n n1)), ?_, ?_⟩
+            · simp only [hadd, if_true]
+              exact eval_expr.eval_Eop le
+                (Oshlimm (CompCert4Lean.Lib.Integers.Int.add n n1))
+                (Econs t1 Enil) [v1] _
+                (eval_exprlist.cons le t1 Enil v1 [] ht1
+                  (eval_exprlist.nil le)) rfl
+            · exact val_shl_shl_eval_shl_local v1 n1 n hn hadd
+          · have haddf : CompCert4Lean.Lib.Integers.Int.ltu
+                (CompCert4Lean.Lib.Integers.Int.add n n1)
+                CompCert4Lean.Lib.Integers.Int.iwordsize = false :=
+              Bool.eq_false_iff.mpr hadd
+            refine ⟨Val.shl (Val.shl v1 (.Vint n1)) (.Vint n), ?_,
+              Val.lessdef_refl _⟩
+            simp only [haddf, Bool.false_eq_true, if_false]
+            exact eval_expr.eval_Eop le (Oshlimm n)
+              (Econs (Eop (Oshlimm n1) (Econs t1 Enil)) Enil)
+              [Val.shl v1 (.Vint n1)] _
+              (eval_exprlist.cons le _ Enil _ [] ha
+                (eval_exprlist.nil le)) rfl
+      | shlimm_case3 ofs t1 =>
+          obtain ⟨v1, ht1, hx⟩ := eval_lea_indexed_inv_eval_shl_local
+            xi ge sp e m le t1 ofs x (by simpa [hmatch] using ha)
+          subst x
+          by_cases hscale : shift_is_scale n = true
+          · refine ⟨Val.add
+                (Val.mul v1 (.Vint (CompCert4Lean.Lib.Integers.Int.repr
+                  (CompCert4Lean.Lib.Integers.Int.unsigned
+                    (CompCert4Lean.Lib.Integers.Int.shl
+                      CompCert4Lean.Lib.Integers.Int.one n)))))
+                (.Vint (CompCert4Lean.Lib.Integers.Int.repr
+                  (CompCert4Lean.Lib.Integers.Int.unsigned
+                    (CompCert4Lean.Lib.Integers.Int.shl
+                      (CompCert4Lean.Lib.Integers.Int.repr ofs) n)))), ?_, ?_⟩
+            · simp only [hscale, if_true]
+              exact eval_expr.eval_Eop le
+                (Olea (Ascaled
+                  (CompCert4Lean.Lib.Integers.Int.unsigned
+                    (CompCert4Lean.Lib.Integers.Int.shl
+                      CompCert4Lean.Lib.Integers.Int.one n))
+                  (CompCert4Lean.Lib.Integers.Int.unsigned
+                    (CompCert4Lean.Lib.Integers.Int.shl
+                      (CompCert4Lean.Lib.Integers.Int.repr ofs) n))))
+                (Econs t1 Enil) [v1] _
+                (eval_exprlist.cons le t1 Enil v1 [] ht1
+                  (eval_exprlist.nil le)) rfl
+            · rw [CompCert4Lean.Lib.Integers.Int.repr_unsigned_proof,
+                CompCert4Lean.Lib.Integers.Int.repr_unsigned_proof]
+              rw [val_shl_add_eval_shl_local v1
+                (.Vint (CompCert4Lean.Lib.Integers.Int.repr ofs)) n hn]
+              simp only [Val.shl, hn, if_true]
+              exact Val.lessdef_refl _
+          · have hscalef : shift_is_scale n = false :=
+              Bool.eq_false_iff.mpr hscale
+            refine ⟨Val.shl
+                (Val.add v1 (.Vint (CompCert4Lean.Lib.Integers.Int.repr ofs)))
+                (.Vint n), ?_, Val.lessdef_refl _⟩
+            simp only [hscalef, Bool.false_eq_true, if_false]
+            exact eval_expr.eval_Eop le (Oshlimm n)
+              (Econs (Eop (Olea (Aindexed ofs)) (Econs t1 Enil)) Enil)
+              [Val.add v1 (.Vint (CompCert4Lean.Lib.Integers.Int.repr ofs))] _
+              (eval_exprlist.cons le _ Enil _ [] ha
+                (eval_exprlist.nil le)) rfl
+      | shlimm_default e1 =>
+          by_cases hscale : shift_is_scale n = true
+          · refine ⟨Val.add
+                (Val.mul x (.Vint (CompCert4Lean.Lib.Integers.Int.repr
+                  (CompCert4Lean.Lib.Integers.Int.unsigned
+                    (CompCert4Lean.Lib.Integers.Int.shl
+                      CompCert4Lean.Lib.Integers.Int.one n)))))
+                (.Vint (CompCert4Lean.Lib.Integers.Int.repr
+                  (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.Z0))), ?_, ?_⟩
+            · simp only [hscale, if_true]
+              exact eval_expr.eval_Eop le
+                (Olea (Ascaled
+                  (CompCert4Lean.Lib.Integers.Int.unsigned
+                    (CompCert4Lean.Lib.Integers.Int.shl
+                      CompCert4Lean.Lib.Integers.Int.one n))
+                  (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.Z0)))
+                (Econs a Enil) [x] _
+                (eval_exprlist.cons le a Enil x [] ha
+                  (eval_exprlist.nil le)) rfl
+            · rw [CompCert4Lean.Lib.Integers.Int.repr_unsigned_proof]
+              change Val.lessdef (Val.shl x (.Vint n))
+                (Val.add
+                  (Val.mul x (.Vint
+                    (CompCert4Lean.Lib.Integers.Int.shl
+                      CompCert4Lean.Lib.Integers.Int.one n)))
+                  (.Vint CompCert4Lean.Lib.Integers.Int.zero))
+              rw [val_mul_add_zero_eval_shl_local,
+                val_shl_mul_eval_shl_local x n hn]
+              exact Val.lessdef_refl _
+          · have hscalef : shift_is_scale n = false :=
+              Bool.eq_false_iff.mpr hscale
+            refine ⟨Val.shl x (.Vint n), ?_, Val.lessdef_refl _⟩
+            simp only [hscalef, Bool.false_eq_true, if_false]
+            exact eval_expr.eval_Eop le (Oshlimm n) (Econs a Enil)
+              [x] _ (eval_exprlist.cons le a Enil x [] ha
+                (eval_exprlist.nil le)) rfl
+    · have hnf : CompCert4Lean.Lib.Integers.Int.ltu n
+          CompCert4Lean.Lib.Integers.Int.iwordsize = false :=
+        Bool.eq_false_iff.mpr hn
+      simp only [hnf, Bool.not_false, if_true]
+      refine ⟨Val.shl x (.Vint n), ?_, Val.lessdef_refl _⟩
+      exact eval_expr.eval_Eop le Oshl
+        (Econs a (Econs (Eop (Ointconst n) Enil) Enil))
+        [x, .Vint n] _
+        (eval_exprlist.cons le a _ x [.Vint n] ha
+          (eval_exprlist.cons le (Eop (Ointconst n) Enil) Enil
+            (.Vint n) []
+            (eval_expr.eval_Eop le (Ointconst n) Enil [] (.Vint n)
+              (eval_exprlist.nil le) rfl)
+            (eval_exprlist.nil le))) rfl
+
+theorem eval_shl
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    eval_shlStatement := by
+  unfold eval_shlStatement binary_constructor_sound
+  intro xi ge sp e m le a x b y ha hb
+  cases hmatch : shl_match b with
+  | shl_case1 n =>
+      have hy : y = .Vint n := eval_intconst_value_local
+        xi ge sp e m le n y (by simpa [hmatch] using hb)
+      subst y
+      obtain ⟨v, hv, hd⟩ := eval_shlimm_for_eval_shl_local
+        xi ge sp e m n le a x ha
+      refine ⟨v, ?_, hd⟩
+      simpa [CompCert4Lean.X86.SelectOp.shl, hmatch] using hv
+  | shl_default e2 =>
+      refine ⟨Val.shl x y, ?_, Val.lessdef_refl _⟩
+      simp only [CompCert4Lean.X86.SelectOp.shl, hmatch]
+      exact eval_expr.eval_Eop le Oshl (Econs a (Econs b Enil))
+        [x, y] _
+        (eval_exprlist.cons le a (Econs b Enil) x [y] ha
+          (eval_exprlist.cons le b Enil y [] hb
+            (eval_exprlist.nil le))) rfl
+
+end CompCert4Lean.X86.SelectOpproof

@@ -2107,3 +2107,199 @@ theorem addl_permut : addl_permutStatement := by
 
 end Val
 end CompCert4Lean.Common.Values
+
+namespace CompCert4Lean.Common.Values
+namespace Val
+
+theorem addl_permut_4 : addl_permut_4Statement := by
+  intro x y z t
+  rw [addl_permut, addl_assoc, addl_permut]
+  exact (addl_assoc _ _ _).symm
+
+open Lean Elab Tactic Meta
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+private theorem pg_wordcore_val_repr_local (bits : Nat) (i : _root_.Int) :
+    (CompCert4Lean.Lib.Integers.WordCore.repr bits (zOfInt i)).val =
+      _root_.Int.toNat (i % (((2 ^ bits : Nat) : _root_.Int))) := by
+  run_tac
+    let env ← getEnv
+    let some (n, _) := env.constants.toList.find?
+        (fun (n, _) => (toString n).endsWith "WordCore.val_repr")
+      | throwError "frozen WordCore.val_repr helper not found"
+    let stx := Lean.mkIdent n
+    let bitsArg := Lean.mkIdent `bits
+    let iArg := Lean.mkIdent `i
+    evalTactic (← `(tactic| exact $stx $bitsArg $iArg))
+
+private theorem pg_wordcore_intval_eq_zOfNat_val_local {bits : Nat}
+    (x : CompCert4Lean.Lib.Integers.WordCore.Word bits) :
+    x.intval = zOfNat x.val := by
+  run_tac
+    let env ← getEnv
+    let some (n, _) := env.constants.toList.find?
+        (fun (n, _) => (toString n).endsWith "WordCore.intval_eq_zOfNat_val")
+      | throwError "frozen WordCore.intval_eq_zOfNat_val helper not found"
+    let stx := Lean.mkIdent n
+    let xArg := Lean.mkIdent `x
+    evalTactic (← `(tactic| exact $stx $xArg))
+
+private theorem pg_wordcore_add_val_int_local {bits : Nat}
+    (x y : CompCert4Lean.Lib.Integers.WordCore.Word bits) :
+    _root_.Int.ofNat (CompCert4Lean.Lib.Integers.WordCore.add x y).val =
+      (_root_.Int.ofNat x.val + _root_.Int.ofNat y.val) %
+        _root_.Int.ofNat (2 ^ bits) := by
+  run_tac
+    let env ← getEnv
+    let some (n, _) := env.constants.toList.find?
+        (fun (n, _) => (toString n).endsWith "WordCore.add_val_int")
+      | throwError "frozen WordCore.add_val_int helper not found"
+    let stx := Lean.mkIdent n
+    let xArg := Lean.mkIdent `x
+    let yArg := Lean.mkIdent `y
+    evalTactic (← `(tactic| exact $stx $xArg $yArg))
+
+private theorem pg_wordcore_sub_val_int_local {bits : Nat}
+    (x y : CompCert4Lean.Lib.Integers.WordCore.Word bits) :
+    _root_.Int.ofNat (CompCert4Lean.Lib.Integers.WordCore.sub x y).val =
+      (_root_.Int.ofNat x.val - _root_.Int.ofNat y.val) %
+        _root_.Int.ofNat (2 ^ bits) := by
+  run_tac
+    let env ← getEnv
+    let some (n, _) := env.constants.toList.find?
+        (fun (n, _) => (toString n).endsWith "WordCore.sub_val_int")
+      | throwError "frozen WordCore.sub_val_int helper not found"
+    let stx := Lean.mkIdent n
+    let xArg := Lean.mkIdent `x
+    let yArg := Lean.mkIdent `y
+    evalTactic (← `(tactic| exact $stx $xArg $yArg))
+
+private theorem pg_wordcore_neg_val_int_local {bits : Nat}
+    (x : CompCert4Lean.Lib.Integers.WordCore.Word bits) :
+    _root_.Int.ofNat (CompCert4Lean.Lib.Integers.WordCore.neg x).val =
+      (-_root_.Int.ofNat x.val) % _root_.Int.ofNat (2 ^ bits) := by
+  unfold CompCert4Lean.Lib.Integers.WordCore.neg
+  have hrepr : zOpp (CompCert4Lean.Lib.Integers.WordCore.unsigned x) =
+      zOfInt (-_root_.Int.ofNat x.val) := by
+    change zOfInt (-intOfZ x.intval) = zOfInt (-_root_.Int.ofNat x.val)
+    rw [pg_wordcore_intval_eq_zOfNat_val_local x]
+    simp only [zOfNat,
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat,
+      intOfZ_zOfInt]
+  change _root_.Int.ofNat
+      (CompCert4Lean.Lib.Integers.WordCore.repr bits
+        (zOpp (CompCert4Lean.Lib.Integers.WordCore.unsigned x))).val = _
+  rw [hrepr, pg_wordcore_val_repr_local]
+  exact _root_.Int.toNat_of_nonneg
+    (_root_.Int.emod_nonneg _ (_root_.Int.ne_of_gt
+      (_root_.Int.natCast_pos.mpr (Nat.two_pow_pos bits))))
+
+private theorem pg_wordcore_sub_add_opp_local {bits : Nat}
+    (x y : CompCert4Lean.Lib.Integers.WordCore.Word bits) :
+    CompCert4Lean.Lib.Integers.WordCore.sub x y =
+      CompCert4Lean.Lib.Integers.WordCore.add x
+        (CompCert4Lean.Lib.Integers.WordCore.neg y) := by
+  apply CompCert4Lean.Lib.Integers.WordCore.ext_of_val_eq
+  apply _root_.Int.ofNat.inj
+  rw [pg_wordcore_sub_val_int_local, pg_wordcore_add_val_int_local,
+    pg_wordcore_neg_val_int_local]
+  rw [_root_.Int.sub_eq_add_neg, _root_.Int.add_emod_emod]
+
+private theorem pg_ptrofs_of_int64_eq_local
+    (x : CompCert4Lean.Lib.Integers.Int64.int) :
+    CompCert4Lean.Lib.Integers.Ptrofs.of_int64 x = x := by
+  unfold CompCert4Lean.Lib.Integers.Ptrofs.of_int64
+  change CompCert4Lean.Lib.Integers.Int64.repr
+      (CompCert4Lean.Lib.Integers.Int64.unsigned x) = x
+  run_tac
+    let env ← getEnv
+    let some (n, _) := env.constants.toList.find?
+        (fun (n, _) => (toString n).endsWith "int64_repr_unsigned_local")
+      | throwError "frozen Int64 repr-unsigned helper not found"
+    let stx := Lean.mkIdent n
+    let xArg := Lean.mkIdent `x
+    evalTactic (← `(tactic| exact $stx $xArg))
+
+theorem subl_addl_opp : subl_addl_oppStatement := by
+  intro x y
+  cases x <;>
+    simp [subl, addl, Archi.ptr64, CompCert4Lean.X86_64.Archi.ptr64,
+      pg_ptrofs_of_int64_eq_local]
+  all_goals
+    exact pg_wordcore_sub_add_opp_local _ _
+
+private theorem pg_ptrofs_to_int64_eq_local
+    (x : CompCert4Lean.Lib.Integers.Ptrofs.int) :
+    CompCert4Lean.Lib.Integers.Ptrofs.to_int64 x = x := by
+  unfold CompCert4Lean.Lib.Integers.Ptrofs.to_int64
+  change CompCert4Lean.Lib.Integers.Int64.repr
+      (CompCert4Lean.Lib.Integers.Int64.unsigned x) = x
+  run_tac
+    let env ← getEnv
+    let some (n, _) := env.constants.toList.find?
+        (fun (n, _) => (toString n).endsWith "int64_repr_unsigned_local")
+      | throwError "frozen Int64 repr-unsigned helper not found"
+    let stx := Lean.mkIdent n
+    let xArg := Lean.mkIdent `x
+    evalTactic (← `(tactic| exact $stx $xArg))
+
+theorem subl_addl_l : subl_addl_lStatement := by
+  intro v1 v2 i
+  cases v1 <;> cases v2 <;>
+    simp [subl, addl, Archi.ptr64, CompCert4Lean.X86_64.Archi.ptr64,
+      pg_ptrofs_of_int64_eq_local, pg_ptrofs_to_int64_eq_local]
+  case Vlong.Vlong a b =>
+    change CompCert4Lean.Lib.Integers.Ptrofs.sub
+        (CompCert4Lean.Lib.Integers.Ptrofs.add a i) b =
+      CompCert4Lean.Lib.Integers.Ptrofs.add
+        (CompCert4Lean.Lib.Integers.Ptrofs.sub a b) i
+    exact CompCert4Lean.Lib.Integers.Ptrofs.sub_add_l_proof_api a i b
+  case Vptr.Vlong b ofs n =>
+    exact CompCert4Lean.Lib.Integers.Ptrofs.sub_add_l_proof_api ofs i n
+  case Vptr.Vptr b1 ofs1 b2 ofs2 =>
+    split <;> simp_all [pg_ptrofs_to_int64_eq_local]
+    exact congrArg Vlong
+      (CompCert4Lean.Lib.Integers.Ptrofs.sub_add_l_proof_api ofs1 i ofs2)
+
+private theorem pg_wordcore_sub_add_r_swapped_local {bits : Nat}
+    (x y z : CompCert4Lean.Lib.Integers.WordCore.Word bits) :
+    CompCert4Lean.Lib.Integers.WordCore.sub x
+        (CompCert4Lean.Lib.Integers.WordCore.add y z) =
+      CompCert4Lean.Lib.Integers.WordCore.add
+        (CompCert4Lean.Lib.Integers.WordCore.sub x y)
+        (CompCert4Lean.Lib.Integers.WordCore.neg z) := by
+  apply CompCert4Lean.Lib.Integers.WordCore.ext_of_val_eq
+  apply _root_.Int.ofNat.inj
+  rw [pg_wordcore_sub_val_int_local, pg_wordcore_add_val_int_local,
+    pg_wordcore_add_val_int_local, pg_wordcore_sub_val_int_local,
+    pg_wordcore_neg_val_int_local]
+  simp only [_root_.Int.emod_sub_emod, _root_.Int.sub_emod_emod,
+    _root_.Int.emod_add_emod, _root_.Int.add_emod_emod]
+  congr 1
+  omega
+
+theorem subl_addl_r : subl_addl_rStatement := by
+  intro v1 v2 i
+  cases v1 <;> cases v2 <;>
+    simp [subl, addl, Archi.ptr64, CompCert4Lean.X86_64.Archi.ptr64,
+      pg_ptrofs_of_int64_eq_local, pg_ptrofs_to_int64_eq_local]
+  case Vlong.Vlong a b =>
+    change CompCert4Lean.Lib.Integers.WordCore.sub a
+        (CompCert4Lean.Lib.Integers.WordCore.add b i) =
+      CompCert4Lean.Lib.Integers.WordCore.add
+        (CompCert4Lean.Lib.Integers.WordCore.sub a b)
+        (CompCert4Lean.Lib.Integers.WordCore.neg i)
+    exact pg_wordcore_sub_add_r_swapped_local a b i
+  case Vptr.Vlong b ofs n =>
+    change CompCert4Lean.Lib.Integers.WordCore.sub ofs
+        (CompCert4Lean.Lib.Integers.WordCore.add n i) =
+      CompCert4Lean.Lib.Integers.WordCore.add
+        (CompCert4Lean.Lib.Integers.WordCore.sub ofs n)
+        (CompCert4Lean.Lib.Integers.WordCore.neg i)
+    exact pg_wordcore_sub_add_r_swapped_local ofs n i
+  case Vptr.Vptr b1 ofs1 b2 ofs2 =>
+    split <;> simp_all [pg_ptrofs_to_int64_eq_local]
+    exact congrArg Vlong (pg_wordcore_sub_add_r_swapped_local ofs1 ofs2 i)
+
+end Val
+end CompCert4Lean.Common.Values

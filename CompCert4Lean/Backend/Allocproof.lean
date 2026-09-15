@@ -5833,3 +5833,246 @@ theorem add_equations_builtin_args_satisf :
               (ih rest' e1 e' hrun hsat)
 
 end CompCert4Lean.Backend.Allocproof
+
+namespace CompCert4Lean.Backend.Allocproof
+
+open CompCert4Lean.Backend.Allocation
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Values
+
+private theorem pgo_cdbe_int_eq_true
+    (x y : CompCert4Lean.Lib.Integers.int)
+    (h : CompCert4Lean.Lib.Integers.Int.eq x y = true) : x = y := by
+  apply CompCert4Lean.Lib.Integers.WordCore.ext
+  have hd : decide (x.intval = y.intval) = true := by
+    simpa [CompCert4Lean.Lib.Integers.Int.eq,
+      CompCert4Lean.Lib.Integers.WordCore.eq] using h
+  exact of_decide_eq_true hd
+
+private theorem pgo_cdbe_int64_eq_true
+    (x y : CompCert4Lean.Lib.Integers.int64)
+    (h : CompCert4Lean.Lib.Integers.Int64.eq x y = true) : x = y := by
+  apply CompCert4Lean.Lib.Integers.WordCore.ext
+  have hd : decide (x.intval = y.intval) = true := by
+    simpa [CompCert4Lean.Lib.Integers.Int64.eq,
+      CompCert4Lean.Lib.Integers.WordCore.eq] using h
+  exact of_decide_eq_true hd
+
+private theorem pgo_cdbe_add_lessdef (v1 v1' v2 v2' : val)
+    (h1 : Val.lessdef v1 v1') (h2 : Val.lessdef v2 v2') :
+    Val.lessdef (Val.add v1 v2) (Val.add v1' v2') := by
+  cases h1 with
+  | lessdef_refl v1 =>
+      cases h2 with
+      | lessdef_refl v2 => exact Val.lessdef_refl _
+      | lessdef_undef v2' =>
+          simpa [Val.add] using (Val.lessdef_undef (Val.add v1 v2'))
+  | lessdef_undef v1' =>
+      simpa [Val.add] using (Val.lessdef_undef (Val.add v1' v2'))
+
+private theorem pgo_cdbe_addl_lessdef (v1 v1' v2 v2' : val)
+    (h1 : Val.lessdef v1 v1') (h2 : Val.lessdef v2 v2') :
+    Val.lessdef (Val.addl v1 v2) (Val.addl v1' v2') := by
+  cases h1 with
+  | lessdef_refl v1 =>
+      cases h2 with
+      | lessdef_refl v2 => exact Val.lessdef_refl _
+      | lessdef_undef v2' =>
+          simpa [Val.addl] using (Val.lessdef_undef (Val.addl v1 v2'))
+  | lessdef_undef v1' =>
+      simpa [Val.addl] using (Val.lessdef_undef (Val.addl v1' v2'))
+
+theorem add_equations_builtin_arg_lessdef :
+    add_equations_builtin_arg_lessdefStatement := by
+  intro env ge sp rs ls m arg v hEval
+  induction hEval with
+  | eval_BA r =>
+      intro e e' arg' hrun hsat hwt
+      cases arg' with
+      | BA l =>
+          simp [add_equations_builtin_arg] at hrun
+          rcases hrun with ⟨rfl, rfl⟩
+          exact ⟨ls l, eval_BA l, add_equation_lessdef rs ls _ _ hsat⟩
+      | BA_splitlong hi lo =>
+          cases hi with
+          | BA hi =>
+              cases lo with
+              | BA lo =>
+                  simp [add_equations_builtin_arg,
+                    CompCert4Lean.X86_64.Archi.splitlong,
+                    CompCert4Lean.X86_64.Archi.ptr64] at hrun
+              | _ => simp [add_equations_builtin_arg] at hrun
+          | _ => simp [add_equations_builtin_arg] at hrun
+      | _ => simp [add_equations_builtin_arg] at hrun
+  | eval_BA_int n =>
+      intro e e' arg' hrun hsat hwt
+      cases arg' with
+      | BA_int n' =>
+          simp [add_equations_builtin_arg] at hrun
+          rcases hrun with ⟨heq, rfl⟩
+          have hn : n = n' := pgo_cdbe_int_eq_true n n' heq
+          cases hn
+          exact ⟨Vint n, eval_BA_int n, Val.lessdef_refl _⟩
+      | _ => simp [add_equations_builtin_arg] at hrun
+  | eval_BA_long n =>
+      intro e e' arg' hrun hsat hwt
+      cases arg' with
+      | BA_long n' =>
+          simp [add_equations_builtin_arg] at hrun
+          rcases hrun with ⟨heq, rfl⟩
+          have hn : n = n' := pgo_cdbe_int64_eq_true n n' heq
+          cases hn
+          exact ⟨Vlong n, eval_BA_long n, Val.lessdef_refl _⟩
+      | _ => simp [add_equations_builtin_arg] at hrun
+  | eval_BA_float n =>
+      intro e e' arg' hrun hsat hwt
+      cases arg' with
+      | BA_float n' =>
+          cases heq : CompCert4Lean.Lib.Floats.Float.eq_dec n n' with
+          | left h =>
+              cases h
+              simp [add_equations_builtin_arg, heq] at hrun
+              cases hrun
+              exact ⟨Vfloat n, eval_BA_float n, Val.lessdef_refl _⟩
+          | right h =>
+              simp [add_equations_builtin_arg, heq] at hrun
+              cases hrun.1
+      | _ => simp [add_equations_builtin_arg] at hrun
+  | eval_BA_single n =>
+      intro e e' arg' hrun hsat hwt
+      cases arg' with
+      | BA_single n' =>
+          cases heq : CompCert4Lean.Lib.Floats.Float32.eq_dec n n' with
+          | left h =>
+              cases h
+              simp [add_equations_builtin_arg, heq] at hrun
+              cases hrun
+              exact ⟨Vsingle n, eval_BA_single n, Val.lessdef_refl _⟩
+          | right h =>
+              simp [add_equations_builtin_arg, heq] at hrun
+              cases hrun.1
+      | _ => simp [add_equations_builtin_arg] at hrun
+  | eval_BA_loadstack chunk ofs v hload =>
+      intro e e' arg' hrun hsat hwt
+      cases arg' with
+      | BA_loadstack chunk' ofs' =>
+          simp [add_equations_builtin_arg] at hrun
+          rcases hrun with ⟨⟨hchunk, hofs⟩, rfl⟩
+          have ho : ofs = ofs' := by
+            unfold CompCert4Lean.Lib.Integers.Ptrofs.eq
+              CompCert4Lean.Lib.Integers.WordCore.eq at hofs
+            apply CompCert4Lean.Lib.Integers.WordCore.ext
+            exact of_decide_eq_true hofs
+          cases hdec : chunk_eq chunk chunk' with
+          | left hc =>
+              cases hc
+              cases ho
+              exact ⟨v, eval_BA_loadstack _ _ _ hload, Val.lessdef_refl _⟩
+          | right hc =>
+              rw [hdec] at hchunk
+              cases hchunk
+      | _ => simp [add_equations_builtin_arg] at hrun
+  | eval_BA_addrstack ofs =>
+      intro e e' arg' hrun hsat hwt
+      cases arg' with
+      | BA_addrstack ofs' =>
+          simp [add_equations_builtin_arg] at hrun
+          rcases hrun with ⟨hofs, rfl⟩
+          have ho : ofs = ofs' := by
+            unfold CompCert4Lean.Lib.Integers.Ptrofs.eq
+              CompCert4Lean.Lib.Integers.WordCore.eq at hofs
+            apply CompCert4Lean.Lib.Integers.WordCore.ext
+            exact of_decide_eq_true hofs
+          cases ho
+          exact ⟨_, eval_BA_addrstack _, Val.lessdef_refl _⟩
+      | _ => simp [add_equations_builtin_arg] at hrun
+  | eval_BA_loadglobal chunk id ofs v hload =>
+      intro e e' arg' hrun hsat hwt
+      cases arg' with
+      | BA_loadglobal chunk' id' ofs' =>
+          simp [add_equations_builtin_arg] at hrun
+          rcases hrun with ⟨⟨⟨hchunk, hid⟩, hofs⟩, rfl⟩
+          have ho : ofs = ofs' := by
+            unfold CompCert4Lean.Lib.Integers.Ptrofs.eq
+              CompCert4Lean.Lib.Integers.WordCore.eq at hofs
+            apply CompCert4Lean.Lib.Integers.WordCore.ext
+            exact of_decide_eq_true hofs
+          cases hchunkDec : chunk_eq chunk chunk' with
+          | left hc =>
+              cases hc
+              cases hidDec : ident_eq id id' with
+              | left hi =>
+                  cases hi
+                  cases ho
+                  exact ⟨v, eval_BA_loadglobal _ _ _ _ hload, Val.lessdef_refl _⟩
+              | right hi =>
+                  rw [hidDec] at hid
+                  cases hid
+          | right hc =>
+              rw [hchunkDec] at hchunk
+              cases hchunk
+      | _ => simp [add_equations_builtin_arg] at hrun
+  | eval_BA_addrglobal id ofs =>
+      intro e e' arg' hrun hsat hwt
+      cases arg' with
+      | BA_addrglobal id' ofs' =>
+          simp [add_equations_builtin_arg] at hrun
+          rcases hrun with ⟨⟨hid, hofs⟩, rfl⟩
+          have ho : ofs = ofs' := by
+            unfold CompCert4Lean.Lib.Integers.Ptrofs.eq
+              CompCert4Lean.Lib.Integers.WordCore.eq at hofs
+            apply CompCert4Lean.Lib.Integers.WordCore.ext
+            exact of_decide_eq_true hofs
+          cases hidDec : ident_eq id id' with
+          | left hi =>
+              cases hi
+              cases ho
+              exact ⟨_, eval_BA_addrglobal _ _, Val.lessdef_refl _⟩
+          | right hi =>
+              rw [hidDec] at hid
+              cases hid
+      | _ => simp [add_equations_builtin_arg] at hrun
+  | eval_BA_splitlong hi lo vhi vlo hhi hlo ihhi ihlo =>
+      intro e e' arg' hrun hsat hwt
+      cases arg' with
+      | BA_splitlong hi' lo' =>
+          change (match add_equations_builtin_arg env hi hi' e with
+            | none => none
+            | some e1 => add_equations_builtin_arg env lo lo' e1) = some e' at hrun
+          split at hrun
+          · cases hrun
+          · rename_i e1 hfirst
+            have hsat1 : satisf rs ls e1 :=
+              add_equations_builtin_arg_satisf env rs ls lo lo' e1 e' hrun hsat
+            obtain ⟨vhi', hhi', ldhi⟩ := ihhi e e1 hi' hfirst hsat1 hwt
+            obtain ⟨vlo', hlo', ldlo⟩ := ihlo e1 e' lo' hrun hsat hwt
+            exact ⟨Val.longofwords vhi' vlo',
+              eval_BA_splitlong _ _ _ _ hhi' hlo',
+              allocproof_longofwords_lessdef _ _ _ _ ldhi ldlo⟩
+      | _ => simp [add_equations_builtin_arg] at hrun
+  | eval_BA_addptr a1 a2 v1 v2 ha1 ha2 iha1 iha2 =>
+      intro e e' arg' hrun hsat hwt
+      cases arg' with
+      | BA_addptr a1' a2' =>
+          change (match add_equations_builtin_arg env a1 a1' e with
+            | none => none
+            | some e1 => add_equations_builtin_arg env a2 a2' e1) = some e' at hrun
+          split at hrun
+          · cases hrun
+          · rename_i e1 hfirst
+            have hsat1 : satisf rs ls e1 :=
+              add_equations_builtin_arg_satisf env rs ls a2 a2' e1 e' hrun hsat
+            obtain ⟨v1', h1', ld1⟩ := iha1 e e1 a1' hfirst hsat1 hwt
+            obtain ⟨v2', h2', ld2⟩ := iha2 e1 e' a2' hrun hsat hwt
+            refine ⟨(if CompCert4Lean.X86_64.Archi.ptr64 then
+                Val.addl v1' v2' else Val.add v1' v2'),
+              eval_BA_addptr _ _ _ _ h1' h2', ?_⟩
+            cases hptr : CompCert4Lean.X86_64.Archi.ptr64 with
+            | false => exact pgo_cdbe_add_lessdef _ _ _ _ ld1 ld2
+            | true => exact pgo_cdbe_addl_lessdef _ _ _ _ ld1 ld2
+      | _ => simp [add_equations_builtin_arg] at hrun
+
+end CompCert4Lean.Backend.Allocproof

@@ -3654,3 +3654,92 @@ theorem sizeof_by_value : sizeof_by_valueStatement := by
   | Tunion id a => cases hmode
 
 end CompCert4Lean.Cfrontend.SimplLocalsproof
+
+namespace CompCert4Lean.Cfrontend.SimplLocalsproof
+
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Cfrontend.Clight
+open CompCert4Lean.Cfrontend.Ctypes
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+
+private theorem alloc_variables_initial_value_fresh
+    (prog : program) (m m' : mem) (b : block) (ty : type)
+    (halloc : Mem.alloc m (.Z0 : Z) (sizeof (globalenv prog).genv_cenv ty) = (m', b))
+    (chunk : memory_chunk) (hmode : access_mode ty = .By_value chunk) :
+    Mem.load chunk m' b (.Z0 : Z) = some .Vundef := by
+  have hsize := sizeof_by_value prog ty chunk hmode
+  have hvacc : Mem.valid_access m' chunk b (.Z0 : Z) Readable := by
+    constructor
+    · intro ofs hof
+      have hlo := hof.1
+      have hhi := hof.2
+      have hbound : ZArith.BinInt.Z.lt ofs (sizeof (globalenv prog).genv_cenv ty) := by
+        change 0 ≤ intOfZ ofs at hlo
+        change intOfZ ofs < intOfZ (ZArith.BinInt.Z.add (.Z0 : Z) (size_chunk chunk)) at hhi
+        change intOfZ (size_chunk chunk) ≤
+          intOfZ (sizeof (globalenv prog).genv_cenv ty) at hsize
+        unfold ZArith.BinInt.Z.add at hhi
+        rw [intOfZ_zOfInt] at hhi
+        have hz : intOfZ (.Z0 : Z) = 0 := rfl
+        rw [hz] at hhi
+        change intOfZ ofs < intOfZ (sizeof (globalenv prog).genv_cenv ty)
+        omega
+      unfold Mem.perm
+      unfold Mem.alloc at halloc
+      cases halloc
+      rw [PMap.gss]
+      change Mem.perm_order'
+        (if (ZArith.BinInt.Z.leb (.Z0 : Z) ofs &&
+          ZArith.BinInt.Z.ltb ofs (sizeof (globalenv prog).genv_cenv ty)) = true
+          then some Freeable else none) Readable
+      have hin : (ZArith.BinInt.Z.leb (.Z0 : Z) ofs &&
+          ZArith.BinInt.Z.ltb ofs (sizeof (globalenv prog).genv_cenv ty)) = true := by
+        change intOfZ (.Z0 : Z) ≤ intOfZ ofs at hlo
+        change intOfZ ofs < intOfZ (sizeof (globalenv prog).genv_cenv ty) at hbound
+        simpa [ZArith.BinInt.Z.leb, ZArith.BinInt.Z.ltb] using And.intro hlo hbound
+      rw [if_pos hin]
+      exact perm_F_any Readable
+    · exact mav_zdivide_zero _
+  rcases Mem.valid_access_load m' chunk b (.Z0 : Z) hvacc with ⟨v, hload⟩
+  have hres := Mem.load_result chunk m' b (.Z0 : Z) v hload
+  have hhead := mav_alloc_new_contents_undef m m' (.Z0 : Z)
+    (sizeof (globalenv prog).genv_cenv ty) b halloc (.Z0 : Z)
+  have hdecode : decode_val chunk
+      (Mem.getN (size_chunk_nat chunk) (.Z0 : Z) (PMap.get b m'.mem_contents)) =
+      Vundef := by
+    obtain ⟨n, hn⟩ := size_chunk_nat_pos chunk
+    rw [hn]
+    simpa only [Mem.getN, hhead] using
+      (decode_val_undef
+        (Mem.getN n (ZArith.BinInt.Z.add (.Z0 : Z) (.Zpos .xH))
+          (PMap.get b m'.mem_contents)) chunk)
+  have hv : v = Vundef := hres.trans hdecode
+  simpa [hv] using hload
+
+theorem alloc_variables_initial_value : alloc_variables_initial_valueStatement := by
+  intro prog e m vars e' m' halloc hinit
+  induction halloc with
+  | nil => exact hinit
+  | cons e m id ty vars m1 b1 m2 e2 halloc hrest ih =>
+      apply ih
+      intro id' b ty' chunk hget hmode
+      have hspec := PTree.gsspec_proof (A := block × type)
+        id' id (b1, ty) e
+      rw [hspec] at hget
+      cases hid : peq id' id with
+      | left heq =>
+          simp only [hid] at hget
+          cases hget
+          exact alloc_variables_initial_value_fresh prog m m1 b1 ty halloc chunk hmode
+      | right hne =>
+          simp only [hid] at hget
+          exact alloc_variables_load_alloc_local m (.Z0 : Z)
+            (sizeof (globalenv prog).genv_cenv ty) m1 b1 halloc chunk b (.Z0 : Z)
+            Vundef (hinit id' b ty' chunk hget hmode)
+
+end CompCert4Lean.Cfrontend.SimplLocalsproof

@@ -2945,3 +2945,43 @@ theorem store_init_data_neutral : store_init_data_neutralStatement := by
 
 end Genv
 end CompCert4Lean.Common.Globalenvs
+
+namespace CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Linking
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.Lib.Integers
+namespace Genv
+
+theorem store_init_data_list_neutral : store_init_data_list_neutralStatement := by
+  intro F V ge thr hsym b idl
+  induction idl with
+  | nil =>
+      intro m p m' hneutral hb hstore
+      change some m = some m' at hstore
+      cases hstore
+      exact hneutral
+  | cons id rest ih =>
+      intro m p m' hneutral hb hstore
+      change (match store_init_data ge m b p id with
+        | none => none
+        | some m1 =>
+            store_init_data_list ge m1 b (zAdd p (init_data_size id)) rest) = some m' at hstore
+      cases hstep : store_init_data ge m b p id with
+      | none => simp [hstep] at hstore
+      | some m1 =>
+          have htail :
+              store_init_data_list ge m1 b (zAdd p (init_data_size id)) rest = some m' := by
+            simpa [hstep] using hstore
+          have hfirst : Mem.inject_neutral thr m1 :=
+            store_init_data_neutral F V ge thr hsym m b p id m1 hneutral hb hstep
+          exact ih m1 (zAdd p (init_data_size id)) m' hfirst hb htail
+
+end Genv
+end CompCert4Lean.Common.Globalenvs

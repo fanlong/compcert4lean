@@ -2838,3 +2838,40 @@ theorem agree_locs_set_slot : agree_locs_set_slotStatement := by
     exact agree_incoming hagree ofs' ty' hin
 
 end CompCert4Lean.Backend.Stackingproof
+
+namespace CompCert4Lean.Backend.Stackingproof
+
+open CompCert4Lean.Backend.Bounds
+open CompCert4Lean.Backend.Locations
+
+theorem agree_locs_return : agree_locs_returnStatement := by
+  intro return_address_offset tprog cfg f
+    bound_local_pos bound_outgoing_pos bound_stack_data_pos
+    used_callee_save_norepet used_callee_save_prop ls ls0 ls' hagree hcallee
+  constructor
+  · intro r hnot
+    have hsave : CompCert4Lean.X86.Conventions1.is_callee_save cfg r = true := by
+      unfold mreg_within_bounds at hnot
+      cases h : CompCert4Lean.X86.Conventions1.is_callee_save cfg r with
+      | false =>
+          exfalso
+          apply hnot
+          intro hsave'
+          rw [h] at hsave'
+          cases hsave'
+      | true => rfl
+    have hls : ls (R r) = ls0 (R r) :=
+      agree_unused_reg hagree r hnot
+    have hls' : ls' (R r) = ls (R r) := by
+      apply hcallee
+      simp [CompCert4Lean.Backend.Conventions.callee_save_loc, hsave]
+    exact hls'.trans hls
+  · intro ofs ty hin
+    have hls : ls (S Incoming ofs ty) = ls0 (S Outgoing ofs ty) :=
+      agree_incoming hagree ofs ty hin
+    have hls' : ls' (S Incoming ofs ty) = ls (S Incoming ofs ty) := by
+      apply hcallee
+      simp [CompCert4Lean.Backend.Conventions.callee_save_loc]
+    exact hls'.trans hls
+
+end CompCert4Lean.Backend.Stackingproof

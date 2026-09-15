@@ -2489,3 +2489,59 @@ theorem match_cont_call_cont :
   | match_Kreturn => exact True.intro
 
 end CompCert4Lean.Cfrontend.SimplExprproof
+
+namespace CompCert4Lean.Cfrontend.SimplExprproof
+
+open CompCert4Lean.Cfrontend.SimplExprspec
+
+theorem tr_select_switch :
+    ∀ [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+      [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)],
+      tr_select_switchStatement := by
+  intro binary64_certificate binary32_certificate ce
+  have hdefault : ∀ ls tls,
+      tr_lblstmts ce ls tls →
+      tr_lblstmts ce (Csem.select_switch_default ls)
+        (Clight.select_switch_default tls) := by
+    intro ls tls htr
+    induction htr using tr_lblstmts.rec
+        (motive_1 := fun _ _ _ => True) <;> try trivial
+    case tr_ls_nil => exact tr_lblstmts.tr_ls_nil
+    case tr_ls_cons c s ls ts tls hs hls ihs ih =>
+      cases c with
+      | none => exact tr_lblstmts.tr_ls_cons none s ls ts tls hs hls
+      | some z => exact ih
+  have hcase : ∀ n ls tls,
+      tr_lblstmts ce ls tls →
+      match Csem.select_switch_case n ls with
+      | none => Clight.select_switch_case n tls = none
+      | some ls' => ∃ tls', Clight.select_switch_case n tls = some tls' ∧
+          tr_lblstmts ce ls' tls' := by
+    intro n ls tls htr
+    induction htr using tr_lblstmts.rec
+        (motive_1 := fun _ _ _ => True) <;> try trivial
+    case tr_ls_cons c s ls ts tls hs hls ihs ih =>
+      cases c with
+      | none => exact ih
+      | some z =>
+          simp only [Csem.select_switch_case, Clight.select_switch_case]
+          cases hz : CompCert4Lean.Lib.Coqlib.zeq z n with
+          | left heq =>
+              exact ⟨Clight.LScons (some z) ts tls, rfl,
+                tr_lblstmts.tr_ls_cons (some z) s ls ts tls hs hls⟩
+          | right hne => exact ih
+  intro n ls tls htr
+  unfold Csem.select_switch Clight.select_switch
+  have hinfo := hcase n ls tls htr
+  cases hsel : Csem.select_switch_case n ls with
+  | some ls' =>
+      rw [hsel] at hinfo
+      rcases hinfo with ⟨tls', htls, hselected⟩
+      rw [htls]
+      exact hselected
+  | none =>
+      rw [hsel] at hinfo
+      rw [hinfo]
+      exact hdefault ls tls htr
+
+end CompCert4Lean.Cfrontend.SimplExprproof

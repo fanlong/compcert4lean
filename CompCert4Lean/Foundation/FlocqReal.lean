@@ -3331,3 +3331,16 @@ theorem INR_IZR_INZ :
 end RIneq
 end Rocq.Coq.Reals
 end CompCert4Lean.Foundation.FlocqReal
+
+namespace CompCert4Lean.Foundation.FlocqReal
+namespace Rocq.Coq.Reals
+namespace RIneq
+
+theorem opp_IZR :
+    ∀ (ctx : ExactRealContext), opp_IZRStatement ctx := by
+  intro ctx n
+  exact ctx.certificate.sourceLaws.ofZ_neg n
+
+end RIneq
+end Rocq.Coq.Reals
+end CompCert4Lean.Foundation.FlocqReal

@@ -3305,3 +3305,140 @@ theorem getN_in : getN_inStatement := by
 end Mem
 
 end CompCert4Lean.Common.Memory
+namespace CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+namespace Mem
+
+theorem load_store_overlap : load_store_overlapStatement := by
+  intro chunk m1 b ofs v m2 chunk' ofs' v' hstore hload hleft hright
+  obtain ⟨sz, hsz⟩ := size_chunk_nat_pos chunk
+  obtain ⟨sz', hsz'⟩ := size_chunk_nat_pos chunk'
+  have hloadres := load_result chunk' m2 b ofs' v' hload
+  let c := PMap.get b m1.mem_contents
+  let c' := setN (encode_val chunk v) ofs c
+  have hloadc : v' = decode_val chunk' (getN (size_chunk_nat chunk') ofs' c') := by
+    simpa [c, c', store_mem_contents chunk m1 b ofs v m2 hstore,
+      pmapGetSetSame] using hloadres
+  cases henc : encode_val chunk v with
+  | nil =>
+      have hlen := encode_val_length chunk v
+      rw [henc, hsz] at hlen
+      simp at hlen
+  | cons mv1 mvl =>
+      have hshapeEnc : shape_encoding chunk v (mv1 :: mvl) := by
+        rw [← henc]
+        exact encode_val_shape chunk v
+      have hlen : (mv1 :: mvl).length = size_chunk_nat chunk := by
+        simpa [henc] using (encode_val_length chunk v)
+      let mv1' := ZMap.get ofs' c'
+      let mvl' := getN sz' (zAdd ofs' z1) c'
+      have hloadc' : v' = decode_val chunk' (mv1' :: mvl') := by
+        rw [hsz'] at hloadc
+        simpa [getN, mv1', mvl'] using hloadc
+      have hshapeDec : shape_decoding chunk' (mv1' :: mvl') v' := by
+        rw [hloadc']
+        exact decode_val_shape chunk' mv1' mvl'
+      have hhead : ZMap.get ofs c' = mv1 := by
+        dsimp [c']
+        rw [henc]
+        change ZMap.get ofs (setN mvl (zAdd ofs z1) (ZMap.set ofs mv1 c)) = mv1
+        have htail : ZMap.get ofs (setN mvl (zAdd ofs z1) (ZMap.set ofs mv1 c)) =
+            ZMap.get ofs (ZMap.set ofs mv1 c) := by
+          apply setN_other
+          intro r hr
+          rcases hr with ⟨hrlo, hrhi⟩
+          intro hro
+          subst r
+          change intOfZ (zAdd ofs z1) ≤ intOfZ ofs at hrlo
+          rw [intOfZ_add_one] at hrlo
+          omega
+        rw [htail]
+        change PMap.get (ZIndexed.index ofs) (PMap.set (ZIndexed.index ofs) mv1 c) = mv1
+        exact pmap_get_set_same_memproof _ _ _
+      refine ⟨mv1, mvl, mv1', mvl', hshapeEnc, hshapeDec, ?_⟩
+      by_cases heq : ofs' = ofs
+      · left
+        subst ofs'
+        constructor
+        · rfl
+        · simpa [mv1'] using hhead
+      · have hneInt : intOfZ ofs ≠ intOfZ ofs' := by
+          intro he
+          apply heq
+          exact (intOfZ_injective he).symm
+        by_cases hlt : zLt ofs ofs'
+        · right
+          left
+          constructor
+          · exact hlt
+          · dsimp [mv1', c']
+            rw [henc]
+            change ZMap.get ofs' (setN mvl (zAdd ofs z1) (ZMap.set ofs mv1 c)) ∈ mvl
+            apply setN_in
+            constructor
+            · change intOfZ (zAdd ofs z1) ≤ intOfZ ofs'
+              change intOfZ ofs < intOfZ ofs' at hlt
+              rw [intOfZ_add_one]
+              omega
+            · change intOfZ ofs' < intOfZ (zAdd (zAdd ofs z1) (zOfNat mvl.length))
+              have hsize : zOfNat (mv1 :: mvl).length = size_chunk chunk := by
+                rw [hlen]
+                cases chunk <;> rfl
+              change intOfZ ofs' < intOfZ (zAdd ofs (size_chunk chunk)) at hright
+              rw [show (mv1 :: mvl).length = mvl.length + 1 by rfl] at hsize
+              have hsizeInt : intOfZ (size_chunk chunk) = Int.ofNat mvl.length + 1 := by
+                have hh := congrArg intOfZ hsize
+                rw [intOfZ_zofnat_mem] at hh
+                change Int.ofNat (mvl.length + 1) = intOfZ (size_chunk chunk) at hh
+                have hnat : Int.ofNat (mvl.length + 1) = Int.ofNat mvl.length + 1 := by
+                  simpa using (Int.ofNat_add_ofNat mvl.length 1).symm
+                rw [hnat] at hh
+                exact hh.symm
+              have hz1 : intOfZ z1 = (1 : Int) := by rfl
+              rw [intOfZ_zadd_mem, intOfZ_zadd_mem, intOfZ_zofnat_mem, hz1]
+              rw [intOfZ_zadd_mem, hsizeInt] at hright
+              omega
+        · right
+          right
+          constructor
+          · change intOfZ ofs' < intOfZ ofs
+            have hlt' : ¬ intOfZ ofs < intOfZ ofs' := by
+              intro h'
+              apply hlt
+              change intOfZ ofs < intOfZ ofs'
+              exact h'
+            omega
+          · dsimp [mvl']
+            rw [← hhead]
+            apply getN_in
+            constructor
+            · change intOfZ (zAdd ofs' z1) ≤ intOfZ ofs
+              have hlt' : intOfZ ofs' < intOfZ ofs := by
+                have hnot : ¬ intOfZ ofs < intOfZ ofs' := by
+                  intro h'
+                  apply hlt
+                  change intOfZ ofs < intOfZ ofs'
+                  exact h'
+                omega
+              rw [intOfZ_add_one]
+              omega
+            · change intOfZ ofs < intOfZ (zAdd (zAdd ofs' z1) (zOfNat sz'))
+              change intOfZ ofs < intOfZ (zAdd ofs' (size_chunk chunk')) at hleft
+              have hsize' : intOfZ (size_chunk chunk') = Int.ofNat sz' + 1 := by
+                have hnat : intOfZ (size_chunk chunk') = Int.ofNat (size_chunk_nat chunk') := by
+                  cases chunk' <;> rfl
+                rw [hnat, hsz']
+                simpa using (Int.ofNat_add_ofNat sz' 1).symm
+              simp only [intOfZ_zadd_mem, intOfZ_zofnat_mem] at hleft ⊢
+              rw [hsize'] at hleft
+              have hz1 : intOfZ z1 = (1 : Int) := by rfl
+              simp [hz1] at hleft ⊢
+              omega
+
+end Mem
+end CompCert4Lean.Common.Memory

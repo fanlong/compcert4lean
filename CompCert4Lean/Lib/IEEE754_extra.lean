@@ -1897,3 +1897,150 @@ theorem Bexact_inverse_mantissa_value :
   omega
 
 end CompCert4Lean.Lib.IEEE754_extra
+
+namespace CompCert4Lean.Lib.IEEE754_extra
+
+open CompCert4Lean.Flocq.Core
+
+private theorem pg_ieee754_posSucc_nat (q : positive) :
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat
+        (_root_.CompCert4Lean.Lib.Floats.Model.Rocq.Coq.Floats.SpecFloat.posSucc q) =
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat q + 1 := by
+  induction q with
+  | xH => rfl
+  | xI q ih =>
+      change 2 * CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat
+          (_root_.CompCert4Lean.Lib.Floats.Model.Rocq.Coq.Floats.SpecFloat.posSucc q) =
+        2 * CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat q + 1 + 1
+      rw [ih]
+      omega
+  | xO q ih =>
+      change CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat (.xI q) =
+        2 * CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat q + 1
+      rfl
+
+private theorem pg_ieee754_digits_xO_iter (k : Nat) :
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat
+        (Digits.digits2_pos
+          (Ziter (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat k)
+            xO xH)) =
+      k + 1 := by
+  induction k with
+  | zero => rfl
+  | succ k ih =>
+      rw [pg_ieee754_ziter_succ]
+      change CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat
+          (_root_.CompCert4Lean.Lib.Floats.Model.Rocq.Coq.Floats.SpecFloat.posSucc
+            (Digits.digits2_pos
+              (Ziter (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat k)
+                xO xH))) =
+        k + 1 + 1
+      rw [pg_ieee754_posSucc_nat, ih]
+
+theorem Bexact_inverse_mantissa_digits2_pos :
+    ∀ {prec emax : Z} [Prec_gt_0 prec] [Prec_lt_emax prec emax],
+      Bexact_inverse_mantissa_digits2_posStatement (prec := prec) (emax := emax) := by
+  intro prec emax pgt ple
+  letI : Prec_gt_0 prec := pgt
+  letI : Prec_lt_emax prec emax := ple
+  dsimp [Bexact_inverse_mantissa_digits2_posStatement, keepPrecisionHypotheses]
+  have hp : Zlt Z0 prec := pgt
+  change (0 : Int) < CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ prec at hp
+  let k := Int.toNat (CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ prec - 1)
+  have hk_nonneg : (0 : Int) ≤ CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ prec - 1 := by
+    omega
+  have hk : Int.ofNat k = CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ prec - 1 := by
+    exact Int.toNat_of_nonneg hk_nonneg
+  have hsub : Zsub prec Zone =
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat k := by
+    apply CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective
+    simp only [Zsub,
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.sub,
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt,
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat]
+    have hzone : CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ Zone = (1 : Int) := by
+      decide
+    rw [hzone, hk]
+  unfold Bexact_inverse_mantissa
+  rw [hsub]
+  apply CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective
+  change Int.ofNat
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat
+        (Digits.digits2_pos
+          (Ziter (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat k)
+            xO xH))) =
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ prec
+  rw [pg_ieee754_digits_xO_iter]
+  change (↑(k + 1) : Int) = _
+  rw [Int.natCast_add]
+  have hprec : CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ prec =
+      Int.ofNat k + 1 := by
+    omega
+  exact hprec.symm
+
+theorem bounded_Bexact_inverse :
+    ∀ {prec emax : Z} [Prec_gt_0 prec] [Prec_lt_emax prec emax],
+      bounded_Bexact_inverseStatement (prec := prec) (emax := emax) := by
+  intro prec emax pgt ple
+  letI : Prec_gt_0 prec := pgt
+  letI : Prec_lt_emax prec emax := ple
+  dsimp [bounded_Bexact_inverseStatement, keepPrecisionHypotheses]
+  intro e
+  have hd := Bexact_inverse_mantissa_digits2_pos (prec := prec) (emax := emax)
+  dsimp [Bexact_inverse_mantissa_digits2_posStatement, keepPrecisionHypotheses] at hd
+  change (Zle (emin prec emax) e ∧ Zle e (Zsub emax prec)) ↔
+    (_root_.CompCert4Lean.Lib.Floats.Model.Rocq.Coq.Floats.SpecFloat.bounded
+      prec emax (Bexact_inverse_mantissa (prec := prec)) e = true)
+  unfold _root_.CompCert4Lean.Lib.Floats.Model.Rocq.Coq.Floats.SpecFloat.bounded
+  unfold _root_.CompCert4Lean.Lib.Floats.Model.Rocq.Coq.Floats.SpecFloat.canonical_mantissa
+  unfold _root_.CompCert4Lean.Lib.Floats.Model.Rocq.Coq.Floats.SpecFloat.fexp
+  have hd' :
+      _root_.CompCert4Lean.Lib.Floats.Model.Rocq.Coq.Floats.SpecFloat.zpos
+          (_root_.CompCert4Lean.Lib.Floats.Model.Rocq.Coq.Floats.SpecFloat.digits2_pos
+            (Bexact_inverse_mantissa (prec := prec))) = prec := by
+    exact hd
+  rw [hd']
+  let em := _root_.CompCert4Lean.Lib.Floats.Model.Rocq.Coq.Floats.SpecFloat.emin prec emax
+  let up := _root_.CompCert4Lean.Lib.Floats.Model.Rocq.Coq.Floats.SpecFloat.zsub emax prec
+  have hcancel :
+      _root_.CompCert4Lean.Lib.Floats.Model.Rocq.Coq.Floats.SpecFloat.zsub
+          (_root_.CompCert4Lean.Lib.Floats.Model.Rocq.Coq.Floats.SpecFloat.zadd prec e) prec = e := by
+    apply CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective
+    simp only [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add,
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.sub,
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+    omega
+  rw [hcancel]
+  change
+    (CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ em ≤
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ e ∧
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ e ≤
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ up) ↔
+      ((decide
+          ((if CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ e ≤
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ em then em else e) = e) &&
+        (if CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ e ≤
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ up then true else false)) = true)
+  have heq_iff : em = e ↔
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ em =
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ e := by
+    constructor
+    · exact fun h => congrArg CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ h
+    · intro h
+      apply CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective
+      exact h
+  by_cases hmax : CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ e ≤
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ em <;>
+    by_cases hup : CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ e ≤
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ up <;>
+    simp [hmax, hup, heq_iff] <;> omega
+
+theorem Bexact_inverse_obligation_2Statement_proof :
+    ∀ {prec emax : Z}, Bexact_inverse_obligation_2Statement (prec := prec) (emax := emax) := by
+  simp [Bexact_inverse_obligation_2Statement]
+
+theorem Bexact_inverse_obligation_3Statement_proof :
+    ∀ {prec emax : Z}, Bexact_inverse_obligation_3Statement (prec := prec) (emax := emax) := by
+  simp [Bexact_inverse_obligation_3Statement]
+
+end CompCert4Lean.Lib.IEEE754_extra

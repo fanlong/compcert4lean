@@ -3198,3 +3198,189 @@ theorem factor_forward_simulation : factor_forward_simulationStatement := by
         simpa [atomic] using props.fsim_public_preserved id
 
 end CompCert4Lean.Common.Smallstep
+
+namespace CompCert4Lean.Common.Smallstep
+
+open CompCert4Lean.Common.Events
+
+theorem atomic_receptive : atomic_receptiveStatement := by
+  intro L hstrong
+  constructor
+  · intro s t1 s1 t2 hstep hmatch
+    cases hstep with
+    | atomic_step_silent s s' hstep1 =>
+        cases hmatch
+        exact ⟨(E0, s'), atomic_step_silent L (globalenv L) s s' hstep1⟩
+    | atomic_step_start s ev t s' hstep1 =>
+        cases hmatch with
+        | match_traces_syscall id args res1 res2 valid1 valid2 same_type =>
+            obtain ⟨s2, t2', hstep2⟩ :=
+              hstrong.ssr_receptive s t s' hstep1
+                (match_traces_syscall id args res1 res2 valid1 valid2 same_type)
+            exact ⟨(t2', s2), atomic_step_start L (globalenv L) s
+              (Event_syscall id args res2) t2' s2 hstep2⟩
+        | match_traces_vload chunk id ofs res1 res2 valid1 valid2 same_type =>
+            obtain ⟨s2, t2', hstep2⟩ :=
+              hstrong.ssr_receptive s t s' hstep1
+                (match_traces_vload chunk id ofs res1 res2 valid1 valid2 same_type)
+            exact ⟨(t2', s2), atomic_step_start L (globalenv L) s
+              (Event_vload chunk id ofs res2) t2' s2 hstep2⟩
+        | match_traces_vstore chunk id ofs arg =>
+            obtain ⟨s2, t2', hstep2⟩ :=
+              hstrong.ssr_receptive s t s' hstep1
+                (match_traces_vstore chunk id ofs arg)
+            exact ⟨(t2', s2), atomic_step_start L (globalenv L) s
+              (Event_vstore chunk id ofs arg) t2' s2 hstep2⟩
+        | match_traces_annot id args =>
+            obtain ⟨s2, t2', hstep2⟩ :=
+              hstrong.ssr_receptive s t s' hstep1
+                (match_traces_annot id args)
+            exact ⟨(t2', s2), atomic_step_start L (globalenv L) s
+              (Event_annot id args) t2' s2 hstep2⟩
+    | atomic_step_continue ev t s hout =>
+        cases hmatch with
+        | match_traces_syscall id args res1 res2 valid1 valid2 same_type =>
+            simp [output_trace, output_event] at hout
+        | match_traces_vload chunk id ofs res1 res2 valid1 valid2 same_type =>
+            simp [output_trace, output_event] at hout
+        | match_traces_vstore chunk id ofs arg =>
+            exact ⟨(t, s), atomic_step_continue L (globalenv L) s hout⟩
+        | match_traces_annot id args =>
+            exact ⟨(t, s), atomic_step_continue L (globalenv L) s hout⟩
+  · intro s t s' hstep
+    cases hstep with
+    | atomic_step_silent s s' hstep1 =>
+        change (0 : Nat) ≤ 1
+        exact Nat.zero_le _
+    | atomic_step_start s ev t s' hstep1 => simp
+    | atomic_step_continue ev t s hout => simp
+
+end CompCert4Lean.Common.Smallstep
+
+namespace CompCert4Lean.Common.Smallstep
+
+open CompCert4Lean.Common.Events
+
+theorem fbs_progress : fbs_progressStatement := by
+  intro L1 L2 index order match_states props i s1 s2 hmatch hsafe
+  cases hmatch
+  rename_i t s20 s1' hstar hmatch0 htrace
+  cases t with
+  | nil =>
+      obtain hprogress := props.bsim_progress i s20 hmatch0
+        (star_safe L1 s1 s1' hstar hsafe)
+      rcases hprogress with ⟨r, hfinal⟩ | ⟨t, s2', hstep⟩
+      · exact Or.inl ⟨r, hfinal, rfl⟩
+      · cases t with
+        | nil =>
+            exact Or.inr ⟨E0, (E0, s2'),
+              atomic_step_silent L2 (globalenv L2) s20 s2' hstep⟩
+        | cons ev t =>
+            exact Or.inr ⟨[ev], (t, s2'),
+              atomic_step_start L2 (globalenv L2) s20 ev t s2' hstep⟩
+  | cons ev t =>
+      rcases htrace with hfalse | hout
+      · simp [E0] at hfalse
+      · exact Or.inr ⟨[ev], (t, s20),
+          atomic_step_continue L2 (globalenv L2) s20 hout⟩
+
+end CompCert4Lean.Common.Smallstep
+
+namespace CompCert4Lean.Common.Smallstep
+
+open CompCert4Lean.Common.Events
+
+theorem fbs_simulation : fbs_simulationStatement := by
+  intro L1 L2 index order match_states props hsingle hwb s2 t s2' hstep
+  induction hstep with
+  | atomic_step_silent s s' hstep =>
+      intro i s1 hmatch hsafe
+      cases hmatch
+      rename_i s1pre hprefix htrace hmatch0
+      obtain ⟨i', s1'', hdiagram, hmatch'⟩ :=
+        props.bsim_simulation s E0 s' hstep i hmatch0
+          (star_safe L1 s1 s1pre hprefix hsafe)
+      rcases hdiagram with hplus | ⟨hstar, horder⟩
+      · exact ⟨i', s1'',
+          Or.inl (star_plus_trans _ _ _ _ s1 E0 s1pre E0 s1'' E0
+            hprefix hplus rfl),
+          fbs_match.intro i' s1'' E0 s' s1'' (star_refl _ _ s1'')
+            hmatch' (Or.inl rfl)⟩
+      · exact ⟨i', s1'',
+          Or.inr ⟨star_trans _ _ _ _ s1 E0 s1pre hprefix E0 s1'' E0
+            hstar rfl, horder⟩,
+          fbs_match.intro i' s1'' E0 s' s1'' (star_refl _ _ s1'')
+            hmatch' (Or.inl rfl)⟩
+  | atomic_step_start s ev t0 s' hstep =>
+      intro i s1 hmatch hsafe
+      cases hmatch
+      rename_i s1pre hprefix htrace hmatch0
+      obtain ⟨i', s1'', hdiagram, hmatch'⟩ :=
+        props.bsim_simulation s (ev :: t0) s' hstep i hmatch0
+          (star_safe L1 s1 s1pre hprefix hsafe)
+      have hcombined : star (step L1) (globalenv L1) s1 (ev :: t0) s1'' := by
+        rcases hdiagram with hplus | ⟨hstar, horder⟩
+        · exact star_trans _ _ _ _ s1 E0 s1pre hprefix (ev :: t0) s1''
+            (ev :: t0) (plus_star _ _ _ _ s1pre (ev :: t0) s1'' hplus)
+            rfl
+        · exact star_trans _ _ _ _ s1 E0 s1pre hprefix (ev :: t0) s1''
+            (ev :: t0) hstar rfl
+      obtain ⟨s1x, hplus, htail⟩ :=
+        star_non_E0_split' L1 hsingle s1 (ev :: t0) s1'' hcombined
+      exact ⟨i', s1x, Or.inl hplus,
+        fbs_match.intro i' s1x t0 s' s1'' htail hmatch'
+          (Or.inr (hwb s (ev :: t0) s' hstep))⟩
+  | atomic_step_continue ev t0 s hout =>
+      intro i s1 hmatch hsafe
+      cases hmatch
+      rename_i s1pre hprefix htrace hmatch0
+      obtain ⟨s1x, hplus, htail⟩ :=
+        star_non_E0_split' L1 hsingle s1 (ev :: t0) s1pre hprefix
+      exact ⟨i, s1x, Or.inl hplus,
+        fbs_match.intro i s1x t0 s s1pre htail hmatch0
+          (Or.inr hout.2)⟩
+
+end CompCert4Lean.Common.Smallstep
+
+namespace CompCert4Lean.Common.Smallstep
+
+open CompCert4Lean.Common.Events
+
+theorem factor_backward_simulation : factor_backward_simulationStatement := by
+  intro L1 L2 hsim hsingle hwb
+  cases hsim with
+  | @Backward_simulation index order match_states props =>
+      refine @Backward_simulation L1 (atomic L2) index order
+        (fbs_match L1 L2 match_states) ?_
+      constructor
+      · exact props.bsim_order_wf
+      · intro s1 hinit1
+        obtain ⟨s2, hinit2⟩ := props.bsim_initial_states_exist s1 hinit1
+        exact ⟨(E0, s2), hinit2, rfl⟩
+      · intro s1 s2 hinit1 hinit2
+        rcases s2 with ⟨t, s2⟩
+        change initial_state L2 s2 ∧ t = E0 at hinit2
+        rcases hinit2 with ⟨hinit2, rfl⟩
+        obtain ⟨i, s1', hinit1', hmatch⟩ :=
+          props.bsim_match_initial_states s1 s2 hinit1 hinit2
+        exact ⟨i, s1', hinit1',
+          fbs_match.intro i s1' E0 s2 s1' (star_refl _ _ s1')
+            hmatch (Or.inl rfl)⟩
+      · intro i s1 s2 r hmatch hsafe hfinal2
+        rcases s2 with ⟨t, s2⟩
+        change final_state L2 s2 r ∧ t = E0 at hfinal2
+        rcases hfinal2 with ⟨hfinal2, rfl⟩
+        cases hmatch
+        rename_i s1pre hprefix htrace hmatch0
+        obtain ⟨s1'', hstar, hfinal1⟩ :=
+          props.bsim_match_final_states i s2 r hmatch0
+            (star_safe L1 s1 s1pre hprefix hsafe) hfinal2
+        exact ⟨s1'',
+          star_trans _ _ _ _ s1 E0 s1pre hprefix E0 s1'' E0 hstar rfl,
+          hfinal1⟩
+      · exact fbs_progress L1 L2 index order match_states props
+      · exact fbs_simulation L1 L2 index order match_states props hsingle hwb
+      · intro id
+        simpa [atomic] using props.bsim_public_preserved id
+
+end CompCert4Lean.Common.Smallstep

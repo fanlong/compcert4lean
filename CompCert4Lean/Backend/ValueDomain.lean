@@ -3421,3 +3421,717 @@ theorem vnormalize_type_sound : vnormalize_type_soundStatement := by
     exact vmatch_add_undef_of_lessdef bc v
       (CompCert4Lean.Common.Values.Val.normalize v ty) x
       (val_lessdef_normalize_local v ty) h
+private theorem is_uns_usize_select_aux (i : int) : is_uns (usize i) i := by
+  intro m hm hle
+  cases m with
+  | Zneg p =>
+      have hnonneg := hm.1
+      change (0 : Int) ≤ -Int.ofNat
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p) at hnonneg
+      have hp : (0 : Int) < Int.ofNat
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p) :=
+        Int.natCast_pos.mpr
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat_positive p)
+      omega
+  | Z0 =>
+      cases hi : i.intval with
+      | Zneg p =>
+          have hirange := i.intrange.1
+          rw [hi] at hirange
+          change (-1 : Int) < -Int.ofNat
+            (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p) at hirange
+          have hp := CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat_positive p
+          have hp' : (0 : Int) < Int.ofNat
+              (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p) :=
+            Int.natCast_pos.mpr hp
+          omega
+      | Z0 =>
+          change i.val.testBit 0 = false
+          have hiv : i.val = 0 := by
+            unfold CompCert4Lean.Lib.Integers.WordCore.Word.val
+            rw [hi]
+            rfl
+          simp [hiv]
+      | Zpos p =>
+          change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (usize i) ≤ 0 at hle
+          unfold usize Int.size at hle
+          simp only [CompCert4Lean.Lib.Integers.Int.unsigned,
+            CompCert4Lean.Lib.Integers.WordCore.unsigned] at hle
+          rw [hi] at hle
+          change Int.ofNat
+            (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat
+              (CompCert4Lean.Foundation.Numbers.Rocq.Coq.PArith.BinPos.Pos.size p)) ≤ 0 at hle
+          have hs := CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat_positive
+            (CompCert4Lean.Foundation.Numbers.Rocq.Coq.PArith.BinPos.Pos.size p)
+          have hs' : (0 : Int) < Int.ofNat
+              (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat
+                (CompCert4Lean.Foundation.Numbers.Rocq.Coq.PArith.BinPos.Pos.size p)) :=
+            Int.natCast_pos.mpr hs
+          omega
+  | Zpos p =>
+      change CompCert4Lean.Lib.Integers.Int.testbit i (.Zpos p) = false
+      rw [is_uns_1_testbit_pos]
+      apply Nat.testBit_lt_two_pow
+      cases hi : i.intval with
+      | Zneg q =>
+          have hirange := i.intrange.1
+          rw [hi] at hirange
+          change (-1 : Int) < -Int.ofNat
+            (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat q) at hirange
+          have hq := CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat_positive q
+          have hq' : (0 : Int) < Int.ofNat
+              (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat q) :=
+            Int.natCast_pos.mpr hq
+          omega
+      | Z0 =>
+          have hiv : i.val = 0 := by
+            unfold CompCert4Lean.Lib.Integers.WordCore.Word.val
+            rw [hi]
+            rfl
+          rw [hiv]
+          exact Nat.two_pow_pos _
+      | Zpos q =>
+          have hiv : i.val =
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat q := by
+            unfold CompCert4Lean.Lib.Integers.WordCore.Word.val
+            rw [hi]
+            rfl
+          rw [hiv]
+          have hsize : Nat.log2
+                (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat q) + 1 ≤
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p := by
+            change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (usize i) ≤
+              Int.ofNat (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p) at hle
+            unfold usize Int.size at hle
+            simp only [CompCert4Lean.Lib.Integers.Int.unsigned,
+              CompCert4Lean.Lib.Integers.WordCore.unsigned] at hle
+            rw [hi] at hle
+            change Int.ofNat
+                (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat
+                  (CompCert4Lean.Foundation.Numbers.Rocq.Coq.PArith.BinPos.Pos.size q)) ≤
+              Int.ofNat (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p) at hle
+            have hsz : CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat
+                (CompCert4Lean.Foundation.Numbers.Rocq.Coq.PArith.BinPos.Pos.size q) =
+                Nat.log2 (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat q) + 1 := by
+              unfold CompCert4Lean.Foundation.Numbers.Rocq.Coq.PArith.BinPos.Pos.size
+              exact CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat_posOfNat
+                (by omega)
+            rw [hsz] at hle
+            exact Int.ofNat_le.mp hle
+          apply (Nat.log2_lt
+            (Nat.ne_of_gt
+              (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat_positive q))).mp
+          omega
+
+open Lean Elab Tactic Meta
+
+private theorem word_val_repr_zOfNat_select_aux (bits n : Nat) :
+    (CompCert4Lean.Lib.Integers.WordCore.repr bits
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt (Int.ofNat n))).val =
+      n % (2 ^ bits) := by
+  run_tac
+    let lctx ← getLCtx
+    let bitsF := (lctx.findFromUserName? `bits).get!
+    let nF := (lctx.findFromUserName? `n).get!
+    let bitsE := mkFVar bitsF.fvarId
+    let nE := mkFVar nF.fvarId
+    let zOfNatE ← mkAppM ``CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt
+      #[← mkAppM ``Int.ofNat #[nE]]
+    let h₁ ← mkAppM
+      (isUns1PrivateName "CompCert4Lean.Lib.Integers.WordCore.val_repr_residue")
+      #[bitsE, zOfNatE]
+    let h₂ ← mkAppM
+      (isUns1PrivateName "CompCert4Lean.Lib.Integers.WordCore.residue_zOfNat")
+      #[bitsE, nE]
+    let e ← mkAppM ``Eq.trans #[h₁, h₂]
+    closeMainGoal Name.anonymous e
+
+private theorem int_not_val_select_aux (i : int) :
+    (CompCert4Lean.Lib.Integers.Int.not i).val =
+      Nat.xor i.val (2 ^ CompCert4Lean.Lib.Integers.Int.wordsize - 1) := by
+  unfold CompCert4Lean.Lib.Integers.Int.not
+    CompCert4Lean.Lib.Integers.WordCore.not
+  change (CompCert4Lean.Lib.Integers.WordCore.repr
+      CompCert4Lean.Lib.Integers.Int.wordsize
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt
+        (Int.ofNat
+          (Nat.xor i.val
+            (2 ^ CompCert4Lean.Lib.Integers.Int.wordsize - 1))))).val =
+    Nat.xor i.val (2 ^ CompCert4Lean.Lib.Integers.Int.wordsize - 1)
+  rw [word_val_repr_zOfNat_select_aux]
+  apply Nat.mod_eq_of_lt
+  apply Nat.xor_lt_two_pow
+  · exact (CompCert4Lean.Lib.Integers.Int.toFin i).isLt
+  · have hp : 0 < 2 ^ CompCert4Lean.Lib.Integers.Int.wordsize := Nat.two_pow_pos _
+    omega
+
+private theorem int_testbit_not_select_aux (i : int)
+    (m : CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z)
+    (hm : zLe z0 m ∧ zLt m Int.zwordsize) :
+    Int.testbit (Int.not i) m = !(Int.testbit i m) := by
+  cases m with
+  | Zneg p =>
+      have hnonneg := hm.1
+      change (0 : Int) ≤ -Int.ofNat
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p) at hnonneg
+      have hp : (0 : Int) < Int.ofNat
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p) :=
+        Int.natCast_pos.mpr
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat_positive p)
+      omega
+  | Z0 =>
+      change (CompCert4Lean.Lib.Integers.Int.not i).val.testBit 0 =
+        !i.val.testBit 0
+      rw [int_not_val_select_aux]
+      calc
+        (Nat.xor i.val
+            (2 ^ CompCert4Lean.Lib.Integers.Int.wordsize - 1)).testBit 0 =
+            (i.val.testBit 0 ^^ (2 ^ CompCert4Lean.Lib.Integers.Int.wordsize - 1).testBit 0) :=
+          Nat.testBit_xor _ _ _
+        _ = !i.val.testBit 0 := by
+          rw [Nat.testBit_two_pow_sub_one]
+          simp [CompCert4Lean.Lib.Integers.Int.wordsize]
+  | Zpos p =>
+      change CompCert4Lean.Lib.Integers.Int.testbit
+        (CompCert4Lean.Lib.Integers.Int.not i) (.Zpos p) =
+        !(CompCert4Lean.Lib.Integers.Int.testbit i (.Zpos p))
+      rw [is_uns_1_testbit_pos, is_uns_1_testbit_pos,
+        int_not_val_select_aux]
+      have hp := hm.2
+      change (Int.ofNat
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p) : Int) <
+        Int.ofNat 32 at hp
+      have hp' : CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p < 32 :=
+        Int.ofNat_lt.mp hp
+      calc
+        (Nat.xor i.val
+            (2 ^ CompCert4Lean.Lib.Integers.Int.wordsize - 1)).testBit
+              (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p) =
+            (i.val.testBit (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p) ^^
+              (2 ^ CompCert4Lean.Lib.Integers.Int.wordsize - 1).testBit
+                (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p)) :=
+          Nat.testBit_xor _ _ _
+        _ = !i.val.testBit (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p) := by
+          rw [Nat.testBit_two_pow_sub_one]
+          simp [CompCert4Lean.Lib.Integers.Int.wordsize, hp']
+
+private theorem is_sgn_ssize_select_aux (i : int) : is_sgn (ssize i) i := by
+  by_cases hneg : Int.lt i Int.zero = true
+  · intro m hm hge
+    have hsize_m : zLe (usize (Int.not i)) m := by
+      change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+          (usize (Int.not i)) ≤
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ m
+      change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+          (zSub (ssize i) z1) ≤
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ m at hge
+      unfold ssize at hge
+      simp only [hneg, if_pos, zAdd,
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add,
+        zSub, CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.sub,
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt] at hge
+      have hz1 : CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ z1 = 1 := by rfl
+      rw [hz1] at hge
+      unfold usize
+      omega
+    have hjm := is_uns_usize_select_aux (Int.not i) m hm hsize_m
+    rw [int_testbit_not_select_aux i m hm] at hjm
+    let top := zSub Int.zwordsize z1
+    have htoprange : zLe z0 top ∧ zLt top Int.zwordsize := by
+      have hz0 : CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ z0 = 0 := by rfl
+      have hz1 : CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ z1 = 1 := by rfl
+      have hzw : CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ Int.zwordsize = 32 := by rfl
+      constructor
+      · change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ z0 ≤
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ top
+        simp only [top, CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.sub,
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+        rw [hz0, hz1, hzw]
+        omega
+      · change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ top <
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ Int.zwordsize
+        simp only [top, CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.sub,
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+        rw [hz1, hzw]
+        omega
+    have hsize_top : zLe (usize (Int.not i)) top := by
+      change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+          (usize (Int.not i)) ≤
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ top
+      change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+          (usize (Int.not i)) ≤
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ m at hsize_m
+      have hmw := hm.2
+      change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ m <
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ Int.zwordsize at hmw
+      simp only [top, CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.sub,
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+      have hz1 : CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ z1 = 1 := by rfl
+      have hzw : CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ Int.zwordsize = 32 := by rfl
+      rw [hz1, hzw]
+      rw [hzw] at hmw
+      omega
+    have hjtop := is_uns_usize_select_aux (Int.not i) top htoprange hsize_top
+    rw [int_testbit_not_select_aux i top htoprange] at hjtop
+    change Int.testbit i m = Int.testbit i top
+    cases hmBit : Int.testbit i m <;>
+      cases htBit : Int.testbit i top <;>
+      simp [hmBit, htBit] at hjm hjtop ⊢
+  · apply is_uns_sgn_vmatch (usize i) (ssize i) i
+      (is_uns_usize_select_aux i)
+    have hfalse : Int.lt i Int.zero = false := Bool.eq_false_iff.mpr hneg
+    change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (usize i) <
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (ssize i)
+    unfold ssize usize
+    simp only [hfalse, Bool.false_eq_true, if_false, zAdd,
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add,
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+    have hz1 : CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ z1 = 1 := by rfl
+    rw [hz1]
+    omega
+
+private theorem ssize_pos_select_aux (i : int) : zLt z0 (ssize i) := by
+  cases h : Int.lt i Int.zero with
+  | false =>
+      have hu := usize_pos i
+      unfold usize at hu
+      change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ z0 <
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (ssize i)
+      change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ z0 ≤
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (Int.size i) at hu
+      unfold ssize
+      simp only [h, Bool.false_eq_true, if_false, zAdd,
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add,
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+      have hz0 : CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ z0 = 0 := by rfl
+      have hz1 : CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ z1 = 1 := by rfl
+      rw [hz0] at hu
+      rw [hz0, hz1]
+      omega
+  | true =>
+      have hu := usize_pos (Int.not i)
+      unfold usize at hu
+      change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ z0 <
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (ssize i)
+      change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ z0 ≤
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (Int.size (Int.not i)) at hu
+      unfold ssize
+      simp only [h, if_true, zAdd,
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add,
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+      have hz0 : CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ z0 = 0 := by rfl
+      have hz1 : CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ z1 = 1 := by rfl
+      rw [hz0] at hu
+      rw [hz0, hz1]
+      omega
+
+private theorem zle_max_l_select_aux
+    (a b : CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z) : zLe a (zMax a b) := by
+  rw [zMax_comm_for_vlub]
+  exact CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.le_max_r b a
+
+private theorem zle_max_r_select_aux
+    (a b : CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z) : zLe b (zMax a b) := by
+  exact CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.le_max_r a b
+
+private theorem vge_vlub_int_i_select_aux (i j : int) :
+    vge (vlub_int I i j) (I i) := by
+  unfold vlub_int
+  by_cases hij : Int.eq i j = true
+  · have hij' : i = j := by
+      change decide (i.intval = j.intval) = true at hij
+      exact CompCert4Lean.Lib.Integers.WordCore.ext (of_decide_eq_true hij)
+    subst j
+    rw [if_pos hij]
+    exact vge.int i
+  · by_cases hneg : Int.lt i Int.zero = true ∨ Int.lt j Int.zero = true
+    · simp [hij, hneg]
+      apply vge_sgn_i'
+      · exact zLt_le_vmatch z0 (ssize i) (zMax (ssize i) (ssize j))
+          (ssize_pos_select_aux i) (zle_max_l_select_aux _ _)
+      · exact is_sgn_mon_vmatch (ssize i) (zMax (ssize i) (ssize j)) i
+          (is_sgn_ssize_select_aux i) (zle_max_l_select_aux _ _)
+    · have hi : Int.lt i Int.zero = false :=
+        Bool.eq_false_iff.mpr (fun h => hneg (Or.inl h))
+      have hj : Int.lt j Int.zero = false :=
+        Bool.eq_false_iff.mpr (fun h => hneg (Or.inr h))
+      simp [hij, hi, hj]
+      apply vge_uns_i'
+      · exact zLe_trans_vmatch z0 (usize i) (zMax (usize i) (usize j))
+          (usize_pos i) (zle_max_l_select_aux _ _)
+      · exact is_uns_mon_vmatch (usize i) (zMax (usize i) (usize j)) i
+          (is_uns_usize_select_aux i) (zle_max_l_select_aux _ _)
+
+private theorem vge_vlub_int_iu_select_aux (i j : int) :
+    vge (vlub_int IU i j) (IU i) := by
+  unfold vlub_int
+  by_cases hij : Int.eq i j = true
+  · have hij' : i = j := by
+      change decide (i.intval = j.intval) = true at hij
+      exact CompCert4Lean.Lib.Integers.WordCore.ext (of_decide_eq_true hij)
+    subst j
+    rw [if_pos hij]
+    exact vge.iu i
+  · by_cases hneg : Int.lt i Int.zero = true ∨ Int.lt j Int.zero = true
+    · simp [hij, hneg]
+      apply vge_sgn_iu'
+      · exact zLt_le_vmatch z0 (ssize i) (zMax (ssize i) (ssize j))
+          (ssize_pos_select_aux i) (zle_max_l_select_aux _ _)
+      · exact is_sgn_mon_vmatch (ssize i) (zMax (ssize i) (ssize j)) i
+          (is_sgn_ssize_select_aux i) (zle_max_l_select_aux _ _)
+    · have hi : Int.lt i Int.zero = false :=
+        Bool.eq_false_iff.mpr (fun h => hneg (Or.inl h))
+      have hj : Int.lt j Int.zero = false :=
+        Bool.eq_false_iff.mpr (fun h => hneg (Or.inr h))
+      simp [hij, hi, hj]
+      apply vge_uns_iu'
+      · exact zLe_trans_vmatch z0 (usize i) (zMax (usize i) (usize j))
+          (usize_pos i) (zle_max_l_select_aux _ _)
+      · exact is_uns_mon_vmatch (usize i) (zMax (usize i) (usize j)) i
+          (is_uns_usize_select_aux i) (zle_max_l_select_aux _ _)
+
+private theorem vge_refl_select_aux (x : aval) : vge x x := by
+  cases x <;> try constructor
+  all_goals first
+    | exact CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.le_refl _
+    | exact pge.pge_refl _
+
+private theorem zlt_max_add_one_l_select_aux
+    (n a : CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z) :
+    zLt n (zMax (zAdd n z1) a) := by
+  apply zLt_le_vmatch n (zAdd n z1) _
+  · change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ n <
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (zAdd n z1)
+    simp only [zAdd,
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add,
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+    have hz1 : CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ z1 = 1 := by rfl
+    rw [hz1]
+    omega
+  · exact zle_max_l_select_aux _ _
+
+private theorem zlt_max_add_one_r_select_aux
+    (a n : CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z) :
+    zLt n (zMax a (zAdd n z1)) := by
+  apply zLt_le_vmatch n (zAdd n z1) _
+  · change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ n <
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (zAdd n z1)
+    simp only [zAdd,
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add,
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+    have hz1 : CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ z1 = 1 := by rfl
+    rw [hz1]
+    omega
+  · exact zle_max_r_select_aux _ _
+
+private theorem vge_sgn_uns_select_aux (q : aptr)
+    (m : CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z) (p : aptr)
+    (n : CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z)
+    (hnm : zLt n m) (hqp : pge q p) : vge (sgn q m) (Uns p n) := by
+  exact vge_trans _ (Sgn q m) _ (vge_sgn_sgn' q m)
+    (vge.sgnUns q m p n hnm hqp)
+
+private theorem vge_sgn_sgn_select_aux (q : aptr)
+    (m : CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z) (p : aptr)
+    (n : CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z)
+    (hnm : zLe n m) (hqp : pge q p) : vge (sgn q m) (Sgn p n) := by
+  exact vge_trans _ (Sgn q m) _ (vge_sgn_sgn' q m)
+    (vge.sgnSgn q m p n hnm hqp)
+
+private theorem vge_uns_uns_select_aux (q : aptr)
+    (m : CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z) (p : aptr)
+    (n : CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z)
+    (hnm : zLe n m) (hqp : pge q p) : vge (uns1 q m) (Uns p n) := by
+  exact vge_trans _ (Uns q m) _ (vge_uns_uns' q m)
+    (vge.vge_uns_uns q m p n hnm hqp)
+
+private theorem vge_mix_i_select_aux (p : aptr)
+    (n : CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z) (i : int) :
+    vge (if Int.lt i Int.zero = true then
+        sgn p (zMax (ssize i) (zAdd n z1))
+      else uns1 p (zMax (usize i) n)) (I i) := by
+  by_cases hneg : Int.lt i Int.zero = true
+  · rw [if_pos hneg]
+    apply vge_sgn_i'
+    · exact zLt_le_vmatch z0 (ssize i) _
+        (ssize_pos_select_aux i) (zle_max_l_select_aux _ _)
+    · exact is_sgn_mon_vmatch (ssize i) _ i
+        (is_sgn_ssize_select_aux i) (zle_max_l_select_aux _ _)
+  · rw [if_neg hneg]
+    apply vge_uns_i'
+    · exact zLe_trans_vmatch z0 (usize i) _
+        (usize_pos i) (zle_max_l_select_aux _ _)
+    · exact is_uns_mon_vmatch (usize i) _ i
+        (is_uns_usize_select_aux i) (zle_max_l_select_aux _ _)
+
+private theorem vge_mix_iu_select_aux (p : aptr)
+    (n : CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z) (i : int) :
+    vge (if Int.lt i Int.zero = true then
+        sgn p (zMax (ssize i) (zAdd n z1))
+      else uns1 p (zMax (usize i) n)) (IU i) := by
+  by_cases hneg : Int.lt i Int.zero = true
+  · rw [if_pos hneg]
+    apply vge_sgn_iu'
+    · exact zLt_le_vmatch z0 (ssize i) _
+        (ssize_pos_select_aux i) (zle_max_l_select_aux _ _)
+    · exact is_sgn_mon_vmatch (ssize i) _ i
+        (is_sgn_ssize_select_aux i) (zle_max_l_select_aux _ _)
+  · rw [if_neg hneg]
+    apply vge_uns_iu'
+    · exact zLe_trans_vmatch z0 (usize i) _
+        (usize_pos i) (zle_max_l_select_aux _ _)
+    · exact is_uns_mon_vmatch (usize i) _ i
+        (is_uns_usize_select_aux i) (zle_max_l_select_aux _ _)
+
+private theorem vge_sgn_i_max_select_aux (p : aptr)
+    (n : CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z) (i : int) :
+    vge (sgn p (zMax (ssize i) n)) (I i) := by
+  apply vge_sgn_i'
+  · exact zLt_le_vmatch z0 (ssize i) _
+      (ssize_pos_select_aux i) (zle_max_l_select_aux _ _)
+  · exact is_sgn_mon_vmatch (ssize i) _ i
+      (is_sgn_ssize_select_aux i) (zle_max_l_select_aux _ _)
+
+private theorem vge_sgn_iu_max_select_aux (p : aptr)
+    (n : CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z) (i : int) :
+    vge (sgn p (zMax (ssize i) n)) (IU i) := by
+  apply vge_sgn_iu'
+  · exact zLt_le_vmatch z0 (ssize i) _
+      (ssize_pos_select_aux i) (zle_max_l_select_aux _ _)
+  · exact is_sgn_mon_vmatch (ssize i) _ i
+      (is_sgn_ssize_select_aux i) (zle_max_l_select_aux _ _)
+
+private theorem vge_uns_mix_select_aux (p : aptr)
+    (n : CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z) (i : int) :
+    vge (if Int.lt i Int.zero = true then
+        sgn p (zMax (ssize i) (zAdd n z1))
+      else uns1 p (zMax (usize i) n)) (Uns p n) := by
+  by_cases hneg : Int.lt i Int.zero = true
+  · rw [if_pos hneg]
+    exact vge_sgn_uns_select_aux p _ p n
+      (zlt_max_add_one_r_select_aux _ _) (pge.pge_refl p)
+  · rw [if_neg hneg]
+    exact vge_uns_uns_select_aux p _ p n
+      (zle_max_r_select_aux _ _) (pge.pge_refl p)
+
+private theorem vge_lub_l_select_aux : ∀ cfg x y, vge (vlub cfg x y) x := by
+  intro cfg x y
+  cases x with
+  | Vbot => simpa only [vlub] using vge.bot y
+  | I i =>
+      cases y with
+      | Vbot => simpa only [vlub] using vge_refl_select_aux (I i)
+      | I j => simpa only [vlub] using vge_vlub_int_i_select_aux i j
+      | IU j =>
+          simpa only [vlub] using
+            vge_trans _ (IU i) _ (vge_vlub_int_iu_select_aux i j) (vge.iuInt i)
+      | Uns p n => simpa only [vlub] using vge_mix_i_select_aux p n i
+      | Sgn p n => simpa only [vlub] using vge_sgn_i_max_select_aux p n i
+      | L _ => simpa only [vlub, ntop] using vge.numInt Pbot i
+      | F _ => simpa only [vlub, ntop] using vge.numInt Pbot i
+      | FS _ => simpa only [vlub, ntop] using vge.numInt Pbot i
+      | Num p => simpa only [vlub] using vge.numInt p i
+      | Ptr p => simpa only [vlub] using vge.ifptrInt (plub p (int_provenance cfg i)) i
+      | Ifptr p => simpa only [vlub] using vge.ifptrInt (plub p (int_provenance cfg i)) i
+  | IU i =>
+      cases y with
+      | Vbot => simpa only [vlub] using vge_refl_select_aux (IU i)
+      | I j => simpa only [vlub] using vge_vlub_int_iu_select_aux i j
+      | IU j => simpa only [vlub] using vge_vlub_int_iu_select_aux i j
+      | Uns p n => simpa only [vlub] using vge_mix_iu_select_aux p n i
+      | Sgn p n => simpa only [vlub] using vge_sgn_iu_max_select_aux p n i
+      | L _ => simpa only [vlub, ntop] using vge.numIU Pbot i
+      | F _ => simpa only [vlub, ntop] using vge.numIU Pbot i
+      | FS _ => simpa only [vlub, ntop] using vge.numIU Pbot i
+      | Num p => simpa only [vlub] using vge.numIU p i
+      | Ptr p => simpa only [vlub] using vge.ifptrIU (plub p (int_provenance cfg i)) i
+      | Ifptr p => simpa only [vlub] using vge.ifptrIU (plub p (int_provenance cfg i)) i
+  | Uns p n =>
+      cases y with
+      | Vbot => simpa only [vlub] using vge_refl_select_aux (Uns p n)
+      | I i => simpa only [vlub] using vge_uns_mix_select_aux p n i
+      | IU i => simpa only [vlub] using vge_uns_mix_select_aux p n i
+      | Uns q m =>
+          simpa only [vlub] using
+            vge.vge_uns_uns (plub p q) (zMax n m) p n
+              (zle_max_l_select_aux n m) (pge_lub_l p q)
+      | Sgn q m =>
+          simpa only [vlub] using
+            vge_sgn_uns_select_aux (plub p q) (zMax (zAdd n z1) m) p n
+              (zlt_max_add_one_l_select_aux n m) (pge_lub_l p q)
+      | L _ => simpa only [vlub] using vge.numUns p p n (pge.pge_refl p)
+      | F _ => simpa only [vlub] using vge.numUns p p n (pge.pge_refl p)
+      | FS _ => simpa only [vlub] using vge.numUns p p n (pge.pge_refl p)
+      | Num q => simpa only [vlub] using vge.numUns (plub p q) p n (pge_lub_l p q)
+      | Ptr q => simpa only [vlub] using vge.ifptrUns (plub p q) p n (pge_lub_l p q)
+      | Ifptr q => simpa only [vlub] using vge.ifptrUns (plub p q) p n (pge_lub_l p q)
+  | Sgn p n =>
+      cases y with
+      | Vbot => simpa only [vlub] using vge_refl_select_aux (Sgn p n)
+      | I i =>
+          simpa only [vlub] using
+            vge_sgn_sgn_select_aux p (zMax (ssize i) n) p n
+              (zle_max_r_select_aux _ _) (pge.pge_refl p)
+      | IU i =>
+          simpa only [vlub] using
+            vge_sgn_sgn_select_aux p (zMax (ssize i) n) p n
+              (zle_max_r_select_aux _ _) (pge.pge_refl p)
+      | Uns q m =>
+          simpa only [vlub] using
+            vge_sgn_sgn_select_aux (plub p q) (zMax n (zAdd m z1)) p n
+              (zle_max_l_select_aux _ _) (pge_lub_l p q)
+      | Sgn q m =>
+          simpa only [vlub] using
+            vge_sgn_sgn_select_aux (plub p q) (zMax n m) p n
+              (zle_max_l_select_aux _ _) (pge_lub_l p q)
+      | L _ => simpa only [vlub] using vge.numSgn p p n (pge.pge_refl p)
+      | F _ => simpa only [vlub] using vge.numSgn p p n (pge.pge_refl p)
+      | FS _ => simpa only [vlub] using vge.numSgn p p n (pge.pge_refl p)
+      | Num q => simpa only [vlub] using vge.numSgn (plub p q) p n (pge_lub_l p q)
+      | Ptr q => simpa only [vlub] using vge.ifptrSgn (plub p q) p n (pge_lub_l p q)
+      | Ifptr q => simpa only [vlub] using vge.ifptrSgn (plub p q) p n (pge_lub_l p q)
+  | L i =>
+      cases y with
+      | Vbot => simpa only [vlub] using vge_refl_select_aux (L i)
+      | I _ => simpa only [vlub, ntop] using vge.numLong Pbot i
+      | IU _ => simpa only [vlub, ntop] using vge.numLong Pbot i
+      | Uns p _ => simpa only [vlub] using vge.numLong p i
+      | Sgn p _ => simpa only [vlub] using vge.numLong p i
+      | L j =>
+          change vge (if Int64.eq i j = true then L i else ntop) (L i)
+          by_cases h : Int64.eq i j = true
+          · rw [if_pos h]
+            exact vge.long i
+          · rw [if_neg h]
+            exact vge.numLong Pbot i
+      | F _ => simpa only [vlub, ntop] using vge.numLong Pbot i
+      | FS _ => simpa only [vlub, ntop] using vge.numLong Pbot i
+      | Num p => simpa only [vlub] using vge.numLong p i
+      | Ptr p => simpa only [vlub] using vge.ifptrLong (plub p (long_provenance cfg i)) i
+      | Ifptr p => simpa only [vlub] using vge.ifptrLong (plub p (long_provenance cfg i)) i
+  | F f =>
+      cases y with
+      | Vbot => simpa only [vlub] using vge_refl_select_aux (F f)
+      | I _ => simpa only [vlub, ntop] using vge.numFloat Pbot f
+      | IU _ => simpa only [vlub, ntop] using vge.numFloat Pbot f
+      | Uns p _ => simpa only [vlub] using vge.numFloat p f
+      | Sgn p _ => simpa only [vlub] using vge.numFloat p f
+      | L _ => simpa only [vlub, ntop] using vge.numFloat Pbot f
+      | F g =>
+          change vge (if f = g then F f else ntop) (F f)
+          by_cases h : f = g
+          · rw [if_pos h]
+            exact vge.float f
+          · rw [if_neg h]
+            exact vge.numFloat Pbot f
+      | FS _ => simpa only [vlub, ntop] using vge.numFloat Pbot f
+      | Num p => simpa only [vlub] using vge.numFloat p f
+      | Ptr p => simpa only [vlub] using vge.ifptrFloat p f
+      | Ifptr p => simpa only [vlub] using vge.ifptrFloat p f
+  | FS f =>
+      cases y with
+      | Vbot => simpa only [vlub] using vge_refl_select_aux (FS f)
+      | I _ => simpa only [vlub, ntop] using vge.numSingle Pbot f
+      | IU _ => simpa only [vlub, ntop] using vge.numSingle Pbot f
+      | Uns p _ => simpa only [vlub] using vge.numSingle p f
+      | Sgn p _ => simpa only [vlub] using vge.numSingle p f
+      | L _ => simpa only [vlub, ntop] using vge.numSingle Pbot f
+      | F _ => simpa only [vlub, ntop] using vge.numSingle Pbot f
+      | FS g =>
+          change vge (if f = g then FS f else ntop) (FS f)
+          by_cases h : f = g
+          · rw [if_pos h]
+            exact vge.single f
+          · rw [if_neg h]
+            exact vge.numSingle Pbot f
+      | Num p => simpa only [vlub] using vge.numSingle p f
+      | Ptr p => simpa only [vlub] using vge.ifptrSingle p f
+      | Ifptr p => simpa only [vlub] using vge.ifptrSingle p f
+  | Num p =>
+      cases y with
+      | Vbot => simpa only [vlub] using vge_refl_select_aux (Num p)
+      | I _ => simpa only [vlub] using vge_refl_select_aux (Num p)
+      | IU _ => simpa only [vlub] using vge_refl_select_aux (Num p)
+      | Uns q _ => simpa only [vlub] using vge.numNum (plub p q) p (pge_lub_l p q)
+      | Sgn q _ => simpa only [vlub] using vge.numNum (plub p q) p (pge_lub_l p q)
+      | L _ => simpa only [vlub] using vge_refl_select_aux (Num p)
+      | F _ => simpa only [vlub] using vge_refl_select_aux (Num p)
+      | FS _ => simpa only [vlub] using vge_refl_select_aux (Num p)
+      | Num q => simpa only [vlub] using vge.numNum (plub p q) p (pge_lub_l p q)
+      | Ptr q => simpa only [vlub] using vge.ifptrNum (plub p q) p (pge_lub_l p q)
+      | Ifptr q => simpa only [vlub] using vge.ifptrNum (plub p q) p (pge_lub_l p q)
+  | Ptr p =>
+      cases y with
+      | Vbot => simpa only [vlub] using vge_refl_select_aux (Ptr p)
+      | I i => simpa only [vlub] using vge.ifptrPtr (plub p (int_provenance cfg i)) p (pge_lub_l _ _)
+      | IU i => simpa only [vlub] using vge.ifptrPtr (plub p (int_provenance cfg i)) p (pge_lub_l _ _)
+      | Uns q _ => simpa only [vlub] using vge.ifptrPtr (plub p q) p (pge_lub_l p q)
+      | Sgn q _ => simpa only [vlub] using vge.ifptrPtr (plub p q) p (pge_lub_l p q)
+      | L i => simpa only [vlub] using vge.ifptrPtr (plub p (long_provenance cfg i)) p (pge_lub_l _ _)
+      | F _ => simpa only [vlub] using vge.ifptrPtr p p (pge.pge_refl p)
+      | FS _ => simpa only [vlub] using vge.ifptrPtr p p (pge.pge_refl p)
+      | Num q => simpa only [vlub] using vge.ifptrPtr (plub p q) p (pge_lub_l p q)
+      | Ptr q => simpa only [vlub] using vge.ptrPtr (plub p q) p (pge_lub_l p q)
+      | Ifptr q => simpa only [vlub] using vge.ifptrPtr (plub p q) p (pge_lub_l p q)
+  | Ifptr p =>
+      cases y with
+      | Vbot => simpa only [vlub] using vge_refl_select_aux (Ifptr p)
+      | I i => simpa only [vlub] using vge.ifptrIfptr (plub p (int_provenance cfg i)) p (pge_lub_l _ _)
+      | IU i => simpa only [vlub] using vge.ifptrIfptr (plub p (int_provenance cfg i)) p (pge_lub_l _ _)
+      | Uns q _ => simpa only [vlub] using vge.ifptrIfptr (plub p q) p (pge_lub_l p q)
+      | Sgn q _ => simpa only [vlub] using vge.ifptrIfptr (plub p q) p (pge_lub_l p q)
+      | L i => simpa only [vlub] using vge.ifptrIfptr (plub p (long_provenance cfg i)) p (pge_lub_l _ _)
+      | F _ => simpa only [vlub] using vge_refl_select_aux (Ifptr p)
+      | FS _ => simpa only [vlub] using vge_refl_select_aux (Ifptr p)
+      | Num q => simpa only [vlub] using vge.ifptrIfptr (plub p q) p (pge_lub_l p q)
+      | Ptr q => simpa only [vlub] using vge.ifptrIfptr (plub p q) p (pge_lub_l p q)
+      | Ifptr q => simpa only [vlub] using vge.ifptrIfptr (plub p q) p (pge_lub_l p q)
+
+private theorem vmatch_lub_l_select_aux (cfg : CompilerConfig) (bc : block_classification)
+    (v : val) (x y : aval) (h : vmatch bc v x) :
+    vmatch bc v (vlub cfg x y) := by
+  exact vmatch_ge bc v (vlub cfg x y) x (vge_lub_l_select_aux cfg x y) h
+
+private theorem vmatch_lub_r_select_aux (cfg : CompilerConfig) (bc : block_classification)
+    (v : val) (x y : aval) (h : vmatch bc v y) :
+    vmatch bc v (vlub cfg x y) := by
+  rw [vlub_comm cfg x y]
+  exact vmatch_lub_l_select_aux cfg bc v y x h
+
+theorem select_sound : select_soundStatement := by
+  intro cfg bc ob v w ab x y ty hcm hv hw
+  cases hcm with
+  | noneCase =>
+      simp [CompCert4Lean.Common.Values.Val.select, select, ntop]
+      exact vmatch.numUndef Pbot
+  | justCase b =>
+      cases b <;>
+        simp [CompCert4Lean.Common.Values.Val.select, select] <;>
+        apply vnormalize_type_sound <;> assumption
+  | maybeNone b =>
+      simp [CompCert4Lean.Common.Values.Val.select, select]
+      exact add_undef_undef bc _
+  | maybeSome b =>
+      cases b <;>
+        simp [CompCert4Lean.Common.Values.Val.select, select] <;>
+        apply add_undef_sound <;>
+        apply vnormalize_type_sound <;> assumption
+  | topCase ob =>
+      cases ob with
+      | none =>
+          simp [CompCert4Lean.Common.Values.Val.select, select]
+          exact add_undef_undef bc _
+      | some b =>
+          cases b with
+          | false =>
+              simp [CompCert4Lean.Common.Values.Val.select, select]
+              apply add_undef_sound
+              apply vnormalize_type_sound
+              exact vmatch_lub_r_select_aux cfg bc w x y hw
+          | true =>
+              simp [CompCert4Lean.Common.Values.Val.select, select]
+              apply add_undef_sound
+              apply vnormalize_type_sound
+              exact vmatch_lub_l_select_aux cfg bc v x y hv
+
+end CompCert4Lean.Backend.ValueDomain

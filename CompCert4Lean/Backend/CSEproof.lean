@@ -3083,3 +3083,26 @@ theorem reduce_lessdef_sound
       exact hsem
 
 end CompCert4Lean.Backend.CSEproof
+
+namespace CompCert4Lean.Backend.CSEproof
+
+theorem analysis_correct_1
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (cfg : CompilerConfig) :
+    analysis_correct_1Statement cfg := by
+  intro ge sp rs m f dm vapprox approx pc pc' i hanalyze hcode hsucc hsat
+  have hsol := CSE.Solver.fixpoint_solution_proof
+    (binary64_certificate := binary64_certificate)
+    (binary32_certificate := binary32_certificate)
+    (CSE.Solver.law_obligation_proof
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate))
+  have hge := hsol RTL.instruction f.fn_code RTL.successors_instr
+      (CSE.transfer cfg f dm vapprox)
+      f.fn_entrypoint approx pc i pc' hanalyze hcode hsucc
+  rcases hsat with ⟨valu, hnum⟩
+  refine ⟨valu, ?_⟩
+  exact hge valu ge sp rs m hnum
+
+end CompCert4Lean.Backend.CSEproof

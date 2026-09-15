@@ -2573,3 +2573,48 @@ theorem ZArith.BinInt.Z.divide_trans :
 
 end Rocq.Coq
 end CompCert4Lean.Foundation.Numbers
+
+namespace CompCert4Lean.Foundation.Numbers
+namespace Rocq.Coq
+
+theorem ZArith.BinInt.Z.le_trans :
+    ZArith.BinInt.Z.le_transStatement := by
+  intro n m p hnm hmp
+  change intOfZ n ≤ intOfZ m at hnm
+  change intOfZ m ≤ intOfZ p at hmp
+  change intOfZ n ≤ intOfZ p
+  exact Int.le_trans hnm hmp
+
+theorem ZArith.BinInt.Z.quot_opp_l :
+    ZArith.BinInt.Z.quot_opp_lStatement := by
+  intro a b _hb
+  apply intOfZ_injective
+  simp only [ZArith.BinInt.Z.quot, ZArith.BinInt.Z.opp, intOfZ_zOfInt]
+  exact Int.neg_tdiv (intOfZ a) (intOfZ b)
+
+theorem ZArith.BinInt.Zplus_opp_l_proof :
+    ∀ (n : Z), ZArith.BinInt.Zplus_opp_l n := by
+  intro n
+  apply intOfZ_injective
+  simp only [ZArith.BinInt.Z.add, ZArith.BinInt.Z.opp, intOfZ_zOfInt]
+  change -intOfZ n + intOfZ n = 0
+  omega
+
+theorem ZArith.BinInt.Z.leb_gt :
+    ZArith.BinInt.Z.leb_gtStatement := by
+  intro x y
+  by_cases hxy : intOfZ x ≤ intOfZ y
+  · constructor
+    · intro hfalse
+      simp [ZArith.BinInt.Z.leb, hxy] at hfalse
+    · intro hyx
+      exact False.elim ((Int.not_lt_of_ge hxy) hyx)
+  · have hyx : intOfZ y < intOfZ x := Int.lt_of_not_ge hxy
+    constructor
+    · intro _
+      exact hyx
+    · intro _
+      simp [ZArith.BinInt.Z.leb, hxy]
+
+end Rocq.Coq
+end CompCert4Lean.Foundation.Numbers
