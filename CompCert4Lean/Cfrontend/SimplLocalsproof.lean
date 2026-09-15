@@ -2687,3 +2687,60 @@ theorem alloc_variables_nextblock : alloc_variables_nextblockStatement := by
       · exact ih
 
 end CompCert4Lean.Cfrontend.SimplLocalsproof
+
+namespace CompCert4Lean.Cfrontend.SimplLocalsproof
+
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Cfrontend.Ctypes
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+
+private theorem alloc_result_range_local (m : mem) (lo hi : Z) (m' : mem)
+    (b : block) (halloc : Mem.alloc m lo hi = (m', b)) : b = m.nextblock := by
+  unfold Mem.alloc at halloc
+  exact (congrArg Prod.snd halloc).symm
+
+theorem alloc_variables_range : alloc_variables_rangeStatement := by
+  intro ge id b ty e m vars e' m' halloc
+  induction halloc generalizing id b ty with
+  | nil =>
+      intro hget
+      exact Or.inl hget
+  | cons e m id0 ty0 vars m1 b1 m2 e2 halloc hrest ih =>
+      intro hget
+      have hstep := ih id b ty hget
+      cases hstep with
+      | inl hget1 =>
+          have hspec := CompCert4Lean.Lib.Maps.PTree.gsspec_proof
+            (A := block × type) id id0 (b1, ty0) e
+          rw [hspec] at hget1
+          cases hp : peq id id0 with
+          | left heq =>
+            subst id0
+            simp only [hp] at hget1
+            cases hget1
+            right
+            constructor
+            · rw [alloc_result_range_local m (.Z0 : Z) (sizeof ge.genv_cenv ty0) m1 b1 halloc]
+              exact Ple_refl _
+            · exact Plt_Ple_trans b1 m1.nextblock m2.nextblock
+                (by
+                  rw [alloc_result_range_local m (.Z0 : Z) (sizeof ge.genv_cenv ty0) m1 b1 halloc]
+                  rw [alloc_nextblock_local m (.Z0 : Z) (sizeof ge.genv_cenv ty0) m1 b1 halloc]
+                  exact Plt_succ _)
+                (alloc_variables_nextblock ge (PTree.set id (b1, ty0) e) m1 vars e2 m2 hrest)
+          | right heq =>
+            simp only [hp] at hget1
+            exact Or.inl hget1
+      | inr hrange =>
+          right
+          constructor
+          · exact Ple_trans m.nextblock m1.nextblock b
+              (by
+                rw [alloc_nextblock_local m (.Z0 : Z) (sizeof ge.genv_cenv ty0) m1 b1 halloc]
+                exact Ple_succ _)
+              hrange.1
+          · exact hrange.2
+
+end CompCert4Lean.Cfrontend.SimplLocalsproof

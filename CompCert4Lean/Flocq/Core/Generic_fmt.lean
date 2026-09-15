@@ -1734,3 +1734,30 @@ theorem mantissa_DN_small_pos :
   · exact h.2
 
 end CompCert4Lean.Flocq.Core.Generic_fmt
+
+namespace CompCert4Lean.Flocq.Core.Generic_fmt
+
+theorem mantissa_UP_small_pos :
+    ∀ ctx, mantissa_UP_small_posStatement ctx := by
+  intro ctx beta fexp x ex hbounds hexp
+  apply CompCert4Lean.Flocq.Core.Raux.Zceil_imp ctx Zone
+  have h := mantissa_small_pos ctx beta fexp x ex hbounds hexp
+  have hz : CompCert4Lean.Flocq.Core.Raux.Zsub
+      (CompCert4Lean.Flocq.Core.Raux.Zpos CompCert4Lean.Flocq.Core.Raux.xH)
+      (CompCert4Lean.Flocq.Core.Raux.Zpos CompCert4Lean.Flocq.Core.Raux.xH) =
+      CompCert4Lean.Flocq.Core.Raux.Z0 := by
+    apply CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective
+    simp only [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.sub,
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+    rfl
+  constructor
+  · change ctx.spec.lt
+      (ctx.spec.ofZ (CompCert4Lean.Flocq.Core.Raux.Zsub
+        (CompCert4Lean.Flocq.Core.Raux.Zpos CompCert4Lean.Flocq.Core.Raux.xH)
+        (CompCert4Lean.Flocq.Core.Raux.Zpos CompCert4Lean.Flocq.Core.Raux.xH))) _
+    rw [hz, ctx.certificate.sourceLaws.ofZ_zero]
+    exact h.1
+  · change ctx.spec.le _ (Exact.IZR ctx Zone)
+    exact (ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp h.2 |>.1
+
+end CompCert4Lean.Flocq.Core.Generic_fmt
