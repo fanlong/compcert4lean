@@ -3354,3 +3354,150 @@ theorem senv_preserved : ∀ (cfg : CSEproofCompilerConfig),
                     rfl
 
 end CompCert4Lean.Backend.CSEproof
+namespace CompCert4Lean.Backend.CSEproof
+
+open CompCert4Lean.Backend.CSE
+open CompCert4Lean.Backend.ValueAnalysis
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Linking
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+
+private theorem cse_symbol_add_global_local
+    {A B V W : Type} (ge1 : Genv.t A V) (ge2 : Genv.t B W) (id : ident)
+    (hm : ∀ id', PTree.get id' ge2.genv_symb = PTree.get id' ge1.genv_symb)
+    (hn : ge2.genv_next = ge1.genv_next) :
+    ∀ id', PTree.get id' (PTree.set id ge2.genv_next ge2.genv_symb) =
+      PTree.get id' (PTree.set id ge1.genv_next ge1.genv_symb) := by
+  intro id'
+  have h2 := @PTree.getSet_equation _ id' id ge2.genv_next ge2.genv_symb
+  have h1 := @PTree.getSet_equation _ id' id ge1.genv_next ge1.genv_symb
+  by_cases h : id' = id
+  · rw [h2, h1]
+    simp only [dif_pos h]
+    exact congrArg some hn
+  · rw [h2, h1]
+    simp only [dif_neg h]
+    exact hm id'
+
+private theorem cse_match_genvs_add_global_local
+    {A B V W : Type} (R : globdef A V → globdef B W → Prop)
+    (ge1 : Genv.t A V) (ge2 : Genv.t B W) (id : ident)
+    (g1 : globdef A V) (g2 : globdef B W)
+    (hm : Genv.match_genvs R ge1 ge2) (hg : R g1 g2) :
+    Genv.match_genvs R (Genv.add_global ge1 (id, g1))
+      (Genv.add_global ge2 (id, g2)) := by
+  constructor
+  · exact congrArg PArith.BinPos.Pos.succ hm.mge_next
+  · exact cse_symbol_add_global_local ge1 ge2 id hm.mge_symb hm.mge_next
+  · intro b
+    change option_rel R
+      (PTree.get b (PTree.set ge1.genv_next g1 ge1.genv_defs))
+      (PTree.get b (PTree.set ge2.genv_next g2 ge2.genv_defs))
+    have h1 := @PTree.getSet_equation (globdef A V) b ge1.genv_next g1 ge1.genv_defs
+    have h2 := @PTree.getSet_equation (globdef B W) b ge2.genv_next g2 ge2.genv_defs
+    by_cases h : b = ge1.genv_next
+    · have h' : b = ge2.genv_next := h.trans hm.mge_next.symm
+      rw [h1, h2]
+      simp only [dif_pos h, dif_pos h']
+      exact option_rel.some g1 g2 hg
+    · have h' : b ≠ ge2.genv_next := by
+        intro hb
+        apply h
+        exact hb.trans hm.mge_next
+      rw [h1, h2]
+      simp only [dif_neg h, dif_neg h']
+      exact hm.mge_defs b
+
+private theorem cse_match_genvs_add_globals_local
+    {A B V W : Type} (R : globdef A V → globdef B W → Prop)
+    (xs : List (ident × globdef A V)) (ys : List (ident × globdef B W))
+    (hxy : list_forall2 (fun a b => a.1 = b.1 ∧ R a.2 b.2) xs ys)
+    (ge1 : Genv.t A V) (ge2 : Genv.t B W) (hm : Genv.match_genvs R ge1 ge2) :
+    Genv.match_genvs R (Genv.add_globals ge1 xs) (Genv.add_globals ge2 ys) := by
+  induction hxy generalizing ge1 ge2 with
+  | nil => simpa [Genv.add_globals] using hm
+  | @cons a xs b ys hab htail ih =>
+      rcases a with ⟨aid, ag⟩
+      rcases b with ⟨bid, bg⟩
+      change aid = bid ∧ R ag bg at hab
+      rcases hab with ⟨rfl, hab⟩
+      simp only [Genv.add_globals, List.foldl_cons]
+      apply ih
+      exact cse_match_genvs_add_global_local R ge1 ge2 aid ag bg hm hab
+
+private theorem cse_globalenv_match_local
+    {C F1 V1 F2 V2 : Type} [Linker C]
+    (mf : C → F1 → F2 → Prop) (mv : V1 → V2 → Prop) (ctx : C)
+    (p : CompCert4Lean.Common.AST.program F1 V1)
+    (tp : CompCert4Lean.Common.AST.program F2 V2)
+    (h : match_program_gen mf mv ctx p tp) :
+    Genv.match_genvs (match_globdef mf mv ctx)
+      (Genv.globalenv p) (Genv.globalenv tp) := by
+  rcases h with ⟨hdefs, hmain, hpub⟩
+  unfold Genv.globalenv
+  rw [hpub]
+  apply cse_match_genvs_add_globals_local
+  · exact hdefs
+  · constructor
+    · rfl
+    · intro id
+      rfl
+    · intro b
+      exact option_rel.none _
+
+theorem functions_translated
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    ∀ cfg, functions_translatedStatement cfg := by
+  intro cfg prog tprog hm v f hfind
+  letI : Linker CompCert4Lean.Backend.RTL.fundef :=
+    Linker_fundef CompCert4Lean.Backend.RTL.function
+  letI : Linker Unit := Linker_unit
+  letI : Linker CompCert4Lean.Backend.RTL.program :=
+    Linker_prog CompCert4Lean.Backend.RTL.fundef Unit
+  unfold match_prog CompCert4Lean.Common.Linking.match_program
+    CompCert4Lean.Common.Linking.match_program_gen at hm
+  have hg := cse_globalenv_match_local
+    (fun (cu : CompCert4Lean.Backend.RTL.program) f tf =>
+      CSE.transf_fundef
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        cfg (prog_defmap cu)
+        (CompCert4Lean.Backend.ValueAnalysis.romem_for cfg cu) f = .OK tf)
+    (fun x y : Unit => x = y) prog prog tprog hm
+  unfold Genv.find_funct at hfind ⊢
+  cases v with
+  | Vundef => simp at hfind
+  | Vint n => simp at hfind
+  | Vlong n => simp at hfind
+  | Vfloat n => simp at hfind
+  | Vsingle n => simp at hfind
+  | Vptr b ofs =>
+      cases hzero : CompCert4Lean.Lib.Integers.Ptrofs.eq ofs
+          CompCert4Lean.Lib.Integers.Ptrofs.zero with
+      | false => simp [hzero] at hfind
+      | true =>
+          simp [hzero] at hfind ⊢
+          unfold Genv.find_funct_ptr Genv.find_def at hfind ⊢
+          have hd := hg.mge_defs b
+          generalize hs : PTree.get b (Genv.globalenv prog).genv_defs = src at hfind hd
+          generalize ht : PTree.get b (Genv.globalenv tprog).genv_defs = tgt at hd ⊢
+          cases src with
+          | none => simp at hfind
+          | some gd =>
+              cases gd with
+              | Gfun sf =>
+                  simp at hfind
+                  cases hfind
+                  cases hd with
+                  | some gd tg hrel =>
+                      cases hrel with
+                      | match_globdef_fun ctx' f1 f2 horder htrans =>
+                          refine ⟨ctx', f2, ?_, htrans, horder⟩
+                          simp [Genv.find_funct_ptr, Genv.find_def]
+              | Gvar gv => simp at hfind
+
+end CompCert4Lean.Backend.CSEproof

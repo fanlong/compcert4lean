@@ -3814,3 +3814,40 @@ theorem create_undef_temps_inv : create_undef_temps_invStatement := by
           · exact List.mem_cons.mpr (Or.inr hin)
 
 end CompCert4Lean.Cfrontend.SimplLocalsproof
+
+namespace CompCert4Lean.Cfrontend.SimplLocalsproof
+
+open CompCert4Lean.Cfrontend.Clight
+open CompCert4Lean.Lib.Maps
+
+theorem create_undef_temps_exten : create_undef_temps_extenStatement := by
+  intro id l1 l2 hmem
+  have hdir : ∀ id l1 l2,
+      (id ∈ var_names l1 → id ∈ var_names l2) →
+      PTree.get id (create_undef_temps l1) = none ∨
+        PTree.get id (create_undef_temps l1) =
+          PTree.get id (create_undef_temps l2) := by
+    intro id' l1' l2' hdir'
+    cases hget : PTree.get id' (create_undef_temps l1') with
+    | none => exact Or.inl rfl
+    | some v =>
+        right
+        have hinv := create_undef_temps_inv l1' id' v hget
+        rcases hinv with ⟨hv, hin⟩
+        subst v
+        have htarget : id' ∈ var_names l2' := hdir' hin
+        obtain ⟨p, hp, hpl⟩ :=
+          CompCert4Lean.Lib.Coqlib.list_in_map_inv
+            (A := ident × type) (B := ident) Prod.fst l2' id'
+            (by simpa [var_names] using htarget)
+        rcases p with ⟨id1, ty1⟩
+        have hid : id' = id1 := by simpa using hp
+        subst id1
+        exact (create_undef_temps_charact id' ty1 l2' hpl).symm
+  rcases hdir id l1 l2 hmem.mp with hnone | heq
+  · rcases hdir id l2 l1 hmem.mpr with hnone' | heq'
+    · rw [hnone, hnone']
+    · exact heq'.symm
+  · exact heq
+
+end CompCert4Lean.Cfrontend.SimplLocalsproof

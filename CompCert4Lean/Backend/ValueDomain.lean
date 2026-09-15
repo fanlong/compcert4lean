@@ -4167,3 +4167,24 @@ theorem provenance_monotone : provenance_monotoneStatement := by
     | exact pge_trans _ _ (poffset_ge _) _ (by assumption)
 
 end CompCert4Lean.Backend.ValueDomain
+
+namespace CompCert4Lean.Backend.ValueDomain
+
+theorem provenance_ifptr_ge : provenance_ifptr_geStatement := by
+  intro p q hpq
+  simp only [provenance]
+  exact pge_trans _ _ (poffset_ge p) _ hpq
+
+theorem val_of_aval_sound : val_of_aval_soundStatement := by
+  intro bc v a h
+  cases h <;> constructor
+
+theorem list_val_of_aval_sound : list_val_of_aval_soundStatement := by
+  intro bc vl al h
+  induction h with
+  | nil => exact CompCert4Lean.Common.Values.Val.lessdef_list_nil
+  | cons v a hhead htail ih =>
+      exact CompCert4Lean.Common.Values.Val.lessdef_list_cons _ _ _ _
+        (val_of_aval_sound bc v a hhead) ih
+
+end CompCert4Lean.Backend.ValueDomain

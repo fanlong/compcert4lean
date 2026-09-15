@@ -3728,3 +3728,92 @@ theorem tech_up :
 end R_Ifp
 end Rocq.Coq.Reals
 end CompCert4Lean.Foundation.FlocqReal
+
+namespace CompCert4Lean.Foundation.FlocqReal
+namespace Rocq.Coq.Reals
+namespace R_sqr
+
+private theorem rsqr_abs_nonnegative (ctx : ExactRealContext)
+    (x : ctx.spec.carrier) :
+    ctx.spec.le (ctx.spec.ofZ Z0) (ctx.spec.abs x) := by
+  rcases ctx.certificate.total_order ctx.spec.zero x with hx | hx
+  · have hx0 : ctx.spec.le ctx.spec.zero x := by
+      rcases hx with hlt | heq
+      · exact (ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp hlt |>.1
+      · rw [heq]
+        exact ctx.certificate.orderedField.le_refl _
+    rw [ctx.certificate.sourceLaws.abs_nonnegative x hx0,
+      ctx.certificate.sourceLaws.ofZ_zero]
+    exact hx0
+  · rw [ctx.certificate.sourceLaws.abs_negative x hx]
+    have hpos :=
+      _root_.CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.Ropp_0_gt_lt_contravar
+        ctx x (by
+          change ctx.spec.lt x (ctx.spec.ofZ Z0)
+          rw [ctx.certificate.sourceLaws.ofZ_zero]
+          exact hx)
+    exact (ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp hpos |>.1
+
+theorem Rsqr_incrst_1 :
+    ∀ (ctx : ExactRealContext), Rsqr_incrst_1Statement ctx := by
+  intro ctx x y hxy hx _hy
+  change ctx.spec.lt (ctx.spec.mul x x) (ctx.spec.mul y y)
+  exact sqr_lt_of_lt ctx x y hx hxy
+
+theorem Rsqr_abs :
+    ∀ (ctx : ExactRealContext), Rsqr_absStatement ctx := by
+  intro ctx x
+  change ctx.spec.mul x x =
+    ctx.spec.mul (ctx.spec.abs x) (ctx.spec.abs x)
+  rcases ctx.certificate.total_order ctx.spec.zero x with hx | hx
+  · have hx0 : ctx.spec.le ctx.spec.zero x := by
+      rcases hx with hlt | heq
+      · exact (ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp hlt |>.1
+      · rw [heq]
+        exact ctx.certificate.orderedField.le_refl _
+    rw [ctx.certificate.sourceLaws.abs_nonnegative x hx0]
+  · rw [ctx.certificate.sourceLaws.abs_negative x hx]
+    exact (_root_.CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.Rmult_opp_opp
+      ctx x x).symm
+
+theorem Rsqr_le_abs_0 :
+    ∀ (ctx : ExactRealContext), Rsqr_le_abs_0Statement ctx := by
+  intro ctx x y hxy
+  have hsquares :
+      ctx.spec.le
+        (ctx.spec.mul (ctx.spec.abs x) (ctx.spec.abs x))
+        (ctx.spec.mul (ctx.spec.abs y) (ctx.spec.abs y)) := by
+    change ctx.spec.le (ctx.spec.mul x x) (ctx.spec.mul y y) at hxy
+    have hx := Rsqr_abs ctx x
+    have hy := Rsqr_abs ctx y
+    change ctx.spec.mul x x =
+      ctx.spec.mul (ctx.spec.abs x) (ctx.spec.abs x) at hx
+    change ctx.spec.mul y y =
+      ctx.spec.mul (ctx.spec.abs y) (ctx.spec.abs y) at hy
+    rw [← hx, ← hy]
+    exact hxy
+  exact Rsqr_incr_0 ctx (ctx.spec.abs x) (ctx.spec.abs y) hsquares
+    (rsqr_abs_nonnegative ctx x) (rsqr_abs_nonnegative ctx y)
+
+theorem Rsqr_lt_abs_0 :
+    ∀ (ctx : ExactRealContext), Rsqr_lt_abs_0Statement ctx := by
+  intro ctx x y hxy
+  have hsquares :
+      ctx.spec.lt
+        (ctx.spec.mul (ctx.spec.abs x) (ctx.spec.abs x))
+        (ctx.spec.mul (ctx.spec.abs y) (ctx.spec.abs y)) := by
+    change ctx.spec.lt (ctx.spec.mul x x) (ctx.spec.mul y y) at hxy
+    have hx := Rsqr_abs ctx x
+    have hy := Rsqr_abs ctx y
+    change ctx.spec.mul x x =
+      ctx.spec.mul (ctx.spec.abs x) (ctx.spec.abs x) at hx
+    change ctx.spec.mul y y =
+      ctx.spec.mul (ctx.spec.abs y) (ctx.spec.abs y) at hy
+    rw [← hx, ← hy]
+    exact hxy
+  exact Rsqr_incrst_0 ctx (ctx.spec.abs x) (ctx.spec.abs y) hsquares
+    (rsqr_abs_nonnegative ctx x) (rsqr_abs_nonnegative ctx y)
+
+end R_sqr
+end Rocq.Coq.Reals
+end CompCert4Lean.Foundation.FlocqReal

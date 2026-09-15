@@ -2650,3 +2650,198 @@ theorem to_intu_to_long : Float.to_intu_to_longStatement := by
 end Float
 
 end CompCert4Lean.Lib.Floats
+namespace CompCert4Lean.Lib.Floats
+namespace Float
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open Lean Elab Tactic Meta
+
+private def ofLongPrivateName (suffix : String) : Name :=
+  let p := Name.str (Name.str (Name.str (Name.str Name.anonymous "_private") "CompCert4Lean") "Lib") "Integers"
+  let base := Name.num p 0
+  suffix.splitOn "." |>.foldl Name.str base
+
+private theorem ofLongValReprOfNat (bits n : Nat) :
+    (CompCert4Lean.Lib.Integers.WordCore.repr bits
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat n)).val = n % (2 ^ bits) := by
+  run_tac
+    let lctx ← getLCtx
+    let bitsF := (lctx.findFromUserName? `bits).get!
+    let nF := (lctx.findFromUserName? `n).get!
+    let bitsE := mkFVar bitsF.fvarId
+    let nE := mkFVar nF.fvarId
+    let z := mkApp
+      (mkConst ``CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat)
+      nE
+    let e1 := mkApp2
+      (mkConst (ofLongPrivateName
+        "CompCert4Lean.Lib.Integers.WordCore.val_repr_residue")) bitsE z
+    let e2 := mkApp2
+      (mkConst (ofLongPrivateName
+        "CompCert4Lean.Lib.Integers.WordCore.residue_zOfNat")) bitsE nE
+    let t1 ← inferType e1
+    let t2 ← inferType e2
+    let (α, lhs, mid) := match_expr t1 with
+      | _root_.Eq α lhs mid => (α, lhs, mid)
+      | _ => panic! "unexpected first equality"
+    let (_, _, rhs) := match_expr t2 with
+      | _root_.Eq _ middle rhs => (α, middle, rhs)
+      | _ => panic! "unexpected second equality"
+    let eqtrans := mkConst ``Eq.trans [.succ .zero]
+    let e := mkAppN eqtrans #[α, lhs, mid, rhs, e1, e2]
+    closeMainGoal Name.anonymous e
+
+theorem of_intu_of_long
+    [certificate : CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate z53 z1024] :
+    Float.of_intu_of_longStatement := by
+  intro n
+  unfold of_intu of_long
+  congr 1
+
+  have hn_nonneg :
+      0 ≤ CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ n.intval := by
+    have h := n.intrange.1
+    change (-1 : Int) <
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ n.intval at h
+    omega
+  have hn_unsigned :
+      Integers.Int.unsigned n =
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat n.val := by
+    have h := CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.Znat.Z2Nat.id
+      n.intval (by
+        change 0 ≤ CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ n.intval
+        exact hn_nonneg)
+    symm
+    simpa [Integers.Int.unsigned, Integers.WordCore.unsigned,
+      Integers.WordCore.Word.val] using h
+  rw [hn_unsigned]
+  have hnval_lt : n.val < 2 ^ 32 := by
+    have h := n.intrange.2
+    change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ n.intval <
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.pow
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 2)
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 32)) at h
+    have hpow :
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+            (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.pow
+              (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 2)
+              (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 32)) =
+          (2 ^ 32 : Int) := by decide
+    rw [hpow] at h
+    have hval :
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ n.intval =
+          Int.ofNat n.val := by
+      rw [show n.intval =
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat n.val by
+          symm
+          simpa [Integers.WordCore.Word.val] using
+            (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.Znat.Z2Nat.id n.intval
+              (by
+                change 0 ≤ CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ n.intval
+                exact hn_nonneg))]
+      simpa only [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat,
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+    rw [hval] at h
+    exact Int.ofNat_lt.mp h
+  have hval_repr :
+      (Integers.Int64.repr
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat n.val)).val = n.val := by
+    change (CompCert4Lean.Lib.Integers.WordCore.repr 64
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat n.val)).val = n.val
+    rw [ofLongValReprOfNat]
+    exact Nat.mod_eq_of_lt (by
+      have hp : 2 ^ 32 ≤ 2 ^ 64 := Nat.pow_le_pow_right Nat.zero_lt_two (by decide)
+      exact Nat.lt_of_lt_of_le hnval_lt hp)
+  have hrepr_unsigned :
+      Integers.WordCore.unsigned
+          (Integers.Int64.repr
+            (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat n.val)) =
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat n.val := by
+    have hx_nonneg :
+        0 ≤ CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+          (Integers.Int64.repr
+            (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat n.val)).intval := by
+      have h := (Integers.Int64.repr
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat n.val)).intrange.1
+      change (-1 : Int) <
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+          (Integers.Int64.repr
+            (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat n.val)).intval at h
+      omega
+    have h := CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.Znat.Z2Nat.id
+      (Integers.Int64.repr
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat n.val)).intval
+      (by
+        change 0 ≤ CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+          (Integers.Int64.repr
+            (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat n.val)).intval
+        exact hx_nonneg)
+    have h' :
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat
+            (Integers.Int64.repr
+              (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat n.val)).val =
+          (Integers.Int64.repr
+            (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat n.val)).intval := by
+      simpa only [Integers.WordCore.Word.val] using h
+    rw [hval_repr] at h'
+    change (Integers.Int64.repr
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat n.val)).intval =
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat n.val
+    exact h'.symm
+  rw [show Integers.Int64.signed
+      (Integers.Int64.repr
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat n.val)) =
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat n.val by
+    unfold Integers.Int64.signed Integers.WordCore.signed
+    dsimp only
+    rw [hrepr_unsigned]
+    cases hdec : CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.ZArith_dec.Z_lt_dec
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat n.val)
+      Integers.Int64.half_modulus with
+    | left h =>
+        run_tac
+          let g ← getMainGoal
+          let zltName := ofLongPrivateName "CompCert4Lean.Lib.Integers.zltSelect"
+          let sbName := ofLongPrivateName "CompCert4Lean.Lib.Integers.sumboolSelect"
+          let t ← g.getType
+          let t' ← withTransparency .all <|
+            transform t
+              (pre := fun e => do
+                match e with
+                | .const n lvls =>
+                    if n == zltName || n == sbName then
+                      let ci ← Lean.getConstInfo n
+                      match ci.value? true with
+                      | some v => pure (.visit (v.instantiateLevelParams ci.levelParams lvls))
+                      | none => pure (.continue)
+                    else
+                      pure (.continue)
+                | _ => pure (.continue))
+
+          let g' ← g.change t' false
+          replaceMainGoal [g']
+        have hdec' := hdec
+        simp only [Integers.Int64.half_modulus] at hdec'
+        simp [hdec', CompCert4Lean.Lib.Coqlib.zlt]
+    | right h =>
+        exfalso
+        apply h
+        change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+            (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat n.val) <
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ Integers.Int64.half_modulus
+        have hhalf :
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ Integers.Int64.half_modulus =
+              (2 ^ 63 : Int) := by decide
+        have hz :
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+                (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat n.val) =
+              Int.ofNat n.val := by
+          simp only [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat,
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+        rw [hz, hhalf]
+        have hnval_lt' : Int.ofNat n.val < (2 ^ 32 : Int) := Int.ofNat_lt.mpr hnval_lt
+        omega]
+
+end Float
+end CompCert4Lean.Lib.Floats

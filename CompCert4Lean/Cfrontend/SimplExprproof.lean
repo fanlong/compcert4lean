@@ -2563,3 +2563,531 @@ theorem tr_seq_of_labeled_statement :
       ts (Clight.seq_of_labeled_statement tls) hs ih
 
 end CompCert4Lean.Cfrontend.SimplExprproof
+
+namespace CompCert4Lean.Cfrontend.SimplExprproof
+
+open CompCert4Lean.Cfrontend.SimplExpr
+open CompCert4Lean.Cfrontend.SimplExprspec
+
+private def pgNoLabel (s : Clight.statement) : Prop :=
+  ∀ lbl k, Clight.find_label lbl s k = none
+
+private def pgNoLabelList (sl : List Clight.statement) : Prop :=
+  ∀ s, s ∈ sl → pgNoLabel s
+
+private theorem pgNoLabel_sequence {s1 s2 : Clight.statement}
+    (h1 : pgNoLabel s1) (h2 : pgNoLabel s2) :
+    pgNoLabel (.Ssequence s1 s2) := by
+  intro lbl k
+  simp only [Clight.find_label]
+  rw [h1 lbl (.Kseq s2 k)]
+  exact h2 lbl k
+
+private theorem pgNoLabel_ifthenelse {a : Clight.expr}
+    {s1 s2 : Clight.statement} (h1 : pgNoLabel s1) (h2 : pgNoLabel s2) :
+    pgNoLabel (.Sifthenelse a s1 s2) := by
+  intro lbl k
+  simp only [Clight.find_label]
+  rw [h1 lbl k]
+  exact h2 lbl k
+
+private theorem pgNoLabel_makeif
+    [BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] {a : Clight.expr}
+    {s1 s2 : Clight.statement} (h1 : pgNoLabel s1) (h2 : pgNoLabel s2) :
+    pgNoLabel (SimplExpr.makeif a s1 s2) := by
+  cases heval : SimplExpr.eval_simpl_expr a with
+  | none =>
+      simpa [SimplExpr.makeif, heval] using pgNoLabel_ifthenelse h1 h2
+  | some v =>
+      cases hbool : Cop.bool_val v (Clight.typeof a)
+          CompCert4Lean.Common.Memory.Mem.empty with
+      | none =>
+          simpa [SimplExpr.makeif, heval, hbool] using pgNoLabel_ifthenelse h1 h2
+      | some b =>
+          cases b <;> simp [SimplExpr.makeif, heval, hbool, h1, h2]
+
+private theorem pgNoLabel_make_set (bf : bitfield) (id : ident)
+    (a : Clight.expr) : pgNoLabel (SimplExpr.make_set bf id a) := by
+  unfold SimplExpr.make_set
+  cases SimplExpr.chunk_for_volatile_type (Clight.typeof a) bf <;>
+    intro lbl k <;> rfl
+
+private theorem pgNoLabel_make_assign (bf : bitfield) (a1 a2 : Clight.expr) :
+    pgNoLabel (SimplExpr.make_assign bf a1 a2) := by
+  unfold SimplExpr.make_assign
+  cases SimplExpr.chunk_for_volatile_type (Clight.typeof a1) bf <;>
+    intro lbl k <;> rfl
+
+private theorem pgNoLabelList_do_set (sd : SimplExpr.set_destination)
+    (a : Clight.expr) : pgNoLabelList (SimplExpr.do_set sd a) := by
+  induction sd generalizing a with
+  | SDbase =>
+      intro s hs
+      simp only [SimplExpr.do_set, List.mem_singleton] at hs
+      subst s
+      intro lbl k
+      rfl
+  | SDcons tycast ty tmp sd ih =>
+      intro s hs
+      simp only [SimplExpr.do_set, List.mem_cons] at hs
+      rcases hs with rfl | hs
+      · intro lbl k
+        rfl
+      · exact ih _ _ hs
+
+private theorem pgNoLabelList_final (dst : SimplExpr.destination)
+    (a : Clight.expr) : pgNoLabelList (SimplExprspec.final dst a) := by
+  cases dst with
+  | For_val => simp [SimplExprspec.final, pgNoLabelList]
+  | For_effects => simp [SimplExprspec.final, pgNoLabelList]
+  | For_set sd => exact pgNoLabelList_do_set sd a
+
+private theorem pgNoLabelList_rvalof {ce : composite_env} {ty : Ctypes.type}
+    {a : Clight.expr} {sl : List Clight.statement} {a' : Clight.expr}
+    {tmp : List ident} (h : SimplExprspec.tr_rvalof ce ty a sl a' tmp) :
+    pgNoLabelList sl := by
+  cases h with
+  | tr_rvalof_nonvol => simp [pgNoLabelList]
+  | tr_rvalof_vol =>
+      intro s hs
+      simp only [List.mem_singleton] at hs
+      subst s
+      exact pgNoLabel_make_set _ _ _
+
+private theorem pgNoLabel_makeseq_rec (s : Clight.statement)
+    (hs : pgNoLabel s) (sl : List Clight.statement)
+    (hsl : pgNoLabelList sl) : pgNoLabel (SimplExpr.makeseq_rec s sl) := by
+  induction sl generalizing s with
+  | nil => simpa [SimplExpr.makeseq_rec]
+  | cons s' sl ih =>
+      apply ih (.Ssequence s s') (pgNoLabel_sequence hs (hsl s' (by simp)))
+      intro s'' hs''
+      exact hsl s'' (by simp [hs''])
+
+private theorem pgNoLabel_makeseq (sl : List Clight.statement)
+    (hsl : pgNoLabelList sl) : pgNoLabel (SimplExpr.makeseq sl) := by
+  apply pgNoLabel_makeseq_rec .Sskip
+  · intro lbl k
+    rfl
+  · exact hsl
+
+end CompCert4Lean.Cfrontend.SimplExprproof
+
+namespace CompCert4Lean.Cfrontend.SimplExprproof
+
+open CompCert4Lean.Cfrontend.SimplExpr
+open CompCert4Lean.Cfrontend.SimplExprspec
+
+private theorem pgNoLabel_skip : pgNoLabel Clight.Sskip := by
+  intro lbl k
+  rfl
+
+private theorem pgNoLabel_assign (a1 a2 : Clight.expr) :
+    pgNoLabel (.Sassign a1 a2) := by
+  intro lbl k
+  rfl
+
+private theorem pgNoLabel_set (id : ident) (a : Clight.expr) :
+    pgNoLabel (.Sset id a) := by
+  intro lbl k
+  rfl
+
+private theorem pgNoLabel_call (id : Option ident) (a : Clight.expr)
+    (args : List Clight.expr) : pgNoLabel (.Scall id a args) := by
+  intro lbl k
+  rfl
+
+private theorem pgNoLabel_builtin (id : Option ident)
+    (ef : CompCert4Lean.Common.AST.external_function) (tys : List Ctypes.type)
+    (args : List Clight.expr) : pgNoLabel (.Sbuiltin id ef tys args) := by
+  intro lbl k
+  rfl
+
+private theorem pgNoLabelList_nil : pgNoLabelList [] := by
+  intro s hs
+  simp at hs
+
+private theorem pgNoLabelList_cons (s : Clight.statement)
+    (sl : List Clight.statement) :
+    pgNoLabelList (s :: sl) ↔ pgNoLabel s ∧ pgNoLabelList sl := by
+  constructor
+  · intro h
+    constructor
+    · exact h s (by simp)
+    · intro s' hs'
+      exact h s' (by simp [hs'])
+  · rintro ⟨hs, hsl⟩ s' hs'
+    simp only [List.mem_cons] at hs'
+    rcases hs' with rfl | hs'
+    · exact hs
+    · exact hsl s' hs'
+
+private theorem pgNoLabelList_append (sl1 sl2 : List Clight.statement) :
+    pgNoLabelList (sl1 ++ sl2) ↔ pgNoLabelList sl1 ∧ pgNoLabelList sl2 := by
+  constructor
+  · intro h
+    constructor
+    · intro s hs
+      exact h s (List.mem_append_left sl2 hs)
+    · intro s hs
+      exact h s (List.mem_append_right sl1 hs)
+  · rintro ⟨h1, h2⟩ s hs
+    simp only [List.mem_append] at hs
+    rcases hs with hs | hs
+    · exact h1 s hs
+    · exact h2 s hs
+
+private theorem pgTrExprNoLabel
+    [BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    {ce : composite_env} {le : Clight.temp_env} {dst : SimplExpr.destination}
+    {r : cexpr} {sl : List Clight.statement} {a : Clight.expr}
+    {tmps : List ident} (h : SimplExprspec.tr_expr ce le dst r sl a tmps) :
+    pgNoLabelList sl := by
+  let P1 := fun (_dst : SimplExpr.destination) (_r : cexpr)
+      (sl : List Clight.statement) (_a : Clight.expr) (_tmps : List ident)
+      (_ : SimplExprspec.tr_expr ce le _dst _r sl _a _tmps) =>
+      pgNoLabelList sl
+  let P2 := fun (_rl : cexprlist) (sl : List Clight.statement)
+      (_al : List Clight.expr) (_tmps : List ident)
+      (_ : SimplExprspec.tr_exprlist ce le _rl sl _al _tmps) =>
+      pgNoLabelList sl
+  refine SimplExprspec.tr_expr.rec (motive_1 := P1) (motive_2 := P2)
+    ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_
+    ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_
+    ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ h
+  all_goals
+    intros <;> dsimp [P1, P2] at * <;>
+      simp_all [pgNoLabelList_nil, pgNoLabelList_cons,
+        pgNoLabelList_append, pgNoLabelList_final, pgNoLabelList_do_set,
+        pgNoLabelList_rvalof, pgNoLabel_make_assign, pgNoLabel_make_set,
+        pgNoLabel_makeif, pgNoLabel_makeseq, pgNoLabel_skip,
+        pgNoLabel_assign, pgNoLabel_set, pgNoLabel_call, pgNoLabel_builtin]
+  all_goals
+    apply pgNoLabelList_rvalof
+    assumption
+
+private theorem pgTrExprListNoLabel
+    [BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    {ce : composite_env} {le : Clight.temp_env} {rl : cexprlist}
+    {sl : List Clight.statement} {al : List Clight.expr} {tmps : List ident}
+    (h : SimplExprspec.tr_exprlist ce le rl sl al tmps) :
+    pgNoLabelList sl := by
+  let P1 := fun (_dst : SimplExpr.destination) (_r : cexpr)
+      (sl : List Clight.statement) (_a : Clight.expr) (_tmps : List ident)
+      (_ : SimplExprspec.tr_expr ce le _dst _r sl _a _tmps) =>
+      pgNoLabelList sl
+  let P2 := fun (_rl : cexprlist) (sl : List Clight.statement)
+      (_al : List Clight.expr) (_tmps : List ident)
+      (_ : SimplExprspec.tr_exprlist ce le _rl sl _al _tmps) =>
+      pgNoLabelList sl
+  refine SimplExprspec.tr_exprlist.rec (motive_1 := P1) (motive_2 := P2)
+    ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_
+    ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_
+    ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ h
+  all_goals
+    intros <;> dsimp [P1, P2] at * <;>
+      simp_all [pgNoLabelList_nil, pgNoLabelList_cons,
+        pgNoLabelList_append, pgNoLabelList_final, pgNoLabelList_do_set,
+        pgNoLabelList_rvalof, pgNoLabel_make_assign, pgNoLabel_make_set,
+        pgNoLabel_makeif, pgNoLabel_makeseq, pgNoLabel_skip,
+        pgNoLabel_assign, pgNoLabel_set, pgNoLabel_call, pgNoLabel_builtin]
+  all_goals
+    apply pgNoLabelList_rvalof
+    assumption
+
+end CompCert4Lean.Cfrontend.SimplExprproof
+
+namespace CompCert4Lean.Cfrontend.SimplExprproof
+
+open CompCert4Lean.Cfrontend.SimplExpr
+open CompCert4Lean.Cfrontend.SimplExprspec
+
+private theorem pgTrTopNoLabel
+    [BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    {ce : composite_env} {ge : Clight.genv} {e : Clight.env}
+    {le : Clight.temp_env} {m : mem} {dst : SimplExpr.destination}
+    {r : cexpr} {sl : List Clight.statement} {a : Clight.expr}
+    {tmps : List ident} (h : SimplExprspec.tr_top ce ge e le m dst r sl a tmps) :
+    pgNoLabelList sl := by
+  cases h with
+  | tr_top_val_val => exact pgNoLabelList_nil
+  | tr_top_base _ _ _ _ _ htr => exact pgTrExprNoLabel htr
+
+private theorem pgTrExpressionNoLabel
+    [BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (tp : tprogram) {ce : composite_env} {r : cexpr}
+    {s : Clight.statement} {a : Clight.expr}
+    (h : SimplExprspec.tr_expression ce r s a) : pgNoLabel s := by
+  cases h with
+  | tr_expression_intro sl a tmps htop =>
+      apply pgNoLabel_makeseq
+      apply pgTrTopNoLabel
+      exact htop (Clight.globalenv tp) Clight.empty_env
+        (CompCert4Lean.Lib.Maps.PTree.empty val)
+        CompCert4Lean.Common.Memory.Mem.empty
+
+private theorem pgTrExprStmtNoLabel
+    [BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (tp : tprogram) {ce : composite_env} {r : cexpr}
+    {s : Clight.statement} (h : SimplExprspec.tr_expr_stmt ce r s) :
+    pgNoLabel s := by
+  cases h with
+  | tr_expr_stmt_intro sl a tmps htop =>
+      apply pgNoLabel_makeseq
+      apply pgTrTopNoLabel
+      exact htop (Clight.globalenv tp) Clight.empty_env
+        (CompCert4Lean.Lib.Maps.PTree.empty val)
+        CompCert4Lean.Common.Memory.Mem.empty
+
+private theorem pgTrIfNoLabel
+    [BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (tp : tprogram) {ce : composite_env} {r : cexpr}
+    {s1 s2 ts : Clight.statement} (h : SimplExprspec.tr_if ce r s1 s2 ts)
+    (h1 : pgNoLabel s1) (h2 : pgNoLabel s2) : pgNoLabel ts := by
+  cases h with
+  | tr_if_intro sl a tmps htop =>
+      apply pgNoLabel_makeseq
+      rw [pgNoLabelList_append]
+      constructor
+      · apply pgTrTopNoLabel
+        exact htop (Clight.globalenv tp) Clight.empty_env
+          (CompCert4Lean.Lib.Maps.PTree.empty val)
+          CompCert4Lean.Common.Memory.Mem.empty
+      · rw [pgNoLabelList_cons]
+        exact ⟨pgNoLabel_makeif h1 h2, pgNoLabelList_nil⟩
+
+end CompCert4Lean.Cfrontend.SimplExprproof
+
+namespace CompCert4Lean.Cfrontend.SimplExprproof
+
+open CompCert4Lean.Cfrontend.SimplExprspec
+
+theorem tr_find_label :
+    ∀ [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+      [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)],
+      tr_find_labelStatement := by
+  intro binary64_certificate binary32_certificate p tp ce lbl s k ts tk htr hmc
+  let P1 := fun (s : cstatement)
+      (ts : Clight.statement) (_ : tr_stmt ce s ts) =>
+      ∀ lbl k tk, match_cont p tp ce k tk →
+        match Csem.find_label lbl s k with
+        | none => Clight.find_label lbl ts tk = none
+        | some (s', k') =>
+            ∃ ts' tk', Clight.find_label lbl ts tk = some (ts', tk') ∧
+              tr_stmt ce s' ts' ∧ match_cont p tp ce k' tk'
+  let P2 := fun (s : clabeled_statements)
+      (ts : Clight.labeled_statements) (_ : tr_lblstmts ce s ts) =>
+      ∀ lbl k tk, match_cont p tp ce k tk →
+        match Csem.find_label_ls lbl s k with
+        | none => Clight.find_label_ls lbl ts tk = none
+        | some (s', k') =>
+            ∃ ts' tk', Clight.find_label_ls lbl ts tk = some (ts', tk') ∧
+              tr_stmt ce s' ts' ∧ match_cont p tp ce k' tk'
+  refine (SimplExprspec.tr_stmt.rec (motive_1 := P1) (motive_2 := P2)
+    ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_
+    ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ htr) lbl k tk hmc
+  · intro lbl k tk hmc
+    rfl
+  · intro r s h lbl k tk hmc
+    exact pgTrExprStmtNoLabel tp h lbl tk
+  · intro s1 s2 ts1 ts2 h1 h2 ih1 ih2 lbl k tk hmc
+    have hmc1 : match_cont p tp ce (Csem.Kseq s2 k) (Clight.Kseq ts2 tk) :=
+      match_cont.match_Kseq ce s2 k ts2 tk h2 hmc
+    have hi1 := ih1 lbl (Csem.Kseq s2 k) (Clight.Kseq ts2 tk) hmc1
+    simp only [Csem.find_label, Clight.find_label]
+    cases hc : Csem.find_label lbl s1 (Csem.Kseq s2 k) with
+    | none =>
+        rw [hc] at hi1
+        rw [hi1]
+        exact ih2 lbl k tk hmc
+    | some sk =>
+        rcases sk with ⟨s', k'⟩
+        rw [hc] at hi1
+        rcases hi1 with ⟨ts', tk', heq, htr', hmc'⟩
+        rw [heq]
+        exact ⟨ts', tk', rfl, htr', hmc'⟩
+  · intro r s' a h lbl k tk hmc
+    change Clight.find_label lbl (.Ssequence s' .Sskip) tk = none
+    exact pgNoLabel_sequence (pgTrExpressionNoLabel tp h) pgNoLabel_skip lbl tk
+  · intro r s1 s2 s' a ts1 ts2 hr h1 h2 ih1 ih2 lbl k tk hmc
+    have hpref := pgTrExpressionNoLabel tp hr
+    have hi1 := ih1 lbl k tk hmc
+    simp only [Csem.find_label, Clight.find_label]
+    rw [hpref lbl (.Kseq (.Sifthenelse a ts1 ts2) tk)]
+    simp only [Clight.find_label]
+    cases hc : Csem.find_label lbl s1 k with
+    | none =>
+        rw [hc] at hi1
+        rw [hi1]
+        exact ih2 lbl k tk hmc
+    | some sk =>
+        rcases sk with ⟨s'', k'⟩
+        rw [hc] at hi1
+        rcases hi1 with ⟨ts', tk', heq, htr', hmc'⟩
+        rw [heq]
+        exact ⟨ts', tk', rfl, htr', hmc'⟩
+  · intro r s1 s' ts1 hr h1 ih1 lbl k tk hmc
+    have hpref := pgTrIfNoLabel tp hr pgNoLabel_skip (by intro l k; rfl)
+    have hmc1 : match_cont p tp ce (Csem.Kwhile2 r s1 k)
+        (Clight.Kloop1 (.Ssequence s' ts1) .Sskip tk) :=
+      match_cont.match_Kwhile2 ce r s1 k s' ts1 tk hr h1 hmc
+    have hi1 := ih1 lbl (Csem.Kwhile2 r s1 k)
+      (Clight.Kloop1 (.Ssequence s' ts1) .Sskip tk) hmc1
+    simp only [Csem.find_label, Clight.find_label]
+    rw [hpref lbl (.Kseq ts1 (.Kloop1 (.Ssequence s' ts1) .Sskip tk))]
+    cases hc : Csem.find_label lbl s1 (Csem.Kwhile2 r s1 k) with
+    | none =>
+        rw [hc] at hi1
+        rw [hi1]
+    | some sk =>
+        rcases sk with ⟨s'', k'⟩
+        rw [hc] at hi1
+        rcases hi1 with ⟨ts', tk', heq, htr', hmc'⟩
+        rw [heq]
+        exact ⟨ts', tk', rfl, htr', hmc'⟩
+  · intro r s1 s' ts1 hr h1 ih1 lbl k tk hmc
+    have hpref := pgTrIfNoLabel tp hr pgNoLabel_skip (by intro l k; rfl)
+    have hmc1 : match_cont p tp ce (Csem.Kdowhile1 r s1 k)
+        (Clight.Kloop1 ts1 s' tk) :=
+      match_cont.match_Kdowhile1 ce r s1 k s' ts1 tk hr h1 hmc
+    have hi1 := ih1 lbl (Csem.Kdowhile1 r s1 k)
+      (Clight.Kloop1 ts1 s' tk) hmc1
+    simp only [Csem.find_label, Clight.find_label]
+    cases hc : Csem.find_label lbl s1 (Csem.Kdowhile1 r s1 k) with
+    | none =>
+        rw [hc] at hi1
+        rw [hi1]
+        exact hpref lbl (Clight.Kloop2 ts1 s' tk)
+    | some sk =>
+        rcases sk with ⟨s'', k'⟩
+        rw [hc] at hi1
+        rcases hi1 with ⟨ts', tk', heq, htr', hmc'⟩
+        rw [heq]
+        exact ⟨ts', tk', rfl, htr', hmc'⟩
+  · intro r s3 s4 s' ts3 ts4 hr h3 h4 ih3 ih4 lbl k tk hmc
+    have hpref := pgTrIfNoLabel tp hr pgNoLabel_skip (by intro l k; rfl)
+    have hmc3 : match_cont p tp ce (Csem.Kfor3 r s3 s4 k)
+        (Clight.Kloop1 (.Ssequence s' ts4) ts3 tk) :=
+      match_cont.match_Kfor3 ce r s3 s4 k ts3 s' ts4 tk hr h3 h4 hmc
+    have hi4 := ih4 lbl (Csem.Kfor3 r s3 s4 k)
+      (Clight.Kloop1 (.Ssequence s' ts4) ts3 tk) hmc3
+    simp only [Csem.find_label, Clight.find_label]
+    rw [hpref lbl (.Kseq ts4 (.Kloop1 (.Ssequence s' ts4) ts3 tk))]
+    cases hc4 : Csem.find_label lbl s4 (Csem.Kfor3 r s3 s4 k) with
+    | some sk =>
+        rcases sk with ⟨s'', k'⟩
+        rw [hc4] at hi4
+        rcases hi4 with ⟨ts', tk', heq, htr', hmc'⟩
+        rw [heq]
+        exact ⟨ts', tk', rfl, htr', hmc'⟩
+    | none =>
+        rw [hc4] at hi4
+        rw [hi4]
+        have hmc4 : match_cont p tp ce (Csem.Kfor4 r s3 s4 k)
+            (Clight.Kloop2 (.Ssequence s' ts4) ts3 tk) :=
+          match_cont.match_Kfor4 ce r s3 s4 k ts3 s' ts4 tk hr h3 h4 hmc
+        exact ih3 lbl (Csem.Kfor4 r s3 s4 k)
+          (Clight.Kloop2 (.Ssequence s' ts4) ts3 tk) hmc4
+  · intro s1 r s3 s4 s' ts1 ts3 ts4 hr hnot h1 h3 h4
+      ih1 ih3 ih4 lbl k tk hmc
+    let loop : Clight.statement := .Sloop (.Ssequence s' ts4) ts3
+    have hfor : tr_stmt ce (.Sfor .Sskip r s3 s4) loop :=
+      tr_stmt.tr_for_1 r s3 s4 s' ts3 ts4 hr h3 h4
+    have hmci : match_cont p tp ce
+        (Csem.Kseq (.Sfor .Sskip r s3 s4) k) (Clight.Kseq loop tk) :=
+      match_cont.match_Kseq ce (.Sfor .Sskip r s3 s4) k loop tk hfor hmc
+    have hii := ih1 lbl (Csem.Kseq (.Sfor .Sskip r s3 s4) k)
+      (Clight.Kseq loop tk) hmci
+    simp only [Csem.find_label, Clight.find_label]
+    cases hci : Csem.find_label lbl s1
+        (Csem.Kseq (.Sfor .Sskip r s3 s4) k) with
+    | some sk =>
+        rcases sk with ⟨s'', k'⟩
+        rw [hci] at hii
+        rcases hii with ⟨ts', tk', heq, htr', hmc'⟩
+        rw [heq]
+        exact ⟨ts', tk', rfl, htr', hmc'⟩
+    | none =>
+        rw [hci] at hii
+        rw [hii]
+        have hpref := pgTrIfNoLabel tp hr pgNoLabel_skip (by intro l k; rfl)
+        rw [hpref lbl (.Kseq ts4 (.Kloop1 (.Ssequence s' ts4) ts3 tk))]
+        have hmc3 : match_cont p tp ce (Csem.Kfor3 r s3 s4 k)
+            (Clight.Kloop1 (.Ssequence s' ts4) ts3 tk) :=
+          match_cont.match_Kfor3 ce r s3 s4 k ts3 s' ts4 tk hr h3 h4 hmc
+        have hi4 := ih4 lbl (Csem.Kfor3 r s3 s4 k)
+          (Clight.Kloop1 (.Ssequence s' ts4) ts3 tk) hmc3
+        cases hc4 : Csem.find_label lbl s4 (Csem.Kfor3 r s3 s4 k) with
+        | some sk =>
+            rcases sk with ⟨s'', k'⟩
+            rw [hc4] at hi4
+            rcases hi4 with ⟨ts', tk', heq, htr', hmc'⟩
+            rw [heq]
+            exact ⟨ts', tk', rfl, htr', hmc'⟩
+        | none =>
+            rw [hc4] at hi4
+            rw [hi4]
+            have hmc4 : match_cont p tp ce (Csem.Kfor4 r s3 s4 k)
+                (Clight.Kloop2 (.Ssequence s' ts4) ts3 tk) :=
+              match_cont.match_Kfor4 ce r s3 s4 k ts3 s' ts4 tk hr h3 h4 hmc
+            exact ih3 lbl (Csem.Kfor4 r s3 s4 k)
+              (Clight.Kloop2 (.Ssequence s' ts4) ts3 tk) hmc4
+  · intro lbl k tk hmc
+    rfl
+  · intro lbl k tk hmc
+    rfl
+  · intro lbl k tk hmc
+    rfl
+  · intro r s' a h lbl k tk hmc
+    change Clight.find_label lbl (.Ssequence s' (.Sreturn (some a))) tk = none
+    exact pgNoLabel_sequence (pgTrExpressionNoLabel tp h)
+      (by intro l k; rfl) lbl tk
+  · intro r ls s' a tls hr hls ihls lbl k tk hmc
+    have hpref := pgTrExpressionNoLabel tp hr
+    simp only [Csem.find_label, Clight.find_label]
+    rw [hpref lbl (.Kseq (.Sswitch a tls) tk)]
+    have hmcs : match_cont p tp ce (Csem.Kswitch2 k) (Clight.Kswitch tk) :=
+      match_cont.match_Kswitch2 ce k tk hmc
+    exact ihls lbl (Csem.Kswitch2 k) (Clight.Kswitch tk) hmcs
+  · intro label s ts h ih lbl k tk hmc
+    simp only [Csem.find_label, Clight.find_label]
+    cases heq : CompCert4Lean.Common.AST.ident_eq lbl label with
+    | left hsame => exact ⟨ts, tk, rfl, h, hmc⟩
+    | right hne => exact ih lbl k tk hmc
+  · intro label lbl k tk hmc
+    rfl
+  · intro lbl k tk hmc
+    rfl
+  · intro c s ls ts tls hs hls ihs ihls lbl k tk hmc
+    have hseq : tr_stmt ce (Csem.seq_of_labeled_statement ls)
+        (Clight.seq_of_labeled_statement tls) :=
+      tr_seq_of_labeled_statement ce ls tls hls
+    have hmc1 : match_cont p tp ce
+        (Csem.Kseq (Csem.seq_of_labeled_statement ls) k)
+        (Clight.Kseq (Clight.seq_of_labeled_statement tls) tk) :=
+      match_cont.match_Kseq ce (Csem.seq_of_labeled_statement ls) k
+        (Clight.seq_of_labeled_statement tls) tk hseq hmc
+    have his := ihs lbl (Csem.Kseq (Csem.seq_of_labeled_statement ls) k)
+      (Clight.Kseq (Clight.seq_of_labeled_statement tls) tk) hmc1
+    simp only [Csem.find_label_ls, Clight.find_label_ls]
+    cases hc : Csem.find_label lbl s
+        (Csem.Kseq (Csem.seq_of_labeled_statement ls) k) with
+    | none =>
+        rw [hc] at his
+        rw [his]
+        exact ihls lbl k tk hmc
+    | some sk =>
+        rcases sk with ⟨s', k'⟩
+        rw [hc] at his
+        rcases his with ⟨ts', tk', heq, htr', hmc'⟩
+        rw [heq]
+        exact ⟨ts', tk', rfl, htr', hmc'⟩
+
+end CompCert4Lean.Cfrontend.SimplExprproof

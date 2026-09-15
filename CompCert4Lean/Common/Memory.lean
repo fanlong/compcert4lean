@@ -3581,3 +3581,39 @@ theorem load_pointer_store : load_pointer_storeStatement := by
 
 end Mem
 end CompCert4Lean.Common.Memory
+
+namespace CompCert4Lean.Common.Memory
+
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memtype
+
+namespace Mem
+
+theorem store_similar_chunks : store_similar_chunksStatement := by
+  intro chunk1 chunk2 v1 v2 m b ofs hencode halign
+  have hsizeNat : size_chunk_nat chunk1 = size_chunk_nat chunk2 := by
+    have hlength := congrArg List.length hencode
+    rw [CompCert4Lean.Common.Memdata.encode_val_length chunk1 v1,
+      CompCert4Lean.Common.Memdata.encode_val_length chunk2 v2] at hlength
+    exact hlength
+  have hsize : size_chunk chunk1 = size_chunk chunk2 := by
+    rw [size_chunk_conv chunk1, size_chunk_conv chunk2, hsizeNat]
+  have hvalid :
+      valid_access m chunk1 b ofs Writable ↔
+        valid_access m chunk2 b ofs Writable := by
+    unfold valid_access
+    rw [hsize, halign]
+  unfold store
+  cases hdec1 : valid_access_dec m chunk1 b ofs Writable with
+  | left hv1 =>
+      cases hdec2 : valid_access_dec m chunk2 b ofs Writable with
+      | left hv2 => simp [boolOfSumbool, hdec1, hdec2, hencode]
+      | right hnv2 => exact False.elim (hnv2 (hvalid.mp hv1))
+  | right hnv1 =>
+      cases hdec2 : valid_access_dec m chunk2 b ofs Writable with
+      | left hv2 => exact False.elim (hnv1 (hvalid.mpr hv2))
+      | right hnv2 => simp [boolOfSumbool, hdec1, hdec2]
+
+end Mem
+
+end CompCert4Lean.Common.Memory

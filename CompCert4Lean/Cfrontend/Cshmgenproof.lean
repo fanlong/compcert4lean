@@ -3769,3 +3769,176 @@ theorem make_memcpy_correct
       cases hbad
 
 end CompCert4Lean.Cfrontend.Cshmgenproof
+
+namespace CompCert4Lean.Cfrontend.Cshmgenproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.ExternalCalls
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Linking
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Smallstep
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Cfrontend.Clight
+open CompCert4Lean.Cfrontend.Cop
+open CompCert4Lean.Cfrontend.Cshmgen
+open CompCert4Lean.Cfrontend.Csharpminor
+open CompCert4Lean.Cfrontend.Ctyping
+open CompCert4Lean.Cfrontend.Ctypes
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.Lib.Maps
+
+local instance : HSub Z Z Z := ⟨ZArith.BinInt.Z.sub⟩
+private abbrev suffix_zsub (a b : Z) : Z := ZArith.BinInt.Z.sub a b
+
+private theorem suffix_make_store_bitfield_correct
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    ∀ (xi : CompCert4Lean.Common.ExternalCalls.ExternalCalls)
+      (prog : CProgram) (ge : TGenv) (f : TFunction)
+      sz sg pos width dst src ty k e le m b ofs v m' s,
+    T_eval_expr ge e le m dst (.Vptr b ofs) →
+    T_eval_expr ge e le m src v →
+    Clight.assign_loc prog.prog_comp_env ty m b ofs (.Bits sz sg pos width) v m' →
+    make_store_bitfield sz sg pos width dst src = .OK s →
+    T_step xi ge (.State f s k e le m) E0
+      (.State f .Sskip k e le m') := by
+  intro xi prog ge f sz sg pos width dst src ty k e le m b ofs v m' s
+    hdst hsrc hassign hmake
+  cases hassign with
+  | assign_loc_bitfield sz sg pos width v m' v' hstore =>
+      cases hstore with
+      | store_bitfield_intro sz sg1 attr sg pos width m addr c n m'
+          hpos hwidth hcarrier hsg hload hstore =>
+          have hfirst := first_bit_range sz pos width hpos hwidth.1 hcarrier
+          have hwidth0 : ZArith.BinInt.Z.le
+              (CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z0) width :=
+            ZArith.Zorder.Zlt_le_weak_proof _ _ hwidth.1
+          have hshl : CompCert4Lean.Lib.Integers.Int.ltu
+              (CompCert4Lean.Lib.Integers.Int.repr (Cop.first_bit sz pos width))
+              CompCert4Lean.Lib.Integers.Int.iwordsize = true :=
+            int_ltu_true _ hfirst.1
+          simp only [Cshmgen.make_store_bitfield] at hmake
+          split at hmake <;> try contradiction
+          cases hmake
+          apply Csharpminor.step_store
+          · exact hdst
+          · refine Csharpminor.eval_Ebinop .Oor _ _
+              (.Vint (CompCert4Lean.Lib.Integers.Int.and
+                (CompCert4Lean.Lib.Integers.Int.shl n
+                  (CompCert4Lean.Lib.Integers.Int.repr
+                    (Cop.first_bit sz pos width)))
+                (CompCert4Lean.Lib.Integers.Int.shl
+                  (CompCert4Lean.Lib.Integers.Int.repr
+                    (suffix_zsub (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.Zpower.two_p width)
+                      (zOfNat 1)))
+                  (CompCert4Lean.Lib.Integers.Int.repr
+                    (Cop.first_bit sz pos width)))))
+              (.Vint (CompCert4Lean.Lib.Integers.Int.and c
+                (CompCert4Lean.Lib.Integers.Int.not
+                  (CompCert4Lean.Lib.Integers.Int.shl
+                    (CompCert4Lean.Lib.Integers.Int.repr
+                      (suffix_zsub (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.Zpower.two_p width)
+                        (zOfNat 1)))
+                    (CompCert4Lean.Lib.Integers.Int.repr
+                      (Cop.first_bit sz pos width))))))
+              (.Vint (CompCert4Lean.Lib.Integers.Int.bitfield_insert
+                (Cop.first_bit sz pos width) width c n)) ?_ ?_ ?_
+            · refine Csharpminor.eval_Ebinop .Oand _ _
+                (.Vint (CompCert4Lean.Lib.Integers.Int.shl n
+                  (CompCert4Lean.Lib.Integers.Int.repr
+                    (Cop.first_bit sz pos width))))
+                (.Vint (CompCert4Lean.Lib.Integers.Int.shl
+                  (CompCert4Lean.Lib.Integers.Int.repr
+                    (suffix_zsub (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.Zpower.two_p width)
+                      (zOfNat 1)))
+                  (CompCert4Lean.Lib.Integers.Int.repr
+                    (Cop.first_bit sz pos width))))
+                (.Vint (CompCert4Lean.Lib.Integers.Int.and
+                  (CompCert4Lean.Lib.Integers.Int.shl n
+                    (CompCert4Lean.Lib.Integers.Int.repr
+                      (Cop.first_bit sz pos width)))
+                  (CompCert4Lean.Lib.Integers.Int.shl
+                    (CompCert4Lean.Lib.Integers.Int.repr
+                      (suffix_zsub (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.Zpower.two_p width)
+                        (zOfNat 1)))
+                    (CompCert4Lean.Lib.Integers.Int.repr
+                      (Cop.first_bit sz pos width))))) ?_ ?_ ?_
+              · refine Csharpminor.eval_Ebinop .Oshl _ _ (.Vint n)
+                  (.Vint (CompCert4Lean.Lib.Integers.Int.repr
+                    (Cop.first_bit sz pos width)))
+                  (.Vint (CompCert4Lean.Lib.Integers.Int.shl n
+                    (CompCert4Lean.Lib.Integers.Int.repr
+                      (Cop.first_bit sz pos width)))) ?_ ?_ ?_
+                · exact hsrc
+                · exact make_intconst_correct ge _ e le m
+                · simp [Csharpminor.eval_binop,
+                    CompCert4Lean.Backend.Cminor.eval_binop,
+                    CompCert4Lean.Common.Values.Val.shl, hshl]
+              · exact make_intconst_correct ge _ e le m
+              · simp [Csharpminor.eval_binop,
+                  CompCert4Lean.Backend.Cminor.eval_binop,
+                  CompCert4Lean.Common.Values.Val.and]
+            · refine Csharpminor.eval_Ebinop .Oand _ _ (.Vint c)
+                (.Vint (CompCert4Lean.Lib.Integers.Int.not
+                  (CompCert4Lean.Lib.Integers.Int.shl
+                    (CompCert4Lean.Lib.Integers.Int.repr
+                      (suffix_zsub (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.Zpower.two_p width)
+                        (zOfNat 1)))
+                    (CompCert4Lean.Lib.Integers.Int.repr
+                      (Cop.first_bit sz pos width)))))
+                (.Vint (CompCert4Lean.Lib.Integers.Int.and c
+                  (CompCert4Lean.Lib.Integers.Int.not
+                    (CompCert4Lean.Lib.Integers.Int.shl
+                      (CompCert4Lean.Lib.Integers.Int.repr
+                        (suffix_zsub (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.Zpower.two_p width)
+                          (zOfNat 1)))
+                      (CompCert4Lean.Lib.Integers.Int.repr
+                        (Cop.first_bit sz pos width)))))) ?_ ?_ ?_
+              · refine Csharpminor.eval_Eload _ _ (.Vptr b ofs) (.Vint c) ?_ ?_
+                · exact hdst
+                · exact hload
+              · exact make_intconst_correct ge _ e le m
+              · simp [Csharpminor.eval_binop,
+                  CompCert4Lean.Backend.Cminor.eval_binop,
+                  CompCert4Lean.Common.Values.Val.and]
+            · have halt :=
+                CompCert4Lean.Lib.Integers.Int.bitfield_insert_alternative_proof
+                  (Cop.first_bit sz pos width) width c n hwidth0
+              simp only [Csharpminor.eval_binop,
+                CompCert4Lean.Backend.Cminor.eval_binop,
+                CompCert4Lean.Common.Values.Val.or,
+                Option.some.injEq]
+              congr 1
+              exact halt.symm
+          · exact hstore
+
+theorem make_store_correct
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    make_store_correctStatement := by
+  intro xi cunit prog hlink ge addr ty bf rhs code e le m b ofs v m' f k
+    hmake haddr hrhs hassign
+  cases hassign with
+  | assign_loc_value v chunk m' hmode hstore =>
+      simp [Cshmgen.make_store, hmode] at hmake
+      cases hmake
+      exact Csharpminor.step_store f chunk addr rhs k e le m
+        (.Vptr b ofs) v m' haddr hrhs hstore
+  | assign_loc_copy b' ofs' bytes m' hmode hsrcAlign hdstAlign hseparated hload hstore =>
+      have hmake' : make_memcpy cunit.prog_comp_env addr rhs ty = .OK code := by
+        simpa [Cshmgen.make_store, hmode] using hmake
+      exact make_memcpy_correct xi cunit prog hlink ge f addr rhs ty k e le m
+        b ofs (.Vptr b' ofs') m' code haddr hrhs
+        (Clight.assign_loc.assign_loc_copy b' ofs' bytes m' hmode hsrcAlign
+          hdstAlign hseparated hload hstore) hmode hmake'
+  | assign_loc_bitfield sz sg pos width v m' v' hstore =>
+      exact suffix_make_store_bitfield_correct xi prog ge f sz sg pos width
+        addr rhs ty k e le m b ofs v m' code haddr hrhs
+        (Clight.assign_loc.assign_loc_bitfield sz sg pos width v m' v' hstore)
+        hmake
+
+end CompCert4Lean.Cfrontend.Cshmgenproof

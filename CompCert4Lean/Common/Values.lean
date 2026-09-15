@@ -2420,3 +2420,37 @@ theorem andl_commut : andl_commutStatement := by
 
 end Val
 end CompCert4Lean.Common.Values
+
+namespace CompCert4Lean.Common.Values
+namespace Val
+
+private theorem pg_orl_int64_commut
+    (x y : CompCert4Lean.Lib.Integers.Int64.int) :
+    CompCert4Lean.Lib.Integers.Int64.or x y =
+      CompCert4Lean.Lib.Integers.Int64.or y x := by
+  apply CompCert4Lean.Lib.Integers.WordCore.ext_of_val_eq
+  unfold CompCert4Lean.Lib.Integers.Int64.or
+    CompCert4Lean.Lib.Integers.WordCore.or
+  change
+    (CompCert4Lean.Lib.Integers.WordCore.repr 64
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat
+        (Nat.lor x.val y.val))).val =
+      (CompCert4Lean.Lib.Integers.WordCore.repr 64
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat
+          (Nat.lor y.val x.val))).val
+  rw [pg_andl_repr_val_of_lt64 (Nat.lor x.val y.val)
+        (Nat.or_lt_two_pow x.toFin.isLt y.toFin.isLt),
+      pg_andl_repr_val_of_lt64 (Nat.lor y.val x.val)
+        (Nat.or_lt_two_pow y.toFin.isLt x.toFin.isLt)]
+  exact Nat.or_comm _ _
+
+theorem orl_commut : orl_commutStatement := by
+  intro x y
+  cases x <;> cases y <;> try rfl
+  case Vlong.Vlong x y =>
+    change Vlong (CompCert4Lean.Lib.Integers.Int64.or x y) =
+      Vlong (CompCert4Lean.Lib.Integers.Int64.or y x)
+    rw [pg_orl_int64_commut]
+
+end Val
+end CompCert4Lean.Common.Values

@@ -3010,3 +3010,257 @@ theorem advance_next_le : advance_next_leStatement := by
 
 end Genv
 end CompCert4Lean.Common.Globalenvs
+
+namespace CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Linking
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.Lib.Integers
+namespace Genv
+
+private theorem pg_alloc_inject_neutral
+    (thr : positive) (m : mem) (lo hi : Z) (m' : mem) (b : positive)
+    (halloc : Mem.alloc m lo hi = (m', b))
+    (hneutral : Mem.inject_neutral thr m) (hnext : Plt m.nextblock thr) :
+    Mem.inject_neutral thr m' := by
+  unfold Mem.alloc at halloc
+  dsimp at halloc
+  cases halloc
+  constructor
+  · intro b1 b2 delta ofs k p hmap hperm
+    have hmap_orig := hmap
+    unfold Mem.flat_inj at hmap
+    cases hplt : plt b1 thr with
+    | right hn => simp [hplt] at hmap
+    | left hb1 =>
+        simp [hplt] at hmap
+        rcases hmap with ⟨hb2, hdelta⟩
+        subst b2
+        by_cases hfresh : b1 = m.nextblock
+        · subst b1
+          change Mem.perm _ _ (ZArith.BinInt.Z.add ofs delta) k p
+          have hadd : ZArith.BinInt.Z.add ofs delta = ofs := by
+            rw [← hdelta]
+            exact pg_neutral_zadd_zero ofs
+          rw [hadd]
+          exact hperm
+        · unfold Mem.perm
+          rw [pg_pmap_get_set_other _ _ _ _ hfresh]
+          have hperm' : Mem.perm m b1 ofs k p := by
+            unfold Mem.perm at hperm
+            rw [pg_pmap_get_set_other _ _ _ _ hfresh] at hperm
+            exact hperm
+          have hself : Mem.flat_inj thr b1 = some (b1, delta) := by
+            exact hmap_orig
+          change Mem.perm _ b1 (ZArith.BinInt.Z.add ofs delta) k p
+          exact hneutral.mi_perm b1 b1 delta ofs k p hself hperm'
+  · intro b1 b2 delta chunk ofs p hmap hrange
+    have hmap_orig := hmap
+    unfold Mem.flat_inj at hmap
+    cases hplt : plt b1 thr with
+    | right hn => simp [hplt] at hmap
+    | left hb1 =>
+        simp [hplt] at hmap
+        rcases hmap with ⟨hb2, hdelta⟩
+        subst b2
+        have hself : Mem.flat_inj thr b1 = some (b1, delta) := by
+          exact hmap_orig
+        rw [← hdelta]
+        exact ZArith.BinInt.Z.divide_0_r _
+  · intro b1 ofs b2 delta hmap hread
+    have hmap_orig := hmap
+    unfold Mem.flat_inj at hmap
+    cases hplt : plt b1 thr with
+    | right hn => simp [hplt] at hmap
+    | left hb1 =>
+        simp [hplt] at hmap
+        rcases hmap with ⟨hb2, hdelta⟩
+        subst b2
+        by_cases hfresh : b1 = m.nextblock
+        · subst b1
+          rw [pg_pmap_get_set_same]
+          simp only [ZMap.get, ZMap.init, PMap.gi]
+          exact memval_inject.undef _ _
+        · rw [pg_pmap_get_set_other _ _ _ _ hfresh]
+          have hread' : Mem.perm m b1 ofs Cur Readable := by
+            unfold Mem.perm at hread
+            rw [pg_pmap_get_set_other _ _ _ _ hfresh] at hread
+            exact hread
+          have hself : Mem.flat_inj thr b1 = some (b1, delta) := by
+            exact hmap_orig
+          change memval_inject _ _
+            (ZMap.get (ZArith.BinInt.Z.add ofs delta) (PMap.get b1 m.mem_contents))
+          exact hneutral.mi_memval b1 ofs b1 delta hself hread'
+
+private theorem pg_drop_inject_neutral
+    (thr : positive) (m : mem) (b) (lo hi : Z) (p : permission)
+    (m' : mem) (hdrop : Mem.drop_perm m b lo hi p = some m')
+    (hneutral : Mem.inject_neutral thr m) (hb : Plt b thr) :
+    Mem.inject_neutral thr m' := by
+  unfold Mem.drop_perm at hdrop
+  cases hr : Mem.range_perm_dec m b lo hi Cur Freeable with
+  | right hn => simp [hr] at hdrop
+  | left hRange =>
+      simp [hr] at hdrop
+      cases hdrop
+      constructor
+      · intro b1 b2 delta ofs k p' hmap hperm
+        have hmap_orig := hmap
+        unfold Mem.flat_inj at hmap
+        cases hplt : plt b1 thr with
+        | right hn => simp [hplt] at hmap
+        | left hb1 =>
+            simp [hplt] at hmap
+            rcases hmap with ⟨hb2, hdelta⟩
+            subst b2
+            change Mem.perm _ _ (ZArith.BinInt.Z.add ofs delta) k p'
+            have hadd : ZArith.BinInt.Z.add ofs delta = ofs := by
+              rw [← hdelta]
+              exact pg_neutral_zadd_zero ofs
+            rw [hadd]
+            exact hperm
+      · intro b1 b2 delta chunk ofs p' hmap hrange
+        have hmap_orig := hmap
+        unfold Mem.flat_inj at hmap
+        cases hplt : plt b1 thr with
+        | right hn => simp [hplt] at hmap
+        | left hb1 =>
+            simp [hplt] at hmap
+            rcases hmap with ⟨hb2, hdelta⟩
+            subst b2
+            rw [← hdelta]
+            exact ZArith.BinInt.Z.divide_0_r _
+      · intro b1 ofs b2 delta hmap hread
+        have hmap_orig := hmap
+        unfold Mem.flat_inj at hmap
+        cases hplt : plt b1 thr with
+        | right hn => simp [hplt] at hmap
+        | left hb1 =>
+            simp [hplt] at hmap
+            rcases hmap with ⟨hb2, hdelta⟩
+            subst b2
+            by_cases htarget : b1 = b
+            · subst b1
+              unfold Mem.perm at hread
+              rw [pg_pmap_get_set_same] at hread
+              split at hread <;> rename_i hIn
+              · have hIn' : (ZArith.BinInt.Z.leb lo ofs &&
+                    ZArith.BinInt.Z.ltb ofs hi) = true := by
+                  exact hIn
+                have hBounds : zLe lo ofs ∧ zLt ofs hi := by
+                  change intOfZ lo ≤ intOfZ ofs ∧ intOfZ ofs < intOfZ hi
+                  simpa [ZArith.BinInt.Z.leb, ZArith.BinInt.Z.ltb] using hIn'
+                have hfree := hRange ofs hBounds
+                have hread' : Mem.perm m b ofs Cur Readable :=
+                  Mem.perm_implies m b ofs Cur Freeable Readable hfree
+                    (CompCert4Lean.Common.Memtype.perm_order.perm_F_any _)
+                have hself : Mem.flat_inj thr b = some (b, delta) := by
+                  exact hmap_orig
+                exact hneutral.mi_memval b ofs b delta hself hread'
+              · have hread' : Mem.perm m b ofs Cur Readable := by
+                  exact hread
+                have hself : Mem.flat_inj thr b = some (b, delta) := by
+                  exact hmap_orig
+                exact hneutral.mi_memval b ofs b delta hself hread'
+            · have hread' : Mem.perm m b1 ofs Cur Readable := by
+                unfold Mem.perm at hread
+                rw [pg_pmap_get_set_other _ _ _ _ htarget] at hread
+                exact hread
+              have hself : Mem.flat_inj thr b1 = some (b1, delta) := by
+                exact hmap_orig
+              exact hneutral.mi_memval b1 ofs b1 delta hself hread'
+
+private theorem pg_alloc_global_neutral
+    (F V : Type) (ge : t F V) (thr : block)
+    (hsym : ∀ id b, find_symbol ge id = some b → Plt b thr)
+    (idg : ident × globdef F V) (m m' : mem)
+    (hallocGlobal : alloc_global ge m idg = some m')
+    (hneutral : Mem.inject_neutral thr m) (hnext : Plt m.nextblock thr) :
+    Mem.inject_neutral thr m' := by
+  rcases idg with ⟨id, gd⟩
+  cases gd with
+  | Gfun f =>
+      unfold alloc_global at hallocGlobal
+      cases halloc : Mem.alloc m z0 z1 with
+      | mk m1 b =>
+          have hdrop : Mem.drop_perm m1 b z0 z1 Nonempty = some m' := by
+            simpa [halloc] using hallocGlobal
+          have hb : b = m.nextblock := by
+            unfold Mem.alloc at halloc
+            exact (congrArg Prod.snd halloc).symm
+          have hbthr : Plt b thr := by simpa [hb] using hnext
+          have hallocNeutral : Mem.inject_neutral thr m1 :=
+            pg_alloc_inject_neutral thr m z0 z1 m1 b halloc hneutral hnext
+          exact pg_drop_inject_neutral thr m1 b z0 z1 Nonempty m' hdrop
+            hallocNeutral hbthr
+  | Gvar v =>
+      unfold alloc_global at hallocGlobal
+      cases halloc : Mem.alloc m z0 (init_data_list_size v.gvar_init) with
+      | mk m1 b =>
+          cases hzeros : store_zeros m1 b z0
+              (init_data_list_size v.gvar_init) with
+          | none => simp [halloc, hzeros] at hallocGlobal
+          | some m2 =>
+              cases hlist : store_init_data_list ge m2 b z0 v.gvar_init with
+              | none => simp [halloc, hzeros, hlist] at hallocGlobal
+              | some m3 =>
+                  have hdrop : Mem.drop_perm m3 b z0
+                      (init_data_list_size v.gvar_init) (perm_globvar v) = some m' := by
+                    simpa [halloc, hzeros, hlist] using hallocGlobal
+                  have hb : b = m.nextblock := by
+                    unfold Mem.alloc at halloc
+                    exact (congrArg Prod.snd halloc).symm
+                  have hbthr : Plt b thr := by simpa [hb] using hnext
+                  have hallocNeutral : Mem.inject_neutral thr m1 :=
+                    pg_alloc_inject_neutral thr m z0
+                      (init_data_list_size v.gvar_init) m1 b halloc hneutral hnext
+                  have hzerosNeutral : Mem.inject_neutral thr m2 :=
+                    store_zeros_neutral thr m1 b z0
+                      (init_data_list_size v.gvar_init) m2 hallocNeutral hbthr hzeros
+                  have hlistNeutral : Mem.inject_neutral thr m3 :=
+                    store_init_data_list_neutral F V ge thr hsym b v.gvar_init
+                      m2 z0 m3 hzerosNeutral hbthr hlist
+                  exact pg_drop_inject_neutral thr m3 b z0
+                    (init_data_list_size v.gvar_init) (perm_globvar v) m' hdrop
+                    hlistNeutral hbthr
+
+theorem alloc_globals_neutral : alloc_globals_neutralStatement := by
+  intro F V ge thr hsym gl
+  induction gl with
+  | nil =>
+      intro m m' hallocs hneutral hbound
+      change some m = some m' at hallocs
+      cases hallocs
+      exact hneutral
+  | cons g rest ih =>
+      intro m m' hallocs hneutral hbound
+      change (match alloc_global ge m g with
+        | none => none
+        | some m1 => alloc_globals ge m1 rest) = some m' at hallocs
+      cases halloc : alloc_global ge m g with
+      | none => simp [halloc] at hallocs
+      | some m1 =>
+          have hrest : alloc_globals ge m1 rest = some m' := by
+            simpa [halloc] using hallocs
+          have hrestNext := alloc_globals_nextblock F V ge rest m1 m' hrest
+          have hglobalNext := alloc_global_nextblock F V ge g m m1 halloc
+          have hsuccFinal : Ple (posSucc m.nextblock) m'.nextblock := by
+            rw [hrestNext, hglobalNext]
+            exact advance_next_le F V rest (posSucc m.nextblock)
+          have hsuccBound : Ple (posSucc m.nextblock) thr :=
+            Ple_trans (posSucc m.nextblock) m'.nextblock thr hsuccFinal hbound
+          have hnext : Plt m.nextblock thr :=
+            Plt_Ple_trans m.nextblock (posSucc m.nextblock) thr
+              (Plt_succ m.nextblock) hsuccBound
+          have hfirst : Mem.inject_neutral thr m1 :=
+            pg_alloc_global_neutral F V ge thr hsym g m m1 halloc hneutral hnext
+          exact ih m1 m' hrest hfirst hbound
+
+end Genv
+end CompCert4Lean.Common.Globalenvs

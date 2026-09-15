@@ -4875,3 +4875,452 @@ theorem shrx_shr_proof : shrx_shr := by
     rw [hs]
     rw [suffix_zshiftr_div_any _ _ hy0]
     rw [hquot]
+
+theorem signed_zero_proof : signed_zero := by
+  rfl
+
+theorem bits_above_proof : bits_above := by
+  intro x i hi
+  cases i with
+  | Zneg p =>
+      exfalso
+      change (32 : Int) ≤ -Int.ofNat
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p) at hi
+      have hp : (0 : Int) ≤ Int.ofNat
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p) :=
+        Int.natCast_nonneg _
+      omega
+  | Z0 =>
+      exfalso
+      change (32 : Int) ≤ 0 at hi
+      omega
+  | Zpos p =>
+      simp only [testbit, WordCore.testbit]
+      rw [WordCore.positiveToNat_eq_posToNat]
+      change Nat.testBit x.val
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p) = false
+      change intOfZ (zOfNat wordsize) ≤
+        intOfZ (Numbers.BinNums.Z.Zpos p) at hi
+      simp only [zOfNat, ZArith.BinInt.Z.of_nat, intOfZ_zOfInt,
+        intOfZ, posToNat] at hi
+      have hidx : wordsize ≤
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p :=
+        Int.ofNat_le.mp hi
+      have hpow : 2 ^ wordsize ≤
+          2 ^ CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p :=
+        Nat.pow_le_pow_right Nat.zero_lt_two hidx
+      have hval : x.val <
+          2 ^ CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p :=
+        Nat.lt_of_lt_of_le (WordCore.val_lt x) hpow
+      exact Nat.testBit_lt_two_pow hval
+
+private theorem suffix_modulo_int (a : Z) :
+    intOfZ (zMod a modulus) = intOfZ a % (2 ^ wordsize : Int) := by
+  have hmpos : (0 : Int) < intOfZ modulus := by
+    change (0 : Int) < Int.ofNat (2 ^ wordsize)
+    exact Int.natCast_pos.mpr (Nat.two_pow_pos _)
+  have hm : intOfZ modulus = (2 ^ wordsize : Int) := by
+    rfl
+  have hrange := ZArith.BinInt.Z.modulo_range a modulus (by
+    change (0 : Int) < intOfZ modulus
+    exact hmpos)
+  have hr0 : (0 : Int) ≤ intOfZ (zMod a modulus) := hrange.1
+  have hrlt : intOfZ (zMod a modulus) < intOfZ modulus := hrange.2
+  have hd := ZArith.Zdiv.Z_div_mod_eq_full a modulus
+  have hdInt := congrArg intOfZ hd
+  simp only [ZArith.BinInt.Z.add, ZArith.BinInt.Z.mul,
+    intOfZ_zOfInt] at hdInt
+  let q := intOfZ (ZArith.BinInt.Z.div a modulus)
+  let r := intOfZ (zMod a modulus)
+  let m := intOfZ modulus
+  have hcalc : intOfZ a % m = r := by
+    calc
+      intOfZ a % m = (m * q + r) % m := congrArg (fun v => v % m) hdInt
+      _ = (r + q * m) % m := by rw [Int.add_comm, Int.mul_comm]
+      _ = r % m := Int.add_mul_emod_self_right r q m
+      _ = r := Int.emod_eq_of_lt hr0 hrlt
+  simpa [m, r, hm] using hcalc.symm
+
+private theorem suffix_signed_mod (x : int) :
+    intOfZ (signed x) % (2 ^ wordsize : Int) =
+      intOfZ (unsigned x) % (2 ^ wordsize : Int) := by
+  unfold signed WordCore.signed
+  cases h : CompCert4Lean.Lib.Coqlib.zlt
+      (WordCore.unsigned x) (zTwoPowerNat (wordsize - 1)) with
+  | left _ =>
+      simp only [zltSelect, sumboolSelect, h]
+      rfl
+  | right _ =>
+      simp only [zltSelect, sumboolSelect, h]
+      simp only [zSub, ZArith.BinInt.Z.sub, intOfZ_zOfInt]
+      have hm : intOfZ (zTwoPowerNat wordsize) = (2 ^ wordsize : Int) := by
+        rfl
+      rw [hm, Int.sub_emod, Int.emod_self, Int.sub_zero, Int.emod_emod]
+      rfl
+
+theorem mods_divs_proof : mods_divs := by
+  intro x y
+  apply WordCore.ext
+  change unsigned (mods x y) = unsigned (sub x (mul (divs x y) y))
+  change unsigned (repr
+      (zSub (signed x) (zMul (zQuot (signed x) (signed y)) (signed y)))) =
+    unsigned (repr
+      (zSub (unsigned x)
+        (unsigned (repr (zMul
+          (unsigned (repr (zQuot (signed x) (signed y)))) (unsigned y))))))
+  rw [suffix_unsigned_repr_eq_exact, suffix_unsigned_repr_eq_exact]
+  rw [suffix_unsigned_repr_eq_exact, suffix_unsigned_repr_eq_exact]
+  apply intOfZ_injective
+  simp only [zSub, zMul, ZArith.BinInt.Z.sub, ZArith.BinInt.Z.mul,
+    intOfZ_zOfInt]
+  rw [suffix_modulo_int]
+  rw [suffix_modulo_int]
+  rw [suffix_modulo_int]
+  simp only [intOfZ_zOfInt]
+  have hsubL :
+      (intOfZ (signed x) - intOfZ (zQuot (signed x) (signed y)) *
+          intOfZ (signed y)) %
+          (2 ^ wordsize : Int) =
+        (intOfZ (signed x) % (2 ^ wordsize : Int) -
+          (intOfZ (zQuot (signed x) (signed y)) * intOfZ (signed y)) %
+            (2 ^ wordsize : Int)) %
+          (2 ^ wordsize : Int) := by
+    rw [Int.sub_emod]
+  have hsubR :
+      (intOfZ (unsigned x) -
+          (intOfZ (zMod (zQuot (signed x) (signed y)) modulus) *
+            intOfZ (unsigned y)) % (2 ^ wordsize : Int)) %
+          (2 ^ wordsize : Int) =
+        (intOfZ (unsigned x) % (2 ^ wordsize : Int) -
+          (intOfZ (zMod (zQuot (signed x) (signed y)) modulus) *
+            intOfZ (unsigned y)) % (2 ^ wordsize : Int)) %
+          (2 ^ wordsize : Int) := by
+    rw [Int.sub_emod, Int.emod_emod]
+  rw [hsubL, hsubR]
+  have hsx := suffix_signed_mod x
+  have hsy := suffix_signed_mod y
+  have hqmod := suffix_modulo_int (zQuot (signed x) (signed y))
+  have hprod :
+      (intOfZ (zQuot (signed x) (signed y)) * intOfZ (signed y)) %
+          (2 ^ wordsize : Int) =
+        (intOfZ (zMod (zQuot (signed x) (signed y)) modulus) *
+          intOfZ (unsigned y)) % (2 ^ wordsize : Int) := by
+    rw [hqmod]
+    calc
+      (intOfZ (zQuot (signed x) (signed y)) * intOfZ (signed y)) %
+          (2 ^ wordsize : Int) =
+        (intOfZ (zQuot (signed x) (signed y)) % (2 ^ wordsize : Int) *
+          (intOfZ (signed y) % (2 ^ wordsize : Int))) %
+            (2 ^ wordsize : Int) := Int.mul_emod _ _ _
+      _ = (intOfZ (zQuot (signed x) (signed y)) %
+          (2 ^ wordsize : Int) *
+          (intOfZ (unsigned y) % (2 ^ wordsize : Int))) %
+            (2 ^ wordsize : Int) := by rw [hsy]
+      _ = (intOfZ (zQuot (signed x) (signed y)) %
+          (2 ^ wordsize : Int) * intOfZ (unsigned y)) %
+            (2 ^ wordsize : Int) := by
+        calc
+          (intOfZ (zQuot (signed x) (signed y)) %
+              (2 ^ wordsize : Int) *
+              (intOfZ (unsigned y) % (2 ^ wordsize : Int))) %
+              (2 ^ wordsize : Int) =
+            ((intOfZ (zQuot (signed x) (signed y)) %
+                (2 ^ wordsize : Int)) % (2 ^ wordsize : Int) *
+              (intOfZ (unsigned y) % (2 ^ wordsize : Int) %
+                (2 ^ wordsize : Int))) % (2 ^ wordsize : Int) :=
+            Int.mul_emod _ _ _
+          _ = (intOfZ (zQuot (signed x) (signed y)) %
+              (2 ^ wordsize : Int) *
+              (intOfZ (unsigned y) % (2 ^ wordsize : Int))) %
+              (2 ^ wordsize : Int) := by
+            rw [Int.emod_emod, Int.emod_emod]
+          _ = (intOfZ (zQuot (signed x) (signed y)) %
+              (2 ^ wordsize : Int) * intOfZ (unsigned y)) %
+              (2 ^ wordsize : Int) := by
+            simpa only [Int.emod_emod] using
+              (Int.mul_emod
+                (intOfZ (zQuot (signed x) (signed y)) %
+                  (2 ^ wordsize : Int))
+                (intOfZ (unsigned y)) (2 ^ wordsize : Int)).symm
+  rw [hsx, hprod]
+  repeat rw [Int.emod_emod]
+
+private theorem suffix_divmods2_n_eq (n : int) :
+    zAdd (zMul (signed (if lt n zero = true then mone else zero)) modulus)
+        (unsigned n) = signed n := by
+  have hux : intOfZ (unsigned n) = Int.ofNat n.val := by
+    change intOfZ n.intval = Int.ofNat n.val
+    rw [WordCore.intval_eq_zOfNat_val n]
+    simpa only [zOfNat, ZArith.BinInt.Z.of_nat] using
+      intOfZ_zOfInt (Int.ofNat n.val)
+  have hsx := suffix_signed_int n
+  have hM : intOfZ modulus = (2 ^ wordsize : Int) := by
+    rfl
+  have hcastM : Int.ofNat (2 ^ wordsize) = (2 ^ wordsize : Int) := by
+    change Int.ofNat (2 ^ wordsize) = Int.ofNat 2 ^ wordsize
+    exact Int.natCast_pow 2 wordsize
+  have hcastH : Int.ofNat (2 ^ (wordsize - 1)) =
+      (2 ^ (wordsize - 1) : Int) := by
+    change Int.ofNat (2 ^ (wordsize - 1)) = Int.ofNat 2 ^ (wordsize - 1)
+    exact Int.natCast_pow 2 (wordsize - 1)
+  by_cases hlt : lt n zero = true
+  · have hneg : intOfZ (signed n) < 0 := by
+      change zltSelect (signed n) (signed zero) true false = true at hlt
+      cases hz : CompCert4Lean.Lib.Coqlib.zlt (signed n) (signed zero) with
+      | left hlt' =>
+          change intOfZ (signed n) < intOfZ (signed zero) at hlt'
+          have hz0 : signed zero = zZero := by rfl
+          rw [hz0] at hlt'
+          exact hlt'
+      | right hge =>
+          simp [zltSelect, sumboolSelect, hz] at hlt
+    have hval : ¬ n.val < 2 ^ (wordsize - 1) := by
+      intro hv
+      have hneg' :
+          (if n.val < 2 ^ (wordsize - 1) then Int.ofNat n.val
+          else Int.ofNat n.val - Int.ofNat (2 ^ wordsize)) < 0 := by
+        simpa only [hsx] using hneg
+      rw [hcastM] at hneg'
+      simp [hv] at hneg'
+      omega
+    rw [if_pos hlt]
+    apply intOfZ_injective
+    simp only [zMul, zAdd, ZArith.BinInt.Z.mul, ZArith.BinInt.Z.add,
+      zOpp, ZArith.BinInt.Z.opp, intOfZ_zOfInt]
+    rw [hux, hM]
+    have hsxval : intOfZ (signed n) =
+        Int.ofNat n.val - Int.ofNat (2 ^ wordsize) := by
+      simpa only [hsx, if_neg hval]
+    rw [hcastM] at hsxval
+    have hmone : intOfZ (signed mone) = (-1 : Int) := by
+      rfl
+    rw [hsxval, hmone]
+    clear hsx
+    omega
+  · have hnonneg : 0 ≤ intOfZ (signed n) := by
+      have hltfalse : lt n zero = false := by
+        cases hq : lt n zero with
+        | false => simpa using hq
+        | true => exact (hlt hq).elim
+      change zltSelect (signed n) (signed zero) true false = false at hltfalse
+      cases hz : CompCert4Lean.Lib.Coqlib.zlt (signed n) (signed zero) with
+      | left hlt' =>
+          simp [zltSelect, sumboolSelect, hz] at hltfalse
+      | right hge =>
+          change intOfZ (signed zero) ≤ intOfZ (signed n) at hge
+          have hz0 : signed zero = zZero := by rfl
+          rw [hz0] at hge
+          exact hge
+    have hval : n.val < 2 ^ (wordsize - 1) := by
+      by_cases hv : n.val < 2 ^ (wordsize - 1)
+      · exact hv
+      · exfalso
+        have hv' : 2 ^ (wordsize - 1) ≤ n.val := Nat.le_of_not_gt hv
+        have hvInt : (2 ^ (wordsize - 1) : Int) ≤ Int.ofNat n.val := by
+          rw [← hcastH]
+          exact (Int.ofNat_le).2 hv'
+        have hsxval_neg : intOfZ (signed n) =
+            Int.ofNat n.val - Int.ofNat (2 ^ wordsize) := by
+          simpa only [hsx, if_neg hv]
+        rw [hcastM] at hsxval_neg
+        have hnonneg' := hnonneg
+        rw [hsxval_neg] at hnonneg'
+        have hnlt := WordCore.val_lt n
+        have hnltInt : Int.ofNat n.val < (2 ^ wordsize : Int) := by
+          rw [← hcastM]
+          exact (Int.ofNat_lt).2 hnlt
+        have hpow : 2 ^ (wordsize - 1) < 2 ^ wordsize := by
+          change 2 ^ 31 < 2 ^ 32
+          decide
+        clear hsx
+        omega
+    rw [if_neg hlt]
+    apply intOfZ_injective
+    simp only [zMul, zAdd, ZArith.BinInt.Z.mul, ZArith.BinInt.Z.add,
+      intOfZ_zOfInt]
+    rw [hux, hM]
+    have hsxval : intOfZ (signed n) = Int.ofNat n.val := by
+      simpa only [hsx, if_pos hval]
+    have hzero : intOfZ (signed zero) = (0 : Int) := by
+      rfl
+    rw [hsxval, hzero]
+    clear hsx
+    omega
+
+private theorem suffix_divmods2_q_bounds (n d : int) (hd : d ≠ zero)
+    (hcond : n ≠ repr min_signed ∨ d ≠ mone) :
+    zLe min_signed (zQuot (signed n) (signed d)) ∧
+      zLe (zQuot (signed n) (signed d)) max_signed := by
+  have hD0 : intOfZ (signed d) ≠ 0 := by
+    intro hzero
+    apply hd
+    apply signed_injective_try
+    apply intOfZ_injective
+    have hz : signed zero = zZero := by rfl
+    rw [hz]
+    exact hzero
+  have hNr := signed_range_proof n
+  change (-2147483648 : Int) ≤ intOfZ (signed n) ∧
+      intOfZ (signed n) ≤ (2147483647 : Int) at hNr
+  have hqeq : intOfZ (zQuot (signed n) (signed d)) =
+      Int.tdiv (intOfZ (signed n)) (intOfZ (signed d)) := by
+    simp only [zQuot, ZArith.BinInt.Z.quot, intOfZ_zOfInt]
+  by_cases hDpos : 0 < intOfZ (signed d)
+  · by_cases hNnonneg : 0 ≤ intOfZ (signed n)
+    · have hQlo : (0 : Int) ≤ Int.tdiv (intOfZ (signed n)) (intOfZ (signed d)) := by
+        exact Int.tdiv_nonneg hNnonneg (Int.le_of_lt hDpos)
+      have hQhi : Int.tdiv (intOfZ (signed n)) (intOfZ (signed d)) ≤ (2147483647 : Int) := by
+        simpa [hNnonneg] using
+          (Int.tdiv_le_of_le_mul (a := intOfZ (signed n))
+            (b := (2147483647 : Int)) hDpos (by omega))
+      constructor
+      · change (-2147483648 : Int) ≤ intOfZ (zQuot (signed n) (signed d))
+        rw [hqeq]
+        exact Int.le_trans (by omega) hQlo
+      · change intOfZ (zQuot (signed n) (signed d)) ≤ (2147483647 : Int)
+        rw [hqeq]
+        exact hQhi
+    · have hNneg : intOfZ (signed n) < 0 := by omega
+      have hA0 : 0 ≤ -intOfZ (signed n) := by omega
+      have hAhi : -intOfZ (signed n) ≤ (2147483648 : Int) := by omega
+      have hQlo' : (-intOfZ (signed n)).tdiv (intOfZ (signed d)) ≤ (2147483648 : Int) := by
+        simpa [show intOfZ (signed n) ≤ 0 by omega] using
+          (Int.tdiv_le_of_le_mul (a := -intOfZ (signed n))
+            (b := (2147483648 : Int)) hDpos (by omega))
+      have hQhi' : 0 ≤ (-intOfZ (signed n)).tdiv (intOfZ (signed d)) := by
+        exact Int.tdiv_nonneg hA0 (Int.le_of_lt hDpos)
+      constructor
+      · change (-2147483648 : Int) ≤ intOfZ (zQuot (signed n) (signed d))
+        rw [hqeq]
+        have hform : Int.tdiv (intOfZ (signed n)) (intOfZ (signed d)) =
+            -((-intOfZ (signed n)).tdiv (intOfZ (signed d))) := by
+          simpa using (Int.neg_tdiv (-intOfZ (signed n)) (intOfZ (signed d)))
+        rw [hform]
+        omega
+      · change intOfZ (zQuot (signed n) (signed d)) ≤ (2147483647 : Int)
+        rw [hqeq]
+        have hform : Int.tdiv (intOfZ (signed n)) (intOfZ (signed d)) =
+            -((-intOfZ (signed n)).tdiv (intOfZ (signed d))) := by
+          simpa using (Int.neg_tdiv (-intOfZ (signed n)) (intOfZ (signed d)))
+        rw [hform]
+        omega
+  · have hDneg : intOfZ (signed d) < 0 := by omega
+    let c : Int := -intOfZ (signed d)
+    have hcpos : 0 < c := by
+      dsimp [c]
+      omega
+    have hqnegden : Int.tdiv (intOfZ (signed n)) (intOfZ (signed d)) =
+        -(Int.tdiv (intOfZ (signed n)) c) := by
+      dsimp [c]
+      simp [Int.tdiv_neg]
+    by_cases hNnonneg : 0 ≤ intOfZ (signed n)
+    · have hQlo' : Int.tdiv (intOfZ (signed n)) c ≤ (2147483648 : Int) := by
+        simpa [hNnonneg] using
+          (Int.tdiv_le_of_le_mul (a := intOfZ (signed n))
+            (b := (2147483648 : Int)) hcpos (by omega))
+      have hQhi' : 0 ≤ Int.tdiv (intOfZ (signed n)) c := by
+        exact Int.tdiv_nonneg hNnonneg (Int.le_of_lt hcpos)
+      constructor
+      · change (-2147483648 : Int) ≤ intOfZ (zQuot (signed n) (signed d))
+        rw [hqeq, hqnegden]
+        omega
+      · change intOfZ (zQuot (signed n) (signed d)) ≤ (2147483647 : Int)
+        rw [hqeq, hqnegden]
+        omega
+    · have hNneg : intOfZ (signed n) < 0 := by omega
+      have hA0 : 0 ≤ -intOfZ (signed n) := by omega
+      have hAhi : -intOfZ (signed n) ≤ (2147483648 : Int) := by omega
+      have hQlo' : 0 ≤ (-intOfZ (signed n)).tdiv c := by
+        exact Int.tdiv_nonneg hA0 (Int.le_of_lt hcpos)
+      by_cases hc_one : c = 1
+      · have hQeq : (-intOfZ (signed n)).tdiv c = -intOfZ (signed n) := by
+          rw [hc_one]
+          exact Int.tdiv_one _
+        have hQhi : (-intOfZ (signed n)).tdiv c ≤ (2147483647 : Int) := by
+          rw [hQeq]
+          by_cases hbad : -intOfZ (signed n) ≤ (2147483647 : Int)
+          · exact hbad
+          · exfalso
+            have hNmin : intOfZ (signed n) = (-2147483648 : Int) := by omega
+            have hnmin : n = repr min_signed := by
+              apply signed_injective_try
+              have hsmin : signed (repr min_signed) = min_signed := by
+                rw [signed_repr_eq_proof]
+                decide
+              apply intOfZ_injective
+              change intOfZ (signed n) = intOfZ (signed (repr min_signed))
+              rw [hNmin, hsmin]
+              rfl
+            have hDminus : signed d = zOpp zOne := by
+              apply intOfZ_injective
+              simp only [zOpp, ZArith.BinInt.Z.opp, intOfZ_zOfInt]
+              dsimp [c] at hc_one
+              have hone : intOfZ zOne = (1 : Int) := by rfl
+              rw [hone]
+              omega
+            have hdminus : d = mone := by
+              apply signed_injective_try
+              rw [hDminus, signed_mone_proof]
+            exact hcond.elim (fun hn => hn hnmin) (fun hd' => hd' hdminus)
+        constructor
+        · change (-2147483648 : Int) ≤ intOfZ (zQuot (signed n) (signed d))
+          rw [hqeq, hqnegden]
+          have hform : Int.tdiv (intOfZ (signed n)) c =
+              -((-intOfZ (signed n)).tdiv c) := by
+            simpa using (Int.neg_tdiv (-intOfZ (signed n)) c)
+          rw [hform, hQeq]
+          omega
+        · change intOfZ (zQuot (signed n) (signed d)) ≤ (2147483647 : Int)
+          rw [hqeq, hqnegden]
+          have hform : Int.tdiv (intOfZ (signed n)) c =
+              -((-intOfZ (signed n)).tdiv c) := by
+            simpa using (Int.neg_tdiv (-intOfZ (signed n)) c)
+          rw [hform, hQeq]
+          omega
+      · have hc_two : (2 : Int) ≤ c := by omega
+        have hQhi : (-intOfZ (signed n)).tdiv c ≤ (2147483647 : Int) := by
+          simpa [show intOfZ (signed n) ≤ 0 by omega] using
+            (Int.tdiv_le_of_le_mul (a := -intOfZ (signed n))
+              (b := (2147483647 : Int)) hcpos (by omega))
+        constructor
+        · change (-2147483648 : Int) ≤ intOfZ (zQuot (signed n) (signed d))
+          rw [hqeq, hqnegden]
+          have hform : Int.tdiv (intOfZ (signed n)) c =
+              -((-intOfZ (signed n)).tdiv c) := by
+            simpa using (Int.neg_tdiv (-intOfZ (signed n)) c)
+          rw [hform]
+          omega
+        · change intOfZ (zQuot (signed n) (signed d)) ≤ (2147483647 : Int)
+          rw [hqeq, hqnegden]
+          have hform : Int.tdiv (intOfZ (signed n)) c =
+              -((-intOfZ (signed n)).tdiv c) := by
+            simpa using (Int.neg_tdiv (-intOfZ (signed n)) c)
+          rw [hform]
+          omega
+
+theorem divmods2_divs_mods_proof : divmods2_divs_mods := by
+  intro n d hd hcond
+  unfold divmods2 divs mods
+  by_cases hdz : d = zero
+  · exact (hd hdz).elim
+  · simp [eq_dec, hdz]
+    rw [suffix_divmods2_n_eq n]
+    have hqb := suffix_divmods2_q_bounds n d hdz hcond
+    rcases hqb with ⟨hqbLo, hqbHi⟩
+    cases hlo : CompCert4Lean.Lib.Coqlib.zle
+        min_signed (zQuot (signed n) (signed d)) with
+    | left hlo' =>
+        cases hhi : CompCert4Lean.Lib.Coqlib.zle
+            (zQuot (signed n) (signed d)) max_signed with
+        | left hhi' => rfl
+        | right hhi' =>
+            exfalso
+            change intOfZ max_signed <
+                intOfZ (zQuot (signed n) (signed d)) at hhi'
+            change intOfZ (zQuot (signed n) (signed d)) ≤ intOfZ max_signed at hqbHi
+            omega
+    | right hlo' =>
+        exfalso
+        change intOfZ (zQuot (signed n) (signed d)) < intOfZ min_signed at hlo'
+        change intOfZ min_signed ≤ intOfZ (zQuot (signed n) (signed d)) at hqbLo
+        omega

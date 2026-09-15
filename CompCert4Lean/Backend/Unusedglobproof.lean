@@ -2562,3 +2562,900 @@ theorem Mem_getN_forall2 : Mem_getN_forall2Statement := by
               omega
 
 end CompCert4Lean.Backend.Unusedglobproof
+
+namespace CompCert4Lean.Backend.Unusedglobproof
+
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Globalenvs.Genv
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.Memdata
+
+private theorem ug_drop_perm_exists (m : CompCert4Lean.Common.Memory.mem)
+    (b : CompCert4Lean.Common.Values.block)
+    (lo hi : CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z)
+    (p : CompCert4Lean.Common.Memtype.permission)
+    (h : Mem.range_perm m b lo hi Cur Freeable) :
+    ∃ m', Mem.drop_perm m b lo hi p = some m' := by
+  unfold Mem.drop_perm
+  cases hdec : Mem.range_perm_dec m b lo hi Cur Freeable with
+  | left hproof =>
+      simp [hdec]
+  | right hnot =>
+      exact False.elim (hnot h)
+
+private theorem ug_store_zeros_exists
+    (m : CompCert4Lean.Common.Memory.mem)
+    (b : CompCert4Lean.Common.Values.block)
+    (p n : CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z)
+    (h : Mem.range_perm m b p
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add p n)
+      Cur Writable) :
+    ∃ m', store_zeros m b p n = some m' := by
+  let P : CompCert4Lean.Common.Memory.mem →
+      CompCert4Lean.Common.Values.block →
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z →
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z → Option CompCert4Lean.Common.Memory.mem → Prop :=
+    fun m b p n r =>
+      Mem.range_perm m b p
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add p n)
+        Cur Writable → ∃ m', r = some m'
+  have hP : ∀ (m : CompCert4Lean.Common.Memory.mem)
+      (b : CompCert4Lean.Common.Values.block)
+      (p n : CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z),
+      P m b p n (store_zeros m b p n) := by
+    apply store_zeros_ind (P := P)
+    · intro m b p n x hx hrange
+      exact ⟨m, rfl⟩
+    · intro m b p n x hx m' hstore hrec hrange
+      have hv : Mem.valid_access m Mint8unsigned b p Writable := by
+        constructor
+        · intro ofs hofs
+          rcases hofs with ⟨hofslo, hofshi⟩
+          apply hrange ofs
+          constructor
+          · exact hofslo
+          · change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ ofs <
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+                (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add p n)
+            change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ ofs <
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+                (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add p
+                  (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 1)) at hofshi
+            change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ n > 0 at x
+            simp [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add,
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat,
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt] at hofshi ⊢
+            omega
+        · change CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.divide
+            (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 1) p
+          refine ⟨p, ?_⟩
+          apply CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective
+          simp [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.mul,
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat,
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+      rcases Mem.valid_access_store m Mint8unsigned b p Vzero hv with ⟨m1, hm1⟩
+      have hm1eq : m1 = m' := Option.some.inj (hm1.symm.trans hstore)
+      subst m1
+      have hrange' : Mem.range_perm m' b
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add p
+            (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 1))
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add
+            (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add p
+              (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 1))
+            (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.sub n
+              (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 1)))
+          Cur Writable := by
+        intro ofs hofs
+        apply Mem.perm_store_1 Mint8unsigned m b p Vzero m' hstore b ofs Cur Writable
+        apply hrange
+        rcases hofs with ⟨hofslo, hofshi⟩
+        constructor
+        · change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ p ≤
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ ofs
+          change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+              (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add p
+                (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 1)) ≤
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ ofs at hofslo
+          simp [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add,
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat,
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt] at hofslo ⊢
+          omega
+        · change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ ofs <
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+              (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add p n)
+          change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ ofs <
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+              (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add
+                (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add p
+                  (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 1))
+                (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.sub n
+                  (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 1))) at hofshi
+          change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ n > 0 at x
+          simp [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add,
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.sub,
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat,
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt] at hofshi ⊢
+          omega
+      rcases hrec hrange' with ⟨m2, hm2⟩
+      exact ⟨m2, hm2⟩
+    · intro m b p n x hx hnone hrange
+      have hv : Mem.valid_access m Mint8unsigned b p Writable := by
+        constructor
+        · intro ofs hofs
+          rcases hofs with ⟨hofslo, hofshi⟩
+          apply hrange ofs
+          constructor
+          · exact hofslo
+          · change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ ofs <
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+                (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add p n)
+            change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ ofs <
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+                (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add p
+                  (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 1)) at hofshi
+            change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ n > 0 at x
+            simp [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add,
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat,
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt] at hofshi ⊢
+            omega
+        · change CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.divide
+            (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 1) p
+          refine ⟨p, ?_⟩
+          apply CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective
+          simp [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.mul,
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat,
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+      rcases Mem.valid_access_store m Mint8unsigned b p Vzero hv with ⟨m', hm'⟩
+      rw [hm'] at hnone
+      cases hnone
+  exact hP m b p n h
+
+private theorem ug_mem_store_exists
+    (chunk : memory_chunk) (m : CompCert4Lean.Common.Memory.mem)
+    (b : CompCert4Lean.Common.Values.block)
+    (p : CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z) (v : val)
+    (hrange : Mem.range_perm m b p
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add p
+        (CompCert4Lean.Common.Memdata.size_chunk chunk)) Cur Writable)
+    (halign : CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.divide
+      (CompCert4Lean.Common.Memdata.align_chunk chunk) p) :
+    ∃ m', Mem.store chunk m b p v = some m' := by
+  rcases Mem.valid_access_store m chunk b p v ⟨hrange, halign⟩ with ⟨m', hm'⟩
+  exact ⟨m', hm'⟩
+
+private theorem ug_store_init_data_exists
+    (F V : Type) (ge : CompCert4Lean.Common.Globalenvs.Genv.t F V)
+    (m : CompCert4Lean.Common.Memory.mem)
+    (b : CompCert4Lean.Common.Values.block)
+    (p : CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z)
+    (i : init_data)
+    (hrange : Mem.range_perm m b p
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add p
+        (init_data_size i)) Cur Writable)
+    (halign : CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.divide
+      (init_data_alignment i) p)
+    (hfind : ∀ id ofs, i = Init_addrof id ofs →
+      ∃ b, Genv.find_symbol ge id = some b) :
+    ∃ m', store_init_data ge m b p i = some m' := by
+  cases i with
+  | Init_int8 n =>
+      simpa [store_init_data, init_data_size, init_data_alignment] using
+        (ug_mem_store_exists Mint8unsigned m b p (Vint n)
+          (by simpa [init_data_size, size_chunk, Mptr] using hrange)
+          (by simpa [init_data_alignment, align_chunk, Mptr] using halign))
+  | Init_int16 n =>
+      simpa [store_init_data, init_data_size, init_data_alignment] using
+        (ug_mem_store_exists Mint16unsigned m b p (Vint n)
+          (by simpa [init_data_size, size_chunk] using hrange)
+          (by simpa [init_data_alignment, align_chunk] using halign))
+  | Init_int32 n =>
+      simpa [store_init_data, init_data_size, init_data_alignment] using
+        (ug_mem_store_exists Mint32 m b p (Vint n)
+          (by simpa [init_data_size, size_chunk] using hrange)
+          (by simpa [init_data_alignment, align_chunk] using halign))
+  | Init_int64 n =>
+      simpa [store_init_data, init_data_size, init_data_alignment] using
+        (ug_mem_store_exists Mint64 m b p (Vlong n)
+          (by simpa [init_data_size, size_chunk] using hrange)
+          (by simpa [init_data_alignment, align_chunk] using halign))
+  | Init_float32 n =>
+      simpa [store_init_data, init_data_size, init_data_alignment] using
+        (ug_mem_store_exists Mfloat32 m b p (Vsingle n)
+          (by simpa [init_data_size, size_chunk] using hrange)
+          (by simpa [init_data_alignment, align_chunk] using halign))
+  | Init_float64 n =>
+      simpa [store_init_data, init_data_size, init_data_alignment] using
+        (ug_mem_store_exists Mfloat64 m b p (Vfloat n)
+          (by simpa [init_data_size, size_chunk] using hrange)
+          (by simpa [init_data_alignment, align_chunk] using halign))
+  | Init_addrof id ofs =>
+      rcases hfind id ofs rfl with ⟨b', hb'⟩
+      have hrange' := hrange
+      rw [Genv.init_data_size_addrof] at hrange'
+      have halign' := halign
+      simp [init_data_alignment] at halign'
+      rw [← CompCert4Lean.Common.Memdata.align_chunk_Mptr] at halign'
+      simpa [store_init_data, hb'] using
+        (ug_mem_store_exists Mptr m b p (Vptr b' ofs) hrange' halign')
+  | Init_space n =>
+      exact ⟨m, by rfl⟩
+
+private theorem ug_store_init_data_perm
+    (F V : Type) (ge : CompCert4Lean.Common.Globalenvs.Genv.t F V)
+    (m m' : CompCert4Lean.Common.Memory.mem)
+    (b : CompCert4Lean.Common.Values.block)
+    (p : CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z)
+    (i : init_data) (hm : store_init_data ge m b p i = some m') :
+    ∀ b' ofs k prm, Mem.perm m b' ofs k prm → Mem.perm m' b' ofs k prm := by
+  intro b' ofs k prm hperm
+  cases i with
+  | Init_int8 n =>
+      exact Mem.perm_store_1 Mint8unsigned m b p (Vint n) m'
+        (by simpa [store_init_data] using hm) b' ofs k prm hperm
+  | Init_int16 n =>
+      exact Mem.perm_store_1 Mint16unsigned m b p (Vint n) m'
+        (by simpa [store_init_data] using hm) b' ofs k prm hperm
+  | Init_int32 n =>
+      exact Mem.perm_store_1 Mint32 m b p (Vint n) m'
+        (by simpa [store_init_data] using hm) b' ofs k prm hperm
+  | Init_int64 n =>
+      exact Mem.perm_store_1 Mint64 m b p (Vlong n) m'
+        (by simpa [store_init_data] using hm) b' ofs k prm hperm
+  | Init_float32 n =>
+      exact Mem.perm_store_1 Mfloat32 m b p (Vsingle n) m'
+        (by simpa [store_init_data] using hm) b' ofs k prm hperm
+  | Init_float64 n =>
+      exact Mem.perm_store_1 Mfloat64 m b p (Vfloat n) m'
+        (by simpa [store_init_data] using hm) b' ofs k prm hperm
+  | Init_addrof id ofs0 =>
+      cases hsym : Genv.find_symbol ge id with
+      | none => simp [store_init_data, hsym] at hm
+      | some b0 =>
+          exact Mem.perm_store_1 Mptr m b p (Vptr b0 ofs0) m'
+            (by simpa [store_init_data, hsym] using hm) b' ofs k prm hperm
+  | Init_space n =>
+      have hm' : m' = m := by simpa [store_init_data] using hm.symm
+      subst m'
+      exact hperm
+
+private theorem ug_store_init_data_list_exists
+    (F V : Type) (ge : CompCert4Lean.Common.Globalenvs.Genv.t F V)
+    (b : CompCert4Lean.Common.Values.block) (il : List init_data)
+    (m : CompCert4Lean.Common.Memory.mem)
+    (p : CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z)
+    (hrange : Mem.range_perm m b p
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add p
+        (init_data_list_size il)) Cur Writable)
+    (halign : init_data_list_aligned p il)
+    (hfind : ∀ id ofs, Init_addrof id ofs ∈ il →
+      ∃ b, Genv.find_symbol ge id = some b) :
+    ∃ m', store_init_data_list ge m b p il = some m' := by
+  induction il generalizing m p with
+  | nil =>
+      exact ⟨m, rfl⟩
+  | cons i rest ih =>
+      rcases halign with ⟨hhead, htail⟩
+      have hrange_i : Mem.range_perm m b p
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add p
+            (init_data_size i)) Cur Writable := by
+        intro ofs hofs
+        rcases hofs with ⟨hofslo, hofshi⟩
+        apply hrange ofs
+        constructor
+        · exact hofslo
+        · change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ ofs <
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+              (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add p
+                (init_data_list_size (i :: rest)))
+          change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ ofs <
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+              (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add p
+                (init_data_size i)) at hofshi
+          simp [init_data_list_size,
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add,
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt] at hofshi ⊢
+          have hnonneg := init_data_list_size_pos rest
+          change 0 ≤ CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+              (init_data_list_size rest) at hnonneg
+          omega
+      have hfind_i : ∀ id ofs, i = Init_addrof id ofs →
+          ∃ b, Genv.find_symbol ge id = some b := by
+        intro id ofs hi
+        apply hfind id ofs
+        simp [hi]
+      rcases ug_store_init_data_exists F V ge m b p i hrange_i hhead hfind_i with
+        ⟨m1, hm1⟩
+      have hrange_tail : Mem.range_perm m1 b
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add p
+            (init_data_size i))
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add
+            (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add p
+              (init_data_size i)) (init_data_list_size rest)) Cur Writable := by
+        intro ofs hofs
+        rcases hofs with ⟨hofslo, hofshi⟩
+        apply ug_store_init_data_perm F V ge m m1 b p i hm1 b ofs Cur Writable
+        apply hrange ofs
+        constructor
+        · change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ p ≤
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ ofs
+          change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+              (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add p
+                  (init_data_size i)) ≤
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ ofs at hofslo
+          simp [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add,
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt] at hofslo ⊢
+          have hi := init_data_size_pos i
+          change 0 ≤ CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+              (init_data_size i) at hi
+          omega
+        · have hadd :
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add p
+                  (init_data_list_size (i :: rest)) =
+                CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add
+                  (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add p
+                    (init_data_size i)) (init_data_list_size rest) := by
+              apply CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective
+              simp [init_data_list_size,
+                CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add,
+                CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+              omega
+          rw [hadd]
+          exact hofshi
+      have hfind_tail : ∀ id ofs, Init_addrof id ofs ∈ rest →
+          ∃ b, Genv.find_symbol ge id = some b := by
+        intro id ofs hmem
+        apply hfind id ofs
+        simp [hmem]
+      rcases ih m1
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add p
+            (init_data_size i)) hrange_tail htail hfind_tail with ⟨m2, hm2⟩
+      refine ⟨m2, ?_⟩
+      simp [store_init_data_list, hm1, hm2]
+
+private theorem ug_alloc_range_perm
+    (m : CompCert4Lean.Common.Memory.mem)
+    (lo hi : CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z) :
+    let r := Mem.alloc m lo hi
+    Mem.range_perm r.1 r.2 lo hi Cur Freeable := by
+  unfold Mem.alloc
+  dsimp
+  intro ofs hofs
+  unfold Mem.perm
+  rw [CompCert4Lean.Lib.Maps.PMap.gss]
+  have hle :
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.leb lo ofs = true := by
+    have hh := hofs.1
+    change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ lo ≤
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ ofs at hh
+    simpa [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.leb] using hh
+  have hlt :
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.ltb ofs hi = true := by
+    have hh := hofs.2
+    change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ ofs <
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ hi at hh
+    simpa [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.ltb] using hh
+  change Mem.perm_order'
+    (if (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.leb lo ofs &&
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.ltb ofs hi) = true
+        then some Freeable else none) Freeable
+  simpa [hle, hlt, Mem.perm_order'] using (perm_refl Freeable)
+
+private theorem ug_alloc_range_perm_writable
+    (m : CompCert4Lean.Common.Memory.mem)
+    (lo hi : CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z) :
+    let r := Mem.alloc m lo hi
+    Mem.range_perm r.1 r.2 lo hi Cur Writable := by
+  unfold Mem.alloc
+  dsimp
+  intro ofs hofs
+  unfold Mem.perm
+  rw [CompCert4Lean.Lib.Maps.PMap.gss]
+  have hle :
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.leb lo ofs = true := by
+    have hh := hofs.1
+    change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ lo ≤
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ ofs at hh
+    simpa [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.leb] using hh
+  have hlt :
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.ltb ofs hi = true := by
+    have hh := hofs.2
+    change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ ofs <
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ hi at hh
+    simpa [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.ltb] using hh
+  change Mem.perm_order'
+    (if (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.leb lo ofs &&
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.ltb ofs hi) = true
+        then some Freeable else none) Writable
+  simpa [hle, hlt, Mem.perm_order'] using (perm_F_any Writable)
+
+private theorem ug_store_zeros_perm
+    (m m' : CompCert4Lean.Common.Memory.mem)
+    (b : CompCert4Lean.Common.Values.block)
+    (p n : CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z)
+    (hs : store_zeros m b p n = some m') :
+    ∀ b' ofs k prm, Mem.perm m b' ofs k prm → Mem.perm m' b' ofs k prm := by
+  let P : CompCert4Lean.Common.Memory.mem →
+      CompCert4Lean.Common.Values.block →
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z →
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z → Option CompCert4Lean.Common.Memory.mem → Prop :=
+    fun m b p n r =>
+      ∀ m', r = some m' →
+        ∀ b' ofs k prm, Mem.perm m b' ofs k prm → Mem.perm m' b' ofs k prm
+  have hP : ∀ (m : CompCert4Lean.Common.Memory.mem)
+      (b : CompCert4Lean.Common.Values.block)
+      (p n : CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z),
+      P m b p n (store_zeros m b p n) := by
+    apply store_zeros_ind (P := P)
+    · intro m b p n x hx m' hm' b' ofs k prm hperm
+      cases Option.some.inj hm'
+      exact hperm
+    · intro m b p n x hx m1 hstore hrec m' hm' b' ofs k prm hperm
+      apply hrec m' hm' b' ofs k prm
+      exact Mem.perm_store_1 Mint8unsigned m b p Vzero m1 hstore
+        b' ofs k prm hperm
+    · intro m b p n x hx hnone m' hm' b' ofs k prm hperm
+      cases hm'
+  exact hP m b p n m' hs
+
+private theorem ug_store_init_data_list_perm
+    (F V : Type) (ge : CompCert4Lean.Common.Globalenvs.Genv.t F V)
+    (m m' : CompCert4Lean.Common.Memory.mem)
+    (b : CompCert4Lean.Common.Values.block)
+    (p : CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z)
+    (il : List init_data)
+    (hm : store_init_data_list ge m b p il = some m') :
+    ∀ b' ofs k prm, Mem.perm m b' ofs k prm → Mem.perm m' b' ofs k prm := by
+  cases il with
+  | nil =>
+      have hm' : m' = m := by simpa [store_init_data_list] using hm.symm
+      subst m'
+      intro b' ofs k prm hperm
+      exact hperm
+  | cons i rest =>
+      simp only [store_init_data_list] at hm
+      cases hstep : store_init_data ge m b p i with
+      | none => simp [hstep] at hm
+      | some m1 =>
+          have hm1 : store_init_data ge m b p i = some m1 := hstep
+          have htail : store_init_data_list ge m1 b
+              (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add p
+                (init_data_size i)) rest = some m' := by
+            simpa [hstep] using hm
+          intro b' ofs k prm hperm
+          have hperm1 := ug_store_init_data_perm F V ge m m1 b p i hm1
+            b' ofs k prm hperm
+          exact ug_store_init_data_list_perm F V ge m1 m' b
+            (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add p
+              (init_data_size i)) rest htail b' ofs k prm hperm1
+
+private theorem ug_perm_freeable_to_writable
+    (m : CompCert4Lean.Common.Memory.mem)
+    (b : CompCert4Lean.Common.Values.block)
+    (ofs : CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z)
+    (k : perm_kind) (h : Mem.perm m b ofs k Freeable) :
+    Mem.perm m b ofs k Writable := by
+  unfold Mem.perm at h ⊢
+  cases hq : (CompCert4Lean.Lib.Maps.PMap.get b m.mem_access) ofs k with
+  | none => simp [Mem.perm_order', hq] at h
+  | some q =>
+      simp [Mem.perm_order', hq] at h ⊢
+      cases h with
+      | perm_refl _ => exact perm_F_any _
+      | perm_F_any _ => exact perm_F_any _
+
+private theorem ug_alloc_global_exists
+    (F V : Type) (ge : CompCert4Lean.Common.Globalenvs.Genv.t F V)
+    (m : CompCert4Lean.Common.Memory.mem)
+    (idg : ident × globdef F V)
+    (h : match idg.2 with
+      | .Gfun _ => True
+      | .Gvar v =>
+          init_data_list_aligned z0 v.gvar_init ∧
+            ∀ i o, Init_addrof i o ∈ v.gvar_init →
+              ∃ b, Genv.find_symbol ge i = some b) :
+    ∃ m', alloc_global ge m idg = some m' := by
+  rcases idg with ⟨id, gd⟩
+  cases gd with
+  | Gfun f =>
+      cases ha : Mem.alloc m z0
+          (.Zpos .xH) with
+      | mk m1 b =>
+          have hr : Mem.range_perm m1 b z0
+              (.Zpos .xH)
+              Cur Freeable := by
+            simpa [ha] using (ug_alloc_range_perm m z0
+              (.Zpos .xH))
+          rcases ug_drop_perm_exists m1 b z0
+              (.Zpos .xH)
+              Nonempty hr with ⟨m2, hm2⟩
+          refine ⟨m2, ?_⟩
+          simp [alloc_global, ha, hm2]
+  | Gvar v =>
+      rcases h with ⟨halign, hfind⟩
+      let sz := init_data_list_size v.gvar_init
+      cases ha : Mem.alloc m z0 sz with
+      | mk m1 b =>
+          have hr0 : Mem.range_perm m1 b z0
+              (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add z0 sz)
+              Cur Freeable := by
+            have hr := ug_alloc_range_perm m z0 sz
+            rw [ha] at hr
+            dsimp at hr
+            have hz :
+                CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add z0 sz = sz := by
+              apply CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective
+              change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+                (CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt
+                  (CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ z0 +
+                    CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ sz)) =
+                CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ sz
+              rw [CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+              have hz0 :
+                  CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ z0 = 0 := by
+                rfl
+              rw [hz0]
+              simp
+            simpa [hz] using hr
+          have hr0w : Mem.range_perm m1 b z0
+              (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add z0 sz)
+              Cur Writable := by
+            intro ofs hofs
+            apply ug_perm_freeable_to_writable m1 b ofs Cur
+            exact hr0 ofs hofs
+          rcases ug_store_zeros_exists m1 b z0 sz hr0w with ⟨m2, hm2⟩
+          have hr2 : Mem.range_perm m2 b z0
+              (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add z0 sz)
+              Cur Freeable := by
+            intro ofs hofs
+            apply ug_store_zeros_perm m1 m2 b z0 sz hm2 b ofs Cur Freeable
+            exact hr0 ofs hofs
+          have hr2w : Mem.range_perm m2 b z0
+              (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add z0 sz)
+              Cur Writable := by
+            intro ofs hofs
+            apply ug_perm_freeable_to_writable m2 b ofs Cur
+            exact hr2 ofs hofs
+          have hfind' : ∀ i o, Init_addrof i o ∈ v.gvar_init →
+              ∃ b, Genv.find_symbol ge i = some b := hfind
+          have hr2' : Mem.range_perm m2 b z0
+              (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add z0
+                (init_data_list_size v.gvar_init)) Cur Writable := by
+            simpa [sz] using hr2w
+          rcases ug_store_init_data_list_exists F V ge b v.gvar_init m2 z0
+              hr2' halign hfind' with ⟨m3, hm3⟩
+          have hr3 : Mem.range_perm m3 b z0
+              (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add z0 sz)
+              Cur Freeable := by
+            intro ofs hofs
+            apply ug_store_init_data_list_perm F V ge m2 m3 b z0
+              v.gvar_init hm3 b ofs Cur Freeable
+            exact hr2 ofs hofs
+          have hz :
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add z0 sz = sz := by
+            apply CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective
+            change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+              (CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt
+                (CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ z0 +
+                  CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ sz)) =
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ sz
+            rw [CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+            have hz0 :
+                CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ z0 = 0 := by
+              rfl
+            rw [hz0]
+            simp
+          have hr3s : Mem.range_perm m3 b z0 sz Cur Freeable := by
+            simpa [hz] using hr3
+          rcases ug_drop_perm_exists m3 b z0 sz (perm_globvar v) hr3s with
+            ⟨m4, hm4⟩
+          refine ⟨m4, ?_⟩
+          simp [alloc_global, ha, hm2, hm3, hm4, sz]
+
+private theorem ug_mem_store_valid_access
+    (chunk : CompCert4Lean.Common.AST.memory_chunk)
+    (m : CompCert4Lean.Common.Memory.mem)
+    (b : CompCert4Lean.Common.Values.block)
+    (p : CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z)
+    (v : CompCert4Lean.Common.Values.val)
+    (m' : CompCert4Lean.Common.Memory.mem)
+    (h : CompCert4Lean.Common.Memory.Mem.store chunk m b p v = some m') :
+    CompCert4Lean.Common.Memory.Mem.valid_access m chunk b p Writable := by
+  unfold CompCert4Lean.Common.Memory.Mem.store at h
+  cases hdec : CompCert4Lean.Common.Memory.Mem.valid_access_dec m chunk b p Writable with
+  | left hproof => exact hproof
+  | right hnot =>
+      simp [hdec] at h
+      have hb := h.1
+      change false = true at hb
+      cases hb
+
+private theorem ug_store_init_data_aligned
+    (F V : Type) (ge : CompCert4Lean.Common.Globalenvs.Genv.t F V)
+    (m m' : CompCert4Lean.Common.Memory.mem)
+    (b : CompCert4Lean.Common.Values.block)
+    (p : CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z)
+    (i : init_data)
+    (h : store_init_data ge m b p i = some m') :
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.divide
+      (init_data_alignment i) p := by
+  cases i with
+  | Init_int8 n =>
+      have hv := ug_mem_store_valid_access Mint8unsigned m b p (Vint n) m'
+        (by simpa [store_init_data] using h)
+      simpa [init_data_alignment, align_chunk, Mptr] using hv.2
+  | Init_int16 n =>
+      have hv := ug_mem_store_valid_access Mint16unsigned m b p (Vint n) m'
+        (by simpa [store_init_data] using h)
+      simpa [init_data_alignment, align_chunk, Mptr] using hv.2
+  | Init_int32 n =>
+      have hv := ug_mem_store_valid_access Mint32 m b p (Vint n) m'
+        (by simpa [store_init_data] using h)
+      simpa [init_data_alignment, align_chunk, Mptr] using hv.2
+  | Init_int64 n =>
+      have hv := ug_mem_store_valid_access Mint64 m b p (Vlong n) m'
+        (by simpa [store_init_data] using h)
+      simpa [init_data_alignment, align_chunk, Mptr] using hv.2
+  | Init_float32 n =>
+      have hv := ug_mem_store_valid_access Mfloat32 m b p (Vsingle n) m'
+        (by simpa [store_init_data] using h)
+      simpa [init_data_alignment, align_chunk, Mptr] using hv.2
+  | Init_float64 n =>
+      have hv := ug_mem_store_valid_access Mfloat64 m b p (Vfloat n) m'
+        (by simpa [store_init_data] using h)
+      simpa [init_data_alignment, align_chunk, Mptr] using hv.2
+  | Init_addrof id ofs =>
+      cases hsym : Genv.find_symbol ge id with
+      | none => simp [store_init_data, hsym] at h
+      | some b' =>
+          have hv := ug_mem_store_valid_access Mptr m b p (Vptr b' ofs) m'
+            (by simpa [store_init_data, hsym] using h)
+          have ha := hv.2
+          rw [CompCert4Lean.Common.Memdata.align_chunk_Mptr] at ha
+          simpa [init_data_alignment] using ha
+  | Init_space n =>
+      simp [init_data_alignment]
+      refine ⟨p, ?_⟩
+      apply CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective
+      simp [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.mul,
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat,
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+
+end CompCert4Lean.Backend.Unusedglobproof
+
+
+namespace CompCert4Lean.Backend.Unusedglobproof
+
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Globalenvs.Genv
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.Memdata
+
+private theorem ug_store_init_data_props
+    (F V : Type) (ge : CompCert4Lean.Common.Globalenvs.Genv.t F V)
+    (m m' : CompCert4Lean.Common.Memory.mem)
+    (b : CompCert4Lean.Common.Values.block)
+    (p : CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z)
+    (i : init_data)
+    (h : store_init_data ge m b p i = some m') :
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.divide
+        (init_data_alignment i) p ∧
+      ∀ id ofs, i = Init_addrof id ofs →
+        ∃ b, Genv.find_symbol ge id = some b := by
+  constructor
+  · exact ug_store_init_data_aligned F V ge m m' b p i h
+  · intro id ofs hi
+    cases i with
+    | Init_int8 n => cases hi
+    | Init_int16 n => cases hi
+    | Init_int32 n => cases hi
+    | Init_int64 n => cases hi
+    | Init_float32 n => cases hi
+    | Init_float64 n => cases hi
+    | Init_space n => cases hi
+    | Init_addrof id0 ofs0 =>
+        cases hi
+        cases hs : Genv.find_symbol ge id with
+        | none => simp [store_init_data, hs] at h
+        | some b => exact ⟨b, rfl⟩
+
+private theorem ug_store_init_data_list_props
+    (F V : Type) (ge : CompCert4Lean.Common.Globalenvs.Genv.t F V)
+    (b : CompCert4Lean.Common.Values.block) (il : List init_data)
+    (m m' : CompCert4Lean.Common.Memory.mem)
+    (p : CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z)
+    (h : store_init_data_list ge m b p il = some m') :
+    init_data_list_aligned p il ∧
+      ∀ id ofs, Init_addrof id ofs ∈ il →
+        ∃ b, Genv.find_symbol ge id = some b := by
+  induction il generalizing m p with
+  | nil =>
+      constructor
+      · trivial
+      · intro id ofs hmem
+        cases hmem
+  | cons i rest ih =>
+      simp only [store_init_data_list] at h
+      cases hs : store_init_data ge m b p i with
+      | none => simp [hs] at h
+      | some m1 =>
+          have htail :
+              store_init_data_list ge m1 b
+                (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add p
+                  (init_data_size i)) rest = some m' := by
+            simpa [hs] using h
+          have hi := ug_store_init_data_props F V ge m m1 b p i hs
+          have ht := ih m1
+            (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add p
+              (init_data_size i)) htail
+          constructor
+          · exact ⟨hi.1, ht.1⟩
+          · intro id ofs hmem
+            rcases List.mem_cons.mp hmem with hhead | hrest
+            · have hi' := hi.2 id ofs
+                (by simpa using hhead.symm)
+              exact hi'
+            · exact ht.2 id ofs hrest
+
+private theorem ug_alloc_global_props
+    (F V : Type) (ge : CompCert4Lean.Common.Globalenvs.Genv.t F V)
+    (m m' : CompCert4Lean.Common.Memory.mem)
+    (id : CompCert4Lean.Common.AST.ident)
+    (v : globvar V)
+    (h : alloc_global ge m (id, Gvar v) = some m') :
+    init_data_list_aligned z0 v.gvar_init ∧
+      ∀ i o, Init_addrof i o ∈ v.gvar_init →
+        ∃ b, Genv.find_symbol ge i = some b := by
+  simp only [alloc_global, Prod.snd] at h
+  split at h
+  · cases h
+  · split at h
+    · cases h
+    · apply ug_store_init_data_list_props F V ge
+      assumption
+
+private theorem ug_alloc_globals_props
+    (F V : Type) (ge : CompCert4Lean.Common.Globalenvs.Genv.t F V)
+    (gl : List (CompCert4Lean.Common.AST.ident × globdef F V))
+    (m m' : CompCert4Lean.Common.Memory.mem)
+    (h : alloc_globals ge m gl = some m') :
+    ∀ id v, (id, Gvar v) ∈ gl →
+      init_data_list_aligned z0 v.gvar_init ∧
+        ∀ i o, Init_addrof i o ∈ v.gvar_init →
+          ∃ b, Genv.find_symbol ge i = some b := by
+  induction gl generalizing m m' with
+  | nil =>
+      intro id v hmem
+      cases hmem
+  | cons g rest ih =>
+      rcases g with ⟨id0, gd⟩
+      simp only [alloc_globals] at h
+      cases ha : alloc_global ge m (id0, gd) with
+      | none => simp [ha] at h
+      | some m1 =>
+          have htail : alloc_globals ge m1 rest = some m' := by
+            simpa [ha] using h
+          intro id v hmem
+          rcases List.mem_cons.mp hmem with hhead | hrest
+          · cases gd with
+            | Gfun f => cases hhead
+            | Gvar v0 =>
+                injection hhead with hid hv
+                subst id0
+                cases hv
+                exact ug_alloc_global_props F V ge m m1 id v ha
+          · exact ih m1 m' htail id v hrest
+
+private theorem ug_init_mem_props
+    (F V : Type) (p : CompCert4Lean.Common.AST.program F V)
+    (m : CompCert4Lean.Common.Memory.mem)
+    (h : Genv.init_mem p = some m) :
+    ∀ id v, (id, Gvar v) ∈ p.prog_defs →
+      init_data_list_aligned z0 v.gvar_init ∧
+        ∀ i o, Init_addrof i o ∈ v.gvar_init →
+          ∃ b, Genv.find_symbol (Genv.globalenv p) i = some b := by
+  unfold Genv.init_mem at h
+  exact ug_alloc_globals_props F V (Genv.globalenv p) p.prog_defs Mem.empty m h
+
+private theorem ug_alloc_globals_exists
+    (F V : Type) (ge : CompCert4Lean.Common.Globalenvs.Genv.t F V)
+    (gl : List (CompCert4Lean.Common.AST.ident × globdef F V))
+    (m : CompCert4Lean.Common.Memory.mem)
+    (hvars : ∀ id v, (id, Gvar v) ∈ gl →
+      init_data_list_aligned z0 v.gvar_init ∧
+        ∀ i o, Init_addrof i o ∈ v.gvar_init →
+          ∃ b, Genv.find_symbol ge i = some b) :
+    ∃ m', alloc_globals ge m gl = some m' := by
+  induction gl generalizing m with
+  | nil =>
+      exact ⟨m, rfl⟩
+  | cons g rest ih =>
+      rcases g with ⟨id, gd⟩
+      have hvars_rest : ∀ id' v, (id', Gvar v) ∈ rest →
+          init_data_list_aligned z0 v.gvar_init ∧
+            ∀ i o, Init_addrof i o ∈ v.gvar_init →
+              ∃ b, Genv.find_symbol ge i = some b := by
+        intro id' v hmem
+        apply hvars id' v
+        exact List.mem_cons_of_mem (id, gd) hmem
+      have htail : ∀ m1, ∃ m', alloc_globals ge m1 rest = some m' :=
+        fun m1 => ih m1 hvars_rest
+      cases gd with
+      | Gfun f =>
+          rcases ug_alloc_global_exists F V ge m (id, Gfun f) trivial with
+            ⟨m1, halloc⟩
+          rcases htail m1 with ⟨m2, hrest⟩
+          exact ⟨m2, by simp [alloc_globals, halloc, hrest]⟩
+      | Gvar v =>
+          have hv := hvars id v (by simp)
+          rcases ug_alloc_global_exists F V ge m (id, Gvar v) hv with
+            ⟨m1, halloc⟩
+          rcases htail m1 with ⟨m2, hrest⟩
+          exact ⟨m2, by simp [alloc_globals, halloc, hrest]⟩
+
+private theorem ug_init_mem_exists
+    (F V : Type) (p : CompCert4Lean.Common.AST.program F V)
+    (hvars : ∀ id v, (id, Gvar v) ∈ p.prog_defs →
+      init_data_list_aligned z0 v.gvar_init ∧
+        ∀ i o, Init_addrof i o ∈ v.gvar_init →
+          ∃ b, Genv.find_symbol (Genv.globalenv p) i = some b) :
+    ∃ m, Genv.init_mem p = some m := by
+  unfold Genv.init_mem
+  exact ug_alloc_globals_exists F V (Genv.globalenv p) p.prog_defs Mem.empty hvars
+
+end CompCert4Lean.Backend.Unusedglobproof
+
+
+namespace CompCert4Lean.Backend.Unusedglobproof
+
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Backend.Unusedglob
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Globalenvs.Genv
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Maps
+
+theorem init_mem_exists : init_mem_existsStatement := by
+  intro p tp used hvalid hmatch m hmem
+  have hsource_props := ug_init_mem_props _ _ p m hmem
+  have htarget_props :
+      ∀ id v, (id, Gvar v) ∈ tp.prog_defs →
+        init_data_list_aligned z0 v.gvar_init ∧
+          ∀ i o, Init_addrof i o ∈ v.gvar_init →
+            ∃ b, Genv.find_symbol (Genv.globalenv tp) i = some b := by
+    intro id v hmemtp
+    have hmaptp : PTree.get id (prog_defmap tp) = some (Gvar v) :=
+      prog_defmap_norepet (F := RTL.fundef) (V := Unit) tp id (Gvar v)
+        (match_prog_unique hmatch) hmemtp
+    rw [match_prog_def hmatch id] at hmaptp
+    cases hused : IS.mem id used with
+    | false =>
+        simp [hused] at hmaptp
+    | true =>
+        have hmap : PTree.get id (prog_defmap p) = some (Gvar v) := by
+          simpa [hused] using hmaptp
+        have hmem_p : (id, Gvar v) ∈ p.prog_defs :=
+          in_prog_defmap (F := RTL.fundef) (V := Unit) p id (Gvar v) hmap
+        have hprops := hsource_props id v hmem_p
+        refine ⟨hprops.1, ?_⟩
+        intro i o hinit
+        rcases hprops.2 i o hinit with ⟨b, hfind⟩
+        have hkept_i : kept used i := by
+          apply kept_closed p used hvalid id (Gvar v)
+          · exact CompCert4Lean.Backend.Unusedglob.IS.mem_2_proof used id hused
+          · exact hmap
+          · exact ⟨o, hinit⟩
+        rcases transform_find_symbol_1 p tp used hmatch i b hfind hkept_i with
+          ⟨b', hfind'⟩
+        exact ⟨b', hfind'⟩
+  exact ug_init_mem_exists _ _ tp htarget_props
+
+end CompCert4Lean.Backend.Unusedglobproof

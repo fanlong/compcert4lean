@@ -3719,3 +3719,30 @@ theorem set_params_set_params' : set_params_set_params'Statement := by
                       hout2.symm
 
 end CompCert4Lean.Cfrontend.Cminorgenproof
+
+namespace CompCert4Lean.Cfrontend.Cminorgenproof
+
+open CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.List
+open CompCert4Lean.Lib.Maps
+
+theorem set_locals_outside : set_locals_outsideStatement := by
+  intro e id il hnot
+  induction il with
+  | nil => rfl
+  | cons i il ih =>
+      have htail : ¬ In id il := by
+        intro h
+        apply hnot
+        exact List.Mem.tail i h
+      change PTree.get id (PTree.set i (.Vundef : val) (CM.set_locals il e)) =
+        PTree.get id e
+      calc
+        PTree.get id (PTree.set i (.Vundef : val) (CM.set_locals il e)) =
+            PTree.get id (CM.set_locals il e) := by
+              exact PTree.gso (A := val) (i := id) (j := i) .Vundef
+                (show PTree.tree val from CM.set_locals il e) (by
+                  intro hie
+                  exact hnot (hie ▸ (List.Mem.head il : In i (i :: il))))
+        _ = PTree.get id e := ih htail
+
+end CompCert4Lean.Cfrontend.Cminorgenproof

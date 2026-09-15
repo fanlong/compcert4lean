@@ -4288,3 +4288,116 @@ theorem lagree_eqmod : lagree_eqmodStatement := by
   exact hbits
 
 end CompCert4Lean.Backend.NeedDomain
+
+namespace CompCert4Lean.Backend.NeedDomain
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Lib.Integers
+
+private theorem zsize_mask_nat_test (k : Nat) (hk : k ≤ 64) :
+    CompCert4Lean.Lib.Zbits.Zsize
+        (ZArith.BinInt.Z.of_nat (((2 ^ 64 - 1) % (2 ^ k)) % (2 ^ 64))) =
+      ZArith.BinInt.Z.of_nat k := by
+  cases k with
+  | zero => rfl
+  | succ j =>
+      have hj : j + 1 ≤ 64 := by omega
+      have hdiv : 2 ^ (j + 1) ∣ 2 ^ 64 := Nat.pow_dvd_pow 2 hj
+      have hb : 1 ≤ 2 ^ (j + 1) :=
+        Nat.one_le_pow _ _ (by decide)
+      have hmod : (2 ^ 64 - 1) % 2 ^ (j + 1) = 2 ^ (j + 1) - 1 := by
+        rw [Nat.mod_eq_sub_iff (a := 2 ^ 64 - 1)
+          (b := 2 ^ (j + 1)) (c := 1) (by decide) hb]
+        have hdiv' : 2 ^ (j + 1) ∣ (2 ^ 64 - 1) + 1 := by
+          simpa [Nat.sub_add_cancel (Nat.one_le_pow 64 2 (by decide))] using hdiv
+        exact hdiv'
+      have hlt : 2 ^ (j + 1) - 1 < 2 ^ 64 := by
+        have hp : 0 < 2 ^ (j + 1) := Nat.two_pow_pos _
+        have hpow : 2 ^ (j + 1) ≤ 2 ^ 64 :=
+          Nat.pow_le_pow_right Nat.zero_lt_two hj
+        omega
+      rw [hmod, Nat.mod_eq_of_lt hlt]
+      have hq : 0 < 2 ^ (j + 1) - 1 := by
+        have hp : 0 < 2 ^ (j + 1) := Nat.two_pow_pos _
+        omega
+      have hlog : Nat.log2 (2 ^ (j + 1) - 1) = j := by
+        apply (Nat.log2_eq_iff (Nat.ne_of_gt hq)).2
+        constructor
+        · rw [Nat.pow_succ]
+          have hp : 0 < 2 ^ j := Nat.two_pow_pos _
+          omega
+        · have hp : 0 < 2 ^ (j + 1) := Nat.two_pow_pos _
+          omega
+      have hpq : posToNat (PArith.BinPos.Pos.of_nat
+          (2 ^ (j + 1) - 1)) = 2 ^ (j + 1) - 1 := by
+        unfold PArith.BinPos.Pos.of_nat
+        exact posToNat_posOfNat hq
+      have hpj : posToNat (PArith.BinPos.Pos.of_nat (j + 1)) = j + 1 := by
+        unfold PArith.BinPos.Pos.of_nat
+        exact posToNat_posOfNat (by omega)
+      have hzn : ZArith.BinInt.Z.of_nat (2 ^ (j + 1) - 1) =
+          Zpos (PArith.BinPos.Pos.of_nat (2 ^ (j + 1) - 1)) := by
+        have hz := ZArith.Znat.Z2Nat.id
+          (Zpos (PArith.BinPos.Pos.of_nat (2 ^ (j + 1) - 1)))
+          (by
+            change 0 ≤ Int.ofNat (posToNat (PArith.BinPos.Pos.of_nat
+              (2 ^ (j + 1) - 1)))
+            rw [hpq]
+            exact Int.natCast_nonneg _)
+        change ZArith.BinInt.Z.of_nat
+            (posToNat (PArith.BinPos.Pos.of_nat (2 ^ (j + 1) - 1))) = _ at hz
+        rw [hpq] at hz
+        exact hz
+      have hzn' : ZArith.BinInt.Z.of_nat (j + 1) =
+          Zpos (PArith.BinPos.Pos.of_nat (j + 1)) := by
+        have hz := ZArith.Znat.Z2Nat.id
+          (Zpos (PArith.BinPos.Pos.of_nat (j + 1)))
+          (by
+            change 0 ≤ Int.ofNat (posToNat (PArith.BinPos.Pos.of_nat (j + 1)))
+            rw [hpj]
+            exact Int.natCast_nonneg _)
+        change ZArith.BinInt.Z.of_nat
+            (posToNat (PArith.BinPos.Pos.of_nat (j + 1))) = _ at hz
+        rw [hpj] at hz
+        exact hz
+      rw [hzn, hzn']
+      change Zpos (PArith.BinPos.Pos.size
+          (PArith.BinPos.Pos.of_nat (2 ^ (j + 1) - 1))) =
+        Zpos (PArith.BinPos.Pos.of_nat (j + 1))
+      unfold PArith.BinPos.Pos.size
+      rw [hpq, hlog]
+      have heq : posOfNat (j + 1) = PArith.BinPos.Pos.of_nat (j + 1) := by
+        apply posToNat_injective
+        rw [posToNat_posOfNat (by omega)]
+        exact hpj.symm
+      rw [heq]
+
+private theorem mask_size_test (n : Z)
+    (hn : ZArith.BinInt.Z.le z0 n)
+    (hnw : ZArith.BinInt.Z.le n Int64.zwordsize) :
+    Int64.size (Int64.zero_ext n Int64.mone) = n := by
+  change CompCert4Lean.Lib.Zbits.Zsize
+      (WordCore.unsigned (Int64.zero_ext n Int64.mone)) = n
+  rw [lagreeUnsignedAsNatFinal]
+  have hv := lagreeZeroExtValFinal n Int64.mone hn
+  rw [hv]
+  change CompCert4Lean.Lib.Zbits.Zsize
+      (ZArith.BinInt.Z.of_nat
+        (((2 ^ 64 - 1) % (2 ^ ZArith.BinInt.Z.to_nat n)) % (2 ^ 64))) = n
+  have hnat := ZArith.Znat.Z2Nat.id n hn
+  have hnw' := hnw
+  rw [← hnat] at hnw'
+  change intOfZ (ZArith.BinInt.Z.of_nat
+      (ZArith.BinInt.Z.to_nat n)) ≤ intOfZ Int64.zwordsize at hnw'
+  simp only [ZArith.BinInt.Z.of_nat, intOfZ_zOfInt] at hnw'
+  change (Int.ofNat (ZArith.BinInt.Z.to_nat n) : Int) ≤ Int.ofNat 64 at hnw'
+  have hk : ZArith.BinInt.Z.to_nat n ≤ 64 := Int.ofNat_le.mp hnw'
+  exact (zsize_mask_nat_test (ZArith.BinInt.Z.to_nat n) hk).trans hnat
+
+theorem complete_mask64_idem : complete_mask64_idemStatement := by
+  intro m
+  unfold complete_mask64
+  have hs := lagreeSizeRangeFinal m
+  rw [mask_size_test (Int64.size m) hs.1 hs.2]
+
+end CompCert4Lean.Backend.NeedDomain

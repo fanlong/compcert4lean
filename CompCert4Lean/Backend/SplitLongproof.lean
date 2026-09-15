@@ -1027,3 +1027,15 @@ theorem is_intconst_sound
   | Eexternal id sg al => simp at hconst
 
 end CompCert4Lean.Backend.SplitLongproof
+
+namespace CompCert4Lean.Backend.SplitLongproof
+
+theorem eval_addl
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    eval_addlStatement := by
+  unfold eval_addlStatement
+  intro xi prog sp e m hptr
+  simp [CompCert4Lean.X86_64.Archi.ptr64] at hptr
+
+end CompCert4Lean.Backend.SplitLongproof
