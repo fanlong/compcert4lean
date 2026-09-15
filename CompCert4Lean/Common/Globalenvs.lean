@@ -2644,3 +2644,31 @@ theorem find_symbol_not_fresh : find_symbol_not_freshStatement := by
 
 end Genv
 end CompCert4Lean.Common.Globalenvs
+
+namespace CompCert4Lean.Common.Globalenvs
+namespace Genv
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Lib.Coqlib
+
+theorem find_def_not_fresh : find_def_not_freshStatement := by
+  intro F V p b g m hmem hfind
+  change Plt b m.nextblock
+  rw [← init_mem_genv_next (F := F) (V := V) (p := p) (m := m) hmem]
+  unfold find_def at hfind
+  exact (globalenv p).genv_defs_range b hfind
+
+theorem find_funct_ptr_not_fresh : find_funct_ptr_not_freshStatement := by
+  intro F V p b f m hmem hfind
+  rw [find_funct_ptr_iff] at hfind
+  exact find_def_not_fresh F V p b (Gfun f) m hmem hfind
+
+theorem find_var_info_not_fresh : find_var_info_not_freshStatement := by
+  intro F V p b gv m hmem hfind
+  rw [find_var_info_iff] at hfind
+  exact find_def_not_fresh F V p b (Gvar gv) m hmem hfind
+
+end Genv
+end CompCert4Lean.Common.Globalenvs
