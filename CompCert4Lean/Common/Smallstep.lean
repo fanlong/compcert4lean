@@ -2840,3 +2840,245 @@ theorem f2b_match_after' : f2b_match_after'Statement := by
         hmatch
 
 end CompCert4Lean.Common.Smallstep
+
+namespace CompCert4Lean.Common.Smallstep
+
+open CompCert4Lean.Common.Events
+
+private theorem smallstep_determinate_plus_after_step
+    (L : semantics) (hdet : determinate L)
+    (s : state L) (t : trace) (s' sf : state L)
+    (hstep : step L (globalenv L) s t s') (hne : t ≠ E0)
+    (hplus : plus (step L) (globalenv L) s t sf) :
+    ∃ n, starN (step L) (globalenv L) n s' E0 sf := by
+  cases hplus with
+  | plus_left t1 sm t2 sf t hfirst htail htrace =>
+      have hlen : (Eapp t1 t2).length ≤ 1 := by
+        rw [← htrace]
+        exact hdet.sd_traces s t s' hstep
+      rcases not_silent_length t1 t2 hlen with ht1 | ht2
+      · subst t1
+        have hmatch := sd_determ_1 L hdet s t s' E0 sm hstep hfirst
+        cases hmatch with
+        | match_traces_E0 => exact False.elim (hne rfl)
+      · subst t2
+        rw [E0_right] at htrace
+        subst t
+        have hsame := sd_determ_2 L hdet s t1 s' sm hstep hfirst
+        subst sm
+        exact star_starN L.genvtype L.state (step L) (globalenv L) s' E0 sf htail
+
+end CompCert4Lean.Common.Smallstep
+
+namespace CompCert4Lean.Common.Smallstep
+
+open CompCert4Lean.Common.Events
+
+private theorem smallstep_f2b_simulation_step : f2b_simulation_stepStatement := by
+  intro L1 L2 index order match_states props hrec hdet
+  intro s2 t s2' hstep2 i s1 hfm hsafe
+  cases hfm with
+  | «at» im s1 s2 hmatch =>
+      have htrans := f2b_progress L1 L2 index order match_states props
+        im s1 s2 hmatch hsafe
+      cases htrans with
+      | f2b_trans_final s1f r hstar hfinal1 hfinal2 =>
+          exact False.elim (hdet.sd_final_nostep s2 r hfinal2 t s2' hstep2)
+      | f2b_trans_step s1m tr s1n s2f im1 im2 hstar1 hsource hplus hmatch1 hmatch2 =>
+          cases hplus with
+          | plus_left tfirst sm ttail s2f tr hfirst htail htrace =>
+              have hdi := f2b_determinacy_inv L1 L2 index order match_states
+                props hdet s2 tfirst sm t s2' hfirst hstep2
+              rcases hdi with hsilent | hvisible
+              · rcases hsilent with ⟨htfirst, ht, hsm⟩
+                subst tfirst
+                subst t
+                subst sm
+                rcases silent_or_not_silent tr with htr | htr
+                · subst tr
+                  rw [E0_left] at htr
+                  subst ttail
+                  obtain ⟨n, hn⟩ := star_starN L2.genvtype L2.state
+                    (step L2) (globalenv L2) s2' E0 s2f htail
+                  refine ⟨F2BI_after n, s1n, Or.inl ?_, ?_⟩
+                  · exact plus_right L1.genvtype L1.state (step L1) (globalenv L1)
+                      s1 E0 s1m E0 s1n E0 hstar1 hsource rfl
+                  · exact f2b_match_after' L1 L2 index match_states
+                      n s2' s2f s1n im2 hn hmatch2
+                · rw [E0_left] at htrace
+                  subst ttail
+                  obtain ⟨n, hn⟩ := star_starN L2.genvtype L2.state
+                    (step L2) (globalenv L2) s2' tr s2f htail
+                  refine ⟨F2BI_before n, s1m, Or.inr ⟨hstar1, ?_⟩, ?_⟩
+                  · exact f2b_order.switch 0 n
+                  · exact f2b_match_states.before s1m tr s1n s2 s2' n s2f im1
+                      hsource htr
+                      (star_one L2.genvtype L2.state (step L2) (globalenv L2)
+                        s2 E0 s2' hstep2)
+                      hn hmatch1
+              · rcases hvisible with ⟨htfirst, ht, htraces⟩
+                have hlen : (Eapp tfirst ttail).length ≤ 1 := by
+                  rw [← htrace]
+                  exact hrec.sr_traces s1m tr s1n hsource
+                rcases not_silent_length tfirst ttail hlen with htfirst0 | htail0
+                · exact False.elim (htfirst htfirst0)
+                · subst ttail
+                  rw [E0_right] at htrace
+                  subst tr
+                  obtain ⟨s1v, hsourcev⟩ :=
+                    hrec.sr_receptive s1m s1n hsource htraces
+                  obtain ⟨imv, s2v, hplusv, hmatchv⟩ :=
+                    fsim_simulation_not_E0 L1 L2 index order match_states props
+                      s1m t s1v hsourcev ht im1 s2 hmatch1
+                  obtain ⟨n, hn⟩ := smallstep_determinate_plus_after_step
+                    L2 hdet s2 t s2' s2v hstep2 ht hplusv
+                  refine ⟨F2BI_after n, s1v, Or.inl ?_, ?_⟩
+                  · exact plus_right L1.genvtype L1.state (step L1) (globalenv L1)
+                      s1 E0 s1m t s1v t hstar1 hsourcev (E0_left t).symm
+                  · exact f2b_match_after' L1 L2 index match_states
+                      n s2' s2v s1v imv hn hmatchv
+  | before s1stored tr s1n s2b s2 n s2a im hsource htr hprefix hn hmatch =>
+      cases hn with
+      | refl s =>
+          exact False.elim (htr rfl)
+      | step n0 s2 tr tfirst sm ttail s2a hfirst htail htrace =>
+          have hdi := f2b_determinacy_inv L1 L2 index order match_states
+            props hdet s2 tfirst sm t s2' hfirst hstep2
+          rcases hdi with hsilent | hvisible
+          · rcases hsilent with ⟨htfirst, ht, hsm⟩
+            subst tfirst
+            subst t
+            subst sm
+            rw [E0_left] at htrace
+            subst ttail
+            refine ⟨F2BI_before n0, s1, Or.inr ⟨?_, ?_⟩, ?_⟩
+            · exact star_refl (step L1) (globalenv L1) s1
+            · exact f2b_order.before (n0 + 1) n0 (Nat.lt_succ_self n0)
+            · exact f2b_match_states.before s1 tr s1n s2b s2' n0 s2a im
+                hsource htr
+                (star_right L2.genvtype L2.state (step L2) (globalenv L2)
+                  s2b E0 s2 E0 s2' E0 hprefix hstep2 rfl)
+                htail hmatch
+          · rcases hvisible with ⟨htfirst, ht, htraces⟩
+            have hlen : (Eapp tfirst ttail).length ≤ 1 := by
+              rw [← htrace]
+              exact hrec.sr_traces s1 tr s1n hsource
+            rcases not_silent_length tfirst ttail hlen with htfirst0 | htail0
+            · exact False.elim (htfirst htfirst0)
+            · subst ttail
+              rw [E0_right] at htrace
+              subst tr
+              obtain ⟨s1v, hsourcev⟩ :=
+                hrec.sr_receptive s1 s1n hsource htraces
+              obtain ⟨imv, s2v, hplusv, hmatchv⟩ :=
+                fsim_simulation_not_E0 L1 L2 index order match_states props
+                  s1 t s1v hsourcev ht im s2b hmatch
+              have hstarv := f2b_determinacy_star L1 L2 index order match_states
+                props hdet s2b s2 hprefix t s2' s2v hstep2 ht
+                (plus_star L2.genvtype L2.state (step L2) (globalenv L2)
+                  s2b t s2v hplusv)
+              rcases star_inv L2.genvtype L2.state (step L2) (globalenv L2)
+                s2 t s2v hstarv with hrefl | hplusTail
+              · exact False.elim (ht hrefl.2)
+              · obtain ⟨ntail, hntail⟩ := smallstep_determinate_plus_after_step
+                  L2 hdet s2 t s2' s2v hstep2 ht hplusTail
+                refine ⟨F2BI_after ntail, s1v, Or.inl ?_, ?_⟩
+                · exact plus_one L1.genvtype L1.state (step L1) (globalenv L1)
+                    s1 t s1v hsourcev
+                · exact f2b_match_after' L1 L2 index match_states
+                    ntail s2' s2v s1v imv hntail hmatchv
+  | after n s2 s2a s1stored im hn hmatch =>
+      cases hn with
+      | step n0 s2 tr tfirst sm ttail s2a hfirst htail htrace =>
+          obtain ⟨htfirst, htail0⟩ := Eapp_E0_inv tfirst ttail htrace.symm
+          subst tfirst
+          subst ttail
+          have hdi := f2b_determinacy_inv L1 L2 index order match_states
+            props hdet s2 E0 sm t s2' hfirst hstep2
+          rcases hdi with hsilent | hvisible
+          · rcases hsilent with ⟨_, ht, hsm⟩
+            subst t
+            subst sm
+            refine ⟨F2BI_after n, s1, Or.inr ⟨?_, ?_⟩, ?_⟩
+            · exact star_refl (step L1) (globalenv L1) s1
+            · exact f2b_order.after (n + 1) n (Nat.lt_succ_self n)
+            · exact f2b_match_after' L1 L2 index match_states
+                n s2' s2a s1 im htail hmatch
+          · exact False.elim (hvisible.1 rfl)
+
+end CompCert4Lean.Common.Smallstep
+
+namespace CompCert4Lean.Common.Smallstep
+
+open CompCert4Lean.Common.Events
+
+theorem forward_to_backward_simulation : forward_to_backward_simulationStatement := by
+  intro L1 L2 hfs hrec hdet
+  cases hfs with
+  | @Forward_simulation index order match_states props =>
+      apply Backward_simulation f2b_order
+        (f2b_match_states L1 L2 match_states)
+      constructor
+      · exact wf_f2b_order
+      · intro s1 hinit1
+        obtain ⟨i, s2, hinit2, hmatch⟩ :=
+          props.fsim_match_initial_states s1 hinit1
+        exact ⟨s2, hinit2⟩
+      · intro s1 s2 hinit1 hinit2
+        obtain ⟨i, s2', hinit2', hmatch⟩ :=
+          props.fsim_match_initial_states s1 hinit1
+        have hs2 : s2 = s2' := hdet.sd_initial_determ s2 s2' hinit2 hinit2'
+        subst s2'
+        exact ⟨F2BI_after 0, s1, hinit1, f2b_match_states.at i s1 s2 hmatch⟩
+      · intro i s1 s2 r hfm hsafe hfinal2
+        cases hfm with
+        | «at» im s1 s2 hmatch =>
+            have htrans := f2b_progress L1 L2 index order match_states props
+              im s1 s2 hmatch hsafe
+            cases htrans with
+            | f2b_trans_final s1f r' hstar hfinal1 hfinal2' =>
+                have hr : r' = r := hdet.sd_final_determ s2 r' r hfinal2' hfinal2
+                subst r'
+                exact ⟨s1f, hstar, hfinal1⟩
+            | f2b_trans_step s1m tr s1n s2f im1 im2 hstar1 hsource hplus hmatch1 hmatch2 =>
+                cases hplus with
+                | plus_left tfirst sm ttail s2f tr hfirst htail htrace =>
+                    exact False.elim
+                      (hdet.sd_final_nostep s2 r hfinal2 tfirst sm hfirst)
+        | before s1stored tr s1n s2b s2 n s2a im hsource htr hprefix hn hmatch =>
+            cases hn with
+            | refl s => exact False.elim (htr rfl)
+            | step n0 s2 tr tfirst sm ttail s2a hfirst htail htrace =>
+                exact False.elim
+                  (hdet.sd_final_nostep s2 r hfinal2 tfirst sm hfirst)
+        | after n s2 s2a s1stored im hn hmatch =>
+            cases hn with
+            | step n0 s2 tr tfirst sm ttail s2a hfirst htail htrace =>
+                exact False.elim
+                  (hdet.sd_final_nostep s2 r hfinal2 tfirst sm hfirst)
+      · intro i s1 s2 hfm hsafe
+        cases hfm with
+        | «at» im s1 s2 hmatch =>
+            have htrans := f2b_progress L1 L2 index order match_states props
+              im s1 s2 hmatch hsafe
+            cases htrans with
+            | f2b_trans_final s1f r hstar hfinal1 hfinal2 =>
+                exact Or.inl ⟨r, hfinal2⟩
+            | f2b_trans_step s1m tr s1n s2f im1 im2 hstar1 hsource hplus hmatch1 hmatch2 =>
+                cases hplus with
+                | plus_left tfirst sm ttail s2f tr hfirst htail htrace =>
+                    exact Or.inr ⟨tfirst, sm, hfirst⟩
+        | before s1stored tr s1n s2b s2 n s2a im hsource htr hprefix hn hmatch =>
+            cases hn with
+            | refl s => exact False.elim (htr rfl)
+            | step n0 s2 tr tfirst sm ttail s2a hfirst htail htrace =>
+                exact Or.inr ⟨tfirst, sm, hfirst⟩
+        | after n s2 s2a s1stored im hn hmatch =>
+            cases hn with
+            | step n0 s2 tr tfirst sm ttail s2a hfirst htail htrace =>
+                exact Or.inr ⟨tfirst, sm, hfirst⟩
+      · exact smallstep_f2b_simulation_step L1 L2 index order match_states
+          props hrec hdet
+      · exact props.fsim_public_preserved
+
+end CompCert4Lean.Common.Smallstep

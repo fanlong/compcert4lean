@@ -4910,3 +4910,144 @@ theorem add_equations_res_lessdef : add_equations_res_lessdefStatement := by
       · simp [add_equations_res, hty] at hrun
 
 end CompCert4Lean.Backend.Allocproof
+
+namespace CompCert4Lean.Backend.Allocproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Lib.Integers
+
+private theorem ap_word_val_lt {bits : Nat} (x : WordCore.Word bits) :
+    x.val < 2 ^ bits := by
+  exact (WordCore.Word.toFin x).isLt
+
+private theorem ap_word_unsigned_nat {bits : Nat} (w : WordCore.Word bits) :
+    WordCore.unsigned w = ZArith.BinInt.Z.of_nat w.val := by
+  have hw : ZArith.BinInt.Z.le Z0 (WordCore.unsigned w) := by
+    have h := w.intrange.1
+    change (-1 : Int) < intOfZ (WordCore.unsigned w) at h
+    change 0 ≤ intOfZ (WordCore.unsigned w)
+    omega
+  exact (ZArith.Znat.Z2Nat.id (WordCore.unsigned w) hw).symm
+
+private theorem ap_word_repr_val_nat (bits n : Nat) :
+    (WordCore.repr bits (ZArith.BinInt.Z.of_nat n)).val = n % (2 ^ bits) := by
+  simp
+  run_tac
+    let pieces := "_private.CompCert4Lean.Lib.Integers.0.CompCert4Lean.Lib.Integers.WordCore.residue_zOfNat".splitOn "."
+    let nm := pieces.foldl (fun acc s => if s = "0" then Lean.Name.num acc 0 else Lean.Name.str acc s) Lean.Name.anonymous
+    let g ← Lean.Elab.Tactic.getMainGoal
+    let goals ← g.apply (Lean.mkConst nm)
+    Lean.Elab.Tactic.replaceMainGoal goals
+
+private theorem ap_word_shl_val {bits : Nat} (x y : WordCore.Word bits) :
+    (WordCore.shl x y).val = (x.val * 2 ^ y.val) % (2 ^ bits) := by
+  change (WordCore.repr bits
+    (ZArith.BinInt.Z.shiftl (WordCore.unsigned x) (WordCore.unsigned y))).val = _
+  rw [ap_word_unsigned_nat x, ap_word_unsigned_nat y]
+  rw [show ZArith.BinInt.Z.shiftl (ZArith.BinInt.Z.of_nat x.val)
+      (ZArith.BinInt.Z.of_nat y.val) =
+      ZArith.BinInt.Z.of_nat (x.val * 2 ^ y.val) by
+    unfold ZArith.BinInt.Z.shiftl
+    simp only [ZArith.BinInt.Z.of_nat, intOfZ_zOfInt,
+      Int.ofNat_eq_natCast, Int.natCast_nonneg, ↓reduceIte]
+    rw [Int.natCast_mul, Int.natCast_pow]
+    rfl]
+  exact ap_word_repr_val_nat bits (x.val * 2 ^ y.val)
+
+private theorem ap_word_or_val {bits : Nat} (x y : WordCore.Word bits) :
+    (WordCore.or x y).val = Nat.lor x.val y.val := by
+  unfold WordCore.or
+  rw [ap_word_repr_val_nat]
+  exact Nat.mod_eq_of_lt (Nat.or_lt_two_pow (ap_word_val_lt x) (ap_word_val_lt y))
+
+private theorem ap_word_shru_val {bits : Nat} (x y : WordCore.Word bits) :
+    (WordCore.shru x y).val = x.val / 2 ^ y.val := by
+  change (WordCore.repr bits
+    (ZArith.BinInt.Z.shiftr (WordCore.unsigned x) (WordCore.unsigned y))).val = _
+  rw [ap_word_unsigned_nat x, ap_word_unsigned_nat y]
+  rw [show ZArith.BinInt.Z.shiftr (ZArith.BinInt.Z.of_nat x.val)
+      (ZArith.BinInt.Z.of_nat y.val) =
+      ZArith.BinInt.Z.of_nat (x.val / 2 ^ y.val) by
+    unfold ZArith.BinInt.Z.shiftr
+    simp only [ZArith.BinInt.Z.of_nat, intOfZ_zOfInt,
+      Int.ofNat_eq_natCast, Int.natCast_nonneg, ↓reduceIte]
+    rw [Int.natCast_ediv, Int.natCast_pow]
+    rfl]
+  rw [ap_word_repr_val_nat]
+  exact Nat.mod_eq_of_lt (Nat.lt_of_le_of_lt (Nat.div_le_self _ _) (ap_word_val_lt x))
+
+private theorem ap_hi_ofwords (hi lo : CompCert4Lean.Lib.Integers.Int.int) :
+    Int64.hiword (Int64.ofwords hi lo) = hi := by
+  have hhi : hi.val < 2 ^ CompCert4Lean.Lib.Integers.Int.wordsize :=
+    ap_word_val_lt hi
+  have hlo : lo.val < 2 ^ CompCert4Lean.Lib.Integers.Int.wordsize :=
+    ap_word_val_lt lo
+  have hshift :
+      (WordCore.repr Int64.wordsize
+        CompCert4Lean.Lib.Integers.Int.zwordsize).val = 32 := by
+    change (WordCore.repr Int64.wordsize
+      (ZArith.BinInt.Z.of_nat 32)).val = 32
+    rw [ap_word_repr_val_nat]
+    decide
+  apply WordCore.ext_of_val_eq
+  unfold Int64.hiword
+  simp only [CompCert4Lean.Lib.Integers.Int.repr, Int64.unsigned, Int64.shru]
+  rw [ap_word_unsigned_nat, ap_word_repr_val_nat]
+  unfold Int64.ofwords
+  simp only [Int64.or, Int64.shl, Int64.repr,
+    CompCert4Lean.Lib.Integers.Int.unsigned]
+  rw [ap_word_shru_val, ap_word_or_val, ap_word_shl_val]
+  rw [@ap_word_unsigned_nat CompCert4Lean.Lib.Integers.Int.wordsize hi,
+    ap_word_repr_val_nat]
+  rw [@ap_word_unsigned_nat CompCert4Lean.Lib.Integers.Int.wordsize lo,
+    ap_word_repr_val_nat]
+  rw [hshift]
+  have hpowle :
+      2 ^ CompCert4Lean.Lib.Integers.Int.wordsize ≤ 2 ^ Int64.wordsize := by
+    decide
+  have hhi64 : hi.val < 2 ^ Int64.wordsize :=
+    Nat.lt_of_lt_of_le hhi hpowle
+  have hlo64 : lo.val < 2 ^ Int64.wordsize :=
+    Nat.lt_of_lt_of_le hlo hpowle
+  rw [Nat.mod_eq_of_lt hhi64, Nat.mod_eq_of_lt hlo64]
+  have hprod : hi.val * 2 ^ 32 < 2 ^ Int64.wordsize := by
+    change hi.val * 2 ^ 32 < 2 ^ 64
+    change hi.val < 2 ^ 32 at hhi
+    omega
+  rw [Nat.mod_eq_of_lt hprod]
+  change (((hi.val * 2 ^ 32) ||| lo.val) / 2 ^ 32) %
+      2 ^ CompCert4Lean.Lib.Integers.Int.wordsize = hi.val
+  have hor := @Nat.or_div_two_pow (hi.val * 2 ^ 32) lo.val 32
+  rw [hor]
+  have hdivlo : lo.val / 2 ^ 32 = 0 := Nat.div_eq_of_lt hlo
+  rw [hdivlo, Nat.or_zero]
+  rw [Nat.mul_comm, Nat.mul_div_right hi.val (Nat.two_pow_pos 32)]
+  exact Nat.mod_eq_of_lt hhi
+
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.Values.Val
+
+theorem val_hiword_longofwords : val_hiword_longofwordsStatement := by
+  intro v1 v2
+  cases v1 with
+  | Vundef =>
+      exact Val.lessdef_undef _
+  | Vint hi =>
+      cases v2 with
+      | Vint lo =>
+          change Val.lessdef
+            (val.Vint (Int64.hiword (Int64.ofwords hi lo))) (val.Vint hi)
+          rw [ap_hi_ofwords hi lo]
+          exact Val.lessdef_refl _
+      | _ =>
+          exact Val.lessdef_undef _
+  | Vlong _ =>
+      exact Val.lessdef_undef _
+  | Vfloat _ =>
+      exact Val.lessdef_undef _
+  | Vsingle _ =>
+      exact Val.lessdef_undef _
+  | Vptr _ _ =>
+      exact Val.lessdef_undef _
+
+end CompCert4Lean.Backend.Allocproof

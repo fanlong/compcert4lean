@@ -2251,3 +2251,21 @@ theorem transf_initial_states : ∀ cfg, transf_initial_statesStatement cfg := b
           Val.lessdef_list.lessdef_list_nil (deadcode_mem_extends_refl m0)
 
 end CompCert4Lean.Backend.Deadcodeproof
+
+namespace CompCert4Lean.Backend.Deadcodeproof
+
+variable
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+
+theorem transf_final_states : ∀ cfg, transf_final_statesStatement cfg := by
+  intro cfg prog st1 st2 r hmatch hfinal
+  cases hfinal with
+  | intro r m =>
+      cases hmatch with
+      | match_return_states s v m s' v' m' hstacks hres hmem =>
+          cases hstacks
+          cases hres
+          exact CompCert4Lean.Backend.RTL.final_state.intro r m'
+
+end CompCert4Lean.Backend.Deadcodeproof

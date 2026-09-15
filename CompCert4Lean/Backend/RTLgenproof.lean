@@ -2322,3 +2322,118 @@ theorem lt_state_wf : lt_state_wfStatement := by
   exact hacc (measure_state s) (hlex.apply (measure_state s)) s rfl
 
 end CompCert4Lean.Backend.RTLgenproof
+
+namespace CompCert4Lean.Backend.RTLgenproof
+
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.Backend.RTLgen
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.Values
+
+private theorem invert_eval_builtin_arg_aux
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    invert_eval_builtin_argStatement := by
+  intro xi prog sp e m a v hev
+  induction hev with
+  | argument a v heval =>
+      refine ⟨[v], ?_, ?_, ?_⟩
+      · exact CminorSel.eval_exprlist.cons [] a .Enil v [] heval
+          (CminorSel.eval_exprlist.nil [])
+      · exact eval_BA v
+      · intro vl'
+        rfl
+  | intValue n =>
+      refine ⟨[], ?_, ?_, ?_⟩
+      · exact CminorSel.eval_exprlist.nil []
+      · exact eval_BA_int n
+      · intro vl'
+        rfl
+  | longValue n =>
+      refine ⟨[], ?_, ?_, ?_⟩
+      · exact CminorSel.eval_exprlist.nil []
+      · exact eval_BA_long n
+      · intro vl'
+        rfl
+  | floatValue n =>
+      refine ⟨[], ?_, ?_, ?_⟩
+      · exact CminorSel.eval_exprlist.nil []
+      · exact eval_BA_float n
+      · intro vl'
+        rfl
+  | singleValue n =>
+      refine ⟨[], ?_, ?_, ?_⟩
+      · exact CminorSel.eval_exprlist.nil []
+      · exact eval_BA_single n
+      · intro vl'
+        rfl
+  | loadStack chunk ofs v hload =>
+      refine ⟨[], ?_, ?_, ?_⟩
+      · exact CminorSel.eval_exprlist.nil []
+      · exact eval_BA_loadstack chunk ofs v hload
+      · intro vl'
+        rfl
+  | addressStack ofs =>
+      refine ⟨[], ?_, ?_, ?_⟩
+      · exact CminorSel.eval_exprlist.nil []
+      · exact eval_BA_addrstack ofs
+      · intro vl'
+        rfl
+  | loadGlobal chunk id ofs v hload =>
+      refine ⟨[], ?_, ?_, ?_⟩
+      · exact CminorSel.eval_exprlist.nil []
+      · exact eval_BA_loadglobal chunk id ofs v hload
+      · intro vl'
+        rfl
+  | addressGlobal id ofs =>
+      refine ⟨[], ?_, ?_, ?_⟩
+      · exact CminorSel.eval_exprlist.nil []
+      · exact eval_BA_addrglobal id ofs
+      · intro vl'
+        rfl
+  | splitLong a1 a2 v1 v2 h1 h2 =>
+      refine ⟨[v1, v2], ?_, ?_, ?_⟩
+      · apply CminorSel.eval_exprlist.cons
+        · exact h1
+        · apply CminorSel.eval_exprlist.cons
+          · exact h2
+          · exact CminorSel.eval_exprlist.nil []
+      · simpa [convert_builtin_arg] using
+          (eval_BA_splitlong (.BA v1) (.BA v2) v1 v2 (eval_BA v1) (eval_BA v2))
+      · intro vl'
+        rfl
+  | addPointer a1 a2 v1 v2 h1 h2 ih1 ih2 =>
+      obtain ⟨vl1, hvl1, hev1, hconv1⟩ := ih1
+      obtain ⟨vl2, hvl2, hev2, hconv2⟩ := ih2
+      refine ⟨vl1 ++ vl2, ?_, ?_, ?_⟩
+      · exact eval_exprlist_append xi prog sp e m []
+          (params_of_builtin_arg a1) vl1 (params_of_builtin_arg a2) vl2 hvl1 hvl2
+      · simpa [convert_builtin_arg, hconv1 vl2, hconv2 []] using
+          (eval_BA_addptr (convert_builtin_arg a1 vl1).1
+            (convert_builtin_arg a2 vl2).1 v1 v2 hev1 hev2)
+      · intro vl'
+        simp [convert_builtin_arg, List.append_assoc,
+          hconv1 vl2, hconv1 (vl2 ++ vl'), hconv2 vl']
+
+theorem invert_eval_builtin_args
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    invert_eval_builtin_argsStatement := by
+  intro xi prog sp e m al vl hargs
+  induction hargs with
+  | nil =>
+      refine ⟨[], ?_, ?_⟩
+      · exact CminorSel.eval_exprlist.nil []
+      · exact CompCert4Lean.Lib.Coqlib.list_forall2_nil _
+  | cons a v ha htail ih =>
+      obtain ⟨vl1, hvl1, hev1, hconv1⟩ :=
+        invert_eval_builtin_arg_aux xi prog sp e m a v ha
+      obtain ⟨vl2, hvl2, hev2⟩ := ih
+      refine ⟨vl1 ++ vl2, ?_, ?_⟩
+      · exact eval_exprlist_append xi prog sp e m []
+          (params_of_builtin_arg a) vl1 (params_of_builtin_args _) vl2 hvl1 hvl2
+      · rw [convert_builtin_args, hconv1]
+        exact CompCert4Lean.Lib.Coqlib.list_forall2.cons _ _ hev1 hev2
+
+end CompCert4Lean.Backend.RTLgenproof

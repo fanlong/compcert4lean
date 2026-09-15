@@ -1819,3 +1819,34 @@ theorem generic_format_canonical :
       exact (CompCert4Lean.Flocq.Core.Raux.Ztrunc_IZR ctx m).symm
 
 end CompCert4Lean.Flocq.Core.Generic_fmt
+
+namespace CompCert4Lean.Flocq.Core.Generic_fmt
+
+theorem generic_format_ge_bpow :
+    ∀ ctx magnitude, generic_format_ge_bpowStatement ctx magnitude := by
+  intro ctx magnitude beta fexp emin hmin x hx hformat
+  unfold Exact.generic_format at hformat
+  rw [hformat]
+  have hmpos : Zlt Z0
+      (Exact.Ztrunc ctx
+        (Exact.scaled_mantissa ctx magnitude beta fexp x)) := by
+    apply CompCert4Lean.Flocq.Core.Float_prop.gt_0_F2R ctx beta
+      (Exact.Ztrunc ctx
+        (Exact.scaled_mantissa ctx magnitude beta fexp x))
+      (Exact.cexp ctx magnitude beta fexp x)
+    change Exact.Rlt ctx (Exact.R0 ctx)
+      (Exact.F2R ctx
+        (Float beta
+          (Exact.Ztrunc ctx
+            (Exact.scaled_mantissa ctx magnitude beta fexp x))
+          (Exact.cexp ctx magnitude beta fexp x)))
+    rw [← hformat]
+    exact hx
+  exact ctx.certificate.orderedField.le_trans _ _ _
+    (pg_bpow_le ctx beta (hmin (Exact.mag magnitude beta x)))
+    (CompCert4Lean.Flocq.Core.Float_prop.bpow_le_F2R ctx beta
+      (Exact.Ztrunc ctx
+        (Exact.scaled_mantissa ctx magnitude beta fexp x))
+      (Exact.cexp ctx magnitude beta fexp x) hmpos)
+
+end CompCert4Lean.Flocq.Core.Generic_fmt
