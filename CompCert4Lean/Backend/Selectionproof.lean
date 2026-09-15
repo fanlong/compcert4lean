@@ -2948,3 +2948,20 @@ theorem set_params_lessdef : set_params_lessdefStatement := by
                   · exact hv
 
 end CompCert4Lean.Backend.Selectionproof
+
+namespace CompCert4Lean.Backend.Selectionproof
+
+open CompCert4Lean.Lib.Maps
+
+theorem set_locals_lessdef : set_locals_lessdefStatement := by
+  intro e1 e2 hEnv il
+  induction il with
+  | nil =>
+      simpa [CompCert4Lean.Backend.Cminor.set_locals] using hEnv
+  | cons i il ih =>
+      dsimp [CompCert4Lean.Backend.Cminor.set_locals]
+      apply set_var_lessdef
+      · exact ih
+      · exact CompCert4Lean.Common.Values.Val.lessdef_undef _
+
+end CompCert4Lean.Backend.Selectionproof

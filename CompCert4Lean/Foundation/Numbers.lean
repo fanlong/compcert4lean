@@ -2405,3 +2405,33 @@ theorem ZArith.BinInt.Z.div_le_mono :
 
 end Rocq.Coq
 end CompCert4Lean.Foundation.Numbers
+
+namespace CompCert4Lean.Foundation.Numbers
+namespace Rocq.Coq
+theorem ZArith.BinInt.Z.le_0_sub : ZArith.BinInt.Z.le_0_subStatement := by
+  intro n m
+  change (0 : Int) ≤ intOfZ (ZArith.BinInt.Z.sub m n) ↔ intOfZ n ≤ intOfZ m
+  simp only [ZArith.BinInt.Z.sub, intOfZ_zOfInt]
+  exact Int.sub_nonneg
+theorem ZArith.BinInt.Z.le_min_r : ZArith.BinInt.Z.le_min_rStatement := by
+  intro n m
+  change intOfZ (ZArith.BinInt.Z.min n m) ≤ intOfZ m
+  unfold ZArith.BinInt.Z.min
+  by_cases h : intOfZ n ≤ intOfZ m <;> simp [h]
+theorem ZArith.BinInt.Z.mul_comm : ZArith.BinInt.Z.mul_commStatement := by
+  intro n m
+  apply intOfZ_injective
+  simp only [ZArith.BinInt.Z.mul, intOfZ_zOfInt]
+  exact Int.mul_comm _ _
+theorem ZArith.BinInt.Z.max_comm : ZArith.BinInt.Z.max_commStatement := by
+  intro n m
+  apply intOfZ_injective
+  unfold ZArith.BinInt.Z.max
+  by_cases hnm : intOfZ n ≤ intOfZ m
+  · by_cases hmn : intOfZ m ≤ intOfZ n
+    · simp [hnm, hmn, Int.le_antisymm hnm hmn]
+    · simp [hnm, hmn]
+  · have hmn := Int.le_of_not_le hnm
+    simp [hnm, hmn]
+end Rocq.Coq
+end CompCert4Lean.Foundation.Numbers

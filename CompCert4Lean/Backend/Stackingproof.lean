@@ -2754,3 +2754,29 @@ theorem agree_locs_set_res : agree_locs_set_resStatement := by
         exact hbound r (by simp [params_of_builtin_res, List.mem_append, hr])
 
 end CompCert4Lean.Backend.Stackingproof
+
+namespace CompCert4Lean.Backend.Stackingproof
+
+open CompCert4Lean.Backend.Bounds
+open CompCert4Lean.Backend.Locations
+
+theorem agree_locs_undef_regs : agree_locs_undef_regsStatement := by
+  intro return_address_offset tprog cfg f
+    bound_local_pos bound_outgoing_pos bound_stack_data_pos
+    used_callee_save_norepet used_callee_save_prop ls0 regs ls
+  induction regs with
+  | nil =>
+      intro hagree hbound
+      simpa [LTL.undef_regs] using hagree
+  | cons r regs ih =>
+      intro hagree hbound
+      apply agree_locs_set_reg return_address_offset tprog cfg f
+        bound_local_pos bound_outgoing_pos bound_stack_data_pos
+        used_callee_save_norepet used_callee_save_prop
+        (LTL.undef_regs regs ls) ls0 r CompCert4Lean.Common.Values.Vundef
+      · apply ih hagree
+        intro r' hr'
+        exact hbound r' (by simp [hr'])
+      · exact hbound r (by simp)
+
+end CompCert4Lean.Backend.Stackingproof

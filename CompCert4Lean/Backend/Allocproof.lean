@@ -4809,3 +4809,104 @@ theorem transfer_use_def_satisf : transfer_use_def_satisfStatement := by
   · simp [hc] at htrans
 
 end CompCert4Lean.Backend.Allocproof
+
+namespace CompCert4Lean.Backend.Allocproof
+
+open CompCert4Lean.Backend.Conventions
+
+theorem return_regs_agree_callee_save : return_regs_agree_callee_saveStatement := by
+  intro cfg caller callee l hl
+  cases l with
+  | R r =>
+      change CompCert4Lean.X86.Conventions1.is_callee_save cfg r = true at hl
+      by_cases h : CompCert4Lean.X86.Conventions1.is_callee_save cfg r = true
+      · simp [LTL.return_regs, h]
+      · exact False.elim (h hl)
+  | S sl ofs ty =>
+      cases sl with
+      | Local => rfl
+      | Incoming => rfl
+      | Outgoing => exact False.elim (hl rfl)
+
+end CompCert4Lean.Backend.Allocproof
+
+namespace CompCert4Lean.Backend.Allocproof
+
+open CompCert4Lean.Backend.Allocation
+open CompCert4Lean.Backend.Conventions
+
+theorem no_caller_saves_sound : no_caller_saves_soundStatement := by
+  intro cfg e q hno hq
+  unfold no_caller_saves at hno
+  let f : EqSet.elt → Bool := fun q =>
+    match q.eloc with
+    | .R r => CompCert4Lean.X86.Conventions1.is_callee_save cfg r
+    | .S .Outgoing _ _ => false
+    | .S _ _ _ => true
+  have hcompat : CompCert4Lean.Lib.FSetInterface.compat_bool
+      OrderedEquation.eq f := by
+    intro q1 q2 hEq
+    cases hEq
+    rfl
+  have hall : EqSet.For_all (fun q => f q = true) e.eqs1 := by
+    apply EqSet.for_all_2 e.eqs1 f hcompat
+    exact hno
+  have hq' : f q = true := hall q hq
+  unfold callee_save_loc
+  cases hloc : q.eloc with
+  | R r =>
+      simpa [f, hloc] using hq'
+  | S sl ofs ty =>
+      cases sl with
+      | Outgoing => simp [f, hloc] at hq'
+      | Local => simp [f, hloc]
+      | Incoming => simp [f, hloc]
+
+end CompCert4Lean.Backend.Allocproof
+
+namespace CompCert4Lean.Backend.Allocproof
+
+open CompCert4Lean.Backend.Allocation
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Backend.Locations
+open CompCert4Lean.Backend.Registers
+
+theorem add_equations_res_lessdef : add_equations_res_lessdefStatement := by
+  intro r ty p e e' rs ls hrun hsat htype
+  cases p with
+  | One mr =>
+      simp [add_equations_res] at hrun
+      rcases hrun with rfl
+      exact add_equation_lessdef (rs := rs) (ls := ls)
+        (q := { ekind := .Full, ereg := r, eloc := .R mr }) (e := e) hsat
+  | Twolong hi lo =>
+      by_cases hty : ty = Tlong
+      · subst ty
+        simp [add_equations_res] at hrun
+        rcases hrun with ⟨hptr, hrun⟩
+        change Val.lessdef (Regmap.get r rs)
+          (Val.longofwords (ls (R hi)) (ls (R lo)))
+        rw [← val_longofwords_eq_1 (Regmap.get r rs) htype hptr]
+        have hsat_nested : satisf rs ls
+            (add_equation { ekind := .Low, ereg := r, eloc := .R lo }
+              (add_equation { ekind := .High, ereg := r, eloc := .R hi } e)) := by
+          rw [hrun]
+          exact hsat
+        have hsat_high : satisf rs ls
+            (add_equation { ekind := .High, ereg := r, eloc := .R hi } e) :=
+          add_equation_satisf rs ls
+            { ekind := .Low, ereg := r, eloc := .R lo }
+            (add_equation { ekind := .High, ereg := r, eloc := .R hi } e)
+            hsat_nested
+        apply allocproof_longofwords_lessdef
+        · exact add_equation_lessdef (rs := rs) (ls := ls)
+            (q := { ekind := .High, ereg := r, eloc := .R hi }) (e := e)
+            hsat_high
+        · exact add_equation_lessdef (rs := rs) (ls := ls)
+            (q := { ekind := .Low, ereg := r, eloc := .R lo })
+            (e := add_equation { ekind := .High, ereg := r, eloc := .R hi } e)
+            hsat_nested
+      · simp [add_equations_res, hty] at hrun
+
+end CompCert4Lean.Backend.Allocproof

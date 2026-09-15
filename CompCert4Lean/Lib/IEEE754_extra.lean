@@ -1750,3 +1750,39 @@ theorem ZofB_range_inversion {prec emax : Z} :
     · rfl
 
 end CompCert4Lean.Lib.IEEE754_extra
+
+namespace CompCert4Lean.Lib.IEEE754_extra
+
+open CompCert4Lean.Flocq.Core
+open CompCert4Lean.Flocq.IEEE754
+
+private theorem pg_zadd_comm (a b : Z) : Zadd a b = Zadd b a := by
+  apply _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective
+  simp only [Zadd,
+    _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add,
+    _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+  omega
+
+theorem Bmult_commut :
+    ∀ {prec emax : Z} [pgt : Prec_gt_0 prec]
+      [ple : Prec_lt_emax prec emax],
+      Bmult_commutStatement (prec := prec) (emax := emax) := by
+  intro prec emax pgt ple mult_nan m x y hnan
+  rcases x with ⟨x, hx⟩
+  rcases y with ⟨y, hy⟩
+  unfold CompCert4Lean.Flocq.IEEE754.Binary.Bmult
+  have hnan' := congrArg (fun z : NaNResult prec emax =>
+      (⟨z.val, z.property.1⟩ :
+        { z : CompCert4Lean.Flocq.IEEE754.Binary.binary_float prec emax //
+            CompCert4Lean.Flocq.IEEE754.Binary.is_nan z = true })) hnan
+  rw [hnan']
+  unfold BinarySingleNaN.Bmult
+  cases x <;> cases y <;> simp [CompCert4Lean.Flocq.IEEE754.BinarySingleNaN.B2SF,
+    CompCert4Lean.Flocq.IEEE754.Binary.B2BSN,
+    CompCert4Lean.Flocq.IEEE754.Binary.BSN2B,
+    _root_.CompCert4Lean.Foundation.Logic.Rocq.Coq.Bool.Bool.xorb_comm,
+    _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.PArith.BinPos.Pos.mul_comm,
+    pg_zadd_comm] <;>
+    rw [_root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.PArith.BinPos.Pos.mul_comm]
+
+end CompCert4Lean.Lib.IEEE754_extra

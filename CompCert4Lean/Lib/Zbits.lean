@@ -1613,3 +1613,7 @@ theorem Z_one_bits_range : Z_one_bits_rangeStatement := by
     rw [zb_zOfNat_int]
     rw [hzero] at hr
     omega
+
+theorem Zshiftl_mul_two_p : Zshiftl_mul_two_pStatement := by
+  intro x n hn
+  exact CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.shiftl_mul_pow2 x n hn

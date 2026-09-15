@@ -3471,3 +3471,45 @@ theorem bitfield_insert_alternative_proof : bitfield_insert_alternative := by
   rw [zero_ext_and_proof width p hwidth]
   exact congrArg (fun q => or q (and n (not mask)))
     (suffix_shl_and p (repr (zSub (zTwoP width) zOne)) (repr pos))
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+private theorem suffix_zshiftr_div_any (x y : Z) (hy : zLe zZero y) :
+    zShiftr x y = zDiv x (zTwoP y) := by
+  change 0 ≤ intOfZ y at hy
+  have hpow : intOfZ (zTwoP y) =
+      Int.pow 2 (Int.toNat (intOfZ y)) := by
+    unfold zTwoP two_p CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.Zpower.two_p
+    change intOfZ (if intOfZ y < 0 then Numbers.BinNums.Z.Z0 else
+      zOfInt (Int.pow 2 (Int.toNat (intOfZ y)))) = _
+    rw [if_neg (by omega)]
+    rw [intOfZ_zOfInt]
+  apply intOfZ_injective
+  simp [zShiftr, zDiv,
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.shiftr,
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.div, hy]
+  rw [intOfZ_zOfInt, intOfZ_zOfInt, hpow]
+  change Int.ediv (intOfZ x) (Int.pow 2 (Int.toNat (intOfZ y))) =
+    (if Int.pow 2 (Int.toNat (intOfZ y)) = 0 then 0
+      else if 0 < Int.pow 2 (Int.toNat (intOfZ y)) then
+        Int.ediv (intOfZ x) (Int.pow 2 (Int.toNat (intOfZ y)))
+      else
+        let d := -(Int.pow 2 (Int.toNat (intOfZ y)))
+        let q := Int.ediv (intOfZ x) d
+        let r := Int.emod (intOfZ x) d
+        if r = 0 then -q else -(q + 1))
+  have hp : 0 < Int.pow 2 (Int.toNat (intOfZ y)) := by
+    exact Int.pow_pos (by omega)
+  simp [hp, Int.ne_of_gt hp]
+
+theorem shr_div_two_p_proof : shr_div_two_p := by
+  intro x y
+  change WordCore.repr wordsize
+      (zShiftr (signed x) (unsigned y)) =
+    WordCore.repr wordsize (zDiv (signed x) (zTwoP (unsigned y)))
+  have hy : zLe zZero (unsigned y) := by
+    have h := y.intrange.1
+    change (-1 : Int) < intOfZ y.intval at h
+    change 0 ≤ intOfZ y.intval
+    omega
+  rw [suffix_zshiftr_div_any (signed x) (unsigned y) hy]

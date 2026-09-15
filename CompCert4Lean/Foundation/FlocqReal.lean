@@ -3135,3 +3135,150 @@ theorem Rinv_lt_contravar :
 end RIneq
 end Rocq.Coq.Reals
 end CompCert4Lean.Foundation.FlocqReal
+
+namespace CompCert4Lean.Foundation.FlocqReal
+namespace Rocq.Coq.Reals
+namespace RIneq
+
+private theorem flocqReal_zero_lt_one (ctx : ExactRealContext) :
+    ctx.spec.lt ctx.spec.zero ctx.spec.one := by
+  have hz : ctx.spec.lt ctx.spec.zero (ctx.spec.ofZ (ctx.spec.up ctx.spec.zero)) := by
+    simpa [ExactReal.R0] using ctx.certificate.sourceLaws.up_gt ctx.spec.zero
+  have hg := ctx.certificate.sourceLaws.up_gap ctx.spec.zero
+  have hneg0 : ctx.spec.neg ctx.spec.zero = ctx.spec.zero := by
+    calc
+      ctx.spec.neg ctx.spec.zero =
+          ctx.spec.add (ctx.spec.neg ctx.spec.zero) ctx.spec.zero :=
+        (ctx.certificate.orderedField.add_zero _).symm
+      _ = ctx.spec.zero := ctx.certificate.orderedField.neg_add_cancel _
+  have hz0 : ctx.spec.add (ctx.spec.ofZ (ctx.spec.up ctx.spec.zero))
+      (ctx.spec.neg ctx.spec.zero) = ctx.spec.ofZ (ctx.spec.up ctx.spec.zero) := by
+    rw [hneg0, ctx.certificate.orderedField.add_zero]
+  have hg' : ctx.spec.le (ctx.spec.ofZ (ctx.spec.up ctx.spec.zero)) ctx.spec.one := by
+    rw [← hz0, ← ctx.certificate.sourceLaws.ofZ_one]
+    exact hg
+  apply (ctx.certificate.orderedField.lt_iff_le_not_le _ _).mpr
+  constructor
+  · have hzle := (ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp hz
+    exact ctx.certificate.orderedField.le_trans _ _ _ hzle.1 hg'
+  · intro h10
+    have hzle := (ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp hz
+    exact hzle.2 (ctx.certificate.orderedField.le_trans _ _ _ hg' h10)
+
+theorem Rlt_0_2 :
+    ∀ (ctx : ExactRealContext), Rlt_0_2Statement ctx := by
+  intro ctx
+  change ctx.spec.lt (ctx.spec.ofZ Z0)
+    (ctx.spec.ofZ (Zpos (xO xH)))
+  have hZ : Z.add (Zpos xH) (Zpos xH) = Zpos (xO xH) := by
+    apply _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective
+    simp only [_root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add]
+    rw [_root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+    change (1 : Int) + 1 = Int.ofNat
+      (_root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat (xO xH))
+    simp [Numbers.Rocq.Coq.posToNat]
+  rw [ctx.certificate.sourceLaws.ofZ_zero, ← hZ,
+    ctx.certificate.sourceLaws.ofZ_add,
+    ctx.certificate.sourceLaws.ofZ_one]
+  have h01 := flocqReal_zero_lt_one ctx
+  have h11 := ctx.certificate.orderedField.add_lt_compat_l
+    ctx.spec.one ctx.spec.zero ctx.spec.one h01
+  rw [ctx.certificate.orderedField.add_zero] at h11
+  exact ctx.certificate.orderedField.lt_trans _ _ _ h01 h11
+
+private theorem flocqReal_zof_nat_succ (n : Nat) :
+    Z.of_nat (Nat.succ n) = Z.add (Z.of_nat n) (Zpos xH) := by
+  apply _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective
+  change _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+      (_root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt (Int.ofNat (Nat.succ n))) =
+    _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+      (_root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt
+        (_root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+          (_root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt (Int.ofNat n)) +
+          _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (Zpos xH)))
+  simp only [_root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+  change Int.ofNat (Nat.succ n) =
+    Int.ofNat n + _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (Zpos xH)
+  simp [Numbers.Rocq.Coq.intOfZ, Numbers.Rocq.Coq.posToNat]
+
+theorem S_INR :
+    ∀ (ctx : ExactRealContext), S_INRStatement ctx := by
+  intro ctx n
+  change ctx.spec.ofZ (Z.of_nat (Nat.succ n)) =
+    ctx.spec.add (ctx.spec.ofZ (Z.of_nat n))
+      (ctx.spec.ofZ (Zpos xH))
+  rw [flocqReal_zof_nat_succ]
+  exact ctx.certificate.sourceLaws.ofZ_add _ _
+
+private theorem flocqReal_zof_nat_zero : Z.of_nat 0 = Z0 := by
+  rfl
+
+theorem lt_0_INR :
+    ∀ (ctx : ExactRealContext), lt_0_INRStatement ctx := by
+  intro ctx n
+  induction n with
+  | zero =>
+      intro hn
+      change 0 < 0 at hn
+      exact (Nat.lt_irrefl 0 hn).elim
+  | succ n ih =>
+      intro hn
+      change ctx.spec.lt (ctx.spec.ofZ Z0)
+        (ctx.spec.ofZ (Z.of_nat (Nat.succ n)))
+      rw [flocqReal_zof_nat_succ,
+        ctx.certificate.sourceLaws.ofZ_add,
+        ctx.certificate.sourceLaws.ofZ_zero,
+        ctx.certificate.sourceLaws.ofZ_one]
+      by_cases hnzero : n = 0
+      · subst n
+        rw [flocqReal_zof_nat_zero,
+          ctx.certificate.sourceLaws.ofZ_zero,
+          ctx.certificate.orderedField.zero_add]
+        exact flocqReal_zero_lt_one ctx
+      · have hnpos : 0 < n := Nat.pos_of_ne_zero hnzero
+        have hin := ih hnpos
+        have hin' : ctx.spec.lt ctx.spec.zero
+            (ctx.spec.ofZ (Z.of_nat n)) := by
+          rw [← ctx.certificate.sourceLaws.ofZ_zero]
+          exact hin
+        have hstep := ctx.certificate.orderedField.add_lt_compat_l
+          (ctx.spec.ofZ (Z.of_nat n)) ctx.spec.zero ctx.spec.one
+          (flocqReal_zero_lt_one ctx)
+        rw [ctx.certificate.orderedField.add_zero] at hstep
+        exact ctx.certificate.orderedField.lt_trans _ _ _ hin' hstep
+
+theorem lt_INR :
+    ∀ (ctx : ExactRealContext), lt_INRStatement ctx := by
+  intro ctx n
+  induction n with
+  | zero =>
+      intro m hnm
+      exact lt_0_INR ctx m hnm
+  | succ n ih =>
+      intro m hnm
+      cases m with
+      | zero =>
+          exfalso
+          change Nat.succ n < 0 at hnm
+          omega
+      | succ m =>
+          have hnm' : n < m := Nat.succ_lt_succ_iff.mp hnm
+          have hin := ih m hnm'
+          change ctx.spec.lt (ctx.spec.ofZ (Z.of_nat (Nat.succ n)))
+            (ctx.spec.ofZ (Z.of_nat (Nat.succ m)))
+          rw [flocqReal_zof_nat_succ, flocqReal_zof_nat_succ,
+            ctx.certificate.sourceLaws.ofZ_add,
+            ctx.certificate.sourceLaws.ofZ_add,
+            ctx.certificate.sourceLaws.ofZ_one]
+          have hres := Rplus_lt_compat_r ctx (ctx.spec.ofZ (Zpos xH))
+            (ctx.spec.ofZ (Z.of_nat n))
+            (ctx.spec.ofZ (Z.of_nat m)) hin
+          rw [ctx.certificate.sourceLaws.ofZ_one] at hres
+          change ctx.spec.lt
+            (ctx.spec.add (ctx.spec.ofZ (Z.of_nat n)) ctx.spec.one)
+            (ctx.spec.add (ctx.spec.ofZ (Z.of_nat m)) ctx.spec.one) at hres
+          exact hres
+
+end RIneq
+end Rocq.Coq.Reals
+end CompCert4Lean.Foundation.FlocqReal

@@ -3347,3 +3347,36 @@ theorem build_compilenv_sound : build_compilenv_soundStatement := by
       (Permutation_in (id2, sz2') hsort h2) hg1 hg2 hne
 
 end CompCert4Lean.Cfrontend.Cminorgenproof
+
+namespace CompCert4Lean.Cfrontend.Cminorgenproof
+
+open CompCert4Lean.Lib.Maps
+
+theorem create_undef_temps_val : create_undef_temps_valStatement := by
+  intro id v temps
+  induction temps with
+  | nil =>
+      intro h
+      change PTree.get id (PTree.empty val) = some v at h
+      have hempty : PTree.get id (PTree.empty val) = none := PTree.gempty val id
+      rw [hempty] at h
+      cases h
+  | cons hd tl ih =>
+      intro h
+      change PTree.get id (PTree.set hd .Vundef (CS.create_undef_temps tl)) = some v at h
+      have hget := CompCert4Lean.Lib.Maps.PTree.gsspec_proof
+        (A := val) id hd .Vundef (CS.create_undef_temps tl)
+      rw [hget] at h
+      cases hp : CompCert4Lean.Lib.Coqlib.peq id hd with
+      | left heq =>
+          subst id
+          simp [hp] at h
+          exact ⟨CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.List.in_eq hd tl,
+            h.symm⟩
+      | right hne =>
+          have htail : PTree.get id (CS.create_undef_temps tl) = some v := by
+            simpa [hp] using h
+          rcases ih htail with ⟨hin, hv⟩
+          exact ⟨CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.List.in_cons hd id tl hin, hv⟩
+
+end CompCert4Lean.Cfrontend.Cminorgenproof

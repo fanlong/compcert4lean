@@ -2338,3 +2338,38 @@ theorem step_make_assign :
       · exact CompCert4Lean.Common.Events.volatile_store_sem_intro _ _ _ _ _ _ hstore
 
 end CompCert4Lean.Cfrontend.SimplExprproof
+
+namespace CompCert4Lean.Cfrontend.SimplExprproof
+
+open CompCert4Lean.Cfrontend.SimplExpr
+open CompCert4Lean.Common.Smallstep
+open CompCert4Lean.Common.Events
+
+theorem push_seq :
+    ∀ [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+      [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)],
+      push_seqStatement := by
+  intro binary64_certificate binary32_certificate
+  intro xi tp f sl k e le m
+  have aux :
+      ∀ (seed : Clight.statement) (sl : List Clight.statement) (k : Clight.cont),
+        star (Clight.step1 xi) (Clight.globalenv tp)
+          (Clight.State f (SimplExpr.makeseq_rec seed sl) k e le m) E0
+          (Clight.State f seed (Kseqlist sl k) e le m) := by
+    intro seed sl
+    revert seed
+    induction sl with
+    | nil =>
+        intro seed k
+        apply star_refl
+    | cons s rest ih =>
+        intro seed k
+        simp only [SimplExpr.makeseq_rec, Kseqlist]
+        refine @CompCert4Lean.Common.Smallstep.star_right _ _ _ _ _ E0
+          (Clight.State f (.Ssequence seed s) (Kseqlist rest k) e le m) E0 _ E0 ?_ ?_ ?_
+        · exact ih (.Ssequence seed s) k
+        · exact Clight.step.step_seq f seed s (Kseqlist rest k) e le m
+        · rfl
+  simpa [SimplExpr.makeseq] using aux Clight.Sskip sl k
+      
+end CompCert4Lean.Cfrontend.SimplExprproof
