@@ -3614,3 +3614,13 @@ theorem pred_ge_gt :
     exact hn'
 
 end CompCert4Lean.Flocq.Core.Ulp
+
+namespace CompCert4Lean.Flocq.Core.Ulp
+
+theorem succ_pred_pos :
+    ∀ (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx),
+      succ_pred_posStatement ctx magnitude := by
+  intro ctx magnitude
+  exact pg_pred_ge_gt_succ_pred_pos ctx magnitude
+
+end CompCert4Lean.Flocq.Core.Ulp
