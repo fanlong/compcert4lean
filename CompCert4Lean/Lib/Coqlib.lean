@@ -1511,3 +1511,22 @@ theorem pred_dec_true : pred_dec_trueStatement := by
   | right hnotP => exact False.elim (hnotP hP)
 
 end CompCert4Lean.Lib.Coqlib
+
+namespace CompCert4Lean.Lib.Coqlib
+
+theorem pred_dec_false : pred_dec_falseStatement := by
+  intro P dec A a b hnotP
+  cases h : dec with
+  | left hP => exact False.elim (hnotP hP)
+  | right hnotP' => rfl
+
+theorem wf_lex_ord : wf_lex_ordStatement := by
+  intro A B ordA ordB hA hB
+  apply Subrelation.wf (r := Prod.Lex ordA ordB)
+  · intro a b h
+    cases h with
+    | left a1 b1 a2 b2 hab => exact Prod.Lex.left b1 b2 hab
+    | right a b1 b2 hbb => exact Prod.Lex.right a hbb
+  · exact (Prod.lex { rel := ordA, wf := hA } { rel := ordB, wf := hB }).wf
+
+end CompCert4Lean.Lib.Coqlib
