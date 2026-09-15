@@ -2896,3 +2896,13 @@ theorem align_unchanged : align_unchangedStatement := by
   exact Int.mul_comm _ _
 
 end CompCert4Lean.Backend.Inliningproof
+
+namespace CompCert4Lean.Backend.Inliningproof
+
+theorem tr_funbody_inv : tr_funbody_invStatement := by
+  intro fenv sz ctx f c pc i hbody hget
+  cases hbody with
+  | tr_funbody_intro ctx f c hparams hinstr hstk hdiv hnonneg hsize =>
+      exact hinstr pc i hget
+
+end CompCert4Lean.Backend.Inliningproof
