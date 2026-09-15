@@ -1864,3 +1864,68 @@ theorem E0_left_inf : E0_left_infStatement := by
   rfl
 
 end CompCert4Lean.Common.Events
+
+namespace CompCert4Lean.Common.Events
+
+theorem Eappinf_assoc : Eappinf_assocStatement := by
+  intro t1 t2 T
+  induction t1 with
+  | nil => rfl
+  | cons e t1 ih =>
+      exact congrArg (Econsinf e) ih
+
+end CompCert4Lean.Common.Events
+
+namespace CompCert4Lean.Common.Events
+
+theorem unroll_traceinf' : unroll_traceinf'Statement := by
+  intro T
+  cases T with
+  | mk chunk nonempty =>
+      apply (traceinf'.mk.injEq chunk nonempty _ _).mpr
+      funext n
+      cases n <;> rfl
+
+end CompCert4Lean.Common.Events
+
+namespace CompCert4Lean.Common.Events
+
+theorem traceinf_traceinf'_app : traceinf_traceinf'_appStatement := by
+  intro t T NE
+  funext n
+  induction t generalizing n with
+  | nil => exact False.elim (NE rfl)
+  | cons e t ih =>
+      cases t with
+      | nil =>
+          cases n with
+          | zero => rfl
+          | succ n => rfl
+      | cons e' t =>
+          cases n with
+          | zero => rfl
+          | succ n =>
+              exact ih (by intro h; cases h) n
+
+end CompCert4Lean.Common.Events
+
+namespace CompCert4Lean.Common.Events
+
+theorem match_traces_preserved : match_traces_preservedStatement := by
+  intro ge1 ge2 hp t1 t2 h
+  induction h with
+  | match_traces_E0 => exact match_traces_E0
+  | match_traces_syscall id args res1 res2 valid1 valid2 same_type =>
+      exact match_traces_syscall id args res1 res2
+        (eventval_valid_preserved ge1 ge2 hp res1 valid1)
+        (eventval_valid_preserved ge1 ge2 hp res2 valid2) same_type
+  | match_traces_vload chunk id ofs res1 res2 valid1 valid2 same_type =>
+      exact match_traces_vload chunk id ofs res1 res2
+        (eventval_valid_preserved ge1 ge2 hp res1 valid1)
+        (eventval_valid_preserved ge1 ge2 hp res2 valid2) same_type
+  | match_traces_vstore chunk id ofs arg =>
+      exact match_traces_vstore chunk id ofs arg
+  | match_traces_annot id args =>
+      exact match_traces_annot id args
+
+end CompCert4Lean.Common.Events
