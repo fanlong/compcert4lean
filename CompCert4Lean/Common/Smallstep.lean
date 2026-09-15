@@ -3082,3 +3082,36 @@ theorem forward_to_backward_simulation : forward_to_backward_simulationStatement
       · exact props.fsim_public_preserved
 
 end CompCert4Lean.Common.Smallstep
+
+namespace CompCert4Lean.Common.Smallstep
+
+open CompCert4Lean.Common.Events
+
+theorem star_non_E0_split' : star_non_E0_split'Statement := by
+  intro L2 hsingle s2 t s2' hstar
+  induction hstar with
+  | star_refl s =>
+      simp [E0]
+  | @star_step s1 t1 s2 t2 s3 t hstep htail htrace ih =>
+      have hlen : t1.length ≤ 1 := hsingle s1 t1 s2 hstep
+      cases t1 with
+      | nil =>
+          cases t2 with
+          | nil =>
+              subst t
+              simp [E0, Eapp]
+          | cons ev t2 =>
+              subst t
+              rcases ih with ⟨s2x, hplus, hstarx⟩
+              exact ⟨s2x,
+                plus_left s1 E0 hstep (plus_star _ _ _ _ s2 [ev] s2x hplus) rfl,
+                hstarx⟩
+      | cons ev t1 =>
+          cases t1 with
+          | nil =>
+              subst t
+              exact ⟨s2, plus_one _ _ _ _ s1 [ev] s2 hstep, htail⟩
+          | cons ev' t1 =>
+              simp at hlen
+
+end CompCert4Lean.Common.Smallstep

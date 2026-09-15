@@ -3282,3 +3282,22 @@ theorem lt_INR :
 end RIneq
 end Rocq.Coq.Reals
 end CompCert4Lean.Foundation.FlocqReal
+
+namespace CompCert4Lean.Foundation.FlocqReal
+namespace Rocq.Coq.Reals
+namespace RIneq
+
+theorem INR_lt :
+    ∀ (ctx : ExactRealContext), INR_ltStatement ctx := by
+  intro ctx n m hnm
+  rcases Nat.lt_trichotomy n m with hlt | heq | hgt
+  · exact hlt
+  · subst m
+    exact (ctx.certificate.orderedField.lt_irrefl _ hnm).elim
+  · have hmn := lt_INR ctx m n hgt
+    exact (ctx.certificate.orderedField.lt_irrefl _
+      (ctx.certificate.orderedField.lt_trans _ _ _ hnm hmn)).elim
+
+end RIneq
+end Rocq.Coq.Reals
+end CompCert4Lean.Foundation.FlocqReal

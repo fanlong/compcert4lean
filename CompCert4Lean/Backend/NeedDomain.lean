@@ -3316,3 +3316,100 @@ theorem lagree_shl : lagree_shlStatement := by
     exact hmask
 
 end CompCert4Lean.Backend.NeedDomain
+
+namespace CompCert4Lean.Backend.NeedDomain
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Lib.Integers
+
+private theorem lagreeBitsAboveFinal (a : Int64.int) (k : Z)
+    (hk : ZArith.BinInt.Z.le Int64.zwordsize k) :
+    Int64.testbit a k = false := by
+  cases k with
+  | Zneg p =>
+      exfalso
+      have h := hk
+      have h64 : (0 : Int) < Int.ofNat 64 := by decide
+      change (Int.ofNat 64 : Int) ≤ -(Int.ofNat (posToNat p)) at h
+      have hp' : (0 : Int) < Int.ofNat (posToNat p) :=
+        Int.natCast_pos.mpr (lagreePosToNatPosFinal p)
+      omega
+  | Z0 =>
+      exfalso
+      have h := hk
+      have h64 : (0 : Int) < Int.ofNat 64 := by decide
+      change (Int.ofNat 64 : Int) ≤ 0 at h
+      omega
+  | Zpos p =>
+      rw [lagreeTestbitPos]
+      have h := hk
+      change (Int.ofNat 64 : Int) ≤ Int.ofNat (posToNat p) at h
+      have hk' : 64 ≤ posToNat p := Int.ofNat_le.mp h
+      have hpow : 2 ^ Int64.wordsize ≤ 2 ^ posToNat p := by
+        exact Nat.pow_le_pow_right (by decide) hk'
+      exact Nat.testBit_lt_two_pow
+        (Nat.lt_of_lt_of_le (lagreeWordValLt a) hpow)
+
+theorem lagree_shru : lagree_shruStatement := by
+  intro x y m n h i hirange hmask
+  have hnnonneg : 0 ≤ intOfZ (Int.unsigned n) := by
+    have hnrange := n.intrange.1
+    change (-1 : Int) < intOfZ (Int.unsigned n) at hnrange
+    omega
+  by_cases hlt : ZArith.BinInt.Z.lt
+      (ZArith.BinInt.Z.add i (Int.unsigned n)) Int64.zwordsize
+  · have hkrange :
+        ZArith.BinInt.Z.le z0
+            (ZArith.BinInt.Z.add i (Int.unsigned n)) ∧
+        ZArith.BinInt.Z.lt
+            (ZArith.BinInt.Z.add i (Int.unsigned n)) Int64.zwordsize := by
+      constructor
+      · change 0 ≤ intOfZ (ZArith.BinInt.Z.add i (Int.unsigned n))
+        have hi0 := hirange.1
+        change 0 ≤ intOfZ i at hi0
+        simp only [ZArith.BinInt.Z.add, intOfZ_zOfInt]
+        omega
+      · exact hlt
+    have hknlt : ¬ ZArith.BinInt.Z.lt
+        (ZArith.BinInt.Z.add i (Int.unsigned n)) (Int.unsigned n) := by
+      intro hbad
+      have hi0 := hirange.1
+      change 0 ≤ intOfZ i at hi0
+      change intOfZ (ZArith.BinInt.Z.add i (Int.unsigned n)) <
+        intOfZ (Int.unsigned n) at hbad
+      simp only [ZArith.BinInt.Z.add, intOfZ_zOfInt] at hbad
+      omega
+    have hsub : ZArith.BinInt.Z.sub
+        (ZArith.BinInt.Z.add i (Int.unsigned n)) (Int.unsigned n) = i := by
+      apply intOfZ_injective
+      simp only [ZArith.BinInt.Z.add, ZArith.BinInt.Z.sub,
+        intOfZ_zOfInt]
+      omega
+    have hmask' : Int64.testbit (Int64.shl' m n)
+        (ZArith.BinInt.Z.add i (Int.unsigned n)) = true := by
+      rw [lagreeShlTestbitHighFinal m n
+        (ZArith.BinInt.Z.add i (Int.unsigned n)) hkrange hknlt, hsub]
+      exact hmask
+    have hxy := h (ZArith.BinInt.Z.add i (Int.unsigned n)) hkrange hmask'
+    rw [lagreeShruTestbitFinal x n i hirange,
+      lagreeShruTestbitFinal y n i hirange]
+    exact hxy
+  · have hkabove : ZArith.BinInt.Z.le Int64.zwordsize
+        (ZArith.BinInt.Z.add i (Int.unsigned n)) := by
+      change intOfZ Int64.zwordsize ≤
+        intOfZ (ZArith.BinInt.Z.add i (Int.unsigned n))
+      have hnot := hlt
+      change ¬ intOfZ (ZArith.BinInt.Z.add i (Int.unsigned n)) <
+        intOfZ Int64.zwordsize at hnot
+      have hwsize : intOfZ Int64.zwordsize = Int.ofNat 64 := by
+        change intOfZ (ZArith.BinInt.Z.of_nat 64) = Int.ofNat 64
+        rw [ZArith.BinInt.Z.of_nat, intOfZ_zOfInt]
+      rw [hwsize] at hnot ⊢
+      simp only [ZArith.BinInt.Z.add, intOfZ_zOfInt] at hnot ⊢
+      omega
+    rw [lagreeShruTestbitFinal x n i hirange,
+      lagreeShruTestbitFinal y n i hirange,
+      lagreeBitsAboveFinal x _ hkabove,
+      lagreeBitsAboveFinal y _ hkabove]
+
+end CompCert4Lean.Backend.NeedDomain

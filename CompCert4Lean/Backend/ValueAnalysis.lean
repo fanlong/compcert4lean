@@ -1979,3 +1979,135 @@ theorem initial_block_classification : initial_block_classificationStatement := 
   exact ⟨bc, hgenv, hbelow, hnostack, hglob, hvalid⟩
 
 end CompCert4Lean.Backend.ValueAnalysis
+
+namespace CompCert4Lean.Backend.ValueAnalysis
+
+open CompCert4Lean.Backend.ValueDomain
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Lib.Maps
+
+private theorem pg_loadbytes_store_other_block
+    (chunk : memory_chunk) (m : mem) (b : block) (ofs : Z) (v : val)
+    (m' : mem) (hstore : Mem.store chunk m b ofs v = some m')
+    (b' : block) (hne : b' ≠ b) (ofs' n : Z) :
+    Mem.loadbytes m' b' ofs' n = Mem.loadbytes m b' ofs' n := by
+  have hcontents : PMap.get b' m'.mem_contents = PMap.get b' m.mem_contents := by
+    rw [Mem.store_mem_contents chunk m b ofs v m' hstore]
+    exact PMap.gso
+      (A := CompCert4Lean.Lib.Maps.ZMap.t memval)
+      (i := b') (j := b)
+      (Mem.setN (encode_val chunk v) ofs (PMap.get b m.mem_contents))
+      m.mem_contents hne
+  unfold Mem.loadbytes
+  cases hm : Mem.range_perm_dec m b' ofs' (zAdd ofs' n) Cur Readable with
+  | left hrange =>
+      have hrange' : Mem.range_perm m' b' ofs' (zAdd ofs' n) Cur Readable := by
+        intro q hq
+        exact Mem.perm_store_1 chunk m b ofs v m' hstore b' q Cur Readable
+          (hrange q hq)
+      cases hm' : Mem.range_perm_dec m' b' ofs' (zAdd ofs' n) Cur Readable with
+      | left _ => rw [hcontents]; rfl
+      | right hn => exact False.elim (hn hrange')
+  | right hnrange =>
+      have hnrange' : ¬ Mem.range_perm m' b' ofs' (zAdd ofs' n) Cur Readable := by
+        intro hrange'
+        apply hnrange
+        intro q hq
+        exact Mem.perm_store_2 chunk m b ofs v m' hstore b' q Cur Readable
+          (hrange' q hq)
+      cases hm' : Mem.range_perm_dec m' b' ofs' (zAdd ofs' n) Cur Readable with
+      | left hrange' => exact False.elim (hnrange' hrange')
+      | right _ => rfl
+
+private theorem pg_bmatch_store_other
+    (bc : block_classification) (chunk : memory_chunk) (m : mem)
+    (b : block) (ofs : Z) (v : val) (m' : mem)
+    (hstore : Mem.store chunk m b ofs v = some m')
+    (b' : block) (hne : b' ≠ b) (ab : ablock)
+    (hmatch : bmatch bc m b' ab) : bmatch bc m' b' ab := by
+  rcases hmatch with ⟨⟨hload, hfragment⟩, habload⟩
+  refine ⟨⟨?_, ?_⟩, ?_⟩
+  · intro chunk' ofs' v' hload'
+    apply hload chunk' ofs' v'
+    have heq := Mem.load_store_other chunk m b ofs v m' hstore chunk' b' ofs'
+      (Or.inl hne)
+    rw [heq] at hload'
+    exact hload'
+  · intro ofs' bx bxofs q i hloadbytes
+    apply hfragment ofs' bx bxofs q i
+    rw [pg_loadbytes_store_other_block chunk m b ofs v m' hstore b' hne]
+      at hloadbytes
+    exact hloadbytes
+  · intro chunk' ofs' v' hload'
+    apply habload chunk' ofs' v'
+    have heq := Mem.load_store_other chunk m b ofs v m' hstore chunk' b' ofs'
+      (Or.inl hne)
+    rw [heq] at hload'
+    exact hload'
+
+theorem store_init_data_other : store_init_data_otherStatement := by
+  intro prog bc m b p id m' ab b' hstore hne hmatch
+  cases id with
+  | Init_int8 n =>
+      exact pg_bmatch_store_other bc Mint8unsigned m b p (Vint n) m'
+        hstore b' hne ab hmatch
+  | Init_int16 n =>
+      exact pg_bmatch_store_other bc Mint16unsigned m b p (Vint n) m'
+        hstore b' hne ab hmatch
+  | Init_int32 n =>
+      exact pg_bmatch_store_other bc Mint32 m b p (Vint n) m'
+        hstore b' hne ab hmatch
+  | Init_int64 n =>
+      exact pg_bmatch_store_other bc Mint64 m b p (Vlong n) m'
+        hstore b' hne ab hmatch
+  | Init_float32 n =>
+      exact pg_bmatch_store_other bc Mfloat32 m b p (Vsingle n) m'
+        hstore b' hne ab hmatch
+  | Init_float64 n =>
+      exact pg_bmatch_store_other bc Mfloat64 m b p (Vfloat n) m'
+        hstore b' hne ab hmatch
+  | Init_addrof id ofs =>
+      change (match Genv.find_symbol (Genv.globalenv prog) id with
+        | none => none
+        | some bx => Mem.store Mptr m b p (Vptr bx ofs)) = some m' at hstore
+      cases hfind : Genv.find_symbol (Genv.globalenv prog) id with
+      | none => simp [hfind] at hstore
+      | some bx =>
+          simp [hfind] at hstore
+          exact pg_bmatch_store_other bc Mptr m b p (Vptr bx ofs) m'
+            hstore b' hne ab hmatch
+  | Init_space n =>
+      change some m = some m' at hstore
+      cases hstore
+      exact hmatch
+
+theorem store_init_data_list_other : store_init_data_list_otherStatement := by
+  intro prog bc b b' ab idl
+  induction idl with
+  | nil =>
+      intro m p m' hstore hne hmatch
+      change some m = some m' at hstore
+      cases hstore
+      exact hmatch
+  | cons id ids ih =>
+      intro m p m' hstore hne hmatch
+      change (match Genv.store_init_data (Genv.globalenv prog) m b p id with
+        | none => none
+        | some m1 => Genv.store_init_data_list (Genv.globalenv prog) m1 b
+            (zAdd p (init_data_size id)) ids) = some m' at hstore
+      cases hhead : Genv.store_init_data (Genv.globalenv prog) m b p id with
+      | none => simp [hhead] at hstore
+      | some m1 =>
+          have htail : Genv.store_init_data_list (Genv.globalenv prog) m1 b
+              (zAdd p (init_data_size id)) ids = some m' := by
+            simpa [hhead] using hstore
+          apply ih m1 (zAdd p (init_data_size id)) m' htail hne
+          exact store_init_data_other prog bc m b p id m1 ab b' hhead hne hmatch
+
+end CompCert4Lean.Backend.ValueAnalysis

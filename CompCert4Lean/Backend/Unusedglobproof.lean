@@ -2427,3 +2427,31 @@ theorem eval_builtin_args_inject : eval_builtin_args_injectStatement := by
         Val.inject_list_cons j v v' vl vl' hinj hinjtail⟩
 
 end CompCert4Lean.Backend.Unusedglobproof
+
+namespace CompCert4Lean.Backend.Unusedglobproof
+
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Backend.Unusedglob
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Lib.Maps
+
+theorem init_meminj_invert_strong : init_meminj_invert_strongStatement := by
+  intro p tp used hvalid hmatch b b' delta hmap
+  rcases init_meminj_invert p tp b b' delta hmap with
+    ⟨hdelta, id, hfind, hfind'⟩
+  have hdom : id ∈ prog_defs_names p :=
+    Genv.find_symbol_inversion (F := RTL.fundef) (V := Unit)
+      (p := p) (x := id) (b := b) hfind
+  rcases prog_defmap_dom (F := RTL.fundef) (V := Unit) p id hdom with
+    ⟨gd, hget⟩
+  rcases (Genv.find_def_symbol (F := RTL.fundef) (V := Unit)
+      (p := p) (id := id) (g := gd)).mp hget with
+    ⟨b'', hfind'', hdef⟩
+  have hb : b = b'' := Option.some.inj (hfind.symm.trans hfind'')
+  subst b''
+  rcases (init_meminj_preserves_globals p tp used hvalid hmatch).defs_inject
+      b b' delta gd hmap hdef with ⟨hdef', _, hrefs⟩
+  exact ⟨hdelta, id, gd, hfind, hfind', hdef, hdef', hrefs⟩
+
+end CompCert4Lean.Backend.Unusedglobproof

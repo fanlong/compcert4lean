@@ -1907,3 +1907,703 @@ theorem free_parallel_rule : free_parallel_ruleStatement := by
 theorem globalenv_inject_obligation_1 : globalenv_inject_obligation_1Statement := by
   intro F V ge j m m' hpred hunch
   exact (globalenv_inject ge j).m_invar m m' hpred hunch
+
+private theorem scc085_alloc_fresh (m : mem) (lo hi : Z) (m' : mem) (b : block)
+    (h : Mem.alloc m lo hi = (m', b)) : b = m.nextblock := by
+  unfold Mem.alloc at h
+  cases h
+  rfl
+
+private theorem scc085_alloc_nextblock (m : mem) (lo hi : Z) (m' : mem) (b : block)
+    (h : Mem.alloc m lo hi = (m', b)) :
+    m'.nextblock = PArith.BinPos.Pos.succ m.nextblock := by
+  unfold Mem.alloc at h
+  cases h
+  rfl
+
+private theorem scc085_alloc_unchanged_on (Q : block → Z → Prop)
+    (m : mem) (lo hi : Z) (m' : mem) (b : block)
+    (h : Mem.alloc m lo hi = (m', b)) : Mem.unchanged_on Q m m' := by
+  unfold Mem.alloc at h
+  cases h
+  constructor
+  · exact Ple_succ _
+  · intro b' ofs k p hQ hvalid
+    have hne : b' ≠ m.nextblock := Plt_ne _ _ hvalid
+    unfold Mem.perm
+    rw [scc085_pmap_get_set_other _ _ _ _ hne]
+  · intro b' ofs hQ hread
+    have hne : b' ≠ m.nextblock :=
+      Plt_ne _ _ (Mem.perm_valid_block m b' ofs Cur Readable hread)
+    rw [scc085_pmap_get_set_other _ _ _ _ hne]
+
+private theorem scc085_alloc_perm_new (m : mem) (lo hi : Z) (m' : mem) (b : block)
+    (h : Mem.alloc m lo hi = (m', b)) (ofs : Z) (k : perm_kind)
+    (hbounds : zLe lo ofs ∧ zLt ofs hi) : Mem.perm m' b ofs k Freeable := by
+  unfold Mem.alloc at h
+  cases h
+  unfold Mem.perm
+  rw [scc085_pmap_get_set_same]
+  change Mem.perm_order'
+    (if (ZArith.BinInt.Z.leb lo ofs && ZArith.BinInt.Z.ltb ofs hi) = true
+      then some Freeable else none) Freeable
+  have hin : (ZArith.BinInt.Z.leb lo ofs && ZArith.BinInt.Z.ltb ofs hi) = true := by
+    change intOfZ lo ≤ intOfZ ofs ∧ intOfZ ofs < intOfZ hi at hbounds
+    simpa [ZArith.BinInt.Z.leb, ZArith.BinInt.Z.ltb] using hbounds
+  rw [if_pos hin]
+  exact perm_refl Freeable
+
+private theorem scc085_alloc_perm_new_inv (m : mem) (lo hi : Z) (m' : mem)
+    (b : block) (h : Mem.alloc m lo hi = (m', b)) (ofs : Z) (k : perm_kind)
+    (p : permission) (hp : Mem.perm m' b ofs k p) : zLe lo ofs ∧ zLt ofs hi := by
+  unfold Mem.alloc at h
+  cases h
+  unfold Mem.perm at hp
+  rw [scc085_pmap_get_set_same] at hp
+  change Mem.perm_order'
+    (if (ZArith.BinInt.Z.leb lo ofs && ZArith.BinInt.Z.ltb ofs hi) = true
+      then some Freeable else none) p at hp
+  by_cases hin : (ZArith.BinInt.Z.leb lo ofs && ZArith.BinInt.Z.ltb ofs hi) = true
+  · change intOfZ lo ≤ intOfZ ofs ∧ intOfZ ofs < intOfZ hi
+    simpa [ZArith.BinInt.Z.leb, ZArith.BinInt.Z.ltb] using hin
+  · simp [hin, Mem.perm_order'] at hp
+
+private theorem scc085_alloc_perm_old (m : mem) (lo hi : Z) (m' : mem) (b : block)
+    (h : Mem.alloc m lo hi = (m', b)) (b' : block) (ofs : Z) (k : perm_kind)
+    (p : permission) (hne : b' ≠ b) (hp : Mem.perm m b' ofs k p) :
+    Mem.perm m' b' ofs k p := by
+  unfold Mem.alloc at h
+  cases h
+  unfold Mem.perm at hp ⊢
+  rw [scc085_pmap_get_set_other _ _ _ _ hne]
+  exact hp
+
+private theorem scc085_alloc_perm_old_inv (m : mem) (lo hi : Z) (m' : mem)
+    (b : block) (h : Mem.alloc m lo hi = (m', b)) (b' : block) (ofs : Z)
+    (k : perm_kind) (p : permission) (hne : b' ≠ b) (hp : Mem.perm m' b' ofs k p) :
+    Mem.perm m b' ofs k p := by
+  unfold Mem.alloc at h
+  cases h
+  unfold Mem.perm at hp ⊢
+  rw [scc085_pmap_get_set_other _ _ _ _ hne] at hp
+  exact hp
+
+private theorem scc085_alloc_contents_new (m : mem) (lo hi : Z) (m' : mem)
+    (b : block) (h : Mem.alloc m lo hi = (m', b)) (ofs : Z) :
+    ZMap.get ofs (PMap.get b m'.mem_contents) =
+      CompCert4Lean.Common.Memdata.Undef := by
+  unfold Mem.alloc at h
+  cases h
+  rw [scc085_pmap_get_set_same]
+  rfl
+
+private theorem scc085_alloc_contents_old (m : mem) (lo hi : Z) (m' : mem)
+    (b : block) (h : Mem.alloc m lo hi = (m', b)) (b' : block) (ofs : Z)
+    (hne : b' ≠ b) :
+    ZMap.get ofs (PMap.get b' m'.mem_contents) =
+      ZMap.get ofs (PMap.get b' m.mem_contents) := by
+  unfold Mem.alloc at h
+  cases h
+  rw [scc085_pmap_get_set_other _ _ _ _ hne]
+
+private theorem scc085_alloc_valid_new (m : mem) (lo hi : Z) (m' : mem) (b : block)
+    (h : Mem.alloc m lo hi = (m', b)) : Mem.valid_block m' b := by
+  change Plt b m'.nextblock
+  rw [scc085_alloc_fresh m lo hi m' b h, scc085_alloc_nextblock m lo hi m' b h]
+  exact Plt_succ m.nextblock
+
+private theorem scc085_perm_of_freeable {m : mem} {b : block} {ofs : Z}
+    {k : perm_kind} {p : permission} (h : Mem.perm m b ofs k Freeable) :
+    Mem.perm m b ofs k p := by
+  unfold Mem.perm
+  rw [accessFreeableOfPerm h]
+  exact perm_F_any p
+
+private def scc085_extend_inj (j : meminj) (b1 b2 : block) (delta : Z) : meminj :=
+  fun b => if b = b1 then some (b2, delta) else j b
+
+private theorem scc085_extend_inj_same (j : meminj) (b1 b2 : block) (delta : Z) :
+    scc085_extend_inj j b1 b2 delta b1 = some (b2, delta) := by
+  simp [scc085_extend_inj]
+
+private theorem scc085_extend_inj_other (j : meminj) (b1 b2 : block) (delta : Z)
+    (b : block) (hne : b ≠ b1) :
+    scc085_extend_inj j b1 b2 delta b = j b := by
+  simp [scc085_extend_inj, hne]
+
+private theorem scc085_align_chunk_divides_eight
+    (chunk : CompCert4Lean.Common.AST.memory_chunk) :
+    zDivide (CompCert4Lean.Common.Memdata.align_chunk chunk) z8 := by
+  cases chunk <;> simp [CompCert4Lean.Common.Memdata.align_chunk, zDivide, z1, z8]
+  all_goals first
+    | exact ⟨ZArith.BinInt.Z.of_nat 8, by rfl⟩
+    | exact ⟨ZArith.BinInt.Z.of_nat 4, by rfl⟩
+    | exact ⟨ZArith.BinInt.Z.of_nat 2, by rfl⟩
+    | exact ⟨ZArith.BinInt.Z.of_nat 1, by rfl⟩
+
+private theorem scc085_align_chunk_divides_delta (delta : Z)
+    (hdiv : zDivide z8 delta) (chunk : CompCert4Lean.Common.AST.memory_chunk) :
+    zDivide (CompCert4Lean.Common.Memdata.align_chunk chunk) delta := by
+  rcases scc085_align_chunk_divides_eight chunk with ⟨ka, ha⟩
+  rcases hdiv with ⟨kd, hd⟩
+  refine ⟨ZArith.BinInt.Z.mul ka kd, ?_⟩
+  calc
+    delta = ZArith.BinInt.Z.mul z8 kd := hd
+    _ = ZArith.BinInt.Z.mul
+        (ZArith.BinInt.Z.mul (CompCert4Lean.Common.Memdata.align_chunk chunk) ka) kd :=
+      congrArg (fun x => ZArith.BinInt.Z.mul x kd) ha
+    _ = ZArith.BinInt.Z.mul (CompCert4Lean.Common.Memdata.align_chunk chunk)
+        (ZArith.BinInt.Z.mul ka kd) := by
+      apply intOfZ_injective
+      simp only [ZArith.BinInt.Z.mul, intOfZ_zOfInt]
+      exact Int.mul_assoc _ _ _
+
+private theorem scc085_alloc_shift_bounds (sz1 sz2 lo hi delta ofs : Z)
+    (hsrc : zLe z0 ofs ∧ zLt ofs sz1)
+    (hlo : lo = delta) (hhi : hi = zAdd delta (zMax z0 sz1))
+    (hdelta : zLe z0 delta) (hhisz : zLe hi sz2) :
+    zLe z0 (zAdd ofs delta) ∧ zLt (zAdd ofs delta) sz2 := by
+  have hsz1 : (0 : Int) ≤ intOfZ sz1 := by
+    have hloSrc := hsrc.1
+    have hhiSrc := hsrc.2
+    change (0 : Int) ≤ intOfZ ofs at hloSrc
+    change intOfZ ofs < intOfZ sz1 at hhiSrc
+    omega
+  have hmax : intOfZ (zMax z0 sz1) = intOfZ sz1 := by
+    simp [ZArith.BinInt.Z.max, (show intOfZ z0 = (0 : Int) by rfl), hsz1]
+  have hhiInt : intOfZ hi = intOfZ delta + intOfZ sz1 := by
+    rw [hhi]
+    change intOfZ (zOfInt (intOfZ delta + intOfZ (zMax z0 sz1))) = _
+    rw [intOfZ_zOfInt, hmax]
+  have hadd : intOfZ (zAdd ofs delta) = intOfZ ofs + intOfZ delta := by
+    change intOfZ (zOfInt (intOfZ ofs + intOfZ delta)) = _
+    rw [intOfZ_zOfInt]
+  constructor
+  · change (0 : Int) ≤ intOfZ (zAdd ofs delta)
+    change (0 : Int) ≤ intOfZ delta at hdelta
+    have hsrcLo := hsrc.1
+    change (0 : Int) ≤ intOfZ ofs at hsrcLo
+    omega
+  · change intOfZ (zAdd ofs delta) < intOfZ sz2
+    change intOfZ hi ≤ intOfZ sz2 at hhisz
+    have hsrcHi := hsrc.2
+    change intOfZ ofs < intOfZ sz1 at hsrcHi
+    omega
+
+private theorem scc085_alloc_representable_bounds (sz1 sz2 hi delta u : Z)
+    (hsrc : (zLe z0 u ∧ zLt u sz1) ∨
+      (zLe z0 (zSub u z1) ∧ zLt (zSub u z1) sz1))
+    (hu0 : zLe z0 u) (hhi : hi = zAdd delta (zMax z0 sz1))
+    (hhisz : zLe hi sz2)
+    (hsz2 : zLe sz2 CompCert4Lean.Lib.Integers.Ptrofs.max_unsigned)
+    (hdelta : zLe z0 delta) :
+    zLe z0 (zAdd u delta) ∧
+      zLe (zAdd u delta) CompCert4Lean.Lib.Integers.Ptrofs.max_unsigned := by
+  have hsub : intOfZ (zSub u z1) = intOfZ u - 1 := by
+    change intOfZ (zOfInt (intOfZ u - intOfZ z1)) = _
+    rw [intOfZ_zOfInt, intOfZZ1]
+  have hsz1 : (0 : Int) ≤ intOfZ sz1 := by
+    rcases hsrc with h | h
+    · have hlo := h.1
+      have hlt := h.2
+      change (0 : Int) ≤ intOfZ u at hlo
+      change intOfZ u < intOfZ sz1 at hlt
+      omega
+    · have hlo := h.1
+      have hlt := h.2
+      change (0 : Int) ≤ intOfZ (zSub u z1) at hlo
+      change intOfZ (zSub u z1) < intOfZ sz1 at hlt
+      omega
+  have hmax : intOfZ (zMax z0 sz1) = intOfZ sz1 := by
+    simp [ZArith.BinInt.Z.max, (show intOfZ z0 = (0 : Int) by rfl), hsz1]
+  have hhiInt : intOfZ hi = intOfZ delta + intOfZ sz1 := by
+    rw [hhi]
+    change intOfZ (zOfInt (intOfZ delta + intOfZ (zMax z0 sz1))) = _
+    rw [intOfZ_zOfInt, hmax]
+  have hadd : intOfZ (zAdd u delta) = intOfZ u + intOfZ delta := by
+    change intOfZ (zOfInt (intOfZ u + intOfZ delta)) = _
+    rw [intOfZ_zOfInt]
+  constructor
+  · change (0 : Int) ≤ intOfZ (zAdd u delta)
+    change (0 : Int) ≤ intOfZ u at hu0
+    change (0 : Int) ≤ intOfZ delta at hdelta
+    omega
+  · change intOfZ (zAdd u delta) ≤
+      intOfZ CompCert4Lean.Lib.Integers.Ptrofs.max_unsigned
+    change intOfZ hi ≤ intOfZ sz2 at hhisz
+    change intOfZ sz2 ≤
+      intOfZ CompCert4Lean.Lib.Integers.Ptrofs.max_unsigned at hsz2
+    rcases hsrc with h | h
+    · have hlt := h.2
+      change intOfZ u < intOfZ sz1 at hlt
+      omega
+    · have hlt := h.2
+      change intOfZ (zSub u z1) < intOfZ sz1 at hlt
+      omega
+
+private theorem scc085_alloc_mapped_inject
+    (j : meminj) (m1 m2 m1' m2' : mem) (sz1 sz2 : Z) (b1 b2 : block)
+    (hi delta : Z) (hinj : Mem.inject j m1 m2)
+    (halloc1 : Mem.alloc m1 z0 sz1 = (m1', b1))
+    (halloc2 : Mem.alloc m2 z0 sz2 = (m2', b2))
+    (hdiv : zDivide z8 delta)
+    (hhi : hi = zAdd delta (zMax z0 sz1))
+    (hsz2 : zLe sz2 CompCert4Lean.Lib.Integers.Ptrofs.max_unsigned)
+    (hdelta : zLe z0 delta) (hhisz : zLe hi sz2) :
+    Mem.inject (scc085_extend_inj j b1 b2 delta) m1' m2' := by
+  let j' := scc085_extend_inj j b1 b2 delta
+  have hfresh1 : ¬ Mem.valid_block m1 b1 := by
+    intro hv
+    rw [scc085_alloc_fresh m1 z0 sz1 m1' b1 halloc1] at hv
+    exact (Plt_ne _ _ hv) rfl
+  have hfresh2 : ¬ Mem.valid_block m2 b2 := by
+    intro hv
+    rw [scc085_alloc_fresh m2 z0 sz2 m2' b2 halloc2] at hv
+    exact (Plt_ne _ _ hv) rfl
+  have hjnone : j b1 = none := hinj.mi_freeblocks b1 hfresh1
+  have hincr : CompCert4Lean.Common.Values.inject_incr j j' := by
+    intro b bt d hmap
+    by_cases hb : b = b1
+    · subst b
+      rw [hjnone] at hmap
+      cases hmap
+    · change scc085_extend_inj j b1 b2 delta b = some (bt, d)
+      rw [scc085_extend_inj_other j b1 b2 delta b hb]
+      exact hmap
+  have hsourceOld : ∀ b bt d, j b = some (bt, d) → b ≠ b1 := by
+    intro b bt d hmap hb
+    subst b
+    rw [hjnone] at hmap
+    cases hmap
+  have htargetOld : ∀ b bt d, j b = some (bt, d) → bt ≠ b2 := by
+    intro b bt d hmap hbt
+    subst bt
+    exact hfresh2 (hinj.mi_mappedblocks b b2 d hmap)
+  change Mem.inject j' m1' m2'
+  refine {
+    mi_inj := {
+      mi_perm := ?_,
+      mi_align := ?_,
+      mi_memval := ?_
+    },
+    mi_freeblocks := ?_,
+    mi_mappedblocks := ?_,
+    mi_no_overlap := ?_,
+    mi_representable := ?_,
+    mi_perm_inv := ?_
+  }
+  · intro b bt d ofs k p hmap hp
+    by_cases hb : b = b1
+    · subst b
+      change scc085_extend_inj j b1 b2 delta b1 = some (bt, d) at hmap
+      rw [scc085_extend_inj_same] at hmap
+      cases hmap
+      have hsrc := scc085_alloc_perm_new_inv m1 z0 sz1 m1' b1 halloc1
+        ofs k p hp
+      have htgt := scc085_alloc_shift_bounds sz1 sz2 delta hi delta ofs
+        hsrc rfl hhi hdelta hhisz
+      exact scc085_perm_of_freeable
+        (scc085_alloc_perm_new m2 z0 sz2 m2' b2 halloc2
+          (zAdd ofs delta) k htgt)
+    · change scc085_extend_inj j b1 b2 delta b = some (bt, d) at hmap
+      rw [scc085_extend_inj_other j b1 b2 delta b hb] at hmap
+      have hpOld := scc085_alloc_perm_old_inv m1 z0 sz1 m1' b1 halloc1
+        b ofs k p hb hp
+      have htOld := hinj.mi_inj.mi_perm b bt d ofs k p hmap hpOld
+      exact scc085_alloc_perm_old m2 z0 sz2 m2' b2 halloc2 bt
+        (zAdd ofs d) k p (htargetOld b bt d hmap) htOld
+  · intro b bt d chunk ofs p hmap hrange
+    by_cases hb : b = b1
+    · subst b
+      change scc085_extend_inj j b1 b2 delta b1 = some (bt, d) at hmap
+      rw [scc085_extend_inj_same] at hmap
+      cases hmap
+      exact scc085_align_chunk_divides_delta delta hdiv chunk
+    · change scc085_extend_inj j b1 b2 delta b = some (bt, d) at hmap
+      rw [scc085_extend_inj_other j b1 b2 delta b hb] at hmap
+      apply hinj.mi_inj.mi_align b bt d chunk ofs p hmap
+      intro i hibounds
+      exact scc085_alloc_perm_old_inv m1 z0 sz1 m1' b1 halloc1
+        b i Max p hb (hrange i hibounds)
+  · intro b ofs bt d hmap hp
+    by_cases hb : b = b1
+    · subst b
+      change scc085_extend_inj j b1 b2 delta b1 = some (bt, d) at hmap
+      rw [scc085_extend_inj_same] at hmap
+      cases hmap
+      rw [scc085_alloc_contents_new m1 z0 sz1 m1' b1 halloc1 ofs]
+      exact CompCert4Lean.Common.Memdata.memval_inject.undef j'
+        (ZMap.get (zAdd ofs delta) (PMap.get b2 m2'.mem_contents))
+    · change scc085_extend_inj j b1 b2 delta b = some (bt, d) at hmap
+      rw [scc085_extend_inj_other j b1 b2 delta b hb] at hmap
+      have hpOld := scc085_alloc_perm_old_inv m1 z0 sz1 m1' b1 halloc1
+        b ofs Cur Readable hb hp
+      have hm := hinj.mi_inj.mi_memval b ofs bt d hmap hpOld
+      have hm' := CompCert4Lean.Common.Memdata.memval_inject_incr
+        j j'
+        (ZMap.get ofs (PMap.get b m1.mem_contents))
+        (ZMap.get (zAdd ofs d) (PMap.get bt m2.mem_contents)) hm hincr
+      rw [scc085_alloc_contents_old m1 z0 sz1 m1' b1 halloc1 b ofs hb,
+        scc085_alloc_contents_old m2 z0 sz2 m2' b2 halloc2 bt (zAdd ofs d)
+          (htargetOld b bt d hmap)]
+      exact hm'
+  · intro b hvalid
+    by_cases hb : b = b1
+    · subst b
+      exact False.elim (hvalid (scc085_alloc_valid_new m1 z0 sz1 m1' b1 halloc1))
+    · change scc085_extend_inj j b1 b2 delta b = none
+      rw [scc085_extend_inj_other j b1 b2 delta b hb]
+      apply hinj.mi_freeblocks b
+      intro hv
+      apply hvalid
+      change Plt b m1'.nextblock
+      rw [scc085_alloc_nextblock m1 z0 sz1 m1' b1 halloc1]
+      exact Plt_trans_succ b m1.nextblock hv
+  · intro b bt d hmap
+    by_cases hb : b = b1
+    · subst b
+      change scc085_extend_inj j b1 b2 delta b1 = some (bt, d) at hmap
+      rw [scc085_extend_inj_same] at hmap
+      cases hmap
+      exact scc085_alloc_valid_new m2 z0 sz2 m2' b2 halloc2
+    · change scc085_extend_inj j b1 b2 delta b = some (bt, d) at hmap
+      rw [scc085_extend_inj_other j b1 b2 delta b hb] at hmap
+      have hv := hinj.mi_mappedblocks b bt d hmap
+      change Plt bt m2'.nextblock
+      rw [scc085_alloc_nextblock m2 z0 sz2 m2' b2 halloc2]
+      exact Plt_trans_succ bt m2.nextblock hv
+  · intro a ta da b bt db oa ob hab hma hmb hpa hpb
+    by_cases ha : a = b1
+    · subst a
+      have hb : b ≠ b1 := by exact fun h => hab h.symm
+      change scc085_extend_inj j b1 b2 delta b1 = some (ta, da) at hma
+      rw [scc085_extend_inj_same] at hma
+      cases hma
+      change scc085_extend_inj j b1 b2 delta b = some (bt, db) at hmb
+      rw [scc085_extend_inj_other j b1 b2 delta b hb] at hmb
+      exact Or.inl (fun h => htargetOld b bt db hmb h.symm)
+    · by_cases hb : b = b1
+      · subst b
+        change scc085_extend_inj j b1 b2 delta b1 = some (bt, db) at hmb
+        rw [scc085_extend_inj_same] at hmb
+        cases hmb
+        change scc085_extend_inj j b1 b2 delta a = some (ta, da) at hma
+        rw [scc085_extend_inj_other j b1 b2 delta a ha] at hma
+        exact Or.inl (htargetOld a ta da hma)
+      · change scc085_extend_inj j b1 b2 delta a = some (ta, da) at hma
+        rw [scc085_extend_inj_other j b1 b2 delta a ha] at hma
+        change scc085_extend_inj j b1 b2 delta b = some (bt, db) at hmb
+        rw [scc085_extend_inj_other j b1 b2 delta b hb] at hmb
+        apply hinj.mi_no_overlap a ta da b bt db oa ob hab hma hmb
+        · exact scc085_alloc_perm_old_inv m1 z0 sz1 m1' b1 halloc1
+            a oa Max Nonempty ha hpa
+        · exact scc085_alloc_perm_old_inv m1 z0 sz1 m1' b1 halloc1
+            b ob Max Nonempty hb hpb
+  · intro b bt d ofs hmap hp
+    by_cases hb : b = b1
+    · subst b
+      change scc085_extend_inj j b1 b2 delta b1 = some (bt, d) at hmap
+      rw [scc085_extend_inj_same] at hmap
+      cases hmap
+      have hu0 : zLe z0 (CompCert4Lean.Lib.Integers.Ptrofs.unsigned ofs) := by
+        have h := ofs.intrange.1
+        change (-1 : Int) < intOfZ (CompCert4Lean.Lib.Integers.Ptrofs.unsigned ofs) at h
+        change (0 : Int) ≤ intOfZ (CompCert4Lean.Lib.Integers.Ptrofs.unsigned ofs)
+        omega
+      have hsrc :
+          (zLe z0 (CompCert4Lean.Lib.Integers.Ptrofs.unsigned ofs) ∧
+            zLt (CompCert4Lean.Lib.Integers.Ptrofs.unsigned ofs) sz1) ∨
+          (zLe z0 (zSub (CompCert4Lean.Lib.Integers.Ptrofs.unsigned ofs) z1) ∧
+            zLt (zSub (CompCert4Lean.Lib.Integers.Ptrofs.unsigned ofs) z1) sz1) := by
+        rcases hp with hp | hp
+        · exact Or.inl (scc085_alloc_perm_new_inv m1 z0 sz1 m1' b1 halloc1
+            (CompCert4Lean.Lib.Integers.Ptrofs.unsigned ofs) Max Nonempty hp)
+        · exact Or.inr (scc085_alloc_perm_new_inv m1 z0 sz1 m1' b1 halloc1
+            (zSub (CompCert4Lean.Lib.Integers.Ptrofs.unsigned ofs) z1) Max Nonempty hp)
+      have hbounds := scc085_alloc_representable_bounds sz1 sz2 hi delta
+        (CompCert4Lean.Lib.Integers.Ptrofs.unsigned ofs) hsrc hu0 hhi hhisz hsz2 hdelta
+      exact ⟨hdelta, hbounds.1, hbounds.2⟩
+    · change scc085_extend_inj j b1 b2 delta b = some (bt, d) at hmap
+      rw [scc085_extend_inj_other j b1 b2 delta b hb] at hmap
+      apply hinj.mi_representable b bt d ofs hmap
+      rcases hp with hp | hp
+      · exact Or.inl (scc085_alloc_perm_old_inv m1 z0 sz1 m1' b1 halloc1
+          b (CompCert4Lean.Lib.Integers.Ptrofs.unsigned ofs) Max Nonempty hb hp)
+      · exact Or.inr (scc085_alloc_perm_old_inv m1 z0 sz1 m1' b1 halloc1
+          b (zSub (CompCert4Lean.Lib.Integers.Ptrofs.unsigned ofs) z1) Max Nonempty hb hp)
+  · intro b ofs bt d k p hmap ht
+    by_cases hb : b = b1
+    · subst b
+      change scc085_extend_inj j b1 b2 delta b1 = some (bt, d) at hmap
+      rw [scc085_extend_inj_same] at hmap
+      cases hmap
+      by_cases hs : Mem.perm m1' b1 ofs Max Nonempty
+      · exact Or.inl (scc085_perm_of_freeable
+          (scc085_alloc_perm_new m1 z0 sz1 m1' b1 halloc1 ofs k
+            (scc085_alloc_perm_new_inv m1 z0 sz1 m1' b1 halloc1
+              ofs Max Nonempty hs)))
+      · exact Or.inr hs
+    · change scc085_extend_inj j b1 b2 delta b = some (bt, d) at hmap
+      rw [scc085_extend_inj_other j b1 b2 delta b hb] at hmap
+      have htOld := scc085_alloc_perm_old_inv m2 z0 sz2 m2' b2 halloc2
+        bt (zAdd ofs d) k p (htargetOld b bt d hmap) ht
+      rcases hinj.mi_perm_inv b ofs bt d k p hmap htOld with hs | hs
+      · exact Or.inl (scc085_alloc_perm_old m1 z0 sz1 m1' b1 halloc1
+          b ofs k p hb hs)
+      · exact Or.inr (fun hp => hs (scc085_alloc_perm_old_inv m1 z0 sz1 m1'
+          b1 halloc1 b ofs Max Nonempty hb hp))
+
+private theorem scc085_globalenv_extend_alloc
+    (F V : Type) (ge : CompCert4Lean.Common.Globalenvs.Genv.t F V)
+    (j : meminj) (m2 m2' : mem)
+    (b1 b2 : block) (delta sz2 : Z)
+    (hge : (globalenv_inject ge j).m_pred m2)
+    (hjnone : j b1 = none)
+    (halloc2 : Mem.alloc m2 z0 sz2 = (m2', b2)) :
+    (globalenv_inject ge (scc085_extend_inj j b1 b2 delta)).m_pred m2' := by
+  rcases hge with ⟨bound, hbound, hpres⟩
+  cases hpres with
+  | globalenv_preserved_intro hdom himage hsym hfun hvar =>
+      refine ⟨bound, ?_, globalenv_preserved_intro ?_ ?_ hsym hfun hvar⟩
+      · rw [scc085_alloc_nextblock m2 z0 sz2 m2' b2 halloc2]
+        exact Ple_trans bound m2.nextblock (PArith.BinPos.Pos.succ m2.nextblock)
+          hbound (Ple_succ m2.nextblock)
+      · intro b hlt
+        by_cases hb : b = b1
+        · subst b
+          have hcontra := hdom b1 hlt
+          rw [hjnone] at hcontra
+          cases hcontra
+        · rw [scc085_extend_inj_other j b1 b2 delta b hb]
+          exact hdom b hlt
+      · intro b bt d hmap hlt
+        by_cases hb : b = b1
+        · subst b
+          rw [scc085_extend_inj_same] at hmap
+          cases hmap
+          have hb2 : Ple bound b2 := by
+            rw [scc085_alloc_fresh m2 z0 sz2 m2' b2 halloc2]
+            exact hbound
+          exact False.elim ((Nat.not_lt_of_ge hb2) hlt)
+        · rw [scc085_extend_inj_other j b1 b2 delta b hb] at hmap
+          exact himage b bt d hmap hlt
+
+private theorem scc085_minjection_central
+    (j : meminj) (m1 m2 m1' m2' : mem) (sz1 sz2 : Z) (b1 b2 : block)
+    (lo hi delta : Z) (hinj : Mem.inject j m1 m2)
+    (halloc1 : Mem.alloc m1 z0 sz1 = (m1', b1))
+    (halloc2 : Mem.alloc m2 z0 sz2 = (m2', b2))
+    (hlo : lo = delta) (hhi : hi = zAdd delta (zMax z0 sz1))
+    (b : block) (ofs : Z)
+    (hfoot : (minjection (scc085_extend_inj j b1 b2 delta) m1').m_footprint b ofs)
+    (hb : b = b2) : zLe lo ofs ∧ zLt ofs hi := by
+  subst b
+  rcases hfoot with ⟨src, d, hmap, hp⟩
+  by_cases hs : src = b1
+  · subst src
+    rw [scc085_extend_inj_same] at hmap
+    cases hmap
+    have hsrc := scc085_alloc_perm_new_inv m1 z0 sz1 m1' b1 halloc1
+      (zSub ofs delta) Max Nonempty hp
+    have hsub : intOfZ (zSub ofs delta) = intOfZ ofs - intOfZ delta := by
+      change intOfZ (zOfInt (intOfZ ofs - intOfZ delta)) = _
+      rw [intOfZ_zOfInt]
+    have hsz1 : (0 : Int) ≤ intOfZ sz1 := by
+      have hslo := hsrc.1
+      have hshi := hsrc.2
+      change (0 : Int) ≤ intOfZ (zSub ofs delta) at hslo
+      change intOfZ (zSub ofs delta) < intOfZ sz1 at hshi
+      omega
+    have hmax : intOfZ (zMax z0 sz1) = intOfZ sz1 := by
+      simp [ZArith.BinInt.Z.max, (show intOfZ z0 = (0 : Int) by rfl), hsz1]
+    have hloInt : intOfZ lo = intOfZ delta := congrArg intOfZ hlo
+    have hhiInt : intOfZ hi = intOfZ delta + intOfZ sz1 := by
+      rw [hhi]
+      change intOfZ (zOfInt (intOfZ delta + intOfZ (zMax z0 sz1))) = _
+      rw [intOfZ_zOfInt, hmax]
+    constructor
+    · change intOfZ lo ≤ intOfZ ofs
+      have hslo := hsrc.1
+      change (0 : Int) ≤ intOfZ (zSub ofs delta) at hslo
+      omega
+    · change intOfZ ofs < intOfZ hi
+      have hshi := hsrc.2
+      change intOfZ (zSub ofs delta) < intOfZ sz1 at hshi
+      omega
+  · rw [scc085_extend_inj_other j b1 b2 delta src hs] at hmap
+    have hfresh2 : ¬ Mem.valid_block m2 b2 := by
+      intro hv
+      rw [scc085_alloc_fresh m2 z0 sz2 m2' b2 halloc2] at hv
+      exact (Plt_ne _ _ hv) rfl
+    exact False.elim (hfresh2 (hinj.mi_mappedblocks src b2 d hmap))
+
+theorem alloc_parallel_rule_2 : alloc_parallel_rule_2Statement := by
+  intro F V ge m1 sz1 m1' b1 m2 sz2 m2' b2 P j lo hi delta
+    hsep halloc1 halloc2 hdiv hlo hhi hsz2 hdelta hhisz
+  let j' := scc085_extend_inj j b1 b2 delta
+  have hinj0 : Mem.inject j m1 m2 := hsep.1
+  have hge0 : (globalenv_inject ge j).m_pred m2 := hsep.2.1.1
+  have hP0 : P.m_pred m2 := hsep.2.1.2.1
+  have hfresh1 : ¬ Mem.valid_block m1 b1 := by
+    intro hv
+    rw [scc085_alloc_fresh m1 z0 sz1 m1' b1 halloc1] at hv
+    exact (Plt_ne _ _ hv) rfl
+  have hfresh2 : ¬ Mem.valid_block m2 b2 := by
+    intro hv
+    rw [scc085_alloc_fresh m2 z0 sz2 m2' b2 halloc2] at hv
+    exact (Plt_ne _ _ hv) rfl
+  have hjnone : j b1 = none := hinj0.mi_freeblocks b1 hfresh1
+  have hincr : CompCert4Lean.Common.Values.inject_incr j j' := by
+    intro b bt d hmap
+    by_cases hb : b = b1
+    · subst b
+      rw [hjnone] at hmap
+      cases hmap
+    · change scc085_extend_inj j b1 b2 delta b = some (bt, d)
+      rw [scc085_extend_inj_other j b1 b2 delta b hb]
+      exact hmap
+  have hinj' : Mem.inject j' m1' m2' :=
+    scc085_alloc_mapped_inject j m1 m2 m1' m2' sz1 sz2 b1 b2 hi delta
+      hinj0 halloc1 halloc2 hdiv hhi hsz2.2 hdelta hhisz
+  have hge' : (globalenv_inject ge j').m_pred m2' :=
+    scc085_globalenv_extend_alloc F V ge j m2 m2' b1 b2 delta sz2
+      hge0 hjnone halloc2
+  have hP' : P.m_pred m2' := by
+    apply P.m_invar m2 m2' hP0
+    exact scc085_alloc_unchanged_on P.m_footprint m2 z0 sz2 m2' b2 halloc2
+  have hgeP : disjoint_footprint (globalenv_inject ge j') P := by
+    intro b ofs hgefoot hPfoot
+    exact hgefoot
+  have hPNoFresh : ∀ ofs, P.m_footprint b2 ofs → False := by
+    intro ofs hPfoot
+    exact hfresh2 (P.m_valid m2 b2 ofs hP0 hPfoot)
+  have hminInner : disjoint_footprint (minjection j' m1')
+      (sepconj (globalenv_inject ge j') P) := by
+    intro b ofs hmin hinner
+    cases hinner with
+    | inl hgefoot => exact hgefoot
+    | inr hPfoot =>
+        rcases hmin with ⟨src, d, hmap, hp⟩
+        by_cases hs : src = b1
+        · subst src
+          have hnew : j' b1 = some (b2, delta) := by
+            change scc085_extend_inj j b1 b2 delta b1 = some (b2, delta)
+            exact scc085_extend_inj_same j b1 b2 delta
+          rw [hnew] at hmap
+          cases hmap
+          exact hPNoFresh ofs hPfoot
+        · change scc085_extend_inj j b1 b2 delta src = some (b, d) at hmap
+          rw [scc085_extend_inj_other j b1 b2 delta src hs] at hmap
+          apply hsep.2.2 b ofs
+          · refine ⟨src, d, hmap, ?_⟩
+            exact scc085_alloc_perm_old_inv m1 z0 sz1 m1' b1 halloc1
+              src (zSub ofs d) Max Nonempty hs hp
+          · exact Or.inr hPfoot
+  have hmaxNonneg : (0 : Int) ≤ intOfZ (zMax z0 sz1) := by
+    by_cases hs : (0 : Int) ≤ intOfZ sz1 <;>
+      simp [ZArith.BinInt.Z.max, (show intOfZ z0 = (0 : Int) by rfl), hs]
+  have hlohi : zLe lo hi := by
+    have hloInt : intOfZ lo = intOfZ delta := congrArg intOfZ hlo
+    have hhiInt : intOfZ hi = intOfZ delta + intOfZ (zMax z0 sz1) := by
+      rw [hhi]
+      change intOfZ (zOfInt (intOfZ delta + intOfZ (zMax z0 sz1))) = _
+      rw [intOfZ_zOfInt]
+    change intOfZ lo ≤ intOfZ hi
+    omega
+  have hhiNonneg : zLe z0 hi := by
+    have hhiInt : intOfZ hi = intOfZ delta + intOfZ (zMax z0 sz1) := by
+      rw [hhi]
+      change intOfZ (zOfInt (intOfZ delta + intOfZ (zMax z0 sz1))) = _
+      rw [intOfZ_zOfInt]
+    change (0 : Int) ≤ intOfZ delta at hdelta
+    change (0 : Int) ≤ intOfZ hi
+    omega
+  have hszmod : zLe sz2 CompCert4Lean.Lib.Integers.Ptrofs.modulus := by
+    have h := hsz2.2
+    unfold CompCert4Lean.Lib.Integers.Ptrofs.max_unsigned at h
+    change intOfZ sz2 ≤
+      intOfZ CompCert4Lean.Lib.Integers.Ptrofs.modulus - 1 at h
+    change intOfZ sz2 ≤ intOfZ CompCert4Lean.Lib.Integers.Ptrofs.modulus
+    omega
+  have hloMod : zLe lo CompCert4Lean.Lib.Integers.Ptrofs.modulus := by
+    change intOfZ lo ≤ intOfZ CompCert4Lean.Lib.Integers.Ptrofs.modulus
+    change intOfZ lo ≤ intOfZ hi at hlohi
+    change intOfZ hi ≤ intOfZ sz2 at hhisz
+    change intOfZ sz2 ≤ intOfZ CompCert4Lean.Lib.Integers.Ptrofs.modulus at hszmod
+    omega
+  have hRangeLo : (range b2 z0 lo).m_pred m2' := by
+    refine ⟨by exact Int.le_refl _, hloMod, ?_⟩
+    intro i k p hibounds
+    have hiSz : zLt i sz2 := by
+      change intOfZ i < intOfZ sz2
+      have hiLo := hibounds.2
+      change intOfZ i < intOfZ lo at hiLo
+      change intOfZ lo ≤ intOfZ hi at hlohi
+      change intOfZ hi ≤ intOfZ sz2 at hhisz
+      omega
+    exact scc085_perm_of_freeable
+      (scc085_alloc_perm_new m2 z0 sz2 m2' b2 halloc2 i k
+        ⟨hibounds.1, hiSz⟩)
+  have hRangeHi : (range b2 hi sz2).m_pred m2' := by
+    refine ⟨hhiNonneg, hszmod, ?_⟩
+    intro i k p hibounds
+    have hi0 : zLe z0 i := by
+      change (0 : Int) ≤ intOfZ i
+      change (0 : Int) ≤ intOfZ hi at hhiNonneg
+      have hboundLo := hibounds.1
+      change intOfZ hi ≤ intOfZ i at hboundLo
+      omega
+    exact scc085_perm_of_freeable
+      (scc085_alloc_perm_new m2 z0 sz2 m2' b2 halloc2 i k
+        ⟨hi0, hibounds.2⟩)
+  have hRangeHiInner : disjoint_footprint (range b2 hi sz2)
+      (sepconj (minjection j' m1') (sepconj (globalenv_inject ge j') P)) := by
+    intro b ofs hr hinner
+    cases hinner with
+    | inl hmin =>
+        have hc := scc085_minjection_central j m1 m2 m1' m2' sz1 sz2 b1 b2
+          lo hi delta hinj0 halloc1 halloc2 hlo hhi b ofs hmin hr.1
+        have hrLo := hr.2.1
+        have hcHi := hc.2
+        change intOfZ hi ≤ intOfZ ofs at hrLo
+        change intOfZ ofs < intOfZ hi at hcHi
+        omega
+    | inr hrest =>
+        cases hrest with
+        | inl hgefoot => exact hgefoot
+        | inr hPfoot =>
+            rw [hr.1] at hPfoot
+            exact hPNoFresh ofs hPfoot
+  have hRangeLoRest : disjoint_footprint (range b2 z0 lo)
+      (sepconj (range b2 hi sz2)
+        (sepconj (minjection j' m1') (sepconj (globalenv_inject ge j') P))) := by
+    intro b ofs hr hrest
+    cases hrest with
+    | inl hhiFoot =>
+        have hrHi := hr.2.2
+        have hhiLo := hhiFoot.2.1
+        change intOfZ ofs < intOfZ lo at hrHi
+        change intOfZ hi ≤ intOfZ ofs at hhiLo
+        change intOfZ lo ≤ intOfZ hi at hlohi
+        omega
+    | inr hinner =>
+        cases hinner with
+        | inl hmin =>
+            have hc := scc085_minjection_central j m1 m2 m1' m2' sz1 sz2 b1 b2
+              lo hi delta hinj0 halloc1 halloc2 hlo hhi b ofs hmin hr.1
+            have hrHi := hr.2.2
+            have hcLo := hc.1
+            change intOfZ ofs < intOfZ lo at hrHi
+            change intOfZ lo ≤ intOfZ ofs at hcLo
+            omega
+        | inr htail =>
+            cases htail with
+            | inl hgefoot => exact hgefoot
+            | inr hPfoot =>
+                rw [hr.1] at hPfoot
+                exact hPNoFresh ofs hPfoot
+  refine ⟨j', ?_, hincr, ?_⟩
+  · exact ⟨hRangeLo,
+      ⟨hRangeHi, ⟨hinj', ⟨hge', hP', hgeP⟩, hminInner⟩, hRangeHiInner⟩,
+      hRangeLoRest⟩
+  · exact scc085_extend_inj_same j b1 b2 delta

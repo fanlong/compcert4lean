@@ -2156,3 +2156,164 @@ theorem is_nan_binary_overflow :
   exact binary_overflow_not_nan m s
 
 end CompCert4Lean.Flocq.IEEE754.BinarySingleNaN
+
+namespace CompCert4Lean.Flocq.IEEE754.BinarySingleNaN
+
+theorem binary_overflow_correct :
+    ∀ {prec emax : Z} [Core.FLX.Prec_gt_0 prec] [Prec_lt_emax prec emax],
+      binary_overflow_correctStatement (prec := prec) (emax := emax) := by
+  intro prec emax hp he m s
+  unfold binary_overflow
+  split
+  · rfl
+  · change (canonical_mantissa0 prec emax
+        (Zto_pos (Zsub (Zpower (Zpos (.xO .xH)) prec) Zone))
+        (Zsub emax prec) &&
+      Zle_bool (Zsub emax prec) (Zsub emax prec)) = true
+    apply Bool.and_eq_true_iff.mpr
+    constructor
+    · have hp0 : Zlt Z0 prec := Core.FLX.prec_gt_0 prec
+      have hpow_gt : Zlt Zone (Zpower radix2 prec) :=
+        Core.Zaux.Zpower_gt_1 radix2 prec hp0
+      have hzone :
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ Zone = (1 : Int) := by
+        rfl
+      have hxpos : Zlt Z0 (Zsub (Zpower radix2 prec) Zone) := by
+        change (0 : Int) <
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+            (Zsub (Zpower radix2 prec) Zone)
+        simp only [Zsub,
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.sub,
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+        rw [hzone]
+        change (1 : Int) <
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+            (Zpower radix2 prec) at hpow_gt
+        omega
+      have zto_pos_id (x : Z) (hx : Zlt Z0 x) : Zpos (Zto_pos x) = x := by
+        cases x with
+        | Z0 =>
+            change (0 : Int) < 0 at hx
+            omega
+        | Zpos p =>
+            apply congrArg Zpos
+            change CompCert4Lean.Foundation.Numbers.Rocq.Coq.PArith.BinPos.Pos.of_nat
+                (Int.toNat (Int.ofNat
+                  (CompCert4Lean.Foundation.Numbers.Rocq.Coq.PArith.BinPos.Pos.to_nat p))) = p
+            rw [show Int.toNat (Int.ofNat
+                (CompCert4Lean.Foundation.Numbers.Rocq.Coq.PArith.BinPos.Pos.to_nat p)) =
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.PArith.BinPos.Pos.to_nat p by
+                cases p <;> rfl]
+            exact CompCert4Lean.Foundation.Numbers.Rocq.Coq.PArith.Pnat.Pos2Nat.id p
+        | Zneg p =>
+            change (0 : Int) < -Int.ofNat
+              (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p) at hx
+            have hp' := CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat_positive p
+            have hp'' : (0 : Int) < Int.ofNat
+                (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p) :=
+              Int.natCast_pos.mpr hp'
+            omega
+      have zabs_of_pos (x : Z) (hx : Zlt Z0 x) : Zabs x = x := by
+        apply CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective
+        change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+            (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.abs x) =
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ x
+        unfold CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.abs
+        rw [CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+        exact Int.natAbs_of_nonneg (Int.le_of_lt hx)
+      have hprec_nonneg : Zle Z0 prec := by
+        exact Int.le_of_lt hp0
+      have hpred_lt : Zlt (Zsub prec Zone) prec := by
+        change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+            (Zsub prec Zone) <
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ prec
+        simp only [Zsub,
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.sub,
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+        rw [hzone]
+        omega
+      have hpowers :
+          Zlt (Zpower radix2 (Zsub prec Zone)) (Zpower radix2 prec) :=
+        Core.Zaux.Zpower_lt radix2 (Zsub prec Zone) prec hprec_nonneg hpred_lt
+      have hpow_le :
+          Zle (Zpower radix2 (Zsub prec Zone))
+            (Zsub (Zpower radix2 prec) Zone) := by
+        change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+            (Zpower radix2 (Zsub prec Zone)) ≤
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+            (Zsub (Zpower radix2 prec) Zone)
+        simp only [Zsub,
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.sub,
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+        rw [hzone]
+        exact Int.le_sub_one_of_lt hpowers
+      have hdigit_lower0 := Core.Digits.Zdigits_gt_Zpower radix2
+        (Zsub prec Zone) (Zsub (Zpower radix2 prec) Zone)
+        (by simpa [zabs_of_pos _ hxpos] using hpow_le)
+      have hdigit_lower :
+          Zle prec (Zdigits radix2 (Zsub (Zpower radix2 prec) Zone)) := by
+        change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ prec ≤
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+            (Zdigits radix2 (Zsub (Zpower radix2 prec) Zone))
+        change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+            (Zsub prec Zone) <
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+            (Zdigits radix2 (Zsub (Zpower radix2 prec) Zone)) at hdigit_lower0
+        have hsub_prec :
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (Zsub prec Zone) =
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ prec - 1 := by
+          simp only [Zsub,
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.sub,
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+          rw [hzone]
+        rw [hsub_prec] at hdigit_lower0
+        omega
+      have habs_lt :
+          Zlt (Zabs (Zsub (Zpower radix2 prec) Zone)) (Zpower radix2 prec) := by
+        rw [zabs_of_pos _ hxpos]
+        change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+            (Zsub (Zpower radix2 prec) Zone) <
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (Zpower radix2 prec)
+        simp only [Zsub,
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.sub,
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+        rw [hzone]
+        omega
+      have hdigit_upper := Core.Digits.Zdigits_le_Zpower radix2 prec
+        (Zsub (Zpower radix2 prec) Zone) habs_lt
+      have hdigit :
+          Zdigits radix2 (Zsub (Zpower radix2 prec) Zone) = prec := by
+        apply CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective
+        apply Int.le_antisymm hdigit_upper hdigit_lower
+      have hto_pos :
+          Zpos (Zto_pos (Zsub (Zpower radix2 prec) Zone)) =
+            Zsub (Zpower radix2 prec) Zone :=
+        zto_pos_id _ hxpos
+      have hdigits_to_pos :
+          Zpos (digits2_pos (Zto_pos (Zsub (Zpower radix2 prec) Zone))) = prec := by
+        calc
+          _ = Zdigits radix2
+                (Zpos (Zto_pos (Zsub (Zpower radix2 prec) Zone))) :=
+            Core.Digits.Zpos_digits2_pos _
+          _ = Zdigits radix2 (Zsub (Zpower radix2 prec) Zone) := by rw [hto_pos]
+          _ = prec := hdigit
+      have hadd : Zadd prec (Zsub emax prec) = emax := by
+        apply CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective
+        simp only [Zadd, Zsub,
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add,
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.sub,
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+        omega
+      change Zeq_bool
+        (fexp (prec := prec) (emax := emax)
+          (Zadd
+            (Zpos (digits2_pos (Zto_pos (Zsub (Zpower radix2 prec) Zone))))
+            (Zsub emax prec)))
+        (Zsub emax prec) = true
+      rw [hdigits_to_pos, hadd, fexp_emax]
+      exact Core.Zaux.Zeq_bool_true _ _ rfl
+    · exact CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.Zbool.Zle_bool_refl_proof _
+
+end CompCert4Lean.Flocq.IEEE754.BinarySingleNaN
+
+namespace CompCert4Lean.Flocq.IEEE754.BinarySingleNaN

@@ -1531,3 +1531,25 @@ theorem compare_ints_spec : compare_ints_specStatement := by
         CompCert4Lean.X86.Asm.data_preg] at hr ⊢
 
 end CompCert4Lean.X86.Asmgenproof1
+
+namespace CompCert4Lean.X86.Asmgenproof1
+
+theorem compare_longs_spec : compare_longs_specStatement := by
+  intro rs v1 v2 m
+  dsimp
+  unfold CompCert4Lean.X86.Asm.nextinstr
+  unfold CompCert4Lean.X86.Asm.compare_longs
+  constructor
+  · simp [CompCert4Lean.X86.Asm.Pregmap.set]
+  constructor
+  · simp [CompCert4Lean.X86.Asm.Pregmap.set]
+  constructor
+  · simp [CompCert4Lean.X86.Asm.Pregmap.set]
+  constructor
+  · simp [CompCert4Lean.X86.Asm.Pregmap.set]
+  · intro r hr
+    cases r <;>
+      simp [CompCert4Lean.X86.Asm.Pregmap.set,
+        CompCert4Lean.X86.Asm.data_preg] at hr ⊢
+
+end CompCert4Lean.X86.Asmgenproof1

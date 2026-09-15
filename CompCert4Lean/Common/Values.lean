@@ -1903,3 +1903,28 @@ theorem not_xor : not_xorStatement := by
 
 end Val
 end CompCert4Lean.Common.Values
+
+namespace CompCert4Lean.Common.Values
+namespace Val
+
+private theorem int64_add_commut_local
+    (a b : CompCert4Lean.Lib.Integers.Int64.int) :
+    CompCert4Lean.Lib.Integers.Int64.add a b =
+      CompCert4Lean.Lib.Integers.Int64.add b a := by
+  unfold CompCert4Lean.Lib.Integers.Int64.add
+  unfold CompCert4Lean.Lib.Integers.WordCore.add
+  apply congrArg
+  apply CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective
+  simp only [CompCert4Lean.Lib.Integers.WordCore.unsigned,
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add,
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+  exact Int.add_comm _ _
+
+theorem addl_commut : addl_commutStatement := by
+  intro x y
+  cases x <;> cases y <;> try rfl
+  case Vlong.Vlong a b =>
+    exact congrArg Vlong (int64_add_commut_local a b)
+
+end Val
+end CompCert4Lean.Common.Values

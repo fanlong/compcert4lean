@@ -1617,3 +1617,41 @@ theorem Z_one_bits_range : Z_one_bits_rangeStatement := by
 theorem Zshiftl_mul_two_p : Zshiftl_mul_two_pStatement := by
   intro x n hn
   exact CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.shiftl_mul_pow2 x n hn
+
+theorem Zshiftr_div_two_p : Zshiftr_div_two_pStatement := by
+  intro x n hn
+  change 0 ≤ intOfZ n at hn
+  have hneg : ¬ intOfZ n < 0 := by omega
+  let p : Int := Int.pow 2 (Int.toNat (intOfZ n))
+  have hp : 0 < p := by
+    dsimp [p]
+    exact Int.pow_pos (by decide)
+  have htwo : intOfZ (zTwoP n) = p := by
+    dsimp [p]
+    unfold zTwoP
+    unfold CompCert4Lean.Foundation.Numbers.Rocq.Coq.two_p
+    unfold CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.Zpower.two_p
+    unfold CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.pow
+    simp only [if_neg hneg, intOfZ_zOfInt]
+    rfl
+  have hq : zDiv x (zTwoP n) = zOfInt (Int.ediv (intOfZ x) p) := by
+    apply CompCert4Lean.Lib.Coqlib.Zdiv_unique x (zTwoP n)
+      (zOfInt (Int.ediv (intOfZ x) p))
+      (zOfInt (Int.emod (intOfZ x) p))
+    · apply intOfZ_injective
+      simp only [ZArith.BinInt.Z.add, ZArith.BinInt.Z.mul,
+        intOfZ_zOfInt, htwo]
+      exact (Int.ediv_mul_add_emod (intOfZ x) p).symm
+    · constructor
+      · change 0 ≤ intOfZ (zOfInt (Int.emod (intOfZ x) p))
+        rw [intOfZ_zOfInt]
+        exact Int.emod_nonneg _ (Int.ne_of_gt hp)
+      · change intOfZ (zOfInt (Int.emod (intOfZ x) p)) <
+          intOfZ (zTwoP n)
+        rw [intOfZ_zOfInt, htwo]
+        exact Int.emod_lt_of_pos _ hp
+  rw [hq]
+  unfold zShiftr
+  unfold CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.shiftr
+  simp only [if_pos hn]
+  rfl

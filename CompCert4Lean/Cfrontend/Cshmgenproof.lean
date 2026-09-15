@@ -3223,3 +3223,212 @@ theorem make_cmp_correct
     · exact h2
 
 end CompCert4Lean.Cfrontend.Cshmgenproof
+
+namespace CompCert4Lean.Cfrontend.Cshmgenproof
+
+open CompCert4Lean.Cfrontend.Cshmgen
+open CompCert4Lean.Cfrontend.Csharpminor
+
+private theorem transl_unop_make_neg_aux
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    make_neg_correctStatement := by
+  intro ge a tya c va v e le m hsem hmake hval
+  unfold CompCert4Lean.Cfrontend.Cop.sem_neg at hsem
+  unfold make_neg at hmake
+  cases hclass : CompCert4Lean.Cfrontend.Cop.classify_neg tya <;>
+    simp [hclass] at hsem hmake
+  case neg_case_i sg =>
+    cases va with
+    | Vint n =>
+        cases hsem
+        cases hmake
+        apply Csharpminor.eval_Eunop
+        · exact hval
+        · rfl
+    | Vlong n | Vfloat n | Vsingle n | Vptr n _ | Vundef => simp at hsem
+  case neg_case_f =>
+    cases va with
+    | Vfloat f =>
+        cases hsem
+        cases hmake
+        apply Csharpminor.eval_Eunop
+        · exact hval
+        · rfl
+    | Vint n | Vlong n | Vsingle n | Vptr n _ | Vundef => simp at hsem
+  case neg_case_s =>
+    cases va with
+    | Vsingle f =>
+        cases hsem
+        cases hmake
+        apply Csharpminor.eval_Eunop
+        · exact hval
+        · rfl
+    | Vint n | Vlong n | Vfloat n | Vptr n _ | Vundef => simp at hsem
+  case neg_case_l sg =>
+    cases va with
+    | Vlong n =>
+        cases hsem
+        cases hmake
+        apply Csharpminor.eval_Eunop
+        · exact hval
+        · rfl
+    | Vint n | Vfloat n | Vsingle n | Vptr n _ | Vundef => simp at hsem
+
+private theorem transl_unop_make_notbool_aux
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    make_notbool_correctStatement := by
+  intro ge a tya c va v e le m hsem hmake hval
+  unfold CompCert4Lean.Cfrontend.Cop.sem_notbool at hsem
+  unfold make_notbool at hmake
+  cases hclass : CompCert4Lean.Cfrontend.Cop.classify_bool tya <;>
+    simp [hclass] at hmake
+  case bool_case_i =>
+    cases va with
+    | Vint n =>
+        have hv : CompCert4Lean.Common.Values.Val.of_bool
+            (CompCert4Lean.Lib.Integers.Int.eq n
+              CompCert4Lean.Lib.Integers.Int.zero) = v := by
+          simpa [CompCert4Lean.Cfrontend.Cop.bool_val, hclass] using hsem
+        rw [← hv]
+        cases hmake
+        apply Csharpminor.eval_Ebinop
+        · exact hval
+        · exact make_intconst_correct ge _ e le m
+        · cases heq : CompCert4Lean.Lib.Integers.WordCore.eq n
+              CompCert4Lean.Lib.Integers.Int.zero <;>
+            simp [Csharpminor.eval_binop, CompCert4Lean.Backend.Cminor.eval_binop,
+          CompCert4Lean.Common.Values.Val.cmpu,
+          CompCert4Lean.Common.Values.Val.cmpu_bool,
+          CompCert4Lean.Lib.Integers.Int.cmpu,
+          CompCert4Lean.Lib.Integers.Int.eq,
+          CompCert4Lean.Lib.Integers.WordCore.cmpu,
+          CompCert4Lean.Common.Values.Val.of_optbool,
+          CompCert4Lean.Common.Values.Val.of_bool,
+          CompCert4Lean.Common.Values.Vtrue,
+          CompCert4Lean.Common.Values.Vfalse, heq]
+    | Vlong n | Vfloat n | Vsingle n | Vptr n _ | Vundef =>
+        simp [CompCert4Lean.Cfrontend.Cop.bool_val, hclass,
+          CompCert4Lean.X86_64.Archi.ptr64] at hsem
+  case bool_case_l =>
+    cases va with
+    | Vlong n =>
+        have hv : CompCert4Lean.Common.Values.Val.of_bool
+            (CompCert4Lean.Lib.Integers.Int64.eq n
+              CompCert4Lean.Lib.Integers.Int64.zero) = v := by
+          simpa [CompCert4Lean.Cfrontend.Cop.bool_val, hclass] using hsem
+        rw [← hv]
+        cases hmake
+        apply Csharpminor.eval_Ebinop
+        · exact hval
+        · exact make_longconst_correct ge _ e le m
+        · cases heq : CompCert4Lean.Lib.Integers.WordCore.eq n
+              CompCert4Lean.Lib.Integers.Int64.zero <;>
+            simp [Csharpminor.eval_binop, CompCert4Lean.Backend.Cminor.eval_binop,
+          CompCert4Lean.Common.Values.Val.cmplu,
+          CompCert4Lean.Common.Values.Val.cmplu_bool,
+          CompCert4Lean.Lib.Integers.Int64.cmpu,
+          CompCert4Lean.Lib.Integers.Int64.eq,
+          CompCert4Lean.Lib.Integers.WordCore.cmpu,
+          CompCert4Lean.Common.Values.Val.of_bool,
+          CompCert4Lean.Common.Values.Vtrue,
+          CompCert4Lean.Common.Values.Vfalse, heq]
+    | Vptr b ofs =>
+        cases hweak : CompCert4Lean.Common.Memory.Mem.weak_valid_pointer m b
+            (CompCert4Lean.Lib.Integers.Ptrofs.unsigned ofs) <;>
+          simp [CompCert4Lean.Cfrontend.Cop.bool_val, hclass,
+            CompCert4Lean.X86_64.Archi.ptr64, hweak] at hsem
+        have hv : CompCert4Lean.Common.Values.Val.of_bool false = v := by
+          simpa [CompCert4Lean.Cfrontend.Cop.bool_val, hclass,
+            CompCert4Lean.X86_64.Archi.ptr64, hweak] using hsem
+        rw [← hv]
+        have hweak' :
+            (CompCert4Lean.Common.Memory.Mem.valid_pointer m b
+                (CompCert4Lean.Lib.Integers.Ptrofs.unsigned ofs) ||
+              CompCert4Lean.Common.Memory.Mem.valid_pointer m b
+                (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.sub
+                  (CompCert4Lean.Lib.Integers.Ptrofs.unsigned ofs)
+                  (.Zpos .xH))) = true := by
+          simpa only [CompCert4Lean.Common.Memory.Mem.weak_valid_pointer] using hweak
+        cases hmake
+        apply Csharpminor.eval_Ebinop
+        · exact hval
+        · exact make_longconst_correct ge _ e le m
+        · simp [Csharpminor.eval_binop, CompCert4Lean.Backend.Cminor.eval_binop,
+          CompCert4Lean.Common.Values.Val.cmplu,
+          CompCert4Lean.Common.Values.Val.cmplu_bool,
+          CompCert4Lean.Lib.Integers.Int64.eq,
+          CompCert4Lean.Lib.Integers.WordCore.eq,
+          CompCert4Lean.X86_64.Archi.ptr64, hweak',
+          CompCert4Lean.Common.Values.Val.cmp_different_blocks,
+          CompCert4Lean.Common.Values.Val.of_bool,
+          CompCert4Lean.Common.Values.Vtrue,
+          CompCert4Lean.Common.Values.Vfalse]
+    | Vint n | Vfloat n | Vsingle n | Vundef =>
+        simp [CompCert4Lean.Cfrontend.Cop.bool_val, hclass] at hsem
+  case bool_case_f =>
+    cases va with
+    | Vfloat f =>
+        have hv : CompCert4Lean.Common.Values.Val.of_bool
+            (CompCert4Lean.Lib.Floats.Float.cmp
+              .Ceq f CompCert4Lean.Lib.Floats.Float.zero) = v := by
+          simpa [CompCert4Lean.Cfrontend.Cop.bool_val, hclass] using hsem
+        rw [← hv]
+        cases hmake
+        apply Csharpminor.eval_Ebinop
+        · exact hval
+        · exact make_floatconst_correct ge _ e le m
+        · cases hcmp : CompCert4Lean.Lib.Floats.Float.cmp
+              .Ceq f CompCert4Lean.Lib.Floats.Float.zero <;>
+            simp [Csharpminor.eval_binop, CompCert4Lean.Backend.Cminor.eval_binop,
+          CompCert4Lean.Common.Values.Val.cmpf,
+          CompCert4Lean.Common.Values.Val.cmpf_bool,
+          CompCert4Lean.Common.Values.Val.of_optbool,
+          CompCert4Lean.Common.Values.Val.of_bool,
+          CompCert4Lean.Common.Values.Vtrue,
+          CompCert4Lean.Common.Values.Vfalse, hcmp]
+    | Vint n | Vlong n | Vsingle n | Vptr n _ | Vundef =>
+        simp [CompCert4Lean.Cfrontend.Cop.bool_val, hclass] at hsem
+  case bool_case_s =>
+    cases va with
+    | Vsingle f =>
+        have hv : CompCert4Lean.Common.Values.Val.of_bool
+            (CompCert4Lean.Lib.Floats.Float32.cmp
+              .Ceq f CompCert4Lean.Lib.Floats.Float32.zero) = v := by
+          simpa [CompCert4Lean.Cfrontend.Cop.bool_val, hclass] using hsem
+        rw [← hv]
+        cases hmake
+        apply Csharpminor.eval_Ebinop
+        · exact hval
+        · exact make_singleconst_correct ge _ e le m
+        · cases hcmp : CompCert4Lean.Lib.Floats.Float32.cmp
+              .Ceq f CompCert4Lean.Lib.Floats.Float32.zero <;>
+            simp [Csharpminor.eval_binop, CompCert4Lean.Backend.Cminor.eval_binop,
+          CompCert4Lean.Common.Values.Val.cmpfs,
+          CompCert4Lean.Common.Values.Val.cmpfs_bool,
+          CompCert4Lean.Common.Values.Val.of_optbool,
+          CompCert4Lean.Common.Values.Val.of_bool,
+          CompCert4Lean.Common.Values.Vtrue,
+          CompCert4Lean.Common.Values.Vfalse, hcmp]
+    | Vint n | Vlong n | Vfloat n | Vptr n _ | Vundef =>
+        simp [CompCert4Lean.Cfrontend.Cop.bool_val, hclass] at hsem
+  case bool_default =>
+    simp [CompCert4Lean.Cfrontend.Cop.bool_val, hclass] at hsem
+
+theorem transl_unop_correct
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    transl_unop_correctStatement := by
+  intro ge op a tya c va v e le m hmake hsem hval
+  cases op with
+  | Onotbool =>
+      exact transl_unop_make_notbool_aux ge a tya c va v e le m hsem hmake hval
+  | Onotint =>
+      exact make_notint_correct ge a tya c va v e le m hsem hmake hval
+  | Oneg =>
+      exact transl_unop_make_neg_aux ge a tya c va v e le m hsem hmake hval
+  | Oabsfloat =>
+      exact make_absfloat_correct ge a tya c va v e le m hsem hmake hval
+
+end CompCert4Lean.Cfrontend.Cshmgenproof

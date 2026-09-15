@@ -2373,3 +2373,55 @@ theorem push_seq :
   simpa [SimplExpr.makeseq] using aux Clight.Sskip sl k
       
 end CompCert4Lean.Cfrontend.SimplExprproof
+
+namespace CompCert4Lean.Cfrontend.SimplExprproof
+
+open CompCert4Lean.Cfrontend.SimplExpr
+open CompCert4Lean.Common.Smallstep
+open CompCert4Lean.Lib.Maps
+
+theorem step_tr_rvalof :
+    ∀ [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+      [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)],
+      step_tr_rvalofStatement := by
+  intro binary64_certificate binary32_certificate xi p tp hmatch
+  intro cu hlink ty m b ofs bf t v e le a sl a' tmp f k hderef hlvalue htr htype
+  cases htr with
+  | tr_rvalof_nonvol _ hvolatile =>
+      have hderef_translated := deref_loc_translated
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        p tp hmatch ty m b ofs bf t v hderef
+      have hnonvol : t = CompCert4Lean.Common.Events.E0 ∧
+          Clight.deref_loc ty m b ofs bf v := by
+        simpa [chunk_for_volatile_type, hvolatile] using hderef_translated
+      rcases hnonvol with ⟨rfl, hderef_clight⟩
+      refine ⟨le, ?_, ?_, rfl, ?_⟩
+      · apply star_refl
+      · exact Clight.eval_expr.eval_Elvalue a b ofs bf v hlvalue
+          (by simpa [htype] using hderef_clight)
+      · intro x hx
+        rfl
+  | tr_rvalof_vol id bf' _ hvolatile htmp haccess =>
+      have hbf : bf' = bf := is_bitfield_access_sound
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        p tp hmatch cu hlink e le m a b ofs bf bf' hlvalue haccess
+      subst bf'
+      refine ⟨PTree.set id v le, ?_, ?_, htype.symm, ?_⟩
+      · simp only [Kseqlist]
+        apply star_two
+        · exact Clight.step_skip_seq f (make_set bf id a) k e le m
+        · exact step_make_set
+            (binary64_certificate := binary64_certificate)
+            (binary32_certificate := binary32_certificate)
+            xi p tp hmatch id a ty m b ofs bf t v e le f k hderef hlvalue htype
+        · rfl
+      · exact Clight.eval_expr.eval_Etempvar id ty v (PTree.gss id v le)
+      · intro x hx
+        apply PTree.gso
+        intro heq
+        subst x
+        exact hx htmp
+
+end CompCert4Lean.Cfrontend.SimplExprproof

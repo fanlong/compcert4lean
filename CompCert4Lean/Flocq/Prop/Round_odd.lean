@@ -1641,3 +1641,35 @@ theorem m_eq_0 : ∀ (ctx : ExactRealContext) (magnitude : ExactMagnitude ctx),
     exact hz
 
 end CompCert4Lean.Flocq.Prop.Round_odd
+
+namespace CompCert4Lean.Flocq.Prop.Round_odd
+
+open CompCert4Lean.Flocq.Core
+
+theorem DN_odd_d_aux : ∀ (ctx : ExactRealContext) (magnitude : ExactMagnitude ctx),
+    DN_odd_d_auxStatement ctx magnitude := by
+  intro ctx magnitude beta fexp _ x d u hd hu z hz
+  refine ⟨hd.1, hz.1, ?_⟩
+  intro g hg hgz
+  rcases CompCert4Lean.Flocq.Core.Round_pred.Rnd_DN_UP_pt_split
+      ctx (generic_format ctx magnitude beta fexp) x
+      (F2R ctx d) (F2R ctx u) hd hu g hg with hgd | hug
+  · exact hgd
+  · have huz : Rle ctx (F2R ctx u) z :=
+      ctx.certificate.orderedField.le_trans _ _ _ hug hgz
+    exact ((ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp hz.2).2 huz |>.elim
+
+theorem UP_odd_d_aux : ∀ (ctx : ExactRealContext) (magnitude : ExactMagnitude ctx),
+    UP_odd_d_auxStatement ctx magnitude := by
+  intro ctx magnitude beta fexp _ x d u hd hu z hz
+  refine ⟨hu.1, hz.2, ?_⟩
+  intro g hg hzg
+  rcases CompCert4Lean.Flocq.Core.Round_pred.Rnd_DN_UP_pt_split
+      ctx (generic_format ctx magnitude beta fexp) x
+      (F2R ctx d) (F2R ctx u) hd hu g hg with hgd | hug
+  · have hzd : Rle ctx z (F2R ctx d) :=
+      ctx.certificate.orderedField.le_trans _ _ _ hzg hgd
+    exact ((ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp hz.1).2 hzd |>.elim
+  · exact hug
+
+end CompCert4Lean.Flocq.Prop.Round_odd

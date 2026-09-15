@@ -3513,3 +3513,54 @@ theorem shr_div_two_p_proof : shr_div_two_p := by
     change 0 ≤ intOfZ y.intval
     omega
   rw [suffix_zshiftr_div_any (signed x) (unsigned y) hy]
+
+private theorem suffix_or_val (x y : int) :
+    (WordCore.or x y).val = Nat.lor x.val y.val := by
+  unfold WordCore.or
+  have hz : zOfNat (Nat.lor x.val y.val) =
+      zOfInt (Int.ofNat (Nat.lor x.val y.val)) := by rfl
+  rw [hz, WordCore.val_repr_residue, WordCore.residue_zOfNat]
+  exact Nat.mod_eq_of_lt
+    (Nat.or_lt_two_pow (WordCore.val_lt x) (WordCore.val_lt y))
+
+private theorem suffix_not_val (x : int) :
+    (WordCore.not x).val = Nat.xor x.val (2 ^ wordsize - 1) := by
+  unfold WordCore.not
+  have hz : zOfNat (Nat.xor x.val (2 ^ wordsize - 1)) =
+      zOfInt (Int.ofNat (Nat.xor x.val (2 ^ wordsize - 1))) := by rfl
+  rw [hz, WordCore.val_repr_residue, WordCore.residue_zOfNat]
+  apply Nat.mod_eq_of_lt
+  apply Nat.xor_lt_two_pow (WordCore.val_lt x)
+  have hpow : 0 < 2 ^ wordsize := Nat.two_pow_pos wordsize
+  omega
+
+private theorem suffix_nat_not_or (x y n : Nat)
+    (hxlt : x < 2 ^ n) (hylt : y < 2 ^ n) :
+    Nat.xor (Nat.lor x y) (2 ^ n - 1) =
+      Nat.land (Nat.xor x (2 ^ n - 1)) (Nat.xor y (2 ^ n - 1)) := by
+  apply Nat.eq_of_testBit_eq
+  intro i
+  simp only [Nat.xor_eq, Nat.lor_eq, Nat.land_eq]
+  rw [Nat.testBit_xor, Nat.testBit_or, Nat.testBit_and]
+  rw [Nat.testBit_xor, Nat.testBit_xor]
+  rw [Nat.testBit_two_pow_sub_one]
+  by_cases hi : i < n
+  · by_cases hx : x.testBit i = true <;>
+      by_cases hy : y.testBit i = true <;> simp [hi, hx, hy]
+  · have hni : n ≤ i := Nat.le_of_not_gt hi
+    have hpow : 2 ^ n ≤ 2 ^ i :=
+      Nat.pow_le_pow_right Nat.zero_lt_two hni
+    have hxi : x < 2 ^ i := Nat.lt_of_lt_of_le hxlt hpow
+    have hyi : y < 2 ^ i := Nat.lt_of_lt_of_le hylt hpow
+    rw [Nat.testBit_lt_two_pow hxi, Nat.testBit_lt_two_pow hyi]
+    simp [hi]
+
+theorem not_or_and_not_proof : not_or_and_not := by
+  intro x y
+  apply WordCore.ext_of_val_eq
+  change (WordCore.not (WordCore.or x y)).val =
+    (WordCore.and (WordCore.not x) (WordCore.not y)).val
+  rw [suffix_not_val, suffix_or_val, suffix_and_val,
+    suffix_not_val, suffix_not_val]
+  exact suffix_nat_not_or x.val y.val wordsize
+    (WordCore.val_lt x) (WordCore.val_lt y)

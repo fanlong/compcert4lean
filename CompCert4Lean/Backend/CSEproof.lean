@@ -2930,3 +2930,71 @@ theorem add_memcpy_eqs_charact : add_memcpy_eqs_charactStatement := by
           · exact Or.inr ⟨e0, List.mem_cons_of_mem e he0, hs⟩
 
 end CompCert4Lean.Backend.CSEproof
+
+namespace CompCert4Lean.Backend.CSEproof
+
+open CompCert4Lean.Backend.CSEdomain
+
+private theorem reduce_rec_sound_aux_for_reduce_sound
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    reduce_rec_soundStatement := by
+  intro A f V ge sp rs m sem f_sound n valu hnum
+  intro niter
+  induction niter with
+  | zero =>
+      intro op args op' rl' res hred hsem
+      simp [CSE.reduce_rec] at hred
+  | succ niter ih =>
+      intro op args op' rl' res hred hsem
+      cases hstep : f (fun v => CSE.find_valnum_num v n.num_eqs) op args with
+      | none =>
+          simp [CSE.reduce_rec, hstep] at hred
+      | some step =>
+          rcases step with ⟨op1, args1⟩
+          have hsem1 : sem op1 (List.map valu args1) = some res := by
+            have hs : sem op1 (List.map valu args1) = sem op (List.map valu args) :=
+              f_sound (fun v => CSE.find_valnum_num v n.num_eqs) valu
+                op args op1 args1 (fun v rhs hfind => by
+                have heq := hnum.num_holds_eq (Eq v true rhs)
+                  (find_valnum_num_charact v rhs n.num_eqs hfind)
+                cases heq with
+                | eq_holds_strict _ _ heval _ => exact heval) hstep
+            exact hs.trans hsem
+          cases hrec : CSE.reduce_rec f n niter op1 args1 with
+          | none =>
+              cases hregs : CSE.regs_valnums n args1 with
+              | none =>
+                  simp [CSE.reduce_rec, hstep, hrec, hregs] at hred
+              | some rl1 =>
+                  simp [CSE.reduce_rec, hstep, hrec, hregs] at hred
+                  obtain ⟨rfl, rfl⟩ := hred
+                  rw [regs_valnums_sound n valu ge sp rs m args1 rl1 hnum hregs]
+                  exact hsem1
+          | some rec =>
+              rcases rec with ⟨op2, rl2⟩
+              simp [CSE.reduce_rec, hstep, hrec] at hred
+              obtain ⟨rfl, rfl⟩ := hred
+              exact ih op1 args1 op2 rl2 res hrec hsem1
+
+theorem reduce_sound
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    reduce_soundStatement := by
+  intro A f V ge sp rs m sem f_sound n valu hnum
+  intro op rl vl op' rl' res hreduce hmap hsem
+  cases hrec : CSE.reduce_rec f n 4 op vl with
+  | none =>
+      simp [CSE.reduce, hrec] at hreduce
+      obtain ⟨rfl, rfl⟩ := hreduce
+      exact hsem
+  | some rec =>
+      rcases rec with ⟨op1, rl1⟩
+      simp [CSE.reduce, hrec] at hreduce
+      obtain ⟨rfl, rfl⟩ := hreduce
+      apply reduce_rec_sound_aux_for_reduce_sound A f V ge sp rs m sem f_sound n valu hnum
+        4 op vl op1 rl1 res hrec
+      rw [hmap]
+      exact hsem
+
+end CompCert4Lean.Backend.CSEproof

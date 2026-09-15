@@ -2437,3 +2437,197 @@ theorem invert_eval_builtin_args
         exact CompCert4Lean.Lib.Coqlib.list_forall2.cons _ _ hev1 hev2
 
 end CompCert4Lean.Backend.RTLgenproof
+
+namespace CompCert4Lean.Backend.RTLgenproof
+
+open CompCert4Lean.Backend.RTLgen
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Values
+
+private theorem rtlgenproof_longofwords_lessdef
+    (v1 v2 v1' v2' : val) :
+    Val.lessdef v1 v1' → Val.lessdef v2 v2' →
+      Val.lessdef (Val.longofwords v1 v2) (Val.longofwords v1' v2') := by
+  intro h1 h2
+  cases h1 with
+  | lessdef_refl v1 =>
+      cases h2 with
+      | lessdef_refl v2 => exact Val.lessdef_refl _
+      | lessdef_undef v2' =>
+          simpa [Val.longofwords] using
+            (Val.lessdef_undef (Val.longofwords v1 v2'))
+  | lessdef_undef v1' =>
+      simpa [Val.longofwords] using
+        (Val.lessdef_undef (Val.longofwords v1' v2'))
+
+private theorem rtlgenproof_add_lessdef
+    (v1 v2 v1' v2' : val) :
+    Val.lessdef v1 v1' → Val.lessdef v2 v2' →
+      Val.lessdef (Val.add v1 v2) (Val.add v1' v2') := by
+  intro h1 h2
+  cases h1 with
+  | lessdef_refl v1 =>
+      cases h2 with
+      | lessdef_refl v2 => exact Val.lessdef_refl _
+      | lessdef_undef v2' =>
+          simpa [Val.add] using (Val.lessdef_undef (Val.add v1 v2'))
+  | lessdef_undef v1' =>
+      simpa [Val.add] using (Val.lessdef_undef (Val.add v1' v2'))
+
+private theorem rtlgenproof_addl_lessdef
+    (v1 v2 v1' v2' : val) :
+    Val.lessdef v1 v1' → Val.lessdef v2 v2' →
+      Val.lessdef (Val.addl v1 v2) (Val.addl v1' v2') := by
+  intro h1 h2
+  cases h1 with
+  | lessdef_refl v1 =>
+      cases h2 with
+      | lessdef_refl v2 => exact Val.lessdef_refl _
+      | lessdef_undef v2' =>
+          simpa [Val.addl] using (Val.lessdef_undef (Val.addl v1 v2'))
+  | lessdef_undef v1' =>
+      simpa [Val.addl] using (Val.lessdef_undef (Val.addl v1' v2'))
+
+theorem transl_eval_builtin_arg : transl_eval_builtin_argStatement := by
+  intro prog sp m rs a
+  induction a with
+  | BA x =>
+      intro vl rl v hless hev
+      cases vl with
+      | nil =>
+          cases rl with
+          | nil =>
+              cases hev
+              exact ⟨_, eval_BA_int _, Val.lessdef_refl _, Val.lessdef_list_nil⟩
+          | cons r rl => cases hless
+      | cons w vl =>
+          cases rl with
+          | nil => cases hless
+          | cons r rl =>
+              cases hless with
+              | lessdef_list_cons _ _ _ _ hhead htail =>
+                  cases hev
+                  exact ⟨_, eval_BA _, hhead, htail⟩
+  | BA_int n =>
+      intro vl rl v hless hev
+      cases hev
+      exact ⟨_, eval_BA_int _, Val.lessdef_refl _, hless⟩
+  | BA_long n =>
+      intro vl rl v hless hev
+      cases hev
+      exact ⟨_, eval_BA_long _, Val.lessdef_refl _, hless⟩
+  | BA_float f =>
+      intro vl rl v hless hev
+      cases hev
+      exact ⟨_, eval_BA_float _, Val.lessdef_refl _, hless⟩
+  | BA_single f =>
+      intro vl rl v hless hev
+      cases hev
+      exact ⟨_, eval_BA_single _, Val.lessdef_refl _, hless⟩
+  | BA_loadstack chunk ofs =>
+      intro vl rl v hless hev
+      cases hev with
+      | eval_BA_loadstack _ _ _ hload =>
+          exact ⟨_, eval_BA_loadstack _ _ _ hload, Val.lessdef_refl _, hless⟩
+  | BA_addrstack ofs =>
+      intro vl rl v hless hev
+      cases hev
+      exact ⟨_, eval_BA_addrstack _, Val.lessdef_refl _, hless⟩
+  | BA_loadglobal chunk id ofs =>
+      intro vl rl v hless hev
+      cases hev with
+      | eval_BA_loadglobal _ _ _ _ hload =>
+          exact ⟨_, eval_BA_loadglobal _ _ _ _ hload, Val.lessdef_refl _, hless⟩
+  | BA_addrglobal id ofs =>
+      intro vl rl v hless hev
+      cases hev
+      exact ⟨_, eval_BA_addrglobal _ _, Val.lessdef_refl _, hless⟩
+  | BA_splitlong hi lo ihHi ihLo =>
+      intro vl rl v hless hev
+      cases hvlHi : convert_builtin_arg hi vl with
+      | mk ahi vl1 =>
+        cases hvlLo : convert_builtin_arg lo vl1 with
+        | mk alo vl2 =>
+          cases hrlHi : convert_builtin_arg hi rl with
+          | mk rhi rl1 =>
+            cases hrlLo : convert_builtin_arg lo rl1 with
+            | mk rlo rl2 =>
+              simp [convert_builtin_arg, hvlHi, hvlLo] at hev
+              cases hev with
+              | eval_BA_splitlong _ _ vhi vlo hevHi hevLo =>
+                  have hevHi' :
+                      eval_builtin_arg (Genv.to_senv (Genv.globalenv prog))
+                        (fun v => v) sp m (convert_builtin_arg hi vl).1 vhi := by
+                    rw [hvlHi]
+                    exact hevHi
+                  have hevLo' :
+                      eval_builtin_arg (Genv.to_senv (Genv.globalenv prog))
+                        (fun v => v) sp m (convert_builtin_arg lo vl1).1 vlo := by
+                    rw [hvlLo]
+                    exact hevLo
+                  obtain ⟨vhi', htargetHi, hlessHi, hremHi⟩ :=
+                    ihHi vl rl vhi hless hevHi'
+                  have htargetHi' := htargetHi
+                  have hremHi' := hremHi
+                  simp [hrlHi] at htargetHi'
+                  simp [hvlHi, hrlHi] at hremHi'
+                  obtain ⟨vlo', htargetLo, hlessLo, hremLo⟩ :=
+                    ihLo vl1 rl1 vlo hremHi' hevLo'
+                  have htargetLo' := htargetLo
+                  have hremLo' := hremLo
+                  simp [hrlLo] at htargetLo'
+                  simp [hvlLo, hrlLo] at hremLo'
+                  refine ⟨Val.longofwords vhi' vlo', ?_, ?_, ?_⟩
+                  · simpa [convert_builtin_arg, hrlHi, hrlLo] using
+                      (eval_BA_splitlong rhi rlo vhi' vlo' htargetHi' htargetLo')
+                  · exact rtlgenproof_longofwords_lessdef _ _ _ _ hlessHi hlessLo
+                  · simpa [convert_builtin_arg, hvlHi, hvlLo, hrlHi, hrlLo] using hremLo'
+  | BA_addptr a1 a2 ih1 ih2 =>
+      intro vl rl v hless hev
+      cases hvl1 : convert_builtin_arg a1 vl with
+      | mk av1 vl1 =>
+        cases hvl2 : convert_builtin_arg a2 vl1 with
+        | mk av2 vl2 =>
+          cases hrl1 : convert_builtin_arg a1 rl with
+          | mk ar1 rl1 =>
+            cases hrl2 : convert_builtin_arg a2 rl1 with
+            | mk ar2 rl2 =>
+              simp [convert_builtin_arg, hvl1, hvl2] at hev
+              cases hev with
+              | eval_BA_addptr _ _ v1 v2 hev1 hev2 =>
+                  have hev1' :
+                      eval_builtin_arg (Genv.to_senv (Genv.globalenv prog))
+                        (fun v => v) sp m (convert_builtin_arg a1 vl).1 v1 := by
+                    rw [hvl1]
+                    exact hev1
+                  have hev2' :
+                      eval_builtin_arg (Genv.to_senv (Genv.globalenv prog))
+                        (fun v => v) sp m (convert_builtin_arg a2 vl1).1 v2 := by
+                    rw [hvl2]
+                    exact hev2
+                  obtain ⟨v1', htarget1, hless1, hrem1⟩ :=
+                    ih1 vl rl v1 hless hev1'
+                  have htarget1' := htarget1
+                  have hrem1' := hrem1
+                  simp [hrl1] at htarget1'
+                  simp [hvl1, hrl1] at hrem1'
+                  obtain ⟨v2', htarget2, hless2, hrem2⟩ :=
+                    ih2 vl1 rl1 v2 hrem1' hev2'
+                  have htarget2' := htarget2
+                  have hrem2' := hrem2
+                  simp [hrl2] at htarget2'
+                  simp [hvl2, hrl2] at hrem2'
+                  let v' := if CompCert4Lean.X86_64.Archi.ptr64
+                    then Val.addl v1' v2' else Val.add v1' v2'
+                  refine ⟨v', ?_, ?_, ?_⟩
+                  · simpa [v', convert_builtin_arg, hrl1, hrl2] using
+                      (eval_BA_addptr ar1 ar2 v1' v2' htarget1' htarget2')
+                  · simp only [v']
+                    split
+                    · exact rtlgenproof_addl_lessdef _ _ _ _ hless1 hless2
+                    · exact rtlgenproof_add_lessdef _ _ _ _ hless1 hless2
+                  · simpa [convert_builtin_arg, hvl1, hvl2, hrl1, hrl2] using hrem2'
+
+end CompCert4Lean.Backend.RTLgenproof

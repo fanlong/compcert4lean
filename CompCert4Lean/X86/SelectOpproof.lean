@@ -1957,3 +1957,60 @@ theorem eval_or
       · rfl
 
 end CompCert4Lean.X86.SelectOpproof
+
+namespace CompCert4Lean.X86.SelectOpproof
+
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.Common.Values
+open CompCert4Lean.X86.Op
+open CompCert4Lean.X86.SelectOp
+
+theorem eval_divs_base
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    eval_divs_baseStatement := by
+  intro xi ge sp e m le a b x y z ha hb hdiv
+  refine ⟨z, ?_, Val.lessdef_refl _⟩
+  unfold divs_base
+  apply eval_expr.eval_Eop le Odiv (Econs a (Econs b Enil)) [x, y] z
+  · exact eval_exprlist.cons le a (Econs b Enil) x [y] ha
+      (eval_exprlist.cons le b Enil y [] hb (eval_exprlist.nil le))
+  · exact hdiv
+
+theorem eval_divu_base
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    eval_divu_baseStatement := by
+  intro xi ge sp e m le a b x y z ha hb hdiv
+  refine ⟨z, ?_, Val.lessdef_refl _⟩
+  unfold divu_base
+  apply eval_expr.eval_Eop le Odivu (Econs a (Econs b Enil)) [x, y] z
+  · exact eval_exprlist.cons le a (Econs b Enil) x [y] ha
+      (eval_exprlist.cons le b Enil y [] hb (eval_exprlist.nil le))
+  · exact hdiv
+
+theorem eval_mods_base
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    eval_mods_baseStatement := by
+  intro xi ge sp e m le a b x y z ha hb hmod
+  refine ⟨z, ?_, Val.lessdef_refl _⟩
+  unfold mods_base
+  apply eval_expr.eval_Eop le Omod (Econs a (Econs b Enil)) [x, y] z
+  · exact eval_exprlist.cons le a (Econs b Enil) x [y] ha
+      (eval_exprlist.cons le b Enil y [] hb (eval_exprlist.nil le))
+  · exact hmod
+
+theorem eval_modu_base
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    eval_modu_baseStatement := by
+  intro xi ge sp e m le a b x y z ha hb hmod
+  refine ⟨z, ?_, Val.lessdef_refl _⟩
+  unfold modu_base
+  apply eval_expr.eval_Eop le Omodu (Econs a (Econs b Enil)) [x, y] z
+  · exact eval_exprlist.cons le a (Econs b Enil) x [y] ha
+      (eval_exprlist.cons le b Enil y [] hb (eval_exprlist.nil le))
+  · exact hmod
+
+end CompCert4Lean.X86.SelectOpproof

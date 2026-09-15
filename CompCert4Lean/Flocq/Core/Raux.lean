@@ -3127,3 +3127,14 @@ theorem Ztrunc_ceil (ctx : ExactRealContext) :
           simp
 
 end CompCert4Lean.Flocq.Core.Raux
+
+namespace CompCert4Lean.Flocq.Core.Raux
+
+theorem Zaway_ceil (ctx : ExactRealContext) :
+    Zaway_ceilStatement ctx := by
+  intro x hx
+  unfold Exact.Zaway
+  have hb := Rlt_bool_false ctx x (Exact.R0 ctx) hx
+  simp [hb]
+
+end CompCert4Lean.Flocq.Core.Raux

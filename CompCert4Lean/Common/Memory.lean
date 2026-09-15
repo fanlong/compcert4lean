@@ -3111,3 +3111,71 @@ theorem load_store_other : load_store_otherStatement := by
 
 end Mem
 end CompCert4Lean.Common.Memory
+
+namespace CompCert4Lean.Common.Memory
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+namespace Mem
+
+theorem loadbytes_store_other : loadbytes_store_otherStatement := by
+  intro chunk m1 b ofs v m2 hstore b' ofs' n hcond
+  have range_perm_1_to_2 :
+      range_perm m1 b' ofs' (zAdd ofs' n) Cur Readable →
+        range_perm m2 b' ofs' (zAdd ofs' n) Cur Readable := by
+    intro hrange o ho
+    exact perm_store_1 chunk m1 b ofs v m2 hstore b' o Cur Readable (hrange o ho)
+  have range_perm_2_to_1 :
+      range_perm m2 b' ofs' (zAdd ofs' n) Cur Readable →
+        range_perm m1 b' ofs' (zAdd ofs' n) Cur Readable := by
+    intro hrange o ho
+    exact perm_store_2 chunk m1 b ofs v m2 hstore b' o Cur Readable (hrange o ho)
+  unfold loadbytes
+  cases hdec1 : range_perm_dec m1 b' ofs' (zAdd ofs' n) Cur Readable with
+  | right hn1 =>
+      have hn2 : ¬ range_perm m2 b' ofs' (zAdd ofs' n) Cur Readable := by
+        intro h2
+        exact hn1 (range_perm_2_to_1 h2)
+      cases hdec2 : range_perm_dec m2 b' ofs' (zAdd ofs' n) Cur Readable with
+      | left h2 => exact False.elim (hn2 h2)
+      | right _ => simp [boolOfSumbool, hdec1, hdec2]
+  | left h1 =>
+      have h2 : range_perm m2 b' ofs' (zAdd ofs' n) Cur Readable :=
+        range_perm_1_to_2 h1
+      cases hdec2 : range_perm_dec m2 b' ofs' (zAdd ofs' n) Cur Readable with
+      | right hn2 => exact False.elim (hn2 h2)
+      | left _ =>
+          simp only [boolOfSumbool, hdec1, hdec2, ↓reduceIte]
+          congr 1
+          rw [store_mem_contents chunk m1 b ofs v m2 hstore]
+          by_cases hb : b' = b
+          · subst b'
+            rw [pmapGetSetSame]
+            by_cases hn : zLe n z0
+            · have hnat : zToNat n = 0 := Z_to_nat_neg n hn
+              simp [hnat, getN]
+            · have hnnonneg : zLe z0 n := by
+                change ¬ intOfZ n ≤ intOfZ z0 at hn
+                change intOfZ z0 ≤ intOfZ n
+                omega
+              have hnat : zOfNat (zToNat n) = n :=
+                ZArith.Znat.Z2Nat.id n hnnonneg
+              have hsize : zOfNat (encode_val chunk v).length = size_chunk chunk := by
+                rw [CompCert4Lean.Common.Memdata.encode_val_length]
+                cases chunk <;> rfl
+              apply getN_setN_outside (encode_val chunk v) ofs
+              rcases hcond with hneq | hnonpos | hleft | hright
+              · exact False.elim (hneq rfl)
+              · exact False.elim (hn hnonpos)
+              · left
+                simpa only [hnat] using hleft
+              · right
+                simpa only [hsize] using hright
+          · rw [pmapGetSetOther _ _ _ _ hb]
+
+end Mem
+end CompCert4Lean.Common.Memory

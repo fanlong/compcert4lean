@@ -3380,3 +3380,43 @@ theorem create_undef_temps_val : create_undef_temps_valStatement := by
           exact ⟨CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.List.in_cons hd id tl hin, hv⟩
 
 end CompCert4Lean.Cfrontend.Cminorgenproof
+
+namespace CompCert4Lean.Cfrontend.Cminorgenproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.List
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.Cfrontend.Cminorgen
+
+theorem assign_variables_domain : assign_variables_domainStatement := by
+  intro id vars
+  induction vars with
+  | nil =>
+      intro cesz hget
+      exact Or.inl (by simpa [assign_variables] using hget)
+  | cons hd tl ih =>
+      intro cesz hget
+      have htail :
+          PTree.get id (assign_variable cesz hd).1 ≠ none ∨
+            In id (List.map Prod.fst tl) := by
+        apply ih
+        simpa [assign_variables] using hget
+      rcases htail with hstep | hmem
+      · rcases hd with ⟨id', sz⟩
+        rcases cesz with ⟨cenv, stksz⟩
+        change PTree.get id
+            (PTree.set id' (align stksz (block_alignment sz)) cenv) ≠ none at hstep
+        have hspec := PTree.gsspec_proof
+          (A := Z) id id' (align stksz (block_alignment sz)) cenv
+        cases heq : peq id id' with
+        | left hid =>
+            subst id
+            exact Or.inr (List.Mem.head _)
+        | right hne =>
+            left
+            rw [hspec] at hstep
+            simpa [heq] using hstep
+      · exact Or.inr (in_cons hd.1 id (List.map Prod.fst tl) hmem)
+
+end CompCert4Lean.Cfrontend.Cminorgenproof

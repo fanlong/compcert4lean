@@ -2846,3 +2846,691 @@ theorem alloc_variables_injective : alloc_variables_injectiveStatement := by
       · exact hids
 
 end CompCert4Lean.Cfrontend.SimplLocalsproof
+
+namespace CompCert4Lean.Cfrontend.SimplLocalsproof
+
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Cfrontend.Clight
+open CompCert4Lean.Cfrontend.Ctypes
+open CompCert4Lean.Cfrontend.SimplLocals
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.Lib.Maps
+
+private theorem mav_alloc_result (m : mem) (lo hi : Z) (m' : mem) (b : block)
+    (halloc : Mem.alloc m lo hi = (m', b)) : b = m.nextblock := by
+  unfold Mem.alloc at halloc
+  exact (congrArg Prod.snd halloc).symm
+
+private theorem mav_alloc_nextblock (m : mem) (lo hi : Z) (m' : mem) (b : block)
+    (halloc : Mem.alloc m lo hi = (m', b)) :
+    m'.nextblock = PArith.BinPos.Pos.succ m.nextblock := by
+  unfold Mem.alloc at halloc
+  have hfirst := congrArg Prod.fst halloc
+  exact (congrArg Mem.nextblock hfirst).symm
+
+private theorem mav_alloc_valid_old (m : mem) (lo hi : Z) (m' : mem) (b b' : block)
+    (halloc : Mem.alloc m lo hi = (m', b)) (hvalid : Mem.valid_block m b') :
+    Mem.valid_block m' b' := by
+  unfold Mem.valid_block at hvalid ⊢
+  rw [mav_alloc_nextblock m lo hi m' b halloc]
+  exact Plt_trans_succ _ _ hvalid
+
+private theorem mav_alloc_fresh_invalid (m : mem) (lo hi : Z) (m' : mem) (b : block)
+    (halloc : Mem.alloc m lo hi = (m', b)) : ¬ Mem.valid_block m b := by
+  rw [mav_alloc_result m lo hi m' b halloc]
+  exact Plt_strict _
+
+private theorem mav_alloc_fresh_valid (m : mem) (lo hi : Z) (m' : mem) (b : block)
+    (halloc : Mem.alloc m lo hi = (m', b)) : Mem.valid_block m' b := by
+  unfold Mem.valid_block
+  rw [mav_alloc_result m lo hi m' b halloc]
+  rw [mav_alloc_nextblock m lo hi m' b halloc]
+  exact Plt_succ _
+
+private theorem mav_alloc_valid_inv (m : mem) (lo hi : Z) (m' : mem) (b x : block)
+    (halloc : Mem.alloc m lo hi = (m', b)) (hvalid : Mem.valid_block m' x) :
+    x = b ∨ Mem.valid_block m x := by
+  have hlt : Plt x (PArith.BinPos.Pos.succ m.nextblock) := by
+    unfold Mem.valid_block at hvalid
+    rwa [mav_alloc_nextblock m lo hi m' b halloc] at hvalid
+  have hle : PArith.BinPos.Pos.le x m.nextblock :=
+    (PArith.BinPos.Pos.lt_succ_r x m.nextblock).mp hlt
+  by_cases hx : x = b
+  · exact Or.inl hx
+  · right
+    unfold Mem.valid_block Plt
+    change posToNat x < posToNat m.nextblock
+    change posToNat x ≤ posToNat m.nextblock at hle
+    have hne : posToNat x ≠ posToNat m.nextblock := by
+      intro heq
+      apply hx
+      rw [mav_alloc_result m lo hi m' b halloc]
+      exact posToNat_injective heq
+    omega
+
+private theorem mav_alloc_access_old (m : mem) (lo hi : Z) (m' : mem) (b b' : block)
+    (halloc : Mem.alloc m lo hi = (m', b)) (hne : b' ≠ b) :
+    PMap.get b' m'.mem_access = PMap.get b' m.mem_access := by
+  unfold Mem.alloc at halloc
+  have hfirst := congrArg Prod.fst halloc
+  have haccess := congrArg (fun x : mem => x.mem_access) hfirst
+  rw [← haccess]
+  apply PMap.gso
+  rwa [mav_alloc_result m lo hi m' b halloc] at hne
+
+private theorem mav_alloc_contents_old (m : mem) (lo hi : Z) (m' : mem) (b b' : block)
+    (halloc : Mem.alloc m lo hi = (m', b)) (hne : b' ≠ b) :
+    PMap.get b' m'.mem_contents = PMap.get b' m.mem_contents := by
+  unfold Mem.alloc at halloc
+  have hfirst := congrArg Prod.fst halloc
+  have hcontents := congrArg (fun x : mem => x.mem_contents) hfirst
+  rw [← hcontents]
+  apply PMap.gso
+  rwa [mav_alloc_result m lo hi m' b halloc] at hne
+
+private theorem mav_alloc_perm_old_iff (m : mem) (lo hi : Z) (m' : mem) (b b' : block)
+    (halloc : Mem.alloc m lo hi = (m', b)) (hne : b' ≠ b)
+    (ofs : Z) (k : perm_kind) (p : permission) :
+    Mem.perm m' b' ofs k p ↔ Mem.perm m b' ofs k p := by
+  unfold Mem.perm
+  rw [mav_alloc_access_old m lo hi m' b b' halloc hne]
+
+private theorem mav_alloc_new_perm_transfer
+    (m tm m' tm' : mem) (lo hi : Z) (b tb : block)
+    (halloc : Mem.alloc m lo hi = (m', b))
+    (htalloc : Mem.alloc tm lo hi = (tm', tb))
+    (ofs : Z) (k : perm_kind) (p : permission) :
+    Mem.perm m' b ofs k p → Mem.perm tm' tb ofs k p := by
+  intro hperm
+  unfold Mem.alloc at halloc htalloc
+  cases halloc
+  cases htalloc
+  unfold Mem.perm at hperm ⊢
+  rw [PMap.gss] at hperm ⊢
+  exact hperm
+
+private theorem mav_alloc_new_contents_undef
+    (m m' : mem) (lo hi : Z) (b : block)
+    (halloc : Mem.alloc m lo hi = (m', b)) (ofs : Z) :
+    ZMap.get ofs (PMap.get b m'.mem_contents) = Undef := by
+  unfold Mem.alloc at halloc
+  cases halloc
+  rw [PMap.gss]
+  exact ZMap.gi_proof _ _ _
+
+private theorem mav_alloc_left_unmapped
+    (f : meminj) (m tm m' : mem) (lo hi : Z) (b : block)
+    (hinj : Mem.inject f m tm) (halloc : Mem.alloc m lo hi = (m', b)) :
+    ∃ f', Mem.inject f' m' tm ∧ inject_incr f f' ∧ f' b = none ∧
+      ∀ x, x ≠ b → f' x = f x := by
+  let f' : meminj := fun x => if x = b then none else f x
+  have hfb : f b = none := hinj.mi_freeblocks b
+    (mav_alloc_fresh_invalid m lo hi m' b halloc)
+  have hincr : inject_incr f f' := by
+    intro x x' delta hmap
+    by_cases hx : x = b
+    · subst x
+      rw [hfb] at hmap
+      cases hmap
+    · simpa [f', hx] using hmap
+  refine ⟨f', ?_, hincr, by simp [f'], ?_⟩
+  · refine {
+      mi_inj := ?_,
+      mi_freeblocks := ?_,
+      mi_mappedblocks := ?_,
+      mi_no_overlap := ?_,
+      mi_representable := ?_,
+      mi_perm_inv := ?_ }
+    · refine {
+        mi_perm := ?_,
+        mi_align := ?_,
+        mi_memval := ?_ }
+      · intro x x' delta ofs k p hmap hperm
+        have hx : x ≠ b := by
+          intro heq
+          subst x
+          simp [f'] at hmap
+        have hmap0 : f x = some (x', delta) := by simpa [f', hx] using hmap
+        exact hinj.mi_inj.mi_perm x x' delta ofs k p hmap0
+          ((mav_alloc_perm_old_iff m lo hi m' b x halloc hx ofs k p).mp hperm)
+      · intro x x' delta chunk ofs p hmap hrange
+        have hx : x ≠ b := by
+          intro heq
+          subst x
+          simp [f'] at hmap
+        have hmap0 : f x = some (x', delta) := by simpa [f', hx] using hmap
+        apply hinj.mi_inj.mi_align x x' delta chunk ofs p hmap0
+        intro q hq
+        exact (mav_alloc_perm_old_iff m lo hi m' b x halloc hx q Max p).mp
+          (hrange q hq)
+      · intro x ofs x' delta hmap hperm
+        have hx : x ≠ b := by
+          intro heq
+          subst x
+          simp [f'] at hmap
+        have hmap0 : f x = some (x', delta) := by simpa [f', hx] using hmap
+        rw [mav_alloc_contents_old m lo hi m' b x halloc hx]
+        exact CompCert4Lean.Common.Memdata.memval_inject_incr f f' _ _
+          (hinj.mi_inj.mi_memval x ofs x' delta hmap0
+            ((mav_alloc_perm_old_iff m lo hi m' b x halloc hx ofs Cur Readable).mp hperm))
+          hincr
+    · intro x hinvalid
+      by_cases hx : x = b
+      · simp [f', hx]
+      · have hinvalid0 : ¬ Mem.valid_block m x := by
+          intro hvalid
+          exact hinvalid (mav_alloc_valid_old m lo hi m' b x halloc hvalid)
+        dsimp [f']
+        split
+        · rename_i heq
+          exact False.elim (hx heq)
+        · exact hinj.mi_freeblocks x hinvalid0
+    · intro x x' delta hmap
+      have hx : x ≠ b := by
+        intro heq
+        subst x
+        simp [f'] at hmap
+      exact hinj.mi_mappedblocks x x' delta (by simpa [f', hx] using hmap)
+    · intro x x' delta y y' delta' ofs ofs' hxy hmap hmap' hperm hperm'
+      have hx : x ≠ b := by
+        intro heq
+        subst x
+        simp [f'] at hmap
+      have hy : y ≠ b := by
+        intro heq
+        subst y
+        simp [f'] at hmap'
+      apply hinj.mi_no_overlap x x' delta y y' delta' ofs ofs' hxy
+        (by simpa [f', hx] using hmap) (by simpa [f', hy] using hmap')
+      · exact (mav_alloc_perm_old_iff m lo hi m' b x halloc hx ofs Max Nonempty).mp hperm
+      · exact (mav_alloc_perm_old_iff m lo hi m' b y halloc hy ofs' Max Nonempty).mp hperm'
+    · intro x x' delta ofs hmap hperm
+      have hx : x ≠ b := by
+        intro heq
+        subst x
+        simp [f'] at hmap
+      apply hinj.mi_representable x x' delta ofs (by simpa [f', hx] using hmap)
+      cases hperm with
+      | inl hp =>
+          exact Or.inl ((mav_alloc_perm_old_iff m lo hi m' b x halloc hx
+            (Ptrofs.unsigned ofs) Max Nonempty).mp hp)
+      | inr hp =>
+          exact Or.inr ((mav_alloc_perm_old_iff m lo hi m' b x halloc hx
+            (ZArith.BinInt.Z.sub (Ptrofs.unsigned ofs) (.Zpos .xH)) Max Nonempty).mp hp)
+    · intro x ofs x' delta k p hmap hperm
+      have hx : x ≠ b := by
+        intro heq
+        subst x
+        simp [f'] at hmap
+      have hbase := hinj.mi_perm_inv x ofs x' delta k p
+        (by simpa [f', hx] using hmap) hperm
+      cases hbase with
+      | inl hp =>
+          exact Or.inl ((mav_alloc_perm_old_iff m lo hi m' b x halloc hx ofs k p).mpr hp)
+      | inr hp =>
+          exact Or.inr (by
+            intro hp'
+            exact hp ((mav_alloc_perm_old_iff m lo hi m' b x halloc hx
+              ofs Max Nonempty).mp hp'))
+  · intro x hx
+    simp [f', hx]
+
+private theorem mav_zdivide_zero (a : Z) : ZArith.BinInt.Z.divide a (.Z0 : Z) := by
+  refine ⟨.Z0, ?_⟩
+  apply intOfZ_injective
+  change intOfZ (.Z0 : Z) = intOfZ (zOfInt (intOfZ a * intOfZ (.Z0 : Z)))
+  rw [intOfZ_zOfInt]
+  change 0 = intOfZ a * 0
+  omega
+
+private theorem mav_zadd_zero (a : Z) : ZArith.BinInt.Z.add a (.Z0 : Z) = a := by
+  apply intOfZ_injective
+  simp only [ZArith.BinInt.Z.add, intOfZ_zOfInt]
+  change intOfZ a + 0 = intOfZ a
+  omega
+
+private theorem mav_ptrofs_unsigned_range (i : Ptrofs.int) :
+    ZArith.BinInt.Z.le (.Z0 : Z) (Ptrofs.unsigned i) ∧
+      ZArith.BinInt.Z.le (Ptrofs.unsigned i) Ptrofs.max_unsigned := by
+  constructor
+  · have h := i.intrange.1
+    change (-1 : _root_.Int) < intOfZ i.intval at h
+    change 0 ≤ intOfZ i.intval
+    omega
+  · have h := i.intrange.2
+    change intOfZ i.intval < intOfZ Ptrofs.modulus at h
+    change intOfZ i.intval ≤
+      intOfZ (ZArith.BinInt.Z.sub Ptrofs.modulus (.Zpos .xH))
+    simp only [ZArith.BinInt.Z.sub, intOfZ_zOfInt]
+    change intOfZ i.intval ≤ intOfZ Ptrofs.modulus - 1
+    omega
+
+private theorem mav_alloc_parallel_same
+    (f : meminj) (m tm m' tm' : mem) (lo hi : Z) (b tb : block)
+    (hinj : Mem.inject f m tm)
+    (halloc : Mem.alloc m lo hi = (m', b))
+    (htalloc : Mem.alloc tm lo hi = (tm', tb)) :
+    ∃ f', Mem.inject f' m' tm' ∧ inject_incr f f' ∧
+      f' b = some (tb, (.Z0 : Z)) ∧ ∀ x, x ≠ b → f' x = f x := by
+  let f' : meminj := fun x => if x = b then some (tb, (.Z0 : Z)) else f x
+  have hfb : f b = none := hinj.mi_freeblocks b
+    (mav_alloc_fresh_invalid m lo hi m' b halloc)
+  have hincr : inject_incr f f' := by
+    intro x x' delta hmap
+    by_cases hx : x = b
+    · subst x
+      rw [hfb] at hmap
+      cases hmap
+    · simpa [f', hx] using hmap
+  have hnew : f' b = some (tb, (.Z0 : Z)) := by simp [f']
+  have hold : ∀ x, x ≠ b → f' x = f x := by
+    intro x hx
+    simp [f', hx]
+  refine ⟨f', ?_, hincr, hnew, hold⟩
+  refine {
+    mi_inj := ?_,
+    mi_freeblocks := ?_,
+    mi_mappedblocks := ?_,
+    mi_no_overlap := ?_,
+    mi_representable := ?_,
+    mi_perm_inv := ?_ }
+  · refine {
+      mi_perm := ?_,
+      mi_align := ?_,
+      mi_memval := ?_ }
+    · intro x x' delta ofs k p hmap hperm
+      by_cases hx : x = b
+      · subst x
+        rw [hnew] at hmap
+        have hpair : (tb, (.Z0 : Z)) = (x', delta) := Option.some.inj hmap
+        have hxb : tb = x' := congrArg Prod.fst hpair
+        have hdelta : (.Z0 : Z) = delta := congrArg Prod.snd hpair
+        subst x'
+        subst delta
+        change Mem.perm tm' (show positive from tb)
+          (ZArith.BinInt.Z.add ofs (.Z0 : Z)) k p
+        rw [mav_zadd_zero]
+        exact mav_alloc_new_perm_transfer m tm m' tm' lo hi b tb
+          halloc htalloc ofs k p hperm
+      · have hmap0 : f x = some (x', delta) := by simpa [hold x hx] using hmap
+        have hx'valid := hinj.mi_mappedblocks x x' delta hmap0
+        have hx' : x' ≠ tb := by
+          rw [mav_alloc_result tm lo hi tm' tb htalloc]
+          exact Plt_ne x' tm.nextblock hx'valid
+        exact (mav_alloc_perm_old_iff tm lo hi tm' tb x' htalloc hx'
+          (ZArith.BinInt.Z.add ofs delta) k p).mpr
+            (hinj.mi_inj.mi_perm x x' delta ofs k p hmap0
+              ((mav_alloc_perm_old_iff m lo hi m' b x halloc hx ofs k p).mp hperm))
+    · intro x x' delta chunk ofs p hmap hrange
+      by_cases hx : x = b
+      · subst x
+        rw [hnew] at hmap
+        have hpair : (tb, (.Z0 : Z)) = (x', delta) := Option.some.inj hmap
+        have hxb : tb = x' := congrArg Prod.fst hpair
+        have hdelta : (.Z0 : Z) = delta := congrArg Prod.snd hpair
+        subst x'
+        subst delta
+        exact mav_zdivide_zero _
+      · have hmap0 : f x = some (x', delta) := by simpa [hold x hx] using hmap
+        apply hinj.mi_inj.mi_align x x' delta chunk ofs p hmap0
+        intro q hq
+        exact (mav_alloc_perm_old_iff m lo hi m' b x halloc hx q Max p).mp
+          (hrange q hq)
+    · intro x ofs x' delta hmap hperm
+      by_cases hx : x = b
+      · subst x
+        rw [hnew] at hmap
+        have hpair : (tb, (.Z0 : Z)) = (x', delta) := Option.some.inj hmap
+        have hxb : tb = x' := congrArg Prod.fst hpair
+        have hdelta : (.Z0 : Z) = delta := congrArg Prod.snd hpair
+        subst x'
+        subst delta
+        rw [mav_alloc_new_contents_undef m m' lo hi b halloc ofs]
+        exact memval_inject.undef f' _
+      · have hmap0 : f x = some (x', delta) := by simpa [hold x hx] using hmap
+        have hx'valid := hinj.mi_mappedblocks x x' delta hmap0
+        have hx' : x' ≠ tb := by
+          rw [mav_alloc_result tm lo hi tm' tb htalloc]
+          exact Plt_ne x' tm.nextblock hx'valid
+        rw [mav_alloc_contents_old m lo hi m' b x halloc hx]
+        rw [mav_alloc_contents_old tm lo hi tm' tb x' htalloc hx']
+        exact CompCert4Lean.Common.Memdata.memval_inject_incr f f' _ _
+          (hinj.mi_inj.mi_memval x ofs x' delta hmap0
+            ((mav_alloc_perm_old_iff m lo hi m' b x halloc hx ofs Cur Readable).mp hperm))
+          hincr
+  · intro x hinvalid
+    by_cases hx : x = b
+    · subst x
+      exact False.elim (hinvalid (mav_alloc_fresh_valid m lo hi m' b halloc))
+    · have hinvalid0 : ¬ Mem.valid_block m x := by
+        intro hvalid
+        exact hinvalid (mav_alloc_valid_old m lo hi m' b x halloc hvalid)
+      rw [hold x hx]
+      exact hinj.mi_freeblocks x hinvalid0
+  · intro x x' delta hmap
+    by_cases hx : x = b
+    · subst x
+      rw [hnew] at hmap
+      have hpair : (tb, (.Z0 : Z)) = (x', delta) := Option.some.inj hmap
+      have hxb : tb = x' := congrArg Prod.fst hpair
+      have hdelta : (.Z0 : Z) = delta := congrArg Prod.snd hpair
+      subst x'
+      exact mav_alloc_fresh_valid tm lo hi tm' tb htalloc
+    · have hmap0 : f x = some (x', delta) := by simpa [hold x hx] using hmap
+      exact mav_alloc_valid_old tm lo hi tm' tb x' htalloc
+        (hinj.mi_mappedblocks x x' delta hmap0)
+  · intro x x' delta y y' delta' ofs ofs' hxy hmap hmap' hperm hperm'
+    by_cases hx : x = b
+    · subst x
+      by_cases hy : y = b
+      · exact False.elim (hxy hy.symm)
+      · rw [hnew] at hmap
+        have hpair : (tb, (.Z0 : Z)) = (x', delta) := Option.some.inj hmap
+        have hxb : tb = x' := congrArg Prod.fst hpair
+        have hdelta : (.Z0 : Z) = delta := congrArg Prod.snd hpair
+        subst x'
+        have hmap0 : f y = some (y', delta') := by simpa [hold y hy] using hmap'
+        left
+        intro heq
+        have hyvalid := hinj.mi_mappedblocks y y' delta' hmap0
+        have hyne : y' ≠ tb := by
+          rw [mav_alloc_result tm lo hi tm' tb htalloc]
+          exact Plt_ne y' tm.nextblock hyvalid
+        exact hyne heq.symm
+    · by_cases hy : y = b
+      · subst y
+        rw [hnew] at hmap'
+        have hpair : (tb, (.Z0 : Z)) = (y', delta') := Option.some.inj hmap'
+        have hyb : tb = y' := congrArg Prod.fst hpair
+        have hdelta' : (.Z0 : Z) = delta' := congrArg Prod.snd hpair
+        subst y'
+        have hmap0 : f x = some (x', delta) := by simpa [hold x hx] using hmap
+        left
+        have hxvalid := hinj.mi_mappedblocks x x' delta hmap0
+        rw [mav_alloc_result tm lo hi tm' tb htalloc]
+        exact Plt_ne x' tm.nextblock hxvalid
+      · have hmap0 : f x = some (x', delta) := by simpa [hold x hx] using hmap
+        have hmap0' : f y = some (y', delta') := by simpa [hold y hy] using hmap'
+        apply hinj.mi_no_overlap x x' delta y y' delta' ofs ofs' hxy hmap0 hmap0'
+        · exact (mav_alloc_perm_old_iff m lo hi m' b x halloc hx ofs Max Nonempty).mp hperm
+        · exact (mav_alloc_perm_old_iff m lo hi m' b y halloc hy ofs' Max Nonempty).mp hperm'
+  · intro x x' delta ofs hmap hperm
+    by_cases hx : x = b
+    · subst x
+      rw [hnew] at hmap
+      have hpair : (tb, (.Z0 : Z)) = (x', delta) := Option.some.inj hmap
+      have hxb : tb = x' := congrArg Prod.fst hpair
+      have hdelta : (.Z0 : Z) = delta := congrArg Prod.snd hpair
+      subst x'
+      subst delta
+      have hrange := mav_ptrofs_unsigned_range ofs
+      have hz : ZArith.BinInt.Z.le (.Z0 : Z) .Z0 := by
+        change (0 : _root_.Int) ≤ 0
+        omega
+      change ZArith.BinInt.Z.le (.Z0 : Z) .Z0 ∧
+        ZArith.BinInt.Z.le (.Z0 : Z)
+          (ZArith.BinInt.Z.add (Ptrofs.unsigned ofs) (.Z0 : Z)) ∧
+        ZArith.BinInt.Z.le
+          (ZArith.BinInt.Z.add (Ptrofs.unsigned ofs) (.Z0 : Z)) Ptrofs.max_unsigned
+      rw [mav_zadd_zero]
+      exact And.intro hz hrange
+    · have hmap0 : f x = some (x', delta) := by simpa [hold x hx] using hmap
+      apply hinj.mi_representable x x' delta ofs hmap0
+      cases hperm with
+      | inl hp =>
+          exact Or.inl ((mav_alloc_perm_old_iff m lo hi m' b x halloc hx
+            (Ptrofs.unsigned ofs) Max Nonempty).mp hp)
+      | inr hp =>
+          exact Or.inr ((mav_alloc_perm_old_iff m lo hi m' b x halloc hx
+            (ZArith.BinInt.Z.sub (Ptrofs.unsigned ofs) (.Zpos .xH)) Max Nonempty).mp hp)
+  · intro x ofs x' delta k p hmap hperm
+    by_cases hx : x = b
+    · subst x
+      rw [hnew] at hmap
+      have hpair : (tb, (.Z0 : Z)) = (x', delta) := Option.some.inj hmap
+      have hxb : tb = x' := congrArg Prod.fst hpair
+      have hdelta : (.Z0 : Z) = delta := congrArg Prod.snd hpair
+      subst x'
+      subst delta
+      exact Or.inl (by
+        change Mem.perm tm' (show positive from tb)
+          (ZArith.BinInt.Z.add ofs (.Z0 : Z)) k p at hperm
+        rw [mav_zadd_zero] at hperm
+        exact mav_alloc_new_perm_transfer tm m tm' m' lo hi tb b
+          htalloc halloc ofs k p hperm)
+    · have hmap0 : f x = some (x', delta) := by simpa [hold x hx] using hmap
+      have hx'valid := hinj.mi_mappedblocks x x' delta hmap0
+      have hx' : x' ≠ tb := by
+        rw [mav_alloc_result tm lo hi tm' tb htalloc]
+        exact Plt_ne x' tm.nextblock hx'valid
+      have hbase := hinj.mi_perm_inv x ofs x' delta k p hmap0
+        ((mav_alloc_perm_old_iff tm lo hi tm' tb x' htalloc hx'
+          (ZArith.BinInt.Z.add ofs delta) k p).mp hperm)
+      cases hbase with
+      | inl hp =>
+          exact Or.inl ((mav_alloc_perm_old_iff m lo hi m' b x halloc hx ofs k p).mpr hp)
+      | inr hp =>
+          exact Or.inr (by
+            intro hp'
+            exact hp ((mav_alloc_perm_old_iff m lo hi m' b x halloc hx
+              ofs Max Nonempty).mp hp'))
+
+theorem match_alloc_variables : match_alloc_variablesStatement := by
+  unfold match_alloc_variablesStatement
+  intro cfg p tp hprog
+  dsimp only
+  intro cenv e m vars e' m' halloc j tm te hnorep hinj
+  have hcenv : (globalenv tp).genv_cenv = (globalenv p).genv_cenv :=
+    comp_env_preserved cfg p tp hprog
+  induction halloc generalizing j tm te with
+  | nil =>
+      refine ⟨j, te, tm, alloc_variables.nil te tm, hinj, ?_, ?_, ?_, ?_, ?_, ?_⟩
+      · intro b b' delta hmap
+        exact hmap
+      · intro b _
+        rfl
+      · intro b b' delta _ _
+        rfl
+      · intro b b' delta hmap hnot
+        exact False.elim (hnot (hinj.mi_mappedblocks b b' delta hmap))
+      · intro id ty hmem
+        cases hmem
+      · intro id _
+        exact ⟨rfl, rfl⟩
+  | cons e m id ty vars m1 b1 m2 e2 halloc hrest ih =>
+      change list_norepet (id :: var_names vars) at hnorep
+      cases hnorep with
+      | cons _ hnotid hnrtail =>
+        by_cases hmem : VSet.mem id cenv = true
+        · rcases mav_alloc_left_unmapped j m tm m1 (.Z0 : Z)
+              (sizeof (globalenv p).genv_cenv ty) b1 hinj halloc with
+            ⟨j1, hinj1, hincr1, hj1new, hj1same⟩
+          rcases ih j1 tm te hnrtail hinj1 with
+            ⟨j', te', tm', htalloc, hinj', hincr', hsrc, htgt, hnew, hvars, hout⟩
+          have htalloc' : alloc_variables (globalenv tp) te tm
+              (remove_lifted cenv ((id, ty) :: vars)) te' tm' := by
+            simpa [remove_lifted, hmem] using htalloc
+          refine ⟨j', te', tm', htalloc', hinj', ?_, ?_, ?_, hnew, ?_, ?_⟩
+          · intro x x' delta hmap
+            exact hincr' x x' delta (hincr1 x x' delta hmap)
+          · intro x hvalid
+            have hx : x ≠ b1 := by
+              intro heq
+              subst x
+              exact (mav_alloc_fresh_invalid m (.Z0 : Z)
+                (sizeof (globalenv p).genv_cenv ty) m1 b1 halloc) hvalid
+            calc
+              j' x = j1 x := hsrc x (mav_alloc_valid_old m (.Z0 : Z)
+                (sizeof (globalenv p).genv_cenv ty) m1 b1 x halloc hvalid)
+              _ = j x := hj1same x hx
+          · intro x x' delta hmap hvalid
+            have hj : j' x = j1 x := htgt x x' delta hmap hvalid
+            have hmap1 : j1 x = some (x', delta) := by simpa [← hj] using hmap
+            have hx : x ≠ b1 := by
+              intro heq
+              subst x
+              rw [hj1new] at hmap1
+              cases hmap1
+            exact hj.trans (hj1same x hx)
+          · intro id0 ty0 hpair
+            simp only [List.mem_cons] at hpair
+            cases hpair with
+            | inl heq =>
+                cases heq
+                have ho := hout id hnotid
+                refine ⟨b1, ?_, ?_⟩
+                · calc
+                    PTree.get id e2 = PTree.get id (PTree.set id (b1, ty) e) := ho.1
+                    _ = some (b1, ty) := PTree.gss (A := block × type) id (b1, ty) e
+                · simp only [hmem, if_true]
+                  exact ⟨ho.2, (hsrc b1 (mav_alloc_fresh_valid m (.Z0 : Z)
+                    (sizeof (globalenv p).genv_cenv ty) m1 b1 halloc)).trans hj1new⟩
+            | inr htail => exact hvars id0 ty0 htail
+          · intro id0 hall
+            change id0 ∉ id :: var_names vars at hall
+            have hid : id0 ≠ id := by
+              intro heq
+              apply hall
+              simp [heq]
+            have htail : id0 ∉ var_names vars := by
+              intro h
+              exact hall (List.mem_cons_of_mem id h)
+            have ho := hout id0 htail
+            constructor
+            · calc
+                PTree.get id0 e2 = PTree.get id0 (PTree.set id (b1, ty) e) := ho.1
+                _ = PTree.get id0 e := PTree.gso (A := block × type) (b1, ty) e hid
+            · exact ho.2
+        · rcases htm : Mem.alloc tm (.Z0 : Z)
+              (sizeof (globalenv p).genv_cenv ty) with ⟨tm1, tb1⟩
+          have htallocSource : Mem.alloc tm (.Z0 : Z)
+              (sizeof (globalenv p).genv_cenv ty) = (tm1, tb1) := htm
+          have htallocTarget : Mem.alloc tm (.Z0 : Z)
+              (sizeof (globalenv tp).genv_cenv ty) = (tm1, tb1) := by
+            rw [hcenv]
+            exact htallocSource
+          rcases mav_alloc_parallel_same j m tm m1 tm1 (.Z0 : Z)
+              (sizeof (globalenv p).genv_cenv ty) b1 tb1 hinj halloc htallocSource with
+            ⟨j1, hinj1, hincr1, hj1new, hj1same⟩
+          rcases ih j1 tm1 (PTree.set id (tb1, ty) te) hnrtail hinj1 with
+            ⟨j', te', tm', htrest, hinj', hincr', hsrc, htgt, hnew, hvars, hout⟩
+          have htcons : alloc_variables (globalenv tp) te tm ((id, ty) ::
+              remove_lifted cenv vars) te' tm' :=
+            alloc_variables.cons te tm id ty (remove_lifted cenv vars) tm1 tb1 tm' te'
+              htallocTarget htrest
+          have htalloc' : alloc_variables (globalenv tp) te tm
+              (remove_lifted cenv ((id, ty) :: vars)) te' tm' := by
+            simpa [remove_lifted, hmem] using htcons
+          refine ⟨j', te', tm', htalloc', hinj', ?_, ?_, ?_, ?_, ?_, ?_⟩
+          · intro x x' delta hmap
+            exact hincr' x x' delta (hincr1 x x' delta hmap)
+          · intro x hvalid
+            have hx : x ≠ b1 := by
+              intro heq
+              subst x
+              exact (mav_alloc_fresh_invalid m (.Z0 : Z)
+                (sizeof (globalenv p).genv_cenv ty) m1 b1 halloc) hvalid
+            calc
+              j' x = j1 x := hsrc x (mav_alloc_valid_old m (.Z0 : Z)
+                (sizeof (globalenv p).genv_cenv ty) m1 b1 x halloc hvalid)
+              _ = j x := hj1same x hx
+          · intro x x' delta hmap hvalid
+            have hj : j' x = j1 x := htgt x x' delta hmap
+              (mav_alloc_valid_old tm (.Z0 : Z)
+                (sizeof (globalenv p).genv_cenv ty) tm1 tb1 x' htallocSource hvalid)
+            have hmap1 : j1 x = some (x', delta) := by simpa [← hj] using hmap
+            have hx : x ≠ b1 := by
+              intro heq
+              subst x
+              rw [hj1new] at hmap1
+              have hp : (tb1, (.Z0 : Z)) = (x', delta) := Option.some.inj hmap1
+              have hb : tb1 = x' := congrArg Prod.fst hp
+              subst x'
+              exact (mav_alloc_fresh_invalid tm (.Z0 : Z)
+                (sizeof (globalenv p).genv_cenv ty) tm1 tb1 htallocSource) hvalid
+            exact hj.trans (hj1same x hx)
+          · intro x x' delta hmap hnot
+            by_cases hxb : x' = tb1
+            · subst x'
+              have hj : j' x = j1 x := htgt x tb1 delta hmap
+                (mav_alloc_fresh_valid tm (.Z0 : Z)
+                  (sizeof (globalenv p).genv_cenv ty) tm1 tb1 htallocSource)
+              have hmap1 : j1 x = some (tb1, delta) := hj.symm.trans hmap
+              by_cases hx : x = b1
+              · subst x
+                rw [hj1new] at hmap1
+                have hp : (tb1, (.Z0 : Z)) = (tb1, delta) := Option.some.inj hmap1
+                have hdelta : (.Z0 : Z) = delta := congrArg Prod.snd hp
+                subst delta
+                have ho := hout id hnotid
+                refine ⟨id, ty, ?_, ?_, rfl⟩
+                · calc
+                    PTree.get id e2 = PTree.get id (PTree.set id (b1, ty) e) := ho.1
+                    _ = some (b1, ty) := PTree.gss (A := block × type) id (b1, ty) e
+                · rw [ho.2]
+                  exact PTree.gss (A := block × type) id (tb1, ty) te
+              · rw [hj1same x hx] at hmap1
+                exact False.elim (hnot (hinj.mi_mappedblocks x tb1 delta hmap1))
+            · apply hnew x x' delta hmap
+              intro hvalid1
+              cases mav_alloc_valid_inv tm (.Z0 : Z)
+                  (sizeof (globalenv p).genv_cenv ty) tm1 tb1 x'
+                  htallocSource hvalid1 with
+              | inl heq => exact hxb heq
+              | inr hvalid0 => exact hnot hvalid0
+          · intro id0 ty0 hpair
+            simp only [List.mem_cons] at hpair
+            cases hpair with
+            | inl heq =>
+                cases heq
+                have ho := hout id hnotid
+                refine ⟨b1, ?_, ?_⟩
+                · calc
+                    PTree.get id e2 = PTree.get id (PTree.set id (b1, ty) e) := ho.1
+                    _ = some (b1, ty) := PTree.gss (A := block × type) id (b1, ty) e
+                · simp only [hmem, if_false]
+                  refine ⟨tb1, ?_, ?_⟩
+                  · rw [ho.2]
+                    exact PTree.gss (A := block × type) id (tb1, ty) te
+                  · exact (hsrc b1 (mav_alloc_fresh_valid m (.Z0 : Z)
+                    (sizeof (globalenv p).genv_cenv ty) m1 b1 halloc)).trans hj1new
+            | inr htail =>
+                have hid : id0 ≠ id := by
+                  intro heq
+                  subst id0
+                  apply hnotid
+                  change id ∈ var_names vars
+                  exact List.mem_map.mpr ⟨(id, ty0), htail, rfl⟩
+                have hv := hvars id0 ty0 htail
+                rcases hv with ⟨b, hb, hv⟩
+                refine ⟨b, hb, ?_⟩
+                cases hm0 : VSet.mem id0 cenv with
+                | false => simpa [hm0] using hv
+                | true =>
+                    simp only [hm0, if_true] at hv ⊢
+                    exact ⟨hv.1.trans (PTree.gso (A := block × type)
+                      (tb1, ty) te hid), hv.2⟩
+          · intro id0 hall
+            change id0 ∉ id :: var_names vars at hall
+            have hid : id0 ≠ id := by
+              intro heq
+              apply hall
+              simp [heq]
+            have htail : id0 ∉ var_names vars := by
+              intro h
+              exact hall (List.mem_cons_of_mem id h)
+            have ho := hout id0 htail
+            constructor
+            · calc
+                PTree.get id0 e2 = PTree.get id0 (PTree.set id (b1, ty) e) := ho.1
+                _ = PTree.get id0 e := PTree.gso (A := block × type) (b1, ty) e hid
+            · rw [ho.2]
+              exact PTree.gso (A := block × type) (tb1, ty) te hid
+
+end CompCert4Lean.Cfrontend.SimplLocalsproof

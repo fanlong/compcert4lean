@@ -2757,3 +2757,96 @@ theorem match_stacks_inside_alloc_left : match_stacks_inside_alloc_leftStatement
       MS' COMPAT FB AG' (hIncr sp sp0 c'.dstk SP) PAD' RES RET BELOW SBELOW
 
 end CompCert4Lean.Backend.Inliningproof
+
+namespace CompCert4Lean.Backend.Inliningproof
+
+open CompCert4Lean.Backend.Inlining
+open CompCert4Lean.Backend.Inliningspec
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.Lib.Maps
+
+theorem match_stacks_inside_extcall : match_stacks_inside_extcallStatement := by
+  intro prog F1 F2 m1 m2 m1' m2' MAXPERM MAXPERM' UNCHANGED INJ INCR SEP
+  intro stk stk' f' ctx sp' rs' hstacks hsp
+  refine match_stacks_inside.rec (prog := prog) (F := F1) (m := m1) (m' := m1')
+    (motive_1 := fun l l0 bound _ =>
+      Ple bound m1'.nextblock → match_stacks prog F2 m2 m2' l l0 bound)
+    (motive_2 := fun l l0 f c sp r _ =>
+      Plt sp m1'.nextblock → match_stacks_inside prog F2 m2 m2' l l0 f c sp r)
+    ?_ ?_ ?_ ?_ ?_ hstacks hsp
+  · intro bound1 bound MG BELOW hbound
+    rcases MG with ⟨DOMAIN, IMAGE, SYMBOLS, FUNCTIONS, VARINFOS⟩
+    apply match_stacks_nil bound1 bound
+    · refine ⟨?_, ?_, SYMBOLS, FUNCTIONS, VARINFOS⟩
+      · intro b hb
+        exact INCR b b zZero (DOMAIN b hb)
+      · intro b1 b2 delta hmap hlt
+        cases hF1 : F1 b1 with
+        | some p =>
+            rcases p with ⟨b2', delta'⟩
+            have hmap' := INCR b1 b2' delta' hF1
+            have hp : (b2', delta') = (b2, delta) :=
+              Option.some.inj (hmap'.symm.trans hmap)
+            rcases hp with ⟨rfl, rfl⟩
+            exact IMAGE b1 b2 delta hF1 hlt
+        | none =>
+            have hsep := SEP b1 b2 delta hF1 hmap
+            have hvalid : Mem.valid_block m1' b2 :=
+              Plt_Ple_trans b2 bound1 m1'.nextblock hlt
+                (Ple_trans bound1 bound m1'.nextblock BELOW hbound)
+            exact False.elim (hsep.2 hvalid)
+    · exact BELOW
+  · intro res f sp pc rs l f' sp' rs' l' bound fenv ctx MS COMPAT FB AG SP PRIV SSZ1 SSZ2 RES BELOW ih
+    intro hbound
+    have hvalid : Mem.valid_block m1' sp' :=
+      Plt_Ple_trans sp' bound m1'.nextblock BELOW hbound
+    apply match_stacks_cons res f sp pc rs l f' sp' rs' l' bound fenv ctx
+    · exact ih hvalid
+    · exact COMPAT
+    · exact FB
+    · exact agree_regs_incr F1 ctx rs rs' F2 AG INCR
+    · exact INCR sp sp' ctx.dstk SP
+    · exact range_private_extcall F1 F2 m1 m2 m1' m2' sp'
+        (zAdd ctx.dstk ctx.mstk) f'.fn_stacksize PRIV MAXPERM UNCHANGED INJ INCR SEP hvalid
+    · exact SSZ1
+    · intro ofs hperm
+      exact SSZ2 ofs (MAXPERM' sp' ofs .Nonempty hvalid hperm)
+    · exact RES
+    · exact BELOW
+  · intro l res f' sp' rpc rs' l' bound ctx MS PRIV SSZ1 SSZ2 RET BELOW ih
+    intro hbound
+    have hvalid : Mem.valid_block m1' sp' :=
+      Plt_Ple_trans sp' bound m1'.nextblock BELOW hbound
+    apply match_stacks_untailcall l res f' sp' rpc rs' l' bound ctx
+    · exact ih hvalid
+    · exact range_private_extcall F1 F2 m1 m2 m1' m2' sp'
+        ctx.dstk f'.fn_stacksize PRIV MAXPERM UNCHANGED INJ INCR SEP hvalid
+    · exact SSZ1
+    · intro ofs hperm
+      exact SSZ2 ofs (MAXPERM' sp' ofs .Nonempty hvalid hperm)
+    · exact RET
+    · exact BELOW
+  · intro l l' f' c sp' rs' MS RET DSTK ih
+    intro hvalid
+    exact match_stacks_inside_base l l' f' c sp' rs'
+      (ih (Plt_Ple sp' m1'.nextblock hvalid)) RET DSTK
+  · intro res f sp pc rs l l' f' fenv c sp' rs' c' MS COMPAT FB AG SP PAD RES RET BELOW SBELOW ih
+    intro hvalid
+    exact match_stacks_inside_inlined res f sp pc rs l l' f' fenv c sp' rs' c'
+      (ih hvalid) COMPAT FB
+      (agree_regs_incr F1 c' rs rs' F2 AG INCR)
+      (INCR sp sp' c'.dstk SP)
+      (range_private_extcall F1 F2 m1 m2 m1' m2' sp'
+        (zAdd c'.dstk c'.mstk) c.dstk PAD MAXPERM UNCHANGED INJ INCR SEP hvalid)
+      RES RET BELOW SBELOW
+
+end CompCert4Lean.Backend.Inliningproof

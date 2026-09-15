@@ -5051,3 +5051,295 @@ theorem val_hiword_longofwords : val_hiword_longofwordsStatement := by
       exact Val.lessdef_undef _
 
 end CompCert4Lean.Backend.Allocproof
+
+namespace CompCert4Lean.Backend.Allocproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.Values.Val
+
+private theorem ap_lo_ofwords (hi lo : CompCert4Lean.Lib.Integers.Int.int) :
+    Int64.loword (Int64.ofwords hi lo) = lo := by
+  have hhi : hi.val < 2 ^ CompCert4Lean.Lib.Integers.Int.wordsize :=
+    ap_word_val_lt hi
+  have hlo : lo.val < 2 ^ CompCert4Lean.Lib.Integers.Int.wordsize :=
+    ap_word_val_lt lo
+  have hshift :
+      (WordCore.repr Int64.wordsize
+        CompCert4Lean.Lib.Integers.Int.zwordsize).val = 32 := by
+    change (WordCore.repr Int64.wordsize
+      (ZArith.BinInt.Z.of_nat 32)).val = 32
+    rw [ap_word_repr_val_nat]
+    decide
+  apply WordCore.ext_of_val_eq
+  unfold Int64.loword
+  simp only [CompCert4Lean.Lib.Integers.Int.repr, Int64.unsigned]
+  rw [ap_word_unsigned_nat, ap_word_repr_val_nat]
+  unfold Int64.ofwords
+  simp only [Int64.or, Int64.shl, Int64.repr,
+    CompCert4Lean.Lib.Integers.Int.unsigned]
+  rw [ap_word_or_val, ap_word_shl_val]
+  rw [@ap_word_unsigned_nat CompCert4Lean.Lib.Integers.Int.wordsize hi,
+    ap_word_repr_val_nat]
+  rw [@ap_word_unsigned_nat CompCert4Lean.Lib.Integers.Int.wordsize lo,
+    ap_word_repr_val_nat]
+  rw [hshift]
+  have hpowle :
+      2 ^ CompCert4Lean.Lib.Integers.Int.wordsize ≤ 2 ^ Int64.wordsize := by
+    decide
+  have hhi64 : hi.val < 2 ^ Int64.wordsize :=
+    Nat.lt_of_lt_of_le hhi hpowle
+  have hlo64 : lo.val < 2 ^ Int64.wordsize :=
+    Nat.lt_of_lt_of_le hlo hpowle
+  rw [Nat.mod_eq_of_lt hhi64, Nat.mod_eq_of_lt hlo64]
+  have hprod : hi.val * 2 ^ 32 < 2 ^ Int64.wordsize := by
+    change hi.val * 2 ^ 32 < 2 ^ 64
+    change hi.val < 2 ^ 32 at hhi
+    omega
+  rw [Nat.mod_eq_of_lt hprod]
+  change ((hi.val * 2 ^ 32) ||| lo.val) %
+      2 ^ CompCert4Lean.Lib.Integers.Int.wordsize = lo.val
+  rw [Nat.or_mod_two_pow]
+  change (hi.val * 2 ^ 32) % 2 ^ 32 ||| lo.val % 2 ^ 32 = lo.val
+  change lo.val < 2 ^ 32 at hlo
+  rw [Nat.mul_comm, Nat.mul_mod_right, Nat.mod_eq_of_lt hlo, Nat.zero_or]
+
+theorem val_loword_longofwords : val_loword_longofwordsStatement := by
+  intro v1 v2
+  cases v1 with
+  | Vundef =>
+      exact Val.lessdef_undef _
+  | Vint hi =>
+      cases v2 with
+      | Vint lo =>
+          change Val.lessdef
+            (val.Vint (Int64.loword (Int64.ofwords hi lo))) (val.Vint lo)
+          rw [ap_lo_ofwords hi lo]
+          exact Val.lessdef_refl _
+      | _ =>
+          exact Val.lessdef_undef _
+  | Vlong _ =>
+      exact Val.lessdef_undef _
+  | Vfloat _ =>
+      exact Val.lessdef_undef _
+  | Vsingle _ =>
+      exact Val.lessdef_undef _
+  | Vptr _ _ =>
+      exact Val.lessdef_undef _
+
+end CompCert4Lean.Backend.Allocproof
+
+namespace CompCert4Lean.Backend.Allocproof
+
+open CompCert4Lean.Backend.Allocation
+open CompCert4Lean.Backend.Locations
+
+theorem compat_left_sound : compat_left_soundStatement := by
+  intro r l e q hcompat hq hreg
+  unfold compat_left at hcompat
+  have hiff := EqSet.for_all_between_iff_proof
+    (fun q : EqSet.elt =>
+      match q.ekind with
+      | .Full => decide (l = q.eloc)
+      | _ => false)
+    (select_reg_l r) (select_reg_h r)
+    (by
+      intro q₁ q₂ hqeq
+      cases hqeq
+      rfl)
+    (select_reg_l_monotone r) (select_reg_h_monotone r) e.eqs1
+  have hsel := (select_reg_charact r q).2 hreg
+  have hp := hiff.mp hcompat q hq hsel.1 hsel.2
+  cases hkind : q.ekind with
+  | Full =>
+      constructor
+      · rfl
+      · have hl : l = q.eloc :=
+          of_decide_eq_true (by simpa [hkind] using hp)
+        exact hl.symm
+  | Low =>
+      simp [hkind] at hp
+  | High =>
+      simp [hkind] at hp
+
+theorem compat_left2_sound : compat_left2_soundStatement := by
+  intro r l1 l2 e q hcompat hq hreg
+  unfold compat_left2 at hcompat
+  have hiff := EqSet.for_all_between_iff_proof
+    (fun q : EqSet.elt =>
+      match q.ekind with
+      | .High => decide (l1 = q.eloc)
+      | .Low => decide (l2 = q.eloc)
+      | .Full => false)
+    (select_reg_l r) (select_reg_h r)
+    (by
+      intro q₁ q₂ hqeq
+      cases hqeq
+      rfl)
+    (select_reg_l_monotone r) (select_reg_h_monotone r) e.eqs1
+  have hsel := (select_reg_charact r q).2 hreg
+  have hp := hiff.mp hcompat q hq hsel.1 hsel.2
+  cases hkind : q.ekind with
+  | Full =>
+      simp [hkind] at hp
+  | Low =>
+      right
+      constructor
+      · rfl
+      · have hl : l2 = q.eloc :=
+          of_decide_eq_true (by simpa [hkind] using hp)
+        exact hl.symm
+  | High =>
+      left
+      constructor
+      · rfl
+      · have hl : l1 = q.eloc :=
+          of_decide_eq_true (by simpa [hkind] using hp)
+        exact hl.symm
+
+end CompCert4Lean.Backend.Allocproof
+
+namespace CompCert4Lean.Backend.Allocproof
+
+open CompCert4Lean.Backend.Allocation
+open CompCert4Lean.Backend.Conventions
+open CompCert4Lean.Backend.Locations
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+
+private theorem ap_lessdef_trans {v1 v2 v3 : val}
+    (h12 : Val.lessdef v1 v2) (h23 : Val.lessdef v2 v3) :
+    Val.lessdef v1 v3 := by
+  cases h12 with
+  | lessdef_refl => exact h23
+  | lessdef_undef => exact Val.lessdef_undef _
+
+private theorem ap_loword_lessdef {v1 v2 : val}
+    (h : Val.lessdef v1 v2) :
+    Val.lessdef (Val.loword v1) (Val.loword v2) := by
+  cases h with
+  | lessdef_refl => exact Val.lessdef_refl _
+  | lessdef_undef => exact Val.lessdef_undef _
+
+private theorem ap_hiword_lessdef {v1 v2 : val}
+    (h : Val.lessdef v1 v2) :
+    Val.lessdef (Val.hiword v1) (Val.hiword v2) := by
+  cases h with
+  | lessdef_refl => exact Val.lessdef_refl _
+  | lessdef_undef => exact Val.lessdef_undef _
+
+theorem function_return_satisf : function_return_satisfStatement := by
+  intro cfg rs lsBefore lsAfter resultReg resultLoc sg e e' v
+  intro _ hremove hsat huncon hno hv hagree
+  cases resultLoc with
+  | One mr =>
+      have he' : e' = remove_equation
+          { ekind := .Full, ereg := resultReg, eloc := .R mr } e := by
+        simpa [remove_equations_res] using hremove.symm
+      subst e'
+      have huncon' : reg_loc_unconstrained resultReg (R mr)
+          (remove_equation
+            { ekind := .Full, ereg := resultReg, eloc := .R mr } e) = true := by
+        simpa [regs_of_rpair] using huncon
+      unfold satisf
+      intro q hq
+      let q0 : equation :=
+        { ekind := .Full, ereg := resultReg, eloc := .R mr }
+      by_cases heq : q = q0
+      · subst q
+        have hget : Regmap.get resultReg (Regmap.set resultReg v rs) = v :=
+          Regmap.gss_proof val resultReg v rs
+        change Val.lessdef
+          (Regmap.get resultReg (Regmap.set resultReg v rs)) (lsAfter (R mr))
+        rw [hget]
+        simpa [map_rpair, Locmap.getpair] using hv
+      · have hqrem : EqSet.In q (remove_equation q0 e).eqs1 := by
+          unfold remove_equation
+          apply EqSet.remove_2 e.eqs1 q0 q
+          · intro h
+            exact heq h.symm
+          · exact hq
+        have hreg : q.ereg ≠ resultReg :=
+          (reg_loc_unconstrained_sound resultReg (R mr)
+            (remove_equation q0 e) q (by simpa [q0] using huncon') hqrem).1
+        rw [Regmap.gso_proof val q.ereg resultReg v rs hreg]
+        have hcallee := no_caller_saves_sound cfg
+          (remove_equation q0 e) q (by simpa [q0] using hno) hqrem
+        rw [← hagree q.eloc hcallee]
+        exact hsat q (by simpa [q0] using hqrem)
+  | Twolong hi lo =>
+      by_cases hsame : lo = hi
+      · subst lo
+        simp [remove_equations_res] at hremove
+      · have he' : e' =
+            remove_equation
+              { ekind := .Low, ereg := resultReg, eloc := .R lo }
+              (remove_equation
+                { ekind := .High, ereg := resultReg, eloc := .R hi } e) := by
+          simpa [remove_equations_res, hsame] using hremove.symm
+        subst e'
+        have huncon' :
+            reg_loc_unconstrained resultReg (R hi)
+                (remove_equation
+                  { ekind := .Low, ereg := resultReg, eloc := .R lo }
+                  (remove_equation
+                    { ekind := .High, ereg := resultReg, eloc := .R hi } e)) = true ∧
+              reg_loc_unconstrained resultReg (R lo)
+                (remove_equation
+                  { ekind := .Low, ereg := resultReg, eloc := .R lo }
+                  (remove_equation
+                    { ekind := .High, ereg := resultReg, eloc := .R hi } e)) = true := by
+          simpa [regs_of_rpair] using huncon
+        unfold satisf
+        intro q hq
+        let qlo : equation :=
+          { ekind := .Low, ereg := resultReg, eloc := .R lo }
+        let qhi : equation :=
+          { ekind := .High, ereg := resultReg, eloc := .R hi }
+        by_cases heqlo : q = qlo
+        · subst q
+          have hld := ap_lessdef_trans (ap_loword_lessdef hv)
+            (val_loword_longofwords (lsAfter (R hi)) (lsAfter (R lo)))
+          have hget : Regmap.get resultReg (Regmap.set resultReg v rs) = v :=
+            Regmap.gss_proof val resultReg v rs
+          change Val.lessdef
+            (Val.loword (Regmap.get resultReg (Regmap.set resultReg v rs)))
+            (lsAfter (R lo))
+          rw [hget]
+          exact hld
+        · by_cases heqhi : q = qhi
+          · subst q
+            have hld := ap_lessdef_trans (ap_hiword_lessdef hv)
+              (val_hiword_longofwords (lsAfter (R hi)) (lsAfter (R lo)))
+            have hget : Regmap.get resultReg (Regmap.set resultReg v rs) = v :=
+              Regmap.gss_proof val resultReg v rs
+            change Val.lessdef
+              (Val.hiword (Regmap.get resultReg (Regmap.set resultReg v rs)))
+              (lsAfter (R hi))
+            rw [hget]
+            exact hld
+          · have hqrem : EqSet.In q
+                (remove_equation qlo (remove_equation qhi e)).eqs1 := by
+              unfold remove_equation
+              apply EqSet.remove_2 (remove_equation qhi e).eqs1 qlo q
+              · intro h
+                exact heqlo h.symm
+              · unfold remove_equation
+                apply EqSet.remove_2 e.eqs1 qhi q
+                · intro h
+                  exact heqhi h.symm
+                · exact hq
+            have hreg : q.ereg ≠ resultReg :=
+              (reg_loc_unconstrained_sound resultReg (R hi)
+                (remove_equation qlo (remove_equation qhi e)) q
+                (by simpa [qlo, qhi] using huncon'.1) hqrem).1
+            rw [Regmap.gso_proof val q.ereg resultReg v rs hreg]
+            have hcallee := no_caller_saves_sound cfg
+              (remove_equation qlo (remove_equation qhi e)) q
+              (by simpa [qlo, qhi] using hno) hqrem
+            rw [← hagree q.eloc hcallee]
+            exact hsat q (by simpa [qlo, qhi] using hqrem)
+
+end CompCert4Lean.Backend.Allocproof

@@ -2435,3 +2435,48 @@ theorem ZArith.BinInt.Z.max_comm : ZArith.BinInt.Z.max_commStatement := by
     simp [hnm, hmn]
 end Rocq.Coq
 end CompCert4Lean.Foundation.Numbers
+
+namespace CompCert4Lean.Foundation.Numbers
+namespace Rocq.Coq
+
+theorem ZArith.BinInt.Z.ltb_spec :
+    ZArith.BinInt.Z.ltb_specStatement := by
+  intro x y
+  by_cases h : intOfZ x < intOfZ y
+  · have hlt : ZArith.BinInt.Z.lt x y := h
+    have hb : ZArith.BinInt.Z.ltb x y = true := by
+      simp [ZArith.BinInt.Z.ltb, h]
+    rw [hb]
+    exact .BoolSpecT _ hlt
+  · have hle : ZArith.BinInt.Z.le y x := Int.le_of_not_gt h
+    have hb : ZArith.BinInt.Z.ltb x y = false := by
+      simp [ZArith.BinInt.Z.ltb, h]
+    rw [hb]
+    exact .BoolSpecF _ hle
+
+theorem ZArith.BinInt.Z.add_comm :
+    ZArith.BinInt.Z.add_commStatement := by
+  intro n m
+  apply intOfZ_injective
+  simp only [ZArith.BinInt.Z.add, intOfZ_zOfInt]
+  exact Int.add_comm _ _
+
+theorem ZArith.Zorder.Zplus_le_0_compat_proof :
+    ∀ (n m : Z), ZArith.Zorder.Zplus_le_0_compat n m := by
+  intro n m hn hm
+  change 0 ≤ intOfZ n at hn
+  change 0 ≤ intOfZ m at hm
+  change 0 ≤ intOfZ (ZArith.BinInt.Z.add n m)
+  simp only [ZArith.BinInt.Z.add, intOfZ_zOfInt]
+  exact Int.add_nonneg hn hm
+
+theorem ZArith.BinInt.Z.divide_0_r :
+    ZArith.BinInt.Z.divide_0_rStatement := by
+  intro n
+  refine ⟨Z0, ?_⟩
+  change Z0 = zOfInt (intOfZ n * 0)
+  rw [Int.mul_zero]
+  rfl
+
+end Rocq.Coq
+end CompCert4Lean.Foundation.Numbers

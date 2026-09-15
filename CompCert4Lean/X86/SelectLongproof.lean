@@ -1407,3 +1407,650 @@ theorem eval_negl
       · rfl
 
 end CompCert4Lean.X86.SelectLongproof
+
+namespace CompCert4Lean.X86.SelectLongproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Lib.Integers
+open Lean Elab Tactic Meta
+
+private theorem shrl_two_power_nat (bits : Nat) :
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.two_power_nat bits =
+      ZArith.BinInt.Z.of_nat (2 ^ bits) := by
+  run_tac
+    let bitsF := (← getLCtx).findFromUserName? `bits |>.get!
+    let proof ← mkAppM
+      (suffixPrivateName
+        "CompCert4Lean.Lib.Integers.WordCore.twoPowerNat_eq_zOfNat_twoPow")
+      #[mkFVar bitsF.fvarId]
+    closeMainGoal Name.anonymous proof
+
+private theorem shrl_int64_repr_signed (x : CCInt64) :
+    CompCert4Lean.Lib.Integers.Int64.repr
+        (CompCert4Lean.Lib.Integers.Int64.signed x) = x := by
+  apply CompCert4Lean.Lib.Integers.WordCore.ext_of_val_eq
+  have hx0 : ZArith.BinInt.Z.le .Z0 x.intval := by
+    have h := x.intrange.1
+    change (-1 : Int) < intOfZ x.intval at h
+    change 0 ≤ intOfZ x.intval
+    omega
+  have hxrepr : x.intval = zOfNat x.val :=
+    (ZArith.Znat.Z2Nat.id x.intval hx0).symm
+  have hxlt : x.val < 2 ^ 64 := x.toFin.isLt
+  rw [show CompCert4Lean.Lib.Integers.Int64.signed x =
+      zOfInt (intOfZ (CompCert4Lean.Lib.Integers.Int64.signed x)) by
+    exact (zOfInt_intOfZ _).symm]
+  unfold CompCert4Lean.Lib.Integers.Int64.repr
+  rw [suffixWordValRepr64]
+  simp only [CompCert4Lean.Lib.Integers.Int64.signed,
+    CompCert4Lean.Lib.Integers.WordCore.signed,
+    CompCert4Lean.Lib.Integers.WordCore.unsigned,
+    CompCert4Lean.Lib.Integers.Int64.wordsize]
+  run_tac
+    let zltName := Lean.mkIdent
+      (suffixPrivateName "CompCert4Lean.Lib.Integers.zltSelect")
+    let selectName := Lean.mkIdent
+      (suffixPrivateName "CompCert4Lean.Lib.Integers.sumboolSelect")
+    let subName := Lean.mkIdent
+      (suffixPrivateName "CompCert4Lean.Lib.Integers.zSub")
+    let powerName := Lean.mkIdent
+      (suffixPrivateName "CompCert4Lean.Lib.Integers.zTwoPowerNat")
+    evalTactic (← `(tactic|
+      unfold $zltName $selectName $subName $powerName))
+  simp only [CompCert4Lean.Lib.Integers.Int64.wordsize, Nat.reduceSub,
+    shrl_two_power_nat]
+  rw [hxrepr]
+  unfold zOfNat
+  split
+  · rw [show ZArith.BinInt.Z.of_nat x.val = zOfInt (Int.ofNat x.val) by rfl,
+      intOfZ_zOfInt]
+    change Int.toNat ((Int.ofNat x.val) % (2 ^ 64 : Int)) = x.val
+    have hvalLt : Int.ofNat x.val < (2 ^ 64 : Int) := by
+      change Int.ofNat x.val < Int.ofNat (2 ^ 64)
+      exact Int.ofNat_lt.mpr hxlt
+    have hmod := Int.emod_eq_of_lt (Int.natCast_nonneg _) hvalLt
+    exact (congrArg Int.toNat hmod).trans (by simp)
+  · rw [show ZArith.BinInt.Z.of_nat x.val = zOfInt (Int.ofNat x.val) by rfl]
+    simp only [ZArith.BinInt.Z.sub, intOfZ_zOfInt]
+    change Int.toNat
+      (((Int.ofNat x.val) - (2 ^ 64 : Int)) % (2 ^ 64 : Int)) = x.val
+    rw [Int.sub_emod]
+    rw [Int.emod_self, Int.sub_zero]
+    have hvalLt : Int.ofNat x.val < (2 ^ 64 : Int) := by
+      change Int.ofNat x.val < Int.ofNat (2 ^ 64)
+      exact Int.ofNat_lt.mpr hxlt
+    have hmod := Int.emod_eq_of_lt (Int.natCast_nonneg _) hvalLt
+    calc
+      Int.toNat ((Int.ofNat x.val % (2 ^ 64 : Int)) % (2 ^ 64 : Int)) =
+          Int.toNat (Int.ofNat x.val % (2 ^ 64 : Int)) := by
+        exact congrArg Int.toNat (Int.emod_emod _ _)
+      _ = Int.toNat (Int.ofNat x.val) := congrArg Int.toNat hmod
+      _ = x.val := by simp
+
+private theorem shrl_int64_signed_repr_int (i : Int)
+    (hlo : -(2 ^ 63 : Int) ≤ i) (hhi : i < (2 ^ 63 : Int)) :
+    CompCert4Lean.Lib.Integers.Int64.signed
+        (CompCert4Lean.Lib.Integers.Int64.repr (zOfInt i)) = zOfInt i := by
+  let w : CCInt64 := CompCert4Lean.Lib.Integers.Int64.repr (zOfInt i)
+  have hwval : w.val = Int.toNat (i % (2 ^ 64 : Int)) := by
+    exact suffixWordValRepr64 64 i
+  have hw0 : ZArith.BinInt.Z.le .Z0 w.intval := by
+    have h := w.intrange.1
+    change (-1 : Int) < intOfZ w.intval at h
+    change 0 ≤ intOfZ w.intval
+    omega
+  have hwrepr : w.intval = zOfNat w.val :=
+    (ZArith.Znat.Z2Nat.id w.intval hw0).symm
+  change CompCert4Lean.Lib.Integers.WordCore.signed w = zOfInt i
+  simp only [CompCert4Lean.Lib.Integers.WordCore.signed,
+    CompCert4Lean.Lib.Integers.WordCore.unsigned]
+  run_tac
+    let zltName := Lean.mkIdent
+      (suffixPrivateName "CompCert4Lean.Lib.Integers.zltSelect")
+    let selectName := Lean.mkIdent
+      (suffixPrivateName "CompCert4Lean.Lib.Integers.sumboolSelect")
+    let subName := Lean.mkIdent
+      (suffixPrivateName "CompCert4Lean.Lib.Integers.zSub")
+    let powerName := Lean.mkIdent
+      (suffixPrivateName "CompCert4Lean.Lib.Integers.zTwoPowerNat")
+    evalTactic (← `(tactic|
+      unfold $zltName $selectName $subName $powerName))
+  simp only [CompCert4Lean.Lib.Integers.Int64.wordsize, Nat.reduceSub,
+    shrl_two_power_nat]
+  rw [hwrepr, hwval]
+  unfold zOfNat
+  by_cases hi : 0 ≤ i
+  · have himod : i % (2 ^ 64 : Int) = i := by
+      apply Int.emod_eq_of_lt hi
+      have hpow : (2 ^ 63 : Int) < 2 ^ 64 := by decide
+      omega
+    rw [himod]
+    have htoNat : Int.ofNat (Int.toNat i) = i :=
+      Int.toNat_of_nonneg hi
+    have hlt : ZArith.BinInt.Z.lt
+        (ZArith.BinInt.Z.of_nat (Int.toNat i))
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.two_power_nat 63) := by
+      rw [shrl_two_power_nat]
+      unfold ZArith.BinInt.Z.lt ZArith.BinInt.Z.of_nat
+      simp only [intOfZ_zOfInt]
+      calc
+        Int.ofNat (Int.toNat i) = i := htoNat
+        _ < Int.ofNat (2 ^ 63) := hhi
+    cases hdec : CompCert4Lean.Lib.Coqlib.zlt
+        (ZArith.BinInt.Z.of_nat (Int.toNat i))
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.two_power_nat 63) with
+    | left h =>
+        simp only [hdec]
+        apply intOfZ_injective
+        unfold ZArith.BinInt.Z.of_nat
+        simp only [intOfZ_zOfInt]
+        exact htoNat
+    | right h => exact (Int.not_lt_of_ge h hlt).elim
+  · have hineg : i < 0 := Int.lt_of_not_ge hi
+    have hmodEq : i % (2 ^ 64 : Int) = i + 2 ^ 64 := by
+      have heq : i % (2 ^ 64 : Int) =
+          (i + 2 ^ 64) % (2 ^ 64 : Int) := by
+        apply (Int.emod_eq_emod_iff_emod_sub_eq_zero).2
+        rw [show i - (i + 2 ^ 64) = -(2 ^ 64 : Int) by omega]
+        exact Int.neg_emod_self _
+      rw [heq]
+      apply Int.emod_eq_of_lt
+      · have hp : 0 < (2 ^ 63 : Int) := by decide
+        have hdouble : (2 ^ 64 : Int) = 2 * 2 ^ 63 := by decide
+        omega
+      · omega
+    rw [hmodEq]
+    have hisum0 : 0 ≤ i + (2 ^ 64 : Int) := by
+      have hp : 0 < (2 ^ 63 : Int) := by decide
+      have hdouble : (2 ^ 64 : Int) = 2 * 2 ^ 63 := by decide
+      omega
+    have htoNat : Int.ofNat (Int.toNat (i + 2 ^ 64)) = i + 2 ^ 64 :=
+      Int.toNat_of_nonneg hisum0
+    have hge : ZArith.BinInt.Z.ge
+        (ZArith.BinInt.Z.of_nat (Int.toNat (i + 2 ^ 64)))
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.two_power_nat 63) := by
+      rw [shrl_two_power_nat]
+      unfold ZArith.BinInt.Z.ge ZArith.BinInt.Z.of_nat
+      simp only [intOfZ_zOfInt]
+      have hbound : (2 ^ 63 : Int) ≤ i + 2 ^ 64 := by
+        have hdouble : (2 ^ 64 : Int) = 2 * 2 ^ 63 := by decide
+        omega
+      exact Int.le_trans hbound (Int.le_of_eq htoNat.symm)
+    cases hdec : CompCert4Lean.Lib.Coqlib.zlt
+        (ZArith.BinInt.Z.of_nat (Int.toNat (i + 2 ^ 64)))
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.two_power_nat 63) with
+    | left h => exact (Int.not_lt_of_ge hge h).elim
+    | right h =>
+        simp only [hdec]
+        apply intOfZ_injective
+        simp only [ZArith.BinInt.Z.sub, ZArith.BinInt.Z.of_nat,
+          intOfZ_zOfInt]
+        change Int.ofNat (Int.toNat (i + 2 ^ 64)) - Int.ofNat (2 ^ 64) = i
+        have hpowNat : Int.ofNat (2 ^ 64) = (2 ^ 64 : Int) := by
+          exact (Int.natCast_pow 2 64).symm
+        rw [htoNat, hpowNat]
+        omega
+
+private theorem shrl_int_unsigned_int (n : CCInt) :
+    intOfZ (CompCert4Lean.Lib.Integers.Int.unsigned n) = Int.ofNat n.val := by
+  have hn0 : ZArith.BinInt.Z.le .Z0 n.intval := by
+    have h := n.intrange.1
+    change (-1 : Int) < intOfZ n.intval at h
+    change 0 ≤ intOfZ n.intval
+    omega
+  have hnrepr : n.intval = zOfNat n.val :=
+    (ZArith.Znat.Z2Nat.id n.intval hn0).symm
+  unfold CompCert4Lean.Lib.Integers.Int.unsigned
+    CompCert4Lean.Lib.Integers.WordCore.unsigned
+  rw [hnrepr]
+  unfold zOfNat ZArith.BinInt.Z.of_nat
+  rw [intOfZ_zOfInt]
+
+private theorem shrl_int_unsigned_z (n : CCInt) :
+    CompCert4Lean.Lib.Integers.Int.unsigned n =
+      ZArith.BinInt.Z.of_nat n.val := by
+  apply intOfZ_injective
+  rw [shrl_int_unsigned_int]
+  unfold ZArith.BinInt.Z.of_nat
+  rw [intOfZ_zOfInt]
+
+private theorem shrl_zshiftr_nat (a : Int) (p q : Nat) :
+    ZArith.BinInt.Z.shiftr
+        (ZArith.BinInt.Z.shiftr (zOfInt a) (ZArith.BinInt.Z.of_nat p))
+        (ZArith.BinInt.Z.of_nat q) =
+      ZArith.BinInt.Z.shiftr (zOfInt a)
+        (ZArith.BinInt.Z.of_nat (p + q)) := by
+  unfold ZArith.BinInt.Z.shiftr ZArith.BinInt.Z.of_nat
+  have hp : 0 ≤ Int.ofNat p := Int.natCast_nonneg _
+  have hq : 0 ≤ Int.ofNat q := Int.natCast_nonneg _
+  have hpq : 0 ≤ Int.ofNat (p + q) := Int.natCast_nonneg _
+  simp only [intOfZ_zOfInt]
+  rw [if_pos hp, if_pos hq, if_pos hpq]
+  simp only [intOfZ_zOfInt]
+  have htp : (Int.ofNat p).toNat = p := rfl
+  have htq : (Int.ofNat q).toNat = q := rfl
+  have htpq : (Int.ofNat (p + q)).toNat = p + q := rfl
+  rw [htp, htq, htpq]
+  apply congrArg zOfInt
+  calc
+    (a.ediv (Int.pow 2 p)).ediv (Int.pow 2 q) =
+        a.ediv (Int.pow 2 p * Int.pow 2 q) :=
+      Int.ediv_ediv_of_nonneg (Int.le_of_lt (Int.pow_pos (by omega)))
+    _ = a.ediv (Int.pow 2 (p + q)) :=
+      congrArg (fun d => a.ediv d) (Int.pow_add 2 p q).symm
+
+private theorem shrl_zshiftr_int_unsigned
+    (a : CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z) (n : CCInt) :
+    ZArith.BinInt.Z.shiftr a
+        (CompCert4Lean.Lib.Integers.Int.unsigned n) =
+      zOfInt (intOfZ a / (2 ^ n.val : Int)) := by
+  rw [shrl_int_unsigned_z]
+  unfold ZArith.BinInt.Z.shiftr ZArith.BinInt.Z.of_nat
+  simp only [intOfZ_zOfInt]
+  have hn : 0 ≤ Int.ofNat n.val := Int.natCast_nonneg _
+  rw [if_pos hn]
+  have htn : (Int.ofNat n.val).toNat = n.val := rfl
+  rw [htn]
+  rfl
+
+private theorem shrl_word_add_val {bits : Nat}
+    (x y : CompCert4Lean.Lib.Integers.WordCore.Word bits) :
+    (CompCert4Lean.Lib.Integers.WordCore.add x y).val =
+      (x.val + y.val) % (2 ^ bits) := by
+  run_tac
+    let lctx ← getLCtx
+    let xF := (lctx.findFromUserName? `x).get!
+    let yF := (lctx.findFromUserName? `y).get!
+    let proof ← mkAppM
+      (suffixPrivateName "CompCert4Lean.Lib.Integers.WordCore.add_val")
+      #[mkFVar xF.fvarId, mkFVar yF.fvarId]
+    closeMainGoal Name.anonymous proof
+
+private theorem shrl_int_add_val_small (x y : CCInt)
+    (h : x.val + y.val < 2 ^ 32) :
+    (CompCert4Lean.Lib.Integers.Int.add x y).val = x.val + y.val := by
+  change (CompCert4Lean.Lib.Integers.WordCore.add x y).val = _
+  rw [shrl_word_add_val]
+  exact Nat.mod_eq_of_lt h
+
+private theorem shrl_int_ltu_iwordsize_val (n : CCInt)
+    (h : CompCert4Lean.Lib.Integers.Int.ltu n
+      CompCert4Lean.Lib.Integers.Int64.iwordsize' = true) :
+    n.val < 64 := by
+  have hlt := (CompCert4Lean.Lib.Integers.Int.ltu_inv_proof n
+    CompCert4Lean.Lib.Integers.Int64.iwordsize' h).2
+  change intOfZ (CompCert4Lean.Lib.Integers.Int.unsigned n) <
+    intOfZ (CompCert4Lean.Lib.Integers.Int.unsigned
+      CompCert4Lean.Lib.Integers.Int64.iwordsize') at hlt
+  rw [shrl_int_unsigned_int n,
+    shrl_int_unsigned_int CompCert4Lean.Lib.Integers.Int64.iwordsize'] at hlt
+  have hi : CompCert4Lean.Lib.Integers.Int64.iwordsize'.val = 64 := rfl
+  rw [hi] at hlt
+  exact Int.ofNat_lt.mp hlt
+
+private theorem shrl_int64_signed_range_int (x : CCInt64) :
+    -(2 ^ 63 : Int) ≤
+        intOfZ (CompCert4Lean.Lib.Integers.Int64.signed x) ∧
+      intOfZ (CompCert4Lean.Lib.Integers.Int64.signed x) < (2 ^ 63 : Int) := by
+  have hx0 : ZArith.BinInt.Z.le .Z0 x.intval := by
+    have h := x.intrange.1
+    change (-1 : Int) < intOfZ x.intval at h
+    change 0 ≤ intOfZ x.intval
+    omega
+  have hxrepr : x.intval = zOfNat x.val :=
+    (ZArith.Znat.Z2Nat.id x.intval hx0).symm
+  have hxlt : x.val < 2 ^ 64 := x.toFin.isLt
+  simp only [CompCert4Lean.Lib.Integers.Int64.signed,
+    CompCert4Lean.Lib.Integers.WordCore.signed,
+    CompCert4Lean.Lib.Integers.WordCore.unsigned,
+    CompCert4Lean.Lib.Integers.Int64.wordsize]
+  run_tac
+    let zltName := Lean.mkIdent
+      (suffixPrivateName "CompCert4Lean.Lib.Integers.zltSelect")
+    let selectName := Lean.mkIdent
+      (suffixPrivateName "CompCert4Lean.Lib.Integers.sumboolSelect")
+    let subName := Lean.mkIdent
+      (suffixPrivateName "CompCert4Lean.Lib.Integers.zSub")
+    let powerName := Lean.mkIdent
+      (suffixPrivateName "CompCert4Lean.Lib.Integers.zTwoPowerNat")
+    evalTactic (← `(tactic|
+      unfold $zltName $selectName $subName $powerName))
+  simp only [Nat.reduceSub, shrl_two_power_nat]
+  rw [hxrepr]
+  unfold zOfNat
+  split
+  · rename_i d hlt heq
+    unfold ZArith.BinInt.Z.lt ZArith.BinInt.Z.of_nat at hlt
+    rw [intOfZ_zOfInt] at hlt
+    unfold ZArith.BinInt.Z.of_nat
+    constructor
+    · rw [intOfZ_zOfInt]
+      have hxnat : (0 : Int) ≤ Int.ofNat x.val := Int.natCast_nonneg _
+      omega
+    · rw [intOfZ_zOfInt]
+      exact hlt
+  · rename_i d hge heq
+    unfold ZArith.BinInt.Z.ge ZArith.BinInt.Z.of_nat at hge
+    rw [intOfZ_zOfInt] at hge
+    unfold ZArith.BinInt.Z.sub ZArith.BinInt.Z.of_nat
+    simp only [intOfZ_zOfInt]
+    have hxnat : (0 : Int) ≤ Int.ofNat x.val := Int.natCast_nonneg _
+    have hxltInt : Int.ofNat x.val < Int.ofNat (2 ^ 64) :=
+      Int.ofNat_lt.mpr hxlt
+    have hpow63 : intOfZ
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.two_power_nat 63) =
+        (2 ^ 63 : Int) := by
+      rw [shrl_two_power_nat]
+      unfold ZArith.BinInt.Z.of_nat
+      rw [intOfZ_zOfInt]
+      exact (Int.natCast_pow 2 63).symm
+    have hpow64 : Int.ofNat (2 ^ 64) = (2 ^ 64 : Int) := by
+      exact (Int.natCast_pow 2 64).symm
+    rw [hpow63] at hge
+    rw [hpow64] at hxltInt ⊢
+    have hdouble : (2 ^ 64 : Int) = 2 * 2 ^ 63 := by decide
+    constructor <;> omega
+
+private theorem shrl_int64_shr_comp (x : CCInt64) (n1 n : CCInt)
+    (hn1 : CompCert4Lean.Lib.Integers.Int.ltu n1
+      CompCert4Lean.Lib.Integers.Int64.iwordsize' = true)
+    (hn : CompCert4Lean.Lib.Integers.Int.ltu n
+      CompCert4Lean.Lib.Integers.Int64.iwordsize' = true) :
+    CompCert4Lean.Lib.Integers.Int64.shr'
+        (CompCert4Lean.Lib.Integers.Int64.shr' x n1) n =
+      CompCert4Lean.Lib.Integers.Int64.shr' x
+        (CompCert4Lean.Lib.Integers.Int.add n n1) := by
+  have hn1v := shrl_int_ltu_iwordsize_val n1 hn1
+  have hnv := shrl_int_ltu_iwordsize_val n hn
+  have haddSmall : n.val + n1.val < 2 ^ 32 := by
+    have hpow : 128 < 2 ^ 32 := by decide
+    omega
+  have haddVal :
+      (CompCert4Lean.Lib.Integers.Int.add n n1).val = n.val + n1.val :=
+    shrl_int_add_val_small n n1 (by simpa [Nat.add_comm] using haddSmall)
+  let sx : Int := intOfZ (CompCert4Lean.Lib.Integers.Int64.signed x)
+  let d : Int := 2 ^ n1.val
+  let j : Int := sx / d
+  have hdpos : 0 < d := by
+    dsimp [d]
+    exact Int.pow_pos (by omega)
+  have hdge : 1 ≤ d := by omega
+  have hsrange := shrl_int64_signed_range_int x
+  have hjlo : -(2 ^ 63 : Int) ≤ j := by
+    apply (Int.le_ediv_iff_mul_le hdpos).2
+    have hmul : -(2 ^ 63 : Int) * d ≤ -(2 ^ 63 : Int) * 1 :=
+      Int.mul_le_mul_of_nonpos_left (by decide) hdge
+    dsimp [sx] at hsrange
+    exact Int.le_trans (by simpa using hmul) hsrange.1
+  have hjhi : j < (2 ^ 63 : Int) := by
+    apply (Int.ediv_lt_iff_lt_mul hdpos).2
+    have hmul : (2 ^ 63 : Int) * 1 ≤ (2 ^ 63 : Int) * d :=
+      Int.mul_le_mul_of_nonneg_left hdge (by decide)
+    dsimp [sx] at hsrange
+    exact Int.lt_of_lt_of_le hsrange.2 (by simpa using hmul)
+  have hshift1 :
+      ZArith.BinInt.Z.shiftr
+          (CompCert4Lean.Lib.Integers.Int64.signed x)
+          (CompCert4Lean.Lib.Integers.Int.unsigned n1) = zOfInt j := by
+    exact shrl_zshiftr_int_unsigned
+      (CompCert4Lean.Lib.Integers.Int64.signed x) n1
+  have hsignedInner :
+      CompCert4Lean.Lib.Integers.Int64.signed
+          (CompCert4Lean.Lib.Integers.Int64.shr' x n1) = zOfInt j := by
+    change CompCert4Lean.Lib.Integers.Int64.signed
+      (CompCert4Lean.Lib.Integers.Int64.repr
+        (ZArith.BinInt.Z.shiftr
+          (CompCert4Lean.Lib.Integers.Int64.signed x)
+          (CompCert4Lean.Lib.Integers.Int.unsigned n1))) = zOfInt j
+    rw [hshift1]
+    exact shrl_int64_signed_repr_int j hjlo hjhi
+  have hxz : zOfInt sx = CompCert4Lean.Lib.Integers.Int64.signed x :=
+    zOfInt_intOfZ _
+  have hcomp :
+      ZArith.BinInt.Z.shiftr
+          (ZArith.BinInt.Z.shiftr
+            (CompCert4Lean.Lib.Integers.Int64.signed x)
+            (CompCert4Lean.Lib.Integers.Int.unsigned n1))
+          (CompCert4Lean.Lib.Integers.Int.unsigned n) =
+        ZArith.BinInt.Z.shiftr
+          (CompCert4Lean.Lib.Integers.Int64.signed x)
+          (CompCert4Lean.Lib.Integers.Int.unsigned
+            (CompCert4Lean.Lib.Integers.Int.add n n1)) := by
+    rw [← hxz, shrl_int_unsigned_z n1, shrl_int_unsigned_z n,
+      shrl_int_unsigned_z (CompCert4Lean.Lib.Integers.Int.add n n1), haddVal,
+      Nat.add_comm]
+    exact shrl_zshiftr_nat sx n1.val n.val
+  change CompCert4Lean.Lib.Integers.Int64.repr
+      (ZArith.BinInt.Z.shiftr
+        (CompCert4Lean.Lib.Integers.Int64.signed
+          (CompCert4Lean.Lib.Integers.Int64.shr' x n1))
+        (CompCert4Lean.Lib.Integers.Int.unsigned n)) =
+    CompCert4Lean.Lib.Integers.Int64.repr
+      (ZArith.BinInt.Z.shiftr
+        (CompCert4Lean.Lib.Integers.Int64.signed x)
+        (CompCert4Lean.Lib.Integers.Int.unsigned
+          (CompCert4Lean.Lib.Integers.Int.add n n1)))
+  rw [hsignedInner]
+  apply congrArg CompCert4Lean.Lib.Integers.Int64.repr
+  calc
+    ZArith.BinInt.Z.shiftr (zOfInt j)
+        (CompCert4Lean.Lib.Integers.Int.unsigned n) =
+      ZArith.BinInt.Z.shiftr
+          (ZArith.BinInt.Z.shiftr
+            (CompCert4Lean.Lib.Integers.Int64.signed x)
+            (CompCert4Lean.Lib.Integers.Int.unsigned n1))
+          (CompCert4Lean.Lib.Integers.Int.unsigned n) :=
+      congrArg
+        (fun z => ZArith.BinInt.Z.shiftr z
+          (CompCert4Lean.Lib.Integers.Int.unsigned n)) hshift1.symm
+    _ = _ := hcomp
+
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.ExternalCalls
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.X86.Op
+open CompCert4Lean.X86.SelectLong
+
+private theorem shrl_int_eq_true_zero (n : CCInt)
+    (h : CompCert4Lean.Lib.Integers.Int.eq n
+      CompCert4Lean.Lib.Integers.Int.zero = true) :
+    n = CompCert4Lean.Lib.Integers.Int.zero := by
+  apply CompCert4Lean.Lib.Integers.WordCore.ext
+  have hd : decide (n.intval =
+      CompCert4Lean.Lib.Integers.Int.zero.intval) = true := by
+    simpa [CompCert4Lean.Lib.Integers.Int.eq,
+      CompCert4Lean.Lib.Integers.WordCore.eq] using h
+  exact of_decide_eq_true hd
+
+private theorem shrl_int64_shr_zero (x : CCInt64) :
+    CompCert4Lean.Lib.Integers.Int64.shr' x
+      CompCert4Lean.Lib.Integers.Int.zero = x := by
+  change CompCert4Lean.Lib.Integers.Int64.repr
+      (ZArith.BinInt.Z.shiftr
+        (CompCert4Lean.Lib.Integers.Int64.signed x)
+        (CompCert4Lean.Lib.Integers.Int.unsigned
+          CompCert4Lean.Lib.Integers.Int.zero)) = x
+  rw [shrl_zshiftr_int_unsigned]
+  have hz : CompCert4Lean.Lib.Integers.Int.zero.val = 0 := rfl
+  rw [hz]
+  simp only [Int.pow_zero, Int.ediv_one]
+  rw [zOfInt_intOfZ]
+  exact shrl_int64_repr_signed x
+
+private theorem shrl_val_zero (x : val) :
+    Val.lessdef
+      (Val.shrl x (.Vint CompCert4Lean.Lib.Integers.Int.zero)) x := by
+  cases x with
+  | Vlong n =>
+      change Val.lessdef
+        (if CompCert4Lean.Lib.Integers.Int.ltu
+            CompCert4Lean.Lib.Integers.Int.zero
+            CompCert4Lean.Lib.Integers.Int64.iwordsize' then
+          .Vlong (CompCert4Lean.Lib.Integers.Int64.shr' n
+            CompCert4Lean.Lib.Integers.Int.zero)
+        else .Vundef) (.Vlong n)
+      have hlt : CompCert4Lean.Lib.Integers.Int.ltu
+          CompCert4Lean.Lib.Integers.Int.zero
+          CompCert4Lean.Lib.Integers.Int64.iwordsize' = true := by decide
+      rw [if_pos hlt, shrl_int64_shr_zero]
+      exact Val.lessdef_refl _
+  | _ => exact Val.lessdef_undef _
+
+private theorem eval_shrlimm_aux_suffix
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    ∀ (xi : ExternalCalls) (prog : program) (hf : HelperFunctions),
+      CompCert4Lean.Backend.SplitLongproof.helper_functions_declared prog hf →
+      ∀ (sp : val) (e : env) (m : mem) (n : CCInt),
+        unary_constructor_sound (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate) xi prog sp e m
+          (fun a => shrlimm a n) (fun v => Val.shrl v (.Vint n)) := by
+  intro xi prog hf hdecl sp e m n le a x h
+  unfold shrlimm
+  cases hz : CompCert4Lean.Lib.Integers.Int.eq n
+      CompCert4Lean.Lib.Integers.Int.zero with
+  | true =>
+      have hn := shrl_int_eq_true_zero n hz
+      simp only [hz, if_true]
+      subst n
+      exact ⟨x, h, shrl_val_zero x⟩
+  | false =>
+      cases hlt : CompCert4Lean.Lib.Integers.Int.ltu n
+          CompCert4Lean.Lib.Integers.Int64.iwordsize' with
+      | false =>
+          simp only [hz, if_false, hlt, Bool.not_false, if_true]
+          refine ⟨Val.shrl x (.Vint n), ?_, Val.lessdef_refl _⟩
+          apply eval_expr.eval_Eop le Oshrl
+            (Econs a (Econs (Eop (Ointconst n) Enil) Enil))
+            [x, .Vint n] (Val.shrl x (.Vint n))
+          · exact eval_exprlist.cons le a _ x [.Vint n] h
+              (eval_exprlist.cons le (Eop (Ointconst n) Enil) Enil
+                (.Vint n) []
+                (eval_expr.eval_Eop le (Ointconst n) Enil [] (.Vint n)
+                  (eval_exprlist.nil le) rfl)
+                (eval_exprlist.nil le))
+          · rfl
+      | true =>
+          simp only [hz, if_false, hlt, Bool.not_true]
+          cases hmatch : shrlimm_match a with
+          | shrlimm_case1 n1 =>
+              have hx : x = .Vlong n1 := eval_longconst_value xi
+                (Genv.globalenv prog) sp e m le n1 x
+                (by simpa [hmatch] using h)
+              subst x
+              refine ⟨.Vlong (CompCert4Lean.Lib.Integers.Int64.shr' n1 n), ?_, ?_⟩
+              · run_tac
+                  let env ← getEnv
+                  let some (name, _) := env.constants.toList.find? (fun (name, _) =>
+                      let s := toString name
+                      s.startsWith "_private.CompCert4Lean.X86.SelectLong." &&
+                        s.endsWith "Int64.shr'")
+                    | throwError "frozen SelectLong Int64.shr' alias not found"
+                  evalTactic (← `(tactic| unfold $(Lean.mkIdent name)))
+                simpa [longconst, hmatch] using
+                  (eval_longconst xi prog sp e m le
+                    (CompCert4Lean.Lib.Integers.Int64.shr' n1 n))
+              · change Val.lessdef
+                  (if CompCert4Lean.Lib.Integers.Int.ltu n
+                      CompCert4Lean.Lib.Integers.Int64.iwordsize' then
+                    .Vlong (CompCert4Lean.Lib.Integers.Int64.shr' n1 n)
+                  else .Vundef) _
+                rw [if_pos hlt]
+                exact Val.lessdef_refl _
+          | shrlimm_case2 n1 t1 =>
+              have horig := h
+              cases h with
+              | eval_Eop le' op al vl v hargs hop =>
+                  cases hargs with
+                  | cons _ a' al' v1 vl' hhead htail =>
+                      cases htail with
+                      | nil _ =>
+                          change some (Val.shrl v1 (.Vint n1)) = some x at hop
+                          cases hop
+                          cases hsum : CompCert4Lean.Lib.Integers.Int.ltu
+                              (CompCert4Lean.Lib.Integers.Int.add n n1)
+                              CompCert4Lean.Lib.Integers.Int64.iwordsize' with
+                          | false =>
+                              refine ⟨Val.shrl (Val.shrl v1 (.Vint n1))
+                                (.Vint n), ?_, Val.lessdef_refl _⟩
+                              simp only [hmatch, hsum, if_false]
+                              apply eval_expr.eval_Eop le (Oshrlimm n)
+                                (Econs (Eop (Oshrlimm n1) (Econs t1 Enil)) Enil)
+                                [Val.shrl v1 (.Vint n1)] _
+                              · exact eval_exprlist.cons le _ Enil _ [] horig
+                                  (eval_exprlist.nil le)
+                              · rfl
+                          | true =>
+                              refine ⟨Val.shrl v1
+                                (.Vint (CompCert4Lean.Lib.Integers.Int.add n n1)), ?_, ?_⟩
+                              · simp only [hmatch, hsum, if_true]
+                                apply eval_expr.eval_Eop le
+                                  (Oshrlimm (CompCert4Lean.Lib.Integers.Int.add n n1))
+                                  (Econs t1 Enil) [v1] _
+                                · exact eval_exprlist.cons le t1 Enil v1 []
+                                    (by simpa [hmatch] using hhead)
+                                    (eval_exprlist.nil le)
+                                · rfl
+                              · cases v1 with
+                                | Vlong i =>
+                                    cases hn1 : CompCert4Lean.Lib.Integers.Int.ltu n1
+                                        CompCert4Lean.Lib.Integers.Int64.iwordsize' with
+                                    | false =>
+                                        simp [Val.shrl, hn1]
+                                        exact Val.lessdef_undef _
+                                    | true =>
+                                        simp only [Val.shrl, hn1, hlt, hsum,
+                                          if_true]
+                                        run_tac
+                                          let env ← getEnv
+                                          let some (name, _) := env.constants.toList.find?
+                                              (fun (name, _) =>
+                                                let s := toString name
+                                                s.startsWith
+                                                    "_private.CompCert4Lean.Common.Values." &&
+                                                  s.endsWith "Int64.shr'")
+                                            | throwError
+                                                "frozen Values Int64.shr' alias not found"
+                                          evalTactic
+                                            (← `(tactic| unfold $(Lean.mkIdent name)))
+                                        rw [shrl_int64_shr_comp i n1 n hn1 hlt]
+                                        exact Val.lessdef_refl _
+                                | _ => exact Val.lessdef_undef _
+          | shrlimm_default e1 =>
+              refine ⟨Val.shrl x (.Vint n), ?_, Val.lessdef_refl _⟩
+              simp only [hmatch]
+              apply eval_expr.eval_Eop le (Oshrlimm n) (Econs a Enil)
+                [x] (Val.shrl x (.Vint n))
+              · exact eval_exprlist.cons le a Enil x [] h
+                  (eval_exprlist.nil le)
+              · rfl
+
+theorem eval_shrl
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    @eval_shrlStatement binary64_certificate binary32_certificate := by
+  unfold eval_shrlStatement binary_constructor_sound
+  intro xi prog hf hdecl sp e m le a x b y ha hb
+  unfold shrl
+  cases hmatch : CompCert4Lean.Backend.SplitLong.is_intconst b with
+  | some n =>
+      have hy : y = .Vint n :=
+        CompCert4Lean.Backend.SplitLongproof.is_intconst_sound
+          xi prog sp e m le b y n hmatch hb
+      subst y
+      obtain ⟨v, hv, hd⟩ := eval_shrlimm_aux_suffix
+        xi prog hf hdecl sp e m n le a x ha
+      exact ⟨v, by simpa only [hmatch] using hv, hd⟩
+  | none =>
+      refine ⟨Val.shrl x y, ?_, Val.lessdef_refl _⟩
+      simp only [hmatch]
+      apply eval_expr.eval_Eop le Oshrl (Econs a (Econs b Enil)) [x, y]
+        (Val.shrl x y)
+      · exact eval_exprlist.cons le a (Econs b Enil) x [y] ha
+          (eval_exprlist.cons le b Enil y [] hb (eval_exprlist.nil le))
+      · rfl
+
+end CompCert4Lean.X86.SelectLongproof
