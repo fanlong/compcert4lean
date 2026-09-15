@@ -2014,3 +2014,163 @@ theorem eval_modu_base
   · exact hmod
 
 end CompCert4Lean.X86.SelectOpproof
+
+namespace CompCert4Lean.X86.SelectOpproof
+
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.Common.Values
+open CompCert4Lean.X86.Op
+open CompCert4Lean.X86.SelectOp
+open Lean Elab Tactic Meta
+
+private theorem int_shrx_zero_local (x : CCInt) :
+    CompCert4Lean.Lib.Integers.Int.shrx x
+      CompCert4Lean.Lib.Integers.Int.zero = x := by
+  change CompCert4Lean.Lib.Integers.Int.divs x
+      (CompCert4Lean.Lib.Integers.Int.shl
+        CompCert4Lean.Lib.Integers.Int.one
+        CompCert4Lean.Lib.Integers.Int.zero) = x
+  rw [CompCert4Lean.Lib.Integers.Int.shl_zero_proof]
+  unfold CompCert4Lean.Lib.Integers.Int.divs
+    CompCert4Lean.Lib.Integers.WordCore.divs
+  have hone : CompCert4Lean.Lib.Integers.WordCore.signed
+      CompCert4Lean.Lib.Integers.Int.one =
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 1 := by rfl
+  rw [hone]
+  have hquot : CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.quot
+      (CompCert4Lean.Lib.Integers.WordCore.signed x)
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 1) =
+      CompCert4Lean.Lib.Integers.WordCore.signed x := by
+    have honez : CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 1 =
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.Zpos
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.xH := by rfl
+    rw [honez]
+    exact CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.quot_1_r _
+  change CompCert4Lean.Lib.Integers.WordCore.repr
+      CompCert4Lean.Lib.Integers.Int.wordsize
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.quot
+        (CompCert4Lean.Lib.Integers.WordCore.signed x)
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 1)) = x
+  rw [hquot]
+  apply CompCert4Lean.Lib.Integers.WordCore.ext_of_val_eq
+  change (CompCert4Lean.Lib.Integers.WordCore.repr
+      CompCert4Lean.Lib.Integers.Int.wordsize
+      (CompCert4Lean.Lib.Integers.WordCore.signed x)).val = x.val
+  rw [show CompCert4Lean.Lib.Integers.WordCore.signed x =
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+          (CompCert4Lean.Lib.Integers.WordCore.signed x)) by
+    exact (CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt_intOfZ _).symm]
+  rw [word_val_repr_local]
+  simp only [CompCert4Lean.Lib.Integers.WordCore.signed,
+    CompCert4Lean.Lib.Integers.WordCore.unsigned,
+    CompCert4Lean.Lib.Integers.Int.wordsize]
+  run_tac
+    let zltName := Lean.mkIdent
+      (selectOpproofPrivateName "CompCert4Lean.Lib.Integers.zltSelect")
+    let selectName := Lean.mkIdent
+      (selectOpproofPrivateName "CompCert4Lean.Lib.Integers.sumboolSelect")
+    let subName := Lean.mkIdent
+      (selectOpproofPrivateName "CompCert4Lean.Lib.Integers.zSub")
+    let powerName := Lean.mkIdent
+      (selectOpproofPrivateName "CompCert4Lean.Lib.Integers.zTwoPowerNat")
+    evalTactic (← `(tactic|
+      unfold $zltName $selectName $subName $powerName))
+  have hxrepr : x.intval = zOfNat x.val :=
+    (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.Znat.Z2Nat.id x.intval (by
+      have h := x.intrange.1
+      change (-1 : Int) < CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ x.intval at h
+      change 0 ≤ CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ x.intval
+      omega)).symm
+  rw [hxrepr]
+  split
+  · rw [show zOfNat x.val =
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt (Int.ofNat x.val) by rfl,
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+    change Int.toNat ((Int.ofNat x.val) % (2 ^ 32 : Int)) = x.val
+    have hvalLt : Int.ofNat x.val < (2 ^ 32 : Int) := by
+      change Int.ofNat x.val < Int.ofNat (2 ^ 32)
+      exact Int.ofNat_lt.mpr x.toFin.isLt
+    have hmod := Int.emod_eq_of_lt (Int.natCast_nonneg _) hvalLt
+    simpa using congrArg Int.toNat hmod
+  · have hp : CompCert4Lean.Foundation.Numbers.Rocq.Coq.two_power_nat 32 =
+        zOfNat (2 ^ 32) := by rfl
+    rw [hp]
+    rw [show CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.sub
+          (zOfNat x.val) (zOfNat (2 ^ 32)) =
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt
+          (Int.ofNat x.val - (2 ^ 32 : Int)) by
+          apply CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective
+          simp only [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.sub,
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat,
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+          rfl,
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+    change Int.toNat
+      (((Int.ofNat x.val) - (2 ^ 32 : Int)) % (2 ^ 32 : Int)) = x.val
+    rw [Int.sub_emod]
+    rw [Int.emod_self, Int.sub_zero]
+    have hvalLt : Int.ofNat x.val < (2 ^ 32 : Int) := by
+      change Int.ofNat x.val < Int.ofNat (2 ^ 32)
+      exact Int.ofNat_lt.mpr x.toFin.isLt
+    have hmod := Int.emod_eq_of_lt (Int.natCast_nonneg _) hvalLt
+    simpa using congrArg Int.toNat hmod
+
+theorem eval_shrximm
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    eval_shrximmStatement := by
+  intro xi ge sp e m le a n x z ha hz
+  rw [CompCert4Lean.X86.SelectOp.shrximm]
+  split
+  · rename_i hn
+    have hn' := int_eq_true_local n
+      CompCert4Lean.Lib.Integers.Int.zero hn
+    subst n
+    refine ⟨x, ha, ?_⟩
+    cases x with
+    | Vint nx =>
+        simp only [CompCert4Lean.Common.Values.Val.shrx] at hz
+        split at hz
+        · cases hz
+          change Val.lessdef
+            (.Vint (CompCert4Lean.Lib.Integers.Int.shrx nx
+              CompCert4Lean.Lib.Integers.Int.zero)) (.Vint nx)
+          rw [int_shrx_zero_local nx]
+          exact Val.lessdef_refl _
+        · cases hz
+    | Vundef => cases hz
+    | Vlong _ => cases hz
+    | Vfloat _ => cases hz
+    | Vsingle _ => cases hz
+    | Vptr _ _ => cases hz
+  · rename_i hn
+    cases x with
+    | Vint nx =>
+        simp only [CompCert4Lean.Common.Values.Val.shrx] at hz
+        split at hz
+        · cases hz
+          refine ⟨.Vint (CompCert4Lean.Lib.Integers.Int.shrx nx n), ?_, ?_⟩
+          · apply eval_expr.eval_Eop le (Oshrximm n) (Econs a Enil)
+                [.Vint nx] _
+            · exact eval_exprlist.cons le a Enil _ [] ha
+                (eval_exprlist.nil le)
+            · change CompCert4Lean.Common.Values.Val.shrx
+                (.Vint nx) (.Vint n) =
+                some (.Vint (CompCert4Lean.Lib.Integers.Int.shrx nx n))
+              simp only [CompCert4Lean.Common.Values.Val.shrx]
+              split
+              · rfl
+              · contradiction
+          · change Val.lessdef
+              (.Vint (CompCert4Lean.Lib.Integers.Int.shrx nx n))
+              (.Vint (CompCert4Lean.Lib.Integers.Int.shrx nx n))
+            exact Val.lessdef_refl _
+        · cases hz
+    | Vundef => cases hz
+    | Vlong _ => cases hz
+    | Vfloat _ => cases hz
+    | Vsingle _ => cases hz
+    | Vptr _ _ => cases hz
+
+end CompCert4Lean.X86.SelectOpproof

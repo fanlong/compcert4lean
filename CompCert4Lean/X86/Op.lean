@@ -2419,3 +2419,22 @@ theorem eval_addressing_lessdef : eval_addressing_lessdefStatement := by
   exact ⟨v2, heval2, suffix_eval_addressing_lessdef_of_inject v1 v2 hinj⟩
 
 end CompCert4Lean.X86.Op
+
+namespace CompCert4Lean.X86.Op
+
+theorem symbol_address_inject : symbol_address_injectStatement := by
+  intro F V genv f globals id ofs
+  unfold CompCert4Lean.Common.Globalenvs.Genv.symbol_address
+  split
+  next b hfind =>
+    apply CompCert4Lean.Common.Values.Val.inject.inject_ptr b ofs b ofs
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.Z0
+    · exact globals.1 id b hfind
+    · rw [show CompCert4Lean.Lib.Integers.Ptrofs.repr
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.Z0 =
+            CompCert4Lean.Lib.Integers.Ptrofs.zero by rfl,
+          suffixPtrofsAddZero]
+  next hfind =>
+    exact CompCert4Lean.Common.Values.Val.inject.val_inject_undef _
+
+end CompCert4Lean.X86.Op

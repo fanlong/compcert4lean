@@ -3384,3 +3384,40 @@ theorem add_undef_undef : add_undef_undefStatement := by
   cases x <;> simp [add_undef, ntop] <;> constructor
 
 end CompCert4Lean.Backend.ValueDomain
+
+namespace CompCert4Lean.Backend.ValueDomain
+
+private theorem val_lessdef_normalize_local (v : val)
+    (ty : CompCert4Lean.Common.AST.typ) :
+    CompCert4Lean.Common.Values.Val.lessdef
+      (CompCert4Lean.Common.Values.Val.normalize v ty) v := by
+  cases v <;> cases ty <;>
+    simp [CompCert4Lean.Common.Values.Val.normalize,
+      CompCert4Lean.X86_64.Archi.ptr64] <;>
+    constructor
+
+private theorem vmatch_add_undef_of_lessdef
+    (bc : block_classification) (v v' : val) (x : aval) :
+    CompCert4Lean.Common.Values.Val.lessdef v' v →
+      vmatch bc v x → vmatch bc v' (add_undef x) := by
+  intro hld hm
+  cases hld with
+  | lessdef_refl => exact add_undef_sound bc v x hm
+  | lessdef_undef => exact add_undef_undef bc x
+
+theorem vnormalize_type_sound : vnormalize_type_soundStatement := by
+  intro bc v x ty h
+  have hcases :
+      CompCert4Lean.Common.Values.Val.has_type v ty ∧
+          vnormalize_type ty x = x ∨
+        vnormalize_type ty x = add_undef x := by
+    cases h <;> cases ty <;>
+      simp [vnormalize_type, CompCert4Lean.Common.Values.Val.has_type,
+        CompCert4Lean.X86_64.Archi.ptr64]
+  rcases hcases with ⟨hv, hx⟩ | hx
+  · rw [hx, CompCert4Lean.Common.Values.Val.normalize_idem v ty hv]
+    exact h
+  · rw [hx]
+    exact vmatch_add_undef_of_lessdef bc v
+      (CompCert4Lean.Common.Values.Val.normalize v ty) x
+      (val_lessdef_normalize_local v ty) h

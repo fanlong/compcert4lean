@@ -5539,3 +5539,297 @@ theorem compat_entry_satisf : compat_entry_satisfStatement := by
                         exact ih ps e htail vs ls hvs q hq
 
 end CompCert4Lean.Backend.Allocproof
+
+namespace CompCert4Lean.Backend.Allocproof
+
+theorem loadv_int64_split : loadv_int64_splitStatement := by
+  intro m a v hload hsplit
+  simp [CompCert4Lean.X86_64.Archi.splitlong,
+    CompCert4Lean.X86_64.Archi.ptr64] at hsplit
+
+end CompCert4Lean.Backend.Allocproof
+
+namespace CompCert4Lean.Backend.Allocproof
+
+open CompCert4Lean.Backend.Allocation
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Events
+
+theorem add_equations_builtin_arg_satisf :
+    add_equations_builtin_arg_satisfStatement := by
+  intro env rs ls arg arg' e e' hrun hsat
+  induction arg generalizing arg' e e' with
+  | BA r =>
+      cases arg' with
+      | BA l =>
+          simp [add_equations_builtin_arg] at hrun
+          rcases hrun with ⟨rfl, rfl⟩
+          exact add_equation_satisf rs ls _ _ hsat
+      | BA_splitlong hi lo =>
+          cases hi with
+          | BA hi =>
+              cases lo with
+              | BA lo =>
+                  change (if decide (env r = Tlong) &&
+                      CompCert4Lean.X86_64.Archi.splitlong then
+                    some (add_equation { ekind := .Low, ereg := r, eloc := lo }
+                      (add_equation { ekind := .High, ereg := r, eloc := hi } e))
+                  else none) = some e' at hrun
+                  split at hrun
+                  · cases hrun
+                    exact add_equation_satisf rs ls _ _
+                      (add_equation_satisf rs ls _ _ hsat)
+                  · cases hrun
+              | _ => simp [add_equations_builtin_arg] at hrun
+          | _ => simp [add_equations_builtin_arg] at hrun
+      | BA_int n' => simp [add_equations_builtin_arg] at hrun
+      | BA_long n' => simp [add_equations_builtin_arg] at hrun
+      | BA_float f' => simp [add_equations_builtin_arg] at hrun
+      | BA_single f' => simp [add_equations_builtin_arg] at hrun
+      | BA_loadstack chunk' ofs' => simp [add_equations_builtin_arg] at hrun
+      | BA_addrstack ofs' => simp [add_equations_builtin_arg] at hrun
+      | BA_loadglobal chunk' id' ofs' => simp [add_equations_builtin_arg] at hrun
+      | BA_addrglobal id' ofs' => simp [add_equations_builtin_arg] at hrun
+      | BA_addptr a1' a2' => simp [add_equations_builtin_arg] at hrun
+  | BA_int n =>
+      cases arg' with
+      | BA l => simp [add_equations_builtin_arg] at hrun
+      | BA_splitlong hi lo => simp [add_equations_builtin_arg] at hrun
+      | BA_int n' =>
+          simp [add_equations_builtin_arg] at hrun
+          rcases hrun with ⟨_, rfl⟩
+          exact hsat
+      | BA_long n' => simp [add_equations_builtin_arg] at hrun
+      | BA_float f' => simp [add_equations_builtin_arg] at hrun
+      | BA_single f' => simp [add_equations_builtin_arg] at hrun
+      | BA_loadstack chunk' ofs' => simp [add_equations_builtin_arg] at hrun
+      | BA_addrstack ofs' => simp [add_equations_builtin_arg] at hrun
+      | BA_loadglobal chunk' id' ofs' => simp [add_equations_builtin_arg] at hrun
+      | BA_addrglobal id' ofs' => simp [add_equations_builtin_arg] at hrun
+      | BA_addptr a1' a2' => simp [add_equations_builtin_arg] at hrun
+  | BA_long n =>
+      cases arg' with
+      | BA_long n' =>
+          simp [add_equations_builtin_arg] at hrun
+          rcases hrun with ⟨_, rfl⟩
+          exact hsat
+      | _ => simp [add_equations_builtin_arg] at hrun
+  | BA_float n =>
+      cases arg' with
+      | BA_float f' =>
+          simp [add_equations_builtin_arg] at hrun
+          rcases hrun with ⟨_, rfl⟩
+          exact hsat
+      | _ => simp [add_equations_builtin_arg] at hrun
+  | BA_single n =>
+      cases arg' with
+      | BA_single f' =>
+          simp [add_equations_builtin_arg] at hrun
+          rcases hrun with ⟨_, rfl⟩
+          exact hsat
+      | _ => simp [add_equations_builtin_arg] at hrun
+  | BA_loadstack chunk ofs =>
+      cases arg' with
+      | BA_loadstack chunk' ofs' =>
+          simp [add_equations_builtin_arg] at hrun
+          rcases hrun with ⟨_, rfl⟩
+          exact hsat
+      | _ => simp [add_equations_builtin_arg] at hrun
+  | BA_addrstack ofs =>
+      cases arg' with
+      | BA_addrstack ofs' =>
+          simp [add_equations_builtin_arg] at hrun
+          rcases hrun with ⟨_, rfl⟩
+          exact hsat
+      | _ => simp [add_equations_builtin_arg] at hrun
+  | BA_loadglobal chunk id ofs =>
+      cases arg' with
+      | BA_loadglobal chunk' id' ofs' =>
+          simp [add_equations_builtin_arg] at hrun
+          rcases hrun with ⟨_, rfl⟩
+          exact hsat
+      | _ => simp [add_equations_builtin_arg] at hrun
+  | BA_addrglobal id ofs =>
+      cases arg' with
+      | BA_addrglobal id' ofs' =>
+          simp [add_equations_builtin_arg] at hrun
+          rcases hrun with ⟨_, rfl⟩
+          exact hsat
+      | _ => simp [add_equations_builtin_arg] at hrun
+  | BA_splitlong hi lo ih_hi ih_lo =>
+      cases arg' with
+      | BA l => simp [add_equations_builtin_arg] at hrun
+      | BA_splitlong hi' lo' =>
+          change (match add_equations_builtin_arg env hi hi' e with
+            | none => none
+            | some e1 => add_equations_builtin_arg env lo lo' e1) = some e' at hrun
+          split at hrun
+          · cases hrun
+          · rename_i e1 hfirst
+            exact ih_hi hi' e e1 hfirst (ih_lo lo' e1 e' hrun hsat)
+      | BA_int n' => simp [add_equations_builtin_arg] at hrun
+      | BA_long n' => simp [add_equations_builtin_arg] at hrun
+      | BA_float f' => simp [add_equations_builtin_arg] at hrun
+      | BA_single f' => simp [add_equations_builtin_arg] at hrun
+      | BA_loadstack chunk' ofs' => simp [add_equations_builtin_arg] at hrun
+      | BA_addrstack ofs' => simp [add_equations_builtin_arg] at hrun
+      | BA_loadglobal chunk' id' ofs' => simp [add_equations_builtin_arg] at hrun
+      | BA_addrglobal id' ofs' => simp [add_equations_builtin_arg] at hrun
+      | BA_addptr a1' a2' => simp [add_equations_builtin_arg] at hrun
+  | BA_addptr a1 a2 ih_a1 ih_a2 =>
+      cases arg' with
+      | BA l => simp [add_equations_builtin_arg] at hrun
+      | BA_splitlong hi lo => simp [add_equations_builtin_arg] at hrun
+      | BA_int n' => simp [add_equations_builtin_arg] at hrun
+      | BA_long n' => simp [add_equations_builtin_arg] at hrun
+      | BA_float f' => simp [add_equations_builtin_arg] at hrun
+      | BA_single f' => simp [add_equations_builtin_arg] at hrun
+      | BA_loadstack chunk' ofs' => simp [add_equations_builtin_arg] at hrun
+      | BA_addrstack ofs' => simp [add_equations_builtin_arg] at hrun
+      | BA_loadglobal chunk' id' ofs' => simp [add_equations_builtin_arg] at hrun
+      | BA_addrglobal id' ofs' => simp [add_equations_builtin_arg] at hrun
+      | BA_addptr a1' a2' =>
+          change (match add_equations_builtin_arg env a1 a1' e with
+            | none => none
+            | some e1 => add_equations_builtin_arg env a2 a2' e1) = some e' at hrun
+          split at hrun
+          · cases hrun
+          · rename_i e1 hfirst
+            exact ih_a1 a1' e e1 hfirst (ih_a2 a2' e1 e' hrun hsat)
+
+end CompCert4Lean.Backend.Allocproof
+
+namespace CompCert4Lean.Backend.Allocproof
+
+open CompCert4Lean.Backend.Allocation
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Values
+
+/- deferred lessdef proof -/
+/-
+  intro env ge sp rs ls m arg v hEval
+  induction hEval with
+  | eval_BA x =>
+      intro e e' arg' hrun hsat hwt
+      cases arg' <;> simp [add_equations_builtin_arg] at hrun
+  | eval_BA_int n =>
+      intro e e' arg' hrun hsat hwt
+      cases arg' <;> simp [add_equations_builtin_arg] at hrun
+  | eval_BA_long n =>
+      intro e e' arg' hrun hsat hwt
+      cases arg' <;> simp [add_equations_builtin_arg] at hrun
+  | eval_BA_float n =>
+      intro e e' arg' hrun hsat hwt
+      cases arg' <;> simp [add_equations_builtin_arg] at hrun
+  | eval_BA_single n =>
+      intro e e' arg' hrun hsat hwt
+      cases arg' <;> simp [add_equations_builtin_arg] at hrun
+  | eval_BA_loadstack chunk ofs v hload =>
+      intro e e' arg' hrun hsat hwt
+      cases arg' <;> simp [add_equations_builtin_arg] at hrun
+  | eval_BA_addrstack ofs =>
+      intro e e' arg' hrun hsat hwt
+      cases arg' <;> simp [add_equations_builtin_arg] at hrun
+  | eval_BA_loadglobal chunk id ofs v hload =>
+      intro e e' arg' hrun hsat hwt
+      cases arg' with
+      | BA_loadglobal chunk' id' ofs' =>
+          simp [add_equations_builtin_arg] at hrun
+          rcases hrun with ⟨⟨hchunk, hid⟩, hofs, rfl⟩
+          have hc : chunk = chunk' := (of_decide_eq_true hchunk)
+          have hi : id = id' := (of_decide_eq_true hid)
+          have ho : ofs = ofs' := by
+            unfold CompCert4Lean.Lib.Integers.Ptrofs.eq WordCore.eq at hofs
+            apply WordCore.ext
+            exact of_decide_eq_true hofs
+          subst hc; subst hi; subst ho
+          exact ⟨v, eval_BA_loadglobal _ _ _ _ hload, Val.lessdef_refl _⟩
+      | _ => simp [add_equations_builtin_arg] at hrun
+  | eval_BA_addrglobal id ofs =>
+      intro e e' arg' hrun hsat hwt
+      cases arg' with
+      | BA_addrglobal id' ofs' =>
+          simp [add_equations_builtin_arg] at hrun
+          rcases hrun with ⟨⟨hid, hofs⟩, rfl⟩
+          have hi : id = id' := (of_decide_eq_true hid)
+          have ho : ofs = ofs' := by
+            unfold CompCert4Lean.Lib.Integers.Ptrofs.eq WordCore.eq at hofs
+            apply WordCore.ext
+            exact of_decide_eq_true hofs
+          subst hi; subst ho
+          exact ⟨_, eval_BA_addrglobal _ _, Val.lessdef_refl _⟩
+      | _ => simp [add_equations_builtin_arg] at hrun
+  | eval_BA_splitlong hi lo vhi vlo hhi hlo ihhi ihlo =>
+      intro e e' arg' hrun hsat hwt
+      cases arg' with
+      | BA_splitlong hi' lo' =>
+          change (match add_equations_builtin_arg env hi hi' e with
+            | none => none
+            | some e1 => add_equations_builtin_arg env lo lo' e1) = some e' at hrun
+          split at hrun
+          · cases hrun
+          · rename_i e1 hfirst
+            obtain ⟨vhi', hhi', ldhi⟩ := ihhi e e1 hi' hfirst hsat hwt
+            obtain ⟨vlo', hlo', ldlo⟩ := ihlo e1 e' lo' hrun hsat hwt
+            exact ⟨Val.longofwords vhi' vlo',
+              eval_BA_splitlong _ _ _ _ hhi' hlo',
+              allocproof_longofwords_lessdef _ _ _ _ ldhi ldlo⟩
+      | _ => simp [add_equations_builtin_arg] at hrun
+  | eval_BA_addptr a1 a2 v1 v2 ha1 ha2 iha1 iha2 =>
+      intro e e' arg' hrun hsat hwt
+      cases arg' with
+      | BA_addptr a1' a2' =>
+          change (match add_equations_builtin_arg env a1 a1' e with
+            | none => none
+            | some e1 => add_equations_builtin_arg env a2 a2' e1) = some e' at hrun
+          split at hrun
+          · cases hrun
+          · rename_i e1 hfirst
+            obtain ⟨v1', h1', ld1⟩ := iha1 e e1 a1' hfirst hsat hwt
+            obtain ⟨v2', h2', ld2⟩ := iha2 e1 e' a2' hrun hsat hwt
+            refine ⟨(if CompCert4Lean.X86_64.Archi.ptr64 then Val.addl v1' v2' else Val.add v1' v2'),
+              eval_BA_addptr _ _ _ _ h1' h2', ?_⟩
+            cases CompCert4Lean.X86_64.Archi.ptr64 <;>
+              first | exact Val.lessdef_refl _ | exact Val.lessdef_refl _
+      | _ => simp [add_equations_builtin_arg] at hrun
+
+end CompCert4Lean.Backend.Allocproof
+-/
+
+end CompCert4Lean.Backend.Allocproof
+
+namespace CompCert4Lean.Backend.Allocproof
+
+open CompCert4Lean.Backend.Allocation
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Common.AST
+
+theorem add_equations_builtin_args_satisf :
+    add_equations_builtin_args_satisfStatement := by
+  intro env rs ls args args' e e' hrun hsat
+  induction args generalizing args' e e' with
+  | nil =>
+      cases args' with
+      | nil =>
+          simp [add_equations_builtin_args] at hrun
+          cases hrun
+          exact hsat
+      | cons a' rest => simp [add_equations_builtin_args] at hrun
+  | cons a rest ih =>
+      cases args' with
+      | nil => simp [add_equations_builtin_args] at hrun
+      | cons a' rest' =>
+          change (match add_equations_builtin_arg env a a' e with
+            | none => none
+            | some e1 => add_equations_builtin_args env rest rest' e1) = some e' at hrun
+          split at hrun
+          · cases hrun
+          · rename_i e1 hfirst
+            exact add_equations_builtin_arg_satisf env rs ls a a' e e1 hfirst
+              (ih rest' e1 e' hrun hsat)
+
+end CompCert4Lean.Backend.Allocproof

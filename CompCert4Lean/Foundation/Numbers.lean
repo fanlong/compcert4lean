@@ -2521,3 +2521,55 @@ theorem ZArith.Zorder.Zlt_succ_proof :
 
 end Rocq.Coq
 end CompCert4Lean.Foundation.Numbers
+
+namespace CompCert4Lean.Foundation.Numbers
+namespace Rocq.Coq
+
+theorem ZArith.BinInt.Z.lt_irrefl :
+    ZArith.BinInt.Z.lt_irreflStatement := by
+  intro x h
+  change intOfZ x < intOfZ x at h
+  exact (Int.lt_irrefl _ h)
+
+theorem ZArith.Zorder.Zeq_le_proof :
+    ∀ (n m : Z) (h : n = m), ZArith.Zorder.Zeq_le n m h := by
+  intro n m h
+  subst m
+  exact Int.le_refl _
+
+theorem ZArith.BinInt.Z.max_l_iff :
+    ZArith.BinInt.Z.max_l_iffStatement := by
+  intro n m
+  change (if intOfZ n ≤ intOfZ m then m else n) = n ↔ intOfZ m ≤ intOfZ n
+  by_cases hnm : intOfZ n ≤ intOfZ m
+  · rw [if_pos hnm]
+    constructor
+    · intro hmax
+      exact Int.le_of_eq (congrArg intOfZ hmax)
+    · intro hmn
+      apply intOfZ_injective
+      exact Int.le_antisymm hmn hnm
+  · rw [if_neg hnm]
+    constructor
+    · intro _
+      exact Int.le_of_lt (Int.lt_of_not_ge hnm)
+    · intro _
+      rfl
+
+theorem ZArith.BinInt.Z.divide_trans :
+    ZArith.BinInt.Z.divide_transStatement := by
+  intro n m p hnm hmp
+  rcases hnm with ⟨k, hk⟩
+  rcases hmp with ⟨l, hl⟩
+  refine ⟨ZArith.BinInt.Z.mul k l, ?_⟩
+  calc
+    p = ZArith.BinInt.Z.mul m l := hl
+    _ = ZArith.BinInt.Z.mul (ZArith.BinInt.Z.mul n k) l :=
+      congrArg (fun z => ZArith.BinInt.Z.mul z l) hk
+    _ = ZArith.BinInt.Z.mul n (ZArith.BinInt.Z.mul k l) := by
+      apply intOfZ_injective
+      simp only [ZArith.BinInt.Z.mul, intOfZ_zOfInt]
+      exact Int.mul_assoc _ _ _
+
+end Rocq.Coq
+end CompCert4Lean.Foundation.Numbers

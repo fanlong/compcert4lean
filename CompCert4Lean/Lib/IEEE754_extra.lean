@@ -1786,3 +1786,114 @@ theorem Bmult_commut :
     rw [_root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.PArith.BinPos.Pos.mul_comm]
 
 end CompCert4Lean.Lib.IEEE754_extra
+
+namespace CompCert4Lean.Lib.IEEE754_extra
+
+private theorem pg_ieee754_ziter_unfold_succ {A : Type} (f : A → A) (x : A) (k : Nat) :
+    Ziter (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat (k + 1)) f x =
+      Ziter (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat k) f (f x) := by
+  simp only [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.iter,
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat,
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt,
+    Int.ofNat_eq_natCast, Int.toNat_natCast]
+  rfl
+
+private theorem pg_ieee754_ziter_commute {A : Type} (f : A → A) (x : A) (k : Nat) :
+    Ziter (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat k) f (f x) =
+      f (Ziter (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat k) f x) := by
+  induction k generalizing x with
+  | zero =>
+      simp only [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.iter,
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat,
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt,
+        Int.ofNat_eq_natCast, Int.toNat_natCast]
+      rfl
+  | succ k ih =>
+      rw [pg_ieee754_ziter_unfold_succ, pg_ieee754_ziter_unfold_succ]
+      rw [ih (f x), ih x]
+
+private theorem pg_ieee754_ziter_succ {A : Type} (f : A → A) (x : A) (k : Nat) :
+    Ziter (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat (k + 1)) f x =
+      f (Ziter (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat k) f x) := by
+  rw [pg_ieee754_ziter_unfold_succ, pg_ieee754_ziter_commute]
+
+private theorem pg_ieee754_xO_iter (k : Nat) :
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat
+      (Ziter (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat k) xO xH) =
+        2 ^ k := by
+  induction k with
+  | zero =>
+      change CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat xH = 1
+      rfl
+  | succ k ih =>
+      rw [pg_ieee754_ziter_succ]
+      change 2 * CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat
+          (Ziter (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat k) xO xH) =
+        2 ^ (k + 1)
+      rw [ih]
+      omega
+
+private theorem pg_ieee754_pow_nat (k : Nat) :
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+        (Zpower Ztwo
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat k)) =
+      Int.ofNat (2 ^ k) := by
+  change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+    (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.pow Ztwo
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat k)) = _
+  unfold CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.pow
+  have hk : CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat k) =
+        Int.ofNat k := by
+    simp [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat,
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+  rw [hk]
+  have htwo : CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ Ztwo = (2 : Int) := by
+    decide
+  rw [htwo]
+  have hkneg : ¬ (Int.ofNat k) < 0 := by
+    exact Int.not_lt_of_ge (Int.natCast_nonneg k)
+  simp only [hkneg, ↓reduceIte]
+  rw [CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+  rw [show (Int.ofNat k).toNat = k by rfl]
+  change Int.pow 2 k = Int.ofNat (2 ^ k)
+  exact (Int.natCast_pow 2 k).symm
+
+private theorem pg_ieee754_mantissa_nonneg (n : Z) (hn : Zle Z0 n) :
+    Zpos (Ziter n xO xH) = Zpower Ztwo n := by
+  have hn_int : (0 : Int) ≤
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ n := hn
+  let k := Int.toNat (CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ n)
+  have hrepr : n =
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat k := by
+    apply CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective
+    simp only [CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt,
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat]
+    exact (Int.toNat_of_nonneg hn_int).symm
+  rw [hrepr]
+  apply CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective
+  change Int.ofNat (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat
+      (Ziter (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat k) xO xH)) = _
+  rw [pg_ieee754_xO_iter]
+  exact (pg_ieee754_pow_nat k).symm
+
+theorem Bexact_inverse_mantissa_value :
+    ∀ {prec : Z} [Prec_gt_0 prec],
+      Bexact_inverse_mantissa_valueStatement (prec := prec) := by
+  intro prec pgt
+  letI : Prec_gt_0 prec := pgt
+  dsimp [Bexact_inverse_mantissa_valueStatement, keepPrecGt]
+  apply pg_ieee754_mantissa_nonneg
+  change (0 : Int) ≤ CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+    (Zsub prec Zone)
+  simp only [Zsub,
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.sub,
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+  have hp : Zlt Z0 prec := pgt
+  change (0 : Int) < CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ prec at hp
+  have hzone : CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ Zone = (1 : Int) := by
+    decide
+  rw [hzone]
+  omega
+
+end CompCert4Lean.Lib.IEEE754_extra

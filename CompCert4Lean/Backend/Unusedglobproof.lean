@@ -2522,3 +2522,43 @@ theorem bytes_of_init_inject : bytes_of_init_injectStatement := by
         exact ⟨ofs, by simp [hmem]⟩
 
 end CompCert4Lean.Backend.Unusedglobproof
+
+namespace CompCert4Lean.Backend.Unusedglobproof
+
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem Mem_getN_forall2 : Mem_getN_forall2Statement := by
+  intro P c1 c2 i n p hlist hpi hupper
+  induction n generalizing p with
+  | zero =>
+      exfalso
+      change intOfZ i < intOfZ (zAdd p (zOfNat 0)) at hupper
+      change intOfZ p ≤ intOfZ i at hpi
+      simp [ZArith.BinInt.Z.add, ZArith.BinInt.Z.of_nat,
+        intOfZ_zOfInt] at hupper
+      omega
+  | succ n ih =>
+      simp only [CompCert4Lean.Common.Memory.Mem.getN] at hlist
+      cases hlist with
+      | cons _ _ hhead htail =>
+          by_cases heq : i = p
+          · subst i
+            exact hhead
+          · apply ih (p := ZArith.BinInt.Z.add p (ZArith.BinInt.Z.of_nat 1)) htail
+            · change intOfZ (ZArith.BinInt.Z.add p (ZArith.BinInt.Z.of_nat 1)) ≤ intOfZ i
+              change intOfZ p ≤ intOfZ i at hpi
+              have hne' : intOfZ i ≠ intOfZ p := by
+                intro h
+                exact heq (intOfZ_injective h)
+              simp [ZArith.BinInt.Z.add, ZArith.BinInt.Z.of_nat,
+                intOfZ_zOfInt]
+              omega
+            · change intOfZ i < intOfZ (zAdd
+                (ZArith.BinInt.Z.add p (ZArith.BinInt.Z.of_nat 1)) (zOfNat n))
+              change intOfZ i < intOfZ (zAdd p (zOfNat (Nat.succ n))) at hupper
+              simp [ZArith.BinInt.Z.add, ZArith.BinInt.Z.of_nat,
+                intOfZ_zOfInt] at hupper ⊢
+              omega
+
+end CompCert4Lean.Backend.Unusedglobproof

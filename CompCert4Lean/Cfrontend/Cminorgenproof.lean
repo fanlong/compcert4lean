@@ -3450,3 +3450,38 @@ theorem build_compilenv_domain : build_compilenv_domainStatement := by
     exact Permutation_in id hmap hsorted
 
 end CompCert4Lean.Cfrontend.Cminorgenproof
+
+namespace CompCert4Lean.Cfrontend.Cminorgenproof
+
+open CompCert4Lean.Lib.Maps
+
+theorem bind_parameters_agree_rec : bind_parameters_agree_recStatement := by
+  intro f vars
+  induction vars with
+  | nil =>
+      intro vals tvals le1 le2 te hbind hinj hmatch
+      cases vals with
+      | nil =>
+          simp [CS.bind_parameters] at hbind
+          cases hbind
+          simpa [set_params'] using hmatch
+      | cons v vs =>
+          simp [CS.bind_parameters] at hbind
+          cases hbind
+  | cons id vars ih =>
+      intro vals tvals le1 le2 te hbind hinj hmatch
+      cases vals with
+      | nil =>
+          simp [CS.bind_parameters] at hbind
+          cases hbind
+      | cons v vs =>
+          cases hinj with
+          | inject_list_cons v tv vs tvals hhead htail =>
+              have hmatch' :
+                  match_temps f (PTree.set id v le1) (PTree.set id tv te) :=
+                match_temps_assign f le1 te id v tv hmatch hhead
+              have hrest := ih vs tvals (PTree.set id v le1) le2
+                (PTree.set id tv te) hbind htail hmatch'
+              simpa [set_params'] using hrest
+
+end CompCert4Lean.Cfrontend.Cminorgenproof

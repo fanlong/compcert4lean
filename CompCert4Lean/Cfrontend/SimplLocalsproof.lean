@@ -3619,3 +3619,38 @@ theorem alloc_variables_load : alloc_variables_loadStatement := by
         (sizeof (globalenv prog).genv_cenv ty) m1 b1 halloc chunk b ofs v hload
 
 end CompCert4Lean.Cfrontend.SimplLocalsproof
+
+namespace CompCert4Lean.Cfrontend.SimplLocalsproof
+
+theorem sizeof_by_value : sizeof_by_valueStatement := by
+  intro prog ty chunk hmode
+  cases ty with
+  | Tvoid => cases hmode
+  | Tint sz sg a =>
+      cases sz <;> cases sg <;> cases hmode <;>
+        simp [CompCert4Lean.Cfrontend.Ctypes.sizeof,
+          CompCert4Lean.Common.Memdata.size_chunk,
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.le]
+  | Tlong sg a =>
+      cases hmode
+      simp [CompCert4Lean.Cfrontend.Ctypes.sizeof,
+        CompCert4Lean.Common.Memdata.size_chunk,
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.le]
+  | Tfloat sz a =>
+      cases sz <;> cases hmode <;>
+        simp [CompCert4Lean.Cfrontend.Ctypes.sizeof,
+          CompCert4Lean.Common.Memdata.size_chunk,
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.le]
+  | Tpointer t a =>
+      cases hmode
+      simp [CompCert4Lean.Cfrontend.Ctypes.sizeof,
+        CompCert4Lean.Common.Memdata.size_chunk,
+        CompCert4Lean.Common.AST.Mptr,
+        CompCert4Lean.X86_64.Archi.ptr64,
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.le]
+  | Tarray t n a => cases hmode
+  | Tfunction args ret cc => cases hmode
+  | Tstruct id a => cases hmode
+  | Tunion id a => cases hmode
+
+end CompCert4Lean.Cfrontend.SimplLocalsproof

@@ -2813,3 +2813,28 @@ theorem agree_locs_undef_locs : agree_locs_undef_locsStatement := by
   exact hnone r hr
 
 end CompCert4Lean.Backend.Stackingproof
+
+namespace CompCert4Lean.Backend.Stackingproof
+
+open CompCert4Lean.Backend.Locations
+open CompCert4Lean.Backend.Lineartyping
+
+theorem agree_locs_set_slot : agree_locs_set_slotStatement := by
+  intro cfg f
+    bound_local_pos bound_outgoing_pos bound_stack_data_pos
+    used_callee_save_norepet used_callee_save_prop ls ls0 sl ofs ty v
+    hagree hwritable
+  constructor
+  · intro r hn
+    rw [show Locmap.set (S sl ofs ty) v ls (R r) = ls (R r) by
+      apply Locmap.gso
+      simp [Loc.diff]]
+    exact agree_unused_reg hagree r hn
+  · intro ofs' ty' hin
+    rw [show Locmap.set (S sl ofs ty) v ls (S Incoming ofs' ty') =
+        ls (S Incoming ofs' ty') by
+      apply Locmap.gso
+      cases sl <;> simp_all [slot_writable, Loc.diff]]
+    exact agree_incoming hagree ofs' ty' hin
+
+end CompCert4Lean.Backend.Stackingproof

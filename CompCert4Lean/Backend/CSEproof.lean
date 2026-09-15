@@ -3056,3 +3056,30 @@ theorem reduce_rec_lessdef_sound
               | lessdef_undef => exact Val.lessdef_undef _
 
 end CompCert4Lean.Backend.CSEproof
+
+namespace CompCert4Lean.Backend.CSEproof
+
+open CompCert4Lean.Backend.CSEdomain
+open CompCert4Lean.Common.Values
+
+theorem reduce_lessdef_sound
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    reduce_lessdef_soundStatement := by
+  intro A f ge sp rs m sem f_sound n valu hnum
+  intro op rl vl op' rl' r hreduce hmap hsem
+  cases hrec : CSE.reduce_rec f n 4 op vl with
+  | none =>
+      simp [CSE.reduce, hrec] at hreduce
+      obtain ⟨rfl, rfl⟩ := hreduce
+      exact ⟨r, hsem, Val.lessdef_refl r⟩
+  | some rec =>
+      rcases rec with ⟨op1, rl1⟩
+      simp [CSE.reduce, hrec] at hreduce
+      obtain ⟨rfl, rfl⟩ := hreduce
+      apply reduce_rec_lessdef_sound A f ge sp rs m sem f_sound n valu hnum
+        4 op vl op1 rl1 r hrec
+      rw [hmap]
+      exact hsem
+
+end CompCert4Lean.Backend.CSEproof

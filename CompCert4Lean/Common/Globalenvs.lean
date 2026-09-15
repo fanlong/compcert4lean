@@ -2871,3 +2871,77 @@ theorem store_zeros_neutral : store_zeros_neutralStatement := by
 
 end Genv
 end CompCert4Lean.Common.Globalenvs
+
+namespace CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Linking
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.Lib.Integers
+open Lean Elab Tactic Meta
+namespace Genv
+
+private def pg_memdataPrivateName (suffix : String) : Name :=
+  let p := Name.str (Name.str (Name.str (Name.str Name.anonymous "_private") "CompCert4Lean") "Common") "Memdata"
+  let base := Name.num p 0
+  suffix.splitOn "." |>.foldl Name.str base
+
+private theorem pg_store_init_data_ptrofs_add_zero (ofs : ptrofs) :
+    Ptrofs.add ofs (Ptrofs.repr (.Z0 : Z)) = ofs := by
+  run_tac
+    let lctx ← getLCtx
+    let ofsF := (lctx.findFromUserName? `ofs).get!
+    let e ← mkAppM
+      (pg_memdataPrivateName "CompCert4Lean.Common.Memdata.memdata_ptrofs_add_zero")
+      #[mkFVar ofsF.fvarId]
+    closeMainGoal Name.anonymous e
+
+theorem store_init_data_neutral : store_init_data_neutralStatement := by
+  intro F V ge thr hsym m b p id m' hneutral hb hstore
+  cases id with
+  | Init_int8 n =>
+      exact pg_store_inject_neutral Mint8unsigned m b p (Vint n) m' thr
+        hstore hneutral hb (Val.inject.inject_int n)
+  | Init_int16 n =>
+      exact pg_store_inject_neutral Mint16unsigned m b p (Vint n) m' thr
+        hstore hneutral hb (Val.inject.inject_int n)
+  | Init_int32 n =>
+      exact pg_store_inject_neutral Mint32 m b p (Vint n) m' thr
+        hstore hneutral hb (Val.inject.inject_int n)
+  | Init_int64 n =>
+      exact pg_store_inject_neutral Mint64 m b p (Vlong n) m' thr
+        hstore hneutral hb (Val.inject.inject_long n)
+  | Init_float32 n =>
+      exact pg_store_inject_neutral Mfloat32 m b p (Vsingle n) m' thr
+        hstore hneutral hb (Val.inject.inject_single n)
+  | Init_float64 n =>
+      exact pg_store_inject_neutral Mfloat64 m b p (Vfloat n) m' thr
+        hstore hneutral hb (Val.inject.inject_float n)
+  | Init_addrof symb ofs =>
+      simp only [store_init_data] at hstore
+      cases hfind : find_symbol ge symb with
+      | none => simp [hfind] at hstore
+      | some b' =>
+          rw [hfind] at hstore
+          have hb' : Plt b' thr := hsym symb b' hfind
+          have hmap : Mem.flat_inj thr b' = some (b', .Z0) := by
+            unfold Mem.flat_inj
+            cases hplt : plt b' thr with
+            | left _ => rfl
+            | right hn => exact False.elim (hn hb')
+          apply pg_store_inject_neutral Mptr m b p (Vptr b' ofs) m' thr
+            hstore hneutral hb
+          exact Val.inject.inject_ptr b' ofs b' ofs .Z0 hmap
+            (pg_store_init_data_ptrofs_add_zero ofs).symm
+  | Init_space n =>
+      simp only [store_init_data] at hstore
+      cases hstore
+      exact hneutral
+
+end Genv
+end CompCert4Lean.Common.Globalenvs

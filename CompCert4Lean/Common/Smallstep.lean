@@ -3166,3 +3166,35 @@ theorem ffs_simulation : ffs_simulationStatement := by
               htail hmatch0⟩
 
 end CompCert4Lean.Common.Smallstep
+
+namespace CompCert4Lean.Common.Smallstep
+
+open CompCert4Lean.Common.Events
+
+theorem factor_forward_simulation : factor_forward_simulationStatement := by
+  intro L1 L2 hsim hsingle
+  cases hsim with
+  | @Forward_simulation index order match_states props =>
+      refine @Forward_simulation (atomic L1) L2 index order
+        (ffs_match L1 L2 match_states) ?_
+      constructor
+      · exact props.fsim_order_wf
+      · intro s1 hs1
+        rcases s1 with ⟨t1, s1⟩
+        change initial_state L1 s1 ∧ t1 = E0 at hs1
+        rcases hs1 with ⟨hs1, rfl⟩
+        obtain ⟨i, s2, hs2, hmatch⟩ :=
+          props.fsim_match_initial_states s1 hs1
+        exact ⟨i, s2, hs2, ffs_match.at i s1 s2 hmatch⟩
+      · intro i s1 s2 r hmatch hfinal1
+        rcases s1 with ⟨t1, s1⟩
+        change final_state L1 s1 r ∧ t1 = E0 at hfinal1
+        rcases hfinal1 with ⟨hfinal1, rfl⟩
+        cases hmatch
+        rename_i hmatch0
+        exact props.fsim_match_final_states i s1 s2 r hmatch0 hfinal1
+      · exact ffs_simulation L1 L2 index order match_states props hsingle
+      · intro id
+        simpa [atomic] using props.fsim_public_preserved id
+
+end CompCert4Lean.Common.Smallstep

@@ -3432,3 +3432,159 @@ theorem transl_unop_correct
       exact make_absfloat_correct ge a tya c va v e le m hsem hmake hval
 
 end CompCert4Lean.Cfrontend.Cshmgenproof
+
+namespace CompCert4Lean.Cfrontend.Cshmgenproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open Lean Elab Tactic Meta
+
+theorem int_ltu_true : int_ltu_trueStatement := by
+  intro x hx
+  have hx0 : CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.le
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z0 x := by
+    change (0 : Int) ≤ intOfZ x
+    exact hx.1
+  have hxlt : CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.lt x
+      CompCert4Lean.Lib.Integers.Int.zwordsize := hx.2
+  unfold CompCert4Lean.Lib.Integers.Int.zwordsize at hxlt
+  change intOfZ x < (32 : Int) at hxlt
+  have hxmax : CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.le x
+      CompCert4Lean.Lib.Integers.Int.max_unsigned := by
+    change intOfZ x ≤ intOfZ CompCert4Lean.Lib.Integers.Int.max_unsigned
+    have hpow : (32 : Int) < 2 ^ (32 : Nat) := by decide
+    change intOfZ x ≤ (2 ^ (32 : Nat) : Int) - 1
+    omega
+  have hrepr : CompCert4Lean.Lib.Integers.WordCore.unsigned
+      (CompCert4Lean.Lib.Integers.Int.repr x) = x := by
+    exact CompCert4Lean.Lib.Integers.Int.unsigned_repr_proof_api x ⟨hx0, hxmax⟩
+  have hiword : CompCert4Lean.Lib.Integers.WordCore.unsigned
+      CompCert4Lean.Lib.Integers.Int.iwordsize =
+      CompCert4Lean.Lib.Integers.Int.zwordsize :=
+    CompCert4Lean.Lib.Integers.Int.unsigned_repr_wordsize_proof
+  unfold CompCert4Lean.Lib.Integers.Int.ltu CompCert4Lean.Lib.Integers.WordCore.ltu
+  rw [hrepr, hiword]
+  run_tac
+    let env ← Lean.MonadEnv.getEnv
+    for (n, _) in env.constants.toList do
+      if (toString n).endsWith "Integers.zltSelect" then
+        let stx := Lean.mkIdent n
+        Lean.Elab.Tactic.evalTactic (← `(tactic| try unfold $stx at *))
+    for (n, _) in env.constants.toList do
+      if (toString n).endsWith "Integers.sumboolSelect" then
+        let stx := Lean.mkIdent n
+        Lean.Elab.Tactic.evalTactic (← `(tactic| try unfold $stx at *))
+  cases hlt : CompCert4Lean.Lib.Coqlib.zlt x
+      CompCert4Lean.Lib.Integers.Int.zwordsize with
+  | left h => simp [hlt]
+  | right h =>
+      exfalso
+      change (32 : Int) ≤ intOfZ x at h
+      omega
+
+end CompCert4Lean.Cfrontend.Cshmgenproof
+
+namespace CompCert4Lean.Cfrontend.Cshmgenproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem first_bit_range : first_bit_rangeStatement := by
+  intro sz pos width hpos hwidth hcarrier
+  have hpos' : (0 : Int) ≤ intOfZ pos := by
+    change (0 : Int) ≤ intOfZ pos
+    exact hpos
+  have hwidth' : (0 : Int) < intOfZ width := by
+    change (0 : Int) < intOfZ width
+    exact hwidth
+  cases sz with
+  | I8 | IBool =>
+      have hcarrier' : intOfZ pos + intOfZ width ≤ Int.ofNat 8 := by
+        change intOfZ (ZArith.BinInt.Z.add pos width) ≤
+          intOfZ (ZArith.BinInt.Z.of_nat 8) at hcarrier
+        simpa only [ZArith.BinInt.Z.add, intOfZ_zOfInt,
+          ZArith.BinInt.Z.of_nat, intOfZ_zOfInt] using hcarrier
+      change intOfZ pos + intOfZ width ≤ (8 : Int) at hcarrier'
+      simp [CompCert4Lean.Cfrontend.Cop.first_bit,
+        CompCert4Lean.X86_64.Archi.big_endian]
+      constructor
+      · constructor
+        · exact hpos
+        · unfold CompCert4Lean.Lib.Integers.Int.zwordsize
+          change intOfZ pos < (32 : Int)
+          omega
+      · constructor
+        · change (0 : Int) ≤ intOfZ
+            (ZArith.BinInt.Z.sub
+              (ZArith.BinInt.Z.sub (ZArith.BinInt.Z.of_nat 32) pos) width)
+          simp only [ZArith.BinInt.Z.sub, intOfZ_zOfInt]
+          change (0 : Int) ≤ (32 : Int) - intOfZ pos - intOfZ width
+          omega
+        · change intOfZ
+              (ZArith.BinInt.Z.sub
+                (ZArith.BinInt.Z.sub (ZArith.BinInt.Z.of_nat 32) pos) width) <
+            intOfZ (ZArith.BinInt.Z.of_nat 32)
+          simp only [ZArith.BinInt.Z.sub, intOfZ_zOfInt,
+            ZArith.BinInt.Z.of_nat, intOfZ_zOfInt]
+          change (32 : Int) - intOfZ pos - intOfZ width < (32 : Int)
+          omega
+  | I16 =>
+      have hcarrier' : intOfZ pos + intOfZ width ≤ Int.ofNat 16 := by
+        change intOfZ (ZArith.BinInt.Z.add pos width) ≤
+          intOfZ (ZArith.BinInt.Z.of_nat 16) at hcarrier
+        simpa only [ZArith.BinInt.Z.add, intOfZ_zOfInt,
+          ZArith.BinInt.Z.of_nat, intOfZ_zOfInt] using hcarrier
+      change intOfZ pos + intOfZ width ≤ (16 : Int) at hcarrier'
+      simp [CompCert4Lean.Cfrontend.Cop.first_bit,
+        CompCert4Lean.X86_64.Archi.big_endian]
+      constructor
+      · constructor
+        · exact hpos
+        · unfold CompCert4Lean.Lib.Integers.Int.zwordsize
+          change intOfZ pos < (32 : Int)
+          omega
+      · constructor
+        · change (0 : Int) ≤ intOfZ
+            (ZArith.BinInt.Z.sub
+              (ZArith.BinInt.Z.sub (ZArith.BinInt.Z.of_nat 32) pos) width)
+          simp only [ZArith.BinInt.Z.sub, intOfZ_zOfInt]
+          change (0 : Int) ≤ (32 : Int) - intOfZ pos - intOfZ width
+          omega
+        · change intOfZ
+              (ZArith.BinInt.Z.sub
+                (ZArith.BinInt.Z.sub (ZArith.BinInt.Z.of_nat 32) pos) width) <
+            intOfZ (ZArith.BinInt.Z.of_nat 32)
+          simp only [ZArith.BinInt.Z.sub, intOfZ_zOfInt,
+            ZArith.BinInt.Z.of_nat, intOfZ_zOfInt]
+          change (32 : Int) - intOfZ pos - intOfZ width < (32 : Int)
+          omega
+  | I32 =>
+      have hcarrier' : intOfZ pos + intOfZ width ≤ Int.ofNat 32 := by
+        change intOfZ (ZArith.BinInt.Z.add pos width) ≤
+          intOfZ (ZArith.BinInt.Z.of_nat 32) at hcarrier
+        simpa only [ZArith.BinInt.Z.add, intOfZ_zOfInt,
+          ZArith.BinInt.Z.of_nat, intOfZ_zOfInt] using hcarrier
+      change intOfZ pos + intOfZ width ≤ (32 : Int) at hcarrier'
+      simp [CompCert4Lean.Cfrontend.Cop.first_bit,
+        CompCert4Lean.X86_64.Archi.big_endian]
+      constructor
+      · constructor
+        · exact hpos
+        · unfold CompCert4Lean.Lib.Integers.Int.zwordsize
+          change intOfZ pos < (32 : Int)
+          omega
+      · constructor
+        · change (0 : Int) ≤ intOfZ
+            (ZArith.BinInt.Z.sub
+              (ZArith.BinInt.Z.sub (ZArith.BinInt.Z.of_nat 32) pos) width)
+          simp only [ZArith.BinInt.Z.sub, intOfZ_zOfInt]
+          change (0 : Int) ≤ (32 : Int) - intOfZ pos - intOfZ width
+          omega
+        · change intOfZ
+              (ZArith.BinInt.Z.sub
+                (ZArith.BinInt.Z.sub (ZArith.BinInt.Z.of_nat 32) pos) width) <
+            intOfZ (ZArith.BinInt.Z.of_nat 32)
+          simp only [ZArith.BinInt.Z.sub, intOfZ_zOfInt,
+            ZArith.BinInt.Z.of_nat, intOfZ_zOfInt]
+          change (32 : Int) - intOfZ pos - intOfZ width < (32 : Int)
+          omega
+
+end CompCert4Lean.Cfrontend.Cshmgenproof

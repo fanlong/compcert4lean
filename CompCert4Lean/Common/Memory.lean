@@ -3254,3 +3254,54 @@ theorem setN_in : setN_inStatement := by
 
 end Mem
 end CompCert4Lean.Common.Memory
+
+namespace CompCert4Lean.Common.Memory
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Lib.Maps
+
+namespace Mem
+
+theorem getN_in : getN_inStatement := by
+  intro c q n
+  induction n with
+  | zero =>
+      intro p h
+      rcases h with ⟨hpq, hqp⟩
+      change intOfZ p ≤ intOfZ q at hpq
+      change intOfZ q < intOfZ (zAdd p (zOfNat 0)) at hqp
+      rw [intOfZ_zadd_mem, intOfZ_zofnat_mem] at hqp
+      have hqp' : intOfZ q < intOfZ p := by simpa using hqp
+      omega
+  | succ n ih =>
+      intro p h
+      simp only [getN, List.mem_cons]
+      by_cases hpq : p = q
+      · subst q
+        exact Or.inl rfl
+      · right
+        apply ih (p := zAdd p z1)
+        rcases h with ⟨hpq', hqend⟩
+        constructor
+        · change intOfZ (zAdd p z1) ≤ intOfZ q
+          change intOfZ p ≤ intOfZ q at hpq'
+          have hpqne : intOfZ p ≠ intOfZ q := by
+            intro heq
+            apply hpq
+            exact intOfZ_injective heq
+          rw [intOfZ_add_one]
+          omega
+        · change intOfZ q <
+              intOfZ (zAdd (zAdd p z1) (zOfNat n))
+          change intOfZ q < intOfZ (zAdd p (zOfNat (Nat.succ n))) at hqend
+          have hnat : Int.ofNat (Nat.succ n) = Int.ofNat n + 1 := by
+            simpa using (Int.ofNat_add_ofNat n 1).symm
+          rw [intOfZ_zadd_mem, intOfZ_zofnat_mem, hnat] at hqend
+          rw [intOfZ_zadd_mem, intOfZ_zadd_mem, intOfZ_zofnat_mem]
+          have hz1 : intOfZ z1 = (1 : Int) := by rfl
+          rw [hz1]
+          omega
+
+end Mem
+
+end CompCert4Lean.Common.Memory

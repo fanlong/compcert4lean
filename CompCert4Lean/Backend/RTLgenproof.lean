@@ -2673,3 +2673,118 @@ theorem transl_eval_builtin_args : transl_eval_builtin_argsStatement := by
               · exact Val.lessdef_list_cons _ _ _ _ hless' hvl'
 
 end CompCert4Lean.Backend.RTLgenproof
+
+namespace CompCert4Lean.Backend.RTLgenproof
+
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.Backend.RTLgenspec
+open CompCert4Lean.Lib.Maps
+
+theorem tr_cont_ind_proof : tr_cont_ind := by
+  intro P hseq hblock hstop hcall
+  intro c m c0 n l l0 n0 o l1 h
+  exact tr_cont.rec
+    (motive_1 := fun c m k n l l0 n0 o cs _ => P c m k n l l0 n0 o cs)
+    (motive_2 := fun _ _ _ => True)
+    (fun c m s k nd nexits ngoto nret rret cs n hs hk ih =>
+      hseq c m s k nd nexits ngoto nret rret cs n hs hk ih)
+    (fun c m k nd nexits ngoto nret rret cs hk ih =>
+      hblock c m k nd nexits ngoto nret rret cs hk ih)
+    (fun c m ngoto nret rret cs hcode hs _ =>
+      hstop c m ngoto nret rret cs hcode hs)
+    (fun c m optid f sp e k ngoto nret rret cs hcode hs _ =>
+      hcall c m optid f sp e k ngoto nret rret cs hcode hs)
+    True.intro (by simp) h
+
+theorem match_stacks_call_cont : match_stacks_call_contStatement := by
+  intro c map k ncont nexits ngoto nret rret cs h
+  refine tr_cont_ind_proof
+    (P := fun c _ k _ _ _ nret rret cs =>
+      match_stacks (CompCert4Lean.Backend.CminorSel.call_cont k) cs ∧
+        PTree.get nret c = some (.Ireturn rret)) ?_ ?_ ?_ ?_
+    c map k ncont nexits ngoto nret rret cs h
+  · intro c map s k nd nexits ngoto nret rret cs n hs hk ih
+    simpa [CompCert4Lean.Backend.CminorSel.call_cont] using ih
+  · intro c map k nd nexits ngoto nret rret cs hk ih
+    simpa [CompCert4Lean.Backend.CminorSel.call_cont] using ih
+  · intro c map ngoto nret rret cs hcode hs
+    simpa [CompCert4Lean.Backend.CminorSel.call_cont] using And.intro hs hcode
+  · intro c map optid f sp e k ngoto nret rret cs hcode hs
+    simpa [CompCert4Lean.Backend.CminorSel.call_cont] using And.intro hs hcode
+
+theorem tr_cont_call_cont : tr_cont_call_contStatement := by
+  intro c map k ncont nexits ngoto nret rret cs h
+  refine tr_cont_ind_proof
+    (P := fun c map k _ _ ngoto nret rret cs =>
+      tr_cont c map (CompCert4Lean.Backend.CminorSel.call_cont k)
+        nret [] ngoto nret rret cs) ?_ ?_ ?_ ?_
+    c map k ncont nexits ngoto nret rret cs h
+  · intro c map s k nd nexits ngoto nret rret cs n hs hk ih
+    simpa [CompCert4Lean.Backend.CminorSel.call_cont] using ih
+  · intro c map k nd nexits ngoto nret rret cs hk ih
+    simpa [CompCert4Lean.Backend.CminorSel.call_cont] using ih
+  · intro c map ngoto nret rret cs hcode hs
+    simpa [CompCert4Lean.Backend.CminorSel.call_cont] using
+      (tr_Kstop c map ngoto nret rret cs hcode hs)
+  · intro c map optid f sp e k ngoto nret rret cs hcode hs
+    simpa [CompCert4Lean.Backend.CminorSel.call_cont] using
+      (tr_Kcall c map optid f sp e k ngoto nret rret cs hcode hs)
+
+theorem tr_find_label : tr_find_labelStatement := by
+  intro c map lbl n ngoto nret rret s' k' cs hgoto
+  intro s k ns nd nexits hfind hstmt hcont
+  induction hstmt generalizing k <;>
+    simp only [CompCert4Lean.Backend.CminorSel.find_label] at hfind
+  case tr_Sseq s1 s2 ns nd nexits ngoto nret rret mid h2 h1 ih2 ih1 =>
+    cases hfirst : CompCert4Lean.Backend.CminorSel.find_label
+        lbl s1 (.Kseq s2 k) with
+    | none =>
+        simp [hfirst] at hfind
+        exact ih2 hgoto k hfind hcont
+    | some sk =>
+        simp [hfirst] at hfind
+        have hfind' : CompCert4Lean.Backend.CminorSel.find_label
+            lbl s1 (.Kseq s2 k) = some (s', k') :=
+          hfirst.trans (congrArg some hfind)
+        exact ih1 hgoto (.Kseq s2 k) hfind'
+          (tr_Kseq c map s2 k mid nexits ngoto nret rret cs nd h2 hcont)
+  case tr_Sifthenelse a strue sfalse ns nd nexits ngoto nret rret
+      ntrue nfalse htrue hfalse hcond ihtrue ihfalse =>
+    cases hfirst : CompCert4Lean.Backend.CminorSel.find_label lbl strue k with
+    | none =>
+        simp [hfirst] at hfind
+        exact ihfalse hgoto k hfind hcont
+    | some sk =>
+        simp [hfirst] at hfind
+        have hfind' : CompCert4Lean.Backend.CminorSel.find_label
+            lbl strue k = some (s', k') :=
+          hfirst.trans (congrArg some hfind)
+        exact ihtrue hgoto k hfind' hcont
+  case tr_Sloop sbody ns nd nexits ngoto nret rret nloop nend
+      hbody hstart hend ihbody =>
+    have hloop : tr_stmt c map (.Sloop sbody) nend nd nexits ngoto nret rret :=
+      tr_stmt.tr_Sloop sbody nend nd nexits ngoto nret rret nloop nend
+        hbody hend hend
+    exact ihbody hgoto (.Kseq (.Sloop sbody) k) hfind
+      (tr_Kseq c map (.Sloop sbody) k nend nexits ngoto nret rret cs nd
+        hloop hcont)
+  case tr_Sblock sbody ns nd nexits ngoto nret rret hbody ihbody =>
+    exact ihbody hgoto (.Kblock k) hfind
+      (tr_Kblock c map k nd nexits ngoto nret rret cs hcont)
+  case tr_Slabel lbl' sbody ns nd nexits ngoto nret rret nlabel
+      hgoto' hcode hbody ihbody =>
+    cases hident : CompCert4Lean.Common.AST.ident_eq lbl lbl' with
+    | left heq =>
+        simp [hident] at hfind
+        rcases hfind with ⟨rfl, rfl⟩
+        subst lbl'
+        have hn : nlabel = n := Option.some.inj (hgoto'.symm.trans hgoto)
+        subst nlabel
+        exact ⟨ns, nd, nexits, hcode, hbody, hcont⟩
+    | right hne =>
+        simp [hident] at hfind
+        exact ihbody hgoto k hfind hcont
+  all_goals simp at hfind
+
+end CompCert4Lean.Backend.RTLgenproof

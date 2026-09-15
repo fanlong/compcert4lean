@@ -2440,3 +2440,52 @@ theorem match_cont_is_call_cont :
     constructor <;> assumption
 
 end CompCert4Lean.Cfrontend.SimplExprproof
+
+namespace CompCert4Lean.Cfrontend.SimplExprproof
+
+theorem match_cont_call_cont :
+    ∀ [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+      [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)],
+      match_cont_call_contStatement := by
+  intro binary64_certificate binary32_certificate
+  intro p tp ce k tk hmatch
+  induction hmatch using match_cont.rec
+      (motive_2 := fun _ _ _ _ _ _ => True) with
+  | match_Kstop ce =>
+      intro ce'
+      simp [Csem.call_cont, Clight.call_cont]
+      exact match_cont.match_Kstop ce'
+  | @match_Kseq ce s k ts tk hstmt hk ih =>
+      intro ce'
+      simpa [Csem.call_cont, Clight.call_cont] using ih ce'
+  | @match_Kwhile2 ce r s k s' ts tk hr hs hk ih =>
+      intro ce'
+      simpa [Csem.call_cont, Clight.call_cont] using ih ce'
+  | @match_Kdowhile1 ce r s k s' ts tk hr hs hk ih =>
+      intro ce'
+      simpa [Csem.call_cont, Clight.call_cont] using ih ce'
+  | @match_Kfor3 ce r s3 s k ts3 s' ts tk hr hs3 hs hk ih =>
+      intro ce'
+      simpa [Csem.call_cont, Clight.call_cont] using ih ce'
+  | @match_Kfor4 ce r s3 s k ts3 s' ts tk hr hs3 hs hk ih =>
+      intro ce'
+      simpa [Csem.call_cont, Clight.call_cont] using ih ce'
+  | @match_Kswitch2 ce k tk hk ih =>
+      intro ce'
+      simpa [Csem.call_cont, Clight.call_cont] using ih ce'
+  | @match_Kcall f e C ty k optid tf le sl tk a dest tmps cu ce hlink htrf hctx htr hmc =>
+      intro ce'
+      simpa [Csem.call_cont, Clight.call_cont] using
+        (match_cont.match_Kcall (prog := p) (tprog := tp)
+          f e C ty k optid tf le sl tk a dest tmps cu ce'
+          hlink htrf hctx htr hmc)
+  | match_Kdo => exact True.intro
+  | match_Kifthenelse_empty => exact True.intro
+  | match_Kifthenelse_1 => exact True.intro
+  | match_Kwhile1 => exact True.intro
+  | match_Kdowhile2 => exact True.intro
+  | match_Kfor2 => exact True.intro
+  | match_Kswitch1 => exact True.intro
+  | match_Kreturn => exact True.intro
+
+end CompCert4Lean.Cfrontend.SimplExprproof

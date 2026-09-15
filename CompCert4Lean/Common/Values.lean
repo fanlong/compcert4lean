@@ -2097,3 +2097,13 @@ theorem addl_assoc : addl_assocStatement := by
 
 end Val
 end CompCert4Lean.Common.Values
+
+namespace CompCert4Lean.Common.Values
+namespace Val
+
+theorem addl_permut : addl_permutStatement := by
+  intro x y z
+  rw [← addl_assoc, addl_commut x y, addl_assoc]
+
+end Val
+end CompCert4Lean.Common.Values
