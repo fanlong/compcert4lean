@@ -6352,3 +6352,50 @@ theorem add_equations_debug_args_satisf :
             exact add_equations_builtin_arg_satisf env rs ls a a' e e1 hfirst hsat1
 
 end CompCert4Lean.Backend.Allocproof
+
+namespace CompCert4Lean.Backend.Allocproof
+
+open CompCert4Lean.Backend.Allocation
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.Globalenvs
+
+theorem add_equations_debug_args_eval :
+    add_equations_debug_args_evalStatement := by
+  intro env ge sp rs ls m tm args vl hEval
+  unfold eval_builtin_args at hEval ⊢
+  induction hEval with
+  | nil =>
+      intro args' e e' hrun hsat hwt hext
+      cases args' with
+      | nil =>
+          exact ⟨[], CompCert4Lean.Lib.Coqlib.list_forall2.nil _⟩
+      | cons arg' args' =>
+          simp [add_equations_debug_args] at hrun
+  | @cons arg args v vl harg htail ih =>
+      intro args' e e' hrun hsat hwt hext
+      cases args' with
+      | nil =>
+          exact ⟨[], CompCert4Lean.Lib.Coqlib.list_forall2.nil _⟩
+      | cons arg' args' =>
+          change (match add_equations_builtin_arg env arg arg' e with
+            | none => add_equations_debug_args env args (arg' :: args') e
+            | some e1 => add_equations_debug_args env args args' e1) = some e' at hrun
+          split at hrun
+          · exact ih (arg' :: args') e e' hrun hsat hwt hext
+          · rename_i e1 hfirst
+            have hsat1 : satisf rs ls e1 :=
+              add_equations_debug_args_satisf env rs ls args args' e1 e' hrun hsat
+            obtain ⟨v', harg', ld⟩ :=
+              add_equations_builtin_arg_lessdef env ge sp rs ls m arg v harg
+                e e1 arg' hfirst hsat1 hwt
+            obtain ⟨v'', harg'', ldmem⟩ :=
+              pgo_eval_builtin_arg_extends (Genv.to_senv ge) ls sp m tm hext
+                arg' v' harg'
+            obtain ⟨vl', htail'⟩ :=
+              ih args' e1 e' hrun hsat hwt hext
+            exact ⟨v'' :: vl',
+              CompCert4Lean.Lib.Coqlib.list_forall2.cons _ _ harg'' htail'⟩
+
+end CompCert4Lean.Backend.Allocproof

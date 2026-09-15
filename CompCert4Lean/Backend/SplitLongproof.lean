@@ -1039,3 +1039,15 @@ theorem eval_addl
   simp [CompCert4Lean.X86_64.Archi.ptr64] at hptr
 
 end CompCert4Lean.Backend.SplitLongproof
+
+namespace CompCert4Lean.Backend.SplitLongproof
+
+theorem eval_subl
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    eval_sublStatement := by
+  unfold eval_sublStatement
+  intro xi prog sp e m hptr
+  simp [CompCert4Lean.X86_64.Archi.ptr64] at hptr
+
+end CompCert4Lean.Backend.SplitLongproof

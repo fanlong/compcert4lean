@@ -3264,3 +3264,125 @@ theorem alloc_globals_neutral : alloc_globals_neutralStatement := by
 
 end Genv
 end CompCert4Lean.Common.Globalenvs
+
+namespace CompCert4Lean.Common.Globalenvs
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.Lib.Maps
+
+namespace Genv
+
+private theorem pg_initmem_flat_inj_some
+    (thr b b' : positive) (delta : Z)
+    (hmap : Mem.flat_inj thr b = some (b', delta)) :
+    b = b' ∧ (.Z0 : Z) = delta ∧ Plt b thr := by
+  unfold Mem.flat_inj at hmap
+  cases hplt : plt b thr with
+  | left hb =>
+      rw [hplt] at hmap
+      have hpairs : (b, (.Z0 : Z)) = (b', delta) := Option.some.inj hmap
+      exact ⟨congrArg Prod.fst hpairs, congrArg Prod.snd hpairs, hb⟩
+  | right hn => simp [hplt] at hmap
+
+private theorem pg_initmem_zadd_zero (a : Z) :
+    ZArith.BinInt.Z.add a (.Z0 : Z) = a := by
+  exact ZArith.BinInt.Z.add_0_r a
+
+private theorem pg_initmem_ptrofs_unsigned_range (ofs : Ptrofs.int) :
+    ZArith.BinInt.Z.le (.Z0 : Z) (Ptrofs.unsigned ofs) ∧
+      ZArith.BinInt.Z.le (Ptrofs.unsigned ofs) Ptrofs.max_unsigned := by
+  constructor
+  · have h := ofs.intrange.1
+    change (-1 : Int) < intOfZ ofs.intval at h
+    change (0 : Int) ≤ intOfZ ofs.intval
+    omega
+  · have h := ofs.intrange.2
+    change intOfZ ofs.intval < intOfZ Ptrofs.modulus at h
+    change intOfZ ofs.intval ≤
+      intOfZ (ZArith.BinInt.Z.sub Ptrofs.modulus (.Zpos .xH))
+    simp only [ZArith.BinInt.Z.sub, intOfZ_zOfInt]
+    change intOfZ ofs.intval ≤ intOfZ Ptrofs.modulus - 1
+    omega
+
+private theorem pg_initmem_empty_inject_neutral (thr : positive) :
+    Mem.inject_neutral thr Mem.empty := by
+  refine { mi_perm := ?_, mi_align := ?_, mi_memval := ?_ }
+  · intro b b' delta ofs k p hmap hperm
+    rcases pg_initmem_flat_inj_some thr b b' delta hmap with ⟨rfl, rfl, _⟩
+    change Mem.perm Mem.empty b
+      (ZArith.BinInt.Z.add ofs (.Z0 : Z)) k p
+    rw [pg_initmem_zadd_zero]
+    exact hperm
+  · intro b b' delta chunk ofs p hmap _
+    rcases pg_initmem_flat_inj_some thr b b' delta hmap with ⟨rfl, rfl, _⟩
+    exact ZArith.BinInt.Z.divide_0_r _
+  · intro b ofs b' delta hmap hperm
+    rcases pg_initmem_flat_inj_some thr b b' delta hmap with ⟨rfl, rfl, _⟩
+    unfold Mem.perm Mem.empty Mem.perm_order' at hperm
+    simp [PMap.get, PMap.init, PTree.get, PTree.empty] at hperm
+
+private theorem pg_initmem_neutral_inject (m : Mem.mem)
+    (hneutral : Mem.inject_neutral m.nextblock m) :
+    Mem.inject (Mem.flat_inj m.nextblock) m m := by
+  refine {
+    mi_inj := hneutral
+    mi_freeblocks := ?_
+    mi_mappedblocks := ?_
+    mi_no_overlap := ?_
+    mi_representable := ?_
+    mi_perm_inv := ?_ }
+  · intro b hinvalid
+    unfold Mem.flat_inj
+    cases hplt : plt b m.nextblock with
+    | left hb => exact False.elim (hinvalid hb)
+    | right _ => rfl
+  · intro b b' delta hmap
+    rcases pg_initmem_flat_inj_some m.nextblock b b' delta hmap with
+      ⟨rfl, rfl, hb⟩
+    exact hb
+  · intro b1 b1' delta1 b2 b2' delta2 ofs1 ofs2 hne hmap1 hmap2 _ _
+    rcases pg_initmem_flat_inj_some m.nextblock b1 b1' delta1 hmap1 with
+      ⟨rfl, rfl, _⟩
+    rcases pg_initmem_flat_inj_some m.nextblock b2 b2' delta2 hmap2 with
+      ⟨rfl, rfl, _⟩
+    exact Or.inl hne
+  · intro b b' delta ofs hmap _
+    rcases pg_initmem_flat_inj_some m.nextblock b b' delta hmap with
+      ⟨rfl, rfl, _⟩
+    have hzero : ZArith.BinInt.Z.le (.Z0 : Z) .Z0 := by
+      change (0 : Int) ≤ 0
+      omega
+    change ZArith.BinInt.Z.le (.Z0 : Z) .Z0 ∧
+      ZArith.BinInt.Z.le (.Z0 : Z)
+        (ZArith.BinInt.Z.add (Ptrofs.unsigned ofs) (.Z0 : Z)) ∧
+      ZArith.BinInt.Z.le
+        (ZArith.BinInt.Z.add (Ptrofs.unsigned ofs) (.Z0 : Z))
+        Ptrofs.max_unsigned
+    rw [pg_initmem_zadd_zero]
+    exact And.intro hzero (pg_initmem_ptrofs_unsigned_range ofs)
+  · intro b ofs b' delta k p hmap hperm
+    rcases pg_initmem_flat_inj_some m.nextblock b b' delta hmap with
+      ⟨rfl, rfl, _⟩
+    left
+    change Mem.perm m b ofs k p
+    change Mem.perm m b (ZArith.BinInt.Z.add ofs (.Z0 : Z)) k p at hperm
+    rw [pg_initmem_zadd_zero] at hperm
+    exact hperm
+
+theorem initmem_inject : initmem_injectStatement := by
+  intro F V p m hmem
+  unfold init_mem at hmem
+  apply pg_initmem_neutral_inject m
+  exact alloc_globals_neutral F V (globalenv p) m.nextblock
+    (fun id b hfind => find_symbol_not_fresh F V p id b m hmem hfind)
+    p.prog_defs Mem.empty m hmem (pg_initmem_empty_inject_neutral m.nextblock)
+    (Ple_refl m.nextblock)
+
+end Genv
+end CompCert4Lean.Common.Globalenvs

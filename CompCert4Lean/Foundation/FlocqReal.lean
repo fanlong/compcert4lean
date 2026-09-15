@@ -3817,3 +3817,69 @@ theorem Rsqr_lt_abs_0 :
 end R_sqr
 end Rocq.Coq.Reals
 end CompCert4Lean.Foundation.FlocqReal
+
+namespace CompCert4Lean.Foundation.FlocqReal
+namespace Rocq.Coq.Reals
+namespace R_sqr
+
+theorem Rsqr_lt_abs_1 :
+    ∀ (ctx : ExactRealContext), Rsqr_lt_abs_1Statement ctx := by
+  intro ctx x y hxy
+  change ctx.spec.lt (ctx.spec.abs x) (ctx.spec.abs y) at hxy
+  have hx : ctx.spec.le (ctx.spec.ofZ Z0) (ctx.spec.abs x) := by
+    exact rsqr_abs_nonnegative ctx x
+  have hy : ctx.spec.le (ctx.spec.ofZ Z0) (ctx.spec.abs y) := by
+    exact rsqr_abs_nonnegative ctx y
+  have hs := Rsqr_incrst_1 ctx (ctx.spec.abs x) (ctx.spec.abs y) hxy hx hy
+  change ctx.spec.lt (ctx.spec.mul x x) (ctx.spec.mul y y)
+  have hxs := Rsqr_abs ctx x
+  have hys := Rsqr_abs ctx y
+  change ctx.spec.mul x x =
+    ctx.spec.mul (ctx.spec.abs x) (ctx.spec.abs x) at hxs
+  change ctx.spec.mul y y =
+    ctx.spec.mul (ctx.spec.abs y) (ctx.spec.abs y) at hys
+  rw [hxs, hys]
+  exact hs
+
+end R_sqr
+end Rocq.Coq.Reals
+
+namespace Rocq.Coq.Reals
+namespace R_sqrt
+
+theorem sqrt_lt_R0 :
+    ∀ (ctx : ExactRealContext), sqrt_lt_R0Statement ctx := by
+  intro ctx x hx
+  change ctx.spec.lt (ctx.spec.ofZ Z0) x at hx
+  change ctx.spec.lt (ctx.spec.ofZ Z0) (ExactReal.sqrt ctx.spec x)
+  rw [ctx.certificate.sourceLaws.ofZ_zero] at hx ⊢
+  unfold ExactReal.sqrt
+  cases hdec : ctx.spec.lt_dec x ctx.spec.zero with
+  | left hlt =>
+      exact (ctx.certificate.orderedField.lt_irrefl x
+        (ctx.certificate.orderedField.lt_trans x ctx.spec.zero x hlt hx)).elim
+  | right _ =>
+      simpa [hdec] using ctx.certificate.sourceLaws.sqrt_strict_positive x hx
+
+end R_sqrt
+end Rocq.Coq.Reals
+
+namespace Rocq.Coq.Reals
+namespace Raxioms
+
+theorem Rplus_comm :
+    ∀ (ctx : ExactRealContext), Rplus_commStatement ctx := by
+  intro ctx r1 r2
+  change ctx.spec.add r1 r2 = ctx.spec.add r2 r1
+  exact ctx.certificate.orderedField.add_comm r1 r2
+
+theorem Rplus_assoc :
+    ∀ (ctx : ExactRealContext), Rplus_assocStatement ctx := by
+  intro ctx r1 r2 r3
+  change ctx.spec.add (ctx.spec.add r1 r2) r3 =
+    ctx.spec.add r1 (ctx.spec.add r2 r3)
+  exact ctx.certificate.orderedField.add_assoc r1 r2 r3
+
+end Raxioms
+end Rocq.Coq.Reals
+end CompCert4Lean.Foundation.FlocqReal

@@ -3851,3 +3851,11 @@ theorem create_undef_temps_exten : create_undef_temps_extenStatement := by
   · exact heq
 
 end CompCert4Lean.Cfrontend.SimplLocalsproof
+
+namespace CompCert4Lean.Cfrontend.SimplLocalsproof
+
+theorem var_names_app : var_names_appStatement := by
+  intro vars1 vars2
+  simp only [CompCert4Lean.Cfrontend.Clight.var_names, List.map_append]
+
+end CompCert4Lean.Cfrontend.SimplLocalsproof

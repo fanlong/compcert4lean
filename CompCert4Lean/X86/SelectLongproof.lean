@@ -2054,3 +2054,125 @@ theorem eval_shrl
       · rfl
 
 end CompCert4Lean.X86.SelectLongproof
+
+namespace CompCert4Lean.X86.SelectLongproof
+
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.ExternalCalls
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.X86.Op
+open CompCert4Lean.X86.SelectLong
+
+theorem eval_mullhu
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    @eval_mullhuStatement binary64_certificate binary32_certificate := by
+  unfold eval_mullhuStatement unary_constructor_sound
+  intro xi prog hf hdecl sp e m n le a x h
+  refine ⟨Val.mullhu x (.Vlong n), ?_, Val.lessdef_refl _⟩
+  unfold mullhu
+  apply eval_expr.eval_Eop le Omullhu
+    (Econs a (Econs (longconst n) Enil)) [x, .Vlong n]
+    (Val.mullhu x (.Vlong n))
+  · exact eval_exprlist.cons le a (Econs (longconst n) Enil) x [.Vlong n] h
+      (eval_exprlist.cons le (longconst n) Enil (.Vlong n) []
+        (CompCert4Lean.X86.SelectLongproof.eval_longconst xi prog sp e m le n)
+        (eval_exprlist.nil le))
+  · rfl
+
+theorem eval_mullhs
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    @eval_mullhsStatement binary64_certificate binary32_certificate := by
+  unfold eval_mullhsStatement unary_constructor_sound
+  intro xi prog hf hdecl sp e m n le a x h
+  refine ⟨Val.mullhs x (.Vlong n), ?_, Val.lessdef_refl _⟩
+  unfold mullhs
+  apply eval_expr.eval_Eop le Omullhs
+    (Econs a (Econs (longconst n) Enil)) [x, .Vlong n]
+    (Val.mullhs x (.Vlong n))
+  · exact eval_exprlist.cons le a (Econs (longconst n) Enil) x [.Vlong n] h
+      (eval_exprlist.cons le (longconst n) Enil (.Vlong n) []
+        (CompCert4Lean.X86.SelectLongproof.eval_longconst xi prog sp e m le n)
+        (eval_exprlist.nil le))
+  · rfl
+
+end CompCert4Lean.X86.SelectLongproof
+
+namespace CompCert4Lean.X86.SelectLongproof
+
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.ExternalCalls
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.X86.Op
+open CompCert4Lean.X86.SelectLong
+
+theorem eval_shrxlimm
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    @eval_shrxlimmStatement binary64_certificate binary32_certificate := by
+  unfold eval_shrxlimmStatement
+  intro xi prog hf hdecl sp e m le a n x z ha hz
+  unfold shrxlimm
+  by_cases hn : CompCert4Lean.Lib.Integers.Int.eq n
+      CompCert4Lean.Lib.Integers.Int.zero = true
+  · have hn' := shrl_int_eq_true_zero n hn
+    rw [if_pos hn]
+    subst n
+    refine ⟨x, ha, ?_⟩
+    cases x with
+    | Vlong i =>
+        simp only [Val.shrxl] at hz
+        split at hz
+        · cases hz
+          change Val.lessdef
+            (.Vlong (CompCert4Lean.Lib.Integers.Int64.shrx' i
+              CompCert4Lean.Lib.Integers.Int.zero)) (.Vlong i)
+          have hshl : CompCert4Lean.Lib.Integers.Int64.shl'
+              CompCert4Lean.Lib.Integers.Int64.one
+              CompCert4Lean.Lib.Integers.Int.zero =
+              CompCert4Lean.Lib.Integers.Int64.one := by
+            rfl
+          rw [CompCert4Lean.Lib.Integers.Int64.shrx', hshl]
+          have hdiv : CompCert4Lean.Lib.Integers.Int64.divs i
+              CompCert4Lean.Lib.Integers.Int64.one = i := by
+            unfold CompCert4Lean.Lib.Integers.Int64.divs
+              CompCert4Lean.Lib.Integers.WordCore.divs
+            have hone : CompCert4Lean.Lib.Integers.WordCore.signed
+                CompCert4Lean.Lib.Integers.Int64.one =
+                CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 1 := by
+              rfl
+            rw [hone]
+            change CompCert4Lean.Lib.Integers.Int64.repr
+              (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.quot
+                (CompCert4Lean.Lib.Integers.WordCore.signed i)
+                (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 1)) = i
+            have honez :
+                CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 1 =
+                  CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.Zpos
+                    CompCert4Lean.Foundation.Numbers.Rocq.Coq.xH := by
+              rfl
+            rw [honez,
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.quot_1_r]
+            exact shrl_int64_repr_signed i
+          rw [hdiv]
+          exact Val.lessdef_refl _
+        · cases hz
+    | Vundef => simp [Val.shrxl] at hz
+    | Vint _ => simp [Val.shrxl] at hz
+    | Vfloat _ => simp [Val.shrxl] at hz
+    | Vsingle _ => simp [Val.shrxl] at hz
+    | Vptr _ _ => simp [Val.shrxl] at hz
+  · rw [if_neg hn]
+    refine ⟨z, ?_, Val.lessdef_refl _⟩
+    apply eval_expr.eval_Eop le (Oshrxlimm n) (Econs a Enil) [x] z
+    · exact eval_exprlist.cons le a Enil x [] ha (eval_exprlist.nil le)
+    · exact hz
+
+end CompCert4Lean.X86.SelectLongproof

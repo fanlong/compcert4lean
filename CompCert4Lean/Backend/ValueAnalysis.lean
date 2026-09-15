@@ -2157,3 +2157,128 @@ theorem store_zeros_other : store_zeros_otherStatement := by
   exact hs b' ab m' rfl hne hmatch
 
 end CompCert4Lean.Backend.ValueAnalysis
+
+namespace CompCert4Lean.Backend.ValueAnalysis
+
+open CompCert4Lean.Backend.ValueDomain
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Lib.Maps
+
+private theorem pg_alloc_global_set_same {A : Type} (i : positive) (x : A)
+    (m : PTree.t A) : PTree.get i (PTree.set i x m) = some x := by
+  have h := PTree.gsspec_proof i i x m
+  cases hp : CompCert4Lean.Lib.Coqlib.peq i i with
+  | left _ => simpa [hp] using h
+  | right hn => exact False.elim (hn rfl)
+
+private theorem pg_alloc_global_set_other {A : Type} (i j : positive) (x : A)
+    (m : PTree.t A) (hne : i ≠ j) :
+    PTree.get i (PTree.set j x m) = PTree.get i m := by
+  have h := PTree.gsspec_proof i j x m
+  cases hp : CompCert4Lean.Lib.Coqlib.peq i j with
+  | left he => exact False.elim (hne he)
+  | right _ => simpa [hp, PTree.t] using h
+
+private theorem pg_alloc_global_remove_same {A : Type} (i : positive)
+    (m : PTree.t A) : PTree.get i (PTree.remove i m) = none := by
+  exact PTree.grs_proof i m
+
+private theorem pg_alloc_global_remove_other {A : Type} (i j : positive)
+    (m : PTree.t A) (hne : i ≠ j) :
+    PTree.get i (PTree.remove j m) = PTree.get i m := by
+  exact PTree.gro_proof m hne
+
+theorem alloc_global_consistent : alloc_global_consistentStatement := by
+  intro cfg dm rm idg hcons
+  unfold romem_consistent at hcons ⊢
+  rcases idg with ⟨id1, gd⟩
+  cases gd with
+  | Gfun f =>
+      change positive at id1
+      intro id ab hab
+      change PTree.get id (PTree.remove id1 rm) = some ab at hab
+      have hne : id ≠ id1 := by
+        intro heq
+        subst id
+        have hn : PTree.get id1 (PTree.remove id1 rm) = none :=
+          pg_alloc_global_remove_same id1 rm
+        rw [hn] at hab
+        contradiction
+      have horig : PTree.get id rm = some ab := by
+        have hr : PTree.get id (PTree.remove id1 rm) = PTree.get id rm :=
+          pg_alloc_global_remove_other id id1 rm hne
+        rw [hr] at hab
+        exact hab
+      obtain ⟨v, hdm, hro, hvol, hdef, habv⟩ := hcons id ab horig
+      refine ⟨v, ?_, hro, hvol, hdef, habv⟩
+      change PTree.get id (PTree.set id1 (Gfun f) dm) = some (Gvar v)
+      have hs : PTree.get id (PTree.set id1 (Gfun f) dm) = PTree.get id dm :=
+        pg_alloc_global_set_other id id1 (Gfun f) dm hne
+      rw [hs]
+      exact hdm
+  | Gvar v1 =>
+      change positive at id1
+      intro id ab hab
+      change PTree.get id
+        (if (v1.gvar_readonly && !v1.gvar_volatile &&
+            definitive_initializer v1.gvar_init) = true then
+          PTree.set id1
+            (store_init_data_list cfg (ablock_init Pbot) (.Z0) v1.gvar_init) rm
+        else PTree.remove id1 rm) = some ab at hab
+      by_cases hguard :
+          (v1.gvar_readonly && !v1.gvar_volatile &&
+            definitive_initializer v1.gvar_init) = true
+      · rw [if_pos hguard] at hab
+        by_cases heq : id = id1
+        · subst id
+          have hs : PTree.get id1
+              (PTree.set id1
+                (store_init_data_list cfg (ablock_init Pbot) (.Z0) v1.gvar_init) rm) =
+              some (store_init_data_list cfg (ablock_init Pbot) (.Z0) v1.gvar_init) :=
+            pg_alloc_global_set_same id1 _ rm
+          rw [hs] at hab
+          cases hab
+          rw [Bool.and_eq_true, Bool.and_eq_true] at hguard
+          rcases hguard with ⟨⟨hro, hnvol⟩, hdef⟩
+          have hvol : v1.gvar_volatile = false := by
+            cases hv : v1.gvar_volatile <;> simp [hv] at hnvol ⊢
+          refine ⟨v1, ?_, hro, hvol, hdef, rfl⟩
+          change PTree.get id1 (PTree.set id1 (Gvar v1) dm) = some (Gvar v1)
+          exact pg_alloc_global_set_same id1 (Gvar v1) dm
+        · have horig : PTree.get id rm = some ab := by
+            have hs : PTree.get id
+                (PTree.set id1
+                  (store_init_data_list cfg (ablock_init Pbot) (.Z0) v1.gvar_init) rm) =
+                PTree.get id rm := pg_alloc_global_set_other id id1 _ rm heq
+            rw [hs] at hab
+            exact hab
+          obtain ⟨v, hdm, hro, hvol, hdef, habv⟩ := hcons id ab horig
+          refine ⟨v, ?_, hro, hvol, hdef, habv⟩
+          change PTree.get id (PTree.set id1 (Gvar v1) dm) = some (Gvar v)
+          have hs : PTree.get id (PTree.set id1 (Gvar v1) dm) = PTree.get id dm :=
+            pg_alloc_global_set_other id id1 (Gvar v1) dm heq
+          rw [hs]
+          exact hdm
+      · rw [if_neg hguard] at hab
+        have hne : id ≠ id1 := by
+          intro heq
+          subst id
+          have hn : PTree.get id1 (PTree.remove id1 rm) = none :=
+            pg_alloc_global_remove_same id1 rm
+          rw [hn] at hab
+          contradiction
+        have horig : PTree.get id rm = some ab := by
+          have hr : PTree.get id (PTree.remove id1 rm) = PTree.get id rm :=
+            pg_alloc_global_remove_other id id1 rm hne
+          rw [hr] at hab
+          exact hab
+        obtain ⟨v, hdm, hro, hvol, hdef, habv⟩ := hcons id ab horig
+        refine ⟨v, ?_, hro, hvol, hdef, habv⟩
+        change PTree.get id (PTree.set id1 (Gvar v1) dm) = some (Gvar v)
+        have hs : PTree.get id (PTree.set id1 (Gvar v1) dm) = PTree.get id dm :=
+          pg_alloc_global_set_other id id1 (Gvar v1) dm hne
+        rw [hs]
+        exact hdm
+
+end CompCert4Lean.Backend.ValueAnalysis

@@ -2958,3 +2958,73 @@ theorem transl_destroyed_by_store : transl_destroyed_by_storeStatement := by
   cases chunk <;> rfl
 
 end CompCert4Lean.Backend.Stackingproof
+
+namespace CompCert4Lean.Backend.Stackingproof
+
+open CompCert4Lean.Backend.Locations
+open CompCert4Lean.Common.Values
+
+theorem LTL_undef_regs_same : LTL_undef_regs_sameStatement := by
+  intro _return_address_offset _tprog r rl ls hin
+  induction rl generalizing ls with
+  | nil => simp at hin
+  | cons r1 rl ih =>
+      simp only [List.mem_cons] at hin
+      rcases hin with heq | htail
+      · cases heq
+        change Locmap.set (R r) Vundef (LTL.undef_regs rl ls) (R r) = Vundef
+        simpa using (Locmap.gss (R r) Vundef (LTL.undef_regs rl ls))
+      · by_cases heq : r = r1
+        · subst r
+          change Locmap.set (R r1) Vundef (LTL.undef_regs rl ls) (R r1) = Vundef
+          simpa using (Locmap.gss (R r1) Vundef (LTL.undef_regs rl ls))
+        · change Locmap.set (R r1) Vundef (LTL.undef_regs rl ls) (R r) = Vundef
+          rw [Locmap.gso (R r1) Vundef (LTL.undef_regs rl ls) (R r)
+            (fun h => heq h.symm)]
+          exact ih ls htail
+
+theorem LTL_undef_regs_others : LTL_undef_regs_othersStatement := by
+  intro _return_address_offset _tprog r rl ls hnot
+  induction rl generalizing ls with
+  | nil => rfl
+  | cons r1 rl ih =>
+      have hne : r ≠ r1 := by
+        intro heq
+        apply hnot
+        simp [heq]
+      have htail : r ∉ rl := by
+        intro hin
+        apply hnot
+        exact List.mem_cons_of_mem r1 hin
+      change Locmap.set (R r1) Vundef (LTL.undef_regs rl ls) (R r) = ls (R r)
+      rw [Locmap.gso (R r1) Vundef (LTL.undef_regs rl ls) (R r)
+        (fun h => hne h.symm)]
+      exact ih ls htail
+
+theorem LTL_undef_regs_slot : LTL_undef_regs_slotStatement := by
+  intro sl ofs ty rl ls
+  induction rl generalizing ls with
+  | nil => rfl
+  | cons r rl ih =>
+      change Locmap.set (R r) Vundef (LTL.undef_regs rl ls) (S sl ofs ty) =
+        ls (S sl ofs ty)
+      rw [Locmap.gso (R r) Vundef (LTL.undef_regs rl ls) (S sl ofs ty) trivial]
+      exact ih ls
+
+theorem undef_regs_type : undef_regs_typeStatement := by
+  intro ty l rl ls htype
+  induction rl generalizing ls with
+  | nil => exact htype
+  | cons r rl ih =>
+      change Val.has_type (Locmap.set (R r) Vundef (LTL.undef_regs rl ls) l) ty
+      unfold Locmap.set
+      cases Loc.eq (R r) l with
+      | left heq =>
+          cases heq
+          exact True.intro
+      | right _hne =>
+          cases Loc.diff_dec (R r) l with
+          | left _hdiff => exact ih ls htype
+          | right _hnotdiff => exact True.intro
+
+end CompCert4Lean.Backend.Stackingproof

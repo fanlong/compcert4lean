@@ -4401,3 +4401,31 @@ theorem complete_mask64_idem : complete_mask64_idemStatement := by
   rw [mask_size_test (Int64.size m) hs.1 hs.2]
 
 end CompCert4Lean.Backend.NeedDomain
+
+namespace CompCert4Lean.Backend.NeedDomain
+
+theorem andimm_sound : andimm_soundStatement := by
+  intro v w x n h
+  cases x with
+  | Nothing =>
+      trivial
+  | I m =>
+      cases v <;> cases w <;>
+        simp [andimm, vagree, iVagree, lVagree,
+          CompCert4Lean.Common.Values.Val.and] at h ⊢
+      exact iagree_and _ _ _ _ h
+  | L m =>
+      cases v <;> cases w <;>
+        simp [andimm, vagree, iVagree, lVagree,
+          CompCert4Lean.Common.Values.Val.and] at h ⊢
+  | All =>
+      cases v <;> cases w <;>
+        simp [andimm, vagree, iVagree, lVagree,
+          CompCert4Lean.Common.Values.Val.and] at h ⊢ <;>
+        try exact CompCert4Lean.Common.Values.Val.lessdef_undef _
+      have heq : Int.and _ n = Int.and _ n :=
+        (iagree_and_eq _ _ n).mp h
+      have hval := congrArg (fun z => CompCert4Lean.Common.Values.val.Vint z) heq
+      exact hval ▸ CompCert4Lean.Common.Values.Val.lessdef_refl _
+
+end CompCert4Lean.Backend.NeedDomain

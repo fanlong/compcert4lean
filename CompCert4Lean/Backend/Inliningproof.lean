@@ -2906,3 +2906,26 @@ theorem tr_funbody_inv : tr_funbody_invStatement := by
       exact hinstr pc i hget
 
 end CompCert4Lean.Backend.Inliningproof
+
+namespace CompCert4Lean.Backend.Inliningproof
+
+theorem transf_final_states : transf_final_statesStatement := by
+  intro cfg prog st1 st2 r hmatch hfinal
+  cases hfinal with
+  | intro r m =>
+      cases hmatch with
+      | match_return_states stk v m stk' v' m' F hstacks hinj hmem =>
+          have hstk : stk' = [] :=
+            match_stacks_empty prog F m m' [] stk' m'.nextblock hstacks rfl
+          subst stk'
+          cases hinj
+          exact CompCert4Lean.Backend.RTL.final_state.intro r m'
+      | match_return_regular_states stk v m stk' f' sp' rs' m' F ctx pc' or rinfo
+          hinside hret hcode hv hinj hvalid hprivate hsize hperms =>
+          have hstk := match_stacks_inside_empty prog F m m' [] stk' f' ctx sp' rs'
+            hinside rfl
+          cases hstk.1
+          have hfalse := hret.symm.trans hstk.2
+          cases hfalse
+
+end CompCert4Lean.Backend.Inliningproof

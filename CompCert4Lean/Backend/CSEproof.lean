@@ -3501,3 +3501,83 @@ theorem functions_translated
               | Gvar gv => simp at hfind
 
 end CompCert4Lean.Backend.CSEproof
+
+namespace CompCert4Lean.Backend.CSEproof
+
+theorem regs_lessdef_regs : regs_lessdef_regsStatement := by
+  intro rs1 rs2 hrs rl
+  induction rl with
+  | nil =>
+      exact CompCert4Lean.Common.Values.Val.lessdef_list.lessdef_list_nil
+  | cons r rl ih =>
+      exact CompCert4Lean.Common.Values.Val.lessdef_list.lessdef_list_cons
+        _ _ _ _ (hrs r) ih
+
+theorem set_reg_lessdef : set_reg_lessdefStatement := by
+  intro r v1 v2 rs1 rs2 hv hrs r0
+  rw [@CompCert4Lean.Backend.Registers.Regmap.gsspec_proof
+      CompCert4Lean.Common.Values.val r0 r v1 rs1,
+    @CompCert4Lean.Backend.Registers.Regmap.gsspec_proof
+      CompCert4Lean.Common.Values.val r0 r v2 rs2]
+  cases CompCert4Lean.Lib.Coqlib.peq r0 r with
+  | left h => exact hv
+  | right h => exact hrs r0
+
+end CompCert4Lean.Backend.CSEproof
+
+namespace CompCert4Lean.Backend.CSEproof
+
+theorem funct_ptr_translated
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    ∀ cfg, funct_ptr_translatedStatement cfg := by
+  intro cfg prog tprog hm b f hfind
+  have hfind' :
+      CompCert4Lean.Common.Globalenvs.Genv.find_funct
+          (CompCert4Lean.Common.Globalenvs.Genv.globalenv prog)
+          (.Vptr b CompCert4Lean.Lib.Integers.Ptrofs.zero) = some f := by
+    rw [CompCert4Lean.Common.Globalenvs.Genv.find_funct_find_funct_ptr]
+    exact hfind
+  obtain ⟨cu, tf, htfind, htrans, horder⟩ :=
+    functions_translated cfg prog tprog hm
+      (.Vptr b CompCert4Lean.Lib.Integers.Ptrofs.zero) f hfind'
+  refine ⟨cu, tf, ?_, htrans, horder⟩
+  rw [← CompCert4Lean.Common.Globalenvs.Genv.find_funct_find_funct_ptr]
+  exact htfind
+
+theorem sig_preserved
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    ∀ cfg, sig_preservedStatement cfg := by
+  intro cfg dm rm f tf htrans
+  cases f with
+  | External ef =>
+      simp [CompCert4Lean.Backend.CSE.transf_fundef,
+        CompCert4Lean.Common.AST.transf_partial_fundef] at htrans
+      cases htrans
+      rfl
+  | Internal fn =>
+      simp only [CompCert4Lean.Backend.CSE.transf_fundef,
+        CompCert4Lean.Common.AST.transf_partial_fundef] at htrans
+      cases htf : CompCert4Lean.Backend.CSE.transf_function
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate) cfg dm rm fn with
+      | Error msg => simp [htf] at htrans
+      | OK tf' =>
+          simp [htf] at htrans
+          cases htrans
+          unfold CompCert4Lean.Backend.CSE.transf_function at htf
+          dsimp only at htf
+          cases hanalyze : CompCert4Lean.Backend.CSE.analyze
+              (binary64_certificate := binary64_certificate)
+              (binary32_certificate := binary32_certificate) cfg fn dm
+              (CompCert4Lean.Backend.CSE.vanalyze
+                (binary64_certificate := binary64_certificate)
+                (binary32_certificate := binary32_certificate) cfg rm fn) with
+          | none => simp [hanalyze] at htf
+          | some approxs =>
+              simp [hanalyze] at htf
+              cases htf
+              rfl
+
+end CompCert4Lean.Backend.CSEproof

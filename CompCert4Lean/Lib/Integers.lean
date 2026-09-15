@@ -5324,3 +5324,86 @@ theorem divmods2_divs_mods_proof : divmods2_divs_mods := by
         change intOfZ (zQuot (signed n) (signed d)) < intOfZ min_signed at hlo'
         change intOfZ min_signed ≤ intOfZ (zQuot (signed n) (signed d)) at hqbLo
         omega
+
+theorem bits_zero_proof : bits_zero := by
+  intro i
+  have hz : zero.val = 0 := by rfl
+  cases i with
+  | Zneg _ => rfl
+  | Z0 =>
+      change zero.val.testBit 0 = false
+      simp [hz]
+  | Zpos p =>
+      change zero.val.testBit (WordCore.positiveToNat p) = false
+      simp [hz]
+
+theorem swap_cmp_proof : swap_cmp := by
+  intro c x y
+  cases c <;>
+    simp [cmp, WordCore.cmp, swap_comparison, WordCore.eq, eq_comm]
+
+theorem or_zero_proof : or_zero := by
+  intro x
+  unfold or WordCore.or
+  change repr (zOfNat (Nat.lor x.val zero.val)) = x
+  rw [show zero.val = 0 by rfl]
+  rw [show Nat.lor x.val 0 = x.val by
+    simpa only [Nat.lor_eq] using Nat.or_zero x.val]
+  rw [show zOfNat x.val = unsigned x by
+    exact (WordCore.intval_eq_zOfNat_val x).symm]
+  exact repr_unsigned_proof x
+
+private theorem suffix_bits_shru_nat (x y : int) (n : Nat) :
+    testbit (shru x y) (zOfNat n) =
+      zltSelect (zAdd (zOfNat n) (unsigned y)) zwordsize
+        (testbit x (zAdd (zOfNat n) (unsigned y))) false := by
+  have hy : unsigned y = zOfNat y.val :=
+    WordCore.intval_eq_zOfNat_val y
+  have hadd : zAdd (zOfNat n) (unsigned y) = zOfNat (n + y.val) := by
+    rw [hy]
+    apply intOfZ_injective
+    simp only [zAdd, ZArith.BinInt.Z.add, zOfNat,
+      ZArith.BinInt.Z.of_nat, intOfZ_zOfInt, Int.ofNat_eq_natCast,
+      Int.natCast_add]
+  rw [hadd, suffix_testbit_nat, suffix_shru_val]
+  rw [← Nat.shiftRight_eq_div_pow, Nat.testBit_shiftRight]
+  rw [Nat.add_comm y.val n]
+  cases hlt : CompCert4Lean.Lib.Coqlib.zlt (zOfNat (n + y.val)) zwordsize with
+  | left hlt' =>
+      simp only [zltSelect, sumboolSelect, hlt]
+      exact (suffix_testbit_nat x (n + y.val)).symm
+  | right hlt' =>
+      simp only [zltSelect, sumboolSelect, hlt]
+      apply Nat.testBit_lt_two_pow
+      have hsum : wordsize ≤ n + y.val := by
+        change zLe zwordsize (zOfNat (n + y.val)) at hlt'
+        change intOfZ zwordsize ≤ intOfZ (zOfNat (n + y.val)) at hlt'
+        simp only [zwordsize, zOfNat, ZArith.BinInt.Z.of_nat,
+          intOfZ_zOfInt] at hlt'
+        exact Int.ofNat_le.mp hlt'
+      have hpow : 2 ^ wordsize ≤ 2 ^ (n + y.val) :=
+        Nat.pow_le_pow_right Nat.zero_lt_two hsum
+      exact Nat.lt_of_lt_of_le (WordCore.val_lt x) hpow
+
+theorem bits_shru_proof : bits_shru := by
+  intro x y i hi
+  cases i with
+  | Zneg p =>
+      have h := hi.1
+      change (0 : Int) ≤ -Int.ofNat
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p) at h
+      have hp : 0 < CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p :=
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat_positive p
+      have hpI : (0 : Int) < Int.ofNat
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p) :=
+        Int.natCast_pos.mpr hp
+      omega
+  | Z0 =>
+      exact suffix_bits_shru_nat x y 0
+  | Zpos p =>
+      have hz : zOfNat
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p) = .Zpos p := by
+        exact ZArith.Znat.positive_nat_Z p
+      rw [← hz] at hi ⊢
+      exact suffix_bits_shru_nat x y
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p)

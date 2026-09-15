@@ -3459,3 +3459,18 @@ theorem init_mem_exists : init_mem_existsStatement := by
   exact ug_init_mem_exists _ _ tp htarget_props
 
 end CompCert4Lean.Backend.Unusedglobproof
+
+namespace CompCert4Lean.Backend.Unusedglobproof
+
+open CompCert4Lean.Backend.RTL
+
+theorem transf_final_states : transf_final_statesStatement := by
+  intro p tp used S1 S2 r hmatch hfinal
+  cases hfinal
+  cases hmatch with
+  | match_states_return s res m ts tres tm j stacks res_inj hmem =>
+      cases stacks
+      cases res_inj
+      constructor
+
+end CompCert4Lean.Backend.Unusedglobproof

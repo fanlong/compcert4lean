@@ -3617,3 +3617,17 @@ theorem store_similar_chunks : store_similar_chunksStatement := by
 end Mem
 
 end CompCert4Lean.Common.Memory
+
+namespace CompCert4Lean.Common.Memory
+
+namespace Mem
+
+theorem store_bool_unsigned_8 : store_bool_unsigned_8Statement := by
+  intro m b ofs v
+  apply store_similar_chunks
+  · cases v <;> rfl
+  · rfl
+
+end Mem
+
+end CompCert4Lean.Common.Memory

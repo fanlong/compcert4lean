@@ -3091,3 +3091,24 @@ theorem tr_find_label :
         exact ⟨ts', tk', rfl, htr', hmc'⟩
 
 end CompCert4Lean.Cfrontend.SimplExprproof
+
+namespace CompCert4Lean.Cfrontend.SimplExprproof
+
+theorem leftcontext_size : leftcontext_sizeStatement := by
+  intro kfrom kto C h
+  apply CompCert4Lean.Cfrontend.Cstrategy.leftcontext.rec
+    (motive_1 := fun _ C _ =>
+      ∀ e1 e2, esize e1 < esize e2 → esize (C e1) < esize (C e2))
+    (motive_2 := fun C _ =>
+      ∀ e1 e2, esize e1 < esize e2 → esizelist (C e1) < esizelist (C e2))
+    (t := h)
+  all_goals intros
+  all_goals (try simp only [esize, esizelist] at *)
+  all_goals (try assumption)
+  all_goals (try apply Nat.succ_lt_succ)
+  all_goals first
+    | solve_by_elim
+    | apply Nat.add_lt_add_left; solve_by_elim
+    | apply Nat.add_lt_add_right; solve_by_elim
+
+end CompCert4Lean.Cfrontend.SimplExprproof

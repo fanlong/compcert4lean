@@ -2845,3 +2845,59 @@ theorem of_intu_of_long
 
 end Float
 end CompCert4Lean.Lib.Floats
+
+namespace CompCert4Lean.Lib.Floats
+
+namespace Float32
+
+private theorem unpacked_mul_comm_worker32 (a b : _root_.Float.Model.UnpackedFloat) :
+    _root_.Float.Model.UnpackedFloat.mul _root_.Float.Model.Format.binary32 a b =
+      _root_.Float.Model.UnpackedFloat.mul _root_.Float.Model.Format.binary32 b a := by
+  cases a with
+  | notANumber => cases b <;> rfl
+  | infinity sa =>
+      cases b with
+      | notANumber => rfl
+      | infinity sb => cases sa <;> cases sb <;> rfl
+      | zero sb => cases sa <;> cases sb <;> rfl
+      | finite sb mb eb hb => cases sa <;> cases sb <;> rfl
+  | zero sa =>
+      cases b with
+      | notANumber => rfl
+      | infinity sb => cases sa <;> cases sb <;> rfl
+      | zero sb => cases sa <;> cases sb <;> rfl
+      | finite sb mb eb hb => cases sa <;> cases sb <;> rfl
+  | finite sa ma ea ha =>
+      cases b with
+      | notANumber => rfl
+      | infinity sb => cases sa <;> cases sb <;> rfl
+      | zero sb => cases sa <;> cases sb <;> rfl
+      | finite sb mb eb hb =>
+          cases sa <;> cases sb <;>
+            simp [_root_.Float.Model.UnpackedFloat.mul, Nat.mul_comm, Int.add_comm]
+          all_goals rfl
+
+private theorem model_mul_comm_worker32 (x y : float32) :
+    modelBinary32
+      (_root_.Float.Model.UnpackedFloat.mul _root_.Float.Model.Format.binary32) x y =
+      modelBinary32
+      (_root_.Float.Model.UnpackedFloat.mul _root_.Float.Model.Format.binary32) y x := by
+  unfold modelBinary32
+  rw [unpacked_mul_comm_worker32]
+
+theorem mul_commut : Float32.mul_commutStatement := by
+  intro x y h
+  unfold Float32.mul
+  rw [model_mul_comm_worker32]
+  by_cases hx : isNaN32 x = true
+  · by_cases hy : isNaN32 y = true
+    · exfalso
+      rcases h with h | h <;> simp_all
+    · simp [finishBinary, binop_nan, cons_pl, hx, hy]
+  · by_cases hy : isNaN32 y = true
+    · simp [finishBinary, binop_nan, cons_pl, hx, hy]
+    · simp [finishBinary, hx, hy]
+
+end Float32
+
+end CompCert4Lean.Lib.Floats

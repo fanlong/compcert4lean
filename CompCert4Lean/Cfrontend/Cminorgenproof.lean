@@ -3746,3 +3746,101 @@ theorem set_locals_outside : set_locals_outsideStatement := by
         _ = PTree.get id e := ih htail
 
 end CompCert4Lean.Cfrontend.Cminorgenproof
+
+namespace CompCert4Lean.Cfrontend.Cminorgenproof
+
+open CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.List
+open CompCert4Lean.Lib.Maps
+
+theorem set_locals_inside : set_locals_insideStatement := by
+  intro e id il hin
+  induction il with
+  | nil => cases hin
+  | cons i il ih =>
+      rcases List.mem_cons.mp hin with heq | htail
+      · subst id
+        change PTree.get i (PTree.set i (.Vundef : val) (CM.set_locals il e)) =
+          some (.Vundef : val)
+        exact PTree.gss i _ _
+      · change PTree.get id (PTree.set i (.Vundef : val) (CM.set_locals il e)) =
+          some (.Vundef : val)
+        by_cases hne : id = i
+        · subst id
+          exact PTree.gss i _ _
+        · rw [PTree.gso (A := val) (i := id) (j := i) .Vundef
+            (show PTree.tree val from CM.set_locals il e) hne]
+          exact ih htail
+
+end CompCert4Lean.Cfrontend.Cminorgenproof
+
+namespace CompCert4Lean.Cfrontend.Cminorgenproof
+
+open CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.List
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+
+theorem set_locals_set_params' : set_locals_set_params'Statement := by
+  intro vars vals params id hnr hdis
+  by_cases hvars : In id vars
+  · have hnotparams : ¬ In id params := by
+      intro hid
+      exact hdis id id hid hvars rfl
+    calc
+      PTree.get id (CM.set_locals vars (CM.set_params vals params)) =
+          some (.Vundef : val) := set_locals_inside _ _ _ hvars
+      _ = PTree.get id
+          (set_params' vals params (CM.set_locals vars (PTree.empty val))) := by
+            exact (set_locals_inside (PTree.empty val) id vars hvars).symm.trans
+              (set_params'_outside id params vals
+                (CM.set_locals vars (PTree.empty val)) hnotparams).symm
+  · by_cases hparams : In id params
+    · calc
+        PTree.get id (CM.set_locals vars (CM.set_params vals params)) =
+            PTree.get id (CM.set_params vals params) :=
+              set_locals_outside (CM.set_params vals params) id vars hvars
+        _ = PTree.get id (set_params' vals params (PTree.empty val)) :=
+              set_params_set_params' params vals id hnr
+        _ = PTree.get id
+            (set_params' vals params (CM.set_locals vars (PTree.empty val))) :=
+              set_params'_inside id params vals (PTree.empty val)
+                (CM.set_locals vars (PTree.empty val)) hparams
+    · calc
+        PTree.get id (CM.set_locals vars (CM.set_params vals params)) =
+            PTree.get id (CM.set_params vals params) :=
+              set_locals_outside (CM.set_params vals params) id vars hvars
+        _ = PTree.get id (set_params' vals params (PTree.empty val)) :=
+              set_params_set_params' params vals id hnr
+        _ = PTree.get id (PTree.empty val) :=
+              set_params'_outside id params vals (PTree.empty val) hparams
+        _ = PTree.get id (CM.set_locals vars (PTree.empty val)) := by
+              exact (set_locals_outside (PTree.empty val) id vars hvars).symm
+        _ = PTree.get id
+            (set_params' vals params (CM.set_locals vars (PTree.empty val))) :=
+              (set_params'_outside id params vals
+                (CM.set_locals vars (PTree.empty val)) hparams).symm
+
+end CompCert4Lean.Cfrontend.Cminorgenproof
+
+namespace CompCert4Lean.Cfrontend.Cminorgenproof
+
+open CompCert4Lean.Lib.Maps
+
+theorem bind_parameters_agree : bind_parameters_agreeStatement := by
+  intro f params temps vals tvals le hbind hinj hnr hdis
+  have hinit :
+      match_temps f (CS.create_undef_temps temps)
+        (CM.set_locals temps (PTree.empty val)) := by
+    intro id v hget
+    rcases create_undef_temps_val id v temps hget with ⟨hin, hv⟩
+    subst v
+    exact ⟨.Vundef, set_locals_inside _ _ _ hin, .val_inject_undef .Vundef⟩
+  have hrec := bind_parameters_agree_rec f params vals tvals
+    (CS.create_undef_temps temps) le
+    (CM.set_locals temps (PTree.empty val)) hbind hinj hinit
+  intro id v hget
+  rcases hrec id v hget with ⟨v', hte, hv⟩
+  refine ⟨v', ?_, hv⟩
+  rw [set_locals_set_params' temps tvals params id hnr hdis]
+  exact hte
+
+end CompCert4Lean.Cfrontend.Cminorgenproof

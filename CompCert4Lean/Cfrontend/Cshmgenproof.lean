@@ -3942,3 +3942,135 @@ theorem make_store_correct
         hmake
 
 end CompCert4Lean.Cfrontend.Cshmgenproof
+
+namespace CompCert4Lean.Cfrontend.Cshmgenproof
+
+open CompCert4Lean.Cfrontend.Cshmgen
+open CompCert4Lean.Cfrontend.Csharpminor
+open CompCert4Lean.Cfrontend.Ctyping
+
+theorem make_normalization_correct
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    make_normalization_correctStatement := by
+  intro ge e le m a v t h_eval h_wt
+  have hzero : CompCert4Lean.Lib.Integers.Int.zero_ext
+      (zOfNat 8) CompCert4Lean.Lib.Integers.Int.zero =
+      CompCert4Lean.Lib.Integers.Int.zero := by decide
+  have hone : CompCert4Lean.Lib.Integers.Int.zero_ext
+      (zOfNat 8) CompCert4Lean.Lib.Integers.Int.one =
+      CompCert4Lean.Lib.Integers.Int.one := by decide
+
+  have hcast8s (n : CompCert4Lean.Lib.Integers.int)
+      (hn : CompCert4Lean.Lib.Integers.Int.sign_ext (zOfNat 8) n = n)
+      (hev : T_eval_expr ge e le m a (.Vint n)) :
+      T_eval_expr ge e le m (.Eunop .Ocast8signed a) (.Vint n) := by
+    refine Csharpminor.eval_Eunop .Ocast8signed a (.Vint n) (.Vint n) ?_ ?_
+    · exact hev
+    · simp [Csharpminor.eval_unop, CompCert4Lean.Backend.Cminor.eval_unop,
+        CompCert4Lean.Common.Values.Val.sign_ext]
+      exact Eq.trans (by rfl) hn
+
+  have hcast8u (n : CompCert4Lean.Lib.Integers.int)
+      (hn : CompCert4Lean.Lib.Integers.Int.zero_ext (zOfNat 8) n = n)
+      (hev : T_eval_expr ge e le m a (.Vint n)) :
+      T_eval_expr ge e le m (.Eunop .Ocast8unsigned a) (.Vint n) := by
+    refine Csharpminor.eval_Eunop .Ocast8unsigned a (.Vint n) (.Vint n) ?_ ?_
+    · exact hev
+    · simp [Csharpminor.eval_unop, CompCert4Lean.Backend.Cminor.eval_unop,
+        CompCert4Lean.Common.Values.Val.zero_ext]
+      exact Eq.trans (by rfl) hn
+
+  have hcast16s (n : CompCert4Lean.Lib.Integers.int)
+      (hn : CompCert4Lean.Lib.Integers.Int.sign_ext (zOfNat 16) n = n)
+      (hev : T_eval_expr ge e le m a (.Vint n)) :
+      T_eval_expr ge e le m (.Eunop .Ocast16signed a) (.Vint n) := by
+    refine Csharpminor.eval_Eunop .Ocast16signed a (.Vint n) (.Vint n) ?_ ?_
+    · exact hev
+    · simp [Csharpminor.eval_unop, CompCert4Lean.Backend.Cminor.eval_unop,
+        CompCert4Lean.Common.Values.Val.sign_ext]
+      exact Eq.trans (by rfl) hn
+
+  have hcast16u (n : CompCert4Lean.Lib.Integers.int)
+      (hn : CompCert4Lean.Lib.Integers.Int.zero_ext (zOfNat 16) n = n)
+      (hev : T_eval_expr ge e le m a (.Vint n)) :
+      T_eval_expr ge e le m (.Eunop .Ocast16unsigned a) (.Vint n) := by
+    refine Csharpminor.eval_Eunop .Ocast16unsigned a (.Vint n) (.Vint n) ?_ ?_
+    · exact hev
+    · simp [Csharpminor.eval_unop, CompCert4Lean.Backend.Cminor.eval_unop,
+        CompCert4Lean.Common.Values.Val.zero_ext]
+      exact Eq.trans (by rfl) hn
+
+  have hcast8s_undef (hev : T_eval_expr ge e le m a .Vundef) :
+      T_eval_expr ge e le m (.Eunop .Ocast8signed a) .Vundef := by
+    refine Csharpminor.eval_Eunop .Ocast8signed a .Vundef .Vundef ?_ ?_
+    · exact hev
+    · rfl
+
+  have hcast8u_undef (hev : T_eval_expr ge e le m a .Vundef) :
+      T_eval_expr ge e le m (.Eunop .Ocast8unsigned a) .Vundef := by
+    refine Csharpminor.eval_Eunop .Ocast8unsigned a .Vundef .Vundef ?_ ?_
+    · exact hev
+    · rfl
+
+  have hcast16s_undef (hev : T_eval_expr ge e le m a .Vundef) :
+      T_eval_expr ge e le m (.Eunop .Ocast16signed a) .Vundef := by
+    refine Csharpminor.eval_Eunop .Ocast16signed a .Vundef .Vundef ?_ ?_
+    · exact hev
+    · rfl
+
+  have hcast16u_undef (hev : T_eval_expr ge e le m a .Vundef) :
+      T_eval_expr ge e le m (.Eunop .Ocast16unsigned a) .Vundef := by
+    refine Csharpminor.eval_Eunop .Ocast16unsigned a .Vundef .Vundef ?_ ?_
+    · exact hev
+    · rfl
+
+  cases t with
+  | Tvoid => exact h_eval
+  | Tint size signed attr =>
+      cases size with
+      | I8 =>
+          cases signed with
+          | Signed =>
+              cases h_wt with
+              | wt_val_int n _ _ _ hwt =>
+                  exact hcast8s n (Eq.trans (by rfl) hwt) h_eval
+              | wt_val_undef _ => exact hcast8s_undef h_eval
+          | Unsigned =>
+              cases h_wt with
+              | wt_val_int n _ _ _ hwt =>
+                  exact hcast8u n (Eq.trans (by rfl) hwt) h_eval
+              | wt_val_undef _ => exact hcast8u_undef h_eval
+      | I16 =>
+          cases signed with
+          | Signed =>
+              cases h_wt with
+              | wt_val_int n _ _ _ hwt =>
+                  exact hcast16s n (Eq.trans (by rfl) hwt) h_eval
+              | wt_val_undef _ => exact hcast16s_undef h_eval
+          | Unsigned =>
+              cases h_wt with
+              | wt_val_int n _ _ _ hwt =>
+                  exact hcast16u n (Eq.trans (by rfl) hwt) h_eval
+              | wt_val_undef _ => exact hcast16u_undef h_eval
+      | I32 => exact h_eval
+      | IBool =>
+          cases h_wt with
+          | wt_val_int n _ _ _ hwt =>
+              cases hwt with
+              | inl h =>
+                  subst n
+                  exact hcast8u _ hzero h_eval
+              | inr h =>
+                  subst n
+                  exact hcast8u _ hone h_eval
+          | wt_val_undef _ => exact hcast8u_undef h_eval
+  | Tlong signed attr => exact h_eval
+  | Tfloat size attr => exact h_eval
+  | Tpointer ty attr => exact h_eval
+  | Tarray ty sz attr => exact h_eval
+  | Tfunction args res cc => exact h_eval
+  | Tstruct id attr => exact h_eval
+  | Tunion id attr => exact h_eval
+
+end CompCert4Lean.Cfrontend.Cshmgenproof

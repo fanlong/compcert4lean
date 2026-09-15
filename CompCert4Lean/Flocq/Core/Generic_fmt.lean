@@ -2150,3 +2150,19 @@ theorem round_generic :
   exact hformat.symm
 
 end CompCert4Lean.Flocq.Core.Generic_fmt
+
+namespace CompCert4Lean.Flocq.Core.Generic_fmt
+
+theorem round_0 :
+    ∀ ctx magnitude, round_0Statement ctx magnitude := by
+  intro ctx magnitude beta fexp rnd hrnd
+  unfold Exact.round
+  rw [scaled_mantissa_0 ctx magnitude beta fexp]
+  have hr : rnd (Exact.R0 ctx) = Z0 := by
+    change rnd ctx.spec.zero = Z0
+    rw [← ctx.certificate.sourceLaws.ofZ_zero]
+    exact hrnd.Zrnd_IZR Z0
+  rw [hr]
+  exact CompCert4Lean.Flocq.Core.Float_prop.F2R_0 ctx beta _
+
+end CompCert4Lean.Flocq.Core.Generic_fmt
