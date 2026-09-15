@@ -2322,3 +2322,44 @@ theorem even_add : even_addStatement := by
       simpa [_root_.CompCert4Lean.Foundation.Logic.Rocq.Coq.Bool.Bool.eqb] using h
 
 end CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z
+
+namespace CompCert4Lean.Foundation.Numbers
+namespace Rocq.Coq
+
+theorem ZArith.BinInt.Z.lt_le_trans :
+    ZArith.BinInt.Z.lt_le_transStatement := by
+  intro n m p hnm hmp
+  change intOfZ n < intOfZ m at hnm
+  change intOfZ m ≤ intOfZ p at hmp
+  change intOfZ n < intOfZ p
+  exact Int.lt_of_lt_of_le hnm hmp
+
+theorem ZArith.BinInt.Z.lt_pred_l :
+    ZArith.BinInt.Z.lt_pred_lStatement := by
+  intro n
+  change intOfZ (ZArith.BinInt.Z.pred n) < intOfZ n
+  simp only [ZArith.BinInt.Z.pred, ZArith.BinInt.Z.sub, intOfZ_zOfInt]
+  have hone : intOfZ (Zpos xH) = 1 := by simp [intOfZ, posToNat]
+  rw [hone]
+  omega
+
+theorem ZArith.BinInt.Z.divide_1_l :
+    ZArith.BinInt.Z.divide_1_lStatement := by
+  intro n
+  refine ⟨n, ?_⟩
+  exact (ZArith.BinInt.Zmult_1_l_proof n).symm
+
+end Rocq.Coq
+end CompCert4Lean.Foundation.Numbers
+
+namespace CompCert4Lean.Foundation.Numbers
+namespace Rocq.Coq
+
+theorem ZArith.Zbool.Zle_bool_refl_proof :
+    ∀ (x : Z), ZArith.Zbool.Zle_bool x x := by
+  intro x
+  unfold ZArith.Zbool.Zle_bool ZArith.BinInt.Z.leb
+  simp
+
+end Rocq.Coq
+end CompCert4Lean.Foundation.Numbers

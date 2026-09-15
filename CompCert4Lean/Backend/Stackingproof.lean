@@ -2708,3 +2708,16 @@ theorem agree_locs_set_reg : agree_locs_set_regStatement := by
     exact agree_incoming hagree ofs ty hin
 
 end CompCert4Lean.Backend.Stackingproof
+
+namespace CompCert4Lean.Backend.Stackingproof
+
+theorem caller_save_reg_within_bounds :
+    caller_save_reg_within_boundsStatement := by
+  intro cfg f r hsave
+  unfold CompCert4Lean.Backend.Bounds.mreg_within_bounds
+  intro hcallee
+  have hfalse : False :=
+    Bool.noConfusion (P := False) (hsave.symm.trans hcallee)
+  exact hfalse.elim
+
+end CompCert4Lean.Backend.Stackingproof

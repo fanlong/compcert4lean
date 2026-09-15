@@ -3254,3 +3254,44 @@ theorem assign_variables_sound : assign_variables_soundStatement := by
           simpa [List.append_assoc] using hrec
 
 end CompCert4Lean.Cfrontend.Cminorgenproof
+
+namespace CompCert4Lean.Cfrontend.Cminorgenproof
+
+open CompCert4Lean.Foundation.Ordered.Rocq.Coq.Sorting.Permutation
+
+theorem permutation_norepet : permutation_norepetStatement := by
+  intro A l l' hperm
+  induction hperm with
+  | perm_nil =>
+      intro _
+      exact CompCert4Lean.Lib.Coqlib.list_norepet.nil _
+  | perm_skip x h ih =>
+      intro hn
+      cases hn with
+      | cons _ hnot htail =>
+          exact CompCert4Lean.Lib.Coqlib.list_norepet.cons x (by
+            intro hx
+            apply hnot
+            exact CompCert4Lean.Foundation.Ordered.Rocq.Coq.Sorting.Permutation.Permutation_in
+              x
+              (CompCert4Lean.Foundation.Ordered.Rocq.Coq.Sorting.Permutation.Permutation_sym h)
+              hx) (ih htail)
+  | perm_swap x y l =>
+      intro hn
+      cases hn with
+      | cons _ hxy htail =>
+          cases htail with
+          | cons _ hx hrest =>
+              exact CompCert4Lean.Lib.Coqlib.list_norepet.cons x (by
+                intro hxl
+                rcases List.mem_cons.mp hxl with hxeq | hxin
+                · apply hxy
+                  simpa [hxeq] using (List.Mem.head x : x ∈ x :: l)
+                · exact hx hxin) (CompCert4Lean.Lib.Coqlib.list_norepet.cons y (by
+                intro hyl
+                exact hxy (List.Mem.tail x hyl)) hrest)
+  | perm_trans h₁ h₂ ih₁ ih₂ =>
+      intro hn
+      exact ih₂ (ih₁ hn)
+
+end CompCert4Lean.Cfrontend.Cminorgenproof
