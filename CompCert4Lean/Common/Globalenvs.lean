@@ -2672,3 +2672,202 @@ theorem find_var_info_not_fresh : find_var_info_not_freshStatement := by
 
 end Genv
 end CompCert4Lean.Common.Globalenvs
+
+namespace CompCert4Lean.Common.Globalenvs
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+
+namespace Genv
+
+private theorem pg_neutral_zmap_get_set_same {A : Type} (i : Z) (x : A)
+    (m : ZMap.t A) : ZMap.get i (ZMap.set i x m) = x := by
+  change PMap.get (ZIndexed.index i) (PMap.set (ZIndexed.index i) x m) = x
+  exact pg_pmap_get_set_same _ _ _
+
+private theorem pg_neutral_zmap_get_set_other {A : Type} (i j : Z) (x : A)
+    (m : ZMap.t A) (h : i ≠ j) :
+    ZMap.get i (ZMap.set j x m) = ZMap.get i m := by
+  change PMap.get (ZIndexed.index i) (PMap.set (ZIndexed.index j) x m) =
+    PMap.get (ZIndexed.index i) m
+  apply pg_pmap_get_set_other
+  intro hij
+  apply h
+  exact ZIndexed.index_inj i j hij
+
+private theorem pg_neutral_zadd_succ (p delta : Z) :
+    ZArith.BinInt.Z.add (ZArith.BinInt.Z.add p delta) (.Zpos .xH) =
+      ZArith.BinInt.Z.add (ZArith.BinInt.Z.add p (.Zpos .xH)) delta := by
+  apply intOfZ_injective
+  simp only [ZArith.BinInt.Z.add, intOfZ_zOfInt]
+  omega
+
+private theorem pg_neutral_zadd_zero (p : Z) :
+    ZArith.BinInt.Z.add p .Z0 = p := by
+  exact ZArith.BinInt.Z.add_0_r p
+
+private theorem pg_neutral_setN_inj
+    (access : Z → Prop) (delta : Z) (f : Val.meminj)
+    {vl1 vl2 : List memval}
+    (hvl : list_forall2 (memval_inject f) vl1 vl2) :
+    ∀ p c1 c2,
+      (∀ q, access q →
+        memval_inject f (ZMap.get q c1)
+          (ZMap.get (ZArith.BinInt.Z.add q delta) c2)) →
+      ∀ q, access q →
+        memval_inject f (ZMap.get q (Mem.setN vl1 p c1))
+          (ZMap.get (ZArith.BinInt.Z.add q delta)
+            (Mem.setN vl2 (ZArith.BinInt.Z.add p delta) c2)) := by
+  induction hvl with
+  | nil =>
+      intro p c1 c2 hbase q hq
+      exact hbase q hq
+  | cons v1 v2 hv htail ih =>
+      intro p c1 c2 hbase q hq
+      simp only [Mem.setN]
+      change memval_inject f
+        (ZMap.get q
+          (Mem.setN _ (ZArith.BinInt.Z.add p (.Zpos .xH))
+            (ZMap.set p v1 c1)))
+        (ZMap.get (ZArith.BinInt.Z.add q delta)
+          (Mem.setN _
+            (ZArith.BinInt.Z.add
+              (ZArith.BinInt.Z.add p delta) (.Zpos .xH))
+            (ZMap.set (ZArith.BinInt.Z.add p delta) v2 c2)))
+      rw [pg_neutral_zadd_succ]
+      apply ih (ZArith.BinInt.Z.add p (.Zpos .xH))
+        (ZMap.set p v1 c1)
+        (ZMap.set (ZArith.BinInt.Z.add p delta) v2 c2)
+      intro r hr
+      by_cases heq : r = p
+      · subst r
+        rw [pg_neutral_zmap_get_set_same, pg_neutral_zmap_get_set_same]
+        exact hv
+      · rw [pg_neutral_zmap_get_set_other _ _ _ _ heq]
+        rw [pg_neutral_zmap_get_set_other]
+        · exact hbase r hr
+        · intro hadd
+          apply heq
+          apply intOfZ_injective
+          have hadd' := congrArg intOfZ hadd
+          simp only [ZArith.BinInt.Z.add, intOfZ_zOfInt] at hadd'
+          omega
+      exact hq
+
+private theorem pg_store_inject_neutral
+    (chunk : memory_chunk) (m : Mem.mem) (b : positive) (ofs : Z)
+    (v : val) (m' : Mem.mem) (thr : positive)
+    (hstore : Mem.store chunk m b ofs v = some m')
+    (hneutral : Mem.inject_neutral thr m) (hb : Plt b thr)
+    (hv : Val.inject (Mem.flat_inj thr) v v) :
+    Mem.inject_neutral thr m' := by
+  unfold Mem.store at hstore
+  split at hstore
+  · cases hstore
+    exact {
+      mi_perm := by
+        intro b1 b2 delta q k prm hmap hperm
+        exact hneutral.mi_perm b1 b2 delta q k prm hmap hperm
+      mi_align := by
+        intro b1 b2 delta chunk' q prm hmap hperm
+        exact hneutral.mi_align b1 b2 delta chunk' q prm hmap hperm
+      mi_memval := by
+        intro b1 q b2 delta hmap hread
+        change Mem.perm m b1 q Cur Readable at hread
+        have hflat : Mem.flat_inj thr b1 = some (b1, .Z0) := by
+          cases hplt : plt b1 thr with
+          | left _ =>
+              unfold Mem.flat_inj
+              simp [hplt]
+          | right hn =>
+              unfold Mem.flat_inj at hmap
+              simp [hplt] at hmap
+        have hpairs : (b1, .Z0) = (b2, delta) := Option.some.inj (hflat.symm.trans hmap)
+        cases hpairs
+        change memval_inject (Mem.flat_inj thr)
+          (ZMap.get q
+            (PMap.get b1
+              (PMap.set b (Mem.setN (encode_val chunk v) ofs
+                (PMap.get b m.mem_contents)) m.mem_contents)))
+          (ZMap.get (ZArith.BinInt.Z.add q .Z0)
+            (PMap.get b1
+              (PMap.set b (Mem.setN (encode_val chunk v) ofs
+                (PMap.get b m.mem_contents)) m.mem_contents)))
+        rw [ZArith.BinInt.Z.add_0_r]
+        by_cases hbb : b1 = b
+        · subst b1
+          rw [pg_pmap_get_set_same]
+          have henc := encode_val_inject (Mem.flat_inj thr) v v chunk hv
+          have hbase : ∀ r, Mem.perm m b r Cur Readable →
+              memval_inject (Mem.flat_inj thr)
+                (ZMap.get r (PMap.get b m.mem_contents))
+                (ZMap.get (ZArith.BinInt.Z.add r .Z0)
+                  (PMap.get b m.mem_contents)) := by
+            intro r hr
+            exact hneutral.mi_memval b r b .Z0 (by
+              unfold Mem.flat_inj
+              cases hplt : plt b thr with
+              | left _ => rfl
+              | right hn => exact False.elim (hn hb)) hr
+          have hset := pg_neutral_setN_inj
+            (access := fun r => Mem.perm m b r Cur Readable)
+            (delta := .Z0) (f := Mem.flat_inj thr) henc ofs
+            (PMap.get b m.mem_contents) (PMap.get b m.mem_contents)
+            hbase q hread
+          change memval_inject (Mem.flat_inj thr)
+            (ZMap.get q
+              (Mem.setN (encode_val chunk v) ofs (PMap.get b m.mem_contents)))
+            (ZMap.get (ZArith.BinInt.Z.add q .Z0)
+              (Mem.setN (encode_val chunk v)
+                (ZArith.BinInt.Z.add ofs .Z0) (PMap.get b m.mem_contents))) at hset
+          rw [pg_neutral_zadd_zero, pg_neutral_zadd_zero] at hset
+          exact hset
+        · rw [pg_pmap_get_set_other _ _ _ _ hbb]
+          have hold := hneutral.mi_memval b1 q b1 .Z0 hflat hread
+          change memval_inject (Mem.flat_inj thr)
+            (ZMap.get q (PMap.get b1 m.mem_contents))
+            (ZMap.get (ZArith.BinInt.Z.add q .Z0)
+              (PMap.get b1 m.mem_contents)) at hold
+          rw [pg_neutral_zadd_zero] at hold
+          exact hold }
+  · cases hstore
+
+theorem store_zeros_neutral : store_zeros_neutralStatement := by
+  let P : Mem.mem → positive → Z → Z → Option Mem.mem → Prop :=
+    fun m b _ _ result =>
+      match result with
+      | some m' => ∀ thr, Mem.inject_neutral thr m →
+          Plt b thr → Mem.inject_neutral thr m'
+      | none => True
+  have hP : ∀ m b p n, P m b p n (store_zeros m b p n) := by
+    apply store_zeros_ind (P := P)
+    · intro m b p n x hx
+      intro thr hneutral hb
+      exact hneutral
+    · intro m b p n x hx m1 hstore hrec
+      cases hresult : store_zeros m1 b
+          (ZArith.BinInt.Z.add p (.Zpos .xH))
+          (ZArith.BinInt.Z.sub n (.Zpos .xH)) with
+      | none => trivial
+      | some m2 =>
+          rw [hresult] at hrec
+          intro thr hneutral hb
+          apply hrec thr
+          · exact pg_store_inject_neutral Mint8unsigned m b p Vzero m1 thr
+              hstore hneutral hb (Val.inject.inject_int _)
+          · exact hb
+    · intro m b p n x hx hnone
+      trivial
+  intro thr m b p n m' hneutral hb hstore
+  have hs := hP m b p n
+  rw [hstore] at hs
+  exact hs thr hneutral hb
+
+end Genv
+end CompCert4Lean.Common.Globalenvs

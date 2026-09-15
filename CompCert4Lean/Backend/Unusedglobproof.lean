@@ -2455,3 +2455,70 @@ theorem init_meminj_invert_strong : init_meminj_invert_strongStatement := by
   exact ⟨hdelta, id, gd, hfind, hfind', hdef, hdef', hrefs⟩
 
 end CompCert4Lean.Backend.Unusedglobproof
+
+namespace CompCert4Lean.Backend.Unusedglobproof
+
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Backend.Unusedglob
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Coqlib
+
+private theorem unusedglob_replicate_byte_inject
+    (f : Val.meminj) (n : Nat) (b : CompCert4Lean.Lib.Integers.byte) :
+    list_forall2 (memval_inject f)
+      (List.replicate n (Byte b)) (List.replicate n (Byte b)) := by
+  induction n with
+  | zero => constructor
+  | succ n ih =>
+      simp only [List.replicate_succ]
+      exact list_forall2.cons _ _ (memval_inject.byte f b) ih
+
+theorem bytes_of_init_inject : bytes_of_init_injectStatement := by
+  intro p tp used hvalid hmatch il hkeep
+  have hglobals := init_meminj_preserves_globals p tp used hvalid hmatch
+  induction il with
+  | nil => constructor
+  | cons i il ih =>
+      unfold Genv.bytes_of_init_data_list
+      apply list_forall2_app
+      · cases i with
+        | Init_int8 n => exact inj_bytes_inject _ _
+        | Init_int16 n => exact inj_bytes_inject _ _
+        | Init_int32 n => exact inj_bytes_inject _ _
+        | Init_int64 n => exact inj_bytes_inject _ _
+        | Init_float32 n => exact inj_bytes_inject _ _
+        | Init_float64 n => exact inj_bytes_inject _ _
+        | Init_space n =>
+            exact unusedglob_replicate_byte_inject _ _ _
+        | Init_addrof id ofs =>
+            have hkid : kept used id := by
+              apply hkeep id
+              exact ⟨ofs, by simp⟩
+            unfold Genv.bytes_of_init_data
+            cases hfind : Genv.find_symbol (Genv.globalenv p) id with
+            | none =>
+                cases hfind' : Genv.find_symbol (Genv.globalenv tp) id with
+                | none =>
+                    simp [Genv.bytes_of_init_data, hfind, hfind']
+                    exact repeat_Undef_inject_self _ _
+                | some b' =>
+                    rcases hglobals.symbols_inject_3 id b' hfind' with
+                      ⟨b, hfindb, _⟩
+                    simp [hfind] at hfindb
+            | some b =>
+                rcases hglobals.symbols_inject_2 id b hkid hfind with
+                  ⟨b', hfind', hmap⟩
+                simp [Genv.bytes_of_init_data, hfind, hfind']
+                apply inj_value_inject
+                apply Val.inject_ptr (init_meminj p tp) b ofs b' ofs z0 hmap
+                exact (unusedglob_ptrofs_add_zero_repr ofs).symm
+      · apply ih
+        intro id hid
+        apply hkeep id
+        rcases hid with ⟨ofs, hmem⟩
+        exact ⟨ofs, by simp [hmem]⟩
+
+end CompCert4Lean.Backend.Unusedglobproof

@@ -3376,3 +3376,11 @@ theorem add_undef_sound : add_undef_soundStatement := by
   cases h <;> simp [add_undef, ntop] <;> constructor <;> assumption
 
 end CompCert4Lean.Backend.ValueDomain
+
+namespace CompCert4Lean.Backend.ValueDomain
+
+theorem add_undef_undef : add_undef_undefStatement := by
+  intro bc x
+  cases x <;> simp [add_undef, ntop] <;> constructor
+
+end CompCert4Lean.Backend.ValueDomain

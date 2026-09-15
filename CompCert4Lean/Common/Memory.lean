@@ -3179,3 +3179,78 @@ theorem loadbytes_store_other : loadbytes_store_otherStatement := by
 
 end Mem
 end CompCert4Lean.Common.Memory
+
+namespace CompCert4Lean.Common.Memory
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Lib.Maps
+namespace Mem
+
+theorem setN_in : setN_inStatement := by
+  intro vl
+  induction vl with
+  | nil =>
+      intro p q c h
+      have hfalse : False := by
+        have hlo := h.1
+        have hlt := h.2
+        change intOfZ p ≤ intOfZ q at hlo
+        change intOfZ q < intOfZ (zAdd p (zOfNat (List.length ([] : List memval)))) at hlt
+        rw [show List.length ([] : List memval) = 0 by rfl]
+          at hlt
+        rw [intOfZ_zadd_mem, intOfZ_zofnat_mem] at hlt
+        have hzero : Int.ofNat 0 = 0 := by rfl
+        rw [hzero] at hlt
+        omega
+      exact hfalse.elim
+  | cons v rest ih =>
+      intro p q c h
+      by_cases hpq : q = p
+      · subst q
+        have hhead :
+            ZMap.get p (setN rest (zAdd p z1) (ZMap.set p v c)) =
+              ZMap.get p (ZMap.set p v c) := by
+          apply setN_other
+          intro r hr
+          intro hrp
+          subst r
+          have hrlo := hr.1
+          change intOfZ (zAdd p z1) ≤ intOfZ p at hrlo
+          rw [intOfZ_add_one] at hrlo
+          omega
+        have hset : ZMap.get p (ZMap.set p v c) = v := by
+          change PMap.get (ZIndexed.index p)
+            (PMap.set (ZIndexed.index p) v c) = v
+          exact pmap_get_set_same_memproof _ _ _
+        change ZMap.get p (setN rest (zAdd p z1) (ZMap.set p v c)) ∈ v :: rest
+        rw [hhead, hset]
+        exact List.mem_cons_self
+      · right
+        apply ih (p := zAdd p z1) (q := q) (c := ZMap.set p v c)
+        constructor
+        · have hlo := h.1
+          have hne : intOfZ q ≠ intOfZ p := by
+            intro heq
+            apply hpq
+            exact intOfZ_injective heq
+          change intOfZ (zAdd p z1) ≤ intOfZ q
+          change intOfZ p ≤ intOfZ q at hlo
+          rw [intOfZ_add_one]
+          omega
+        · have hhi := h.2
+          change intOfZ q <
+            intOfZ (zAdd p (zOfNat (List.length (v :: rest)))) at hhi
+          change intOfZ q <
+            intOfZ (zAdd (zAdd p z1) (zOfNat rest.length))
+          have hnat : Int.ofNat (rest.length + 1) = Int.ofNat rest.length + 1 := by
+            simpa using (Int.ofNat_add_ofNat rest.length 1).symm
+          rw [show (v :: rest).length = rest.length + 1 by rfl]
+            at hhi
+          rw [intOfZ_zadd_mem, intOfZ_zofnat_mem, hnat] at hhi
+          rw [intOfZ_zadd_mem, intOfZ_zadd_mem, intOfZ_zofnat_mem]
+          have hz1 : intOfZ z1 = (1 : Int) := by rfl
+          rw [hz1]
+          omega
+
+end Mem
+end CompCert4Lean.Common.Memory

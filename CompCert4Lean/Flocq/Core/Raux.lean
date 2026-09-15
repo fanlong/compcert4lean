@@ -3138,3 +3138,244 @@ theorem Zaway_ceil (ctx : ExactRealContext) :
   simp [hb]
 
 end CompCert4Lean.Flocq.Core.Raux
+
+namespace CompCert4Lean.Flocq.Core.Raux
+
+theorem Zaway_floor (ctx : ExactRealContext) :
+    Zaway_floorStatement ctx := by
+  intro x hx
+  unfold Exact.Zaway
+  cases h : Exact.Rlt_bool ctx x (Exact.R0 ctx) with
+  | true => simp [h]
+  | false =>
+      have hspec := Rlt_bool_spec ctx x (Exact.R0 ctx)
+      rw [h] at hspec
+      cases hspec with
+      | Rlt_bool_false_ hzero_le =>
+          have hzero : Exact.IZR ctx Z0 = Exact.R0 ctx :=
+            ctx.certificate.sourceLaws.ofZ_zero
+          have hx0 : x = Exact.IZR ctx Z0 := by
+            apply ctx.certificate.orderedField.le_antisymm
+            · rw [hzero]
+              exact hx
+            · rw [hzero]
+              exact hzero_le
+          rw [hx0, Zfloor_IZR ctx Z0, Zceil_IZR ctx Z0]
+          simp
+
+theorem Zaway_opp (ctx : ExactRealContext) :
+    Zaway_oppStatement ctx := by
+  intro x
+  cases h : Exact.Rlt_bool ctx x (Exact.R0 ctx) with
+  | true =>
+      have hspec := Rlt_bool_spec ctx x (Exact.R0 ctx)
+      rw [h] at hspec
+      cases hspec with
+      | Rlt_bool_true_ hx =>
+          have hxle : ctx.spec.le x ctx.spec.zero :=
+            (ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp hx |>.1
+          have hnonneg : ctx.spec.le ctx.spec.zero (ctx.spec.neg x) := by
+            have hneg := pg_neg_le_contravar ctx hxle
+            rw [show ctx.spec.neg ctx.spec.zero = ctx.spec.zero by
+              calc
+                ctx.spec.neg ctx.spec.zero =
+                    ctx.spec.add (ctx.spec.neg ctx.spec.zero) ctx.spec.zero :=
+                  (ctx.certificate.orderedField.add_zero _).symm
+                _ = ctx.spec.zero :=
+                  ctx.certificate.orderedField.neg_add_cancel _] at hneg
+            exact hneg
+          rw [Zaway_ceil ctx (Exact.Ropp ctx x) hnonneg]
+          change Zopp (Exact.Zfloor ctx (Exact.Ropp ctx (Exact.Ropp ctx x))) =
+            Zopp (Exact.Zaway ctx x)
+          rw [show Exact.Ropp ctx (Exact.Ropp ctx x) = x by
+            exact pg_neg_neg ctx x]
+          unfold Exact.Zaway
+          simp [h]
+  | false =>
+      have hspec := Rlt_bool_spec ctx x (Exact.R0 ctx)
+      rw [h] at hspec
+      cases hspec with
+      | Rlt_bool_false_ hx =>
+          have hnonpos : ctx.spec.le (ctx.spec.neg x) ctx.spec.zero := by
+            have hneg := pg_neg_le_contravar ctx hx
+            change ctx.spec.le (ctx.spec.neg x)
+              (ctx.spec.neg ctx.spec.zero) at hneg
+            rw [show ctx.spec.neg ctx.spec.zero = ctx.spec.zero by
+              calc
+                ctx.spec.neg ctx.spec.zero =
+                    ctx.spec.add (ctx.spec.neg ctx.spec.zero) ctx.spec.zero :=
+                  (ctx.certificate.orderedField.add_zero _).symm
+                _ = ctx.spec.zero :=
+                  ctx.certificate.orderedField.neg_add_cancel _] at hneg
+            exact hneg
+          rw [Zaway_floor ctx (Exact.Ropp ctx x) hnonpos]
+          unfold Exact.Zaway
+          simp [h]
+          unfold Exact.Zceil
+          rw [pg_zopp_zopp]
+
+end CompCert4Lean.Flocq.Core.Raux
+
+namespace CompCert4Lean.Flocq.Core.Raux
+
+private theorem pg_middle_half_add_half (ctx : ExactRealContext) :
+    ctx.spec.add (Exact.Rhalf ctx) (Exact.Rhalf ctx) = ctx.spec.one := by
+  have hone_pos := exact_zero_lt_one_aux ctx
+  have hone_lt_two := ctx.certificate.orderedField.add_lt_compat_l ctx.spec.one
+    ctx.spec.zero ctx.spec.one hone_pos
+  rw [ctx.certificate.orderedField.add_zero] at hone_lt_two
+  have htwo_pos := ctx.certificate.orderedField.lt_trans ctx.spec.zero ctx.spec.one
+    (ctx.spec.add ctx.spec.one ctx.spec.one) hone_pos hone_lt_two
+  have htwo_ne : ctx.spec.add ctx.spec.one ctx.spec.one ≠ ctx.spec.zero := by
+    intro heq
+    rw [heq] at htwo_pos
+    exact ctx.certificate.orderedField.lt_irrefl ctx.spec.zero htwo_pos
+  change ctx.spec.add
+    (ctx.spec.div ctx.spec.one (ctx.spec.add ctx.spec.one ctx.spec.one))
+    (ctx.spec.div ctx.spec.one (ctx.spec.add ctx.spec.one ctx.spec.one)) =
+      ctx.spec.one
+  rw [ctx.certificate.orderedField.div_eq_mul_inv,
+    ctx.certificate.orderedField.one_mul]
+  calc
+    ctx.spec.add
+        (ctx.spec.inv (ctx.spec.add ctx.spec.one ctx.spec.one))
+        (ctx.spec.inv (ctx.spec.add ctx.spec.one ctx.spec.one)) =
+      ctx.spec.add
+        (ctx.spec.mul (ctx.spec.inv (ctx.spec.add ctx.spec.one ctx.spec.one))
+          ctx.spec.one)
+        (ctx.spec.mul (ctx.spec.inv (ctx.spec.add ctx.spec.one ctx.spec.one))
+          ctx.spec.one) := by
+            rw [ctx.certificate.orderedField.mul_one]
+    _ = ctx.spec.mul
+        (ctx.spec.inv (ctx.spec.add ctx.spec.one ctx.spec.one))
+        (ctx.spec.add ctx.spec.one ctx.spec.one) :=
+      (ctx.certificate.orderedField.left_distrib
+        (ctx.spec.inv (ctx.spec.add ctx.spec.one ctx.spec.one))
+        ctx.spec.one ctx.spec.one).symm
+    _ = ctx.spec.one :=
+      ctx.certificate.orderedField.inv_mul_cancel _ htwo_ne
+
+private theorem pg_middle_complement_sum (ctx : ExactRealContext)
+    (x f : ctx.spec.carrier) :
+    ctx.spec.add (ctx.spec.add x (ctx.spec.neg f))
+        (ctx.spec.add (ctx.spec.add f ctx.spec.one) (ctx.spec.neg x)) =
+      ctx.spec.one := by
+  calc
+    ctx.spec.add (ctx.spec.add x (ctx.spec.neg f))
+        (ctx.spec.add (ctx.spec.add f ctx.spec.one) (ctx.spec.neg x)) =
+      ctx.spec.add x
+        (ctx.spec.add (ctx.spec.neg f)
+          (ctx.spec.add (ctx.spec.add f ctx.spec.one) (ctx.spec.neg x))) :=
+      ctx.certificate.orderedField.add_assoc _ _ _
+    _ = ctx.spec.add x
+        (ctx.spec.add
+          (ctx.spec.add (ctx.spec.neg f) (ctx.spec.add f ctx.spec.one))
+          (ctx.spec.neg x)) := by
+      apply congrArg (fun t => ctx.spec.add x t)
+      exact (ctx.certificate.orderedField.add_assoc
+        (ctx.spec.neg f) (ctx.spec.add f ctx.spec.one) (ctx.spec.neg x)).symm
+    _ = ctx.spec.add x
+        (ctx.spec.add
+          (ctx.spec.add (ctx.spec.add (ctx.spec.neg f) f) ctx.spec.one)
+          (ctx.spec.neg x)) := by
+      apply congrArg (fun t => ctx.spec.add x
+        (ctx.spec.add t (ctx.spec.neg x)))
+      exact (ctx.certificate.orderedField.add_assoc
+        (ctx.spec.neg f) f ctx.spec.one).symm
+    _ = ctx.spec.add x
+        (ctx.spec.add ctx.spec.one (ctx.spec.neg x)) := by
+      rw [ctx.certificate.orderedField.neg_add_cancel,
+        ctx.certificate.orderedField.zero_add]
+    _ = ctx.spec.add (ctx.spec.add x ctx.spec.one) (ctx.spec.neg x) := by
+      rw [ctx.certificate.orderedField.add_assoc]
+    _ = ctx.spec.add (ctx.spec.add ctx.spec.one x) (ctx.spec.neg x) := by
+      rw [ctx.certificate.orderedField.add_comm x ctx.spec.one]
+    _ = ctx.spec.add ctx.spec.one (ctx.spec.add x (ctx.spec.neg x)) :=
+      ctx.certificate.orderedField.add_assoc _ _ _
+    _ = ctx.spec.add ctx.spec.one ctx.spec.zero := by
+      rw [ctx.certificate.orderedField.add_comm x (ctx.spec.neg x),
+        ctx.certificate.orderedField.neg_add_cancel]
+    _ = ctx.spec.one := ctx.certificate.orderedField.add_zero _
+
+private theorem pg_Rcompare_middle_of_complement (ctx : ExactRealContext)
+    (a b : ctx.spec.carrier)
+    (hsum : ctx.spec.add a b = ctx.spec.one) :
+    Exact.Rcompare ctx a (Exact.Rhalf ctx) = Exact.Rcompare ctx a b := by
+  have hhalf := pg_middle_half_add_half ctx
+  rcases ctx.certificate.total_order a (Exact.Rhalf ctx) with h | hgt
+  · rcases h with hlt | heq
+    ·
+      have h1 := ctx.certificate.orderedField.add_lt_compat_l a a
+        (Exact.Rhalf ctx) hlt
+      have h2 := ctx.certificate.orderedField.add_lt_compat_l
+        (Exact.Rhalf ctx) a (Exact.Rhalf ctx) hlt
+      rw [ctx.certificate.orderedField.add_comm (Exact.Rhalf ctx) a] at h2
+      have hab_add := ctx.certificate.orderedField.lt_trans _ _ _ h1 h2
+      rw [hhalf, ← hsum] at hab_add
+      have hab :=
+        CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.Rplus_lt_reg_l
+          ctx a a b hab_add
+      rw [Rcompare_Lt ctx a (Exact.Rhalf ctx) hlt,
+        Rcompare_Lt ctx a b hab]
+    ·
+      have haa : ctx.spec.add a a = ctx.spec.one := by
+        rw [heq]
+        exact hhalf
+      have hab :=
+        CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.Rplus_eq_reg_l
+          ctx a a b (haa.trans hsum.symm)
+      rw [Rcompare_Eq ctx a (Exact.Rhalf ctx) heq,
+        Rcompare_Eq ctx a b hab]
+  ·
+      have h1 := ctx.certificate.orderedField.add_lt_compat_l
+        (Exact.Rhalf ctx) (Exact.Rhalf ctx) a hgt
+      have h2 := ctx.certificate.orderedField.add_lt_compat_l a
+        (Exact.Rhalf ctx) a hgt
+      rw [ctx.certificate.orderedField.add_comm a (Exact.Rhalf ctx)] at h2
+      have hba_add := ctx.certificate.orderedField.lt_trans _ _ _ h1 h2
+      rw [hhalf, ← hsum] at hba_add
+      have hba :=
+        CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.Rplus_lt_reg_l
+          ctx a b a hba_add
+      rw [Rcompare_Gt ctx a (Exact.Rhalf ctx) hgt,
+        Rcompare_Gt ctx a b hba]
+
+theorem Rcompare_floor_ceil_middle (ctx : ExactRealContext) :
+    Rcompare_floor_ceil_middleStatement ctx := by
+  intro x hx
+  have hceil := Zceil_floor_neq ctx x hx
+  have hsum :
+      ctx.spec.add
+        (ctx.spec.add x (ctx.spec.neg (ctx.spec.ofZ (Exact.Zfloor ctx x))))
+        (ctx.spec.add (ctx.spec.ofZ (Exact.Zceil ctx x)) (ctx.spec.neg x)) =
+      ctx.spec.one := by
+    rw [hceil, ctx.certificate.sourceLaws.ofZ_add,
+      ctx.certificate.sourceLaws.ofZ_one]
+    exact pg_middle_complement_sum ctx x (ctx.spec.ofZ (Exact.Zfloor ctx x))
+  exact pg_Rcompare_middle_of_complement ctx
+    (Exact.Rminus ctx x (Exact.IZR ctx (Exact.Zfloor ctx x)))
+    (Exact.Rminus ctx (Exact.IZR ctx (Exact.Zceil ctx x)) x) hsum
+
+theorem Rcompare_ceil_floor_middle (ctx : ExactRealContext) :
+    Rcompare_ceil_floor_middleStatement ctx := by
+  intro x hx
+  have hceil := Zceil_floor_neq ctx x hx
+  have hsum :
+      ctx.spec.add
+        (ctx.spec.add x (ctx.spec.neg (ctx.spec.ofZ (Exact.Zfloor ctx x))))
+        (ctx.spec.add (ctx.spec.ofZ (Exact.Zceil ctx x)) (ctx.spec.neg x)) =
+      ctx.spec.one := by
+    rw [hceil, ctx.certificate.sourceLaws.ofZ_add,
+      ctx.certificate.sourceLaws.ofZ_one]
+    exact pg_middle_complement_sum ctx x (ctx.spec.ofZ (Exact.Zfloor ctx x))
+  have hsum' :
+      ctx.spec.add
+        (ctx.spec.add (ctx.spec.ofZ (Exact.Zceil ctx x)) (ctx.spec.neg x))
+        (ctx.spec.add x (ctx.spec.neg (ctx.spec.ofZ (Exact.Zfloor ctx x)))) =
+      ctx.spec.one :=
+    (ctx.certificate.orderedField.add_comm _ _).trans hsum
+  exact pg_Rcompare_middle_of_complement ctx
+    (Exact.Rminus ctx (Exact.IZR ctx (Exact.Zceil ctx x)) x)
+    (Exact.Rminus ctx x (Exact.IZR ctx (Exact.Zfloor ctx x))) hsum'
+
+end CompCert4Lean.Flocq.Core.Raux

@@ -2850,3 +2850,49 @@ theorem match_stacks_inside_extcall : match_stacks_inside_extcallStatement := by
       RES RET BELOW SBELOW
 
 end CompCert4Lean.Backend.Inliningproof
+
+namespace CompCert4Lean.Backend.Inliningproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Lib.Coqlib
+
+theorem align_unchanged : align_unchangedStatement := by
+  intro n amount hpos hdiv
+  rcases hdiv with ⟨k, hk⟩
+  change 0 < intOfZ amount at hpos
+  rw [hk]
+  unfold CompCert4Lean.Lib.Coqlib.align
+  have hq :
+      ZArith.BinInt.Z.div
+          (ZArith.BinInt.Z.sub
+            (ZArith.BinInt.Z.add
+              (ZArith.BinInt.Z.mul amount k) amount)
+            (Zpos xH)) amount = k := by
+    apply CompCert4Lean.Lib.Coqlib.Zdiv_unique
+        (ZArith.BinInt.Z.sub
+          (ZArith.BinInt.Z.add
+            (ZArith.BinInt.Z.mul amount k) amount)
+          (Zpos xH)) amount k
+        (ZArith.BinInt.Z.sub amount (Zpos xH))
+    · apply intOfZ_injective
+      simp only [ZArith.BinInt.Z.sub, ZArith.BinInt.Z.add,
+        ZArith.BinInt.Z.mul, intOfZ_zOfInt]
+      change intOfZ amount * intOfZ k + intOfZ amount - 1 =
+        intOfZ k * intOfZ amount + (intOfZ amount - 1)
+      rw [Int.mul_comm (intOfZ amount) (intOfZ k)]
+      omega
+    · constructor
+      · change 0 ≤ intOfZ (ZArith.BinInt.Z.sub amount (Zpos xH))
+        simp only [ZArith.BinInt.Z.sub, intOfZ_zOfInt]
+        change 0 ≤ intOfZ amount - 1
+        omega
+      · change intOfZ (ZArith.BinInt.Z.sub amount (Zpos xH)) < intOfZ amount
+        simp only [ZArith.BinInt.Z.sub, intOfZ_zOfInt]
+        change intOfZ amount - 1 < intOfZ amount
+        omega
+  rw [hq]
+  apply intOfZ_injective
+  simp only [ZArith.BinInt.Z.mul, intOfZ_zOfInt]
+  exact Int.mul_comm _ _
+
+end CompCert4Lean.Backend.Inliningproof

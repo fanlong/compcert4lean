@@ -3301,3 +3301,20 @@ theorem INR_lt :
 end RIneq
 end Rocq.Coq.Reals
 end CompCert4Lean.Foundation.FlocqReal
+
+namespace CompCert4Lean.Foundation.FlocqReal
+namespace Rocq.Coq.Reals
+namespace RIneq
+
+theorem le_INR :
+    ∀ (ctx : ExactRealContext), le_INRStatement ctx := by
+  intro ctx n m hnm
+  rcases Nat.lt_or_eq_of_le hnm with hlt | heq
+  · have hlt' := lt_INR ctx n m hlt
+    exact (ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp hlt' |>.1
+  · subst m
+    exact ctx.certificate.orderedField.le_refl _
+
+end RIneq
+end Rocq.Coq.Reals
+end CompCert4Lean.Foundation.FlocqReal

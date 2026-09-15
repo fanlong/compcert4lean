@@ -1928,3 +1928,172 @@ theorem addl_commut : addl_commutStatement := by
 
 end Val
 end CompCert4Lean.Common.Values
+
+namespace CompCert4Lean.Common.Values
+namespace Val
+
+open Lean Elab Tactic Meta
+
+private theorem int64_add_assoc_local
+    (a b c : CompCert4Lean.Lib.Integers.Int64.int) :
+    CompCert4Lean.Lib.Integers.Int64.add
+        (CompCert4Lean.Lib.Integers.Int64.add a b) c =
+      CompCert4Lean.Lib.Integers.Int64.add a
+        (CompCert4Lean.Lib.Integers.Int64.add b c) := by
+  change CompCert4Lean.Lib.Integers.Ptrofs.add
+      (CompCert4Lean.Lib.Integers.Ptrofs.add a b) c =
+    CompCert4Lean.Lib.Integers.Ptrofs.add a
+      (CompCert4Lean.Lib.Integers.Ptrofs.add b c)
+  exact CompCert4Lean.Lib.Integers.Ptrofs.add_assoc_proof_api a b c
+
+private theorem int64_repr_unsigned_local
+    (x : CompCert4Lean.Lib.Integers.Int64.int) :
+    CompCert4Lean.Lib.Integers.Int64.repr
+        (CompCert4Lean.Lib.Integers.Int64.unsigned x) = x := by
+  apply CompCert4Lean.Lib.Integers.WordCore.ext
+  have hnonneg :
+      0 ≤ CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+        (CompCert4Lean.Lib.Integers.Int64.unsigned x) := by
+    have hx := x.intrange.1
+    change (-1 : Int) <
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+          (CompCert4Lean.Lib.Integers.Int64.unsigned x) at hx
+    omega
+  have hmax :
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+          (CompCert4Lean.Lib.Integers.Int64.unsigned x) ≤
+        (2 ^ 64 : Int) - 1 := by
+    have hx := x.intrange.2
+    change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+        (CompCert4Lean.Lib.Integers.Int64.unsigned x) <
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+        CompCert4Lean.Lib.Integers.Int64.modulus at hx
+    change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+        (CompCert4Lean.Lib.Integers.Int64.unsigned x) < (2 ^ 64 : Int) at hx
+    omega
+  have hrepr :
+      CompCert4Lean.Lib.Integers.WordCore.unsigned
+        (CompCert4Lean.Lib.Integers.Int64.repr
+          (CompCert4Lean.Lib.Integers.Int64.unsigned x)) =
+        CompCert4Lean.Lib.Integers.Int64.unsigned x := by
+    have hzi : CompCert4Lean.Lib.Integers.Int64.unsigned x =
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+            (CompCert4Lean.Lib.Integers.Int64.unsigned x)) :=
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt_intOfZ _).symm
+    rw [hzi]
+    change (CompCert4Lean.Lib.Integers.WordCore.repr 64
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+          (CompCert4Lean.Lib.Integers.Int64.unsigned x)))).intval =
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+          (CompCert4Lean.Lib.Integers.Int64.unsigned x))
+    let w := CompCert4Lean.Lib.Integers.WordCore.repr 64
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+          (CompCert4Lean.Lib.Integers.Int64.unsigned x)))
+    have hi : w.val =
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+          (CompCert4Lean.Lib.Integers.Int64.unsigned x) %
+          ((2 ^ 64 : Nat) : Int)).toNat := by
+      dsimp [w]
+      run_tac
+        let env ← getEnv
+        let some (n, _) := env.constants.toList.find?
+            (fun (n, _) => (toString n).endsWith "WordCore.val_repr")
+          | throwError "frozen WordCore.val_repr helper not found"
+        let stx := Lean.mkIdent n
+        let arg := Lean.mkIdent `x
+        evalTactic
+          (← `(tactic| exact $stx 64
+            (CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+              (CompCert4Lean.Lib.Integers.Int64.unsigned $arg))))
+    have hwi : w.intval =
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat w.val := by
+      run_tac
+        let env ← getEnv
+        let some (n, _) := env.constants.toList.find?
+            (fun (n, _) => (toString n).endsWith "WordCore.intval_eq_zOfNat_val")
+          | throwError "frozen WordCore.intval_eq_zOfNat_val helper not found"
+        let stx := Lean.mkIdent n
+        let arg := Lean.mkIdent `w
+        evalTactic (← `(tactic| exact $stx $arg))
+    change w.intval = _
+    rw [hwi, hi]
+    have hlt :
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+            (CompCert4Lean.Lib.Integers.Int64.unsigned x) <
+          ((2 ^ 64 : Nat) : Int) := by
+      omega
+    rw [Int.emod_eq_of_lt hnonneg hlt]
+    change CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt
+        (↑(Int.toNat
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+            (CompCert4Lean.Lib.Integers.Int64.unsigned x))) : Int) = _
+    rw [Int.toNat_of_nonneg hnonneg]
+  exact hrepr
+
+private theorem ptrofs_of_int64_add_local
+    (a b : CompCert4Lean.Lib.Integers.Int64.int) :
+    CompCert4Lean.Lib.Integers.Ptrofs.of_int64
+        (CompCert4Lean.Lib.Integers.Int64.add a b) =
+      CompCert4Lean.Lib.Integers.Ptrofs.add
+        (CompCert4Lean.Lib.Integers.Ptrofs.of_int64 a)
+        (CompCert4Lean.Lib.Integers.Ptrofs.of_int64 b) := by
+  have ha : CompCert4Lean.Lib.Integers.Ptrofs.of_int64 a = a := by
+    unfold CompCert4Lean.Lib.Integers.Ptrofs.of_int64
+    change CompCert4Lean.Lib.Integers.Int64.repr
+        (CompCert4Lean.Lib.Integers.Int64.unsigned a) = a
+    exact int64_repr_unsigned_local a
+  have hb : CompCert4Lean.Lib.Integers.Ptrofs.of_int64 b = b := by
+    unfold CompCert4Lean.Lib.Integers.Ptrofs.of_int64
+    change CompCert4Lean.Lib.Integers.Int64.repr
+        (CompCert4Lean.Lib.Integers.Int64.unsigned b) = b
+    exact int64_repr_unsigned_local b
+  have hab : CompCert4Lean.Lib.Integers.Ptrofs.of_int64
+        (CompCert4Lean.Lib.Integers.Int64.add a b) =
+      CompCert4Lean.Lib.Integers.Int64.add a b := by
+    unfold CompCert4Lean.Lib.Integers.Ptrofs.of_int64
+    change CompCert4Lean.Lib.Integers.Int64.repr
+        (CompCert4Lean.Lib.Integers.Int64.unsigned
+          (CompCert4Lean.Lib.Integers.Int64.add a b)) = _
+    exact int64_repr_unsigned_local _
+  rw [ha, hb, hab]
+  rfl
+
+private theorem ptrofs_permut_local
+    (a b c : CompCert4Lean.Lib.Integers.Ptrofs.int) :
+    CompCert4Lean.Lib.Integers.Ptrofs.add a
+        (CompCert4Lean.Lib.Integers.Ptrofs.add b c) =
+      CompCert4Lean.Lib.Integers.Ptrofs.add b
+        (CompCert4Lean.Lib.Integers.Ptrofs.add a c) := by
+  calc
+    CompCert4Lean.Lib.Integers.Ptrofs.add a
+          (CompCert4Lean.Lib.Integers.Ptrofs.add b c) =
+        CompCert4Lean.Lib.Integers.Ptrofs.add
+          (CompCert4Lean.Lib.Integers.Ptrofs.add a b) c :=
+      (CompCert4Lean.Lib.Integers.Ptrofs.add_assoc_proof_api _ _ _).symm
+    _ = CompCert4Lean.Lib.Integers.Ptrofs.add
+          (CompCert4Lean.Lib.Integers.Ptrofs.add b a) c := by
+      exact congrArg
+        (fun t => CompCert4Lean.Lib.Integers.Ptrofs.add t c)
+        (CompCert4Lean.Lib.Integers.Ptrofs.add_commut_proof_api a b)
+    _ = CompCert4Lean.Lib.Integers.Ptrofs.add b
+          (CompCert4Lean.Lib.Integers.Ptrofs.add a c) :=
+      CompCert4Lean.Lib.Integers.Ptrofs.add_assoc_proof_api _ _ _
+
+theorem addl_assoc : addl_assocStatement := by
+  intro x y z
+  cases x <;> cases y <;> cases z <;>
+    simp [addl, Archi.ptr64, CompCert4Lean.X86_64.Archi.ptr64]
+  all_goals try exact int64_add_assoc_local _ _ _
+  all_goals try rw [ptrofs_of_int64_add_local]
+  all_goals
+    simp [CompCert4Lean.Lib.Integers.Ptrofs.add_assoc_proof_api,
+      CompCert4Lean.Lib.Integers.Ptrofs.add_commut_proof_api]
+  all_goals
+    exact ptrofs_permut_local _ _ _
+
+end Val
+end CompCert4Lean.Common.Values

@@ -3534,3 +3534,88 @@ theorem match_alloc_variables : match_alloc_variablesStatement := by
               exact PTree.gso (A := block × type) (tb1, ty) te hid
 
 end CompCert4Lean.Cfrontend.SimplLocalsproof
+
+namespace CompCert4Lean.Cfrontend.SimplLocalsproof
+
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Cfrontend.Clight
+open CompCert4Lean.Cfrontend.Ctypes
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+
+private theorem alloc_variables_load_alloc_local
+    (m : mem) (lo hi : Z) (m' : mem) (fresh : block)
+    (halloc : Mem.alloc m lo hi = (m', fresh))
+    (chunk : memory_chunk) (b : block) (ofs : Z) (v : val)
+    (hload : Mem.load chunk m b ofs = some v) :
+    Mem.load chunk m' b ofs = some v := by
+  have hvacc := Mem.load_valid_access m chunk b ofs v hload
+  have hperm : Mem.perm m b ofs Cur Readable := by
+    apply hvacc.1 ofs
+    constructor
+    · change intOfZ ofs ≤ intOfZ ofs
+      omega
+    · change intOfZ ofs < intOfZ (ZArith.BinInt.Z.add ofs (size_chunk chunk))
+      have hsize := CompCert4Lean.Common.Memdata.size_chunk_pos chunk
+      change 0 < intOfZ (size_chunk chunk) at hsize
+      unfold ZArith.BinInt.Z.add
+      rw [intOfZ_zOfInt]
+      omega
+  have hvalid := Mem.perm_valid_block m b ofs Cur Readable hperm
+  have hfresh : fresh = m.nextblock := by
+    unfold Mem.alloc at halloc
+    exact (congrArg Prod.snd halloc).symm
+  have hne : b ≠ fresh := by
+    rw [hfresh]
+    exact Plt_ne b m.nextblock hvalid
+  have haccess : PMap.get b m'.mem_access = PMap.get b m.mem_access := by
+    unfold Mem.alloc at halloc
+    have hfirst := congrArg Prod.fst halloc
+    have heq := congrArg (fun x : mem => x.mem_access) hfirst
+    rw [← heq]
+    apply PMap.gso
+    rwa [hfresh] at hne
+  have hcontents : PMap.get b m'.mem_contents = PMap.get b m.mem_contents := by
+    unfold Mem.alloc at halloc
+    have hfirst := congrArg Prod.fst halloc
+    have heq := congrArg (fun x : mem => x.mem_contents) hfirst
+    rw [← heq]
+    apply PMap.gso
+    rwa [hfresh] at hne
+  have hvacc' : Mem.valid_access m' chunk b ofs Readable := by
+    constructor
+    · intro q hq
+      unfold Mem.perm
+      rw [haccess]
+      exact hvacc.1 q hq
+    · exact hvacc.2
+  rcases Mem.valid_access_load m' chunk b ofs hvacc' with ⟨v', hload'⟩
+  have hres' := Mem.load_result chunk m' b ofs v' hload'
+  have hres := Mem.load_result chunk m b ofs v hload
+  have hv : v' = v := by
+    calc
+      v' = decode_val chunk
+          (Mem.getN (size_chunk_nat chunk) ofs (PMap.get b m'.mem_contents)) := hres'
+      _ = decode_val chunk
+          (Mem.getN (size_chunk_nat chunk) ofs (PMap.get b m.mem_contents)) := by rw [hcontents]
+      _ = v := hres.symm
+  simpa [hv] using hload'
+
+theorem alloc_variables_load : alloc_variables_loadStatement := by
+  intro prog e m vars e' m' halloc
+  induction halloc with
+  | nil =>
+      intro chunk b ofs v hload
+      exact hload
+  | cons e m id ty vars m1 b1 m2 e2 halloc hrest ih =>
+      intro chunk b ofs v hload
+      apply ih
+      exact alloc_variables_load_alloc_local m (.Z0 : Z)
+        (sizeof (globalenv prog).genv_cenv ty) m1 b1 halloc chunk b ofs v hload
+
+end CompCert4Lean.Cfrontend.SimplLocalsproof

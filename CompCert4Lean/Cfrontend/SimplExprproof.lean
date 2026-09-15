@@ -2425,3 +2425,18 @@ theorem step_tr_rvalof :
         exact hx htmp
 
 end CompCert4Lean.Cfrontend.SimplExprproof
+
+namespace CompCert4Lean.Cfrontend.SimplExprproof
+
+theorem match_cont_is_call_cont :
+    ∀ [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+      [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)],
+      match_cont_is_call_contStatement := by
+  intro binary64_certificate binary32_certificate
+  intro p tp ce k tk hmatch hcall ce'
+  cases hmatch <;> simp [Csem.is_call_cont] at hcall ⊢ <;>
+    try contradiction
+  all_goals
+    constructor <;> assumption
+
+end CompCert4Lean.Cfrontend.SimplExprproof

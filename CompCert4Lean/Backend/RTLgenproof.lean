@@ -2631,3 +2631,45 @@ theorem transl_eval_builtin_arg : transl_eval_builtin_argStatement := by
                   · simpa [convert_builtin_arg, hvl1, hvl2, hrl1, hrl2] using hrem2'
 
 end CompCert4Lean.Backend.RTLgenproof
+
+namespace CompCert4Lean.Backend.RTLgenproof
+
+open CompCert4Lean.Backend.RTLgen
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Coqlib
+
+theorem transl_eval_builtin_args : transl_eval_builtin_argsStatement := by
+  intro prog sp m rs al vl1 rl vl hless hev
+  induction al generalizing vl1 rl vl with
+  | nil =>
+      cases hev
+      exact ⟨[], list_forall2_nil _, Val.lessdef_list_nil⟩
+  | cons a al ih =>
+      cases hvl : convert_builtin_arg a vl1 with
+      | mk a1 vl2 =>
+        have hev' : eval_builtin_args (Genv.to_senv (Genv.globalenv prog))
+            (fun v => v) sp m (a1 :: convert_builtin_args al vl2) vl := by
+          simpa [convert_builtin_args, hvl] using hev
+        cases hev' with
+        | cons _ _ hevHead hevTail =>
+            have harg := transl_eval_builtin_arg prog sp m rs a vl1 rl
+                _ hless (by simpa [hvl] using hevHead)
+            obtain ⟨v1', harg', hless', hrem'⟩ := harg
+            cases hrl : convert_builtin_arg a rl with
+            | mk a1' rl2 =>
+              have harg'' : eval_builtin_arg (Genv.to_senv (Genv.globalenv prog))
+                  (fun r => Regmap.get r rs) sp m a1' v1' := by
+                simpa [hrl] using harg'
+              have hrem'' : Val.lessdef_list vl2
+                  (rl2.map (fun r => Regmap.get r rs)) := by
+                simpa [hvl, hrl] using hrem'
+              obtain ⟨vl', htail', hvl'⟩ := ih vl2 rl2 _ hrem'' hevTail
+              refine ⟨v1' :: vl', ?_, ?_⟩
+              · simpa [eval_builtin_args, convert_builtin_args, hrl] using
+                  (list_forall2.cons a1' _ harg'' htail')
+              · exact Val.lessdef_list_cons _ _ _ _ hless' hvl'
+
+end CompCert4Lean.Backend.RTLgenproof

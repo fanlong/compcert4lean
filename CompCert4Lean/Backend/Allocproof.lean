@@ -5343,3 +5343,199 @@ theorem function_return_satisf : function_return_satisfStatement := by
             exact hsat q (by simpa [qlo, qhi] using hqrem)
 
 end CompCert4Lean.Backend.Allocproof
+
+namespace CompCert4Lean.Backend.Allocproof
+
+open CompCert4Lean.Backend.Allocation
+open CompCert4Lean.Backend.Conventions
+open CompCert4Lean.Backend.Locations
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Backend.LTL
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+
+theorem find_function_tailcall : find_function_tailcallStatement := by
+  intro cfg tge ros ls1 ls2 hcompat
+  unfold ros_compatible_tailcall at hcompat
+  cases ros with
+  | inl r =>
+      have hsave : CompCert4Lean.X86.Conventions1.is_callee_save cfg r = false := by
+        simpa using hcompat
+      simp [LTL.find_function, return_regs, hsave]
+  | inr id =>
+      rfl
+
+private theorem ap_call_regs_parameter_loc
+    (cfg : CompCert4Lean.Config.CompilerConfig) (sg : signature)
+    (ls : LTL.locset) (l : loc)
+    (hl : l ∈ regs_of_rpairs
+      (CompCert4Lean.X86.Conventions1.loc_arguments cfg sg)) :
+    LTL.call_regs ls (parameter_of_argument l) = ls l := by
+  have hacc := loc_arguments_acceptable_2 cfg sg l hl
+  cases l with
+  | R r => rfl
+  | S sl ofs ty =>
+      cases sl with
+      | Local =>
+          simp [CompCert4Lean.X86.Conventions1.loc_argument_acceptable] at hacc
+      | Incoming =>
+          simp [CompCert4Lean.X86.Conventions1.loc_argument_acceptable] at hacc
+      | Outgoing => rfl
+
+theorem call_regs_param_values : call_regs_param_valuesStatement := by
+  intro cfg sg ls
+  unfold loc_parameters
+  simp only [List.map_map]
+  apply CompCert4Lean.Lib.Coqlib.list_map_exten
+  intro p hp
+  cases p with
+  | One l =>
+      change ls l = LTL.call_regs ls (parameter_of_argument l)
+      apply (ap_call_regs_parameter_loc cfg sg ls l _).symm
+      exact in_regs_of_rpairs loc l (One l) (by simp [regs_of_rpair])
+        (CompCert4Lean.X86.Conventions1.loc_arguments cfg sg) hp
+  | Twolong hi lo =>
+      simp only [Function.comp_apply, map_rpair, Locmap.getpair]
+      rw [ap_call_regs_parameter_loc cfg sg ls hi,
+        ap_call_regs_parameter_loc cfg sg ls lo]
+      · exact in_regs_of_rpairs loc lo (Twolong hi lo)
+          (by simp [regs_of_rpair])
+          (CompCert4Lean.X86.Conventions1.loc_arguments cfg sg) hp
+      · exact in_regs_of_rpairs loc hi (Twolong hi lo)
+          (by simp [regs_of_rpair])
+          (CompCert4Lean.X86.Conventions1.loc_arguments cfg sg) hp
+
+private theorem ap_return_regs_argument_loc
+    (cfg : CompCert4Lean.Config.CompilerConfig) (sg : signature)
+    (ls1 ls2 : LTL.locset)
+    (hpossible : tailcall_is_possible cfg sg = true)
+    (l : loc) (hl : l ∈ regs_of_rpairs
+      (CompCert4Lean.X86.Conventions1.loc_arguments cfg sg)) :
+    LTL.return_regs cfg ls1 ls2 l = ls2 l := by
+  have htail := tailcall_is_possible_correct cfg sg hpossible l hl
+  have hacc := loc_arguments_acceptable_2 cfg sg l hl
+  cases l with
+  | R r =>
+      change CompCert4Lean.X86.Conventions1.is_callee_save cfg r = false at hacc
+      change (if CompCert4Lean.X86.Conventions1.is_callee_save cfg r = true then
+          ls1 (R r) else ls2 (R r)) = ls2 (R r)
+      simp [hacc]
+  | S sl ofs ty =>
+      simp at htail
+
+theorem return_regs_arg_values : return_regs_arg_valuesStatement := by
+  intro cfg sg ls1 ls2 hpossible
+  apply CompCert4Lean.Lib.Coqlib.list_map_exten
+  intro p hp
+  cases p with
+  | One l =>
+      change ls2 l = LTL.return_regs cfg ls1 ls2 l
+      apply (ap_return_regs_argument_loc cfg sg ls1 ls2 hpossible l _).symm
+      exact in_regs_of_rpairs loc l (One l) (by simp [regs_of_rpair])
+        (CompCert4Lean.X86.Conventions1.loc_arguments cfg sg) hp
+  | Twolong hi lo =>
+      simp only [Locmap.getpair]
+      rw [ap_return_regs_argument_loc cfg sg ls1 ls2 hpossible hi,
+        ap_return_regs_argument_loc cfg sg ls1 ls2 hpossible lo]
+      · exact in_regs_of_rpairs loc lo (Twolong hi lo)
+          (by simp [regs_of_rpair])
+          (CompCert4Lean.X86.Conventions1.loc_arguments cfg sg) hp
+      · exact in_regs_of_rpairs loc hi (Twolong hi lo)
+          (by simp [regs_of_rpair])
+          (CompCert4Lean.X86.Conventions1.loc_arguments cfg sg) hp
+
+private theorem ap_rtl_gss (r : reg) (v : val) (rs : RTL.regset) :
+    Regmap.get r (Regmap.set r v rs) = v := by
+  change Regmap.t val at rs
+  exact Regmap.gss_proof val r v rs
+
+private theorem ap_rtl_gso (i j : reg) (v : val) (rs : RTL.regset)
+    (hij : i ≠ j) :
+    Regmap.get i (Regmap.set j v rs) = Regmap.get i rs := by
+  change Regmap.t val at rs
+  exact Regmap.gso_proof val i j v rs hij
+
+theorem compat_entry_satisf : compat_entry_satisfStatement := by
+  intro rl
+  induction rl with
+  | nil =>
+      intro ll e hcomp vl ls hvl
+      cases ll with
+      | nil =>
+          cases vl with
+          | nil =>
+              unfold satisf
+              intro q hq
+              change equation at q
+              rw [show Regmap.get q.ereg (RTL.init_regs [] []) = Vundef by
+                exact Regmap.gi_proof val q.ereg Vundef]
+              cases q.ekind <;> exact Val.lessdef_undef _
+          | cons v vs =>
+              cases hvl
+      | cons p ps =>
+          simp [compat_entry] at hcomp
+  | cons r rs ih =>
+      intro ll e hcomp vl ls hvl
+      cases ll with
+      | nil =>
+          simp [compat_entry] at hcomp
+      | cons p ps =>
+          cases p with
+          | One l =>
+              simp only [compat_entry, Bool.and_eq_true] at hcomp
+              rcases hcomp with ⟨hleft, htail⟩
+              cases vl with
+              | nil => cases hvl
+              | cons v vs =>
+                  cases hvl with
+                  | lessdef_list_cons _ _ _ _ hv hvs =>
+                      unfold satisf
+                      intro q hq
+                      change equation at q
+                      change Val.lessdef
+                        (sel_val q.ekind
+                          (Regmap.get q.ereg
+                            (Regmap.set r v (RTL.init_regs vs rs))))
+                        (ls q.eloc)
+                      by_cases heq : q.ereg = r
+                      · rw [heq, ap_rtl_gss]
+                        have hc := compat_left_sound r l e q hleft hq heq
+                        rcases hc with ⟨hk, hl⟩
+                        rw [hk, hl]
+                        exact hv
+                      · rw [ap_rtl_gso q.ereg r v (RTL.init_regs vs rs) heq]
+                        exact ih ps e htail vs ls hvs q hq
+          | Twolong hi lo =>
+              simp only [compat_entry, Bool.and_eq_true] at hcomp
+              rcases hcomp with ⟨hleft, htail⟩
+              cases vl with
+              | nil => cases hvl
+              | cons v vs =>
+                  cases hvl with
+                  | lessdef_list_cons _ _ _ _ hv hvs =>
+                      unfold satisf
+                      intro q hq
+                      change equation at q
+                      change Val.lessdef
+                        (sel_val q.ekind
+                          (Regmap.get q.ereg
+                            (Regmap.set r v (RTL.init_regs vs rs))))
+                        (ls q.eloc)
+                      by_cases heq : q.ereg = r
+                      · rw [heq, ap_rtl_gss]
+                        have hc := compat_left2_sound r hi lo e q hleft hq heq
+                        apply Or.elim hc
+                        · intro hcHigh
+                          rw [hcHigh.1, hcHigh.2]
+                          have hld := ap_lessdef_trans (ap_hiword_lessdef hv)
+                            (val_hiword_longofwords (ls hi) (ls lo))
+                          simpa [sel_val] using hld
+                        · intro hcLow
+                          rw [hcLow.1, hcLow.2]
+                          have hld := ap_lessdef_trans (ap_loword_lessdef hv)
+                            (val_loword_longofwords (ls hi) (ls lo))
+                          simpa [sel_val] using hld
+                      · rw [ap_rtl_gso q.ereg r v (RTL.init_regs vs rs) heq]
+                        exact ih ps e htail vs ls hvs q hq
+
+end CompCert4Lean.Backend.Allocproof

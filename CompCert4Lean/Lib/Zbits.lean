@@ -1655,3 +1655,21 @@ theorem Zshiftr_div_two_p : Zshiftr_div_two_pStatement := by
   unfold CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.shiftr
   simp only [if_pos hn]
   rfl
+
+theorem Zsize_pos' : Zsize_pos'Statement := by
+  intro x hx
+  cases x with
+  | Z0 =>
+      change (0 : Int) < 0 at hx
+      omega
+  | Zpos p =>
+      simp [zLt, Zsize, zPosSize,
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.lt,
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ,
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.PArith.BinPos.Pos.size,
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat_positive]
+  | Zneg p =>
+      change (0 : Int) < -Int.ofNat (posToNat p) at hx
+      have hp : (0 : Int) ≤ Int.ofNat (posToNat p) := Int.natCast_nonneg _
+      exfalso
+      omega

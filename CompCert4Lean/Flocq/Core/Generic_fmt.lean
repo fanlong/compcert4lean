@@ -1984,3 +1984,47 @@ theorem generic_format_bpow_inv' :
   exact (ctx.certificate.orderedField.lt_irrefl _ hpos).elim
 
 end CompCert4Lean.Flocq.Core.Generic_fmt
+
+namespace CompCert4Lean.Flocq.Core.Generic_fmt
+
+theorem generic_format_bpow_inv :
+    ∀ ctx magnitude, generic_format_bpow_invStatement ctx magnitude := by
+  intro ctx magnitude beta fexp hvalid e hformat
+  have hnext : Zle (fexp (Zadd e Zone)) e :=
+    generic_format_bpow_inv' ctx magnitude beta fexp e hformat
+  have hfk : Zlt (fexp (Zadd e Zone)) (Zadd e Zone) := by
+    change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+        (fexp (Zadd e Zone)) <
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (Zadd e Zone)
+    change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+        (fexp (Zadd e Zone)) ≤
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ e at hnext
+    simp only [Zadd,
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add,
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+    change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ e + 1 >
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+        (fexp (Zadd e Zone))
+    omega
+  have h_lk : Zle e (Zadd e Zone) := by
+    change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ e ≤
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (Zadd e Zone)
+    simp only [Zadd,
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add,
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+    change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ e ≤
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ e + 1
+    omega
+  have hlarge := valid_exp_large' fexp hvalid (Zadd e Zone) e hfk h_lk
+  change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (fexp e) <
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (Zadd e Zone) at hlarge
+  change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (fexp e) ≤
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ e
+  simp only [Zadd,
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add,
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt] at hlarge
+  change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (fexp e) <
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ e + 1 at hlarge
+  omega
+
+end CompCert4Lean.Flocq.Core.Generic_fmt

@@ -2310,3 +2310,112 @@ theorem eval_condition_lessdef : eval_condition_lessdefStatement := by
               cases cond <;> simp [eval_condition] at heval ⊢
 
 end CompCert4Lean.X86.Op
+
+namespace CompCert4Lean.X86.Op
+
+open Lean Elab Tactic Meta
+
+private theorem suffix_eval_addressing_lessdef_ptrofs_add_zero
+    (x : CompCert4Lean.Lib.Integers.Ptrofs.int) :
+    CompCert4Lean.Lib.Integers.Ptrofs.add x
+        CompCert4Lean.Lib.Integers.Ptrofs.zero = x := by
+  run_tac
+    let env ← getEnv
+    let some (n, _) := env.constants.toList.find?
+        (fun (n, _) => (toString n).endsWith "suffixPtrofsAddZero")
+      | throwError "frozen helper not found"
+    let stx := Lean.mkIdent n
+    let arg := Lean.mkIdent `x
+    evalTactic (← `(tactic| exact $stx $arg))
+
+private theorem suffix_eval_addressing_lessdef_to_inject
+    (v1 v2 : CompCert4Lean.Common.Values.val) :
+    CompCert4Lean.Common.Values.Val.lessdef v1 v2 →
+      CompCert4Lean.Common.Values.Val.inject
+        (fun b => some (b,
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.Z0)) v1 v2 := by
+  intro h
+  cases h with
+  | lessdef_refl =>
+      cases v1 with
+      | Vint n => exact CompCert4Lean.Common.Values.Val.inject.inject_int n
+      | Vlong n => exact CompCert4Lean.Common.Values.Val.inject.inject_long n
+      | Vfloat f => exact CompCert4Lean.Common.Values.Val.inject.inject_float f
+      | Vsingle f => exact CompCert4Lean.Common.Values.Val.inject.inject_single f
+      | Vptr b ofs =>
+          apply CompCert4Lean.Common.Values.Val.inject.inject_ptr b ofs b ofs
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.Z0
+          · rfl
+          · rw [show CompCert4Lean.Lib.Integers.Ptrofs.repr
+                CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.Z0 =
+              CompCert4Lean.Lib.Integers.Ptrofs.zero by rfl,
+              suffix_eval_addressing_lessdef_ptrofs_add_zero]
+      | Vundef =>
+          exact CompCert4Lean.Common.Values.Val.inject.val_inject_undef _
+  | lessdef_undef =>
+      exact CompCert4Lean.Common.Values.Val.inject.val_inject_undef _
+
+private theorem suffix_eval_addressing_lessdef_list_to_inject
+    (vl1 vl2 : List CompCert4Lean.Common.Values.val) :
+    CompCert4Lean.Common.Values.Val.lessdef_list vl1 vl2 →
+      CompCert4Lean.Common.Values.Val.inject_list
+        (fun b => some (b,
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.Z0)) vl1 vl2 := by
+  intro h
+  induction h with
+  | lessdef_list_nil =>
+      exact CompCert4Lean.Common.Values.Val.inject_list.inject_list_nil
+  | lessdef_list_cons v1 v2 vl1 vl2 hhead htail ih =>
+      exact CompCert4Lean.Common.Values.Val.inject_list.inject_list_cons
+        v1 v2 vl1 vl2 (suffix_eval_addressing_lessdef_to_inject v1 v2 hhead) ih
+
+private theorem suffix_eval_addressing_lessdef_of_inject
+    (v1 v2 : CompCert4Lean.Common.Values.val) :
+    CompCert4Lean.Common.Values.Val.inject
+        (fun b => some (b,
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.Z0)) v1 v2 →
+      CompCert4Lean.Common.Values.Val.lessdef v1 v2 := by
+  intro h
+  cases h with
+  | inject_int i => exact CompCert4Lean.Common.Values.Val.lessdef.lessdef_refl _
+  | inject_long i => exact CompCert4Lean.Common.Values.Val.lessdef.lessdef_refl _
+  | inject_float f => exact CompCert4Lean.Common.Values.Val.lessdef.lessdef_refl _
+  | inject_single f => exact CompCert4Lean.Common.Values.Val.lessdef.lessdef_refl _
+  | inject_ptr b1 ofs1 b2 ofs2 delta hmap hofs =>
+      have hpair :
+          (b1, CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.Z0) =
+            (b2, delta) := Option.some.inj hmap
+      cases hpair
+      rw [show CompCert4Lean.Lib.Integers.Ptrofs.repr
+                CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.Z0 =
+              CompCert4Lean.Lib.Integers.Ptrofs.zero by rfl,
+          suffix_eval_addressing_lessdef_ptrofs_add_zero] at hofs
+      subst ofs2
+      exact CompCert4Lean.Common.Values.Val.lessdef.lessdef_refl _
+  | val_inject_undef v =>
+      exact CompCert4Lean.Common.Values.Val.lessdef.lessdef_undef _
+
+theorem eval_addressing_lessdef : eval_addressing_lessdefStatement := by
+  intro F V genv sp addr vl1 vl2 v1 hvl heval
+  let f : CompCert4Lean.Common.Values.Val.meminj :=
+    fun b => some (b,
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.Z0)
+  have hglobals : ∀ id ofs,
+      id ∈ globals_addressing addr →
+        CompCert4Lean.Common.Values.Val.inject f
+          (CompCert4Lean.Common.Globalenvs.Genv.symbol_address genv id ofs)
+          (CompCert4Lean.Common.Globalenvs.Genv.symbol_address genv id ofs) := by
+    intro id ofs _
+    exact suffix_eval_addressing_lessdef_to_inject _ _
+      (CompCert4Lean.Common.Values.Val.lessdef.lessdef_refl _)
+  have hsp : CompCert4Lean.Common.Values.Val.inject f sp sp :=
+    suffix_eval_addressing_lessdef_to_inject _ _
+      (CompCert4Lean.Common.Values.Val.lessdef.lessdef_refl _)
+  have hvl' : CompCert4Lean.Common.Values.Val.inject_list f vl1 vl2 :=
+    suffix_eval_addressing_lessdef_list_to_inject vl1 vl2 hvl
+  obtain ⟨v2, heval2, hinj⟩ :=
+    eval_addressing_inj F F V V genv genv f addr sp vl1 sp vl2 v1
+      hglobals hsp hvl' heval
+  exact ⟨v2, heval2, suffix_eval_addressing_lessdef_of_inject v1 v2 hinj⟩
+
+end CompCert4Lean.X86.Op

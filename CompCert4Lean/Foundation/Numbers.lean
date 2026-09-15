@@ -2480,3 +2480,44 @@ theorem ZArith.BinInt.Z.divide_0_r :
 
 end Rocq.Coq
 end CompCert4Lean.Foundation.Numbers
+
+namespace CompCert4Lean.Foundation.Numbers
+namespace Rocq.Coq
+
+theorem ZArith.BinInt.Z.abs_opp :
+    ZArith.BinInt.Z.abs_oppStatement := by
+  intro n
+  apply intOfZ_injective
+  simp only [ZArith.BinInt.Z.abs, ZArith.BinInt.Z.opp, intOfZ_zOfInt,
+    Int.natAbs_neg]
+
+theorem ZArith.Zorder.Zle_pred_proof :
+    ∀ (n : Z), ZArith.Zorder.Zle_pred n := by
+  intro n
+  change intOfZ (ZArith.BinInt.Z.pred n) ≤ intOfZ n
+  simp only [ZArith.BinInt.Z.pred, ZArith.BinInt.Z.sub, intOfZ_zOfInt]
+  have hone : intOfZ (Zpos xH) = 1 := by simp [intOfZ, posToNat]
+  rw [hone]
+  omega
+
+theorem ZArith.Zorder.Zplus_le_compat_proof :
+    ∀ (n m p q : Z), ZArith.Zorder.Zplus_le_compat n m p q := by
+  intro n m p q hnm hpq
+  change intOfZ n ≤ intOfZ m at hnm
+  change intOfZ p ≤ intOfZ q at hpq
+  change intOfZ (ZArith.BinInt.Z.add n p) ≤
+    intOfZ (ZArith.BinInt.Z.add m q)
+  simp only [ZArith.BinInt.Z.add, intOfZ_zOfInt]
+  exact Int.add_le_add hnm hpq
+
+theorem ZArith.Zorder.Zlt_succ_proof :
+    ∀ (n : Z), ZArith.Zorder.Zlt_succ n := by
+  intro n
+  change intOfZ n < intOfZ (ZArith.BinInt.Z.succ n)
+  simp only [ZArith.BinInt.Z.succ, ZArith.BinInt.Z.add, intOfZ_zOfInt]
+  have hone : intOfZ (Zpos xH) = 1 := by simp [intOfZ, posToNat]
+  rw [hone]
+  omega
+
+end Rocq.Coq
+end CompCert4Lean.Foundation.Numbers

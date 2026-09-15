@@ -3564,3 +3564,452 @@ theorem not_or_and_not_proof : not_or_and_not := by
     suffix_not_val, suffix_not_val]
   exact suffix_nat_not_or x.val y.val wordsize
     (WordCore.val_lt x) (WordCore.val_lt y)
+
+theorem divu_one_proof : divu_one := by
+  intro x
+  change WordCore.repr wordsize
+      (zDiv (unsigned x) (unsigned one)) = x
+  have hone : unsigned one = zOne := by rfl
+  rw [hone]
+  have hdiv : zDiv (unsigned x) zOne = unsigned x := by
+    apply intOfZ_injective
+    simp only [zDiv, ZArith.BinInt.Z.div, intOfZ_zOfInt]
+    change (intOfZ (unsigned x)).ediv 1 = intOfZ (unsigned x)
+    exact Int.ediv_one _
+  rw [hdiv]
+  exact repr_unsigned_proof x
+
+theorem signed_range_proof : signed_range := by
+  intro x
+  unfold signed WordCore.signed
+  cases hlt : CompCert4Lean.Lib.Coqlib.zlt
+      (WordCore.unsigned x) (zTwoPowerNat (wordsize - 1)) with
+  | left h =>
+      simp only [zltSelect, sumboolSelect, hlt]
+      constructor
+      · have hx0 : 0 ≤ intOfZ (unsigned x) := by
+          have hx := x.intrange.1
+          change (-1 : Int) < intOfZ (unsigned x) at hx
+          omega
+        change intOfZ min_signed ≤ intOfZ (unsigned x)
+        change (-2147483648 : Int) ≤ intOfZ (unsigned x)
+        omega
+      · change intOfZ (unsigned x) ≤ intOfZ max_signed
+        change intOfZ (unsigned x) < intOfZ half_modulus at h
+        change intOfZ (unsigned x) < (2147483648 : Int) at h
+        change intOfZ (unsigned x) ≤ (2147483647 : Int)
+        omega
+  | right h =>
+      simp only [zltSelect, sumboolSelect, hlt]
+      have hxlt := x.intrange.2
+      change intOfZ (unsigned x) < intOfZ modulus at hxlt
+      change intOfZ (unsigned x) < (4294967296 : Int) at hxlt
+      change intOfZ half_modulus ≤ intOfZ (unsigned x) at h
+      change (2147483648 : Int) ≤ intOfZ (unsigned x) at h
+      constructor
+      · change intOfZ min_signed ≤ intOfZ (zSub (unsigned x) modulus)
+        simp only [zSub, ZArith.BinInt.Z.sub, intOfZ_zOfInt]
+        change (-2147483648 : Int) ≤
+          intOfZ (unsigned x) - (4294967296 : Int)
+        omega
+      · change intOfZ (zSub (unsigned x) modulus) ≤ intOfZ max_signed
+        simp only [zSub, ZArith.BinInt.Z.sub, intOfZ_zOfInt]
+        change intOfZ (unsigned x) - (4294967296 : Int) ≤
+          (2147483647 : Int)
+        omega
+
+private theorem suffix_shru_val (x y : int) :
+    (shru x y).val = x.val / 2 ^ y.val := by
+  unfold shru WordCore.shru
+  change (WordCore.repr wordsize
+      (ZArith.BinInt.Z.shiftr x.intval y.intval)).val = _
+  rw [WordCore.intval_eq_zOfNat_val x, WordCore.intval_eq_zOfNat_val y]
+  have hshift : ZArith.BinInt.Z.shiftr (zOfNat x.val) (zOfNat y.val) =
+      zOfNat (x.val / 2 ^ y.val) := by
+    unfold ZArith.BinInt.Z.shiftr
+    simp only [ZArith.BinInt.Z.of_nat, intOfZ_zOfInt,
+      Int.ofNat_eq_natCast, Int.natCast_nonneg, ↓reduceIte,
+      Int.toNat_natCast, Int.natCast_pow]
+    exact congrArg zOfInt Int.ofNat_ediv_ofNat
+  rw [hshift, WordCore.val_repr_residue]
+  have hzof : zOfNat (x.val / 2 ^ y.val) =
+      zOfInt (Int.ofNat (x.val / 2 ^ y.val)) := by rfl
+  rw [hzof, WordCore.residue_zOfNat]
+  apply Nat.mod_eq_of_lt
+  exact Nat.lt_of_le_of_lt (Nat.div_le_self x.val _) (WordCore.val_lt x)
+
+private theorem suffix_ltu_iwordsize_val (n : int)
+    (h : ltu n iwordsize = true) : n.val < wordsize := by
+  have hlt := (ltu_inv_proof n iwordsize h).2
+  change ZArith.BinInt.Z.lt n.intval iwordsize.intval at hlt
+  rw [WordCore.intval_eq_zOfNat_val n,
+    WordCore.intval_eq_zOfNat_val iwordsize] at hlt
+  have hi : iwordsize.val = wordsize := rfl
+  rw [hi] at hlt
+  change intOfZ (ZArith.BinInt.Z.of_nat n.val) <
+    intOfZ (ZArith.BinInt.Z.of_nat wordsize) at hlt
+  rw [ZArith.BinInt.Z.of_nat, intOfZ_zOfInt,
+    ZArith.BinInt.Z.of_nat, intOfZ_zOfInt] at hlt
+  exact Int.ofNat_lt.mp hlt
+
+theorem shru_shru_proof : shru_shru := by
+  intro x y z hy hz _hsum
+  have hyv := suffix_ltu_iwordsize_val y hy
+  have hzv := suffix_ltu_iwordsize_val z hz
+  have hyzlt : y.val + z.val < 2 ^ wordsize := by
+    change y.val < 32 at hyv
+    change z.val < 32 at hzv
+    change y.val + z.val < 2 ^ 32
+    omega
+  apply WordCore.ext_of_val_eq
+  rw [suffix_shru_val, suffix_shru_val, suffix_shru_val]
+  change x.val / 2 ^ y.val / 2 ^ z.val =
+    x.val / 2 ^ (WordCore.add y z).val
+  rw [WordCore.add_val, Nat.mod_eq_of_lt hyzlt]
+  rw [Nat.div_div_eq_div_mul, ← Nat.pow_add]
+
+private def suffixSignStep : (Z → Z) → Z → Z :=
+  fun rec y => CompCert4Lean.Lib.Zbits.Zshiftin
+    (ZArith.BinInt.Z.odd y) (rec (ZArith.BinInt.Z.div2 y))
+
+private def suffixSignBase : Z → Z :=
+  fun y => if ZArith.BinInt.Z.odd y then zOpp zOne else zZero
+
+private theorem suffix_intOfZ_shiftin (b : Bool) (x : Z) :
+    intOfZ (CompCert4Lean.Lib.Zbits.Zshiftin b x) =
+      2 * intOfZ x + if b then 1 else 0 := by
+  rw [CompCert4Lean.Lib.Zbits.Zshiftin_spec]
+  simp only [zAdd, zMul, ZArith.BinInt.Z.add,
+    ZArith.BinInt.Z.mul, intOfZ_zOfInt]
+  cases b <;> rfl
+
+private theorem suffix_odd_zOfNat (a : Nat) :
+    ZArith.BinInt.Z.odd (zOfNat a) = decide (a % 2 = 1) := by
+  unfold ZArith.BinInt.Z.odd ZArith.BinInt.Z.even
+  rw [zNatAbs_nat]
+  have hrange := Nat.mod_lt a (by decide : 0 < 2)
+  by_cases h : a % 2 = 1
+  · simp [h]
+  · have hz : a % 2 = 0 := by omega
+    simp [h, hz]
+
+private theorem suffix_sign_iter_nat (k a : Nat) :
+    intOfZ (ZArith.BinInt.Z.iter (zOfNat k)
+      suffixSignStep suffixSignBase (zOfNat a)) =
+      if a % (2 ^ (k + 1)) < 2 ^ k then
+        Int.ofNat (a % (2 ^ (k + 1)))
+      else
+        Int.ofNat (a % (2 ^ (k + 1))) - Int.ofNat (2 ^ (k + 1)) := by
+  induction k generalizing a with
+  | zero =>
+      change intOfZ (suffixSignBase (zOfNat a)) = _
+      unfold suffixSignBase
+      rw [suffix_odd_zOfNat]
+      by_cases h : a % 2 = 1
+      · have hr : a % 2 = 1 := h
+        simp [suffixSignBase, h, hr]
+        rfl
+      · have hr : a % 2 = 0 := by omega
+        simp [suffixSignBase, h, hr]
+        rfl
+  | succ k ih =>
+      rw [ziter_succ suffixSignStep suffixSignBase k]
+      change intOfZ (CompCert4Lean.Lib.Zbits.Zshiftin
+        (ZArith.BinInt.Z.odd (zOfNat a))
+        (ZArith.BinInt.Z.iter (zOfNat k) suffixSignStep suffixSignBase
+          (ZArith.BinInt.Z.div2 (zOfNat a)))) = _
+      rw [zdiv2_nat, suffix_intOfZ_shiftin, ih]
+      rw [suffix_odd_zOfNat]
+      let q := (a / 2) % 2 ^ (k + 1)
+      let r := a % 2 ^ (k + 2)
+      change 2 * (if q < 2 ^ k then Int.ofNat q
+          else Int.ofNat q - Int.ofNat (2 ^ (k + 1))) +
+          (if decide (a % 2 = 1) then 1 else 0) =
+        if r < 2 ^ (k + 1) then Int.ofNat r
+          else Int.ofNat r - Int.ofNat (2 ^ (k + 2))
+      have hr : 2 * q + a % 2 = r := by
+        have hm := Nat.mod_mul (a := 2) (b := 2 ^ (k + 1)) (x := a)
+        simpa [q, r, Nat.pow_succ, Nat.add_comm, Nat.mul_comm,
+          Nat.mul_left_comm] using hm.symm
+      have hpNat : 2 ^ (k + 2) = 2 * 2 ^ (k + 1) := by
+        rw [show k + 2 = (k + 1) + 1 by omega, Nat.pow_succ]
+        omega
+      have hpInt := congrArg Int.ofNat hpNat
+      simp only [Int.ofNat_eq_natCast, Int.natCast_mul] at hpInt
+      have hbit : a % 2 = 0 ∨ a % 2 = 1 := by omega
+      rcases hbit with hbit | hbit
+      · have hodd : decide (a % 2 = 1) = false := by simp [hbit]
+        rw [hodd]
+        simp only [Bool.false_eq_true, ↓reduceIte]
+        by_cases hq : q < 2 ^ k
+        · have hrl : r < 2 ^ (k + 1) := by
+            rw [← hr, hbit]
+            simp only [Nat.add_zero]
+            omega
+          rw [if_pos hq, if_pos hrl]
+          have hrInt := congrArg Int.ofNat hr
+          simp only [Int.ofNat_eq_natCast, Int.natCast_add,
+            Int.natCast_mul] at hrInt
+          simp only [Int.ofNat_eq_natCast]
+          omega
+
+        · have hrl : ¬ r < 2 ^ (k + 1) := by
+            intro hrl
+            rw [← hr, hbit] at hrl
+            simp only [Nat.add_zero] at hrl
+            omega
+          rw [if_neg hq, if_neg hrl]
+          have hrInt := congrArg Int.ofNat hr
+          simp only [Int.ofNat_eq_natCast, Int.natCast_add,
+            Int.natCast_mul] at hrInt
+          simp only [Int.ofNat_eq_natCast]
+          omega
+      · have hodd : decide (a % 2 = 1) = true := by simp [hbit]
+        rw [hodd]
+        simp only [↓reduceIte]
+        by_cases hq : q < 2 ^ k
+        · have hrl : r < 2 ^ (k + 1) := by
+            rw [← hr, hbit]
+            omega
+          rw [if_pos hq, if_pos hrl]
+          have hrInt := congrArg Int.ofNat hr
+          simp only [Int.ofNat_eq_natCast, Int.natCast_add,
+            Int.natCast_mul] at hrInt
+          simp only [Int.ofNat_eq_natCast]
+          omega
+        · have hrl : ¬ r < 2 ^ (k + 1) := by
+            intro hrl
+            rw [← hr, hbit] at hrl
+            omega
+          rw [if_neg hq, if_neg hrl]
+          have hrInt := congrArg Int.ofNat hr
+          simp only [Int.ofNat_eq_natCast, Int.natCast_add,
+            Int.natCast_mul] at hrInt
+          simp only [Int.ofNat_eq_natCast]
+          omega
+
+private theorem suffix_sign_ext_nat (k : Nat) (x : int) :
+    sign_ext (zOfNat (k + 1)) x =
+      WordCore.repr wordsize (zOfInt
+        (if x.val % (2 ^ (k + 1)) < 2 ^ k then
+          Int.ofNat (x.val % (2 ^ (k + 1)))
+        else
+          Int.ofNat (x.val % (2 ^ (k + 1))) - Int.ofNat (2 ^ (k + 1)))) := by
+  have hpred : ZArith.BinInt.Z.pred (zOfNat (k + 1)) = zOfNat k := by
+    apply intOfZ_injective
+    simp only [ZArith.BinInt.Z.pred, ZArith.BinInt.Z.sub,
+      intOfZ_zOfInt, zOfNat, ZArith.BinInt.Z.of_nat]
+    change Int.ofNat (k + 1) - 1 = Int.ofNat k
+    simp only [Int.ofNat_eq_natCast, Int.natCast_add, Int.natCast_one]
+    omega
+  have hsel : sumboolSelect
+      (CompCert4Lean.Lib.Coqlib.zlt zZero (zOfNat (k + 1)))
+      (zOpp zOne) zZero = zOpp zOne := by
+    cases hs : CompCert4Lean.Lib.Coqlib.zlt zZero (zOfNat (k + 1)) with
+    | left _ => rfl
+    | right h =>
+        exfalso
+        change intOfZ (zOfNat (k + 1)) ≤ 0 at h
+        have hz : intOfZ (zOfNat (k + 1)) = Int.ofNat (k + 1) := by
+          simpa only [zOfNat, ZArith.BinInt.Z.of_nat] using
+            intOfZ_zOfInt (Int.ofNat (k + 1))
+        rw [hz] at h
+        have hk : 0 < Int.ofNat (k + 1) := by
+          rw [Int.ofNat_eq_natCast]
+          exact Int.natCast_pos.mpr (by omega)
+        exact (Int.not_le_of_gt hk) h
+  unfold sign_ext WordCore.sign_ext
+  rw [hpred]
+  dsimp only
+  simp only [hsel]
+  unfold WordCore.unsigned
+  rw [WordCore.intval_eq_zOfNat_val x]
+  change WordCore.repr wordsize
+      (ZArith.BinInt.Z.iter (zOfNat k) suffixSignStep suffixSignBase
+        (zOfNat x.val)) = _
+  apply congrArg (WordCore.repr wordsize)
+  apply intOfZ_injective
+  rw [intOfZ_zOfInt]
+  exact suffix_sign_iter_nat k x.val
+
+private theorem suffix_signed_int (x : int) :
+    intOfZ (signed x) =
+      if x.val < 2 ^ (wordsize - 1) then Int.ofNat x.val
+      else Int.ofNat x.val - Int.ofNat (2 ^ wordsize) := by
+  unfold signed WordCore.signed
+  cases hlt : CompCert4Lean.Lib.Coqlib.zlt
+      (WordCore.unsigned x) (zTwoPowerNat (wordsize - 1)) with
+  | left h =>
+      simp only [zltSelect, sumboolSelect, hlt]
+      have hvlt : x.val < 2 ^ (wordsize - 1) := by
+        change intOfZ x.intval < intOfZ (zTwoPowerNat (wordsize - 1)) at h
+        rw [WordCore.intval_eq_zOfNat_val x] at h
+        have hval : intOfZ (zOfNat x.val) = Int.ofNat x.val := by
+          simpa only [zOfNat, ZArith.BinInt.Z.of_nat] using
+            intOfZ_zOfInt (Int.ofNat x.val)
+        have hpow : intOfZ (zTwoPowerNat (wordsize - 1)) =
+            Int.ofNat (2 ^ (wordsize - 1)) := by rfl
+        rw [hval, hpow] at h
+        exact Int.ofNat_lt.mp h
+      rw [if_pos hvlt]
+      change intOfZ x.intval = Int.ofNat x.val
+      rw [WordCore.intval_eq_zOfNat_val x]
+      simpa only [zOfNat, ZArith.BinInt.Z.of_nat] using
+        intOfZ_zOfInt (Int.ofNat x.val)
+  | right h =>
+      simp only [zltSelect, sumboolSelect, hlt]
+      have hvge : ¬ x.val < 2 ^ (wordsize - 1) := by
+        intro hvlt
+        change intOfZ (zTwoPowerNat (wordsize - 1)) ≤ intOfZ x.intval at h
+        rw [WordCore.intval_eq_zOfNat_val x] at h
+        have hval : intOfZ (zOfNat x.val) = Int.ofNat x.val := by
+          simpa only [zOfNat, ZArith.BinInt.Z.of_nat] using
+            intOfZ_zOfInt (Int.ofNat x.val)
+        have hpow : intOfZ (zTwoPowerNat (wordsize - 1)) =
+            Int.ofNat (2 ^ (wordsize - 1)) := by rfl
+        rw [hval, hpow] at h
+        exact (Int.not_le_of_gt (Int.ofNat_lt.mpr hvlt)) h
+      rw [if_neg hvge]
+      simp only [zSub, ZArith.BinInt.Z.sub, intOfZ_zOfInt]
+      change intOfZ x.intval - intOfZ (zTwoPowerNat wordsize) = _
+      rw [WordCore.intval_eq_zOfNat_val x]
+      have hval : intOfZ (zOfNat x.val) = Int.ofNat x.val := by
+        simpa only [zOfNat, ZArith.BinInt.Z.of_nat] using
+          intOfZ_zOfInt (Int.ofNat x.val)
+      have hpow : intOfZ (zTwoPowerNat wordsize) =
+          Int.ofNat (2 ^ wordsize) := by rfl
+      rw [hval, hpow]
+
+private theorem suffix_shr_shl_nat (k : Nat) (hk : k < 32) (x : int) :
+    let y := repr (zOfNat (31 - k))
+    shr (shl x y) y =
+      WordCore.repr wordsize (zOfInt
+        (if x.val % (2 ^ (k + 1)) < 2 ^ k then
+          Int.ofNat (x.val % (2 ^ (k + 1)))
+        else
+          Int.ofNat (x.val % (2 ^ (k + 1))) - Int.ofNat (2 ^ (k + 1)))) := by
+  let s := 31 - k
+  let y := repr (zOfNat s)
+  change shr (shl x y) y = _
+  have hks : k + s = 31 := by dsimp [s]; omega
+  have hk1s : (k + 1) + s = 32 := by omega
+  have hpHalf : 2 ^ 31 = 2 ^ k * 2 ^ s := by
+    rw [← Nat.pow_add, hks]
+  have hpFull : 2 ^ 32 = 2 ^ (k + 1) * 2 ^ s := by
+    rw [← Nat.pow_add, hk1s]
+  have hyval : y.val = s := by
+    dsimp [y]
+    unfold repr
+    change (WordCore.repr wordsize (zOfNat s)).val = s
+    rw [WordCore.val_repr_residue]
+    have hzof : zOfNat s = zOfInt (Int.ofNat s) := by rfl
+    rw [hzof, WordCore.residue_zOfNat]
+    apply Nat.mod_eq_of_lt
+    change s < 2 ^ 32
+    dsimp [s]
+    omega
+  have hyunsigned : unsigned y = zOfNat s := by
+    change y.intval = zOfNat s
+    rw [WordCore.intval_eq_zOfNat_val y, hyval]
+  let r := x.val % 2 ^ (k + 1)
+  have hrange : r < 2 ^ (k + 1) := by
+    exact Nat.mod_lt _ (Nat.two_pow_pos _)
+  have hb : (shl x y).val = r * 2 ^ s := by
+    change (WordCore.shl x y).val = _
+    rw [suffix_shl_val, hyval]
+    change (x.val * 2 ^ s) % 2 ^ 32 = r * 2 ^ s
+    rw [hpFull]
+    exact Nat.mul_mod_mul_right (2 ^ s) x.val (2 ^ (k + 1))
+  change WordCore.repr wordsize
+      (zShiftr (signed (shl x y)) (unsigned y)) = _
+  apply congrArg (WordCore.repr wordsize)
+  apply intOfZ_injective
+  rw [hyunsigned, intOfZ_zOfInt]
+  unfold zShiftr ZArith.BinInt.Z.shiftr
+  simp only [zOfNat, ZArith.BinInt.Z.of_nat, intOfZ_zOfInt,
+    Int.ofNat_eq_natCast, Int.natCast_nonneg, ↓reduceIte,
+    Int.toNat_natCast]
+  rw [suffix_signed_int, hb]
+  change (if r * 2 ^ s < 2 ^ 31 then Int.ofNat (r * 2 ^ s)
+      else Int.ofNat (r * 2 ^ s) - Int.ofNat (2 ^ 32)) /
+      Int.pow 2 s =
+    if r < 2 ^ k then Int.ofNat r
+      else Int.ofNat r - Int.ofNat (2 ^ (k + 1))
+  have hpowpos : 0 < Int.pow 2 s := Int.pow_pos (by omega)
+  have hcastmul (a : Nat) : Int.ofNat (a * 2 ^ s) =
+      Int.ofNat a * Int.pow 2 s := by
+    calc
+      Int.ofNat (a * 2 ^ s) = Int.ofNat a * Int.ofNat (2 ^ s) := by
+        exact Int.natCast_mul a (2 ^ s)
+      _ = Int.ofNat a * Int.pow 2 s :=
+        congrArg (fun q : Int => Int.ofNat a * q) (Int.natCast_pow 2 s)
+  have hbInt := hcastmul r
+  have hpFullInt : Int.ofNat (2 ^ 32) =
+      Int.ofNat (2 ^ (k + 1)) * Int.pow 2 s := by
+    calc
+      Int.ofNat (2 ^ 32) = Int.ofNat (2 ^ (k + 1) * 2 ^ s) :=
+        congrArg Int.ofNat hpFull
+      _ = _ := hcastmul (2 ^ (k + 1))
+  by_cases hrlt : r < 2 ^ k
+  · have hblt : r * 2 ^ s < 2 ^ 31 := by
+      rw [hpHalf]
+      exact (Nat.mul_lt_mul_right (Nat.two_pow_pos s)).2 hrlt
+    rw [if_pos hblt, if_pos hrlt, hbInt]
+    exact Int.mul_ediv_cancel _ (Int.ne_of_gt hpowpos)
+  · have hrge : 2 ^ k ≤ r := Nat.le_of_not_gt hrlt
+    have hbge : 2 ^ 31 ≤ r * 2 ^ s := by
+      rw [hpHalf]
+      exact Nat.mul_le_mul_right (2 ^ s) hrge
+    have hbnlt : ¬ r * 2 ^ s < 2 ^ 31 := Nat.not_lt_of_ge hbge
+    rw [if_neg hbnlt, if_neg hrlt, hbInt, hpFullInt, ← Int.sub_mul]
+    exact Int.mul_ediv_cancel _ (Int.ne_of_gt hpowpos)
+
+theorem sign_ext_shr_shl_proof : sign_ext_shr_shl := by
+  intro n x hn
+  have hn0 : zLe zZero n := by
+    change 0 ≤ intOfZ n
+    have h := hn.1
+    change 0 < intOfZ n at h
+    exact Int.le_of_lt h
+  let m := zToNat n
+  have hnrepr : n = zOfNat m := by
+    exact (ZArith.Znat.Z2Nat.id n hn0).symm
+  have hmpos : 0 < m := by
+    have h := hn.1
+    rw [hnrepr] at h
+    change 0 < intOfZ (zOfNat m) at h
+    have hz : intOfZ (zOfNat m) = Int.ofNat m := by
+      simpa only [zOfNat, ZArith.BinInt.Z.of_nat] using
+        intOfZ_zOfInt (Int.ofNat m)
+    rw [hz] at h
+    exact Int.ofNat_lt.mp h
+  have hmle : m ≤ 32 := by
+    have h := hn.2
+    rw [hnrepr] at h
+    change intOfZ (zOfNat m) ≤ intOfZ zwordsize at h
+    have hz : intOfZ (zOfNat m) = Int.ofNat m := by
+      simpa only [zOfNat, ZArith.BinInt.Z.of_nat] using
+        intOfZ_zOfInt (Int.ofNat m)
+    rw [hz] at h
+    change Int.ofNat m ≤ 32 at h
+    exact Int.ofNat_le.mp h
+  let k := m - 1
+  have hk : k < 32 := by dsimp [k]; omega
+  have hmk : k + 1 = m := by dsimp [k]; omega
+  have hnk : n = zOfNat (k + 1) := by rw [hnrepr, hmk]
+  have hdiff : zSub zwordsize n = zOfNat (31 - k) := by
+    rw [hnk]
+    apply intOfZ_injective
+    simp only [zSub, ZArith.BinInt.Z.sub, intOfZ_zOfInt]
+    have hw : intOfZ zwordsize = (32 : Int) := by rfl
+    have hkz : intOfZ (zOfNat (k + 1)) = Int.ofNat (k + 1) := by
+      simpa only [zOfNat, ZArith.BinInt.Z.of_nat] using
+        intOfZ_zOfInt (Int.ofNat (k + 1))
+    have hrz : intOfZ (zOfNat (31 - k)) = Int.ofNat (31 - k) := by
+      simpa only [zOfNat, ZArith.BinInt.Z.of_nat] using
+        intOfZ_zOfInt (Int.ofNat (31 - k))
+    rw [hw, hkz, hrz]
+    simp only [Int.ofNat_eq_natCast, Int.natCast_add, Int.natCast_one]
+    omega
+  rw [hdiff, hnk]
+  exact (suffix_sign_ext_nat k x).trans (suffix_shr_shl_nat k hk x).symm

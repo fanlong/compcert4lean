@@ -3420,3 +3420,33 @@ theorem assign_variables_domain : assign_variables_domainStatement := by
       · exact Or.inr (in_cons hd.1 id (List.map Prod.fst tl) hmem)
 
 end CompCert4Lean.Cfrontend.Cminorgenproof
+
+namespace CompCert4Lean.Cfrontend.Cminorgenproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Foundation.Ordered.Rocq.Coq.Sorting.Permutation
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.Cfrontend.Cminorgen
+
+theorem build_compilenv_domain : build_compilenv_domainStatement := by
+  intro f cenv sz id ofs hbuild hget
+  unfold build_compilenv at hbuild
+  have hsort : Permutation f.fn_vars (VarSort.sort f.fn_vars) :=
+    VarSort.Permuted_sort_proof f.fn_vars
+  have hdomain :=
+    assign_variables_domain id (VarSort.sort f.fn_vars) (PTree.empty Z, z0)
+  rw [hbuild] at hdomain
+  have hne : PTree.get id cenv ≠ none := by
+    intro hnone
+    rw [hnone] at hget
+    cases hget
+  rcases hdomain hne with hbase | hsorted
+  · rw [PTree.gempty] at hbase
+    exact False.elim (hbase rfl)
+  · have hmap :
+        Permutation (List.map Prod.fst (VarSort.sort f.fn_vars))
+          (List.map Prod.fst f.fn_vars) :=
+      Permutation_map Prod.fst (Permutation_sym hsort)
+    exact Permutation_in id hmap hsorted
+
+end CompCert4Lean.Cfrontend.Cminorgenproof

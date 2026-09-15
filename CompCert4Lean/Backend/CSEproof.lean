@@ -2998,3 +2998,61 @@ theorem reduce_sound
       exact hsem
 
 end CompCert4Lean.Backend.CSEproof
+
+namespace CompCert4Lean.Backend.CSEproof
+
+open CompCert4Lean.Backend.CSEdomain
+open CompCert4Lean.Common.Values
+
+theorem reduce_rec_lessdef_sound
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    reduce_rec_lessdef_soundStatement := by
+  intro A f ge sp rs m sem f_sound n valu hnum
+  intro niter
+  induction niter with
+  | zero =>
+      intro op args op' rl' r hred hsem
+      simp [CSE.reduce_rec] at hred
+  | succ niter ih =>
+      intro op args op' rl' r hred hsem
+      cases hstep : f (fun v => CSE.find_valnum_num v n.num_eqs) op args with
+      | none =>
+          simp [CSE.reduce_rec, hstep] at hred
+      | some step =>
+          rcases step with ⟨op1, args1⟩
+          have hex : ∃ r',
+              sem op1 (List.map valu args1) = some r' ∧ Val.lessdef r r' := by
+            apply f_sound (fun v => CSE.find_valnum_num v n.num_eqs) valu
+              op args op1 args1 r
+            · intro v rhs hfind
+              have heq := hnum.num_holds_eq (Eq v true rhs)
+                (find_valnum_num_charact v rhs n.num_eqs hfind)
+              cases heq with
+              | eq_holds_strict _ _ heval _ => exact heval
+            · exact hstep
+            · exact hsem
+          cases hrec : CSE.reduce_rec f n niter op1 args1 with
+          | none =>
+              cases hregs : CSE.regs_valnums n args1 with
+              | none =>
+                  simp [CSE.reduce_rec, hstep, hrec, hregs] at hred
+              | some rl1 =>
+                  simp [CSE.reduce_rec, hstep, hrec, hregs] at hred
+                  obtain ⟨rfl, rfl⟩ := hred
+                  obtain ⟨r', hs, hld⟩ := hex
+                  refine ⟨r', ?_, hld⟩
+                  rw [regs_valnums_sound n valu ge sp rs m args1 rl1 hnum hregs]
+                  exact hs
+          | some rec =>
+              rcases rec with ⟨op2, rl2⟩
+              simp [CSE.reduce_rec, hstep, hrec] at hred
+              obtain ⟨rfl, rfl⟩ := hred
+              obtain ⟨r', hs, hld⟩ := hex
+              obtain ⟨r'', hs2, hld2⟩ := ih op1 args1 op2 rl2 r' hrec hs
+              refine ⟨r'', hs2, ?_⟩
+              cases hld with
+              | lessdef_refl => exact hld2
+              | lessdef_undef => exact Val.lessdef_undef _
+
+end CompCert4Lean.Backend.CSEproof

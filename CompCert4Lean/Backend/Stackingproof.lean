@@ -2796,3 +2796,20 @@ theorem agree_locs_undef_locs_1 : agree_locs_undef_locs_1Statement := by
   exact caller_save_reg_within_bounds cfg f r (hcaller r hr)
 
 end CompCert4Lean.Backend.Stackingproof
+
+namespace CompCert4Lean.Backend.Stackingproof
+
+open CompCert4Lean.Backend.Bounds
+
+theorem agree_locs_undef_locs : agree_locs_undef_locsStatement := by
+  intro return_address_offset tprog cfg f
+    bound_local_pos bound_outgoing_pos bound_stack_data_pos
+    used_callee_save_norepet used_callee_save_prop ls0 regs ls hagree hnone
+  apply agree_locs_undef_locs_1 return_address_offset tprog cfg f
+    bound_local_pos bound_outgoing_pos bound_stack_data_pos
+    used_callee_save_norepet used_callee_save_prop ls0 regs ls hagree
+  intro r hr
+  simp at hnone
+  exact hnone r hr
+
+end CompCert4Lean.Backend.Stackingproof

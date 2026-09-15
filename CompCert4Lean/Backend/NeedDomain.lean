@@ -3413,3 +3413,445 @@ theorem lagree_shru : lagree_shruStatement := by
       lagreeBitsAboveFinal y _ hkabove]
 
 end CompCert4Lean.Backend.NeedDomain
+
+namespace CompCert4Lean.Backend.NeedDomain
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Lib.Integers
+
+private theorem lagreeRolValRotate (a n : Int64.int) :
+    (Int64.rol a n).val =
+      Nat.lor (a.val <<< (n.val % Int64.wordsize))
+        (a.val >>> (Int64.wordsize - (n.val % Int64.wordsize))) %
+        (2 ^ Int64.wordsize) := by
+  change (WordCore.repr Int64.wordsize
+    (ZArith.BinInt.Z.of_nat
+      (Nat.lor (a.val <<< (n.val % Int64.wordsize))
+        (a.val >>> (Int64.wordsize - (n.val % Int64.wordsize)))))).val = _
+  rw [lagreeValReprOfNat]
+
+private theorem lagreeRorValRotate (a n : Int64.int) :
+    (Int64.ror a n).val =
+      Nat.lor (a.val >>> (n.val % Int64.wordsize))
+        (a.val <<< (Int64.wordsize - (n.val % Int64.wordsize))) %
+        (2 ^ Int64.wordsize) := by
+  change (WordCore.repr Int64.wordsize
+    (ZArith.BinInt.Z.of_nat
+      (Nat.lor (a.val >>> (n.val % Int64.wordsize))
+        (a.val <<< (Int64.wordsize - (n.val % Int64.wordsize)))))).val = _
+  rw [lagreeValReprOfNat]
+
+private theorem lagreeRorBitNatRotate (a n : Int64.int) (k : Nat)
+    (hk : k < Int64.wordsize) :
+    Int64.testbit (Int64.ror a n) (ZArith.BinInt.Z.of_nat k) =
+      a.val.testBit ((k + n.val % Int64.wordsize) % Int64.wordsize) := by
+  rw [lagreeTestbitOfNatFinal, lagreeRorValRotate]
+  rw [Nat.testBit_mod_two_pow]
+  rw [decide_eq_true hk, Bool.true_and]
+  change ((a.val >>> (n.val % Int64.wordsize)) |||
+      (a.val <<< (Int64.wordsize - (n.val % Int64.wordsize)))).testBit k = _
+  rw [Nat.testBit_or, Nat.testBit_shiftRight, Nat.testBit_shiftLeft]
+  have haval : a.val < 2 ^ Int64.wordsize := lagreeWordValLt a
+  have hamod : n.val % Int64.wordsize < Int64.wordsize :=
+    Nat.mod_lt _ (by decide)
+  by_cases hsum : k + n.val % Int64.wordsize < Int64.wordsize
+  · have hleft : ¬ k ≥ Int64.wordsize - n.val % Int64.wordsize := by omega
+    rw [decide_eq_false hleft, Bool.false_and, Bool.or_false]
+    rw [Nat.mod_eq_of_lt hsum]
+    simp [Nat.add_comm]
+  · have hsum' : Int64.wordsize ≤ k + n.val % Int64.wordsize :=
+      Nat.le_of_not_gt hsum
+    have hleft : Int64.wordsize - n.val % Int64.wordsize ≤ k := by omega
+    rw [decide_eq_true hleft, Bool.true_and]
+    have hsum'' : Int64.wordsize ≤ n.val % Int64.wordsize + k := by omega
+    have hpow : 2 ^ Int64.wordsize ≤
+        2 ^ (n.val % Int64.wordsize + k) :=
+      Nat.pow_le_pow_right (by decide) hsum''
+    have hright : a.val.testBit (n.val % Int64.wordsize + k) = false :=
+      Nat.testBit_lt_two_pow (Nat.lt_of_lt_of_le haval hpow)
+    rw [hright, Bool.false_or]
+    have hsub : k - (Int64.wordsize - n.val % Int64.wordsize) =
+        k + n.val % Int64.wordsize - Int64.wordsize := by omega
+    rw [hsub, Nat.mod_eq_sub_mod hsum']
+    have hdiff : k + n.val % Int64.wordsize - Int64.wordsize <
+        Int64.wordsize := by omega
+    rw [Nat.mod_eq_of_lt hdiff]
+
+private theorem lagreeRolBitNatRotate (a n : Int64.int) (k : Nat)
+    (hk : k < Int64.wordsize) :
+    Int64.testbit (Int64.rol a n) (ZArith.BinInt.Z.of_nat k) =
+      a.val.testBit ((k + Int64.wordsize - n.val % Int64.wordsize) %
+        Int64.wordsize) := by
+  rw [lagreeTestbitOfNatFinal, lagreeRolValRotate]
+  rw [Nat.testBit_mod_two_pow]
+  rw [decide_eq_true hk, Bool.true_and]
+  change ((a.val <<< (n.val % Int64.wordsize)) |||
+      (a.val >>> (Int64.wordsize - (n.val % Int64.wordsize)))).testBit k = _
+  rw [Nat.testBit_or, Nat.testBit_shiftLeft, Nat.testBit_shiftRight]
+  have haval : a.val < 2 ^ Int64.wordsize := lagreeWordValLt a
+  have hamod : n.val % Int64.wordsize < Int64.wordsize :=
+    Nat.mod_lt _ (by decide)
+  by_cases hge : n.val % Int64.wordsize ≤ k
+  · rw [decide_eq_true hge, Bool.true_and]
+    have hright : a.val.testBit
+        (Int64.wordsize - n.val % Int64.wordsize + k) = false :=
+      Nat.testBit_lt_two_pow (Nat.lt_of_lt_of_le haval (by
+        apply Nat.pow_le_pow_right (by decide)
+        omega))
+    rw [hright, Bool.or_false]
+    have hidx : k + Int64.wordsize - n.val % Int64.wordsize =
+        Int64.wordsize + (k - n.val % Int64.wordsize) := by omega
+    have hsub_lt : k - n.val % Int64.wordsize < Int64.wordsize := by omega
+    rw [hidx, Nat.add_mod, Nat.mod_eq_of_lt hsub_lt]
+    simp
+    rw [Nat.mod_eq_of_lt hsub_lt]
+  · rw [decide_eq_false hge, Bool.false_and, Bool.false_or]
+    have hidx_lt : k + Int64.wordsize - n.val % Int64.wordsize <
+        Int64.wordsize := by omega
+    rw [Nat.mod_eq_of_lt hidx_lt]
+    have hidx : Int64.wordsize - n.val % Int64.wordsize + k =
+        k + Int64.wordsize - n.val % Int64.wordsize := by omega
+    rw [hidx]
+
+private theorem lagreeRotIndexBackRotate (k a : Nat)
+    (hk : k < Int64.wordsize) (ha : a < Int64.wordsize) :
+    (((k + Int64.wordsize - a) % Int64.wordsize + a) % Int64.wordsize) = k := by
+  by_cases hge : a ≤ k
+  · have hidx : k + Int64.wordsize - a = Int64.wordsize + (k - a) := by omega
+    have hsub_lt : k - a < Int64.wordsize := by omega
+    have hinner : (Int64.wordsize + (k - a)) % Int64.wordsize = k - a := by
+      have hmod : (Int64.wordsize + (k - a)) % Int64.wordsize =
+          (k - a) % Int64.wordsize := by
+        simpa using Nat.mul_add_mod_self_left Int64.wordsize 1 (k - a)
+      exact hmod.trans (Nat.mod_eq_of_lt hsub_lt)
+    rw [hidx, hinner, Nat.sub_add_cancel hge, Nat.mod_eq_of_lt hk]
+  · have hidx_lt : k + Int64.wordsize - a < Int64.wordsize := by omega
+    rw [Nat.mod_eq_of_lt hidx_lt]
+    have hidx : k + Int64.wordsize - a + a = Int64.wordsize + k := by omega
+    rw [hidx, Nat.add_mod]
+    simp [Nat.mod_eq_of_lt hk]
+
+private theorem lagreeRolAtRotate (p q m amount : Int64.int)
+    (h : lagree p q (Int64.ror m amount)) (k : Nat)
+    (hk : k < Int64.wordsize) (hmask : m.val.testBit k = true) :
+    Int64.testbit (Int64.rol p amount) (ZArith.BinInt.Z.of_nat k) =
+      Int64.testbit (Int64.rol q amount) (ZArith.BinInt.Z.of_nat k) := by
+  let a := amount.val % Int64.wordsize
+  let j := (k + Int64.wordsize - a) % Int64.wordsize
+  have ha : a < Int64.wordsize := Nat.mod_lt _ (by decide)
+  have hj : j < Int64.wordsize := Nat.mod_lt _ (by decide)
+  have hback : (j + a) % Int64.wordsize = k := by
+    dsimp [j]
+    exact lagreeRotIndexBackRotate k a hk ha
+  have hmask' : Int64.testbit (Int64.ror m amount)
+      (ZArith.BinInt.Z.of_nat j) = true := by
+    rw [lagreeRorBitNatRotate m amount j hj]
+    change m.val.testBit ((j + amount.val % Int64.wordsize) % Int64.wordsize) = true
+    rw [show amount.val % Int64.wordsize = a by rfl, hback]
+    exact hmask
+  have hjrange :
+      ZArith.BinInt.Z.le z0 (ZArith.BinInt.Z.of_nat j) ∧
+      ZArith.BinInt.Z.lt (ZArith.BinInt.Z.of_nat j) Int64.zwordsize := by
+    constructor
+    · change 0 ≤ intOfZ (ZArith.BinInt.Z.of_nat j)
+      simp only [ZArith.BinInt.Z.of_nat, intOfZ_zOfInt]
+      exact Int.natCast_nonneg _
+    · change intOfZ (ZArith.BinInt.Z.of_nat j) < intOfZ Int64.zwordsize
+      have hw : intOfZ Int64.zwordsize = Int.ofNat 64 := by
+        change intOfZ (ZArith.BinInt.Z.of_nat 64) = Int.ofNat 64
+        rw [ZArith.BinInt.Z.of_nat, intOfZ_zOfInt]
+      rw [hw]
+      simp only [ZArith.BinInt.Z.of_nat, intOfZ_zOfInt]
+      exact Int.ofNat_lt.mpr hj
+  have hsrc := h (ZArith.BinInt.Z.of_nat j) hjrange hmask'
+  rw [lagreeTestbitOfNatFinal p j, lagreeTestbitOfNatFinal q j] at hsrc
+  rw [lagreeRolBitNatRotate p amount k hk, lagreeRolBitNatRotate q amount k hk]
+  change p.val.testBit j = q.val.testBit j
+  exact hsrc
+
+theorem lagree_rol : lagree_rolStatement := by
+  intro p q m amount h i hirange hmask
+  cases i with
+  | Zneg r =>
+      exfalso
+      have h0 := hirange.1
+      change 0 ≤ -(Int.ofNat (posToNat r)) at h0
+      have hr : (0 : Int) < Int.ofNat (posToNat r) :=
+        Int.natCast_pos.mpr (lagreePosToNatPosFinal r)
+      omega
+  | Z0 =>
+      have hm : m.val.testBit 0 = true := by
+        simpa [lagreeTestbitZero] using hmask
+      rw [lagreeTestbitZero, lagreeTestbitZero]
+      have ht := lagreeRolAtRotate p q m amount h 0 (by decide) hm
+      rw [lagreeTestbitOfNatFinal (Int64.rol p amount) 0,
+        lagreeTestbitOfNatFinal (Int64.rol q amount) 0] at ht
+      exact ht
+  | Zpos r =>
+      have hkZ := hirange.2
+      change (Int.ofNat (posToNat r) : Int) < Int.ofNat 64 at hkZ
+      have hk : posToNat r < Int64.wordsize := Int.ofNat_lt.mp hkZ
+      have hm : m.val.testBit (posToNat r) = true := by
+        simpa [lagreeTestbitPos] using hmask
+      rw [lagreeTestbitPos, lagreeTestbitPos]
+      have ht := lagreeRolAtRotate p q m amount h (posToNat r) hk hm
+      rw [lagreeTestbitOfNatFinal (Int64.rol p amount) (posToNat r),
+        lagreeTestbitOfNatFinal (Int64.rol q amount) (posToNat r)] at ht
+      exact ht
+
+end CompCert4Lean.Backend.NeedDomain
+
+namespace CompCert4Lean.Backend.NeedDomain
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Lib.Integers
+
+private theorem lagreeRotIndexForwardRotate (k a : Nat)
+    (hk : k < Int64.wordsize) (ha : a < Int64.wordsize) :
+    (((k + a) % Int64.wordsize + Int64.wordsize - a) % Int64.wordsize) = k := by
+  by_cases hsum : k + a < Int64.wordsize
+  · rw [Nat.mod_eq_of_lt hsum]
+    have hidx : k + a + Int64.wordsize - a = Int64.wordsize + k := by omega
+    rw [hidx, Nat.add_mod]
+    simp [Nat.mod_eq_of_lt hk]
+  · have hsum' : Int64.wordsize ≤ k + a := Nat.le_of_not_gt hsum
+    have hsub_lt : k + a - Int64.wordsize < Int64.wordsize := by omega
+    rw [Nat.mod_eq_sub_mod hsum', Nat.mod_eq_of_lt hsub_lt]
+    have hidx : k + a - Int64.wordsize + Int64.wordsize - a = k := by omega
+    rw [hidx, Nat.mod_eq_of_lt hk]
+
+private theorem lagreeRorAtRotate (p q m amount : Int64.int)
+    (h : lagree p q (Int64.rol m amount)) (k : Nat)
+    (hk : k < Int64.wordsize) (hmask : m.val.testBit k = true) :
+    Int64.testbit (Int64.ror p amount) (ZArith.BinInt.Z.of_nat k) =
+      Int64.testbit (Int64.ror q amount) (ZArith.BinInt.Z.of_nat k) := by
+  let a := amount.val % Int64.wordsize
+  let j := (k + a) % Int64.wordsize
+  have ha : a < Int64.wordsize := Nat.mod_lt _ (by decide)
+  have hj : j < Int64.wordsize := Nat.mod_lt _ (by decide)
+  have hback : (j + Int64.wordsize - a) % Int64.wordsize = k := by
+    dsimp [j]
+    exact lagreeRotIndexForwardRotate k a hk ha
+  have hmask' : Int64.testbit (Int64.rol m amount)
+      (ZArith.BinInt.Z.of_nat j) = true := by
+    rw [lagreeRolBitNatRotate m amount j hj]
+    change m.val.testBit ((j + Int64.wordsize - amount.val % Int64.wordsize) %
+      Int64.wordsize) = true
+    rw [show amount.val % Int64.wordsize = a by rfl, hback]
+    exact hmask
+  have hjrange :
+      ZArith.BinInt.Z.le z0 (ZArith.BinInt.Z.of_nat j) ∧
+      ZArith.BinInt.Z.lt (ZArith.BinInt.Z.of_nat j) Int64.zwordsize := by
+    constructor
+    · change 0 ≤ intOfZ (ZArith.BinInt.Z.of_nat j)
+      simp only [ZArith.BinInt.Z.of_nat, intOfZ_zOfInt]
+      exact Int.natCast_nonneg _
+    · change intOfZ (ZArith.BinInt.Z.of_nat j) < intOfZ Int64.zwordsize
+      have hw : intOfZ Int64.zwordsize = Int.ofNat 64 := by
+        change intOfZ (ZArith.BinInt.Z.of_nat 64) = Int.ofNat 64
+        rw [ZArith.BinInt.Z.of_nat, intOfZ_zOfInt]
+      rw [hw]
+      simp only [ZArith.BinInt.Z.of_nat, intOfZ_zOfInt]
+      exact Int.ofNat_lt.mpr hj
+  have hsrc := h (ZArith.BinInt.Z.of_nat j) hjrange hmask'
+  rw [lagreeTestbitOfNatFinal p j, lagreeTestbitOfNatFinal q j] at hsrc
+  rw [lagreeRorBitNatRotate p amount k hk, lagreeRorBitNatRotate q amount k hk]
+  change p.val.testBit j = q.val.testBit j
+  exact hsrc
+
+theorem lagree_ror : lagree_rorStatement := by
+  intro p q m amount h i hirange hmask
+  let amount64 := Int64.repr (Int.unsigned amount)
+  change lagree p q (Int64.rol m amount64) at h
+  change Int64.testbit (Int64.ror p amount64) i =
+    Int64.testbit (Int64.ror q amount64) i
+  cases i with
+  | Zneg r =>
+      exfalso
+      have h0 := hirange.1
+      change 0 ≤ -(Int.ofNat (posToNat r)) at h0
+      have hr : (0 : Int) < Int.ofNat (posToNat r) :=
+        Int.natCast_pos.mpr (lagreePosToNatPosFinal r)
+      omega
+  | Z0 =>
+      have hm : m.val.testBit 0 = true := by
+        simpa [lagreeTestbitZero] using hmask
+      rw [lagreeTestbitZero, lagreeTestbitZero]
+      have ht := lagreeRorAtRotate p q m amount64 h 0 (by decide) hm
+      rw [lagreeTestbitOfNatFinal (Int64.ror p amount64) 0,
+        lagreeTestbitOfNatFinal (Int64.ror q amount64) 0] at ht
+      exact ht
+  | Zpos r =>
+      have hkZ := hirange.2
+      change (Int.ofNat (posToNat r) : Int) < Int.ofNat 64 at hkZ
+      have hk : posToNat r < Int64.wordsize := Int.ofNat_lt.mp hkZ
+      have hm : m.val.testBit (posToNat r) = true := by
+        simpa [lagreeTestbitPos] using hmask
+      rw [lagreeTestbitPos, lagreeTestbitPos]
+      have ht := lagreeRorAtRotate p q m amount64 h (posToNat r) hk hm
+      rw [lagreeTestbitOfNatFinal (Int64.ror p amount64) (posToNat r),
+        lagreeTestbitOfNatFinal (Int64.ror q amount64) (posToNat r)] at ht
+      exact ht
+
+end CompCert4Lean.Backend.NeedDomain
+
+namespace CompCert4Lean.Backend.NeedDomain
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Lib.Integers
+
+private theorem lagreeUnsignedAsNatFinal (a : Int64.int) :
+    WordCore.unsigned a = ZArith.BinInt.Z.of_nat a.val := by
+  have hnonneg : ZArith.BinInt.Z.le z0 (WordCore.unsigned a) := by
+    have h := a.intrange.1
+    change (-1 : Int) < intOfZ (WordCore.unsigned a) at h
+    change 0 ≤ intOfZ (WordCore.unsigned a)
+    omega
+  exact (ZArith.Znat.Z2Nat.id (WordCore.unsigned a) hnonneg).symm
+
+private theorem lagreeSignedLowFinal (a : Int64.int)
+    (h : a.val < 2 ^ (Int64.wordsize - 1)) :
+    Int64.signed a = ZArith.BinInt.Z.of_nat a.val := by
+  unfold Int64.signed WordCore.signed
+  dsimp
+  run_tac
+    let g ← Lean.Elab.Tactic.getMainGoal
+    let t ← g.getType
+    let zltName := lagreePrivateName "CompCert4Lean.Lib.Integers.zltSelect"
+    let selectName := lagreePrivateName "CompCert4Lean.Lib.Integers.sumboolSelect"
+    let powerName := lagreePrivateName "CompCert4Lean.Lib.Integers.zTwoPowerNat"
+    let subName := lagreePrivateName "CompCert4Lean.Lib.Integers.zSub"
+    let t ← Lean.Meta.transform t (post := fun e => do
+      if e.isAppOf zltName then
+        return .visit (← Lean.Meta.whnf (← Lean.Meta.unfoldDefinition e))
+      else return .continue)
+    let t ← Lean.Meta.transform t (post := fun e => do
+      if e.isAppOf selectName then
+        return .visit (← Lean.Meta.whnf (← Lean.Meta.unfoldDefinition e))
+      else return .continue)
+    let t ← Lean.Meta.transform t (post := fun e => do
+      if e.isAppOf powerName || e.isAppOf subName then
+        return .visit (← Lean.Meta.unfoldDefinition e)
+      else return .continue)
+    let t ← Lean.Meta.transform t (post := fun e => do
+      if e.getAppFn.isLambda then return .done (← Lean.Meta.whnf e)
+      else return .continue)
+    let t ← Lean.Meta.zetaReduce t false false true
+    let g ← g.replaceTargetDefEq t
+    Lean.Elab.Tactic.replaceMainGoal [g]
+  cases hz : CompCert4Lean.Lib.Coqlib.zlt (WordCore.unsigned a)
+      (two_power_nat (Int64.wordsize - 1)) with
+  | left hlt =>
+      exact lagreeUnsignedAsNatFinal a
+  | right hnot =>
+    have hge := hnot
+    change intOfZ (WordCore.unsigned a) ≥
+      intOfZ (two_power_nat (Int64.wordsize - 1)) at hge
+    rw [lagreeUnsignedAsNatFinal] at hge
+    have hpow : intOfZ (two_power_nat (Int64.wordsize - 1)) =
+        Int.ofNat (2 ^ (Int64.wordsize - 1)) := by rfl
+    rw [hpow] at hge
+    simp only [ZArith.BinInt.Z.of_nat, intOfZ_zOfInt] at hge
+    have : 2 ^ (Int64.wordsize - 1) ≤ a.val := Int.ofNat_le.mp hge
+    omega
+
+private theorem lagreeSignedHighFinal (a : Int64.int)
+    (h : 2 ^ (Int64.wordsize - 1) ≤ a.val) :
+    Int64.signed a = ZArith.BinInt.Z.sub
+      (ZArith.BinInt.Z.of_nat a.val)
+      (ZArith.BinInt.Z.of_nat (2 ^ Int64.wordsize)) := by
+  unfold Int64.signed WordCore.signed
+  dsimp
+  run_tac
+    let g ← Lean.Elab.Tactic.getMainGoal
+    let t ← g.getType
+    let zltName := lagreePrivateName "CompCert4Lean.Lib.Integers.zltSelect"
+    let selectName := lagreePrivateName "CompCert4Lean.Lib.Integers.sumboolSelect"
+    let powerName := lagreePrivateName "CompCert4Lean.Lib.Integers.zTwoPowerNat"
+    let subName := lagreePrivateName "CompCert4Lean.Lib.Integers.zSub"
+    let t ← Lean.Meta.transform t (post := fun e => do
+      if e.isAppOf zltName then
+        return .visit (← Lean.Meta.whnf (← Lean.Meta.unfoldDefinition e))
+      else return .continue)
+    let t ← Lean.Meta.transform t (post := fun e => do
+      if e.isAppOf selectName then
+        return .visit (← Lean.Meta.whnf (← Lean.Meta.unfoldDefinition e))
+      else return .continue)
+    let t ← Lean.Meta.transform t (post := fun e => do
+      if e.isAppOf powerName || e.isAppOf subName then
+        return .visit (← Lean.Meta.unfoldDefinition e)
+      else return .continue)
+    let t ← Lean.Meta.transform t (post := fun e => do
+      if e.getAppFn.isLambda then return .done (← Lean.Meta.whnf e)
+      else return .continue)
+    let t ← Lean.Meta.zetaReduce t false false true
+    let g ← g.replaceTargetDefEq t
+    Lean.Elab.Tactic.replaceMainGoal [g]
+  cases hz : CompCert4Lean.Lib.Coqlib.zlt (WordCore.unsigned a)
+      (two_power_nat (Int64.wordsize - 1)) with
+  | left hlt =>
+    change intOfZ (WordCore.unsigned a) <
+      intOfZ (two_power_nat (Int64.wordsize - 1)) at hlt
+    rw [lagreeUnsignedAsNatFinal] at hlt
+    have hpow : intOfZ (two_power_nat (Int64.wordsize - 1)) =
+        Int.ofNat (2 ^ (Int64.wordsize - 1)) := by rfl
+    rw [hpow] at hlt
+    simp only [ZArith.BinInt.Z.of_nat, intOfZ_zOfInt] at hlt
+    have : a.val < 2 ^ (Int64.wordsize - 1) := Int.ofNat_lt.mp hlt
+    omega
+  | right hge =>
+    change ZArith.BinInt.Z.sub (WordCore.unsigned a)
+      (two_power_nat Int64.wordsize) = _
+    rw [lagreeUnsignedAsNatFinal]
+    rfl
+
+end CompCert4Lean.Backend.NeedDomain
+
+namespace CompCert4Lean.Backend.NeedDomain
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Lib.Integers
+open Lean Elab Tactic Meta
+
+private theorem lagreeIntUnsignedAsNatFinal (n : Int.int) :
+    Int.unsigned n = ZArith.BinInt.Z.of_nat n.val := by
+  have hnonneg : ZArith.BinInt.Z.le z0 (Int.unsigned n) := by
+    have h := n.intrange.1
+    change (-1 : Int) < intOfZ (Int.unsigned n) at h
+    change 0 ≤ intOfZ (Int.unsigned n)
+    omega
+  exact (ZArith.Znat.Z2Nat.id (Int.unsigned n) hnonneg).symm
+
+private theorem lagreeValReprIntFinal (bits : Nat) (i : Int) :
+    (WordCore.repr bits (zOfInt i)).val =
+      Int.toNat (i % ((2 ^ bits : Nat) : Int)) := by
+  run_tac
+    let lctx ← getLCtx
+    let bitsF := (lctx.findFromUserName? `bits).get!
+    let iF := (lctx.findFromUserName? `i).get!
+    let bitsE := mkFVar bitsF.fvarId
+    let iE := mkFVar iF.fvarId
+    let e ← mkAppM
+      (lagreePrivateName "CompCert4Lean.Lib.Integers.WordCore.val_repr")
+      #[bitsE, iE]
+    closeMainGoal Name.anonymous e
+
+private theorem lagreeShrValLowFinal (a : Int64.int) (n : Int.int)
+    (h : a.val < 2 ^ (Int64.wordsize - 1)) :
+    (Int64.shr' a n).val = a.val / 2 ^ n.val := by
+  change (WordCore.repr Int64.wordsize
+    (ZArith.BinInt.Z.shiftr (Int64.signed a) (Int.unsigned n))).val = _
+  rw [lagreeSignedLowFinal a h, lagreeIntUnsignedAsNatFinal n]
+  rw [show ZArith.BinInt.Z.shiftr (ZArith.BinInt.Z.of_nat a.val)
+      (ZArith.BinInt.Z.of_nat n.val) =
+      ZArith.BinInt.Z.of_nat (a.val / 2 ^ n.val) by
+    unfold ZArith.BinInt.Z.shiftr
+    simp only [ZArith.BinInt.Z.of_nat, intOfZ_zOfInt,
+      Int.ofNat_eq_natCast, Int.natCast_nonneg, ↓reduceIte]
+    rw [Int.natCast_ediv, Int.natCast_pow]
+    rfl]
+  rw [lagreeValReprOfNat]
+  apply Nat.mod_eq_of_lt
+  exact Nat.lt_of_le_of_lt (Nat.div_le_self _ _) (lagreeWordValLt a)
+
+end CompCert4Lean.Backend.NeedDomain

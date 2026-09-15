@@ -3115,3 +3115,54 @@ theorem star_non_E0_split' : star_non_E0_split'Statement := by
               simp at hlen
 
 end CompCert4Lean.Common.Smallstep
+
+namespace CompCert4Lean.Common.Smallstep
+
+open CompCert4Lean.Common.Events
+
+theorem ffs_simulation : ffs_simulationStatement := by
+  intro L1 L2 index order match_states props hsingle s1 t s1' hstep
+  induction hstep with
+  | atomic_step_silent s s' hstep =>
+      intro i s2 hmatch
+      cases hmatch
+      rename_i hmatch0
+      obtain ⟨i', s2', hdiag, hmatch'⟩ :=
+        props.fsim_simulation s E0 s' hstep i s2 hmatch0
+      exact ⟨i', s2', hdiag, ffs_match.at i' s' s2' hmatch'⟩
+  | atomic_step_start s ev t s' hstep =>
+      intro i s2 hmatch
+      cases hmatch
+      rename_i hmatch0
+      obtain ⟨i', s2', hdiag, hmatch'⟩ :=
+        props.fsim_simulation s (ev :: t) s' hstep i s2 hmatch0
+      cases t with
+      | nil =>
+          exact ⟨i', s2', hdiag, ffs_match.at i' s' s2' hmatch'⟩
+      | cons ev' t =>
+          have hstar : star (step L2) (globalenv L2) s2 (ev :: ev' :: t) s2' := by
+            rcases hdiag with hplus | ⟨hstar, horder⟩
+            · exact plus_star _ _ _ _ _ _ _ hplus
+            · exact hstar
+          obtain ⟨s2x, hplus, htail⟩ :=
+            star_non_E0_split' L2 hsingle s2 (ev :: ev' :: t) s2' hstar
+          exact ⟨i', s2x, Or.inl hplus,
+            ffs_match.buffer i' ev' t s' s2x s2'
+              htail hmatch'⟩
+  | atomic_step_continue ev t s hout =>
+      intro i s2 hmatch
+      cases hmatch
+      rename_i s20 s20' hmatch0 hstar0
+      obtain ⟨s2x, hplus, htail⟩ :=
+        star_non_E0_split' L2 hsingle s2 (ev :: t) s20' hstar0
+      cases t with
+      | nil =>
+          exact ⟨i, s20',
+            Or.inl (plus_star_trans _ _ _ _ _ _ _ _ _ _ hplus htail rfl),
+            ffs_match.at i s s20' hmatch0⟩
+      | cons ev'' t'' =>
+          exact ⟨i, s2x, Or.inl hplus,
+            ffs_match.buffer i ev'' t'' s s2x s20'
+              htail hmatch0⟩
+
+end CompCert4Lean.Common.Smallstep
