@@ -3389,3 +3389,46 @@ theorem radix_pos (ctx : ExactRealContext) :
   exact exact_radix_pos_aux ctx r
 
 end CompCert4Lean.Flocq.Core.Raux
+
+namespace CompCert4Lean.Flocq.Core.Raux
+
+theorem IZR_Zpower_pos (ctx : ExactRealContext) : IZR_Zpower_posStatement ctx := by
+  intro n m
+  apply CompCert4Lean.Foundation.Numbers.Rocq.Coq.PArith.BinPos.Pos.peano_ind
+    (P := fun m => Exact.IZR ctx (Zpower_pos n m) =
+      Exact.powerRZ ctx (Exact.IZR ctx n) (Zpos m))
+  · rw [pg_zpower_pos_one]
+    change Exact.IZR ctx n = ctx.spec.mul (Exact.IZR ctx n) ctx.spec.one
+    exact (ctx.certificate.orderedField.mul_one _).symm
+  · intro m ih
+    change Exact.IZR ctx
+        (Zpower_pos n
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.PArith.BinPos.Pos.succ m)) =
+      CompCert4Lean.Foundation.FlocqReal.ExactReal.powerNat ctx.spec
+        (Exact.IZR ctx n)
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.PArith.BinPos.Pos.succ m))
+    rw [pg_zpower_pos_succ]
+    have hmul :=
+      CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.mult_IZR ctx
+        (Zpower_pos n m) n
+    rw [show Exact.IZR ctx
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.mul
+          (Zpower_pos n m) n) =
+        ctx.spec.mul (Exact.IZR ctx (Zpower_pos n m))
+          (Exact.IZR ctx n) by exact hmul]
+    rw [ih, pg_posToNat_succ]
+    rw [show CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat m + 1 =
+        Nat.succ (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat m) by omega]
+    change ctx.spec.mul
+        (CompCert4Lean.Foundation.FlocqReal.ExactReal.powerNat ctx.spec
+          (Exact.IZR ctx n)
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat m))
+        (Exact.IZR ctx n) =
+      ctx.spec.mul (Exact.IZR ctx n)
+        (CompCert4Lean.Foundation.FlocqReal.ExactReal.powerNat ctx.spec
+          (Exact.IZR ctx n)
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat m))
+    rw [ctx.certificate.orderedField.mul_comm]
+
+end CompCert4Lean.Flocq.Core.Raux

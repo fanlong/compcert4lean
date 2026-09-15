@@ -3442,3 +3442,15 @@ theorem load_store_overlap : load_store_overlapStatement := by
 
 end Mem
 end CompCert4Lean.Common.Memory
+
+namespace CompCert4Lean.Common.Memory
+namespace Mem
+
+theorem compat_pointer_chunks_true : compat_pointer_chunks_trueStatement := by
+  intro chunk1 chunk2 h1 h2 hq
+  rcases h1 with rfl | rfl | rfl | rfl <;>
+    rcases h2 with rfl | rfl | rfl | rfl <;>
+    simp [Memdata.quantity_chunk, compat_pointer_chunks] at hq ⊢
+
+end Mem
+end CompCert4Lean.Common.Memory

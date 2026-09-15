@@ -2907,3 +2907,38 @@ theorem destroyed_by_cond_caller_save : destroyed_by_cond_caller_saveStatement :
   rfl
 
 end CompCert4Lean.Backend.Stackingproof
+
+namespace CompCert4Lean.Backend.Stackingproof
+
+theorem destroyed_by_jumptable_caller_save :
+    destroyed_by_jumptable_caller_saveStatement := by
+  intro cfg
+  unfold no_callee_saves
+  simp [CompCert4Lean.X86.Machregs.destroyed_by_jumptable,
+    CompCert4Lean.X86.Conventions1.is_callee_save]
+
+theorem destroyed_by_setstack_caller_save :
+    destroyed_by_setstack_caller_saveStatement := by
+  intro cfg ty
+  unfold no_callee_saves
+  cases ty <;>
+    simp [CompCert4Lean.X86.Machregs.destroyed_by_setstack,
+      CompCert4Lean.X86.Conventions1.is_callee_save]
+
+theorem destroyed_at_function_entry_caller_save :
+    destroyed_at_function_entry_caller_saveStatement := by
+  intro cfg
+  unfold no_callee_saves
+  simp [CompCert4Lean.X86.Machregs.destroyed_at_function_entry,
+    CompCert4Lean.X86.Conventions1.is_callee_save]
+
+theorem destroyed_by_setstack_function_entry :
+    destroyed_by_setstack_function_entryStatement := by
+  intro _ _ ty r hr
+  cases ty <;>
+    simp [CompCert4Lean.X86.Machregs.destroyed_by_setstack,
+      CompCert4Lean.X86.Machregs.destroyed_at_function_entry] at hr ⊢
+  · exact Or.inr hr
+  · exact Or.inr hr
+
+end CompCert4Lean.Backend.Stackingproof

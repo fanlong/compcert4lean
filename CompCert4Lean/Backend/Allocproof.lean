@@ -6076,3 +6076,242 @@ theorem add_equations_builtin_arg_lessdef :
       | _ => simp [add_equations_builtin_arg] at hrun
 
 end CompCert4Lean.Backend.Allocproof
+
+namespace CompCert4Lean.Backend.Allocproof
+
+open CompCert4Lean.Backend.Allocation
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Values
+
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Lib.Integers.Ptrofs
+open Lean Elab Tactic Meta
+
+private def pgo_memdataPrivateName (suffix : String) : Name :=
+  let p := Name.str (Name.str (Name.str (Name.str Name.anonymous "_private") "CompCert4Lean") "Common") "Memdata"
+  let base := Name.num p 0
+  suffix.splitOn "." |>.foldl Name.str base
+
+private theorem pgo_ptrofs_add_zero
+    (ofs : CompCert4Lean.Lib.Integers.Ptrofs.int) :
+    CompCert4Lean.Lib.Integers.Ptrofs.add ofs
+      (CompCert4Lean.Lib.Integers.Ptrofs.repr (.Z0 : Z)) = ofs := by
+  run_tac
+    let lctx ← getLCtx
+    let ofsF := (lctx.findFromUserName? `ofs).get!
+    let e ← mkAppM
+      (pgo_memdataPrivateName "CompCert4Lean.Common.Memdata.memdata_ptrofs_add_zero")
+      #[mkFVar ofsF.fvarId]
+    closeMainGoal Name.anonymous e
+
+private theorem pgo_zadd_zero (x : Z) :
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add x (.Z0) = x := by
+  apply CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective
+  change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ x + 0)) =
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ x
+  rw [CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+  simp
+
+private theorem pgo_val_inject_lessdef (v v' : val) :
+    Val.inject CompCert4Lean.Common.Values.inject_id v v' → Val.lessdef v v' := by
+  intro h
+  cases h with
+  | inject_int n => exact Val.lessdef_refl _
+  | inject_long n => exact Val.lessdef_refl _
+  | inject_float n => exact Val.lessdef_refl _
+  | inject_single n => exact Val.lessdef_refl _
+  | inject_ptr b1 ofs1 b2 ofs2 delta hmap hofs =>
+      have hpair : (b1, (.Z0 : Z)) = (b2, delta) := by
+        simpa [CompCert4Lean.Common.Values.inject_id] using Option.some.inj hmap
+      rcases hpair with ⟨rfl, rfl⟩
+      have hz0 := pgo_ptrofs_add_zero ofs1
+      rw [hz0] at hofs
+      have hz : ofs2 = ofs1 := hofs
+      cases hz
+      exact Val.lessdef_refl _
+  | val_inject_undef v => exact Val.lessdef_undef _
+
+private theorem pgo_getN_memval_lessdef :
+    ∀ (N : Nat) (p : Z) (c1 c2 : ZMap.t memval),
+      (∀ i, ZArith.BinInt.Z.le p i ∧
+          ZArith.BinInt.Z.lt i (ZArith.BinInt.Z.add p (ZArith.BinInt.Z.of_nat N)) →
+        memval_lessdef (ZMap.get i c1) (ZMap.get i c2)) →
+      CompCert4Lean.Lib.Coqlib.list_forall2 memval_lessdef
+        (Mem.getN N p c1) (Mem.getN N p c2) := by
+  intro N
+  induction N with
+  | zero =>
+      intro p c1 c2 hN
+      exact CompCert4Lean.Lib.Coqlib.list_forall2_nil _
+  | succ N ih =>
+      intro p c1 c2 hN
+      apply CompCert4Lean.Lib.Coqlib.list_forall2.cons
+      · apply hN p
+        constructor
+        · change intOfZ p ≤ intOfZ p
+          omega
+        · change intOfZ p < intOfZ
+            (ZArith.BinInt.Z.add p (ZArith.BinInt.Z.of_nat (N + 1)))
+          simp [ZArith.BinInt.Z.add, ZArith.BinInt.Z.of_nat, intOfZ_zOfInt]
+          omega
+      · change CompCert4Lean.Lib.Coqlib.list_forall2 memval_lessdef
+          (Mem.getN N (ZArith.BinInt.Z.add p (ZArith.BinInt.Z.of_nat 1)) c1)
+          (Mem.getN N (ZArith.BinInt.Z.add p (ZArith.BinInt.Z.of_nat 1)) c2)
+        apply ih
+        intro i hi
+        apply hN i
+        rcases hi with ⟨hile, hilt⟩
+        constructor
+        · change intOfZ p ≤ intOfZ i
+          change intOfZ (ZArith.BinInt.Z.add p (ZArith.BinInt.Z.of_nat 1)) ≤
+            intOfZ i at hile
+          simp [ZArith.BinInt.Z.add, ZArith.BinInt.Z.of_nat, intOfZ_zOfInt] at hile
+          omega
+        · change intOfZ i < intOfZ
+            (ZArith.BinInt.Z.add p (ZArith.BinInt.Z.of_nat (N + 1)))
+          change intOfZ i < intOfZ
+            (ZArith.BinInt.Z.add
+              (ZArith.BinInt.Z.add p (ZArith.BinInt.Z.of_nat 1))
+              (ZArith.BinInt.Z.of_nat N)) at hilt
+          simp [ZArith.BinInt.Z.add, ZArith.BinInt.Z.of_nat, intOfZ_zOfInt] at hilt ⊢
+          omega
+
+private theorem pgo_loadv_extends
+    (chunk : memory_chunk) (m tm : mem) (addr : val) (v : val)
+    (hext : Mem.extends m tm) (hload : Mem.loadv chunk m addr = some v) :
+    ∃ v', Mem.loadv chunk tm addr = some v' ∧ Val.lessdef v v' := by
+  cases addr with
+  | Vundef => simp [Mem.loadv] at hload
+  | Vint n => simp [Mem.loadv] at hload
+  | Vlong n => simp [Mem.loadv] at hload
+  | Vfloat n => simp [Mem.loadv] at hload
+  | Vsingle n => simp [Mem.loadv] at hload
+  | Vptr b ofs =>
+      have hvalid := Mem.load_valid_access m chunk b
+        (CompCert4Lean.Lib.Integers.Ptrofs.unsigned ofs) v hload
+      have hvalid' : Mem.valid_access tm chunk b
+          (CompCert4Lean.Lib.Integers.Ptrofs.unsigned ofs) Readable := by
+        constructor
+        · intro i hi
+          have hp := hext.mext_inj.mi_perm b b (.Z0) i Cur Readable (by rfl)
+            (hvalid.1 i hi)
+          simpa [pgo_zadd_zero] using hp
+        · exact hvalid.2
+      rcases Mem.valid_access_load tm chunk b
+          (CompCert4Lean.Lib.Integers.Ptrofs.unsigned ofs) hvalid' with
+        ⟨v', hload'⟩
+      refine ⟨v', hload', ?_⟩
+      rw [Mem.load_result chunk m b
+          (CompCert4Lean.Lib.Integers.Ptrofs.unsigned ofs) v hload,
+        Mem.load_result chunk tm b
+          (CompCert4Lean.Lib.Integers.Ptrofs.unsigned ofs) v' hload']
+      apply pgo_val_inject_lessdef
+      apply decode_val_inject
+      have hsize : ZArith.BinInt.Z.of_nat (size_chunk_nat chunk) = size_chunk chunk :=
+        (size_chunk_conv chunk).symm
+      apply pgo_getN_memval_lessdef
+      intro i hi
+      have hp := hvalid.1 i (by
+        rcases hi with ⟨hilo, hihi⟩
+        constructor
+        · exact hilo
+        · simpa [hsize] using hihi)
+      have hm := hext.mext_inj.mi_memval b i b (.Z0) (by rfl) hp
+      change memval_inject CompCert4Lean.Common.Values.inject_id
+        (ZMap.get i (PMap.get b m.mem_contents))
+        (ZMap.get i (PMap.get b tm.mem_contents))
+      simpa [pgo_zadd_zero] using hm
+
+private theorem pgo_eval_builtin_arg_extends
+    {A : Type} (ge : Senv.t) (e : A → val) (sp : val) (m tm : mem)
+    (hext : Mem.extends m tm) :
+    ∀ (a : builtin_arg A) (v : val),
+      eval_builtin_arg ge e sp m a v →
+      ∃ v', eval_builtin_arg ge e sp tm a v' ∧ Val.lessdef v v' := by
+  intro a v h
+  induction h with
+  | eval_BA x => exact ⟨e x, eval_BA x, Val.lessdef_refl _⟩
+  | eval_BA_int n => exact ⟨Vint n, eval_BA_int n, Val.lessdef_refl _⟩
+  | eval_BA_long n => exact ⟨Vlong n, eval_BA_long n, Val.lessdef_refl _⟩
+  | eval_BA_float n => exact ⟨Vfloat n, eval_BA_float n, Val.lessdef_refl _⟩
+  | eval_BA_single n => exact ⟨Vsingle n, eval_BA_single n, Val.lessdef_refl _⟩
+  | eval_BA_loadstack chunk ofs v hload =>
+      rcases pgo_loadv_extends chunk m tm (Val.offset_ptr sp ofs) v hext hload with
+        ⟨v', hload', hld⟩
+      exact ⟨v', eval_BA_loadstack _ _ _ hload', hld⟩
+  | eval_BA_addrstack ofs =>
+      exact ⟨Val.offset_ptr sp ofs, eval_BA_addrstack _, Val.lessdef_refl _⟩
+  | eval_BA_loadglobal chunk id ofs v hload =>
+      rcases pgo_loadv_extends chunk m tm (Senv.symbol_address ge id ofs) v hext hload with
+        ⟨v', hload', hld⟩
+      exact ⟨v', eval_BA_loadglobal _ _ _ _ hload', hld⟩
+  | eval_BA_addrglobal id ofs =>
+      exact ⟨Senv.symbol_address ge id ofs, eval_BA_addrglobal id ofs, Val.lessdef_refl _⟩
+  | eval_BA_splitlong hi lo vhi vlo hhi hlo ihi ihlo =>
+      rcases ihi with ⟨vhi', hhi', ldhi⟩
+      rcases ihlo with ⟨vlo', hlo', ldlo⟩
+      exact ⟨Val.longofwords vhi' vlo', eval_BA_splitlong _ _ _ _ hhi' hlo',
+        allocproof_longofwords_lessdef _ _ _ _ ldhi ldlo⟩
+  | eval_BA_addptr a1 a2 v1 v2 h1 h2 ih1 ih2 =>
+      rcases ih1 with ⟨v1', h1', ld1⟩
+      rcases ih2 with ⟨v2', h2', ld2⟩
+      refine ⟨(if CompCert4Lean.X86_64.Archi.ptr64 then Val.addl v1' v2' else Val.add v1' v2'),
+        eval_BA_addptr _ _ _ _ h1' h2', ?_⟩
+      cases hptr : CompCert4Lean.X86_64.Archi.ptr64 with
+      | false => exact pgo_cdbe_add_lessdef _ _ _ _ ld1 ld2
+      | true => exact pgo_cdbe_addl_lessdef _ _ _ _ ld1 ld2
+
+theorem add_equations_builtin_args_lessdef :
+    add_equations_builtin_args_lessdefStatement := by
+  intro env ge sp rs ls m tm args vl hEval
+  unfold eval_builtin_args at hEval ⊢
+  induction hEval with
+  | nil =>
+      intro args' e e' hrun hsat hwt hext
+      cases args' with
+      | nil =>
+          simp [add_equations_builtin_args] at hrun
+          cases hrun
+          exact ⟨[], CompCert4Lean.Lib.Coqlib.list_forall2.nil _, Val.lessdef_list_nil⟩
+      | cons arg' args' =>
+          simp [add_equations_builtin_args] at hrun
+  | @cons arg args v vl harg htail ih =>
+      intro args' e e' hrun hsat hwt hext
+      cases args' with
+      | nil =>
+          simp [add_equations_builtin_args] at hrun
+      | cons arg' args' =>
+          change (match add_equations_builtin_arg env arg arg' e with
+            | none => none
+            | some e1 => add_equations_builtin_args env args args' e1) = some e' at hrun
+          split at hrun
+          · cases hrun
+          · rename_i e1 hfirst
+            have hsat1 : satisf rs ls e1 :=
+              add_equations_builtin_args_satisf env rs ls args args' e1 e' hrun hsat
+            obtain ⟨v', harg', ld⟩ :=
+              add_equations_builtin_arg_lessdef env ge sp rs ls m arg v harg
+                e e1 arg' hfirst hsat1 hwt
+            obtain ⟨v'', harg'', ldmem⟩ :=
+              pgo_eval_builtin_arg_extends (Genv.to_senv ge) ls sp m tm hext
+                arg' v' harg'
+            obtain ⟨vl', htail', ldlist⟩ :=
+              ih args' e1 e' hrun hsat hwt hext
+            have ld' : Val.lessdef v v'' := by
+              cases ld with
+              | lessdef_refl => exact ldmem
+              | lessdef_undef => exact Val.lessdef_undef _
+            exact ⟨v'' :: vl',
+              CompCert4Lean.Lib.Coqlib.list_forall2.cons _ _ harg'' htail',
+              Val.lessdef_list_cons _ _ _ _ ld' ldlist⟩
+
+end CompCert4Lean.Backend.Allocproof

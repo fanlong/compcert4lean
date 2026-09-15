@@ -3531,3 +3531,70 @@ theorem set_params'_outside : set_params'_outsideStatement := by
                   exact hnot (hie ▸ (List.Mem.head il : In i (i :: il))))
 
 end CompCert4Lean.Cfrontend.Cminorgenproof
+
+namespace CompCert4Lean.Cfrontend.Cminorgenproof
+
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.List
+
+theorem set_params'_inside : set_params'_insideStatement := by
+  intro id il vl te1 te2 hin
+  induction il generalizing vl te1 te2 with
+  | nil =>
+      cases hin
+  | cons i il ih =>
+      cases vl with
+      | nil =>
+          by_cases hmem : In id il
+          · simpa only [set_params'] using
+              (ih (vl := []) (te1 := PTree.set i (.Vundef : val) te1)
+                (te2 := PTree.set i (.Vundef : val) te2) hmem)
+          · have hid : id = i := by
+              rcases List.mem_cons.mp hin with hEq | htail
+              · exact hEq
+              · exact (hmem htail).elim
+            subst id
+            have houtside1 := set_params'_outside i il []
+              (PTree.set i (.Vundef : val) te1) hmem
+            have houtside2 := set_params'_outside i il []
+              (PTree.set i (.Vundef : val) te2) hmem
+            calc
+              PTree.get i (set_params' [] (i :: il) te1) =
+                  PTree.get i (set_params' [] il
+                    (PTree.set i (.Vundef : val) te1)) := by
+                simp only [set_params']
+              _ = PTree.get i (PTree.set i (.Vundef : val) te1) := houtside1
+              _ = some (.Vundef : val) := PTree.gss i _ _
+              _ = PTree.get i (PTree.set i (.Vundef : val) te2) :=
+                (PTree.gss i _ _).symm
+              _ = PTree.get i (set_params' [] il
+                    (PTree.set i (.Vundef : val) te2)) := houtside2.symm
+              _ = PTree.get i (set_params' [] (i :: il) te2) := by
+                simp only [set_params']
+      | cons v vl =>
+          by_cases hmem : In id il
+          · simpa only [set_params'] using
+              (ih (vl := vl) (te1 := PTree.set i v te1)
+                (te2 := PTree.set i v te2) hmem)
+          · have hid : id = i := by
+              rcases List.mem_cons.mp hin with hEq | htail
+              · exact hEq
+              · exact (hmem htail).elim
+            subst id
+            have houtside1 := set_params'_outside i il vl
+              (PTree.set i v te1) hmem
+            have houtside2 := set_params'_outside i il vl
+              (PTree.set i v te2) hmem
+            calc
+              PTree.get i (set_params' (v :: vl) (i :: il) te1) =
+                  PTree.get i (set_params' vl il (PTree.set i v te1)) := by
+                simp only [set_params']
+              _ = PTree.get i (PTree.set i v te1) := houtside1
+              _ = some v := PTree.gss i _ _
+              _ = PTree.get i (PTree.set i v te2) := (PTree.gss i _ _).symm
+              _ = PTree.get i (set_params' vl il (PTree.set i v te2)) :=
+                houtside2.symm
+              _ = PTree.get i (set_params' (v :: vl) (i :: il) te2) := by
+                simp only [set_params']
+
+end CompCert4Lean.Cfrontend.Cminorgenproof

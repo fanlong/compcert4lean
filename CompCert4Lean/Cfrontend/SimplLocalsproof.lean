@@ -3743,3 +3743,36 @@ theorem alloc_variables_initial_value : alloc_variables_initial_valueStatement :
             Vundef (hinit id' b ty' chunk hget hmode)
 
 end CompCert4Lean.Cfrontend.SimplLocalsproof
+
+namespace CompCert4Lean.Cfrontend.SimplLocalsproof
+
+open CompCert4Lean.Cfrontend.Clight
+open CompCert4Lean.Lib.Maps
+
+theorem create_undef_temps_charact : create_undef_temps_charactStatement := by
+  intro id ty vars hmem
+  induction vars with
+  | nil => cases hmem
+  | cons hd rest ih =>
+      rcases hd with ⟨id1, ty1⟩
+      cases hmem with
+      | head _ =>
+          simpa [create_undef_temps] using
+            (PTree.gss (A := CompCert4Lean.Common.Values.val) id
+              (.Vundef) (create_undef_temps rest))
+      | tail _ htail =>
+          by_cases hne : id ≠ id1
+          · have hget := PTree.gso (A := CompCert4Lean.Common.Values.val)
+                (i := id) (j := id1)
+                (.Vundef) (create_undef_temps rest) hne
+            change PTree.get id
+              (PTree.set id1 (.Vundef) (create_undef_temps rest)) =
+              some .Vundef
+            exact hget.trans (ih htail)
+          · have heq : id = id1 := Classical.byContradiction (fun hneq => hne hneq)
+            subst id
+            simpa [create_undef_temps] using
+              (PTree.gss (A := CompCert4Lean.Common.Values.val) id1
+                (.Vundef) (create_undef_temps rest))
+
+end CompCert4Lean.Cfrontend.SimplLocalsproof

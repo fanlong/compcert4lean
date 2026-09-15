@@ -2303,3 +2303,50 @@ theorem subl_addl_r : subl_addl_rStatement := by
 
 end Val
 end CompCert4Lean.Common.Values
+
+namespace CompCert4Lean.Common.Values
+namespace Val
+
+private abbrev pg_mull_zMul :=
+  CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.mul
+
+private theorem pg_int64_mul_commut_local
+    (x y : CompCert4Lean.Lib.Integers.Int64.int) :
+    CompCert4Lean.Lib.Integers.Int64.mul x y =
+      CompCert4Lean.Lib.Integers.Int64.mul y x := by
+  apply CompCert4Lean.Lib.Integers.WordCore.ext_of_val_eq
+  unfold CompCert4Lean.Lib.Integers.Int64.mul
+    CompCert4Lean.Lib.Integers.WordCore.mul
+  change (CompCert4Lean.Lib.Integers.WordCore.repr 64
+      (pg_mull_zMul x.intval y.intval)).val =
+    (CompCert4Lean.Lib.Integers.WordCore.repr 64
+      (pg_mull_zMul y.intval x.intval)).val
+  rw [pg_wordcore_intval_eq_zOfNat_val_local x,
+    pg_wordcore_intval_eq_zOfNat_val_local y]
+  simp only [pg_mull_zMul,
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.mul]
+  have hxz :
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat x.val) =
+        (x.val : Int) := by
+    simpa [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat] using
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt (Int.ofNat x.val))
+  have hyz :
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat y.val) =
+        (y.val : Int) := by
+    simpa [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat] using
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt (Int.ofNat y.val))
+  rw [hxz, hyz]
+  rw [show CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt
+      ((x.val : Int) * (y.val : Int)) =
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt
+        ((y.val : Int) * (x.val : Int)) by rw [Int.mul_comm]]
+
+theorem mull_commut : mull_commutStatement := by
+  intro x y
+  cases x <;> cases y <;> simp [mull]
+  exact pg_int64_mul_commut_local _ _
+
+end Val
+end CompCert4Lean.Common.Values

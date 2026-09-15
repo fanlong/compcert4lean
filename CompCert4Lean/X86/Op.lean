@@ -2438,3 +2438,27 @@ theorem symbol_address_inject : symbol_address_injectStatement := by
     exact CompCert4Lean.Common.Values.Val.inject.val_inject_undef _
 
 end CompCert4Lean.X86.Op
+
+namespace CompCert4Lean.X86.Op
+
+theorem eval_addressing_inject : eval_addressing_injectStatement := by
+  intro F V genv f globals sp1 sp2 delta hsp addr vl1 vl2 v1 hvl heval
+  rw [eval_shift_stack_addressing]
+  have hsp' :
+      CompCert4Lean.Common.Values.Val.inject f
+        (.Vptr sp1 CompCert4Lean.Lib.Integers.Ptrofs.zero)
+        (.Vptr sp2 (CompCert4Lean.Lib.Integers.Ptrofs.repr delta)) :=
+    CompCert4Lean.Common.Values.Val.inject.inject_ptr sp1
+      CompCert4Lean.Lib.Integers.Ptrofs.zero sp2
+      (CompCert4Lean.Lib.Integers.Ptrofs.repr delta) delta hsp (by
+        rw [CompCert4Lean.Lib.Integers.Ptrofs.add_commut_proof_api]
+        exact (suffixPtrofsAddZero _).symm)
+  exact eval_addressing_inj F F V V genv genv f addr
+    (.Vptr sp1 CompCert4Lean.Lib.Integers.Ptrofs.zero) vl1
+    (.Vptr sp2 (CompCert4Lean.Lib.Integers.Ptrofs.repr delta)) vl2 v1
+    (by
+      intro id ofs haddr
+      exact symbol_address_inject F V genv f globals id ofs)
+    hsp' hvl heval
+
+end CompCert4Lean.X86.Op

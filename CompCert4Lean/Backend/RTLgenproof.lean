@@ -2788,3 +2788,212 @@ theorem tr_find_label : tr_find_labelStatement := by
   all_goals simp at hfind
 
 end CompCert4Lean.Backend.RTLgenproof
+
+namespace CompCert4Lean.Backend.RTLgenproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Linking
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+
+private theorem rtlgen_initial_store_init_data
+    {prog : CminorSel.program} {tprog : RTL.program}
+    (hsymb : ∀ id,
+      Genv.find_symbol (Genv.globalenv tprog) id =
+        Genv.find_symbol (Genv.globalenv prog) id)
+    (m : mem) (b : positive) (p : Z) (i : init_data) :
+    Genv.store_init_data (Genv.globalenv prog) m b p i =
+      Genv.store_init_data (Genv.globalenv tprog) m b p i := by
+  cases i with
+  | Init_addrof symb ofs =>
+      simp [Genv.store_init_data, hsymb symb]
+  | _ => rfl
+
+private theorem rtlgen_initial_store_init_data_list
+    {prog : CminorSel.program} {tprog : RTL.program}
+    (hsymb : ∀ id,
+      Genv.find_symbol (Genv.globalenv tprog) id =
+        Genv.find_symbol (Genv.globalenv prog) id) :
+    ∀ (m : mem) (b : positive) (p : Z) (il : List init_data),
+      Genv.store_init_data_list (Genv.globalenv prog) m b p il =
+        Genv.store_init_data_list (Genv.globalenv tprog) m b p il := by
+  intro m b p il
+  induction il generalizing m b p with
+  | nil => rfl
+  | cons i rest ih =>
+      simp only [Genv.store_init_data_list]
+      rw [rtlgen_initial_store_init_data hsymb]
+      cases h : Genv.store_init_data (Genv.globalenv tprog) m b p i with
+      | none => simp [h]
+      | some m' =>
+          simp only [h]
+          exact ih m' b
+            (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add
+              p (init_data_size i))
+
+private theorem rtlgen_initial_alloc_global
+    [Linker CminorSel.program]
+    {prog : CminorSel.program} {tprog : RTL.program}
+    (hsymb : ∀ id,
+      Genv.find_symbol (Genv.globalenv tprog) id =
+        Genv.find_symbol (Genv.globalenv prog) id)
+    {id : ident} {gd : globdef CminorSel.fundef Unit}
+    {tg : globdef RTL.fundef Unit}
+    (hgd : match_globdef
+      (fun _ f tf => RTLgen.transl_fundef f = .OK tf)
+      (fun x y : Unit => x = y) prog gd tg)
+    (m : mem) :
+    Genv.alloc_global (Genv.globalenv prog) m (id, gd) =
+      Genv.alloc_global (Genv.globalenv tprog) m (id, tg) := by
+  cases hgd with
+  | match_globdef_fun ctx' f1 f2 horder htrans => rfl
+  | match_globdef_var v1 v2 hvar =>
+      cases hvar with
+      | match_globvar_intro info1 info2 init ro vol hinfo =>
+          cases hinfo
+          simp only [Genv.alloc_global]
+          simp [rtlgen_initial_store_init_data_list hsymb]
+
+private theorem rtlgen_initial_alloc_globals
+    [Linker CminorSel.program]
+    {prog : CminorSel.program} {tprog : RTL.program}
+    (hsymb : ∀ id,
+      Genv.find_symbol (Genv.globalenv tprog) id =
+        Genv.find_symbol (Genv.globalenv prog) id)
+    (gl : List (ident × globdef CminorSel.fundef Unit))
+    (tgl : List (ident × globdef RTL.fundef Unit))
+    (hlist : list_forall2
+      (match_ident_globdef
+        (fun _ f tf => RTLgen.transl_fundef f = .OK tf)
+        (fun x y : Unit => x = y) prog) gl tgl) :
+    ∀ (m m' : mem),
+      Genv.alloc_globals (Genv.globalenv prog) m gl = some m' →
+      Genv.alloc_globals (Genv.globalenv tprog) m tgl = some m' := by
+  induction hlist with
+  | nil =>
+      intro m m' h
+      simpa [Genv.alloc_globals] using h
+  | cons hd thd hhd htl ih =>
+      intro m m' h
+      rcases hhd with ⟨hid, hgd⟩
+      rcases hd with ⟨id, gd⟩
+      rcases thd with ⟨tid, tgd⟩
+      have halloc :
+          Genv.alloc_global (Genv.globalenv prog) m (id, gd) =
+            Genv.alloc_global (Genv.globalenv tprog) m (tid, tgd) := by
+        change id = tid at hid
+        subst tid
+        exact rtlgen_initial_alloc_global hsymb hgd m
+      simp only [Genv.alloc_globals] at h ⊢
+      rw [halloc] at h
+      cases ha : Genv.alloc_global (Genv.globalenv tprog) m (tid, tgd) with
+      | none => simp [ha] at h
+      | some m1 =>
+          simp only [ha] at h ⊢
+          exact ih m1 m' h
+
+private theorem rtlgen_sig_transl_fundef
+    (f : CminorSel.fundef) (tf : RTL.fundef) :
+    RTLgen.transl_fundef f = .OK tf → RTL.funsig tf = CminorSel.funsig f := by
+  intro h
+  cases f with
+  | Internal f =>
+      unfold RTLgen.transl_fundef CompCert4Lean.Common.AST.transf_partial_fundef at h
+      cases htf : RTLgen.transl_function f with
+      | Error msg => simp [htf] at h
+      | OK tf' =>
+          simp [htf] at h
+          cases h
+          unfold RTLgen.transl_function at htf
+          cases hbuild : RTLgen.transl_fun f RTLgen.init_state with
+          | Error msg => simp [hbuild] at htf
+          | OK nr s i =>
+              simp [hbuild] at htf
+              cases htf
+              rfl
+  | External ef =>
+      simp [RTLgen.transl_fundef, CompCert4Lean.Common.AST.transf_partial_fundef] at h
+      cases h
+      rfl
+
+private theorem rtlgen_mem_extends_refl (m : mem) : Mem.extends m m := by
+  refine ⟨rfl, ?_, ?_⟩
+  · refine ⟨?_, ?_, ?_⟩
+    · intro b1 b2 delta ofs k p hmap hp
+      have hpair : (b1, (.Z0 : Z)) = (b2, delta) := by
+        simpa [CompCert4Lean.Common.Values.inject_id] using Option.some.inj hmap
+      cases hpair
+      change Mem.perm m b1 (ZArith.BinInt.Z.add ofs (.Z0 : Z)) k p
+      have hzadd : ZArith.BinInt.Z.add ofs (.Z0 : Z) = ofs := by
+        apply intOfZ_injective
+        change intOfZ (zOfInt (intOfZ ofs + 0)) = intOfZ ofs
+        rw [intOfZ_zOfInt]
+        simp
+      rw [hzadd]
+      exact hp
+    · intro b1 b2 delta chunk ofs p hmap hp
+      have hpair : (b1, (.Z0 : Z)) = (b2, delta) := by
+        simpa [CompCert4Lean.Common.Values.inject_id] using Option.some.inj hmap
+      cases hpair
+      refine ⟨.Z0, ?_⟩
+      apply intOfZ_injective
+      change 0 = intOfZ (ZArith.BinInt.Z.mul
+        (CompCert4Lean.Common.Memdata.align_chunk chunk) (.Z0 : Z))
+      change 0 = intOfZ (zOfInt (intOfZ
+        (CompCert4Lean.Common.Memdata.align_chunk chunk) * 0))
+      rw [intOfZ_zOfInt]
+      simp
+    · intro b1 ofs b2 delta hmap hp
+      have hpair : (b1, (.Z0 : Z)) = (b2, delta) := by
+        simpa [CompCert4Lean.Common.Values.inject_id] using Option.some.inj hmap
+      cases hpair
+      change memval_inject inject_id
+        (ZMap.get ofs (PMap.get b1 m.mem_contents))
+        (ZMap.get (ZArith.BinInt.Z.add ofs (.Z0 : Z))
+          (PMap.get b1 m.mem_contents))
+      have hzadd : ZArith.BinInt.Z.add ofs (.Z0 : Z) = ofs := by
+        apply intOfZ_injective
+        change intOfZ (zOfInt (intOfZ ofs + 0)) = intOfZ ofs
+        rw [intOfZ_zOfInt]
+        simp
+      rw [hzadd]
+      exact memval_lessdef_refl _
+  · intro b ofs k p hp
+    exact Or.inl hp
+
+theorem transl_initial_states : transl_initial_statesStatement := by
+  letI : Linker CminorSel.fundef := @Linker_fundef CminorSel.function
+  letI : Linker Unit := Linker_unit
+  letI : Linker CminorSel.program := @Linker_prog CminorSel.fundef Unit _ _
+  intro prog tprog hmatch S hinit
+  cases hinit with
+  | intro b f m0 hmem hsymb hfun hsig =>
+      rcases rtlgen_function_ptr_translated prog tprog hmatch b f hfun with
+        ⟨tf, htf, htrans⟩
+      refine ⟨RTL.Callstate [] tf [] m0, ?_, ?_⟩
+      · apply RTL.initial_state.intro b tf m0
+        · unfold Genv.init_mem at hmem ⊢
+          apply rtlgen_initial_alloc_globals (prog := prog) (tprog := tprog)
+            (fun id => (rtlgen_globalenvs_match prog tprog hmatch).mge_symb id)
+            prog.prog_defs tprog.prog_defs hmatch.1 Mem.empty m0
+          exact hmem
+        · change Genv.find_symbol (Genv.globalenv tprog) tprog.prog_main = some b
+          rw [hmatch.2.1]
+          have hs : Genv.find_symbol (Genv.globalenv tprog) prog.prog_main =
+              Genv.find_symbol (Genv.globalenv prog) prog.prog_main := by
+            simpa [Genv.find_symbol] using
+              (rtlgen_globalenvs_match prog tprog hmatch).mge_symb prog.prog_main
+          rw [hs]
+          exact hsymb
+        · exact htf
+        · rw [rtlgen_sig_transl_fundef f tf htrans]
+          exact hsig
+      · exact match_callstate f [] [] .Kstop m0 m0 [] tf htrans
+          match_stacks_stop Val.lessdef_list_nil (rtlgen_mem_extends_refl m0)
+
+end CompCert4Lean.Backend.RTLgenproof

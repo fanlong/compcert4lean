@@ -2592,3 +2592,61 @@ theorem ZofB_range_widen : Float.ZofB_range_widenStatement := by
 end Float
 
 end CompCert4Lean.Lib.Floats
+
+namespace CompCert4Lean.Lib.Floats
+
+namespace Float
+
+theorem to_intu_to_long : Float.to_intu_to_longStatement := by
+  intro f n h
+  unfold to_intu at h
+  unfold to_long
+  cases hz : CompCert4Lean.Lib.IEEE754_extra.ZofB_range (decode64 f) z0 Integers.Int.max_unsigned with
+  | none => simp [hz] at h
+  | some z =>
+    simp [hz] at h
+    subst n
+    have hbound :
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.le z0 z ∧
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.le
+            z Integers.Int.max_unsigned := by
+      unfold CompCert4Lean.Lib.IEEE754_extra.ZofB_range at hz
+      cases hzb : CompCert4Lean.Lib.IEEE754_extra.ZofB (decode64 f) with
+      | none => simp [hzb] at hz
+      | some z' =>
+        simp [hzb] at hz
+        rcases hz with ⟨⟨hminb, hmaxb⟩, rfl⟩
+        constructor
+        · have hs : CompCert4Lean.Flocq.Core.Zaux.Zle_bool_prop z0 z' true := by
+            simpa [hminb] using
+              (CompCert4Lean.Flocq.Core.Zaux.Zle_bool_spec z0 z')
+          cases hs with
+          | Zle_bool_true_ hle => exact hle
+        · have hs : CompCert4Lean.Flocq.Core.Zaux.Zle_bool_prop z' Integers.Int.max_unsigned true := by
+            simpa [hmaxb] using
+              (CompCert4Lean.Flocq.Core.Zaux.Zle_bool_spec z' Integers.Int.max_unsigned)
+          cases hs with
+          | Zle_bool_true_ hle => exact hle
+    have hmin :
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.le
+          Integers.Int64.min_signed z0 := by
+      change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ Integers.Int64.min_signed ≤
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ z0
+      decide
+    have hmax :
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.le
+          Integers.Int.max_unsigned Integers.Int64.max_signed := by
+      change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ Integers.Int.max_unsigned ≤
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ Integers.Int64.max_signed
+      decide
+    have hdst := ZofB_range_widen f z z0 Integers.Int.max_unsigned
+      Integers.Int64.min_signed Integers.Int64.max_signed hz hmin hmax
+    rw [hdst]
+    have hu : Integers.Int.unsigned (Integers.Int.repr z) = z :=
+      CompCert4Lean.Lib.Integers.Int.unsigned_repr_proof_api z hbound
+    rw [hu]
+    rfl
+
+end Float
+
+end CompCert4Lean.Lib.Floats

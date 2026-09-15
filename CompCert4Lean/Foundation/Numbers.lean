@@ -2618,3 +2618,19 @@ theorem ZArith.BinInt.Z.leb_gt :
 
 end Rocq.Coq
 end CompCert4Lean.Foundation.Numbers
+
+namespace CompCert4Lean.Foundation.Numbers
+namespace Rocq.Coq
+
+def ZArith.BinInt.Z.min_case :
+    ZArith.BinInt.Z.min_caseStatement := by
+  intro n m P hn hm
+  by_cases h : intOfZ n ≤ intOfZ m
+  · simp [ZArith.BinInt.Z.min, h]
+    exact hn
+  · have h' : intOfZ m ≤ intOfZ n := Int.le_of_not_le h
+    simp [ZArith.BinInt.Z.min, h]
+    exact hm
+
+end Rocq.Coq
+end CompCert4Lean.Foundation.Numbers

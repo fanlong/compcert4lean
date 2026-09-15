@@ -4135,3 +4135,35 @@ theorem select_sound : select_soundStatement := by
               exact vmatch_lub_l_select_aux cfg bc v x y hv
 
 end CompCert4Lean.Backend.ValueDomain
+
+namespace CompCert4Lean.Backend.ValueDomain
+
+theorem poffset_ge : poffset_geStatement := by
+  intro p
+  cases p <;> simp only [poffset] <;> constructor
+
+theorem poffset_monotone : poffset_monotoneStatement := by
+  intro p q hpq
+  cases hpq with
+  | pge_top _ => exact pge.pge_top _
+  | bot _ => exact pge.bot _
+  | pge_refl _ => exact pge.pge_refl _
+  | gloGl id ofs => exact pge.pge_refl _
+  | globGl id ofs => exact pge.globGlo id
+  | globGlo id => exact pge.globGlo id
+  | nsGl id ofs => exact pge.nsGlo id
+  | nsGlo id => exact pge.nsGlo id
+  | nsGlob => exact pge.nsGlob
+  | stackStk ofs => exact pge.pge_refl _
+
+theorem provenance_monotone : provenance_monotoneStatement := by
+  intro x y hxy
+  cases hxy <;> simp only [provenance] <;>
+    first
+    | assumption
+    | exact pge.bot _
+    | exact pge.pge_refl _
+    | exact poffset_monotone _ _ (by assumption)
+    | exact pge_trans _ _ (poffset_ge _) _ (by assumption)
+
+end CompCert4Lean.Backend.ValueDomain

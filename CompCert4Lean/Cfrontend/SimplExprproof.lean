@@ -2545,3 +2545,21 @@ theorem tr_select_switch :
       exact hdefault ls tls htr
 
 end CompCert4Lean.Cfrontend.SimplExprproof
+
+namespace CompCert4Lean.Cfrontend.SimplExprproof
+
+open CompCert4Lean.Cfrontend.SimplExprspec
+
+theorem tr_seq_of_labeled_statement :
+    ∀ [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+      [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)],
+      tr_seq_of_labeled_statementStatement := by
+  intro binary64_certificate binary32_certificate ce ls tls htr
+  induction htr using tr_lblstmts.rec
+      (motive_1 := fun _ _ _ => True) <;> try trivial
+  case tr_ls_nil => exact tr_stmt.tr_skip
+  case tr_ls_cons c s ls ts tls hs hls ihs ih =>
+    exact tr_stmt.tr_seq s (Csem.seq_of_labeled_statement ls)
+      ts (Clight.seq_of_labeled_statement tls) hs ih
+
+end CompCert4Lean.Cfrontend.SimplExprproof

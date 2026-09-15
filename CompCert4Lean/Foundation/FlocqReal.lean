@@ -3436,3 +3436,103 @@ theorem le_IZR :
 end RIneq
 end Rocq.Coq.Reals
 end CompCert4Lean.Foundation.FlocqReal
+
+namespace CompCert4Lean.Foundation.FlocqReal
+namespace Rocq.Coq.Reals
+namespace RIneq
+
+theorem IZR_neq_proof :
+    ∀ (ctx : ExactRealContext) (z1 z2 : Z) (h : z1 ≠ z2),
+      IZR_neq ctx z1 z2 h := by
+  intro ctx z1 z2 h heq
+  exact h (eq_IZR ctx z1 z2 heq)
+
+theorem Rinv_involutive_proof :
+    ∀ (ctx : ExactRealContext) (r : ctx.spec.carrier)
+      (_h : ¬r = ExactReal.IZR ctx.spec Z0),
+      Rinv_involutive ctx r _h := by
+  intro ctx r h
+  have hrne : r ≠ ctx.spec.zero := by
+    intro hz
+    apply h
+    calc
+      r = ctx.spec.zero := hz
+      _ = ExactReal.IZR ctx.spec Z0 :=
+        ctx.certificate.sourceLaws.ofZ_zero.symm
+  have hinvr : ctx.spec.inv r ≠ ctx.spec.zero := by
+    intro hz
+    have hinvr_src := Rinv_neq_0_compat ctx r h
+    apply hinvr_src
+    calc
+      ctx.spec.inv r = ctx.spec.zero := hz
+      _ = ExactReal.IZR ctx.spec Z0 :=
+        ctx.certificate.sourceLaws.ofZ_zero.symm
+  have hinvr_src : ¬(ctx.spec.inv r = ExactReal.IZR ctx.spec Z0) :=
+    Rinv_neq_0_compat ctx r h
+  apply Rmult_eq_reg_r ctx (ctx.spec.inv r)
+    (ctx.spec.inv (ctx.spec.inv r)) r
+  · have hleft := Raxioms.Rinv_l ctx (ctx.spec.inv r) (by
+      intro hz
+      exact hinvr_src hz)
+    have hright := Raxioms.Rinv_l ctx r h
+    have hleft' : ctx.spec.mul (ctx.spec.inv (ctx.spec.inv r))
+        (ctx.spec.inv r) = ctx.spec.one := by
+      simpa [ExactReal.Rmult, ExactReal.Rinv, ExactReal.IZR,
+        ctx.certificate.sourceLaws.ofZ_one] using hleft
+    have hright' : ctx.spec.mul r (ctx.spec.inv r) = ctx.spec.one := by
+      calc
+        ctx.spec.mul r (ctx.spec.inv r) =
+            ctx.spec.mul (ctx.spec.inv r) r :=
+          ctx.certificate.orderedField.mul_comm r (ctx.spec.inv r)
+        _ = ctx.spec.one := by
+          simpa [ExactReal.Rmult, ExactReal.Rinv, ExactReal.IZR,
+            ctx.certificate.sourceLaws.ofZ_one] using hright
+    change ctx.spec.mul (ctx.spec.inv (ctx.spec.inv r)) (ctx.spec.inv r) =
+      ctx.spec.mul r (ctx.spec.inv r)
+    rw [hleft', hright']
+  · exact hinvr_src
+
+theorem Ropp_inv_permute_proof :
+    ∀ (ctx : ExactRealContext) (r : ctx.spec.carrier)
+      (_h : ¬r = ExactReal.IZR ctx.spec Z0),
+      Ropp_inv_permute ctx r _h := by
+  intro ctx r h
+  have hrne : r ≠ ctx.spec.zero := by
+    intro hz
+    apply h
+    calc
+      r = ctx.spec.zero := hz
+      _ = ExactReal.IZR ctx.spec Z0 :=
+        ctx.certificate.sourceLaws.ofZ_zero.symm
+  change ctx.spec.neg (ctx.spec.inv r) =
+    ctx.spec.inv (ctx.spec.neg r)
+  exact (flocqReal_inv_neg ctx r hrne).symm
+
+theorem Rle_Rinv_proof :
+    ∀ (ctx : ExactRealContext) (x y : ctx.spec.carrier)
+      (_hx : ExactReal.Rlt ctx.spec (ExactReal.IZR ctx.spec Z0) x)
+      (_hy : ExactReal.Rlt ctx.spec (ExactReal.IZR ctx.spec Z0) y)
+      (_hxy : ExactReal.Rle ctx.spec x y),
+      Rle_Rinv ctx x y _hx _hy _hxy := by
+  intro ctx x y hx hy hxy
+  change ctx.spec.lt (ctx.spec.ofZ Z0) x at hx
+  change ctx.spec.lt (ctx.spec.ofZ Z0) y at hy
+  change ctx.spec.le x y at hxy
+  change ctx.spec.le (ctx.spec.inv y) (ctx.spec.inv x)
+  rcases ctx.certificate.total_order x y with h | h
+  · rcases h with hlt | heq
+    · have hprod : ctx.spec.lt (ctx.spec.ofZ Z0)
+          (ctx.spec.mul x y) := Rmult_lt_0_compat ctx x y hx hy
+      have hinv := Rinv_lt_contravar ctx x y hprod hlt
+      change ctx.spec.lt (ctx.spec.inv y) (ctx.spec.inv x) at hinv
+      exact (ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp hinv |>.1
+    · subst y
+      exact ctx.certificate.orderedField.le_refl _
+  · have hcontra : ¬ctx.spec.lt y x := by
+      intro hyx
+      exact (ctx.certificate.orderedField.lt_iff_le_not_le y x).mp hyx |>.2 hxy
+    exact (hcontra h).elim
+
+end RIneq
+end Rocq.Coq.Reals
+end CompCert4Lean.Foundation.FlocqReal
