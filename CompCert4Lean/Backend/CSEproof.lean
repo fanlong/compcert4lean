@@ -3106,3 +3106,32 @@ theorem analysis_correct_1
   exact hge valu ge sp rs m hnum
 
 end CompCert4Lean.Backend.CSEproof
+
+namespace CompCert4Lean.Backend.CSEproof
+
+open CompCert4Lean.Backend.CSEdomain
+open CompCert4Lean.Common.Values
+
+theorem analysis_correct_entry
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (cfg : CompilerConfig) :
+    analysis_correct_entryStatement cfg := by
+  intro ge sp rs m f dm vapprox approx hanalyze
+  have hsol := CSE.Solver.fixpoint_entry_proof
+    (binary64_certificate := binary64_certificate)
+    (binary32_certificate := binary32_certificate)
+    (CSE.Solver.law_obligation_proof
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate))
+  have hentry := hsol RTL.instruction f.fn_code RTL.successors_instr
+      (CSE.transfer cfg f dm vapprox)
+      f.fn_entrypoint approx hanalyze
+  let valu : valuation := fun _ => Vundef
+  refine ⟨valu, ?_⟩
+  have hempty : numbering_holds valu ge sp rs m CSE.Solver.L.top := by
+    change numbering_holds valu ge sp rs m empty_numbering
+    exact empty_numbering_holds valu ge sp rs m
+  exact (congrArg (fun n => numbering_holds valu ge sp rs m n) hentry).mpr hempty
+
+end CompCert4Lean.Backend.CSEproof

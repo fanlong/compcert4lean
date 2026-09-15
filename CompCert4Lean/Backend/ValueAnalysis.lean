@@ -2111,3 +2111,49 @@ theorem store_init_data_list_other : store_init_data_list_otherStatement := by
           exact store_init_data_other prog bc m b p id m1 ab b' hhead hne hmatch
 
 end CompCert4Lean.Backend.ValueAnalysis
+
+namespace CompCert4Lean.Backend.ValueAnalysis
+
+open CompCert4Lean.Backend.ValueDomain
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Lib.Maps
+
+theorem store_zeros_other : store_zeros_otherStatement := by
+  intro bc b' ab m b p n m' hzeros hne hmatch
+  let P : mem → block → Z → Z → Option mem → Prop :=
+    fun m0 b0 _ _ result =>
+      match result with
+      | some m1 =>
+          ∀ (b'' : block) (ab'' : ablock) (m'' : mem),
+            m1 = m'' → b'' ≠ b0 →
+            bmatch bc m0 b'' ab'' → bmatch bc m'' b'' ab''
+      | none => True
+  have hP : ∀ m0 b0 p0 n0, P m0 b0 p0 n0 (store_zeros m0 b0 p0 n0) := by
+    apply store_zeros_ind (P := P)
+    · intro m0 b0 p0 n0 x hx
+      intro b'' ab'' m'' heq hne' hmatch'
+      cases heq
+      exact hmatch'
+    · intro m0 b0 p0 n0 x hx m1 hstore hrec
+      cases hresult : store_zeros m1 b0 (zAdd p0 (.Zpos .xH))
+          (ZArith.BinInt.Z.sub n0 (.Zpos .xH)) with
+      | none => trivial
+      | some m2 =>
+          rw [hresult] at hrec
+          intro b'' ab'' m'' heq hne' hmatch'
+          apply hrec b'' ab'' m'' heq hne'
+          exact pg_bmatch_store_other bc Mint8unsigned m0 b0 p0 Vzero m1
+            hstore b'' hne' ab'' hmatch'
+    · intro m0 b0 p0 n0 x hx hnone
+      trivial
+  have hs := hP m b p n
+  rw [hzeros] at hs
+  exact hs b' ab m' rfl hne hmatch
+
+end CompCert4Lean.Backend.ValueAnalysis

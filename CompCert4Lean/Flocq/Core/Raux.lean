@@ -3379,3 +3379,13 @@ theorem Rcompare_ceil_floor_middle (ctx : ExactRealContext) :
     (Exact.Rminus ctx x (Exact.IZR ctx (Exact.Zfloor ctx x))) hsum'
 
 end CompCert4Lean.Flocq.Core.Raux
+
+namespace CompCert4Lean.Flocq.Core.Raux
+
+theorem radix_pos (ctx : ExactRealContext) :
+    radix_posStatement ctx := by
+  intro r
+  change ctx.spec.lt ctx.spec.zero (ctx.spec.ofZ r.radix_val)
+  exact exact_radix_pos_aux ctx r
+
+end CompCert4Lean.Flocq.Core.Raux

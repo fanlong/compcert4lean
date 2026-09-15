@@ -3344,3 +3344,95 @@ theorem opp_IZR :
 end RIneq
 end Rocq.Coq.Reals
 end CompCert4Lean.Foundation.FlocqReal
+
+namespace CompCert4Lean.Foundation.FlocqReal
+namespace Rocq.Coq.Reals
+namespace RIneq
+
+private theorem flocqReal_zsub_eq_add_opp (n m : Z) :
+    Z.sub n m = Z.add n (Z.opp m) := by
+  apply _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective
+  simp only [_root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.sub,
+    _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add,
+    _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.opp,
+    _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+  omega
+
+theorem minus_IZR :
+    ∀ (ctx : ExactRealContext), minus_IZRStatement ctx := by
+  intro ctx n m
+  change ctx.spec.ofZ (Z.sub n m) =
+    ctx.spec.add (ctx.spec.ofZ n) (ctx.spec.neg (ctx.spec.ofZ m))
+  rw [flocqReal_zsub_eq_add_opp,
+    ctx.certificate.sourceLaws.ofZ_add,
+    ctx.certificate.sourceLaws.ofZ_neg]
+
+theorem lt_IZR :
+    ∀ (ctx : ExactRealContext), lt_IZRStatement ctx := by
+  intro ctx n m h
+  change ctx.spec.lt (ctx.spec.ofZ n) (ctx.spec.ofZ m) at h
+  change _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ n <
+    _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ m
+  by_cases hnm :
+      _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ n <
+        _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ m
+  · exact hnm
+  · by_cases hmn :
+        _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ m <
+          _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ n
+    · have hmn' := IZR_lt ctx m n hmn
+      exact (ctx.certificate.orderedField.lt_irrefl _
+        (ctx.certificate.orderedField.lt_trans _ _ _ h hmn')).elim
+    · have heq :
+          _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ n =
+            _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ m :=
+        Int.le_antisymm (Int.le_of_not_gt hmn) (Int.le_of_not_gt hnm)
+      have hnm' : n = m :=
+        _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective heq
+      subst m
+      exact (ctx.certificate.orderedField.lt_irrefl _ h).elim
+
+theorem eq_IZR :
+    ∀ (ctx : ExactRealContext), eq_IZRStatement ctx := by
+  intro ctx n m h
+  change ctx.spec.ofZ n = ctx.spec.ofZ m at h
+  by_cases hnm :
+      _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ n <
+        _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ m
+  · have hlt := IZR_lt ctx n m hnm
+    change ctx.spec.lt (ctx.spec.ofZ n) (ctx.spec.ofZ m) at hlt
+    rw [h] at hlt
+    exact (ctx.certificate.orderedField.lt_irrefl _ hlt).elim
+  · by_cases hmn :
+        _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ m <
+          _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ n
+    · have hlt := IZR_lt ctx m n hmn
+      change ctx.spec.lt (ctx.spec.ofZ m) (ctx.spec.ofZ n) at hlt
+      rw [h] at hlt
+      exact (ctx.certificate.orderedField.lt_irrefl _ hlt).elim
+    · have heq :
+          _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ n =
+            _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ m :=
+        Int.le_antisymm (Int.le_of_not_gt hmn) (Int.le_of_not_gt hnm)
+      exact _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective heq
+
+theorem le_IZR :
+    ∀ (ctx : ExactRealContext), le_IZRStatement ctx := by
+  intro ctx n m h
+  change ctx.spec.le (ctx.spec.ofZ n) (ctx.spec.ofZ m) at h
+  change _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ n ≤
+    _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ m
+  by_cases hnm :
+      _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ n ≤
+        _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ m
+  · exact hnm
+  · have hmn :
+        _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ m <
+          _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ n :=
+      Int.lt_of_not_ge hnm
+    have hlt := IZR_lt ctx m n hmn
+    exact ((ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp hlt).2 h |>.elim
+
+end RIneq
+end Rocq.Coq.Reals
+end CompCert4Lean.Foundation.FlocqReal

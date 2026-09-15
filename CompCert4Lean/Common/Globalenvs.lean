@@ -2985,3 +2985,28 @@ theorem store_init_data_list_neutral : store_init_data_list_neutralStatement := 
 
 end Genv
 end CompCert4Lean.Common.Globalenvs
+
+namespace CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Linking
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.Lib.Integers
+namespace Genv
+
+theorem advance_next_le : advance_next_leStatement := by
+  intro F V gl x
+  induction gl generalizing x with
+  | nil => exact Ple_refl x
+  | cons g rest ih =>
+      change Ple x (advance_next rest (posSucc x))
+      exact Ple_trans x (posSucc x) (advance_next rest (posSucc x))
+        (Ple_succ x) (ih (posSucc x))
+
+end Genv
+end CompCert4Lean.Common.Globalenvs

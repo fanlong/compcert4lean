@@ -3485,3 +3485,49 @@ theorem bind_parameters_agree_rec : bind_parameters_agree_recStatement := by
               simpa [set_params'] using hrest
 
 end CompCert4Lean.Cfrontend.Cminorgenproof
+
+namespace CompCert4Lean.Cfrontend.Cminorgenproof
+
+open CompCert4Lean.Lib.Maps
+
+theorem set_params'_outside : set_params'_outsideStatement := by
+  intro id il vl te hnot
+  induction il generalizing vl te with
+  | nil => cases vl <;> rfl
+  | cons i il ih =>
+      cases vl with
+      | nil =>
+          have htail : ¬In id il := by
+            intro h
+            apply hnot
+            exact List.Mem.tail i h
+          have hrec := ih (vl := [])
+            (te := (PTree.set i (.Vundef : val) te)) htail
+          calc
+            PTree.get id (set_params' [] (i :: il) te) =
+                PTree.get id (set_params' [] il (PTree.set i (.Vundef : val) te)) := by
+              simp only [set_params']
+            _ = PTree.get id (PTree.set i (.Vundef : val) te) := hrec
+            _ = PTree.get id te := by
+              exact PTree.gso (A := val) (i := id) (j := i)
+                (.Vundef : val) (show PTree.tree val from te) (by
+                  intro hie
+                  exact hnot (hie ▸ (List.Mem.head il : In i (i :: il))))
+      | cons v vl =>
+          have htail : ¬In id il := by
+            intro h
+            apply hnot
+            exact List.Mem.tail i h
+          have hrec := ih vl (PTree.set i v te) htail
+          calc
+            PTree.get id (set_params' (v :: vl) (i :: il) te) =
+                PTree.get id (set_params' vl il (PTree.set i v te)) := by
+              simp only [set_params']
+            _ = PTree.get id (PTree.set i v te) := hrec
+            _ = PTree.get id te := by
+              exact PTree.gso (A := val) (i := id) (j := i) v
+                (show PTree.tree val from te) (by
+                  intro hie
+                  exact hnot (hie ▸ (List.Mem.head il : In i (i :: il))))
+
+end CompCert4Lean.Cfrontend.Cminorgenproof
