@@ -2162,3 +2162,85 @@ theorem pred_pos_plus_ulp_aux3 :
             _ = x := hxpow.symm
 
 end CompCert4Lean.Flocq.Core.Ulp
+
+namespace CompCert4Lean.Flocq.Core.Ulp
+
+theorem mag_plus_eps :
+    ∀ (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx),
+      mag_plus_epsStatement ctx magnitude := by
+  intro ctx magnitude beta fexp x hx hformat eps heps
+  have hx0 : x ≠ Exact.R0 ctx := by
+    intro hzero
+    subst x
+    exact (ctx.certificate.orderedField.lt_irrefl _ hx).elim
+  let ex : Z := Exact.mag ctx magnitude beta x
+  have hmx := (CompCert4Lean.Flocq.Core.Raux.Exact.mag magnitude beta x).mag_bound hx0
+  have habsx : Exact.Rabs ctx x = x := by
+    change ctx.spec.abs x = x
+    exact ctx.certificate.sourceLaws.abs_nonnegative x
+      ((ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp hx).1
+  have hmx' : Exact.Rle ctx (Exact.bpow ctx beta (Zsub ex Zone)) x ∧
+      Exact.Rlt ctx x (Exact.bpow ctx beta ex) := by
+    simpa only [ex, habsx] using hmx
+  have hsum_nonneg : Exact.Rle ctx (Exact.R0 ctx)
+      (Exact.Rplus ctx x eps) := by
+    change ctx.spec.le ctx.spec.zero (ctx.spec.add x eps)
+    have h := CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.Rplus_le_compat
+      ctx ctx.spec.zero x ctx.spec.zero eps
+      ((ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp hx).1 heps.1
+    change ctx.spec.le (ctx.spec.add ctx.spec.zero ctx.spec.zero)
+      (ctx.spec.add x eps) at h
+    rw [ctx.certificate.orderedField.zero_add] at h
+    exact h
+  have habssum : Exact.Rabs ctx (Exact.Rplus ctx x eps) =
+      Exact.Rplus ctx x eps := by
+    change ctx.spec.abs (ctx.spec.add x eps) = ctx.spec.add x eps
+    exact ctx.certificate.sourceLaws.abs_nonnegative _ hsum_nonneg
+  have hupper : Exact.Rle ctx
+      (Exact.Rplus ctx x (Exact.ulp ctx magnitude beta fexp x))
+      (Exact.bpow ctx beta ex) := by
+    exact id_p_ulp_le_bpow ctx magnitude beta fexp x ex hx hformat hmx'.2
+  have hsum_bounds :
+      Exact.Rle ctx (Exact.bpow ctx beta (Zsub ex Zone))
+        (Exact.Rabs ctx (Exact.Rplus ctx x eps)) ∧
+      Exact.Rlt ctx (Exact.Rabs ctx (Exact.Rplus ctx x eps))
+        (Exact.bpow ctx beta ex) := by
+    constructor
+    · rw [habssum]
+      have hle := CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.Rplus_le_compat
+        ctx (Exact.bpow ctx beta (Zsub ex Zone)) x ctx.spec.zero eps
+        hmx'.1 heps.1
+      change ctx.spec.le
+        (ctx.spec.add (Exact.bpow ctx beta (Zsub ex Zone)) ctx.spec.zero)
+        (ctx.spec.add x eps) at hle
+      rw [ctx.certificate.orderedField.add_zero] at hle
+      exact hle
+    · rw [habssum]
+      have hlt : Exact.Rlt ctx (Exact.Rplus ctx x eps)
+          (Exact.Rplus ctx x (Exact.ulp ctx magnitude beta fexp x)) :=
+        ctx.certificate.orderedField.add_lt_compat_l x _ _ heps.2
+      exact CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.Rlt_le_trans
+        ctx _ _ _ hlt hupper
+  have hle_sum : Exact.Rle ctx x (Exact.Rplus ctx x eps) := by
+    have h := CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.Rplus_le_compat_l
+      ctx x ctx.spec.zero eps heps.1
+    change ctx.spec.le (ctx.spec.add x ctx.spec.zero)
+      (ctx.spec.add x eps) at h
+    rw [ctx.certificate.orderedField.add_zero] at h
+    exact h
+  have hsum_pos : Exact.Rlt ctx (Exact.R0 ctx)
+      (Exact.Rplus ctx x eps) := by
+    exact CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.Rlt_le_trans
+      ctx _ _ _ hx hle_sum
+  have hsum0 : Exact.Rplus ctx x eps ≠ Exact.R0 ctx := by
+    intro hz
+    rw [hz] at hsum_pos
+    exact (ctx.certificate.orderedField.lt_irrefl _ hsum_pos).elim
+  have hmag_sum :=
+    (CompCert4Lean.Flocq.Core.Raux.Exact.mag magnitude beta
+      (Exact.Rplus ctx x eps)).mag_bound hsum0
+  have heq := ulp_mag_unique ctx beta (Exact.Rplus ctx x eps)
+      hsum_bounds hmag_sum
+  exact heq.symm
+
+end CompCert4Lean.Flocq.Core.Ulp
