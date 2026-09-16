@@ -4562,3 +4562,57 @@ theorem vagree_bitwise_binop : vagree_bitwise_binopStatement := by
           CompCert4Lean.Common.Values.Val.lessdef_undef]
 
 end CompCert4Lean.Backend.NeedDomain
+
+namespace CompCert4Lean.Backend.NeedDomain
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Integers
+
+theorem and_sound : and_soundStatement := by
+  exact vagree_bitwise_binop Int.and
+    (iagree_bitwise_binop (fun a b => a && b) Int.and
+      (fun x y i hi => iagreeAndTestbit x y i))
+
+theorem or_sound : or_soundStatement := by
+  exact vagree_bitwise_binop Int.or
+    (iagree_bitwise_binop (fun a b => a || b) Int.or
+      (fun x y i hi => iagreeOrTestbit x y i))
+
+private theorem pgIagreeXorVal (a b : Int.int) :
+    (Int.xor a b).val = Nat.xor a.val b.val := by
+  change (WordCore.repr Int.wordsize
+    (ZArith.BinInt.Z.of_nat (Nat.xor a.val b.val))).val = _
+  rw [iagreeValReprOfNat]
+  apply Nat.mod_eq_of_lt
+  exact Nat.xor_lt_two_pow (iagreeWordValLt a) (iagreeWordValLt b)
+
+private theorem pgIagreeXorTestbit (a b : Int.int) (i : Z)
+    (hirange : ZArith.BinInt.Z.le z0 i ∧
+      ZArith.BinInt.Z.lt i Int.zwordsize) :
+    Int.testbit (Int.xor a b) i =
+      Bool.xor (Int.testbit a i) (Int.testbit b i) := by
+  cases i with
+  | Zneg p => rfl
+  | Z0 =>
+      rw [iagreeTestbitZero (Int.xor a b), iagreeTestbitZero a,
+        iagreeTestbitZero b, pgIagreeXorVal]
+      rw [Nat.xor_eq, Nat.testBit_xor]
+  | Zpos p =>
+      rw [iagreeTestbitPos (Int.xor a b) p, iagreeTestbitPos a p,
+        iagreeTestbitPos b p, pgIagreeXorVal]
+      rw [Nat.xor_eq, Nat.testBit_xor]
+
+theorem xor_sound : xor_soundStatement := by
+  exact vagree_bitwise_binop Int.xor
+    (iagree_bitwise_binop Bool.xor Int.xor
+      (fun x y i hi => pgIagreeXorTestbit x y i hi))
+
+theorem notint_sound : notint_soundStatement := by
+  intro v w x h
+  rw [CompCert4Lean.Common.Values.Val.not_xor,
+    CompCert4Lean.Common.Values.Val.not_xor]
+  exact xor_sound v w (Vint Int.mone) (Vint Int.mone) x h
+    (vagree_same (Vint Int.mone) (bitwise x))
+
+end CompCert4Lean.Backend.NeedDomain
