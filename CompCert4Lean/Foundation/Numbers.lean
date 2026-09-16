@@ -2996,3 +2996,16 @@ theorem ZArith.BinInt.Zmult_plus_distr_r_proof :
 
 end Rocq.Coq
 end CompCert4Lean.Foundation.Numbers
+
+namespace CompCert4Lean.Foundation.Numbers
+namespace Rocq.Coq
+
+theorem ZArith.BinInt.Zopp_plus_distr_proof :
+    ∀ (n m : Z), ZArith.BinInt.Zopp_plus_distr n m := by
+  intro n m
+  apply intOfZ_injective
+  simp only [ZArith.BinInt.Z.opp, ZArith.BinInt.Z.add, intOfZ_zOfInt]
+  exact Int.neg_add
+
+end Rocq.Coq
+end CompCert4Lean.Foundation.Numbers
