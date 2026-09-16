@@ -3844,3 +3844,41 @@ theorem bind_parameters_agree : bind_parameters_agreeStatement := by
   exact hte
 
 end CompCert4Lean.Cfrontend.Cminorgenproof
+
+namespace CompCert4Lean.Cfrontend.Cminorgenproof
+
+open CompCert4Lean.Common.Values
+
+theorem val_inject_val_of_bool : val_inject_val_of_boolStatement := by
+  intro f b
+  cases b <;> constructor
+
+theorem val_inject_val_of_optbool : val_inject_val_of_optboolStatement := by
+  intro f ob
+  cases ob with
+  | none => constructor
+  | some b =>
+      cases b <;> constructor
+
+theorem eval_unop_compat
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    eval_unop_compatStatement := by
+  intro f op v1 tv1 v heval hinj
+  cases op <;> cases hinj <;>
+    simp [CM.eval_unop, CompCert4Lean.Backend.Cminor.eval_unop,
+      Val.zero_ext, Val.sign_ext, Val.negint, Val.notint, Val.negf, Val.absf,
+      Val.negfs, Val.absfs, Val.singleoffloat, Val.floatofsingle,
+      Val.intoffloat, Val.intuoffloat, Val.floatofint, Val.floatofintu,
+      Val.intofsingle, Val.intuofsingle, Val.singleofint, Val.singleofintu,
+      Val.negl, Val.notl, Val.loword, Val.longofint, Val.longofintu,
+      Val.longoffloat, Val.longuoffloat, Val.floatoflong, Val.floatoflongu,
+      Val.longofsingle, Val.longuofsingle, Val.singleoflong,
+      Val.singleoflongu] at heval ⊢
+  all_goals subst_vars
+  all_goals first
+    | rcases heval with ⟨a, ha, rfl⟩
+      exact ⟨_, ⟨a, ha, rfl⟩, by constructor⟩
+    | constructor
+
+end CompCert4Lean.Cfrontend.Cminorgenproof

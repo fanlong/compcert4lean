@@ -2488,3 +2488,31 @@ theorem xorl_commut : xorl_commutStatement := by
 
 end Val
 end CompCert4Lean.Common.Values
+
+namespace CompCert4Lean.Common.Values
+namespace Val
+
+theorem notl_xorl : notl_xorlStatement := by
+  intro x
+  cases x <;> simp [notl, xorl]
+  rename_i a
+  apply CompCert4Lean.Lib.Integers.WordCore.ext_of_val_eq
+  change (CompCert4Lean.Lib.Integers.WordCore.not a).val =
+    (CompCert4Lean.Lib.Integers.WordCore.xor a Int64.mone).val
+  have hmone : Int64.mone.val = 2 ^ CompCert4Lean.Lib.Integers.Int64.wordsize - 1 := by
+    rfl
+  simp only [CompCert4Lean.Lib.Integers.WordCore.not,
+    CompCert4Lean.Lib.Integers.WordCore.xor]
+  change
+    (CompCert4Lean.Lib.Integers.WordCore.repr
+      CompCert4Lean.Lib.Integers.Int64.wordsize
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat
+        (Nat.xor a.val (2 ^ CompCert4Lean.Lib.Integers.Int64.wordsize - 1)))).val =
+      (CompCert4Lean.Lib.Integers.WordCore.repr
+        CompCert4Lean.Lib.Integers.Int64.wordsize
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat
+          (Nat.xor a.val Int64.mone.val))).val
+  rw [hmone]
+
+end Val
+end CompCert4Lean.Common.Values

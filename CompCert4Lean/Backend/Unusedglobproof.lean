@@ -4487,3 +4487,49 @@ theorem init_mem_inject : init_mem_injectStatement := by
   · exact init_meminj_preserves_globals p tp used hvalid hmatch
 
 end CompCert4Lean.Backend.Unusedglobproof
+
+namespace CompCert4Lean.Backend.Unusedglobproof
+
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Values
+
+theorem transf_initial_states : transf_initial_statesStatement := by
+  intro p tp used hvalid hmatch S1 hinit
+  cases hinit with
+  | intro b f m0 hmem hsymb hfun hsig =>
+      rcases init_mem_inject p tp used hvalid hmatch m0 hmem with
+        ⟨j, tm, htmem, hmeminj, hglobals⟩
+      have hmain : kept used p.prog_main := kept_main p used hvalid
+      rcases hglobals.symbols_inject_2 p.prog_main b hmain hsymb with
+        ⟨b', hsymb', hmap⟩
+      have hdef : Genv.find_def (Genv.globalenv p) b = some (.Gfun f) :=
+        (Genv.find_funct_ptr_iff (F := fundef) (V := Unit)
+          (ge := Genv.globalenv p) (b := b) (f := f)).mp hfun
+      rcases hglobals.defs_inject b b' z0 (.Gfun f) hmap hdef with
+        ⟨hdef', _, hrefs⟩
+      have hfun' : Genv.find_funct_ptr (Genv.globalenv tp) b' = some f :=
+        (Genv.find_funct_ptr_iff (F := fundef) (V := Unit)
+          (ge := Genv.globalenv tp) (b := b') (f := f)).mpr hdef'
+      refine ⟨Callstate [] f [] tm, ?_, ?_⟩
+      · apply initial_state.intro b' f tm
+        · exact htmem
+        · change Genv.find_symbol (Genv.globalenv tp) tp.prog_main = some b'
+          rw [match_prog_main hmatch]
+          exact hsymb'
+        · exact hfun'
+        · exact hsig
+      · apply match_states_call [] f [] m0 [] [] tm j
+        · apply match_stacks_nil m0.nextblock tm.nextblock hglobals
+          · rw [← Genv.init_mem_genv_next (F := fundef) (V := Unit)
+              (p := p) (m := m0) hmem]
+            exact CompCert4Lean.Lib.Coqlib.Ple_refl _
+          · rw [← Genv.init_mem_genv_next (F := fundef) (V := Unit)
+              (p := tp) (m := tm) htmem]
+            exact CompCert4Lean.Lib.Coqlib.Ple_refl _
+        · exact hrefs
+        · exact Val.inject_list_nil j
+        · exact hmeminj
+
+end CompCert4Lean.Backend.Unusedglobproof

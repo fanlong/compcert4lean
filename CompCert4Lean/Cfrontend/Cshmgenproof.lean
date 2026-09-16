@@ -4240,3 +4240,201 @@ theorem symbols_preserved : symbols_preservedStatement := by
   exact hgenv.mge_symb s
 
 end CompCert4Lean.Cfrontend.Cshmgenproof
+
+namespace CompCert4Lean.Cfrontend.Cshmgenproof
+
+open CompCert4Lean.Lib.Maps
+
+theorem match_env_globals : match_env_globalsStatement := by
+  intro prog e te id hmatch hnone
+  cases hte : PTree.get id te with
+  | none => rfl
+  | some pair =>
+      rcases pair with ⟨b, sz⟩
+      have hex := hmatch.me_local_inv id b sz hte
+      rcases hex with ⟨ty, he⟩
+      rw [hnone] at he
+      cases he
+
+end CompCert4Lean.Cfrontend.Cshmgenproof
+
+namespace CompCert4Lean.Cfrontend.Cshmgenproof
+
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Linking
+open CompCert4Lean.Cfrontend.Ctypes
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+
+private theorem cshmgenproof_option_rel_some
+    {A B : Type} {R : A → B → Prop} {a : Option A} {b : Option B}
+    {x : A} {y : B} (h : option_rel R a b)
+    (ha : a = some x) (hb : b = some y) : R x y := by
+  cases h with
+  | none => cases ha
+  | some x' y' hxy =>
+      cases ha
+      cases hb
+      exact hxy
+
+private theorem cshmgenproof_option_rel_some_none
+    {A B : Type} {R : A → B → Prop} {a : Option A} {b : Option B}
+    {x : A} (h : option_rel R a b)
+    (ha : a = some x) (hb : b = none) : False := by
+  cases h with
+  | none => cases ha
+  | some x' y' hxy => cases hb
+
+theorem function_ptr_translated : function_ptr_translatedStatement := by
+  intro prog tprog hm b f hfind
+  have hg := cshmgenproof_globalenvs_match prog tprog hm
+  change Genv.find_funct_ptr (Genv.globalenv (Ctypes.program_of_program prog)) b = some f at hfind
+  unfold Genv.find_funct_ptr Genv.find_def at hfind ⊢
+  have hsrc : PTree.get b (Genv.globalenv (Ctypes.program_of_program prog)).genv_defs = some (.Gfun f) := by
+    cases hfd : PTree.get b (Genv.globalenv (Ctypes.program_of_program prog)).genv_defs with
+    | none => simp [hfd] at hfind
+    | some gd =>
+        cases gd with
+        | Gfun f0 =>
+            simp [hfd] at hfind
+            cases hfind
+            rfl
+        | Gvar v => simp [hfd] at hfind
+  generalize ht : PTree.get b (Genv.globalenv tprog).genv_defs = tgt at ⊢
+  cases tgt with
+  | none =>
+      exact False.elim (cshmgenproof_option_rel_some_none
+        (hg.mge_defs b) hsrc ht)
+  | some gd2 =>
+      cases gd2 with
+      | Gfun f2 =>
+          have hrel := cshmgenproof_option_rel_some
+            (hg.mge_defs b) hsrc ht
+          rcases hrel with ⟨ctx', horder, htrans⟩
+          refine ⟨ctx', f2, ?_, htrans, horder⟩
+          simp [Genv.find_funct_ptr, Genv.find_def, ht]
+      | Gvar v2 =>
+          have hrel := cshmgenproof_option_rel_some
+            (hg.mge_defs b) hsrc ht
+          simp at hrel
+
+end CompCert4Lean.Cfrontend.Cshmgenproof
+
+namespace CompCert4Lean.Cfrontend.Cshmgenproof
+
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Cfrontend.Ctypes
+open CompCert4Lean.Lib.Integers
+
+theorem functions_translated : functions_translatedStatement := by
+  intro prog tprog hm v f hfind
+  change Genv.find_funct (Genv.globalenv (Ctypes.program_of_program prog)) v = some f at hfind
+  unfold Genv.find_funct at hfind ⊢
+  cases v with
+  | Vundef => simp at hfind
+  | Vint n => simp at hfind
+  | Vlong n => simp at hfind
+  | Vfloat n => simp at hfind
+  | Vsingle n => simp at hfind
+  | Vptr b ofs =>
+      cases hzero : Ptrofs.eq ofs Ptrofs.zero with
+      | false => simp [hzero] at hfind
+      | true =>
+          simp [hzero] at hfind ⊢
+          exact function_ptr_translated prog tprog hm b f hfind
+
+end CompCert4Lean.Cfrontend.Cshmgenproof
+
+namespace CompCert4Lean.Cfrontend.Cshmgenproof
+
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Linking
+open CompCert4Lean.Cfrontend.Ctypes
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+
+private theorem cshmgenproof_option_rel_none_some
+    {A B : Type} {R : A → B → Prop} {a : Option A} {b : Option B}
+    {y : B} (h : option_rel R a b)
+    (ha : a = none) (hb : b = some y) : False := by
+  cases h with
+  | none => cases hb
+  | some x' y' hxy => cases ha
+
+private theorem cshmgenproof_add_globals_public
+    {A V : Type} (ge : Genv.t A V) (gl : List (ident × globdef A V)) :
+    (Genv.add_globals ge gl).genv_public = ge.genv_public := by
+  induction gl generalizing ge with
+  | nil => rfl
+  | cons x xs ih =>
+      simp only [Genv.add_globals, List.foldl]
+      exact ih (ge := Genv.add_global ge x)
+
+theorem senv_preserved : senv_preservedStatement := by
+  intro prog tprog hm
+  have hg := cshmgenproof_globalenvs_match prog tprog hm
+  unfold Senv.equiv
+  constructor
+  · intro id
+    exact hg.mge_symb id
+  constructor
+  · intro id
+    change Genv.public_symbol (Genv.globalenv tprog) id =
+      Genv.public_symbol (Genv.globalenv (Ctypes.program_of_program prog)) id
+    have ht : (Genv.globalenv tprog).genv_public = tprog.prog_public := by
+      unfold Genv.globalenv
+      exact cshmgenproof_add_globals_public _ _
+    have hp :
+        (Genv.globalenv (Ctypes.program_of_program prog)).genv_public =
+          (Ctypes.program_of_program prog).prog_public := by
+      unfold Genv.globalenv
+      exact cshmgenproof_add_globals_public _ _
+    unfold Genv.public_symbol Genv.find_symbol
+    rw [hg.mge_symb id, ht, hp, hm.2.2]
+    rfl
+  · intro b
+    change Genv.block_is_volatile (Genv.globalenv tprog) b =
+      Genv.block_is_volatile (Genv.globalenv (Ctypes.program_of_program prog)) b
+    unfold Genv.block_is_volatile Genv.find_var_info Genv.find_def
+    generalize hs : PTree.get b (Genv.globalenv (Ctypes.program_of_program prog)).genv_defs = src at ⊢
+    generalize ht : PTree.get b (Genv.globalenv tprog).genv_defs = tgt at ⊢
+    cases src with
+    | none =>
+        cases tgt with
+        | none => rfl
+        | some gd2 =>
+            exact False.elim (cshmgenproof_option_rel_none_some
+              (hg.mge_defs b) hs ht)
+    | some gd1 =>
+        cases gd1 with
+        | Gfun f1 =>
+            cases tgt with
+            | none =>
+                exact False.elim (cshmgenproof_option_rel_some_none
+                  (hg.mge_defs b) hs ht)
+            | some gd2 =>
+                cases gd2 with
+                | Gfun f2 => rfl
+                | Gvar v2 =>
+                    have hrel := cshmgenproof_option_rel_some
+                      (hg.mge_defs b) hs ht
+                    simp at hrel
+        | Gvar v1 =>
+            cases tgt with
+            | none =>
+                exact False.elim (cshmgenproof_option_rel_some_none
+                  (hg.mge_defs b) hs ht)
+            | some gd2 =>
+                cases gd2 with
+                | Gfun f2 =>
+                    have hrel := cshmgenproof_option_rel_some
+                      (hg.mge_defs b) hs ht
+                    simp at hrel
+                | Gvar v2 =>
+                    have hrel := cshmgenproof_option_rel_some
+                      (hg.mge_defs b) hs ht
+                    exact hrel.2.2.2.symm
+
+end CompCert4Lean.Cfrontend.Cshmgenproof
