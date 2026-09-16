@@ -5185,3 +5185,390 @@ theorem round_UP_le_DN_lt :
       (((ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp hfloorlt).2 hdn)
 
 end CompCert4Lean.Flocq.Core.Ulp
+
+namespace CompCert4Lean.Flocq.Core.Ulp
+
+private theorem pg_current_generic_format_pred
+    (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx)
+    (beta : radix) (fexp : Z → Z) (hvalid : Valid_exp fexp)
+    (x : Exact.R ctx)
+    (hformat : Exact.generic_format ctx magnitude beta fexp x) :
+    Exact.generic_format ctx magnitude beta fexp
+      (Exact.pred ctx magnitude beta fexp x) := by
+  unfold Exact.pred
+  apply CompCert4Lean.Flocq.Core.Generic_fmt.generic_format_opp
+  apply pg_assignment_generic_format_succ ctx magnitude beta fexp hvalid
+  exact CompCert4Lean.Flocq.Core.Generic_fmt.generic_format_opp
+    ctx magnitude beta fexp x hformat
+
+private theorem pg_current_generic_format_round_UP
+    (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx)
+    (beta : radix) (fexp : Z → Z) (hvalid : Valid_exp fexp)
+    (x : Exact.R ctx) :
+    Exact.generic_format ctx magnitude beta fexp
+      (Exact.round ctx magnitude beta fexp
+        (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zceil ctx) x) := by
+  let ceil := CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zceil ctx
+  have hceil := pg_rdu_valid_rnd_UP ctx
+  rcases ctx.certificate.total_order (Exact.R0 ctx) x with hx | hx
+  · rcases hx with hxpos | hxzero
+    · exact CompCert4Lean.Flocq.Core.Generic_fmt.generic_format_round_pos
+        ctx magnitude beta fexp hvalid ceil hceil x hxpos
+    · subst x
+      have hround0 := CompCert4Lean.Flocq.Core.Generic_fmt.round_0
+        ctx magnitude beta fexp ceil hceil
+      change CompCert4Lean.Flocq.Core.Generic_fmt.Exact.generic_format
+        ctx magnitude beta fexp
+          (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.round
+            ctx magnitude beta fexp ceil (Exact.R0 ctx))
+      rw [hround0]
+      exact pg_pred_ge_gt_generic_format_zero ctx magnitude beta fexp
+  · have hnegpos : Exact.Rlt ctx (Exact.R0 ctx) (Exact.Ropp ctx x) := by
+      have h := ulp_neg_lt_neg ctx hx
+      change ctx.spec.lt (ctx.spec.neg ctx.spec.zero) (ctx.spec.neg x) at h
+      have hz : ctx.spec.neg ctx.spec.zero = ctx.spec.zero := by
+        have hz := ctx.certificate.orderedField.neg_add_cancel ctx.spec.zero
+        rw [ctx.certificate.orderedField.add_zero] at hz
+        exact hz
+      rw [hz] at h
+      exact h
+    have hformat := CompCert4Lean.Flocq.Core.Generic_fmt.generic_format_round_pos
+      ctx magnitude beta fexp hvalid
+      (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zfloor ctx)
+      (pg_rdu_valid_rnd_DN ctx) (Exact.Ropp ctx x) hnegpos
+    change Exact.generic_format ctx magnitude beta fexp
+      (Exact.round ctx magnitude beta fexp
+        (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zfloor ctx)
+        (Exact.Ropp ctx x)) at hformat
+    rw [pg_rdu_round_DN_opp ctx magnitude beta fexp x] at hformat
+    have hneg := CompCert4Lean.Flocq.Core.Generic_fmt.generic_format_opp
+      ctx magnitude beta fexp _ hformat
+    change Exact.generic_format ctx magnitude beta fexp
+      (Exact.Ropp ctx (Exact.Ropp ctx
+        (Exact.round ctx magnitude beta fexp
+          (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zceil ctx) x))) at hneg
+    have hnn : Exact.Ropp ctx (Exact.Ropp ctx
+        (Exact.round ctx magnitude beta fexp
+          (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zceil ctx) x)) =
+        Exact.round ctx magnitude beta fexp
+          (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zceil ctx) x := by
+      exact ulp_neg_neg ctx _
+    rw [hnn] at hneg
+    exact hneg
+
+theorem pred_UP_le_DN :
+    ∀ (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx),
+      pred_UP_le_DNStatement ctx magnitude := by
+  intro ctx magnitude beta fexp hvalid x
+  let floor := CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zfloor ctx
+  let ceil := CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zceil ctx
+  by_cases hxformat : Exact.generic_format ctx magnitude beta fexp x
+  · have hfloor := CompCert4Lean.Flocq.Core.Generic_fmt.round_generic
+      ctx magnitude beta fexp floor (pg_rdu_valid_rnd_DN ctx) x hxformat
+    have hceil := CompCert4Lean.Flocq.Core.Generic_fmt.round_generic
+      ctx magnitude beta fexp ceil (pg_rdu_valid_rnd_UP ctx) x hxformat
+    change Exact.Rle ctx
+      (Exact.pred ctx magnitude beta fexp
+        (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.round
+          ctx magnitude beta fexp ceil x))
+      (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.round
+        ctx magnitude beta fexp floor x)
+    rw [hfloor, hceil]
+    exact pred_le_id ctx magnitude beta fexp x
+  · let u := Exact.round ctx magnitude beta fexp ceil x
+    let d := Exact.round ctx magnitude beta fexp floor x
+    change Exact.Rle ctx (Exact.pred ctx magnitude beta fexp u) d
+    by_cases hu0 : u = Exact.R0 ctx
+    · have hx0 : x ≠ Exact.R0 ctx := by
+        intro hx0
+        apply hxformat
+        rw [hx0]
+        exact pg_pred_ge_gt_generic_format_zero ctx magnitude beta fexp
+      rcases negligible_exp_spec' fexp with hnone | hsome
+      · have hune := round_neq_0_negligible_exp ctx magnitude beta fexp hvalid
+          hnone.1 ceil (pg_rdu_valid_rnd_UP ctx) x hx0
+        exact False.elim (hune hu0)
+      · rcases hsome with ⟨n, hn, hnle⟩
+        have hulp : Exact.ulp ctx magnitude beta fexp (Exact.R0 ctx) =
+            Exact.bpow ctx beta (fexp n) := by
+          unfold Exact.ulp
+          have hreq : Exact.Req_bool ctx (Exact.R0 ctx) (Exact.R0 ctx) = true :=
+            CompCert4Lean.Flocq.Core.Raux.Req_bool_true ctx _ _ rfl
+          rw [hreq, hn]
+        have hpred0 := pred_0 ctx magnitude beta fexp
+        rw [hu0, hpred0, hulp]
+        rcases ctx.certificate.total_order
+            (Exact.Ropp ctx (Exact.bpow ctx beta (fexp n))) d with h | h
+        · rcases h with hlt | heq
+          · exact (ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp hlt |>.1
+          · rw [heq]
+            exact ctx.certificate.orderedField.le_refl _
+        · have hpowformat : Exact.generic_format ctx magnitude beta fexp
+              (Exact.bpow ctx beta (fexp n)) := by
+            let e := fexp n
+            have hnext : Zle
+                (fexp (CompCert4Lean.Flocq.Core.Raux.Zadd e Zone)) e :=
+              ((hvalid.valid_exp n).2 hnle).1
+            have hrepr :
+                CompCert4Lean.Flocq.Core.Generic_fmt.Exact.F2R ctx
+                  (CompCert4Lean.Flocq.Core.Generic_fmt.Float beta Zone e) =
+                  Exact.bpow ctx beta e := by
+              change ctx.spec.mul (ctx.spec.ofZ Zone) (Exact.bpow ctx beta e) = _
+              rw [ctx.certificate.sourceLaws.ofZ_one,
+                ctx.certificate.orderedField.one_mul]
+            rw [← hrepr]
+            apply pg_pred_ge_gt_generic_format_F2R
+              ctx magnitude beta fexp Zone e
+            intro _
+            rw [hrepr]
+            change Zle
+              (fexp (Exact.mag ctx magnitude beta (Exact.bpow ctx beta e))) e
+            rw [pg_ulp_mag_bpow ctx magnitude beta e]
+            exact hnext
+          have hnegformat := CompCert4Lean.Flocq.Core.Generic_fmt.generic_format_opp
+            ctx magnitude beta fexp _ hpowformat
+          have hup := round_UP_le_DN_lt ctx magnitude beta fexp hvalid x
+            (Exact.Ropp ctx (Exact.bpow ctx beta (fexp n))) hnegformat h
+          change Exact.Rle ctx u (Exact.Ropp ctx (Exact.bpow ctx beta (fexp n))) at hup
+          rw [hu0] at hup
+          have hpos := CompCert4Lean.Flocq.Core.Raux.bpow_gt_0 ctx beta (fexp n)
+          have hneg := ulp_neg_lt_neg ctx hpos
+          change ctx.spec.lt (ctx.spec.neg (Exact.bpow ctx beta (fexp n)))
+            (ctx.spec.neg ctx.spec.zero) at hneg
+          have hz : ctx.spec.neg ctx.spec.zero = ctx.spec.zero := by
+            have hz := ctx.certificate.orderedField.neg_add_cancel ctx.spec.zero
+            rw [ctx.certificate.orderedField.add_zero] at hz
+            exact hz
+          rw [hz] at hneg
+          exact False.elim
+            (((ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp hneg).2 hup)
+    · have huformat : Exact.generic_format ctx magnitude beta fexp u := by
+        exact pg_current_generic_format_round_UP ctx magnitude beta fexp hvalid x
+      have hpformat := pg_current_generic_format_pred
+        ctx magnitude beta fexp hvalid u huformat
+      have hplt : Exact.Rlt ctx (Exact.pred ctx magnitude beta fexp u) u :=
+        pred_lt_id ctx magnitude beta fexp u hu0
+      exact round_DN_ge_UP_gt ctx magnitude beta fexp hvalid x
+        (Exact.pred ctx magnitude beta fexp u) hpformat hplt
+
+private theorem pg_current_generic_format_round_DN
+    (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx)
+    (beta : radix) (fexp : Z → Z) (hvalid : Valid_exp fexp)
+    (x : Exact.R ctx) :
+    Exact.generic_format ctx magnitude beta fexp
+      (Exact.round ctx magnitude beta fexp
+        (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zfloor ctx) x) := by
+  have hup := pg_current_generic_format_round_UP
+    ctx magnitude beta fexp hvalid (Exact.Ropp ctx x)
+  have hneg := CompCert4Lean.Flocq.Core.Generic_fmt.generic_format_opp
+    ctx magnitude beta fexp _ hup
+  change Exact.generic_format ctx magnitude beta fexp
+    (Exact.Ropp ctx
+      (Exact.round ctx magnitude beta fexp
+        (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zceil ctx)
+        (Exact.Ropp ctx x))) at hneg
+  rw [pg_rdu_neg_round_UP_opp ctx magnitude beta fexp x] at hneg
+  exact hneg
+
+private theorem pg_current_round_DN_le_id
+    (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx)
+    (beta : radix) (fexp : Z → Z) (x : Exact.R ctx) :
+    Exact.Rle ctx
+      (Exact.round ctx magnitude beta fexp
+        (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zfloor ctx) x) x := by
+  let e := Exact.cexp ctx magnitude beta fexp x
+  let s := CompCert4Lean.Flocq.Core.Generic_fmt.Exact.scaled_mantissa
+    ctx magnitude beta fexp x
+  have hfloor := CompCert4Lean.Flocq.Core.Raux.Zfloor_lb ctx s
+  have hpow : ctx.spec.le ctx.spec.zero (Exact.bpow ctx beta e) :=
+    CompCert4Lean.Flocq.Core.Raux.bpow_ge_0 ctx beta e
+  have hmul :=
+    CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.Rmult_le_compat_r
+      ctx (Exact.bpow ctx beta e)
+        (ctx.spec.ofZ
+          (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zfloor ctx s))
+        s (by
+          change ctx.spec.le (ctx.spec.ofZ Z0) (Exact.bpow ctx beta e)
+          rw [ctx.certificate.sourceLaws.ofZ_zero]
+          exact hpow) hfloor
+  change ctx.spec.le
+    (ctx.spec.mul
+      (ctx.spec.ofZ
+        (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zfloor ctx s))
+      (Exact.bpow ctx beta e))
+    (ctx.spec.mul s (Exact.bpow ctx beta e)) at hmul
+  change ctx.spec.le
+    (ctx.spec.mul
+      (ctx.spec.ofZ
+        (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zfloor ctx s))
+      (Exact.bpow ctx beta e)) x
+  have hcancel : ctx.spec.mul s (Exact.bpow ctx beta e) = x := by
+    exact pg_rdu_scale_cancel ctx beta x e
+  rw [hcancel] at hmul
+  exact hmul
+
+private theorem pg_current_round_UP_ge_id
+    (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx)
+    (beta : radix) (fexp : Z → Z) (x : Exact.R ctx) :
+    Exact.Rle ctx x
+      (Exact.round ctx magnitude beta fexp
+        (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zceil ctx) x) := by
+  let e := Exact.cexp ctx magnitude beta fexp x
+  let s := CompCert4Lean.Flocq.Core.Generic_fmt.Exact.scaled_mantissa
+    ctx magnitude beta fexp x
+  have hceil := CompCert4Lean.Flocq.Core.Raux.Zceil_ub ctx s
+  have hpow : ctx.spec.le ctx.spec.zero (Exact.bpow ctx beta e) :=
+    CompCert4Lean.Flocq.Core.Raux.bpow_ge_0 ctx beta e
+  have hmul :=
+    CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.Rmult_le_compat_r
+      ctx (Exact.bpow ctx beta e) s
+        (ctx.spec.ofZ
+          (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zceil ctx s))
+        (by
+          change ctx.spec.le (ctx.spec.ofZ Z0) (Exact.bpow ctx beta e)
+          rw [ctx.certificate.sourceLaws.ofZ_zero]
+          exact hpow) hceil
+  change ctx.spec.le
+    (ctx.spec.mul s (Exact.bpow ctx beta e))
+    (ctx.spec.mul
+      (ctx.spec.ofZ
+        (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zceil ctx s))
+      (Exact.bpow ctx beta e)) at hmul
+  change ctx.spec.le x
+    (ctx.spec.mul
+      (ctx.spec.ofZ
+        (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zceil ctx s))
+      (Exact.bpow ctx beta e))
+  have hcancel : ctx.spec.mul s (Exact.bpow ctx beta e) = x := by
+    exact pg_rdu_scale_cancel ctx beta x e
+  rw [hcancel] at hmul
+  exact hmul
+
+theorem pred_UP_eq_DN :
+    ∀ (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx),
+      pred_UP_eq_DNStatement ctx magnitude := by
+  intro ctx magnitude beta fexp hvalid x hxformat
+  let floor := CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zfloor ctx
+  let ceil := CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zceil ctx
+  let d := Exact.round ctx magnitude beta fexp floor x
+  let u := Exact.round ctx magnitude beta fexp ceil x
+  change Exact.pred ctx magnitude beta fexp u = d
+  apply ctx.certificate.orderedField.le_antisymm
+  · exact pred_UP_le_DN ctx magnitude beta fexp hvalid x
+  · have hdformat : Exact.generic_format ctx magnitude beta fexp d :=
+      pg_current_generic_format_round_DN ctx magnitude beta fexp hvalid x
+    have huformat : Exact.generic_format ctx magnitude beta fexp u :=
+      pg_current_generic_format_round_UP ctx magnitude beta fexp hvalid x
+    have hdx : Exact.Rle ctx d x :=
+      pg_current_round_DN_le_id ctx magnitude beta fexp x
+    have hxu : Exact.Rle ctx x u :=
+      pg_current_round_UP_ge_id ctx magnitude beta fexp x
+    have hdu : Exact.Rle ctx d u :=
+      ctx.certificate.orderedField.le_trans _ _ _ hdx hxu
+    have hdune : d ≠ u := by
+      intro hdu_eq
+      apply hxformat
+      have hxle : Exact.Rle ctx x d := by
+        rw [hdu_eq]
+        exact hxu
+      have hxd : x = d := ctx.certificate.orderedField.le_antisymm _ _
+        hxle hdx
+      rw [hxd]
+      exact hdformat
+    have hdltu : Exact.Rlt ctx d u :=
+      (ctx.certificate.orderedField.lt_iff_le_not_le _ _).mpr
+        ⟨hdu, fun hud => hdune
+          (ctx.certificate.orderedField.le_antisymm _ _ hdu hud)⟩
+    exact pred_ge_gt ctx magnitude beta fexp hvalid d u
+      hdformat huformat hdltu
+
+theorem succ_DN_eq_UP :
+    ∀ (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx),
+      succ_DN_eq_UPStatement ctx magnitude := by
+  intro ctx magnitude beta fexp hvalid x hxformat
+  let floor := CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zfloor ctx
+  let ceil := CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zceil ctx
+  let d := Exact.round ctx magnitude beta fexp floor x
+  let u := Exact.round ctx magnitude beta fexp ceil x
+  have hpred : Exact.pred ctx magnitude beta fexp u = d :=
+    pred_UP_eq_DN ctx magnitude beta fexp hvalid x hxformat
+  have huformat : Exact.generic_format ctx magnitude beta fexp u :=
+    pg_current_generic_format_round_UP ctx magnitude beta fexp hvalid x
+  calc
+    Exact.succ ctx magnitude beta fexp d =
+        Exact.succ ctx magnitude beta fexp
+          (Exact.pred ctx magnitude beta fexp u) :=
+      congrArg (Exact.succ ctx magnitude beta fexp) hpred.symm
+    _ = u := succ_pred ctx magnitude beta fexp hvalid u huformat
+
+private theorem pg_current_succ_le_lt
+    (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx)
+    (beta : radix) (fexp : Z → Z) (hvalid : Valid_exp fexp)
+    (x y : Exact.R ctx)
+    (hxformat : Exact.generic_format ctx magnitude beta fexp x)
+    (hyformat : Exact.generic_format ctx magnitude beta fexp y)
+    (hxy : Exact.Rlt ctx x y) :
+    Exact.Rle ctx (Exact.succ ctx magnitude beta fexp x) y := by
+  have hnxformat := CompCert4Lean.Flocq.Core.Generic_fmt.generic_format_opp
+    ctx magnitude beta fexp x hxformat
+  have hnyformat := CompCert4Lean.Flocq.Core.Generic_fmt.generic_format_opp
+    ctx magnitude beta fexp y hyformat
+  have hneglt : Exact.Rlt ctx (Exact.Ropp ctx y) (Exact.Ropp ctx x) :=
+    ulp_neg_lt_neg ctx hxy
+  have hp := pred_ge_gt ctx magnitude beta fexp hvalid
+    (Exact.Ropp ctx y) (Exact.Ropp ctx x) hnyformat hnxformat hneglt
+  rw [pred_opp ctx magnitude beta fexp x] at hp
+  exact CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.Ropp_le_cancel
+    ctx (Exact.succ ctx magnitude beta fexp x) y hp
+
+theorem round_DN_eq :
+    ∀ (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx),
+      round_DN_eqStatement ctx magnitude := by
+  intro ctx magnitude beta fexp hvalid x d hdformat hbounds
+  let floor := CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zfloor ctx
+  let ceil := CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zceil ctx
+  let rd := Exact.round ctx magnitude beta fexp floor x
+  have hdrd : Exact.Rle ctx d rd :=
+    pg_rdu_round_DN_ge_generic ctx magnitude beta fexp hvalid
+      d x hdformat hbounds.1
+  apply ctx.certificate.orderedField.le_antisymm
+  · by_cases hxformat : Exact.generic_format ctx magnitude beta fexp x
+    · have hround := CompCert4Lean.Flocq.Core.Generic_fmt.round_generic
+        ctx magnitude beta fexp floor (pg_rdu_valid_rnd_DN ctx) x hxformat
+      change ctx.spec.le
+        (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.round
+          ctx magnitude beta fexp floor x) d
+      change CompCert4Lean.Flocq.Core.Generic_fmt.Exact.round
+        ctx magnitude beta fexp floor x = x at hround
+      rw [hround]
+      rcases ctx.certificate.total_order x d with hxd | hdx
+      · rcases hxd with hlt | heq
+        · exact (ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp hlt |>.1
+        · rw [heq]
+          exact ctx.certificate.orderedField.le_refl _
+      · have hsuccle := pg_current_succ_le_lt
+          ctx magnitude beta fexp hvalid d x hdformat hxformat hdx
+        exact False.elim
+          (((ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp hbounds.2).2
+            hsuccle)
+    · have hrdformat : Exact.generic_format ctx magnitude beta fexp rd :=
+        pg_current_generic_format_round_DN ctx magnitude beta fexp hvalid x
+      have hsuccdformat : Exact.generic_format ctx magnitude beta fexp
+          (Exact.succ ctx magnitude beta fexp d) :=
+        pg_assignment_generic_format_succ
+          ctx magnitude beta fexp hvalid d hdformat
+      have hxle : Exact.Rle ctx x (Exact.succ ctx magnitude beta fexp d) :=
+        (ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp hbounds.2 |>.1
+      have hupp := pg_rdu_round_UP_le_generic
+        ctx magnitude beta fexp hvalid x
+          (Exact.succ ctx magnitude beta fexp d) hsuccdformat hxle
+      have hsuccround := succ_DN_eq_UP
+        ctx magnitude beta fexp hvalid x hxformat
+      change Exact.succ ctx magnitude beta fexp rd =
+        Exact.round ctx magnitude beta fexp ceil x at hsuccround
+      rw [← hsuccround] at hupp
+      exact succ_le_inv ctx magnitude beta fexp hvalid rd d
+        hrdformat hdformat hupp
+  · exact hdrd
+
+end CompCert4Lean.Flocq.Core.Ulp

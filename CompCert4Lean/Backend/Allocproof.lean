@@ -6545,3 +6545,33 @@ theorem parallel_set_builtin_res_satisf :
       cases resultLoc <;> simp [remove_equations_builtin_res] at hremove
 
 end CompCert4Lean.Backend.Allocproof
+
+namespace CompCert4Lean.Backend.Allocproof
+
+open CompCert4Lean.Backend.Allocation
+open CompCert4Lean.Common.Errors
+open CompCert4Lean.Lib.Maps
+
+theorem analyze_successors : analyze_successorsStatement := by
+  intro cfg f env bsh an pc bs s e hAnalyze hBsh hSucc hAn
+  unfold analyze at hAnalyze
+  have hsol :=
+    CompCert4Lean.Backend.Kildall.Backward_Dataflow_Solver.fixpoint_allnodes_solution
+      (LAT := CompCert4Lean.Backend.Allocation.DS.L)
+      (NS := CompCert4Lean.Backend.Kildall.NodeSetBackward)
+      (CompCert4Lean.Backend.Allocation.DS.law_obligation_proof.1)
+      CompCert4Lean.Backend.Kildall.NodeSetBackward.law_obligation_proof
+      bsh successors_block_shape (transfer cfg f env bsh) an pc bs s hAnalyze hBsh hSucc
+  change (match PMap.get pc an, transfer cfg f env bsh s (PMap.get s an) with
+    | .OK a, .OK b => EqSet.Subset b a
+    | .Error _, _ => True
+    | _, .Error _ => False) at hsol
+  rw [hAn] at hsol
+  cases htransfer : transfer cfg f env bsh s (PMap.get s an) with
+  | Error msg =>
+      simp [htransfer] at hsol
+  | OK e' =>
+      refine ⟨e', rfl, ?_⟩
+      simpa [htransfer] using hsol
+
+end CompCert4Lean.Backend.Allocproof

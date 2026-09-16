@@ -2958,3 +2958,41 @@ theorem ZArith.BinInt.Z.compare_eq :
 
 end Rocq.Coq
 end CompCert4Lean.Foundation.Numbers
+
+namespace CompCert4Lean.Foundation.Numbers
+namespace Rocq.Coq
+
+theorem ZArith.BinInt.Z.abs_mul :
+    ZArith.BinInt.Z.abs_mulStatement := by
+  intro n m
+  apply intOfZ_injective
+  simp [ZArith.BinInt.Z.abs, ZArith.BinInt.Z.mul, intOfZ_zOfInt,
+    Int.natAbs_mul]
+
+theorem ZArith.Zorder.Zle_antisym_proof :
+    ∀ (n m : Z) (h₁ : ZArith.BinInt.Z.le n m)
+      (h₂ : ZArith.BinInt.Z.le m n),
+      ZArith.Zorder.Zle_antisym n m h₁ h₂ := by
+  intro n m h₁ h₂
+  apply intOfZ_injective
+  exact Int.le_antisymm h₁ h₂
+
+theorem ZArith.Zorder.Zlt_lt_succ_proof :
+    ∀ (n m : Z), ZArith.Zorder.Zlt_lt_succ n m := by
+  intro n m h
+  change intOfZ n < intOfZ m at h
+  change intOfZ n < intOfZ (ZArith.BinInt.Z.succ m)
+  simp only [ZArith.BinInt.Z.succ, ZArith.BinInt.Z.add, intOfZ_zOfInt]
+  have hone : intOfZ (Zpos xH) = 1 := by simp [intOfZ, posToNat]
+  rw [hone]
+  omega
+
+theorem ZArith.BinInt.Zmult_plus_distr_r_proof :
+    ∀ (n m p : Z), ZArith.BinInt.Zmult_plus_distr_r n m p := by
+  intro n m p
+  apply intOfZ_injective
+  simp only [ZArith.BinInt.Z.mul, ZArith.BinInt.Z.add, intOfZ_zOfInt]
+  exact Int.mul_add _ _ _
+
+end Rocq.Coq
+end CompCert4Lean.Foundation.Numbers

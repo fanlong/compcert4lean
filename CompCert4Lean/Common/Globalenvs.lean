@@ -4068,3 +4068,49 @@ theorem globalenvs_match : globalenvs_matchStatement := by
 
 end Genv
 end CompCert4Lean.Common.Globalenvs
+
+namespace CompCert4Lean.Common.Globalenvs
+namespace Genv
+
+theorem find_def_match_2 : find_def_match_2Statement := by
+  intro C F1 V1 F2 V2 _ match_fundef match_varinfo ctx p tp hmatch b
+  exact (@globalenvs_match C F1 V1 F2 V2 _ match_fundef match_varinfo ctx p tp hmatch).mge_defs b
+
+open CompCert4Lean.Common.AST
+
+theorem find_def_match : find_def_matchStatement := by
+  intro C F1 V1 F2 V2 _ match_fundef match_varinfo ctx p tp hmatch b g hfind
+  have hrel := @find_def_match_2 C F1 V1 F2 V2 _ match_fundef match_varinfo ctx p tp hmatch b
+  rw [hfind] at hrel
+  cases hdef : find_def (globalenv tp) b with
+  | none =>
+      rw [hdef] at hrel
+      cases hrel
+  | some tg =>
+      rw [hdef] at hrel
+      cases hrel with
+      | some _ _ htg => exact ⟨tg, rfl, htg⟩
+
+theorem find_funct_ptr_match : find_funct_ptr_matchStatement := by
+  intro C F1 V1 F2 V2 _ match_fundef match_varinfo ctx p tp hmatch b f hfind
+  have hdef : find_def (globalenv p) b = some (Gfun f) :=
+    (find_funct_ptr_iff (F := F1) (V := V1) (ge := globalenv p) (b := b) (f := f)).mp hfind
+  rcases @find_def_match C F1 V1 F2 V2 _ match_fundef match_varinfo ctx p tp hmatch b (Gfun f) hdef with
+    ⟨tg, htdef, htg⟩
+  cases htg with
+  | match_globdef_fun ctx' _ f2 horder hfun =>
+      exact ⟨ctx', f2,
+        (find_funct_ptr_iff (F := F2) (V := V2) (ge := globalenv tp) (b := b) (f := f2)).mpr htdef,
+        hfun, horder⟩
+
+theorem find_funct_match : find_funct_matchStatement := by
+  intro C F1 V1 F2 V2 _ match_fundef match_varinfo ctx p tp hmatch v f hfind
+  rcases find_funct_inv (F := F1) (V := V1) (ge := globalenv p) (v := v) (f := f) hfind with
+    ⟨b, hv⟩
+  subst v
+  have hptr : find_funct_ptr (globalenv p) b = some f :=
+    (find_funct_find_funct_ptr (F := F1) (V := V1) (ge := globalenv p) (b := b)).symm.trans hfind
+  exact @find_funct_ptr_match C F1 V1 F2 V2 _ match_fundef match_varinfo ctx p tp hmatch b f hptr
+
+end Genv
+end CompCert4Lean.Common.Globalenvs

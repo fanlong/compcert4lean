@@ -4595,3 +4595,190 @@ theorem match_env_alloc_variables : match_env_alloc_variablesStatement := by
                     hmatch2⟩
 
 end CompCert4Lean.Cfrontend.Cshmgenproof
+
+namespace CompCert4Lean.Cfrontend.Cshmgenproof
+
+theorem create_undef_temps_match : create_undef_temps_matchStatement := by
+  intro temps
+  induction temps with
+  | nil => rfl
+  | cons head tail ih =>
+      cases head with
+      | mk id ty =>
+          simp only [Clight.create_undef_temps, Csharpminor.create_undef_temps,
+            List.map_cons]
+          rw [ih]
+
+theorem bind_parameter_temps_match : bind_parameter_temps_matchStatement := by
+  intro vars vals le1 le2 h
+  induction vars generalizing vals le1 with
+  | nil =>
+      cases vals with
+      | nil =>
+          simp only [Clight.bind_parameter_temps] at h
+          exact h
+      | cons v vs => simp [Clight.bind_parameter_temps] at h
+  | cons head tail ih =>
+      cases head with
+      | mk id ty =>
+          cases vals with
+          | nil => simp [Clight.bind_parameter_temps] at h
+          | cons v vs =>
+              apply ih
+              simpa [Clight.bind_parameter_temps] using h
+
+theorem transl_vars_names : transl_vars_namesStatement := by
+  intro ce vars tvars h
+  have hm := CompCert4Lean.Common.Errors.mmap_inversion _ _
+    (Cshmgen.transl_var ce) vars tvars h
+  have aux : ∀ {xs ys},
+      CompCert4Lean.Lib.Coqlib.list_forall2
+        (fun x y => Cshmgen.transl_var ce x = .OK y) xs ys →
+      ys.map Prod.fst = Clight.var_names xs := by
+    intro xs ys hxy
+    induction hxy with
+    | nil => rfl
+    | cons x y hxy htail ih =>
+        cases x with
+        | mk id ty =>
+            cases y with
+            | mk id' sz =>
+                unfold Cshmgen.transl_var at hxy
+                cases hsize : Cshmgen.sizeof ce ty with
+                | Error msg => simp [hsize] at hxy
+                | OK sz' =>
+                    simp [hsize] at hxy
+                    cases hxy
+                    simp_all [Clight.var_names]
+  exact aux hm
+
+end CompCert4Lean.Cfrontend.Cshmgenproof
+
+namespace CompCert4Lean.Cfrontend.Cshmgenproof
+
+theorem transl_expr_lvalue
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    transl_expr_lvalueStatement := by
+  intro prog cunit hlink e le m a loc ofs bf ta heval htrans
+  cases heval with
+  | eval_Evar_local id loc ty hfind =>
+      refine ⟨.Eaddrof id, ?_, ?_⟩
+      · rfl
+      · simpa [Cshmgen.transl_expr, Clight.typeof] using htrans
+  | eval_Evar_global id loc ty hlocal hglobal =>
+      refine ⟨.Eaddrof id, ?_, ?_⟩
+      · rfl
+      · simpa [Cshmgen.transl_expr, Clight.typeof] using htrans
+  | eval_Ederef a ty loc ofs ha =>
+      cases htransl : Cshmgen.transl_expr cunit.prog_comp_env a with
+      | Error msg =>
+          simp only [Cshmgen.transl_expr] at htrans
+          simp [htransl] at htrans
+      | OK tb =>
+          simp only [Cshmgen.transl_expr] at htrans
+          simp [htransl] at htrans
+          refine ⟨tb, ?_, ?_⟩
+          · simp only [Cshmgen.transl_lvalue, htransl]
+          · simpa only [Clight.typeof] using htrans
+  | eval_Efield_struct a id ty loc ofs structId co att delta bf ha htype hcomposite hoffset =>
+      simp only [Cshmgen.transl_expr] at htrans
+      cases hbase : Cshmgen.transl_expr cunit.prog_comp_env a with
+      | Error msg => simp [hbase] at htrans
+      | OK tbase =>
+          cases hacc : Cshmgen.make_field_access cunit.prog_comp_env
+              (Clight.typeof a) id tbase with
+          | Error msg => simp [hbase, hacc] at htrans
+          | OK pair =>
+              rcases pair with ⟨addr, bf'⟩
+              have hload : Cshmgen.make_load addr ty bf' = .OK ta := by
+                simpa [hbase, hacc] using htrans
+              have haccOrig := hacc
+              rw [htype] at hacc
+              unfold Cshmgen.make_field_access at hacc
+              cases hget : CompCert4Lean.Lib.Maps.PTree.get structId cunit.prog_comp_env with
+              | none => simp [hget] at hacc
+              | some co' =>
+                  cases hfield : Ctypes.field_offset cunit.prog_comp_env id co'.co_members with
+                  | Error msg => simp [hget, hfield] at hacc
+                  | OK offset =>
+                      rcases offset with ⟨delta', bf0⟩
+                      simp [hget, hfield] at hacc
+                      have hgetprog : CompCert4Lean.Lib.Maps.PTree.get structId
+                          prog.prog_comp_env = some co' := hlink.2 structId co' hget
+                      have hcomposite' : CompCert4Lean.Lib.Maps.PTree.get structId
+                          prog.prog_comp_env = some co := by
+                        simpa [Clight.globalenv] using hcomposite
+                      have hcoeq : co' = co := Option.some.inj
+                        (hgetprog.symm.trans hcomposite')
+                      subst co'
+                      have hconsistent := Ctypes.build_composite_env_consistent
+                        cunit.prog_types cunit.prog_comp_env
+                        cunit.prog_comp_env_eq structId co hget
+                      have hstable := Ctypes.field_offset_stable
+                        cunit.prog_comp_env prog.prog_comp_env hlink.2 id
+                        co.co_members hconsistent.co_consistent_complete
+                      have hoffset' : Ctypes.field_offset prog.prog_comp_env
+                          id co.co_members = .OK (delta, bf) := by
+                        simpa [Clight.globalenv] using hoffset
+                      have hpairs : (delta, bf) = (delta', bf0) :=
+                        CompCert4Lean.Common.Errors.res.OK.inj
+                          (hoffset'.symm.trans (hstable.trans hfield))
+                      have hbf : bf = bf' :=
+                        (congrArg Prod.snd hpairs).trans hacc.2
+                      subst bf'
+                      refine ⟨addr, ?_, ?_⟩
+                      · simp only [Cshmgen.transl_lvalue, hbase, haccOrig]
+                      · simpa only [Clight.typeof] using hload
+  | eval_Efield_union a id ty loc ofs unionId co att delta bf ha htype hcomposite hoffset =>
+      simp only [Cshmgen.transl_expr] at htrans
+      cases hbase : Cshmgen.transl_expr cunit.prog_comp_env a with
+      | Error msg => simp [hbase] at htrans
+      | OK tbase =>
+          cases hacc : Cshmgen.make_field_access cunit.prog_comp_env
+              (Clight.typeof a) id tbase with
+          | Error msg => simp [hbase, hacc] at htrans
+          | OK pair =>
+              rcases pair with ⟨addr, bf'⟩
+              have hload : Cshmgen.make_load addr ty bf' = .OK ta := by
+                simpa [hbase, hacc] using htrans
+              have haccOrig := hacc
+              rw [htype] at hacc
+              unfold Cshmgen.make_field_access at hacc
+              cases hget : CompCert4Lean.Lib.Maps.PTree.get unionId cunit.prog_comp_env with
+              | none => simp [hget] at hacc
+              | some co' =>
+                  cases hfield : Ctypes.union_field_offset cunit.prog_comp_env
+                      id co'.co_members with
+                  | Error msg => simp [hget, hfield] at hacc
+                  | OK offset =>
+                      rcases offset with ⟨delta', bf0⟩
+                      simp [hget, hfield] at hacc
+                      have hgetprog : CompCert4Lean.Lib.Maps.PTree.get unionId
+                          prog.prog_comp_env = some co' := hlink.2 unionId co' hget
+                      have hcomposite' : CompCert4Lean.Lib.Maps.PTree.get unionId
+                          prog.prog_comp_env = some co := by
+                        simpa [Clight.globalenv] using hcomposite
+                      have hcoeq : co' = co := Option.some.inj
+                        (hgetprog.symm.trans hcomposite')
+                      subst co'
+                      have hconsistent := Ctypes.build_composite_env_consistent
+                        cunit.prog_types cunit.prog_comp_env
+                        cunit.prog_comp_env_eq unionId co hget
+                      have hstable := Ctypes.union_field_offset_stable
+                        cunit.prog_comp_env prog.prog_comp_env hlink.2 id
+                        co.co_members hconsistent.co_consistent_complete
+                      have hoffset' : Ctypes.union_field_offset prog.prog_comp_env
+                          id co.co_members = .OK (delta, bf) := by
+                        simpa [Clight.globalenv] using hoffset
+                      have hpairs : (delta, bf) = (delta', bf0) :=
+                        CompCert4Lean.Common.Errors.res.OK.inj
+                          (hoffset'.symm.trans (hstable.trans hfield))
+                      have hbf : bf = bf' :=
+                        (congrArg Prod.snd hpairs).trans hacc.2
+                      subst bf'
+                      refine ⟨addr, ?_, ?_⟩
+                      · simp only [Cshmgen.transl_lvalue, hbase, haccOrig]
+                      · simpa only [Clight.typeof] using hload
+
+end CompCert4Lean.Cfrontend.Cshmgenproof

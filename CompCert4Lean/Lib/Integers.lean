@@ -6018,3 +6018,65 @@ theorem bits_sign_ext_proof : bits_sign_ext := by
         exact Int.ofNat_lt.mp hb
       exact suffix_bits_sign_ext_nat n x
         (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p) hiNat
+
+theorem mul_add_distr_l_proof : mul_add_distr_l := by
+  intro x y z
+  change WordCore.mul (WordCore.add x y) z =
+    WordCore.add (WordCore.mul x z) (WordCore.mul y z)
+  apply WordCore.ext_of_val_eq
+  apply Int.ofNat.inj
+  rw [suffix_wordcore_mul_val_int (WordCore.add x y) z,
+    WordCore.add_val_int x y,
+    WordCore.add_val_int (WordCore.mul x z) (WordCore.mul y z),
+    suffix_wordcore_mul_val_int x z, suffix_wordcore_mul_val_int y z]
+  let m : Int := Int.ofNat (2 ^ wordsize)
+  change
+    (((Int.ofNat x.val + Int.ofNat y.val) % m) * Int.ofNat z.val) % m =
+      ((Int.ofNat x.val * Int.ofNat z.val) % m +
+        (Int.ofNat y.val * Int.ofNat z.val) % m) % m
+  calc
+    (((Int.ofNat x.val + Int.ofNat y.val) % m) * Int.ofNat z.val) % m =
+        ((((Int.ofNat x.val + Int.ofNat y.val) % m) % m) *
+          (Int.ofNat z.val % m)) % m := Int.mul_emod _ _ _
+    _ = (((Int.ofNat x.val + Int.ofNat y.val) % m) *
+          (Int.ofNat z.val % m)) % m := by
+      rw [Int.emod_emod]
+    _ = ((Int.ofNat x.val + Int.ofNat y.val) * Int.ofNat z.val) % m :=
+      (Int.mul_emod _ _ _).symm
+    _ = (Int.ofNat x.val * Int.ofNat z.val +
+          Int.ofNat y.val * Int.ofNat z.val) % m := by
+      rw [Int.add_mul]
+    _ = ((Int.ofNat x.val * Int.ofNat z.val) % m +
+          (Int.ofNat y.val * Int.ofNat z.val) % m) % m :=
+      Int.add_emod _ _ _
+
+theorem not_involutive_proof : not_involutive := by
+  intro x
+  apply WordCore.ext_of_val_eq
+  change (WordCore.not (WordCore.not x)).val = x.val
+  rw [suffix_not_val, suffix_not_val, Nat.xor_eq, Nat.xor_eq, Nat.xor_assoc,
+    Nat.xor_self, Nat.xor_zero]
+
+theorem ltu_iwordsize_inv_proof : ltu_iwordsize_inv := by
+  intro x h
+  have hx := ltu_inv_proof x iwordsize h
+  rw [unsigned_repr_wordsize_proof] at hx
+  exact hx
+
+theorem shl_shl_proof : shl_shl := by
+  intro x y z hy hz _hyz
+  have hyv := suffix_ltu_iwordsize_val y hy
+  have hzv := suffix_ltu_iwordsize_val z hz
+  have hyzlt : y.val + z.val < 2 ^ wordsize := by
+    change y.val < 32 at hyv
+    change z.val < 32 at hzv
+    change y.val + z.val < 2 ^ 32
+    omega
+  apply WordCore.ext_of_val_eq
+  change (WordCore.shl (WordCore.shl x y) z).val =
+    (WordCore.shl x (WordCore.add y z)).val
+  rw [suffix_shl_val, suffix_shl_val, suffix_shl_val]
+  rw [WordCore.add_val, Nat.mod_eq_of_lt hyzlt]
+  rw [Nat.pow_add]
+  rw [← Nat.mul_assoc]
+  exact Nat.mod_mul_mod _ _ _

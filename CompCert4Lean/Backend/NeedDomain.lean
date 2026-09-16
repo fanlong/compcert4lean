@@ -4683,3 +4683,517 @@ theorem xorl_sound : xorl_soundStatement := by
       (fun x y i hi => pgLagreeXorTestbit x y i hi))
 
 end CompCert4Lean.Backend.NeedDomain
+
+namespace CompCert4Lean.Backend.NeedDomain
+
+open CompCert4Lean.Common.Values
+
+theorem notl_sound : notl_soundStatement := by
+  intro v w x h
+  rw [CompCert4Lean.Common.Values.Val.notl_xorl,
+    CompCert4Lean.Common.Values.Val.notl_xorl]
+  exact xorl_sound v w (Vlong Int64.mone) (Vlong Int64.mone) x h
+    (vagree_same (Vlong Int64.mone) (bitwise x))
+
+theorem shlimm_sound : shlimm_soundStatement := by
+  intro v w x n h
+  by_cases hn : Int.ltu n Int.iwordsize = true
+  · cases x with
+    | Nothing =>
+        trivial
+    | I m =>
+        cases v <;> cases w <;>
+          simp [shlimm, vagree, iVagree, lVagree,
+            CompCert4Lean.Common.Values.Val.shl, hn] at h ⊢
+        exact iagree_shl _ _ _ _ h
+    | L m =>
+        cases v <;>
+          simp [shlimm, vagree, iVagree, lVagree,
+            CompCert4Lean.Common.Values.Val.shl, hn] at h ⊢
+    | All =>
+        cases v <;> cases w <;>
+          simp [shlimm, vagree, iVagree, lVagree,
+            CompCert4Lean.Common.Values.Val.shl, hn] at h ⊢ <;>
+          try exact CompCert4Lean.Common.Values.Val.lessdef_undef _
+        have heq : Int.shl _ n = Int.shl _ n :=
+          iagree_mone _ _ (iagree_shl _ _ _ _ h)
+        have hval := congrArg (fun z => Vint z) heq
+        exact hval ▸ CompCert4Lean.Common.Values.Val.lessdef_refl _
+  · have hn' : Int.ltu n Int.iwordsize = false := Bool.eq_false_iff.mpr hn
+    have hshl (a : val) :
+        CompCert4Lean.Common.Values.Val.shl a (Vint n) = Vundef := by
+      cases a <;> try rfl
+      rename_i i
+      change (if Int.ltu n Int.iwordsize = true then Vint (Int.shl i n)
+        else Vundef) = Vundef
+      simp [hn']
+    rw [hshl v, hshl w]
+    exact vagree_same Vundef x
+
+theorem shruimm_sound : shruimm_soundStatement := by
+  intro v w x n h
+  by_cases hn : Int.ltu n Int.iwordsize = true
+  · cases x with
+    | Nothing =>
+        trivial
+    | I m =>
+        cases v <;> cases w <;>
+          simp [shruimm, vagree, iVagree, lVagree,
+            CompCert4Lean.Common.Values.Val.shru, hn] at h ⊢
+        exact iagree_shru _ _ _ _ h
+    | L m =>
+        cases v <;>
+          simp [shruimm, vagree, iVagree, lVagree,
+            CompCert4Lean.Common.Values.Val.shru, hn] at h ⊢
+    | All =>
+        cases v <;> cases w <;>
+          simp [shruimm, vagree, iVagree, lVagree,
+            CompCert4Lean.Common.Values.Val.shru, hn] at h ⊢ <;>
+          try exact CompCert4Lean.Common.Values.Val.lessdef_undef _
+        have heq : Int.shru _ n = Int.shru _ n :=
+          iagree_mone _ _ (iagree_shru _ _ _ _ h)
+        have hval := congrArg (fun z => Vint z) heq
+        exact hval ▸ CompCert4Lean.Common.Values.Val.lessdef_refl _
+  · have hn' : Int.ltu n Int.iwordsize = false := Bool.eq_false_iff.mpr hn
+    have hshru (a : val) :
+        CompCert4Lean.Common.Values.Val.shru a (Vint n) = Vundef := by
+      cases a <;> try rfl
+      rename_i i
+      change (if Int.ltu n Int.iwordsize = true then Vint (Int.shru i n)
+        else Vundef) = Vundef
+      simp [hn']
+    rw [hshru v, hshru w]
+    exact vagree_same Vundef x
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Lib.Integers
+open Lean Elab Tactic Meta
+
+private theorem pgIagreeUnsignedAsNat (a : Int.int) :
+    WordCore.unsigned a = ZArith.BinInt.Z.of_nat a.val := by
+  have hnonneg : ZArith.BinInt.Z.le z0 (WordCore.unsigned a) := by
+    have h := a.intrange.1
+    change (-1 : Int) < intOfZ (WordCore.unsigned a) at h
+    change 0 ≤ intOfZ (WordCore.unsigned a)
+    omega
+  exact (ZArith.Znat.Z2Nat.id (WordCore.unsigned a) hnonneg).symm
+
+private theorem pgIagreeSignedLow (a : Int.int)
+    (h : a.val < 2 ^ (Int.wordsize - 1)) :
+    Int.signed a = ZArith.BinInt.Z.of_nat a.val := by
+  unfold Int.signed
+  unfold CompCert4Lean.Lib.Integers.Int.signed
+  unfold WordCore.signed
+  dsimp
+  run_tac
+    let g ← Lean.Elab.Tactic.getMainGoal
+    let t ← g.getType
+    let zltName := iagreePrivateName "CompCert4Lean.Lib.Integers.zltSelect"
+    let selectName := iagreePrivateName "CompCert4Lean.Lib.Integers.sumboolSelect"
+    let powerName := iagreePrivateName "CompCert4Lean.Lib.Integers.zTwoPowerNat"
+    let subName := iagreePrivateName "CompCert4Lean.Lib.Integers.zSub"
+    let t ← Lean.Meta.transform t (post := fun e => do
+      if e.isAppOf zltName then
+        return .visit (← Lean.Meta.whnf (← Lean.Meta.unfoldDefinition e))
+      else return .continue)
+    let t ← Lean.Meta.transform t (post := fun e => do
+      if e.isAppOf selectName then
+        return .visit (← Lean.Meta.whnf (← Lean.Meta.unfoldDefinition e))
+      else return .continue)
+    let t ← Lean.Meta.transform t (post := fun e => do
+      if e.isAppOf powerName || e.isAppOf subName then
+        return .visit (← Lean.Meta.unfoldDefinition e)
+      else return .continue)
+    let t ← Lean.Meta.transform t (post := fun e => do
+      if e.getAppFn.isLambda then return .done (← Lean.Meta.whnf e)
+      else return .continue)
+    let t ← Lean.Meta.zetaReduce t false false true
+    let g ← g.replaceTargetDefEq t
+    Lean.Elab.Tactic.replaceMainGoal [g]
+  cases hz : CompCert4Lean.Lib.Coqlib.zlt (WordCore.unsigned a)
+      (two_power_nat (Int.wordsize - 1)) with
+  | left hlt =>
+      exact pgIagreeUnsignedAsNat a
+  | right hnot =>
+    have hge := hnot
+    change intOfZ (WordCore.unsigned a) ≥
+      intOfZ (two_power_nat (Int.wordsize - 1)) at hge
+    rw [pgIagreeUnsignedAsNat] at hge
+    have hpow : intOfZ (two_power_nat (Int.wordsize - 1)) =
+        Int.ofNat (2 ^ (Int.wordsize - 1)) := by rfl
+    rw [hpow] at hge
+    simp only [ZArith.BinInt.Z.of_nat, intOfZ_zOfInt] at hge
+    have : 2 ^ (Int.wordsize - 1) ≤ a.val := Int.ofNat_le.mp hge
+    omega
+
+private theorem pgIagreeSignedHigh (a : Int.int)
+    (h : 2 ^ (Int.wordsize - 1) ≤ a.val) :
+    Int.signed a = ZArith.BinInt.Z.sub
+      (ZArith.BinInt.Z.of_nat a.val)
+      (ZArith.BinInt.Z.of_nat (2 ^ Int.wordsize)) := by
+  unfold Int.signed
+  unfold CompCert4Lean.Lib.Integers.Int.signed
+  unfold WordCore.signed
+  dsimp
+  run_tac
+    let g ← Lean.Elab.Tactic.getMainGoal
+    let t ← g.getType
+    let zltName := iagreePrivateName "CompCert4Lean.Lib.Integers.zltSelect"
+    let selectName := iagreePrivateName "CompCert4Lean.Lib.Integers.sumboolSelect"
+    let powerName := iagreePrivateName "CompCert4Lean.Lib.Integers.zTwoPowerNat"
+    let subName := iagreePrivateName "CompCert4Lean.Lib.Integers.zSub"
+    let t ← Lean.Meta.transform t (post := fun e => do
+      if e.isAppOf zltName then
+        return .visit (← Lean.Meta.whnf (← Lean.Meta.unfoldDefinition e))
+      else return .continue)
+    let t ← Lean.Meta.transform t (post := fun e => do
+      if e.isAppOf selectName then
+        return .visit (← Lean.Meta.whnf (← Lean.Meta.unfoldDefinition e))
+      else return .continue)
+    let t ← Lean.Meta.transform t (post := fun e => do
+      if e.isAppOf powerName || e.isAppOf subName then
+        return .visit (← Lean.Meta.unfoldDefinition e)
+      else return .continue)
+    let t ← Lean.Meta.transform t (post := fun e => do
+      if e.getAppFn.isLambda then return .done (← Lean.Meta.whnf e)
+      else return .continue)
+    let t ← Lean.Meta.zetaReduce t false false true
+    let g ← g.replaceTargetDefEq t
+    Lean.Elab.Tactic.replaceMainGoal [g]
+  cases hz : CompCert4Lean.Lib.Coqlib.zlt (WordCore.unsigned a)
+      (two_power_nat (Int.wordsize - 1)) with
+  | left hlt =>
+    change intOfZ (WordCore.unsigned a) <
+      intOfZ (two_power_nat (Int.wordsize - 1)) at hlt
+    rw [pgIagreeUnsignedAsNat] at hlt
+    have hpow : intOfZ (two_power_nat (Int.wordsize - 1)) =
+        Int.ofNat (2 ^ (Int.wordsize - 1)) := by rfl
+    rw [hpow] at hlt
+    simp only [ZArith.BinInt.Z.of_nat, intOfZ_zOfInt] at hlt
+    have : a.val < 2 ^ (Int.wordsize - 1) := Int.ofNat_lt.mp hlt
+    omega
+  | right hge =>
+    change ZArith.BinInt.Z.sub (WordCore.unsigned a)
+      (two_power_nat Int.wordsize) = _
+    rw [pgIagreeUnsignedAsNat]
+    rfl
+
+private theorem pgIagreeValReprInt (bits : Nat) (i : Int) :
+    (WordCore.repr bits (zOfInt i)).val =
+      Int.toNat (i % ((2 ^ bits : Nat) : Int)) := by
+  run_tac
+    let lctx ← getLCtx
+    let bitsF := (lctx.findFromUserName? `bits).get!
+    let iF := (lctx.findFromUserName? `i).get!
+    let bitsE := mkFVar bitsF.fvarId
+    let iE := mkFVar iF.fvarId
+    let e ← mkAppM
+      (iagreePrivateName "CompCert4Lean.Lib.Integers.WordCore.val_repr")
+      #[bitsE, iE]
+    closeMainGoal Name.anonymous e
+
+private theorem pgIagreeSignedBounds (a : Int.int) :
+    -(2 ^ (Int.wordsize - 1) : Int) ≤ intOfZ (Int.signed a) ∧
+      intOfZ (Int.signed a) < (2 ^ (Int.wordsize - 1) : Int) := by
+  by_cases hlow : a.val < 2 ^ (Int.wordsize - 1)
+  · rw [pgIagreeSignedLow a hlow]
+    simp only [ZArith.BinInt.Z.of_nat, intOfZ_zOfInt,
+      Int.ofNat_eq_natCast]
+    simp only [Int.wordsize] at hlow ⊢
+    omega
+  · have hhigh : 2 ^ (Int.wordsize - 1) ≤ a.val := Nat.le_of_not_gt hlow
+    rw [pgIagreeSignedHigh a hhigh]
+    simp only [ZArith.BinInt.Z.sub, ZArith.BinInt.Z.of_nat, intOfZ_zOfInt,
+      Int.ofNat_eq_natCast, Int.natCast_pow]
+    have haval := iagreeWordValLt a
+    simp only [Int.wordsize] at hhigh haval ⊢
+    omega
+
+private theorem pgIagreeBitVecSignedToInt (a : Int.int) :
+    (BitVec.ofInt Int.wordsize (intOfZ (Int.signed a))).toInt =
+      intOfZ (Int.signed a) := by
+  rw [BitVec.toInt_ofInt]
+  have hb := pgIagreeSignedBounds a
+  simp only [Int.wordsize] at hb ⊢
+  apply Int.bmod_eq_of_le <;> omega
+
+private theorem pgIagreeBitVecSignedToNat (a : Int.int) :
+    (BitVec.ofInt Int.wordsize (intOfZ (Int.signed a))).toNat = a.val := by
+  rw [BitVec.toNat_ofInt]
+  by_cases hlow : a.val < 2 ^ (Int.wordsize - 1)
+  · rw [pgIagreeSignedLow a hlow]
+    simp only [ZArith.BinInt.Z.of_nat, intOfZ_zOfInt,
+      Int.ofNat_eq_natCast]
+    have haval := iagreeWordValLt a
+    have hcast : (a.val : Int) < ((2 ^ Int.wordsize : Nat) : Int) := by
+      exact_mod_cast haval
+    have hem : (a.val : Int) % ((2 ^ Int.wordsize : Nat) : Int) = a.val :=
+      Int.emod_eq_of_lt (Int.natCast_nonneg _) hcast
+    rw [hem]
+    simp
+  · have hhigh : 2 ^ (Int.wordsize - 1) ≤ a.val := Nat.le_of_not_gt hlow
+    rw [pgIagreeSignedHigh a hhigh]
+    simp only [ZArith.BinInt.Z.sub, ZArith.BinInt.Z.of_nat, intOfZ_zOfInt,
+      Int.ofNat_eq_natCast]
+    rw [Int.sub_emod_right]
+    have haval := iagreeWordValLt a
+    have hcast : (a.val : Int) < ((2 ^ Int.wordsize : Nat) : Int) := by
+      exact_mod_cast haval
+    have hem : (a.val : Int) % ((2 ^ Int.wordsize : Nat) : Int) = a.val :=
+      Int.emod_eq_of_lt (Int.natCast_nonneg _) hcast
+    rw [hem]
+    simp
+
+private theorem pgIagreeShrValBitVec (a n : Int.int) :
+    (Int.shr a n).val =
+      ((BitVec.ofInt Int.wordsize
+        (intOfZ (Int.signed a))).sshiftRight n.val).toNat := by
+  change (WordCore.repr Int.wordsize
+    (ZArith.BinInt.Z.shiftr (Int.signed a) (WordCore.unsigned n))).val = _
+  rw [pgIagreeUnsignedAsNat n]
+  unfold ZArith.BinInt.Z.shiftr
+  simp only [ZArith.BinInt.Z.of_nat, intOfZ_zOfInt,
+    Int.ofNat_eq_natCast, Int.natCast_nonneg, ↓reduceIte]
+  rw [pgIagreeValReprInt]
+  rw [BitVec.sshiftRight_eq, BitVec.toNat_ofInt,
+    pgIagreeBitVecSignedToInt]
+  rw [Int.shiftRight_eq_div_pow]
+  simp only [Int.toNat_natCast]
+  have hpow : Int.pow 2 n.val = ((2 ^ n.val : Nat) : Int) :=
+    (Int.natCast_pow 2 n.val).symm
+  rw [hpow]
+  rw [← Int.div_def]
+
+private theorem pgIagreeShrTestbitNat (a n : Int.int)
+    (k : Nat) (hk : k < Int.wordsize) :
+    Int.testbit (Int.shr a n) (ZArith.BinInt.Z.of_nat k) =
+      Int.testbit a (ZArith.BinInt.Z.of_nat
+        (if n.val + k < Int.wordsize then n.val + k
+          else Int.wordsize - 1)) := by
+  rw [test_iagreeTestbitOfNat, pgIagreeShrValBitVec,
+    BitVec.testBit_toNat, BitVec.getLsbD_sshiftRight]
+  have hnle : ¬Int.wordsize ≤ k := Nat.not_le.mpr hk
+  rw [decide_eq_false hnle, Bool.not_false, Bool.true_and]
+  by_cases hsum : n.val + k < Int.wordsize
+  · rw [if_pos hsum, test_iagreeTestbitOfNat]
+    rw [← BitVec.testBit_toNat, pgIagreeBitVecSignedToNat]
+    rw [if_pos hsum]
+  · rw [if_neg hsum, BitVec.msb_eq_getLsbD_last,
+      test_iagreeTestbitOfNat]
+    rw [← BitVec.testBit_toNat, pgIagreeBitVecSignedToNat]
+    rw [if_neg hsum]
+
+private theorem pgIagreeShlTestbitNatAt (a n : Int.int)
+    (k : Nat) (hsum : n.val + k < Int.wordsize) :
+    Int.testbit (Int.shl a n)
+        (ZArith.BinInt.Z.of_nat (n.val + k)) =
+      Int.testbit a (ZArith.BinInt.Z.of_nat k) := by
+  rw [test_iagreeTestbitOfNat, test_iagreeShlVal,
+    Nat.testBit_mod_two_pow]
+  rw [decide_eq_true hsum, Bool.true_and, Nat.testBit_mul_two_pow]
+  have hle : n.val ≤ n.val + k := Nat.le_add_right _ _
+  rw [decide_eq_true hle, Bool.true_and, Nat.add_sub_cancel_left]
+  rw [test_iagreeTestbitOfNat]
+
+private theorem pgIagreeMinSignedVal :
+    (Int.repr Int.min_signed).val = 2 ^ (Int.wordsize - 1) := by
+  have hmin : Int.min_signed =
+      zOfInt (-(2 ^ (Int.wordsize - 1) : Nat) : Int) := by rfl
+  rw [hmin]
+  change (WordCore.repr Int.wordsize
+    (zOfInt (-(2 ^ (Int.wordsize - 1) : Nat) : Int))).val = _
+  rw [pgIagreeValReprInt]
+  simp only [Int.wordsize]
+  omega
+
+private theorem pgIagreeMinSignedTopBit :
+    Int.testbit (Int.repr Int.min_signed)
+      (ZArith.BinInt.Z.of_nat (Int.wordsize - 1)) = true := by
+  rw [test_iagreeTestbitOfNat, pgIagreeMinSignedVal,
+    Nat.testBit_two_pow_self]
+
+private theorem pgIagreeNatIndexRange (k : Nat)
+    (hk : k < Int.wordsize) :
+    ZArith.BinInt.Z.le z0 (ZArith.BinInt.Z.of_nat k) ∧
+      ZArith.BinInt.Z.lt (ZArith.BinInt.Z.of_nat k) Int.zwordsize := by
+  constructor
+  · change 0 ≤ intOfZ (ZArith.BinInt.Z.of_nat k)
+    simp only [ZArith.BinInt.Z.of_nat, intOfZ_zOfInt]
+    exact Int.natCast_nonneg _
+  · change intOfZ (ZArith.BinInt.Z.of_nat k) < intOfZ Int.zwordsize
+    simp only [ZArith.BinInt.Z.of_nat, intOfZ_zOfInt]
+    have hw : intOfZ Int.zwordsize = Int.ofNat Int.wordsize := by rfl
+    rw [hw]
+    exact Int.ofNat_lt.mpr hk
+
+private theorem pgIagreeShrAtNat (x y m n : Int.int)
+    (h : iagree x y
+      (Int.or (Int.shl m n) (Int.repr Int.min_signed)))
+    (k : Nat) (hk : k < Int.wordsize)
+    (hmask : Int.testbit m (ZArith.BinInt.Z.of_nat k) = true) :
+    Int.testbit (Int.shr x n) (ZArith.BinInt.Z.of_nat k) =
+      Int.testbit (Int.shr y n) (ZArith.BinInt.Z.of_nat k) := by
+  let j := if n.val + k < Int.wordsize then n.val + k
+    else Int.wordsize - 1
+  have hjlt : j < Int.wordsize := by
+    dsimp [j]
+    split <;> simp only [Int.wordsize] at * <;> omega
+  have hjrange := pgIagreeNatIndexRange j hjlt
+  have hjmask : Int.testbit
+      (Int.or (Int.shl m n) (Int.repr Int.min_signed))
+      (ZArith.BinInt.Z.of_nat j) = true := by
+    rw [iagreeOrTestbit]
+    by_cases hsum : n.val + k < Int.wordsize
+    · have hj : j = n.val + k := by simp [j, hsum]
+      rw [hj, pgIagreeShlTestbitNatAt m n k hsum, hmask]
+      rfl
+    · have hj : j = Int.wordsize - 1 := by simp [j, hsum]
+      rw [hj, pgIagreeMinSignedTopBit]
+      simp
+  have hxy := h (ZArith.BinInt.Z.of_nat j) hjrange hjmask
+  rw [pgIagreeShrTestbitNat x n k hk,
+    pgIagreeShrTestbitNat y n k hk]
+  exact hxy
+
+private theorem pgIagreeShr : iagree_shrStatement := by
+  intro x y m n h i hirange hmask
+  cases i with
+  | Zneg p =>
+      exfalso
+      have hi0 := hirange.1
+      change 0 ≤ -(Int.ofNat (posToNat p)) at hi0
+      have hp : (0 : Int) < Int.ofNat (posToNat p) :=
+        Int.natCast_pos.mpr (test_posToNat_pos p)
+      omega
+  | Z0 =>
+      exact pgIagreeShrAtNat x y m n h 0 (by decide) hmask
+  | Zpos p =>
+      have hkZ := hirange.2
+      change (Int.ofNat (posToNat p) : Int) < Int.ofNat 32 at hkZ
+      have hk : posToNat p < Int.wordsize := Int.ofNat_lt.mp hkZ
+      have hz : ZArith.BinInt.Z.of_nat (posToNat p) = .Zpos p := by
+        apply intOfZ_injective
+        simp only [ZArith.BinInt.Z.of_nat, intOfZ_zOfInt]
+        rfl
+      rw [← hz] at hmask ⊢
+      exact pgIagreeShrAtNat x y m n h (posToNat p) hk hmask
+
+private theorem pgIagreeShlTestbitNatAny (a n : Int.int) (k : Nat) :
+    Int.testbit (Int.shl a n)
+        (ZArith.BinInt.Z.of_nat (n.val + k)) =
+      if n.val + k < Int.wordsize then
+        Int.testbit a (ZArith.BinInt.Z.of_nat k)
+      else false := by
+  rw [test_iagreeTestbitOfNat, test_iagreeShlVal,
+    Nat.testBit_mod_two_pow]
+  by_cases hsum : n.val + k < Int.wordsize
+  · rw [decide_eq_true hsum, Bool.true_and, if_pos hsum,
+      Nat.testBit_mul_two_pow]
+    have hle : n.val ≤ n.val + k := Nat.le_add_right _ _
+    rw [decide_eq_true hle, Bool.true_and, Nat.add_sub_cancel_left]
+    rw [test_iagreeTestbitOfNat]
+  · rw [decide_eq_false hsum, Bool.false_and, if_neg hsum]
+
+private theorem pgIagreeShruShlTestbitNat (a n : Int.int) (k : Nat) :
+    Int.testbit (Int.shru (Int.shl a n) n)
+        (ZArith.BinInt.Z.of_nat k) =
+      if n.val + k < Int.wordsize then
+        Int.testbit a (ZArith.BinInt.Z.of_nat k)
+      else false := by
+  rw [test_iagreeTestbitOfNat, test_iagreeShruVal]
+  rw [← Nat.testBit_add]
+  rw [Nat.add_comm k n.val]
+  rw [← test_iagreeTestbitOfNat]
+  exact pgIagreeShlTestbitNatAny a n k
+
+private theorem pgIagreeShr1AtNat (x y m n : Int.int)
+    (heq : Int.shru (Int.shl m n) n = m)
+    (h : iagree x y (Int.shl m n))
+    (k : Nat) (hk : k < Int.wordsize)
+    (hmask : Int.testbit m (ZArith.BinInt.Z.of_nat k) = true) :
+    Int.testbit (Int.shr x n) (ZArith.BinInt.Z.of_nat k) =
+      Int.testbit (Int.shr y n) (ZArith.BinInt.Z.of_nat k) := by
+  let j := if n.val + k < Int.wordsize then n.val + k
+    else Int.wordsize - 1
+  have hjlt : j < Int.wordsize := by
+    dsimp [j]
+    split <;> simp only [Int.wordsize] at * <;> omega
+  have hjrange := pgIagreeNatIndexRange j hjlt
+  have hjmask : Int.testbit (Int.shl m n)
+      (ZArith.BinInt.Z.of_nat j) = true := by
+    by_cases hsum : n.val + k < Int.wordsize
+    · have hj : j = n.val + k := by simp [j, hsum]
+      rw [hj, pgIagreeShlTestbitNatAt m n k hsum, hmask]
+    · have heqbit := congrArg
+          (fun a => Int.testbit a (ZArith.BinInt.Z.of_nat k)) heq
+      rw [pgIagreeShruShlTestbitNat m n k, if_neg hsum, hmask] at heqbit
+      contradiction
+  have hxy := h (ZArith.BinInt.Z.of_nat j) hjrange hjmask
+  rw [pgIagreeShrTestbitNat x n k hk,
+    pgIagreeShrTestbitNat y n k hk]
+  exact hxy
+
+private theorem pgIagreeShr1 : iagree_shr_1Statement := by
+  intro x y m n heq h i hirange hmask
+  cases i with
+  | Zneg p =>
+      exfalso
+      have hi0 := hirange.1
+      change 0 ≤ -(Int.ofNat (posToNat p)) at hi0
+      have hp : (0 : Int) < Int.ofNat (posToNat p) :=
+        Int.natCast_pos.mpr (test_posToNat_pos p)
+      omega
+  | Z0 =>
+      exact pgIagreeShr1AtNat x y m n heq h 0 (by decide) hmask
+  | Zpos p =>
+      have hkZ := hirange.2
+      change (Int.ofNat (posToNat p) : Int) < Int.ofNat 32 at hkZ
+      have hk : posToNat p < Int.wordsize := Int.ofNat_lt.mp hkZ
+      have hz : ZArith.BinInt.Z.of_nat (posToNat p) = .Zpos p := by
+        apply intOfZ_injective
+        simp only [ZArith.BinInt.Z.of_nat, intOfZ_zOfInt]
+        rfl
+      rw [← hz] at hmask ⊢
+      exact pgIagreeShr1AtNat x y m n heq h (posToNat p) hk hmask
+
+theorem shrimm_sound : shrimm_soundStatement := by
+  intro v w x n h
+  by_cases hn : Int.ltu n Int.iwordsize = true
+  · cases x with
+    | Nothing =>
+        trivial
+    | I m =>
+        by_cases heq : Int.shru (Int.shl m n) n = m
+        · cases v <;> cases w <;>
+            simp [shrimm, vagree, iVagree, lVagree,
+              CompCert4Lean.Common.Values.Val.shr, hn, heq] at h ⊢
+          exact pgIagreeShr1 _ _ _ _ heq h
+        · cases v <;> cases w <;>
+            simp [shrimm, vagree, iVagree, lVagree,
+              CompCert4Lean.Common.Values.Val.shr, hn, heq] at h ⊢
+          exact pgIagreeShr _ _ _ _ h
+    | L m =>
+        cases v <;>
+          simp [shrimm, vagree, iVagree, lVagree,
+            CompCert4Lean.Common.Values.Val.shr, hn] at h ⊢
+    | All =>
+        cases v <;> cases w <;>
+          simp [shrimm, vagree, iVagree, lVagree,
+            CompCert4Lean.Common.Values.Val.shr, hn] at h ⊢ <;>
+          try exact CompCert4Lean.Common.Values.Val.lessdef_undef _
+        have heq : Int.shr _ n = Int.shr _ n :=
+          iagree_mone _ _ (pgIagreeShr _ _ _ _ h)
+        have hval := congrArg (fun z => Vint z) heq
+        exact hval ▸ CompCert4Lean.Common.Values.Val.lessdef_refl _
+  · have hn' : Int.ltu n Int.iwordsize = false := Bool.eq_false_iff.mpr hn
+    have hshr (a : val) :
+        CompCert4Lean.Common.Values.Val.shr a (Vint n) = Vundef := by
+      cases a <;> try rfl
+      rename_i i
+      change (if Int.ltu n Int.iwordsize = true then Vint (Int.shr i n)
+        else Vundef) = Vundef
+      simp [hn']
+    rw [hshr v, hshr w]
+    exact vagree_same Vundef x
+
+end CompCert4Lean.Backend.NeedDomain
