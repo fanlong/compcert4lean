@@ -3882,3 +3882,11 @@ theorem eval_unop_compat
     | constructor
 
 end CompCert4Lean.Cfrontend.Cminorgenproof
+
+namespace CompCert4Lean.Cfrontend.Cminorgenproof
+
+theorem bool_of_val_inject : bool_of_val_injectStatement := by
+  intro f v tv b hbool hinject
+  cases hinject <;> cases hbool <;> constructor
+
+end CompCert4Lean.Cfrontend.Cminorgenproof

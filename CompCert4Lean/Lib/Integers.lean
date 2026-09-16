@@ -6119,3 +6119,179 @@ theorem xor_assoc_proof : xor_assoc := by
   rw [suffix_xor_val_exact, suffix_xor_val_exact,
     suffix_xor_val_exact, suffix_xor_val_exact]
   exact Nat.xor_assoc _ _ _
+
+theorem eqm_refl_proof : eqm_refl := by
+  intro x
+  exact CompCert4Lean.Lib.Zbits.eqmod_refl modulus x
+
+theorem or_commut_proof : or_commut := by
+  intro x y
+  apply WordCore.ext_of_val_eq
+  change (WordCore.or x y).val = (WordCore.or y x).val
+  rw [suffix_or_val, suffix_or_val, Nat.lor_eq, Nat.lor_eq]
+  exact Nat.or_comm _ _
+
+private theorem suffix_bits_or_nat (x y : int) (n : Nat) :
+    testbit (or x y) (zOfNat n) =
+      (testbit x (zOfNat n) || testbit y (zOfNat n)) := by
+  change testbit (WordCore.or x y) (zOfNat n) =
+    (testbit x (zOfNat n) || testbit y (zOfNat n))
+  rw [suffix_testbit_nat, suffix_testbit_nat, suffix_testbit_nat]
+  rw [suffix_or_val, Nat.lor_eq, Nat.testBit_or]
+
+theorem bits_or_proof : bits_or := by
+  intro x y i hi
+  cases i with
+  | Zneg p =>
+      have h := hi.1
+      change (0 : Int) ≤ -Int.ofNat
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p) at h
+      have hp : 0 < CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p :=
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat_positive p
+      have hpI : (0 : Int) < Int.ofNat
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p) :=
+        Int.natCast_pos.mpr hp
+      omega
+  | Z0 =>
+      exact suffix_bits_or_nat x y 0
+  | Zpos p =>
+      have hz : zOfNat
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p) = .Zpos p := by
+        exact ZArith.Znat.positive_nat_Z p
+      rw [← hz] at hi ⊢
+      exact suffix_bits_or_nat x y
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p)
+
+private theorem suffix_positive_is_power2
+    (p : CompCert4Lean.Foundation.Numbers.Rocq.Coq.positive)
+    (h : CompCert4Lean.Lib.Zbits.P_is_power2 p = true) :
+    ∃ k : Nat,
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p = 2 ^ k := by
+  induction p with
+  | xH => exact ⟨0, rfl⟩
+  | xI p ih => simp [CompCert4Lean.Lib.Zbits.P_is_power2] at h
+  | xO p ih =>
+      rcases ih h with ⟨k, hk⟩
+      refine ⟨k + 1, ?_⟩
+      rw [CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat, hk,
+        Nat.pow_succ]
+      omega
+
+private theorem suffix_is_power2_nat
+    (n logn : int) (hpow : is_power2 n = some logn) :
+    ∃ k : Nat, n.val = 2 ^ k := by
+  unfold is_power2 at hpow
+  cases hu : unsigned n with
+  | Z0 =>
+      simp only [CompCert4Lean.Lib.Zbits.Z_is_power2, hu] at hpow
+      cases hpow
+  | Zneg p =>
+      simp only [CompCert4Lean.Lib.Zbits.Z_is_power2, hu] at hpow
+      cases hpow
+  | Zpos p =>
+      cases hp : CompCert4Lean.Lib.Zbits.P_is_power2 p with
+      | false =>
+          simp only [CompCert4Lean.Lib.Zbits.Z_is_power2, hu, hp,
+            Bool.false_eq_true, ↓reduceIte] at hpow
+          cases hpow
+      | true =>
+          rcases suffix_positive_is_power2 p hp with ⟨k, hk⟩
+          refine ⟨k, ?_⟩
+          have hz : zOfNat n.val = .Zpos p := by
+            exact (WordCore.intval_eq_zOfNat_val n).symm.trans hu
+          have hi : Int.ofNat n.val = Int.ofNat
+              (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p) := by
+            calc
+              Int.ofNat n.val = intOfZ (zOfNat n.val) := by
+                exact (intOfZ_zOfInt (Int.ofNat n.val)).symm
+              _ = intOfZ (.Zpos p) := congrArg intOfZ hz
+              _ = Int.ofNat
+                  (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p) := by
+                rfl
+          exact (Int.ofNat.inj hi).trans hk
+
+private theorem suffix_sub_one_val
+    (n : int) (hnpos : 0 < n.val) :
+    (sub n one).val = n.val - 1 := by
+  change (WordCore.sub n (WordCore.one wordsize)).val = n.val - 1
+  rw [WordCore.sub_val]
+  change (2 ^ wordsize - 1 + n.val) % (2 ^ wordsize) = n.val - 1
+  have hnlt : n.val < 2 ^ wordsize := WordCore.val_lt n
+  have hadd : 2 ^ wordsize - 1 + n.val =
+      (n.val - 1) + 2 ^ wordsize := by omega
+  rw [hadd, Nat.add_mod_right, Nat.mod_eq_of_lt]
+  omega
+
+private theorem suffix_modulo_nat (a b : Nat) (hb : 0 < b) :
+    ZArith.BinInt.Z.modulo (zOfNat a) (zOfNat b) = zOfNat (a % b) := by
+  have hdecompNat : a = a % b + b * (a / b) := by
+    exact (Nat.mod_add_div a b).symm
+  have hdecompNat' : a = a % b + (a / b) * b := by
+    simpa [Nat.mul_comm] using hdecompNat
+  have hdecomp : zOfNat a =
+      zAdd (zOfNat (a % b)) (zMul (zOfNat (a / b)) (zOfNat b)) := by
+    apply intOfZ_injective
+    simp only [zAdd, zMul, zOfNat, ZArith.BinInt.Z.add,
+      ZArith.BinInt.Z.mul, ZArith.BinInt.Z.of_nat, intOfZ_zOfInt,
+      Int.ofNat_eq_natCast, Int.natCast_add, Int.natCast_mul]
+    exact congrArg Int.ofNat hdecompNat'
+  have hbZ : zLt zZero (zOfNat b) := by
+    change (0 : Int) < intOfZ (zOfNat b)
+    simp only [zOfNat, ZArith.BinInt.Z.of_nat, intOfZ_zOfInt]
+    exact Int.natCast_pos.mpr hb
+  have hsmall : zLe zZero (zOfNat (a % b)) ∧
+      zLt (zOfNat (a % b)) (zOfNat b) := by
+    constructor
+    · change (0 : Int) ≤ intOfZ (zOfNat (a % b))
+      simp only [zOfNat, ZArith.BinInt.Z.of_nat, intOfZ_zOfInt]
+      exact Int.natCast_nonneg _
+    · change intOfZ (zOfNat (a % b)) < intOfZ (zOfNat b)
+      simp only [zOfNat, ZArith.BinInt.Z.of_nat, intOfZ_zOfInt]
+      exact Int.ofNat_lt.mpr (Nat.mod_lt _ hb)
+  rw [show ZArith.BinInt.Z.modulo (zOfNat a) (zOfNat b) =
+      ZArith.BinInt.Z.modulo
+        (zAdd (zOfNat (a % b)) (zMul (zOfNat (a / b)) (zOfNat b)))
+        (zOfNat b) by rw [hdecomp]]
+  rw [ZArith.Zdiv.Z_mod_plus _ _ _ hbZ]
+  exact ZArith.Zdiv.Zmod_small _ _ hsmall
+
+private theorem suffix_modu_val
+    (x n : int) (hnpos : 0 < n.val) :
+    (modu x n).val = x.val % n.val := by
+  unfold modu WordCore.modu
+  change (WordCore.repr wordsize
+    (ZArith.BinInt.Z.modulo (unsigned x) (unsigned n))).val = x.val % n.val
+  have hx : unsigned x = zOfNat x.val :=
+    WordCore.intval_eq_zOfNat_val x
+  have hn : unsigned n = zOfNat n.val :=
+    WordCore.intval_eq_zOfNat_val n
+  rw [hx, hn, suffix_modulo_nat _ _ hnpos]
+  rw [show zOfNat (x.val % n.val) =
+      zOfInt (Int.ofNat (x.val % n.val)) by rfl]
+  rw [WordCore.val_repr]
+  have hrem : x.val % n.val < 2 ^ wordsize :=
+    Nat.lt_of_lt_of_le (Nat.mod_lt _ hnpos)
+      (Nat.le_of_lt (WordCore.val_lt n))
+  have hmod : Int.ofNat (x.val % n.val) %
+      ((2 ^ wordsize : Nat) : Int) = Int.ofNat (x.val % n.val) :=
+    Int.emod_eq_of_lt (Int.natCast_nonneg _)
+      (by
+        change Int.ofNat (x.val % n.val) < Int.ofNat (2 ^ wordsize)
+        exact Int.ofNat_lt.mpr hrem)
+  rw [hmod]
+  exact Int.toNat_natCast _
+
+theorem modu_and_proof : modu_and := by
+  intro x n logn hpow
+  rcases suffix_is_power2_nat n logn hpow with ⟨k, hnk⟩
+  have hnpos : 0 < n.val := by
+    rw [hnk]
+    exact Nat.two_pow_pos k
+  apply WordCore.ext_of_val_eq
+  rw [suffix_modu_val x n hnpos]
+  change _ = (WordCore.and x (WordCore.sub n (WordCore.one wordsize))).val
+  rw [suffix_and_val]
+  have hs : (WordCore.sub n (WordCore.one wordsize)).val = n.val - 1 := by
+    exact suffix_sub_one_val n hnpos
+  rw [hs, hnk]
+  exact (Nat.and_two_pow_sub_one_eq_mod x.val k).symm

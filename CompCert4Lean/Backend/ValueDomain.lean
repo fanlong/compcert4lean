@@ -4236,3 +4236,26 @@ theorem loadbytes_load_ext : loadbytes_load_extStatement := by
   exact hload_m
 
 end CompCert4Lean.Backend.ValueDomain
+
+namespace CompCert4Lean.Backend.ValueDomain
+
+theorem smatch_ext : smatch_extStatement := by
+  intro bc m b p m' hsm hloadbytes
+  rcases hsm with ⟨hload, hfrag⟩
+  constructor
+  · intro chunk ofs v h
+    apply hload chunk ofs v
+    exact loadbytes_load_ext b m m' hloadbytes chunk ofs v h
+  · intro ofs b' ofs' q i h
+    apply hfrag ofs b' ofs' q i
+    apply hloadbytes ofs z1
+      [CompCert4Lean.Common.Memdata.Fragment
+        (CompCert4Lean.Common.Values.Vptr b' ofs') q i] h
+    change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ z0 ≤
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ z1
+    have hz0 : CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ z0 = 0 := by rfl
+    have hz1 : CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ z1 = 1 := by rfl
+    rw [hz0, hz1]
+    omega
+
+end CompCert4Lean.Backend.ValueDomain

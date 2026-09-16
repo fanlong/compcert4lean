@@ -2495,3 +2495,27 @@ theorem eval_longofsingle
     (eval_exprlist.cons le a Enil x [] ha (eval_exprlist.nil le)) hy
 
 end CompCert4Lean.X86.SelectLongproof
+
+namespace CompCert4Lean.X86.SelectLongproof
+
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.ExternalCalls
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.X86.Op
+open CompCert4Lean.X86.SelectLong
+
+theorem eval_singleoflong
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    @eval_singleoflongStatement binary64_certificate binary32_certificate := by
+  unfold eval_singleoflongStatement
+  intro xi prog hf hdecl sp e m le a x y ha hy
+  refine ⟨y, ?_, Val.lessdef_refl _⟩
+  unfold singleoflong
+  exact eval_expr.eval_Eop le Osingleoflong (Econs a Enil) [x] y
+    (eval_exprlist.cons le a Enil x [] ha (eval_exprlist.nil le)) hy
+
+end CompCert4Lean.X86.SelectLongproof

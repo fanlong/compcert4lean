@@ -4146,3 +4146,95 @@ theorem match_envs_alloc_variables : match_envs_alloc_variablesStatement := by
     exact ⟨tb, hte⟩
 
 end CompCert4Lean.Cfrontend.SimplLocalsproof
+
+namespace CompCert4Lean.Cfrontend.SimplLocalsproof
+
+theorem blocks_of_env_translated : blocks_of_env_translatedStatement := by
+  intro cfg p tp hprog e
+  unfold CompCert4Lean.Cfrontend.Clight.blocks_of_env
+  unfold CompCert4Lean.Cfrontend.Clight.block_of_binding
+  rw [comp_env_preserved cfg p tp hprog]
+
+end CompCert4Lean.Cfrontend.SimplLocalsproof
+
+namespace CompCert4Lean.Cfrontend.SimplLocalsproof
+
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.Cfrontend.Clight
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Cfrontend.Ctypes
+
+theorem blocks_of_env_no_overlap : blocks_of_env_no_overlapStatement := by
+  intro ge j cenv e le m lo hi te tle tlo thi tm hme hinj hperms l
+  induction l with
+  | nil => simp [freelist_no_overlap]
+  | cons a l ih =>
+      cases a with
+      | mk id bty =>
+          cases bty with
+          | mk b ty =>
+              intro hnorep hte
+              cases hnorep with
+              | cons hd hnot htail =>
+                  have hte0 : PTree.get id te = some (b, ty) := by
+                    apply hte
+                    simp
+                  refine ⟨?_, ?_⟩
+                  · apply ih htail
+                    intro id' bty' hmem
+                    apply hte id' bty'
+                    simp [hmem]
+                  · intro b' lo' hi' hmem
+                    rcases List.mem_map.mp hmem with ⟨p, hpl, heq⟩
+                    rcases p with ⟨id', b', ty'⟩
+                    simp [CompCert4Lean.Cfrontend.Clight.block_of_binding] at heq
+                    rcases heq with ⟨hb, hlo, hhi⟩
+                    cases hb
+                    have hte' : PTree.get id' te = some (b', ty') := by
+                      apply hte id' (b', ty')
+                      simp [hpl]
+                    have hid' : id' ≠ id := by
+                      intro heqid
+                      subst id'
+                      apply hnot
+                      exact List.mem_map.mpr ⟨(id, b', ty'), hpl, rfl⟩
+                    have hid : id ≠ id' := fun h => hid' h.symm
+                    by_cases hsz : ZArith.BinInt.Z.le (sizeof ge.genv_cenv ty) .Z0
+                    · exact Or.inr (Or.inr (by rw [← hlo]; exact hsz))
+                    by_cases hsz' : ZArith.BinInt.Z.le (sizeof ge.genv_cenv ty') .Z0
+                    · exact Or.inr (Or.inl (by rw [← hhi]; exact hsz'))
+                    have hne : b ≠ b' := by
+                      rcases hme.me_mapped id b ty hte0 with ⟨b0, hmap, hsrc0⟩
+                      rcases hme.me_mapped id' b' ty' hte' with ⟨b0', hmap', hsrc'⟩
+                      have hb0 : b0 ≠ b0' := by
+                        apply hme.me_inj id b0 ty id' b0' ty' hsrc0 hsrc' hid
+                      intro hbb
+                      subst b'
+                      have hmaps := hinj.mi_no_overlap b0 b .Z0 b0' b .Z0 .Z0 .Z0
+                        hb0 hmap hmap'
+                      have hperm0 : Mem.perm m b0 .Z0 .Max .Nonempty := by
+                        apply Mem.perm_implies m b0 .Z0 .Max .Freeable .Nonempty
+                          (Mem.perm_cur_max m b0 .Z0 .Freeable
+                            (hperms id b0 ty hsrc0 .Z0 ⟨by
+                              change intOfZ .Z0 ≤ intOfZ .Z0
+                              omega, by
+                              change intOfZ .Z0 < intOfZ (sizeof ge.genv_cenv ty)
+                              change ¬ intOfZ (sizeof ge.genv_cenv ty) ≤ intOfZ .Z0 at hsz
+                              omega⟩))
+                        exact .perm_F_any _
+                      have hperm0' : Mem.perm m b0' .Z0 .Max .Nonempty := by
+                        apply Mem.perm_implies m b0' .Z0 .Max .Freeable .Nonempty
+                          (Mem.perm_cur_max m b0' .Z0 .Freeable
+                            (hperms id' b0' ty' hsrc' .Z0 ⟨by
+                              change intOfZ .Z0 ≤ intOfZ .Z0
+                              omega, by
+                              change intOfZ .Z0 < intOfZ (sizeof ge.genv_cenv ty')
+                              change ¬ intOfZ (sizeof ge.genv_cenv ty') ≤ intOfZ .Z0 at hsz'
+                              omega⟩))
+                        exact .perm_F_any _
+                      have := hmaps hperm0 hperm0'
+                      simp at this
+                    exact Or.inl hne.symm
+
+end CompCert4Lean.Cfrontend.SimplLocalsproof

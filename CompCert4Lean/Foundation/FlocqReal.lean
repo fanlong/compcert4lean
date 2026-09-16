@@ -4203,3 +4203,67 @@ theorem Rabs_pos_lt :
 end Rbasic_fun
 end Rocq.Coq.Reals
 end CompCert4Lean.Foundation.FlocqReal
+
+namespace CompCert4Lean.Foundation.FlocqReal
+namespace Rocq.Coq.Reals
+namespace Rbasic_fun
+
+private theorem exact_abs_neg_suffix (ctx : ExactRealContext)
+    (z : ctx.spec.carrier) :
+    ctx.spec.abs (ctx.spec.neg z) = ctx.spec.abs z := by
+  rcases ctx.certificate.total_order z ctx.spec.zero with hz | hz
+  · rcases hz with hzneg | hzero
+    · have hpos : ctx.spec.lt ctx.spec.zero (ctx.spec.neg z) :=
+        by
+          have hzneg' : ctx.spec.lt z (ctx.spec.ofZ Z0) := by
+            rw [ctx.certificate.sourceLaws.ofZ_zero]
+            exact hzneg
+          have hpos' := RIneq.Ropp_0_gt_lt_contravar ctx z hzneg'
+          change ctx.spec.lt (ctx.spec.ofZ Z0) (ctx.spec.neg z) at hpos'
+          rw [ctx.certificate.sourceLaws.ofZ_zero] at hpos'
+          exact hpos'
+      have hposle : ctx.spec.le ctx.spec.zero (ctx.spec.neg z) :=
+        (ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp hpos |>.1
+      rw [ctx.certificate.sourceLaws.abs_nonnegative _ hposle,
+        ctx.certificate.sourceLaws.abs_negative z hzneg]
+    · subst z
+      have hzero' : ctx.spec.neg ctx.spec.zero = ctx.spec.zero := by
+        calc
+          ctx.spec.neg ctx.spec.zero = ctx.spec.neg (ctx.spec.ofZ Z0) := by
+            rw [ctx.certificate.sourceLaws.ofZ_zero]
+          _ = ctx.spec.ofZ Z0 := by
+            exact RIneq.Ropp_0 ctx
+          _ = ctx.spec.zero := ctx.certificate.sourceLaws.ofZ_zero
+      rw [hzero']
+  · have hneg : ctx.spec.lt (ctx.spec.neg z) ctx.spec.zero :=
+      by
+        have hz' : ctx.spec.lt (ctx.spec.ofZ Z0) z := by
+          rw [ctx.certificate.sourceLaws.ofZ_zero]
+          exact hz
+        have hneg' := RIneq.Ropp_lt_gt_0_contravar ctx z hz'
+        change ctx.spec.lt (ctx.spec.neg z) (ctx.spec.ofZ Z0) at hneg'
+        rw [ctx.certificate.sourceLaws.ofZ_zero] at hneg'
+        exact hneg'
+    have hzle : ctx.spec.le ctx.spec.zero z :=
+      (ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp hz |>.1
+    rw [ctx.certificate.sourceLaws.abs_negative _ hneg,
+      ctx.certificate.sourceLaws.abs_nonnegative _ hzle]
+    exact by
+      have hri := RIneq.Ropp_involutive ctx z
+      change ctx.spec.neg (ctx.spec.neg z) = z at hri
+      exact hri
+
+theorem Rabs_minus_sym :
+    ∀ (ctx : ExactRealContext), Rabs_minus_symStatement ctx := by
+  intro ctx x y
+  change ctx.spec.abs (ctx.spec.add x (ctx.spec.neg y)) =
+    ctx.spec.abs (ctx.spec.add y (ctx.spec.neg x))
+  have hminus :
+      ctx.spec.neg (ctx.spec.add x (ctx.spec.neg y)) =
+        ctx.spec.add y (ctx.spec.neg x) :=
+    RIneq.Ropp_minus_distr ctx x y
+  rw [← hminus, exact_abs_neg_suffix]
+
+end Rbasic_fun
+end Rocq.Coq.Reals
+end CompCert4Lean.Foundation.FlocqReal
