@@ -3883,3 +3883,49 @@ theorem Rplus_assoc :
 end Raxioms
 end Rocq.Coq.Reals
 end CompCert4Lean.Foundation.FlocqReal
+
+namespace CompCert4Lean.Foundation.FlocqReal
+namespace Rocq.Coq.Reals
+namespace Raxioms
+
+theorem Rplus_opp_r :
+    ∀ (ctx : ExactRealContext), Rplus_opp_rStatement ctx := by
+  intro ctx r
+  change ctx.spec.add r (ctx.spec.neg r) = ctx.spec.ofZ
+    (_root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.Z0)
+  rw [ctx.certificate.sourceLaws.ofZ_zero,
+    ctx.certificate.orderedField.add_comm]
+  exact ctx.certificate.orderedField.neg_add_cancel r
+
+theorem Rplus_0_l :
+    ∀ (ctx : ExactRealContext), Rplus_0_lStatement ctx := by
+  intro ctx r
+  change ctx.spec.add (ctx.spec.ofZ
+    (_root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.Z0)) r = r
+  rw [ctx.certificate.sourceLaws.ofZ_zero]
+  exact ctx.certificate.orderedField.zero_add r
+
+theorem archimed :
+    ∀ (ctx : ExactRealContext), archimedStatement ctx := by
+  intro ctx r
+  change And
+    (ctx.spec.lt r (ctx.spec.ofZ (ctx.spec.up r)))
+    (ctx.spec.le
+      (ExactReal.Rminus ctx.spec (ctx.spec.ofZ (ctx.spec.up r)) r)
+      (ctx.spec.ofZ
+        (_root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.Zpos
+          _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.xH)))
+  exact ⟨ctx.certificate.sourceLaws.up_gt r,
+    ctx.certificate.sourceLaws.up_gap r⟩
+
+noncomputable def completeness :
+    (ctx : ExactRealContext) → completenessStatement ctx := by
+  intro ctx E hbound hex
+  change (∃ m, (∀ x, E x → ctx.spec.le x m)) at hbound
+  change (∃ x, E x) at hex
+  let hres := ctx.certificate.sourceLaws.completeness E hbound hex
+  exact ⟨Classical.choose hres, Classical.choose_spec hres⟩
+
+end Raxioms
+end Rocq.Coq.Reals
+end CompCert4Lean.Foundation.FlocqReal

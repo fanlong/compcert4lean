@@ -3581,3 +3581,339 @@ theorem sig_preserved
               rfl
 
 end CompCert4Lean.Backend.CSEproof
+
+namespace CompCert4Lean.Backend.CSEproof
+
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Common.Values
+
+theorem init_regs_lessdef : init_regs_lessdefStatement := by
+  intro params
+  induction params with
+  | nil =>
+      intro vl vl' h
+      cases vl with
+      | nil =>
+          cases vl' with
+          | nil =>
+              intro r
+              change Val.lessdef (Regmap.get r (Regmap.init Vundef))
+                (Regmap.get r (Regmap.init Vundef))
+              rw [Regmap.gi_proof]
+              exact Val.lessdef.lessdef_refl _
+          | cons v' vs' => cases h
+      | cons v vs =>
+          cases vl' with
+          | nil => cases h
+          | cons v' vs' =>
+              intro r
+              change Val.lessdef (Regmap.get r (Regmap.init Vundef))
+                (Regmap.get r (Regmap.init Vundef))
+              rw [Regmap.gi_proof]
+              exact Val.lessdef.lessdef_refl _
+  | cons r params ih =>
+      intro vl vl' h
+      cases vl with
+      | nil =>
+          cases vl' with
+          | nil =>
+              intro r0
+              change Val.lessdef (Regmap.get r0 (Regmap.init Vundef))
+                (Regmap.get r0 (Regmap.init Vundef))
+              rw [Regmap.gi_proof]
+              exact Val.lessdef.lessdef_refl _
+          | cons v' vs' => cases h
+      | cons v vs =>
+          cases vl' with
+          | nil => cases h
+          | cons v' vs' =>
+              cases h with
+              | lessdef_list_cons v1 v2 vl1 vl2 hv htail =>
+                  change regs_lessdef
+                    (Regmap.set r v (init_regs vs params))
+                    (Regmap.set r v' (init_regs vs' params))
+                  exact set_reg_lessdef r v v'
+                    (init_regs vs params) (init_regs vs' params)
+                    hv (ih vs vs' htail)
+
+theorem find_function_translated
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    ∀ cfg, find_function_translatedStatement cfg := by
+  intro cfg prog tprog hm ros rs fd rs' hfind hrs
+  cases ros with
+  | inl r =>
+      simp only [CompCert4Lean.Backend.RTL.find_function] at hfind ⊢
+      have hld := hrs r
+      generalize hsrc : Regmap.get r rs = sv at hfind hld
+      generalize htgt : Regmap.get r rs' = tv at hld ⊢
+      cases hld with
+      | lessdef_refl v =>
+          exact functions_translated cfg prog tprog hm sv fd hfind
+      | lessdef_undef v =>
+          simp [CompCert4Lean.Common.Globalenvs.Genv.find_funct] at hfind
+  | inr id =>
+      simp only [CompCert4Lean.Backend.RTL.find_function] at hfind ⊢
+      rw [symbols_preserved cfg prog tprog hm id]
+      cases hs : CompCert4Lean.Common.Globalenvs.Genv.find_symbol
+          (CompCert4Lean.Common.Globalenvs.Genv.globalenv prog) id with
+      | none => simp [hs] at hfind
+      | some b =>
+          simp only [hs] at hfind ⊢
+          exact funct_ptr_translated cfg prog tprog hm b fd hfind
+
+end CompCert4Lean.Backend.CSEproof
+
+namespace CompCert4Lean.Backend.CSEproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Backend.CSE
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Backend.ValueAnalysis
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Linking
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.Lib.Maps
+open Lean Elab Tactic Meta
+
+variable
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+
+private def cseproofPrivateName (suffix : String) : Name :=
+  let p := Name.str (Name.str (Name.str (Name.str Name.anonymous "_private")
+    "CompCert4Lean") "Lib") "Integers"
+  let base := Name.num p 0
+  suffix.splitOn "." |>.foldl Name.str base
+
+private theorem cseproof_wordcore_add_val {bits : Nat}
+    (x y : WordCore.Word bits) :
+    (WordCore.add x y).val = (x.val + y.val) % (2 ^ bits) := by
+  run_tac
+    let lctx ← getLCtx
+    let xF := (lctx.findFromUserName? `x).get!
+    let yF := (lctx.findFromUserName? `y).get!
+    let e ← mkAppM
+      (cseproofPrivateName "CompCert4Lean.Lib.Integers.WordCore.add_val")
+      #[mkFVar xF.fvarId, mkFVar yF.fvarId]
+    closeMainGoal Name.anonymous e
+
+private theorem cseproof_wordcore_zero_val (bits : Nat) :
+    (WordCore.zero bits).val = 0 := by
+  unfold WordCore.zero
+  run_tac
+    let lctx ← getLCtx
+    let bitsF := (lctx.findFromUserName? `bits).get!
+    let e ← mkAppM
+      (cseproofPrivateName
+        "CompCert4Lean.Lib.Integers.WordCore.val_repr_residue")
+      #[mkFVar bitsF.fvarId,
+        mkConst ``CompCert4Lean.Foundation.Numbers.Rocq.Coq.Numbers.BinNums.Z.Z0]
+    closeMainGoal Name.anonymous e
+
+private theorem cseproof_wordcore_val_lt {bits : Nat}
+    (x : WordCore.Word bits) : x.val < 2 ^ bits := by
+  run_tac
+    let lctx ← getLCtx
+    let xF := (lctx.findFromUserName? `x).get!
+    let e ← mkAppM
+      (cseproofPrivateName "CompCert4Lean.Lib.Integers.WordCore.val_lt")
+      #[mkFVar xF.fvarId]
+    closeMainGoal Name.anonymous e
+
+private theorem cseproof_ptrofs_add_zero (x : Ptrofs.int) :
+    Ptrofs.add x Ptrofs.zero = x := by
+  change WordCore.add x (WordCore.zero Ptrofs.wordsize) = x
+  apply WordCore.ext_of_val_eq
+  rw [cseproof_wordcore_add_val, cseproof_wordcore_zero_val]
+  exact Nat.mod_eq_of_lt (cseproof_wordcore_val_lt x)
+
+private theorem cseproof_val_inject_refl (v : val) : Val.inject inject_id v v := by
+  cases v with
+  | Vint i => exact Val.inject.inject_int _
+  | Vlong i => exact Val.inject.inject_long _
+  | Vfloat f => exact Val.inject.inject_float _
+  | Vsingle f => exact Val.inject.inject_single _
+  | Vptr b ofs =>
+      apply Val.inject.inject_ptr
+      · rfl
+      · exact (cseproof_ptrofs_add_zero ofs).symm
+  | Vundef => exact Val.inject.val_inject_undef _
+
+private theorem cseproof_mem_extends_refl (m : mem) : Mem.extends m m := by
+  refine ⟨rfl, ?_, ?_⟩
+  · refine ⟨?_, ?_, ?_⟩
+    · intro b1 b2 delta ofs k p hmap hp
+      have hpair : (b1, (.Z0 : Z)) = (b2, delta) := by
+        simpa [inject_id] using Option.some.inj hmap
+      cases hpair
+      change Mem.perm m b1 (zAdd ofs (.Z0 : Z)) k p
+      have hz : zAdd ofs (.Z0 : Z) = ofs := by
+        apply intOfZ_injective
+        change intOfZ (zOfInt (intOfZ ofs + 0)) = intOfZ ofs
+        rw [intOfZ_zOfInt]
+        simp
+      rw [hz]
+      exact hp
+    · intro b1 b2 delta chunk ofs p hmap hp
+      have hpair : (b1, (.Z0 : Z)) = (b2, delta) := by
+        simpa [inject_id] using Option.some.inj hmap
+      cases hpair
+      refine ⟨.Z0, ?_⟩
+      apply intOfZ_injective
+      change 0 = intOfZ (ZArith.BinInt.Z.mul (align_chunk chunk) (.Z0 : Z))
+      change 0 = intOfZ (zOfInt (intOfZ (align_chunk chunk) * 0))
+      rw [intOfZ_zOfInt]
+      simp
+    · intro b1 ofs b2 delta hmap hp
+      have hpair : (b1, (.Z0 : Z)) = (b2, delta) := by
+        simpa [inject_id] using Option.some.inj hmap
+      cases hpair
+      change memval_inject inject_id
+        (ZMap.get ofs (PMap.get b1 m.mem_contents))
+        (ZMap.get (zAdd ofs (.Z0 : Z)) (PMap.get b1 m.mem_contents))
+      have hz : zAdd ofs (.Z0 : Z) = ofs := by
+        apply intOfZ_injective
+        change intOfZ (zOfInt (intOfZ ofs + 0)) = intOfZ ofs
+        rw [intOfZ_zOfInt]
+        simp
+      rw [hz]
+      cases hmv : ZMap.get ofs (PMap.get b1 m.mem_contents) with
+      | Byte n => exact memval_inject.byte _ _
+      | Fragment v q n =>
+          exact memval_inject.fragment _ _ _ _ _ (cseproof_val_inject_refl v)
+      | Undef => exact memval_inject.undef _ _
+  · intro b ofs k p hp
+    exact Or.inl hp
+
+private theorem cseproof_initial_store_init_data
+    {prog tprog : program}
+    (hsymb : ∀ id, Genv.find_symbol (Genv.globalenv tprog) id =
+      Genv.find_symbol (Genv.globalenv prog) id)
+    (m : mem) (b : block) (p : Z) (i : init_data) :
+    Genv.store_init_data (Genv.globalenv prog) m b p i =
+      Genv.store_init_data (Genv.globalenv tprog) m b p i := by
+  cases i with
+  | Init_addrof symb ofs => simp [Genv.store_init_data, hsymb symb]
+  | _ => rfl
+
+private theorem cseproof_initial_store_init_data_list
+    {prog tprog : program}
+    (hsymb : ∀ id, Genv.find_symbol (Genv.globalenv tprog) id =
+      Genv.find_symbol (Genv.globalenv prog) id) :
+    ∀ (m : mem) (b : block) (p : Z) (il : List init_data),
+      Genv.store_init_data_list (Genv.globalenv prog) m b p il =
+        Genv.store_init_data_list (Genv.globalenv tprog) m b p il := by
+  intro m b p il
+  induction il generalizing m b p with
+  | nil => rfl
+  | cons i rest ih =>
+      simp only [Genv.store_init_data_list]
+      rw [cseproof_initial_store_init_data hsymb]
+      cases h : Genv.store_init_data (Genv.globalenv tprog) m b p i with
+      | none => simp
+      | some m' =>
+          simp only [h]
+          exact ih m' b (zAdd p (init_data_size i))
+
+private theorem cseproof_initial_alloc_global
+    (cfg : CompilerConfig) [Linker program]
+    {prog tprog : program}
+    (hsymb : ∀ id, Genv.find_symbol (Genv.globalenv tprog) id =
+      Genv.find_symbol (Genv.globalenv prog) id)
+    {id : ident} {gd tg : globdef fundef Unit}
+    (hgd : match_globdef
+      (fun (cu : program) f tf => CSE.transf_fundef
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        cfg (prog_defmap cu) (romem_for cfg cu) f = .OK tf)
+      (fun x y : Unit => x = y) prog gd tg)
+    (m : mem) :
+    Genv.alloc_global (Genv.globalenv prog) m (id, gd) =
+      Genv.alloc_global (Genv.globalenv tprog) m (id, tg) := by
+  cases hgd with
+  | match_globdef_fun ctx' f1 f2 horder htrans => rfl
+  | match_globdef_var v1 v2 hvar =>
+      cases hvar with
+      | match_globvar_intro info1 info2 init ro vol hinfo =>
+          cases hinfo
+          simp only [Genv.alloc_global, CompCert4Lean.Common.Values.block]
+          congr 1
+          funext m2
+          congr 1
+          exact cseproof_initial_store_init_data_list hsymb _ _ _ _
+
+private theorem cseproof_initial_alloc_globals
+    (cfg : CompilerConfig) [Linker program]
+    {prog tprog : program}
+    (hsymb : ∀ id, Genv.find_symbol (Genv.globalenv tprog) id =
+      Genv.find_symbol (Genv.globalenv prog) id)
+    (gl tgl : List (ident × globdef fundef Unit))
+    (hlist : list_forall2
+      (match_ident_globdef
+        (fun (cu : program) f tf => CSE.transf_fundef
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate)
+          cfg (prog_defmap cu) (romem_for cfg cu) f = .OK tf)
+        (fun x y : Unit => x = y) prog) gl tgl) :
+    ∀ (m m' : mem),
+      Genv.alloc_globals (Genv.globalenv prog) m gl = some m' →
+        Genv.alloc_globals (Genv.globalenv tprog) m tgl = some m' := by
+  induction hlist with
+  | nil =>
+      intro m m' h
+      simpa [Genv.alloc_globals] using h
+  | cons hd thd hhd htl ih =>
+      intro m m' h
+      rcases hhd with ⟨hid, hgd⟩
+      rcases hd with ⟨id, gd⟩
+      rcases thd with ⟨tid, tgd⟩
+      have halloc : Genv.alloc_global (Genv.globalenv prog) m (id, gd) =
+          Genv.alloc_global (Genv.globalenv tprog) m (tid, tgd) := by
+        change id = tid at hid
+        subst tid
+        exact cseproof_initial_alloc_global cfg hsymb hgd m
+      simp only [Genv.alloc_globals] at h ⊢
+      rw [halloc] at h
+      cases ha : Genv.alloc_global (Genv.globalenv tprog) m (tid, tgd) with
+      | none => simp [ha] at h
+      | some m1 =>
+          simp only [ha] at h ⊢
+          exact ih m1 m' h
+
+theorem transf_initial_states : ∀ cfg, transf_initial_statesStatement cfg := by
+  letI : Linker fundef := Linker_fundef function
+  letI : Linker Unit := Linker_unit
+  letI : Linker program := Linker_prog fundef Unit
+  intro cfg prog tprog hmatch st1 hinit
+  have hmatch' := hmatch
+  unfold match_prog at hmatch'
+  cases hinit with
+  | intro b f m0 hmem hsymb hfun hsig =>
+      rcases funct_ptr_translated cfg prog tprog hmatch b f hfun with
+        ⟨cu, tf, hfind, htrans, hlink⟩
+      refine ⟨Callstate [] tf [] m0, ?_, ?_⟩
+      · apply initial_state.intro b tf m0
+        · unfold Genv.init_mem at hmem ⊢
+          apply cseproof_initial_alloc_globals cfg
+            (fun id => symbols_preserved cfg prog tprog hmatch id)
+            prog.prog_defs tprog.prog_defs hmatch'.1 Mem.empty m0
+          exact hmem
+        · change Genv.find_symbol (Genv.globalenv tprog) tprog.prog_main = some b
+          rw [hmatch'.2.1]
+          rw [symbols_preserved cfg prog tprog hmatch prog.prog_main]
+          exact hsymb
+        · exact hfind
+        · rw [sig_preserved cfg (prog_defmap cu) (romem_for cfg cu) f tf htrans]
+          exact hsig
+      · exact match_states.call [] f tf [] m0 [] [] m0 cu hlink
+          match_stackframes.nil htrans Val.lessdef_list.lessdef_list_nil
+          (cseproof_mem_extends_refl m0)
+
+end CompCert4Lean.Backend.CSEproof

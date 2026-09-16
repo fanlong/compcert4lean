@@ -3386,3 +3386,160 @@ theorem initmem_inject : initmem_injectStatement := by
 
 end Genv
 end CompCert4Lean.Common.Globalenvs
+
+namespace CompCert4Lean.Common.Globalenvs
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Linking
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.Lib.Integers
+
+namespace Genv
+
+theorem store_init_data_aligned : store_init_data_alignedStatement := by
+  intro F V ge m b p i m' hstore
+  have dfl : ∀ chunk v,
+      Mem.store chunk m b p v = some m' →
+      align_chunk chunk = init_data_alignment i →
+      zDivide (init_data_alignment i) p := by
+    intro chunk v h hEq
+    have hvalid : Mem.valid_access m chunk b p Writable :=
+      Mem.store_valid_access_3 chunk m b p v m' h
+    unfold Mem.valid_access at hvalid
+    simpa [hEq] using hvalid.2
+  cases i with
+  | Init_int8 n =>
+      change Mem.store Mint8unsigned m b p (Vint n) = some m' at hstore
+      exact dfl Mint8unsigned (Vint n) hstore rfl
+  | Init_int16 n =>
+      change Mem.store Mint16unsigned m b p (Vint n) = some m' at hstore
+      exact dfl Mint16unsigned (Vint n) hstore rfl
+  | Init_int32 n =>
+      change Mem.store Mint32 m b p (Vint n) = some m' at hstore
+      exact dfl Mint32 (Vint n) hstore rfl
+  | Init_int64 n =>
+      change Mem.store Mint64 m b p (Vlong n) = some m' at hstore
+      exact dfl Mint64 (Vlong n) hstore rfl
+  | Init_float32 n =>
+      change Mem.store Mfloat32 m b p (Vsingle n) = some m' at hstore
+      exact dfl Mfloat32 (Vsingle n) hstore rfl
+  | Init_float64 n =>
+      change Mem.store Mfloat64 m b p (Vfloat n) = some m' at hstore
+      exact dfl Mfloat64 (Vfloat n) hstore rfl
+  | Init_addrof id ofs =>
+      change (match find_symbol ge id with
+        | none => none
+        | some b' => Mem.store Mptr m b p (Vptr b' ofs)) = some m' at hstore
+      cases hfind : find_symbol ge id with
+      | none => simp [hfind] at hstore
+      | some b' =>
+          simp [hfind] at hstore
+          apply dfl Mptr (Vptr b' ofs) hstore
+          unfold init_data_alignment
+          exact align_chunk_Mptr
+  | Init_space n =>
+      change some m = some m' at hstore
+      cases hstore
+      exact ZArith.BinInt.Z.divide_1_l p
+
+theorem store_init_data_list_aligned : store_init_data_list_alignedStatement := by
+  intro F V ge b il
+  induction il with
+  | nil =>
+      intro m p m' hstore
+      trivial
+  | cons i rest ih =>
+      intro m p m' hstore
+      change (match store_init_data ge m b p i with
+        | none => none
+        | some m1 => store_init_data_list ge m1 b (zAdd p (init_data_size i)) rest) = some m' at hstore
+      cases hstep : store_init_data ge m b p i with
+      | none => simp [hstep] at hstore
+      | some m1 =>
+          have htail :
+              store_init_data_list ge m1 b (zAdd p (init_data_size i)) rest = some m' := by
+            simpa [hstep] using hstore
+          exact ⟨store_init_data_aligned F V ge m b p i m1 hstep,
+            ih m1 (zAdd p (init_data_size i)) m' htail⟩
+
+theorem store_init_data_list_free_idents : store_init_data_list_free_identsStatement := by
+  intro F V ge b i o il
+  induction il with
+  | nil =>
+      intro m p m' hstore hin
+      cases hin
+  | cons i1 rest ih =>
+      intro m p m' hstore hin
+      change (match store_init_data ge m b p i1 with
+        | none => none
+        | some m1 => store_init_data_list ge m1 b (zAdd p (init_data_size i1)) rest) = some m' at hstore
+      cases hstep : store_init_data ge m b p i1 with
+      | none => simp [hstep] at hstore
+      | some m1 =>
+          have hrest :
+              store_init_data_list ge m1 b (zAdd p (init_data_size i1)) rest = some m' := by
+            simpa [hstep] using hstore
+          rcases List.mem_cons.mp hin with hhead | hmem
+          · cases hhead
+            change store_init_data ge m b p (Init_addrof i o) = some m1 at hstep
+            simp only [store_init_data] at hstep
+            cases hfind : find_symbol ge i with
+            | none => simp [hfind] at hstep
+            | some b' => exact ⟨b', rfl⟩
+          · exact ih m1 (zAdd p (init_data_size i1)) m' hrest hmem
+
+theorem init_mem_inversion : init_mem_inversionStatement := by
+  intro F V p m id v hmem hin
+  have aux : ∀ (defs : List (ident × globdef F V)) (m m' : mem)
+      (id : ident) (v : globvar V),
+      alloc_globals (globalenv p) m defs = some m' →
+      (id, Gvar v) ∈ defs →
+      init_data_list_aligned z0 v.gvar_init ∧
+        ∀ i o, Init_addrof i o ∈ v.gvar_init →
+          ∃ b, find_symbol (globalenv p) i = some b := by
+    intro defs
+    induction defs with
+    | nil =>
+        intro m m' id v halloc hmem
+        cases hmem
+    | cons idg defs ih =>
+        intro m m' id v halloc hmem
+        change (match alloc_global (globalenv p) m idg with
+          | none => none
+          | some m1 => alloc_globals (globalenv p) m1 defs) = some m' at halloc
+        cases hstep : alloc_global (globalenv p) m idg with
+        | none => simp [hstep] at halloc
+        | some m1 =>
+            have htail : alloc_globals (globalenv p) m1 defs = some m' := by
+              simpa [hstep] using halloc
+            rcases List.mem_cons.mp hmem with hhead | hrest
+            · subst idg
+              unfold alloc_global at hstep
+              dsimp at hstep
+              cases halloc' : Mem.alloc m z0 (init_data_list_size v.gvar_init) with
+              | mk m0 b =>
+                  cases hzeros : store_zeros m0 b z0
+                      (init_data_list_size v.gvar_init) with
+                  | none => simp [halloc', hzeros] at hstep
+                  | some m2 =>
+                      cases hlist : store_init_data_list (globalenv p) m2 b z0
+                          v.gvar_init with
+                      | none => simp [halloc', hzeros, hlist] at hstep
+                      | some m3 =>
+                          exact ⟨
+                            store_init_data_list_aligned F V (globalenv p) b
+                              v.gvar_init m2 z0 m3 hlist,
+                            fun i o hin =>
+                              store_init_data_list_free_idents F V
+                                (globalenv p) b i o v.gvar_init m2 z0 m3 hlist hin⟩
+            · exact ih m1 m' id v htail hrest
+  exact aux p.prog_defs Mem.empty m id v hmem hin
+
+end Genv
+end CompCert4Lean.Common.Globalenvs

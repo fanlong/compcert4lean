@@ -4429,3 +4429,136 @@ theorem andimm_sound : andimm_soundStatement := by
       exact hval ▸ CompCert4Lean.Common.Values.Val.lessdef_refl _
 
 end CompCert4Lean.Backend.NeedDomain
+
+namespace CompCert4Lean.Backend.NeedDomain
+
+theorem orimm_sound : orimm_soundStatement := by
+  intro v w x n h
+  cases x with
+  | Nothing =>
+      trivial
+  | I m =>
+      cases v <;> cases w <;>
+        simp [orimm, vagree, iVagree, lVagree,
+          CompCert4Lean.Common.Values.Val.or] at h ⊢
+      exact iagree_or _ _ _ _ h
+  | L m =>
+      cases v <;> cases w <;>
+        simp [orimm, vagree, iVagree, lVagree,
+          CompCert4Lean.Common.Values.Val.or] at h ⊢
+  | All =>
+      cases v <;> cases w <;>
+        simp [orimm, vagree, iVagree, lVagree,
+          CompCert4Lean.Common.Values.Val.or] at h ⊢ <;>
+        try exact CompCert4Lean.Common.Values.Val.lessdef_undef _
+      have heq : Int.or _ n = Int.or _ n :=
+        iagree_mone _ _ (iagree_or _ _ _ _ (by
+          have hmask : Int.and Int.mone (Int.not n) = Int.not n := by
+            calc
+              Int.and Int.mone (Int.not n) =
+                  Int.and (Int.not n) Int.mone :=
+                CompCert4Lean.Lib.Integers.Int.and_commut_proof _ _
+              _ = Int.not n :=
+                CompCert4Lean.Lib.Integers.Int.and_mone_proof _
+          rw [hmask]
+          exact h))
+      have hval := congrArg (fun z => CompCert4Lean.Common.Values.val.Vint z) heq
+      exact hval ▸ CompCert4Lean.Common.Values.Val.lessdef_refl _
+
+end CompCert4Lean.Backend.NeedDomain
+
+namespace CompCert4Lean.Backend.NeedDomain
+
+theorem andlimm_sound : andlimm_soundStatement := by
+  intro v w x n h
+  cases x with
+  | Nothing =>
+      trivial
+  | I m =>
+      cases v <;> cases w <;>
+        simp [andlimm, vagree, iVagree, lVagree,
+          CompCert4Lean.Common.Values.Val.andl] at h ⊢
+  | L m =>
+      cases v <;> cases w <;>
+        simp [andlimm, vagree, iVagree, lVagree,
+          CompCert4Lean.Common.Values.Val.andl] at h ⊢
+      exact lagree_and _ _ _ _ h
+  | All =>
+      cases v <;> cases w <;>
+        simp [andlimm, vagree, iVagree, lVagree,
+          CompCert4Lean.Common.Values.Val.andl] at h ⊢ <;>
+        try exact CompCert4Lean.Common.Values.Val.lessdef_undef _
+      have heq : Int64.and _ n = Int64.and _ n :=
+        (lagree_and_eq _ _ n).mp h
+      have hval := congrArg (fun z => CompCert4Lean.Common.Values.val.Vlong z) heq
+      exact hval ▸ CompCert4Lean.Common.Values.Val.lessdef_refl _
+
+end CompCert4Lean.Backend.NeedDomain
+
+namespace CompCert4Lean.Backend.NeedDomain
+
+private theorem orlimmAndMone (a : int64) :
+    Int64.and a Int64.mone = a := by
+  apply CompCert4Lean.Lib.Integers.WordCore.ext_of_val_eq
+  rw [lagreeAndVal]
+  have hmone : Int64.mone.val =
+      2 ^ CompCert4Lean.Lib.Integers.Int64.wordsize - 1 := by
+    rfl
+  rw [hmone, Nat.land_eq]
+  exact Nat.and_two_pow_sub_one_of_lt_two_pow (lagreeWordValLt a)
+
+theorem orlimm_sound : orlimm_soundStatement := by
+  intro v w x n h
+  cases x with
+  | Nothing =>
+      trivial
+  | I m =>
+      cases v <;> cases w <;>
+        simp [orlimm, vagree, iVagree, lVagree,
+          CompCert4Lean.Common.Values.Val.orl] at h ⊢
+  | L m =>
+      cases v <;> cases w <;>
+        simp [orlimm, vagree, iVagree, lVagree,
+          CompCert4Lean.Common.Values.Val.orl] at h ⊢
+      exact lagree_or _ _ _ _ h
+  | All =>
+      cases v <;> cases w <;>
+        simp [orlimm, vagree, iVagree, lVagree,
+          CompCert4Lean.Common.Values.Val.orl] at h ⊢ <;>
+        try exact CompCert4Lean.Common.Values.Val.lessdef_undef _
+      have heq : Int64.or _ n = Int64.or _ n :=
+        lagree_mone _ _ (lagree_or _ _ _ _ (by
+          have hmask : Int64.and Int64.mone (Int64.not n) =
+              Int64.not n := by
+            calc
+              Int64.and Int64.mone (Int64.not n) =
+                  Int64.and (Int64.not n) Int64.mone :=
+                lagreeAndCommFinal _ _
+              _ = Int64.not n := orlimmAndMone _
+          rw [hmask]
+          exact h))
+      have hval := congrArg (fun z => CompCert4Lean.Common.Values.val.Vlong z) heq
+      exact hval ▸ CompCert4Lean.Common.Values.Val.lessdef_refl _
+
+end CompCert4Lean.Backend.NeedDomain
+
+namespace CompCert4Lean.Backend.NeedDomain
+
+theorem vagree_bitwise_binop : vagree_bitwise_binopStatement := by
+  intro f hf v1 w1 v2 w2 x h1 h2
+  cases x with
+  | Nothing =>
+      trivial
+  | I m =>
+      cases v1 <;> cases w1 <;> cases v2 <;> cases w2 <;>
+        simp [bitwise, vagree, iVagree, lVagree] at h1 h2 ⊢
+      exact hf _ _ _ _ _ h1 h2
+  | L m =>
+      cases v1 <;> cases w1 <;> cases v2 <;> cases w2 <;>
+        simp [bitwise, vagree, iVagree, lVagree] at h1 h2 ⊢
+  | All =>
+      cases h1 <;> cases h2 <;>
+        simp [bitwise, vagree, CompCert4Lean.Common.Values.Val.lessdef_refl,
+          CompCert4Lean.Common.Values.Val.lessdef_undef]
+
+end CompCert4Lean.Backend.NeedDomain

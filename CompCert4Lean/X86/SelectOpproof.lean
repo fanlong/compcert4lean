@@ -2845,3 +2845,211 @@ theorem eval_addfs
       (eval_exprlist.cons le b Enil y [] hb (eval_exprlist.nil le))) rfl
 
 end CompCert4Lean.X86.SelectOpproof
+
+namespace CompCert4Lean.X86.SelectOpproof
+
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.ExternalCalls
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Values
+open CompCert4Lean.X86.Op
+open CompCert4Lean.X86.SelectOp
+
+/-
+set_option maxHeartbeats 1000000 in
+private theorem eval_compimm_case1_local
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (xi : ExternalCalls) (ge : genv) (sp : val) (e : env) (m : mem)
+    (default : comparison → CCInt → condition)
+    (intsem : comparison → CCInt → CCInt → Bool)
+    (sem : comparison → val → val → val)
+    (hsem_int : ∀ c x y, sem c (.Vint x) (.Vint y) = Val.of_bool (intsem c x y))
+    (le : letenv) (c : comparison) (n1 n2 : CCInt) :
+    ∀ (x : val),
+      eval_expr xi ge sp e m le (Eop (Ointconst n1) Enil) x →
+      ∃ v,
+        eval_expr xi ge sp e m le (compimm default intsem c
+          (Eop (Ointconst n1) Enil) n2) v ∧
+        Val.lessdef (sem c x (.Vint n2)) v := by
+  intro x hx
+  have hx' := eval_intconst_value_local xi ge sp e m le n1 x hx
+  subst x
+  refine ⟨Val.of_bool (intsem c n1 n2), ?_, ?_⟩
+  · simp [CompCert4Lean.X86.SelectOp.compimm]
+    apply eval_expr.eval_Eop le
+      (Ointconst _) Enil [] _
+    · exact eval_exprlist.nil le
+    · cases h : intsem c n1 n2 <;> rfl
+  · rw [hsem_int]
+    exact Val.lessdef_refl _
+
+end CompCert4Lean.X86.SelectOpproof
+
+namespace CompCert4Lean.X86.SelectOpproof
+
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.ExternalCalls
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Values
+open CompCert4Lean.X86.Op
+open CompCert4Lean.X86.SelectOp
+
+set_option maxHeartbeats 1000000 in
+private theorem eval_compimm_case2_local
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (xi : ExternalCalls) (ge : genv) (sp : val) (e : env) (m : mem)
+    (default : comparison → CCInt → condition)
+    (intsem : comparison → CCInt → CCInt → Bool)
+    (sem : comparison → val → val → val)
+    (hsem_undef : ∀ c v, sem c .Vundef v = .Vundef)
+    (hsem_eq : ∀ x y, sem .Ceq (.Vint x) (.Vint y) =
+      Val.of_bool (CompCert4Lean.Lib.Integers.Int.eq x y))
+    (le : letenv) (cond : condition) (el : exprlist) (n2 : CCInt) (x : val) :
+    eval_expr xi ge sp e m le (Eop (Ocmp cond) el) x →
+      ∃ v,
+        eval_expr xi ge sp e m le
+          (compimm default intsem .Ceq (Eop (Ocmp cond) el) n2) v ∧
+        Val.lessdef (sem .Ceq x (.Vint n2)) v := by
+  have h00 : CompCert4Lean.Lib.Integers.Int.eq
+      CompCert4Lean.Lib.Integers.Int.zero CompCert4Lean.Lib.Integers.Int.zero = true := by
+    rfl
+  have h01 : CompCert4Lean.Lib.Integers.Int.eq
+      CompCert4Lean.Lib.Integers.Int.zero CompCert4Lean.Lib.Integers.Int.one = false := by
+    rfl
+  have h10 : CompCert4Lean.Lib.Integers.Int.eq
+      CompCert4Lean.Lib.Integers.Int.one CompCert4Lean.Lib.Integers.Int.zero = false := by
+    rfl
+  have h11 : CompCert4Lean.Lib.Integers.Int.eq
+      CompCert4Lean.Lib.Integers.Int.one CompCert4Lean.Lib.Integers.Int.one = true := by
+    rfl
+  intro hx
+  cases hx with
+  | eval_Eop le' op al vl v hargs hop =>
+      change some (Val.of_optbool (eval_condition cond vl m)) = some x at hop
+      have hx' : Val.of_optbool (eval_condition cond vl m) = x :=
+        Option.some.inj hop
+      subst x
+      by_cases hz : n2 = CompCert4Lean.Lib.Integers.Int.zero
+      · subst n2
+        refine ⟨Val.of_optbool (eval_condition (negate_condition cond) vl m), ?_, ?_⟩
+        · simp [CompCert4Lean.X86.SelectOp.compimm]
+          apply eval_expr.eval_Eop le (Ocmp (negate_condition cond)) el vl _
+          · exact hargs
+          · rfl
+        · have hneg := eval_negate_condition cond vl m
+          rw [hneg]
+          cases hc : eval_condition cond vl m with
+          | none =>
+              change Val.lessdef (sem .Ceq .Vundef _) .Vundef
+              rw [hsem_undef]
+              exact Val.lessdef_undef _
+          | some b =>
+              cases b <;>
+                simp [Val.of_optbool, Vtrue, Vfalse, hsem_eq, h00, h01, h10, h11,
+                  CompCert4Lean.Lib.Integers.Int.eq,
+                    CompCert4Lean.Lib.Integers.WordCore.eq] <;>
+                  try exact Val.lessdef_refl _
+      · by_cases ho : n2 = CompCert4Lean.Lib.Integers.Int.one
+        · subst n2
+          refine ⟨Val.of_optbool (eval_condition cond vl m), ?_, ?_⟩
+          · simp [CompCert4Lean.X86.SelectOp.compimm]
+            apply eval_expr.eval_Eop le (Ocmp cond) el vl _
+            · exact hargs
+            · rfl
+          · cases hc : eval_condition cond vl m with
+            | none =>
+                change Val.lessdef (sem .Ceq .Vundef _) .Vundef
+                rw [hsem_undef]
+                exact Val.lessdef_undef _
+            | some b =>
+                cases b <;>
+                  simp [Val.of_optbool, Vtrue, Vfalse, hsem_eq, h00, h01, h10, h11,
+                    CompCert4Lean.Lib.Integers.Int.eq,
+                    CompCert4Lean.Lib.Integers.WordCore.eq] <;>
+                  try exact Val.lessdef_refl _
+        · have hzero : CompCert4Lean.Lib.Integers.Int.eq_dec n2
+              CompCert4Lean.Lib.Integers.Int.zero = .right hz := by
+            unfold CompCert4Lean.Lib.Integers.Int.eq_dec
+            split
+            · next h => exact (hz h).elim
+            · rfl
+          have hone : CompCert4Lean.Lib.Integers.Int.eq_dec n2
+              CompCert4Lean.Lib.Integers.Int.one = .right ho := by
+            unfold CompCert4Lean.Lib.Integers.Int.eq_dec
+            split
+            · next h => exact (ho h).elim
+            · rfl
+          refine ⟨.Vint CompCert4Lean.Lib.Integers.Int.zero, ?_, ?_⟩
+          · have hcm : CompCert4Lean.X86.SelectOp.compimm_match .Ceq
+                (Eop (Ocmp cond) el) = .compimm_case2 cond el := by
+              rfl
+            simp only [CompCert4Lean.X86.SelectOp.compimm, hcm]
+            change eval_expr xi ge sp e m le
+              (if (match CompCert4Lean.Lib.Integers.Int.eq_dec n2
+                  CompCert4Lean.Lib.Integers.Int.zero with
+                | .left _ => true
+                | .right _ => false) = true then
+                Eop (Ocmp (negate_condition cond)) el
+              else if (match CompCert4Lean.Lib.Integers.Int.eq_dec n2
+                  CompCert4Lean.Lib.Integers.Int.one with
+                | .left _ => true
+                | .right _ => false) = true then
+                Eop (Ocmp cond) el
+              else Eop (Ointconst CompCert4Lean.Lib.Integers.Int.zero) Enil)
+              (Vint CompCert4Lean.Lib.Integers.Int.zero)
+            simp [hzero, hone]
+            apply eval_expr.eval_Eop le
+              (Ointconst CompCert4Lean.Lib.Integers.Int.zero) Enil [] _
+            · exact eval_exprlist.nil le
+            · rfl
+          · cases hc : eval_condition cond vl m with
+            | none =>
+                change Val.lessdef (sem .Ceq .Vundef _) _
+                rw [hsem_undef]
+                exact Val.lessdef_undef _
+            | some b =>
+                cases b <;>
+                  simp [Val.of_optbool, Vtrue, Vfalse, hsem_eq, h00, h01, h10, h11,
+                    CompCert4Lean.Lib.Integers.Int.eq,
+                    CompCert4Lean.Lib.Integers.WordCore.eq] <;>
+                  try exact Val.lessdef_refl _
+
+end CompCert4Lean.X86.SelectOpproof
+
+namespace CompCert4Lean.X86.SelectOpproof
+
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.X86.Op
+
+-/
+theorem eval_subfs
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    eval_subfsStatement := by
+  intro xi ge sp e m le a x b y ha hb
+  refine ⟨Val.subfs x y, ?_, Val.lessdef_refl _⟩
+  exact eval_expr.eval_Eop le Osubfs (Econs a (Econs b Enil)) [x, y]
+    (Val.subfs x y)
+    (eval_exprlist.cons le a (Econs b Enil) x [y] ha
+      (eval_exprlist.cons le b Enil y [] hb (eval_exprlist.nil le))) rfl
+
+theorem eval_mulfs
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    eval_mulfsStatement := by
+  intro xi ge sp e m le a x b y ha hb
+  refine ⟨Val.mulfs x y, ?_, Val.lessdef_refl _⟩
+  exact eval_expr.eval_Eop le Omulfs (Econs a (Econs b Enil)) [x, y]
+    (Val.mulfs x y)
+    (eval_exprlist.cons le a (Econs b Enil) x [y] ha
+      (eval_exprlist.cons le b Enil y [] hb (eval_exprlist.nil le))) rfl
+
+end CompCert4Lean.X86.SelectOpproof

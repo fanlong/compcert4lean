@@ -1609,3 +1609,96 @@ theorem make_mullimm_correct
           rfl
 
 end CompCert4Lean.X86.ConstpropOpproof
+
+namespace CompCert4Lean.X86.ConstpropOpproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.X86.Op
+open CompCert4Lean.X86.ConstpropOp
+
+private theorem worker_int64_one_mul (x : CompCert4Lean.Lib.Integers.Int64.int) :
+    CompCert4Lean.Lib.Integers.Int64.mul
+        CompCert4Lean.Lib.Integers.Int64.one x = x := by
+  unfold CompCert4Lean.Lib.Integers.Int64.mul
+    CompCert4Lean.Lib.Integers.WordCore.mul
+  rw [show CompCert4Lean.Lib.Integers.WordCore.unsigned
+      CompCert4Lean.Lib.Integers.Int64.one = Zpos xH by rfl]
+  change CompCert4Lean.Lib.Integers.WordCore.repr
+      CompCert4Lean.Lib.Integers.Int64.wordsize
+      (ZArith.BinInt.Z.mul (Zpos xH)
+        (CompCert4Lean.Lib.Integers.WordCore.unsigned x)) = x
+  rw [ZArith.BinInt.Zmult_1_l_proof]
+  exact worker_int64_repr_unsigned x
+
+private theorem worker_int64_divs_pow2
+    (x n : CompCert4Lean.Lib.Integers.Int64.int)
+    (logn : CompCert4Lean.Lib.Integers.Int.int)
+    (hpow : CompCert4Lean.Lib.Integers.Int64.is_power2' n = some logn) :
+    CompCert4Lean.Lib.Integers.Int64.divs x n =
+      CompCert4Lean.Lib.Integers.Int64.shrx' x logn := by
+  unfold CompCert4Lean.Lib.Integers.Int64.shrx'
+  rw [← worker_int64_mul_pow2 CompCert4Lean.Lib.Integers.Int64.one n logn hpow]
+  rw [worker_int64_one_mul]
+
+private theorem worker_val_divls_pow2
+    (x : CompCert4Lean.Common.Values.val)
+    (n : CompCert4Lean.Lib.Integers.Int64.int)
+    (logn : CompCert4Lean.Lib.Integers.Int.int)
+    (y : CompCert4Lean.Common.Values.val)
+    (hpow : CompCert4Lean.Lib.Integers.Int64.is_power2' n = some logn)
+    (hlt : CompCert4Lean.Lib.Integers.Int.ltu logn
+      (CompCert4Lean.Lib.Integers.Int.repr (zOfNat 63)) = true)
+    (hdiv : CompCert4Lean.Common.Values.Val.divls x (.Vlong n) = some y) :
+    CompCert4Lean.Common.Values.Val.shrxl x (.Vint logn) = some y := by
+  cases x with
+  | Vlong i =>
+      simp only [CompCert4Lean.Common.Values.Val.divls] at hdiv
+      split at hdiv
+      · cases hdiv
+      · cases hdiv
+        simp only [CompCert4Lean.Common.Values.Val.shrxl, hlt, if_true,
+          Option.some.injEq, val.Vlong.injEq]
+        exact (worker_int64_divs_pow2 i n logn hpow).symm
+  | Vundef => simp [CompCert4Lean.Common.Values.Val.divls] at hdiv
+  | Vint i => simp [CompCert4Lean.Common.Values.Val.divls] at hdiv
+  | Vfloat f => simp [CompCert4Lean.Common.Values.Val.divls] at hdiv
+  | Vsingle f => simp [CompCert4Lean.Common.Values.Val.divls] at hdiv
+  | Vptr b ofs => simp [CompCert4Lean.Common.Values.Val.divls] at hdiv
+
+theorem make_divlimm_correct
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    @make_divlimm_correctStatement binary64_certificate binary32_certificate := by
+  intro ge sp e m n r1 r2 v hdiv hr2
+  have hdivn : CompCert4Lean.Common.Values.Val.divls
+      (CompCert4Lean.Backend.Registers.Regmap.get r1 e) (.Vlong n) = some v := by
+    rw [← hr2]
+    exact hdiv
+  unfold CompCert4Lean.X86.ConstpropOp.make_divlimm
+  cases hpow : CompCert4Lean.Lib.Integers.Int64.is_power2' n with
+  | none =>
+      simp only
+      refine ⟨v, ?_, CompCert4Lean.Common.Values.Val.lessdef_refl _⟩
+      change CompCert4Lean.Common.Values.Val.divls
+        (CompCert4Lean.Backend.Registers.Regmap.get r1 e)
+        (CompCert4Lean.Backend.Registers.Regmap.get r2 e) = some v
+      exact hdiv
+  | some logn =>
+      simp only
+      split <;> rename_i hlt
+      · refine ⟨v, ?_, CompCert4Lean.Common.Values.Val.lessdef_refl _⟩
+        change CompCert4Lean.Common.Values.Val.shrxl
+          (CompCert4Lean.Backend.Registers.Regmap.get r1 e) (.Vint logn) = some v
+        exact worker_val_divls_pow2
+          (CompCert4Lean.Backend.Registers.Regmap.get r1 e) n logn v hpow hlt hdivn
+      · refine ⟨v, ?_, CompCert4Lean.Common.Values.Val.lessdef_refl _⟩
+        change CompCert4Lean.Common.Values.Val.divls
+          (CompCert4Lean.Backend.Registers.Regmap.get r1 e)
+          (CompCert4Lean.Backend.Registers.Regmap.get r2 e) = some v
+        exact hdiv
+
+end CompCert4Lean.X86.ConstpropOpproof

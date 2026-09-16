@@ -2660,3 +2660,14 @@ theorem ZArith.BinInt.Zmult_plus_distr_l_proof :
 
 end Rocq.Coq
 end CompCert4Lean.Foundation.Numbers
+
+namespace CompCert4Lean.Foundation.Numbers
+namespace Rocq.Coq
+
+theorem ZArith.BinInt.Z.divide_factor_r :
+    ZArith.BinInt.Z.divide_factor_rStatement := by
+  intro n m
+  exact ⟨m, ZArith.BinInt.Z.mul_comm m n⟩
+
+end Rocq.Coq
+end CompCert4Lean.Foundation.Numbers

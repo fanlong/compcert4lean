@@ -3631,3 +3631,67 @@ theorem store_bool_unsigned_8 : store_bool_unsigned_8Statement := by
 end Mem
 
 end CompCert4Lean.Common.Memory
+
+namespace CompCert4Lean.Common.Memory
+
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memtype
+
+namespace Mem
+
+theorem store_signed_unsigned_8 : store_signed_unsigned_8Statement := by
+  intro m b ofs v
+  apply store_similar_chunks
+  · exact CompCert4Lean.Common.Memdata.encode_val_int8_signed_unsigned v
+  · rfl
+
+theorem store_signed_unsigned_16 : store_signed_unsigned_16Statement := by
+  intro m b ofs v
+  apply store_similar_chunks
+  · exact CompCert4Lean.Common.Memdata.encode_val_int16_signed_unsigned v
+  · rfl
+
+def range_perm_storebytes : range_perm_storebytesStatement := by
+  intro m1 b ofs bytes hperm
+  unfold storebytes
+  cases hdec : range_perm_dec m1 b ofs (zAdd ofs (zOfNat bytes.length)) Cur Writable with
+  | left _ =>
+      simp [boolOfSumbool, hdec]
+      exact ⟨_, rfl⟩
+  | right hn =>
+      exact False.elim (hn hperm)
+
+end Mem
+
+end CompCert4Lean.Common.Memory
+
+namespace CompCert4Lean.Common.Memory
+
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memtype
+
+namespace Mem
+
+theorem storebytes_store : storebytes_storeStatement := by
+  intro m1 b ofs chunk v m2 hstore halign
+  have hlen : zOfNat (encode_val chunk v).length = size_chunk chunk := by
+    rw [CompCert4Lean.Common.Memdata.encode_val_length, size_chunk_conv]
+  unfold storebytes at hstore
+  cases hdec : range_perm_dec m1 b ofs (zAdd ofs (zOfNat (encode_val chunk v).length))
+      Cur Writable with
+  | right hn =>
+      simp [boolOfSumbool, hdec] at hstore
+  | left hr =>
+      have hr' : range_perm m1 b ofs (zAdd ofs (size_chunk chunk)) Cur Writable := by
+        simpa [hlen] using hr
+      have hv : valid_access m1 chunk b ofs Writable := ⟨hr', halign⟩
+      unfold store
+      cases hvalid : valid_access_dec m1 chunk b ofs Writable with
+      | right hnvalid => exact False.elim (hnvalid hv)
+      | left hp =>
+          simp [boolOfSumbool, hvalid, hdec, hlen] at hstore ⊢
+          exact hstore
+
+end Mem
+
+end CompCert4Lean.Common.Memory

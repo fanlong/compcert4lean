@@ -4074,3 +4074,169 @@ theorem make_normalization_correct
   | Tunion id attr => exact h_eval
 
 end CompCert4Lean.Cfrontend.Cshmgenproof
+
+namespace CompCert4Lean.Cfrontend.Cshmgenproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Linking
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+
+private theorem cshmgenproof_add_global_match
+    {A B V W : Type} (R : globdef A V → globdef B W → Prop)
+    (ge1 : Genv.t A V) (ge2 : Genv.t B W)
+    (h : Genv.match_genvs R ge1 ge2)
+    (id : ident) (g1 : globdef A V) (g2 : globdef B W) (hr : R g1 g2) :
+    Genv.match_genvs R (Genv.add_global ge1 (id, g1))
+      (Genv.add_global ge2 (id, g2)) := by
+  change positive at id
+  constructor
+  · simp only [Genv.add_global]
+    change PArith.BinPos.Pos.succ ge2.genv_next =
+      PArith.BinPos.Pos.succ ge1.genv_next
+    exact congrArg _ h.mge_next
+  · intro id'
+    simp only [Genv.add_global]
+    change PTree.get id' (PTree.set id ge2.genv_next ge2.genv_symb) =
+      PTree.get id' (PTree.set id ge1.genv_next ge1.genv_symb)
+    have hx2 := @PTree.gsspec_proof _ id' id ge2.genv_next ge2.genv_symb
+    have hx1 := @PTree.gsspec_proof _ id' id ge1.genv_next ge1.genv_symb
+    cases heq : peq id' id with
+    | left hij =>
+        have hx2' : PTree.get id' (PTree.set id ge2.genv_next ge2.genv_symb) =
+            some ge2.genv_next := by
+          simpa [heq] using hx2
+        have hx1' : PTree.get id' (PTree.set id ge1.genv_next ge1.genv_symb) =
+            some ge1.genv_next := by
+          simpa [heq] using hx1
+        rw [hx2', hx1', h.mge_next]
+    | right hne =>
+        have hx2' : PTree.get id' (PTree.set id ge2.genv_next ge2.genv_symb) =
+            PTree.get id' ge2.genv_symb := by
+          simpa [heq] using hx2
+        have hx1' : PTree.get id' (PTree.set id ge1.genv_next ge1.genv_symb) =
+            PTree.get id' ge1.genv_symb := by
+          simpa [heq] using hx1
+        rw [hx2', hx1', h.mge_symb]
+  · intro b
+    simp only [Genv.add_global]
+    change option_rel R
+      (PTree.get b (PTree.set ge1.genv_next g1 ge1.genv_defs))
+      (PTree.get b (PTree.set ge2.genv_next g2 ge2.genv_defs))
+    have hx1 := @PTree.gsspec_proof _ b ge1.genv_next g1 ge1.genv_defs
+    have hx2 := @PTree.gsspec_proof _ b ge2.genv_next g2 ge2.genv_defs
+    cases heq : peq b ge1.genv_next with
+    | left hb =>
+        have heq' : b = ge2.genv_next := hb.trans h.mge_next.symm
+        cases hpeq2 : peq b ge2.genv_next with
+        | left hb2 =>
+            have hx1' : PTree.get b (PTree.set ge1.genv_next g1 ge1.genv_defs) =
+                some g1 := by
+              simpa [heq] using hx1
+            have hx2' : PTree.get b (PTree.set ge2.genv_next g2 ge2.genv_defs) =
+                some g2 := by
+              simpa [hpeq2] using hx2
+            rw [hx1', hx2']
+            exact option_rel.some g1 g2 hr
+        | right hb2 => exact False.elim (hb2 heq')
+    | right hb =>
+        have hb2 : b ≠ ge2.genv_next := by
+          intro hbeq
+          apply hb
+          exact hbeq.trans h.mge_next
+        cases hpeq2 : peq b ge2.genv_next with
+        | left hb2' => exact False.elim (hb (hb2'.trans h.mge_next))
+        | right hb2' =>
+            have hx1' : PTree.get b (PTree.set ge1.genv_next g1 ge1.genv_defs) =
+                PTree.get b ge1.genv_defs := by
+              simpa [heq] using hx1
+            have hx2' : PTree.get b (PTree.set ge2.genv_next g2 ge2.genv_defs) =
+                PTree.get b ge2.genv_defs := by
+              simpa [hpeq2] using hx2
+            rw [hx1', hx2']
+            exact h.mge_defs b
+
+private theorem cshmgenproof_add_globals_match
+    {A B V W : Type} (R : globdef A V → globdef B W → Prop)
+    (gl1 : List (ident × globdef A V)) (gl2 : List (ident × globdef B W))
+    (ge1 : Genv.t A V) (ge2 : Genv.t B W) :
+    list_forall2 (fun x y => x.1 = y.1 ∧ R x.2 y.2) gl1 gl2 →
+    Genv.match_genvs R ge1 ge2 →
+    Genv.match_genvs R (Genv.add_globals ge1 gl1) (Genv.add_globals ge2 gl2) := by
+  intro hlist hge
+  induction hlist generalizing ge1 ge2 with
+  | nil => exact hge
+  | cons hd1 hd2 hhd htl ih =>
+      rcases hhd with ⟨hid, hrel⟩
+      cases hd1 with
+      | mk id1 gd1 =>
+          cases hd2 with
+          | mk id2 gd2 =>
+              simp only [Genv.add_globals, List.foldl]
+              change id1 = id2 at hid
+              subst id2
+              exact ih
+                (Genv.add_global ge1 (id1, gd1))
+                (Genv.add_global ge2 (id1, gd2))
+                (cshmgenproof_add_global_match R ge1 ge2 hge id1 gd1 gd2 hrel)
+
+private theorem cshmgenproof_globalenvs_match
+    (p : CProgram) (tp : TProgram)
+    (hmatch : match_prog p tp) :
+    Genv.match_genvs
+      (fun g1 g2 =>
+        match g1, g2 with
+        | .Gfun f, .Gfun tf =>
+            ∃ cu, Ctypes.linkorder_program cu p ∧ match_fundef cu f tf
+        | .Gvar v, .Gvar tv =>
+            match_varinfo v.gvar_info tv.gvar_info ∧
+              v.gvar_init = tv.gvar_init ∧
+              v.gvar_readonly = tv.gvar_readonly ∧
+              v.gvar_volatile = tv.gvar_volatile
+        | _, _ => False)
+      (Genv.globalenv (Ctypes.program_of_program p)) (Genv.globalenv tp) := by
+  let R : globdef CFundef CType → globdef TFundef Unit → Prop := fun g1 g2 =>
+    match g1, g2 with
+    | .Gfun f, .Gfun tf =>
+        ∃ cu, Ctypes.linkorder_program cu p ∧ match_fundef cu f tf
+    | .Gvar v, .Gvar tv =>
+        match_varinfo v.gvar_info tv.gvar_info ∧
+          v.gvar_init = tv.gvar_init ∧
+          v.gvar_readonly = tv.gvar_readonly ∧
+          v.gvar_volatile = tv.gvar_volatile
+    | _, _ => False
+  have hempty : Genv.match_genvs R
+      (Genv.empty_genv CFundef CType
+        (Ctypes.program_of_program p).prog_public)
+      (Genv.empty_genv Csharpminor.fundef Unit tp.prog_public) := by
+    constructor
+    · rfl
+    · intro id
+      rfl
+    · intro b
+      exact option_rel.none _
+  have hlist : list_forall2
+      (fun x y => x.1 = y.1 ∧ R x.2 y.2)
+      (Ctypes.program_of_program p).prog_defs tp.prog_defs := by
+    unfold match_prog at hmatch
+    have hdefs := hmatch.1
+    change list_forall2
+      (fun x y => x.1 = y.1 ∧ R x.2 y.2)
+      (Ctypes.program_of_program p).prog_defs tp.prog_defs at hdefs
+    exact hdefs
+  have hall := cshmgenproof_add_globals_match R
+    (Ctypes.program_of_program p).prog_defs tp.prog_defs
+    (Genv.empty_genv CFundef CType
+      (Ctypes.program_of_program p).prog_public)
+    (Genv.empty_genv Csharpminor.fundef Unit tp.prog_public)
+    hlist hempty
+  simpa [Genv.globalenv, R] using hall
+
+theorem symbols_preserved : symbols_preservedStatement := by
+  intro prog tprog hmatch s
+  have hgenv := cshmgenproof_globalenvs_match prog tprog hmatch
+  exact hgenv.mge_symb s
+
+end CompCert4Lean.Cfrontend.Cshmgenproof

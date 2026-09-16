@@ -3112,3 +3112,21 @@ theorem leftcontext_size : leftcontext_sizeStatement := by
     | apply Nat.add_lt_add_right; solve_by_elim
 
 end CompCert4Lean.Cfrontend.SimplExprproof
+
+namespace CompCert4Lean.Cfrontend.SimplExprproof
+
+theorem tr_val_gen :
+    ∀ [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+      [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)],
+      tr_val_genStatement := by
+  intro binary64_certificate binary32_certificate
+  intro ce le dst v ty a tmp htype heval
+  cases dst with
+  | For_val =>
+      exact SimplExprspec.tr_expr.tr_val_value le v ty a tmp htype heval
+  | For_effects =>
+      exact SimplExprspec.tr_expr.tr_val_effect le v ty a tmp
+  | For_set sd =>
+      exact SimplExprspec.tr_expr.tr_val_set le sd v ty a a tmp htype heval
+
+end CompCert4Lean.Cfrontend.SimplExprproof

@@ -2901,3 +2901,289 @@ theorem mul_commut : Float32.mul_commutStatement := by
 end Float32
 
 end CompCert4Lean.Lib.Floats
+
+namespace CompCert4Lean.Lib.Floats
+
+namespace Float32
+
+theorem cmp_swap : Float32.cmp_swapStatement := by
+  intro c x y
+  unfold Float32.cmp Float32.compare
+  have hraw := Float.raw_bcompare_swap (x := decode32 x) (y := decode32 y)
+  rw [hraw]
+  cases h : CompCert4Lean.Flocq.IEEE754.Binary.Bcompare (decode32 x) (decode32 y) with
+  | none => exact cmp_of_comparison_swap c none
+  | some v => cases v <;> exact cmp_of_comparison_swap c (some _)
+
+theorem cmp_ne_eq : Float32.cmp_ne_eqStatement := by
+  intro f1 f2
+  unfold Float32.cmp
+  exact cmp_of_comparison_ne_eq (Float32.compare f1 f2)
+
+end Float32
+
+end CompCert4Lean.Lib.Floats
+
+namespace CompCert4Lean.Lib.Floats
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+private theorem float32_of_int_two_bits
+    [certificate : CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate z24 z128] :
+    Float32.of_int (Integers.Int.repr (ZArith.BinInt.Z.of_nat 2)) =
+      ⟨BitVec.ofNat 32 1073741824⟩ := by
+  rfl
+
+private theorem float32_unpack_two_bits :
+    _root_.Float.Model.UnpackedFloat.unpack _root_.Float.Model.Format.binary32
+        (BitVec.ofNat 32 1073741824) =
+      .finite .positive 8388608 (-22) (by decide) := by
+  rfl
+
+private theorem extendedMantissa_shift_pow (m k : Nat) :
+    (_root_.Float.Model.UnpackedFloat.ExtendedMantissa.ofMantissaAndAccuracy
+        (m * 2 ^ k) _root_.Float.Model.UnpackedFloat.Accuracy.exact >>> k) =
+      _root_.Float.Model.UnpackedFloat.ExtendedMantissa.ofMantissaAndAccuracy
+        m _root_.Float.Model.UnpackedFloat.Accuracy.exact := by
+  change Nat.repeat
+      _root_.Float.Model.UnpackedFloat.ExtendedMantissa.shiftRightOne k
+        (_root_.Float.Model.UnpackedFloat.ExtendedMantissa.ofMantissaAndAccuracy
+          (m * 2 ^ k) _root_.Float.Model.UnpackedFloat.Accuracy.exact) = _
+  induction k generalizing m with
+  | zero => simp [Nat.repeat]
+  | succ k ih =>
+      rw [show m * 2 ^ (k + 1) = (m * 2) * 2 ^ k by
+        simp [Nat.pow_succ, Nat.mul_assoc, Nat.mul_comm]]
+      simp only [Nat.repeat]
+      rw [ih]
+      simp [_root_.Float.Model.UnpackedFloat.ExtendedMantissa.shiftRightOne,
+        _root_.Float.Model.UnpackedFloat.ExtendedMantissa.ofMantissaAndAccuracy]
+
+private theorem extendedMantissa_shift_zero
+    (x : _root_.Float.Model.UnpackedFloat.ExtendedMantissa) : x >>> 0 = x := by
+  change Nat.repeat
+    _root_.Float.Model.UnpackedFloat.ExtendedMantissa.shiftRightOne 0 x = x
+  unfold Nat.repeat
+  rfl
+
+private theorem extendedMantissa_shift_pow_add (m k q : Nat) :
+    (_root_.Float.Model.UnpackedFloat.ExtendedMantissa.ofMantissaAndAccuracy
+        (m * 2 ^ k) _root_.Float.Model.UnpackedFloat.Accuracy.exact >>> (k + q)) =
+      (_root_.Float.Model.UnpackedFloat.ExtendedMantissa.ofMantissaAndAccuracy
+        m _root_.Float.Model.UnpackedFloat.Accuracy.exact >>> q) := by
+  induction q with
+  | zero =>
+      rw [extendedMantissa_shift_zero]
+      exact extendedMantissa_shift_pow m k
+  | succ q ih =>
+      change
+        _root_.Float.Model.UnpackedFloat.ExtendedMantissa.shiftRightOne
+            ((_root_.Float.Model.UnpackedFloat.ExtendedMantissa.ofMantissaAndAccuracy
+              (m * 2 ^ k) _root_.Float.Model.UnpackedFloat.Accuracy.exact) >>> (k + q)) =
+          _root_.Float.Model.UnpackedFloat.ExtendedMantissa.shiftRightOne
+            ((_root_.Float.Model.UnpackedFloat.ExtendedMantissa.ofMantissaAndAccuracy
+              m _root_.Float.Model.UnpackedFloat.Accuracy.exact) >>> q)
+      exact congrArg _ ih
+
+private theorem log2_mul_pow (m k : Nat) (hm : m ≠ 0) :
+    (m * 2 ^ k).log2 = m.log2 + k := by
+  induction k with
+  | zero => simp
+  | succ k ih =>
+      rw [Nat.pow_succ]
+      rw [show m * (2 ^ k * 2) = 2 * (m * 2 ^ k) by
+        simp [Nat.mul_assoc, Nat.mul_comm, Nat.mul_left_comm]]
+      rw [Nat.log2_two_mul
+        (Nat.mul_ne_zero hm (Nat.ne_of_gt (Nat.two_pow_pos k))), ih]
+      omega
+
+private theorem shiftToTargetExponent_scale32
+    (m k : Nat) (e : Int) (hm : m ≠ 0)
+    (hle : e ≤ _root_.Float.Model.Format.binary32.targetExponent
+      (_root_.Float.Model.totalExponent m e)) :
+    _root_.Float.Model.UnpackedFloat.shiftToTargetExponent
+        _root_.Float.Model.Format.binary32 (m * 2 ^ k) (e - (k : Int))
+        _root_.Float.Model.UnpackedFloat.Accuracy.exact =
+      _root_.Float.Model.UnpackedFloat.shiftToTargetExponent
+        _root_.Float.Model.Format.binary32 m e
+        _root_.Float.Model.UnpackedFloat.Accuracy.exact := by
+  have htotal :
+      _root_.Float.Model.totalExponent (m * 2 ^ k) (e - (k : Int)) =
+        _root_.Float.Model.totalExponent m e := by
+    unfold _root_.Float.Model.totalExponent
+    rw [log2_mul_pow m k hm]
+    omega
+  unfold _root_.Float.Model.UnpackedFloat.shiftToTargetExponent
+  rw [htotal]
+  unfold _root_.Float.Model.UnpackedFloat.shiftToExponent
+  let t := _root_.Float.Model.Format.binary32.targetExponent
+    (_root_.Float.Model.totalExponent m e)
+  have hnonneg : 0 ≤ t - e := by omega
+  have hdiff : t - (e - (k : Int)) = (k : Int) + (t - e) := by omega
+  change
+    ((_root_.Float.Model.UnpackedFloat.ExtendedMantissa.ofMantissaAndAccuracy
+        (m * 2 ^ k) _root_.Float.Model.UnpackedFloat.Accuracy.exact >>>
+          (t - (e - (k : Int))).toNat),
+        e - (k : Int) + (t - (e - (k : Int))).toNat) =
+      ((_root_.Float.Model.UnpackedFloat.ExtendedMantissa.ofMantissaAndAccuracy
+        m _root_.Float.Model.UnpackedFloat.Accuracy.exact >>> (t - e).toNat),
+        e + (t - e).toNat)
+  rw [hdiff, Int.toNat_add (Int.ofNat_nonneg k) hnonneg]
+  apply Prod.ext
+  · exact extendedMantissa_shift_pow_add m k (t - e).toNat
+  · simp only [Int.toNat_natCast]
+    have hcast : ((t - e).toNat : Int) = t - e := Int.toNat_of_nonneg hnonneg
+    omega
+
+private theorem round_double_worker32
+    (s : _root_.Float.Model.UnpackedFloat.Sign) (m : Nat) (e : Int)
+    (hm : 0 < m) :
+    _root_.Float.Model.UnpackedFloat.round _root_.Float.Model.Format.binary32
+        s (m + m) e =
+      _root_.Float.Model.UnpackedFloat.roundWithAccuracy
+        _root_.Float.Model.Format.binary32 s (m * 8388608) (e - 22)
+        _root_.Float.Model.UnpackedFloat.Accuracy.exact := by
+  let a := m + m
+  let t := _root_.Float.Model.Format.binary32.targetExponent
+    (_root_.Float.Model.totalExponent a e)
+  let d := (e - t).toNat
+  have ha : a ≠ 0 := by simp [a, Nat.ne_of_gt hm]
+  have hloga : a.log2 = m.log2 + 1 := by
+    rw [show a = 2 * m by omega, Nat.log2_two_mul (Nat.ne_of_gt hm)]
+  have ht_lower : e - 22 ≤ t := by
+    dsimp [t]
+    change e - 22 ≤ max ((a.log2 : Int) + 1 + e - 24) (-149)
+    rw [hloga]
+    omega
+  have hdle : d ≤ 22 := by
+    dsimp [d]
+    omega
+  let c := a * 2 ^ d
+  let ec := e - (d : Int)
+  have hc : c ≠ 0 :=
+    Nat.mul_ne_zero ha (Nat.ne_of_gt (Nat.two_pow_pos d))
+  have htotalc :
+      _root_.Float.Model.totalExponent c ec =
+        _root_.Float.Model.totalExponent a e := by
+    dsimp [c, ec]
+    unfold _root_.Float.Model.totalExponent
+    rw [log2_mul_pow a d ha]
+    omega
+  have hlec : ec ≤ _root_.Float.Model.Format.binary32.targetExponent
+      (_root_.Float.Model.totalExponent c ec) := by
+    rw [htotalc]
+    change e - (d : Int) ≤ t
+    dsimp [d]
+    omega
+  have hscale := shiftToTargetExponent_scale32 c (22 - d) ec hc hlec
+  have hmant : c * 2 ^ (22 - d) = m * 8388608 := by
+    dsimp [c, a]
+    rw [Nat.mul_assoc, ← Nat.pow_add, Nat.add_sub_of_le hdle]
+    change (m + m) * 4194304 = m * 8388608
+    omega
+  have hexp : ec - ((22 - d : Nat) : Int) = e - 22 := by
+    dsimp [ec]
+    omega
+  rw [hmant, hexp] at hscale
+  unfold _root_.Float.Model.UnpackedFloat.round
+    _root_.Float.Model.UnpackedFloat.decreaseExponent
+  dsimp only
+  change
+    _root_.Float.Model.UnpackedFloat.roundWithAccuracy
+        _root_.Float.Model.Format.binary32 s (a <<< d) ec
+        _root_.Float.Model.UnpackedFloat.Accuracy.exact = _
+  rw [Nat.shiftLeft_eq]
+  change
+    _root_.Float.Model.UnpackedFloat.roundWithAccuracy
+        _root_.Float.Model.Format.binary32 s c ec
+        _root_.Float.Model.UnpackedFloat.Accuracy.exact = _
+  unfold _root_.Float.Model.UnpackedFloat.roundWithAccuracy
+  rw [← hscale]
+
+private theorem unpacked_add_self_mul_two_worker32
+    (a : _root_.Float.Model.UnpackedFloat) :
+    _root_.Float.Model.UnpackedFloat.add _root_.Float.Model.Format.binary32 a a =
+      _root_.Float.Model.UnpackedFloat.mul _root_.Float.Model.Format.binary32 a
+        (.finite .positive 8388608 (-22) (by decide)) := by
+  cases a with
+  | notANumber => rfl
+  | infinity s => cases s <;> rfl
+  | zero s => cases s <;> rfl
+  | finite s m e hm =>
+      have hmI : (0 : Int) < (m : Int) := by omega
+      cases s with
+      | negative =>
+        simp only [_root_.Float.Model.UnpackedFloat.add,
+          _root_.Float.Model.UnpackedFloat.mul,
+          _root_.Float.Model.UnpackedFloat.decreaseExponent,
+          _root_.Float.Model.UnpackedFloat.Sign.apply,
+          _root_.Float.Model.UnpackedFloat.normalize, Int.min_self, Int.sub_self,
+          Int.toNat_zero, Nat.shiftLeft_zero]
+        have hc : compare (-(m : Int) + -(m : Int)) 0 = .lt :=
+          Int.compare_eq_lt.mpr (by omega)
+        rw [hc]
+        have hnat : (-(-(m : Int) + -(m : Int))).toNat = m + m := by omega
+        rw [hnat]
+        change
+          _root_.Float.Model.UnpackedFloat.round _root_.Float.Model.Format.binary32
+              .negative (m + m) e =
+            _root_.Float.Model.UnpackedFloat.roundWithAccuracy
+              _root_.Float.Model.Format.binary32 .negative (m * 8388608) (e - 22)
+              _root_.Float.Model.UnpackedFloat.Accuracy.exact
+        exact round_double_worker32 .negative m e hm
+      | positive =>
+        simp only [_root_.Float.Model.UnpackedFloat.add,
+          _root_.Float.Model.UnpackedFloat.mul,
+          _root_.Float.Model.UnpackedFloat.decreaseExponent,
+          _root_.Float.Model.UnpackedFloat.Sign.apply,
+          _root_.Float.Model.UnpackedFloat.normalize, Int.min_self, Int.sub_self,
+          Int.toNat_zero, Nat.shiftLeft_zero]
+        have hc : compare ((m : Int) + (m : Int)) 0 = .gt :=
+          Int.compare_eq_gt.mpr (by omega)
+        rw [hc]
+        have hnat : ((m : Int) + (m : Int)).toNat = m + m := by omega
+        rw [hnat]
+        change
+          _root_.Float.Model.UnpackedFloat.round _root_.Float.Model.Format.binary32
+              .positive (m + m) e =
+            _root_.Float.Model.UnpackedFloat.roundWithAccuracy
+              _root_.Float.Model.Format.binary32 .positive (m * 8388608) (e - 22)
+              _root_.Float.Model.UnpackedFloat.Accuracy.exact
+        exact round_double_worker32 .positive m e hm
+
+private theorem model_add_self_mul_two_worker32
+    [certificate : CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate z24 z128]
+    (f : float32) :
+    modelBinary32
+        (_root_.Float.Model.UnpackedFloat.add _root_.Float.Model.Format.binary32) f f =
+      modelBinary32
+        (_root_.Float.Model.UnpackedFloat.mul _root_.Float.Model.Format.binary32) f
+          (Float32.of_int (Integers.Int.repr (ZArith.BinInt.Z.of_nat 2))) := by
+  rw [float32_of_int_two_bits]
+  unfold modelBinary32
+  rw [float32_unpack_two_bits, unpacked_add_self_mul_two_worker32]
+
+private theorem isNaN_of_int_two_worker32
+    [certificate : CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate z24 z128] :
+    isNaN32 (Float32.of_int (Integers.Int.repr (ZArith.BinInt.Z.of_nat 2))) = false := by
+  rw [float32_of_int_two_bits]
+  rfl
+
+namespace Float32
+
+theorem mul2_add
+    [certificate : CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate z24 z128] :
+    Float32.mul2_addStatement := by
+  intro f
+  unfold Float32.add Float32.mul
+  rw [model_add_self_mul_two_worker32]
+  have htwo := isNaN_of_int_two_worker32
+  by_cases hf : isNaN32 f = true
+  · simp only [finishBinary, binop_nan, cons_pl, hf, htwo, Bool.true_or,
+      Bool.false_eq_true, ↓reduceIte]
+    rw [CompCert4Lean.X86_64.Archi.choose_nan_32_idem]
+  · simp [finishBinary, hf, htwo]
+
+end Float32
+
+end CompCert4Lean.Lib.Floats

@@ -5407,3 +5407,170 @@ theorem bits_shru_proof : bits_shru := by
       rw [← hz] at hi ⊢
       exact suffix_bits_shru_nat x y
         (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p)
+
+theorem half_modulus_pos_proof : half_modulus_pos := by
+  change zLt zZero (zTwoPowerNat (wordsize - 1))
+  change (0 : Int) < Int.ofNat (2 ^ (wordsize - 1))
+  decide
+
+theorem same_bits_eq_proof : same_bits_eq := by
+  intro x y h
+  apply WordCore.ext_of_val_eq
+  apply Nat.eq_of_testBit_eq
+  intro i
+  by_cases hi : i < wordsize
+  · have hi0 : zLe zZero (zOfNat i) := by
+      change 0 ≤ intOfZ (zOfNat i)
+      simp only [zOfNat, ZArith.BinInt.Z.of_nat, intOfZ_zOfInt]
+      exact Int.natCast_nonneg _
+    have hil : zLt (zOfNat i) zwordsize := by
+      change intOfZ (zOfNat i) < intOfZ (zOfNat wordsize)
+      simp only [zOfNat, ZArith.BinInt.Z.of_nat, intOfZ_zOfInt]
+      exact Int.ofNat_lt.mpr (by simpa [wordsize] using hi)
+    have hh := h (zOfNat i) ⟨hi0, hil⟩
+    rw [suffix_testbit_nat, suffix_testbit_nat] at hh
+    exact hh
+  · have hle : wordsize ≤ i := Nat.le_of_not_gt hi
+    have hpow : 2 ^ wordsize ≤ 2 ^ i :=
+      Nat.pow_le_pow_right Nat.zero_lt_two hle
+    have hxlt : x.val < 2 ^ i :=
+      Nat.lt_of_lt_of_le (WordCore.val_lt x) hpow
+    have hylt : y.val < 2 ^ i :=
+      Nat.lt_of_lt_of_le (WordCore.val_lt y) hpow
+    rw [Nat.testBit_lt_two_pow hxlt, Nat.testBit_lt_two_pow hylt]
+
+theorem ltu_not_proof : ltu_not := by
+  intro x y
+  change zltSelect (unsigned y) (unsigned x) true false =
+    (!zltSelect (unsigned x) (unsigned y) true false &&
+      !decide (x.intval = y.intval))
+  cases hxy : CompCert4Lean.Lib.Coqlib.zlt (unsigned y) (unsigned x) with
+  | left hlt =>
+      cases hrev : CompCert4Lean.Lib.Coqlib.zlt (unsigned x) (unsigned y) with
+      | left hrevlt =>
+          exact (Int.lt_asymm hlt hrevlt).elim
+      | right hrevge =>
+          have hne : x.intval ≠ y.intval := by
+            intro heq
+            have hlt' : intOfZ (unsigned y) < intOfZ (unsigned x) := hlt
+            change intOfZ y.intval < intOfZ x.intval at hlt'
+            rw [heq] at hlt'
+            exact (Int.lt_irrefl _ hlt').elim
+          simp [zltSelect, sumboolSelect, hxy, hrev, hne]
+  | right hge =>
+      cases hrev : CompCert4Lean.Lib.Coqlib.zlt (unsigned x) (unsigned y) with
+      | left hrevlt =>
+          simp [zltSelect, sumboolSelect, hxy, hrev]
+      | right hrevge =>
+          have hge' : intOfZ (unsigned x) ≤ intOfZ (unsigned y) := by
+            exact hge
+          have hrevge' : intOfZ (unsigned y) ≤ intOfZ (unsigned x) := by
+            exact hrevge
+          have huv : unsigned y = unsigned x := by
+            apply intOfZ_injective
+            exact Int.le_antisymm hrevge' hge'
+          have heqv : x.intval = y.intval := by
+            simpa only [unsigned, WordCore.unsigned] using huv.symm
+          simp [zltSelect, sumboolSelect, hxy, hrev, heqv]
+
+theorem divmodu2_divu_modu_proof : divmodu2_divu_modu := by
+  intro n d hd
+  unfold divmodu2 divu modu
+  by_cases hdz : d = zero
+  · exact (hd hdz).elim
+  · have hsum :
+        zAdd (zMul (unsigned zero) modulus) (unsigned n) = unsigned n := by
+      apply intOfZ_injective
+      simp only [zAdd, zMul, ZArith.BinInt.Z.add, ZArith.BinInt.Z.mul,
+        intOfZ_zOfInt]
+      have hz : intOfZ (unsigned zero) = (0 : Int) := by rfl
+      rw [hz]
+      omega
+    rw [hsum]
+    simp [eq_dec, hdz]
+    have hn0 : (0 : Int) ≤ intOfZ (unsigned n) := by
+      have hn := n.intrange.1
+      change (-1 : Int) < intOfZ n.intval at hn
+      change 0 ≤ intOfZ n.intval
+      omega
+    have hnmax : intOfZ (unsigned n) ≤ intOfZ max_unsigned := by
+      have hn := n.intrange.2
+      change intOfZ n.intval < intOfZ modulus at hn
+      change intOfZ n.intval ≤ intOfZ modulus - 1
+      omega
+    have hd0 : (0 : Int) ≤ intOfZ (unsigned d) := by
+      have hd' := d.intrange.1
+      change (-1 : Int) < intOfZ d.intval at hd'
+      change 0 ≤ intOfZ d.intval
+      omega
+    have hdpos : (0 : Int) < intOfZ (unsigned d) := by
+      have hdne : intOfZ (unsigned d) ≠ 0 := by
+        intro hzero
+        apply hd
+        apply WordCore.ext
+        apply intOfZ_injective
+        change intOfZ d.intval = 0 at hzero
+        have hz0 : intOfZ zero.intval = 0 := by rfl
+        exact hzero.trans hz0.symm
+      omega
+    have hqbound : zLe (ZArith.BinInt.Z.div_eucl
+        (unsigned n) (unsigned d)).1 max_unsigned := by
+      have hb := CompCert4Lean.Lib.Coqlib.Zdiv_interval_1
+        zZero (zAdd max_unsigned zOne) (unsigned n) (unsigned d)
+        (by
+          change (0 : Int) ≤ 0
+          omega) (by
+          change (0 : Int) < intOfZ (zAdd max_unsigned zOne)
+          simp only [zAdd, ZArith.BinInt.Z.add, intOfZ_zOfInt]
+          change (0 : Int) < (2 ^ wordsize : Int)
+          exact Int.pow_pos (by omega))
+        (by exact hdpos)
+        (by
+          constructor
+          · change intOfZ (zMul zZero (unsigned d)) ≤ intOfZ (unsigned n)
+            simp only [zMul, ZArith.BinInt.Z.mul]
+            simp only [intOfZ_zOfInt]
+            have hz0 : intOfZ zZero = (0 : Int) := by rfl
+            rw [hz0, Int.zero_mul]
+            exact hn0
+          · change intOfZ (unsigned n) < intOfZ
+              (zMul (zAdd max_unsigned zOne) (unsigned d))
+            have hmax : intOfZ max_unsigned = (2 ^ wordsize : Int) - 1 := by
+              rfl
+            have hone : intOfZ zOne = (1 : Int) := by rfl
+            have hmul : intOfZ (unsigned n) ≤
+                ((2 ^ wordsize : Int) - 1) * intOfZ (unsigned d) := by
+              have hnd := Int.mul_le_mul_of_nonneg_left
+                (show (1 : Int) ≤ intOfZ (unsigned d) by omega) hn0
+              have hmaxd := Int.mul_le_mul_of_nonneg_right hnmax hd0
+              exact Int.le_trans (by simpa using hnd) (by simpa [hmax] using hmaxd)
+            have hstrict : ((2 ^ wordsize : Int) - 1) * intOfZ (unsigned d) <
+                (((2 ^ wordsize : Int) - 1) + 1) * intOfZ (unsigned d) := by
+              apply Int.mul_lt_mul_of_pos_right _ hdpos
+              omega
+            have hlt : intOfZ (unsigned n) <
+                (((2 ^ wordsize : Int) - 1) + 1) * intOfZ (unsigned d) :=
+              Int.lt_of_le_of_lt hmul hstrict
+            simpa [zMul, zAdd, ZArith.BinInt.Z.mul,
+              ZArith.BinInt.Z.add, intOfZ_zOfInt, hmax, hone] using hlt)
+      have hqhi := hb.2
+      change intOfZ (ZArith.BinInt.Z.div_eucl
+          (unsigned n) (unsigned d)).1 <
+        intOfZ (zAdd max_unsigned zOne) at hqhi
+      change intOfZ (ZArith.BinInt.Z.div_eucl
+          (unsigned n) (unsigned d)).1 ≤ intOfZ max_unsigned
+      simp only [zAdd, ZArith.BinInt.Z.add, intOfZ_zOfInt] at hqhi ⊢
+      have hmax : intOfZ max_unsigned = (2 ^ wordsize : Int) - 1 := by
+        rfl
+      have hone : intOfZ zOne = (1 : Int) := by rfl
+      rw [hmax] at hqhi ⊢
+      rw [hone] at hqhi
+      omega
+    cases hle : CompCert4Lean.Lib.Coqlib.zle
+        (ZArith.BinInt.Z.div_eucl (unsigned n) (unsigned d)).1 max_unsigned with
+    | left hle' =>
+        simp [hle, ZArith.BinInt.Z.div_eucl]
+        constructor <;> rfl
+    | right hle' =>
+        exfalso
+        exact (Int.not_lt_of_ge hqbound hle').elim

@@ -1714,3 +1714,251 @@ theorem testcond_for_neg_float_comparison_correct :
         CompCert4Lean.Lib.Integers.WordCore.eq, honezero, Ne.symm honezero]
 
 end CompCert4Lean.X86.Asmgenproof1
+
+namespace CompCert4Lean.X86.Asmgenproof1
+
+theorem swap_floats_commut : swap_floats_commutStatement := by
+  intro A B c f x y
+  cases c <;> rfl
+
+end CompCert4Lean.X86.Asmgenproof1
+
+namespace CompCert4Lean.X86.Asmgenproof1
+
+theorem compare_floats_inv : compare_floats_invStatement := by
+  intro vx vy rs r hzf hcf hpf hsf hof
+  unfold CompCert4Lean.X86.Asm.compare_floats
+  cases vx <;> cases vy <;>
+    simp [CompCert4Lean.X86.Asm.undef_regs,
+      CompCert4Lean.X86.Asm.Pregmap.get, CompCert4Lean.X86.Asm.Pregmap.set,
+      hzf, hcf, hpf, hsf, hof]
+
+end CompCert4Lean.X86.Asmgenproof1
+
+namespace CompCert4Lean.X86.Asmgenproof1
+
+open CompCert4Lean.X86.Asmgen
+open CompCert4Lean.X86.Asm
+open Lean Elab Tactic Meta
+
+theorem testcond_for_float32_comparison_correct :
+    testcond_for_float32_comparison_correctStatement := by
+  intro c n1 n2 rs
+  have h := compare_floats32_spec rs (swap_floats c n1 n2) (swap_floats c n2 n1)
+  rcases h with ⟨A, B, C, D⟩
+  have hof (b : Bool) :
+      (match CompCert4Lean.Common.Values.Val.of_bool b with
+       | .Vint v => some v
+       | _ => none) =
+        some (if b then CompCert4Lean.Lib.Integers.Int.one
+          else CompCert4Lean.Lib.Integers.Int.zero) := by
+    cases b <;> rfl
+  have honezero :
+      CompCert4Lean.Lib.Integers.Int.one.intval ≠
+        CompCert4Lean.Lib.Integers.Int.zero.intval := by
+    decide
+  cases c <;> simp only [swap_floats, testcond_for_condition] at A B C ⊢
+  all_goals
+    simp only [eval_extcond, eval_testcond]
+    run_tac
+      let g ← getMainGoal
+      let t ← g.getType
+      let flagName := asmgenproof1AsmPrivateName "CompCert4Lean.X86.Asm.flagValue"
+      let t ← Lean.Meta.transform t (post := fun e => do
+        if e.isAppOf flagName then
+          return .visit (← Lean.Meta.unfoldDefinition e)
+        else
+          return .continue)
+      let g ← g.replaceTargetDefEq t
+      Lean.Elab.Tactic.replaceMainGoal [g]
+    simp only [CompCert4Lean.X86.Asm.Pregmap.get, A, B, C]
+    try simp [CompCert4Lean.Common.Values.Val.of_bool,
+      CompCert4Lean.Common.Values.Vtrue, CompCert4Lean.Common.Values.Vfalse]
+  case Ceq =>
+    unfold CompCert4Lean.Lib.Floats.Float32.cmp
+    unfold CompCert4Lean.Lib.Floats.Float32.ordered
+    cases hcmp : CompCert4Lean.Lib.Floats.Float32.compare n1 n2 with
+    | none => simp [hcmp, CompCert4Lean.Lib.Floats.cmp_of_comparison,
+        CompCert4Lean.Lib.Floats.ordered_of_comparison,
+        CompCert4Lean.Lib.Integers.Int.eq,
+        CompCert4Lean.Lib.Integers.WordCore.eq, honezero, Ne.symm honezero]
+    | some v => cases v <;> simp [hcmp, CompCert4Lean.Lib.Floats.cmp_of_comparison,
+        CompCert4Lean.Lib.Floats.ordered_of_comparison,
+        CompCert4Lean.Lib.Integers.Int.eq,
+        CompCert4Lean.Lib.Integers.WordCore.eq, honezero, Ne.symm honezero]
+  case Cne =>
+    unfold CompCert4Lean.Lib.Floats.Float32.cmp
+    unfold CompCert4Lean.Lib.Floats.Float32.ordered
+    cases hcmp : CompCert4Lean.Lib.Floats.Float32.compare n1 n2 with
+    | none => simp [hcmp, CompCert4Lean.Lib.Floats.cmp_of_comparison,
+        CompCert4Lean.Lib.Floats.ordered_of_comparison,
+        CompCert4Lean.Lib.Integers.Int.eq,
+        CompCert4Lean.Lib.Integers.WordCore.eq, honezero, Ne.symm honezero]
+    | some v => cases v <;> simp [hcmp, CompCert4Lean.Lib.Floats.cmp_of_comparison,
+        CompCert4Lean.Lib.Floats.ordered_of_comparison,
+        CompCert4Lean.Lib.Integers.Int.eq,
+        CompCert4Lean.Lib.Integers.WordCore.eq, honezero, Ne.symm honezero]
+  case Clt =>
+    rw [← CompCert4Lean.Lib.Floats.Float32.cmp_swap
+      CompCert4Lean.Lib.Integers.Clt n2 n1]
+    simp only [CompCert4Lean.Lib.Integers.swap_comparison]
+    unfold CompCert4Lean.Lib.Floats.Float32.cmp
+    unfold CompCert4Lean.Lib.Floats.Float32.ordered
+    cases hcmp : CompCert4Lean.Lib.Floats.Float32.compare n2 n1 with
+    | none => simp [hcmp, CompCert4Lean.Lib.Floats.cmp_of_comparison,
+        CompCert4Lean.Lib.Floats.ordered_of_comparison,
+        CompCert4Lean.Lib.Integers.Int.eq,
+        CompCert4Lean.Lib.Integers.WordCore.eq, honezero, Ne.symm honezero]
+    | some v => cases v <;> simp [hcmp, CompCert4Lean.Lib.Floats.cmp_of_comparison,
+        CompCert4Lean.Lib.Floats.ordered_of_comparison,
+        CompCert4Lean.Lib.Integers.Int.eq,
+        CompCert4Lean.Lib.Integers.WordCore.eq, honezero, Ne.symm honezero]
+  case Cle =>
+    rw [← CompCert4Lean.Lib.Floats.Float32.cmp_swap
+      CompCert4Lean.Lib.Integers.Cge n1 n2]
+    simp only [CompCert4Lean.Lib.Integers.swap_comparison]
+    unfold CompCert4Lean.Lib.Floats.Float32.cmp
+    cases hcmp : CompCert4Lean.Lib.Floats.Float32.compare n1 n2 with
+    | none => simp [hcmp, CompCert4Lean.Lib.Floats.cmp_of_comparison,
+        CompCert4Lean.Lib.Integers.Int.eq,
+        CompCert4Lean.Lib.Integers.WordCore.eq, honezero, Ne.symm honezero]
+    | some v => cases v <;> simp [hcmp, CompCert4Lean.Lib.Floats.cmp_of_comparison,
+        CompCert4Lean.Lib.Integers.Int.eq,
+        CompCert4Lean.Lib.Integers.WordCore.eq, honezero, Ne.symm honezero]
+  case Cgt =>
+    unfold CompCert4Lean.Lib.Floats.Float32.cmp
+    unfold CompCert4Lean.Lib.Floats.Float32.ordered
+    cases hcmp : CompCert4Lean.Lib.Floats.Float32.compare n1 n2 with
+    | none => simp [hcmp, CompCert4Lean.Lib.Floats.cmp_of_comparison,
+        CompCert4Lean.Lib.Floats.ordered_of_comparison,
+        CompCert4Lean.Lib.Integers.Int.eq,
+        CompCert4Lean.Lib.Integers.WordCore.eq, honezero, Ne.symm honezero]
+    | some v => cases v <;> simp [hcmp, CompCert4Lean.Lib.Floats.cmp_of_comparison,
+        CompCert4Lean.Lib.Floats.ordered_of_comparison,
+        CompCert4Lean.Lib.Integers.Int.eq,
+        CompCert4Lean.Lib.Integers.WordCore.eq, honezero, Ne.symm honezero]
+  case Cge =>
+    unfold CompCert4Lean.Lib.Floats.Float32.cmp
+    cases hcmp : CompCert4Lean.Lib.Floats.Float32.compare n1 n2 with
+    | none => simp [hcmp, CompCert4Lean.Lib.Floats.cmp_of_comparison,
+        CompCert4Lean.Lib.Integers.Int.eq,
+        CompCert4Lean.Lib.Integers.WordCore.eq, honezero, Ne.symm honezero]
+    | some v => cases v <;> simp [hcmp, CompCert4Lean.Lib.Floats.cmp_of_comparison,
+        CompCert4Lean.Lib.Integers.Int.eq,
+        CompCert4Lean.Lib.Integers.WordCore.eq, honezero, Ne.symm honezero]
+
+end CompCert4Lean.X86.Asmgenproof1
+
+namespace CompCert4Lean.X86.Asmgenproof1
+
+open CompCert4Lean.X86.Asmgen
+open CompCert4Lean.X86.Asm
+open Lean Elab Tactic Meta
+
+theorem testcond_for_neg_float32_comparison_correct :
+    testcond_for_neg_float32_comparison_correctStatement := by
+  intro c n1 n2 rs
+  have h := compare_floats32_spec rs (swap_floats c n1 n2) (swap_floats c n2 n1)
+  rcases h with ⟨A, B, C, D⟩
+  have hof (b : Bool) :
+      (match CompCert4Lean.Common.Values.Val.of_bool b with
+       | .Vint v => some v
+       | _ => none) =
+        some (if b then CompCert4Lean.Lib.Integers.Int.one
+          else CompCert4Lean.Lib.Integers.Int.zero) := by
+    cases b <;> rfl
+  have honezero :
+      CompCert4Lean.Lib.Integers.Int.one.intval ≠
+        CompCert4Lean.Lib.Integers.Int.zero.intval := by
+    decide
+  cases c <;> simp only [swap_floats, testcond_for_condition] at A B C ⊢
+  all_goals
+    simp only [eval_extcond, eval_testcond]
+    run_tac
+      let g ← getMainGoal
+      let t ← g.getType
+      let flagName := asmgenproof1AsmPrivateName "CompCert4Lean.X86.Asm.flagValue"
+      let t ← Lean.Meta.transform t (post := fun e => do
+        if e.isAppOf flagName then
+          return .visit (← Lean.Meta.unfoldDefinition e)
+        else
+          return .continue)
+      let g ← g.replaceTargetDefEq t
+      Lean.Elab.Tactic.replaceMainGoal [g]
+    simp only [CompCert4Lean.X86.Asm.Pregmap.get, A, B, C]
+    try simp [CompCert4Lean.Common.Values.Val.of_bool,
+      CompCert4Lean.Common.Values.Vtrue, CompCert4Lean.Common.Values.Vfalse]
+  case Ceq =>
+    unfold CompCert4Lean.Lib.Floats.Float32.cmp
+    unfold CompCert4Lean.Lib.Floats.Float32.ordered
+    cases hcmp : CompCert4Lean.Lib.Floats.Float32.compare n1 n2 with
+    | none => simp [hcmp, CompCert4Lean.Lib.Floats.cmp_of_comparison,
+        CompCert4Lean.Lib.Floats.ordered_of_comparison,
+        CompCert4Lean.Lib.Integers.Int.eq,
+        CompCert4Lean.Lib.Integers.WordCore.eq, honezero, Ne.symm honezero]
+    | some v => cases v <;> simp [hcmp, CompCert4Lean.Lib.Floats.cmp_of_comparison,
+        CompCert4Lean.Lib.Floats.ordered_of_comparison,
+        CompCert4Lean.Lib.Integers.Int.eq,
+        CompCert4Lean.Lib.Integers.WordCore.eq, honezero, Ne.symm honezero]
+  case Cne =>
+    unfold CompCert4Lean.Lib.Floats.Float32.cmp
+    unfold CompCert4Lean.Lib.Floats.Float32.ordered
+    cases hcmp : CompCert4Lean.Lib.Floats.Float32.compare n1 n2 with
+    | none => simp [hcmp, CompCert4Lean.Lib.Floats.cmp_of_comparison,
+        CompCert4Lean.Lib.Floats.ordered_of_comparison,
+        CompCert4Lean.Lib.Integers.Int.eq,
+        CompCert4Lean.Lib.Integers.WordCore.eq, honezero, Ne.symm honezero]
+    | some v => cases v <;> simp [hcmp, CompCert4Lean.Lib.Floats.cmp_of_comparison,
+        CompCert4Lean.Lib.Floats.ordered_of_comparison,
+        CompCert4Lean.Lib.Integers.Int.eq,
+        CompCert4Lean.Lib.Integers.WordCore.eq, honezero, Ne.symm honezero]
+  case Clt =>
+    rw [← CompCert4Lean.Lib.Floats.Float32.cmp_swap
+      CompCert4Lean.Lib.Integers.Clt n2 n1]
+    simp only [CompCert4Lean.Lib.Integers.swap_comparison]
+    unfold CompCert4Lean.Lib.Floats.Float32.cmp
+    unfold CompCert4Lean.Lib.Floats.Float32.ordered
+    cases hcmp : CompCert4Lean.Lib.Floats.Float32.compare n2 n1 with
+    | none => simp [hcmp, CompCert4Lean.Lib.Floats.cmp_of_comparison,
+        CompCert4Lean.Lib.Floats.ordered_of_comparison,
+        CompCert4Lean.Lib.Integers.Int.eq,
+        CompCert4Lean.Lib.Integers.WordCore.eq, honezero, Ne.symm honezero]
+    | some v => cases v <;> simp [hcmp, CompCert4Lean.Lib.Floats.cmp_of_comparison,
+        CompCert4Lean.Lib.Floats.ordered_of_comparison,
+        CompCert4Lean.Lib.Integers.Int.eq,
+        CompCert4Lean.Lib.Integers.WordCore.eq, honezero, Ne.symm honezero]
+  case Cle =>
+    rw [← CompCert4Lean.Lib.Floats.Float32.cmp_swap
+      CompCert4Lean.Lib.Integers.Cge n1 n2]
+    simp only [CompCert4Lean.Lib.Integers.swap_comparison]
+    unfold CompCert4Lean.Lib.Floats.Float32.cmp
+    cases hcmp : CompCert4Lean.Lib.Floats.Float32.compare n1 n2 with
+    | none => simp [hcmp, CompCert4Lean.Lib.Floats.cmp_of_comparison,
+        CompCert4Lean.Lib.Integers.Int.eq,
+        CompCert4Lean.Lib.Integers.WordCore.eq, honezero, Ne.symm honezero]
+    | some v => cases v <;> simp [hcmp, CompCert4Lean.Lib.Floats.cmp_of_comparison,
+        CompCert4Lean.Lib.Integers.Int.eq,
+        CompCert4Lean.Lib.Integers.WordCore.eq, honezero, Ne.symm honezero]
+  case Cgt =>
+    unfold CompCert4Lean.Lib.Floats.Float32.cmp
+    unfold CompCert4Lean.Lib.Floats.Float32.ordered
+    cases hcmp : CompCert4Lean.Lib.Floats.Float32.compare n1 n2 with
+    | none => simp [hcmp, CompCert4Lean.Lib.Floats.cmp_of_comparison,
+        CompCert4Lean.Lib.Floats.ordered_of_comparison,
+        CompCert4Lean.Lib.Integers.Int.eq,
+        CompCert4Lean.Lib.Integers.WordCore.eq, honezero, Ne.symm honezero]
+    | some v => cases v <;> simp [hcmp, CompCert4Lean.Lib.Floats.cmp_of_comparison,
+        CompCert4Lean.Lib.Floats.ordered_of_comparison,
+        CompCert4Lean.Lib.Integers.Int.eq,
+        CompCert4Lean.Lib.Integers.WordCore.eq, honezero, Ne.symm honezero]
+  case Cge =>
+    unfold CompCert4Lean.Lib.Floats.Float32.cmp
+    cases hcmp : CompCert4Lean.Lib.Floats.Float32.compare n1 n2 with
+    | none => simp [hcmp, CompCert4Lean.Lib.Floats.cmp_of_comparison,
+        CompCert4Lean.Lib.Integers.Int.eq,
+        CompCert4Lean.Lib.Integers.WordCore.eq, honezero, Ne.symm honezero]
+    | some v => cases v <;> simp [hcmp, CompCert4Lean.Lib.Floats.cmp_of_comparison,
+        CompCert4Lean.Lib.Integers.Int.eq,
+        CompCert4Lean.Lib.Integers.WordCore.eq, honezero, Ne.symm honezero]
+
+end CompCert4Lean.X86.Asmgenproof1

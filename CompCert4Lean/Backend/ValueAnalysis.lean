@@ -2282,3 +2282,88 @@ theorem alloc_global_consistent : alloc_global_consistentStatement := by
         exact hdm
 
 end CompCert4Lean.Backend.ValueAnalysis
+
+namespace CompCert4Lean.Backend.ValueAnalysis
+
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Backend.ValueDomain
+open CompCert4Lean.Lib.Maps
+
+theorem romem_for_consistent : romem_for_consistentStatement := by
+  intro cfg cunit
+  have hfold : ∀ (l : List (ident × globdef CompCert4Lean.Backend.RTL.fundef Unit))
+      (dm : PTree.t (globdef CompCert4Lean.Backend.RTL.fundef Unit))
+      (rm : PTree.t ablock),
+      romem_consistent cfg dm rm →
+        romem_consistent cfg
+          (l.foldl (fun m idg => PTree.set idg.1 idg.2 m) dm)
+          (l.foldl (fun rm idg => alloc_global cfg rm idg) rm) := by
+    intro l
+    induction l with
+    | nil =>
+        intro dm rm h
+        simpa only [List.foldl] using h
+    | cons idg l ih =>
+        intro dm rm h
+        apply ih
+        exact alloc_global_consistent cfg dm rm idg h
+  have hbase : romem_consistent cfg
+      (PTree.empty (globdef CompCert4Lean.Backend.RTL.fundef Unit))
+      (PTree.empty ablock) := by
+    intro id ab hget
+    have hempty : PTree.get id (PTree.empty ablock) = none :=
+      PTree.gempty ablock id
+    rw [hempty] at hget
+    contradiction
+  exact hfold cunit.prog_defs
+    (PTree.empty (globdef CompCert4Lean.Backend.RTL.fundef Unit))
+    (PTree.empty ablock) hbase
+
+end CompCert4Lean.Backend.ValueAnalysis
+
+namespace CompCert4Lean.Backend.ValueAnalysis
+
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Backend.ValueDomain
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Linking
+open CompCert4Lean.Lib.Maps
+
+theorem romem_for_consistent_2 : romem_for_consistent_2Statement := by
+  intro cfg prog cunit hlink
+  intro id ab hab
+  obtain ⟨v, hdm, hro, hvol, hdef, habv⟩ :=
+    romem_for_consistent cfg cunit id ab hab
+  obtain ⟨gd, hprog, hgd⟩ :=
+    prog_defmap_linkorder_proof
+      (F := CompCert4Lean.Backend.RTL.fundef) (V := Unit)
+      (LF := Linker_fundef CompCert4Lean.Backend.RTL.function) (LV := Linker_unit)
+      cunit prog id (.Gvar v) hlink hdm
+  cases hgd with
+  | linkorder_def_var v1 v2 hvar =>
+      cases hvar with
+      | linkorder_vardef_intro info1 info2 i1 i2 ro vo hinfo hinit =>
+          have hinit_eq : i2 = i1 := by
+            cases hinit with
+            | linkorder_varinit_refl il => rfl
+            | linkorder_varinit_extern il =>
+                simp [definitive_initializer] at hdef
+            | linkorder_varinit_common size il hne hsize =>
+                simp [definitive_initializer] at hdef
+          have hro' : ro = true := by
+            simpa using hro
+          have hvol' : vo = false := by
+            simpa using hvol
+          subst i2
+          subst ro
+          subst vo
+          refine ⟨({ gvar_info := info2, gvar_init := i1, gvar_readonly := true, gvar_volatile := false } : globvar Unit),
+            hprog, ?_, ?_, ?_, ?_⟩
+          · exact rfl
+          · exact rfl
+          · exact hdef
+          · exact habv
+
+end CompCert4Lean.Backend.ValueAnalysis

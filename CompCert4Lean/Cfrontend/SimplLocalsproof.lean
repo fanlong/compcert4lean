@@ -3859,3 +3859,44 @@ theorem var_names_app : var_names_appStatement := by
   simp only [CompCert4Lean.Cfrontend.Clight.var_names, List.map_append]
 
 end CompCert4Lean.Cfrontend.SimplLocalsproof
+
+namespace CompCert4Lean.Cfrontend.SimplLocalsproof
+
+theorem filter_app : filter_appStatement := by
+  intro A f l1 l2
+  exact List.filter_append l1 l2
+
+theorem filter_charact : filter_charactStatement := by
+  intro A f x l
+  exact List.mem_filter
+
+theorem filter_norepet : filter_norepetStatement := by
+  intro A f l h
+  induction h with
+  | nil =>
+      exact CompCert4Lean.Lib.Coqlib.list_norepet.nil A
+  | cons hd hnot htail ih =>
+      cases hf : f hd with
+      | false =>
+          simpa [List.filter_cons, hf] using ih
+      | true =>
+          rw [List.filter_cons]
+          simp [hf]
+          apply CompCert4Lean.Lib.Coqlib.list_norepet.cons hd
+          · intro hmem
+            apply hnot
+            exact (List.mem_filter.mp hmem).1
+          · exact ih
+
+theorem filter_map : filter_mapStatement := by
+  intro A B f pa pb h l
+  induction l with
+  | nil => rfl
+  | cons a l ih =>
+      cases ha : pa a with
+      | false =>
+          simp [List.filter, List.map, ha, h a, ih]
+      | true =>
+          simp [List.filter, List.map, ha, h a, ih]
+
+end CompCert4Lean.Cfrontend.SimplLocalsproof

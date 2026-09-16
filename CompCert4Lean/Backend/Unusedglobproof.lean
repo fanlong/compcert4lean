@@ -3474,3 +3474,1016 @@ theorem transf_final_states : transf_final_statesStatement := by
       constructor
 
 end CompCert4Lean.Backend.Unusedglobproof
+
+namespace CompCert4Lean.Backend.Unusedglobproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Globalenvs.Genv
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.Lib.Maps
+
+
+private theorem ug_init_pmap_gss {A : Type} (b : block) (x : A) (m : PMap.t A) :
+    PMap.get b (PMap.set b x m) = x := by
+  exact PMap.gss b x m
+
+private theorem ug_init_pmap_gso {A : Type} (b b' : block) (x : A) (m : PMap.t A)
+    (h : b' ≠ b) : PMap.get b' (PMap.set b x m) = PMap.get b' m := by
+  exact PMap.gso x m h
+
+private theorem ug_init_loadbytes_unchanged
+    (P : block → Z → Prop) (m m' : mem) (b : block) (ofs n : Z)
+    (bytes : List memval) (hunch : Mem.unchanged_on P m m')
+    (hn : zLe z0 n)
+    (hP : ∀ i, zLe ofs i ∧ zLt i (zAdd ofs n) → P b i)
+    (hload : Mem.loadbytes m b ofs n = some bytes) :
+    Mem.loadbytes m' b ofs n = some bytes := by
+  unfold Mem.loadbytes at hload ⊢
+  cases hdec : Mem.range_perm_dec m b ofs (zAdd ofs n) Cur Readable with
+  | right hnot =>
+      rw [hdec] at hload
+      change none = some bytes at hload
+      cases hload
+  | left hrange =>
+      have hrange' : Mem.range_perm m' b ofs (zAdd ofs n) Cur Readable := by
+        intro i hi
+        have hperm := hrange i hi
+        exact (hunch.unchanged_on_perm b i Cur Readable (hP i hi)
+          (Mem.perm_valid_block m b i Cur Readable hperm)).mp hperm
+      cases hdec' : Mem.range_perm_dec m' b ofs (zAdd ofs n) Cur Readable with
+      | right hnot => exact False.elim (hnot hrange')
+      | left _ =>
+          rw [hdec] at hload
+          change some (Mem.getN (ZArith.BinInt.Z.to_nat n) ofs
+            (PMap.get b m.mem_contents)) = some bytes at hload
+          change some (Mem.getN (ZArith.BinInt.Z.to_nat n) ofs
+            (PMap.get b m'.mem_contents)) = some bytes
+          simp only [Option.some.injEq] at hload ⊢
+          rw [← hload]
+          apply Mem.getN_exten
+          intro i hi
+          have hnid : zOfNat (ZArith.BinInt.Z.to_nat n) = n :=
+            ZArith.Znat.Z2Nat.id n hn
+          have hi' : zLe ofs i ∧ zLt i (zAdd ofs n) := by
+            simpa [hnid] using hi
+          exact hunch.unchanged_on_contents b i (hP i hi') (hrange i hi')
+
+private theorem ug_init_alloc_result
+    (m m' : mem) (lo hi : Z) (b : block)
+    (halloc : Mem.alloc m lo hi = (m', b)) :
+    b = m.nextblock := by
+  unfold Mem.alloc at halloc
+  cases halloc
+  rfl
+
+private theorem ug_init_alloc_perm_bound
+    (m m' : mem) (lo hi : Z) (b : block)
+    (halloc : Mem.alloc m lo hi = (m', b))
+    (ofs : Z) (k : perm_kind) (prm : permission)
+    (hperm : Mem.perm m' b ofs k prm) :
+    zLe lo ofs ∧ zLt ofs hi := by
+  unfold Mem.alloc at halloc
+  cases halloc
+  unfold Mem.perm at hperm
+  rw [PMap.gss] at hperm
+  change Mem.perm_order'
+    (if (ZArith.BinInt.Z.leb lo ofs && ZArith.BinInt.Z.ltb ofs hi) = true
+      then some Freeable else none) prm at hperm
+  cases hle : ZArith.BinInt.Z.leb lo ofs with
+  | false => simp [Mem.perm_order', hle] at hperm
+  | true =>
+      cases hlt : ZArith.BinInt.Z.ltb ofs hi with
+      | false => simp [Mem.perm_order', hlt] at hperm
+      | true =>
+          constructor
+          · change intOfZ lo ≤ intOfZ ofs
+            simpa [ZArith.BinInt.Z.leb] using hle
+          · change intOfZ ofs < intOfZ hi
+            simpa [ZArith.BinInt.Z.ltb] using hlt
+
+private theorem ug_init_drop_perm_range
+    (m m' : mem) (b : block) (lo hi : Z) (prm : permission)
+    (hdrop : Mem.drop_perm m b lo hi prm = some m') :
+    Mem.range_perm m' b lo hi Cur prm := by
+  unfold Mem.drop_perm at hdrop
+  cases hdec : Mem.range_perm_dec m b lo hi Cur Freeable with
+  | right _ => simp [hdec] at hdrop
+  | left _ =>
+      simp [hdec] at hdrop
+      cases hdrop
+      intro ofs hofs
+      unfold Mem.perm
+      change Mem.perm_order'
+        (PMap.get b (PMap.set b _ m.mem_access) ofs Cur) prm
+      rw [ug_init_pmap_gss]
+      have hle : ZArith.BinInt.Z.leb lo ofs = true := by
+        have hh := hofs.1
+        change intOfZ lo ≤ intOfZ ofs at hh
+        simpa [ZArith.BinInt.Z.leb] using hh
+      have hlt : ZArith.BinInt.Z.ltb ofs hi = true := by
+        have hh := hofs.2
+        change intOfZ ofs < intOfZ hi at hh
+        simpa [ZArith.BinInt.Z.ltb] using hh
+      change Mem.perm_order'
+        (if (ZArith.BinInt.Z.leb lo ofs && ZArith.BinInt.Z.ltb ofs hi) = true
+          then some prm else (PMap.get b m.mem_access) ofs Cur) prm
+      simpa [hle, hlt, Mem.perm_order'] using (perm_refl prm)
+
+private theorem ug_init_drop_perm_order
+    (m m' : mem) (b : block) (lo hi : Z) (prm : permission)
+    (hdrop : Mem.drop_perm m b lo hi prm = some m')
+    (ofs : Z) (k : perm_kind) (prm' : permission)
+    (hofs : zLe lo ofs ∧ zLt ofs hi)
+    (hperm : Mem.perm m' b ofs k prm') :
+    perm_order prm prm' := by
+  unfold Mem.drop_perm at hdrop
+  cases hdec : Mem.range_perm_dec m b lo hi Cur Freeable with
+  | right _ => simp [hdec] at hdrop
+  | left _ =>
+      simp [hdec] at hdrop
+      cases hdrop
+      unfold Mem.perm at hperm
+      change Mem.perm_order'
+        (PMap.get b (PMap.set b _ m.mem_access) ofs k) prm' at hperm
+      rw [ug_init_pmap_gss] at hperm
+      have hle : ZArith.BinInt.Z.leb lo ofs = true := by
+        have hh := hofs.1
+        change intOfZ lo ≤ intOfZ ofs at hh
+        simpa [ZArith.BinInt.Z.leb] using hh
+      have hlt : ZArith.BinInt.Z.ltb ofs hi = true := by
+        have hh := hofs.2
+        change intOfZ ofs < intOfZ hi at hh
+        simpa [ZArith.BinInt.Z.ltb] using hh
+      change Mem.perm_order'
+        (if (ZArith.BinInt.Z.leb lo ofs && ZArith.BinInt.Z.ltb ofs hi) = true
+          then some prm else (PMap.get b m.mem_access) ofs k) prm' at hperm
+      simpa [hle, hlt, Mem.perm_order'] using hperm
+
+private theorem ug_init_drop_perm_inv
+    (m m' : mem) (b : block) (lo hi : Z) (prm : permission)
+    (hdrop : Mem.drop_perm m b lo hi prm = some m')
+    (b' : block) (ofs : Z) (k : perm_kind) (prm' : permission)
+    (hperm : Mem.perm m' b' ofs k prm') :
+    Mem.perm m b' ofs k prm' := by
+  unfold Mem.drop_perm at hdrop
+  cases hdec : Mem.range_perm_dec m b lo hi Cur Freeable with
+  | right _ => simp [hdec] at hdrop
+  | left hrange =>
+      simp [hdec] at hdrop
+      cases hdrop
+      by_cases hbb : b' = b
+      · subst b'
+        by_cases hin : zLe lo ofs ∧ zLt ofs hi
+        · have hfreeCur := hrange ofs hin
+          have hfree : Mem.perm m b ofs k Freeable := by
+            cases k with
+            | Cur => exact hfreeCur
+            | Max => exact Mem.perm_cur_max m b ofs Freeable hfreeCur
+          exact Mem.perm_implies m b ofs k Freeable prm' hfree (perm_F_any prm')
+        · unfold Mem.perm at hperm ⊢
+          change Mem.perm_order'
+            (PMap.get b (PMap.set b _ m.mem_access) ofs k) prm' at hperm
+          rw [ug_init_pmap_gss] at hperm
+          change Mem.perm_order'
+            (if (ZArith.BinInt.Z.leb lo ofs && ZArith.BinInt.Z.ltb ofs hi) = true
+              then some prm else (PMap.get b m.mem_access) ofs k) prm' at hperm
+          have hbool :
+              (ZArith.BinInt.Z.leb lo ofs && ZArith.BinInt.Z.ltb ofs hi) = false := by
+            cases hle : ZArith.BinInt.Z.leb lo ofs with
+            | false => simp [hle]
+            | true =>
+                cases hlt : ZArith.BinInt.Z.ltb ofs hi with
+                | false => simp [hlt]
+                | true =>
+                    exfalso
+                    apply hin
+                    constructor
+                    · change intOfZ lo ≤ intOfZ ofs
+                      simpa [ZArith.BinInt.Z.leb] using hle
+                    · change intOfZ ofs < intOfZ hi
+                      simpa [ZArith.BinInt.Z.ltb] using hlt
+          simpa [hbool] using hperm
+      · unfold Mem.perm at hperm ⊢
+        change Mem.perm_order'
+          (PMap.get b' (PMap.set b _ m.mem_access) ofs k) prm' at hperm
+        rw [ug_init_pmap_gso _ _ _ _ hbb] at hperm
+        exact hperm
+
+private theorem ug_init_drop_loadbytes
+    (m m' : mem) (b : block) (lo hi : Z) (prm : permission)
+    (hdrop : Mem.drop_perm m b lo hi prm = some m')
+    (ofs n : Z) (bytes : List memval)
+    (hread : perm_order prm Readable)
+    (hload : Mem.loadbytes m b ofs n = some bytes)
+    (hrange : ∀ i, zLe ofs i ∧ zLt i (zAdd ofs n) →
+      zLe lo i ∧ zLt i hi) :
+    Mem.loadbytes m' b ofs n = some bytes := by
+  have hcontents : m'.mem_contents = m.mem_contents := by
+    unfold Mem.drop_perm at hdrop
+    cases hdec : Mem.range_perm_dec m b lo hi Cur Freeable with
+    | right _ => simp [hdec] at hdrop
+    | left _ =>
+        simp [hdec] at hdrop
+        cases hdrop
+        rfl
+  unfold Mem.loadbytes at hload ⊢
+  cases hold : Mem.range_perm_dec m b ofs (zAdd ofs n) Cur Readable with
+  | right _ =>
+      rw [hold] at hload
+      change none = some bytes at hload
+      cases hload
+  | left _ =>
+      have hnewrange : Mem.range_perm m' b ofs (zAdd ofs n) Cur Readable := by
+        intro i hi'
+        exact Mem.perm_implies m' b i Cur prm Readable
+          (ug_init_drop_perm_range m m' b lo hi prm hdrop i (hrange i hi')) hread
+      cases hnew : Mem.range_perm_dec m' b ofs (zAdd ofs n) Cur Readable with
+      | right hnot => exact False.elim (hnot hnewrange)
+      | left _ =>
+          rw [hold] at hload
+          change some (Mem.getN (ZArith.BinInt.Z.to_nat n) ofs
+            (PMap.get b m.mem_contents)) = some bytes at hload
+          change some (Mem.getN (ZArith.BinInt.Z.to_nat n) ofs
+            (PMap.get b m'.mem_contents)) = some bytes
+          rw [hcontents]
+          exact hload
+
+end CompCert4Lean.Backend.Unusedglobproof
+
+namespace CompCert4Lean.Backend.Unusedglobproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Globalenvs.Genv
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.Lib.Maps
+
+private abbrev ug_init_z1 : Z := .Zpos .xH
+
+private theorem ug_init_z1_int : intOfZ ug_init_z1 = 1 := rfl
+
+private theorem ug_init_zOfNat_nonneg (n : Nat) :
+    ZArith.BinInt.Z.le Z0 (ZArith.BinInt.Z.of_nat n) := by
+  change (0 : Int) ≤ intOfZ (ZArith.BinInt.Z.of_nat n)
+  simp only [ZArith.BinInt.Z.of_nat, intOfZ_zOfInt]
+  change (0 : Int) ≤ Int.ofNat n
+  exact Int.ofNat_zero_le n
+
+private theorem ug_init_store_zeros_loadbytes
+    (m : mem) (b : block) (p n : Z) (m' : mem)
+    (hzeros : store_zeros m b p n = some m') :
+    readbytes_as_zero m' b p n := by
+  let P : mem → block → Z → Z → Option mem → Prop :=
+    fun m0 b0 p0 n0 result =>
+      ∀ m1, result = some m1 → readbytes_as_zero m1 b0 p0 n0
+  have hP : ∀ m0 b0 p0 n0, P m0 b0 p0 n0 (store_zeros m0 b0 p0 n0) := by
+    apply store_zeros_ind (P := P)
+    · intro m0 b0 p0 n0 hn hbranch m1 hm1 q len hlo hhi
+      cases Option.some.inj hm1
+      have hlen : len = 0 := by
+        change intOfZ n0 ≤ 0 at hn
+        change intOfZ p0 ≤ intOfZ q at hlo
+        change intOfZ (zAdd q (zOfNat len)) ≤ intOfZ (zAdd p0 n0) at hhi
+        simp [ZArith.BinInt.Z.add, ZArith.BinInt.Z.of_nat,
+          intOfZ_zOfInt] at hhi
+        omega
+      subst len
+      simpa using (Mem.loadbytes_empty m0 b0 q (zOfNat 0) (by
+        change intOfZ (zOfNat 0) ≤ 0
+        simp [ZArith.BinInt.Z.of_nat, intOfZ_zOfInt]))
+    · intro m0 b0 p0 n0 hn hbranch m1 hstore hrec
+      cases hresult : store_zeros m1 b0 (zAdd p0 ug_init_z1)
+          (ZArith.BinInt.Z.sub n0 ug_init_z1) with
+      | none =>
+          intro m2 hm2
+          cases hm2
+      | some m2 =>
+          rw [hresult] at hrec
+          intro m2' hm2'
+          cases Option.some.inj hm2'
+          intro q len hlo hhi
+          by_cases hqp : q = p0
+          · subst q
+            cases len with
+            | zero =>
+                simpa using (Mem.loadbytes_empty m2 b0 p0 (zOfNat 0) (by
+                  change intOfZ (zOfNat 0) ≤ 0
+                  simp [ZArith.BinInt.Z.of_nat, intOfZ_zOfInt]))
+            | succ len =>
+                let Q : block → Z → Prop := fun b' i => b' = b0 ∧ i = p0
+                have hunch : Mem.unchanged_on Q m1 m2 := by
+                  apply Genv.store_zeros_unchanged Q m1 b0 (zAdd p0 ug_init_z1)
+                    (ZArith.BinInt.Z.sub n0 ug_init_z1) m2 hresult
+                  intro i hi hQi
+                  rcases hQi with ⟨_, hiEq⟩
+                  subst i
+                  have hlo' := hi.1
+                  change intOfZ (zAdd p0 ug_init_z1) ≤ intOfZ p0 at hlo'
+                  simp only [ZArith.BinInt.Z.add, intOfZ_zOfInt] at hlo'
+                  rw [ug_init_z1_int] at hlo'
+                  omega
+                have hbyte :
+                    Mem.loadbytes m1 b0 p0 ug_init_z1 =
+                      some [Byte (CompCert4Lean.Lib.Integers.Byte.repr z0)] := by
+                  have hs := Mem.loadbytes_store_same Mint8unsigned m0 b0 p0 Vzero m1 hstore
+                  have henc : encode_val Mint8unsigned Vzero =
+                      [Byte (CompCert4Lean.Lib.Integers.Byte.repr z0)] := by
+                    rfl
+                  have hsize : size_chunk Mint8unsigned = ug_init_z1 := rfl
+                  rw [← hsize]
+                  exact hs.trans (congrArg some henc)
+                have hbyte' :
+                    Mem.loadbytes m2 b0 p0 ug_init_z1 =
+                      some [Byte (CompCert4Lean.Lib.Integers.Byte.repr z0)] := by
+                  apply ug_init_loadbytes_unchanged Q m1 m2 b0 p0 ug_init_z1 _ hunch
+                  · change (0 : Int) ≤ 1
+                    omega
+                  · intro i hi
+                    constructor
+                    · rfl
+                    · change intOfZ p0 ≤ intOfZ i ∧
+                        intOfZ i < intOfZ (zAdd p0 ug_init_z1) at hi
+                      change i = p0
+                      apply intOfZ_injective
+                      simp only [ZArith.BinInt.Z.add, intOfZ_zOfInt] at hi
+                      rw [ug_init_z1_int] at hi
+                      omega
+                  · exact hbyte
+                have htail : Mem.loadbytes m2 b0 (zAdd p0 ug_init_z1) (zOfNat len) =
+                    some (List.replicate len
+                      (Byte (CompCert4Lean.Lib.Integers.Byte.repr z0))) := by
+                  apply hrec m2 rfl (zAdd p0 ug_init_z1) len
+                  · change intOfZ (zAdd p0 ug_init_z1) ≤ intOfZ (zAdd p0 ug_init_z1)
+                    omega
+                  · change intOfZ
+                        (zAdd (zAdd p0 ug_init_z1) (zOfNat len)) ≤
+                      intOfZ (zAdd (zAdd p0 ug_init_z1)
+                        (ZArith.BinInt.Z.sub n0 ug_init_z1))
+                    change intOfZ (zAdd p0 (zOfNat (Nat.succ len))) ≤
+                      intOfZ (zAdd p0 n0) at hhi
+                    simp [ZArith.BinInt.Z.add, ZArith.BinInt.Z.sub,
+                      ZArith.BinInt.Z.of_nat, intOfZ_zOfInt] at hhi ⊢
+                    rw [ug_init_z1_int]
+                    omega
+                have hcat := Mem.loadbytes_concat m2 b0 p0 ug_init_z1 (zOfNat len)
+                  [Byte (CompCert4Lean.Lib.Integers.Byte.repr z0)]
+                  (List.replicate len
+                    (Byte (CompCert4Lean.Lib.Integers.Byte.repr z0)))
+                  hbyte' htail
+                  (by change (0 : Int) ≤ 1; omega)
+                  (ug_init_zOfNat_nonneg len)
+                have hsizes : zAdd ug_init_z1 (zOfNat len) = zOfNat (Nat.succ len) := by
+                  apply intOfZ_injective
+                  simp only [ZArith.BinInt.Z.add, ZArith.BinInt.Z.of_nat,
+                    intOfZ_zOfInt]
+                  rw [ug_init_z1_int]
+                  calc
+                    1 + Int.ofNat len = Int.ofNat len + 1 := Int.add_comm _ _
+                    _ = Int.ofNat len.succ := (Int.natCast_succ len).symm
+                simpa [hsizes, List.replicate_succ] using hcat
+          · apply hrec m2 rfl q len
+            · change intOfZ (zAdd p0 ug_init_z1) ≤ intOfZ q
+              change intOfZ p0 ≤ intOfZ q at hlo
+              have hne : intOfZ q ≠ intOfZ p0 := by
+                intro heq
+                exact hqp (intOfZ_injective heq)
+              simp only [ZArith.BinInt.Z.add, intOfZ_zOfInt]
+              rw [ug_init_z1_int]
+              omega
+            · change intOfZ (zAdd q (zOfNat len)) ≤
+                intOfZ (zAdd (zAdd p0 ug_init_z1)
+                  (ZArith.BinInt.Z.sub n0 ug_init_z1))
+              change intOfZ (zAdd q (zOfNat len)) ≤ intOfZ (zAdd p0 n0) at hhi
+              simp only [ZArith.BinInt.Z.add, ZArith.BinInt.Z.sub,
+                intOfZ_zOfInt] at hhi ⊢
+              rw [ug_init_z1_int] at ⊢
+              omega
+    · intro m0 b0 p0 n0 hn hbranch hnone m1 hm1
+      cases hm1
+  exact hP m b p n m' hzeros
+
+private theorem ug_init_ofNat_toNat_max (z : Z) :
+    ZArith.BinInt.Z.of_nat (ZArith.BinInt.Z.to_nat z) =
+      ZArith.BinInt.Z.max z Z0 := by
+  apply intOfZ_injective
+  simp only [ZArith.BinInt.Z.of_nat, ZArith.BinInt.Z.to_nat,
+    intOfZ_zOfInt]
+  unfold ZArith.BinInt.Z.max
+  split <;> rename_i h
+  · have hz : intOfZ z ≤ 0 := by
+      change intOfZ z ≤ 0 at h
+      exact h
+    rw [Int.toNat_of_nonpos hz]
+    rfl
+  · have hz : 0 ≤ intOfZ z := by
+      change ¬ intOfZ z ≤ 0 at h
+      omega
+    exact Int.toNat_of_nonneg hz
+
+private theorem ug_init_store_init_data_loadbytes
+    (F V : Type) (ge : Genv.t F V) (m : mem) (b : block) (p : Z)
+    (i : init_data) (m' : mem)
+    (hstore : store_init_data ge m b p i = some m')
+    (hzero : readbytes_as_zero m b p (init_data_size i)) :
+    Mem.loadbytes m' b p (init_data_size i) = some (bytes_of_init_data ge i) := by
+  cases i with
+  | Init_int8 n =>
+      exact Mem.loadbytes_store_same Mint8unsigned m b p (Vint n) m' hstore
+  | Init_int16 n =>
+      exact Mem.loadbytes_store_same Mint16unsigned m b p (Vint n) m' hstore
+  | Init_int32 n =>
+      exact Mem.loadbytes_store_same Mint32 m b p (Vint n) m' hstore
+  | Init_int64 n =>
+      exact Mem.loadbytes_store_same Mint64 m b p (Vlong n) m' hstore
+  | Init_float32 n =>
+      exact Mem.loadbytes_store_same Mfloat32 m b p (Vsingle n) m' hstore
+  | Init_float64 n =>
+      exact Mem.loadbytes_store_same Mfloat64 m b p (Vfloat n) m' hstore
+  | Init_space n =>
+      change some m = some m' at hstore
+      cases hstore
+      have heq := ug_init_ofNat_toNat_max n
+      have hz := hzero p (ZArith.BinInt.Z.to_nat n)
+        (by change intOfZ p ≤ intOfZ p; omega)
+        (by
+          change intOfZ (zAdd p
+              (ZArith.BinInt.Z.of_nat (ZArith.BinInt.Z.to_nat n))) ≤
+            intOfZ (zAdd p (ZArith.BinInt.Z.max n Z0))
+          rw [heq]
+          omega)
+      change Mem.loadbytes m b p
+          (ZArith.BinInt.Z.of_nat (ZArith.BinInt.Z.to_nat n)) =
+        some (List.replicate (ZArith.BinInt.Z.to_nat n)
+          (Byte (CompCert4Lean.Lib.Integers.Byte.repr Z0))) at hz
+      rw [heq] at hz
+      simpa [init_data_size, bytes_of_init_data] using hz
+  | Init_addrof id ofs =>
+      cases hfind : Genv.find_symbol ge id with
+      | none => simp [store_init_data, hfind] at hstore
+      | some b' =>
+          have hs := Mem.loadbytes_store_same Mptr m b p (Vptr b' ofs) m' (by
+            simpa [store_init_data, hfind] using hstore)
+          have hsize : init_data_size (Init_addrof id ofs) = size_chunk Mptr := rfl
+          rw [hsize, hs]
+          congr 1
+          simp [bytes_of_init_data, hfind, Mptr, encode_val,
+            CompCert4Lean.X86_64.Archi.ptr64]
+
+private theorem ug_init_store_init_data_list_loadbytes
+    (F V : Type) (ge : Genv.t F V) (b : block) (il : List init_data)
+    (m : mem) (p : Z) (m' : mem)
+    (hstore : store_init_data_list ge m b p il = some m')
+    (hzero : readbytes_as_zero m b p (init_data_list_size il)) :
+    Mem.loadbytes m' b p (init_data_list_size il) =
+      some (bytes_of_init_data_list ge il) := by
+  induction il generalizing m p with
+  | nil =>
+      change some m = some m' at hstore
+      cases hstore
+      simpa [init_data_list_size, bytes_of_init_data_list] using
+        (Mem.loadbytes_empty m' b p Z0 (by change (0 : Int) ≤ 0; omega))
+  | cons i rest ih =>
+      change (match store_init_data ge m b p i with
+        | none => none
+        | some m1 => store_init_data_list ge m1 b
+          (zAdd p (init_data_size i)) rest) = some m' at hstore
+      cases hhead : store_init_data ge m b p i with
+      | none => simp [hhead] at hstore
+      | some m1 =>
+          have htail : store_init_data_list ge m1 b
+              (zAdd p (init_data_size i)) rest = some m' := by
+            simpa [hhead] using hstore
+          let Phead : block → Z → Prop := fun _ ofs =>
+            zLt ofs (zAdd p (init_data_size i))
+          have hunchtail : Mem.unchanged_on Phead m1 m' := by
+            apply Genv.store_init_data_list_unchanged F V ge Phead b rest m1
+              (zAdd p (init_data_size i)) m' htail
+            intro ofs hlo hp
+            change intOfZ (zAdd p (init_data_size i)) ≤ intOfZ ofs at hlo
+            change intOfZ ofs < intOfZ (zAdd p (init_data_size i)) at hp
+            omega
+          have hzerohead : readbytes_as_zero m b p (init_data_size i) := by
+            intro q len hlo hhi
+            apply hzero q len hlo
+            change intOfZ (zAdd q (zOfNat len)) ≤
+              intOfZ (zAdd p (init_data_list_size (i :: rest)))
+            change intOfZ (zAdd q (zOfNat len)) ≤
+              intOfZ (zAdd p (init_data_size i)) at hhi
+            simp only [init_data_list_size, ZArith.BinInt.Z.add,
+              intOfZ_zOfInt] at hhi ⊢
+            have hrestnonneg := init_data_list_size_pos rest
+            change (0 : Int) ≤ intOfZ (init_data_list_size rest) at hrestnonneg
+            omega
+          have hloadhead1 := ug_init_store_init_data_loadbytes F V ge m b p i m1
+            hhead hzerohead
+          have hloadhead : Mem.loadbytes m' b p (init_data_size i) =
+              some (bytes_of_init_data ge i) := by
+            apply ug_init_loadbytes_unchanged Phead m1 m' b p
+              (init_data_size i) _ hunchtail (init_data_size_pos i)
+            · intro ofs hi
+              exact hi.2
+            · exact hloadhead1
+          let Ptail : block → Z → Prop := fun _ ofs =>
+            zLe (zAdd p (init_data_size i)) ofs
+          have hunchhead : Mem.unchanged_on Ptail m m1 := by
+            apply Genv.store_init_data_unchanged F V ge Ptail b i m p m1 hhead
+            intro ofs hi hp
+            have hupper := hi.2
+            change intOfZ ofs < intOfZ (zAdd p (init_data_size i)) at hupper
+            change intOfZ (zAdd p (init_data_size i)) ≤ intOfZ ofs at hp
+            omega
+          have hzerotail : readbytes_as_zero m1 b
+              (zAdd p (init_data_size i)) (init_data_list_size rest) := by
+            intro q len hlo hhi
+            apply ug_init_loadbytes_unchanged Ptail m m1 b q (zOfNat len) _
+              hunchhead (ug_init_zOfNat_nonneg len)
+            · intro ofs hi
+              change intOfZ (zAdd p (init_data_size i)) ≤ intOfZ ofs
+              change intOfZ (zAdd p (init_data_size i)) ≤ intOfZ q at hlo
+              have hilower := hi.1
+              change intOfZ q ≤ intOfZ ofs at hilower
+              omega
+            · apply hzero q len
+              · change intOfZ p ≤ intOfZ q
+                change intOfZ (zAdd p (init_data_size i)) ≤ intOfZ q at hlo
+                simp only [ZArith.BinInt.Z.add, intOfZ_zOfInt] at hlo
+                have hinonneg := init_data_size_pos i
+                change (0 : Int) ≤ intOfZ (init_data_size i) at hinonneg
+                omega
+              · change intOfZ (zAdd q (zOfNat len)) ≤
+                  intOfZ (zAdd p (init_data_list_size (i :: rest)))
+                change intOfZ (zAdd q (zOfNat len)) ≤
+                  intOfZ (zAdd (zAdd p (init_data_size i))
+                    (init_data_list_size rest)) at hhi
+                simp only [init_data_list_size, ZArith.BinInt.Z.add,
+                  intOfZ_zOfInt] at hhi ⊢
+                omega
+          have hloadtail := ih m1 (zAdd p (init_data_size i)) htail hzerotail
+          have hcat := Mem.loadbytes_concat m' b p (init_data_size i)
+            (init_data_list_size rest) (bytes_of_init_data ge i)
+            (bytes_of_init_data_list ge rest) hloadhead hloadtail
+            (init_data_size_pos i) (init_data_list_size_pos rest)
+          simpa [init_data_list_size, bytes_of_init_data_list] using hcat
+
+private def ug_init_globals {F V : Type} (ge g : Genv.t F V) (m : mem) : Prop :=
+  ∀ b gd, Genv.find_def g b = some gd →
+    match gd with
+    | Gfun _ =>
+        Mem.perm m b Z0 Cur CompCert4Lean.Common.Memtype.Nonempty ∧
+          ∀ ofs k prm, Mem.perm m b ofs k prm →
+            ofs = Z0 ∧ prm = CompCert4Lean.Common.Memtype.Nonempty
+    | Gvar v =>
+        Mem.range_perm m b Z0 (init_data_list_size v.gvar_init) Cur
+            (perm_globvar v) ∧
+          (∀ ofs k prm, Mem.perm m b ofs k prm →
+            (ZArith.BinInt.Z.le Z0 ofs ∧
+              ZArith.BinInt.Z.lt ofs (init_data_list_size v.gvar_init)) ∧
+            perm_order (perm_globvar v) prm) ∧
+          (v.gvar_volatile = false →
+            Mem.loadbytes m b Z0 (init_data_list_size v.gvar_init) =
+              some (bytes_of_init_data_list ge v.gvar_init))
+
+private theorem ug_init_nonempty_order_eq (p : permission)
+    (h : perm_order CompCert4Lean.Common.Memtype.Nonempty p) :
+    p = CompCert4Lean.Common.Memtype.Nonempty := by
+  cases h <;> rfl
+
+private theorem ug_init_alloc_global
+    (F V : Type) (ge g : Genv.t F V) (m : mem) (id : ident)
+    (gd : globdef F V) (m' : mem)
+    (hnext : g.genv_next = m.nextblock)
+    (halloc : alloc_global ge m (id, gd) = some m')
+    (hglobals : ug_init_globals ge g m) :
+    ug_init_globals ge (Genv.add_global g (id, gd)) m' ∧
+      (Genv.add_global g (id, gd)).genv_next = m'.nextblock := by
+  have hnextalloc := Genv.alloc_global_nextblock F V ge (id, gd) m m' halloc
+  constructor
+  · intro b gd' hfind
+    unfold Genv.find_def at hfind
+    change PTree.get b (PTree.set g.genv_next gd g.genv_defs) = some gd' at hfind
+    rw [PTree.gsspec_proof (show positive from b)
+      (show positive from g.genv_next) gd g.genv_defs] at hfind
+    cases heq : peq (show positive from b) (show positive from g.genv_next) with
+    | left hbeq =>
+        rw [heq] at hfind
+        cases Option.some.inj hfind
+        have hb : b = g.genv_next := hbeq
+        cases hb
+        cases gd with
+        | Gfun f =>
+            unfold alloc_global at halloc
+            cases ha : Mem.alloc m Z0 ug_init_z1 with
+            | mk m1 bnew =>
+                have hdrop : Mem.drop_perm m1 bnew Z0 ug_init_z1
+                    CompCert4Lean.Common.Memtype.Nonempty =
+                    some m' := by
+                  simpa [ha] using halloc
+                have hbnew := ug_init_alloc_result m m1 Z0 ug_init_z1 bnew ha
+                have hgb : g.genv_next = bnew := hnext.trans hbnew.symm
+                rw [hgb]
+                constructor
+                · exact ug_init_drop_perm_range m1 m' bnew Z0 ug_init_z1
+                    CompCert4Lean.Common.Memtype.Nonempty hdrop Z0 (by
+                      constructor
+                      · change (0 : Int) ≤ 0
+                        omega
+                      · change (0 : Int) < 1
+                        omega)
+                · intro ofs k prm hp
+                  have hp1 := ug_init_drop_perm_inv m1 m' bnew Z0 ug_init_z1
+                    CompCert4Lean.Common.Memtype.Nonempty hdrop bnew ofs k prm hp
+                  have hbounds := ug_init_alloc_perm_bound m m1 Z0 ug_init_z1
+                    bnew ha ofs k prm hp1
+                  have hord := ug_init_drop_perm_order m1 m' bnew Z0 ug_init_z1
+                    CompCert4Lean.Common.Memtype.Nonempty hdrop ofs k prm hbounds hp
+                  constructor
+                  · apply intOfZ_injective
+                    have hlo := hbounds.1
+                    have hhi := hbounds.2
+                    change (0 : Int) ≤ intOfZ ofs at hlo
+                    change intOfZ ofs < 1 at hhi
+                    change intOfZ ofs = 0
+                    omega
+                  · exact ug_init_nonempty_order_eq prm hord
+        | Gvar v =>
+            unfold alloc_global at halloc
+            cases ha : Mem.alloc m Z0 (init_data_list_size v.gvar_init) with
+            | mk m1 bnew =>
+                cases hz : store_zeros m1 bnew Z0
+                    (init_data_list_size v.gvar_init) with
+                | none => simp [ha, hz] at halloc
+                | some m2 =>
+                    cases hl : store_init_data_list ge m2 bnew Z0 v.gvar_init with
+                    | none => simp [ha, hz, hl] at halloc
+                    | some m3 =>
+                        have hdrop : Mem.drop_perm m3 bnew Z0
+                            (init_data_list_size v.gvar_init) (perm_globvar v) =
+                            some m' := by
+                          simpa [ha, hz, hl] using halloc
+                        have hbnew := ug_init_alloc_result m m1 Z0
+                          (init_data_list_size v.gvar_init) bnew ha
+                        have hgb : g.genv_next = bnew := hnext.trans hbnew.symm
+                        rw [hgb]
+                        constructor
+                        · exact ug_init_drop_perm_range m3 m' bnew Z0
+                            (init_data_list_size v.gvar_init) (perm_globvar v) hdrop
+                        constructor
+                        · intro ofs k prm hp
+                          have hp3 := ug_init_drop_perm_inv m3 m' bnew Z0
+                            (init_data_list_size v.gvar_init) (perm_globvar v)
+                            hdrop bnew ofs k prm hp
+                          have hp2 := (Genv.store_init_data_list_perm F V ge k prm
+                            bnew ofs v.gvar_init bnew m2 Z0 m3 hl).mpr hp3
+                          have hp1 := (Genv.store_zeros_perm k prm bnew ofs m1 bnew Z0
+                            (init_data_list_size v.gvar_init) m2 hz).mpr hp2
+                          have hbounds := ug_init_alloc_perm_bound m m1 Z0
+                            (init_data_list_size v.gvar_init) bnew ha ofs k prm hp1
+                          exact ⟨hbounds, ug_init_drop_perm_order m3 m' bnew Z0
+                            (init_data_list_size v.gvar_init) (perm_globvar v)
+                            hdrop ofs k prm hbounds hp⟩
+                        · intro hnonvol
+                          have hzero := ug_init_store_zeros_loadbytes m1 bnew Z0
+                            (init_data_list_size v.gvar_init) m2 hz
+                          have hload3 := ug_init_store_init_data_list_loadbytes F V
+                            ge bnew v.gvar_init m2 Z0 m3 hl hzero
+                          have hread : perm_order (perm_globvar v) Readable := by
+                            unfold perm_globvar
+                            rw [hnonvol]
+                            cases v.gvar_readonly <;> constructor
+                          apply ug_init_drop_loadbytes m3 m' bnew Z0
+                            (init_data_list_size v.gvar_init) (perm_globvar v) hdrop
+                            Z0 (init_data_list_size v.gvar_init) _ hread hload3
+                          intro ofs hi
+                          constructor
+                          · exact hi.1
+                          · have hhi := hi.2
+                            change intOfZ ofs < intOfZ
+                              (zAdd Z0 (init_data_list_size v.gvar_init)) at hhi
+                            change intOfZ ofs < intOfZ
+                              (init_data_list_size v.gvar_init)
+                            simp only [ZArith.BinInt.Z.add, intOfZ_zOfInt] at hhi
+                            have hz0 : intOfZ Z0 = 0 := rfl
+                            rw [hz0] at hhi
+                            simpa using hhi
+    | right hbne =>
+        rw [heq] at hfind
+        have hold : Genv.find_def g b = some gd' := hfind
+        have hvalid : Mem.valid_block m b := by
+          change Plt b m.nextblock
+          rw [← hnext]
+          exact g.genv_defs_range b hold
+        have hunch := Genv.alloc_global_unchanged F V ge
+          (fun _ _ => True) m id gd m' halloc
+        have holdprops := hglobals b gd' hold
+        cases gd' with
+        | Gfun f =>
+            constructor
+            · exact (hunch.unchanged_on_perm b Z0 Cur
+                CompCert4Lean.Common.Memtype.Nonempty trivial hvalid).mp
+                holdprops.1
+            · intro ofs k prm hp
+              apply holdprops.2 ofs k prm
+              exact (hunch.unchanged_on_perm b ofs k prm trivial hvalid).mpr hp
+        | Gvar v =>
+            constructor
+            · intro ofs hi
+              exact (hunch.unchanged_on_perm b ofs Cur (perm_globvar v)
+                trivial hvalid).mp (holdprops.1 ofs hi)
+            constructor
+            · intro ofs k prm hp
+              apply holdprops.2.1 ofs k prm
+              exact (hunch.unchanged_on_perm b ofs k prm trivial hvalid).mpr hp
+            · intro hnonvol
+              apply ug_init_loadbytes_unchanged (fun _ _ => True) m m' b Z0
+                (init_data_list_size v.gvar_init) _ hunch
+                (init_data_list_size_pos v.gvar_init)
+              · intro _ _
+                trivial
+              · exact holdprops.2.2 hnonvol
+  · change PArith.BinPos.Pos.succ g.genv_next = m'.nextblock
+    rw [hnext]
+    exact hnextalloc.symm
+
+private theorem ug_init_alloc_globals
+    (F V : Type) (ge : Genv.t F V) (gl : List (ident × globdef F V))
+    (g : Genv.t F V) (m m' : mem)
+    (halloc : alloc_globals ge m gl = some m')
+    (hnext : g.genv_next = m.nextblock)
+    (hglobals : ug_init_globals ge g m) :
+    ug_init_globals ge (Genv.add_globals g gl) m' := by
+  induction gl generalizing g m with
+  | nil =>
+      change some m = some m' at halloc
+      cases halloc
+      exact hglobals
+  | cons idgd rest ih =>
+      rcases idgd with ⟨id, gd⟩
+      change (match alloc_global ge m (id, gd) with
+        | none => none
+        | some m1 => alloc_globals ge m1 rest) = some m' at halloc
+      cases hhead : alloc_global ge m (id, gd) with
+      | none => simp [hhead] at halloc
+      | some m1 =>
+          have htail : alloc_globals ge m1 rest = some m' := by
+            simpa [hhead] using halloc
+          have hstep := ug_init_alloc_global F V ge g m id gd m1
+            hnext hhead hglobals
+          change ug_init_globals ge
+            (Genv.add_globals (Genv.add_global g (id, gd)) rest) m'
+          exact ih (Genv.add_global g (id, gd)) m1 htail hstep.2 hstep.1
+
+private theorem ug_init_mem_characterization
+    (F V : Type) (p : program F V) (m : mem)
+    (hmem : Genv.init_mem p = some m) :
+    ug_init_globals (Genv.globalenv p) (Genv.globalenv p) m := by
+  unfold Genv.init_mem at hmem
+  change ug_init_globals (Genv.globalenv p)
+    (Genv.add_globals (Genv.empty_genv F V p.prog_public) p.prog_defs) m
+  apply ug_init_alloc_globals F V (Genv.globalenv p) p.prog_defs
+    (Genv.empty_genv F V p.prog_public) Mem.empty m hmem
+  · rfl
+  · intro b gd hfind
+    unfold Genv.find_def Genv.empty_genv at hfind
+    simp [PTree.get, PTree.empty] at hfind
+
+private theorem ug_init_zadd_zero (z : Z) :
+    ZArith.BinInt.Z.add z Z0 = z := by
+  unfold ZArith.BinInt.Z.add
+  have hz0 : intOfZ Z0 = 0 := rfl
+  rw [hz0, Int.add_zero]
+  exact zOfInt_intOfZ z
+
+private theorem ug_init_zero_zadd (z : Z) :
+    ZArith.BinInt.Z.add Z0 z = z := by
+  unfold ZArith.BinInt.Z.add
+  have hz0 : intOfZ Z0 = 0 := rfl
+  rw [hz0, Int.zero_add]
+  exact zOfInt_intOfZ z
+
+private theorem ug_init_nonvolatile_of_readable {V : Type} (v : globvar V)
+    (h : perm_order (perm_globvar v) Readable) :
+    v.gvar_volatile = false := by
+  cases hv : v.gvar_volatile with
+  | false => rfl
+  | true =>
+      unfold perm_globvar at h
+      rw [hv] at h
+      cases h
+
+private theorem ug_init_mem_inj_1
+    (p tp : CompCert4Lean.Backend.RTL.program)
+    (used : CompCert4Lean.Backend.Unusedglob.IS.t)
+    (hvalid : valid_used_set p used) (hmatch : match_prog_1 used p tp)
+    (m tm : mem) (hmem : Genv.init_mem p = some m)
+    (htmem : Genv.init_mem tp = some tm) :
+    Mem.mem_inj (init_meminj p tp) m tm := by
+  have hsource := ug_init_mem_characterization _ _ p m hmem
+  have htarget := ug_init_mem_characterization _ _ tp tm htmem
+  constructor
+  · intro b b' delta ofs k prm hmap hp
+    rcases init_meminj_invert_strong p tp used hvalid hmatch b b' delta hmap with
+      ⟨hdelta, id, gd, hfind, hfind', hdef, hdef', hrefs⟩
+    subst delta
+    have hs := hsource b gd hdef
+    have ht := htarget b' gd hdef'
+    cases gd with
+    | Gfun f =>
+        rcases hs.2 ofs k prm hp with ⟨hofs, hprm⟩
+        subst ofs
+        subst prm
+        change Mem.perm tm b' (ZArith.BinInt.Z.add Z0 Z0) k
+          CompCert4Lean.Common.Memtype.Nonempty
+        rw [ug_init_zadd_zero]
+        exact Mem.perm_cur tm b' Z0 k CompCert4Lean.Common.Memtype.Nonempty ht.1
+    | Gvar v =>
+        have hsbound := hs.2.1 ofs k prm hp
+        have htcur := ht.1 ofs hsbound.1
+        have htprm := Mem.perm_implies tm b' ofs Cur (perm_globvar v) prm
+          htcur hsbound.2
+        change Mem.perm tm b' (ZArith.BinInt.Z.add ofs Z0) k prm
+        rw [ug_init_zadd_zero]
+        exact Mem.perm_cur tm b' ofs k prm htprm
+  · intro b b' delta chunk ofs prm hmap hrange
+    rcases init_meminj_invert p tp b b' delta hmap with
+      ⟨hdelta, id, hfind, hfind'⟩
+    subst delta
+    exact ZArith.BinInt.Z.divide_0_r (align_chunk chunk)
+  · intro b ofs b' delta hmap hread
+    rcases init_meminj_invert_strong p tp used hvalid hmatch b b' delta hmap with
+      ⟨hdelta, id, gd, hfind, hfind', hdef, hdef', hrefs⟩
+    subst delta
+    have hs := hsource b gd hdef
+    have ht := htarget b' gd hdef'
+    cases gd with
+    | Gfun f =>
+        have hbad := (hs.2 ofs Cur Readable hread).2
+        cases hbad
+    | Gvar v =>
+        have hsbound := hs.2.1 ofs Cur Readable hread
+        have hnonvol := ug_init_nonvolatile_of_readable v hsbound.2
+        have hloads := hs.2.2 hnonvol
+        have hloadt := ht.2.2 hnonvol
+        let sz := init_data_list_size v.gvar_init
+        have hgets : Mem.getN (ZArith.BinInt.Z.to_nat sz) Z0
+              (PMap.get b m.mem_contents) =
+            bytes_of_init_data_list (Genv.globalenv p) v.gvar_init := by
+          unfold Mem.loadbytes at hloads
+          split at hloads
+          · exact Option.some.inj hloads
+          · cases hloads
+        have hgett : Mem.getN (ZArith.BinInt.Z.to_nat sz) Z0
+              (PMap.get b' tm.mem_contents) =
+            bytes_of_init_data_list (Genv.globalenv tp) v.gvar_init := by
+          unfold Mem.loadbytes at hloadt
+          split at hloadt
+          · exact Option.some.inj hloadt
+          · cases hloadt
+        have hbytes := bytes_of_init_inject p tp used hvalid hmatch v.gvar_init (by
+          intro rid href
+          exact hrefs rid href)
+        have hgetrel : list_forall2 (memval_inject (init_meminj p tp))
+            (Mem.getN (ZArith.BinInt.Z.to_nat sz) Z0
+              (PMap.get b m.mem_contents))
+            (Mem.getN (ZArith.BinInt.Z.to_nat sz) Z0
+              (PMap.get b' tm.mem_contents)) := by
+          rw [hgets, hgett]
+          exact hbytes
+        have hupper : ZArith.BinInt.Z.lt ofs
+            (zAdd Z0 (zOfNat (ZArith.BinInt.Z.to_nat sz))) := by
+          have hsizeid := ZArith.Znat.Z2Nat.id sz (init_data_list_size_pos v.gvar_init)
+          change ZArith.BinInt.Z.lt ofs
+            (ZArith.BinInt.Z.add Z0
+              (ZArith.BinInt.Z.of_nat (ZArith.BinInt.Z.to_nat sz)))
+          rw [hsizeid, ug_init_zero_zadd]
+          exact hsbound.1.2
+        have hmv := Mem_getN_forall2 (memval_inject (init_meminj p tp))
+          (PMap.get b m.mem_contents) (PMap.get b' tm.mem_contents)
+          ofs (ZArith.BinInt.Z.to_nat sz) Z0 hgetrel hsbound.1.1 hupper
+        change memval_inject (init_meminj p tp)
+          (ZMap.get ofs (PMap.get b m.mem_contents))
+          (ZMap.get (ZArith.BinInt.Z.add ofs Z0) (PMap.get b' tm.mem_contents))
+        rw [ug_init_zadd_zero]
+        exact hmv
+
+private theorem ug_init_ptrofs_unsigned_range_2
+    (ofs : CompCert4Lean.Lib.Integers.ptrofs) :
+    ZArith.BinInt.Z.le Z0 (Ptrofs.unsigned ofs) ∧
+      ZArith.BinInt.Z.le (Ptrofs.unsigned ofs) Ptrofs.max_unsigned := by
+  constructor
+  · have hlo := ofs.intrange.1
+    change (-1 : Int) < intOfZ ofs.intval at hlo
+    change (0 : Int) ≤ intOfZ (Ptrofs.unsigned ofs)
+    unfold Ptrofs.unsigned WordCore.unsigned
+    omega
+  · have hhi := ofs.intrange.2
+    change intOfZ ofs.intval < intOfZ Ptrofs.modulus at hhi
+    change intOfZ (Ptrofs.unsigned ofs) ≤ intOfZ Ptrofs.max_unsigned
+    unfold Ptrofs.unsigned WordCore.unsigned Ptrofs.max_unsigned
+    change intOfZ ofs.intval ≤
+      intOfZ (ZArith.BinInt.Z.sub Ptrofs.modulus (Zpos xH))
+    unfold ZArith.BinInt.Z.sub
+    rw [intOfZ_zOfInt]
+    have hone : intOfZ (Zpos xH) = 1 := rfl
+    rw [hone]
+    omega
+
+private theorem ug_init_mem_inj_2
+    (p tp : CompCert4Lean.Backend.RTL.program)
+    (used : CompCert4Lean.Backend.Unusedglob.IS.t)
+    (hvalid : valid_used_set p used) (hmatch : match_prog_1 used p tp)
+    (m tm : mem) (hmem : Genv.init_mem p = some m)
+    (htmem : Genv.init_mem tp = some tm) :
+    Mem.inject (init_meminj p tp) m tm := by
+  have hsource := ug_init_mem_characterization _ _ p m hmem
+  have htarget := ug_init_mem_characterization _ _ tp tm htmem
+  constructor
+  · exact ug_init_mem_inj_1 p tp used hvalid hmatch m tm hmem htmem
+  · intro b hnot
+    cases hmap : init_meminj p tp b with
+    | none => rfl
+    | some bd =>
+        rcases bd with ⟨b', delta⟩
+        exfalso
+        apply hnot
+        rcases init_meminj_invert p tp b b' delta hmap with
+          ⟨hdelta, id, hfind, hfind'⟩
+        exact Genv.find_symbol_not_fresh _ _ p id b m hmem hfind
+  · intro b b' delta hmap
+    rcases init_meminj_invert p tp b b' delta hmap with
+      ⟨hdelta, id, hfind, hfind'⟩
+    exact Genv.find_symbol_not_fresh _ _ tp id b' tm htmem hfind'
+  · intro b1 b1' delta1 b2 b2' delta2 ofs1 ofs2 hb hmap1 hmap2 hp1 hp2
+    rcases init_meminj_invert p tp b1 b1' delta1 hmap1 with
+      ⟨hdelta1, id1, hfind1, hfind1'⟩
+    rcases init_meminj_invert p tp b2 b2' delta2 hmap2 with
+      ⟨hdelta2, id2, hfind2, hfind2'⟩
+    by_cases hids : id1 = id2
+    · subst id2
+      have hblocks : b1 = b2 := Option.some.inj (hfind1.symm.trans hfind2)
+      exact False.elim (hb hblocks)
+    · left
+      exact Genv.global_addresses_distinct _ _ (Genv.globalenv tp)
+        id1 id2 b1' b2' hids hfind1' hfind2'
+  · intro b b' delta ofs hmap hperm
+    rcases init_meminj_invert p tp b b' delta hmap with
+      ⟨hdelta, id, hfind, hfind'⟩
+    subst delta
+    have hrange := ug_init_ptrofs_unsigned_range_2 ofs
+    constructor
+    · change (0 : Int) ≤ 0
+      omega
+    constructor
+    · change ZArith.BinInt.Z.le Z0
+        (ZArith.BinInt.Z.add (Ptrofs.unsigned ofs) Z0)
+      rw [ug_init_zadd_zero]
+      exact hrange.1
+    · change ZArith.BinInt.Z.le
+        (ZArith.BinInt.Z.add (Ptrofs.unsigned ofs) Z0) Ptrofs.max_unsigned
+      rw [ug_init_zadd_zero]
+      exact hrange.2
+  · intro b ofs b' delta k prm hmap hp
+    rcases init_meminj_invert_strong p tp used hvalid hmatch b b' delta hmap with
+      ⟨hdelta, id, gd, hfind, hfind', hdef, hdef', hrefs⟩
+    subst delta
+    have hs := hsource b gd hdef
+    have ht := htarget b' gd hdef'
+    have hp' : Mem.perm tm b' ofs k prm := by
+      change Mem.perm tm b' (ZArith.BinInt.Z.add ofs Z0) k prm at hp
+      rw [ug_init_zadd_zero] at hp
+      exact hp
+    left
+    cases gd with
+    | Gfun f =>
+        rcases ht.2 ofs k prm hp' with ⟨hofs, hprm⟩
+        subst ofs
+        subst prm
+        exact Mem.perm_cur m b Z0 k CompCert4Lean.Common.Memtype.Nonempty hs.1
+    | Gvar v =>
+        have htbound := ht.2.1 ofs k prm hp'
+        have hscur := hs.1 ofs htbound.1
+        have hsprm := Mem.perm_implies m b ofs Cur (perm_globvar v) prm
+          hscur htbound.2
+        exact Mem.perm_cur m b ofs k prm hsprm
+
+theorem init_mem_inject : init_mem_injectStatement := by
+  intro p tp used hvalid hmatch m hmem
+  rcases init_mem_exists p tp used hvalid hmatch m hmem with ⟨tm, htmem⟩
+  refine ⟨init_meminj p tp, tm, htmem, ?_, ?_⟩
+  · exact ug_init_mem_inj_2 p tp used hvalid hmatch m tm hmem htmem
+  · exact init_meminj_preserves_globals p tp used hvalid hmatch
+
+end CompCert4Lean.Backend.Unusedglobproof

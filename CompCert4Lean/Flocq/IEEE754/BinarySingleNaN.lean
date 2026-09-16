@@ -2746,3 +2746,94 @@ theorem shl_align_correct' :
         rw [← hdiff]
         exact hchange.symm
       · rfl
+
+theorem shl_align_correct :
+    ∀ (ctx : ExactRealContext), shl_align_correctStatement ctx := by
+  intro ctx mx ex e
+  cases hz : Zsub e ex with
+  | Z0 =>
+      have hsub := congrArg
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ hz
+      simp only [Zsub,
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.sub,
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt] at hsub
+      change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ e -
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ ex = 0 at hsub
+      have hle : Zle e ex := by
+        change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ e ≤
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ ex
+        omega
+      have hcorrect := shl_align_correct' ctx mx ex e hle
+      have hshl : shl_align mx ex e = (mx, ex) := by
+        change (match Zsub e ex with
+          | .Zneg d =>
+              (Lib.Floats.Model.Rocq.Coq.Floats.SpecFloat.shiftPos d mx, e)
+          | _ => (mx, ex)) = (mx, ex)
+        rw [hz]
+      rw [hshl] at hcorrect ⊢
+      constructor
+      · rfl
+      · change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ ex ≤
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ e
+        omega
+  | Zpos p =>
+      have hsub := congrArg
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ hz
+      simp only [Zsub,
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.sub,
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt] at hsub
+      change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ e -
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ ex =
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (Zpos p) at hsub
+      have hp : 0 <
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (Zpos p) := by
+        change 0 < Int.ofNat
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p)
+        exact Int.natCast_pos.mpr
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat_positive p)
+      have hshl : shl_align mx ex e = (mx, ex) := by
+        change (match Zsub e ex with
+          | .Zneg d =>
+              (Lib.Floats.Model.Rocq.Coq.Floats.SpecFloat.shiftPos d mx, e)
+          | _ => (mx, ex)) = (mx, ex)
+        rw [hz]
+      rw [hshl]
+      constructor
+      · rfl
+      · change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ ex ≤
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ e
+        omega
+  | Zneg p =>
+      have hsub := congrArg
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ hz
+      simp only [Zsub,
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.sub,
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt] at hsub
+      change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ e -
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ ex =
+            -CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (Zpos p) at hsub
+      have hp : 0 <
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (Zpos p) := by
+        change 0 < Int.ofNat
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p)
+        exact Int.natCast_pos.mpr
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat_positive p)
+      have hle : Zle e ex := by
+        change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ e ≤
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ ex
+        omega
+      have hcorrect := shl_align_correct' ctx mx ex e hle
+      have hshl : shl_align mx ex e =
+          (Lib.Floats.Model.Rocq.Coq.Floats.SpecFloat.shiftPos p mx, e) := by
+        change (match Zsub e ex with
+          | .Zneg d =>
+              (Lib.Floats.Model.Rocq.Coq.Floats.SpecFloat.shiftPos d mx, e)
+          | _ => (mx, ex)) =
+            (Lib.Floats.Model.Rocq.Coq.Floats.SpecFloat.shiftPos p mx, e)
+        rw [hz]
+      rw [hshl] at hcorrect ⊢
+      constructor
+      · exact hcorrect.1.symm
+      · change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ e ≤
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ e
+        omega
