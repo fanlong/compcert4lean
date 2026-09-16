@@ -4214,3 +4214,25 @@ theorem aval_of_val_sound : aval_of_val_soundStatement := by
   | Vptr b ofs => simp [aval_of_val] at h
 
 end CompCert4Lean.Backend.ValueDomain
+
+namespace CompCert4Lean.Backend.ValueDomain
+
+theorem loadbytes_load_ext : loadbytes_load_extStatement := by
+  intro b m m' h_ext chunk ofs v hload
+  obtain ⟨bytes, hbytes, hval⟩ :=
+    CompCert4Lean.Common.Memory.Mem.load_loadbytes chunk m' b ofs v hload
+  have hvalid :=
+    CompCert4Lean.Common.Memory.Mem.load_valid_access m' chunk b ofs v hload
+  have hnonneg : zLe z0
+      (CompCert4Lean.Common.Memdata.size_chunk chunk) :=
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.Zorder.Zlt_le_weak_proof _ _
+      (CompCert4Lean.Common.Memdata.size_chunk_pos chunk)
+  have hbytes' := h_ext ofs (CompCert4Lean.Common.Memdata.size_chunk chunk)
+      bytes hbytes hnonneg
+  have hload_m : CompCert4Lean.Common.Memory.Mem.load chunk m b ofs =
+      some (CompCert4Lean.Common.Memdata.decode_val chunk bytes) :=
+    CompCert4Lean.Common.Memory.Mem.loadbytes_load chunk m b ofs bytes hbytes' hvalid.2
+  rw [← hval] at hload_m
+  exact hload_m
+
+end CompCert4Lean.Backend.ValueDomain

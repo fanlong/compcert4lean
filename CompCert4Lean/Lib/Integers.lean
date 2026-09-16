@@ -6080,3 +6080,42 @@ theorem shl_shl_proof : shl_shl := by
   rw [Nat.pow_add]
   rw [← Nat.mul_assoc]
   exact Nat.mod_mul_mod _ _ _
+
+theorem unsigned_repr_eq_proof : unsigned_repr_eq := by
+  intro x
+  exact suffix_unsigned_repr_eq_exact x
+
+theorem eqm_sym_proof : eqm_sym := by
+  intro x y h
+  unfold eqm WordCore.eqm CompCert4Lean.Lib.Zbits.eqmod at h ⊢
+  rcases h with ⟨k, hk⟩
+  refine ⟨zOpp k, ?_⟩
+  apply intOfZ_injective
+  have hk' := congrArg intOfZ hk
+  simp only [zAdd, zMul, zOpp, ZArith.BinInt.Z.add,
+    ZArith.BinInt.Z.mul, ZArith.BinInt.Z.opp, intOfZ_zOfInt] at hk' ⊢
+  change intOfZ y = -intOfZ k * intOfZ modulus + intOfZ x
+  change intOfZ x = intOfZ k * intOfZ modulus + intOfZ y at hk'
+  rw [hk']
+  simp only [Int.neg_mul]
+  omega
+
+theorem sub_add_l_proof : sub_add_l := by
+  intro x y z
+  change WordCore.sub (WordCore.add x y) z =
+    WordCore.add (WordCore.sub x z) y
+  apply WordCore.ext_of_val_eq
+  apply Int.ofNat.inj
+  rw [WordCore.sub_val_int, WordCore.add_val_int, WordCore.add_val_int,
+    WordCore.sub_val_int]
+  simp only [Int.emod_sub_emod, Int.sub_emod_emod, Int.emod_add_emod,
+    Int.add_emod_emod]
+  congr 1
+  omega
+
+theorem xor_assoc_proof : xor_assoc := by
+  intro x y z
+  apply WordCore.ext_of_val_eq
+  rw [suffix_xor_val_exact, suffix_xor_val_exact,
+    suffix_xor_val_exact, suffix_xor_val_exact]
+  exact Nat.xor_assoc _ _ _
