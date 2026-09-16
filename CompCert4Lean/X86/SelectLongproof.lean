@@ -2176,3 +2176,68 @@ theorem eval_shrxlimm
     · exact hz
 
 end CompCert4Lean.X86.SelectLongproof
+
+namespace CompCert4Lean.X86.SelectLongproof
+
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.ExternalCalls
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.X86.Op
+open CompCert4Lean.X86.SelectLong
+
+theorem eval_divls_base
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    @eval_divls_baseStatement binary64_certificate binary32_certificate := by
+  unfold eval_divls_baseStatement partial_binary_constructor_sound
+  intro xi prog hf hdecl sp e m le a x b y z ha hb hz
+  refine ⟨z, ?_, Val.lessdef_refl _⟩
+  unfold divls_base
+  apply eval_expr.eval_Eop le Odivl (Econs a (Econs b Enil)) [x, y] z
+  · exact eval_exprlist.cons le a (Econs b Enil) x [y] ha
+      (eval_exprlist.cons le b Enil y [] hb (eval_exprlist.nil le))
+  · exact hz
+
+theorem eval_modls_base
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    @eval_modls_baseStatement binary64_certificate binary32_certificate := by
+  unfold eval_modls_baseStatement partial_binary_constructor_sound
+  intro xi prog hf hdecl sp e m le a x b y z ha hb hz
+  refine ⟨z, ?_, Val.lessdef_refl _⟩
+  unfold modls_base
+  apply eval_expr.eval_Eop le Omodl (Econs a (Econs b Enil)) [x, y] z
+  · exact eval_exprlist.cons le a (Econs b Enil) x [y] ha
+      (eval_exprlist.cons le b Enil y [] hb (eval_exprlist.nil le))
+  · exact hz
+
+theorem eval_divlu_base
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    @eval_divlu_baseStatement binary64_certificate binary32_certificate := by
+  unfold eval_divlu_baseStatement partial_binary_constructor_sound
+  intro xi prog hf hdecl sp e m le a x b y z ha hb hz
+  refine ⟨z, ?_, Val.lessdef_refl _⟩
+  unfold divlu_base
+  apply eval_expr.eval_Eop le Odivlu (Econs a (Econs b Enil)) [x, y] z
+  · exact eval_exprlist.cons le a (Econs b Enil) x [y] ha
+      (eval_exprlist.cons le b Enil y [] hb (eval_exprlist.nil le))
+  · exact hz
+
+theorem eval_modlu_base
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    @eval_modlu_baseStatement binary64_certificate binary32_certificate := by
+  unfold eval_modlu_baseStatement partial_binary_constructor_sound
+  intro xi prog hf hdecl sp e m le a x b y z ha hb hz
+  refine ⟨z, ?_, Val.lessdef_refl _⟩
+  unfold modlu_base
+  apply eval_expr.eval_Eop le Omodlu (Econs a (Econs b Enil)) [x, y] z
+  · exact eval_exprlist.cons le a (Econs b Enil) x [y] ha
+      (eval_exprlist.cons le b Enil y [] hb (eval_exprlist.nil le))
+  · exact hz
+
+end CompCert4Lean.X86.SelectLongproof

@@ -3543,3 +3543,371 @@ theorem init_mem_inversion : init_mem_inversionStatement := by
 
 end Genv
 end CompCert4Lean.Common.Globalenvs
+
+namespace CompCert4Lean.Common.Globalenvs
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Linking
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.Lib.Integers
+
+namespace Genv
+
+theorem store_zeros_exists : store_zeros_existsStatement := by
+  intro m b p n hrange
+  let P : mem → block → Z → Z → Option mem → Prop :=
+    fun m b p n r =>
+      Mem.range_perm m b p (zAdd p n) Cur Writable → ∃ m', r = some m'
+  have hP : ∀ (m : mem) (b : block) (p n : Z),
+      P m b p n (store_zeros m b p n) := by
+    apply store_zeros_ind (P := P)
+    · intro m b p n x hx hrange
+      exact ⟨m, rfl⟩
+    · intro m b p n x hx m' hstore hrec hrange
+      have hv : Mem.valid_access m Mint8unsigned b p Writable := by
+        constructor
+        · intro ofs hofs
+          rcases hofs with ⟨hofslo, hofshi⟩
+          apply hrange ofs
+          constructor
+          · exact hofslo
+          · change intOfZ ofs < intOfZ (zAdd p n)
+            change intOfZ ofs < intOfZ (zAdd p (zOfNat 1)) at hofshi
+            change intOfZ n > 0 at x
+            simp [zAdd, ZArith.BinInt.Z.add, ZArith.BinInt.Z.of_nat,
+              intOfZ_zOfInt] at hofshi ⊢
+            omega
+        · change zDivide (zOfNat 1) p
+          refine ⟨p, ?_⟩
+          apply intOfZ_injective
+          simp [ZArith.BinInt.Z.mul, ZArith.BinInt.Z.of_nat,
+            intOfZ_zOfInt]
+      rcases Mem.valid_access_store m Mint8unsigned b p Vzero hv with ⟨m1, hm1⟩
+      have hm1eq : m1 = m' := Option.some.inj (hm1.symm.trans hstore)
+      subst m1
+      have hrange' : Mem.range_perm m' b (zAdd p (zOfNat 1))
+          (zAdd (zAdd p (zOfNat 1)) (ZArith.BinInt.Z.sub n (zOfNat 1)))
+          Cur Writable := by
+        intro ofs hofs
+        apply Mem.perm_store_1 Mint8unsigned m b p Vzero m' hstore b ofs Cur Writable
+        apply hrange
+        rcases hofs with ⟨hofslo, hofshi⟩
+        constructor
+        · change intOfZ p ≤ intOfZ ofs
+          change intOfZ (zAdd p (zOfNat 1)) ≤ intOfZ ofs at hofslo
+          simp [zAdd, ZArith.BinInt.Z.add, ZArith.BinInt.Z.of_nat,
+            intOfZ_zOfInt] at hofslo ⊢
+          omega
+        · change intOfZ ofs < intOfZ (zAdd p n)
+          change intOfZ ofs < intOfZ
+            (zAdd (zAdd p (zOfNat 1)) (ZArith.BinInt.Z.sub n (zOfNat 1))) at hofshi
+          change intOfZ n > 0 at x
+          simp [zAdd, ZArith.BinInt.Z.add, ZArith.BinInt.Z.sub,
+            ZArith.BinInt.Z.of_nat, intOfZ_zOfInt] at hofshi ⊢
+          omega
+      rcases hrec hrange' with ⟨m2, hm2⟩
+      exact ⟨m2, hm2⟩
+    · intro m b p n x hx hnone hrange
+      have hv : Mem.valid_access m Mint8unsigned b p Writable := by
+        constructor
+        · intro ofs hofs
+          rcases hofs with ⟨hofslo, hofshi⟩
+          apply hrange ofs
+          constructor
+          · exact hofslo
+          · change intOfZ ofs < intOfZ (zAdd p n)
+            change intOfZ ofs < intOfZ (zAdd p (zOfNat 1)) at hofshi
+            change intOfZ n > 0 at x
+            simp [zAdd, ZArith.BinInt.Z.add, ZArith.BinInt.Z.of_nat,
+              intOfZ_zOfInt] at hofshi ⊢
+            omega
+        · change zDivide (zOfNat 1) p
+          refine ⟨p, ?_⟩
+          apply intOfZ_injective
+          simp [ZArith.BinInt.Z.mul, ZArith.BinInt.Z.of_nat,
+            intOfZ_zOfInt]
+      rcases Mem.valid_access_store m Mint8unsigned b p Vzero hv with ⟨m', hm'⟩
+      rw [hm'] at hnone
+      cases hnone
+  exact hP m b p n hrange
+
+end Genv
+end CompCert4Lean.Common.Globalenvs
+
+namespace CompCert4Lean.Common.Globalenvs
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Linking
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.Lib.Integers
+
+namespace Genv
+
+private theorem pg_mem_store_exists
+    (chunk : memory_chunk) (m : mem) (b : block) (p : Z) (v : val)
+    (hrange : Mem.range_perm m b p (zAdd p (size_chunk chunk)) Cur Writable)
+    (halign : zDivide (align_chunk chunk) p) :
+    ∃ m', Mem.store chunk m b p v = some m' := by
+  rcases Mem.valid_access_store m chunk b p v ⟨hrange, halign⟩ with ⟨m', hm'⟩
+  exact ⟨m', hm'⟩
+
+theorem store_init_data_exists : store_init_data_existsStatement := by
+  intro F V ge m b p i hrange halign hfind
+  cases i with
+  | Init_int8 n =>
+      simpa [store_init_data, init_data_size, init_data_alignment] using
+        (pg_mem_store_exists Mint8unsigned m b p (Vint n)
+          (by simpa [init_data_size, size_chunk, Mptr] using hrange)
+          (by simpa [init_data_alignment, align_chunk, Mptr] using halign))
+  | Init_int16 n =>
+      simpa [store_init_data, init_data_size, init_data_alignment] using
+        (pg_mem_store_exists Mint16unsigned m b p (Vint n)
+          (by simpa [init_data_size, size_chunk] using hrange)
+          (by simpa [init_data_alignment, align_chunk] using halign))
+  | Init_int32 n =>
+      simpa [store_init_data, init_data_size, init_data_alignment] using
+        (pg_mem_store_exists Mint32 m b p (Vint n)
+          (by simpa [init_data_size, size_chunk] using hrange)
+          (by simpa [init_data_alignment, align_chunk] using halign))
+  | Init_int64 n =>
+      simpa [store_init_data, init_data_size, init_data_alignment] using
+        (pg_mem_store_exists Mint64 m b p (Vlong n)
+          (by simpa [init_data_size, size_chunk] using hrange)
+          (by simpa [init_data_alignment, align_chunk] using halign))
+  | Init_float32 n =>
+      simpa [store_init_data, init_data_size, init_data_alignment] using
+        (pg_mem_store_exists Mfloat32 m b p (Vsingle n)
+          (by simpa [init_data_size, size_chunk] using hrange)
+          (by simpa [init_data_alignment, align_chunk] using halign))
+  | Init_float64 n =>
+      simpa [store_init_data, init_data_size, init_data_alignment] using
+        (pg_mem_store_exists Mfloat64 m b p (Vfloat n)
+          (by simpa [init_data_size, size_chunk] using hrange)
+          (by simpa [init_data_alignment, align_chunk] using halign))
+  | Init_addrof id ofs =>
+      rcases hfind id ofs rfl with ⟨b', hb'⟩
+      have hrange' := hrange
+      have hsize : init_data_size (Init_addrof id ofs) = size_chunk Mptr := by
+        rfl
+      rw [hsize] at hrange'
+      have halign' := halign
+      simp [init_data_alignment] at halign'
+      rw [← align_chunk_Mptr] at halign'
+      simpa [store_init_data, hb'] using
+        (pg_mem_store_exists Mptr m b p (Vptr b' ofs) hrange' halign')
+  | Init_space n =>
+      exact ⟨m, rfl⟩
+
+private theorem pg_store_init_data_perm
+    (F V : Type) (ge : t F V) (m m' : mem) (b : block) (p : Z)
+    (i : init_data) (hm : store_init_data ge m b p i = some m') :
+    ∀ b' ofs k prm, Mem.perm m b' ofs k prm → Mem.perm m' b' ofs k prm := by
+  intro b' ofs k prm hperm
+  cases i with
+  | Init_int8 n =>
+      exact Mem.perm_store_1 Mint8unsigned m b p (Vint n) m'
+        (by simpa [store_init_data] using hm) b' ofs k prm hperm
+  | Init_int16 n =>
+      exact Mem.perm_store_1 Mint16unsigned m b p (Vint n) m'
+        (by simpa [store_init_data] using hm) b' ofs k prm hperm
+  | Init_int32 n =>
+      exact Mem.perm_store_1 Mint32 m b p (Vint n) m'
+        (by simpa [store_init_data] using hm) b' ofs k prm hperm
+  | Init_int64 n =>
+      exact Mem.perm_store_1 Mint64 m b p (Vlong n) m'
+        (by simpa [store_init_data] using hm) b' ofs k prm hperm
+  | Init_float32 n =>
+      exact Mem.perm_store_1 Mfloat32 m b p (Vsingle n) m'
+        (by simpa [store_init_data] using hm) b' ofs k prm hperm
+  | Init_float64 n =>
+      exact Mem.perm_store_1 Mfloat64 m b p (Vfloat n) m'
+        (by simpa [store_init_data] using hm) b' ofs k prm hperm
+  | Init_addrof id ofs0 =>
+      cases hsym : find_symbol ge id with
+      | none => simp [store_init_data, hsym] at hm
+      | some b0 =>
+          exact Mem.perm_store_1 Mptr m b p (Vptr b0 ofs0) m'
+            (by simpa [store_init_data, hsym] using hm) b' ofs k prm hperm
+  | Init_space n =>
+      have hm' : m' = m := by simpa [store_init_data] using hm.symm
+      subst m'
+      exact hperm
+
+theorem store_init_data_list_exists : store_init_data_list_existsStatement := by
+  intro F V ge b il
+  induction il with
+  | nil =>
+      intro m p hrange halign hfind
+      exact ⟨m, rfl⟩
+  | cons i rest ih =>
+      intro m p hrange halign hfind
+      rcases halign with ⟨hhead, htail⟩
+      have hrange_i : Mem.range_perm m b p
+          (zAdd p (init_data_size i)) Cur Writable := by
+        intro ofs hofs
+        rcases hofs with ⟨hofslo, hofshi⟩
+        apply hrange ofs
+        constructor
+        · exact hofslo
+        · change intOfZ ofs < intOfZ (zAdd p (init_data_list_size (i :: rest)))
+          change intOfZ ofs < intOfZ (zAdd p (init_data_size i)) at hofshi
+          simp [init_data_list_size, zAdd, ZArith.BinInt.Z.add,
+            intOfZ_zOfInt] at hofshi ⊢
+          have hnonneg := init_data_list_size_pos rest
+          change 0 ≤ intOfZ (init_data_list_size rest) at hnonneg
+          omega
+      have hfind_i : ∀ id ofs, i = Init_addrof id ofs →
+          ∃ b, find_symbol ge id = some b := by
+        intro id ofs hi
+        apply hfind id ofs
+        simp [hi]
+      rcases store_init_data_exists F V ge m b p i hrange_i hhead hfind_i with
+        ⟨m1, hm1⟩
+      have hrange_tail : Mem.range_perm m1 b
+          (zAdd p (init_data_size i))
+          (zAdd (zAdd p (init_data_size i)) (init_data_list_size rest))
+          Cur Writable := by
+        intro ofs hofs
+        rcases hofs with ⟨hofslo, hofshi⟩
+        apply pg_store_init_data_perm F V ge m m1 b p i hm1 b ofs Cur Writable
+        apply hrange ofs
+        constructor
+        · change intOfZ p ≤ intOfZ ofs
+          change intOfZ (zAdd p (init_data_size i)) ≤ intOfZ ofs at hofslo
+          simp [zAdd, ZArith.BinInt.Z.add, intOfZ_zOfInt] at hofslo ⊢
+          have hi := init_data_size_pos i
+          change 0 ≤ intOfZ (init_data_size i) at hi
+          omega
+        · have hadd : zAdd p (init_data_list_size (i :: rest)) =
+              zAdd (zAdd p (init_data_size i)) (init_data_list_size rest) := by
+              apply intOfZ_injective
+              simp [init_data_list_size, zAdd, ZArith.BinInt.Z.add,
+                intOfZ_zOfInt]
+              omega
+          rw [hadd]
+          exact hofshi
+      have hfind_tail : ∀ id ofs, Init_addrof id ofs ∈ rest →
+          ∃ b, find_symbol ge id = some b := by
+        intro id ofs hmem
+        apply hfind id ofs
+        simp [hmem]
+      rcases ih m1 (zAdd p (init_data_size i)) hrange_tail htail hfind_tail with
+        ⟨m2, hm2⟩
+      refine ⟨m2, ?_⟩
+      simp [store_init_data_list, hm1, hm2]
+
+end Genv
+end CompCert4Lean.Common.Globalenvs
+
+namespace CompCert4Lean.Common.Globalenvs
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Linking
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.Lib.Integers
+
+namespace Genv
+
+private theorem pg_drop_perm_exists (m : mem) (b : block) (lo hi : Z)
+    (p : permission) (hrange : Mem.range_perm m b lo hi Cur Freeable) :
+    ∃ m', Mem.drop_perm m b lo hi p = some m' := by
+  unfold Mem.drop_perm
+  cases hdec : Mem.range_perm_dec m b lo hi Cur Freeable with
+  | left hproof =>
+      simp [hdec]
+  | right hnot =>
+      exact False.elim (hnot hrange)
+
+private theorem pg_alloc_range_perm (m : mem) (lo hi : Z) :
+    let r := Mem.alloc m lo hi
+    Mem.range_perm r.1 r.2 lo hi Cur Freeable := by
+  unfold Mem.alloc
+  dsimp
+  intro ofs hofs
+  unfold Mem.perm
+  rw [PMap.gss]
+  have hle : ZArith.BinInt.Z.leb lo ofs = true := by
+    have hh := hofs.1
+    change intOfZ lo ≤ intOfZ ofs at hh
+    simpa [ZArith.BinInt.Z.leb] using hh
+  have hlt : ZArith.BinInt.Z.ltb ofs hi = true := by
+    have hh := hofs.2
+    change intOfZ ofs < intOfZ hi at hh
+    simpa [ZArith.BinInt.Z.ltb] using hh
+  change Mem.perm_order'
+    (if (ZArith.BinInt.Z.leb lo ofs && ZArith.BinInt.Z.ltb ofs hi) = true
+      then some Freeable else none) Freeable
+  simpa [hle, hlt, Mem.perm_order'] using (perm_refl Freeable)
+
+theorem alloc_global_exists : alloc_global_existsStatement := by
+  intro F V ge m idg hvalid
+  rcases idg with ⟨id, gd⟩
+  cases gd with
+  | Gfun f =>
+      unfold alloc_global
+      cases halloc : Mem.alloc m z0 z1 with
+      | mk m1 b =>
+          have hrange : Mem.range_perm m1 b z0 z1 Cur Freeable := by
+            simpa [halloc] using (pg_alloc_range_perm m z0 z1)
+          rcases pg_drop_perm_exists m1 b z0 z1 Nonempty hrange with
+            ⟨m2, hdrop⟩
+          exact ⟨m2, by simp [halloc, hdrop]⟩
+  | Gvar v =>
+      rcases hvalid with ⟨halign, hfind⟩
+      let sz := init_data_list_size v.gvar_init
+      unfold alloc_global
+      cases halloc : Mem.alloc m z0 sz with
+      | mk m1 b =>
+          have hrange1f : Mem.range_perm m1 b z0 sz Cur Freeable := by
+            simpa [halloc] using (pg_alloc_range_perm m z0 sz)
+          have hrange1 : Mem.range_perm m1 b z0 sz Cur Writable :=
+            Mem.range_perm_implies m1 b z0 sz Cur Freeable Writable
+              hrange1f (perm_F_any Writable)
+          have hzadd : zAdd z0 sz = sz := by
+            apply intOfZ_injective
+            simp [zAdd, ZArith.BinInt.Z.add, intOfZ_zOfInt]
+            change intOfZ z0 + intOfZ sz = intOfZ sz
+            have hz0 : intOfZ z0 = 0 := by rfl
+            rw [hz0]
+            omega
+          have hrange1' : Mem.range_perm m1 b z0 (zAdd z0 sz) Cur Writable := by
+            simpa [hzadd] using hrange1
+          rcases store_zeros_exists m1 b z0 sz hrange1' with ⟨m2, hzeros⟩
+          have hrange2f : Mem.range_perm m2 b z0 sz Cur Freeable := by
+            intro ofs hofs
+            exact (store_zeros_perm Cur Freeable b ofs m1 b z0 sz m2 hzeros).mp
+              (hrange1f ofs hofs)
+          have hrange2 : Mem.range_perm m2 b z0 sz Cur Writable :=
+            Mem.range_perm_implies m2 b z0 sz Cur Freeable Writable
+              hrange2f (perm_F_any Writable)
+          have hsize : init_data_list_size v.gvar_init = sz := by rfl
+          rcases store_init_data_list_exists F V ge b v.gvar_init m2 z0
+              (by simpa [hsize, hzadd] using hrange2) halign hfind with ⟨m3, hlist⟩
+          have hrange3f : Mem.range_perm m3 b z0 sz Cur Freeable := by
+            intro ofs hofs
+            exact (store_init_data_list_perm F V ge Cur Freeable b ofs
+              v.gvar_init b m2 z0 m3 hlist).mp (hrange2f ofs hofs)
+          rcases pg_drop_perm_exists m3 b z0 sz (perm_globvar v) hrange3f with
+            ⟨m4, hdrop⟩
+          exact ⟨m4, by simp [halloc, hzeros, hlist, hdrop, sz]⟩
+
+end Genv
+end CompCert4Lean.Common.Globalenvs

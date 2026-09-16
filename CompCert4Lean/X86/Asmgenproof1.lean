@@ -1962,3 +1962,56 @@ theorem testcond_for_neg_float32_comparison_correct :
         CompCert4Lean.Lib.Integers.WordCore.eq, honezero, Ne.symm honezero]
 
 end CompCert4Lean.X86.Asmgenproof1
+
+namespace CompCert4Lean.X86.Asmgenproof1
+
+open Lean Elab Tactic Meta
+
+theorem compare_floats32_inv : compare_floats32_invStatement := by
+  intro vx vy rs r hzf hcf hpf hsf hof
+  unfold CompCert4Lean.X86.Asm.compare_floats32
+  cases vx <;> cases vy <;>
+    simp [CompCert4Lean.X86.Asm.undef_regs,
+      CompCert4Lean.X86.Asm.Pregmap.get, CompCert4Lean.X86.Asm.Pregmap.set,
+      hzf, hcf, hpf, hsf, hof]
+
+theorem eval_testcond_nextinstr : eval_testcond_nextinstrStatement := by
+  intro c rs
+  cases c <;>
+    simp only [CompCert4Lean.X86.Asm.eval_testcond]
+  all_goals
+    run_tac
+      let g ← getMainGoal
+      let t ← g.getType
+      let flagName := asmgenproof1AsmPrivateName "CompCert4Lean.X86.Asm.flagValue"
+      let t ← Lean.Meta.transform t (post := fun e => do
+        if e.isAppOf flagName then
+          return .visit (← Lean.Meta.unfoldDefinition e)
+        else
+          return .continue)
+      let g ← g.replaceTargetDefEq t
+      Lean.Elab.Tactic.replaceMainGoal [g]
+    simp [CompCert4Lean.X86.Asm.nextinstr,
+      CompCert4Lean.X86.Asm.Pregmap.get,
+      CompCert4Lean.X86.Asm.Pregmap.set]
+
+theorem eval_testcond_set_ireg : eval_testcond_set_iregStatement := by
+  intro c rs r v
+  cases c <;>
+    simp only [CompCert4Lean.X86.Asm.eval_testcond]
+  all_goals
+    run_tac
+      let g ← getMainGoal
+      let t ← g.getType
+      let flagName := asmgenproof1AsmPrivateName "CompCert4Lean.X86.Asm.flagValue"
+      let t ← Lean.Meta.transform t (post := fun e => do
+        if e.isAppOf flagName then
+          return .visit (← Lean.Meta.unfoldDefinition e)
+        else
+          return .continue)
+      let g ← g.replaceTargetDefEq t
+      Lean.Elab.Tactic.replaceMainGoal [g]
+    simp [CompCert4Lean.X86.Asm.Pregmap.get,
+      CompCert4Lean.X86.Asm.Pregmap.set]
+
+end CompCert4Lean.X86.Asmgenproof1

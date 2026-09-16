@@ -3695,3 +3695,59 @@ theorem storebytes_store : storebytes_storeStatement := by
 end Mem
 
 end CompCert4Lean.Common.Memory
+
+namespace CompCert4Lean.Common.Memory
+
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memtype
+
+namespace Mem
+
+theorem store_storebytes : store_storebytesStatement := by
+  intro m1 b ofs chunk v m2 hstore
+  have hlen : zOfNat (encode_val chunk v).length = size_chunk chunk := by
+    rw [CompCert4Lean.Common.Memdata.encode_val_length, size_chunk_conv]
+  unfold store at hstore
+  cases hvalid : valid_access_dec m1 chunk b ofs Writable with
+  | right _ => simp [boolOfSumbool, hvalid] at hstore
+  | left hv =>
+      have hr :
+          range_perm m1 b ofs (zAdd ofs (zOfNat (encode_val chunk v).length)) Cur Writable := by
+        simpa [hlen] using hv.1
+      unfold storebytes
+      cases hdec : range_perm_dec m1 b ofs
+          (zAdd ofs (zOfNat (encode_val chunk v).length)) Cur Writable with
+      | right hn => exact False.elim (hn hr)
+      | left _ =>
+          simp [boolOfSumbool, hvalid, hdec, hlen] at hstore ⊢
+          exact hstore
+
+theorem storebytes_access : storebytes_accessStatement := by
+  intro m1 b ofs bytes m2 hstore
+  unfold storebytes at hstore
+  cases hdec : range_perm_dec m1 b ofs (zAdd ofs (zOfNat bytes.length)) Cur Writable with
+  | right _ => simp [boolOfSumbool, hdec] at hstore
+  | left _ =>
+      simp [boolOfSumbool, hdec] at hstore
+      subst m2
+      rfl
+
+theorem storebytes_mem_contents : storebytes_mem_contentsStatement := by
+  intro m1 b ofs bytes m2 hstore
+  unfold storebytes at hstore
+  cases hdec : range_perm_dec m1 b ofs (zAdd ofs (zOfNat bytes.length)) Cur Writable with
+  | right _ => simp [boolOfSumbool, hdec] at hstore
+  | left _ =>
+      simp [boolOfSumbool, hdec] at hstore
+      subst m2
+      rfl
+
+theorem perm_storebytes_1 : perm_storebytes_1Statement := by
+  intro m1 b ofs bytes m2 hstore b' ofs' k p hp
+  unfold perm at hp ⊢
+  rw [storebytes_access m1 b ofs bytes m2 hstore]
+  exact hp
+
+end Mem
+
+end CompCert4Lean.Common.Memory

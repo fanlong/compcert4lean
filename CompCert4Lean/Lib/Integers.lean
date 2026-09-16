@@ -5574,3 +5574,72 @@ theorem divmodu2_divu_modu_proof : divmodu2_divu_modu := by
     | right hle' =>
         exfalso
         exact (Int.not_lt_of_ge hqbound hle').elim
+
+theorem eq_false_proof : eq_false := by
+  intro x y hxy
+  change decide (x.intval = y.intval) = false
+  have hval : x.intval ≠ y.intval := by
+    intro h
+    exact hxy (WordCore.ext h)
+  simp [hval]
+
+theorem negate_cmp_proof : negate_cmp := by
+  intro c x y
+  cases c <;> simp [cmp, WordCore.cmp, negate_comparison]
+
+theorem eq_signed_proof : eq_signed := by
+  intro x y
+  change decide (x.intval = y.intval) =
+    sumboolSelect (CompCert4Lean.Lib.Coqlib.zeq (signed x) (signed y)) true false
+  cases h : CompCert4Lean.Lib.Coqlib.zeq (signed x) (signed y) with
+  | left hs =>
+      have hxy : x = y := signed_injective_try hs
+      subst y
+      simp [sumboolSelect]
+  | right hs =>
+      have hxy : x ≠ y := by
+        intro heq
+        apply hs
+        simpa [heq]
+      have hval : x.intval ≠ y.intval := by
+        intro hv
+        exact hxy (WordCore.ext hv)
+      simp [sumboolSelect, hval]
+
+private theorem suffix_xor_val_exact (x y : int) :
+    (xor x y).val = Nat.xor x.val y.val := by
+  have hu := suffix_xor_unsigned x y
+  change (xor x y).intval = zOfNat (Nat.xor x.val y.val) at hu
+  rw [WordCore.intval_eq_zOfNat_val] at hu
+  have hi := congrArg intOfZ hu
+  simp only [zOfNat, ZArith.BinInt.Z.of_nat, intOfZ_zOfInt] at hi
+  exact Int.ofNat.inj hi
+
+private theorem suffix_bits_xor_nat (x y : int) (n : Nat) :
+    testbit (xor x y) (zOfNat n) =
+      Bool.xor (testbit x (zOfNat n)) (testbit y (zOfNat n)) := by
+  rw [suffix_testbit_nat, suffix_testbit_nat, suffix_testbit_nat]
+  rw [suffix_xor_val_exact, Nat.xor_eq, Nat.testBit_xor]
+
+theorem bits_xor_proof : bits_xor := by
+  intro x y i hi
+  cases i with
+  | Zneg p =>
+      have h := hi.1
+      change (0 : Int) ≤ -Int.ofNat
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p) at h
+      have hp : 0 < CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p :=
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat_positive p
+      have hpI : (0 : Int) < Int.ofNat
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p) :=
+        Int.natCast_pos.mpr hp
+      omega
+  | Z0 =>
+      exact suffix_bits_xor_nat x y 0
+  | Zpos p =>
+      have hz : zOfNat
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p) = .Zpos p := by
+        exact ZArith.Znat.positive_nat_Z p
+      rw [← hz] at hi ⊢
+      exact suffix_bits_xor_nat x y
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p)

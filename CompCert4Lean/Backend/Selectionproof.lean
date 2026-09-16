@@ -2979,3 +2979,224 @@ theorem sel_builtin_res_correct : sel_builtin_res_correctStatement := by
       · exact hVal
 
 end CompCert4Lean.Backend.Selectionproof
+
+namespace CompCert4Lean.Backend.Selectionproof
+
+theorem classify_stmt_wt : classify_stmt_wtStatement := by
+  intro env tyret id a s hclass hwt
+  induction hwt with
+  | wt_Sskip =>
+      simp [CompCert4Lean.Backend.Selection.classify_stmt] at hclass
+  | wt_Sassign id' a' htyped =>
+      cases a' <;>
+        simp [CompCert4Lean.Backend.Selection.classify_stmt] at hclass
+      case Evar id'' =>
+        cases heq : CompCert4Lean.Common.AST.ident_eq id' id'' with
+        | left h =>
+            simp [heq] at hclass
+        | right h =>
+            simp [heq] at hclass
+            obtain ⟨rfl, rfl⟩ := hclass
+            exact htyped
+      all_goals
+        obtain ⟨rfl, rfl⟩ := hclass
+        exact htyped
+  | wt_Sbuiltin optid ef al hargs hopt =>
+      clear hargs hopt
+      cases optid <;> cases ef <;>
+        simp [CompCert4Lean.Backend.Selection.classify_stmt] at hclass
+  | wt_Sseq s1 s2 hwt1 hwt2 ih1 ih2 =>
+      cases hclass1 : CompCert4Lean.Backend.Selection.classify_stmt s1 with
+      | SCskip =>
+          cases hclass2 : CompCert4Lean.Backend.Selection.classify_stmt s2 with
+          | SCskip | SCother =>
+              simp [CompCert4Lean.Backend.Selection.classify_stmt, hclass1, hclass2] at hclass
+          | SCassign id' a' =>
+              simp [CompCert4Lean.Backend.Selection.classify_stmt, hclass1, hclass2] at hclass
+              obtain ⟨rfl, rfl⟩ := hclass
+              exact ih2 hclass2
+      | SCassign id' a' =>
+          cases hclass2 : CompCert4Lean.Backend.Selection.classify_stmt s2 with
+          | SCskip =>
+              simp [CompCert4Lean.Backend.Selection.classify_stmt, hclass1, hclass2] at hclass
+              obtain ⟨rfl, rfl⟩ := hclass
+              exact ih1 hclass1
+          | SCassign | SCother =>
+              simp [CompCert4Lean.Backend.Selection.classify_stmt, hclass1, hclass2] at hclass
+      | SCother =>
+          cases hclass2 : CompCert4Lean.Backend.Selection.classify_stmt s2 <;>
+            simp [CompCert4Lean.Backend.Selection.classify_stmt, hclass1, hclass2] at hclass
+  | wt_Sstore | wt_Scall | wt_Stailcall | wt_Sifthenelse | wt_Sloop |
+    wt_Sblock | wt_Sexit | wt_Sswitch | wt_Sreturn_none | wt_Sreturn_some |
+    wt_Slabel | wt_Sgoto =>
+      simp [CompCert4Lean.Backend.Selection.classify_stmt] at hclass
+
+end CompCert4Lean.Backend.Selectionproof
+
+namespace CompCert4Lean.Backend.Selectionproof
+
+theorem eventually_step
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    eventually_stepStatement := by
+  intro xi prog f s k sp e m n P hstep
+  unfold eventually
+  apply CompCert4Lean.Common.Smallstep.eventually_later
+  · intro r hfinal
+    cases hfinal
+  · intro t s' h
+    exact (hstep t s' h).1
+  · intro t s' h
+    exact (hstep t s' h).2
+
+end CompCert4Lean.Backend.Selectionproof
+
+namespace CompCert4Lean.Backend.Selectionproof
+
+theorem classify_stmt_sound
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    classify_stmt_soundStatement := by
+  intro xi prog s
+  induction s with
+  | Sskip =>
+      simp [CompCert4Lean.Backend.Selection.classify_stmt]
+      refine ⟨0, ?_⟩
+      intro f k sp e m
+      unfold eventually
+      exact CompCert4Lean.Common.Smallstep.eventually_now _ _ _ _ _ rfl
+  | Sassign id a =>
+      have base :
+          ∃ n, ∀ (f : CompCert4Lean.Backend.Cminor.function)
+            (k : CompCert4Lean.Backend.Cminor.cont)
+            (sp : CompCert4Lean.Common.Values.val) (e : Env)
+            (m : CompCert4Lean.Common.Memory.mem)
+            (v : CompCert4Lean.Common.Values.val),
+            CompCert4Lean.Backend.Cminor.eval_expr
+              (binary64_certificate := binary64_certificate)
+              (binary32_certificate := binary32_certificate)
+              (CompCert4Lean.Common.Globalenvs.Genv.globalenv prog) sp e m a v →
+            eventually prog xi n
+              (CompCert4Lean.Backend.Cminor.State f (.Sassign id a) k sp e m)
+              (Eq (CompCert4Lean.Backend.Cminor.State f .Sskip k sp
+                (CompCert4Lean.Lib.Maps.PTree.set id v e) m)) := by
+        refine ⟨1, ?_⟩
+        intro f k sp e m v heval
+        apply eventually_step
+        intro t s' hstep
+        cases hstep with
+        | step_assign _ _ _ _ _ _ _ v' heval' =>
+            have hv : v' = v :=
+              CompCert4Lean.Backend.Cminor.eval_expr_determ _ _ _ _ _ _ heval v' heval'
+            subst v'
+            refine ⟨rfl, ?_⟩
+            unfold eventually
+            exact CompCert4Lean.Common.Smallstep.eventually_now _ _ _ _ _ rfl
+      cases a with
+      | Evar id' =>
+          cases heq : CompCert4Lean.Common.AST.ident_eq id id' with
+          | left hid =>
+              subst id'
+              simp [CompCert4Lean.Backend.Selection.classify_stmt, heq]
+              refine ⟨1, ?_⟩
+              intro f k sp e m
+              apply eventually_step
+              intro t s' hstep
+              cases hstep with
+              | step_assign _ _ _ _ _ _ _ v heval =>
+                  cases heval with
+                  | eval_Evar _ _ hget =>
+                      refine ⟨rfl, ?_⟩
+                      rw [CompCert4Lean.Lib.Maps.PTree.gsident id e hget]
+                      unfold eventually
+                      exact CompCert4Lean.Common.Smallstep.eventually_now _ _ _ _ _ rfl
+          | right hne =>
+              simpa [CompCert4Lean.Backend.Selection.classify_stmt, heq] using base
+      | _ =>
+          simpa [CompCert4Lean.Backend.Selection.classify_stmt] using base
+  | Sbuiltin optid ef args =>
+      cases optid <;> cases ef <;>
+        simp [CompCert4Lean.Backend.Selection.classify_stmt]
+      all_goals
+        refine ⟨1, ?_⟩
+        intro f k sp e m
+        apply eventually_step
+        intro t s' hstep
+        cases hstep with
+        | step_builtin _ _ _ _ _ _ _ _ _ _ _ _ hargs hext =>
+            cases hext
+            refine ⟨rfl, ?_⟩
+            unfold eventually
+            exact CompCert4Lean.Common.Smallstep.eventually_now _ _ _ _ _ rfl
+  | Sseq s1 s2 ih1 ih2 =>
+      have eseq :
+          ∀ n1 n2 (f : CompCert4Lean.Backend.Cminor.function)
+            (sp : CompCert4Lean.Common.Values.val)
+            (m : CompCert4Lean.Common.Memory.mem) (e e' e'' : Env),
+            (∀ k, eventually prog xi n1
+              (CompCert4Lean.Backend.Cminor.State f s1 k sp e m)
+              (Eq (CompCert4Lean.Backend.Cminor.State f .Sskip k sp e' m))) →
+            (∀ k, eventually prog xi n2
+              (CompCert4Lean.Backend.Cminor.State f s2 k sp e' m)
+              (Eq (CompCert4Lean.Backend.Cminor.State f .Sskip k sp e'' m))) →
+            ∀ k, eventually prog xi (Nat.succ (n1 + Nat.succ n2))
+              (CompCert4Lean.Backend.Cminor.State f (.Sseq s1 s2) k sp e m)
+              (Eq (CompCert4Lean.Backend.Cminor.State f .Sskip k sp e'' m)) := by
+        intro n1 n2 f sp m e e' e'' hfirst hsecond k
+        apply eventually_step
+        intro t s' hstep
+        cases hstep with
+        | step_seq =>
+            refine ⟨rfl, ?_⟩
+            apply CompCert4Lean.Common.Smallstep.eventually_trans
+            · exact hfirst _
+            · intro s' hs'
+              subst s'
+              apply eventually_step
+              intro t s' hstep
+              cases hstep with
+              | step_skip_seq => exact ⟨rfl, hsecond _⟩
+              | step_skip_call _ _ _ _ _ _ hcall _ =>
+                  simp [CompCert4Lean.Backend.Cminor.is_call_cont] at hcall
+      cases hc1 : CompCert4Lean.Backend.Selection.classify_stmt s1 with
+      | SCskip =>
+          cases hc2 : CompCert4Lean.Backend.Selection.classify_stmt s2 with
+          | SCskip =>
+              simp [CompCert4Lean.Backend.Selection.classify_stmt, hc1, hc2] at ih1 ih2 ⊢
+              rcases ih1 with ⟨n1, h1⟩
+              rcases ih2 with ⟨n2, h2⟩
+              exact ⟨Nat.succ (n1 + Nat.succ n2), fun f k sp e m =>
+                eseq n1 n2 f sp m e e e
+                  (fun k => h1 f k sp e m) (fun k => h2 f k sp e m) k⟩
+          | SCassign id a =>
+              simp [CompCert4Lean.Backend.Selection.classify_stmt, hc1, hc2] at ih1 ih2 ⊢
+              rcases ih1 with ⟨n1, h1⟩
+              rcases ih2 with ⟨n2, h2⟩
+              refine ⟨Nat.succ (n1 + Nat.succ n2), ?_⟩
+              intro f k sp e m v heval
+              exact eseq n1 n2 f sp m e e (CompCert4Lean.Lib.Maps.PTree.set id v e)
+                (fun k => h1 f k sp e m) (fun k => h2 f k sp e m v heval) k
+          | SCother =>
+              simp [CompCert4Lean.Backend.Selection.classify_stmt, hc1, hc2]
+      | SCassign id a =>
+          cases hc2 : CompCert4Lean.Backend.Selection.classify_stmt s2 with
+          | SCskip =>
+              simp [CompCert4Lean.Backend.Selection.classify_stmt, hc1, hc2] at ih1 ih2 ⊢
+              rcases ih1 with ⟨n1, h1⟩
+              rcases ih2 with ⟨n2, h2⟩
+              refine ⟨Nat.succ (n1 + Nat.succ n2), ?_⟩
+              intro f k sp e m v heval
+              exact eseq n1 n2 f sp m e (CompCert4Lean.Lib.Maps.PTree.set id v e)
+                (CompCert4Lean.Lib.Maps.PTree.set id v e)
+                (fun k => h1 f k sp e m v heval)
+                (fun k => h2 f k sp (CompCert4Lean.Lib.Maps.PTree.set id v e) m) k
+          | SCassign | SCother =>
+              simp [CompCert4Lean.Backend.Selection.classify_stmt, hc1, hc2]
+      | SCother =>
+          cases hc2 : CompCert4Lean.Backend.Selection.classify_stmt s2 <;>
+            simp [CompCert4Lean.Backend.Selection.classify_stmt, hc1, hc2]
+  | Sstore | Scall | Stailcall | Sifthenelse | Sloop | Sblock | Sexit |
+    Sswitch | Sreturn | Slabel | Sgoto =>
+      simp [CompCert4Lean.Backend.Selection.classify_stmt]
+
+end CompCert4Lean.Backend.Selectionproof

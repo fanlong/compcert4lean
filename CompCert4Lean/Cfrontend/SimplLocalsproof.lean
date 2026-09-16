@@ -3900,3 +3900,249 @@ theorem filter_map : filter_mapStatement := by
           simp [List.filter, List.map, ha, h a, ih]
 
 end CompCert4Lean.Cfrontend.SimplLocalsproof
+
+namespace CompCert4Lean.Cfrontend.SimplLocalsproof
+
+open CompCert4Lean.Cfrontend.Clight
+open CompCert4Lean.Cfrontend.SimplLocals
+open CompCert4Lean.Lib.Maps
+
+theorem create_undef_temps_lifted : create_undef_temps_liftedStatement := by
+  intro id f hparam
+  apply create_undef_temps_exten
+  unfold add_lifted
+  rw [filter_app]
+  unfold var_names at *
+  repeat rw [List.map_append] at *
+  constructor
+  · intro hmem
+    simp only [List.mem_append] at hmem ⊢
+    rcases hmem with hvars | htemps
+    · exact Or.inl (Or.inr hvars)
+    · exact Or.inr htemps
+  · intro hmem
+    simp only [List.mem_append] at hmem ⊢
+    rcases hmem with hparams | hrest
+    · rcases hparams with hparam' | hvars
+      · exfalso
+        apply hparam
+        obtain ⟨p, hp, hpl⟩ :=
+          CompCert4Lean.Lib.Coqlib.list_in_map_inv _ _ Prod.fst _ _ hparam'
+        have hp' : p ∈ f.fn_params := (List.mem_filter.mp hpl).1
+        exact List.mem_map.mpr ⟨p, hp', hp.symm⟩
+      · exact Or.inl hvars
+    · exact Or.inr hrest
+
+end CompCert4Lean.Cfrontend.SimplLocalsproof
+
+namespace CompCert4Lean.Cfrontend.SimplLocalsproof
+
+open CompCert4Lean.Cfrontend.Clight
+open CompCert4Lean.Cfrontend.SimplLocals
+open CompCert4Lean.Lib.Coqlib
+
+theorem vars_and_temps_properties : vars_and_temps_propertiesStatement := by
+  intro cenv params vars temps hnorepet hdisjoint
+  have hsplit := (list_norepet_app _ _ _).mp hnorepet
+  refine ⟨hsplit.1, ?_, ?_⟩
+  · unfold remove_lifted
+    unfold var_names
+    have hfm := filter_map _ _ Prod.fst
+      (fun idType => !(VSet.mem idType.1 cenv))
+      (fun id => !(VSet.mem id cenv))
+      (by intro a; rfl) (params ++ vars)
+    refine hfm ▸ ?_
+    apply filter_norepet
+    have hnorepet' : list_norepet
+        (List.map Prod.fst (params ++ vars)) := by
+      rw [List.map_append]
+      change list_norepet (List.map Prod.fst params ++ List.map Prod.fst vars) at hnorepet
+      exact hnorepet
+    exact hnorepet'
+  · unfold add_lifted
+    unfold var_names at *
+    rw [List.map_append]
+    intro x y hx hy hxy
+    rcases (List.mem_append.mp hy) with hyvars | hytemps
+    · obtain ⟨p, hp, hpl⟩ :=
+        CompCert4Lean.Lib.Coqlib.list_in_map_inv _ _ Prod.fst _ _ hyvars
+      have hpvars := (List.mem_filter.mp hpl).1
+      have hyvars' : y ∈ List.map Prod.fst vars :=
+        List.mem_map.mpr ⟨p, hpvars, hp.symm⟩
+      exact hsplit.2.2 x y hx hyvars' hxy
+    · exact hdisjoint x y hx hytemps hxy
+
+end CompCert4Lean.Cfrontend.SimplLocalsproof
+
+namespace CompCert4Lean.Cfrontend.SimplLocalsproof
+
+open CompCert4Lean.Cfrontend.Clight
+open CompCert4Lean.Cfrontend.Ctypes
+open CompCert4Lean.Cfrontend.SimplLocals
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+
+theorem match_envs_alloc_variables : match_envs_alloc_variablesStatement := by
+  intro cfg p tp hprog
+  dsimp only
+  intro cenv m vars e m' temps j tm halloc hnorep hinj hbyval hdom
+  have hempty : ∀ id, PTree.get id empty_env = none := by
+    intro id
+    simpa [empty_env] using (PTree.gempty (A := _) id)
+  have hinit : env_initial_value empty_env m := by
+    intro id b ty chunk hget
+    rw [hempty id] at hget
+    cases hget
+  have hinit' := alloc_variables_initial_value p empty_env m vars e m' halloc hinit
+  rcases match_alloc_variables cfg p tp hprog cenv empty_env m vars e m' halloc j tm empty_env hnorep hinj with
+    ⟨j', te, tm', A, B, C, D, E, F, G, H⟩
+  refine ⟨j', te, tm', A, ?_, B, C, D, E, ?_⟩
+  · refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+    · intro id
+      by_cases hid : id ∈ var_names vars
+      · obtain ⟨p0, hp0, hplist⟩ :=
+          CompCert4Lean.Lib.Coqlib.list_in_map_inv _ _ Prod.fst _ _
+            (by simpa [var_names] using hid)
+        rcases p0 with ⟨id0, ty0⟩
+        have hid0 : id = id0 := by simpa using hp0
+        subst id0
+        rcases G id ty0 hplist with ⟨b, henv, hcase⟩
+        cases hm : VSet.mem id cenv with
+        | true =>
+            simp only [hm, ↓reduceIte] at hcase
+            have htenv : PTree.get id te = none := by
+              rw [hcase.1]
+              exact hempty _
+            have hmode := hbyval id ty0 hplist hm
+            rcases hmode with ⟨chunk, hmode⟩
+            have hload := hinit' id b ty0 chunk henv hmode
+            have hinadd : (id, ty0) ∈ add_lifted cenv vars temps := by
+              unfold add_lifted
+              apply List.mem_append.mpr
+              left
+              exact List.mem_filter.mpr ⟨hplist, hm⟩
+            have htget := create_undef_temps_charact id ty0 _ hinadd
+            exact match_var_lifted b ty0 chunk .Vundef .Vundef henv htenv hm
+              hcase.2 hmode hload htget (Val.inject.val_inject_undef _)
+        | false =>
+            simp only [hm, ↓reduceIte] at hcase
+            rcases hcase with ⟨tb, hte, hmap⟩
+            exact match_var_not_lifted b ty0 tb henv hte hm hmap
+      · have hmemfalse : VSet.mem id cenv = false := by
+          cases hm : VSet.mem id cenv with
+          | false => simpa using hm
+          | true => exact False.elim (hid (hdom id hm))
+        have hout := H id hid
+        have henv : PTree.get id e = none := by
+          rw [hout.1]
+          exact hempty _
+        have htenv : PTree.get id te = none := by
+          rw [hout.2]
+          exact hempty _
+        exact match_var_not_local henv htenv hmemfalse
+    · intro id v hget
+      rcases create_undef_temps_inv temps id v hget with ⟨hv, hid⟩
+      subst v
+      change id ∈ List.map Prod.fst temps at hid
+      obtain ⟨p0, hplist, hp0⟩ := List.mem_map.mp hid
+      rcases p0 with ⟨id0, ty0⟩
+      have hid0 : id0 = id := hp0
+      subst id0
+      have hinadd : (id, ty0) ∈ add_lifted cenv vars temps := by
+        unfold add_lifted
+        apply List.mem_append.mpr
+        exact Or.inr hplist
+      have htget := create_undef_temps_charact id ty0 _ hinadd
+      refine ⟨⟨.Vundef, htget, Val.inject.val_inject_undef _⟩, ?_⟩
+      intro _
+      rfl
+    · intro id1 b1 ty1 id2 b2 ty2 hget1 hget2 hneq
+      apply alloc_variables_injective (globalenv p) id1 b1 ty1 id2 b2 ty2
+        empty_env m vars e m' halloc
+      · intro h1 h2 hne
+        rw [hempty] at h1
+        cases h1
+      · intro id b ty hget
+        rw [hempty _] at hget
+        cases hget
+      · exact hget1
+      · exact hget2
+      · exact hneq
+    · intro id b ty hget
+      rcases alloc_variables_range (globalenv p) id b ty empty_env m vars e m' halloc hget with h | h
+      · rw [hempty] at h
+        cases h
+      · exact h
+    · intro id b ty hget
+      rcases alloc_variables_range (globalenv tp) id b ty empty_env tm
+          (remove_lifted cenv vars) te tm' A hget with h | h
+      · rw [hempty] at h
+        cases h
+      · exact h
+    · intro id b' ty hte
+      by_cases hid : id ∈ var_names vars
+      · change id ∈ List.map Prod.fst vars at hid
+        obtain ⟨p0, hplist, hp0⟩ := List.mem_map.mp hid
+        rcases p0 with ⟨id0, ty0⟩
+        have hid0 : id0 = id := hp0
+        subst id0
+        rcases G id ty0 hplist with ⟨b, henv, hcase⟩
+        cases hm : VSet.mem id cenv with
+        | true =>
+            simp only [hm, ↓reduceIte] at hcase
+            have hte0 : PTree.get id te = none := by
+              rw [hcase.1]
+              exact hempty _
+            rw [hte0] at hte
+            cases hte
+        | false =>
+            simp only [hm, ↓reduceIte] at hcase
+            rcases hcase with ⟨tb, hte0, hmap⟩
+            have heq : (tb, ty0) = (b', ty) := Option.some.inj (hte0.symm.trans hte)
+            cases heq
+            exact ⟨b, hmap, henv⟩
+      · have hout := H id hid
+        rw [hout.2] at hte
+        rw [hempty _] at hte
+        cases hte
+    · intro id b' ty b delta hte hmap
+      rcases alloc_variables_range (globalenv tp) id b' ty empty_env tm
+          (remove_lifted cenv vars) te tm' A hte with h | h
+      · rw [hempty] at h
+        cases h
+      · have hnotvalid : ¬ Mem.valid_block tm b' := by
+          intro hv
+          change Plt b' tm.nextblock at hv
+          exact (Nat.not_lt_of_ge h.1) hv
+        rcases F b b' delta hmap hnotvalid with ⟨id0, ty0, henv0, hte0, hdelta⟩
+        have hid : id = id0 := by
+          apply Classical.byContradiction
+          intro hneq
+          have hinj' := alloc_variables_injective (globalenv tp) id b' ty id0 b' ty0
+            empty_env tm (remove_lifted cenv vars) te tm' A
+            (by
+              intro h1 h2 _
+              rw [hempty] at h1
+              cases h1)
+            (by
+              intro id1 b1 ty1 hget
+              rw [hempty] at hget
+              cases hget)
+            hte hte0 hneq
+          exact hinj' rfl
+        subst id0
+        have hty : (b', ty0) = (b', ty) := Option.some.inj (hte0.symm.trans hte)
+        cases hty
+        exact ⟨henv0, hdelta⟩
+    · exact alloc_variables_nextblock (globalenv p) empty_env m vars e m' halloc
+    · exact alloc_variables_nextblock (globalenv tp) empty_env tm
+        (remove_lifted cenv vars) te tm' A
+  · intro id ty hpair hfalse
+    rcases G id ty hpair with ⟨b, henv, hcase⟩
+    simp only [hfalse] at hcase
+    rcases hcase with ⟨tb, hte, hmap⟩
+    exact ⟨tb, hte⟩
+
+end CompCert4Lean.Cfrontend.SimplLocalsproof

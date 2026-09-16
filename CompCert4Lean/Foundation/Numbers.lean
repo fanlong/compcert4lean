@@ -2671,3 +2671,230 @@ theorem ZArith.BinInt.Z.divide_factor_r :
 
 end Rocq.Coq
 end CompCert4Lean.Foundation.Numbers
+
+namespace CompCert4Lean.Foundation.Numbers
+namespace Rocq.Coq
+
+theorem ZArith.BinInt.Z.lt_pred_le :
+    ZArith.BinInt.Z.lt_pred_leStatement := by
+  intro n m
+  change intOfZ (ZArith.BinInt.Z.pred n) < intOfZ m ↔ intOfZ n ≤ intOfZ m
+  simp only [ZArith.BinInt.Z.pred, ZArith.BinInt.Z.sub, intOfZ_zOfInt]
+  have hone : intOfZ (Zpos xH) = 1 := by simp [intOfZ, posToNat]
+  rw [hone]
+  omega
+
+theorem ZArith.BinInt.Z.div_small :
+    ZArith.BinInt.Z.div_smallStatement := by
+  intro a b h
+  change 0 ≤ intOfZ a ∧ intOfZ a < intOfZ b at h
+  have hb : 0 < intOfZ b := Int.lt_of_le_of_lt h.1 h.2
+  have hb0 : intOfZ b ≠ 0 := Int.ne_of_gt hb
+  apply intOfZ_injective
+  change intOfZ (ZArith.BinInt.Z.div a b) = 0
+  simp only [ZArith.BinInt.Z.div, intOfZ_zOfInt]
+  unfold ZArith.BinInt.Z.zDivEucl
+  simp only [hb0, if_false, hb, if_true]
+  exact Int.ediv_eq_zero_of_lt h.1 h.2
+
+theorem ZArith.BinInt.Z.even_pow :
+    ZArith.BinInt.Z.even_powStatement := by
+  intro a b hb
+  change 0 < intOfZ b at hb
+  have hcast : (Int.toNat (intOfZ b) : Int) = intOfZ b :=
+    Int.toNat_of_nonneg (Int.le_of_lt hb)
+  have hn : 0 < Int.toNat (intOfZ b) := by omega
+  change decide (Int.natAbs (intOfZ (ZArith.BinInt.Z.pow a b)) % 2 = 0) =
+    decide (Int.natAbs (intOfZ a) % 2 = 0)
+  unfold ZArith.BinInt.Z.pow
+  simp only [if_neg (Int.not_lt_of_ge (Int.le_of_lt hb)), intOfZ_zOfInt]
+  change decide (((intOfZ a) ^ Int.toNat (intOfZ b)).natAbs % 2 = 0) =
+    decide (Int.natAbs (intOfZ a) % 2 = 0)
+  rw [Int.natAbs_pow]
+  rw [Nat.pow_mod]
+  have hmod : Int.natAbs (intOfZ a) % 2 < 2 := Nat.mod_lt _ (by decide)
+  have hpow : (Int.natAbs (intOfZ a) % 2) ^ Int.toNat (intOfZ b) % 2 =
+      Int.natAbs (intOfZ a) % 2 := by
+    by_cases hzero : Int.natAbs (intOfZ a) % 2 = 0
+    · rw [hzero, Nat.zero_pow hn, Nat.zero_mod]
+    · have hone : Int.natAbs (intOfZ a) % 2 = 1 := by omega
+      simp [hone]
+  rw [hpow]
+
+private theorem zDivEucl_eq_fdiv (a b : Int) :
+    ZArith.BinInt.Z.zDivEucl a b = Int.fdiv a b := by
+  by_cases hb0 : b = 0
+  · simp [ZArith.BinInt.Z.zDivEucl, hb0]
+  by_cases hbpos : 0 < b
+  · simp [ZArith.BinInt.Z.zDivEucl, hb0, hbpos]
+    exact (Int.fdiv_eq_ediv_of_nonneg a (Int.le_of_lt hbpos)).symm
+  · have hbneg : b < 0 := by omega
+    rw [Int.fdiv_eq_ediv]
+    simp only [hbneg, Int.not_le_of_gt hbneg, false_or]
+    unfold ZArith.BinInt.Z.zDivEucl
+    simp only [hb0, hbpos, if_false]
+    by_cases hdvd : b ∣ a
+    · have hrem : a % (-b) = 0 := by
+        have hdvd' : -b ∣ a := by simpa using hdvd
+        exact Int.emod_eq_zero_of_dvd hdvd'
+      have hb_repr : b = -(-b) := by omega
+      have hr : a.emod (-b) = 0 := hrem
+      have hdiv : a / b = -(a / (-b)) := by
+        calc
+          a / b = a / (-(-b)) := congrArg (fun x => a / x) hb_repr
+          _ = -(a / (-b)) := Int.ediv_neg _ _
+      rw [if_pos hr, if_pos hdvd, hdiv]
+      simp only [Int.sub_zero]
+      change -(a / (-b)) = -(a / (-b))
+      rfl
+    · have hrem : a % (-b) ≠ 0 := by
+        intro h
+        apply hdvd
+        have hdvd' : -b ∣ a := Int.dvd_of_emod_eq_zero h
+        simpa using hdvd'
+      have hb_repr : b = -(-b) := by omega
+      have hr : a.emod (-b) ≠ 0 := hrem
+      have hdiv : a / b = -(a / (-b)) := by
+        calc
+          a / b = a / (-(-b)) := congrArg (fun x => a / x) hb_repr
+          _ = -(a / (-b)) := Int.ediv_neg _ _
+      rw [if_neg hr, if_neg hdvd, hdiv]
+      change -((a / (-b)) + 1) = -(a / (-b)) - 1
+      omega
+
+private theorem fdiv_fdiv_of_pos (a b c : Int) (hb : b ≠ 0) (hc : 0 < c) :
+    (a.fdiv b).fdiv c = a.fdiv (b * c) := by
+  have hc0 : 0 ≤ c := Int.le_of_lt hc
+  rw [Int.fdiv_eq_ediv_of_nonneg _ hc0, Int.fdiv_eq_ediv, Int.fdiv_eq_ediv]
+  by_cases hbn : 0 ≤ b
+  · have hbc0 : 0 ≤ b * c := Int.mul_nonneg hbn hc0
+    simpa [hbn, hbc0] using (Int.ediv_ediv_of_nonneg (x := a) (y := b) (z := c) hbn)
+  · have hbneg : b < 0 := by omega
+    have hbcneg : b * c < 0 := Int.mul_neg_of_neg_of_pos hbneg hc
+    have hbc0n : ¬ 0 ≤ b * c := Int.not_le_of_gt hbcneg
+    simp only [hbn, hbc0n, false_or]
+    have hshift : ∀ q : Int,
+        (q - 1) / c = q / c - if c ∣ q then 1 else 0 := by
+      intro q
+      by_cases hcq : c ∣ q
+      · have hcq' : c ∣ q := hcq
+        obtain ⟨k, hq⟩ := hcq'
+        have hq' : q = k * c := by simpa [Int.mul_comm] using hq
+        have hdiv : q / c = k :=
+          Int.ediv_eq_of_eq_mul_right (Int.ne_of_gt hc) hq
+        have hc1 : 1 ≤ c := by omega
+        have hsub : (q - 1) / c = k - 1 := by
+          apply (Int.ediv_eq_iff_of_pos hc).2
+          constructor
+          · calc
+              (k - 1) * c = k * c - c := by
+                simpa using (Int.sub_mul k 1 c)
+              _ ≤ k * c - 1 := by omega
+              _ = q - 1 := by rw [hq']
+          · calc
+              q - 1 < q := by omega
+              _ = (k - 1) * c + c := by
+                rw [hq', Int.sub_mul]
+                simpa using (Int.sub_add_cancel (k * c) c).symm
+        simpa [hcq, hdiv] using hsub
+      · have hrem0 : q % c ≠ 0 := by
+          intro hrem
+          apply hcq
+          exact Int.dvd_of_emod_eq_zero hrem
+        have hrem_nonneg : 0 ≤ q % c :=
+          Int.emod_nonneg q (Int.ne_of_gt hc)
+        have hrem_pos : 0 < q % c := by omega
+        have hrem_lt : q % c < c := Int.emod_lt_of_pos q hc
+        have hdecomp : q % c + c * (q / c) = q :=
+          Int.emod_add_mul_ediv q c
+        have hsub : (q - 1) / c = q / c := by
+          apply (Int.ediv_eq_iff_of_pos hc).2
+          constructor
+          · calc
+              (q / c) * c = c * (q / c) := Int.mul_comm _ _
+              _ ≤ q - 1 := by omega
+          · calc
+              q - 1 < c * (q / c) + c := by omega
+              _ = (q / c) * c + c := by rw [Int.mul_comm]
+        simpa [hcq] using hsub
+    by_cases hba : b ∣ a
+    · have hiff : b * c ∣ a ↔ c ∣ a / b := by
+        constructor
+        · rintro ⟨k, hk⟩
+          refine ⟨k, ?_⟩
+          apply Int.ediv_eq_of_eq_mul_right hb
+          calc
+            a = b * c * k := hk
+            _ = b * (c * k) := Int.mul_assoc _ _ _
+        · rintro ⟨k, hk⟩
+          have hba' := hba
+          refine ⟨k, ?_⟩
+          have hq : a / b = c * k := hk
+          have ha' : a = b * (a / b) := by
+            calc
+              a = (a / b) * b := (Int.ediv_mul_cancel_of_dvd hba').symm
+              _ = b * (a / b) := Int.mul_comm _ _
+          calc
+            a = b * (a / b) := ha'
+            _ = b * (c * k) := by rw [hq]
+            _ = b * c * k := (Int.mul_assoc _ _ _).symm
+      have he := Int.ediv_ediv (x := a) (y := b) (z := c)
+      have hsign : c.sign = 1 := Int.sign_eq_one_of_pos hc
+      by_cases hcq : c ∣ a / b
+      · have hbc : b * c ∣ a := hiff.mpr hcq
+        simp only [if_pos hba, if_pos hbc, Int.sub_zero]
+        simpa [hbneg, hcq, hsign] using he
+      · have hbc : ¬ b * c ∣ a := by
+          intro h
+          exact hcq (hiff.mp h)
+        simp only [if_pos hba, if_neg hbc, Int.sub_zero]
+        have he' : a / b / c = a / (b * c) - 1 := by
+          simpa [hbneg, hcq, hsign] using he
+        exact he'
+    · have hbc : ¬ b * c ∣ a := by
+        intro h
+        obtain ⟨k, hk⟩ := h
+        apply hba
+        refine ⟨c * k, ?_⟩
+        calc
+          a = b * c * k := hk
+          _ = b * (c * k) := Int.mul_assoc _ _ _
+      simp only [if_neg hba, if_neg hbc]
+      have he := Int.ediv_ediv (x := a) (y := b) (z := c)
+      have hsign : c.sign = 1 := Int.sign_eq_one_of_pos hc
+      have he' : a / b / c = a / (b * c) -
+          if c ∣ a / b then 0 else 1 := by
+        simpa [hbneg, hsign] using he
+      have hs := hshift (a / b)
+      by_cases hcq : c ∣ a / b
+      · have hs' : (a / b - 1) / c = a / b / c - 1 := by
+          simpa [hcq] using hs
+        have he'' : a / b / c = a / (b * c) := by
+          simpa [hcq] using he'
+        calc
+          (a / b - 1) / c = a / b / c - 1 := hs'
+          _ = a / (b * c) - 1 := by rw [he'']
+      · have hs' : (a / b - 1) / c = a / b / c := by
+          simpa [hcq] using hs
+        have he'' : a / b / c = a / (b * c) - 1 := by
+          simpa [hcq] using he'
+        calc
+          (a / b - 1) / c = a / b / c := hs'
+          _ = a / (b * c) - 1 := he''
+
+theorem ZArith.BinInt.Z.div_div :
+    ZArith.BinInt.Z.div_divStatement := by
+  intro a b c hb hc
+  have hb' : intOfZ b ≠ 0 := by
+    intro hzero
+    apply hb
+    apply intOfZ_injective
+    simpa [intOfZ] using hzero
+  change 0 < intOfZ c at hc
+  apply intOfZ_injective
+  simp only [ZArith.BinInt.Z.div, ZArith.BinInt.Z.mul, intOfZ_zOfInt]
+  rw [zDivEucl_eq_fdiv, zDivEucl_eq_fdiv, zDivEucl_eq_fdiv]
+  exact fdiv_fdiv_of_pos _ _ _ hb' hc
+
+end Rocq.Coq
+end CompCert4Lean.Foundation.Numbers

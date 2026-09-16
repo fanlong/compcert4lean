@@ -3130,3 +3130,80 @@ theorem tr_val_gen :
       exact SimplExprspec.tr_expr.tr_val_set le sd v ty a a tmp htype heval
 
 end CompCert4Lean.Cfrontend.SimplExprproof
+
+namespace CompCert4Lean.Cfrontend.SimplExprproof
+
+theorem alloc_variables_preserved :
+    ∀ [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+      [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)],
+      alloc_variables_preservedStatement := by
+  intro binary64_certificate binary32_certificate
+  intro p tp hmatch e m params e' m' halloc
+  induction halloc with
+  | nil e m =>
+      exact Clight.alloc_variables.nil e m
+  | cons halloc hrest ih =>
+      apply Clight.alloc_variables.cons
+      · rw [comp_env_preserved (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate) p tp hmatch]
+        exact halloc
+      · exact ih
+
+end CompCert4Lean.Cfrontend.SimplExprproof
+
+namespace CompCert4Lean.Cfrontend.SimplExprproof
+
+theorem bind_parameters_preserved :
+    ∀ [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+      [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)],
+      bind_parameters_preservedStatement := by
+  intro binary64_certificate binary32_certificate
+  intro p tp hmatch e m params args m' hbind
+  induction hbind with
+  | nil m =>
+      exact Clight.bind_parameters.nil m
+  | cons hfind hassign hrest ih =>
+      apply Clight.bind_parameters.cons
+      · exact hfind
+      · cases hassign with
+        | value hmode hvol hstore =>
+            exact Clight.assign_loc_value _ _ _ hmode hstore
+        | copy hmode hsrcAlign htgtAlign hseparated hload hstore =>
+            have henv : (Clight.globalenv tp).genv_cenv =
+                (Csem.globalenv p).genv_cenv :=
+              comp_env_preserved (binary64_certificate := binary64_certificate)
+                (binary32_certificate := binary32_certificate) p tp hmatch
+            rw [henv]
+            apply Clight.assign_loc_copy _ _ _ _ hmode
+            · intro _
+              exact hsrcAlign
+            · intro _
+              exact htgtAlign
+            · exact hseparated
+            · exact hload
+            · exact hstore
+        | volatile hmode hvol hstore =>
+            cases hstore with
+            | volatile_store_nonvol a b c d =>
+                exact Clight.assign_loc_value _ _ _ hmode d
+      · exact ih
+
+end CompCert4Lean.Cfrontend.SimplExprproof
+
+namespace CompCert4Lean.Cfrontend.SimplExprproof
+
+theorem tr_top_val_for_val_inv :
+    ∀ [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+      [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)],
+      tr_top_val_for_val_invStatement := by
+  intro binary64_certificate binary32_certificate
+  intro tp ce e le m v ty sl a tmps h
+  cases h with
+  | tr_top_val_val v ty a tmps htype heval =>
+      exact ⟨rfl, htype, heval⟩
+  | tr_top_base dst r sl a tmps htr =>
+      cases htr with
+      | tr_val_value v ty a tmps htype heval =>
+          exact ⟨rfl, htype, heval _ _ _ _ (by intros; rfl)⟩
+
+end CompCert4Lean.Cfrontend.SimplExprproof

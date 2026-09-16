@@ -2837,3 +2837,170 @@ theorem shl_align_correct :
       · change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ e ≤
           CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ e
         omega
+
+private theorem pg_shl_fexp_digits2_pos_nat (q : positive) :
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat (digits2_pos q) =
+      Nat.log2 (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat q) + 1 := by
+  have hsucc (r : positive) :
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat
+          (Lib.Floats.Model.Rocq.Coq.Floats.SpecFloat.posSucc r) =
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat r + 1 := by
+    induction r with
+    | xH => rfl
+    | xI r ih =>
+        change 2 * CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat
+            (Lib.Floats.Model.Rocq.Coq.Floats.SpecFloat.posSucc r) =
+          2 * CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat r + 1 + 1
+        rw [ih]
+        omega
+    | xO r ih =>
+        change CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat (.xI r) =
+          2 * CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat r + 1
+        rfl
+  induction q with
+  | xH => decide
+  | xO q ih =>
+      rw [show digits2_pos (.xO q) =
+            Lib.Floats.Model.Rocq.Coq.Floats.SpecFloat.posSucc
+              (digits2_pos q) by rfl,
+        hsucc, ih]
+      simp only [CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat]
+      have hqne : CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat q ≠ 0 :=
+        Nat.ne_of_gt
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat_positive q)
+      rw [Nat.log2_two_mul hqne]
+  | xI q ih =>
+      rw [show digits2_pos (.xI q) =
+            Lib.Floats.Model.Rocq.Coq.Floats.SpecFloat.posSucc
+              (digits2_pos q) by rfl,
+        hsucc, ih]
+      simp only [CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat]
+      let k := CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat q
+      have hk : 0 < k :=
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat_positive q
+      have hlog : Nat.log2 (2 * k + 1) = Nat.log2 k + 1 := by
+        apply (Nat.log2_eq_iff
+          (Nat.ne_of_gt (by omega : 0 < 2 * k + 1))).2
+        have hlow := Nat.log2_self_le (Nat.ne_of_gt hk)
+        have hhigh := (Nat.log2_lt (Nat.ne_of_gt hk)).1
+          (Nat.lt_succ_self (Nat.log2 k))
+        constructor <;> rw [Nat.pow_succ] <;> omega
+      change Nat.log2 k + 1 + 1 = Nat.log2 (2 * k + 1) + 1
+      rw [hlog]
+
+private theorem pg_shl_fexp_log2_mul_two_pow (k n : Nat) (hk : 0 < k) :
+    Nat.log2 (k * 2 ^ n) = Nat.log2 k + n := by
+  apply (Nat.log2_eq_iff
+    (Nat.ne_of_gt (Nat.mul_pos hk (Nat.two_pow_pos n)))).2
+  have hlow := Nat.log2_self_le (Nat.ne_of_gt hk)
+  have hhigh := (Nat.log2_lt (Nat.ne_of_gt hk)).1
+    (Nat.lt_succ_self (Nat.log2 k))
+  constructor
+  · rw [Nat.pow_add]
+    exact Nat.mul_le_mul_right (2 ^ n) hlow
+  · rw [show Nat.log2 k + n + 1 = (Nat.log2 k + 1) + n by omega,
+      Nat.pow_add]
+    exact Nat.mul_lt_mul_of_pos_right hhigh (Nat.two_pow_pos n)
+
+private theorem pg_shl_fexp_shift_digits (p x : positive) :
+    Zdigits radix2
+        (Zpos (Lib.Floats.Model.Rocq.Coq.Floats.SpecFloat.shiftPos p x)) =
+      Zadd (Zdigits radix2 (Zpos x)) (Zpos p) := by
+  change Core.Digits.Zdigits radix2
+      (Zpos (Lib.Floats.Model.Rocq.Coq.Floats.SpecFloat.shiftPos p x)) =
+    Zadd (Core.Digits.Zdigits radix2 (Zpos x)) (Zpos p)
+  rw [← Core.Digits.Zpos_digits2_pos,
+    ← Core.Digits.Zpos_digits2_pos]
+  apply CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective
+  simp only [Zadd,
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add,
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+  change Int.ofNat
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat
+        (digits2_pos
+          (Lib.Floats.Model.Rocq.Coq.Floats.SpecFloat.shiftPos p x))) =
+    Int.ofNat
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat (digits2_pos x)) +
+      Int.ofNat (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p)
+  rw [pg_shl_fexp_digits2_pos_nat, pg_shl_fexp_digits2_pos_nat]
+  unfold Lib.Floats.Model.Rocq.Coq.Floats.SpecFloat.shiftPos
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.Zpower.shift_pos
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.PArith.BinPos.Pos.shiftl_nat
+  rw [CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat_posOfNat
+    (Nat.mul_pos
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat_positive x)
+      (Nat.two_pow_pos _))]
+  rw [pg_shl_fexp_log2_mul_two_pow _ _
+    (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat_positive x)]
+  simp only [
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.PArith.BinPos.Pos.to_nat,
+    Int.ofNat_eq_coe, Int.natCast_add]
+  omega
+
+theorem shl_align_fexp_correct :
+    ∀ {prec emax : Z} (ctx : ExactRealContext),
+      shl_align_fexp_correctStatement (prec := prec) (emax := emax) ctx := by
+  intro prec emax ctx mx ex
+  unfold shl_align_fexp
+  let e := fexp (prec := prec) (emax := emax)
+    (Zadd (Zpos (digits2_pos mx)) ex)
+  have hc := shl_align_correct ctx mx ex e
+  have hdigit : Zdigits radix2 (Zpos mx) = Zpos (digits2_pos mx) := by
+    change Core.Digits.Zdigits radix2 (Zpos mx) = Zpos (digits2_pos mx)
+    exact (Core.Digits.Zpos_digits2_pos mx).symm
+  cases hz : Zsub e ex with
+  | Z0 =>
+      have hs : shl_align mx ex e = (mx, ex) := by
+        change (match Zsub e ex with
+          | .Zneg d =>
+              (Lib.Floats.Model.Rocq.Coq.Floats.SpecFloat.shiftPos d mx, e)
+          | _ => (mx, ex)) = (mx, ex)
+        rw [hz]
+      rw [hs] at hc ⊢
+      refine ⟨hc.1, ?_⟩
+      rw [hdigit]
+      exact hc.2
+  | Zpos p =>
+      have hs : shl_align mx ex e = (mx, ex) := by
+        change (match Zsub e ex with
+          | .Zneg d =>
+              (Lib.Floats.Model.Rocq.Coq.Floats.SpecFloat.shiftPos d mx, e)
+          | _ => (mx, ex)) = (mx, ex)
+        rw [hz]
+      rw [hs] at hc ⊢
+      refine ⟨hc.1, ?_⟩
+      rw [hdigit]
+      exact hc.2
+  | Zneg p =>
+      have hs : shl_align mx ex e =
+          (Lib.Floats.Model.Rocq.Coq.Floats.SpecFloat.shiftPos p mx, e) := by
+        change (match Zsub e ex with
+          | .Zneg d =>
+              (Lib.Floats.Model.Rocq.Coq.Floats.SpecFloat.shiftPos d mx, e)
+          | _ => (mx, ex)) =
+            (Lib.Floats.Model.Rocq.Coq.Floats.SpecFloat.shiftPos p mx, e)
+        rw [hz]
+      rw [hs] at hc ⊢
+      refine ⟨hc.1, ?_⟩
+      have hsub := congrArg
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ hz
+      simp only [Zsub,
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.sub,
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt] at hsub
+      change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ e -
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ ex =
+        -CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (Zpos p) at hsub
+      have harg :
+          Zadd
+              (Zdigits radix2
+                (Zpos
+                  (Lib.Floats.Model.Rocq.Coq.Floats.SpecFloat.shiftPos p mx))) e =
+            Zadd (Zpos (digits2_pos mx)) ex := by
+        rw [pg_shl_fexp_shift_digits, hdigit]
+        apply CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective
+        simp only [Zadd,
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add,
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+        omega
+      rw [harg]
+      exact hc.2
