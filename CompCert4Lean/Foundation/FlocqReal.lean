@@ -3929,3 +3929,60 @@ noncomputable def completeness :
 end Raxioms
 end Rocq.Coq.Reals
 end CompCert4Lean.Foundation.FlocqReal
+
+namespace CompCert4Lean.Foundation.FlocqReal
+namespace Rocq.Coq.Reals
+namespace Rbasic_fun
+
+theorem Rmin_l :
+    ∀ (ctx : ExactRealContext), Rmin_lStatement ctx := by
+  intro ctx x y
+  change ctx.spec.le (ctx.spec.min x y) x
+  exact ctx.certificate.sourceLaws.min_left x y
+
+theorem Rmin_r :
+    ∀ (ctx : ExactRealContext), Rmin_rStatement ctx := by
+  intro ctx x y
+  change ctx.spec.le (ctx.spec.min x y) y
+  exact ctx.certificate.sourceLaws.min_right x y
+
+theorem Rmin_comm :
+    ∀ (ctx : ExactRealContext), Rmin_commStatement ctx := by
+  intro ctx x y
+  change ctx.spec.min x y = ctx.spec.min y x
+  rcases ctx.certificate.total_order x y with hxy | hyx
+  · rcases hxy with hlt | heq
+    · have hle : ctx.spec.le x y :=
+        (ctx.certificate.orderedField.lt_iff_le_not_le x y).mp hlt |>.1
+      rw [ctx.certificate.sourceLaws.min_eq_left x y hle,
+        ctx.certificate.sourceLaws.min_eq_right y x hle]
+    · subst y
+      rfl
+  · have hle : ctx.spec.le y x :=
+      (ctx.certificate.orderedField.lt_iff_le_not_le y x).mp hyx |>.1
+    rw [ctx.certificate.sourceLaws.min_eq_right x y hle,
+      ctx.certificate.sourceLaws.min_eq_left y x hle]
+
+def Rcase_abs :
+    ∀ (ctx : ExactRealContext), Rcase_absStatement ctx := by
+  intro ctx r
+  cases hdec : ctx.spec.lt_dec r ctx.spec.zero with
+  | left hlt =>
+      exact .left (by
+        change ctx.spec.lt r (ctx.spec.ofZ Z0)
+        rw [ctx.certificate.sourceLaws.ofZ_zero]
+        exact hlt)
+  | right hnlt =>
+      apply Logic.Support.Sumbool.right
+      change ctx.spec.le (ctx.spec.ofZ Z0) r
+      rw [ctx.certificate.sourceLaws.ofZ_zero]
+      rcases ctx.certificate.total_order ctx.spec.zero r with h | h
+      · rcases h with hlt | heq
+        · exact (ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp hlt |>.1
+        · subst r
+          exact ctx.certificate.orderedField.le_refl _
+      · exact (hnlt h).elim
+
+end Rbasic_fun
+end Rocq.Coq.Reals
+end CompCert4Lean.Foundation.FlocqReal
