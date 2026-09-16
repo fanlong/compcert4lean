@@ -4188,3 +4188,29 @@ theorem list_val_of_aval_sound : list_val_of_aval_soundStatement := by
         (val_of_aval_sound bc v a hhead) ih
 
 end CompCert4Lean.Backend.ValueDomain
+
+namespace CompCert4Lean.Backend.ValueDomain
+
+theorem aval_of_val_sound : aval_of_val_soundStatement := by
+  intro bc v a h
+  cases v with
+  | Vundef => simp [aval_of_val] at h
+  | Vint i =>
+      have ha : I i = a := by simpa [aval_of_val] using h
+      cases ha
+      exact vmatch.vmatch_i i
+  | Vlong i =>
+      have ha : L i = a := by simpa [aval_of_val] using h
+      cases ha
+      exact vmatch.long i
+  | Vfloat f =>
+      have ha : F f = a := by simpa [aval_of_val] using h
+      cases ha
+      exact vmatch.float f
+  | Vsingle f =>
+      have ha : FS f = a := by simpa [aval_of_val] using h
+      cases ha
+      exact vmatch.single f
+  | Vptr b ofs => simp [aval_of_val] at h
+
+end CompCert4Lean.Backend.ValueDomain
