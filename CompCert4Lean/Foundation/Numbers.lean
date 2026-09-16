@@ -2898,3 +2898,63 @@ theorem ZArith.BinInt.Z.div_div :
 
 end Rocq.Coq
 end CompCert4Lean.Foundation.Numbers
+
+namespace CompCert4Lean.Foundation.Numbers
+namespace Rocq.Coq
+
+private theorem pg_evenNatMulEq (a b : Nat) :
+    decide ((a * b) % 2 = 0) =
+      _root_.Bool.or (decide (a % 2 = 0)) (decide (b % 2 = 0)) := by
+  have hmod : (a * b) % 2 = ((a % 2) * (b % 2)) % 2 := Nat.mul_mod a b 2
+  rw [hmod]
+  by_cases ha : a % 2 = 0
+  · by_cases hb : b % 2 = 0 <;> simp [ha, hb]
+  · by_cases hb : b % 2 = 0
+    · simp [ha, hb]
+    · have ha' : a % 2 < 2 := Nat.mod_lt _ (by decide)
+      have hb' : b % 2 < 2 := Nat.mod_lt _ (by decide)
+      have ha1 : a % 2 = 1 := by omega
+      have hb1 : b % 2 = 1 := by omega
+      simp [ha, hb, ha1, hb1]
+
+theorem ZArith.BinInt.Z.even_mul :
+    ZArith.BinInt.Z.even_mulStatement := by
+  intro n m
+  unfold ZArith.BinInt.Z.even ZArith.BinInt.Z.mul
+  rw [intOfZ_zOfInt]
+  rw [Int.natAbs_mul]
+  exact pg_evenNatMulEq _ _
+
+theorem ZArith.BinInt.Z.le_min_l :
+    ZArith.BinInt.Z.le_min_lStatement := by
+  intro n m
+  change intOfZ (ZArith.BinInt.Z.min n m) ≤ intOfZ n
+  by_cases h : intOfZ n ≤ intOfZ m
+  · simp [ZArith.BinInt.Z.min, h]
+  · have h' : intOfZ m ≤ intOfZ n := Int.le_of_not_le h
+    simp [ZArith.BinInt.Z.min, h, h']
+
+theorem ZArith.BinInt.Z.le_max_l :
+    ZArith.BinInt.Z.le_max_lStatement := by
+  intro n m
+  change intOfZ n ≤ intOfZ (ZArith.BinInt.Z.max n m)
+  by_cases h : intOfZ n ≤ intOfZ m
+  · simp [ZArith.BinInt.Z.max, h]
+  · simp [ZArith.BinInt.Z.max, h]
+
+theorem ZArith.BinInt.Z.compare_eq :
+    ZArith.BinInt.Z.compare_eqStatement := by
+  intro x y h
+  unfold ZArith.BinInt.Z.compare comparisonOfInt at h
+  change (if intOfZ x < intOfZ y then (Lt : comparison)
+    else if intOfZ x = intOfZ y then (Eq : comparison)
+    else (Gt : comparison)) = (Eq : comparison) at h
+  by_cases hxy : intOfZ x < intOfZ y
+  · simp [hxy] at h
+  · by_cases heq : intOfZ x = intOfZ y
+    · apply intOfZ_injective
+      exact heq
+    · simp [hxy, heq] at h
+
+end Rocq.Coq
+end CompCert4Lean.Foundation.Numbers

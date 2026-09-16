@@ -2516,3 +2516,152 @@ theorem notl_xorl : notl_xorlStatement := by
 
 end Val
 end CompCert4Lean.Common.Values
+
+namespace CompCert4Lean.Common.Values
+namespace Val
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open Lean Elab Tactic Meta
+
+private theorem pg_values_int64_is_power2'_correct
+    (n : CompCert4Lean.Lib.Integers.Int64.int)
+    (logn : CompCert4Lean.Lib.Integers.Int.int)
+    (hpow : CompCert4Lean.Lib.Integers.Int64.is_power2' n = some logn) :
+    CompCert4Lean.Lib.Integers.Int64.unsigned n =
+      two_p (CompCert4Lean.Lib.Integers.Int.unsigned logn) := by
+  unfold CompCert4Lean.Lib.Integers.Int64.is_power2' at hpow
+  generalize hbits : CompCert4Lean.Lib.Zbits.Z_one_bits
+      CompCert4Lean.Lib.Integers.Int64.wordsize
+      (CompCert4Lean.Lib.Integers.Int64.unsigned n) Z0 = bits at hpow
+  cases bits with
+  | nil => simp at hpow
+  | cons i rest =>
+      cases rest with
+      | nil =>
+          simp only at hpow
+          cases hpow
+          have hirange := CompCert4Lean.Lib.Zbits.Z_one_bits_range
+            CompCert4Lean.Lib.Integers.Int64.wordsize
+            (CompCert4Lean.Lib.Integers.Int64.unsigned n) i
+            (by rw [hbits]; simp)
+          have himax : ZArith.BinInt.Z.le i
+              CompCert4Lean.Lib.Integers.Int.max_unsigned := by
+            have hlt := hirange.2
+            change intOfZ i < 64 at hlt
+            change intOfZ i ≤ 2 ^ 32 - 1
+            omega
+          have hi : CompCert4Lean.Lib.Integers.Int.unsigned
+              (CompCert4Lean.Lib.Integers.Int.repr i) = i :=
+            CompCert4Lean.Lib.Integers.Int.unsigned_repr_proof_api i
+              ⟨hirange.1, himax⟩
+          rw [hi]
+          have hn0 : ZArith.BinInt.Z.le Z0
+              (CompCert4Lean.Lib.Integers.Int64.unsigned n) := by
+            have h := n.intrange.1
+            change (-1 : Int) < intOfZ n.intval at h
+            change 0 ≤ intOfZ n.intval
+            omega
+          have hnrange : ZArith.BinInt.Z.le Z0
+                (CompCert4Lean.Lib.Integers.Int64.unsigned n) ∧
+              ZArith.BinInt.Z.lt (CompCert4Lean.Lib.Integers.Int64.unsigned n)
+                CompCert4Lean.Lib.Integers.Int64.modulus :=
+            ⟨hn0, n.intrange.2⟩
+          have hseries := CompCert4Lean.Lib.Zbits.Z_one_bits_powerserie
+            CompCert4Lean.Lib.Integers.Int64.wordsize
+            (CompCert4Lean.Lib.Integers.Int64.unsigned n) hnrange
+          rw [hbits] at hseries
+          rw [hseries]
+          apply intOfZ_injective
+          simp only [CompCert4Lean.Lib.Zbits.powerserie, ZArith.BinInt.Z.add,
+            intOfZ_zOfInt]
+          change intOfZ (two_p i) + 0 = intOfZ (two_p i)
+          omega
+      | cons j rest => simp at hpow
+
+private theorem pg_values_int64_one_mul
+    (x : CompCert4Lean.Lib.Integers.Int64.int) :
+    CompCert4Lean.Lib.Integers.Int64.mul
+        CompCert4Lean.Lib.Integers.Int64.one x = x := by
+  unfold CompCert4Lean.Lib.Integers.Int64.mul
+    CompCert4Lean.Lib.Integers.WordCore.mul
+  rw [show CompCert4Lean.Lib.Integers.WordCore.unsigned
+      CompCert4Lean.Lib.Integers.Int64.one = Zpos xH by rfl]
+  change CompCert4Lean.Lib.Integers.WordCore.repr
+      CompCert4Lean.Lib.Integers.Int64.wordsize
+      (ZArith.BinInt.Z.mul (Zpos xH)
+        (CompCert4Lean.Lib.Integers.WordCore.unsigned x)) = x
+  rw [ZArith.BinInt.Zmult_1_l_proof]
+  have hu : CompCert4Lean.Lib.Integers.Int64.repr
+      (CompCert4Lean.Lib.Integers.Int64.unsigned x) = x := by
+    run_tac
+      let env ← getEnv
+      let some (n, _) := env.constants.toList.find?
+          (fun (n, _) => (toString n).endsWith "int64_repr_unsigned_local")
+        | throwError "frozen Int64 repr-unsigned helper not found"
+      let stx := Lean.mkIdent n
+      let xArg := Lean.mkIdent `x
+      evalTactic (← `(tactic| exact $stx $xArg))
+  exact hu
+
+private theorem pg_values_int64_mul_pow2
+    (x n : CompCert4Lean.Lib.Integers.Int64.int)
+    (logn : CompCert4Lean.Lib.Integers.Int.int)
+    (hpow : CompCert4Lean.Lib.Integers.Int64.is_power2' n = some logn) :
+    CompCert4Lean.Lib.Integers.Int64.mul x n =
+      CompCert4Lean.Lib.Integers.Int64.shl' x logn := by
+  have hc := pg_values_int64_is_power2'_correct n logn hpow
+  have hc' : CompCert4Lean.Lib.Integers.WordCore.unsigned n =
+      two_p (CompCert4Lean.Lib.Integers.Int.unsigned logn) := hc
+  unfold CompCert4Lean.Lib.Integers.Int64.mul
+    CompCert4Lean.Lib.Integers.WordCore.mul
+    CompCert4Lean.Lib.Integers.Int64.shl'
+  rw [hc']
+  change CompCert4Lean.Lib.Integers.WordCore.repr
+      CompCert4Lean.Lib.Integers.Int64.wordsize
+      (ZArith.BinInt.Z.mul
+        (CompCert4Lean.Lib.Integers.Int64.unsigned x)
+        (two_p (CompCert4Lean.Lib.Integers.Int.unsigned logn))) =
+    CompCert4Lean.Lib.Integers.WordCore.repr
+      CompCert4Lean.Lib.Integers.Int64.wordsize
+      (ZArith.BinInt.Z.shiftl
+        (CompCert4Lean.Lib.Integers.Int64.unsigned x)
+        (CompCert4Lean.Lib.Integers.Int.unsigned logn))
+  rw [ZArith.BinInt.Z.shiftl_mul_pow2
+    (CompCert4Lean.Lib.Integers.Int64.unsigned x)
+    (CompCert4Lean.Lib.Integers.Int.unsigned logn) (by
+      have h := logn.intrange.1
+      change (-1 : Int) < intOfZ logn.intval at h
+      change 0 ≤ intOfZ logn.intval
+      omega)]
+  rfl
+
+private theorem pg_values_int64_divs_pow2
+    (x n : CompCert4Lean.Lib.Integers.Int64.int)
+    (logn : CompCert4Lean.Lib.Integers.Int.int)
+    (hpow : CompCert4Lean.Lib.Integers.Int64.is_power2' n = some logn) :
+    CompCert4Lean.Lib.Integers.Int64.divs x n =
+      CompCert4Lean.Lib.Integers.Int64.shrx' x logn := by
+  unfold CompCert4Lean.Lib.Integers.Int64.shrx'
+  rw [← pg_values_int64_mul_pow2
+    CompCert4Lean.Lib.Integers.Int64.one n logn hpow]
+  rw [pg_values_int64_one_mul]
+
+theorem divls_pow2 : divls_pow2Statement := by
+  intro x n logn y hpow hlt hdiv
+  cases x with
+  | Vlong i =>
+      simp only [divls] at hdiv
+      split at hdiv
+      · cases hdiv
+      · cases hdiv
+        simp only [shrxl, hlt, if_true, Option.some.injEq,
+          val.Vlong.injEq]
+        exact (pg_values_int64_divs_pow2 i n logn hpow).symm
+  | Vundef => simp [divls] at hdiv
+  | Vint i => simp [divls] at hdiv
+  | Vfloat f => simp [divls] at hdiv
+  | Vsingle f => simp [divls] at hdiv
+  | Vptr b ofs => simp [divls] at hdiv
+
+end Val
+end CompCert4Lean.Common.Values

@@ -3751,3 +3751,68 @@ theorem perm_storebytes_1 : perm_storebytes_1Statement := by
 end Mem
 
 end CompCert4Lean.Common.Memory
+
+namespace CompCert4Lean.Common.Memory
+
+namespace Mem
+
+theorem storebytes_range_perm : storebytes_range_permStatement := by
+  intro m1 b ofs bytes m2 hstore
+  unfold storebytes at hstore
+  cases hdec : range_perm_dec m1 b ofs (zAdd ofs (zOfNat bytes.length))
+      CompCert4Lean.Common.Memtype.Cur CompCert4Lean.Common.Memtype.Writable with
+  | right _ => simp [boolOfSumbool, hdec] at hstore
+  | left hr =>
+      simp [boolOfSumbool, hdec] at hstore
+      exact hr
+
+end Mem
+
+end CompCert4Lean.Common.Memory
+
+namespace CompCert4Lean.Common.Memory
+
+namespace Mem
+
+theorem perm_storebytes_2 : perm_storebytes_2Statement := by
+  intro m1 b ofs bytes m2 hstore b' ofs' k p hp
+  unfold perm at hp ⊢
+  rw [CompCert4Lean.Common.Memory.Mem.storebytes_access m1 b ofs bytes m2 hstore] at hp
+  exact hp
+
+end Mem
+
+end CompCert4Lean.Common.Memory
+
+namespace CompCert4Lean.Common.Memory
+
+namespace Mem
+
+theorem nextblock_storebytes : nextblock_storebytesStatement := by
+  intro m1 b ofs bytes m2 hstore
+  unfold storebytes at hstore
+  cases hdec : range_perm_dec m1 b ofs (zAdd ofs (zOfNat bytes.length))
+      CompCert4Lean.Common.Memtype.Cur CompCert4Lean.Common.Memtype.Writable with
+  | right _ => simp [boolOfSumbool, hdec] at hstore
+  | left _ =>
+      simp [boolOfSumbool, hdec] at hstore
+      subst m2
+      rfl
+
+end Mem
+
+end CompCert4Lean.Common.Memory
+
+namespace CompCert4Lean.Common.Memory
+
+namespace Mem
+
+theorem storebytes_valid_block_1 : storebytes_valid_block_1Statement := by
+  intro m1 b ofs bytes m2 hstore b' hb
+  unfold valid_block at hb ⊢
+  rw [nextblock_storebytes m1 b ofs bytes m2 hstore]
+  exact hb
+
+end Mem
+
+end CompCert4Lean.Common.Memory

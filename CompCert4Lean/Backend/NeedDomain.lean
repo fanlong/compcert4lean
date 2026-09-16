@@ -4616,3 +4616,70 @@ theorem notint_sound : notint_soundStatement := by
     (vagree_same (Vint Int.mone) (bitwise x))
 
 end CompCert4Lean.Backend.NeedDomain
+
+namespace CompCert4Lean.Backend.NeedDomain
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Lib.Integers
+
+theorem vagree_bitwise64_binop : vagree_bitwise64_binopStatement := by
+  intro f hf v1 w1 v2 w2 x h1 h2
+  cases x with
+  | Nothing =>
+      trivial
+  | I m =>
+      cases v1 <;> cases w1 <;> cases v2 <;> cases w2 <;>
+        simp [bitwise, vagree, iVagree, lVagree] at h1 h2 ⊢
+  | L m =>
+      cases v1 <;> cases w1 <;> cases v2 <;> cases w2 <;>
+        simp [bitwise, vagree, iVagree, lVagree] at h1 h2 ⊢
+      exact hf _ _ _ _ _ h1 h2
+  | All =>
+      cases h1 <;> cases h2 <;>
+        simp [bitwise, vagree, CompCert4Lean.Common.Values.Val.lessdef_refl,
+          CompCert4Lean.Common.Values.Val.lessdef_undef]
+
+theorem andl_sound : andl_soundStatement := by
+  exact vagree_bitwise64_binop Int64.and
+    (lagree_bitwise_binop (fun a b => a && b) Int64.and
+      (fun x y i hi => lagreeAndTestbitForOr x y i))
+
+theorem orl_sound : orl_soundStatement := by
+  exact vagree_bitwise64_binop Int64.or
+    (lagree_bitwise_binop (fun a b => a || b) Int64.or
+      (fun x y i hi => lagreeOrTestbitForOr x y i))
+
+private theorem pgLagreeXorVal (a b : int64) :
+    (CompCert4Lean.Lib.Integers.Int64.xor a b).val = Nat.xor a.val b.val := by
+  change (WordCore.repr CompCert4Lean.Lib.Integers.Int64.wordsize
+    (ZArith.BinInt.Z.of_nat (Nat.xor a.val b.val))).val = _
+  rw [lagreeValReprOfNat]
+  apply Nat.mod_eq_of_lt
+  exact Nat.xor_lt_two_pow (lagreeWordValLt a) (lagreeWordValLt b)
+
+private theorem pgLagreeXorTestbit (a b : int64) (i : Z)
+    (hirange : ZArith.BinInt.Z.le z0 i ∧
+      ZArith.BinInt.Z.lt i Int64.zwordsize) :
+    CompCert4Lean.Lib.Integers.Int64.testbit
+        (CompCert4Lean.Lib.Integers.Int64.xor a b) i =
+      Bool.xor (CompCert4Lean.Lib.Integers.Int64.testbit a i)
+        (CompCert4Lean.Lib.Integers.Int64.testbit b i) := by
+  cases i with
+  | Zneg p => rfl
+  | Z0 =>
+      rw [lagreeTestbitZero (CompCert4Lean.Lib.Integers.Int64.xor a b),
+        lagreeTestbitZero a,
+        lagreeTestbitZero b, pgLagreeXorVal]
+      rw [Nat.xor_eq, Nat.testBit_xor]
+  | Zpos p =>
+      rw [lagreeTestbitPos (CompCert4Lean.Lib.Integers.Int64.xor a b) p,
+        lagreeTestbitPos a p,
+        lagreeTestbitPos b p, pgLagreeXorVal]
+      rw [Nat.xor_eq, Nat.testBit_xor]
+
+theorem xorl_sound : xorl_soundStatement := by
+  exact vagree_bitwise64_binop CompCert4Lean.Lib.Integers.Int64.xor
+    (lagree_bitwise_binop Bool.xor CompCert4Lean.Lib.Integers.Int64.xor
+      (fun x y i hi => pgLagreeXorTestbit x y i hi))
+
+end CompCert4Lean.Backend.NeedDomain

@@ -5166,3 +5166,22 @@ theorem round_DN_ge_UP_gt :
   · exact (ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp hyx |>.1
 
 end CompCert4Lean.Flocq.Core.Ulp
+
+namespace CompCert4Lean.Flocq.Core.Ulp
+
+theorem round_UP_le_DN_lt :
+    ∀ (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx),
+      round_UP_le_DN_ltStatement ctx magnitude := by
+  intro ctx magnitude beta fexp hvalid x y hyformat hfloorlt
+  rcases ctx.certificate.total_order
+      (Exact.round ctx magnitude beta fexp
+        (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zceil ctx) x) y with hxy | hyx
+  · rcases hxy with hlt | heq
+    · exact (ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp hlt |>.1
+    · rw [heq]
+      exact ctx.certificate.orderedField.le_refl _
+  · have hdn := round_DN_ge_UP_gt ctx magnitude beta fexp hvalid x y hyformat hyx
+    exact False.elim
+      (((ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp hfloorlt).2 hdn)
+
+end CompCert4Lean.Flocq.Core.Ulp

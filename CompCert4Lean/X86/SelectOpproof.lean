@@ -3053,3 +3053,415 @@ theorem eval_mulfs
       (eval_exprlist.cons le b Enil y [] hb (eval_exprlist.nil le))) rfl
 
 end CompCert4Lean.X86.SelectOpproof
+
+namespace CompCert4Lean.X86.SelectOpproof
+
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.ExternalCalls
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.X86.Op
+open CompCert4Lean.X86.SelectOp
+
+private theorem int_eq_false_of_ne_for_compimm (x y : CCInt) (h : x ≠ y) :
+    CompCert4Lean.Lib.Integers.Int.eq x y = false := by
+  unfold CompCert4Lean.Lib.Integers.Int.eq
+  unfold CompCert4Lean.Lib.Integers.WordCore.eq
+  apply decide_eq_false
+  intro hxy
+  exact h (CompCert4Lean.Lib.Integers.WordCore.ext hxy)
+
+private theorem eval_compimm_for_swap_local
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (xi : ExternalCalls) (ge : genv) (sp : val) (e : env) (m : mem)
+    (default : comparison → CCInt → condition)
+    (intsem : comparison → CCInt → CCInt → Bool)
+    (sem : comparison → val → val → val)
+    (hsem_int : ∀ c x y, sem c (.Vint x) (.Vint y) = Val.of_bool (intsem c x y))
+    (hsem_undef : ∀ c v, sem c .Vundef v = .Vundef)
+    (hsem_eq : ∀ x y, sem .Ceq (.Vint x) (.Vint y) =
+      Val.of_bool (CompCert4Lean.Lib.Integers.Int.eq x y))
+    (hsem_ne : ∀ x y, sem .Cne (.Vint x) (.Vint y) =
+      Val.of_bool (!(CompCert4Lean.Lib.Integers.Int.eq x y)))
+    (hsem_default : ∀ c v n, sem c v (.Vint n) =
+      Val.of_optbool (eval_condition (default c n) [v] m))
+    (le : letenv) (c : comparison) (a : expr) (n2 : CCInt) (x : val)
+    (h : eval_expr xi ge sp e m le a x) :
+    ∃ v,
+      eval_expr xi ge sp e m le (compimm default intsem c a n2) v ∧
+      Val.lessdef (sem c x (.Vint n2)) v := by
+  have h00 : CompCert4Lean.Lib.Integers.Int.eq
+      CompCert4Lean.Lib.Integers.Int.zero
+      CompCert4Lean.Lib.Integers.Int.zero = true := by rfl
+  have h01 : CompCert4Lean.Lib.Integers.Int.eq
+      CompCert4Lean.Lib.Integers.Int.zero
+      CompCert4Lean.Lib.Integers.Int.one = false := by rfl
+  have h10 : CompCert4Lean.Lib.Integers.Int.eq
+      CompCert4Lean.Lib.Integers.Int.one
+      CompCert4Lean.Lib.Integers.Int.zero = false := by rfl
+  have h11 : CompCert4Lean.Lib.Integers.Int.eq
+      CompCert4Lean.Lib.Integers.Int.one
+      CompCert4Lean.Lib.Integers.Int.one = true := by rfl
+  cases hcase : compimm_match c a with
+  | compimm_case1 c n1 =>
+      have hx := eval_intconst_value_local xi ge sp e m le n1 x h
+      subst x
+      refine ⟨Val.of_bool (intsem c n1 n2), ?_, ?_⟩
+      · simp only [compimm, hcase]
+        apply eval_expr.eval_Eop le
+          (Ointconst (if intsem c n1 n2 then
+            CompCert4Lean.Lib.Integers.Int.one
+          else CompCert4Lean.Lib.Integers.Int.zero)) Enil [] _
+        · exact eval_exprlist.nil le
+        · cases intsem c n1 n2 <;> rfl
+      · rw [hsem_int]
+        exact Val.lessdef_refl _
+  | compimm_case2 cond el =>
+      cases h with
+      | eval_Eop le' op al vl v hargs hop =>
+          change some (Val.of_optbool (eval_condition cond vl m)) = some x at hop
+          have hx : Val.of_optbool (eval_condition cond vl m) = x :=
+            Option.some.inj hop
+          subst x
+          by_cases hz : n2 = CompCert4Lean.Lib.Integers.Int.zero
+          · subst n2
+            refine ⟨Val.of_optbool (eval_condition (negate_condition cond) vl m), ?_, ?_⟩
+            · simp only [compimm, hcase]
+              apply eval_expr.eval_Eop le (Ocmp (negate_condition cond)) el vl _
+              · exact hargs
+              · rfl
+            · rw [eval_negate_condition]
+              cases hc : eval_condition cond vl m with
+              | none =>
+                  change Val.lessdef (sem .Ceq .Vundef _) .Vundef
+                  rw [hsem_undef]
+                  exact Val.lessdef_undef _
+              | some b =>
+                  cases b <;>
+                    simp [Val.of_optbool, Val.of_bool, Vtrue, Vfalse, hsem_eq,
+                      h00, h01, h10, h11] <;>
+                    exact Val.lessdef_refl _
+          · by_cases ho : n2 = CompCert4Lean.Lib.Integers.Int.one
+            · subst n2
+              refine ⟨Val.of_optbool (eval_condition cond vl m), ?_, ?_⟩
+              · simp only [compimm, hcase]
+                apply eval_expr.eval_Eop le (Ocmp cond) el vl _
+                · exact hargs
+                · rfl
+              · cases hc : eval_condition cond vl m with
+                | none =>
+                    change Val.lessdef (sem .Ceq .Vundef _) .Vundef
+                    rw [hsem_undef]
+                    exact Val.lessdef_undef _
+                | some b =>
+                    cases b <;>
+                      simp [Val.of_optbool, Val.of_bool, Vtrue, Vfalse, hsem_eq,
+                        h00, h01, h10, h11] <;>
+                      exact Val.lessdef_refl _
+            · have hzero : CompCert4Lean.Lib.Integers.Int.eq_dec n2
+                  CompCert4Lean.Lib.Integers.Int.zero = .right hz := by
+                unfold CompCert4Lean.Lib.Integers.Int.eq_dec
+                split
+                · next heq => exact (hz heq).elim
+                · rfl
+              have hone : CompCert4Lean.Lib.Integers.Int.eq_dec n2
+                  CompCert4Lean.Lib.Integers.Int.one = .right ho := by
+                unfold CompCert4Lean.Lib.Integers.Int.eq_dec
+                split
+                · next heq => exact (ho heq).elim
+                · rfl
+              have heq0 : CompCert4Lean.Lib.Integers.Int.eq
+                  CompCert4Lean.Lib.Integers.Int.zero n2 = false :=
+                int_eq_false_of_ne_for_compimm _ _ (fun heq => hz heq.symm)
+              have heq1 : CompCert4Lean.Lib.Integers.Int.eq
+                  CompCert4Lean.Lib.Integers.Int.one n2 = false :=
+                int_eq_false_of_ne_for_compimm _ _ (fun heq => ho heq.symm)
+              refine ⟨.Vint CompCert4Lean.Lib.Integers.Int.zero, ?_, ?_⟩
+              · simp only [compimm, hcase]
+                run_tac
+                  let goal ← Lean.Elab.Tactic.getMainGoal
+                  let target ← goal.getType
+                  let some e := target.find? fun e =>
+                    e.isConst && e.constName!.getString! == "intEqDecBool"
+                    | throwError "private equality decider not found"
+                  let .defnInfo info ← Lean.getConstInfo e.constName!
+                    | throwError "private equality decider is not a definition"
+                  let target' := target.replace fun e =>
+                    if e.isConstOf info.name then some info.value else none
+                  let goal' ← Lean.Meta.withTransparency .all <|
+                    goal.replaceTargetDefEq target'
+                  Lean.Elab.Tactic.replaceMainGoal [goal']
+                simp [hzero, hone]
+                exact eval_expr.eval_Eop le
+                  (Ointconst CompCert4Lean.Lib.Integers.Int.zero) Enil [] _
+                  (eval_exprlist.nil le) rfl
+              · cases hc : eval_condition cond vl m with
+                | none =>
+                    change Val.lessdef (sem .Ceq .Vundef _) _
+                    rw [hsem_undef]
+                    exact Val.lessdef_undef _
+                | some b =>
+                    cases b <;>
+                      simp [Val.of_optbool, Val.of_bool, Vtrue, Vfalse, hsem_eq,
+                        heq0, heq1] <;>
+                      exact Val.lessdef_refl _
+  | compimm_case3 cond el =>
+      cases h with
+      | eval_Eop le' op al vl v hargs hop =>
+          change some (Val.of_optbool (eval_condition cond vl m)) = some x at hop
+          have hx : Val.of_optbool (eval_condition cond vl m) = x :=
+            Option.some.inj hop
+          subst x
+          by_cases hz : n2 = CompCert4Lean.Lib.Integers.Int.zero
+          · subst n2
+            refine ⟨Val.of_optbool (eval_condition cond vl m), ?_, ?_⟩
+            · simp only [compimm, hcase]
+              apply eval_expr.eval_Eop le (Ocmp cond) el vl _
+              · exact hargs
+              · rfl
+            · cases hc : eval_condition cond vl m with
+              | none =>
+                  change Val.lessdef (sem .Cne .Vundef _) .Vundef
+                  rw [hsem_undef]
+                  exact Val.lessdef_undef _
+              | some b =>
+                  cases b <;>
+                    simp [Val.of_optbool, Val.of_bool, Vtrue, Vfalse, hsem_ne,
+                      h00, h01, h10, h11] <;>
+                    exact Val.lessdef_refl _
+          · by_cases ho : n2 = CompCert4Lean.Lib.Integers.Int.one
+            · subst n2
+              refine ⟨Val.of_optbool (eval_condition (negate_condition cond) vl m), ?_, ?_⟩
+              · simp only [compimm, hcase]
+                apply eval_expr.eval_Eop le (Ocmp (negate_condition cond)) el vl _
+                · exact hargs
+                · rfl
+              · rw [eval_negate_condition]
+                cases hc : eval_condition cond vl m with
+                | none =>
+                    change Val.lessdef (sem .Cne .Vundef _) .Vundef
+                    rw [hsem_undef]
+                    exact Val.lessdef_undef _
+                | some b =>
+                    cases b <;>
+                      simp [Val.of_optbool, Val.of_bool, Vtrue, Vfalse, hsem_ne,
+                        h00, h01, h10, h11] <;>
+                      exact Val.lessdef_refl _
+            · have hzero : CompCert4Lean.Lib.Integers.Int.eq_dec n2
+                  CompCert4Lean.Lib.Integers.Int.zero = .right hz := by
+                unfold CompCert4Lean.Lib.Integers.Int.eq_dec
+                split
+                · next heq => exact (hz heq).elim
+                · rfl
+              have hone : CompCert4Lean.Lib.Integers.Int.eq_dec n2
+                  CompCert4Lean.Lib.Integers.Int.one = .right ho := by
+                unfold CompCert4Lean.Lib.Integers.Int.eq_dec
+                split
+                · next heq => exact (ho heq).elim
+                · rfl
+              have heq0 : CompCert4Lean.Lib.Integers.Int.eq
+                  CompCert4Lean.Lib.Integers.Int.zero n2 = false :=
+                int_eq_false_of_ne_for_compimm _ _ (fun heq => hz heq.symm)
+              have heq1 : CompCert4Lean.Lib.Integers.Int.eq
+                  CompCert4Lean.Lib.Integers.Int.one n2 = false :=
+                int_eq_false_of_ne_for_compimm _ _ (fun heq => ho heq.symm)
+              refine ⟨.Vint CompCert4Lean.Lib.Integers.Int.one, ?_, ?_⟩
+              · simp only [compimm, hcase]
+                run_tac
+                  let goal ← Lean.Elab.Tactic.getMainGoal
+                  let target ← goal.getType
+                  let some e := target.find? fun e =>
+                    e.isConst && e.constName!.getString! == "intEqDecBool"
+                    | throwError "private equality decider not found"
+                  let .defnInfo info ← Lean.getConstInfo e.constName!
+                    | throwError "private equality decider is not a definition"
+                  let target' := target.replace fun e =>
+                    if e.isConstOf info.name then some info.value else none
+                  let goal' ← Lean.Meta.withTransparency .all <|
+                    goal.replaceTargetDefEq target'
+                  Lean.Elab.Tactic.replaceMainGoal [goal']
+                simp [hzero, hone]
+                exact eval_expr.eval_Eop le
+                  (Ointconst CompCert4Lean.Lib.Integers.Int.one) Enil [] _
+                  (eval_exprlist.nil le) rfl
+              · cases hc : eval_condition cond vl m with
+                | none =>
+                    change Val.lessdef (sem .Cne .Vundef _) _
+                    rw [hsem_undef]
+                    exact Val.lessdef_undef _
+                | some b =>
+                    cases b <;>
+                      simp [Val.of_optbool, Val.of_bool, Vtrue, Vfalse, hsem_ne,
+                        heq0, heq1] <;>
+                      exact Val.lessdef_refl _
+  | compimm_case4 n1 t1 =>
+      cases h with
+      | eval_Eop le' op al vl v hargs hop =>
+          cases hargs with
+          | cons _ a' al' v1 vl' hhead htail =>
+              cases htail with
+              | nil _ =>
+                  change some (Val.and v1 (.Vint n1)) = some x at hop
+                  have hx : Val.and v1 (.Vint n1) = x := Option.some.inj hop
+                  subst x
+                  by_cases hz : n2 = CompCert4Lean.Lib.Integers.Int.zero
+                  · subst n2
+                    refine ⟨Val.of_optbool (eval_condition (.Cmaskzero n1) [v1] m), ?_, ?_⟩
+                    · simp only [compimm, hcase]
+                      apply eval_expr.eval_Eop le (Ocmp (.Cmaskzero n1))
+                        (Econs t1 Enil) [v1] _
+                      · exact eval_exprlist.cons le t1 Enil v1 [] hhead
+                          (eval_exprlist.nil le)
+                      · rfl
+                    · cases v1 with
+                      | Vint i =>
+                          change Val.lessdef
+                            (sem .Ceq (.Vint (CompCert4Lean.Lib.Integers.Int.and i n1))
+                              (.Vint CompCert4Lean.Lib.Integers.Int.zero)) _
+                          rw [hsem_eq]
+                          cases hb : CompCert4Lean.Lib.Integers.Int.eq
+                              (CompCert4Lean.Lib.Integers.Int.and i n1)
+                              CompCert4Lean.Lib.Integers.Int.zero <;>
+                            simp [eval_condition, Val.maskzero_bool, hb,
+                              Val.of_optbool, Val.of_bool, Vtrue, Vfalse] <;>
+                            exact Val.lessdef_refl _
+                      | _ =>
+                          change Val.lessdef (sem .Ceq .Vundef _) .Vundef
+                          rw [hsem_undef]
+                          exact Val.lessdef_undef _
+                  · have hzero : CompCert4Lean.Lib.Integers.Int.eq_dec n2
+                        CompCert4Lean.Lib.Integers.Int.zero = .right hz := by
+                      unfold CompCert4Lean.Lib.Integers.Int.eq_dec
+                      split
+                      · next heq => exact (hz heq).elim
+                      · rfl
+                    refine ⟨Val.of_optbool
+                      (eval_condition (default .Ceq n2)
+                        [Val.and v1 (.Vint n1)] m), ?_, ?_⟩
+                    · simp only [compimm, hcase]
+                      run_tac
+                        let goal ← Lean.Elab.Tactic.getMainGoal
+                        let target ← goal.getType
+                        let some e := target.find? fun e =>
+                          e.isConst && e.constName!.getString! == "intEqDecBool"
+                          | throwError "private equality decider not found"
+                        let .defnInfo info ← Lean.getConstInfo e.constName!
+                          | throwError "private equality decider is not a definition"
+                        let target' := target.replace fun e =>
+                          if e.isConstOf info.name then some info.value else none
+                        let goal' ← Lean.Meta.withTransparency .all <|
+                          goal.replaceTargetDefEq target'
+                        Lean.Elab.Tactic.replaceMainGoal [goal']
+                      simp [hzero]
+                      apply eval_expr.eval_Eop le (Ocmp (default .Ceq n2))
+                        (Econs (Eop (Oandimm n1) (Econs t1 Enil)) Enil)
+                        [Val.and v1 (.Vint n1)] _
+                      · apply eval_exprlist.cons le _ Enil _ []
+                        · apply eval_expr.eval_Eop le (Oandimm n1)
+                            (Econs t1 Enil) [v1] _
+                          · exact eval_exprlist.cons le t1 Enil v1 [] hhead
+                              (eval_exprlist.nil le)
+                          · rfl
+                        · exact eval_exprlist.nil le
+                      · rfl
+                    · rw [hsem_default]
+                      exact Val.lessdef_refl _
+  | compimm_case5 n1 t1 =>
+      cases h with
+      | eval_Eop le' op al vl v hargs hop =>
+          cases hargs with
+          | cons _ a' al' v1 vl' hhead htail =>
+              cases htail with
+              | nil _ =>
+                  change some (Val.and v1 (.Vint n1)) = some x at hop
+                  have hx : Val.and v1 (.Vint n1) = x := Option.some.inj hop
+                  subst x
+                  by_cases hz : n2 = CompCert4Lean.Lib.Integers.Int.zero
+                  · subst n2
+                    refine ⟨Val.of_optbool (eval_condition (.Cmasknotzero n1) [v1] m), ?_, ?_⟩
+                    · simp only [compimm, hcase]
+                      apply eval_expr.eval_Eop le (Ocmp (.Cmasknotzero n1))
+                        (Econs t1 Enil) [v1] _
+                      · exact eval_exprlist.cons le t1 Enil v1 [] hhead
+                          (eval_exprlist.nil le)
+                      · rfl
+                    · cases v1 with
+                      | Vint i =>
+                          change Val.lessdef
+                            (sem .Cne (.Vint (CompCert4Lean.Lib.Integers.Int.and i n1))
+                              (.Vint CompCert4Lean.Lib.Integers.Int.zero)) _
+                          rw [hsem_ne]
+                          cases hb : CompCert4Lean.Lib.Integers.Int.eq
+                              (CompCert4Lean.Lib.Integers.Int.and i n1)
+                              CompCert4Lean.Lib.Integers.Int.zero <;>
+                            simp [eval_condition, Val.maskzero_bool, hb,
+                              Val.of_optbool, Val.of_bool, Vtrue, Vfalse] <;>
+                            exact Val.lessdef_refl _
+                      | _ =>
+                          change Val.lessdef (sem .Cne .Vundef _) .Vundef
+                          rw [hsem_undef]
+                          exact Val.lessdef_undef _
+                  · have hzero : CompCert4Lean.Lib.Integers.Int.eq_dec n2
+                        CompCert4Lean.Lib.Integers.Int.zero = .right hz := by
+                      unfold CompCert4Lean.Lib.Integers.Int.eq_dec
+                      split
+                      · next heq => exact (hz heq).elim
+                      · rfl
+                    refine ⟨Val.of_optbool
+                      (eval_condition (default .Cne n2)
+                        [Val.and v1 (.Vint n1)] m), ?_, ?_⟩
+                    · simp only [compimm, hcase]
+                      run_tac
+                        let goal ← Lean.Elab.Tactic.getMainGoal
+                        let target ← goal.getType
+                        let some e := target.find? fun e =>
+                          e.isConst && e.constName!.getString! == "intEqDecBool"
+                          | throwError "private equality decider not found"
+                        let .defnInfo info ← Lean.getConstInfo e.constName!
+                          | throwError "private equality decider is not a definition"
+                        let target' := target.replace fun e =>
+                          if e.isConstOf info.name then some info.value else none
+                        let goal' ← Lean.Meta.withTransparency .all <|
+                          goal.replaceTargetDefEq target'
+                        Lean.Elab.Tactic.replaceMainGoal [goal']
+                      simp [hzero]
+                      apply eval_expr.eval_Eop le (Ocmp (default .Cne n2))
+                        (Econs (Eop (Oandimm n1) (Econs t1 Enil)) Enil)
+                        [Val.and v1 (.Vint n1)] _
+                      · apply eval_exprlist.cons le _ Enil _ []
+                        · apply eval_expr.eval_Eop le (Oandimm n1)
+                            (Econs t1 Enil) [v1] _
+                          · exact eval_exprlist.cons le t1 Enil v1 [] hhead
+                              (eval_exprlist.nil le)
+                          · rfl
+                        · exact eval_exprlist.nil le
+                      · rfl
+                    · rw [hsem_default]
+                      exact Val.lessdef_refl _
+  | compimm_default c a =>
+      refine ⟨Val.of_optbool (eval_condition (default c n2) [x] m), ?_, ?_⟩
+      · simp only [compimm, hcase]
+        apply eval_expr.eval_Eop le (Ocmp (default c n2)) (Econs a Enil) [x] _
+        · exact eval_exprlist.cons le a Enil x [] h (eval_exprlist.nil le)
+        · rfl
+      · rw [hsem_default]
+        exact Val.lessdef_refl _
+
+theorem eval_compimm_swap
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    eval_compimm_swapStatement := by
+  intro xi ge sp e m default intsem sem hsem_int hsem_undef hsem_eq hsem_ne
+    hsem_default hsem_swap le c a n2 x h
+  have hresult := eval_compimm_for_swap_local xi ge sp e m default intsem sem
+    hsem_int hsem_undef hsem_eq hsem_ne hsem_default le
+      (CompCert4Lean.Lib.Integers.swap_comparison c) a n2 x h
+  rcases hresult with ⟨v, hev, hless⟩
+  refine ⟨v, hev, ?_⟩
+  rw [hsem_swap] at hless
+  exact hless
+
+end CompCert4Lean.X86.SelectOpproof

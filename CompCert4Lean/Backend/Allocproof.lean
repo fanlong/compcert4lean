@@ -6399,3 +6399,149 @@ theorem add_equations_debug_args_eval :
               CompCert4Lean.Lib.Coqlib.list_forall2.cons _ _ harg'' htail'⟩
 
 end CompCert4Lean.Backend.Allocproof
+
+namespace CompCert4Lean.Backend.Allocproof
+
+open CompCert4Lean.Backend.Allocation
+open CompCert4Lean.Backend.Locations
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+
+theorem parallel_set_builtin_res_satisf :
+    parallel_set_builtin_res_satisfStatement := by
+  intro env resultReg resultLoc e0 e1 rs ls v v'
+  intro hremove hreg hloc hsat hld
+  cases resultReg with
+  | BR r =>
+      cases resultLoc with
+      | BR mr =>
+          have he1 : e1 = remove_equation
+              { ekind := .Full, ereg := r, eloc := .R mr } e0 := by
+            simpa [remove_equations_builtin_res] using hremove.symm
+          subst e1
+          apply parallel_assignment_satisf .Full r mr e0 rs ls v v'
+          · simpa [sel_val] using hld
+          · simp [params_of_builtin_res, reg_loc_unconstrained] at hreg hloc ⊢
+            exact ⟨hreg, hloc⟩
+          · exact hsat
+      | BR_none =>
+          simp [remove_equations_builtin_res] at hremove
+      | BR_splitlong hiRes loRes =>
+          cases hiRes with
+          | BR hi =>
+              cases loRes with
+              | BR lo =>
+                  by_cases htype : env r ≠ Tlong
+                  · simp [remove_equations_builtin_res, htype] at hremove
+                  · have htype' : env r = Tlong := Classical.byContradiction htype
+                    by_cases hsame : hi = lo
+                    · simp [remove_equations_builtin_res, htype', hsame] at hremove
+                    · have he1 : e1 =
+                          remove_equation
+                            { ekind := .Low, ereg := r, eloc := .R lo }
+                            (remove_equation
+                              { ekind := .High, ereg := r, eloc := .R hi } e0) := by
+                        simpa [remove_equations_builtin_res, htype', hsame] using hremove.symm
+                      subst e1
+                      simp [params_of_builtin_res] at hreg hloc
+                      unfold satisf at hsat ⊢
+                      intro q hq
+                      change equation at q
+                      change Regmap.t val at rs
+                      change Locmap.t at ls
+                      let qlo : equation :=
+                        { ekind := .Low, ereg := r, eloc := .R lo }
+                      let qhi : equation :=
+                        { ekind := .High, ereg := r, eloc := .R hi }
+                      by_cases heqlo : q = qlo
+                      · subst q
+                        have hlow : Val.lessdef (Val.loword v) (Val.loword v') := by
+                          cases hld with
+                          | lessdef_refl => exact Val.lessdef_refl _
+                          | lessdef_undef => exact Val.lessdef_undef _
+                        have hget : Regmap.get r (Regmap.set r v rs) = v :=
+                          Regmap.gss_proof val r v rs
+                        have hset :
+                            Locmap.set (R lo) (Val.loword v')
+                                (Locmap.set (R hi) (Val.hiword v') ls) (R lo) =
+                              Val.loword v' := by
+                          simpa using Locmap.gss (R lo) (Val.loword v')
+                            (Locmap.set (R hi) (Val.hiword v') ls)
+                        change Val.lessdef
+                          (Val.loword (Regmap.get r (Regmap.set r v rs)))
+                          (Locmap.set (R lo) (Val.loword v')
+                            (Locmap.set (R hi) (Val.hiword v') ls) (R lo))
+                        rw [hget, hset]
+                        exact hlow
+                      · by_cases heqhi : q = qhi
+                        · subst q
+                          have hhigh : Val.lessdef (Val.hiword v) (Val.hiword v') := by
+                            cases hld with
+                            | lessdef_refl => exact Val.lessdef_refl _
+                            | lessdef_undef => exact Val.lessdef_undef _
+                          have hget : Regmap.get r (Regmap.set r v rs) = v :=
+                            Regmap.gss_proof val r v rs
+                          have hdiff : Loc.diff (R lo) (R hi) := by
+                            exact fun h => hsame h.symm
+                          change Val.lessdef
+                            (Val.hiword (Regmap.get r (Regmap.set r v rs)))
+                            (Locmap.set (R lo) (Val.loword v')
+                              (Locmap.set (R hi) (Val.hiword v') ls) (R hi))
+                          rw [hget]
+                          rw [Locmap.gso (R lo) (Val.loword v')
+                            (Locmap.set (R hi) (Val.hiword v') ls) (R hi) hdiff]
+                          rw [Locmap.gss]
+                          exact hhigh
+                        · have hqrem : EqSet.In q
+                              (remove_equation qlo (remove_equation qhi e0)).eqs1 := by
+                            unfold remove_equation
+                            apply EqSet.remove_2 (remove_equation qhi e0).eqs1 qlo q
+                            · intro h
+                              exact heqlo h.symm
+                            · unfold remove_equation
+                              apply EqSet.remove_2 e0.eqs1 qhi q
+                              · intro h
+                                exact heqhi h.symm
+                              · exact hq
+                          have hregdiff : q.ereg ≠ r :=
+                            reg_unconstrained_sound r
+                              (remove_equation qlo (remove_equation qhi e0)) q
+                              (by simpa [qlo, qhi] using hreg) hqrem
+                          have hlodiff : Loc.diff (R lo) q.eloc :=
+                            loc_unconstrained_sound (R lo)
+                              (remove_equation qlo (remove_equation qhi e0)) q
+                              (by simpa [qlo, qhi] using hloc.2) hqrem
+                          have hhidiff : Loc.diff (R hi) q.eloc :=
+                            loc_unconstrained_sound (R hi)
+                              (remove_equation qlo (remove_equation qhi e0)) q
+                              (by simpa [qlo, qhi] using hloc.1) hqrem
+                          change Val.lessdef
+                            (sel_val q.ekind (Regmap.get q.ereg (Regmap.set r v rs)))
+                            (Locmap.set (R lo) (Val.loword v')
+                              (Locmap.set (R hi) (Val.hiword v') ls) q.eloc)
+                          rw [Regmap.gso_proof val q.ereg r v rs hregdiff]
+                          rw [Locmap.gso (R lo) (Val.loword v')
+                            (Locmap.set (R hi) (Val.hiword v') ls) q.eloc hlodiff]
+                          rw [Locmap.gso (R hi) (Val.hiword v') ls q.eloc hhidiff]
+                          exact hsat q (by simpa [qlo, qhi] using hqrem)
+              | BR_none =>
+                  simp [remove_equations_builtin_res] at hremove
+              | BR_splitlong _ _ =>
+                  simp [remove_equations_builtin_res] at hremove
+          | BR_none =>
+              simp [remove_equations_builtin_res] at hremove
+          | BR_splitlong _ _ =>
+              simp [remove_equations_builtin_res] at hremove
+  | BR_none =>
+      cases resultLoc with
+      | BR _ => simp [remove_equations_builtin_res] at hremove
+      | BR_none =>
+          simp [remove_equations_builtin_res] at hremove
+          subst e1
+          simpa [regmap_setres, Locmap.setres] using hsat
+      | BR_splitlong _ _ => simp [remove_equations_builtin_res] at hremove
+  | BR_splitlong _ _ =>
+      cases resultLoc <;> simp [remove_equations_builtin_res] at hremove
+
+end CompCert4Lean.Backend.Allocproof

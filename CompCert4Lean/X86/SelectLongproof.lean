@@ -2241,3 +2241,233 @@ theorem eval_modlu_base
   · exact hz
 
 end CompCert4Lean.X86.SelectLongproof
+
+namespace CompCert4Lean.X86.SelectLongproof
+
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.ExternalCalls
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.X86.Op
+open CompCert4Lean.X86.SelectLong
+
+theorem eval_longoffloat
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    @eval_longoffloatStatement binary64_certificate binary32_certificate := by
+  unfold eval_longoffloatStatement
+  intro xi prog hf hdecl sp e m le a x y ha hy
+  refine ⟨y, ?_, Val.lessdef_refl _⟩
+  unfold longoffloat
+  exact eval_expr.eval_Eop le Olongoffloat (Econs a Enil) [x] y
+    (eval_exprlist.cons le a Enil x [] ha (eval_exprlist.nil le)) hy
+
+theorem eval_floatoflong
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    @eval_floatoflongStatement binary64_certificate binary32_certificate := by
+  unfold eval_floatoflongStatement
+  intro xi prog hf hdecl sp e m le a x y ha hy
+  refine ⟨y, ?_, Val.lessdef_refl _⟩
+  unfold floatoflong
+  exact eval_expr.eval_Eop le Ofloatoflong (Econs a Enil) [x] y
+    (eval_exprlist.cons le a Enil x [] ha (eval_exprlist.nil le)) hy
+
+end CompCert4Lean.X86.SelectLongproof
+
+namespace CompCert4Lean.X86.SelectLongproof
+
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.ExternalCalls
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.X86.Op
+open CompCert4Lean.X86.SelectLong
+
+private theorem selectLong_swap_cmpl_bool
+    (c : comparison) (x y : val) :
+    Val.cmpl_bool (swap_comparison c) x y = Val.cmpl_bool c y x := by
+  cases c <;> cases x <;> cases y <;>
+    simp [Val.cmpl_bool, swap_comparison, Int64.cmp, WordCore.cmp,
+      WordCore.eq, eq_comm]
+
+private theorem selectLong_cmpl_result
+    (c : comparison) (x y v : val)
+    (h : Val.cmpl c x y = some v) :
+    some (Val.of_optbool (Val.cmpl_bool c x y)) = some v := by
+  unfold Val.cmpl at h
+  cases hc : Val.cmpl_bool c x y with
+  | none => simp [hc] at h
+  | some bv =>
+      simp [hc] at h
+      rw [← h]
+      cases bv <;> rfl
+
+theorem eval_cmpl
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    @eval_cmplStatement binary64_certificate binary32_certificate := by
+  unfold eval_cmplStatement
+  intro xi prog sp e m c le a x b y v ha hb hv
+  unfold cmpl
+  cases hca : is_longconst a with
+  | none =>
+      cases hcb : is_longconst b with
+      | none =>
+          simp only [hca, hcb]
+          exact eval_expr.eval_Eop le (Ocmp (Ccompl c))
+            (Econs a (Econs b Enil)) [x, y] v
+            (eval_exprlist.cons le a (Econs b Enil) x [y] ha
+              (eval_exprlist.cons le b Enil y [] hb (eval_exprlist.nil le)))
+            (selectLong_cmpl_result c x y v hv)
+      | some n2 =>
+          have hy : y = .Vlong n2 :=
+            is_longconst_sound xi prog sp e m y b n2 le hcb hb
+          subst y
+          simp only [hca, hcb]
+          exact eval_expr.eval_Eop le (Ocmp (Ccomplimm c n2))
+            (Econs a Enil) [x] v
+            (eval_exprlist.cons le a Enil x [] ha (eval_exprlist.nil le))
+            (selectLong_cmpl_result c x (.Vlong n2) v hv)
+  | some n1 =>
+      have hx : x = .Vlong n1 :=
+        is_longconst_sound xi prog sp e m x a n1 le hca ha
+      subst x
+      cases hcb : is_longconst b with
+      | none =>
+          simp only [hca, hcb]
+          apply eval_expr.eval_Eop le (Ocmp (Ccomplimm (swap_comparison c) n1))
+            (Econs b Enil) [y] v
+            (eval_exprlist.cons le b Enil y [] hb (eval_exprlist.nil le))
+          change some (Val.of_optbool
+            (Val.cmpl_bool (swap_comparison c) y (.Vlong n1))) = some v
+          rw [selectLong_swap_cmpl_bool]
+          exact selectLong_cmpl_result c (.Vlong n1) y v hv
+      | some n2 =>
+          have hy : y = .Vlong n2 :=
+            is_longconst_sound xi prog sp e m y b n2 le hcb hb
+          subst y
+          simp only [hca, hcb]
+          apply eval_expr.eval_Eop le (Ointconst
+            (if Int64.cmp c n1 n2 then Int.one else Int.zero)) Enil [] v
+            (eval_exprlist.nil le)
+          unfold Val.cmpl Val.cmpl_bool at hv
+          simp only [Option.map_some] at hv
+          rw [← hv]
+          cases Int64.cmp c n1 n2 <;> rfl
+
+end CompCert4Lean.X86.SelectLongproof
+
+namespace CompCert4Lean.X86.SelectLongproof
+
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.ExternalCalls
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.X86.Op
+open CompCert4Lean.X86.SelectLong
+
+private theorem selectLong_swap_int64_cmpu
+    (c : comparison) (x y : Int64.int) :
+    Int64.cmpu (swap_comparison c) x y = Int64.cmpu c y x := by
+  cases c <;>
+    simp [Int64.cmpu, WordCore.cmpu, swap_comparison, WordCore.eq, eq_comm]
+
+private theorem selectLong_swap_cmplu_bool_long
+    (valid : CompCert4Lean.Common.Values.block →
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z → Bool)
+    (c : comparison) (n : Int64.int) (y : val) :
+    Val.cmplu_bool valid (swap_comparison c) y (.Vlong n) =
+      Val.cmplu_bool valid c (.Vlong n) y := by
+  cases y with
+  | Vlong y =>
+      exact congrArg some (selectLong_swap_int64_cmpu c y n)
+  | Vundef => cases c <;> rfl
+  | Vint y => cases c <;> rfl
+  | Vfloat y => cases c <;> rfl
+  | Vsingle y => cases c <;> rfl
+  | Vptr b ofs =>
+      cases c <;>
+        simp [Val.cmplu_bool, Val.cmp_different_blocks, swap_comparison]
+
+private theorem selectLong_cmplu_result
+    (valid : CompCert4Lean.Common.Values.block →
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z → Bool)
+    (c : comparison) (x y v : val)
+    (h : Val.cmplu valid c x y = some v) :
+    some (Val.of_optbool (Val.cmplu_bool valid c x y)) = some v := by
+  unfold Val.cmplu at h
+  cases hc : Val.cmplu_bool valid c x y with
+  | none => simp [hc] at h
+  | some bv =>
+      simp [hc] at h
+      rw [← h]
+      cases bv <;> rfl
+
+theorem eval_cmplu
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    @eval_cmpluStatement binary64_certificate binary32_certificate := by
+  unfold eval_cmpluStatement
+  intro xi prog sp e m c le a x b y v ha hb hv
+  unfold cmplu
+  cases hca : is_longconst a with
+  | none =>
+      cases hcb : is_longconst b with
+      | none =>
+          simp only [hca, hcb]
+          exact eval_expr.eval_Eop le (Ocmp (Ccomplu c))
+            (Econs a (Econs b Enil)) [x, y] v
+            (eval_exprlist.cons le a (Econs b Enil) x [y] ha
+              (eval_exprlist.cons le b Enil y [] hb (eval_exprlist.nil le)))
+            (selectLong_cmplu_result (fun b ofs => Mem.valid_pointer m b ofs)
+              c x y v hv)
+      | some n2 =>
+          have hy : y = .Vlong n2 :=
+            is_longconst_sound xi prog sp e m y b n2 le hcb hb
+          subst y
+          simp only [hca, hcb]
+          exact eval_expr.eval_Eop le (Ocmp (Ccompluimm c n2))
+            (Econs a Enil) [x] v
+            (eval_exprlist.cons le a Enil x [] ha (eval_exprlist.nil le))
+            (selectLong_cmplu_result (fun b ofs => Mem.valid_pointer m b ofs)
+              c x (.Vlong n2) v hv)
+  | some n1 =>
+      have hx : x = .Vlong n1 :=
+        is_longconst_sound xi prog sp e m x a n1 le hca ha
+      subst x
+      cases hcb : is_longconst b with
+      | none =>
+          simp only [hca, hcb]
+          apply eval_expr.eval_Eop le (Ocmp (Ccompluimm (swap_comparison c) n1))
+            (Econs b Enil) [y] v
+            (eval_exprlist.cons le b Enil y [] hb (eval_exprlist.nil le))
+          change some (Val.of_optbool
+            (Val.cmplu_bool (Mem.valid_pointer m) (swap_comparison c) y
+              (.Vlong n1))) = some v
+          rw [selectLong_swap_cmplu_bool_long
+            (valid := fun b ofs => Mem.valid_pointer m b ofs)]
+          exact selectLong_cmplu_result (fun b ofs => Mem.valid_pointer m b ofs)
+            c (.Vlong n1) y v hv
+      | some n2 =>
+          have hy : y = .Vlong n2 :=
+            is_longconst_sound xi prog sp e m y b n2 le hcb hb
+          subst y
+          simp only [hca, hcb]
+          apply eval_expr.eval_Eop le (Ointconst
+            (if Int64.cmpu c n1 n2 then Int.one else Int.zero)) Enil [] v
+            (eval_exprlist.nil le)
+          unfold Val.cmplu Val.cmplu_bool at hv
+          simp only [Option.map_some] at hv
+          rw [← hv]
+          cases Int64.cmpu c n1 n2 <;> rfl
+
+end CompCert4Lean.X86.SelectLongproof

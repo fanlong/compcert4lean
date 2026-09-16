@@ -3004,3 +3004,77 @@ theorem shl_align_fexp_correct :
         omega
       rw [harg]
       exact hc.2
+
+theorem Fplus_naive_correct :
+    ∀ (ctx : ExactRealContext), Fplus_naive_correctStatement ctx := by
+  intro ctx sx mx ex sy my ey ez Hx Hy
+  unfold Fplus_naive
+  cases hmy : shl_align my ey ez with
+  | mk my' ey' =>
+    cases hmx : shl_align mx ex ez with
+    | mk mx' ex' =>
+      have hy := shl_align_correct' ctx my ey ez Hy
+      have hx := shl_align_correct' ctx mx ex ez Hx
+      simp only [hmx, hmy] at hy hx ⊢
+      have hxs :
+          Exact.F2R ctx (Float radix2 (cond_Zopp sx (Zpos mx')) ez) =
+            Exact.F2R ctx (Float radix2 (cond_Zopp sx (Zpos mx)) ex) := by
+        calc
+          Exact.F2R ctx (Float radix2 (cond_Zopp sx (Zpos mx')) ez) =
+              CompCert4Lean.Flocq.Core.Raux.Exact.cond_Ropp ctx sx
+                (Exact.F2R ctx (Float radix2 (Zpos mx') ez)) :=
+            CompCert4Lean.Flocq.Core.Float_prop.F2R_cond_Zopp
+              ctx radix2 sx (Zpos mx') ez
+          _ = CompCert4Lean.Flocq.Core.Raux.Exact.cond_Ropp ctx sx
+                (Exact.F2R ctx (Float radix2 (Zpos mx) ex)) :=
+            congrArg (fun t =>
+              CompCert4Lean.Flocq.Core.Raux.Exact.cond_Ropp ctx sx t) hx.1
+          _ = Exact.F2R ctx (Float radix2 (cond_Zopp sx (Zpos mx)) ex) :=
+            (CompCert4Lean.Flocq.Core.Float_prop.F2R_cond_Zopp
+              ctx radix2 sx (Zpos mx) ex).symm
+      have hys :
+          Exact.F2R ctx (Float radix2 (cond_Zopp sy (Zpos my')) ez) =
+            Exact.F2R ctx (Float radix2 (cond_Zopp sy (Zpos my)) ey) := by
+        calc
+          Exact.F2R ctx (Float radix2 (cond_Zopp sy (Zpos my')) ez) =
+              CompCert4Lean.Flocq.Core.Raux.Exact.cond_Ropp ctx sy
+                (Exact.F2R ctx (Float radix2 (Zpos my') ez)) :=
+            CompCert4Lean.Flocq.Core.Float_prop.F2R_cond_Zopp
+              ctx radix2 sy (Zpos my') ez
+          _ = CompCert4Lean.Flocq.Core.Raux.Exact.cond_Ropp ctx sy
+                (Exact.F2R ctx (Float radix2 (Zpos my) ey)) :=
+            congrArg (fun t =>
+              CompCert4Lean.Flocq.Core.Raux.Exact.cond_Ropp ctx sy t) hy.1
+          _ = Exact.F2R ctx (Float radix2 (cond_Zopp sy (Zpos my)) ey) :=
+            (CompCert4Lean.Flocq.Core.Float_prop.F2R_cond_Zopp
+              ctx radix2 sy (Zpos my) ey).symm
+      have hsum (a b : Z) :
+          Exact.F2R ctx (Float radix2 (Zadd a b) ez) =
+            Exact.Rplus ctx
+              (Exact.F2R ctx (Float radix2 a ez))
+              (Exact.F2R ctx (Float radix2 b ez)) := by
+        change ctx.spec.mul (ctx.spec.ofZ (Zadd a b))
+            (Exact.bpow ctx radix2 ez) =
+          ctx.spec.add
+            (ctx.spec.mul (ctx.spec.ofZ a) (Exact.bpow ctx radix2 ez))
+            (ctx.spec.mul (ctx.spec.ofZ b) (Exact.bpow ctx radix2 ez))
+        rw [ctx.certificate.sourceLaws.ofZ_add]
+        calc
+          ctx.spec.mul
+              (ctx.spec.add (ctx.spec.ofZ a) (ctx.spec.ofZ b))
+              (Exact.bpow ctx radix2 ez) =
+            ctx.spec.mul (Exact.bpow ctx radix2 ez)
+              (ctx.spec.add (ctx.spec.ofZ a) (ctx.spec.ofZ b)) :=
+            ctx.certificate.orderedField.mul_comm _ _
+          _ = ctx.spec.add
+              (ctx.spec.mul (Exact.bpow ctx radix2 ez) (ctx.spec.ofZ a))
+              (ctx.spec.mul (Exact.bpow ctx radix2 ez) (ctx.spec.ofZ b)) :=
+            ctx.certificate.orderedField.left_distrib _ _ _
+          _ = ctx.spec.add
+              (ctx.spec.mul (ctx.spec.ofZ a) (Exact.bpow ctx radix2 ez))
+              (ctx.spec.mul (ctx.spec.ofZ b) (Exact.bpow ctx radix2 ez)) := by
+            rw [ctx.certificate.orderedField.mul_comm
+              (Exact.bpow ctx radix2 ez) (ctx.spec.ofZ a),
+              ctx.certificate.orderedField.mul_comm
+                (Exact.bpow ctx radix2 ez) (ctx.spec.ofZ b)]
+      rw [hsum, hxs, hys]

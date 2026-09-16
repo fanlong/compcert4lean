@@ -2222,3 +2222,513 @@ theorem make_modluimm_correct
         (CompCert4Lean.Backend.Registers.Regmap.get r1 e) n logn v hpow hmodn)
 
 end CompCert4Lean.X86.ConstpropOpproof
+
+namespace CompCert4Lean.X86.ConstpropOpproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.X86.Op
+open CompCert4Lean.X86.ConstpropOp
+
+private theorem worker_int64_xor_zero
+    (x : CompCert4Lean.Lib.Integers.Int64.int) :
+    CompCert4Lean.Lib.Integers.Int64.xor x
+        CompCert4Lean.Lib.Integers.Int64.zero = x := by
+  unfold CompCert4Lean.Lib.Integers.Int64.xor
+    CompCert4Lean.Lib.Integers.WordCore.xor
+  change CompCert4Lean.Lib.Integers.Int64.repr
+      (zOfNat (Nat.xor x.val CompCert4Lean.Lib.Integers.Int64.zero.val)) = x
+  rw [show CompCert4Lean.Lib.Integers.Int64.zero.val = 0 by rfl]
+  rw [show Nat.xor x.val 0 = x.val by
+    simpa only [Nat.xor_eq] using Nat.xor_zero x.val]
+  change CompCert4Lean.Lib.Integers.Int64.repr (zOfNat x.val) = x
+  rw [worker_int64_zOfNat_val]
+  exact worker_int64_repr_unsigned x
+
+theorem make_xorlimm_correct
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    @make_xorlimm_correctStatement binary64_certificate binary32_certificate := by
+  intro ge sp e m n r
+  dsimp [CompCert4Lean.X86.ConstpropOp.make_xorlimm]
+  split <;> rename_i hzero
+  · have hn : n = CompCert4Lean.Lib.Integers.Int64.zero :=
+      worker_int64_eq_true n CompCert4Lean.Lib.Integers.Int64.zero hzero
+    subst n
+    refine ⟨CompCert4Lean.Backend.Registers.Regmap.get r e, ?_, ?_⟩
+    · rfl
+    · cases CompCert4Lean.Backend.Registers.Regmap.get r e with
+      | Vlong i =>
+          change CompCert4Lean.Common.Values.Val.lessdef
+            (.Vlong (CompCert4Lean.Lib.Integers.Int64.xor i
+              CompCert4Lean.Lib.Integers.Int64.zero)) (.Vlong i)
+          rw [worker_int64_xor_zero]
+          exact CompCert4Lean.Common.Values.Val.lessdef_refl _
+      | _ => exact CompCert4Lean.Common.Values.Val.lessdef_undef _
+  · split <;> rename_i hmone
+    · have hn : n = CompCert4Lean.Lib.Integers.Int64.mone :=
+        worker_int64_eq_true n CompCert4Lean.Lib.Integers.Int64.mone hmone
+      subst n
+      refine ⟨CompCert4Lean.Common.Values.Val.notl
+          (CompCert4Lean.Backend.Registers.Regmap.get r e), ?_, ?_⟩
+      · rfl
+      · rw [← CompCert4Lean.Common.Values.Val.notl_xorl]
+        exact CompCert4Lean.Common.Values.Val.lessdef_refl _
+    · refine ⟨CompCert4Lean.Common.Values.Val.xorl
+          (CompCert4Lean.Backend.Registers.Regmap.get r e) (.Vlong n), ?_,
+          CompCert4Lean.Common.Values.Val.lessdef_refl _⟩
+      rfl
+
+end CompCert4Lean.X86.ConstpropOpproof
+
+namespace CompCert4Lean.X86.ConstpropOpproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.X86.Op
+open CompCert4Lean.X86.ConstpropOp
+
+theorem make_mulfsimm_correct
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    @make_mulfsimm_correctStatement binary64_certificate binary32_certificate := by
+  intro ge sp e m n r1 r2 hr2
+  dsimp [CompCert4Lean.X86.ConstpropOp.make_mulfsimm]
+  split <;> rename_i htwo
+  · refine ⟨CompCert4Lean.Common.Values.Val.addfs
+        (CompCert4Lean.Backend.Registers.Regmap.get r1 e)
+        (CompCert4Lean.Backend.Registers.Regmap.get r1 e), rfl, ?_⟩
+    rw [hr2, htwo]
+    cases CompCert4Lean.Backend.Registers.Regmap.get r1 e with
+    | Vsingle f =>
+        change CompCert4Lean.Common.Values.Val.lessdef
+          (.Vsingle (CompCert4Lean.Lib.Floats.Float32.mul f
+            (CompCert4Lean.Lib.Floats.Float32.of_int
+              (CompCert4Lean.Lib.Integers.Int.repr (zOfNat 2)))))
+          (.Vsingle (CompCert4Lean.Lib.Floats.Float32.add f f))
+        rw [← CompCert4Lean.Lib.Floats.Float32.mul2_add]
+        exact CompCert4Lean.Common.Values.Val.lessdef_refl _
+    | _ => exact CompCert4Lean.Common.Values.Val.lessdef_undef _
+  · refine ⟨CompCert4Lean.Common.Values.Val.mulfs
+        (CompCert4Lean.Backend.Registers.Regmap.get r1 e)
+        (CompCert4Lean.Backend.Registers.Regmap.get r2 e), rfl,
+        CompCert4Lean.Common.Values.Val.lessdef_refl _⟩
+
+end CompCert4Lean.X86.ConstpropOpproof
+
+namespace CompCert4Lean.X86.ConstpropOpproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Lib.Floats
+
+private theorem worker_float64_of_int_two_bits
+    [certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)] :
+    Float.of_int (CompCert4Lean.Lib.Integers.Int.repr (zOfNat 2)) =
+      ⟨BitVec.ofNat 64 4611686018427387904⟩ := by
+  rfl
+
+private theorem worker_float64_unpack_two_bits :
+    _root_.Float.Model.UnpackedFloat.unpack _root_.Float.Model.Format.binary64
+        (BitVec.ofNat 64 4611686018427387904) =
+      .finite .positive 4503599627370496 (-51) (by decide) := by
+  rfl
+
+end CompCert4Lean.X86.ConstpropOpproof
+
+namespace CompCert4Lean.X86.ConstpropOpproof
+
+private theorem worker_extendedMantissa_shift_pow (m k : Nat) :
+    (_root_.Float.Model.UnpackedFloat.ExtendedMantissa.ofMantissaAndAccuracy
+        (m * 2 ^ k) _root_.Float.Model.UnpackedFloat.Accuracy.exact >>> k) =
+      _root_.Float.Model.UnpackedFloat.ExtendedMantissa.ofMantissaAndAccuracy
+        m _root_.Float.Model.UnpackedFloat.Accuracy.exact := by
+  change Nat.repeat
+      _root_.Float.Model.UnpackedFloat.ExtendedMantissa.shiftRightOne k
+        (_root_.Float.Model.UnpackedFloat.ExtendedMantissa.ofMantissaAndAccuracy
+          (m * 2 ^ k) _root_.Float.Model.UnpackedFloat.Accuracy.exact) = _
+  induction k generalizing m with
+  | zero => simp [Nat.repeat]
+  | succ k ih =>
+      rw [show m * 2 ^ (k + 1) = (m * 2) * 2 ^ k by
+        simp [Nat.pow_succ, Nat.mul_assoc, Nat.mul_comm]]
+      simp only [Nat.repeat]
+      rw [ih]
+      simp [_root_.Float.Model.UnpackedFloat.ExtendedMantissa.shiftRightOne,
+        _root_.Float.Model.UnpackedFloat.ExtendedMantissa.ofMantissaAndAccuracy]
+
+private theorem worker_extendedMantissa_shift_zero
+    (x : _root_.Float.Model.UnpackedFloat.ExtendedMantissa) : x >>> 0 = x := by
+  change Nat.repeat
+    _root_.Float.Model.UnpackedFloat.ExtendedMantissa.shiftRightOne 0 x = x
+  unfold Nat.repeat
+  rfl
+
+private theorem worker_extendedMantissa_shift_pow_add (m k q : Nat) :
+    (_root_.Float.Model.UnpackedFloat.ExtendedMantissa.ofMantissaAndAccuracy
+        (m * 2 ^ k) _root_.Float.Model.UnpackedFloat.Accuracy.exact >>> (k + q)) =
+      (_root_.Float.Model.UnpackedFloat.ExtendedMantissa.ofMantissaAndAccuracy
+        m _root_.Float.Model.UnpackedFloat.Accuracy.exact >>> q) := by
+  induction q with
+  | zero =>
+      rw [worker_extendedMantissa_shift_zero]
+      exact worker_extendedMantissa_shift_pow m k
+  | succ q ih =>
+      change
+        _root_.Float.Model.UnpackedFloat.ExtendedMantissa.shiftRightOne
+            ((_root_.Float.Model.UnpackedFloat.ExtendedMantissa.ofMantissaAndAccuracy
+              (m * 2 ^ k) _root_.Float.Model.UnpackedFloat.Accuracy.exact) >>> (k + q)) =
+          _root_.Float.Model.UnpackedFloat.ExtendedMantissa.shiftRightOne
+            ((_root_.Float.Model.UnpackedFloat.ExtendedMantissa.ofMantissaAndAccuracy
+              m _root_.Float.Model.UnpackedFloat.Accuracy.exact) >>> q)
+      exact congrArg _ ih
+
+private theorem worker_log2_mul_pow (m k : Nat) (hm : m ≠ 0) :
+    (m * 2 ^ k).log2 = m.log2 + k := by
+  induction k with
+  | zero => simp
+  | succ k ih =>
+      rw [Nat.pow_succ]
+      rw [show m * (2 ^ k * 2) = 2 * (m * 2 ^ k) by
+        simp [Nat.mul_assoc, Nat.mul_comm, Nat.mul_left_comm]]
+      rw [Nat.log2_two_mul
+        (Nat.mul_ne_zero hm (Nat.ne_of_gt (Nat.two_pow_pos k))), ih]
+      omega
+
+private theorem worker_shiftToTargetExponent_scale64
+    (m k : Nat) (e : Int) (hm : m ≠ 0)
+    (hle : e ≤ _root_.Float.Model.Format.binary64.targetExponent
+      (_root_.Float.Model.totalExponent m e)) :
+    _root_.Float.Model.UnpackedFloat.shiftToTargetExponent
+        _root_.Float.Model.Format.binary64 (m * 2 ^ k) (e - (k : Int))
+        _root_.Float.Model.UnpackedFloat.Accuracy.exact =
+      _root_.Float.Model.UnpackedFloat.shiftToTargetExponent
+        _root_.Float.Model.Format.binary64 m e
+        _root_.Float.Model.UnpackedFloat.Accuracy.exact := by
+  have htotal :
+      _root_.Float.Model.totalExponent (m * 2 ^ k) (e - (k : Int)) =
+        _root_.Float.Model.totalExponent m e := by
+    unfold _root_.Float.Model.totalExponent
+    rw [worker_log2_mul_pow m k hm]
+    omega
+  unfold _root_.Float.Model.UnpackedFloat.shiftToTargetExponent
+  rw [htotal]
+  unfold _root_.Float.Model.UnpackedFloat.shiftToExponent
+  let t := _root_.Float.Model.Format.binary64.targetExponent
+    (_root_.Float.Model.totalExponent m e)
+  have hnonneg : 0 ≤ t - e := by omega
+  have hdiff : t - (e - (k : Int)) = (k : Int) + (t - e) := by omega
+  change
+    ((_root_.Float.Model.UnpackedFloat.ExtendedMantissa.ofMantissaAndAccuracy
+        (m * 2 ^ k) _root_.Float.Model.UnpackedFloat.Accuracy.exact >>>
+          (t - (e - (k : Int))).toNat),
+        e - (k : Int) + (t - (e - (k : Int))).toNat) =
+      ((_root_.Float.Model.UnpackedFloat.ExtendedMantissa.ofMantissaAndAccuracy
+        m _root_.Float.Model.UnpackedFloat.Accuracy.exact >>> (t - e).toNat),
+        e + (t - e).toNat)
+  rw [hdiff, Int.toNat_add (Int.ofNat_nonneg k) hnonneg]
+  apply Prod.ext
+  · exact worker_extendedMantissa_shift_pow_add m k (t - e).toNat
+  · simp only [Int.toNat_natCast]
+    have hcast : ((t - e).toNat : Int) = t - e := Int.toNat_of_nonneg hnonneg
+    omega
+
+end CompCert4Lean.X86.ConstpropOpproof
+
+namespace CompCert4Lean.X86.ConstpropOpproof
+
+private theorem worker_round_double64
+    (s : _root_.Float.Model.UnpackedFloat.Sign) (m : Nat) (e : Int)
+    (hm : 0 < m) :
+    _root_.Float.Model.UnpackedFloat.round _root_.Float.Model.Format.binary64
+        s (m + m) e =
+      _root_.Float.Model.UnpackedFloat.roundWithAccuracy
+        _root_.Float.Model.Format.binary64 s (m * 4503599627370496) (e - 51)
+        _root_.Float.Model.UnpackedFloat.Accuracy.exact := by
+  let a := m + m
+  let t := _root_.Float.Model.Format.binary64.targetExponent
+    (_root_.Float.Model.totalExponent a e)
+  let d := (e - t).toNat
+  have ha : a ≠ 0 := by simp [a, Nat.ne_of_gt hm]
+  have hloga : a.log2 = m.log2 + 1 := by
+    rw [show a = 2 * m by omega, Nat.log2_two_mul (Nat.ne_of_gt hm)]
+  have ht_lower : e - 51 ≤ t := by
+    dsimp [t]
+    change e - 51 ≤ max ((a.log2 : Int) + 1 + e - 53) (-1074)
+    rw [hloga]
+    omega
+  have hdle : d ≤ 51 := by
+    dsimp [d]
+    omega
+  let c := a * 2 ^ d
+  let ec := e - (d : Int)
+  have hc : c ≠ 0 :=
+    Nat.mul_ne_zero ha (Nat.ne_of_gt (Nat.two_pow_pos d))
+  have htotalc :
+      _root_.Float.Model.totalExponent c ec =
+        _root_.Float.Model.totalExponent a e := by
+    dsimp [c, ec]
+    unfold _root_.Float.Model.totalExponent
+    rw [worker_log2_mul_pow a d ha]
+    omega
+  have hlec : ec ≤ _root_.Float.Model.Format.binary64.targetExponent
+      (_root_.Float.Model.totalExponent c ec) := by
+    rw [htotalc]
+    change e - (d : Int) ≤ t
+    dsimp [d]
+    omega
+  have hscale := worker_shiftToTargetExponent_scale64 c (51 - d) ec hc hlec
+  have hmant : c * 2 ^ (51 - d) = m * 4503599627370496 := by
+    dsimp [c, a]
+    rw [Nat.mul_assoc, ← Nat.pow_add, Nat.add_sub_of_le hdle]
+    change (m + m) * 2251799813685248 = m * 4503599627370496
+    omega
+  have hexp : ec - ((51 - d : Nat) : Int) = e - 51 := by
+    dsimp [ec]
+    omega
+  rw [hmant, hexp] at hscale
+  unfold _root_.Float.Model.UnpackedFloat.round
+    _root_.Float.Model.UnpackedFloat.decreaseExponent
+  dsimp only
+  change
+    _root_.Float.Model.UnpackedFloat.roundWithAccuracy
+        _root_.Float.Model.Format.binary64 s (a <<< d) ec
+        _root_.Float.Model.UnpackedFloat.Accuracy.exact = _
+  rw [Nat.shiftLeft_eq]
+  change
+    _root_.Float.Model.UnpackedFloat.roundWithAccuracy
+        _root_.Float.Model.Format.binary64 s c ec
+        _root_.Float.Model.UnpackedFloat.Accuracy.exact = _
+  unfold _root_.Float.Model.UnpackedFloat.roundWithAccuracy
+  rw [← hscale]
+
+end CompCert4Lean.X86.ConstpropOpproof
+
+namespace CompCert4Lean.X86.ConstpropOpproof
+
+private theorem worker_unpacked_add_self_mul_two64
+    (a : _root_.Float.Model.UnpackedFloat) :
+    _root_.Float.Model.UnpackedFloat.add _root_.Float.Model.Format.binary64 a a =
+      _root_.Float.Model.UnpackedFloat.mul _root_.Float.Model.Format.binary64 a
+        (.finite .positive 4503599627370496 (-51) (by decide)) := by
+  cases a with
+  | notANumber => rfl
+  | infinity s => cases s <;> rfl
+  | zero s => cases s <;> rfl
+  | finite s m e hm =>
+      have hmI : (0 : Int) < (m : Int) := by omega
+      cases s with
+      | negative =>
+        simp only [_root_.Float.Model.UnpackedFloat.add,
+          _root_.Float.Model.UnpackedFloat.mul,
+          _root_.Float.Model.UnpackedFloat.decreaseExponent,
+          _root_.Float.Model.UnpackedFloat.Sign.apply,
+          _root_.Float.Model.UnpackedFloat.normalize, Int.min_self, Int.sub_self,
+          Int.toNat_zero, Nat.shiftLeft_zero]
+        have hc : compare (-(m : Int) + -(m : Int)) 0 = .lt :=
+          Int.compare_eq_lt.mpr (by omega)
+        rw [hc]
+        have hnat : (-(-(m : Int) + -(m : Int))).toNat = m + m := by omega
+        rw [hnat]
+        change
+          _root_.Float.Model.UnpackedFloat.round _root_.Float.Model.Format.binary64
+              .negative (m + m) e =
+            _root_.Float.Model.UnpackedFloat.roundWithAccuracy
+              _root_.Float.Model.Format.binary64 .negative
+              (m * 4503599627370496) (e - 51)
+              _root_.Float.Model.UnpackedFloat.Accuracy.exact
+        exact worker_round_double64 .negative m e hm
+      | positive =>
+        simp only [_root_.Float.Model.UnpackedFloat.add,
+          _root_.Float.Model.UnpackedFloat.mul,
+          _root_.Float.Model.UnpackedFloat.decreaseExponent,
+          _root_.Float.Model.UnpackedFloat.Sign.apply,
+          _root_.Float.Model.UnpackedFloat.normalize, Int.min_self, Int.sub_self,
+          Int.toNat_zero, Nat.shiftLeft_zero]
+        have hc : compare ((m : Int) + (m : Int)) 0 = .gt :=
+          Int.compare_eq_gt.mpr (by omega)
+        rw [hc]
+        have hnat : ((m : Int) + (m : Int)).toNat = m + m := by omega
+        rw [hnat]
+        change
+          _root_.Float.Model.UnpackedFloat.round _root_.Float.Model.Format.binary64
+              .positive (m + m) e =
+            _root_.Float.Model.UnpackedFloat.roundWithAccuracy
+              _root_.Float.Model.Format.binary64 .positive
+              (m * 4503599627370496) (e - 51)
+              _root_.Float.Model.UnpackedFloat.Accuracy.exact
+        exact worker_round_double64 .positive m e hm
+
+end CompCert4Lean.X86.ConstpropOpproof
+
+namespace CompCert4Lean.X86.ConstpropOpproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Lib.Floats
+
+private def worker_float64_sign (x : float) : Bool :=
+  x.bits.toNat / (2 ^ 63) % 2 == 1
+
+private def worker_float64_fraction (x : float) : Nat :=
+  x.bits.toNat % (2 ^ 52)
+
+private def worker_float64_isNaN (x : float) : Bool :=
+  (x.bits.toNat / (2 ^ 52) % (2 ^ 11) == (2 ^ 11 - 1)) &&
+    worker_float64_fraction x != 0
+
+private def worker_float64_payload (x : float) : positive :=
+  PArith.BinPos.Pos.of_nat (worker_float64_fraction x)
+
+private def worker_float64_cons_pl
+    (x : float) (l : List (Bool × positive)) : List (Bool × positive) :=
+  if worker_float64_isNaN x then
+    (worker_float64_sign x, worker_float64_payload x) :: l
+  else l
+
+private def worker_float64_binop_nan (x y : float) : float :=
+  CompCert4Lean.Lib.Floats.quiet_nan_64
+    (CompCert4Lean.X86_64.Archi.choose_nan_64
+      (worker_float64_cons_pl x (worker_float64_cons_pl y [])))
+
+private def worker_modelBinary64
+    (op : _root_.Float.Model.UnpackedFloat →
+      _root_.Float.Model.UnpackedFloat → _root_.Float.Model.UnpackedFloat)
+    (x y : float) : float :=
+  ⟨_root_.Float.Model.UnpackedFloat.pack _root_.Float.Model.Format.binary64
+    (op
+      (_root_.Float.Model.UnpackedFloat.unpack _root_.Float.Model.Format.binary64
+        x.bits)
+      (_root_.Float.Model.UnpackedFloat.unpack _root_.Float.Model.Format.binary64
+        y.bits))⟩
+
+private def worker_finishBinary64 (x y r : float) : float :=
+  if worker_float64_isNaN x || worker_float64_isNaN y then
+    worker_float64_binop_nan x y
+  else if worker_float64_isNaN r then
+    CompCert4Lean.Lib.Floats.default_nan_64 else r
+
+private theorem worker_model_add_self_mul_two64
+    [certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    (f : float) :
+    worker_modelBinary64
+        (_root_.Float.Model.UnpackedFloat.add _root_.Float.Model.Format.binary64)
+        f f =
+      worker_modelBinary64
+        (_root_.Float.Model.UnpackedFloat.mul _root_.Float.Model.Format.binary64)
+        f (CompCert4Lean.Lib.Floats.Float.of_int
+          (CompCert4Lean.Lib.Integers.Int.repr (zOfNat 2))) := by
+  rw [worker_float64_of_int_two_bits]
+  unfold worker_modelBinary64
+  rw [worker_float64_unpack_two_bits, worker_unpacked_add_self_mul_two64]
+
+private theorem worker_float64_two_not_nan
+    [certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)] :
+    worker_float64_isNaN
+        (CompCert4Lean.Lib.Floats.Float.of_int
+          (CompCert4Lean.Lib.Integers.Int.repr (zOfNat 2))) = false := by
+  rw [worker_float64_of_int_two_bits]
+  rfl
+
+private theorem worker_float64_mul2_add
+    [certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    (f : float) :
+    CompCert4Lean.Lib.Floats.Float.add f f =
+      CompCert4Lean.Lib.Floats.Float.mul f
+        (CompCert4Lean.Lib.Floats.Float.of_int
+          (CompCert4Lean.Lib.Integers.Int.repr (zOfNat 2))) := by
+  unfold CompCert4Lean.Lib.Floats.Float.add CompCert4Lean.Lib.Floats.Float.mul
+  change
+    worker_finishBinary64 f f
+        (worker_modelBinary64
+          (_root_.Float.Model.UnpackedFloat.add _root_.Float.Model.Format.binary64)
+          f f) =
+      worker_finishBinary64 f
+        (CompCert4Lean.Lib.Floats.Float.of_int
+          (CompCert4Lean.Lib.Integers.Int.repr (zOfNat 2)))
+        (worker_modelBinary64
+          (_root_.Float.Model.UnpackedFloat.mul _root_.Float.Model.Format.binary64)
+          f (CompCert4Lean.Lib.Floats.Float.of_int
+            (CompCert4Lean.Lib.Integers.Int.repr (zOfNat 2))))
+  rw [worker_model_add_self_mul_two64]
+  have htwo := worker_float64_two_not_nan
+  by_cases hf : worker_float64_isNaN f = true
+  · simp only [worker_finishBinary64, worker_float64_binop_nan,
+      worker_float64_cons_pl, hf, htwo, Bool.true_or, Bool.false_eq_true,
+      ↓reduceIte]
+    rw [CompCert4Lean.X86_64.Archi.choose_nan_64_idem]
+  · simp [worker_finishBinary64, hf, htwo]
+
+end CompCert4Lean.X86.ConstpropOpproof
+
+namespace CompCert4Lean.X86.ConstpropOpproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.X86.Op
+open CompCert4Lean.X86.ConstpropOp
+
+theorem make_mulfimm_correct
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    @make_mulfimm_correctStatement binary64_certificate binary32_certificate := by
+  intro ge sp e m n r1 r2 hr2
+  dsimp [CompCert4Lean.X86.ConstpropOp.make_mulfimm]
+  split <;> rename_i htwo
+  · refine ⟨CompCert4Lean.Common.Values.Val.addf
+        (CompCert4Lean.Backend.Registers.Regmap.get r1 e)
+        (CompCert4Lean.Backend.Registers.Regmap.get r1 e), rfl, ?_⟩
+    rw [hr2, htwo]
+    cases CompCert4Lean.Backend.Registers.Regmap.get r1 e with
+    | Vfloat f =>
+        change CompCert4Lean.Common.Values.Val.lessdef
+          (.Vfloat (CompCert4Lean.Lib.Floats.Float.mul f
+            (CompCert4Lean.Lib.Floats.Float.of_int
+              (CompCert4Lean.Lib.Integers.Int.repr (zOfNat 2)))))
+          (.Vfloat (CompCert4Lean.Lib.Floats.Float.add f f))
+        rw [← worker_float64_mul2_add]
+        exact CompCert4Lean.Common.Values.Val.lessdef_refl _
+    | _ => exact CompCert4Lean.Common.Values.Val.lessdef_undef _
+  · refine ⟨CompCert4Lean.Common.Values.Val.mulf
+        (CompCert4Lean.Backend.Registers.Regmap.get r1 e)
+        (CompCert4Lean.Backend.Registers.Regmap.get r2 e), rfl,
+        CompCert4Lean.Common.Values.Val.lessdef_refl _⟩
+
+theorem make_mulfimm_correct_2
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    @make_mulfimm_correct_2Statement binary64_certificate binary32_certificate := by
+  intro ge sp e m n r1 r2 hr1
+  dsimp [CompCert4Lean.X86.ConstpropOp.make_mulfimm]
+  split <;> rename_i htwo
+  · refine ⟨CompCert4Lean.Common.Values.Val.addf
+        (CompCert4Lean.Backend.Registers.Regmap.get r2 e)
+        (CompCert4Lean.Backend.Registers.Regmap.get r2 e), rfl, ?_⟩
+    rw [hr1, htwo]
+    cases CompCert4Lean.Backend.Registers.Regmap.get r2 e with
+    | Vfloat f =>
+        change CompCert4Lean.Common.Values.Val.lessdef
+          (.Vfloat (CompCert4Lean.Lib.Floats.Float.mul
+            (CompCert4Lean.Lib.Floats.Float.of_int
+              (CompCert4Lean.Lib.Integers.Int.repr (zOfNat 2))) f))
+          (.Vfloat (CompCert4Lean.Lib.Floats.Float.add f f))
+        have hcomm := CompCert4Lean.Lib.Floats.Float.mul_commut
+          (CompCert4Lean.Lib.Floats.Float.of_int
+            (CompCert4Lean.Lib.Integers.Int.repr (zOfNat 2))) f
+          (Or.inl worker_float64_two_not_nan)
+        rw [hcomm, ← worker_float64_mul2_add]
+        exact CompCert4Lean.Common.Values.Val.lessdef_refl _
+    | _ => exact CompCert4Lean.Common.Values.Val.lessdef_undef _
+  · refine ⟨CompCert4Lean.Common.Values.Val.mulf
+        (CompCert4Lean.Backend.Registers.Regmap.get r1 e)
+        (CompCert4Lean.Backend.Registers.Regmap.get r2 e), rfl,
+        CompCert4Lean.Common.Values.Val.lessdef_refl _⟩
+
+end CompCert4Lean.X86.ConstpropOpproof

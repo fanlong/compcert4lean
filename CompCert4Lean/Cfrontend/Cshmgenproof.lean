@@ -4438,3 +4438,160 @@ theorem senv_preserved : senv_preservedStatement := by
                     exact hrel.2.2.2.symm
 
 end CompCert4Lean.Cfrontend.Cshmgenproof
+
+namespace CompCert4Lean.Cfrontend.Cshmgenproof
+
+open CompCert4Lean.Cfrontend.Clight
+open CompCert4Lean.Cfrontend.Csharpminor
+open CompCert4Lean.Cfrontend.Ctypes
+open CompCert4Lean.Lib.Maps
+
+private theorem cshmgenproof_map_list_forall2
+    {A B C : Type} {R : A → B → Prop} (f : A → C) (g : B → C) :
+    ∀ {xs ys}, CompCert4Lean.Lib.Coqlib.list_forall2 R xs ys →
+      (∀ x y, R x y → g y = f x) → ys.map g = xs.map f := by
+  intro xs ys hrel hfg
+  induction hrel with
+  | nil => rfl
+  | cons x y hxy htail ih =>
+      simp only [List.map_cons]
+      rw [hfg x y hxy, ih]
+
+theorem match_env_same_blocks : match_env_same_blocksStatement := by
+  intro prog e te hmatch
+  have hrel := PTree.elements_canonical_order
+    (R := fun x y =>
+      y.1 = x.1 ∧ y.2 = Ctypes.sizeof prog.prog_comp_env x.2)
+    e te
+    (by
+      intro id x hx
+      rcases x with ⟨b, ty⟩
+      exact ⟨(b, Ctypes.sizeof prog.prog_comp_env ty),
+        hmatch.me_local id b ty hx, rfl, rfl⟩)
+    (by
+      intro id y hy
+      rcases y with ⟨b, sz⟩
+      rcases hmatch.me_local_inv id b sz hy with ⟨ty, hx⟩
+      have hlocal := hmatch.me_local id b ty hx
+      have hpairs :
+          (b, Ctypes.sizeof prog.prog_comp_env ty) = (b, sz) :=
+        Option.some.inj (hlocal.symm.trans hy)
+      have hsz : Ctypes.sizeof prog.prog_comp_env ty = sz :=
+        congrArg Prod.snd hpairs
+      exact ⟨(b, ty), hx, rfl, hsz.symm⟩)
+  unfold Csharpminor.blocks_of_env Clight.blocks_of_env
+  apply cshmgenproof_map_list_forall2
+      (Clight.block_of_binding (Clight.globalenv prog))
+      Csharpminor.block_of_binding hrel
+  intro x y hxy
+  rcases x with ⟨idx, ⟨bx, tx⟩⟩
+  rcases y with ⟨idy, ⟨bt, sy⟩⟩
+  rcases hxy with ⟨_, hb, hs⟩
+  simp only [Csharpminor.block_of_binding, Clight.block_of_binding,
+    Prod.fst, Prod.snd] at hb hs ⊢
+  rw [hb, hs]
+  change (bx, (.Z0 : CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z),
+      Ctypes.sizeof prog.prog_comp_env tx) =
+    (bx, (.Z0 : CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z),
+      Ctypes.sizeof prog.prog_comp_env tx)
+  rfl
+
+theorem match_env_empty : match_env_emptyStatement := by
+  intro prog
+  constructor
+  · intro id b ty hget
+    change PTree.get id (PTree.empty _) = some (b, ty) at hget
+    rw [PTree.gempty] at hget
+    cases hget
+  · intro id b sz hget
+    change PTree.get id (PTree.empty _) = some (b, sz) at hget
+    rw [PTree.gempty] at hget
+    cases hget
+
+theorem match_env_free_blocks : match_env_free_blocksStatement := by
+  intro prog e te m m' hmatch hfree
+  rw [match_env_same_blocks prog e te hmatch]
+  exact hfree
+
+theorem match_env_alloc_variables : match_env_alloc_variablesStatement := by
+  intro prog cunit hlink e1 m1 vars e2 m2 halloc
+    tvars te1 hmmap hmatch
+  induction halloc generalizing tvars te1 with
+  | nil e m =>
+      simp only [CompCert4Lean.Common.Errors.mmap] at hmmap
+      cases hmmap
+      exact ⟨te1, Csharpminor.alloc_variables_nil te1 m, hmatch⟩
+  | cons e m id ty vars m1 b1 m2 e2 hmem hrest ih =>
+      cases hvar : Cshmgen.transl_var cunit.prog_comp_env (id, ty) with
+      | Error msg =>
+          simp [CompCert4Lean.Common.Errors.mmap, hvar] at hmmap
+      | OK idsize =>
+          cases htail : CompCert4Lean.Common.Errors.mmap
+              (Cshmgen.transl_var cunit.prog_comp_env) vars with
+          | Error msg =>
+              simp [CompCert4Lean.Common.Errors.mmap, hvar, htail] at hmmap
+          | OK tvars' =>
+              simp only [CompCert4Lean.Common.Errors.mmap, hvar, htail] at hmmap
+              cases hmmap
+              rcases idsize with ⟨tid, sz⟩
+              unfold Cshmgen.transl_var at hvar
+              cases hsize : Cshmgen.sizeof cunit.prog_comp_env ty with
+              | Error msg => simp [hsize] at hvar
+              | OK sz' =>
+                  simp [hsize] at hvar
+                  rcases hvar with ⟨rfl, rfl⟩
+                  have hsz := transl_sizeof cunit prog ty sz' hlink hsize
+                  subst sz'
+                  have hmatch' :
+                      match_env prog (PTree.set id (b1, ty) e)
+                        (PTree.set id
+                          (b1, Ctypes.sizeof prog.prog_comp_env ty) te1) := by
+                    constructor
+                    · intro id0 b ty0 hget
+                      have hsrc := PTree.gsspec_proof
+                        (A := CompCert4Lean.Common.Values.block × Ctypes.type)
+                        id0 id (b1, ty) e
+                      have htgt := PTree.gsspec_proof
+                        (A := CompCert4Lean.Common.Values.block ×
+                          CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z)
+                        id0 id
+                        (b1, Ctypes.sizeof prog.prog_comp_env ty) te1
+                      rw [hsrc] at hget
+                      rw [htgt]
+                      cases hq : CompCert4Lean.Lib.Coqlib.peq id0 id with
+                      | left heq =>
+                          simp [hq] at hget ⊢
+                          exact ⟨hget.1,
+                            congrArg (Ctypes.sizeof prog.prog_comp_env) hget.2⟩
+                      | right hne =>
+                          simp [hq] at hget ⊢
+                          exact hmatch.me_local id0 b ty0 hget
+                    · intro id0 b size hget
+                      have htgt := PTree.gsspec_proof
+                        (A := CompCert4Lean.Common.Values.block ×
+                          CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z)
+                        id0 id
+                        (b1, Ctypes.sizeof prog.prog_comp_env ty) te1
+                      have hsrc := PTree.gsspec_proof
+                        (A := CompCert4Lean.Common.Values.block × Ctypes.type)
+                        id0 id (b1, ty) e
+                      rw [htgt] at hget
+                      rw [hsrc]
+                      cases hq : CompCert4Lean.Lib.Coqlib.peq id0 id with
+                      | left heq =>
+                          simp [hq] at hget ⊢
+                          exact hget.1
+                      | right hne =>
+                          simp [hq] at hget ⊢
+                          exact hmatch.me_local_inv id0 b size hget
+                  rcases ih tvars'
+                      (PTree.set id
+                        (b1, Ctypes.sizeof prog.prog_comp_env ty) te1)
+                      htail hmatch' with ⟨te2, halloc2, hmatch2⟩
+                  exact ⟨te2,
+                    Csharpminor.alloc_variables_cons te1 m id
+                      (Ctypes.sizeof prog.prog_comp_env ty) tvars' m1 b1 m2 te2
+                      hmem halloc2,
+                    hmatch2⟩
+
+end CompCert4Lean.Cfrontend.Cshmgenproof

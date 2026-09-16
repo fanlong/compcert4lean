@@ -3911,3 +3911,160 @@ theorem alloc_global_exists : alloc_global_existsStatement := by
 
 end Genv
 end CompCert4Lean.Common.Globalenvs
+
+namespace CompCert4Lean.Common.Globalenvs
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Linking
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+
+namespace Genv
+
+private theorem pg_alloc_globals_exists
+    (F V : Type) (ge : t F V)
+    (gl : List (ident × globdef F V)) (m : mem)
+    (hvars : ∀ id v, (id, Gvar v) ∈ gl →
+      init_data_list_aligned z0 v.gvar_init ∧
+        ∀ i o, Init_addrof i o ∈ v.gvar_init →
+          ∃ b, find_symbol ge i = some b) :
+    ∃ m', alloc_globals ge m gl = some m' := by
+  induction gl generalizing m with
+  | nil =>
+      exact ⟨m, rfl⟩
+  | cons g rest ih =>
+      rcases g with ⟨id, gd⟩
+      have hvars_rest : ∀ id' v, (id', Gvar v) ∈ rest →
+          init_data_list_aligned z0 v.gvar_init ∧
+            ∀ i o, Init_addrof i o ∈ v.gvar_init →
+              ∃ b, find_symbol ge i = some b := by
+        intro id' v hmem
+        apply hvars id' v
+        exact List.mem_cons_of_mem (id, gd) hmem
+      have htail : ∀ m1, ∃ m', alloc_globals ge m1 rest = some m' :=
+        fun m1 => ih m1 hvars_rest
+      cases gd with
+      | Gfun f =>
+          rcases alloc_global_exists F V ge m (id, Gfun f) trivial with
+            ⟨m1, halloc⟩
+          rcases htail m1 with ⟨m2, hrest⟩
+          exact ⟨m2, by simp [alloc_globals, halloc, hrest]⟩
+      | Gvar v =>
+          have hv := hvars id v (by simp)
+          rcases alloc_global_exists F V ge m (id, Gvar v) hv with
+            ⟨m1, halloc⟩
+          rcases htail m1 with ⟨m2, hrest⟩
+          exact ⟨m2, by simp [alloc_globals, halloc, hrest]⟩
+
+theorem init_mem_exists : init_mem_existsStatement := by
+  intro F V p hvars
+  unfold init_mem
+  exact pg_alloc_globals_exists F V (globalenv p) p.prog_defs Mem.empty hvars
+
+theorem add_global_match : add_global_matchStatement := by
+  intro A B V W R ge1 ge2 id g1 g2 h hr
+  change positive at id
+  constructor
+  · simp only [add_global]
+    change PArith.BinPos.Pos.succ ge2.genv_next =
+      PArith.BinPos.Pos.succ ge1.genv_next
+    exact congrArg _ h.mge_next
+  · intro id'
+    simp only [add_global]
+    change PTree.get id' (PTree.set id ge2.genv_next ge2.genv_symb) =
+      PTree.get id' (PTree.set id ge1.genv_next ge1.genv_symb)
+    have hx2 := @PTree.gsspec_proof _ id' id ge2.genv_next ge2.genv_symb
+    have hx1 := @PTree.gsspec_proof _ id' id ge1.genv_next ge1.genv_symb
+    cases heq : peq id' id with
+    | left hij =>
+        have hx2' : PTree.get id' (PTree.set id ge2.genv_next ge2.genv_symb) =
+            some ge2.genv_next := by
+          simpa [heq] using hx2
+        have hx1' : PTree.get id' (PTree.set id ge1.genv_next ge1.genv_symb) =
+            some ge1.genv_next := by
+          simpa [heq] using hx1
+        rw [hx2', hx1', h.mge_next]
+    | right hne =>
+        have hx2' : PTree.get id' (PTree.set id ge2.genv_next ge2.genv_symb) =
+            PTree.get id' ge2.genv_symb := by
+          simpa [heq] using hx2
+        have hx1' : PTree.get id' (PTree.set id ge1.genv_next ge1.genv_symb) =
+            PTree.get id' ge1.genv_symb := by
+          simpa [heq] using hx1
+        rw [hx2', hx1', h.mge_symb]
+  · intro b
+    simp only [add_global]
+    change option_rel R
+      (PTree.get b (PTree.set ge1.genv_next g1 ge1.genv_defs))
+      (PTree.get b (PTree.set ge2.genv_next g2 ge2.genv_defs))
+    have hx1 := @PTree.gsspec_proof _ b ge1.genv_next g1 ge1.genv_defs
+    have hx2 := @PTree.gsspec_proof _ b ge2.genv_next g2 ge2.genv_defs
+    cases heq : peq b ge1.genv_next with
+    | left hb =>
+        have heq' : b = ge2.genv_next := hb.trans h.mge_next.symm
+        cases hpeq2 : peq b ge2.genv_next with
+        | left hb2 =>
+            have hx1' : PTree.get b (PTree.set ge1.genv_next g1 ge1.genv_defs) =
+                some g1 := by
+              simpa [heq] using hx1
+            have hx2' : PTree.get b (PTree.set ge2.genv_next g2 ge2.genv_defs) =
+                some g2 := by
+              simpa [hpeq2] using hx2
+            rw [hx1', hx2']
+            exact option_rel.some g1 g2 hr
+        | right hb2 => exact False.elim (hb2 heq')
+    | right hb =>
+        have hb2 : b ≠ ge2.genv_next := by
+          intro hbeq
+          apply hb
+          exact hbeq.trans h.mge_next
+        cases hpeq2 : peq b ge2.genv_next with
+        | left hb2' => exact False.elim (hb (hb2'.trans h.mge_next))
+        | right hb2' =>
+            have hx1' : PTree.get b (PTree.set ge1.genv_next g1 ge1.genv_defs) =
+                PTree.get b ge1.genv_defs := by
+              simpa [heq] using hx1
+            have hx2' : PTree.get b (PTree.set ge2.genv_next g2 ge2.genv_defs) =
+                PTree.get b ge2.genv_defs := by
+              simpa [hpeq2] using hx2
+            rw [hx1', hx2']
+            exact h.mge_defs b
+
+theorem add_globals_match : add_globals_matchStatement := by
+  intro A B V W R gl1 gl2 hlist ge1 ge2 hge
+  induction hlist generalizing ge1 ge2 with
+  | nil => exact hge
+  | cons hd1 hd2 hhd htl ih =>
+      rcases hhd with ⟨hid, hrel⟩
+      cases hd1 with
+      | mk id1 gd1 =>
+          cases hd2 with
+          | mk id2 gd2 =>
+              simp only [add_globals, List.foldl]
+              change id1 = id2 at hid
+              subst id2
+              exact ih
+                (add_global ge1 (id1, gd1))
+                (add_global ge2 (id1, gd2))
+                (add_global_match A B V W R ge1 ge2 id1 gd1 gd2 hge hrel)
+
+theorem globalenvs_match : globalenvs_matchStatement := by
+  intro C F1 V1 F2 V2 _ match_fundef match_varinfo ctx p tp hmatch
+  have hempty : match_genvs
+      (match_globdef match_fundef match_varinfo ctx)
+      (empty_genv F1 V1 p.prog_public) (empty_genv F2 V2 tp.prog_public) := by
+    constructor
+    · rfl
+    · intro id
+      rfl
+    · intro b
+      exact option_rel.none _
+  exact add_globals_match F1 F2 V1 V2
+    (match_globdef match_fundef match_varinfo ctx)
+    p.prog_defs tp.prog_defs hmatch.1
+    (empty_genv F1 V1 p.prog_public) (empty_genv F2 V2 tp.prog_public) hempty
+
+end Genv
+end CompCert4Lean.Common.Globalenvs
