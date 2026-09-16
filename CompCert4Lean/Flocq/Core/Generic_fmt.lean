@@ -2683,3 +2683,29 @@ theorem generic_format_round_pos :
       simpa only [y, Exact.round] using hg
 
 end CompCert4Lean.Flocq.Core.Generic_fmt
+
+namespace CompCert4Lean.Flocq.Core.Generic_fmt
+
+theorem round_opp :
+    ∀ ctx magnitude, round_oppStatement ctx magnitude := by
+  intro ctx magnitude beta fexp rnd x
+  unfold Exact.round
+  have hce := pg_cexp_opp ctx magnitude beta fexp x
+  rw [hce, scaled_mantissa_opp ctx magnitude beta fexp x]
+  have hf2r := CompCert4Lean.Flocq.Core.Float_prop.F2R_Zopp ctx beta
+    (Exact.Zrnd_opp ctx rnd (Exact.scaled_mantissa ctx magnitude beta fexp x))
+    (Exact.cexp ctx magnitude beta fexp x)
+  change Exact.F2R ctx
+      (Float beta (Zopp (Exact.Zrnd_opp ctx rnd
+        (Exact.scaled_mantissa ctx magnitude beta fexp x)))
+        (Exact.cexp ctx magnitude beta fexp x)) =
+    Exact.Ropp ctx
+      (Exact.F2R ctx
+        (Float beta (Exact.Zrnd_opp ctx rnd
+          (Exact.scaled_mantissa ctx magnitude beta fexp x))
+          (Exact.cexp ctx magnitude beta fexp x))) at hf2r
+  rw [← hf2r]
+  simp only [Exact.Zrnd_opp]
+  rw [pg_zopp_zopp]
+
+end CompCert4Lean.Flocq.Core.Generic_fmt

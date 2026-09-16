@@ -6575,3 +6575,17 @@ theorem analyze_successors : analyze_successorsStatement := by
       simpa [htransfer] using hsol
 
 end CompCert4Lean.Backend.Allocproof
+
+namespace CompCert4Lean.Backend.Allocproof
+
+open CompCert4Lean.Backend.Allocation
+open CompCert4Lean.Common.Errors
+open CompCert4Lean.Lib.Maps
+
+theorem satisf_successors : satisf_successorsStatement := by
+  intro cfg f env bsh an pc bs s e rs ls hAnalyze hBsh hSucc hAn hSat
+  obtain ⟨e', hTransfer, hSubset⟩ :=
+    analyze_successors cfg f env bsh an pc bs s e hAnalyze hBsh hSucc hAn
+  exact ⟨e', hTransfer, satisf_incr rs ls e' e hSat hSubset⟩
+
+end CompCert4Lean.Backend.Allocproof

@@ -3816,3 +3816,34 @@ theorem storebytes_valid_block_1 : storebytes_valid_block_1Statement := by
 end Mem
 
 end CompCert4Lean.Common.Memory
+
+namespace CompCert4Lean.Common.Memory
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Lib.Maps
+
+namespace Mem
+
+theorem loadbytes_storebytes_same : loadbytes_storebytes_sameStatement := by
+  intro m1 b ofs bytes m2 hstore
+  have hperm : range_perm m2 b ofs (zAdd ofs (zOfNat bytes.length)) Cur Readable := by
+    intro ofs0 hof
+    apply perm_storebytes_1 m1 b ofs bytes m2 hstore b ofs0 Cur Readable
+    have hperm1 : range_perm m1 b ofs (zAdd ofs (zOfNat bytes.length)) Cur Writable :=
+      storebytes_range_perm m1 b ofs bytes m2 hstore
+    have hperm1r : range_perm m1 b ofs (zAdd ofs (zOfNat bytes.length)) Cur Readable :=
+      range_perm_implies m1 b ofs (zAdd ofs (zOfNat bytes.length))
+        Cur Writable Readable hperm1 perm_W_R
+    exact hperm1r ofs0 hof
+  unfold loadbytes
+  cases hdec : range_perm_dec m2 b ofs (zAdd ofs (zOfNat bytes.length)) Cur Readable with
+  | right hn => exact False.elim (hn hperm)
+  | left _ =>
+      simp [boolOfSumbool, hdec]
+      rw [storebytes_mem_contents m1 b ofs bytes m2 hstore, pmapGetSetSame]
+      exact getN_setN_same bytes ofs (PMap.get b m1.mem_contents)
+
+end Mem
+
+end CompCert4Lean.Common.Memory

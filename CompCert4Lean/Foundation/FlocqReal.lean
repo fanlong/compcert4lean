@@ -4173,3 +4173,33 @@ theorem Rabs_le :
 end Rbasic_fun
 end Rocq.Coq.Reals
 end CompCert4Lean.Foundation.FlocqReal
+
+namespace CompCert4Lean.Foundation.FlocqReal
+namespace Rocq.Coq.Reals
+namespace Rbasic_fun
+
+theorem Rabs_pos_lt :
+    ∀ (ctx : ExactRealContext), Rabs_pos_ltStatement ctx := by
+  intro ctx x hne
+  change ctx.spec.lt (ctx.spec.ofZ Z0) (ctx.spec.abs x)
+  rw [ctx.certificate.sourceLaws.ofZ_zero]
+  apply (ctx.certificate.orderedField.lt_iff_le_not_le _ _).mpr
+  constructor
+  · have hpos := Rabs_pos ctx x
+    change ctx.spec.le (ctx.spec.ofZ Z0) (ctx.spec.abs x) at hpos
+    rw [ctx.certificate.sourceLaws.ofZ_zero] at hpos
+    exact hpos
+  · intro hzero
+    have hnonneg : ctx.spec.le ctx.spec.zero (ctx.spec.abs x) := by
+      have hpos := Rabs_pos ctx x
+      change ctx.spec.le (ctx.spec.ofZ Z0) (ctx.spec.abs x) at hpos
+      rw [ctx.certificate.sourceLaws.ofZ_zero] at hpos
+      exact hpos
+    have heq : ctx.spec.abs x = ctx.spec.zero :=
+      ctx.certificate.orderedField.le_antisymm _ _ hzero hnonneg
+    apply (Rabs_no_R0 ctx x hne)
+    exact heq.trans ctx.certificate.sourceLaws.ofZ_zero.symm
+
+end Rbasic_fun
+end Rocq.Coq.Reals
+end CompCert4Lean.Foundation.FlocqReal

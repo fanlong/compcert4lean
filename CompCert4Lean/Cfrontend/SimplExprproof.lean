@@ -3207,3 +3207,18 @@ theorem tr_top_val_for_val_inv :
           exact ⟨rfl, htype, heval _ _ _ _ (by intros; rfl)⟩
 
 end CompCert4Lean.Cfrontend.SimplExprproof
+
+namespace CompCert4Lean.Cfrontend.SimplExprproof
+
+theorem blocks_of_env_preserved :
+    ∀ [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+      [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)],
+      blocks_of_env_preservedStatement := by
+  intro binary64_certificate binary32_certificate
+  intro p tp hmatch e
+  unfold Clight.blocks_of_env Csem.blocks_of_env
+  unfold Clight.block_of_binding Csem.block_of_binding
+  rw [comp_env_preserved (binary64_certificate := binary64_certificate)
+    (binary32_certificate := binary32_certificate) p tp hmatch]
+
+end CompCert4Lean.Cfrontend.SimplExprproof
