@@ -6455,3 +6455,214 @@ theorem shr_lt_zero_proof : shr_lt_zero := by
         (zDiv (signed x) (zOfInt (Int.ofNat (2 ^ (wordsize - 1))))) =
       WordCore.repr wordsize zZero
     rw [hq]
+
+private theorem suffix_zsub_nat (a b : Nat) (hba : b ≤ a) :
+    zSub (zOfNat a) (zOfNat b) = zOfNat (a - b) := by
+  apply intOfZ_injective
+  simp only [zSub, ZArith.BinInt.Z.sub, zOfNat,
+    ZArith.BinInt.Z.of_nat, intOfZ_zOfInt]
+  exact (Int.ofNat_sub hba).symm
+
+private theorem suffix_bitfield_nat_arith (a p w : Nat)
+    (hpw : p + w ≤ 32) (hw : 0 < w) (ha : a < 2 ^ 32) :
+    (a / 2 ^ p) % 2 ^ w =
+      (a * 2 ^ (32 - p - w) % 2 ^ 32) / 2 ^ (32 - w) := by
+  let A := 2 ^ p
+  let B := 2 ^ w
+  let C := 2 ^ (32 - p - w)
+  let M := 2 ^ 32
+  let D := 2 ^ (32 - w)
+  let q := a / A
+  let r := a % A
+  let s := q % B
+  have hp : p ≤ 32 := by omega
+  have hApos : 0 < A := by dsimp [A]; exact Nat.two_pow_pos _
+  have hBpos : 0 < B := by dsimp [B]; exact Nat.two_pow_pos _
+  have hCpos : 0 < C := by dsimp [C]; exact Nat.two_pow_pos _
+  have hDpos : 0 < D := by dsimp [D]; exact Nat.two_pow_pos _
+  have hMpos : 0 < M := by dsimp [M]; exact Nat.two_pow_pos 32
+  have hpow : A * B * C = M := by
+    dsimp [A, B, C, M]
+    rw [← Nat.pow_add, ← Nat.pow_add]
+    congr 1
+    rw [Nat.sub_sub]
+    rw [Nat.add_sub_of_le hpw]
+  have hpow' : A * C = D := by
+    dsimp [A, C, D]
+    rw [← Nat.pow_add]
+    congr 1
+    omega
+  have hBD : B * D = M := by
+    rw [← hpow']
+    calc
+      B * (A * C) = A * B * C := by
+        simp only [Nat.mul_assoc, Nat.mul_left_comm, Nat.mul_comm]
+      _ = M := hpow
+  have hqdecomp : q = (q / B) * B + s := by
+    exact (Nat.div_add_mod' q B).symm
+  have hadecomp : a = q * A + r := by
+    exact (Nat.div_add_mod' a A).symm
+  have hqa : q * A + r = (q / B * B + s) * A + r := by
+    exact congrArg (fun t => t * A + r) hqdecomp
+  have hcalc : a * C = (q / B) * M + s * D + r * C := by
+    calc
+      a * C = (q * A + r) * C := by rw [hadecomp]
+      _ = ((q / B * B + s) * A + r) * C := congrArg (fun t => t * C) hqa
+      _ = (q / B) * (A * B * C) + s * (A * C) + r * C := by
+        simp only [Nat.mul_add, Nat.add_mul, Nat.mul_assoc,
+          Nat.mul_left_comm, Nat.mul_comm]
+      _ = (q / B) * M + s * D + r * C := by rw [hpow, hpow']
+  have hrA : r < A := by
+    dsimp [r]
+    exact Nat.mod_lt _ hApos
+  have hsB : s < B := by
+    dsimp [s]
+    exact Nat.mod_lt _ hBpos
+  have hrC : r * C < D := by
+    have h := Nat.mul_lt_mul_of_pos_right hrA hCpos
+    rw [hpow'] at h
+    exact h
+  have hsDadd : s * D + D ≤ M := by
+    have hs1 : s + 1 ≤ B := by omega
+    have h := Nat.mul_le_mul_right D hs1
+    rw [Nat.add_mul, hBD] at h
+    simpa only [Nat.one_mul] using h
+  have hrestlt : s * D + r * C < M := by omega
+  have hmod : a * C % M = s * D + r * C := by
+    calc
+      a * C % M = (q / B * M + s * D + r * C) % M := by rw [hcalc]
+      _ = (s * D + r * C + M * (q / B)) % M := by
+        congr 1
+        simp only [Nat.mul_comm, Nat.add_assoc, Nat.add_left_comm, Nat.add_comm]
+      _ = (s * D + r * C) % M := Nat.add_mul_mod_self_left _ _ _
+      _ = s * D + r * C := Nat.mod_eq_of_lt hrestlt
+  have hquotlo : s * D ≤ s * D + r * C := by omega
+  have hquothi : s * D + r * C < (s + 1) * D := by
+    rw [Nat.add_mul]
+    omega
+  have hquot : (a * C % M) / D = s := by
+    rw [hmod]
+    exact Nat.div_eq_of_lt_le hquotlo hquothi
+  dsimp [A, B, C, M, D, q, r, s] at hquot ⊢
+  exact hquot.symm
+
+theorem unsigned_bitfield_extract_by_shifts_proof :
+    unsigned_bitfield_extract_by_shifts := by
+  intro pos width n hpos hwidth hsum
+  let p := zToNat pos
+  let w := zToNat width
+  have hposrepr : pos = zOfNat p := by
+    dsimp [p]
+    exact (ZArith.Znat.Z2Nat.id pos hpos).symm
+  have hwidth0 : zLe zZero width := by
+    change 0 ≤ intOfZ width
+    have h := hwidth
+    change 0 < intOfZ width at h
+    omega
+  have hwrepr : width = zOfNat w := by
+    dsimp [w]
+    exact (ZArith.Znat.Z2Nat.id width hwidth0).symm
+  have hpw : p + w ≤ 32 := by
+    have hs := hsum
+    rw [hposrepr, hwrepr] at hs
+    change intOfZ (zAdd (zOfNat p) (zOfNat w)) ≤ intOfZ zwordsize at hs
+    simp only [zAdd, ZArith.BinInt.Z.add, zOfNat,
+      ZArith.BinInt.Z.of_nat, intOfZ_zOfInt, zwordsize] at hs
+    exact Int.ofNat_le.mp hs
+  have hwpos : 0 < w := by
+    have h := hwidth
+    rw [hwrepr] at h
+    change 0 < intOfZ (zOfNat w) at h
+    simp only [zOfNat, ZArith.BinInt.Z.of_nat, intOfZ_zOfInt] at h
+    exact Int.ofNat_lt.mp h
+  have hp_lt : p < 2 ^ 32 := by omega
+  have hw_le : w ≤ 32 := by omega
+  have hpval : (WordCore.repr wordsize pos).val = p := by
+    rw [hposrepr, WordCore.val_repr_residue]
+    have hz : zOfNat p = zOfInt (Int.ofNat p) := by rfl
+    rw [hz, WordCore.residue_zOfNat]
+    exact Nat.mod_eq_of_lt hp_lt
+  have hwval : (WordCore.repr wordsize width).val = w := by
+    rw [hwrepr, WordCore.val_repr_residue]
+    have hz : zOfNat w = zOfInt (Int.ofNat w) := by rfl
+    rw [hz, WordCore.residue_zOfNat]
+    exact Nat.mod_eq_of_lt (Nat.lt_of_le_of_lt hw_le (by decide : (32 : Nat) < 2 ^ 32))
+  have hleft1 :
+      (WordCore.zero_ext width (WordCore.shru n (WordCore.repr wordsize pos))).val =
+        ((n.val / 2 ^ p) % 2 ^ w) := by
+    change (zero_ext width (WordCore.shru n (WordCore.repr wordsize pos))).val = _
+    rw [zero_ext_val width (WordCore.shru n (WordCore.repr wordsize pos)) hwidth0]
+    change (WordCore.shru n (WordCore.repr wordsize pos)).val % 2 ^ w % 2 ^ wordsize = _
+    have hshru : (WordCore.shru n (WordCore.repr wordsize pos)).val =
+        n.val / 2 ^ (WordCore.repr wordsize pos).val :=
+      suffix_shru_val n (WordCore.repr wordsize pos)
+    rw [hshru, hpval]
+    rw [Nat.mod_eq_of_lt (by
+      have h := Nat.mod_lt (n.val / 2 ^ p) (Nat.two_pow_pos w)
+      have hle : 2 ^ w ≤ 2 ^ wordsize :=
+        Nat.pow_le_pow_right Nat.zero_lt_two hw_le
+      exact Nat.lt_of_lt_of_le h hle)]
+  have hsub1 :
+      zSub (zSub zwordsize pos) width =
+        zOfNat (32 - p - w) := by
+    have hzws : zwordsize = zOfNat 32 := by rfl
+    rw [hzws, hposrepr, hwrepr]
+    have hinner : zSub (zOfNat 32) (zOfNat p) = zOfNat (32 - p) := by
+      apply suffix_zsub_nat
+      omega
+    rw [hinner]
+    apply suffix_zsub_nat
+    omega
+  have hsub2 : zSub zwordsize width = zOfNat (32 - w) := by
+    have hzws : zwordsize = zOfNat 32 := by rfl
+    rw [hzws, hwrepr]
+    apply suffix_zsub_nat
+    omega
+  have hright :
+      (WordCore.shru
+        (WordCore.shl n (WordCore.repr wordsize (zSub (zSub zwordsize pos) width)))
+      (WordCore.repr wordsize (zSub zwordsize width))).val =
+      ((n.val * 2 ^ (32 - p - w)) % 2 ^ 32) /
+        2 ^ (32 - w) := by
+    change (shru
+      (shl n (WordCore.repr wordsize (zSub (zSub zwordsize pos) width)))
+      (WordCore.repr wordsize (zSub zwordsize width))).val = _
+    have hshru :
+        (shru
+          (shl n (WordCore.repr wordsize (zSub (zSub zwordsize pos) width)))
+          (WordCore.repr wordsize (zSub zwordsize width))).val =
+        (shl n (WordCore.repr wordsize (zSub (zSub zwordsize pos) width))).val /
+          2 ^ (WordCore.repr wordsize (zSub zwordsize width)).val :=
+      suffix_shru_val
+      (shl n (WordCore.repr wordsize (zSub (zSub zwordsize pos) width)))
+      (WordCore.repr wordsize (zSub zwordsize width))
+    have hshl :
+        (shl n (WordCore.repr wordsize (zSub (zSub zwordsize pos) width))).val =
+          n.val * 2 ^ (WordCore.repr wordsize
+            (zSub (zSub zwordsize pos) width)).val % 2 ^ wordsize :=
+      suffix_shl_val n
+      (WordCore.repr wordsize (zSub (zSub zwordsize pos) width))
+    rw [hshru, hshl, hsub1, hsub2]
+    have hz1 : zOfNat (32 - p - w) = zOfInt (Int.ofNat (32 - p - w)) := by rfl
+    have hz2 : zOfNat (32 - w) = zOfInt (Int.ofNat (32 - w)) := by rfl
+    rw [hz1, hz2, WordCore.val_repr_residue, WordCore.residue_zOfNat,
+      WordCore.val_repr_residue, WordCore.residue_zOfNat]
+    have hpowws : (2 ^ wordsize : Nat) = 2 ^ 32 := by rfl
+    rw [hpowws]
+    have hk1 : 32 - p - w < 2 ^ 32 := by
+      have hk1le : 32 - p - w ≤ 32 := by omega
+      exact Nat.lt_of_le_of_lt hk1le (by decide)
+    have hk2 : 32 - w < 2 ^ 32 := by
+      have hk2le : 32 - w ≤ 32 := by omega
+      exact Nat.lt_of_le_of_lt hk2le (by decide)
+    rw [Nat.mod_eq_of_lt hk1, Nat.mod_eq_of_lt hk2]
+  change WordCore.unsigned_bitfield_extract pos width n = _
+  apply WordCore.ext_of_val_eq
+  change (WordCore.zero_ext width (WordCore.shru n (WordCore.repr wordsize pos))).val = _
+  change (WordCore.zero_ext width (WordCore.shru n (WordCore.repr wordsize pos))).val =
+    (WordCore.shru
+      (WordCore.shl n (WordCore.repr wordsize (zSub (zSub zwordsize pos) width)))
+      (WordCore.repr wordsize (zSub zwordsize width))).val
+  rw [hleft1, hright]
+  exact suffix_bitfield_nat_arith n.val p w
+    hpw hwpos (WordCore.val_lt n)

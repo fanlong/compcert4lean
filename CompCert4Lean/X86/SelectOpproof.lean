@@ -4052,3 +4052,41 @@ theorem eval_select
       · rfl
 
 end CompCert4Lean.X86.SelectOpproof
+
+namespace CompCert4Lean.X86.SelectOpproof
+
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.ExternalCalls
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.X86.Op
+open CompCert4Lean.X86.SelectOp
+
+theorem eval_floatofint
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    eval_floatofintStatement := by
+  intro xi ge sp e m le a x y h hx
+  cases hmatch : floatofint_match a with
+  | floatofint_case1 n =>
+      have hx' : x = .Vint n := eval_intconst_value_local
+        xi ge sp e m le n x (by simpa [hmatch] using h)
+      subst x
+      simp [Val.floatofint] at hx
+      subst y
+      refine ⟨.Vfloat (CompCert4Lean.Lib.Floats.Float.of_int
+          (certificate := binary64_certificate) n), ?_,
+        Val.lessdef_refl _⟩
+      simp only [CompCert4Lean.X86.SelectOp.floatofint, hmatch]
+      exact eval_expr.eval_Eop le
+        (Ofloatconst (CompCert4Lean.Lib.Floats.Float.of_int
+          (certificate := binary64_certificate) n)) Enil [] _
+        (eval_exprlist.nil le) rfl
+  | floatofint_default e1 =>
+      refine ⟨y, ?_, Val.lessdef_refl _⟩
+      simp only [CompCert4Lean.X86.SelectOp.floatofint, hmatch]
+      apply eval_expr.eval_Eop le Ofloatofint (Econs a Enil) [x] y
+      · exact eval_exprlist.cons le a Enil x [] h (eval_exprlist.nil le)
+      · exact hx
+
+end CompCert4Lean.X86.SelectOpproof

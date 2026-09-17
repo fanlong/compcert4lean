@@ -4162,3 +4162,15 @@ theorem storebytes_split : storebytes_splitStatement := by
 end Mem
 
 end CompCert4Lean.Common.Memory
+
+namespace CompCert4Lean.Common.Memory
+
+namespace Mem
+
+theorem store_int64_split : store_int64_splitStatement := by
+  intro m b ofs v m' hstore hptr
+  simp [CompCert4Lean.X86_64.Archi.ptr64] at hptr
+
+end Mem
+
+end CompCert4Lean.Common.Memory

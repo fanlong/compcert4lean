@@ -4628,3 +4628,51 @@ theorem storebytes_provenance : storebytes_provenanceStatement := by
     exact Or.inr (hother.symm.trans hload)
 
 end CompCert4Lean.Backend.ValueDomain
+
+namespace CompCert4Lean.Backend.ValueDomain
+
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Values
+
+theorem store_provenance : store_provenanceStatement := by
+  intro chunk m b ofs v m' b' ofs' b'' ofs'' q i hstore hload
+  have hstorebytes :=
+    CompCert4Lean.Common.Memory.Mem.store_storebytes
+      m b ofs chunk v m' hstore
+  have hprov :=
+    storebytes_provenance m b ofs (encode_val chunk v) m'
+      b' ofs' b'' ofs'' q i hstorebytes hload
+  rcases hprov with hmem | hmem
+  · left
+    cases henc : encode_val chunk v with
+    | nil =>
+        simp [henc] at hmem
+    | cons mv mvl =>
+      rw [henc] at hmem
+      have hshape : shape_encoding chunk v (mv :: mvl) := by
+        rw [← henc]
+        exact CompCert4Lean.Common.Memdata.encode_val_shape chunk v
+      cases hshape with
+    | fragment q0 i0 mvl hchunks hq hsize htail =>
+        simp only [List.mem_cons] at hmem
+        rcases hmem with heq | htailmem
+        · cases heq
+          exact ⟨rfl, hchunks⟩
+        · obtain ⟨j, heq, _⟩ := htail _ htailmem
+          cases heq
+          exact ⟨rfl, hchunks⟩
+    | bytes b0 mvl hv htail =>
+        simp only [List.mem_cons] at hmem
+        rcases hmem with heq | htailmem
+        · cases heq
+        · obtain ⟨b1, heq⟩ := htail _ htailmem
+          cases heq
+    | undef mvl htail =>
+        simp only [List.mem_cons] at hmem
+        rcases hmem with heq | htailmem
+        · cases heq
+        · obtain ⟨heq⟩ := htail _ htailmem
+  · exact Or.inr hmem
+
+end CompCert4Lean.Backend.ValueDomain

@@ -4334,3 +4334,16 @@ theorem find_funct_ptr_transf_partial : find_funct_ptr_transf_partialStatement :
 
 end Genv
 end CompCert4Lean.Common.Globalenvs
+
+namespace CompCert4Lean.Common.Globalenvs
+namespace Genv
+
+theorem find_funct_transf_partial : find_funct_transf_partialStatement := by
+  intro A B V _ _ transf p tp hmatch v f hfind
+  rcases @find_funct_match (CompCert4Lean.Common.AST.program A V) A V B V _
+      (fun _ f tf => transf f = .OK tf) Eq p p tp hmatch v f hfind with
+    ⟨_, tf, htf, htransf, _⟩
+  exact ⟨tf, htf, htransf⟩
+
+end Genv
+end CompCert4Lean.Common.Globalenvs

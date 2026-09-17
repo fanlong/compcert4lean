@@ -3124,3 +3124,173 @@ theorem simplify_load_destroyed : simplify_load_destroyedStatement := by
   cases chunk <;> rfl
 
 end CompCert4Lean.Backend.Stackingproof
+
+namespace CompCert4Lean.Backend.Stackingproof
+
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Backend.Stacking
+open CompCert4Lean.Backend.Locations
+open CompCert4Lean.Common.Separation
+open CompCert4Lean.Backend.Bounds
+open CompCert4Lean.X86.Stacklayout
+
+theorem simplify_store_destroyed : simplify_store_destroyedStatement := by
+  intro chunk addr
+  cases chunk <;> rfl
+
+theorem match_stacks_change_meminj : match_stacks_change_meminjStatement := by
+  intro cfg tprog j j' bound_local_pos bound_outgoing_pos bound_stack_data_pos
+    used_callee_save_norepet used_callee_save_prop hincr cs cs' sg hmatch
+  induction hmatch with
+  | match_stacks_empty sg htail =>
+      exact match_stacks.match_stacks_empty sg htail
+  | @match_stacks_cons f sp ls c cs fb sp' ra c' cs' sg trf htail hfind htransf
+      hcode hinj hra hlocs hargs hstacks ih =>
+      exact match_stacks.match_stacks_cons f sp ls c cs fb sp' ra c' cs' sg trf
+        htail hfind htransf hcode (hincr _ _ _ hinj) hra hlocs hargs ih
+
+theorem match_stacks_change_sig : match_stacks_change_sigStatement := by
+  intro cfg tprog sg1 j bound_local_pos bound_outgoing_pos bound_stack_data_pos
+    used_callee_save_norepet used_callee_save_prop cs cs' sg hmatch htail1
+  induction hmatch with
+  | match_stacks_empty sg htail =>
+      exact match_stacks.match_stacks_empty sg1 htail1
+  | @match_stacks_cons f sp ls c cs fb sp' ra c' cs' sg trf htail hfind htransf
+      hcode hinj hra hlocs hargs hstacks ih =>
+      apply match_stacks.match_stacks_cons f sp ls c cs fb sp' ra c' cs' sg1 trf
+        htail hfind htransf hcode hinj hra hlocs
+      intro ofs ty harg
+      exact (htail1 (S Outgoing ofs ty) harg).elim
+      exact hstacks
+
+private theorem stackingproof_massert_imp_refl (P : massert) : massert_imp P P := by
+  constructor
+  · intro m h
+    exact h
+  · intro b ofs h
+    exact h
+
+private theorem stackingproof_frame_contents_incr
+    (return_address_offset : Mach.function → Mach.code →
+      CompCert4Lean.Lib.Integers.ptrofs → Prop)
+    (tprog : Mach.program) (cfg : CompilerConfig) (f : Linear.function)
+    (bound_local_pos : bound_local_pos cfg (function_bounds cfg f))
+    (bound_outgoing_pos : bound_outgoing_pos cfg (function_bounds cfg f))
+    (bound_stack_data_pos : bound_stack_data_pos cfg (function_bounds cfg f))
+    (used_callee_save_norepet : used_callee_save_norepet cfg (function_bounds cfg f))
+    (used_callee_save_prop : used_callee_save_prop cfg (function_bounds cfg f))
+    (j j' : meminj) (sp : block) (ls ls0 : locset) (parent retaddr : val)
+    (hinc : inject_incr j j') :
+    massert_imp
+      (frame_contents return_address_offset tprog cfg f bound_local_pos
+        bound_outgoing_pos bound_stack_data_pos used_callee_save_norepet
+        used_callee_save_prop j sp ls ls0 parent retaddr)
+      (frame_contents return_address_offset tprog cfg f bound_local_pos
+        bound_outgoing_pos bound_stack_data_pos used_callee_save_norepet
+        used_callee_save_prop j' sp ls ls0 parent retaddr) := by
+  let b := function_bounds cfg f
+  let fe := make_env cfg b
+  have hlocal : massert_imp
+      (contains_locations return_address_offset tprog j sp fe.fe_ofs_local
+        b.bound_local Local ls)
+      (contains_locations return_address_offset tprog j' sp fe.fe_ofs_local
+        b.bound_local Local ls) :=
+    contains_locations_incr return_address_offset tprog j j' sp fe.fe_ofs_local
+      b.bound_local Local ls hinc
+  have hout : massert_imp
+      (contains_locations return_address_offset tprog j sp (fe_ofs_arg cfg)
+        b.bound_outgoing Outgoing ls)
+      (contains_locations return_address_offset tprog j' sp (fe_ofs_arg cfg)
+        b.bound_outgoing Outgoing ls) :=
+    contains_locations_incr return_address_offset tprog j j' sp (fe_ofs_arg cfg)
+      b.bound_outgoing Outgoing ls hinc
+  have hlink : massert_imp
+      (hasvalue CompCert4Lean.Common.AST.Mptr sp fe.fe_ofs_link parent)
+      (hasvalue CompCert4Lean.Common.AST.Mptr sp fe.fe_ofs_link parent) :=
+    stackingproof_massert_imp_refl _
+  have hret : massert_imp
+      (hasvalue CompCert4Lean.Common.AST.Mptr sp fe.fe_ofs_retaddr retaddr)
+      (hasvalue CompCert4Lean.Common.AST.Mptr sp fe.fe_ofs_retaddr retaddr) :=
+    stackingproof_massert_imp_refl _
+  have hcallee : massert_imp
+      (contains_callee_saves j sp fe.fe_ofs_callee_save b.used_callee_save ls0)
+      (contains_callee_saves j' sp fe.fe_ofs_callee_save b.used_callee_save ls0) :=
+    contains_callee_saves_incr j j' sp ls0 hinc b.used_callee_save
+      fe.fe_ofs_callee_save
+  have hframe1 : massert_imp
+      (frame_contents_1 return_address_offset tprog cfg f bound_local_pos
+        bound_outgoing_pos bound_stack_data_pos used_callee_save_norepet
+        used_callee_save_prop j sp ls ls0 parent retaddr)
+      (frame_contents_1 return_address_offset tprog cfg f bound_local_pos
+        bound_outgoing_pos bound_stack_data_pos used_callee_save_norepet
+        used_callee_save_prop j' sp ls ls0 parent retaddr) := by
+    exact stackingproof_massert_imp_sepconj hlocal
+      (stackingproof_massert_imp_sepconj hout
+        (stackingproof_massert_imp_sepconj hlink
+          (stackingproof_massert_imp_sepconj hret hcallee)))
+  exact stackingproof_massert_imp_mconj hframe1
+    (stackingproof_massert_imp_sepconj
+      (stackingproof_massert_imp_refl _) (stackingproof_massert_imp_refl _))
+
+theorem stack_contents_change_meminj : stack_contents_change_meminjStatement := by
+  intro return_address_offset tprog cfg m j j' bound_local_pos bound_outgoing_pos
+    bound_stack_data_pos used_callee_save_norepet used_callee_save_prop hincr cs cs' P
+  have hstack : massert_imp
+      (stack_contents return_address_offset tprog cfg j cs cs'
+        bound_local_pos bound_outgoing_pos bound_stack_data_pos
+        used_callee_save_norepet used_callee_save_prop)
+      (stack_contents return_address_offset tprog cfg j' cs cs'
+        bound_local_pos bound_outgoing_pos bound_stack_data_pos
+        used_callee_save_norepet used_callee_save_prop) := by
+    induction cs generalizing cs' with
+    | nil =>
+        cases cs' with
+        | nil =>
+            simpa [stack_contents] using
+              (stackingproof_massert_imp_refl (pure True))
+        | cons sf cs' =>
+            simpa [stack_contents] using
+              (stackingproof_massert_imp_refl (pure False))
+    | cons sf cs ih =>
+        cases sf with
+        | Stackframe f fsp ls c =>
+            cases cs' with
+            | nil =>
+                simpa [stack_contents] using
+                  (stackingproof_massert_imp_refl (pure False))
+            | cons sf' cs' =>
+                cases sf' with
+                | Stackframe fb sptarget ra c' =>
+                    cases sptarget with
+                    | Vptr sp' ofs' =>
+                        have hframe := stackingproof_frame_contents_incr
+                          return_address_offset tprog cfg f
+                          (bound_local_pos f) (bound_outgoing_pos f)
+                          (bound_stack_data_pos f)
+                          (used_callee_save_norepet f)
+                          (used_callee_save_prop f) j j' sp' ls
+                          (Linear.parent_locset cs) (Mach.parent_sp cs')
+                          (Mach.parent_ra cs') hincr
+                        have htail := ih (cs' := cs')
+                        simpa [stack_contents] using
+                          (stackingproof_massert_imp_sepconj hframe htail)
+                    | Vundef =>
+                        simpa [stack_contents] using
+                          (stackingproof_massert_imp_refl (pure False))
+                    | Vint n =>
+                        simpa [stack_contents] using
+                          (stackingproof_massert_imp_refl (pure False))
+                    | Vlong n =>
+                        simpa [stack_contents] using
+                          (stackingproof_massert_imp_refl (pure False))
+                    | Vfloat n =>
+                        simpa [stack_contents] using
+                          (stackingproof_massert_imp_refl (pure False))
+                    | Vsingle n =>
+                        simpa [stack_contents] using
+                          (stackingproof_massert_imp_refl (pure False))
+  intro hpred
+  exact (stackingproof_massert_imp_sepconj hstack
+    (stackingproof_massert_imp_refl P)).1 m hpred
+
+end CompCert4Lean.Backend.Stackingproof

@@ -4139,3 +4139,86 @@ theorem switch_table_select : switch_table_selectStatement := by
       exact hn
 
 end CompCert4Lean.Cfrontend.Cminorgenproof
+
+namespace CompCert4Lean.Cfrontend.Cminorgenproof
+
+theorem switch_descent
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    switch_descentStatement := by
+  intro xi tprog cenv xenv k
+  intro ls body s htrans
+  refine CompCert4Lean.Cfrontend.Csharpminor.lbl_stmt.rec
+    (motive_1 := fun _ => True)
+    (motive_2 := fun ls => ∀ (body s : CompCert4Lean.Backend.Cminor.stmt),
+      CompCert4Lean.Cfrontend.Cminorgen.transl_lblstmt cenv
+        (CompCert4Lean.Cfrontend.Cminorgen.switch_env ls xenv) ls body = .OK s →
+      ∃ k', transl_lblstmt_cont cenv xenv ls k k' ∧
+        ∀ f sp e m,
+          CompCert4Lean.Common.Smallstep.plus (CM.step xi)
+            (targetGenv tprog)
+            (.State f s k sp e m) CompCert4Lean.Common.Events.E0
+            (.State f body k' sp e m))
+    (Sskip := trivial)
+    (Sset := fun _ _ => trivial)
+    (Sstore := fun _ _ _ => trivial)
+    (Scall := fun _ _ _ _ => trivial)
+    (Sbuiltin := fun _ _ _ => trivial)
+    (Sseq := fun _ _ _ _ => trivial)
+    (Sifthenelse := fun _ _ _ _ _ => trivial)
+    (Sloop := fun _ _ => trivial)
+    (Sblock := fun _ _ => trivial)
+    (Sexit := fun _ => trivial)
+    (Sswitch := fun _ _ _ _ => trivial)
+    (Sreturn := fun _ => trivial)
+    (Slabel := fun _ _ _ => trivial)
+    (Sgoto := fun _ => trivial)
+    (LSnil := by
+      intro body s htrans
+      change (.OK (.Sseq (.Sblock body) .Sskip) :
+        CompCert4Lean.Common.Errors.res CompCert4Lean.Backend.Cminor.stmt) = .OK s at htrans
+      cases htrans
+      refine ⟨_, .default, ?_⟩
+      intro f sp e m
+      apply CompCert4Lean.Common.Smallstep.plus_two
+      · exact CompCert4Lean.Backend.Cminor.step.step_seq f
+          (.Sblock body) .Sskip k sp e m
+      · exact CompCert4Lean.Backend.Cminor.step.step_block f body
+          (.Kseq .Sskip k) sp e m
+      · rfl)
+    (LScons := fun c stmt remaining _ihs ihr => by
+      intro body s htrans
+      simp only [CompCert4Lean.Cfrontend.Cminorgen.transl_lblstmt,
+        CompCert4Lean.Cfrontend.Cminorgen.switch_env] at htrans
+      generalize hstmt : CompCert4Lean.Cfrontend.Cminorgen.transl_stmt cenv
+          (false :: CompCert4Lean.Cfrontend.Cminorgen.switch_env remaining xenv) stmt = q at htrans
+      cases q with
+      | Error msg => cases htrans
+      | OK ts =>
+          have htrans' :
+            CompCert4Lean.Cfrontend.Cminorgen.transl_lblstmt cenv
+              (CompCert4Lean.Cfrontend.Cminorgen.switch_env remaining xenv)
+              remaining (.Sseq (.Sblock body) ts) = .OK s := by
+            simp only at htrans
+            simpa [List.tail, CompCert4Lean.Cfrontend.Cminorgen.switch_env] using htrans
+          obtain ⟨k', hk', hplus⟩ := ihr (.Sseq (.Sblock body) ts) s htrans'
+          refine ⟨_, .case (i := c) (s := stmt) (ls := remaining)
+              (k := k) (k' := k') (ts := ts) ?_ hk', ?_⟩
+          · exact hstmt
+          · intro f sp e m
+            apply CompCert4Lean.Common.Smallstep.plus_star_trans
+              (genv := CM.genv) (state := CM.state)
+              (step := CM.step xi)
+              (ge := targetGenv tprog)
+            · exact hplus f sp e m
+            · apply CompCert4Lean.Common.Smallstep.star_left
+              · exact CompCert4Lean.Backend.Cminor.step.step_seq f
+                  (.Sblock body) ts k' sp e m
+              · exact CompCert4Lean.Common.Smallstep.star_one _ _ _ _ _ _ _
+                  (CompCert4Lean.Backend.Cminor.step.step_block f body
+                    (.Kseq ts k') sp e m)
+              · rfl
+            · rfl)
+    ls body s htrans
+
+end CompCert4Lean.Cfrontend.Cminorgenproof

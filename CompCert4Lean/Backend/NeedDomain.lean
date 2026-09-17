@@ -5950,3 +5950,116 @@ theorem add_sound : add_soundStatement := by
                 exact CompCert4Lean.Common.Values.Val.lessdef_undef _
 
 end CompCert4Lean.Backend.NeedDomain
+
+namespace CompCert4Lean.Backend.NeedDomain
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Lib.Integers
+
+private theorem pg_unsigned_mul_congr (m a b c d : Int.int)
+    (hab : CompCert4Lean.Lib.Zbits.eqmod
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.two_p (Int.size m))
+      (Int.unsigned a) (Int.unsigned c))
+    (hcd : CompCert4Lean.Lib.Zbits.eqmod
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.two_p (Int.size m))
+      (Int.unsigned b) (Int.unsigned d)) :
+    CompCert4Lean.Lib.Zbits.eqmod
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.two_p (Int.size m))
+      (Int.unsigned (CompCert4Lean.Lib.Integers.Int.mul a b))
+      (Int.unsigned (CompCert4Lean.Lib.Integers.Int.mul c d)) := by
+  let target := CompCert4Lean.Foundation.Numbers.Rocq.Coq.two_p (Int.size m)
+  let ua := Int.unsigned a
+  let ub := Int.unsigned b
+  let uc := Int.unsigned c
+  let ud := Int.unsigned d
+  have hraw := CompCert4Lean.Lib.Zbits.eqmod_mult target ua ub uc ud hab hcd
+  change CompCert4Lean.Lib.Zbits.eqmod target
+      (ZArith.BinInt.Z.mul ua ub)
+      (ZArith.BinInt.Z.mul uc ud) at hraw
+  have hdiv := pg_two_power_divides m
+  have hleft0' := CompCert4Lean.Lib.Integers.Int.eqm_unsigned_repr_l_proof
+    (ZArith.BinInt.Z.mul ua ub) (ZArith.BinInt.Z.mul ua ub)
+    (CompCert4Lean.Lib.Integers.Int.eqm_refl_proof
+      (ZArith.BinInt.Z.mul ua ub))
+  have hright0' := CompCert4Lean.Lib.Integers.Int.eqm_unsigned_repr_l_proof
+    (ZArith.BinInt.Z.mul uc ud) (ZArith.BinInt.Z.mul uc ud)
+    (CompCert4Lean.Lib.Integers.Int.eqm_refl_proof
+      (ZArith.BinInt.Z.mul uc ud))
+  have hleft0 := pg_eqmod_sym hleft0'
+  have hright0 := pg_eqmod_sym hright0'
+  have hleft : CompCert4Lean.Lib.Zbits.eqmod target
+      (ZArith.BinInt.Z.mul ua ub)
+      (Int.unsigned (CompCert4Lean.Lib.Integers.Int.mul a b)) := by
+    apply CompCert4Lean.Lib.Zbits.eqmod_divides
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.two_power_nat 32) target
+      (ZArith.BinInt.Z.mul ua ub)
+      (Int.unsigned (CompCert4Lean.Lib.Integers.Int.mul a b))
+    · exact hleft0
+    · exact hdiv
+  have hright : CompCert4Lean.Lib.Zbits.eqmod target
+      (ZArith.BinInt.Z.mul uc ud)
+      (Int.unsigned (CompCert4Lean.Lib.Integers.Int.mul c d)) := by
+    apply CompCert4Lean.Lib.Zbits.eqmod_divides
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.two_power_nat 32) target
+      (ZArith.BinInt.Z.mul uc ud)
+      (Int.unsigned (CompCert4Lean.Lib.Integers.Int.mul c d))
+    · exact hright0
+    · exact hdiv
+  exact CompCert4Lean.Lib.Zbits.eqmod_trans target
+    (Int.unsigned (CompCert4Lean.Lib.Integers.Int.mul a b))
+    (ZArith.BinInt.Z.mul ua ub)
+    (Int.unsigned (CompCert4Lean.Lib.Integers.Int.mul c d))
+    (pg_eqmod_sym hleft)
+    (CompCert4Lean.Lib.Zbits.eqmod_trans target
+      (ZArith.BinInt.Z.mul ua ub)
+      (ZArith.BinInt.Z.mul uc ud)
+      (Int.unsigned (CompCert4Lean.Lib.Integers.Int.mul c d))
+      hraw hright)
+
+theorem mul_sound : mul_soundStatement := by
+  intro v1 w1 v2 w2 x h1 h2
+  cases x with
+  | Nothing => trivial
+  | I m =>
+      cases v1 <;> cases w1 <;> cases v2 <;> cases w2 <;>
+        simp [modarith, vagree, iVagree, lVagree,
+          CompCert4Lean.Common.Values.Val.mul,
+          CompCert4Lean.X86_64.Archi.ptr64] at h1 h2 ⊢
+      apply pg_iagree_of_eqmod_unsigned m
+      apply pg_unsigned_mul_congr m
+      · exact iagree_eqmod _ _ _ h1
+      · exact iagree_eqmod _ _ _ h2
+  | L m =>
+      cases v1 <;> cases w1 <;> cases v2 <;> cases w2 <;>
+        simp [modarith, vagree, iVagree, lVagree,
+          CompCert4Lean.Common.Values.Val.mul,
+          CompCert4Lean.X86_64.Archi.ptr64] at h1 h2 ⊢
+  | All =>
+      cases h1 with
+      | lessdef_refl v1 =>
+          cases h2 with
+          | lessdef_refl v2 =>
+              cases v1 <;> cases v2 <;>
+                simp [vagree, CompCert4Lean.Common.Values.Val.mul,
+                  CompCert4Lean.X86_64.Archi.ptr64] <;>
+                first | exact CompCert4Lean.Common.Values.Val.lessdef_refl _
+                      | exact CompCert4Lean.Common.Values.Val.lessdef_undef _
+          | lessdef_undef w2 =>
+              cases v1 <;> cases w2 <;>
+                simp [vagree, CompCert4Lean.Common.Values.Val.mul,
+                  CompCert4Lean.X86_64.Archi.ptr64] <;>
+                exact CompCert4Lean.Common.Values.Val.lessdef_undef _
+      | lessdef_undef w1 =>
+          cases h2 with
+          | lessdef_refl v2 =>
+              cases w1 <;> cases v2 <;>
+                simp [vagree, CompCert4Lean.Common.Values.Val.mul,
+                  CompCert4Lean.X86_64.Archi.ptr64] <;>
+                exact CompCert4Lean.Common.Values.Val.lessdef_undef _
+          | lessdef_undef w2 =>
+              cases w1 <;> cases w2 <;>
+                simp [vagree, CompCert4Lean.Common.Values.Val.mul,
+                  CompCert4Lean.X86_64.Archi.ptr64] <;>
+                exact CompCert4Lean.Common.Values.Val.lessdef_undef _
+
+end CompCert4Lean.Backend.NeedDomain

@@ -3071,3 +3071,19 @@ theorem swap_cmp_bool : swap_cmp_boolStatement := by
 
 end Val
 end CompCert4Lean.Common.Values
+
+namespace CompCert4Lean.Common.Values
+namespace Val
+
+open CompCert4Lean.Lib.Integers
+
+theorem swap_cmpu_bool : swap_cmpu_boolStatement := by
+  intro valid_ptr c x y
+  cases c <;> cases x <;> cases y <;>
+    simp [cmpu_bool, CompCert4Lean.X86_64.Archi.ptr64, swap_comparison,
+      CompCert4Lean.Lib.Integers.Int.cmpu,
+      CompCert4Lean.Lib.Integers.WordCore.cmpu,
+      CompCert4Lean.Lib.Integers.WordCore.eq, eq_comm]
+
+end Val
+end CompCert4Lean.Common.Values

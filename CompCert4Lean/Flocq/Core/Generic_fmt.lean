@@ -3366,3 +3366,209 @@ theorem round_ZR_abs :
     exact (ctx.certificate.sourceLaws.abs_nonnegative _ hround).symm
 
 end CompCert4Lean.Flocq.Core.Generic_fmt
+
+namespace CompCert4Lean.Flocq.Core.Generic_fmt
+
+private theorem pg_suffix_scaled_nonneg (ctx : ExactRealContext)
+    (magnitude : Exact.Magnitude ctx) (beta : radix) (fexp : Z → Z)
+    (x : Exact.R ctx) (hx : Exact.Rle ctx (Exact.R0 ctx) x) :
+    Exact.Rle ctx (Exact.R0 ctx)
+      (Exact.scaled_mantissa ctx magnitude beta fexp x) := by
+  unfold Exact.scaled_mantissa
+  let p := Exact.bpow ctx beta
+    (Zopp (Exact.cexp ctx magnitude beta fexp x))
+  have hpow : Exact.Rle ctx (Exact.IZR ctx Z0) p := by
+    change ctx.spec.le (ctx.spec.ofZ Z0) p
+    rw [ctx.certificate.sourceLaws.ofZ_zero]
+    exact CompCert4Lean.Flocq.Core.Raux.bpow_ge_0 ctx beta _
+  have hmul :=
+    CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.Rmult_le_compat_r
+      ctx p (Exact.R0 ctx) x hpow hx
+  change ctx.spec.le (ctx.spec.mul (Exact.R0 ctx) p)
+      (ctx.spec.mul x p) at hmul
+  change ctx.spec.le (ctx.spec.mul ctx.spec.zero p)
+      (ctx.spec.mul x p) at hmul
+  rw [ctx.certificate.orderedField.zero_mul] at hmul
+  exact hmul
+
+private theorem pg_suffix_zopp_zopp (z : Z) : Zopp (Zopp z) = z := by
+  apply CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective
+  change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (Zopp (Zopp z)) =
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ z
+  simp only [Zopp,
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.opp,
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+  omega
+
+private theorem pg_suffix_zopp_zero : Zopp Z0 = Z0 := by
+  apply CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective
+  change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (Zopp Z0) =
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ Z0
+  simp only [Zopp,
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.opp,
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+  change (-(0 : Int)) = 0
+  rfl
+
+private theorem pg_suffix_neg_zero_spec (ctx : ExactRealContext) :
+    ctx.spec.neg ctx.spec.zero = ctx.spec.zero := by
+  have h := ctx.certificate.orderedField.neg_add_cancel ctx.spec.zero
+  rw [ctx.certificate.orderedField.add_zero] at h
+  exact h
+
+private theorem pg_suffix_abs_nonpos (ctx : ExactRealContext) (y : Exact.R ctx)
+    (hy : Exact.Rle ctx y (Exact.R0 ctx)) :
+    Exact.Rabs ctx y = Exact.Ropp ctx y := by
+  rcases ctx.certificate.total_order y (Exact.R0 ctx) with h | h
+  · rcases h with hlt | heq
+    · exact ctx.certificate.sourceLaws.abs_negative y hlt
+    · rw [heq, pg_abs_zero, pg_neg_zero ctx]
+  · exact False.elim (((ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp h).2 hy)
+
+theorem round_AW_opp :
+    ∀ ctx magnitude, round_AW_oppStatement ctx magnitude := by
+  intro ctx magnitude beta fexp x
+  unfold Exact.round
+  let sm := Exact.scaled_mantissa ctx magnitude beta fexp x
+  have hawayopp : Exact.Zaway ctx (Exact.Ropp ctx sm) =
+      Zopp (Exact.Zaway ctx sm) := by
+    exact CompCert4Lean.Flocq.Core.Raux.Zaway_opp ctx sm
+  rw [scaled_mantissa_opp ctx magnitude beta fexp x,
+    pg_cexp_opp ctx magnitude beta fexp x,
+    hawayopp]
+  exact CompCert4Lean.Flocq.Core.Float_prop.F2R_Zopp ctx beta
+    (Exact.Zaway ctx (Exact.scaled_mantissa ctx magnitude beta fexp x))
+    (Exact.cexp ctx magnitude beta fexp x)
+
+theorem round_ZR_DN :
+    ∀ ctx magnitude, round_ZR_DNStatement ctx magnitude := by
+  intro ctx magnitude beta fexp x hx
+  unfold Exact.round
+  have hsm := pg_suffix_scaled_nonneg ctx magnitude beta fexp x hx
+  have htr : Exact.Ztrunc ctx
+      (Exact.scaled_mantissa ctx magnitude beta fexp x) =
+      Exact.Zfloor ctx (Exact.scaled_mantissa ctx magnitude beta fexp x) :=
+    CompCert4Lean.Flocq.Core.Raux.Ztrunc_floor ctx _ hsm
+  rw [htr]
+
+theorem round_AW_UP :
+    ∀ ctx magnitude, round_AW_UPStatement ctx magnitude := by
+  intro ctx magnitude beta fexp x hx
+  unfold Exact.round
+  have hsm := pg_suffix_scaled_nonneg ctx magnitude beta fexp x hx
+  have haway : Exact.Zaway ctx
+      (Exact.scaled_mantissa ctx magnitude beta fexp x) =
+      Exact.Zceil ctx (Exact.scaled_mantissa ctx magnitude beta fexp x) :=
+    CompCert4Lean.Flocq.Core.Raux.Zaway_ceil ctx _ hsm
+  rw [haway]
+
+private theorem pg_suffix_round_AW_nonneg (ctx : ExactRealContext)
+    (magnitude : Exact.Magnitude ctx) (beta : radix) (fexp : Z → Z)
+    (x : Exact.R ctx) (hx : Exact.Rle ctx (Exact.R0 ctx) x) :
+    Exact.Rle ctx (Exact.R0 ctx)
+      (Exact.round ctx magnitude beta fexp (Exact.Zaway ctx) x) := by
+  unfold Exact.round
+  let sm := Exact.scaled_mantissa ctx magnitude beta fexp x
+  have hsm : Exact.Rle ctx (Exact.R0 ctx) sm := by
+    exact pg_suffix_scaled_nonneg ctx magnitude beta fexp x hx
+  have haway : Exact.Zaway ctx sm = Exact.Zceil ctx sm :=
+    CompCert4Lean.Flocq.Core.Raux.Zaway_ceil ctx sm hsm
+  rw [haway]
+  have hneg : Exact.Rle ctx (Exact.Ropp ctx sm) (Exact.R0 ctx) := by
+    have h :=
+      CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.Ropp_le_contravar
+        ctx sm (Exact.R0 ctx) hsm
+    change ctx.spec.le (ctx.spec.neg sm) (ctx.spec.neg ctx.spec.zero) at h
+    rw [pg_suffix_neg_zero_spec ctx] at h
+    exact h
+  have hfloor := CompCert4Lean.Flocq.Core.Raux.Zfloor_le ctx
+    (Exact.Ropp ctx sm) (Exact.R0 ctx) hneg
+  have hzfloor0 : Exact.Zfloor ctx (Exact.R0 ctx) = Z0 := by
+    rw [show Exact.R0 ctx = Exact.IZR ctx Z0 by
+      exact ctx.certificate.sourceLaws.ofZ_zero.symm]
+    exact CompCert4Lean.Flocq.Core.Raux.Zfloor_IZR ctx Z0
+  have hfloor0 : Zle (Exact.Zfloor ctx (Exact.Ropp ctx sm)) Z0 := by
+    simpa [hzfloor0] using hfloor
+  have hceil : Zle Z0 (Exact.Zceil ctx sm) := by
+    unfold Exact.Zceil
+    apply CompCert4Lean.Flocq.Core.Zaux.Zopp_le_cancel
+    change Zle (Zopp (Zopp (Exact.Zfloor ctx (Exact.Ropp ctx sm))))
+      (Zopp Z0)
+    simpa [pg_suffix_zopp_zopp, pg_suffix_zopp_zero] using hfloor0
+  exact CompCert4Lean.Flocq.Core.Float_prop.F2R_ge_0 ctx beta
+    (Float beta (Exact.Zceil ctx sm)
+      (Exact.cexp ctx magnitude beta fexp x)) hceil
+
+theorem round_AW_abs :
+    ∀ ctx magnitude, round_AW_absStatement ctx magnitude := by
+  intro ctx magnitude beta fexp hvalid x
+  rcases ctx.certificate.total_order x (Exact.R0 ctx) with hx | hx
+  · rcases hx with hxlt | hxeq
+    · have hxle0 : Exact.Rle ctx x (Exact.R0 ctx) :=
+        (ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp hxlt |>.1
+      have hnegx : Exact.Rle ctx (Exact.R0 ctx) (Exact.Ropp ctx x) := by
+        have h :=
+          CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.Ropp_le_contravar
+            ctx (Exact.R0 ctx) x hxle0
+        change ctx.spec.le (ctx.spec.neg ctx.spec.zero) (ctx.spec.neg x) at h
+        rw [pg_suffix_neg_zero_spec ctx] at h
+        exact h
+      have hnonneg := pg_suffix_round_AW_nonneg ctx magnitude beta fexp
+        (Exact.Ropp ctx x) hnegx
+      have hround := round_AW_opp ctx magnitude beta fexp x
+      have hnonpos : Exact.Rle ctx
+          (Exact.round ctx magnitude beta fexp (Exact.Zaway ctx) x)
+          (Exact.R0 ctx) := by
+        have h :=
+          CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.Ropp_le_contravar
+            ctx (Exact.round ctx magnitude beta fexp (Exact.Zaway ctx)
+                (Exact.Ropp ctx x)) (Exact.R0 ctx) hnonneg
+        change ctx.spec.le
+            (ctx.spec.neg (Exact.round ctx magnitude beta fexp
+              (Exact.Zaway ctx) (Exact.Ropp ctx x)))
+            (ctx.spec.neg ctx.spec.zero) at h
+        have h' : Exact.Rle ctx
+            (Exact.Ropp ctx (Exact.round ctx magnitude beta fexp (Exact.Zaway ctx)
+              (Exact.Ropp ctx x))) (Exact.Ropp ctx (Exact.R0 ctx)) := by
+          exact h
+        rw [hround, pg_neg_neg ctx, pg_neg_zero ctx] at h'
+        exact h'
+      have habsx : Exact.Rabs ctx x = Exact.Ropp ctx x := by
+        change ctx.spec.abs x = ctx.spec.neg x
+        exact ctx.certificate.sourceLaws.abs_negative x hxlt
+      have habsrnd : Exact.Rabs ctx
+          (Exact.round ctx magnitude beta fexp (Exact.Zaway ctx) x) =
+          Exact.Ropp ctx (Exact.round ctx magnitude beta fexp
+            (Exact.Zaway ctx) x) :=
+        pg_suffix_abs_nonpos ctx _ hnonpos
+      rw [habsx, habsrnd]
+      exact hround
+    · subst x
+      have hzero : Exact.round ctx magnitude beta fexp (Exact.Zaway ctx)
+          (Exact.R0 ctx) = Exact.R0 ctx := by
+        unfold Exact.round
+        rw [scaled_mantissa_0 ctx magnitude beta fexp]
+        have hza0 : Exact.Zaway ctx (Exact.R0 ctx) = Z0 := by
+          calc
+            Exact.Zaway ctx (Exact.R0 ctx) = Exact.Zfloor ctx (Exact.R0 ctx) :=
+              CompCert4Lean.Flocq.Core.Raux.Zaway_floor ctx _
+                (ctx.certificate.orderedField.le_refl _)
+            _ = Z0 := by
+              rw [show Exact.R0 ctx = Exact.IZR ctx Z0 by
+                exact ctx.certificate.sourceLaws.ofZ_zero.symm]
+              exact CompCert4Lean.Flocq.Core.Raux.Zfloor_IZR ctx Z0
+        rw [hza0]
+        exact CompCert4Lean.Flocq.Core.Float_prop.F2R_0 ctx beta _
+      simpa [pg_abs_zero, hzero]
+  · have hxnonneg : Exact.Rle ctx (Exact.R0 ctx) x :=
+      (ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp hx |>.1
+    have hnonneg := pg_suffix_round_AW_nonneg ctx magnitude beta fexp x hxnonneg
+    have habsx : Exact.Rabs ctx x = x :=
+      ctx.certificate.sourceLaws.abs_nonnegative x hxnonneg
+    have habsrnd : Exact.Rabs ctx
+        (Exact.round ctx magnitude beta fexp (Exact.Zaway ctx) x) =
+        Exact.round ctx magnitude beta fexp (Exact.Zaway ctx) x :=
+      ctx.certificate.sourceLaws.abs_nonnegative _ hnonneg
+    rw [habsx, habsrnd]
+
+end CompCert4Lean.Flocq.Core.Generic_fmt

@@ -4823,3 +4823,20 @@ theorem Rsqrt_positivity :
 end Rsqrt_def
 end Rocq.Coq.Reals
 end CompCert4Lean.Foundation.FlocqReal
+
+namespace CompCert4Lean.Foundation.FlocqReal
+namespace Rocq.Coq.Reals
+namespace Rtrigo_def
+
+theorem exp_0 :
+    ∀ (ctx : ExactRealContext), exp_0Statement ctx := by
+  intro ctx
+  change ctx.spec.exp (ctx.spec.ofZ Z0) =
+    ctx.spec.ofZ (Zpos xH)
+  rw [ctx.certificate.sourceLaws.ofZ_zero,
+    ctx.certificate.exp.zero,
+    ctx.certificate.sourceLaws.ofZ_one]
+
+end Rtrigo_def
+end Rocq.Coq.Reals
+end CompCert4Lean.Foundation.FlocqReal

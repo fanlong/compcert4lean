@@ -4517,3 +4517,23 @@ theorem free_list_perm' : free_list_perm'Statement := by
   exact slp_free_list_freeable l m m' hfree b lo hi hin
 
 end CompCert4Lean.Cfrontend.SimplLocalsproof
+
+namespace CompCert4Lean.Cfrontend.SimplLocalsproof
+
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Lib.Maps
+
+theorem free_blocks_of_env_perm_2 : free_blocks_of_env_perm_2Statement := by
+  intro ce m e m' id b ty hfree hget
+  apply free_list_perm' b (.Z0 : Z)
+    (CompCert4Lean.Cfrontend.Ctypes.sizeof ce.genv_cenv ty)
+    (CompCert4Lean.Cfrontend.Clight.blocks_of_env ce e) m m' hfree
+  unfold CompCert4Lean.Cfrontend.Clight.blocks_of_env
+  apply List.mem_map.mpr
+  refine ⟨(id, (b, ty)), ?_, ?_⟩
+  · exact PTree.elements_correct_proof e id (v := (b, ty)) hget
+  · rfl
+
+end CompCert4Lean.Cfrontend.SimplLocalsproof

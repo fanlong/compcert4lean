@@ -3262,3 +3262,21 @@ theorem ZArith.BinInt.Z.abs_eq :
 
 end Rocq.Coq
 end CompCert4Lean.Foundation.Numbers
+
+namespace CompCert4Lean.Foundation.Numbers
+namespace Rocq.Coq
+
+theorem ZArith.BinInt.Z.abs_neq :
+    ZArith.BinInt.Z.abs_neqStatement := by
+  intro n hn
+  apply intOfZ_injective
+  change intOfZ (ZArith.BinInt.Z.abs n) = intOfZ (ZArith.BinInt.Z.opp n)
+  simp only [ZArith.BinInt.Z.abs, ZArith.BinInt.Z.opp, intOfZ_zOfInt]
+  change intOfZ n ≤ 0 at hn
+  have hnonneg : (0 : Int) ≤ -intOfZ n := by
+    omega
+  have h := Int.natAbs_of_nonneg (a := -intOfZ n) hnonneg
+  simpa [Int.natAbs_neg] using h
+
+end Rocq.Coq
+end CompCert4Lean.Foundation.Numbers

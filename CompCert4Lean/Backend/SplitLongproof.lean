@@ -1536,3 +1536,241 @@ theorem eval_modls_base
     a b x y z ha hb hmod hlookup hz
 
 end CompCert4Lean.Backend.SplitLongproof
+
+namespace CompCert4Lean.Backend.SplitLongproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Lib.Integers
+
+private theorem test_mod_congr_add_one (a b m : Nat) (h : a % m = b % m) :
+    (2 * a + 1) % m = (2 * b + 1) % m := by
+  rw [← Nat.mod_add_div a m, ← Nat.mod_add_div b m]
+  simp [Nat.add_mod, Nat.mul_mod, h]
+
+private theorem test_mod_congr_mul (a b m : Nat) (h : a % m = b % m) :
+    (2 * a) % m = (2 * b) % m := by
+  rw [← Nat.mod_add_div a m, ← Nat.mod_add_div b m]
+  simp [Nat.add_mod, Nat.mul_mod, h]
+
+private theorem test_repr_Zpos (bits : Nat) (p : CompCert4Lean.Foundation.Numbers.Rocq.Coq.Numbers.BinNums.positive) :
+    (CompCert4Lean.Lib.Integers.WordCore.repr bits
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.Numbers.BinNums.Z.Zpos p)).val =
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p % (2 ^ bits) := by
+  induction p with
+  | xH => simp_all!
+  | xI p ih =>
+      simp_all!
+      exact test_mod_congr_add_one _ _ _ ih
+  | xO p ih =>
+      simp_all!
+      exact test_mod_congr_mul _ _ _ ih
+
+private theorem test_repr_zOfNat (bits n : Nat) :
+    (CompCert4Lean.Lib.Integers.WordCore.repr bits
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat n)).val =
+      n % (2 ^ bits) := by
+  cases n with
+  | zero => rfl
+  | succ n =>
+      dsimp only [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat]
+      exact test_repr_Zpos bits
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posOfNat (n + 1)) |>.trans
+        (by rw [CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat_posOfNat (by omega)])
+
+private theorem test_or_val {bits : Nat}
+    (x y : CompCert4Lean.Lib.Integers.WordCore.Word bits) :
+    (CompCert4Lean.Lib.Integers.WordCore.or x y).val = Nat.lor x.val y.val := by
+  unfold CompCert4Lean.Lib.Integers.WordCore.or
+  rw [test_repr_zOfNat]
+  exact Nat.mod_eq_of_lt (Nat.or_lt_two_pow
+    (CompCert4Lean.Lib.Integers.WordCore.Word.toFin x).isLt
+    (CompCert4Lean.Lib.Integers.WordCore.Word.toFin y).isLt)
+
+private theorem test_unsigned_eq_zOfNat {bits : Nat}
+    (x : CompCert4Lean.Lib.Integers.WordCore.Word bits) :
+    CompCert4Lean.Lib.Integers.WordCore.unsigned x =
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat x.val := by
+  have hx0 : CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.le
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.Numbers.BinNums.Z.Z0 x.intval := by
+    have h := x.intrange.1
+    change (-1 : Int) <
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ x.intval at h
+    change 0 ≤ CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ x.intval
+    omega
+  exact (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.Znat.Z2Nat.id
+    x.intval hx0).symm
+
+private theorem test_shl_val {bits : Nat}
+    (x y : CompCert4Lean.Lib.Integers.WordCore.Word bits) :
+    (CompCert4Lean.Lib.Integers.WordCore.shl x y).val =
+      (x.val * 2 ^ y.val) % (2 ^ bits) := by
+  change (CompCert4Lean.Lib.Integers.WordCore.repr bits
+    (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.shiftl
+      (CompCert4Lean.Lib.Integers.WordCore.unsigned x)
+      (CompCert4Lean.Lib.Integers.WordCore.unsigned y))).val = _
+  rw [test_unsigned_eq_zOfNat x, test_unsigned_eq_zOfNat y]
+  rw [show CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.shiftl
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat x.val)
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat y.val) =
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat
+        (x.val * 2 ^ y.val) by
+    unfold CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.shiftl
+    simp only [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat,
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt,
+      Int.ofNat_eq_natCast, Int.natCast_nonneg, ↓reduceIte]
+    rw [Int.natCast_mul, Int.natCast_pow]
+    rfl]
+  exact test_repr_zOfNat bits (x.val * 2 ^ y.val)
+
+private theorem test_int64_repr_unsigned_val (x : CCInt) :
+    (CompCert4Lean.Lib.Integers.Int64.repr
+      (CompCert4Lean.Lib.Integers.Int.unsigned x)).val = x.val := by
+  rw [show CompCert4Lean.Lib.Integers.Int.unsigned x =
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat x.val by
+    exact test_unsigned_eq_zOfNat x]
+  unfold CompCert4Lean.Lib.Integers.Int64.repr
+  rw [test_repr_zOfNat]
+  apply Nat.mod_eq_of_lt
+  have hx := (CompCert4Lean.Lib.Integers.WordCore.Word.toFin x).isLt
+  change x.val < 2 ^ 32 at hx
+  have hpow : 2 ^ 32 ≤ 2 ^ 64 :=
+    Nat.pow_le_pow_right Nat.zero_lt_two (by decide)
+  exact Nat.lt_of_lt_of_le hx hpow
+
+private theorem test_int64_repr_zwordsize_val :
+    (CompCert4Lean.Lib.Integers.Int64.repr
+      CompCert4Lean.Lib.Integers.Int.zwordsize).val = 32 := by
+  rw [show CompCert4Lean.Lib.Integers.Int.zwordsize =
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 32 by rfl]
+  unfold CompCert4Lean.Lib.Integers.Int64.repr
+  rw [test_repr_zOfNat]
+  decide
+
+private theorem test_int64_ofwords_val (h l : CCInt) :
+    (int64Ofwords h l).val = Nat.lor (Nat.shiftLeft h.val 32) l.val := by
+  unfold int64Ofwords CompCert4Lean.Lib.Integers.Int64.ofwords
+    CompCert4Lean.Lib.Integers.Int64.or
+    CompCert4Lean.Lib.Integers.Int64.shl
+  rw [test_or_val, test_shl_val,
+    test_int64_repr_unsigned_val, test_int64_repr_zwordsize_val,
+    test_int64_repr_unsigned_val]
+  have hshift : Nat.shiftLeft h.val 32 = h.val * 2 ^ 32 :=
+    Nat.shiftLeft_eq h.val 32
+  rw [hshift]
+  unfold CompCert4Lean.Lib.Integers.Int64.wordsize
+  have hh := (CompCert4Lean.Lib.Integers.WordCore.Word.toFin h).isLt
+  change h.val < 2 ^ 32 at hh
+  have hmul' := Nat.mul_lt_mul_of_pos_right hh (Nat.two_pow_pos 32)
+  have hpow : 2 ^ 32 * 2 ^ 32 = 2 ^ 64 := by
+    rw [← Nat.pow_add]
+  have hmul : h.val * 2 ^ 32 < 2 ^ 64 := hpow ▸ hmul'
+  rw [Nat.mod_eq_of_lt hmul]
+
+private theorem test_nat_lor_zero (a b : Nat) :
+    Nat.lor a b = 0 ↔ a = 0 ∧ b = 0 := by
+  constructor
+  · intro hab
+    have ha : a = 0 := by
+      apply Nat.eq_of_testBit_eq
+      intro i
+      have hz : (Nat.lor a b).testBit i = false := by
+        rw [hab]
+        simp
+      rw [Nat.lor_eq, Nat.testBit_or] at hz
+      by_cases hbit : a.testBit i = true <;> simp [hbit] at hz ⊢
+    have hb : b = 0 := by
+      apply Nat.eq_of_testBit_eq
+      intro i
+      have hz : (Nat.lor a b).testBit i = false := by
+        rw [hab]
+        simp
+      rw [Nat.lor_eq, Nat.testBit_or] at hz
+      by_cases hbit : b.testBit i = true <;> simp [hbit] at hz ⊢
+    exact ⟨ha, hb⟩
+  · rintro ⟨rfl, rfl⟩
+    simp
+
+private theorem test_int_or_val (h l : CCInt) :
+    (CompCert4Lean.Lib.Integers.Int.or h l).val = Nat.lor h.val l.val := by
+  change (CompCert4Lean.Lib.Integers.WordCore.or h l).val = _
+  exact test_or_val h l
+
+private theorem test_int_zero_val :
+    (CompCert4Lean.Lib.Integers.Int.zero : CCInt).val = 0 := by
+  rfl
+
+private theorem test_int64_zero_val :
+    (CompCert4Lean.Lib.Integers.Int64.zero).val = 0 := by
+  rfl
+
+private theorem test_int64_ofwords_zero_iff (h l : CCInt) :
+    int64Ofwords h l = CompCert4Lean.Lib.Integers.Int64.zero ↔
+      h = CompCert4Lean.Lib.Integers.Int.zero ∧
+      l = CompCert4Lean.Lib.Integers.Int.zero := by
+  constructor
+  · intro hz
+    have hv := congrArg (fun q => q.val) hz
+    rw [test_int64_ofwords_val, test_int64_zero_val] at hv
+    obtain ⟨hh, hl⟩ := test_nat_lor_zero _ _ |>.mp hv
+    have hh0 : h.val = 0 := Nat.shiftLeft_eq_zero_iff.mp hh
+    have hle : h = CompCert4Lean.Lib.Integers.Int.zero := by
+      apply CompCert4Lean.Lib.Integers.WordCore.ext_of_val_eq
+      simpa [test_int_zero_val] using hh0
+    have lle : l = CompCert4Lean.Lib.Integers.Int.zero := by
+      apply CompCert4Lean.Lib.Integers.WordCore.ext_of_val_eq
+      simpa [test_int_zero_val] using hl
+    exact ⟨hle, lle⟩
+  · rintro ⟨rfl, rfl⟩
+    apply CompCert4Lean.Lib.Integers.WordCore.ext_of_val_eq
+    rw [test_int64_ofwords_val, test_int64_zero_val,
+      test_int_zero_val]
+    simp
+
+private theorem test_decompose_word_eq_iff (h l : CCInt) :
+    int64Ofwords h l = CompCert4Lean.Lib.Integers.Int64.zero ↔
+      CompCert4Lean.Lib.Integers.Int.or h l =
+        CompCert4Lean.Lib.Integers.Int.zero := by
+  constructor
+  · intro hz
+    obtain ⟨hh, hl⟩ := test_int64_ofwords_zero_iff h l |>.mp hz
+    subst hh
+    subst hl
+    rfl
+  · intro hz
+    have hv := congrArg (fun q => q.val) hz
+    rw [test_int_or_val, test_int_zero_val] at hv
+    obtain ⟨hh, hl⟩ := test_nat_lor_zero _ _ |>.mp hv
+    have hheq : h = CompCert4Lean.Lib.Integers.Int.zero := by
+      apply CompCert4Lean.Lib.Integers.WordCore.ext_of_val_eq
+      simpa [test_int_zero_val] using hh
+    have hleq : l = CompCert4Lean.Lib.Integers.Int.zero := by
+      apply CompCert4Lean.Lib.Integers.WordCore.ext_of_val_eq
+      simpa [test_int_zero_val] using hl
+    exact test_int64_ofwords_zero_iff h l |>.mpr ⟨hheq, hleq⟩
+
+theorem decompose_cmpl_eq_zero : decompose_cmpl_eq_zeroStatement := by
+  intro h l
+  change decide ((int64Ofwords h l).intval = int64Zero.intval) =
+    decide ((intOr h l).intval = intZero.intval)
+  have hiff : (int64Ofwords h l).intval = int64Zero.intval ↔
+      (intOr h l).intval = intZero.intval := by
+    constructor
+    · intro hz
+      have hw : int64Ofwords h l = int64Zero :=
+        CompCert4Lean.Lib.Integers.WordCore.ext hz
+      have ho := test_decompose_word_eq_iff h l |>.mp hw
+      exact congrArg (fun q => q.intval) ho
+    · intro hz
+      have ho : intOr h l = intZero :=
+        CompCert4Lean.Lib.Integers.WordCore.ext hz
+      have hw := test_decompose_word_eq_iff h l |>.mpr ho
+      exact congrArg (fun q => q.intval) hw
+  by_cases hz : (int64Ofwords h l).intval = int64Zero.intval
+  · have ho := hiff.mp hz
+    simp [hz, ho]
+  · have ho : ¬ (intOr h l).intval = intZero.intval := by
+      intro ho
+      exact hz (hiff.mpr ho)
+    simp [hz, ho]
+
+end CompCert4Lean.Backend.SplitLongproof
