@@ -6345,3 +6345,113 @@ theorem xor_zero_proof : xor_zero := by
   rw [suffix_xor_val_exact]
   change x.val ^^^ 0 = x.val
   exact Nat.xor_zero _
+
+theorem one_not_zero_proof : one_not_zero := by
+  intro h
+  have hv := congrArg (fun q : int => q.val) h
+  change (WordCore.one wordsize).val = (WordCore.zero wordsize).val at hv
+  change (WordCore.repr wordsize zOne).val =
+    (WordCore.repr wordsize zZero).val at hv
+  rw [WordCore.val_repr_residue, WordCore.val_repr_residue] at hv
+  change 1 = 0 at hv
+  omega
+
+theorem add_zero_l_proof : add_zero_l := by
+  intro x
+  rw [add_commut_proof]
+  exact add_zero_proof x
+
+theorem shr_lt_zero_proof : shr_lt_zero := by
+  intro x
+  rw [shr_div_two_p_proof]
+  have hy : unsigned (repr (zSub zwordsize zOne)) =
+      zSub zwordsize zOne := by
+    apply unsigned_repr_proof_api
+    constructor
+    · change (0 : Int) ≤ 31
+      omega
+    · change (31 : Int) ≤ (2 ^ wordsize : Int) - 1
+      decide
+  rw [hy]
+  have hn : zLe zZero (zSub zwordsize zOne) := by
+    change (0 : Int) ≤ 31
+    omega
+  have hpow := suffix_two_p_nonneg (zSub zwordsize zOne) hn
+  have hnval : zToNat (zSub zwordsize zOne) = wordsize - 1 := by
+    decide
+  have hpow' : zTwoP (zSub zwordsize zOne) =
+      zOfInt (Int.ofNat (2 ^ (wordsize - 1))) := by
+    simpa [hnval] using hpow
+  rw [hpow']
+  have hdpos : (0 : Int) < Int.ofNat (2 ^ (wordsize - 1)) := by
+    exact Int.natCast_pos.mpr (Nat.two_pow_pos _)
+  by_cases hlt : lt x zero = true
+  · simp [hlt]
+    have hslt : zLt (signed x) zZero := by
+      change zltSelect (signed x) (signed zero) true false = true at hlt
+      cases hs : CompCert4Lean.Lib.Coqlib.zlt (signed x) (signed zero) with
+      | left hs' =>
+          have hz : signed zero = zZero := by rfl
+          simpa [hz] using hs'
+      | right hs' => simp [zltSelect, sumboolSelect, hs] at hlt
+    have hq : zDiv (signed x)
+        (zOfInt (Int.ofNat (2 ^ (wordsize - 1)))) = zOpp zOne := by
+      apply intOfZ_injective
+      simp only [zDiv, zOpp,
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.div,
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.opp,
+        intOfZ_zOfInt]
+      change Int.ediv (intOfZ (signed x))
+          (Int.ofNat (2 ^ (wordsize - 1))) = -1
+      apply (Int.ediv_eq_iff_of_pos hdpos).2
+      constructor
+      · have hlo := (signed_range_proof x).1
+        change (-2147483648 : Int) ≤ intOfZ (signed x) at hlo
+        change (-1 : Int) * Int.ofNat (2 ^ (wordsize - 1)) ≤
+          intOfZ (signed x)
+        exact hlo
+      · change intOfZ (signed x) < 0 at hslt
+        have hd : Int.ofNat (2 ^ (wordsize - 1)) = 2147483648 := by
+          decide
+        rw [hd]
+        omega
+    change WordCore.repr wordsize
+        (zDiv (signed x) (zOfInt (Int.ofNat (2 ^ (wordsize - 1))))) =
+      WordCore.repr wordsize (zOpp zOne)
+    rw [hq]
+
+  · simp [hlt]
+    have hsge : zLe zZero (signed x) := by
+      have hlt' := hlt
+      change ¬(zltSelect (signed x) (signed zero) true false = true) at hlt'
+      cases hs : CompCert4Lean.Lib.Coqlib.zlt (signed x) (signed zero) with
+      | left hs' => simp [zltSelect, sumboolSelect, hs] at hlt'
+      | right hs' =>
+          have hz : signed zero = zZero := by rfl
+          have hle : zLe (signed zero) (signed x) := hs'
+          simpa [hz] using hle
+    have hq : zDiv (signed x)
+        (zOfInt (Int.ofNat (2 ^ (wordsize - 1)))) = zZero := by
+      apply intOfZ_injective
+      simp only [zDiv,
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.div,
+        intOfZ_zOfInt]
+      change Int.ediv (intOfZ (signed x))
+          (Int.ofNat (2 ^ (wordsize - 1))) = 0
+      apply (Int.ediv_eq_iff_of_pos hdpos).2
+      constructor
+      · change (0 : Int) ≤ intOfZ (signed x) at hsge
+        simpa using hsge
+      · have hhi := (signed_range_proof x).2
+        change intOfZ (signed x) ≤ (2147483647 : Int) at hhi
+        change intOfZ (signed x) <
+          (0 : Int) * Int.ofNat (2 ^ (wordsize - 1)) +
+            Int.ofNat (2 ^ (wordsize - 1))
+        have hd : Int.ofNat (2 ^ (wordsize - 1)) = 2147483648 := by
+          decide
+        rw [hd]
+        omega
+    change WordCore.repr wordsize
+        (zDiv (signed x) (zOfInt (Int.ofNat (2 ^ (wordsize - 1))))) =
+      WordCore.repr wordsize zZero
+    rw [hq]

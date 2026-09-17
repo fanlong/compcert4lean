@@ -4459,3 +4459,61 @@ theorem free_blocks_of_env_perm_1 : free_blocks_of_env_perm_1Statement := by
     hbounds.1 hbounds.2 hperm
 
 end CompCert4Lean.Cfrontend.SimplLocalsproof
+
+namespace CompCert4Lean.Cfrontend.SimplLocalsproof
+
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+private theorem slp_free_range_perm (m : Mem.mem) (b : positive) (lo hi : Z)
+    (m' : Mem.mem) (hfree : Mem.free m b lo hi = some m') :
+    Mem.range_perm m b lo hi .Cur .Freeable := by
+  unfold Mem.free at hfree
+  cases hr : Mem.range_perm_dec m b lo hi .Cur .Freeable with
+  | left hp =>
+      simp [hr] at hfree
+      cases hfree
+      exact hp
+  | right hn =>
+      simp [hr] at hfree
+      cases hfree.1
+
+private theorem slp_free_list_freeable :
+    ∀ l m m', Mem.free_list m l = some m' →
+      ∀ b lo hi, (b, lo, hi) ∈ l → Mem.range_perm m b lo hi .Cur .Freeable := by
+  intro l
+  induction l with
+  | nil =>
+      intro m m' hfree b lo hi hin
+      cases hin
+  | cons a rest ih =>
+      intro m m' hfree b lo hi hin
+      rcases a with ⟨b0, lo0, hi0⟩
+      change (match Mem.free m b0 lo0 hi0 with
+        | none => none
+        | some m1 => Mem.free_list m1 rest) = some m' at hfree
+      cases hfm : Mem.free m b0 lo0 hi0 with
+      | none =>
+          rw [hfm] at hfree
+          cases hfree
+      | some m1 =>
+          rw [hfm] at hfree
+          cases (_root_.List.mem_cons.mp hin) with
+          | inl heq =>
+              injection heq with hb hlo
+              subst b
+              cases hlo
+              exact slp_free_range_perm m b0 lo hi m1 hfm
+          | inr htail =>
+              have hrest : Mem.free_list m1 rest = some m' := hfree
+              have hrange := ih m1 m' hrest b lo hi htail
+              intro ofs hof
+              exact slp_perm_of_free m m1 b0 lo0 hi0 hfm b ofs .Cur .Freeable
+                (hrange ofs hof)
+
+theorem free_list_perm' : free_list_perm'Statement := by
+  intro b lo hi l m m' hfree hin
+  exact slp_free_list_freeable l m m' hfree b lo hi hin
+
+end CompCert4Lean.Cfrontend.SimplLocalsproof

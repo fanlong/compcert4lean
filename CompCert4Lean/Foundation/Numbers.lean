@@ -3246,3 +3246,19 @@ theorem ZArith.BinInt.Z.min_r :
 
 end Rocq.Coq
 end CompCert4Lean.Foundation.Numbers
+
+namespace CompCert4Lean.Foundation.Numbers
+namespace Rocq.Coq
+
+theorem ZArith.BinInt.Z.abs_eq :
+    ZArith.BinInt.Z.abs_eqStatement := by
+  intro n hn
+  apply intOfZ_injective
+  change intOfZ (ZArith.BinInt.Z.abs n) = intOfZ n
+  simp only [ZArith.BinInt.Z.abs, intOfZ_zOfInt]
+  change Int.ofNat (Int.natAbs (intOfZ n)) = intOfZ n
+  have hnonneg : (0 : Int) ≤ intOfZ n := hn
+  exact Int.natAbs_of_nonneg hnonneg
+
+end Rocq.Coq
+end CompCert4Lean.Foundation.Numbers

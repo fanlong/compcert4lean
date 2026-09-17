@@ -4098,3 +4098,67 @@ theorem storebytes_concat : storebytes_concatStatement := by
 end Mem
 
 end CompCert4Lean.Common.Memory
+
+namespace CompCert4Lean.Common.Memory
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Lib.Maps
+
+namespace Mem
+
+theorem storebytes_split : storebytes_splitStatement := by
+  intro m b ofs bytes1 bytes2 m2 hstore
+  have hlen := storebytes_concat_zadd_len ofs bytes1 bytes2
+  have hwhole : range_perm m b ofs
+      (zAdd ofs (zOfNat (bytes1 ++ bytes2).length)) Cur Writable :=
+    storebytes_range_perm m b ofs (bytes1 ++ bytes2) m2 hstore
+  have hfirst : range_perm m b ofs
+      (zAdd ofs (zOfNat bytes1.length)) Cur Writable := by
+    intro ofs0 hof
+    apply hwhole ofs0
+    constructor
+    · exact hof.1
+    · change intOfZ ofs0 < intOfZ (zAdd ofs (zOfNat (bytes1 ++ bytes2).length))
+      rw [hlen]
+      change intOfZ ofs0 < intOfZ
+        (zAdd (zAdd ofs (zOfNat bytes1.length)) (zOfNat bytes2.length))
+      rw [intOfZ_zadd_mem, intOfZ_zofnat_mem,
+        intOfZ_zadd_mem, intOfZ_zofnat_mem]
+      change intOfZ ofs0 < intOfZ ofs + Int.ofNat bytes1.length + Int.ofNat bytes2.length
+      change intOfZ ofs ≤ intOfZ ofs0 ∧
+        intOfZ ofs0 < intOfZ (zAdd ofs (zOfNat bytes1.length)) at hof
+      rw [intOfZ_zadd_mem, intOfZ_zofnat_mem] at hof
+      have hnonneg : 0 ≤ Int.ofNat bytes2.length := Int.ofNat_zero_le _
+      omega
+  obtain ⟨m1, hstore1⟩ := range_perm_storebytes m b ofs bytes1 hfirst
+  have hsecond : range_perm m1 b
+      (zAdd ofs (zOfNat bytes1.length))
+      (zAdd (zAdd ofs (zOfNat bytes1.length)) (zOfNat bytes2.length)) Cur Writable := by
+    intro ofs0 hof
+    apply perm_storebytes_1 m b ofs bytes1 m1 hstore1 b ofs0 Cur Writable
+    apply hwhole ofs0
+    constructor
+    · change intOfZ ofs ≤ intOfZ ofs0
+      have hoflo := hof.1
+      change intOfZ (zAdd ofs (zOfNat bytes1.length)) ≤ intOfZ ofs0 at hoflo
+      rw [intOfZ_zadd_mem, intOfZ_zofnat_mem] at hoflo
+      have hnonneg : 0 ≤ Int.ofNat bytes1.length := Int.ofNat_zero_le _
+      omega
+    · change intOfZ ofs0 < intOfZ (zAdd ofs (zOfNat (bytes1 ++ bytes2).length))
+      rw [hlen]
+      change intOfZ ofs0 < intOfZ
+        (zAdd (zAdd ofs (zOfNat bytes1.length)) (zOfNat bytes2.length))
+      exact hof.2
+  obtain ⟨m2', hstore2⟩ := range_perm_storebytes m1
+    b (zAdd ofs (zOfNat bytes1.length)) bytes2 hsecond
+  have hconcat := storebytes_concat m b ofs bytes1 m1 bytes2 m2' hstore1 hstore2
+  have heq : some m2 = some m2' := hstore.symm.trans hconcat
+  have hm : m2 = m2' := Option.some.inj heq
+  subst m2'
+  exact ⟨m1, hstore1, hstore2⟩
+
+end Mem
+
+end CompCert4Lean.Common.Memory

@@ -3055,3 +3055,19 @@ theorem negate_cmplu_bool : negate_cmplu_boolStatement := by
 
 end Val
 end CompCert4Lean.Common.Values
+
+namespace CompCert4Lean.Common.Values
+namespace Val
+
+open CompCert4Lean.Lib.Integers
+
+theorem swap_cmp_bool : swap_cmp_boolStatement := by
+  intro c x y
+  cases c <;> cases x <;> cases y <;>
+    simp [cmp_bool, swap_comparison,
+      CompCert4Lean.Lib.Integers.Int.cmp,
+      CompCert4Lean.Lib.Integers.WordCore.cmp,
+      CompCert4Lean.Lib.Integers.WordCore.eq, eq_comm]
+
+end Val
+end CompCert4Lean.Common.Values

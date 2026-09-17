@@ -2037,3 +2037,162 @@ theorem negate_testcond_for_condition : negate_testcond_for_conditionStatement :
   | Cmasknotzero n => rfl
 
 end CompCert4Lean.X86.Asmgenproof1
+
+namespace CompCert4Lean.X86.Asmgenproof1
+
+open CompCert4Lean.Backend.Asmgenproof0
+open CompCert4Lean.Common.Values
+open CompCert4Lean.X86.Asm
+
+private theorem mk_sel_lessdef_normalize (v : Val)
+    (ty : CompCert4Lean.Common.AST.typ) :
+    Val.lessdef (Val.normalize v ty) v := by
+  cases v <;> cases ty <;>
+    simp [Val.normalize, CompCert4Lean.X86_64.Archi.ptr64] <;>
+    first | exact Val.lessdef_refl _ | exact Val.lessdef_undef _
+
+theorem mk_sel_correct
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    mk_sel_correctStatement := by
+  intro ge fn xc ty rd r2 k c ob rs m hmk hne hob
+  cases xc with
+  | Cond_base c0 =>
+      simp only [CompCert4Lean.X86.Asmgen.mk_sel] at hmk
+      change CompCert4Lean.Common.Errors.OK
+          (.Pcmov (CompCert4Lean.X86.Asmgen.negate_testcond c0) rd r2 :: k) =
+        CompCert4Lean.Common.Errors.OK c at hmk
+      injection hmk with hc
+      subst c
+      let v := match eval_testcond
+          (CompCert4Lean.X86.Asmgen.negate_testcond c0) rs with
+        | some b => if b then rs (.IR r2) else rs (.IR rd)
+        | none => Vundef
+      refine ⟨CompCert4Lean.X86.Asm.nextinstr
+        (CompCert4Lean.X86.Asm.Pregmap.set (.IR rd) v rs), ?_, ?_, ?_⟩
+      · apply exec_straight_one
+        · change CompCert4Lean.X86.Asm.outcome.Next
+            (CompCert4Lean.X86.Asm.nextinstr
+              (CompCert4Lean.X86.Asm.Pregmap.set (.IR rd) v rs)) m = _
+          rfl
+        · rfl
+      · simp [v, CompCert4Lean.X86.Asm.nextinstr,
+          CompCert4Lean.X86.Asm.Pregmap.set,
+          CompCert4Lean.X86.Asm.Pregmap.get]
+        cases ob with
+        | none => exact Val.lessdef_undef _
+        | some b =>
+            rcases hob with ⟨_, hneg⟩
+            have hneg' : eval_testcond
+                (CompCert4Lean.X86.Asmgen.negate_testcond c0) rs = some (!b) := by
+              simpa [eval_extcond, negate_extcond] using hneg
+            cases hval : eval_testcond
+                (CompCert4Lean.X86.Asmgen.negate_testcond c0) rs with
+            | none => simp [hval] at hneg'
+            | some bneg =>
+                simp [hval] at hneg'
+                cases b <;> cases bneg
+                · contradiction
+                · simp [Val.select, v, hval]
+                  exact mk_sel_lessdef_normalize (rs (.IR r2)) ty
+                · simp [Val.select, v, hval]
+                  exact mk_sel_lessdef_normalize (rs (.IR rd)) ty
+                · contradiction
+      · intro r hr hrd
+        cases r <;>
+          simp_all [CompCert4Lean.X86.Asm.nextinstr,
+            CompCert4Lean.X86.Asm.Pregmap.set,
+            CompCert4Lean.X86.Asm.Pregmap.get,
+            CompCert4Lean.X86.Asm.data_preg]
+  | Cond_and c1 c2 =>
+      simp only [CompCert4Lean.X86.Asmgen.mk_sel] at hmk
+      change CompCert4Lean.Common.Errors.OK
+          (.Pcmov (CompCert4Lean.X86.Asmgen.negate_testcond c1) rd r2 ::
+            .Pcmov (CompCert4Lean.X86.Asmgen.negate_testcond c2) rd r2 :: k) =
+        CompCert4Lean.Common.Errors.OK c at hmk
+      injection hmk with hc
+      subst c
+      let v1 := match eval_testcond
+          (CompCert4Lean.X86.Asmgen.negate_testcond c1) rs with
+        | some b => if b then rs (.IR r2) else rs (.IR rd)
+        | none => Vundef
+      let rs_mid := CompCert4Lean.X86.Asm.nextinstr
+        (CompCert4Lean.X86.Asm.Pregmap.set (.IR rd) v1 rs)
+      let v2 := match eval_testcond
+          (CompCert4Lean.X86.Asmgen.negate_testcond c2) rs with
+        | some b => if b then rs (.IR r2) else v1
+        | none => Vundef
+      let rs_final := CompCert4Lean.X86.Asm.nextinstr
+        (CompCert4Lean.X86.Asm.Pregmap.set (.IR rd) v2 rs_mid)
+      refine ⟨rs_final, ?_, ?_, ?_⟩
+      · apply exec_straight_step (rs2 := rs_mid) (m2 := m)
+        · change CompCert4Lean.X86.Asm.outcome.Next
+            (CompCert4Lean.X86.Asm.nextinstr
+              (CompCert4Lean.X86.Asm.Pregmap.set (.IR rd) v1 rs)) m = _
+          rfl
+        · rfl
+        · apply exec_straight_one
+          · have hmid_eval : eval_testcond
+                (CompCert4Lean.X86.Asmgen.negate_testcond c2) rs_mid =
+                eval_testcond
+                  (CompCert4Lean.X86.Asmgen.negate_testcond c2) rs := by
+              change eval_testcond
+                  (CompCert4Lean.X86.Asmgen.negate_testcond c2)
+                  (CompCert4Lean.X86.Asm.nextinstr
+                    (CompCert4Lean.X86.Asm.Pregmap.set (.IR rd) v1 rs)) = _
+              have hnext := eval_testcond_nextinstr
+                (CompCert4Lean.X86.Asmgen.negate_testcond c2)
+                (CompCert4Lean.X86.Asm.Pregmap.set (.IR rd) v1 rs)
+              have hset := eval_testcond_set_ireg
+                (CompCert4Lean.X86.Asmgen.negate_testcond c2) rs rd v1
+              exact hnext.trans hset
+            change CompCert4Lean.X86.Asm.outcome.Next
+                (CompCert4Lean.X86.Asm.nextinstr
+                  (CompCert4Lean.X86.Asm.Pregmap.set (.IR rd)
+                    (match eval_testcond
+                        (CompCert4Lean.X86.Asmgen.negate_testcond c2) rs_mid with
+                    | some b => if b then rs_mid (.IR r2) else rs_mid (.IR rd)
+                    | none => Vundef) rs_mid)) m = _
+            rw [hmid_eval]
+            simp [rs_mid, v1, CompCert4Lean.X86.Asm.nextinstr,
+              CompCert4Lean.X86.Asm.Pregmap.set, rs_final, v2,
+              hne, Ne.symm hne]
+          · rfl
+      · dsimp [rs_final, rs_mid]
+        simp [CompCert4Lean.X86.Asm.nextinstr,
+          CompCert4Lean.X86.Asm.Pregmap.set,
+          CompCert4Lean.X86.Asm.Pregmap.get]
+        cases ob with
+        | none => exact Val.lessdef_undef _
+        | some b =>
+            rcases hob with ⟨_, hneg⟩
+            cases h1 : eval_testcond
+                (CompCert4Lean.X86.Asmgen.negate_testcond c1) rs with
+            | none =>
+                simp [eval_extcond, negate_extcond, h1] at hneg
+            | some b1 =>
+                cases h2 : eval_testcond
+                    (CompCert4Lean.X86.Asmgen.negate_testcond c2) rs with
+                | none =>
+                    simp [eval_extcond, negate_extcond, h1, h2] at hneg
+                | some b2 =>
+                    simp [eval_extcond, negate_extcond, h1, h2] at hneg
+                    cases b <;> cases b1 <;> cases b2 <;>
+                      simp_all [Val.select, v1, v2, h1, h2]
+                    all_goals first
+                      | simpa [Val.select, v1, v2, h1, h2] using
+                          (mk_sel_lessdef_normalize (rs (.IR rd)) ty)
+                      | simpa [Val.select, v1, v2, h1, h2] using
+                          (mk_sel_lessdef_normalize (rs (.IR r2)) ty)
+      · intro r hr hrd
+        dsimp [rs_final, rs_mid]
+        cases r <;>
+          simp_all [CompCert4Lean.X86.Asm.nextinstr,
+            CompCert4Lean.X86.Asm.Pregmap.set,
+            CompCert4Lean.X86.Asm.Pregmap.get,
+            CompCert4Lean.X86.Asm.data_preg]
+  | Cond_or c1 c2 =>
+      simp only [CompCert4Lean.X86.Asmgen.mk_sel] at hmk
+      cases hmk
+
+end CompCert4Lean.X86.Asmgenproof1

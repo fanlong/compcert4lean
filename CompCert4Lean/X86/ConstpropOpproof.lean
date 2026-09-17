@@ -2732,3 +2732,232 @@ theorem make_mulfimm_correct_2
         CompCert4Lean.Common.Values.Val.lessdef_refl _⟩
 
 end CompCert4Lean.X86.ConstpropOpproof
+
+namespace CompCert4Lean.X86.ConstpropOpproof
+
+open Lean Elab Tactic Meta
+open CompCert4Lean.Backend.ValueDomain
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Common.Values
+
+private def worker_boolOfSumbool {P Q : Prop} :
+    CompCert4Lean.Foundation.Logic.Support.Sumbool P Q → Bool
+  | .left _ => true
+  | .right _ => false
+
+private def worker_zlt
+    (x y : CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z) : Bool :=
+  worker_boolOfSumbool (CompCert4Lean.Lib.Coqlib.zlt x y)
+
+private def worker_zle
+    (x y : CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z) : Bool :=
+  worker_boolOfSumbool (CompCert4Lean.Lib.Coqlib.zle x y)
+
+private theorem worker_zlt_true
+    {x y : CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z}
+    (h : worker_zlt x y = true) :
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.lt x y := by
+  cases hd : CompCert4Lean.Lib.Coqlib.zlt x y with
+  | left hxy => exact hxy
+  | right hxy => simp [worker_zlt, worker_boolOfSumbool, hd] at h
+
+private theorem worker_zle_true
+    {x y : CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z}
+    (h : worker_zle x y = true) :
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.le x y := by
+  cases hd : CompCert4Lean.Lib.Coqlib.zle x y with
+  | left hxy => exact hxy
+  | right hxy => simp [worker_zle, worker_boolOfSumbool, hd] at h
+
+private def worker_is_sgn
+    (n : CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z)
+    (i : CompCert4Lean.Lib.Integers.int) : Prop :=
+  ∀ m, CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.le
+      (.Z0) m ∧
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.lt m
+        CompCert4Lean.Lib.Integers.Int.zwordsize →
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.le
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.sub n (.Zpos .xH)) m →
+    CompCert4Lean.Lib.Integers.Int.testbit i m =
+      CompCert4Lean.Lib.Integers.Int.testbit i
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.sub
+          CompCert4Lean.Lib.Integers.Int.zwordsize (.Zpos .xH))
+
+private def worker_private_name (suffix : String) : Lean.Name :=
+  let p := Lean.Name.str
+    (Lean.Name.str
+      (Lean.Name.str
+        (Lean.Name.str Lean.Name.anonymous "_private") "CompCert4Lean") "Lib")
+    "Integers"
+  let p := Lean.Name.num p 0
+  suffix.splitOn "." |>.foldl Lean.Name.str p
+
+private def worker_simp_private (suffixes : List String) : Lean.Elab.Tactic.TacticM Unit := do
+  let mut ts : Lean.Meta.SimpTheorems := {}
+  for suffix in suffixes do
+    let eqs ← Lean.Meta.getEqnsFor? (worker_private_name suffix)
+    match eqs with
+    | some eqs =>
+        for eqn in eqs do
+          let xs ← Lean.Meta.mkSimpTheoremFromConst eqn
+          for x in xs do ts := ts.addSimpTheorem x
+    | none => pure ()
+  let ctx ← Lean.Meta.Simp.mkContext {} #[ts]
+  let g ← Lean.Elab.Tactic.getMainGoal
+  let (r, _) ← Lean.Meta.simpGoal g ctx
+  match r with
+  | none => Lean.Elab.Tactic.replaceMainGoal []
+  | some (_, g') => Lean.Elab.Tactic.replaceMainGoal [g']
+
+private theorem worker_is_sgn_sign_ext_16
+    (i : CompCert4Lean.Lib.Integers.int)
+    (h : worker_is_sgn (zOfNat 16) i) :
+    CompCert4Lean.Lib.Integers.Int.sign_ext (zOfNat 16) i = i := by
+  apply CompCert4Lean.Lib.Integers.Int.same_bits_eq_proof
+  intro j hj
+  have hb := CompCert4Lean.Lib.Integers.Int.bits_sign_ext_proof
+    (zOfNat 16) i j hj
+  rw [hb]
+  cases hs : CompCert4Lean.Lib.Coqlib.zlt j (zOfNat 16) with
+  | left hlt =>
+      run_tac worker_simp_private ["CompCert4Lean.Lib.Integers.zltSelect"]
+      rw [hs]
+      rfl
+  | right hge =>
+      run_tac worker_simp_private ["CompCert4Lean.Lib.Integers.zltSelect"]
+      rw [hs]
+      run_tac worker_simp_private ["CompCert4Lean.Lib.Integers.sumboolSelect"]
+      have hkn : CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.le
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.sub
+            (zOfNat 16) (.Zpos .xH)) j := by
+        change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+            (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.sub
+              (zOfNat 16) (.Zpos .xH)) ≤
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ j
+        change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (zOfNat 16) ≤
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ j at hge
+        simp only [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.sub,
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+        have h16 : CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (zOfNat 16) = 16 := by rfl
+        have h1 : CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (.Zpos .xH) = 1 := by rfl
+        rw [h16] at hge
+        simp only [h1]
+        omega
+      have h15 := h (zOfNat 15)
+        (by
+          constructor
+          · change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (.Z0) ≤
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (zOfNat 15)
+            change (0 : Int) ≤ 15
+            omega
+          · change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (zOfNat 15) <
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+                CompCert4Lean.Lib.Integers.Int.zwordsize
+            change (15 : Int) < 32
+            omega)
+        (by
+          change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+              (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.sub
+                (zOfNat 16) (zOfNat 1)) ≤
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (zOfNat 15)
+          simp only [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.sub,
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+          have h16 : CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (zOfNat 16) = 16 := by rfl
+          have h1 : CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (zOfNat 1) = 1 := by rfl
+          have h15' : CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (zOfNat 15) = 15 := by rfl
+          simp only [h16, h1, h15']
+          omega)
+      have hjbit := h j (by exact hj) hkn
+      exact h15.trans hjbit.symm
+
+theorem make_cast16signed_correct
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    @make_cast16signed_correctStatement binary64_certificate binary32_certificate := by
+  intro bc ge sp e m r x hmatch
+  dsimp [CompCert4Lean.X86.ConstpropOp.make_cast16signed]
+  by_cases hincl : vincl x (Sgn Ptop (zOfNat 16)) = true
+  · simp only [if_pos hincl]
+    refine ⟨Regmap.get r e, rfl, ?_⟩
+    generalize hv : Regmap.get r e = w at hmatch
+    cases x with
+    | Vbot => cases hmatch
+    | I i =>
+        have hrewrite :
+            vincl (I i) (Sgn Ptop (zOfNat 16)) =
+              (decide (CompCert4Lean.Lib.Integers.Int.sign_ext (zOfNat 16) i = i) &&
+                worker_zlt (.Z0)
+                  (zOfNat 16)) := by rfl
+        rw [hrewrite] at hincl
+        have hi : CompCert4Lean.Lib.Integers.Int.sign_ext (zOfNat 16) i = i :=
+          of_decide_eq_true (Bool.and_eq_true_iff.mp hincl).1
+        cases hmatch with
+        | vmatch_i =>
+            have hext : Val.sign_ext (zOfNat 16) (.Vint i) =
+                .Vint (CompCert4Lean.Lib.Integers.Int.sign_ext (zOfNat 16) i) := by rfl
+            rw [hext]
+            rw [hi]
+            exact CompCert4Lean.Common.Values.Val.lessdef_refl _
+    | IU i =>
+        have hrewrite :
+            vincl (IU i) (Sgn Ptop (zOfNat 16)) =
+              (decide (CompCert4Lean.Lib.Integers.Int.sign_ext (zOfNat 16) i = i) &&
+                worker_zlt (.Z0)
+                  (zOfNat 16)) := by rfl
+        rw [hrewrite] at hincl
+        have hi : CompCert4Lean.Lib.Integers.Int.sign_ext (zOfNat 16) i = i :=
+          of_decide_eq_true (Bool.and_eq_true_iff.mp hincl).1
+        cases hmatch with
+        | vmatch_iu =>
+            have hext : Val.sign_ext (zOfNat 16) (.Vint i) =
+                .Vint (CompCert4Lean.Lib.Integers.Int.sign_ext (zOfNat 16) i) := by rfl
+            rw [hext]
+            rw [hi]
+            exact CompCert4Lean.Common.Values.Val.lessdef_refl _
+        | iuUndef =>
+            exact CompCert4Lean.Common.Values.Val.lessdef_refl _
+    | Uns p n =>
+        have hrewrite :
+            vincl (Uns p n) (Sgn Ptop (zOfNat 16)) =
+              (worker_zlt n (zOfNat 16) && pincl p Ptop) := by rfl
+        rw [hrewrite] at hincl
+        have hp := Bool.and_eq_true_iff.mp hincl
+        have hge : vge (Sgn Ptop (zOfNat 16)) (Uns p n) :=
+          vge.sgnUns Ptop (zOfNat 16) p n (worker_zlt_true hp.1)
+            (pincl_ge p Ptop hp.2)
+        have hmv := vmatch_ge bc w (Sgn Ptop (zOfNat 16)) (Uns p n) hge hmatch
+        cases hmv with
+        | sgn _ i _ _ hi =>
+            have hi' : worker_is_sgn (zOfNat 16) i := hi
+            have hext : Val.sign_ext (zOfNat 16) (.Vint i) =
+                .Vint (CompCert4Lean.Lib.Integers.Int.sign_ext (zOfNat 16) i) := by rfl
+            rw [hext]
+            rw [worker_is_sgn_sign_ext_16 i hi']
+            exact CompCert4Lean.Common.Values.Val.lessdef_refl _
+        | sgnUndef => exact CompCert4Lean.Common.Values.Val.lessdef_refl _
+    | Sgn p n =>
+        have hrewrite :
+            vincl (Sgn p n) (Sgn Ptop (zOfNat 16)) =
+              (worker_zle n (zOfNat 16) && pincl p Ptop) := by rfl
+        rw [hrewrite] at hincl
+        have hp := Bool.and_eq_true_iff.mp hincl
+        have hge : vge (Sgn Ptop (zOfNat 16)) (Sgn p n) :=
+          vge.sgnSgn Ptop (zOfNat 16) p n (worker_zle_true hp.1)
+            (pincl_ge p Ptop hp.2)
+        have hmv := vmatch_ge bc w (Sgn Ptop (zOfNat 16)) (Sgn p n) hge hmatch
+        cases hmv with
+        | sgn _ i _ _ hi =>
+            have hi' : worker_is_sgn (zOfNat 16) i := hi
+            have hext : Val.sign_ext (zOfNat 16) (.Vint i) =
+                .Vint (CompCert4Lean.Lib.Integers.Int.sign_ext (zOfNat 16) i) := by rfl
+            rw [hext]
+            rw [worker_is_sgn_sign_ext_16 i hi']
+            exact CompCert4Lean.Common.Values.Val.lessdef_refl _
+        | sgnUndef => exact CompCert4Lean.Common.Values.Val.lessdef_refl _
+    | L _ | F _ | FS _ | Num _ | Ptr _ | Ifptr _ =>
+        simp [vincl] at hincl
+  · simp only [if_neg hincl]
+    refine ⟨Val.sign_ext (zOfNat 16) (Regmap.get r e), rfl,
+      CompCert4Lean.Common.Values.Val.lessdef_refl _⟩
+
+end CompCert4Lean.X86.ConstpropOpproof

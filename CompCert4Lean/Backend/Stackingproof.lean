@@ -3113,3 +3113,14 @@ theorem simplify_store_correct : simplify_store_correctStatement := by
       | Many64 => rfl
 
 end CompCert4Lean.Backend.Stackingproof
+
+namespace CompCert4Lean.Backend.Stackingproof
+
+open CompCert4Lean.Backend.Stacking
+open CompCert4Lean.X86.Machregs
+
+theorem simplify_load_destroyed : simplify_load_destroyedStatement := by
+  intro chunk addr
+  cases chunk <;> rfl
+
+end CompCert4Lean.Backend.Stackingproof

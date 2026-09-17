@@ -4552,3 +4552,79 @@ theorem loadbytes_provenance : loadbytes_provenanceStatement := by
         omega
 
 end CompCert4Lean.Backend.ValueDomain
+
+namespace CompCert4Lean.Backend.ValueDomain
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Values
+
+theorem storebytes_provenance : storebytes_provenanceStatement := by
+  intro m b ofs bytes m' b' ofs' b'' ofs'' q i hstore hload
+  by_cases hblock : b' = b
+  · subst b'
+    by_cases hleft : in_loadbytes_zLe
+        (in_loadbytes_zAdd ofs' in_loadbytes_z1) ofs
+    · exact Or.inr (by
+        have hother :=
+          CompCert4Lean.Common.Memory.Mem.loadbytes_storebytes_other
+            m b ofs bytes m' hstore b ofs' in_loadbytes_z1
+            (by
+              change (0 : Int) ≤ intOfZ in_loadbytes_z1
+              simp [in_loadbytes_z1, intOfZ, posToNat])
+            (Or.inr (Or.inl hleft))
+        exact hother.symm.trans hload)
+    by_cases hright : in_loadbytes_zLe
+        (in_loadbytes_zAdd ofs (ZArith.BinInt.Z.of_nat bytes.length)) ofs'
+    · exact Or.inr (by
+        have hother :=
+          CompCert4Lean.Common.Memory.Mem.loadbytes_storebytes_other
+            m b ofs bytes m' hstore b ofs' in_loadbytes_z1
+            (by
+              change (0 : Int) ≤ intOfZ in_loadbytes_z1
+              simp [in_loadbytes_z1, intOfZ, posToNat])
+            (Or.inr (Or.inr hright))
+        exact hother.symm.trans hload)
+    · have hbounds :
+          in_loadbytes_zLe ofs ofs' ∧
+            in_loadbytes_zLt ofs'
+              (in_loadbytes_zAdd ofs (ZArith.BinInt.Z.of_nat bytes.length)) := by
+        constructor
+        · change intOfZ ofs ≤ intOfZ ofs'
+          have hleft' : ¬ intOfZ (in_loadbytes_zAdd ofs' in_loadbytes_z1) ≤
+              intOfZ ofs := by
+            intro h
+            exact hleft h
+          have hlt : intOfZ ofs <
+              intOfZ (in_loadbytes_zAdd ofs' in_loadbytes_z1) :=
+            Int.lt_of_not_ge hleft'
+          rw [in_loadbytes_intOfZ_zadd] at hlt
+          have hone : intOfZ in_loadbytes_z1 = (1 : Int) := by
+            simp [in_loadbytes_z1, intOfZ, posToNat]
+          rw [hone] at hlt
+          omega
+        · change intOfZ ofs' <
+            intOfZ (in_loadbytes_zAdd ofs
+              (ZArith.BinInt.Z.of_nat bytes.length))
+          have hright' : ¬ intOfZ (in_loadbytes_zAdd ofs
+              (ZArith.BinInt.Z.of_nat bytes.length)) ≤ intOfZ ofs' := by
+            intro h
+            exact hright h
+          exact Int.lt_of_not_ge hright'
+      exact Or.inl (loadbytes_provenance m' b ofs'
+        (Fragment (Vptr b'' ofs'') q i)
+        (ZArith.BinInt.Z.of_nat bytes.length) ofs bytes
+        (CompCert4Lean.Common.Memory.Mem.loadbytes_storebytes_same
+          m b ofs bytes m' hstore)
+        hload hbounds)
+  · have hother :=
+      CompCert4Lean.Common.Memory.Mem.loadbytes_storebytes_other
+        m b ofs bytes m' hstore b' ofs' in_loadbytes_z1
+        (by
+          change (0 : Int) ≤ intOfZ in_loadbytes_z1
+          simp [in_loadbytes_z1, intOfZ, posToNat])
+        (Or.inl hblock)
+    exact Or.inr (hother.symm.trans hload)
+
+end CompCert4Lean.Backend.ValueDomain

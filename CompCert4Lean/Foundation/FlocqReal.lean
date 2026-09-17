@@ -4768,3 +4768,58 @@ theorem powerRZ_le :
 end Rfunctions
 end Rocq.Coq.Reals
 end CompCert4Lean.Foundation.FlocqReal
+
+namespace CompCert4Lean.Foundation.FlocqReal
+namespace Rocq.Coq.Reals
+namespace Rpower
+
+theorem exp_lt_inv :
+    ∀ (ctx : ExactRealContext), exp_lt_invStatement ctx := by
+  intro ctx x y hxy
+  rcases ctx.certificate.total_order x y with h | h
+  · rcases h with hlt | heq
+    · exact hlt
+    · subst y
+      exact (ctx.certificate.orderedField.lt_irrefl _ hxy).elim
+  · have hyx : ctx.spec.lt (ctx.spec.exp y) (ctx.spec.exp x) :=
+      ctx.certificate.exp.strict_monotone y x h
+    exact (ctx.certificate.orderedField.lt_irrefl _
+      (ctx.certificate.orderedField.lt_trans _ _ _ hxy hyx)).elim
+
+theorem exp_ln :
+    ∀ (ctx : ExactRealContext), exp_lnStatement ctx := by
+  intro ctx x hx
+  change ctx.spec.exp (ExactReal.ln ctx.spec x) = x
+  have hx' : ctx.spec.lt ctx.spec.zero x := by
+    change ctx.spec.lt (ctx.spec.ofZ Z0) x at hx
+    rw [ctx.certificate.sourceLaws.ofZ_zero] at hx
+    exact hx
+  unfold ExactReal.ln
+  cases hdec : ctx.spec.lt_dec ctx.spec.zero x with
+  | left _ =>
+      simpa [hdec] using ctx.certificate.ln.exp_ln x hx'
+  | right hnot =>
+      exact (hnot hx').elim
+
+theorem exp_Ropp :
+    ∀ (ctx : ExactRealContext), exp_RoppStatement ctx := by
+  intro ctx x
+  change ctx.spec.exp (ctx.spec.neg x) = ctx.spec.inv (ctx.spec.exp x)
+  exact ctx.certificate.sourceLaws.exp_opp x
+
+end Rpower
+end Rocq.Coq.Reals
+end CompCert4Lean.Foundation.FlocqReal
+
+namespace CompCert4Lean.Foundation.FlocqReal
+namespace Rocq.Coq.Reals
+namespace Rsqrt_def
+
+theorem Rsqrt_positivity :
+    Rsqrt_positivityStatement := by
+  intro ctx x
+  exact ctx.certificate.sqrt.nonnegative x.nonneg
+
+end Rsqrt_def
+end Rocq.Coq.Reals
+end CompCert4Lean.Foundation.FlocqReal

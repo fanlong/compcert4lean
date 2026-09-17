@@ -3317,3 +3317,452 @@ theorem if_conversion_nolabel : if_conversion_nolabelStatement cfg oracle := by
     · cases h
 
 end CompCert4Lean.Backend.Selectionproof
+
+namespace CompCert4Lean.Backend.Selectionproof
+
+variable [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+variable [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+variable [binary64_inverse_certificate : BexactInverseCertificate (zOfNat 53) (zOfNat 1024)]
+variable [binary32_inverse_certificate : BexactInverseCertificate (zOfNat 24) (zOfNat 128)]
+variable (cfg : CompilerConfig) (oracle : SelectionOracle)
+
+theorem sel_final_states : sel_final_statesStatement cfg oracle := by
+  intro prog s tr v hmatch hfinal
+  cases hfinal with
+  | final_state_intro r m =>
+      cases hmatch with
+      | match_returnstate v tv k ks m ms hc hl hm =>
+          cases hc with
+          | match_cont_stop =>
+              cases hl with
+              | lessdef_refl =>
+                  exact CminorSel.final_state.intro v ms
+
+end CompCert4Lean.Backend.Selectionproof
+
+namespace CompCert4Lean.Backend.Selectionproof
+
+variable [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+variable [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+variable [binary64_inverse_certificate : BexactInverseCertificate (zOfNat 53) (zOfNat 1024)]
+variable [binary32_inverse_certificate : BexactInverseCertificate (zOfNat 24) (zOfNat 128)]
+variable (cfg : CompilerConfig) (oracle : SelectionOracle)
+
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Linking
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Lib.Integers
+
+private theorem selection_mem_extends_refl
+    (m : CompCert4Lean.Common.Memory.Mem.mem) :
+    CompCert4Lean.Common.Memory.Mem.extends m m := by
+  refine ⟨rfl, ?_, ?_⟩
+  · refine ⟨?_, ?_, ?_⟩
+    · intro b1 b2 delta ofs k p hmap hp
+      have hpair : (b1, (.Z0 : CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z)) = (b2, delta) := by
+        simpa [CompCert4Lean.Common.Values.inject_id] using Option.some.inj hmap
+      cases hpair
+      change CompCert4Lean.Common.Memory.Mem.perm m b1
+        (ZArith.BinInt.Z.add ofs (.Z0 : CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z)) k p
+      have hzadd : ZArith.BinInt.Z.add ofs
+          (.Z0 : CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z) = ofs := by
+        apply intOfZ_injective
+        change intOfZ (zOfInt (intOfZ ofs + 0)) = intOfZ ofs
+        rw [intOfZ_zOfInt]
+        simp
+      rw [hzadd]
+      exact hp
+    · intro b1 b2 delta chunk ofs p hmap hp
+      have hpair : (b1, (.Z0 : CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z)) = (b2, delta) := by
+        simpa [CompCert4Lean.Common.Values.inject_id] using Option.some.inj hmap
+      cases hpair
+      refine ⟨.Z0, ?_⟩
+      apply intOfZ_injective
+      change 0 = intOfZ (ZArith.BinInt.Z.mul
+        (CompCert4Lean.Common.Memdata.align_chunk chunk)
+        (.Z0 : CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z))
+      change 0 = intOfZ (zOfInt (intOfZ
+        (CompCert4Lean.Common.Memdata.align_chunk chunk) * 0))
+      rw [intOfZ_zOfInt]
+      simp
+    · intro b ofs b' delta hmap hval
+      have hpair : (b, (.Z0 : CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z)) = (b', delta) := by
+        simpa [CompCert4Lean.Common.Values.inject_id] using Option.some.inj hmap
+      cases hpair
+      change CompCert4Lean.Common.Memdata.memval_inject
+        CompCert4Lean.Common.Values.inject_id
+        (CompCert4Lean.Lib.Maps.ZMap.get ofs (CompCert4Lean.Lib.Maps.PMap.get b m.mem_contents))
+        (CompCert4Lean.Lib.Maps.ZMap.get
+          (ZArith.BinInt.Z.add ofs
+            (.Z0 : CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z))
+          (CompCert4Lean.Lib.Maps.PMap.get b m.mem_contents))
+      have hzadd : ZArith.BinInt.Z.add ofs
+          (.Z0 : CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z) = ofs := by
+        apply intOfZ_injective
+        change intOfZ (zOfInt (intOfZ ofs + 0)) = intOfZ ofs
+        rw [intOfZ_zOfInt]
+        simp
+      rw [hzadd]
+      exact CompCert4Lean.Common.Memdata.memval_lessdef_refl _
+  · intro b ofs k p hp
+    exact Or.inl hp
+
+theorem sel_initial_states : sel_initial_statesStatement cfg oracle := by
+  intro prog tprog hm s hinit
+  cases hinit with
+  | initial_state_intro b f m0 hmem hsym hfun hsig =>
+      rcases @CompCert4Lean.Common.Globalenvs.Genv.find_funct_ptr_match
+          CminorProgram CminorFundef Unit CminorSelFundef Unit
+          cminorProgramLinker
+          (fun cu f tf => match_fundef cfg oracle cu f tf)
+          (fun x y : Unit => x = y) prog prog tprog
+          (by
+            change CompCert4Lean.Common.Linking.match_program_gen
+              (fun cu f tf => match_fundef cfg oracle cu f tf)
+              (fun x y : Unit => x = y) prog prog tprog
+            exact hm) b f hfun with
+        ⟨cu, tf, htf, hmatch, horder⟩
+      refine ⟨CminorSel.Callstate tf [] CminorSel.Kstop m0, ?_, ?_⟩
+      · apply CminorSel.initial_state.intro b tf m0
+        · unfold Genv.init_mem at hmem ⊢
+          apply Genv.alloc_globals_match
+            CminorProgram CminorFundef Unit CminorSelFundef Unit
+            (fun cu f tf => match_fundef cfg oracle cu f tf)
+            (fun x y : Unit => x = y) prog prog tprog hm
+            prog.prog_defs tprog.prog_defs hm.1 Mem.empty m0 hmem
+        · change Genv.find_symbol (Genv.globalenv tprog) tprog.prog_main = some b
+          rw [CompCert4Lean.Common.Linking.match_program_main hm]
+          rw [selection_symbols_preserved cfg oracle prog tprog
+            (by exact ⟨hm.1, hm.2.1, hm.2.2⟩) prog.prog_main]
+          exact hsym
+        · exact htf
+        · rw [sig_function_translated cfg oracle cu f tf hmatch]
+          exact hsig
+      · exact match_callstate cu f tf [] [] Cminor.Kstop CminorSel.Kstop m0 m0
+          horder hmatch match_cont_stop
+          CompCert4Lean.Common.Values.Val.lessdef_list_nil
+          (selection_mem_extends_refl m0)
+
+end CompCert4Lean.Backend.Selectionproof
+
+namespace CompCert4Lean.Backend.Selectionproof
+
+open CompCert4Lean.Backend.Cminor
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.Backend.Selection
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Linking
+open CompCert4Lean.Common.Switch
+
+variable [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+variable [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+variable [binary64_inverse_certificate : BexactInverseCertificate (zOfNat 53) (zOfNat 1024)]
+variable [binary32_inverse_certificate : BexactInverseCertificate (zOfNat 24) (zOfNat 128)]
+variable (cfg : CompilerConfig) (oracle : SelectionOracle)
+
+private theorem selection_sel_builtin_nolabel (hf : HelperFunctions) :
+    ∀ (optid : Option ident) (ef : external_function) (args : List Cminor.expr),
+      nolabel' (sel_builtin cfg
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        (binary64_inverse_certificate := binary64_inverse_certificate)
+        (binary32_inverse_certificate := binary32_inverse_certificate) optid ef args) := by
+  letI : HelperFunctions := hf
+  intro optid ef args lbl k
+  cases ef with
+  | EF_builtin name sg =>
+      cases hbf : CompCert4Lean.Common.Builtins.lookup_builtin_function name sg with
+      | none => simp [sel_builtin, sel_builtin_default, Sno_op, hbf, CminorSel.find_label]
+      | some bf =>
+          cases optid with
+          | none => simp [sel_builtin, sel_builtin_default, Sno_op, hbf, CminorSel.find_label]
+          | some id =>
+              cases hknown : sel_known_builtin bf
+                  (sel_exprlist
+                    (binary64_certificate := binary64_certificate)
+                    (binary32_certificate := binary32_certificate)
+                    (binary64_inverse_certificate := binary64_inverse_certificate)
+                    (binary32_inverse_certificate := binary32_inverse_certificate) cfg args) with
+              | none => simp [sel_builtin, sel_builtin_default, Sno_op, hbf, hknown, CminorSel.find_label]
+              | some a => simp [sel_builtin, sel_builtin_default, Sno_op, hbf, hknown, CminorSel.find_label]
+  | _ => simp [sel_builtin, sel_builtin_default, Sno_op, CminorSel.find_label]
+
+theorem find_label_commut : find_label_commutStatement cfg oracle := by
+  intro prog cunit hf ki env lbl s kont k s' k' hcont hsel
+  letI : HelperFunctions := hf
+  induction s generalizing kont k s' k' with
+  | Sskip =>
+      cases hsel
+      simp [Cminor.find_label, CminorSel.find_label]
+  | Sassign id a =>
+      cases hsel
+      simp [Cminor.find_label, CminorSel.find_label]
+  | Sstore chunk address value =>
+      cases hsel
+      simp [Cminor.find_label, CminorSel.find_label]
+  | Scall optid sg callee args =>
+      cases hclass : classify_call (prog_defmap cunit) callee
+      case Call_default =>
+        simp [Selection.sel_stmt, hclass] at hsel
+        cases hsel
+        simp [Cminor.find_label, CminorSel.find_label]
+      case Call_imm id =>
+        simp [Selection.sel_stmt, hclass] at hsel
+        cases hsel
+        simp [Cminor.find_label, CminorSel.find_label]
+      case Call_builtin ef =>
+        simp [Selection.sel_stmt, hclass] at hsel
+        cases hsel
+        simp only [Cminor.find_label]
+        have hn := selection_sel_builtin_nolabel (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate)
+          (binary64_inverse_certificate := binary64_inverse_certificate)
+          (binary32_inverse_certificate := binary32_inverse_certificate)
+          cfg hf optid ef args lbl k'
+        simp [hn]
+  | Stailcall sg callee args =>
+      cases hclass : classify_call (prog_defmap cunit) callee
+      case Call_default =>
+        simp [Selection.sel_stmt, hclass] at hsel
+        cases hsel
+        simp [Cminor.find_label, CminorSel.find_label]
+      case Call_imm id =>
+        simp [Selection.sel_stmt, hclass] at hsel
+        cases hsel
+        simp [Cminor.find_label, CminorSel.find_label]
+      case Call_builtin =>
+        simp [Selection.sel_stmt, hclass] at hsel
+        cases hsel
+        simp [Cminor.find_label, CminorSel.find_label]
+  | Sbuiltin optid ef args =>
+      simp [Selection.sel_stmt] at hsel
+      cases hsel
+      simp only [Cminor.find_label]
+      have hn := selection_sel_builtin_nolabel (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        (binary64_inverse_certificate := binary64_inverse_certificate)
+        (binary32_inverse_certificate := binary32_inverse_certificate)
+        cfg hf optid ef args lbl k'
+      simp [hn]
+  | Sseq s1 s2 ih1 ih2 =>
+      cases hs2 : sel_stmt cfg oracle (prog_defmap cunit) ki env s2 kont with
+      | Error msg => simp [Selection.sel_stmt, hs2] at hsel
+      | OK s2' =>
+        cases hs1 : sel_stmt cfg oracle (prog_defmap cunit) ki env s1 s2' with
+        | Error msg => simp [Selection.sel_stmt, hs2, hs1] at hsel
+        | OK s1' =>
+          have hseq : s' = CminorSel.Sseq s1' s2' := by
+            simpa [Selection.sel_stmt, hs2, hs1] using hsel.symm
+          subst s'
+          have hmc : match_cont cfg oracle prog cunit hf ki env
+              (Cminor.Kseq s2 k) (CminorSel.Kseq s2' k') :=
+            match_cont_seq cunit hf ki env s2 kont s2' k k' hs2 hcont
+          cases hsrc : Cminor.find_label lbl s1 (Cminor.Kseq s2 k) with
+          | some p =>
+            rcases p with ⟨sx, kx⟩
+            cases htgt : CminorSel.find_label lbl s1' (CminorSel.Kseq s2' k') with
+            | some q =>
+              rcases q with ⟨sy, ky⟩
+              have hi := ih1 (kont := s2') (k := Cminor.Kseq s2 k)
+                (s' := s1') (k' := CminorSel.Kseq s2' k') hmc hs1
+              simpa [Cminor.find_label, CminorSel.find_label, hsrc, htgt] using hi
+            | none =>
+              have hi := ih1 (kont := s2') (k := Cminor.Kseq s2 k)
+                (s' := s1') (k' := CminorSel.Kseq s2' k') hmc hs1
+              have hfalse : False := by
+                simpa [hsrc, htgt] using hi
+              exact hfalse.elim
+          | none =>
+            cases htgt : CminorSel.find_label lbl s1' (CminorSel.Kseq s2' k') with
+            | some q =>
+              rcases q with ⟨sy, ky⟩
+              have hi := ih1 (kont := s2') (k := Cminor.Kseq s2 k)
+                (s' := s1') (k' := CminorSel.Kseq s2' k') hmc hs1
+              have hfalse : False := by
+                simpa [hsrc, htgt] using hi
+              exact hfalse.elim
+            | none =>
+              cases hsrc2 : Cminor.find_label lbl s2 k with
+              | some q =>
+                rcases q with ⟨sx, kx⟩
+                cases htgt2 : CminorSel.find_label lbl s2' k' with
+                | some r =>
+                  rcases r with ⟨sy, ky⟩
+                  have hi := ih2 (kont := kont) (k := k) (s' := s2')
+                    (k' := k') hcont hs2
+                  simpa [Cminor.find_label, CminorSel.find_label, hsrc, htgt,
+                    hsrc2, htgt2] using hi
+                | none =>
+                  have hi := ih2 (kont := kont) (k := k) (s' := s2')
+                    (k' := k') hcont hs2
+                  have hfalse : False := by
+                    simpa [hsrc2, htgt2] using hi
+                  exact hfalse.elim
+              | none =>
+                cases htgt2 : CminorSel.find_label lbl s2' k' with
+                | some r =>
+                  rcases r with ⟨sy, ky⟩
+                  have hi := ih2 (kont := kont) (k := k) (s' := s2')
+                    (k' := k') hcont hs2
+                  have hfalse : False := by
+                    simpa [hsrc2, htgt2] using hi
+                  exact hfalse.elim
+                | none =>
+                  simp [Cminor.find_label, CminorSel.find_label, hsrc, htgt,
+                    hsrc2, htgt2]
+  | Sifthenelse cond ifso ifnot ih1 ih2 =>
+      cases hifc : if_conversion cfg oracle ki env cond ifso ifnot kont with
+      | some sf =>
+          have hsf : s' = sf := by
+            simpa [Selection.sel_stmt, hifc] using hsel.symm
+          subst s'
+          have hn := if_conversion_nolabel (binary64_certificate := binary64_certificate)
+            (binary32_certificate := binary32_certificate)
+            (binary64_inverse_certificate := binary64_inverse_certificate)
+            (binary32_inverse_certificate := binary32_inverse_certificate)
+            cfg oracle hf ki env cond ifso ifnot kont sf hifc
+          rcases hn with ⟨hn1, hn2, hns⟩
+          simp [Cminor.find_label, hn1 lbl k, hn2 lbl k, hns lbl k']
+      | none =>
+          cases hs1 : sel_stmt cfg oracle (prog_defmap cunit) ki env ifso kont with
+          | Error msg => simp [Selection.sel_stmt, hifc, hs1] at hsel
+          | OK ifso' =>
+            cases hs2 : sel_stmt cfg oracle (prog_defmap cunit) ki env ifnot kont with
+            | Error msg => simp [Selection.sel_stmt, hifc, hs1, hs2] at hsel
+            | OK ifnot' =>
+              have hif : s' = CminorSel.Sifthenelse
+                  (condexpr_of_expr (sel_expr cfg cond)) ifso' ifnot' := by
+                simpa [Selection.sel_stmt, hifc, hs1, hs2] using hsel.symm
+              subst s'
+              cases hsrc : Cminor.find_label lbl ifso k with
+              | some p =>
+                rcases p with ⟨sx, kx⟩
+                cases htgt : CminorSel.find_label lbl ifso' k' with
+                | some q =>
+                  rcases q with ⟨sy, ky⟩
+                  have hi := ih1 (kont := kont) (k := k) (s' := ifso')
+                    (k' := k') hcont hs1
+                  simpa [Cminor.find_label, CminorSel.find_label, hsrc, htgt] using hi
+                | none =>
+                  have hi := ih1 (kont := kont) (k := k) (s' := ifso')
+                    (k' := k') hcont hs1
+                  have hfalse : False := by simpa [hsrc, htgt] using hi
+                  exact hfalse.elim
+              | none =>
+                cases htgt : CminorSel.find_label lbl ifso' k' with
+                | some q =>
+                  rcases q with ⟨sy, ky⟩
+                  have hi := ih1 (kont := kont) (k := k) (s' := ifso')
+                    (k' := k') hcont hs1
+                  have hfalse : False := by simpa [hsrc, htgt] using hi
+                  exact hfalse.elim
+                | none =>
+                  cases hsrc2 : Cminor.find_label lbl ifnot k with
+                  | some q =>
+                    rcases q with ⟨sx, kx⟩
+                    cases htgt2 : CminorSel.find_label lbl ifnot' k' with
+                    | some r =>
+                      rcases r with ⟨sy, ky⟩
+                      have hi := ih2 (kont := kont) (k := k) (s' := ifnot')
+                        (k' := k') hcont hs2
+                      simpa [Cminor.find_label, CminorSel.find_label, hsrc, htgt,
+                        hsrc2, htgt2] using hi
+                    | none =>
+                      have hi := ih2 (kont := kont) (k := k) (s' := ifnot')
+                        (k' := k') hcont hs2
+                      have hfalse : False := by simpa [hsrc2, htgt2] using hi
+                      exact hfalse.elim
+                  | none =>
+                    cases htgt2 : CminorSel.find_label lbl ifnot' k' with
+                    | some r =>
+                      rcases r with ⟨sy, ky⟩
+                      have hi := ih2 (kont := kont) (k := k) (s' := ifnot')
+                        (k' := k') hcont hs2
+                      have hfalse : False := by simpa [hsrc2, htgt2] using hi
+                      exact hfalse.elim
+                    | none =>
+                      simp [Cminor.find_label, CminorSel.find_label, hsrc, htgt,
+                        hsrc2, htgt2]
+  | Sloop body ih =>
+      cases hbody : sel_stmt cfg oracle (prog_defmap cunit) ki env body CminorSel.Sskip with
+      | Error msg => simp [Selection.sel_stmt, hbody] at hsel
+      | OK body' =>
+          have hloop : s' = CminorSel.Sloop body' := by
+            simpa [Selection.sel_stmt, hbody] using hsel.symm
+          subst s'
+          have hmc : match_cont cfg oracle prog cunit hf ki env
+              (Cminor.Kseq (Cminor.Sloop body) k)
+              (CminorSel.Kseq (CminorSel.Sloop body') k') :=
+            match_cont_seq cunit hf ki env (Cminor.Sloop body) kont
+              (CminorSel.Sloop body') k k' hsel hcont
+          have hi := ih (kont := CminorSel.Sskip)
+            (k := Cminor.Kseq (Cminor.Sloop body) k)
+            (s' := body') (k' := CminorSel.Kseq (CminorSel.Sloop body') k') hmc hbody
+          simpa [Cminor.find_label, CminorSel.find_label] using hi
+  | Sblock body ih =>
+      cases hbody : sel_stmt cfg oracle (prog_defmap cunit) ki env body kont with
+      | Error msg => simp [Selection.sel_stmt, hbody] at hsel
+      | OK body' =>
+          have hblock : s' = CminorSel.Sblock body' := by
+            simpa [Selection.sel_stmt, hbody] using hsel.symm
+          subst s'
+          have hmc : match_cont cfg oracle prog cunit hf ki env
+              (Cminor.Kblock k) (CminorSel.Kblock k') :=
+            match_cont_block cunit hf ki env k k' hcont
+          have hi := ih (kont := kont) (k := Cminor.Kblock k)
+            (s' := body') (k' := CminorSel.Kblock k') hmc hbody
+          simpa [Cminor.find_label, CminorSel.find_label] using hi
+  | Sexit depth =>
+      cases hsel
+      simp [Cminor.find_label, CminorSel.find_label]
+  | Sswitch isLong arg cases default =>
+      cases isLong with
+      | false =>
+          cases hvalid : validate_switch CompCert4Lean.Lib.Integers.Int.modulus default cases
+              (compile_switch oracle CompCert4Lean.Lib.Integers.Int.modulus default cases) with
+          | false => simp [Selection.sel_stmt, hvalid] at hsel
+          | true =>
+              simp [Selection.sel_stmt, hvalid] at hsel
+              cases hsel
+              simp [Cminor.find_label, CminorSel.find_label]
+      | true =>
+          cases hvalid : validate_switch CompCert4Lean.Lib.Integers.Int64.modulus default cases
+              (compile_switch oracle CompCert4Lean.Lib.Integers.Int64.modulus default cases) with
+          | false => simp [Selection.sel_stmt, hvalid] at hsel
+          | true =>
+              simp [Selection.sel_stmt, hvalid] at hsel
+              cases hsel
+              simp [Cminor.find_label, CminorSel.find_label]
+  | Sreturn value =>
+      cases value with
+      | none =>
+          simp [Selection.sel_stmt] at hsel
+          cases hsel
+          simp [Cminor.find_label, CminorSel.find_label]
+      | some e =>
+          simp [Selection.sel_stmt] at hsel
+          cases hsel
+          simp [Cminor.find_label, CminorSel.find_label]
+  | Slabel label body ih =>
+      cases hbody : sel_stmt cfg oracle (prog_defmap cunit) ki env body kont with
+      | Error msg => simp [Selection.sel_stmt, hbody] at hsel
+      | OK body' =>
+          have hlabel : s' = CminorSel.Slabel label body' := by
+            simpa [Selection.sel_stmt, hbody] using hsel.symm
+          subst s'
+          cases heq : ident_eq lbl label with
+          | left hll =>
+              simp only [Cminor.find_label, CminorSel.find_label, heq]
+              exact ⟨kont, hbody, hcont⟩
+          | right hll =>
+              have hi := ih (kont := kont) (k := k) (s' := body')
+                (k' := k') hcont hbody
+              simpa [Cminor.find_label, CminorSel.find_label, heq] using hi
+  | Sgoto label =>
+      cases hsel
+      simp [Cminor.find_label, CminorSel.find_label]
+
+end CompCert4Lean.Backend.Selectionproof

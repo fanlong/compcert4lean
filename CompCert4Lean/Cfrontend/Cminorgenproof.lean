@@ -4003,3 +4003,139 @@ theorem match_is_call_cont
       · exact .match_Kcall htrans ih
 
 end CompCert4Lean.Cfrontend.Cminorgenproof
+
+namespace CompCert4Lean.Cfrontend.Cminorgenproof
+
+open CompCert4Lean.Cfrontend.Cminorgen
+open CompCert4Lean.Common.Switch
+
+theorem switch_table_default : switch_table_defaultStatement := by
+  intro sl
+  let rec go (sl : CS.lbl_stmt) : ∀ base,
+      ∃ n, lbl_stmt_tail sl n (CS.select_switch_default sl) ∧
+        (switch_table sl base).2 = n + base := by
+    intro base
+    cases sl with
+    | LSnil =>
+        exact ⟨0, .zero, by simp [switch_table]⟩
+    | LScons c s remaining =>
+        cases c with
+        | none =>
+            exact ⟨0, .zero, by simp [switch_table]⟩
+        | some z =>
+            obtain ⟨n, hn, heq⟩ := go remaining (Nat.succ base)
+            refine ⟨Nat.succ n, .succ hn, ?_⟩
+            simp only [switch_table]
+            rw [heq]
+            omega
+  exact go sl
+
+theorem switch_table_case : switch_table_caseStatement := by
+  intro i sl
+  refine CompCert4Lean.Cfrontend.Csharpminor.lbl_stmt.rec
+    (motive_1 := fun _ => True)
+    (motive_2 := fun sl => ∀ base dfl,
+      match CompCert4Lean.Cfrontend.Csharpminor.select_switch_case i sl with
+      | none => switch_target i dfl (switch_table sl base).1 = dfl
+      | some sl' => ∃ n, lbl_stmt_tail sl n sl' ∧
+          switch_target i dfl (switch_table sl base).1 = n + base)
+    (Sskip := trivial)
+    (Sset := fun _ _ => trivial)
+    (Sstore := fun _ _ _ => trivial)
+    (Scall := fun _ _ _ _ => trivial)
+    (Sbuiltin := fun _ _ _ => trivial)
+    (Sseq := fun _ _ _ _ => trivial)
+    (Sifthenelse := fun _ _ _ _ _ => trivial)
+    (Sloop := fun _ _ => trivial)
+    (Sblock := fun _ _ => trivial)
+    (Sexit := fun _ => trivial)
+    (Sswitch := fun _ _ _ _ => trivial)
+    (Sreturn := fun _ => trivial)
+    (Slabel := fun _ _ _ => trivial)
+    (Sgoto := fun _ => trivial)
+    (LSnil := by
+      intro base dfl
+      simp [CompCert4Lean.Cfrontend.Csharpminor.select_switch_case,
+        switch_table, switch_target])
+    (LScons := fun c s remaining ihs ihr => by
+      intro base dfl
+      cases c with
+      | none =>
+          simp only [CompCert4Lean.Cfrontend.Csharpminor.select_switch_case,
+            switch_table]
+          cases hsel : CompCert4Lean.Cfrontend.Csharpminor.select_switch_case i remaining with
+          | none =>
+              have hgo := ihr (Nat.succ base) dfl
+              rw [hsel] at hgo
+              exact hgo
+          | some sl' =>
+              have hgo := ihr (Nat.succ base) dfl
+              rw [hsel] at hgo
+              rcases hgo with ⟨n, hn, heq⟩
+              refine ⟨Nat.succ n, .succ hn, ?_⟩
+              rw [heq]
+              omega
+      | some z =>
+          simp only [CompCert4Lean.Cfrontend.Csharpminor.select_switch_case]
+          cases h : CompCert4Lean.Lib.Coqlib.zeq z i with
+          | left heq =>
+              simp only [h]
+              refine ⟨0, .zero, ?_⟩
+              cases hz : CompCert4Lean.Lib.Coqlib.zeq i z with
+              | left hi =>
+                  simp [switch_table, switch_target, hz]
+              | right hzi =>
+                  exact False.elim (hzi heq.symm)
+          | right hne =>
+              cases hsel : CompCert4Lean.Cfrontend.Csharpminor.select_switch_case i remaining with
+              | none =>
+                  have hgo := ihr (Nat.succ base) dfl
+                  rw [hsel] at hgo
+                  cases hz : CompCert4Lean.Lib.Coqlib.zeq i z with
+                  | left hi => exact False.elim (hne hi.symm)
+                  | right hzi =>
+                      simpa [h, hsel, switch_table, switch_target, hz] using hgo
+              | some sl' =>
+                  have hgo := ihr (Nat.succ base) dfl
+                  rw [hsel] at hgo
+                  rcases hgo with ⟨n, hn, heq⟩
+                  refine ⟨Nat.succ n, .succ hn, ?_⟩
+                  cases hz : CompCert4Lean.Lib.Coqlib.zeq i z with
+                  | left hi => exact False.elim (hne hi.symm)
+                  | right hzi =>
+                      simp [h, hsel, switch_table, switch_target, hz] at *
+                      omega)
+    sl
+
+theorem switch_table_select : switch_table_selectStatement := by
+  intro i sl
+  change lbl_stmt_tail sl
+    (switch_target i (switch_table sl 0).2 (switch_table sl 0).1)
+    (CompCert4Lean.Cfrontend.Csharpminor.select_switch i sl)
+  unfold CompCert4Lean.Cfrontend.Csharpminor.select_switch
+  cases h : CompCert4Lean.Cfrontend.Csharpminor.select_switch_case i sl with
+  | none =>
+      simp only
+      have hcase := switch_table_case i sl 0 (switch_table sl 0).2
+      have hcase' :
+          switch_target i (switch_table sl 0).2 (switch_table sl 0).1 =
+            (switch_table sl 0).2 := by
+        simpa only [h] using hcase
+      obtain ⟨n, hn, heq⟩ := switch_table_default sl 0
+      have heq' : (switch_table sl 0).2 = n := by simpa using heq
+      rw [hcase', heq']
+      exact hn
+  | some sl' =>
+      simp only
+      have hcase := switch_table_case i sl 0 (switch_table sl 0).2
+      have hcase' :
+          ∃ n, lbl_stmt_tail sl n sl' ∧
+            switch_target i (switch_table sl 0).2 (switch_table sl 0).1 = n + 0 := by
+        simpa only [h] using hcase
+      obtain ⟨n, hn, heq⟩ := hcase'
+      have heq' : switch_target i (switch_table sl 0).2 (switch_table sl 0).1 = n := by
+        simpa using heq
+      rw [heq']
+      exact hn
+
+end CompCert4Lean.Cfrontend.Cminorgenproof
