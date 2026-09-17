@@ -3091,3 +3091,37 @@ theorem ZArith.BinInt.Z.pred_succ :
 
 end Rocq.Coq
 end CompCert4Lean.Foundation.Numbers
+
+namespace CompCert4Lean.Foundation.Numbers
+namespace Rocq.Coq
+
+theorem ZArith.BinInt.Zmult_0_l_proof :
+    ∀ n : Z, ZArith.BinInt.Zmult_0_l n := by
+  intro n
+  unfold ZArith.BinInt.Zmult_0_l
+  apply intOfZ_injective
+  simp [ZArith.BinInt.Z.mul, intOfZ, zOfInt]
+
+theorem ZArith.BinInt.Z.eqb_eq :
+    ZArith.BinInt.Z.eqb_eqStatement := by
+  intro n m
+  simp [ZArith.BinInt.Z.eqb]
+
+theorem ZArith.BinInt.Z.ltb_lt :
+    ZArith.BinInt.Z.ltb_ltStatement := by
+  intro n m
+  unfold ZArith.BinInt.Z.ltb ZArith.BinInt.Z.lt
+  by_cases h : intOfZ n < intOfZ m
+  · simp [h]
+  · simp [h]
+
+theorem ZArith.BinInt.Z.leb_le :
+    ZArith.BinInt.Z.leb_leStatement := by
+  intro n m
+  unfold ZArith.BinInt.Z.leb ZArith.BinInt.Z.le
+  by_cases h : intOfZ n ≤ intOfZ m
+  · simp [h]
+  · simp [h]
+
+end Rocq.Coq
+end CompCert4Lean.Foundation.Numbers

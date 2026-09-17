@@ -3286,3 +3286,34 @@ theorem if_conversion_base_nolabel : if_conversion_base_nolabelStatement cfg ora
   rfl
 
 end CompCert4Lean.Backend.Selectionproof
+
+namespace CompCert4Lean.Backend.Selectionproof
+
+variable [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+variable [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+variable [binary64_inverse_certificate : BexactInverseCertificate (zOfNat 53) (zOfNat 1024)]
+variable [binary32_inverse_certificate : BexactInverseCertificate (zOfNat 24) (zOfNat 128)]
+variable (cfg : CompilerConfig) (oracle : SelectionOracle)
+
+theorem if_conversion_nolabel : if_conversion_nolabelStatement cfg oracle := by
+  intro hf ki env a s1 s2 kont s h
+  unfold CompCert4Lean.Backend.Selection.if_conversion at h
+  cases hc1 : CompCert4Lean.Backend.Selection.classify_stmt s1 <;>
+    cases hc2 : CompCert4Lean.Backend.Selection.classify_stmt s2 <;>
+    simp [CompCert4Lean.Backend.Selection.if_conversion, hc1, hc2] at h
+  · have hs1 : nolabel s1 := classify_stmt_nolabel s1 (by simp [hc1])
+    have hs2 : nolabel s2 := classify_stmt_nolabel s2 (by simp [hc2])
+    exact ⟨hs1, hs2,
+      if_conversion_base_nolabel cfg oracle hf ki env a _ _ _ _ s h⟩
+  · have hs1 : nolabel s1 := classify_stmt_nolabel s1 (by simp [hc1])
+    have hs2 : nolabel s2 := classify_stmt_nolabel s2 (by simp [hc2])
+    exact ⟨hs1, hs2,
+      if_conversion_base_nolabel cfg oracle hf ki env a _ _ _ _ s h⟩
+  · have hs1 : nolabel s1 := classify_stmt_nolabel s1 (by simp [hc1])
+    have hs2 : nolabel s2 := classify_stmt_nolabel s2 (by simp [hc2])
+    split at h
+    · exact ⟨hs1, hs2,
+        if_conversion_base_nolabel cfg oracle hf ki env a _ _ _ _ s h⟩
+    · cases h
+
+end CompCert4Lean.Backend.Selectionproof
