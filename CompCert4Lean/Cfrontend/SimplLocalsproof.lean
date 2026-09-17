@@ -4274,3 +4274,30 @@ theorem bind_parameters_nextblock : bind_parameters_nextblockStatement := by
         CompCert4Lean.Lib.Integers.Ptrofs.zero .Full v1 m1 hassign
 
 end CompCert4Lean.Cfrontend.SimplLocalsproof
+
+namespace CompCert4Lean.Cfrontend.SimplLocalsproof
+
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Cfrontend.Clight
+
+theorem bind_parameters_load : bind_parameters_loadStatement := by
+  intro ge e chunk b ofs hne m params args m' hbind
+  induction hbind with
+  | nil => rfl
+  | cons m id ty params v1 vl b0 m1 m2 hfind hassign hrest ih =>
+      rw [ih]
+      have hneq : b ≠ b0 := hne id b0 ty hfind
+      cases hassign with
+      | assign_loc_value _ chunk0 m1 _ hstore =>
+          simp [Mem.storev] at hstore
+          exact Mem.load_store_other chunk0 m b0
+            (CompCert4Lean.Lib.Integers.Ptrofs.unsigned
+              CompCert4Lean.Lib.Integers.Ptrofs.zero) _ m1 hstore
+            chunk b ofs (Or.inl hneq)
+      | assign_loc_copy b' ofs' bytes m1 hmode halignSource halignTarget hseparated hload hstore =>
+          exact Mem.load_storebytes_other m b0
+            (CompCert4Lean.Lib.Integers.Ptrofs.unsigned
+              CompCert4Lean.Lib.Integers.Ptrofs.zero) bytes m1 hstore
+            chunk b ofs (Or.inl hneq)
+
+end CompCert4Lean.Cfrontend.SimplLocalsproof

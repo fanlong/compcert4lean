@@ -2015,3 +2015,25 @@ theorem eval_testcond_set_ireg : eval_testcond_set_iregStatement := by
       CompCert4Lean.X86.Asm.Pregmap.set]
 
 end CompCert4Lean.X86.Asmgenproof1
+
+namespace CompCert4Lean.X86.Asmgenproof1
+
+theorem negate_testcond_for_condition : negate_testcond_for_conditionStatement := by
+  intro cond
+  cases cond with
+  | Ccomp c => cases c <;> rfl
+  | Ccompu c => cases c <;> rfl
+  | Ccompimm c n => cases c <;> rfl
+  | Ccompuimm c n => cases c <;> rfl
+  | Ccompl c => cases c <;> rfl
+  | Ccomplu c => cases c <;> rfl
+  | Ccomplimm c n => cases c <;> rfl
+  | Ccompluimm c n => cases c <;> rfl
+  | Ccompf c => cases c <;> rfl
+  | Cnotcompf c => cases c <;> rfl
+  | Ccompfs c => cases c <;> rfl
+  | Cnotcompfs c => cases c <;> rfl
+  | Cmaskzero n => rfl
+  | Cmasknotzero n => rfl
+
+end CompCert4Lean.X86.Asmgenproof1

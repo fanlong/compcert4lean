@@ -3215,3 +3215,17 @@ theorem ZArith.BinInt.Z.max_l :
 
 end Rocq.Coq
 end CompCert4Lean.Foundation.Numbers
+
+namespace CompCert4Lean.Foundation.Numbers
+namespace Rocq.Coq
+
+theorem ZArith.BinInt.Z.min_l :
+    ZArith.BinInt.Z.min_lStatement := by
+  intro n m h
+  apply intOfZ_injective
+  change intOfZ (ZArith.BinInt.Z.min n m) = intOfZ n
+  change intOfZ n ≤ intOfZ m at h
+  simp [ZArith.BinInt.Z.min, h]
+
+end Rocq.Coq
+end CompCert4Lean.Foundation.Numbers

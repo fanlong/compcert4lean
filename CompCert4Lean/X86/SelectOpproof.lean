@@ -3973,3 +3973,82 @@ theorem eval_cast16unsigned
       · rfl
 
 end CompCert4Lean.X86.SelectOpproof
+
+namespace CompCert4Lean.X86.SelectOpproof
+
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.ExternalCalls
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.X86.Op
+open CompCert4Lean.X86.SelectOp
+
+theorem eval_singleoffloat
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    eval_singleoffloatStatement := by
+  intro xi ge sp e m le a x h
+  refine ⟨Val.singleoffloat x, ?_, Val.lessdef_refl _⟩
+  apply eval_expr.eval_Eop le Osingleoffloat (Econs a Enil) [x]
+    (Val.singleoffloat x)
+  · exact eval_exprlist.cons le a Enil x [] h (eval_exprlist.nil le)
+  · rfl
+
+theorem eval_floatofsingle
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    eval_floatofsingleStatement := by
+  intro xi ge sp e m le a x h
+  refine ⟨Val.floatofsingle x, ?_, Val.lessdef_refl _⟩
+  apply eval_expr.eval_Eop le Ofloatofsingle (Econs a Enil) [x]
+    (Val.floatofsingle x)
+  · exact eval_exprlist.cons le a Enil x [] h (eval_exprlist.nil le)
+  · rfl
+
+theorem eval_intoffloat
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    eval_intoffloatStatement := by
+  intro xi ge sp e m le a x y h hxy
+  refine ⟨y, ?_, Val.lessdef_refl _⟩
+  apply eval_expr.eval_Eop le Ointoffloat (Econs a Enil) [x] y
+  · exact eval_exprlist.cons le a Enil x [] h (eval_exprlist.nil le)
+  · exact hxy
+
+end CompCert4Lean.X86.SelectOpproof
+
+namespace CompCert4Lean.X86.SelectOpproof
+
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.ExternalCalls
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.X86.Op
+open CompCert4Lean.X86.SelectOp
+
+theorem eval_select
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    eval_selectStatement := by
+  intro xi ge sp e m le ty cond al vl a1 v1 a2 v2 hs hAl h1 h2
+  by_cases hswap : select_swap cond = true
+  · refine ⟨Val.select (eval_condition (negate_condition cond) vl m) v2 v1 ty, ?_, ?_⟩
+    · simp only [SelectOp.select, hswap, ↓reduceIte]
+      apply eval_expr.eval_Eop le (Osel (negate_condition cond) ty)
+        (Econs a2 (Econs a1 al)) (v2 :: v1 :: vl) _
+      · exact eval_exprlist.cons le a2 (Econs a1 al) v2 (v1 :: vl) h2
+          (eval_exprlist.cons le a1 al v1 vl h1 hAl)
+      · rfl
+    · rw [eval_negate_condition]
+      cases hc : eval_condition cond vl m with
+      | none => exact Val.lessdef_refl _
+      | some b => cases b <;> exact Val.lessdef_refl _
+  · refine ⟨Val.select (eval_condition cond vl m) v1 v2 ty, ?_, Val.lessdef_refl _⟩
+    · simp only [SelectOp.select, hswap, ↓reduceIte]
+      apply eval_expr.eval_Eop le (Osel cond ty)
+        (Econs a1 (Econs a2 al)) (v1 :: v2 :: vl) _
+      · exact eval_exprlist.cons le a1 (Econs a2 al) v1 (v2 :: vl) h1
+          (eval_exprlist.cons le a2 al v2 vl h2 hAl)
+      · rfl
+
+end CompCert4Lean.X86.SelectOpproof

@@ -4820,3 +4820,14 @@ theorem match_transl_step
       exact star_refl _ _ _
 
 end CompCert4Lean.Cfrontend.Cshmgenproof
+
+namespace CompCert4Lean.Cfrontend.Cshmgenproof
+
+open CompCert4Lean.Cfrontend.Cshmgen
+
+theorem match_states_skip : match_states_skipStatement := by
+  intro prog tprog f e le te nbrk ncnt k tf tk m cu hlink htrans henv hcont
+  exact match_states.match_state f nbrk ncnt .Sskip k e le m tf .Sskip tk te .Sskip tk cu
+    hlink htrans (by rfl) (match_transl.match_transl_0 _ _) henv hcont
+
+end CompCert4Lean.Cfrontend.Cshmgenproof
