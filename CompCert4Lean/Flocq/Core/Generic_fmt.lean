@@ -2709,3 +2709,19 @@ theorem round_opp :
   rw [pg_zopp_zopp]
 
 end CompCert4Lean.Flocq.Core.Generic_fmt
+
+namespace CompCert4Lean.Flocq.Core.Generic_fmt
+
+theorem round_DN_or_UP :
+    ∀ ctx magnitude, round_DN_or_UPStatement ctx magnitude := by
+  intro ctx magnitude beta fexp rnd hrnd x
+  unfold Exact.round
+  have hround := Zrnd_DN_or_UP ctx rnd hrnd
+    (Exact.scaled_mantissa ctx magnitude beta fexp x)
+  rcases hround with hfloor | hceil
+  · left
+    rw [hfloor]
+  · right
+    rw [hceil]
+
+end CompCert4Lean.Flocq.Core.Generic_fmt
