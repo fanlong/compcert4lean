@@ -6326,3 +6326,14 @@ theorem and_idem_proof : and_idem := by
   change (WordCore.and x x).val = x.val
   rw [suffix_and_val]
   exact Nat.and_self x.val
+
+theorem bits_not_proof : bits_not := by
+  intro x i hi
+  have hnot : not x = xor x mone := by
+    apply WordCore.ext_of_val_eq
+    change (WordCore.not x).val =
+      (xor x mone).val
+    rw [suffix_not_val, suffix_xor_val_exact]
+    congr 1
+  rw [hnot, bits_xor_proof x mone i hi, bits_mone_proof i hi]
+  cases testbit x i <;> rfl

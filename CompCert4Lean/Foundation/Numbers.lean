@@ -3047,3 +3047,47 @@ theorem ZArith.BinInt.Z.even_opp :
 
 end Rocq.Coq
 end CompCert4Lean.Foundation.Numbers
+
+namespace CompCert4Lean.Foundation.Numbers
+namespace Rocq.Coq
+
+theorem ZArith.BinInt.Z.opp_involutive :
+    ZArith.BinInt.Z.opp_involutiveStatement := by
+  intro n
+  apply intOfZ_injective
+  simp [ZArith.BinInt.Z.opp, intOfZ_zOfInt]
+
+theorem ZArith.BinInt.Z.shiftr_0_r :
+    ZArith.BinInt.Z.shiftr_0_rStatement := by
+  intro a
+  unfold ZArith.BinInt.Z.shiftr
+  rw [if_pos (show (0 : Int) ≤ intOfZ Z0 by
+    change (0 : Int) ≤ 0
+    exact Int.le_refl _)]
+  have hpow : Int.pow 2 (Int.toNat (intOfZ Z0)) = 1 := by
+    change Int.pow 2 0 = 1
+    rfl
+  rw [hpow]
+  have hdiv : (intOfZ a).ediv 1 = intOfZ a := by
+    change intOfZ a / 1 = intOfZ a
+    exact Int.ediv_one _
+  rw [hdiv]
+  exact zOfInt_intOfZ a
+
+theorem ZArith.BinInt.Z.add_0_l :
+    ZArith.BinInt.Z.add_0_lStatement := by
+  intro n
+  apply intOfZ_injective
+  simp only [ZArith.BinInt.Z.add, intOfZ_zOfInt]
+  change (0 : Int) + intOfZ n = intOfZ n
+  exact Int.zero_add _
+
+theorem ZArith.BinInt.Z.pred_succ :
+    ZArith.BinInt.Z.pred_succStatement := by
+  intro n
+  apply intOfZ_injective
+  simp [ZArith.BinInt.Z.pred, ZArith.BinInt.Z.succ,
+    ZArith.BinInt.Z.sub, ZArith.BinInt.Z.add, intOfZ_zOfInt]
+
+end Rocq.Coq
+end CompCert4Lean.Foundation.Numbers

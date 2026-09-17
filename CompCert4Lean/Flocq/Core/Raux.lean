@@ -4284,3 +4284,14 @@ theorem eqb_true : eqb_trueStatement := by
   exact (CompCert4Lean.Foundation.Logic.Rocq.Coq.Bool.Bool.eqb_true_iff x y).2 h
 
 end CompCert4Lean.Flocq.Core.Raux
+
+namespace CompCert4Lean.Flocq.Core.Raux
+
+theorem IZR_cond_Zopp :
+    ∀ (ctx : ExactRealContext), IZR_cond_ZoppStatement ctx := by
+  intro ctx b m
+  cases b with
+  | false => rfl
+  | true => exact ctx.certificate.sourceLaws.ofZ_neg m
+
+end CompCert4Lean.Flocq.Core.Raux

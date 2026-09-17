@@ -5328,3 +5328,182 @@ theorem shrluimm_sound : shrluimm_soundStatement := by
     exact vagree_same Vundef x
 
 end CompCert4Lean.Backend.NeedDomain
+
+namespace CompCert4Lean.Backend.NeedDomain
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.Common.Values
+
+private theorem pgLagreeShlTestbitNatAny (a : Int64.int) (n : Int.int)
+    (k : Nat) :
+    Int64.testbit (Int64.shl' a n)
+        (ZArith.BinInt.Z.of_nat (n.val + k)) =
+      if n.val + k < Int64.wordsize then
+        Int64.testbit a (ZArith.BinInt.Z.of_nat k)
+      else false := by
+  rw [lagreeTestbitOfNatFinal, lagreeShlValFinal,
+    Nat.testBit_mod_two_pow]
+  by_cases hsum : n.val + k < Int64.wordsize
+  · rw [decide_eq_true hsum, Bool.true_and, if_pos hsum,
+      Nat.testBit_mul_two_pow]
+    have hle : n.val ≤ n.val + k := Nat.le_add_right _ _
+    rw [decide_eq_true hle, Bool.true_and, Nat.add_sub_cancel_left]
+    rw [lagreeTestbitOfNatFinal]
+  · rw [decide_eq_false hsum, Bool.false_and, if_neg hsum]
+
+private theorem pgLagreeShruShlTestbitNat (a : Int64.int) (n : Int.int)
+    (k : Nat) :
+    Int64.testbit (Int64.shru' (Int64.shl' a n) n)
+        (ZArith.BinInt.Z.of_nat k) =
+      if n.val + k < Int64.wordsize then
+        Int64.testbit a (ZArith.BinInt.Z.of_nat k)
+      else false := by
+  rw [lagreeTestbitOfNatFinal, lagreeShruValFinal,
+    lagreeTestbitOfNatFinal]
+  rw [← Nat.testBit_add]
+  rw [Nat.add_comm k n.val]
+  rw [← lagreeTestbitOfNatFinal]
+  simpa only [lagreeTestbitOfNatFinal] using
+    pgLagreeShlTestbitNatAny a n k
+
+private theorem pgLagreeShr1AtNat (x y m : Int64.int) (n : Int.int)
+    (heq : Int64.shru' (Int64.shl' m n) n = m)
+    (h : lagree x y (Int64.shl' m n))
+    (k : Nat) (hk : k < Int64.wordsize)
+    (hmask : Int64.testbit m (ZArith.BinInt.Z.of_nat k) = true) :
+    Int64.testbit (Int64.shr' x n) (ZArith.BinInt.Z.of_nat k) =
+      Int64.testbit (Int64.shr' y n) (ZArith.BinInt.Z.of_nat k) := by
+  let j := if n.val + k < Int64.wordsize then n.val + k
+    else Int64.wordsize - 1
+  have hjlt : j < Int64.wordsize := by
+    dsimp [j]
+    split <;> simp only [Int64.wordsize] at * <;> omega
+  have hjrange := lagreeNatIndexRangeShrFinal j hjlt
+  have hjmask : Int64.testbit (Int64.shl' m n)
+      (ZArith.BinInt.Z.of_nat j) = true := by
+    by_cases hsum : n.val + k < Int64.wordsize
+    · have hj : j = n.val + k := by simp [j, hsum]
+      rw [hj, lagreeShlTestbitNatAtFinal m n k hsum, hmask]
+    · have heqbit := congrArg
+          (fun a => Int64.testbit a (ZArith.BinInt.Z.of_nat k)) heq
+      rw [pgLagreeShruShlTestbitNat m n k, if_neg hsum, hmask] at heqbit
+      contradiction
+  have hxy := h (ZArith.BinInt.Z.of_nat j) hjrange hjmask
+  rw [lagreeShrTestbitNatFinal x n k hk,
+    lagreeShrTestbitNatFinal y n k hk]
+  exact hxy
+
+private theorem pgLagreeShr1 : lagree_shr_1Statement := by
+  intro x y m n heq h i hirange hmask
+  cases i with
+  | Zneg p =>
+      exfalso
+      have hi0 := hirange.1
+      change 0 ≤ -(Int.ofNat (posToNat p)) at hi0
+      have hp : (0 : Int) < Int.ofNat (posToNat p) :=
+        Int.natCast_pos.mpr (lagreePosToNatPosFinal p)
+      omega
+  | Z0 =>
+      exact pgLagreeShr1AtNat x y m n heq h 0 (by decide) hmask
+  | Zpos p =>
+      have hkZ := hirange.2
+      change (Int.ofNat (posToNat p) : Int) < Int.ofNat 64 at hkZ
+      have hk : posToNat p < Int64.wordsize := Int.ofNat_lt.mp hkZ
+      have hz : ZArith.BinInt.Z.of_nat (posToNat p) = .Zpos p := by
+        apply intOfZ_injective
+        simp only [ZArith.BinInt.Z.of_nat, intOfZ_zOfInt]
+        rfl
+      rw [← hz] at hmask ⊢
+      exact pgLagreeShr1AtNat x y m n heq h (posToNat p) hk hmask
+
+set_option maxHeartbeats 800000 in
+theorem shrlimm_sound : shrlimm_soundStatement := by
+  intro v w x n h
+  by_cases hn : Int.ltu n Int64.iwordsize' = true
+  · cases x with
+    | Nothing =>
+        trivial
+    | I m =>
+        cases v <;> cases w <;>
+          simp [shrlimm, vagree, iVagree, lVagree,
+            CompCert4Lean.Common.Values.Val.shrl, hn] at h ⊢
+    | L m =>
+        by_cases heq : Int64.shru' (Int64.shl' m n) n = m
+        · cases v <;> cases w <;>
+            simp [shrlimm, vagree, iVagree, lVagree,
+              CompCert4Lean.Common.Values.Val.shrl, hn, heq] at h ⊢
+          exact pgLagreeShr1 _ _ _ _ heq h
+        · cases v <;> cases w <;>
+            simp [shrlimm, vagree, iVagree, lVagree,
+              CompCert4Lean.Common.Values.Val.shrl, hn, heq] at h ⊢
+          exact lagree_shr _ _ _ _ h
+    | All =>
+        cases v with
+        | Vlong i =>
+            cases w with
+            | Vlong j =>
+                simp [shrlimm, vagree, iVagree, lVagree,
+                  CompCert4Lean.Common.Values.Val.shrl, hn] at h ⊢
+                have hshr := lagree_shr i j Int64.mone n h
+                have heq : Int64.shr' i n = Int64.shr' j n :=
+                  lagree_mone _ _ hshr
+                exact congrArg (fun z => Vlong z) heq ▸
+                  CompCert4Lean.Common.Values.Val.lessdef_refl _
+            | Vundef =>
+                simp [shrlimm, vagree, iVagree, lVagree,
+                  CompCert4Lean.Common.Values.Val.shrl, hn] at h ⊢ <;>
+                  try exact CompCert4Lean.Common.Values.Val.lessdef_undef _
+            | Vint k =>
+                simp [shrlimm, vagree, iVagree, lVagree,
+                  CompCert4Lean.Common.Values.Val.shrl, hn] at h ⊢ <;>
+                  try exact CompCert4Lean.Common.Values.Val.lessdef_undef _
+            | Vfloat f =>
+                simp [shrlimm, vagree, iVagree, lVagree,
+                  CompCert4Lean.Common.Values.Val.shrl, hn] at h ⊢ <;>
+                  try exact CompCert4Lean.Common.Values.Val.lessdef_undef _
+            | Vsingle f =>
+                simp [shrlimm, vagree, iVagree, lVagree,
+                  CompCert4Lean.Common.Values.Val.shrl, hn] at h ⊢ <;>
+                  try exact CompCert4Lean.Common.Values.Val.lessdef_undef _
+            | Vptr b ofs =>
+                simp [shrlimm, vagree, iVagree, lVagree,
+                  CompCert4Lean.Common.Values.Val.shrl, hn] at h ⊢ <;>
+                  try exact CompCert4Lean.Common.Values.Val.lessdef_undef _
+        | Vundef =>
+            cases w <;>
+              simp [shrlimm, vagree, iVagree, lVagree,
+                CompCert4Lean.Common.Values.Val.shrl, hn] at h ⊢ <;>
+              try exact CompCert4Lean.Common.Values.Val.lessdef_undef _
+        | Vint k =>
+            cases w <;>
+              simp [shrlimm, vagree, iVagree, lVagree,
+                CompCert4Lean.Common.Values.Val.shrl, hn] at h ⊢ <;>
+              try exact CompCert4Lean.Common.Values.Val.lessdef_undef _
+        | Vfloat f =>
+            cases w <;>
+              simp [shrlimm, vagree, iVagree, lVagree,
+                CompCert4Lean.Common.Values.Val.shrl, hn] at h ⊢ <;>
+              try exact CompCert4Lean.Common.Values.Val.lessdef_undef _
+        | Vsingle f =>
+            cases w <;>
+              simp [shrlimm, vagree, iVagree, lVagree,
+                CompCert4Lean.Common.Values.Val.shrl, hn] at h ⊢ <;>
+              try exact CompCert4Lean.Common.Values.Val.lessdef_undef _
+        | Vptr b ofs =>
+            cases w <;>
+              simp [shrlimm, vagree, iVagree, lVagree,
+                CompCert4Lean.Common.Values.Val.shrl, hn] at h ⊢ <;>
+              try exact CompCert4Lean.Common.Values.Val.lessdef_undef _
+  · have hn' : Int.ltu n Int64.iwordsize' = false := Bool.eq_false_iff.mpr hn
+    have hshr (a : val) :
+        CompCert4Lean.Common.Values.Val.shrl a (Vint n) = Vundef := by
+      cases a <;> try rfl
+      rename_i i
+      change (if Int.ltu n Int64.iwordsize' = true then
+        Vlong (Int64.shr' i n) else Vundef) = Vundef
+      simp [hn']
+    rw [hshr v, hshr w]
+    exact vagree_same Vundef x
+
+end CompCert4Lean.Backend.NeedDomain
