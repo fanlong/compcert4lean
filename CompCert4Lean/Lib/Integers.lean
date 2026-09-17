@@ -6319,3 +6319,10 @@ theorem eqm_unsigned_repr_l_proof : eqm_unsigned_repr_l := by
   apply eqm_trans_proof (unsigned (repr a)) a b
   · exact eqm_sym_proof _ _ (suffix_eqm_unsigned_repr a)
   · exact hab
+
+theorem and_idem_proof : and_idem := by
+  intro x
+  apply WordCore.ext_of_val_eq
+  change (WordCore.and x x).val = x.val
+  rw [suffix_and_val]
+  exact Nat.and_self x.val

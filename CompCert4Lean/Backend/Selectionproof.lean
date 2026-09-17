@@ -3268,3 +3268,21 @@ theorem classify_stmt_nolabel : classify_stmt_nolabelStatement := by
       simp [CompCert4Lean.Backend.Selection.classify_stmt] at hclass
 
 end CompCert4Lean.Backend.Selectionproof
+
+namespace CompCert4Lean.Backend.Selectionproof
+
+variable [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+variable [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+variable [binary64_inverse_certificate : BexactInverseCertificate (zOfNat 53) (zOfNat 1024)]
+variable [binary32_inverse_certificate : BexactInverseCertificate (zOfNat 24) (zOfNat 128)]
+variable (cfg : CompilerConfig) (oracle : SelectionOracle)
+
+theorem if_conversion_base_nolabel : if_conversion_base_nolabelStatement cfg oracle := by
+  intro hf ki env a id a1 a2 kont s h
+  unfold CompCert4Lean.Backend.Selection.if_conversion_base at h
+  dsimp at h
+  split at h <;> try cases h
+  intro lbl k
+  rfl
+
+end CompCert4Lean.Backend.Selectionproof

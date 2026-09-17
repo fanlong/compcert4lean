@@ -5238,3 +5238,93 @@ theorem shllimm_sound : shllimm_soundStatement := by
     exact vagree_same Vundef x
 
 end CompCert4Lean.Backend.NeedDomain
+
+namespace CompCert4Lean.Backend.NeedDomain
+
+open CompCert4Lean.Common.Values
+
+set_option maxHeartbeats 800000 in
+theorem shrluimm_sound : shrluimm_soundStatement := by
+  intro v w x n h
+  by_cases hn : Int.ltu n Int64.iwordsize' = true
+  · cases x with
+    | Nothing =>
+        trivial
+    | I m =>
+        cases v <;> cases w <;>
+          simp [shrluimm, vagree, iVagree, lVagree,
+            CompCert4Lean.Common.Values.Val.shrlu, hn] at h ⊢
+    | L m =>
+        cases v <;> cases w <;>
+          simp [shrluimm, vagree, iVagree, lVagree,
+            CompCert4Lean.Common.Values.Val.shrlu, hn] at h ⊢
+        exact lagree_shru _ _ _ _ h
+    | All =>
+        cases v with
+        | Vlong i =>
+            cases w with
+            | Vlong j =>
+                simp [shrluimm, vagree, iVagree, lVagree,
+                  CompCert4Lean.Common.Values.Val.shrlu, hn] at h ⊢
+                have hshr := lagree_shru i j Int64.mone n h
+                have heq : Int64.shru' i n = Int64.shru' j n :=
+                  lagree_mone _ _ hshr
+                exact congrArg (fun z => Vlong z) heq ▸
+                  CompCert4Lean.Common.Values.Val.lessdef_refl _
+            | Vundef =>
+                simp [shrluimm, vagree, iVagree, lVagree,
+                  CompCert4Lean.Common.Values.Val.shrlu, hn] at h ⊢ <;>
+                  try exact CompCert4Lean.Common.Values.Val.lessdef_undef _
+            | Vint k =>
+                simp [shrluimm, vagree, iVagree, lVagree,
+                  CompCert4Lean.Common.Values.Val.shrlu, hn] at h ⊢ <;>
+                  try exact CompCert4Lean.Common.Values.Val.lessdef_undef _
+            | Vfloat f =>
+                simp [shrluimm, vagree, iVagree, lVagree,
+                  CompCert4Lean.Common.Values.Val.shrlu, hn] at h ⊢ <;>
+                  try exact CompCert4Lean.Common.Values.Val.lessdef_undef _
+            | Vsingle f =>
+                simp [shrluimm, vagree, iVagree, lVagree,
+                  CompCert4Lean.Common.Values.Val.shrlu, hn] at h ⊢ <;>
+                  try exact CompCert4Lean.Common.Values.Val.lessdef_undef _
+            | Vptr b ofs =>
+                simp [shrluimm, vagree, iVagree, lVagree,
+                  CompCert4Lean.Common.Values.Val.shrlu, hn] at h ⊢ <;>
+                  try exact CompCert4Lean.Common.Values.Val.lessdef_undef _
+        | Vundef =>
+            cases w <;>
+              simp [shrluimm, vagree, iVagree, lVagree,
+                CompCert4Lean.Common.Values.Val.shrlu, hn] at h ⊢ <;>
+              try exact CompCert4Lean.Common.Values.Val.lessdef_undef _
+        | Vint k =>
+            cases w <;>
+              simp [shrluimm, vagree, iVagree, lVagree,
+                CompCert4Lean.Common.Values.Val.shrlu, hn] at h ⊢ <;>
+              try exact CompCert4Lean.Common.Values.Val.lessdef_undef _
+        | Vfloat f =>
+            cases w <;>
+              simp [shrluimm, vagree, iVagree, lVagree,
+                CompCert4Lean.Common.Values.Val.shrlu, hn] at h ⊢ <;>
+              try exact CompCert4Lean.Common.Values.Val.lessdef_undef _
+        | Vsingle f =>
+            cases w <;>
+              simp [shrluimm, vagree, iVagree, lVagree,
+                CompCert4Lean.Common.Values.Val.shrlu, hn] at h ⊢ <;>
+              try exact CompCert4Lean.Common.Values.Val.lessdef_undef _
+        | Vptr b ofs =>
+            cases w <;>
+              simp [shrluimm, vagree, iVagree, lVagree,
+                CompCert4Lean.Common.Values.Val.shrlu, hn] at h ⊢ <;>
+              try exact CompCert4Lean.Common.Values.Val.lessdef_undef _
+  · have hn' : Int.ltu n Int64.iwordsize' = false := Bool.eq_false_iff.mpr hn
+    have hshru (a : val) :
+        CompCert4Lean.Common.Values.Val.shrlu a (Vint n) = Vundef := by
+      cases a <;> try rfl
+      rename_i i
+      change (if Int.ltu n Int64.iwordsize' = true then
+        Vlong (Int64.shru' i n) else Vundef) = Vundef
+      simp [hn']
+    rw [hshru v, hshru w]
+    exact vagree_same Vundef x
+
+end CompCert4Lean.Backend.NeedDomain

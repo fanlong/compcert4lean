@@ -4276,3 +4276,11 @@ theorem eqb_sym : eqb_symStatement := by
   cases x <;> cases y <;> rfl
 
 end CompCert4Lean.Flocq.Core.Raux
+
+namespace CompCert4Lean.Flocq.Core.Raux
+
+theorem eqb_true : eqb_trueStatement := by
+  intro x y h
+  exact (CompCert4Lean.Foundation.Logic.Rocq.Coq.Bool.Bool.eqb_true_iff x y).2 h
+
+end CompCert4Lean.Flocq.Core.Raux

@@ -3035,3 +3035,15 @@ theorem ZArith.BinInt.Z.opp_inj :
 
 end Rocq.Coq
 end CompCert4Lean.Foundation.Numbers
+
+namespace CompCert4Lean.Foundation.Numbers
+namespace Rocq.Coq
+
+theorem ZArith.BinInt.Z.even_opp :
+    ZArith.BinInt.Z.even_oppStatement := by
+  intro n
+  unfold ZArith.BinInt.Z.even ZArith.BinInt.Z.opp
+  rw [intOfZ_zOfInt, Int.natAbs_neg]
+
+end Rocq.Coq
+end CompCert4Lean.Foundation.Numbers

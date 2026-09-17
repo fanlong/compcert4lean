@@ -4124,3 +4124,48 @@ theorem find_symbol_match : find_symbol_matchStatement := by
 
 end Genv
 end CompCert4Lean.Common.Globalenvs
+
+namespace CompCert4Lean.Common.Globalenvs
+namespace Genv
+
+theorem senv_match : senv_matchStatement := by
+  intro C F1 V1 F2 V2 _ match_fundef match_varinfo ctx p tp hmatch
+  unfold Senv.equiv
+  constructor
+  · intro id
+    exact @find_symbol_match C F1 V1 F2 V2 _ match_fundef match_varinfo ctx p tp hmatch id
+  constructor
+  · intro id
+    change public_symbol (globalenv tp) id = public_symbol (globalenv p) id
+    unfold public_symbol
+    rw [@find_symbol_match C F1 V1 F2 V2 _ match_fundef match_varinfo ctx p tp hmatch id]
+    rw [globalenv_public, globalenv_public, hmatch.2.2]
+  · intro b
+    change block_is_volatile (globalenv tp) b = block_is_volatile (globalenv p) b
+    have hge := @globalenvs_match C F1 V1 F2 V2 _ match_fundef match_varinfo ctx p tp hmatch
+    unfold block_is_volatile find_var_info find_def
+    have hdefs := hge.mge_defs b
+    cases hsrc : CompCert4Lean.Lib.Maps.PTree.get b (globalenv p).genv_defs with
+    | none =>
+        cases htgt : CompCert4Lean.Lib.Maps.PTree.get b (globalenv tp).genv_defs with
+        | none => rfl
+        | some gd2 =>
+            simp [hsrc, htgt] at hdefs
+            cases hdefs
+    | some gd1 =>
+        cases htgt : CompCert4Lean.Lib.Maps.PTree.get b (globalenv tp).genv_defs with
+        | none =>
+            simp [hsrc, htgt] at hdefs
+            cases hdefs
+        | some gd2 =>
+            simp [hsrc, htgt] at hdefs
+            cases hdefs with
+            | some _ _ hrel =>
+                cases hrel with
+                | match_globdef_fun => rfl
+                | match_globdef_var _ _ hvar =>
+                    cases hvar
+                    rfl
+
+end Genv
+end CompCert4Lean.Common.Globalenvs

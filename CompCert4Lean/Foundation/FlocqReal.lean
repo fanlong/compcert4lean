@@ -4406,3 +4406,65 @@ theorem Rabs_mult :
 end Rbasic_fun
 end Rocq.Coq.Reals
 end CompCert4Lean.Foundation.FlocqReal
+
+namespace CompCert4Lean.Foundation.FlocqReal
+namespace Rocq.Coq.Reals
+namespace Rbasic_fun
+
+theorem Rabs_Rinv_proof :
+    ∀ (ctx : ExactRealContext) (r : ctx.spec.carrier)
+      (_h : ¬r = ExactReal.IZR ctx.spec Z0),
+      Rabs_Rinv ctx r _h := by
+  intro ctx r h
+  change ctx.spec.abs (ctx.spec.inv r) =
+    ctx.spec.inv (ctx.spec.abs r)
+  have hzero : ExactReal.IZR ctx.spec Z0 = ctx.spec.zero :=
+    ctx.certificate.sourceLaws.ofZ_zero
+  have hrne : r ≠ ctx.spec.zero := by
+    intro hr0
+    apply h
+    exact hr0.trans hzero.symm
+  have habs_r_ne : ctx.spec.abs r ≠ ctx.spec.zero := by
+    intro habs0
+    have habs0' := Rabs_no_R0 ctx r h
+    apply habs0'
+    exact habs0.trans hzero.symm
+  have hinvl : ctx.spec.mul (ctx.spec.inv r) r = ctx.spec.one := by
+    have h' := Raxioms.Rinv_l ctx r h
+    change ctx.spec.mul (ctx.spec.inv r) r =
+      ctx.spec.ofZ
+        (_root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.Zpos
+          _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.xH) at h'
+    rw [ctx.certificate.sourceLaws.ofZ_one] at h'
+    exact h'
+  have hzero_le_one : ctx.spec.le ctx.spec.zero ctx.spec.one := by
+    have h01 := RIneq.Rle_0_1 ctx
+    change ctx.spec.le (ctx.spec.ofZ Z0)
+      (ctx.spec.ofZ (Zpos xH)) at h01
+    rw [ctx.certificate.sourceLaws.ofZ_zero,
+      ctx.certificate.sourceLaws.ofZ_one] at h01
+    exact h01
+  have habs_one : ctx.spec.abs ctx.spec.one = ctx.spec.one :=
+    ctx.certificate.sourceLaws.abs_nonnegative _ hzero_le_one
+  have hmul :
+      ctx.spec.mul (ctx.spec.abs (ctx.spec.inv r)) (ctx.spec.abs r) =
+        ctx.spec.one := by
+    have habsmul :
+        ctx.spec.abs (ctx.spec.mul (ctx.spec.inv r) r) =
+          ctx.spec.mul (ctx.spec.abs (ctx.spec.inv r)) (ctx.spec.abs r) := by
+      simpa [ExactReal.Rabs, ExactReal.Rmult] using
+        (Rabs_mult ctx (ctx.spec.inv r) r)
+    rw [← habsmul, hinvl, habs_one]
+  have hinv_abs :
+      ctx.spec.mul (ctx.spec.inv (ctx.spec.abs r)) (ctx.spec.abs r) =
+        ctx.spec.one :=
+    ctx.certificate.orderedField.inv_mul_cancel _ habs_r_ne
+  apply RIneq.Rmult_eq_reg_r ctx (ctx.spec.abs r)
+  · change ctx.spec.mul (ctx.spec.abs (ctx.spec.inv r)) (ctx.spec.abs r) =
+      ctx.spec.mul (ctx.spec.inv (ctx.spec.abs r)) (ctx.spec.abs r)
+    rw [hmul, hinv_abs]
+  · exact Rabs_no_R0 ctx r h
+
+end Rbasic_fun
+end Rocq.Coq.Reals
+end CompCert4Lean.Foundation.FlocqReal

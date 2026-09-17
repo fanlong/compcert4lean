@@ -4782,3 +4782,21 @@ theorem transl_expr_lvalue
                       · simpa only [Clight.typeof] using hload
 
 end CompCert4Lean.Cfrontend.Cshmgenproof
+
+namespace CompCert4Lean.Cfrontend.Cshmgenproof
+
+open CompCert4Lean.Cfrontend.Cshmgen
+open CompCert4Lean.Cfrontend.Ctypes
+
+theorem typlist_of_arglist_eq
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    typlist_of_arglist_eqStatement := by
+  intro prog e le m al tyl vl h
+  induction h with
+  | nil => rfl
+  | @cons a rest ty types v1 v2 values ha hcast hrest ih =>
+      simp only [typlist_of_arglist, List.map]
+      exact congrArg (fun xs => argtype_of_type _ :: xs) ih
+
+end CompCert4Lean.Cfrontend.Cshmgenproof

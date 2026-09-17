@@ -4270,3 +4270,19 @@ theorem smatch_inv : smatch_invStatement := by
   exact hload
 
 end CompCert4Lean.Backend.ValueDomain
+
+namespace CompCert4Lean.Backend.ValueDomain
+
+theorem smatch_ge : smatch_geStatement := by
+  intro bc m b p q hsm hpq
+  rcases hsm with ⟨hload, hfrag⟩
+  constructor
+  · intro chunk ofs v h
+    apply vmatch_ge bc v (Ifptr q) (Ifptr p)
+      (vge.ifptrIfptr q p hpq)
+    exact hload chunk ofs v h
+  · intro ofs b' ofs' q' i h
+    apply pmatch_ge bc b' ofs' q p hpq
+    exact hfrag ofs b' ofs' q' i h
+
+end CompCert4Lean.Backend.ValueDomain

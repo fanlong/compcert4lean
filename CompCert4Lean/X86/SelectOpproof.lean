@@ -3696,3 +3696,28 @@ theorem eval_compu
       · rfl
 
 end CompCert4Lean.X86.SelectOpproof
+
+namespace CompCert4Lean.X86.SelectOpproof
+
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.ExternalCalls
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.X86.Op
+open CompCert4Lean.X86.SelectOp
+
+theorem eval_compf
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    eval_compfStatement := by
+  intro xi ge sp e m c le a x b y ha hb
+  refine ⟨Val.cmpf c x y, ?_, Val.lessdef_refl _⟩
+  exact eval_expr.eval_Eop le (Ocmp (Ccompf c)) (Econs a (Econs b Enil)) [x, y]
+    (Val.cmpf c x y)
+    (eval_exprlist.cons le a (Econs b Enil) x [y] ha
+      (eval_exprlist.cons le b Enil y [] hb (eval_exprlist.nil le))) rfl
+
+end CompCert4Lean.X86.SelectOpproof

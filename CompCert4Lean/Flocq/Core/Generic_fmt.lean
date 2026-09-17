@@ -3083,3 +3083,115 @@ theorem round_le_generic :
   exact round_le ctx magnitude beta fexp hvalid rnd hrnd x y hxy
 
 end CompCert4Lean.Flocq.Core.Generic_fmt
+
+namespace CompCert4Lean.Flocq.Core.Generic_fmt
+
+theorem round_abs_abs :
+    ∀ ctx magnitude, round_abs_absStatement ctx magnitude := by
+  intro ctx magnitude beta fexp hvalid P hP rnd hrnd x
+  rcases ctx.certificate.total_order x (Exact.R0 ctx) with hx | hx
+  · rcases hx with hxlt | hxeq
+    · have hxpos : Exact.Rle ctx (Exact.R0 ctx) (Exact.Ropp ctx x) := by
+        have hlt := pg_neg_pos_of_neg ctx hxlt
+        exact (ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp hlt |>.1
+      have hrndopp := pg_worker_valid_rnd_opp ctx rnd hrnd
+      have hmain := hP (Exact.Zrnd_opp ctx rnd) hrndopp
+        (Exact.Ropp ctx x) hxpos
+      have hround := round_opp ctx magnitude beta fexp rnd
+        (Exact.Ropp ctx x)
+      rw [pg_neg_neg ctx x] at hround
+      have hnonneg := pg_worker_round_nonneg ctx magnitude beta fexp
+        (Exact.Zrnd_opp ctx rnd) hrndopp (Exact.Ropp ctx x) hxpos
+      have habsx : Exact.Rabs ctx x = Exact.Ropp ctx x := by
+        change ctx.spec.abs x = ctx.spec.neg x
+        exact ctx.certificate.sourceLaws.abs_negative x hxlt
+      have habsrnd : Exact.Rabs ctx (Exact.round ctx magnitude beta fexp rnd x) =
+          Exact.round ctx magnitude beta fexp (Exact.Zrnd_opp ctx rnd) (Exact.Ropp ctx x) := by
+        rw [hround]
+        calc
+          Exact.Rabs ctx (Exact.Ropp ctx
+              (Exact.round ctx magnitude beta fexp (Exact.Zrnd_opp ctx rnd) (Exact.Ropp ctx x))) =
+              Exact.Rabs ctx
+                (Exact.round ctx magnitude beta fexp (Exact.Zrnd_opp ctx rnd) (Exact.Ropp ctx x)) :=
+            pg_abs_opp ctx _
+          _ = Exact.round ctx magnitude beta fexp (Exact.Zrnd_opp ctx rnd) (Exact.Ropp ctx x) :=
+            ctx.certificate.sourceLaws.abs_nonnegative _ hnonneg
+      rw [habsx, habsrnd]
+      exact hmain
+    · subst x
+      have hxzero : Exact.Rabs ctx (Exact.R0 ctx) = Exact.R0 ctx :=
+        pg_abs_zero ctx
+      have hzero := round_0 ctx magnitude beta fexp rnd hrnd
+      have hmain := hP rnd hrnd (Exact.R0 ctx)
+        (ctx.certificate.orderedField.le_refl _)
+      simpa [hxzero, hzero, pg_abs_zero] using hmain
+  · have hxnonneg : Exact.Rle ctx (Exact.R0 ctx) x :=
+      (ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp hx |>.1
+    have hmain := hP rnd hrnd x hxnonneg
+    have hnonneg := pg_worker_round_nonneg ctx magnitude beta fexp
+      rnd hrnd x hxnonneg
+    have habsx : Exact.Rabs ctx x = x :=
+      ctx.certificate.sourceLaws.abs_nonnegative x hxnonneg
+    have habsrnd : Exact.Rabs ctx (Exact.round ctx magnitude beta fexp rnd x) =
+        Exact.round ctx magnitude beta fexp rnd x :=
+      ctx.certificate.sourceLaws.abs_nonnegative _ hnonneg
+    rw [habsx, habsrnd]
+    exact hmain
+
+theorem exp_small_round_0 :
+    ∀ ctx magnitude, exp_small_round_0Statement ctx magnitude := by
+  intro ctx magnitude beta fexp hvalid rnd hrnd x ex hbounds hround
+  let P : Exact.R ctx → Exact.R ctx → Prop := fun t rt =>
+    ∀ ex, (Exact.Rle ctx (Exact.bpow ctx beta (Zsub ex Zone))
+      (Exact.Rabs ctx t) ∧
+      Exact.Rlt ctx (Exact.Rabs ctx t) (Exact.bpow ctx beta ex)) →
+      rt = Exact.R0 ctx → Zle ex (fexp ex)
+  have hP : ∀ rnd', Exact.Valid_rnd ctx rnd' → ∀ t,
+      Exact.Rle ctx (Exact.R0 ctx) t → P t (Exact.round ctx magnitude beta fexp rnd' t) := by
+    intro rnd' hrnd' t ht ex' hb' hr'
+    have habst : Exact.Rabs ctx t = t :=
+      ctx.certificate.sourceLaws.abs_nonnegative t ht
+    have hb'' : (Exact.Rle ctx (Exact.bpow ctx beta (Zsub ex' Zone)) t ∧
+        Exact.Rlt ctx t (Exact.bpow ctx beta ex')) := by
+      simpa [habst] using hb'
+    exact exp_small_round_0_pos ctx magnitude beta fexp rnd' hrnd' t ex'
+      hb'' hr'
+  have h := round_abs_abs ctx magnitude beta fexp hvalid P hP rnd hrnd x
+  have habs0 : Exact.Rabs ctx (Exact.round ctx magnitude beta fexp rnd x) =
+      Exact.R0 ctx := by
+    rw [hround, pg_abs_zero]
+  have habsbounds :
+      (Exact.Rle ctx (Exact.bpow ctx beta (Zsub ex Zone))
+        (Exact.Rabs ctx (Exact.Rabs ctx x)) ∧
+       Exact.Rlt ctx (Exact.Rabs ctx (Exact.Rabs ctx x))
+        (Exact.bpow ctx beta ex)) := by
+    have habsabs : Exact.Rabs ctx (Exact.Rabs ctx x) = Exact.Rabs ctx x := by
+      exact ctx.certificate.sourceLaws.abs_nonnegative _ (pg_abs_nonneg ctx x)
+    simpa [habsabs] using hbounds
+  exact h ex habsbounds habs0
+
+theorem abs_round_ge_generic :
+    ∀ ctx magnitude, abs_round_ge_genericStatement ctx magnitude := by
+  intro ctx magnitude beta fexp hvalid rnd hrnd x y hx hxy
+  let P : Exact.R ctx → Exact.R ctx → Prop := fun t rt =>
+    Exact.Rle ctx x t → Exact.Rle ctx x rt
+  have hP : ∀ rnd', Exact.Valid_rnd ctx rnd' → ∀ t,
+      Exact.Rle ctx (Exact.R0 ctx) t → P t (Exact.round ctx magnitude beta fexp rnd' t) := by
+    intro rnd' hrnd' t ht hxt
+    exact round_ge_generic ctx magnitude beta fexp hvalid rnd' hrnd' x t hx hxt
+  have h := round_abs_abs ctx magnitude beta fexp hvalid P hP rnd hrnd y
+  exact h hxy
+
+theorem abs_round_le_generic :
+    ∀ ctx magnitude, abs_round_le_genericStatement ctx magnitude := by
+  intro ctx magnitude beta fexp hvalid rnd hrnd x y hy hxy
+  let P : Exact.R ctx → Exact.R ctx → Prop := fun t rt =>
+    Exact.Rle ctx t y → Exact.Rle ctx rt y
+  have hP : ∀ rnd', Exact.Valid_rnd ctx rnd' → ∀ t,
+      Exact.Rle ctx (Exact.R0 ctx) t → P t (Exact.round ctx magnitude beta fexp rnd' t) := by
+    intro rnd' hrnd' t ht hty
+    exact round_le_generic ctx magnitude beta fexp hvalid rnd' hrnd' t y hy hty
+  have h := round_abs_abs ctx magnitude beta fexp hvalid P hP rnd hrnd x
+  exact h hxy
+
+end CompCert4Lean.Flocq.Core.Generic_fmt

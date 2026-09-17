@@ -3028,3 +3028,54 @@ theorem undef_regs_type : undef_regs_typeStatement := by
           | right _hnotdiff => exact True.intro
 
 end CompCert4Lean.Backend.Stackingproof
+
+namespace CompCert4Lean.Backend.Stackingproof
+
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Lib.Integers
+
+private theorem pgo_norm_bool_is_lessdef (v : CompCert4Lean.Common.Values.val) :
+    Val.lessdef (Val.norm_bool v) v := by
+  unfold Val.norm_bool
+  split
+  · exact Val.lessdef_refl _
+  · exact Val.lessdef_undef _
+
+theorem simplify_load_correct : simplify_load_correctStatement := by
+  intro chunk m a v h
+  cases a with
+  | Vundef => simp [Mem.loadv] at h
+  | Vint n => simp [Mem.loadv] at h
+  | Vlong n => simp [Mem.loadv] at h
+  | Vfloat n => simp [Mem.loadv] at h
+  | Vsingle n => simp [Mem.loadv] at h
+  | Vptr b ofs =>
+      cases chunk with
+      | Mbool =>
+          change Mem.load Mbool m b (Ptrofs.unsigned ofs) = some v at h
+          have hbool := Mem.load_bool_int8_unsigned m b (Ptrofs.unsigned ofs)
+          rw [hbool] at h
+          cases hload : Mem.load Mint8unsigned m b (Ptrofs.unsigned ofs) with
+          | none => simp [hload, CompCert4Lean.Lib.Coqlib.option_map] at h
+          | some v' =>
+              refine ⟨v', ?_, ?_⟩
+              · change Mem.load Mint8unsigned m b (Ptrofs.unsigned ofs) = some v'
+                exact hload
+              · have hv : Val.norm_bool v' = v := by
+                  simpa [hload, CompCert4Lean.Lib.Coqlib.option_map] using h
+                rw [← hv]
+                exact pgo_norm_bool_is_lessdef v'
+      | Mint8signed => exact ⟨v, h, Val.lessdef_refl _⟩
+      | Mint8unsigned => exact ⟨v, h, Val.lessdef_refl _⟩
+      | Mint16signed => exact ⟨v, h, Val.lessdef_refl _⟩
+      | Mint16unsigned => exact ⟨v, h, Val.lessdef_refl _⟩
+      | Mint32 => exact ⟨v, h, Val.lessdef_refl _⟩
+      | Mint64 => exact ⟨v, h, Val.lessdef_refl _⟩
+      | Mfloat32 => exact ⟨v, h, Val.lessdef_refl _⟩
+      | Mfloat64 => exact ⟨v, h, Val.lessdef_refl _⟩
+      | Many32 => exact ⟨v, h, Val.lessdef_refl _⟩
+      | Many64 => exact ⟨v, h, Val.lessdef_refl _⟩
+
+end CompCert4Lean.Backend.Stackingproof

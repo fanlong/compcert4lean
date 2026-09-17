@@ -2990,3 +2990,39 @@ theorem modlu_pow2 : modlu_pow2Statement := by
 
 end Val
 end CompCert4Lean.Common.Values
+
+namespace CompCert4Lean.Common.Values
+namespace Val
+
+open CompCert4Lean.Lib.Integers
+
+theorem negate_cmp_bool : negate_cmp_boolStatement := by
+  intro c x y
+  cases c <;> cases x <;> cases y <;>
+    simp [cmp_bool, negate_comparison, CompCert4Lean.Lib.Integers.Int.cmp,
+      CompCert4Lean.Lib.Integers.WordCore.cmp,
+      CompCert4Lean.Lib.Coqlib.option_map]
+
+theorem negate_cmpu_bool : negate_cmpu_boolStatement := by
+  intro valid_ptr c x y
+  cases c <;> cases x <;> cases y <;>
+    simp [cmpu_bool, negate_comparison, cmp_different_blocks,
+      CompCert4Lean.Lib.Integers.Int.cmp,
+      CompCert4Lean.Lib.Integers.Int.cmpu,
+      CompCert4Lean.Lib.Integers.Int64.cmp,
+      CompCert4Lean.Lib.Integers.Int64.cmpu,
+      CompCert4Lean.Lib.Integers.Ptrofs.cmpu,
+      CompCert4Lean.Lib.Integers.WordCore.cmp,
+      CompCert4Lean.Lib.Integers.WordCore.cmpu,
+      CompCert4Lean.X86_64.Archi.ptr64,
+      CompCert4Lean.Lib.Coqlib.option_map]
+
+theorem negate_cmpl_bool : negate_cmpl_boolStatement := by
+  intro c x y
+  cases c <;> cases x <;> cases y <;>
+    simp [cmpl_bool, negate_comparison, CompCert4Lean.Lib.Integers.Int64.cmp,
+      CompCert4Lean.Lib.Integers.WordCore.cmp,
+      CompCert4Lean.Lib.Coqlib.option_map]
+
+end Val
+end CompCert4Lean.Common.Values

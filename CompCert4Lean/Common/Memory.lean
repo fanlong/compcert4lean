@@ -3911,3 +3911,72 @@ theorem loadbytes_storebytes_other : loadbytes_storebytes_otherStatement := by
 end Mem
 
 end CompCert4Lean.Common.Memory
+
+namespace CompCert4Lean.Common.Memory
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Lib.Maps
+
+namespace Mem
+
+theorem load_storebytes_other : load_storebytes_otherStatement := by
+  intro m1 b ofs bytes m2 hstore chunk b' ofs' hcond
+  have valid_access_1_to_2 : ∀ {ch b0 o p},
+      valid_access m1 ch b0 o p → valid_access m2 ch b0 o p := by
+    intro ch b0 o p hv
+    unfold valid_access at hv ⊢
+    constructor
+    · intro o0 ho0
+      exact perm_storebytes_1 m1 b ofs bytes m2 hstore b0 o0 Memtype.Cur p
+        (hv.1 o0 ho0)
+    · exact hv.2
+  have valid_access_2_to_1 : ∀ {ch b0 o p},
+      valid_access m2 ch b0 o p → valid_access m1 ch b0 o p := by
+    intro ch b0 o p hv
+    unfold valid_access at hv ⊢
+    constructor
+    · intro o0 ho0
+      exact perm_storebytes_2 m1 b ofs bytes m2 hstore b0 o0 Memtype.Cur p
+        (hv.1 o0 ho0)
+    · exact hv.2
+  unfold load
+  cases hdec1 : valid_access_dec m1 chunk b' ofs' Readable with
+  | right hn1 =>
+      have hn2 : ¬ valid_access m2 chunk b' ofs' Readable := by
+        intro h2
+        exact hn1 (valid_access_2_to_1 h2)
+      cases hdec2 : valid_access_dec m2 chunk b' ofs' Readable with
+      | left h2 => exact False.elim (hn2 h2)
+      | right _ => simp [boolOfSumbool, hdec1, hdec2]
+  | left h1 =>
+      have h2 : valid_access m2 chunk b' ofs' Readable :=
+        valid_access_1_to_2 h1
+      cases hdec2 : valid_access_dec m2 chunk b' ofs' Readable with
+      | right hn2 => exact False.elim (hn2 h2)
+      | left _ =>
+          simp only [boolOfSumbool, hdec1, hdec2, ↓reduceIte]
+          congr 1
+          rw [storebytes_mem_contents m1 b ofs bytes m2 hstore]
+          by_cases hb : b' = b
+          · subst b'
+            rw [pmapGetSetSame]
+            have hget : getN (size_chunk_nat chunk) ofs'
+                (setN bytes ofs (PMap.get b m1.mem_contents)) =
+                getN (size_chunk_nat chunk) ofs' (PMap.get b m1.mem_contents) := by
+              apply getN_setN_outside bytes ofs
+              have hsize : zOfNat (size_chunk_nat chunk) = size_chunk chunk := by
+                cases chunk <;> rfl
+              rcases hcond with hneq | hleft | hright
+              · exact False.elim (hneq rfl)
+              · left
+                simpa [hsize] using hleft
+              · right
+                exact hright
+            rw [hget]
+          · rw [pmapGetSetOther _ _ _ _ hb]
+
+end Mem
+
+end CompCert4Lean.Common.Memory

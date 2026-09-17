@@ -4238,3 +4238,23 @@ theorem blocks_of_env_no_overlap : blocks_of_env_no_overlapStatement := by
                     exact Or.inl hne.symm
 
 end CompCert4Lean.Cfrontend.SimplLocalsproof
+
+namespace CompCert4Lean.Cfrontend.SimplLocalsproof
+
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Cfrontend.Clight
+
+theorem assign_loc_nextblock : assign_loc_nextblockStatement := by
+  intro ge ty m b ofs bf v m' hassign
+  cases hassign with
+  | assign_loc_value v chunk m' hmode hstore =>
+      exact Mem.nextblock_store _ _ _ _ _ _ hstore
+  | assign_loc_copy b' ofs' bytes m' hmode halignSource halignTarget hseparated hload hstore =>
+      exact Mem.nextblock_storebytes _ _ _ _ _ hstore
+  | assign_loc_bitfield sz sg pos width v m' v' hstore =>
+      cases hstore with
+      | store_bitfield_intro sz sg1 attr sg pos width m addr c n m' hpos hwidth
+          hcarrier hsg hload hstore =>
+          exact Mem.nextblock_store _ _ _ _ _ _ hstore
+
+end CompCert4Lean.Cfrontend.SimplLocalsproof
