@@ -6337,3 +6337,11 @@ theorem bits_not_proof : bits_not := by
     congr 1
   rw [hnot, bits_xor_proof x mone i hi, bits_mone_proof i hi]
   cases testbit x i <;> rfl
+
+theorem xor_zero_proof : xor_zero := by
+  intro x
+  apply WordCore.ext_of_val_eq
+  change (xor x zero).val = x.val
+  rw [suffix_xor_val_exact]
+  change x.val ^^^ 0 = x.val
+  exact Nat.xor_zero _

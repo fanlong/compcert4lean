@@ -3026,3 +3026,32 @@ theorem negate_cmpl_bool : negate_cmpl_boolStatement := by
 
 end Val
 end CompCert4Lean.Common.Values
+
+namespace CompCert4Lean.Common.Values
+namespace Val
+
+open CompCert4Lean.Lib.Integers
+
+theorem negate_cmplu_bool : negate_cmplu_boolStatement := by
+  have hneg : ∀ c,
+      cmp_different_blocks (negate_comparison c) =
+        CompCert4Lean.Lib.Coqlib.option_map Bool.not (cmp_different_blocks c) := by
+    intro c
+    cases c <;> rfl
+  intro valid_ptr c x y
+  unfold cmplu_bool
+  simp only [hneg]
+  cases harch : CompCert4Lean.X86_64.Archi.ptr64 <;>
+    cases c <;> cases x <;> cases y <;>
+      simp [harch, negate_comparison,
+        CompCert4Lean.Lib.Integers.Int64.cmp,
+        CompCert4Lean.Lib.Integers.Int64.cmpu,
+        CompCert4Lean.Lib.Integers.Ptrofs.cmpu,
+        CompCert4Lean.Lib.Integers.WordCore.cmp,
+        CompCert4Lean.Lib.Integers.WordCore.cmpu,
+        CompCert4Lean.Lib.Coqlib.option_map]
+  all_goals
+    repeat first | split | simp_all [cmp_different_blocks]
+
+end Val
+end CompCert4Lean.Common.Values

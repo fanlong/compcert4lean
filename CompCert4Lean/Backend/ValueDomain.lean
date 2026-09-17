@@ -4430,3 +4430,125 @@ theorem smatch_loadbytes : smatch_loadbytesStatement := by
   exact hsmatch.2 ofs1 b' ofs' q i hload1
 
 end CompCert4Lean.Backend.ValueDomain
+
+namespace CompCert4Lean.Backend.ValueDomain
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Coqlib
+
+theorem loadbytes_provenance : loadbytes_provenanceStatement := by
+  intro m b ofs' byte n
+  refine CompCert4Lean.Foundation.Recursion.Rocq.Coq.Init.Wf.well_founded_ind
+    (R := CompCert4Lean.Foundation.Recursion.Rocq.Coq.ZArith.Zwf.Zwf in_loadbytes_z0)
+    (P := fun sz : Z => ∀ ofs bytes,
+      Mem.loadbytes m b ofs sz = some bytes →
+      Mem.loadbytes m b ofs' in_loadbytes_z1 = some [byte] →
+      (in_loadbytes_zLe ofs ofs' ∧
+        in_loadbytes_zLt ofs' (in_loadbytes_zAdd ofs sz)) →
+      byte ∈ bytes)
+    (CompCert4Lean.Foundation.Recursion.Rocq.Coq.ZArith.Zwf.Zwf_well_founded
+      in_loadbytes_z0) ?_ n
+  intro sz rec ofs bytes hload hload1 hbounds
+  have hszpos : in_loadbytes_zLt in_loadbytes_z0 sz := by
+    change (0 : Int) < intOfZ sz
+    rcases hbounds with ⟨hlo, hhi⟩
+    change intOfZ ofs ≤ intOfZ ofs' at hlo
+    change intOfZ ofs' < intOfZ (in_loadbytes_zAdd ofs sz) at hhi
+    rw [in_loadbytes_intOfZ_zadd] at hhi
+    omega
+  have hszsub : in_loadbytes_zLe in_loadbytes_z0
+      (in_loadbytes_zSub sz in_loadbytes_z1) := by
+    change (0 : Int) ≤ intOfZ (in_loadbytes_zSub sz in_loadbytes_z1)
+    rw [in_loadbytes_intOfZ_zsub]
+    have hz1 : intOfZ in_loadbytes_z1 = (1 : Int) := by rfl
+    rw [hz1]
+    change (0 : Int) < intOfZ sz at hszpos
+    omega
+  have hszadd : in_loadbytes_zAdd in_loadbytes_z1
+      (in_loadbytes_zSub sz in_loadbytes_z1) = sz := by
+    apply intOfZ_injective
+    rw [in_loadbytes_intOfZ_zadd, in_loadbytes_intOfZ_zsub]
+    have hz1 : intOfZ in_loadbytes_z1 = (1 : Int) := by rfl
+    rw [hz1]
+    change (0 : Int) < intOfZ sz at hszpos
+    omega
+  have hloadsz : Mem.loadbytes m b ofs
+      (in_loadbytes_zAdd in_loadbytes_z1 (in_loadbytes_zSub sz in_loadbytes_z1)) =
+      some bytes := by
+    rw [hszadd]
+    exact hload
+  have hsplit := CompCert4Lean.Common.Memory.Mem.loadbytes_split m b ofs
+    in_loadbytes_z1 (in_loadbytes_zSub sz in_loadbytes_z1) bytes hloadsz
+    (by
+      change (0 : Int) ≤ intOfZ in_loadbytes_z1
+      have hz1 : intOfZ in_loadbytes_z1 = (1 : Int) := by rfl
+      rw [hz1]
+      omega)
+    hszsub
+  rcases hsplit with ⟨bytes1, bytes2, hload1', hload2, hconcat⟩
+  have hlen1 := CompCert4Lean.Common.Memory.Mem.loadbytes_length m b ofs
+    in_loadbytes_z1 bytes1 hload1'
+  have hlen1' : bytes1.length = 1 := by
+    change bytes1.length = Int.toNat (intOfZ in_loadbytes_z1) at hlen1
+    have hz1 : intOfZ in_loadbytes_z1 = (1 : Int) := by rfl
+    rw [hz1] at hlen1
+    simpa using hlen1
+  by_cases heq : ofs = ofs'
+  · subst ofs'
+    rw [hload1] at hload1'
+    have hbytes1 : bytes1 = [byte] := by
+      cases bytes1 with
+      | nil => simp at hlen1'
+      | cons x xs =>
+          cases xs with
+          | nil => simp at hload1' ⊢; exact hload1'.symm ▸ rfl
+          | cons y ys => simp at hlen1'
+    subst bytes1
+    rw [hconcat]
+    simp
+  · rw [hconcat]
+    apply (CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.List.in_app_iff
+      bytes1 bytes2 byte).mpr
+    right
+    apply rec (in_loadbytes_zSub sz in_loadbytes_z1)
+    · unfold CompCert4Lean.Foundation.Recursion.Rocq.Coq.ZArith.Zwf.Zwf
+      constructor
+      · change (0 : Int) ≤ intOfZ sz
+        change (0 : Int) < intOfZ sz at hszpos
+        omega
+      · change intOfZ (in_loadbytes_zSub sz in_loadbytes_z1) < intOfZ sz
+        rw [in_loadbytes_intOfZ_zsub]
+        have hz1 : intOfZ in_loadbytes_z1 = (1 : Int) := by rfl
+        rw [hz1]
+        change (0 : Int) < intOfZ sz at hszpos
+        omega
+    · exact hload2
+    · exact hload1
+    · constructor
+      · change intOfZ (in_loadbytes_zAdd ofs in_loadbytes_z1) ≤ intOfZ ofs'
+        rw [in_loadbytes_intOfZ_zadd]
+        rcases hbounds with ⟨hlo, hhi⟩
+        change intOfZ ofs ≤ intOfZ ofs' at hlo
+        have hz1 : intOfZ in_loadbytes_z1 = (1 : Int) := by rfl
+        rw [hz1]
+        have hne : intOfZ ofs ≠ intOfZ ofs' := by
+          intro heq'
+          apply heq
+          exact intOfZ_injective heq'
+        omega
+      · change intOfZ ofs' < intOfZ
+          (in_loadbytes_zAdd (in_loadbytes_zAdd ofs in_loadbytes_z1)
+            (in_loadbytes_zSub sz in_loadbytes_z1))
+        rw [in_loadbytes_intOfZ_zadd, in_loadbytes_intOfZ_zadd,
+          in_loadbytes_intOfZ_zsub]
+        rcases hbounds with ⟨hlo, hhi⟩
+        change intOfZ ofs' < intOfZ (in_loadbytes_zAdd ofs sz) at hhi
+        rw [in_loadbytes_intOfZ_zadd] at hhi
+        have hz1 : intOfZ in_loadbytes_z1 = (1 : Int) := by rfl
+        rw [hz1]
+        omega
+
+end CompCert4Lean.Backend.ValueDomain

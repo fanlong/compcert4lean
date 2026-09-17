@@ -3242,3 +3242,127 @@ theorem round_ZR_opp :
     (Exact.Ztrunc ctx sm) (Exact.cexp ctx magnitude beta fexp x)
 
 end CompCert4Lean.Flocq.Core.Generic_fmt
+
+namespace CompCert4Lean.Flocq.Core.Generic_fmt
+
+theorem round_ZR_abs :
+    ∀ ctx magnitude, round_ZR_absStatement ctx magnitude := by
+  intro ctx magnitude beta fexp hvalid x
+  have hrnd : Exact.Valid_rnd ctx (Exact.Ztrunc ctx) := by
+    constructor
+    · intro x y hxy
+      rcases ctx.certificate.total_order x (Exact.R0 ctx) with hx | hx
+      · rcases hx with hxlt | hxeq
+        · rcases ctx.certificate.total_order y (Exact.R0 ctx) with hy | hy
+          · rcases hy with hylt | hyeq
+            · simpa only [CompCert4Lean.Flocq.Core.Raux.Ztrunc_ceil ctx x
+                    ((ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp hxlt).1,
+                  CompCert4Lean.Flocq.Core.Raux.Ztrunc_ceil ctx y
+                    ((ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp hylt).1] using
+                (CompCert4Lean.Flocq.Core.Raux.Zceil_le ctx x y hxy)
+            · subst y
+              have hx0izr : Exact.Rle ctx x (Exact.IZR ctx Z0) := by
+                change ctx.spec.le x (ctx.spec.ofZ Z0)
+                rw [ctx.certificate.sourceLaws.ofZ_zero]
+                exact ((ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp hxlt).1
+              have hceil := CompCert4Lean.Flocq.Core.Raux.Zceil_glb ctx Z0 x
+                hx0izr
+              simpa only [CompCert4Lean.Flocq.Core.Raux.Ztrunc_ceil ctx x
+                    ((ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp hxlt).1,
+                  show Exact.R0 ctx = Exact.IZR ctx Z0 by
+                    exact ctx.certificate.sourceLaws.ofZ_zero.symm,
+                  CompCert4Lean.Flocq.Core.Raux.Ztrunc_IZR ctx Z0] using hceil
+          · have hyl : Exact.Rle ctx (Exact.R0 ctx) y := by
+              exact (ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp hy |>.1
+            have hceil : Zle (Exact.Zceil ctx x) Z0 := by
+              have hx0izr : Exact.Rle ctx x (Exact.IZR ctx Z0) := by
+                change ctx.spec.le x (ctx.spec.ofZ Z0)
+                rw [ctx.certificate.sourceLaws.ofZ_zero]
+                exact ((ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp hxlt).1
+              apply CompCert4Lean.Flocq.Core.Raux.Zceil_glb ctx Z0 x
+              exact hx0izr
+            have hfloor : Zle Z0 (Exact.Zfloor ctx y) := by
+              have hy0izr : Exact.Rle ctx (Exact.IZR ctx Z0) y := by
+                change ctx.spec.le (ctx.spec.ofZ Z0) y
+                rw [ctx.certificate.sourceLaws.ofZ_zero]
+                exact hyl
+              apply CompCert4Lean.Flocq.Core.Raux.Zfloor_lub ctx Z0 y
+              exact hy0izr
+            have hcross : Zle (Exact.Zceil ctx x) (Exact.Zfloor ctx y) := by
+              change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+                (Exact.Zceil ctx x) ≤
+                CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (Exact.Zfloor ctx y)
+              exact Int.le_trans hceil hfloor
+            simpa only [CompCert4Lean.Flocq.Core.Raux.Ztrunc_ceil ctx x
+                  ((ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp hxlt).1,
+                CompCert4Lean.Flocq.Core.Raux.Ztrunc_floor ctx y hyl] using hcross
+        · subst x
+          rcases ctx.certificate.total_order y (Exact.R0 ctx) with hy | hy
+          · rcases hy with hylt | hyeq
+            · exact False.elim (((ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp hylt).2 hxy)
+            · subst y
+              change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+                (Exact.Ztrunc ctx (Exact.R0 ctx)) ≤
+                CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+                  (Exact.Ztrunc ctx (Exact.R0 ctx))
+              exact Int.le_refl _
+          · have hyl : Exact.Rle ctx (Exact.R0 ctx) y :=
+              (ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp hy |>.1
+            have hy0izr : Exact.Rle ctx (Exact.IZR ctx Z0) y := by
+              change ctx.spec.le (ctx.spec.ofZ Z0) y
+              rw [ctx.certificate.sourceLaws.ofZ_zero]
+              exact hyl
+            have hfloor := CompCert4Lean.Flocq.Core.Raux.Zfloor_lub ctx Z0 y hy0izr
+            simpa only [show Exact.R0 ctx = Exact.IZR ctx Z0 by
+                  exact ctx.certificate.sourceLaws.ofZ_zero.symm,
+              CompCert4Lean.Flocq.Core.Raux.Ztrunc_IZR ctx Z0,
+              CompCert4Lean.Flocq.Core.Raux.Ztrunc_floor ctx y hyl] using hfloor
+      · have hxl : Exact.Rle ctx (Exact.R0 ctx) x :=
+          (ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp hx |>.1
+        have hyl : Exact.Rle ctx (Exact.R0 ctx) y :=
+          ctx.certificate.orderedField.le_trans _ _ _ hxl hxy
+        simpa only [CompCert4Lean.Flocq.Core.Raux.Ztrunc_floor ctx x hxl,
+          CompCert4Lean.Flocq.Core.Raux.Ztrunc_floor ctx y hyl] using
+          (CompCert4Lean.Flocq.Core.Raux.Zfloor_le ctx x y hxy)
+    · intro n
+      exact CompCert4Lean.Flocq.Core.Raux.Ztrunc_IZR ctx n
+  rcases ctx.certificate.total_order x (Exact.R0 ctx) with hx | hx
+  · rcases hx with hxlt | hxeq
+    · have habsx : Exact.Rabs ctx x = Exact.Ropp ctx x := by
+        change ctx.spec.abs x = ctx.spec.neg x
+        exact ctx.certificate.sourceLaws.abs_negative x hxlt
+      rw [habsx, round_ZR_opp ctx magnitude beta fexp x]
+      have hround : Exact.Rle ctx
+          (Exact.round ctx magnitude beta fexp (Exact.Ztrunc ctx) x)
+          (Exact.R0 ctx) := by
+        have hle : Exact.Rle ctx x (Exact.R0 ctx) :=
+          (ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp hxlt |>.1
+        have h := round_le ctx magnitude beta fexp hvalid
+          (Exact.Ztrunc ctx) hrnd x (Exact.R0 ctx) hle
+        rw [round_0 ctx magnitude beta fexp (Exact.Ztrunc ctx) hrnd] at h
+        exact h
+      have habsnonpos : Exact.Rabs ctx
+          (Exact.round ctx magnitude beta fexp (Exact.Ztrunc ctx) x) =
+          Exact.Ropp ctx (Exact.round ctx magnitude beta fexp
+            (Exact.Ztrunc ctx) x) := by
+        rcases ctx.certificate.total_order
+            (Exact.round ctx magnitude beta fexp (Exact.Ztrunc ctx) x)
+            (Exact.R0 ctx) with hy | hy
+        · rcases hy with hylt | hyeq
+          · exact ctx.certificate.sourceLaws.abs_negative _ hylt
+          · rw [hyeq, pg_abs_zero, pg_neg_zero ctx]
+        · exact False.elim (((ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp hy).2 hround)
+      exact habsnonpos.symm
+    · subst x
+      rw [pg_abs_zero, round_0 ctx magnitude beta fexp (Exact.Ztrunc ctx) hrnd,
+        pg_abs_zero]
+  · have hxnonneg : Exact.Rle ctx (Exact.R0 ctx) x :=
+      (ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp hx |>.1
+    have habsx : Exact.Rabs ctx x = x :=
+      ctx.certificate.sourceLaws.abs_nonnegative x hxnonneg
+    rw [habsx]
+    have hround := pg_worker_round_nonneg ctx magnitude beta fexp
+      (Exact.Ztrunc ctx) hrnd x hxnonneg
+    exact (ctx.certificate.sourceLaws.abs_nonnegative _ hround).symm
+
+end CompCert4Lean.Flocq.Core.Generic_fmt

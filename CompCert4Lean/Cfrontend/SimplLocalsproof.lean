@@ -4301,3 +4301,161 @@ theorem bind_parameters_load : bind_parameters_loadStatement := by
             chunk b ofs (Or.inl hneq)
 
 end CompCert4Lean.Cfrontend.SimplLocalsproof
+
+namespace CompCert4Lean.Cfrontend.SimplLocalsproof
+
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.Cfrontend.Clight
+open CompCert4Lean.Cfrontend.Ctypes
+
+private theorem slp_pmap_get_set_same {A : Type} (i : positive) (x : A)
+    (m : PMap.t A) : PMap.get i (PMap.set i x m) = x := by
+  change (match PTree.get i (PTree.set i x m.2) with
+    | some y => y | none => m.1) = x
+  rw [PTree.gsspec_proof]
+  cases hpeq : CompCert4Lean.Lib.Coqlib.peq i i with
+  | left h => simp [hpeq]
+  | right h => exact False.elim (h rfl)
+
+private theorem slp_pmap_get_set_other {A : Type} (i j : positive) (x : A)
+    (m : PMap.t A) (h : i ≠ j) : PMap.get i (PMap.set j x m) = PMap.get i m := by
+  change (match PTree.get i (PTree.set j x m.2) with
+    | some y => y | none => m.1) =
+    (match PTree.get i m.2 with | some y => y | none => m.1)
+  rw [PTree.gsspec_proof]
+  cases hpeq : CompCert4Lean.Lib.Coqlib.peq i j with
+  | left hij => exact False.elim (h hij)
+  | right hne => simp [hpeq]
+
+private theorem slp_perm_of_free (m m1 : Mem.mem) (b' : positive) (lo hi : Z)
+    (hfree : Mem.free m b' lo hi = some m1) :
+    ∀ b ofs (k : perm_kind) (p : permission),
+      Mem.perm m1 b ofs k p → Mem.perm m b ofs k p := by
+  intro b ofs k p hp
+  unfold Mem.free at hfree
+  split at hfree
+  next hcond =>
+    injection hfree with hm1
+    subst m1
+    unfold Mem.perm at hp ⊢
+    by_cases hb : b = b'
+    · subst b
+      change Mem.perm_order'
+        ((PMap.get b' (PMap.set b'
+          (fun (ofs : Z) (k : perm_kind) => _) m.mem_access)) ofs k) p at hp
+      rw [slp_pmap_get_set_same] at hp
+      split at hp
+      · exact False.elim hp
+      · exact hp
+    · dsimp [Mem.unchecked_free] at hp
+      change Mem.perm_order'
+        ((PMap.get b (PMap.set b'
+          (fun (ofs : Z) (k : perm_kind) => _) m.mem_access)) ofs k) p at hp
+      rw [slp_pmap_get_set_other _ _ _ _ hb] at hp
+      exact hp
+  next hcond => cases hfree
+
+private theorem slp_perm_freelist :
+    ∀ (l : List (positive × Z × Z)) (m m' : Mem.mem)
+      (b : positive) (ofs : Z) (k : perm_kind) (p : permission),
+      Mem.free_list m l = some m' → Mem.perm m' b ofs k p → Mem.perm m b ofs k p := by
+  intro l
+  induction l with
+  | nil =>
+      intro m m' b ofs k p hfree hp
+      simp [Mem.free_list] at hfree
+      cases hfree
+      exact hp
+  | cons x rest ih =>
+      intro m m' b ofs k p hfree hp
+      change (match Mem.free m x.1 x.2.1 x.2.2 with
+        | none => none
+        | some m1 => Mem.free_list m1 rest) = some m' at hfree
+      cases hfm : Mem.free m x.1 x.2.1 x.2.2 with
+      | none =>
+          rw [hfm] at hfree
+          cases hfree
+      | some m1 =>
+          rw [hfm] at hfree
+          have hrest : Mem.free_list m1 rest = some m' := hfree
+          have hp1 : Mem.perm m1 b ofs k p :=
+            ih m1 m' b ofs k p hrest hp
+          exact slp_perm_of_free m m1 x.1 x.2.1 x.2.2 hfm b ofs k p hp1
+
+private theorem slp_perm_free_2 (m m' : Mem.mem) (b : positive) (lo hi : Z)
+    (hfree : Mem.free m b lo hi = some m') :
+    ∀ ofs (k : perm_kind) (p : permission),
+      ZArith.BinInt.Z.le lo ofs → ZArith.BinInt.Z.lt ofs hi → ¬ Mem.perm m' b ofs k p := by
+  intro ofs k p hlo hhi hp
+  unfold Mem.free at hfree
+  split at hfree
+  next hcond =>
+    injection hfree with hm'
+    rw [← hm'] at hp
+    unfold Mem.perm at hp
+    dsimp [Mem.unchecked_free] at hp
+    change Mem.perm_order'
+      ((PMap.get b (PMap.set b
+        (fun (ofs : Z) (k : perm_kind) => _) m.mem_access)) ofs k) p at hp
+    rw [slp_pmap_get_set_same] at hp
+    split at hp
+    · exact hp
+    · rename_i hnot
+      exfalso
+      apply hnot
+      change (ZArith.BinInt.Z.leb lo ofs && ZArith.BinInt.Z.ltb ofs hi) = true
+      have hlo' : intOfZ lo ≤ intOfZ ofs := by
+        change intOfZ lo ≤ intOfZ ofs
+        exact hlo
+      have hhi' : intOfZ ofs < intOfZ hi := by
+        change intOfZ ofs < intOfZ hi
+        exact hhi
+      simp [ZArith.BinInt.Z.leb, ZArith.BinInt.Z.ltb, hlo', hhi']
+  next hcond => cases hfree
+
+private theorem slp_free_list_no_perm (l : List (positive × Z × Z))
+    (m m' : Mem.mem) (hfree : Mem.free_list m l = some m') :
+    ∀ b lo hi, (b, lo, hi) ∈ l →
+      ∀ ofs (k : perm_kind) (p : permission),
+        ZArith.BinInt.Z.le lo ofs → ZArith.BinInt.Z.lt ofs hi → ¬ Mem.perm m' b ofs k p := by
+  induction l generalizing m m' with
+  | nil =>
+      intro b lo hi hin
+      cases hin
+  | cons x rest ih =>
+      intro b lo hi hin ofs k p hlo hhi hp
+      change (match Mem.free m x.1 x.2.1 x.2.2 with
+        | none => none
+        | some m1 => Mem.free_list m1 rest) = some m' at hfree
+      cases hfm : Mem.free m x.1 x.2.1 x.2.2 with
+      | none =>
+          rw [hfm] at hfree
+          cases hfree
+      | some m1 =>
+          rw [hfm] at hfree
+          have hrest : Mem.free_list m1 rest = some m' := hfree
+          cases (_root_.List.mem_cons.mp hin) with
+          | inl heq =>
+              cases heq
+              have hp1 : Mem.perm m1 b ofs k p :=
+                slp_perm_freelist rest m1 m' b ofs k p hrest hp
+              exact slp_perm_free_2 m m1 b lo hi hfm ofs k p hlo hhi hp1
+          | inr htail =>
+              exact ih m1 m' hrest b lo hi htail ofs k p hlo hhi hp
+
+theorem free_blocks_of_env_perm_1 : free_blocks_of_env_perm_1Statement := by
+  intro ce m e m' id b ty ofs k permission hfree hget hperm hbounds
+  have hmem : (b, (.Z0 : Z), sizeof ce.genv_cenv ty) ∈ blocks_of_env ce e := by
+    unfold blocks_of_env
+    apply List.mem_map.mpr
+    refine ⟨(id, (b, ty)), ?_, ?_⟩
+    · exact PTree.elements_correct_proof e id (v := (b, ty)) hget
+    · rfl
+  exact slp_free_list_no_perm (blocks_of_env ce e) m m' hfree
+    b (.Z0 : Z) (sizeof ce.genv_cenv ty) hmem ofs k permission
+    hbounds.1 hbounds.2 hperm
+
+end CompCert4Lean.Cfrontend.SimplLocalsproof

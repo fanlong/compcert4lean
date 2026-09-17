@@ -5507,3 +5507,150 @@ theorem shrlimm_sound : shrlimm_soundStatement := by
     exact vagree_same Vundef x
 
 end CompCert4Lean.Backend.NeedDomain
+
+namespace CompCert4Lean.Backend.NeedDomain
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Lib.Integers
+
+private theorem pg_zsize_mask32 (k : Nat) (hk : k ≤ 32) :
+    CompCert4Lean.Lib.Zbits.Zsize
+        (ZArith.BinInt.Z.of_nat (((2 ^ 32 - 1) % (2 ^ k)) % (2 ^ 32))) =
+      ZArith.BinInt.Z.of_nat k := by
+  cases k with
+  | zero => rfl
+  | succ j =>
+      have hj : j + 1 ≤ 32 := by omega
+      have hdiv : 2 ^ (j + 1) ∣ 2 ^ 32 := Nat.pow_dvd_pow 2 hj
+      have hb : 1 ≤ 2 ^ (j + 1) := Nat.one_le_pow _ _ (by decide)
+      have hmod : (2 ^ 32 - 1) % 2 ^ (j + 1) = 2 ^ (j + 1) - 1 := by
+        rw [Nat.mod_eq_sub_iff (a := 2 ^ 32 - 1)
+          (b := 2 ^ (j + 1)) (c := 1) (by decide) hb]
+        have hdiv' : 2 ^ (j + 1) ∣ (2 ^ 32 - 1) + 1 := by
+          simpa [Nat.sub_add_cancel (Nat.one_le_pow 32 2 (by decide))] using hdiv
+        exact hdiv'
+      have hlt : 2 ^ (j + 1) - 1 < 2 ^ 32 := by
+        have hp : 0 < 2 ^ (j + 1) := Nat.two_pow_pos _
+        have hpow : 2 ^ (j + 1) ≤ 2 ^ 32 :=
+          Nat.pow_le_pow_right Nat.zero_lt_two hj
+        omega
+      rw [hmod, Nat.mod_eq_of_lt hlt]
+      have hq : 0 < 2 ^ (j + 1) - 1 := by
+        have hp : 0 < 2 ^ (j + 1) := Nat.two_pow_pos _
+        omega
+      have hlog : Nat.log2 (2 ^ (j + 1) - 1) = j := by
+        apply (Nat.log2_eq_iff (Nat.ne_of_gt hq)).2
+        constructor
+        · rw [Nat.pow_succ]
+          have hp : 0 < 2 ^ j := Nat.two_pow_pos _
+          omega
+        · have hp : 0 < 2 ^ (j + 1) := Nat.two_pow_pos _
+          omega
+      have hpq : posToNat (PArith.BinPos.Pos.of_nat
+          (2 ^ (j + 1) - 1)) = 2 ^ (j + 1) - 1 := by
+        unfold PArith.BinPos.Pos.of_nat
+        exact posToNat_posOfNat hq
+      have hpj : posToNat (PArith.BinPos.Pos.of_nat (j + 1)) = j + 1 := by
+        unfold PArith.BinPos.Pos.of_nat
+        exact posToNat_posOfNat (by omega)
+      have hzn : ZArith.BinInt.Z.of_nat (2 ^ (j + 1) - 1) =
+          Zpos (PArith.BinPos.Pos.of_nat (2 ^ (j + 1) - 1)) := by
+        have hz := ZArith.Znat.Z2Nat.id
+          (Zpos (PArith.BinPos.Pos.of_nat (2 ^ (j + 1) - 1)))
+          (by
+            change 0 ≤ Int.ofNat (posToNat (PArith.BinPos.Pos.of_nat
+              (2 ^ (j + 1) - 1)))
+            rw [hpq]
+            exact Int.natCast_nonneg _)
+        change ZArith.BinInt.Z.of_nat
+            (posToNat (PArith.BinPos.Pos.of_nat (2 ^ (j + 1) - 1))) = _ at hz
+        rw [hpq] at hz
+        exact hz
+      have hzn' : ZArith.BinInt.Z.of_nat (j + 1) =
+          Zpos (PArith.BinPos.Pos.of_nat (j + 1)) := by
+        have hz := ZArith.Znat.Z2Nat.id
+          (Zpos (PArith.BinPos.Pos.of_nat (j + 1)))
+          (by
+            change 0 ≤ Int.ofNat (posToNat (PArith.BinPos.Pos.of_nat (j + 1)))
+            rw [hpj]
+            exact Int.natCast_nonneg _)
+        change ZArith.BinInt.Z.of_nat
+            (posToNat (PArith.BinPos.Pos.of_nat (j + 1))) = _ at hz
+        rw [hpj] at hz
+        exact hz
+      rw [hzn, hzn']
+      change Zpos (PArith.BinPos.Pos.size
+          (PArith.BinPos.Pos.of_nat (2 ^ (j + 1) - 1))) =
+        Zpos (PArith.BinPos.Pos.of_nat (j + 1))
+      unfold PArith.BinPos.Pos.size
+      rw [hpq, hlog]
+      have heq : posOfNat (j + 1) = PArith.BinPos.Pos.of_nat (j + 1) := by
+        apply posToNat_injective
+        rw [posToNat_posOfNat (by omega)]
+        exact hpj.symm
+      rw [heq]
+
+private theorem pg_mask_size_test32
+    (n : CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z)
+    (hn : ZArith.BinInt.Z.le z0 n)
+    (hnw : ZArith.BinInt.Z.le n Int.zwordsize) :
+    Int.size (Int.zero_ext n Int.mone) = n := by
+  change CompCert4Lean.Lib.Zbits.Zsize
+      (CompCert4Lean.Lib.Integers.WordCore.unsigned (Int.zero_ext n Int.mone)) = n
+  rw [pgIagreeUnsignedAsNat]
+  have hv := local_zero_ext_val_eqmod n Int.mone hn
+  rw [hv]
+  change CompCert4Lean.Lib.Zbits.Zsize
+      (ZArith.BinInt.Z.of_nat
+        (((2 ^ 32 - 1) % (2 ^ ZArith.BinInt.Z.to_nat n)) % (2 ^ 32))) = n
+  have hnat := ZArith.Znat.Z2Nat.id n hn
+  have hnw' := hnw
+  rw [← hnat] at hnw'
+  change intOfZ (ZArith.BinInt.Z.of_nat
+      (ZArith.BinInt.Z.to_nat n)) ≤ intOfZ Int.zwordsize at hnw'
+  simp only [ZArith.BinInt.Z.of_nat, intOfZ_zOfInt] at hnw'
+  change (Int.ofNat (ZArith.BinInt.Z.to_nat n) : Int) ≤ Int.ofNat 32 at hnw'
+  have hk : ZArith.BinInt.Z.to_nat n ≤ 32 := Int.ofNat_le.mp hnw'
+  exact (pg_zsize_mask32 (ZArith.BinInt.Z.to_nat n) hk).trans hnat
+
+theorem modarith_idem : modarith_idemStatement := by
+  intro nv
+  cases nv with
+  | Nothing => rfl
+  | All => rfl
+  | I m =>
+      simp only [modarith]
+      unfold complete_mask
+      have hs := local_size_range_eqmod m
+      have hsize : Int.size (Int.zero_ext (Int.size m) Int.mone) = Int.size m :=
+        pg_mask_size_test32 (Int.size m) hs.1 hs.2
+      exact congrArg (fun n => I (Int.zero_ext n Int.mone)) hsize
+  | L m =>
+      simp only [modarith]
+      exact congrArg L (complete_mask64_idem m)
+
+end CompCert4Lean.Backend.NeedDomain
+
+namespace CompCert4Lean.Backend.NeedDomain
+
+theorem rorl_sound : rorl_soundStatement := by
+  intro v w x n h
+  cases x with
+  | Nothing => trivial
+  | I m =>
+      cases v <;> cases w <;>
+        simp [rorl, vagree, iVagree, lVagree,
+          CompCert4Lean.Common.Values.Val.rorl] at h ⊢
+  | L m =>
+      cases v <;> cases w <;>
+        simp [rorl, vagree, iVagree, lVagree,
+          CompCert4Lean.Common.Values.Val.rorl] at h ⊢
+      exact lagree_ror _ _ _ _ h
+  | All =>
+      cases h with
+      | lessdef_refl v =>
+          exact CompCert4Lean.Common.Values.Val.lessdef_refl _
+      | lessdef_undef v =>
+          exact CompCert4Lean.Common.Values.Val.lessdef_undef _
+
+end CompCert4Lean.Backend.NeedDomain

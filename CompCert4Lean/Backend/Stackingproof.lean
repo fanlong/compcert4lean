@@ -3079,3 +3079,37 @@ theorem simplify_load_correct : simplify_load_correctStatement := by
       | Many64 => exact ⟨v, h, Val.lessdef_refl _⟩
 
 end CompCert4Lean.Backend.Stackingproof
+
+namespace CompCert4Lean.Backend.Stackingproof
+
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Integers
+
+open CompCert4Lean.Backend.Stacking
+
+theorem simplify_store_correct : simplify_store_correctStatement := by
+  intro chunk m a v m' hstore
+  cases a with
+  | Vundef => simp [Mem.storev] at hstore
+  | Vint n => simp [Mem.storev] at hstore
+  | Vlong n => simp [Mem.storev] at hstore
+  | Vfloat f => simp [Mem.storev] at hstore
+  | Vsingle f => simp [Mem.storev] at hstore
+  | Vptr b ofs =>
+      rw [← hstore]
+      symm
+      cases chunk with
+      | Mbool => exact Mem.store_bool_unsigned_8 m b (Ptrofs.unsigned ofs) v
+      | Mint8signed => exact Mem.store_signed_unsigned_8 m b (Ptrofs.unsigned ofs) v
+      | Mint8unsigned => rfl
+      | Mint16signed => exact Mem.store_signed_unsigned_16 m b (Ptrofs.unsigned ofs) v
+      | Mint16unsigned => rfl
+      | Mint32 => rfl
+      | Mint64 => rfl
+      | Mfloat32 => rfl
+      | Mfloat64 => rfl
+      | Many32 => rfl
+      | Many64 => rfl
+
+end CompCert4Lean.Backend.Stackingproof

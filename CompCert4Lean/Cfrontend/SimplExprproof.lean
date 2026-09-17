@@ -3222,3 +3222,21 @@ theorem blocks_of_env_preserved :
     (binary32_certificate := binary32_certificate) p tp hmatch]
 
 end CompCert4Lean.Cfrontend.SimplExprproof
+
+namespace CompCert4Lean.Cfrontend.SimplExprproof
+
+theorem transl_final_states :
+    ∀ [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+      [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)],
+      transl_final_statesStatement := by
+  intro binary64_certificate binary32_certificate
+  intro p tp S S' r hmatch hfinal
+  cases hfinal with
+  | intro r m =>
+      cases hmatch with
+      | match_returnstates res k m tk hmc =>
+          have htk := hmc (CompCert4Lean.Lib.Maps.PTree.empty _)
+          cases htk
+          exact Clight.final_state.intro r m
+
+end CompCert4Lean.Cfrontend.SimplExprproof

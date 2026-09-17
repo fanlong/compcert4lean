@@ -4308,3 +4308,16 @@ theorem alloc_globals_match : alloc_globals_matchStatement := by
 
 end Genv
 end CompCert4Lean.Common.Globalenvs
+
+namespace CompCert4Lean.Common.Globalenvs
+namespace Genv
+
+theorem init_mem_match : init_mem_matchStatement := by
+  intro C F1 V1 F2 V2 _ match_fundef match_varinfo ctx p tp hmatch
+  intro m hmem
+  unfold init_mem at hmem ⊢
+  exact alloc_globals_match C F1 V1 F2 V2 match_fundef match_varinfo ctx p tp
+    hmatch p.prog_defs tp.prog_defs hmatch.1 CompCert4Lean.Common.Memory.Mem.empty m hmem
+
+end Genv
+end CompCert4Lean.Common.Globalenvs

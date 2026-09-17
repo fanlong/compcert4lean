@@ -4649,3 +4649,122 @@ theorem abs_IZR :
 end Rbasic_fun
 end Rocq.Coq.Reals
 end CompCert4Lean.Foundation.FlocqReal
+
+namespace CompCert4Lean.Foundation.FlocqReal
+namespace Rocq.Coq.Reals
+namespace Rfunctions
+
+theorem powerRZ_add :
+    ∀ (ctx : ExactRealContext), powerRZ_addStatement ctx := by
+  intro ctx x n m h
+  change ExactReal.powerRZ ctx.spec x (Z.add n m) =
+    ctx.spec.mul (ExactReal.powerRZ ctx.spec x n)
+      (ExactReal.powerRZ ctx.spec x m)
+  have hx : x ≠ ctx.spec.zero := by
+    intro hx0
+    apply h
+    change x = ctx.spec.ofZ Z0
+    rw [ctx.certificate.sourceLaws.ofZ_zero]
+    exact hx0
+  exact ctx.certificate.sourceLaws.powerRZ_add x n m hx
+
+end Rfunctions
+end Rocq.Coq.Reals
+end CompCert4Lean.Foundation.FlocqReal
+
+namespace CompCert4Lean.Foundation.FlocqReal
+namespace Rocq.Coq.Reals
+namespace Rpower
+
+theorem exp_increasing :
+    ∀ (ctx : ExactRealContext), exp_increasingStatement ctx := by
+  intro ctx x y hxy
+  exact ctx.certificate.exp.strict_monotone x y hxy
+
+end Rpower
+end Rocq.Coq.Reals
+end CompCert4Lean.Foundation.FlocqReal
+
+namespace CompCert4Lean.Foundation.FlocqReal
+namespace Rocq.Coq.Reals
+namespace Rfunctions
+
+private theorem powerRZ_mul_pos_suffix
+    (ctx : ExactRealContext) (a b : ctx.spec.carrier)
+    (ha : ctx.spec.lt ctx.spec.zero a)
+    (hb : ctx.spec.lt ctx.spec.zero b) :
+    ctx.spec.lt ctx.spec.zero (ctx.spec.mul a b) := by
+  have h := ctx.certificate.orderedField.mul_lt_compat_l a
+    ctx.spec.zero b ha hb
+  rw [ctx.certificate.orderedField.mul_zero] at h
+  exact h
+
+private theorem powerRZ_one_pos_suffix (ctx : ExactRealContext) :
+    ctx.spec.lt ctx.spec.zero ctx.spec.one := by
+  have h := RIneq.Rlt_0_1 ctx
+  change ctx.spec.lt (ctx.spec.ofZ Z0)
+    (ctx.spec.ofZ (Zpos xH)) at h
+  rw [ctx.certificate.sourceLaws.ofZ_zero,
+    ctx.certificate.sourceLaws.ofZ_one] at h
+  exact h
+
+private theorem powerRZ_inv_pos_suffix
+    (ctx : ExactRealContext) (a : ctx.spec.carrier)
+    (ha : ctx.spec.lt ctx.spec.zero a) :
+    ctx.spec.lt ctx.spec.zero (ctx.spec.inv a) := by
+  have ha' : ctx.spec.lt (ctx.spec.ofZ Z0) a := by
+    rw [ctx.certificate.sourceLaws.ofZ_zero]
+    exact ha
+  have h := RIneq.Rinv_0_lt_compat ctx a ha'
+  change ctx.spec.lt (ctx.spec.ofZ Z0) (ctx.spec.inv a) at h
+  rw [ctx.certificate.sourceLaws.ofZ_zero] at h
+  exact h
+
+private theorem powerNat_pos_suffix
+    (ctx : ExactRealContext) (x : ctx.spec.carrier)
+    (hx : ctx.spec.lt ctx.spec.zero x) :
+    ∀ n : Nat, ctx.spec.lt ctx.spec.zero (ExactReal.powerNat ctx.spec x n) := by
+  intro n
+  induction n with
+  | zero =>
+      exact powerRZ_one_pos_suffix ctx
+  | succ n ih =>
+      unfold ExactReal.powerNat
+      exact powerRZ_mul_pos_suffix ctx x
+        (ExactReal.powerNat ctx.spec x n) hx ih
+
+theorem powerRZ_lt :
+    ∀ (ctx : ExactRealContext), powerRZ_ltStatement ctx := by
+  intro ctx x z hx
+  have hx' : ctx.spec.lt ctx.spec.zero x := by
+    change ctx.spec.lt (ctx.spec.ofZ Z0) x at hx
+    rw [ctx.certificate.sourceLaws.ofZ_zero] at hx
+    exact hx
+  change ctx.spec.lt (ctx.spec.ofZ Z0) (ExactReal.powerRZ ctx.spec x z)
+  rw [ctx.certificate.sourceLaws.ofZ_zero]
+  cases z with
+  | Z0 =>
+      exact powerRZ_one_pos_suffix ctx
+  | Zpos p =>
+      exact powerNat_pos_suffix ctx x hx' _
+  | Zneg p =>
+      exact powerRZ_inv_pos_suffix ctx _
+        (powerNat_pos_suffix ctx x hx' _)
+
+theorem powerRZ_le :
+    ∀ (ctx : ExactRealContext), powerRZ_leStatement ctx := by
+  intro ctx x z hx
+  have hlt := powerRZ_lt ctx x z hx
+  have hlt' : ctx.spec.lt ctx.spec.zero
+      (ExactReal.powerRZ ctx.spec x z) := by
+    change ctx.spec.lt (ctx.spec.ofZ Z0)
+      (ExactReal.powerRZ ctx.spec x z) at hlt
+    rw [ctx.certificate.sourceLaws.ofZ_zero] at hlt
+    exact hlt
+  change ctx.spec.le (ctx.spec.ofZ Z0) (ExactReal.powerRZ ctx.spec x z)
+  rw [ctx.certificate.sourceLaws.ofZ_zero]
+  exact (ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp hlt' |>.1
+
+end Rfunctions
+end Rocq.Coq.Reals
+end CompCert4Lean.Foundation.FlocqReal

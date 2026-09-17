@@ -6631,3 +6631,25 @@ theorem senv_preserved : senv_preservedStatement := by
     prog prog tprog hmatch
 
 end CompCert4Lean.Backend.Allocproof
+
+namespace CompCert4Lean.Backend.Allocproof
+
+open CompCert4Lean.Backend.Allocation
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Backend.LTL
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Linking
+
+theorem functions_translated : functions_translatedStatement := by
+  intro cfg oracle prog tprog hmatch v f hfind
+  letI : Linker RTL.fundef := Linker_fundef RTL.function
+  letI : Linker Unit := Linker_unit
+  letI : Linker RTL.program := Linker_prog RTL.fundef Unit
+  unfold match_prog CompCert4Lean.Common.Linking.match_program at hmatch
+  rcases Genv.find_funct_match RTL.program RTL.fundef Unit LTL.fundef Unit
+    (fun _ f tf => transf_fundef cfg oracle f = .OK tf) Eq
+    prog prog tprog hmatch v f hfind with ⟨_, tf, hfindtf, htrans, _⟩
+  exact ⟨tf, hfindtf, htrans⟩
+
+end CompCert4Lean.Backend.Allocproof

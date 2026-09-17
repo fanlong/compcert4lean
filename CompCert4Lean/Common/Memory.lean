@@ -4015,3 +4015,86 @@ theorem setN_concat : setN_concatStatement := by
 end Mem
 
 end CompCert4Lean.Common.Memory
+
+namespace CompCert4Lean.Common.Memory
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Lib.Maps
+
+namespace Mem
+
+private theorem storebytes_concat_zadd_len (ofs : Z) (bytes1 bytes2 : List memval) :
+    zAdd ofs (zOfNat (bytes1 ++ bytes2).length) =
+      zAdd (zAdd ofs (zOfNat bytes1.length)) (zOfNat bytes2.length) := by
+  apply intOfZ_injective
+  rw [intOfZ_zadd_mem, intOfZ_zofnat_mem,
+    intOfZ_zadd_mem, intOfZ_zadd_mem, intOfZ_zofnat_mem,
+    intOfZ_zofnat_mem]
+  simp only [List.length_append]
+  have hnat : Int.ofNat (bytes1.length + bytes2.length) =
+      Int.ofNat bytes1.length + Int.ofNat bytes2.length :=
+    Int.natCast_add bytes1.length bytes2.length
+  rw [hnat]
+  omega
+
+theorem storebytes_concat : storebytes_concatStatement := by
+  intro m b ofs bytes1 m1 bytes2 m2 h1 h2
+  have hlen := storebytes_concat_zadd_len ofs bytes1 bytes2
+  unfold storebytes at h1 h2 ⊢
+  cases hd1 : range_perm_dec m b ofs (zAdd ofs (zOfNat bytes1.length)) Cur Writable with
+  | right hn1 => simp [boolOfSumbool, hd1] at h1
+  | left hr1 =>
+      cases hd2 : range_perm_dec m1 b (zAdd ofs (zOfNat bytes1.length))
+          (zAdd (zAdd ofs (zOfNat bytes1.length)) (zOfNat bytes2.length)) Cur Writable with
+      | right hn2 => simp [boolOfSumbool, hd2] at h2
+      | left hr2 =>
+          have hr : range_perm m b ofs
+              (zAdd (zAdd ofs (zOfNat bytes1.length)) (zOfNat bytes2.length)) Cur Writable := by
+            intro o ho
+            change intOfZ ofs ≤ intOfZ o ∧
+              intOfZ o < intOfZ (zAdd (zAdd ofs (zOfNat bytes1.length))
+                (zOfNat bytes2.length)) at ho
+            by_cases hbefore : intOfZ o < intOfZ (zAdd ofs (zOfNat bytes1.length))
+            · apply hr1 o
+              constructor
+              · exact ho.1
+              · exact hbefore
+            · apply perm_storebytes_2 m b ofs bytes1 m1 h1 b o Cur Writable
+                (hr2 o (by
+                  constructor
+                  · change intOfZ (zAdd ofs (zOfNat bytes1.length)) ≤ intOfZ o
+                    exact Int.le_of_not_gt hbefore
+                  · exact ho.2))
+          cases hd : range_perm_dec m b ofs
+              (zAdd ofs (zOfNat (bytes1 ++ bytes2).length)) Cur Writable with
+          | right hn =>
+              exfalso
+              apply hn
+              rw [hlen]
+              exact hr
+          | left hr' =>
+              simp [boolOfSumbool, hd1, hd2, hd, hlen] at h1 h2 ⊢
+              subst m1
+              subst m2
+              simp only [pmapGetSetSame]
+              apply mkmem_ext
+              · have hmap :
+                    PMap.set b (setN bytes2 (zAdd ofs (zOfNat bytes1.length))
+                      (setN bytes1 ofs (PMap.get b m.mem_contents)))
+                      (PMap.set b (setN bytes1 ofs (PMap.get b m.mem_contents)) m.mem_contents) =
+                    PMap.set b (setN bytes2 (zAdd ofs (zOfNat bytes1.length))
+                      (setN bytes1 ofs (PMap.get b m.mem_contents))) m.mem_contents :=
+                  PMap.set2 (A := ZMap.t memval) b
+                    (setN bytes1 ofs (PMap.get b m.mem_contents))
+                    (setN bytes2 (zAdd ofs (zOfNat bytes1.length))
+                      (setN bytes1 ofs (PMap.get b m.mem_contents))) m.mem_contents
+                rw [hmap]
+                rw [setN_concat]
+              · rfl
+              · rfl
+
+end Mem
+
+end CompCert4Lean.Common.Memory

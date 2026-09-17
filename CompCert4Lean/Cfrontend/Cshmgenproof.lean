@@ -4831,3 +4831,61 @@ theorem match_states_skip : match_states_skipStatement := by
     hlink htrans (by rfl) (match_transl.match_transl_0 _ _) henv hcont
 
 end CompCert4Lean.Cfrontend.Cshmgenproof
+
+namespace CompCert4Lean.Cfrontend.Cshmgenproof
+
+theorem match_cont_is_call_cont : match_cont_is_call_contStatement := by
+  intro prog tprog ce tyret nbrk ncnt k tk ce' nbrk' ncnt' hmatch hcall
+  cases hmatch with
+  | match_Kstop ce0 tyret0 nbrk0 ncnt0 =>
+      simp [Clight.is_call_cont] at hcall
+      exact ⟨match_cont.match_Kstop tyret ce' nbrk' ncnt', trivial⟩
+  | match_Kseq ce0 tyret0 nbrk0 ncnt0 s k ts tk htr hmc =>
+      simp [Clight.is_call_cont] at hcall
+  | match_Kloop1 ce0 tyret0 s1 s2 k ts1 ts2 nbrk0 ncnt0 tk h1 h2 hmc =>
+      simp [Clight.is_call_cont] at hcall
+  | match_Kloop2 ce0 tyret0 s1 s2 k ts1 ts2 nbrk0 ncnt0 tk h1 h2 hmc =>
+      simp [Clight.is_call_cont] at hcall
+  | match_Kswitch ce0 tyret0 nbrk0 ncnt0 k tk hmc =>
+      simp [Clight.is_call_cont] at hcall
+  | match_Kcall ce0 tyret0 nbrk0 ncnt0 nbrk1 ncnt1 f e k id tf te le tk cu hlink htf henv hmc =>
+      simp [Clight.is_call_cont] at hcall
+      exact ⟨match_cont.match_Kcall (prog := prog) (tprog := tprog)
+        (ce := ce') (tyret := tyret) (nbrk := nbrk') (ncnt := ncnt')
+        (nbrk' := nbrk1) (ncnt' := ncnt1) f e k id tf te le tk cu
+        hlink htf henv hmc, trivial⟩
+  | match_Kcall_normalize ce0 tyret0 nbrk0 ncnt0 nbrk1 ncnt1 f e k id a tf te le tk cu hlink htf henv hmc hwt =>
+      simp [Clight.is_call_cont] at hcall
+      exact ⟨match_cont.match_Kcall_normalize (prog := prog) (tprog := tprog)
+        (ce := ce') (tyret := tyret) (nbrk := nbrk') (ncnt := ncnt')
+        (nbrk' := nbrk1) (ncnt' := ncnt1) f e k id a tf te le tk cu
+        hlink htf henv hmc hwt, trivial⟩
+
+theorem match_cont_call_cont : match_cont_call_contStatement := by
+  intro prog tprog ce' nbrk' ncnt' ce tyret nbrk ncnt k tk hmatch
+  induction hmatch with
+  | match_Kstop ce tyret nbrk ncnt =>
+      simp [Clight.call_cont, Csharpminor.call_cont]
+      exact match_cont.match_Kstop _ _ nbrk' ncnt'
+  | match_Kseq ce tyret nbrk ncnt s k ts tk htr hmc ih =>
+      simpa [Clight.call_cont, Csharpminor.call_cont] using ih
+  | match_Kloop1 ce tyret s1 s2 k ts1 ts2 nbrk ncnt tk h1 h2 hmc ih =>
+      simpa [Clight.call_cont, Csharpminor.call_cont] using ih
+  | match_Kloop2 ce tyret s1 s2 k ts1 ts2 nbrk ncnt tk h1 h2 hmc ih =>
+      simpa [Clight.call_cont, Csharpminor.call_cont] using ih
+  | match_Kswitch ce tyret nbrk ncnt k tk hmc ih =>
+      simpa [Clight.call_cont, Csharpminor.call_cont] using ih
+  | match_Kcall ce tyret nbrk ncnt nbrk0 ncnt0 f e k id tf te le tk cu hlink htf henv hmc ih =>
+      simpa [Clight.call_cont, Csharpminor.call_cont] using
+        (match_cont.match_Kcall (prog := prog) (tprog := tprog)
+          (ce := ce') (tyret := tyret) (nbrk := nbrk') (ncnt := ncnt')
+          (nbrk' := nbrk0) (ncnt' := ncnt0) f e k id tf te le tk cu
+          hlink htf henv hmc)
+  | match_Kcall_normalize ce tyret nbrk ncnt nbrk0 ncnt0 f e k id a tf te le tk cu hlink htf henv hmc hwt ih =>
+      simpa [Clight.call_cont, Csharpminor.call_cont] using
+        (match_cont.match_Kcall_normalize (prog := prog) (tprog := tprog)
+          (ce := ce') (tyret := tyret) (nbrk := nbrk') (ncnt := ncnt')
+          (nbrk' := nbrk0) (ncnt' := ncnt0) f e k id a tf te le tk cu
+          hlink htf henv hmc hwt)
+
+end CompCert4Lean.Cfrontend.Cshmgenproof

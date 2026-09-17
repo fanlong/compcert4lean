@@ -3229,3 +3229,20 @@ theorem ZArith.BinInt.Z.min_l :
 
 end Rocq.Coq
 end CompCert4Lean.Foundation.Numbers
+
+namespace CompCert4Lean.Foundation.Numbers
+namespace Rocq.Coq
+
+theorem ZArith.BinInt.Z.min_r :
+    ZArith.BinInt.Z.min_rStatement := by
+  intro n m h
+  apply intOfZ_injective
+  change intOfZ (ZArith.BinInt.Z.min n m) = intOfZ m
+  change intOfZ m <= intOfZ n at h
+  unfold ZArith.BinInt.Z.min
+  by_cases hnm : intOfZ n <= intOfZ m
+  · simp [hnm, Int.le_antisymm hnm h]
+  · simp [hnm]
+
+end Rocq.Coq
+end CompCert4Lean.Foundation.Numbers
