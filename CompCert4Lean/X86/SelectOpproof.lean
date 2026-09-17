@@ -3575,3 +3575,124 @@ theorem eval_comp
       · rfl
 
 end CompCert4Lean.X86.SelectOpproof
+namespace CompCert4Lean.X86.SelectOpproof
+
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.ExternalCalls
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.X86.Op
+open CompCert4Lean.X86.SelectOp
+
+private theorem eval_compu_swap_cmpu
+    (valid_ptr : block → CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z → Bool)
+    (c : comparison) (x y : val) :
+    Val.cmpu valid_ptr (swap_comparison c) x y =
+      Val.cmpu valid_ptr c y x := by
+  cases c <;> cases x <;> cases y <;>
+    simp [Val.cmpu, Val.cmpu_bool, Val.cmp_different_blocks,
+      swap_comparison, CompCert4Lean.Lib.Integers.Int.cmpu,
+      CompCert4Lean.Lib.Integers.Int64.cmpu,
+      CompCert4Lean.Lib.Integers.Ptrofs.cmpu,
+      CompCert4Lean.Lib.Integers.WordCore.cmpu,
+      CompCert4Lean.Lib.Integers.WordCore.eq, eq_comm,
+      CompCert4Lean.X86_64.Archi.ptr64]
+
+theorem eval_compu
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    eval_compuStatement := by
+  unfold eval_compuStatement binary_constructor_sound
+  intro xi ge sp e m c le a x b y ha hb
+  cases hmatch : compu_match a b with
+  | compu_case1 n1 t2 =>
+      have hx : x = .Vint n1 := eval_intconst_value_local xi ge sp e m le n1 x
+        (by simpa [hmatch] using ha)
+      subst x
+      have hsem_int : ∀ c x y, Val.cmpu (Mem.valid_pointer m) c (.Vint x) (.Vint y) =
+          Val.of_bool (CompCert4Lean.Lib.Integers.Int.cmpu c x y) := by
+        intro c x y
+        cases h : CompCert4Lean.Lib.Integers.Int.cmpu c x y <;>
+          simp [Val.cmpu, Val.cmpu_bool, Val.of_optbool, Val.of_bool,
+            Vtrue, Vfalse, h]
+      have hsem_undef : ∀ c v, Val.cmpu (Mem.valid_pointer m) c .Vundef v = .Vundef := by
+        intro c v
+        simp [Val.cmpu, Val.cmpu_bool, Val.of_optbool]
+      have hsem_eq : ∀ x y, Val.cmpu (Mem.valid_pointer m) .Ceq (.Vint x) (.Vint y) =
+          Val.of_bool (Int.eq x y) := by
+        intro x y
+        simpa [CompCert4Lean.Lib.Integers.Int.cmpu, WordCore.cmpu,
+          CompCert4Lean.Lib.Integers.Int.eq, WordCore.eq] using
+          (hsem_int .Ceq x y)
+      have hsem_ne : ∀ x y, Val.cmpu (Mem.valid_pointer m) .Cne (.Vint x) (.Vint y) =
+          Val.of_bool (!(Int.eq x y)) := by
+        intro x y
+        simpa [CompCert4Lean.Lib.Integers.Int.cmpu, WordCore.cmpu,
+          CompCert4Lean.Lib.Integers.Int.eq, WordCore.eq] using
+          (hsem_int .Cne x y)
+      have hsem_default : ∀ c v n,
+          Val.cmpu (Mem.valid_pointer m) c v (.Vint n) =
+            Val.of_optbool (eval_condition (Ccompuimm c n) [v] m) := by
+        intro c v n
+        simp [Val.cmpu, Val.cmpu_bool, Val.of_optbool, eval_condition]
+      have hsem_swap : ∀ c x y,
+          Val.cmpu (Mem.valid_pointer m) (swap_comparison c) x y =
+            Val.cmpu (Mem.valid_pointer m) c y x := by
+        intro c x y
+        exact eval_compu_swap_cmpu (Mem.valid_pointer m) c x y
+      obtain ⟨v, hv, hd⟩ := eval_compimm_swap xi ge sp e m Ccompuimm
+        CompCert4Lean.Lib.Integers.Int.cmpu (Val.cmpu (Mem.valid_pointer m))
+        hsem_int hsem_undef hsem_eq hsem_ne hsem_default hsem_swap le c b n1 y hb
+      refine ⟨v, ?_, ?_⟩
+      · simpa [compu, hmatch] using hv
+      · exact hd
+  | compu_case2 t1 n2 =>
+      have hy : y = .Vint n2 := eval_intconst_value_local xi ge sp e m le n2 y
+        (by simpa [hmatch] using hb)
+      subst y
+      have hsem_int : ∀ c x y, Val.cmpu (Mem.valid_pointer m) c (.Vint x) (.Vint y) =
+          Val.of_bool (CompCert4Lean.Lib.Integers.Int.cmpu c x y) := by
+        intro c x y
+        cases h : CompCert4Lean.Lib.Integers.Int.cmpu c x y <;>
+          simp [Val.cmpu, Val.cmpu_bool, Val.of_optbool, Val.of_bool,
+            Vtrue, Vfalse, h]
+      have hsem_undef : ∀ c v, Val.cmpu (Mem.valid_pointer m) c .Vundef v = .Vundef := by
+        intro c v
+        simp [Val.cmpu, Val.cmpu_bool, Val.of_optbool]
+      have hsem_eq : ∀ x y, Val.cmpu (Mem.valid_pointer m) .Ceq (.Vint x) (.Vint y) =
+          Val.of_bool (Int.eq x y) := by
+        intro x y
+        simpa [CompCert4Lean.Lib.Integers.Int.cmpu, WordCore.cmpu,
+          CompCert4Lean.Lib.Integers.Int.eq, WordCore.eq] using
+          (hsem_int .Ceq x y)
+      have hsem_ne : ∀ x y, Val.cmpu (Mem.valid_pointer m) .Cne (.Vint x) (.Vint y) =
+          Val.of_bool (!(Int.eq x y)) := by
+        intro x y
+        simpa [CompCert4Lean.Lib.Integers.Int.cmpu, WordCore.cmpu,
+          CompCert4Lean.Lib.Integers.Int.eq, WordCore.eq] using
+          (hsem_int .Cne x y)
+      have hsem_default : ∀ c v n,
+          Val.cmpu (Mem.valid_pointer m) c v (.Vint n) =
+            Val.of_optbool (eval_condition (Ccompuimm c n) [v] m) := by
+        intro c v n
+        simp [Val.cmpu, Val.cmpu_bool, Val.of_optbool, eval_condition]
+      obtain ⟨v, hv, hd⟩ := eval_compimm_for_swap_local xi ge sp e m
+        Ccompuimm CompCert4Lean.Lib.Integers.Int.cmpu
+        (Val.cmpu (Mem.valid_pointer m)) hsem_int hsem_undef hsem_eq hsem_ne
+        hsem_default le c a n2 x ha
+      refine ⟨v, ?_, ?_⟩
+      · simpa [compu, hmatch] using hv
+      · exact hd
+  | compu_default e1 e2 =>
+      refine ⟨Val.cmpu (Mem.valid_pointer m) c x y, ?_, Val.lessdef_refl _⟩
+      simp only [compu, hmatch]
+      apply eval_expr.eval_Eop le (Ocmp (Ccompu c))
+        (Econs a (Econs b Enil)) [x, y] (Val.cmpu (Mem.valid_pointer m) c x y)
+      · exact eval_exprlist.cons le a (Econs b Enil) x [y] ha
+          (eval_exprlist.cons le b Enil y [] hb (eval_exprlist.nil le))
+      · rfl
+
+end CompCert4Lean.X86.SelectOpproof

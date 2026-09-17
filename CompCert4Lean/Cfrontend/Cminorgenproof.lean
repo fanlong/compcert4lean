@@ -3890,3 +3890,35 @@ theorem bool_of_val_inject : bool_of_val_injectStatement := by
   cases hinject <;> cases hbool <;> constructor
 
 end CompCert4Lean.Cfrontend.Cminorgenproof
+
+namespace CompCert4Lean.Cfrontend.Cminorgenproof
+
+theorem transl_constant_correct : transl_constant_correctStatement := by
+  intro tprog f sp cst v h
+  cases cst with
+  | Ointconst n =>
+      simp [CompCert4Lean.Cfrontend.Csharpminor.eval_constant,
+        CompCert4Lean.Backend.Cminor.eval_constant,
+        CompCert4Lean.Cfrontend.Cminorgen.transl_constant] at h ⊢
+      subst v
+      exact .inject_int _
+  | Ofloatconst n =>
+      simp [CompCert4Lean.Cfrontend.Csharpminor.eval_constant,
+        CompCert4Lean.Backend.Cminor.eval_constant,
+        CompCert4Lean.Cfrontend.Cminorgen.transl_constant] at h ⊢
+      subst v
+      exact .inject_float _
+  | Osingleconst n =>
+      simp [CompCert4Lean.Cfrontend.Csharpminor.eval_constant,
+        CompCert4Lean.Backend.Cminor.eval_constant,
+        CompCert4Lean.Cfrontend.Cminorgen.transl_constant] at h ⊢
+      subst v
+      exact .inject_single _
+  | Olongconst n =>
+      simp [CompCert4Lean.Cfrontend.Csharpminor.eval_constant,
+        CompCert4Lean.Backend.Cminor.eval_constant,
+        CompCert4Lean.Cfrontend.Cminorgen.transl_constant] at h ⊢
+      subst v
+      exact .inject_long _
+
+end CompCert4Lean.Cfrontend.Cminorgenproof

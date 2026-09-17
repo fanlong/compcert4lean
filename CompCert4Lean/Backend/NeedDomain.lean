@@ -5197,3 +5197,44 @@ theorem shrimm_sound : shrimm_soundStatement := by
     exact vagree_same Vundef x
 
 end CompCert4Lean.Backend.NeedDomain
+
+namespace CompCert4Lean.Backend.NeedDomain
+
+open CompCert4Lean.Common.Values
+
+theorem shllimm_sound : shllimm_soundStatement := by
+  intro v w x n h
+  by_cases hn : Int.ltu n Int64.iwordsize' = true
+  · cases x with
+    | Nothing =>
+        trivial
+    | I m =>
+        cases v <;> cases w <;>
+          simp [shllimm, vagree, iVagree, lVagree,
+            CompCert4Lean.Common.Values.Val.shll, hn] at h ⊢
+    | L m =>
+        cases v <;> cases w <;>
+          simp [shllimm, vagree, iVagree, lVagree,
+            CompCert4Lean.Common.Values.Val.shll, hn] at h ⊢
+        exact lagree_shl _ _ _ _ h
+    | All =>
+        cases v <;> cases w <;>
+          simp [shllimm, vagree, iVagree, lVagree,
+            CompCert4Lean.Common.Values.Val.shll, hn] at h ⊢ <;>
+          try exact CompCert4Lean.Common.Values.Val.lessdef_undef _
+        have heq : Int64.shl' _ n = Int64.shl' _ n :=
+          lagree_mone _ _ (lagree_shl _ _ _ _ h)
+        have hval := congrArg (fun z => Vlong z) heq
+        exact hval ▸ CompCert4Lean.Common.Values.Val.lessdef_refl _
+  · have hn' : Int.ltu n Int64.iwordsize' = false := Bool.eq_false_iff.mpr hn
+    have hshl (a : val) :
+        CompCert4Lean.Common.Values.Val.shll a (Vint n) = Vundef := by
+      cases a <;> try rfl
+      rename_i i
+      change (if Int.ltu n Int64.iwordsize' = true then
+        Vlong (Int64.shl' i n) else Vundef) = Vundef
+      simp [hn']
+    rw [hshl v, hshl w]
+    exact vagree_same Vundef x
+
+end CompCert4Lean.Backend.NeedDomain

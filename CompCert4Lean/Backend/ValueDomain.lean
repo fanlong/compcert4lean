@@ -4259,3 +4259,14 @@ theorem smatch_ext : smatch_extStatement := by
     omega
 
 end CompCert4Lean.Backend.ValueDomain
+
+namespace CompCert4Lean.Backend.ValueDomain
+
+theorem smatch_inv : smatch_invStatement := by
+  intro bc m b p m' hsm heq
+  apply smatch_ext bc m b p m' hsm
+  intro ofs n bytes hload hn
+  rw [heq ofs n hn] at hload
+  exact hload
+
+end CompCert4Lean.Backend.ValueDomain

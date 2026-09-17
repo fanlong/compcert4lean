@@ -3200,3 +3200,71 @@ theorem classify_stmt_sound
       simp [CompCert4Lean.Backend.Selection.classify_stmt]
 
 end CompCert4Lean.Backend.Selectionproof
+
+namespace CompCert4Lean.Backend.Selectionproof
+
+theorem classify_stmt_nolabel : classify_stmt_nolabelStatement := by
+  intro s hclass
+  induction s with
+  | Sskip =>
+      intro lbl k
+      rfl
+  | Sassign id a =>
+      intro lbl k
+      rfl
+  | Sstore chunk address value =>
+      simp [CompCert4Lean.Backend.Selection.classify_stmt] at hclass
+  | Scall result sig callee args =>
+      simp [CompCert4Lean.Backend.Selection.classify_stmt] at hclass
+  | Stailcall sig callee args =>
+      simp [CompCert4Lean.Backend.Selection.classify_stmt] at hclass
+  | Sbuiltin optid ef args =>
+      cases optid <;> cases ef <;>
+        simp [CompCert4Lean.Backend.Selection.classify_stmt] at hclass
+      intro lbl k
+      rfl
+  | Sseq s1 s2 ih1 ih2 =>
+      cases hc1 : CompCert4Lean.Backend.Selection.classify_stmt s1 with
+      | SCskip =>
+          cases hc2 : CompCert4Lean.Backend.Selection.classify_stmt s2 with
+          | SCskip | SCassign _ _ =>
+              have h1 := ih1 (by simpa [hc1])
+              have h2 := ih2 (by simpa [hc2])
+              intro lbl k
+              simp only [CompCert4Lean.Backend.Cminor.find_label]
+              rw [h1 lbl (CompCert4Lean.Backend.Cminor.Kseq s2 k)]
+              exact h2 lbl k
+          | SCother =>
+              simp [CompCert4Lean.Backend.Selection.classify_stmt, hc1, hc2] at hclass
+      | SCassign _ _ =>
+          cases hc2 : CompCert4Lean.Backend.Selection.classify_stmt s2 with
+          | SCskip =>
+              have h1 := ih1 (by simpa [hc1])
+              have h2 := ih2 (by simpa [hc2])
+              intro lbl k
+              simp only [CompCert4Lean.Backend.Cminor.find_label]
+              rw [h1 lbl (CompCert4Lean.Backend.Cminor.Kseq s2 k)]
+              exact h2 lbl k
+          | SCassign _ _ | SCother =>
+              simp [CompCert4Lean.Backend.Selection.classify_stmt, hc1, hc2] at hclass
+      | SCother =>
+          cases hc2 : CompCert4Lean.Backend.Selection.classify_stmt s2 <;>
+            simp [CompCert4Lean.Backend.Selection.classify_stmt, hc1, hc2] at hclass
+  | Sifthenelse condition ifso ifnot =>
+      simp [CompCert4Lean.Backend.Selection.classify_stmt] at hclass
+  | Sloop body =>
+      simp [CompCert4Lean.Backend.Selection.classify_stmt] at hclass
+  | Sblock body =>
+      simp [CompCert4Lean.Backend.Selection.classify_stmt] at hclass
+  | Sexit depth =>
+      simp [CompCert4Lean.Backend.Selection.classify_stmt] at hclass
+  | Sswitch isLong argument cases default =>
+      simp [CompCert4Lean.Backend.Selection.classify_stmt] at hclass
+  | Sreturn value =>
+      simp [CompCert4Lean.Backend.Selection.classify_stmt] at hclass
+  | Slabel label body =>
+      simp [CompCert4Lean.Backend.Selection.classify_stmt] at hclass
+  | Sgoto label =>
+      simp [CompCert4Lean.Backend.Selection.classify_stmt] at hclass
+
+end CompCert4Lean.Backend.Selectionproof

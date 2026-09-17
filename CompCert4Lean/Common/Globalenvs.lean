@@ -4114,3 +4114,13 @@ theorem find_funct_match : find_funct_matchStatement := by
 
 end Genv
 end CompCert4Lean.Common.Globalenvs
+
+namespace CompCert4Lean.Common.Globalenvs
+namespace Genv
+
+theorem find_symbol_match : find_symbol_matchStatement := by
+  intro C F1 V1 F2 V2 _ match_fundef match_varinfo ctx p tp hmatch s
+  exact (@globalenvs_match C F1 V1 F2 V2 _ match_fundef match_varinfo ctx p tp hmatch).mge_symb s
+
+end Genv
+end CompCert4Lean.Common.Globalenvs

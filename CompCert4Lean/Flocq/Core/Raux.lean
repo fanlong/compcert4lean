@@ -4268,3 +4268,11 @@ theorem mag_mult_bpow :
   exact ⟨hlower, hupper⟩
 
 end CompCert4Lean.Flocq.Core.Raux
+
+namespace CompCert4Lean.Flocq.Core.Raux
+
+theorem eqb_sym : eqb_symStatement := by
+  intro x y
+  cases x <;> cases y <;> rfl
+
+end CompCert4Lean.Flocq.Core.Raux

@@ -3847,3 +3847,67 @@ theorem loadbytes_storebytes_same : loadbytes_storebytes_sameStatement := by
 end Mem
 
 end CompCert4Lean.Common.Memory
+
+namespace CompCert4Lean.Common.Memory
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Lib.Maps
+
+namespace Mem
+
+private theorem loadbytes_storebytes_disjoint_aux : loadbytes_storebytes_disjointStatement := by
+  intro m1 b ofs bytes m2 hstore b' ofs' len hlen hcond
+  have range_perm_1_to_2 :
+      range_perm m1 b' ofs' (zAdd ofs' len) Cur Readable ->
+        range_perm m2 b' ofs' (zAdd ofs' len) Cur Readable := by
+    intro hrange o ho
+    exact perm_storebytes_1 m1 b ofs bytes m2 hstore b' o Cur Readable
+      (hrange o ho)
+  have range_perm_2_to_1 :
+      range_perm m2 b' ofs' (zAdd ofs' len) Cur Readable ->
+        range_perm m1 b' ofs' (zAdd ofs' len) Cur Readable := by
+    intro hrange o ho
+    exact perm_storebytes_2 m1 b ofs bytes m2 hstore b' o Cur Readable
+      (hrange o ho)
+  unfold loadbytes
+  cases hdec1 : range_perm_dec m1 b' ofs' (zAdd ofs' len) Cur Readable with
+  | right hn1 =>
+      have hn2 : ¬ range_perm m2 b' ofs' (zAdd ofs' len) Cur Readable := by
+        intro h2
+        exact hn1 (range_perm_2_to_1 h2)
+      cases hdec2 : range_perm_dec m2 b' ofs' (zAdd ofs' len) Cur Readable with
+      | left h2 => exact False.elim (hn2 h2)
+      | right _ => simp [boolOfSumbool, hdec1, hdec2]
+  | left h1 =>
+      have h2 : range_perm m2 b' ofs' (zAdd ofs' len) Cur Readable :=
+        range_perm_1_to_2 h1
+      cases hdec2 : range_perm_dec m2 b' ofs' (zAdd ofs' len) Cur Readable with
+      | right hn2 => exact False.elim (hn2 h2)
+      | left _ =>
+          simp only [boolOfSumbool, hdec1, hdec2, ↓reduceIte]
+          congr 1
+          rw [storebytes_mem_contents m1 b ofs bytes m2 hstore]
+          by_cases hb : b' = b
+          · subst b'
+            rw [pmapGetSetSame]
+            have hnat : zOfNat (zToNat len) = len :=
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.Znat.Z2Nat.id len hlen
+            apply getN_setN_disjoint bytes ofs (PMap.get b m1.mem_contents)
+              (zToNat len) ofs'
+            rcases hcond with hneq | hdis
+            · exact False.elim (hneq rfl)
+            · simpa only [hnat] using hdis
+          · rw [pmapGetSetOther _ _ _ _ hb]
+
+theorem loadbytes_storebytes_other : loadbytes_storebytes_otherStatement := by
+  intro m1 b ofs bytes m2 hstore b' ofs' len hlen hcond
+  apply loadbytes_storebytes_disjoint_aux m1 b ofs bytes m2 hstore b' ofs' len hlen
+  rcases hcond with hneq | hleft | hright
+  · exact Or.inl hneq
+  · exact Or.inr (CompCert4Lean.Lib.Intv.disjoint_range _ _ (Or.inl hleft))
+  · exact Or.inr (CompCert4Lean.Lib.Intv.disjoint_range _ _ (Or.inr hright))
+
+end Mem
+
+end CompCert4Lean.Common.Memory

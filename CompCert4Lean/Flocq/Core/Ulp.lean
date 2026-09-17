@@ -5572,3 +5572,47 @@ theorem round_DN_eq :
   · exact hdrd
 
 end CompCert4Lean.Flocq.Core.Ulp
+
+namespace CompCert4Lean.Flocq.Core.Ulp
+
+theorem round_UP_eq :
+    ∀ (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx),
+      round_UP_eqStatement ctx magnitude := by
+  intro ctx magnitude beta fexp hvalid x u huformat hbounds
+  have hdn := round_DN_eq ctx magnitude beta fexp hvalid
+    (Exact.Ropp ctx x) (Exact.Ropp ctx u)
+    (CompCert4Lean.Flocq.Core.Generic_fmt.generic_format_opp
+      ctx magnitude beta fexp u huformat)
+    (by
+      constructor
+      · change ctx.spec.le (ctx.spec.neg u) (ctx.spec.neg x)
+        apply CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.Ropp_le_contravar
+          ctx u x
+        exact hbounds.2
+      · rw [succ_opp ctx magnitude beta fexp u]
+        change ctx.spec.lt (ctx.spec.neg x)
+          (ctx.spec.neg (Exact.pred ctx magnitude beta fexp u))
+        apply CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.Ropp_lt_contravar
+          ctx x (Exact.pred ctx magnitude beta fexp u)
+        exact hbounds.1)
+  change Exact.round ctx magnitude beta fexp
+      (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zfloor ctx)
+      (Exact.Ropp ctx x) = Exact.Ropp ctx u at hdn
+  rw [pg_rdu_round_DN_opp ctx magnitude beta fexp x] at hdn
+  have hri1 : Exact.Ropp ctx (Exact.Ropp ctx
+      (Exact.round ctx magnitude beta fexp
+        (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zceil ctx) x)) =
+      Exact.round ctx magnitude beta fexp
+        (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zceil ctx) x :=
+    CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.Ropp_involutive ctx _
+  have hri2 : Exact.Ropp ctx (Exact.Ropp ctx u) = u :=
+    CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.Ropp_involutive ctx _
+  have hround := congrArg (fun z => Exact.Ropp ctx z) hdn
+  change Exact.Ropp ctx (Exact.Ropp ctx
+      (Exact.round ctx magnitude beta fexp
+        (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zceil ctx) x)) =
+      Exact.Ropp ctx (Exact.Ropp ctx u) at hround
+  rw [hri1, hri2] at hround
+  exact hround
+
+end CompCert4Lean.Flocq.Core.Ulp

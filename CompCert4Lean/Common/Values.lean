@@ -2837,3 +2837,156 @@ theorem divlu_pow2 : divlu_pow2Statement := by
 
 end Val
 end CompCert4Lean.Common.Values
+
+namespace CompCert4Lean.Common.Values
+namespace Val
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open Lean Elab Tactic Meta
+
+private theorem pg_values_int64_zOfNat_val
+    (x : CompCert4Lean.Lib.Integers.Int64.int) :
+    zOfNat x.val = CompCert4Lean.Lib.Integers.Int64.unsigned x := by
+  exact (pg_wordcore_intval_eq_zOfNat_val_local x).symm
+
+private theorem pg_values_positive_is_power2
+    (p : positive) (h : CompCert4Lean.Lib.Zbits.P_is_power2 p = true) :
+    ∃ k : Nat, posToNat p = 2 ^ k := by
+  induction p with
+  | xH => exact ⟨0, rfl⟩
+  | xI p ih => simp [CompCert4Lean.Lib.Zbits.P_is_power2] at h
+  | xO p ih =>
+      have hp : CompCert4Lean.Lib.Zbits.P_is_power2 p = true := by
+        simpa [CompCert4Lean.Lib.Zbits.P_is_power2] using h
+      rcases ih hp with ⟨k, hk⟩
+      refine ⟨k + 1, ?_⟩
+      rw [posToNat, hk, Nat.pow_succ]
+      omega
+
+private theorem pg_values_int64_is_power2_nat
+    (n logn : CompCert4Lean.Lib.Integers.Int64.int)
+    (hpow : CompCert4Lean.Lib.Integers.Int64.is_power2 n = some logn) :
+    ∃ k : Nat, n.val = 2 ^ k := by
+  unfold CompCert4Lean.Lib.Integers.Int64.is_power2 at hpow
+  cases hu : CompCert4Lean.Lib.Integers.Int64.unsigned n with
+  | Z0 =>
+      simp only [CompCert4Lean.Lib.Zbits.Z_is_power2, hu] at hpow
+      cases hpow
+  | Zneg p =>
+      simp only [CompCert4Lean.Lib.Zbits.Z_is_power2, hu] at hpow
+      cases hpow
+  | Zpos p =>
+      cases hp : CompCert4Lean.Lib.Zbits.P_is_power2 p with
+      | false =>
+          simp only [CompCert4Lean.Lib.Zbits.Z_is_power2, hu, hp,
+            Bool.false_eq_true, ↓reduceIte] at hpow
+          cases hpow
+      | true =>
+          rcases pg_values_positive_is_power2 p hp with ⟨k, hk⟩
+          refine ⟨k, ?_⟩
+          have hz := (pg_values_int64_zOfNat_val n).trans hu
+          have hi : Int.ofNat n.val = Int.ofNat (posToNat p) := by
+            calc
+              Int.ofNat n.val = intOfZ (zOfNat n.val) := by
+                exact (intOfZ_zOfInt (Int.ofNat n.val)).symm
+              _ = intOfZ (Zpos p) := congrArg intOfZ hz
+              _ = Int.ofNat (posToNat p) := rfl
+          exact (Int.ofNat.inj hi).trans hk
+
+private theorem pg_values_word_sub_val {bits : Nat}
+    (x y : CompCert4Lean.Lib.Integers.WordCore.Word bits) :
+    (CompCert4Lean.Lib.Integers.WordCore.sub x y).val =
+      (2 ^ bits - y.val + x.val) % (2 ^ bits) := by
+  run_tac
+    let lctx ← getLCtx
+    let xF := (lctx.findFromUserName? `x).get!
+    let yF := (lctx.findFromUserName? `y).get!
+    let e ← mkAppM
+      (pg_andl_suffix_private_name "CompCert4Lean.Lib.Integers.WordCore.sub_val")
+      #[mkFVar xF.fvarId, mkFVar yF.fvarId]
+    closeMainGoal Name.anonymous e
+
+private theorem pg_values_int64_sub_one_val
+    (n : CompCert4Lean.Lib.Integers.Int64.int) (hnpos : 0 < n.val) :
+    (CompCert4Lean.Lib.Integers.Int64.sub n
+      CompCert4Lean.Lib.Integers.Int64.one).val = n.val - 1 := by
+  change (CompCert4Lean.Lib.Integers.WordCore.sub n
+      CompCert4Lean.Lib.Integers.Int64.one).val = n.val - 1
+  rw [pg_values_word_sub_val]
+  change (2 ^ 64 - 1 + n.val) % (2 ^ 64) = n.val - 1
+  have hnlt : n.val < 2 ^ 64 := n.toFin.isLt
+  have hadd : 2 ^ 64 - 1 + n.val = (n.val - 1) + 2 ^ 64 := by omega
+  rw [hadd, Nat.add_mod_right, Nat.mod_eq_of_lt]
+  omega
+
+private theorem pg_values_int64_and_val
+    (x y : CompCert4Lean.Lib.Integers.Int64.int) :
+    (CompCert4Lean.Lib.Integers.Int64.and x y).val = Nat.land x.val y.val := by
+  unfold CompCert4Lean.Lib.Integers.Int64.and
+    CompCert4Lean.Lib.Integers.WordCore.and
+  change (CompCert4Lean.Lib.Integers.WordCore.repr 64
+    (zOfNat (Nat.land x.val y.val))).val = Nat.land x.val y.val
+  exact pg_andl_repr_val_of_lt64 _ (Nat.and_lt_two_pow _ y.toFin.isLt)
+
+private theorem pg_values_modulo_nat (a b : Nat) (hb : 0 < b) :
+    ZArith.BinInt.Z.modulo (zOfNat a) (zOfNat b) = zOfNat (a % b) := by
+  run_tac
+    let env ← getEnv
+    let some (n, _) := env.constants.toList.find?
+        (fun (n, _) => (toString n).endsWith "suffix_modulo_nat")
+      | throwError "frozen modulo helper not found"
+    let stx := Lean.mkIdent n
+    let aArg := Lean.mkIdent `a
+    let bArg := Lean.mkIdent `b
+    let hbArg := Lean.mkIdent `hb
+    evalTactic (← `(tactic| exact $stx $aArg $bArg $hbArg))
+
+private theorem pg_values_int64_modu_val
+    (x n : CompCert4Lean.Lib.Integers.Int64.int) (hnpos : 0 < n.val) :
+    (CompCert4Lean.Lib.Integers.Int64.modu x n).val = x.val % n.val := by
+  unfold CompCert4Lean.Lib.Integers.Int64.modu
+    CompCert4Lean.Lib.Integers.WordCore.modu
+  change (CompCert4Lean.Lib.Integers.WordCore.repr 64
+    (ZArith.BinInt.Z.modulo
+      (CompCert4Lean.Lib.Integers.Int64.unsigned x)
+      (CompCert4Lean.Lib.Integers.Int64.unsigned n))).val = x.val % n.val
+  rw [← pg_values_int64_zOfNat_val x, ← pg_values_int64_zOfNat_val n,
+    pg_values_modulo_nat _ _ hnpos]
+  exact pg_andl_repr_val_of_lt64 _ (by
+    exact Nat.lt_of_lt_of_le (Nat.mod_lt _ hnpos)
+      (Nat.le_of_lt n.toFin.isLt))
+
+private theorem pg_values_int64_modu_and
+    (x n logn : CompCert4Lean.Lib.Integers.Int64.int)
+    (hpow : CompCert4Lean.Lib.Integers.Int64.is_power2 n = some logn) :
+    CompCert4Lean.Lib.Integers.Int64.modu x n =
+      CompCert4Lean.Lib.Integers.Int64.and x
+        (CompCert4Lean.Lib.Integers.Int64.sub n
+          CompCert4Lean.Lib.Integers.Int64.one) := by
+  rcases pg_values_int64_is_power2_nat n logn hpow with ⟨k, hnk⟩
+  have hnpos : 0 < n.val := by
+    rw [hnk]
+    exact Nat.two_pow_pos k
+  apply CompCert4Lean.Lib.Integers.WordCore.ext_of_val_eq
+  rw [pg_values_int64_modu_val x n hnpos, pg_values_int64_and_val,
+    pg_values_int64_sub_one_val n hnpos, hnk]
+  exact (Nat.and_two_pow_sub_one_eq_mod x.val k).symm
+
+theorem modlu_pow2 : modlu_pow2Statement := by
+  intro x n logn y hpow hmod
+  cases x with
+  | Vlong i =>
+      simp only [modlu] at hmod
+      split at hmod
+      · cases hmod
+      · cases hmod
+        simp only [andl, val.Vlong.injEq]
+        exact (pg_values_int64_modu_and i n logn hpow).symm
+  | Vundef => simp [modlu] at hmod
+  | Vint i => simp [modlu] at hmod
+  | Vfloat f => simp [modlu] at hmod
+  | Vsingle f => simp [modlu] at hmod
+  | Vptr b ofs => simp [modlu] at hmod
+
+end Val
+end CompCert4Lean.Common.Values

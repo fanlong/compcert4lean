@@ -3022,3 +3022,16 @@ theorem ZArith.BinInt.Z.mul_0_r :
 
 end Rocq.Coq
 end CompCert4Lean.Foundation.Numbers
+
+namespace CompCert4Lean.Foundation.Numbers
+namespace Rocq.Coq
+
+theorem ZArith.BinInt.Z.opp_inj :
+    ZArith.BinInt.Z.opp_injStatement := by
+  intro n m h
+  apply intOfZ_injective
+  have h' := congrArg intOfZ h
+  simpa [ZArith.BinInt.Z.opp, intOfZ_zOfInt] using h'
+
+end Rocq.Coq
+end CompCert4Lean.Foundation.Numbers

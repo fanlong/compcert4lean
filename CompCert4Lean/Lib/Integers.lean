@@ -6295,3 +6295,27 @@ theorem modu_and_proof : modu_and := by
     exact suffix_sub_one_val n hnpos
   rw [hs, hnk]
   exact (Nat.and_two_pow_sub_one_eq_mod x.val k).symm
+
+private theorem suffix_eqm_unsigned_repr :
+    ∀ a : Z, eqm a (unsigned (repr a)) := by
+  intro a
+  unfold eqm WordCore.eqm CompCert4Lean.Lib.Zbits.eqmod
+  refine ⟨ZArith.BinInt.Z.div a modulus, ?_⟩
+  rw [unsigned_repr_eq_proof]
+  have hd := ZArith.Zdiv.Z_div_mod_eq_full a modulus
+  apply intOfZ_injective
+  have hd' := congrArg intOfZ hd
+  simp only [ZArith.BinInt.Z.add, ZArith.BinInt.Z.mul,
+    intOfZ_zOfInt] at hd' ⊢
+  change intOfZ a = intOfZ (ZArith.BinInt.Z.div a modulus) *
+      intOfZ modulus + intOfZ (zMod a modulus)
+  change intOfZ a = intOfZ modulus *
+      intOfZ (ZArith.BinInt.Z.div a modulus) + intOfZ (zMod a modulus) at hd'
+  rw [Int.mul_comm]
+  exact hd'
+
+theorem eqm_unsigned_repr_l_proof : eqm_unsigned_repr_l := by
+  intro a b hab
+  apply eqm_trans_proof (unsigned (repr a)) a b
+  · exact eqm_sym_proof _ _ (suffix_eqm_unsigned_repr a)
+  · exact hab

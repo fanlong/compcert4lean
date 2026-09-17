@@ -4267,3 +4267,142 @@ theorem Rabs_minus_sym :
 end Rbasic_fun
 end Rocq.Coq.Reals
 end CompCert4Lean.Foundation.FlocqReal
+
+namespace CompCert4Lean.Foundation.FlocqReal
+namespace Rocq.Coq.Reals
+namespace Rbasic_fun
+
+theorem Rabs_mult :
+    ∀ (ctx : ExactRealContext), Rabs_multStatement ctx := by
+  intro ctx x y
+  change ctx.spec.abs (ctx.spec.mul x y) =
+    ctx.spec.mul (ctx.spec.abs x) (ctx.spec.abs y)
+  rcases ctx.certificate.total_order x ctx.spec.zero with hx | hx
+  · rcases hx with hxneg | hxzero
+    · rcases ctx.certificate.total_order y ctx.spec.zero with hy | hy
+      · rcases hy with hyneg | hyzero
+        · have hnx : ctx.spec.lt (ctx.spec.ofZ Z0) (ctx.spec.neg x) := by
+            have hxneg' : ctx.spec.lt x (ctx.spec.ofZ Z0) := by
+              rw [ctx.certificate.sourceLaws.ofZ_zero]
+              exact hxneg
+            exact RIneq.Ropp_0_gt_lt_contravar ctx x hxneg'
+          have hny : ctx.spec.lt (ctx.spec.ofZ Z0) (ctx.spec.neg y) := by
+            have hyneg' : ctx.spec.lt y (ctx.spec.ofZ Z0) := by
+              rw [ctx.certificate.sourceLaws.ofZ_zero]
+              exact hyneg
+            exact RIneq.Ropp_0_gt_lt_contravar ctx y hyneg'
+          have hprod : ctx.spec.lt ctx.spec.zero (ctx.spec.mul x y) := by
+            have h := RIneq.Rmult_lt_0_compat ctx (ctx.spec.neg x)
+              (ctx.spec.neg y) hnx hny
+            change ctx.spec.lt (ctx.spec.ofZ Z0)
+              (ctx.spec.mul (ctx.spec.neg x) (ctx.spec.neg y)) at h
+            have hnegneg : ctx.spec.mul (ctx.spec.neg x) (ctx.spec.neg y) =
+                ctx.spec.mul x y := by
+              change ExactReal.Rmult ctx.spec
+                (ExactReal.Ropp ctx.spec x) (ExactReal.Ropp ctx.spec y) =
+                ExactReal.Rmult ctx.spec x y
+              exact RIneq.Rmult_opp_opp ctx x y
+            rw [ctx.certificate.sourceLaws.ofZ_zero, hnegneg] at h
+            exact h
+          have hprodle : ctx.spec.le ctx.spec.zero (ctx.spec.mul x y) :=
+            (ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp hprod |>.1
+          have hnegneg : ctx.spec.mul (ctx.spec.neg x) (ctx.spec.neg y) =
+              ctx.spec.mul x y := by
+            change ExactReal.Rmult ctx.spec
+              (ExactReal.Ropp ctx.spec x) (ExactReal.Ropp ctx.spec y) =
+              ExactReal.Rmult ctx.spec x y
+            exact RIneq.Rmult_opp_opp ctx x y
+          rw [ctx.certificate.sourceLaws.abs_nonnegative _ hprodle,
+            ctx.certificate.sourceLaws.abs_negative x hxneg,
+            ctx.certificate.sourceLaws.abs_negative y hyneg,
+            hnegneg.symm]
+        · subst y
+          rw [ctx.certificate.orderedField.mul_zero,
+            ctx.certificate.sourceLaws.abs_nonnegative _
+              (ctx.certificate.orderedField.le_refl _),
+            ctx.certificate.orderedField.mul_zero]
+      · have hypos : ctx.spec.lt ctx.spec.zero y := hy
+        have hy_nonneg : ctx.spec.le ctx.spec.zero y :=
+          (ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp hypos |>.1
+        have hypos' : ctx.spec.lt (ctx.spec.ofZ Z0) y := by
+          rw [ctx.certificate.sourceLaws.ofZ_zero]
+          exact hypos
+        have hprod : ctx.spec.lt (ctx.spec.mul x y) ctx.spec.zero := by
+          have hxneg' : ctx.spec.lt x (ctx.spec.ofZ Z0) := by
+            rw [ctx.certificate.sourceLaws.ofZ_zero]
+            exact hxneg
+          have h := RIneq.Rmult_lt_compat_r ctx y x (ctx.spec.ofZ Z0)
+            hypos' hxneg'
+          change ctx.spec.lt (ctx.spec.mul x y)
+            (ctx.spec.mul (ctx.spec.ofZ Z0) y) at h
+          rw [ctx.certificate.sourceLaws.ofZ_zero,
+            ctx.certificate.orderedField.zero_mul] at h
+          exact h
+        have hnegleft : ctx.spec.mul (ctx.spec.neg x) y =
+            ctx.spec.neg (ctx.spec.mul x y) := by
+          change ExactReal.Rmult ctx.spec (ExactReal.Ropp ctx.spec x) y =
+            ExactReal.Ropp ctx.spec (ExactReal.Rmult ctx.spec x y)
+          exact RIneq.Ropp_mult_distr_l_reverse ctx x y
+        rw [ctx.certificate.sourceLaws.abs_negative _ hprod,
+          ctx.certificate.sourceLaws.abs_negative x hxneg,
+          ctx.certificate.sourceLaws.abs_nonnegative _ hy_nonneg,
+          hnegleft.symm]
+    · subst x
+      rw [ctx.certificate.orderedField.zero_mul,
+        ctx.certificate.sourceLaws.abs_nonnegative _
+          (ctx.certificate.orderedField.le_refl _),
+        ctx.certificate.orderedField.zero_mul]
+  · have hxpos : ctx.spec.lt ctx.spec.zero x := hx
+    have hx_nonneg : ctx.spec.le ctx.spec.zero x :=
+      (ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp hxpos |>.1
+    have hxpos' : ctx.spec.lt (ctx.spec.ofZ Z0) x := by
+      rw [ctx.certificate.sourceLaws.ofZ_zero]
+      exact hxpos
+    rcases ctx.certificate.total_order y ctx.spec.zero with hy | hy
+    · rcases hy with hyneg | hyzero
+      · have hprod : ctx.spec.lt (ctx.spec.mul x y) ctx.spec.zero := by
+          have hyneg' : ctx.spec.lt y (ctx.spec.ofZ Z0) := by
+            rw [ctx.certificate.sourceLaws.ofZ_zero]
+            exact hyneg
+          have h := Raxioms.Rmult_lt_compat_l ctx x y (ctx.spec.ofZ Z0)
+            hxpos' hyneg'
+          change ctx.spec.lt (ctx.spec.mul x y)
+            (ctx.spec.mul x (ctx.spec.ofZ Z0)) at h
+          rw [ctx.certificate.sourceLaws.ofZ_zero,
+            ctx.certificate.orderedField.mul_zero] at h
+          exact h
+        have hnegright : ctx.spec.mul x (ctx.spec.neg y) =
+            ctx.spec.neg (ctx.spec.mul x y) := by
+          change ExactReal.Rmult ctx.spec x (ExactReal.Ropp ctx.spec y) =
+            ExactReal.Ropp ctx.spec (ExactReal.Rmult ctx.spec x y)
+          exact RIneq.Ropp_mult_distr_r_reverse ctx x y
+        rw [ctx.certificate.sourceLaws.abs_negative _ hprod,
+          ctx.certificate.sourceLaws.abs_nonnegative _ hx_nonneg,
+          ctx.certificate.sourceLaws.abs_negative y hyneg,
+          hnegright.symm]
+      · subst y
+        rw [ctx.certificate.orderedField.mul_zero,
+          ctx.certificate.sourceLaws.abs_nonnegative _ hx_nonneg,
+          ctx.certificate.sourceLaws.abs_nonnegative _
+            (ctx.certificate.orderedField.le_refl _),
+          ctx.certificate.orderedField.mul_zero]
+    · have hypos : ctx.spec.lt ctx.spec.zero y := hy
+      have hy_nonneg : ctx.spec.le ctx.spec.zero y :=
+        (ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp hypos |>.1
+      have hypos' : ctx.spec.lt (ctx.spec.ofZ Z0) y := by
+        rw [ctx.certificate.sourceLaws.ofZ_zero]
+        exact hypos
+      have hprod : ctx.spec.lt ctx.spec.zero (ctx.spec.mul x y) := by
+        have h := RIneq.Rmult_lt_0_compat ctx x y hxpos' hypos'
+        change ctx.spec.lt (ctx.spec.ofZ Z0) (ctx.spec.mul x y) at h
+        rw [ctx.certificate.sourceLaws.ofZ_zero] at h
+        exact h
+      have hprodle : ctx.spec.le ctx.spec.zero (ctx.spec.mul x y) :=
+        (ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp hprod |>.1
+      rw [ctx.certificate.sourceLaws.abs_nonnegative _ hprodle,
+        ctx.certificate.sourceLaws.abs_nonnegative _ hx_nonneg,
+        ctx.certificate.sourceLaws.abs_nonnegative _ hy_nonneg]
+
+end Rbasic_fun
+end Rocq.Coq.Reals
+end CompCert4Lean.Foundation.FlocqReal
