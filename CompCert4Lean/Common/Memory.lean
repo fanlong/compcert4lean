@@ -3980,3 +3980,38 @@ theorem load_storebytes_other : load_storebytes_otherStatement := by
 end Mem
 
 end CompCert4Lean.Common.Memory
+
+namespace CompCert4Lean.Common.Memory
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Lib.Maps
+
+namespace Mem
+
+private theorem setN_concat_zadd_zero_memproof (ofs : Z) :
+    zAdd ofs (zOfNat 0) = ofs := by
+  apply intOfZ_injective
+  simp only [intOfZ_zadd_mem, intOfZ_zofnat_mem]
+  simp
+
+private theorem setN_concat_zadd_succ_memproof (ofs : Z) (n : Nat) :
+    zAdd ofs (zOfNat (Nat.succ n)) =
+      zAdd (zAdd ofs z1) (zOfNat n) := by
+  symm
+  apply zadd_succ_nat_memproof
+
+theorem setN_concat : setN_concatStatement := by
+  intro bytes1 bytes2 ofs c
+  induction bytes1 generalizing ofs c with
+  | nil =>
+      simp only [List.nil_append, List.length_nil, setN]
+      rw [setN_concat_zadd_zero_memproof]
+  | cons b rest ih =>
+      simp only [List.cons_append, List.length_cons, setN]
+      rw [ih]
+      rw [setN_concat_zadd_succ_memproof]
+
+end Mem
+
+end CompCert4Lean.Common.Memory

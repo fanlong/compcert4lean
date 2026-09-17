@@ -3125,3 +3125,93 @@ theorem ZArith.BinInt.Z.leb_le :
 
 end Rocq.Coq
 end CompCert4Lean.Foundation.Numbers
+
+namespace CompCert4Lean.Foundation.Numbers
+namespace Rocq.Coq
+
+theorem ZArith.BinInt.Z.compare_eq_iff :
+    ZArith.BinInt.Z.compare_eq_iffStatement := by
+  intro n m
+  unfold ZArith.BinInt.Z.compare comparisonOfInt
+  change (if intOfZ n < intOfZ m then (Lt : comparison)
+    else if intOfZ n = intOfZ m then (Eq : comparison)
+    else (Gt : comparison)) = (Eq : comparison) ↔ n = m
+  constructor
+  · intro h
+    by_cases hlt : intOfZ n < intOfZ m
+    · simp [hlt] at h
+    · by_cases heq : intOfZ n = intOfZ m
+      · exact intOfZ_injective heq
+      · simp [hlt, heq] at h
+  · intro h
+    subst m
+    simp [comparisonOfInt]
+
+end Rocq.Coq
+end CompCert4Lean.Foundation.Numbers
+
+namespace CompCert4Lean.Foundation.Numbers
+namespace Rocq.Coq
+
+private theorem comparisonOfInt_antisym (a b : Int) :
+    CompOpp (comparisonOfInt a b) = comparisonOfInt b a := by
+  unfold comparisonOfInt
+  by_cases hab : a < b
+  · have hba : ¬ b < a := Int.not_lt_of_ge (Int.le_of_lt hab)
+    have hne : a ≠ b := by omega
+    have hne' : b ≠ a := by omega
+    simp only [if_pos hab, if_neg hba, if_neg hne']
+    rfl
+  · by_cases heq : a = b
+    · subst b
+      simp only [if_neg hab, if_pos rfl]
+      rfl
+    · have hba : b < a := by omega
+      have hne : b ≠ a := by omega
+      simp only [if_neg hab, if_neg heq, if_pos hba]
+      rfl
+
+theorem ZArith.BinInt.Z.compare_antisym :
+    ZArith.BinInt.Z.compare_antisymStatement := by
+  intro n m
+  unfold ZArith.BinInt.Z.compare
+  exact (comparisonOfInt_antisym (intOfZ n) (intOfZ m)).symm
+
+end Rocq.Coq
+end CompCert4Lean.Foundation.Numbers
+
+namespace CompCert4Lean.Foundation.Numbers
+namespace Rocq.Coq
+
+theorem ZArith.BinInt.Z.lt_succ_r :
+    ZArith.BinInt.Z.lt_succ_rStatement := by
+  intro n m
+  change intOfZ n < intOfZ (ZArith.BinInt.Z.succ m) ↔
+    intOfZ n ≤ intOfZ m
+  simp only [ZArith.BinInt.Z.succ, ZArith.BinInt.Z.add,
+    intOfZ_zOfInt]
+  have hone : intOfZ (Zpos xH) = 1 := by
+    simp [intOfZ, posToNat]
+  rw [hone]
+  change intOfZ n < intOfZ m + 1 ↔ intOfZ n ≤ intOfZ m
+  omega
+
+end Rocq.Coq
+end CompCert4Lean.Foundation.Numbers
+
+namespace CompCert4Lean.Foundation.Numbers
+namespace Rocq.Coq
+
+theorem ZArith.BinInt.Z.max_l :
+    ZArith.BinInt.Z.max_lStatement := by
+  intro n m h
+  apply intOfZ_injective
+  change intOfZ (ZArith.BinInt.Z.max n m) = intOfZ n
+  change intOfZ m ≤ intOfZ n at h
+  by_cases hnm : intOfZ n ≤ intOfZ m
+  · simp [ZArith.BinInt.Z.max, hnm]
+    exact Int.le_antisymm h hnm
+  · simp [ZArith.BinInt.Z.max, hnm]
+
+end Rocq.Coq
+end CompCert4Lean.Foundation.Numbers

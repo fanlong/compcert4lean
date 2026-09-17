@@ -3195,3 +3195,24 @@ theorem abs_round_le_generic :
   exact h hxy
 
 end CompCert4Lean.Flocq.Core.Generic_fmt
+
+namespace CompCert4Lean.Flocq.Core.Generic_fmt
+
+theorem round_UP_opp :
+    ∀ ctx magnitude, round_UP_oppStatement ctx magnitude := by
+  intro ctx magnitude beta fexp x
+  have hzrnd : Exact.Zrnd_opp ctx (Exact.Zceil ctx) = Exact.Zfloor ctx := by
+    funext y
+    unfold Exact.Zrnd_opp
+    change Zopp (Zopp (Exact.Zfloor ctx (Exact.Ropp ctx (Exact.Ropp ctx y)))) =
+      Exact.Zfloor ctx y
+    rw [pg_neg_neg ctx y, pg_zopp_zopp]
+  calc
+    Exact.round ctx magnitude beta fexp (Exact.Zceil ctx) (Exact.Ropp ctx x) =
+        Exact.Ropp ctx (Exact.round ctx magnitude beta fexp
+          (Exact.Zrnd_opp ctx (Exact.Zceil ctx)) x) :=
+      round_opp ctx magnitude beta fexp (Exact.Zceil ctx) x
+    _ = Exact.Ropp ctx (Exact.round ctx magnitude beta fexp (Exact.Zfloor ctx) x) := by
+      rw [hzrnd]
+
+end CompCert4Lean.Flocq.Core.Generic_fmt
