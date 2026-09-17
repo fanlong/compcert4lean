@@ -4295,3 +4295,28 @@ theorem IZR_cond_Zopp :
   | true => exact ctx.certificate.sourceLaws.ofZ_neg m
 
 end CompCert4Lean.Flocq.Core.Raux
+
+namespace CompCert4Lean.Flocq.Core.Raux
+
+theorem abs_cond_Ropp :
+    ∀ (ctx : ExactRealContext), abs_cond_RoppStatement ctx := by
+  intro ctx b m
+  cases b with
+  | false => rfl
+  | true =>
+      change ctx.spec.abs (ctx.spec.neg m) = ctx.spec.abs m
+      exact CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.Rbasic_fun.Rabs_Ropp
+        ctx m
+
+theorem cond_Ropp_mult_l :
+    ∀ (ctx : ExactRealContext), cond_Ropp_mult_lStatement ctx := by
+  intro ctx b x y
+  cases b with
+  | false => rfl
+  | true =>
+      change ctx.spec.neg (ctx.spec.mul x y) =
+        ctx.spec.mul (ctx.spec.neg x) y
+      exact (CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.Ropp_mult_distr_l_reverse
+        ctx x y).symm
+
+end CompCert4Lean.Flocq.Core.Raux

@@ -6589,3 +6589,24 @@ theorem satisf_successors : satisf_successorsStatement := by
   exact ⟨e', hTransfer, satisf_incr rs ls e' e hSat hSubset⟩
 
 end CompCert4Lean.Backend.Allocproof
+
+namespace CompCert4Lean.Backend.Allocproof
+
+open CompCert4Lean.Backend.Allocation
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Backend.LTL
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Linking
+
+theorem symbols_preserved : symbols_preservedStatement := by
+  intro cfg oracle prog tprog hmatch id
+  letI : Linker RTL.fundef := Linker_fundef RTL.function
+  letI : Linker Unit := Linker_unit
+  letI : Linker RTL.program := Linker_prog RTL.fundef Unit
+  unfold match_prog CompCert4Lean.Common.Linking.match_program at hmatch
+  exact Genv.find_symbol_match RTL.program RTL.fundef Unit LTL.fundef Unit
+    (fun _ f tf => transf_fundef cfg oracle f = .OK tf) Eq
+    prog prog tprog hmatch id
+
+end CompCert4Lean.Backend.Allocproof

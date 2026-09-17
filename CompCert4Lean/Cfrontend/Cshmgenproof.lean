@@ -4800,3 +4800,23 @@ theorem typlist_of_arglist_eq
       exact congrArg (fun xs => argtype_of_type _ :: xs) ih
 
 end CompCert4Lean.Cfrontend.Cshmgenproof
+
+namespace CompCert4Lean.Cfrontend.Cshmgenproof
+
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Smallstep
+open CompCert4Lean.Cfrontend.Csharpminor
+
+theorem match_transl_step
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    match_transl_stepStatement := by
+  intro xi tprog ts tk ts' tk' f te le m hmatch
+  cases hmatch with
+  | match_transl_0 _ _ =>
+      exact star_one _ _ _ _ _ _ _ (step_block f ts tk te le m)
+  | match_transl_1 _ _ =>
+      exact star_refl _ _ _
+
+end CompCert4Lean.Cfrontend.Cshmgenproof

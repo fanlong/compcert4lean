@@ -4258,3 +4258,19 @@ theorem assign_loc_nextblock : assign_loc_nextblockStatement := by
           exact Mem.nextblock_store _ _ _ _ _ _ hstore
 
 end CompCert4Lean.Cfrontend.SimplLocalsproof
+
+namespace CompCert4Lean.Cfrontend.SimplLocalsproof
+
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Cfrontend.Clight
+
+theorem bind_parameters_nextblock : bind_parameters_nextblockStatement := by
+  intro ge e m params args m' hbind
+  induction hbind with
+  | nil => rfl
+  | cons m id ty params v1 vl b m1 m2 hfind hassign hrest ih =>
+      rw [ih]
+      exact assign_loc_nextblock ge.genv_cenv ty m b
+        CompCert4Lean.Lib.Integers.Ptrofs.zero .Full v1 m1 hassign
+
+end CompCert4Lean.Cfrontend.SimplLocalsproof

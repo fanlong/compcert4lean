@@ -3721,3 +3721,255 @@ theorem eval_compf
       (eval_exprlist.cons le b Enil y [] hb (eval_exprlist.nil le))) rfl
 
 end CompCert4Lean.X86.SelectOpproof
+
+namespace CompCert4Lean.X86.SelectOpproof
+
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.ExternalCalls
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.X86.Op
+open CompCert4Lean.X86.SelectOp
+
+theorem eval_cast8signed
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    eval_cast8signedStatement := by
+  intro xi ge sp e m le a x h
+  cases hcase : cast8signed_match a with
+  | cast8signed_case1 n =>
+      have hx : x = .Vint n := eval_intconst_value_local xi ge sp e m le n x
+        (by simpa [hcase] using h)
+      subst x
+      refine ⟨.Vint (CompCert4Lean.Lib.Integers.Int.sign_ext z8 n), ?_, ?_⟩
+      · exact eval_expr.eval_Eop le
+          (Ointconst (CompCert4Lean.Lib.Integers.Int.sign_ext z8 n)) Enil [] _
+          (eval_exprlist.nil le) rfl
+      · exact Val.lessdef_refl _
+  | cast8signed_default e1 =>
+      refine ⟨Val.sign_ext z8 x, ?_, Val.lessdef_refl _⟩
+      simp only [cast8signed, hcase]
+      apply eval_expr.eval_Eop le Ocast8signed (Econs a Enil) [x]
+        (Val.sign_ext z8 x)
+      · exact eval_exprlist.cons le a Enil x [] h (eval_exprlist.nil le)
+      · rfl
+
+end CompCert4Lean.X86.SelectOpproof
+
+namespace CompCert4Lean.X86.SelectOpproof
+
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.ExternalCalls
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.X86.Op
+open CompCert4Lean.X86.SelectOp
+
+private theorem val_zero_ext_and_mask8_local (v : val)
+    (n : CompCert4Lean.Lib.Integers.int) :
+    Val.zero_ext z8 (Val.and v (.Vint n)) =
+      Val.and v (.Vint (CompCert4Lean.Lib.Integers.Int.and
+        (CompCert4Lean.Lib.Integers.Int.repr (zOfNat 255)) n)) := by
+  cases v with
+  | Vundef => rfl
+  | Vfloat _ => rfl
+  | Vsingle _ => rfl
+  | Vlong _ => rfl
+  | Vptr _ _ => rfl
+  | Vint p =>
+      change CompCert4Lean.Common.Values.val.Vint
+          (CompCert4Lean.Lib.Integers.Int.zero_ext z8
+            (CompCert4Lean.Lib.Integers.Int.and p n)) =
+        CompCert4Lean.Common.Values.val.Vint
+          (CompCert4Lean.Lib.Integers.Int.and p
+            (CompCert4Lean.Lib.Integers.Int.and
+              (CompCert4Lean.Lib.Integers.Int.repr (zOfNat 255)) n))
+      congr 1
+      rw [CompCert4Lean.Lib.Integers.Int.zero_ext_and_proof
+        z8 (CompCert4Lean.Lib.Integers.Int.and p n)
+        (by change (0 : Int) ≤ 8; omega)]
+      calc
+        CompCert4Lean.Lib.Integers.Int.and
+              (CompCert4Lean.Lib.Integers.Int.and p n)
+              (CompCert4Lean.Lib.Integers.Int.repr (zOfNat 255)) =
+            CompCert4Lean.Lib.Integers.Int.and p
+              (CompCert4Lean.Lib.Integers.Int.and n
+                (CompCert4Lean.Lib.Integers.Int.repr (zOfNat 255))) := by
+                  exact CompCert4Lean.Lib.Integers.Int.and_assoc_proof p n
+                    (CompCert4Lean.Lib.Integers.Int.repr (zOfNat 255))
+        _ = CompCert4Lean.Lib.Integers.Int.and p
+              (CompCert4Lean.Lib.Integers.Int.and
+                (CompCert4Lean.Lib.Integers.Int.repr (zOfNat 255)) n) := by
+                  exact congrArg (CompCert4Lean.Lib.Integers.Int.and p)
+                    (CompCert4Lean.Lib.Integers.Int.and_commut_proof n
+                      (CompCert4Lean.Lib.Integers.Int.repr (zOfNat 255)))
+
+theorem eval_cast8unsigned
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    eval_cast8unsignedStatement := by
+  intro xi ge sp e m le a x h
+  cases hcase : cast8unsigned_match a with
+  | cast8unsigned_case1 n =>
+      have hx : x = .Vint n := eval_intconst_value_local xi ge sp e m le n x
+        (by simpa [hcase] using h)
+      subst x
+      refine ⟨.Vint (CompCert4Lean.Lib.Integers.Int.zero_ext z8 n), ?_, ?_⟩
+      · exact eval_expr.eval_Eop le
+          (Ointconst (CompCert4Lean.Lib.Integers.Int.zero_ext z8 n)) Enil [] _
+          (eval_exprlist.nil le) rfl
+      · exact Val.lessdef_refl _
+  | cast8unsigned_case2 n t =>
+      cases h with
+      | eval_Eop le' op al vl v hargs hop =>
+          cases hargs with
+          | cons _ a' al' v1 vl' hhead htail =>
+              cases htail with
+              | nil _ =>
+                  change some (Val.and v1 (.Vint n)) = some x at hop
+                  cases hop
+                  let mask := CompCert4Lean.Lib.Integers.Int.and
+                    (CompCert4Lean.Lib.Integers.Int.repr (zOfNat 255)) n
+                  obtain ⟨v, hv, hd⟩ := eval_andimm xi ge sp e m mask le t v1
+                    (by simpa [hcase] using hhead)
+                  refine ⟨v, ?_, ?_⟩
+                  · simpa [cast8unsigned, hcase, mask] using hv
+                  · rw [val_zero_ext_and_mask8_local v1 n]
+                    exact hd
+  | cast8unsigned_default e1 =>
+      refine ⟨Val.zero_ext z8 x, ?_, Val.lessdef_refl _⟩
+      simp only [cast8unsigned, hcase]
+      apply eval_expr.eval_Eop le Ocast8unsigned (Econs a Enil) [x]
+        (Val.zero_ext z8 x)
+      · exact eval_exprlist.cons le a Enil x [] h (eval_exprlist.nil le)
+      · rfl
+
+end CompCert4Lean.X86.SelectOpproof
+
+namespace CompCert4Lean.X86.SelectOpproof
+
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.ExternalCalls
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.X86.Op
+open CompCert4Lean.X86.SelectOp
+
+theorem eval_cast16signed
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    eval_cast16signedStatement := by
+  intro xi ge sp e m le a x h
+  cases hcase : cast16signed_match a with
+  | cast16signed_case1 n =>
+      have hx : x = .Vint n := eval_intconst_value_local xi ge sp e m le n x
+        (by simpa [hcase] using h)
+      subst x
+      refine ⟨.Vint (CompCert4Lean.Lib.Integers.Int.sign_ext z16 n), ?_, ?_⟩
+      · exact eval_expr.eval_Eop le
+          (Ointconst (CompCert4Lean.Lib.Integers.Int.sign_ext z16 n)) Enil [] _
+          (eval_exprlist.nil le) rfl
+      · exact Val.lessdef_refl _
+  | cast16signed_default e1 =>
+      refine ⟨Val.sign_ext z16 x, ?_, Val.lessdef_refl _⟩
+      simp only [cast16signed, hcase]
+      apply eval_expr.eval_Eop le Ocast16signed (Econs a Enil) [x]
+        (Val.sign_ext z16 x)
+      · exact eval_exprlist.cons le a Enil x [] h (eval_exprlist.nil le)
+      · rfl
+
+end CompCert4Lean.X86.SelectOpproof
+
+namespace CompCert4Lean.X86.SelectOpproof
+
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.ExternalCalls
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.X86.Op
+open CompCert4Lean.X86.SelectOp
+
+private theorem val_zero_ext_and_mask16_local (v : val)
+    (n : CompCert4Lean.Lib.Integers.int) :
+    Val.zero_ext z16 (Val.and v (.Vint n)) =
+      Val.and v (.Vint (CompCert4Lean.Lib.Integers.Int.and
+        (CompCert4Lean.Lib.Integers.Int.repr (zOfNat 65535)) n)) := by
+  cases v with
+  | Vundef => rfl
+  | Vfloat _ => rfl
+  | Vsingle _ => rfl
+  | Vlong _ => rfl
+  | Vptr _ _ => rfl
+  | Vint p =>
+      change CompCert4Lean.Common.Values.val.Vint
+          (CompCert4Lean.Lib.Integers.Int.zero_ext z16
+            (CompCert4Lean.Lib.Integers.Int.and p n)) =
+        CompCert4Lean.Common.Values.val.Vint
+          (CompCert4Lean.Lib.Integers.Int.and p
+            (CompCert4Lean.Lib.Integers.Int.and
+              (CompCert4Lean.Lib.Integers.Int.repr (zOfNat 65535)) n))
+      congr 1
+      rw [CompCert4Lean.Lib.Integers.Int.zero_ext_and_proof
+        z16 (CompCert4Lean.Lib.Integers.Int.and p n)
+        (by change (0 : Int) ≤ 16; omega)]
+      calc
+        CompCert4Lean.Lib.Integers.Int.and
+              (CompCert4Lean.Lib.Integers.Int.and p n)
+              (CompCert4Lean.Lib.Integers.Int.repr (zOfNat 65535)) =
+            CompCert4Lean.Lib.Integers.Int.and p
+              (CompCert4Lean.Lib.Integers.Int.and n
+                (CompCert4Lean.Lib.Integers.Int.repr (zOfNat 65535))) := by
+                  exact CompCert4Lean.Lib.Integers.Int.and_assoc_proof p n
+                    (CompCert4Lean.Lib.Integers.Int.repr (zOfNat 65535))
+        _ = CompCert4Lean.Lib.Integers.Int.and p
+              (CompCert4Lean.Lib.Integers.Int.and
+                (CompCert4Lean.Lib.Integers.Int.repr (zOfNat 65535)) n) := by
+                  exact congrArg (CompCert4Lean.Lib.Integers.Int.and p)
+                    (CompCert4Lean.Lib.Integers.Int.and_commut_proof n
+                      (CompCert4Lean.Lib.Integers.Int.repr (zOfNat 65535)))
+
+theorem eval_cast16unsigned
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    eval_cast16unsignedStatement := by
+  intro xi ge sp e m le a x h
+  cases hcase : cast16unsigned_match a with
+  | cast16unsigned_case1 n =>
+      have hx : x = .Vint n := eval_intconst_value_local xi ge sp e m le n x
+        (by simpa [hcase] using h)
+      subst x
+      refine ⟨.Vint (CompCert4Lean.Lib.Integers.Int.zero_ext z16 n), ?_, ?_⟩
+      · exact eval_expr.eval_Eop le
+          (Ointconst (CompCert4Lean.Lib.Integers.Int.zero_ext z16 n)) Enil [] _
+          (eval_exprlist.nil le) rfl
+      · exact Val.lessdef_refl _
+  | cast16unsigned_case2 n t =>
+      cases h with
+      | eval_Eop le' op al vl v hargs hop =>
+          cases hargs with
+          | cons _ a' al' v1 vl' hhead htail =>
+              cases htail with
+              | nil _ =>
+                  change some (Val.and v1 (.Vint n)) = some x at hop
+                  cases hop
+                  let mask := CompCert4Lean.Lib.Integers.Int.and
+                    (CompCert4Lean.Lib.Integers.Int.repr (zOfNat 65535)) n
+                  obtain ⟨v, hv, hd⟩ := eval_andimm xi ge sp e m mask le t v1
+                    (by simpa [hcase] using hhead)
+                  refine ⟨v, ?_, ?_⟩
+                  · simpa [cast16unsigned, hcase, mask] using hv
+                  · rw [val_zero_ext_and_mask16_local v1 n]
+                    exact hd
+  | cast16unsigned_default e1 =>
+      refine ⟨Val.zero_ext z16 x, ?_, Val.lessdef_refl _⟩
+      simp only [cast16unsigned, hcase]
+      apply eval_expr.eval_Eop le Ocast16unsigned (Econs a Enil) [x]
+        (Val.zero_ext z16 x)
+      · exact eval_exprlist.cons le a Enil x [] h (eval_exprlist.nil le)
+      · rfl
+
+end CompCert4Lean.X86.SelectOpproof

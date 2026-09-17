@@ -4417,3 +4417,16 @@ theorem In_loadbytes : In_loadbytesStatement := by
         omega
 
 end CompCert4Lean.Backend.ValueDomain
+
+namespace CompCert4Lean.Backend.ValueDomain
+
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Values
+
+theorem smatch_loadbytes : smatch_loadbytesStatement := by
+  intro bc m b p b' ofs' q i n ofs bytes hload hsmatch hmem
+  obtain ⟨ofs1, ⟨_hlo, _hhi⟩, hload1⟩ :=
+    In_loadbytes m b (Fragment (Vptr b' ofs') q i) n ofs bytes hload hmem
+  exact hsmatch.2 ofs1 b' ofs' q i hload1
+
+end CompCert4Lean.Backend.ValueDomain

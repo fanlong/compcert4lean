@@ -4169,3 +4169,142 @@ theorem senv_match : senv_matchStatement := by
 
 end Genv
 end CompCert4Lean.Common.Globalenvs
+
+namespace CompCert4Lean.Common.Globalenvs
+namespace Genv
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Linking
+
+private theorem pg_store_init_data_match
+    {C F1 V1 F2 V2 : Type} [Linker C]
+    (match_fundef : C → F1 → F2 → Prop)
+    (match_varinfo : V1 → V2 → Prop)
+    (ctx : C) (p : program F1 V1) (tp : program F2 V2)
+    (hmatch : match_program_gen match_fundef match_varinfo ctx p tp) :
+    ∀ (i : init_data) (m : mem) (b : block) (ofs : Z) (m' : mem),
+      store_init_data (globalenv p) m b ofs i = some m' →
+      store_init_data (globalenv tp) m b ofs i = some m' := by
+  intro i m b ofs m' h
+  cases i with
+  | Init_int8 n => exact h
+  | Init_int16 n => exact h
+  | Init_int32 n => exact h
+  | Init_int64 n => exact h
+  | Init_float32 n => exact h
+  | Init_float64 n => exact h
+  | Init_space n => exact h
+  | Init_addrof id offset =>
+      change (match find_symbol (globalenv p) id with
+        | none => none
+        | some b' => Mem.store Mptr m b ofs (Vptr b' offset)) = some m' at h
+      change (match find_symbol (globalenv tp) id with
+        | none => none
+        | some b' => Mem.store Mptr m b ofs (Vptr b' offset)) = some m'
+      have hsym := @find_symbol_match C F1 V1 F2 V2 _ match_fundef match_varinfo
+        ctx p tp hmatch id
+      rw [hsym]
+      exact h
+
+private theorem pg_store_init_data_list_match
+    {C F1 V1 F2 V2 : Type} [Linker C]
+    (match_fundef : C → F1 → F2 → Prop)
+    (match_varinfo : V1 → V2 → Prop)
+    (ctx : C) (p : program F1 V1) (tp : program F2 V2)
+    (hmatch : match_program_gen match_fundef match_varinfo ctx p tp) :
+    ∀ (idl : List init_data) (m : mem) (b : block) (ofs : Z) (m' : mem),
+      store_init_data_list (globalenv p) m b ofs idl = some m' →
+      store_init_data_list (globalenv tp) m b ofs idl = some m' := by
+  intro idl
+  induction idl with
+  | nil =>
+      intro m b ofs m' h
+      exact h
+  | cons i rest ih =>
+      intro m b ofs m' h
+      change (match store_init_data (globalenv p) m b ofs i with
+        | none => none
+        | some m1 =>
+            store_init_data_list (globalenv p) m1 b
+              (zAdd ofs (init_data_size i)) rest) = some m' at h
+      cases hstep : store_init_data (globalenv p) m b ofs i with
+      | none => simp [hstep] at h
+      | some m1 =>
+          have htail : store_init_data_list (globalenv p) m1 b
+              (zAdd ofs (init_data_size i)) rest = some m' := by
+            simpa [hstep] using h
+          have hfirst := pg_store_init_data_match match_fundef match_varinfo ctx p tp
+            hmatch i m b ofs m1 hstep
+          change (match store_init_data (globalenv tp) m b ofs i with
+            | none => none
+            | some m1 =>
+                store_init_data_list (globalenv tp) m1 b
+                  (zAdd ofs (init_data_size i)) rest) = some m'
+          rw [hfirst]
+          exact ih m1 b (zAdd ofs (init_data_size i)) m' htail
+
+theorem alloc_globals_match : alloc_globals_matchStatement := by
+  intro C F1 V1 F2 V2 _ match_fundef match_varinfo ctx p tp hmatch
+  intro gl1 gl2 hgl
+  induction hgl with
+  | nil =>
+      intro m m' h
+      exact h
+  | @cons hd1 tl1 hd2 tl2 hhd htl ih =>
+      intro m m' h
+      rcases hd1 with ⟨id1, gd1⟩
+      rcases hd2 with ⟨id2, gd2⟩
+      rcases hhd with ⟨hid, hgd⟩
+      change id1 = id2 at hid
+      subst id2
+      change (match alloc_global (globalenv p) m (id1, gd1) with
+        | none => none
+        | some m1 => alloc_globals (globalenv p) m1 tl1) = some m' at h
+      cases halloc : alloc_global (globalenv p) m (id1, gd1) with
+      | none => simp [halloc] at h
+      | some m1 =>
+          have htail : alloc_globals (globalenv p) m1 tl1 = some m' := by
+            simpa [halloc] using h
+          have halloc' : alloc_global (globalenv tp) m (id1, gd2) = some m1 := by
+            cases gd1 with
+            | Gfun f1 =>
+                cases gd2 with
+                | Gfun f2 =>
+                    simpa [alloc_global] using halloc
+                | Gvar v2 => cases hgd
+            | Gvar v1 =>
+                cases gd2 with
+                | Gfun f2 => cases hgd
+                | Gvar v2 =>
+                    cases hgd with
+                    | match_globdef_var _ _ hvar =>
+                        cases hvar with
+                        | match_globvar_intro info1 info2 init readonly volatile hinfo =>
+                            unfold alloc_global at halloc ⊢
+                            cases hmem : Mem.alloc m z0 (init_data_list_size init) with
+                            | mk m2 b =>
+                                cases hzeros : store_zeros m2 b z0
+                                    (init_data_list_size init) with
+                                | none => simp [hmem, hzeros] at halloc
+                                | some m3 =>
+                                    cases hlist : store_init_data_list (globalenv p) m3 b z0
+                                        init with
+                                    | none => simp [hmem, hzeros, hlist] at halloc
+                                    | some m4 =>
+                                        have hstored : store_init_data_list (globalenv tp) m3 b z0
+                                            init = some m4 :=
+                                          pg_store_init_data_list_match match_fundef match_varinfo
+                                            ctx p tp hmatch init m3 b z0 m4 hlist
+                                        simpa [perm_globvar, hmem, hzeros, hlist, hstored] using halloc
+          change (match alloc_global (globalenv tp) m (id1, gd2) with
+            | none => none
+            | some m1 => alloc_globals (globalenv tp) m1 tl2) = some m'
+          rw [halloc']
+          exact ih m1 m' htail
+
+end Genv
+end CompCert4Lean.Common.Globalenvs

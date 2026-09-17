@@ -3922,3 +3922,84 @@ theorem transl_constant_correct : transl_constant_correctStatement := by
       exact .inject_long _
 
 end CompCert4Lean.Cfrontend.Cminorgenproof
+
+namespace CompCert4Lean.Cfrontend.Cminorgenproof
+
+theorem val_inject_function_pointer : val_inject_function_pointerStatement := by
+  intro prog bound v fd f tv hfind hgenv hinj
+  have hinv := CompCert4Lean.Common.Globalenvs.Genv.find_funct_inv
+    (F := CS.fundef) (V := Unit)
+    (ge := sourceGenv prog) (v := v) (f := fd) hfind
+  rcases hinv with ⟨b, hv⟩
+  subst v
+  have hfind_ptr : CompCert4Lean.Common.Globalenvs.Genv.find_funct_ptr
+      (sourceGenv prog) b = some fd := by
+    rw [← CompCert4Lean.Common.Globalenvs.Genv.find_funct_find_funct_ptr]
+    exact hfind
+  rcases hgenv with ⟨hdom, himage, hsymbols, hfunctions, hvarinfos⟩
+  have hb : CompCert4Lean.Lib.Coqlib.Plt b bound := hfunctions b fd hfind_ptr
+  have hmap : f b = some (b, .Z0) := hdom b hb
+  cases hinj with
+  | inject_ptr b1 ofs1 b2 ofs2 delta hmap' hofs =>
+      have heq : (b2, delta) = (b, .Z0) := Option.some.inj (hmap'.symm.trans hmap)
+      cases heq
+      have hadd : CompCert4Lean.Lib.Integers.Ptrofs.add
+          CompCert4Lean.Lib.Integers.Ptrofs.zero
+          (CompCert4Lean.Lib.Integers.Ptrofs.repr .Z0) =
+          CompCert4Lean.Lib.Integers.Ptrofs.zero := by
+        apply CompCert4Lean.Lib.Integers.WordCore.ext
+        rfl
+      rw [hadd] at hofs
+      exact congrArg
+        (fun o : CompCert4Lean.Lib.Integers.Ptrofs.int =>
+          CompCert4Lean.Common.Values.val.Vptr b o) hofs
+
+theorem match_call_cont : match_call_contStatement := by
+  intro k tk cenv xenv cs hmatch
+  induction hmatch with
+  | stop =>
+      exact .stop
+  | seq htrans ih a_ih =>
+      simpa only [CompCert4Lean.Cfrontend.Csharpminor.call_cont,
+        CompCert4Lean.Backend.Cminor.call_cont] using a_ih
+  | match_Kseq2 htrans ih a_ih =>
+      simpa only [CompCert4Lean.Cfrontend.Csharpminor.call_cont,
+        CompCert4Lean.Backend.Cminor.call_cont] using a_ih
+  | block ih a_ih =>
+      simpa only [CompCert4Lean.Cfrontend.Csharpminor.call_cont,
+        CompCert4Lean.Backend.Cminor.call_cont] using a_ih
+  | match_Kblock2 ih a_ih =>
+      simpa only [CompCert4Lean.Cfrontend.Csharpminor.call_cont,
+        CompCert4Lean.Backend.Cminor.call_cont] using a_ih
+  | match_Kcall htrans ih a_ih =>
+      exact .match_Kcall htrans ih
+
+theorem match_is_call_cont
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    match_is_call_contStatement := by
+  intro xi tprog tfn te sp tm k tk cenv xenv cs hmatch hcall
+  induction hmatch with
+  | stop =>
+      refine ⟨_, CompCert4Lean.Common.Smallstep.star_refl _ _ _, ?_, ?_⟩
+      · trivial
+      · exact .stop
+  | seq htrans ih a_ih =>
+      simp [CompCert4Lean.Cfrontend.Csharpminor.is_call_cont] at hcall
+  | match_Kseq2 htrans ih a_ih =>
+      simp [CompCert4Lean.Cfrontend.Csharpminor.is_call_cont] at hcall
+  | block ih a_ih =>
+      simp [CompCert4Lean.Cfrontend.Csharpminor.is_call_cont] at hcall
+  | match_Kblock2 ih a_ih =>
+      rcases a_ih hcall with ⟨tk', hstar, hcall', hmatch'⟩
+      refine ⟨tk', ?_, hcall', hmatch'⟩
+      apply CompCert4Lean.Common.Smallstep.star_left
+      · exact CompCert4Lean.Backend.Cminor.step.step_skip_block _ _ _ _ _
+      · exact hstar
+      · rfl
+  | match_Kcall htrans ih a_ih =>
+      refine ⟨_, CompCert4Lean.Common.Smallstep.star_refl _ _ _, ?_, ?_⟩
+      · trivial
+      · exact .match_Kcall htrans ih
+
+end CompCert4Lean.Cfrontend.Cminorgenproof

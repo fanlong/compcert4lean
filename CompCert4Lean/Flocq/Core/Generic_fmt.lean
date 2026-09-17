@@ -3216,3 +3216,29 @@ theorem round_UP_opp :
       rw [hzrnd]
 
 end CompCert4Lean.Flocq.Core.Generic_fmt
+
+namespace CompCert4Lean.Flocq.Core.Generic_fmt
+
+theorem round_ZR_opp :
+    ∀ ctx magnitude, round_ZR_oppStatement ctx magnitude := by
+  intro ctx magnitude beta fexp x
+  unfold Exact.round
+  have hce := pg_cexp_opp ctx magnitude beta fexp x
+  rw [hce, scaled_mantissa_opp ctx magnitude beta fexp x]
+  let sm := Exact.scaled_mantissa ctx magnitude beta fexp x
+  have htr : Exact.Ztrunc ctx (Exact.Ropp ctx sm) = Zopp (Exact.Ztrunc ctx sm) := by
+    by_cases hsm0 : sm = Exact.R0 ctx
+    ·
+      have hz0 : Exact.R0 ctx = Exact.IZR ctx Z0 := by
+        exact ctx.certificate.sourceLaws.ofZ_zero.symm
+      have hzt : Exact.Ztrunc ctx (Exact.R0 ctx) = Z0 := by
+        rw [hz0]
+        exact CompCert4Lean.Flocq.Core.Raux.Ztrunc_IZR ctx Z0
+      rw [hsm0, pg_neg_zero ctx, hzt]
+      exact (pg_zopp_zopp Z0).symm
+    · exact pg_ztrunc_opp ctx hsm0
+  rw [htr]
+  exact CompCert4Lean.Flocq.Core.Float_prop.F2R_Zopp ctx beta
+    (Exact.Ztrunc ctx sm) (Exact.cexp ctx magnitude beta fexp x)
+
+end CompCert4Lean.Flocq.Core.Generic_fmt
