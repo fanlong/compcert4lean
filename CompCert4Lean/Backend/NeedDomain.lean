@@ -6634,3 +6634,247 @@ theorem mull_sound : mull_soundStatement := by
                 exact CompCert4Lean.Common.Values.Val.lessdef_undef _
 
 end CompCert4Lean.Backend.NeedDomain
+
+namespace CompCert4Lean.Backend.NeedDomain
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Lib.Integers
+
+private theorem pg_zmod_int64 (i : Int) :
+    ZArith.BinInt.Z.modulo
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt i)
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.two_power_nat 64) =
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt
+        (i % Int.ofNat (2 ^ 64)) := by
+  have hmpos : (0 : Int) < intOfZ
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.two_power_nat 64) := by
+    rw [pg_two_power_nat_zofint 64]
+    simp only [CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt,
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+    exact Int.natCast_pos.mpr (Nat.two_pow_pos 64)
+  apply intOfZ_injective
+  have hrange := ZArith.BinInt.Z.modulo_range
+    (CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt i)
+    (CompCert4Lean.Foundation.Numbers.Rocq.Coq.two_power_nat 64)
+    (by
+      change (0 : Int) < intOfZ
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.two_power_nat 64)
+      exact hmpos)
+  have hr0 : (0 : Int) ≤ intOfZ
+      (ZArith.BinInt.Z.modulo
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt i)
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.two_power_nat 64)) := hrange.1
+  have hrlt : intOfZ
+      (ZArith.BinInt.Z.modulo
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt i)
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.two_power_nat 64)) <
+      intOfZ (CompCert4Lean.Foundation.Numbers.Rocq.Coq.two_power_nat 64) := hrange.2
+  have hd := ZArith.Zdiv.Z_div_mod_eq_full
+    (CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt i)
+    (CompCert4Lean.Foundation.Numbers.Rocq.Coq.two_power_nat 64)
+  have hdInt := congrArg intOfZ hd
+  simp only [ZArith.BinInt.Z.add, ZArith.BinInt.Z.mul,
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt] at hdInt
+  have hcalc :
+      intOfZ (ZArith.BinInt.Z.modulo
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt i)
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.two_power_nat 64)) =
+      i % intOfZ (CompCert4Lean.Foundation.Numbers.Rocq.Coq.two_power_nat 64) := by
+    have hdiv := hdInt
+    change i = intOfZ
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.two_power_nat 64) *
+        intOfZ (ZArith.BinInt.Z.div
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt i)
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.two_power_nat 64)) +
+        intOfZ (ZArith.BinInt.Z.modulo
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt i)
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.two_power_nat 64)) at hdiv
+    let q := intOfZ (ZArith.BinInt.Z.div
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt i)
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.two_power_nat 64))
+    let r := intOfZ (ZArith.BinInt.Z.modulo
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt i)
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.two_power_nat 64))
+    let m := intOfZ
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.two_power_nat 64)
+    have hcalc' : i % m = r := by
+      calc
+        i % m = (m * q + r) % m := congrArg (fun a => a % m) hdiv
+        _ = (r + q * m) % m := by rw [Int.add_comm, Int.mul_comm]
+        _ = r % m := Int.add_mul_emod_self_right r q m
+        _ = r := Int.emod_eq_of_lt hr0 hrlt
+    simpa [m, r] using hcalc'.symm
+  have hm : intOfZ
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.two_power_nat 64) =
+      Int.ofNat (2 ^ 64) := by
+    rw [pg_two_power_nat_zofint 64]
+    rfl
+  rw [hm] at hcalc
+  rw [hcalc]
+  simp only [CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+
+private theorem pg_unsigned_neg64_base (a : Int64.int) :
+    CompCert4Lean.Lib.Zbits.eqmod
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.two_power_nat 64)
+      (ZArith.BinInt.Z.opp (Int64.unsigned a))
+      (Int64.unsigned (CompCert4Lean.Lib.Integers.Int64.neg a)) := by
+  have hrepr := lagreeUnsignedAsNatFinal a
+  have hneg0 := lagreeUnsignedAsNatFinal
+    (CompCert4Lean.Lib.Integers.Int64.neg a)
+  have hneg := hneg0
+  change CompCert4Lean.Lib.Zbits.eqmod
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.two_power_nat 64)
+      (ZArith.BinInt.Z.opp (WordCore.unsigned a))
+      (WordCore.unsigned (CompCert4Lean.Lib.Integers.Int64.neg a))
+  rw [hrepr]
+  change CompCert4Lean.Lib.Zbits.eqmod
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.two_power_nat 64)
+      (ZArith.BinInt.Z.opp (ZArith.BinInt.Z.of_nat a.val))
+      (WordCore.unsigned (CompCert4Lean.Lib.Integers.Int64.neg a))
+  rw [hneg]
+  change WordCore.unsigned (WordCore.neg a) =
+      ZArith.BinInt.Z.of_nat (WordCore.neg a).val at hneg
+  unfold WordCore.neg at hneg
+  rw [hrepr] at hneg
+  change WordCore.unsigned
+      (WordCore.repr Int64.wordsize
+        (ZArith.BinInt.Z.opp (ZArith.BinInt.Z.of_nat a.val))) =
+      ZArith.BinInt.Z.of_nat
+        (WordCore.repr Int64.wordsize
+          (ZArith.BinInt.Z.opp (ZArith.BinInt.Z.of_nat a.val))).val at hneg
+  have hopp : ZArith.BinInt.Z.opp (ZArith.BinInt.Z.of_nat a.val) =
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt (-Int.ofNat a.val) := by
+    apply intOfZ_injective
+    simp only [ZArith.BinInt.Z.opp, ZArith.BinInt.Z.of_nat,
+      intOfZ_zOfInt]
+  rw [hopp] at hneg
+  rw [lagreeValReprIntFinal] at hneg
+  have hneg0' := hneg0
+  change WordCore.unsigned (WordCore.neg a) =
+      ZArith.BinInt.Z.of_nat
+        (CompCert4Lean.Lib.Integers.Int64.neg a).val at hneg0'
+  unfold WordCore.neg at hneg0'
+  rw [hrepr] at hneg0'
+  change WordCore.unsigned
+      (WordCore.repr Int64.wordsize
+        (ZArith.BinInt.Z.opp (ZArith.BinInt.Z.of_nat a.val))) = _ at hneg0'
+  rw [hopp] at hneg0'
+  have hnat : ZArith.BinInt.Z.of_nat
+        (CompCert4Lean.Lib.Integers.Int64.neg a).val =
+      ZArith.BinInt.Z.of_nat
+        (Int.toNat (-Int.ofNat a.val % Int.ofNat (2 ^ 64))) := by
+    exact hneg0'.symm.trans hneg
+  have hremnonneg : (0 : Int) ≤
+      -Int.ofNat a.val % Int.ofNat (2 ^ 64) :=
+    Int.emod_nonneg _ (by
+      exact Int.ne_of_gt (Int.natCast_pos.mpr (Nat.two_pow_pos 64)))
+  have hzrem :
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt
+          (-Int.ofNat a.val % Int.ofNat (2 ^ 64)) =
+        ZArith.BinInt.Z.of_nat
+          (CompCert4Lean.Lib.Integers.Int64.neg a).val := by
+    have hzto : CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt
+          (-Int.ofNat a.val % Int.ofNat (2 ^ 64)) =
+        ZArith.BinInt.Z.of_nat
+          (Int.toNat (-Int.ofNat a.val % Int.ofNat (2 ^ 64))) := by
+      apply intOfZ_injective
+      simp only [ZArith.BinInt.Z.of_nat,
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+      exact (Int.toNat_of_nonneg hremnonneg).symm
+    exact hzto.trans hnat.symm
+  have hmod_eq :
+      ZArith.BinInt.Z.modulo
+          (ZArith.BinInt.Z.opp (ZArith.BinInt.Z.of_nat a.val))
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.two_power_nat 64) =
+        ZArith.BinInt.Z.of_nat
+          (CompCert4Lean.Lib.Integers.Int64.neg a).val := by
+    rw [hopp]
+    exact (pg_zmod_int64 (-Int.ofNat a.val)).trans hzrem
+  have hmod := pg_eqmod_mod64
+    (CompCert4Lean.Foundation.Numbers.Rocq.Coq.two_power_nat 64)
+    (ZArith.BinInt.Z.opp (ZArith.BinInt.Z.of_nat a.val))
+  exact CompCert4Lean.Lib.Zbits.eqmod_trans
+    (CompCert4Lean.Foundation.Numbers.Rocq.Coq.two_power_nat 64)
+    (ZArith.BinInt.Z.opp (ZArith.BinInt.Z.of_nat a.val))
+    (ZArith.BinInt.Z.modulo
+      (ZArith.BinInt.Z.opp (ZArith.BinInt.Z.of_nat a.val))
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.two_power_nat 64))
+    (ZArith.BinInt.Z.of_nat
+      (CompCert4Lean.Lib.Integers.Int64.neg a).val)
+    hmod (by
+      have hrefl := CompCert4Lean.Lib.Zbits.eqmod_refl
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.two_power_nat 64)
+        (ZArith.BinInt.Z.modulo
+          (ZArith.BinInt.Z.opp (ZArith.BinInt.Z.of_nat a.val))
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.two_power_nat 64))
+      rw [← hmod_eq]
+      exact hrefl)
+
+private theorem pg_unsigned_neg64_target (m a c : Int64.int)
+    (h : CompCert4Lean.Lib.Zbits.eqmod
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.two_p (Int64.size m))
+      (Int64.unsigned a) (Int64.unsigned c)) :
+    CompCert4Lean.Lib.Zbits.eqmod
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.two_p (Int64.size m))
+      (Int64.unsigned (CompCert4Lean.Lib.Integers.Int64.neg a))
+      (Int64.unsigned (CompCert4Lean.Lib.Integers.Int64.neg c)) := by
+  let target := CompCert4Lean.Foundation.Numbers.Rocq.Coq.two_p (Int64.size m)
+  have hraw := CompCert4Lean.Lib.Zbits.eqmod_neg target
+    (Int64.unsigned a) (Int64.unsigned c) h
+  change CompCert4Lean.Lib.Zbits.eqmod target
+      (ZArith.BinInt.Z.opp (Int64.unsigned a))
+      (ZArith.BinInt.Z.opp (Int64.unsigned c)) at hraw
+  have hdiv := pg_two_power_divides64 m
+  have hleft0 := pg_unsigned_neg64_base a
+  have hright0 := pg_unsigned_neg64_base c
+  have hleft := CompCert4Lean.Lib.Zbits.eqmod_divides
+    (CompCert4Lean.Foundation.Numbers.Rocq.Coq.two_power_nat 64) target
+    (ZArith.BinInt.Z.opp (Int64.unsigned a))
+    (Int64.unsigned (CompCert4Lean.Lib.Integers.Int64.neg a)) hleft0 hdiv
+  have hright := CompCert4Lean.Lib.Zbits.eqmod_divides
+    (CompCert4Lean.Foundation.Numbers.Rocq.Coq.two_power_nat 64) target
+    (ZArith.BinInt.Z.opp (Int64.unsigned c))
+    (Int64.unsigned (CompCert4Lean.Lib.Integers.Int64.neg c)) hright0 hdiv
+  exact CompCert4Lean.Lib.Zbits.eqmod_trans target
+    (Int64.unsigned (CompCert4Lean.Lib.Integers.Int64.neg a))
+    (ZArith.BinInt.Z.opp (Int64.unsigned a))
+    (Int64.unsigned (CompCert4Lean.Lib.Integers.Int64.neg c))
+    (pg_eqmod_sym hleft)
+    (CompCert4Lean.Lib.Zbits.eqmod_trans target
+      (ZArith.BinInt.Z.opp (Int64.unsigned a))
+      (ZArith.BinInt.Z.opp (Int64.unsigned c))
+      (Int64.unsigned (CompCert4Lean.Lib.Integers.Int64.neg c))
+      hraw hright)
+
+theorem negl_sound : negl_soundStatement := by
+  intro v w x h
+  cases x with
+  | Nothing => trivial
+  | I m =>
+      cases v <;> cases w <;>
+        simp [modarith, vagree, iVagree, lVagree,
+          CompCert4Lean.Common.Values.Val.negl,
+          CompCert4Lean.X86_64.Archi.ptr64] at h ⊢
+  | L m =>
+      cases v <;> cases w <;>
+        simp [modarith, vagree, iVagree, lVagree,
+          CompCert4Lean.Common.Values.Val.negl,
+          CompCert4Lean.X86_64.Archi.ptr64] at h ⊢
+      apply pg_lagree_of_eqmod_unsigned m
+      apply pg_unsigned_neg64_target m
+      exact lagree_eqmod _ _ _ h
+  | All =>
+      cases h with
+      | lessdef_refl v =>
+          cases v <;>
+            simp [vagree, CompCert4Lean.Common.Values.Val.negl,
+              CompCert4Lean.X86_64.Archi.ptr64] <;>
+            first | exact CompCert4Lean.Common.Values.Val.lessdef_refl _
+                  | exact CompCert4Lean.Common.Values.Val.lessdef_undef _
+      | lessdef_undef w =>
+          cases w <;>
+            simp [vagree, CompCert4Lean.Common.Values.Val.negl,
+              CompCert4Lean.X86_64.Archi.ptr64] <;>
+            exact CompCert4Lean.Common.Values.Val.lessdef_undef _
+
+end CompCert4Lean.Backend.NeedDomain

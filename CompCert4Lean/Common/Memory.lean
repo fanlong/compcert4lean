@@ -4539,3 +4539,102 @@ theorem load_alloc_same' : load_alloc_same'Statement := by
 end Mem
 
 end CompCert4Lean.Common.Memory
+
+namespace CompCert4Lean.Common.Memory
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.Lib.Coqlib
+
+namespace Mem
+
+theorem loadbytes_alloc_unchanged : loadbytes_alloc_unchangedStatement := by
+  intro m1 lo hi m2 b halloc b' ofs n hbvalid
+  have hneq : b' ≠ b := by
+    intro heq
+    subst b'
+    have hb : b = m1.nextblock := by
+      have := alloc_result m1 lo hi m2 b halloc
+      exact this
+    subst b
+    exact Plt_strict _ hbvalid
+  have h1to2 : ∀ {o},
+      perm m1 b' o Cur Readable → perm m2 b' o Cur Readable := by
+    intro o hp
+    exact perm_alloc_1 m1 lo hi m2 b halloc b' o Cur Readable hp
+  have h2to1 : ∀ {o},
+      perm m2 b' o Cur Readable → perm m1 b' o Cur Readable := by
+    intro o hp
+    exact perm_alloc_4 m1 lo hi m2 b halloc b' o Cur Readable hp hneq
+  unfold loadbytes
+  cases h1 : range_perm_dec m1 b' ofs (zAdd ofs n) Cur Readable with
+  | left hv1 =>
+      have hv2 : range_perm m2 b' ofs (zAdd ofs n) Cur Readable := by
+        intro o ho
+        exact h1to2 (hv1 o ho)
+      cases h2 : range_perm_dec m2 b' ofs (zAdd ofs n) Cur Readable with
+      | left _ =>
+          simp [boolOfSumbool, h1, h2]
+          have halloc' := halloc
+          simp [alloc] at halloc'
+          rcases halloc' with ⟨rfl, rfl⟩
+          simp [pmapGetSetOther _ _ _ _ hneq]
+      | right hn2 => exact False.elim (hn2 hv2)
+  | right hn1 =>
+      cases h2 : range_perm_dec m2 b' ofs (zAdd ofs n) Cur Readable with
+      | left hv2 =>
+          apply False.elim
+          apply hn1
+          intro o ho
+          exact h2to1 (hv2 o ho)
+      | right _ => simp [boolOfSumbool, h1, h2]
+
+theorem loadbytes_alloc_same : loadbytes_alloc_sameStatement := by
+  intro m1 lo hi m2 b halloc n ofs bytes byte hload hmem
+  unfold loadbytes at hload
+  cases hdec : range_perm_dec m2 b ofs (zAdd ofs n) Cur Readable with
+  | right hn => simp [boolOfSumbool, hdec] at hload
+  | left _ =>
+      have hbytes : bytes = getN (zToNat n) ofs
+          (PMap.get b m2.mem_contents) := by
+        simpa [boolOfSumbool, hdec] using hload.symm
+      subst bytes
+      have halloc' := halloc
+      simp [alloc] at halloc'
+      rcases halloc' with ⟨rfl, rfl⟩
+      have hmem' : byte ∈ getN (zToNat n) ofs (ZMap.init Undef) := by
+        simpa [alloc, pmapGetSetSame] using hmem
+      have hundef : ∀ (k : Nat) (p : Z),
+          byte ∈ getN k p (ZMap.init Undef) → byte = Undef := by
+        intro k
+        induction k with
+        | zero => intro p hm; simp [getN] at hm
+        | succ k ih =>
+            intro p hm
+            simp only [getN, List.mem_cons] at hm
+            rw [show ZMap.get p (ZMap.init Undef) = Undef by rfl] at hm
+            rcases hm with hhead | htail
+            · exact hhead
+            · exact ih (zAdd p z1) htail
+      exact hundef (zToNat n) ofs hmem'
+
+def range_perm_free : range_perm_freeStatement := by
+  intro m1 b lo hi hperm
+  refine ⟨unchecked_free m1 b lo hi, ?_⟩
+  unfold free
+  cases hdec : range_perm_dec m1 b lo hi Cur Freeable with
+  | left _ => simp [boolOfSumbool, hdec]
+  | right hn => exact False.elim (hn hperm)
+
+theorem free_range_perm : free_range_permStatement := by
+  intro m1 bf lo hi m2 hfree
+  unfold free at hfree
+  cases hdec : range_perm_dec m1 bf lo hi Cur Freeable with
+  | left hperm => exact hperm
+  | right _ => simp [boolOfSumbool, hdec] at hfree
+
+end Mem
+
+end CompCert4Lean.Common.Memory

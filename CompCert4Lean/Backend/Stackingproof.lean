@@ -3482,3 +3482,92 @@ theorem find_label_tail : find_label_tailStatement := by
           exact is_tail.cons _ (ih h)
 
 end CompCert4Lean.Backend.Stackingproof
+
+namespace CompCert4Lean.Backend.Stackingproof
+
+open CompCert4Lean.Backend.Stacking
+open CompCert4Lean.Lib.Coqlib
+
+theorem is_tail_save_callee_save : is_tail_save_callee_saveStatement := by
+  intro l ofs k
+  induction l generalizing ofs with
+  | nil => exact is_tail.refl k
+  | cons r l ih =>
+      simp only [save_callee_save_rec]
+      exact is_tail.cons _ (ih
+        (ofs := zAdd (align ofs (CompCert4Lean.Common.AST.typesize
+          (CompCert4Lean.X86.Machregs.mreg_type r)))
+          (CompCert4Lean.Common.AST.typesize (CompCert4Lean.X86.Machregs.mreg_type r)))
+        )
+
+theorem is_tail_restore_callee_save : is_tail_restore_callee_saveStatement := by
+  intro l ofs k
+  induction l generalizing ofs with
+  | nil => exact is_tail.refl k
+  | cons r l ih =>
+      simp only [restore_callee_save_rec]
+      exact is_tail.cons _ (ih
+        (ofs := zAdd (align ofs (CompCert4Lean.Common.AST.typesize
+          (CompCert4Lean.X86.Machregs.mreg_type r)))
+          (CompCert4Lean.Common.AST.typesize (CompCert4Lean.X86.Machregs.mreg_type r)))
+        )
+
+end CompCert4Lean.Backend.Stackingproof
+
+namespace CompCert4Lean.Backend.Stackingproof
+
+open CompCert4Lean.Backend.Linear
+open CompCert4Lean.Backend.Mach
+open CompCert4Lean.Backend.Stacking
+open CompCert4Lean.Lib.Coqlib
+
+theorem is_tail_transl_instr : is_tail_transl_instrStatement := by
+  intro cfg fe i k
+  cases i with
+  | Lgetstack sl ofs ty dst =>
+      cases sl <;> exact is_tail.cons _ (is_tail.refl k)
+  | Lsetstack src sl ofs ty =>
+      cases sl
+      · exact is_tail.cons _ (is_tail.refl k)
+      · exact is_tail.refl k
+      · exact is_tail.cons _ (is_tail.refl k)
+  | Lop op args res => exact is_tail.cons _ (is_tail.refl k)
+  | Lload chunk addr args dst => exact is_tail.cons _ (is_tail.refl k)
+  | Lstore chunk addr args src => exact is_tail.cons _ (is_tail.refl k)
+  | Lcall sig ros => exact is_tail.cons _ (is_tail.refl k)
+  | Ltailcall sig ros =>
+      simp only [transl_instr, restore_callee_save]
+      exact is_tail_trans _ k (Mtailcall sig ros :: k)
+        (is_tail.cons _ (is_tail.refl k)) _
+        (is_tail_restore_callee_save fe.fe_used_callee_save fe.fe_ofs_callee_save
+          (Mtailcall sig ros :: k))
+  | Lbuiltin ef args res => exact is_tail.cons _ (is_tail.refl k)
+  | Llabel lbl => exact is_tail.cons _ (is_tail.refl k)
+  | Lgoto lbl => exact is_tail.cons _ (is_tail.refl k)
+  | Lcond cond args lbl => exact is_tail.cons _ (is_tail.refl k)
+  | Ljumptable arg tbl => exact is_tail.cons _ (is_tail.refl k)
+  | Lreturn =>
+      simp only [transl_instr, restore_callee_save]
+      exact is_tail_trans _ k (Mreturn :: k)
+        (is_tail.cons _ (is_tail.refl k)) _
+        (is_tail_restore_callee_save fe.fe_used_callee_save fe.fe_ofs_callee_save
+          (Mreturn :: k))
+
+end CompCert4Lean.Backend.Stackingproof
+
+namespace CompCert4Lean.Backend.Stackingproof
+
+open CompCert4Lean.Backend.Linear
+open CompCert4Lean.Backend.Stacking
+open CompCert4Lean.Lib.Coqlib
+
+theorem is_tail_transl_code : is_tail_transl_codeStatement := by
+  intro cfg fe c1 c2 h
+  induction h with
+  | refl c => exact is_tail.refl (transl_code cfg fe c)
+  | cons i htail ih =>
+      rw [transl_code_eq]
+      exact is_tail_trans _ (transl_code cfg fe _) (transl_code cfg fe _)
+        ih _ (is_tail_transl_instr cfg fe i (transl_code cfg fe _))
+
+end CompCert4Lean.Backend.Stackingproof

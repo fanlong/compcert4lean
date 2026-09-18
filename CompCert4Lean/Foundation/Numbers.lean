@@ -4173,3 +4173,188 @@ theorem ZArith.BinInt.Z.shiftl_spec_high :
 
 end Rocq.Coq
 end CompCert4Lean.Foundation.Numbers
+
+namespace CompCert4Lean.Foundation.Numbers
+namespace Rocq.Coq
+open ZArith.BinInt
+
+private theorem numbers_add_pos_pos (r p : positive) :
+    ZArith.BinInt.Z.add (Z.Zpos r) (Z.Zpos p) =
+      Z.Zpos (posOfNat (posToNat r + posToNat p)) := by
+  apply intOfZ_injective
+  change intOfZ (zOfInt (intOfZ (Z.Zpos r) + intOfZ (Z.Zpos p))) =
+    intOfZ (Z.Zpos (posOfNat (posToNat r + posToNat p)))
+  rw [intOfZ_zOfInt]
+  have hr := posToNat_positive r
+  have hp := posToNat_positive p
+  simp only [intOfZ, posToNat_posOfNat (by omega : 0 < posToNat r + posToNat p)]
+  exact (Int.natCast_add (posToNat r) (posToNat p)).symm
+
+private theorem numbers_add_pos_neg_lt (r p : positive) (hrp : posToNat r < posToNat p) :
+    ZArith.BinInt.Z.add (Z.Zpos r) (Z.Zneg p) =
+      Z.Zneg (posOfNat (posToNat p - posToNat r)) := by
+  apply intOfZ_injective
+  change intOfZ (zOfInt (intOfZ (Z.Zpos r) + intOfZ (Z.Zneg p))) =
+    intOfZ (Z.Zneg (posOfNat (posToNat p - posToNat r)))
+  rw [intOfZ_zOfInt]
+  have hsub : 0 < posToNat p - posToNat r := by omega
+  simp only [intOfZ, posToNat_posOfNat hsub]
+  have hcast : (Int.ofNat (posToNat p - posToNat r) : Int) =
+      Int.ofNat (posToNat p) - Int.ofNat (posToNat r) :=
+    Int.ofNat_sub (by omega)
+  rw [hcast]
+  omega
+
+private theorem numbers_shiftr_neg_eq_shiftl_pos (a : Z) (p : positive) :
+    ZArith.BinInt.Z.shiftr a (Z.Zneg p) =
+      ZArith.BinInt.Z.shiftl a (Z.Zpos p) := by
+  unfold ZArith.BinInt.Z.shiftr ZArith.BinInt.Z.shiftl
+  have hp : 0 < posToNat p := posToNat_positive p
+  have hip : (0 : Int) < Int.ofNat (posToNat p) := Int.natCast_pos.mpr hp
+  have hneg : ¬ (0 : Int) ≤ intOfZ (Z.Zneg p) := by
+    change ¬ (0 : Int) ≤ -Int.ofNat (posToNat p)
+    omega
+  have hpos : (0 : Int) ≤ intOfZ (Z.Zpos p) := by
+    change (0 : Int) ≤ Int.ofNat (posToNat p)
+    omega
+  simp only [if_neg hneg, if_pos hpos]
+  congr 1
+  simp [intOfZ, Int.toNat]
+
+private theorem numbers_add_pos_neg_eq_sub (r p : positive) :
+    ZArith.BinInt.Z.add (Z.Zpos r) (Z.Zneg p) =
+      ZArith.BinInt.Z.sub (Z.Zpos r) (Z.Zpos p) := by
+  apply intOfZ_injective
+  simp [ZArith.BinInt.Z.add, ZArith.BinInt.Z.sub,
+    intOfZ_zOfInt, intOfZ, Int.sub_eq_add_neg]
+
+theorem ZArith.BinInt.Z.shiftr_spec :
+    ZArith.BinInt.Z.shiftr_specStatement := by
+  intro a n m hm
+  cases n with
+  | Z0 =>
+      rw [ZArith.BinInt.Z.shiftr_0_r, ZArith.BinInt.Z.add_0_r]
+  | Zpos p =>
+      have hp : 0 < posToNat p := posToNat_positive p
+      have hnp : 0 ≤ intOfZ (Z.Zpos p) := by simp [intOfZ]
+      unfold ZArith.BinInt.Z.shiftr
+      rw [if_pos hnp]
+      cases m with
+      | Zneg r =>
+          exfalso
+          change 0 ≤ -(Int.ofNat (posToNat r)) at hm
+          have hr : (0 : Int) < Int.ofNat (posToNat r) :=
+            Int.natCast_pos.mpr (posToNat_positive r)
+          omega
+      | Z0 =>
+          cases a with
+          | Z0 =>
+              simp only [intOfZ]
+              have hz : zOfInt (Int.ediv 0
+                  (Int.pow 2 (Int.toNat (Int.ofNat (posToNat p))))) = Z.Z0 := by
+                have hdiv : Int.ediv 0
+                    (Int.pow 2 (Int.toNat (Int.ofNat (posToNat p)))) = 0 :=
+                  Int.zero_ediv _
+                rw [hdiv]
+                rfl
+              rw [hz, ZArith.BinInt.Z.testbit_0_l,
+                ZArith.BinInt.Z.add_0_l,
+                ZArith.BinInt.Z.testbit_0_l]
+          | Zpos q =>
+              simp only [intOfZ]
+              change Z.testbit
+                (zOfInt (Int.ofNat (posToNat q) /
+                  Int.pow 2 (posToNat p))) Z.Z0 =
+                Z.testbit (Z.Zpos q)
+                  (ZArith.BinInt.Z.add Z.Z0 (Z.Zpos p))
+              rw [numbers_int_pow_two_nat,
+                numbers_testbit_pos_div_pow_zero,
+                ZArith.BinInt.Z.add_0_l,
+                numbers_testbit_pos_pos_any]
+          | Zneg q =>
+              simp only [intOfZ]
+              have hq := posToNat_positive q
+              change Z.testbit
+                (zOfInt (-Int.ofNat (posToNat q) /
+                  Int.pow 2 (posToNat p))) Z.Z0 =
+                Z.testbit (Z.Zneg q)
+                  (ZArith.BinInt.Z.add Z.Z0 (Z.Zpos p))
+              rw [numbers_int_pow_two_nat,
+                numbers_testbit_neg_div_pow_zero _ _ hq,
+                ZArith.BinInt.Z.add_0_l,
+                numbers_testbit_neg_pos_any]
+      | Zpos r =>
+          cases a with
+          | Z0 =>
+              simp only [intOfZ]
+              have hz : zOfInt (Int.ediv 0
+                  (Int.pow 2 (Int.toNat (Int.ofNat (posToNat p))))) = Z.Z0 := by
+                have hdiv : Int.ediv 0
+                    (Int.pow 2 (Int.toNat (Int.ofNat (posToNat p)))) = 0 :=
+                  Int.zero_ediv _
+                rw [hdiv]
+                rfl
+              rw [hz, ZArith.BinInt.Z.testbit_0_l,
+                numbers_add_pos_pos, ZArith.BinInt.Z.testbit_0_l]
+          | Zpos q =>
+              simp only [intOfZ]
+              change Z.testbit
+                (zOfInt (Int.ofNat (posToNat q) /
+                  Int.pow 2 (posToNat p))) (Z.Zpos r) =
+                Z.testbit (Z.Zpos q)
+                  (ZArith.BinInt.Z.add (Z.Zpos r) (Z.Zpos p))
+              rw [numbers_int_pow_two_nat,
+                numbers_testbit_pos_div_pow,
+                numbers_add_pos_pos,
+                numbers_testbit_pos_pos_any]
+              rw [posToNat_posOfNat (by omega : 0 < posToNat r + posToNat p)]
+          | Zneg q =>
+              simp only [intOfZ]
+              have hq := posToNat_positive q
+              change Z.testbit
+                (zOfInt (-Int.ofNat (posToNat q) /
+                  Int.pow 2 (posToNat p))) (Z.Zpos r) =
+                Z.testbit (Z.Zneg q)
+                  (ZArith.BinInt.Z.add (Z.Zpos r) (Z.Zpos p))
+              rw [numbers_int_pow_two_nat,
+                numbers_testbit_neg_div_pow _ _ hq,
+                numbers_add_pos_pos,
+                numbers_testbit_neg_pos_any]
+              rw [posToNat_posOfNat (by omega : 0 < posToNat r + posToNat p)]
+  | Zneg p =>
+      have hp : 0 < posToNat p := posToNat_positive p
+      rw [numbers_shiftr_neg_eq_shiftl_pos]
+      cases m with
+      | Zneg r =>
+          exfalso
+          change 0 ≤ -(Int.ofNat (posToNat r)) at hm
+          have hr : (0 : Int) < Int.ofNat (posToNat r) :=
+            Int.natCast_pos.mpr (posToNat_positive r)
+          omega
+      | Z0 =>
+          have hlt : ZArith.BinInt.Z.lt Z.Z0 (Z.Zpos p) := by
+            change (0 : Int) < Int.ofNat (posToNat p)
+            exact Int.natCast_pos.mpr hp
+          rw [ZArith.BinInt.Z.shiftl_spec_low a (Z.Zpos p) Z.Z0 hlt,
+            ZArith.BinInt.Z.add_0_l]
+          rfl
+      | Zpos r =>
+          by_cases hpr : posToNat p ≤ posToNat r
+          · have hle : ZArith.BinInt.Z.le (Z.Zpos p) (Z.Zpos r) := by
+              change Int.ofNat (posToNat p) ≤ Int.ofNat (posToNat r)
+              exact Int.ofNat_le.mpr hpr
+            rw [ZArith.BinInt.Z.shiftl_spec_high a (Z.Zpos p) (Z.Zpos r)
+              (by
+                change (0 : Int) ≤ Int.ofNat (posToNat r)
+                exact Int.natCast_nonneg _) hle,
+              numbers_add_pos_neg_eq_sub]
+          · have hlt : posToNat r < posToNat p := by omega
+            have hlow : ZArith.BinInt.Z.lt (Z.Zpos r) (Z.Zpos p) := by
+              change Int.ofNat (posToNat r) < Int.ofNat (posToNat p)
+              exact Int.ofNat_lt.mpr hlt
+            rw [ZArith.BinInt.Z.shiftl_spec_low a (Z.Zpos p) (Z.Zpos r) hlow,
+              numbers_add_pos_neg_lt r p hlt]
+            rfl
+
+end Rocq.Coq
+end CompCert4Lean.Foundation.Numbers

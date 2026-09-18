@@ -4030,3 +4030,14 @@ theorem mag_DN :
   exact hmag
 
 end CompCert4Lean.Flocq.Core.Generic_fmt
+
+namespace CompCert4Lean.Flocq.Core.Generic_fmt
+
+theorem cexp_DN :
+    ∀ ctx magnitude, cexp_DNStatement ctx magnitude := by
+  intro ctx magnitude beta fexp hvalid x hpos
+  unfold Exact.cexp
+  exact congrArg fexp
+    (mag_DN ctx magnitude beta fexp hvalid x hpos)
+
+end CompCert4Lean.Flocq.Core.Generic_fmt

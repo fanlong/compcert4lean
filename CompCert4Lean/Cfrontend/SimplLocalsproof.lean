@@ -5298,3 +5298,31 @@ theorem match_envs_free_blocks : match_envs_free_blocksStatement := by
   exact hinside
 
 end CompCert4Lean.Cfrontend.SimplLocalsproof
+
+namespace CompCert4Lean.Cfrontend.SimplLocalsproof
+
+open CompCert4Lean.Cfrontend.Clight
+open CompCert4Lean.Cfrontend.SimplLocals
+
+theorem match_globalenvs_preserves_globals :
+    match_globalenvs_preserves_globalsStatement := by
+  intro prog f h
+  rcases h with ⟨bound, hmg⟩
+  rcases hmg with ⟨hdom, himage, hsymbols, hfunctions, hvarinfos⟩
+  constructor
+  · intro id b hfind
+    exact hdom b (hsymbols id b hfind)
+  constructor
+  · intro b gv hfind
+    exact hdom b (hvarinfos b gv hfind)
+  · intro b1 b2 delta gv hfind hmap
+    exact (himage b1 b2 delta hmap (hvarinfos b2 gv hfind)).symm
+
+theorem typeof_simpl_expr : typeof_simpl_exprStatement := by
+  intro cenv a
+  cases a <;> try rfl
+  case Evar id ty =>
+    by_cases h : VSet.mem id cenv = true <;>
+      simp [simpl_expr, typeof, h]
+
+end CompCert4Lean.Cfrontend.SimplLocalsproof

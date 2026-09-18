@@ -3386,3 +3386,68 @@ theorem hiword_lessdef : hiword_lessdefStatement := by
 
 end Val
 end CompCert4Lean.Common.Values
+
+namespace CompCert4Lean.Common.Values
+namespace Val
+
+theorem lessdef_normalize : lessdef_normalizeStatement := by
+  intro v ty
+  cases v with
+  | Vundef => exact lessdef_refl _
+  | Vint n =>
+      cases ty <;> simp [normalize] <;>
+        first | exact lessdef_refl _ | exact lessdef_undef _
+  | Vlong n =>
+      cases ty <;> simp [normalize] <;>
+        first | exact lessdef_refl _ | exact lessdef_undef _
+  | Vfloat f =>
+      cases ty <;> simp [normalize] <;>
+        first | exact lessdef_refl _ | exact lessdef_undef _
+  | Vsingle f =>
+      cases ty <;> simp [normalize] <;>
+        first | exact lessdef_refl _ | exact lessdef_undef _
+  | Vptr b ofs =>
+      cases ty <;> cases harch : CompCert4Lean.X86_64.Archi.ptr64 <;>
+        simp [normalize, harch] <;>
+        first | exact lessdef_refl _ | exact lessdef_undef _
+
+end Val
+end CompCert4Lean.Common.Values
+
+namespace CompCert4Lean.Common.Values
+namespace Val
+
+theorem normalize_lessdef : normalize_lessdefStatement := by
+  intro v v' ty h
+  cases h with
+  | lessdef_refl v => exact lessdef_refl _
+  | lessdef_undef v => exact lessdef_undef _
+
+theorem has_argtype_lessdef : has_argtype_lessdefStatement := by
+  intro v r v' harg hld
+  cases hld with
+  | lessdef_refl => exact harg
+  | lessdef_undef =>
+      cases r <;> simp [has_argtype] at harg ⊢
+
+end Val
+end CompCert4Lean.Common.Values
+
+namespace CompCert4Lean.Common.Values
+namespace Val
+
+theorem has_argtype_list_lessdef : has_argtype_list_lessdefStatement := by
+  intro vl rl vl' harg hld
+  induction hld generalizing rl with
+  | lessdef_list_nil =>
+      cases harg
+      exact CompCert4Lean.Lib.Coqlib.list_forall2.nil _
+  | lessdef_list_cons v1 v2 vl1 vl2 hhead htail ih =>
+      cases harg with
+      | cons _ _ hheadArg htailArg =>
+          exact CompCert4Lean.Lib.Coqlib.list_forall2.cons _ _
+            (has_argtype_lessdef _ _ _ hheadArg hhead)
+            (ih _ htailArg)
+
+end Val
+end CompCert4Lean.Common.Values

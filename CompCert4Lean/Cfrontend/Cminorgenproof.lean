@@ -4388,3 +4388,71 @@ theorem match_globalenvs_init : match_globalenvs_initStatement := by
     exact Genv.find_var_info_not_fresh _ _ prog b gv m hmem hfind
 
 end CompCert4Lean.Cfrontend.Cminorgenproof
+
+namespace CompCert4Lean.Cfrontend.Cminorgenproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Linking
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+
+theorem transl_initial_states : transl_initial_statesStatement := by
+  letI : CompCert4Lean.Common.Linking.Linker CS.fundef :=
+    @CompCert4Lean.Common.Linking.Linker_fundef CS.function
+  letI : CompCert4Lean.Common.Linking.Linker CS.program :=
+    @CompCert4Lean.Common.Linking.Linker_prog CS.fundef Unit _ _
+  intro prog tprog hmatch S hinit
+  cases hinit with
+  | initial_state_intro b f m0 hmem hsymbol hfun hsig =>
+      obtain ⟨tf, hfind, htrans⟩ :=
+        function_ptr_translated prog tprog hmatch b f hfun
+      have hmem' : Genv.init_mem tprog = some m0 := by
+        exact Genv.init_mem_transf_partial
+          (A := CS.fundef) (B := CompCert4Lean.Backend.Cminor.fundef)
+          (V := Unit)
+          (transf := fun f => CompCert4Lean.Cfrontend.Cminorgen.transl_fundef f)
+          prog tprog hmatch m0 hmem
+      have hmain : tprog.prog_main = prog.prog_main :=
+        CompCert4Lean.Common.Linking.match_program_main hmatch
+      have hsymbol' :
+          Genv.find_symbol (Genv.globalenv tprog) tprog.prog_main = some b := by
+        rw [hmain]
+        exact (symbols_preserved prog tprog hmatch prog.prog_main).trans hsymbol
+      have hsig' :
+          CompCert4Lean.Backend.Cminor.funsig tf =
+            CompCert4Lean.Common.AST.signature_main := by
+        exact (sig_preserved f tf htrans).trans hsig
+      refine ⟨.Callstate tf [] .Kstop m0, ?_, ?_⟩
+      · exact CompCert4Lean.Backend.Cminor.initial_state.initial_state_intro
+          b tf m0 hmem' hsymbol' hfind hsig'
+      · apply match_callstate (f := Mem.flat_inj m0.nextblock)
+          (cs := []) (cenv := PTree.empty Z)
+        · exact htrans
+        · exact @Genv.initmem_inject CS.fundef Unit prog m0 hmem
+        · apply match_callstack.mcs_nil (hi := m0.nextblock)
+          · exact match_globalenvs_init prog m0 hmem
+          · exact Ple_refl _
+          · exact Ple_refl _
+        · exact match_cont.stop
+        · exact by trivial
+        · exact Val.inject_list_nil _
+
+end CompCert4Lean.Cfrontend.Cminorgenproof
+
+namespace CompCert4Lean.Cfrontend.Cminorgenproof
+
+theorem transl_final_states : transl_final_statesStatement := by
+  intro prog S R r hmatch hfinal
+  cases hfinal with
+  | final_state_intro r m =>
+      cases hmatch with
+      | @returnstate v k m tv tk tm f cs cenv h_inj h_stack h_cont h_val =>
+          cases h_cont
+          cases h_val
+          exact CompCert4Lean.Backend.Cminor.final_state.final_state_intro r tm
+
+end CompCert4Lean.Cfrontend.Cminorgenproof
