@@ -4358,3 +4358,33 @@ theorem find_symbol_transf_partial : find_symbol_transf_partialStatement := by
 
 end Genv
 end CompCert4Lean.Common.Globalenvs
+
+namespace CompCert4Lean.Common.Globalenvs
+namespace Genv
+
+theorem senv_transf_partial : senv_transf_partialStatement := by
+  intro A B V _ _ transf p tp hmatch
+  exact @senv_match (CompCert4Lean.Common.AST.program A V) A V B V _
+      (fun _ f tf => transf f = .OK tf) Eq p p tp hmatch
+
+theorem init_mem_transf_partial : init_mem_transf_partialStatement := by
+  intro A B V _ _ transf p tp hmatch
+  exact @init_mem_match (CompCert4Lean.Common.AST.program A V) A V B V _
+      (fun _ f tf => transf f = .OK tf) Eq p p tp hmatch
+
+theorem find_funct_ptr_transf : find_funct_ptr_transfStatement := by
+  intro A B V _ _ transf p tp hmatch b f hfind
+  rcases @find_funct_ptr_match (CompCert4Lean.Common.AST.program A V) A V B V _
+      (fun _ f tf => tf = transf f) Eq p p tp hmatch b f hfind with
+    ⟨_, tf, htf, htransf, _⟩
+  simpa [htransf] using htf
+
+theorem find_funct_transf : find_funct_transfStatement := by
+  intro A B V _ _ transf p tp hmatch v f hfind
+  rcases @find_funct_match (CompCert4Lean.Common.AST.program A V) A V B V _
+      (fun _ f tf => tf = transf f) Eq p p tp hmatch v f hfind with
+    ⟨_, tf, htf, htransf, _⟩
+  simpa [htransf] using htf
+
+end Genv
+end CompCert4Lean.Common.Globalenvs

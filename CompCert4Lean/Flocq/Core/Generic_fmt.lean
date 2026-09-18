@@ -3702,3 +3702,63 @@ theorem round_UP_pt :
   exact hup
 
 end CompCert4Lean.Flocq.Core.Generic_fmt
+
+namespace CompCert4Lean.Flocq.Core.Generic_fmt
+
+private theorem pg_suffix_valid_rnd_ceil (ctx : ExactRealContext) :
+    Exact.Valid_rnd ctx (Exact.Zceil ctx) := by
+  constructor
+  · intro x y hxy
+    exact CompCert4Lean.Flocq.Core.Raux.Zceil_le ctx x y hxy
+  · intro n
+    exact CompCert4Lean.Flocq.Core.Raux.Zceil_IZR ctx n
+
+theorem round_DN_small_pos :
+    ∀ ctx magnitude, round_DN_small_posStatement ctx magnitude := by
+  intro ctx magnitude beta fexp x ex hbounds hexp
+  unfold Exact.round Exact.scaled_mantissa
+  rw [cexp_fexp_pos ctx magnitude beta fexp x ex hbounds]
+  rw [mantissa_DN_small_pos ctx beta fexp x ex hbounds hexp]
+  exact CompCert4Lean.Flocq.Core.Float_prop.F2R_0 ctx beta _
+
+theorem round_UP_small_pos :
+    ∀ ctx magnitude, round_UP_small_posStatement ctx magnitude := by
+  intro ctx magnitude beta fexp x ex hbounds hexp
+  unfold Exact.round Exact.scaled_mantissa
+  rw [cexp_fexp_pos ctx magnitude beta fexp x ex hbounds]
+  rw [mantissa_UP_small_pos ctx beta fexp x ex hbounds hexp]
+  exact CompCert4Lean.Flocq.Core.Float_prop.F2R_bpow ctx beta _
+
+theorem round_DN_UP_lt :
+    ∀ ctx magnitude, round_DN_UP_ltStatement ctx magnitude := by
+  intro ctx magnitude beta fexp hvalid x hxformat
+  have hdn := round_DN_pt ctx magnitude beta fexp hvalid x
+  have hup := round_UP_pt ctx magnitude beta fexp hvalid x
+  constructor
+  · apply (ctx.certificate.orderedField.lt_iff_le_not_le _ _).mpr
+    refine ⟨hdn.2.1, ?_⟩
+    intro hrev
+    have heq : x = Exact.round ctx magnitude beta fexp (Exact.Zfloor ctx) x :=
+      ctx.certificate.orderedField.le_antisymm _ _ hrev hdn.2.1
+    apply hxformat
+    rw [heq]
+    exact hdn.1
+  · apply (ctx.certificate.orderedField.lt_iff_le_not_le _ _).mpr
+    refine ⟨hup.2.1, ?_⟩
+    intro hrev
+    have heq : x = Exact.round ctx magnitude beta fexp (Exact.Zceil ctx) x :=
+      ctx.certificate.orderedField.le_antisymm _ _ hup.2.1 hrev
+    apply hxformat
+    rw [heq]
+    exact hup.1
+
+theorem generic_format_EM :
+    ∀ ctx magnitude, generic_format_EMStatement ctx magnitude := by
+  intro ctx magnitude beta fexp hvalid x
+  by_cases hformat : Exact.generic_format ctx magnitude beta fexp x
+  · exact Or.inl hformat
+  · right
+    intro hround
+    exact hformat hround
+
+end CompCert4Lean.Flocq.Core.Generic_fmt

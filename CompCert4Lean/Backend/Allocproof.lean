@@ -6746,3 +6746,76 @@ theorem sig_function_translated : sig_function_translatedStatement := by
       rfl
 
 end CompCert4Lean.Backend.Allocproof
+
+namespace CompCert4Lean.Backend.Allocproof
+
+open CompCert4Lean.Backend.Allocation
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Backend.LTL
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Linking
+
+theorem find_function_translated : find_function_translatedStatement := by
+  intro cfg oracle prog tprog hmatch ros rs fd ros' e e' ls hfind hros hsat
+  cases ros with
+  | inl r =>
+      cases ros' with
+      | inl mr =>
+          simp [add_equation_ros] at hros
+          rcases hros with ⟨rfl, rfl⟩
+          simp only [RTL.find_function] at hfind
+          have hfind' : Genv.find_funct (Genv.globalenv prog)
+              (CompCert4Lean.Backend.Registers.Regmap.get r rs) = some fd := by
+            simpa [RTL.find_function] using hfind
+          have hld := add_equation_lessdef rs ls
+            { ekind := Full, ereg := r, eloc := .R mr } e hsat
+          have hld' : CompCert4Lean.Common.Values.Val.lessdef
+              (CompCert4Lean.Backend.Registers.Regmap.get r rs)
+              (ls (CompCert4Lean.Backend.Locations.R mr)) := by
+            simpa [sel_val] using hld
+          clear hsat hld
+          generalize hsrc : CompCert4Lean.Backend.Registers.Regmap.get r rs = vs
+              at hfind' hld'
+          generalize htgt : ls (CompCert4Lean.Backend.Locations.R mr) = vt at hld'
+          cases hld' with
+          | lessdef_refl v =>
+              rcases functions_translated cfg oracle prog tprog hmatch
+                  vs fd hfind' with
+                ⟨tf, hfindtf, htrans⟩
+              refine ⟨tf, ?_, htrans⟩
+              change Genv.find_funct (Genv.globalenv tprog)
+                (ls (CompCert4Lean.Backend.Locations.R mr)) = some tf
+              rw [htgt]
+              exact hfindtf
+          | lessdef_undef v =>
+              simp [Genv.find_funct] at hfind'
+      | inr id' =>
+          simp [add_equation_ros] at hros
+  | inr id =>
+      cases ros' with
+      | inl mr =>
+          simp [add_equation_ros] at hros
+      | inr id' =>
+          simp [add_equation_ros] at hros
+          cases hEq : ident_eq id id' with
+          | left heq =>
+              have hb := hros.1
+              rw [hEq] at hb
+              change (true : Bool) = true at hb
+              cases heq
+              rcases hros with ⟨_, rfl⟩
+              simp only [RTL.find_function, LTL.find_function] at hfind ⊢
+              rw [symbols_preserved cfg oracle prog tprog hmatch id]
+              cases hs : Genv.find_symbol (Genv.globalenv prog) id with
+              | none => simp [hs] at hfind
+              | some b =>
+                  simp only [hs] at hfind ⊢
+                  exact function_ptr_translated cfg oracle prog tprog hmatch b fd hfind
+          | right hne =>
+              have hb := hros.1
+              rw [hEq] at hb
+              change (false : Bool) = true at hb
+              cases hb
+
+end CompCert4Lean.Backend.Allocproof

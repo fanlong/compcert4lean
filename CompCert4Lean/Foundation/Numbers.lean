@@ -3307,3 +3307,309 @@ theorem ZArith.BinInt.Z.div_mod :
 
 end Rocq.Coq
 end CompCert4Lean.Foundation.Numbers
+
+namespace CompCert4Lean.Foundation.Numbers
+namespace Rocq.Coq
+
+theorem ZArith.BinInt.Z.testbit_even_0 :
+    ZArith.BinInt.Z.testbit_even_0Statement := by
+  intro a
+  simp only [ZArith.BinInt.Z.testbit, ZArith.BinInt.Z.odd,
+    ZArith.BinInt.Z.even, ZArith.BinInt.Z.mul, intOfZ_zOfInt]
+  rw [Int.natAbs_mul]
+  have htwo : (intOfZ (Zpos (xO xH))).natAbs = 2 := by
+    simp [intOfZ, posToNat]
+  rw [htwo]
+  simp [Nat.mul_mod]
+
+private theorem z_mul_two_pos_for_testbit (p : positive) :
+    ZArith.BinInt.Z.mul (Zpos (xO xH)) (Zpos p) =
+      Zpos (posOfNat (2 * posToNat p)) := by
+  unfold ZArith.BinInt.Z.mul
+  rw [← zOfInt_intOfZ (Zpos (posOfNat (2 * posToNat p)))]
+  apply congrArg zOfInt
+  simp only [intOfZ, posToNat]
+  rw [posToNat_posOfNat (by have hp := posToNat_positive p; omega)]
+  rw [show Int.ofNat 2 = (2 : Int) by rfl]
+  exact (Int.natCast_mul 2 (posToNat p)).symm
+
+private theorem z_mul_two_neg_for_testbit (p : positive) :
+    ZArith.BinInt.Z.mul (Zpos (xO xH)) (Zneg p) =
+      Zneg (posOfNat (2 * posToNat p)) := by
+  unfold ZArith.BinInt.Z.mul
+  rw [← zOfInt_intOfZ (Zneg (posOfNat (2 * posToNat p)))]
+  apply congrArg zOfInt
+  simp only [intOfZ, posToNat]
+  rw [posToNat_posOfNat (by have hp := posToNat_positive p; omega)]
+  rw [show Int.ofNat 2 = (2 : Int) by rfl]
+  rw [Int.mul_neg]
+  exact congrArg Neg.neg (Int.natCast_mul 2 (posToNat p)).symm
+
+private theorem z_odd_pos_for_testbit (p : positive) :
+    ZArith.BinInt.Z.add
+        (ZArith.BinInt.Z.mul (Zpos (xO xH)) (Zpos p)) (Zpos xH) =
+      Zpos (posOfNat (2 * posToNat p + 1)) := by
+  rw [z_mul_two_pos_for_testbit]
+  unfold ZArith.BinInt.Z.add
+  rw [← zOfInt_intOfZ (Zpos (posOfNat (2 * posToNat p + 1)))]
+  apply congrArg zOfInt
+  simp only [intOfZ, posToNat]
+  rw [posToNat_posOfNat (by have hp := posToNat_positive p; omega)]
+  rw [posToNat_posOfNat (by exact Nat.succ_pos _)]
+  exact (Int.natCast_add (2 * posToNat p) 1).symm
+
+private theorem z_odd_neg_for_testbit (p : positive) :
+    ZArith.BinInt.Z.add
+        (ZArith.BinInt.Z.mul (Zpos (xO xH)) (Zneg p)) (Zpos xH) =
+      Zneg (posOfNat (2 * posToNat p - 1)) := by
+  have hp : 0 < posToNat p := posToNat_positive p
+  rw [z_mul_two_neg_for_testbit]
+  unfold ZArith.BinInt.Z.add
+  rw [← zOfInt_intOfZ (Zneg (posOfNat (2 * posToNat p - 1)))]
+  apply congrArg zOfInt
+  simp only [intOfZ, posToNat]
+  rw [posToNat_posOfNat (by omega)]
+  rw [posToNat_posOfNat (by have hp := posToNat_positive p; omega)]
+  have hcast : (Int.ofNat (2 * posToNat p - 1) : Int) =
+      2 * Int.ofNat (posToNat p) - 1 := by
+    calc
+      Int.ofNat (2 * posToNat p - 1) =
+          Int.ofNat (2 * posToNat p) - Int.ofNat 1 := Int.ofNat_sub (by omega)
+      _ = 2 * Int.ofNat (posToNat p) - 1 := by
+        rw [show Int.ofNat (2 * posToNat p) =
+          2 * Int.ofNat (posToNat p) by
+            exact (Int.natCast_mul 2 (posToNat p)).symm]
+        rfl
+  rw [hcast]
+  rw [show Int.ofNat (2 * posToNat p) =
+    2 * Int.ofNat (posToNat p) by
+      exact (Int.natCast_mul 2 (posToNat p)).symm]
+  change -(2 * Int.ofNat (posToNat p)) + (1 : Int) =
+    -(2 * Int.ofNat (posToNat p) - 1)
+  omega
+
+private theorem nat_testbit_even_zero_for_testbit (k : Nat) :
+    Nat.testBit (2 * k) 0 = false := by
+  rw [Nat.testBit_zero]
+  simp only [decide_eq_false_iff_not]
+  omega
+
+private theorem nat_testbit_odd_zero_for_testbit (k : Nat) :
+    Nat.testBit (2 * k + 1) 0 = true := by
+  rw [Nat.testBit_zero]
+  simp only [decide_eq_true_eq]
+  omega
+
+private theorem nat_testbit_odd_pred_zero_for_testbit (k : Nat) (hk : 0 < k) :
+    Nat.testBit (2 * k - 1) 0 = true := by
+  rw [Nat.testBit_zero]
+  simp only [decide_eq_true_eq]
+  omega
+
+private theorem nat_testbit_even_pred_zero_for_testbit (k : Nat) (hk : 0 < k) :
+    Nat.testBit ((2 * k - 1) - 1) 0 = false := by
+  rw [Nat.testBit_zero]
+  simp only [decide_eq_false_iff_not]
+  omega
+
+theorem ZArith.BinInt.Z.testbit_odd_0 :
+    ZArith.BinInt.Z.testbit_odd_0Statement := by
+  intro a
+  cases a with
+  | Z0 =>
+      change ZArith.BinInt.Z.testbit (Zpos xH) Z0 = true
+      rw [testbit_pos_zero]
+      exact nat_testbit_odd_zero_for_testbit 0
+  | Zpos p =>
+      rw [z_odd_pos_for_testbit, testbit_pos_zero]
+      rw [posToNat_posOfNat (by exact Nat.succ_pos _)]
+      exact nat_testbit_odd_zero_for_testbit _
+  | Zneg p =>
+      rw [z_odd_neg_for_testbit, testbit_neg_zero]
+      rw [posToNat_posOfNat (by have hp := posToNat_positive p; omega)]
+      have hp := posToNat_positive p
+      have hbit := nat_testbit_even_pred_zero_for_testbit (posToNat p) hp
+      simp [hbit]
+
+private theorem z_succ_zero_for_testbit :
+    ZArith.BinInt.Z.succ Z0 = Zpos xH := by
+  have hpos : posOfNat 1 = xH := by
+    apply posToNat_injective
+    rw [posToNat_posOfNat (by omega)]
+    simp [posToNat]
+  unfold ZArith.BinInt.Z.succ ZArith.BinInt.Z.add
+  simp only [intOfZ]
+  rw [Int.zero_add]
+  rw [show posToNat xH = 1 by rfl]
+  rw [← hpos]
+  exact zOfInt_intOfZ (Zpos (posOfNat 1))
+
+private theorem z_succ_pos_for_testbit (p : positive) :
+    ZArith.BinInt.Z.succ (Zpos p) =
+      Zpos (posOfNat (posToNat p + 1)) := by
+  unfold ZArith.BinInt.Z.succ ZArith.BinInt.Z.add
+  rw [← zOfInt_intOfZ (Zpos (posOfNat (posToNat p + 1)))]
+  apply congrArg zOfInt
+  simp only [intOfZ, posToNat]
+  rw [posToNat_posOfNat (by exact Nat.succ_pos _)]
+  exact (Int.natCast_add (posToNat p) 1).symm
+
+private theorem nat_testbit_even_succ_for_testbit (k i : Nat) :
+    Nat.testBit (2 * k) (i + 1) = Nat.testBit k i := by
+  rw [Nat.testBit_succ]
+  congr 1
+  omega
+
+private theorem nat_testbit_odd_succ_for_testbit (k i : Nat) :
+    Nat.testBit (2 * k + 1) (i + 1) = Nat.testBit k i := by
+  rw [Nat.testBit_succ]
+  congr 1
+  omega
+
+private theorem nat_testbit_odd_pred_succ_for_testbit (k i : Nat) (hk : 0 < k) :
+    Nat.testBit (2 * k - 1) (i + 1) = Nat.testBit (k - 1) i := by
+  rw [Nat.testBit_succ]
+  congr 1
+  omega
+
+private theorem nat_testbit_even_pred_succ_for_testbit (k i : Nat) (hk : 0 < k) :
+    Nat.testBit ((2 * k - 1) - 1) (i + 1) = Nat.testBit (k - 1) i := by
+  rw [Nat.testBit_succ]
+  congr 1
+  omega
+
+theorem ZArith.BinInt.Z.testbit_even_succ :
+    ZArith.BinInt.Z.testbit_even_succStatement := by
+  intro a n hn
+  cases n with
+  | Zneg p =>
+      exfalso
+      change 0 ≤ -(Int.ofNat (posToNat p)) at hn
+      have hp : (0 : Int) < Int.ofNat (posToNat p) :=
+        Int.natCast_pos.mpr (posToNat_positive p)
+      omega
+  | Z0 =>
+      rw [z_succ_zero_for_testbit]
+      cases a with
+      | Z0 =>
+          change ZArith.BinInt.Z.testbit Z0 (Zpos xH) =
+            ZArith.BinInt.Z.testbit Z0 Z0
+          simp [ZArith.BinInt.Z.testbit, ZArith.BinInt.Z.odd,
+            ZArith.BinInt.Z.even, intOfZ]
+      | Zpos p =>
+          rw [z_mul_two_pos_for_testbit]
+          have hpos : posOfNat 1 = xH := by
+            apply posToNat_injective
+            rw [posToNat_posOfNat (by omega)]
+            simp [posToNat]
+          rw [← hpos]
+          rw [testbit_pos_pos, testbit_pos_zero]
+          rw [posToNat_posOfNat (by have hp := posToNat_positive p; omega)]
+          exact nat_testbit_even_succ_for_testbit _ 0
+      | Zneg p =>
+          rw [z_mul_two_neg_for_testbit]
+          have hpos : posOfNat 1 = xH := by
+            apply posToNat_injective
+            rw [posToNat_posOfNat (by omega)]
+            simp [posToNat]
+          rw [← hpos]
+          rw [testbit_neg_pos, testbit_neg_zero]
+          rw [posToNat_posOfNat (by have hp := posToNat_positive p; omega)]
+          have hp := posToNat_positive p
+          have hbit := nat_testbit_odd_pred_succ_for_testbit (posToNat p) 0 hp
+          simp [hbit]
+  | Zpos p =>
+      rw [z_succ_pos_for_testbit]
+      cases a with
+      | Z0 =>
+          change ZArith.BinInt.Z.testbit Z0
+              (Zpos (posOfNat (posToNat p + 1))) =
+            ZArith.BinInt.Z.testbit Z0 (Zpos p)
+          simp [ZArith.BinInt.Z.testbit]
+      | Zpos q =>
+          rw [z_mul_two_pos_for_testbit]
+          simp only [ZArith.BinInt.Z.testbit]
+          rw [posToNat_posOfNat (by have hq := posToNat_positive q; omega)]
+          rw [posToNat_posOfNat (by exact Nat.succ_pos _)]
+          exact nat_testbit_even_succ_for_testbit _ _
+      | Zneg q =>
+          rw [z_mul_two_neg_for_testbit]
+          simp only [ZArith.BinInt.Z.testbit]
+          rw [posToNat_posOfNat (by have hq := posToNat_positive q; omega)]
+          rw [posToNat_posOfNat (by exact Nat.succ_pos _)]
+          have hq := posToNat_positive q
+          have hbit := nat_testbit_odd_pred_succ_for_testbit (posToNat q) (posToNat p) hq
+          simp [hbit]
+
+theorem ZArith.BinInt.Z.testbit_odd_succ :
+    ZArith.BinInt.Z.testbit_odd_succStatement := by
+  intro a n hn
+  cases n with
+  | Zneg p =>
+      exfalso
+      change 0 ≤ -(Int.ofNat (posToNat p)) at hn
+      have hp : (0 : Int) < Int.ofNat (posToNat p) :=
+        Int.natCast_pos.mpr (posToNat_positive p)
+      omega
+  | Z0 =>
+      rw [z_succ_zero_for_testbit]
+      cases a with
+      | Z0 =>
+          change ZArith.BinInt.Z.testbit (Zpos xH) (Zpos xH) =
+            ZArith.BinInt.Z.testbit Z0 Z0
+          simp [ZArith.BinInt.Z.testbit, ZArith.BinInt.Z.odd,
+            ZArith.BinInt.Z.even, intOfZ]
+          rw [show posToNat xH = 1 by rfl]
+          apply nat_bit_false_large
+          omega
+      | Zpos p =>
+          rw [z_odd_pos_for_testbit]
+          have hpos : posOfNat 1 = xH := by
+            apply posToNat_injective
+            rw [posToNat_posOfNat (by omega)]
+            simp [posToNat]
+          rw [← hpos]
+          rw [testbit_pos_pos, testbit_pos_zero]
+          rw [posToNat_posOfNat (by have hp := posToNat_positive p; omega)]
+          exact nat_testbit_odd_succ_for_testbit _ 0
+      | Zneg p =>
+          rw [z_odd_neg_for_testbit]
+          have hpos : posOfNat 1 = xH := by
+            apply posToNat_injective
+            rw [posToNat_posOfNat (by omega)]
+            simp [posToNat]
+          rw [← hpos]
+          rw [testbit_neg_pos, testbit_neg_zero]
+          rw [posToNat_posOfNat (by have hp := posToNat_positive p; omega)]
+          have hp := posToNat_positive p
+          have hbit := nat_testbit_even_pred_succ_for_testbit (posToNat p) 0 hp
+          simp [hbit]
+  | Zpos p =>
+      rw [z_succ_pos_for_testbit]
+      cases a with
+      | Z0 =>
+          change ZArith.BinInt.Z.testbit (Zpos xH)
+              (Zpos (posOfNat (posToNat p + 1))) =
+            ZArith.BinInt.Z.testbit Z0 (Zpos p)
+          simp only [ZArith.BinInt.Z.testbit]
+          rw [show posToNat xH = 1 by rfl]
+          rw [posToNat_posOfNat (by exact Nat.succ_pos _)]
+          apply nat_bit_false_large
+          omega
+      | Zpos q =>
+          rw [z_odd_pos_for_testbit]
+          simp only [ZArith.BinInt.Z.testbit]
+          rw [posToNat_posOfNat (by have hq := posToNat_positive q; omega)]
+          rw [posToNat_posOfNat (by exact Nat.succ_pos _)]
+          exact nat_testbit_odd_succ_for_testbit _ _
+      | Zneg q =>
+          rw [z_odd_neg_for_testbit]
+          simp only [ZArith.BinInt.Z.testbit]
+          rw [posToNat_posOfNat (by have hq := posToNat_positive q; omega)]
+          rw [posToNat_posOfNat (by exact Nat.succ_pos _)]
+          have hq := posToNat_positive q
+          have hbit := nat_testbit_even_pred_succ_for_testbit (posToNat q) (posToNat p) hq
+          simp [hbit]
+
+end Rocq.Coq
+end CompCert4Lean.Foundation.Numbers
