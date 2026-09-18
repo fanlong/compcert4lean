@@ -7338,3 +7338,29 @@ theorem bits_size_2_proof : bits_size_2 := by
           apply Nat.testBit_lt_two_pow
           apply (Nat.log2_lt (Nat.ne_of_gt (by omega : 0 < n + 1))).mp
           omega
+
+theorem neg_involutive_proof : neg_involutive := by
+  intro x
+  change WordCore.neg (WordCore.neg x) = x
+  apply WordCore.ext_of_val_eq
+  apply Int.ofNat.inj
+  rw [suffix_wordcore_neg_val_int, suffix_wordcore_neg_val_int]
+  have hx0 : (0 : Int) ≤ Int.ofNat x.val := Int.natCast_nonneg _
+  have hxm : Int.ofNat x.val < Int.ofNat (2 ^ wordsize) := by
+    exact Int.ofNat_lt.mpr (WordCore.val_lt x)
+  by_cases hxzero : Int.ofNat x.val = 0
+  · rw [hxzero]
+    simp
+  · have hxpos : (0 : Int) < Int.ofNat x.val := by omega
+    have hma0 : (0 : Int) ≤ Int.ofNat (2 ^ wordsize) - Int.ofNat x.val := by
+      omega
+    have hma_lt : Int.ofNat (2 ^ wordsize) - Int.ofNat x.val <
+        Int.ofNat (2 ^ wordsize) := by
+      omega
+    rw [Int.neg_emod_eq_sub_emod, Int.neg_emod_eq_sub_emod]
+    rw [Int.emod_eq_of_lt hma0 hma_lt]
+    have hsub : Int.ofNat (2 ^ wordsize) -
+        (Int.ofNat (2 ^ wordsize) - Int.ofNat x.val) = Int.ofNat x.val := by
+      omega
+    rw [hsub]
+    exact Int.emod_eq_of_lt hx0 hxm

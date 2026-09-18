@@ -5199,3 +5199,97 @@ theorem inval_before_contents : inval_before_contentsStatement := by
       exact ⟨h, Or.inr hright⟩
 
 end CompCert4Lean.Backend.ValueDomain
+
+namespace CompCert4Lean.Backend.ValueDomain
+
+theorem ablock_store_contents : ablock_store_contentsStatement := by
+  intro chunk ab i av j chunk' av' h
+  change CompCert4Lean.Lib.Maps.ZTree.get j
+      (CompCert4Lean.Lib.Maps.ZTree.set i (ACval chunk av)
+        (inval_before i (zSub i (zOfNat 7))
+          (inval_after (zAdd i z1)
+            (zSub (zAdd i (CompCert4Lean.Common.Memdata.size_chunk chunk)) z1)
+            ab.ab_contents))) = some (ACval chunk' av') at h
+  by_cases hij : i = j
+  · subst j
+    have hs := CompCert4Lean.Lib.Maps.ZTree.gss_proof acontent i
+      (ACval chunk av)
+      (inval_before i (zSub i (zOfNat 7))
+        (inval_after (zAdd i z1)
+          (zSub (zAdd i (CompCert4Lean.Common.Memdata.size_chunk chunk)) z1)
+          ab.ab_contents))
+    rw [hs] at h
+    cases h
+    exact Or.inl ⟨rfl, rfl, rfl⟩
+  · have hset := CompCert4Lean.Lib.Maps.ZTree.gso_proof acontent j i
+      (ACval chunk av)
+      (inval_before i (zSub i (zOfNat 7))
+        (inval_after (zAdd i z1)
+          (zSub (zAdd i (CompCert4Lean.Common.Memdata.size_chunk chunk)) z1)
+          ab.ab_contents)) (by
+            intro hji
+            exact hij hji.symm)
+    rw [hset] at h
+    obtain ⟨hafter, hbound⟩ := inval_before_contents i
+      (inval_after (zAdd i z1)
+        (zSub (zAdd i (CompCert4Lean.Common.Memdata.size_chunk chunk)) z1)
+        ab.ab_contents)
+      chunk' av' j h
+    obtain ⟨horiginal, hout⟩ := inval_after_contents chunk' av' j
+      (zAdd i z1)
+      (zSub (zAdd i (CompCert4Lean.Common.Memdata.size_chunk chunk)) z1)
+      ab.ab_contents hafter
+    refine Or.inr ⟨horiginal, ?_⟩
+    rcases hbound with hbefore | hafter_bound
+    · exact Or.inl hbefore
+    · rcases hout with hleft | hright
+      · exfalso
+        change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ i ≤
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ j at hafter_bound
+        change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ j <
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (zAdd i z1) at hleft
+        have hne_int :
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ i ≠
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ j := by
+          intro heq
+          apply hij
+          exact CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective heq
+        have hz1' : CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ z1 = 1 := by
+          rfl
+        simp [zAdd,
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add,
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt, hz1'] at hleft
+        omega
+      · right
+        change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+            (zAdd i (CompCert4Lean.Common.Memdata.size_chunk chunk)) ≤
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ j
+        change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+            (zSub (zAdd i (CompCert4Lean.Common.Memdata.size_chunk chunk)) z1) <
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ j at hright
+        have hz1 : CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ z1 = 1 := by
+          rfl
+        have hadd :
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+                (zAdd i (CompCert4Lean.Common.Memdata.size_chunk chunk)) =
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ i +
+                CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+                  (CompCert4Lean.Common.Memdata.size_chunk chunk) := by
+          simp [zAdd,
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add,
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+        have hsub :
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+                (zSub (zAdd i (CompCert4Lean.Common.Memdata.size_chunk chunk)) z1) =
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ i +
+                CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+                  (CompCert4Lean.Common.Memdata.size_chunk chunk) - 1 := by
+          simp [zSub,
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.sub,
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt, hz1,
+            hadd]
+        rw [hsub] at hright
+        rw [hadd]
+        omega
+
+end CompCert4Lean.Backend.ValueDomain
