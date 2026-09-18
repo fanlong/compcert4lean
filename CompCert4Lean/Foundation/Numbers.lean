@@ -4481,3 +4481,35 @@ theorem ZArith.BinInt.Zplus_diag_eq_mult_2 :
 
 end Rocq.Coq
 end CompCert4Lean.Foundation.Numbers
+
+namespace CompCert4Lean.Foundation.Numbers
+namespace Rocq.Coq
+
+def ZArith.ZArith_dec.Z_lt_le_dec :
+    ZArith.ZArith_dec.Z_lt_le_decStatement := by
+  intro x y
+  by_cases h : intOfZ x < intOfZ y
+  · exact .left h
+  · exact .right (Int.le_of_not_gt h)
+
+theorem ZArith.Zbool.Zlt_cases :
+    ZArith.Zbool.Zlt_casesStatement := by
+  intro n m
+  unfold ZArith.BinInt.Z.ltb ZArith.BinInt.Z.lt ZArith.BinInt.Z.ge
+  by_cases h : intOfZ n < intOfZ m
+  · simp [h]
+  · have hge : intOfZ m ≤ intOfZ n := Int.le_of_not_gt h
+    simp [h, hge]
+
+theorem ZArith.Zbool.Zle_bool_imp_le :
+    ZArith.Zbool.Zle_bool_imp_leStatement := by
+  intro n m h
+  exact (ZArith.BinInt.Z.leb_le n m).mp h
+
+theorem ZArith.Zbool.Zle_is_le_bool :
+    ZArith.Zbool.Zle_is_le_boolStatement := by
+  intro n m
+  exact (ZArith.BinInt.Z.leb_le n m).symm
+
+end Rocq.Coq
+end CompCert4Lean.Foundation.Numbers

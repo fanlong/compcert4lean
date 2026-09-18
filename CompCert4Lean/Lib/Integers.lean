@@ -7244,3 +7244,97 @@ theorem bits_shl_proof : bits_shl := by
         exact Int.ofNat_lt.mp h
       exact suffix_bits_shl_nat x y
         (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p) hn
+
+private theorem suffix_bits_size_2_unsigned_eq (x : int) :
+    unsigned x = zOfNat x.val := by
+  unfold unsigned WordCore.unsigned
+  exact WordCore.intval_eq_zOfNat_val x
+
+theorem bits_size_2_proof : bits_size_2 := by
+  intro x i hi
+  have hi0 : zLe zZero i := by
+    have hx0 : zLe zZero (size x) := by
+      change ZArith.BinInt.Z.le Z0
+        (CompCert4Lean.Lib.Zbits.Zsize (unsigned x))
+      cases hu : unsigned x with
+      | Z0 =>
+          simp only [CompCert4Lean.Lib.Zbits.Zsize, hu]
+          change (0 : Int) ≤ 0
+          omega
+      | Zpos p =>
+          simp only [CompCert4Lean.Lib.Zbits.Zsize, hu]
+          change (0 : Int) ≤ intOfZ (Zpos (PArith.BinPos.Pos.size p))
+          simp only [intOfZ]
+          exact Int.natCast_nonneg _
+      | Zneg p =>
+          simp only [CompCert4Lean.Lib.Zbits.Zsize, hu]
+          change (0 : Int) ≤ 0
+          omega
+    change intOfZ (size x) ≤ intOfZ i at hi
+    change (0 : Int) ≤ intOfZ i
+    have hx0' := hx0
+    change (0 : Int) ≤ intOfZ (size x) at hx0'
+    omega
+  cases i with
+  | Zneg p =>
+      change (0 : Int) ≤ -Int.ofNat
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p) at hi0
+      have hp : (0 : Int) < Int.ofNat
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p) :=
+        Int.natCast_pos.mpr
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat_positive p)
+      omega
+  | Z0 =>
+      change testbit x (zOfNat 0) = false
+      rw [suffix_testbit_nat x 0]
+      cases hval : x.val with
+      | zero => rfl
+      | succ n =>
+          have hsizepos : zLt zZero (size x) := by
+            change (0 : Int) < intOfZ (CompCert4Lean.Lib.Zbits.Zsize (unsigned x))
+            rw [suffix_bits_size_2_unsigned_eq x, hval]
+            rw [show zOfNat (n + 1) = Zpos (posOfNat (n + 1)) by rfl]
+            simp only [CompCert4Lean.Lib.Zbits.Zsize]
+            change (0 : Int) < Int.ofNat
+              (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat
+                (PArith.BinPos.Pos.size (posOfNat (n + 1))))
+            exact Int.natCast_pos.mpr
+              (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat_positive _)
+          change intOfZ (size x) ≤ 0 at hi
+          change (0 : Int) < intOfZ (size x) at hsizepos
+          omega
+  | Zpos p =>
+      have hz : zOfNat
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p) = .Zpos p :=
+        ZArith.Znat.positive_nat_Z p
+      rw [← hz] at hi ⊢
+      let k := CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p
+      rw [suffix_testbit_nat x k]
+      cases hval : x.val with
+      | zero => simp
+      | succ n =>
+          have hsize : Nat.log2 (n + 1) + 1 ≤ k := by
+            change intOfZ (CompCert4Lean.Lib.Zbits.Zsize (unsigned x)) ≤
+              intOfZ (zOfNat k) at hi
+            rw [suffix_bits_size_2_unsigned_eq x, hval] at hi
+            simp only [CompCert4Lean.Lib.Zbits.Zsize, ZArith.BinInt.Z.of_nat,
+              intOfZ_zOfInt] at hi
+            change Int.ofNat
+                (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat
+                  (PArith.BinPos.Pos.size (posOfNat (n + 1)))) ≤
+              Int.ofNat k at hi
+            have hsz :
+                CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat
+                    (PArith.BinPos.Pos.size (posOfNat (n + 1))) =
+                  Nat.log2 (n + 1) + 1 := by
+              unfold PArith.BinPos.Pos.size
+              rw [CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat_posOfNat
+                (by omega : 0 < n + 1)]
+              exact CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat_posOfNat
+                (by omega)
+            rw [hsz] at hi
+            exact Int.ofNat_le.mp hi
+          change Nat.testBit (n + 1) k = false
+          apply Nat.testBit_lt_two_pow
+          apply (Nat.log2_lt (Nat.ne_of_gt (by omega : 0 < n + 1))).mp
+          omega

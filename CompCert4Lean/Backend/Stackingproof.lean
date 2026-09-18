@@ -3628,3 +3628,75 @@ theorem function_ptr_translated : function_ptr_translatedStatement := by
     prog tprog hm b f hfind
 
 end CompCert4Lean.Backend.Stackingproof
+
+namespace CompCert4Lean.Backend.Stackingproof
+
+open CompCert4Lean.Backend.Linear
+open CompCert4Lean.Backend.Locations
+open CompCert4Lean.Backend.Mach
+open CompCert4Lean.Backend.Stacking
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Linking
+open CompCert4Lean.Common.Separation
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Integers
+
+private theorem stackingproof_ptrofs_zero_add_zero :
+    Ptrofs.add Ptrofs.zero (Ptrofs.repr (.Z0 : Z)) = Ptrofs.zero := by
+  rfl
+
+theorem find_function_translated : find_function_translatedStatement := by
+  intro cfg prog tprog hmatch j ls rs m ros f hregs hge hfind
+  cases ros with
+  | inl r =>
+      unfold Linear.find_function at hfind
+      have hinv := Genv.find_funct_inv (F := Linear.fundef) (V := Unit)
+        (Genv.globalenv prog) (ls (.R r)) f hfind
+      rcases hinv with ⟨b, hb⟩
+      have hfun : Genv.find_funct (Genv.globalenv prog)
+          (.Vptr b Ptrofs.zero) = some f := by
+        rw [← hb]
+        exact hfind
+      have hptr : Genv.find_funct_ptr (Genv.globalenv prog) b = some f := by
+        rw [Genv.find_funct_find_funct_ptr] at hfun
+        exact hfun
+      rcases function_ptr_translated cfg prog tprog hmatch b f hptr with
+        ⟨tf, htf, htransf⟩
+      rcases hge with ⟨bound, _, hpres⟩
+      rcases hpres with ⟨DOMAIN, _, _, FUNCTIONS, _⟩
+      have hbnd : Plt b bound := FUNCTIONS b f hptr
+      have hj : j b = some (b, .Z0) := DOMAIN b hbnd
+      have hreg := hregs r
+      rw [hb] at hreg
+      generalize hrs : rs r = vr at hreg
+      cases hreg with
+      | inject_ptr b1 ofs1 b2 ofs2 delta hmap hofs =>
+          have hmap' : (b2, delta) = (b, .Z0) := by
+            exact Option.some.inj (hmap.symm.trans hj)
+          rcases hmap' with ⟨rfl, rfl⟩
+          have hofs' : ofs2 = Ptrofs.zero := by
+            rw [stackingproof_ptrofs_zero_add_zero] at hofs
+            exact hofs
+          refine ⟨b, tf, ?_, htf, htransf⟩
+          unfold Mach.find_function_ptr
+          simp only [Sum.rec]
+          rw [hrs, hofs']
+          simp [Ptrofs.eq, WordCore.eq]
+  | inr symb =>
+      unfold Linear.find_function at hfind
+      cases hs : Genv.find_symbol (Genv.globalenv prog) symb with
+      | none => simp [hs] at hfind
+      | some b =>
+          have hptr : Genv.find_funct_ptr (Genv.globalenv prog) b = some f := by
+            simpa [hs] using hfind
+          rcases function_ptr_translated cfg prog tprog hmatch b f hptr with
+            ⟨tf, htf, htransf⟩
+          have hs' : Genv.find_symbol (Genv.globalenv tprog) symb = some b := by
+            exact (symbols_preserved cfg prog tprog hmatch symb).trans hs
+          refine ⟨b, tf, ?_, htf, htransf⟩
+          unfold Mach.find_function_ptr
+          simp [hs']
+
+end CompCert4Lean.Backend.Stackingproof

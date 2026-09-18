@@ -5326,3 +5326,123 @@ theorem typeof_simpl_expr : typeof_simpl_exprStatement := by
       simp [simpl_expr, typeof, h]
 
 end CompCert4Lean.Cfrontend.SimplLocalsproof
+
+namespace CompCert4Lean.Cfrontend.SimplLocalsproof
+
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Cfrontend.SimplLocals
+open CompCert4Lean.Lib.Coqlib
+
+theorem match_cont_invariant : match_cont_invariantStatement := by
+  intro cfg prog f' m' f cenv k tk m bound tbound hmatch hload hincr hsource htarget
+  induction hmatch with
+  | stop cenv m bound tbound hi hglobals hhibound hhitbound =>
+      apply match_cont.stop
+      · cases hglobals with
+        | intro hdomain himage hsymbols hfunctions hvarinfos =>
+            exact match_globalenvs.intro
+              (fun b hb => hincr b b (.Z0 : Z) (hdomain b hb))
+              (fun b1 b2 delta hmap hb2 => by
+                have hb2' : Plt b2 tbound := Nat.lt_of_lt_of_le hb2 hhitbound
+                have heq := htarget b1 b2 delta hmap hb2'
+                apply himage b1 b2 delta
+                · rw [← heq]
+                  exact hmap
+                · exact hb2)
+              hsymbols hfunctions hvarinfos
+      · exact hhibound
+      · exact hhitbound
+  | seq cenv s k ts tk m bound tbound hstmt hcont hcompat ih =>
+      exact match_cont.seq cenv s k ts tk m' bound tbound hstmt
+        (ih hload hsource htarget) hcompat
+  | loop1 cenv s1 s2 k ts1 ts2 tk m bound tbound hstmt1 hstmt2 hcont hcompat ih =>
+      exact match_cont.loop1 cenv s1 s2 k ts1 ts2 tk m' bound tbound hstmt1 hstmt2
+        (ih hload hsource htarget) hcompat
+  | loop2 cenv s1 s2 k ts1 ts2 tk m bound tbound hstmt1 hstmt2 hcont hcompat ih =>
+      exact match_cont.loop2 cenv s1 s2 k ts1 ts2 tk m' bound tbound hstmt1 hstmt2
+        (ih hload hsource htarget) hcompat
+  | switch cenv k tk m bound tbound hcont ih =>
+      exact match_cont.switch cenv k tk m' bound tbound
+        (ih hload hsource htarget)
+  | match_Kcall cenv optid fn e le k tfn te tle tk m hi thi lo tlo bound tbound x
+      hfun henv hcont hcheck hhibound hthitbound ih =>
+      have hlohi : Ple lo hi := henv.me_incr
+      have htlohi : Ple tlo thi := henv.me_tincr
+      apply match_cont.match_Kcall cenv optid fn e le k tfn te tle tk m'
+        hi thi lo tlo bound tbound x hfun
+      · apply match_envs_invariant f (cenv_for fn) e le m lo hi te tle tlo thi f' m'
+          henv
+        · intro b chunk v hnone hb hmem
+          apply hload b chunk v hnone
+          · exact Nat.lt_of_lt_of_le hb.2 hhibound
+          · exact hmem
+        · exact hincr
+        · intro b hb
+          exact hsource b (Nat.lt_of_lt_of_le hb.2 hhibound)
+        · intro b b' delta hmap hb'
+          exact htarget b b' delta hmap (Nat.lt_of_lt_of_le hb'.2 hthitbound)
+      · apply ih
+        · intro b chunk v hnone hb hmem
+          apply hload b chunk v hnone
+          · exact Nat.lt_of_lt_of_le hb (Nat.le_trans hlohi hhibound)
+          · exact hmem
+        · intro b hb
+          exact hsource b (Nat.lt_of_lt_of_le hb (Nat.le_trans hlohi hhibound))
+        · intro b b' delta hmap hb'
+          exact htarget b b' delta hmap
+            (Nat.lt_of_lt_of_le hb' (Nat.le_trans htlohi hthitbound))
+      · exact hcheck
+      · exact hhibound
+      · exact hthitbound
+
+end CompCert4Lean.Cfrontend.SimplLocalsproof
+
+namespace CompCert4Lean.Cfrontend.SimplLocalsproof
+
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Cfrontend.Clight
+open CompCert4Lean.Cfrontend.Cop
+open CompCert4Lean.Lib.Coqlib
+
+theorem match_cont_assign_loc : match_cont_assign_locStatement := by
+  intro cfg prog f cenv k tk m bound tbound ty loc ofs bf v m' hmatch hassign hloc
+  apply match_cont_invariant cfg prog f m' f cenv k tk m bound tbound hmatch
+  · intro b chunk value hnone hblt hmem
+    have hne : b ≠ loc := by
+      intro heq
+      subst b
+      exact (Nat.not_lt_of_ge hloc) hblt
+    cases hassign with
+    | assign_loc_value value' chunk' m' hmode hstore =>
+        simp [Mem.storev] at hstore
+        rw [Mem.load_store_other chunk' m loc
+          (CompCert4Lean.Lib.Integers.Ptrofs.unsigned ofs) v m' hstore
+          chunk b (.Z0 : CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z) (Or.inl hne)]
+        exact hmem
+    | assign_loc_copy source sourceOfs bytes m' hmode halignSource halignTarget
+        hseparated hbytes hstore =>
+        rw [Mem.load_storebytes_other m loc
+          (CompCert4Lean.Lib.Integers.Ptrofs.unsigned ofs) bytes m' hstore
+          chunk b (.Z0 : CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z) (Or.inl hne)]
+        exact hmem
+    | assign_loc_bitfield sz sg pos width value' m' result hstore =>
+        cases hstore with
+        | store_bitfield_intro sz sg1 attr sg pos width m addr c n m'
+            hpos hwidth hcarrier hsg hload hstore =>
+            simp [Mem.storev] at hstore
+            rw [Mem.load_store_other (chunk_for_carrier sz) m loc
+              (CompCert4Lean.Lib.Integers.Ptrofs.unsigned ofs)
+              (.Vint (CompCert4Lean.Lib.Integers.Int.bitfield_insert
+                (first_bit sz pos width) width c n)) m' hstore
+              chunk b (.Z0 : CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z) (Or.inl hne)]
+            exact hmem
+  · exact CompCert4Lean.Common.Values.inject_incr_refl f
+  · intro b hb
+    rfl
+  · intro b b' delta hmap hb'
+    rfl
+
+end CompCert4Lean.Cfrontend.SimplLocalsproof

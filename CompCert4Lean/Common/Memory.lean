@@ -4846,3 +4846,69 @@ theorem valid_access_free_1 : valid_access_free_1Statement := by
 end Mem
 
 end CompCert4Lean.Common.Memory
+
+namespace CompCert4Lean.Common.Memory
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.Lib.Coqlib
+
+namespace Mem
+
+theorem range_perm_drop_1 : range_perm_drop_1Statement := by
+  intro m b lo hi p m' hdrop
+  unfold drop_perm at hdrop
+  cases hdec : range_perm_dec m b lo hi Cur Freeable with
+  | left hRange => exact hRange
+  | right hn => simp [hdec] at hdrop
+
+def range_perm_drop_2 : range_perm_drop_2Statement := by
+  intro m b lo hi p hRange
+  cases hdec : range_perm_dec m b lo hi Cur Freeable with
+  | left _ =>
+      unfold drop_perm
+      rw [hdec]
+      exact ⟨_, rfl⟩
+  | right hn => exact False.elim (hn hRange)
+
+theorem load_free : load_freeStatement := by
+  intro m1 bf lo hi m2 hfree chunk b ofs hout
+  unfold load
+  cases hdec : valid_access_dec m2 chunk b ofs Readable with
+  | left hv2 =>
+      have hv1 := valid_access_free_inv_1 m1 bf lo hi m2 hfree chunk b ofs Readable hv2
+      cases hdec1 : valid_access_dec m1 chunk b ofs Readable with
+      | left _ =>
+          simp [boolOfSumbool, hdec, hdec1]
+          rw [free_result m1 bf lo hi m2 hfree]
+          rfl
+      | right hn1 => exact False.elim (hn1 hv1)
+  | right hn2 =>
+      cases hdec1 : valid_access_dec m1 chunk b ofs Readable with
+      | left hv1 =>
+          exact False.elim
+            (hn2 (valid_access_free_1 m1 bf lo hi m2 hfree chunk b ofs Readable hv1 hout))
+      | right _ => simp [boolOfSumbool, hdec, hdec1]
+
+theorem loadbytes_free_2 : loadbytes_free_2Statement := by
+  intro m1 bf lo hi m2 hfree b ofs n bytes hload
+  unfold loadbytes at hload ⊢
+  cases hdec2 : range_perm_dec m2 b ofs (zAdd ofs n) Cur Readable with
+  | right hn2 => simp [boolOfSumbool, hdec2] at hload
+  | left hv2 =>
+      have hv1 : range_perm m1 b ofs (zAdd ofs n) Cur Readable := by
+        intro ofs' hofs'
+        exact perm_free_3 m1 bf lo hi m2 hfree b ofs' Cur Readable (hv2 ofs' hofs')
+      cases hdec1 : range_perm_dec m1 b ofs (zAdd ofs n) Cur Readable with
+      | right hn1 => exact False.elim (hn1 hv1)
+      | left _ =>
+          simp [boolOfSumbool, hdec1] at ⊢
+          simp [boolOfSumbool, hdec2] at hload
+          rw [free_result m1 bf lo hi m2 hfree] at hload
+          simpa [unchecked_free] using hload
+
+end Mem
+
+end CompCert4Lean.Common.Memory

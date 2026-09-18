@@ -5135,3 +5135,67 @@ theorem inval_before_contents_1 : inval_before_contents_1Statement := by
           omega
 
 end CompCert4Lean.Backend.ValueDomain
+
+namespace CompCert4Lean.Backend.ValueDomain
+
+theorem inval_before_contents : inval_before_contentsStatement := by
+  intro i c chunk' av' j h
+  by_cases hleft : zLt j (zSub i (zOfNat 7))
+  · have houtside :
+        CompCert4Lean.Lib.Maps.ZTree.get j (inval_before i (zSub i (zOfNat 7)) c) =
+          CompCert4Lean.Lib.Maps.ZTree.get j c :=
+      inval_before_outside j i (zSub i (zOfNat 7)) c (Or.inl hleft)
+    rw [houtside] at h
+    refine ⟨h, Or.inl ?_⟩
+    have hmax := max_size_chunk chunk'
+    change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+        (zAdd j (CompCert4Lean.Common.Memdata.size_chunk chunk')) ≤
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ i
+    simp only [zAdd,
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add,
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+    change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ j <
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (zSub i (zOfNat 7)) at hleft
+    change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+        (CompCert4Lean.Common.Memdata.size_chunk chunk') ≤
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (zOfNat 8) at hmax
+    simp [zOfNat,
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat,
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt] at hmax
+    have hsub :
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (zSub i (zOfNat 7)) =
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ i - 7 := by
+      simp [zSub,
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.sub,
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat,
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+    rw [hsub] at hleft
+    omega
+  · by_cases hmid : zLt j i
+    · have hrange : zLe (zSub i (zOfNat 7)) j ∧ zLt j i := by
+        constructor
+        · change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+              (zSub i (zOfNat 7)) ≤
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ j
+          change ¬ CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ j <
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+                (zSub i (zOfNat 7)) at hleft
+          omega
+        · exact hmid
+      obtain ⟨hc, hbound⟩ := inval_before_contents_1 j chunk' av'
+        (zSub i (zOfNat 7)) i c hrange h
+      exact ⟨hc, Or.inl hbound⟩
+    · have hright : zLe i j := by
+        change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ i ≤
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ j
+        change ¬ CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ j <
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ i at hmid
+        omega
+      have houtside :
+          CompCert4Lean.Lib.Maps.ZTree.get j (inval_before i (zSub i (zOfNat 7)) c) =
+            CompCert4Lean.Lib.Maps.ZTree.get j c :=
+        inval_before_outside j i (zSub i (zOfNat 7)) c (Or.inr hright)
+      rw [houtside] at h
+      exact ⟨h, Or.inr hright⟩
+
+end CompCert4Lean.Backend.ValueDomain

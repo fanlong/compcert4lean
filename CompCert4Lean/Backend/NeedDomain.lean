@@ -6955,3 +6955,258 @@ theorem zero_ext_sound : zero_ext_soundStatement := by
             exact CompCert4Lean.Common.Values.Val.lessdef_undef _
 
 end CompCert4Lean.Backend.NeedDomain
+
+namespace CompCert4Lean.Backend.NeedDomain
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Lib.Integers
+open Lean Elab Tactic Meta
+
+private def pgSignExtPrivateName (suffix : String) : Name :=
+  let p := Name.str
+    (Name.str
+      (Name.str
+        (Name.str Name.anonymous "_private") "CompCert4Lean") "Lib")
+    "Integers"
+  let p := Name.num p 0
+  suffix.splitOn "." |>.foldl Name.str p
+
+private def pgSignExtSimpPrivate
+    (suffixes : List String) : TacticM Unit := do
+  let mut ts : SimpTheorems := {}
+  for suffix in suffixes do
+    let eqs ← getEqnsFor? (pgSignExtPrivateName suffix)
+    match eqs with
+    | some eqs =>
+        for eqn in eqs do
+          let xs ← mkSimpTheoremFromConst eqn
+          for x in xs do ts := ts.addSimpTheorem x
+    | none => pure ()
+  let ctx ← Simp.mkContext {} #[ts]
+  let g ← getMainGoal
+  let (r, _) ← simpGoal g ctx
+  match r with
+  | none => replaceMainGoal []
+  | some (_, g') => replaceMainGoal [g']
+
+private theorem pgSignExtIagreeOfBranches
+    (a b input output : int) (n : Z)
+    (hm : iagree a b input)
+    (hn : ZArith.BinInt.Z.lt z0 n)
+    (hlow : ∀ i,
+      (ZArith.BinInt.Z.le z0 i ∧
+        ZArith.BinInt.Z.lt i Int.zwordsize) →
+      ZArith.BinInt.Z.lt i n →
+      Int.testbit output i = true → Int.testbit input i = true)
+    (hhigh : ∀ i,
+      (ZArith.BinInt.Z.le z0 i ∧
+        ZArith.BinInt.Z.lt i Int.zwordsize) →
+      ZArith.BinInt.Z.ge i n →
+      Int.testbit output i = true →
+      Int.testbit input (ZArith.BinInt.Z.sub n z1) = true) :
+    iagree (Int.sign_ext n a) (Int.sign_ext n b) output := by
+  intro i hi hout
+  rw [CompCert4Lean.Lib.Integers.Int.bits_sign_ext_proof n a i hi,
+    CompCert4Lean.Lib.Integers.Int.bits_sign_ext_proof n b i hi]
+  cases hs : CompCert4Lean.Lib.Coqlib.zlt i n with
+  | left hlt =>
+      run_tac pgSignExtSimpPrivate ["CompCert4Lean.Lib.Integers.zltSelect"]
+      rw [hs]
+      exact hm i hi (hlow i hi hlt hout)
+  | right hge =>
+      run_tac pgSignExtSimpPrivate ["CompCert4Lean.Lib.Integers.zltSelect"]
+      rw [hs]
+      run_tac pgSignExtSimpPrivate ["CompCert4Lean.Lib.Integers.sumboolSelect"]
+      have hjrange :
+          ZArith.BinInt.Z.le z0 (ZArith.BinInt.Z.sub n z1) ∧
+            ZArith.BinInt.Z.lt (ZArith.BinInt.Z.sub n z1)
+              Int.zwordsize := by
+        change 0 ≤ intOfZ (ZArith.BinInt.Z.sub n z1) ∧
+          intOfZ (ZArith.BinInt.Z.sub n z1) < intOfZ Int.zwordsize
+        change 0 < intOfZ n at hn
+        change intOfZ n ≤ intOfZ i at hge
+        have hiUpper := hi.2
+        change intOfZ i < intOfZ Int.zwordsize at hiUpper
+        simp only [ZArith.BinInt.Z.sub, intOfZ_zOfInt]
+        have h1 : intOfZ z1 = 1 := by rfl
+        rw [h1]
+        omega
+      exact hm (ZArith.BinInt.Z.sub n z1) hjrange
+        (hhigh i hi hge hout)
+
+private theorem pgSignExtTopBit
+    (n : Z) (i : Z)
+    (hi : ZArith.BinInt.Z.le z0 i ∧
+      ZArith.BinInt.Z.lt i Int.zwordsize)
+    (hn : ZArith.BinInt.Z.lt z0 n)
+    (hge : ZArith.BinInt.Z.ge i n) :
+    Int.testbit
+      (Int.shl Int.one (Int.repr (ZArith.BinInt.Z.sub n z1)))
+      (ZArith.BinInt.Z.sub n z1) = true := by
+  have hjrange :
+      ZArith.BinInt.Z.le z0 (ZArith.BinInt.Z.sub n z1) ∧
+        ZArith.BinInt.Z.lt (ZArith.BinInt.Z.sub n z1)
+          Int.zwordsize := by
+    change 0 ≤ intOfZ (ZArith.BinInt.Z.sub n z1) ∧
+      intOfZ (ZArith.BinInt.Z.sub n z1) < intOfZ Int.zwordsize
+    change 0 < intOfZ n at hn
+    change intOfZ n ≤ intOfZ i at hge
+    have hiUpper := hi.2
+    change intOfZ i < intOfZ Int.zwordsize at hiUpper
+    simp only [ZArith.BinInt.Z.sub, intOfZ_zOfInt]
+    have h1 : intOfZ z1 = 1 := by rfl
+    rw [h1]
+    omega
+  have hrepr :
+      CompCert4Lean.Lib.Integers.Int.unsigned
+          (CompCert4Lean.Lib.Integers.Int.repr
+            (ZArith.BinInt.Z.sub n z1)) =
+        ZArith.BinInt.Z.sub n z1 := by
+    apply CompCert4Lean.Lib.Integers.Int.unsigned_repr_proof_api
+    constructor
+    · exact hjrange.1
+    · have hmax :=
+        CompCert4Lean.Lib.Integers.Int.wordsize_max_unsigned_proof
+      change intOfZ (ZArith.BinInt.Z.sub n z1) ≤
+        intOfZ Int.max_unsigned
+      have hjUpper := hjrange.2
+      change intOfZ (ZArith.BinInt.Z.sub n z1) <
+        intOfZ Int.zwordsize at hjUpper
+      change intOfZ Int.zwordsize ≤ intOfZ Int.max_unsigned at hmax
+      omega
+  rw [CompCert4Lean.Lib.Integers.Int.bits_shl_proof Int.one
+    (Int.repr (ZArith.BinInt.Z.sub n z1))
+    (ZArith.BinInt.Z.sub n z1) hjrange, hrepr]
+  run_tac pgSignExtSimpPrivate ["CompCert4Lean.Lib.Integers.zltSelect"]
+  cases hs : CompCert4Lean.Lib.Coqlib.zlt
+      (ZArith.BinInt.Z.sub n z1) (ZArith.BinInt.Z.sub n z1) with
+  | left hlt => exact (Int.lt_irrefl _ hlt).elim
+  | right _ =>
+      run_tac pgSignExtSimpPrivate ["CompCert4Lean.Lib.Integers.sumboolSelect", "CompCert4Lean.Lib.Integers.zSub"]
+      have hsub : ZArith.BinInt.Z.sub
+          (ZArith.BinInt.Z.sub n z1) (ZArith.BinInt.Z.sub n z1) = z0 := by
+        apply intOfZ_injective
+        simp only [ZArith.BinInt.Z.sub, intOfZ_zOfInt]
+        change intOfZ n - intOfZ z1 - (intOfZ n - intOfZ z1) = 0
+        omega
+      rw [hsub]
+      rfl
+
+theorem sign_ext_sound : sign_ext_soundStatement := by
+  intro v w x n h hn
+  cases x with
+  | Nothing => trivial
+  | I m =>
+      cases v with
+      | Vint a =>
+          cases w with
+          | Vint b =>
+              simp [sign_ext, vagree, iVagree, lVagree,
+                CompCert4Lean.Common.Values.Val.sign_ext] at h ⊢
+              apply pgSignExtIagreeOfBranches a b
+                (Int.or (Int.zero_ext n m)
+                  (Int.shl Int.one
+                    (Int.repr (ZArith.BinInt.Z.sub n z1)))) m n h hn
+              · intro i hi hlt hout
+                rw [iagreeOrTestbit]
+                rw [CompCert4Lean.Lib.Integers.Int.bits_zero_ext_proof
+                  n m i hi.1]
+                run_tac pgSignExtSimpPrivate ["CompCert4Lean.Lib.Integers.zltSelect"]
+                cases hs : CompCert4Lean.Lib.Coqlib.zlt i n with
+                | left _ =>
+                    run_tac pgSignExtSimpPrivate ["CompCert4Lean.Lib.Integers.sumboolSelect"]
+                    rw [hout]
+                    rfl
+                | right hge =>
+                    change intOfZ n ≤ intOfZ i at hge
+                    change intOfZ i < intOfZ n at hlt
+                    omega
+              · intro i hi hge _
+                rw [iagreeOrTestbit]
+                have htop := pgSignExtTopBit n i hi hn hge
+                rw [htop]
+                simp
+          | _ =>
+              simp [sign_ext, vagree, iVagree, lVagree,
+                CompCert4Lean.Common.Values.Val.sign_ext] at h
+      | _ =>
+          cases w <;>
+            simp [sign_ext, vagree, iVagree, lVagree,
+              CompCert4Lean.Common.Values.Val.sign_ext]
+  | L m =>
+      cases v <;> cases w <;>
+        simp [sign_ext, vagree, iVagree, lVagree,
+          CompCert4Lean.Common.Values.Val.sign_ext]
+  | All =>
+      cases v with
+      | Vint a =>
+          cases w with
+          | Vint b =>
+              simp [sign_ext, vagree, iVagree, lVagree,
+                CompCert4Lean.Common.Values.Val.sign_ext] at h ⊢
+              have hagree : iagree (Int.sign_ext n a)
+                  (Int.sign_ext n b) Int.mone := by
+                apply pgSignExtIagreeOfBranches a b
+                  (Int.zero_ext n Int.mone) Int.mone n h hn
+                · intro i hi hlt _
+                  rw [CompCert4Lean.Lib.Integers.Int.bits_zero_ext_proof
+                    n Int.mone i hi.1]
+                  run_tac pgSignExtSimpPrivate ["CompCert4Lean.Lib.Integers.zltSelect"]
+                  cases hs : CompCert4Lean.Lib.Coqlib.zlt i n with
+                  | left _ =>
+                      run_tac pgSignExtSimpPrivate ["CompCert4Lean.Lib.Integers.sumboolSelect"]
+                      exact CompCert4Lean.Lib.Integers.Int.bits_mone_proof i hi
+                  | right hge =>
+                      change intOfZ n ≤ intOfZ i at hge
+                      change intOfZ i < intOfZ n at hlt
+                      omega
+                · intro i hi hge _
+                  have hjrange :
+                      ZArith.BinInt.Z.le z0
+                          (ZArith.BinInt.Z.sub n z1) ∧
+                        ZArith.BinInt.Z.lt
+                          (ZArith.BinInt.Z.sub n z1) Int.zwordsize := by
+                    change 0 ≤ intOfZ (ZArith.BinInt.Z.sub n z1) ∧
+                      intOfZ (ZArith.BinInt.Z.sub n z1) <
+                        intOfZ Int.zwordsize
+                    change 0 < intOfZ n at hn
+                    change intOfZ n ≤ intOfZ i at hge
+                    have hiUpper := hi.2
+                    change intOfZ i < intOfZ Int.zwordsize at hiUpper
+                    simp only [ZArith.BinInt.Z.sub, intOfZ_zOfInt]
+                    have h1 : intOfZ z1 = 1 := by rfl
+                    rw [h1]
+                    omega
+                  rw [CompCert4Lean.Lib.Integers.Int.bits_zero_ext_proof
+                    n Int.mone (ZArith.BinInt.Z.sub n z1) hjrange.1]
+                  run_tac pgSignExtSimpPrivate ["CompCert4Lean.Lib.Integers.zltSelect"]
+                  cases hs : CompCert4Lean.Lib.Coqlib.zlt
+                      (ZArith.BinInt.Z.sub n z1) n with
+                  | left _ =>
+                      run_tac pgSignExtSimpPrivate ["CompCert4Lean.Lib.Integers.sumboolSelect"]
+                      exact CompCert4Lean.Lib.Integers.Int.bits_mone_proof
+                        (ZArith.BinInt.Z.sub n z1) hjrange
+                  | right hbad =>
+                      change intOfZ n ≤
+                        intOfZ (ZArith.BinInt.Z.sub n z1) at hbad
+                      change 0 < intOfZ n at hn
+                      simp only [ZArith.BinInt.Z.sub, intOfZ_zOfInt] at hbad
+                      have h1 : intOfZ z1 = 1 := by rfl
+                      rw [h1] at hbad
+                      omega
+              have heq := iagree_mone _ _ hagree
+              change CompCert4Lean.Common.Values.Val.lessdef
+                (CompCert4Lean.Common.Values.Vint (Int.sign_ext n a))
+                (CompCert4Lean.Common.Values.Vint (Int.sign_ext n b))
+              rw [heq]
+              exact CompCert4Lean.Common.Values.Val.lessdef_refl _
+          | _ =>
+              simp [sign_ext, vagree, iVagree, lVagree,
+                CompCert4Lean.Common.Values.Val.sign_ext] at h
+      | _ =>
+          cases w <;>
+            simp [sign_ext, vagree, iVagree, lVagree,
+              CompCert4Lean.Common.Values.Val.sign_ext] <;>
+            exact CompCert4Lean.Common.Values.Val.lessdef_undef _
+
+end CompCert4Lean.Backend.NeedDomain
