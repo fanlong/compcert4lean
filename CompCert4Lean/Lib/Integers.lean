@@ -6695,3 +6695,96 @@ theorem shr_zero_proof : shr_zero := by
   have hsu : eqm (signed x) (unsigned x) := eqm_signed_unsigned_proof x
   change repr (signed x) = x
   rw [eqm_samerepr_proof _ _ hsu, repr_unsigned_proof]
+
+theorem mul_zero_proof : mul_zero := by
+  intro x
+  change WordCore.mul x (WordCore.zero wordsize) = WordCore.zero wordsize
+  apply WordCore.ext_of_val_eq
+  apply Int.ofNat.inj
+  rw [suffix_wordcore_mul_val_int]
+  rfl
+
+theorem modu_divu_proof : modu_divu := by
+  intro x y hy
+  have hy0 : unsigned y ≠ zZero := by
+    intro hz
+    apply hy
+    apply WordCore.ext
+    change unsigned y = unsigned (WordCore.zero wordsize)
+    rw [hz]
+    rfl
+  apply WordCore.ext
+  change unsigned (modu x y) =
+    unsigned (sub x (mul (divu x y) y))
+  change unsigned (repr (zMod (unsigned x) (unsigned y))) =
+    unsigned (repr (zSub (unsigned x)
+      (unsigned (repr (zMul (unsigned (repr (zDiv (unsigned x) (unsigned y))))
+        (unsigned y))))))
+  rw [suffix_unsigned_repr_eq_exact, suffix_unsigned_repr_eq_exact]
+  rw [suffix_unsigned_repr_eq_exact, suffix_unsigned_repr_eq_exact]
+  apply intOfZ_injective
+  simp only [zSub, zMul, ZArith.BinInt.Z.sub, ZArith.BinInt.Z.mul,
+    intOfZ_zOfInt]
+  rw [suffix_modulo_int, suffix_modulo_int, suffix_modulo_int]
+  simp only [intOfZ_zOfInt]
+  have huy : (0 : Int) < intOfZ (unsigned y) := by
+    have h := y.intrange.1
+    change (-1 : Int) < intOfZ y.intval at h
+    have hnonneg : 0 ≤ intOfZ y.intval := by omega
+    have hne : intOfZ y.intval ≠ 0 := by
+      intro hz
+      apply hy0
+      apply intOfZ_injective
+      exact hz
+    change 0 < intOfZ y.intval
+    omega
+  have hdiv := CompCert4Lean.Lib.Coqlib.Z_div_mod_eq
+    (unsigned x) (unsigned y) huy
+  have hdiv' := congrArg intOfZ hdiv
+  simp only [zAdd, zMul, ZArith.BinInt.Z.add, ZArith.BinInt.Z.mul,
+    intOfZ_zOfInt] at hdiv'
+  have hqmod : intOfZ (zMod (zDiv (unsigned x) (unsigned y)) modulus) =
+      intOfZ (zDiv (unsigned x) (unsigned y)) % (2 ^ wordsize : Int) :=
+    suffix_modulo_int _
+  rw [hqmod]
+  rw [Int.sub_emod]
+  have hprodmod :
+      (intOfZ (zDiv (unsigned x) (unsigned y)) % (2 ^ wordsize : Int) *
+          intOfZ (unsigned y)) % (2 ^ wordsize : Int) =
+      (intOfZ (zDiv (unsigned x) (unsigned y)) *
+          intOfZ (unsigned y)) % (2 ^ wordsize : Int) := by
+    calc
+      (intOfZ (zDiv (unsigned x) (unsigned y)) % (2 ^ wordsize : Int) *
+          intOfZ (unsigned y)) % (2 ^ wordsize : Int) =
+          ((intOfZ (zDiv (unsigned x) (unsigned y)) % (2 ^ wordsize : Int)) %
+            (2 ^ wordsize : Int) *
+            (intOfZ (unsigned y) % (2 ^ wordsize : Int))) %
+              (2 ^ wordsize : Int) := Int.mul_emod _ _ _
+      _ = (intOfZ (zDiv (unsigned x) (unsigned y)) % (2 ^ wordsize : Int) *
+          (intOfZ (unsigned y) % (2 ^ wordsize : Int))) %
+            (2 ^ wordsize : Int) := by rw [Int.emod_emod]
+      _ = (intOfZ (zDiv (unsigned x) (unsigned y)) *
+          intOfZ (unsigned y)) % (2 ^ wordsize : Int) :=
+        (Int.mul_emod _ _ _).symm
+  rw [hprodmod]
+  rw [← Int.sub_emod]
+  have hrem : intOfZ (zMod (unsigned x) (unsigned y)) =
+      intOfZ (unsigned x) -
+        intOfZ (zDiv (unsigned x) (unsigned y)) * intOfZ (unsigned y) := by
+    have hdiv'' := hdiv'
+    rw [Int.mul_comm (intOfZ (unsigned y))
+      (intOfZ (ZArith.BinInt.Z.div (unsigned x) (unsigned y)))] at hdiv''
+    change intOfZ (unsigned x) =
+      intOfZ (ZArith.BinInt.Z.div (unsigned x) (unsigned y)) *
+        intOfZ (unsigned y) + intOfZ (zMod (unsigned x) (unsigned y)) at hdiv''
+    change intOfZ (zMod (unsigned x) (unsigned y)) =
+      intOfZ (unsigned x) -
+        intOfZ (ZArith.BinInt.Z.div (unsigned x) (unsigned y)) *
+          intOfZ (unsigned y)
+    omega
+  rw [hrem]
+  rw [Int.sub_emod]
+  rw [Int.sub_emod (intOfZ (unsigned x))
+    ((intOfZ (zDiv (unsigned x) (unsigned y)) * intOfZ (unsigned y)) %
+      (2 ^ wordsize : Int)) (2 ^ wordsize : Int)]
+  simp only [Int.emod_emod]

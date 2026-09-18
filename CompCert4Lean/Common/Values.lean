@@ -3213,3 +3213,50 @@ theorem swap_cmplu_bool : swap_cmplu_boolStatement := by
 
 end Val
 end CompCert4Lean.Common.Values
+
+namespace CompCert4Lean.Common.Values
+namespace Val
+
+theorem lessdef_list_trans : lessdef_list_transStatement := by
+  intro vl1 vl2 h12 vl3 h23
+  induction h12 generalizing vl3 with
+  | lessdef_list_nil =>
+      cases h23
+      exact lessdef_list_nil
+  | lessdef_list_cons v1 v2 vl1 vl2 hhead htail ih =>
+      cases h23 with
+      | lessdef_list_cons _ v3 _ vl3 hhead23 htail23 =>
+          exact lessdef_list_cons _ _ _ _
+            (lessdef_trans _ _ _ hhead hhead23) (ih vl3 htail23)
+
+theorem load_result_lessdef : load_result_lessdefStatement := by
+  intro chunk v1 v2 h
+  cases h with
+  | lessdef_refl =>
+      exact lessdef_refl _
+  | lessdef_undef =>
+      cases chunk <;> cases v2 <;> simp [load_result]
+      all_goals exact lessdef_undef _
+
+theorem norm_bool_is_lessdef : norm_bool_is_lessdefStatement := by
+  intro v
+  unfold norm_bool
+  by_cases h : is_bool v
+  · simp [h]
+    exact lessdef_refl v
+  · simp [h]
+    exact lessdef_undef v
+
+theorem norm_bool_lessdef : norm_bool_lessdefStatement := by
+  intro v1 v2 h
+  cases h with
+  | lessdef_refl =>
+      exact lessdef_refl _
+  | lessdef_undef =>
+      have hu : norm_bool Vundef = Vundef := by
+        rfl
+      rw [hu]
+      exact lessdef_undef _
+
+end Val
+end CompCert4Lean.Common.Values

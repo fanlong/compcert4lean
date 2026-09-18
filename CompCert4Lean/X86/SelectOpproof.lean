@@ -4155,3 +4155,23 @@ theorem eval_floatofintu
             rw [← CompCert4Lean.Lib.Floats.Float.of_intu_of_long]
       | _ => simp [Val.floatofintu] at hx
 end CompCert4Lean.X86.SelectOpproof
+
+namespace CompCert4Lean.X86.SelectOpproof
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.ExternalCalls
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.X86.Op
+open CompCert4Lean.X86.SelectOp
+
+theorem eval_intofsingle
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    eval_intofsingleStatement := by
+  intro xi ge sp e m le a x y h hxy
+  refine ⟨y, ?_, Val.lessdef_refl _⟩
+  apply eval_expr.eval_Eop le Ointofsingle (Econs a Enil) [x] y
+  · exact eval_exprlist.cons le a Enil x [] h (eval_exprlist.nil le)
+  · exact hxy
+
+end CompCert4Lean.X86.SelectOpproof

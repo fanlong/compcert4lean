@@ -4388,3 +4388,24 @@ theorem find_funct_transf : find_funct_transfStatement := by
 
 end Genv
 end CompCert4Lean.Common.Globalenvs
+
+namespace CompCert4Lean.Common.Globalenvs
+namespace Genv
+
+theorem find_symbol_transf : find_symbol_transfStatement := by
+  intro A B V _ _ transf p tp hmatch s
+  exact @find_symbol_match (CompCert4Lean.Common.AST.program A V) A V B V _
+      (fun _ f tf => tf = transf f) Eq p p tp hmatch s
+
+theorem senv_transf : senv_transfStatement := by
+  intro A B V _ _ transf p tp hmatch
+  exact @senv_match (CompCert4Lean.Common.AST.program A V) A V B V _
+      (fun _ f tf => tf = transf f) Eq p p tp hmatch
+
+theorem init_mem_transf : init_mem_transfStatement := by
+  intro A B V _ _ transf p tp hmatch
+  exact @init_mem_match (CompCert4Lean.Common.AST.program A V) A V B V _
+      (fun _ f tf => tf = transf f) Eq p p tp hmatch
+
+end Genv
+end CompCert4Lean.Common.Globalenvs

@@ -3336,3 +3336,35 @@ theorem match_stacks_type_retaddr : match_stacks_type_retaddrStatement := by
       exact hra
 
 end CompCert4Lean.Backend.Stackingproof
+
+namespace CompCert4Lean.Backend.Stackingproof
+
+open CompCert4Lean.Backend.Linear
+open CompCert4Lean.Backend.Stacking
+open CompCert4Lean.Lib.Coqlib
+
+private theorem stackingproof_list_fold_left_append
+    {A B : Type} (f : A → B → B) (acc : B) (xs ys : List A) :
+    CompCert4Lean.Lib.Coqlib.list_fold_left f acc (xs ++ ys) =
+      CompCert4Lean.Lib.Coqlib.list_fold_left f
+        (CompCert4Lean.Lib.Coqlib.list_fold_left f acc xs) ys := by
+  induction xs generalizing acc with
+  | nil => rfl
+  | cons x xs ih =>
+      simp only [List.cons_append, CompCert4Lean.Lib.Coqlib.list_fold_left]
+      exact ih (f x acc)
+
+private theorem stackingproof_list_fold_right_cons
+    {A B : Type} (f : A → B → B) (x : A) (xs : List A) (acc : B) :
+    CompCert4Lean.Lib.Coqlib.list_fold_right f (x :: xs) acc =
+      f x (CompCert4Lean.Lib.Coqlib.list_fold_right f xs acc) := by
+  unfold CompCert4Lean.Lib.Coqlib.list_fold_right
+  rw [List.reverse_cons, stackingproof_list_fold_left_append]
+  rfl
+
+theorem transl_code_eq : transl_code_eqStatement := by
+  intro cfg fe i c
+  unfold transl_code
+  exact stackingproof_list_fold_right_cons (transl_instr cfg fe) i c []
+
+end CompCert4Lean.Backend.Stackingproof

@@ -4717,3 +4717,123 @@ theorem smatch_store : smatch_storeStatement := by
     · exact pmatch_vplub bc b0 ofs0' av p (hfrag ofs0 b0 ofs0' q i hold)
 
 end CompCert4Lean.Backend.ValueDomain
+
+namespace CompCert4Lean.Backend.ValueDomain
+
+theorem bmatch_ext : bmatch_extStatement := by
+  intro bc m b ab m' hbm hload
+  rcases hbm with ⟨hsmatch, hload_match⟩
+  constructor
+  · exact smatch_ext bc m b ab.ab_summary m' hsmatch hload
+  · intro chunk ofs v h
+    apply hload_match chunk ofs v
+    exact loadbytes_load_ext b m m' hload chunk ofs v h
+
+theorem bmatch_inv : bmatch_invStatement := by
+  intro bc m b ab m' hbm heq
+  apply bmatch_ext bc m b ab m' hbm
+  intro ofs n bytes hload hn
+  rw [heq ofs n hn] at hload
+  exact hload
+
+theorem ablock_load_sound : ablock_load_soundStatement := by
+  intro bc chunk m b ofs v ab hload hbm
+  exact hbm.2 chunk ofs v hload
+
+end CompCert4Lean.Backend.ValueDomain
+
+namespace CompCert4Lean.Backend.ValueDomain
+
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Values
+
+theorem smatch_storebytes : smatch_storebytesStatement := by
+  intro bc m b ofs bytes m' b' p p' hstore hsmatch hpmatch
+  rcases hsmatch with ⟨hload_match, hfrag_match⟩
+  constructor
+  · intro chunk ofs' v hload'
+    apply vmatch_ifptr bc v (plub p' p)
+    intro bx ofsx hvptr
+    subst v
+    obtain ⟨bytes', hloadbytes, hdecode⟩ :=
+      CompCert4Lean.Common.Memory.Mem.load_loadbytes chunk m' b' ofs' (Vptr bx ofsx) hload'
+    cases bytes' with
+    | nil =>
+        have hlen := CompCert4Lean.Common.Memory.Mem.loadbytes_length
+          m' b' ofs' (size_chunk chunk) [] hloadbytes
+        change [].length = CompCert4Lean.Common.Memdata.size_chunk_nat chunk at hlen
+        obtain ⟨n, hn⟩ := CompCert4Lean.Common.Memdata.size_chunk_nat_pos chunk
+        rw [hn] at hlen
+        simp at hlen
+    | cons byte1' bytes' =>
+        have hshape := CompCert4Lean.Common.Memdata.decode_val_shape
+          chunk byte1' bytes'
+        rw [← hdecode] at hshape
+        have hdec_inv : ∀ (mv0 : memval) (tail0 : List memval) (w : val),
+            shape_decoding chunk (mv0 :: tail0) w →
+            w = Vptr bx ofsx →
+            ∃ vv q i, mv0 = Fragment vv q i ∧
+              Vptr bx ofsx = Val.load_result chunk vv := by
+          intro mv0 tail0 w hh hw
+          cases hh with
+          | fragment vv q i mvl hch hq hi htail =>
+              exact ⟨vv, q, i, by simp, hw.symm⟩
+          | shape_decoding_b bb mvl vv hv htail =>
+              exfalso
+              simpa [hw] using hv
+          | shape_decoding_u mvl =>
+              cases hw
+        obtain ⟨vv, q0, i0, hmv, hval⟩ :=
+          hdec_inv byte1' bytes' (Vptr bx ofsx) hshape rfl
+        have hvv : vv = Vptr bx ofsx := by
+          have hnorm_no_ptr : ∀ n, Val.norm_bool (Vint n) ≠ Vptr bx ofsx := by
+            intro n hn
+            unfold Val.norm_bool at hn
+            split at hn <;> cases hn
+          cases chunk with
+          | Mbool =>
+              cases vv with
+              | Vint n =>
+                  rw [Val.load_result] at hval
+                  exact False.elim (hnorm_no_ptr _ hval.symm)
+              | _ => simp [Val.load_result, Val.norm_bool] at hval
+          | Mint8signed => cases vv <;> simp [Val.load_result] at hval
+          | Mint8unsigned => cases vv <;> simp [Val.load_result] at hval
+          | Mint16signed => cases vv <;> simp [Val.load_result] at hval
+          | Mint16unsigned => cases vv <;> simp [Val.load_result] at hval
+          | Mint32 => cases vv <;> simp [Val.load_result, CompCert4Lean.X86_64.Archi.ptr64] at hval
+          | Mfloat32 => cases vv <;> simp [Val.load_result] at hval
+          | Mfloat64 => cases vv <;> simp [Val.load_result] at hval
+          | Mint64 =>
+              cases vv with
+              | Vptr b1 o1 => exact hval.symm
+              | _ => simp [Val.load_result, CompCert4Lean.X86_64.Archi.ptr64] at hval
+          | Many32 => cases vv <;> simp [Val.load_result, CompCert4Lean.X86_64.Archi.ptr64] at hval
+          | Many64 =>
+              cases vv with
+              | Vptr b1 o1 => exact hval.symm
+              | _ => simp [Val.load_result] at hval
+        have hmem : Fragment (Vptr bx ofsx) q0 i0 ∈ byte1' :: bytes' := by
+          rw [hmv, hvv]
+          simp
+        obtain ⟨ofs1, _hbounds, hload1⟩ :=
+          In_loadbytes m' b' (Fragment (Vptr bx ofsx) q0 i0)
+            (size_chunk chunk) ofs' (byte1' :: bytes') hloadbytes hmem
+        have hprov :=
+          storebytes_provenance m b ofs bytes m' b' ofs1 bx ofsx q0 i0
+            hstore hload1
+        rcases hprov with hbytes | hbytes
+        · exact pmatch_lub_l bc bx ofsx p' p (hpmatch bx ofsx q0 i0 hbytes)
+        · exact pmatch_lub_r bc bx ofsx p' p
+            (hfrag_match ofs1 bx ofsx q0 i0 hbytes)
+  · intro ofs0 b0 ofs0' q i hload'
+    have hprov :=
+      storebytes_provenance m b ofs bytes m' b' ofs0 b0 ofs0' q i
+        hstore hload'
+    rcases hprov with hbytes | hbytes
+    · exact pmatch_lub_l bc b0 ofs0' p' p (hpmatch b0 ofs0' q i hbytes)
+    · exact pmatch_lub_r bc b0 ofs0' p' p
+        (hfrag_match ofs0 b0 ofs0' q i hbytes)
+
+end CompCert4Lean.Backend.ValueDomain
