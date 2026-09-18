@@ -3294,3 +3294,45 @@ theorem stack_contents_change_meminj : stack_contents_change_meminjStatement := 
     (stackingproof_massert_imp_refl P)).1 m hpred
 
 end CompCert4Lean.Backend.Stackingproof
+
+namespace CompCert4Lean.Backend.Stackingproof
+
+open CompCert4Lean.Backend.Stacking
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Integers
+
+theorem find_label_save_callee_save : find_label_save_callee_saveStatement := by
+  intro lbl l ofs k
+  induction l generalizing ofs with
+  | nil => rfl
+  | cons r rl ih =>
+      simp [save_callee_save_rec, Mach.find_label, Mach.is_label, ih]
+
+theorem find_label_restore_callee_save : find_label_restore_callee_saveStatement := by
+  intro lbl l ofs k
+  induction l generalizing ofs with
+  | nil => rfl
+  | cons r rl ih =>
+      simp [restore_callee_save_rec, Mach.find_label, Mach.is_label, ih]
+
+theorem match_stacks_type_sp : match_stacks_type_spStatement := by
+  intro cfg tprog j bound_local_pos bound_outgoing_pos bound_stack_data_pos
+    used_callee_save_norepet used_callee_save_prop cs cs' sg hmatch
+  cases hmatch with
+  | match_stacks_empty sg htail =>
+      exact Val.Vnullptr_has_type
+  | @match_stacks_cons f sp ls c cs fb sp' ra c' cs' sg trf
+      htail hfind htransf hcode hinj hra hlocs hargs hstacks =>
+      exact Val.Vptr_has_type sp' Ptrofs.zero
+
+theorem match_stacks_type_retaddr : match_stacks_type_retaddrStatement := by
+  intro cfg tprog j bound_local_pos bound_outgoing_pos bound_stack_data_pos
+    used_callee_save_norepet used_callee_save_prop cs cs' sg hmatch
+  cases hmatch with
+  | match_stacks_empty sg htail =>
+      exact Val.Vnullptr_has_type
+  | @match_stacks_cons f sp ls c cs fb sp' ra c' cs' sg trf
+      htail hfind htransf hcode hinj hra hlocs hargs hstacks =>
+      exact hra
+
+end CompCert4Lean.Backend.Stackingproof

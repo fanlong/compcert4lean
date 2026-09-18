@@ -6666,3 +6666,32 @@ theorem unsigned_bitfield_extract_by_shifts_proof :
   rw [hleft1, hright]
   exact suffix_bitfield_nat_arith n.val p w
     hpw hwpos (WordCore.val_lt n)
+
+theorem mul_one_proof : mul_one := by
+  intro x
+  change WordCore.mul x (WordCore.one wordsize) = x
+  unfold WordCore.mul
+  rw [show WordCore.unsigned (WordCore.one wordsize) = Zpos xH by rfl]
+  change WordCore.repr wordsize
+      (ZArith.BinInt.Z.mul (WordCore.unsigned x) (Zpos xH)) = x
+  rw [ZArith.BinInt.Zmult_1_r_proof]
+  exact repr_unsigned_proof x
+
+theorem eqm_refl2_proof : eqm_refl2 := by
+  intro x y hxy
+  subst y
+  exact eqm_refl_proof x
+
+theorem eqm_add_proof : eqm_add := by
+  intro a b c d hab hcd
+  exact CompCert4Lean.Lib.Zbits.eqmod_add modulus a b c d hab hcd
+
+theorem shr_zero_proof : shr_zero := by
+  intro x
+  change WordCore.repr wordsize
+      (ZArith.BinInt.Z.shiftr (signed x) (unsigned (WordCore.zero wordsize))) = x
+  rw [show unsigned (WordCore.zero wordsize) = Z0 by rfl]
+  rw [ZArith.BinInt.Z.shiftr_0_r]
+  have hsu : eqm (signed x) (unsigned x) := eqm_signed_unsigned_proof x
+  change repr (signed x) = x
+  rw [eqm_samerepr_proof _ _ hsu, repr_unsigned_proof]

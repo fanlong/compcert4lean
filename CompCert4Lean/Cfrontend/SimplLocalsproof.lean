@@ -4537,3 +4537,117 @@ theorem free_blocks_of_env_perm_2 : free_blocks_of_env_perm_2Statement := by
   · rfl
 
 end CompCert4Lean.Cfrontend.SimplLocalsproof
+
+namespace CompCert4Lean.Cfrontend.SimplLocalsproof
+
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Lib.Maps
+
+private theorem slp_range_perm_free (m : Mem.mem) (b : positive) (lo hi : Z)
+    (hperm : Mem.range_perm m b lo hi .Cur .Freeable) :
+    ∃ m', Mem.free m b lo hi = some m' := by
+  cases hr : Mem.range_perm_dec m b lo hi .Cur .Freeable with
+  | left hp =>
+      refine ⟨Mem.unchecked_free m b lo hi, ?_⟩
+      unfold Mem.free
+      rw [hr]
+      rfl
+  | right hn =>
+      exact False.elim (hn hperm)
+
+private theorem slp_perm_free_1 (m m' : Mem.mem) (b' : positive) (lo hi : Z)
+    (hfree : Mem.free m b' lo hi = some m') :
+    ∀ b ofs (k : perm_kind) (p : permission),
+      (b ≠ b' ∨ ZArith.BinInt.Z.lt ofs lo ∨
+        ZArith.BinInt.Z.le hi ofs) →
+      Mem.perm m b ofs k p → Mem.perm m' b ofs k p := by
+  intro b ofs k p hout hp
+  unfold Mem.free at hfree
+  split at hfree
+  next hcond =>
+    injection hfree with hm'
+    rw [← hm']
+    unfold Mem.perm at hp ⊢
+    dsimp [Mem.unchecked_free] at ⊢
+    by_cases hb : b = b'
+    · subst b
+      change Mem.perm_order' ((PMap.get b' m.mem_access) ofs k) p at hp
+      change Mem.perm_order'
+        ((PMap.get b' (PMap.set b'
+          (fun (ofs : Z) (k : perm_kind) => _) m.mem_access)) ofs k) p
+      rw [slp_pmap_get_set_same]
+      split
+      · rename_i hin
+        exfalso
+        rcases hout with hne | hlt | hge
+        · exact hne rfl
+        · change (ZArith.BinInt.Z.leb lo ofs &&
+            ZArith.BinInt.Z.ltb ofs hi) = true at hin
+          have hin' := Bool.and_eq_true_iff.mp hin
+          have hlo' : intOfZ lo ≤ intOfZ ofs := by
+            simpa [ZArith.BinInt.Z.leb] using hin'.1
+          change intOfZ ofs < intOfZ lo at hlt
+          omega
+        · change (ZArith.BinInt.Z.leb lo ofs &&
+            ZArith.BinInt.Z.ltb ofs hi) = true at hin
+          have hin' := Bool.and_eq_true_iff.mp hin
+          have hhi' : intOfZ ofs < intOfZ hi := by
+            simpa [ZArith.BinInt.Z.ltb] using hin'.2
+          change intOfZ hi ≤ intOfZ ofs at hge
+          omega
+      · exact hp
+    · change Mem.perm_order' (PMap.get b m.mem_access ofs k) p at hp
+      change Mem.perm_order'
+        ((PMap.get b (PMap.set b'
+          (fun (ofs : Z) (k : perm_kind) => _) m.mem_access)) ofs k) p
+      rw [slp_pmap_get_set_other _ _ _ _ hb]
+      exact hp
+  next hcond => cases hfree
+
+theorem can_free_list : can_free_listStatement := by
+  intro l
+  induction l with
+  | nil =>
+      intro m hperms hno
+      exact ⟨m, by rfl⟩
+  | cons a rest ih =>
+      intro m hperms hno
+      rcases a with ⟨b, lo, hi⟩
+      change freelist_no_overlap rest ∧
+        (∀ b' lo' hi', (b', lo', hi') ∈ rest →
+          b' ≠ b ∨ ZArith.BinInt.Z.le hi' lo ∨
+            ZArith.BinInt.Z.le hi lo') at hno
+      rcases slp_range_perm_free m b lo hi
+        (hperms b lo hi (_root_.List.mem_cons_self)) with ⟨m1, hfree⟩
+      have hperms1 : ∀ b' lo' hi', (b', lo', hi') ∈ rest →
+          Mem.range_perm m1 b' lo' hi' .Cur .Freeable := by
+        intro b' lo' hi' hmem
+        intro ofs hof
+        apply slp_perm_free_1 m m1 b lo hi hfree b' ofs .Cur .Freeable
+        · rcases hno.2 b' lo' hi' hmem with hne | hbefore | hafter
+          · exact Or.inl hne
+          · right
+            left
+            change intOfZ ofs < intOfZ lo
+            change intOfZ hi' ≤ intOfZ lo at hbefore
+            change intOfZ lo' ≤ intOfZ ofs ∧ intOfZ ofs < intOfZ hi' at hof
+            omega
+          · right
+            right
+            change intOfZ hi ≤ intOfZ ofs
+            change intOfZ hi ≤ intOfZ lo' at hafter
+            change intOfZ lo' ≤ intOfZ ofs ∧ intOfZ ofs < intOfZ hi' at hof
+            omega
+        · exact hperms b' lo' hi'
+            (_root_.List.mem_cons.mpr (Or.inr hmem)) ofs hof
+      rcases ih m1 hperms1 hno.1 with ⟨m2, htail⟩
+      refine ⟨m2, ?_⟩
+      change (match Mem.free m b lo hi with
+        | none => none
+        | some m1 => Mem.free_list m1 rest) = some m2
+      rw [hfree]
+      exact htail
+
+end CompCert4Lean.Cfrontend.SimplLocalsproof

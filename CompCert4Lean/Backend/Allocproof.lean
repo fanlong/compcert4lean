@@ -6675,3 +6675,74 @@ theorem function_ptr_translated : function_ptr_translatedStatement := by
   exact ⟨tf, hfindtf, htrans⟩
 
 end CompCert4Lean.Backend.Allocproof
+
+namespace CompCert4Lean.Backend.Allocproof
+
+open CompCert4Lean.Backend.Allocation
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Backend.LTL
+open CompCert4Lean.Common.AST
+
+theorem sig_function_translated : sig_function_translatedStatement := by
+  intro cfg oracle f tf h
+  cases f with
+  | Internal fn =>
+      unfold CompCert4Lean.Backend.Allocation.transf_fundef
+        CompCert4Lean.Common.AST.transf_partial_fundef at h
+      cases htr : CompCert4Lean.Backend.Allocation.transf_function cfg oracle fn with
+      | Error msg => simp [htr] at h
+      | OK tf' =>
+          simp [htr] at h
+          cases h
+          unfold CompCert4Lean.Backend.Allocation.transf_function at htr
+          cases ht : CompCert4Lean.Backend.RTLtyping.type_function cfg fn with
+          | Error msg => simp [ht] at htr
+          | OK env =>
+              cases ho : CompCert4Lean.Backend.Allocation.regalloc oracle fn with
+              | Error msg => simp [ht, ho] at htr
+              | OK tf0 =>
+                  cases hc : CompCert4Lean.Backend.Allocation.check_function cfg fn tf0 env with
+                  | Error msg => simp [ht, ho, hc] at htr
+                  | OK u =>
+                      simp [ht, ho, hc] at htr
+                      cases htr
+                      unfold CompCert4Lean.Backend.Allocation.check_function at hc
+                      cases ha : CompCert4Lean.Backend.Allocation.analyze cfg fn env
+                          (CompCert4Lean.Backend.Allocation.pair_codes fn tf') with
+                      | none => simp [ha] at hc
+                      | some an =>
+                          simp [ha] at hc
+                          unfold CompCert4Lean.Backend.Allocation.check_entrypoints at hc
+                          cases he : CompCert4Lean.Backend.Allocation.transfer cfg fn env
+                              (CompCert4Lean.Backend.Allocation.pair_codes fn tf')
+                              fn.fn_entrypoint
+                              (CompCert4Lean.Lib.Maps.PMap.get fn.fn_entrypoint an) with
+                          | Error msg => simp [he] at hc
+                          | OK e1 =>
+                              simp [he] at hc
+                              cases hx : CompCert4Lean.Backend.Allocation.check_entrypoints_aux
+                                  cfg fn tf' env e1 with
+                              | none => simp [hx] at hc
+                              | some u' =>
+                                  simp [hx] at hc
+                                  unfold CompCert4Lean.Backend.Allocation.check_entrypoints_aux at hx
+                                  cases hp : CompCert4Lean.Backend.Allocation.pair_entrypoints fn tf' with
+                                  | none => simp [hp] at hx
+                                  | some mv =>
+                                      cases htm : CompCert4Lean.Backend.Allocation.track_moves env mv e1 with
+                                      | none => simp [hp, htm] at hx
+                                      | some e2 =>
+                                          simp [hp, htm] at hx
+                                          have hsigbool := hx.2.2.2
+                                          cases hsigeq : signature_eq fn.fn_sig tf'.fn_sig with
+                                          | left hsig => exact hsig.symm
+                                          | right hne =>
+                                              rw [hsigeq] at hsigbool
+                                              cases hsigbool
+  | External ef =>
+      simp [CompCert4Lean.Backend.Allocation.transf_fundef,
+        CompCert4Lean.Common.AST.transf_partial_fundef] at h
+      cases h
+      rfl
+
+end CompCert4Lean.Backend.Allocproof

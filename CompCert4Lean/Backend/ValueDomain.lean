@@ -4676,3 +4676,44 @@ theorem store_provenance : store_provenanceStatement := by
   · exact Or.inr hmem
 
 end CompCert4Lean.Backend.ValueDomain
+
+namespace CompCert4Lean.Backend.ValueDomain
+
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Values
+
+theorem smatch_store : smatch_storeStatement := by
+  intro bc chunk m b ofs v m' b' p av hstore hsmatch hvmatch
+  rcases hsmatch with ⟨hload, hfrag⟩
+  constructor
+  · intro chunk' ofs' v' hload'
+    cases v' with
+    | Vundef => exact vmatch.ifptrUndef (vplub av p)
+    | Vint i => exact vmatch.ifptrInt i (vplub av p)
+    | Vlong i => exact vmatch.ifptrLong i (vplub av p)
+    | Vfloat f => exact vmatch.ifptrFloat f (vplub av p)
+    | Vsingle f => exact vmatch.ifptrSingle f (vplub av p)
+    | Vptr b'' ofs'' =>
+        have hptr :=
+          CompCert4Lean.Common.Memory.Mem.load_pointer_store
+            chunk m b ofs v m' chunk' b' ofs' b'' ofs'' hstore hload'
+        rcases hptr with ⟨⟨hv, _hcompat, _hb, _hofs⟩⟩ | hdisj
+        · subst v
+          exact vmatch_vplub_l bc (Vptr b'' ofs'') av p hvmatch
+        · apply vmatch_vplub_r bc (Vptr b'' ofs'') _ p
+          apply hload chunk' ofs' (Vptr b'' ofs'')
+          rw [← hload']
+          symm
+          exact CompCert4Lean.Common.Memory.Mem.load_store_other
+            chunk m b ofs v m' hstore chunk' b' ofs' hdisj
+  · intro ofs0 b0 ofs0' q i hload'
+    have hprov :=
+      store_provenance chunk m b ofs v m' b' ofs0 b0 ofs0' q i hstore hload'
+    rcases hprov with ⟨⟨hv, _hchunk⟩⟩ | hold
+    · subst v
+      have hv' := vmatch_vplub_l bc (Vptr b0 ofs0') av p hvmatch
+      cases hv' <;> assumption
+    · exact pmatch_vplub bc b0 ofs0' av p (hfrag ofs0 b0 ofs0' q i hold)
+
+end CompCert4Lean.Backend.ValueDomain

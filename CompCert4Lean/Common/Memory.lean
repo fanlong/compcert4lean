@@ -4174,3 +4174,41 @@ theorem store_int64_split : store_int64_splitStatement := by
 end Mem
 
 end CompCert4Lean.Common.Memory
+
+namespace CompCert4Lean.Common.Memory
+
+namespace Mem
+
+theorem nextblock_alloc : nextblock_allocStatement := by
+  intro m1 lo hi m2 b halloc
+  simp [alloc] at halloc
+  rcases halloc with ⟨rfl, rfl⟩
+  rfl
+
+theorem alloc_result : alloc_resultStatement := by
+  intro m1 lo hi m2 b halloc
+  simp [alloc] at halloc
+  rcases halloc with ⟨rfl, rfl⟩
+  rfl
+
+theorem valid_block_alloc : valid_block_allocStatement := by
+  intro m1 lo hi m2 b halloc b' hb'
+  simp [alloc] at halloc
+  rcases halloc with ⟨rfl, rfl⟩
+  unfold valid_block at hb' ⊢
+  change CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat b' <
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat m1.nextblock at hb'
+  change CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat b' <
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat (posSucc m1.nextblock)
+  have hs := pltSucc m1.nextblock
+  change CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat m1.nextblock <
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat (posSucc m1.nextblock) at hs
+  exact Nat.lt_trans hb' hs
+
+theorem storev_int64_split : storev_int64_splitStatement := by
+  intro m a v m' hstore hptr
+  simp [CompCert4Lean.X86_64.Archi.ptr64] at hptr
+
+end Mem
+
+end CompCert4Lean.Common.Memory

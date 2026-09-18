@@ -3247,3 +3247,272 @@ theorem of_to_bits : Float32.of_to_bitsStatement := by
 end Float32
 
 end CompCert4Lean.Lib.Floats
+
+namespace CompCert4Lean.Lib.Floats.Sqrt
+
+open Lean Elab Tactic Meta
+
+private def sqrtPrivateName (suffix : String) : Name :=
+  let p := Name.str
+    (Name.str
+      (Name.str
+        (Name.str
+          (Name.str Name.anonymous "_private") "CompCert4Lean") "Lib") "Floats") "Sqrt"
+  let p := Name.num p 0
+  suffix.splitOn "." |>.foldl Name.str p
+
+private def sqrtUnfoldPrivate (suffixes : List String) : TacticM Unit := do
+  for suffix in suffixes do
+    let n := sqrtPrivateName suffix
+    evalTactic (← `(tactic| unfold $(Lean.mkIdent n) at *))
+
+private theorem quiet_nan64_bits_worker (y : BitVec 64)
+    (he : y.toNat / 2 ^ 52 % 2 ^ 11 = 2047)
+    (hm : y.toNat % 2 ^ 52 ≠ 0) :
+    y ||| (1#64 <<< 51) =
+      (quiet_nan_64 (sign64 (⟨y⟩ : float), payload64 (⟨y⟩ : float))).bits := by
+  unfold quiet_nan_64 quiet_nan_64_payload mkNaN64 sign64 payload64 fraction64
+  apply BitVec.eq_of_toNat_eq
+  simp only [BitVec.toNat_or, BitVec.toNat_shiftLeft, BitVec.toNat_ofNat,
+    Nat.mod_eq_of_lt (by decide : 2 ^ 51 < 2 ^ 64)]
+  let k := y.toNat / 2 ^ 52
+  let f := y.toNat % 2 ^ 52
+  have hf : f < 2 ^ 52 := Nat.mod_lt _ (by omega)
+  have hfpos : 0 < f := Nat.pos_of_ne_zero hm
+  have hy : 2 ^ 52 * k + f = y.toNat := by
+    dsimp [k, f]
+    rw [Nat.div_add_mod]
+  have hk : k < 2 ^ 12 := by
+    dsimp [k]
+    apply Nat.div_lt_of_lt_mul
+    simpa [Nat.pow_add, Nat.mul_assoc, Nat.mul_comm, Nat.mul_left_comm] using y.isLt
+  have hkmod : k % 2 ^ 11 = 2047 := by
+    dsimp [k]
+    exact he
+  have hk_cases : k = 2047 ∨ k = 4095 := by omega
+  have horlt : Nat.lor f (2 ^ 51) < 2 ^ 52 := Nat.or_lt_two_pow hf (by omega)
+  have hqeq : Nat.lor f (2 ^ 51) % 2 ^ 52 = Nat.lor f (2 ^ 51) :=
+    Nat.mod_eq_of_lt horlt
+  have hqpos : 0 < Nat.lor f (2 ^ 51) % 2 ^ 52 := by
+    rw [hqeq]
+    have hb : 2 ^ 51 ≤ Nat.lor f (2 ^ 51) := Nat.right_le_or
+    omega
+  have hpayload :
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.PArith.BinPos.Pos.to_nat
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.PArith.BinPos.Pos.of_nat f) = f := by
+    change CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posOfNat f) = _
+    exact CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat_posOfNat hfpos
+  have hpayloadQuiet :
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.PArith.BinPos.Pos.to_nat
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.PArith.BinPos.Pos.of_nat
+            (Nat.lor f (2 ^ 51) % 2 ^ 52)) = Nat.lor f (2 ^ 51) % 2 ^ 52 := by
+    change CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posOfNat
+          (Nat.lor f (2 ^ 51) % 2 ^ 52)) = _
+    exact CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat_posOfNat hqpos
+  rw [show y.toNat % 2 ^ 52 = f by rfl, hpayload,
+    hpayloadQuiet, hqeq]
+  have hmask : (1 % 2 ^ 64) <<< 51 % 2 ^ 64 = 2 ^ 51 := by decide
+  rw [hmask]
+  have horassoc (a b c : Nat) :
+      Nat.lor (Nat.lor a b) c = Nat.lor a (Nat.lor b c) := by
+    apply Nat.eq_of_testBit_eq
+    intro i
+    simp [Nat.testBit_or, Bool.or_assoc]
+  have hpow (a b : Nat) (hb : b < 2 ^ 52) :
+      Nat.lor (2 ^ 52 * a) b = 2 ^ 52 * a + b := by
+    have hh := Nat.two_pow_add_eq_or_of_lt hb a
+    simpa using hh.symm
+  have hor_split (a b : Nat) (hb : b < 2 ^ 52) :
+      Nat.lor (2 ^ 52 * a + b) (2 ^ 51) = 2 ^ 52 * a + Nat.lor b (2 ^ 51) := by
+    rw [← hpow a b hb, horassoc]
+    have hbq : Nat.lor b (2 ^ 51) < 2 ^ 52 := Nat.or_lt_two_pow hb (by decide)
+    rw [hpow a _ hbq]
+  have hor_def : (2 ^ 52 * k + f) ||| (2 ^ 51) =
+      Nat.lor (2 ^ 52 * k + f) (2 ^ 51) := by rfl
+  rw [← hy, hor_def, hor_split k f hf]
+  rcases hk_cases with hkval | hkval
+  · have hs : (2 ^ 52 * 2047 + f) / 2 ^ 63 % 2 = 0 := by omega
+    simp [hkval, hs, hqeq]
+    rw [show (f ||| 2251799813685248) = Nat.lor f 2251799813685248 by rfl]
+    have hqeqNum : Nat.lor f 2251799813685248 % 4503599627370496 =
+        Nat.lor f 2251799813685248 := by simpa using hqeq
+    rw [hqeqNum]
+    have hqbound : Nat.lor f 2251799813685248 < 2 ^ 52 := by simpa using horlt
+    have hsum : 9218868437227405312 + Nat.lor f 2251799813685248 <
+        18446744073709551616 := by omega
+    rw [Nat.mod_eq_of_lt hsum]
+  · have hs : (2 ^ 52 * 4095 + f) / 2 ^ 63 % 2 = 1 := by omega
+    simp [hkval, hs, hqeq]
+    rw [show (f ||| 2251799813685248) = Nat.lor f 2251799813685248 by rfl]
+    have hqeqNum : Nat.lor f 2251799813685248 % 4503599627370496 =
+        Nat.lor f 2251799813685248 := by simpa using hqeq
+    rw [hqeqNum]
+    have hqbound : Nat.lor f 2251799813685248 < 2 ^ 52 := by simpa using horlt
+    have hsum : 18442240474082181120 + Nat.lor f 2251799813685248 <
+        18446744073709551616 := by omega
+    rw [Nat.mod_eq_of_lt hsum]
+
+theorem float64_sqrt_correct_proof : float64_sqrt_correctStatement := by
+  intro x
+  have rawNaN_iff (y : BitVec 64) :
+      (BitVec.extractLsb 62 52 y = 2047#11 ∧
+        ¬BitVec.extractLsb 51 0 y = 0#52) ↔
+      isNaN64 (⟨y⟩ : float) = true := by
+    have he_iff :
+        BitVec.extractLsb 62 52 y = 2047#11 ↔
+          y.toNat / 2 ^ 52 % 2 ^ 11 = 2047 := by
+      constructor
+      · intro he
+        have ht := congrArg BitVec.toNat he
+        simpa [BitVec.extractLsb_toNat, Nat.shiftRight_eq_div_pow] using ht
+      · intro he
+        apply BitVec.eq_of_toNat_eq
+        simpa [BitVec.extractLsb_toNat, Nat.shiftRight_eq_div_pow] using he
+    have hm_iff :
+        BitVec.extractLsb 51 0 y = 0#52 ↔
+          y.toNat % 2 ^ 52 = 0 := by
+      constructor
+      · intro hm
+        have ht := congrArg BitVec.toNat hm
+        simpa [BitVec.extractLsb_toNat, Nat.shiftRight_eq_div_pow] using ht
+      · intro hm
+        apply BitVec.eq_of_toNat_eq
+        simpa [BitVec.extractLsb_toNat, Nat.shiftRight_eq_div_pow] using hm
+    constructor
+    · intro hparts
+      have he := he_iff.1 hparts.1
+      have hm : y.toNat % 2 ^ 52 ≠ 0 := fun hm => hparts.2 (hm_iff.2 hm)
+      simp [isNaN64, exponent64, fraction64, he, hm]
+    · intro hnan
+      have hparts :
+          y.toNat / 2 ^ 52 % 2 ^ 11 = 2047 ∧ y.toNat % 2 ^ 52 ≠ 0 := by
+        simpa [isNaN64, exponent64, fraction64] using hnan
+      exact ⟨he_iff.2 hparts.1, fun hm => hparts.2 (hm_iff.1 hm)⟩
+  have raw_iff (y : BitVec 64) :
+      (Float.Model.UnpackedFloat.unpackExponent
+          (spec := Float.Model.Format.binary64) y == -1#11 &&
+        Float.Model.UnpackedFloat.unpackMantissa
+          (spec := Float.Model.Format.binary64) y != 0#52) = true ↔
+      isNaN64 (⟨y⟩ : float) = true := by
+    have hp := rawNaN_iff y
+    simpa [Float.Model.UnpackedFloat.unpackExponent,
+      Float.Model.UnpackedFloat.unpackMantissa,
+      BitVec.extractLsb_toNat, Nat.shiftRight_eq_div_pow] using hp
+  have rawProp_iff (y : BitVec 64) :
+      (Float.Model.UnpackedFloat.unpackExponent
+          (spec := Float.Model.Format.binary64) y = -1#11 ∧
+        Float.Model.UnpackedFloat.unpackMantissa
+          (spec := Float.Model.Format.binary64) y ≠ 0#52) ↔
+      isNaN64 (⟨y⟩ : float) = true := by
+    simpa [Bool.and_eq_true] using (raw_iff y)
+  have rawProp2047_iff (y : BitVec 64) :
+      (Float.Model.UnpackedFloat.unpackExponent
+          (spec := Float.Model.Format.binary64) y = 2047#11 ∧
+        Float.Model.UnpackedFloat.unpackMantissa
+          (spec := Float.Model.Format.binary64) y ≠ 0#52) ↔
+      isNaN64 (⟨y⟩ : float) = true := by
+    simpa using (rawProp_iff y)
+  dsimp [float64_sqrt, Float.sqrt, Sqrt.rawSqrt]
+  run_tac sqrtUnfoldPrivate ["CompCert4Lean.Lib.Floats.Sqrt.rawIsNaN",
+    "CompCert4Lean.Lib.Floats.Sqrt.quietNaN",
+    "CompCert4Lean.Lib.Floats.Sqrt.defaultNaN"]
+  by_cases h : isNaN64 (⟨x.toBitVec⟩ : float) = true
+  · have hparts : x.toNat / 2 ^ 52 % 2 ^ 11 = 2047 ∧
+        x.toNat % 2 ^ 52 ≠ 0 := by
+      simpa [isNaN64, exponent64, fraction64] using h
+    simp only [h, ↓reduceIte]
+    split
+    · rename_i hraw
+      apply UInt64.toBitVec_inj.mp
+      change (x.toBitVec ||| (1#64 <<< 51)) = _
+      simpa [h, hraw, Float.unop_nan, Float.cons_pl,
+        CompCert4Lean.X86_64.Archi.choose_nan_64, quiet_nan_64,
+        quiet_nan_64_payload, mkNaN64, sign64, payload64] using
+        (quiet_nan64_bits_worker x.toBitVec hparts.1 hparts.2)
+    · simp_all! [Float.unop_nan, Float.cons_pl, quiet_nan_64,
+        quiet_nan_64_payload, mkNaN64, sign64, payload64,
+        Float.Model.UnpackedFloat.unpackExponent,
+        Float.Model.UnpackedFloat.unpackMantissa, rawNaN_iff]
+  · split
+    · rename_i hraw
+      have hbad : isNaN64 (⟨x.toBitVec⟩ : float) = true :=
+        (raw_iff x.toBitVec).1 hraw
+      exact (h hbad).elim
+    · rename_i hraw
+      by_cases hr : isNaN64
+          ({ bits :=
+              Float.Model.UnpackedFloat.pack Float.Model.Format.binary64
+                (unpackedSqrt Float.Model.Format.binary64
+                  (Float.Model.UnpackedFloat.unpack Float.Model.Format.binary64 x.toBitVec)) } : float) = true
+      · have hp :
+            Float.Model.UnpackedFloat.unpackExponent
+                  (Float.Model.UnpackedFloat.pack Float.Model.Format.binary64
+                    (unpackedSqrt Float.Model.Format.binary64
+                      (Float.Model.UnpackedFloat.unpack Float.Model.Format.binary64 x.toBitVec))) = 2047#11 ∧
+              Float.Model.UnpackedFloat.unpackMantissa
+                  (Float.Model.UnpackedFloat.pack Float.Model.Format.binary64
+                    (unpackedSqrt Float.Model.Format.binary64
+                      (Float.Model.UnpackedFloat.unpack Float.Model.Format.binary64 x.toBitVec))) ≠ 0#52 :=
+          (rawProp2047_iff _).2 hr
+        have hbeq : (2047#11 == -1#11) = true := by decide
+        have hpe :
+            Float.Model.UnpackedFloat.unpackExponent
+                (Float.Model.UnpackedFloat.pack Float.Model.Format.binary64
+                  (unpackedSqrt Float.Model.Format.binary64
+                    (Float.Model.UnpackedFloat.unpack Float.Model.Format.binary64 x.toBitVec))) = -1#11 := by
+          have heq : (2047#11 : BitVec 11) = -1#11 := by decide
+          exact heq ▸ hp.1
+        have hc :
+            (Float.Model.UnpackedFloat.unpackExponent
+                (Float.Model.UnpackedFloat.pack Float.Model.Format.binary64
+                  (unpackedSqrt Float.Model.Format.binary64
+                    (Float.Model.UnpackedFloat.unpack Float.Model.Format.binary64 x.toBitVec))) == -1#11 &&
+              Float.Model.UnpackedFloat.unpackMantissa
+                (Float.Model.UnpackedFloat.pack Float.Model.Format.binary64
+                  (unpackedSqrt Float.Model.Format.binary64
+                    (Float.Model.UnpackedFloat.unpack Float.Model.Format.binary64 x.toBitVec))) != 0#52) = true := by
+          simp [hpe, hp]
+        simp only [hc, hr, ↓reduceIte]
+        have hd : isNaN64 default_nan_64 = true := by decide
+        have hdraw : isNaN64
+            ({ bits :=
+                Float.Model.UnpackedFloat.packedNaN Float.Model.Format.binary64 |||
+                  (1#Float.Model.Format.binary64.numBits <<<
+                    (Float.Model.Format.binary64.numBits - 1)) } : float) = true := by decide
+        have hdef : default_nan_64.bits =
+            Float.Model.UnpackedFloat.packedNaN Float.Model.Format.binary64 |||
+              (1#Float.Model.Format.binary64.numBits <<<
+                (Float.Model.Format.binary64.numBits - 1)) := by
+          unfold default_nan_64 quiet_nan_64 quiet_nan_64_payload
+          unfold CompCert4Lean.X86_64.Archi.default_nan_64 mkNaN64
+          decide
+        simp only [hdraw, ↓reduceIte]
+        apply UInt64.toBitVec_inj.mp
+        simpa using hdef.symm
+      · have hp : ¬(
+            Float.Model.UnpackedFloat.unpackExponent
+                  (Float.Model.UnpackedFloat.pack Float.Model.Format.binary64
+                    (unpackedSqrt Float.Model.Format.binary64
+                      (Float.Model.UnpackedFloat.unpack Float.Model.Format.binary64 x.toBitVec))) = 2047#11 ∧
+              Float.Model.UnpackedFloat.unpackMantissa
+                  (Float.Model.UnpackedFloat.pack Float.Model.Format.binary64
+                    (unpackedSqrt Float.Model.Format.binary64
+                      (Float.Model.UnpackedFloat.unpack Float.Model.Format.binary64 x.toBitVec))) ≠ 0#52) := by
+          intro hp
+          exact hr ((rawProp2047_iff _).1 hp)
+        have hc :
+            (Float.Model.UnpackedFloat.unpackExponent
+                    (Float.Model.UnpackedFloat.pack Float.Model.Format.binary64
+                      (unpackedSqrt Float.Model.Format.binary64
+                        (Float.Model.UnpackedFloat.unpack Float.Model.Format.binary64 x.toBitVec))) == -1#11 &&
+                Float.Model.UnpackedFloat.unpackMantissa
+                    (Float.Model.UnpackedFloat.pack Float.Model.Format.binary64
+                      (unpackedSqrt Float.Model.Format.binary64
+                        (Float.Model.UnpackedFloat.unpack Float.Model.Format.binary64 x.toBitVec))) != 0#52) ≠ true := by
+          intro hc
+          exact hr ((raw_iff _).1 hc)
+        simp only [hc, hr, Bool.false_eq_true, ↓reduceIte]
+
+end CompCert4Lean.Lib.Floats.Sqrt

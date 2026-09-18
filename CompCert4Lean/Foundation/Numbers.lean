@@ -3280,3 +3280,30 @@ theorem ZArith.BinInt.Z.abs_neq :
 
 end Rocq.Coq
 end CompCert4Lean.Foundation.Numbers
+
+namespace CompCert4Lean.Foundation.Numbers
+namespace Rocq.Coq
+
+theorem ZArith.BinInt.Z.double_spec :
+    ZArith.BinInt.Z.double_specStatement := by
+  intro n
+  rfl
+
+theorem ZArith.BinInt.Z.succ_double_spec :
+    ZArith.BinInt.Z.succ_double_specStatement := by
+  intro n
+  rfl
+
+theorem ZArith.BinInt.Z.testbit_0_l :
+    ZArith.BinInt.Z.testbit_0_lStatement := by
+  intro n
+  cases n <;> simp [ZArith.BinInt.Z.testbit, ZArith.BinInt.Z.odd,
+    ZArith.BinInt.Z.even, intOfZ]
+
+theorem ZArith.BinInt.Z.div_mod :
+    ZArith.BinInt.Z.div_modStatement := by
+  intro a b hb
+  exact ZArith.Zdiv.Z_div_mod_eq_full a b
+
+end Rocq.Coq
+end CompCert4Lean.Foundation.Numbers

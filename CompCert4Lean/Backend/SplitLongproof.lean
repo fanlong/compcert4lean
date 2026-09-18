@@ -1774,3 +1774,353 @@ theorem decompose_cmpl_eq_zero : decompose_cmpl_eq_zeroStatement := by
     simp [hz, ho]
 
 end CompCert4Lean.Backend.SplitLongproof
+
+namespace CompCert4Lean.Backend.SplitLongproof
+
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.ExternalCalls
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.Backend.SplitLong
+open CompCert4Lean.X86.Op
+open CompCert4Lean.X86.SelectOp
+
+variable
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+
+private abbrev SLInt := CompCert4Lean.Lib.Integers.int
+private abbrev SLEnv := CompCert4Lean.Backend.Cminor.env
+private abbrev SLMem := CompCert4Lean.Common.Memory.mem
+private abbrev SLVal := CompCert4Lean.Common.Values.val
+private abbrev SLGenv := CompCert4Lean.Backend.CminorSel.genv
+
+private theorem splitlong_eval_orcomp
+    (xi : ExternalCalls) (ge : SLGenv) (sp : SLVal) (e : SLEnv) (m : SLMem)
+    (le : letenv) (h l : expr) (p q : SLInt)
+    (hh : eval_expr xi ge sp e m le h (.Vint p))
+    (hl : eval_expr xi ge sp e m le l (.Vint q)) :
+    ∃ v, eval_expr xi ge sp e m le
+      (CompCert4Lean.X86.SelectOp.comp .Ceq
+        (CompCert4Lean.X86.SelectOp.or h l)
+        (Eop (Ointconst (CompCert4Lean.Lib.Integers.Int.zero)) Enil)) v ∧
+      v = CompCert4Lean.Common.Values.Val.of_bool
+        (CompCert4Lean.Lib.Integers.Int.eq
+          (CompCert4Lean.Lib.Integers.Int.or p q)
+          CompCert4Lean.Lib.Integers.Int.zero) := by
+  obtain ⟨vo, ho, hdo⟩ := CompCert4Lean.X86.SelectOpproof.eval_or
+    xi ge sp e m le h (.Vint p) l (.Vint q) hh hl
+  have hdo' : vo = .Vint (CompCert4Lean.Lib.Integers.Int.or p q) := by
+    cases hdo
+    simp [CompCert4Lean.Common.Values.Val.or]
+  subst vo
+  have hz : eval_expr xi ge sp e m le
+      (Eop (Ointconst (CompCert4Lean.Lib.Integers.Int.zero)) Enil)
+      (.Vint (CompCert4Lean.Lib.Integers.Int.zero)) := by
+    apply eval_expr.eval_Eop (le := le)
+      (op := Ointconst (CompCert4Lean.Lib.Integers.Int.zero))
+      (al := Enil) (vl := [])
+    · exact eval_exprlist.nil le
+    · rfl
+  obtain ⟨vc, hc, hdc⟩ := CompCert4Lean.X86.SelectOpproof.eval_comp
+    xi ge sp e m .Ceq le (CompCert4Lean.X86.SelectOp.or h l)
+      (.Vint (CompCert4Lean.Lib.Integers.Int.or p q))
+      (Eop (Ointconst (CompCert4Lean.Lib.Integers.Int.zero)) Enil)
+      (.Vint (CompCert4Lean.Lib.Integers.Int.zero)) ho hz
+  have hsrc : CompCert4Lean.Common.Values.Val.cmp .Ceq
+      (.Vint (CompCert4Lean.Lib.Integers.Int.or p q))
+      (.Vint (CompCert4Lean.Lib.Integers.Int.zero)) =
+      CompCert4Lean.Common.Values.Val.of_bool
+        (CompCert4Lean.Lib.Integers.Int.eq
+          (CompCert4Lean.Lib.Integers.Int.or p q)
+          (CompCert4Lean.Lib.Integers.Int.zero)) := by
+    cases h : decide ((CompCert4Lean.Lib.Integers.Int.or p q).intval =
+        CompCert4Lean.Lib.Integers.Int.zero.intval) <;>
+      simp [CompCert4Lean.Common.Values.Val.cmp,
+        CompCert4Lean.Common.Values.Val.cmp_bool,
+        CompCert4Lean.Common.Values.Val.of_optbool,
+        CompCert4Lean.Common.Values.Val.of_bool,
+        CompCert4Lean.Lib.Integers.Int.cmp,
+        CompCert4Lean.Lib.Integers.WordCore.cmp,
+        CompCert4Lean.Lib.Integers.Int.eq,
+        CompCert4Lean.Lib.Integers.WordCore.eq, h]
+  rw [hsrc] at hdc
+  refine ⟨vc, hc, ?_⟩
+  cases heq : CompCert4Lean.Lib.Integers.Int.eq
+      (CompCert4Lean.Lib.Integers.Int.or p q)
+      (CompCert4Lean.Lib.Integers.Int.zero) with
+  | false =>
+      simp [CompCert4Lean.Common.Values.Val.of_bool, heq] at hdc ⊢
+      cases hdc <;> rfl
+  | true =>
+      simp [CompCert4Lean.Common.Values.Val.of_bool, heq] at hdc ⊢
+      cases hdc <;> rfl
+
+private theorem splitlong_shru_val {bits : Nat}
+    (x y : CompCert4Lean.Lib.Integers.WordCore.Word bits) :
+    (CompCert4Lean.Lib.Integers.WordCore.shru x y).val =
+      x.val / 2 ^ y.val := by
+  change (CompCert4Lean.Lib.Integers.WordCore.repr bits
+    (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.shiftr
+      (CompCert4Lean.Lib.Integers.WordCore.unsigned x)
+      (CompCert4Lean.Lib.Integers.WordCore.unsigned y))).val = _
+  rw [test_unsigned_eq_zOfNat x, test_unsigned_eq_zOfNat y]
+  rw [show CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.shiftr
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat x.val)
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat y.val) =
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat
+        (x.val / 2 ^ y.val) by
+    unfold CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.shiftr
+    simp only [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat,
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt,
+      Int.ofNat_eq_natCast, Int.natCast_nonneg, ↓reduceIte,
+      Int.toNat_natCast, Int.natCast_pow]
+    exact congrArg CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt
+      Int.ofNat_ediv_ofNat]
+  rw [test_repr_zOfNat]
+  apply Nat.mod_eq_of_lt
+  exact Nat.lt_of_le_of_lt (Nat.div_le_self _ _)
+    (CompCert4Lean.Lib.Integers.WordCore.Word.toFin x).isLt
+
+private theorem splitlong_hiword_val (x : CompCert4Lean.Lib.Integers.int64) :
+    (CompCert4Lean.Lib.Integers.Int64.hiword x).val = x.val / 2 ^ 32 := by
+  unfold CompCert4Lean.Lib.Integers.Int64.hiword
+    CompCert4Lean.Lib.Integers.Int64.shru
+    CompCert4Lean.Lib.Integers.Int64.repr
+    CompCert4Lean.Lib.Integers.Int64.unsigned
+  have hshift :
+      (CompCert4Lean.Lib.Integers.WordCore.repr
+        CompCert4Lean.Lib.Integers.Int64.wordsize
+        CompCert4Lean.Lib.Integers.Int.zwordsize).val = 32 := by
+    change (CompCert4Lean.Lib.Integers.WordCore.repr 64
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 32)).val = 32
+    rw [test_repr_zOfNat]
+  rw [test_unsigned_eq_zOfNat, splitlong_shru_val, hshift]
+  change (CompCert4Lean.Lib.Integers.WordCore.repr
+    CompCert4Lean.Lib.Integers.Int.wordsize
+    (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat
+      (x.val / 2 ^ 32))).val = x.val / 2 ^ 32
+  rw [test_repr_zOfNat]
+  apply Nat.mod_eq_of_lt
+  have hx := (CompCert4Lean.Lib.Integers.WordCore.Word.toFin x).isLt
+  change x.val < 2 ^ 64 at hx
+  have hpow : 2 ^ 32 * 2 ^ 32 = 2 ^ 64 := by
+    rw [← Nat.pow_add]
+  have hx' : x.val < 2 ^ 32 * 2 ^ 32 := hpow ▸ hx
+  have hq : x.val / 2 ^ 32 < 2 ^ 32 :=
+    Nat.div_lt_of_lt_mul hx'
+  simpa [CompCert4Lean.Lib.Integers.Int.wordsize] using hq
+
+private theorem splitlong_loword_val (x : CompCert4Lean.Lib.Integers.int64) :
+    (CompCert4Lean.Lib.Integers.Int64.loword x).val = x.val % 2 ^ 32 := by
+  unfold CompCert4Lean.Lib.Integers.Int64.loword
+    CompCert4Lean.Lib.Integers.Int.repr
+    CompCert4Lean.Lib.Integers.Int64.unsigned
+  rw [test_unsigned_eq_zOfNat, test_repr_zOfNat]
+  have hx := (CompCert4Lean.Lib.Integers.WordCore.Word.toFin x).isLt
+  change x.val < 2 ^ 64 at hx
+  have hle : x.val % 2 ^ 32 < 2 ^ 32 := Nat.mod_lt _ (by decide)
+  simpa [CompCert4Lean.Lib.Integers.Int.wordsize] using hle
+
+private theorem splitlong_int_eq_zero_iff (w : CompCert4Lean.Lib.Integers.int) :
+    CompCert4Lean.Lib.Integers.Int.eq w
+        CompCert4Lean.Lib.Integers.Int.zero = true ↔ w.val = 0 := by
+  constructor
+  · intro h
+    have hw : w = CompCert4Lean.Lib.Integers.Int.zero := by
+      apply CompCert4Lean.Lib.Integers.WordCore.ext
+      simpa [CompCert4Lean.Lib.Integers.Int.eq,
+        CompCert4Lean.Lib.Integers.WordCore.eq] using h
+    simpa [test_int_zero_val] using congrArg (fun q => q.val) hw
+  · intro h
+    have hw : w = CompCert4Lean.Lib.Integers.Int.zero := by
+      apply CompCert4Lean.Lib.Integers.WordCore.ext_of_val_eq
+      simpa [test_int_zero_val] using h
+    subst w
+    simp [CompCert4Lean.Lib.Integers.Int.eq,
+      CompCert4Lean.Lib.Integers.WordCore.eq]
+
+private theorem splitlong_int64_eq_zero_iff
+    (w : CompCert4Lean.Lib.Integers.int64) :
+    CompCert4Lean.Lib.Integers.Int64.eq w
+        CompCert4Lean.Lib.Integers.Int64.zero = true ↔ w.val = 0 := by
+  constructor
+  · intro h
+    have hw : w = CompCert4Lean.Lib.Integers.Int64.zero := by
+      apply CompCert4Lean.Lib.Integers.WordCore.ext
+      simpa [CompCert4Lean.Lib.Integers.Int64.eq,
+        CompCert4Lean.Lib.Integers.WordCore.eq] using h
+    simpa [test_int64_zero_val] using congrArg (fun q => q.val) hw
+  · intro h
+    have hw : w = CompCert4Lean.Lib.Integers.Int64.zero := by
+      apply CompCert4Lean.Lib.Integers.WordCore.ext_of_val_eq
+      simpa [test_int64_zero_val] using h
+    subst w
+    simp [CompCert4Lean.Lib.Integers.Int64.eq,
+      CompCert4Lean.Lib.Integers.WordCore.eq]
+
+private theorem splitlong_cmpl_zero_bool
+    (x : CompCert4Lean.Lib.Integers.int64) :
+    CompCert4Lean.Lib.Integers.Int64.eq x
+        CompCert4Lean.Lib.Integers.Int64.zero =
+      CompCert4Lean.Lib.Integers.Int.eq
+        (CompCert4Lean.Lib.Integers.Int.or
+          (CompCert4Lean.Lib.Integers.Int64.hiword x)
+          (CompCert4Lean.Lib.Integers.Int64.loword x))
+        CompCert4Lean.Lib.Integers.Int.zero := by
+  apply Bool.eq_iff_iff.mpr
+  constructor
+  · intro hx
+    have hxv := splitlong_int64_eq_zero_iff x |>.mp hx
+    apply (splitlong_int_eq_zero_iff _).mpr
+    rw [test_int_or_val]
+    apply (test_nat_lor_zero _ _).mpr
+    constructor
+    · rw [splitlong_hiword_val, hxv]
+    · rw [splitlong_loword_val, hxv]
+  · intro ho
+    have hov := splitlong_int_eq_zero_iff _ |>.mp ho
+    rw [test_int_or_val] at hov
+    obtain ⟨hh, hl⟩ := (test_nat_lor_zero _ _).mp hov
+    apply (splitlong_int64_eq_zero_iff _).mpr
+    have hsum := Nat.div_add_mod x.val (2 ^ 32)
+    have hh' : x.val / 2 ^ 32 = 0 := by
+      rw [← splitlong_hiword_val]
+      simpa [test_int_zero_val] using hh
+    have hl' : x.val % 2 ^ 32 = 0 := by
+      rw [← splitlong_loword_val]
+      simpa [test_int_zero_val] using hl
+    simpa [hh', hl'] using hsum.symm
+
+private theorem splitlong_eval_cmpl_default
+    (xi : ExternalCalls) (ge : SLGenv) (sp : SLVal) (e : SLEnv) (m : SLMem)
+    (le : letenv) (a : expr) (x : CompCert4Lean.Lib.Integers.int64)
+    (ha : eval_expr xi ge sp e m le a (.Vlong x)) :
+    eval_expr xi ge sp e m le
+      (Elet a
+        (CompCert4Lean.X86.SelectOp.comp .Ceq
+          (CompCert4Lean.X86.SelectOp.or
+            (Eop Ohighlong (Econs (Eletvar 0) Enil))
+            (Eop Olowlong (Econs (Eletvar 0) Enil)))
+          (Eop (Ointconst (CompCert4Lean.Lib.Integers.Int.zero)) Enil)))
+      (CompCert4Lean.Common.Values.Val.of_bool
+        (CompCert4Lean.Lib.Integers.Int64.eq x
+          CompCert4Lean.Lib.Integers.Int64.zero)) := by
+  apply eval_expr.eval_Elet le a _ (.Vlong x) _ ha
+  change List CompCert4Lean.Common.Values.val at le
+  have hhigh : eval_expr xi ge sp e m (.Vlong x :: le)
+      (Eop Ohighlong (Econs (Eletvar 0) Enil))
+      (.Vint (CompCert4Lean.Lib.Integers.Int64.hiword x)) := by
+    apply eval_expr.eval_Eop (le := .Vlong x :: le)
+      (op := Ohighlong) (al := Econs (Eletvar 0) Enil)
+      (vl := [.Vlong x])
+    · exact eval_exprlist.cons (.Vlong x :: le) (Eletvar 0) Enil
+        (.Vlong x) []
+        (eval_expr.eval_Eletvar (.Vlong x :: le) 0 (.Vlong x) (by rfl))
+        (eval_exprlist.nil (.Vlong x :: le))
+    · rfl
+  have hlow : eval_expr xi ge sp e m (.Vlong x :: le)
+      (Eop Olowlong (Econs (Eletvar 0) Enil))
+      (.Vint (CompCert4Lean.Lib.Integers.Int64.loword x)) := by
+    apply eval_expr.eval_Eop (le := .Vlong x :: le)
+      (op := Olowlong) (al := Econs (Eletvar 0) Enil)
+      (vl := [.Vlong x])
+    · exact eval_exprlist.cons (.Vlong x :: le) (Eletvar 0) Enil
+        (.Vlong x) []
+        (eval_expr.eval_Eletvar (.Vlong x :: le) 0 (.Vlong x) (by rfl))
+        (eval_exprlist.nil (.Vlong x :: le))
+    · rfl
+  obtain ⟨v, hv, hvval⟩ := splitlong_eval_orcomp xi ge sp e m
+    (.Vlong x :: le)
+    (Eop Ohighlong (Econs (Eletvar 0) Enil))
+    (Eop Olowlong (Econs (Eletvar 0) Enil))
+    (CompCert4Lean.Lib.Integers.Int64.hiword x)
+    (CompCert4Lean.Lib.Integers.Int64.loword x) hhigh hlow
+  exact splitlong_cmpl_zero_bool x ▸ hvval ▸ hv
+
+private theorem splitlong_eval_cmpl_shape
+    (xi : ExternalCalls) (ge : SLGenv) (sp : SLVal) (e : SLEnv) (m : SLMem)
+    (le : letenv) (h l : expr) (x : CompCert4Lean.Lib.Integers.int64)
+    (ha : eval_expr xi ge sp e m le
+      (Eop Omakelong (Econs h (Econs l Enil))) (.Vlong x)) :
+    eval_expr xi ge sp e m le
+      (CompCert4Lean.X86.SelectOp.comp .Ceq
+        (CompCert4Lean.X86.SelectOp.or h l)
+        (Eop (Ointconst (CompCert4Lean.Lib.Integers.Int.zero)) Enil))
+      (CompCert4Lean.Common.Values.Val.of_bool
+        (CompCert4Lean.Lib.Integers.Int64.eq x
+          CompCert4Lean.Lib.Integers.Int64.zero)) := by
+  obtain ⟨vl, hargs, hop⟩ := splitlong_eval_eop_inv xi ge sp e m le
+    Omakelong (Econs h (Econs l Enil)) (.Vlong x) ha
+  obtain ⟨v1, vl', hvl, hh, ht⟩ := splitlong_eval_cons_inv xi ge sp e m le
+    h (Econs l Enil) vl hargs
+  obtain ⟨v2, vl2, hvl', hl, ht2⟩ := splitlong_eval_cons_inv xi ge sp e m le
+    l Enil vl' ht
+  have hnil := splitlong_eval_nil_inv xi ge sp e m le vl2 ht2
+  rw [hvl, hvl', hnil] at hop
+  change some (CompCert4Lean.Common.Values.Val.longofwords v1 v2) =
+    some (CompCert4Lean.Common.Values.val.Vlong x) at hop
+  cases v1 with
+  | Vint p =>
+      cases v2 with
+      | Vint q =>
+          change some (CompCert4Lean.Common.Values.val.Vlong
+            (CompCert4Lean.Lib.Integers.Int64.ofwords p q)) =
+            some (CompCert4Lean.Common.Values.val.Vlong x) at hop
+          cases hop
+          obtain ⟨v, hv, hvval⟩ := splitlong_eval_orcomp xi ge sp e m le
+            h l p q hh hl
+          have hbool := decompose_cmpl_eq_zero p q
+          have hbool' := congrArg
+            CompCert4Lean.Common.Values.Val.of_bool hbool
+          rw [hbool', ← hvval]
+          exact hv
+      | Vundef => simp [CompCert4Lean.Common.Values.Val.longofwords] at hop
+      | Vlong _ => simp [CompCert4Lean.Common.Values.Val.longofwords] at hop
+      | Vfloat _ => simp [CompCert4Lean.Common.Values.Val.longofwords] at hop
+      | Vsingle _ => simp [CompCert4Lean.Common.Values.Val.longofwords] at hop
+      | Vptr _ _ => simp [CompCert4Lean.Common.Values.Val.longofwords] at hop
+  | Vundef => simp [CompCert4Lean.Common.Values.Val.longofwords] at hop
+  | Vlong _ => simp [CompCert4Lean.Common.Values.Val.longofwords] at hop
+  | Vfloat _ => simp [CompCert4Lean.Common.Values.Val.longofwords] at hop
+  | Vsingle _ => simp [CompCert4Lean.Common.Values.Val.longofwords] at hop
+  | Vptr _ _ => simp [CompCert4Lean.Common.Values.Val.longofwords] at hop
+
+end CompCert4Lean.Backend.SplitLongproof
+
+namespace CompCert4Lean.Backend.SplitLongproof
+
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.ExternalCalls
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Backend.SplitLong
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.X86.Op
+
+variable
+    [binary64_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 53)
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 24)
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 128)]
+
+theorem eval_cmpl_eq_zero : eval_cmpl_eq_zeroStatement := by
+  intro xi prog sp e m le a x ha
+  unfold cmpl_eq_zero
+  cases hmatch : splitlong_match a with
+  | splitlong_case1 h l =>
+      exact splitlong_eval_cmpl_shape xi (Genv.globalenv prog) sp e m le h l x
+        (by simpa [hmatch] using ha)
+  | splitlong_default =>
+      simpa [splitlong, hmatch] using
+        (splitlong_eval_cmpl_default xi (Genv.globalenv prog) sp e m le a x
+          (by simpa [hmatch] using ha))
+
+end CompCert4Lean.Backend.SplitLongproof

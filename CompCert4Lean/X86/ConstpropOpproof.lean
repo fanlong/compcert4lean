@@ -2961,3 +2961,178 @@ theorem make_cast16signed_correct
       CompCert4Lean.Common.Values.Val.lessdef_refl _⟩
 
 end CompCert4Lean.X86.ConstpropOpproof
+
+namespace CompCert4Lean.X86.ConstpropOpproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Backend.ValueDomain
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.X86.Op
+open CompCert4Lean.X86.ConstpropOp
+open Lean Elab Tactic Meta
+
+private def worker_is_uns
+    (n : CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z)
+    (i : CompCert4Lean.Lib.Integers.int) : Prop :=
+  ∀ m, CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.le
+      (.Z0) m ∧
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.lt m
+        CompCert4Lean.Lib.Integers.Int.zwordsize →
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.le n m →
+    CompCert4Lean.Lib.Integers.Int.testbit i m = false
+
+private def worker_suffixPrivateName2 (suffix : String) : Name :=
+  let p := Name.str (Name.str (Name.str (Name.str Name.anonymous "_private") "CompCert4Lean") "Lib") "Integers"
+  let base := Name.num p 0
+  suffix.splitOn "." |>.foldl Name.str base
+
+private theorem worker_int_and_val (x y : CompCert4Lean.Lib.Integers.Int.int) :
+    (CompCert4Lean.Lib.Integers.WordCore.and x y).val = Nat.land x.val y.val := by
+  run_tac
+    let lctx ← getLCtx
+    let xF := (lctx.findFromUserName? `x).get!
+    let yF := (lctx.findFromUserName? `y).get!
+    let e ← mkAppM
+      (worker_suffixPrivateName2 "CompCert4Lean.Lib.Integers.Int.suffix_and_val")
+      #[mkFVar xF.fvarId, mkFVar yF.fvarId]
+    closeMainGoal Name.anonymous e
+
+private theorem worker_int_testbit_nat
+    (x : CompCert4Lean.Lib.Integers.Int.int) (n : Nat) :
+    CompCert4Lean.Lib.Integers.Int.testbit x (zOfNat n) = Nat.testBit x.val n := by
+  run_tac
+    let lctx ← getLCtx
+    let xF := (lctx.findFromUserName? `x).get!
+    let nF := (lctx.findFromUserName? `n).get!
+    let e ← mkAppM
+      (worker_suffixPrivateName2 "CompCert4Lean.Lib.Integers.Int.suffix_testbit_nat")
+      #[mkFVar xF.fvarId, mkFVar nF.fvarId]
+    closeMainGoal Name.anonymous e
+
+private theorem worker_is_uns_zero_ext_16
+    (i : CompCert4Lean.Lib.Integers.Int.int)
+    (h : worker_is_uns (zOfNat 16) i) :
+    CompCert4Lean.Lib.Integers.Int.zero_ext (zOfNat 16) i = i := by
+  have hval : i.val < 2 ^ 16 := by
+    by_cases hlt : i.val < 2 ^ 16
+    · exact hlt
+    have hge : 2 ^ 16 ≤ i.val := Nat.le_of_not_gt hlt
+    rcases Nat.exists_ge_and_testBit_of_ge_two_pow hge with ⟨j, hj, hbit⟩
+    have hjlt : j < 32 := by
+      by_cases hjlt : j < 32
+      · exact hjlt
+      have hj32 : 32 ≤ j := Nat.le_of_not_gt hjlt
+      have hp : 2 ^ 32 ≤ 2 ^ j := Nat.pow_le_pow_right Nat.zero_lt_two hj32
+      have hival : i.val < 2 ^ 32 := i.toFin.isLt
+      have hij : i.val < 2 ^ j := Nat.lt_of_lt_of_le hival hp
+      rw [Nat.testBit_lt_two_pow hij] at hbit
+      cases hbit
+    have hfalse := h (zOfNat j) (by
+      constructor
+      · change intOfZ .Z0 ≤ intOfZ (zOfNat j)
+        have hjz : zOfNat j = zOfInt (Int.ofNat j) := by rfl
+        rw [hjz, intOfZ_zOfInt]
+        change (0 : Int) ≤ Int.ofNat j
+        exact Int.natCast_nonneg _
+      · change intOfZ (zOfNat j) < intOfZ Int.zwordsize
+        have hjz : zOfNat j = zOfInt (Int.ofNat j) := by rfl
+        rw [hjz, intOfZ_zOfInt]
+        change (Int.ofNat j) < 32
+        exact Int.ofNat_lt.mpr hjlt)
+      (by
+        change intOfZ (zOfNat 16) ≤ intOfZ (zOfNat j)
+        have hjz : zOfNat j = zOfInt (Int.ofNat j) := by rfl
+        rw [hjz, intOfZ_zOfInt]
+        have h16z : zOfNat 16 = zOfInt (Int.ofNat 16) := by rfl
+        rw [h16z, intOfZ_zOfInt]
+        change (Int.ofNat 16) ≤ Int.ofNat j
+        exact Int.ofNat_le.mpr hj)
+    have hbit' : CompCert4Lean.Lib.Integers.Int.testbit i (zOfNat j) = true := by
+      rw [worker_int_testbit_nat]
+      exact hbit
+    rw [hbit'] at hfalse
+    cases hfalse
+  rw [CompCert4Lean.Lib.Integers.Int.zero_ext_and_proof (zOfNat 16) i
+    (by change (0 : Int) ≤ 16; omega)]
+  apply CompCert4Lean.Lib.Integers.WordCore.ext_of_val_eq
+  change (CompCert4Lean.Lib.Integers.WordCore.and i
+    (CompCert4Lean.Lib.Integers.Int.repr
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.sub
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.Zpower.two_p (zOfNat 16))
+        (zOfNat 1)))).val = i.val
+  rw [worker_int_and_val]
+  change Nat.land i.val 65535 = i.val
+  exact Nat.and_two_pow_sub_one_of_lt_two_pow hval
+
+theorem make_cast16unsigned_correct
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    @make_cast16unsigned_correctStatement binary64_certificate binary32_certificate := by
+  intro bc ge sp e m r x hmatch
+  dsimp [CompCert4Lean.X86.ConstpropOp.make_cast16unsigned]
+  by_cases hincl : vincl x (Uns Ptop (zOfNat 16)) = true
+  · simp only [if_pos hincl]
+    refine ⟨Regmap.get r e, rfl, ?_⟩
+    generalize hv : Regmap.get r e = w at hmatch
+    cases x with
+    | Vbot => cases hmatch
+    | I i =>
+        have hrewrite :
+            vincl (I i) (Uns Ptop (zOfNat 16)) =
+              (decide (CompCert4Lean.Lib.Integers.Int.zero_ext (zOfNat 16) i = i) &&
+                worker_zle (.Z0) (zOfNat 16)) := by rfl
+        rw [hrewrite] at hincl
+        have hi : CompCert4Lean.Lib.Integers.Int.zero_ext (zOfNat 16) i = i :=
+          of_decide_eq_true (Bool.and_eq_true_iff.mp hincl).1
+        cases hmatch with
+        | vmatch_i =>
+            have hext : Val.zero_ext (zOfNat 16) (.Vint i) =
+                .Vint (CompCert4Lean.Lib.Integers.Int.zero_ext (zOfNat 16) i) := by rfl
+            rw [hext]
+            rw [hi]
+            exact CompCert4Lean.Common.Values.Val.lessdef_refl _
+    | IU i =>
+        have hrewrite :
+            vincl (IU i) (Uns Ptop (zOfNat 16)) =
+              (decide (CompCert4Lean.Lib.Integers.Int.zero_ext (zOfNat 16) i = i) &&
+                worker_zle (.Z0) (zOfNat 16)) := by rfl
+        rw [hrewrite] at hincl
+        have hi : CompCert4Lean.Lib.Integers.Int.zero_ext (zOfNat 16) i = i :=
+          of_decide_eq_true (Bool.and_eq_true_iff.mp hincl).1
+        cases hmatch with
+        | vmatch_iu =>
+            have hext : Val.zero_ext (zOfNat 16) (.Vint i) =
+                .Vint (CompCert4Lean.Lib.Integers.Int.zero_ext (zOfNat 16) i) := by rfl
+            rw [hext]
+            rw [hi]
+            exact CompCert4Lean.Common.Values.Val.lessdef_refl _
+        | iuUndef => exact CompCert4Lean.Common.Values.Val.lessdef_refl _
+    | Uns p n =>
+        have hrewrite :
+            vincl (Uns p n) (Uns Ptop (zOfNat 16)) =
+              (worker_zle n (zOfNat 16) && pincl p Ptop) := by rfl
+        rw [hrewrite] at hincl
+        have hp := Bool.and_eq_true_iff.mp hincl
+        have hge : vge (Uns Ptop (zOfNat 16)) (Uns p n) :=
+          vge.vge_uns_uns Ptop (zOfNat 16) p n (worker_zle_true hp.1)
+            (pincl_ge p Ptop hp.2)
+        have hmv := vmatch_ge bc w (Uns Ptop (zOfNat 16)) (Uns p n) hge hmatch
+        cases hmv with
+        | uns _ i _ _ hi =>
+            have hi' : worker_is_uns (zOfNat 16) i := hi
+            have hext : Val.zero_ext (zOfNat 16) (.Vint i) =
+                .Vint (CompCert4Lean.Lib.Integers.Int.zero_ext (zOfNat 16) i) := by rfl
+            rw [hext]
+            rw [worker_is_uns_zero_ext_16 i hi']
+            exact CompCert4Lean.Common.Values.Val.lessdef_refl _
+        | vmatch_Uns_undef => exact CompCert4Lean.Common.Values.Val.lessdef_refl _
+    | Sgn p n | L _ | F _ | FS _ | Num _ | Ptr _ | Ifptr _ =>
+        simp [vincl] at hincl
+  · simp only [if_neg hincl]
+    refine ⟨Val.zero_ext (zOfNat 16) (Regmap.get r e), rfl,
+      CompCert4Lean.Common.Values.Val.lessdef_refl _⟩
+
+end CompCert4Lean.X86.ConstpropOpproof

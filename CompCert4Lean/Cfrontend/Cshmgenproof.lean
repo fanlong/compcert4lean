@@ -4889,3 +4889,147 @@ theorem match_cont_call_cont : match_cont_call_contStatement := by
           hlink htf henv hmc hwt)
 
 end CompCert4Lean.Cfrontend.Cshmgenproof
+
+namespace CompCert4Lean.Cfrontend.Cshmgenproof
+
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Cfrontend.Clight
+open CompCert4Lean.Cfrontend.Csharpminor
+open CompCert4Lean.Cfrontend.Ctypes
+open CompCert4Lean.Common.Linking
+open CompCert4Lean.Lib.Coqlib
+
+private theorem cshmgenproof_match_prog_gen (prog : CProgram) (tprog : TProgram)
+    (hm : match_prog prog tprog) :
+    match_program_gen
+      (fun _ f tf => ∃ cu, Ctypes.linkorder_program cu prog ∧ match_fundef cu f tf)
+      match_varinfo ()
+      (Ctypes.program_of_program prog) tprog := by
+  refine ⟨?_, hm.2.1, hm.2.2⟩
+  have convert :
+      ∀ (src : List (ident × globdef CFundef CType))
+        (defs : List (ident × globdef TFundef Unit)),
+        list_forall2
+          (fun idg tidg =>
+            idg.1 = tidg.1 ∧
+              match idg.2, tidg.2 with
+              | .Gfun f, .Gfun tf =>
+                  ∃ cu, Ctypes.linkorder_program cu prog ∧ match_fundef cu f tf
+              | .Gvar v, .Gvar tv =>
+                  match_varinfo v.gvar_info tv.gvar_info ∧
+                    v.gvar_init = tv.gvar_init ∧
+                    v.gvar_readonly = tv.gvar_readonly ∧
+                    v.gvar_volatile = tv.gvar_volatile
+              | _, _ => False) src defs →
+        list_forall2
+          (match_ident_globdef
+            (fun _ f tf => ∃ cu, Ctypes.linkorder_program cu prog ∧ match_fundef cu f tf)
+            match_varinfo ()) src defs := by
+    intro src
+    induction src with
+    | nil =>
+        intro defs h
+        cases h
+        exact list_forall2.nil _
+    | cons hd tl ih =>
+        intro defs h
+        cases defs with
+        | nil => cases h
+        | cons hd' tl' =>
+            cases h with
+            | cons _ _ hhd htail =>
+                rcases hd with ⟨id1, gd1⟩
+                rcases hd' with ⟨id2, gd2⟩
+                rcases hhd with ⟨hid, hgd⟩
+                change id1 = id2 at hid
+                subst id2
+                apply list_forall2.cons
+                · constructor
+                  · rfl
+                  · cases gd1 with
+                    | Gfun f1 =>
+                        cases gd2 with
+                        | Gfun f2 =>
+                            rcases hgd with ⟨cu, horder, hmatch⟩
+                            apply match_globdef.match_globdef_fun (ctx' := ())
+                            · exact Linker.linkorder_refl ()
+                            · exact ⟨cu, horder, hmatch⟩
+                        | Gvar v2 => cases hgd
+                    | Gvar v1 =>
+                        cases gd2 with
+                        | Gfun f2 => cases hgd
+                        | Gvar v2 =>
+                            rcases v1 with ⟨info1, init1, ro1, vol1⟩
+                            rcases v2 with ⟨info2, init2, ro2, vol2⟩
+                            rcases hgd with
+                              ⟨hinfo, rfl, rfl, rfl⟩
+                            apply match_globdef.match_globdef_var
+                            exact match_globvar.match_globvar_intro match_varinfo
+                              info1 info2 init1 ro1 vol1 hinfo
+                · exact ih tl' htail
+  exact convert _ _ hm.1
+
+theorem transl_initial_states : transl_initial_statesStatement := by
+  intro prog tprog hm S hinit
+  cases hinit with
+  | intro b f m0 hmem hsymbol hfun htype =>
+      rcases function_ptr_translated prog tprog hm b f hfun with
+        ⟨cu, tf, hfun', hmatchf, horder⟩
+      have hmgen := cshmgenproof_match_prog_gen prog tprog hm
+      have hmem' : Genv.init_mem tprog = some m0 := by
+        exact Genv.init_mem_match
+          (C := Unit) (F1 := CFundef) (V1 := CType)
+          (F2 := TFundef) (V2 := Unit)
+          (match_fundef :=
+            fun _ f tf => ∃ cu, Ctypes.linkorder_program cu prog ∧ match_fundef cu f tf)
+          (match_varinfo := match_varinfo) ()
+          (Ctypes.program_of_program prog) tprog hmgen m0 hmem
+      have hmain : tprog.prog_main = (Ctypes.program_of_program prog).prog_main := hm.2.1
+      have hsymbol' :
+          Genv.find_symbol (Genv.globalenv tprog) tprog.prog_main = some b := by
+        calc
+          Genv.find_symbol (Genv.globalenv tprog) tprog.prog_main =
+              Genv.find_symbol (Genv.globalenv tprog)
+                (Ctypes.program_of_program prog).prog_main := by rw [hmain]
+          _ = Genv.find_symbol (Genv.globalenv (Ctypes.program_of_program prog))
+                (Ctypes.program_of_program prog).prog_main := by
+            change Genv.find_symbol (Genv.globalenv tprog)
+                (Ctypes.program_of_program prog).prog_main =
+              Genv.find_symbol (Clight.globalenv prog).genv_genv
+                (Ctypes.program_of_program prog).prog_main
+            exact symbols_preserved prog tprog hm
+              (Ctypes.program_of_program prog).prog_main
+          _ = some b := hsymbol
+      have hsig : funsig tf = signature_main := by
+        have hs := transl_fundef_sig2 cu f tf [] type_int32s cc_default hmatchf htype
+        simpa [signature_main, signature_of_type, rettype_of_type, type_int32s] using hs
+      refine ⟨.Callstate tf [] .Kstop m0, ?_, ?_⟩
+      · exact Csharpminor.initial_state.initial_state_intro b tf m0 hmem' hsymbol' hfun' hsig
+      · apply match_states.match_callstate (ce := cu.prog_comp_env)
+          (targs := []) (tres := type_int32s) (cconv := cc_default)
+        · exact horder
+        · exact hmatchf
+        · exact match_cont.match_Kstop _ _ _ _
+        · trivial
+        · exact htype
+        · change list_forall2 _ [] []
+          exact list_forall2.nil _
+
+end CompCert4Lean.Cfrontend.Cshmgenproof
+
+namespace CompCert4Lean.Cfrontend.Cshmgenproof
+
+open CompCert4Lean.Cfrontend.Clight
+open CompCert4Lean.Cfrontend.Csharpminor
+
+theorem transl_final_states : transl_final_statesStatement := by
+  intro prog tprog S R r hmatch hfinal
+  cases hfinal with
+  | intro r m =>
+      cases hmatch with
+      | match_returnstate res tres k m tk ce hcont hwt =>
+          cases hcont
+          exact Csharpminor.final_state.final_state_intro r m
+
+end CompCert4Lean.Cfrontend.Cshmgenproof

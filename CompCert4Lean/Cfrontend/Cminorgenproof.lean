@@ -4222,3 +4222,125 @@ theorem switch_descent
     ls body s htrans
 
 end CompCert4Lean.Cfrontend.Cminorgenproof
+
+namespace CompCert4Lean.Cfrontend.Cminorgenproof
+
+theorem switch_ascent
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    switch_ascentStatement := by
+  intro xi tprog f sp e m cenv xenv ls n ls' htail
+  induction htail with
+  | zero =>
+      intro k k1 hcont
+      exact ⟨k1, CompCert4Lean.Common.Smallstep.star_refl _ _ _, hcont⟩
+  | @succ c s sl n sl' htail ih =>
+      intro k k1 hcont
+      cases hcont with
+      | case hstmt hrest =>
+          obtain ⟨k2, hstar, htailcont⟩ := ih k _ hrest
+          refine ⟨k2, ?_, htailcont⟩
+          apply CompCert4Lean.Common.Smallstep.star_left
+            (ge := targetGenv tprog)
+          · exact CompCert4Lean.Backend.Cminor.step.step_exit_block_S f n
+              (.Kseq _ _) sp e m
+          · apply CompCert4Lean.Common.Smallstep.star_left
+              (ge := targetGenv tprog)
+            · exact CompCert4Lean.Backend.Cminor.step.step_exit_seq f n
+                _ _ sp e m
+            · exact hstar
+            · rfl
+          · rfl
+
+end CompCert4Lean.Cfrontend.Cminorgenproof
+
+namespace CompCert4Lean.Cfrontend.Cminorgenproof
+
+theorem switch_match_cont : switch_match_contStatement := by
+  intro cenv xenv k cs tk ls tk' hmatch htrans
+  induction htrans with
+  | default =>
+      apply match_Kblock2
+      apply match_cont.seq
+      · rfl
+      · exact hmatch
+  | @case i s ls k ts k' hstmt hrest ih =>
+      apply match_Kblock2
+      apply match_cont.match_Kseq2
+      · simpa [CompCert4Lean.Cfrontend.Cminorgen.switch_env] using hstmt
+      · simpa [CompCert4Lean.Cfrontend.Cminorgen.switch_env] using ih hmatch
+
+end CompCert4Lean.Cfrontend.Cminorgenproof
+
+namespace CompCert4Lean.Cfrontend.Cminorgenproof
+
+theorem transl_lblstmt_suffix : transl_lblstmt_suffixStatement := by
+  intro cenv xenv ls n ls' htail
+  induction htail with
+  | zero =>
+      intro body ts htrans
+      exact ⟨body, ts, htrans⟩
+  | @succ c s sl n sl' htail ih =>
+      intro body ts htrans
+      simp only [CompCert4Lean.Cfrontend.Cminorgen.transl_lblstmt,
+        CompCert4Lean.Cfrontend.Cminorgen.switch_env] at htrans
+      generalize hstmt : CompCert4Lean.Cfrontend.Cminorgen.transl_stmt cenv
+          (false :: CompCert4Lean.Cfrontend.Cminorgen.switch_env sl xenv) s = q at htrans
+      cases q with
+      | Error msg => cases htrans
+      | OK ts0 =>
+          have htrans' :
+              CompCert4Lean.Cfrontend.Cminorgen.transl_lblstmt cenv
+                (CompCert4Lean.Cfrontend.Cminorgen.switch_env sl xenv)
+                sl (.Sseq (.Sblock body) ts0) = .OK ts := by
+            simp only at htrans
+            simpa [List.tail, CompCert4Lean.Cfrontend.Cminorgen.switch_env] using htrans
+          obtain ⟨body', ts', hfinal⟩ := ih (.Sseq (.Sblock body) ts0) ts htrans'
+          exact ⟨body', ts', hfinal⟩
+
+end CompCert4Lean.Cfrontend.Cminorgenproof
+
+namespace CompCert4Lean.Cfrontend.Cminorgenproof
+
+theorem switch_match_states
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    switch_match_statesStatement := by
+  intro xi prog tprog fn k e le m tfn ts tk sp te tm cenv xenv f lo hi cs sz ls body tk'
+    hfun htrans hinj hmcs hmatch hcont
+  cases hcont with
+  | default =>
+      refine ⟨.State tfn .Sskip tk (.Vptr sp CompCert4Lean.Lib.Integers.Ptrofs.zero) te tm, ?_, ?_⟩
+      · apply CompCert4Lean.Common.Smallstep.plus_two
+        · exact CompCert4Lean.Backend.Cminor.step.step_exit_block_0 tfn
+            (.Kseq .Sskip tk) (.Vptr sp CompCert4Lean.Lib.Integers.Ptrofs.zero) te tm
+        · exact CompCert4Lean.Backend.Cminor.step.step_skip_seq tfn
+            .Sskip tk (.Vptr sp CompCert4Lean.Lib.Integers.Ptrofs.zero) te tm
+        · rfl
+      · apply match_state
+        · exact hfun
+        · rfl
+        · exact hinj
+        · exact hmcs
+        · exact hmatch
+  | @case i s ls tk ts0 tk1 hstmt hrest =>
+      refine ⟨.State tfn ts0 tk1 (.Vptr sp CompCert4Lean.Lib.Integers.Ptrofs.zero) te tm, ?_, ?_⟩
+      · apply CompCert4Lean.Common.Smallstep.plus_left
+          (ge := targetGenv tprog)
+          (t1 := CompCert4Lean.Common.Events.E0)
+          (t2 := CompCert4Lean.Common.Events.E0)
+          (t := CompCert4Lean.Common.Events.E0)
+        · exact CompCert4Lean.Backend.Cminor.step.step_exit_block_0 tfn
+            (.Kseq ts0 tk1) (.Vptr sp CompCert4Lean.Lib.Integers.Ptrofs.zero) te tm
+        · exact CompCert4Lean.Common.Smallstep.star_one _ _ _ _ _ _ _
+            (CompCert4Lean.Backend.Cminor.step.step_skip_seq tfn
+              ts0 tk1 (.Vptr sp CompCert4Lean.Lib.Integers.Ptrofs.zero) te tm)
+        · rfl
+      · apply match_state_seq
+        · exact hfun
+        · simpa [CompCert4Lean.Cfrontend.Cminorgen.switch_env] using hstmt
+        · exact hinj
+        · exact hmcs
+        · exact switch_match_cont cenv xenv k cs tk ls tk1 hmatch hrest
+
+end CompCert4Lean.Cfrontend.Cminorgenproof

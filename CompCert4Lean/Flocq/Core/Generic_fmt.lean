@@ -3572,3 +3572,133 @@ theorem round_AW_abs :
     rw [habsx, habsrnd]
 
 end CompCert4Lean.Flocq.Core.Generic_fmt
+
+namespace CompCert4Lean.Flocq.Core.Generic_fmt
+
+private theorem pg_worker_generic_format_zero (ctx : ExactRealContext)
+    (magnitude : Exact.Magnitude ctx) (beta : radix) (fexp : Z → Z) :
+    Exact.generic_format ctx magnitude beta fexp (Exact.R0 ctx) := by
+  unfold Exact.generic_format
+  rw [scaled_mantissa_0 ctx magnitude beta fexp]
+  have hz : Exact.Ztrunc ctx (Exact.R0 ctx) = Z0 := by
+    rw [show Exact.R0 ctx = Exact.IZR ctx Z0 by
+      exact ctx.certificate.sourceLaws.ofZ_zero.symm]
+    exact CompCert4Lean.Flocq.Core.Raux.Ztrunc_IZR ctx Z0
+  rw [hz]
+  exact (CompCert4Lean.Flocq.Core.Float_prop.F2R_0 ctx beta _).symm
+
+theorem generic_format_round :
+    ∀ ctx magnitude, generic_format_roundStatement ctx magnitude := by
+  intro ctx magnitude beta fexp hvalid rnd hrnd x
+  rcases ctx.certificate.total_order x (Exact.R0 ctx) with hx | hx
+  · rcases hx with hxlt | hxeq
+    · have hypos : Exact.Rlt ctx (Exact.R0 ctx) (Exact.Ropp ctx x) :=
+        pg_neg_pos_of_neg ctx hxlt
+      have hrndopp := pg_worker_valid_rnd_opp ctx rnd hrnd
+      have hfmt := generic_format_round_pos ctx magnitude beta fexp hvalid
+        (Exact.Zrnd_opp ctx rnd) hrndopp (Exact.Ropp ctx x) hypos
+      have hfmtopp := generic_format_opp ctx magnitude beta fexp
+        (Exact.round ctx magnitude beta fexp (Exact.Zrnd_opp ctx rnd)
+          (Exact.Ropp ctx x)) hfmt
+      have hround := round_opp ctx magnitude beta fexp rnd (Exact.Ropp ctx x)
+      rw [pg_neg_neg ctx x] at hround
+      rw [hround]
+      exact hfmtopp
+    · subst x
+      rw [round_0 ctx magnitude beta fexp rnd hrnd]
+      exact pg_worker_generic_format_zero ctx magnitude beta fexp
+  · exact generic_format_round_pos ctx magnitude beta fexp hvalid rnd hrnd x hx
+
+end CompCert4Lean.Flocq.Core.Generic_fmt
+
+namespace CompCert4Lean.Flocq.Core.Generic_fmt
+
+private theorem pg_worker_valid_rnd_floor (ctx : ExactRealContext) :
+    Exact.Valid_rnd ctx (Exact.Zfloor ctx) := by
+  constructor
+  · intro x y hxy
+    exact CompCert4Lean.Flocq.Core.Raux.Zfloor_le ctx x y hxy
+  · intro n
+    exact CompCert4Lean.Flocq.Core.Raux.Zfloor_IZR ctx n
+
+theorem round_DN_pt :
+    ∀ ctx magnitude, round_DN_ptStatement ctx magnitude := by
+  intro ctx magnitude beta fexp hvalid x
+  let hrnd : Exact.Valid_rnd ctx (Exact.Zfloor ctx) :=
+    pg_worker_valid_rnd_floor ctx
+  refine ⟨?_, ?_, ?_⟩
+  · exact generic_format_round ctx magnitude beta fexp hvalid
+      (Exact.Zfloor ctx) hrnd x
+  · have hscaled := scaled_mantissa_mult_bpow ctx magnitude beta fexp x
+    have hle : Exact.Rle ctx
+        (Exact.round ctx magnitude beta fexp (Exact.Zfloor ctx) x)
+        (Exact.Rmult ctx
+          (Exact.scaled_mantissa ctx magnitude beta fexp x)
+          (Exact.bpow ctx beta
+            (Exact.cexp ctx magnitude beta fexp x))) := by
+      unfold Exact.round Exact.F2R
+      change Exact.Rle ctx
+        (Exact.Rmult ctx
+          (Exact.IZR ctx (Exact.Zfloor ctx
+            (Exact.scaled_mantissa ctx magnitude beta fexp x)))
+          (Exact.bpow ctx beta
+            (Exact.cexp ctx magnitude beta fexp x)))
+        (Exact.Rmult ctx
+          (Exact.scaled_mantissa ctx magnitude beta fexp x)
+          (Exact.bpow ctx beta
+            (Exact.cexp ctx magnitude beta fexp x)))
+      apply CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.Rmult_le_compat_r
+      · change ctx.spec.le (ctx.spec.ofZ Z0)
+          (Exact.bpow ctx beta (Exact.cexp ctx magnitude beta fexp x))
+        rw [ctx.certificate.sourceLaws.ofZ_zero]
+        exact CompCert4Lean.Flocq.Core.Raux.bpow_ge_0 ctx beta _
+      · exact CompCert4Lean.Flocq.Core.Raux.Zfloor_lb ctx _
+    rw [hscaled] at hle
+    exact hle
+  · intro g hg hgx
+    exact round_ge_generic ctx magnitude beta fexp hvalid
+      (Exact.Zfloor ctx) hrnd g x hg hgx
+
+end CompCert4Lean.Flocq.Core.Generic_fmt
+
+namespace CompCert4Lean.Flocq.Core.Generic_fmt
+
+theorem generic_format_satisfies_any :
+    ∀ ctx magnitude, generic_format_satisfies_anyStatement ctx magnitude := by
+  intro ctx magnitude beta fexp hvalid
+  refine CompCert4Lean.Flocq.Core.Round_pred.satisfies_any.Satisfies_any
+    (Exact.generic_format ctx magnitude beta fexp) ?_ ?_ ?_
+  · exact pg_worker_generic_format_zero ctx magnitude beta fexp
+  · intro x hx
+    exact generic_format_opp ctx magnitude beta fexp x hx
+  · intro x
+    exact ⟨Exact.round ctx magnitude beta fexp (Exact.Zfloor ctx) x,
+      round_DN_pt ctx magnitude beta fexp hvalid x⟩
+
+end CompCert4Lean.Flocq.Core.Generic_fmt
+
+namespace CompCert4Lean.Flocq.Core.Generic_fmt
+
+theorem round_UP_pt :
+    ∀ ctx magnitude, round_UP_ptStatement ctx magnitude := by
+  intro ctx magnitude beta fexp hvalid x
+  have hdn := round_DN_pt ctx magnitude beta fexp hvalid
+    (Exact.Ropp ctx x)
+  have hup := CompCert4Lean.Flocq.Core.Round_pred.Rnd_UP_pt_opp
+    ctx (Exact.generic_format ctx magnitude beta fexp)
+    (fun y hy => generic_format_opp ctx magnitude beta fexp y hy)
+    (Exact.Ropp ctx x)
+      (Exact.round ctx magnitude beta fexp (Exact.Zfloor ctx)
+      (Exact.Ropp ctx x)) hdn
+  change Defs.Exact.Rnd_UP_pt ctx
+    (Exact.generic_format ctx magnitude beta fexp)
+    (Exact.Ropp ctx (Exact.Ropp ctx x))
+    (Exact.Ropp ctx
+      (Exact.round ctx magnitude beta fexp (Exact.Zfloor ctx)
+        (Exact.Ropp ctx x))) at hup
+  have heq := round_UP_opp ctx magnitude beta fexp (Exact.Ropp ctx x)
+  rw [pg_neg_neg ctx x] at hup heq
+  rw [← heq] at hup
+  exact hup
+
+end CompCert4Lean.Flocq.Core.Generic_fmt
