@@ -4691,3 +4691,64 @@ theorem ZArith.Zdiv.Zdiv_unique_full :
 
 end Rocq.Coq
 end CompCert4Lean.Foundation.Numbers
+
+namespace CompCert4Lean.Foundation.Numbers
+namespace Rocq.Coq
+
+theorem ZArith.Zdiv.Zdiv_0_l :
+    ZArith.Zdiv.Zdiv_0_lStatement := by
+  intro a
+  apply intOfZ_injective
+  simp only [ZArith.BinInt.Z.div, intOfZ_zOfInt]
+  change ZArith.BinInt.Z.zDivEucl 0 (intOfZ a) = 0
+  unfold ZArith.BinInt.Z.zDivEucl
+  by_cases ha0 : intOfZ a = 0
+  · simp [ha0]
+  by_cases hapos : 0 < intOfZ a
+  · simp only [ha0, hapos, if_false, if_true]
+    exact Int.zero_ediv _
+  · have haneg : intOfZ a < 0 := by omega
+    have hrem : Int.emod 0 (-intOfZ a) = 0 := Int.zero_emod _
+    have hquot : Int.ediv 0 (-intOfZ a) = 0 := Int.zero_ediv _
+    simp [ha0, hapos, hrem, hquot]
+
+theorem ZArith.Zdiv.Zmod_0_l :
+    ZArith.Zdiv.Zmod_0_lStatement := by
+  intro a
+  apply intOfZ_injective
+  simp only [ZArith.BinInt.Z.modulo, intOfZ_zOfInt]
+  change ZArith.BinInt.Z.zModEucl 0 (intOfZ a) = 0
+  unfold ZArith.BinInt.Z.zModEucl
+  by_cases ha0 : intOfZ a = 0
+  · simp [ha0]
+  by_cases hapos : 0 < intOfZ a
+  · simp only [ha0, hapos, if_false, if_true]
+    exact Int.zero_emod _
+  · have haneg : intOfZ a < 0 := by omega
+    have hrem : Int.emod 0 (-intOfZ a) = 0 := Int.zero_emod _
+    simp [ha0, hapos, hrem]
+
+theorem ZArith.Zdiv.Zdiv_1_r :
+    ZArith.Zdiv.Zdiv_1_rStatement := by
+  intro a
+  apply intOfZ_injective
+  simp only [ZArith.BinInt.Z.div, intOfZ_zOfInt]
+  change ZArith.BinInt.Z.zDivEucl (intOfZ a) (intOfZ (Zpos xH)) = intOfZ a
+  have hone : intOfZ (Zpos xH) = 1 := by simp [intOfZ, posToNat]
+  rw [hone]
+  unfold ZArith.BinInt.Z.zDivEucl
+  exact Int.ediv_one _
+
+theorem ZArith.Zdiv.Zmod_1_r :
+    ZArith.Zdiv.Zmod_1_rStatement := by
+  intro a
+  apply intOfZ_injective
+  simp only [ZArith.BinInt.Z.modulo, intOfZ_zOfInt]
+  change ZArith.BinInt.Z.zModEucl (intOfZ a) (intOfZ (Zpos xH)) = 0
+  have hone : intOfZ (Zpos xH) = 1 := by simp [intOfZ, posToNat]
+  rw [hone]
+  unfold ZArith.BinInt.Z.zModEucl
+  exact Int.emod_one _
+
+end Rocq.Coq
+end CompCert4Lean.Foundation.Numbers

@@ -3634,3 +3634,47 @@ theorem has_argtype_inject : has_argtype_injectStatement := by
 
 end Val
 end CompCert4Lean.Common.Values
+
+namespace CompCert4Lean.Common.Values
+
+theorem inject_incr_trans : inject_incr_transStatement := by
+  intro f1 f2 f3 h12 h23 b b' delta hmap
+  exact h23 b b' delta (h12 b b' delta hmap)
+
+theorem val_inject_incr : val_inject_incrStatement := by
+  intro f1 f2 v v' hincr hinj
+  cases hinj with
+  | inject_int i => exact Val.inject_int f2 i
+  | inject_long i => exact Val.inject_long f2 i
+  | inject_float x => exact Val.inject_float f2 x
+  | inject_single x => exact Val.inject_single f2 x
+  | inject_ptr b1 ofs1 b2 ofs2 delta hmap hofs =>
+      exact Val.inject_ptr f2 b1 ofs1 b2 ofs2 delta
+        (hincr b1 b2 delta hmap) hofs
+  | val_inject_undef => exact Val.val_inject_undef f2 v'
+
+theorem val_inject_list_incr : val_inject_list_incrStatement := by
+  intro f1 f2 vl vl' hincr hinj
+  induction hinj with
+  | inject_list_nil => exact Val.inject_list_nil f2
+  | inject_list_cons v1 v2 vl1 vl2 hhead htail ih =>
+      exact Val.inject_list_cons f2 v1 v2 vl1 vl2
+        (val_inject_incr f1 f2 v1 v2 hincr hhead) ih
+
+namespace Val
+
+theorem has_argtype_list_inject : has_argtype_list_injectStatement := by
+  intro f vl rl vl' harg hinj
+  induction hinj generalizing rl with
+  | inject_list_nil =>
+      cases harg
+      exact CompCert4Lean.Lib.Coqlib.list_forall2.nil _
+  | inject_list_cons v1 v2 vl1 vl2 hhead htail ih =>
+      cases harg with
+      | cons _ _ hheadArg htailArg =>
+          exact CompCert4Lean.Lib.Coqlib.list_forall2.cons _ _
+            (has_argtype_inject _ _ _ _ hheadArg hhead)
+            (ih _ htailArg)
+
+end Val
+end CompCert4Lean.Common.Values
