@@ -4839,3 +4839,97 @@ theorem ZArith.Zdiv.Z_div_plus_full_l :
 
 end Rocq.Coq
 end CompCert4Lean.Foundation.Numbers
+
+namespace CompCert4Lean.Foundation.Numbers
+namespace Rocq.Coq
+
+theorem ZArith.Zdiv.Zmod_opp_opp :
+    ZArith.Zdiv.Zmod_opp_oppStatement := by
+  intro a b
+  apply intOfZ_injective
+  simp only [ZArith.BinInt.Z.modulo, ZArith.BinInt.Z.opp, intOfZ_zOfInt]
+  change ZArith.BinInt.Z.zModEucl (-intOfZ a) (-intOfZ b) =
+    -ZArith.BinInt.Z.zModEucl (intOfZ a) (intOfZ b)
+  unfold ZArith.BinInt.Z.zModEucl
+  by_cases hb0 : intOfZ b = 0
+  · simp [hb0]
+  by_cases hbpos : 0 < intOfZ b
+  · have hbnonneg : 0 ≤ intOfZ b := by omega
+    have hneg0 : -intOfZ b ≠ 0 := by omega
+    have hnegpos : ¬ 0 < -intOfZ b := by omega
+    have hbabs : (Int.natAbs (intOfZ b) : Int) = intOfZ b := Int.natAbs_of_nonneg hbnonneg
+    by_cases hdvd : intOfZ b ∣ intOfZ a
+    · have hrem : (intOfZ a) % (intOfZ b) = 0 := Int.emod_eq_zero_of_dvd hdvd
+      have hnegrem : (-intOfZ a) % (intOfZ b) = 0 := by
+        rw [Int.neg_emod]
+        simp [hdvd, hrem]
+      simp only [hb0, hneg0, hbpos, hnegpos, Int.neg_neg, if_false, if_true]
+      have hnegrem' : Int.emod (-intOfZ a) (intOfZ b) = 0 := hnegrem
+      rw [if_pos hnegrem']
+      have hrem' : Int.emod (intOfZ a) (intOfZ b) = 0 := hrem
+      simp [hrem']
+    · have hrem : (intOfZ a) % (intOfZ b) ≠ 0 := by
+        intro h
+        apply hdvd
+        exact Int.dvd_of_emod_eq_zero h
+      have hnegrem : (-intOfZ a) % (intOfZ b) ≠ 0 := by
+        rw [Int.neg_emod]
+        simp only [hdvd, if_false, hbabs]
+        have hlt : (intOfZ a) % (intOfZ b) < intOfZ b :=
+          Int.emod_lt_of_pos _ hbpos
+        omega
+      simp only [hb0, hneg0, hbpos, hnegpos, Int.neg_neg, if_false, if_true]
+      have hnegrem' : Int.emod (-intOfZ a) (intOfZ b) ≠ 0 := hnegrem
+      rw [if_neg hnegrem']
+      have hnegmod :
+          Int.emod (-intOfZ a) (intOfZ b) =
+            if intOfZ b ∣ intOfZ a then 0 else
+              (Int.natAbs (intOfZ b) : Int) - Int.emod (intOfZ a) (intOfZ b) := by
+        change (-intOfZ a) % (intOfZ b) =
+          if intOfZ b ∣ intOfZ a then 0 else
+            (Int.natAbs (intOfZ b) : Int) - (intOfZ a) % (intOfZ b)
+        exact Int.neg_emod
+      rw [hnegmod]
+      simp only [hdvd, if_false, hbabs]
+      omega
+  · have hbneg : intOfZ b < 0 := by omega
+    have hd : 0 < -intOfZ b := by omega
+    have hneg0 : -intOfZ b ≠ 0 := by omega
+    have hdabs : (Int.natAbs (-intOfZ b) : Int) = -intOfZ b := Int.natAbs_of_nonneg (by omega)
+    by_cases hdvd : (-intOfZ b) ∣ intOfZ a
+    · have hrem : (intOfZ a) % (-intOfZ b) = 0 := Int.emod_eq_zero_of_dvd hdvd
+      have hnegrem : (-intOfZ a) % (-intOfZ b) = 0 := by
+        rw [Int.neg_emod]
+        simp [hdvd, hrem]
+      simp only [hb0, hneg0, hbpos, hd, Int.neg_neg, if_false, if_true]
+      have hrem' : Int.emod (intOfZ a) (-intOfZ b) = 0 := hrem
+      rw [if_pos hrem']
+      have hnegrem' : Int.emod (-intOfZ a) (-intOfZ b) = 0 := hnegrem
+      simp [hnegrem']
+    · have hrem : (intOfZ a) % (-intOfZ b) ≠ 0 := by
+        intro h
+        apply hdvd
+        exact Int.dvd_of_emod_eq_zero h
+      have hnegrem : (-intOfZ a) % (-intOfZ b) ≠ 0 := by
+        rw [Int.neg_emod]
+        simp only [hdvd, if_false, hdabs]
+        have hlt : (intOfZ a) % (-intOfZ b) < -intOfZ b :=
+          Int.emod_lt_of_pos _ hd
+        omega
+      simp only [hb0, hneg0, hbpos, hd, Int.neg_neg, if_false, if_true]
+      have hrem' : Int.emod (intOfZ a) (-intOfZ b) ≠ 0 := hrem
+      rw [if_neg hrem']
+      have hnegmod :
+          Int.emod (-intOfZ a) (-intOfZ b) =
+            if (-intOfZ b) ∣ intOfZ a then 0 else
+              (Int.natAbs (-intOfZ b) : Int) - Int.emod (intOfZ a) (-intOfZ b) := by
+        change (-intOfZ a) % (-intOfZ b) =
+          if (-intOfZ b) ∣ intOfZ a then 0 else
+            (Int.natAbs (-intOfZ b) : Int) - (intOfZ a) % (-intOfZ b)
+        exact Int.neg_emod
+      rw [hnegmod]
+      simp only [hdabs]
+      omega
+
+end Rocq.Coq
+end CompCert4Lean.Foundation.Numbers

@@ -5614,3 +5614,146 @@ theorem match_cont_extcall : match_cont_extcallStatement := by
         exact hincr b b0 delta0 hff
 
 end CompCert4Lean.Cfrontend.SimplLocalsproof
+
+namespace CompCert4Lean.Cfrontend.SimplLocalsproof
+
+theorem match_cont_call_cont : match_cont_call_contStatement := by
+  intro cfg prog f cenv k tk m bound tbound hmatch
+  induction hmatch with
+  | stop cenv m bound tbound hi hglobals hhibound hthitbound =>
+      intro cenv'
+      simp [CompCert4Lean.Cfrontend.Clight.call_cont]
+      exact match_cont.stop cenv' m bound tbound hi hglobals hhibound hthitbound
+  | seq cenv s k ts tk m bound tbound hstmt hcont hcompat ih =>
+      intro cenv'
+      simpa [CompCert4Lean.Cfrontend.Clight.call_cont] using ih cenv'
+  | loop1 cenv s1 s2 k ts1 ts2 tk m bound tbound hstmt1 hstmt2 hcont hcompat ih =>
+      intro cenv'
+      simpa [CompCert4Lean.Cfrontend.Clight.call_cont] using ih cenv'
+  | loop2 cenv s1 s2 k ts1 ts2 tk m bound tbound hstmt1 hstmt2 hcont hcompat ih =>
+      intro cenv'
+      simpa [CompCert4Lean.Cfrontend.Clight.call_cont] using ih cenv'
+  | switch cenv k tk m bound tbound hcont ih =>
+      intro cenv'
+      simpa [CompCert4Lean.Cfrontend.Clight.call_cont] using ih cenv'
+  | match_Kcall cenv optid fn e le k tfn te tle tk m hi thi lo tlo bound tbound x
+      hfun henv hcont hcheck hhibound hthitbound ih =>
+      intro cenv'
+      simpa [CompCert4Lean.Cfrontend.Clight.call_cont] using
+        (match_cont.match_Kcall cenv' optid fn e le k tfn te tle tk m
+          hi thi lo tlo bound tbound x hfun henv hcont hcheck hhibound hthitbound)
+
+end CompCert4Lean.Cfrontend.SimplLocalsproof
+
+namespace CompCert4Lean.Cfrontend.SimplLocalsproof
+
+open CompCert4Lean.Common.Memory
+
+theorem free_list_nextblock : free_list_nextblockStatement := by
+  intro l
+  induction l with
+  | nil =>
+      intro m m' hfree
+      simp [Mem.free_list] at hfree
+      cases hfree
+      rfl
+  | cons x rest ih =>
+      intro m m' hfree
+      change (match Mem.free m x.1 x.2.1 x.2.2 with
+        | none => none
+        | some m1 => Mem.free_list m1 rest) = some m' at hfree
+      cases hfm : Mem.free m x.1 x.2.1 x.2.2 with
+      | none =>
+          rw [hfm] at hfree
+          cases hfree
+      | some m1 =>
+          rw [hfm] at hfree
+          have hrest : Mem.free_list m1 rest = some m' := hfree
+          have hnext : m'.nextblock = m1.nextblock := ih m1 m' hrest
+          exact hnext.trans (slp3_nextblock_free m x.1 x.2.1 x.2.2 m1 hfm)
+
+end CompCert4Lean.Cfrontend.SimplLocalsproof
+
+namespace CompCert4Lean.Cfrontend.SimplLocalsproof
+
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Lib.Coqlib
+
+theorem free_list_load : free_list_loadStatement := by
+  intro chunk b' l
+  induction l with
+  | nil =>
+      intro m m' hfree hlt
+      simp [Mem.free_list] at hfree
+      cases hfree
+      rfl
+  | cons x rest ih =>
+      intro m m' hfree hlt
+      change (match Mem.free m x.1 x.2.1 x.2.2 with
+        | none => none
+        | some m1 => Mem.free_list m1 rest) = some m' at hfree
+      cases hfm : Mem.free m x.1 x.2.1 x.2.2 with
+      | none =>
+          rw [hfm] at hfree
+          cases hfree
+      | some m1 =>
+          rw [hfm] at hfree
+          have hrest : Mem.free_list m1 rest = some m' := hfree
+          have hnext : Mem.load chunk m' b' (.Z0 : Z) =
+              Mem.load chunk m1 b' (.Z0 : Z) := ih m1 m' hrest (by
+                intro b lo hi hin
+                exact hlt b lo hi (List.mem_cons.mpr (Or.inr hin)))
+          have hone : Mem.load chunk m1 b' (.Z0 : Z) =
+              Mem.load chunk m b' (.Z0 : Z) :=
+            Mem.load_free m x.1 x.2.1 x.2.2 m1 hfm chunk b' (.Z0 : Z)
+              (Or.inl (Plt_ne b' x.1 (hlt x.1 x.2.1 x.2.2
+                (List.mem_cons.mpr (Or.inl rfl)))))
+          exact hnext.trans hone
+
+end CompCert4Lean.Cfrontend.SimplLocalsproof
+
+namespace CompCert4Lean.Cfrontend.SimplLocalsproof
+
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Cfrontend.Clight
+open CompCert4Lean.Lib.Coqlib
+
+open CompCert4Lean.Lib.Maps
+
+theorem match_cont_free_env : match_cont_free_envStatement := by
+  intro cfg prog tprog
+  dsimp
+  intro f cenv e le m lo hi te tle tm tlo thi k tk m' tm'
+    henv hcont hhi hthi hfree hfree'
+  apply match_cont_incr_bounds cfg prog f cenv k tk m' lo tlo
+  · apply match_cont_invariant cfg prog f m' f cenv k tk m lo tlo hcont
+    · intro b chunk v hnone hb hload
+      calc
+        Mem.load chunk m' b (.Z0 : Z) = Mem.load chunk m b (.Z0 : Z) := by
+          apply free_list_load chunk b (blocks_of_env (globalenv prog) e) m m'
+            hfree
+          intro b0 lo0 hi0 hmem
+          unfold blocks_of_env at hmem
+          rcases List.mem_map.mp hmem with ⟨id_b_ty, hel, heq⟩
+          rcases id_b_ty with ⟨id, b0', ty⟩
+          simp [block_of_binding] at heq
+          have hb0 : b0' = b0 := congrArg Prod.fst heq
+          subst b0'
+          have hget := PTree.elements_complete_proof e id (b0, ty) hel
+          exact Plt_Ple_trans b lo b0 (by exact hb) (henv.me_range id b0 ty hget).1
+        _ = some v := hload
+    · exact CompCert4Lean.Common.Values.inject_incr_refl f
+    · intro b hb
+      rfl
+    · intro b b' delta hmap hb'
+      rfl
+  · have hmnext := free_list_nextblock _ m m' hfree
+    rw [hmnext]
+    exact Ple_trans lo hi m.nextblock henv.me_incr hhi
+  · have htmnext := free_list_nextblock _ tm tm' hfree'
+    rw [htmnext]
+    exact Ple_trans tlo thi tm.nextblock henv.me_tincr hthi
+
+end CompCert4Lean.Cfrontend.SimplLocalsproof

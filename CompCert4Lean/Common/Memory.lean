@@ -5438,3 +5438,265 @@ theorem loadbytes_drop : loadbytes_dropStatement := by
 end Mem
 
 end CompCert4Lean.Common.Memory
+
+namespace CompCert4Lean.Common.Memory
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+
+namespace Mem
+
+private theorem intOfZ_zadd_mem_suffix (x y : Z) :
+    intOfZ (zAdd x y) = intOfZ x + intOfZ y := by
+  change intOfZ (zOfInt (intOfZ x + intOfZ y)) = _
+  rw [intOfZ_zOfInt]
+
+private theorem intOfZ_zofnat_mem_suffix (n : Nat) :
+    intOfZ (zOfNat n) = Int.ofNat n := by
+  change intOfZ (zOfInt (Int.ofNat n)) = _
+  rw [intOfZ_zOfInt]
+
+theorem getN_inj : getN_injStatement := by
+  intro f m1 m2 b1 b2 delta hinj hf n ofs hrange
+  induction n generalizing ofs with
+  | zero => exact list_forall2_nil _
+  | succ n ih =>
+      apply list_forall2.cons
+      · apply hinj.mi_memval b1 ofs b2 delta hf
+        apply hrange ofs
+        constructor
+        · change intOfZ ofs ≤ intOfZ ofs
+          omega
+        · change intOfZ ofs < intOfZ (zAdd ofs (zOfNat (Nat.succ n)))
+          rw [intOfZ_zadd_mem_suffix, intOfZ_zofnat_mem_suffix]
+          have hn : (0 : Int) ≤ Int.ofNat n := Int.natCast_nonneg _
+          have hsucc : Int.ofNat (Nat.succ n) = Int.ofNat n + 1 := by
+            simpa using (Int.ofNat_add_ofNat n 1).symm
+          rw [hsucc]
+          omega
+      · have hoff : zAdd (zAdd ofs delta) z1 = zAdd (zAdd ofs z1) delta := by
+          apply intOfZ_injective
+          rw [intOfZ_zadd_mem_suffix, intOfZ_zadd_mem_suffix,
+            intOfZ_zadd_mem_suffix, intOfZ_zadd_mem_suffix]
+          have hz1 : intOfZ z1 = (1 : Int) := by rfl
+          rw [hz1]
+          omega
+        rw [hoff]
+        apply ih (ofs := zAdd ofs z1)
+        intro ofs' hofs'
+        apply hrange ofs'
+        rcases hofs' with ⟨hlower, hupper⟩
+        constructor
+        · change intOfZ ofs ≤ intOfZ ofs'
+          change intOfZ (zAdd ofs z1) ≤ intOfZ ofs' at hlower
+          rw [intOfZ_add_one] at hlower
+          omega
+        · change intOfZ ofs' < intOfZ (zAdd ofs (zOfNat (Nat.succ n)))
+          rw [intOfZ_zadd_mem_suffix, intOfZ_zofnat_mem_suffix]
+          change intOfZ ofs' < intOfZ (zAdd (zAdd ofs z1) (zOfNat n)) at hupper
+          rw [intOfZ_zadd_mem_suffix, intOfZ_zofnat_mem_suffix] at hupper
+          rw [intOfZ_add_one] at hupper
+          have hsucc : Int.ofNat (Nat.succ n) = Int.ofNat n + 1 := by
+            simpa using (Int.ofNat_add_ofNat n 1).symm
+          rw [hsucc]
+          omega
+
+theorem load_inj : load_injStatement := by
+  intro f m1 m2 chunk b1 ofs b2 delta v1 hinj hload hf
+  have hv1 : valid_access m1 chunk b1 ofs Readable :=
+    load_valid_access m1 chunk b1 ofs v1 hload
+  have hv2 : valid_access m2 chunk b2 (zAdd ofs delta) Readable :=
+    valid_access_inj f m1 m2 b1 b2 delta chunk ofs Readable hinj hf hv1
+  refine ⟨decode_val chunk
+      (getN (size_chunk_nat chunk) (zAdd ofs delta)
+        (PMap.get b2 m2.mem_contents)), ?_, ?_⟩
+  · unfold load
+    cases hdec : valid_access_dec m2 chunk b2 (zAdd ofs delta) Readable with
+    | left _ => simp [boolOfSumbool, hdec]
+    | right hn => exact False.elim (hn hv2)
+  · rw [load_result chunk m1 b1 ofs v1 hload]
+    apply decode_val_inject
+    apply getN_inj f m1 m2 b1 b2 delta hinj hf
+    have hsize := size_chunk_conv chunk
+    simpa [hsize] using hv1.1
+
+end Mem
+
+end CompCert4Lean.Common.Memory
+
+namespace CompCert4Lean.Common.Memory
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+
+namespace Mem
+
+theorem setN_inj : setN_injStatement := by
+  intro access delta f vl1 vl2 hlist
+  induction vl1 generalizing vl2 with
+  | nil =>
+      cases hlist with
+      | nil =>
+          intro p c1 c2 haccess q hq
+          exact haccess q hq
+  | cons mv1 vl1 ih =>
+      cases hlist with
+      | cons mv2 vl2 hmv htail =>
+          rename_i tail
+          intro p c1 c2 haccess q hq
+          by_cases heq : q = p
+          · subst q
+            have htail1 : ZMap.get p
+                (setN vl1 (zAdd p z1) (ZMap.set p mv1 c1)) =
+                ZMap.get p (ZMap.set p mv1 c1) := by
+              apply setN_other
+              intro r hr hrp
+              subst r
+              have hlo := hr.1
+              change intOfZ (zAdd p z1) ≤ intOfZ p at hlo
+              rw [intOfZ_add_one] at hlo
+              omega
+            have htail2 : ZMap.get (zAdd p delta)
+                (setN tail (zAdd (zAdd p delta) z1)
+                  (ZMap.set (zAdd p delta) vl2 c2)) =
+                ZMap.get (zAdd p delta) (ZMap.set (zAdd p delta) vl2 c2) := by
+              apply setN_other
+              intro r hr hrp
+              subst r
+              have hlo := hr.1
+              change intOfZ (zAdd (zAdd p delta) z1) ≤
+                intOfZ (zAdd p delta) at hlo
+              rw [intOfZ_zadd_mem_suffix] at hlo
+              have hz1 : intOfZ z1 = (1 : Int) := by rfl
+              rw [hz1] at hlo
+              omega
+            change memval_inject f
+              (ZMap.get p (setN vl1 (zAdd p z1) (ZMap.set p mv1 c1)))
+              (ZMap.get (zAdd p delta)
+                (setN tail (zAdd (zAdd p delta) z1)
+                  (ZMap.set (zAdd p delta) vl2 c2)))
+            rw [htail1, htail2]
+            change memval_inject f
+              (PMap.get (ZIndexed.index p) (PMap.set (ZIndexed.index p) mv1 c1))
+              (PMap.get (ZIndexed.index (zAdd p delta))
+                (PMap.set (ZIndexed.index (zAdd p delta)) vl2 c2))
+            rw [pmap_get_set_same_memproof, pmap_get_set_same_memproof]
+            exact hmv
+          · have hqneq : q ≠ p := heq
+            have hqdelta : zAdd q delta ≠ zAdd p delta := by
+              intro h
+              apply hqneq
+              apply intOfZ_injective
+              have h' := congrArg intOfZ h
+              rw [intOfZ_zadd_mem_suffix, intOfZ_zadd_mem_suffix] at h'
+              omega
+            have haccess' : ∀ r, access r →
+                memval_inject f (ZMap.get r (ZMap.set p mv1 c1))
+                  (ZMap.get (zAdd r delta)
+                    (ZMap.set (zAdd p delta) vl2 c2)) := by
+              intro r hr
+              by_cases hrp : r = p
+              · subst r
+                change memval_inject f
+                  (PMap.get (ZIndexed.index p)
+                    (PMap.set (ZIndexed.index p) mv1 c1))
+                  (PMap.get (ZIndexed.index (zAdd p delta))
+                    (PMap.set (ZIndexed.index (zAdd p delta)) vl2 c2))
+                rw [pmap_get_set_same_memproof, pmap_get_set_same_memproof]
+                exact hmv
+              · rw [zmap_get_set_other_memproof r p mv1 c1 hrp,
+                  zmap_get_set_other_memproof (zAdd r delta) (zAdd p delta)
+                    vl2 c2 (by
+                      intro h
+                      have h' := congrArg intOfZ h
+                      rw [intOfZ_zadd_mem_suffix, intOfZ_zadd_mem_suffix] at h'
+                      apply hrp
+                      apply intOfZ_injective
+                      omega)]
+                exact haccess r hr
+            have hoff : zAdd (zAdd p delta) z1 = zAdd (zAdd p z1) delta := by
+              apply intOfZ_injective
+              rw [intOfZ_zadd_mem_suffix, intOfZ_zadd_mem_suffix,
+                intOfZ_zadd_mem_suffix, intOfZ_zadd_mem_suffix]
+              have hz1 : intOfZ z1 = (1 : Int) := by rfl
+              rw [hz1]
+              omega
+            change memval_inject f
+              (ZMap.get q (setN vl1 (zAdd p z1) (ZMap.set p mv1 c1)))
+              (ZMap.get (zAdd q delta)
+                (setN tail (zAdd (zAdd p delta) z1)
+                  (ZMap.set (zAdd p delta) vl2 c2)))
+            rw [hoff]
+            apply ih tail htail (p := zAdd p z1)
+              (c1 := ZMap.set p mv1 c1)
+              (c2 := ZMap.set (zAdd p delta) vl2 c2) haccess' q hq
+
+end Mem
+
+end CompCert4Lean.Common.Memory
+
+namespace CompCert4Lean.Common.Memory
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+
+namespace Mem
+
+theorem loadbytes_inj : loadbytes_injStatement := by
+  intro f m1 m2 len b1 ofs b2 delta bytes1 hinj hload hf
+  unfold loadbytes at hload
+  cases hdec : range_perm_dec m1 b1 ofs (zAdd ofs len) Cur Readable with
+  | right _ => simp [boolOfSumbool, hdec] at hload
+  | left hperm1 =>
+      simp [boolOfSumbool, hdec] at hload
+      subst bytes1
+      refine ⟨getN (zToNat len) (zAdd ofs delta)
+          (PMap.get b2 m2.mem_contents), ?_, ?_⟩
+      · have hend : zAdd (zAdd ofs len) delta =
+            zAdd (zAdd ofs delta) len := by
+          apply intOfZ_injective
+          rw [intOfZ_zadd_mem, intOfZ_zadd_mem,
+            intOfZ_zadd_mem, intOfZ_zadd_mem]
+          omega
+        have hperm2 : range_perm m2 b2 (zAdd ofs delta)
+            (zAdd (zAdd ofs delta) len) Cur Readable := by
+          have hri := range_perm_inj f m1 m2 b1 ofs (zAdd ofs len)
+            Cur Readable b2 delta hinj hperm1 hf
+          rw [hend] at hri
+          exact hri
+        unfold loadbytes
+        cases hdec2 : range_perm_dec m2 b2 (zAdd ofs delta)
+            (zAdd (zAdd ofs delta) len) Cur Readable with
+        | left _ => simp [boolOfSumbool, hdec2]
+        | right hn2 => exact False.elim (hn2 hperm2)
+      · have hpermNat : range_perm m1 b1 ofs
+            (zAdd ofs (zOfNat (zToNat len))) Cur Readable := by
+          by_cases hnonneg : zLe z0 len
+          · have hnat : zOfNat (zToNat len) = len :=
+                ZArith.Znat.Z2Nat.id len hnonneg
+            simpa [hnat] using hperm1
+          · have hlen : zLe len z0 := by
+              change ¬ intOfZ z0 ≤ intOfZ len at hnonneg
+              change intOfZ len ≤ intOfZ z0
+              omega
+            have hnat : zToNat len = 0 := Z_to_nat_neg len hlen
+            apply range_perm_vacuous
+            change intOfZ (zAdd ofs (zOfNat (zToNat len))) ≤ intOfZ ofs
+            rw [intOfZ_zadd_mem, intOfZ_zofnat_mem, hnat]
+            have hzero : Int.ofNat 0 = 0 := by rfl
+            rw [hzero]
+            omega
+        exact getN_inj f m1 m2 b1 b2 delta hinj hf
+          (zToNat len) ofs hpermNat
+
+end Mem
+
+end CompCert4Lean.Common.Memory

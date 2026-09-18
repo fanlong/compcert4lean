@@ -4437,3 +4437,105 @@ theorem generic_inclusion_mag :
     · exact Or.inr (hle hx0)
 
 end CompCert4Lean.Flocq.Core.Generic_fmt
+
+namespace CompCert4Lean.Flocq.Core.Generic_fmt
+
+private theorem pg_suffix_generic_format_abs_inv (ctx : ExactRealContext)
+    (magnitude : Exact.Magnitude ctx) (beta : radix) (fexp : Z → Z)
+    (x : Exact.R ctx)
+    (hx : Exact.generic_format ctx magnitude beta fexp (Exact.Rabs ctx x)) :
+    Exact.generic_format ctx magnitude beta fexp x := by
+  rcases ctx.certificate.total_order x ctx.spec.zero with h | h
+  · rcases h with hxneg | hxzero
+    · have habs := ctx.certificate.sourceLaws.abs_negative x hxneg
+      have hneg := generic_format_opp ctx magnitude beta fexp
+        (Exact.Rabs ctx x) hx
+      have harg : Exact.Ropp ctx (Exact.Rabs ctx x) = x := by
+        change ctx.spec.neg (ctx.spec.abs x) = x
+        rw [habs]
+        exact pg_neg_neg ctx x
+      rw [harg] at hneg
+      exact hneg
+    · subst x
+      have harg : Exact.Rabs ctx ctx.spec.zero = ctx.spec.zero := by
+        change ctx.spec.abs ctx.spec.zero = ctx.spec.zero
+        exact ctx.certificate.sourceLaws.abs_nonnegative _
+          (ctx.certificate.orderedField.le_refl _)
+      rw [harg] at hx
+      exact hx
+  · have hxle : ctx.spec.le ctx.spec.zero x :=
+      (ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp h |>.1
+    have harg : Exact.Rabs ctx x = x := by
+      change ctx.spec.abs x = x
+      exact ctx.certificate.sourceLaws.abs_nonnegative x hxle
+    rw [harg] at hx
+    exact hx
+
+theorem generic_inclusion :
+    ∀ ctx magnitude, generic_inclusionStatement ctx magnitude := by
+  intro ctx magnitude beta fexp1 fexp2 hvalid1 hvalid2 e hle x hbounds hformat
+  rcases hbounds with ⟨hlower, hupper⟩
+  by_cases heq : Exact.Rabs ctx x = Exact.bpow ctx beta e
+  · have habs_format1 := generic_format_abs ctx magnitude beta fexp1 x hformat
+    rw [heq] at habs_format1
+    have hpow_inv := generic_format_bpow_inv ctx magnitude beta fexp1
+      hvalid1 e habs_format1
+    have hfe2 : Zle (fexp2 e) e := by
+      exact Int.le_trans hle hpow_inv
+    have hnext : Zle (fexp2 (Zadd e Zone)) e := by
+      have hfe2' : CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+          (fexp2 e) ≤ CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ e := by
+        exact hfe2
+      rcases Int.lt_or_eq_of_le hfe2' with hlt | he
+      · have hlt' : Zlt (fexp2 e) e := by exact hlt
+        exact (hvalid2.valid_exp e).1 hlt'
+      · have he' : fexp2 e = e := by
+          apply CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective
+          exact he
+        have hfe2rev : Zle e (fexp2 e) := by
+          change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ e ≤
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (fexp2 e)
+          rw [he']
+          exact Int.le_refl _
+        have hs := (hvalid2.valid_exp e).2 hfe2rev
+        simpa [he'] using hs.1
+    have hpow2 := pg_2878_generic_format_bpow ctx magnitude beta fexp2 e hnext
+    have hpow2' : Exact.generic_format ctx magnitude beta fexp2
+        (Exact.Rabs ctx x) := by
+      rw [heq]
+      exact hpow2
+    exact pg_suffix_generic_format_abs_inv ctx magnitude beta fexp2 x hpow2'
+  · have hlt : Exact.Rlt ctx (Exact.Rabs ctx x) (Exact.bpow ctx beta e) := by
+      apply (ctx.certificate.orderedField.lt_iff_le_not_le _ _).mpr
+      refine ⟨hupper, ?_⟩
+      intro hrev
+      exact heq (ctx.certificate.orderedField.le_antisymm _ _ hupper hrev)
+    have hx0 : x ≠ Exact.R0 ctx := by
+      intro hxzero
+      subst x
+      have hpos : Exact.Rlt ctx (Exact.R0 ctx)
+          (Exact.bpow ctx beta (Zsub e Zone)) :=
+        CompCert4Lean.Flocq.Core.Raux.bpow_gt_0 ctx beta (Zsub e Zone)
+      have hzeroabs : Exact.Rabs ctx (Exact.R0 ctx) = Exact.R0 ctx := by
+        change ctx.spec.abs ctx.spec.zero = ctx.spec.zero
+        exact ctx.certificate.sourceLaws.abs_nonnegative _
+          (ctx.certificate.orderedField.le_refl _)
+      rw [hzeroabs] at hlower
+      exact (ctx.certificate.orderedField.lt_irrefl _
+        (CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.Rlt_le_trans
+          ctx _ _ _ hpos hlower)).elim
+    have hmag :=
+      (CompCert4Lean.Flocq.Core.Raux.Exact.mag magnitude beta x).mag_bound hx0
+    have hmeq := pg_mag_unique ctx beta x ⟨hlower, hlt⟩ hmag
+    have hle_mag : Zle (fexp2 (Exact.mag magnitude beta x))
+        (fexp1 (Exact.mag magnitude beta x)) := by
+      change Zle (fexp2
+        ((CompCert4Lean.Flocq.Core.Raux.Exact.mag magnitude beta x).mag_val))
+        (fexp1
+        ((CompCert4Lean.Flocq.Core.Raux.Exact.mag magnitude beta x).mag_val))
+      rw [← hmeq]
+      exact hle
+    exact generic_inclusion_mag ctx magnitude beta fexp1 fexp2 x
+      (fun _ => hle_mag) hformat
+
+end CompCert4Lean.Flocq.Core.Generic_fmt
