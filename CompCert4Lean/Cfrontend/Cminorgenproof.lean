@@ -4344,3 +4344,47 @@ theorem switch_match_states
         · exact switch_match_cont cenv xenv k cs tk ls tk1 hmatch hrest
 
 end CompCert4Lean.Cfrontend.Cminorgenproof
+
+namespace CompCert4Lean.Cfrontend.Cminorgenproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Lib.Coqlib
+
+private theorem cminorgenproof_flat_inj_some
+    (thr b b' : block) (delta : Z)
+    (hmap : Mem.flat_inj thr b = some (b', delta)) :
+    b = b' ∧ (.Z0 : Z) = delta ∧ Plt b thr := by
+  unfold Mem.flat_inj at hmap
+  cases hplt : plt b thr with
+  | left hb =>
+      rw [hplt] at hmap
+      have hpairs : (b, (.Z0 : Z)) = (b', delta) := Option.some.inj hmap
+      exact ⟨congrArg Prod.fst hpairs, congrArg Prod.snd hpairs, hb⟩
+  | right hn =>
+      simp [hplt] at hmap
+
+theorem match_globalenvs_init : match_globalenvs_initStatement := by
+  intro prog m hmem
+  apply match_globalenvs.mk
+  · intro b hb
+    unfold Mem.flat_inj
+    cases hplt : plt b m.nextblock with
+    | left _ =>
+        change some (b, (.Z0 : Z)) = some (b, (.Z0 : Z))
+        rfl
+    | right hn => exact False.elim (hn hb)
+  · intro b1 b2 delta hmap hb2
+    rcases cminorgenproof_flat_inj_some m.nextblock b1 b2 delta hmap with
+      ⟨rfl, rfl, _⟩
+    rfl
+  · intro id b hfind
+    exact Genv.find_symbol_not_fresh _ _ prog id b m hmem hfind
+  · intro b fd hfind
+    exact Genv.find_funct_ptr_not_fresh _ _ prog b fd m hmem hfind
+  · intro b gv hfind
+    exact Genv.find_var_info_not_fresh _ _ prog b gv m hmem hfind
+
+end CompCert4Lean.Cfrontend.Cminorgenproof

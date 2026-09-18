@@ -4000,3 +4000,33 @@ theorem mag_round_ZR :
       ⟨hlow, hupper⟩
 
 end CompCert4Lean.Flocq.Core.Generic_fmt
+
+namespace CompCert4Lean.Flocq.Core.Generic_fmt
+
+theorem mag_DN :
+    ∀ ctx magnitude, mag_DNStatement ctx magnitude := by
+  intro ctx magnitude beta fexp hvalid x hpos
+  have hdn := round_DN_pt ctx magnitude beta fexp hvalid x
+  have hxpos : Exact.Rlt ctx (Exact.R0 ctx) x := by
+    exact CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.Rlt_le_trans
+      ctx _ _ _ hpos hdn.2.1
+  have hxnonneg : Exact.Rle ctx (Exact.R0 ctx) x :=
+    (ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp hxpos |>.1
+  have hround_eq :
+      Exact.round ctx magnitude beta fexp (Exact.Ztrunc ctx) x =
+        Exact.round ctx magnitude beta fexp (Exact.Zfloor ctx) x :=
+    round_ZR_DN ctx magnitude beta fexp x hxnonneg
+  have hfloor_ne :
+      Exact.round ctx magnitude beta fexp (Exact.Zfloor ctx) x ≠ Exact.R0 ctx := by
+    intro hzero
+    rw [hzero] at hpos
+    exact (ctx.certificate.orderedField.lt_irrefl _ hpos).elim
+  have htrunc_ne :
+      Exact.round ctx magnitude beta fexp (Exact.Ztrunc ctx) x ≠ Exact.R0 ctx := by
+    rw [hround_eq]
+    exact hfloor_ne
+  have hmag := mag_round_ZR ctx magnitude beta fexp hvalid x htrunc_ne
+  rw [hround_eq] at hmag
+  exact hmag
+
+end CompCert4Lean.Flocq.Core.Generic_fmt

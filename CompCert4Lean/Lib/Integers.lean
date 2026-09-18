@@ -6983,3 +6983,32 @@ theorem testbit_repr_proof : testbit_repr := by
     exact hd'
   exact (CompCert4Lean.Lib.Zbits.same_bits_eqmod
     wordsize x (zMod x modulus) i heq hi).symm
+
+theorem modulus_power_proof : modulus_power := by
+  rfl
+
+theorem add_unsigned_proof : add_unsigned := by
+  intro x y
+  rfl
+
+theorem mul_commut_proof : mul_commut := by
+  intro x y
+  change WordCore.mul x y = WordCore.mul y x
+  apply WordCore.ext_of_val_eq
+  apply Int.ofNat.inj
+  rw [suffix_wordcore_mul_val_int, suffix_wordcore_mul_val_int]
+  rw [Int.mul_comm]
+
+theorem sub_add_r_proof : sub_add_r := by
+  intro x y z
+  change WordCore.sub x (WordCore.add y z) =
+    WordCore.add (WordCore.sub x z) (WordCore.neg y)
+  apply WordCore.ext_of_val_eq
+  apply Int.ofNat.inj
+  rw [WordCore.sub_val_int, WordCore.add_val_int,
+    WordCore.add_val_int, suffix_wordcore_neg_val_int,
+    WordCore.sub_val_int]
+  simp only [Int.emod_sub_emod, Int.sub_emod_emod,
+    Int.emod_add_emod, Int.add_emod_emod]
+  congr 1
+  omega

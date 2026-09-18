@@ -3460,3 +3460,25 @@ theorem transl_find_label : transl_find_labelStatement := by
   rfl
 
 end CompCert4Lean.Backend.Stackingproof
+
+namespace CompCert4Lean.Backend.Stackingproof
+
+open CompCert4Lean.Backend.Linear
+open CompCert4Lean.Lib.Coqlib
+
+theorem find_label_tail : find_label_tailStatement := by
+  intro lbl c c' h
+  induction c with
+  | nil =>
+      simp [Linear.find_label] at h
+  | cons i c ih =>
+      cases hlabel : Linear.is_label lbl i with
+      | true =>
+          simp [Linear.find_label, hlabel] at h
+          cases h
+          exact is_tail.cons _ (is_tail.refl _)
+      | false =>
+          simp [Linear.find_label, hlabel] at h
+          exact is_tail.cons _ (ih h)
+
+end CompCert4Lean.Backend.Stackingproof
