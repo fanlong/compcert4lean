@@ -4090,3 +4090,68 @@ theorem eval_floatofint
       · exact hx
 
 end CompCert4Lean.X86.SelectOpproof
+
+namespace CompCert4Lean.X86.SelectOpproof
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.ExternalCalls
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.X86.Op
+open CompCert4Lean.X86.SelectOp
+
+private theorem eval_intconst_suffix
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (xi : ExternalCalls) (ge : genv) (sp : val) (e : env) (m : mem)
+    (le : letenv) (n : CCInt) (x : val)
+    (h : eval_expr (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) xi ge sp e m le
+      (Eop (Ointconst n) Enil) x) : x = .Vint n := by
+  cases h with
+  | eval_Eop _ _ _ _ _ hargs hop =>
+      cases hargs
+      change some (.Vint n) = some x at hop
+      cases hop
+      rfl
+
+theorem eval_floatofintu
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    eval_floatofintuStatement := by
+  intro xi ge sp e m le a x y h hx
+  cases hmatch : floatofintu_match a with
+  | floatofintu_case1 n =>
+      have hn := eval_intconst_suffix xi ge sp e m le n x (by simpa [hmatch] using h)
+      subst x
+      simp [Val.floatofintu] at hx
+      subst y
+      refine ⟨Vfloat (CompCert4Lean.Lib.Floats.Float.of_intu
+          (certificate := binary64_certificate) n), ?_, Val.lessdef_refl _⟩
+      simp only [CompCert4Lean.X86.SelectOp.floatofintu, hmatch]
+      exact eval_expr.eval_Eop le
+        (Ofloatconst (CompCert4Lean.Lib.Floats.Float.of_intu
+          (certificate := binary64_certificate) n)) Enil [] _
+        (eval_exprlist.nil le) rfl
+  | floatofintu_default a =>
+      cases x with
+      | Vint n =>
+          simp [Val.floatofintu] at hx
+          subst y
+          refine ⟨.Vfloat (CompCert4Lean.Lib.Floats.Float.of_intu
+              (certificate := binary64_certificate) n), ?_, Val.lessdef_refl _⟩
+          simp only [CompCert4Lean.X86.SelectOp.floatofintu, hmatch,
+            CompCert4Lean.X86_64.Archi.splitlong,
+            CompCert4Lean.X86_64.Archi.ptr64]
+          apply eval_expr.eval_Eop le Ofloatoflong
+            (Econs (Eop Ocast32unsigned (Econs a Enil)) Enil)
+            [Val.longofintu (.Vint n)] _
+          · exact eval_exprlist.cons le _ _ _ _
+              (eval_expr.eval_Eop le Ocast32unsigned (Econs a Enil) [.Vint n]
+                _ (eval_exprlist.cons le a Enil (.Vint n) [] h (eval_exprlist.nil le)) rfl)
+              (eval_exprlist.nil le)
+          · change some (Vfloat (CompCert4Lean.Lib.Floats.Float.of_long
+              (CompCert4Lean.Lib.Integers.Int64.repr
+                (CompCert4Lean.Lib.Integers.Int.unsigned n)))) = _
+            rw [← CompCert4Lean.Lib.Floats.Float.of_intu_of_long]
+      | _ => simp [Val.floatofintu] at hx
+end CompCert4Lean.X86.SelectOpproof
