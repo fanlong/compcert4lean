@@ -3700,3 +3700,211 @@ theorem find_function_translated : find_function_translatedStatement := by
           simp [hs']
 
 end CompCert4Lean.Backend.Stackingproof
+
+namespace CompCert4Lean.Backend.Stackingproof
+
+open CompCert4Lean.Backend.Conventions
+open CompCert4Lean.Backend.Lineartyping
+open CompCert4Lean.Backend.Locations
+open CompCert4Lean.Backend.Mach
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Linking
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Separation
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Coqlib
+
+theorem wt_prog : wt_progStatement := by
+  intro cfg prog tprog hmatch
+  letI : Linker Linear.fundef := Linker_fundef Linear.function
+  letI : Linker Unit := Linker_unit
+  letI : Linker Linear.program := Linker_prog Linear.fundef Unit
+  intro i fd hmem
+  unfold match_prog CompCert4Lean.Common.Linking.match_program at hmatch
+  rcases hmatch with ⟨hdefs, _, _⟩
+  rcases @list_forall2_in_left _ _ _ _ _ _ hdefs hmem with ⟨ig', _, hrel⟩
+  rcases ig' with ⟨i', gd'⟩
+  simp only [match_ident_globdef] at hrel
+  rcases hrel with ⟨_, hgd⟩
+  cases fd with
+  | Internal f =>
+      change wt_fundef cfg (CompCert4Lean.Common.AST.fundef.Internal f)
+      cases gd' with
+      | Gfun tf =>
+          cases hgd with
+          | match_globdef_fun _ _ _ _ hfun =>
+              unfold CompCert4Lean.Backend.Stacking.transf_fundef
+                CompCert4Lean.Common.AST.transf_partial_fundef at hfun
+              unfold CompCert4Lean.Backend.Stacking.transf_function at hfun
+              cases hwt : wt_function cfg f with
+              | false =>
+                  simp [hwt] at hfun
+              | true =>
+                  simp [hwt] at hfun
+                  exact hwt
+      | Gvar v => cases hgd
+  | External ef =>
+      change wt_fundef cfg (CompCert4Lean.Common.AST.fundef.External ef)
+      trivial
+
+end CompCert4Lean.Backend.Stackingproof
+
+namespace CompCert4Lean.Backend.Stackingproof
+
+open CompCert4Lean.Backend.Locations
+open CompCert4Lean.Backend.Mach
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.X86.Conventions1
+
+private theorem stackingproof_inject_vint_eq (j : Val.meminj)
+    (i : CompCert4Lean.Lib.Integers.Int.int) (v : val) :
+    Val.inject j (Vint i) v → v = Vint i := by
+  intro h
+  cases h with
+  | inject_int => rfl
+
+theorem transf_final_states : transf_final_statesStatement := by
+  intro cfg return_address_offset prog tprog bound_local_pos bound_outgoing_pos
+    bound_stack_data_pos used_callee_save_norepet used_callee_save_prop
+    st1 st2 r hmatch hfinal
+  cases hfinal with
+  | final_state_intro rs m _ =>
+      cases hmatch with
+      | match_states_return cs ls m cs' rs' m' j sg hstacks hregs hsep =>
+          cases hstacks
+          have hresult' : Locmap.getpair
+              (map_rpair R (loc_result signature_main)) rs = Vint r := by
+            assumption
+          have hR : ∃ rres, loc_result signature_main = .One rres := by
+            cases h : loc_result signature_main with
+            | One rres => exact ⟨rres, rfl⟩
+            | Twolong r1 r2 =>
+                have hty := loc_result_type signature_main
+                rw [h] at hty
+                simp [CompCert4Lean.Common.AST.signature_main,
+                  CompCert4Lean.Common.AST.proj_sig_res,
+                  CompCert4Lean.Common.AST.proj_xtype,
+                  CompCert4Lean.Common.AST.subtype,
+                  CompCert4Lean.Common.AST.typ_rpair,
+                  CompCert4Lean.X86.Machregs.mreg_type,
+                  CompCert4Lean.X86_64.Archi.ptr64] at hty
+          rcases hR with ⟨rres, hR⟩
+          rw [hR] at hresult'
+          simp only [Locmap.getpair, map_rpair] at hresult'
+          have hagree := hregs rres
+          rw [hresult'] at hagree
+          have hval : rs' rres = Vint r :=
+            stackingproof_inject_vint_eq j r (rs' rres) hagree
+          exact Mach.final_state.final_state_intro rs' m' rres r hR hval
+
+end CompCert4Lean.Backend.Stackingproof
+
+namespace CompCert4Lean.Backend.Stackingproof
+
+open CompCert4Lean.Backend.Conventions
+open CompCert4Lean.Backend.Lineartyping
+open CompCert4Lean.Backend.Locations
+open CompCert4Lean.Backend.Mach
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Linking
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Separation
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Coqlib
+
+theorem transf_initial_states : transf_initial_statesStatement := by
+  letI : Linker Linear.fundef := Linker_fundef Linear.function
+  letI : Linker Unit := Linker_unit
+  letI : Linker Mach.fundef := Linker_fundef Mach.function
+  letI : Linker Linear.program := Linker_prog Linear.fundef Unit
+  letI : Linker Mach.program := Linker_prog Mach.fundef Unit
+  intro cfg return_address_offset prog tprog bound_local_pos bound_outgoing_pos
+    bound_stack_data_pos used_callee_save_norepet used_callee_save_prop hmatch st1 hinit
+  cases hinit with
+  | initial_state_intro b f m0 hmem hsymb hfun hsig =>
+      rcases function_ptr_translated cfg prog tprog hmatch b f hfun with
+        ⟨tf, hfind, htransf⟩
+      refine ⟨Mach.Callstate [] b
+        (CompCert4Lean.Backend.Mach.Regmap.init Vundef) m0, ?_, ?_⟩
+      · apply Mach.initial_state.initial_state_intro b m0
+        · unfold Genv.init_mem at hmem ⊢
+          exact Genv.init_mem_transf_partial
+            (A := Linear.fundef) (B := Mach.fundef) (V := Unit)
+            (transf := fun f => CompCert4Lean.Backend.Stacking.transf_fundef cfg f)
+            prog tprog hmatch m0 hmem
+        · change Genv.find_symbol (Genv.globalenv tprog) tprog.prog_main = some b
+          rw [hmatch.2.1]
+          rw [symbols_preserved cfg prog tprog hmatch prog.prog_main]
+          exact hsymb
+      · apply match_states_call [] f
+          (CompCert4Lean.Backend.Locations.Locmap.init Vundef) m0 [] b
+          (CompCert4Lean.Backend.Mach.Regmap.init Vundef) m0
+          (CompCert4Lean.Common.Memory.Mem.flat_inj
+            (CompCert4Lean.Common.Memory.Mem.nextblock m0)) tf
+        · apply match_stacks_empty
+          rw [hsig]
+          unfold tailcall_possible
+          have hloc :
+              CompCert4Lean.X86.Conventions1.loc_arguments cfg
+                CompCert4Lean.Common.AST.signature_main = [] := by
+            simp [CompCert4Lean.X86.Conventions1.loc_arguments,
+              CompCert4Lean.X86.Conventions1.loc_arguments_32,
+              CompCert4Lean.X86.Conventions1.loc_arguments_elf64,
+              CompCert4Lean.X86.Conventions1.loc_arguments_win64,
+              CompCert4Lean.Common.AST.signature_main,
+              CompCert4Lean.Common.AST.proj_sig_args]
+          change ∀ l, l ∈ regs_of_rpairs
+            (CompCert4Lean.X86.Conventions1.loc_arguments cfg
+              CompCert4Lean.Common.AST.signature_main) → _
+          rw [hloc]
+          intro l hl
+          simp [CompCert4Lean.Common.AST.regs_of_rpairs] at hl
+        · exact htransf
+        · exact hfind
+        · intro r
+          exact Val.val_inject_undef _ _
+        · have hmeminj : Mem.inject
+              (Mem.flat_inj (Mem.nextblock m0)) m0 m0 :=
+              Genv.initmem_inject (F := Linear.fundef) (V := Unit) prog m0 hmem
+          have hgenv : (globalenv_inject (Genv.globalenv prog)
+              (Mem.flat_inj (Mem.nextblock m0))).m_pred m0 := by
+            refine ⟨Mem.nextblock m0, Ple_refl _, ?_⟩
+            apply globalenv_preserved_intro
+            · intro b hb
+              unfold Mem.flat_inj
+              cases hdec : CompCert4Lean.Lib.Coqlib.plt b (Mem.nextblock m0) with
+              | left hleft => rfl
+              | right hright => exact False.elim (hright hb)
+            · intro b1 b2 delta hmap hb
+              unfold Mem.flat_inj at hmap
+              cases hp : CompCert4Lean.Lib.Coqlib.plt b1 (Mem.nextblock m0) with
+              | left hleft =>
+                  rw [show CompCert4Lean.Lib.Coqlib.plt b1 (Mem.nextblock m0) =
+                    .left hleft from hp] at hmap
+                  cases hmap
+                  rfl
+              | right hright =>
+                  rw [show CompCert4Lean.Lib.Coqlib.plt b1 (Mem.nextblock m0) =
+                    .right hright from hp] at hmap
+                  cases hmap
+            · intro id b hfind
+              change Mem.valid_block m0 b
+              exact Genv.find_symbol_not_fresh Linear.fundef Unit prog id b m0 hmem hfind
+            · intro b fd hfind
+              change Mem.valid_block m0 b
+              exact Genv.find_funct_ptr_not_fresh Linear.fundef Unit prog b fd m0 hmem hfind
+            · intro b gv hfind
+              change Mem.valid_block m0 b
+              exact Genv.find_var_info_not_fresh Linear.fundef Unit prog b gv m0 hmem hfind
+          simp only [stack_contents, sepconj, CompCert4Lean.Common.Separation.pure,
+            minjection, globalenv_inject]
+          refine ⟨trivial, ⟨hmeminj, hgenv, ?_⟩, ?_⟩
+          · intro b ofs _ hfalse
+            exact hfalse.elim
+          · intro b ofs _ _
+            exact False.elim (by assumption)
+
+end CompCert4Lean.Backend.Stackingproof
