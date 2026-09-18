@@ -6992,3 +6992,198 @@ theorem exec_moves
                   · rfl
 
 end CompCert4Lean.Backend.Allocproof
+
+namespace CompCert4Lean.Backend.Allocproof
+
+theorem match_stackframes_change_sig
+    [binary64_certificate : BinaryNormalizeCertificate
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 53)
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 24)
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 128)] :
+    match_stackframes_change_sigStatement := by
+  intro cfg oracle xi tprog s ts sg sg' hmatch hres
+  cases hmatch with
+  | match_stackframes_nil sg0 hsg0 =>
+      exact match_stackframes_nil sg' (hres.trans hsg0)
+  | @match_stackframes_cons resultReg f sp pc rs s tf bb ls ts sg0 an e env
+      hstacks hfun hanalyze heq hwtf hwtrs hwtres hsteps =>
+      apply match_stackframes_cons resultReg f sp pc rs s tf bb ls ts sg'
+        an e env hstacks hfun hanalyze heq hwtf hwtrs
+      · simpa [CompCert4Lean.Common.AST.proj_sig_res, hres] using hwtres
+      · intro v ls1 m hv hty hag
+        apply hsteps v ls1 m
+        · have hlr := CompCert4Lean.X86.Conventions1.loc_result_exten sg' sg hres
+          simpa [hlr] using hv
+        · exact hty
+        · exact hag
+
+theorem addressing_not_long : addressing_not_longStatement := by
+  intro cfg env f addr args dst s r hwt hsplit hr
+  simp [CompCert4Lean.X86_64.Archi.splitlong,
+    CompCert4Lean.X86_64.Archi.ptr64] at hsplit
+
+end CompCert4Lean.Backend.Allocproof
+
+namespace CompCert4Lean.Backend.Allocproof
+
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Backend.LTL
+open CompCert4Lean.Backend.Locations
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Linking
+open CompCert4Lean.Common.Values
+
+private theorem allocproof_val_inject_refl
+    (v : CompCert4Lean.Common.Values.val) :
+    CompCert4Lean.Common.Values.Val.inject
+      CompCert4Lean.Common.Values.inject_id v v := by
+  cases v with
+  | Vint i => exact CompCert4Lean.Common.Values.Val.inject.inject_int _
+  | Vlong i => exact CompCert4Lean.Common.Values.Val.inject.inject_long _
+  | Vfloat f => exact CompCert4Lean.Common.Values.Val.inject.inject_float _
+  | Vsingle f => exact CompCert4Lean.Common.Values.Val.inject.inject_single _
+  | Vptr b ofs =>
+      apply CompCert4Lean.Common.Values.Val.inject.inject_ptr
+      · rfl
+      · exact (pgo_ptrofs_add_zero ofs).symm
+  | Vundef => exact CompCert4Lean.Common.Values.Val.inject.val_inject_undef _
+
+private theorem allocproof_mem_extends_refl
+    (m : CompCert4Lean.Common.Memory.mem) :
+    CompCert4Lean.Common.Memory.Mem.extends m m := by
+  refine ⟨rfl, ?_, ?_⟩
+  · refine ⟨?_, ?_, ?_⟩
+    · intro b1 b2 delta ofs k p hmap hp
+      have hpair : (b1, (.Z0 : CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z)) =
+          (b2, delta) := by
+        simpa [CompCert4Lean.Common.Values.inject_id] using Option.some.inj hmap
+      cases hpair
+      change CompCert4Lean.Common.Memory.Mem.perm m b1
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add ofs
+          (.Z0 : CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z)) k p
+      have hz : CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add ofs
+          (.Z0 : CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z) = ofs := by
+        apply CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective
+        change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt
+            (CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ ofs + 0)) =
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ ofs
+        rw [CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+        simp
+      rw [hz]
+      exact hp
+    · intro b1 b2 delta chunk ofs p hmap hp
+      have hpair : (b1, (.Z0 : CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z)) =
+          (b2, delta) := by
+        simpa [CompCert4Lean.Common.Values.inject_id] using Option.some.inj hmap
+      cases hpair
+      refine ⟨.Z0, ?_⟩
+      apply CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective
+      change 0 = CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.mul
+          (CompCert4Lean.Common.Memdata.align_chunk chunk)
+          (.Z0 : CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z))
+      change 0 = CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+            (CompCert4Lean.Common.Memdata.align_chunk chunk) * 0))
+      rw [CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+      simp
+    · intro b1 ofs b2 delta hmap hp
+      have hpair : (b1, (.Z0 : CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z)) =
+          (b2, delta) := by
+        simpa [CompCert4Lean.Common.Values.inject_id] using Option.some.inj hmap
+      cases hpair
+      change CompCert4Lean.Common.Memdata.memval_inject
+        CompCert4Lean.Common.Values.inject_id
+        (CompCert4Lean.Lib.Maps.ZMap.get ofs
+          (CompCert4Lean.Lib.Maps.PMap.get b1 m.mem_contents))
+        (CompCert4Lean.Lib.Maps.ZMap.get
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add ofs
+            (.Z0 : CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z))
+          (CompCert4Lean.Lib.Maps.PMap.get b1 m.mem_contents))
+      have hz : CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add ofs
+          (.Z0 : CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z) = ofs := by
+        apply CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective
+        change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt
+            (CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ ofs + 0)) =
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ ofs
+        rw [CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+        simp
+      rw [hz]
+      cases hmv : CompCert4Lean.Lib.Maps.ZMap.get ofs
+          (CompCert4Lean.Lib.Maps.PMap.get b1 m.mem_contents) with
+      | Byte n => exact CompCert4Lean.Common.Memdata.memval_inject.byte _ _
+      | Fragment v q n =>
+          exact CompCert4Lean.Common.Memdata.memval_inject.fragment _ _ _ _ _
+            (allocproof_val_inject_refl v)
+      | Undef => exact CompCert4Lean.Common.Memdata.memval_inject.undef _ _
+  · intro b ofs k p hp
+    exact Or.inl hp
+
+theorem initial_states_simulation
+    [binary64_certificate : BinaryNormalizeCertificate
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 53)
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 24)
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 128)] :
+    initial_states_simulationStatement := by
+  letI : Linker RTL.fundef := Linker_fundef RTL.function
+  letI : Linker Unit := Linker_unit
+  letI : Linker RTL.program := Linker_prog RTL.fundef Unit
+  intro cfg oracle xi prog tprog hmatch st1 hinit
+  cases hinit with
+  | intro b f m0 hmem hsymb hfun hsig =>
+      rcases function_ptr_translated cfg oracle prog tprog hmatch b f hfun with
+        ⟨tf, hfindtf, htrans⟩
+      refine ⟨LTL.Callstate [] tf
+        (CompCert4Lean.Backend.Locations.Locmap.init
+          CompCert4Lean.Common.Values.Vundef) m0, ?_, ?_⟩
+      · apply LTL.initial_state.intro b tf m0
+        · unfold Genv.init_mem at hmem ⊢
+          exact Genv.init_mem_transf_partial
+            RTL.fundef LTL.fundef Unit
+            (fun f => CompCert4Lean.Backend.Allocation.transf_fundef cfg oracle f)
+            prog tprog hmatch m0 hmem
+        · change Genv.find_symbol (Genv.globalenv tprog) tprog.prog_main = some b
+          have hmatch' := hmatch
+          unfold match_prog CompCert4Lean.Common.Linking.match_program at hmatch'
+          rw [hmatch'.2.1]
+          rw [symbols_preserved cfg oracle prog tprog hmatch prog.prog_main]
+          exact hsymb
+        · exact hfindtf
+        · rw [sig_function_translated cfg oracle f tf htrans]
+          exact hsig
+      · apply match_states_call
+        · apply match_stackframes_nil
+          rw [sig_function_translated cfg oracle f tf htrans]
+          rw [hsig]
+          rfl
+        · exact htrans
+        · rw [sig_function_translated cfg oracle f tf htrans, hsig]
+          have hloc : CompCert4Lean.X86.Conventions1.loc_arguments cfg
+              CompCert4Lean.Common.AST.signature_main = [] := by
+            unfold CompCert4Lean.X86.Conventions1.loc_arguments
+            cases hwin : CompCert4Lean.X86_64.Archi.win64 cfg <;>
+              simp [hwin, CompCert4Lean.X86.Conventions1.loc_arguments_win64,
+                CompCert4Lean.X86.Conventions1.loc_arguments_elf64,
+                CompCert4Lean.X86.Conventions1.loc_arguments_32,
+                CompCert4Lean.Common.AST.proj_sig_args,
+                CompCert4Lean.Common.AST.signature_main,
+                CompCert4Lean.X86_64.Archi.ptr64]
+          rw [hloc]
+          exact CompCert4Lean.Common.Values.Val.lessdef_list_nil
+        · intro l hl
+          rfl
+        · exact allocproof_mem_extends_refl m0
+        · rw [sig_function_translated cfg oracle f tf htrans, hsig]
+          simp [CompCert4Lean.Common.AST.proj_sig_args,
+            CompCert4Lean.Common.AST.signature_main]
+          trivial
+
+end CompCert4Lean.Backend.Allocproof

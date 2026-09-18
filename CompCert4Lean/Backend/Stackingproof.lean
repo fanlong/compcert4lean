@@ -3433,3 +3433,30 @@ theorem find_label_transl_code : find_label_transl_codeStatement := by
             Linear.find_label, ih]
 
 end CompCert4Lean.Backend.Stackingproof
+
+namespace CompCert4Lean.Backend.Stackingproof
+
+open CompCert4Lean.Backend.Linear
+open CompCert4Lean.Backend.Mach
+open CompCert4Lean.Backend.Stacking
+open CompCert4Lean.Backend.Bounds
+open CompCert4Lean.X86.Stacklayout
+
+theorem transl_find_label : transl_find_labelStatement := by
+  intro cfg f tf lbl c htrans hfind
+  rw [unfold_transf_function cfg f tf htrans]
+  change Mach.find_label lbl
+      (save_callee_save (make_env cfg (function_bounds cfg f))
+        (transl_code cfg (make_env cfg (function_bounds cfg f)) f.fn_code)) = _
+  unfold CompCert4Lean.Backend.Linear.label at lbl
+  change CompCert4Lean.Backend.Mach.label at lbl
+  unfold save_callee_save
+  rw [find_label_save_callee_save]
+  change Mach.find_label lbl
+      (transl_code cfg (make_env cfg (function_bounds cfg f))
+        (show List CompCert4Lean.Backend.Linear.instruction from f.fn_code)) = _
+  rw [find_label_transl_code]
+  rw [hfind]
+  rfl
+
+end CompCert4Lean.Backend.Stackingproof

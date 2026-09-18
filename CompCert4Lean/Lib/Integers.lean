@@ -6909,3 +6909,77 @@ theorem bits_zero_ext_proof : bits_zero_ext := by
         cases hs : CompCert4Lean.Lib.Coqlib.zlt (zOfNat k) n with
         | left _ => simp [k, zltSelect, sumboolSelect, hs]
         | right _ => simp [k, zltSelect, sumboolSelect, hs]
+
+private theorem suffix_testbit_unsigned (w : int) (i : Z)
+    (hi : zLe zZero i) :
+    testbit w i = zTestbit (unsigned w) i := by
+  cases i with
+  | Zneg p =>
+      change (0 : Int) ≤ -Int.ofNat
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p) at hi
+      have hp : 0 < CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p :=
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat_positive p
+      have hpI : (0 : Int) < Int.ofNat
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p) :=
+        Int.natCast_pos.mpr hp
+      omega
+  | Z0 =>
+      simp only [testbit, WordCore.testbit]
+      change Nat.testBit w.val 0 = zTestbit (unsigned w) zZero
+      rw [show unsigned w = zOfNat w.val by
+        unfold unsigned WordCore.unsigned
+        exact WordCore.intval_eq_zOfNat_val w]
+      rw [Nat.testBit_zero]
+      simp only [zTestbit, ZArith.BinInt.Z.testbit,
+        ZArith.BinInt.Z.odd, ZArith.BinInt.Z.even,
+        ZArith.BinInt.Z.of_nat, intOfZ_zOfInt]
+      have habs : (_root_.Int.ofNat w.val).natAbs = w.val := by
+        apply _root_.Int.ofNat.inj
+        exact _root_.Int.natAbs_of_nonneg (_root_.Int.natCast_nonneg _)
+      rw [habs]
+      rcases Nat.mod_two_eq_zero_or_one w.val with h | h <;> simp [h]
+  | Zpos p =>
+      simp only [testbit, WordCore.testbit,
+        WordCore.positiveToNat_eq_posToNat]
+      change Nat.testBit w.val (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p) =
+        zTestbit (unsigned w) (.Zpos p)
+      rw [show unsigned w = zOfNat w.val by
+        unfold unsigned WordCore.unsigned
+        exact WordCore.intval_eq_zOfNat_val w]
+      cases hw : w.val with
+      | zero =>
+          rw [show zOfNat 0 = (.Z0 : Z) by rfl]
+          simp [zTestbit, ZArith.BinInt.Z.testbit]
+      | succ n =>
+          have hz : zOfNat (Nat.succ n) =
+              .Zpos (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posOfNat (n + 1)) := by
+            rfl
+          rw [hz]
+          have hp :
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat
+                  (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posOfNat (n + 1)) = n + 1 :=
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat_posOfNat
+              (Nat.succ_pos n)
+          simp only [zTestbit, ZArith.BinInt.Z.testbit, hp]
+
+theorem testbit_repr_proof : testbit_repr := by
+  intro x i hi
+  rw [suffix_testbit_unsigned (repr x) i hi.1]
+  rw [unsigned_repr_eq_proof]
+  have heq : CompCert4Lean.Lib.Zbits.eqmod
+      (zTwoPowerNat wordsize) x (zMod x modulus) := by
+    unfold CompCert4Lean.Lib.Zbits.eqmod
+    refine ⟨ZArith.BinInt.Z.div x modulus, ?_⟩
+    have hd := ZArith.Zdiv.Z_div_mod_eq_full x modulus
+    apply intOfZ_injective
+    have hd' := congrArg intOfZ hd
+    simp only [ZArith.BinInt.Z.add, ZArith.BinInt.Z.mul,
+      intOfZ_zOfInt] at hd' ⊢
+    change intOfZ x = intOfZ (ZArith.BinInt.Z.div x modulus) *
+      intOfZ modulus + intOfZ (zMod x modulus)
+    change intOfZ x = intOfZ modulus *
+      intOfZ (ZArith.BinInt.Z.div x modulus) + intOfZ (zMod x modulus) at hd'
+    rw [Int.mul_comm]
+    exact hd'
+  exact (CompCert4Lean.Lib.Zbits.same_bits_eqmod
+    wordsize x (zMod x modulus) i heq hi).symm

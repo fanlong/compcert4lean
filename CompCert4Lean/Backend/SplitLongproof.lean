@@ -2323,3 +2323,67 @@ theorem eval_cmpl_ne_zero : eval_cmpl_ne_zeroStatement := by
           (by simpa [hmatch] using ha))
 
 end CompCert4Lean.Backend.SplitLongproof
+
+namespace CompCert4Lean.Backend.SplitLongproof
+
+theorem int64_eq_xor : int64_eq_xorStatement := by
+  intro p q
+  have hzero_val : CompCert4Lean.Lib.Integers.Int64.zero.val = 0 := by
+    change (CompCert4Lean.Lib.Integers.WordCore.repr 64
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.Z0).val = 0
+    rw [show CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.Z0 =
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 0 by rfl,
+      test_repr_zOfNat]
+  by_cases hpq : p = q
+  · subst q
+    have hxor : CompCert4Lean.Lib.Integers.Int64.xor p p =
+        CompCert4Lean.Lib.Integers.Int64.zero := by
+      apply CompCert4Lean.Lib.Integers.WordCore.ext_of_val_eq
+      change
+        (CompCert4Lean.Lib.Integers.Int64.xor p p).val =
+          CompCert4Lean.Lib.Integers.Int64.zero.val
+      unfold CompCert4Lean.Lib.Integers.Int64.xor
+        CompCert4Lean.Lib.Integers.WordCore.xor
+      rw [test_repr_zOfNat]
+      rw [hzero_val]
+      change Nat.xor p.val p.val % 2 ^ 64 = 0
+      rw [Nat.xor_eq, Nat.xor_self, Nat.zero_mod]
+    simp [int64Eq, CompCert4Lean.Lib.Integers.Int64.eq,
+      CompCert4Lean.Lib.Integers.WordCore.eq, hxor]
+  · have hpval : p.intval ≠ q.intval := by
+      intro h
+      exact hpq (CompCert4Lean.Lib.Integers.WordCore.ext h)
+    have hxzero : CompCert4Lean.Lib.Integers.Int64.xor p q ≠
+        CompCert4Lean.Lib.Integers.Int64.zero := by
+      intro h
+      have hval : (CompCert4Lean.Lib.Integers.Int64.xor p q).val =
+          CompCert4Lean.Lib.Integers.Int64.zero.val := by
+        rw [h]
+      unfold CompCert4Lean.Lib.Integers.Int64.xor
+        CompCert4Lean.Lib.Integers.WordCore.xor at hval
+      rw [test_repr_zOfNat] at hval
+      rw [hzero_val] at hval
+      change Nat.xor p.val q.val % 2 ^ 64 = 0 at hval
+      have hxorlt : Nat.xor p.val q.val < 2 ^ CompCert4Lean.Lib.Integers.Int64.wordsize :=
+        Nat.xor_lt_two_pow p.toFin.isLt q.toFin.isLt
+      have hxor : Nat.xor p.val q.val = 0 := by
+        rw [Nat.mod_eq_of_lt (by simpa [CompCert4Lean.Lib.Integers.Int64.wordsize] using hxorlt)] at hval
+        exact hval
+      have hpval' : p.val = q.val := by
+        apply Nat.eq_of_testBit_eq
+        intro i
+        have hi : (Nat.xor p.val q.val).testBit i = false := by
+          rw [hxor]
+          simp
+        rw [Nat.xor_eq, Nat.testBit_xor] at hi
+        by_cases hpi : p.val.testBit i <;>
+          by_cases hqi : q.val.testBit i <;> simp [hpi, hqi] at hi ⊢
+      exact hpq (CompCert4Lean.Lib.Integers.WordCore.ext_of_val_eq hpval')
+    have hxvalzero : (CompCert4Lean.Lib.Integers.Int64.xor p q).intval ≠
+        CompCert4Lean.Lib.Integers.Int64.zero.intval := by
+      intro h
+      exact hxzero (CompCert4Lean.Lib.Integers.WordCore.ext h)
+    simp [int64Eq, CompCert4Lean.Lib.Integers.Int64.eq,
+      CompCert4Lean.Lib.Integers.WordCore.eq, hpval, hxvalzero]
+
+end CompCert4Lean.Backend.SplitLongproof

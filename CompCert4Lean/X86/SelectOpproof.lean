@@ -4175,3 +4175,39 @@ theorem eval_intofsingle
   · exact hxy
 
 end CompCert4Lean.X86.SelectOpproof
+
+namespace CompCert4Lean.X86.SelectOpproof
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.ExternalCalls
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.X86.Op
+open CompCert4Lean.X86.SelectOp
+
+theorem eval_singleofint
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    eval_singleofintStatement := by
+  intro xi ge sp e m le a x y h hx
+  cases hmatch : singleofint_match a with
+  | singleofint_case1 n =>
+      have hx' : x = .Vint n := eval_intconst_suffix xi ge sp e m le n x
+        (by simpa [hmatch] using h)
+      subst x
+      simp [Val.singleofint] at hx
+      subst y
+      refine ⟨.Vsingle (CompCert4Lean.Lib.Floats.Float32.of_int
+          (certificate := binary32_certificate) n), ?_, Val.lessdef_refl _⟩
+      simp only [CompCert4Lean.X86.SelectOp.singleofint, hmatch]
+      exact eval_expr.eval_Eop le
+        (Osingleconst (CompCert4Lean.Lib.Floats.Float32.of_int
+          (certificate := binary32_certificate) n)) Enil [] _
+        (eval_exprlist.nil le) rfl
+  | singleofint_default e1 =>
+      refine ⟨y, ?_, Val.lessdef_refl _⟩
+      simp only [CompCert4Lean.X86.SelectOp.singleofint, hmatch]
+      apply eval_expr.eval_Eop le Osingleofint (Econs a Enil) [x] y
+      · exact eval_exprlist.cons le a Enil x [] h (eval_exprlist.nil le)
+      · exact hx
+
+end CompCert4Lean.X86.SelectOpproof

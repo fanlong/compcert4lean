@@ -3348,3 +3348,41 @@ theorem cmplu_bool_lessdef : cmplu_bool_lessdefStatement := by
 
 end Val
 end CompCert4Lean.Common.Values
+
+namespace CompCert4Lean.Common.Values
+namespace Val
+
+theorem of_optbool_lessdef : of_optbool_lessdefStatement := by
+  intro ob ob' h
+  cases ob with
+  | none => exact lessdef_undef _
+  | some b =>
+      have hb : ob' = some b := h b rfl
+      cases hb
+      exact lessdef_refl _
+
+theorem longofwords_lessdef : longofwords_lessdefStatement := by
+  intro v1 v2 v1' v2' h1 h2
+  cases h1 with
+  | lessdef_refl =>
+      cases h2 with
+      | lessdef_refl => exact lessdef_refl _
+      | lessdef_undef =>
+          cases v1 <;> simp [longofwords] <;> exact lessdef_undef _
+  | lessdef_undef =>
+      exact lessdef_undef _
+
+theorem loword_lessdef : loword_lessdefStatement := by
+  intro v v' h
+  cases h with
+  | lessdef_refl => exact lessdef_refl _
+  | lessdef_undef => exact lessdef_undef _
+
+theorem hiword_lessdef : hiword_lessdefStatement := by
+  intro v v' h
+  cases h with
+  | lessdef_refl => exact lessdef_refl _
+  | lessdef_undef => exact lessdef_undef _
+
+end Val
+end CompCert4Lean.Common.Values

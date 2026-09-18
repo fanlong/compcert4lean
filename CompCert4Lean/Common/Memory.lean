@@ -4426,3 +4426,116 @@ theorem valid_access_alloc_inv : valid_access_alloc_invStatement := by
 end Mem
 
 end CompCert4Lean.Common.Memory
+
+namespace CompCert4Lean.Common.Memory
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.Lib.Coqlib
+
+namespace Mem
+
+theorem load_alloc_unchanged : load_alloc_unchangedStatement := by
+  intro m1 lo hi m2 b halloc chunk b' ofs hbvalid
+  have hneq : b' ≠ b := by
+    intro heq
+    subst b'
+    have hb : b = m1.nextblock := alloc_result m1 lo hi m2 b halloc
+    subst b
+    exact Plt_strict _ hbvalid
+  cases h1 : valid_access_dec m1 chunk b' ofs Readable with
+  | left hv1 =>
+      have hv2 : valid_access m2 chunk b' ofs Readable := by
+        refine ⟨?_, hv1.2⟩
+        intro ofs' hofs'
+        exact perm_alloc_1 m1 lo hi m2 b halloc b' ofs' Cur Readable
+          (hv1.1 ofs' hofs')
+      cases h2 : valid_access_dec m2 chunk b' ofs Readable with
+      | left _ =>
+          unfold load
+          simp [boolOfSumbool, h1, h2]
+          have halloc' := halloc
+          simp [alloc] at halloc'
+          rcases halloc' with ⟨rfl, rfl⟩
+          simp [alloc, pmapGetSetOther _ _ _ _ hneq]
+      | right hn2 => exact False.elim (hn2 hv2)
+  | right hn1 =>
+      cases h2 : valid_access_dec m2 chunk b' ofs Readable with
+      | left hv2 =>
+          have hinv := valid_access_alloc_inv m1 lo hi m2 b halloc
+            chunk b' ofs Readable hv2
+          cases heq : eq_block b' b with
+          | left hbeq => exact False.elim (hneq hbeq)
+          | right _ => exact False.elim (hn1 (by simpa [heq] using hinv))
+      | right _ =>
+          unfold load
+          simp [boolOfSumbool, h1, h2]
+
+theorem load_alloc_other : load_alloc_otherStatement := by
+  intro m1 lo hi m2 b halloc chunk b' ofs v hload
+  have hvalid : valid_access m1 chunk b' ofs Readable :=
+    load_valid_access m1 chunk b' ofs v hload
+  have hsize := CompCert4Lean.Common.Memdata.size_chunk_pos chunk
+  have hofs : zLt ofs (zAdd ofs (size_chunk chunk)) := by
+    change intOfZ ofs < intOfZ (zAdd ofs (size_chunk chunk))
+    unfold zAdd ZArith.BinInt.Z.add
+    rw [intOfZ_zOfInt]
+    change 0 < intOfZ (size_chunk chunk) at hsize
+    omega
+  have hbvalid : valid_block m1 b' :=
+    perm_valid_block m1 b' ofs Cur Readable
+      (hvalid.1 ofs ⟨by change intOfZ ofs ≤ intOfZ ofs; omega, hofs⟩)
+  rw [load_alloc_unchanged m1 lo hi m2 b halloc chunk b' ofs hbvalid]
+  exact hload
+
+theorem load_alloc_same : load_alloc_sameStatement := by
+  intro m1 lo hi m2 b halloc chunk ofs v hload
+  have hres := load_result chunk m2 b ofs v hload
+  have halloc' := halloc
+  simp [alloc] at halloc'
+  rcases halloc' with ⟨rfl, rfl⟩
+  rw [hres]
+  obtain ⟨n, hn⟩ := CompCert4Lean.Common.Memdata.size_chunk_nat_pos chunk
+  simp only [alloc, pmapGetSetSame]
+  rw [hn]
+  simp only [getN]
+  rw [show ZMap.get ofs (ZMap.init Undef) = Undef by rfl]
+  exact CompCert4Lean.Common.Memdata.decode_val_undef _ _
+
+theorem load_alloc_same' : load_alloc_same'Statement := by
+  intro m1 lo hi m2 b halloc chunk ofs hlo hhi halign
+  have hvalidF : valid_access m2 chunk b ofs Freeable := by
+    refine ⟨?_, halign⟩
+    intro ofs' hofs'
+    have hofslo : zLe lo ofs' := by
+      change intOfZ lo ≤ intOfZ ofs'
+      change intOfZ lo ≤ intOfZ ofs at hlo
+      have hofslo' := hofs'.1
+      change intOfZ ofs ≤ intOfZ ofs' at hofslo'
+      omega
+    have hofshi : zLt ofs' hi := by
+      change intOfZ ofs' < intOfZ hi
+      have hofshi' := hofs'.2
+      change intOfZ ofs' < intOfZ (zAdd ofs (size_chunk chunk)) at hofshi'
+      change intOfZ (zAdd ofs (size_chunk chunk)) ≤ intOfZ hi at hhi
+      unfold zAdd ZArith.BinInt.Z.add at hofshi'
+      rw [intOfZ_zOfInt] at hofshi'
+      unfold zAdd ZArith.BinInt.Z.add at hhi
+      rw [intOfZ_zOfInt] at hhi
+      omega
+    exact perm_alloc_2 m1 lo hi m2 b halloc ofs' Cur ⟨hofslo, hofshi⟩
+  have hvalidR : valid_access m2 chunk b ofs Readable :=
+    valid_access_implies m2 chunk b ofs Freeable Readable hvalidF
+      (perm_F_any Readable)
+  obtain ⟨v, hload⟩ := valid_access_load m2 chunk b ofs hvalidR
+  have hv := load_alloc_same m1 lo hi m2 b halloc chunk ofs v hload
+  subst v
+  exact hload
+
+end Mem
+
+end CompCert4Lean.Common.Memory
