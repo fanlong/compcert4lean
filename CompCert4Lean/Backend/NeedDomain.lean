@@ -6063,3 +6063,95 @@ theorem mul_sound : mul_soundStatement := by
                 exact CompCert4Lean.Common.Values.Val.lessdef_undef _
 
 end CompCert4Lean.Backend.NeedDomain
+
+namespace CompCert4Lean.Backend.NeedDomain
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Lib.Integers
+
+private theorem pg_unsigned_neg_congr (m a c : Int.int)
+    (h : CompCert4Lean.Lib.Zbits.eqmod
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.two_p (Int.size m))
+      (Int.unsigned a) (Int.unsigned c)) :
+    CompCert4Lean.Lib.Zbits.eqmod
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.two_p (Int.size m))
+      (Int.unsigned (CompCert4Lean.Lib.Integers.Int.neg a))
+      (Int.unsigned (CompCert4Lean.Lib.Integers.Int.neg c)) := by
+  let target := CompCert4Lean.Foundation.Numbers.Rocq.Coq.two_p (Int.size m)
+  let ua := Int.unsigned a
+  let uc := Int.unsigned c
+  have hraw := CompCert4Lean.Lib.Zbits.eqmod_neg target ua uc h
+  change CompCert4Lean.Lib.Zbits.eqmod target
+      (ZArith.BinInt.Z.opp ua) (ZArith.BinInt.Z.opp uc) at hraw
+  have hdiv := pg_two_power_divides m
+  have hleft0' := CompCert4Lean.Lib.Integers.Int.eqm_unsigned_repr_l_proof
+    (ZArith.BinInt.Z.opp ua) (ZArith.BinInt.Z.opp ua)
+    (CompCert4Lean.Lib.Integers.Int.eqm_refl_proof
+      (ZArith.BinInt.Z.opp ua))
+  have hright0' := CompCert4Lean.Lib.Integers.Int.eqm_unsigned_repr_l_proof
+    (ZArith.BinInt.Z.opp uc) (ZArith.BinInt.Z.opp uc)
+    (CompCert4Lean.Lib.Integers.Int.eqm_refl_proof
+      (ZArith.BinInt.Z.opp uc))
+  have hleft0 := pg_eqmod_sym hleft0'
+  have hright0 := pg_eqmod_sym hright0'
+  have hleft : CompCert4Lean.Lib.Zbits.eqmod target
+      (ZArith.BinInt.Z.opp ua)
+      (Int.unsigned (CompCert4Lean.Lib.Integers.Int.neg a)) := by
+    apply CompCert4Lean.Lib.Zbits.eqmod_divides
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.two_power_nat 32) target
+      (ZArith.BinInt.Z.opp ua)
+      (Int.unsigned (CompCert4Lean.Lib.Integers.Int.neg a))
+    · exact hleft0
+    · exact hdiv
+  have hright : CompCert4Lean.Lib.Zbits.eqmod target
+      (ZArith.BinInt.Z.opp uc)
+      (Int.unsigned (CompCert4Lean.Lib.Integers.Int.neg c)) := by
+    apply CompCert4Lean.Lib.Zbits.eqmod_divides
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.two_power_nat 32) target
+      (ZArith.BinInt.Z.opp uc)
+      (Int.unsigned (CompCert4Lean.Lib.Integers.Int.neg c))
+    · exact hright0
+    · exact hdiv
+  exact CompCert4Lean.Lib.Zbits.eqmod_trans target
+    (Int.unsigned (CompCert4Lean.Lib.Integers.Int.neg a))
+    (ZArith.BinInt.Z.opp ua)
+    (Int.unsigned (CompCert4Lean.Lib.Integers.Int.neg c))
+    (pg_eqmod_sym hleft)
+    (CompCert4Lean.Lib.Zbits.eqmod_trans target
+      (ZArith.BinInt.Z.opp ua)
+      (ZArith.BinInt.Z.opp uc)
+      (Int.unsigned (CompCert4Lean.Lib.Integers.Int.neg c))
+      hraw hright)
+
+theorem neg_sound : neg_soundStatement := by
+  intro v w x h
+  cases x with
+  | Nothing => trivial
+  | I m =>
+      cases v <;> cases w <;>
+        simp [modarith, vagree, iVagree, lVagree,
+          CompCert4Lean.Common.Values.Val.neg,
+          CompCert4Lean.X86_64.Archi.ptr64] at h ⊢
+      apply pg_iagree_of_eqmod_unsigned m
+      apply pg_unsigned_neg_congr m
+      exact iagree_eqmod _ _ _ h
+  | L m =>
+      cases v <;> cases w <;>
+        simp [modarith, vagree, iVagree, lVagree,
+          CompCert4Lean.Common.Values.Val.neg,
+          CompCert4Lean.X86_64.Archi.ptr64] at h ⊢
+  | All =>
+      cases h with
+      | lessdef_refl v =>
+          cases v <;>
+            simp [vagree, CompCert4Lean.Common.Values.Val.neg,
+              CompCert4Lean.X86_64.Archi.ptr64] <;>
+            first | exact CompCert4Lean.Common.Values.Val.lessdef_refl _
+                  | exact CompCert4Lean.Common.Values.Val.lessdef_undef _
+      | lessdef_undef w =>
+          cases w <;>
+            simp [vagree, CompCert4Lean.Common.Values.Val.neg,
+              CompCert4Lean.X86_64.Archi.ptr64] <;>
+            exact CompCert4Lean.Common.Values.Val.lessdef_undef _
+
+end CompCert4Lean.Backend.NeedDomain

@@ -4212,3 +4212,70 @@ theorem storev_int64_split : storev_int64_splitStatement := by
 end Mem
 
 end CompCert4Lean.Common.Memory
+
+namespace CompCert4Lean.Common.Memory
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.Lib.Coqlib
+
+namespace Mem
+
+theorem fresh_block_alloc : fresh_block_allocStatement := by
+  intro m1 lo hi m2 b halloc
+  simp [alloc] at halloc
+  rcases halloc with ⟨rfl, rfl⟩
+  unfold valid_block
+  intro hvalid
+  exact (Plt_strict _ hvalid)
+
+theorem valid_new_block : valid_new_blockStatement := by
+  intro m1 lo hi m2 b halloc
+  simp [alloc] at halloc
+  rcases halloc with ⟨rfl, rfl⟩
+  unfold valid_block
+  exact pltSucc m1.nextblock
+
+theorem perm_alloc_1 : perm_alloc_1Statement := by
+  intro m1 lo hi m2 b halloc b' ofs k p hperm
+  simp [alloc] at halloc
+  rcases halloc with ⟨rfl, rfl⟩
+  unfold perm at hperm ⊢
+  by_cases hblock : b' = m1.nextblock
+  · subst b'
+    rw [pmapGetSetSame]
+    by_cases hrange : inRange lo hi ofs
+    · simpa [hrange, perm_order'] using (perm_F_any p)
+    · simp [hrange]
+      have hnone := m1.nextblock_noaccess m1.nextblock ofs k (Plt_strict _)
+      rw [hnone] at hperm
+      simp [perm_order'] at hperm
+  · rw [pmapGetSetOther _ _ _ _ hblock]
+    exact hperm
+
+theorem perm_alloc_2 : perm_alloc_2Statement := by
+  intro m1 lo hi m2 b halloc ofs k hbounds
+  simp [alloc] at halloc
+  rcases halloc with ⟨rfl, rfl⟩
+  unfold perm
+  rw [pmapGetSetSame]
+  have hlo : zLeb lo ofs = true := by
+    change (if CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ lo ≤
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ ofs then true else false) = true
+    have hle := hbounds.1
+    change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ lo ≤
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ ofs at hle
+    simp [hle]
+  have hhi : zLtb ofs hi = true := by
+    change (if CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ ofs <
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ hi then true else false) = true
+    have hlt := hbounds.2
+    change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ ofs <
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ hi at hlt
+    simp [hlt]
+  simpa [inRange, hlo, hhi, perm_order'] using (perm_refl Freeable)
+
+end Mem
+
+end CompCert4Lean.Common.Memory
