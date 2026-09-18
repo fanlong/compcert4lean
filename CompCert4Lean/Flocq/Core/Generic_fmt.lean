@@ -4388,3 +4388,52 @@ theorem round_N_opp :
   exact hf2r
 
 end CompCert4Lean.Flocq.Core.Generic_fmt
+
+namespace CompCert4Lean.Flocq.Core.Generic_fmt
+
+private theorem pg_suffix_generic_format_F2R (ctx : ExactRealContext)
+    (magnitude : Exact.Magnitude ctx) (beta : radix) (fexp : Z → Z)
+    (x : Exact.R ctx) (f : float beta) (hfx : Exact.F2R ctx f = x)
+    (hx : x = Exact.R0 ctx ∨
+      Zle (Exact.cexp ctx magnitude beta fexp x) (Fexp f)) :
+    Exact.generic_format ctx magnitude beta fexp x := by
+  rcases hx with hx0 | hle
+  · rw [hx0]
+    exact pg_worker_generic_format_zero ctx magnitude beta fexp
+  · cases f with
+    | Float m e =>
+        let e' := Exact.cexp ctx magnitude beta fexp x
+        let m' := Zmul m
+          (CompCert4Lean.Flocq.Core.Raux.Zpower (beta : Z) (Zsub e e'))
+        have hchange :
+            Exact.F2R ctx (Float beta m e) =
+              Exact.F2R ctx (Float beta m' e') := by
+          dsimp [m', e']
+          exact CompCert4Lean.Flocq.Core.Float_prop.F2R_change_exp ctx
+            beta e' m e hle
+        have hxe : Exact.F2R ctx (Float beta m' e') = x := by
+          exact hchange.symm.trans hfx
+        have hcanon : Exact.canonical ctx magnitude beta fexp
+            (Float beta m' e') := by
+          unfold Exact.canonical
+          change e' = Exact.cexp ctx magnitude beta fexp
+            (Exact.F2R ctx (Float beta m' e'))
+          rw [hxe]
+        rw [← hxe]
+        exact generic_format_canonical ctx magnitude beta fexp
+          (Float beta m' e') hcanon
+
+theorem generic_inclusion_mag :
+    ∀ ctx magnitude, generic_inclusion_magStatement ctx magnitude := by
+  intro ctx magnitude beta fexp1 fexp2 x hle hformat
+  unfold Exact.generic_format at hformat
+  apply pg_suffix_generic_format_F2R ctx magnitude beta fexp2 x
+    (Float beta (Exact.Ztrunc ctx
+      (Exact.scaled_mantissa ctx magnitude beta fexp1 x))
+      (Exact.cexp ctx magnitude beta fexp1 x))
+  · exact hformat.symm
+  · by_cases hx0 : x = Exact.R0 ctx
+    · exact Or.inl hx0
+    · exact Or.inr (hle hx0)
+
+end CompCert4Lean.Flocq.Core.Generic_fmt

@@ -3678,3 +3678,130 @@ theorem has_argtype_list_inject : has_argtype_list_injectStatement := by
 
 end Val
 end CompCert4Lean.Common.Values
+
+namespace CompCert4Lean.Common.Values
+
+open Lean Elab Tactic Meta
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+private theorem values_ptrofs_add_zero
+    (ofs : CompCert4Lean.Lib.Integers.Ptrofs.int) :
+    CompCert4Lean.Lib.Integers.Ptrofs.add ofs
+        (CompCert4Lean.Lib.Integers.Ptrofs.repr
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.Z0 : Z)) = ofs := by
+  apply CompCert4Lean.Lib.Integers.WordCore.ext_of_val_eq
+  apply _root_.Int.ofNat.inj
+  change _root_.Int.ofNat
+      (CompCert4Lean.Lib.Integers.WordCore.add ofs
+        (CompCert4Lean.Lib.Integers.Ptrofs.repr
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.Z0 : Z))).val =
+    _root_.Int.ofNat ofs.val
+  have hadd :
+      _root_.Int.ofNat
+          (CompCert4Lean.Lib.Integers.WordCore.add ofs
+            (CompCert4Lean.Lib.Integers.Ptrofs.repr
+              (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.Z0 : Z))).val =
+        (_root_.Int.ofNat ofs.val +
+            _root_.Int.ofNat
+              (CompCert4Lean.Lib.Integers.Ptrofs.repr
+                (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.Z0 : Z)).val) %
+          _root_.Int.ofNat (2 ^ CompCert4Lean.Lib.Integers.Ptrofs.wordsize) := by
+    run_tac
+      let env ← getEnv
+      let some (n, _) := env.constants.toList.find?
+          (fun (n, _) => (toString n).endsWith "pg_wordcore_add_val_int_local")
+        | throwError "frozen WordCore add-value helper not found"
+      let stx := Lean.mkIdent n
+      let xArg := Lean.mkIdent `ofs
+      evalTactic (← `(tactic| exact $stx $xArg
+        (CompCert4Lean.Lib.Integers.Ptrofs.repr
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.Z0 : Z))))
+  rw [hadd]
+  have hz :
+      (CompCert4Lean.Lib.Integers.Ptrofs.repr
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.Z0 : Z)).val = 0 := by
+    rfl
+  rw [hz]
+  simp only [_root_.Int.ofNat_eq_natCast, _root_.Int.natCast_zero,
+    _root_.Int.add_zero]
+  have hlt : ofs.val < 2 ^ CompCert4Lean.Lib.Integers.Ptrofs.wordsize := by
+    run_tac
+      let env ← getEnv
+      let some (n, _) := env.constants.toList.find?
+          (fun (n, _) => (toString n).endsWith "WordCore.val_lt")
+        | throwError "frozen WordCore value-range helper not found"
+      let stx := Lean.mkIdent n
+      let xArg := Lean.mkIdent `ofs
+      evalTactic (← `(tactic| exact $stx $xArg))
+  have hlt' : (ofs.val : Int) <
+      (2 ^ CompCert4Lean.Lib.Integers.Ptrofs.wordsize : Int) :=
+    Int.ofNat_lt.mpr hlt
+  exact Int.emod_eq_of_lt (Int.natCast_nonneg ofs.val) hlt'
+
+end CompCert4Lean.Common.Values
+
+namespace CompCert4Lean.Common.Values
+
+theorem val_inject_lessdef : val_inject_lessdefStatement := by
+  intro v1 v2
+  constructor
+  · intro h
+    cases h with
+    | lessdef_refl =>
+        cases v1 with
+        | Vundef => exact Val.val_inject_undef _ _
+        | Vint i => exact Val.inject_int _ _
+        | Vlong i => exact Val.inject_long _ _
+        | Vfloat f => exact Val.inject_float _ _
+        | Vsingle f => exact Val.inject_single _ _
+        | Vptr b ofs =>
+            exact Val.inject_ptr _ _ _ _ _ _ rfl
+              (values_ptrofs_add_zero ofs).symm
+    | lessdef_undef => exact Val.val_inject_undef _ _
+  · intro h
+    cases h with
+    | inject_int i => exact Val.lessdef_refl _
+    | inject_long i => exact Val.lessdef_refl _
+    | inject_float f => exact Val.lessdef_refl _
+    | inject_single f => exact Val.lessdef_refl _
+    | inject_ptr b1 ofs1 b2 ofs2 delta hmap hofs =>
+        have hp : (b1, z0) = (b2, delta) := Option.some.inj hmap
+        have hb : b1 = b2 := congrArg Prod.fst hp
+        have hd : z0 = delta := congrArg Prod.snd hp
+        subst b2
+        subst delta
+        rw [values_ptrofs_add_zero] at hofs
+        subst ofs2
+        exact Val.lessdef_refl _
+    | val_inject_undef v => exact Val.lessdef_undef _
+
+end CompCert4Lean.Common.Values
+
+namespace CompCert4Lean.Common.Values
+
+theorem val_inject_list_lessdef : val_inject_list_lessdefStatement := by
+  intro vl1 vl2
+  constructor
+  · intro h
+    induction h with
+    | lessdef_list_nil => exact Val.inject_list_nil _
+    | lessdef_list_cons v1 v2 vl1 vl2 hhead htail ih =>
+        exact Val.inject_list_cons (fun b => some (b, z0)) v1 v2 vl1 vl2
+          (val_inject_lessdef v1 v2 |>.mp hhead) ih
+  · intro h
+    induction h with
+    | inject_list_nil => exact Val.lessdef_list_nil
+    | inject_list_cons v1 v2 vl1 vl2 hhead htail ih =>
+        exact Val.lessdef_list_cons v1 v2 vl1 vl2
+          (val_inject_lessdef v1 v2 |>.mpr hhead) ih
+
+end CompCert4Lean.Common.Values
+
+namespace CompCert4Lean.Common.Values
+
+theorem val_inject_id : val_inject_idStatement := by
+  intro v1 v2
+  change Val.inject (fun b => some (b, z0)) v1 v2 ↔ Val.lessdef v1 v2
+  exact (val_inject_lessdef v1 v2).symm
+
+end CompCert4Lean.Common.Values

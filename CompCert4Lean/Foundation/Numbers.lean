@@ -4777,3 +4777,65 @@ theorem ZArith.Zdiv.Zdiv2_div :
 
 end Rocq.Coq
 end CompCert4Lean.Foundation.Numbers
+
+namespace CompCert4Lean.Foundation.Numbers
+namespace Rocq.Coq
+
+private theorem pg_zDivEucl_eq_fdiv (a b : Int) :
+    ZArith.BinInt.Z.zDivEucl a b = Int.fdiv a b := by
+  by_cases hb0 : b = 0
+  · simp [ZArith.BinInt.Z.zDivEucl, hb0]
+  by_cases hbpos : 0 < b
+  · simp [ZArith.BinInt.Z.zDivEucl, hb0, hbpos]
+    exact (Int.fdiv_eq_ediv_of_nonneg a (Int.le_of_lt hbpos)).symm
+  · have hbneg : b < 0 := by omega
+    rw [Int.fdiv_eq_ediv]
+    simp only [hbneg, Int.not_le_of_gt hbneg, false_or]
+    unfold ZArith.BinInt.Z.zDivEucl
+    simp only [hb0, hbpos, if_false]
+    by_cases hdvd : b ∣ a
+    · have hrem : a % (-b) = 0 := by
+        have hdvd' : -b ∣ a := by simpa using hdvd
+        exact Int.emod_eq_zero_of_dvd hdvd'
+      have hb_repr : b = -(-b) := by omega
+      have hr : a.emod (-b) = 0 := hrem
+      have hdiv : a / b = -(a / (-b)) := by
+        calc
+          a / b = a / (-(-b)) := congrArg (fun x => a / x) hb_repr
+          _ = -(a / (-b)) := Int.ediv_neg _ _
+      rw [if_pos hr, if_pos hdvd, hdiv]
+      simp only [Int.sub_zero]
+      change -(a / (-b)) = -(a / (-b))
+      rfl
+    · have hrem : a % (-b) ≠ 0 := by
+        intro h
+        apply hdvd
+        have hdvd' : -b ∣ a := Int.dvd_of_emod_eq_zero h
+        simpa using hdvd'
+      have hb_repr : b = -(-b) := by omega
+      have hr : a.emod (-b) ≠ 0 := hrem
+      have hdiv : a / b = -(a / (-b)) := by
+        calc
+          a / b = a / (-(-b)) := congrArg (fun x => a / x) hb_repr
+          _ = -(a / (-b)) := Int.ediv_neg _ _
+      rw [if_neg hr, if_neg hdvd, hdiv]
+      change -((a / (-b)) + 1) = -(a / (-b)) - 1
+      omega
+
+theorem ZArith.Zdiv.Z_div_plus_full_l :
+    ZArith.Zdiv.Z_div_plus_full_lStatement := by
+  intro a b c hb
+  apply intOfZ_injective
+  simp only [ZArith.BinInt.Z.add, ZArith.BinInt.Z.mul,
+    ZArith.BinInt.Z.div, intOfZ_zOfInt]
+  rw [pg_zDivEucl_eq_fdiv, pg_zDivEucl_eq_fdiv]
+  have hb' : intOfZ b ≠ 0 := by
+    intro h
+    apply hb
+    apply intOfZ_injective
+    simpa [intOfZ] using h
+  rw [Int.mul_add_fdiv_right _ _ hb']
+  exact Int.add_comm _ _
+
+end Rocq.Coq
+end CompCert4Lean.Foundation.Numbers

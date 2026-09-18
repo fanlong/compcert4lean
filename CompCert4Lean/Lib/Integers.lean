@@ -7533,3 +7533,58 @@ theorem or_ror_proof : or_ror := by
         exact ZArith.Znat.positive_nat_Z p
       rw [← hzpos] at hi ⊢
       exact hbits _ hn
+
+theorem unsigned_range_proof : unsigned_range := by
+  intro i
+  constructor
+  · have h := i.intrange.1
+    change (-1 : Int) < intOfZ (unsigned i) at h
+    change 0 ≤ intOfZ (unsigned i)
+    omega
+  · exact i.intrange.2
+
+theorem eqm_unsigned_repr_r_proof : eqm_unsigned_repr_r := by
+  intro a b hab
+  exact eqm_trans_proof a b (unsigned (repr b)) hab
+    (suffix_eqm_unsigned_repr b)
+
+private theorem suffix_ltu_repr_of_lt_wordsize (j : Z)
+    (hj : zLe zZero j ∧ zLt j (zOfNat wordsize)) :
+    ltu (repr j) iwordsize = true := by
+  unfold ltu WordCore.ltu
+  have hjmod : zMod j modulus = j := by
+    apply ZArith.BinInt.Z.mod_small
+    constructor
+    · exact hj.1
+    · change intOfZ j < intOfZ modulus
+      change intOfZ j < (2 ^ wordsize : Int)
+      have hjs : intOfZ j < Int.ofNat wordsize := by
+        exact hj.2
+      change intOfZ j < Int.ofNat wordsize at hjs
+      have hpow : (Int.ofNat wordsize : Int) < (2 ^ wordsize : Int) := by
+        decide
+      change intOfZ j < (2 ^ wordsize : Int)
+      omega
+  have hu : unsigned (repr j) = j := by
+    rw [suffix_unsigned_repr_eq_exact, hjmod]
+  have hi : unsigned iwordsize = zOfNat wordsize := by
+    change unsigned (repr (zOfNat wordsize)) = zOfNat wordsize
+    rw [suffix_unsigned_repr_eq_exact]
+    apply ZArith.BinInt.Z.mod_small
+    constructor
+    · change 0 ≤ Int.ofNat wordsize
+      exact Int.natCast_nonneg _
+    · change (Int.ofNat wordsize : Int) < Int.ofNat (2 ^ wordsize)
+      exact Int.ofNat_lt.mpr (by decide)
+  change zltSelect (unsigned (repr j)) (unsigned iwordsize) true false = true
+  rw [hu, hi]
+  cases h : CompCert4Lean.Lib.Coqlib.zlt j (zOfNat wordsize) with
+  | left hlt => simp [zltSelect, sumboolSelect, h]
+  | right hge => exfalso; exact (Int.not_lt_of_ge hge) hj.2
+
+theorem one_bits_range_proof : one_bits_range := by
+  intro x i hi
+  unfold one_bits at hi
+  rcases List.mem_map.1 hi with ⟨j, hj, rfl⟩
+  exact suffix_ltu_repr_of_lt_wordsize j
+    (CompCert4Lean.Lib.Zbits.Z_one_bits_range wordsize (unsigned x) j hj)
