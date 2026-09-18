@@ -3260,3 +3260,91 @@ theorem norm_bool_lessdef : norm_bool_lessdefStatement := by
 
 end Val
 end CompCert4Lean.Common.Values
+
+namespace CompCert4Lean.Common.Values
+namespace Val
+
+theorem add_lessdef : add_lessdefStatement := by
+  intro v1 v1' v2 v2' h1 h2
+  cases h1 with
+  | lessdef_refl v1 =>
+      cases h2 with
+      | lessdef_refl v2 => exact lessdef_refl _
+      | lessdef_undef =>
+          cases v1 <;> simp [add] <;> exact lessdef_undef _
+  | lessdef_undef =>
+      exact lessdef_undef _
+
+theorem addl_lessdef : addl_lessdefStatement := by
+  intro v1 v1' v2 v2' h1 h2
+  cases h1 with
+  | lessdef_refl v1 =>
+      cases h2 with
+      | lessdef_refl v2 => exact lessdef_refl _
+      | lessdef_undef =>
+          cases v1 <;> simp [addl] <;> exact lessdef_undef _
+  | lessdef_undef =>
+      exact lessdef_undef _
+
+end Val
+end CompCert4Lean.Common.Values
+
+namespace CompCert4Lean.Common.Values
+namespace Val
+
+theorem cmpu_bool_lessdef : cmpu_bool_lessdefStatement := by
+  intro valid_ptr valid_ptr' c v1 v1' v2 v2' b hvalid h1 h2 hcmp
+  have hvalid_or : ∀ b ofs,
+      (valid_ptr b ofs = true ∨ valid_ptr b (zSub ofs z1) = true) →
+      (valid_ptr' b ofs = true ∨ valid_ptr' b (zSub ofs z1) = true) := by
+    intro b ofs h
+    rcases h with h | h
+    · exact Or.inl (hvalid b ofs h)
+    · exact Or.inr (hvalid b (zSub ofs z1) h)
+  cases h1 with
+  | lessdef_undef =>
+      cases v1' <;> simp [cmpu_bool] at hcmp
+  | lessdef_refl =>
+      cases h2 with
+      | lessdef_undef =>
+          cases v1 <;> simp [cmpu_bool] at hcmp
+      | lessdef_refl =>
+          cases harch : CompCert4Lean.X86_64.Archi.ptr64 <;>
+            cases c <;> cases v1 <;> cases v2 <;>
+              simp [cmpu_bool, harch, cmp_different_blocks, hvalid_or, hvalid] at hcmp ⊢ <;>
+              try assumption
+          all_goals
+            repeat first | split at hcmp | simp_all [hvalid_or, hvalid]
+
+end Val
+end CompCert4Lean.Common.Values
+
+namespace CompCert4Lean.Common.Values
+namespace Val
+
+theorem cmplu_bool_lessdef : cmplu_bool_lessdefStatement := by
+  intro valid_ptr valid_ptr' c v1 v1' v2 v2' b hvalid h1 h2 hcmp
+  have hvalid_or : ∀ b ofs,
+      (valid_ptr b ofs = true ∨ valid_ptr b (zSub ofs z1) = true) →
+      (valid_ptr' b ofs = true ∨ valid_ptr' b (zSub ofs z1) = true) := by
+    intro b ofs h
+    rcases h with h | h
+    · exact Or.inl (hvalid b ofs h)
+    · exact Or.inr (hvalid b (zSub ofs z1) h)
+  cases h1 with
+  | lessdef_undef =>
+      cases v1' <;> simp [cmplu_bool] at hcmp
+  | lessdef_refl =>
+      cases h2 with
+      | lessdef_undef =>
+          cases v1 <;> simp [cmplu_bool] at hcmp
+      | lessdef_refl =>
+          cases harch : CompCert4Lean.X86_64.Archi.ptr64 <;>
+            cases c <;> cases v1 <;> cases v2 <;>
+              simp [cmplu_bool, harch, cmp_different_blocks, hvalid_or, hvalid] at hcmp ⊢ <;>
+              try assumption
+          all_goals
+            repeat first | split at hcmp | simp_all [hvalid_or, hvalid]
+
+end Val
+end CompCert4Lean.Common.Values

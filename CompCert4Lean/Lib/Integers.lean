@@ -6788,3 +6788,124 @@ theorem modu_divu_proof : modu_divu := by
     ((intOfZ (zDiv (unsigned x) (unsigned y)) * intOfZ (unsigned y)) %
       (2 ^ wordsize : Int)) (2 ^ wordsize : Int)]
   simp only [Int.emod_emod]
+
+private theorem test_zero_ext_nonpos (n : Z) (x : int)
+    (hn : intOfZ n ≤ 0) : (zero_ext n x).val = 0 := by
+  unfold zero_ext WordCore.zero_ext CompCert4Lean.Lib.Zbits.Zzero_ext
+  cases n with
+  | Z0 => rfl
+  | Zneg p =>
+      rw [WordCore.val_repr_residue]
+      change WordCore.residue wordsize
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.iter
+          (.Zneg p)
+          (fun rec y =>
+            CompCert4Lean.Lib.Zbits.Zshiftin
+              (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.odd y)
+              (rec (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.div2 y)))
+          (fun _ => CompCert4Lean.Foundation.Numbers.Rocq.Coq.Numbers.BinNums.Z.Z0)
+          (WordCore.unsigned x)) = 0
+      simp only [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.iter]
+      have hz : (intOfZ (.Zneg p)).toNat = 0 := by
+        simp [intOfZ]
+      rw [hz]
+      rfl
+  | Zpos p =>
+      have hp : 0 < CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p :=
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat_positive p
+      have hp' : (0 : Int) < intOfZ (.Zpos p) := by
+        change (0 : Int) < Int.ofNat
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p)
+        exact Int.natCast_pos.mpr hp
+      exact (Int.not_le_of_gt hp' hn).elim
+
+private theorem suffix_bits_zero_ext_nat (n : Z) (x : int) (k : Nat)
+    (hk : k < wordsize) (hn : zLe zZero n) :
+    testbit (zero_ext n x) (zOfNat k) =
+      zltSelect (zOfNat k) n (testbit x (zOfNat k)) false := by
+  rw [suffix_testbit_nat, zero_ext_val n x hn]
+  rw [Nat.testBit_mod_two_pow]
+  simp only [hk, decide_true]
+  rw [suffix_testbit_nat]
+  have hnrepr : zOfNat (zToNat n) = n :=
+    ZArith.Znat.Z2Nat.id n hn
+  cases hs : CompCert4Lean.Lib.Coqlib.zlt (zOfNat k) n with
+  | left hlt =>
+      have hlt' : k < zToNat n := by
+        rw [← hnrepr] at hlt
+        change intOfZ (zOfNat k) < intOfZ (zOfNat (zToNat n)) at hlt
+        simp only [zOfNat, ZArith.BinInt.Z.of_nat, intOfZ_zOfInt] at hlt
+        exact Int.ofNat_lt.mp hlt
+      simp [zltSelect, sumboolSelect, hs]
+      simp [hlt']
+  | right hge =>
+      have hge' : zToNat n ≤ k := by
+        rw [← hnrepr] at hge
+        change intOfZ (zOfNat (zToNat n)) ≤ intOfZ (zOfNat k) at hge
+        simp only [zOfNat, ZArith.BinInt.Z.of_nat, intOfZ_zOfInt] at hge
+        exact Int.ofNat_le.mp hge
+      simp [zltSelect, sumboolSelect, hs]
+      intro hbad
+      exact (Nat.not_lt_of_ge hge' hbad).elim
+
+theorem bits_zero_ext_proof : bits_zero_ext := by
+  intro n x i hi
+  cases i with
+  | Zneg p =>
+      have h := hi
+      change (0 : Int) ≤ -Int.ofNat
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p) at h
+      have hp : 0 < CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p :=
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat_positive p
+      have hpI : (0 : Int) < Int.ofNat
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p) :=
+        Int.natCast_pos.mpr hp
+      omega
+  | Z0 =>
+      have hk : 0 < wordsize := by decide
+      by_cases hn : 0 ≤ intOfZ n
+      · exact suffix_bits_zero_ext_nat n x 0 hk hn
+      · have hn' : intOfZ n ≤ 0 := by omega
+        change testbit (zero_ext n x) (zOfNat 0) =
+          zltSelect (zOfNat 0) n (testbit x (zOfNat 0)) false
+        rw [suffix_testbit_nat, test_zero_ext_nonpos n x hn']
+        cases hs : CompCert4Lean.Lib.Coqlib.zlt (zOfNat 0) n with
+        | left hlt =>
+            exfalso
+            change intOfZ (zOfNat 0) < intOfZ n at hlt
+            have hzero : intOfZ (zOfNat 0) = (0 : Int) := by rfl
+            rw [hzero] at hlt
+            omega
+        | right hge =>
+            simp [zltSelect, sumboolSelect, hs]
+  | Zpos p =>
+      have hz : zOfNat
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p) = .Zpos p :=
+        ZArith.Znat.positive_nat_Z p
+      rw [← hz] at hi ⊢
+      let k := CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p
+      by_cases hk : k < wordsize
+      · by_cases hn : 0 ≤ intOfZ n
+        · exact suffix_bits_zero_ext_nat n x k hk hn
+        · have hn' : intOfZ n ≤ 0 := by omega
+          rw [suffix_testbit_nat, test_zero_ext_nonpos n x hn']
+          cases hs : CompCert4Lean.Lib.Coqlib.zlt (zOfNat k) n with
+          | left hlt =>
+              exfalso
+              change intOfZ (zOfNat k) < intOfZ n at hlt
+              simp only [zOfNat, ZArith.BinInt.Z.of_nat, intOfZ_zOfInt] at hlt
+              have hk0 : (0 : Int) ≤ Int.ofNat k := Int.natCast_nonneg _
+              omega
+          | right hge =>
+              simp [k, zltSelect, sumboolSelect, hs]
+      · have hk' : wordsize ≤ k := Nat.le_of_not_gt hk
+        have hiword : zLe zwordsize (zOfNat k) := by
+          change intOfZ (zOfNat wordsize) ≤ intOfZ (zOfNat k)
+          simp only [zOfNat, ZArith.BinInt.Z.of_nat, intOfZ_zOfInt]
+          exact Int.ofNat_le.mpr hk'
+        have hleft := bits_above_proof (zero_ext n x) (zOfNat k) hiword
+        have hright := bits_above_proof x (zOfNat k) hiword
+        rw [hleft, hright]
+        cases hs : CompCert4Lean.Lib.Coqlib.zlt (zOfNat k) n with
+        | left _ => simp [k, zltSelect, sumboolSelect, hs]
+        | right _ => simp [k, zltSelect, sumboolSelect, hs]

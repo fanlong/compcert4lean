@@ -6819,3 +6819,176 @@ theorem find_function_translated : find_function_translatedStatement := by
               cases hb
 
 end CompCert4Lean.Backend.Allocproof
+
+namespace CompCert4Lean.Backend.Allocproof
+
+open CompCert4Lean.Backend.Allocation
+open CompCert4Lean.Backend.Locations
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Backend.LTL
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Smallstep
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.Events
+open CompCert4Lean.X86.Op
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+set_option maxHeartbeats 0 in
+theorem exec_moves
+    [binary64_certificate : BinaryNormalizeCertificate
+      (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate
+      (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)] :
+    exec_movesStatement := by
+  intro cfg xi tprog mv env rs s f sp bb m e e' ls htrack hwf hsat hwt
+  induction mv generalizing e e' ls with
+  | nil =>
+      simp [track_moves, expand_moves] at htrack
+      cases htrack
+      exact ⟨ls, star_refl _ _ _, hsat⟩
+  | cons a mv ih =>
+      cases hwf with
+      | cons hhead htail =>
+          cases a with
+          | MV src dst =>
+              change (match track_moves env mv e with
+                | none => none
+                | some e1 =>
+                    if can_undef_except dst (destroyed_by_move src dst) e1 &&
+                        well_typed_move env dst e1 then
+                      subst_loc dst src e1
+                    else none) = some e' at htrack
+              cases hrec : track_moves env mv e with
+              | none => simp [hrec] at htrack
+              | some e1 =>
+                  rw [hrec] at htrack
+                  cases hc : (can_undef_except dst (destroyed_by_move src dst) e1 &&
+                    well_typed_move env dst e1) with
+                  | false => simp [hc] at htrack
+                  | true =>
+                      simp [hc] at htrack
+                      have hct : can_undef_except dst (destroyed_by_move src dst) e1 = true ∧
+                          well_typed_move env dst e1 = true := by
+                        simpa [Bool.and_eq_true] using hc
+                      have hsat1 := subst_loc_undef_satisf env src dst rs ls
+                        (destroyed_by_move src dst) e1 e' htrack hct.2 hct.1 hwt hsat
+                      rcases ih (e := e) (e' := e1)
+                        (ls := Locmap.set dst (ls src)
+                          (undef_regs (destroyed_by_move src dst) ls))
+                        hrec htail hsat1 with ⟨ls', hstar, hsat'⟩
+                      refine ⟨ls', ?_, hsat'⟩
+                      cases src with
+                      | R rsrc =>
+                          cases dst with
+                          | R rdst =>
+                              apply star_left
+                              · apply CompCert4Lean.Backend.LTL.step.exec_Lop (v := ls (R rsrc))
+                                · rfl
+                                · rfl
+                              · exact hstar
+                              · rfl
+                          | S sl ofs ty =>
+                              apply star_left
+                              · apply CompCert4Lean.Backend.LTL.step.exec_Lsetstack
+                                rfl
+                              · exact hstar
+                              · rfl
+                      | S sl ofs ty =>
+                          cases dst with
+                          | R rdst =>
+                              apply star_left
+                              · apply CompCert4Lean.Backend.LTL.step.exec_Lgetstack
+                                rfl
+                              · exact hstar
+                              · rfl
+                          | S sl' ofs' ty' =>
+                              exact False.elim hhead
+          | MVmakelong src1 src2 dst =>
+              change (if CompCert4Lean.X86_64.Archi.ptr64 then none else
+                match track_moves env mv e with
+                | none => none
+                | some e1 =>
+                    if long_type_compat env (R dst) e1 then
+                      subst_loc_pair (R dst) (R src1) (R src2) e1
+                    else none) = some e' at htrack
+              have hptr : CompCert4Lean.X86_64.Archi.ptr64 = false := by
+                cases hp : CompCert4Lean.X86_64.Archi.ptr64 with
+                | false => exact rfl
+                | true => simp [hp] at htrack
+              cases hrec : track_moves env mv e with
+              | none => simp [hrec, hptr] at htrack
+              | some e1 =>
+                  rw [hptr, hrec] at htrack
+                  cases hc : long_type_compat env (R dst) e1 with
+                  | false => simp [hc] at htrack
+                  | true =>
+                      simp [hc] at htrack
+                      have hsat1 := subst_loc_pair_satisf_makelong env src1 src2 dst rs ls
+                        e1 e' htrack (by exact hc) hwt hsat hptr
+                      rcases ih (e := e) (e' := e1)
+                        (ls := Locmap.set (R dst)
+                          (Val.longofwords (ls (R src1)) (ls (R src2))) ls)
+                        hrec htail hsat1 with ⟨ls', hstar, hsat'⟩
+                      refine ⟨ls', ?_, hsat'⟩
+                      apply star_left
+                      · apply CompCert4Lean.Backend.LTL.step.exec_Lop
+                          (v := Val.longofwords (ls (R src1)) (ls (R src2)))
+                        · rfl
+                        · rfl
+                      · exact hstar
+                      · rfl
+          | MVlowlong src dst =>
+              change (if CompCert4Lean.X86_64.Archi.ptr64 then none else
+                match track_moves env mv e with
+                | none => none
+                | some e1 => subst_loc_part (R dst) (R src) Low e1) = some e' at htrack
+              have hptr : CompCert4Lean.X86_64.Archi.ptr64 = false := by
+                cases hp : CompCert4Lean.X86_64.Archi.ptr64 with
+                | false => exact rfl
+                | true => simp [hp] at htrack
+              cases hrec : track_moves env mv e with
+              | none => simp [hrec, hptr] at htrack
+              | some e1 =>
+                  rw [hptr, hrec] at htrack
+                  have hsat1 := subst_loc_part_satisf_lowlong src dst rs ls e1 e'
+                    htrack hsat
+                  rcases ih (e := e) (e' := e1)
+                    (ls := Locmap.set (R dst) (Val.loword (ls (R src))) ls)
+                    hrec htail hsat1 with ⟨ls', hstar, hsat'⟩
+                  refine ⟨ls', ?_, hsat'⟩
+                  apply star_left
+                  · apply CompCert4Lean.Backend.LTL.step.exec_Lop
+                      (v := Val.loword (ls (R src)))
+                    · rfl
+                    · rfl
+                  · exact hstar
+                  · rfl
+          | MVhighlong src dst =>
+              change (if CompCert4Lean.X86_64.Archi.ptr64 then none else
+                match track_moves env mv e with
+                | none => none
+                | some e1 => subst_loc_part (R dst) (R src) High e1) = some e' at htrack
+              have hptr : CompCert4Lean.X86_64.Archi.ptr64 = false := by
+                cases hp : CompCert4Lean.X86_64.Archi.ptr64 with
+                | false => exact rfl
+                | true => simp [hp] at htrack
+              cases hrec : track_moves env mv e with
+              | none => simp [hrec, hptr] at htrack
+              | some e1 =>
+                  rw [hptr, hrec] at htrack
+                  have hsat1 := subst_loc_part_satisf_highlong src dst rs ls e1 e'
+                    htrack hsat
+                  rcases ih (e := e) (e' := e1)
+                    (ls := Locmap.set (R dst) (Val.hiword (ls (R src))) ls)
+                    hrec htail hsat1 with ⟨ls', hstar, hsat'⟩
+                  refine ⟨ls', ?_, hsat'⟩
+                  apply star_left
+                  · apply CompCert4Lean.Backend.LTL.step.exec_Lop
+                      (v := Val.hiword (ls (R src)))
+                    · rfl
+                    · rfl
+                  · exact hstar
+                  · rfl
+
+end CompCert4Lean.Backend.Allocproof

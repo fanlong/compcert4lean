@@ -4279,3 +4279,150 @@ theorem perm_alloc_2 : perm_alloc_2Statement := by
 end Mem
 
 end CompCert4Lean.Common.Memory
+
+namespace CompCert4Lean.Common.Memory
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.Lib.Coqlib
+
+namespace Mem
+
+private theorem scc083_pmap_get_set_spec {A : Type} (i j : positive) (x : A)
+    (m : PMap.t A) :
+    PMap.get i (PMap.set j x m) = if h : i = j then x else PMap.get i m := by
+  by_cases h : i = j
+  · subst j
+    simp [pmapGetSetSame]
+  · simp [pmapGetSetOther _ _ _ _ h, h]
+
+theorem perm_alloc_inv : perm_alloc_invStatement := by
+  intro m1 lo hi m2 b halloc b' ofs k p hperm
+  simp [alloc] at halloc
+  rcases halloc with ⟨rfl, rfl⟩
+  cases heq : eq_block b' m1.nextblock with
+  | left hbeq =>
+      subst b'
+      unfold perm at hperm
+      rw [scc083_pmap_get_set_spec] at hperm
+      simp at hperm
+      unfold perm_order' at hperm
+      split at hperm
+      · rename_i hIn
+        split at hIn
+        · rename_i hRange
+          simp only [heq]
+          change (ZArith.BinInt.Z.leb lo ofs &&
+            ZArith.BinInt.Z.ltb ofs hi) = true at hRange
+          simp only [Bool.and_eq_true] at hRange
+          constructor
+          · change intOfZ lo ≤ intOfZ ofs
+            simpa [ZArith.BinInt.Z.leb] using hRange.1
+          · change intOfZ ofs < intOfZ hi
+            simpa [ZArith.BinInt.Z.ltb] using hRange.2
+        · simp at hIn
+      · simp at hperm
+  | right hbneq =>
+      unfold perm at hperm
+      rw [scc083_pmap_get_set_spec] at hperm
+      have hbneq' : b' ≠ m1.nextblock := by
+        intro h
+        apply hbneq
+        exact h
+      simp [heq, hbneq, hbneq'] at hperm ⊢
+      exact hperm
+
+theorem perm_alloc_3 : perm_alloc_3Statement := by
+  intro m1 lo hi m2 b halloc ofs k p hperm
+  have hinv := perm_alloc_inv m1 lo hi m2 b halloc b ofs k p hperm
+  cases heq : eq_block b b with
+  | left _ => simpa [heq] using hinv
+  | right hne => exact False.elim (hne rfl)
+
+theorem perm_alloc_4 : perm_alloc_4Statement := by
+  intro m1 lo hi m2 b halloc b' ofs k p hperm hne
+  have hinv := perm_alloc_inv m1 lo hi m2 b halloc b' ofs k p hperm
+  cases heq : eq_block b' b with
+  | left hbeq => exact False.elim (hne hbeq)
+  | right _ => simpa [heq] using hinv
+
+theorem valid_access_alloc_inv : valid_access_alloc_invStatement := by
+  intro m1 lo hi m2 b halloc chunk b' ofs p hvalid
+  simp [alloc] at halloc
+  rcases halloc with ⟨rfl, rfl⟩
+  cases heq : eq_block b' m1.nextblock with
+  | left hbeq =>
+      subst b'
+      have hsize := CompCert4Lean.Common.Memdata.size_chunk_pos chunk
+      have hofs_lt : zLt ofs (zAdd ofs (size_chunk chunk)) := by
+        change intOfZ ofs < intOfZ (zAdd ofs (size_chunk chunk))
+        unfold zAdd ZArith.BinInt.Z.add
+        rw [intOfZ_zOfInt]
+        change 0 < intOfZ (size_chunk chunk) at hsize
+        omega
+      have hperm0 : perm (let m' := alloc m1 lo hi |>.1; m')
+          m1.nextblock ofs Cur p := by
+        exact hvalid.1 ofs ⟨by change intOfZ ofs ≤ intOfZ ofs; omega, hofs_lt⟩
+      have hinv0 := perm_alloc_inv m1 lo hi
+        (alloc m1 lo hi).1 m1.nextblock rfl m1.nextblock ofs Cur p hperm0
+      have hinv0' : zLe lo ofs ∧ zLt ofs hi := by
+        simpa [heq] using hinv0
+      let ofs1 : Z := zSub (zAdd ofs (size_chunk chunk)) z1
+      have hofs1lo : zLe ofs ofs1 := by
+        change intOfZ ofs ≤ intOfZ ofs1
+        change intOfZ ofs ≤ intOfZ (zSub (zAdd ofs (size_chunk chunk)) z1)
+        unfold zSub ZArith.BinInt.Z.sub
+        rw [intOfZ_zOfInt]
+        unfold zAdd ZArith.BinInt.Z.add
+        rw [intOfZ_zOfInt]
+        change 0 < intOfZ (size_chunk chunk) at hsize
+        have hz1 : intOfZ z1 = (1 : Int) := by rfl
+        rw [hz1]
+        have hsize1 : (1 : Int) ≤ intOfZ (size_chunk chunk) := by omega
+        omega
+      have hofs1hi : zLt ofs1 (zAdd ofs (size_chunk chunk)) := by
+        change intOfZ ofs1 < intOfZ (zAdd ofs (size_chunk chunk))
+        unfold ofs1 zSub ZArith.BinInt.Z.sub
+        rw [intOfZ_zOfInt]
+        change intOfZ (zAdd ofs (size_chunk chunk)) - 1 <
+          intOfZ (zAdd ofs (size_chunk chunk))
+        omega
+      have hperm1 : perm (let m' := alloc m1 lo hi |>.1; m')
+          m1.nextblock ofs1 Cur p := by
+        exact hvalid.1 ofs1 ⟨hofs1lo, hofs1hi⟩
+      have hinv1 := perm_alloc_inv m1 lo hi
+        (alloc m1 lo hi).1 m1.nextblock rfl m1.nextblock ofs1 Cur p hperm1
+      have hinv1' : zLe lo ofs1 ∧ zLt ofs1 hi := by
+        simpa [heq] using hinv1
+      constructor
+      · exact hinv0'.1
+      constructor
+      · change intOfZ (zAdd ofs (size_chunk chunk)) ≤ intOfZ hi
+        unfold zAdd ZArith.BinInt.Z.add
+        rw [intOfZ_zOfInt]
+        have hupper1 := hinv1'.2
+        change intOfZ (zSub (zAdd ofs (size_chunk chunk)) z1) < intOfZ hi at hupper1
+        unfold zSub ZArith.BinInt.Z.sub at hupper1
+        rw [intOfZ_zOfInt] at hupper1
+        have hz1 : intOfZ z1 = (1 : Int) := by rfl
+        rw [hz1] at hupper1
+        unfold zAdd ZArith.BinInt.Z.add at hupper1
+        rw [intOfZ_zOfInt] at hupper1
+        omega
+      · exact hvalid.2
+  | right hbneq =>
+      have hresult : valid_access m1 chunk b' ofs p := by
+        refine ⟨?_, hvalid.2⟩
+        intro ofs' hof'
+        have hperm := hvalid.1 ofs' hof'
+        have hinv := perm_alloc_inv m1 lo hi
+          (alloc m1 lo hi).1 m1.nextblock rfl b' ofs' Cur p hperm
+        simpa [heq, hbneq] using hinv
+      simpa [heq, hbneq] using hresult
+
+end Mem
+
+end CompCert4Lean.Common.Memory

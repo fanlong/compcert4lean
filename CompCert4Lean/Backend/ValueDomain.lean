@@ -4837,3 +4837,47 @@ theorem smatch_storebytes : smatch_storebytesStatement := by
         (hfrag_match ofs0 b0 ofs0' q i hbytes)
 
 end CompCert4Lean.Backend.ValueDomain
+
+namespace CompCert4Lean.Backend.ValueDomain
+
+theorem inval_after_outside : inval_after_outsideStatement := by
+  intro i lo hi c h
+  induction hi, c using inval_after.induct lo with
+  | case1 hi c hcur ih =>
+      rw [inval_after.eq_1, if_pos hcur]
+      have hnext : zLt i lo ∨ zLt (zSub hi z1) i := by
+        rcases h with hleft | hright
+        · exact Or.inl hleft
+        · apply Or.inr
+          change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (zSub hi z1) <
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ i
+          change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ hi <
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ i at hright
+          have hsub :
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (zSub hi z1) =
+                CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ hi - 1 := by
+            have hz1 : CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ z1 = 1 := by
+              rfl
+            simp [zSub,
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.sub,
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt, hz1]
+          rw [hsub]
+          omega
+      rw [ih hnext]
+      exact CompCert4Lean.Lib.Maps.ZTree.gro_proof acontent i hi c (by
+        intro heq
+        subst i
+        rcases h with hleft | hright
+        · change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ hi <
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ lo at hleft
+          have hcur' := zle_true_prop_for_inval hcur
+          change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ lo ≤
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ hi at hcur'
+          omega
+        · change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ hi <
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ hi at hright
+          omega)
+  | case2 hi c hcur =>
+      rw [inval_after.eq_1, if_neg hcur]
+
+end CompCert4Lean.Backend.ValueDomain

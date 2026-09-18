@@ -3762,3 +3762,78 @@ theorem generic_format_EM :
     exact hformat hround
 
 end CompCert4Lean.Flocq.Core.Generic_fmt
+
+namespace CompCert4Lean.Flocq.Core.Generic_fmt
+
+theorem round_large_pos_ge_bpow :
+    ∀ ctx magnitude, round_large_pos_ge_bpowStatement ctx magnitude := by
+  intro ctx magnitude beta fexp rnd hrnd x e hround hxe
+  let ex := Exact.mag magnitude beta x
+  have hx0 : x ≠ Exact.R0 ctx := by
+    intro hx
+    subst x
+    have hpowpos := CompCert4Lean.Flocq.Core.Raux.bpow_gt_0 ctx beta e
+    exact (ctx.certificate.orderedField.lt_irrefl _
+      (CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.Rlt_le_trans
+        ctx _ _ _ hpowpos hxe)).elim
+  have hxpos : Exact.Rlt ctx (Exact.R0 ctx) x := by
+    have hpowpos := CompCert4Lean.Flocq.Core.Raux.bpow_gt_0 ctx beta e
+    exact CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.Rlt_le_trans
+      ctx _ _ _ hpowpos hxe
+  have hmag := (CompCert4Lean.Flocq.Core.Raux.Exact.mag magnitude beta x).mag_bound hx0
+  have hxnonneg : Exact.Rle ctx (Exact.R0 ctx) x :=
+    (ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp hxpos |>.1
+  have habs : Exact.Rabs ctx x = x :=
+    ctx.certificate.sourceLaws.abs_nonnegative x hxnonneg
+  have hbounds :
+      Exact.Rle ctx (Exact.bpow ctx beta (Zsub ex Zone)) x ∧
+        Exact.Rlt ctx x (Exact.bpow ctx beta ex) := by
+    simpa only [ex, habs] using hmag
+  have he_lt_ex : Zlt e ex := by
+    change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ e <
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ ex
+    apply Int.lt_of_not_ge
+    intro hnot
+    have hexle : Zle ex e := by
+      change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ ex ≤
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ e
+      exact hnot
+    have hpow := CompCert4Lean.Flocq.Core.Raux.bpow_le ctx beta ex e hexle
+    exact ((ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp
+      hbounds.2).2 (ctx.certificate.orderedField.le_trans _ _ _ hpow hxe)
+  by_cases hsmall : Zle ex (fexp ex)
+  · rcases round_bounded_small_pos ctx magnitude beta fexp rnd hrnd
+      x ex hsmall hbounds with hzero | hpow
+    · rw [hzero] at hround
+      exact (ctx.certificate.orderedField.lt_irrefl _ hround).elim
+    · rw [hpow]
+      apply CompCert4Lean.Flocq.Core.Raux.bpow_le ctx beta e (fexp ex)
+      change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ e ≤
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (fexp ex)
+      change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ e <
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ ex at he_lt_ex
+      change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ ex ≤
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (fexp ex) at hsmall
+      omega
+  · have hlarge : Zlt (fexp ex) ex := by
+      change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (fexp ex) <
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ ex
+      change ¬ CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ ex ≤
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (fexp ex) at hsmall
+      omega
+    have hround' := pg_round_bounded_large_pos ctx magnitude beta fexp rnd hrnd
+      x ex hlarge hbounds
+    apply ctx.certificate.orderedField.le_trans _ _ _ ?_ hround'.1
+    apply CompCert4Lean.Flocq.Core.Raux.bpow_le ctx beta e (Zsub ex Zone)
+    change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ e ≤
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (Zsub ex Zone)
+    simp only [Zsub,
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.sub,
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+    change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ e ≤
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ ex - 1
+    change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ e <
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ ex at he_lt_ex
+    omega
+
+end CompCert4Lean.Flocq.Core.Generic_fmt

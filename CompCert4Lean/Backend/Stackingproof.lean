@@ -3368,3 +3368,68 @@ theorem transl_code_eq : transl_code_eqStatement := by
   exact stackingproof_list_fold_right_cons (transl_instr cfg fe) i c []
 
 end CompCert4Lean.Backend.Stackingproof
+
+namespace CompCert4Lean.Backend.Stackingproof
+
+open CompCert4Lean.Backend.Linear
+open CompCert4Lean.Backend.Mach
+open CompCert4Lean.Backend.Stacking
+open CompCert4Lean.Lib.Coqlib
+
+theorem find_label_transl_code : find_label_transl_codeStatement := by
+  intro cfg fe lbl c
+  induction c with
+  | nil => rfl
+  | cons i c ih =>
+      rw [transl_code_eq]
+      cases i with
+      | Lgetstack sl ofs ty dst =>
+          cases sl <;>
+            simp [transl_instr, Mach.find_label, Mach.is_label,
+              Linear.is_label, Linear.find_label, ih]
+      | Lsetstack src sl ofs ty =>
+          cases sl <;>
+            simp [transl_instr, Mach.find_label, Mach.is_label,
+              Linear.is_label, Linear.find_label, ih]
+      | Lop op args res =>
+          simp [transl_instr, Mach.find_label, Mach.is_label,
+            Linear.is_label, Linear.find_label, ih]
+      | Lload chunk addr args dst =>
+          simp [transl_instr, Mach.find_label, Mach.is_label,
+            Linear.is_label, Linear.find_label, ih]
+      | Lstore chunk addr args src =>
+          simp [transl_instr, Mach.find_label, Mach.is_label,
+            Linear.is_label, Linear.find_label, ih]
+      | Lcall sig ros =>
+          simp [transl_instr, Mach.find_label, Mach.is_label,
+            Linear.is_label, Linear.find_label, ih]
+      | Ltailcall sig ros =>
+          simp only [transl_instr, restore_callee_save]
+          rw [find_label_restore_callee_save lbl fe.fe_used_callee_save
+            fe.fe_ofs_callee_save (Mtailcall sig ros :: transl_code cfg fe c)]
+          simp [Mach.find_label, Mach.is_label, Linear.is_label,
+            Linear.find_label, ih]
+      | Lbuiltin ef args res =>
+          simp [transl_instr, Mach.find_label, Mach.is_label,
+            Linear.is_label, Linear.find_label, ih]
+      | Llabel lbl' =>
+          cases h : peq lbl lbl' <;>
+            simp [transl_instr, Mach.find_label, Mach.is_label,
+              Linear.is_label, Linear.find_label, Option.map, h, ih]
+      | Lgoto lbl' =>
+          simp [transl_instr, Mach.find_label, Mach.is_label,
+            Linear.is_label, Linear.find_label, ih]
+      | Lcond cond args lbl' =>
+          simp [transl_instr, Mach.find_label, Mach.is_label,
+            Linear.is_label, Linear.find_label, ih]
+      | Ljumptable arg tbl =>
+          simp [transl_instr, Mach.find_label, Mach.is_label,
+            Linear.is_label, Linear.find_label, ih]
+      | Lreturn =>
+          simp only [transl_instr, restore_callee_save]
+          rw [find_label_restore_callee_save lbl fe.fe_used_callee_save
+            fe.fe_ofs_callee_save (Mreturn :: transl_code cfg fe c)]
+          simp [Mach.find_label, Mach.is_label, Linear.is_label,
+            Linear.find_label, ih]
+
+end CompCert4Lean.Backend.Stackingproof
