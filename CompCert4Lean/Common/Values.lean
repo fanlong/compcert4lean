@@ -3101,3 +3101,115 @@ theorem swap_cmpl_bool : swap_cmpl_boolStatement := by
 
 end Val
 end CompCert4Lean.Common.Values
+
+namespace CompCert4Lean.Common.Values
+namespace Val
+
+open CompCert4Lean.Lib.Integers
+
+theorem lessdef_same : lessdef_sameStatement := by
+  intro v1 v2 h
+  cases h
+  exact lessdef_refl v1
+
+theorem lessdef_trans : lessdef_transStatement := by
+  intro v1 v2 v3 h12 h23
+  cases h12 with
+  | lessdef_refl => exact h23
+  | lessdef_undef => exact lessdef_undef _
+
+theorem zero_ext_and : zero_ext_andStatement := by
+  intro n v hn
+  cases v with
+  | Vundef => rfl
+  | Vint x =>
+      simp only [zero_ext, and]
+      congr 1
+      exact CompCert4Lean.Lib.Integers.Int.zero_ext_and_proof n x hn
+  | Vlong _ => rfl
+  | Vfloat _ => rfl
+  | Vsingle _ => rfl
+  | Vptr _ _ => rfl
+
+theorem swap_cmplu_bool : swap_cmplu_boolStatement := by
+  have hcmp64 : ∀ c (x y : CompCert4Lean.Lib.Integers.Int64.int),
+      CompCert4Lean.Lib.Integers.Int64.cmpu (swap_comparison c) x y =
+        CompCert4Lean.Lib.Integers.Int64.cmpu c y x := by
+    intro c x y
+    cases c with
+    | Ceq =>
+        change decide (x.intval = y.intval) = decide (y.intval = x.intval)
+        by_cases h : x.intval = y.intval
+        · simp [h]
+        · have h' : ¬y.intval = x.intval := by
+            intro hyx
+            exact h hyx.symm
+          simp [h, h']
+    | Cne =>
+        change (!decide (x.intval = y.intval)) = (!decide (y.intval = x.intval))
+        by_cases h : x.intval = y.intval
+        · simp [h]
+        · have h' : ¬y.intval = x.intval := by
+            intro hyx
+            exact h hyx.symm
+          simp [h, h']
+    | Clt => rfl
+    | Cle => rfl
+    | Cgt => rfl
+    | Cge => rfl
+  have hcmpPtrofs : ∀ c (x y : CompCert4Lean.Lib.Integers.Ptrofs.int),
+      CompCert4Lean.Lib.Integers.Ptrofs.cmpu (swap_comparison c) x y =
+        CompCert4Lean.Lib.Integers.Ptrofs.cmpu c y x := by
+    intro c x y
+    cases c with
+    | Ceq =>
+        change decide (x.intval = y.intval) = decide (y.intval = x.intval)
+        by_cases h : x.intval = y.intval
+        · simp [h]
+        · have h' : ¬y.intval = x.intval := by
+            intro hyx
+            exact h hyx.symm
+          simp [h, h']
+    | Cne =>
+        change (!decide (x.intval = y.intval)) = (!decide (y.intval = x.intval))
+        by_cases h : x.intval = y.intval
+        · simp [h]
+        · have h' : ¬y.intval = x.intval := by
+            intro hyx
+            exact h hyx.symm
+          simp [h, h']
+    | Clt => rfl
+    | Cle => rfl
+    | Cgt => rfl
+    | Cge => rfl
+  have hdiff : ∀ c, cmp_different_blocks (swap_comparison c) = cmp_different_blocks c := by
+    intro c
+    cases c <;> rfl
+  have hblock : ∀ (b1 b2 : block),
+      boolOfSumbool (eq_block b1 b2) = boolOfSumbool (eq_block b2 b1) := by
+    intro b1 b2
+    by_cases h : b1 = b2
+    · subst b2
+      rfl
+    · have h' : b2 ≠ b1 := by
+        intro h'
+        exact h h'.symm
+      change boolOfSumbool (CompCert4Lean.Lib.Coqlib.peq b1 b2) =
+        boolOfSumbool (CompCert4Lean.Lib.Coqlib.peq b2 b1)
+      cases heq : CompCert4Lean.Lib.Coqlib.peq b1 b2 with
+      | left hab => exact (h hab).elim
+      | right hne =>
+          cases heq' : CompCert4Lean.Lib.Coqlib.peq b2 b1 with
+          | left hba => exact (h' hba).elim
+          | right hne' => rfl
+  intro valid_ptr c x y
+  unfold cmplu_bool
+  simp only [hdiff]
+  cases harch : CompCert4Lean.X86_64.Archi.ptr64 <;>
+    cases c <;> cases x <;> cases y <;>
+      simp [harch, hcmp64, hcmpPtrofs, hblock]
+  all_goals
+    repeat first | split | simp_all [cmp_different_blocks, hcmp64, hcmpPtrofs]
+
+end Val
+end CompCert4Lean.Common.Values
