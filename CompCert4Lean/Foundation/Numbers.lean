@@ -5139,3 +5139,74 @@ theorem ZArith.Znat.Z2Nat.inj_sub :
 
 end Rocq.Coq
 end CompCert4Lean.Foundation.Numbers
+
+namespace CompCert4Lean.Foundation.Numbers
+namespace Rocq.Coq
+
+theorem ZArith.Znumtheory.Zdivide_bounds :
+    ZArith.Znumtheory.Zdivide_boundsStatement := by
+  intro a b hab hbn
+  rcases hab with ⟨k, hk⟩
+  have hk' : intOfZ b = intOfZ a * intOfZ k := by
+    simpa [ZArith.BinInt.Z.mul, intOfZ_zOfInt] using congrArg intOfZ hk
+  have hb0 : intOfZ b ≠ 0 := by
+    intro hb
+    apply hbn
+    apply intOfZ_injective
+    simpa [hb, intOfZ]
+  have ha0 : intOfZ a ≠ 0 := by
+    intro ha
+    apply hb0
+    rw [hk', ha]
+    simp
+  have hk0 : intOfZ k ≠ 0 := by
+    intro hk0
+    apply hb0
+    rw [hk', hk0]
+    simp
+  have hkpos : 0 < (intOfZ k).natAbs := Int.natAbs_pos.mpr hk0
+  change intOfZ (ZArith.BinInt.Z.abs a) ≤
+    intOfZ (ZArith.BinInt.Z.abs b)
+  simp only [ZArith.BinInt.Z.abs, intOfZ_zOfInt]
+  rw [hk', Int.natAbs_mul]
+  exact_mod_cast (Nat.le_mul_of_pos_right (intOfZ a).natAbs hkpos)
+
+end Rocq.Coq
+end CompCert4Lean.Foundation.Numbers
+
+namespace CompCert4Lean.Foundation.Numbers
+namespace Rocq.Coq
+
+theorem ZArith.Znat.Zabs2Nat.abs_nat_nonneg :
+    ZArith.Znat.Zabs2Nat.abs_nat_nonnegStatement := by
+  intro n hn
+  change ZArith.BinInt.Z.to_nat (ZArith.BinInt.Z.abs n) =
+    ZArith.BinInt.Z.to_nat n
+  rw [ZArith.BinInt.Z.abs_eq n hn]
+
+theorem ZArith.Znat.Zabs2Nat.id_abs :
+    ZArith.Znat.Zabs2Nat.id_absStatement := by
+  intro n
+  change ZArith.BinInt.Z.of_nat (ZArith.BinInt.Z.abs_nat n) =
+    ZArith.BinInt.Z.abs n
+  unfold ZArith.BinInt.Z.of_nat ZArith.BinInt.Z.abs_nat
+  change zOfInt (Int.ofNat (Int.toNat (intOfZ (ZArith.BinInt.Z.abs n)))) =
+    ZArith.BinInt.Z.abs n
+  have hnonneg : (0 : Int) ≤ intOfZ (ZArith.BinInt.Z.abs n) := by
+    simp [ZArith.BinInt.Z.abs, intOfZ_zOfInt]
+  have hcast : Int.ofNat (Int.toNat (intOfZ (ZArith.BinInt.Z.abs n))) =
+      intOfZ (ZArith.BinInt.Z.abs n) :=
+    Int.toNat_of_nonneg hnonneg
+  rw [hcast]
+  exact zOfInt_intOfZ _
+
+theorem ZArith.Zabs.Zabs_nat_Z_of_nat_proof :
+    ∀ n : Nat, ZArith.Zabs.Zabs_nat_Z_of_nat n := by
+  intro n
+  change ZArith.BinInt.Z.abs_nat (ZArith.BinInt.Z.of_nat n) = n
+  unfold ZArith.BinInt.Z.abs_nat ZArith.BinInt.Z.of_nat
+    ZArith.BinInt.Z.abs
+  simp [intOfZ_zOfInt]
+
+end Rocq.Coq
+end CompCert4Lean.Foundation.Numbers

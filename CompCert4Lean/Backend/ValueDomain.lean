@@ -5415,3 +5415,44 @@ theorem smatch_lub_r : smatch_lub_rStatement := by
     exact pmatch_lub_r bc b' ofs' p q (hfrag ofs b' ofs' q' i h)
 
 end CompCert4Lean.Backend.ValueDomain
+
+namespace CompCert4Lean.Backend.ValueDomain
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memtype
+
+theorem romatch_store : romatch_storeStatement := by
+  intro bc chunk m b ofs v m' rm hstore hrom
+  unfold romatch at hrom ⊢
+  intro b' id ab hbc hget
+  rcases hrom b' id ab hbc hget with ⟨hglob, hbm, hperm⟩
+  refine ⟨hglob, ?_, ?_⟩
+  · apply bmatch_inv bc m b' ab m' hbm
+    intro ofs' n hn
+    by_cases hne : b' ≠ b
+    · exact Mem.loadbytes_store_other chunk m b ofs v m' hstore b' ofs' n
+        (Or.inl hne)
+    · exfalso
+      have hbeq : b' = b := by
+        exact Classical.byContradiction (fun hneq => hne hneq)
+      subst b'
+      apply hperm ofs
+      apply Mem.perm_cur_max m b ofs .Writable
+      have hvalid := Mem.store_valid_access_3 chunk m b ofs v m' hstore
+      apply hvalid.1 ofs
+      constructor
+      · change intOfZ ofs ≤ intOfZ ofs
+        omega
+      · change intOfZ ofs < intOfZ (ZArith.BinInt.Z.add ofs (size_chunk chunk))
+        have hsize := CompCert4Lean.Common.Memdata.size_chunk_pos chunk
+        change 0 < intOfZ (size_chunk chunk) at hsize
+        unfold ZArith.BinInt.Z.add
+        rw [intOfZ_zOfInt]
+        omega
+  · intro ofs' hp'
+    apply hperm ofs'
+    exact Mem.perm_store_2 chunk m b ofs v m' hstore b' ofs' .Max .Writable hp'
+
+end CompCert4Lean.Backend.ValueDomain

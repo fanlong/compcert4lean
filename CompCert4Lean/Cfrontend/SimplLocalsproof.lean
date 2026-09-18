@@ -6209,3 +6209,71 @@ theorem simpl_find_label : simpl_find_labelStatement := by
   exact H s k ts tk h mc compat
 
 end CompCert4Lean.Cfrontend.SimplLocalsproof
+
+namespace CompCert4Lean.Cfrontend.SimplLocalsproof
+
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Cfrontend.Clight
+open CompCert4Lean.Cfrontend.SimplLocals
+
+theorem find_label_store_params : find_label_store_paramsStatement := by
+  intro lbl cenv s k params
+  induction params with
+  | nil => rfl
+  | cons p params ih =>
+      cases p with
+      | mk id ty =>
+          simp only [store_params]
+          split
+          · split <;> simp [find_label, ih]
+          · simp [find_label, ih]
+
+end CompCert4Lean.Cfrontend.SimplLocalsproof
+
+namespace CompCert4Lean.Cfrontend.SimplLocalsproof
+
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Cfrontend.Clight
+open CompCert4Lean.Cfrontend.SimplLocals
+open CompCert4Lean.Driver.Compopts
+
+theorem find_label_add_debug_vars : find_label_add_debug_varsStatement := by
+  intro cfg lbl s k vars
+  unfold add_debug_vars
+  by_cases hd : CompCert4Lean.Driver.Compopts.debug cfg = true
+  · rw [hd]
+    induction vars with
+    | nil => rfl
+    | cons p vars ih =>
+        cases p with
+        | mk id ty =>
+            simp only [List.foldr]
+            simp [add_debug_var, Sdebug_var, find_label] at ih ⊢
+            exact ih
+  · simp [hd]
+
+end CompCert4Lean.Cfrontend.SimplLocalsproof
+
+namespace CompCert4Lean.Cfrontend.SimplLocalsproof
+
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Cfrontend.Clight
+open CompCert4Lean.Cfrontend.SimplLocals
+open CompCert4Lean.Driver.Compopts
+
+theorem find_label_add_debug_params : find_label_add_debug_paramsStatement := by
+  intro cfg lbl s k vars
+  unfold add_debug_params
+  by_cases hd : CompCert4Lean.Driver.Compopts.debug cfg = true
+  · rw [hd]
+    induction vars with
+    | nil => rfl
+    | cons p vars ih =>
+        cases p with
+        | mk id ty =>
+            simp only [List.foldr]
+            simp [add_debug_param, Sdebug_temp, find_label] at ih ⊢
+            exact ih
+  · simp [hd]
+
+end CompCert4Lean.Cfrontend.SimplLocalsproof

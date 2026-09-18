@@ -7725,3 +7725,353 @@ theorem default_needs_of_condition_sound : default_needs_of_condition_soundState
               cases cond <;> simp [eval_condition] at heval ⊢
 
 end CompCert4Lean.Backend.NeedDomain
+
+namespace CompCert4Lean.Backend.NeedDomain
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Lib.Integers
+
+private theorem pg_iagree_trans (a b c m : int)
+    (h₁ : iagree a b m) (h₂ : iagree b c m) : iagree a c m := by
+  intro i hi hm
+  exact (h₁ i hi hm).trans (h₂ i hi hm)
+
+private theorem pg_zero_ext_red_int
+    (a b m : int) (n : Z)
+    (hred : CompCert4Lean.Lib.Integers.Int.zero_ext n m = m)
+    (hagree : iagree a b (CompCert4Lean.Lib.Integers.Int.zero_ext n m))
+    (hn : ZArith.BinInt.Z.le z0 n) :
+    iagree (CompCert4Lean.Lib.Integers.Int.zero_ext n a) b m := by
+  have hmask := CompCert4Lean.Lib.Integers.Int.zero_ext_and_proof n m hn
+  apply (iagree_and_eq (CompCert4Lean.Lib.Integers.Int.zero_ext n a) b m).mpr
+  calc
+    CompCert4Lean.Lib.Integers.Int.and
+        (CompCert4Lean.Lib.Integers.Int.zero_ext n a) m =
+        CompCert4Lean.Lib.Integers.Int.and
+          (CompCert4Lean.Lib.Integers.Int.and a
+          (CompCert4Lean.Lib.Integers.Int.repr (ZArith.BinInt.Z.sub
+            (CompCert4Lean.Foundation.Numbers.Rocq.Coq.two_p n) z1))) m := by
+      rw [CompCert4Lean.Lib.Integers.Int.zero_ext_and_proof n a hn]
+    _ = CompCert4Lean.Lib.Integers.Int.and a
+        (CompCert4Lean.Lib.Integers.Int.and
+          (CompCert4Lean.Lib.Integers.Int.repr (ZArith.BinInt.Z.sub
+            (CompCert4Lean.Foundation.Numbers.Rocq.Coq.two_p n) z1)) m) :=
+      CompCert4Lean.Lib.Integers.Int.and_assoc_proof _ _ _
+    _ = CompCert4Lean.Lib.Integers.Int.and a
+        (CompCert4Lean.Lib.Integers.Int.and m
+          (CompCert4Lean.Lib.Integers.Int.repr (ZArith.BinInt.Z.sub
+            (CompCert4Lean.Foundation.Numbers.Rocq.Coq.two_p n) z1))) := by
+      exact congrArg (CompCert4Lean.Lib.Integers.Int.and a)
+        (CompCert4Lean.Lib.Integers.Int.and_commut_proof _ _)
+    _ = CompCert4Lean.Lib.Integers.Int.and a
+        (CompCert4Lean.Lib.Integers.Int.zero_ext n m) := by
+      rw [← hmask]
+    _ = CompCert4Lean.Lib.Integers.Int.and b
+        (CompCert4Lean.Lib.Integers.Int.zero_ext n m) :=
+      (iagree_and_eq a b
+        (CompCert4Lean.Lib.Integers.Int.zero_ext n m)).mp hagree
+    _ = CompCert4Lean.Lib.Integers.Int.and b m := by rw [hred]
+
+theorem zero_ext_redundant_sound : zero_ext_redundant_soundStatement := by
+  intro v w x n hred hagree hn
+  cases x with
+  | Nothing => trivial
+  | I m =>
+      cases v with
+      | Vint a =>
+          cases w with
+          | Vint b =>
+              simp [zero_ext_redundant, zero_ext, vagree, iVagree,
+                CompCert4Lean.Common.Values.Val.zero_ext] at hred hagree ⊢
+              exact pg_zero_ext_red_int a b m n hred hagree hn
+          | _ =>
+              simp [zero_ext, vagree, iVagree,
+                CompCert4Lean.Common.Values.Val.zero_ext] at hagree
+      | _ =>
+          cases w <;>
+            simp [zero_ext, vagree, iVagree,
+              CompCert4Lean.Common.Values.Val.zero_ext]
+  | L m =>
+      simp [zero_ext_redundant] at hred
+  | All =>
+      simp [zero_ext_redundant] at hred
+
+end CompCert4Lean.Backend.NeedDomain
+
+namespace CompCert4Lean.Backend.NeedDomain
+
+private theorem pg_lagree_mask_of_not
+    (m n : int64)
+    (hred : CompCert4Lean.Lib.Integers.Int64.and m
+      (CompCert4Lean.Lib.Integers.Int64.not n) =
+      CompCert4Lean.Lib.Integers.Int64.zero) :
+    CompCert4Lean.Lib.Integers.Int64.and m n = m := by
+  have hrel : lagree
+      (CompCert4Lean.Lib.Integers.Int64.and m n) m
+      CompCert4Lean.Lib.Integers.Int64.mone := by
+    intro i hi _
+    have hz := congrArg
+      (fun z => CompCert4Lean.Lib.Integers.Int64.testbit z i) hred
+    rw [lagreeAndTestbitForOr,
+      lagreeNotTestbitFinal n i hi] at hz
+    have hzero : CompCert4Lean.Lib.Integers.Int64.testbit
+        CompCert4Lean.Lib.Integers.Int64.zero i = false := by
+      cases i with
+      | Zneg p => rfl
+      | Z0 => rfl
+      | Zpos p =>
+          rw [lagreeTestbitPos]
+          change Nat.testBit 0 (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p) = false
+          simp
+    rw [hzero] at hz
+    by_cases hm : CompCert4Lean.Lib.Integers.Int64.testbit m i = true
+    · have hn : CompCert4Lean.Lib.Integers.Int64.testbit n i = true := by
+        cases hnb : CompCert4Lean.Lib.Integers.Int64.testbit n i with
+        | false =>
+            exfalso
+            simpa [hm, hnb] using hz
+        | true => rfl
+      rw [lagreeAndTestbitForOr]
+      simp [hm, hn]
+    · rw [lagreeAndTestbitForOr]
+      simp [hm]
+  exact lagree_mone _ _ hrel
+
+private theorem pg_andlimm_red_long
+    (a b m n : int64)
+    (hred : CompCert4Lean.Lib.Integers.Int64.and m
+      (CompCert4Lean.Lib.Integers.Int64.not n) =
+      CompCert4Lean.Lib.Integers.Int64.zero)
+    (hagree : lagree a b
+      (CompCert4Lean.Lib.Integers.Int64.and m n)) :
+    lagree (CompCert4Lean.Lib.Integers.Int64.and a n) b m := by
+  have hmn := pg_lagree_mask_of_not m n hred
+  have heq := (lagree_and_eq a b
+    (CompCert4Lean.Lib.Integers.Int64.and m n)).mp hagree
+  apply (lagree_and_eq
+    (CompCert4Lean.Lib.Integers.Int64.and a n) b m).mpr
+  calc
+    CompCert4Lean.Lib.Integers.Int64.and
+        (CompCert4Lean.Lib.Integers.Int64.and a n) m =
+        CompCert4Lean.Lib.Integers.Int64.and a
+          (CompCert4Lean.Lib.Integers.Int64.and n m) :=
+      lagreeAndAssocFinal a n m
+    _ = CompCert4Lean.Lib.Integers.Int64.and a
+          (CompCert4Lean.Lib.Integers.Int64.and m n) := by
+      exact congrArg (CompCert4Lean.Lib.Integers.Int64.and a)
+        (lagreeAndCommFinal n m)
+    _ = CompCert4Lean.Lib.Integers.Int64.and b
+          (CompCert4Lean.Lib.Integers.Int64.and m n) := heq
+    _ = CompCert4Lean.Lib.Integers.Int64.and b m := by rw [hmn]
+
+theorem andlimm_redundant_sound : andlimm_redundant_soundStatement := by
+  intro v w x n hred hagree
+  cases x with
+  | Nothing => trivial
+  | I m => simp [andlimm_redundant] at hred
+  | L m =>
+      cases v with
+      | Vlong a =>
+          cases w with
+          | Vlong b =>
+              simp [andlimm_redundant, andlimm, vagree, lVagree,
+                CompCert4Lean.Common.Values.Val.andl] at hred hagree ⊢
+              exact pg_andlimm_red_long a b m n hred hagree
+          | _ =>
+              simp [andlimm, vagree, lVagree,
+                CompCert4Lean.Common.Values.Val.andl] at hagree
+      | _ =>
+          cases w <;>
+            simp [andlimm, vagree, lVagree,
+              CompCert4Lean.Common.Values.Val.andl]
+  | All => simp [andlimm_redundant] at hred
+
+end CompCert4Lean.Backend.NeedDomain
+
+namespace CompCert4Lean.Backend.NeedDomain
+
+open Lean Elab Tactic Meta
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Lib.Integers
+
+private theorem pg_sign_ext_red_int
+    (a b m : int) (n : Z)
+    (hred : CompCert4Lean.Lib.Integers.Int.zero_ext n m = m)
+    (hagree : iagree a b
+      (CompCert4Lean.Lib.Integers.Int.or
+        (CompCert4Lean.Lib.Integers.Int.zero_ext n m)
+        (CompCert4Lean.Lib.Integers.Int.shl
+          CompCert4Lean.Lib.Integers.Int.one
+          (CompCert4Lean.Lib.Integers.Int.repr
+            (ZArith.BinInt.Z.sub n z1)))))
+    (hn : ZArith.BinInt.Z.lt z0 n) :
+    iagree (CompCert4Lean.Lib.Integers.Int.sign_ext n a) b m := by
+  intro i hi hm
+  rw [CompCert4Lean.Lib.Integers.Int.bits_sign_ext_proof n a i hi]
+  run_tac pgSignExtSimpPrivate ["CompCert4Lean.Lib.Integers.zltSelect"]
+  cases hs : CompCert4Lean.Lib.Coqlib.zlt i n with
+  | left hlt =>
+      run_tac pgSignExtSimpPrivate ["CompCert4Lean.Lib.Integers.sumboolSelect"]
+      have hm0 : CompCert4Lean.Lib.Integers.Int.testbit
+          (CompCert4Lean.Lib.Integers.Int.zero_ext n m) i = true := by
+        simpa [hred] using hm
+      have hinput : CompCert4Lean.Lib.Integers.Int.testbit
+          (CompCert4Lean.Lib.Integers.Int.or
+            (CompCert4Lean.Lib.Integers.Int.zero_ext n m)
+            (CompCert4Lean.Lib.Integers.Int.shl
+              CompCert4Lean.Lib.Integers.Int.one
+              (CompCert4Lean.Lib.Integers.Int.repr
+                (ZArith.BinInt.Z.sub n z1)))) i = true := by
+        rw [iagreeOrTestbit]
+        simp [hm0]
+      exact hagree i hi hinput
+  | right hge =>
+      have hm0 : CompCert4Lean.Lib.Integers.Int.testbit
+          (CompCert4Lean.Lib.Integers.Int.zero_ext n m) i = true := by
+        simpa [hred] using hm
+      have hz : CompCert4Lean.Lib.Integers.Int.testbit
+          (CompCert4Lean.Lib.Integers.Int.zero_ext n m) i = false := by
+        rw [CompCert4Lean.Lib.Integers.Int.bits_zero_ext_proof n m i hi.1]
+        run_tac pgSignExtSimpPrivate ["CompCert4Lean.Lib.Integers.zltSelect"]
+        rw [hs]
+        run_tac pgSignExtSimpPrivate ["CompCert4Lean.Lib.Integers.sumboolSelect"]
+        rfl
+      exact (by simpa [hm0] using hz : False).elim
+
+theorem sign_ext_redundant_sound : sign_ext_redundant_soundStatement := by
+  intro v w x n hred hagree hn
+  cases x with
+  | Nothing => trivial
+  | I m =>
+      cases v with
+      | Vint a =>
+          cases w with
+          | Vint b =>
+              simp [sign_ext_redundant, sign_ext, vagree, iVagree,
+                CompCert4Lean.Common.Values.Val.sign_ext] at hred hagree ⊢
+              exact pg_sign_ext_red_int a b m n hred hagree hn
+          | _ =>
+              simp [sign_ext, vagree, iVagree,
+                CompCert4Lean.Common.Values.Val.sign_ext] at hagree
+      | _ =>
+          cases w <;>
+            simp [sign_ext, vagree, iVagree,
+              CompCert4Lean.Common.Values.Val.sign_ext]
+  | L m => simp [sign_ext_redundant] at hred
+  | All => simp [sign_ext_redundant] at hred
+
+end CompCert4Lean.Backend.NeedDomain
+
+namespace CompCert4Lean.Backend.NeedDomain
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Lib.Integers
+
+private theorem pg_nat_not_or64 (x y : Nat)
+    (hxlt : x < 2 ^ Int64.wordsize)
+    (hylt : y < 2 ^ Int64.wordsize) :
+    Nat.xor (Nat.lor x y) (2 ^ Int64.wordsize - 1) =
+      Nat.land (Nat.xor x (2 ^ Int64.wordsize - 1))
+        (Nat.xor y (2 ^ Int64.wordsize - 1)) := by
+  apply Nat.eq_of_testBit_eq
+  intro i
+  simp only [Nat.xor_eq, Nat.lor_eq, Nat.land_eq]
+  rw [Nat.testBit_xor, Nat.testBit_or, Nat.testBit_and]
+  rw [Nat.testBit_xor, Nat.testBit_xor]
+  rw [Nat.testBit_two_pow_sub_one]
+  by_cases hi : i < Int64.wordsize
+  · by_cases hx : x.testBit i = true <;>
+      by_cases hy : y.testBit i = true <;> simp [hi, hx, hy]
+  · have hni : Int64.wordsize ≤ i := Nat.le_of_not_gt hi
+    have hpow : 2 ^ Int64.wordsize ≤ 2 ^ i :=
+      Nat.pow_le_pow_right Nat.zero_lt_two hni
+    have hxi : x < 2 ^ i := Nat.lt_of_lt_of_le hxlt hpow
+    have hyi : y < 2 ^ i := Nat.lt_of_lt_of_le hylt hpow
+    rw [Nat.testBit_lt_two_pow hxi, Nat.testBit_lt_two_pow hyi]
+    simp [hi]
+
+private theorem pg_int64_not_and_not (a b : int64) :
+    CompCert4Lean.Lib.Integers.Int64.not
+        (CompCert4Lean.Lib.Integers.Int64.and
+          (CompCert4Lean.Lib.Integers.Int64.not a)
+          (CompCert4Lean.Lib.Integers.Int64.not b)) =
+      CompCert4Lean.Lib.Integers.Int64.or a b := by
+  apply CompCert4Lean.Lib.Integers.WordCore.ext_of_val_eq
+  rw [lagreeNotValFinal, lagreeAndVal, lagreeNotValFinal,
+    lagreeNotValFinal, lagreeOrValForOr]
+  have h := pg_nat_not_or64 a.val b.val
+    (lagreeWordValLt a) (lagreeWordValLt b)
+  calc
+    Nat.xor
+        (Nat.land (Nat.xor a.val (2 ^ Int64.wordsize - 1))
+          (Nat.xor b.val (2 ^ Int64.wordsize - 1)))
+        (2 ^ Int64.wordsize - 1) =
+        Nat.xor
+          (Nat.xor (Nat.lor a.val b.val)
+            (2 ^ Int64.wordsize - 1))
+          (2 ^ Int64.wordsize - 1) := by rw [h]
+    _ = Nat.lor a.val b.val := by
+      simp [Nat.xor_assoc]
+
+private theorem pg_int64_not_or (a b : int64) :
+    CompCert4Lean.Lib.Integers.Int64.not
+      (CompCert4Lean.Lib.Integers.Int64.or a b) =
+      CompCert4Lean.Lib.Integers.Int64.and
+        (CompCert4Lean.Lib.Integers.Int64.not a)
+        (CompCert4Lean.Lib.Integers.Int64.not b) := by
+  calc
+    CompCert4Lean.Lib.Integers.Int64.not
+        (CompCert4Lean.Lib.Integers.Int64.or a b) =
+        CompCert4Lean.Lib.Integers.Int64.not
+          (CompCert4Lean.Lib.Integers.Int64.not
+            (CompCert4Lean.Lib.Integers.Int64.and
+              (CompCert4Lean.Lib.Integers.Int64.not a)
+              (CompCert4Lean.Lib.Integers.Int64.not b))) := by
+      exact (congrArg CompCert4Lean.Lib.Integers.Int64.not
+        (pg_int64_not_and_not a b)).symm
+    _ = CompCert4Lean.Lib.Integers.Int64.and
+          (CompCert4Lean.Lib.Integers.Int64.not a)
+          (CompCert4Lean.Lib.Integers.Int64.not b) :=
+      lagreeNotInvolutiveFinal _
+
+theorem orlimm_redundant_sound : orlimm_redundant_soundStatement := by
+  intro v w x n hred hagree
+  cases x with
+  | Nothing => trivial
+  | I m => simp [orlimm_redundant] at hred
+  | L m =>
+      cases v with
+      | Vlong a =>
+          cases w with
+          | Vlong b =>
+              simp [orlimm_redundant, orlimm, vagree, lVagree,
+                CompCert4Lean.Common.Values.Val.orl] at hred hagree ⊢
+              apply lagree_not'
+              change lagree
+                (CompCert4Lean.Lib.Integers.Int64.not
+                  (CompCert4Lean.Lib.Integers.Int64.or a n))
+                (CompCert4Lean.Lib.Integers.Int64.not b) m
+              rw [pg_int64_not_or]
+              apply andlimm_redundant_sound
+                (v := CompCert4Lean.Common.Values.Vlong
+                  (CompCert4Lean.Lib.Integers.Int64.not a))
+                (w := CompCert4Lean.Common.Values.Vlong
+                  (CompCert4Lean.Lib.Integers.Int64.not b))
+                (x := L m)
+                (n := CompCert4Lean.Lib.Integers.Int64.not n)
+              · simpa [andlimm_redundant, lagreeNotInvolutiveFinal] using hred
+              · simpa [andlimm, vagree, lVagree,
+                  CompCert4Lean.Common.Values.Val.andl] using
+                    (lagree_not a b
+                      (CompCert4Lean.Lib.Integers.Int64.and m
+                        (CompCert4Lean.Lib.Integers.Int64.not n)) hagree)
+          | _ =>
+              simp [orlimm, vagree, lVagree,
+                CompCert4Lean.Common.Values.Val.orl] at hagree
+      | _ =>
+          cases w <;>
+            simp [orlimm, vagree, lVagree,
+              CompCert4Lean.Common.Values.Val.orl]
+  | All => simp [orlimm_redundant] at hred
+
+end CompCert4Lean.Backend.NeedDomain

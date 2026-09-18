@@ -7978,3 +7978,105 @@ theorem bits_size_4_proof : bits_size_4 := by
                 exact hsz0)
           exact congrArg
             (fun q => CompCert4Lean.Foundation.Numbers.Rocq.Coq.Zpos q) hpos
+
+end CompCert4Lean.Lib.Integers.Int
+
+namespace CompCert4Lean.Lib.Integers.Byte
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem eqm_samerepr_proof : eqm_samerepr := by
+  intro x y h
+  apply WordCore.ext_of_val_eq
+  rw [show x = zOfInt (intOfZ x) by exact (zOfInt_intOfZ x).symm,
+    show y = zOfInt (intOfZ y) by exact (zOfInt_intOfZ y).symm]
+  change (WordCore.repr wordsize (zOfInt (intOfZ x))).val =
+    (WordCore.repr wordsize (zOfInt (intOfZ y))).val
+  rw [WordCore.val_repr, WordCore.val_repr]
+  have hm : intOfZ modulus = (2 ^ wordsize : Int) := by
+    unfold modulus
+    rw [WordCore.twoPowerNat_eq_zOfNat_twoPow]
+    rfl
+  unfold WordCore.eqm CompCert4Lean.Lib.Zbits.eqmod at h
+  rcases h with ⟨k, hk⟩
+  have hk' := congrArg intOfZ hk
+  simp only [zAdd, zMul, ZArith.BinInt.Z.add,
+    ZArith.BinInt.Z.mul, intOfZ_zOfInt] at hk'
+  change intOfZ x = intOfZ k * intOfZ modulus + intOfZ y at hk'
+  have hrem : intOfZ x % intOfZ modulus = intOfZ y % intOfZ modulus := by
+    rw [hk', Int.add_emod, Int.mul_emod]
+    simp
+  rw [hm] at hrem
+  exact congrArg Int.toNat hrem
+
+end CompCert4Lean.Lib.Integers.Byte
+
+namespace CompCert4Lean.Lib.Integers.Int64
+
+theorem signed_mone_proof : signed_mone := by
+  rfl
+
+theorem eqm_refl_proof : eqm_refl := by
+  intro x
+  exact CompCert4Lean.Lib.Zbits.eqmod_refl modulus x
+
+end CompCert4Lean.Lib.Integers.Int64
+
+namespace CompCert4Lean.Lib.Integers.Int64
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+private theorem suffix_int64_unsigned_repr_eq_exact (x : Z) :
+    unsigned (repr x) = zMod x modulus := by
+  change (WordCore.repr wordsize x).intval = zMod x modulus
+  rw [WordCore.intval_eq_zOfNat_val]
+  have hval : (WordCore.repr wordsize x).val =
+      _root_.Int.toNat
+        (intOfZ x % _root_.Int.ofNat (2 ^ wordsize)) := by
+    have h := WordCore.val_repr wordsize (intOfZ x)
+    rw [zOfInt_intOfZ x] at h
+    simpa only [_root_.Int.ofNat_eq_natCast] using h
+  rw [hval]
+  apply intOfZ_injective
+  have hmpos : (0 : _root_.Int) < intOfZ modulus := by
+    change (0 : _root_.Int) < _root_.Int.ofNat (2 ^ wordsize)
+    exact _root_.Int.natCast_pos.mpr (Nat.two_pow_pos _)
+  have hm : intOfZ modulus = _root_.Int.ofNat (2 ^ wordsize) := by
+    rfl
+  simp only [zOfNat, ZArith.BinInt.Z.of_nat, intOfZ_zOfInt]
+  have hmod : intOfZ (zMod x modulus) =
+      intOfZ x % _root_.Int.ofNat (2 ^ wordsize) := by
+    have hrange := ZArith.BinInt.Z.modulo_range x modulus (by
+      change (0 : _root_.Int) < intOfZ modulus
+      exact hmpos)
+    have hr0 : (0 : _root_.Int) ≤ intOfZ (zMod x modulus) := hrange.1
+    have hrlt : intOfZ (zMod x modulus) < intOfZ modulus := hrange.2
+    have hd := ZArith.Zdiv.Z_div_mod_eq_full x modulus
+    have hdInt := congrArg intOfZ hd
+    simp only [ZArith.BinInt.Z.add, ZArith.BinInt.Z.mul,
+      intOfZ_zOfInt] at hdInt
+    let q := intOfZ (ZArith.BinInt.Z.div x modulus)
+    let r := intOfZ (zMod x modulus)
+    let m := intOfZ modulus
+    have hcalc : intOfZ x % m = r := by
+      calc
+        intOfZ x % m = (m * q + r) % m :=
+          congrArg (fun a => a % m) hdInt
+        _ = (r + q * m) % m := by
+          rw [_root_.Int.add_comm, _root_.Int.mul_comm]
+        _ = r % m := _root_.Int.add_mul_emod_self_right r q m
+        _ = r := _root_.Int.emod_eq_of_lt hr0 hrlt
+    simpa [m, r, hm] using hcalc.symm
+  rw [hmod]
+  exact _root_.Int.toNat_of_nonneg
+    (_root_.Int.emod_nonneg (intOfZ x) (_root_.Int.ne_of_gt hmpos))
+
+theorem signed_repr_eq_proof : signed_repr_eq := by
+  intro x
+  change zltSelect (unsigned (repr x)) half_modulus
+      (unsigned (repr x)) (zSub (unsigned (repr x)) modulus) =
+    zltSelect (zMod x modulus) half_modulus (zMod x modulus)
+      (zSub (zMod x modulus) modulus)
+  rw [suffix_int64_unsigned_repr_eq_exact]
+
+end CompCert4Lean.Lib.Integers.Int64
