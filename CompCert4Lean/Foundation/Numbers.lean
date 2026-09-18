@@ -5095,3 +5095,47 @@ theorem ZArith.Zmisc.iter_nat_of_Z :
 
 end Rocq.Coq
 end CompCert4Lean.Foundation.Numbers
+
+namespace CompCert4Lean.Foundation.Numbers
+namespace Rocq.Coq
+
+theorem ZArith.Znat.Nat2Z.inj :
+    ZArith.Znat.Nat2Z.injStatement := by
+  intro n m h
+  have hi : (Int.ofNat n) = Int.ofNat m := by
+    simpa [ZArith.BinInt.Z.of_nat, intOfZ_zOfInt] using congrArg intOfZ h
+  exact Int.ofNat.inj hi
+
+theorem ZArith.Znat.Nat2Z.inj_add :
+    ZArith.Znat.Nat2Z.inj_addStatement := by
+  intro n m
+  apply intOfZ_injective
+  simp [ZArith.BinInt.Z.of_nat, ZArith.BinInt.Z.add, intOfZ_zOfInt]
+
+theorem ZArith.Znat.Z2Nat.inj_add :
+    ZArith.Znat.Z2Nat.inj_addStatement := by
+  intro n m hn hm
+  change Int.toNat (intOfZ (ZArith.BinInt.Z.add n m)) =
+    Nat.add (Int.toNat (intOfZ n)) (Int.toNat (intOfZ m))
+  simp only [ZArith.BinInt.Z.add, intOfZ_zOfInt]
+  rw [Int.toNat_add]
+  · rfl
+  · exact hn
+  · exact hm
+
+theorem ZArith.Znat.Z2Nat.inj_sub :
+    ZArith.Znat.Z2Nat.inj_subStatement := by
+  intro n m hm
+  change Int.toNat (intOfZ (ZArith.BinInt.Z.sub n m)) =
+    Nat.sub (Int.toNat (intOfZ n)) (Int.toNat (intOfZ m))
+  simp only [ZArith.BinInt.Z.sub, intOfZ_zOfInt]
+  generalize ha : intOfZ n = a
+  generalize hb : intOfZ m = b
+  change Int.toNat (a - b) = Nat.sub (Int.toNat a) (Int.toNat b)
+  have hbnonneg : 0 ≤ b := by
+    change 0 ≤ intOfZ m at hm
+    simpa [hb] using hm
+  cases a <;> cases b <;> simp_all <;> omega
+
+end Rocq.Coq
+end CompCert4Lean.Foundation.Numbers

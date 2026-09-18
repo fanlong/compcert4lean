@@ -5963,3 +5963,249 @@ theorem match_cont_find_funct : match_cont_find_functStatement := by
                   exact ⟨tfd, htfind, htf⟩
 
 end CompCert4Lean.Cfrontend.SimplLocalsproof
+
+namespace CompCert4Lean.Cfrontend.SimplLocalsproof
+
+open CompCert4Lean.Cfrontend.Clight
+open CompCert4Lean.Cfrontend.SimplLocals
+
+theorem compat_cenv_select_switch : compat_cenv_select_switchStatement := by
+  intro cenv n
+  have DFL : ∀ ls,
+      compat_cenv (addr_taken_lblstmt ls) cenv →
+        compat_cenv (addr_taken_lblstmt (select_switch_default ls)) cenv := by
+    let P0 : labeled_statements → Prop := fun ls =>
+      compat_cenv (addr_taken_lblstmt ls) cenv →
+        compat_cenv (addr_taken_lblstmt (select_switch_default ls)) cenv
+    have H : ∀ ls, P0 ls := by
+      apply CompCert4Lean.Cfrontend.Clight.labeled_statements.rec
+        (motive_1 := fun _ => True) (motive_2 := P0)
+      all_goals try simp
+      case LSnil => intro h; exact compat_cenv_empty cenv
+      case LScons =>
+        intro case stmt rest ih h
+        cases case with
+        | none => simpa [select_switch_default] using h
+        | some c => exact ih (compat_union_right _ _ _ h)
+    exact H
+  have CASE : ∀ ls ls',
+      compat_cenv (addr_taken_lblstmt ls) cenv →
+      select_switch_case n ls = some ls' →
+      compat_cenv (addr_taken_lblstmt ls') cenv := by
+    let P0 : labeled_statements → Prop := fun ls =>
+      ∀ ls', compat_cenv (addr_taken_lblstmt ls) cenv →
+        select_switch_case n ls = some ls' →
+        compat_cenv (addr_taken_lblstmt ls') cenv
+    have H : ∀ ls, P0 ls := by
+      apply CompCert4Lean.Cfrontend.Clight.labeled_statements.rec
+        (motive_1 := fun _ => True) (motive_2 := P0)
+      all_goals try simp
+      case LSnil =>
+        intro ls' _ h
+        simp [select_switch_case] at h
+      case LScons =>
+        intro case stmt rest ih ls' h hsel
+        cases case with
+        | none => exact ih ls' (compat_union_right _ _ _ h) hsel
+        | some c =>
+            cases hz : CompCert4Lean.Lib.Coqlib.zeq c n with
+            | left heq =>
+                simp only [select_switch_case, hz] at hsel
+                cases hsel
+                simpa [addr_taken_lblstmt] using h
+            | right hne =>
+                apply ih ls' (compat_union_right _ _ _ h)
+                simpa [select_switch_case, hz] using hsel
+    exact H
+  intro ls h
+  cases hs : select_switch_case n ls with
+  | some ls' =>
+      simp [select_switch, hs]
+      exact CASE ls ls' h hs
+  | none =>
+      simp [select_switch, hs]
+      exact DFL ls h
+
+theorem addr_taken_seq_of_labeled_statement : addr_taken_seq_of_labeled_statementStatement := by
+  intro ls
+  let P : statement → Prop := fun _ => True
+  let P0 : labeled_statements → Prop := fun ls =>
+    addr_taken_stmt (seq_of_labeled_statement ls) = addr_taken_lblstmt ls
+  have H : ∀ ls, P0 ls := by
+    apply CompCert4Lean.Cfrontend.Clight.labeled_statements.rec
+      (motive_1 := P) (motive_2 := P0)
+    all_goals try simp [P]
+    case LSnil => rfl
+    case LScons =>
+      intro case stmt rest ih
+      change VSet.union (addr_taken_stmt stmt)
+          (addr_taken_stmt (seq_of_labeled_statement rest)) =
+        VSet.union (addr_taken_stmt stmt) (addr_taken_lblstmt rest)
+      rw [ih]
+  exact H ls
+
+theorem simpl_find_label : simpl_find_labelStatement := by
+  intro cfg prog f cenv m bound tbound lbl
+  let P : statement → Prop := fun s =>
+    ∀ k ts tk, simpl_stmt cfg cenv s = .OK ts →
+      match_cont cfg prog f cenv k tk m bound tbound →
+      compat_cenv (addr_taken_stmt s) cenv →
+      match find_label lbl s k with
+      | none => find_label lbl ts tk = none
+      | some (s', k') => ∃ ts' tk', find_label lbl ts tk = some (ts', tk') ∧
+          compat_cenv (addr_taken_stmt s') cenv ∧ simpl_stmt cfg cenv s' = .OK ts' ∧
+          match_cont cfg prog f cenv k' tk' m bound tbound
+  have H : ∀ s, P s := by
+    apply CompCert4Lean.Cfrontend.Clight.statement.rec
+      (motive_1 := P) (motive_2 := fun _ => True)
+    case Sskip =>
+      intro k ts tk h _ _
+      cases h
+      rfl
+    case Sassign =>
+      intro lhs rhs k ts tk h _ _
+      simp only [simpl_stmt] at h
+      split at h
+      · cases h
+        exact find_label_Sset_debug_none cfg lbl _ _ _ tk
+      · cases h
+        rfl
+    case Sset =>
+      intro id rhs k ts tk h _ _
+      simp only [simpl_stmt] at h
+      split at h <;> try contradiction
+      cases h
+      rfl
+    case Scall =>
+      intro result fn args k ts tk h _ _
+      simp only [simpl_stmt] at h
+      split at h <;> try contradiction
+      cases h
+      rfl
+    case Sbuiltin =>
+      intro result ef argTypes args k ts tk h _ _
+      simp only [simpl_stmt] at h
+      split at h <;> try contradiction
+      cases h
+      rfl
+    case Ssequence =>
+      intro s1 s2 ih1 ih2 k ts tk h mc compat
+      simp only [simpl_stmt] at h
+      split at h <;> try contradiction
+      rename_i h1
+      split at h <;> try contradiction
+      rename_i h2
+      cases h
+      have compat1 : compat_cenv (addr_taken_stmt s1) cenv :=
+        compat_union_left _ _ _ compat
+      have compat2 : compat_cenv (addr_taken_stmt s2) cenv :=
+        compat_union_right _ _ _ compat
+      have mc1 := match_Kseq cenv s2 k _ tk m bound tbound h2 mc compat2
+      have h1' := ih1 (.Kseq s2 k) _ (.Kseq _ tk) h1 mc1 compat1
+      cases e : find_label lbl s1 (.Kseq s2 k) with
+      | none =>
+          simp [e] at h1'
+          simpa [find_label, e, h1'] using ih2 k _ tk h2 mc compat2
+      | some found =>
+          rcases (by simpa [e] using h1') with ⟨ts', tk', hfind, hc, hs, hm⟩
+          simp only [find_label, e]
+          exact ⟨ts', tk', by rw [hfind], hc, hs, hm⟩
+    case Sloop =>
+      intro body iter ihbody ihiter k ts tk h mc compat
+      simp only [simpl_stmt] at h
+      split at h <;> try contradiction
+      rename_i hbody
+      split at h <;> try contradiction
+      rename_i hiter
+      cases h
+      have compatbody : compat_cenv (addr_taken_stmt body) cenv :=
+        compat_union_left _ _ _ compat
+      have compatiter : compat_cenv (addr_taken_stmt iter) cenv :=
+        compat_union_right _ _ _ compat
+      have mcbody := match_Kloop1 cenv body iter k _ _ tk m bound tbound
+        hbody hiter mc compat
+      have hbody' := ihbody (.Kloop1 body iter k) _ (.Kloop1 _ _ tk)
+        hbody mcbody compatbody
+      cases e : find_label lbl body (.Kloop1 body iter k) with
+      | none =>
+          simp [e] at hbody'
+          have mciter := match_Kloop2 cenv body iter k _ _ tk m bound tbound
+            hbody hiter mc compat
+          simpa [find_label, e, hbody'] using
+            ihiter (.Kloop2 body iter k) _ (.Kloop2 _ _ tk) hiter mciter compatiter
+      | some found =>
+          rcases (by simpa [e] using hbody') with ⟨ts', tk', hfind, hc, hs, hm⟩
+          simp only [find_label, e]
+          exact ⟨ts', tk', by rw [hfind], hc, hs, hm⟩
+    case Sbreak =>
+      intro k ts tk h _ _
+      cases h
+      rfl
+    case Scontinue =>
+      intro k ts tk h _ _
+      cases h
+      rfl
+    case Sreturn =>
+      intro result k ts tk h _ _
+      cases h
+      rfl
+    case Sswitch =>
+      intro selector cases ihcases k ts tk h mc compat
+      simp only [simpl_stmt] at h
+      split at h <;> try contradiction
+      rename_i hcases
+      cases h
+      have compatcases : compat_cenv (addr_taken_lblstmt cases) cenv :=
+        compat_union_right _ _ _ compat
+      have mc' := match_Kswitch cenv k tk m bound tbound mc
+      simpa [find_label] using
+        (simpl_find_label_ls cfg prog f cenv m bound tbound lbl cases
+          (.Kswitch k) _ (.Kswitch tk) hcases mc' compatcases)
+    case Slabel =>
+      intro l body ihbody k ts tk h mc compat
+      simp only [simpl_stmt] at h
+      split at h <;> try contradiction
+      rename_i hbody
+      cases h
+      have compatbody : compat_cenv (addr_taken_stmt body) cenv := by
+        simpa [addr_taken_stmt] using compat
+      cases e : CompCert4Lean.Common.AST.ident_eq lbl l with
+      | left heq =>
+          simp only [find_label, e]
+          exact ⟨_, tk, rfl, compatbody, hbody, mc⟩
+      | right hne =>
+          simpa [find_label, e] using ihbody k _ tk hbody mc compatbody
+    case Sgoto =>
+      intro l k ts tk h _ _
+      cases h
+      rfl
+    case Sifthenelse =>
+      intro cond s1 s2 ih1 ih2 k ts tk h mc compat
+      simp only [simpl_stmt] at h
+      split at h <;> try contradiction
+      rename_i h1
+      split at h <;> try contradiction
+      rename_i h2
+      cases h
+      have compat12 : compat_cenv
+          (VSet.union (addr_taken_stmt s1) (addr_taken_stmt s2)) cenv :=
+        compat_union_right _ _ _ compat
+      have compat1 : compat_cenv (addr_taken_stmt s1) cenv :=
+        compat_union_left _ _ _ compat12
+      have compat2 : compat_cenv (addr_taken_stmt s2) cenv :=
+        compat_union_right _ _ _ compat12
+      have h1' := ih1 k _ tk h1 mc compat1
+      cases e : find_label lbl s1 k with
+      | none =>
+          simp [e] at h1'
+          simpa [find_label, e, h1'] using ih2 k _ tk h2 mc compat2
+      | some found =>
+          rcases (by simpa [e] using h1') with ⟨ts', tk', hfind, hc, hs, hm⟩
+          simp only [find_label, e]
+          exact ⟨ts', tk', by rw [hfind], hc, hs, hm⟩
+    case LSnil => exact True.intro
+    case LScons => intros; exact True.intro
+  intro s k ts tk h mc compat
+  exact H s k ts tk h mc compat
+
+end CompCert4Lean.Cfrontend.SimplLocalsproof

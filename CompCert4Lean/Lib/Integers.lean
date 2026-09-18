@@ -7845,3 +7845,136 @@ theorem ror_rol_neg_proof : ror_rol_neg := by
           rw [hidx]
         _ = testbit (rol x (neg y)) (zOfNat n) := by
           exact (suffix_rol_testbit_nat x (WordCore.neg y) n hk).symm
+
+theorem and_zero_proof : and_zero := by
+  intro x
+  apply same_bits_eq_proof
+  intro i hi
+  rw [bits_and_proof x zero i hi, bits_zero_proof]
+  simp
+
+theorem negate_cmpu_proof : negate_cmpu := by
+  intro c x y
+  cases c <;> simp [cmpu, WordCore.cmpu, negate_comparison]
+
+end CompCert4Lean.Lib.Integers.Int
+
+namespace CompCert4Lean.Lib.Integers
+
+theorem int_wordsize_divides_modulus_proof : int_wordsize_divides_modulusStatement := by
+  unfold int_wordsize_divides_modulusStatement
+  change ∃ k, Int.modulus =
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.mul
+      (zOfNat Int.wordsize) k
+  refine ⟨zOfNat (2 ^ (32 - 5)), ?_⟩
+  rw [Int.modulus, WordCore.twoPowerNat_eq_zOfNat_twoPow]
+  apply CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective
+  simp only [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.mul,
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat,
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+  change Int.ofNat (2 ^ 32) = Int.ofNat 32 * Int.ofNat (2 ^ (32 - 5))
+  rfl
+
+namespace Int
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem bits_size_4_proof : bits_size_4 := by
+  intro x n hn hbit hhigh
+  cases n with
+  | Zneg p =>
+      change (0 : Int) ≤ -Int.ofNat
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p) at hn
+      have hp : (0 : Int) < Int.ofNat
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p) :=
+        Int.natCast_pos.mpr
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat_positive p)
+      omega
+  | Z0 =>
+      have hidx : intOfZ (zSub zZero zOne) < 0 := by
+        change (0 : Int) - 1 < 0
+        omega
+      have hf := suffix_testbit_negative_index x (zSub zZero zOne) hidx
+      rw [hf] at hbit
+      cases hbit
+  | Zpos p =>
+      let k := CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p
+      have hkpos : 0 < k :=
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat_positive p
+      have hz : zOfNat k = .Zpos p := by
+        exact ZArith.Znat.positive_nat_Z p
+      have hsub : zSub (.Zpos p) zOne = zOfNat (k - 1) := by
+        rw [← hz]
+        exact suffix_zsub_nat k 1 (by omega)
+      rw [hsub] at hbit
+      have hbitnat : x.val.testBit (k - 1) = true := by
+        rw [suffix_testbit_nat] at hbit
+        exact hbit
+      have hhighNat : ∀ i : Nat, k ≤ i → x.val.testBit i = false := by
+        intro i hik
+        by_cases hi32 : i < wordsize
+        · have hki : zLe (.Zpos p) (zOfNat i) := by
+            change intOfZ (.Zpos p) ≤ intOfZ (zOfNat i)
+            rw [← hz]
+            simp only [zOfNat, ZArith.BinInt.Z.of_nat,
+              intOfZ_zOfInt]
+            exact Int.ofNat_le.mpr hik
+          have hil : zLt (zOfNat i) zwordsize := by
+            change intOfZ (zOfNat i) < intOfZ zwordsize
+            simp only [zOfNat, zwordsize, ZArith.BinInt.Z.of_nat,
+              intOfZ_zOfInt]
+            exact Int.ofNat_lt.mpr hi32
+          have hh := hhigh (zOfNat i) ⟨hki, hil⟩
+          rw [suffix_testbit_nat] at hh
+          exact hh
+        · have hxlt : x.val < 2 ^ wordsize := WordCore.val_lt x
+          have hpow : 2 ^ wordsize ≤ 2 ^ i :=
+            Nat.pow_le_pow_right (by decide) (Nat.le_of_not_gt hi32)
+          exact Nat.testBit_lt_two_pow (Nat.lt_of_lt_of_le hxlt hpow)
+      have hxne : x.val ≠ 0 := by
+        intro hx
+        rw [hx] at hbitnat
+        simp at hbitnat
+      have hlo : 2 ^ (k - 1) ≤ x.val :=
+        Nat.ge_two_pow_of_testBit hbitnat
+      have hkstep : k - 1 + 1 = k := by omega
+      have hupp : x.val < 2 ^ ((k - 1) + 1) := by
+        rw [hkstep]
+        exact Nat.lt_pow_two_of_testBit x.val (by
+          intro i hik
+          exact hhighNat i hik)
+      have hlog : Nat.log2 x.val = k - 1 :=
+        (Nat.log2_eq_iff hxne).2 ⟨hlo, hupp⟩
+      cases hval : x.val with
+      | zero => exact (hxne hval).elim
+      | succ m =>
+          have hsz0 :
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat
+                  (PArith.BinPos.Pos.size (posOfNat (m + 1))) = k := by
+            unfold PArith.BinPos.Pos.size
+            rw [CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat_posOfNat
+              (by omega : 0 < m + 1)]
+            have hlog' : Nat.log2 (m + 1) = k - 1 := by
+              simpa [hval] using hlog
+            rw [hlog']
+            rw [CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat_posOfNat
+              (by omega : 0 < k - 1 + 1)]
+            omega
+          change CompCert4Lean.Lib.Zbits.Zsize (unsigned x) = .Zpos p
+          rw [← hz]
+          rw [suffix_bits_size_2_unsigned_eq x, hval]
+          simp only [CompCert4Lean.Lib.Zbits.Zsize]
+          change .Zpos (PArith.BinPos.Pos.size (posOfNat (m + 1))) = zOfNat k
+          have hzk : zOfNat k = .Zpos (posOfNat k) := by
+            cases hk : k with
+            | zero => omega
+            | succ q => rfl
+          rw [hzk]
+          have hpos : PArith.BinPos.Pos.size (posOfNat (m + 1)) =
+              posOfNat k :=
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat_injective
+              (by
+                rw [CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat_posOfNat hkpos]
+                exact hsz0)
+          exact congrArg
+            (fun q => CompCert4Lean.Foundation.Numbers.Rocq.Coq.Zpos q) hpos

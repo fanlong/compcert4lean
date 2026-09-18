@@ -6033,3 +6033,239 @@ theorem storebytes_mapped_inj : storebytes_mapped_injStatement := by
 end Mem
 
 end CompCert4Lean.Common.Memory
+
+namespace CompCert4Lean.Common.Memory
+
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.Lib.Coqlib
+
+namespace Mem
+
+theorem free_left_inj : free_left_injStatement := by
+  intro f m1 m2 b lo hi m1' hmem hfree
+  have hresult := free_result m1 b lo hi m1' hfree
+  rw [hresult]
+  have hfree' : free m1 b lo hi = some (unchecked_free m1 b lo hi) := by
+    simpa [hresult] using hfree
+  constructor
+  · intro b1 b2 delta ofs k p hmap hperm
+    exact hmem.mi_perm b1 b2 delta ofs k p hmap
+      (perm_free_3 m1 b lo hi (unchecked_free m1 b lo hi) hfree'
+        b1 ofs k p hperm)
+  · intro b1 b2 delta chunk ofs p hmap hrange
+    apply hmem.mi_align b1 b2 delta chunk ofs p hmap
+    intro q hq
+    exact perm_free_3 m1 b lo hi (unchecked_free m1 b lo hi) hfree'
+      b1 q Max p (hrange q hq)
+  · intro b1 ofs b2 delta hmap hperm
+    have hperm_old : perm m1 b1 ofs Cur Readable :=
+      perm_free_3 m1 b lo hi (unchecked_free m1 b lo hi) hfree'
+        b1 ofs Cur Readable hperm
+    have hmemval := hmem.mi_memval b1 ofs b2 delta hmap hperm_old
+    exact hmemval
+
+end Mem
+
+end CompCert4Lean.Common.Memory
+
+namespace CompCert4Lean.Common.Memory
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.Lib.Coqlib
+
+namespace Mem
+
+theorem alloc_right_inj : alloc_right_injStatement := by
+  intro f m1 m2 lo hi b2 m2' hinj halloc
+  constructor
+  · intro b1 b2' delta ofs k p hmap hperm
+    have hperm_old := hinj.mi_perm b1 b2' delta ofs k p hmap hperm
+    simpa [halloc] using
+      (perm_alloc_1 m2 lo hi m2' b2 halloc b2' (zAdd ofs delta) k p hperm_old)
+  · intro b1 b2' delta chunk ofs p hmap hrange
+    exact hinj.mi_align b1 b2' delta chunk ofs p hmap hrange
+  · intro b1 ofs b2' delta hmap hperm
+    have hperm2 : perm m2 b2' (zAdd ofs delta) Cur Readable :=
+      hinj.mi_perm b1 b2' delta ofs Cur Readable hmap hperm
+    have hvalid : valid_block m2 b2' :=
+      perm_valid_block m2 b2' (zAdd ofs delta) Cur Readable hperm2
+    have hfresh : ¬ valid_block m2 b2 :=
+      fresh_block_alloc m2 lo hi m2' b2 halloc
+    have hneq : b2' ≠ b2 := by
+      intro heq
+      apply hfresh
+      simpa [heq] using hvalid
+    have halloc' := halloc
+    simp [alloc] at halloc'
+    rcases halloc' with ⟨rfl, rfl⟩
+    rw [pmapGetSetOther _ _ _ _ hneq]
+    exact hinj.mi_memval b1 ofs b2' delta hmap hperm
+
+end Mem
+
+end CompCert4Lean.Common.Memory
+
+namespace CompCert4Lean.Common.Memory
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.Lib.Coqlib
+
+namespace Mem
+
+theorem alloc_left_unmapped_inj : alloc_left_unmapped_injStatement := by
+  intro f m1 m2 lo hi m1' b1 hmem halloc hf
+  simp [alloc] at halloc
+  rcases halloc with ⟨rfl, rfl⟩
+  have hbneq : ∀ b b2 delta, f b = some (b2, delta) →
+      b ≠ m1.nextblock := by
+    intro b b2 delta hmap heq
+    subst b
+    rw [hf] at hmap
+    cases hmap
+  constructor
+  · intro b b2 delta ofs k p hmap hperm
+    have hinv := perm_alloc_inv m1 lo hi (alloc m1 lo hi).1
+      m1.nextblock rfl b ofs k p hperm
+    have hperm_old : perm m1 b ofs k p := by
+      have hneq := hbneq b b2 delta hmap
+      cases heq : CompCert4Lean.Common.Values.eq_block b m1.nextblock with
+      | left hbeq => exact (hneq hbeq).elim
+      | right _ => simpa [heq] using hinv
+    exact hmem.mi_perm b b2 delta ofs k p hmap hperm_old
+  · intro b b2 delta chunk ofs p hmap hrange
+    apply hmem.mi_align b b2 delta chunk ofs p hmap
+    intro q hq
+    have hinv := perm_alloc_inv m1 lo hi (alloc m1 lo hi).1
+      m1.nextblock rfl b q Max p (hrange q hq)
+    have hneq := hbneq b b2 delta hmap
+    cases heq : CompCert4Lean.Common.Values.eq_block b m1.nextblock with
+    | left hbeq => exact (hneq hbeq).elim
+    | right _ => simpa [heq] using hinv
+  · intro b ofs b2 delta hmap hperm
+    have hinv := perm_alloc_inv m1 lo hi (alloc m1 lo hi).1
+      m1.nextblock rfl b ofs Cur Readable hperm
+    have hperm_old : perm m1 b ofs Cur Readable := by
+      have hneq := hbneq b b2 delta hmap
+      cases heq : CompCert4Lean.Common.Values.eq_block b m1.nextblock with
+      | left hbeq => exact (hneq hbeq).elim
+      | right _ => simpa [heq] using hinv
+    have hmemval := hmem.mi_memval b ofs b2 delta hmap hperm_old
+    have hneq := hbneq b b2 delta hmap
+    simpa [alloc, pmapGetSetOther _ _ _ _ hneq] using hmemval
+
+end Mem
+
+end CompCert4Lean.Common.Memory
+
+namespace CompCert4Lean.Common.Memory
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.Lib.Coqlib
+
+namespace Mem
+
+theorem alloc_left_mapped_inj : alloc_left_mapped_injStatement := by
+  intro f m1 m2 lo hi m1' b1 b2 delta hmem halloc hvalid haligned htarget hf
+  simp [alloc] at halloc
+  rcases halloc with ⟨rfl, rfl⟩
+  constructor
+  · intro b b2' delta' ofs k p hmap hperm
+    cases heq : CompCert4Lean.Common.Values.eq_block b m1.nextblock with
+    | left hbeq =>
+        subst b
+        have hpair : (b2', delta') = (b2, delta) :=
+          Option.some.inj (hmap.symm.trans hf)
+        cases hpair
+        have hbnds := perm_alloc_3 m1 lo hi (alloc m1 lo hi).1
+          m1.nextblock rfl ofs k p hperm
+        exact htarget ofs k p hbnds
+    | right hneq =>
+        apply hmem.mi_perm b b2' delta' ofs k p hmap
+        exact perm_alloc_4 m1 lo hi (alloc m1 lo hi).1 m1.nextblock rfl
+          b ofs k p hperm hneq
+  · intro b b2' delta' chunk ofs p hmap hrange
+    cases heq : CompCert4Lean.Common.Values.eq_block b m1.nextblock with
+    | left hbeq =>
+        subst b
+        have hpair : (b2', delta') = (b2, delta) :=
+          Option.some.inj (hmap.symm.trans hf)
+        cases hpair
+        apply haligned chunk
+        have hsize := CompCert4Lean.Common.Memdata.size_chunk_pos chunk
+        have hzsub (x y : Z) :
+            intOfZ (zSub x y) = intOfZ x - intOfZ y := by
+          change intOfZ (zOfInt (intOfZ x - intOfZ y)) = _
+          rw [intOfZ_zOfInt]
+        have hofslt : zLt ofs (zAdd ofs (size_chunk chunk)) := by
+          change intOfZ ofs < intOfZ (zAdd ofs (size_chunk chunk))
+          simp only [intOfZ_zadd_mem]
+          change 0 < intOfZ (size_chunk chunk) at hsize
+          omega
+        have hp0 := hrange ofs
+          ⟨by change intOfZ ofs ≤ intOfZ ofs; omega, hofslt⟩
+        have hb0 := perm_alloc_3 m1 lo hi (alloc m1 lo hi).1
+          m1.nextblock rfl ofs Max p hp0
+        let last := zSub (zAdd ofs (size_chunk chunk)) (zOfNat 1)
+        have hlastRange : zLe ofs last ∧
+            zLt last (zAdd ofs (size_chunk chunk)) := by
+          dsimp [last]
+          change intOfZ ofs ≤ intOfZ (zSub (zAdd ofs (size_chunk chunk))
+              (zOfNat 1)) ∧
+            intOfZ (zSub (zAdd ofs (size_chunk chunk)) (zOfNat 1)) <
+              intOfZ (zAdd ofs (size_chunk chunk))
+          rw [hzsub, intOfZ_zadd_mem, intOfZ_zofnat_mem]
+          change 0 < intOfZ (size_chunk chunk) at hsize
+          have hsize1 : (1 : Int) ≤ intOfZ (size_chunk chunk) := by omega
+          simp at hsize1 ⊢
+          omega
+        have hplast := hrange last hlastRange
+        have hblast := perm_alloc_3 m1 lo hi (alloc m1 lo hi).1
+          m1.nextblock rfl last Max p hplast
+        change intOfZ (size_chunk chunk) ≤ intOfZ (zSub hi lo)
+        rw [hzsub]
+        dsimp [last] at hblast
+        change intOfZ lo ≤ intOfZ ofs ∧
+          intOfZ ofs < intOfZ hi at hb0
+        change intOfZ lo ≤
+            intOfZ (zSub (zAdd ofs (size_chunk chunk)) (zOfNat 1)) ∧
+          intOfZ (zSub (zAdd ofs (size_chunk chunk)) (zOfNat 1)) <
+            intOfZ hi at hblast
+        rw [hzsub, intOfZ_zadd_mem, intOfZ_zofnat_mem] at hblast
+        simp at hblast
+        have hsize1 : (1 : Int) ≤ intOfZ (size_chunk chunk) := by
+          change 0 < intOfZ (size_chunk chunk) at hsize
+          omega
+        simp at hsize1 ⊢
+        omega
+    | right hneq =>
+        apply hmem.mi_align b b2' delta' chunk ofs p hmap
+        intro q hq
+        exact perm_alloc_4 m1 lo hi (alloc m1 lo hi).1 m1.nextblock rfl
+          b q Max p (hrange q hq) hneq
+  · intro b ofs b2' delta' hmap hperm
+    cases heq : CompCert4Lean.Common.Values.eq_block b m1.nextblock with
+    | left hbeq =>
+        subst b
+        simp [alloc, pmapGetSetSame]
+        exact memval_inject.undef f
+          (ZMap.get (zAdd ofs delta') (PMap.get b2' m2.mem_contents))
+    | right hneq =>
+        have hperm_old : perm m1 b ofs Cur Readable :=
+          perm_alloc_4 m1 lo hi (alloc m1 lo hi).1 m1.nextblock rfl
+            b ofs Cur Readable hperm hneq
+        have hmemval := hmem.mi_memval b ofs b2' delta' hmap hperm_old
+        simpa [alloc, pmapGetSetOther _ _ _ _ hneq] using hmemval
+
+end Mem
+
+end CompCert4Lean.Common.Memory

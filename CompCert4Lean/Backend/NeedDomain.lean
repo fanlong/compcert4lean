@@ -7539,3 +7539,189 @@ theorem store_argument_load_result : store_argument_load_resultStatement := by
   | Many64 => exact CompCert4Lean.Common.Values.Val.load_result_lessdef _ _ _ h
 
 end CompCert4Lean.Backend.NeedDomain
+
+namespace CompCert4Lean.Backend.NeedDomain
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.X86.Op
+
+private theorem pg_andimm_redundant_int
+    (i q m n : int)
+    (hred : Int.and m (Int.not n) = Int.zero)
+    (hagree : iagree i q (Int.and m n)) :
+    iagree (Int.and i n) q m := by
+  intro k hk hm
+  have hzero : CompCert4Lean.Lib.Integers.Int.testbit
+      (Int.and m (Int.not n)) k =
+      CompCert4Lean.Lib.Integers.Int.testbit Int.zero k :=
+    congrArg (fun z => CompCert4Lean.Lib.Integers.Int.testbit z k) hred
+  rw [iagreeAndTestbit,
+    CompCert4Lean.Lib.Integers.Int.bits_zero_proof,
+    iagreeNotTestbit n k hk] at hzero
+  have hn : CompCert4Lean.Lib.Integers.Int.testbit n k = true := by
+    cases hnk : CompCert4Lean.Lib.Integers.Int.testbit n k with
+    | false => simp [hm, hnk] at hzero
+    | true => rfl
+  have hmn : CompCert4Lean.Lib.Integers.Int.testbit (Int.and m n) k = true := by
+    rw [iagreeAndTestbit]
+    simp [hm, hn]
+  have hiq := hagree k hk hmn
+  rw [iagreeAndTestbit]
+  simp [hn, hiq]
+
+theorem andimm_redundant_sound : andimm_redundant_soundStatement := by
+  intro v w x n hred hagree
+  cases x with
+  | Nothing => trivial
+  | I m =>
+      have hred' : Int.and m (Int.not n) = Int.zero := by
+        simpa [andimm_redundant] using hred
+      cases v <;> cases w <;>
+        simp [andimm, vagree, iVagree, lVagree,
+          CompCert4Lean.Common.Values.Val.and] at hagree ⊢
+      exact pg_andimm_redundant_int _ _ _ _ hred' hagree
+  | L m => simp [andimm_redundant] at hred
+  | All => simp [andimm_redundant] at hred
+
+theorem orimm_redundant_sound : orimm_redundant_soundStatement := by
+  intro v w x n hred hagree
+  cases x with
+  | Nothing => trivial
+  | I m =>
+      have hred' : Int.and m n = Int.zero := by
+        simpa [orimm_redundant] using hred
+      cases v with
+      | Vint i =>
+          cases w with
+          | Vint q =>
+              simp [orimm, vagree, iVagree, lVagree,
+                CompCert4Lean.Common.Values.Val.or] at hagree ⊢
+              have hqadd : iagree (Int.or q n) q m := by
+                intro k hk hm
+                have hz : CompCert4Lean.Lib.Integers.Int.testbit
+                    (Int.and m n) k =
+                    CompCert4Lean.Lib.Integers.Int.testbit Int.zero k :=
+                  congrArg (fun z => CompCert4Lean.Lib.Integers.Int.testbit z k) hred'
+                rw [iagreeAndTestbit,
+                  CompCert4Lean.Lib.Integers.Int.bits_zero_proof] at hz
+                have hn : CompCert4Lean.Lib.Integers.Int.testbit n k = false := by
+                  cases hmk : CompCert4Lean.Lib.Integers.Int.testbit m k with
+                  | false => exact False.elim (by simpa [hm] using hmk)
+                  | true => simpa [hm] using hz
+                rw [iagreeOrTestbit]
+                simp [hn]
+              have hadd : iagree (Int.or i n) q m := by
+                have htmp := iagree_or i q n m hagree
+                intro k hk hm
+                exact (htmp k hk hm).trans (hqadd k hk hm)
+              exact hadd
+          | _ => simp [orimm, vagree, iVagree, lVagree,
+              CompCert4Lean.Common.Values.Val.or] at hagree ⊢
+      | _ => cases w <;> simp [orimm, vagree, iVagree, lVagree,
+          CompCert4Lean.Common.Values.Val.or] at hagree ⊢
+  | L m => simp [orimm_redundant] at hred
+  | All => simp [orimm_redundant] at hred
+
+private theorem pg_cmp_bool_lessdef
+    (c : CompCert4Lean.Lib.Integers.comparison)
+    (v1 v1' v2 v2' : val) (b : Bool)
+    (h1 : Val.lessdef v1 v1') (h2 : Val.lessdef v2 v2') :
+    Val.cmp_bool c v1 v2 = some b → Val.cmp_bool c v1' v2' = some b := by
+  cases h1 <;> cases h2 <;> simp [Val.cmp_bool] at *
+
+private theorem pg_cmpl_bool_lessdef
+    (c : CompCert4Lean.Lib.Integers.comparison)
+    (v1 v1' v2 v2' : val) (b : Bool)
+    (h1 : Val.lessdef v1 v1') (h2 : Val.lessdef v2 v2') :
+    Val.cmpl_bool c v1 v2 = some b → Val.cmpl_bool c v1' v2' = some b := by
+  cases h1 <;> cases h2 <;> simp [Val.cmpl_bool] at *
+
+private theorem pg_cmpf_bool_lessdef
+    (c : CompCert4Lean.Lib.Integers.comparison)
+    (v1 v1' v2 v2' : val) (b : Bool)
+    (h1 : Val.lessdef v1 v1') (h2 : Val.lessdef v2 v2') :
+    Val.cmpf_bool c v1 v2 = some b → Val.cmpf_bool c v1' v2' = some b := by
+  cases h1 <;> cases h2 <;> simp [Val.cmpf_bool] at *
+
+private theorem pg_cmpfs_bool_lessdef
+    (c : CompCert4Lean.Lib.Integers.comparison)
+    (v1 v1' v2 v2' : val) (b : Bool)
+    (h1 : Val.lessdef v1 v1') (h2 : Val.lessdef v2 v2') :
+    Val.cmpfs_bool c v1 v2 = some b → Val.cmpfs_bool c v1' v2' = some b := by
+  cases h1 <;> cases h2 <;> simp [Val.cmpfs_bool] at *
+
+private theorem pg_maskzero_bool_lessdef
+    (v1 v1' : val) (mask : int) (b : Bool)
+    (h1 : Val.lessdef v1 v1') :
+    Val.maskzero_bool v1 mask = some b → Val.maskzero_bool v1' mask = some b := by
+  cases h1 <;> simp [Val.maskzero_bool] at *
+
+private theorem pg_cmp_bool_lessdef_right
+    (c : CompCert4Lean.Lib.Integers.comparison)
+    (v1 v1' x : val) (b : Bool) (h1 : Val.lessdef v1 v1') :
+    Val.cmp_bool c v1 x = some b → Val.cmp_bool c v1' x = some b := by
+  exact pg_cmp_bool_lessdef c v1 v1' x x b h1 (Val.lessdef_refl _)
+
+private theorem pg_cmpl_bool_lessdef_right
+    (c : CompCert4Lean.Lib.Integers.comparison)
+    (v1 v1' x : val) (b : Bool) (h1 : Val.lessdef v1 v1') :
+    Val.cmpl_bool c v1 x = some b → Val.cmpl_bool c v1' x = some b := by
+  exact pg_cmpl_bool_lessdef c v1 v1' x x b h1 (Val.lessdef_refl _)
+
+private theorem pg_cmpf_bool_lessdef_right
+    (c : CompCert4Lean.Lib.Integers.comparison)
+    (v1 v1' x : val) (b : Bool) (h1 : Val.lessdef v1 v1') :
+    Val.cmpf_bool c v1 x = some b → Val.cmpf_bool c v1' x = some b := by
+  exact pg_cmpf_bool_lessdef c v1 v1' x x b h1 (Val.lessdef_refl _)
+
+private theorem pg_cmpfs_bool_lessdef_right
+    (c : CompCert4Lean.Lib.Integers.comparison)
+    (v1 v1' x : val) (b : Bool) (h1 : Val.lessdef v1 v1') :
+    Val.cmpfs_bool c v1 x = some b → Val.cmpfs_bool c v1' x = some b := by
+  exact pg_cmpfs_bool_lessdef c v1 v1' x x b h1 (Val.lessdef_refl _)
+
+theorem default_needs_of_condition_sound : default_needs_of_condition_soundStatement := by
+  intro m1 m2 hperm cond args1 b args2 heval hvagree
+  have hvalid : ∀ (blk : block) (ofs : Z),
+      Mem.valid_pointer m1 blk ofs = true → Mem.valid_pointer m2 blk ofs = true := by
+    intro blk ofs h
+    apply (Mem.valid_pointer_nonempty_perm m2 blk ofs).2
+    apply hperm blk ofs Cur CompCert4Lean.Common.Memtype.Nonempty
+    exact (Mem.valid_pointer_nonempty_perm m1 blk ofs).1 h
+  have hless : Val.lessdef_list args1 args2 :=
+    lessdef_vagree_list args1 args2 hvagree
+  cases hless with
+  | lessdef_list_nil =>
+      cases cond <;> simp [eval_condition] at heval ⊢
+  | lessdef_list_cons v1 v1' rest rest' h1 ht =>
+      cases ht with
+      | lessdef_list_nil =>
+          cases cond <;> simp [eval_condition] at heval ⊢
+          all_goals
+            first
+            | exact pg_cmp_bool_lessdef_right _ _ _ _ _ h1 heval
+            | exact Val.cmpu_bool_lessdef _ _ _ _ _ _ _ _ hvalid h1 (Val.lessdef_refl _) heval
+            | exact pg_cmpl_bool_lessdef_right _ _ _ _ _ h1 heval
+            | exact Val.cmplu_bool_lessdef _ _ _ _ _ _ _ _ hvalid h1 (Val.lessdef_refl _) heval
+            | exact pg_cmpf_bool_lessdef_right _ _ _ _ _ h1 heval
+            | exact pg_cmpfs_bool_lessdef_right _ _ _ _ _ h1 heval
+            | exact pg_maskzero_bool_lessdef _ _ _ _ h1 heval
+      | lessdef_list_cons v2 v2' rest2 rest2' h2 ht2 =>
+          cases ht2 with
+          | lessdef_list_nil =>
+              cases cond <;> simp [eval_condition] at heval ⊢
+              all_goals
+                first
+                | exact pg_cmp_bool_lessdef _ _ _ _ _ _ h1 h2 heval
+                | exact Val.cmpu_bool_lessdef _ _ _ _ _ _ _ _ hvalid h1 h2 heval
+                | exact pg_cmpl_bool_lessdef _ _ _ _ _ _ h1 h2 heval
+                | exact Val.cmplu_bool_lessdef _ _ _ _ _ _ _ _ hvalid h1 h2 heval
+                | exact pg_cmpf_bool_lessdef _ _ _ _ _ _ h1 h2 heval
+                | exact pg_cmpfs_bool_lessdef _ _ _ _ _ _ h1 h2 heval
+          | lessdef_list_cons v3 v3' rest3 rest3' h3 ht3 =>
+              cases cond <;> simp [eval_condition] at heval ⊢
+
+end CompCert4Lean.Backend.NeedDomain
