@@ -5757,3 +5757,209 @@ theorem match_cont_free_env : match_cont_free_envStatement := by
     exact Ple_trans tlo thi tm.nextblock henv.me_tincr hthi
 
 end CompCert4Lean.Cfrontend.SimplLocalsproof
+
+namespace CompCert4Lean.Cfrontend.SimplLocalsproof
+
+theorem match_cont_globalenv : match_cont_globalenvStatement := by
+  intro cfg prog f cenv k tk m bound tbound h
+  induction h with
+  | stop cenv m bound tbound hi hmg hbound htb =>
+      exact ⟨hi, hmg⟩
+  | seq cenv s k ts tk m bound tbound hs hprev hcompat ih => exact ih
+  | loop1 cenv s1 s2 k ts1 ts2 tk m bound tbound hs1 hs2 hprev hcompat ih => exact ih
+  | loop2 cenv s1 s2 k ts1 ts2 tk m bound tbound hs1 hs2 hprev hcompat ih => exact ih
+  | switch cenv k tk m bound tbound hprev ih => exact ih
+  | match_Kcall cenv optid fn e le k tfn te tle tk m hi thi lo tlo bound tbound x htf henv hprev hop hbound htb ih => exact ih
+
+end CompCert4Lean.Cfrontend.SimplLocalsproof
+
+namespace CompCert4Lean.Cfrontend.SimplLocalsproof
+
+open CompCert4Lean.Cfrontend.SimplLocals
+
+theorem is_liftable_var_charact : is_liftable_var_charactStatement := by
+  intro cenv a
+  cases a with
+  | Evar id ty =>
+      unfold CompCert4Lean.Cfrontend.SimplLocals.is_liftable_var
+      cases hmem : VSet.mem id cenv with
+      | true => simp [hmem]
+      | false => simp [hmem]
+  | _ => simp [CompCert4Lean.Cfrontend.SimplLocals.is_liftable_var]
+
+end CompCert4Lean.Cfrontend.SimplLocalsproof
+
+namespace CompCert4Lean.Cfrontend.SimplLocalsproof
+
+open CompCert4Lean.Cfrontend.Clight
+open CompCert4Lean.Cfrontend.SimplLocals
+
+theorem simpl_select_switch : simpl_select_switchStatement := by
+  intro cfg cenv n ls tls h
+  have DFL : ∀ ls tls,
+      simpl_lblstmt cfg cenv ls = .OK tls →
+        simpl_lblstmt cfg cenv (select_switch_default ls) =
+          .OK (select_switch_default tls) := by
+    let P0 : labeled_statements → Prop := fun ls =>
+      ∀ tls, simpl_lblstmt cfg cenv ls = .OK tls →
+        simpl_lblstmt cfg cenv (select_switch_default ls) =
+          .OK (select_switch_default tls)
+    have H : ∀ ls, P0 ls := by
+      apply CompCert4Lean.Cfrontend.Clight.labeled_statements.rec
+        (motive_1 := fun _ => True) (motive_2 := P0)
+      all_goals try simp
+      case LSnil =>
+        intro tls h
+        cases h
+        rfl
+      case LScons =>
+        intro case stmt rest ih tls h
+        simp only [simpl_lblstmt] at h
+        split at h <;> try contradiction
+        rename_i hstmt
+        split at h <;> try contradiction
+        rename_i hrest
+        cases h
+        cases case with
+        | none =>
+            simp [select_switch_default, simpl_lblstmt, hstmt, hrest]
+        | some c =>
+            simp only [select_switch_default]
+            exact ih _ hrest
+    exact H
+  have CASE : ∀ ls tls,
+      simpl_lblstmt cfg cenv ls = .OK tls →
+      match select_switch_case n ls with
+      | none => select_switch_case n tls = none
+      | some ls' =>
+          ∃ tls', select_switch_case n tls = some tls' ∧
+            simpl_lblstmt cfg cenv ls' = .OK tls' := by
+    let P0 : labeled_statements → Prop := fun ls =>
+      ∀ tls, simpl_lblstmt cfg cenv ls = .OK tls →
+        match select_switch_case n ls with
+        | none => select_switch_case n tls = none
+        | some ls' =>
+            ∃ tls', select_switch_case n tls = some tls' ∧
+              simpl_lblstmt cfg cenv ls' = .OK tls'
+    have H : ∀ ls, P0 ls := by
+      apply CompCert4Lean.Cfrontend.Clight.labeled_statements.rec
+        (motive_1 := fun _ => True) (motive_2 := P0)
+      all_goals try simp
+      case LSnil =>
+        intro tls h
+        cases h
+        rfl
+      case LScons =>
+        intro case stmt rest ih tls h
+        simp only [simpl_lblstmt] at h
+        split at h <;> try contradiction
+        rename_i hstmt
+        split at h <;> try contradiction
+        rename_i hrest
+        cases h
+        cases case with
+        | none =>
+            simpa [select_switch_case] using ih _ hrest
+        | some c =>
+            cases hz : CompCert4Lean.Lib.Coqlib.zeq c n with
+            | left heq =>
+                simp only [select_switch_case, hz]
+                refine ⟨_, rfl, ?_⟩
+                simp only [simpl_lblstmt, hstmt, hrest]
+            | right hne =>
+                simpa [select_switch_case, hz] using ih _ hrest
+    exact H
+  have hcase := CASE ls tls h
+  cases hs : select_switch_case n ls with
+  | some ls' =>
+      have hcase' : ∃ tls', select_switch_case n tls = some tls' ∧
+          simpl_lblstmt cfg cenv ls' = .OK tls' := by
+        simpa [hs] using hcase
+      rcases hcase' with ⟨tls', htarget, hls'⟩
+      simp [select_switch, hs, htarget, hls']
+  | none =>
+      have hcase' : select_switch_case n tls = none := by
+        simpa [hs] using hcase
+      simp [select_switch, hs, hcase']
+      exact DFL _ _ h
+
+end CompCert4Lean.Cfrontend.SimplLocalsproof
+
+namespace CompCert4Lean.Cfrontend.SimplLocalsproof
+
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Cfrontend.Clight
+open CompCert4Lean.Cfrontend.Ctypes
+open CompCert4Lean.Cfrontend.SimplLocals
+open CompCert4Lean.Lib.Integers
+
+theorem match_cont_find_funct : match_cont_find_functStatement := by
+  intro cfg p tp hprog f cenv k tk m bound tbound vf fd tvf hcont hfind hinj
+  have htrans := @Genv.find_funct_transf_partial
+    (CompCert4Lean.Cfrontend.Ctypes.fundef function)
+    (CompCert4Lean.Cfrontend.Ctypes.fundef function) type _ _
+    (transf_fundef cfg) (program_of_program p) (program_of_program tp)
+    hprog.1 vf fd hfind
+  rcases htrans with ⟨tfd, htfind, htf⟩
+  have hgenv := match_cont_globalenv cfg p f cenv k tk m bound tbound hcont
+  rcases hgenv with ⟨bound', hmg⟩
+  cases vf with
+  | Vundef => simp [Genv.find_funct] at hfind
+  | Vint n => simp [Genv.find_funct] at hfind
+  | Vlong n => simp [Genv.find_funct] at hfind
+  | Vfloat n => simp [Genv.find_funct] at hfind
+  | Vsingle n => simp [Genv.find_funct] at hfind
+  | Vptr b ofs =>
+      unfold Genv.find_funct at hfind
+      cases hzero : Ptrofs.eq ofs Ptrofs.zero with
+      | false => simp [hzero] at hfind
+      | true =>
+          have hptr : Genv.find_funct_ptr
+              (Genv.globalenv (program_of_program p)) b = some fd := by
+            simpa [hzero] using hfind
+          cases hmg with
+          | intro hdomain himage hsymbols hfunctions hvarinfos =>
+              have hmap : f b = some (b, .Z0) :=
+                hdomain b (hfunctions b fd hptr)
+              cases hinj with
+              | inject_ptr b1 ofs1 b2 ofs2 delta hfb hofs =>
+                  rw [hmap] at hfb
+                  cases hfb
+                  have hofsz : ofs = Ptrofs.zero := by
+                    unfold Ptrofs.eq CompCert4Lean.Lib.Integers.WordCore.eq at hzero
+                    exact CompCert4Lean.Lib.Integers.WordCore.ext
+                      (of_decide_eq_true hzero)
+                  subst ofs
+                  have hadd : Ptrofs.add Ptrofs.zero (Ptrofs.repr (.Z0)) =
+                      Ptrofs.zero := by
+                    have hrepr : Ptrofs.repr (.Z0) = Ptrofs.zero := by rfl
+                    have huns : Ptrofs.unsigned Ptrofs.zero = (.Z0) := by rfl
+                    have hrepr_core :
+                        CompCert4Lean.Lib.Integers.WordCore.repr
+                            Ptrofs.wordsize (.Z0) =
+                          CompCert4Lean.Lib.Integers.WordCore.zero
+                            Ptrofs.wordsize := by rfl
+                    have huns_repr :
+                        CompCert4Lean.Lib.Integers.WordCore.unsigned
+                            (CompCert4Lean.Lib.Integers.WordCore.repr
+                              Ptrofs.wordsize (.Z0)) = (.Z0) := by rfl
+                    apply CompCert4Lean.Lib.Integers.WordCore.ext
+                    change Ptrofs.unsigned
+                      (Ptrofs.add Ptrofs.zero (Ptrofs.repr (.Z0))) =
+                      Ptrofs.unsigned Ptrofs.zero
+                    rw [hrepr]
+                    simp [Ptrofs.unsigned, Ptrofs.add, Ptrofs.zero, Ptrofs.repr,
+                      CompCert4Lean.Lib.Integers.WordCore.add,
+                      CompCert4Lean.Lib.Integers.WordCore.zero, huns,
+                      huns_repr]
+                    change CompCert4Lean.Lib.Integers.WordCore.unsigned
+                      (CompCert4Lean.Lib.Integers.WordCore.repr
+                        Ptrofs.wordsize (.Z0)) = (.Z0)
+                    exact huns_repr
+                  have hofs0 : ofs2 = Ptrofs.zero := by
+                    simpa [hadd] using hofs
+                  subst ofs2
+                  exact ⟨tfd, htfind, htf⟩
+
+end CompCert4Lean.Cfrontend.SimplLocalsproof

@@ -5377,3 +5377,41 @@ theorem ablock_storebytes_contents : ablock_storebytes_contentsStatement := by
       omega
 
 end CompCert4Lean.Backend.ValueDomain
+
+namespace CompCert4Lean.Backend.ValueDomain
+
+private theorem vmatch_ifptr_plub_l_local
+    (bc : block_classification) (v : val) (p q : aptr)
+    (h : vmatch bc v (Ifptr p)) :
+    vmatch bc v (Ifptr (plub p q)) := by
+  exact vmatch_ge bc v (Ifptr (plub p q)) (Ifptr p)
+    (vge.ifptrIfptr (plub p q) p (pge_lub_l p q)) h
+
+private theorem vmatch_ifptr_plub_r_local
+    (bc : block_classification) (v : val) (p q : aptr)
+    (h : vmatch bc v (Ifptr q)) :
+    vmatch bc v (Ifptr (plub p q)) := by
+  exact vmatch_ge bc v (Ifptr (plub p q)) (Ifptr q)
+    (vge.ifptrIfptr (plub p q) q (pge_lub_r p q)) h
+
+theorem smatch_lub_l : smatch_lub_lStatement := by
+  intro bc m b p q hsm
+  rcases hsm with ⟨hload, hfrag⟩
+  constructor
+  · intro chunk ofs v h
+    have hv := vmatch_ifptr_plub_l_local bc v p q (hload chunk ofs v h)
+    simpa only [vlub] using hv
+  · intro ofs b' ofs' q' i h
+    exact pmatch_lub_l bc b' ofs' p q (hfrag ofs b' ofs' q' i h)
+
+theorem smatch_lub_r : smatch_lub_rStatement := by
+  intro bc m b p q hsm
+  rcases hsm with ⟨hload, hfrag⟩
+  constructor
+  · intro chunk ofs v h
+    have hv := vmatch_ifptr_plub_r_local bc v p q (hload chunk ofs v h)
+    simpa only [vlub] using hv
+  · intro ofs b' ofs' q' i h
+    exact pmatch_lub_r bc b' ofs' p q (hfrag ofs b' ofs' q' i h)
+
+end CompCert4Lean.Backend.ValueDomain

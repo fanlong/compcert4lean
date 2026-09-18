@@ -4933,3 +4933,88 @@ theorem ZArith.Zdiv.Zmod_opp_opp :
 
 end Rocq.Coq
 end CompCert4Lean.Foundation.Numbers
+
+namespace CompCert4Lean.Foundation.Numbers
+namespace Rocq.Coq
+
+theorem ZArith.Zdiv.Z_div_plus :
+    ZArith.Zdiv.Z_div_plusStatement := by
+  intro a b c hc
+  apply intOfZ_injective
+  simp only [ZArith.BinInt.Z.div, ZArith.BinInt.Z.add,
+    ZArith.BinInt.Z.mul, intOfZ_zOfInt]
+  rw [pg_zDivEucl_eq_fdiv, pg_zDivEucl_eq_fdiv]
+  have hc' : 0 < intOfZ c := hc
+  have hc0 : intOfZ c ≠ 0 := Int.ne_of_gt hc'
+  rw [Int.add_comm (intOfZ a) (intOfZ b * intOfZ c)]
+  rw [Int.mul_add_fdiv_right _ _ hc0]
+
+theorem ZArith.Zmax.Zmax_spec :
+    ZArith.Zmax.Zmax_specStatement := by
+  intro x y
+  by_cases hle : intOfZ x ≤ intOfZ y
+  · by_cases heq : intOfZ x = intOfZ y
+    · left
+      constructor
+      · change intOfZ y ≤ intOfZ x
+        simpa [heq] using hle
+      · apply intOfZ_injective
+        simp [ZArith.BinInt.Z.max, hle, heq]
+    · right
+      constructor
+      · change intOfZ x < intOfZ y
+        omega
+      · simp [ZArith.BinInt.Z.max, hle]
+  · left
+    constructor
+    · change intOfZ y ≤ intOfZ x
+      exact (Int.le_total _ _).resolve_left hle
+    · simp [ZArith.BinInt.Z.max, hle]
+
+theorem ZArith.Zmax.Zmax_left :
+    ZArith.Zmax.Zmax_leftStatement := by
+  intro n m hnm
+  change intOfZ m ≤ intOfZ n at hnm
+  by_cases hle : intOfZ n ≤ intOfZ m
+  · have heq : intOfZ n = intOfZ m := Int.le_antisymm hle hnm
+    apply intOfZ_injective
+    simp [ZArith.BinInt.Z.max, hle, heq]
+  · simp [ZArith.BinInt.Z.max, hle]
+
+theorem ZArith.Zeven.Zdiv2_odd_eqn :
+    ZArith.Zeven.Zdiv2_odd_eqnStatement := by
+  intro n
+  apply intOfZ_injective
+  simp only [ZArith.BinInt.Z.add, ZArith.BinInt.Z.mul,
+    ZArith.BinInt.Z.div2, ZArith.BinInt.Z.div, intOfZ_zOfInt]
+  have htwo : intOfZ (Zpos (.xO .xH)) = 2 := by
+    simp [intOfZ, posToNat]
+  rw [htwo]
+  simp only [ZArith.BinInt.Z.zDivEucl]
+  simp
+  have hdecomp :
+      (intOfZ n).ediv 2 * 2 + (intOfZ n).emod 2 = intOfZ n :=
+    Int.ediv_mul_add_emod (intOfZ n) 2
+  rcases Int.emod_two_eq (intOfZ n) with hrem | hrem
+  · have hnat : Int.natAbs (intOfZ n) % 2 = 0 := by
+      rw [Int.natAbs_emod_two, hrem]
+      rfl
+    have hrem' : (intOfZ n).emod 2 = 0 := hrem
+    have hodd : ZArith.BinInt.Z.odd n ≠ true := by
+      intro ho
+      simp [ZArith.BinInt.Z.odd, ZArith.BinInt.Z.even, hnat] at ho
+    rw [if_neg hodd]
+    change intOfZ n = 2 * (intOfZ n).ediv 2 + 0
+    simpa [hrem', Int.mul_comm] using hdecomp.symm
+  · have hnat : Int.natAbs (intOfZ n) % 2 = 1 := by
+      rw [Int.natAbs_emod_two, hrem]
+      rfl
+    have hrem' : (intOfZ n).emod 2 = 1 := hrem
+    have hodd : ZArith.BinInt.Z.odd n = true := by
+      simp [ZArith.BinInt.Z.odd, ZArith.BinInt.Z.even, hnat]
+    rw [if_pos hodd]
+    change intOfZ n = 2 * (intOfZ n).ediv 2 + 1
+    simpa [hrem', Int.mul_comm] using hdecomp.symm
+
+end Rocq.Coq
+end CompCert4Lean.Foundation.Numbers

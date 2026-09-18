@@ -4539,3 +4539,45 @@ theorem generic_inclusion :
       (fun _ => hle_mag) hformat
 
 end CompCert4Lean.Flocq.Core.Generic_fmt
+
+namespace CompCert4Lean.Flocq.Core.Generic_fmt
+
+theorem generic_inclusion_le :
+    ∀ ctx magnitude, generic_inclusion_leStatement ctx magnitude := by
+  intro ctx magnitude beta fexp1 fexp2 hvalid1 hvalid2 e2 hle x hbound hformat
+  by_cases heq : Exact.Rabs ctx x = Exact.bpow ctx beta e2
+  · have hpred : Zle (Zsub e2 Zone) e2 := by
+      change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+          (Zsub e2 Zone) ≤
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ e2
+      simp only [Zsub,
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.sub,
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+      change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ e2 - 1 ≤
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ e2
+      omega
+    have hbounds :
+        Exact.Rle ctx (Exact.bpow ctx beta (Zsub e2 Zone))
+            (Exact.Rabs ctx x) ∧
+          Exact.Rle ctx (Exact.Rabs ctx x) (Exact.bpow ctx beta e2) := by
+      constructor
+      · rw [heq]
+        exact pg_bpow_le ctx beta hpred
+      · exact hbound
+    exact generic_inclusion ctx magnitude beta fexp1 fexp2 hvalid1 hvalid2
+      e2 (hle e2 (by exact Int.le_refl _)) x hbounds hformat
+  · by_cases hx0 : x = Exact.R0 ctx
+    · subst x
+      exact pg_worker_generic_format_zero ctx magnitude beta fexp2
+    · have hlt : Exact.Rlt ctx (Exact.Rabs ctx x)
+          (Exact.bpow ctx beta e2) := by
+        apply (ctx.certificate.orderedField.lt_iff_le_not_le _ _).mpr
+        refine ⟨hbound, ?_⟩
+        intro hrev
+        exact heq (ctx.certificate.orderedField.le_antisymm _ _ hbound hrev)
+      apply generic_inclusion_mag ctx magnitude beta fexp1 fexp2 x ?_ hformat
+      intro hx
+      exact hle _ (CompCert4Lean.Flocq.Core.Raux.mag_le_bpow
+        ctx magnitude beta x e2 hx hlt)
+
+end CompCert4Lean.Flocq.Core.Generic_fmt

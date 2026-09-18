@@ -5700,3 +5700,336 @@ theorem loadbytes_inj : loadbytes_injStatement := by
 end Mem
 
 end CompCert4Lean.Common.Memory
+
+namespace CompCert4Lean.Common.Memory
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+
+namespace Mem
+
+theorem store_mapped_inj : store_mapped_injStatement := by
+  intro f chunk m1 b1 ofs v1 n1 m2 b2 delta v2 hinj hstore hno hf hv
+  have hvalid1 : valid_access m1 chunk b1 ofs Writable :=
+    store_valid_access_3 chunk m1 b1 ofs v1 n1 hstore
+  have hvalid2 : valid_access m2 chunk b2 (zAdd ofs delta) Writable :=
+    valid_access_inj f m1 m2 b1 b2 delta chunk ofs Writable hinj hf hvalid1
+  rcases valid_access_store m2 chunk b2 (zAdd ofs delta) v2 hvalid2 with
+    ⟨n2, hstore2⟩
+  refine ⟨n2, hstore2, ?_⟩
+  constructor
+  · intro b1' b2' delta' ofs' k p hmap hperm
+    apply perm_store_1 chunk m2 b2 (zAdd ofs delta) v2 n2 hstore2
+    apply hinj.mi_perm b1' b2' delta' ofs' k p hmap
+    apply perm_store_2 chunk m1 b1 ofs v1 n1 hstore b1' ofs' k p
+    exact hperm
+  · intro b1' b2' delta' chunk' ofs' p hmap hrange
+    apply hinj.mi_align b1' b2' delta' chunk' ofs' p hmap
+    intro q hq
+    apply perm_store_2 chunk m1 b1 ofs v1 n1 hstore b1' q Max p
+    exact hrange q hq
+  · intro b1' ofs' b2' delta' hmap hperm
+    have hperm1 : perm m1 b1' ofs' Cur Readable := by
+      apply perm_store_2 chunk m1 b1 ofs v1 n1 hstore b1' ofs' Cur Readable
+      exact hperm
+    rw [store_mem_contents chunk m1 b1 ofs v1 n1 hstore]
+    rw [store_mem_contents chunk m2 b2 (zAdd ofs delta) v2 n2 hstore2]
+    by_cases hsrc : b1' = b1
+    · subst b1'
+      rw [pmapGetSetSame]
+      rw [hf] at hmap
+      cases hmap
+      rw [pmapGetSetSame b2 _ _]
+      exact setN_inj (access := fun q => perm m1 b1 q Cur Readable)
+        delta f (encode_val chunk v1) (encode_val chunk v2)
+        (encode_val_inject f v1 v2 chunk hv)
+        ofs (PMap.get b1 m1.mem_contents) (PMap.get b2 m2.mem_contents)
+        (by
+          intro q hq
+          exact hinj.mi_memval b1 q b2 delta hf hq)
+        ofs' hperm1
+    · rw [pmap_get_set_other_memproof _ _ _ _ hsrc]
+      by_cases hdst : b2' = b2
+      · subst b2'
+        rw [pmapGetSetSame b2 _ _]
+        have hofs_lt : zLt ofs (zAdd ofs (size_chunk chunk)) := by
+          have hs := size_chunk_pos chunk
+          change intOfZ ofs < intOfZ (zAdd ofs (size_chunk chunk))
+          rw [intOfZ_zadd_mem]
+          change (0 : Int) < intOfZ (size_chunk chunk) at hs
+          omega
+        have hpstore : perm m1 b1 ofs Max Nonempty := by
+          apply perm_implies m1 b1 ofs Max Writable Nonempty
+            (perm_cur_max m1 b1 ofs Writable (hvalid1.1 ofs
+              ⟨by change intOfZ ofs ≤ intOfZ ofs; omega, hofs_lt⟩))
+            (perm_any_N Writable)
+        have hpquery : perm m1 b1' ofs' Max Nonempty := by
+          apply perm_implies m1 b1' ofs' Max Readable Nonempty
+            (perm_cur_max m1 b1' ofs' Readable hperm1) (perm_any_N Readable)
+        have intOfZ_zsub_local (x y : Z) :
+            intOfZ (zSub x y) = intOfZ x - intOfZ y := by
+          change intOfZ (zOfInt (intOfZ x - intOfZ y)) = _
+          rw [intOfZ_zOfInt]
+        have houtside : ∀ q,
+            zLe (zAdd ofs delta) q ∧
+              zLt q (zAdd (zAdd ofs delta)
+                (zOfNat (encode_val chunk v2).length)) →
+            q ≠ zAdd ofs' delta' := by
+          intro q hq heq
+          have hlen : (encode_val chunk v2).length = size_chunk_nat chunk :=
+            encode_val_length chunk v2
+          rw [hlen] at hq
+          change (intOfZ (zAdd ofs delta) ≤ intOfZ q ∧
+            intOfZ q < intOfZ (zAdd (zAdd ofs delta)
+              (zOfNat (size_chunk_nat chunk)))) at hq
+          simp only [intOfZ_zadd_mem, intOfZ_zofnat_mem] at hq
+          have hsrcRangeNat : zLe ofs (zSub q delta) ∧
+              zLt (zSub q delta) (zAdd ofs (zOfNat (size_chunk_nat chunk))) := by
+            constructor
+            · change intOfZ ofs ≤ intOfZ (zSub q delta)
+              rw [intOfZ_zsub_local]
+              omega
+            · change intOfZ (zSub q delta) <
+                intOfZ (zAdd ofs (zOfNat (size_chunk_nat chunk)))
+              rw [intOfZ_zsub_local, intOfZ_zadd_mem,
+                intOfZ_zofnat_mem]
+              omega
+          have hsrcRange : zLe ofs (zSub q delta) ∧
+              zLt (zSub q delta) (zAdd ofs (size_chunk chunk)) := by
+            rw [size_chunk_conv chunk]
+            exact hsrcRangeNat
+          have hpq : perm m1 b1 (zSub q delta) Max Nonempty := by
+            apply perm_implies m1 b1 (zSub q delta) Max Writable Nonempty
+              (perm_cur_max m1 b1 (zSub q delta) Writable
+                (hvalid1.1 (zSub q delta) hsrcRange)) (perm_any_N Writable)
+          have hcontra := hno b1 b2 delta b1' b2 delta'
+            (zSub q delta) ofs'
+            (by intro he; exact hsrc he.symm) hf hmap hpq hpquery
+          rcases hcontra with hne | hne
+          · exact (hne rfl).elim
+          · apply hne
+            apply intOfZ_injective
+            rw [intOfZ_zadd_mem, intOfZ_zsub_local,
+              intOfZ_zadd_mem, heq, intOfZ_zadd_mem]
+            omega
+        rw [setN_other (encode_val chunk v2)
+          (PMap.get b2 m2.mem_contents) (zAdd ofs delta)
+          (zAdd ofs' delta') houtside]
+        exact hinj.mi_memval b1' ofs' b2 delta' hmap hperm1
+      · rw [pmap_get_set_other_memproof _ _ _ _ hdst]
+        exact hinj.mi_memval b1' ofs' b2' delta' hmap hperm1
+
+end Mem
+
+end CompCert4Lean.Common.Memory
+
+namespace CompCert4Lean.Common.Memory
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+
+namespace Mem
+
+theorem store_unmapped_inj : store_unmapped_injStatement := by
+  intro f chunk m1 b1 ofs v1 n1 m2 hinj hstore hf
+  constructor
+  · intro b1' b2 delta ofs' k p hmap hperm
+    apply hinj.mi_perm b1' b2 delta ofs' k p hmap
+    apply perm_store_2 chunk m1 b1 ofs v1 n1 hstore b1' ofs' k p
+    exact hperm
+  · intro b1' b2 delta chunk' ofs' p hmap hrange
+    apply hinj.mi_align b1' b2 delta chunk' ofs' p hmap
+    intro q hq
+    apply perm_store_2 chunk m1 b1 ofs v1 n1 hstore b1' q Max p
+    exact hrange q hq
+  · intro b1' ofs' b2 delta hmap hperm
+    rw [store_mem_contents chunk m1 b1 ofs v1 n1 hstore]
+    have hblock : b1' ≠ b1 := by
+      intro heq
+      rw [heq, hf] at hmap
+      cases hmap
+    rw [pmap_get_set_other_memproof _ _ _ _ hblock]
+    apply hinj.mi_memval b1' ofs' b2 delta hmap
+    apply perm_store_2 chunk m1 b1 ofs v1 n1 hstore b1' ofs' Cur Readable
+    exact hperm
+
+theorem storebytes_empty_inj : storebytes_empty_injStatement := by
+  intro f m1 b1 ofs1 m1' m2 b2 ofs2 m2' hinj hstore1 hstore2
+  constructor
+  · intro b1' b2' delta ofs' k p hmap hperm
+    apply perm_storebytes_1 m2 b2 ofs2 [] m2' hstore2 b2' (zAdd ofs' delta) k p
+    apply hinj.mi_perm b1' b2' delta ofs' k p hmap
+    apply perm_storebytes_2 m1 b1 ofs1 [] m1' hstore1 b1' ofs' k p
+    exact hperm
+  · intro b1' b2' delta chunk ofs' p hmap hrange
+    apply hinj.mi_align b1' b2' delta chunk ofs' p hmap
+    intro q hq
+    apply perm_storebytes_2 m1 b1 ofs1 [] m1' hstore1 b1' q Max p
+    exact hrange q hq
+  · intro b1' ofs' b2' delta hmap hperm
+    have hperm1 : perm m1 b1' ofs' Cur Readable := by
+      apply perm_storebytes_2 m1 b1 ofs1 [] m1' hstore1 b1' ofs' Cur Readable
+      exact hperm
+    rw [storebytes_mem_contents m1 b1 ofs1 [] m1' hstore1]
+    rw [storebytes_mem_contents m2 b2 ofs2 [] m2' hstore2]
+    change memval_inject f
+      (ZMap.get ofs' (PMap.get b1' (PMap.set b1
+        (setN [] ofs1 (PMap.get b1 m1.mem_contents)) m1.mem_contents)))
+      (ZMap.get (zAdd ofs' delta) (PMap.get b2' (PMap.set b2
+        (setN [] ofs2 (PMap.get b2 m2.mem_contents)) m2.mem_contents)))
+    simp only [setN]
+    have hsrc : PMap.get b1' (PMap.set b1 (PMap.get b1 m1.mem_contents)
+        m1.mem_contents) = PMap.get b1' m1.mem_contents := by
+      by_cases h : b1' = b1
+      · subst b1'
+        rw [pmapGetSetSame]
+      · exact pmap_get_set_other_memproof _ _ _ _ h
+    have hdst : PMap.get b2' (PMap.set b2 (PMap.get b2 m2.mem_contents)
+        m2.mem_contents) = PMap.get b2' m2.mem_contents := by
+      by_cases h : b2' = b2
+      · subst b2'
+        rw [pmapGetSetSame]
+      · exact pmap_get_set_other_memproof _ _ _ _ h
+    rw [hsrc, hdst]
+    exact hinj.mi_memval b1' ofs' b2' delta hmap hperm1
+
+end Mem
+
+end CompCert4Lean.Common.Memory
+
+namespace CompCert4Lean.Common.Memory
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+
+namespace Mem
+
+theorem storebytes_mapped_inj : storebytes_mapped_injStatement := by
+  intro f m1 b1 ofs bytes1 n1 m2 b2 delta bytes2 hinj hstore hno hf hlist
+  have hlen : bytes1.length = bytes2.length :=
+    list_forall2_length _ _ _ bytes1 bytes2 hlist
+  have hrange1 : range_perm m1 b1 ofs
+      (zAdd ofs (zOfNat bytes1.length)) Cur Writable := by
+    exact storebytes_range_perm m1 b1 ofs bytes1 n1 hstore
+  have hend : zAdd (zAdd ofs (zOfNat bytes1.length)) delta =
+      zAdd (zAdd ofs delta) (zOfNat bytes2.length) := by
+    apply intOfZ_injective
+    simp only [intOfZ_zadd_mem, intOfZ_zofnat_mem]
+    have hlen' : (Int.ofNat bytes1.length) = Int.ofNat bytes2.length :=
+      congrArg Int.ofNat hlen
+    omega
+  have hrange2 : range_perm m2 b2 (zAdd ofs delta)
+      (zAdd (zAdd ofs delta) (zOfNat bytes2.length)) Cur Writable := by
+    have hr := range_perm_inj f m1 m2 b1 ofs
+      (zAdd ofs (zOfNat bytes1.length)) Cur Writable b2 delta
+      hinj hrange1 hf
+    rw [hend] at hr
+    exact hr
+  rcases range_perm_storebytes m2 b2 (zAdd ofs delta) bytes2 hrange2 with
+    ⟨n2, hstore2⟩
+  refine ⟨n2, hstore2, ?_⟩
+  constructor
+  · intro b1' b2' delta' ofs' k p hmap hperm
+    apply perm_storebytes_1 m2 b2 (zAdd ofs delta) bytes2 n2 hstore2
+    apply hinj.mi_perm b1' b2' delta' ofs' k p hmap
+    apply perm_storebytes_2 m1 b1 ofs bytes1 n1 hstore b1' ofs' k p
+    exact hperm
+  · intro b1' b2' delta' chunk ofs' p hmap hrange
+    apply hinj.mi_align b1' b2' delta' chunk ofs' p hmap
+    intro q hq
+    apply perm_storebytes_2 m1 b1 ofs bytes1 n1 hstore b1' q Max p
+    exact hrange q hq
+  · intro b1' ofs' b2' delta' hmap hperm
+    have hperm1 : perm m1 b1' ofs' Cur Readable := by
+      apply perm_storebytes_2 m1 b1 ofs bytes1 n1 hstore b1' ofs' Cur Readable
+      exact hperm
+    rw [storebytes_mem_contents m1 b1 ofs bytes1 n1 hstore]
+    rw [storebytes_mem_contents m2 b2 (zAdd ofs delta) bytes2 n2 hstore2]
+    by_cases hsrc : b1' = b1
+    · subst b1'
+      rw [pmapGetSetSame]
+      rw [hf] at hmap
+      cases hmap
+      rw [pmapGetSetSame b2 _ _]
+      exact setN_inj (access := fun q => perm m1 b1 q Cur Readable)
+        delta f bytes1 bytes2 hlist ofs
+        (PMap.get b1 m1.mem_contents) (PMap.get b2 m2.mem_contents)
+        (by
+          intro q hq
+          exact hinj.mi_memval b1 q b2 delta hf hq)
+        ofs' hperm1
+    · rw [pmap_get_set_other_memproof _ _ _ _ hsrc]
+      by_cases hdst : b2' = b2
+      · subst b2'
+        rw [pmapGetSetSame b2 _ _]
+        have hpquery : perm m1 b1' ofs' Max Nonempty := by
+          apply perm_implies m1 b1' ofs' Max Readable Nonempty
+            (perm_cur_max m1 b1' ofs' Readable hperm1) (perm_any_N Readable)
+        have houtside : ∀ q,
+            zLe (zAdd ofs delta) q ∧
+              zLt q (zAdd (zAdd ofs delta) (zOfNat bytes2.length)) →
+            q ≠ zAdd ofs' delta' := by
+          intro q hq heq
+          rw [← hlen] at hq
+          have hsrcRange : zLe ofs (zSub q delta) ∧
+              zLt (zSub q delta) (zAdd ofs (zOfNat bytes1.length)) := by
+            constructor
+            · change intOfZ ofs ≤ intOfZ (zSub q delta)
+              have hzsub (x y : Z) :
+                  intOfZ (zSub x y) = intOfZ x - intOfZ y := by
+                change intOfZ (zOfInt (intOfZ x - intOfZ y)) = _
+                rw [intOfZ_zOfInt]
+              change (intOfZ (zAdd ofs delta) ≤ intOfZ q ∧
+                intOfZ q < intOfZ (zAdd (zAdd ofs delta)
+                  (zOfNat bytes1.length))) at hq
+              simp only [intOfZ_zadd_mem, intOfZ_zofnat_mem] at hq
+              rw [hzsub]
+              omega
+            · change intOfZ (zSub q delta) <
+                intOfZ (zAdd ofs (zOfNat bytes1.length))
+              have hzsub (x y : Z) :
+                  intOfZ (zSub x y) = intOfZ x - intOfZ y := by
+                change intOfZ (zOfInt (intOfZ x - intOfZ y)) = _
+                rw [intOfZ_zOfInt]
+              rw [hzsub, intOfZ_zadd_mem, intOfZ_zofnat_mem]
+              change (intOfZ (zAdd ofs delta) ≤ intOfZ q ∧
+                intOfZ q < intOfZ (zAdd (zAdd ofs delta)
+                  (zOfNat bytes1.length))) at hq
+              simp only [intOfZ_zadd_mem, intOfZ_zofnat_mem] at hq
+              omega
+          have hpq : perm m1 b1 (zSub q delta) Max Nonempty := by
+            apply perm_implies m1 b1 (zSub q delta) Max Writable Nonempty
+              (perm_cur_max m1 b1 (zSub q delta) Writable
+                (hrange1 (zSub q delta) hsrcRange)) (perm_any_N Writable)
+          have hcontra := hno b1 b2 delta b1' b2 delta'
+            (zSub q delta) ofs'
+            (by intro he; exact hsrc he.symm) hf hmap hpq hpquery
+          rcases hcontra with hne | hne
+          · exact (hne rfl).elim
+          · apply hne
+            apply intOfZ_injective
+            have hzsub (x y : Z) :
+                intOfZ (zSub x y) = intOfZ x - intOfZ y := by
+              change intOfZ (zOfInt (intOfZ x - intOfZ y)) = _
+              rw [intOfZ_zOfInt]
+            rw [intOfZ_zadd_mem, hzsub,
+              intOfZ_zadd_mem, heq, intOfZ_zadd_mem]
+            omega
+        rw [setN_other bytes2 (PMap.get b2 m2.mem_contents)
+          (zAdd ofs delta) (zAdd ofs' delta') houtside]
+        exact hinj.mi_memval b1' ofs' b2 delta' hmap hperm1
+      · rw [pmap_get_set_other_memproof _ _ _ _ hdst]
+        exact hinj.mi_memval b1' ofs' b2' delta' hmap hperm1
+
+end Mem
+
+end CompCert4Lean.Common.Memory
