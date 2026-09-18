@@ -3571,3 +3571,60 @@ theorem is_tail_transl_code : is_tail_transl_codeStatement := by
         ih _ (is_tail_transl_instr cfg fe i (transl_code cfg fe _))
 
 end CompCert4Lean.Backend.Stackingproof
+
+namespace CompCert4Lean.Backend.Stackingproof
+
+open CompCert4Lean.Backend.Linear
+open CompCert4Lean.Backend.Mach
+open CompCert4Lean.Backend.Stacking
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Linking
+open CompCert4Lean.Lib.Coqlib
+
+theorem is_tail_transf_function : is_tail_transf_functionStatement := by
+  intro cfg f tf c htf htail
+  rw [unfold_transf_function cfg f tf htf]
+  unfold transl_body
+  exact is_tail_trans _
+    (transl_code cfg (CompCert4Lean.X86.Stacklayout.make_env cfg
+      (CompCert4Lean.Backend.Bounds.function_bounds cfg f)) c)
+    (transl_code cfg (CompCert4Lean.X86.Stacklayout.make_env cfg
+      (CompCert4Lean.Backend.Bounds.function_bounds cfg f)) f.fn_code)
+    (is_tail_transl_code cfg (CompCert4Lean.X86.Stacklayout.make_env cfg
+      (CompCert4Lean.Backend.Bounds.function_bounds cfg f)) c f.fn_code htail)
+    _ (is_tail_save_callee_save
+      (CompCert4Lean.X86.Stacklayout.make_env cfg
+        (CompCert4Lean.Backend.Bounds.function_bounds cfg f)).fe_used_callee_save
+      (CompCert4Lean.X86.Stacklayout.make_env cfg
+        (CompCert4Lean.Backend.Bounds.function_bounds cfg f)).fe_ofs_callee_save
+      (transl_code cfg (CompCert4Lean.X86.Stacklayout.make_env cfg
+        (CompCert4Lean.Backend.Bounds.function_bounds cfg f)) f.fn_code))
+
+theorem symbols_preserved : symbols_preservedStatement := by
+  intro cfg prog tprog hm s
+  unfold match_prog at hm
+  exact @CompCert4Lean.Common.Globalenvs.Genv.find_symbol_transf_partial
+    Linear.fundef Mach.fundef Unit
+    (Linker_fundef Linear.function) Linker_unit
+    (transf_fundef cfg)
+    prog tprog hm s
+
+theorem senv_preserved : senv_preservedStatement := by
+  intro cfg prog tprog hm
+  unfold match_prog at hm
+  exact @CompCert4Lean.Common.Globalenvs.Genv.senv_transf_partial
+    Linear.fundef Mach.fundef Unit
+    (Linker_fundef Linear.function) Linker_unit
+    (transf_fundef cfg)
+    prog tprog hm
+
+theorem function_ptr_translated : function_ptr_translatedStatement := by
+  intro cfg prog tprog hm b f hfind
+  unfold match_prog at hm
+  exact @CompCert4Lean.Common.Globalenvs.Genv.find_funct_ptr_transf_partial
+    Linear.fundef Mach.fundef Unit
+    (Linker_fundef Linear.function) Linker_unit
+    (transf_fundef cfg)
+    prog tprog hm b f hfind
+
+end CompCert4Lean.Backend.Stackingproof

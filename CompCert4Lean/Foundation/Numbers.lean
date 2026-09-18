@@ -4358,3 +4358,35 @@ theorem ZArith.BinInt.Z.shiftr_spec :
 
 end Rocq.Coq
 end CompCert4Lean.Foundation.Numbers
+
+namespace CompCert4Lean.Foundation.Numbers
+namespace Rocq.Coq
+
+theorem ZArith.BinInt.Z.ge_le :
+    ZArith.BinInt.Z.ge_leStatement := by
+  intro n m h
+  exact h
+
+theorem ZArith.BinInt.Z.le_ge :
+    ZArith.BinInt.Z.le_geStatement := by
+  intro n m h
+  exact h
+
+theorem ZArith.BinInt.Z.geb_le :
+    ZArith.BinInt.Z.geb_leStatement := by
+  intro n m
+  unfold ZArith.BinInt.Z.geb ZArith.BinInt.Z.le
+  by_cases h : intOfZ m ≤ intOfZ n
+  · simp [h]
+  · simp [h]
+
+theorem ZArith.BinInt.Z.gtb_lt :
+    ZArith.BinInt.Z.gtb_ltStatement := by
+  intro n m
+  unfold ZArith.BinInt.Z.gtb ZArith.BinInt.Z.lt
+  by_cases h : intOfZ m < intOfZ n
+  · simp [h]
+  · simp [h]
+
+end Rocq.Coq
+end CompCert4Lean.Foundation.Numbers

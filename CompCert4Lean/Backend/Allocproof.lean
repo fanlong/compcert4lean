@@ -7187,3 +7187,115 @@ theorem initial_states_simulation
           trivial
 
 end CompCert4Lean.Backend.Allocproof
+
+namespace CompCert4Lean.Backend.Allocproof
+
+open CompCert4Lean.Backend.Allocation
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Linking
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Backend.RTLtyping
+
+theorem wt_prog : wt_progStatement := by
+  intro cfg oracle prog tprog hmatch
+  letI : Linker RTL.fundef := Linker_fundef RTL.function
+  letI : Linker Unit := Linker_unit
+  letI : Linker RTL.program := Linker_prog RTL.fundef Unit
+  unfold wt_program
+  intro i fd hmem
+  unfold match_prog CompCert4Lean.Common.Linking.match_program at hmatch
+  rcases hmatch with ⟨hdefs, _, _⟩
+  rcases @list_forall2_in_left _ _ _ _ _ _ hdefs hmem with ⟨ig', _, hrel⟩
+  rcases ig' with ⟨i', gd'⟩
+  simp only [match_ident_globdef] at hrel
+  rcases hrel with ⟨_, hgd⟩
+  cases fd with
+  | Internal f =>
+      change CompCert4Lean.Backend.RTLtyping.wt_fundef cfg
+        (CompCert4Lean.Common.AST.fundef.Internal f)
+      cases gd' with
+      | Gfun tf =>
+          cases hgd with
+          | match_globdef_fun _ _ _ _ hfun =>
+              unfold CompCert4Lean.Backend.Allocation.transf_fundef
+                CompCert4Lean.Common.AST.transf_partial_fundef at hfun
+              unfold CompCert4Lean.Backend.Allocation.transf_function at hfun
+              cases htype : CompCert4Lean.Backend.RTLtyping.type_function cfg f with
+              | Error msg =>
+                  simp only [htype] at hfun
+                  cases hfun
+              | OK env =>
+                  simp only [htype] at hfun
+                  cases horacle : CompCert4Lean.Backend.Allocation.regalloc oracle f with
+                  | Error msg =>
+                      simp only [horacle] at hfun
+                      cases hfun
+                  | OK tf0 =>
+                      simp only [horacle] at hfun
+                      cases hcheck : CompCert4Lean.Backend.Allocation.check_function
+                          cfg f tf0 env with
+                      | Error msg =>
+                          simp only [hcheck] at hfun
+                          cases hfun
+                      | OK unit =>
+                          simp [hcheck] at hfun
+                          cases hfun
+                          exact wt_function_internal f env
+                            (CompCert4Lean.Backend.RTLtyping.type_function_correct
+                              cfg f env htype)
+      | Gvar v => cases hgd
+  | External ef =>
+      change CompCert4Lean.Backend.RTLtyping.wt_fundef cfg
+        (CompCert4Lean.Common.AST.fundef.External ef)
+      cases gd' with
+      | Gfun tf =>
+          cases hgd with
+          | match_globdef_fun _ _ _ _ hfun =>
+              simp [CompCert4Lean.Backend.Allocation.transf_fundef] at hfun
+              cases hfun
+              exact wt_fundef_external ef
+      | Gvar v => cases hgd
+
+end CompCert4Lean.Backend.Allocproof
+
+namespace CompCert4Lean.Backend.Allocproof
+
+open CompCert4Lean.Backend.Locations
+open CompCert4Lean.Common.AST
+open CompCert4Lean.X86.Conventions1
+
+private theorem allocproof_lessdef_vint
+    (r : CompCert4Lean.Lib.Integers.Int.int) (v : CompCert4Lean.Common.Values.val) :
+    CompCert4Lean.Common.Values.Val.lessdef (CompCert4Lean.Common.Values.Vint r) v →
+      v = CompCert4Lean.Common.Values.Vint r := by
+  intro h
+  cases h with
+  | lessdef_refl => rfl
+
+theorem final_states_simulation
+    [binary64_certificate : BinaryNormalizeCertificate
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 53)
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 24)
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 128)] :
+    final_states_simulationStatement := by
+  intro cfg oracle xi tprog st1 st2 r hmatch hfinal
+  cases hfinal
+  cases hmatch with
+  | match_states_return s result m ts ls m' sg hstacks hres hag hmem hwtres =>
+      cases hstacks with
+      | match_stackframes_nil sg hsig =>
+          have hres' :
+              Locmap.getpair (map_rpair R (loc_result sg)) ls =
+                CompCert4Lean.Common.Values.Vint r :=
+            allocproof_lessdef_vint r _ hres
+          apply LTL.final_state.intro ls m' r
+          have hloc : loc_result sg = loc_result signature_main :=
+            loc_result_exten sg signature_main hsig
+          change Locmap.getpair (map_rpair R (loc_result signature_main)) ls =
+            CompCert4Lean.Common.Values.Vint r
+          rw [← hloc]
+          exact hres'
+
+end CompCert4Lean.Backend.Allocproof

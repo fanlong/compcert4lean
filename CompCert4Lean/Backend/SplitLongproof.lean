@@ -2387,3 +2387,376 @@ theorem int64_eq_xor : int64_eq_xorStatement := by
       CompCert4Lean.Lib.Integers.WordCore.eq, hpval, hxvalzero]
 
 end CompCert4Lean.Backend.SplitLongproof
+
+namespace CompCert4Lean.Backend.SplitLongproof
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.ExternalCalls
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Backend.SplitLong
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.X86.Op
+
+variable
+    [binary64_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 53)
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 24)
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 128)]
+
+private theorem splitlong_eval_makelong_inv
+    (xi : ExternalCalls) (ge : CompCert4Lean.Backend.CminorSel.genv)
+    (sp : CompCert4Lean.Common.Values.val) (e : CompCert4Lean.Backend.Cminor.env)
+    (m : CompCert4Lean.Common.Memory.mem) (le : letenv)
+    (h l : expr) (x : CCInt64)
+    (he : eval_expr xi ge sp e m le
+      (Eop Omakelong (Econs h (Econs l Enil))) (.Vlong x)) :
+    ∃ p q : CCInt,
+      eval_expr xi ge sp e m le h (.Vint p) ∧
+      eval_expr xi ge sp e m le l (.Vint q) ∧
+      x = int64Ofwords p q := by
+  obtain ⟨vl, hargs, hop⟩ := splitlong_eval_eop_inv xi ge sp e m le
+    Omakelong (Econs h (Econs l Enil)) (.Vlong x) he
+  obtain ⟨v1, vl', hvl, hh, ht⟩ := splitlong_eval_cons_inv xi ge sp e m le
+    h (Econs l Enil) vl hargs
+  obtain ⟨v2, vl2, hvl', hl, ht2⟩ := splitlong_eval_cons_inv xi ge sp e m le
+    l Enil vl' ht
+  have hnil := splitlong_eval_nil_inv xi ge sp e m le vl2 ht2
+  rw [hvl, hvl', hnil] at hop
+  change some (CompCert4Lean.Common.Values.Val.longofwords v1 v2) =
+    some (CompCert4Lean.Common.Values.val.Vlong x) at hop
+  cases v1 with
+  | Vint p =>
+      cases v2 with
+      | Vint q =>
+          change some (CompCert4Lean.Common.Values.val.Vlong
+            (CompCert4Lean.Lib.Integers.Int64.ofwords p q)) =
+            some (CompCert4Lean.Common.Values.val.Vlong x) at hop
+          cases hop
+          exact ⟨p, q, hh, hl, rfl⟩
+      | Vundef => simp [CompCert4Lean.Common.Values.Val.longofwords] at hop
+      | Vlong _ => simp [CompCert4Lean.Common.Values.Val.longofwords] at hop
+      | Vfloat _ => simp [CompCert4Lean.Common.Values.Val.longofwords] at hop
+      | Vsingle _ => simp [CompCert4Lean.Common.Values.Val.longofwords] at hop
+      | Vptr _ _ => simp [CompCert4Lean.Common.Values.Val.longofwords] at hop
+  | Vundef => simp [CompCert4Lean.Common.Values.Val.longofwords] at hop
+  | Vlong _ => simp [CompCert4Lean.Common.Values.Val.longofwords] at hop
+  | Vfloat _ => simp [CompCert4Lean.Common.Values.Val.longofwords] at hop
+  | Vsingle _ => simp [CompCert4Lean.Common.Values.Val.longofwords] at hop
+  | Vptr _ _ => simp [CompCert4Lean.Common.Values.Val.longofwords] at hop
+
+private theorem splitlong_hi_ofwords (h l : CCInt) :
+    int64Hiword (int64Ofwords h l) = h := by
+  apply CompCert4Lean.Lib.Integers.WordCore.ext_of_val_eq
+  rw [splitlong_hiword_val, test_int64_ofwords_val]
+  have hshift : Nat.shiftLeft h.val 32 = h.val * 2 ^ 32 :=
+    Nat.shiftLeft_eq h.val 32
+  rw [hshift]
+  change Nat.lor (h.val * 2 ^ 32) l.val / 2 ^ 32 = h.val
+  have hlor : Nat.lor (h.val * 2 ^ 32) l.val =
+      (h.val * 2 ^ 32) ||| l.val := rfl
+  rw [hlor]
+  have hor := @Nat.or_div_two_pow (h.val * 2 ^ 32) l.val 32
+  rw [hor]
+  have hl : l.val / 2 ^ 32 = 0 := by
+    apply Nat.div_eq_of_lt
+    exact (CompCert4Lean.Lib.Integers.WordCore.Word.toFin l).isLt
+  rw [hl, Nat.or_zero, Nat.mul_comm,
+    Nat.mul_div_right h.val (Nat.two_pow_pos 32)]
+
+private theorem splitlong_lo_ofwords (h l : CCInt) :
+    int64Loword (int64Ofwords h l) = l := by
+  apply CompCert4Lean.Lib.Integers.WordCore.ext_of_val_eq
+  rw [splitlong_loword_val, test_int64_ofwords_val]
+  have hshift : Nat.shiftLeft h.val 32 = h.val * 2 ^ 32 :=
+    Nat.shiftLeft_eq h.val 32
+  rw [hshift]
+  change Nat.lor (h.val * 2 ^ 32) l.val % 2 ^ 32 = l.val
+  have hlor : Nat.lor (h.val * 2 ^ 32) l.val =
+      (h.val * 2 ^ 32) ||| l.val := rfl
+  rw [hlor]
+  have hor := @Nat.or_mod_two_pow (h.val * 2 ^ 32) l.val 32
+  rw [hor]
+  change (h.val * 2 ^ 32) % 2 ^ 32 ||| l.val % 2 ^ 32 = l.val
+  have hl : l.val < 2 ^ 32 :=
+    (CompCert4Lean.Lib.Integers.WordCore.Word.toFin l).isLt
+  rw [Nat.mul_comm, Nat.mul_mod_right, Nat.mod_eq_of_lt hl, Nat.zero_or]
+
+private theorem test_eval_cmpl_gen_parts
+    (xi : ExternalCalls) (ge : CompCert4Lean.Backend.CminorSel.genv)
+    (sp : CompCert4Lean.Common.Values.val) (e : CompCert4Lean.Backend.Cminor.env)
+    (m : CompCert4Lean.Common.Memory.mem) (le : letenv)
+    (ch cl : CCComparison) (h1 l1 h2 l2 : expr)
+    (p1 q1 p2 q2 : CCInt)
+    (hh1 : eval_expr xi ge sp e m le h1 (.Vint p1))
+    (hl1 : eval_expr xi ge sp e m le l1 (.Vint q1))
+    (hh2 : eval_expr xi ge sp e m le h2 (.Vint p2))
+    (hl2 : eval_expr xi ge sp e m le l2 (.Vint q2)) :
+    eval_expr xi ge sp e m le
+      (Econdition
+        (CEcond (Ccomp (.Ceq)) (Econs h1 (Econs h2 Enil)))
+        (Eop (Ocmp (Ccompu cl)) (Econs l1 (Econs l2 Enil)))
+        (Eop (Ocmp (Ccomp ch)) (Econs h1 (Econs h2 Enil))))
+      (CompCert4Lean.Common.Values.Val.of_bool (if intEq p1 p2 then
+          CompCert4Lean.Lib.Integers.Int.cmpu cl q1 q2 else
+          CompCert4Lean.Lib.Integers.Int.cmp ch p1 p2)) := by
+  have hargs_eq : eval_exprlist xi ge sp e m le
+      (Econs h1 (Econs h2 Enil)) [.Vint p1, .Vint p2] := by
+    exact eval_exprlist.cons le h1 (Econs h2 Enil) (.Vint p1) [.Vint p2]
+      hh1 (eval_exprlist.cons le h2 Enil (.Vint p2) [] hh2
+        (eval_exprlist.nil le))
+  have hcond : eval_condexpr xi ge sp e m le
+      (CEcond (Ccomp (.Ceq)) (Econs h1 (Econs h2 Enil)))
+      (CompCert4Lean.Lib.Integers.Int.eq p1 p2) := by
+    apply eval_condexpr.condition le (Ccomp (.Ceq))
+      (Econs h1 (Econs h2 Enil)) [(.Vint p1), (.Vint p2)]
+      (CompCert4Lean.Lib.Integers.Int.eq p1 p2) hargs_eq
+    rfl
+  apply eval_expr.eval_Econdition le
+    (CEcond (Ccomp (.Ceq)) (Econs h1 (Econs h2 Enil)))
+    (Eop (Ocmp (Ccompu cl)) (Econs l1 (Econs l2 Enil)))
+    (Eop (Ocmp (Ccomp ch)) (Econs h1 (Econs h2 Enil)))
+    (CompCert4Lean.Lib.Integers.Int.eq p1 p2)
+  · exact hcond
+  · by_cases heq : CompCert4Lean.Lib.Integers.Int.eq p1 p2
+    · simp [heq]
+      apply eval_expr.eval_Eop le (Ocmp (Ccompu cl))
+        (Econs l1 (Econs l2 Enil)) [.Vint q1, .Vint q2]
+        (CompCert4Lean.Common.Values.Val.of_bool
+          (CompCert4Lean.Lib.Integers.Int.cmpu cl q1 q2))
+      · exact eval_exprlist.cons le l1 (Econs l2 Enil) (.Vint q1) [.Vint q2]
+          hl1 (eval_exprlist.cons le l2 Enil (.Vint q2) [] hl2
+            (eval_exprlist.nil le))
+      · change some (CompCert4Lean.Common.Values.Val.of_optbool
+          (CompCert4Lean.Common.Values.Val.cmpu_bool
+            (CompCert4Lean.Common.Memory.Mem.valid_pointer m) cl
+            (.Vint q1) (.Vint q2))) = _
+        cases hc : CompCert4Lean.Lib.Integers.Int.cmpu cl q1 q2 <;>
+          simp [CompCert4Lean.Common.Values.Val.cmpu_bool,
+            CompCert4Lean.Common.Values.Val.of_optbool,
+            CompCert4Lean.Common.Values.Val.of_bool, hc]
+    · simp [heq]
+      apply eval_expr.eval_Eop le (Ocmp (Ccomp ch))
+        (Econs h1 (Econs h2 Enil)) [.Vint p1, .Vint p2]
+        (CompCert4Lean.Common.Values.Val.of_bool
+          (CompCert4Lean.Lib.Integers.Int.cmp ch p1 p2))
+      · exact hargs_eq
+      · change some (CompCert4Lean.Common.Values.Val.of_optbool
+          (CompCert4Lean.Common.Values.Val.cmp_bool ch
+            (.Vint p1) (.Vint p2))) = _
+        cases hc : CompCert4Lean.Lib.Integers.Int.cmp ch p1 p2 <;>
+          simp [CompCert4Lean.Common.Values.Val.cmp_bool,
+            CompCert4Lean.Common.Values.Val.of_optbool,
+            CompCert4Lean.Common.Values.Val.of_bool, hc]
+
+set_option maxHeartbeats 1000000 in
+theorem eval_cmpl_gen : eval_cmpl_genStatement := by
+  intro xi prog sp e m ch cl a b le x y ha hb
+  unfold cmpl_gen
+  cases hmatch : splitlong2_match a b with
+  | splitlong2_case1 h1 l1 h2 l2 =>
+      obtain ⟨p1, q1, hh1, hl1, hx⟩ :=
+        splitlong_eval_makelong_inv xi (Genv.globalenv prog) sp e m le h1 l1 x
+          (by simpa [hmatch] using ha)
+      obtain ⟨p2, q2, hh2, hl2, hy⟩ :=
+        splitlong_eval_makelong_inv xi (Genv.globalenv prog) sp e m le h2 l2 y
+          (by simpa [hmatch] using hb)
+      have hparts := test_eval_cmpl_gen_parts xi (Genv.globalenv prog) sp e m le
+        ch cl h1 l1 h2 l2 p1 q1 p2 q2 hh1 hl1 hh2 hl2
+      subst x
+      subst y
+      simpa [splitlong2, hmatch, splitlong_hi_ofwords, splitlong_lo_ofwords] using hparts
+  | splitlong2_case2 h1 l1 t2 =>
+      obtain ⟨p1, q1, hh1, hl1, hx⟩ :=
+        splitlong_eval_makelong_inv xi (Genv.globalenv prog) sp e m le h1 l1 x
+          (by simpa [hmatch] using ha)
+      have hh1' := CompCert4Lean.Backend.CminorSel.eval_lift xi
+        (Genv.globalenv prog) sp e m le h1 (.Vint p1) (.Vlong y) hh1
+      have hl1' := CompCert4Lean.Backend.CminorSel.eval_lift xi
+        (Genv.globalenv prog) sp e m le l1 (.Vint q1) (.Vlong y) hl1
+      have hhigh : eval_expr xi (Genv.globalenv prog) sp e m
+          (.Vlong y :: le)
+          (Eop Ohighlong (Econs (Eletvar 0) Enil))
+          (.Vint (int64Hiword y)) := by
+        apply eval_expr.eval_Eop (le := .Vlong y :: le)
+          (op := Ohighlong) (al := Econs (Eletvar 0) Enil)
+          (vl := [.Vlong y])
+        · exact eval_exprlist.cons (.Vlong y :: le) (Eletvar 0) Enil
+            (.Vlong y) []
+            (eval_expr.eval_Eletvar (.Vlong y :: le) 0 (.Vlong y) (by rfl))
+            (eval_exprlist.nil (.Vlong y :: le))
+        · rfl
+      have hlow : eval_expr xi (Genv.globalenv prog) sp e m
+          (.Vlong y :: le)
+          (Eop Olowlong (Econs (Eletvar 0) Enil))
+          (.Vint (int64Loword y)) := by
+        apply eval_expr.eval_Eop (le := .Vlong y :: le)
+          (op := Olowlong) (al := Econs (Eletvar 0) Enil)
+          (vl := [.Vlong y])
+        · exact eval_exprlist.cons (.Vlong y :: le) (Eletvar 0) Enil
+            (.Vlong y) []
+            (eval_expr.eval_Eletvar (.Vlong y :: le) 0 (.Vlong y) (by rfl))
+            (eval_exprlist.nil (.Vlong y :: le))
+        · rfl
+      have hparts := test_eval_cmpl_gen_parts xi (Genv.globalenv prog) sp e m
+        (.Vlong y :: le) ch cl (lift h1) (lift l1)
+        (Eop Ohighlong (Econs (Eletvar 0) Enil))
+        (Eop Olowlong (Econs (Eletvar 0) Enil))
+        p1 q1 (int64Hiword y) (int64Loword y)
+        hh1' hl1' hhigh hlow
+      have hbody : eval_expr xi (Genv.globalenv prog) sp e m
+          (.Vlong y :: le)
+          (Econdition
+            (CEcond (Ccomp (.Ceq))
+              (Econs (lift h1) (Econs
+                (Eop Ohighlong (Econs (Eletvar 0) Enil)) Enil)))
+            (Eop (Ocmp (Ccompu cl))
+              (Econs (lift l1) (Econs
+                (Eop Olowlong (Econs (Eletvar 0) Enil)) Enil)))
+            (Eop (Ocmp (Ccomp ch))
+              (Econs (lift h1) (Econs
+                (Eop Ohighlong (Econs (Eletvar 0) Enil)) Enil)))) _ := hparts
+      have hele := eval_expr.eval_Elet le b _ (.Vlong y) _ hb hbody
+      simpa [splitlong2, hmatch, hx, splitlong_hi_ofwords, splitlong_lo_ofwords] using hele
+  | splitlong2_case3 t1 h2 l2 =>
+      obtain ⟨p2, q2, hh2, hl2, hy⟩ :=
+        splitlong_eval_makelong_inv xi (Genv.globalenv prog) sp e m le h2 l2 y
+          (by simpa [hmatch] using hb)
+      have hh2' := CompCert4Lean.Backend.CminorSel.eval_lift xi
+        (Genv.globalenv prog) sp e m le h2 (.Vint p2) (.Vlong x) hh2
+      have hl2' := CompCert4Lean.Backend.CminorSel.eval_lift xi
+        (Genv.globalenv prog) sp e m le l2 (.Vint q2) (.Vlong x) hl2
+      have hhigh : eval_expr xi (Genv.globalenv prog) sp e m
+          (.Vlong x :: le)
+          (Eop Ohighlong (Econs (Eletvar 0) Enil))
+          (.Vint (int64Hiword x)) := by
+        apply eval_expr.eval_Eop (le := .Vlong x :: le)
+          (op := Ohighlong) (al := Econs (Eletvar 0) Enil)
+          (vl := [.Vlong x])
+        · exact eval_exprlist.cons (.Vlong x :: le) (Eletvar 0) Enil
+            (.Vlong x) []
+            (eval_expr.eval_Eletvar (.Vlong x :: le) 0 (.Vlong x) (by rfl))
+            (eval_exprlist.nil (.Vlong x :: le))
+        · rfl
+      have hlow : eval_expr xi (Genv.globalenv prog) sp e m
+          (.Vlong x :: le)
+          (Eop Olowlong (Econs (Eletvar 0) Enil))
+          (.Vint (int64Loword x)) := by
+        apply eval_expr.eval_Eop (le := .Vlong x :: le)
+          (op := Olowlong) (al := Econs (Eletvar 0) Enil)
+          (vl := [.Vlong x])
+        · exact eval_exprlist.cons (.Vlong x :: le) (Eletvar 0) Enil
+            (.Vlong x) []
+            (eval_expr.eval_Eletvar (.Vlong x :: le) 0 (.Vlong x) (by rfl))
+            (eval_exprlist.nil (.Vlong x :: le))
+        · rfl
+      have hparts := test_eval_cmpl_gen_parts xi (Genv.globalenv prog) sp e m
+        (.Vlong x :: le) ch cl
+        (Eop Ohighlong (Econs (Eletvar 0) Enil))
+        (Eop Olowlong (Econs (Eletvar 0) Enil)) (lift h2) (lift l2)
+        (int64Hiword x) (int64Loword x) p2 q2
+        hhigh hlow hh2' hl2'
+      have hbody : eval_expr xi (Genv.globalenv prog) sp e m
+          (.Vlong x :: le)
+          (Econdition
+            (CEcond (Ccomp (.Ceq))
+              (Econs (Eop Ohighlong (Econs (Eletvar 0) Enil))
+                (Econs (lift h2) Enil)))
+            (Eop (Ocmp (Ccompu cl))
+              (Econs (Eop Olowlong (Econs (Eletvar 0) Enil))
+                (Econs (lift l2) Enil)))
+            (Eop (Ocmp (Ccomp ch))
+              (Econs (Eop Ohighlong (Econs (Eletvar 0) Enil))
+                (Econs (lift h2) Enil)))) _ := hparts
+      have hele := eval_expr.eval_Elet le a _ (.Vlong x) _ ha hbody
+      simpa [splitlong2, hmatch, hy, splitlong_hi_ofwords, splitlong_lo_ofwords] using hele
+  | splitlong2_default t1 t2 =>
+      have hblift := CompCert4Lean.Backend.CminorSel.eval_lift xi
+        (Genv.globalenv prog) sp e m le b (.Vlong y) (.Vlong x) hb
+      have hhighx : eval_expr xi (Genv.globalenv prog) sp e m
+          (.Vlong y :: .Vlong x :: le)
+          (Eop Ohighlong (Econs (Eletvar 1) Enil))
+          (.Vint (int64Hiword x)) := by
+        apply eval_expr.eval_Eop
+          (le := .Vlong y :: .Vlong x :: le)
+          (op := Ohighlong) (al := Econs (Eletvar 1) Enil)
+          (vl := [.Vlong x])
+        · exact eval_exprlist.cons (.Vlong y :: .Vlong x :: le)
+            (Eletvar 1) Enil (.Vlong x) []
+            (eval_expr.eval_Eletvar (.Vlong y :: .Vlong x :: le) 1
+              (.Vlong x) (by rfl))
+            (eval_exprlist.nil (.Vlong y :: .Vlong x :: le))
+        · rfl
+      have hlowx : eval_expr xi (Genv.globalenv prog) sp e m
+          (.Vlong y :: .Vlong x :: le)
+          (Eop Olowlong (Econs (Eletvar 1) Enil))
+          (.Vint (int64Loword x)) := by
+        apply eval_expr.eval_Eop
+          (le := .Vlong y :: .Vlong x :: le)
+          (op := Olowlong) (al := Econs (Eletvar 1) Enil)
+          (vl := [.Vlong x])
+        · exact eval_exprlist.cons (.Vlong y :: .Vlong x :: le)
+            (Eletvar 1) Enil (.Vlong x) []
+            (eval_expr.eval_Eletvar (.Vlong y :: .Vlong x :: le) 1
+              (.Vlong x) (by rfl))
+            (eval_exprlist.nil (.Vlong y :: .Vlong x :: le))
+        · rfl
+      have hhighy : eval_expr xi (Genv.globalenv prog) sp e m
+          (.Vlong y :: .Vlong x :: le)
+          (Eop Ohighlong (Econs (Eletvar 0) Enil))
+          (.Vint (int64Hiword y)) := by
+        apply eval_expr.eval_Eop
+          (le := .Vlong y :: .Vlong x :: le)
+          (op := Ohighlong) (al := Econs (Eletvar 0) Enil)
+          (vl := [.Vlong y])
+        · exact eval_exprlist.cons (.Vlong y :: .Vlong x :: le)
+            (Eletvar 0) Enil (.Vlong y) []
+            (eval_expr.eval_Eletvar (.Vlong y :: .Vlong x :: le) 0
+              (.Vlong y) (by rfl))
+            (eval_exprlist.nil (.Vlong y :: .Vlong x :: le))
+        · rfl
+      have hlowy : eval_expr xi (Genv.globalenv prog) sp e m
+          (.Vlong y :: .Vlong x :: le)
+          (Eop Olowlong (Econs (Eletvar 0) Enil))
+          (.Vint (int64Loword y)) := by
+        apply eval_expr.eval_Eop
+          (le := .Vlong y :: .Vlong x :: le)
+          (op := Olowlong) (al := Econs (Eletvar 0) Enil)
+          (vl := [.Vlong y])
+        · exact eval_exprlist.cons (.Vlong y :: .Vlong x :: le)
+            (Eletvar 0) Enil (.Vlong y) []
+            (eval_expr.eval_Eletvar (.Vlong y :: .Vlong x :: le) 0
+              (.Vlong y) (by rfl))
+            (eval_exprlist.nil (.Vlong y :: .Vlong x :: le))
+        · rfl
+      have hparts := test_eval_cmpl_gen_parts xi (Genv.globalenv prog) sp e m
+        (.Vlong y :: .Vlong x :: le) ch cl
+        (Eop Ohighlong (Econs (Eletvar 1) Enil))
+        (Eop Olowlong (Econs (Eletvar 1) Enil))
+        (Eop Ohighlong (Econs (Eletvar 0) Enil))
+        (Eop Olowlong (Econs (Eletvar 0) Enil))
+        (int64Hiword x) (int64Loword x)
+        (int64Hiword y) (int64Loword y)
+        hhighx hlowx hhighy hlowy
+      have hbody : eval_expr xi (Genv.globalenv prog) sp e m
+          (.Vlong y :: .Vlong x :: le)
+          (Econdition
+            (CEcond (Ccomp (.Ceq))
+              (Econs (Eop Ohighlong (Econs (Eletvar 1) Enil))
+                (Econs (Eop Ohighlong (Econs (Eletvar 0) Enil)) Enil)))
+            (Eop (Ocmp (Ccompu cl))
+              (Econs (Eop Olowlong (Econs (Eletvar 1) Enil))
+                (Econs (Eop Olowlong (Econs (Eletvar 0) Enil)) Enil)))
+            (Eop (Ocmp (Ccomp ch))
+              (Econs (Eop Ohighlong (Econs (Eletvar 1) Enil))
+                (Econs (Eop Ohighlong (Econs (Eletvar 0) Enil)) Enil)))) _ := hparts
+      have hinner := eval_expr.eval_Elet (.Vlong x :: le) (lift b) _
+        (.Vlong y) _ hblift hbody
+      have hele := eval_expr.eval_Elet le a _ (.Vlong x) _ ha hinner
+      simpa [splitlong2, hmatch] using hele
+
+end CompCert4Lean.Backend.SplitLongproof

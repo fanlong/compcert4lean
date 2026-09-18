@@ -4638,3 +4638,86 @@ theorem free_range_perm : free_range_permStatement := by
 end Mem
 
 end CompCert4Lean.Common.Memory
+
+namespace CompCert4Lean.Common.Memory
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.Lib.Coqlib
+
+namespace Mem
+
+theorem free_result : free_resultStatement := by
+  intro m1 bf lo hi m2 hfree
+  unfold free at hfree
+  cases hdec : range_perm_dec m1 bf lo hi Cur Freeable with
+  | left _ =>
+      simp [boolOfSumbool, hdec] at hfree
+      cases hfree
+      rfl
+  | right _ =>
+      simp [boolOfSumbool, hdec] at hfree
+
+theorem nextblock_free : nextblock_freeStatement := by
+  intro m1 bf lo hi m2 hfree
+  have hresult := free_result m1 bf lo hi m2 hfree
+  rw [hresult]
+  rfl
+
+theorem perm_free_1 : perm_free_1Statement := by
+  intro m1 bf lo hi m2 hfree b ofs k p hout hp
+  have hresult := free_result m1 bf lo hi m2 hfree
+  rw [hresult]
+  unfold perm unchecked_free
+  simp only
+  by_cases hblock : b = bf
+  · subst b
+    rw [pmapGetSetSame]
+    split
+    · rename_i hin
+      exfalso
+      rcases hout with hne | hlt | hge
+      · exact hne rfl
+      · change intOfZ ofs < intOfZ lo at hlt
+        have hin' := hin
+        change (zLeb lo ofs && zLtb ofs hi) = true at hin'
+        have hlo : intOfZ lo ≤ intOfZ ofs := by
+          simpa [ZArith.BinInt.Z.leb] using (Bool.and_eq_true_iff.mp hin').1
+        omega
+      · change intOfZ hi ≤ intOfZ ofs at hge
+        have hin' := hin
+        change (zLeb lo ofs && zLtb ofs hi) = true at hin'
+        have hhi : intOfZ ofs < intOfZ hi := by
+          simpa [ZArith.BinInt.Z.ltb] using (Bool.and_eq_true_iff.mp hin').2
+        omega
+    · exact hp
+  · rw [pmapGetSetOther _ _ _ _ hblock]
+    exact hp
+
+theorem perm_free_2 : perm_free_2Statement := by
+  intro m1 bf lo hi m2 hfree ofs k p hbounds hp
+  have hresult := free_result m1 bf lo hi m2 hfree
+  rw [hresult] at hp
+  unfold perm unchecked_free at hp
+  simp only at hp
+  rw [pmapGetSetSame] at hp
+  split at hp
+  · exact hp
+  · rename_i hnot
+    apply hnot
+    change (zLeb lo ofs && zLtb ofs hi) = true
+    apply Bool.and_eq_true_iff.mpr
+    constructor
+    · change (if intOfZ lo ≤ intOfZ ofs then true else false) = true
+      have hle := hbounds.1
+      change intOfZ lo ≤ intOfZ ofs at hle
+      simp [hle]
+    · change (if intOfZ ofs < intOfZ hi then true else false) = true
+      have hlt := hbounds.2
+      change intOfZ ofs < intOfZ hi at hlt
+      simp [hlt]
+
+end Mem
+
+end CompCert4Lean.Common.Memory

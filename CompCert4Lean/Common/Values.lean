@@ -3451,3 +3451,90 @@ theorem has_argtype_list_lessdef : has_argtype_list_lessdefStatement := by
 
 end Val
 end CompCert4Lean.Common.Values
+
+namespace CompCert4Lean.Common.Values
+namespace Val
+
+theorem load_result_inject : load_result_injectStatement := by
+  intro f chunk v1 v2 h
+  cases h with
+  | inject_int i =>
+      cases chunk with
+      | Mbool =>
+          by_cases hb : is_bool (Vint (intZeroExt (zOfNat 8) i)) = true
+          · simp [load_result, norm_bool, hb]
+            exact inject_int _ _
+          · simp [load_result, norm_bool, hb]
+            exact val_inject_undef _ _
+      | Mint8signed => simp [load_result]; exact inject_int _ _
+      | Mint8unsigned => simp [load_result]; exact inject_int _ _
+      | Mint16signed => simp [load_result]; exact inject_int _ _
+      | Mint16unsigned => simp [load_result]; exact inject_int _ _
+      | Mint32 => exact inject_int _ _
+      | Mint64 => simp [load_result]; exact val_inject_undef _ _
+      | Mfloat32 => simp [load_result]; exact val_inject_undef _ _
+      | Mfloat64 => simp [load_result]; exact val_inject_undef _ _
+      | Many32 => exact inject_int _ _
+      | Many64 => exact inject_int _ _
+  | inject_long i =>
+      cases chunk <;>
+        simp [load_result, norm_bool] <;>
+        first | exact inject_long _ _ | exact val_inject_undef _ _
+  | inject_float x =>
+      cases chunk <;>
+        simp [load_result, norm_bool] <;>
+        first | exact inject_float _ _ | exact val_inject_undef _ _
+  | inject_single x =>
+      cases chunk <;>
+        simp [load_result, norm_bool] <;>
+        first | exact inject_single _ _ | exact val_inject_undef _ _
+  | inject_ptr b1 ofs1 b2 ofs2 delta hmap hofs =>
+      cases chunk <;>
+        simp [load_result, norm_bool, CompCert4Lean.X86_64.Archi.ptr64] <;>
+        first | exact inject_ptr _ _ _ _ _ _ hmap hofs | exact val_inject_undef _ _
+  | val_inject_undef v =>
+      cases chunk <;> exact val_inject_undef _ _
+
+theorem add_inject : add_injectStatement := by
+  intro f v1 v1' v2 v2' h1 h2
+  cases h1 <;> cases h2 <;>
+    simp [add, Archi.ptr64, CompCert4Lean.X86_64.Archi.ptr64] <;>
+    constructor <;>
+    try assumption
+  all_goals
+    subst_vars
+    rw [Ptrofs.add_assoc_proof_api, Ptrofs.add_assoc_proof_api]
+    congr 1
+    exact Ptrofs.add_comm_proof_api _ _
+
+theorem sub_inject : sub_injectStatement := by
+  intro f v1 v1' v2 v2' h1 h2
+  cases h1 <;> cases h2 <;>
+    simp [sub, Archi.ptr64, CompCert4Lean.X86_64.Archi.ptr64] <;>
+    try constructor <;>
+    try assumption
+
+theorem offset_ptr_inject : offset_ptr_injectStatement := by
+  intro f v v' ofs h
+  cases h with
+  | inject_int i =>
+      simpa [offset_ptr] using (val_inject_undef f (offset_ptr (Vint i) ofs))
+  | inject_long i =>
+      simpa [offset_ptr] using (val_inject_undef f (offset_ptr (Vlong i) ofs))
+  | inject_float x =>
+      simpa [offset_ptr] using (val_inject_undef f (offset_ptr (Vfloat x) ofs))
+  | inject_single x =>
+      simpa [offset_ptr] using (val_inject_undef f (offset_ptr (Vsingle x) ofs))
+  | inject_ptr b1 ofs1 b2 ofs2 delta hmap hofs =>
+      simp [offset_ptr]
+      apply Val.inject_ptr f b1 _ b2 _ delta hmap
+      subst ofs2
+      rw [CompCert4Lean.Lib.Integers.Ptrofs.add_assoc_proof_api,
+        CompCert4Lean.Lib.Integers.Ptrofs.add_assoc_proof_api]
+      congr 1
+      exact CompCert4Lean.Lib.Integers.Ptrofs.add_commut_proof_api _ _
+  | val_inject_undef v =>
+      simpa [offset_ptr] using (val_inject_undef f (offset_ptr v' ofs))
+
+end Val
+end CompCert4Lean.Common.Values

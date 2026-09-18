@@ -4041,3 +4041,110 @@ theorem cexp_DN :
     (mag_DN ctx magnitude beta fexp hvalid x hpos)
 
 end CompCert4Lean.Flocq.Core.Generic_fmt
+
+namespace CompCert4Lean.Flocq.Core.Generic_fmt
+
+theorem Znearest_DN_or_UP :
+    ∀ ctx, Znearest_DN_or_UPStatement ctx := by
+  intro ctx choice x
+  unfold Exact.Znearest
+  cases hcmp : Exact.Rcompare ctx
+      (Exact.Rminus ctx x (Exact.IZR ctx (Exact.Zfloor ctx x)))
+      (Exact.Rdiv ctx (Exact.Rone ctx) (Exact.Rtwo ctx)) with
+  | Lt => exact Or.inl rfl
+  | Eq =>
+      by_cases hchoice : choice (Exact.Zfloor ctx x)
+      · simp [hchoice]
+      · simp [hchoice]
+  | Gt => exact Or.inr rfl
+
+theorem lt_cexp_pos :
+    ∀ ctx magnitude, lt_cexp_posStatement ctx magnitude := by
+  intro ctx magnitude beta fexp hmono x y hy hce
+  unfold Exact.cexp at hce
+  have hmag : Zlt (Exact.mag magnitude beta x) (Exact.mag magnitude beta y) := by
+    change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+        (Exact.mag magnitude beta x) <
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+        (Exact.mag magnitude beta y)
+    apply Int.lt_of_not_ge
+    intro hnot
+    have hle : Zle (Exact.mag magnitude beta y) (Exact.mag magnitude beta x) := by
+      change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+          (Exact.mag magnitude beta y) ≤
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+          (Exact.mag magnitude beta x)
+      exact hnot
+    have hmono' := hmono.monotone_exp
+      (Exact.mag magnitude beta y) (Exact.mag magnitude beta x) hle
+    change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+        (fexp (Exact.mag magnitude beta y)) ≤
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+        (fexp (Exact.mag magnitude beta x)) at hmono'
+    change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+        (fexp (Exact.mag magnitude beta x)) <
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+        (fexp (Exact.mag magnitude beta y)) at hce
+    omega
+  exact CompCert4Lean.Flocq.Core.Raux.lt_mag ctx magnitude beta x y hy hmag
+
+theorem mag_round_ge :
+    ∀ ctx magnitude, mag_round_geStatement ctx magnitude := by
+  intro ctx magnitude beta fexp hvalid rnd hrnd x hround
+  rcases round_ZR_or_AW ctx magnitude beta fexp rnd hrnd x with htrunc | haway
+  · rw [htrunc] at hround
+    rw [htrunc]
+    have hmag := mag_round_ZR ctx magnitude beta fexp hvalid x hround
+    rw [hmag]
+    exact Int.le_refl _
+  · rw [haway] at hround
+    rw [haway]
+    have hx0 : x ≠ Exact.R0 ctx := by
+      intro hx
+      subst x
+      apply hround
+      unfold Exact.round
+      rw [scaled_mantissa_0 ctx magnitude beta fexp]
+      have hza0 : Exact.Zaway ctx (Exact.R0 ctx) = Z0 := by
+        calc
+          Exact.Zaway ctx (Exact.R0 ctx) = Exact.Zfloor ctx (Exact.R0 ctx) :=
+            CompCert4Lean.Flocq.Core.Raux.Zaway_floor ctx _
+              (ctx.certificate.orderedField.le_refl _)
+          _ = Z0 := by
+            rw [show Exact.R0 ctx = Exact.IZR ctx Z0 by
+              exact ctx.certificate.sourceLaws.ofZ_zero.symm]
+            exact CompCert4Lean.Flocq.Core.Raux.Zfloor_IZR ctx Z0
+      rw [hza0]
+      exact CompCert4Lean.Flocq.Core.Float_prop.F2R_0 ctx beta _
+    apply CompCert4Lean.Flocq.Core.Raux.mag_le_abs ctx magnitude beta x
+      (Exact.round ctx magnitude beta fexp (Exact.Zaway ctx) x) hx0
+    have hup := (round_UP_pt ctx magnitude beta fexp hvalid
+      (Exact.Rabs ctx x)).2.1
+    have hnonneg_abs : Exact.Rle ctx (Exact.R0 ctx) (Exact.Rabs ctx x) := by
+      change ctx.spec.le ctx.spec.zero (ctx.spec.abs x)
+      have h := CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.Rbasic_fun.Rabs_pos
+        ctx x
+      change ctx.spec.le (ctx.spec.ofZ Z0) (ctx.spec.abs x) at h
+      rw [ctx.certificate.sourceLaws.ofZ_zero] at h
+      exact h
+    have haway_abs := round_AW_UP ctx magnitude beta fexp (Exact.Rabs ctx x)
+      hnonneg_abs
+    have hround_abs := round_AW_abs ctx magnitude beta fexp hvalid x
+    have hfirst : Exact.Rle ctx (Exact.Rabs ctx x)
+        (Exact.round ctx magnitude beta fexp (Exact.Zaway ctx)
+          (Exact.Rabs ctx x)) := by
+      rw [haway_abs]
+      exact hup
+    change Exact.Rle ctx (Exact.Rabs ctx x)
+      (Exact.Rabs ctx
+        (Exact.round ctx magnitude beta fexp (Exact.Zaway ctx) x))
+    exact hround_abs ▸ hfirst
+
+theorem cexp_round_ge :
+    ∀ ctx magnitude, cexp_round_geStatement ctx magnitude := by
+  intro ctx magnitude beta fexp hvalid hmono rnd hrnd x hround
+  unfold Exact.cexp
+  apply hmono.monotone_exp
+  exact mag_round_ge ctx magnitude beta fexp hvalid rnd hrnd x hround
+
+end CompCert4Lean.Flocq.Core.Generic_fmt
