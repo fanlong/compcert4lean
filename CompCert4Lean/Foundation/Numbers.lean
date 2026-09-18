@@ -4448,3 +4448,36 @@ theorem ZArith.BinInt.Z2Pos.id :
 
 end Rocq.Coq
 end CompCert4Lean.Foundation.Numbers
+
+namespace CompCert4Lean.Foundation.Numbers
+namespace Rocq.Coq
+
+theorem ZArith.BinInt.Zsucc_pred :
+    ZArith.BinInt.Zsucc_predStatement := by
+  intro n
+  apply intOfZ_injective
+  simp [ZArith.BinInt.Z.succ, ZArith.BinInt.Z.pred,
+    ZArith.BinInt.Z.add, ZArith.BinInt.Z.sub, intOfZ_zOfInt]
+
+theorem ZArith.BinInt.Zpred_succ :
+    ZArith.BinInt.Zpred_succStatement := by
+  intro n
+  exact (ZArith.BinInt.Z.pred_succ n).symm
+
+theorem ZArith.BinInt.Zopp_mult_distr_l :
+    ZArith.BinInt.Zopp_mult_distr_lStatement := by
+  intro n m
+  apply intOfZ_injective
+  simp only [ZArith.BinInt.Z.opp, ZArith.BinInt.Z.mul, intOfZ_zOfInt]
+  exact (Int.neg_mul _ _).symm
+
+theorem ZArith.BinInt.Zplus_diag_eq_mult_2 :
+    ZArith.BinInt.Zplus_diag_eq_mult_2Statement := by
+  intro n
+  apply intOfZ_injective
+  simp only [ZArith.BinInt.Z.add, ZArith.BinInt.Z.mul, intOfZ_zOfInt]
+  change intOfZ n + intOfZ n = intOfZ n * 2
+  omega
+
+end Rocq.Coq
+end CompCert4Lean.Foundation.Numbers

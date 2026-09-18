@@ -4721,3 +4721,128 @@ theorem perm_free_2 : perm_free_2Statement := by
 end Mem
 
 end CompCert4Lean.Common.Memory
+
+namespace CompCert4Lean.Common.Memory
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.Lib.Coqlib
+
+namespace Mem
+
+theorem perm_free_3 : perm_free_3Statement := by
+  intro m1 bf lo hi m2 hfree b ofs k p hp
+  unfold free at hfree
+  cases hdec : range_perm_dec m1 bf lo hi Cur Freeable with
+  | right _ => simp [boolOfSumbool, hdec] at hfree
+  | left _ =>
+      simp [boolOfSumbool, hdec] at hfree
+      cases hfree
+      unfold perm at hp ⊢
+      unfold unchecked_free at hp
+      simp only at hp ⊢
+      by_cases hblock : b = bf
+      · subst b
+        rw [pmapGetSetSame] at hp
+        split at hp
+        · rename_i hin
+          exact False.elim hp
+        · exact hp
+      · rw [pmapGetSetOther _ _ _ _ hblock] at hp
+        exact hp
+
+end Mem
+
+end CompCert4Lean.Common.Memory
+
+namespace CompCert4Lean.Common.Memory
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.Lib.Coqlib
+
+namespace Mem
+
+theorem perm_free_inv : perm_free_invStatement := by
+  intro m1 bf lo hi m2 hfree b ofs k p hp
+  by_cases hblock : b = bf
+  · subst b
+    by_cases hlo : zLe lo ofs
+    · by_cases hhi : zLt ofs hi
+      · exact Or.inl ⟨rfl, hlo, hhi⟩
+      · right
+        apply perm_free_1 m1 bf lo hi m2 hfree bf ofs k p
+        right
+        right
+        change intOfZ hi ≤ intOfZ ofs
+        have hhi' : intOfZ hi ≤ intOfZ ofs := by
+          simpa [ZArith.BinInt.Z.lt] using hhi
+        exact hhi'
+        exact hp
+    · right
+      apply perm_free_1 m1 bf lo hi m2 hfree bf ofs k p
+      right
+      left
+      change intOfZ ofs < intOfZ lo
+      have hlo' : intOfZ ofs < intOfZ lo := by
+        simpa [ZArith.BinInt.Z.le] using hlo
+      exact hlo'
+      exact hp
+  · right
+    apply perm_free_1 m1 bf lo hi m2 hfree b ofs k p
+    exact Or.inl hblock
+    exact hp
+
+theorem valid_access_free_inv_1 : valid_access_free_inv_1Statement := by
+  intro m1 bf lo hi m2 hfree chunk b ofs p hv
+  unfold valid_access at hv ⊢
+  constructor
+  · intro ofs' hofs'
+    exact perm_free_3 m1 bf lo hi m2 hfree b ofs' Cur p (hv.1 ofs' hofs')
+  · exact hv.2
+
+theorem valid_access_free_1 : valid_access_free_1Statement := by
+  intro m1 bf lo hi m2 hfree chunk b ofs p hv hout
+  unfold valid_access at hv ⊢
+  constructor
+  · intro ofs' hofs'
+    apply perm_free_1 m1 bf lo hi m2 hfree b ofs' Cur p
+    · rcases hout with hne | hge | hlo | hhi
+      · exact Or.inl hne
+      · right
+        by_cases hlt : zLt ofs' lo
+        · exact Or.inl hlt
+        · right
+          change intOfZ hi ≤ intOfZ ofs'
+          have hge' : intOfZ hi ≤ intOfZ lo := by
+            simpa [ZArith.BinInt.Z.le] using hge
+          have hlt' : intOfZ lo ≤ intOfZ ofs' := by
+            simpa [ZArith.BinInt.Z.lt] using hlt
+          omega
+      · right
+        left
+        change intOfZ ofs' < intOfZ lo
+        have hofslt : intOfZ ofs' < intOfZ
+            (zAdd ofs (CompCert4Lean.Common.Memdata.size_chunk chunk)) := by
+          simpa [ZArith.BinInt.Z.lt] using hofs'.2
+        have hlo' : intOfZ
+            (zAdd ofs (CompCert4Lean.Common.Memdata.size_chunk chunk)) ≤ intOfZ lo := by
+          simpa [ZArith.BinInt.Z.le] using hlo
+        omega
+      · right
+        right
+        change intOfZ hi ≤ intOfZ ofs'
+        have hhi' : intOfZ hi ≤ intOfZ ofs := by
+          simpa [ZArith.BinInt.Z.le] using hhi
+        have hofsge : intOfZ ofs ≤ intOfZ ofs' := by
+          simpa [ZArith.BinInt.Z.le] using hofs'.1
+        omega
+    · exact hv.1 ofs' hofs'
+  · exact hv.2
+
+end Mem
+
+end CompCert4Lean.Common.Memory

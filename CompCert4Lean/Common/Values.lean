@@ -3571,3 +3571,17 @@ theorem loword_inject : loword_injectStatement := by
 
 end Val
 end CompCert4Lean.Common.Values
+
+namespace CompCert4Lean.Common.Values
+namespace Val
+
+theorem cmpu_bool_inject : cmpu_bool_injectStatement := by
+  intro f valid_ptr1 valid_ptr2
+  dsimp only
+  intro _ _ _ _ c v1 v2 v1' v2' b h1 h2 hcmp
+  cases h1 <;> cases h2 <;>
+    simp [cmpu_bool, Archi.ptr64, CompCert4Lean.X86_64.Archi.ptr64] at hcmp ⊢ <;>
+    assumption
+
+end Val
+end CompCert4Lean.Common.Values
