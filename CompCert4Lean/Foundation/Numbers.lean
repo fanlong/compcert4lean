@@ -4540,3 +4540,154 @@ theorem ZArith.Zcompare.Zcompare_antisym :
 
 end Rocq.Coq
 end CompCert4Lean.Foundation.Numbers
+
+namespace CompCert4Lean.Foundation.Numbers
+namespace Rocq.Coq
+
+theorem ZArith.Zcompare.Zlt_compare :
+    ZArith.Zcompare.Zlt_compareStatement := by
+  intro n m h
+  change intOfZ n < intOfZ m at h
+  unfold ZArith.BinInt.Z.compare comparisonOfInt
+  change (match (if intOfZ n < intOfZ m then (Lt : comparison)
+      else if intOfZ n = intOfZ m then (Eq : comparison)
+      else (Gt : comparison)) with
+    | .Eq => False
+    | .Lt => True
+    | .Gt => False)
+  simp [h]
+
+theorem ZArith.Zcompare.Zgt_compare :
+    ZArith.Zcompare.Zgt_compareStatement := by
+  intro n m h
+  change intOfZ m < intOfZ n at h
+  unfold ZArith.BinInt.Z.compare comparisonOfInt
+  change (match (if intOfZ n < intOfZ m then (Lt : comparison)
+      else if intOfZ n = intOfZ m then (Eq : comparison)
+      else (Gt : comparison)) with
+    | .Eq => False
+    | .Lt => False
+    | .Gt => True)
+  have hnm : ¬ intOfZ n < intOfZ m := Int.not_lt_of_ge (Int.le_of_lt h)
+  have hne : intOfZ n ≠ intOfZ m := by omega
+  simp [h, hnm, hne]
+
+end Rocq.Coq
+end CompCert4Lean.Foundation.Numbers
+
+namespace CompCert4Lean.Foundation.Numbers
+namespace Rocq.Coq
+
+theorem ZArith.Zdiv.Z_div_mod :
+    ZArith.Zdiv.Z_div_modStatement := by
+  intro a b hb
+  dsimp [ZArith.BinInt.Z.div_eucl]
+  exact ⟨ZArith.Zdiv.Z_div_mod_eq_full a b,
+    ZArith.BinInt.Z.modulo_range a b hb⟩
+
+end Rocq.Coq
+end CompCert4Lean.Foundation.Numbers
+
+namespace CompCert4Lean.Foundation.Numbers
+namespace Rocq.Coq
+
+private theorem zDivEucl_unique_int (a b q r : Int)
+    (hr : (0 ≤ r ∧ r < b) ∨ (b < r ∧ r ≤ 0))
+    (ha : a = b * q + r) :
+    q = ZArith.BinInt.Z.zDivEucl a b := by
+  rcases hr with hr | hr
+  · have hb : 0 < b := Int.lt_of_le_of_lt hr.1 hr.2
+    have hb0 : b ≠ 0 := Int.ne_of_gt hb
+    unfold ZArith.BinInt.Z.zDivEucl
+    simp [hb0, hb]
+    symm
+    apply (Int.ediv_eq_iff_of_pos hb).2
+    constructor
+    · calc
+        q * b = b * q := Int.mul_comm _ _
+        _ ≤ a := by omega
+    · calc
+        a < b * q + b := by omega
+        _ = q * b + b := by rw [Int.mul_comm b q]
+  · have hb : b < 0 := Int.lt_of_lt_of_le hr.1 hr.2
+    have hb0 : b ≠ 0 := by omega
+    have hbnpos : ¬ 0 < b := Int.not_lt_of_ge (Int.le_of_lt hb)
+    let d : Int := -b
+    have hd : 0 < d := by dsimp [d]; omega
+    have hs0 : 0 ≤ d + r := by dsimp [d]; omega
+    have hsd : d + r ≤ d := by dsimp [d]; omega
+    have ha' : a = d * (-q - 1) + (d + r) := by
+      calc
+        a = b * q + r := ha
+        _ = d * (-q - 1) + (d + r) := by
+          dsimp [d]
+          rw [Int.mul_sub]
+          simp only [Int.one_mul, Int.neg_mul, Int.mul_neg, Int.neg_neg]
+          omega
+    by_cases hrs : r = 0
+    · have hde : a = d * (-q) := by
+        calc
+          a = b * q := by simpa [hrs] using ha
+          _ = d * (-q) := by
+            dsimp [d]
+            simp only [Int.neg_mul, Int.mul_neg, Int.neg_neg]
+      have hquot : a.ediv d = -q :=
+        Int.ediv_eq_of_eq_mul_right (Int.ne_of_gt hd) (by
+          simpa [Int.mul_comm] using hde)
+      have hdvd : d ∣ a := by
+        refine ⟨-q, ?_⟩
+        simpa [Int.mul_comm] using hde
+      have hrem : a % d = 0 := Int.emod_eq_zero_of_dvd hdvd
+      unfold ZArith.BinInt.Z.zDivEucl
+      have hrem' : a % (-b) = 0 := by simpa [d] using hrem
+      have hquot' : a.ediv (-b) = -q := by simpa [d] using hquot
+      change a.emod (-b) = 0 at hrem'
+      simp only [if_neg hb0]
+      simp [hbnpos, hrem', hquot']
+    · have hspos : 0 < d + r := by omega
+      have hquot : a.ediv d = -q - 1 := by
+        apply (Int.ediv_eq_iff_of_pos hd).2
+        constructor
+        · calc
+            (-q - 1) * d = d * (-q - 1) := Int.mul_comm _ _
+            _ ≤ a := by omega
+        · calc
+            a = d * (-q - 1) + (d + r) := ha'
+            _ = (-q - 1) * d + (d + r) := by rw [Int.mul_comm d]
+            _ < (-q - 1) * d + d := by omega
+      have hmod : a % d = d + r := by
+        have hrepr : d * (-q - 1) + (d + r) =
+            (d + r) + (-q - 1) * d := by
+          rw [Int.mul_comm d (-q - 1), Int.add_comm]
+        rw [ha', hrepr]
+        rw [Int.add_mul_emod_self_right]
+        have hsd' : d + r < d := by omega
+        exact Int.emod_eq_of_lt hs0 hsd'
+      have hrem : a % d ≠ 0 := by rw [hmod]; omega
+      unfold ZArith.BinInt.Z.zDivEucl
+      have hrem' : a % (-b) ≠ 0 := by simpa [d] using hrem
+      have hquot' : a.ediv (-b) = -q - 1 := by simpa [d] using hquot
+      change a.emod (-b) ≠ 0 at hrem'
+      simp only [if_neg hb0]
+      simp [hbnpos, hrem', hquot']
+
+theorem ZArith.Zdiv.Zdiv_unique_full :
+    ZArith.Zdiv.Zdiv_unique_fullStatement := by
+  intro a b q r hr ha
+  apply intOfZ_injective
+  change intOfZ q = intOfZ (ZArith.BinInt.Z.div a b)
+  have hr' :
+      (0 ≤ intOfZ r ∧ intOfZ r < intOfZ b) ∨
+        (intOfZ b < intOfZ r ∧ intOfZ r ≤ 0) := by
+    rcases hr with hr | hr
+    · exact Or.inl (by exact hr)
+    · exact Or.inr (by exact hr)
+  have ha' : intOfZ a = intOfZ b * intOfZ q + intOfZ r := by
+    simpa [ZArith.BinInt.Z.add, ZArith.BinInt.Z.mul, intOfZ_zOfInt] using
+      congrArg intOfZ ha
+  have h := zDivEucl_unique_int (intOfZ a) (intOfZ b)
+      (intOfZ q) (intOfZ r) hr' ha'
+  simpa [ZArith.BinInt.Z.div, intOfZ_zOfInt] using h
+
+end Rocq.Coq
+end CompCert4Lean.Foundation.Numbers

@@ -7364,3 +7364,14 @@ theorem neg_involutive_proof : neg_involutive := by
       omega
     rw [hsub]
     exact Int.emod_eq_of_lt hx0 hxm
+
+theorem eq_spec_proof : eq_spec := by
+  intro x y
+  by_cases h : x.intval = y.intval
+  · have hxy : x = y := WordCore.ext h
+    simp [eq, WordCore.eq, h, hxy]
+  · have hxy : x ≠ y := by
+      intro hxy
+      apply h
+      exact congrArg (fun q => q.intval) hxy
+    simp [eq, WordCore.eq, h, hxy]

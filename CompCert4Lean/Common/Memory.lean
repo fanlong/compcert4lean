@@ -5056,3 +5056,182 @@ theorem perm_drop_3 : perm_drop_3Statement := by
 end Mem
 
 end CompCert4Lean.Common.Memory
+
+namespace CompCert4Lean.Common.Memory
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.Lib.Coqlib
+
+namespace Mem
+
+theorem perm_drop_4 : perm_drop_4Statement := by
+  intro m b lo hi p m' hdrop b' ofs k p' hperm
+  unfold drop_perm at hdrop
+  cases hdec : range_perm_dec m b lo hi Cur Freeable with
+  | right _ => simp [hdec] at hdrop
+  | left hRange =>
+      simp [hdec] at hdrop
+      cases hdrop
+      unfold perm at hperm ⊢
+      change perm_order'
+        (PMap.get b'
+          (PMap.set b
+            (fun ofs k => if inRange lo hi ofs then some p
+              else (PMap.get b m.mem_access) ofs k)
+            m.mem_access)
+          ofs k)
+        p' at hperm
+      by_cases hblock : b' = b
+      · subst b'
+        rw [pmapGetSetSame] at hperm
+        by_cases hin : inRange lo hi ofs
+        · simp [hin] at hperm
+          have hbounds : zLe lo ofs ∧ zLt ofs hi := by
+            change intOfZ lo ≤ intOfZ ofs ∧ intOfZ ofs < intOfZ hi
+            change (zLeb lo ofs && zLtb ofs hi) = true at hin
+            simp only [Bool.and_eq_true] at hin
+            constructor
+            · simpa [ZArith.BinInt.Z.leb] using hin.1
+            · simpa [ZArith.BinInt.Z.ltb] using hin.2
+          have hfree : perm m b ofs Cur Freeable := hRange ofs hbounds
+          have hfree' : perm m b ofs k Freeable := by
+            cases k with
+            | Max => exact perm_cur_max m b ofs Freeable hfree
+            | Cur => exact hfree
+          have hp : perm m b ofs k p :=
+            perm_implies m b ofs k Freeable p hfree' (perm_F_any p)
+          exact perm_implies m b ofs k p p' hp hperm
+        · simp [hin] at hperm ⊢
+          exact hperm
+      · rw [pmapGetSetOther _ _ _ _ hblock] at hperm
+        exact hperm
+
+end Mem
+
+end CompCert4Lean.Common.Memory
+
+namespace CompCert4Lean.Common.Memory
+
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memtype
+
+namespace Mem
+
+theorem valid_access_drop_2 : valid_access_drop_2Statement := by
+  intro m b lo hi p m' hdrop chunk b' ofs p' hvalid
+  rcases hvalid with ⟨hperm, halign⟩
+  refine ⟨?_, halign⟩
+  intro ofs' hbounds
+  exact perm_drop_4 m b lo hi p m' hdrop b' ofs' Cur p'
+    (hperm ofs' hbounds)
+
+end Mem
+
+end CompCert4Lean.Common.Memory
+
+namespace CompCert4Lean.Common.Memory
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.Lib.Coqlib
+
+namespace Mem
+
+theorem valid_access_drop_1 : valid_access_drop_1Statement := by
+  intro m b lo hi p m' hdrop chunk b' ofs p' hout hv
+  unfold valid_access at hv ⊢
+  constructor
+  · intro ofs' hofs'
+    rcases hout with hne | hlo | hhi | hp
+    · exact perm_drop_3 m b lo hi p m' hdrop b' ofs' Cur p'
+        (Or.inl hne) (hv.1 ofs' hofs')
+    · apply perm_drop_3 m b lo hi p m' hdrop b' ofs' Cur p'
+      · right
+        by_cases hlt : zLt ofs' lo
+        · exact Or.inl hlt
+        · right
+          change intOfZ hi ≤ intOfZ ofs'
+          have hlo' : intOfZ (zAdd ofs (size_chunk chunk)) ≤ intOfZ lo := by
+            simpa [ZArith.BinInt.Z.le] using hlo
+          have hofslt : intOfZ ofs' < intOfZ (zAdd ofs (size_chunk chunk)) := by
+            simpa [ZArith.BinInt.Z.lt] using hofs'.2
+          have hlt' : intOfZ lo ≤ intOfZ ofs' := by
+            simpa [ZArith.BinInt.Z.lt] using hlt
+          omega
+      · exact hv.1 ofs' hofs'
+    · apply perm_drop_3 m b lo hi p m' hdrop b' ofs' Cur p'
+      · right
+        right
+        change intOfZ hi ≤ intOfZ ofs'
+        have hhi' : intOfZ hi ≤ intOfZ ofs := by
+          simpa [ZArith.BinInt.Z.le] using hhi
+        have hofsge : intOfZ ofs ≤ intOfZ ofs' := by
+          simpa [ZArith.BinInt.Z.le] using hofs'.1
+        omega
+      · exact hv.1 ofs' hofs'
+    · by_cases hblock : b' = b
+      · by_cases hlt : zLt ofs' lo
+        · exact perm_drop_3 m b lo hi p m' hdrop b' ofs' Cur p'
+            (Or.inr (Or.inl hlt)) (hv.1 ofs' hofs')
+        · by_cases hge : zLe hi ofs'
+          · exact perm_drop_3 m b lo hi p m' hdrop b' ofs' Cur p'
+              (Or.inr (Or.inr hge)) (hv.1 ofs' hofs')
+          · subst b'
+            apply perm_implies m' b ofs' Cur p p'
+            · apply perm_drop_1 m b lo hi p m' hdrop ofs' Cur
+              constructor
+              · change intOfZ lo ≤ intOfZ ofs'
+                simpa [ZArith.BinInt.Z.lt] using hlt
+              · change intOfZ ofs' < intOfZ hi
+                simpa [ZArith.BinInt.Z.le] using hge
+            · exact hp
+      · exact perm_drop_3 m b lo hi p m' hdrop b' ofs' Cur p'
+          (Or.inl hblock) (hv.1 ofs' hofs')
+  · exact hv.2
+
+end Mem
+
+end CompCert4Lean.Common.Memory
+
+namespace CompCert4Lean.Common.Memory
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.Lib.Coqlib
+
+namespace Mem
+
+theorem load_drop : load_dropStatement := by
+  intro m b lo hi p m' hdrop chunk b' ofs hout
+  unfold load
+  cases hdec2 : valid_access_dec m' chunk b' ofs Readable with
+  | left hv2 =>
+      have hv1 := valid_access_drop_2 m b lo hi p m' hdrop chunk b' ofs Readable hv2
+      cases hdec1 : valid_access_dec m chunk b' ofs Readable with
+      | left _ =>
+          simp [boolOfSumbool, hdec1, hdec2]
+          unfold drop_perm at hdrop
+          cases hdec : range_perm_dec m b lo hi Cur Freeable with
+          | right _ => simp [hdec] at hdrop
+          | left _ =>
+              simp [hdec] at hdrop
+              cases hdrop
+              rfl
+      | right hn1 => exact False.elim (hn1 hv1)
+  | right hn2 =>
+      cases hdec1 : valid_access_dec m chunk b' ofs Readable with
+      | left hv1 =>
+          exact False.elim
+            (hn2 (valid_access_drop_1 m b lo hi p m' hdrop chunk b' ofs Readable hout hv1))
+      | right _ => simp [boolOfSumbool, hdec1, hdec2]
+
+end Mem
+
+end CompCert4Lean.Common.Memory
