@@ -4752,3 +4752,28 @@ theorem ZArith.Zdiv.Zmod_1_r :
 
 end Rocq.Coq
 end CompCert4Lean.Foundation.Numbers
+
+namespace CompCert4Lean.Foundation.Numbers
+namespace Rocq.Coq
+
+theorem ZArith.Zdiv.Zdiv_small :
+    ZArith.Zdiv.Zdiv_smallStatement := by
+  intro a b h
+  apply intOfZ_injective
+  change intOfZ (ZArith.BinInt.Z.div a b) = 0
+  simp only [ZArith.BinInt.Z.div, intOfZ_zOfInt]
+  unfold ZArith.BinInt.Z.zDivEucl
+  have ha : 0 ≤ intOfZ a := h.1
+  have hab : intOfZ a < intOfZ b := h.2
+  have hb : 0 < intOfZ b := by omega
+  have hb0 : intOfZ b ≠ 0 := by omega
+  simp [hb0, hb]
+  exact Int.ediv_eq_zero_of_lt ha hab
+
+theorem ZArith.Zdiv.Zdiv2_div :
+    ZArith.Zdiv.Zdiv2_divStatement := by
+  intro a
+  rfl
+
+end Rocq.Coq
+end CompCert4Lean.Foundation.Numbers

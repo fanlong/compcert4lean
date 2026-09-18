@@ -5235,3 +5235,206 @@ theorem load_drop : load_dropStatement := by
 end Mem
 
 end CompCert4Lean.Common.Memory
+
+namespace CompCert4Lean.Common.Memory
+
+namespace Mem
+
+theorem perm_inj : perm_injStatement := by
+  intro f m1 m2 b1 ofs k p b2 delta hinj hperm hf
+  exact hinj.mi_perm b1 b2 delta ofs k p hf hperm
+
+theorem range_perm_inj : range_perm_injStatement := by
+  intro f m1 m2 b1 lo hi k p b2 delta hinj hrange hf
+  intro ofs' hofs'
+  have hzadd (x y : CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z) :
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (zAdd x y) =
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ x +
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ y := by
+    change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ x +
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ y)) = _
+    rw [CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+  have hzsub (x y : CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z) :
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (zSub x y) =
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ x -
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ y := by
+    change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ x -
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ y)) = _
+    rw [CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+  have hofs_eq : zAdd (zSub ofs' delta) delta = ofs' := by
+    apply CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective
+    change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+      (zAdd (zSub ofs' delta) delta) =
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ ofs'
+    rw [hzadd, hzsub]
+    omega
+  rw [← hofs_eq]
+  rcases hofs' with ⟨hlower, hupper⟩
+  apply perm_inj f m1 m2 b1 (zSub ofs' delta) k p b2 delta hinj
+    (hrange (zSub ofs' delta) ?_) hf
+  constructor <;>
+    change _
+  · change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ lo ≤
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (zSub ofs' delta)
+    rw [hzsub]
+    change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+      (zAdd lo delta) ≤
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ ofs' at hlower
+    rw [hzadd] at hlower
+    omega
+  · change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+      (zSub ofs' delta) < CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ hi
+    rw [hzsub]
+    change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ ofs' <
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (zAdd hi delta) at hupper
+    rw [hzadd] at hupper
+    omega
+
+theorem valid_access_inj : valid_access_injStatement := by
+  intro f m1 m2 b1 b2 delta chunk ofs p hinj hf hv
+  rcases hv with ⟨hrange, halign⟩
+  have hzadd (x y : CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z) :
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (zAdd x y) =
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ x +
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ y := by
+    change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ x +
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ y)) = _
+    rw [CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+  have hri := range_perm_inj f m1 m2 b1 ofs
+    (zAdd ofs (CompCert4Lean.Common.Memdata.size_chunk chunk))
+      CompCert4Lean.Common.Memtype.Cur p b2 delta hinj hrange hf
+  constructor
+  · intro ofs' hofs'
+    apply hri ofs'
+    rcases hofs' with ⟨hlower, hupper⟩
+    constructor
+    · exact hlower
+    · change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ ofs' <
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+          (zAdd (zAdd ofs (CompCert4Lean.Common.Memdata.size_chunk chunk)) delta)
+      rw [hzadd]
+      change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ ofs' <
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+          (zAdd (zAdd ofs delta) (CompCert4Lean.Common.Memdata.size_chunk chunk)) at hupper
+      rw [hzadd] at hupper
+      rw [hzadd] at *
+      omega
+  · have hmax : range_perm m1 b1 ofs
+        (zAdd ofs (CompCert4Lean.Common.Memdata.size_chunk chunk))
+        CompCert4Lean.Common.Memtype.Max p := by
+      intro q hq
+      exact perm_cur_max m1 b1 q p (hrange q hq)
+    apply CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.divide_add_r
+      (CompCert4Lean.Common.Memdata.align_chunk chunk) ofs delta halign
+    exact hinj.mi_align b1 b2 delta chunk ofs p hf hmax
+
+theorem loadbytes_drop : loadbytes_dropStatement := by
+  intro m b lo hi p m' hdrop b' ofs n hout
+  unfold loadbytes
+  cases hdec2 : range_perm_dec m' b' ofs (zAdd ofs n)
+      CompCert4Lean.Common.Memtype.Cur CompCert4Lean.Common.Memtype.Readable with
+  | left hv2 =>
+      have hv1 : range_perm m b' ofs (zAdd ofs n)
+          CompCert4Lean.Common.Memtype.Cur CompCert4Lean.Common.Memtype.Readable := by
+        intro ofs' hofs'
+        exact perm_drop_4 m b lo hi p m' hdrop b' ofs'
+          CompCert4Lean.Common.Memtype.Cur CompCert4Lean.Common.Memtype.Readable
+          (hv2 ofs' hofs')
+      cases hdec1 : range_perm_dec m b' ofs (zAdd ofs n)
+          CompCert4Lean.Common.Memtype.Cur CompCert4Lean.Common.Memtype.Readable with
+      | left _ =>
+          simp [boolOfSumbool, hdec1, hdec2]
+          unfold drop_perm at hdrop
+          cases hdec : range_perm_dec m b lo hi
+              CompCert4Lean.Common.Memtype.Cur CompCert4Lean.Common.Memtype.Freeable with
+          | right _ => simp [hdec] at hdrop
+          | left _ =>
+              simp [hdec] at hdrop
+              cases hdrop
+              rfl
+      | right hn1 => exact False.elim (hn1 hv1)
+  | right hn2 =>
+      cases hdec1 : range_perm_dec m b' ofs (zAdd ofs n)
+          CompCert4Lean.Common.Memtype.Cur CompCert4Lean.Common.Memtype.Readable with
+      | left hv1 =>
+          have hv2 : range_perm m' b' ofs (zAdd ofs n)
+              CompCert4Lean.Common.Memtype.Cur CompCert4Lean.Common.Memtype.Readable := by
+            intro ofs' hofs'
+            rcases hout with hne | hlo | hhi | hp
+            · exact perm_drop_3 m b lo hi p m' hdrop b' ofs'
+                CompCert4Lean.Common.Memtype.Cur CompCert4Lean.Common.Memtype.Readable
+                (Or.inl hne) (hv1 ofs' hofs')
+            · apply perm_drop_3 m b lo hi p m' hdrop b' ofs'
+                CompCert4Lean.Common.Memtype.Cur CompCert4Lean.Common.Memtype.Readable
+              right
+              by_cases hlt : zLt ofs' lo
+              · exact Or.inl hlt
+              · right
+                change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ hi ≤
+                  CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ ofs'
+                have hlo' : CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+                    (zAdd ofs n) ≤ CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ lo := by
+                  simpa [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.le] using hlo
+                have hofslt : CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ ofs' <
+                    CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (zAdd ofs n) := by
+                  simpa [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.lt] using hofs'.2
+                have hlt' : CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ lo ≤
+                    CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ ofs' := by
+                  simpa [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.lt] using hlt
+                omega
+              exact hv1 ofs' hofs'
+            · apply perm_drop_3 m b lo hi p m' hdrop b' ofs'
+                CompCert4Lean.Common.Memtype.Cur CompCert4Lean.Common.Memtype.Readable
+              right
+              right
+              change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ hi ≤
+                CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ ofs'
+              have hhi' : CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ hi ≤
+                  CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ ofs := by
+                simpa [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.le] using hhi
+              have hofsge : CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ ofs ≤
+                  CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ ofs' := by
+                simpa [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.le] using hofs'.1
+              omega
+              exact hv1 ofs' hofs'
+            · by_cases hblock : b' = b
+              · by_cases hlt : zLt ofs' lo
+                · exact perm_drop_3 m b lo hi p m' hdrop b' ofs'
+                    CompCert4Lean.Common.Memtype.Cur CompCert4Lean.Common.Memtype.Readable
+                    (Or.inr (Or.inl hlt)) (hv1 ofs' hofs')
+                · by_cases hge : zLe hi ofs'
+                  · exact perm_drop_3 m b lo hi p m' hdrop b' ofs'
+                      CompCert4Lean.Common.Memtype.Cur CompCert4Lean.Common.Memtype.Readable
+                      (Or.inr (Or.inr hge)) (hv1 ofs' hofs')
+                  · subst b'
+                    apply perm_implies m' b ofs'
+                      CompCert4Lean.Common.Memtype.Cur p
+                      CompCert4Lean.Common.Memtype.Readable
+                    · apply perm_drop_1 m b lo hi p m' hdrop ofs'
+                        CompCert4Lean.Common.Memtype.Cur
+                        (by
+                          constructor
+                          · exact (by
+                              change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ lo ≤
+                                CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ ofs'
+                              simpa [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.lt] using hlt)
+                          · exact (by
+                              change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ ofs' <
+                                CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ hi
+                              simpa [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.le] using hge))
+                    · exact hp
+              · exact perm_drop_3 m b lo hi p m' hdrop b' ofs'
+                  CompCert4Lean.Common.Memtype.Cur CompCert4Lean.Common.Memtype.Readable
+                  (Or.inl hblock) (hv1 ofs' hofs')
+          exact False.elim (hn2 hv2)
+      | right _ => simp [boolOfSumbool, hdec1, hdec2]
+
+end Mem
+
+end CompCert4Lean.Common.Memory

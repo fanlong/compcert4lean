@@ -5446,3 +5446,171 @@ theorem match_cont_assign_loc : match_cont_assign_locStatement := by
     rfl
 
 end CompCert4Lean.Cfrontend.SimplLocalsproof
+
+namespace CompCert4Lean.Cfrontend.SimplLocalsproof
+
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Cfrontend.Clight
+open CompCert4Lean.Cfrontend.Cop
+open CompCert4Lean.Lib.Coqlib
+
+theorem match_cont_incr_bounds : match_cont_incr_boundsStatement := by
+  intro cfg prog f cenv k tk m bound tbound hmatch bound' tbound'
+  induction hmatch generalizing bound' tbound' with
+  | stop cenv m bound tbound hi hglobals hhibound hthitbound =>
+      intro hbound htbound
+      exact match_cont.stop cenv m bound' tbound' hi hglobals
+        (Ple_trans hi bound bound' hhibound hbound)
+        (Ple_trans hi tbound tbound' hthitbound htbound)
+  | seq cenv s k ts tk m bound tbound hstmt hcont hcompat ih =>
+      intro hbound htbound
+      exact match_cont.seq cenv s k ts tk m bound' tbound' hstmt
+        (ih bound' tbound' hbound htbound) hcompat
+  | loop1 cenv s1 s2 k ts1 ts2 tk m bound tbound hstmt1 hstmt2 hcont hcompat ih =>
+      intro hbound htbound
+      exact match_cont.loop1 cenv s1 s2 k ts1 ts2 tk m bound' tbound' hstmt1 hstmt2
+        (ih bound' tbound' hbound htbound) hcompat
+  | loop2 cenv s1 s2 k ts1 ts2 tk m bound tbound hstmt1 hstmt2 hcont hcompat ih =>
+      intro hbound htbound
+      exact match_cont.loop2 cenv s1 s2 k ts1 ts2 tk m bound' tbound' hstmt1 hstmt2
+        (ih bound' tbound' hbound htbound) hcompat
+  | switch cenv k tk m bound tbound hcont ih =>
+      intro hbound htbound
+      exact match_cont.switch cenv k tk m bound' tbound'
+        (ih bound' tbound' hbound htbound)
+  | match_Kcall cenv optid fn e le k tfn te tle tk m hi thi lo tlo bound tbound x
+      hfun henv hcont hcheck hhibound hthitbound ih =>
+      intro hbound htbound
+      exact match_cont.match_Kcall cenv optid fn e le k tfn te tle tk m
+        hi thi lo tlo bound' tbound' x hfun henv
+        (ih lo tlo (Ple_refl lo) (Ple_refl tlo)) hcheck
+        (Ple_trans hi bound bound' hhibound hbound)
+        (Ple_trans thi tbound tbound' hthitbound htbound)
+
+theorem match_cont_change_cenv : match_cont_change_cenvStatement := by
+  intro cfg prog f cenv k tk m bound tbound cenv' hmatch hcall
+  cases hmatch <;> simp [is_call_cont] at hcall ⊢ <;>
+    try contradiction
+  all_goals constructor <;> assumption
+
+theorem match_cont_is_call_cont : match_cont_is_call_contStatement := by
+  intro cfg prog f cenv k tk m bound tbound hmatch hcall
+  cases hmatch <;> simp [is_call_cont] at hcall ⊢ <;>
+    try contradiction
+  all_goals assumption
+
+end CompCert4Lean.Cfrontend.SimplLocalsproof
+
+namespace CompCert4Lean.Cfrontend.SimplLocalsproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Cfrontend.Clight
+open CompCert4Lean.Cfrontend.Cop
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+
+private theorem slp_intOfZ_zadd (x y : Z) :
+    intOfZ (ZArith.BinInt.Z.add x y) = intOfZ x + intOfZ y := by
+  change intOfZ (zOfInt (intOfZ x + intOfZ y)) = intOfZ x + intOfZ y
+  rw [intOfZ_zOfInt]
+
+private theorem slp_zadd_lt (x y : Z)
+    (hy : ZArith.BinInt.Z.lt (.Z0 : Z) y) :
+    ZArith.BinInt.Z.lt x (ZArith.BinInt.Z.add x y) := by
+  change intOfZ x < intOfZ (ZArith.BinInt.Z.add x y)
+  rw [slp_intOfZ_zadd]
+  change 0 < intOfZ y at hy
+  omega
+
+private theorem slp_load_unchanged_on
+    (P : block → Z → Prop) (m m' : mem) (chunk : memory_chunk)
+    (b : block) (p : Z) (v : val)
+    (hunch : Mem.unchanged_on P m m')
+    (hP : ∀ i, ZArith.BinInt.Z.le p i ∧
+      ZArith.BinInt.Z.lt i
+        (ZArith.BinInt.Z.add p (size_chunk chunk)) → P b i)
+    (hload : Mem.load chunk m b p = some v) :
+    Mem.load chunk m' b p = some v := by
+  have hvacc := Mem.load_valid_access m chunk b p v hload
+  have hpvalid := hvacc.1 p ⟨by
+    change intOfZ p ≤ intOfZ p
+    omega, slp_zadd_lt p (size_chunk chunk)
+      (CompCert4Lean.Common.Memdata.size_chunk_pos chunk)⟩
+  have hvb := Mem.perm_valid_block m b p Cur Readable hpvalid
+  have hrange : Mem.range_perm m' b p
+      (ZArith.BinInt.Z.add p (size_chunk chunk)) Cur Readable := by
+    intro q hq
+    apply (hunch.unchanged_on_perm b q Cur Readable (hP q hq) hvb).mp
+    exact hvacc.1 q hq
+  have hvalid' : Mem.valid_access m' chunk b p Readable := ⟨hrange, hvacc.2⟩
+  have hgetN :
+      Mem.getN (size_chunk_nat chunk) p (PMap.get b m'.mem_contents) =
+        Mem.getN (size_chunk_nat chunk) p (PMap.get b m.mem_contents) := by
+    apply Mem.getN_exten
+    intro q hq
+    apply hunch.unchanged_on_contents b q
+    · apply hP q
+      constructor
+      · exact hq.1
+      · have hsize := CompCert4Lean.Common.Memdata.size_chunk_conv chunk
+        simpa [hsize] using hq.2
+    · apply hvacc.1 q
+      constructor
+      · exact hq.1
+      · have hsize := CompCert4Lean.Common.Memdata.size_chunk_conv chunk
+        simpa [hsize] using hq.2
+  rcases Mem.valid_access_load m' chunk b p hvalid' with ⟨v', hload'⟩
+  have hres' := Mem.load_result chunk m' b p v' hload'
+  have hres := Mem.load_result chunk m b p v hload
+  have heq : v' = v := by
+    calc
+      v' = decode_val chunk
+          (Mem.getN (size_chunk_nat chunk) p (PMap.get b m'.mem_contents)) := hres'
+      _ = decode_val chunk
+          (Mem.getN (size_chunk_nat chunk) p (PMap.get b m.mem_contents)) := by rw [hgetN]
+      _ = v := hres.symm
+  simpa [heq] using hload'
+
+theorem match_cont_extcall : match_cont_extcallStatement := by
+  intro cfg prog f cenv k tk m bound tbound tm f' m' hmatch hunch hincr hsep hbound htbound
+  apply match_cont_invariant cfg prog f' m' f cenv k tk m bound tbound hmatch
+  · intro b chunk v hnone hb hload
+    apply slp_load_unchanged_on (loc_unmapped f) m m' chunk b (.Z0 : Z) v hunch
+    · intro i hi
+      exact hnone
+    · exact hload
+  · exact hincr
+  · intro b hb
+    by_cases hf : f b = none
+    · cases hfp : f' b with
+      | none => exact hf.symm
+      | some pair =>
+        rcases pair with ⟨b', delta⟩
+        have hmap : f' b = some (b', delta) := hfp
+        have hvb : Mem.valid_block m b := by
+          exact Plt_Ple_trans b bound m.nextblock hb hbound
+        exact False.elim ((hsep b b' delta hf hmap).1 hvb)
+    · cases hff : f b with
+      | none => exact False.elim (hf hff)
+      | some pair =>
+        rcases pair with ⟨b', delta⟩
+        exact hincr b b' delta hff
+  · intro b b' delta hmap hb'
+    by_cases hf : f b = none
+    · have hvb' : Mem.valid_block tm b' :=
+        Plt_Ple_trans b' tbound tm.nextblock hb' htbound
+      exact False.elim ((hsep b b' delta hf hmap).2 hvb')
+    · cases hff : f b with
+      | none => exact False.elim (hf hff)
+      | some pair =>
+        rcases pair with ⟨b0, delta0⟩
+        exact hincr b b0 delta0 hff
+
+end CompCert4Lean.Cfrontend.SimplLocalsproof
