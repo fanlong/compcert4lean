@@ -4390,3 +4390,61 @@ theorem ZArith.BinInt.Z.gtb_lt :
 
 end Rocq.Coq
 end CompCert4Lean.Foundation.Numbers
+
+namespace CompCert4Lean.Foundation.Numbers
+namespace Rocq.Coq
+
+theorem ZArith.BinInt.Zpos_xO_proof :
+    ∀ p : positive, ZArith.BinInt.Zpos_xO p := by
+  intro p
+  unfold ZArith.BinInt.Zpos_xO
+  apply intOfZ_injective
+  change Int.ofNat (posToNat (.xO p)) =
+    intOfZ (zOfInt (Int.ofNat (posToNat (.xO .xH)) * Int.ofNat (posToNat p)))
+  rw [intOfZ_zOfInt]
+  simp [posToNat]
+
+theorem ZArith.BinInt.Zpos_xI_proof :
+    ∀ p : positive, ZArith.BinInt.Zpos_xI p := by
+  intro p
+  unfold ZArith.BinInt.Zpos_xI
+  apply intOfZ_injective
+  unfold ZArith.BinInt.Z.add ZArith.BinInt.Z.mul
+  rw [intOfZ_zOfInt, intOfZ_zOfInt]
+  simp [intOfZ, posToNat]
+
+theorem ZArith.BinInt.Pos2Z.inj_sub :
+    ZArith.BinInt.Pos2Z.inj_subStatement := by
+  intro p q h
+  apply intOfZ_injective
+  unfold ZArith.BinInt.Z.sub
+  rw [intOfZ_zOfInt]
+  simp only [intOfZ]
+  unfold PArith.BinPos.Pos.sub
+  rw [posToNat_posOfNat]
+  · have hle : posToNat p ≤ posToNat q := Nat.le_of_lt h
+    exact Int.ofNat_sub hle
+  · have hp := posToNat_positive p
+    have hq := posToNat_positive q
+    change posToNat p < posToNat q at h
+    omega
+
+theorem ZArith.BinInt.Z2Pos.id :
+    ZArith.BinInt.Z2Pos.idStatement := by
+  intro x hx
+  cases x with
+  | Z0 =>
+      change (0 : Int) < 0 at hx
+      omega
+  | Zpos p =>
+      change Int.ofNat (posToNat p) > 0 at hx
+      apply congrArg Zpos
+      exact posOfNat_posToNat p
+  | Zneg p =>
+      change -Int.ofNat (posToNat p) > 0 at hx
+      have hp := posToNat_positive p
+      have hn : (0 : Int) ≤ Int.ofNat (posToNat p) := Int.natCast_nonneg _
+      exact False.elim (by omega)
+
+end Rocq.Coq
+end CompCert4Lean.Foundation.Numbers

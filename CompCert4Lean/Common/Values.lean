@@ -3538,3 +3538,36 @@ theorem offset_ptr_inject : offset_ptr_injectStatement := by
 
 end Val
 end CompCert4Lean.Common.Values
+
+namespace CompCert4Lean.Common.Values
+namespace Val
+
+theorem longofwords_inject : longofwords_injectStatement := by
+  intro f v1 v2 v1' v2' h1 h2
+  cases h1 with
+  | inject_int i1 =>
+      cases h2 with
+      | inject_int i2 => simpa [longofwords] using (inject_long f (Int64.ofwords i1 i2))
+      | inject_long _ => exact val_inject_undef _ _
+      | inject_float _ => exact val_inject_undef _ _
+      | inject_single _ => exact val_inject_undef _ _
+      | inject_ptr _ _ _ _ _ _ _ => exact val_inject_undef _ _
+      | val_inject_undef _ => exact val_inject_undef _ _
+  | inject_long _ => exact val_inject_undef _ _
+  | inject_float _ => exact val_inject_undef _ _
+  | inject_single _ => exact val_inject_undef _ _
+  | inject_ptr _ _ _ _ _ _ _ => exact val_inject_undef _ _
+  | val_inject_undef _ => exact val_inject_undef _ _
+
+theorem loword_inject : loword_injectStatement := by
+  intro f v v' h
+  cases h with
+  | inject_int _ => exact val_inject_undef _ _
+  | inject_long i => simpa [loword] using (inject_int f (Int64.loword i))
+  | inject_float _ => exact val_inject_undef _ _
+  | inject_single _ => exact val_inject_undef _ _
+  | inject_ptr _ _ _ _ _ _ _ => exact val_inject_undef _ _
+  | val_inject_undef _ => exact val_inject_undef _ _
+
+end Val
+end CompCert4Lean.Common.Values

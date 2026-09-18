@@ -4211,3 +4211,52 @@ theorem eval_singleofint
       · exact hx
 
 end CompCert4Lean.X86.SelectOpproof
+
+namespace CompCert4Lean.X86.SelectOpproof
+
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.ExternalCalls
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.X86.Op
+open CompCert4Lean.X86.SelectOp
+
+theorem eval_builtin_arg_addr
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    eval_builtin_arg_addrStatement := by
+  intro xi ge sp e m addr al vl v hargs haddr
+  cases hmatch : builtin_arg_addr_match addr al with
+  | builtin_arg_addr_case1 n e1 =>
+      cases hargs with
+      | cons _ _ _ v1 _ h1 hnil =>
+          cases hnil
+          have hv : v = Val.addl v1 (.Vlong (CompCert4Lean.Lib.Integers.Int64.repr n)) := by
+            simpa [eval_addressing, eval_addressing64, CompCert4Lean.X86_64.Archi.ptr64] using haddr.symm
+          subst v
+          simp only [builtin_arg_addr, hmatch]
+          simpa [CompCert4Lean.X86_64.Archi.ptr64] using
+            (eval_builtin_arg.addPointer (.BA e1) (.BA_long (CompCert4Lean.Lib.Integers.Int64.repr n)) v1
+              (.Vlong (CompCert4Lean.Lib.Integers.Int64.repr n))
+              (eval_builtin_arg.argument e1 v1 h1) (eval_builtin_arg.longValue _))
+  | builtin_arg_addr_case2 id ofs =>
+      cases hargs
+      simp only [builtin_arg_addr, hmatch]
+      simp [eval_addressing, eval_addressing64, CompCert4Lean.X86_64.Archi.ptr64] at haddr
+      cases haddr
+      exact eval_builtin_arg.addressGlobal id ofs
+  | builtin_arg_addr_case3 ofs =>
+      cases hargs
+      simp only [builtin_arg_addr, hmatch]
+      simp [eval_addressing, eval_addressing64, CompCert4Lean.X86_64.Archi.ptr64] at haddr
+      cases haddr
+      exact eval_builtin_arg.addressStack ofs
+  | builtin_arg_addr_default addr al =>
+      simp only [builtin_arg_addr, hmatch]
+      apply eval_builtin_arg.argument (Eop (Olea_ptr addr) al) v
+      apply eval_expr.eval_Eop [] (Olea_ptr addr) al vl v
+      · exact hargs
+      · exact (eval_Olea_ptr (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate) ge sp addr vl m) ▸ haddr
+
+end CompCert4Lean.X86.SelectOpproof

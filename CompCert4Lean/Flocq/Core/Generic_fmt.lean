@@ -4148,3 +4148,41 @@ theorem cexp_round_ge :
   exact mag_round_ge ctx magnitude beta fexp hvalid rnd hrnd x hround
 
 end CompCert4Lean.Flocq.Core.Generic_fmt
+
+namespace CompCert4Lean.Flocq.Core.Generic_fmt
+
+theorem Znearest_ge_floor :
+    ∀ ctx, Znearest_ge_floorStatement ctx := by
+  intro ctx choice x
+  have hfc : Zle (Exact.Zfloor ctx x) (Exact.Zceil ctx x) := by
+    have h := CompCert4Lean.Flocq.Core.Raux.Zfloor_le ctx x
+      (Exact.IZR ctx (Exact.Zceil ctx x))
+      (CompCert4Lean.Flocq.Core.Raux.Zceil_ub ctx x)
+    have hz := CompCert4Lean.Flocq.Core.Raux.Zfloor_IZR ctx
+      (Exact.Zceil ctx x)
+    rw [hz] at h
+    exact h
+  rcases Znearest_DN_or_UP ctx choice x with hfloor | hceil
+  · rw [hfloor]
+    exact Int.le_refl _
+  · rw [hceil]
+    exact hfc
+
+theorem Znearest_le_ceil :
+    ∀ ctx, Znearest_le_ceilStatement ctx := by
+  intro ctx choice x
+  have hfc : Zle (Exact.Zfloor ctx x) (Exact.Zceil ctx x) := by
+    have h := CompCert4Lean.Flocq.Core.Raux.Zfloor_le ctx x
+      (Exact.IZR ctx (Exact.Zceil ctx x))
+      (CompCert4Lean.Flocq.Core.Raux.Zceil_ub ctx x)
+    have hz := CompCert4Lean.Flocq.Core.Raux.Zfloor_IZR ctx
+      (Exact.Zceil ctx x)
+    rw [hz] at h
+    exact h
+  rcases Znearest_DN_or_UP ctx choice x with hfloor | hceil
+  · rw [hfloor]
+    exact hfc
+  · rw [hceil]
+    exact Int.le_refl _
+
+end CompCert4Lean.Flocq.Core.Generic_fmt

@@ -6878,3 +6878,80 @@ theorem negl_sound : negl_soundStatement := by
             exact CompCert4Lean.Common.Values.Val.lessdef_undef _
 
 end CompCert4Lean.Backend.NeedDomain
+
+namespace CompCert4Lean.Backend.NeedDomain
+
+theorem zero_ext_sound : zero_ext_soundStatement := by
+  intro v w x n h hn
+  have hzi (a b mask : int)
+      (hm : iagree a b (CompCert4Lean.Lib.Integers.Int.zero_ext n mask)) :
+      iagree (CompCert4Lean.Lib.Integers.Int.zero_ext n a)
+        (CompCert4Lean.Lib.Integers.Int.zero_ext n b) mask := by
+    have hz := CompCert4Lean.Lib.Integers.Int.zero_ext_and_proof n mask hn
+    have hprem : iagree a b
+        (CompCert4Lean.Lib.Integers.Int.and mask
+          (CompCert4Lean.Lib.Integers.Int.repr
+            (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.sub
+              (CompCert4Lean.Foundation.Numbers.Rocq.Coq.two_p n) z1))) := by
+      rw [← hz]
+      exact hm
+    have hi := iagree_and a b
+      (CompCert4Lean.Lib.Integers.Int.repr
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.sub
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.two_p n) z1)) mask hprem
+    rw [CompCert4Lean.Lib.Integers.Int.zero_ext_and_proof n a hn,
+      CompCert4Lean.Lib.Integers.Int.zero_ext_and_proof n b hn]
+    exact hi
+  have hzeq (a b : int)
+      (hm : iagree a b
+        (CompCert4Lean.Lib.Integers.Int.zero_ext n
+          CompCert4Lean.Lib.Integers.Int.mone)) :
+      CompCert4Lean.Lib.Integers.Int.zero_ext n a =
+        CompCert4Lean.Lib.Integers.Int.zero_ext n b := by
+    exact iagree_mone _ _ (hzi a b CompCert4Lean.Lib.Integers.Int.mone hm)
+  cases x with
+  | Nothing => trivial
+  | I m =>
+      cases v with
+      | Vint a =>
+          cases w with
+          | Vint b =>
+              simp [zero_ext, vagree, iVagree, lVagree,
+                CompCert4Lean.Common.Values.Val.zero_ext] at h ⊢
+              exact hzi a b m h
+          | _ =>
+              simp [zero_ext, vagree, iVagree, lVagree,
+                CompCert4Lean.Common.Values.Val.zero_ext] at h
+      | _ =>
+          cases w <;>
+            simp [zero_ext, vagree, iVagree, lVagree,
+              CompCert4Lean.Common.Values.Val.zero_ext]
+  | L m =>
+      cases v <;> cases w <;>
+        simp [zero_ext, vagree, iVagree, lVagree,
+          CompCert4Lean.Common.Values.Val.zero_ext]
+  | All =>
+      cases v with
+      | Vint a =>
+          cases w with
+          | Vint b =>
+              simp [zero_ext, vagree, iVagree, lVagree,
+                CompCert4Lean.Common.Values.Val.zero_ext] at h ⊢
+              have heq := hzeq a b h
+              change CompCert4Lean.Common.Values.Val.lessdef
+                (CompCert4Lean.Common.Values.Vint
+                  (CompCert4Lean.Lib.Integers.Int.zero_ext n a))
+                (CompCert4Lean.Common.Values.Vint
+                  (CompCert4Lean.Lib.Integers.Int.zero_ext n b))
+              rw [heq]
+              exact CompCert4Lean.Common.Values.Val.lessdef_refl _
+          | _ =>
+              simp [zero_ext, vagree, iVagree, lVagree,
+                CompCert4Lean.Common.Values.Val.zero_ext] at h
+      | _ =>
+          cases w <;>
+            simp [zero_ext, vagree, iVagree, lVagree,
+              CompCert4Lean.Common.Values.Val.zero_ext] <;>
+            exact CompCert4Lean.Common.Values.Val.lessdef_undef _
+
+end CompCert4Lean.Backend.NeedDomain

@@ -4881,3 +4881,257 @@ theorem inval_after_outside : inval_after_outsideStatement := by
       rw [inval_after.eq_1, if_neg hcur]
 
 end CompCert4Lean.Backend.ValueDomain
+
+namespace CompCert4Lean.Backend.ValueDomain
+
+theorem max_size_chunk : max_size_chunkStatement := by
+  have hp1 : CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posOfNat 1) = 1 :=
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat_posOfNat (by omega)
+  have hp2 : CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posOfNat 2) = 2 :=
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat_posOfNat (by omega)
+  have hp4 : CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posOfNat 4) = 4 :=
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat_posOfNat (by omega)
+  have hp8 : CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posOfNat 8) = 8 :=
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat_posOfNat (by omega)
+  intro chunk
+  cases chunk <;>
+    simp [CompCert4Lean.Common.Memdata.size_chunk,
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.le,
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat,
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ,
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt,
+      hp1, hp2, hp4, hp8]
+
+theorem inval_after_contents : inval_after_contentsStatement := by
+  intro chunk av i lo hi c h
+  induction hi, c using inval_after.induct lo with
+  | case1 hi c hcur ih =>
+      by_cases heq : i = hi
+      · subst i
+        rw [inval_after.eq_1, if_pos hcur] at h
+        have hnext : zLt (zSub hi z1) hi := by
+          change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (zSub hi z1) <
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ hi
+          have hz1 : CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ z1 = 1 := by
+            rfl
+          have hsub :
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (zSub hi z1) =
+                CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ hi - 1 := by
+            simp [zSub,
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.sub,
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt, hz1]
+          rw [hsub]
+          omega
+        rw [inval_after_outside hi lo (zSub hi z1)
+          (CompCert4Lean.Lib.Maps.ZTree.remove hi c)
+          (Or.inr hnext)] at h
+        have hnone := CompCert4Lean.Lib.Maps.ZTree.grs_proof acontent hi c
+        rw [hnone] at h
+        contradiction
+      · rw [inval_after.eq_1, if_pos hcur] at h
+        obtain ⟨hc, hout⟩ := ih h
+        have hgro := CompCert4Lean.Lib.Maps.ZTree.gro_proof acontent i hi c heq
+        rw [hgro] at hc
+        refine ⟨hc, ?_⟩
+        rcases hout with hleft | hright
+        · exact Or.inl hleft
+        · right
+          change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ hi <
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ i
+          change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (zSub hi z1) <
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ i at hright
+          have hz1 : CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ z1 = 1 := by
+            rfl
+          have hsub :
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (zSub hi z1) =
+                CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ hi - 1 := by
+            simp [zSub,
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.sub,
+                CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt, hz1]
+          rw [hsub] at hright
+          have hne_int :
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ i ≠
+                CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ hi := by
+            intro heq_int
+            apply heq
+            exact CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective heq_int
+          omega
+  | case2 hi c hcur =>
+      rw [inval_after.eq_1, if_neg hcur] at h
+      refine ⟨h, ?_⟩
+      by_cases hleft : zLt i lo
+      · exact Or.inl hleft
+      · apply Or.inr
+        change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ hi <
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ i
+        have hlt : CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ hi <
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ lo := by
+          have hcmp := CompCert4Lean.Lib.Coqlib.zle lo hi
+          cases hcmp with
+          | left hle =>
+              exfalso
+              apply hcur
+              unfold zle
+              cases hdec : CompCert4Lean.Lib.Coqlib.zle lo hi with
+              | left hle' => rfl
+              | right hgt =>
+                  change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ hi <
+                    CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ lo at hgt
+                  change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ lo ≤
+                    CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ hi at hle
+                  omega
+          | right hgt =>
+              change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ hi <
+                CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ lo at hgt
+              exact hgt
+        change ¬ CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ i <
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ lo at hleft
+        omega
+
+end CompCert4Lean.Backend.ValueDomain
+
+namespace CompCert4Lean.Backend.ValueDomain
+
+theorem inval_before_outside : inval_before_outsideStatement := by
+  intro i hi lo c h
+  induction lo, c using inval_before.induct hi with
+  | case1 lo c hcur ih =>
+      rw [inval_before.eq_1, if_pos hcur]
+      have hnext : zLt i (zAdd lo z1) ∨ zLe hi i := by
+        rcases h with hleft | hright
+        · left
+          change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ i <
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (zAdd lo z1)
+          change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ i <
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ lo at hleft
+          have hz1 : CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ z1 = 1 := by
+            rfl
+          simp [zAdd,
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add,
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt, hz1]
+          omega
+        · exact Or.inr hright
+      rw [ih hnext]
+      cases hget : CompCert4Lean.Lib.Maps.ZTree.get lo c with
+      | none => simp [inval_if, hget]
+      | some ac =>
+          cases ac with
+          | ACval chunk av =>
+              by_cases hsize : zle (zAdd lo
+                (CompCert4Lean.Common.Memdata.size_chunk chunk)) hi = true
+              · simp [inval_if, hget, hsize]
+              · have hne : i ≠ lo := by
+                  intro heq
+                  subst i
+                  rcases h with hleft | hright
+                  · change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ lo <
+                      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ lo at hleft
+                    omega
+                  · change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ hi ≤
+                      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ lo at hright
+                    have hcur' := zlt_true_prop_for_inval hcur
+                    change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ lo <
+                      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ hi at hcur'
+                    omega
+                simp [inval_if, hget, hsize]
+                exact CompCert4Lean.Lib.Maps.ZTree.gro_proof acontent i lo c hne
+  | case2 lo c hcur =>
+      rw [inval_before.eq_1, if_neg hcur]
+
+end CompCert4Lean.Backend.ValueDomain
+
+namespace CompCert4Lean.Backend.ValueDomain
+
+theorem inval_before_contents_1 : inval_before_contents_1Statement := by
+  intro i chunk av lo hi c hrange h
+  induction lo, c using inval_before.induct hi with
+  | case1 lo c hcur ih =>
+      rw [inval_before.eq_1, if_pos hcur] at h
+      by_cases heq : lo = i
+      · subst i
+        have hout : zLt lo (zAdd lo z1) := by
+          change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ lo <
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (zAdd lo z1)
+          have hz1 : CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ z1 = 1 := by
+            rfl
+          simp [zAdd,
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add,
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt, hz1]
+          omega
+        rw [inval_before_outside lo hi (zAdd lo z1)
+          (inval_if hi lo c) (Or.inl hout)] at h
+        cases hget : CompCert4Lean.Lib.Maps.ZTree.get lo c with
+        | none =>
+            simp [inval_if, hget] at h
+        | some ac =>
+            cases ac with
+            | ACval chunk0 av0 =>
+                by_cases hsize : zle
+                    (zAdd lo (CompCert4Lean.Common.Memdata.size_chunk chunk0)) hi = true
+                · simp [inval_if, hget, hsize] at h
+                  rcases h with ⟨hchunk, hav⟩
+                  have hsize' : zle
+                      (zAdd lo (CompCert4Lean.Common.Memdata.size_chunk chunk)) hi = true := by
+                    simpa [hchunk] using hsize
+                  exact ⟨by simpa [hchunk, hav], zle_true_prop_for_inval hsize'⟩
+                · simp [inval_if, hget, hsize] at h
+                  have hnone := CompCert4Lean.Lib.Maps.ZTree.grs_proof acontent lo c
+                  rw [hnone] at h
+                  contradiction
+      · have hnext :
+            zLe (zAdd lo z1) i ∧ zLt i hi := by
+          constructor
+          · change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (zAdd lo z1) ≤
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ i
+            have hrlo := hrange.1
+            change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ lo ≤
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ i at hrlo
+            have hz1 : CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ z1 = 1 := by
+              rfl
+            have hne_int :
+                CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ lo ≠
+                  CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ i := by
+              intro heq_int
+              apply heq
+              exact CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective heq_int
+            simp [zAdd,
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add,
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt, hz1]
+            omega
+          · exact hrange.2
+        obtain ⟨hc, hbound⟩ := ih hnext h
+        refine ⟨?_, hbound⟩
+        cases hget : CompCert4Lean.Lib.Maps.ZTree.get lo c with
+        | none => simpa [inval_if, hget] using hc
+        | some ac =>
+            cases ac with
+            | ACval chunk0 av0 =>
+                by_cases hsize : zle
+                    (zAdd lo (CompCert4Lean.Common.Memdata.size_chunk chunk0)) hi = true
+                · simpa [inval_if, hget, hsize] using hc
+                · simp [inval_if, hget, hsize] at hc
+                  exact (CompCert4Lean.Lib.Maps.ZTree.gro_proof acontent i lo c
+                    (by intro heq'; exact heq heq'.symm)).symm ▸ hc
+  | case2 lo c hcur =>
+      rw [inval_before.eq_1, if_neg hcur] at h
+      exfalso
+      apply hcur
+      unfold zlt
+      cases hdec : CompCert4Lean.Lib.Coqlib.zlt lo hi with
+      | left hlt => rfl
+      | right hge =>
+          change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ hi ≤
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ lo at hge
+          have hrlo := hrange.1
+          have hrhi := hrange.2
+          change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ lo ≤
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ i at hrlo
+          change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ i <
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ hi at hrhi
+          omega
+
+end CompCert4Lean.Backend.ValueDomain
