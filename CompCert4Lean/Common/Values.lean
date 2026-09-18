@@ -3585,3 +3585,52 @@ theorem cmpu_bool_inject : cmpu_bool_injectStatement := by
 
 end Val
 end CompCert4Lean.Common.Values
+
+namespace CompCert4Lean.Common.Values
+namespace Val
+
+theorem hiword_inject : hiword_injectStatement := by
+  intro f v v' h
+  cases h with
+  | inject_int _ => exact val_inject_undef _ _
+  | inject_long i => simpa [hiword] using (inject_int f (Int64.hiword i))
+  | inject_float _ => exact val_inject_undef _ _
+  | inject_single _ => exact val_inject_undef _ _
+  | inject_ptr _ _ _ _ _ _ _ => exact val_inject_undef _ _
+  | val_inject_undef _ => exact val_inject_undef _ _
+
+end Val
+end CompCert4Lean.Common.Values
+
+namespace CompCert4Lean.Common.Values
+namespace Val
+
+theorem normalize_inject : normalize_injectStatement := by
+  intro f v v' ty h
+  cases h <;> cases ty <;>
+    simp [normalize, Archi.ptr64, CompCert4Lean.X86_64.Archi.ptr64] <;>
+    constructor <;> try assumption
+
+theorem select_inject : select_injectStatement := by
+  intro f ob ob' v1 v1' v2 v2' ty hob h1 h2
+  unfold select
+  rcases hob with hnone | heq
+  · subst ob
+    cases ob' <;> simp [normalize] <;> exact val_inject_undef _ _
+  · subst ob'
+    cases ob with
+    | none => exact val_inject_undef _ _
+    | some b => cases b <;> simp [normalize] <;> apply normalize_inject <;> assumption
+
+theorem has_argtype_inject : has_argtype_injectStatement := by
+  intro f v r v' harg hinj
+  cases hinj with
+  | inject_int i => cases r <;> simp [has_argtype] at harg ⊢ <;> assumption
+  | inject_long i => cases r <;> simp [has_argtype] at harg ⊢ <;> assumption
+  | inject_float x => cases r <;> simp [has_argtype] at harg ⊢ <;> assumption
+  | inject_single x => cases r <;> simp [has_argtype] at harg ⊢ <;> assumption
+  | inject_ptr b1 ofs1 b2 ofs2 delta hmap hofs => cases r <;> simp [has_argtype] at harg ⊢ <;> assumption
+  | val_inject_undef v => cases r <;> simp [has_argtype] at harg ⊢
+
+end Val
+end CompCert4Lean.Common.Values

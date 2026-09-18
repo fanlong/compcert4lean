@@ -5293,3 +5293,15 @@ theorem ablock_store_contents : ablock_store_contentsStatement := by
         omega
 
 end CompCert4Lean.Backend.ValueDomain
+
+namespace CompCert4Lean.Backend.ValueDomain
+
+theorem chunk_compat_true : chunk_compat_trueStatement := by
+  intro c c' h
+  cases c <;> cases c' <;>
+    simp [chunk_compat, CompCert4Lean.Common.Memdata.size_chunk,
+      CompCert4Lean.Common.Memdata.align_chunk,
+      CompCert4Lean.Common.AST.type_of_chunk] at h ⊢ <;>
+    exact CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.le_refl _
+
+end CompCert4Lean.Backend.ValueDomain

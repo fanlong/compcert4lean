@@ -4912,3 +4912,147 @@ theorem loadbytes_free_2 : loadbytes_free_2Statement := by
 end Mem
 
 end CompCert4Lean.Common.Memory
+
+namespace CompCert4Lean.Common.Memory
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.Lib.Coqlib
+
+namespace Mem
+
+theorem perm_drop_1 : perm_drop_1Statement := by
+  intro m b lo hi p m' hdrop ofs k hbounds
+  unfold drop_perm at hdrop
+  cases hdec : range_perm_dec m b lo hi Cur Freeable with
+  | right _ => simp [hdec] at hdrop
+  | left _ =>
+      simp [hdec] at hdrop
+      cases hdrop
+      unfold perm
+      rw [pmapGetSetSame]
+      simp only [inRange]
+      have hlo : zLeb lo ofs = true := by
+        change (if intOfZ lo ≤ intOfZ ofs then true else false) = true
+        have h := hbounds.1
+        change intOfZ lo ≤ intOfZ ofs at h
+        simp [h]
+      have hhi : zLtb ofs hi = true := by
+        change (if intOfZ ofs < intOfZ hi then true else false) = true
+        have h := hbounds.2
+        change intOfZ ofs < intOfZ hi at h
+        simp [h]
+      simp [hlo, hhi, perm_order']
+      exact perm_refl p
+
+end Mem
+
+end CompCert4Lean.Common.Memory
+
+namespace CompCert4Lean.Common.Memory
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.Lib.Coqlib
+
+namespace Mem
+
+theorem nextblock_drop : nextblock_dropStatement := by
+  intro m b lo hi p m' hdrop
+  unfold drop_perm at hdrop
+  cases hdec : range_perm_dec m b lo hi Cur Freeable with
+  | left _ =>
+      simp [hdec] at hdrop
+      cases hdrop
+      rfl
+  | right _ => simp [hdec] at hdrop
+
+theorem perm_drop_2 : perm_drop_2Statement := by
+  intro m b lo hi p m' hdrop ofs k p' hbounds hperm
+  unfold drop_perm at hdrop
+  cases hdec : range_perm_dec m b lo hi Cur Freeable with
+  | right _ => simp [hdec] at hdrop
+  | left _ =>
+      simp [hdec] at hdrop
+      cases hdrop
+      unfold perm at hperm
+      rw [pmapGetSetSame] at hperm
+      simp only [inRange] at hperm
+      have hlo : zLeb lo ofs = true := by
+        change (if intOfZ lo ≤ intOfZ ofs then true else false) = true
+        have h := hbounds.1
+        change intOfZ lo ≤ intOfZ ofs at h
+        simp [h]
+      have hhi : zLtb ofs hi = true := by
+        change (if intOfZ ofs < intOfZ hi then true else false) = true
+        have h := hbounds.2
+        change intOfZ ofs < intOfZ hi at h
+        simp [h]
+      simp [hlo, hhi, perm_order'] at hperm
+      exact hperm
+
+end Mem
+
+end CompCert4Lean.Common.Memory
+
+namespace CompCert4Lean.Common.Memory
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.Lib.Coqlib
+
+namespace Mem
+
+theorem perm_drop_3 : perm_drop_3Statement := by
+  intro m b lo hi p m' hdrop b' ofs k p' hout hperm
+  unfold drop_perm at hdrop
+  cases hdec : range_perm_dec m b lo hi Cur Freeable with
+  | right _ => simp [hdec] at hdrop
+  | left _ =>
+      simp [hdec] at hdrop
+      cases hdrop
+      unfold perm at hperm ⊢
+      change perm_order'
+        (PMap.get b'
+          (PMap.set b
+            (fun ofs k => if inRange lo hi ofs then some p
+              else (PMap.get b m.mem_access) ofs k)
+            m.mem_access)
+          ofs k)
+        p'
+      by_cases hblock : b' = b
+      · subst b'
+        rw [pmapGetSetSame]
+        have hnot : ¬ inRange lo hi ofs := by
+          intro hin
+          have hbounds : zLe lo ofs ∧ zLt ofs hi := by
+            change intOfZ lo ≤ intOfZ ofs ∧ intOfZ ofs < intOfZ hi
+            change (zLeb lo ofs && zLtb ofs hi) = true at hin
+            simp only [Bool.and_eq_true] at hin
+            constructor
+            · simpa [ZArith.BinInt.Z.leb] using hin.1
+            · simpa [ZArith.BinInt.Z.ltb] using hin.2
+          have hlo : intOfZ lo ≤ intOfZ ofs := by
+            simpa [ZArith.BinInt.Z.le] using hbounds.1
+          have hhi : intOfZ ofs < intOfZ hi := by
+            simpa [ZArith.BinInt.Z.lt] using hbounds.2
+          rcases hout with hne | hlt | hge
+          · exact hne rfl
+          · change intOfZ ofs < intOfZ lo at hlt
+            omega
+          · change intOfZ hi ≤ intOfZ ofs at hge
+            omega
+        simp [hnot] at hperm ⊢
+        exact hperm
+      · rw [pmapGetSetOther _ _ _ _ hblock]
+        exact hperm
+
+end Mem
+
+end CompCert4Lean.Common.Memory

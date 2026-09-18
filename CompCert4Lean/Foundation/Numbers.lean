@@ -4513,3 +4513,30 @@ theorem ZArith.Zbool.Zle_is_le_bool :
 
 end Rocq.Coq
 end CompCert4Lean.Foundation.Numbers
+
+namespace CompCert4Lean.Foundation.Numbers
+namespace Rocq.Coq
+
+theorem ZArith.Zbool.Zlt_is_lt_bool :
+    ZArith.Zbool.Zlt_is_lt_boolStatement := by
+  intro n m
+  exact (ZArith.BinInt.Z.ltb_lt n m).symm
+
+theorem ZArith.Zbool.Zeq_is_eq_bool :
+    ZArith.Zbool.Zeq_is_eq_boolStatement := by
+  intro x y
+  simpa [ZArith.Zbool.Zeq_bool, ZArith.BinInt.Z.eqb] using
+    (ZArith.BinInt.Z.eqb_eq x y).symm
+
+theorem ZArith.Zbool.Zeq_bool_eq :
+    ZArith.Zbool.Zeq_bool_eqStatement := by
+  intro x y h
+  exact (ZArith.Zbool.Zeq_is_eq_bool x y).mpr h
+
+theorem ZArith.Zcompare.Zcompare_antisym :
+    ZArith.Zcompare.Zcompare_antisymStatement := by
+  intro n m
+  exact (ZArith.BinInt.Z.compare_antisym n m).symm
+
+end Rocq.Coq
+end CompCert4Lean.Foundation.Numbers
