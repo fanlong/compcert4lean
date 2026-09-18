@@ -7210,3 +7210,332 @@ theorem sign_ext_sound : sign_ext_soundStatement := by
             exact CompCert4Lean.Common.Values.Val.lessdef_undef _
 
 end CompCert4Lean.Backend.NeedDomain
+
+namespace CompCert4Lean.Backend.NeedDomain
+
+open CompCert4Lean.Common.AST
+
+theorem pg_test_store_mbool : ∀ v w, vagree v w (store_argument CompCert4Lean.Common.AST.Mbool) →
+    CompCert4Lean.Common.Values.Val.lessdef
+      (CompCert4Lean.Common.Values.Val.load_result CompCert4Lean.Common.AST.Mbool v)
+      (CompCert4Lean.Common.Values.Val.load_result CompCert4Lean.Common.AST.Mbool w) := by
+  intro v w h
+  cases v with
+  | Vundef =>
+      cases w <;>
+        simp [CompCert4Lean.Common.Values.Val.load_result] <;>
+        exact CompCert4Lean.Common.Values.Val.lessdef_undef _
+  | Vint a =>
+      cases w with
+      | Vint b =>
+          simp [store_argument, vagree, iVagree, lVagree,
+            CompCert4Lean.Common.Values.Val.load_result] at h ⊢
+          apply CompCert4Lean.Common.Values.Val.norm_bool_lessdef
+          apply zero_ext_sound (v := CompCert4Lean.Common.Values.Vint a)
+            (w := CompCert4Lean.Common.Values.Vint b)
+            (x := All) (n := CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 8)
+          · have hm : Int.zero_ext
+                (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 8)
+                Int.mone = Int.repr
+                (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 255) := by
+              decide
+            simpa [zero_ext, vagree, iVagree, hm] using h
+          · change (0 : Int) ≤ (8 : Int)
+            omega
+      | Vundef => simp [store_argument, vagree, iVagree] at h
+      | Vlong _ => simp [store_argument, vagree, iVagree] at h
+      | Vfloat _ => simp [store_argument, vagree, iVagree] at h
+      | Vsingle _ => simp [store_argument, vagree, iVagree] at h
+      | Vptr _ _ => simp [store_argument, vagree, iVagree] at h
+  | Vlong _ => cases w <;>
+      simp [CompCert4Lean.Common.Values.Val.load_result] <;>
+      exact CompCert4Lean.Common.Values.Val.lessdef_undef _
+  | Vfloat _ => cases w <;>
+      simp [CompCert4Lean.Common.Values.Val.load_result] <;>
+      exact CompCert4Lean.Common.Values.Val.lessdef_undef _
+  | Vsingle _ => cases w <;>
+      simp [CompCert4Lean.Common.Values.Val.load_result] <;>
+      exact CompCert4Lean.Common.Values.Val.lessdef_undef _
+  | Vptr _ _ => cases w <;>
+      simp [CompCert4Lean.Common.Values.Val.load_result] <;>
+      exact CompCert4Lean.Common.Values.Val.lessdef_undef _
+
+end CompCert4Lean.Backend.NeedDomain
+
+namespace CompCert4Lean.Backend.NeedDomain
+
+theorem normalize_sound : normalize_soundStatement := by
+  intro v w x ty h
+  cases x with
+  | Nothing => trivial
+  | I m =>
+      cases v <;> cases w <;> cases ty <;>
+        cases harch : CompCert4Lean.X86_64.Archi.ptr64 <;>
+        simp [vagree, iVagree, lVagree,
+          CompCert4Lean.Common.Values.Val.normalize, harch] at h ⊢ <;>
+        try assumption
+  | L m =>
+      cases v <;> cases w <;> cases ty <;>
+        cases harch : CompCert4Lean.X86_64.Archi.ptr64 <;>
+        simp [vagree, iVagree, lVagree,
+          CompCert4Lean.Common.Values.Val.normalize, harch] at h ⊢ <;>
+        try assumption
+  | All =>
+      exact CompCert4Lean.Common.Values.Val.normalize_lessdef v w ty h
+
+theorem select_sound : select_soundStatement := by
+  intro ob v1 v2 w1 w2 ty x h1 h2
+  cases ob with
+  | none =>
+      cases x with
+      | Nothing => trivial
+      | I _ => trivial
+      | L _ => trivial
+      | All => exact CompCert4Lean.Common.Values.Val.lessdef_refl _
+  | some b =>
+      cases b with
+      | false =>
+          simpa [CompCert4Lean.Common.Values.Val.select] using
+            (normalize_sound v2 w2 x ty h2)
+      | true =>
+          simpa [CompCert4Lean.Common.Values.Val.select] using
+            (normalize_sound v1 w1 x ty h1)
+
+theorem maskzero_sound : maskzero_soundStatement := by
+  intro v w n b h hv
+  cases v with
+  | Vundef => simp [CompCert4Lean.Common.Values.Val.maskzero_bool] at hv
+  | Vint p =>
+      cases w with
+      | Vundef => simp [maskzero, vagree, iVagree,
+          CompCert4Lean.Common.Values.Val.maskzero_bool] at h
+      | Vint q =>
+          simp [maskzero, vagree, iVagree,
+            CompCert4Lean.Common.Values.Val.maskzero_bool] at h hv ⊢
+          have heq : Int.and p n = Int.and q n :=
+            (CompCert4Lean.Backend.NeedDomain.iagree_and_eq p q n).mp h
+          simpa [heq] using hv
+      | Vlong _ => simp [maskzero, vagree, iVagree,
+          CompCert4Lean.Common.Values.Val.maskzero_bool] at h
+      | Vfloat _ => simp [maskzero, vagree, iVagree,
+          CompCert4Lean.Common.Values.Val.maskzero_bool] at h
+      | Vsingle _ => simp [maskzero, vagree, iVagree,
+          CompCert4Lean.Common.Values.Val.maskzero_bool] at h
+      | Vptr _ _ => simp [maskzero, vagree, iVagree,
+          CompCert4Lean.Common.Values.Val.maskzero_bool] at h
+  | Vlong _ => simp [CompCert4Lean.Common.Values.Val.maskzero_bool] at hv
+  | Vfloat _ => simp [CompCert4Lean.Common.Values.Val.maskzero_bool] at hv
+  | Vsingle _ => simp [CompCert4Lean.Common.Values.Val.maskzero_bool] at hv
+  | Vptr _ _ => simp [CompCert4Lean.Common.Values.Val.maskzero_bool] at hv
+
+end CompCert4Lean.Backend.NeedDomain
+
+namespace CompCert4Lean.Backend.NeedDomain
+
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem store_argument_load_result : store_argument_load_resultStatement := by
+  intro chunk v w h
+  have hmask8 : Int.zero_ext
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 8)
+        Int.mone = Int.repr
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 255) := by
+    decide
+  have hmask16 : Int.zero_ext
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 16)
+        Int.mone = Int.repr
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 65535) := by
+    set_option maxRecDepth 100000 in
+      decide
+  have hzero8 (a b : CompCert4Lean.Lib.Integers.int)
+      (hab : iagree a b (Int.repr
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 255))) :
+      CompCert4Lean.Common.Values.Val.lessdef
+        (CompCert4Lean.Common.Values.Vint
+          (Int.zero_ext
+            (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 8) a))
+        (CompCert4Lean.Common.Values.Vint
+          (Int.zero_ext
+            (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 8) b)) := by
+    have hz := zero_ext_sound
+      (v := CompCert4Lean.Common.Values.Vint a)
+      (w := CompCert4Lean.Common.Values.Vint b) (x := All)
+      (n := CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 8)
+      (by simpa [zero_ext, vagree, iVagree, hmask8] using hab)
+      (by change (0 : Int) ≤ (8 : Int); omega)
+    simpa [vagree, CompCert4Lean.Common.Values.Val.zero_ext] using hz
+  have hsign8 (a b : CompCert4Lean.Lib.Integers.int)
+      (hab : iagree a b (Int.repr
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 255))) :
+      CompCert4Lean.Common.Values.Val.lessdef
+        (CompCert4Lean.Common.Values.Vint
+          (CompCert4Lean.Lib.Integers.Int.sign_ext
+            (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 8) a))
+        (CompCert4Lean.Common.Values.Vint
+          (CompCert4Lean.Lib.Integers.Int.sign_ext
+            (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 8) b)) := by
+    have hs := sign_ext_sound
+      (v := CompCert4Lean.Common.Values.Vint a)
+      (w := CompCert4Lean.Common.Values.Vint b) (x := All)
+      (n := CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 8)
+      (by simpa [sign_ext, vagree, iVagree, hmask8] using hab)
+      (by change (0 : Int) < (8 : Int); omega)
+    simpa [vagree, CompCert4Lean.Common.Values.Val.sign_ext] using hs
+  have hzero16 (a b : CompCert4Lean.Lib.Integers.int)
+      (hab : iagree a b (Int.repr
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 65535))) :
+      CompCert4Lean.Common.Values.Val.lessdef
+        (CompCert4Lean.Common.Values.Vint
+          (Int.zero_ext
+            (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 16) a))
+        (CompCert4Lean.Common.Values.Vint
+          (Int.zero_ext
+            (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 16) b)) := by
+    have hz := zero_ext_sound
+      (v := CompCert4Lean.Common.Values.Vint a)
+      (w := CompCert4Lean.Common.Values.Vint b) (x := All)
+      (n := CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 16)
+      (by simpa [zero_ext, vagree, iVagree, hmask16] using hab)
+      (by change (0 : Int) ≤ (16 : Int); omega)
+    simpa [vagree, CompCert4Lean.Common.Values.Val.zero_ext] using hz
+  have hsign16 (a b : CompCert4Lean.Lib.Integers.int)
+      (hab : iagree a b (Int.repr
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 65535))) :
+      CompCert4Lean.Common.Values.Val.lessdef
+        (CompCert4Lean.Common.Values.Vint
+          (CompCert4Lean.Lib.Integers.Int.sign_ext
+            (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 16) a))
+        (CompCert4Lean.Common.Values.Vint
+          (CompCert4Lean.Lib.Integers.Int.sign_ext
+            (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 16) b)) := by
+    have hs := sign_ext_sound
+      (v := CompCert4Lean.Common.Values.Vint a)
+      (w := CompCert4Lean.Common.Values.Vint b) (x := All)
+      (n := CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 16)
+      (by simpa [sign_ext, vagree, iVagree, hmask16] using hab)
+      (by change (0 : Int) < (16 : Int); omega)
+    simpa [vagree, CompCert4Lean.Common.Values.Val.sign_ext] using hs
+  cases chunk with
+  | Mbool => exact pg_test_store_mbool v w h
+  | Mint8signed =>
+      cases v with
+      | Vint a =>
+          cases w with
+          | Vint b =>
+              simp [store_argument, vagree, iVagree, lVagree,
+                CompCert4Lean.Common.Values.Val.load_result] at h ⊢
+              exact hsign8 a b h
+          | Vundef => simp [store_argument, vagree, iVagree] at h
+          | Vlong _ => simp [store_argument, vagree, iVagree] at h
+          | Vfloat _ => simp [store_argument, vagree, iVagree] at h
+          | Vsingle _ => simp [store_argument, vagree, iVagree] at h
+          | Vptr _ _ => simp [store_argument, vagree, iVagree] at h
+      | Vundef => cases w <;>
+          simp [CompCert4Lean.Common.Values.Val.load_result] <;>
+          exact CompCert4Lean.Common.Values.Val.lessdef_undef _
+      | Vlong _ => cases w <;>
+          simp [CompCert4Lean.Common.Values.Val.load_result] <;>
+          exact CompCert4Lean.Common.Values.Val.lessdef_undef _
+      | Vfloat _ => cases w <;>
+          simp [CompCert4Lean.Common.Values.Val.load_result] <;>
+          exact CompCert4Lean.Common.Values.Val.lessdef_undef _
+      | Vsingle _ => cases w <;>
+          simp [CompCert4Lean.Common.Values.Val.load_result] <;>
+          exact CompCert4Lean.Common.Values.Val.lessdef_undef _
+      | Vptr _ _ => cases w <;>
+          simp [CompCert4Lean.Common.Values.Val.load_result] <;>
+          exact CompCert4Lean.Common.Values.Val.lessdef_undef _
+  | Mint8unsigned =>
+      cases v with
+      | Vint a =>
+          cases w with
+          | Vint b =>
+              simp [store_argument, vagree, iVagree, lVagree,
+                CompCert4Lean.Common.Values.Val.load_result] at h ⊢
+              exact hzero8 a b h
+          | Vundef => simp [store_argument, vagree, iVagree] at h
+          | Vlong _ => simp [store_argument, vagree, iVagree] at h
+          | Vfloat _ => simp [store_argument, vagree, iVagree] at h
+          | Vsingle _ => simp [store_argument, vagree, iVagree] at h
+          | Vptr _ _ => simp [store_argument, vagree, iVagree] at h
+      | Vundef => cases w <;>
+          simp [CompCert4Lean.Common.Values.Val.load_result] <;>
+          exact CompCert4Lean.Common.Values.Val.lessdef_undef _
+      | Vlong _ => cases w <;>
+          simp [CompCert4Lean.Common.Values.Val.load_result] <;>
+          exact CompCert4Lean.Common.Values.Val.lessdef_undef _
+      | Vfloat _ => cases w <;>
+          simp [CompCert4Lean.Common.Values.Val.load_result] <;>
+          exact CompCert4Lean.Common.Values.Val.lessdef_undef _
+      | Vsingle _ => cases w <;>
+          simp [CompCert4Lean.Common.Values.Val.load_result] <;>
+          exact CompCert4Lean.Common.Values.Val.lessdef_undef _
+      | Vptr _ _ => cases w <;>
+          simp [CompCert4Lean.Common.Values.Val.load_result] <;>
+          exact CompCert4Lean.Common.Values.Val.lessdef_undef _
+  | Mint16signed =>
+      cases v with
+      | Vint a =>
+          cases w with
+          | Vint b =>
+              simp [store_argument, vagree, iVagree, lVagree,
+                CompCert4Lean.Common.Values.Val.load_result] at h ⊢
+              exact hsign16 a b h
+          | Vundef => simp [store_argument, vagree, iVagree] at h
+          | Vlong _ => simp [store_argument, vagree, iVagree] at h
+          | Vfloat _ => simp [store_argument, vagree, iVagree] at h
+          | Vsingle _ => simp [store_argument, vagree, iVagree] at h
+          | Vptr _ _ => simp [store_argument, vagree, iVagree] at h
+      | Vundef => cases w <;>
+          simp [CompCert4Lean.Common.Values.Val.load_result] <;>
+          exact CompCert4Lean.Common.Values.Val.lessdef_undef _
+      | Vlong _ => cases w <;>
+          simp [CompCert4Lean.Common.Values.Val.load_result] <;>
+          exact CompCert4Lean.Common.Values.Val.lessdef_undef _
+      | Vfloat _ => cases w <;>
+          simp [CompCert4Lean.Common.Values.Val.load_result] <;>
+          exact CompCert4Lean.Common.Values.Val.lessdef_undef _
+      | Vsingle _ => cases w <;>
+          simp [CompCert4Lean.Common.Values.Val.load_result] <;>
+          exact CompCert4Lean.Common.Values.Val.lessdef_undef _
+      | Vptr _ _ => cases w <;>
+          simp [CompCert4Lean.Common.Values.Val.load_result] <;>
+          exact CompCert4Lean.Common.Values.Val.lessdef_undef _
+  | Mint16unsigned =>
+      cases v with
+      | Vint a =>
+          cases w with
+          | Vint b =>
+              simp [store_argument, vagree, iVagree, lVagree,
+                CompCert4Lean.Common.Values.Val.load_result] at h ⊢
+              exact hzero16 a b h
+          | Vundef => simp [store_argument, vagree, iVagree] at h
+          | Vlong _ => simp [store_argument, vagree, iVagree] at h
+          | Vfloat _ => simp [store_argument, vagree, iVagree] at h
+          | Vsingle _ => simp [store_argument, vagree, iVagree] at h
+          | Vptr _ _ => simp [store_argument, vagree, iVagree] at h
+      | Vundef => cases w <;>
+          simp [CompCert4Lean.Common.Values.Val.load_result] <;>
+          exact CompCert4Lean.Common.Values.Val.lessdef_undef _
+      | Vlong _ => cases w <;>
+          simp [CompCert4Lean.Common.Values.Val.load_result] <;>
+          exact CompCert4Lean.Common.Values.Val.lessdef_undef _
+      | Vfloat _ => cases w <;>
+          simp [CompCert4Lean.Common.Values.Val.load_result] <;>
+          exact CompCert4Lean.Common.Values.Val.lessdef_undef _
+      | Vsingle _ => cases w <;>
+          simp [CompCert4Lean.Common.Values.Val.load_result] <;>
+          exact CompCert4Lean.Common.Values.Val.lessdef_undef _
+      | Vptr _ _ => cases w <;>
+          simp [CompCert4Lean.Common.Values.Val.load_result] <;>
+          exact CompCert4Lean.Common.Values.Val.lessdef_undef _
+  | Mint32 => exact CompCert4Lean.Common.Values.Val.load_result_lessdef _ _ _ h
+  | Mint64 => exact CompCert4Lean.Common.Values.Val.load_result_lessdef _ _ _ h
+  | Mfloat32 => exact CompCert4Lean.Common.Values.Val.load_result_lessdef _ _ _ h
+  | Mfloat64 => exact CompCert4Lean.Common.Values.Val.load_result_lessdef _ _ _ h
+  | Many32 => exact CompCert4Lean.Common.Values.Val.load_result_lessdef _ _ _ h
+  | Many64 => exact CompCert4Lean.Common.Values.Val.load_result_lessdef _ _ _ h
+
+end CompCert4Lean.Backend.NeedDomain

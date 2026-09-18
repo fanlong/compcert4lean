@@ -5018,3 +5018,80 @@ theorem ZArith.Zeven.Zdiv2_odd_eqn :
 
 end Rocq.Coq
 end CompCert4Lean.Foundation.Numbers
+
+namespace CompCert4Lean.Foundation.Numbers
+namespace Rocq.Coq
+
+theorem ZArith.Zmin.Zmin_spec :
+    ZArith.Zmin.Zmin_specStatement := by
+  intro x y
+  by_cases hxy : intOfZ x ≤ intOfZ y
+  · left
+    constructor
+    · exact hxy
+    · apply intOfZ_injective
+      simp [ZArith.BinInt.Z.min, hxy]
+  · right
+    constructor
+    · change intOfZ y < intOfZ x
+      exact Int.lt_of_not_ge hxy
+    · apply intOfZ_injective
+      simp [ZArith.BinInt.Z.min, hxy]
+
+theorem ZArith.Znat.N_nat_Z :
+    ZArith.Znat.N_nat_ZStatement := by
+  intro n
+  cases n with
+  | N0 => rfl
+  | Npos p =>
+      change zOfInt (Int.ofNat (posToNat p)) = Zpos p
+      simpa [intOfZ] using zOfInt_intOfZ (Zpos p)
+
+theorem ZArith.Znat.Nat2Z.inj_succ :
+    ZArith.Znat.Nat2Z.inj_succStatement := by
+  intro n
+  apply intOfZ_injective
+  simp only [ZArith.BinInt.Z.of_nat, ZArith.BinInt.Z.succ,
+    ZArith.BinInt.Z.add, intOfZ_zOfInt]
+  have hone : intOfZ (Zpos xH) = (1 : Int) := by
+    simp [intOfZ, posToNat]
+  rw [hone]
+  simp
+
+private theorem natRect_iter_comm {A : Type} (f : A → A) (x : A) :
+    ∀ n : Nat,
+      nat_rect (fun _ : Nat => A) (f x) (fun _ : Nat => f) n =
+        f (nat_rect (fun _ : Nat => A) x (fun _ : Nat => f) n) := by
+  intro n
+  induction n with
+  | zero => rfl
+  | succ n ih =>
+      change f (nat_rect (fun _ : Nat => A) (f x) (fun _ : Nat => f) n) =
+        f (f (nat_rect (fun _ : Nat => A) x (fun _ : Nat => f) n))
+      rw [ih]
+
+private theorem natIter_nat_rect {A : Type} (f : A → A) (x : A) (n : Nat) :
+    natIter f n x = nat_rect (fun _ : Nat => A) x (fun _ : Nat => f) n := by
+  induction n generalizing x with
+  | zero => rfl
+  | succ n ih =>
+      change natIter f n (f x) =
+        f (nat_rect (fun _ : Nat => A) x (fun _ : Nat => f) n)
+      rw [ih (f x)]
+      exact natRect_iter_comm f x n
+
+theorem ZArith.Zmisc.iter_nat_of_Z :
+    ZArith.Zmisc.iter_nat_of_ZStatement := by
+  intro n A f x hn
+  have habs : ZArith.BinInt.Z.abs n = n :=
+    ZArith.BinInt.Z.abs_eq n hn
+  have habsnat : ZArith.BinInt.Z.abs_nat n = ZArith.BinInt.Z.to_nat n := by
+    change Int.toNat (intOfZ (ZArith.BinInt.Z.abs n)) =
+      Int.toNat (intOfZ n)
+    rw [habs]
+  unfold ZArith.BinInt.Z.iter
+  rw [habsnat]
+  exact natIter_nat_rect f x (ZArith.BinInt.Z.to_nat n)
+
+end Rocq.Coq
+end CompCert4Lean.Foundation.Numbers
