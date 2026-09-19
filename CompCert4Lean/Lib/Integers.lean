@@ -8080,3 +8080,165 @@ theorem signed_repr_eq_proof : signed_repr_eq := by
   rw [suffix_int64_unsigned_repr_eq_exact]
 
 end CompCert4Lean.Lib.Integers.Int64
+
+namespace CompCert4Lean.Lib.Integers.Int
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+private theorem suffix_is_power2_correct (n logn : int)
+    (hpow : is_power2 n = some logn) :
+    unsigned n = zTwoP (unsigned logn) := by
+  unfold is_power2 at hpow
+  cases hu : unsigned n with
+  | Z0 =>
+      simp only [CompCert4Lean.Lib.Zbits.Z_is_power2, hu] at hpow
+      cases hpow
+  | Zneg p =>
+      simp only [CompCert4Lean.Lib.Zbits.Z_is_power2, hu] at hpow
+      cases hpow
+  | Zpos p =>
+      cases hp : CompCert4Lean.Lib.Zbits.P_is_power2 p with
+      | false =>
+          simp only [CompCert4Lean.Lib.Zbits.Z_is_power2, hu, hp,
+            Bool.false_eq_true, ↓reduceIte] at hpow
+          cases hpow
+      | true =>
+          simp only [CompCert4Lean.Lib.Zbits.Z_is_power2, hu, hp,
+            ↓reduceIte] at hpow
+          injection hpow with hlog
+          rcases suffix_positive_is_power2 p hp with ⟨k, hk⟩
+          have hnval_p : n.val =
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p := by
+            have hz : zOfNat n.val = Numbers.BinNums.Z.Zpos p :=
+              (WordCore.intval_eq_zOfNat_val n).symm.trans hu
+            have hi : Int.ofNat n.val = Int.ofNat
+                (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p) := by
+              calc
+                Int.ofNat n.val = intOfZ (zOfNat n.val) := by
+                  exact (intOfZ_zOfInt (Int.ofNat n.val)).symm
+                _ = intOfZ (Numbers.BinNums.Z.Zpos p) := congrArg intOfZ hz
+                _ = Int.ofNat
+                    (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p) := by
+                  rfl
+            exact Int.ofNat.inj hi
+          have hpbound :
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p <
+                2 ^ wordsize := by
+            rw [← hnval_p]
+            exact WordCore.val_lt n
+          rw [hk] at hpbound
+          have hkpowlt : 2 ^ k < 2 ^ wordsize := hpbound
+          have hklt : k < wordsize :=
+            (Nat.pow_lt_pow_iff_right (a := 2) (by decide)).mp hkpowlt
+          have hzlog : ZArith.BinInt.Z.log2
+              (Numbers.BinNums.Z.Zpos p) = zOfInt (Int.ofNat k) := by
+            unfold ZArith.BinInt.Z.log2
+            have hpcast : intOfZ (Numbers.BinNums.Z.Zpos p) =
+                Int.ofNat
+                  (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p) := by
+              rfl
+            rw [hpcast]
+            have htoNat : Int.toNat
+                (Int.ofNat
+                  (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p)) =
+                CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p := by
+              simp
+            rw [htoNat, hk, Nat.log2_two_pow]
+          have hkpow : k < 2 ^ wordsize := by
+            exact Nat.lt_of_lt_of_le hklt (by decide)
+          have hlog_bounds :
+              zLe zZero (ZArith.BinInt.Z.log2
+                (Numbers.BinNums.Z.Zpos p)) ∧
+                zLe (ZArith.BinInt.Z.log2
+                  (Numbers.BinNums.Z.Zpos p)) max_unsigned := by
+            rw [hzlog]
+            constructor
+            · change 0 ≤ intOfZ (zOfInt (Int.ofNat k))
+              rw [intOfZ_zOfInt]
+              exact Int.natCast_nonneg _
+            · change intOfZ (zOfInt (Int.ofNat k)) ≤ intOfZ max_unsigned
+              rw [intOfZ_zOfInt]
+              have hmax : intOfZ max_unsigned =
+                  (2 ^ wordsize : Int) - 1 := by
+                unfold max_unsigned modulus
+                rw [WordCore.twoPowerNat_eq_zOfNat_twoPow]
+                simp only [zSub, ZArith.BinInt.Z.sub, zOfNat,
+                  ZArith.BinInt.Z.of_nat, intOfZ_zOfInt]
+                have hone : intOfZ zOne = (1 : Int) := by rfl
+                rw [hone]
+                rfl
+              rw [hmax]
+              have hkcast : (Int.ofNat k : Int) < Int.ofNat (2 ^ wordsize) :=
+                Int.ofNat_lt.mpr hkpow
+              have hpcast : Int.ofNat (2 ^ wordsize) = (2 ^ wordsize : Int) :=
+                Int.natCast_pow 2 wordsize
+              have hkcast' : (Int.ofNat k : Int) < (2 ^ wordsize : Int) := by
+                rw [← hpcast]
+                exact hkcast
+              omega
+          have hlog_unsigned :
+              unsigned (repr (ZArith.BinInt.Z.log2
+                (Numbers.BinNums.Z.Zpos p))) =
+                ZArith.BinInt.Z.log2 (Numbers.BinNums.Z.Zpos p) :=
+            unsigned_repr_proof_api _ hlog_bounds
+          have htwo : zTwoP (zOfInt (Int.ofNat k)) =
+              zOfInt (Int.ofNat (2 ^ k)) := by
+            have hk0 : zLe zZero (zOfInt (Int.ofNat k)) := by
+              change 0 ≤ intOfZ (zOfInt (Int.ofNat k))
+              rw [intOfZ_zOfInt]
+              exact Int.natCast_nonneg _
+            have h := suffix_two_p_nonneg
+              (zOfInt (Int.ofNat k)) hk0
+            have hznat : zToNat (zOfInt (Int.ofNat k)) = k := by
+              change Int.toNat (intOfZ (zOfInt (Int.ofNat k))) = k
+              rw [intOfZ_zOfInt]
+              exact Int.toNat_natCast _
+            rw [hznat] at h
+            exact h
+          have hpz : (Numbers.BinNums.Z.Zpos p : Z) =
+              zOfInt (Int.ofNat (2 ^ k)) := by
+            apply intOfZ_injective
+            calc
+              intOfZ (Numbers.BinNums.Z.Zpos p) =
+                  Int.ofNat
+                    (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat p) := by
+                rfl
+              _ = Int.ofNat (2 ^ k) := congrArg Int.ofNat hk
+              _ = intOfZ (zOfInt (Int.ofNat (2 ^ k))) :=
+                (intOfZ_zOfInt _).symm
+          rw [← hlog, hlog_unsigned, hzlog]
+          exact hpz.trans htwo.symm
+
+private theorem suffix_shl_one_eq_of_power2 (n logn : int)
+    (hcorrect : unsigned n = zTwoP (unsigned logn)) :
+    shl one logn = n := by
+  change WordCore.repr wordsize
+      (zShiftl (unsigned one) (unsigned logn)) = n
+  have hlog0 : zLe zZero (unsigned logn) := by
+    have h := logn.intrange.1
+    change (-1 : Int) < intOfZ logn.intval at h
+    change 0 ≤ intOfZ logn.intval
+    omega
+  have hshift : zShiftl (unsigned one) (unsigned logn) =
+      zMul (unsigned one) (zTwoP (unsigned logn)) :=
+    CompCert4Lean.Lib.Zbits.Zshiftl_mul_two_p
+      (unsigned one) (unsigned logn) hlog0
+  rw [hshift]
+  have hone : unsigned one = zOne := by rfl
+  rw [hone]
+  have hmul : zMul zOne (zTwoP (unsigned logn)) =
+      zTwoP (unsigned logn) := by
+    exact CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Zmult_1_l_proof _
+  rw [hmul]
+  change WordCore.repr wordsize (zTwoP (unsigned logn)) = n
+  rw [← hcorrect]
+  exact repr_unsigned_proof n
+
+theorem divs_pow2_proof : divs_pow2 := by
+  intro x n logn hpow
+  have hcorrect := suffix_is_power2_correct n logn hpow
+  have hshl := suffix_shl_one_eq_of_power2 n logn hcorrect
+  change divs x n = divs x (shl one logn)
+  rw [hshl]
+
+end CompCert4Lean.Lib.Integers.Int

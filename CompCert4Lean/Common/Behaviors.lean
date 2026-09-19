@@ -2334,3 +2334,15 @@ theorem behavior_bigstep_diverges :
     exact ⟨T', heq⟩
 
 end CompCert4Lean.Common.Behaviors
+
+namespace CompCert4Lean.Common.Behaviors
+
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.Smallstep
+
+theorem forward_simulation_state_behaves :
+    forward_simulation_state_behavesStatement := by
+  intro L1 L2 index order match_states props
+  exact behaviors_forward_simulation_state_behaves L1 L2 index order match_states props
+
+end CompCert4Lean.Common.Behaviors

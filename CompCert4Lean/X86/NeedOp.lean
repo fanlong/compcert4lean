@@ -200,3 +200,76 @@ def operation_is_redundant_soundStatement
     vagree v arg1' nv
 
 end CompCert4Lean.X86.NeedOp
+
+namespace CompCert4Lean.X86.NeedOp
+
+open CompCert4Lean.Backend.NeedDomain
+open CompCert4Lean.X86.Op
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Values
+
+ theorem needs_of_condition_sound : needs_of_condition_soundStatement := by
+  intro m m' hperm cond args b args' heval hagree
+  cases cond with
+  | Cmaskzero n =>
+      cases hagree with
+      | vagree_list_nil _ => contradiction
+      | vagree_list_cons v vl v' vl' nv nvl hv htail =>
+          cases htail with
+          | vagree_list_default _ _ _ _ _ _ => contradiction
+          | vagree_list_nil _ =>
+              simp [eval_condition] at heval ⊢
+              exact CompCert4Lean.Backend.NeedDomain.maskzero_sound v v' n b hv heval
+  | Cmasknotzero n =>
+      cases hagree with
+      | vagree_list_nil _ => contradiction
+      | vagree_list_cons v vl v' vl' nv nvl hv htail =>
+          cases htail with
+          | vagree_list_default _ _ _ _ _ _ => contradiction
+          | vagree_list_nil _ =>
+              simp [eval_condition] at heval ⊢
+              cases hmask : Val.maskzero_bool v n with
+              | none => simp [hmask] at heval
+              | some b0 =>
+                  have hmask' :=
+                    CompCert4Lean.Backend.NeedDomain.maskzero_sound v v' n b0 hv hmask
+                  simp [hmask, hmask'] at heval ⊢
+                  exact heval
+  | Ccomp c =>
+      exact CompCert4Lean.Backend.NeedDomain.default_needs_of_condition_sound
+        m m' hperm (.Ccomp c) args b args' heval hagree
+  | Ccompu c =>
+      exact CompCert4Lean.Backend.NeedDomain.default_needs_of_condition_sound
+        m m' hperm (.Ccompu c) args b args' heval hagree
+  | Ccompimm c n =>
+      exact CompCert4Lean.Backend.NeedDomain.default_needs_of_condition_sound
+        m m' hperm (.Ccompimm c n) args b args' heval hagree
+  | Ccompuimm c n =>
+      exact CompCert4Lean.Backend.NeedDomain.default_needs_of_condition_sound
+        m m' hperm (.Ccompuimm c n) args b args' heval hagree
+  | Ccompl c =>
+      exact CompCert4Lean.Backend.NeedDomain.default_needs_of_condition_sound
+        m m' hperm (.Ccompl c) args b args' heval hagree
+  | Ccomplu c =>
+      exact CompCert4Lean.Backend.NeedDomain.default_needs_of_condition_sound
+        m m' hperm (.Ccomplu c) args b args' heval hagree
+  | Ccomplimm c n =>
+      exact CompCert4Lean.Backend.NeedDomain.default_needs_of_condition_sound
+        m m' hperm (.Ccomplimm c n) args b args' heval hagree
+  | Ccompluimm c n =>
+      exact CompCert4Lean.Backend.NeedDomain.default_needs_of_condition_sound
+        m m' hperm (.Ccompluimm c n) args b args' heval hagree
+  | Ccompf c =>
+      exact CompCert4Lean.Backend.NeedDomain.default_needs_of_condition_sound
+        m m' hperm (.Ccompf c) args b args' heval hagree
+  | Cnotcompf c =>
+      exact CompCert4Lean.Backend.NeedDomain.default_needs_of_condition_sound
+        m m' hperm (.Cnotcompf c) args b args' heval hagree
+  | Ccompfs c =>
+      exact CompCert4Lean.Backend.NeedDomain.default_needs_of_condition_sound
+        m m' hperm (.Ccompfs c) args b args' heval hagree
+  | Cnotcompfs c =>
+      exact CompCert4Lean.Backend.NeedDomain.default_needs_of_condition_sound
+        m m' hperm (.Cnotcompfs c) args b args' heval hagree
+
+end CompCert4Lean.X86.NeedOp
