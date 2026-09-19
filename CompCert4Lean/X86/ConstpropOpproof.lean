@@ -4080,3 +4080,83 @@ theorem make_shruimm_correct
         exact CompCert4Lean.Common.Values.Val.lessdef_refl _
 
 end CompCert4Lean.X86.ConstpropOpproof
+
+namespace CompCert4Lean.X86.ConstpropOpproof
+
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.X86.Op
+open CompCert4Lean.X86.ConstpropOp
+
+set_option maxHeartbeats 1000000 in
+theorem make_mulimm_correct
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    @make_mulimm_correctStatement binary64_certificate binary32_certificate := by
+  intro ge sp e m n r
+  unfold make_mulimm
+  cases hzero : CompCert4Lean.Lib.Integers.Int.eq n
+      CompCert4Lean.Lib.Integers.Int.zero with
+  | true =>
+      have hn : n = CompCert4Lean.Lib.Integers.Int.zero := by
+        apply CompCert4Lean.Lib.Integers.WordCore.ext
+        simpa only [CompCert4Lean.Lib.Integers.Int.eq,
+          CompCert4Lean.Lib.Integers.WordCore.eq] using of_decide_eq_true hzero
+      subst n
+      refine ⟨.Vint CompCert4Lean.Lib.Integers.Int.zero, ?_, ?_⟩
+      · rfl
+      · cases hx : CompCert4Lean.Backend.Registers.Regmap.get r e with
+        | Vundef => exact Val.lessdef_undef _
+        | Vint x =>
+            simp only [Val.mul]
+            change Val.lessdef
+              (.Vint (CompCert4Lean.Lib.Integers.Int.mul x
+                CompCert4Lean.Lib.Integers.Int.zero)) (.Vint CompCert4Lean.Lib.Integers.Int.zero)
+            rw [CompCert4Lean.Lib.Integers.Int.mul_zero_proof]
+            exact Val.lessdef_refl _
+        | Vlong x => exact Val.lessdef_undef _
+        | Vfloat x => exact Val.lessdef_undef _
+        | Vsingle x => exact Val.lessdef_undef _
+        | Vptr b ofs => exact Val.lessdef_undef _
+  | false =>
+      cases hone : CompCert4Lean.Lib.Integers.Int.eq n
+          CompCert4Lean.Lib.Integers.Int.one with
+      | true =>
+          have hn : n = CompCert4Lean.Lib.Integers.Int.one := by
+            apply CompCert4Lean.Lib.Integers.WordCore.ext
+            simpa only [CompCert4Lean.Lib.Integers.Int.eq,
+              CompCert4Lean.Lib.Integers.WordCore.eq] using of_decide_eq_true hone
+          subst n
+          refine ⟨CompCert4Lean.Backend.Registers.Regmap.get r e, ?_, ?_⟩
+          · rfl
+          · cases hx : CompCert4Lean.Backend.Registers.Regmap.get r e with
+            | Vundef => exact Val.lessdef_refl _
+            | Vint x =>
+                simp only [Val.mul]
+                change Val.lessdef
+                  (.Vint (CompCert4Lean.Lib.Integers.Int.mul x
+                    CompCert4Lean.Lib.Integers.Int.one)) (.Vint x)
+                rw [CompCert4Lean.Lib.Integers.Int.mul_one_proof]
+                exact Val.lessdef_refl _
+            | Vlong x => exact Val.lessdef_undef _
+            | Vfloat x => exact Val.lessdef_undef _
+            | Vsingle x => exact Val.lessdef_undef _
+            | Vptr b ofs => exact Val.lessdef_undef _
+      | false =>
+          cases hp : CompCert4Lean.Lib.Integers.Int.is_power2 n with
+          | some l =>
+              refine ⟨Val.shl (CompCert4Lean.Backend.Registers.Regmap.get r e)
+                  (.Vint l), ?_, ?_⟩
+              · rfl
+              · rw [← CompCert4Lean.Common.Values.Val.mul_pow2
+                    (CompCert4Lean.Backend.Registers.Regmap.get r e) n l hp]
+                exact Val.lessdef_refl _
+          | none =>
+              refine ⟨Val.mul (CompCert4Lean.Backend.Registers.Regmap.get r e)
+                  (.Vint n), ?_, ?_⟩
+              · rfl
+              · exact Val.lessdef_refl _
+
+end CompCert4Lean.X86.ConstpropOpproof
