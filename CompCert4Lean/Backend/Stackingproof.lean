@@ -5218,3 +5218,186 @@ open CompCert4Lean.Lib.Integers
         | Outgoing => exact (hl rfl).elim
 
 end CompCert4Lean.Backend.Stackingproof
+
+namespace CompCert4Lean.Backend.Stackingproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Backend.Linear
+open CompCert4Lean.Backend.Locations
+open CompCert4Lean.Backend.Mach
+open CompCert4Lean.Backend.Stacking
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Linking
+open CompCert4Lean.Common.Separation
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.X86.Conventions1
+open CompCert4Lean.X86.Stacklayout
+open Lean Elab Tactic Meta
+private def stkName (suffix : String) : Name :=
+  let p := Name.str (Name.str (Name.str (Name.str Name.anonymous "_private") "CompCert4Lean") "Lib") "Integers"
+  let base := Name.num p 0
+  suffix.splitOn "." |>.foldl Name.str base
+private theorem stkWordValRepr (bits : Nat) (i : Int) :
+    (CompCert4Lean.Lib.Integers.WordCore.repr bits
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt i)).val =
+      Int.toNat (i % ((2 ^ bits : Nat) : Int)) := by
+  run_tac
+    let lctx ← getLCtx
+    let bitsF := (lctx.findFromUserName? `bits).get!
+    let iF := (lctx.findFromUserName? `i).get!
+    let e ← mkAppM
+      (stkName "CompCert4Lean.Lib.Integers.WordCore.val_repr")
+      #[mkFVar bitsF.fvarId, mkFVar iF.fvarId]
+    closeMainGoal Name.anonymous e
+private theorem stkWordIntvalEq (bits : Nat) (w : CompCert4Lean.Lib.Integers.WordCore.Word bits) :
+    w.intval = CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt (Int.toNat w.val) := by
+  run_tac
+    let lctx ← getLCtx
+    let bitsF := (lctx.findFromUserName? `bits).get!
+    let wF := (lctx.findFromUserName? `w).get!
+    let e ← mkAppM
+      (stkName "CompCert4Lean.Lib.Integers.WordCore.intval_eq_zOfNat_val")
+      #[mkFVar wF.fvarId]
+    closeMainGoal Name.anonymous e
+private theorem stkPtrofsUnsignedRepr (z : Z)
+    (hz : zLe z0 z ∧ zLe z Ptrofs.max_unsigned) :
+    Ptrofs.unsigned (Ptrofs.repr z) = z := by
+  have hz' : CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt (intOfZ z) = z :=
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt_intOfZ z
+  unfold Ptrofs.unsigned Ptrofs.repr WordCore.unsigned
+  rw [← hz']
+  rw [stkWordIntvalEq, stkWordValRepr]
+  have hz0 : 0 ≤ intOfZ z := hz.1
+  have hzmax : intOfZ z ≤ intOfZ Ptrofs.max_unsigned := hz.2
+  have hzlt : intOfZ z < (2 ^ Ptrofs.wordsize : Nat) := by
+    change intOfZ z < intOfZ Ptrofs.modulus
+    change intOfZ z < (2 ^ Ptrofs.wordsize : Nat)
+    change intOfZ z ≤ (2 ^ Ptrofs.wordsize : Nat) - 1 at hzmax
+    omega
+  have hmod : intOfZ z % (2 ^ Ptrofs.wordsize : Nat) = intOfZ z :=
+    Int.emod_eq_of_lt hz0 hzlt
+  rw [hmod]
+  congr 1
+  exact Int.toNat_of_nonneg hz0
+
+
+
+private theorem stkAddrNonneg (pos ofs : Z)
+    (hpos : zLe z0 pos) (hofs : zLe z0 ofs) :
+    zLe z0 (zAdd pos (zMul z4 ofs)) := by
+  unfold zLe ZArith.BinInt.Z.le at hpos hofs ⊢
+  unfold zAdd ZArith.BinInt.Z.add
+  unfold zMul ZArith.BinInt.Z.mul
+  repeat rw [intOfZ_zOfInt]
+  have hz0 : intOfZ z0 = 0 := rfl
+  have hz4 : intOfZ z4 = 4 := rfl
+  rw [hz0] at hpos hofs ⊢
+  rw [hz4]
+  omega
+private theorem stkAddrMax (pos bound ofs : Z) (ty : typ)
+    (hover : zLe (zAdd pos (zMul z4 bound)) Ptrofs.modulus)
+    (hbound : zLe (zAdd ofs (CompCert4Lean.Backend.Locations.typesize ty)) bound) :
+    zLe (zAdd pos (zMul z4 ofs)) Ptrofs.max_unsigned := by
+  change intOfZ (zAdd pos (zMul z4 ofs)) ≤
+    intOfZ (ZArith.BinInt.Z.sub Ptrofs.modulus (ZArith.BinInt.Z.of_nat 1))
+  unfold ZArith.BinInt.Z.sub
+  rw [intOfZ_zOfInt]
+  change intOfZ (zAdd pos (zMul z4 ofs)) ≤ intOfZ Ptrofs.modulus - 1
+  unfold zLe ZArith.BinInt.Z.le at hover hbound
+  unfold zAdd ZArith.BinInt.Z.add at hover hbound ⊢
+  unfold zMul ZArith.BinInt.Z.mul at hover ⊢
+  rw [intOfZ_zOfInt] at hover hbound ⊢
+  rw [intOfZ_zOfInt] at hover ⊢
+  have hz1 : intOfZ (ZArith.BinInt.Z.of_nat 1) = 1 := rfl
+  have hz2 : intOfZ (ZArith.BinInt.Z.of_nat 2) = 2 := rfl
+  have hz4 : intOfZ z4 = 4 := rfl
+  rw [hz4] at hover ⊢
+  cases ty <;>
+    simp only [CompCert4Lean.Backend.Locations.typesize] at hbound
+  all_goals first | rw [hz1] at hbound | rw [hz2] at hbound
+  all_goals omega
+
+private theorem stkWordCoreAddVal {bits : Nat}
+    (x y : CompCert4Lean.Lib.Integers.WordCore.Word bits) :
+    (CompCert4Lean.Lib.Integers.WordCore.add x y).val =
+      (x.val + y.val) % (2 ^ bits) := by
+  run_tac
+    let lctx ← getLCtx
+    let xF := (lctx.findFromUserName? `x).get!
+    let yF := (lctx.findFromUserName? `y).get!
+    let e ← mkAppM
+      (stkName "CompCert4Lean.Lib.Integers.WordCore.add_val")
+      #[mkFVar xF.fvarId, mkFVar yF.fvarId]
+    closeMainGoal Name.anonymous e
+private theorem stkPtrofsAddZero (x : ptrofs) : Ptrofs.add Ptrofs.zero x = x := by
+  apply CompCert4Lean.Lib.Integers.WordCore.ext_of_val_eq
+  change (CompCert4Lean.Lib.Integers.WordCore.add
+    (CompCert4Lean.Lib.Integers.WordCore.zero Ptrofs.wordsize) x).val = x.val
+  rw [stkWordCoreAddVal]
+  change (0 + x.val) % (2 ^ Ptrofs.wordsize) = x.val
+  rw [Nat.zero_add]
+  apply Nat.mod_eq_of_lt
+  have hx := x.intrange.2
+  change intOfZ x.intval < Int.ofNat (2 ^ Ptrofs.wordsize) at hx
+  rw [stkWordIntvalEq] at hx
+  simp only [intOfZ_zOfInt] at hx
+  exact Int.ofNat_lt.mp hx
+
+private theorem stkLoadAddress (z : Z)
+    (hz : zLe z0 z ∧ zLe z Ptrofs.max_unsigned) :
+    Ptrofs.unsigned (Ptrofs.add Ptrofs.zero (Ptrofs.repr z)) = z := by
+  rw [stkPtrofsAddZero]
+  exact stkPtrofsUnsignedRepr z hz
+
+
+theorem transl_external_argument : transl_external_argumentStatement := by
+  intro cfg return_address_offset tprog j cs cs' sg
+    bound_local_pos bound_outgoing_pos bound_stack_data_pos
+    used_callee_save_norepet used_callee_save_prop hstacks ls rs hregs hcs ho m' hmem l hl
+  have hacc := CompCert4Lean.Backend.Conventions.loc_arguments_acceptable_2 cfg sg l hl
+  cases hstacks with
+  | match_stacks_empty sg0 htail =>
+      cases l with
+      | R r =>
+          refine ⟨rs r, ?_, hregs r⟩
+          exact Mach.extcall_arg.extcall_arg_reg r
+      | S sl ofs ty =>
+          cases sl with
+          | Local => cases hacc
+          | Incoming => cases hacc
+          | Outgoing => exact (htail _ hl).elim
+  | @match_stacks_cons f sp ls0 c cs fb sp' ra c' cs' sg0 trf htail hfind htransf hcode hinj hra hlocs hargs htailstacks =>
+      cases l with
+      | R r =>
+          refine ⟨rs r, ?_, hregs r⟩
+          exact Mach.extcall_arg.extcall_arg_reg r
+      | S sl ofs ty =>
+          cases sl with
+          | Local => cases hacc
+          | Incoming => cases hacc
+          | Outgoing =>
+              have hslot : CompCert4Lean.Backend.Bounds.slot_within_bounds (CompCert4Lean.Backend.Bounds.function_bounds cfg f) Outgoing ofs ty :=
+                hargs ofs ty (by exact hl)
+              have hframe := hmem.1
+              have hout := hframe.1.2.1.1
+              have hload := hout.2.2.2.2 ofs ty hacc.1 hslot hacc.2
+              rcases hload with ⟨v, hv, hinjv⟩
+              refine ⟨v, ?_, ?_⟩
+              · apply Mach.extcall_arg.extcall_arg_stack ofs ty v
+                change Mach.load_stack m' (Vptr sp' Ptrofs.zero) ty
+                  (Ptrofs.repr (zAdd (fe_ofs_arg cfg) (zMul z4 ofs))) = some v
+                unfold Mach.load_stack CompCert4Lean.Common.Memory.Mem.loadv
+                simp only [CompCert4Lean.Common.Values.Val.offset_ptr]
+                rw [stkLoadAddress]
+                · exact hv
+                · constructor
+                  · exact stkAddrNonneg _ _ hout.2.1 hacc.1
+                  · exact stkAddrMax _ _ ofs ty hout.2.2.1 hslot
+              · rw [ho ty ofs hl]
+                exact hinjv
+
+
+end CompCert4Lean.Backend.Stackingproof

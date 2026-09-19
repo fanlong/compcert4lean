@@ -4817,3 +4817,20 @@ open CompCert4Lean.X86.SelectLong
         exact Rint.intro _
 
 end CompCert4Lean.Backend.Selectionproof
+
+namespace CompCert4Lean.Backend.Selectionproof
+
+theorem match_states_skip
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    [binary64_inverse_certificate : BexactInverseCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_inverse_certificate : BexactInverseCertificate (zOfNat 24) (zOfNat 128)]
+    (cfg : CompilerConfig) (oracle : SelectionOracle) :
+    match_states_skipStatement cfg oracle := by
+  intro prog cunit hf f f' k k' sp e m e' m' env
+    hlink hhf hsel hty hcont hld hme
+  exact match_state cunit hf f f' Cminor.Sskip k CminorSel.Sskip
+    CminorSel.Sskip k' sp e m e' m' env
+    hlink hhf hsel hty rfl hcont hld hme
+
+end CompCert4Lean.Backend.Selectionproof

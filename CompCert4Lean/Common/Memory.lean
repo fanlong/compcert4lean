@@ -8358,3 +8358,62 @@ theorem disjoint_or_equal_inject : disjoint_or_equal_injectStatement := by
 end Mem
 
 end CompCert4Lean.Common.Memory
+
+namespace CompCert4Lean.Common.Memory
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+
+namespace Mem
+
+theorem aligned_area_inject : aligned_area_injectStatement := by
+  intro f m m' b ofs al sz b' delta hinj hal hpos hdiv hrange hof hmap
+  have hbound : zLe al sz := by
+    obtain ⟨k, hk⟩ := hdiv
+    have hk' := congrArg intOfZ hk
+    change 0 < intOfZ sz at hpos
+    change intOfZ al ≤ intOfZ sz
+    simp only [ZArith.BinInt.Z.mul, intOfZ_zOfInt] at hk'
+    rcases hal with rfl | rfl | rfl | rfl
+    · change intOfZ sz = 1 * intOfZ k at hk'
+      change 1 ≤ intOfZ sz
+      omega
+    · change intOfZ sz = 2 * intOfZ k at hk'
+      change 2 ≤ intOfZ sz
+      omega
+    · change intOfZ sz = 4 * intOfZ k at hk'
+      change 4 ≤ intOfZ sz
+      omega
+    · change intOfZ sz = 8 * intOfZ k at hk'
+      change 8 ≤ intOfZ sz
+      omega
+  have hchunk : ∃ chunk, al = align_chunk chunk ∧ al = size_chunk chunk := by
+    rcases hal with rfl | rfl | rfl | rfl
+    · exact ⟨Mint8unsigned, rfl, rfl⟩
+    · exact ⟨Mint16unsigned, rfl, rfl⟩
+    · exact ⟨Mint32, rfl, rfl⟩
+    · exact ⟨Mint64, rfl, rfl⟩
+  obtain ⟨chunk, halign, hsize⟩ := hchunk
+  have hd : zDivide al delta := by
+    rw [halign]
+    apply hinj.mi_inj.mi_align b b' delta chunk ofs Nonempty hmap
+    intro i hi
+    apply Mem.perm_cur_max m b i Nonempty
+    apply hrange i
+    rw [← hsize] at hi
+    change intOfZ ofs ≤ intOfZ i ∧ intOfZ i < intOfZ (zAdd ofs al) at hi
+    change intOfZ al ≤ intOfZ sz at hbound
+    change intOfZ ofs ≤ intOfZ i ∧ intOfZ i < intOfZ (zAdd ofs sz)
+    simp only [zAdd, ZArith.BinInt.Z.add, intOfZ_zOfInt] at hi ⊢
+    omega
+  exact ZArith.BinInt.Z.divide_add_r al ofs delta hof hd
+
+end Mem
+
+end CompCert4Lean.Common.Memory

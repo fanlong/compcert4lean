@@ -9694,3 +9694,80 @@ theorem nlive_remove : nlive_removeStatement := by
           | Stack => exact nlive.nlive_intro _ _ _ _ hs hg
 
 end CompCert4Lean.Backend.NeedDomain
+
+namespace CompCert4Lean.Backend.NeedDomain
+open CompCert4Lean.Lib.IntvSets
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.Backend.ValueDomain
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Lib.Integers
+
+theorem nlive_dead_stack : nlive_dead_stackStatement := by
+  intro ge sp sz b' i hcond
+  constructor
+  · intro hb hm
+    rcases hcond with hne | hnot
+    · exact (hne hb).elim
+    · exact hnot ((CompCert4Lean.Lib.IntvSets.ISet.In_interval i z0 sz).mp hm)
+  · intro id iv hsym hget
+    rw [CompCert4Lean.Lib.Maps.PTree.gempty (CompCert4Lean.Lib.IntvSets.ISet.t) id] at hget
+    cases hget
+
+end CompCert4Lean.Backend.NeedDomain
+
+namespace CompCert4Lean.Backend.NeedDomain
+open CompCert4Lean.Lib.IntvSets
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.Backend.ValueDomain
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Lib.Integers
+
+theorem nlive_contains : nlive_containsStatement := by
+  intro ge sp bc b ofs p nm sz i gm hsp hpm hcontains hi
+  cases nm with
+  | NMemDead =>
+      intro h
+      cases h
+  | NMem stk gl =>
+      cases p with
+      | Pbot => simp [nmem_contains] at hcontains
+      | Glob => simp [nmem_contains] at hcontains
+      | Glo id => simp [nmem_contains] at hcontains
+      | Nonstack => simp [nmem_contains] at hcontains
+      | Ptop => simp [nmem_contains] at hcontains
+      | Stack => simp [nmem_contains] at hcontains
+      | Stk ofs =>
+          intro h
+          cases h with
+          | nlive_intro _ _ _ _ hs hg =>
+              cases hpm with
+              | stk hbc =>
+                  have hcontain : ISet.contains
+                      (Ptrofs.unsigned ofs)
+                      (ZArith.BinInt.Z.add (Ptrofs.unsigned ofs) sz) stk = true := by
+                    simpa [nmem_contains] using hcontains
+                  have hmem : ISet.In i stk :=
+                    (ISet.contains_spec _ _ _).mp hcontain i hi
+                  have hbs : b = sp := bc.bc_stack b sp hbc hsp
+                  exact (hs hbs hmem).elim
+      | Gl id ofs =>
+          cases hx : PTree.get id gl with
+          | none => simp [nmem_contains, hx] at hcontains
+          | some iv =>
+              intro h
+              cases h with
+              | nlive_intro _ _ _ _ hs hg =>
+                  cases hpm with
+                  | gl _ hbc =>
+                      have hsym : Genv.find_symbol ge id = some b := (gm.1 id b).mpr hbc
+                      have hcontain : ISet.contains
+                          (Ptrofs.unsigned ofs)
+                          (ZArith.BinInt.Z.add (Ptrofs.unsigned ofs) sz) iv = true := by
+                        simpa [nmem_contains, hx] using hcontains
+                      have hmem : ISet.In i iv :=
+                        (ISet.contains_spec _ _ _).mp hcontain i hi
+                      exact (hg id iv hsym hx hmem).elim
+
+end CompCert4Lean.Backend.NeedDomain
