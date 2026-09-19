@@ -2535,3 +2535,10 @@ theorem transf_function_spec : transf_function_specStatement := by
           cases h
 
 end CompCert4Lean.Backend.Inliningspec
+
+namespace CompCert4Lean.Backend.Inliningspec
+
+theorem expand_instr_unchanged : expand_instr_unchangedStatement := by
+  exact expand_instr_unchanged_aux
+
+end CompCert4Lean.Backend.Inliningspec

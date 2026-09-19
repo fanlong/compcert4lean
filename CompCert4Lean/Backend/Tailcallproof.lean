@@ -1210,3 +1210,34 @@ theorem transf_final_states : transf_final_statesStatement := by
   exact final_state.intro r _
 
 end CompCert4Lean.Backend.Tailcallproof
+
+namespace CompCert4Lean.Backend.Tailcallproof
+
+open CompCert4Lean.Backend.Tailcall
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.X86.Op
+
+theorem transf_instr_lookup : transf_instr_lookupStatement := by
+  intro cfg f pc i h
+  unfold CompCert4Lean.Backend.Tailcall.transf_function
+  split
+  · rename_i hcond
+    dsimp [CompCert4Lean.Backend.RTL.transf_function]
+    rw [@CompCert4Lean.Lib.Maps.PTree.gmap instruction instruction
+      (fun p j => CompCert4Lean.Backend.Tailcall.transf_instr cfg f p j)
+      (show CompCert4Lean.Foundation.Numbers.Rocq.Coq.positive from pc) f.fn_code]
+    refine ⟨CompCert4Lean.Backend.Tailcall.transf_instr cfg f pc i, ?_, ?_⟩
+    · simpa [h]
+    · apply transf_instr_charact cfg f pc i
+      have hparts :=
+        (CompCert4Lean.Foundation.Logic.Rocq.Coq.Bool.Bool.andb_true_iff _ _).mp hcond
+      have hstack : f.fn_stacksize =
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.Numbers.BinNums.Z0 :=
+        decide_eq_true_eq.mp hparts.1
+      exact hstack
+  · refine ⟨i, h, ?_⟩
+    exact .unchanged
+
+end CompCert4Lean.Backend.Tailcallproof

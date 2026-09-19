@@ -5616,3 +5616,82 @@ theorem round_UP_eq :
   exact hround
 
 end CompCert4Lean.Flocq.Core.Ulp
+
+namespace CompCert4Lean.Flocq.Core.Ulp
+
+theorem round_UP_DN_ulp :
+    ∀ (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx),
+      round_UP_DN_ulpStatement ctx magnitude := by
+  intro ctx magnitude beta fexp x hxformat
+  have hxne : x ≠ Exact.R0 ctx := by
+    intro hxzero
+    apply hxformat
+    rw [hxzero]
+    exact pg_pred_ge_gt_generic_format_zero ctx magnitude beta fexp
+  have hulp := ulp_neq_0 ctx magnitude beta fexp x hxne
+  let sm := CompCert4Lean.Flocq.Core.Generic_fmt.Exact.scaled_mantissa ctx magnitude beta fexp x
+  let ce := Exact.cexp ctx magnitude beta fexp x
+  change CompCert4Lean.Flocq.Core.Defs.Exact.F2R ctx
+      (CompCert4Lean.Flocq.Core.Float_prop.Float beta
+        (CompCert4Lean.Flocq.Core.Raux.Exact.Zceil ctx sm) ce) =
+    Exact.Rplus ctx
+      (CompCert4Lean.Flocq.Core.Defs.Exact.F2R ctx
+        (CompCert4Lean.Flocq.Core.Float_prop.Float beta
+          (CompCert4Lean.Flocq.Core.Raux.Exact.Zfloor ctx sm) ce))
+      (Exact.ulp ctx magnitude beta fexp x)
+  unfold CompCert4Lean.Flocq.Core.Defs.Exact.F2R
+  rw [hulp]
+  have hceil := CompCert4Lean.Flocq.Core.Raux.Zceil_floor_neq ctx sm (by
+    intro hsm
+    apply hxformat
+    change x = CompCert4Lean.Flocq.Core.Defs.Exact.F2R ctx
+      (CompCert4Lean.Flocq.Core.Float_prop.Float beta
+        (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Ztrunc ctx sm) ce)
+    have htrunc : CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Ztrunc ctx sm =
+        CompCert4Lean.Flocq.Core.Raux.Exact.Zfloor ctx sm := by
+      calc
+        CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Ztrunc ctx sm =
+            CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Ztrunc ctx
+              (CompCert4Lean.Flocq.Core.Raux.Exact.IZR ctx
+                (CompCert4Lean.Flocq.Core.Raux.Exact.Zfloor ctx sm)) := by
+          exact congrArg
+            (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Ztrunc ctx) hsm.symm
+        _ = CompCert4Lean.Flocq.Core.Raux.Exact.Zfloor ctx sm :=
+          CompCert4Lean.Flocq.Core.Raux.Ztrunc_IZR ctx _
+    rw [htrunc]
+    have hscaled := CompCert4Lean.Flocq.Core.Generic_fmt.scaled_mantissa_mult_bpow
+      ctx magnitude beta fexp x
+    calc
+      x = CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Rmult ctx sm
+          (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.bpow ctx beta ce) := hscaled.symm
+      _ = CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Rmult ctx
+          (CompCert4Lean.Flocq.Core.Raux.Exact.IZR ctx
+            (CompCert4Lean.Flocq.Core.Raux.Exact.Zfloor ctx sm))
+          (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.bpow ctx beta ce) := by
+        congr 1
+        exact hsm.symm
+      _ = CompCert4Lean.Flocq.Core.Defs.Exact.F2R ctx
+          (CompCert4Lean.Flocq.Core.Float_prop.Float beta
+            (CompCert4Lean.Flocq.Core.Raux.Exact.Zfloor ctx sm) ce) := by rfl)
+  rw [hceil]
+  -- algebra
+  change ctx.spec.mul
+      (ctx.spec.ofZ
+        (CompCert4Lean.Flocq.Core.Raux.Zadd
+          (CompCert4Lean.Flocq.Core.Raux.Exact.Zfloor ctx sm)
+          CompCert4Lean.Flocq.Core.Zaux.Zone))
+      (CompCert4Lean.Flocq.Core.Raux.Exact.bpow ctx beta ce) =
+    ctx.spec.add
+      (ctx.spec.mul
+        (ctx.spec.ofZ (CompCert4Lean.Flocq.Core.Raux.Exact.Zfloor ctx sm))
+        (CompCert4Lean.Flocq.Core.Raux.Exact.bpow ctx beta ce))
+      (CompCert4Lean.Flocq.Core.Raux.Exact.bpow ctx beta ce)
+  rw [ctx.certificate.sourceLaws.ofZ_add,
+    ctx.certificate.sourceLaws.ofZ_one,
+    ctx.certificate.orderedField.mul_comm,
+    ctx.certificate.orderedField.left_distrib,
+    ctx.certificate.orderedField.mul_comm,
+    ctx.certificate.orderedField.mul_comm,
+    ctx.certificate.orderedField.mul_one]
+
+end CompCert4Lean.Flocq.Core.Ulp

@@ -349,3 +349,35 @@ theorem Zwf_up_well_founded : Zwf_up_well_foundedStatement := by
 
 end Rocq.Coq.ZArith.Zwf
 end CompCert4Lean.Foundation.Recursion
+
+namespace CompCert4Lean.Foundation.Recursion
+namespace Rocq.Coq
+namespace ZArith.Wf_Z
+
+open _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem natlike_ind : natlike_indStatement := by
+  intro P h0 hstep x hx
+  have hrepr :
+      _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat
+          (_root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.to_nat x) = x :=
+    _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.Znat.Z2Nat.id x hx
+  rw [← hrepr]
+  induction _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.to_nat x with
+  | zero =>
+      exact h0
+  | succ n ih =>
+      rw [_root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.Znat.Nat2Z.inj_succ n]
+      apply hstep
+        (_root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat n)
+      · change intOfZ Z0 ≤ intOfZ
+          (_root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat n)
+        simp only [_root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat,
+          intOfZ_zOfInt]
+        change (0 : Int) ≤ Int.ofNat n
+        exact Int.natCast_nonneg n
+      · exact ih
+
+end ZArith.Wf_Z
+end Rocq.Coq
+end CompCert4Lean.Foundation.Recursion

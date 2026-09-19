@@ -3805,3 +3805,18 @@ theorem val_inject_id : val_inject_idStatement := by
   exact (val_inject_lessdef v1 v2).symm
 
 end CompCert4Lean.Common.Values
+
+namespace CompCert4Lean.Common.Values
+namespace Val
+
+theorem andl_assoc : andl_assocStatement := by
+  intro x y z
+  cases x <;> cases y <;> cases z <;> simp [andl]
+  case Vlong.Vlong.Vlong a b c =>
+    apply CompCert4Lean.Lib.Integers.WordCore.ext_of_val_eq
+    rw [pg_values_int64_and_val, pg_values_int64_and_val,
+      pg_values_int64_and_val, pg_values_int64_and_val]
+    exact Nat.and_assoc _ _ _
+
+end Val
+end CompCert4Lean.Common.Values

@@ -3076,3 +3076,54 @@ noncomputable def link_build_composite_env_proof : link_build_composite_envState
     ⟨env1, hbuild1, hadd⟩
 
 end CompCert4Lean.Cfrontend.Ctypes
+
+namespace CompCert4Lean.Cfrontend.Ctypes
+
+open CompCert4Lean.Common
+open CompCert4Lean.Common.Linking
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.List
+
+noncomputable def linker_program_certificate_proof : Linker_program_obligations := by
+  let c : Linker_composite_defs_obligations := {
+    link_composite_def_inv := link_composite_def_inv_proof
+    link_build_composite_env := link_build_composite_env_proof
+    link_linkorder := by
+      intro l1 l2 l hlink
+      have hi := link_composite_def_inv_proof l1 l2 l hlink
+      rcases hi with ⟨_, hlist, hmem⟩
+      constructor
+      · intro x hx
+        exact (hmem x).mpr (Or.inl hx)
+      · intro x hx
+        exact (hmem x).mpr (Or.inr hx)
+  }
+  exact { composite_defs := c, link_linkorder := (by
+    intro F p1 p2 p h
+    unfold link_program at h
+    cases hbase : CompCert4Lean.Common.Linking.link
+      (program_of_program p1) (program_of_program p2) with
+    | none => simp [hbase] at h
+    | some q =>
+      cases htypes : lift_option (link_composite_defs p1.prog_types p2.prog_types) with
+      | inright hn => simp [hbase, htypes] at h
+      | inleft ht =>
+        cases henv : c.link_build_composite_env
+            p1.prog_types p2.prog_types ht.val
+            p1.prog_comp_env p2.prog_comp_env
+            p1.prog_comp_env_eq p2.prog_comp_env_eq ht.property with
+        | mk env henvprop =>
+          simp [hbase, htypes, henv] at h
+          cases h
+          unfold linkorder_program
+          have hp := CompCert4Lean.Common.Linking.Linker_prog_link_linkorder_proof
+            (fundef F) type (program_of_program p1) (program_of_program p2) q hbase
+          refine ⟨?_, ?_⟩
+          · constructor
+            · simpa [program_of_program] using hp.1
+            · simpa using henvprop.2.1
+          · constructor
+            · simpa [program_of_program] using hp.2
+            · simpa using henvprop.2.2) }
+
+end CompCert4Lean.Cfrontend.Ctypes

@@ -1743,3 +1743,11 @@ theorem findMin_empty_proof : findMin_empty := by
   exact CompCert4Lean.Lib.Heaps.SplayHeapSet.findMin_empty positiveOrder
 
 end CompCert4Lean.Lib.Heaps.PHeap
+
+namespace CompCert4Lean.Lib.Heaps.SplayHeapSet.R
+
+theorem deleteMin_lt (E : OrderedType) : deleteMin_ltStatement E := by
+  intro x h hlt
+  exact deleteMinLtProof E x h hlt
+
+end CompCert4Lean.Lib.Heaps.SplayHeapSet.R

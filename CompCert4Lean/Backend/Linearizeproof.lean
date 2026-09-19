@@ -2011,3 +2011,31 @@ theorem transf_initial_states : transf_initial_statesStatement := by
           (CompCert4Lean.Lib.Coqlib.list_forall2.nil _) htrans
 
 end CompCert4Lean.Backend.Linearizeproof
+
+namespace CompCert4Lean.Backend.Linearizeproof
+
+open CompCert4Lean.Backend.Linearize
+open CompCert4Lean.Backend.LTL
+open CompCert4Lean.Lib.Maps
+
+theorem reachable_entrypoint : reachable_entrypointStatement := by
+  intro f
+  unfold reachable
+  cases h : reachable_aux f with
+  | none =>
+      change PMap.get f.fn_entrypoint (PMap.init true) = true
+      exact PMap.gi f.fn_entrypoint true
+  | some reach =>
+      have hfix : CompCert4Lean.Backend.Linearize.DS.fixpoint
+          f.fn_code LTL.successors_block (fun _ reachable => reachable)
+          f.fn_entrypoint true = some reach := by
+        exact h
+      have hentry := CompCert4Lean.Backend.Linearize.DS.fixpoint_entry_proof
+        CompCert4Lean.Backend.Linearize.DS.law_obligation_proof
+      have hge := hentry LTL.bblock f.fn_code LTL.successors_block
+        (fun _ reachable => reachable) f.fn_entrypoint true reach hfix
+      change PMap.get f.fn_entrypoint reach = true ∨
+        PMap.get f.fn_entrypoint reach = true at hge
+      rcases hge with hge | hge <;> exact hge
+
+end CompCert4Lean.Backend.Linearizeproof

@@ -371,3 +371,248 @@ theorem frame_env_aligned : frame_env_alignedStatement := by
       (if CompCert4Lean.X86_64.Archi.ptr64 then z8 else z4)
 
 end CompCert4Lean.X86.Stacklayout
+
+namespace CompCert4Lean.X86.Stacklayout
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Backend.Bounds
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Separation
+open CompCert4Lean.Lib.Coqlib
+
+private theorem sl_sepconj_eqv_right {A Q R : massert}
+    (hQR : massert_eqv Q R) :
+    massert_eqv (sepconj A Q) (sepconj A R) := by
+  constructor
+  · constructor
+    · intro m h
+      refine ⟨h.1, hQR.1.1 m h.2.1, ?_⟩
+      intro b ofs hA hR
+      exact h.2.2 b ofs hA (hQR.1.2 b ofs hR)
+    · intro b ofs h
+      cases h with
+      | inl hA => exact Or.inl hA
+      | inr hR => exact Or.inr (hQR.1.2 b ofs hR)
+  · constructor
+    · intro m h
+      refine ⟨h.1, hQR.2.1 m h.2.1, ?_⟩
+      intro b ofs hA hQ
+      exact h.2.2 b ofs hA (hQR.2.2 b ofs hQ)
+    · intro b ofs h
+      cases h with
+      | inl hA => exact Or.inl hA
+      | inr hQ => exact Or.inr (hQR.2.2 b ofs hQ)
+
+theorem frame_env_separated : frame_env_separatedStatement := by
+  intro cfg b _bound_local_pos _bound_outgoing_pos _bound_stack_data_pos
+    _used_callee_save_norepet _used_callee_save_prop sp m P fe h
+  dsimp only [fe] at h ⊢
+  dsimp [make_env] at h ⊢
+  let w : Z := if CompCert4Lean.X86_64.Archi.ptr64 then z8 else z4
+  let olink : Z := align
+    (zAdd (fe_ofs_arg cfg) (zMul z4 b.bound_outgoing)) w
+  let ocs : Z := zAdd olink w
+  let ol : Z := align (size_callee_save_area cfg b ocs) z8
+  let ostkdata : Z := align (zAdd ol (zMul z4 b.bound_local)) z8
+  let oretaddr : Z := align (zAdd ostkdata b.bound_stack_data) w
+  have hMptr : size_chunk Mptr = w := by rfl
+  change (sepconj (range sp z0 ostkdata)
+      (sepconj (range sp (zAdd ostkdata b.bound_stack_data)
+        (zAdd oretaddr w)) P)).m_pred m at h
+  change (sepconj (range sp ol (zAdd ol (zMul z4 b.bound_local)))
+      (sepconj (range sp (fe_ofs_arg cfg) (zAdd (fe_ofs_arg cfg) (zMul z4 b.bound_outgoing)))
+        (sepconj (range sp olink (zAdd olink w))
+          (sepconj (range sp oretaddr (zAdd oretaddr w))
+            (sepconj (range sp ocs (size_callee_save_area cfg b ocs)) P))))).m_pred m
+  have hw : zGt w z0 := by
+    dsimp [w]
+    exact sl_zofnat_pos 8 (by omega)
+  have harg : zLe z0 (fe_ofs_arg cfg) := by
+    unfold fe_ofs_arg
+    cases h : CompCert4Lean.X86_64.Archi.win64 cfg
+    · exact sl_zle_refl z0
+    · simpa [h] using sl_zofnat_nonneg 32
+  have hout : zLe z0 (zMul z4 b.bound_outgoing) := by
+    change 0 ≤ intOfZ (zMul z4 b.bound_outgoing)
+    simp only [zMul, ZArith.BinInt.Z.mul, intOfZ_zOfInt]
+    have hb : 0 ≤ intOfZ b.bound_outgoing := _bound_outgoing_pos
+    exact Int.mul_nonneg (sl_zofnat_nonneg 4) hb
+  have hlocal : zLe z0 (zMul z4 b.bound_local) := by
+    change 0 ≤ intOfZ (zMul z4 b.bound_local)
+    simp only [zMul, ZArith.BinInt.Z.mul, intOfZ_zOfInt]
+    have hb : 0 ≤ intOfZ b.bound_local := _bound_local_pos
+    exact Int.mul_nonneg (sl_zofnat_nonneg 4) hb
+  have holink0 : zLe z0 olink := by
+    apply sl_zle_trans ?_ (sl_align_le _ _ hw)
+    change zLe z0 (zAdd (fe_ofs_arg cfg) (zMul z4 b.bound_outgoing))
+    change intOfZ z0 ≤ intOfZ (zAdd (fe_ofs_arg cfg) (zMul z4 b.bound_outgoing))
+    simp only [zAdd, ZArith.BinInt.Z.add, intOfZ_zOfInt]
+    have ha : 0 ≤ intOfZ (fe_ofs_arg cfg) := harg
+    have ho : 0 ≤ intOfZ (zMul z4 b.bound_outgoing) := hout
+    exact Int.add_nonneg ha ho
+  have hocs0 : zLe z0 ocs := by
+    change zLe z0 (zAdd olink w)
+    change intOfZ z0 ≤ intOfZ (zAdd olink w)
+    simp only [zAdd, ZArith.BinInt.Z.add, intOfZ_zOfInt]
+    have ho : 0 ≤ intOfZ olink := holink0
+    have hw0 : 0 ≤ intOfZ w := Int.le_of_lt (show intOfZ z0 < intOfZ w from hw)
+    exact Int.add_nonneg ho hw0
+  have harea : zLe ocs (size_callee_save_area cfg b ocs) :=
+    sl_size_callee_save_area_incr b.used_callee_save ocs
+  have hocsl : zLe ocs ol :=
+    sl_zle_trans harea (sl_align_le _ _ (sl_zofnat_pos 8 (by omega)))
+  have hol0 : zLe z0 ol := sl_zle_trans hocs0 hocsl
+  have hostk0 : zLe z0 ostkdata := by
+    apply sl_zle_trans ?_ (sl_align_le _ _ (sl_zofnat_pos 8 (by omega)))
+    change zLe z0 (zAdd ol (zMul z4 b.bound_local))
+    change intOfZ z0 ≤ intOfZ (zAdd ol (zMul z4 b.bound_local))
+    simp only [zAdd, ZArith.BinInt.Z.add, intOfZ_zOfInt]
+    have ho : 0 ≤ intOfZ ol := hol0
+    have hl : 0 ≤ intOfZ (zMul z4 b.bound_local) := hlocal
+    exact Int.add_nonneg ho hl
+  have hret : zLe (zAdd ostkdata b.bound_stack_data) oretaddr :=
+    sl_align_le _ _ hw
+  have hstack : zLe z0 b.bound_stack_data := _bound_stack_data_pos
+  have hright : zLe (zAdd ostkdata b.bound_stack_data) (zAdd oretaddr w) := by
+    apply sl_zle_trans hret
+    change zLe oretaddr (zAdd oretaddr w)
+    change intOfZ oretaddr ≤ intOfZ (zAdd oretaddr w)
+    simp only [zAdd, ZArith.BinInt.Z.add, intOfZ_zOfInt]
+    have hw0 : 0 ≤ intOfZ w := Int.le_of_lt (show intOfZ z0 < intOfZ w from hw)
+    omega
+  have hargout : zLe (fe_ofs_arg cfg) (zAdd (fe_ofs_arg cfg) (zMul z4 b.bound_outgoing)) := by
+    change intOfZ (fe_ofs_arg cfg) ≤ intOfZ (zAdd (fe_ofs_arg cfg) (zMul z4 b.bound_outgoing))
+    simp only [zAdd, ZArith.BinInt.Z.add, intOfZ_zOfInt]
+    have ho : 0 ≤ intOfZ (zMul z4 b.bound_outgoing) := hout
+    exact Int.le_add_of_nonneg_right ho
+  have hlinkocs : zLe olink ocs := by
+    change intOfZ olink ≤ intOfZ (zAdd olink w)
+    simp only [zAdd, ZArith.BinInt.Z.add, intOfZ_zOfInt]
+    exact Int.le_add_of_nonneg_right (Int.le_of_lt (show 0 < intOfZ w from hw))
+  have hocssize : zLe ocs (size_callee_save_area cfg b ocs) := harea
+  have hsizeol : zLe (size_callee_save_area cfg b ocs) ol :=
+    sl_align_le _ _ (sl_zofnat_pos 8 (by omega))
+  have holostk : zLe ol ostkdata := by
+    apply sl_zle_trans ?_ (sl_align_le _ _ (sl_zofnat_pos 8 (by omega)))
+    change zLe ol (zAdd ol (zMul z4 b.bound_local))
+    change intOfZ ol ≤ intOfZ (zAdd ol (zMul z4 b.bound_local))
+    simp only [zAdd, ZArith.BinInt.Z.add, intOfZ_zOfInt]
+    have hl : 0 ≤ intOfZ (zMul z4 b.bound_local) := hlocal
+    exact Int.le_add_of_nonneg_right hl
+  have holend : zLe ol (zAdd ol (zMul z4 b.bound_local)) := by
+    change intOfZ ol ≤ intOfZ (zAdd ol (zMul z4 b.bound_local))
+    simp only [zAdd, ZArith.BinInt.Z.add, intOfZ_zOfInt]
+    have hl : 0 ≤ intOfZ (zMul z4 b.bound_local) := hlocal
+    exact Int.le_add_of_nonneg_right hl
+  have hend0 : zLe z0 (zAdd ol (zMul z4 b.bound_local)) :=
+    sl_zle_trans hol0 holend
+  have holmid : zLe (zAdd ol (zMul z4 b.bound_local)) ostkdata :=
+    sl_align_le _ _ (sl_zofnat_pos 8 (by omega))
+  have hargolink : zLe (zAdd (fe_ofs_arg cfg) (zMul z4 b.bound_outgoing)) olink :=
+    sl_align_le _ _ hw
+  have hargocs : zLe (fe_ofs_arg cfg) ocs :=
+    sl_zle_trans hargout (sl_zle_trans hargolink hlinkocs)
+  have hargostk : zLe (fe_ofs_arg cfg) ostkdata :=
+    sl_zle_trans hargocs (sl_zle_trans hocssize (sl_zle_trans hsizeol holostk))
+  have hlinkostk : zLe olink ostkdata :=
+    sl_zle_trans hlinkocs (sl_zle_trans hocssize (sl_zle_trans hsizeol holostk))
+  have hocsostk : zLe ocs ostkdata :=
+    sl_zle_trans hocssize (sl_zle_trans hsizeol holostk)
+  have hsizeostk : zLe (size_callee_save_area cfg b ocs) ostkdata :=
+    sl_zle_trans hsizeol holostk
+  have hstackret : zLe (zAdd ostkdata b.bound_stack_data) oretaddr := hret
+  have hstackfe : zLe (zAdd ostkdata b.bound_stack_data) (zAdd oretaddr w) := hright
+  have hret_size : zLe oretaddr (zAdd oretaddr w) := by
+    change intOfZ oretaddr ≤ intOfZ (zAdd oretaddr w)
+    simp only [zAdd, ZArith.BinInt.Z.add, intOfZ_zOfInt]
+    have hw0 : 0 ≤ intOfZ w := Int.le_of_lt (show intOfZ z0 < intOfZ w from hw)
+    omega
+  have hN :
+      (sepconj (range sp (fe_ofs_arg cfg) (zAdd (fe_ofs_arg cfg) (zMul z4 b.bound_outgoing)))
+        (sepconj (range sp olink (zAdd olink w))
+          (sepconj (range sp ocs (size_callee_save_area cfg b ocs))
+            (sepconj (range sp ol (zAdd ol (zMul z4 b.bound_local)))
+              (sepconj (range sp oretaddr (zAdd oretaddr w)) P))))).m_pred m := by
+    refine range_drop_left sp z0
+      (zAdd (fe_ofs_arg cfg) (zMul z4 b.bound_outgoing))
+      (sepconj (range sp olink (zAdd olink w))
+        (sepconj (range sp ocs (size_callee_save_area cfg b ocs))
+          (sepconj (range sp ol (zAdd ol (zMul z4 b.bound_local)))
+            (sepconj (range sp oretaddr (zAdd oretaddr w)) P))))
+      (fe_ofs_arg cfg) m ⟨harg, hargout⟩ ?_
+    change (sepconj (range sp z0 (zAdd (fe_ofs_arg cfg) (zMul z4 b.bound_outgoing)))
+      (sepconj (range sp (align (zAdd (fe_ofs_arg cfg) (zMul z4 b.bound_outgoing)) w) ocs)
+        (sepconj (range sp ocs (size_callee_save_area cfg b ocs))
+          (sepconj (range sp ol (zAdd ol (zMul z4 b.bound_local)))
+            (sepconj (range sp oretaddr (zAdd oretaddr w)) P))))).m_pred m
+    refine range_split_2 sp z0 ocs
+      (sepconj (range sp ocs (size_callee_save_area cfg b ocs))
+        (sepconj (range sp ol (zAdd ol (zMul z4 b.bound_local)))
+          (sepconj (range sp oretaddr (zAdd oretaddr w)) P)))
+      (zAdd (fe_ofs_arg cfg) (zMul z4 b.bound_outgoing)) w m
+      ⟨?_, ?_⟩ ?_ ?_
+    · exact holink0
+    · exact hlinkocs
+    · exact hw
+    · refine range_split sp z0 (size_callee_save_area cfg b ocs)
+        (sepconj (range sp ol (zAdd ol (zMul z4 b.bound_local)))
+          (sepconj (range sp oretaddr (zAdd oretaddr w)) P))
+        ocs m ⟨hocs0, harea⟩ ?_
+      have hprem :
+          (sepconj (range sp z0 (zAdd ol (zMul z4 b.bound_local)))
+            (sepconj (range sp oretaddr (zAdd oretaddr w)) P)).m_pred m := by
+        have hdrop := range_drop_right sp z0 ostkdata
+            (sepconj (range sp (zAdd ostkdata b.bound_stack_data)
+              (zAdd oretaddr w)) P)
+            (zAdd ol (zMul z4 b.bound_local)) m
+            ⟨hend0, holmid⟩ h
+        have hswap := (sep_swap
+            (range sp z0 (zAdd ol (zMul z4 b.bound_local)))
+            (range sp (zAdd ostkdata b.bound_stack_data) (zAdd oretaddr w)) P).1.1 m hdrop
+        have hret' := range_drop_left sp
+            (zAdd ostkdata b.bound_stack_data)
+            (zAdd oretaddr w)
+            (sepconj (range sp z0 (zAdd ol (zMul z4 b.bound_local))) P)
+            oretaddr m ⟨hret, hret_size⟩ hswap
+        exact (sep_swap
+            (range sp oretaddr (zAdd oretaddr w))
+            (range sp z0 (zAdd ol (zMul z4 b.bound_local))) P).1.1 m hret'
+      have hs := range_split_2 sp z0 (zAdd ol (zMul z4 b.bound_local))
+          (sepconj (range sp oretaddr (zAdd oretaddr w)) P)
+          (size_callee_save_area cfg b ocs) z8 m
+          ⟨(by simpa [ol] using hol0),
+            (by simpa [ol] using holend)⟩
+          (by simpa [w] using (sl_zofnat_pos 8 (by omega))) hprem
+      simpa [ol] using hs
+  have h1 := (sep_swap4
+      (range sp (fe_ofs_arg cfg) (zAdd (fe_ofs_arg cfg) (zMul z4 b.bound_outgoing)))
+      (range sp olink (zAdd olink w))
+      (range sp ocs (size_callee_save_area cfg b ocs))
+      (range sp ol (zAdd ol (zMul z4 b.bound_local)))
+      (sepconj (range sp oretaddr (zAdd oretaddr w)) P)).1.1 m hN
+  have e2 := sep_swap3
+      (range sp olink (zAdd olink w))
+      (range sp ocs (size_callee_save_area cfg b ocs))
+      (range sp (fe_ofs_arg cfg) (zAdd (fe_ofs_arg cfg) (zMul z4 b.bound_outgoing)))
+      (sepconj (range sp oretaddr (zAdd oretaddr w)) P)
+  have h2 := (sl_sepconj_eqv_right (A := range sp ol (zAdd ol (zMul z4 b.bound_local))) e2).1.1 m h1
+  have e3 := sep_swap
+      (range sp ocs (size_callee_save_area cfg b ocs))
+      (range sp olink (zAdd olink w))
+      (sepconj (range sp oretaddr (zAdd oretaddr w)) P)
+  have e3a := sl_sepconj_eqv_right
+      (A := range sp (fe_ofs_arg cfg) (zAdd (fe_ofs_arg cfg) (zMul z4 b.bound_outgoing))) e3
+  have e3d := sl_sepconj_eqv_right
+      (A := range sp ol (zAdd ol (zMul z4 b.bound_local))) e3a
+  have h3 := e3d.1.1 m h2
+  have e4 := sep_swap
+      (range sp ocs (size_callee_save_area cfg b ocs))
+      (range sp oretaddr (zAdd oretaddr w)) P
+  have e4a := sl_sepconj_eqv_right
+      (A := range sp olink (zAdd olink w)) e4
+  have e4b := sl_sepconj_eqv_right
+      (A := range sp (fe_ofs_arg cfg) (zAdd (fe_ofs_arg cfg) (zMul z4 b.bound_outgoing))) e4a
+  have e4c := sl_sepconj_eqv_right
+      (A := range sp ol (zAdd ol (zMul z4 b.bound_local))) e4b
+  exact e4c.1.1 m h3
+end CompCert4Lean.X86.Stacklayout

@@ -157,3 +157,133 @@ def DN_UP_parity_generic_posStatement (ctx : ExactRealContext)
       DN_UP_parity_pos_prop ctx magnitude beta fexp
 
 end CompCert4Lean.Flocq.Core.Round_NE
+
+namespace CompCert4Lean.Flocq.Core.Round_NE
+theorem DN_UP_parity_aux :
+    ∀ ctx magnitude, DN_UP_parity_auxStatement ctx magnitude := by
+  intro ctx magnitude beta fexp hpos x xd xu
+  intro hformat hx_d hx_u hxd hxu
+  have hnegzero : Exact.Ropp ctx (Exact.R0 ctx) = Exact.R0 ctx := by
+    change ctx.spec.neg ctx.spec.zero = ctx.spec.zero
+    have h := ctx.certificate.orderedField.neg_add_cancel ctx.spec.zero
+    rw [ctx.certificate.orderedField.add_zero] at h
+    exact h
+  have hnegneg : ∀ y : Exact.R ctx, Exact.Ropp ctx (Exact.Ropp ctx y) = y := by
+    intro y
+    change ctx.spec.neg (ctx.spec.neg y) = y
+    calc
+      ctx.spec.neg (ctx.spec.neg y) =
+          ctx.spec.add (ctx.spec.neg (ctx.spec.neg y)) ctx.spec.zero :=
+        (ctx.certificate.orderedField.add_zero _).symm
+      _ = ctx.spec.add (ctx.spec.neg (ctx.spec.neg y))
+          (ctx.spec.add (ctx.spec.neg y) y) := by
+        rw [ctx.certificate.orderedField.neg_add_cancel]
+      _ = ctx.spec.add
+          (ctx.spec.add (ctx.spec.neg (ctx.spec.neg y)) (ctx.spec.neg y)) y := by
+        rw [ctx.certificate.orderedField.add_assoc]
+      _ = ctx.spec.add ctx.spec.zero y := by
+        rw [ctx.certificate.orderedField.neg_add_cancel]
+      _ = y := ctx.certificate.orderedField.zero_add _
+  have hzero : format ctx magnitude beta fexp (Exact.R0 ctx) := by
+    change Exact.R0 ctx = Exact.F2R ctx (Defs.float.Float beta
+      (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Ztrunc ctx
+        (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.scaled_mantissa ctx magnitude beta fexp
+          (Exact.R0 ctx)))
+      (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.cexp ctx magnitude beta fexp
+        (Exact.R0 ctx)))
+    rw [CompCert4Lean.Flocq.Core.Generic_fmt.scaled_mantissa_0
+      ctx magnitude beta fexp]
+    have hz : CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Ztrunc ctx (Exact.R0 ctx) = Zaux.Z0 := by
+      rw [show Exact.R0 ctx = CompCert4Lean.Flocq.Core.Generic_fmt.Exact.IZR ctx Zaux.Z0 by
+        exact ctx.certificate.sourceLaws.ofZ_zero.symm]
+      exact CompCert4Lean.Flocq.Core.Raux.Ztrunc_IZR ctx Zaux.Z0
+    rw [hz]
+    exact (CompCert4Lean.Flocq.Core.Float_prop.F2R_0 ctx beta _).symm
+  rcases ctx.certificate.total_order (Exact.R0 ctx) x with hx | hx
+  · rcases hx with hxpos | hxeq
+    · exact hpos x xd xu hxpos hformat hx_d hx_u hxd hxu
+    · subst x
+      exact (hformat hzero).elim
+  · have hxpos : Exact.Rlt ctx (Exact.R0 ctx) (Exact.Ropp ctx x) := by
+      have h := ctx.certificate.orderedField.add_lt_compat_l
+        (Exact.Ropp ctx x) x (Exact.R0 ctx) hx
+      change ctx.spec.lt (ctx.spec.add (ctx.spec.neg x) x)
+        (ctx.spec.add (ctx.spec.neg x) ctx.spec.zero) at h
+      rw [ctx.certificate.orderedField.neg_add_cancel,
+        ctx.certificate.orderedField.add_zero] at h
+      exact h
+    have hformat' : ¬ format ctx magnitude beta fexp (Exact.Ropp ctx x) := by
+      intro h
+      apply hformat
+      have hh := CompCert4Lean.Flocq.Core.Generic_fmt.generic_format_opp
+        ctx magnitude beta fexp (Exact.Ropp ctx x) h
+      simpa only [hnegneg x] using hh
+    have hcanon_opp : ∀ (m e : Z),
+        canonical ctx magnitude beta fexp (Defs.float.Float beta m e) →
+          canonical ctx magnitude beta fexp (Defs.float.Float beta (Zaux.Zopp m) e) := by
+      intro m e hc
+      unfold canonical at hc ⊢
+      change e = CompCert4Lean.Flocq.Core.Generic_fmt.Exact.cexp ctx magnitude beta fexp
+        (Exact.F2R ctx (Defs.float.Float beta (Zaux.Zopp m) e))
+      have hf := CompCert4Lean.Flocq.Core.Float_prop.F2R_Zopp ctx beta m e
+      change Exact.F2R ctx (Defs.float.Float beta (Zaux.Zopp m) e) =
+        Exact.Ropp ctx (Exact.F2R ctx (Defs.float.Float beta m e)) at hf
+      have hce : CompCert4Lean.Flocq.Core.Generic_fmt.Exact.cexp ctx magnitude beta fexp
+          (Exact.Ropp ctx (Exact.F2R ctx (Defs.float.Float beta m e))) =
+          CompCert4Lean.Flocq.Core.Generic_fmt.Exact.cexp ctx magnitude beta fexp
+            (Exact.F2R ctx (Defs.float.Float beta m e)) := by
+        unfold CompCert4Lean.Flocq.Core.Generic_fmt.Exact.cexp
+        exact congrArg fexp
+          (CompCert4Lean.Flocq.Core.Raux.mag_opp ctx magnitude beta
+            (Exact.F2R ctx (Defs.float.Float beta m e)))
+      rw [hf, hce]
+      exact hc
+    cases xd with
+    | Float md ed =>
+      cases xu with
+      | Float mu eu =>
+        have hcd := hcanon_opp mu eu hx_u
+        have hcu := hcanon_opp md ed hx_d
+        have hxd' : Exact.F2R ctx (Defs.float.Float beta (Zaux.Zopp mu) eu) =
+            Exact.round ctx magnitude beta fexp (Exact.Zfloor ctx) (Exact.Ropp ctx x) := by
+          have hr := CompCert4Lean.Flocq.Core.Generic_fmt.round_opp
+            ctx magnitude beta fexp (Exact.Zfloor ctx) x
+          have hfd : CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Zrnd_opp ctx (Exact.Zfloor ctx) = Exact.Zceil ctx := by
+            funext y
+            rfl
+          rw [hfd] at hr
+          calc
+            Exact.F2R ctx (Defs.float.Float beta (Zaux.Zopp mu) eu) =
+                Exact.Ropp ctx (Exact.F2R ctx (Defs.float.Float beta mu eu)) :=
+              CompCert4Lean.Flocq.Core.Float_prop.F2R_Zopp ctx beta mu eu
+            _ = Exact.Ropp ctx (Exact.round ctx magnitude beta fexp
+                (Exact.Zceil ctx) x) := by rw [hxu]
+            _ = Exact.round ctx magnitude beta fexp (Exact.Zfloor ctx)
+                (Exact.Ropp ctx x) := hr.symm
+        have hxu' : Exact.F2R ctx (Defs.float.Float beta (Zaux.Zopp md) ed) =
+            Exact.round ctx magnitude beta fexp (Exact.Zceil ctx) (Exact.Ropp ctx x) := by
+          have hr := CompCert4Lean.Flocq.Core.Generic_fmt.round_UP_opp
+            ctx magnitude beta fexp x
+          calc
+            Exact.F2R ctx (Defs.float.Float beta (Zaux.Zopp md) ed) =
+                Exact.Ropp ctx (Exact.F2R ctx (Defs.float.Float beta md ed)) :=
+              CompCert4Lean.Flocq.Core.Float_prop.F2R_Zopp ctx beta md ed
+            _ = Exact.Ropp ctx (Exact.round ctx magnitude beta fexp
+                (Exact.Zfloor ctx) x) := by rw [hxd]
+            _ = Exact.round ctx magnitude beta fexp (Exact.Zceil ctx)
+                (Exact.Ropp ctx x) := hr.symm
+        have hp := hpos (Exact.Ropp ctx x)
+          (Defs.float.Float beta (Zaux.Zopp mu) eu)
+          (Defs.float.Float beta (Zaux.Zopp md) ed)
+          hxpos hformat' hcd hcu hxd' hxu'
+        have hp2 := congrArg Bool.not hp.symm
+        simp only [Defs.Fnum] at hp2 ⊢
+        change Bool.not (Bool.not (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.even
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.opp mu))) =
+          Bool.not (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.even
+            (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.opp md)) at hp2
+        rw [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.even_opp md,
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.even_opp mu] at hp2
+        simpa only [Bool.not_not] using hp2
+
+end CompCert4Lean.Flocq.Core.Round_NE

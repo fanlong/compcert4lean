@@ -559,3 +559,189 @@ theorem satisfies_any_eq : satisfies_any_eqStatement := by
     exact Hmin g ((Heq g).mpr Hg) Hgx
 
 end CompCert4Lean.Flocq.Core.Round_pred
+
+namespace CompCert4Lean.Flocq.Core.Round_pred
+
+theorem Rnd_N_pt_monotone : Rnd_N_pt_monotoneStatement := by
+  intro ctx F x y f g Hxf Hyg Hxy
+  rcases Hxf with ⟨Hf, Hxf⟩
+  rcases Hyg with ⟨Hg, Hyg⟩
+  rcases ctx.certificate.total_order f g with hfg | hgf
+  · rcases hfg with hlt | heq
+    · exact (ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp hlt |>.1
+    · rw [heq]
+      exact ctx.certificate.orderedField.le_refl _
+  · have hgf' : ctx.spec.lt g f := hgf
+    by_cases hxg : ctx.spec.le x g
+    · have hxf' : ctx.spec.lt x f :=
+        CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.Rle_lt_trans
+          ctx x g f hxg hgf'
+      have hxf0 : ctx.spec.le ctx.spec.zero
+          (ExactSpec.Rminus ctx f x) :=
+        CompCert4Lean.Flocq.Core.Raux.Rle_0_minus ctx x f
+          ((ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp hxf').1
+      have hxg0 : ctx.spec.le ctx.spec.zero
+          (ExactSpec.Rminus ctx g x) :=
+        CompCert4Lean.Flocq.Core.Raux.Rle_0_minus ctx x g hxg
+      have habsf : ctx.spec.abs (ExactSpec.Rminus ctx f x) =
+          ExactSpec.Rminus ctx f x := by
+        change ctx.spec.abs (ExactSpec.Rminus ctx f x) = _
+        exact pg_abs_self_of_nonneg ctx _ hxf0
+      have habsg : ctx.spec.abs (ExactSpec.Rminus ctx g x) =
+          ExactSpec.Rminus ctx g x := by
+        change ctx.spec.abs (ExactSpec.Rminus ctx g x) = _
+        exact pg_abs_self_of_nonneg ctx _ hxg0
+      have hfgx := Hxf g Hg
+      change ctx.spec.le (ctx.spec.abs (ExactSpec.Rminus ctx f x))
+        (ctx.spec.abs (ExactSpec.Rminus ctx g x)) at hfgx
+      rw [habsf, habsg] at hfgx
+      have hltfx : ctx.spec.lt (ExactSpec.Rminus ctx g x)
+          (ExactSpec.Rminus ctx f x) := by
+        change ctx.spec.lt (ctx.spec.add g (ctx.spec.neg x))
+          (ctx.spec.add f (ctx.spec.neg x))
+        exact CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.Rplus_lt_compat_r
+          ctx (ctx.spec.neg x) g f hgf'
+      exact False.elim
+        (((ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp hltfx).2 hfgx)
+    · have hgxle : ctx.spec.le g x := by
+        rcases ctx.certificate.total_order g x with h | h
+        · rcases h with hlt | heq
+          · exact (ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp hlt |>.1
+          · rw [heq]
+            exact ctx.certificate.orderedField.le_refl _
+        · exact False.elim
+            (hxg ((ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp h).1)
+      have hgx : ctx.spec.lt g x :=
+        (ctx.certificate.orderedField.lt_iff_le_not_le _ _).mpr
+          ⟨hgxle, hxg⟩
+      have hgy : ctx.spec.lt g y :=
+        ctx.certificate.orderedField.lt_trans g x y hgx Hxy
+      by_cases hfy : ctx.spec.le f y
+      · have hgy0 : ctx.spec.le
+            (ExactSpec.Rminus ctx g y) ctx.spec.zero :=
+          pg_sub_nonpos_of_le ctx g y
+            ((ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp hgy).1
+        have hfy0 : ctx.spec.le
+            (ExactSpec.Rminus ctx f y) ctx.spec.zero :=
+          pg_sub_nonpos_of_le ctx f y hfy
+        have habsgy : ctx.spec.abs (ExactSpec.Rminus ctx g y) =
+            ctx.spec.neg (ExactSpec.Rminus ctx g y) := by
+          change ctx.spec.abs (ExactSpec.Rminus ctx g y) = _
+          exact pg_abs_neg_of_le ctx _ hgy0
+        have habsfy : ctx.spec.abs (ExactSpec.Rminus ctx f y) =
+            ctx.spec.neg (ExactSpec.Rminus ctx f y) := by
+          change ctx.spec.abs (ExactSpec.Rminus ctx f y) = _
+          exact pg_abs_neg_of_le ctx _ hfy0
+        have hgyf := Hyg f Hf
+        change ctx.spec.le (ctx.spec.abs (ExactSpec.Rminus ctx g y))
+          (ctx.spec.abs (ExactSpec.Rminus ctx f y)) at hgyf
+        rw [habsgy, habsfy] at hgyf
+        have hlt : ctx.spec.lt (ctx.spec.neg (ExactSpec.Rminus ctx f y))
+            (ctx.spec.neg (ExactSpec.Rminus ctx g y)) := by
+          have hdiff : ctx.spec.lt (ExactSpec.Rminus ctx g y)
+              (ExactSpec.Rminus ctx f y) := by
+            change ctx.spec.lt (ctx.spec.add g (ctx.spec.neg y))
+              (ctx.spec.add f (ctx.spec.neg y))
+            exact CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.Rplus_lt_compat_r
+              ctx (ctx.spec.neg y) g f hgf'
+          exact CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.Ropp_lt_contravar
+            ctx (ExactSpec.Rminus ctx f y) (ExactSpec.Rminus ctx g y) hdiff
+        exact False.elim
+          (((ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp hlt).2 hgyf)
+      · have hyf : ctx.spec.lt y f := by
+          have hyfle : ctx.spec.le y f := by
+            rcases ctx.certificate.total_order y f with h | h
+            · rcases h with hlt | heq
+              · exact (ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp hlt |>.1
+              · rw [heq]
+                exact ctx.certificate.orderedField.le_refl _
+            · exact False.elim
+                (hfy ((ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp h).1)
+          exact (ctx.certificate.orderedField.lt_iff_le_not_le _ _).mpr
+            ⟨hyfle, hfy⟩
+        have hxf' : ctx.spec.lt x f :=
+          ctx.certificate.orderedField.lt_trans x y f Hxy hyf
+        have hgx0 : ctx.spec.le
+            (ExactSpec.Rminus ctx g x) ctx.spec.zero :=
+          pg_sub_nonpos_of_le ctx g x
+            ((ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp hgx).1
+        have hfx0 : ctx.spec.le ctx.spec.zero
+            (ExactSpec.Rminus ctx f x) :=
+          CompCert4Lean.Flocq.Core.Raux.Rle_0_minus ctx x f
+            ((ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp hxf').1
+        have hgy0 : ctx.spec.le
+            (ExactSpec.Rminus ctx g y) ctx.spec.zero :=
+          pg_sub_nonpos_of_le ctx g y
+            ((ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp hgy).1
+        have hfy0 : ctx.spec.le ctx.spec.zero
+            (ExactSpec.Rminus ctx f y) :=
+          CompCert4Lean.Flocq.Core.Raux.Rle_0_minus ctx y f
+            ((ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp hyf).1
+        have habsfx : ctx.spec.abs (ExactSpec.Rminus ctx f x) =
+            ExactSpec.Rminus ctx f x := by
+          change ctx.spec.abs (ExactSpec.Rminus ctx f x) = _
+          exact pg_abs_self_of_nonneg ctx _ hfx0
+        have habsgx : ctx.spec.abs (ExactSpec.Rminus ctx g x) =
+            ctx.spec.neg (ExactSpec.Rminus ctx g x) := by
+          change ctx.spec.abs (ExactSpec.Rminus ctx g x) = _
+          exact pg_abs_neg_of_le ctx _ hgx0
+        have habsgy : ctx.spec.abs (ExactSpec.Rminus ctx g y) =
+            ctx.spec.neg (ExactSpec.Rminus ctx g y) := by
+          change ctx.spec.abs (ExactSpec.Rminus ctx g y) = _
+          exact pg_abs_neg_of_le ctx _ hgy0
+        have habsfy : ctx.spec.abs (ExactSpec.Rminus ctx f y) =
+            ExactSpec.Rminus ctx f y := by
+          change ctx.spec.abs (ExactSpec.Rminus ctx f y) = _
+          exact pg_abs_self_of_nonneg ctx _ hfy0
+        have hA := Hxf g Hg
+        have hB := Hyg f Hf
+        change ctx.spec.le (ctx.spec.abs (ExactSpec.Rminus ctx f x))
+          (ctx.spec.abs (ExactSpec.Rminus ctx g x)) at hA
+        change ctx.spec.le (ctx.spec.abs (ExactSpec.Rminus ctx g y))
+          (ctx.spec.abs (ExactSpec.Rminus ctx f y)) at hB
+        rw [habsfx, habsgx, pg_neg_minus ctx g x] at hA
+        rw [habsgy, pg_neg_minus ctx g y, habsfy] at hB
+        have hxyg : ctx.spec.lt (ExactSpec.Rminus ctx x g)
+            (ExactSpec.Rminus ctx y g) := by
+          change ctx.spec.lt (ctx.spec.add x (ctx.spec.neg g))
+            (ctx.spec.add y (ctx.spec.neg g))
+          exact CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.Rplus_lt_compat_r
+            ctx (ctx.spec.neg g) x y Hxy
+        have hfyfx : ctx.spec.lt (ExactSpec.Rminus ctx f y)
+            (ExactSpec.Rminus ctx f x) := by
+          have hn : ctx.spec.lt (ctx.spec.neg y) (ctx.spec.neg x) :=
+            CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.Ropp_lt_contravar
+              ctx y x Hxy
+          change ctx.spec.lt (ctx.spec.add f (ctx.spec.neg y))
+            (ctx.spec.add f (ctx.spec.neg x))
+          exact ctx.certificate.orderedField.add_lt_compat_l
+            f (ctx.spec.neg y) (ctx.spec.neg x) hn
+        have hsum : ctx.spec.le
+            (ctx.spec.add (ExactSpec.Rminus ctx f x)
+              (ExactSpec.Rminus ctx y g))
+            (ctx.spec.add (ExactSpec.Rminus ctx x g)
+              (ExactSpec.Rminus ctx f y)) := by
+          exact CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.Rplus_le_compat
+            ctx (ExactSpec.Rminus ctx f x) (ExactSpec.Rminus ctx x g)
+              (ExactSpec.Rminus ctx y g) (ExactSpec.Rminus ctx f y) hA hB
+        have hsumlt : ctx.spec.lt
+            (ctx.spec.add (ExactSpec.Rminus ctx x g)
+              (ExactSpec.Rminus ctx f y))
+            (ctx.spec.add (ExactSpec.Rminus ctx f x)
+              (ExactSpec.Rminus ctx y g)) := by
+          have ht := CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.Rplus_lt_compat
+            ctx (ExactSpec.Rminus ctx x g) (ExactSpec.Rminus ctx y g)
+              (ExactSpec.Rminus ctx f y) (ExactSpec.Rminus ctx f x) hxyg hfyfx
+          change ctx.spec.lt
+            (ctx.spec.add (ExactSpec.Rminus ctx x g)
+              (ExactSpec.Rminus ctx f y))
+            (ctx.spec.add (ExactSpec.Rminus ctx y g)
+              (ExactSpec.Rminus ctx f x)) at ht
+          rw [ctx.certificate.orderedField.add_comm
+            (ExactSpec.Rminus ctx y g) (ExactSpec.Rminus ctx f x)] at ht
+          exact ht
+        exact False.elim
+          (((ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp hsumlt).2 hsum)
+
+
+end CompCert4Lean.Flocq.Core.Round_pred

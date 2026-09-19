@@ -2662,3 +2662,11 @@ theorem eval_divlu
                     | Vptr b ofs => simp [Val.divlu] at hz
 
 end CompCert4Lean.Backend.SelectDivproof
+
+namespace CompCert4Lean.Backend.SelectDivproof
+
+/-- Kernel-checked evidence for the positive division multiplication theorem. -/
+theorem Zdiv_mul_pos : Zdiv_mul_posStatement := by
+  exact zdiv_mul_pos_local
+
+end CompCert4Lean.Backend.SelectDivproof

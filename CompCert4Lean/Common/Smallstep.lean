@@ -3384,3 +3384,13 @@ theorem factor_backward_simulation : factor_backward_simulationStatement := by
         simpa [atomic] using props.bsim_public_preserved id
 
 end CompCert4Lean.Common.Smallstep
+
+namespace CompCert4Lean.Common.Smallstep
+
+theorem bb_match_at : bb_match_atStatement := by
+  intro L1 L2 L3 index match_states index' match_states' i1 i2 s1 s3 s2
+    hmatch1 hmatch2
+  exact bb_match_later L1 L2 L3 match_states match_states' i1 i2 s1 s3
+    hmatch1 (star_refl _ _ s2) hmatch2
+
+end CompCert4Lean.Common.Smallstep

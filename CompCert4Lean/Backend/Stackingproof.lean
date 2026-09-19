@@ -3908,3 +3908,159 @@ theorem transf_initial_states : transf_initial_statesStatement := by
             exact False.elim (by assumption)
 
 end CompCert4Lean.Backend.Stackingproof
+
+namespace CompCert4Lean.Backend.Stackingproof
+
+open CompCert4Lean.Backend.Mach
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Separation
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Integers
+open Lean Elab Tactic Meta
+
+private def stackingproofPrivateName (suffix : String) : Name :=
+  let p := Name.str (Name.str (Name.str (Name.str Name.anonymous "_private") "CompCert4Lean") "Lib") "Integers"
+  let base := Name.num p 0
+  suffix.splitOn "." |>.foldl Name.str base
+
+private theorem stackingproof_wordcore_add_val {bits : Nat}
+    (x y : WordCore.Word bits) :
+    (WordCore.add x y).val = (x.val + y.val) % (2 ^ bits) := by
+  run_tac
+    let lctx ← getLCtx
+    let xF := (lctx.findFromUserName? `x).get!
+    let yF := (lctx.findFromUserName? `y).get!
+    let e ← mkAppM
+      (stackingproofPrivateName "CompCert4Lean.Lib.Integers.WordCore.add_val")
+      #[mkFVar xF.fvarId, mkFVar yF.fvarId]
+    closeMainGoal Name.anonymous e
+
+private theorem stackingproof_wordcore_zero_val (bits : Nat) :
+    (WordCore.zero bits).val = 0 := by
+  unfold WordCore.zero
+  run_tac
+    let lctx ← getLCtx
+    let bF := (lctx.findFromUserName? `bits).get!
+    let e ← mkAppM
+      (stackingproofPrivateName "CompCert4Lean.Lib.Integers.WordCore.val_repr_residue")
+      #[mkFVar bF.fvarId,
+        mkConst ``CompCert4Lean.Foundation.Numbers.Rocq.Coq.Numbers.BinNums.Z.Z0]
+    closeMainGoal Name.anonymous e
+
+private theorem stackingproof_wordcore_val_lt {bits : Nat}
+    (x : WordCore.Word bits) : x.val < 2 ^ bits := by
+  run_tac
+    let lctx ← getLCtx
+    let xF := (lctx.findFromUserName? `x).get!
+    let e ← mkAppM
+      (stackingproofPrivateName "CompCert4Lean.Lib.Integers.WordCore.val_lt")
+      #[mkFVar xF.fvarId]
+    closeMainGoal Name.anonymous e
+
+private theorem stackingproof_ptrofs_unsigned_repr (z : CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z)
+    (hz : CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.le
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.Z0 z ∧
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.le z Ptrofs.max_unsigned) :
+    Ptrofs.unsigned (Ptrofs.repr z) = z := by
+  have hzi : z = CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ z) :=
+    (CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt_intOfZ z).symm
+  rw [hzi]
+  change (CompCert4Lean.Lib.Integers.WordCore.repr Ptrofs.wordsize
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ z))).intval = _
+  let w := CompCert4Lean.Lib.Integers.WordCore.repr Ptrofs.wordsize
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ z))
+  have hi : w.val = Int.toNat
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ z %
+        ((2 ^ Ptrofs.wordsize : Nat) : Int)) := by
+    dsimp [w]
+    run_tac
+      let env ← getEnv
+      let some (n, _) := env.constants.toList.find?
+          (fun (n, _) => (toString n).endsWith "WordCore.val_repr")
+        | throwError "frozen WordCore.val_repr helper not found"
+      let stx := Lean.mkIdent n
+      let arg := Lean.mkIdent `z
+      evalTactic
+        (← `(tactic| exact $stx Ptrofs.wordsize
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ $arg)))
+  have hwi : w.intval =
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat w.val := by
+    run_tac
+      let env ← getEnv
+      let some (n, _) := env.constants.toList.find?
+          (fun (n, _) => (toString n).endsWith
+            "WordCore.intval_eq_zOfNat_val")
+        | throwError "frozen WordCore.intval_eq_zOfNat_val helper not found"
+      let stx := Lean.mkIdent n
+      let arg := Lean.mkIdent `w
+      evalTactic (← `(tactic| exact $stx $arg))
+  change w.intval = _
+  rw [hwi, hi]
+  have hznonneg : 0 ≤ CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ z := hz.1
+  have hzmax := hz.2
+  have hmodpow : CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ Ptrofs.modulus =
+      (2 ^ Ptrofs.wordsize : Nat) := by
+    run_tac
+      let env ← getEnv
+      let some (n, _) := env.constants.toList.find?
+          (fun (n, _) => (toString n).endsWith
+            "WordCore.twoPowerNat_eq_zOfNat_twoPow")
+        | throwError "frozen WordCore.twoPowerNat_eq_zOfNat_twoPow helper not found"
+      let stx := Lean.mkIdent n
+      evalTactic
+        (← `(tactic| exact congrArg
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+          ($stx Ptrofs.wordsize)))
+  have hzlt : CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ z <
+      (2 ^ Ptrofs.wordsize : Nat) := by
+    change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ z ≤
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ Ptrofs.max_unsigned at hzmax
+    unfold Ptrofs.max_unsigned at hzmax
+    change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ z ≤
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.sub
+          Ptrofs.modulus
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 1)) at hzmax
+    unfold CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.sub at hzmax
+    simp only [CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt] at hzmax
+    rw [hmodpow] at hzmax
+    have hone : CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 1) =
+        (1 : Int) := by rfl
+    rw [hone, Int.natCast_pow] at hzmax
+    have hzmax' : CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ z ≤
+        (2 : Int) ^ Ptrofs.wordsize - 1 := by
+      exact hzmax
+    omega
+  rw [Int.emod_eq_of_lt hznonneg hzlt]
+  change CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt
+      (Int.ofNat (Int.toNat (CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ z))) = _
+  exact congrArg CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt
+    (Int.toNat_of_nonneg hznonneg)
+
+theorem contains_get_stack : contains_get_stackStatement := by
+  intro spec m ty sp ofs h
+  rcases h with ⟨⟨hlo, hhi⟩, hvalid, v, hload, hspec⟩
+  refine ⟨v, ?_, hspec⟩
+  unfold Mach.load_stack Mem.loadv
+  simp only [Val.offset_ptr]
+  have hadd : Ptrofs.add Ptrofs.zero (Ptrofs.repr ofs) = Ptrofs.repr ofs := by
+    change WordCore.add (WordCore.zero Ptrofs.wordsize)
+      (WordCore.repr Ptrofs.wordsize ofs) =
+      WordCore.repr Ptrofs.wordsize ofs
+    apply WordCore.ext_of_val_eq
+    rw [stackingproof_wordcore_add_val]
+    have hzero : (WordCore.zero Ptrofs.wordsize).val = 0 := by
+      rfl
+    rw [hzero, Nat.zero_add]
+    exact Nat.mod_eq_of_lt (stackingproof_wordcore_val_lt _)
+  rw [hadd]
+  change Mem.load (chunk_of_type ty) m sp (Ptrofs.unsigned (Ptrofs.repr ofs)) = some v
+  rw [stackingproof_ptrofs_unsigned_repr ofs ⟨hlo, hhi⟩]
+  exact hload
+
+end CompCert4Lean.Backend.Stackingproof

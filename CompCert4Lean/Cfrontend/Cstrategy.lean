@@ -2808,3 +2808,260 @@ theorem assign_loc_receptive : assign_loc_receptiveStatement := by
         _ _ _ _ _ _ _ _ hstore hm
 
 end CompCert4Lean.Cfrontend.Cstrategy
+
+namespace CompCert4Lean.Cfrontend.Cstrategy
+open CompCert4Lean.Cfrontend.Csem
+open CompCert4Lean.Cfrontend.Csyntax
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.Cfrontend.Csyntax
+open CompCert4Lean.Common.Events
+
+set_option maxHeartbeats 2000000 in
+theorem invert_expr_context
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    invert_expr_contextStatement := by
+  unfold invert_expr_contextStatement
+  intro xi ge e
+  constructor
+  · intro fromKind to C hcontext
+    exact Csem.context.rec
+      (motive_1 := fun k C _ =>
+        ∀ a m, invert_expr_prop xi ge e a m → invert_expr_prop xi ge e (C a) m)
+      (motive_2 := fun C _ =>
+        ∀ a m, invert_expr_prop xi ge e a m → ¬ exprlist_all_values (C a))
+      (by intros; assumption)
+      (by
+        intro C ty hctx ih a m h
+        have hi := ih a m h
+        cases hca : C a <;> simp only [invert_expr_prop, hca] at hi ⊢ <;>
+          try contradiction <;> try assumption)
+      (by
+        intro C f ty hctx ih a m h
+        have hi := ih a m h
+        cases hca : C a <;> simp only [invert_expr_prop, hca] at hi ⊢ <;>
+          try contradiction <;> try assumption)
+      (by
+        intro C ty hctx ih a m h
+        have hi := ih a m h
+        cases hca : C a <;> simp only [invert_expr_prop, hca] at hi ⊢)
+      (by
+        intro C ty hctx ih a m h
+        have hi := ih a m h
+        cases hca : C a <;> simp only [invert_expr_prop, hca] at hi ⊢)
+      (by
+        intro C op ty hctx ih a m h
+        have hi := ih a m h
+        cases hca : C a <;> simp only [invert_expr_prop, hca] at hi ⊢)
+      (by
+        intro C op e2 ty hctx ih a m h
+        have hi := ih a m h
+        cases hca : C a <;> simp only [invert_expr_prop, hca] at hi ⊢)
+      (by
+        intro C op e1 ty hctx ih a m h
+        have hi := ih a m h
+        cases hca : C a <;> simp only [invert_expr_prop, hca] at hi ⊢)
+      (by
+        intro C ty hctx ih a m h
+        have hi := ih a m h
+        cases hca : C a <;> simp only [invert_expr_prop, hca] at hi ⊢)
+      (by
+        intro C r2 ty hctx ih a m h
+        have hi := ih a m h
+        cases hca : C a <;> simp only [invert_expr_prop, hca] at hi ⊢)
+      (by
+        intro C r2 ty hctx ih a m h
+        have hi := ih a m h
+        cases hca : C a <;> simp only [invert_expr_prop, hca] at hi ⊢)
+      (by
+        intro C r2 r3 ty hctx ih a m h
+        have hi := ih a m h
+        cases hca : C a <;> simp only [invert_expr_prop, hca] at hi ⊢)
+      (by
+        intro C e2 ty hctx ih a m h
+        have hi := ih a m h
+        cases hca : C a <;> simp only [invert_expr_prop, hca] at hi ⊢)
+      (by
+        intro C e1 ty hctx ih a m h
+        have hi := ih a m h
+        cases hca : C a <;> simp only [invert_expr_prop, hca] at hi ⊢)
+      (by
+        intro C op e2 tyres ty hctx ih a m h
+        have hi := ih a m h
+        cases hca : C a <;> simp only [invert_expr_prop, hca] at hi ⊢)
+      (by
+        intro C op e1 tyres ty hctx ih a m h
+        have hi := ih a m h
+        cases hca : C a <;> simp only [invert_expr_prop, hca] at hi ⊢)
+      (by
+        intro C id ty hctx ih a m h
+        have hi := ih a m h
+        cases hca : C a <;> simp only [invert_expr_prop, hca] at hi ⊢)
+      (by
+        intro C el ty hctx ih a m h
+        have hi := ih a m h
+        cases hca : C a <;> simp only [invert_expr_prop, hca] at hi ⊢)
+      (by
+        intro C e1 ty hctx ih a m h
+        have hi := ih a m h
+        cases he1 : e1 <;> simp only [invert_expr_prop, he1] at hi ⊢ <;>
+          try contradiction <;> try assumption <;> try trivial
+        case Eval =>
+          intro hall
+          exact (hi hall).elim)
+      (by
+        intro C ef tyargs ty hctx ih a m h
+        have hi := ih a m h
+        intro hall
+        exact (hi hall).elim)
+      (by
+        intro C e2 ty hctx ih a m h
+        have hi := ih a m h
+        cases hca : C a <;> simp [invert_expr_prop, hca] at hi ⊢)
+      (by
+        intro C tycast ty hctx ih a m h
+        have hi := ih a m h
+        cases hca : C a <;> simp [invert_expr_prop, hca] at hi ⊢)
+      (by
+        intro C el hctx ih a m h
+        have hi := ih a m h
+        intro hall
+        cases hca : C a <;> simp only [exprlist_all_values, invert_expr_prop, hca] at hall hi ⊢ <;>
+          contradiction)
+      (by
+        intro C e1 hctx ih a m h
+        have hi := ih a m h
+        intro hall
+        cases he1 : e1 <;> simp only [exprlist_all_values, he1] at hall ⊢
+        exact hi hall)
+      hcontext
+  · intro fromKind C hcontext
+    exact Csem.contextlist.rec
+      (motive_1 := fun k C _ =>
+        ∀ a m, invert_expr_prop xi ge e a m → invert_expr_prop xi ge e (C a) m)
+      (motive_2 := fun C _ =>
+        ∀ a m, invert_expr_prop xi ge e a m → ¬ exprlist_all_values (C a))
+      (by intros; assumption)
+      (by
+        intro C ty hctx ih a m h
+        have hi := ih a m h
+        cases hca : C a <;> simp only [invert_expr_prop, hca] at hi ⊢ <;>
+          try contradiction <;> try assumption)
+      (by
+        intro C f ty hctx ih a m h
+        have hi := ih a m h
+        cases hca : C a <;> simp only [invert_expr_prop, hca] at hi ⊢ <;>
+          try contradiction <;> try assumption)
+      (by
+        intro C ty hctx ih a m h
+        have hi := ih a m h
+        cases hca : C a <;> simp only [invert_expr_prop, hca] at hi ⊢ <;>
+          try contradiction <;> try assumption)
+      (by
+        intro C ty hctx ih a m h
+        have hi := ih a m h
+        cases hca : C a <;> simp only [invert_expr_prop, hca] at hi ⊢ <;>
+          try contradiction <;> try assumption)
+      (by
+        intro C op ty hctx ih a m h
+        have hi := ih a m h
+        cases hca : C a <;> simp only [invert_expr_prop, hca] at hi ⊢ <;>
+          try contradiction <;> try assumption)
+      (by
+        intro C op e2 ty hctx ih a m h
+        have hi := ih a m h
+        cases hca : C a <;> simp only [invert_expr_prop, hca] at hi ⊢ <;>
+          try contradiction <;> try assumption)
+      (by
+        intro C op e1 ty hctx ih a m h
+        have hi := ih a m h
+        cases hca : C a <;> simp only [invert_expr_prop, hca] at hi ⊢ <;>
+          try contradiction <;> try assumption)
+      (by
+        intro C ty hctx ih a m h
+        have hi := ih a m h
+        cases hca : C a <;> simp only [invert_expr_prop, hca] at hi ⊢ <;>
+          try contradiction <;> try assumption)
+      (by
+        intro C r2 ty hctx ih a m h
+        have hi := ih a m h
+        cases hca : C a <;> simp only [invert_expr_prop, hca] at hi ⊢ <;>
+          try contradiction <;> try assumption)
+      (by
+        intro C r2 ty hctx ih a m h
+        have hi := ih a m h
+        cases hca : C a <;> simp only [invert_expr_prop, hca] at hi ⊢ <;>
+          try contradiction <;> try assumption)
+      (by
+        intro C r2 r3 ty hctx ih a m h
+        have hi := ih a m h
+        cases hca : C a <;> simp only [invert_expr_prop, hca] at hi ⊢ <;>
+          try contradiction <;> try assumption)
+      (by
+        intro C e2 ty hctx ih a m h
+        have hi := ih a m h
+        cases hca : C a <;> simp only [invert_expr_prop, hca] at hi ⊢ <;>
+          try contradiction <;> try assumption)
+      (by
+        intro C e1 ty hctx ih a m h
+        have hi := ih a m h
+        cases hca : C a <;> simp only [invert_expr_prop, hca] at hi ⊢ <;>
+          try contradiction <;> try assumption)
+      (by
+        intro C op e2 tyres ty hctx ih a m h
+        have hi := ih a m h
+        cases hca : C a <;> simp only [invert_expr_prop, hca] at hi ⊢ <;>
+          try contradiction <;> try assumption)
+      (by
+        intro C op e1 tyres ty hctx ih a m h
+        have hi := ih a m h
+        cases hca : C a <;> simp only [invert_expr_prop, hca] at hi ⊢ <;>
+          try contradiction <;> try assumption)
+      (by
+        intro C id ty hctx ih a m h
+        have hi := ih a m h
+        cases hca : C a <;> simp only [invert_expr_prop, hca] at hi ⊢ <;>
+          try contradiction <;> try assumption)
+      (by
+        intro C el ty hctx ih a m h
+        have hi := ih a m h
+        cases hca : C a <;> simp only [invert_expr_prop, hca] at hi ⊢ <;>
+          try contradiction <;> try assumption)
+      (by
+        intro C e1 ty hctx ih a m h
+        have hi := ih a m h
+        cases he1 : e1 <;> simp only [invert_expr_prop, he1] at hi ⊢ <;>
+          try contradiction <;> try assumption <;> try trivial
+        case Eval =>
+          intro hall
+          exact (hi hall).elim)
+      (by
+        intro C ef tyargs ty hctx ih a m h
+        have hi := ih a m h
+        intro hall
+        exact (hi hall).elim)
+      (by
+        intro C e2 ty hctx ih a m h
+        have hi := ih a m h
+        cases hca : C a <;> simp only [invert_expr_prop, hca] at hi ⊢ <;>
+          try contradiction <;> try assumption)
+      (by
+        intro C tycast ty hctx ih a m h
+        have hi := ih a m h
+        cases hca : C a <;> simp only [invert_expr_prop, hca] at hi ⊢ <;>
+          try contradiction <;> try assumption)
+      (by
+        intro C el hctx ih a m h hall
+        have hi := ih a m h
+        cases hca : C a <;> simp only [exprlist_all_values, invert_expr_prop, hca] at hall hi ⊢ <;>
+          try contradiction)
+      (by
+        intro C e1 hctx ih a m h
+        have hi := ih a m h
+        intro hall
+        cases he1 : e1 <;> simp only [exprlist_all_values, he1] at hall ⊢
+        exact hi hall)
+      hcontext
+
+end CompCert4Lean.Cfrontend.Cstrategy

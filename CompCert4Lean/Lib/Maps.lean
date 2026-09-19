@@ -3748,3 +3748,239 @@ theorem of_list_dom_proof : of_list_dom := by
 end PTree_Properties
 
 end CompCert4Lean.Lib.Maps
+namespace CompCert4Lean.Lib.Maps
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+namespace PTree
+
+private theorem test_ext_tree'_proof {A : Type} :
+    ∀ (m1 m2 : tree' A), (∀ i, get' i m1 = get' i m2) → m1 = m2 := by
+  intro m1
+  induction m1 with
+  | Node001 r ih =>
+      intro m2 h
+      cases m2 with
+      | Node001 r2 =>
+          have hr : r = r2 := ih r2 (by intro i; exact h (.xI i))
+          cases hr
+          rfl
+      | Node010 x => have hh := h .xH; simp [get'] at hh
+      | Node011 x r2 => have hh := h .xH; simp [get'] at hh
+      | Node100 l =>
+          rcases tree'_not_empty l with ⟨i, hi⟩
+          have hh := h (.xO i); simp [get'] at hh
+          exfalso
+          exact hi hh.symm
+      | Node101 l r2 =>
+          rcases tree'_not_empty l with ⟨i, hi⟩
+          have hh := h (.xO i); simp [get'] at hh
+          exfalso
+          exact hi hh.symm
+      | Node110 l x => have hh := h .xH; simp [get'] at hh
+      | Node111 l x r2 => have hh := h .xH; simp [get'] at hh
+  | Node010 x =>
+      intro m2 h
+      cases m2 with
+      | Node001 r => have hh := h .xH; simp [get'] at hh
+      | Node010 y =>
+          have hh := h .xH; simp [get'] at hh
+          have hxy : x = y := hh
+          cases hxy; rfl
+      | Node011 y r =>
+          have hh := h .xH; simp [get'] at hh
+          have hxy : x = y := hh
+          rcases tree'_not_empty r with ⟨i, hi⟩
+          have hx := h (.xI i); simp [get'] at hx
+          exfalso
+          exact hi hx.symm
+      | Node100 l => have hh := h .xH; simp [get'] at hh
+      | Node101 l r => have hh := h .xH; simp [get'] at hh
+      | Node110 l y =>
+          have hh := h .xH; simp [get'] at hh
+          have hxy : x = y := hh
+          rcases tree'_not_empty l with ⟨i, hi⟩
+          have hx := h (.xO i); simp [get'] at hx
+          exfalso
+          exact hi hx.symm
+      | Node111 l y r =>
+          have hh := h .xH; simp [get'] at hh
+          have hxy : x = y := hh
+          rcases tree'_not_empty l with ⟨i, hi⟩
+          have hx := h (.xO i); simp [get'] at hx
+          exfalso
+          exact hi hx.symm
+  | Node011 x r ih =>
+      intro m2 h
+      cases m2 with
+      | Node001 r2 => have hh := h .xH; simp [get'] at hh
+      | Node010 y =>
+          have hh := h .xH; simp [get'] at hh
+          have hxy : x = y := hh
+          rcases tree'_not_empty r with ⟨i, hi⟩
+          have hx := h (.xI i); simp [get'] at hx
+          exfalso
+          exact hi hx
+      | Node011 y r2 =>
+          have hh := h .xH; simp [get'] at hh
+          have hxy : x = y := hh
+          have hr : r = r2 := ih r2 (by intro i; exact h (.xI i))
+          cases hxy; cases hr; rfl
+      | Node100 l => have hh := h .xH; simp [get'] at hh
+      | Node101 l r2 => have hh := h .xH; simp [get'] at hh
+      | Node110 l y =>
+          have hh := h .xH; simp [get'] at hh
+          have hxy : x = y := hh
+          rcases tree'_not_empty l with ⟨i, hi⟩
+          have hx := h (.xO i); simp [get'] at hx
+          exfalso
+          exact hi hx.symm
+      | Node111 l y r2 =>
+          have hh := h .xH; simp [get'] at hh
+          have hxy : x = y := hh
+          rcases tree'_not_empty l with ⟨i, hi⟩
+          have hx := h (.xO i); simp [get'] at hx
+          exfalso
+          exact hi hx.symm
+  | Node100 l ih =>
+      intro m2 h
+      cases m2 with
+      | Node001 r =>
+          rcases tree'_not_empty l with ⟨i, hi⟩
+          have hh := h (.xO i); simp [get'] at hh
+          exfalso
+          exact hi hh
+      | Node010 x => have hh := h .xH; simp [get'] at hh
+      | Node011 x r => have hh := h .xH; simp [get'] at hh
+      | Node100 l2 =>
+          have hl : l = l2 := ih l2 (by intro i; exact h (.xO i))
+          cases hl; rfl
+      | Node101 l2 r =>
+          have hl : l = l2 := ih l2 (by intro i; exact h (.xO i))
+          rcases tree'_not_empty r with ⟨i, hi⟩
+          have hh := h (.xI i); simp [get'] at hh
+          exfalso
+          exact hi hh.symm
+      | Node110 l2 x => have hh := h .xH; simp [get'] at hh
+      | Node111 l2 x r => have hh := h .xH; simp [get'] at hh
+  | Node101 l r ihl ihr =>
+      intro m2 h
+      cases m2 with
+      | Node001 r2 =>
+          rcases tree'_not_empty l with ⟨i, hi⟩
+          have hh := h (.xO i); simp [get'] at hh
+          exfalso
+          exact hi hh
+      | Node010 x => have hh := h .xH; simp [get'] at hh
+      | Node011 x r2 => have hh := h .xH; simp [get'] at hh
+      | Node100 l2 =>
+          have hl : l = l2 := ihl l2 (by intro i; exact h (.xO i))
+          rcases tree'_not_empty r with ⟨i, hi⟩
+          have hh := h (.xI i); simp [get'] at hh
+          exfalso
+          exact hi hh
+      | Node101 l2 r2 =>
+          have hl : l = l2 := ihl l2 (by intro i; exact h (.xO i))
+          have hr : r = r2 := ihr r2 (by intro i; exact h (.xI i))
+          cases hl; cases hr; rfl
+      | Node110 l2 x => have hh := h .xH; simp [get'] at hh
+      | Node111 l2 x r2 => have hh := h .xH; simp [get'] at hh
+  | Node110 l x ih =>
+      intro m2 h
+      cases m2 with
+      | Node001 r => have hh := h .xH; simp [get'] at hh
+      | Node010 y =>
+          have hh := h .xH; simp [get'] at hh
+          have hxy : x = y := hh
+          rcases tree'_not_empty l with ⟨i, hi⟩
+          have hx := h (.xO i); simp [get'] at hx
+          exfalso
+          exact hi hx
+      | Node011 y r =>
+          have hh := h .xH; simp [get'] at hh
+          have hxy : x = y := hh
+          rcases tree'_not_empty l with ⟨i, hi⟩
+          have hx := h (.xO i); simp [get'] at hx
+          exfalso
+          exact hi hx
+      | Node100 l2 => have hh := h .xH; simp [get'] at hh
+      | Node101 l2 r => have hh := h .xH; simp [get'] at hh
+      | Node110 l2 y =>
+          have hh := h .xH; simp [get'] at hh
+          have hxy : x = y := hh
+          have hl : l = l2 := ih l2 (by intro i; exact h (.xO i))
+          cases hxy; cases hl; rfl
+      | Node111 l2 y r =>
+          have hh := h .xH; simp [get'] at hh
+          have hxy : x = y := hh
+          have hl : l = l2 := ih l2 (by intro i; exact h (.xO i))
+          rcases tree'_not_empty r with ⟨i, hi⟩
+          have hx := h (.xI i); simp [get'] at hx
+          exfalso
+          exact hi hx.symm
+  | Node111 l x r ihl ihr =>
+      intro m2 h
+      cases m2 with
+      | Node001 r2 => have hh := h .xH; simp [get'] at hh
+      | Node010 y =>
+          have hh := h .xH; simp [get'] at hh
+          have hxy : x = y := hh
+          rcases tree'_not_empty l with ⟨i, hi⟩
+          have hx := h (.xO i); simp [get'] at hx
+          exfalso
+          exact hi hx
+      | Node011 y r2 =>
+          have hh := h .xH; simp [get'] at hh
+          have hxy : x = y := hh
+          rcases tree'_not_empty l with ⟨i, hi⟩
+          have hx := h (.xO i); simp [get'] at hx
+          exfalso
+          exact hi hx
+      | Node100 l2 => have hh := h .xH; simp [get'] at hh
+      | Node101 l2 r2 => have hh := h .xH; simp [get'] at hh
+      | Node110 l2 y =>
+          have hh := h .xH; simp [get'] at hh
+          have hxy : x = y := hh
+          have hl : l = l2 := ihl l2 (by intro i; exact h (.xO i))
+          rcases tree'_not_empty r with ⟨i, hi⟩
+          have hx := h (.xI i); simp [get'] at hx
+          exfalso
+          exact hi hx
+      | Node111 l2 y r2 =>
+          have hh := h .xH; simp [get'] at hh
+          have hxy : x = y := hh
+          have hl : l = l2 := ihl l2 (by intro i; exact h (.xO i))
+          have hr : r = r2 := ihr r2 (by intro i; exact h (.xI i))
+          cases hxy; cases hl; cases hr; rfl
+
+private theorem test_ext_tree_proof {A : Type} (m1 m2 : tree A) :
+    (∀ i, get i m1 = get i m2) → m1 = m2 := by
+  cases m1 with
+  | Empty =>
+      cases m2 with
+      | Empty => intro h; rfl
+      | Nodes m2 =>
+          intro h
+          rcases tree'_not_empty m2 with ⟨i, hi⟩
+          have hh := h i
+          simp [get] at hh
+          exact False.elim (hi hh.symm)
+  | Nodes m1 =>
+      cases m2 with
+      | Empty =>
+          intro h
+          rcases tree'_not_empty m1 with ⟨i, hi⟩
+          have hh := h i
+          simp [get] at hh
+          exact False.elim (hi hh)
+      | Nodes m2 =>
+          intro h
+          congr
+          apply test_ext_tree'_proof
+          intro i
+          exact h i
+
+theorem extensionality : extensionalityStatement := by
+  intro A m1 m2 h
+  exact test_ext_tree_proof m1 m2 h
+
+end PTree
+end CompCert4Lean.Lib.Maps

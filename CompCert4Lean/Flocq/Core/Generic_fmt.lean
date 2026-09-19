@@ -4581,3 +4581,12 @@ theorem generic_inclusion_le :
         ctx magnitude beta x e2 hx hlt)
 
 end CompCert4Lean.Flocq.Core.Generic_fmt
+
+namespace CompCert4Lean.Flocq.Core.Generic_fmt
+
+theorem generic_format_bpow :
+    ∀ ctx magnitude, generic_format_bpowStatement ctx magnitude := by
+  intro ctx magnitude beta fexp e h
+  exact pg_2878_generic_format_bpow ctx magnitude beta fexp e h
+
+end CompCert4Lean.Flocq.Core.Generic_fmt

@@ -146,3 +146,35 @@ theorem builtin_function_sem_inject
       exact ⟨vres', rfl, by simpa [val_opt_inject] using hopt⟩
 
 end CompCert4Lean.Common.Builtins
+
+namespace CompCert4Lean.Common.Builtins
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.Values
+
+theorem builtin_function_sem_lessdef
+    [binary64_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)] :
+    builtin_function_sem_lessdefStatement := by
+  intro b vargs vres vargs' hsem hless
+  have lessdef_list_to_inject : ∀ (vl1 vl2 : List val),
+      Val.lessdef_list vl1 vl2 → Val.inject_list inject_id vl1 vl2 := by
+    intro vl1 vl2 h
+    induction h with
+    | lessdef_list_nil => exact Val.inject_list_nil _
+    | lessdef_list_cons v1 v2 vl1 vl2 hhead htail ih =>
+        exact Val.inject_list_cons inject_id v1 v2 vl1 vl2
+          ((val_inject_id v1 v2).mpr hhead) ih
+  have hinj : Val.inject_list inject_id vargs vargs' :=
+    lessdef_list_to_inject vargs vargs' hless
+  obtain ⟨vres', hsem', hinj'⟩ := builtin_function_sem_inject
+    (binary64_certificate := binary64_certificate)
+    (binary32_certificate := binary32_certificate)
+    b vargs vres inject_id vargs' hsem hinj
+  exact ⟨vres', hsem', (val_inject_id vres vres').mp hinj'⟩
+
+end CompCert4Lean.Common.Builtins

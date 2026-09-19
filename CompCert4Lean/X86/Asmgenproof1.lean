@@ -2196,3 +2196,131 @@ theorem mk_sel_correct
       cases hmk
 
 end CompCert4Lean.X86.Asmgenproof1
+
+
+namespace CompCert4Lean.X86.Asmgenproof1
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Integers
+
+theorem divs_mods_exists : divs_mods_existsStatement := by
+  intro v1 v2 h
+  cases v1 <;> cases v2 <;>
+    simp only [CompCert4Lean.Common.Values.Val.divs,
+      CompCert4Lean.Common.Values.Val.mods] at h ⊢
+  all_goals try { simp at h }
+  case Vint.Vint n d =>
+    have hd : d ≠ CompCert4Lean.Lib.Integers.Int.zero := by
+      intro hd
+      subst d
+      simp [CompCert4Lean.Lib.Integers.Int.eq,
+        CompCert4Lean.Lib.Integers.WordCore.eq] at h
+    have hcond : n ≠ CompCert4Lean.Lib.Integers.Int.repr
+          CompCert4Lean.Lib.Integers.Int.min_signed ∨
+        d ≠ CompCert4Lean.Lib.Integers.Int.mone := by
+      by_cases hn : n = CompCert4Lean.Lib.Integers.Int.repr
+          CompCert4Lean.Lib.Integers.Int.min_signed
+      · right
+        intro hdm
+        subst n
+        subst d
+        simp [CompCert4Lean.Lib.Integers.Int.eq,
+          CompCert4Lean.Lib.Integers.WordCore.eq] at h
+      · exact Or.inl hn
+    let c := CompCert4Lean.Lib.Integers.Int.eq d
+          CompCert4Lean.Lib.Integers.Int.zero ||
+        CompCert4Lean.Lib.Integers.Int.eq n
+          (CompCert4Lean.Lib.Integers.Int.repr
+            CompCert4Lean.Lib.Integers.Int.min_signed) &&
+        CompCert4Lean.Lib.Integers.Int.eq d
+          CompCert4Lean.Lib.Integers.Int.mone
+    have hc : c = false := by
+      apply (Bool.eq_false_iff).2
+      intro hc'
+      dsimp [c] at hc'
+      simp [hc'] at h
+    have hdiv := CompCert4Lean.Lib.Integers.Int.divmods2_divs_mods_proof
+      n d hd hcond
+    have hshr : CompCert4Lean.Common.Values.Val.shr (Vint n)
+        (Vint (CompCert4Lean.Lib.Integers.Int.repr
+          (ZArith.BinInt.Z.of_nat 31))) =
+      Vint (if CompCert4Lean.Lib.Integers.Int.lt n
+          CompCert4Lean.Lib.Integers.Int.zero then
+        CompCert4Lean.Lib.Integers.Int.mone else
+        CompCert4Lean.Lib.Integers.Int.zero) := by
+      change (if CompCert4Lean.Lib.Integers.Int.ltu
+          (CompCert4Lean.Lib.Integers.Int.repr
+            (ZArith.BinInt.Z.of_nat 31))
+          CompCert4Lean.Lib.Integers.Int.iwordsize = true then
+          Vint (CompCert4Lean.Lib.Integers.Int.shr n
+            (CompCert4Lean.Lib.Integers.Int.repr
+              (ZArith.BinInt.Z.of_nat 31))) else Vundef) = _
+      have hlt : CompCert4Lean.Lib.Integers.Int.ltu
+          (CompCert4Lean.Lib.Integers.Int.repr
+            (ZArith.BinInt.Z.of_nat 31))
+          CompCert4Lean.Lib.Integers.Int.iwordsize = true := by decide
+      simp [hlt]
+      congr 1
+      have hz : (ZArith.BinInt.Z.of_nat 31) =
+          ZArith.BinInt.Z.sub
+            CompCert4Lean.Lib.Integers.Int.zwordsize
+            (ZArith.BinInt.Z.Zpos xH) := by decide
+      change CompCert4Lean.Lib.Integers.Int.shr n
+          (CompCert4Lean.Lib.Integers.Int.repr
+            (ZArith.BinInt.Z.of_nat 31)) = _
+      rw [hz]
+      exact CompCert4Lean.Lib.Integers.Int.shr_lt_zero_proof n
+    have hc_actual : (CompCert4Lean.Lib.Integers.Int.eq d
+          CompCert4Lean.Lib.Integers.Int.zero ||
+        CompCert4Lean.Lib.Integers.Int.eq n
+          (CompCert4Lean.Lib.Integers.Int.repr
+            CompCert4Lean.Lib.Integers.Int.min_signed) &&
+        CompCert4Lean.Lib.Integers.Int.eq d
+          CompCert4Lean.Lib.Integers.Int.mone) = false := by
+      change (CompCert4Lean.Lib.Integers.Int.eq d
+          CompCert4Lean.Lib.Integers.Int.zero ||
+        CompCert4Lean.Lib.Integers.Int.eq n
+          (CompCert4Lean.Lib.Integers.Int.repr
+            CompCert4Lean.Lib.Integers.Int.min_signed) &&
+        CompCert4Lean.Lib.Integers.Int.eq d
+          CompCert4Lean.Lib.Integers.Int.mone) = false at hc
+      exact hc
+    simp [hc_actual]
+    have hshr' : CompCert4Lean.Common.Values.Val.shr (Vint n)
+        (Vint (CompCert4Lean.Lib.Integers.Int.repr
+          (ZArith.BinInt.Z.of_nat 31))) =
+      Vint (CompCert4Lean.Lib.Integers.Int.shr n
+        (CompCert4Lean.Lib.Integers.Int.repr
+          (ZArith.BinInt.Z.of_nat 31))) := by
+      change (if CompCert4Lean.Lib.Integers.Int.ltu
+          (CompCert4Lean.Lib.Integers.Int.repr
+            (ZArith.BinInt.Z.of_nat 31))
+          CompCert4Lean.Lib.Integers.Int.iwordsize = true then
+          Vint (CompCert4Lean.Lib.Integers.Int.shr n
+            (CompCert4Lean.Lib.Integers.Int.repr
+              (ZArith.BinInt.Z.of_nat 31))) else Vundef) = _
+      have hlt : CompCert4Lean.Lib.Integers.Int.ltu
+          (CompCert4Lean.Lib.Integers.Int.repr
+            (ZArith.BinInt.Z.of_nat 31))
+          CompCert4Lean.Lib.Integers.Int.iwordsize = true := by decide
+      simp [hlt]
+    refine ⟨CompCert4Lean.Lib.Integers.Int.shr n
+          (CompCert4Lean.Lib.Integers.Int.repr
+            (ZArith.BinInt.Z.of_nat 31)), hshr', ?_⟩
+    rw [show CompCert4Lean.Lib.Integers.Int.shr n
+          (CompCert4Lean.Lib.Integers.Int.repr
+            (ZArith.BinInt.Z.of_nat 31)) =
+          (if CompCert4Lean.Lib.Integers.Int.lt n
+            CompCert4Lean.Lib.Integers.Int.zero then
+            CompCert4Lean.Lib.Integers.Int.mone else
+            CompCert4Lean.Lib.Integers.Int.zero) by
+      have hz : (ZArith.BinInt.Z.of_nat 31) =
+          ZArith.BinInt.Z.sub
+            CompCert4Lean.Lib.Integers.Int.zwordsize
+            (ZArith.BinInt.Z.Zpos xH) := by decide
+      rw [hz]
+      exact CompCert4Lean.Lib.Integers.Int.shr_lt_zero_proof n]
+    exact hdiv
+
+end CompCert4Lean.X86.Asmgenproof1

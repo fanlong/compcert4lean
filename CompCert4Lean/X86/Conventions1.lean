@@ -709,3 +709,21 @@ theorem loc_arguments_acceptable : loc_arguments_acceptableStatement := by
           conv_elf64_charact_acceptable cfg convZ0 l2
             (conv_zle_refl convZ0) hc.2 habi'⟩
 end CompCert4Lean.X86.Conventions1
+
+namespace CompCert4Lean.X86.Conventions1
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Backend.Locations
+open CompCert4Lean.X86.Machregs
+
+theorem loc_arguments_main : loc_arguments_mainStatement := by
+  intro cfg
+  unfold loc_arguments
+  cases hwin : CompCert4Lean.X86_64.Archi.win64 cfg <;>
+    simp [hwin, loc_arguments_win64, loc_arguments_elf64,
+      loc_arguments_32, CompCert4Lean.Common.AST.proj_sig_args,
+      CompCert4Lean.Common.AST.signature_main,
+      CompCert4Lean.X86_64.Archi.ptr64]
+
+end CompCert4Lean.X86.Conventions1

@@ -6576,3 +6576,18 @@ end Mem
 
 end CompCert4Lean.Common.Memory
 -/
+
+namespace CompCert4Lean.Common.Memory
+namespace Mem
+
+theorem valid_access_compat : valid_access_compatStatement := by
+  intro m chunk1 chunk2 b ofs p hsize halign hvalid
+  rcases hvalid with ⟨hrange, hdiv⟩
+  constructor
+  · simpa [hsize] using hrange
+  · exact CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.divide_trans
+      (CompCert4Lean.Common.Memdata.align_chunk chunk2) (CompCert4Lean.Common.Memdata.align_chunk chunk1) ofs
+      (CompCert4Lean.Common.Memdata.align_le_divides chunk2 chunk1 halign) hdiv
+
+end Mem
+end CompCert4Lean.Common.Memory

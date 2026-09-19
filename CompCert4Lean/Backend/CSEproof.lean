@@ -3935,3 +3935,11 @@ theorem transf_final_states : ∀ cfg, transf_final_statesStatement cfg := by
           exact RTL.final_state.intro r m'
 
 end CompCert4Lean.Backend.CSEproof
+
+namespace CompCert4Lean.Backend.CSEproof
+
+theorem find_valnum_rhs_charact : find_valnum_rhs_charactStatement := by
+  intro rh v eqs h
+  exact cse_find_valnum_rhs_charact rh v eqs h
+
+end CompCert4Lean.Backend.CSEproof

@@ -581,3 +581,68 @@ theorem split_between_prop : split_between_propStatement := by
                   | right hvk' => simp [switch_target, hz, hvk, hi]
 
 end CompCert4Lean.Common.Switch
+
+namespace CompCert4Lean.Common.Switch
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+ theorem validate_jumptable_correct_rec : validate_jumptable_correct_recStatement := by
+  intro cases tbl
+  have hzero : intOfZ z0 = 0 := by rfl
+  have hone : intOfZ z1 = 1 := by rfl
+  induction tbl with
+  | nil =>
+      intro base v hv hbound
+      rcases hbound with ⟨hv0, hvlen⟩
+      change intOfZ v < 0 at hvlen
+      change 0 ≤ intOfZ v at hv0
+      omega
+  | cons hd tl ih =>
+      intro base v hv hbound
+      simp only [validate_jumptable, Bool.and_eq_true] at hv
+      rcases hbound with ⟨hv0, hvlen⟩
+      have hlen := CompCert4Lean.Lib.Coqlib.list_length_z_cons Nat hd tl
+      have hvlen' : zLt v (zAdd (list_length_z tl) z1) := by
+        change zLt v (CompCert4Lean.Lib.Coqlib.list_length_z (hd :: tl)) at hvlen
+        rw [hlen] at hvlen
+        exact hvlen
+      cases hz : zeq v z0 with
+      | left hvz =>
+          subst v
+          simp only [CompCert4Lean.Lib.Coqlib.list_nth_z, hz]
+          have hadd : zAdd base z0 = base := by
+            apply intOfZ_injective
+            simp [zAdd, ZArith.BinInt.Z.add, intOfZ_zOfInt, hzero]
+          rw [hadd]
+          have heq := (CompCert4Lean.Foundation.Numbers.Rocq.Coq.Arith.PeanoNat.Nat.eqb_eq
+            hd (CompCert4Lean.Lib.Maps.ZMap.get base cases)).mp hv.1
+          exact heq ▸ rfl
+      | right hvz =>
+          simp only [CompCert4Lean.Lib.Coqlib.list_nth_z, hz]
+          have hvlt : zLt z0 v := by
+            change 0 < intOfZ v
+            change 0 ≤ intOfZ v at hv0
+            have hvne : intOfZ v ≠ 0 := by
+              intro he
+              apply hvz
+              apply intOfZ_injective
+              simpa [hzero] using he
+            omega
+          have hvpred0 : zLe z0 (ZArith.BinInt.Z.pred v) :=
+            (ZArith.BinInt.Z.lt_le_pred z0 v).mp hvlt
+          have hvle : zLe v (list_length_z tl) := by
+            exact (ZArith.BinInt.Z.lt_succ_r v (list_length_z tl)).mp hvlen'
+          have hvpredlen : zLt (ZArith.BinInt.Z.pred v) (list_length_z tl) :=
+            (ZArith.BinInt.Z.lt_pred_le v (list_length_z tl)).mpr hvle
+          have hi := ih (zSucc base) (ZArith.BinInt.Z.pred v) hv.2
+            ⟨hvpred0, hvpredlen⟩
+          have hadd : zAdd (zSucc base) (ZArith.BinInt.Z.pred v) = zAdd base v := by
+            apply intOfZ_injective
+            simp only [zAdd, zSucc, ZArith.BinInt.Z.succ, ZArith.BinInt.Z.add,
+              ZArith.BinInt.Z.pred, ZArith.BinInt.Z.sub, intOfZ_zOfInt]
+            simp [hzero, hone] at *
+            omega
+          rw [hadd] at hi
+          exact hi
+
+end CompCert4Lean.Common.Switch

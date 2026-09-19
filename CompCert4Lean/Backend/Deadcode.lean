@@ -586,3 +586,17 @@ theorem transfer_builtin_ind :
               exact hbuiltin_dead _ _ _ _ _ _ _ rfl args rfl bf hlookup hdead
 
 end CompCert4Lean.Backend.Deadcode
+
+namespace CompCert4Lean.Backend.Deadcode
+namespace DS
+
+theorem fixpoint_solution_proof :
+    ∀ (laws : law_obligation), fixpoint_solution laws := by
+  intro laws
+  intro A code successors transf res n instr s hfix hcode hsucc hbot
+  exact CompCert4Lean.Backend.Kildall.Backward_Dataflow_Solver.fixpoint_solution
+    (LAT := L) (NS := CompCert4Lean.Backend.Kildall.NodeSetBackward) laws.1 laws.2
+    code successors transf res n instr s hfix hcode hsucc hbot
+
+end DS
+end CompCert4Lean.Backend.Deadcode

@@ -6277,3 +6277,20 @@ theorem find_label_add_debug_params : find_label_add_debug_paramsStatement := by
   · simp [hd]
 
 end CompCert4Lean.Cfrontend.SimplLocalsproof
+
+namespace CompCert4Lean.Cfrontend.SimplLocalsproof
+
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Cfrontend.Ctypes
+open CompCert4Lean.Cfrontend.Clight
+open CompCert4Lean.Cfrontend.SimplLocals
+
+ theorem function_ptr_translated : function_ptr_translatedStatement := by
+  intro cfg p tp hmatch b fd hfind
+  exact @Genv.find_funct_ptr_transf_partial
+    (CompCert4Lean.Cfrontend.Ctypes.fundef function)
+    (CompCert4Lean.Cfrontend.Ctypes.fundef function) type _ _
+    (transf_fundef cfg) (program_of_program p) (program_of_program tp)
+    hmatch.1 b fd hfind
+
+end CompCert4Lean.Cfrontend.SimplLocalsproof

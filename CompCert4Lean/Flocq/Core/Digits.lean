@@ -1103,3 +1103,113 @@ theorem Zdigits2_Zdigits : Zdigits2_ZdigitsStatement := by
       exact Zpos_digits2_pos p
 
 end CompCert4Lean.Flocq.Core.Digits
+
+namespace CompCert4Lean.Flocq.Core.Digits
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+ theorem Zdigits_correct : Zdigits_correctStatement := by
+  intro beta n
+  cases n with
+  | Z0 =>
+      constructor
+      · change intOfZ (Zpower (beta : Z) (Zsub (Zdigits beta (Z0 : Z)) Zone)) ≤
+          intOfZ (Zabs (Z0 : Z))
+        change intOfZ (Zpower (beta : Z) (Zsub Z0 Zone)) ≤ intOfZ Z0
+        have hpow0 : intOfZ (Zpower (beta : Z) (Zsub Z0 Zone)) = 0 := by
+          rw [show Zsub Z0 Zone = (.Zneg .xH : Z) by rfl]
+          change intOfZ (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.pow
+            (beta : Z) (.Zneg .xH)) = 0
+          unfold CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.pow
+          have hneg : intOfZ (.Zneg .xH : Z) < 0 := by
+            change -Int.ofNat (posToNat .xH) < 0
+            decide
+          rw [if_pos hneg]
+          rfl
+        rw [hpow0]
+        simp [intOfZ]
+      · change intOfZ (Zabs (Z0 : Z)) <
+          intOfZ (Zpower (beta : Z) (Zdigits beta (Z0 : Z)))
+        change intOfZ Z0 < intOfZ (Zpower (beta : Z) Z0)
+        rw [zpower_zero_int]
+        simp [intOfZ]
+  | Zpos p =>
+      obtain ⟨d, hd, hdl, hdu⟩ := digits_bounds_pos beta p
+      have hz := Zdigits_gt_0 beta (.Zpos p) (by intro h; cases h)
+      change 0 < intOfZ (Zdigits beta (.Zpos p)) at hz
+      rw [hd] at hz
+      have hdpos : 0 < d := Int.natCast_pos.mp hz
+      have hdposI : (0 : Int) < Int.ofNat d := Int.natCast_pos.mpr hdpos
+      have hzone : intOfZ (Zone : Z) = (1 : Int) := by simp [intOfZ, posToNat]
+      have hsub : intOfZ (Zsub (Zdigits beta (.Zpos p)) Zone) =
+          Int.ofNat d - 1 := by
+        rw [sub_int, hd, hzone]
+      have hsubnon : 0 ≤ intOfZ (Zsub (Zdigits beta (.Zpos p)) Zone) := by
+        rw [hsub]
+        omega
+      have hsubto : Int.toNat (intOfZ (Zsub (Zdigits beta (.Zpos p)) Zone)) = d - 1 := by
+        rw [hsub]
+        simp
+      have hzdnon : 0 ≤ intOfZ (Zdigits beta (.Zpos p)) := by
+        rw [hd]
+        exact Int.natCast_nonneg _
+      have hzdto : Int.toNat (intOfZ (Zdigits beta (.Zpos p))) = d := by
+        rw [hd]
+        simp
+      constructor
+      · change intOfZ (Zpower (beta : Z)
+            (Zsub (Zdigits beta (.Zpos p)) Zone)) ≤
+          intOfZ (Zabs (.Zpos p : Z))
+        rw [abs_pos]
+        have hp := zpower_int_nat beta
+          (Zsub (Zdigits beta (.Zpos p)) Zone) hsubnon
+        rw [hp, hsubto]
+        exact hdl
+      · change intOfZ (Zabs (.Zpos p : Z)) <
+          intOfZ (Zpower (beta : Z) (Zdigits beta (.Zpos p)))
+        rw [abs_pos]
+        have hp := zpower_int_nat beta (Zdigits beta (.Zpos p)) hzdnon
+        rw [hp, hzdto]
+        exact hdu
+  | Zneg p =>
+      obtain ⟨d, hd, hdl, hdu⟩ := digits_bounds_pos beta p
+      have hdneg : intOfZ (Zdigits beta (.Zneg p)) = Int.ofNat d := by
+        simpa [Zdigits] using hd
+      have hz := Zdigits_gt_0 beta (.Zneg p) (by intro h; cases h)
+      change 0 < intOfZ (Zdigits beta (.Zneg p)) at hz
+      rw [hdneg] at hz
+      have hdpos : 0 < d := Int.natCast_pos.mp hz
+      have hdposI : (0 : Int) < Int.ofNat d := Int.natCast_pos.mpr hdpos
+      have hzone : intOfZ (Zone : Z) = (1 : Int) := by simp [intOfZ, posToNat]
+      have hsub : intOfZ (Zsub (Zdigits beta (.Zneg p)) Zone) =
+          Int.ofNat d - 1 := by
+        rw [sub_int, hdneg, hzone]
+      have hsubnon : 0 ≤ intOfZ (Zsub (Zdigits beta (.Zneg p)) Zone) := by
+        rw [hsub]
+        omega
+      have hsubto : Int.toNat (intOfZ (Zsub (Zdigits beta (.Zneg p)) Zone)) = d - 1 := by
+        rw [hsub]
+        simp
+      have hzdnon : 0 ≤ intOfZ (Zdigits beta (.Zneg p)) := by
+        rw [hdneg]
+        exact Int.natCast_nonneg _
+      have hzdto : Int.toNat (intOfZ (Zdigits beta (.Zneg p))) = d := by
+        rw [hdneg]
+        simp
+      constructor
+      · change intOfZ (Zpower (beta : Z)
+            (Zsub (Zdigits beta (.Zneg p)) Zone)) ≤
+          intOfZ (Zabs (.Zneg p : Z))
+        rw [abs_neg]
+        have hp := zpower_int_nat beta
+          (Zsub (Zdigits beta (.Zneg p)) Zone) hsubnon
+        rw [hp, hsubto]
+        exact hdl
+      · change intOfZ (Zabs (.Zneg p : Z)) <
+          intOfZ (Zpower (beta : Z) (Zdigits beta (.Zneg p)))
+        rw [abs_neg]
+        have hp := zpower_int_nat beta (Zdigits beta (.Zneg p)) hzdnon
+        rw [hp, hzdto]
+        exact hdu
+
+end CompCert4Lean.Flocq.Core.Digits

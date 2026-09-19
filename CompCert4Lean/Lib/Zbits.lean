@@ -1673,3 +1673,19 @@ theorem Zsize_pos' : Zsize_pos'Statement := by
       have hp : (0 : Int) ≤ Int.ofNat (posToNat p) := Int.natCast_nonneg _
       exfalso
       omega
+
+theorem eqmod_mod : eqmod_modStatement := by
+  intro modul hmod x
+  unfold eqmod
+  refine ⟨zDiv x modul, ?_⟩
+  have h := ZArith.Zdiv.Z_div_mod_eq_full x modul
+  apply intOfZ_injective
+  have hh := congrArg intOfZ h
+  simp only [zAdd, zMul, ZArith.BinInt.Z.add, ZArith.BinInt.Z.mul,
+    intOfZ_zOfInt] at hh ⊢
+  change intOfZ x = intOfZ modul * intOfZ (ZArith.BinInt.Z.div x modul) +
+    intOfZ (ZArith.BinInt.Z.modulo x modul) at hh
+  change intOfZ x = intOfZ (ZArith.BinInt.Z.div x modul) * intOfZ modul +
+    intOfZ (ZArith.BinInt.Z.modulo x modul)
+  rw [Int.mul_comm]
+  exact hh

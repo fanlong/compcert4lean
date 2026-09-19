@@ -1507,3 +1507,12 @@ theorem partition_between_iff_2 : partition_between_iff_2Statement := by
       above_monotone below_monotone x s.this s.is_ok.ok hx hpartition
 
 end CompCert4Lean.Lib.FSetAVLplus.Make
+
+namespace CompCert4Lean.Lib.FSetAVLplus.Make
+
+theorem In_raw_elements_between_3 : In_raw_elements_between_3Statement := by
+  intro X above_low_bound below_high_bound above_monotone below_monotone
+  exact in_raw_elements_between_3_aux above_low_bound below_high_bound
+    above_monotone below_monotone
+
+end CompCert4Lean.Lib.FSetAVLplus.Make

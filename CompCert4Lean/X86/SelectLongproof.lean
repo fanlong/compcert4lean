@@ -2519,3 +2519,15 @@ theorem eval_singleoflong
     (eval_exprlist.cons le a Enil x [] ha (eval_exprlist.nil le)) hy
 
 end CompCert4Lean.X86.SelectLongproof
+
+namespace CompCert4Lean.X86.SelectLongproof
+
+theorem eval_andlimm
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    @eval_andlimmStatement binary64_certificate binary32_certificate := by
+  unfold eval_andlimmStatement
+  intro xi prog sp e m n
+  exact eval_andlimm_aux xi prog sp e m n
+
+end CompCert4Lean.X86.SelectLongproof

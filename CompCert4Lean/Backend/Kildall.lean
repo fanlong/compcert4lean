@@ -3049,3 +3049,27 @@ theorem fixpoint_invariant : fixpoint_invariantStatement := by
     cases pc' <;> exact Ptop
 
 end CompCert4Lean.Backend.Kildall.BBlock_solver
+
+namespace CompCert4Lean.Backend.Kildall.Dataflow_Solver
+
+theorem optge_abstr_value : optge_abstr_valueStatement := by
+  intro LAT NS LATlaws NSlaws st st' n hge
+  unfold abstr_value
+  generalize h₁ : CompCert4Lean.Lib.Maps.PTree.get n st.aval = o₁ at hge ⊢
+  generalize h₂ : CompCert4Lean.Lib.Maps.PTree.get n st'.aval = o₂ at hge ⊢
+  cases o₁ with
+  | none =>
+      cases o₂ with
+      | none =>
+          exact LATlaws.ge_refl LAT.bot LAT.bot (LATlaws.eq_refl LAT.bot)
+      | some v' =>
+          cases hge
+  | some v =>
+      cases o₂ with
+      | none =>
+          exact LATlaws.ge_bot v
+      | some v' =>
+          cases hge with
+          | optge_some h => exact h
+
+end CompCert4Lean.Backend.Kildall.Dataflow_Solver

@@ -1292,3 +1292,41 @@ theorem iter_pos_nat : iter_pos_natStatement := by
           simp [Nat.two_mul]
 
 end CompCert4Lean.Flocq.Core.Zaux
+
+namespace CompCert4Lean.Flocq.Core.Zaux
+
+theorem Zpower_plus : Zpower_plusStatement := by
+  intro n k1 k2 hk1 hk2
+  have hk1' : 0 ≤ CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ k1 := hk1
+  have hk2' : 0 ≤ CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ k2 := hk2
+  have hsum :
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (Zadd k1 k2) =
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ k1 +
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ k2 := by
+    simp only [Zadd,
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add,
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+  have hk12 :
+      0 ≤ CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (Zadd k1 k2) := by
+    rw [hsum]
+    omega
+  have hpow : ∀ x : Z,
+      0 ≤ CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ x →
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (Zpower n x) =
+          Int.pow (CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ n)
+            (Int.toNat (CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ x)) := by
+    intro x hx
+    unfold Zpower
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.Zpow_def.Zpower
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.pow
+    rw [if_neg (Int.not_lt_of_ge hx)]
+    simp only [CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+  apply CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective
+  simp only [Zmul,
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.mul,
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+  rw [hpow (Zadd k1 k2) hk12, hpow k1 hk1', hpow k2 hk2']
+  rw [hsum, Int.toNat_add hk1' hk2']
+  exact Int.pow_add (CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ n) _ _
+
+end CompCert4Lean.Flocq.Core.Zaux

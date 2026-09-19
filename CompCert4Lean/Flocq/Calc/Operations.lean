@@ -769,3 +769,37 @@ theorem F2R_plus (ctx : ExactRealContext) : F2R_plusStatement ctx := by
             hchange.symm
 
 end CompCert4Lean.Flocq.Calc.Operations
+
+namespace CompCert4Lean.Flocq.Calc.Operations
+
+theorem Falign_spec (ctx : ExactRealContext) : Falign_specStatement ctx := by
+  intro beta f1 f2
+  rcases f1 with ⟨m1, e1⟩
+  rcases f2 with ⟨m2, e2⟩
+  simp only [Falign]
+  split
+  · next hle =>
+      have hle' :
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.le e1 e2 := by
+        simpa [Zle_bool,
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.leb,
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.le] using hle
+      constructor
+      · rfl
+      · exact operations_f2r_change_exp ctx beta e1 m2 e2 hle'
+  · next hnot =>
+      have hle :
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.le e2 e1 := by
+        have hnot' : ¬ (CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ e1 ≤
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ e2) := by
+          simpa [Zle_bool,
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.leb,
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.le] using hnot
+        change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ e2 ≤
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ e1
+        omega
+      constructor
+      · exact operations_f2r_change_exp ctx beta e2 m1 e1 hle
+      · rfl
+
+end CompCert4Lean.Flocq.Calc.Operations

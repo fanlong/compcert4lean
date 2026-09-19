@@ -2462,3 +2462,143 @@ theorem eval_addressing_inject : eval_addressing_injectStatement := by
     hsp' hvl heval
 
 end CompCert4Lean.X86.Op
+
+namespace CompCert4Lean.X86.Op
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+private abbrev suffixZAdd :=
+  CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add
+private abbrev suffixZMod :=
+  CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.modulo
+
+private theorem suffix_int_repr_add
+    (x y : CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z) :
+    CompCert4Lean.Lib.Integers.Int.repr (suffixZAdd x y) =
+      CompCert4Lean.Lib.Integers.Int.add
+        (CompCert4Lean.Lib.Integers.Int.repr x)
+        (CompCert4Lean.Lib.Integers.Int.repr y) := by
+  have hx : CompCert4Lean.Lib.Integers.Int.eqm x
+      (CompCert4Lean.Lib.Integers.Int.unsigned
+        (CompCert4Lean.Lib.Integers.Int.repr x)) :=
+    CompCert4Lean.Lib.Integers.Int.eqm_unsigned_repr_r_proof x x
+      (CompCert4Lean.Lib.Integers.Int.eqm_refl_proof x)
+  have hy : CompCert4Lean.Lib.Integers.Int.eqm y
+      (CompCert4Lean.Lib.Integers.Int.unsigned
+        (CompCert4Lean.Lib.Integers.Int.repr y)) :=
+    CompCert4Lean.Lib.Integers.Int.eqm_unsigned_repr_r_proof y y
+      (CompCert4Lean.Lib.Integers.Int.eqm_refl_proof y)
+  rw [CompCert4Lean.Lib.Integers.Int.unsigned_repr_eq_proof] at hx hy
+  have hxy := CompCert4Lean.Lib.Integers.Int.eqm_add_proof x
+    (suffixZMod x CompCert4Lean.Lib.Integers.Int.modulus) y
+    (suffixZMod y CompCert4Lean.Lib.Integers.Int.modulus) hx hy
+  rw [CompCert4Lean.Lib.Integers.Int.eqm_samerepr_proof _ _ hxy]
+  rw [CompCert4Lean.Lib.Integers.Int.add_unsigned_proof]
+  rw [CompCert4Lean.Lib.Integers.Int.unsigned_repr_eq_proof]
+  rw [CompCert4Lean.Lib.Integers.Int.unsigned_repr_eq_proof]
+
+theorem eval_offset_addressing_total_32 : eval_offset_addressing_total_32Statement := by
+  intro F V ge sp addr args delta v h
+  cases addr with
+  | Aindexed ofs =>
+      cases args with
+      | nil => simp [eval_addressing32, offset_addressing_total] at h ⊢
+      | cons a tail =>
+          cases tail with
+          | nil =>
+              simp [eval_addressing32, offset_addressing_total] at h ⊢
+              rw [← h, suffix_int_repr_add]
+              exact (CompCert4Lean.Common.Values.Val.add_assoc a
+                (.Vint (CompCert4Lean.Lib.Integers.Int.repr ofs))
+                (.Vint (CompCert4Lean.Lib.Integers.Int.repr delta))).symm
+          | cons b tail => simp [eval_addressing32, offset_addressing_total] at h ⊢
+  | Aindexed2 ofs =>
+      cases args with
+      | nil => simp [eval_addressing32, offset_addressing_total] at h ⊢
+      | cons a tail =>
+          cases tail with
+          | nil => simp [eval_addressing32, offset_addressing_total] at h ⊢
+          | cons b tail =>
+              cases tail with
+              | nil =>
+                  simp [eval_addressing32, offset_addressing_total] at h ⊢
+                  rw [← h, suffix_int_repr_add]
+                  exact (CompCert4Lean.Common.Values.Val.add_assoc
+                    (CompCert4Lean.Common.Values.Val.add a b)
+                    (.Vint (CompCert4Lean.Lib.Integers.Int.repr ofs))
+                    (.Vint (CompCert4Lean.Lib.Integers.Int.repr delta))).symm
+              | cons c tail => simp [eval_addressing32, offset_addressing_total] at h ⊢
+  | Ascaled scale ofs =>
+      cases args with
+      | nil => simp [eval_addressing32, offset_addressing_total] at h ⊢
+      | cons a tail =>
+          cases tail with
+          | nil =>
+              simp [eval_addressing32, offset_addressing_total] at h ⊢
+              rw [← h, suffix_int_repr_add]
+              exact (CompCert4Lean.Common.Values.Val.add_assoc
+                (CompCert4Lean.Common.Values.Val.mul a
+                  (.Vint (CompCert4Lean.Lib.Integers.Int.repr scale)))
+                (.Vint (CompCert4Lean.Lib.Integers.Int.repr ofs))
+                (.Vint (CompCert4Lean.Lib.Integers.Int.repr delta))).symm
+          | cons b tail => simp [eval_addressing32, offset_addressing_total] at h ⊢
+  | Aindexed2scaled scale ofs =>
+      cases args with
+      | nil => simp [eval_addressing32, offset_addressing_total] at h ⊢
+      | cons a tail =>
+          cases tail with
+          | nil => simp [eval_addressing32, offset_addressing_total] at h ⊢
+          | cons b tail =>
+              cases tail with
+              | nil =>
+                  simp [eval_addressing32, offset_addressing_total] at h ⊢
+                  rw [← h, suffix_int_repr_add]
+                  change CompCert4Lean.Common.Values.Val.add a
+                      (CompCert4Lean.Common.Values.Val.add
+                        (CompCert4Lean.Common.Values.Val.mul b
+                          (.Vint (CompCert4Lean.Lib.Integers.Int.repr scale)))
+                        (CompCert4Lean.Common.Values.Val.add
+                          (.Vint (CompCert4Lean.Lib.Integers.Int.repr ofs))
+                          (.Vint (CompCert4Lean.Lib.Integers.Int.repr delta)))) = _
+                  calc
+                    _ = CompCert4Lean.Common.Values.Val.add a
+                        (CompCert4Lean.Common.Values.Val.add
+                          (CompCert4Lean.Common.Values.Val.add
+                            (CompCert4Lean.Common.Values.Val.mul b
+                              (.Vint (CompCert4Lean.Lib.Integers.Int.repr scale)))
+                            (.Vint (CompCert4Lean.Lib.Integers.Int.repr ofs)))
+                          (.Vint (CompCert4Lean.Lib.Integers.Int.repr delta))) := by
+                          rw [← CompCert4Lean.Common.Values.Val.add_assoc
+                            (CompCert4Lean.Common.Values.Val.mul b
+                              (.Vint (CompCert4Lean.Lib.Integers.Int.repr scale)))
+                            (.Vint (CompCert4Lean.Lib.Integers.Int.repr ofs))
+                            (.Vint (CompCert4Lean.Lib.Integers.Int.repr delta))]
+                    _ = _ := (CompCert4Lean.Common.Values.Val.add_assoc a
+                      (CompCert4Lean.Common.Values.Val.add
+                        (CompCert4Lean.Common.Values.Val.mul b
+                          (.Vint (CompCert4Lean.Lib.Integers.Int.repr scale)))
+                        (.Vint (CompCert4Lean.Lib.Integers.Int.repr ofs)))
+                      (.Vint (CompCert4Lean.Lib.Integers.Int.repr delta))).symm
+              | cons c tail => simp [eval_addressing32, offset_addressing_total] at h ⊢
+  | Aglobal id ofs =>
+      cases args <;> simp [eval_addressing32, offset_addressing_total,
+        CompCert4Lean.X86_64.Archi.ptr64] at h ⊢
+  | Abased id ofs =>
+      cases args with
+      | nil => simp [eval_addressing32, offset_addressing_total,
+          CompCert4Lean.X86_64.Archi.ptr64] at h ⊢
+      | cons a tail =>
+          cases tail <;> simp [eval_addressing32, offset_addressing_total,
+            CompCert4Lean.X86_64.Archi.ptr64] at h ⊢
+  | Abasedscaled scale id ofs =>
+      cases args with
+      | nil => simp [eval_addressing32, offset_addressing_total,
+          CompCert4Lean.X86_64.Archi.ptr64] at h ⊢
+      | cons a tail =>
+          cases tail <;> simp [eval_addressing32, offset_addressing_total,
+            CompCert4Lean.X86_64.Archi.ptr64] at h ⊢
+  | Ainstack ofs =>
+      cases args <;> simp [eval_addressing32, offset_addressing_total,
+        CompCert4Lean.X86_64.Archi.ptr64] at h ⊢
+
+end CompCert4Lean.X86.Op

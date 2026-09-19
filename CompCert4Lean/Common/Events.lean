@@ -1987,3 +1987,77 @@ theorem eval_builtin_args_preserved : eval_builtin_args_preservedStatement := by
             (ih _ hrest)
 
 end CompCert4Lean.Common.Events
+
+namespace CompCert4Lean.Common.Events
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Lib.Integers
+open Lean Elab Tactic Meta
+
+private def eventsIntegersPrivateName (suffix : String) : Name :=
+  let p := Name.str (Name.str (Name.str (Name.str Name.anonymous "_private") "CompCert4Lean") "Lib") "Integers"
+  let base := Name.num p 0
+  suffix.splitOn "." |>.foldl Name.str base
+
+private theorem events_ptrofs_add_zero (ofs : Ptrofs.int) :
+    Ptrofs.add ofs (Ptrofs.repr (.Z0 : Z)) = ofs := by
+  change WordCore.add ofs (WordCore.zero Ptrofs.wordsize) = ofs
+  apply WordCore.ext_of_val_eq
+  have hadd : (WordCore.add ofs (WordCore.zero Ptrofs.wordsize)).val =
+      (ofs.val + (WordCore.zero Ptrofs.wordsize).val) % (2 ^ Ptrofs.wordsize) := by
+    run_tac
+      let lctx ← getLCtx
+      let ofsF := (lctx.findFromUserName? `ofs).get!
+      let zF := mkConst ``CompCert4Lean.Lib.Integers.Ptrofs.wordsize
+      let z0F := mkApp (mkConst ``CompCert4Lean.Lib.Integers.WordCore.zero) zF
+      let e ← mkAppM (eventsIntegersPrivateName "CompCert4Lean.Lib.Integers.WordCore.add_val")
+        #[mkFVar ofsF.fvarId, z0F]
+      closeMainGoal Name.anonymous e
+  rw [hadd]
+  simp [WordCore.zero]
+  have hlt : ofs.val < 2 ^ Ptrofs.wordsize := by
+    run_tac
+      let lctx ← getLCtx
+      let ofsF := (lctx.findFromUserName? `ofs).get!
+      let e ← mkAppM (eventsIntegersPrivateName "CompCert4Lean.Lib.Integers.WordCore.val_lt")
+        #[mkFVar ofsF.fvarId]
+      closeMainGoal Name.anonymous e
+  exact Nat.mod_eq_of_lt hlt
+
+theorem eventval_match_inject : eventval_match_injectStatement := by
+  intro f ge1 ge2 hsymbols ev ty v1 v2 hmatch hinj
+  cases hmatch with
+  | ev_match_int i =>
+      cases hinj
+      exact ev_match_int _
+  | ev_match_long i =>
+      cases hinj
+      exact ev_match_long _
+  | ev_match_float x =>
+      cases hinj
+      exact ev_match_float _
+  | ev_match_single x =>
+      cases hinj
+      exact ev_match_single _
+  | ev_match_ptr id b ofs hpub hfind =>
+      cases hinj with
+      | inject_ptr b1 ofs1 b2 ofs2 delta hmap hofs =>
+          have hpub' : Senv.public_symbol ge2 id = true := by
+            rw [hsymbols.1 id]
+            exact hpub
+          obtain ⟨b3, hmap3, hfind3⟩ := hsymbols.2.2.1 id b hpub hfind
+          have hpair : (b2, delta) = (b3, .Z0) :=
+            Option.some.inj (hmap.symm.trans hmap3)
+          have hb : b2 = b3 := congrArg Prod.fst hpair
+          have hdelta : delta = (.Z0 : Z) := congrArg Prod.snd hpair
+          subst b3
+          rw [hdelta] at hofs
+          subst delta
+          rw [events_ptrofs_add_zero ofs] at hofs
+          subst ofs2
+          exact ev_match_ptr id b2 ofs hpub' hfind3
+
+end CompCert4Lean.Common.Events
