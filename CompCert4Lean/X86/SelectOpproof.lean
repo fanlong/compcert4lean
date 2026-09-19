@@ -5383,3 +5383,25 @@ theorem eval_shr
             (eval_exprlist.nil le))) rfl
 
 end CompCert4Lean.X86.SelectOpproof
+
+namespace CompCert4Lean.X86.SelectOpproof
+
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.ExternalCalls
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.X86.Op
+open CompCert4Lean.X86.SelectOp
+
+theorem eval_compimm
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    eval_compimmStatement := by
+  intro xi ge sp e m default intsem sem hsem_int hsem_undef hsem_eq hsem_ne
+    hsem_default le c a n2 x h
+  exact eval_compimm_for_swap_local xi ge sp e m default intsem sem
+    hsem_int hsem_undef hsem_eq hsem_ne hsem_default le c a n2 x h
+
+end CompCert4Lean.X86.SelectOpproof

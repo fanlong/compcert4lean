@@ -3518,3 +3518,169 @@ theorem BofZ_representable :
       simp [hlt, hp]
 
 end CompCert4Lean.Lib.IEEE754_extra
+
+namespace CompCert4Lean.Lib.IEEE754_extra
+open CompCert4Lean.Flocq.Core
+open CompCert4Lean.Flocq.IEEE754
+
+theorem ZofB_correct :
+    ∀ {prec emax : Z}, ZofB_correctStatement (prec := prec) (emax := emax) := by
+  intro prec emax f ctx
+  cases f with
+  | mk f hcert =>
+    cases f with
+    | B754_nan => simp [ZofB, Binary.is_finite]
+    | B754_infinity s => simp [ZofB, Binary.is_finite]
+    | B754_zero s =>
+      simp only [ZofB, Binary.is_finite, Bool.false_eq_true, ↓reduceIte,
+        Option.some.injEq]
+      change Z0 = Exact.Ztrunc ctx (Exact.R0 ctx)
+      have hz : Exact.R0 ctx = Exact.IZR ctx Z0 := by
+        change ctx.spec.zero = ctx.spec.ofZ Z0
+        exact ctx.certificate.sourceLaws.ofZ_zero.symm
+      rw [hz]
+      change Z0 = CompCert4Lean.Flocq.Core.Raux.Exact.Ztrunc ctx
+        (CompCert4Lean.Flocq.Core.Raux.Exact.IZR ctx Z0)
+      rw [CompCert4Lean.Flocq.Core.Raux.Ztrunc_IZR ctx]
+    | B754_finite s m e =>
+      cases e with
+      | Z0 =>
+        simp only [ZofB, Binary.is_finite, ↓reduceIte,
+          Option.some.injEq]
+        change Zaux.cond_Zopp s (Zpos m) =
+          Exact.Ztrunc ctx (CompCert4Lean.Flocq.IEEE754.Binary.Exact.F2R ctx
+            (CompCert4Lean.Flocq.Core.Defs.Float Zaux.radix2
+              (Zaux.cond_Zopp s (Zpos m)) Z0))
+        have hF : CompCert4Lean.Flocq.IEEE754.Binary.Exact.F2R ctx
+            (CompCert4Lean.Flocq.Core.Defs.Float Zaux.radix2
+              (Zaux.cond_Zopp s (Zpos m)) Z0) =
+            Exact.IZR ctx (Zaux.cond_Zopp s (Zpos m)) := by
+          change ctx.spec.mul
+              (ctx.spec.ofZ (Zaux.cond_Zopp s (Zpos m)))
+              (Exact.bpow ctx Zaux.radix2 Z0) =
+              ctx.spec.ofZ (Zaux.cond_Zopp s (Zpos m))
+          rw [show Exact.bpow ctx Zaux.radix2 Z0 = ctx.spec.one by rfl,
+            ctx.certificate.orderedField.mul_one]
+        rw [hF]
+        change Zaux.cond_Zopp s (Zpos m) =
+          CompCert4Lean.Flocq.Core.Raux.Exact.Ztrunc ctx
+            (CompCert4Lean.Flocq.Core.Raux.Exact.IZR ctx
+              (Zaux.cond_Zopp s (Zpos m)))
+        rw [CompCert4Lean.Flocq.Core.Raux.Ztrunc_IZR ctx]
+      | Zpos p =>
+        simp only [ZofB, Binary.is_finite, ↓reduceIte,
+          Option.some.injEq]
+        change Zmul (Zaux.cond_Zopp s (Zpos m)) (Zpower_pos Ztwo p) =
+          Exact.Ztrunc ctx (CompCert4Lean.Flocq.IEEE754.Binary.Exact.F2R ctx
+            (CompCert4Lean.Flocq.Core.Defs.Float Zaux.radix2
+              (Zaux.cond_Zopp s (Zpos m)) (Zpos p)))
+        have hbpow : Exact.bpow ctx Zaux.radix2 (Zpos p) =
+            Exact.IZR ctx (Zpower_pos Ztwo p) := by rfl
+        have hF : CompCert4Lean.Flocq.IEEE754.Binary.Exact.F2R ctx
+            (CompCert4Lean.Flocq.Core.Defs.Float Zaux.radix2
+              (Zaux.cond_Zopp s (Zpos m)) (Zpos p)) =
+            Exact.IZR ctx
+              (Zmul (Zaux.cond_Zopp s (Zpos m)) (Zpower_pos Ztwo p)) := by
+          change ctx.spec.mul
+              (ctx.spec.ofZ (Zaux.cond_Zopp s (Zpos m)))
+              (Exact.bpow ctx Zaux.radix2 (Zpos p)) = _
+          rw [hbpow]
+          exact (CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.mult_IZR
+            ctx (Zaux.cond_Zopp s (Zpos m)) (Zpower_pos Ztwo p)).symm
+        rw [hF]
+        change Zmul (Zaux.cond_Zopp s (Zpos m)) (Zpower_pos Ztwo p) =
+          CompCert4Lean.Flocq.Core.Raux.Exact.Ztrunc ctx
+            (CompCert4Lean.Flocq.Core.Raux.Exact.IZR ctx
+              (Zmul (Zaux.cond_Zopp s (Zpos m)) (Zpower_pos Ztwo p)))
+        rw [CompCert4Lean.Flocq.Core.Raux.Ztrunc_IZR ctx]
+      | Zneg p =>
+        simp only [ZofB, Binary.is_finite, ↓reduceIte,
+          Option.some.injEq]
+        cases s with
+        | false =>
+          change Zdiv (Zpos m) (Zpower_pos Ztwo p) =
+            Exact.Ztrunc ctx (CompCert4Lean.Flocq.IEEE754.Binary.Exact.F2R ctx
+              (CompCert4Lean.Flocq.Core.Defs.Float Zaux.radix2
+                (Zpos m) (Zneg p)))
+          change Zdiv (Zpos m) (Zpower_pos Ztwo p) =
+            Exact.Ztrunc ctx
+              (ctx.spec.mul (ctx.spec.ofZ (Zpos m))
+                (Exact.bpow ctx Zaux.radix2 (Zneg p)))
+          change Zdiv (Zpos m) (Zpower_pos Ztwo p) =
+            Exact.Ztrunc ctx
+              (ctx.spec.mul (ctx.spec.ofZ (Zpos m))
+                (ctx.spec.inv (ctx.spec.ofZ (Zpower_pos Ztwo p))))
+          have hmpos : Zlt Z0 (Zpos m) := by
+            change (0 : Int) <
+              _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (Zpos m)
+            simp only [_root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ]
+            change (0 : Int) < Int.ofNat
+              (_root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat m)
+            exact Int.ofNat_lt.mpr
+              (_root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat_positive m)
+          have hmle : Zle Z0 (Zpos m) := Int.le_of_lt hmpos
+          have hpbase : Zlt Z0 Ztwo := by
+            change (0 : Int) < 2
+            decide
+          have hpowpos := CompCert4Lean.Flocq.Core.Zaux.Zpower_pos_gt_0 Ztwo p hpbase
+          rw [← ctx.certificate.orderedField.div_eq_mul_inv]
+          exact (local_trunc_div ctx (Zpos m) (Zpower_pos Ztwo p) hmle hpowpos).symm
+        | true =>
+          change Zaux.cond_Zopp true (Zdiv (Zpos m) (Zpower_pos Ztwo p)) =
+            Exact.Ztrunc ctx (CompCert4Lean.Flocq.IEEE754.Binary.Exact.B2R ctx
+              (Binary.B754_finite true m (Zneg p)))
+          change Zaux.cond_Zopp true (Zdiv (Zpos m) (Zpower_pos Ztwo p)) =
+            Exact.Ztrunc ctx (CompCert4Lean.Flocq.IEEE754.Binary.Exact.F2R ctx
+              (CompCert4Lean.Flocq.Core.Defs.Float Zaux.radix2
+                (Zaux.cond_Zopp true (Zpos m)) (Zneg p)))
+          have hFpos : CompCert4Lean.Flocq.IEEE754.Binary.Exact.F2R ctx
+              (CompCert4Lean.Flocq.Core.Defs.Float Zaux.radix2 (Zpos m) (Zneg p)) =
+              CompCert4Lean.Foundation.FlocqReal.ExactReal.Rdiv ctx.spec
+                (CompCert4Lean.Flocq.Core.Raux.Exact.IZR ctx (Zpos m))
+                (CompCert4Lean.Flocq.Core.Raux.Exact.IZR ctx (Zpower_pos Ztwo p)) := by
+            change ctx.spec.mul (ctx.spec.ofZ (Zpos m))
+              (Exact.bpow ctx Zaux.radix2 (Zneg p)) = _
+            change ctx.spec.mul (ctx.spec.ofZ (Zpos m))
+              (ctx.spec.inv (ctx.spec.ofZ (Zpower_pos Ztwo p))) = _
+            rw [← ctx.certificate.orderedField.div_eq_mul_inv]
+            rfl
+          have hF : CompCert4Lean.Flocq.IEEE754.Binary.Exact.F2R ctx
+              (CompCert4Lean.Flocq.Core.Defs.Float Zaux.radix2
+                (Zaux.cond_Zopp true (Zpos m)) (Zneg p)) =
+              CompCert4Lean.Foundation.FlocqReal.ExactReal.Ropp ctx.spec
+                (CompCert4Lean.Foundation.FlocqReal.ExactReal.Rdiv ctx.spec
+                  (CompCert4Lean.Flocq.Core.Raux.Exact.IZR ctx (Zpos m))
+                  (CompCert4Lean.Flocq.Core.Raux.Exact.IZR ctx (Zpower_pos Ztwo p))) := by
+            change ctx.spec.mul
+                (ctx.spec.ofZ (Zaux.cond_Zopp true (Zpos m)))
+                (Exact.bpow ctx Zaux.radix2 (Zneg p)) = _
+            rw [show Zaux.cond_Zopp true (Zpos m) = Zopp (Zpos m) by rfl,
+              ctx.certificate.sourceLaws.ofZ_neg]
+            rw [← hFpos]
+            exact CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.Ropp_mult_distr_l_reverse
+              ctx (ctx.spec.ofZ (Zpos m)) (Exact.bpow ctx Zaux.radix2 (Zneg p))
+          rw [hF]
+          change Zaux.cond_Zopp true (Zdiv (Zpos m) (Zpower_pos Ztwo p)) =
+            CompCert4Lean.Flocq.Core.Raux.Exact.Ztrunc ctx
+              (CompCert4Lean.Flocq.Core.Raux.Exact.Ropp ctx
+                (CompCert4Lean.Foundation.FlocqReal.ExactReal.Rdiv ctx.spec
+                  (CompCert4Lean.Flocq.Core.Raux.Exact.IZR ctx (Zpos m))
+                  (CompCert4Lean.Flocq.Core.Raux.Exact.IZR ctx (Zpower_pos Ztwo p))))
+          rw [CompCert4Lean.Flocq.Core.Raux.Ztrunc_opp ctx]
+          have hmpos : Zlt Z0 (Zpos m) := by
+            change (0 : Int) <
+              _root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (Zpos m)
+            simp only [_root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ]
+            change (0 : Int) < Int.ofNat
+              (_root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat m)
+            exact Int.ofNat_lt.mpr
+              (_root_.CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat_positive m)
+          have hmle : Zle Z0 (Zpos m) := Int.le_of_lt hmpos
+          have hpbase : Zlt Z0 Ztwo := by
+            change (0 : Int) < 2
+            decide
+          have hpowpos := CompCert4Lean.Flocq.Core.Zaux.Zpower_pos_gt_0 Ztwo p hpbase
+          rw [local_trunc_div ctx (Zpos m) (Zpower_pos Ztwo p) hmle hpowpos]
+          rfl
+
+end CompCert4Lean.Lib.IEEE754_extra

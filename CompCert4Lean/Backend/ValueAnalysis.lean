@@ -3105,3 +3105,38 @@ theorem sound_stack_storev
       exact Or.inl hne
 
 end CompCert4Lean.Backend.ValueAnalysis
+
+namespace CompCert4Lean.Backend.ValueAnalysis
+
+open CompCert4Lean.Backend.ValueDomain
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Lib.Integers
+
+theorem sound_stack_storebytes
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    sound_stack_storebytesStatement := by
+  intro cfg prog ge m b ofs bytes m' bc aaddr stk bound hstore hvmatch hstk
+  apply sound_stack_inv
+    (binary64_certificate := binary64_certificate)
+    (binary32_certificate := binary32_certificate)
+    cfg prog ge m' bc stk m bound hstk
+  intro b' ofs' n hbound hbinv hnonneg
+  have htop : pmatch bc b ofs Ptop := by
+    cases hvmatch with
+    | ptr _ _ p hp =>
+        exact pmatch_top' bc b ofs p hp
+    | ifptrPtr _ _ p hp =>
+        exact pmatch_top' bc b ofs p hp
+  have hnotinvalid : bc b ≠ BCinvalid := by
+    cases htop with
+    | top h => exact h
+  have hne : b' ≠ b := by
+    intro heq
+    subst b'
+    exact hnotinvalid hbinv
+  apply Mem.loadbytes_storebytes_other m b (Ptrofs.unsigned ofs) bytes m' hstore b' ofs' n
+    hnonneg
+  exact Or.inl hne
+
+end CompCert4Lean.Backend.ValueAnalysis

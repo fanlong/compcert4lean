@@ -8881,3 +8881,256 @@ theorem longofintu_sound : longofintu_soundStatement := by
           exact Val.lessdef_undef _
 
 end CompCert4Lean.Backend.NeedDomain
+
+namespace CompCert4Lean.Backend.NeedDomain
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Lib.Integers
+open Lean Elab Tactic Meta
+private theorem pgLongofintReprTestbit (a : Int.int) (i : Z)
+    (hi : ZArith.BinInt.Z.le z0 i ∧
+      ZArith.BinInt.Z.lt i Int64.zwordsize) :
+    Int64.testbit (Int64.repr (Int.signed a)) i =
+      ZArith.BinInt.Z.testbit (Int.signed a) i := by
+  rw [← lagreeUnsignedTestbitFinal (Int64.repr (Int.signed a)) i hi.1]
+  rw [local_int64_unsigned_repr_eq_exact]
+  have heq := pg_eqmod_mod64
+    (CompCert4Lean.Foundation.Numbers.Rocq.Coq.two_power_nat 64)
+    (Int.signed a)
+  exact (CompCert4Lean.Lib.Zbits.same_bits_eqmod 64
+    (Int.signed a) (ZArith.BinInt.Z.modulo (Int.signed a) Int64.modulus)
+    i heq hi).symm
+
+end CompCert4Lean.Backend.NeedDomain
+
+namespace CompCert4Lean.Backend.NeedDomain
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Lib.Integers
+
+private theorem pgLongofintAgree (a b : Int.int) (m : Int64.int)
+    (h : iagree a b
+      (Int.or (Int64.loword m) (Int.shl Int.one (Int.repr z31)))) :
+    lagree (Int64.repr (Int.signed a)) (Int64.repr (Int.signed b)) m := by
+  intro i hi hm
+  have hreprA := pgLongofintReprTestbit a i hi
+  have hreprB := pgLongofintReprTestbit b i hi
+  rw [hreprA, hreprB]
+  cases i with
+  | Zneg p =>
+      exfalso
+      have h0 := hi.1
+      change (0 : Int) ≤ -(Int.ofNat (posToNat p)) at h0
+      have hp : (0 : Int) < Int.ofNat (posToNat p) :=
+        Int.natCast_pos.mpr (posToNat_positive p)
+      omega
+  | Z0 =>
+      have h32 : ZArith.BinInt.Z.le z0 z0 ∧
+          ZArith.BinInt.Z.lt z0 Int.zwordsize := by
+        constructor
+        · change (0 : Int) ≤ 0
+          omega
+        · change (0 : Int) < 32
+          omega
+      have hmask : Int.testbit (Int64.loword m) z0 = true := by
+        rw [test_loword_testbit m z0 h32]
+        exact hm
+      have hab := h z0 h32 (by
+        rw [iagreeOrTestbit]
+        simp [hmask])
+      have hsa' : ZArith.BinInt.Z.testbit (Int.signed a) z0 = Int.testbit a z0 := by
+        have hh := CompCert4Lean.Lib.Integers.Int.bits_signed_proof a z0 h32.1
+        run_tac
+          let zltName := lagreePrivateName "CompCert4Lean.Lib.Integers.zltSelect"
+          let selectName := lagreePrivateName "CompCert4Lean.Lib.Integers.sumboolSelect"
+          let testbitName := lagreePrivateName "CompCert4Lean.Lib.Integers.zTestbit"
+          let subName := lagreePrivateName "CompCert4Lean.Lib.Integers.zSub"
+          let oneName := lagreePrivateName "CompCert4Lean.Lib.Integers.zOne"
+          Lean.Elab.Tactic.evalTactic (← `(tactic| unfold $(Lean.mkIdent zltName):ident at $(Lean.mkIdent `hh):ident))
+          Lean.Elab.Tactic.evalTactic (← `(tactic| unfold $(Lean.mkIdent selectName):ident at $(Lean.mkIdent `hh):ident))
+          Lean.Elab.Tactic.evalTactic (← `(tactic| unfold $(Lean.mkIdent testbitName):ident at $(Lean.mkIdent `hh):ident))
+          Lean.Elab.Tactic.evalTactic (← `(tactic| unfold $(Lean.mkIdent subName):ident at $(Lean.mkIdent `hh):ident))
+          Lean.Elab.Tactic.evalTactic (← `(tactic| unfold $(Lean.mkIdent oneName):ident at $(Lean.mkIdent `hh):ident))
+        cases hz : CompCert4Lean.Lib.Coqlib.zlt z0 Int.zwordsize with
+        | left _ => simpa [hz] using hh
+        | right hge => exact False.elim (by
+            have hsmall : (0 : Int) < 32 := by omega
+            change (32 : Int) ≤ 0 at hge
+            omega)
+      have hsb' : ZArith.BinInt.Z.testbit (Int.signed b) z0 = Int.testbit b z0 := by
+        have hh := CompCert4Lean.Lib.Integers.Int.bits_signed_proof b z0 h32.1
+        run_tac
+          let zltName := lagreePrivateName "CompCert4Lean.Lib.Integers.zltSelect"
+          let selectName := lagreePrivateName "CompCert4Lean.Lib.Integers.sumboolSelect"
+          let testbitName := lagreePrivateName "CompCert4Lean.Lib.Integers.zTestbit"
+          let subName := lagreePrivateName "CompCert4Lean.Lib.Integers.zSub"
+          let oneName := lagreePrivateName "CompCert4Lean.Lib.Integers.zOne"
+          Lean.Elab.Tactic.evalTactic (← `(tactic| unfold $(Lean.mkIdent zltName):ident at $(Lean.mkIdent `hh):ident))
+          Lean.Elab.Tactic.evalTactic (← `(tactic| unfold $(Lean.mkIdent selectName):ident at $(Lean.mkIdent `hh):ident))
+          Lean.Elab.Tactic.evalTactic (← `(tactic| unfold $(Lean.mkIdent testbitName):ident at $(Lean.mkIdent `hh):ident))
+          Lean.Elab.Tactic.evalTactic (← `(tactic| unfold $(Lean.mkIdent subName):ident at $(Lean.mkIdent `hh):ident))
+          Lean.Elab.Tactic.evalTactic (← `(tactic| unfold $(Lean.mkIdent oneName):ident at $(Lean.mkIdent `hh):ident))
+        cases hz : CompCert4Lean.Lib.Coqlib.zlt z0 Int.zwordsize with
+        | left _ => simpa [hz] using hh
+        | right hge => exact False.elim (by
+            have hsmall : (0 : Int) < 32 := by omega
+            change (32 : Int) ≤ 0 at hge
+            omega)
+      rw [hsa', hsb']
+      exact hab
+  | Zpos p =>
+      have hkz := hi.2
+      change (Int.ofNat (posToNat p) : Int) < Int.ofNat 64 at hkz
+      have hk : posToNat p < 64 := Int.ofNat_lt.mp hkz
+      have hz : ZArith.BinInt.Z.of_nat (posToNat p) = .Zpos p := by
+        apply intOfZ_injective
+        simp only [ZArith.BinInt.Z.of_nat, intOfZ_zOfInt]
+        rfl
+      by_cases hlt : posToNat p < 32
+      · have h32 : ZArith.BinInt.Z.le z0 (.Zpos p) ∧
+            ZArith.BinInt.Z.lt (.Zpos p) Int.zwordsize := by
+          constructor
+          · change (0 : Int) ≤ Int.ofNat (posToNat p)
+            exact Int.natCast_nonneg _
+          · change (Int.ofNat (posToNat p) : Int) < Int.ofNat 32
+            exact Int.ofNat_lt.mpr hlt
+        have hmask : Int.testbit (Int64.loword m) (.Zpos p) = true := by
+          rw [test_loword_testbit m _ h32]
+          exact hm
+        have hab := h (.Zpos p) h32 (by
+          rw [iagreeOrTestbit]
+          simp [hmask])
+        have hsa : ZArith.BinInt.Z.testbit (Int.signed a) (.Zpos p) = Int.testbit a (.Zpos p) := by
+          have hh := CompCert4Lean.Lib.Integers.Int.bits_signed_proof a (.Zpos p) h32.1
+          run_tac
+            let zltName := lagreePrivateName "CompCert4Lean.Lib.Integers.zltSelect"
+            let selectName := lagreePrivateName "CompCert4Lean.Lib.Integers.sumboolSelect"
+            let testbitName := lagreePrivateName "CompCert4Lean.Lib.Integers.zTestbit"
+            let subName := lagreePrivateName "CompCert4Lean.Lib.Integers.zSub"
+            let oneName := lagreePrivateName "CompCert4Lean.Lib.Integers.zOne"
+            Lean.Elab.Tactic.evalTactic (← `(tactic| unfold $(Lean.mkIdent zltName):ident at $(Lean.mkIdent `hh):ident))
+            Lean.Elab.Tactic.evalTactic (← `(tactic| unfold $(Lean.mkIdent selectName):ident at $(Lean.mkIdent `hh):ident))
+            Lean.Elab.Tactic.evalTactic (← `(tactic| unfold $(Lean.mkIdent testbitName):ident at $(Lean.mkIdent `hh):ident))
+            Lean.Elab.Tactic.evalTactic (← `(tactic| unfold $(Lean.mkIdent subName):ident at $(Lean.mkIdent `hh):ident))
+            Lean.Elab.Tactic.evalTactic (← `(tactic| unfold $(Lean.mkIdent oneName):ident at $(Lean.mkIdent `hh):ident))
+          cases hz : CompCert4Lean.Lib.Coqlib.zlt (.Zpos p) Int.zwordsize with
+          | left _ => simpa [hz] using hh
+          | right hge => exact False.elim (Nat.not_lt_of_ge (by
+              change (Int.ofNat 32 : Int) ≤ Int.ofNat (posToNat p) at hge
+              exact Int.ofNat_le.mp hge) hlt)
+        have hsb : ZArith.BinInt.Z.testbit (Int.signed b) (.Zpos p) = Int.testbit b (.Zpos p) := by
+          have hh := CompCert4Lean.Lib.Integers.Int.bits_signed_proof b (.Zpos p) h32.1
+          run_tac
+            let zltName := lagreePrivateName "CompCert4Lean.Lib.Integers.zltSelect"
+            let selectName := lagreePrivateName "CompCert4Lean.Lib.Integers.sumboolSelect"
+            let testbitName := lagreePrivateName "CompCert4Lean.Lib.Integers.zTestbit"
+            let subName := lagreePrivateName "CompCert4Lean.Lib.Integers.zSub"
+            let oneName := lagreePrivateName "CompCert4Lean.Lib.Integers.zOne"
+            Lean.Elab.Tactic.evalTactic (← `(tactic| unfold $(Lean.mkIdent zltName):ident at $(Lean.mkIdent `hh):ident))
+            Lean.Elab.Tactic.evalTactic (← `(tactic| unfold $(Lean.mkIdent selectName):ident at $(Lean.mkIdent `hh):ident))
+            Lean.Elab.Tactic.evalTactic (← `(tactic| unfold $(Lean.mkIdent testbitName):ident at $(Lean.mkIdent `hh):ident))
+            Lean.Elab.Tactic.evalTactic (← `(tactic| unfold $(Lean.mkIdent subName):ident at $(Lean.mkIdent `hh):ident))
+            Lean.Elab.Tactic.evalTactic (← `(tactic| unfold $(Lean.mkIdent oneName):ident at $(Lean.mkIdent `hh):ident))
+          cases hz : CompCert4Lean.Lib.Coqlib.zlt (.Zpos p) Int.zwordsize with
+          | left _ => simpa [hz] using hh
+          | right hge => exact False.elim (Nat.not_lt_of_ge (by
+              change (Int.ofNat 32 : Int) ≤ Int.ofNat (posToNat p) at hge
+              exact Int.ofNat_le.mp hge) hlt)
+        rw [hsa, hsb]
+        exact hab
+      · have hge : 32 ≤ posToNat p := Nat.le_of_not_gt hlt
+        have h31 : ZArith.BinInt.Z.le z0 z31 ∧
+            ZArith.BinInt.Z.lt z31 Int.zwordsize := by
+          constructor
+          · change (0 : Int) ≤ 31
+            omega
+          · change (31 : Int) < 32
+            omega
+        have hmask31 : Int.testbit
+            (Int.shl Int.one (Int.repr z31)) z31 = true := by
+          have hz31 : z31 = .Zpos (posOfNat 31) := by rfl
+          rw [hz31, iagreeTestbitPos, test_iagreeShlVal]
+          decide
+        have hab := h z31 h31 (by
+          rw [iagreeOrTestbit]
+          simp [hmask31])
+        have hsa : ZArith.BinInt.Z.testbit (Int.signed a) (.Zpos p) = Int.testbit a z31 := by
+          have hh := CompCert4Lean.Lib.Integers.Int.bits_signed_proof a (.Zpos p) (by
+            change (0 : Int) ≤ Int.ofNat (posToNat p)
+            exact Int.natCast_nonneg _)
+          run_tac
+            let zltName := lagreePrivateName "CompCert4Lean.Lib.Integers.zltSelect"
+            let selectName := lagreePrivateName "CompCert4Lean.Lib.Integers.sumboolSelect"
+            let testbitName := lagreePrivateName "CompCert4Lean.Lib.Integers.zTestbit"
+            let subName := lagreePrivateName "CompCert4Lean.Lib.Integers.zSub"
+            let oneName := lagreePrivateName "CompCert4Lean.Lib.Integers.zOne"
+            Lean.Elab.Tactic.evalTactic (← `(tactic| unfold $(Lean.mkIdent zltName):ident at $(Lean.mkIdent `hh):ident))
+            Lean.Elab.Tactic.evalTactic (← `(tactic| unfold $(Lean.mkIdent selectName):ident at $(Lean.mkIdent `hh):ident))
+            Lean.Elab.Tactic.evalTactic (← `(tactic| unfold $(Lean.mkIdent testbitName):ident at $(Lean.mkIdent `hh):ident))
+            Lean.Elab.Tactic.evalTactic (← `(tactic| unfold $(Lean.mkIdent subName):ident at $(Lean.mkIdent `hh):ident))
+            Lean.Elab.Tactic.evalTactic (← `(tactic| unfold $(Lean.mkIdent oneName):ident at $(Lean.mkIdent `hh):ident))
+          cases hz : CompCert4Lean.Lib.Coqlib.zlt (.Zpos p) Int.zwordsize with
+          | left hlt => exact False.elim (by
+              change intOfZ (.Zpos p) < intOfZ Int.zwordsize at hlt
+              have hge' : intOfZ Int.zwordsize ≤ intOfZ (.Zpos p) := by
+                change (Int.ofNat 32 : Int) ≤ Int.ofNat (posToNat p)
+                exact Int.ofNat_le.mpr hge
+              omega)
+          | right _ =>
+              have hz31 : ZArith.BinInt.Z.sub Int.zwordsize z1 = z31 := by rfl
+              simpa [hz, hz31] using hh
+        have hsb : ZArith.BinInt.Z.testbit (Int.signed b) (.Zpos p) = Int.testbit b z31 := by
+          have hh := CompCert4Lean.Lib.Integers.Int.bits_signed_proof b (.Zpos p) (by
+            change (0 : Int) ≤ Int.ofNat (posToNat p)
+            exact Int.natCast_nonneg _)
+          run_tac
+            let zltName := lagreePrivateName "CompCert4Lean.Lib.Integers.zltSelect"
+            let selectName := lagreePrivateName "CompCert4Lean.Lib.Integers.sumboolSelect"
+            Lean.Elab.Tactic.evalTactic (← `(tactic| unfold $(Lean.mkIdent zltName):ident at $(Lean.mkIdent `hh):ident))
+            Lean.Elab.Tactic.evalTactic (← `(tactic| unfold $(Lean.mkIdent selectName):ident at $(Lean.mkIdent `hh):ident))
+          cases hz : CompCert4Lean.Lib.Coqlib.zlt (.Zpos p) Int.zwordsize with
+          | left hlt => exact False.elim (by
+              change intOfZ (.Zpos p) < intOfZ Int.zwordsize at hlt
+              have hge' : intOfZ Int.zwordsize ≤ intOfZ (.Zpos p) := by
+                change (Int.ofNat 32 : Int) ≤ Int.ofNat (posToNat p)
+                exact Int.ofNat_le.mpr hge
+              omega)
+          | right _ =>
+              have hz31 : ZArith.BinInt.Z.sub Int.zwordsize z1 = z31 := by rfl
+              simpa [hz, hz31] using hh
+        rw [hsa, hsb]
+        exact hab
+
+end CompCert4Lean.Backend.NeedDomain
+
+namespace CompCert4Lean.Backend.NeedDomain
+open CompCert4Lean.Common.Values
+
+theorem longofint_sound : longofint_soundStatement := by
+  intro v w x h
+  cases x with
+  | Nothing => trivial
+  | I m =>
+      cases h with
+      | lessdef_refl v =>
+          cases v <;> simp [Val.longofint, vagree, iVagree, lVagree]
+      | lessdef_undef =>
+          simp [Val.longofint, vagree, iVagree, lVagree]
+  | L m =>
+      cases v with
+      | Vint a =>
+          cases w with
+          | Vint b =>
+              simp [longofint, vagree, iVagree, lVagree,
+                Val.longofint] at h ⊢
+              exact pgLongofintAgree a b m h
+          | _ => simp [longofint, vagree, iVagree, lVagree,
+              Val.longofint] at h ⊢
+      | _ => simp [longofint, vagree, iVagree, lVagree,
+          Val.longofint] at h ⊢
+  | All =>
+      cases h with
+      | lessdef_refl v =>
+          exact Val.lessdef_refl _
+      | lessdef_undef v =>
+          exact Val.lessdef_undef _
+
+end CompCert4Lean.Backend.NeedDomain

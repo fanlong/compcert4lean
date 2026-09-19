@@ -5867,3 +5867,41 @@ theorem vnormalize_cast : vnormalize_castStatement := by
     | apply vmatch.ifptrPtr <;> assumption
 
 end CompCert4Lean.Backend.ValueDomain
+
+namespace CompCert4Lean.Backend.ValueDomain
+
+theorem of_xtype_arg_sound : of_xtype_arg_soundStatement := by
+  intro bc v x p harg hmatch
+  cases x <;> cases v <;> simp [CompCert4Lean.Common.Values.Val.has_argtype,
+    of_xtype] at harg hmatch ⊢
+  all_goals try exact hmatch
+  all_goals first
+    | rcases harg with rfl | rfl
+      · apply vmatch.uns _ _ _
+        · change (0 : Int) ≤ 1
+          omega
+        · apply (is_uns_zero_ext _ _).2
+          decide
+      · apply vmatch.uns _ _ _
+        · change (0 : Int) ≤ 1
+          omega
+        · apply (is_uns_zero_ext _ _).2
+          decide
+    | apply vmatch.sgn _ _ _
+      · change (0 : Int) < 8
+        omega
+      · exact (is_sgn_sign_ext _ _ (by change (0 : Int) < 8; omega)).2 harg.symm
+    | apply vmatch.uns _ _ _
+      · change (0 : Int) ≤ 8
+        omega
+      · exact (is_uns_zero_ext _ _).2 harg.symm
+    | apply vmatch.sgn _ _ _
+      · change (0 : Int) < 16
+        omega
+      · exact (is_sgn_sign_ext _ _ (by change (0 : Int) < 16; omega)).2 harg.symm
+    | apply vmatch.uns _ _ _
+      · change (0 : Int) ≤ 16
+        omega
+      · exact (is_uns_zero_ext _ _).2 harg.symm
+
+end CompCert4Lean.Backend.ValueDomain

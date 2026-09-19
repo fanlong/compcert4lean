@@ -4818,3 +4818,12 @@ theorem round_DN_opp :
   exact CompCert4Lean.Flocq.Core.Float_prop.F2R_Zopp ctx beta _ _
 
 end CompCert4Lean.Flocq.Core.Generic_fmt
+
+namespace CompCert4Lean.Flocq.Core.Generic_fmt
+
+theorem Znearest_opp :
+    ∀ ctx, Znearest_oppStatement ctx := by
+  intro ctx choice x
+  exact pg_suffix_Znearest_opp ctx choice x
+
+end CompCert4Lean.Flocq.Core.Generic_fmt

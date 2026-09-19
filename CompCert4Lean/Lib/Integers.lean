@@ -8864,3 +8864,10 @@ theorem or_assoc_proof : or_assoc := by
   exact Nat.or_assoc _ _ _
 
 end CompCert4Lean.Lib.Integers.Int
+
+namespace CompCert4Lean.Lib.Integers.Int
+
+theorem bits_shr_proof : bits_shr := by
+  exact bits_shr_proof_worker
+
+end CompCert4Lean.Lib.Integers.Int

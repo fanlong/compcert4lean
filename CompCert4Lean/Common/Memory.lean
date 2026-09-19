@@ -8024,3 +8024,138 @@ theorem address_inject_gen : address_inject_genStatement := by
 end Mem
 
 end CompCert4Lean.Common.Memory
+
+namespace CompCert4Lean.Common.Memory
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+
+namespace Mem
+
+theorem address_inject : address_injectStatement := by
+  intro f m1 m2 b1 ofs1 b2 delta p hinj hperm hmap
+  exact address_inject_gen f m1 m2 b1 ofs1 b2 delta p hinj (Or.inl hperm) hmap
+
+end Mem
+
+end CompCert4Lean.Common.Memory
+
+namespace CompCert4Lean.Common.Memory
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+
+namespace Mem
+
+theorem address_inject' : address_inject'Statement := by
+  intro f m1 m2 chunk b1 ofs1 b2 delta hinj hvalid hmap
+  apply address_inject f m1 m2 b1 ofs1 b2 delta Memtype.Nonempty hinj ?_ hmap
+  apply hvalid.1
+  constructor
+  · change intOfZ (Ptrofs.unsigned ofs1) ≤ intOfZ (Ptrofs.unsigned ofs1)
+    omega
+  · change intOfZ (Ptrofs.unsigned ofs1) <
+      intOfZ (zAdd (Ptrofs.unsigned ofs1) (size_chunk chunk))
+    have hzadd : intOfZ (zAdd (Ptrofs.unsigned ofs1) (size_chunk chunk)) =
+        intOfZ (Ptrofs.unsigned ofs1) + intOfZ (size_chunk chunk) := by
+      change intOfZ (zOfInt (intOfZ (Ptrofs.unsigned ofs1) +
+        intOfZ (size_chunk chunk))) = _
+      rw [intOfZ_zOfInt]
+    rw [hzadd]
+    have hsize := size_chunk_pos chunk
+    change intOfZ (size_chunk chunk) > 0 at hsize
+    omega
+
+end Mem
+
+end CompCert4Lean.Common.Memory
+
+namespace CompCert4Lean.Common.Memory
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+
+namespace Mem
+
+theorem weak_valid_pointer_inject_no_overflow :
+    weak_valid_pointer_inject_no_overflowStatement := by
+  intro f m1 m2 b ofs b' delta hinj hvalid hmap
+  rw [weak_valid_pointer_spec] at hvalid
+  have hpmax :
+      perm m1 b (Ptrofs.unsigned ofs) Max Memtype.Nonempty ∨
+        perm m1 b (zSub (Ptrofs.unsigned ofs) z1) Max Memtype.Nonempty := by
+    rcases hvalid with hp | hp
+    · exact Or.inl (perm_cur_max m1 b (Ptrofs.unsigned ofs) Memtype.Nonempty
+        ((valid_pointer_nonempty_perm m1 b (Ptrofs.unsigned ofs)).mp hp))
+    · exact Or.inr (perm_cur_max m1 b (zSub (Ptrofs.unsigned ofs) z1)
+        Memtype.Nonempty
+        ((valid_pointer_nonempty_perm m1 b (zSub (Ptrofs.unsigned ofs) z1)).mp hp))
+  obtain ⟨hdelta, hsum⟩ := hinj.mi_representable b b' delta ofs hmap hpmax
+  have hofs0 : 0 ≤ intOfZ (Ptrofs.unsigned ofs) := by
+    have h := ofs.intrange.1
+    change (-1 : Int) < intOfZ (Ptrofs.unsigned ofs) at h
+    omega
+  have hdeltaMax : zLe delta Ptrofs.max_unsigned := by
+    change intOfZ delta ≤ intOfZ Ptrofs.max_unsigned
+    have h := hsum.2
+    change intOfZ (zAdd (Ptrofs.unsigned ofs) delta) ≤
+      intOfZ Ptrofs.max_unsigned at h
+    simp only [zAdd, ZArith.BinInt.Z.add, intOfZ_zOfInt] at h
+    omega
+  have hdelta_repr : Ptrofs.unsigned (Ptrofs.repr delta) = delta :=
+    memory_ptrofs_unsigned_repr delta ⟨hdelta, hdeltaMax⟩
+  rw [hdelta_repr]
+  exact ⟨hsum.1, hsum.2⟩
+
+end Mem
+
+end CompCert4Lean.Common.Memory
+
+namespace CompCert4Lean.Common.Memory
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+
+namespace Mem
+
+theorem valid_pointer_inject_val : valid_pointer_inject_valStatement := by
+  intro f m1 m2 b ofs b' ofs' hinj hvalid hv
+  cases hv with
+  | inject_ptr =>
+      rename_i delta hmap hofs
+      have hvalid_access :=
+        (valid_pointer_valid_access m1 b (Ptrofs.unsigned ofs)).mp hvalid
+      have haddr := address_inject' f m1 m2 Mint8unsigned b ofs b' delta hinj
+        hvalid_access hmap
+      have hp := valid_pointer_inject f m1 m2 b (Ptrofs.unsigned ofs) b' delta
+        hmap hinj hvalid
+      rw [hofs, haddr]
+      exact hp
+
+end Mem
+
+end CompCert4Lean.Common.Memory
