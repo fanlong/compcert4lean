@@ -2534,3 +2534,91 @@ theorem extcall_annot_ok : extcall_annot_okStatement := by
         exact ⟨match_traces_annot _ _, by intro; exact ⟨rfl, rfl⟩⟩
 
 end CompCert4Lean.Common.Events
+
+namespace CompCert4Lean.Common.Events
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.Builtins
+open CompCert4Lean.Common.Builtins0
+open CompCert4Lean.Common.Values
+
+theorem known_builtin_ok
+    [binary64_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)] :
+    known_builtin_okStatement := by
+  intro bf
+  refine {
+    ec_well_typed := ?_
+    ec_symbols_preserved := ?_
+    ec_valid_block := ?_
+    ec_max_perm := ?_
+    ec_readonly := ?_
+    ec_mem_extends := ?_
+    ec_mem_inject := ?_
+    ec_trace_length := ?_
+    ec_receptive := ?_
+    ec_determ := ?_ }
+  · intro ge vargs m1 t vres m2 hsem
+    cases hsem with
+    | known_builtin_sem_intro vargs vres evaluation =>
+        have ht := (builtin_function_sem bf).bs_well_typed vargs
+        change val_opt_has_rettype (builtin_function_sem bf vargs)
+          (builtin_function_sig bf).sig_res at ht
+        rw [evaluation] at ht
+        exact ht
+  · intro ge1 ge2 vargs m1 t vres m2 _ hsem
+    cases hsem with
+    | known_builtin_sem_intro vargs vres evaluation =>
+        exact known_builtin_sem_intro vargs vres m1 evaluation
+  · intro ge vargs m1 t vres m2 b hsem hb
+    cases hsem
+    exact hb
+  · intro ge vargs m1 t vres m2 b ofs p hsem hb hp
+    cases hsem
+    exact hp
+  · intro ge vargs m1 t vres m2 b ofs n bytes hsem hb hload hreadonly
+    cases hsem
+    exact hload
+  · intro ge vargs m1 t vres m2 m1' vargs' hsem hext hless
+    cases hsem with
+    | known_builtin_sem_intro vargs vres evaluation =>
+        obtain ⟨vres', evaluation', hres⟩ :=
+          builtin_function_sem_lessdef bf vargs vres vargs' evaluation hless
+        exact ⟨vres', m1', known_builtin_sem_intro vargs' vres' m1' evaluation',
+          hres, hext, extcall_debug_unchanged_on_refl (loc_out_of_bounds m1) m1'⟩
+  · intro ge1 ge2 vargs m1 t vres m2 f m1' vargs' hsymbols hsem hinj hvlist
+    cases hsem with
+    | known_builtin_sem_intro vargs vres evaluation =>
+        obtain ⟨vres', evaluation', hres⟩ :=
+          builtin_function_sem_inject bf vargs vres f vargs' evaluation hvlist
+        refine ⟨f, vres', m1', known_builtin_sem_intro vargs' vres' m1' evaluation',
+          hres, hinj, ?_, ?_, ?_, ?_⟩
+        · exact extcall_debug_unchanged_on_refl (loc_unmapped f) m1
+        · exact extcall_debug_unchanged_on_refl (loc_out_of_reach f m1) m1'
+        · intro b b' delta h
+          exact h
+        · intro b1 b2 delta hnone hsome
+          rw [hnone] at hsome
+          cases hsome
+  · intro ge vargs m t vres m' hsem
+    cases hsem
+    simp [E0]
+  · intro ge vargs m t1 vres1 m1 t2 hsem hmatch
+    cases hsem with
+    | known_builtin_sem_intro vargs vres evaluation =>
+        cases hmatch
+        exact ⟨vres1, m, known_builtin_sem_intro vargs vres1 m evaluation⟩
+  · intro ge vargs m t1 vres1 m1 t2 vres2 m2 hsem1 hsem2
+    cases hsem1 with
+    | known_builtin_sem_intro vargs vres1 evaluation1 =>
+      cases hsem2 with
+      | known_builtin_sem_intro vargs vres2 evaluation2 =>
+        have hv : vres1 = vres2 := Option.some.inj (evaluation1.symm.trans evaluation2)
+        subst vres2
+        exact ⟨match_traces_E0, by intro; exact ⟨rfl, rfl⟩⟩
+
+end CompCert4Lean.Common.Events
