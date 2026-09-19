@@ -2622,3 +2622,140 @@ theorem known_builtin_ok
         exact ⟨match_traces_E0, by intro; exact ⟨rfl, rfl⟩⟩
 
 end CompCert4Lean.Common.Events
+
+namespace CompCert4Lean.Common.Events
+
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Lib.Integers
+
+theorem volatile_load_ok : volatile_load_okStatement := by
+  intro chunk
+  refine {
+    ec_well_typed := ?_
+    ec_symbols_preserved := ?_
+    ec_valid_block := ?_
+    ec_max_perm := ?_
+    ec_readonly := ?_
+    ec_mem_extends := ?_
+    ec_mem_inject := ?_
+    ec_trace_length := ?_
+    ec_receptive := ?_
+    ec_determ := ?_ }
+  · intro ge vargs m1 t vres m2 hsem
+    cases hsem with
+    | volatile_load_sem_intro b ofs _ _ _ hload =>
+        cases hload with
+        | volatile_load_vol id ev _ hvol hfind hmatch =>
+            exact Val.load_result_xtype chunk _
+        | volatile_load_nonvol _ hnot hload =>
+            exact Mem.load_xtype m1 chunk b (Ptrofs.unsigned ofs) _ hload
+  · intro ge1 ge2 vargs m1 t vres m2 heq hsem
+    cases hsem with
+    | volatile_load_sem_intro b ofs _ _ _ hload =>
+        apply volatile_load_sem_intro
+        exact volatile_load_preserved ge1 ge2 chunk m1 b ofs t vres heq hload
+  · intro ge vargs m1 t vres m2 b hsem hb
+    cases hsem
+    exact hb
+  · intro ge vargs m1 t vres m2 b ofs p hsem hb hp
+    cases hsem
+    exact hp
+  · intro ge vargs m1 t vres m2 b ofs n bytes hsem hb hload hreadonly
+    cases hsem
+    exact hload
+  · intro ge vargs m1 t vres m2 m1' vargs' hsem hext hless
+    cases hsem with
+    | volatile_load_sem_intro b ofs _ _ _ hload =>
+        have hvargs : vargs' = [Vptr b ofs] := by
+          cases hless with
+          | lessdef_list_cons _ _ _ _ hhead htail =>
+              cases htail
+              cases hhead
+              rfl
+        subst vargs'
+        obtain ⟨v', hload', hval⟩ :=
+          volatile_load_extends ge chunk m1 b ofs t vres m1' hload hext
+        refine ⟨v', m1', ?_, hval, hext, extcall_debug_unchanged_on_refl _ _⟩
+        apply volatile_load_sem_intro
+        exact hload'
+  · intro ge1 ge2 vargs m1 t vres m2 f m1' vargs'
+      hsymbols hsem hmem hvlist
+    cases hsem with
+    | volatile_load_sem_intro b ofs _ _ _ hload =>
+        cases hvlist with
+        | inject_list_cons _ v2 _ _ hptr htail =>
+            cases htail
+            cases hptr with
+            | inject_ptr _ _ b2 ofs2 delta hmap hofs =>
+                obtain ⟨v', hload', hval⟩ :=
+                  volatile_load_inject ge1 ge2 f chunk m1 b ofs t vres
+                    b2 ofs2 m1' hsymbols hload
+                    (Val.inject.inject_ptr b ofs b2 ofs2 delta hmap hofs) hmem
+                refine ⟨f, v', m1', ?_, hval, hmem,
+                  extcall_debug_unchanged_on_refl _ _,
+                  extcall_debug_unchanged_on_refl _ _, ?_, ?_⟩
+                · apply volatile_load_sem_intro
+                  exact hload'
+                · intro b0 b' delta' hmap'
+                  exact hmap'
+                · intro b0 b' delta' hnone hsome
+                  rw [hnone] at hsome
+                  cases hsome
+  · intro ge vargs m t vres m' hsem
+    cases hsem with
+    | volatile_load_sem_intro _ _ _ _ _ hload =>
+        cases hload with
+        | volatile_load_vol => simp
+        | volatile_load_nonvol =>
+            change List.length ([] : List event) ≤ 1
+            simp
+  · intro ge vargs m t1 vres1 m1 t2 hsem hmatch
+    cases hsem with
+    | volatile_load_sem_intro b ofs _ _ _ hload =>
+        obtain ⟨v2, hload2⟩ :=
+          volatile_load_receptive ge chunk m b ofs t1 t2 vres1 hload hmatch
+        refine ⟨v2, m, ?_⟩
+        apply volatile_load_sem_intro
+        exact hload2
+  · intro ge vargs m t1 vres1 m1 t2 vres2 m2 hsem1 hsem2
+    cases hsem1 with
+    | volatile_load_sem_intro b1 ofs1 _ _ _ hload1 =>
+        cases hsem2 with
+        | volatile_load_sem_intro b2 ofs2 _ _ _ hload2 =>
+            cases hload1 with
+            | volatile_load_vol id ev _ hvol hfind hmatch =>
+                cases hload2 with
+                | volatile_load_vol id0 ev0 _ hvol0 hfind0 hmatch0 =>
+                    have hid : id = id0 :=
+                      ge.find_symbol_injective id id0 hfind hfind0
+                    subst id0
+                    refine ⟨match_traces_vload chunk id ofs1 ev ev0
+                      (eventval_match_valid ge ev (type_of_chunk chunk) _ hmatch)
+                      (eventval_match_valid ge ev0 (type_of_chunk chunk) _ hmatch0)
+                      (eventval_match_same_type ge ev (type_of_chunk chunk) _ ev0 _ hmatch hmatch0), ?_⟩
+                    intro heq
+                    cases heq
+                    have hv : _ = _ :=
+                      eventval_match_determ_1 ge ev (type_of_chunk chunk) _ _ hmatch hmatch0
+                    subst_vars
+                    exact ⟨rfl, rfl⟩
+                | volatile_load_nonvol _ hnot0 hload0 =>
+                    rw [hvol] at hnot0
+                    cases hnot0
+            | volatile_load_nonvol _ hnot hload =>
+                cases hload2 with
+                | volatile_load_vol id0 ev0 _ hvol0 hfind0 hmatch0 =>
+                    rw [hvol0] at hnot
+                    cases hnot
+                | volatile_load_nonvol _ hnot0 hload0 =>
+                    refine ⟨match_traces_E0, ?_⟩
+                    intro heq
+                    have hv : _ = _ := Option.some.inj (hload.symm.trans hload0)
+                    subst_vars
+                    exact ⟨rfl, rfl⟩
+
+end CompCert4Lean.Common.Events
