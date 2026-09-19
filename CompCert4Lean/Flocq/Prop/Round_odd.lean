@@ -4530,3 +4530,19 @@ open CompCert4Lean.Flocq.Core
       exact h
 
 end CompCert4Lean.Flocq.Prop.Round_odd
+
+namespace CompCert4Lean.Flocq.Prop.Round_odd
+
+open CompCert4Lean.Flocq.Core
+
+theorem u'_eq : ∀ (ctx : ExactRealContext) (magnitude : ExactMagnitude ctx),
+    u'_eqStatement ctx magnitude := by
+  intro ctx magnitude beta fexp hvalid x d u hd hdcanon hu hdpos
+  rw [u_eq ctx magnitude beta fexp hvalid x u hu]
+  unfold round
+  refine ⟨_, rfl, ?_⟩
+  change fexp (mag_val ctx magnitude beta x) = Fexp d
+  have hdexp := Fexp_d ctx magnitude beta fexp hvalid x d hd hdcanon hdpos
+  rw [hdexp]
+
+end CompCert4Lean.Flocq.Prop.Round_odd

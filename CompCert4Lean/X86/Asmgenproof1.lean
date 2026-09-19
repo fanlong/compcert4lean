@@ -4083,3 +4083,90 @@ theorem testcond_for_signed_comparison_32_correct :
       <;> omega
 
 end CompCert4Lean.X86.Asmgenproof1
+
+namespace CompCert4Lean.X86.Asmgenproof1
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open Lean Elab Tactic Meta
+private theorem word_eq_eq_decide_unsigned_aux2 {bits : Nat}
+    (x y : CompCert4Lean.Lib.Integers.WordCore.Word bits) :
+    CompCert4Lean.Lib.Integers.WordCore.eq x y =
+      decide (intOfZ (CompCert4Lean.Lib.Integers.WordCore.unsigned x) =
+        intOfZ (CompCert4Lean.Lib.Integers.WordCore.unsigned y)) := by
+  by_cases hu : intOfZ (CompCert4Lean.Lib.Integers.WordCore.unsigned x) = intOfZ (CompCert4Lean.Lib.Integers.WordCore.unsigned y)
+  · have huz := intOfZ_injective hu
+    have hxy : x = y := by rw [← word_repr_unsigned_aux x, ← word_repr_unsigned_aux y, huz]
+    subst y; simp [CompCert4Lean.Lib.Integers.WordCore.eq]
+  · have hxy : x.intval ≠ y.intval := by
+      intro hval; apply hu; have hxy : x = y := CompCert4Lean.Lib.Integers.WordCore.ext hval; subst y; rfl
+    simp [CompCert4Lean.Lib.Integers.WordCore.eq, hu, hxy]
+
+theorem testcond_for_unsigned_comparison_32_correct : testcond_for_unsigned_comparison_32_correctStatement := by
+  intro c v1 v2 rs m b hb
+  have hs := compare_ints_spec rs v1 v2 m
+  rcases hs with ⟨hzf, hcf, hsf, hof, hdata⟩
+  cases v1 <;> cases v2 <;>
+    simp [CompCert4Lean.Common.Values.Val.cmpu_bool,
+      CompCert4Lean.X86_64.Archi.ptr64] at hb
+  case Vint.Vint x y =>
+    subst b
+    have hltxy := word_ltu_eq_decide_aux x y
+    have hltyx := word_ltu_eq_decide_aux y x
+    have heqxy := word_eq_eq_decide_unsigned_aux2 x y
+    have honezero : CompCert4Lean.Lib.Integers.Int.one.intval ≠
+        CompCert4Lean.Lib.Integers.Int.zero.intval := by decide
+    have hzeroone : CompCert4Lean.Lib.Integers.Int.zero.intval ≠
+        CompCert4Lean.Lib.Integers.Int.one.intval := Ne.symm honezero
+    cases c <;>
+      simp only [CompCert4Lean.X86.Asmgen.testcond_for_unsigned_comparison,
+        CompCert4Lean.X86.Asm.eval_testcond]
+    all_goals
+      run_tac
+        let g ← getMainGoal
+        let t ← g.getType
+        let flagName := asmgenproof1AsmPrivateName "CompCert4Lean.X86.Asm.flagValue"
+        let t ← Lean.Meta.transform t (post := fun e => do
+          if e.isAppOf flagName then return .visit (← Lean.Meta.unfoldDefinition e)
+          else return .continue)
+        let g ← g.replaceTargetDefEq t
+        Lean.Elab.Tactic.replaceMainGoal [g]
+      simp only [CompCert4Lean.X86.Asm.Pregmap.get, hzf, hcf]
+    have hvaliff : x.intval = y.intval ↔
+        intOfZ (CompCert4Lean.Lib.Integers.WordCore.unsigned x) =
+          intOfZ (CompCert4Lean.Lib.Integers.WordCore.unsigned y) := by
+      constructor
+      · intro h; have hxy : x = y := CompCert4Lean.Lib.Integers.WordCore.ext h; subst y; rfl
+      · intro h
+        have hu : CompCert4Lean.Lib.Integers.WordCore.unsigned x =
+            CompCert4Lean.Lib.Integers.WordCore.unsigned y := intOfZ_injective h
+        have hxy : x = y := by
+          rw [← word_repr_unsigned_aux x, ← word_repr_unsigned_aux y, hu]
+        subst y; rfl
+    all_goals
+      simp_all [CompCert4Lean.Common.Values.Val.cmpu,
+        CompCert4Lean.Common.Values.Val.cmpu_bool,
+        CompCert4Lean.Common.Values.Val.of_optbool,
+        CompCert4Lean.Common.Values.Vtrue,
+        CompCert4Lean.Common.Values.Vfalse,
+        CompCert4Lean.Lib.Integers.Int.cmpu,
+        CompCert4Lean.Lib.Integers.WordCore.cmpu,
+        CompCert4Lean.Lib.Integers.Int.eq,
+        CompCert4Lean.Lib.Integers.WordCore.eq,
+        hltxy, hltyx, heqxy]
+    all_goals
+      by_cases hp : decide (intOfZ (CompCert4Lean.Lib.Integers.WordCore.unsigned x) <
+          intOfZ (CompCert4Lean.Lib.Integers.WordCore.unsigned y)) = true
+      <;> by_cases hq : decide (intOfZ (CompCert4Lean.Lib.Integers.WordCore.unsigned y) <
+          intOfZ (CompCert4Lean.Lib.Integers.WordCore.unsigned x)) = true
+      <;> by_cases he : decide (intOfZ (CompCert4Lean.Lib.Integers.WordCore.unsigned x) =
+          intOfZ (CompCert4Lean.Lib.Integers.WordCore.unsigned y)) = true
+      <;> simp [hp, hq, he, CompCert4Lean.Lib.Integers.Int.cmpu,
+        CompCert4Lean.Lib.Integers.WordCore.cmpu,
+        CompCert4Lean.Lib.Integers.Int.eq,
+        CompCert4Lean.Lib.Integers.WordCore.eq, honezero, hzeroone]
+      <;> simp_all [CompCert4Lean.Lib.Integers.Int.cmpu,
+        CompCert4Lean.Lib.Integers.WordCore.cmpu,
+        CompCert4Lean.Lib.Integers.Int.eq,
+        CompCert4Lean.Lib.Integers.WordCore.eq, honezero, hzeroone]
+      <;> omega
+
+end CompCert4Lean.X86.Asmgenproof1

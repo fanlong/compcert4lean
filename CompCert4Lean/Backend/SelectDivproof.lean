@@ -3733,3 +3733,65 @@ theorem eval_modsimm
       simp [CompCert4Lean.Common.Values.Val.divs] at hdiv
 
 end CompCert4Lean.Backend.SelectDivproof
+
+namespace CompCert4Lean.Backend.SelectDivproof
+
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.Backend.SelectDiv
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.X86.Op
+open CompCert4Lean.X86.SelectOp
+
+theorem eval_mods
+    [binary64_certificate : BinaryNormalizeCertificate (ZArith.BinInt.Z.of_nat 53)
+      (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (ZArith.BinInt.Z.of_nat 24)
+      (ZArith.BinInt.Z.of_nat 128)] :
+    eval_modsStatement := by
+  intro cfg xi prog sp e m le a b x y z ha hb hmod
+  unfold mods
+  cases hB : CompCert4Lean.Backend.SelectDiv.is_intconst b with
+  | none =>
+      exact CompCert4Lean.X86.SelectOpproof.eval_mods_base
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        xi (Genv.globalenv prog) sp e m le a b x y z ha hb hmod
+  | some n2 =>
+      have hy := is_intconst_sound
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        xi prog sp e m y b n2 le hB hb
+      subst y
+      cases hA : CompCert4Lean.Backend.SelectDiv.is_intconst a with
+      | none =>
+          exact eval_modsimm
+            (binary64_certificate := binary64_certificate)
+            (binary32_certificate := binary32_certificate)
+            cfg xi prog sp e m le a x n2 z ha hmod
+      | some n1 =>
+          have hx := is_intconst_sound
+            (binary64_certificate := binary64_certificate)
+            (binary32_certificate := binary32_certificate)
+            xi prog sp e m x a n1 le hA ha
+          subst x
+          by_cases hz : CompCert4Lean.Lib.Integers.Int.eq n2
+              CompCert4Lean.Lib.Integers.Int.zero = true
+          · simp only [hB, hA, if_pos hz]
+            exact CompCert4Lean.X86.SelectOpproof.eval_mods_base
+              (binary64_certificate := binary64_certificate)
+              (binary32_certificate := binary32_certificate)
+              xi (Genv.globalenv prog) sp e m le a b
+              (.Vint n1) (.Vint n2) z ha hb hmod
+          · simp only [hB, hA, if_neg hz]
+            have hdz : z = .Vint (CompCert4Lean.Lib.Integers.Int.mods n1 n2) := by
+              simp [CompCert4Lean.Common.Values.Val.mods, hz] at hmod
+              exact hmod.2.symm
+            subst z
+            exact ⟨.Vint (CompCert4Lean.Lib.Integers.Int.mods n1 n2),
+              eval_intconst_local xi (Genv.globalenv prog) sp e m le
+                (CompCert4Lean.Lib.Integers.Int.mods n1 n2),
+              Val.lessdef_refl _⟩
+
+end CompCert4Lean.Backend.SelectDivproof
