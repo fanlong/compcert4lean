@@ -454,3 +454,230 @@ theorem join_bits_range : join_bits_rangeStatement := by
         omega
 
 end CompCert4Lean.Flocq.IEEE754.Bits
+
+namespace CompCert4Lean.Flocq.IEEE754.Bits
+
+open CompCert4Lean.Flocq.Core
+
+private abbrev bits_intOfZ2 :=
+  CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+
+theorem split_join_bits : split_join_bitsStatement := by
+  intro mw ew s m e Hm He
+  change 0 ≤ bits_intOfZ2 m ∧ bits_intOfZ2 m < bits_intOfZ2 (Zpower Ztwo mw) at Hm
+  change 0 ≤ bits_intOfZ2 e ∧ bits_intOfZ2 e < bits_intOfZ2 (Zpower Ztwo ew) at He
+  have hmw : Zle Z0 mw := by
+    change 0 ≤ bits_intOfZ2 mw
+    cases mw with
+    | Z0 => simp [bits_intOfZ2, CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ]
+    | Zpos p => simp [bits_intOfZ2, CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ]
+    | Zneg p =>
+      have hpow : bits_intOfZ2 (Zpower Ztwo (.Zneg p)) = 0 := by
+        simp [bits_intOfZ2, Zpower,
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.pow,
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ,
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat_positive]
+      rw [hpow] at Hm
+      simp [bits_intOfZ2, CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ] at *
+      omega
+  have hew : Zle Z0 ew := by
+    change 0 ≤ bits_intOfZ2 ew
+    cases ew with
+    | Z0 => simp [bits_intOfZ2, CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ]
+    | Zpos p => simp [bits_intOfZ2, CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ]
+    | Zneg p =>
+      have hpow : bits_intOfZ2 (Zpower Ztwo (.Zneg p)) = 0 := by
+        simp [bits_intOfZ2, Zpower,
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.pow,
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ,
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat_positive]
+      rw [hpow] at He
+      simp [bits_intOfZ2, CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ] at *
+      omega
+  have hmmpos : Zlt Z0 (Zpower Ztwo mw) := by
+    exact CompCert4Lean.Flocq.Core.Zaux.Zpower_gt_0
+      CompCert4Lean.Flocq.Core.Zaux.radix2 mw hmw
+  have hempos : Zlt Z0 (Zpower Ztwo ew) := by
+    exact CompCert4Lean.Flocq.Core.Zaux.Zpower_gt_0
+      CompCert4Lean.Flocq.Core.Zaux.radix2 ew hew
+  dsimp [split_bits, join_bits]
+  have hshift : Zshiftl (Zadd (if s then Zpower Ztwo ew else Z0) e) mw =
+      Zmul (Zadd (if s then Zpower Ztwo ew else Z0) e) (Zpower Ztwo mw) := by
+    exact CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.shiftl_mul_pow2
+      _ _ hmw
+  rw [hshift]
+  cases s with
+  | false =>
+      simp only [Bool.false_eq_true, ↓reduceIte]
+      have hmodm : Zmod (Zadd (Zmul (Zadd Z0 e) (Zpower Ztwo mw)) m)
+          (Zpower Ztwo mw) = m := by
+        change CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.modulo
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add
+            (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.mul
+              (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add Z0 e)
+              (Zpower Ztwo mw)) m) (Zpower Ztwo mw) = m
+        rw [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add_comm
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.mul
+            (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add Z0 e)
+            (Zpower Ztwo mw)) m]
+        rw [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.Zdiv.Z_mod_plus_full]
+        exact CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.Zdiv.Zmod_small m
+          (Zpower Ztwo mw) Hm
+      have hbool : Zlt
+          (Zadd (Zmul (Zadd Z0 e) (Zpower Ztwo mw)) m)
+          (Zmul (Zpower Ztwo mw) (Zpower Ztwo ew)) := by
+        change bits_intOfZ2 (Zadd (Zmul (Zadd Z0 e) (Zpower Ztwo mw)) m) <
+          bits_intOfZ2 (Zmul (Zpower Ztwo mw) (Zpower Ztwo ew))
+        simp only [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add,
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.mul,
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt,
+          Int.zero_add]
+        have hzero : CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ Z0 = 0 := by decide
+        rw [hzero]
+        have hM0 : 0 ≤ bits_intOfZ2 (Zpower Ztwo mw) := Int.le_of_lt hmmpos
+        have hE1 : (1 : Int) ≤ bits_intOfZ2 (Zpower Ztwo ew) := by
+          have hEpos : 0 < bits_intOfZ2 (Zpower Ztwo ew) := hempos
+          omega
+        have hcoef : bits_intOfZ2 e + 1 ≤ bits_intOfZ2 (Zpower Ztwo ew) := by
+          omega
+        have hmul :
+            (bits_intOfZ2 e + 1) * bits_intOfZ2 (Zpower Ztwo mw) ≤
+              bits_intOfZ2 (Zpower Ztwo ew) * bits_intOfZ2 (Zpower Ztwo mw) :=
+          Int.mul_le_mul_of_nonneg_right hcoef hM0
+        have hstep :
+            bits_intOfZ2 e * bits_intOfZ2 (Zpower Ztwo mw) + bits_intOfZ2 m <
+              (bits_intOfZ2 e + 1) * bits_intOfZ2 (Zpower Ztwo mw) := by
+          calc
+            bits_intOfZ2 e * bits_intOfZ2 (Zpower Ztwo mw) + bits_intOfZ2 m <
+                bits_intOfZ2 e * bits_intOfZ2 (Zpower Ztwo mw) +
+                  bits_intOfZ2 (Zpower Ztwo mw) := by omega
+            _ = (bits_intOfZ2 e + 1) * bits_intOfZ2 (Zpower Ztwo mw) := by
+              rw [Int.add_mul, Int.one_mul]
+        have hlt := Int.lt_of_lt_of_le hstep hmul
+        simpa [Int.mul_comm] using hlt
+      have hz : Zadd Z0 e = e := by
+        apply CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective
+        simp only [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add]
+        rw [CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+        have hzero : CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ Z0 = 0 := by decide
+        rw [hzero]
+        simp
+      have hdiv : Zdiv (Zadd (Zmul (Zadd Z0 e) (Zpower Ztwo mw)) m)
+          (Zpower Ztwo mw) = e := by
+        rw [hz]
+        change CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.div
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add
+            (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.mul e
+              (Zpower Ztwo mw)) m) (Zpower Ztwo mw) = e
+        have hMne : Zpower Ztwo mw ≠ Z0 := by
+          intro h
+          have hp := hmmpos
+          rw [h] at hp
+          change (0 : Int) < 0 at hp
+          omega
+        rw [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.Zdiv.Z_div_plus_full_l
+          e (Zpower Ztwo mw) m hMne]
+        rw [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.Zdiv.Zdiv_small m
+          (Zpower Ztwo mw) Hm]
+        apply CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective
+        simp only [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add]
+        rw [CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+        have hzero : CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ Z0 = 0 := by decide
+        rw [hzero, Int.add_zero]
+      have hmod_e : Zmod (Zdiv (Zadd (Zmul (Zadd Z0 e) (Zpower Ztwo mw)) m)
+          (Zpower Ztwo mw)) (Zpower Ztwo ew) = e := by
+        rw [hdiv]
+        exact CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.Zdiv.Zmod_small e
+          (Zpower Ztwo ew) He
+      apply Prod.ext
+      · apply Prod.ext
+        · exact CompCert4Lean.Flocq.Core.Zaux.Zle_bool_false _ _ hbool
+        · exact hmodm
+      · exact hmod_e
+  | true =>
+      simp only [↓reduceIte]
+      have hmodm : Zmod (Zadd (Zmul (Zadd (Zpower Ztwo ew) e) (Zpower Ztwo mw)) m)
+          (Zpower Ztwo mw) = m := by
+        change CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.modulo
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add
+            (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.mul
+              (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add
+                (Zpower Ztwo ew) e) (Zpower Ztwo mw)) m) (Zpower Ztwo mw) = m
+        rw [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add_comm
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.mul
+            (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add
+              (Zpower Ztwo ew) e) (Zpower Ztwo mw)) m]
+        rw [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.Zdiv.Z_mod_plus_full]
+        exact CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.Zdiv.Zmod_small m
+          (Zpower Ztwo mw) Hm
+      have hbool : Zle (Zmul (Zpower Ztwo mw) (Zpower Ztwo ew))
+          (Zadd (Zmul (Zadd (Zpower Ztwo ew) e) (Zpower Ztwo mw)) m) := by
+        change bits_intOfZ2 (Zmul (Zpower Ztwo mw) (Zpower Ztwo ew)) ≤
+          bits_intOfZ2 (Zadd (Zmul (Zadd (Zpower Ztwo ew) e) (Zpower Ztwo mw)) m)
+        simp only [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add,
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.mul,
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+        have hM0 : 0 ≤ bits_intOfZ2 (Zpower Ztwo mw) := Int.le_of_lt hmmpos
+        have hcoef : bits_intOfZ2 (Zpower Ztwo ew) ≤
+            bits_intOfZ2 (Zpower Ztwo ew) + bits_intOfZ2 e := by omega
+        have hmul : bits_intOfZ2 (Zpower Ztwo ew) * bits_intOfZ2 (Zpower Ztwo mw) ≤
+            (bits_intOfZ2 (Zpower Ztwo ew) + bits_intOfZ2 e) *
+              bits_intOfZ2 (Zpower Ztwo mw) :=
+          Int.mul_le_mul_of_nonneg_right hcoef hM0
+        have hmul' : bits_intOfZ2 (Zpower Ztwo mw) * bits_intOfZ2 (Zpower Ztwo ew) ≤
+            (bits_intOfZ2 (Zpower Ztwo ew) + bits_intOfZ2 e) *
+              bits_intOfZ2 (Zpower Ztwo mw) := by
+          simpa [Int.mul_comm] using hmul
+        have hplus :
+            (bits_intOfZ2 (Zpower Ztwo ew) + bits_intOfZ2 e) *
+                bits_intOfZ2 (Zpower Ztwo mw) ≤
+              (bits_intOfZ2 (Zpower Ztwo ew) + bits_intOfZ2 e) *
+                bits_intOfZ2 (Zpower Ztwo mw) + bits_intOfZ2 m := by omega
+        exact Int.le_trans hmul' hplus
+      have hdiv : Zdiv (Zadd (Zmul (Zadd (Zpower Ztwo ew) e) (Zpower Ztwo mw)) m)
+          (Zpower Ztwo mw) = Zadd (Zpower Ztwo ew) e := by
+        change CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.div
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add
+            (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.mul
+              (Zadd (Zpower Ztwo ew) e) (Zpower Ztwo mw)) m)
+            (Zpower Ztwo mw) = Zadd (Zpower Ztwo ew) e
+        have hMne : Zpower Ztwo mw ≠ Z0 := by
+          intro h
+          have hp := hmmpos
+          rw [h] at hp
+          change (0 : Int) < 0 at hp
+          omega
+        rw [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.Zdiv.Z_div_plus_full_l
+          (Zadd (Zpower Ztwo ew) e) (Zpower Ztwo mw) m hMne]
+        rw [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.Zdiv.Zdiv_small m
+          (Zpower Ztwo mw) Hm]
+        apply CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective
+        simp only [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add]
+        rw [CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+        have hzero : CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ Z0 = 0 := by decide
+        rw [hzero, Int.add_zero]
+      have hadd : Zadd (Zpower Ztwo ew) e =
+          Zadd e (Zmul Zone (Zpower Ztwo ew)) := by
+        apply CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective
+        simp only [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add,
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.mul,
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+        have hzone : CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ Zone = 1 := by decide
+        rw [hzone, Int.one_mul, Int.add_comm]
+      have hmod_e : Zmod (Zdiv (Zadd (Zmul (Zadd (Zpower Ztwo ew) e)
+          (Zpower Ztwo mw)) m) (Zpower Ztwo mw)) (Zpower Ztwo ew) = e := by
+        rw [hdiv, hadd]
+        change CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.modulo
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add e
+            (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.mul Zone
+              (Zpower Ztwo ew))) (Zpower Ztwo ew) = e
+        rw [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.Zdiv.Z_mod_plus_full]
+        exact CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.Zdiv.Zmod_small e
+          (Zpower Ztwo ew) He
+      apply Prod.ext
+      · apply Prod.ext
+        · exact CompCert4Lean.Flocq.Core.Zaux.Zle_bool_true _ _ hbool
+        · exact hmodm
+      · exact hmod_e
+
+end CompCert4Lean.Flocq.IEEE754.Bits

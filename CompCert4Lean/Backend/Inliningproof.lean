@@ -2929,3 +2929,10 @@ theorem transf_final_states : transf_final_statesStatement := by
           cases hfalse
 
 end CompCert4Lean.Backend.Inliningproof
+
+namespace CompCert4Lean.Backend.Inliningproof
+
+theorem range_private_invariant : range_private_invariantStatement :=
+  range_private_invariant_local
+
+end CompCert4Lean.Backend.Inliningproof

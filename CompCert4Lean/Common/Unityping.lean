@@ -1267,3 +1267,10 @@ theorem solve_complete : solve_completeStatement := by
   simp [solve, hsolve]
 
 end CompCert4Lean.Common.Unityping.UniSolver
+
+namespace CompCert4Lean.Common.Unityping.UniSolver
+
+theorem solve_rec_false : solve_rec_falseStatement := by
+  exact solve_rec_false_aux
+
+end CompCert4Lean.Common.Unityping.UniSolver

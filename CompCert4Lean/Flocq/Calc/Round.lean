@@ -1774,3 +1774,144 @@ theorem round_sign_any_correct : ∀ (ctx : ExactRealContext)
           x m e habs hformat
 
 end CompCert4Lean.Flocq.Calc.Round
+
+namespace CompCert4Lean.Flocq.Calc.Round
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem cexp_inbetween_float : ∀ (ctx : ExactRealContext)
+    (magnitude : ExactMagnitude ctx),
+    cexp_inbetween_floatStatement ctx magnitude := by
+  intro ctx magnitude beta fexp hvalid x m e l hx hbetween he
+  unfold CompCert4Lean.Flocq.Core.Generic_fmt.Exact.cexp
+  have hb := CompCert4Lean.Flocq.Calc.Bracket.inbetween_float_bounds ctx
+    beta x m e l hbetween
+  have hupperpos : ctx.spec.lt ctx.spec.zero
+      (CompCert4Lean.Flocq.Calc.Bracket.F2R ctx
+        (CompCert4Lean.Flocq.Calc.Bracket.Float beta (Zadd m Zone) e)) := by
+    exact ctx.certificate.orderedField.lt_trans _ _ _ hx hb.2
+  have hmsucc : Zlt Z0 (Zadd m Zone) := by
+    exact CompCert4Lean.Flocq.Core.Float_prop.gt_0_F2R ctx beta
+      (Zadd m Zone) e hupperpos
+  have hm : Zle Z0 m := by
+    change (0 : Int) ≤ intOfZ m
+    change (0 : Int) < intOfZ (Zadd m Zone) at hmsucc
+    simp only [Zadd,
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add,
+      intOfZ_zOfInt] at hmsucc
+    have hone : intOfZ Zone = (1 : Int) := by rfl
+    rw [hone] at hmsucc
+    change (0 : Int) < intOfZ m + 1 at hmsucc
+    omega
+  rcases show Or (Zlt Z0 m) (m = Z0) from by
+    change Or ((0 : Int) < intOfZ m) (m = Z0)
+    by_cases hm0 : m = Z0
+    · exact Or.inr hm0
+    · left
+      have hm' : (0 : Int) ≤ intOfZ m := by
+        change (0 : Int) ≤ intOfZ m at hm
+        exact hm
+      have : ¬ (intOfZ m ≤ (0 : Int)) := by
+        intro hle
+        have : intOfZ m = 0 := by omega
+        apply hm0
+        apply intOfZ_injective
+        change intOfZ m = 0
+        exact this
+      omega
+    with hmpos | hmzero
+  · have hmag := CompCert4Lean.Flocq.Core.Float_prop.mag_F2R_bounds_Zdigits
+      ctx magnitude beta x m e hmpos hb
+    change fexp ((CompCert4Lean.Flocq.Core.Raux.Exact.mag magnitude beta x).mag_val) =
+      fexp (Zadd (Zdigits beta m) e)
+    have hmag' : (CompCert4Lean.Flocq.Core.Raux.Exact.mag magnitude beta x).mag_val =
+        Zadd (Zdigits beta m) e := by exact hmag
+    rw [hmag']
+  
+  · subst m
+    have hxne : x ≠ ctx.spec.zero := by
+      intro hx0
+      rw [hx0] at hx
+      exact (ctx.certificate.orderedField.lt_irrefl _ hx).elim
+    have habsx : ctx.spec.abs x = x :=
+      ctx.certificate.sourceLaws.abs_nonnegative x
+        ((ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp hx).1
+    have hbpow : ctx.spec.lt (ctx.spec.abs x)
+        (CompCert4Lean.Flocq.Core.Raux.Exact.bpow ctx beta e) := by
+      rw [habsx]
+      have hbupper := hb.2
+      change ctx.spec.lt x
+          (CompCert4Lean.Flocq.Calc.Bracket.F2R ctx
+            (CompCert4Lean.Flocq.Calc.Bracket.Float beta
+              (CompCert4Lean.Flocq.Calc.Bracket.Zadd Z0
+                CompCert4Lean.Flocq.Calc.Bracket.Zone) e)) at hbupper
+      have hzadd : CompCert4Lean.Flocq.Calc.Bracket.Zadd Z0
+          CompCert4Lean.Flocq.Calc.Bracket.Zone =
+          CompCert4Lean.Flocq.Calc.Bracket.Zone := by
+        apply intOfZ_injective
+        change intOfZ (Zadd Z0 Zone) = intOfZ Zone
+        simp only [Zadd,
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add,
+          intOfZ_zOfInt]
+        have hz0 : intOfZ Z0 = 0 := by rfl
+        rw [hz0]
+        omega
+      rw [hzadd] at hbupper
+      change ctx.spec.lt x
+        (CompCert4Lean.Flocq.Core.Float_prop.Exact.F2R ctx
+          (CompCert4Lean.Flocq.Core.Float_prop.Float beta Zone e)) at hbupper
+      rw [CompCert4Lean.Flocq.Core.Float_prop.F2R_bpow] at hbupper
+      exact hbupper
+    have hmag : Zle
+        (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.mag magnitude beta x) e := by
+      exact CompCert4Lean.Flocq.Core.Raux.mag_le_bpow ctx magnitude beta x e hxne hbpow
+    have hzdigits : Zdigits beta Z0 = Z0 := by rfl
+    have hzadd : Zadd Z0 e = e := by
+      apply intOfZ_injective
+      change intOfZ (Zadd Z0 e) = intOfZ e
+      simp only [Zadd,
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add,
+        intOfZ_zOfInt]
+      have hz0 : intOfZ Z0 = 0 := by rfl
+      rw [hz0]
+      omega
+    rcases he with he1 | he2
+    · have hle : Zle
+          (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.mag magnitude beta x)
+          (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.cexp ctx magnitude beta fexp x) := by
+        change Zle
+          (CompCert4Lean.Flocq.Core.Raux.Exact.mag magnitude beta x).mag_val
+          (fexp (CompCert4Lean.Flocq.Core.Raux.Exact.mag magnitude beta x).mag_val)
+        exact (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.le_trans
+          _ _ _ hmag he1)
+      have heq := (hvalid.valid_exp
+        ((CompCert4Lean.Flocq.Core.Raux.Exact.mag magnitude beta x).mag_val)).2 hle
+      have heq' := heq.2 e
+      have hele : Zle e
+          (fexp ((CompCert4Lean.Flocq.Core.Raux.Exact.mag magnitude beta x).mag_val)) := by
+        exact he1
+      have hres := heq' he1
+      have hmag_eq : CompCert4Lean.Flocq.Core.Generic_fmt.Exact.mag magnitude beta x =
+          (CompCert4Lean.Flocq.Core.Raux.Exact.mag magnitude beta x).mag_val := by rfl
+      rw [hmag_eq]
+      have hzright : Zadd (Zdigits beta Z0) e = e := by
+        simpa [hzdigits] using hzadd
+      rw [hzright]
+      exact hres.symm
+    · have he2' : Zle e (fexp e) := by
+        simpa [hzdigits, hzadd] using he2
+      have hle : Zle
+          (CompCert4Lean.Flocq.Core.Raux.Exact.mag magnitude beta x).mag_val
+          (fexp e) := by
+        exact (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.le_trans
+          _ _ _ hmag he2')
+      have heq := (hvalid.valid_exp e).2 he2' 
+      have hres := heq.2 _ hle
+      have hmag_eq : CompCert4Lean.Flocq.Core.Generic_fmt.Exact.mag magnitude beta x =
+          (CompCert4Lean.Flocq.Core.Raux.Exact.mag magnitude beta x).mag_val := by rfl
+      rw [hmag_eq]
+      have hzright : Zadd (Zdigits beta Z0) e = e := by
+        simpa [hzdigits] using hzadd
+      rw [hzright]
+      exact hres
+end CompCert4Lean.Flocq.Calc.Round
+

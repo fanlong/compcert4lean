@@ -5033,3 +5033,15 @@ theorem transl_final_states : transl_final_statesStatement := by
           exact Csharpminor.final_state.final_state_intro r m
 
 end CompCert4Lean.Cfrontend.Cshmgenproof
+
+namespace CompCert4Lean.Cfrontend.Cshmgenproof
+
+theorem union_field_offset_stable : union_field_offset_stableStatement := by
+  intro cunit prog id co f hlink hget
+  have hconsistent := Ctypes.build_composite_env_consistent
+    cunit.prog_types cunit.prog_comp_env cunit.prog_comp_env_eq id co hget
+  refine ⟨hlink.2 id co hget, ?_⟩
+  exact Ctypes.union_field_offset_stable cunit.prog_comp_env prog.prog_comp_env
+    hlink.2 f co.co_members hconsistent.co_consistent_complete
+
+end CompCert4Lean.Cfrontend.Cshmgenproof
