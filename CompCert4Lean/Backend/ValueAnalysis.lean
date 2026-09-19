@@ -3160,3 +3160,50 @@ theorem sound_stack_free
   exact Mem.loadbytes_free_2 m b lo hi m' hfree b' ofs n bytes hload
 
 end CompCert4Lean.Backend.ValueAnalysis
+
+namespace CompCert4Lean.Backend.ValueAnalysis
+
+open CompCert4Lean.Backend.ValueDomain
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Lib.Maps
+
+theorem store_zeros_same : store_zeros_sameStatement := by
+  intro bc p m b pos n m' hzeros hmatch
+  let P : mem → block → Z → Z → Option mem → Prop :=
+    fun m0 b0 _ _ result =>
+      ∀ p0, smatch bc m0 b0 p0 →
+        match result with
+        | some m1 => smatch bc m1 b0 p0
+        | none => True
+  have hP : ∀ m0 b0 p0 n0, P m0 b0 p0 n0 (store_zeros m0 b0 p0 n0) := by
+    apply store_zeros_ind (P := P)
+    · intro m0 b0 p0 n0 x hx
+      intro p1 hsm
+      exact hsm
+    · intro m0 b0 p0 n0 x hx m1 hstore hrec
+      cases hresult : store_zeros m1 b0 (zAdd p0 (.Zpos .xH))
+          (ZArith.BinInt.Z.sub n0 (.Zpos .xH)) with
+      | none => simp [P]
+      | some m2 =>
+          rw [hresult] at hrec
+          intro p1 hsm
+          apply hrec p1
+          have hvzero : vmatch bc Vzero
+              (I CompCert4Lean.Lib.Integers.Int.zero) := by
+            exact vmatch.vmatch_i _
+          exact smatch_store bc Mint8unsigned m0 b0 p0 Vzero m1 b0 p1
+            (I CompCert4Lean.Lib.Integers.Int.zero) hstore hsm hvzero
+    · intro m0 b0 p0 n0 x hx hnone
+      intro p1 hsm
+      trivial
+  have hs := hP m b pos n
+  rw [hzeros] at hs
+  exact hs p hmatch
+
+end CompCert4Lean.Backend.ValueAnalysis

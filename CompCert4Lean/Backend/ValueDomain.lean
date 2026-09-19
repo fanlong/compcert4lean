@@ -5942,3 +5942,116 @@ theorem ablock_storebytes_anywhere_sound : ablock_storebytes_anywhere_soundState
       hstore hbm.1 hpmatch)
 
 end CompCert4Lean.Backend.ValueDomain
+
+namespace CompCert4Lean.Backend.ValueDomain
+
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Values
+
+theorem ablock_storebytes_sound : ablock_storebytes_soundStatement := by
+  intro bc m b ofs bytes m' p ab sz hstore hlen hfrag hbm
+  rcases hbm with ⟨hsmatch, hload_match⟩
+  constructor
+  · exact smatch_storebytes bc m b ofs bytes m' b ab.ab_summary p hstore hsmatch hfrag
+  · intro chunk' ofs' v' hload'
+    have hsummary : vmatch bc v' (vnormalize chunk' (Ifptr (plub p ab.ab_summary))) := by
+      obtain ⟨hsm, _⟩ := smatch_storebytes bc m b ofs bytes m' b ab.ab_summary p hstore hsmatch hfrag
+      exact vnormalize_cast bc chunk' m' b ofs' v' (plub p ab.ab_summary) hload' (hsm chunk' ofs' v' hload')
+    have hmax : CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat bytes.length =
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.max sz
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z0 := by
+      cases sz with
+      | Z0 =>
+          have hn : bytes.length = 0 := by
+            change bytes.length = Int.toNat 0 at hlen
+            simpa using hlen
+          rw [hn]
+          have hz : CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.max
+              (.Z0) (.Z0) = .Z0 :=
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.max_r _ _ (by
+              change (0 : Int) ≤ 0
+              omega)
+          rw [hz]
+          rfl
+      | Zpos p =>
+          calc
+            _ = CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat
+                (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.to_nat (.Zpos p)) :=
+              congrArg CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat hlen
+            _ = .Zpos p :=
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.Znat.Z2Nat.id _ (by
+                change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ .Z0 ≤
+                  CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (.Zpos p)
+                simp [CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ])
+            _ = CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.max
+                  (.Zpos p) (.Z0) :=
+              (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.max_l _ _ (by
+                change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ .Z0 ≤
+                  CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (.Zpos p)
+                simp [CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ])).symm
+      | Zneg p =>
+          have hn : CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.to_nat (.Zneg p) = 0 := by
+            change Int.toNat (-Int.ofNat
+              (CompCert4Lean.Foundation.Numbers.Rocq.Coq.PArith.BinPos.Pos.to_nat p)) = 0
+            apply Int.toNat_of_nonpos
+            simp [CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ]
+          calc
+            _ = CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat
+                (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.to_nat (.Zneg p)) :=
+              congrArg CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat hlen
+            _ = CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 0 := by rw [hn]
+            _ = .Z0 := by rfl
+            _ = CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.max
+                  (.Zneg p) (.Z0) :=
+              (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.max_r _ _ (by
+                change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (.Zneg p) ≤
+                  CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ .Z0
+                simp [CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ])).symm
+    change vmatch bc v' (match CompCert4Lean.Lib.Maps.ZTree.get ofs' (ablock_storebytes ab p ofs sz).ab_contents with
+      | none => vnormalize chunk' (Ifptr (plub p ab.ab_summary))
+      | some (ACval chunk av) =>
+          if chunk_compat chunk' chunk = true then vnormalize chunk' av
+          else vnormalize chunk' (Ifptr (plub p ab.ab_summary)))
+    cases hget : CompCert4Lean.Lib.Maps.ZTree.get ofs' (ablock_storebytes ab p ofs sz).ab_contents with
+    | none => exact hsummary
+    | some c =>
+      cases c with
+      | ACval chunk av =>
+        by_cases hcompat : chunk_compat chunk' chunk = true
+        · simp only [if_pos hcompat]
+          have hcont := ablock_storebytes_contents ab p ofs sz ofs' chunk av hget
+          rcases hcont with ⟨hcont, hbound⟩
+          have hload_old : Mem.load chunk' m b ofs' = some v' := by
+            rw [← hload']
+            symm
+            apply Mem.load_storebytes_other m b ofs bytes m' hstore chunk' b ofs'
+            right
+            rcases hbound with hleft | hright
+            · left
+              have hsize : size_chunk chunk' = size_chunk chunk := by
+                exact (chunk_compat_true chunk' chunk hcompat).1
+              change CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.le
+                (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add ofs'
+                  (size_chunk chunk')) ofs
+              change CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.le
+                (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add ofs'
+                  (size_chunk chunk)) ofs at hleft
+              simpa [hsize] using hleft
+            · right
+              change CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.le
+                (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add ofs
+                  (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat bytes.length)) ofs'
+              change CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.le
+                (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add ofs
+                  (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.max sz
+                    CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z0)) ofs' at hright
+              simpa [hmax] using hright
+          have hold := hload_match chunk' ofs' v' hload_old
+          unfold ablock_load at hold
+          rw [hcont] at hold
+          simpa only [if_pos hcompat] using hold
+        · simp only [if_neg hcompat]
+          exact hsummary
+
+end CompCert4Lean.Backend.ValueDomain

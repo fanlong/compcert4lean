@@ -4609,3 +4609,75 @@ theorem m_eq : ∀ (ctx : ExactRealContext) (magnitude : ExactMagnitude ctx),
     omega
 
 end CompCert4Lean.Flocq.Prop.Round_odd
+
+namespace CompCert4Lean.Flocq.Prop.Round_odd
+
+open CompCert4Lean.Flocq.Core
+
+theorem fexp_m_eq_0 : ∀ (ctx : ExactRealContext) (magnitude : ExactMagnitude ctx),
+    fexp_m_eq_0Statement ctx magnitude := by
+  intro ctx magnitude beta hbeta fexp hvalid hexists x d u hd hu hxpos hd0
+  have hxne : x ≠ R0 ctx := by
+    intro hxzero
+    rw [hxzero] at hxpos
+    exact (ctx.certificate.orderedField.lt_irrefl _ hxpos).elim
+  let e : Z := mag_val ctx magnitude beta x
+  have hxbounds := (CompCert4Lean.Flocq.Core.Raux.Exact.mag magnitude beta x).mag_bound hxne
+  have hxle : Rle ctx (R0 ctx) x :=
+    (ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp hxpos |>.1
+  have hxabs : ctx.spec.abs x = x :=
+    ctx.certificate.sourceLaws.abs_nonnegative x hxle
+  change Rle ctx (bpow ctx beta (Zsub e Zone)) (ctx.spec.abs x) ∧
+    Rlt ctx (ctx.spec.abs x) (bpow ctx beta e) at hxbounds
+  rw [hxabs] at hxbounds
+  let hrnd : CompCert4Lean.Flocq.Core.Generic_fmt.Exact.Valid_rnd ctx (Zfloor ctx) := by
+    constructor
+    · intro y z hyz
+      exact CompCert4Lean.Flocq.Core.Raux.Zfloor_le ctx y z hyz
+    · intro n
+      exact CompCert4Lean.Flocq.Core.Raux.Zfloor_IZR ctx n
+  have hfloor0 : round ctx magnitude beta fexp (Zfloor ctx) x = R0 ctx := by
+    have hd_eq' := d_eq ctx magnitude beta fexp hvalid x d hd
+    rw [← hd_eq', hd0]
+  have hexp : Zle e (fexp e) := by
+    exact CompCert4Lean.Flocq.Core.Generic_fmt.exp_small_round_0_pos
+      ctx magnitude beta fexp (Zfloor ctx) hrnd x e hxbounds hfloor0
+  have hsmall : round ctx magnitude beta fexp (Zceil ctx) x =
+      bpow ctx beta (fexp e) := by
+    exact CompCert4Lean.Flocq.Core.Generic_fmt.round_UP_small_pos
+      ctx magnitude beta fexp x e hxbounds hexp
+  have hu_eq : F2R ctx u = round ctx magnitude beta fexp (Zceil ctx) x :=
+    u_eq ctx magnitude beta fexp hvalid x u hu
+  have hu_bpow : F2R ctx u = bpow ctx beta (fexp e) := by
+    rw [hu_eq, hsmall]
+  have hmag_u : mag_val ctx magnitude beta (F2R ctx u) =
+      Zadd (fexp e) Zone := by
+    rw [hu_bpow]
+    exact CompCert4Lean.Flocq.Core.Raux.mag_bpow ctx magnitude beta (fexp e)
+  rw [hmag_u]
+  have hsub : Zsub (Zadd (fexp e) Zone) Zone = fexp e := by
+    apply CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective
+    simp only [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add,
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.sub,
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+    omega
+  rw [hsub]
+  have hEq : fexp (fexp e) = fexp e :=
+    ((hvalid.valid_exp e).2 hexp).2 (fexp e) (by exact Int.le_refl _)
+  have hfix : fexp (Zadd (fexp e) Zone) = fexp e := by
+    rcases hexists.exists_NE with hodd | hlaw
+    · change Zeven (radix_val beta) = false at hodd
+      rw [hbeta] at hodd
+      exact Bool.noConfusion hodd
+    · exact (hlaw e).2 hexp
+  rw [hEq, hfix]
+  change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (fexp e) <
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+      (Zadd (fexp e) Zone)
+  simp only [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add,
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+  change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (fexp e) <
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (fexp e) + 1
+  omega
+
+end CompCert4Lean.Flocq.Prop.Round_odd

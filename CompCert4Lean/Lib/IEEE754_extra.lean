@@ -3684,3 +3684,21 @@ theorem ZofB_correct :
           rfl
 
 end CompCert4Lean.Lib.IEEE754_extra
+
+namespace CompCert4Lean.Lib.IEEE754_extra
+
+open CompCert4Lean.Flocq.Core
+open CompCert4Lean.Flocq.IEEE754
+
+theorem ZofB_range_correct :
+    ∀ {prec emax : Z}, ZofB_range_correctStatement (prec := prec) (emax := emax) := by
+  intro prec emax f min max ctx
+  dsimp [ZofB_range_correctStatement]
+  unfold ZofB_range
+  have hz := ZofB_correct (prec := prec) (emax := emax) f ctx
+  rw [hz]
+  cases hfin : Binary.is_finite f.1 with
+  | false => simp [hfin]
+  | true => simp [hfin]
+
+end CompCert4Lean.Lib.IEEE754_extra

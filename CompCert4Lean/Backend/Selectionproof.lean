@@ -4834,3 +4834,32 @@ theorem match_states_skip
     hlink hhf hsel hty rfl hcont hld hme
 
 end CompCert4Lean.Backend.Selectionproof
+
+namespace CompCert4Lean.Backend.Selectionproof
+
+theorem call_cont_commut
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    [binary64_inverse_certificate : BexactInverseCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_inverse_certificate : BexactInverseCertificate (zOfNat 24) (zOfNat 128)]
+    (cfg : CompilerConfig) (oracle : SelectionOracle) :
+    call_cont_commutStatement cfg oracle := by
+  intro prog cunit hf ki env k k' hmatch
+  refine match_cont.rec (cfg := cfg) (oracle := oracle) (prog := prog)
+    (motive_1 := fun _ _ _ _ k k' _ =>
+      match_call_cont cfg oracle prog (Cminor.call_cont k) (CminorSel.call_cont k'))
+    (motive_2 := fun k k' _ =>
+      match_call_cont cfg oracle prog (Cminor.call_cont k) (CminorSel.call_cont k'))
+    ?_ ?_ ?_ ?_ ?_ hmatch
+  · intro cunit hf ki env s kont s' k k' hsel hcont ih
+    simpa [Cminor.call_cont, CminorSel.call_cont] using ih
+  · intro cunit hf ki env k k' hcont ih
+    simpa [Cminor.call_cont, CminorSel.call_cont] using ih
+  · intro cunit hf ki env k k' hcall ih
+    exact ih
+  · exact .match_cont_stop
+  · intro cunit hf env id f sp e k f' e' k' hlink hhf hsel hty hcont hld ih
+    exact .match_cont_call cunit hf env id f sp e k f' e' k'
+      hlink hhf hsel hty hcont hld
+
+end CompCert4Lean.Backend.Selectionproof

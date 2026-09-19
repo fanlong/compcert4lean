@@ -8417,3 +8417,116 @@ theorem aligned_area_inject : aligned_area_injectStatement := by
 end Mem
 
 end CompCert4Lean.Common.Memory
+
+namespace CompCert4Lean.Common.Memory
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+
+namespace Mem
+
+theorem load_inject : load_injectStatement := by
+  intro f m1 m2 chunk b1 ofs b2 delta v1 hinj hload hf
+  exact load_inj f m1 m2 chunk b1 ofs b2 delta v1 hinj.mi_inj hload hf
+
+theorem loadv_inject : loadv_injectStatement := by
+  intro f m1 m2 chunk a1 a2 v1 hinj hload haddr
+  cases a1 with
+  | Vptr b1 ofs1 =>
+      cases a2 with
+      | Vptr b2 ofs2 =>
+          unfold loadv at hload ⊢
+          cases haddr with
+          | inject_ptr _ _ _ _ delta hmap hofs =>
+              have hvalid : valid_access m1 chunk b1 (Ptrofs.unsigned ofs1) Readable :=
+                load_valid_access m1 chunk b1 (Ptrofs.unsigned ofs1) v1 hload
+              have hvalidN : valid_access m1 chunk b1 (Ptrofs.unsigned ofs1) Nonempty :=
+                valid_access_implies m1 chunk b1 (Ptrofs.unsigned ofs1) Readable Nonempty
+                  hvalid (perm_any_N Readable)
+              have hadd : Ptrofs.unsigned (Ptrofs.add ofs1 (Ptrofs.repr delta)) =
+                  zAdd (Ptrofs.unsigned ofs1) delta :=
+                address_inject' f m1 m2 chunk b1 ofs1 b2 delta hinj hvalidN hmap
+              rcases load_inj f m1 m2 chunk b1 (Ptrofs.unsigned ofs1) b2 delta v1
+                  hinj.mi_inj hload hmap with ⟨v2, hload2, hv2⟩
+              refine ⟨v2, ?_, hv2⟩
+              simpa only [loadv, hofs, hadd] using hload2
+      | Vundef => cases haddr
+      | Vint i => cases haddr
+      | Vlong i => cases haddr
+      | Vfloat x => cases haddr
+      | Vsingle x => cases haddr
+  | Vundef => cases haddr; simp [loadv] at hload
+  | Vint i => cases haddr; simp [loadv] at hload
+  | Vlong i => cases haddr; simp [loadv] at hload
+  | Vfloat x => cases haddr; simp [loadv] at hload
+  | Vsingle x => cases haddr; simp [loadv] at hload
+
+theorem loadbytes_inject : loadbytes_injectStatement := by
+  intro f m1 m2 b1 ofs len b2 delta bytes1 hinj hload hf
+  exact loadbytes_inj f m1 m2 len b1 ofs b2 delta bytes1 hinj.mi_inj hload hf
+
+end Mem
+
+end CompCert4Lean.Common.Memory
+
+namespace CompCert4Lean.Common.Memory
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+
+namespace Mem
+
+private theorem store_mapped_inject_transport
+    (f : meminj) (chunk : memory_chunk)
+    (m1 m2 n1 n2 : mem) (b1 b2 : block) (ofs1 ofs2 : Z) (v1 v2 : val)
+    (hinj : inject f m1 m2)
+    (hstore1 : store chunk m1 b1 ofs1 v1 = some n1)
+    (hstore2 : store chunk m2 b2 ofs2 v2 = some n2)
+    (hmem : mem_inj f n1 n2) : inject f n1 n2 := by
+  have hp1 := perm_store_1 chunk m1 b1 ofs1 v1 n1 hstore1
+  have hp2 := perm_store_2 chunk m1 b1 ofs1 v1 n1 hstore1
+  have hq2 := perm_store_2 chunk m2 b2 ofs2 v2 n2 hstore2
+  constructor
+  · exact hmem
+  · intro b hb
+    apply hinj.mi_freeblocks b
+    intro hv
+    exact hb (store_valid_block_1 chunk m1 b1 ofs1 v1 n1 hstore1 b hv)
+  · intro b b' delta hmap
+    exact store_valid_block_1 chunk m2 b2 ofs2 v2 n2 hstore2 b'
+      (hinj.mi_mappedblocks b b' delta hmap)
+  · intro b b' delta c c' delta' ofs ofs' hne hmap hmap' hp hq
+    exact hinj.mi_no_overlap b b' delta c c' delta' ofs ofs' hne hmap hmap'
+      (hp2 b ofs Max Nonempty hp) (hp2 c ofs' Max Nonempty hq)
+  · intro b b' delta ofs hmap hp
+    apply hinj.mi_representable b b' delta ofs hmap
+    exact hp.elim (fun h => Or.inl (hp2 _ _ _ _ h))
+      (fun h => Or.inr (hp2 _ _ _ _ h))
+  · intro b ofs b' delta k p hmap hp
+    obtain hp' | hn := hinj.mi_perm_inv b ofs b' delta k p hmap (hq2 _ _ _ _ hp)
+    · exact Or.inl (hp1 _ _ _ _ hp')
+    · exact Or.inr (fun h => hn (hp2 _ _ _ _ h))
+
+theorem store_mapped_inject : store_mapped_injectStatement := by
+  intro f chunk m1 b1 ofs v1 n1 m2 b2 delta v2 hinj hstore hf hv
+  rcases store_mapped_inj f chunk m1 b1 ofs v1 n1 m2 b2 delta v2
+      hinj.mi_inj hstore hinj.mi_no_overlap hf hv with ⟨n2, hstore2, hmem⟩
+  refine ⟨n2, hstore2, ?_⟩
+  exact store_mapped_inject_transport f chunk m1 m2 n1 n2 b1 b2 ofs
+    (zAdd ofs delta) v1 v2 hinj hstore hstore2 hmem
+
+end Mem
+
+end CompCert4Lean.Common.Memory

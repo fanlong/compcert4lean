@@ -4294,3 +4294,51 @@ theorem make_divuimm_correct
           exact hdiv
 
 end CompCert4Lean.X86.ConstpropOpproof
+
+namespace CompCert4Lean.X86.ConstpropOpproof
+
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.X86.Op
+open CompCert4Lean.X86.ConstpropOp
+
+private theorem worker_val_modu_pow2
+    (x : CompCert4Lean.Common.Values.val)
+    (n logn : CompCert4Lean.Lib.Integers.int)
+    (y : CompCert4Lean.Common.Values.val)
+    (hpow : CompCert4Lean.Lib.Integers.Int.is_power2 n = some logn)
+    (hmod : CompCert4Lean.Common.Values.Val.modu x (.Vint n) = some y) :
+    CompCert4Lean.Common.Values.Val.and x
+      (.Vint (CompCert4Lean.Lib.Integers.Int.sub n
+        CompCert4Lean.Lib.Integers.Int.one)) = y := by
+  exact CompCert4Lean.Common.Values.Val.modu_pow2 x n logn y hpow hmod
+
+theorem make_moduimm_correct
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    @make_moduimm_correctStatement binary64_certificate binary32_certificate := by
+  intro ge sp e m n r1 r2 v hmod hr2
+  have hmodn : CompCert4Lean.Common.Values.Val.modu
+      (CompCert4Lean.Backend.Registers.Regmap.get r1 e) (.Vint n) = some v := by
+    rw [← hr2]
+    exact hmod
+  unfold CompCert4Lean.X86.ConstpropOp.make_moduimm
+  cases hpow : CompCert4Lean.Lib.Integers.Int.is_power2 n with
+  | none =>
+      refine ⟨v, ?_, CompCert4Lean.Common.Values.Val.lessdef_refl _⟩
+      change CompCert4Lean.Common.Values.Val.modu
+        (CompCert4Lean.Backend.Registers.Regmap.get r1 e)
+        (CompCert4Lean.Backend.Registers.Regmap.get r2 e) = some v
+      exact hmod
+  | some logn =>
+      refine ⟨v, ?_, CompCert4Lean.Common.Values.Val.lessdef_refl _⟩
+      change some (CompCert4Lean.Common.Values.Val.and
+        (CompCert4Lean.Backend.Registers.Regmap.get r1 e)
+        (.Vint (CompCert4Lean.Lib.Integers.Int.sub n
+          CompCert4Lean.Lib.Integers.Int.one))) = some v
+      exact congrArg some (worker_val_modu_pow2
+        (CompCert4Lean.Backend.Registers.Regmap.get r1 e) n logn v hpow hmodn)
+
+end CompCert4Lean.X86.ConstpropOpproof

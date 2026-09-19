@@ -5401,3 +5401,49 @@ theorem transl_external_argument : transl_external_argumentStatement := by
 
 
 end CompCert4Lean.Backend.Stackingproof
+
+namespace CompCert4Lean.Backend.Stackingproof
+
+open CompCert4Lean.Backend.Locations
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.X86.Conventions1
+
+theorem transl_external_argument_2 : transl_external_argument_2Statement := by
+  intro cfg return_address_offset tprog j cs cs' sg
+    bound_local_pos bound_outgoing_pos bound_stack_data_pos
+    used_callee_save_norepet used_callee_save_prop hstacks ls rs hregs hcs ho m' hmem p hp
+  cases p with
+  | One l =>
+      have hl : l ∈ CompCert4Lean.Common.AST.regs_of_rpairs (loc_arguments cfg sg) :=
+        CompCert4Lean.Common.AST.in_regs_of_rpairs loc l (One l) (by simp [CompCert4Lean.Common.AST.regs_of_rpair])
+          (loc_arguments cfg sg) hp
+      obtain ⟨v, harg, hinj⟩ :=
+        transl_external_argument cfg return_address_offset tprog j cs cs' sg
+          bound_local_pos bound_outgoing_pos bound_stack_data_pos
+          used_callee_save_norepet used_callee_save_prop hstacks ls rs hregs hcs ho
+          m' hmem l hl
+      refine ⟨v, Mach.extcall_arg_pair.extcall_arg_one l v harg, ?_⟩
+      exact hinj
+  | Twolong hi lo =>
+      have hhi : hi ∈ CompCert4Lean.Common.AST.regs_of_rpairs (loc_arguments cfg sg) :=
+        CompCert4Lean.Common.AST.in_regs_of_rpairs loc hi (Twolong hi lo) (by simp [CompCert4Lean.Common.AST.regs_of_rpair])
+          (loc_arguments cfg sg) hp
+      have hlo : lo ∈ CompCert4Lean.Common.AST.regs_of_rpairs (loc_arguments cfg sg) :=
+        CompCert4Lean.Common.AST.in_regs_of_rpairs loc lo (Twolong hi lo) (by simp [CompCert4Lean.Common.AST.regs_of_rpair])
+          (loc_arguments cfg sg) hp
+      obtain ⟨vhi, harg_hi, hinj_hi⟩ :=
+        transl_external_argument cfg return_address_offset tprog j cs cs' sg
+          bound_local_pos bound_outgoing_pos bound_stack_data_pos
+          used_callee_save_norepet used_callee_save_prop hstacks ls rs hregs hcs ho
+          m' hmem hi hhi
+      obtain ⟨vlo, harg_lo, hinj_lo⟩ :=
+        transl_external_argument cfg return_address_offset tprog j cs cs' sg
+          bound_local_pos bound_outgoing_pos bound_stack_data_pos
+          used_callee_save_norepet used_callee_save_prop hstacks ls rs hregs hcs ho
+          m' hmem lo hlo
+      refine ⟨Val.longofwords vhi vlo,
+        Mach.extcall_arg_pair.extcall_arg_twolong hi lo vhi vlo harg_hi harg_lo, ?_⟩
+      exact Val.longofwords_inject j _ _ _ _ hinj_hi hinj_lo
+
+end CompCert4Lean.Backend.Stackingproof
