@@ -3868,3 +3868,85 @@ theorem make_cmp_base_correct
         exact Val.lessdef_refl _
 
 end CompCert4Lean.X86.ConstpropOpproof
+
+namespace CompCert4Lean.X86.ConstpropOpproof
+
+open CompCert4Lean.Common.Values
+open CompCert4Lean.X86.Op
+open CompCert4Lean.X86.ConstpropOp
+
+private theorem make_addimm_repr_unsigned_local
+    (n : CompCert4Lean.Lib.Integers.Int.int) :
+    CompCert4Lean.Lib.Integers.Int.repr
+      (CompCert4Lean.Lib.Integers.Int.unsigned n) = n := by
+  apply CompCert4Lean.Lib.Integers.WordCore.ext
+  change CompCert4Lean.Lib.Integers.Int.unsigned
+      (CompCert4Lean.Lib.Integers.Int.repr
+        (CompCert4Lean.Lib.Integers.Int.unsigned n)) =
+    CompCert4Lean.Lib.Integers.Int.unsigned n
+  apply CompCert4Lean.Lib.Integers.Int.unsigned_repr_proof_api
+  constructor
+  · have hn := n.intrange.1
+    change (-1 : _root_.Int) <
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ n.intval at hn
+    change 0 ≤ CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ n.intval
+    omega
+  · have hn := n.intrange.2
+    change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ n.intval <
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+        CompCert4Lean.Lib.Integers.Int.modulus at hn
+    change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ n.intval ≤
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+        CompCert4Lean.Lib.Integers.Int.max_unsigned
+    change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ n.intval ≤
+      (2 ^ CompCert4Lean.Lib.Integers.Int.wordsize : _root_.Int) - 1
+    change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ n.intval <
+      (2 ^ CompCert4Lean.Lib.Integers.Int.wordsize : _root_.Int) at hn
+    omega
+
+theorem make_addimm_correct
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    @make_addimm_correctStatement binary64_certificate binary32_certificate := by
+  intro ge sp e m n r
+  unfold make_addimm
+  cases heq : CompCert4Lean.Lib.Integers.Int.eq n CompCert4Lean.Lib.Integers.Int.zero with
+  | true =>
+    have hn : n = CompCert4Lean.Lib.Integers.Int.zero := by
+      apply CompCert4Lean.Lib.Integers.WordCore.ext
+      simpa only [CompCert4Lean.Lib.Integers.Int.eq,
+        CompCert4Lean.Lib.Integers.WordCore.eq] using of_decide_eq_true heq
+    subst n
+    refine ⟨CompCert4Lean.Backend.Registers.Regmap.get r e, ?_, ?_⟩
+    · rfl
+    · cases hx : CompCert4Lean.Backend.Registers.Regmap.get r e with
+      | Vundef => exact Val.lessdef_refl _
+      | Vint x =>
+          simp only [Val.add]
+          have hz : CompCert4Lean.Lib.Integers.Int.add x
+              CompCert4Lean.Lib.Integers.Int.zero = x := by
+            exact CompCert4Lean.Lib.Integers.Int.add_zero_proof x
+          change Val.lessdef
+            (.Vint (CompCert4Lean.Lib.Integers.Int.add x
+              CompCert4Lean.Lib.Integers.Int.zero)) (.Vint x)
+          rw [hz]
+          exact Val.lessdef_refl _
+      | Vlong x => exact Val.lessdef_undef _
+      | Vfloat x => exact Val.lessdef_undef _
+      | Vsingle x => exact Val.lessdef_undef _
+      | Vptr b ofs => exact Val.lessdef_undef _
+  | false =>
+    refine ⟨Val.add (CompCert4Lean.Backend.Registers.Regmap.get r e)
+        (.Vint (CompCert4Lean.Lib.Integers.Int.repr
+          (CompCert4Lean.Lib.Integers.Int.signed n))), ?_, ?_⟩
+    · change eval_addressing32 ge (.Vptr sp CompCert4Lean.Lib.Integers.Ptrofs.zero)
+          (Aindexed (CompCert4Lean.Lib.Integers.Int.signed n))
+          [CompCert4Lean.Backend.Registers.Regmap.get r e] =
+        some (Val.add (CompCert4Lean.Backend.Registers.Regmap.get r e)
+          (.Vint (CompCert4Lean.Lib.Integers.Int.repr
+            (CompCert4Lean.Lib.Integers.Int.signed n))))
+      rfl
+    · rw [CompCert4Lean.Lib.Integers.Int.repr_signed_proof]
+      exact Val.lessdef_refl _
+
+end CompCert4Lean.X86.ConstpropOpproof
