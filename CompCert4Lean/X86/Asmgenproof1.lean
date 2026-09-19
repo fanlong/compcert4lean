@@ -3176,3 +3176,910 @@ theorem normalize_addrmode_32_correct : normalize_addrmode_32_correctStatement :
           rfl
 
 end CompCert4Lean.X86.Asmgenproof1
+namespace CompCert4Lean.X86.Asmgenproof1
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+private def asmgenproof1SumboolSelect {P Q : Prop} {A : Type}
+    (d : CompCert4Lean.Foundation.Logic.Support.Sumbool P Q)
+    (ifso ifnot : A) : A :=
+  match d with
+  | .left _ => ifso
+  | .right _ => ifnot
+
+private theorem word_signed_eq_select_aux {bits : Nat}
+    (x : CompCert4Lean.Lib.Integers.WordCore.Word bits) :
+    CompCert4Lean.Lib.Integers.WordCore.signed x =
+      asmgenproof1SumboolSelect
+        (CompCert4Lean.Lib.Coqlib.zlt
+          (CompCert4Lean.Lib.Integers.WordCore.unsigned x)
+          (two_power_nat (bits - 1)))
+        (CompCert4Lean.Lib.Integers.WordCore.unsigned x)
+        (ZArith.BinInt.Z.sub
+          (CompCert4Lean.Lib.Integers.WordCore.unsigned x)
+          (two_power_nat bits)) := by
+  rfl
+
+private theorem int_signed_eq_select_aux
+    (x : CompCert4Lean.Lib.Integers.Int.int) :
+    CompCert4Lean.Lib.Integers.Int.signed x =
+      asmgenproof1SumboolSelect
+        (CompCert4Lean.Lib.Coqlib.zlt
+          (CompCert4Lean.Lib.Integers.Int.unsigned x)
+          CompCert4Lean.Lib.Integers.Int.half_modulus)
+        (CompCert4Lean.Lib.Integers.Int.unsigned x)
+        (ZArith.BinInt.Z.sub
+          (CompCert4Lean.Lib.Integers.Int.unsigned x)
+          CompCert4Lean.Lib.Integers.Int.modulus) := by
+  exact word_signed_eq_select_aux x
+
+private theorem int_sub_eq_repr_signed_aux
+    (x y : CompCert4Lean.Lib.Integers.Int.int) :
+    CompCert4Lean.Lib.Integers.Int.sub x y =
+      CompCert4Lean.Lib.Integers.Int.repr
+        (ZArith.BinInt.Z.sub
+          (CompCert4Lean.Lib.Integers.Int.signed x)
+          (CompCert4Lean.Lib.Integers.Int.signed y)) := by
+  have hx : ∃ k : Z,
+      CompCert4Lean.Lib.Integers.Int.unsigned x =
+        ZArith.BinInt.Z.add
+          (ZArith.BinInt.Z.mul k CompCert4Lean.Lib.Integers.Int.modulus)
+          (CompCert4Lean.Lib.Integers.Int.signed x) := by
+    have hs := int_signed_eq_select_aux x
+    cases h : CompCert4Lean.Lib.Coqlib.zlt
+        (CompCert4Lean.Lib.Integers.WordCore.unsigned x)
+        CompCert4Lean.Lib.Integers.Int.half_modulus with
+    | left hp =>
+        have h' : CompCert4Lean.Lib.Coqlib.zlt
+            (CompCert4Lean.Lib.Integers.Int.unsigned x)
+            CompCert4Lean.Lib.Integers.Int.half_modulus =
+            CompCert4Lean.Foundation.Logic.Support.Sumbool.left hp := by
+          exact h
+        have hs' : CompCert4Lean.Lib.Integers.Int.signed x =
+            CompCert4Lean.Lib.Integers.Int.unsigned x := by
+          simpa only [asmgenproof1SumboolSelect, h'] using hs
+        refine ⟨Z0, ?_⟩
+        rw [hs']
+        apply intOfZ_injective
+        simp only [ZArith.BinInt.Z.add, ZArith.BinInt.Z.mul, intOfZ_zOfInt]
+        change intOfZ (CompCert4Lean.Lib.Integers.Int.unsigned x) =
+          0 * intOfZ CompCert4Lean.Lib.Integers.Int.modulus +
+            intOfZ (CompCert4Lean.Lib.Integers.Int.unsigned x)
+        omega
+    | right hn =>
+        have h' : CompCert4Lean.Lib.Coqlib.zlt
+            (CompCert4Lean.Lib.Integers.Int.unsigned x)
+            CompCert4Lean.Lib.Integers.Int.half_modulus =
+            CompCert4Lean.Foundation.Logic.Support.Sumbool.right hn := by
+          exact h
+        have hs' : CompCert4Lean.Lib.Integers.Int.signed x =
+            ZArith.BinInt.Z.sub
+              (CompCert4Lean.Lib.Integers.Int.unsigned x)
+              CompCert4Lean.Lib.Integers.Int.modulus := by
+          simpa only [asmgenproof1SumboolSelect, h'] using hs
+        refine ⟨Zpos xH, ?_⟩
+        rw [hs']
+        apply intOfZ_injective
+        simp only [ZArith.BinInt.Z.add, ZArith.BinInt.Z.mul,
+          ZArith.BinInt.Z.sub, intOfZ_zOfInt]
+        change intOfZ (CompCert4Lean.Lib.Integers.Int.unsigned x) =
+          1 * 4294967296 +
+            (intOfZ (CompCert4Lean.Lib.Integers.Int.unsigned x) - 4294967296)
+        omega
+  have hy : ∃ k : Z,
+      CompCert4Lean.Lib.Integers.Int.unsigned y =
+        ZArith.BinInt.Z.add
+          (ZArith.BinInt.Z.mul k CompCert4Lean.Lib.Integers.Int.modulus)
+          (CompCert4Lean.Lib.Integers.Int.signed y) := by
+    have hs := int_signed_eq_select_aux y
+    cases h : CompCert4Lean.Lib.Coqlib.zlt
+        (CompCert4Lean.Lib.Integers.WordCore.unsigned y)
+        CompCert4Lean.Lib.Integers.Int.half_modulus with
+    | left hp =>
+        have h' : CompCert4Lean.Lib.Coqlib.zlt
+            (CompCert4Lean.Lib.Integers.Int.unsigned y)
+            CompCert4Lean.Lib.Integers.Int.half_modulus =
+            CompCert4Lean.Foundation.Logic.Support.Sumbool.left hp := by
+          exact h
+        have hs' : CompCert4Lean.Lib.Integers.Int.signed y =
+            CompCert4Lean.Lib.Integers.Int.unsigned y := by
+          simpa only [asmgenproof1SumboolSelect, h'] using hs
+        refine ⟨Z0, ?_⟩
+        rw [hs']
+        apply intOfZ_injective
+        simp only [ZArith.BinInt.Z.add, ZArith.BinInt.Z.mul, intOfZ_zOfInt]
+        change intOfZ (CompCert4Lean.Lib.Integers.Int.unsigned y) =
+          0 * intOfZ CompCert4Lean.Lib.Integers.Int.modulus +
+            intOfZ (CompCert4Lean.Lib.Integers.Int.unsigned y)
+        omega
+    | right hn =>
+        have h' : CompCert4Lean.Lib.Coqlib.zlt
+            (CompCert4Lean.Lib.Integers.Int.unsigned y)
+            CompCert4Lean.Lib.Integers.Int.half_modulus =
+            CompCert4Lean.Foundation.Logic.Support.Sumbool.right hn := by
+          exact h
+        have hs' : CompCert4Lean.Lib.Integers.Int.signed y =
+            ZArith.BinInt.Z.sub
+              (CompCert4Lean.Lib.Integers.Int.unsigned y)
+              CompCert4Lean.Lib.Integers.Int.modulus := by
+          simpa only [asmgenproof1SumboolSelect, h'] using hs
+        refine ⟨Zpos xH, ?_⟩
+        rw [hs']
+        apply intOfZ_injective
+        simp only [ZArith.BinInt.Z.add, ZArith.BinInt.Z.mul,
+          ZArith.BinInt.Z.sub, intOfZ_zOfInt]
+        change intOfZ (CompCert4Lean.Lib.Integers.Int.unsigned y) =
+          1 * 4294967296 +
+            (intOfZ (CompCert4Lean.Lib.Integers.Int.unsigned y) - 4294967296)
+        omega
+  rcases hx with ⟨kx, hx⟩
+  rcases hy with ⟨ky, hy⟩
+  unfold CompCert4Lean.Lib.Integers.Int.sub
+  unfold CompCert4Lean.Lib.Integers.WordCore.sub
+  apply CompCert4Lean.Lib.Integers.Int.eqm_samerepr_proof
+  unfold CompCert4Lean.Lib.Integers.Int.eqm
+  unfold CompCert4Lean.Lib.Integers.WordCore.eqm
+  unfold CompCert4Lean.Lib.Zbits.eqmod
+  refine ⟨ZArith.BinInt.Z.sub kx ky, ?_⟩
+  apply intOfZ_injective
+  have hx' := congrArg intOfZ hx
+  have hy' := congrArg intOfZ hy
+  simp only [ZArith.BinInt.Z.add, ZArith.BinInt.Z.mul,
+    ZArith.BinInt.Z.sub, intOfZ_zOfInt] at hx' hy' ⊢
+  have hm : intOfZ CompCert4Lean.Lib.Integers.Int.modulus = 4294967296 := by
+    rfl
+  rw [hm] at hx' hy'
+  change intOfZ (CompCert4Lean.Lib.Integers.Int.unsigned x) -
+      intOfZ (CompCert4Lean.Lib.Integers.Int.unsigned y) =
+    (intOfZ kx - intOfZ ky) * 4294967296 +
+      (intOfZ (CompCert4Lean.Lib.Integers.Int.signed x) -
+        intOfZ (CompCert4Lean.Lib.Integers.Int.signed y))
+  omega
+
+end CompCert4Lean.X86.Asmgenproof1
+
+namespace CompCert4Lean.X86.Asmgenproof1
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open Lean Elab Tactic Meta
+
+private theorem word_unsigned_eq_zOfNat_val_aux {bits : Nat}
+    (x : CompCert4Lean.Lib.Integers.WordCore.Word bits) :
+    CompCert4Lean.Lib.Integers.WordCore.unsigned x =
+      ZArith.BinInt.Z.of_nat x.val := by
+  run_tac
+    let lctx ← getLCtx
+    let xF := (lctx.findFromUserName? `x).get!
+    let e ← mkAppM
+      (asmgenproof1PrivateName
+        "CompCert4Lean.Lib.Integers.WordCore.intval_eq_zOfNat_val")
+      #[mkFVar xF.fvarId]
+    closeMainGoal Name.anonymous e
+
+private theorem word_unsigned_repr_int_aux {bits : Nat} (z : Z) :
+    intOfZ (CompCert4Lean.Lib.Integers.WordCore.unsigned
+      (CompCert4Lean.Lib.Integers.WordCore.repr bits z)) =
+      intOfZ z % (2 ^ bits : Nat) := by
+  have hz : zOfInt (intOfZ z) = z := zOfInt_intOfZ z
+  rw [← hz, word_unsigned_eq_zOfNat_val_aux,
+    asmgenproof1WordValRepr, intOfZ_zOfInt]
+  simp only [ZArith.BinInt.Z.of_nat, intOfZ_zOfInt]
+  exact Int.toNat_of_nonneg (Int.emod_nonneg _ (Int.ne_of_gt
+    (Int.natCast_pos.mpr (Nat.two_pow_pos bits))))
+
+private theorem word_lt_eq_decide_aux {bits : Nat}
+    (x y : CompCert4Lean.Lib.Integers.WordCore.Word bits) :
+    CompCert4Lean.Lib.Integers.WordCore.lt x y =
+      decide (intOfZ (CompCert4Lean.Lib.Integers.WordCore.signed x) <
+        intOfZ (CompCert4Lean.Lib.Integers.WordCore.signed y)) := by
+  unfold CompCert4Lean.Lib.Integers.WordCore.lt
+  change asmgenproof1SumboolSelect
+      (CompCert4Lean.Lib.Coqlib.zlt
+        (CompCert4Lean.Lib.Integers.WordCore.signed x)
+        (CompCert4Lean.Lib.Integers.WordCore.signed y)) true false = _
+  cases h : CompCert4Lean.Lib.Coqlib.zlt
+      (CompCert4Lean.Lib.Integers.WordCore.signed x)
+      (CompCert4Lean.Lib.Integers.WordCore.signed y) with
+  | left hp =>
+      have h' : CompCert4Lean.Lib.Coqlib.zlt
+          (CompCert4Lean.Lib.Integers.WordCore.signed x)
+          (CompCert4Lean.Lib.Integers.WordCore.signed y) =
+          CompCert4Lean.Foundation.Logic.Support.Sumbool.left hp := h
+      simp only [asmgenproof1SumboolSelect, h']
+      have hp' : intOfZ (CompCert4Lean.Lib.Integers.WordCore.signed x) <
+          intOfZ (CompCert4Lean.Lib.Integers.WordCore.signed y) := hp
+      exact (decide_eq_true hp').symm
+  | right hn =>
+      have h' : CompCert4Lean.Lib.Coqlib.zlt
+          (CompCert4Lean.Lib.Integers.WordCore.signed x)
+          (CompCert4Lean.Lib.Integers.WordCore.signed y) =
+          CompCert4Lean.Foundation.Logic.Support.Sumbool.right hn := h
+      simp only [asmgenproof1SumboolSelect, h']
+      exact (decide_eq_false (Int.not_lt_of_ge hn)).symm
+
+private theorem word_ltu_eq_decide_aux {bits : Nat}
+    (x y : CompCert4Lean.Lib.Integers.WordCore.Word bits) :
+    CompCert4Lean.Lib.Integers.WordCore.ltu x y =
+      decide (intOfZ (CompCert4Lean.Lib.Integers.WordCore.unsigned x) <
+        intOfZ (CompCert4Lean.Lib.Integers.WordCore.unsigned y)) := by
+  unfold CompCert4Lean.Lib.Integers.WordCore.ltu
+  change asmgenproof1SumboolSelect
+      (CompCert4Lean.Lib.Coqlib.zlt
+        (CompCert4Lean.Lib.Integers.WordCore.unsigned x)
+        (CompCert4Lean.Lib.Integers.WordCore.unsigned y)) true false = _
+  cases h : CompCert4Lean.Lib.Coqlib.zlt
+      (CompCert4Lean.Lib.Integers.WordCore.unsigned x)
+      (CompCert4Lean.Lib.Integers.WordCore.unsigned y) with
+  | left hp =>
+      have h' : CompCert4Lean.Lib.Coqlib.zlt
+          (CompCert4Lean.Lib.Integers.WordCore.unsigned x)
+          (CompCert4Lean.Lib.Integers.WordCore.unsigned y) =
+          CompCert4Lean.Foundation.Logic.Support.Sumbool.left hp := h
+      simp only [asmgenproof1SumboolSelect, h']
+      have hp' : intOfZ (CompCert4Lean.Lib.Integers.WordCore.unsigned x) <
+          intOfZ (CompCert4Lean.Lib.Integers.WordCore.unsigned y) := hp
+      exact (decide_eq_true hp').symm
+  | right hn =>
+      have h' : CompCert4Lean.Lib.Coqlib.zlt
+          (CompCert4Lean.Lib.Integers.WordCore.unsigned x)
+          (CompCert4Lean.Lib.Integers.WordCore.unsigned y) =
+          CompCert4Lean.Foundation.Logic.Support.Sumbool.right hn := h
+      simp only [asmgenproof1SumboolSelect, h']
+      exact (decide_eq_false (Int.not_lt_of_ge hn)).symm
+
+private theorem word_signed_repr_int_aux {bits : Nat} (z : Z) (M H : Int)
+    (hM : ((2 ^ bits : Nat) : Int) = M)
+    (hPow : intOfZ (two_power_nat bits) = M)
+    (hHalf : intOfZ (two_power_nat (bits - 1)) = H)
+    (hMtwo : M = 2 * H) (hMpos : 0 < M)
+    (hzlo : -M < intOfZ z) (hzhi : intOfZ z < M) :
+    intOfZ (CompCert4Lean.Lib.Integers.WordCore.signed
+      (CompCert4Lean.Lib.Integers.WordCore.repr bits z)) =
+      if intOfZ z < -H then intOfZ z + M
+      else if H ≤ intOfZ z then intOfZ z - M else intOfZ z := by
+  have hu0 := word_unsigned_repr_int_aux (bits := bits) z
+  rw [hM] at hu0
+  have hu : intOfZ (CompCert4Lean.Lib.Integers.WordCore.unsigned
+      (CompCert4Lean.Lib.Integers.WordCore.repr bits z)) =
+      if intOfZ z < 0 then intOfZ z + M else intOfZ z := by
+    by_cases hzneg : intOfZ z < 0
+    · rw [if_pos hzneg]
+      have hr0 : 0 ≤ intOfZ z + M := by omega
+      have hrlt : intOfZ z + M < M := by omega
+      have hmod : intOfZ z % M = intOfZ z + M := by
+        calc
+          intOfZ z % M = (intOfZ z + M) % M := (Int.add_emod_right _ _).symm
+          _ = intOfZ z + M := Int.emod_eq_of_lt hr0 hrlt
+      exact hu0.trans hmod
+    · rw [if_neg hzneg]
+      exact hu0.trans (Int.emod_eq_of_lt (Int.le_of_not_gt hzneg) hzhi)
+  unfold CompCert4Lean.Lib.Integers.WordCore.signed
+  change intOfZ (asmgenproof1SumboolSelect
+      (CompCert4Lean.Lib.Coqlib.zlt
+        (CompCert4Lean.Lib.Integers.WordCore.unsigned
+          (CompCert4Lean.Lib.Integers.WordCore.repr bits z))
+        (two_power_nat (bits - 1)))
+      (CompCert4Lean.Lib.Integers.WordCore.unsigned
+        (CompCert4Lean.Lib.Integers.WordCore.repr bits z))
+      (ZArith.BinInt.Z.sub
+        (CompCert4Lean.Lib.Integers.WordCore.unsigned
+          (CompCert4Lean.Lib.Integers.WordCore.repr bits z))
+        (two_power_nat bits))) = _
+  cases h : CompCert4Lean.Lib.Coqlib.zlt
+      (CompCert4Lean.Lib.Integers.WordCore.unsigned
+        (CompCert4Lean.Lib.Integers.WordCore.repr bits z))
+      (two_power_nat (bits - 1)) with
+  | left hp =>
+      simp only [asmgenproof1SumboolSelect]
+      have hp' : intOfZ (CompCert4Lean.Lib.Integers.WordCore.unsigned
+          (CompCert4Lean.Lib.Integers.WordCore.repr bits z)) < H := by
+        change intOfZ (CompCert4Lean.Lib.Integers.WordCore.unsigned
+          (CompCert4Lean.Lib.Integers.WordCore.repr bits z)) <
+            intOfZ (two_power_nat (bits - 1)) at hp
+        rwa [hHalf] at hp
+      by_cases hlo : intOfZ z < -H
+      · simp only [if_pos hlo]
+        by_cases hneg : intOfZ z < 0
+        · simp only [if_pos hneg] at hu
+          omega
+        · simp only [if_neg hneg] at hu
+          omega
+      · simp only [if_neg hlo]
+        by_cases hhi : H ≤ intOfZ z
+        · simp only [if_pos hhi]
+          by_cases hneg : intOfZ z < 0
+          · simp only [if_pos hneg] at hu
+            omega
+          · simp only [if_neg hneg] at hu
+            omega
+        · simp only [if_neg hhi]
+          by_cases hneg : intOfZ z < 0
+          · simp only [if_pos hneg] at hu
+            omega
+          · simp only [if_neg hneg] at hu
+            omega
+  | right hn =>
+      simp only [asmgenproof1SumboolSelect,
+        ZArith.BinInt.Z.sub, intOfZ_zOfInt]
+      have hn' : H ≤ intOfZ (CompCert4Lean.Lib.Integers.WordCore.unsigned
+          (CompCert4Lean.Lib.Integers.WordCore.repr bits z)) := by
+        change intOfZ (two_power_nat (bits - 1)) ≤
+          intOfZ (CompCert4Lean.Lib.Integers.WordCore.unsigned
+            (CompCert4Lean.Lib.Integers.WordCore.repr bits z)) at hn
+        rwa [hHalf] at hn
+      rw [hPow]
+      by_cases hlo : intOfZ z < -H
+      · simp only [if_pos hlo]
+        by_cases hneg : intOfZ z < 0
+        · simp only [if_pos hneg] at hu
+          omega
+        · simp only [if_neg hneg] at hu
+          omega
+      · simp only [if_neg hlo]
+        by_cases hhi : H ≤ intOfZ z
+        · simp only [if_pos hhi]
+          by_cases hneg : intOfZ z < 0
+          · simp only [if_pos hneg] at hu
+            omega
+          · simp only [if_neg hneg] at hu
+            omega
+        · simp only [if_neg hhi]
+          by_cases hneg : intOfZ z < 0
+          · simp only [if_pos hneg] at hu
+            omega
+          · simp only [if_neg hneg] at hu
+            omega
+
+private theorem word_signed_bounds_int_aux {bits : Nat}
+    (x : CompCert4Lean.Lib.Integers.WordCore.Word bits) (M H : Int)
+    (hPow : intOfZ (two_power_nat bits) = M)
+    (hHalf : intOfZ (two_power_nat (bits - 1)) = H)
+    (hMtwo : M = 2 * H) :
+    -H ≤ intOfZ (CompCert4Lean.Lib.Integers.WordCore.signed x) ∧
+      intOfZ (CompCert4Lean.Lib.Integers.WordCore.signed x) < H := by
+  have hu0 : 0 ≤ intOfZ
+      (CompCert4Lean.Lib.Integers.WordCore.unsigned x) := by
+    have h := x.intrange.1
+    change (-1 : Int) < intOfZ
+      (CompCert4Lean.Lib.Integers.WordCore.unsigned x) at h
+    omega
+  have huM : intOfZ
+      (CompCert4Lean.Lib.Integers.WordCore.unsigned x) < M := by
+    have h := x.intrange.2
+    change intOfZ (CompCert4Lean.Lib.Integers.WordCore.unsigned x) <
+      intOfZ (two_power_nat bits) at h
+    rwa [hPow] at h
+  rw [word_signed_eq_select_aux]
+  cases h : CompCert4Lean.Lib.Coqlib.zlt
+      (CompCert4Lean.Lib.Integers.WordCore.unsigned x)
+      (two_power_nat (bits - 1)) with
+  | left hp =>
+      simp only [asmgenproof1SumboolSelect]
+      change intOfZ (CompCert4Lean.Lib.Integers.WordCore.unsigned x) <
+        intOfZ (two_power_nat (bits - 1)) at hp
+      rw [hHalf] at hp
+      omega
+  | right hn =>
+      simp only [asmgenproof1SumboolSelect,
+        ZArith.BinInt.Z.sub, intOfZ_zOfInt]
+      change intOfZ (two_power_nat (bits - 1)) ≤
+        intOfZ (CompCert4Lean.Lib.Integers.WordCore.unsigned x) at hn
+      rw [hHalf] at hn
+      rw [hPow]
+      omega
+
+private theorem word_repr_eq_of_int_eqmod_aux {bits : Nat} (a b : Z) (k : Int)
+    (h : intOfZ a = k * ((2 ^ bits : Nat) : Int) + intOfZ b) :
+    CompCert4Lean.Lib.Integers.WordCore.repr bits a =
+      CompCert4Lean.Lib.Integers.WordCore.repr bits b := by
+  apply CompCert4Lean.Lib.Integers.WordCore.ext_of_val_eq
+  rw [← zOfInt_intOfZ a, ← zOfInt_intOfZ b,
+    asmgenproof1WordValRepr, asmgenproof1WordValRepr]
+  apply congrArg Int.toNat
+  rw [h, Int.add_comm]
+  exact Int.add_mul_emod_self_right _ _ _
+
+private theorem word_sub_eq_repr_signed_aux {bits : Nat}
+    (x y : CompCert4Lean.Lib.Integers.WordCore.Word bits) (M : Int)
+    (hM : ((2 ^ bits : Nat) : Int) = M)
+    (hPow : intOfZ (two_power_nat bits) = M) :
+    CompCert4Lean.Lib.Integers.WordCore.sub x y =
+      CompCert4Lean.Lib.Integers.WordCore.repr bits
+        (ZArith.BinInt.Z.sub
+          (CompCert4Lean.Lib.Integers.WordCore.signed x)
+          (CompCert4Lean.Lib.Integers.WordCore.signed y)) := by
+  have hx : ∃ k : Int,
+      intOfZ (CompCert4Lean.Lib.Integers.WordCore.unsigned x) =
+        k * M + intOfZ (CompCert4Lean.Lib.Integers.WordCore.signed x) := by
+    unfold CompCert4Lean.Lib.Integers.WordCore.signed
+    change ∃ k : Int,
+      intOfZ (CompCert4Lean.Lib.Integers.WordCore.unsigned x) =
+        k * M + intOfZ (asmgenproof1SumboolSelect
+          (CompCert4Lean.Lib.Coqlib.zlt
+            (CompCert4Lean.Lib.Integers.WordCore.unsigned x)
+            (two_power_nat (bits - 1)))
+          (CompCert4Lean.Lib.Integers.WordCore.unsigned x)
+          (ZArith.BinInt.Z.sub
+            (CompCert4Lean.Lib.Integers.WordCore.unsigned x)
+            (two_power_nat bits)))
+    cases CompCert4Lean.Lib.Coqlib.zlt
+        (CompCert4Lean.Lib.Integers.WordCore.unsigned x)
+        (two_power_nat (bits - 1)) with
+    | left hp =>
+        simp only [asmgenproof1SumboolSelect]
+        exact ⟨0, by omega⟩
+    | right hn =>
+        simp only [asmgenproof1SumboolSelect,
+          ZArith.BinInt.Z.sub, intOfZ_zOfInt]
+        refine ⟨1, ?_⟩
+        rw [hPow]
+        omega
+  have hy : ∃ k : Int,
+      intOfZ (CompCert4Lean.Lib.Integers.WordCore.unsigned y) =
+        k * M + intOfZ (CompCert4Lean.Lib.Integers.WordCore.signed y) := by
+    unfold CompCert4Lean.Lib.Integers.WordCore.signed
+    change ∃ k : Int,
+      intOfZ (CompCert4Lean.Lib.Integers.WordCore.unsigned y) =
+        k * M + intOfZ (asmgenproof1SumboolSelect
+          (CompCert4Lean.Lib.Coqlib.zlt
+            (CompCert4Lean.Lib.Integers.WordCore.unsigned y)
+            (two_power_nat (bits - 1)))
+          (CompCert4Lean.Lib.Integers.WordCore.unsigned y)
+          (ZArith.BinInt.Z.sub
+            (CompCert4Lean.Lib.Integers.WordCore.unsigned y)
+            (two_power_nat bits)))
+    cases CompCert4Lean.Lib.Coqlib.zlt
+        (CompCert4Lean.Lib.Integers.WordCore.unsigned y)
+        (two_power_nat (bits - 1)) with
+    | left hp =>
+        simp only [asmgenproof1SumboolSelect]
+        exact ⟨0, by omega⟩
+    | right hn =>
+        simp only [asmgenproof1SumboolSelect,
+          ZArith.BinInt.Z.sub, intOfZ_zOfInt]
+        refine ⟨1, ?_⟩
+        rw [hPow]
+        omega
+  rcases hx with ⟨kx, hx⟩
+  rcases hy with ⟨ky, hy⟩
+  unfold CompCert4Lean.Lib.Integers.WordCore.sub
+  apply word_repr_eq_of_int_eqmod_aux (k := kx - ky)
+  simp only [ZArith.BinInt.Z.sub, intOfZ_zOfInt]
+  rw [hM]
+  rw [Int.sub_mul]
+  omega
+
+private theorem word_zero_val_aux (bits : Nat) :
+    (CompCert4Lean.Lib.Integers.WordCore.zero bits).val = 0 := by
+  unfold CompCert4Lean.Lib.Integers.WordCore.zero
+  change (CompCert4Lean.Lib.Integers.WordCore.repr bits (zOfInt (0 : Int))).val = 0
+  simpa using asmgenproof1WordValRepr bits 0
+
+private theorem word_one_val_aux (bits : Nat) (hbits : 0 < bits) :
+    (CompCert4Lean.Lib.Integers.WordCore.one bits).val = 1 := by
+  unfold CompCert4Lean.Lib.Integers.WordCore.one
+  change (CompCert4Lean.Lib.Integers.WordCore.repr bits (zOfInt (1 : Int))).val = 1
+  rw [asmgenproof1WordValRepr]
+  have hlt : (1 : Int) < ((2 ^ bits : Nat) : Int) :=
+    Int.ofNat_lt.mpr (Nat.one_lt_two_pow (Nat.ne_of_gt hbits))
+  rw [Int.emod_eq_of_lt (by omega) hlt]
+  rfl
+
+private theorem word_xor_zero_zero_aux (bits : Nat) :
+    CompCert4Lean.Lib.Integers.WordCore.xor
+      (CompCert4Lean.Lib.Integers.WordCore.zero bits)
+      (CompCert4Lean.Lib.Integers.WordCore.zero bits) =
+        CompCert4Lean.Lib.Integers.WordCore.zero bits := by
+  unfold CompCert4Lean.Lib.Integers.WordCore.xor
+  change CompCert4Lean.Lib.Integers.WordCore.repr bits
+    (ZArith.BinInt.Z.of_nat (Nat.xor
+      (CompCert4Lean.Lib.Integers.WordCore.zero bits).val
+      (CompCert4Lean.Lib.Integers.WordCore.zero bits).val)) = _
+  rw [word_zero_val_aux]
+  rfl
+
+private theorem word_xor_zero_one_aux (bits : Nat) (hbits : 0 < bits) :
+    CompCert4Lean.Lib.Integers.WordCore.xor
+      (CompCert4Lean.Lib.Integers.WordCore.zero bits)
+      (CompCert4Lean.Lib.Integers.WordCore.one bits) =
+        CompCert4Lean.Lib.Integers.WordCore.one bits := by
+  unfold CompCert4Lean.Lib.Integers.WordCore.xor
+  change CompCert4Lean.Lib.Integers.WordCore.repr bits
+    (ZArith.BinInt.Z.of_nat (Nat.xor
+      (CompCert4Lean.Lib.Integers.WordCore.zero bits).val
+      (CompCert4Lean.Lib.Integers.WordCore.one bits).val)) = _
+  rw [word_zero_val_aux, word_one_val_aux bits hbits]
+  rfl
+
+private theorem word_xor_one_zero_aux (bits : Nat) (hbits : 0 < bits) :
+    CompCert4Lean.Lib.Integers.WordCore.xor
+      (CompCert4Lean.Lib.Integers.WordCore.one bits)
+      (CompCert4Lean.Lib.Integers.WordCore.zero bits) =
+        CompCert4Lean.Lib.Integers.WordCore.one bits := by
+  unfold CompCert4Lean.Lib.Integers.WordCore.xor
+  change CompCert4Lean.Lib.Integers.WordCore.repr bits
+    (ZArith.BinInt.Z.of_nat (Nat.xor
+      (CompCert4Lean.Lib.Integers.WordCore.one bits).val
+      (CompCert4Lean.Lib.Integers.WordCore.zero bits).val)) = _
+  rw [word_one_val_aux bits hbits, word_zero_val_aux]
+  rfl
+
+private theorem word_xor_one_one_aux (bits : Nat) (hbits : 0 < bits) :
+    CompCert4Lean.Lib.Integers.WordCore.xor
+      (CompCert4Lean.Lib.Integers.WordCore.one bits)
+      (CompCert4Lean.Lib.Integers.WordCore.one bits) =
+        CompCert4Lean.Lib.Integers.WordCore.zero bits := by
+  unfold CompCert4Lean.Lib.Integers.WordCore.xor
+  change CompCert4Lean.Lib.Integers.WordCore.repr bits
+    (ZArith.BinInt.Z.of_nat (Nat.xor
+      (CompCert4Lean.Lib.Integers.WordCore.one bits).val
+      (CompCert4Lean.Lib.Integers.WordCore.one bits).val)) = _
+  rw [word_one_val_aux bits hbits]
+  rfl
+
+private theorem word_sub_overflow_eq_select_aux {bits : Nat}
+    (x y bin : CompCert4Lean.Lib.Integers.WordCore.Word bits) :
+    CompCert4Lean.Lib.Integers.WordCore.sub_overflow x y bin =
+      asmgenproof1SumboolSelect
+        (CompCert4Lean.Lib.Coqlib.zlt
+          (ZArith.BinInt.Z.sub
+            (ZArith.BinInt.Z.sub
+              (CompCert4Lean.Lib.Integers.WordCore.signed x)
+              (CompCert4Lean.Lib.Integers.WordCore.signed y))
+            (CompCert4Lean.Lib.Integers.WordCore.signed bin))
+          (ZArith.BinInt.Z.opp (two_power_nat (bits - 1))))
+        (CompCert4Lean.Lib.Integers.WordCore.one bits)
+        (asmgenproof1SumboolSelect
+          (CompCert4Lean.Lib.Coqlib.zlt
+            (ZArith.BinInt.Z.sub (two_power_nat (bits - 1)) (Zpos xH))
+            (ZArith.BinInt.Z.sub
+              (ZArith.BinInt.Z.sub
+                (CompCert4Lean.Lib.Integers.WordCore.signed x)
+                (CompCert4Lean.Lib.Integers.WordCore.signed y))
+              (CompCert4Lean.Lib.Integers.WordCore.signed bin)))
+          (CompCert4Lean.Lib.Integers.WordCore.one bits)
+          (CompCert4Lean.Lib.Integers.WordCore.zero bits)) := by
+  rfl
+
+private theorem word_lt_sub_overflow_aux {bits : Nat}
+    (x y : CompCert4Lean.Lib.Integers.WordCore.Word bits) (M H : Int)
+    (hbits : 0 < bits)
+    (hM : ((2 ^ bits : Nat) : Int) = M)
+    (hPow : intOfZ (two_power_nat bits) = M)
+    (hHalf : intOfZ (two_power_nat (bits - 1)) = H)
+    (hMtwo : M = 2 * H) (hMpos : 0 < M) :
+    CompCert4Lean.Lib.Integers.WordCore.xor
+      (CompCert4Lean.Lib.Integers.WordCore.sub_overflow x y
+        (CompCert4Lean.Lib.Integers.WordCore.zero bits))
+      (CompCert4Lean.Lib.Integers.WordCore.negative
+        (CompCert4Lean.Lib.Integers.WordCore.sub x y)) =
+      if CompCert4Lean.Lib.Integers.WordCore.lt x y then
+        CompCert4Lean.Lib.Integers.WordCore.one bits
+      else CompCert4Lean.Lib.Integers.WordCore.zero bits := by
+  have hHpos : 0 < H := by omega
+  have hxrange := word_signed_bounds_int_aux x M H hPow hHalf hMtwo
+  have hyrange := word_signed_bounds_int_aux y M H hPow hHalf hMtwo
+  let d : Z := ZArith.BinInt.Z.sub
+    (CompCert4Lean.Lib.Integers.WordCore.signed x)
+    (CompCert4Lean.Lib.Integers.WordCore.signed y)
+  have hd : intOfZ d =
+      intOfZ (CompCert4Lean.Lib.Integers.WordCore.signed x) -
+        intOfZ (CompCert4Lean.Lib.Integers.WordCore.signed y) := by
+    dsimp [d]
+    simp only [ZArith.BinInt.Z.sub, intOfZ_zOfInt]
+  have hdlo : -M < intOfZ d := by omega
+  have hdhi : intOfZ d < M := by omega
+  have hzeroInt : intOfZ (CompCert4Lean.Lib.Integers.WordCore.signed
+      (CompCert4Lean.Lib.Integers.WordCore.zero bits)) = 0 := by
+    change intOfZ (CompCert4Lean.Lib.Integers.WordCore.signed
+      (CompCert4Lean.Lib.Integers.WordCore.repr bits Z0)) = 0
+    have h := word_signed_repr_int_aux (bits := bits) Z0 M H
+      hM hPow hHalf hMtwo hMpos (by change -M < (0 : Int); omega)
+        (by change (0 : Int) < M; omega)
+    change intOfZ (CompCert4Lean.Lib.Integers.WordCore.signed
+      (CompCert4Lean.Lib.Integers.WordCore.repr bits Z0)) =
+        if (0 : Int) < -H then 0 + M else if H ≤ 0 then 0 - M else 0 at h
+    have hnH : ¬H < 0 := by omega
+    have hnle : ¬H ≤ 0 := by omega
+    simpa [hnH, hnle] using h
+  have hzero : CompCert4Lean.Lib.Integers.WordCore.signed
+      (CompCert4Lean.Lib.Integers.WordCore.zero bits) = Z0 := by
+    apply intOfZ_injective
+    exact hzeroInt
+  have hsub := word_sub_eq_repr_signed_aux x y M hM hPow
+  have hwrapped : intOfZ (CompCert4Lean.Lib.Integers.WordCore.signed
+      (CompCert4Lean.Lib.Integers.WordCore.sub x y)) =
+      if intOfZ d < -H then intOfZ d + M
+      else if H ≤ intOfZ d then intOfZ d - M else intOfZ d := by
+    rw [hsub]
+    exact word_signed_repr_int_aux d M H hM hPow hHalf hMtwo hMpos hdlo hdhi
+  rw [word_sub_overflow_eq_select_aux]
+  unfold CompCert4Lean.Lib.Integers.WordCore.negative
+  rw [word_lt_eq_decide_aux, word_lt_eq_decide_aux]
+  rw [hzero]
+  have hdzero : ZArith.BinInt.Z.sub d Z0 = d := by
+    apply intOfZ_injective
+    simp only [ZArith.BinInt.Z.sub, intOfZ_zOfInt]
+    rw [show intOfZ Z0 = 0 by rfl]
+    omega
+  rw [hdzero]
+  have hzint : intOfZ Z0 = 0 := rfl
+  rw [hzint]
+  change CompCert4Lean.Lib.Integers.WordCore.xor
+      (asmgenproof1SumboolSelect
+        (CompCert4Lean.Lib.Coqlib.zlt d
+          (ZArith.BinInt.Z.opp (two_power_nat (bits - 1))))
+        (CompCert4Lean.Lib.Integers.WordCore.one bits)
+        (asmgenproof1SumboolSelect
+          (CompCert4Lean.Lib.Coqlib.zlt
+            (ZArith.BinInt.Z.sub (two_power_nat (bits - 1)) (Zpos xH)) d)
+          (CompCert4Lean.Lib.Integers.WordCore.one bits)
+          (CompCert4Lean.Lib.Integers.WordCore.zero bits)))
+      (if decide (intOfZ
+          (CompCert4Lean.Lib.Integers.WordCore.signed
+            (CompCert4Lean.Lib.Integers.WordCore.sub x y)) < 0) then
+        CompCert4Lean.Lib.Integers.WordCore.one bits
+       else CompCert4Lean.Lib.Integers.WordCore.zero bits) =
+    (if decide (intOfZ (CompCert4Lean.Lib.Integers.WordCore.signed x) <
+        intOfZ (CompCert4Lean.Lib.Integers.WordCore.signed y)) then
+      CompCert4Lean.Lib.Integers.WordCore.one bits
+     else CompCert4Lean.Lib.Integers.WordCore.zero bits)
+  cases hlo : CompCert4Lean.Lib.Coqlib.zlt d
+      (ZArith.BinInt.Z.opp (two_power_nat (bits - 1))) with
+  | left hlo' =>
+      simp only [asmgenproof1SumboolSelect]
+      have hloI : intOfZ d < -H := by
+        change intOfZ d < intOfZ
+          (ZArith.BinInt.Z.opp (two_power_nat (bits - 1))) at hlo'
+        simp only [ZArith.BinInt.Z.opp, intOfZ_zOfInt] at hlo'
+        rw [hHalf] at hlo'
+        exact hlo'
+      have hxy : intOfZ (CompCert4Lean.Lib.Integers.WordCore.signed x) <
+          intOfZ (CompCert4Lean.Lib.Integers.WordCore.signed y) := by omega
+      have hwrap0 : ¬intOfZ (CompCert4Lean.Lib.Integers.WordCore.signed
+          (CompCert4Lean.Lib.Integers.WordCore.sub x y)) < 0 := by
+        rw [if_pos hloI] at hwrapped
+        omega
+      simp [hwrap0, hxy, word_xor_one_zero_aux bits hbits]
+  | right hlo' =>
+      have hloI : -H ≤ intOfZ d := by
+        change intOfZ (ZArith.BinInt.Z.opp (two_power_nat (bits - 1))) ≤
+          intOfZ d at hlo'
+        simp only [ZArith.BinInt.Z.opp, intOfZ_zOfInt] at hlo'
+        rwa [hHalf] at hlo'
+      cases hhi : CompCert4Lean.Lib.Coqlib.zlt
+          (ZArith.BinInt.Z.sub (two_power_nat (bits - 1)) (Zpos xH)) d with
+      | left hhi' =>
+          simp only [asmgenproof1SumboolSelect]
+          have hhiI : H ≤ intOfZ d := by
+            change intOfZ
+                (ZArith.BinInt.Z.sub (two_power_nat (bits - 1)) (Zpos xH)) <
+              intOfZ d at hhi'
+            simp only [ZArith.BinInt.Z.sub, intOfZ_zOfInt] at hhi'
+            rw [hHalf, show intOfZ (Zpos xH) = 1 by rfl] at hhi'
+            omega
+          have hxy : ¬intOfZ (CompCert4Lean.Lib.Integers.WordCore.signed x) <
+              intOfZ (CompCert4Lean.Lib.Integers.WordCore.signed y) := by omega
+          have hwrap : intOfZ (CompCert4Lean.Lib.Integers.WordCore.signed
+              (CompCert4Lean.Lib.Integers.WordCore.sub x y)) < 0 := by
+            rw [if_neg (by omega), if_pos hhiI] at hwrapped
+            omega
+          simp [hwrap, hxy, word_xor_one_one_aux bits hbits]
+      | right hhi' =>
+          simp only [asmgenproof1SumboolSelect]
+          have hhiI : intOfZ d < H := by
+            change intOfZ d ≤ intOfZ
+              (ZArith.BinInt.Z.sub (two_power_nat (bits - 1)) (Zpos xH)) at hhi'
+            simp only [ZArith.BinInt.Z.sub, intOfZ_zOfInt] at hhi'
+            rw [hHalf, show intOfZ (Zpos xH) = 1 by rfl] at hhi'
+            omega
+          rw [if_neg (by omega), if_neg (by omega)] at hwrapped
+          by_cases hdneg : intOfZ d < 0
+          · have hxy : intOfZ (CompCert4Lean.Lib.Integers.WordCore.signed x) <
+                intOfZ (CompCert4Lean.Lib.Integers.WordCore.signed y) := by omega
+            have hwrap : intOfZ (CompCert4Lean.Lib.Integers.WordCore.signed
+                (CompCert4Lean.Lib.Integers.WordCore.sub x y)) < 0 := by omega
+            simp [hwrap, hxy, word_xor_zero_one_aux bits hbits]
+          · have hxy : ¬intOfZ (CompCert4Lean.Lib.Integers.WordCore.signed x) <
+                intOfZ (CompCert4Lean.Lib.Integers.WordCore.signed y) := by omega
+            have hwrap : ¬intOfZ (CompCert4Lean.Lib.Integers.WordCore.signed
+                (CompCert4Lean.Lib.Integers.WordCore.sub x y)) < 0 := by omega
+            simp [hwrap, hxy, word_xor_zero_zero_aux bits]
+
+private theorem word_repr_unsigned_aux {bits : Nat}
+    (x : CompCert4Lean.Lib.Integers.WordCore.Word bits) :
+    CompCert4Lean.Lib.Integers.WordCore.repr bits
+      (CompCert4Lean.Lib.Integers.WordCore.unsigned x) = x := by
+  apply CompCert4Lean.Lib.Integers.WordCore.ext_of_val_eq
+  rw [word_unsigned_eq_zOfNat_val_aux]
+  change (CompCert4Lean.Lib.Integers.WordCore.repr bits
+    (zOfInt (Int.ofNat x.val))).val = x.val
+  rw [asmgenproof1WordValRepr]
+  have hlt : Int.ofNat x.val < ((2 ^ bits : Nat) : Int) :=
+    Int.ofNat_lt.mpr (asmgenproof1WordCoreValLt x)
+  have hmod : Int.ofNat x.val % ((2 ^ bits : Nat) : Int) =
+      Int.ofNat x.val := Int.emod_eq_of_lt (Int.natCast_nonneg _) hlt
+  rw [hmod]
+  simp
+
+private theorem word_repr_signed_aux {bits : Nat}
+    (x : CompCert4Lean.Lib.Integers.WordCore.Word bits) :
+    CompCert4Lean.Lib.Integers.WordCore.repr bits
+      (CompCert4Lean.Lib.Integers.WordCore.signed x) = x := by
+  have hx : ∃ k : Int,
+      intOfZ (CompCert4Lean.Lib.Integers.WordCore.unsigned x) =
+        k * ((2 ^ bits : Nat) : Int) +
+          intOfZ (CompCert4Lean.Lib.Integers.WordCore.signed x) := by
+    rw [word_signed_eq_select_aux]
+    cases h : CompCert4Lean.Lib.Coqlib.zlt
+        (CompCert4Lean.Lib.Integers.WordCore.unsigned x)
+        (two_power_nat (bits - 1)) with
+    | left hp =>
+        simp only [asmgenproof1SumboolSelect]
+        exact ⟨0, by omega⟩
+    | right hn =>
+        simp only [asmgenproof1SumboolSelect,
+          ZArith.BinInt.Z.sub, intOfZ_zOfInt]
+        refine ⟨1, ?_⟩
+        have hpow : intOfZ (two_power_nat bits) =
+            ((2 ^ bits : Nat) : Int) := by
+          have hp : two_power_nat bits = ZArith.BinInt.Z.of_nat (2 ^ bits) := by
+            run_tac
+              let lctx ← getLCtx
+              let bitsF := (lctx.findFromUserName? `bits).get!
+              let e ← mkAppM
+                (asmgenproof1PrivateName
+                  "CompCert4Lean.Lib.Integers.WordCore.twoPowerNat_eq_zOfNat_twoPow")
+                #[mkFVar bitsF.fvarId]
+              closeMainGoal Name.anonymous e
+          have hi := congrArg intOfZ hp
+          simpa only [ZArith.BinInt.Z.of_nat, intOfZ_zOfInt,
+            Int.ofNat_eq_natCast] using hi
+        rw [hpow]
+        omega
+  rcases hx with ⟨k, hk⟩
+  have hs : intOfZ (CompCert4Lean.Lib.Integers.WordCore.signed x) =
+      (-k) * ((2 ^ bits : Nat) : Int) +
+        intOfZ (CompCert4Lean.Lib.Integers.WordCore.unsigned x) := by
+    rw [Int.neg_mul]
+    omega
+  rw [word_repr_eq_of_int_eqmod_aux _ _ (-k) hs]
+  exact word_repr_unsigned_aux x
+
+private theorem word_eq_eq_decide_signed_aux {bits : Nat}
+    (x y : CompCert4Lean.Lib.Integers.WordCore.Word bits) :
+    CompCert4Lean.Lib.Integers.WordCore.eq x y =
+      decide (intOfZ (CompCert4Lean.Lib.Integers.WordCore.signed x) =
+        intOfZ (CompCert4Lean.Lib.Integers.WordCore.signed y)) := by
+  by_cases hs : intOfZ (CompCert4Lean.Lib.Integers.WordCore.signed x) =
+      intOfZ (CompCert4Lean.Lib.Integers.WordCore.signed y)
+  · have hsz : CompCert4Lean.Lib.Integers.WordCore.signed x =
+        CompCert4Lean.Lib.Integers.WordCore.signed y := intOfZ_injective hs
+    have hxy : x = y := by
+      rw [← word_repr_signed_aux x, ← word_repr_signed_aux y, hsz]
+    subst y
+    simp [CompCert4Lean.Lib.Integers.WordCore.eq]
+  · have hxy : x.intval ≠ y.intval := by
+      intro hval
+      apply hs
+      have hxy : x = y := CompCert4Lean.Lib.Integers.WordCore.ext hval
+      subst y
+      rfl
+    simp [CompCert4Lean.Lib.Integers.WordCore.eq, hs, hxy]
+
+private theorem int_lt_sub_overflow_aux
+    (x y : CompCert4Lean.Lib.Integers.Int.int) :
+    CompCert4Lean.Lib.Integers.Int.xor
+      (CompCert4Lean.Lib.Integers.Int.sub_overflow
+        x y CompCert4Lean.Lib.Integers.Int.zero)
+      (CompCert4Lean.Lib.Integers.Int.negative
+        (CompCert4Lean.Lib.Integers.Int.sub x y)) =
+      if CompCert4Lean.Lib.Integers.Int.lt x y then
+        CompCert4Lean.Lib.Integers.Int.one
+      else CompCert4Lean.Lib.Integers.Int.zero := by
+  exact word_lt_sub_overflow_aux x y 4294967296 2147483648
+    (by decide) (by decide) (by decide) (by decide)
+    (by decide) (by decide)
+
+private theorem int64_lt_sub_overflow_aux
+    (x y : CompCert4Lean.Lib.Integers.Int64.int) :
+    CompCert4Lean.Lib.Integers.Int64.xor
+      (CompCert4Lean.Lib.Integers.Int64.sub_overflow
+        x y CompCert4Lean.Lib.Integers.Int64.zero)
+      (CompCert4Lean.Lib.Integers.Int64.negative
+        (CompCert4Lean.Lib.Integers.Int64.sub x y)) =
+      if CompCert4Lean.Lib.Integers.Int64.lt x y then
+        CompCert4Lean.Lib.Integers.Int64.one
+      else CompCert4Lean.Lib.Integers.Int64.zero := by
+  exact word_lt_sub_overflow_aux x y 18446744073709551616 9223372036854775808
+    (by decide) (by decide) (by decide) (by decide)
+    (by decide) (by decide)
+
+private theorem val_cmpu_int_aux (valid : CompCert4Lean.Common.Values.block → Z → Bool)
+    (c : CompCert4Lean.Lib.Integers.comparison)
+    (x y : CompCert4Lean.Lib.Integers.Int.int) :
+    CompCert4Lean.Common.Values.Val.cmpu valid c (.Vint x) (.Vint y) =
+      CompCert4Lean.Common.Values.Val.of_bool
+        (CompCert4Lean.Lib.Integers.Int.cmpu c x y) := by
+  cases h : CompCert4Lean.Lib.Integers.Int.cmpu c x y <;>
+    simp [CompCert4Lean.Common.Values.Val.cmpu,
+      CompCert4Lean.Common.Values.Val.cmpu_bool,
+      CompCert4Lean.Common.Values.Val.of_optbool,
+      CompCert4Lean.Common.Values.Val.of_bool, h]
+
+private theorem val_sub_overflow_int_aux
+    (x y : CompCert4Lean.Lib.Integers.Int.int) :
+    CompCert4Lean.Common.Values.Val.sub_overflow (.Vint x) (.Vint y) =
+      .Vint (CompCert4Lean.Lib.Integers.Int.sub_overflow
+        x y CompCert4Lean.Lib.Integers.Int.zero) := by
+  rfl
+
+private theorem val_negative_sub_int_aux
+    (x y : CompCert4Lean.Lib.Integers.Int.int) :
+    CompCert4Lean.Common.Values.Val.negative
+      (CompCert4Lean.Common.Values.Val.sub (.Vint x) (.Vint y)) =
+      .Vint (CompCert4Lean.Lib.Integers.Int.negative
+        (CompCert4Lean.Lib.Integers.Int.sub x y)) := by
+  rfl
+
+theorem testcond_for_signed_comparison_32_correct :
+    testcond_for_signed_comparison_32_correctStatement := by
+  intro c v1 v2 rs m b hb
+  have hs := compare_ints_spec rs v1 v2 m
+  rcases hs with ⟨hzf, hcf, hsf, hof, hdata⟩
+  cases v1 <;> cases v2 <;>
+    simp [CompCert4Lean.Common.Values.Val.cmp_bool] at hb
+  case Vint.Vint x y =>
+    subst b
+    have honezero : CompCert4Lean.Lib.Integers.Int.one.intval ≠
+        CompCert4Lean.Lib.Integers.Int.zero.intval := by decide
+    have hzeroone : CompCert4Lean.Lib.Integers.Int.zero.intval ≠
+        CompCert4Lean.Lib.Integers.Int.one.intval := Ne.symm honezero
+    have hltxy := word_lt_eq_decide_aux x y
+    have hltyx := word_lt_eq_decide_aux y x
+    have heqxy := word_eq_eq_decide_signed_aux x y
+    have hover := int_lt_sub_overflow_aux x y
+    cases c <;>
+      simp only [CompCert4Lean.X86.Asmgen.testcond_for_signed_comparison,
+        CompCert4Lean.X86.Asm.eval_testcond]
+    all_goals
+      run_tac
+        let g ← getMainGoal
+        let t ← g.getType
+        let flagName := asmgenproof1AsmPrivateName "CompCert4Lean.X86.Asm.flagValue"
+        let t ← Lean.Meta.transform t (post := fun e => do
+          if e.isAppOf flagName then
+            return .visit (← Lean.Meta.unfoldDefinition e)
+          else
+            return .continue)
+        let g ← g.replaceTargetDefEq t
+        Lean.Elab.Tactic.replaceMainGoal [g]
+      simp only [CompCert4Lean.X86.Asm.Pregmap.get, hzf, hcf, hsf, hof]
+    all_goals
+      simp [CompCert4Lean.Common.Values.Val.cmpu,
+        CompCert4Lean.Common.Values.Val.cmpu_bool,
+        val_cmpu_int_aux, val_sub_overflow_int_aux,
+        val_negative_sub_int_aux,
+        CompCert4Lean.Common.Values.Val.of_optbool,
+        CompCert4Lean.Common.Values.Val.of_bool,
+        CompCert4Lean.Common.Values.Vtrue,
+        CompCert4Lean.Common.Values.Vfalse,
+        int_lt_sub_overflow_aux,
+        word_lt_eq_decide_aux, word_eq_eq_decide_signed_aux,
+        CompCert4Lean.Lib.Integers.Int.cmp,
+        CompCert4Lean.Lib.Integers.WordCore.cmp,
+        hltxy, hltyx, heqxy, hover,
+        honezero, Ne.symm honezero]
+    all_goals
+      by_cases hlt : intOfZ (CompCert4Lean.Lib.Integers.WordCore.signed x) <
+          intOfZ (CompCert4Lean.Lib.Integers.WordCore.signed y)
+      <;> by_cases heq : intOfZ (CompCert4Lean.Lib.Integers.WordCore.signed x) =
+          intOfZ (CompCert4Lean.Lib.Integers.WordCore.signed y)
+      <;> simp_all [CompCert4Lean.Lib.Integers.Int.cmpu,
+        CompCert4Lean.Lib.Integers.WordCore.cmpu,
+        CompCert4Lean.Lib.Integers.Int.lt,
+        CompCert4Lean.Lib.Integers.Int.eq,
+        CompCert4Lean.Lib.Integers.WordCore.eq, hzeroone]
+      <;> omega
+
+end CompCert4Lean.X86.Asmgenproof1
