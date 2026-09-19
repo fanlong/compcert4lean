@@ -4790,3 +4790,11 @@ theorem regs_inject : regs_injectStatement := by
       exact Val.inject_list.inject_list_cons _ _ _ _ (h r) ih
 
 end CompCert4Lean.Backend.Unusedglobproof
+
+namespace CompCert4Lean.Backend.Unusedglobproof
+
+theorem set_reg_inject : set_reg_injectStatement := by
+  intro f rs rs' r v v' h hv
+  exact unusedglob_set_reg_inject_aux f rs rs' r v v' h hv
+
+end CompCert4Lean.Backend.Unusedglobproof

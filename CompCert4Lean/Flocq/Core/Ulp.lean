@@ -6204,3 +6204,8 @@ theorem id_m_ulp_ge_bpow : ∀ (ctx : ExactRealContext) (magnitude : Exact.Magni
   rw [hformat']
   exact hmain
 
+theorem generic_format_pred_aux1 :
+    ∀ (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx),
+      generic_format_pred_aux1Statement ctx magnitude := by
+  intro ctx magnitude beta fexp x hx hformat hbranch
+  exact pg_pred_ge_gt_generic_pred_aux1 ctx magnitude beta fexp x hx hformat hbranch

@@ -4951,3 +4951,356 @@ theorem store_zeros_read_as_zero : store_zeros_read_as_zeroStatement := by
 
 end Genv
 end CompCert4Lean.Common.Globalenvs
+
+namespace CompCert4Lean.Common.Globalenvs
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Lib.Integers
+
+namespace Genv
+
+private theorem pg_charact_repr_pos (bits : Nat) (p : positive) :
+    intOfZ (WordCore.unsigned (WordCore.repr bits (Zpos p))) =
+      (posToNat p % (2 ^ bits) : Nat) := by
+  change intOfZ (ZArith.BinInt.Z.of_nat _) = _
+  rw [ZArith.BinInt.Z.of_nat, intOfZ_zOfInt]
+  apply congrArg Int.ofNat
+  change _ % (2 ^ bits) = posToNat p % (2 ^ bits)
+  congr 1
+  induction p with
+  | xH => rfl
+  | xI p ih => change 2 * _ + 1 = 2 * _ + 1; rw [ih]
+  | xO p ih => change 2 * _ = 2 * _; rw [ih]
+
+private theorem pg_charact_repr_nonneg (bits : Nat) (z : Z)
+    (hz : 0 ≤ intOfZ z) :
+    intOfZ (WordCore.unsigned (WordCore.repr bits z)) =
+      intOfZ z % (2 : Int) ^ bits := by
+  cases z with
+  | Z0 => change (0 : Int) = 0 % (2 : Int) ^ bits; simp
+  | Zpos p =>
+      rw [pg_charact_repr_pos]
+      simp only [intOfZ, Int.natCast_emod, Int.natCast_pow]
+      rfl
+  | Zneg p =>
+      have hp := posToNat_positive p
+      change 0 ≤ -(Int.ofNat (posToNat p)) at hz
+      simp only [Int.ofNat_eq_natCast] at hz
+      omega
+
+private theorem pg_charact_div256 (z : Z) :
+    intOfZ (ZArith.BinInt.Z.div z (zOfNat 256)) = intOfZ z / 256 := by
+  unfold ZArith.BinInt.Z.div
+  rw [intOfZ_zOfInt]
+  rfl
+
+private theorem pg_charact_bytes_step (n : Nat) (z : Z) (hz : 0 ≤ intOfZ z) :
+    intOfZ (int_of_bytes (bytes_of_int (n + 1) z)) =
+      intOfZ z % 256 +
+        intOfZ (int_of_bytes (bytes_of_int n
+          (ZArith.BinInt.Z.div z (zOfNat 256)))) * 256 := by
+  simp only [bytes_of_int, int_of_bytes, ZArith.BinInt.Z.add,
+    ZArith.BinInt.Z.mul, intOfZ_zOfInt]
+  change intOfZ (Byte.unsigned (Byte.repr z)) +
+    intOfZ (int_of_bytes (bytes_of_int n (ZArith.BinInt.Z.div z (zOfNat 256)))) * 256 = _
+  rw [show intOfZ (Byte.unsigned (Byte.repr z)) = intOfZ z % 256 from
+    pg_charact_repr_nonneg 8 z hz]
+
+private theorem pg_charact_bytes_bounded (n : Nat) (z : Z)
+    (hz : 0 ≤ intOfZ z) (hbound : intOfZ z < (256 : Int) ^ n) :
+    intOfZ (int_of_bytes (bytes_of_int n z)) = intOfZ z := by
+  induction n generalizing z with
+  | zero =>
+      change (0 : Int) = intOfZ z
+      simp only [Int.pow_zero] at hbound
+      omega
+  | succ n ih =>
+      rw [pg_charact_bytes_step n z hz]
+      rw [ih]
+      · rw [pg_charact_div256]
+        exact Int.emod_add_ediv_mul _ _
+      · rw [pg_charact_div256]
+        omega
+      · rw [pg_charact_div256]
+        rw [Int.pow_succ] at hbound
+        omega
+
+private theorem pg_charact_proj_bytes (bl : List byte) :
+    proj_bytes (inj_bytes bl) = some bl := by
+  induction bl with
+  | nil => rfl
+  | cons b bl ih =>
+      change (match proj_bytes (inj_bytes bl) with
+        | none => none | some l => some (b :: l)) = some (b :: bl)
+      rw [ih]
+
+private theorem pg_charact_word_nonneg {bits : Nat} (w : WordCore.Word bits) :
+    0 ≤ intOfZ (WordCore.unsigned w) := by
+  have h := w.intrange.1
+  change (-1 : Int) < intOfZ (WordCore.unsigned w) at h
+  omega
+
+private theorem pg_charact_decode_word (bits n : Nat) (w : WordCore.Word bits)
+    (hbound : intOfZ (WordCore.unsigned w) < (256 : Int) ^ n)
+    (hbound' : intOfZ (WordCore.unsigned w) < (2 : Int) ^ bits) :
+    WordCore.repr bits (decode_int (encode_int n (WordCore.unsigned w))) = w := by
+  have hn := pg_charact_word_nonneg w
+  have hdec : decode_int (encode_int n (WordCore.unsigned w)) = WordCore.unsigned w := by
+    apply intOfZ_injective
+    exact pg_charact_bytes_bounded n _ hn hbound
+  rw [hdec]
+  apply WordCore.ext
+  apply intOfZ_injective
+  change intOfZ (WordCore.unsigned (WordCore.repr bits (WordCore.unsigned w))) = _
+  rw [pg_charact_repr_nonneg bits _ hn]
+  exact Int.emod_eq_of_lt hn hbound'
+
+private theorem pg_charact_decode_int32 (w : int) :
+    CompCert4Lean.Lib.Integers.Int.repr (decode_int (encode_int 4 (Int.unsigned w))) = w := by
+  apply pg_charact_decode_word 32 4 w
+  all_goals exact w.intrange.2
+
+private theorem pg_charact_decode_int64 (w : int64) :
+    Int64.repr (decode_int (encode_int 8 (Int64.unsigned w))) = w := by
+  apply pg_charact_decode_word 64 8 w
+  all_goals exact w.intrange.2
+
+private theorem pg_charact_decode_byte (z : Z) (hz : 0 ≤ intOfZ z) :
+    intOfZ (decode_int (encode_int 1 z)) = intOfZ z % 256 := by
+  change intOfZ (int_of_bytes (bytes_of_int (0 + 1) z)) = _
+  rw [pg_charact_bytes_step 0 z hz]
+  change intOfZ z % 256 + 0 * 256 = _
+  omega
+
+private theorem pg_charact_decode_short (z : Z) (hz : 0 ≤ intOfZ z) :
+    intOfZ (decode_int (encode_int 2 z)) = intOfZ z % 65536 := by
+  change intOfZ (int_of_bytes (bytes_of_int (1 + 1) z)) = _
+  rw [pg_charact_bytes_step 1 z hz]
+  have hd : 0 ≤ intOfZ (ZArith.BinInt.Z.div z (zOfNat 256)) := by
+    rw [pg_charact_div256]
+    omega
+  rw [pg_charact_bytes_step 0 _ hd, pg_charact_div256]
+  change intOfZ z % 256 + (intOfZ z / 256 % 256 + 0 * 256) * 256 = _
+  omega
+
+private theorem pg_charact_zero_ext8 (w : int) :
+    Int.zero_ext (zOfNat 8) (CompCert4Lean.Lib.Integers.Int.repr (decode_int (encode_int 1 (Int.unsigned w)))) =
+      Int.zero_ext (zOfNat 8) w := by
+  have hn := pg_charact_word_nonneg w
+  have hd := pg_charact_decode_byte (Int.unsigned w) hn
+  have hdn : 0 ≤ intOfZ (decode_int (encode_int 1 (Int.unsigned w))) := by
+    rw [hd]
+    omega
+  apply WordCore.ext
+  change Int.unsigned (Int.zero_ext (zOfNat 8) _) = Int.unsigned (Int.zero_ext (zOfNat 8) w)
+  rw [Int.zero_ext_mod_proof_api _ _ (by change (0 : Int) ≤ 8 ∧ (8 : Int) < 32; omega),
+    Int.zero_ext_mod_proof_api _ _ (by change (0 : Int) ≤ 8 ∧ (8 : Int) < 32; omega)]
+  apply intOfZ_injective
+  simp only [ZArith.BinInt.Z.modulo, intOfZ_zOfInt]
+  change intOfZ (Int.unsigned (CompCert4Lean.Lib.Integers.Int.repr (decode_int (encode_int 1 (Int.unsigned w))))) % 256 =
+    intOfZ (Int.unsigned w) % 256
+  change intOfZ (WordCore.unsigned (WordCore.repr 32 _)) % _ = _
+  rw [pg_charact_repr_nonneg 32 _ hdn, hd]
+  omega
+
+private theorem pg_charact_zero_ext16 (w : int) :
+    Int.zero_ext (zOfNat 16) (CompCert4Lean.Lib.Integers.Int.repr (decode_int (encode_int 2 (Int.unsigned w)))) =
+      Int.zero_ext (zOfNat 16) w := by
+  have hn := pg_charact_word_nonneg w
+  have hd := pg_charact_decode_short (Int.unsigned w) hn
+  have hdn : 0 ≤ intOfZ (decode_int (encode_int 2 (Int.unsigned w))) := by
+    rw [hd]
+    omega
+  apply WordCore.ext
+  change Int.unsigned (Int.zero_ext (zOfNat 16) _) = Int.unsigned (Int.zero_ext (zOfNat 16) w)
+  rw [Int.zero_ext_mod_proof_api _ _ (by change (0 : Int) ≤ 16 ∧ (16 : Int) < 32; omega),
+    Int.zero_ext_mod_proof_api _ _ (by change (0 : Int) ≤ 16 ∧ (16 : Int) < 32; omega)]
+  apply intOfZ_injective
+  simp only [ZArith.BinInt.Z.modulo, intOfZ_zOfInt]
+  change intOfZ (Int.unsigned (CompCert4Lean.Lib.Integers.Int.repr (decode_int (encode_int 2 (Int.unsigned w))))) % 65536 =
+    intOfZ (Int.unsigned w) % 65536
+  change intOfZ (WordCore.unsigned (WordCore.repr 32 _)) % _ = _
+  rw [pg_charact_repr_nonneg 32 _ hdn, hd]
+  omega
+
+private theorem pg_charact_decode_int8_val (w : int) :
+    decode_val Mint8unsigned (encode_val Mint8unsigned (Vint w)) =
+      Val.zero_ext (zOfNat 8) (Vint w) := by
+  simp only [encode_val, decode_val, pg_charact_proj_bytes]
+  exact congrArg Vint (pg_charact_zero_ext8 w)
+
+private theorem pg_charact_decode_int16_val (w : int) :
+    decode_val Mint16unsigned (encode_val Mint16unsigned (Vint w)) =
+      Val.zero_ext (zOfNat 16) (Vint w) := by
+  simp only [encode_val, decode_val, pg_charact_proj_bytes]
+  exact congrArg Vint (pg_charact_zero_ext16 w)
+
+private theorem pg_charact_decode_int32_val (w : int) :
+    decode_val Mint32 (encode_val Mint32 (Vint w)) = Vint w := by
+  simp only [encode_val, decode_val, pg_charact_proj_bytes]
+  exact congrArg Vint (pg_charact_decode_int32 w)
+
+private theorem pg_charact_decode_int64_val (w : int64) :
+    decode_val Mint64 (encode_val Mint64 (Vlong w)) = Vlong w := by
+  simp only [encode_val, decode_val, pg_charact_proj_bytes]
+  exact congrArg Vlong (pg_charact_decode_int64 w)
+
+private theorem pg_charact_decode_float32_val (w : CompCert4Lean.Lib.Floats.float32) :
+    decode_val Mfloat32 (encode_val Mfloat32 (Vsingle w)) = Vsingle w := by
+  simp only [encode_val, decode_val, pg_charact_proj_bytes]
+  change Vsingle (CompCert4Lean.Lib.Floats.Float32.of_bits (CompCert4Lean.Lib.Integers.Int.repr
+    (decode_int (encode_int 4 (Int.unsigned (CompCert4Lean.Lib.Floats.Float32.to_bits w)))))) = _
+  rw [pg_charact_decode_int32, CompCert4Lean.Lib.Floats.Float32.of_to_bits]
+
+private theorem pg_charact_decode_float64_val (w : CompCert4Lean.Lib.Floats.float) :
+    decode_val Mfloat64 (encode_val Mfloat64 (Vfloat w)) = Vfloat w := by
+  simp only [encode_val, decode_val, pg_charact_proj_bytes]
+  change Vfloat (CompCert4Lean.Lib.Floats.Float.of_bits (Int64.repr
+    (decode_int (encode_int 8 (Int64.unsigned (CompCert4Lean.Lib.Floats.Float.to_bits w)))))) = _
+  rw [pg_charact_decode_int64, CompCert4Lean.Lib.Floats.Float.of_to_bits]
+
+private theorem pg_charact_decode_ptr_val (b : block) (ofs : ptrofs) :
+    decode_val Mptr (encode_val Mptr (Vptr b ofs)) = Vptr b ofs := by
+  simp [Mptr, CompCert4Lean.X86_64.Archi.ptr64, encode_val, decode_val,
+    inj_value, inj_value_rec, size_quantity_nat, proj_bytes, proj_value,
+    check_value, Val.eq, quantity_eq, Val.load_result]
+  rfl
+
+private theorem pg_charact_head_load {F V : Type} (ge : t F V)
+    (chunk : memory_chunk) (v result : val) (m m1 m' : mem)
+    (b : block) (p : Z) (il : List init_data)
+    (hstore : Mem.store chunk m b p v = some m1)
+    (htail : store_init_data_list ge m1 b (zAdd p (size_chunk chunk)) il = some m')
+    (hdecode : decode_val chunk (encode_val chunk v) = result) :
+    Mem.load chunk m' b p = some result := by
+  have hbytes := Mem.loadbytes_store_same chunk m b p v m1 hstore
+  have halign := (Mem.store_valid_access_3 chunk m b p v m1 hstore).2
+  have hload := Mem.loadbytes_load chunk m1 b p _ hbytes halign
+  rw [hdecode] at hload
+  let P : block → Z → Prop := fun _ q => zLt q (zAdd p (size_chunk chunk))
+  apply pg_load_unchanged_on P m1 m' chunk b p result
+  · apply store_init_data_list_unchanged F V ge P b il m1
+      (zAdd p (size_chunk chunk)) m' htail
+    intro q hlo hP
+    change intOfZ (zAdd p (size_chunk chunk)) ≤ intOfZ q at hlo
+    change intOfZ q < intOfZ (zAdd p (size_chunk chunk)) at hP
+    omega
+  · intro q hq
+    exact hq.2
+  · exact hload
+
+theorem store_init_data_list_charact : store_init_data_list_charactStatement := by
+  intro F V ge b il
+  induction il with
+  | nil => intro m p m' hstore hzero; trivial
+  | cons i rest ih =>
+      intro m p m' hstore hzero
+      cases hhead : store_init_data ge m b p i with
+      | none => simp [store_init_data_list, hhead] at hstore
+      | some m1 =>
+          have htail : store_init_data_list ge m1 b
+              (zAdd p (init_data_size i)) rest = some m' := by
+            simpa only [store_init_data_list, hhead] using hstore
+          let Ptail : block → Z → Prop := fun _ q =>
+            zLe (zAdd p (init_data_size i)) q
+          have hzero_before : read_as_zero m b (zAdd p (init_data_size i))
+              (init_data_list_size rest) := by
+            intro chunk q hlo hhi halign
+            apply hzero chunk q _ _ halign
+            · change intOfZ p ≤ intOfZ q
+              change intOfZ (zAdd p (init_data_size i)) ≤ intOfZ q at hlo
+              have hnonneg := init_data_size_pos i
+              change (0 : Int) ≤ intOfZ (init_data_size i) at hnonneg
+              simp only [ZArith.BinInt.Z.add, intOfZ_zOfInt] at hlo
+              omega
+            · change intOfZ (zAdd q (size_chunk chunk)) ≤
+                intOfZ (zAdd p (init_data_list_size (i :: rest)))
+              change intOfZ (zAdd q (size_chunk chunk)) ≤
+                intOfZ (zAdd (zAdd p (init_data_size i)) (init_data_list_size rest)) at hhi
+              simp only [init_data_list_size, ZArith.BinInt.Z.add,
+                intOfZ_zOfInt] at hhi ⊢
+              omega
+          have hunch_head : Mem.unchanged_on Ptail m m1 := by
+            apply store_init_data_unchanged F V ge Ptail b i m p m1 hhead
+            intro q hq hP
+            have hupper := hq.2
+            change intOfZ q < intOfZ (zAdd p (init_data_size i)) at hupper
+            change intOfZ (zAdd p (init_data_size i)) ≤ intOfZ q at hP
+            omega
+          have hzero_tail : read_as_zero m1 b (zAdd p (init_data_size i))
+              (init_data_list_size rest) := by
+            apply read_as_zero_unchanged Ptail m b (zAdd p (init_data_size i))
+              (init_data_list_size rest) m1 hzero_before hunch_head
+            intro q hq
+            exact hq.1
+          have hresult := ih m1 (zAdd p (init_data_size i)) m' htail hzero_tail
+          cases i with
+          | Init_int8 n =>
+              exact ⟨pg_charact_head_load ge Mint8unsigned (Vint n) _ m m1 m' b p rest
+                hhead htail (pg_charact_decode_int8_val n), hresult⟩
+          | Init_int16 n =>
+              exact ⟨pg_charact_head_load ge Mint16unsigned (Vint n) _ m m1 m' b p rest
+                hhead htail (pg_charact_decode_int16_val n), hresult⟩
+          | Init_int32 n =>
+              exact ⟨pg_charact_head_load ge Mint32 (Vint n) _ m m1 m' b p rest
+                hhead htail (pg_charact_decode_int32_val n), hresult⟩
+          | Init_int64 n =>
+              exact ⟨pg_charact_head_load ge Mint64 (Vlong n) _ m m1 m' b p rest
+                hhead htail (pg_charact_decode_int64_val n), hresult⟩
+          | Init_float32 n =>
+              exact ⟨pg_charact_head_load ge Mfloat32 (Vsingle n) _ m m1 m' b p rest
+                hhead htail (pg_charact_decode_float32_val n), hresult⟩
+          | Init_float64 n =>
+              exact ⟨pg_charact_head_load ge Mfloat64 (Vfloat n) _ m m1 m' b p rest
+                hhead htail (pg_charact_decode_float64_val n), hresult⟩
+          | Init_addrof symb ofs =>
+              cases hsym : find_symbol ge symb with
+              | none => simp [store_init_data, hsym] at hhead
+              | some b' =>
+                  have hs : Mem.store Mptr m b p (Vptr b' ofs) = some m1 := by
+                    simpa [store_init_data, hsym] using hhead
+                  exact ⟨⟨b', hsym, pg_charact_head_load ge Mptr (Vptr b' ofs) _
+                    m m1 m' b p rest hs htail (pg_charact_decode_ptr_val b' ofs)⟩, hresult⟩
+          | Init_space n =>
+              have hm : m = m1 := Option.some.inj hhead
+              subst m1
+              refine ⟨?_, hresult⟩
+              have hn : intOfZ n ≤ intOfZ (init_data_size (Init_space n)) := by
+                change intOfZ n ≤ intOfZ (zMax n z0)
+                unfold zMax ZArith.BinInt.Z.max
+                split <;> rename_i h
+                · change intOfZ n ≤ 0 at h
+                  exact h
+                · omega
+              let Phead : block → Z → Prop := fun _ q =>
+                zLt q (zAdd p (init_data_size (Init_space n)))
+              apply read_as_zero_unchanged Phead m b p n m'
+              · intro chunk q hlo hhi halign
+                apply hzero chunk q hlo _ halign
+                have hnonneg := init_data_list_size_pos rest
+                change (0 : Int) ≤ intOfZ (init_data_list_size rest) at hnonneg
+                change intOfZ (zAdd q (size_chunk chunk)) ≤
+                  intOfZ (zAdd p (init_data_list_size (Init_space n :: rest)))
+                change intOfZ (zAdd q (size_chunk chunk)) ≤ intOfZ (zAdd p n) at hhi
+                simp only [init_data_list_size, ZArith.BinInt.Z.add, intOfZ_zOfInt] at hhi ⊢
+                omega
+              · apply store_init_data_list_unchanged F V ge Phead b rest m
+                  (zAdd p (init_data_size (Init_space n))) m' htail
+                intro q hlo hP
+                change intOfZ (zAdd p (init_data_size (Init_space n))) ≤ intOfZ q at hlo
+                change intOfZ q < intOfZ (zAdd p (init_data_size (Init_space n))) at hP
+                omega
+              · intro q hq
+                have hupper := hq.2
+                change intOfZ q < intOfZ (zAdd p n) at hupper
+                change intOfZ q < intOfZ (zAdd p (init_data_size (Init_space n)))
+                simp only [ZArith.BinInt.Z.add, intOfZ_zOfInt] at hupper ⊢
+                omega
+
+end Genv
+end CompCert4Lean.Common.Globalenvs

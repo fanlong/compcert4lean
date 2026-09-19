@@ -1781,3 +1781,22 @@ theorem Ziter_succ : Ziter_succStatement := by
   induction k generalizing x with
   | zero => rfl
   | succ k ih => exact ih (f x)
+
+theorem Znatlike_ind : Znatlike_indStatement := by
+  intro P hnonpos hstep n
+  by_cases hn : zLe n zZero
+  · exact hnonpos n hn
+  · have hn0 : zLe zZero n := by
+      change intOfZ zZero ≤ intOfZ n
+      change ¬ intOfZ n ≤ intOfZ zZero at hn
+      omega
+    exact CompCert4Lean.Foundation.Recursion.Rocq.Coq.ZArith.Wf_Z.natlike_ind
+      P
+      (by
+        apply hnonpos zZero
+        change intOfZ zZero ≤ intOfZ zZero
+        omega)
+      (by
+        intro x hx hPx
+        exact hstep x hx hPx)
+      n hn0

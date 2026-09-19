@@ -2055,3 +2055,27 @@ theorem inbetween_ex (ctx : ExactRealContext) : inbetween_exStatement ctx := by
             (bracket_Rcompare_gt ctx hx.1)⟩
 
 end CompCert4Lean.Flocq.Calc.Bracket
+
+namespace CompCert4Lean.Flocq.Calc.Bracket
+
+theorem new_location_correct (ctx : ExactRealContext) :
+    new_location_correctStatement ctx := by
+  intro start step nb_steps hstep hnb x k l hk hx
+  unfold new_location
+  by_cases heven : Zeven nb_steps = true
+  · simp only [heven, ↓reduceIte]
+    exact new_location_even_correct ctx start step nb_steps hstep hnb heven x k l hk hx
+  · have hodd : Zeven nb_steps = false := by
+      cases h : Zeven nb_steps <;> simp_all
+    simp only [hodd, Bool.false_eq_true, ↓reduceIte]
+    exact new_location_odd_correct ctx start step nb_steps hstep hnb hodd x k l hk hx
+
+theorem inbetween_float_ex (ctx : ExactRealContext) :
+    inbetween_float_exStatement ctx := by
+  intro beta m e l
+  apply inbetween_ex ctx
+  exact CompCert4Lean.Flocq.Core.Float_prop.F2R_lt ctx beta e m
+    (Zadd m Zone)
+    (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.Zorder.Zlt_succ_proof m)
+
+end CompCert4Lean.Flocq.Calc.Bracket

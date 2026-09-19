@@ -8172,3 +8172,10 @@ theorem iagree_shr : iagree_shrStatement := by
   exact pgIagreeShr
 
 end CompCert4Lean.Backend.NeedDomain
+
+namespace CompCert4Lean.Backend.NeedDomain
+
+theorem iagree_rol : iagree_rolStatement := by
+  exact test_iagree_rol
+
+end CompCert4Lean.Backend.NeedDomain

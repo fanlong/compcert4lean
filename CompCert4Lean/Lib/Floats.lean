@@ -3574,3 +3574,23 @@ theorem Float.abs_nan_result_obligation_proof : Float.abs_nan_result_obligation 
   · exact default_nan_64_result_obligation_proof
 
 end CompCert4Lean.Lib.Floats
+
+namespace CompCert4Lean.Lib.Floats
+
+theorem quiet_nan_32_proof : quiet_nan_32_proofStatement := by
+  intro p
+  have hpayload :
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.PArith.BinPos.Pos.of_nat
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.PArith.BinPos.Pos.to_nat
+            (quiet_nan_32_payload p)) =
+        quiet_nan_32_payload p :=
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.posOfNat_posToNat
+      (quiet_nan_32_payload p)
+  rw [← hpayload]
+  exact nan_pl_posOfNat_lt_23
+    (CompCert4Lean.Foundation.Numbers.Rocq.Coq.PArith.BinPos.Pos.to_nat
+      (quiet_nan_32_payload p))
+    (quiet_nan_32_payload_bounds p).1
+    (quiet_nan_32_payload_bounds p).2
+
+end CompCert4Lean.Lib.Floats

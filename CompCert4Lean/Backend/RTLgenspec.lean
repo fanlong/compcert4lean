@@ -3035,3 +3035,111 @@ theorem transl_stmt_charact : transl_stmt_charactStatement := by
           exact .tr_Sgoto lbl n nd nexits ngoto nret rret hg
 
 end CompCert4Lean.Backend.RTLgenspec
+
+namespace CompCert4Lean.Backend.RTLgenspec
+
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.Backend.RTLgen
+
+private theorem rtlgenspec_stmt_bind_inv {A B : Type} {f : RTLgen.mon A}
+    {g : A → RTLgen.mon B} {s s' : RTLgen.state} {v : B}
+    {i : state_incr s s'} (h : RTLgen.bind f g s = .OK v s' i) :
+    ∃ (a : A) (s1 : RTLgen.state) (i1 : state_incr s s1) (i2 : state_incr s1 s'),
+      f s = .OK a s1 i1 ∧ g a s1 = .OK v s' i2 := by
+  cases hf : f s with
+  | Error msg => simp [RTLgen.bind, hf] at h
+  | OK a s1 i1 =>
+      cases hg : g a s1 with
+      | Error msg => simp [RTLgen.bind, hf, hg] at h
+      | OK b s2 i2 =>
+          simp [RTLgen.bind, hf, hg] at h
+          rcases h with ⟨rfl, rfl⟩
+          exact ⟨a, s1, i1, i2, rfl, hg⟩
+
+private theorem rtlgenspec_add_instr_code
+    (s : RTLgen.state) (ins : RTL.instruction) (n : RTL.node)
+    (s' : RTLgen.state) (i : state_incr s s') :
+    RTLgen.add_instr ins s = .OK n s' i →
+    PTree.get n s'.st_code = some ins := by
+  intro h
+  simp [RTLgen.add_instr] at h
+  injection h with hn hs
+  cases hn
+  cases hs
+  change PTree.get s.st_nextnode
+    (PTree.set s.st_nextnode ins (show PTree.t RTL.instruction from s.st_code)) = some ins
+  have hx := PTree.getSet_equation (A := RTL.instruction)
+    s.st_nextnode s.st_nextnode ins s.st_code
+  rw [hx]
+  simp
+
+theorem transl_function_charact : transl_function_charactStatement := by
+  intro f tf h
+  unfold RTLgen.transl_function at h
+  cases htrans : RTLgen.transl_fun f RTLgen.init_state with
+  | Error msg => simp [htrans] at h
+  | OK x sf ifinal =>
+      cases x with
+      | mk nentry rparams =>
+          simp [htrans] at h
+          subst tf
+          simp only [RTLgen.transl_fun] at htrans
+          rcases rtlgenspec_stmt_bind_inv htrans with ⟨ngoto, s1, i1, j1, hgoto, htail⟩
+          rcases rtlgenspec_stmt_bind_inv htail with ⟨x, s2, i2, j2, hparams, htail2⟩
+          cases x with
+          | mk rparams0 map1 =>
+              rcases rtlgenspec_stmt_bind_inv htail2 with ⟨y, s3, i3, j3, hvars, htail3⟩
+              cases y with
+              | mk rvars map2 =>
+                  rcases rtlgenspec_stmt_bind_inv htail3 with ⟨rret, s4, i4, j4, hnew, htail4⟩
+                  rcases rtlgenspec_stmt_bind_inv htail4 with ⟨nret, s5, i5, j5, hadd, htail5⟩
+                  rcases rtlgenspec_stmt_bind_inv htail5 with ⟨nentry0, s6, i6, j6, hstmt, hret⟩
+                  simp [RTLgen.ret] at hret
+                  rcases hret with ⟨⟨rfl, rfl⟩, rfl⟩
+                  have hparams' : add_vars RTLgen.init_mapping f.fn_params s1 =
+                      .OK (rparams0, map1) s2 i2 := by
+                    simpa using hparams
+                  have hvars' : add_vars map1 f.fn_vars s2 =
+                      .OK (rvars, map2) s3 i3 := by
+                    simpa using hvars
+                  have hmap1 : map_valid map1 s2 :=
+                    (add_vars_valid f.fn_params s1 s2 RTLgen.init_mapping map1 rparams0 i2
+                      hparams' (init_mapping_valid s1)).2
+                  have hmap2 : map_valid map2 s3 :=
+                    (add_vars_valid f.fn_vars s2 s3 map1 map2 rvars i3 hvars' hmap1).2
+                  have hmap2s5 : map_valid map2 s5 := by
+                    intro r hr
+                    exact reg_valid_incr r s3 s5
+                      (RTLgen.state_incr_trans s3 s4 s5 i4 i5) (hmap2 r hr)
+                  have hrvalid : reg_valid rret s4 := by
+                    simp [RTLgen.new_reg] at hnew
+                    injection hnew with hr hs
+                    cases hr
+                    cases hs
+                    exact CompCert4Lean.Lib.Coqlib.Plt_succ _
+                  have hreturn : return_reg_ok s5 map2 (ret_reg f.fn_sig rret) := by
+                    by_cases hv : f.fn_sig.sig_res = Xvoid
+                    · simp [RTLgen.ret_reg, hv]
+                      exact .return_reg_ok_none _ _
+                    · simp [RTLgen.ret_reg, hv]
+                      exact .return_reg_ok_some _ _ rret (by
+                        intro hr
+                        exact new_reg_not_in_map s3 s4 map2 rret i4 hnew hmap2 hr)
+                        (reg_valid_incr rret s4 s5 i5 hrvalid)
+                  have htrstmt : tr_stmt s6.st_code map2 f.fn_body nentry0 nret [] ngoto nret
+                      (ret_reg f.fn_sig rret) := by
+                    simpa using (transl_stmt_charact map2 f.fn_body nret [] ngoto nret
+                      (ret_reg f.fn_sig rret) s5 nentry0 s6 i6 hstmt hmap2s5 hreturn)
+                  have hcode5 : PTree.get nret s5.st_code =
+                      some (RTL.instruction.Ireturn (ret_reg f.fn_sig rret)) :=
+                    rtlgenspec_add_instr_code s4 _ nret s5 i5 hadd
+                  have hcode : PTree.get nret s6.st_code =
+                      some (RTL.instruction.Ireturn (ret_reg f.fn_sig rret)) :=
+                    instr_at_incr s5 s6 nret _ i6 hcode5
+                  refine .tr_function_intro f s6.st_code rparams0 map1 s1 s2 i2 rvars map2 s3 i3
+                    nentry0 ngoto nret rret (ret_reg f.fn_sig rret) hparams' hvars' rfl htrstmt hcode
+
+end CompCert4Lean.Backend.RTLgenspec

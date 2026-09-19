@@ -3569,3 +3569,139 @@ theorem match_stacks_inside_invariant : match_stacks_inside_invariantStatement :
       MS' COMPAT FB AG' (hIncr sp sp' c'.dstk SP) PAD' RES RET BELOW SBELOW
 
 end CompCert4Lean.Backend.Inliningproof
+
+namespace CompCert4Lean.Backend.Inliningproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Backend.Inlining
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Lib.Coqlib
+
+private abbrev pg_min_align_z1 : Z := ZArith.BinInt.Z.of_nat 1
+private abbrev pg_min_align_z2 : Z := ZArith.BinInt.Z.of_nat 2
+private abbrev pg_min_align_z4 : Z := ZArith.BinInt.Z.of_nat 4
+private abbrev pg_min_align_z8 : Z := ZArith.BinInt.Z.of_nat 8
+
+theorem min_alignment_sound : min_alignment_soundStatement := by
+  intro sz n h
+  have hz1 : intOfZ pg_min_align_z1 = (1 : Int) := by
+    rw [show pg_min_align_z1 = zOfInt (1 : Int) by rfl, intOfZ_zOfInt]
+  have hz2 : intOfZ pg_min_align_z2 = (2 : Int) := by
+    rw [show pg_min_align_z2 = zOfInt (2 : Int) by rfl, intOfZ_zOfInt]
+  have hz4 : intOfZ pg_min_align_z4 = (4 : Int) := by
+    rw [show pg_min_align_z4 = zOfInt (4 : Int) by rfl, intOfZ_zOfInt]
+  have hz8 : intOfZ pg_min_align_z8 = (8 : Int) := by
+    rw [show pg_min_align_z8 = zOfInt (8 : Int) by rfl, intOfZ_zOfInt]
+  have h24 : ZArith.BinInt.Z.le pg_min_align_z2 pg_min_align_z4 := by
+    change intOfZ pg_min_align_z2 ≤ intOfZ pg_min_align_z4
+    rw [hz2, hz4]
+    omega
+  have h28 : ZArith.BinInt.Z.le pg_min_align_z2 pg_min_align_z8 := by
+    change intOfZ pg_min_align_z2 ≤ intOfZ pg_min_align_z8
+    rw [hz2, hz8]
+    omega
+  have h48 : ZArith.BinInt.Z.le pg_min_align_z4 pg_min_align_z8 := by
+    change intOfZ pg_min_align_z4 ≤ intOfZ pg_min_align_z8
+    rw [hz4, hz8]
+    omega
+  have h2 : ZArith.BinInt.Z.le pg_min_align_z2 sz →
+      ZArith.BinInt.Z.divide pg_min_align_z2 n := by
+    intro hs
+    unfold min_alignment at h
+    cases e1 : zle sz pg_min_align_z1 with
+    | left hle1 =>
+      change intOfZ sz ≤ intOfZ pg_min_align_z1 at hle1
+      change intOfZ pg_min_align_z2 ≤ intOfZ sz at hs
+      rw [hz1] at hle1
+      rw [hz2] at hs
+      omega
+    | right hgt1 =>
+      cases e2 : zle sz pg_min_align_z2 with
+      | left hle2 =>
+        simpa [e1, e2] using h
+      | right hgt2 =>
+        cases e4 : zle sz pg_min_align_z4 with
+        | left hle4 =>
+          apply ZArith.BinInt.Z.divide_trans pg_min_align_z2 pg_min_align_z4 n
+          · exact ⟨pg_min_align_z2, by rfl⟩
+          · simpa [e1, e2, e4] using h
+        | right hgt4 =>
+          apply ZArith.BinInt.Z.divide_trans pg_min_align_z2 pg_min_align_z8 n
+          · exact ⟨pg_min_align_z4, by rfl⟩
+          · simpa [e1, e2, e4] using h
+  have h4 : ZArith.BinInt.Z.le pg_min_align_z4 sz →
+      ZArith.BinInt.Z.divide pg_min_align_z4 n := by
+    intro hs
+    unfold min_alignment at h
+    cases e1 : zle sz pg_min_align_z1 with
+    | left hle1 =>
+      change intOfZ sz ≤ intOfZ pg_min_align_z1 at hle1
+      change intOfZ pg_min_align_z4 ≤ intOfZ sz at hs
+      rw [hz1] at hle1
+      rw [hz4] at hs
+      omega
+    | right hgt1 =>
+      cases e2 : zle sz pg_min_align_z2 with
+      | left hle2 =>
+        change intOfZ sz ≤ intOfZ pg_min_align_z2 at hle2
+        rw [hz2] at hle2
+        change intOfZ pg_min_align_z4 ≤ intOfZ sz at hs
+        rw [hz4] at hs
+        omega
+      | right hgt2 =>
+        cases e4 : zle sz pg_min_align_z4 with
+        | left hle4 =>
+          simpa [e1, e2, e4] using h
+        | right hgt4 =>
+          apply ZArith.BinInt.Z.divide_trans pg_min_align_z4 pg_min_align_z8 n
+          · exact ⟨pg_min_align_z2, by rfl⟩
+          · simpa [e1, e2, e4] using h
+  have h8 : ZArith.BinInt.Z.le pg_min_align_z8 sz →
+      ZArith.BinInt.Z.divide pg_min_align_z8 n := by
+    intro hs
+    unfold min_alignment at h
+    cases e1 : zle sz pg_min_align_z1 with
+    | left hle1 =>
+      change intOfZ sz ≤ intOfZ pg_min_align_z1 at hle1
+      change intOfZ pg_min_align_z8 ≤ intOfZ sz at hs
+      rw [hz1] at hle1
+      rw [hz8] at hs
+      omega
+    | right hgt1 =>
+      cases e2 : zle sz pg_min_align_z2 with
+      | left hle2 =>
+        change intOfZ sz ≤ intOfZ pg_min_align_z2 at hle2
+        rw [hz2] at hle2
+        change intOfZ pg_min_align_z8 ≤ intOfZ sz at hs
+        rw [hz8] at hs
+        omega
+      | right hgt2 =>
+        cases e4 : zle sz pg_min_align_z4 with
+        | left hle4 =>
+          change intOfZ sz ≤ intOfZ pg_min_align_z4 at hle4
+          rw [hz4] at hle4
+          change intOfZ pg_min_align_z8 ≤ intOfZ sz at hs
+          rw [hz8] at hs
+          omega
+        | right hgt4 =>
+          simpa [e1, e2, e4] using h
+  unfold Mem.inj_offset_aligned
+  intro chunk hs
+  cases chunk <;>
+    simp [CompCert4Lean.Common.Memdata.size_chunk,
+      CompCert4Lean.Common.Memdata.align_chunk] at hs ⊢
+  · exact ZArith.BinInt.Z.divide_1_l n
+  · exact ZArith.BinInt.Z.divide_1_l n
+  · exact ZArith.BinInt.Z.divide_1_l n
+  · exact h2 hs
+  · exact h2 hs
+  · exact h4 hs
+  · exact h8 hs
+  · exact h4 hs
+  · exact h4 (ZArith.BinInt.Z.le_trans pg_min_align_z4 pg_min_align_z8 sz h48 hs)
+  · exact h4 hs
+  · exact h4 (ZArith.BinInt.Z.le_trans pg_min_align_z4 pg_min_align_z8 sz h48 hs)
+
+end CompCert4Lean.Backend.Inliningproof

@@ -5624,3 +5624,44 @@ theorem is_zero_ext_uns : is_zero_ext_unsStatement := by
       rfl
 
 end CompCert4Lean.Backend.ValueDomain
+
+namespace CompCert4Lean.Backend.ValueDomain
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem is_sign_ext_uns : is_sign_ext_unsStatement := by
+  intro i n m hmn hi
+  have hnsub : intOfZ (zSub n z1) = intOfZ n - 1 := by
+    simp only [ZArith.BinInt.Z.sub, intOfZ_zOfInt]
+    rfl
+  intro k hk hmk
+  change CompCert4Lean.Lib.Integers.Int.testbit
+    (CompCert4Lean.Lib.Integers.Int.sign_ext n i) k = false
+  rw [CompCert4Lean.Lib.Integers.Int.bits_sign_ext_proof n i k hk]
+  run_tac isUnsZeroExtSimpPrivate ["CompCert4Lean.Lib.Integers.zltSelect"]
+  cases hkn : CompCert4Lean.Lib.Coqlib.zlt k n with
+  | left hlt =>
+      run_tac isUnsZeroExtSimpPrivate ["CompCert4Lean.Lib.Integers.sumboolSelect"]
+      exact hi k hk hmk
+  | right hge =>
+      run_tac isUnsZeroExtSimpPrivate ["CompCert4Lean.Lib.Integers.sumboolSelect"]
+      have hpred : zLe z0 (zSub n z1) ∧
+          zLt (zSub n z1) CompCert4Lean.Lib.Integers.Int.zwordsize := by
+        change 0 ≤ intOfZ (zSub n z1) ∧ intOfZ (zSub n z1) < 32
+        rw [hnsub]
+        have hm0 := hmn.1
+        have hmN := hmn.2
+        have hk' : 0 ≤ intOfZ k ∧ intOfZ k < 32 := hk
+        change intOfZ n ≤ intOfZ k at hge
+        change 0 ≤ intOfZ m at hm0
+        change intOfZ m < intOfZ n at hmN
+        omega
+      have hnm : zLe m (zSub n z1) := by
+        change intOfZ m ≤ intOfZ (zSub n z1)
+        rw [hnsub]
+        have hmN := hmn.2
+        change intOfZ m < intOfZ n at hmN
+        omega
+      exact hi (zSub n z1) hpred hnm
+
+end CompCert4Lean.Backend.ValueDomain

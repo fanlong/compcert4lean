@@ -4862,3 +4862,205 @@ theorem transl_expr_Eop_correct
         exact hstable r hr
 
 end CompCert4Lean.Backend.RTLgenproof
+
+namespace CompCert4Lean.Backend.RTLgenproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.X86.Op
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.Smallstep
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.Lib.Maps
+
+private theorem rtlgen_unary_total_aux (f : val → val)
+    (hundef : f .Vundef = .Vundef) {a b : val} (h : Val.lessdef a b) :
+    Val.lessdef (f a) (f b) := by
+  cases h with
+  | lessdef_refl => exact Val.lessdef_refl _
+  | lessdef_undef => rw [hundef]; exact Val.lessdef_undef _
+
+private theorem rtlgen_binary_total_aux (f : val → val → val)
+    (hleft : ∀ v, f .Vundef v = .Vundef)
+    (hright : ∀ v, f v .Vundef = .Vundef)
+    {a a' b b' : val} (ha : Val.lessdef a a') (hb : Val.lessdef b b') :
+    Val.lessdef (f a b) (f a' b') := by
+  cases ha with
+  | lessdef_undef => rw [hleft]; exact Val.lessdef_undef _
+  | lessdef_refl =>
+      cases hb with
+      | lessdef_undef => rw [hright]; exact Val.lessdef_undef _
+      | lessdef_refl => exact Val.lessdef_refl _
+
+private theorem rtlgen_eop_addressing64_aux {F V : Type} (ge : Genv.t F V)
+    (sp : val) (addr : addressing) (vl1 vl2 : List val) (v : val)
+    (hl : Val.lessdef_list vl1 vl2)
+    (heval : eval_addressing64 ge sp addr vl1 = some v) :
+    ∃ v', eval_addressing64 ge sp addr vl2 = some v' ∧ Val.lessdef v v' := by
+  cases addr with
+  | Aindexed n =>
+      cases hl with
+      | lessdef_list_nil => simp [eval_addressing64] at heval
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_cons => simp [eval_addressing64] at heval
+          | lessdef_list_nil =>
+              simp only [eval_addressing64, Option.some.injEq] at heval
+              subst v
+              refine ⟨_, rfl, ?_⟩
+              exact rtlgen_unary_total_aux
+                (fun v1 => Val.addl v1 (.Vlong (Int64.repr n))) rfl h1
+  | Aindexed2 n =>
+      cases hl with
+      | lessdef_list_nil => simp [eval_addressing64] at heval
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_nil => simp [eval_addressing64] at heval
+          | lessdef_list_cons v2 v2' l2 l2' h2 ht2 =>
+              cases ht2 with
+              | lessdef_list_cons => simp [eval_addressing64] at heval
+              | lessdef_list_nil =>
+                  simp only [eval_addressing64, Option.some.injEq] at heval
+                  subst v
+                  refine ⟨_, rfl, ?_⟩
+                  exact rtlgen_binary_total_aux
+                    (fun v1 v2 => Val.addl (Val.addl v1 v2)
+                      (.Vlong (Int64.repr n)))
+                    (by intro x; cases x <;> rfl)
+                    (by intro x; cases x <;> rfl) h1 h2
+  | Ascaled scale ofs =>
+      cases hl with
+      | lessdef_list_nil => simp [eval_addressing64] at heval
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_cons => simp [eval_addressing64] at heval
+          | lessdef_list_nil =>
+              simp only [eval_addressing64, Option.some.injEq] at heval
+              subst v
+              refine ⟨_, rfl, ?_⟩
+              exact rtlgen_unary_total_aux
+                (fun v1 => Val.addl (Val.mull v1 (.Vlong (Int64.repr scale)))
+                  (.Vlong (Int64.repr ofs))) rfl h1
+  | Aindexed2scaled scale ofs =>
+      cases hl with
+      | lessdef_list_nil => simp [eval_addressing64] at heval
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 with
+          | lessdef_list_nil => simp [eval_addressing64] at heval
+          | lessdef_list_cons v2 v2' l2 l2' h2 ht2 =>
+              cases ht2 with
+              | lessdef_list_cons => simp [eval_addressing64] at heval
+              | lessdef_list_nil =>
+                  simp only [eval_addressing64, Option.some.injEq] at heval
+                  subst v
+                  refine ⟨_, rfl, ?_⟩
+                  exact rtlgen_binary_total_aux
+                    (fun v1 v2 => Val.addl v1
+                      (Val.addl (Val.mull v2 (.Vlong (Int64.repr scale)))
+                        (.Vlong (Int64.repr ofs))))
+                    (by intro x; cases x <;> rfl)
+                    (by intro x; cases x <;> rfl) h1 h2
+  | Aglobal id ofs =>
+      cases hl with
+      | lessdef_list_cons => simp [eval_addressing64] at heval
+      | lessdef_list_nil =>
+          simp only [eval_addressing64, CompCert4Lean.X86_64.Archi.ptr64,
+            if_true, Option.some.injEq] at heval
+          subst v
+          exact ⟨_, rfl, Val.lessdef_refl _⟩
+  | Ainstack ofs =>
+      cases hl with
+      | lessdef_list_cons => simp [eval_addressing64] at heval
+      | lessdef_list_nil =>
+          simp only [eval_addressing64, CompCert4Lean.X86_64.Archi.ptr64,
+            if_true, Option.some.injEq] at heval
+          subst v
+          exact ⟨_, rfl, Val.lessdef_refl _⟩
+  | Abased id ofs =>
+      cases hl with
+      | lessdef_list_nil => simp [eval_addressing64] at heval
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 <;> simp [eval_addressing64] at heval
+  | Abasedscaled scale id ofs =>
+      cases hl with
+      | lessdef_list_nil => simp [eval_addressing64] at heval
+      | lessdef_list_cons v1 v1' l1 l1' h1 ht1 =>
+          cases ht1 <;> simp [eval_addressing64] at heval
+
+private theorem rtlgen_eval_addressing_lessdef {F V : Type}
+    (ge : Genv.t F V) (sp : val) (addr : addressing)
+    (vl1 vl2 : List val) (v : val) :
+    Val.lessdef_list vl1 vl2 →
+    eval_addressing ge sp addr vl1 = some v →
+    ∃ v', eval_addressing ge sp addr vl2 = some v' ∧ Val.lessdef v v' := by
+  intro hvals heval
+  simp only [eval_addressing, CompCert4Lean.X86_64.Archi.ptr64,
+    ↓reduceIte] at heval ⊢
+  exact rtlgen_eop_addressing64_aux ge sp addr vl1 vl2 v hvals heval
+
+private theorem rtlgen_loadv_extends
+    (chunk : memory_chunk) (m1 m2 : mem) (addr1 addr2 v1 : val) :
+    Mem.extends m1 m2 →
+    Mem.loadv chunk m1 addr1 = some v1 →
+    Val.lessdef addr1 addr2 →
+    ∃ v2, Mem.loadv chunk m2 addr2 = some v2 ∧ Val.lessdef v1 v2 := by
+  intro hext hload haddr
+  cases addr1 with
+  | Vundef => simp [Mem.loadv] at hload
+  | Vint n => cases haddr; simp [Mem.loadv] at hload
+  | Vlong n => cases haddr; simp [Mem.loadv] at hload
+  | Vfloat n => cases haddr; simp [Mem.loadv] at hload
+  | Vsingle n => cases haddr; simp [Mem.loadv] at hload
+  | Vptr b ofs =>
+      cases haddr with
+      | lessdef_refl _ =>
+          simp only [Mem.loadv] at hload ⊢
+          obtain ⟨v2, hload2, hless⟩ :=
+            Mem.load_extends chunk m1 m2 b (Ptrofs.unsigned ofs) v1 hext hload
+          exact ⟨v2, hload2, hless⟩
+
+theorem transl_expr_Eload_correct
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    transl_expr_Eload_correctStatement := by
+  intro xi prog tprog hprog sp e m le chunk addr args vargs vaddr v
+    hevalargs htransargs haddr hload
+  unfold transl_expr_prop
+  intro tge tm cs f map pr ns nd rd rs dst hwf htr hmatch hext
+  cases htr with
+  | tr_Eload map pr chunk addr args ns nd rd n1 rl dst hargs hcode hmap hpr =>
+      obtain ⟨rs1, tm1, hstar, hmatch1, hresults, hstable, hext1⟩ :=
+        htransargs tm cs f map pr ns n1 rl rs hwf hargs hmatch hext
+      obtain ⟨vaddr', haddr', hlessaddr⟩ :=
+        rtlgen_eval_addressing_lessdef (Genv.globalenv prog) sp addr vargs
+          (rl.map (fun r => Regmap.get r rs1)) vaddr hresults haddr
+      obtain ⟨v', hload', hless⟩ :=
+        rtlgen_loadv_extends chunk m tm1 vaddr vaddr' v hext1 hload hlessaddr
+      have haddr'' : eval_addressing tge sp addr
+          (rl.map (fun r => Regmap.get r rs1)) = some vaddr' := by
+        rw [eval_addressing_preserved _ _ _ _ (Genv.globalenv prog) tge
+          (symbols_preserved prog tprog hprog)]
+        exact haddr'
+      refine ⟨Regmap.set rd v' rs1, tm1, ?_, ?_, ?_, ?_, hext1⟩
+      · exact star_right _ _ _ _ _ _ _ _ _ _ hstar
+          (RTL.step.exec_Iload cs f sp n1 rs1 tm1 chunk addr rl rd nd vaddr' v'
+            hcode haddr'' hload') rfl
+      · exact match_env_update_dest map e le rs1 dst rd v v'
+          hless hwf hmap hmatch1
+      · rw [Regmap.gss_proof val rd v' rs1]
+        exact hless
+      · intro r hr
+        have hne : r ≠ rd := by
+          intro heq
+          subst r
+          exact hpr hr
+        rw [Regmap.gso_proof val r rd v' rs1 hne]
+        exact hstable r hr
+
+end CompCert4Lean.Backend.RTLgenproof

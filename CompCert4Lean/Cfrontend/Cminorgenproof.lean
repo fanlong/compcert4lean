@@ -5100,3 +5100,21 @@ theorem match_callstack_alloc_variables : match_callstack_alloc_variablesStateme
   · exact alloc_right_inject_local f1 m1 tm1 fn.fn_stackspace tm2 sp ha hinj
 
 end CompCert4Lean.Cfrontend.Cminorgenproof
+
+namespace CompCert4Lean.Cfrontend.Cminorgenproof
+
+theorem match_callstack_function_entry : match_callstack_function_entryStatement := by
+  intro prog fn cenv tf m e m' tm tm' sp f cs args targs le
+    hbuild hmax hnvars hnparams hdisjoint halloc hbind hargs
+    htalloc hstack hinject
+  obtain ⟨hcompat, hseparated⟩ :=
+    build_compilenv_sound fn cenv tf.fn_stackspace hbuild hnvars
+  exact match_callstack_alloc_variables prog tm sp tm' m fn.fn_vars e m'
+    cenv f cs tf le (CM.set_locals fn.fn_temps (CM.set_params targs fn.fn_params))
+    htalloc hmax halloc hnvars hcompat hseparated
+    (fun id ofs hget => build_compilenv_domain fn cenv tf.fn_stackspace id ofs hbuild hget)
+    hinject hstack
+    (bind_parameters_agree f fn.fn_params fn.fn_temps args targs le
+      hbind hargs hnparams hdisjoint)
+
+end CompCert4Lean.Cfrontend.Cminorgenproof

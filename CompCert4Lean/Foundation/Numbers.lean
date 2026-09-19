@@ -5418,3 +5418,63 @@ theorem ZArith.Zorder.Zplus_lt_reg_r :
 
 end Rocq.Coq
 end CompCert4Lean.Foundation.Numbers
+
+namespace CompCert4Lean.Foundation.Numbers
+namespace Rocq.Coq
+
+theorem ZArith.Zorder.Zmult_le_compat_r :
+    ZArith.Zorder.Zmult_le_compat_rStatement := by
+  intro n m p h hp
+  change intOfZ n ≤ intOfZ m at h
+  change (0 : Int) ≤ intOfZ p at hp
+  change intOfZ (ZArith.BinInt.Z.mul n p) ≤ intOfZ (ZArith.BinInt.Z.mul m p)
+  simp only [ZArith.BinInt.Z.mul, intOfZ_zOfInt]
+  exact Int.mul_le_mul_of_nonneg_right h hp
+
+end Rocq.Coq
+end CompCert4Lean.Foundation.Numbers
+
+namespace CompCert4Lean.Foundation.Numbers
+namespace Rocq.Coq
+
+theorem ZArith.Zorder.Zmult_le_compat_l :
+    ZArith.Zorder.Zmult_le_compat_lStatement := by
+  intro n m p h hp
+  change intOfZ n ≤ intOfZ m at h
+  change (0 : Int) ≤ intOfZ p at hp
+  change intOfZ (ZArith.BinInt.Z.mul p n) ≤ intOfZ (ZArith.BinInt.Z.mul p m)
+  simp only [ZArith.BinInt.Z.mul, intOfZ_zOfInt]
+  exact Int.mul_le_mul_of_nonneg_left h hp
+
+end Rocq.Coq
+end CompCert4Lean.Foundation.Numbers
+
+namespace CompCert4Lean.Foundation.Numbers
+namespace Rocq.Coq
+
+theorem ZArith.Zorder.Zmult_lt_compat_r :
+    ZArith.Zorder.Zmult_lt_compat_rStatement := by
+  intro n m p hp h
+  change intOfZ n < intOfZ m at h
+  change (0 : Int) < intOfZ p at hp
+  change intOfZ (ZArith.BinInt.Z.mul n p) < intOfZ (ZArith.BinInt.Z.mul m p)
+  simp only [ZArith.BinInt.Z.mul, intOfZ_zOfInt]
+  exact Int.mul_lt_mul_of_pos_right h hp
+
+end Rocq.Coq
+end CompCert4Lean.Foundation.Numbers
+
+namespace CompCert4Lean.Foundation.Numbers
+namespace Rocq.Coq
+
+theorem ZArith.Zorder.Zmult_lt_compat_l :
+    ZArith.Zorder.Zmult_lt_compat_lStatement := by
+  intro n m p hp h
+  change intOfZ n < intOfZ m at h
+  change (0 : Int) < intOfZ p at hp
+  change intOfZ (ZArith.BinInt.Z.mul p n) < intOfZ (ZArith.BinInt.Z.mul p m)
+  simp only [ZArith.BinInt.Z.mul, intOfZ_zOfInt]
+  exact Int.mul_lt_mul_of_pos_left h hp
+
+end Rocq.Coq
+end CompCert4Lean.Foundation.Numbers

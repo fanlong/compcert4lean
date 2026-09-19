@@ -2179,3 +2179,21 @@ theorem sem_cast_inject :
           hmap rfl)) v1 ty1 ty v tv1 hsem hinj
 
 end CompCert4Lean.Cfrontend.Cop
+
+namespace CompCert4Lean.Cfrontend.Cop
+
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Integers
+
+theorem sem_unary_operation_inject :
+    ∀ [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)],
+      sem_unary_operation_injectStatement := by
+  intro _binary64_certificate f m m' op v1 ty1 v tv1 hsem hinj hmem
+  exact sem_unary_operation_inj (binary64_certificate := _binary64_certificate) f m m'
+    (fun b ofs b' delta hmap hvalid =>
+      cop_weak_valid_pointer_inject_val f m m' hmem b ofs b'
+        (Ptrofs.add ofs (Ptrofs.repr delta)) hvalid
+        (Val.inject.inject_ptr b ofs b' (Ptrofs.add ofs (Ptrofs.repr delta)) delta
+          hmap rfl)) op v1 ty1 v tv1 hsem hinj
+
+end CompCert4Lean.Cfrontend.Cop

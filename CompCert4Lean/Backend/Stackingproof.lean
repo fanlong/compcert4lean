@@ -4114,3 +4114,51 @@ theorem get_location : get_locationStatement := by
   exact hv
 
 end CompCert4Lean.Backend.Stackingproof
+
+namespace CompCert4Lean.Backend.Stackingproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Backend.Bounds
+open CompCert4Lean.Backend.Lineartyping
+open CompCert4Lean.Backend.Locations
+open CompCert4Lean.Backend.Stacking
+open CompCert4Lean.X86.Stacklayout
+
+theorem frame_get_local : frame_get_localStatement := by
+  intro return_address_offset tprog cfg f hlocal houtgoing hstack hnorepet hcallee
+    ofs ty j sp ls ls0 parent retaddr m P hframe hbound hvalid
+  have hchecks : zLe z0 ofs ∧ zDivide (typealign ty) ofs := by
+    revert hvalid
+    unfold slot_valid
+    run_tac
+      Lean.Elab.Tactic.liftMetaTactic fun goal => goal.withContext do
+        let target ← goal.getType
+        let target' ← Lean.Meta.transform target (pre := fun e => do
+          match e.getAppFn.constName? with
+          | some name =>
+              if Lean.Name.isPrefixOf `_private name then
+                let e' ← Lean.Meta.withTransparency .all <| Lean.Meta.whnf e
+                return Lean.TransformStep.done e'
+              else
+                return Lean.TransformStep.continue
+          | none => return Lean.TransformStep.continue)
+        let goal ← Lean.Meta.withTransparency .all <| goal.change target'
+        return [goal]
+    generalize hle : CompCert4Lean.Lib.Coqlib.zle ZArith.BinInt.Z.Z0 ofs = d
+    cases d with
+    | right h => simp
+    | left hnonneg =>
+      generalize heq : CompCert4Lean.Lib.Coqlib.zeq
+        (ZArith.BinInt.Z.modulo ofs (typealign ty)) ZArith.BinInt.Z.Z0 = d
+      cases d with
+      | right h => simp
+      | left hmod =>
+        intro _
+        refine ⟨hnonneg, ZArith.Znumtheory.Zmod_divide ofs (typealign ty) ?_ hmod⟩
+        cases ty <;> decide
+  exact get_location return_address_offset tprog m j sp
+    (make_env cfg (function_bounds cfg f)).fe_ofs_local
+    (function_bounds cfg f).bound_local Local ls ofs ty
+    hframe.1.1.1 hchecks.1 hbound hchecks.2
+
+end CompCert4Lean.Backend.Stackingproof

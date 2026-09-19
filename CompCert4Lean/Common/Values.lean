@@ -3933,3 +3933,27 @@ theorem mul_pow2 : mul_pow2Statement := by
     rw [CompCert4Lean.Lib.Integers.Int.shl_mul_proof, hn]
 
 end CompCert4Lean.Common.Values.Val
+
+namespace CompCert4Lean.Common.Values
+namespace Val
+
+theorem mods_divs : mods_divsStatement := by
+  intro x y z h
+  cases x <;> cases y <;> simp [mods] at h
+  case Vint.Vint a b =>
+    rcases h with ⟨hcond, hz⟩
+    refine ⟨Vint (Int.divs a b), ?_, ?_⟩
+    · simp only [divs]
+      by_cases ha : Int.eq a (Int.repr Int.min_signed) = true
+      · have hb := hcond.2 ha
+        simp [hcond.1, ha, hb]
+      · simp [hcond.1, ha]
+    · subst z
+      simp only [sub, mul, CompCert4Lean.X86_64.Archi.ptr64]
+      change Vint (Int.mods a b) =
+        Vint (Int.sub a (Int.mul (Int.divs a b) b))
+      congr 1
+      exact CompCert4Lean.Lib.Integers.Int.mods_divs_proof a b
+
+end Val
+end CompCert4Lean.Common.Values

@@ -2297,3 +2297,46 @@ theorem decode_val_xtype : decode_val_xtypeStatement := by
       | Many64 => simp [decode_val, h, Val.has_rettype, xtype_of_chunk]
 
 end CompCert4Lean.Common.Memdata
+
+namespace CompCert4Lean.Common.Memdata
+
+open CompCert4Lean.Common.Values
+
+theorem decode_val_cast : decode_val_castStatement := by
+  intro chunk l
+  unfold decode_val
+  cases h : proj_bytes l with
+  | none =>
+      cases chunk <;> simp [h, Val.norm_bool, Val.sign_ext, Val.zero_ext]
+  | some bl =>
+      cases chunk with
+      | Mbool =>
+          exact (CompCert4Lean.Common.Values.Val.norm_bool_idem _).symm
+      | Mint8signed =>
+          apply congrArg Vint
+          exact (CompCert4Lean.Lib.Integers.Int.sign_ext_idem_proof
+            (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 8)
+            (CompCert4Lean.Lib.Integers.Int.repr (decode_int bl))
+            (by change (0 : Int) < 8; omega)).symm
+      | Mint8unsigned =>
+          apply congrArg Vint
+          exact (CompCert4Lean.Lib.Integers.Int.zero_ext_idem_proof_api
+            (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 8)
+            (CompCert4Lean.Lib.Integers.Int.repr (decode_int bl))
+            (by change (0 : Int) ≤ 8; omega)).symm
+      | Mint16signed =>
+          apply congrArg Vint
+          exact (CompCert4Lean.Lib.Integers.Int.sign_ext_idem_proof
+            (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 16)
+            (CompCert4Lean.Lib.Integers.Int.repr (decode_int bl))
+            (by change (0 : Int) < 16; omega)).symm
+      | Mint16unsigned =>
+          apply congrArg Vint
+          exact (CompCert4Lean.Lib.Integers.Int.zero_ext_idem_proof_api
+            (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 16)
+            (CompCert4Lean.Lib.Integers.Int.repr (decode_int bl))
+            (by change (0 : Int) ≤ 16; omega)).symm
+      | Mint32 | Mint64 | Mfloat32 | Mfloat64 | Many32 | Many64 =>
+          trivial
+
+end CompCert4Lean.Common.Memdata

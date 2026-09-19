@@ -8280,3 +8280,97 @@ theorem add_equations_builtin_eval
       Val.lessdef_refl _, hext⟩
 
 end CompCert4Lean.Backend.Allocproof
+
+namespace CompCert4Lean.Backend.Allocproof
+
+open CompCert4Lean.Backend.Allocation
+open CompCert4Lean.Backend.RTLtyping
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Backend.LTL
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Lib.Maps
+
+theorem transf_function_inv : transf_function_invStatement := by
+  intro cfg oracle f tf h
+  unfold CompCert4Lean.Backend.Allocation.transf_function at h
+  cases ht : CompCert4Lean.Backend.RTLtyping.type_function cfg f with
+  | Error msg => simp [ht] at h
+  | OK env =>
+      cases ho : CompCert4Lean.Backend.Allocation.regalloc oracle f with
+      | Error msg => simp [ht, ho] at h
+      | OK tf0 =>
+          cases hc : CompCert4Lean.Backend.Allocation.check_function cfg f tf0 env with
+          | Error msg => simp [ht, ho, hc] at h
+          | OK u =>
+              simp [ht, ho, hc] at h
+              cases h
+              unfold CompCert4Lean.Backend.Allocation.check_function at hc
+              cases ha : CompCert4Lean.Backend.Allocation.analyze cfg f env
+                  (CompCert4Lean.Backend.Allocation.pair_codes f tf) with
+              | none => simp [ha] at hc
+              | some an =>
+                  simp [ha] at hc
+                  unfold CompCert4Lean.Backend.Allocation.check_entrypoints at hc
+                  cases he : CompCert4Lean.Backend.Allocation.transfer cfg f env
+                      (CompCert4Lean.Backend.Allocation.pair_codes f tf)
+                      f.fn_entrypoint (PMap.get f.fn_entrypoint an) with
+                  | Error msg => simp [he] at hc
+                  | OK e1 =>
+                      simp [he] at hc
+                      cases hx : CompCert4Lean.Backend.Allocation.check_entrypoints_aux
+                          cfg f tf env e1 with
+                      | none => simp [hx] at hc
+                      | some u' =>
+                          simp [hx] at hc
+                          unfold CompCert4Lean.Backend.Allocation.check_entrypoints_aux at hx
+                          cases hp : CompCert4Lean.Backend.Allocation.pair_entrypoints f tf with
+                          | none => simp [hp] at hx
+                          | some mv =>
+                              cases htm : CompCert4Lean.Backend.Allocation.track_moves env mv e1 with
+                              | none => simp [hp, htm] at hx
+                              | some e2 =>
+                                  simp [hp, htm] at hx
+                                  have hentry : ∃ k : List LTL.instruction,
+                                      PTree.get tf.fn_entrypoint tf.fn_code =
+                                        some (expand_moves mv (Lbranch f.fn_entrypoint :: k)) ∧
+                                      wf_moves mv := by
+                                    unfold CompCert4Lean.Backend.Allocation.pair_entrypoints at hp
+                                    cases hcode : PTree.get tf.fn_entrypoint tf.fn_code with
+                                    | none => simp [hcode] at hp
+                                    | some b =>
+                                        cases hm : extract_moves_ext [] b with
+                                        | mk mv' b1 =>
+                                            simp [hcode, hm] at hp
+                                            cases hs : check_succ f.fn_entrypoint b1 with
+                                            | false => simp [hs] at hp
+                                            | true =>
+                                                simp [hs] at hp
+                                                cases hp
+                                                rcases extract_moves_ext_sound b mv b1 hm with
+                                                  ⟨hwf, hb⟩
+                                                rcases check_succ_sound f.fn_entrypoint b1 hs with
+                                                  ⟨k, hk⟩
+                                                subst b1
+                                                exact ⟨k, congrArg (fun x => some x) hb, hwf⟩
+                                  rcases hentry with ⟨k, hcode, hmv⟩
+                                  have hsig : f.fn_sig = tf.fn_sig := by
+                                    have hbool := hx.2.2.2
+                                    cases hs : signature_eq f.fn_sig tf.fn_sig with
+                                    | left heq => exact heq
+                                    | right hne => rw [hs] at hbool; cases hbool
+                                  have hcompat :
+                                      compat_entry f.fn_params
+                                        (CompCert4Lean.Backend.Conventions.loc_parameters cfg tf.fn_sig) e2 = true := by
+                                    simpa [hsig] using hx.1
+                                  have hundef : can_undef CompCert4Lean.X86.Machregs.destroyed_at_function_entry e2 = true := by
+                                    exact hx.2.1
+                                  have hstack : f.fn_stacksize = tf.fn_stacksize := by
+                                    have hbool := hx.2.2.1
+                                    cases hs : CompCert4Lean.Lib.Coqlib.zeq f.fn_stacksize tf.fn_stacksize with
+                                    | left heq => exact heq
+                                    | right hne => rw [hs] at hbool; cases hbool
+                                  exact transf_function_spec_intro env an mv k e1 e2
+                                    (CompCert4Lean.Backend.RTLtyping.type_function_correct cfg f env ht)
+                                    ha hcode hmv he htm hcompat hundef hstack hsig
+
+end CompCert4Lean.Backend.Allocproof

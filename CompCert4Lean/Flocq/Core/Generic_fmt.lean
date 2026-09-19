@@ -4634,3 +4634,27 @@ theorem cexp_abs :
   exact pg_cexp_abs ctx magnitude beta fexp x
 
 end CompCert4Lean.Flocq.Core.Generic_fmt
+
+namespace CompCert4Lean.Flocq.Core.Generic_fmt
+
+theorem generic_format_bpow' :
+    ∀ ctx magnitude, generic_format_bpow'Statement ctx magnitude := by
+  intro ctx magnitude beta fexp hvalid e hle
+  apply generic_format_bpow ctx magnitude beta fexp e
+  have hle' : CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (fexp e) ≤
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ e := by
+    exact hle
+  rcases Int.lt_or_eq_of_le hle' with hlt | heq
+  · have hlt' : Zlt (fexp e) e := by exact hlt
+    exact (hvalid.valid_exp e).1 hlt'
+  · have heq' : fexp e = e := by
+      apply CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective
+      exact heq
+    have hrev : Zle e (fexp e) := by
+      change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ e ≤
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (fexp e)
+      rw [heq']
+      exact Int.le_refl _
+    simpa [heq'] using ((hvalid.valid_exp e).2 hrev).1
+
+end CompCert4Lean.Flocq.Core.Generic_fmt

@@ -1972,3 +1972,38 @@ theorem transl_instr_label : transl_instr_labelStatement := by
           | (refine asmgenproof_op_tail_cons (by intro lbl; rfl) ?_)
 
 end CompCert4Lean.X86.Asmgenproof
+
+namespace CompCert4Lean.X86.Asmgenproof
+
+theorem transl_instr_label' : transl_instr_label'Statement := by
+  intro lbl f i ep k c h
+  have hlabel := transl_instr_label f i ep k c h
+  cases i with
+  | Mlabel lbl' =>
+      subst c
+      simp only [CompCert4Lean.Backend.Asmgenproof0.find_label]
+      cases hpeq : CompCert4Lean.Lib.Coqlib.peq lbl lbl' with
+      | left heq =>
+          simp only [CompCert4Lean.X86.Asm.is_label,
+            CompCert4Lean.Backend.Mach.is_label, hpeq]
+          rfl
+      | right hne =>
+          simp only [CompCert4Lean.X86.Asm.is_label,
+            CompCert4Lean.Backend.Mach.is_label, hpeq]
+          rfl
+  | Mgetstack ofs ty dst
+  | Msetstack src ofs ty
+  | Mgetparam ofs ty dst
+  | Mop op args dst
+  | Mload chunk addr args dst
+  | Mstore chunk addr args src
+  | Mcall sg callee
+  | Mtailcall sg callee
+  | Mgoto lbl'
+  | Mcond cond args lbl'
+  | Mjumptable arg tbl
+  | Mreturn
+  | Mbuiltin ef args result =>
+      exact hlabel.2 lbl
+
+end CompCert4Lean.X86.Asmgenproof

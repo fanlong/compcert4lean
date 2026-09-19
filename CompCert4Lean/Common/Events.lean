@@ -2464,3 +2464,73 @@ theorem volatile_store_extends : volatile_store_extendsStatement := by
           hstore).1 i hi
 
 end CompCert4Lean.Common.Events
+namespace CompCert4Lean.Common.Events
+
+theorem extcall_annot_ok : extcall_annot_okStatement := by
+  intro text targs
+  refine {
+    ec_well_typed := ?_
+    ec_symbols_preserved := ?_
+    ec_valid_block := ?_
+    ec_max_perm := ?_
+    ec_readonly := ?_
+    ec_mem_extends := ?_
+    ec_mem_inject := ?_
+    ec_trace_length := ?_
+    ec_receptive := ?_
+    ec_determ := ?_ }
+  · intro ge vargs m1 t vres m2 hsem
+    cases hsem
+    simp [CompCert4Lean.Common.Values.Val.has_rettype]
+  · intro ge1 ge2 vargs m1 t vres m2 heq hsem
+    cases hsem with
+    | extcall_annot_sem_intro args hmatch =>
+        apply extcall_annot_sem_intro
+        exact eventval_list_match_preserved ge1 ge2 heq.2.1 heq.1 args targs vargs hmatch
+  · intro ge vargs m1 t vres m2 b hsem hb
+    cases hsem
+    exact hb
+  · intro ge vargs m1 t vres m2 b ofs p hsem hb hp
+    cases hsem
+    exact hp
+  · intro ge vargs m1 t vres m2 b ofs n bytes hsem hb hload hreadonly
+    cases hsem
+    exact hload
+  · intro ge vargs m1 t vres m2 m1' vargs' hsem hext hless
+    cases hsem with
+    | extcall_annot_sem_intro args hmatch =>
+      refine ⟨.Vundef, m1', ?_, .lessdef_refl _, hext, ?_⟩
+      · apply extcall_annot_sem_intro
+        exact eventval_list_match_lessdef ge args targs vargs hmatch vargs' hless
+      · exact extcall_debug_unchanged_on_refl (loc_out_of_bounds m1) m1'
+  · intro ge1 ge2 vargs m1 t vres m2 f m1' vargs' hsymbols hsem hinj hvlist
+    cases hsem with
+    | extcall_annot_sem_intro args hmatch =>
+      refine ⟨f, .Vundef, m1', ?_, .val_inject_undef _, hinj, ?_, ?_, ?_, ?_⟩
+      · apply extcall_annot_sem_intro
+        exact eventval_list_match_inject f ge1 ge2 hsymbols args targs vargs hmatch vargs' hvlist
+      · exact extcall_debug_unchanged_on_refl (loc_unmapped f) m1
+      · exact extcall_debug_unchanged_on_refl (loc_out_of_reach f m1) m1'
+      · intro b b' delta h
+        exact h
+      · intro b1 b2 delta hnone hsome
+        rw [hnone] at hsome
+        cases hsome
+  · intro ge vargs m t vres m' hsem
+    cases hsem
+    simp [E0]
+  · intro ge vargs m t1 vres1 m1 t2 hsem hmatch
+    cases hsem with
+    | extcall_annot_sem_intro args hmatch' =>
+      cases hmatch
+      exact ⟨.Vundef, m, extcall_annot_sem_intro vargs m args hmatch'⟩
+  · intro ge vargs m t1 vres1 m1 t2 vres2 m2 hsem1 hsem2
+    cases hsem1 with
+    | extcall_annot_sem_intro args1 hmatch1 =>
+      cases hsem2 with
+      | extcall_annot_sem_intro args2 hmatch2 =>
+        have hargs := eventval_list_match_determ_2 ge args1 targs vargs hmatch1 args2 hmatch2
+        subst args2
+        exact ⟨match_traces_annot _ _, by intro; exact ⟨rfl, rfl⟩⟩
+
+end CompCert4Lean.Common.Events

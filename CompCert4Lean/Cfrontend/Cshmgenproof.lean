@@ -5208,3 +5208,13 @@ theorem make_boolean_correct
       simp [bool_val, hclass] at hbool
 
 end CompCert4Lean.Cfrontend.Cshmgenproof
+
+namespace CompCert4Lean.Cfrontend.Cshmgenproof
+
+theorem make_notbool_correct
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    make_notbool_correctStatement := by
+  exact transl_unop_make_notbool_aux
+
+end CompCert4Lean.Cfrontend.Cshmgenproof

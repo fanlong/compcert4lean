@@ -3194,3 +3194,12 @@ theorem generic_format_B2R :
           (Float radix2 (cond_Zopp s (Zpos m)) e) hcanon
 
 end CompCert4Lean.Flocq.IEEE754.BinarySingleNaN
+
+namespace CompCert4Lean.Flocq.IEEE754.BinarySingleNaN
+
+theorem is_finite_SF2B :
+    ∀ {prec emax : Z}, is_finite_SF2BStatement (prec := prec) (emax := emax) := by
+  intro prec emax x Hx
+  cases x <;> rfl
+
+end CompCert4Lean.Flocq.IEEE754.BinarySingleNaN

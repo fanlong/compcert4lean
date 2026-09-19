@@ -2557,3 +2557,75 @@ theorem magree_free : magree_freeStatement := by
     exact hma.ma_nextblock
 
 end CompCert4Lean.Backend.Deadcodeproof
+
+namespace CompCert4Lean.Backend.Deadcodeproof
+
+open CompCert4Lean.Backend.NeedDomain
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Common.Values
+
+set_option maxHeartbeats 1000000 in
+theorem eagree_init_regs : eagree_init_regsStatement := by
+  intro rl
+  induction rl with
+  | nil =>
+      intro vl1 vl2 ne hld
+      change NeedDomain.NE.t at ne
+      cases vl1 with
+      | nil =>
+          cases vl2 with
+          | nil =>
+              intro r
+              change vagree Vundef Vundef _
+              exact NeedDomain.vagree_same _ _
+          | cons v2 vl2 => cases hld
+      | cons v1 vl1 =>
+          cases vl2 with
+          | nil => cases hld
+          | cons v2 vl2 =>
+              intro r
+              change vagree Vundef Vundef _
+              exact NeedDomain.vagree_same _ _
+  | cons r rl ih =>
+      intro vl1 vl2 ne hld
+      change NeedDomain.NE.t at ne
+      cases vl1 with
+      | nil =>
+          cases vl2 with
+          | nil =>
+              intro r0
+              change vagree Vundef Vundef _
+              exact NeedDomain.vagree_same _ _
+          | cons v2 vl2 =>
+              cases hld
+      | cons v1 vl1 =>
+          cases vl2 with
+          | nil =>
+              cases hld
+          | cons v2 vl2 =>
+              cases hld with
+              | lessdef_list_cons _ _ _ _ hv htail =>
+                  intro r0
+                  have hinit1 :
+                      CompCert4Lean.Backend.RTL.init_regs (v1 :: vl1) (r :: rl) =
+                        CompCert4Lean.Lib.Maps.PMap.set r v1
+                          (CompCert4Lean.Backend.RTL.init_regs vl1 rl) := rfl
+                  have hinit2 :
+                      CompCert4Lean.Backend.RTL.init_regs (v2 :: vl2) (r :: rl) =
+                        CompCert4Lean.Lib.Maps.PMap.set r v2
+                          (CompCert4Lean.Backend.RTL.init_regs vl2 rl) := rfl
+                  rw [hinit1, hinit2]
+                  have hg1 := Regmap.gsspec_proof Common.Values.val r0 r v1
+                    (CompCert4Lean.Backend.RTL.init_regs vl1 rl)
+                  have hg2 := Regmap.gsspec_proof Common.Values.val r0 r v2
+                    (CompCert4Lean.Backend.RTL.init_regs vl2 rl)
+                  rw [hg1, hg2]
+                  cases CompCert4Lean.Lib.Coqlib.peq r0 r with
+                  | left heq =>
+                      subst r0
+                      exact NeedDomain.vagree_lessdef v1 v2 _ hv
+                  | right hne =>
+                      exact ih vl1 vl2 ne htail r0
+
+end CompCert4Lean.Backend.Deadcodeproof

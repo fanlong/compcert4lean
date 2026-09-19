@@ -3735,3 +3735,30 @@ theorem make_assign_value_sound :
             hwidth.1 hwidth.2 hty heval
 
 end CompCert4Lean.Cfrontend.SimplExprproof
+
+namespace CompCert4Lean.Cfrontend.SimplExprproof
+
+open CompCert4Lean.Cfrontend.SimplExpr
+open CompCert4Lean.Cfrontend.Cstrategy
+open CompCert4Lean.Cfrontend.SimplExprspec
+open CompCert4Lean.Cfrontend.Ctypes
+open CompCert4Lean.Lib.Maps
+
+theorem tr_simple :
+    ∀ [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+      [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)],
+      tr_simpleStatement := by
+  intro binary64_certificate binary32_certificate p tp hmatch cunit e m
+  constructor
+  · intro r v hEval
+    exact tr_simple_rvalue
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      p tp hmatch cunit e m r v hEval
+  · intro l b ofs bf hEval
+    exact tr_simple_lvalue
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      p tp hmatch cunit e m l b ofs bf hEval
+
+end CompCert4Lean.Cfrontend.SimplExprproof

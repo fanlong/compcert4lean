@@ -2810,3 +2810,221 @@ theorem eval_xorlimm
   exact eval_xorlimm_aux
 
 end CompCert4Lean.X86.SelectLongproof
+
+namespace CompCert4Lean.X86.SelectLongproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.ExternalCalls
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.X86.Op
+open CompCert4Lean.X86.SelectLong
+
+private theorem shrlu_int64_shru_zero (x : CCInt64) :
+    CompCert4Lean.Lib.Integers.Int64.shru' x
+      CompCert4Lean.Lib.Integers.Int.zero = x := by
+  apply CompCert4Lean.Lib.Integers.WordCore.ext_of_val_eq
+  have h := orl_shru_val x (CompCert4Lean.Lib.Integers.Int.zero : CCInt)
+  have hz : (CompCert4Lean.Lib.Integers.Int.zero : CCInt).val = 0 := rfl
+  calc
+    (CompCert4Lean.Lib.Integers.Int64.shru' x
+      (CompCert4Lean.Lib.Integers.Int.zero : CCInt)).val =
+        x.val / 2 ^ (CompCert4Lean.Lib.Integers.Int.zero : CCInt).val := h
+    _ = x.val := by simp [hz]
+
+private theorem shrlu_val_zero (x : val) :
+    Val.lessdef
+      (Val.shrlu x (.Vint CompCert4Lean.Lib.Integers.Int.zero)) x := by
+  cases x with
+  | Vlong n =>
+      change Val.lessdef
+        (if CompCert4Lean.Lib.Integers.Int.ltu
+            CompCert4Lean.Lib.Integers.Int.zero
+            CompCert4Lean.Lib.Integers.Int64.iwordsize' then
+          .Vlong (CompCert4Lean.Lib.Integers.Int64.shru' n
+            CompCert4Lean.Lib.Integers.Int.zero)
+        else .Vundef) (.Vlong n)
+      have hlt : CompCert4Lean.Lib.Integers.Int.ltu
+          CompCert4Lean.Lib.Integers.Int.zero
+          CompCert4Lean.Lib.Integers.Int64.iwordsize' = true := by decide
+      rw [if_pos hlt, shrlu_int64_shru_zero]
+      exact Val.lessdef_refl _
+  | _ => exact Val.lessdef_undef _
+
+private theorem shrlu_int64_shru_comp (x : CCInt64) (n1 n : CCInt)
+    (hn1 : CompCert4Lean.Lib.Integers.Int.ltu n1
+      CompCert4Lean.Lib.Integers.Int64.iwordsize' = true)
+    (hn : CompCert4Lean.Lib.Integers.Int.ltu n
+      CompCert4Lean.Lib.Integers.Int64.iwordsize' = true) :
+    CompCert4Lean.Lib.Integers.Int64.shru'
+        (CompCert4Lean.Lib.Integers.Int64.shru' x n1) n =
+      CompCert4Lean.Lib.Integers.Int64.shru' x
+        (CompCert4Lean.Lib.Integers.Int.add n n1) := by
+  have hn1v := shrl_int_ltu_iwordsize_val n1 hn1
+  have hnv := shrl_int_ltu_iwordsize_val n hn
+  have haddVal :
+      (CompCert4Lean.Lib.Integers.Int.add n n1).val = n.val + n1.val :=
+    shrl_int_add_val_small n n1 (by omega)
+  apply CompCert4Lean.Lib.Integers.WordCore.ext_of_val_eq
+  have h1 := orl_shru_val x n1
+  have h3 := orl_shru_val x (CompCert4Lean.Lib.Integers.Int.add n n1)
+  calc
+    (CompCert4Lean.Lib.Integers.Int64.shru'
+        (CompCert4Lean.Lib.Integers.Int64.shru' x n1) n).val =
+        (CompCert4Lean.Lib.Integers.Int64.shru' x n1).val /
+          2 ^ n.val := orl_shru_val _ _
+    _ = (x.val / 2 ^ n1.val) / 2 ^ n.val := by
+      exact congrArg (fun q => q / 2 ^ n.val) h1
+    _ = x.val / 2 ^ (n.val + n1.val) := by
+      rw [Nat.div_div_eq_div_mul, ← Nat.pow_add]
+      rw [Nat.add_comm n1.val n.val]
+    _ = (CompCert4Lean.Lib.Integers.Int64.shru'
+        x (CompCert4Lean.Lib.Integers.Int.add n n1)).val := by
+      rw [← haddVal]
+      exact h3.symm
+
+end CompCert4Lean.X86.SelectLongproof
+
+namespace CompCert4Lean.X86.SelectLongproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.ExternalCalls
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.X86.Op
+open CompCert4Lean.X86.SelectLong
+open Lean Elab Tactic Meta
+
+theorem eval_shrluimm
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    @eval_shrluimmStatement binary64_certificate binary32_certificate := by
+  unfold eval_shrluimmStatement unary_constructor_sound
+  intro xi prog hf hdecl sp e m n le a x h
+  unfold CompCert4Lean.X86.SelectLong.shrluimm
+  cases hz : CompCert4Lean.Lib.Integers.Int.eq n
+      CompCert4Lean.Lib.Integers.Int.zero with
+  | true =>
+      have hn := shrl_int_eq_true_zero n hz
+      simp only [hz, if_true]
+      subst n
+      exact ⟨x, h, shrlu_val_zero x⟩
+  | false =>
+      simp only [hz, if_false]
+      cases hlt : CompCert4Lean.Lib.Integers.Int.ltu n
+          CompCert4Lean.Lib.Integers.Int64.iwordsize' with
+      | false =>
+          simp only [hlt, Bool.not_false, if_true]
+          refine ⟨Val.shrlu x (.Vint n), ?_, Val.lessdef_refl _⟩
+          apply eval_expr.eval_Eop le Oshrlu
+            (Econs a (Econs (Eop (Ointconst n) Enil) Enil))
+            [x, .Vint n] (Val.shrlu x (.Vint n))
+          · exact eval_exprlist.cons le a _ x [.Vint n] h
+              (eval_exprlist.cons le (Eop (Ointconst n) Enil) Enil
+                (.Vint n) []
+                (eval_expr.eval_Eop le (Ointconst n) Enil [] (.Vint n)
+                  (eval_exprlist.nil le) rfl)
+                (eval_exprlist.nil le))
+          · rfl
+      | true =>
+          simp only [hlt, Bool.not_true]
+          cases hmatch : shrluimm_match a with
+          | shrluimm_case1 n1 =>
+              have hx : x = .Vlong n1 := eval_longconst_value xi
+                (Genv.globalenv prog) sp e m le n1 x
+                (by simpa [hmatch] using h)
+              subst x
+              refine ⟨.Vlong (CompCert4Lean.Lib.Integers.Int64.shru' n1 n), ?_, ?_⟩
+              · run_tac
+                  let env ← getEnv
+                  let some (name, _) := env.constants.toList.find? (fun (name, _) =>
+                      let s := toString name
+                      s.startsWith "_private.CompCert4Lean.X86.SelectLong." &&
+                        s.endsWith "Int64.shru'")
+                    | throwError "frozen SelectLong Int64.shru' alias not found"
+                  evalTactic (← `(tactic| unfold $(Lean.mkIdent name)))
+                simpa [longconst, hmatch] using
+                  (eval_longconst xi prog sp e m le
+                    (CompCert4Lean.Lib.Integers.Int64.shru' n1 n))
+              · change Val.lessdef
+                  (if CompCert4Lean.Lib.Integers.Int.ltu n
+                      CompCert4Lean.Lib.Integers.Int64.iwordsize' then
+                    .Vlong (CompCert4Lean.Lib.Integers.Int64.shru' n1 n)
+                  else .Vundef) _
+                rw [if_pos hlt]
+                exact Val.lessdef_refl _
+          | shrluimm_case2 n1 t1 =>
+              have horig := h
+              cases h with
+              | eval_Eop le' op al vl v hargs hop =>
+                  cases hargs with
+                  | cons _ a' al' v1 vl' hhead htail =>
+                      cases htail with
+                      | nil _ =>
+                          change some (Val.shrlu v1 (.Vint n1)) = some x at hop
+                          cases hop
+                          cases hsum : CompCert4Lean.Lib.Integers.Int.ltu
+                              (CompCert4Lean.Lib.Integers.Int.add n n1)
+                              CompCert4Lean.Lib.Integers.Int64.iwordsize' with
+                          | false =>
+                              refine ⟨Val.shrlu (Val.shrlu v1 (.Vint n1))
+                                (.Vint n), ?_, Val.lessdef_refl _⟩
+                              simp only [hmatch, hsum, if_false]
+                              apply eval_expr.eval_Eop le (Oshrluimm n)
+                                (Econs (Eop (Oshrluimm n1) (Econs t1 Enil)) Enil)
+                                [Val.shrlu v1 (.Vint n1)] _
+                              · exact eval_exprlist.cons le _ Enil _ [] horig
+                                  (eval_exprlist.nil le)
+                              · rfl
+                          | true =>
+                              refine ⟨Val.shrlu v1
+                                (.Vint (CompCert4Lean.Lib.Integers.Int.add n n1)), ?_, ?_⟩
+                              · simp only [hmatch, hsum, if_true]
+                                apply eval_expr.eval_Eop le
+                                  (Oshrluimm (CompCert4Lean.Lib.Integers.Int.add n n1))
+                                  (Econs t1 Enil) [v1] _
+                                · exact eval_exprlist.cons le t1 Enil v1 []
+                                    (by simpa [hmatch] using hhead)
+                                    (eval_exprlist.nil le)
+                                · rfl
+                              · cases v1 with
+                                | Vlong i =>
+                                    cases hn1 : CompCert4Lean.Lib.Integers.Int.ltu n1
+                                        CompCert4Lean.Lib.Integers.Int64.iwordsize' with
+                                    | false =>
+                                        simp [Val.shrlu, hn1]
+                                        exact Val.lessdef_undef _
+                                    | true =>
+                                        simp only [Val.shrlu, hn1, hlt, hsum,
+                                          if_true]
+                                        run_tac
+                                          let env ← getEnv
+                                          let some (name, _) := env.constants.toList.find?
+                                              (fun (name, _) =>
+                                                let s := toString name
+                                                s.startsWith
+                                                    "_private.CompCert4Lean.Common.Values." &&
+                                                  s.endsWith "Int64.shru'")
+                                            | throwError
+                                                "frozen Values Int64.shru' alias not found"
+                                          evalTactic
+                                            (← `(tactic| unfold $(Lean.mkIdent name)))
+                                        rw [shrlu_int64_shru_comp i n1 n hn1 hlt]
+                                        exact Val.lessdef_refl _
+                                | _ => exact Val.lessdef_refl _
+          | shrluimm_default e1 =>
+              refine ⟨Val.shrlu x (.Vint n), ?_, Val.lessdef_refl _⟩
+              simp only [hmatch]
+              apply eval_expr.eval_Eop le (Oshrluimm n) (Econs a Enil)
+                [x] (Val.shrlu x (.Vint n))
+              · exact eval_exprlist.cons le a Enil x [] h
+                  (eval_exprlist.nil le)
+              · rfl
+
+end CompCert4Lean.X86.SelectLongproof

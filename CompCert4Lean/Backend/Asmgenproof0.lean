@@ -2068,3 +2068,111 @@ theorem code_tail_next_int : code_tail_next_intStatement :=
   code_tail_next_int_asmgenproof
 
 end CompCert4Lean.Backend.Asmgenproof0
+
+namespace CompCert4Lean.Backend.Asmgenproof0
+
+open Lean Elab Tactic Meta
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Lib.Integers
+
+private theorem asmgenproof_ptrofs_unsigned_repr (z : Z)
+    (hz : ZArith.BinInt.Z.le Z0 z ∧
+      ZArith.BinInt.Z.le z Ptrofs.max_unsigned) :
+    Ptrofs.unsigned (Ptrofs.repr z) = z := by
+  have hzi : z = zOfInt (intOfZ z) := (zOfInt_intOfZ z).symm
+  rw [hzi]
+  change (CompCert4Lean.Lib.Integers.WordCore.repr Ptrofs.wordsize
+      (zOfInt (intOfZ z))).intval = zOfInt (intOfZ z)
+  let w := CompCert4Lean.Lib.Integers.WordCore.repr Ptrofs.wordsize
+      (zOfInt (intOfZ z))
+  have hi : w.val = Int.toNat
+      (intOfZ z % ((2 ^ Ptrofs.wordsize : Nat) : Int)) := by
+    dsimp [w]
+    run_tac
+      let env ← getEnv
+      let some (n, _) := env.constants.toList.find?
+          (fun (n, _) => (toString n).endsWith "WordCore.val_repr")
+        | throwError "frozen WordCore.val_repr helper not found"
+      let stx := Lean.mkIdent n
+      let arg := Lean.mkIdent `z
+      evalTactic
+        (← `(tactic| exact $stx Ptrofs.wordsize
+          (CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ $arg)))
+  have hwi : w.intval = ZArith.BinInt.Z.of_nat w.val := by
+    run_tac
+      let env ← getEnv
+      let some (n, _) := env.constants.toList.find?
+          (fun (n, _) => (toString n).endsWith
+            "WordCore.intval_eq_zOfNat_val")
+        | throwError "frozen WordCore.intval_eq_zOfNat_val helper not found"
+      let stx := Lean.mkIdent n
+      let arg := Lean.mkIdent `w
+      evalTactic (← `(tactic| exact $stx $arg))
+  change w.intval = _
+  rw [hwi, hi]
+  have hznonneg : 0 ≤ intOfZ z := hz.1
+  have hzmax := hz.2
+  have hm : intOfZ Ptrofs.max_unsigned =
+      (2 ^ Ptrofs.wordsize : Int) - 1 := by rfl
+  have hzlt : intOfZ z < ((2 ^ Ptrofs.wordsize : Nat) : Int) := by
+    change intOfZ z ≤ intOfZ Ptrofs.max_unsigned at hzmax
+    rw [hm] at hzmax
+    have hpcast : ((2 ^ Ptrofs.wordsize : Nat) : Int) =
+        (2 : Int) ^ Ptrofs.wordsize := by
+      exact (Int.natCast_pow 2 Ptrofs.wordsize).symm
+    rw [hpcast]
+    omega
+  rw [Int.emod_eq_of_lt hznonneg hzlt]
+  change zOfInt (↑(Int.toNat (intOfZ z)) : Int) = _
+  rw [Int.toNat_of_nonneg hznonneg]
+
+theorem return_address_exists : return_address_existsStatement := by
+  intro transl_instr_tail transf_function_inv transf_function_len f sg ros c htail
+  cases htf : CompCert4Lean.X86.Asmgen.transf_function f with
+  | Error msg =>
+      refine ⟨CompCert4Lean.Lib.Integers.Ptrofs.zero, ?_⟩
+      intro tf tc htf' htc
+      rw [htf] at htf'
+      cases htf'
+  | OK tf =>
+      have htf' : CompCert4Lean.X86.Asmgen.transf_function f = .OK tf := htf
+      obtain ⟨tc1, ep1, htc1, htail1⟩ :=
+        transf_function_inv f tf htf'
+      obtain ⟨tc2, ep2, htc2, htail2⟩ :=
+        transl_code_tail transl_instr_tail f
+          (.Mcall sg ros :: c) f.fn_code htail tc1 ep1 htc1
+      simp only [CompCert4Lean.X86.Asmgen.transl_code] at htc2
+      obtain ⟨k, hk, hrest⟩ :=
+        CompCert4Lean.Common.Errors.bind_inversion _ _ _ _ _ htc2
+      have htail_instr := transl_instr_tail f (.Mcall sg ros) ep2 k tc2 hrest
+      have htail3 : CompCert4Lean.Lib.Coqlib.is_tail k tf.fn_code := by
+        have hkt1 : CompCert4Lean.Lib.Coqlib.is_tail k tc1 :=
+          CompCert4Lean.Lib.Coqlib.is_tail_trans _ k tc2 htail_instr tc1 htail2
+        exact CompCert4Lean.Lib.Coqlib.is_tail_trans _ k tc1 hkt1
+          tf.fn_code htail1
+      obtain ⟨ofs, hofs⟩ := is_tail_code_tail k tf.fn_code htail3
+      have hbounds := code_tail_bounds_1 tf.fn_code ofs k hofs
+      have hlen := transf_function_len f tf htf'
+      have hofs_max : ZArith.BinInt.Z.le ofs Ptrofs.max_unsigned :=
+        ZArith.BinInt.Z.le_trans ofs
+          (CompCert4Lean.Lib.Coqlib.list_length_z tf.fn_code)
+          Ptrofs.max_unsigned hbounds.2 hlen
+      refine ⟨CompCert4Lean.Lib.Integers.Ptrofs.repr ofs, ?_⟩
+      intro tf' tc' htf'' htc'
+      have htf_eq : tf' = tf := by
+        rw [htf] at htf''
+        cases htf''
+        rfl
+      subst tf'
+      have htc_tail :
+          CompCert4Lean.X86.Asmgen.transl_code f c false = .OK k := by
+        simpa only [CompCert4Lean.X86.Asmgen.it1_is_parent] using hk
+      have htc_eq : tc' = k := by
+        rw [htc_tail] at htc'
+        cases htc'
+        rfl
+      subst tc'
+      rw [asmgenproof_ptrofs_unsigned_repr ofs ⟨hbounds.1, hofs_max⟩]
+      exact hofs
+
+end CompCert4Lean.Backend.Asmgenproof0

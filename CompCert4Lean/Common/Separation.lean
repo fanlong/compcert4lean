@@ -2667,3 +2667,77 @@ theorem loadv_rule : loadv_ruleStatement := by
 theorem minjection_obligation_1 : minjection_obligation_1Statement := by
   intro j m0 m m' hinj hunch
   exact (minjection j m0).m_invar m m' hinj hunch
+
+theorem loadv_parallel_rule : loadv_parallel_ruleStatement := by
+  intro j m1 m2 chunk addr1 v1 addr2 hinj hload hinject
+  change Mem.inject j m1 m2 at hinj
+  cases hinject with
+  | inject_int i =>
+      simp [Mem.loadv] at hload
+  | inject_long i =>
+      simp [Mem.loadv] at hload
+  | inject_float f =>
+      simp [Mem.loadv] at hload
+  | inject_single f =>
+      simp [Mem.loadv] at hload
+  | val_inject_undef v =>
+      simp [Mem.loadv] at hload
+  | @inject_ptr b1 ofs1 b2 ofs2 delta hmap hofs =>
+      have hvalid := Mem.load_valid_access m1 chunk b1
+        (Ptrofs.unsigned ofs1) v1 (by simpa [Mem.loadv] using hload)
+      have hpmax : Mem.perm m1 b1 (Ptrofs.unsigned ofs1) Max Nonempty :=
+        permMaxNonemptyOfPerm (hvalid.1 (Ptrofs.unsigned ofs1) (by
+          constructor
+          · change intOfZ (Ptrofs.unsigned ofs1) ≤ intOfZ (Ptrofs.unsigned ofs1)
+            omega
+          · change intOfZ (Ptrofs.unsigned ofs1) <
+              intOfZ (zAdd (Ptrofs.unsigned ofs1)
+                (CompCert4Lean.Common.Memdata.size_chunk chunk))
+            rw [chunkSpanInt]
+            have hs := CompCert4Lean.Common.Memdata.size_chunk_pos chunk
+            have hsize := CompCert4Lean.Common.Memdata.size_chunk_conv chunk
+            have hsize' := congrArg intOfZ hsize
+            have hsize'' : intOfZ (CompCert4Lean.Common.Memdata.size_chunk chunk) =
+                Int.ofNat (CompCert4Lean.Common.Memdata.size_chunk_nat chunk) := by
+              calc
+                _ = intOfZ (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat
+                  (CompCert4Lean.Common.Memdata.size_chunk_nat chunk)) := hsize'
+                _ = _ := by
+                  change intOfZ (CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt
+                    (Int.ofNat (CompCert4Lean.Common.Memdata.size_chunk_nat chunk))) = _
+                  exact CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt _
+            change 0 < intOfZ (CompCert4Lean.Common.Memdata.size_chunk chunk) at hs
+            rw [hsize''] at hs
+            omega))
+      have hrep := hinj.mi_representable b1 b2 delta
+        ofs1 hmap (Or.inl hpmax)
+      have haddr : Ptrofs.unsigned (Ptrofs.add ofs1 (Ptrofs.repr delta)) =
+          zAdd (Ptrofs.unsigned ofs1) delta := by
+        change Ptrofs.unsigned (Ptrofs.repr
+          (zAdd (Ptrofs.unsigned ofs1) (Ptrofs.unsigned (Ptrofs.repr delta)))) = _
+        have hdelta : zLe z0 delta := hrep.1
+        have hofs0 : zLe z0 (Ptrofs.unsigned ofs1) := by
+          have h := ofs1.intrange.1
+          change (-1 : Int) < intOfZ (Ptrofs.unsigned ofs1) at h
+          change (0 : Int) ≤ intOfZ (Ptrofs.unsigned ofs1)
+          omega
+        have hdeltaMax : zLe delta Ptrofs.max_unsigned := by
+          change intOfZ delta ≤ intOfZ Ptrofs.max_unsigned
+          have hsum := hrep.2.2
+          change intOfZ (zAdd (Ptrofs.unsigned ofs1) delta) ≤
+            intOfZ Ptrofs.max_unsigned at hsum
+          change (0 : Int) ≤ intOfZ (Ptrofs.unsigned ofs1) at hofs0
+          have hadd : intOfZ (zAdd (Ptrofs.unsigned ofs1) delta) =
+              intOfZ (Ptrofs.unsigned ofs1) + intOfZ delta := by
+            change intOfZ (zOfInt (intOfZ (Ptrofs.unsigned ofs1) + intOfZ delta)) = _
+            rw [CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+          omega
+        rw [scc085_ptrofs_unsigned_repr delta ⟨hdelta, hdeltaMax⟩]
+        rw [scc085_ptrofs_unsigned_repr
+          (zAdd (Ptrofs.unsigned ofs1) delta) ⟨hrep.2.1, hrep.2.2⟩]
+      have hload' := Mem.load_inj j m1 m2 chunk b1
+        (Ptrofs.unsigned ofs1) b2 delta v1 hinj.mi_inj
+        (by simpa [Mem.loadv] using hload) hmap
+      rcases hload' with ⟨v2, hv2, hinjv⟩
+      refine ⟨v2, ?_, hinjv⟩
+      simpa [Mem.loadv, hofs, haddr] using hv2
