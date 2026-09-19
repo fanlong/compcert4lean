@@ -4599,3 +4599,18 @@ theorem frame_set_res : frame_set_resStatement := by
       simpa [Locmap.setres] using hlo
 
 end CompCert4Lean.Backend.Stackingproof
+
+namespace CompCert4Lean.Backend.Stackingproof
+
+theorem frame_contents_incr : frame_contents_incrStatement := by
+  intro return_address_offset tprog cfg f bound_local_pos bound_outgoing_pos
+    bound_stack_data_pos used_callee_save_norepet used_callee_save_prop
+    j sp ls ls0 parent retaddr m P j' hm hincr
+  exact (stackingproof_massert_imp_sepconj
+    (stackingproof_frame_contents_incr return_address_offset tprog cfg f
+      bound_local_pos bound_outgoing_pos bound_stack_data_pos
+      used_callee_save_norepet used_callee_save_prop j j' sp ls ls0 parent
+      retaddr hincr)
+    (stackingproof_massert_imp_refl P)).1 m hm
+
+end CompCert4Lean.Backend.Stackingproof

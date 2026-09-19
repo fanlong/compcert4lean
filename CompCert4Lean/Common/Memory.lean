@@ -7560,3 +7560,182 @@ theorem storev_extends : storev_extendsStatement := by
 end Mem
 
 end CompCert4Lean.Common.Memory
+
+namespace CompCert4Lean.Common.Memory
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+
+namespace Mem
+
+theorem storebytes_within_extends : storebytes_within_extendsStatement := by
+  intro m1 m2 b ofs bytes1 m1' bytes2 hext hstore hbytes
+  have hno : meminj_no_overlap inject_id m1 := by
+    unfold meminj_no_overlap
+    unfold inject_id
+    intro b1 b1' delta1 b2 b2' delta2 ofs1 ofs2 hneq hmap1 hmap2 hp1 hp2
+    left
+    cases hmap1
+    cases hmap2
+    exact hneq
+  rcases storebytes_mapped_inj inject_id m1 b ofs bytes1 m1'
+      m2 b (.Z0 : Z) bytes2 hext.mext_inj hstore hno rfl hbytes with
+    ⟨m2', hstore2, hinj⟩
+  have hzadd : zAdd ofs (.Z0 : Z) = ofs := by
+    apply intOfZ_injective
+    change intOfZ (zOfInt (intOfZ ofs + 0)) = intOfZ ofs
+    rw [intOfZ_zOfInt]
+    simp
+  have hstore2' : storebytes m2 b ofs bytes2 = some m2' := by
+    simpa [hzadd] using hstore2
+  refine ⟨m2', hstore2', ?_⟩
+  constructor
+  · calc
+      m1'.nextblock = m1.nextblock := nextblock_storebytes m1 b ofs bytes1 m1' hstore
+      _ = m2.nextblock := hext.mext_next
+      _ = m2'.nextblock := (nextblock_storebytes m2 b ofs bytes2 m2' hstore2').symm
+  · exact hinj
+  · intro b' ofs' k p hperm
+    have hperm2 : perm m2 b' ofs' k p :=
+      perm_storebytes_2 m2 b ofs bytes2 m2' hstore2' b' ofs' k p hperm
+    rcases hext.mext_perm_inv b' ofs' k p hperm2 with hperm1 | hnot
+    · exact Or.inl (perm_storebytes_1 m1 b ofs bytes1 m1' hstore b' ofs' k p hperm1)
+    · right
+      intro hperm1'
+      apply hnot
+      exact perm_storebytes_2 m1 b ofs bytes1 m1' hstore b' ofs' Max Nonempty hperm1'
+
+end Mem
+
+end CompCert4Lean.Common.Memory
+
+namespace CompCert4Lean.Common.Memory
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+
+namespace Mem
+
+theorem alloc_extends : alloc_extendsStatement := by
+  intro m1 m2 lo1 hi1 b m1' lo2 hi2 hext halloc hlo hhi
+  cases halloc2 : alloc m2 lo2 hi2 with
+  | mk m2' b2 =>
+      have hb : b2 = b := by
+        rw [alloc_result m2 lo2 hi2 m2' b2 halloc2,
+          alloc_result m1 lo1 hi1 m1' b halloc]
+        exact hext.mext_next.symm
+      subst b2
+      refine ⟨m2', rfl, ?_⟩
+      constructor
+      · rw [nextblock_alloc m1 lo1 hi1 m1' b halloc,
+          nextblock_alloc m2 lo2 hi2 m2' b halloc2, hext.mext_next]
+      · apply alloc_left_mapped_inj inject_id m1 m2' lo1 hi1 m1' b b (.Z0 : Z)
+          (alloc_right_inj inject_id m1 m2 lo2 hi2 b m2' hext.mext_inj halloc2)
+          halloc (valid_new_block m2 lo2 hi2 m2' b halloc2)
+        · intro chunk _
+          refine ⟨.Z0, ?_⟩
+          apply intOfZ_injective
+          change 0 = intOfZ (zOfInt (intOfZ (align_chunk chunk) * 0))
+          rw [intOfZ_zOfInt]
+          simp
+        · intro ofs k p hrange
+          have hzadd : zAdd ofs (.Z0 : Z) = ofs := by
+            apply intOfZ_injective
+            change intOfZ (zOfInt (intOfZ ofs + 0)) = intOfZ ofs
+            rw [intOfZ_zOfInt]
+            simp
+          rw [hzadd]
+          apply perm_implies m2' b ofs k Freeable p
+          · apply perm_alloc_2 m2 lo2 hi2 m2' b halloc2 ofs k
+            change intOfZ lo2 ≤ intOfZ ofs ∧ intOfZ ofs < intOfZ hi2
+            change intOfZ lo1 ≤ intOfZ ofs ∧ intOfZ ofs < intOfZ hi1 at hrange
+            change intOfZ lo2 ≤ intOfZ lo1 at hlo
+            change intOfZ hi1 ≤ intOfZ hi2 at hhi
+            omega
+          · exact perm_F_any p
+        · rfl
+      · intro b' ofs k p hperm
+        by_cases hb' : b' = b
+        · subst b'
+          by_cases hrange : zLe lo1 ofs ∧ zLt ofs hi1
+          · left
+            exact perm_implies m1' b ofs k Freeable p
+              (perm_alloc_2 m1 lo1 hi1 m1' b halloc ofs k hrange)
+              (perm_F_any p)
+          · right
+            intro hp
+            exact hrange (perm_alloc_3 m1 lo1 hi1 m1' b halloc ofs Max Nonempty hp)
+        · have hperm2 := perm_alloc_4 m2 lo2 hi2 m2' b halloc2 b' ofs k p hperm hb'
+          rcases hext.mext_perm_inv b' ofs k p hperm2 with hp1 | hn
+          · exact Or.inl (perm_alloc_1 m1 lo1 hi1 m1' b halloc b' ofs k p hp1)
+          · right
+            intro hp
+            exact hn (perm_alloc_4 m1 lo1 hi1 m1' b halloc b' ofs Max Nonempty hp hb')
+
+end Mem
+
+end CompCert4Lean.Common.Memory
+
+namespace CompCert4Lean.Common.Memory
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+
+namespace Mem
+
+theorem free_left_extends : free_left_extendsStatement := by
+  intro m1 m2 b lo hi m1' hext hfree
+  constructor
+  · rw [nextblock_free m1 b lo hi m1' hfree]
+    exact hext.mext_next
+  · exact free_left_inj inject_id m1 m2 b lo hi m1' hext.mext_inj hfree
+  · intro b' ofs k p hp
+    rcases hext.mext_perm_inv b' ofs k p hp with hp1 | hn
+    · rcases perm_free_inv m1 b lo hi m1' hfree b' ofs k p hp1 with
+        ⟨hb, hlo, hhi⟩ | hp1'
+      · subst b'
+        right
+        exact perm_free_2 m1 b lo hi m1' hfree ofs Max Nonempty ⟨hlo, hhi⟩
+      · exact Or.inl hp1'
+    · right
+      intro hp1'
+      exact hn (perm_free_3 m1 b lo hi m1' hfree b' ofs Max Nonempty hp1')
+
+theorem free_right_extends : free_right_extendsStatement := by
+  intro m1 m2 b lo hi m2' hext hfree hno
+  constructor
+  · rw [nextblock_free m2 b lo hi m2' hfree]
+    exact hext.mext_next
+  · apply free_right_inj inject_id m1 m2 b lo hi m2' hext.mext_inj hfree
+    intro b' delta ofs k p hmap hp hrange
+    have heq : (b', (.Z0 : Z)) = (b, delta) := Option.some.inj hmap
+    cases heq
+    apply hno ofs k p hp
+    have hzadd : zAdd ofs (.Z0 : Z) = ofs := by
+      apply intOfZ_injective
+      change intOfZ (zOfInt (intOfZ ofs + 0)) = intOfZ ofs
+      rw [intOfZ_zOfInt]
+      simp
+    simpa [hzadd] using hrange
+  · intro b' ofs k p hp
+    exact hext.mext_perm_inv b' ofs k p
+      (perm_free_3 m2 b lo hi m2' hfree b' ofs k p hp)
+
+end Mem
+
+end CompCert4Lean.Common.Memory

@@ -3887,3 +3887,118 @@ theorem eval_addl
       exact congrArg some (addl_pair_zero_aux x y)
 
 end CompCert4Lean.X86.SelectLongproof
+
+namespace CompCert4Lean.X86.SelectLongproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.ExternalCalls
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.X86.Op
+open CompCert4Lean.X86.SelectLong
+
+private theorem subl_repr_neg_aux (z : Z) :
+    CompCert4Lean.Lib.Integers.Int64.repr (ZArith.BinInt.Z.opp z) =
+      CompCert4Lean.Lib.Integers.Int64.neg (CompCert4Lean.Lib.Integers.Int64.repr z) := by
+  let x := CompCert4Lean.Lib.Integers.Int64.repr z
+  have hx0 : ZArith.BinInt.Z.le .Z0 x.intval := by
+    have h := x.intrange.1
+    change (-1 : Int) < intOfZ x.intval at h
+    change 0 ≤ intOfZ x.intval
+    omega
+  have hx : x.intval = zOfNat x.val := (ZArith.Znat.Z2Nat.id x.intval hx0).symm
+  apply WordCore.ext_of_val_eq
+  apply Int.ofNat.inj
+  change Int.ofNat (CompCert4Lean.Lib.Integers.Int64.repr (ZArith.BinInt.Z.opp z)).val =
+    Int.ofNat (CompCert4Lean.Lib.Integers.Int64.repr (ZArith.BinInt.Z.opp x.intval)).val
+  rw [addl_repr_val_int_aux, addl_repr_val_int_aux, hx]
+  simp only [ZArith.BinInt.Z.opp, zOfNat, ZArith.BinInt.Z.of_nat, intOfZ_zOfInt]
+  change (-intOfZ z) % (2 ^ 64 : Int) =
+    (-Int.ofNat (CompCert4Lean.Lib.Integers.Int64.repr z).val) % (2 ^ 64 : Int)
+  rw [addl_repr_val_int_aux]
+  simpa only [Int.zero_sub, Int.zero_emod] using (Int.sub_emod 0 (intOfZ z) (2 ^ 64))
+
+private theorem subl_repr_difference_aux (x y : Z) :
+    CompCert4Lean.Lib.Integers.Int64.repr (ZArith.BinInt.Z.sub x y) =
+      CompCert4Lean.Lib.Integers.Int64.add
+        (CompCert4Lean.Lib.Integers.Int64.neg (CompCert4Lean.Lib.Integers.Int64.repr y))
+        (CompCert4Lean.Lib.Integers.Int64.repr x) := by
+  rw [← subl_repr_neg_aux, ← addl_repr_sum_aux]
+  congr 1
+  simp only [ZArith.BinInt.Z.sub, ZArith.BinInt.Z.add, ZArith.BinInt.Z.opp,
+    intOfZ_zOfInt, Int.sub_eq_add_neg, Int.add_comm]
+
+private theorem subl_eval_op_aux
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (xi : ExternalCalls) (ge : genv) (sp : val) (e : env) (m : mem)
+    (le : letenv) (a b : expr) (x y : val)
+    (ha : eval_expr xi ge sp e m le a x)
+    (hb : eval_expr xi ge sp e m le b y) :
+    eval_expr xi ge sp e m le (Eop Osubl (Econs a (Econs b Enil))) (Val.subl x y) := by
+  exact eval_expr.eval_Eop le Osubl (Econs a (Econs b Enil)) [x, y] (Val.subl x y)
+    (eval_exprlist.cons le a (Econs b Enil) x [y] ha
+      (eval_exprlist.cons le b Enil y [] hb (eval_exprlist.nil le))) rfl
+
+theorem eval_subl
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    @eval_sublStatement binary64_certificate binary32_certificate := by
+  unfold eval_sublStatement binary_constructor_sound
+  intro xi prog sp e m le a x b y ha hb
+  cases hmatch : subl_match a b with
+  | subl_case1 t1 n2 =>
+      have hy : y = .Vlong n2 := eval_longconst_value xi
+        (Genv.globalenv prog) sp e m le n2 y hb
+      subst y
+      obtain ⟨v, hv, hd⟩ := eval_addlimm xi prog sp e m
+        (CompCert4Lean.Lib.Integers.Int64.neg n2) le a x ha
+      refine ⟨v, ?_, ?_⟩
+      · simpa only [subl, hmatch] using hv
+      · rw [Val.subl_addl_opp]
+        exact hd
+  | subl_case2 n1 t1 n2 t2 =>
+      obtain ⟨u, hu, rfl⟩ := shll_eval_lea_indexed_inv xi
+        (Genv.globalenv prog) sp e m le t1 n1 x ha
+      obtain ⟨w, hw, rfl⟩ := shll_eval_lea_indexed_inv xi
+        (Genv.globalenv prog) sp e m le t2 n2 y hb
+      obtain ⟨v, hv, hd⟩ := eval_addlimm xi prog sp e m
+        (CompCert4Lean.Lib.Integers.Int64.repr (ZArith.BinInt.Z.sub n1 n2)) le
+        (Eop Osubl (Econs t1 (Econs t2 Enil))) (Val.subl u w)
+        (subl_eval_op_aux xi (Genv.globalenv prog) sp e m le t1 t2 u w hu hw)
+      refine ⟨v, ?_, ?_⟩
+      · simpa only [subl, hmatch] using hv
+      · rw [Val.subl_addl_l, Val.subl_addl_r, Val.addl_assoc]
+        simpa only [Val.addl, subl_repr_difference_aux] using hd
+  | subl_case3 n1 t1 t2 =>
+      obtain ⟨u, hu, rfl⟩ := shll_eval_lea_indexed_inv xi
+        (Genv.globalenv prog) sp e m le t1 n1 x ha
+      obtain ⟨v, hv, hd⟩ := eval_addlimm xi prog sp e m
+        (CompCert4Lean.Lib.Integers.Int64.repr n1) le
+        (Eop Osubl (Econs t1 (Econs b Enil))) (Val.subl u y)
+        (subl_eval_op_aux xi (Genv.globalenv prog) sp e m le t1 b u y hu hb)
+      refine ⟨v, ?_, ?_⟩
+      · simpa only [subl, hmatch] using hv
+      · rw [Val.subl_addl_l]
+        exact hd
+  | subl_case4 t1 n2 t2 =>
+      obtain ⟨w, hw, rfl⟩ := shll_eval_lea_indexed_inv xi
+        (Genv.globalenv prog) sp e m le t2 n2 y hb
+      obtain ⟨v, hv, hd⟩ := eval_addlimm xi prog sp e m
+        (CompCert4Lean.Lib.Integers.Int64.repr (ZArith.BinInt.Z.opp n2)) le
+        (Eop Osubl (Econs a (Econs t2 Enil))) (Val.subl x w)
+        (subl_eval_op_aux xi (Genv.globalenv prog) sp e m le a t2 x w ha hw)
+      refine ⟨v, ?_, ?_⟩
+      · simpa only [subl, hmatch] using hv
+      · rw [Val.subl_addl_r]
+        simpa only [subl_repr_neg_aux] using hd
+  | subl_default e1 e2 =>
+      refine ⟨Val.subl x y, ?_, Val.lessdef_refl _⟩
+      simpa only [subl, hmatch] using
+        subl_eval_op_aux xi (Genv.globalenv prog) sp e m le a b x y ha hb
+
+end CompCert4Lean.X86.SelectLongproof
