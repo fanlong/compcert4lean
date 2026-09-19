@@ -805,3 +805,22 @@ theorem relative_error_FLT :
     (ctx.certificate.orderedField.le_trans _ _ _ hpow hprod)
 
 end CompCert4Lean.Flocq.Prop.Relative
+
+namespace CompCert4Lean.Flocq.Prop.Relative
+
+open CompCert4Lean.Flocq.Core
+open CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals
+
+theorem relative_error_FLT_ex :
+    ∀ (ctx : ExactRealContext) (magnitude : ExactMagnitude ctx),
+      relative_error_FLT_exStatement ctx magnitude := by
+  intro ctx magnitude beta emin prec hp rnd hrnd x hx
+  apply relative_error_lt_conversion ctx magnitude beta
+    (FLT_exp emin prec) rnd hrnd x
+    (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.bpow ctx beta
+      (Zadd (Zopp prec) Zone))
+  · exact Raux.bpow_gt_0 ctx beta _
+  · intro _
+    exact relative_error_FLT ctx magnitude beta emin prec hp rnd hrnd x hx
+
+end CompCert4Lean.Flocq.Prop.Relative

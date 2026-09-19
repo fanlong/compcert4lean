@@ -1244,3 +1244,10 @@ open CompCert4Lean.Foundation.Numbers.Rocq.Coq
   · exact hdle
 
 end CompCert4Lean.Flocq.Core.Digits
+
+namespace CompCert4Lean.Flocq.Core.Digits
+
+theorem Zpower_gt_Zdigits : Zpower_gt_ZdigitsStatement :=
+  zpower_gt_digits_local
+
+end CompCert4Lean.Flocq.Core.Digits

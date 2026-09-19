@@ -1788,3 +1788,13 @@ theorem findMax_max (E : OrderedType) : findMax_maxStatement E := by
           · exact hmax y hin
 
 end CompCert4Lean.Lib.Heaps.SplayHeapSet.R
+
+namespace CompCert4Lean.Lib.Heaps.SplayHeapSet
+
+theorem findMax_max (E : OrderedType) : findMax_maxStatement E := by
+  intro h x y hfind hy
+  unfold findMax at hfind
+  unfold In at hy
+  simpa [R.le] using (R.findMax_max E x h.1 hfind h.2 y hy)
+
+end CompCert4Lean.Lib.Heaps.SplayHeapSet

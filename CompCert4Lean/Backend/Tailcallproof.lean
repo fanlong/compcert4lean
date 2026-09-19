@@ -1259,3 +1259,35 @@ theorem symbols_preserved : symbols_preservedStatement := by
     (transf_fundef cfg) prog tprog hmatch s
 
 end CompCert4Lean.Backend.Tailcallproof
+
+namespace CompCert4Lean.Backend.Tailcallproof
+
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Values
+
+theorem find_function_translated : find_function_translatedStatement := by
+  intro cfg prog tprog hmatch ros rs rs' f hfind hregs
+  cases ros with
+  | inl r =>
+      simp only [find_function] at hfind ⊢
+      have hld := hregs r
+      have heq : Regmap.get r rs = Regmap.get r rs' := by
+        generalize hv : Regmap.get r rs = v at hfind hld ⊢
+        generalize hv' : Regmap.get r rs' = v' at hld ⊢
+        cases hld with
+        | lessdef_refl v => rfl
+        | lessdef_undef v => simp [Genv.find_funct] at hfind
+      rw [← heq]
+      exact functions_translated cfg prog tprog hmatch _ f hfind
+  | inr symb =>
+      simp only [find_function] at hfind ⊢
+      rw [symbols_preserved cfg prog tprog hmatch symb]
+      cases hs : Genv.find_symbol (Genv.globalenv prog) symb with
+      | none => simp [sourceGenv, hs] at hfind
+      | some b =>
+          simp only [sourceGenv, hs] at hfind ⊢
+          exact funct_ptr_translated cfg prog tprog hmatch b f hfind
+
+end CompCert4Lean.Backend.Tailcallproof

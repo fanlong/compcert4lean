@@ -2072,3 +2072,10 @@ theorem reachable_successors : reachable_successorsStatement := by
       rcases hge with hge | hge <;> exact hge
 
 end CompCert4Lean.Backend.Linearizeproof
+
+namespace CompCert4Lean.Backend.Linearizeproof
+
+theorem nodeset_of_list_correct : nodeset_of_list_correctStatement :=
+  linearize_nodeset_of_list_correct_aux
+
+end CompCert4Lean.Backend.Linearizeproof

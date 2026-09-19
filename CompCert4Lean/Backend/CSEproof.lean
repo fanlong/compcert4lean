@@ -3972,3 +3972,10 @@ theorem find_rhs_sound
           exact ⟨v, rhs_eval_to_compat valu ge sp m rh' v rh hev hcompat', hld⟩
 
 end CompCert4Lean.Backend.CSEproof
+
+namespace CompCert4Lean.Backend.CSEproof
+
+theorem forget_reg_charact : forget_reg_charactStatement := by
+  exact cse_forget_reg_charact
+
+end CompCert4Lean.Backend.CSEproof

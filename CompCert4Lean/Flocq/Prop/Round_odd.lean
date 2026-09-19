@@ -4073,3 +4073,27 @@ theorem Zrnd_odd_Zodd : ∀ (ctx : ExactRealContext),
           rfl
 
 end CompCert4Lean.Flocq.Prop.Round_odd
+
+namespace CompCert4Lean.Flocq.Prop.Round_odd
+
+open CompCert4Lean.Flocq.Core
+
+theorem Zrnd_odd_plus : ∀ (ctx : ExactRealContext),
+    Zrnd_odd_plusStatement ctx := by
+  intro ctx x y hx heven
+  have h := round_odd_Zrnd_odd_add_integer_aux ctx (Zfloor ctx x) y heven
+  have hxplus : Rplus ctx x y =
+      Rplus ctx (IZR ctx (Zfloor ctx x)) y :=
+    congrArg (fun z => Rplus ctx z y) hx
+  have hxrhs : Rplus ctx x (IZR ctx (Zrnd_odd ctx y)) =
+      Rplus ctx (IZR ctx (Zfloor ctx x)) (IZR ctx (Zrnd_odd ctx y)) :=
+    congrArg (fun z => Rplus ctx z (IZR ctx (Zrnd_odd ctx y))) hx
+  calc
+    IZR ctx (Zrnd_odd ctx (Rplus ctx x y)) =
+        IZR ctx (Zrnd_odd ctx (Rplus ctx (IZR ctx (Zfloor ctx x)) y)) := by
+          exact congrArg (fun z => IZR ctx (Zrnd_odd ctx z)) hxplus
+    _ = Rplus ctx (IZR ctx (Zfloor ctx x))
+          (IZR ctx (Zrnd_odd ctx y)) := h
+    _ = Rplus ctx x (IZR ctx (Zrnd_odd ctx y)) := hxrhs.symm
+
+end CompCert4Lean.Flocq.Prop.Round_odd

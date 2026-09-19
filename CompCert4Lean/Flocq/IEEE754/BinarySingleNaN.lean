@@ -3078,3 +3078,57 @@ theorem Fplus_naive_correct :
               ctx.certificate.orderedField.mul_comm
                 (Exact.bpow ctx radix2 ez) (ctx.spec.ofZ b)]
       rw [hsum, hxs, hys]
+
+theorem canonical_canonical_mantissa :
+    ∀ {prec emax : Z} (ctx : ExactRealContext)
+      (magnitude : Exact.Magnitude ctx),
+      canonical_canonical_mantissaStatement (prec := prec) (emax := emax)
+        ctx magnitude := by
+  intro prec emax ctx magnitude sx mx ex H
+  unfold Exact.canonical Exact.cexp Exact.mag
+  change ex = (fexp (prec := prec) (emax := emax))
+    (CompCert4Lean.Flocq.Core.Raux.Exact.mag magnitude radix2
+      (Exact.F2R ctx (Float radix2 (cond_Zopp sx (Zpos mx)) ex))).mag_val
+  have hmant :
+      (fexp (prec := prec) (emax := emax))
+          (Zadd (Zpos (digits2_pos mx)) ex) = ex := by
+    change CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.Zbool.Zeq_bool
+        ((fexp (prec := prec) (emax := emax))
+          (Zadd (Zpos (digits2_pos mx)) ex)) ex = true at H
+    exact (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.Zbool.Zeq_bool_eq _ _ H)
+  have hm : cond_Zopp sx (Zpos mx) ≠ Z0 := by
+    intro h
+    have hz := pg_abs_cond_Zopp_pos sx mx
+    rw [h] at hz
+    have hz' := congrArg
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ hz
+    change (0 : Int) =
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (Zpos mx) at hz'
+    have hp : (0 : Int) <
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (Zpos mx) := by
+      change (0 : Int) < Int.ofNat
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat mx)
+      exact Int.natCast_pos.mpr
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat_positive mx)
+    omega
+  have hmag := CompCert4Lean.Flocq.Core.Float_prop.mag_F2R_Zdigits
+    ctx magnitude radix2 (cond_Zopp sx (Zpos mx)) ex hm
+  have habs :
+      CompCert4Lean.Flocq.Core.Float_prop.Zdigits radix2
+          (cond_Zopp sx (Zpos mx)) = Zpos (digits2_pos mx) := by
+    change CompCert4Lean.Flocq.Core.Digits.Zdigits radix2
+      (cond_Zopp sx (Zpos mx)) = Zpos (digits2_pos mx)
+    rw [← CompCert4Lean.Flocq.Core.Digits.Zdigits_abs radix2
+      (cond_Zopp sx (Zpos mx))]
+    have hzabs :
+        CompCert4Lean.Flocq.Core.Digits.Zabs (cond_Zopp sx (Zpos mx)) = Zpos mx := by
+      exact pg_abs_cond_Zopp_pos sx mx
+    rw [hzabs]
+    exact (CompCert4Lean.Flocq.Core.Digits.Zpos_digits2_pos mx).symm
+  change ex = (fexp (prec := prec) (emax := emax))
+    ((CompCert4Lean.Flocq.Core.Float_prop.Exact.mag magnitude radix2
+      (CompCert4Lean.Flocq.Core.Float_prop.Exact.F2R ctx
+        (CompCert4Lean.Flocq.Core.Float_prop.Float radix2
+          (cond_Zopp sx (Zpos mx)) ex))))
+  rw [hmag, habs]
+  exact hmant.symm

@@ -1683,3 +1683,133 @@ theorem inbetween_step_Lo_not_Eq (ctx : ExactRealContext) :
         hx'.2 hmid
 
 end CompCert4Lean.Flocq.Calc.Bracket
+
+namespace CompCert4Lean.Flocq.Calc.Bracket
+
+private theorem middle_odd_num (ctx : ExactRealContext)
+    (start step : R ctx) (k : Z) :
+    Rplus ctx (Rplus ctx start (Rmult ctx (IZR ctx k) step))
+        (Rplus ctx start (Rmult ctx (IZR ctx (Zadd k Zone)) step)) =
+      Rplus ctx start
+        (Rplus ctx start
+          (Rmult ctx (IZR ctx (Zadd k (Zadd k Zone))) step)) := by
+  have hzadd :=
+    CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.plus_IZR
+      ctx k (Zadd k Zone)
+  change ctx.spec.ofZ (Zadd k (Zadd k Zone)) =
+      ctx.spec.add (ctx.spec.ofZ k)
+        (ctx.spec.ofZ (Zadd k Zone)) at hzadd
+  change ctx.spec.add
+      (ctx.spec.add start (ctx.spec.mul (ctx.spec.ofZ k) step))
+      (ctx.spec.add start
+        (ctx.spec.mul (ctx.spec.ofZ (Zadd k Zone)) step)) = _
+  calc
+    ctx.spec.add
+        (ctx.spec.add start (ctx.spec.mul (ctx.spec.ofZ k) step))
+        (ctx.spec.add start
+          (ctx.spec.mul (ctx.spec.ofZ (Zadd k Zone)) step)) =
+      ctx.spec.add
+        (ctx.spec.add
+          (ctx.spec.add start (ctx.spec.mul (ctx.spec.ofZ k) step)) start)
+        (ctx.spec.mul (ctx.spec.ofZ (Zadd k Zone)) step) := by
+          exact (ctx.certificate.orderedField.add_assoc
+            (ctx.spec.add start (ctx.spec.mul (ctx.spec.ofZ k) step))
+            start (ctx.spec.mul (ctx.spec.ofZ (Zadd k Zone)) step)).symm
+    _ = ctx.spec.add
+        (ctx.spec.add start
+          (ctx.spec.add (ctx.spec.mul (ctx.spec.ofZ k) step) start))
+        (ctx.spec.mul (ctx.spec.ofZ (Zadd k Zone)) step) := by
+          congr 1
+          exact ctx.certificate.orderedField.add_assoc start
+            (ctx.spec.mul (ctx.spec.ofZ k) step) start
+    _ = ctx.spec.add
+        (ctx.spec.add start
+          (ctx.spec.add start (ctx.spec.mul (ctx.spec.ofZ k) step)))
+        (ctx.spec.mul (ctx.spec.ofZ (Zadd k Zone)) step) := by
+          congr 2
+          exact ctx.certificate.orderedField.add_comm
+            (ctx.spec.mul (ctx.spec.ofZ k) step) start
+    _ = ctx.spec.add start
+        (ctx.spec.add
+          (ctx.spec.add start (ctx.spec.mul (ctx.spec.ofZ k) step))
+          (ctx.spec.mul (ctx.spec.ofZ (Zadd k Zone)) step)) := by
+          exact ctx.certificate.orderedField.add_assoc start
+            (ctx.spec.add start (ctx.spec.mul (ctx.spec.ofZ k) step))
+            (ctx.spec.mul (ctx.spec.ofZ (Zadd k Zone)) step)
+    _ = ctx.spec.add start
+        (ctx.spec.add start
+          (ctx.spec.add
+            (ctx.spec.mul (ctx.spec.ofZ k) step)
+            (ctx.spec.mul (ctx.spec.ofZ (Zadd k Zone)) step))) := by
+          exact congrArg (fun q => ctx.spec.add start q)
+            (ctx.certificate.orderedField.add_assoc start
+              (ctx.spec.mul (ctx.spec.ofZ k) step)
+              (ctx.spec.mul (ctx.spec.ofZ (Zadd k Zone)) step))
+    _ = ctx.spec.add start
+        (ctx.spec.add start
+          (ctx.spec.mul
+            (ctx.spec.add (ctx.spec.ofZ k)
+              (ctx.spec.ofZ (Zadd k Zone))) step)) := by
+          congr 2
+          calc
+            ctx.spec.add
+                (ctx.spec.mul (ctx.spec.ofZ k) step)
+                (ctx.spec.mul (ctx.spec.ofZ (Zadd k Zone)) step) =
+              ctx.spec.add
+                (ctx.spec.mul step (ctx.spec.ofZ k))
+                (ctx.spec.mul step (ctx.spec.ofZ (Zadd k Zone))) := by
+                  rw [ctx.certificate.orderedField.mul_comm
+                    (ctx.spec.ofZ k) step,
+                    ctx.certificate.orderedField.mul_comm
+                      (ctx.spec.ofZ (Zadd k Zone)) step]
+            _ = ctx.spec.mul step
+                (ctx.spec.add (ctx.spec.ofZ k)
+                  (ctx.spec.ofZ (Zadd k Zone))) :=
+              (ctx.certificate.orderedField.left_distrib step _ _).symm
+            _ = ctx.spec.mul
+                (ctx.spec.add (ctx.spec.ofZ k)
+                  (ctx.spec.ofZ (Zadd k Zone))) step :=
+              ctx.certificate.orderedField.mul_comm _ _
+    _ = ctx.spec.add start
+        (ctx.spec.add start
+          (ctx.spec.mul (ctx.spec.ofZ (Zadd k (Zadd k Zone))) step)) := by
+          rw [hzadd]
+
+end CompCert4Lean.Flocq.Calc.Bracket
+
+namespace CompCert4Lean.Flocq.Calc.Bracket
+
+theorem middle_odd (ctx : ExactRealContext) :
+    middle_oddStatement ctx := by
+  intro start step nb_steps k hEq
+  have hk : Zadd k (Zadd k Zone) = nb_steps := by
+    apply CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective
+    have hEq' := congrArg
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ hEq
+    change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+        (Zadd (Zmul Ztwo k) Zone) =
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ nb_steps at hEq'
+    change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+        (Zadd k (Zadd k Zone)) =
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ nb_steps
+    simp only [Zadd, Zmul,
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add,
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.mul,
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt] at hEq' ⊢
+    have htwo :
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ Ztwo = (2 : Int) := by
+      rfl
+    have hone :
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ Zone = (1 : Int) := by
+      rfl
+    change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ k +
+        (CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ k + 1) =
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ nb_steps
+    change 2 * CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ k + 1 =
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ nb_steps at hEq'
+    omega
+  rw [middle_odd_num ctx start step k]
+  rw [middle_range ctx start step (Zadd k (Zadd k Zone))]
+  rw [hk]
+
+end CompCert4Lean.Flocq.Calc.Bracket

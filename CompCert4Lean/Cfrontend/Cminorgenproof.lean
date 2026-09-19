@@ -4636,3 +4636,107 @@ theorem match_env_alloc : match_env_allocStatement := by
   exact match_env_alloc_local
 
 end CompCert4Lean.Cfrontend.Cminorgenproof
+
+namespace CompCert4Lean.Cfrontend.Cminorgenproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+
+theorem match_callstack_alloc_left : match_callstack_alloc_leftStatement := by
+  intro prog f1 m1 tm id cenv tf e le te sp lo cs sz m2 b f2 ofs
+    hstack halloc hcenv hincr hmap hother henone
+  change CompCert4Lean.Common.Values.block at b
+  cases hstack with
+  | @cons cenv' tf' e' le' te' sp' lo' hi' cs' bound' tbound'
+      hbound hsp htemps henv hbounds hfree htail =>
+      have hnext : m2.nextblock = PArith.BinPos.Pos.succ m1.nextblock :=
+        alloc_nextblock_local m1 z0 sz m2 b halloc
+      have hb : b = m1.nextblock := alloc_result_local m1 z0 sz m2 b halloc
+      have hlo : Ple lo m1.nextblock :=
+        Ple_trans _ _ _ henv.me_low_high hbound
+      have henv' : match_env f2 cenv (PTree.set id (b, sz) e) sp lo m2.nextblock :=
+        match_env_alloc f1 id cenv e sp lo m1 sz m2 b ofs f2 henv halloc
+          hcenv hincr hmap hother henone
+      have hbounds' : match_bounds (PTree.set id (b, sz) e) m2 := by
+        intro id0 b0 sz0 ofs0 p hget hperm
+        cases hp : CompCert4Lean.Lib.Coqlib.peq id0 id with
+        | left heq =>
+            subst id0
+            rw [PTree.gsspec_proof (A := _) id id (b, sz) e] at hget
+            simp only [hp] at hget
+            have hpairs := Option.some.inj hget
+            have hb0eq : b0 = b := (congrArg Prod.fst hpairs).symm
+            have hsz0eq : sz0 = sz := (congrArg Prod.snd hpairs).symm
+            rw [hb0eq] at hperm
+            rw [hsz0eq]
+            exact Mem.perm_alloc_3 m1 z0 sz m2 b halloc ofs0 _ _ hperm
+        | right hne =>
+            rw [PTree.gsspec_proof (A := _) id0 id (b, sz) e] at hget
+            simp only [hp] at hget
+            have hbnd := henv.me_bounded id0 b0 sz0 hget
+            have hb0lt : Plt b0 m1.nextblock :=
+              Plt_Ple_trans _ _ _ hbnd.2 hbound
+            have hb0neq : b0 ≠ b := by
+              intro heq
+              subst b0
+              exact Plt_strict _ (hb ▸ hb0lt)
+            exact hbounds id0 b0 sz0 ofs0 p hget
+              (Mem.perm_alloc_4 m1 z0 sz m2 b halloc b0 ofs0 _ _ hperm hb0neq)
+      have hfree' : padding_freeable f2 (PTree.set id (b, sz) e) tm sp tf.fn_stackspace := by
+        intro ofs0 hof
+        rcases hfree ofs0 hof with hperm | hreach
+        · exact Or.inl hperm
+        · cases hreach with
+          | @is_reachable_intro id0 b0 sz0 delta hget hf1 hdelta =>
+              by_cases hi : id0 = id
+              · subst id0
+                exfalso
+                rw [henone] at hget
+                cases hget
+              · apply Or.inr
+                exact is_reachable_intro (id := id0) (b := b0) (sz := sz0)
+                  (delta := delta)
+                  (by
+                    rw [PTree.gso (A := _) (x := (b, sz)) (m := e) hi]
+                    exact hget)
+                  (hincr b0 sp delta hf1) hdelta
+      have htail' : match_callstack prog f2 m2 tm cs lo sp := by
+        apply match_callstack_invariant prog f1 m1 tm f2 m2 tm cs lo sp htail
+        · exact hincr
+        · intro b0 ofs0 p hlt hperm
+          have hb0lt : Plt b0 m1.nextblock :=
+            Plt_Ple_trans _ _ _ hlt hlo
+          have hb0neq : b0 ≠ b := by
+            intro heq
+            subst b0
+            exact Plt_strict _ (hb ▸ hb0lt)
+          exact Mem.perm_alloc_4 m1 z0 sz m2 b halloc b0 ofs0 _ _ hperm hb0neq
+        · intro sp0 ofs0 hlt hperm
+          exact hperm
+        · intro b0 hlt
+          apply hother b0
+          intro heq
+          subst b0
+          exact Plt_strict _ (hb ▸ (Plt_Ple_trans _ _ _ hlt hlo))
+        · intro b0 b' delta hmap0 hlt'
+          by_cases heq : b0 = b
+          · subst b0
+            rw [hmap] at hmap0
+            have hpairs := Option.some.inj hmap0
+            have hbeq : sp = b' := congrArg Prod.fst hpairs
+            subst b'
+            exact False.elim (Plt_strict _ hlt')
+          · rw [hother b0 heq] at hmap0
+            exact hmap0
+      apply match_callstack.cons (Ple_refl _)
+      · exact hsp
+      · exact match_temps_invariant f1 f2 le te htemps hincr
+      · exact henv'
+      · exact hbounds'
+      · exact hfree'
+      · exact htail'
+
+end CompCert4Lean.Cfrontend.Cminorgenproof

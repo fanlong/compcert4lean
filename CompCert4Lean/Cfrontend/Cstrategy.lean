@@ -3121,3 +3121,22 @@ theorem imm_safe_inv
         try exact hi <;> trivial
 
 end CompCert4Lean.Cfrontend.Cstrategy
+
+namespace CompCert4Lean.Cfrontend.Cstrategy
+
+theorem safe_inv
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    safe_invStatement := by
+  unfold safe_invStatement
+  intro xi ge e k C f a K m hs hcontext
+  have himm := safe_imm_safe
+    (binary64_certificate := binary64_certificate)
+    (binary32_certificate := binary32_certificate)
+    xi ge f C a K e m k hs hcontext
+  exact imm_safe_inv
+    (binary64_certificate := binary64_certificate)
+    (binary32_certificate := binary32_certificate)
+    xi ge e k a m himm
+
+end CompCert4Lean.Cfrontend.Cstrategy

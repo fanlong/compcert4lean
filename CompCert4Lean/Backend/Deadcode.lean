@@ -600,3 +600,407 @@ theorem fixpoint_solution_proof :
 
 end DS
 end CompCert4Lean.Backend.Deadcode
+
+namespace CompCert4Lean.Backend.Deadcode
+open CompCert4Lean.Backend.NeedDomain
+open CompCert4Lean.Backend.Kildall
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.Lib.IntvSets
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open Lean Elab Tactic Meta
+private theorem t1 : ∀ x, NVal.eq x x := by intro x; rfl
+private theorem t2 : ∀ x y, NVal.eq x y → NVal.eq y x := by intro x y h; exact h.symm
+private theorem t3 : ∀ x y z, NVal.eq x y → NVal.eq y z → NVal.eq x z := by intro x y z h1 h2; exact h1.trans h2
+private theorem t4 : ∀ x y, NVal.beq x y = true → NVal.eq x y := by
+  intro x y h
+  unfold NVal.beq at h
+  cases he : eq_nval x y with
+  | left hxy => exact hxy
+  | right hxy => simp [CompCert4Lean.Lib.Coqlib.proj_sumbool, he] at h
+private theorem t5 : ∀ x y, NVal.eq x y → NVal.ge x y := by
+  intro x y h; subst y
+  cases x with
+  | Nothing => exact nge.nge_all _
+  | All => exact nge.nge_nothing _
+  | I m => exact nge.nge_int m m (by intro i hi hm; exact hm)
+  | L m => exact nge.nge_long m m (by intro i hi hm; exact hm)
+private theorem t6 : ∀ x y z, NVal.ge x y → NVal.ge y z → NVal.ge x z := by
+  intro x y z hxy hyz
+  cases hxy with
+  | nge_nothing a => exact nge.nge_nothing z
+  | nge_all a =>
+      cases hyz with
+      | nge_all => exact nge.nge_all _
+  | nge_int m1 m2 h12 =>
+      cases hyz with
+      | nge_all => exact nge.nge_all _
+      | nge_int m2' m3 h23 =>
+          apply nge.nge_int m1 m3
+          intro i hi hm
+          exact h12 i hi (h23 i hi hm)
+  | nge_long m1 m2 h12 =>
+      cases hyz with
+      | nge_all => exact nge.nge_all _
+      | nge_long m2' m3 h23 =>
+          apply nge.nge_long m1 m3
+          intro i hi hm
+          exact h12 i hi (h23 i hi hm)
+private theorem t7 : ∀ x, NVal.ge x NVal.bot := by intro x; exact nge.nge_all x
+private theorem t8 : ∀ x y, NVal.ge (NVal.lub x y) x := by intro x y; exact CompCert4Lean.Backend.NeedDomain.nge_lub_l x y
+private def privateNameX (suffix : String) : Name :=
+  let p := Name.str (Name.str (Name.str (Name.str Name.anonymous "_private") "CompCert4Lean") "Lib") "Integers"
+  let base := Name.num p 0
+  suffix.splitOn "." |>.foldl Name.str base
+private theorem residue_zOfNatX (bits n : Nat) :
+    (WordCore.repr bits (ZArith.BinInt.Z.of_nat n)).val = n % (2 ^ bits) := by
+  run_tac
+    let lctx ← getLCtx
+    let bitsF := (lctx.findFromUserName? `bits).get!
+    let nF := (lctx.findFromUserName? `n).get!
+    let bitsE := mkFVar bitsF.fvarId
+    let nE := mkFVar nF.fvarId
+    let z := mkApp (mkConst ``ZArith.BinInt.Z.of_nat) nE
+    let e1 := mkApp2 (mkConst (privateNameX "CompCert4Lean.Lib.Integers.WordCore.val_repr_residue")) bitsE z
+    let e2 := mkApp2 (mkConst (privateNameX "CompCert4Lean.Lib.Integers.WordCore.residue_zOfNat")) bitsE nE
+    let t1 ← inferType e1
+    let t2 ← inferType e2
+    let (α, lhs, mid) := match_expr t1 with
+      | _root_.Eq α lhs mid => (α, lhs, mid)
+      | _ => panic! "not eq1"
+    let (_, _, rhs) := match_expr t2 with
+      | _root_.Eq _ mid' rhs => (α, mid', rhs)
+      | _ => panic! "not eq2"
+    let eqtrans := mkConst ``Eq.trans [.succ .zero]
+    let e := mkAppN eqtrans #[α, lhs, mid, rhs, e1, e2]
+    closeMainGoal Name.anonymous e
+private theorem int64_or_valX (x y : Int64.int) :
+    (Int64.or x y).val = Nat.lor x.val y.val % (2 ^ Int64.wordsize) := by
+  unfold Int64.or WordCore.or
+  exact residue_zOfNatX Int64.wordsize (Nat.lor x.val y.val)
+private theorem word64_val_ltX (x : Int64.int) : x.val < 2 ^ Int64.wordsize := by
+  run_tac
+    let lctx ← getLCtx
+    let xF := (lctx.findFromUserName? `x).get!
+    let xE := mkFVar xF.fvarId
+    let e ← mkAppM (privateNameX "CompCert4Lean.Lib.Integers.WordCore.val_lt") #[xE]
+    closeMainGoal Name.anonymous e
+private theorem nat_or_mod_testbitX (a b w k : Nat) (ha : a < 2 ^ w) (hb : b < 2 ^ w) :
+    (Nat.lor a b % 2 ^ w).testBit k = (a.testBit k || b.testBit k) := by
+  rw [Nat.testBit_mod_two_pow]
+  by_cases hk : k < w
+  · simp only [hk]
+    simpa using (Nat.testBit_or a b k)
+  · have hkw : w ≤ k := Nat.le_of_not_gt hk
+    have hpow : 2 ^ w ≤ 2 ^ k := Nat.pow_le_pow_right (by decide) hkw
+    have ha' : a < 2 ^ k := Nat.lt_of_lt_of_le ha hpow
+    have hb' : b < 2 ^ k := Nat.lt_of_lt_of_le hb hpow
+    have hfa := Nat.testBit_lt_two_pow ha'
+    have hfb := Nat.testBit_lt_two_pow hb'
+    simp [hk, hfa, hfb]
+private theorem int64_or_testbitX (x y : Int64.int) (i : Z) :
+    Int64.testbit (Int64.or x y) i = (Int64.testbit x i || Int64.testbit y i) := by
+  cases i with
+  | Zneg p => rfl
+  | Z0 =>
+      simp only [Int64.testbit, WordCore.testbit]
+      change Nat.testBit (Int64.or x y).val 0 = (Nat.testBit x.val 0 || Nat.testBit y.val 0)
+      rw [int64_or_valX]
+      exact nat_or_mod_testbitX x.val y.val Int64.wordsize 0
+        (word64_val_ltX x) (word64_val_ltX y)
+  | Zpos p =>
+      simp only [Int64.testbit, WordCore.testbit]
+      change Nat.testBit (Int64.or x y).val _ = _
+      rw [int64_or_valX]
+      exact nat_or_mod_testbitX x.val y.val Int64.wordsize _
+        (word64_val_ltX x) (word64_val_ltX y)
+
+private theorem t9 : ∀ x y, NVal.ge (NVal.lub x y) y := by
+  intro x y
+  cases y with
+  | Nothing => exact nge.nge_all _
+  | All => cases x <;> change nge All All <;> exact nge.nge_nothing All
+  | I m2 =>
+      cases x with
+      | Nothing => exact nge.nge_int m2 m2 (by intro i hi hm; exact hm)
+      | I m1 =>
+          apply nge.nge_int (Int.or m1 m2) m2
+          intro i hi hm
+          rw [CompCert4Lean.Lib.Integers.Int.bits_or_proof m1 m2 i hi]
+          exact Bool.or_eq_true_iff.mpr (Or.inr hm)
+      | L _ | All => exact nge.nge_nothing _
+  | L m2 =>
+      cases x with
+      | Nothing => exact nge.nge_long m2 m2 (by intro i hi hm; exact hm)
+      | I _ | All => exact nge.nge_nothing _
+      | L m1 =>
+          apply nge.nge_long (Int64.or m1 m2) m2
+          intro i hi hm
+          rw [int64_or_testbitX]
+          exact Bool.or_eq_true_iff.mpr (Or.inr hm)
+
+private theorem na_iset_beq_eq : ∀ (s1 s2 : ISet.t), ISet.beq s1 s2 = true → s1 = s2 := by
+  intro s1 s2 h
+  rcases s1 with ⟨r1, o1⟩
+  rcases s2 with ⟨r2, o2⟩
+  apply Subtype.ext
+  change r1 = r2
+  change ISet.R.beq r1 r2 = true at h
+  clear o1 o2
+  induction r1 generalizing r2 with
+  | Nil =>
+      cases r2 <;> simp [ISet.R.beq] at h
+      exact rfl
+  | Cons l h1 t ih =>
+      cases r2 with
+      | Nil => simp [ISet.R.beq] at h
+      | Cons l2 h2 t2 =>
+          have hhall : (l = l2 ∧ h1 = h2) ∧ ISet.R.beq t t2 = true := by
+            simpa [ISet.R.beq] using h
+          have hp : l = l2 ∧ h1 = h2 := hhall.1
+          have ht : ISet.R.beq t t2 = true := hhall.2
+          have ht' : t = t2 := ih t2 ht
+          rcases hp with ⟨hl, hh⟩
+          subst l2; subst h2; subst t2
+          rfl
+private theorem na_nmem_beq_eq : ∀ (m1 m2 : nmem), nmem_beq m1 m2 = true → m1 = m2 := by
+  intro m1 m2 h
+  cases m1 with
+  | NMemDead =>
+      cases m2 with
+      | NMemDead => rfl
+      | NMem stk gl => simp [nmem_beq] at h
+  | NMem stk1 gl1 =>
+      cases m2 with
+      | NMemDead => simp [nmem_beq] at h
+      | NMem stk2 gl2 =>
+          have hh : ISet.beq stk1 stk2 = true ∧ PTree.beq ISet.beq gl1 gl2 = true := by
+            simpa [nmem_beq] using h
+          have hstk : stk1 = stk2 := na_iset_beq_eq stk1 stk2 hh.1
+          have hpt := (PTree.beq_correct_proof ISet.beq gl1 gl2).mp hh.2
+          have hgl : gl1 = gl2 := PTree.extensionality gl1 gl2 (by
+            intro id
+            cases h1 : PTree.get id gl1 with
+            | none =>
+                cases h2 : PTree.get id gl2 with
+                | none => simp [h1, h2]
+                | some s2 =>
+                    have hx := hpt id
+                    simp [h1, h2] at hx
+            | some s1 =>
+                cases h2 : PTree.get id gl2 with
+                | none =>
+                    have hx := hpt id
+                    simp [h1, h2] at hx
+                | some s2 =>
+                    have hx := hpt id
+                    have hs : ISet.beq s1 s2 = true := by simpa [h1, h2] using hx
+                    have he := na_iset_beq_eq s1 s2 hs
+                    simpa [h1, h2] using he)
+          subst stk2
+          subst gl2
+          rfl
+private theorem na_nlive_lub_left :
+    ∀ (ge : CompCert4Lean.Backend.RTL.genv) (sp : CompCert4Lean.Common.Values.block)
+      (m1 m2 : nmem) (b : CompCert4Lean.Common.Values.block)
+      (ofs : CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z),
+      nlive ge sp m1 b ofs → nlive ge sp (nmem_lub m1 m2) b ofs := by
+  intro ge sp m1 m2 b ofs h
+  cases m1 with
+  | NMemDead => cases h
+  | NMem stk1 gl1 =>
+      cases m2 with
+      | NMemDead => simpa [nmem_lub]
+      | NMem stk2 gl2 =>
+          cases h with
+          | nlive_intro _ _ _ _ hstk hgl =>
+              apply nlive.nlive_intro (ISet.inter stk1 stk2)
+                (PTree.combine (fun o1 o2 =>
+                  match o1, o2 with
+                  | some iv1, some iv2 => some (ISet.inter iv1 iv2)
+                  | _, _ => none) gl1 gl2) b ofs
+              · intro hbsp hmem
+                apply hstk hbsp
+                have hi := ISet.R.In_inter ofs stk1.1 stk1.2 stk2.1 stk2.2
+                exact hi.mp hmem |>.1
+              · intro id iv hfind hget
+                have hc := PTree.gcombine_proof (A := ISet.t) (B := ISet.t) (C := ISet.t)
+                  (fun o1 o2 => match o1, o2 with
+                  | some iv1, some iv2 => some (ISet.inter iv1 iv2)
+                  | _, _ => none) (by rfl) gl1 gl2 (id : positive)
+                rw [hc] at hget
+                cases h1 : PTree.get id gl1 with
+                | none => cases h2 : PTree.get id gl2 <;> simp [h1, h2] at hget
+                | some iv1 =>
+                    cases h2 : PTree.get id gl2 with
+                    | none => simp [h1, h2] at hget
+                    | some iv2 =>
+                        simp [h1, h2] at hget
+                        subst iv
+                        intro hin
+                        apply hgl id iv1 hfind h1
+                        have hi := ISet.R.In_inter ofs iv1.1 iv1.2 iv2.1 iv2.2
+                        exact (hi.mp hin).1
+private theorem na_nlive_lub_right :
+    ∀ (ge : CompCert4Lean.Backend.RTL.genv) (sp : CompCert4Lean.Common.Values.block)
+      (m1 m2 : nmem) (b : CompCert4Lean.Common.Values.block)
+      (ofs : CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z),
+      nlive ge sp m2 b ofs → nlive ge sp (nmem_lub m1 m2) b ofs := by
+  intro ge sp m1 m2 b ofs h
+  cases m2 with
+  | NMemDead => cases m1 with
+      | NMemDead => cases h
+      | NMem _ _ => cases h
+  | NMem stk2 gl2 =>
+      cases m1 with
+      | NMemDead => simpa [nmem_lub]
+      | NMem stk1 gl1 =>
+          cases h with
+          | nlive_intro _ _ _ _ hstk hgl =>
+              apply nlive.nlive_intro (ISet.inter stk1 stk2)
+                (PTree.combine (fun o1 o2 =>
+                  match o1, o2 with
+                  | some iv1, some iv2 => some (ISet.inter iv1 iv2)
+                  | _, _ => none) gl1 gl2) b ofs
+              · intro hbsp hmem
+                apply hstk hbsp
+                have hi := ISet.R.In_inter ofs stk1.1 stk1.2 stk2.1 stk2.2
+                exact hi.mp hmem |>.2
+              · intro id iv hfind hget
+                have hc := PTree.gcombine_proof (A := ISet.t) (B := ISet.t) (C := ISet.t)
+                  (fun o1 o2 => match o1, o2 with
+                  | some iv1, some iv2 => some (ISet.inter iv1 iv2)
+                  | _, _ => none) (by rfl) gl1 gl2 (id : positive)
+                rw [hc] at hget
+                cases h1 : PTree.get id gl1 with
+                | none => cases h2 : PTree.get id gl2 <;> simp [h1, h2] at hget
+                | some iv1 =>
+                    cases h2 : PTree.get id gl2 with
+                    | none => simp [h1, h2] at hget
+                    | some iv2 =>
+                        simp [h1, h2] at hget
+                        subst iv
+                        intro hin
+                        apply hgl id iv2 hfind h2
+                        have hi := ISet.R.In_inter ofs iv1.1 iv1.2 iv2.1 iv2.2
+                        exact (hi.mp hin).2
+private def na_getD : Option NVal.t → NVal.t
+  | none => NVal.bot
+  | some v => v
+private theorem na_ne_lub_get : ∀ (x y : NE.t) (p : positive),
+  NE.get p (NE.lub x y) = na_getD ((fun a b =>
+    match a,b with | some u,some v=>some (NVal.lub u v) | none,_=>b | _,none=>a)
+       (PTree.get p x) (PTree.get p y)) := by
+  intro x y p
+  unfold NE.get NE.lub
+  have hc := PTree.gcombine_proof (A:=NVal.t) (B:=NVal.t) (C:=NVal.t)
+    (fun a b => match a,b with | some u,some v=>some (NVal.lub u v) | none,_=>b | _,none=>a)
+    (by rfl) x y p
+  exact congrArg na_getD hc
+private theorem na_ne_eq_refl : ∀ x : NE.t, NE.eq x x := by intro x p; exact t1 _
+private theorem na_ne_eq_sym : ∀ x y : NE.t, NE.eq x y -> NE.eq y x := by intro x y h p; exact t2 _ _ (h p)
+private theorem na_ne_eq_trans : ∀ x y z : NE.t, NE.eq x y -> NE.eq y z -> NE.eq x z := by intro x y z h k p; exact t3 _ _ _ (h p) (k p)
+private theorem na_ne_beq : ∀ x y : NE.t, NE.beq x y = true -> NE.eq x y := by
+  intro x y h p
+  have hp := (PTree.beq_correct_proof NVal.beq x y).mp h p
+  cases hx : PTree.get p x with
+  | none =>
+      cases hy : PTree.get p y with
+      | none => simpa only [NE.get, hx, hy] using (t1 NVal.bot)
+      | some v => simp [NE.get, hx, hy] at hp
+  | some u =>
+      cases hy : PTree.get p y with
+      | none => simp [NE.get, hx, hy] at hp
+      | some v =>
+          have huv : NVal.eq u v := t4 u v (by simpa [hx, hy] using hp)
+          simpa only [NE.get, hx, hy] using huv
+private theorem na_ne_ge_refl : ∀ x y : NE.t, NE.eq x y -> NE.ge x y := by intro x y h p; exact t5 _ _ (h p)
+private theorem na_ne_ge_trans : ∀ x y z : NE.t, NE.ge x y -> NE.ge y z -> NE.ge x z := by intro x y z h k p; exact t6 _ _ _ (h p) (k p)
+private theorem na_ne_ge_bot : ∀ x : NE.t, NE.ge x NE.bot := by intro x p; exact t7 _
+private theorem na_ne_lub_left : ∀ x y : NE.t, NE.ge (NE.lub x y) x := by
+  intro x y p
+  cases hx : PTree.get p x with
+  | none =>
+      cases hy : PTree.get p y with
+      | none =>
+          rw [na_ne_lub_get]
+          simp [na_getD, hx, hy, NE.get]
+          exact t7 _
+      | some v =>
+          rw [na_ne_lub_get]
+          simp [na_getD, hx, hy, NE.get]
+          exact t7 _
+  | some u =>
+      cases hy : PTree.get p y with
+      | none =>
+          rw [na_ne_lub_get]
+          simp [na_getD, hx, hy, NE.get]
+          exact t5 u u rfl
+      | some v =>
+          rw [na_ne_lub_get]
+          simp [na_getD, hx, hy, NE.get]
+          exact t8 u v
+private theorem na_ne_lub_right : ∀ x y : NE.t, NE.ge (NE.lub x y) y := by
+  intro x y p
+  cases hx : PTree.get p x with
+  | none =>
+      cases hy : PTree.get p y with
+      | none =>
+          rw [na_ne_lub_get]
+          simp [na_getD, hx, hy, NE.get]
+          exact t7 _
+      | some v =>
+          rw [na_ne_lub_get]
+          simp [na_getD, hx, hy, NE.get]
+          exact t5 v v rfl
+  | some u =>
+      cases hy : PTree.get p y with
+      | none =>
+          rw [na_ne_lub_get]
+          simp [na_getD, hx, hy, NE.get]
+          exact t7 _
+      | some v =>
+          rw [na_ne_lub_get]
+          simp [na_getD, hx, hy, NE.get]
+          exact t9 u v
+theorem solver_law_obligation_proof : solver_law_obligation := by
+  unfold solver_law_obligation na_lattice
+  constructor
+  · constructor
+    · intro x
+      change NA.t at x
+      exact ⟨na_ne_eq_refl x.1, by intro ge sp b ofs; rfl⟩
+    · intro x y h
+      change NA.t at x y
+      exact ⟨na_ne_eq_sym _ _ h.1, by intro ge sp b ofs; exact (h.2 ge sp b ofs).symm⟩
+    · intro x y z hxy hyz
+      change NA.t at x y z
+      exact ⟨na_ne_eq_trans _ _ _ hxy.1 hyz.1, by intro ge sp b ofs; exact Iff.trans (hxy.2 ge sp b ofs) (hyz.2 ge sp b ofs)⟩
+    · intro x y h
+      change NA.t at x y
+      have hh : NE.beq x.1 y.1 = true ∧ nmem_beq x.2 y.2 = true := by simpa [NA.beq] using h
+      have hne : NE.eq x.1 y.1 := na_ne_beq _ _ hh.1
+      have hmem : x.2 = y.2 := na_nmem_beq_eq _ _ hh.2
+      have hmiff : ∀ ge sp b ofs, nlive ge sp x.2 b ofs ↔ nlive ge sp y.2 b ofs := by
+        intro ge sp b ofs
+        rw [hmem]
+      exact ⟨hne, hmiff⟩
+    · intro x y h
+      change NA.t at x y
+      exact ⟨na_ne_ge_refl _ _ h.1, by intro ge sp b ofs hm; exact (h.2 ge sp b ofs).mpr hm⟩
+    · intro x y z hxy hyz
+      change NA.t at x y z
+      exact ⟨na_ne_ge_trans _ _ _ hxy.1 hyz.1, by intro ge sp b ofs hm; exact hxy.2 ge sp b ofs (hyz.2 ge sp b ofs hm)⟩
+    · intro x
+      change NA.t at x
+      exact ⟨na_ne_ge_bot _, by intro ge sp b ofs hm; cases hm⟩
+    · intro x y
+      change NA.t at x y
+      exact ⟨na_ne_lub_left _ _, by intro ge sp b ofs hm; exact na_nlive_lub_left ge sp x.2 y.2 b ofs hm⟩
+    · intro x y
+      change NA.t at x y
+      exact ⟨na_ne_lub_right _ _, by intro ge sp b ofs hm; exact na_nlive_lub_right ge sp x.2 y.2 b ofs hm⟩
+  · exact CompCert4Lean.Backend.Kildall.NodeSetBackward.law_obligation_proof
+end CompCert4Lean.Backend.Deadcode

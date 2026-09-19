@@ -2789,3 +2789,27 @@ theorem integer_representable_2p :
     split <;> simp only [hsub, hadd, hone, hthree] <;> omega
 
 end CompCert4Lean.Lib.IEEE754_extra
+
+namespace CompCert4Lean.Lib.IEEE754_extra
+
+open CompCert4Lean.Flocq.Core
+
+theorem integer_representable_opp :
+    ∀ {prec emax : Z},
+      integer_representable_oppStatement (prec := prec) (emax := emax) := by
+  intro prec emax ctx magnitude n hn
+  constructor
+  · change Zle (Zabs (Zopp n)) _
+    have habs : Zabs (Zopp n) = Zabs n :=
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.abs_opp n
+    rw [habs]
+    exact hn.1
+  · change Generic_fmt.Exact.generic_format ctx magnitude Zaux.radix2
+      (fexp prec emax) (Exact.IZR ctx (Zopp n))
+    have hizr : Exact.IZR ctx (Zopp n) = Exact.Ropp ctx (Exact.IZR ctx n) :=
+      CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.opp_IZR ctx n
+    rw [hizr]
+    exact Generic_fmt.generic_format_opp ctx magnitude Zaux.radix2
+      (fexp prec emax) (Exact.IZR ctx n) hn.2
+
+end CompCert4Lean.Lib.IEEE754_extra

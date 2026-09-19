@@ -5471,3 +5471,59 @@ theorem is_uns_usize : is_uns_usizeStatement := by
   exact is_uns_usize_select_aux i
 
 end CompCert4Lean.Backend.ValueDomain
+
+namespace CompCert4Lean.Backend.ValueDomain
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open Lean Elab Tactic Meta
+private def isUnsZeroExtSimpPrivate (suffixes : List String) : TacticM Unit := do
+  let mut ts : SimpTheorems := {}
+  for suffix in suffixes do
+    let eqs ← getEqnsFor? (isUns1PrivateName suffix)
+    match eqs with
+    | some eqs =>
+        for eqn in eqs do
+          let xs ← mkSimpTheoremFromConst eqn
+          for x in xs do ts := ts.addSimpTheorem x
+    | none => pure ()
+  let ctx ← Simp.mkContext {} #[ts]
+  let g ← getMainGoal
+  let (r, _) ← simpGoal g ctx
+  match r with
+  | none => replaceMainGoal []
+  | some (_, g') => replaceMainGoal [g']
+theorem is_uns_zero_ext : is_uns_zero_extStatement := by
+  intro n i
+  constructor
+  · intro hu
+    apply CompCert4Lean.Lib.Integers.Int.same_bits_eq_proof
+    intro m hm
+    rw [CompCert4Lean.Lib.Integers.Int.bits_zero_ext_proof n i m hm.1]
+    run_tac isUnsZeroExtSimpPrivate ["CompCert4Lean.Lib.Integers.zltSelect"]
+    cases hs : CompCert4Lean.Lib.Coqlib.zlt m n with
+    | left hlt =>
+        run_tac isUnsZeroExtSimpPrivate ["CompCert4Lean.Lib.Integers.sumboolSelect"]
+        rfl
+    | right hge =>
+        have hnm : zLe n m := by exact hge
+        have hf : CompCert4Lean.Lib.Integers.Int.testbit i m = false := hu m hm hnm
+        run_tac isUnsZeroExtSimpPrivate ["CompCert4Lean.Lib.Integers.sumboolSelect"]
+        exact hf.symm
+  · intro heq m hm hnm
+    have heq' : CompCert4Lean.Lib.Integers.Int.zero_ext n i = i := heq
+    have hb := CompCert4Lean.Lib.Integers.Int.bits_zero_ext_proof n i m hm.1
+    rw [heq'] at hb
+    change CompCert4Lean.Lib.Integers.Int.testbit i m = false
+    rw [hb]
+    run_tac isUnsZeroExtSimpPrivate ["CompCert4Lean.Lib.Integers.zltSelect"]
+    cases hs : CompCert4Lean.Lib.Coqlib.zlt m n with
+    | left hlt =>
+        have hcontra : ¬ zLe n m := by
+          intro hnm'
+          change intOfZ m < intOfZ n at hlt
+          change intOfZ n ≤ intOfZ m at hnm'
+          omega
+        exact (hcontra hnm).elim
+    | right hge =>
+        run_tac isUnsZeroExtSimpPrivate ["CompCert4Lean.Lib.Integers.sumboolSelect"]
+        rfl
+end CompCert4Lean.Backend.ValueDomain

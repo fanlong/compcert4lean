@@ -561,3 +561,133 @@ theorem combine_compimm_eq_0_sound
             (valu x) (.Vint Int.zero)).symm
 
 end CompCert4Lean.X86.CombineOpproof
+
+namespace CompCert4Lean.X86.CombineOpproof
+
+open CompCert4Lean.X86.CombineOp
+open CompCert4Lean.X86.Op
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Integers
+
+private theorem combine_offset_some_aux (a a' : addressing)
+    (n : CompCert4Lean.Foundation.Numbers.Rocq.Coq.Z)
+    (h : offset_addressing a n = some a') :
+    offset_addressing_total a n = a' := by
+  unfold offset_addressing at h
+  dsimp only at h
+  split at h
+  · exact Option.some.inj h
+  · cases h
+
+theorem combine_addr_32_sound
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    combine_addr_32_soundStatement := by
+  intro ge sp m get valu get_sound addr args addr' args' h
+  unfold combine_addr_32 at h
+  split at h
+  next n x =>
+    split at h
+    next a ys hget =>
+      split at h
+      next a' hoff =>
+        have hev := get_op_sound ge sp m get valu get_sound x (.Olea a) ys hget
+        change eval_addressing32 ge sp a (List.map valu ys) = some (valu x) at hev
+        have hp := Option.some.inj h
+        cases hp
+        rw [← combine_offset_some_aux a addr' n hoff]
+        exact eval_offset_addressing_total_32 _ _ ge sp a (List.map valu args') n (valu x) hev
+      next => cases h
+    next => cases h
+  next => cases h
+
+end CompCert4Lean.X86.CombineOpproof
+
+namespace CompCert4Lean.X86.CombineOpproof
+
+open CompCert4Lean.X86.CombineOp
+open CompCert4Lean.X86.Op
+
+theorem combine_addr_64_sound
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    combine_addr_64_soundStatement := by
+  intro ge sp m get valu get_sound addr args addr' args' h
+  unfold combine_addr_64 at h
+  split at h
+  next n x =>
+    split at h
+    next a ys hget =>
+      split at h
+      next a' hoff =>
+        have hev := get_op_sound ge sp m get valu get_sound x (.Oleal a) ys hget
+        change eval_addressing64 ge sp a (List.map valu ys) = some (valu x) at hev
+        have hp := Option.some.inj h
+        cases hp
+        rw [← combine_offset_some_aux a addr' n hoff]
+        exact eval_offset_addressing_total_64 _ _ ge sp a (List.map valu args') n (valu x) hev
+      next => cases h
+    next => cases h
+  next => cases h
+
+end CompCert4Lean.X86.CombineOpproof
+
+namespace CompCert4Lean.X86.CombineOpproof
+
+open CompCert4Lean.X86.CombineOp
+open CompCert4Lean.X86.Op
+
+theorem combine_cond_sound
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    combine_cond_soundStatement := by
+  intro ge sp m get valu get_sound cond args cond' args' h
+  unfold combine_cond at h
+  split at h
+  next n x =>
+    split at h
+    next hn =>
+      subst n
+      exact (combine_compimm_ne_0_sound ge sp m get valu get_sound x cond' args' h).1
+    next =>
+      split at h
+      next hn =>
+        subst n
+        exact (combine_compimm_ne_1_sound ge sp m get valu get_sound x cond' args' h).1
+      next => cases h
+  next n x =>
+    split at h
+    next hn =>
+      subst n
+      exact (combine_compimm_eq_0_sound ge sp m get valu get_sound x cond' args' h).1
+    next =>
+      split at h
+      next hn =>
+        subst n
+        exact (combine_compimm_eq_1_sound ge sp m get valu get_sound x cond' args' h).1
+      next => cases h
+  next n x =>
+    split at h
+    next hn =>
+      subst n
+      exact (combine_compimm_ne_0_sound ge sp m get valu get_sound x cond' args' h).2
+    next =>
+      split at h
+      next hn =>
+        subst n
+        exact (combine_compimm_ne_1_sound ge sp m get valu get_sound x cond' args' h).2
+      next => cases h
+  next n x =>
+    split at h
+    next hn =>
+      subst n
+      exact (combine_compimm_eq_0_sound ge sp m get valu get_sound x cond' args' h).2
+    next =>
+      split at h
+      next hn =>
+        subst n
+        exact (combine_compimm_eq_1_sound ge sp m get valu get_sound x cond' args' h).2
+      next => cases h
+  next => cases h
+
+end CompCert4Lean.X86.CombineOpproof

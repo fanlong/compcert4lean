@@ -5737,3 +5737,35 @@ theorem generic_format_ulp_0 :
             ((hvalid.valid_exp n).2 hn).1
 
 end CompCert4Lean.Flocq.Core.Ulp
+
+
+namespace CompCert4Lean.Flocq.Core.Ulp
+
+theorem pred_eq_pos :
+    ∀ (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx),
+      pred_eq_posStatement ctx magnitude := by
+  intro ctx magnitude beta fexp x hx
+  rcases ctx.certificate.total_order (Exact.R0 ctx) x with h | h
+  · rcases h with hpos | hzero
+    · exact pg_pred_ge_gt_pred_eq_pos ctx magnitude beta fexp x hpos
+    · subst x
+      rw [pred_0 ctx magnitude beta fexp]
+      have hne : Exact.R0 ctx ≠ Exact.bpow ctx beta
+          (Zsub (Exact.mag ctx magnitude beta (Exact.R0 ctx)) Zone) := by
+        intro heq
+        have hpos : Exact.Rlt ctx (Exact.R0 ctx) (Exact.bpow ctx beta
+            (Zsub (Exact.mag ctx magnitude beta (Exact.R0 ctx)) Zone)) :=
+          CompCert4Lean.Flocq.Core.Raux.bpow_gt_0 ctx beta _
+        rw [← heq] at hpos
+        exact ctx.certificate.orderedField.lt_irrefl _ hpos
+      have hbool : Exact.Req_bool ctx (Exact.R0 ctx) (Exact.bpow ctx beta
+          (Zsub (Exact.mag ctx magnitude beta (Exact.R0 ctx)) Zone)) = false :=
+        CompCert4Lean.Flocq.Core.Raux.Req_bool_false ctx _ _ hne
+      unfold Exact.pred_pos
+      rw [hbool]
+      simp only [Bool.false_eq_true, ↓reduceIte]
+      exact (ctx.certificate.orderedField.zero_add _).symm
+  · exact False.elim
+      (((ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp h).2 hx)
+
+end CompCert4Lean.Flocq.Core.Ulp

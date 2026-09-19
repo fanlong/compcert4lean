@@ -1343,3 +1343,23 @@ theorem Zcompare_Eq : Zcompare_EqStatement := by
   simp
 
 end CompCert4Lean.Flocq.Core.Zaux
+
+namespace CompCert4Lean.Flocq.Core.Zaux
+
+theorem Zcompare_Gt : Zcompare_GtStatement := by
+  intro x y h
+  change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ y <
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ x at h
+  change (if CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ x <
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ y then Lt else if
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ x =
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ y then Eq else Gt) = Gt
+  have hnlt : ¬ CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ x <
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ y := by
+    omega
+  have hneq : ¬ CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ x =
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ y := by
+    omega
+  simp [hnlt, hneq]
+
+end CompCert4Lean.Flocq.Core.Zaux

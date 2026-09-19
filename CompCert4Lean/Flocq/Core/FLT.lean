@@ -429,3 +429,101 @@ theorem ulp_FLT_small :
     rw [hmax]
 
 end CompCert4Lean.Flocq.Core.FLT
+
+namespace CompCert4Lean.Flocq.Core.FLT
+
+theorem generic_format_FLT :
+    ∀ (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx),
+      generic_format_FLTStatement ctx magnitude := by
+  intro ctx magnitude beta emin prec x hformat
+  cases hformat with
+  | FLT_spec f hfx hmant hemin =>
+      cases f with
+      | Float m e =>
+          rw [hfx]
+          apply CompCert4Lean.Flocq.Core.Generic_fmt.generic_format_F2R
+            ctx magnitude beta (FLT_exp emin prec) m e
+          intro hm
+          unfold CompCert4Lean.Flocq.Core.Generic_fmt.Exact.cexp
+          have hmag := CompCert4Lean.Flocq.Core.Float_prop.mag_F2R
+            ctx magnitude beta m e hm
+          change (CompCert4Lean.Flocq.Core.Raux.Exact.mag magnitude beta
+              (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.F2R ctx
+                (CompCert4Lean.Flocq.Core.Generic_fmt.Float beta m e))).mag_val =
+            Zadd (CompCert4Lean.Flocq.Core.Raux.Exact.mag magnitude beta
+              (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.IZR ctx m)).mag_val e at hmag
+          unfold FLT_exp
+          change Zle (Zmax (Zsub
+              (CompCert4Lean.Flocq.Core.Raux.Exact.mag magnitude beta
+                (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.F2R ctx
+                  (CompCert4Lean.Flocq.Core.Generic_fmt.Float beta m e))).mag_val
+              prec) emin) e
+          rw [hmag]
+          change Zle (Zmax (Zsub
+              (Zadd
+                (CompCert4Lean.Flocq.Core.Raux.Exact.mag magnitude beta
+                  (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.IZR ctx m)).mag_val e)
+              prec) emin) e
+          change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+              (Zmax (Zsub
+                (Zadd
+                  (CompCert4Lean.Flocq.Core.Raux.Exact.mag magnitude beta
+                    (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.IZR ctx m)).mag_val e)
+                prec) emin) ≤
+            CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ e
+          simp only [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.max]
+          by_cases hmax : CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+              (Zsub
+                (Zadd
+                  (CompCert4Lean.Flocq.Core.Raux.Exact.mag magnitude beta
+                    (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.IZR ctx m)).mag_val e)
+                prec) ≤
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ emin
+          · simp only [if_pos hmax]
+            exact hemin
+          · simp only [if_neg hmax]
+            have hsub : CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+                (Zsub
+                  (Zadd
+                    (CompCert4Lean.Flocq.Core.Raux.Exact.mag magnitude beta
+                      (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.IZR ctx m)).mag_val e)
+                  prec) =
+                CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+                  (Zadd
+                    (CompCert4Lean.Flocq.Core.Raux.Exact.mag magnitude beta
+                      (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.IZR ctx m)).mag_val e) -
+                  CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ prec := by
+              change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+                  (CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt
+                    (CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+                      (Zadd
+                        (CompCert4Lean.Flocq.Core.Raux.Exact.mag magnitude beta
+                          (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.IZR ctx m)).mag_val e) -
+                      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ prec)) = _
+              simp only [CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+            rw [hsub]
+            have hmag := CompCert4Lean.Flocq.Core.Raux.mag_le_Zpower
+              ctx magnitude beta m prec hm hmant
+            change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+                (CompCert4Lean.Flocq.Core.Raux.Exact.mag magnitude beta
+                  (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.IZR ctx m)).mag_val ≤
+              CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ prec at hmag
+            have hadd : CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+                (Zadd
+                  (CompCert4Lean.Flocq.Core.Raux.Exact.mag magnitude beta
+                    (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.IZR ctx m)).mag_val e) =
+                CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+                  (CompCert4Lean.Flocq.Core.Raux.Exact.mag magnitude beta
+                    (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.IZR ctx m)).mag_val +
+                  CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ e := by
+              change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+                  (CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt
+                    (CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+                      (CompCert4Lean.Flocq.Core.Raux.Exact.mag magnitude beta
+                        (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.IZR ctx m)).mag_val +
+                      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ e)) = _
+              simp only [CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+            rw [hadd]
+            omega
+
+end CompCert4Lean.Flocq.Core.FLT

@@ -704,3 +704,141 @@ theorem validate_jumptable_correct : validate_jumptable_correctStatement := by
   exact hresult
 
 end CompCert4Lean.Common.Switch
+
+namespace CompCert4Lean.Common.Switch
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+private theorem validate_rec_bool_true {P Q : Prop}
+    (d : CompCert4Lean.Foundation.Logic.Support.Sumbool P Q)
+    (h : boolOfSumbool d = true) : P := by
+  cases d with
+  | left hp => exact hp
+  | right _ => cases h
+
+private theorem validate_rec_refine_bounds (v key lo hi : Z)
+    (hne : v ≠ key) (hb : zLe lo v ∧ zLe v hi) :
+    zLe (refine_low_bound key lo) v ∧ zLe v (refine_high_bound key hi) := by
+  have hne' : intOfZ v ≠ intOfZ key := fun h => hne (intOfZ_injective h)
+  rcases hb with ⟨hl, hh⟩
+  change intOfZ lo ≤ intOfZ v at hl
+  change intOfZ v ≤ intOfZ hi at hh
+  constructor
+  · unfold refine_low_bound
+    cases he : zeq key lo with
+    | left hk =>
+        change intOfZ (zAdd lo z1) ≤ intOfZ v
+        simp only [zAdd, ZArith.BinInt.Z.add, intOfZ_zOfInt]
+        change intOfZ lo + 1 ≤ intOfZ v
+        rw [hk] at hne'
+        omega
+    | right _ => exact hl
+  · unfold refine_high_bound
+    cases he : zeq key hi with
+    | left hk =>
+        change intOfZ v ≤ intOfZ (zSub hi z1)
+        simp only [zSub, ZArith.BinInt.Z.sub, intOfZ_zOfInt]
+        change intOfZ v ≤ intOfZ hi - 1
+        rw [hk] at hne'
+        omega
+    | right _ => exact hh
+
+theorem validate_correct_rec : validate_correct_recStatement := by
+  intro modulus hmod default v hv t
+  induction t with
+  | CTaction act =>
+      intro cases lo hi hvalid hbound
+      cases cases with
+      | nil =>
+          have hact := (Arith.PeanoNat.Nat.eqb_eq act default).mp hvalid
+          simpa only [comptree_match, switch_target] using congrArg some hact
+      | cons p rem =>
+          rcases p with ⟨key1, act1⟩
+          simp only [validate, Bool.and_eq_true] at hvalid
+          have hkey : key1 = lo := validate_rec_bool_true _ hvalid.1
+          have hlo : lo = hi := validate_rec_bool_true _ hvalid.2.1
+          have hact := (Arith.PeanoNat.Nat.eqb_eq act act1).mp hvalid.2.2
+          have hvkey : v = key1 := by
+            apply intOfZ_injective
+            rcases hbound with ⟨hl, hh⟩
+            change intOfZ lo ≤ intOfZ v at hl
+            change intOfZ v ≤ intOfZ hi at hh
+            rw [← hlo, ← hkey] at hh
+            rw [← hkey] at hl
+            omega
+          cases he : zeq v key1 with
+          | left _ => simp only [comptree_match, switch_target, he, hact]
+          | right hn => exact (hn hvkey).elim
+  | CTifeq key act cne ih =>
+      intro cases lo hi hvalid hbound
+      cases hs : split_eq key cases with
+      | mk opt others =>
+          cases opt with
+          | none => simp [validate, hs] at hvalid
+          | some act' =>
+              simp only [validate, hs, Bool.and_eq_true] at hvalid
+              have hact := (Arith.PeanoNat.Nat.eqb_eq act act').mp hvalid.2.2.1
+              rw [split_eq_prop v default key cases (some act') others hs]
+              cases he : zeq v key with
+              | left _ => simp only [comptree_match, he, hact]
+              | right hn =>
+                  simp only [comptree_match, he]
+                  exact ih others (refine_low_bound key lo) (refine_high_bound key hi)
+                    hvalid.2.2.2 (validate_rec_refine_bounds v key lo hi hn hbound)
+  | CTiflt key clt cge ihl ihr =>
+      intro cases lo hi hvalid hbound
+      cases hs : split_lt key cases with
+      | mk lcases rcases =>
+          simp only [validate, hs, Bool.and_eq_true] at hvalid
+          rw [split_lt_prop v default key cases lcases rcases hs]
+          cases he : zlt v key with
+          | left hk =>
+              have hupper : zLe v (zSub key z1) := by
+                change intOfZ v < intOfZ key at hk
+                change intOfZ v ≤ intOfZ (zSub key z1)
+                simp only [zSub, ZArith.BinInt.Z.sub, intOfZ_zOfInt]
+                change intOfZ v ≤ intOfZ key - 1
+                omega
+              simp only [comptree_match, he]
+              exact ihl lcases lo (zSub key z1) hvalid.2.2.1 ⟨hbound.1, hupper⟩
+          | right hk =>
+              simp only [comptree_match, he]
+              exact ihr rcases key hi hvalid.2.2.2 ⟨hk, hbound.2⟩
+  | CTjumptable ofs sz acts cother ih =>
+      intro cases lo hi hvalid hbound
+      cases hs : split_between modulus default ofs sz cases with
+      | mk inside outside =>
+          simp only [validate, hs, Bool.and_eq_true] at hvalid
+          have hofs : zLe z0 ofs := validate_rec_bool_true _ hvalid.1
+          have hsz : zLe z0 sz := validate_rec_bool_true _ hvalid.2.2.1
+          have hsum : zLe (zAdd ofs sz) modulus :=
+            validate_rec_bool_true _ hvalid.2.2.2.2.1
+          have hlen : zLe sz (list_length_z acts) :=
+            validate_rec_bool_true _ hvalid.2.2.2.2.2.1
+          have hszint : zLt sz CompCert4Lean.Lib.Integers.Int.modulus :=
+            validate_rec_bool_true _ hvalid.2.2.2.2.2.2.1
+          have htable : validate_jumptable inside acts ofs = true :=
+            hvalid.2.2.2.2.2.2.2.1
+          have hother : validate modulus default outside cother lo hi = true :=
+            hvalid.2.2.2.2.2.2.2.2
+          rw [split_between_prop modulus v default ofs sz cases inside outside hs]
+          cases he : zlt (zMod (zSub v ofs) modulus) sz with
+          | left hd =>
+              have hrange := ZArith.BinInt.Z.modulo_range (zSub v ofs) modulus hmod
+              have hsmall : zMod (zMod (zSub v ofs) modulus)
+                  CompCert4Lean.Lib.Integers.Int.modulus = zMod (zSub v ofs) modulus := by
+                apply ZArith.BinInt.Z.mod_small
+                refine ⟨hrange.1, ?_⟩
+                change intOfZ (zMod (zSub v ofs) modulus) < intOfZ sz at hd
+                change intOfZ sz < intOfZ CompCert4Lean.Lib.Integers.Int.modulus at hszint
+                change intOfZ (zMod (zSub v ofs) modulus) <
+                  intOfZ CompCert4Lean.Lib.Integers.Int.modulus
+                omega
+              simp only [comptree_match, he, hsmall]
+              exact validate_jumptable_correct modulus hmod inside acts ofs v sz
+                htable hd hsz hofs hsum hv hlen
+          | right _ =>
+              simp only [comptree_match, he]
+              exact ih outside lo hi hother hbound
+
+end CompCert4Lean.Common.Switch

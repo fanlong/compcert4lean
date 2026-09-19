@@ -1692,3 +1692,69 @@ theorem eqmod_mod : eqmod_modStatement := by
 
 theorem equal_same_bits : equal_same_bitsStatement :=
   CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.bits_inj'
+
+private theorem zb_mod_two_p_high_bit (n : Nat) (y i : Z)
+    (hy : zLe zZero y ∧ zLt y (zTwoPowerNat n))
+    (hi : zLe (zOfNat n) i) : zTestbit y i = false := by
+  have hlt : intOfZ y < (2 : Int) ^ n := by
+    have h : intOfZ y < intOfZ (zTwoPowerNat n) := hy.2
+    rw [zb_two_power_nat_int] at h
+    exact h
+  have hin : (n : Int) ≤ intOfZ i := by
+    have h : intOfZ (zOfNat n) ≤ intOfZ i := hi
+    rw [zb_zOfNat_int] at h
+    exact h
+  cases y with
+  | Z0 => exact Ztestbit_0 i
+  | Zneg p =>
+      have hy0 : 0 ≤ -(posToNat p : Int) := hy.1
+      have hp := posToNat_positive p
+      omega
+  | Zpos p =>
+      have hp : posToNat p < 2 ^ n := by
+        change (posToNat p : Int) < (2 : Int) ^ n at hlt
+        have hcast : (2 : Int) ^ n = Int.ofNat (2 ^ n) :=
+          (Int.natCast_pow 2 n).symm
+        rw [hcast] at hlt
+        exact Int.ofNat_lt.mp hlt
+      cases i with
+      | Z0 =>
+          have hn : n = 0 := by
+            change (n : Int) ≤ 0 at hin
+            omega
+          rw [hn] at hp
+          have hp0 := posToNat_positive p
+          simp only [Nat.pow_zero] at hp
+          omega
+      | Zneg q =>
+          change (n : Int) ≤ -(posToNat q : Int) at hin
+          have hq := posToNat_positive q
+          omega
+      | Zpos q =>
+          change Nat.testBit (posToNat p) (posToNat q) = false
+          apply Nat.testBit_lt_two_pow
+          have hnq : n ≤ posToNat q := Int.ofNat_le.mp hin
+          exact Nat.lt_of_lt_of_le hp (Nat.pow_le_pow_right (by decide) hnq)
+
+theorem Ztestbit_mod_two_p : Ztestbit_mod_two_pStatement := by
+  intro n x i hn hi
+  let N := Int.toNat (intOfZ n)
+  have hrepr : n = zOfNat N := zb_z_nonneg_repr n hn
+  have hpow : zTwoP n = zTwoPowerNat N := by
+    rw [hrepr]
+    rfl
+  rw [hpow]
+  have hpos : zGt (zTwoPowerNat N) zZero := zbits_two_power_nat_pos N
+  cases hcmp : zltDec i n with
+  | left hlt =>
+      simp only [sumboolSelect]
+      have heq := eqmod_mod (zTwoPowerNat N) hpos x
+      exact (same_bits_eqmod N x (zModulo x (zTwoPowerNat N)) i heq
+        ⟨hi, by simpa only [hrepr] using hlt⟩).symm
+  | right hge =>
+      simp only [sumboolSelect]
+      apply zb_mod_two_p_high_bit N
+      · exact ZArith.Zdiv.Z_mod_lt x (zTwoPowerNat N) hpos
+      · change intOfZ (zOfNat N) ≤ intOfZ i
+        rw [← hrepr]
+        exact hge

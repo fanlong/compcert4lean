@@ -5057,3 +5057,20 @@ theorem field_offset_stable : field_offset_stableStatement := by
     hlink.2 f co.co_members hconsistent.co_consistent_complete
 
 end CompCert4Lean.Cfrontend.Cshmgenproof
+
+namespace CompCert4Lean.Cfrontend.Cshmgenproof
+
+theorem make_ptrofsconst_correct
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    make_ptrofsconst_correctStatement := by
+  intro ge n e le m
+  change T_eval_expr ge e le m
+    (Cshmgen.make_longconst (CompCert4Lean.Lib.Integers.Int64.repr n))
+    (.Vlong (CompCert4Lean.Lib.Integers.Int64.repr
+      (CompCert4Lean.Lib.Integers.Int64.unsigned
+        (CompCert4Lean.Lib.Integers.Int64.repr n))))
+  rw [int64_repr_unsigned_local]
+  exact make_longconst_correct ge (CompCert4Lean.Lib.Integers.Int64.repr n) e le m
+
+end CompCert4Lean.Cfrontend.Cshmgenproof

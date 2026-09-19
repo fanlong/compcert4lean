@@ -5273,3 +5273,44 @@ theorem ZArith.Zorder.Zle_lt_or_eq :
 
 end Rocq.Coq
 end CompCert4Lean.Foundation.Numbers
+
+namespace CompCert4Lean.Foundation.Numbers
+namespace Rocq.Coq
+
+theorem ZArith.Zorder.Zge_trans :
+    ZArith.Zorder.Zge_transStatement := by
+  intro n m p hnm hmp
+  exact Int.le_trans hmp hnm
+
+theorem ZArith.Zorder.Zle_lt_succ :
+    ZArith.Zorder.Zle_lt_succStatement := by
+  intro n m h
+  change intOfZ n ≤ intOfZ m at h
+  change intOfZ n < intOfZ (ZArith.BinInt.Z.succ m)
+  simp only [ZArith.BinInt.Z.succ, ZArith.BinInt.Z.add, intOfZ_zOfInt]
+  have hone : intOfZ (Zpos xH) = 1 := by simp [intOfZ, posToNat]
+  rw [hone]
+  omega
+
+theorem ZArith.Zorder.Zlt_succ_le :
+    ZArith.Zorder.Zlt_succ_leStatement := by
+  intro n m h
+  change intOfZ n < intOfZ (ZArith.BinInt.Z.succ m) at h
+  change intOfZ n ≤ intOfZ m
+  simp only [ZArith.BinInt.Z.succ, ZArith.BinInt.Z.add, intOfZ_zOfInt] at h
+  have hone : intOfZ (Zpos xH) = 1 := by simp [intOfZ, posToNat]
+  rw [hone] at h
+  omega
+
+theorem ZArith.Zorder.Zle_succ_le :
+    ZArith.Zorder.Zle_succ_leStatement := by
+  intro n m h
+  change intOfZ (ZArith.BinInt.Z.succ n) ≤ intOfZ m at h
+  change intOfZ n ≤ intOfZ m
+  simp only [ZArith.BinInt.Z.succ, ZArith.BinInt.Z.add, intOfZ_zOfInt] at h
+  have hone : intOfZ (Zpos xH) = 1 := by simp [intOfZ, posToNat]
+  rw [hone] at h
+  omega
+
+end Rocq.Coq
+end CompCert4Lean.Foundation.Numbers

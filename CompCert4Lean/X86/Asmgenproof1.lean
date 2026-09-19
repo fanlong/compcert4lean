@@ -2324,3 +2324,212 @@ theorem divs_mods_exists : divs_mods_existsStatement := by
     exact hdiv
 
 end CompCert4Lean.X86.Asmgenproof1
+
+namespace CompCert4Lean.X86.Asmgenproof1
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Backend.Asmgenproof0
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.X86.Asm
+open CompCert4Lean.X86.Asmgen
+
+private theorem shrximm_sub_zero (x : int) :
+    CompCert4Lean.Lib.Integers.Int.sub x CompCert4Lean.Lib.Integers.Int.zero = x := by
+  change WordCore.repr 32 (ZArith.BinInt.Z.sub
+    (CompCert4Lean.Lib.Integers.Int.unsigned x) Z0) = x
+  have hz (z : Z) : ZArith.BinInt.Z.sub z Z0 = z := by
+    apply intOfZ_injective
+    simp only [ZArith.BinInt.Z.sub, intOfZ_zOfInt,
+      show intOfZ Z0 = 0 from rfl, _root_.Int.sub_zero]
+  rw [hz]
+  exact CompCert4Lean.Lib.Integers.Int.repr_unsigned_proof x
+
+private theorem shrximm_overflow_zero (x : int) :
+    CompCert4Lean.Lib.Integers.Int.sub_overflow x
+      CompCert4Lean.Lib.Integers.Int.zero CompCert4Lean.Lib.Integers.Int.zero =
+      CompCert4Lean.Lib.Integers.Int.zero := by
+  have hr := CompCert4Lean.Lib.Integers.Int.signed_range_proof x
+  change -2147483648 ≤ intOfZ (CompCert4Lean.Lib.Integers.Int.signed x) ∧
+    intOfZ (CompCert4Lean.Lib.Integers.Int.signed x) ≤ 2147483647 at hr
+  unfold CompCert4Lean.Lib.Integers.Int.sub_overflow WordCore.sub_overflow
+  have hz (z : Z) : ZArith.BinInt.Z.sub z Z0 = z := by
+    apply intOfZ_injective
+    simp only [ZArith.BinInt.Z.sub, intOfZ_zOfInt,
+      show intOfZ Z0 = 0 from rfl, _root_.Int.sub_zero]
+  rw [show WordCore.signed CompCert4Lean.Lib.Integers.Int.zero = Z0 from
+    CompCert4Lean.Lib.Integers.Int.signed_zero_proof]
+  run_tac
+    let g ← Lean.Elab.Tactic.getMainGoal
+    let t ← Lean.Meta.transform (← g.getType) (post := fun e => do
+      if e.getAppFn.constName?.any (fun n =>
+          n.toString.startsWith "_private.CompCert4Lean.Lib.Integers.") then
+        return .visit (← Lean.Meta.unfoldDefinition e)
+      else return .continue)
+    Lean.Elab.Tactic.replaceMainGoal [← g.replaceTargetDefEq t]
+  dsimp only
+  rw [hz, hz]
+  cases CompCert4Lean.Lib.Coqlib.zlt (WordCore.signed x)
+      (ZArith.BinInt.Z.opp (two_power_nat (CompCert4Lean.Lib.Integers.Int.wordsize - 1))) with
+  | left h =>
+      change intOfZ (CompCert4Lean.Lib.Integers.Int.signed x) < -2147483648 at h
+      omega
+  | right _ =>
+      cases CompCert4Lean.Lib.Coqlib.zlt
+          (ZArith.BinInt.Z.sub (two_power_nat (CompCert4Lean.Lib.Integers.Int.wordsize - 1))
+            (Zpos xH)) (WordCore.signed x) with
+      | left h =>
+          change 2147483647 < intOfZ (CompCert4Lean.Lib.Integers.Int.signed x) at h
+          omega
+      | right _ => rfl
+
+private theorem shrximm_sign_condition (rs : regset) (x : int) (m : Mem) :
+    eval_testcond .Cond_l (compare_ints (.Vint x)
+      (.Vint CompCert4Lean.Lib.Integers.Int.zero) rs m) =
+      some (CompCert4Lean.Lib.Integers.Int.lt x CompCert4Lean.Lib.Integers.Int.zero) := by
+  change some (CompCert4Lean.Lib.Integers.Int.eq
+    (CompCert4Lean.Lib.Integers.Int.xor
+      (CompCert4Lean.Lib.Integers.Int.sub_overflow x
+        CompCert4Lean.Lib.Integers.Int.zero CompCert4Lean.Lib.Integers.Int.zero)
+      (CompCert4Lean.Lib.Integers.Int.negative
+        (CompCert4Lean.Lib.Integers.Int.sub x CompCert4Lean.Lib.Integers.Int.zero)))
+    CompCert4Lean.Lib.Integers.Int.one) = _
+  rw [shrximm_overflow_zero, shrximm_sub_zero]
+  change some (CompCert4Lean.Lib.Integers.Int.eq
+    (CompCert4Lean.Lib.Integers.Int.xor CompCert4Lean.Lib.Integers.Int.zero
+      (if CompCert4Lean.Lib.Integers.Int.lt x CompCert4Lean.Lib.Integers.Int.zero
+        then CompCert4Lean.Lib.Integers.Int.one else CompCert4Lean.Lib.Integers.Int.zero))
+    CompCert4Lean.Lib.Integers.Int.one) = _
+  cases h : CompCert4Lean.Lib.Integers.Int.lt x CompCert4Lean.Lib.Integers.Int.zero <;>
+    simp only [h, Bool.false_eq_true, if_false, if_true] <;> rfl
+
+
+private theorem shrximm_value (x n : int) (v : Val)
+    (h : Val.shrx (.Vint x) (.Vint n) = some v) :
+    Val.shr
+      (if CompCert4Lean.Lib.Integers.Int.lt x CompCert4Lean.Lib.Integers.Int.zero then
+        .Vint (CompCert4Lean.Lib.Integers.Int.add x
+          (CompCert4Lean.Lib.Integers.Int.sub
+            (CompCert4Lean.Lib.Integers.Int.shl CompCert4Lean.Lib.Integers.Int.one n)
+            CompCert4Lean.Lib.Integers.Int.one))
+      else .Vint x) (.Vint n) = v := by
+  have hn : CompCert4Lean.Lib.Integers.Int.ltu n
+      (CompCert4Lean.Lib.Integers.Int.repr (zOfNat 31)) = true := by
+    cases hc : CompCert4Lean.Lib.Integers.Int.ltu n
+        (CompCert4Lean.Lib.Integers.Int.repr (zOfNat 31))
+    · simp [Val.shrx, hc] at h
+    · rfl
+  have hlt := (CompCert4Lean.Lib.Integers.Int.ltu_inv_proof n
+    (CompCert4Lean.Lib.Integers.Int.repr (zOfNat 31)) hn).2
+  change intOfZ (CompCert4Lean.Lib.Integers.Int.unsigned n) < 31 at hlt
+  have hn32 : CompCert4Lean.Lib.Integers.Int.ltu n
+      CompCert4Lean.Lib.Integers.Int.iwordsize = true := by
+    unfold CompCert4Lean.Lib.Integers.Int.ltu WordCore.ltu
+    run_tac
+      let g ← Lean.Elab.Tactic.getMainGoal
+      let t ← Lean.Meta.transform (← g.getType) (post := fun e => do
+        if e.getAppFn.constName?.any (fun n =>
+            n.toString.startsWith "_private.CompCert4Lean.Lib.Integers.") then
+          return .visit (← Lean.Meta.unfoldDefinition e)
+        else return .continue)
+      Lean.Elab.Tactic.replaceMainGoal [← g.replaceTargetDefEq t]
+    dsimp only
+    cases CompCert4Lean.Lib.Coqlib.zlt (WordCore.unsigned n)
+        (WordCore.unsigned CompCert4Lean.Lib.Integers.Int.iwordsize) with
+    | left _ => rfl
+    | right hge =>
+        change 32 ≤ intOfZ (CompCert4Lean.Lib.Integers.Int.unsigned n) at hge
+        omega
+  have heq := CompCert4Lean.Lib.Integers.Int.shrx_shr_proof x n hn
+  simp only [Val.shrx, hn, if_true, Option.some.injEq] at h
+  change Vint (CompCert4Lean.Lib.Integers.Int.shrx x n) = v at h
+  rw [← h, heq]
+  cases hs : CompCert4Lean.Lib.Integers.Int.lt x CompCert4Lean.Lib.Integers.Int.zero <;>
+    simp [hs, Val.shr, hn32]
+
+
+theorem mk_shrximm_correct
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    mk_shrximm_correctStatement := by
+  intro ge fn n k c rs1 v m hmk hv
+  obtain ⟨x, hx⟩ : ∃ x, rs1 (.IR .RAX) = Vint x := by
+    cases he : rs1 (.IR .RAX) <;> try { simp [Val.shrx, he] at hv }
+    exact ⟨_, rfl⟩
+  have hvalue := shrximm_value x n v (by simpa only [hx] using hv)
+  let p := CompCert4Lean.Lib.Integers.Int.sub
+    (CompCert4Lean.Lib.Integers.Int.shl CompCert4Lean.Lib.Integers.Int.one n)
+    CompCert4Lean.Lib.Integers.Int.one
+  let x' := CompCert4Lean.Lib.Integers.Int.add x p
+  let rs2 := nextinstr (compare_ints (.Vint x)
+    (.Vint CompCert4Lean.Lib.Integers.Int.zero) rs1 m)
+  let rs3 := nextinstr (Pregmap.set (.IR .RCX) (.Vint x') rs2)
+  let v' : Val := if CompCert4Lean.Lib.Integers.Int.lt x
+    CompCert4Lean.Lib.Integers.Int.zero then .Vint x' else .Vint x
+  let rs4 := nextinstr (Pregmap.set (.IR .RAX) v' rs3)
+  let rs5 := nextinstr_nf (Pregmap.set (.IR .RAX)
+    (Val.shr (rs4 (.IR .RAX)) (.Vint n)) rs4)
+  have h2rax : rs2 (.IR .RAX) = Vint x := by
+    simp [rs2, nextinstr, compare_ints, Pregmap.set, hx]
+  have h3rax : rs3 (.IR .RAX) = Vint x := by
+    simp [rs3, nextinstr, Pregmap.set, h2rax]
+  have h3rcx : rs3 (.IR .RCX) = Vint x' := by
+    simp [rs3, nextinstr, Pregmap.set]
+  have h4rax : rs4 (.IR .RAX) = v' := by
+    simp [rs4, nextinstr, Pregmap.set]
+  have hcond : eval_testcond .Cond_l rs3 =
+      some (CompCert4Lean.Lib.Integers.Int.lt x CompCert4Lean.Lib.Integers.Int.zero) := by
+    exact (eval_testcond_nextinstr .Cond_l
+      (Pregmap.set (.IR .RCX) (.Vint x') rs2)).trans
+      ((eval_testcond_set_ireg .Cond_l rs2 .RCX (.Vint x')).trans
+        ((eval_testcond_nextinstr .Cond_l
+          (compare_ints (.Vint x) (.Vint CompCert4Lean.Lib.Integers.Int.zero) rs1 m)).trans
+          (shrximm_sign_condition rs1 x m)))
+  unfold mk_shrximm at hmk
+  injection hmk with hc
+  subst c
+  refine ⟨rs5, ?_, ?_, ?_⟩
+  · apply exec_straight_step (rs2 := rs2) (m2 := m)
+    · change Next (nextinstr (compare_ints
+        (Val.and (rs1 (.IR .RAX)) (rs1 (.IR .RAX))) Vzero rs1 m)) m = _
+      rw [hx]
+      change Next (nextinstr (compare_ints
+        (Vint (CompCert4Lean.Lib.Integers.Int.and x x)) Vzero rs1 m)) m = _
+      rw [CompCert4Lean.Lib.Integers.Int.and_idem_proof]
+      rfl
+    · rfl
+    · apply exec_straight_step (rs2 := rs3) (m2 := m)
+      · change Next (nextinstr (Pregmap.set (.IR .RCX)
+          (eval_addrmode32 ge (.Addrmode (some .RAX) none
+            (.inl (CompCert4Lean.Lib.Integers.Int.unsigned p))) rs2) rs2)) m = _
+        have ha : eval_addrmode32 ge (.Addrmode (some .RAX) none
+            (.inl (CompCert4Lean.Lib.Integers.Int.unsigned p))) rs2 = Vint x' := by
+          change Val.add (rs2 (.IR .RAX))
+            (Val.add (Vint CompCert4Lean.Lib.Integers.Int.zero)
+              (Vint (CompCert4Lean.Lib.Integers.Int.repr
+                (CompCert4Lean.Lib.Integers.Int.unsigned p)))) = _
+          rw [h2rax, CompCert4Lean.Lib.Integers.Int.repr_unsigned_proof]
+          change Vint (CompCert4Lean.Lib.Integers.Int.add x
+            (CompCert4Lean.Lib.Integers.Int.add CompCert4Lean.Lib.Integers.Int.zero p)) = _
+          rw [CompCert4Lean.Lib.Integers.Int.add_zero_l_proof]
+        rw [ha]
+      · rfl
+      · apply exec_straight_step (rs2 := rs4) (m2 := m)
+        · change Next (nextinstr (Pregmap.set (.IR .RAX)
+            (match eval_testcond .Cond_l rs3 with
+              | some b => if b then rs3 (.IR .RCX) else rs3 (.IR .RAX)
+              | none => Vundef) rs3)) m = _
+          rw [hcond, h3rax, h3rcx]
+        · rfl
+        · apply exec_straight_one
+          · rfl
+          · rfl
+  · change Val.shr (rs4 (.IR .RAX)) (.Vint n) = v
+    rw [h4rax]
+    exact hvalue
+  · intro r hr hrax hrcx
+    cases r <;>
+      simp_all [rs5, rs4, rs3, rs2, nextinstr_nf, nextinstr,
+        undef_regs, compare_ints, Pregmap.set, data_preg]
+
+end CompCert4Lean.X86.Asmgenproof1

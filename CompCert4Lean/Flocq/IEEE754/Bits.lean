@@ -681,3 +681,311 @@ theorem split_join_bits : split_join_bitsStatement := by
       · exact hmod_e
 
 end CompCert4Lean.Flocq.IEEE754.Bits
+
+
+namespace CompCert4Lean.Flocq.IEEE754.Bits
+
+open CompCert4Lean.Flocq.Core
+
+private abbrev I := CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+private theorem bits_exp_bounds (mw ew e : Z) (Hmw : Zlt Z0 mw) (Hew : Zlt Z0 ew)
+    (hemin : Zle (emin mw ew) e)
+    (hexp : Zle e (Zsub (emax ew) (prec mw))) :
+    Zle Z0 (Zadd (Zsub e (emin mw ew)) Zone) ∧
+      Zlt (Zadd (Zsub e (emin mw ew)) Zone) (Zpower Ztwo ew) := by
+  have zadd_int : ∀ a b : Z, I (Zadd a b) = I a + I b := by
+    intro a b; change I (CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt (I a + I b)) = _
+    exact CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt _
+  have zsub_int : ∀ a b : Z, I (Zsub a b) = I a - I b := by
+    intro a b; change I (CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt (I a - I b)) = _
+    exact CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt _
+  have hone : I Zone = 1 := by decide
+  have hthree : I (Zsub (Zsub (Z_of_nat 3) (emax ew)) (prec mw)) =
+      3 - I (emax ew) - I (prec mw) := by
+    rw [zsub_int, zsub_int]
+    have h3 : I (Z_of_nat 3) = 3 := by decide
+    rw [h3]
+  have hemin_formula : I (emin mw ew) = 3 - I (emax ew) - I (prec mw) := by
+    change I (BinarySingleNaN.emin0 (prec mw) (emax ew)) = _
+    simp [BinarySingleNaN.emin0,
+      CompCert4Lean.Lib.Floats.Model.Rocq.Coq.Floats.SpecFloat.emin]
+    exact hthree
+  have hew0 : Zle Z0 (Zsub ew Zone) := by
+    change (0 : Int) ≤ I (Zsub ew Zone)
+    rw [zsub_int, hone]
+    change 0 < I ew at Hew
+    omega
+  have hzone0 : Zle Z0 Zone := by
+    change (0 : Int) ≤ I Zone
+    rw [hone]
+    omega
+  have hp := Zaux.Zpower_plus Ztwo (Zsub ew Zone) Zone hew0 hzone0
+  have harg : Zadd (Zsub ew Zone) Zone = ew := by
+    apply CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective
+    change I (Zadd (Zsub ew Zone) Zone) = I ew
+    rw [zadd_int, zsub_int, hone]
+    change 0 < I ew at Hew
+    omega
+  have hpI := congrArg I hp
+  change I (Zpower Ztwo (Zadd (Zsub ew Zone) Zone)) =
+      I (Zmul (Zpower Ztwo (Zsub ew Zone)) (Zpower Ztwo Zone)) at hpI
+  have hzmul : ∀ a b : Z, I (Zmul a b) = I a * I b := by
+    intro a b; change I (CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt (I a * I b)) = _
+    exact CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt _
+  have htwo : I (Zpower Ztwo Zone) = 2 := by decide
+  rw [hzmul, htwo] at hpI
+  have hpowrel : I (Zpower Ztwo ew) = 2 * I (emax ew) := by
+    have this := hpI
+    rw [harg] at this
+    simpa [emax, Int.mul_comm] using this
+  change 0 ≤ I (Zadd (Zsub e (emin mw ew)) Zone) ∧
+    I (Zadd (Zsub e (emin mw ew)) Zone) < I (Zpower Ztwo ew)
+  rw [zadd_int, zsub_int, hone]
+  change I e ≤ I (Zsub (emax ew) (prec mw)) at hexp
+  rw [zsub_int] at hexp
+  change I (emin mw ew) ≤ I e at hemin
+  rw [hemin_formula] at hemin
+  rw [hpowrel]
+  omega
+
+
+theorem split_bits_of_binary_float_correct : split_bits_of_binary_float_correctStatement := by
+  intro mw ew Hmw Hew x
+  cases x with
+  | mk x hx =>
+    cases x with
+    | B754_zero s =>
+      apply split_join_bits
+      · change 0 ≤ I Z0 ∧ I Z0 < I (Zpower Ztwo mw)
+        have hp := Zaux.Zpower_gt_0 Zaux.radix2 mw (Int.le_of_lt Hmw)
+        change 0 < I (Zpower Ztwo mw) at hp
+        have hz : I Z0 = 0 := by decide
+        rw [hz]
+        constructor <;> omega
+      · change 0 ≤ I Z0 ∧ I Z0 < I (Zpower Ztwo ew)
+        have hp := Zaux.Zpower_gt_0 Zaux.radix2 ew (Int.le_of_lt Hew)
+        change 0 < I (Zpower Ztwo ew) at hp
+        have hz : I Z0 = 0 := by decide
+        rw [hz]
+        constructor <;> omega
+    | B754_infinity s =>
+      apply split_join_bits
+      · change 0 ≤ I Z0 ∧ I Z0 < I (Zpower Ztwo mw)
+        have hp := Zaux.Zpower_gt_0 Zaux.radix2 mw (Int.le_of_lt Hmw)
+        change 0 < I (Zpower Ztwo mw) at hp
+        have hz : I Z0 = 0 := by decide
+        rw [hz]
+        constructor <;> omega
+      · have zsub_int : ∀ a b : Z, I (Zsub a b) = I a - I b := by
+          intro a b
+          change I (CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt (I a - I b)) = _
+          exact CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt _
+        change 0 ≤ I (Zsub (Zpower Ztwo ew) Zone) ∧ I (Zsub (Zpower Ztwo ew) Zone) < I (Zpower Ztwo ew)
+        have hp := Zaux.Zpower_gt_0 Zaux.radix2 ew (Int.le_of_lt Hew)
+        change 0 < I (Zpower Ztwo ew) at hp
+        have hone : I Zone = 1 := by decide
+        rw [zsub_int, hone]
+        constructor <;> omega
+    | B754_nan s pl =>
+      simp [bits_of_binary_float, split_bits_of_binary_float]
+      simp [Binary.BinaryFloatCertificate, Binary.B2FF, Binary.valid_binary, Binary.nan_pl] at hx
+      have hspec := Zaux.Zlt_bool_spec (Zpos (BinarySingleNaN.digits2_pos pl)) (prec mw)
+      have hspec' : Zaux.Zlt_bool_prop (Zpos (BinarySingleNaN.digits2_pos pl)) (prec mw) true := by
+        simpa [hx] using hspec
+      have hdigits : Zlt (Zpos (BinarySingleNaN.digits2_pos pl)) (prec mw) := by
+        cases hspec' with
+        | Zlt_bool_true_ h => exact h
+      have hd := CompCert4Lean.Flocq.Core.Digits.digits2_Pnat_correct pl
+      have hupper0' := hd.2
+      have hpow_eq : CompCert4Lean.Flocq.Core.Digits.Zpower_nat
+            CompCert4Lean.Flocq.Core.Digits.Ztwo
+            (Nat.succ (CompCert4Lean.Flocq.Core.Digits.digits2_Pnat pl)) =
+          Zpower Ztwo (Z_of_nat (Nat.succ (CompCert4Lean.Flocq.Core.Digits.digits2_Pnat pl))) := by
+        rfl
+      rw [hpow_eq] at hupper0'
+      have hupper0 : Zlt (Zpos pl)
+          (Zpower Ztwo (Z_of_nat (Nat.succ (CompCert4Lean.Flocq.Core.Digits.digits2_Pnat pl)))) := hupper0'
+      have zadd_int : ∀ a b : Z, I (Zadd a b) = I a + I b := by
+        intro a b
+        change I (CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt (I a + I b)) = _
+        exact CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt _
+      have hexp : Zle (Z_of_nat (Nat.succ (CompCert4Lean.Flocq.Core.Digits.digits2_Pnat pl))) mw := by
+        change I (Z_of_nat (Nat.succ (CompCert4Lean.Flocq.Core.Digits.digits2_Pnat pl))) ≤ I mw
+        change I (Zpos (BinarySingleNaN.digits2_pos pl)) < I (Zadd mw Zone) at hdigits
+        have heq : I (Zpos (BinarySingleNaN.digits2_pos pl)) =
+            I (Z_of_nat (Nat.succ (CompCert4Lean.Flocq.Core.Digits.digits2_Pnat pl))) := by
+          have hh := CompCert4Lean.Flocq.Core.Digits.Z_of_nat_S_digits2_Pnat pl
+          have hp := CompCert4Lean.Flocq.Core.Digits.Zpos_digits2_pos pl
+          have heqD : Zpos (BinarySingleNaN.digits2_pos pl) =
+              Z_of_nat (Nat.succ (CompCert4Lean.Flocq.Core.Digits.digits2_Pnat pl)) := by
+            calc
+              Zpos (BinarySingleNaN.digits2_pos pl) =
+                  CompCert4Lean.Flocq.Core.Digits.Zdigits
+                    CompCert4Lean.Flocq.Core.Digits.radix2 (Zpos pl) := by simpa using hp
+              _ = Z_of_nat (Nat.succ (CompCert4Lean.Flocq.Core.Digits.digits2_Pnat pl)) := by
+                simpa using hh.symm
+          exact congrArg I heqD
+        rw [heq, zadd_int] at hdigits
+        have hone : I Zone = 1 := by decide
+        rw [hone] at hdigits
+        omega
+      have hpowle := Zaux.Zpower_le Zaux.radix2
+        (Z_of_nat (Nat.succ (CompCert4Lean.Flocq.Core.Digits.digits2_Pnat pl))) mw hexp
+      have hmupper : Zlt (Zpos pl) (Zpower Ztwo mw) :=
+        Int.lt_of_lt_of_le hupper0 hpowle
+      apply split_join_bits
+      · have hp := Zaux.Zpower_gt_0 Zaux.radix2 mw (Int.le_of_lt Hmw)
+        change 0 < I (Zpower Ztwo mw) at hp
+        change 0 ≤ I (Zpos pl) ∧ I (Zpos pl) < I (Zpower Ztwo mw)
+        exact ⟨by simp [CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ], hmupper⟩
+      · have hp := Zaux.Zpower_gt_0 Zaux.radix2 ew (Int.le_of_lt Hew)
+        change 0 < I (Zpower Ztwo ew) at hp
+        have zsub_int : ∀ a b : Z, I (Zsub a b) = I a - I b := by
+          intro a b
+          change I (CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt (I a - I b)) = _
+          exact CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt _
+        change 0 ≤ I (Zsub (Zpower Ztwo ew) Zone) ∧ I (Zsub (Zpower Ztwo ew) Zone) < I (Zpower Ztwo ew)
+        rw [zsub_int]
+        have hone : I Zone = 1 := by decide
+        rw [hone]
+        constructor <;> omega
+    | B754_finite s m e =>
+      simp [bits_of_binary_float, split_bits_of_binary_float]
+      simp [Binary.BinaryFloatCertificate, Binary.B2FF, Binary.valid_binary] at hx
+      change (BinarySingleNaN.canonical_mantissa0 (prec mw) (emax ew) m e &&
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.Zbool.Zle_bool e
+          (Zsub (emax ew) (prec mw))) = true at hx
+      have Hparts := Bool.and_eq_true_iff.mp hx
+      have Hcan := Hparts.1
+      have Hexp := Hparts.2
+      change CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.Zbool.Zeq_bool
+          (Binary.fexp0 (prec mw) (emax ew)
+            (Zadd (Zpos (BinarySingleNaN.digits2_pos m)) e)) e = true at Hcan
+      simp only [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.Zbool.Zeq_bool] at Hcan
+      simp at Hcan
+      simp only [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.Zbool.Zle_bool] at Hexp
+      have Hexp' : Zle e (Zsub (emax ew) (prec mw)) := by
+        have hs := Zaux.Zle_bool_spec e (Zsub (emax ew) (prec mw))
+        have hs' : Zaux.Zle_bool_prop e (Zsub (emax ew) (prec mw)) true := by
+          simpa [Hexp] using hs
+        cases hs' with
+        | Zle_bool_true_ h => exact h
+      change CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.max
+          (Zsub (Zadd (Zpos (BinarySingleNaN.digits2_pos m)) e) (prec mw))
+          (emin mw ew) = e at Hcan
+      have zadd_int : ∀ a b : Z, I (Zadd a b) = I a + I b := by
+        intro a b
+        change I (CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt (I a + I b)) = _
+        exact CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt _
+      have zsub_int : ∀ a b : Z, I (Zsub a b) = I a - I b := by
+        intro a b
+        change I (CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt (I a - I b)) = _
+        exact CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt _
+      have hmaxa0 := CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.le_max_l
+        (Zsub (Zadd (Zpos (BinarySingleNaN.digits2_pos m)) e) (prec mw)) (emin mw ew)
+      have hmaxb0 := CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.le_max_r
+        (Zsub (Zadd (Zpos (BinarySingleNaN.digits2_pos m)) e) (prec mw)) (emin mw ew)
+      rw [Hcan] at hmaxa0 hmaxb0
+      have hdigits0 : Zle (Zpos (BinarySingleNaN.digits2_pos m)) (prec mw) := by
+        change I (Zpos (BinarySingleNaN.digits2_pos m)) ≤ I (prec mw)
+        change I (Zsub (Zadd (Zpos (BinarySingleNaN.digits2_pos m)) e) (prec mw)) ≤ I e at hmaxa0
+        rw [zsub_int, zadd_int] at hmaxa0
+        omega
+      have hdigits : Zle (CompCert4Lean.Flocq.Core.Digits.Zdigits
+          CompCert4Lean.Flocq.Core.Digits.radix2 (Zpos m)) (prec mw) := by
+        have hp := CompCert4Lean.Flocq.Core.Digits.Zpos_digits2_pos m
+        rw [← hp]
+        exact hdigits0
+      have hemin : Zle (emin mw ew) e := hmaxb0
+      have hmlt_prec : Zlt (Zpos m) (Zpower Ztwo (prec mw)) := by
+        have hd := CompCert4Lean.Flocq.Core.Digits.digits2_Pnat_correct m
+        have hupper0' := hd.2
+        have hpow_eq : CompCert4Lean.Flocq.Core.Digits.Zpower_nat
+              CompCert4Lean.Flocq.Core.Digits.Ztwo
+              (Nat.succ (CompCert4Lean.Flocq.Core.Digits.digits2_Pnat m)) =
+            Zpower Ztwo (Z_of_nat (Nat.succ (CompCert4Lean.Flocq.Core.Digits.digits2_Pnat m))) := by
+          rfl
+        rw [hpow_eq] at hupper0'
+        have hp := CompCert4Lean.Flocq.Core.Digits.Zpos_digits2_pos m
+        have heqD : Zpos (BinarySingleNaN.digits2_pos m) =
+            Z_of_nat (Nat.succ (CompCert4Lean.Flocq.Core.Digits.digits2_Pnat m)) := by
+          calc
+            Zpos (BinarySingleNaN.digits2_pos m) =
+                CompCert4Lean.Flocq.Core.Digits.Zdigits
+                  CompCert4Lean.Flocq.Core.Digits.radix2 (Zpos m) := by simpa using hp
+            _ = Z_of_nat (Nat.succ (CompCert4Lean.Flocq.Core.Digits.digits2_Pnat m)) := by
+              have hh := CompCert4Lean.Flocq.Core.Digits.Z_of_nat_S_digits2_Pnat m
+              simpa using hh.symm
+        have hexp : Zle (Z_of_nat (Nat.succ (CompCert4Lean.Flocq.Core.Digits.digits2_Pnat m))) (prec mw) := by
+          change I (Z_of_nat (Nat.succ (CompCert4Lean.Flocq.Core.Digits.digits2_Pnat m))) ≤ I (prec mw)
+          rw [← heqD]
+          exact hdigits0
+        have hpowle := Zaux.Zpower_le Zaux.radix2
+          (Z_of_nat (Nat.succ (CompCert4Lean.Flocq.Core.Digits.digits2_Pnat m))) (prec mw) hexp
+        exact Int.lt_of_lt_of_le hupper0' hpowle
+      by_cases hb : Zle_bool Z0 (Zsub (Zpos m) (Zpower Ztwo mw)) = true
+      · simp [hb]
+        apply split_join_bits
+        · have hnon : Zle Z0 (Zsub (Zpos m) (Zpower Ztwo mw)) := by
+            have hs := Zaux.Zle_bool_spec Z0 (Zsub (Zpos m) (Zpower Ztwo mw))
+            have hs' : Zaux.Zle_bool_prop Z0 (Zsub (Zpos m) (Zpower Ztwo mw)) true := by
+              simpa [hb] using hs
+            cases hs' with
+            | Zle_bool_true_ h => exact h
+          change 0 ≤ I (Zsub (Zpos m) (Zpower Ztwo mw)) ∧
+            I (Zsub (Zpos m) (Zpower Ztwo mw)) < I (Zpower Ztwo mw)
+          rw [zsub_int]
+          have hmI : I (Zpos m) < I (Zpower Ztwo (prec mw)) := hmlt_prec
+          have hmI' : I (Zpos m) < 2 * I (Zpower Ztwo mw) := by
+            have zpow_prec : I (Zpower Ztwo (prec mw)) =
+                2 * I (Zpower Ztwo mw) := by
+              have hmw0 : Zle Z0 mw := Int.le_of_lt Hmw
+              have hzone0 : Zle Z0 Zone := by
+                change (0 : Int) ≤ I Zone
+                have hone : I Zone = 1 := by decide
+                rw [hone]
+                omega
+              have hp := Zaux.Zpower_plus Ztwo mw Zone hmw0 hzone0
+              have hone : I Zone = 1 := by decide
+              have htwo : I (Zpower Ztwo Zone) = 2 := by decide
+              have hzmul : ∀ a b : Z, I (Zmul a b) = I a * I b := by
+                intro a b
+                change I (CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt (I a * I b)) = _
+                exact CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt _
+              have harg : Zadd mw Zone = prec mw := by rfl
+              have hpI := congrArg I hp
+              rw [hzmul, htwo] at hpI
+              simpa [prec, Int.mul_comm] using hpI
+            exact lt_of_lt_of_eq hmI zpow_prec
+          change 0 ≤ I (Zsub (Zpos m) (Zpower Ztwo mw)) at hnon
+          rw [zsub_int] at hnon
+          constructor <;> omega
+        · exact bits_exp_bounds mw ew e Hmw Hew hemin Hexp'
+      · simp [hb]
+        apply split_join_bits
+        · change 0 ≤ I (Zpos m) ∧ I (Zpos m) < I (Zpower Ztwo mw)
+          have hmpos : 0 < I (Zpos m) := by
+            change 0 < Int.ofNat (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat m)
+            exact Int.natCast_pos.mpr
+              (CompCert4Lean.Foundation.Numbers.Rocq.Coq.posToNat_positive m)
+          have hltbranch : Zlt (Zsub (Zpos m) (Zpower Ztwo mw)) Z0 := by
+            have hs := Zaux.Zle_bool_spec Z0 (Zsub (Zpos m) (Zpower Ztwo mw))
+            have hs' : Zaux.Zle_bool_prop Z0 (Zsub (Zpos m) (Zpower Ztwo mw)) false := by
+              simpa [hb] using hs
+            cases hs' with
+            | Zle_bool_false_ h => exact h
+          have hmlt : Zlt (Zpos m) (Zpower Ztwo mw) := by
+            change I (Zpos m) < I (Zpower Ztwo mw)
+            change I (Zsub (Zpos m) (Zpower Ztwo mw)) < I Z0 at hltbranch
+            rw [zsub_int] at hltbranch
+            have hz : I Z0 = 0 := by decide
+            rw [hz] at hltbranch
+            omega
+          exact ⟨by omega, hmlt⟩
+        · change 0 ≤ I Z0 ∧ I Z0 < I (Zpower Ztwo ew)
+          have hp := Zaux.Zpower_gt_0 Zaux.radix2 ew (Int.le_of_lt Hew)
+          change 0 < I (Zpower Ztwo ew) at hp
+          have hz : I Z0 = 0 := by decide
+          rw [hz]
+          constructor <;> omega
+end CompCert4Lean.Flocq.IEEE754.Bits

@@ -2968,3 +2968,244 @@ theorem eval_splitlong_strict : eval_splitlong_strictStatement := by
       · exact splitlong_eval_low_local xi (Genv.globalenv prog) sp e m le (.Vlong va)
 
 end CompCert4Lean.Backend.SplitLongproof
+
+namespace CompCert4Lean.Backend.SplitLongproof
+
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Backend.SplitLong
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.X86.Op
+
+variable
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+
+private theorem splitlong2_parts_longofwords_local (x y : val) (n : CCInt64)
+    (h : Val.longofwords x y = .Vlong n) :
+    x = .Vint (int64Hiword n) ∧ y = .Vint (int64Loword n) := by
+  cases x <;> cases y <;> simp [Val.longofwords] at h
+  subst n
+  rw [splitlong_hi_ofwords, splitlong_lo_ofwords]
+  exact ⟨rfl, rfl⟩
+
+private theorem splitlong2_result_lessdef_local
+    (va vb x1 x2 y1 y2 v : val) (sem : val → val → val)
+    (hun : match va, vb with
+      | .Vlong _, .Vlong _ => True
+      | _, _ => sem va vb = .Vundef)
+    (hx : ∀ n, va = .Vlong n →
+      x1 = .Vint (int64Hiword n) ∧ x2 = .Vint (int64Loword n))
+    (hy : ∀ n, vb = .Vlong n →
+      y1 = .Vint (int64Hiword n) ∧ y2 = .Vint (int64Loword n))
+    (hsem : ∀ (p1 p2 q1 q2 : CCInt),
+      x1 = .Vint p1 → x2 = .Vint p2 → y1 = .Vint q1 → y2 = .Vint q2 →
+      v = sem (.Vlong (int64Ofwords p1 p2)) (.Vlong (int64Ofwords q1 q2))) :
+    Val.lessdef (sem va vb) v := by
+  cases va <;> cases vb <;>
+    try (change sem _ _ = .Vundef at hun; rw [hun]; exact Val.lessdef_undef _)
+  rename_i p q
+  obtain ⟨hx1, hx2⟩ := hx p rfl
+  obtain ⟨hy1, hy2⟩ := hy q rfl
+  have hv := hsem _ _ _ _ hx1 hx2 hy1 hy2
+  rw [splitlong_recompose_local, splitlong_recompose_local] at hv
+  rw [hv]
+  exact Val.lessdef_refl _
+
+end CompCert4Lean.Backend.SplitLongproof
+
+namespace CompCert4Lean.Backend.SplitLongproof
+
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Backend.SplitLong
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.X86.Op
+
+variable
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+
+set_option maxHeartbeats 10000000 in
+set_option maxRecDepth 100000 in
+theorem eval_splitlong2 : eval_splitlong2Statement := by
+  intro xi prog sp e m le a b f va vb sem hexec hun ha hb
+  cases hm : splitlong2_match a b with
+  | splitlong2_case1 h1 l1 h2 l2 =>
+      obtain ⟨x1, x2, hx1, hx2, hva⟩ :=
+        splitlong_eval_makelong_any_local xi (Genv.globalenv prog) sp e m le h1 l1 va
+          (by simpa [hm] using ha)
+      obtain ⟨y1, y2, hy1, hy2, hvb⟩ :=
+        splitlong_eval_makelong_any_local xi (Genv.globalenv prog) sp e m le h2 l2 vb
+          (by simpa [hm] using hb)
+      obtain ⟨v, hv, hsem⟩ := hexec le h1 l1 h2 l2 x1 x2 y1 y2 hx1 hx2 hy1 hy2
+      refine ⟨v, ?_, ?_⟩
+      · simpa [splitlong2, hm] using hv
+      · have hxlong : ∀ n, va = .Vlong n →
+            x1 = .Vint (int64Hiword n) ∧ x2 = .Vint (int64Loword n) := by
+          intro n hn
+          apply splitlong2_parts_longofwords_local x1 x2 n
+          calc
+            Val.longofwords x1 x2 = va := hva.symm
+            _ = .Vlong n := hn
+        have hylong : ∀ n, vb = .Vlong n →
+            y1 = .Vint (int64Hiword n) ∧ y2 = .Vint (int64Loword n) := by
+          intro n hn
+          apply splitlong2_parts_longofwords_local y1 y2 n
+          calc
+            Val.longofwords y1 y2 = vb := hvb.symm
+            _ = .Vlong n := hn
+        exact splitlong2_result_lessdef_local va vb x1 x2 y1 y2 v sem hun
+          hxlong hylong hsem
+  | splitlong2_case2 h1 l1 t2 =>
+      obtain ⟨x1, x2, hx1, hx2, hva⟩ :=
+        splitlong_eval_makelong_any_local xi (Genv.globalenv prog) sp e m le h1 l1 va
+          (by simpa [hm] using ha)
+      have hx1' := CompCert4Lean.Backend.CminorSel.eval_lift xi
+        (Genv.globalenv prog) sp e m le h1 x1 vb hx1
+      have hx2' := CompCert4Lean.Backend.CminorSel.eval_lift xi
+        (Genv.globalenv prog) sp e m le l1 x2 vb hx2
+      have hhigh := splitlong_eval_high_local xi (Genv.globalenv prog) sp e m le vb
+      have hlow := splitlong_eval_low_local xi (Genv.globalenv prog) sp e m le vb
+      obtain ⟨v, hv, hsem⟩ := hexec (vb :: le) (lift h1) (lift l1)
+        (Eop Ohighlong (Econs (Eletvar 0) Enil))
+        (Eop Olowlong (Econs (Eletvar 0) Enil)) x1 x2
+        (Val.hiword vb) (Val.loword vb) hx1' hx2' hhigh hlow
+      refine ⟨v, ?_, ?_⟩
+      · have hele := eval_expr.eval_Elet le b
+          (f (lift h1) (lift l1)
+            (Eop Ohighlong (Econs (Eletvar 0) Enil))
+            (Eop Olowlong (Econs (Eletvar 0) Enil))) vb v hb hv
+        simpa [splitlong2, hm] using hele
+      · have hxlong : ∀ n, va = .Vlong n →
+            x1 = .Vint (int64Hiword n) ∧ x2 = .Vint (int64Loword n) := by
+          intro n hn
+          apply splitlong2_parts_longofwords_local x1 x2 n
+          calc
+            Val.longofwords x1 x2 = va := hva.symm
+            _ = .Vlong n := hn
+        have hylong : ∀ n, vb = .Vlong n →
+            Val.hiword vb = .Vint (int64Hiword n) ∧
+            Val.loword vb = .Vint (int64Loword n) := by
+          intro n hn
+          subst vb
+          simp [Val.hiword, Val.loword]
+        exact splitlong2_result_lessdef_local va vb x1 x2
+          (Val.hiword vb) (Val.loword vb) v sem hun hxlong hylong hsem
+  | splitlong2_case3 t1 h2 l2 =>
+      obtain ⟨y1, y2, hy1, hy2, hvb⟩ :=
+        splitlong_eval_makelong_any_local xi (Genv.globalenv prog) sp e m le h2 l2 vb
+          (by simpa [hm] using hb)
+      have hy1' := CompCert4Lean.Backend.CminorSel.eval_lift xi
+        (Genv.globalenv prog) sp e m le h2 y1 va hy1
+      have hy2' := CompCert4Lean.Backend.CminorSel.eval_lift xi
+        (Genv.globalenv prog) sp e m le l2 y2 va hy2
+      have hhigh := splitlong_eval_high_local xi (Genv.globalenv prog) sp e m le va
+      have hlow := splitlong_eval_low_local xi (Genv.globalenv prog) sp e m le va
+      obtain ⟨v, hv, hsem⟩ := hexec (va :: le)
+        (Eop Ohighlong (Econs (Eletvar 0) Enil))
+        (Eop Olowlong (Econs (Eletvar 0) Enil)) (lift h2) (lift l2)
+        (Val.hiword va) (Val.loword va) y1 y2 hhigh hlow hy1' hy2'
+      refine ⟨v, ?_, ?_⟩
+      · have hele := eval_expr.eval_Elet le a
+          (f (Eop Ohighlong (Econs (Eletvar 0) Enil))
+            (Eop Olowlong (Econs (Eletvar 0) Enil)) (lift h2) (lift l2)) va v ha hv
+        simpa [splitlong2, hm] using hele
+      · have hxlong : ∀ n, va = .Vlong n →
+            Val.hiword va = .Vint (int64Hiword n) ∧
+            Val.loword va = .Vint (int64Loword n) := by
+          intro n hn
+          subst va
+          simp [Val.hiword, Val.loword]
+        have hylong : ∀ n, vb = .Vlong n →
+            y1 = .Vint (int64Hiword n) ∧ y2 = .Vint (int64Loword n) := by
+          intro n hn
+          apply splitlong2_parts_longofwords_local y1 y2 n
+          calc
+            Val.longofwords y1 y2 = vb := hvb.symm
+            _ = .Vlong n := hn
+        exact splitlong2_result_lessdef_local va vb
+          (Val.hiword va) (Val.loword va) y1 y2 v sem hun hxlong hylong hsem
+  | splitlong2_default t1 t2 =>
+      have hblift := CompCert4Lean.Backend.CminorSel.eval_lift xi
+        (Genv.globalenv prog) sp e m le b vb va hb
+      have hhighx : eval_expr xi (Genv.globalenv prog) sp e m
+          (vb :: va :: le)
+          (Eop Ohighlong (Econs (Eletvar 1) Enil)) (Val.hiword va) := by
+        apply eval_expr.eval_Eop
+          (le := vb :: va :: le) (op := Ohighlong)
+          (al := Econs (Eletvar 1) Enil) (vl := [va])
+          (Val.hiword va)
+        · exact eval_exprlist.cons (vb :: va :: le) (Eletvar 1) Enil
+            va []
+            (eval_expr.eval_Eletvar (vb :: va :: le) 1 va (by rfl))
+            (eval_exprlist.nil (vb :: va :: le))
+        · rfl
+      have hlowx : eval_expr xi (Genv.globalenv prog) sp e m
+          (vb :: va :: le)
+          (Eop Olowlong (Econs (Eletvar 1) Enil)) (Val.loword va) := by
+        apply eval_expr.eval_Eop
+          (le := vb :: va :: le) (op := Olowlong)
+          (al := Econs (Eletvar 1) Enil) (vl := [va])
+          (Val.loword va)
+        · exact eval_exprlist.cons (vb :: va :: le) (Eletvar 1) Enil
+            va []
+            (eval_expr.eval_Eletvar (vb :: va :: le) 1 va (by rfl))
+            (eval_exprlist.nil (vb :: va :: le))
+        · rfl
+      have hhighy : eval_expr xi (Genv.globalenv prog) sp e m
+          (vb :: va :: le)
+          (Eop Ohighlong (Econs (Eletvar 0) Enil)) (Val.hiword vb) := by
+        apply eval_expr.eval_Eop
+          (le := vb :: va :: le) (op := Ohighlong)
+          (al := Econs (Eletvar 0) Enil) (vl := [vb])
+          (Val.hiword vb)
+        · exact eval_exprlist.cons (vb :: va :: le) (Eletvar 0) Enil
+            vb []
+            (eval_expr.eval_Eletvar (vb :: va :: le) 0 vb (by rfl))
+            (eval_exprlist.nil (vb :: va :: le))
+        · rfl
+      have hlowy : eval_expr xi (Genv.globalenv prog) sp e m
+          (vb :: va :: le)
+          (Eop Olowlong (Econs (Eletvar 0) Enil)) (Val.loword vb) := by
+        apply eval_expr.eval_Eop
+          (le := vb :: va :: le) (op := Olowlong)
+          (al := Econs (Eletvar 0) Enil) (vl := [vb])
+          (Val.loword vb)
+        · exact eval_exprlist.cons (vb :: va :: le) (Eletvar 0) Enil
+            vb []
+            (eval_expr.eval_Eletvar (vb :: va :: le) 0 vb (by rfl))
+            (eval_exprlist.nil (vb :: va :: le))
+        · rfl
+      obtain ⟨v, hv, hsem⟩ := hexec (vb :: va :: le)
+        (Eop Ohighlong (Econs (Eletvar 1) Enil))
+        (Eop Olowlong (Econs (Eletvar 1) Enil))
+        (Eop Ohighlong (Econs (Eletvar 0) Enil))
+        (Eop Olowlong (Econs (Eletvar 0) Enil))
+        (Val.hiword va) (Val.loword va) (Val.hiword vb) (Val.loword vb)
+        hhighx hlowx hhighy hlowy
+      refine ⟨v, ?_, ?_⟩
+      · have hinner := eval_expr.eval_Elet (va :: le) (lift b)
+          (f (Eop Ohighlong (Econs (Eletvar 1) Enil))
+            (Eop Olowlong (Econs (Eletvar 1) Enil))
+            (Eop Ohighlong (Econs (Eletvar 0) Enil))
+            (Eop Olowlong (Econs (Eletvar 0) Enil))) vb v hblift hv
+        have hele := eval_expr.eval_Elet le a _ va v ha hinner
+        simpa [splitlong2, hm] using hele
+      · have hxlong : ∀ n, va = .Vlong n →
+            Val.hiword va = .Vint (int64Hiword n) ∧
+            Val.loword va = .Vint (int64Loword n) := by
+          intro n hn
+          subst va
+          simp [Val.hiword, Val.loword]
+        have hylong : ∀ n, vb = .Vlong n →
+            Val.hiword vb = .Vint (int64Hiword n) ∧
+            Val.loword vb = .Vint (int64Loword n) := by
+          intro n hn
+          subst vb
+          simp [Val.hiword, Val.loword]
+        exact splitlong2_result_lessdef_local va vb
+          (Val.hiword va) (Val.loword va) (Val.hiword vb) (Val.loword vb)
+          v sem hun hxlong hylong hsem
+
+end CompCert4Lean.Backend.SplitLongproof

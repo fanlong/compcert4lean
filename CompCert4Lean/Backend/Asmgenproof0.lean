@@ -1967,3 +1967,21 @@ theorem extcall_arg_pair_match : extcall_arg_pair_matchStatement := by
           hldhi hldlo⟩
 
 end CompCert4Lean.Backend.Asmgenproof0
+
+namespace CompCert4Lean.Backend.Asmgenproof0
+
+theorem extcall_args_match : extcall_args_matchStatement := by
+  intro cfg ms sp rs m m' hagree hext ll vl hargs
+  induction hargs with
+  | nil =>
+      exact ⟨[], CompCert4Lean.Lib.Coqlib.list_forall2.nil _,
+        CompCert4Lean.Common.Values.Val.lessdef_list_nil⟩
+  | @cons p vlp v vls hp htail ih =>
+      rcases extcall_arg_pair_match cfg ms sp rs m m' p v hagree hext hp with
+        ⟨v', hp', hld⟩
+      rcases ih with ⟨vls', htail', hldtail⟩
+      exact ⟨v' :: vls',
+        CompCert4Lean.Lib.Coqlib.list_forall2.cons p _ hp' htail',
+        CompCert4Lean.Common.Values.Val.lessdef_list_cons _ _ _ _ hld hldtail⟩
+
+end CompCert4Lean.Backend.Asmgenproof0

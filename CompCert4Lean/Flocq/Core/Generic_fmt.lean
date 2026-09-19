@@ -4605,3 +4605,13 @@ theorem generic_format_F2R :
   · exact Or.inr (hle hm)
 
 end CompCert4Lean.Flocq.Core.Generic_fmt
+
+namespace CompCert4Lean.Flocq.Core.Generic_fmt
+
+theorem generic_format_0 :
+    ∀ (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx),
+      generic_format_0Statement ctx magnitude := by
+  intro ctx magnitude beta fexp
+  exact pg_worker_generic_format_zero ctx magnitude beta fexp
+
+end CompCert4Lean.Flocq.Core.Generic_fmt

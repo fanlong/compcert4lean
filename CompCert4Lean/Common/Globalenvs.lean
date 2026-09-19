@@ -4639,3 +4639,91 @@ theorem store_zeros_loadbytes : store_zeros_loadbytesStatement := by
 
 end Genv
 end CompCert4Lean.Common.Globalenvs
+
+namespace CompCert4Lean.Common.Globalenvs
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Linking
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.Lib.Integers
+
+namespace Genv
+
+private theorem pg_init_zOfNat_nonneg (n : Nat) :
+    ZArith.BinInt.Z.le Z0 (ZArith.BinInt.Z.of_nat n) := by
+  change (0 : Int) ≤ intOfZ (ZArith.BinInt.Z.of_nat n)
+  simp only [ZArith.BinInt.Z.of_nat, intOfZ_zOfInt]
+  change (0 : Int) ≤ Int.ofNat n
+  exact Int.ofNat_zero_le n
+
+private theorem pg_init_ofNat_toNat_max (z : Z) :
+    ZArith.BinInt.Z.of_nat (ZArith.BinInt.Z.to_nat z) =
+      ZArith.BinInt.Z.max z Z0 := by
+  apply intOfZ_injective
+  simp only [ZArith.BinInt.Z.of_nat, ZArith.BinInt.Z.to_nat,
+    intOfZ_zOfInt]
+  unfold ZArith.BinInt.Z.max
+  split <;> rename_i h
+  · have hz : intOfZ z ≤ 0 := by
+      change intOfZ z ≤ 0 at h
+      exact h
+    rw [Int.toNat_of_nonpos hz]
+    rfl
+  · have hz : 0 ≤ intOfZ z := by
+      change ¬ intOfZ z ≤ 0 at h
+      omega
+    exact Int.toNat_of_nonneg hz
+
+theorem store_init_data_loadbytes : store_init_data_loadbytesStatement := by
+  intro F V ge m b p i m' hstore hzero
+  cases i with
+  | Init_int8 n =>
+      exact Mem.loadbytes_store_same Mint8unsigned m b p (Vint n) m' hstore
+  | Init_int16 n =>
+      exact Mem.loadbytes_store_same Mint16unsigned m b p (Vint n) m' hstore
+  | Init_int32 n =>
+      exact Mem.loadbytes_store_same Mint32 m b p (Vint n) m' hstore
+  | Init_int64 n =>
+      exact Mem.loadbytes_store_same Mint64 m b p (Vlong n) m' hstore
+  | Init_float32 n =>
+      exact Mem.loadbytes_store_same Mfloat32 m b p (Vsingle n) m' hstore
+  | Init_float64 n =>
+      exact Mem.loadbytes_store_same Mfloat64 m b p (Vfloat n) m' hstore
+  | Init_space n =>
+      change some m = some m' at hstore
+      cases hstore
+      have heq := pg_init_ofNat_toNat_max n
+      have hz := hzero p (ZArith.BinInt.Z.to_nat n)
+        (by change intOfZ p ≤ intOfZ p; omega)
+        (by
+          change intOfZ (zAdd p
+              (ZArith.BinInt.Z.of_nat (ZArith.BinInt.Z.to_nat n))) ≤
+            intOfZ (zAdd p (ZArith.BinInt.Z.max n Z0))
+          rw [heq]
+          omega)
+      change Mem.loadbytes m b p
+          (ZArith.BinInt.Z.of_nat (ZArith.BinInt.Z.to_nat n)) =
+        some (List.replicate (ZArith.BinInt.Z.to_nat n)
+          (Byte (CompCert4Lean.Lib.Integers.Byte.repr Z0))) at hz
+      rw [heq] at hz
+      simpa [init_data_size, bytes_of_init_data] using hz
+  | Init_addrof id ofs =>
+      cases hfind : find_symbol ge id with
+      | none => simp [store_init_data, hfind] at hstore
+      | some b' =>
+          have hs := Mem.loadbytes_store_same Mptr m b p (Vptr b' ofs) m'
+            (by simpa [store_init_data, hfind] using hstore)
+          have hsize : init_data_size (Init_addrof id ofs) = size_chunk Mptr := rfl
+          rw [hsize, hs]
+          congr 1
+          simp [bytes_of_init_data, hfind, Mptr, encode_val,
+            CompCert4Lean.X86_64.Archi.ptr64]
+
+end Genv
+end CompCert4Lean.Common.Globalenvs

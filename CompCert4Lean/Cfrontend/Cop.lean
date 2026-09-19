@@ -1724,3 +1724,264 @@ theorem sem_binarith_inject :
 
 
 end CompCert4Lean.Cfrontend.Cop
+
+namespace CompCert4Lean.Cfrontend.Cop
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.Lib.Coqlib
+
+private theorem cmp_inj_repr_pos (p : positive) :
+    (WordCore.repr 64 (.Zpos p)).intval = zOfNat (posToNat p % 2^64) := by
+  change zOfNat (_ % 2^64) = zOfNat _
+  congr 1
+  congr 1
+  induction p with
+  | xH => rfl
+  | xI p ih => change 2 * _ + 1 = 2 * _ + 1; rw [ih]
+  | xO p ih => change 2 * _ = 2 * _; rw [ih]
+
+private theorem cmp_inj_unsigned_repr (z : Z)
+    (hz : zLe z0 z ∧ zLe z Ptrofs.max_unsigned) :
+    Ptrofs.unsigned (Ptrofs.repr z) = z := by
+  cases z with
+  | Z0 => rfl
+  | Zpos p =>
+      have hmax := hz.2
+      change (posToNat p : _root_.Int) ≤ 18446744073709551615 at hmax
+      have hp : posToNat p < 2^64 := by omega
+      change (WordCore.repr 64 (.Zpos p)).intval = .Zpos p
+      rw [cmp_inj_repr_pos, Nat.mod_eq_of_lt hp]
+      exact ZArith.Znat.positive_nat_Z p
+  | Zneg p =>
+      have hpos := posToNat_positive p
+      have hmin := hz.1
+      change (0 : _root_.Int) ≤ -(posToNat p : _root_.Int) at hmin
+      omega
+
+private theorem cmp_inj_unsigned_add (x d : Ptrofs)
+    (h : zLe z0 (zAdd (Ptrofs.unsigned x) (Ptrofs.unsigned d)) ∧
+      zLe (zAdd (Ptrofs.unsigned x) (Ptrofs.unsigned d)) Ptrofs.max_unsigned) :
+    Ptrofs.unsigned (Ptrofs.add x d) = zAdd (Ptrofs.unsigned x) (Ptrofs.unsigned d) :=
+  cmp_inj_unsigned_repr _ h
+
+private theorem cmp_inj_ltu (x y : Ptrofs) :
+    CompCert4Lean.Lib.Integers.Ptrofs.ltu x y =
+      decide (intOfZ (Ptrofs.unsigned x) < intOfZ (Ptrofs.unsigned y)) := by
+  unfold CompCert4Lean.Lib.Integers.Ptrofs.ltu WordCore.ltu
+  run_tac
+    let env ← Lean.MonadEnv.getEnv
+    for (n, _) in env.constants.toList do
+      if (toString n).endsWith "Integers.zltSelect" then
+        let stx := Lean.mkIdent n
+        Lean.Elab.Tactic.evalTactic (← `(tactic| unfold $stx))
+    for (n, _) in env.constants.toList do
+      if (toString n).endsWith "Integers.sumboolSelect" then
+        let stx := Lean.mkIdent n
+        Lean.Elab.Tactic.evalTactic (← `(tactic| unfold $stx))
+  cases h : zlt (WordCore.unsigned x) (WordCore.unsigned y) with
+  | left hlt => simp [h, show intOfZ (Ptrofs.unsigned x) < intOfZ (Ptrofs.unsigned y) from hlt]
+  | right hge =>
+      have hn : ¬ intOfZ (Ptrofs.unsigned x) < intOfZ (Ptrofs.unsigned y) :=
+        _root_.Int.not_lt.mpr hge
+      simp [h, hn]
+
+private theorem cmp_inj_translate (c : comparison) (x y d : Ptrofs)
+    (hx : zLe z0 (zAdd (Ptrofs.unsigned x) (Ptrofs.unsigned d)) ∧
+      zLe (zAdd (Ptrofs.unsigned x) (Ptrofs.unsigned d)) Ptrofs.max_unsigned)
+    (hy : zLe z0 (zAdd (Ptrofs.unsigned y) (Ptrofs.unsigned d)) ∧
+      zLe (zAdd (Ptrofs.unsigned y) (Ptrofs.unsigned d)) Ptrofs.max_unsigned) :
+    CompCert4Lean.Lib.Integers.Ptrofs.cmpu c (Ptrofs.add x d) (Ptrofs.add y d) =
+      CompCert4Lean.Lib.Integers.Ptrofs.cmpu c x y := by
+  have heq : CompCert4Lean.Lib.Integers.Ptrofs.eq (Ptrofs.add x d) (Ptrofs.add y d) =
+      CompCert4Lean.Lib.Integers.Ptrofs.eq x y := by
+    change decide (Ptrofs.unsigned (Ptrofs.add x d) = Ptrofs.unsigned (Ptrofs.add y d)) =
+      decide (Ptrofs.unsigned x = Ptrofs.unsigned y)
+    rw [cmp_inj_unsigned_add x d hx, cmp_inj_unsigned_add y d hy]
+    congr 1
+    apply propext
+    constructor
+    · intro h
+      apply intOfZ_injective
+      have hh := congrArg intOfZ h
+      simp only [ZArith.BinInt.Z.add, intOfZ_zOfInt] at hh
+      omega
+    · intro h; rw [h]
+  have hlt : ∀ a b : Ptrofs,
+      Ptrofs.unsigned (Ptrofs.add a d) = zAdd (Ptrofs.unsigned a) (Ptrofs.unsigned d) →
+      Ptrofs.unsigned (Ptrofs.add b d) = zAdd (Ptrofs.unsigned b) (Ptrofs.unsigned d) →
+      CompCert4Lean.Lib.Integers.Ptrofs.ltu (Ptrofs.add a d) (Ptrofs.add b d) =
+        CompCert4Lean.Lib.Integers.Ptrofs.ltu a b := by
+    intro a b ha hb
+    rw [cmp_inj_ltu, cmp_inj_ltu, ha, hb]
+    simp only [ZArith.BinInt.Z.add, intOfZ_zOfInt, _root_.Int.add_lt_add_iff_right]
+  have hxy := hlt x y (cmp_inj_unsigned_add x d hx) (cmp_inj_unsigned_add y d hy)
+  have hyx := hlt y x (cmp_inj_unsigned_add y d hy) (cmp_inj_unsigned_add x d hx)
+  cases c <;> simp only [CompCert4Lean.Lib.Integers.Ptrofs.cmpu, heq, hxy, hyx]
+
+private theorem cmp_inj_ptrs (m : mem) (c : comparison) (b1 b2 : block) (o1 o2 : Ptrofs) :
+    Val.cmplu_bool (Mem.valid_pointer m) c (.Vptr b1 o1) (.Vptr b2 o2) =
+      (if b1 = b2 then
+        if Mem.weak_valid_pointer m b1 (Ptrofs.unsigned o1) &&
+           Mem.weak_valid_pointer m b2 (Ptrofs.unsigned o2) then
+          some (CompCert4Lean.Lib.Integers.Ptrofs.cmpu c o1 o2) else none
+       else if Mem.valid_pointer m b1 (Ptrofs.unsigned o1) &&
+               Mem.valid_pointer m b2 (Ptrofs.unsigned o2) then
+         Val.cmp_different_blocks c else none) := by
+  unfold Val.cmplu_bool
+  run_tac
+    let env ← Lean.MonadEnv.getEnv
+    for (n, _) in env.constants.toList do
+      if (toString n).endsWith "Values.boolOfSumbool" then
+        let stx := Lean.mkIdent n
+        Lean.Elab.Tactic.evalTactic (← `(tactic| unfold $stx))
+  cases h : eq_block b1 b2 with
+  | left he => simp [h, he, Mem.weak_valid_pointer, CompCert4Lean.X86_64.Archi.ptr64]
+  | right hn => simp [h, hn, Mem.weak_valid_pointer, CompCert4Lean.X86_64.Archi.ptr64]
+
+private theorem cmp_inj_pointer : sem_cmp_ptr_injStatement := by
+  intro f m m' hv hw ho hd c v1 v2 v tv1 tv2 hcmp hi1 hi2
+  have hb : ∀ c v1 v2 tv1 tv2 b,
+      Val.inject f v1 tv1 → Val.inject f v2 tv2 →
+      Val.cmplu_bool (Mem.valid_pointer m) c v1 v2 = some b →
+      Val.cmplu_bool (Mem.valid_pointer m') c tv1 tv2 = some b := by
+    intro c v1 v2 tv1 tv2 b hi1 hi2 hc
+    cases hi1 <;> cases hi2 <;>
+      try { simp [Val.cmplu_bool] at hc }
+    case inject_long.inject_long n1 n2 => exact hc
+    case inject_long.inject_ptr n b1 o1 b2 o2 d hf he =>
+      subst o2
+      change (if Int64.eq n Int64.zero && Mem.weak_valid_pointer m b1 (Ptrofs.unsigned o1)
+        then Val.cmp_different_blocks c else none) = some b at hc
+      change (if Int64.eq n Int64.zero &&
+        Mem.weak_valid_pointer m' b2 (Ptrofs.unsigned (Ptrofs.add o1 (Ptrofs.repr d)))
+        then Val.cmp_different_blocks c else none) = some b
+      split at hc
+      · rename_i hh
+        have hh' := Bool.and_eq_true_iff.mp hh
+        rw [hh'.1, hw b1 o1 b2 d hf hh'.2]
+        exact hc
+      · cases hc
+    case inject_ptr.inject_long b1 o1 b2 o2 d hf he n =>
+      subst o2
+      change (if Int64.eq n Int64.zero && Mem.weak_valid_pointer m b1 (Ptrofs.unsigned o1)
+        then Val.cmp_different_blocks c else none) = some b at hc
+      change (if Int64.eq n Int64.zero &&
+        Mem.weak_valid_pointer m' b2 (Ptrofs.unsigned (Ptrofs.add o1 (Ptrofs.repr d)))
+        then Val.cmp_different_blocks c else none) = some b
+      split at hc
+      · rename_i hh
+        have hh' := Bool.and_eq_true_iff.mp hh
+        rw [hh'.1, hw b1 o1 b2 d hf hh'.2]
+        exact hc
+      · cases hc
+    case inject_ptr.inject_ptr b1 o1 t1 u1 d1 hf1 he1 b2 o2 t2 u2 d2 hf2 he2 =>
+      subst u1 u2
+      rw [cmp_inj_ptrs] at hc ⊢
+      by_cases hs : b1 = b2
+      · subst b2
+        have he := Option.some.inj (hf1.symm.trans hf2)
+        cases he
+        simp only [ite_true] at hc ⊢
+        split at hc
+        · rename_i hh
+          have hh' := Bool.and_eq_true_iff.mp hh
+          rw [hw b1 o1 t1 d1 hf1 hh'.1, hw b1 o2 t1 d1 hf1 hh'.2]
+          simp only [Bool.and_self, ite_true]
+          rw [cmp_inj_translate c o1 o2 (Ptrofs.repr d1)
+            (ho b1 o1 t1 d1 hf1 hh'.1) (ho b1 o2 t1 d1 hf1 hh'.2)]
+          exact hc
+        · cases hc
+      · rw [if_neg hs] at hc
+        split at hc
+        · rename_i hh
+          have hh' := Bool.and_eq_true_iff.mp hh
+          by_cases ht : t1 = t2
+          · subst t2
+            simp only [ite_true]
+            have hw1 : Mem.weak_valid_pointer m b1 (Ptrofs.unsigned o1) = true := by
+              simp [Mem.weak_valid_pointer, hh'.1]
+            have hw2 : Mem.weak_valid_pointer m b2 (Ptrofs.unsigned o2) = true := by
+              simp [Mem.weak_valid_pointer, hh'.2]
+            rw [hw b1 o1 t1 d1 hf1 hw1, hw b2 o2 t1 d2 hf2 hw2]
+            simp only [Bool.and_self, ite_true]
+            have hdiff := hd b1 o1 b2 o2 t1 d1 t1 d2 hs hh'.1 hh'.2 hf1 hf2
+            have hne := hdiff.resolve_left (fun h => h rfl)
+            have heq : CompCert4Lean.Lib.Integers.Ptrofs.eq
+                (Ptrofs.add o1 (Ptrofs.repr d1)) (Ptrofs.add o2 (Ptrofs.repr d2)) = false := by
+              exact decide_eq_false hne
+            cases c <;> simp [Val.cmp_different_blocks] at hc <;>
+              simp [CompCert4Lean.Lib.Integers.Ptrofs.cmpu, heq, hc]
+          · rw [if_neg ht, hv b1 o1 t1 d1 hf1 hh'.1, hv b2 o2 t2 d2 hf2 hh'.2]
+            exact hc
+        · cases hc
+  unfold cmp_ptr at hcmp ⊢
+  simp only [CompCert4Lean.X86_64.Archi.ptr64, ite_true] at hcmp ⊢
+  cases hbool : Val.cmplu_bool (Mem.valid_pointer m) c v1 v2 with
+  | none => simp [hbool] at hcmp
+  | some b =>
+      simp only [hbool, Option.map_some, Option.some.injEq] at hcmp
+      subst v
+      refine ⟨Val.of_bool b, ?_, ?_⟩
+      · rw [hb c v1 v2 tv1 tv2 b hi1 hi2 hbool]
+        rfl
+      · cases b <;> exact Val.inject.inject_int _
+
+private theorem cmp_inj_bool_self (b : Bool) : optval_self_injects (some (Val.of_bool b)) := by
+  cases b <;> trivial
+
+theorem sem_cmp_inj :
+    ∀ [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+      [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)],
+      sem_cmp_injStatement := by
+  intro _binary64_certificate _binary32_certificate f m m' hv hw ho hd
+    c v1 tv1 ty1 v2 tv2 ty2 v hsem hi1 hi2
+  have hp := cmp_inj_pointer f m m' hv hw ho hd
+  unfold sem_cmp at hsem ⊢
+  cases hc : classify_cmp ty1 ty2 with
+  | cmp_case_pp =>
+      simp only [hc] at hsem ⊢
+      exact hp c v1 v2 v tv1 tv2 hsem hi1 hi2
+  | cmp_case_pi si =>
+      simp only [hc] at hsem ⊢
+      cases hi2 with
+      | inject_int n =>
+          exact hp c v1 (Vptrofs (ptrofs_of_int si n)) v tv1
+            (Vptrofs (ptrofs_of_int si n)) hsem hi1 (Val.inject.inject_long _)
+      | _ => simp [CompCert4Lean.X86_64.Archi.ptr64] at hsem
+  | cmp_case_ip si =>
+      simp only [hc] at hsem ⊢
+      cases hi1 with
+      | inject_int n =>
+          exact hp c (Vptrofs (ptrofs_of_int si n)) v2 v
+            (Vptrofs (ptrofs_of_int si n)) tv2 hsem (Val.inject.inject_long _) hi2
+      | _ => simp [CompCert4Lean.X86_64.Archi.ptr64] at hsem
+  | cmp_case_pl =>
+      simp only [hc] at hsem ⊢
+      cases hi2 with
+      | inject_long n =>
+          exact hp c v1 (Vptrofs (Ptrofs.of_int64 n)) v tv1
+            (Vptrofs (Ptrofs.of_int64 n)) hsem hi1 (Val.inject.inject_long _)
+      | inject_ptr b1 o1 b2 o2 d hf he =>
+          exact hp c v1 (.Vptr b1 o1) v tv1 (.Vptr b2 o2) hsem hi1
+            (Val.inject.inject_ptr b1 o1 b2 o2 d hf he)
+      | _ => simp at hsem
+  | cmp_case_lp =>
+      simp only [hc] at hsem ⊢
+      cases hi1 with
+      | inject_long n =>
+          exact hp c (Vptrofs (Ptrofs.of_int64 n)) v2 v
+            (Vptrofs (Ptrofs.of_int64 n)) tv2 hsem (Val.inject.inject_long _) hi2
+      | inject_ptr b1 o1 b2 o2 d hf he =>
+          exact hp c (.Vptr b1 o1) v2 v (.Vptr b2 o2) tv2 hsem
+            (Val.inject.inject_ptr b1 o1 b2 o2 d hf he) hi2
+      | _ => simp at hsem
+  | cmp_default =>
+      simp only [hc] at hsem ⊢
+      exact sem_binarith_inject f m m' hw _ _ _ _ v1 ty1 v2 ty2 v tv1 tv2 hsem hi1 hi2
+        (fun _ _ _ => cmp_inj_bool_self _) (fun _ _ _ => cmp_inj_bool_self _)
+        (fun _ _ => cmp_inj_bool_self _) (fun _ _ => cmp_inj_bool_self _)
+
+end CompCert4Lean.Cfrontend.Cop

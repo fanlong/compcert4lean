@@ -7299,3 +7299,570 @@ theorem final_states_simulation
           exact hres'
 
 end CompCert4Lean.Backend.Allocproof
+
+namespace CompCert4Lean.Backend.Allocproof
+open CompCert4Lean.Backend.Allocation
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Backend.LTL
+open CompCert4Lean.X86.Op
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Lib.Coqlib
+
+private theorem local_parse_branch
+    (b : LTL.bblock) (mv : moves) (b1 : LTL.bblock) (s : RTL.node)
+    (hmv : extract_moves [] b = (mv, b1))
+    (hs : check_succ s b1 = true) :
+    ∃ k, wf_moves mv ∧ b = expand_moves mv (Lbranch s :: k) := by
+  rcases extract_moves_sound b mv b1 hmv with ⟨hwf, hb⟩
+  rcases check_succ_sound s b1 hs with ⟨k, hk⟩
+  subst b1
+  refine ⟨k, hwf, ?_⟩
+  simpa [expand_moves] using hb
+
+private theorem local_parse_op
+    (b : LTL.bblock) (mv1 : moves) (b1 : LTL.bblock)
+    (op : operation) (args' : List CompCert4Lean.X86.Machregs.mreg) (res' : CompCert4Lean.X86.Machregs.mreg)
+    (mv2 : moves) (b2 b3 : LTL.bblock) (s : RTL.node)
+    (hm1 : extract_moves [] b = (mv1, b1))
+    (hhead : b1 = Lop op args' res' :: b2)
+    (hm2 : extract_moves [] b2 = (mv2, b3))
+    (hs : check_succ s b3 = true) :
+    ∃ k, wf_moves mv1 ∧ wf_moves mv2 ∧
+      b = expand_moves mv1
+        (Lop op args' res' :: expand_moves mv2 (Lbranch s :: k)) := by
+  rcases extract_moves_sound b mv1 b1 hm1 with ⟨hwf1, hb1⟩
+  rcases extract_moves_sound b2 mv2 b3 hm2 with ⟨hwf2, hb2⟩
+  rcases check_succ_sound s b3 hs with ⟨k, hk⟩
+  subst b3
+  rw [hhead] at hb1
+  refine ⟨k, hwf1, hwf2, ?_⟩
+  have hb2' : b2 = expand_moves mv2 (Lbranch s :: k) := by
+    simpa [expand_moves] using hb2
+  rw [hb2'] at hb1
+  simpa [expand_moves, List.append_assoc] using hb1
+
+private theorem local_pair_Iop
+    (op : operation) (args : List reg) (res : reg) (s : RTL.node)
+    (b : LTL.bblock) (bsh : block_shape)
+    (h : pair_Iop_block op args res s b = some bsh) :
+    expand_block_shape bsh (Iop op args res s) b := by
+  unfold pair_Iop_block at h
+  cases hm1 : extract_moves [] b with
+  | mk mv1 b1 =>
+      simp only [hm1] at h
+      cases hb1 : b1 with
+      | nil => simp [hb1, check_succ] at h
+      | cons hd tl =>
+          cases hd with
+          | Lop op' args' res' =>
+              cases hm2 : extract_moves [] tl with
+              | mk mv2 b3 =>
+                  simp only [hb1] at h
+                  rw [hm2] at h
+                  cases heq : eq_operation op op' with
+                  | left hop =>
+                      cases hs : check_succ s b3 with
+                      | false => simp [hb1, hm2, heq, hs] at h
+                      | true =>
+                          simp [hb1, hm2, heq, hs] at h
+                          rcases h with ⟨_, hshape⟩
+                          cases hshape
+                          subst b1
+                          rcases local_parse_op b mv1 (Lop op' args' res' :: tl)
+                            op' args' res' mv2 tl b3 s hm1 (by rfl) hm2 hs with
+                            ⟨k, hwf1, hwf2, hb⟩
+                          subst op'
+                          rw [hb]
+                          exact ebs_op op args res mv1 args' res' mv2 s k hwf1 hwf2
+                  | right hne =>
+                      simp [hb1, heq] at h
+                      rcases h with ⟨⟨hbool, _⟩, _⟩
+                      change false = true at hbool
+                      cases hbool
+          | Lbranch succ =>
+              cases hs : check_succ s (Lbranch succ :: tl) with
+              | false => simp [hb1, hs] at h
+              | true =>
+                  simp [hb1, hs] at h
+                  cases h
+                  subst b1
+                  exact ebs_opdead_from_parse_local op args res s b mv1
+                    (Lbranch succ :: tl) hm1 hs
+          | Lgetstack sl ofs ty dst => simp [hb1, check_succ] at h
+          | Lsetstack src sl ofs ty => simp [hb1, check_succ] at h
+          | Lload chunk addr args' dst => simp [hb1, check_succ] at h
+          | Lstore chunk addr args' src => simp [hb1, check_succ] at h
+          | Lcall sg ros => simp [hb1, check_succ] at h
+          | Ltailcall sg ros => simp [hb1, check_succ] at h
+          | Lbuiltin ef args' res' => simp [hb1, check_succ] at h
+          | Lcond cond args' s1 s2 => simp [hb1, check_succ] at h
+          | Ljumptable arg tbl => simp [hb1, check_succ] at h
+          | Lreturn => simp [hb1, check_succ] at h
+
+private theorem local_parse_load
+    (b : LTL.bblock) (mv1 : moves) (b1 : LTL.bblock)
+    (chunk : memory_chunk) (addr : addressing)
+    (args' : List CompCert4Lean.X86.Machregs.mreg)
+    (dst' : CompCert4Lean.X86.Machregs.mreg)
+    (mv2 : moves) (b2 b3 : LTL.bblock) (s : RTL.node)
+    (hm1 : extract_moves [] b = (mv1, b1))
+    (hhead : b1 = Lload chunk addr args' dst' :: b2)
+    (hm2 : extract_moves [] b2 = (mv2, b3))
+    (hs : check_succ s b3 = true) :
+    ∃ k, wf_moves mv1 ∧ wf_moves mv2 ∧
+      b = expand_moves mv1
+        (Lload chunk addr args' dst' :: expand_moves mv2 (Lbranch s :: k)) := by
+  rcases extract_moves_sound b mv1 b1 hm1 with ⟨hwf1, hb1⟩
+  rcases extract_moves_sound b2 mv2 b3 hm2 with ⟨hwf2, hb2⟩
+  rcases check_succ_sound s b3 hs with ⟨k, hk⟩
+  subst b3
+  rw [hhead] at hb1
+  refine ⟨k, hwf1, hwf2, ?_⟩
+  have hb2' : b2 = expand_moves mv2 (Lbranch s :: k) := by
+    simpa [expand_moves] using hb2
+  rw [hb2'] at hb1
+  simpa [expand_moves, List.append_assoc] using hb1
+
+private theorem local_parse_store
+    (b : LTL.bblock) (mv1 : moves) (b1 : LTL.bblock)
+    (chunk : memory_chunk) (addr : addressing)
+    (args' : List CompCert4Lean.X86.Machregs.mreg)
+    (src' : CompCert4Lean.X86.Machregs.mreg)
+    (b2 : LTL.bblock) (s : RTL.node)
+    (hm1 : extract_moves [] b = (mv1, b1))
+    (hhead : b1 = Lstore chunk addr args' src' :: b2)
+    (hs : check_succ s b2 = true) :
+    ∃ k, wf_moves mv1 ∧
+      b = expand_moves mv1 (Lstore chunk addr args' src' :: Lbranch s :: k) := by
+  rcases extract_moves_sound b mv1 b1 hm1 with ⟨hwf1, hb1⟩
+  rcases check_succ_sound s b2 hs with ⟨k, hk⟩
+  subst b2
+  rw [hhead] at hb1
+  refine ⟨k, hwf1, ?_⟩
+  simpa [expand_moves] using hb1
+
+private theorem local_parse_call
+    (b : LTL.bblock) (mv1 : moves) (b1 : LTL.bblock)
+    (sg : signature) (ros' : Sum CompCert4Lean.X86.Machregs.mreg ident)
+    (mv2 : moves) (b2 b3 : LTL.bblock) (s : RTL.node)
+    (hm1 : extract_moves_ext [] b = (mv1, b1))
+    (hhead : b1 = Lcall sg ros' :: b2)
+    (hm2 : extract_moves_ext [] b2 = (mv2, b3))
+    (hs : check_succ s b3 = true) :
+    ∃ k, wf_moves mv1 ∧ wf_moves mv2 ∧
+      b = expand_moves mv1
+        (Lcall sg ros' :: expand_moves mv2 (Lbranch s :: k)) := by
+  rcases extract_moves_ext_sound b mv1 b1 hm1 with ⟨hwf1, hb1⟩
+  rcases extract_moves_ext_sound b2 mv2 b3 hm2 with ⟨hwf2, hb2⟩
+  rcases check_succ_sound s b3 hs with ⟨k, hk⟩
+  subst b3
+  rw [hhead] at hb1
+  refine ⟨k, hwf1, hwf2, ?_⟩
+  have hb2' : b2 = expand_moves mv2 (Lbranch s :: k) := by
+    simpa [expand_moves] using hb2
+  rw [hb2'] at hb1
+  simpa [expand_moves, List.append_assoc] using hb1
+
+private theorem local_parse_tailcall
+    (b : LTL.bblock) (mv : moves) (b1 : LTL.bblock)
+    (sg : signature) (ros' : Sum CompCert4Lean.X86.Machregs.mreg ident)
+    (tail : LTL.bblock)
+    (hm : extract_moves_ext [] b = (mv, b1))
+    (hhead : b1 = Ltailcall sg ros' :: tail) :
+    ∃ k, wf_moves mv ∧ b = expand_moves mv (Ltailcall sg ros' :: k) := by
+  rcases extract_moves_ext_sound b mv b1 hm with ⟨hwf, hb⟩
+  rw [hhead] at hb
+  exact ⟨tail, hwf, by simpa [expand_moves] using hb⟩
+
+private theorem local_parse_builtin
+    (b : LTL.bblock) (mv1 : moves) (b1 : LTL.bblock)
+    (ef : external_function)
+    (args' : List (builtin_arg CompCert4Lean.Backend.Locations.loc)) (res' : builtin_res CompCert4Lean.X86.Machregs.mreg)
+    (mv2 : moves) (b2 b3 : LTL.bblock) (s : RTL.node)
+    (hm1 : extract_moves [] b = (mv1, b1))
+    (hhead : b1 = Lbuiltin ef args' res' :: b2)
+    (hm2 : extract_moves [] b2 = (mv2, b3))
+    (hs : check_succ s b3 = true) :
+    ∃ k, wf_moves mv1 ∧ wf_moves mv2 ∧
+      b = expand_moves mv1
+        (Lbuiltin ef args' res' :: expand_moves mv2 (Lbranch s :: k)) := by
+  rcases extract_moves_sound b mv1 b1 hm1 with ⟨hwf1, hb1⟩
+  rcases extract_moves_sound b2 mv2 b3 hm2 with ⟨hwf2, hb2⟩
+  rcases check_succ_sound s b3 hs with ⟨k, hk⟩
+  subst b3
+  rw [hhead] at hb1
+  refine ⟨k, hwf1, hwf2, ?_⟩
+  have hb2' : b2 = expand_moves mv2 (Lbranch s :: k) := by
+    simpa [expand_moves] using hb2
+  rw [hb2'] at hb1
+  simpa [expand_moves, List.append_assoc] using hb1
+
+private theorem local_pair_instr : pair_instr_block_soundStatement := by
+  intro i b bsh hpair
+  cases i with
+  | Inop s =>
+      cases hm : extract_moves [] b with
+      | mk mv b1 =>
+          simp [pair_instr_block, hm] at hpair
+          rcases hpair with ⟨hsucc, rfl⟩
+          rcases local_parse_branch b mv b1 s hm hsucc with ⟨k, hwf, hb⟩
+          rw [hb]
+          exact ebs_nop mv s k hwf
+  | Iop op args res s =>
+      cases hc : classify_operation op args with
+      | operation_Omove arg =>
+          cases hm : extract_moves [] b with
+          | mk mv b1 =>
+              simp [pair_instr_block, hc, hm] at hpair
+              rcases hpair with ⟨hsucc, rfl⟩
+              rcases local_parse_branch b mv b1 s hm hsucc with ⟨k, hwf, hb⟩
+              rw [hb]
+              exact ebs_move arg res mv s k hwf
+      | operation_Omakelong arg1 arg2 =>
+          simp [pair_instr_block, hc, CompCert4Lean.X86_64.Archi.splitlong] at hpair
+          exact local_pair_Iop Omakelong [arg1, arg2] res s b bsh hpair
+      | operation_Olowlong arg =>
+          simp [pair_instr_block, hc, CompCert4Lean.X86_64.Archi.splitlong] at hpair
+          exact local_pair_Iop Olowlong [arg] res s b bsh hpair
+      | operation_Ohighlong arg =>
+          simp [pair_instr_block, hc, CompCert4Lean.X86_64.Archi.splitlong] at hpair
+          exact local_pair_Iop Ohighlong [arg] res s b bsh hpair
+      | operation_other _ _ =>
+          simp [pair_instr_block, hc] at hpair
+          exact local_pair_Iop op args res s b bsh hpair
+  | Iload chunk addr args dst s =>
+      cases hm1 : extract_moves [] b with
+      | mk mv1 b1 =>
+          cases hb1 : b1 with
+          | nil =>
+              simp [pair_instr_block, hm1, hb1,
+                CompCert4Lean.X86_64.Archi.splitlong,
+                CompCert4Lean.X86_64.Archi.ptr64, check_succ] at hpair
+          | cons hd b2 =>
+              cases hd with
+              | Lload chunk' addr' args' dst' =>
+                  cases hm2 : extract_moves [] b2 with
+                  | mk mv2 b3 =>
+                      cases hchunk : chunk_eq chunk chunk' with
+                      | left hchunkEq =>
+                          cases haddr : eq_addressing addr addr' with
+                          | left haddrEq =>
+                              cases hs : check_succ s b3 with
+                              | false =>
+                                  simp [pair_instr_block, hm1, hb1, hm2,
+                                    CompCert4Lean.X86_64.Archi.splitlong,
+                                    CompCert4Lean.X86_64.Archi.ptr64,
+                                    hchunk, haddr, hs] at hpair
+                              | true =>
+                                  simp [pair_instr_block, hm1, hb1, hm2,
+                                    CompCert4Lean.X86_64.Archi.splitlong,
+                                    CompCert4Lean.X86_64.Archi.ptr64,
+                                    hchunk, haddr, hs] at hpair
+                                  rcases hpair with ⟨_, hshape⟩
+                                  cases hshape
+                                  subst b1
+                                  rcases local_parse_load b mv1 (Lload chunk' addr' args' dst' :: b2)
+                                    chunk' addr' args' dst' mv2 b2 b3 s hm1 (by rfl) hm2 hs with
+                                    ⟨k, hwf1, hwf2, hb⟩
+                                  subst chunk'
+                                  subst addr'
+                                  rw [hb]
+                                  exact ebs_load chunk addr args dst mv1 args' dst' mv2 s k hwf1 hwf2
+                          | right haddrNe =>
+                              simp [pair_instr_block, hm1, hb1, hm2,
+                                CompCert4Lean.X86_64.Archi.splitlong,
+                                CompCert4Lean.X86_64.Archi.ptr64,
+                                hchunk, haddr] at hpair
+                              rcases hpair with ⟨⟨⟨_, haddrbad⟩, _⟩, _⟩
+                              change false = true at haddrbad
+                              cases haddrbad
+                      | right hchunkNe =>
+                          simp [pair_instr_block, hm1, hb1, hm2,
+                            CompCert4Lean.X86_64.Archi.splitlong,
+                            CompCert4Lean.X86_64.Archi.ptr64,
+                            hchunk] at hpair
+                          rcases hpair with ⟨⟨⟨hchunkbad, _⟩, _⟩, _⟩
+                          change false = true at hchunkbad
+                          cases hchunkbad
+              | _ =>
+                  simp [pair_instr_block, hm1, hb1,
+                    CompCert4Lean.X86_64.Archi.splitlong,
+                    CompCert4Lean.X86_64.Archi.ptr64] at hpair
+                  rcases hpair with ⟨hsucc, hshape⟩
+                  cases hshape
+                  subst b1
+                  rcases local_parse_branch b mv1 _ s hm1 hsucc with ⟨k, hwf, hb⟩
+                  rw [hb]
+                  exact ebs_load_dead chunk addr args dst mv1 s k hwf
+
+  | Istore chunk addr args src s =>
+      cases hm1 : extract_moves [] b with
+      | mk mv1 b1 =>
+          cases hb1 : b1 with
+          | nil =>
+              simp [pair_instr_block, hm1, hb1,
+                CompCert4Lean.X86_64.Archi.splitlong,
+                CompCert4Lean.X86_64.Archi.ptr64] at hpair
+          | cons hd b2 =>
+              cases hd with
+              | Lstore chunk' addr' args' src' =>
+                  cases hchunk : chunk_eq chunk chunk' with
+                  | left hchunkEq =>
+                      cases haddr : eq_addressing addr addr' with
+                      | left haddrEq =>
+                          cases hs : check_succ s b2 with
+                          | false =>
+                              simp [pair_instr_block, hm1, hb1,
+                                CompCert4Lean.X86_64.Archi.splitlong,
+                                CompCert4Lean.X86_64.Archi.ptr64,
+                                hchunk, haddr, hs] at hpair
+                          | true =>
+                              simp [pair_instr_block, hm1, hb1,
+                                CompCert4Lean.X86_64.Archi.splitlong,
+                                CompCert4Lean.X86_64.Archi.ptr64,
+                                hchunk, haddr, hs] at hpair
+                              rcases hpair with ⟨_, hshape⟩
+                              cases hshape
+                              subst b1
+                              rcases local_parse_store b mv1 (Lstore chunk' addr' args' src' :: b2)
+                                chunk' addr' args' src' b2 s hm1 (by rfl) hs with
+                                ⟨k, hwf1, hb⟩
+                              subst chunk'
+                              subst addr'
+                              rw [hb]
+                              exact ebs_store chunk addr args src mv1 args' src' s k hwf1
+                      | right haddrNe =>
+                          simp [pair_instr_block, hm1, hb1,
+                            CompCert4Lean.X86_64.Archi.splitlong,
+                            CompCert4Lean.X86_64.Archi.ptr64,
+                            hchunk, haddr] at hpair
+                          rcases hpair with ⟨⟨⟨_, haddrbad⟩, _⟩, _⟩
+                          change false = true at haddrbad
+                          cases haddrbad
+                  | right hchunkNe =>
+                      simp [pair_instr_block, hm1, hb1,
+                        CompCert4Lean.X86_64.Archi.splitlong,
+                        CompCert4Lean.X86_64.Archi.ptr64,
+                        hchunk] at hpair
+                      rcases hpair with ⟨⟨⟨hchunkbad, _⟩, _⟩, _⟩
+                      change false = true at hchunkbad
+                      cases hchunkbad
+              | _ =>
+                  simp [pair_instr_block, hm1, hb1,
+                    CompCert4Lean.X86_64.Archi.splitlong,
+                    CompCert4Lean.X86_64.Archi.ptr64] at hpair
+
+  | Icall sg ros args res s =>
+      cases hm1 : extract_moves_ext [] b with
+      | mk mv1 b1 =>
+          cases hb1 : b1 with
+          | nil =>
+              simp [pair_instr_block, hm1, hb1] at hpair
+          | cons hd b2 =>
+              cases hd with
+              | Lcall sg' ros' =>
+                  cases hm2 : extract_moves_ext [] b2 with
+                  | mk mv2 b3 =>
+                      cases hsg : signature_eq sg sg' with
+                      | left hsgEq =>
+                          cases hs : check_succ s b3 with
+                          | false =>
+                              simp [pair_instr_block, hm1, hb1, hm2, hsg, hs] at hpair
+                          | true =>
+                              simp [pair_instr_block, hm1, hb1, hm2, hsg, hs] at hpair
+                              rcases hpair with ⟨_, hshape⟩
+                              cases hshape
+                              subst b1
+                              rcases local_parse_call b mv1 (Lcall sg' ros' :: b2)
+                                sg' ros' mv2 b2 b3 s hm1 (by rfl) hm2 hs with
+                                ⟨k, hwf1, hwf2, hb⟩
+                              subst sg'
+                              rw [hb]
+                              exact ebs_call sg ros args res mv1 ros' mv2 s k hwf1 hwf2
+                      | right hsgNe =>
+                          simp [pair_instr_block, hm1, hb1, hm2, hsg] at hpair
+                          rcases hpair with ⟨⟨hbad, _⟩, _⟩
+                          change false = true at hbad
+                          cases hbad
+              | _ =>
+                  simp [pair_instr_block, hm1, hb1] at hpair
+
+  | Itailcall sg ros args =>
+      cases hm : extract_moves_ext [] b with
+      | mk mv b1 =>
+          cases hb1 : b1 with
+          | nil => simp [pair_instr_block, hm, hb1] at hpair
+          | cons hd tail =>
+              cases hd with
+              | Ltailcall sg' ros' =>
+                  cases hsg : signature_eq sg sg' with
+                  | left hsgEq =>
+                      simp [pair_instr_block, hm, hb1, hsg] at hpair
+                      rcases hpair with ⟨_, hshape⟩
+                      cases hshape
+                      subst b1
+                      rcases local_parse_tailcall b mv (Ltailcall sg' ros' :: tail)
+                        sg' ros' tail hm (by rfl) with ⟨k, hwf, hb⟩
+                      subst sg'
+                      rw [hb]
+                      exact ebs_tailcall sg ros args mv ros' k hwf
+                  | right hsgNe =>
+                      simp [pair_instr_block, hm, hb1, hsg] at hpair
+                      rcases hpair with ⟨hbad, _⟩
+                      change false = true at hbad
+                      cases hbad
+              | _ => simp [pair_instr_block, hm, hb1] at hpair
+
+  | Ibuiltin ef args res s =>
+      cases hm1 : extract_moves [] b with
+      | mk mv1 b1 =>
+          cases hb1 : b1 with
+          | nil => simp [pair_instr_block, hm1, hb1] at hpair
+          | cons hd b2 =>
+              cases hd with
+              | Lbuiltin ef' args' res' =>
+                  cases hm2 : extract_moves [] b2 with
+                  | mk mv2 b3 =>
+                      cases hef : external_function_eq ef ef' with
+                      | left hefEq =>
+                          cases hs : check_succ s b3 with
+                          | false => simp [pair_instr_block, hm1, hb1, hm2, hef, hs] at hpair
+                          | true =>
+                              simp [pair_instr_block, hm1, hb1, hm2, hef, hs] at hpair
+                              rcases hpair with ⟨_, hshape⟩
+                              cases hshape
+                              subst b1
+                              rcases local_parse_builtin b mv1 (Lbuiltin ef' args' res' :: b2)
+                                ef' args' res' mv2 b2 b3 s hm1 (by rfl) hm2 hs with
+                                ⟨k, hwf1, hwf2, hb⟩
+                              subst ef'
+                              rw [hb]
+                              exact ebs_builtin ef args res mv1 args' res' mv2 s k hwf1 hwf2
+                      | right hefNe =>
+                          simp [pair_instr_block, hm1, hb1, hm2, hef] at hpair
+                          rcases hpair with ⟨⟨hbad, _⟩, _⟩
+                          change false = true at hbad
+                          cases hbad
+              | _ => simp [pair_instr_block, hm1, hb1] at hpair
+
+  | Icond cond args s1 s2 =>
+      cases hm : extract_moves [] b with
+      | mk mv b1 =>
+          cases hb1 : b1 with
+          | nil => simp [pair_instr_block, hm, hb1] at hpair
+          | cons hd tail =>
+              cases hd with
+              | Lcond cond' args' s1' s2' =>
+                  cases hcond : eq_condition cond cond' with
+                  | left hcondEq =>
+                      cases hs1 : CompCert4Lean.Lib.Coqlib.peq s1 s1' with
+                      | left hs1Eq =>
+                          cases hs2 : CompCert4Lean.Lib.Coqlib.peq s2 s2' with
+                          | left hs2Eq =>
+                              simp [pair_instr_block, hm, hb1, hcond, hs1, hs2] at hpair
+                              rcases hpair with ⟨_, hshape⟩
+                              cases hshape
+                              subst cond'
+                              subst s1'
+                              subst s2'
+                              rcases extract_moves_sound b mv b1 hm with ⟨hwf, hb⟩
+                              rw [hb1] at hb
+                              rw [hb]
+                              exact ebs_cond cond args mv args' s1 s2 tail hwf
+                          | right hs2Ne =>
+                              simp [pair_instr_block, hm, hb1, hcond, hs1, hs2] at hpair
+                              rcases hpair with ⟨⟨⟨_, _⟩, hbad⟩, _⟩
+                              change false = true at hbad
+                              cases hbad
+                      | right hs1Ne =>
+                          simp [pair_instr_block, hm, hb1, hcond, hs1] at hpair
+                          rcases hpair with ⟨⟨⟨_, hbad⟩, _⟩, _⟩
+                          change false = true at hbad
+                          cases hbad
+                  | right hcondNe =>
+                      simp [pair_instr_block, hm, hb1, hcond] at hpair
+                      rcases hpair with ⟨⟨⟨hbad, _⟩, _⟩, _⟩
+                      change false = true at hbad
+                      cases hbad
+              | _ => simp [pair_instr_block, hm, hb1] at hpair
+  | Ijumptable arg tbl =>
+      cases hm : extract_moves [] b with
+      | mk mv b1 =>
+          cases hb1 : b1 with
+          | nil => simp [pair_instr_block, hm, hb1] at hpair
+          | cons hd tail =>
+              cases hd with
+              | Ljumptable arg' tbl' =>
+                  cases htbl : CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.List.list_eq_dec peq tbl tbl' with
+                  | left htblEq =>
+                      simp [pair_instr_block, hm, hb1, htbl] at hpair
+                      rcases hpair with ⟨_, hshape⟩
+                      cases hshape
+                      rcases extract_moves_sound b mv b1 hm with ⟨hwf, hb⟩
+                      rw [hb1] at hb
+                      rw [hb]
+                      subst tbl'
+                      exact ebs_jumptable arg mv arg' tbl tail hwf
+                  | right htblNe =>
+                      simp [pair_instr_block, hm, hb1, htbl] at hpair
+                      rcases hpair with ⟨hbad, _⟩
+                      change false = true at hbad
+                      cases hbad
+              | _ => simp [pair_instr_block, hm, hb1] at hpair
+  | Ireturn optarg =>
+      cases hm : extract_moves_ext [] b with
+      | mk mv b1 =>
+          cases hb1 : b1 with
+          | nil => simp [pair_instr_block, hm, hb1] at hpair
+          | cons hd tail =>
+              cases hd with
+              | Lreturn =>
+                  simp [pair_instr_block, hm, hb1] at hpair
+                  cases hpair
+                  rcases extract_moves_ext_sound b mv b1 hm with ⟨hwf, hb⟩
+                  rw [hb1] at hb
+                  rw [hb]
+                  exact ebs_return optarg mv tail hwf
+              | _ => simp [pair_instr_block, hm, hb1] at hpair
+
+end CompCert4Lean.Backend.Allocproof
+
+namespace CompCert4Lean.Backend.Allocproof
+open CompCert4Lean.Backend.Allocation
+open CompCert4Lean.Lib.Maps
+
+ theorem matching_instr_block : matching_instr_blockStatement := by
+  intro f1 f2 pc bsh i hpair hcode
+  unfold pair_codes at hpair
+  have hg := CompCert4Lean.Lib.Maps.PTree.gcombine_proof
+    (A := RTL.instruction) (B := LTL.bblock) (C := block_shape)
+    (f := fun oi ob =>
+      match oi, ob with
+      | some i, some b => pair_instr_block i b
+      | _, _ => none) (by rfl) f1.fn_code f2.fn_code pc
+  have hpair' :
+      (match PTree.get pc f1.fn_code, PTree.get pc f2.fn_code with
+       | some i, some b => pair_instr_block i b
+       | _, _ => none) = some bsh := by
+    calc
+      (match PTree.get pc f1.fn_code, PTree.get pc f2.fn_code with
+       | some i, some b => pair_instr_block i b
+       | _, _ => none) =
+          PTree.get pc (PTree.combine
+            (fun oi ob =>
+              match oi, ob with
+              | some i, some b => pair_instr_block i b
+              | _, _ => none)
+            f1.fn_code f2.fn_code) := hg.symm
+      _ = some bsh := hpair
+  rw [hcode] at hpair'
+  cases hblock : PTree.get pc f2.fn_code with
+  | none =>
+      simp [hblock] at hpair'
+  | some b =>
+      refine ⟨b, rfl, ?_⟩
+      apply local_pair_instr i b bsh
+      simpa [hblock] using hpair'
+
+end CompCert4Lean.Backend.Allocproof

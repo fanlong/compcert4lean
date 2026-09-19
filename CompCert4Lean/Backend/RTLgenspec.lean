@@ -2554,3 +2554,10 @@ theorem tr_stmt_incr : tr_stmt_incrStatement := by
       exact tr_stmt.tr_Sgoto lbl ns nd nexits ngoto nret rret h
 
 end CompCert4Lean.Backend.RTLgenspec
+
+namespace CompCert4Lean.Backend.RTLgenspec
+
+theorem transl_exit_charact : transl_exit_charactStatement :=
+  rtlgenspec_transl_exit_charact
+
+end CompCert4Lean.Backend.RTLgenspec

@@ -3598,3 +3598,23 @@ theorem TransfSimplExprLink :
         exact ⟨hmp, htypes⟩
 
 end CompCert4Lean.Cfrontend.SimplExprproof
+
+namespace CompCert4Lean.Cfrontend.SimplExprproof
+
+theorem type_of_fundef_preserved :
+    ∀ [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+      [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)],
+      type_of_fundef_preservedStatement := by
+  intro binary64_certificate binary32_certificate
+  intro cu f tf h
+  cases h with
+  | tr_internal f tf htr =>
+      cases htr with
+      | tr_function_intro hbody hreturn hcallconv hparams hvars =>
+          simp [Clight.type_of_fundef, Csyntax.type_of_fundef,
+            Clight.type_of_function, Csyntax.type_of_function,
+            hreturn, hcallconv, hparams]
+  | tr_external ef targs tres cconv =>
+      rfl
+
+end CompCert4Lean.Cfrontend.SimplExprproof

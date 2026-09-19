@@ -2088,3 +2088,298 @@ theorem eventval_match_inject_2 : eventval_match_inject_2Statement := by
         (events_ptrofs_add_zero ofs).symm
 
 end CompCert4Lean.Common.Events
+
+namespace CompCert4Lean.Common.Events
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.Builtins
+open CompCert4Lean.Common.Values
+
+theorem known_builtin_sem_lessdef
+    [binary64_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate :
+      CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate
+        (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)] :
+    known_builtin_sem_lessdefStatement := by
+  intro bf ge vargs m1 t vres m2 ge' vargs' m' hsem hless
+  cases hsem with
+  | known_builtin_sem_intro vargs vres heval =>
+      obtain ⟨vres', heval', hres⟩ :=
+        builtin_function_sem_lessdef bf vargs vres vargs' heval hless
+      exact ⟨vres', known_builtin_sem_intro vargs' vres' m' heval', hres⟩
+
+theorem eventval_list_match_inject : eventval_list_match_injectStatement := by
+  intro f ge1 ge2 hsymbols evl tyl vl1 hmatch
+  induction hmatch with
+  | evl_match_nil =>
+      intro vl2 hinj
+      cases hinj
+      exact evl_match_nil
+  | evl_match_cons ev evl ty tyl v vl hhead htail ih =>
+      intro vl2 hinj
+      cases hinj with
+      | inject_list_cons v v' vl vl' hhead' htail' =>
+          exact evl_match_cons ev evl ty tyl v' vl'
+            (eventval_match_inject f ge1 ge2 hsymbols ev ty v v' hhead hhead')
+            (ih vl' htail')
+
+end CompCert4Lean.Common.Events
+
+namespace CompCert4Lean.Common.Events
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Lib.Integers
+open Lean Elab Tactic Meta
+
+private theorem events_unsigned_repr_bounded (z : Z)
+    (hz : zLe z0 z ∧ zLe z Ptrofs.max_unsigned) :
+    Ptrofs.unsigned (Ptrofs.repr z) = z := by
+  have heq : Ptrofs.unsigned (Ptrofs.repr z) =
+      ZArith.BinInt.Z.modulo z Ptrofs.modulus := by
+    run_tac
+      let lctx ← getLCtx
+      let zF := (lctx.findFromUserName? `z).get!
+      let e ← mkAppM
+        (eventsIntegersPrivateName
+          "CompCert4Lean.Lib.Integers.Int64.suffix_int64_unsigned_repr_eq_exact")
+        #[mkFVar zF.fvarId]
+      closeMainGoal Name.anonymous e
+  rw [heq]
+  apply ZArith.BinInt.Z.mod_small
+  refine ⟨hz.1, ?_⟩
+  have h := hz.2
+  change intOfZ z ≤ 18446744073709551615 at h
+  change intOfZ z < 18446744073709551616
+  omega
+
+private theorem events_address_inject
+    (f : Val.meminj) (m m' : mem) (b b' : block) (ofs : Ptrofs.int)
+    (delta : Z) (p : permission)
+    (hinj : Mem.inject f m m')
+    (hperm : Mem.perm m b (Ptrofs.unsigned ofs) Cur p)
+    (hmap : f b = some (b', delta)) :
+    Ptrofs.unsigned (Ptrofs.add ofs (Ptrofs.repr delta)) =
+      zAdd (Ptrofs.unsigned ofs) delta := by
+  have hnonempty := Mem.perm_cur_max m b (Ptrofs.unsigned ofs) Nonempty
+    (Mem.perm_implies m b (Ptrofs.unsigned ofs) Cur p Nonempty hperm (perm_any_N p))
+  obtain ⟨hdelta, hsum⟩ := hinj.mi_representable b b' delta ofs hmap (Or.inl hnonempty)
+  have hu : 0 ≤ intOfZ (Ptrofs.unsigned ofs) := by
+    have h := ofs.intrange.1
+    change (-1 : _root_.Int) < intOfZ (Ptrofs.unsigned ofs) at h
+    omega
+  have hdmax : zLe delta Ptrofs.max_unsigned := by
+    have h := hsum.2
+    change intOfZ (ZArith.BinInt.Z.add (Ptrofs.unsigned ofs) delta) ≤
+      intOfZ Ptrofs.max_unsigned at h
+    simp only [ZArith.BinInt.Z.add, intOfZ_zOfInt] at h
+    change intOfZ delta ≤ intOfZ Ptrofs.max_unsigned
+    omega
+  change Ptrofs.unsigned (Ptrofs.repr
+    (zAdd (Ptrofs.unsigned ofs) (Ptrofs.unsigned (Ptrofs.repr delta)))) = _
+  rw [events_unsigned_repr_bounded delta ⟨hdelta, hdmax⟩]
+  exact events_unsigned_repr_bounded _ hsum
+
+private theorem events_valid_access_perm (m : mem) (chunk : memory_chunk)
+    (b : block) (ofs : Z) (p : permission)
+    (hvalid : Mem.valid_access m chunk b ofs p) : Mem.perm m b ofs Cur p := by
+  apply hvalid.1 ofs
+  constructor
+  · exact _root_.Int.le_refl _
+  · have hsize := size_chunk_pos chunk
+    change 0 < intOfZ (size_chunk chunk) at hsize
+    change intOfZ ofs < intOfZ (ZArith.BinInt.Z.add ofs (size_chunk chunk))
+    simp only [ZArith.BinInt.Z.add, intOfZ_zOfInt]
+    omega
+
+theorem volatile_load_inject : volatile_load_injectStatement := by
+  intro ge1 ge2 f chunk m b ofs t v b' ofs' m' hsymbols hload hptr hmem
+  cases hload with
+  | volatile_load_vol id ev v hvol hfind hmatch =>
+      cases hptr with
+      | inject_ptr b ofs b' ofs' delta hmap heq =>
+          obtain ⟨hzero, hfind'⟩ := hsymbols.2.1 id b b' delta hmap hfind
+          subst delta
+          rw [events_ptrofs_add_zero] at heq
+          subst ofs'
+          obtain ⟨v', hmatch', hval⟩ :=
+            eventval_match_inject_2 f ge1 ge2 hsymbols ev (type_of_chunk chunk) v hmatch
+          refine ⟨Val.load_result chunk v', ?_, Val.load_result_inject f chunk v v' hval⟩
+          apply volatile_load_vol chunk m' b' ofs id ev v' _ hfind' hmatch'
+          rw [hsymbols.2.2.2 b b' .Z0 hmap]
+          exact hvol
+  | volatile_load_nonvol v hvol hload =>
+      cases hptr with
+      | inject_ptr b ofs b' ofs' delta hmap heq =>
+          obtain ⟨v', hload', hval⟩ := Mem.load_inj f m m' chunk b
+            (Ptrofs.unsigned ofs) b' delta v hmem.mi_inj hload hmap
+          have haddr := events_address_inject f m m' b b' ofs delta Readable hmem
+            (events_valid_access_perm m chunk b (Ptrofs.unsigned ofs) Readable
+              (Mem.load_valid_access m chunk b (Ptrofs.unsigned ofs) v hload)) hmap
+          change Mem.load chunk m' b' (zAdd (Ptrofs.unsigned ofs) delta) = some v' at hload'
+          rw [← haddr, ← heq] at hload'
+          refine ⟨v', volatile_load_nonvol chunk m' b' ofs' v' ?_ hload', hval⟩
+          rw [hsymbols.2.2.2 b b' delta hmap]
+          exact hvol
+
+end CompCert4Lean.Common.Events
+
+namespace CompCert4Lean.Common.Events
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.Lib.Coqlib
+
+private theorem events_store_injection_transport
+    (f : Val.meminj) (chunk : memory_chunk)
+    (m1 m2 n1 n2 : mem) (b1 b2 : block) (ofs1 ofs2 : Z) (v1 v2 : val)
+    (hinj : Mem.inject f m1 m2)
+    (hstore1 : Mem.store chunk m1 b1 ofs1 v1 = some n1)
+    (hstore2 : Mem.store chunk m2 b2 ofs2 v2 = some n2)
+    (hmem : Mem.mem_inj f n1 n2) : Mem.inject f n1 n2 := by
+  have hp1 := Mem.perm_store_1 chunk m1 b1 ofs1 v1 n1 hstore1
+  have hp2 := Mem.perm_store_2 chunk m1 b1 ofs1 v1 n1 hstore1
+  have hq2 := Mem.perm_store_2 chunk m2 b2 ofs2 v2 n2 hstore2
+  constructor
+  · exact hmem
+  · intro b hb
+    apply hinj.mi_freeblocks b
+    intro hv
+    exact hb (Mem.store_valid_block_1 chunk m1 b1 ofs1 v1 n1 hstore1 b hv)
+  · intro b b' delta hmap
+    exact Mem.store_valid_block_1 chunk m2 b2 ofs2 v2 n2 hstore2 b'
+      (hinj.mi_mappedblocks b b' delta hmap)
+  · intro b b' delta c c' delta' ofs ofs' hne hmap hmap' hp hq
+    exact hinj.mi_no_overlap b b' delta c c' delta' ofs ofs' hne hmap hmap'
+      (hp2 b ofs Max Nonempty hp) (hp2 c ofs' Max Nonempty hq)
+  · intro b b' delta ofs hmap hp
+    apply hinj.mi_representable b b' delta ofs hmap
+    exact hp.elim (fun h => Or.inl (hp2 _ _ _ _ h))
+      (fun h => Or.inr (hp2 _ _ _ _ h))
+  · intro b ofs b' delta k p hmap hp
+    obtain hp | hn := hinj.mi_perm_inv b ofs b' delta k p hmap (hq2 _ _ _ _ hp)
+    · exact Or.inl (hp1 _ _ _ _ hp)
+    · exact Or.inr (fun h => hn (hp2 _ _ _ _ h))
+
+private theorem events_store_unchanged
+    (P : block → Z → Prop) (chunk : memory_chunk) (m : mem)
+    (b : block) (ofs : Z) (v : val) (m' : mem)
+    (hstore : Mem.store chunk m b ofs v = some m')
+    (hout : ∀ i, zLe ofs i ∧ zLt i (zAdd ofs (size_chunk chunk)) → ¬ P b i) :
+    Mem.unchanged_on P m m' := by
+  constructor
+  · rw [Mem.nextblock_store chunk m b ofs v m' hstore]
+    exact Ple_refl _
+  · intro b' ofs' k p _ _
+    exact ⟨Mem.perm_store_1 chunk m b ofs v m' hstore b' ofs' k p,
+      Mem.perm_store_2 chunk m b ofs v m' hstore b' ofs' k p⟩
+  · intro b' ofs' hP _
+    rw [Mem.store_mem_contents chunk m b ofs v m' hstore]
+    by_cases hb : b' = b
+    · subst b'
+      erw [PMap.gss]
+      apply Mem.setN_other
+      intro r hr heq
+      subst r
+      apply hout ofs' _ hP
+      have hsize : ZArith.BinInt.Z.of_nat (encode_val chunk v).length =
+          size_chunk chunk := by
+        rw [encode_val_length]
+        exact (size_chunk_conv chunk).symm
+      change zLe ofs ofs' ∧ zLt ofs'
+        (zAdd ofs (ZArith.BinInt.Z.of_nat (encode_val chunk v).length)) at hr
+      rw [hsize] at hr
+      exact hr
+    · erw [PMap.gso _ _ hb]
+
+end CompCert4Lean.Common.Events
+
+namespace CompCert4Lean.Common.Events
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Lib.Integers
+
+theorem volatile_store_inject : volatile_store_injectStatement := by
+  intro ge1 ge2 f chunk m1 b ofs v t m2 m1' b' ofs' v'
+    hsymbols hstore hptr hval hmem
+  cases hstore with
+  | volatile_store_vol id ev v hvol hfind hmatch =>
+      cases hptr with
+      | inject_ptr b ofs b' ofs' delta hmap heq =>
+          obtain ⟨hzero, hfind'⟩ := hsymbols.2.1 id b b' delta hmap hfind
+          subst delta
+          rw [events_ptrofs_add_zero] at heq
+          subst ofs'
+          refine ⟨m1', ?_, hmem, extcall_debug_unchanged_on_refl _ _,
+            extcall_debug_unchanged_on_refl _ _⟩
+          refine volatile_store_vol chunk m1' b' ofs id ev v' ?_ hfind' ?_
+          · rw [hsymbols.2.2.2 b b' .Z0 hmap]
+            exact hvol
+          · exact eventval_match_inject f ge1 ge2 hsymbols ev (type_of_chunk chunk)
+              (Val.load_result chunk v) (Val.load_result chunk v') hmatch
+              (Val.load_result_inject f chunk v v' hval)
+  | volatile_store_nonvol v m2 hvol hstore =>
+      cases hptr with
+      | inject_ptr b ofs b' ofs' delta hmap heq =>
+          obtain ⟨m2', hstore', hmem'⟩ := Mem.store_mapped_inj f chunk m1 b
+            (Ptrofs.unsigned ofs) v m2 m1' b' delta v' hmem.mi_inj hstore
+            hmem.mi_no_overlap hmap hval
+          change Mem.store chunk m1' b' (zAdd (Ptrofs.unsigned ofs) delta) v' =
+            some m2' at hstore'
+          have hvalid := Mem.store_valid_access_3 chunk m1 b (Ptrofs.unsigned ofs)
+            v m2 hstore
+          have haddr := events_address_inject f m1 m1' b b' ofs delta Writable hmem
+            (events_valid_access_perm m1 chunk b (Ptrofs.unsigned ofs) Writable hvalid) hmap
+          have hfull := events_store_injection_transport f chunk m1 m1' m2 m2' b b'
+            (Ptrofs.unsigned ofs) (zAdd (Ptrofs.unsigned ofs) delta) v v'
+            hmem hstore hstore' hmem'
+          refine ⟨m2', ?_, hfull, ?_, ?_⟩
+          · apply volatile_store_nonvol chunk m1' b' ofs' v' m2'
+            · rw [hsymbols.2.2.2 b b' delta hmap]
+              exact hvol
+            · rw [heq, haddr]
+              exact hstore'
+          · apply events_store_unchanged _ chunk m1 b (Ptrofs.unsigned ofs) v m2 hstore
+            intro i _ hunmapped
+            change f b = none at hunmapped
+            rw [hmap] at hunmapped
+            cases hunmapped
+          · apply events_store_unchanged _ chunk m1' b'
+              (zAdd (Ptrofs.unsigned ofs) delta) v' m2' hstore'
+            intro i hi hout
+            apply hout b delta hmap
+            apply Mem.perm_cur_max m1 b (zSub i delta) Nonempty
+            apply Mem.perm_implies m1 b (zSub i delta) Cur Writable Nonempty
+              _ (perm_any_N Writable)
+            apply hvalid.1 (zSub i delta)
+            change intOfZ (zAdd (Ptrofs.unsigned ofs) delta) ≤ intOfZ i ∧
+              intOfZ i < intOfZ (zAdd (zAdd (Ptrofs.unsigned ofs) delta)
+                (size_chunk chunk)) at hi
+            change intOfZ (Ptrofs.unsigned ofs) ≤ intOfZ (zSub i delta) ∧
+              intOfZ (zSub i delta) < intOfZ (zAdd (Ptrofs.unsigned ofs)
+                (size_chunk chunk))
+            simp only [zAdd, zSub, ZArith.BinInt.Z.add, ZArith.BinInt.Z.sub,
+              intOfZ_zOfInt] at hi ⊢
+            omega
+
+end CompCert4Lean.Common.Events

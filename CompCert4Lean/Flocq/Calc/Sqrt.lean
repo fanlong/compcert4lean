@@ -97,3 +97,34 @@ def Fsqrt_core_correctStatement (ctx : ExactRealContext) : Prop :=
       (Exact.sqrt ctx (Exact.F2R ctx (Float beta m1 e1))) l
 
 end CompCert4Lean.Flocq.Calc.Sqrt
+
+namespace CompCert4Lean.Flocq.Calc.Sqrt
+
+theorem mag_sqrt_F2R : ∀ (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx),
+    mag_sqrt_F2RStatement ctx magnitude := by
+  intro ctx magnitude beta m1 e1 hm
+  have hpos := CompCert4Lean.Flocq.Core.Float_prop.F2R_gt_0 ctx beta
+    (Float beta m1 e1) hm
+  have hs := CompCert4Lean.Flocq.Core.Raux.mag_sqrt ctx magnitude beta
+    (Exact.F2R ctx (Float beta m1 e1)) hpos
+  have hmne : m1 ≠ Z0 := by
+    intro hm0
+    subst m1
+    change (0 : Int) < 0 at hm
+    omega
+  have hmag :
+      (CompCert4Lean.Flocq.Core.Raux.Exact.mag magnitude beta
+        (Exact.F2R ctx (Float beta m1 e1))).mag_val =
+        Zadd (Zdigits beta m1) e1 := by
+    exact CompCert4Lean.Flocq.Core.Float_prop.mag_F2R_Zdigits
+      ctx magnitude beta m1 e1 hmne
+  calc
+    Exact.mag ctx magnitude beta
+        (Exact.sqrt ctx (Exact.F2R ctx (Float beta m1 e1))) =
+        Zdiv2 (Zadd
+          (CompCert4Lean.Flocq.Core.Raux.Exact.mag magnitude beta
+            (Exact.F2R ctx (Float beta m1 e1))).mag_val Zone) := hs
+    _ = Zdiv2 (Zadd (Zadd (Zdigits beta m1) e1) Zone) := by
+      rw [hmag]
+
+end CompCert4Lean.Flocq.Calc.Sqrt

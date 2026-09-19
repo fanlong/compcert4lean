@@ -3814,3 +3814,28 @@ theorem symbols_preserved
   exact selection_symbols_preserved cfg oracle prog tprog hm id
 
 end CompCert4Lean.Backend.Selectionproof
+
+namespace CompCert4Lean.Backend.Selectionproof
+
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Linking
+
+variable [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+variable [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+variable [binary64_inverse_certificate : BexactInverseCertificate (zOfNat 53) (zOfNat 1024)]
+variable [binary32_inverse_certificate : BexactInverseCertificate (zOfNat 24) (zOfNat 128)]
+variable (cfg : CompilerConfig) (oracle : SelectionOracle)
+
+theorem function_ptr_translated : function_ptr_translatedStatement cfg oracle := by
+  intro prog tprog hmatch b f hfind
+  unfold match_prog CompCert4Lean.Common.Linking.match_program at hmatch
+  rcases Genv.find_funct_ptr_match CminorProgram CminorFundef Unit CminorSelFundef Unit
+    (fun cu f tf => match_fundef cfg oracle
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      (binary64_inverse_certificate := binary64_inverse_certificate)
+      (binary32_inverse_certificate := binary32_inverse_certificate) cu f tf) Eq
+    prog prog tprog hmatch b f hfind with ⟨cu, tf, hfindtf, hmatchf, horder⟩
+  exact ⟨cu, tf, hfindtf, hmatchf, horder⟩
+
+end CompCert4Lean.Backend.Selectionproof

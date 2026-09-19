@@ -3846,3 +3846,29 @@ theorem orl_assoc : orl_assocStatement := by
 
 end Val
 end CompCert4Lean.Common.Values
+
+namespace CompCert4Lean.Common.Values
+namespace Val
+
+private theorem pg_values_int64_xor_val
+    (x y : CompCert4Lean.Lib.Integers.Int64.int) :
+    (CompCert4Lean.Lib.Integers.Int64.xor x y).val = Nat.xor x.val y.val := by
+  unfold CompCert4Lean.Lib.Integers.Int64.xor
+    CompCert4Lean.Lib.Integers.WordCore.xor
+  change (CompCert4Lean.Lib.Integers.WordCore.repr 64
+    (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat
+      (Nat.xor x.val y.val))).val = Nat.xor x.val y.val
+  exact CompCert4Lean.Common.Values.Val.pg_andl_repr_val_of_lt64 _
+    (Nat.xor_lt_two_pow x.toFin.isLt y.toFin.isLt)
+
+theorem xorl_assoc : xorl_assocStatement := by
+  intro x y z
+  cases x <;> cases y <;> cases z <;> simp [xorl]
+  case Vlong.Vlong.Vlong a b c =>
+    apply CompCert4Lean.Lib.Integers.WordCore.ext_of_val_eq
+    rw [pg_values_int64_xor_val, pg_values_int64_xor_val,
+      pg_values_int64_xor_val, pg_values_int64_xor_val]
+    exact Nat.xor_assoc _ _ _
+
+end Val
+end CompCert4Lean.Common.Values

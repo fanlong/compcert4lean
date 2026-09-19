@@ -1964,3 +1964,23 @@ theorem cexp_inbetween_float_loc_Exact : ∀ (ctx : ExactRealContext)
       · exact Or.inr hl
 
 end CompCert4Lean.Flocq.Calc.Round
+
+namespace CompCert4Lean.Flocq.Calc.Round
+
+theorem inbetween_float_round_sign : ∀ (ctx : ExactRealContext)
+    (magnitude : ExactMagnitude ctx),
+    inbetween_float_round_signStatement ctx magnitude := by
+  intro ctx magnitude beta fexp rnd choice hchoice x m l e hbetween
+  unfold CompCert4Lean.Flocq.Core.Generic_fmt.Exact.round
+  apply congrArg (fun z : Z =>
+    CompCert4Lean.Flocq.Calc.Bracket.F2R ctx
+      (CompCert4Lean.Flocq.Calc.Bracket.Float beta z
+        (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.cexp ctx magnitude beta fexp x)))
+  dsimp only [CompCert4Lean.Flocq.Calc.Bracket.R0,
+    CompCert4Lean.Flocq.Core.Raux.Exact.R0,
+    CompCert4Lean.Foundation.FlocqReal.ExactReal.R0]
+  rw [← pg_rlt_bool_scaled ctx magnitude beta fexp x]
+  apply hchoice
+  exact pg_inbetween_int_scaled ctx magnitude beta fexp x m _ l hbetween rfl
+
+end CompCert4Lean.Flocq.Calc.Round

@@ -8149,3 +8149,12 @@ theorem nge_lub_r : nge_lub_rStatement := by
       | All => exact nge.nge_nothing (L m2)
 
 end CompCert4Lean.Backend.NeedDomain
+
+namespace CompCert4Lean.Backend.NeedDomain
+
+theorem eq_same_bits : eq_same_bitsStatement := by
+  intro i x y h
+  subst y
+  rfl
+
+end CompCert4Lean.Backend.NeedDomain

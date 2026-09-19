@@ -3356,3 +3356,114 @@ theorem cond_strength_reduction_correct : cond_strength_reduction_correctStateme
   | cond_strength_reduction_default cond args vl => rfl
 
 end CompCert4Lean.X86.ConstpropOpproof
+
+namespace CompCert4Lean.X86.ConstpropOpproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Backend.ValueDomain
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.X86.Op
+open CompCert4Lean.X86.ConstpropOp
+
+private theorem cp_addr32_repr_add (x y : Z) :
+    CompCert4Lean.Lib.Integers.Int.repr (ZArith.BinInt.Z.add x y) =
+      CompCert4Lean.Lib.Integers.Int.add
+        (CompCert4Lean.Lib.Integers.Int.repr x)
+        (CompCert4Lean.Lib.Integers.Int.repr y) := by
+  apply CompCert4Lean.Lib.Integers.Int.eqm_samerepr_proof
+  exact CompCert4Lean.Lib.Integers.Int.eqm_add_proof _ _ _ _
+    (CompCert4Lean.Lib.Integers.Int.eqm_unsigned_repr_r_proof x x
+      (CompCert4Lean.Lib.Integers.Int.eqm_refl_proof x))
+    (CompCert4Lean.Lib.Integers.Int.eqm_unsigned_repr_r_proof y y
+      (CompCert4Lean.Lib.Integers.Int.eqm_refl_proof y))
+
+private theorem cp_addr32_signed_add (x : int) (y : Z) :
+    CompCert4Lean.Lib.Integers.Int.repr
+      (ZArith.BinInt.Z.add (CompCert4Lean.Lib.Integers.Int.signed x) y) =
+      CompCert4Lean.Lib.Integers.Int.add x
+        (CompCert4Lean.Lib.Integers.Int.repr y) := by
+  rw [cp_addr32_repr_add, CompCert4Lean.Lib.Integers.Int.repr_signed_proof]
+
+private theorem cp_addr32_signed_mul (x : int) (y : Z) :
+    CompCert4Lean.Lib.Integers.Int.repr
+      (ZArith.BinInt.Z.mul (CompCert4Lean.Lib.Integers.Int.signed x) y) =
+      CompCert4Lean.Lib.Integers.Int.mul x
+        (CompCert4Lean.Lib.Integers.Int.repr y) := by
+  apply CompCert4Lean.Lib.Integers.Int.eqm_samerepr_proof
+  exact CompCert4Lean.Lib.Zbits.eqmod_mult _ _ _ _ _
+    (CompCert4Lean.Lib.Integers.Int.eqm_signed_unsigned_proof x)
+    (CompCert4Lean.Lib.Integers.Int.eqm_unsigned_repr_r_proof y y
+      (CompCert4Lean.Lib.Integers.Int.eqm_refl_proof y))
+
+theorem addr_strength_reduction_32_generic_correct :
+    addr_strength_reduction_32_generic_correctStatement := by
+  intro bc ge sp ae e hem addr args vl res hvl heval
+  unfold addr_strength_reduction_32_generic
+  cases hred : addr_strength_reduction_32_generic_match addr args vl with
+  | addr_strength_reduction_32_generic_case1 ofs r1 r2 n1 v2 =>
+      have hv : Regmap.get r1 e = .Vint n1 := by
+        apply cp_cond_int_value
+        rw [(List.cons.inj hvl).1]
+        exact hem r1
+      simp only [reg_values, List.map_cons, List.map_nil, eval_addressing32,
+        hv, Option.some.injEq] at heval
+      refine ⟨_, rfl, ?_⟩
+      rw [← heval, cp_addr32_signed_add]
+      change Val.lessdef
+        (Val.add (Val.add (.Vint n1) (Regmap.get r2 e))
+          (.Vint (CompCert4Lean.Lib.Integers.Int.repr ofs)))
+        (Val.add (Regmap.get r2 e)
+          (Val.add (.Vint n1) (.Vint (CompCert4Lean.Lib.Integers.Int.repr ofs))))
+      rw [Val.add_assoc, Val.add_permut (.Vint n1)]
+      exact Val.lessdef_refl _
+  | addr_strength_reduction_32_generic_case2 ofs r1 r2 v1 n2 =>
+      have hv : Regmap.get r2 e = .Vint n2 := by
+        apply cp_cond_int_value
+        rw [(List.cons.inj (List.cons.inj hvl).2).1]
+        exact hem r2
+      simp only [reg_values, List.map_cons, List.map_nil, eval_addressing32,
+        hv, Option.some.injEq] at heval
+      refine ⟨_, rfl, ?_⟩
+      rw [← heval, cp_addr32_signed_add]
+      change Val.lessdef
+        (Val.add (Val.add (Regmap.get r1 e) (.Vint n2))
+          (.Vint (CompCert4Lean.Lib.Integers.Int.repr ofs)))
+        (Val.add (Regmap.get r1 e)
+          (Val.add (.Vint n2) (.Vint (CompCert4Lean.Lib.Integers.Int.repr ofs))))
+      rw [Val.add_assoc]
+      exact Val.lessdef_refl _
+  | addr_strength_reduction_32_generic_case3 sc ofs r1 r2 v1 n2 =>
+      have hv : Regmap.get r2 e = .Vint n2 := by
+        apply cp_cond_int_value
+        rw [(List.cons.inj (List.cons.inj hvl).2).1]
+        exact hem r2
+      simp only [reg_values, List.map_cons, List.map_nil, eval_addressing32,
+        hv, Option.some.injEq] at heval
+      refine ⟨_, rfl, ?_⟩
+      rw [← heval, cp_addr32_repr_add, cp_addr32_signed_mul]
+      exact Val.lessdef_refl _
+  | addr_strength_reduction_32_generic_case4 sc ofs r1 r2 n1 v2 =>
+      have hv : Regmap.get r1 e = .Vint n1 := by
+        apply cp_cond_int_value
+        rw [(List.cons.inj hvl).1]
+        exact hem r1
+      simp only [reg_values, List.map_cons, List.map_nil, eval_addressing32,
+        hv, Option.some.injEq] at heval
+      refine ⟨_, rfl, ?_⟩
+      rw [← heval, cp_addr32_signed_add]
+      change Val.lessdef
+        (Val.add (.Vint n1)
+          (Val.add (Val.mul (Regmap.get r2 e)
+            (.Vint (CompCert4Lean.Lib.Integers.Int.repr sc)))
+            (.Vint (CompCert4Lean.Lib.Integers.Int.repr ofs))))
+        (Val.add (Val.mul (Regmap.get r2 e)
+          (.Vint (CompCert4Lean.Lib.Integers.Int.repr sc)))
+          (Val.add (.Vint n1) (.Vint (CompCert4Lean.Lib.Integers.Int.repr ofs))))
+      rw [Val.add_permut (.Vint n1)]
+      exact Val.lessdef_refl _
+  | addr_strength_reduction_32_generic_default addr args vl =>
+      exact ⟨res, heval, Val.lessdef_refl _⟩
+
+end CompCert4Lean.X86.ConstpropOpproof

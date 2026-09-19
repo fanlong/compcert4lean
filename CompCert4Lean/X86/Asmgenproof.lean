@@ -1808,3 +1808,11 @@ theorem exec_straight_at
   exact asmgenproof_exec_straight_at_local
 
 end CompCert4Lean.X86.Asmgenproof
+
+namespace CompCert4Lean.X86.Asmgenproof
+
+theorem mk_setcc_base_label : mk_setcc_base_labelStatement := by
+  intro xc rd k
+  exact asmgenproof_mk_setcc_base_label xc rd k
+
+end CompCert4Lean.X86.Asmgenproof

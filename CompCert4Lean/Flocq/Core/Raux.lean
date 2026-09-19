@@ -4425,3 +4425,20 @@ theorem mag_le_Zpower :
   exact mag_le_bpow ctx m r (Exact.IZR ctx z) e hne hlt
 
 end CompCert4Lean.Flocq.Core.Raux
+
+namespace CompCert4Lean.Flocq.Core.Raux
+
+theorem Rcompare_half_l (ctx : ExactRealContext) : Rcompare_half_lStatement ctx := by
+  intro x y
+  calc
+    Exact.Rcompare ctx (Exact.Rdiv ctx x (Exact.Rtwo ctx)) y =
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.CompOpp
+          (Exact.Rcompare ctx y (Exact.Rdiv ctx x (Exact.Rtwo ctx))) :=
+      Rcompare_sym ctx _ _
+    _ = CompCert4Lean.Foundation.Numbers.Rocq.Coq.CompOpp
+          (Exact.Rcompare ctx (Exact.Rmult ctx (Exact.Rtwo ctx) y) x) :=
+      congrArg _ (Rcompare_half_r ctx y x)
+    _ = Exact.Rcompare ctx x (Exact.Rmult ctx (Exact.Rtwo ctx) y) :=
+      (Rcompare_sym ctx _ _).symm
+
+end CompCert4Lean.Flocq.Core.Raux

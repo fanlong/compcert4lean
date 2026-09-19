@@ -991,3 +991,108 @@ theorem eval_static_addressing_32_sound : eval_static_addressing_32_soundStateme
               cases addr <;> simp [eval_addressing32, CompCert4Lean.X86_64.Archi.ptr64] at he
 
 end CompCert4Lean.X86.ValueAOp
+
+namespace CompCert4Lean.X86.ValueAOp
+
+open CompCert4Lean.Backend.ValueDomain
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.X86.Op
+
+private theorem addr64_padd_match (bc : block_classification) (b : block)
+    (ofs n : ptrofs) (p : aptr) (h : pmatch bc b ofs p) :
+    pmatch bc b (Ptrofs.add ofs n) (padd p n) := by
+  cases h <;> simp only [padd]
+  all_goals constructor <;> assumption
+
+private theorem addr64_poffset_match (bc : block_classification) (b : block)
+    (ofs ofs' : ptrofs) (p : aptr) (h : pmatch bc b ofs p) :
+    pmatch bc b ofs' (poffset p) := by
+  cases h <;> simp only [poffset]
+  all_goals constructor <;> assumption
+
+set_option maxHeartbeats 2000000 in
+private theorem addr64_add_match (bc : block_classification)
+    (v w : val) (x y : aval) (hv : vmatch bc v x) (hw : vmatch bc w y) :
+    vmatch bc (Val.addl v w) (addl x y) := by
+  cases hv <;> cases hw <;>
+    simp only [Val.addl, addl, CompCert4Lean.X86_64.Archi.ptr64, if_true, ntop2]
+  all_goals first
+    | exact vmatch.long _
+    | exact vmatch.numUndef _
+    | exact vmatch.numLong _ _
+    | exact vmatch.ptrUndef _
+    | exact vmatch.ifptrUndef _
+    | exact vmatch.ifptrLong _ _
+    | (apply vmatch.ptr; apply addr64_padd_match; assumption)
+    | (apply vmatch.ptr; apply addr64_poffset_match; assumption)
+    | (apply vmatch.ifptrPtr; apply addr64_padd_match; assumption)
+    | (apply vmatch.ifptrPtr; apply addr64_poffset_match; assumption)
+    | (apply vmatch.ifptrPtr; apply pmatch_lub_l;
+        apply addr64_poffset_match; assumption)
+    | (apply vmatch.ifptrPtr; apply pmatch_lub_r;
+        apply addr64_poffset_match; assumption)
+
+private theorem addr64_mul_const_match (bc : block_classification)
+    (v : val) (x : aval) (j : int64) (hv : vmatch bc v x) :
+    vmatch bc (Val.mull v (Vlong j)) (mull x (L j)) := by
+  cases hv <;> simp only [Val.mull, mull, binop_long, ntop2]
+  all_goals first
+    | exact vmatch.long _
+    | exact vmatch.numUndef _
+    | exact vmatch.numLong _ _
+
+private theorem addr64_add_zero_left (ofs : ptrofs) :
+    Ptrofs.add Ptrofs.zero ofs = ofs := by
+  apply WordCore.ext_of_val_eq
+  have hadd : (Ptrofs.add Ptrofs.zero ofs).val =
+      (Ptrofs.zero.val + ofs.val) % (2 ^ Ptrofs.wordsize) := by
+    run_tac
+      let some (nm, _) := (← Lean.getEnv).constants.toList.find? (fun (n, _) =>
+        n.toString.endsWith ".CompCert4Lean.Lib.Integers.WordCore.add_val")
+        | throwError "Missing checked word addition lemma"
+      Lean.Elab.Tactic.evalTactic (← `(tactic| exact $(Lean.mkIdent nm) _ _))
+  rw [hadd]
+  change (0 + ofs.val) % (2 ^ Ptrofs.wordsize) = ofs.val
+  rw [Nat.zero_add]
+  apply Nat.mod_eq_of_lt
+  exact ofs.toFin.isLt
+
+theorem eval_static_addressing_64_sound : eval_static_addressing_64_soundStatement := by
+  intro bc ge hge sp hsp addr vargs vres aargs he hm
+  cases hm with
+  | nil =>
+      cases addr <;> simp [eval_addressing64, CompCert4Lean.X86_64.Archi.ptr64] at he
+      all_goals cases he
+      · exact symbol_address_sound bc ge hge _ _
+      · simp only [eval_static_addressing_64, Val.offset_ptr, addr64_add_zero_left]
+        exact vmatch.ptr _ _ _ (pmatch.stk hsp)
+  | cons v a hv ht =>
+      cases ht with
+      | nil =>
+          cases addr <;> simp [eval_addressing64] at he
+          all_goals cases he
+          all_goals simp only [eval_static_addressing_64]
+          all_goals apply addr64_add_match
+          all_goals first
+            | exact hv
+            | exact vmatch.long _
+            | exact addr64_mul_const_match bc _ _ _ hv
+      | cons w b hw ht =>
+          cases ht with
+          | nil =>
+              cases addr <;> simp [eval_addressing64] at he
+              all_goals cases he
+              all_goals simp only [eval_static_addressing_64]
+              all_goals apply addr64_add_match
+              all_goals first
+                | exact hv
+                | exact vmatch.long _
+                | exact addr64_add_match bc _ _ _ _ hv hw
+                | (apply addr64_add_match; exact addr64_mul_const_match bc _ _ _ hw;
+                    exact vmatch.long _)
+          | cons z c hz ht =>
+              cases addr <;> simp [eval_addressing64] at he
+
+end CompCert4Lean.X86.ValueAOp

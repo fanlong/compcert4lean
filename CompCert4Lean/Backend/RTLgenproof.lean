@@ -3261,3 +3261,17 @@ theorem match_init_env_init_reg : match_init_env_init_regStatement := by
     (init_regs tvparams rparams) i2 hparams_match.1 hvars
 
 end CompCert4Lean.Backend.RTLgenproof
+
+
+namespace CompCert4Lean.Backend.RTLgenproof
+
+open CompCert4Lean.Common.Globalenvs
+
+theorem symbols_preserved : symbols_preservedStatement := by
+  intro prog tprog hm id
+  have hg := rtlgen_globalenvs_match prog tprog hm
+  change Genv.find_symbol (Genv.globalenv tprog) id =
+    Genv.find_symbol (Genv.globalenv prog) id
+  simpa [Genv.find_symbol] using hg.mge_symb id
+
+end CompCert4Lean.Backend.RTLgenproof

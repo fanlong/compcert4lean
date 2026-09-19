@@ -2931,3 +2931,81 @@ theorem eval_offset_addressing_total_64 :
             CompCert4Lean.X86_64.Archi.ptr64] at h ⊢
 
 end CompCert4Lean.X86.Op
+
+namespace CompCert4Lean.X86.Op
+
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.Globalenvs
+
+theorem type_of_addressing64_sound : type_of_addressing64_soundStatement := by
+  intro A V genv addr vl sp v h
+  cases addr with
+  | Aindexed ofs =>
+      cases vl with
+      | nil => simp [eval_addressing64] at h
+      | cons v1 vl =>
+          cases vl with
+          | nil =>
+              simp [eval_addressing64] at h
+              cases h
+              exact type_addl _ _
+          | cons v2 vl => simp [eval_addressing64] at h
+  | Aindexed2 ofs =>
+      cases vl with
+      | nil => simp [eval_addressing64] at h
+      | cons v1 vl =>
+          cases vl with
+          | nil => simp [eval_addressing64] at h
+          | cons v2 vl =>
+              cases vl with
+              | nil =>
+                  simp [eval_addressing64] at h
+                  cases h
+                  exact type_addl _ _
+              | cons v3 vl => simp [eval_addressing64] at h
+  | Ascaled scale ofs =>
+      cases vl with
+      | nil => simp [eval_addressing64] at h
+      | cons v1 vl =>
+          cases vl with
+          | nil =>
+              simp [eval_addressing64] at h
+              cases h
+              exact type_addl _ _
+          | cons v2 vl => simp [eval_addressing64] at h
+  | Aindexed2scaled scale ofs =>
+      cases vl with
+      | nil => simp [eval_addressing64] at h
+      | cons v1 vl =>
+          cases vl with
+          | nil => simp [eval_addressing64] at h
+          | cons v2 vl =>
+              cases vl with
+              | nil =>
+                  simp [eval_addressing64] at h
+                  cases h
+                  exact type_addl _ _
+              | cons v3 vl => simp [eval_addressing64] at h
+  | Aglobal id ofs =>
+      cases vl with
+      | nil =>
+          simp [eval_addressing64, CompCert4Lean.X86_64.Archi.ptr64] at h
+          cases h
+          unfold Genv.symbol_address
+          cases Genv.find_symbol genv id <;>
+            simp [Val.has_type, CompCert4Lean.X86_64.Archi.ptr64]
+      | cons v1 vl => simp [eval_addressing64] at h
+  | Abased id ofs =>
+      simp [eval_addressing64] at h
+  | Abasedscaled scale id ofs =>
+      simp [eval_addressing64] at h
+  | Ainstack ofs =>
+      cases vl with
+      | nil =>
+          simp [eval_addressing64, CompCert4Lean.X86_64.Archi.ptr64] at h
+          cases h
+          cases sp <;>
+            simp [Val.offset_ptr, Val.has_type, CompCert4Lean.X86_64.Archi.ptr64]
+      | cons v1 vl => simp [eval_addressing64] at h
+
+end CompCert4Lean.X86.Op

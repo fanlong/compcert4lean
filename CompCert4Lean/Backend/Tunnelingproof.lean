@@ -2109,3 +2109,55 @@ noncomputable def record_conds_1_correct : record_conds_1_correctStatement := by
   exact ⟨REC.1, REC.2.2⟩
 
 end CompCert4Lean.Backend.Tunnelingproof
+
+namespace CompCert4Lean.Backend.Tunnelingproof
+
+open CompCert4Lean.Backend.Tunneling
+open CompCert4Lean.Backend.LTL
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Foundation.Logic.Rocq.Coq.Init.Specif
+open CompCert4Lean.Lib.Maps
+
+noncomputable def record_conds_correct : record_conds_correctStatement := by
+  intro fn cu hmap hcompat
+  let P : code × U.t → U.t → Type := fun cu u =>
+    code_compat fn cu.1 →
+      sig (fun f : node → Nat => branch_map_correct_2 fn cu.1 cu.2 f) →
+      sig (fun f : node → Nat => branch_map_correct fn u f)
+  have Hrec : ∀ cu : code × U.t, P cu (record_conds cu) := by
+    apply record_conds_rec (P := P)
+    · intro cu cu' changed hresult hchanged ih
+      intro hcompat0 hmap0
+      rcases cu with ⟨c, u⟩
+      rcases hmap0 with ⟨f, BMC⟩
+      have H1 := record_conds_1_correct fn c u f BMC hcompat0
+      rcases H1 with ⟨⟨COMPAT1⟩, ⟨f1, BMC1⟩⟩
+      subst changed
+      have Htarget := ih (by simpa [hresult] using COMPAT1)
+        ⟨f1, by simpa [hresult] using BMC1⟩
+      simpa [P, hresult, record_conds] using Htarget
+    · intro cu cu' changed hresult hunchanged
+      intro hcompat0 hmap0
+      rcases hmap0 with ⟨f, BMC⟩
+      refine ⟨f, ?_⟩
+      intro pc
+      have BMCpc := BMC pc
+      cases hget : PTree.get pc fn.fn_code with
+      | none =>
+          simpa [hget] using BMCpc
+      | some bb =>
+          cases bb with
+          | nil =>
+              simpa [hget] using BMCpc
+          | cons instr tail =>
+              cases instr with
+              | Lcond cond args ifso ifnot =>
+                  simp [hget] at BMCpc ⊢
+                  rcases BMCpc with H | ⟨_, H⟩
+                  · exact Or.inl H
+                  · exact Or.inr H
+              | _ =>
+                  simpa [hget] using BMCpc
+  exact Hrec cu hcompat hmap
+
+end CompCert4Lean.Backend.Tunnelingproof

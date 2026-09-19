@@ -3057,3 +3057,404 @@ theorem range_private_free_left : range_private_free_leftStatement := by
           Max Nonempty hperm)
 
 end CompCert4Lean.Backend.Inliningproof
+namespace CompCert4Lean.Backend.Inliningproof
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Backend.Inlining
+open CompCert4Lean.Backend.Inliningspec
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.Lib.Maps
+open Lean Elab Tactic Meta
+private def pgPrivateName (suffix : String) : Name :=
+  let p := Name.str (Name.str (Name.str (Name.str Name.anonymous "_private") "CompCert4Lean") "Lib") "Integers"
+  let base := Name.num p 0
+  suffix.splitOn "." |>.foldl Name.str base
+private theorem pg_wordcore_val_repr (bits : Nat) (i : Int) :
+    (WordCore.repr bits (CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt i)).val =
+      Int.toNat (i % ((2 ^ bits : Nat) : Int)) := by
+  run_tac
+    let lctx ← getLCtx
+    let bF := (lctx.findFromUserName? `bits).get!
+    let iF := (lctx.findFromUserName? `i).get!
+    let e ← mkAppM
+      (pgPrivateName "CompCert4Lean.Lib.Integers.WordCore.val_repr")
+      #[mkFVar bF.fvarId, mkFVar iF.fvarId]
+    closeMainGoal Name.anonymous e
+private theorem pg_wordcore_intval_eq_zOfNat_val {bits : Nat} (x : WordCore.Word bits) :
+    x.intval = ZArith.BinInt.Z.of_nat x.val := by
+  run_tac
+    let lctx ← getLCtx
+    let xF := (lctx.findFromUserName? `x).get!
+    let e ← mkAppM
+      (pgPrivateName "CompCert4Lean.Lib.Integers.WordCore.intval_eq_zOfNat_val")
+      #[mkFVar xF.fvarId]
+    closeMainGoal Name.anonymous e
+private theorem pg_ptrofs_modulus :
+    Ptrofs.modulus = ZArith.BinInt.Z.of_nat (2 ^ Ptrofs.wordsize) := by
+  unfold Ptrofs.modulus
+  run_tac
+    let e ← mkAppM
+      (pgPrivateName "CompCert4Lean.Lib.Integers.WordCore.twoPowerNat_eq_zOfNat_twoPow")
+      #[mkConst ``CompCert4Lean.Lib.Integers.Ptrofs.wordsize]
+    closeMainGoal Name.anonymous e
+
+
+private theorem pg_wordcore_add_val {bits : Nat} (x y : WordCore.Word bits) :
+    (WordCore.add x y).val = (x.val + y.val) % (2 ^ bits) := by
+  run_tac
+    let lctx ← getLCtx
+    let xF := (lctx.findFromUserName? `x).get!
+    let yF := (lctx.findFromUserName? `y).get!
+    let e ← mkAppM
+      (pgPrivateName "CompCert4Lean.Lib.Integers.WordCore.add_val")
+      #[mkFVar xF.fvarId, mkFVar yF.fvarId]
+    closeMainGoal Name.anonymous e
+private theorem pg_wordcore_val_lt {bits : Nat} (x : WordCore.Word bits) :
+    x.val < 2 ^ bits := by
+  run_tac
+    let lctx ← getLCtx
+    let xF := (lctx.findFromUserName? `x).get!
+    let e ← mkAppM
+      (pgPrivateName "CompCert4Lean.Lib.Integers.WordCore.val_lt")
+      #[mkFVar xF.fvarId]
+    closeMainGoal Name.anonymous e
+private theorem pg_wordcore_zero_val (bits : Nat) :
+    (WordCore.zero bits).val = 0 := by
+  unfold WordCore.zero
+  change (WordCore.repr bits (CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt (Int.ofNat 0))).val = 0
+  simpa using pg_wordcore_val_repr bits 0
+private theorem pg_ptr_add_zero (x : Ptrofs.int) :
+    Ptrofs.add x Ptrofs.zero = x := by
+  change WordCore.add x (WordCore.zero Ptrofs.wordsize) = x
+  apply WordCore.ext_of_val_eq
+  rw [pg_wordcore_add_val, pg_wordcore_zero_val]
+  exact Nat.mod_eq_of_lt (pg_wordcore_val_lt x)
+private theorem pg_ptr_add_zero_repr (x : Ptrofs.int) :
+    Ptrofs.add x (Ptrofs.repr (.Z0)) = x := by
+  change WordCore.add x (WordCore.repr Ptrofs.wordsize (.Z0)) = x
+  apply WordCore.ext_of_val_eq
+  rw [pg_wordcore_add_val]
+  have hz : (WordCore.repr Ptrofs.wordsize (.Z0)).val = 0 := by
+    change (WordCore.repr Ptrofs.wordsize
+      (CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt (Int.ofNat 0))).val = 0
+    simpa using pg_wordcore_val_repr Ptrofs.wordsize 0
+  rw [hz, Nat.add_zero]
+  exact Nat.mod_eq_of_lt (pg_wordcore_val_lt x)
+private theorem pg_ptr_add_zero_l (x : Ptrofs.int) :
+    Ptrofs.add Ptrofs.zero x = x := by
+  rw [Ptrofs.add_commut_proof_api]
+  exact pg_ptr_add_zero x
+
+private theorem pg_ptr_unsigned_repr (z : Z)
+    (hz : ZArith.BinInt.Z.le (.Z0) z ∧ ZArith.BinInt.Z.le z Ptrofs.max_unsigned) :
+    Ptrofs.unsigned (Ptrofs.repr z) = z := by
+  have hznonneg : 0 ≤ intOfZ z := by
+    have hz0 := hz.1
+    change 0 ≤ intOfZ z at hz0
+    exact hz0
+  have hzlt : intOfZ z < ((2 ^ Ptrofs.wordsize : Nat) : Int) := by
+    have hzmax := hz.2
+    change intOfZ z ≤ intOfZ Ptrofs.max_unsigned at hzmax
+    change intOfZ z ≤ intOfZ (Ptrofs.max_unsigned) at hzmax
+    unfold Ptrofs.max_unsigned at hzmax
+    change intOfZ z ≤ intOfZ (ZArith.BinInt.Z.sub Ptrofs.modulus (.Zpos xH)) at hzmax
+    rw [pg_ptrofs_modulus] at hzmax
+    change intOfZ z ≤ Int.ofNat (2 ^ Ptrofs.wordsize) - 1 at hzmax
+    have hzmax' : intOfZ z ≤ ((2 ^ Ptrofs.wordsize : Nat) : Int) - 1 := by
+      simpa only [Int.ofNat_eq_natCast] using hzmax
+    omega
+  change (WordCore.repr Ptrofs.wordsize z).intval = z
+  rw [pg_wordcore_intval_eq_zOfNat_val]
+  have hval :
+      (WordCore.repr Ptrofs.wordsize z).val =
+        Int.toNat (intOfZ z % ((2 ^ Ptrofs.wordsize : Nat) : Int)) := by
+    rw [← zOfInt_intOfZ z]
+    simpa only [intOfZ_zOfInt] using pg_wordcore_val_repr Ptrofs.wordsize (intOfZ z)
+  rw [hval, Int.emod_eq_of_lt hznonneg hzlt]
+  change zOfInt (Int.ofNat (Int.toNat (intOfZ z))) = z
+  calc
+    _ = zOfInt (intOfZ z) := congrArg zOfInt (Int.toNat_of_nonneg hznonneg)
+    _ = z := zOfInt_intOfZ z
+
+end CompCert4Lean.Backend.Inliningproof
+namespace CompCert4Lean.Backend.Inliningproof
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Backend.Inlining
+open CompCert4Lean.Backend.Inliningspec
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.Lib.Maps
+private theorem pg_address_inject
+    (f : Val.meminj) (m1 m2 : mem) (b1 : block) (ofs1 : Ptrofs.int)
+    (b2 : block) (delta : Z) (p : CompCert4Lean.Common.Memtype.permission) :
+    Mem.inject f m1 m2 →
+    Mem.perm m1 b1 (Ptrofs.unsigned ofs1) Cur p →
+    f b1 = some (b2, delta) →
+    Ptrofs.unsigned (Ptrofs.add ofs1 (Ptrofs.repr delta)) =
+      ZArith.BinInt.Z.add (Ptrofs.unsigned ofs1) delta := by
+  intro hinj hperm hmap
+  have hpmax : Mem.perm m1 b1 (Ptrofs.unsigned ofs1) Max Nonempty := by
+    exact Mem.perm_implies m1 b1 (Ptrofs.unsigned ofs1) Max p Nonempty
+      (Mem.perm_cur_max m1 b1 (Ptrofs.unsigned ofs1) p hperm)
+      (perm_any_N p)
+  have hrep := hinj.mi_representable b1 b2 delta ofs1 hmap (Or.inl hpmax)
+  have hdelta0 : 0 ≤ intOfZ delta := by
+    change 0 ≤ intOfZ delta
+    exact hrep.1
+  have hsum0 : 0 ≤ intOfZ (ZArith.BinInt.Z.add (Ptrofs.unsigned ofs1) delta) := by
+    change 0 ≤ intOfZ (ZArith.BinInt.Z.add (Ptrofs.unsigned ofs1) delta)
+    exact hrep.2.1
+  have hsummax : intOfZ (ZArith.BinInt.Z.add (Ptrofs.unsigned ofs1) delta) ≤
+      intOfZ Ptrofs.max_unsigned := by
+    simpa only [ZArith.BinInt.Z.le] using hrep.2.2
+  have hofs0 : 0 ≤ intOfZ (Ptrofs.unsigned ofs1) := by
+    have h := ofs1.intrange.1
+    change (-1 : Int) < intOfZ (Ptrofs.unsigned ofs1) at h
+    omega
+  have hdeltaMax : intOfZ delta ≤ intOfZ Ptrofs.max_unsigned := by
+    have hsum := hsummax
+    have hadd := hsum0
+    have haddI : intOfZ (ZArith.BinInt.Z.add (Ptrofs.unsigned ofs1) delta) =
+        intOfZ (Ptrofs.unsigned ofs1) + intOfZ delta := by
+      simp only [ZArith.BinInt.Z.add, intOfZ_zOfInt]
+    omega
+  have hu_delta : Ptrofs.unsigned (Ptrofs.repr delta) = delta :=
+    pg_ptr_unsigned_repr delta (by
+      constructor
+      · exact hdelta0
+      · exact hdeltaMax)
+  have haddrepr : Ptrofs.add ofs1 (Ptrofs.repr delta) =
+      Ptrofs.repr (ZArith.BinInt.Z.add (Ptrofs.unsigned ofs1)
+        (Ptrofs.unsigned (Ptrofs.repr delta))) := by rfl
+  rw [haddrepr]
+  have hsummax' : ZArith.BinInt.Z.le (ZArith.BinInt.Z.add (Ptrofs.unsigned ofs1) delta)
+      Ptrofs.max_unsigned := hrep.2.2
+  rw [hu_delta]
+  apply pg_ptr_unsigned_repr
+  constructor
+  · exact hsum0
+  · exact hsummax'
+
+end CompCert4Lean.Backend.Inliningproof
+namespace CompCert4Lean.Backend.Inliningproof
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Backend.Inlining
+open CompCert4Lean.Backend.Inliningspec
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.Lib.Maps
+private theorem pg_loadv_inject
+    (f : Val.meminj) (m1 m2 : mem) (chunk : memory_chunk)
+    (a1 a2 : val) (v1 : val) :
+    Mem.inject f m1 m2 →
+    Mem.loadv chunk m1 a1 = some v1 →
+    Val.inject f a1 a2 →
+    ∃ v2, Mem.loadv chunk m2 a2 = some v2 ∧ Val.inject f v1 v2 := by
+  intro hinj hload haddr
+  cases a1 with
+  | Vptr b1 ofs1 =>
+      cases a2 with
+      | Vptr b2 ofs2 =>
+          cases haddr with
+          | inject_ptr _ _ _ _ delta hmap hofs =>
+              have hacc := Mem.load_valid_access m1 chunk b1
+                (Ptrofs.unsigned ofs1) v1 (by simpa [Mem.loadv] using hload)
+              have hp : Mem.perm m1 b1 (Ptrofs.unsigned ofs1) Cur Readable := by
+                apply hacc.1 (Ptrofs.unsigned ofs1)
+                constructor
+                · exact ZArith.BinInt.Z.le_refl _
+                · have hs := CompCert4Lean.Common.Memdata.size_chunk_pos chunk
+                  change intOfZ (Ptrofs.unsigned ofs1) <
+                    intOfZ (ZArith.BinInt.Z.add (Ptrofs.unsigned ofs1) (size_chunk chunk))
+                  have hs' : 0 < intOfZ (size_chunk chunk) := by
+                    have hs0 := hs
+                    change 0 < intOfZ (size_chunk chunk) at hs0
+                    exact hs0
+                  have hadd : intOfZ (ZArith.BinInt.Z.add (Ptrofs.unsigned ofs1) (size_chunk chunk)) =
+                      intOfZ (Ptrofs.unsigned ofs1) + intOfZ (size_chunk chunk) := by
+                    simp only [ZArith.BinInt.Z.add, intOfZ_zOfInt]
+                  rw [hadd]
+                  omega
+              have haddr' := pg_address_inject f m1 m2 b1 ofs1 b2 delta
+                Readable hinj hp hmap
+              obtain ⟨v2, hload2, hinj2⟩ :=
+                Mem.load_inj f m1 m2 chunk b1 (Ptrofs.unsigned ofs1)
+                  b2 delta v1 hinj.mi_inj
+                  (by simpa [Mem.loadv] using hload) hmap
+              refine ⟨v2, ?_, hinj2⟩
+              simpa [Mem.loadv, hofs, haddr'] using hload2
+      | Vundef => cases haddr
+      | Vint _ => cases haddr
+      | Vlong _ => cases haddr
+      | Vfloat _ => cases haddr
+      | Vsingle _ => cases haddr
+  | Vundef => cases haddr <;> simp [Mem.loadv] at hload
+  | Vint _ => cases haddr <;> simp [Mem.loadv] at hload
+  | Vlong _ => cases haddr <;> simp [Mem.loadv] at hload
+  | Vfloat _ => cases haddr <;> simp [Mem.loadv] at hload
+  | Vsingle _ => cases haddr <;> simp [Mem.loadv] at hload
+end CompCert4Lean.Backend.Inliningproof
+namespace CompCert4Lean.Backend.Inliningproof
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Backend.Inlining
+open CompCert4Lean.Backend.Inliningspec
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.Lib.Maps
+theorem tr_builtin_arg : tr_builtin_argStatement := by
+  intro cfg prog tprog hm F bound ctx rs rs' sp sp' m m' a v hMG hregs hsp hmem hEval
+  rcases hMG with ⟨hdom, himage, hsymbols, hfunctions, hvarinfos⟩
+  induction hEval with
+  | eval_BA x =>
+      refine ⟨Regmap.get (sreg ctx x) rs', ?_, ?_⟩
+      · simpa [sbuiltinarg] using
+          (eval_BA (ge := Genv.to_senv (Genv.globalenv tprog))
+            (e := fun r => Regmap.get r rs') (sp := Vptr sp' Ptrofs.zero)
+            (m := m') (sreg ctx x))
+      · exact agree_val_reg F ctx rs rs' x hregs
+  | eval_BA_int n => exact ⟨Vint n, eval_BA_int _, Val.inject_int F n⟩
+  | eval_BA_long n => exact ⟨Vlong n, eval_BA_long _, Val.inject_long F n⟩
+  | eval_BA_float n => exact ⟨Vfloat n, eval_BA_float _, Val.inject_float F n⟩
+  | eval_BA_single n => exact ⟨Vsingle n, eval_BA_single _, Val.inject_single F n⟩
+  | eval_BA_loadstack chunk ofs v load =>
+      have hbase : Val.inject F (Vptr sp Ptrofs.zero)
+          (Vptr sp' (Ptrofs.add Ptrofs.zero (Ptrofs.repr ctx.dstk))) := by
+        exact Val.inject_ptr F sp Ptrofs.zero sp'
+          (Ptrofs.add Ptrofs.zero (Ptrofs.repr ctx.dstk)) ctx.dstk hsp rfl
+      have haddr0 := Val.offset_ptr_inject F _ _ ofs hbase
+      have heq :
+          Val.offset_ptr (Vptr sp' (Ptrofs.add Ptrofs.zero (Ptrofs.repr ctx.dstk))) ofs =
+            Val.offset_ptr (Vptr sp' Ptrofs.zero)
+              (Ptrofs.add ofs (Ptrofs.repr ctx.dstk)) := by
+        simp [Val.offset_ptr]
+        simp only [pg_ptr_add_zero_l]
+        rw [Ptrofs.add_commut_proof_api]
+      obtain ⟨v', hload', hinj'⟩ :=
+        pg_loadv_inject F m m' chunk
+          (Val.offset_ptr (Vptr sp Ptrofs.zero) ofs)
+          (Val.offset_ptr (Vptr sp' Ptrofs.zero)
+            (Ptrofs.add ofs (Ptrofs.repr ctx.dstk))) v hmem load (by
+              simpa [heq] using haddr0)
+      refine ⟨v', ?_, hinj'⟩
+      apply eval_BA_loadstack
+      simpa [heq] using hload'
+  | eval_BA_addrstack ofs =>
+      have hbase : Val.inject F (Vptr sp Ptrofs.zero)
+          (Vptr sp' (Ptrofs.add Ptrofs.zero (Ptrofs.repr ctx.dstk))) := by
+        exact Val.inject_ptr F sp Ptrofs.zero sp'
+          (Ptrofs.add Ptrofs.zero (Ptrofs.repr ctx.dstk)) ctx.dstk hsp rfl
+      have haddr0 := Val.offset_ptr_inject F _ _ ofs hbase
+      have heq :
+          Val.offset_ptr (Vptr sp' (Ptrofs.add Ptrofs.zero (Ptrofs.repr ctx.dstk))) ofs =
+            Val.offset_ptr (Vptr sp' Ptrofs.zero)
+              (Ptrofs.add ofs (Ptrofs.repr ctx.dstk)) := by
+        simp [Val.offset_ptr]
+        simp only [pg_ptr_add_zero_l]
+        rw [Ptrofs.add_commut_proof_api]
+      refine ⟨Val.offset_ptr (Vptr sp' Ptrofs.zero)
+        (Ptrofs.add ofs (Ptrofs.repr ctx.dstk)), ?_, ?_⟩
+      · exact eval_BA_addrstack _
+      · simpa [heq] using haddr0
+  | eval_BA_loadglobal chunk id ofs v load =>
+      change Mem.loadv chunk m
+        (Genv.symbol_address (Genv.globalenv prog) id ofs) = some v at load
+      cases hfind : Genv.find_symbol (Genv.globalenv prog) id with
+      | none =>
+          have : False := by simpa [Genv.symbol_address, hfind, Mem.loadv] using load
+          exact this.elim
+      | some b =>
+          have hmap : F b = some (b, .Z0) := hdom b (hsymbols id b hfind)
+          have hfind' : Genv.find_symbol (Genv.globalenv tprog) id = some b := by
+            rw [symbols_preserved cfg prog tprog hm id]
+            exact hfind
+          have haddr : Val.inject F
+              (Genv.symbol_address (Genv.globalenv prog) id ofs)
+              (Genv.symbol_address (Genv.globalenv tprog) id ofs) := by
+            simp [Genv.symbol_address, hfind, hfind']
+            exact Val.inject_ptr F b ofs b ofs .Z0 hmap
+              (pg_ptr_add_zero_repr ofs).symm
+          obtain ⟨v', hload', hinj'⟩ := pg_loadv_inject F m m' chunk
+            (Genv.symbol_address (Genv.globalenv prog) id ofs)
+            (Genv.symbol_address (Genv.globalenv tprog) id ofs) v hmem load haddr
+          refine ⟨v', ?_, hinj'⟩
+          apply eval_BA_loadglobal
+          exact hload'
+  | eval_BA_addrglobal id ofs =>
+      refine ⟨Senv.symbol_address (Genv.to_senv (Genv.globalenv tprog)) id ofs,
+        (by simpa [sbuiltinarg] using
+          (eval_BA_addrglobal (ge := Genv.to_senv (Genv.globalenv tprog))
+            (e := fun r => Regmap.get r rs') (sp := Vptr sp' Ptrofs.zero) (m := m') id ofs)), ?_⟩
+      change Val.inject F
+        (Genv.symbol_address (Genv.globalenv prog) id ofs)
+        (Genv.symbol_address (Genv.globalenv tprog) id ofs)
+      cases hfind : Genv.find_symbol (Genv.globalenv prog) id with
+      | none => simp [Genv.symbol_address, hfind]; exact Val.val_inject_undef F _
+      | some b =>
+          have hmap : F b = some (b, .Z0) := hdom b (hsymbols id b hfind)
+          have hfind' : Genv.find_symbol (Genv.globalenv tprog) id = some b := by
+            rw [symbols_preserved cfg prog tprog hm id]
+            exact hfind
+          simp [Genv.symbol_address, hfind, hfind']
+          exact Val.inject_ptr F b ofs b ofs .Z0 hmap
+            (pg_ptr_add_zero_repr ofs).symm
+  | eval_BA_splitlong hi lo vhi vlo hhi hlo ihhi ihlo =>
+      rcases ihhi with ⟨vhi', hhi', hinjhi⟩
+      rcases ihlo with ⟨vlo', hlo', hinjlo⟩
+      refine ⟨Val.longofwords vhi' vlo', ?_, ?_⟩
+      · simpa [sbuiltinarg] using
+          (eval_BA_splitlong (ge := Genv.to_senv (Genv.globalenv tprog))
+            (e := fun r => Regmap.get r rs')
+            (sp := Vptr sp' Ptrofs.zero) (m := m')
+            (sbuiltinarg ctx hi) (sbuiltinarg ctx lo) vhi' vlo' hhi' hlo')
+      · exact Val.longofwords_inject F vhi vlo vhi' vlo' hinjhi hinjlo
+  | eval_BA_addptr a1 a2 v1 v2 h1 h2 ih1 ih2 =>
+      rcases ih1 with ⟨v1', h1', hinj1⟩
+      rcases ih2 with ⟨v2', h2', hinj2⟩
+      refine ⟨if CompCert4Lean.X86_64.Archi.ptr64 then Val.addl v1' v2' else Val.add v1' v2', ?_, ?_⟩
+      · simpa [sbuiltinarg] using
+          (eval_BA_addptr (ge := Genv.to_senv (Genv.globalenv tprog))
+            (e := fun r => Regmap.get r rs')
+            (sp := Vptr sp' Ptrofs.zero) (m := m')
+            (sbuiltinarg ctx a1) (sbuiltinarg ctx a2) v1' v2' h1' h2')
+      · cases hp : CompCert4Lean.X86_64.Archi.ptr64
+        · simp [hp]
+          exact Val.add_inject F v1 v1' v2 v2' hinj1 hinj2
+        · simp [hp]
+          exact Val.addl_inject F v1 v1' v2 v2' hinj1 hinj2
+end CompCert4Lean.Backend.Inliningproof

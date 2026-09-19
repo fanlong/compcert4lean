@@ -2392,3 +2392,100 @@ theorem magree_storebytes_parallel : magree_storebytes_parallelStatement := by
     exact hma.ma_nextblock
 
 end CompCert4Lean.Backend.Deadcodeproof
+namespace CompCert4Lean.Backend.Deadcodeproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Backend.NeedDomain
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Integers
+
+private theorem magree_store_encode_aux (chunk : memory_chunk) (v w : val)
+    (h : vagree v w (store_argument chunk)) :
+    list_forall2 memval_lessdef (encode_val chunk v) (encode_val chunk w) := by
+  have hmask8 : complete_mask (CompCert4Lean.Lib.Integers.Int.repr (zOfNat 255)) =
+      CompCert4Lean.Lib.Integers.Int.repr (zOfNat 255) := by
+    decide
+  have hsize8 : CompCert4Lean.Lib.Integers.Int.size
+      (CompCert4Lean.Lib.Integers.Int.repr (zOfNat 255)) = zOfNat 8 := by decide
+  have hmask16 : complete_mask (CompCert4Lean.Lib.Integers.Int.repr (zOfNat 65535)) =
+      CompCert4Lean.Lib.Integers.Int.repr (zOfNat 65535) := by
+    set_option maxRecDepth 100000 in decide
+  have hsize16 : CompCert4Lean.Lib.Integers.Int.size
+      (CompCert4Lean.Lib.Integers.Int.repr (zOfNat 65535)) = zOfNat 16 := by
+    set_option maxRecDepth 100000 in decide
+  cases chunk with
+  | Mbool | Mint8signed | Mint8unsigned =>
+      cases v <;> first
+        | exact repeat_Undef_inject_encode_val inject_id _ _
+        | skip
+      cases w <;> try (exact False.elim h)
+      rename_i a b
+      change iagree a b (CompCert4Lean.Lib.Integers.Int.repr (zOfNat 255)) at h
+      have hm := iagree_eqmod a b
+        (CompCert4Lean.Lib.Integers.Int.repr (zOfNat 255)) (by simpa [hmask8] using h)
+      change CompCert4Lean.Lib.Zbits.eqmod (two_p (zOfNat 8)) (Int.unsigned a) (Int.unsigned b) at hm
+      change list_forall2 memval_lessdef
+        (inj_bytes (encode_int 1 (Int.unsigned a)))
+        (inj_bytes (encode_int 1 (Int.unsigned b)))
+      rw [encode_int_8_mod _ _ hm]
+      exact inj_bytes_inject inject_id _
+  | Mint16signed | Mint16unsigned =>
+      cases v <;> first
+        | exact repeat_Undef_inject_encode_val inject_id _ _
+        | skip
+      cases w <;> try (exact False.elim h)
+      rename_i a b
+      change iagree a b (CompCert4Lean.Lib.Integers.Int.repr (zOfNat 65535)) at h
+      have hm := iagree_eqmod a b
+        (CompCert4Lean.Lib.Integers.Int.repr (zOfNat 65535)) (by simpa [hmask16] using h)
+      change CompCert4Lean.Lib.Zbits.eqmod (two_p (zOfNat 16)) (Int.unsigned a) (Int.unsigned b) at hm
+      have he : encode_int 2 (Int.unsigned a) = encode_int 2 (Int.unsigned b) := by
+        unfold encode_int
+        congr 1
+        exact bytes_of_int_mod 2 _ _ hm
+      change list_forall2 memval_lessdef
+        (inj_bytes (encode_int 2 (Int.unsigned a)))
+        (inj_bytes (encode_int 2 (Int.unsigned b)))
+      rw [he]
+      exact inj_bytes_inject inject_id _
+  | Mint32 | Mint64 | Mfloat32 | Mfloat64 | Many32 | Many64 =>
+      exact encode_val_inject inject_id v w _ ((val_inject_id v w).mpr h)
+
+end CompCert4Lean.Backend.Deadcodeproof
+
+namespace CompCert4Lean.Backend.Deadcodeproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Backend.NeedDomain
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Integers
+
+ theorem magree_store_parallel : magree_store_parallelStatement := by
+  intro m1 m2 P Q chunk b ofs v1 m1' v2 hma hstore hv hPQ
+  have hvalid := Mem.store_valid_access_3 chunk m1 b ofs v1 m1' hstore
+  have hbytes := Mem.store_storebytes m1 b ofs chunk v1 m1' hstore
+  have hout : ∀ b' i, Q b' i →
+      b' ≠ b ∨ zLt i ofs ∨ zLe (zAdd ofs (zOfNat (encode_val chunk v1).length)) i →
+      P b' i := by
+    intro b' i hQ hi
+    have hlen : (encode_val chunk v1).length = size_chunk_nat chunk :=
+      encode_val_length chunk v1
+    have hz : zOfNat (encode_val chunk v1).length = size_chunk chunk := by
+      rw [hlen]
+      exact (size_chunk_conv chunk).symm
+    rw [hz] at hi
+    exact hPQ b' i hQ hi
+  obtain ⟨m2', hbytes2, hagree⟩ := magree_storebytes_parallel m1 m2 P Q b ofs
+    (encode_val chunk v1) m1' (encode_val chunk v2) hma hbytes hout
+    (magree_store_encode_aux chunk v1 v2 hv)
+  exact ⟨m2', Mem.storebytes_store m2 b ofs chunk v2 m2' hbytes2 hvalid.2, hagree⟩
+
+end CompCert4Lean.Backend.Deadcodeproof

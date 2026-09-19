@@ -3526,3 +3526,10 @@ theorem Float32.unop_nan_result_obligation_proof : Float32.unop_nan_result_oblig
     (CompCert4Lean.X86_64.Archi.choose_nan_32 (Float32.cons_pl x []))
 
 end CompCert4Lean.Lib.Floats
+
+namespace CompCert4Lean.Lib.Floats
+
+theorem quiet_nan_32_result_obligation_proof : quiet_nan_32_result_obligation :=
+  quiet_nan_32_result_obligation_proof_local
+
+end CompCert4Lean.Lib.Floats

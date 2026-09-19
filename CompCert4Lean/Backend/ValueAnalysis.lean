@@ -2367,3 +2367,14 @@ theorem romem_for_consistent_2 : romem_for_consistent_2Statement := by
           · exact habv
 
 end CompCert4Lean.Backend.ValueAnalysis
+
+namespace CompCert4Lean.Backend.ValueAnalysis.DS
+
+theorem fixpoint_solution_proof {cfg : CompCert4Lean.Config.CompilerConfig}
+    (laws : law_obligation cfg) : fixpoint_solution laws := by
+  intro A code successors transf ep ev res n instr s hfix hcode hsucc hbot
+  exact CompCert4Lean.Backend.Kildall.Dataflow_Solver.fixpoint_solution
+    (L cfg) CompCert4Lean.Backend.Kildall.NodeSetForward laws.1 laws.2
+    code successors transf ep ev res n instr s hfix hcode hsucc hbot
+
+end CompCert4Lean.Backend.ValueAnalysis.DS

@@ -3401,3 +3401,10 @@ theorem bb_simulation_base : bb_simulation_baseStatement :=
   smallstep_bb_simulation_base
 
 end CompCert4Lean.Common.Smallstep
+
+namespace CompCert4Lean.Common.Smallstep
+
+theorem bb_simulation : bb_simulationStatement :=
+  smallstep_bb_simulation
+
+end CompCert4Lean.Common.Smallstep

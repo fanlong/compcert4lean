@@ -6772,3 +6772,46 @@ theorem TransfSimplLocalsLink (cfg : CompilerConfig)
   exact hmatch
 
 end CompCert4Lean.Cfrontend.SimplLocalsproof
+
+namespace CompCert4Lean.Cfrontend.SimplLocalsproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Lib.Coqlib
+
+theorem match_envs_extcall : match_envs_extcallStatement := by
+  intro f cenv e le m lo hi te tle tlo thi tm f' m' hmatch hunch hincr hsep hhi hthi
+  apply match_envs_invariant f cenv e le m lo hi te tle tlo thi f' m' hmatch
+  · intro b chunk v hnone _ hload
+    apply slp_load_unchanged_on (loc_unmapped f) m m' chunk b (.Z0 : Z) v hunch
+    · intro i _
+      exact hnone
+    · exact hload
+  · exact hincr
+  · intro b hb
+    by_cases hf : f b = none
+    · cases hfp : f' b with
+      | none => exact hf.symm
+      | some pair =>
+          rcases pair with ⟨b', delta⟩
+          have hvb : Mem.valid_block m b :=
+            Plt_Ple_trans b hi m.nextblock hb.2 hhi
+          exact False.elim ((hsep b b' delta hf hfp).1 hvb)
+    · cases hff : f b with
+      | none => exact False.elim (hf hff)
+      | some pair =>
+          rcases pair with ⟨b', delta⟩
+          exact hincr b b' delta hff
+  · intro b b' delta hmap hb'
+    by_cases hf : f b = none
+    · have hvb' : Mem.valid_block tm b' :=
+        Plt_Ple_trans b' thi tm.nextblock hb'.2 hthi
+      exact False.elim ((hsep b b' delta hf hmap).2 hvb')
+    · cases hff : f b with
+      | none => exact False.elim (hf hff)
+      | some pair =>
+          rcases pair with ⟨b0, delta0⟩
+          exact hincr b b0 delta0 hff
+
+end CompCert4Lean.Cfrontend.SimplLocalsproof

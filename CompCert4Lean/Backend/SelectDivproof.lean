@@ -2775,3 +2775,40 @@ theorem divs_mul_shift_gen : divs_mul_shift_genStatement := by
   · exact CompCert4Lean.Lib.Integers.Int.eqm_refl_proof _
 
 end CompCert4Lean.Backend.SelectDivproof
+
+namespace CompCert4Lean.Backend.SelectDivproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem divs_mul_shift_1 : divs_mul_shift_1Statement := by
+  intro x y m p hparams hlt
+  obtain ⟨hm, hp, hgen⟩ := divs_mul_shift_gen x y m p hparams
+  refine ⟨hp, ?_⟩
+  rw [hgen]
+  congr 1
+  unfold intMulhs
+  have hword : zLe z0 CompCert4Lean.Lib.Integers.Int.zwordsize := by
+    change (0 : Int) ≤ 32
+    omega
+  rw [zshiftr_div_two_p_local _ _ hword]
+  have hmod : CompCert4Lean.Lib.Integers.Int.modulus =
+      two_p CompCert4Lean.Lib.Integers.Int.zwordsize := by
+    exact CompCert4Lean.Lib.Integers.Int.modulus_power_proof
+  rw [hmod]
+  have hm0 : zLe z0 m := hm.1
+  have hm0' : (0 : Int) ≤ intOfZ m := by
+    change (0 : Int) ≤ intOfZ m at hm0
+    exact hm0
+  have hmlt : intOfZ m < (2147483648 : Int) := by
+    change intOfZ m < (2147483648 : Int) at hlt
+    exact hlt
+  have hmrepr : intSigned (intRepr m) = m := by
+    apply CompCert4Lean.Lib.Integers.Int.signed_repr_proof
+    constructor
+    · change (-2147483648 : Int) ≤ intOfZ m
+      omega
+    · change intOfZ m ≤ (2147483647 : Int)
+      omega
+  rw [hmrepr]
+
+end CompCert4Lean.Backend.SelectDivproof

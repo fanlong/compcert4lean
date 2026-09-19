@@ -4345,3 +4345,175 @@ open CompCert4Lean.X86.SelectOp
           rw [CompCert4Lean.Lib.Integers.Int.repr_signed_proof n]
 
 end CompCert4Lean.X86.SelectOpproof
+
+namespace CompCert4Lean.X86.SelectOpproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.ExternalCalls
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.X86.Op
+open CompCert4Lean.X86.SelectOp
+
+private theorem eval_add_repr_sum_local (x y : Z) :
+    CompCert4Lean.Lib.Integers.Int.repr (ZArith.BinInt.Z.add x y) =
+      CompCert4Lean.Lib.Integers.Int.add
+        (CompCert4Lean.Lib.Integers.Int.repr x)
+        (CompCert4Lean.Lib.Integers.Int.repr y) := by
+  have hx := CompCert4Lean.Lib.Integers.Int.eqm_unsigned_repr_r_proof x x
+    (CompCert4Lean.Lib.Integers.Int.eqm_refl_proof x)
+  have hy := CompCert4Lean.Lib.Integers.Int.eqm_unsigned_repr_r_proof y y
+    (CompCert4Lean.Lib.Integers.Int.eqm_refl_proof y)
+  have hxy := CompCert4Lean.Lib.Integers.Int.eqm_add_proof _ _ _ _ hx hy
+  rw [CompCert4Lean.Lib.Integers.Int.eqm_samerepr_proof _ _ hxy]
+  exact (CompCert4Lean.Lib.Integers.Int.add_unsigned_proof _ _).symm
+
+private theorem eval_add_scaled_inv_local
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (xi : ExternalCalls) (ge : genv) (sp : val) (e : env) (m : mem)
+    (le : letenv) (t : expr) (sc ofs : Z) (x : val)
+    (h : eval_expr xi ge sp e m le
+      (Eop (Olea (Ascaled sc ofs)) (Econs t Enil)) x) :
+    ∃ v, eval_expr xi ge sp e m le t v ∧
+      x = Val.add
+        (Val.mul v (.Vint (CompCert4Lean.Lib.Integers.Int.repr sc)))
+        (.Vint (CompCert4Lean.Lib.Integers.Int.repr ofs)) := by
+  cases h with
+  | eval_Eop _ _ _ _ _ hargs hop =>
+      cases hargs with
+      | cons _ _ _ v _ hhead htail =>
+          cases htail
+          change some (Val.add
+            (Val.mul v (.Vint (CompCert4Lean.Lib.Integers.Int.repr sc)))
+            (.Vint (CompCert4Lean.Lib.Integers.Int.repr ofs))) = some x at hop
+          cases hop
+          exact ⟨v, hhead, rfl⟩
+
+private theorem eval_add_global_impossible_local
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (xi : ExternalCalls) (ge : genv) (sp : val) (e : env) (m : mem)
+    (le : letenv) (id : CompCert4Lean.Common.AST.ident) (ofs : Ptrofs) (x : val)
+    (h : eval_expr xi ge sp e m le (Eop (Olea (Aglobal id ofs)) Enil) x) :
+    False := by
+  cases h with
+  | eval_Eop _ _ _ _ _ hargs hop =>
+      cases hargs
+      change none = some x at hop
+      cases hop
+
+private theorem eval_add_lea_pair_local
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (xi : ExternalCalls) (ge : genv) (sp : val) (e : env) (m : mem)
+    (le : letenv) (addr : op_addressing) (t1 t2 : expr) (x y v : val)
+    (hx : eval_expr xi ge sp e m le t1 x)
+    (hy : eval_expr xi ge sp e m le t2 y)
+    (hv : eval_addressing32 ge sp addr [x, y] = some v) :
+    eval_expr xi ge sp e m le (Eop (Olea addr) (Econs t1 (Econs t2 Enil))) v := by
+  exact eval_expr.eval_Eop le _ _ [x, y] v
+    (eval_exprlist.cons le t1 _ x [y] hx
+      (eval_exprlist.cons le t2 Enil y [] hy (eval_exprlist.nil le))) hv
+
+private theorem eval_add_zero_local (x y : val) :
+    Val.add (Val.add x y) (.Vint CompCert4Lean.Lib.Integers.Int.zero) =
+      Val.add x y := by
+  cases x <;> cases y <;>
+    simp [Val.add, CompCert4Lean.X86_64.Archi.ptr64]
+  case Vint.Vint a b =>
+    exact CompCert4Lean.Lib.Integers.Int.add_zero_proof _
+
+theorem eval_add
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    eval_addStatement := by
+  intro xi ge sp e m le a x b y ha hb
+  have hadd_assoc : ∀ u v w : val,
+      Val.add (Val.add u v) w = Val.add u (Val.add v w) := Val.add_assoc
+  have hadd_comm : ∀ u v : val, Val.add u v = Val.add v u := Val.add_commut
+  have hadd_permut : ∀ u v w : val,
+      Val.add u (Val.add v w) = Val.add v (Val.add u w) := Val.add_permut
+  have hconst : ∀ n1 n2 : Z,
+      val.Vint (CompCert4Lean.Lib.Integers.Int.repr (ZArith.BinInt.Z.add n1 n2)) =
+        Val.add (.Vint (CompCert4Lean.Lib.Integers.Int.repr n1))
+          (.Vint (CompCert4Lean.Lib.Integers.Int.repr n2)) := by
+    intro n1 n2
+    exact congrArg val.Vint (eval_add_repr_sum_local n1 n2)
+  unfold CompCert4Lean.X86.SelectOp.add
+  cases hcase : add_match a b with
+  | add_case1 n t =>
+      have hx := eval_intconst_value_local xi ge sp e m le n x ha
+      subst x
+      simpa only [hadd_comm] using (eval_addimm xi ge sp e m n le b y hb)
+  | add_case2 t n =>
+      have hy := eval_intconst_value_local xi ge sp e m le n y hb
+      subst y
+      exact eval_addimm xi ge sp e m n le a x ha
+  | add_case3 n1 t1 n2 t2 =>
+      obtain ⟨u, hu, rfl⟩ := eval_lea_indexed_inv_eval_shl_local
+        xi ge sp e m le t1 n1 x ha
+      obtain ⟨v, hv, rfl⟩ := eval_lea_indexed_inv_eval_shl_local
+        xi ge sp e m le t2 n2 y hb
+      refine ⟨_, eval_add_lea_pair_local xi ge sp e m le _ _ _ u v _ hu hv rfl, ?_⟩
+      rw [hconst]
+      rw [Val.add_permut_4 u]
+      exact Val.lessdef_refl _
+  | add_case4 n1 t1 sc n2 t2 =>
+      obtain ⟨u, hu, rfl⟩ := eval_lea_indexed_inv_eval_shl_local
+        xi ge sp e m le t1 n1 x ha
+      obtain ⟨v, hv, rfl⟩ := eval_add_scaled_inv_local
+        xi ge sp e m le t2 sc n2 y hb
+      refine ⟨_, eval_add_lea_pair_local xi ge sp e m le _ _ _ u v _ hu hv rfl, ?_⟩
+      rw [hconst]
+      simp only [hadd_assoc, hadd_comm, hadd_permut]
+      exact Val.lessdef_refl _
+  | add_case5 sc n1 t1 n2 t2 =>
+      obtain ⟨u, hu, rfl⟩ := eval_add_scaled_inv_local
+        xi ge sp e m le t1 sc n1 x ha
+      obtain ⟨v, hv, rfl⟩ := eval_lea_indexed_inv_eval_shl_local
+        xi ge sp e m le t2 n2 y hb
+      refine ⟨_, eval_add_lea_pair_local xi ge sp e m le _ _ _ v u _ hv hu rfl, ?_⟩
+      rw [hconst]
+      simp only [hadd_assoc, hadd_comm, hadd_permut]
+      exact Val.lessdef_refl _
+  | add_case6 n t id ofs =>
+      exact False.elim (eval_add_global_impossible_local xi ge sp e m le id ofs y hb)
+  | add_case7 id ofs n t =>
+      exact False.elim (eval_add_global_impossible_local xi ge sp e m le id ofs x ha)
+  | add_case8 sc n t id ofs =>
+      exact False.elim (eval_add_global_impossible_local xi ge sp e m le id ofs y hb)
+  | add_case9 id ofs sc n t =>
+      exact False.elim (eval_add_global_impossible_local xi ge sp e m le id ofs x ha)
+  | add_case10 sc n t1 t2 =>
+      obtain ⟨u, hu, rfl⟩ := eval_add_scaled_inv_local
+        xi ge sp e m le t1 sc n x ha
+      refine ⟨_, eval_add_lea_pair_local xi ge sp e m le _ _ _ y u _ hb hu rfl, ?_⟩
+      rw [Val.add_commut]
+      exact Val.lessdef_refl _
+  | add_case11 t1 sc n t2 =>
+      obtain ⟨v, hv, rfl⟩ := eval_add_scaled_inv_local
+        xi ge sp e m le t2 sc n y hb
+      exact ⟨_, eval_add_lea_pair_local xi ge sp e m le _ _ _ x v _ ha hv rfl,
+        Val.lessdef_refl _⟩
+  | add_case12 n t1 t2 =>
+      obtain ⟨u, hu, rfl⟩ := eval_lea_indexed_inv_eval_shl_local
+        xi ge sp e m le t1 n x ha
+      refine ⟨_, eval_add_lea_pair_local xi ge sp e m le _ _ _ u y _ hu hb rfl, ?_⟩
+      simp only [hadd_assoc, hadd_comm, hadd_permut]
+      exact Val.lessdef_refl _
+  | add_case13 t1 n t2 =>
+      obtain ⟨v, hv, rfl⟩ := eval_lea_indexed_inv_eval_shl_local
+        xi ge sp e m le t2 n y hb
+      refine ⟨_, eval_add_lea_pair_local xi ge sp e m le _ _ _ x v _ ha hv rfl, ?_⟩
+      rw [Val.add_assoc]
+      exact Val.lessdef_refl _
+  | add_default t1 t2 =>
+      refine ⟨_, eval_add_lea_pair_local xi ge sp e m le _ _ _ x y _ ha hb rfl, ?_⟩
+      change Val.lessdef (Val.add x y)
+        (Val.add (Val.add x y) (.Vint CompCert4Lean.Lib.Integers.Int.zero))
+      rw [eval_add_zero_local]
+      exact Val.lessdef_refl _
+
+end CompCert4Lean.X86.SelectOpproof

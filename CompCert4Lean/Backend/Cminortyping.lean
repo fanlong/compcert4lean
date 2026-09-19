@@ -2563,3 +2563,43 @@ theorem type_binop_sound : type_binop_soundStatement := by
         | split at h <;> (cases h <;> trivial)
 
 end CompCert4Lean.Backend.Cminortyping
+
+namespace CompCert4Lean.Backend.Cminortyping
+
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Backend.Cminor
+
+theorem wt_eval_expr
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    wt_eval_exprStatement := by
+  intro p env sp e m a v heval t hwt henv
+  cases heval with
+  | eval_Evar id v hget =>
+      cases hwt
+      exact henv id v hget
+  | eval_Econst cst v hconst =>
+      cases hwt
+      exact type_constant_sound p sp cst v hconst
+  | eval_Eunop op a1 v1 v ha1 hop =>
+      cases hwt with
+      | wt_Eunop op a1 targ tres htype harg =>
+          have hv := type_unop_sound op v1 v hop
+          simpa only [htype] using hv
+  | eval_Ebinop op a1 a2 v1 v2 v ha1 ha2 hop =>
+      cases hwt with
+      | wt_Ebinop op a1 a2 targ1 targ2 tres htype harg1 harg2 =>
+          have hv := type_binop_sound op v1 v2 m v hop
+          simpa only [htype] using hv
+  | eval_Eload chunk address vaddr v haddr hload =>
+      cases hwt
+      cases vaddr with
+      | Vptr b ofs => exact Mem.load_type m chunk b _ v hload
+      | Vundef => cases hload
+      | Vint n => cases hload
+      | Vlong n => cases hload
+      | Vfloat f => cases hload
+      | Vsingle f => cases hload
+
+end CompCert4Lean.Backend.Cminortyping

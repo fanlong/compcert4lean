@@ -4585,3 +4585,95 @@ theorem iter_step_invariant : iter_step_invariantStatement := by
             · exact False.elim (hnot_todo hnew)
 
 end CompCert4Lean.Backend.Unusedglobproof
+
+namespace CompCert4Lean.Backend.Unusedglobproof
+
+open CompCert4Lean.Backend.Unusedglob
+open CompCert4Lean.Common.AST
+
+theorem used_globals_sound : used_globals_soundStatement := by
+  intro p u h
+  unfold CompCert4Lean.Backend.Unusedglob.used_globals at h
+  have hprop := CompCert4Lean.Lib.Iteration.PrimIter.iterate_prop
+    workset IS.t
+    (CompCert4Lean.Backend.Unusedglob.iter_step
+      (CompCert4Lean.Common.AST.prog_defmap p))
+    (fun w => workset_invariant p w)
+    (fun u => used_set_closed p u)
+    (by
+      intro w hw
+      cases hstep : CompCert4Lean.Backend.Unusedglob.iter_step
+          (CompCert4Lean.Common.AST.prog_defmap p) w with
+      | inl u' =>
+          simp only
+          unfold CompCert4Lean.Backend.Unusedglob.iter_step at hstep
+          cases htodo : w.w_todo with
+          | nil =>
+              simp [htodo] at hstep
+              cases hstep
+              unfold used_set_closed
+              intro id gd id' hseen hget href
+              apply hw id gd id' hseen
+              · rw [htodo]
+                exact List.not_mem_nil
+              · exact hget
+              · exact href
+          | cons id rem =>
+              simp [htodo] at hstep
+      | inr w' =>
+          simp only
+          unfold CompCert4Lean.Backend.Unusedglob.iter_step at hstep
+          cases htodo : w.w_todo with
+          | nil =>
+              simp [htodo] at hstep
+          | cons id rem =>
+              simp only [htodo] at hstep
+              injection hstep with hw'
+              subst w'
+              unfold workset_invariant at hw ⊢
+              intro id0 gd id' hseen hnot_todo hget href
+              have hwi := add_ref_definition_incl
+                (CompCert4Lean.Common.AST.prog_defmap p) id
+                { w_seen := w.w_seen, w_todo := rem }
+              cases hwi with
+              | workset_incl_intro seen todo track =>
+                  by_cases heq : id = id0
+                  · subst id0
+                    exact seen_add_ref_definition
+                      (CompCert4Lean.Common.AST.prog_defmap p) id gd id'
+                      { w_seen := w.w_seen, w_todo := rem } hget href
+                  · have htrack := track id0 hseen
+                    rcases htrack with hbase | hnew
+                    · have hnot_rem : ¬ id0 ∈ rem := by
+                        intro hrem
+                        exact hnot_todo (todo id0 hrem)
+                      have hnot_orig : ¬ id0 ∈ w.w_todo := by
+                        intro horig
+                        have horig'' : id0 ∈ id :: rem := by
+                          simpa [htodo] using horig
+                        have horig' : id0 = id ∨ id0 ∈ rem :=
+                          List.mem_cons.mp horig''
+                        rcases horig' with horig | horig
+                        · exact heq horig.symm
+                        · exact hnot_rem horig
+                      have hout := hw id0 gd id' hbase hnot_orig hget href
+                      exact seen_workset_incl
+                        { w_seen := w.w_seen, w_todo := rem }
+                        (CompCert4Lean.Backend.Unusedglob.add_ref_definition
+                          (CompCert4Lean.Common.AST.prog_defmap p) id
+                          { w_seen := w.w_seen, w_todo := rem })
+                        id' (workset_incl_intro seen todo track) hout
+                    · exact False.elim (hnot_todo hnew))
+  unfold CompCert4Lean.Lib.Iteration.PrimIter.iterate_propStatement at hprop
+  exact hprop (initial_workset p) u h (by
+    unfold workset_invariant
+    intro id gd id' hseen hnot_todo hget href
+    have hwi := initial_workset_incl p
+    cases hwi with
+    | workset_incl_intro seen todo track =>
+        rcases track id hseen with hempty | htodo
+        · exact False.elim
+            (CompCert4Lean.Backend.Unusedglob.IS.empty_1_proof id hempty)
+        · exact False.elim (hnot_todo htodo))
+
+end CompCert4Lean.Backend.Unusedglobproof
