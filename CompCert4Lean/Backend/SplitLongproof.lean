@@ -3420,3 +3420,45 @@ theorem eval_intoflong : eval_intoflongStatement := by
   exact eval_lowlong
 
 end CompCert4Lean.Backend.SplitLongproof
+
+namespace CompCert4Lean.Backend.SplitLongproof
+
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Backend.SplitLong
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.X86.Op
+
+variable
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+
+theorem eval_longofintu : eval_longofintuStatement := by
+  intro xi prog sp e m le a x ha
+  refine ⟨Val.longofwords (.Vint intZero) x, ?_, ?_⟩
+  · change eval_expr xi (Genv.globalenv prog) sp e m le
+      (Eop Omakelong (Econs (Eop (Ointconst intZero) Enil) (Econs a Enil)))
+      (Val.longofwords (.Vint intZero) x)
+    apply eval_expr.eval_Eop (le := le) (op := Omakelong)
+      (vl := [.Vint intZero, x])
+    · apply eval_exprlist.cons
+      · apply eval_expr.eval_Eop (le := le) (op := Ointconst intZero) (vl := [])
+        · exact eval_exprlist.nil le
+        · rfl
+      · exact eval_exprlist.cons le a Enil x [] ha (eval_exprlist.nil le)
+    · rfl
+  · cases x with
+    | Vint n =>
+        have hn : int64Ofwords intZero n =
+            CompCert4Lean.Lib.Integers.Int64.repr (intUnsigned n) := by
+          apply CompCert4Lean.Lib.Integers.WordCore.ext_of_val_eq
+          rw [test_int64_ofwords_val, test_int64_repr_unsigned_val]
+          simp [intZero, test_int_zero_val]
+        change Val.lessdef
+          (.Vlong (CompCert4Lean.Lib.Integers.Int64.repr (intUnsigned n)))
+          (.Vlong (int64Ofwords intZero n))
+        rw [hn]
+        exact Val.lessdef_refl _
+    | _ => exact Val.lessdef_undef _
+
+end CompCert4Lean.Backend.SplitLongproof

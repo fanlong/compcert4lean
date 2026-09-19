@@ -8488,3 +8488,15 @@ theorem one_bits_decomp_proof : one_bits_decomp := by
   exact CompCert4Lean.Lib.Zbits.Z_one_bits_range wordsize (unsigned x) a ha
 
 end CompCert4Lean.Lib.Integers.Int
+
+namespace CompCert4Lean.Lib.Integers.Int
+
+theorem mul_pow2_proof : mul_pow2 := by
+  intro x n logn hpow
+  have hcorrect := suffix_is_power2_correct n logn hpow
+  have hshl := suffix_shl_one_eq_of_power2 n logn hcorrect
+  calc
+    mul x n = mul x (shl one logn) := by rw [hshl]
+    _ = shl x logn := by symm; exact shl_mul_proof x logn
+
+end CompCert4Lean.Lib.Integers.Int

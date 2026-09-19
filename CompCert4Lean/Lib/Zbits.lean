@@ -1874,3 +1874,10 @@ theorem Zzero_ext_spec : Zzero_ext_specStatement := by
                 change intOfZ i < intOfZ (zSucc n) at hlt_lt
                 omega
             | right hge => rfl
+
+theorem Zzero_ext_mod : Zzero_ext_modStatement := by
+  intro n x hn
+  apply equal_same_bits
+  intro i hi
+  rw [Zzero_ext_spec n x i hi]
+  rw [Ztestbit_mod_two_p n x i hn hi]

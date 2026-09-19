@@ -5544,3 +5544,42 @@ theorem alloc_global_initialized
 
 end Genv
 end CompCert4Lean.Common.Globalenvs
+
+namespace CompCert4Lean.Common.Globalenvs
+namespace Genv
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Linking
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.Lib.Integers
+
+theorem alloc_globals_initialized : alloc_globals_initializedStatement := by
+  intro F V ge gl g m m' halloc hnext hglobals
+  induction gl generalizing g m with
+  | nil =>
+      change some m = some m' at halloc
+      cases halloc
+      exact hglobals
+  | cons idg rest ih =>
+      rcases idg with ⟨id, gd⟩
+      change (match alloc_global ge m (id, gd) with
+        | none => none
+        | some m1 => alloc_globals ge m1 rest) = some m' at halloc
+      cases hstep : alloc_global ge m (id, gd) with
+      | none => simp [hstep] at halloc
+      | some m1 =>
+          have hrest : alloc_globals ge m1 rest = some m' := by
+            simpa [hstep] using halloc
+          have hone := alloc_global_initialized F V ge g m id gd m1 hnext hstep hglobals
+          rcases hone with ⟨hglobals', hnext'⟩
+          exact ih (g := add_global g (id, gd)) (m := m1)
+            hrest hnext' hglobals'
+
+end Genv
+end CompCert4Lean.Common.Globalenvs

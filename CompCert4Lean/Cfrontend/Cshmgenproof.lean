@@ -5622,3 +5622,340 @@ theorem make_add_correct
     | exact test_ptr_int cunit prog hlink ge _ _ b a c e le m vb va v hmake h2 h1 hsem
     | exact earlyPtrLong cunit prog hlink ge _ b a c e le m vb va v hmake h2 h1 hsem
     | exact hfull a tya b tyb c va vb v e le m hsem hmake h1 h2
+
+
+section SubtractionProof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+private theorem subPositiveDivisor (sz : Z)
+    (hpos : 0 < intOfZ sz) (hmax : intOfZ sz ≤ 9223372036854775807) :
+    CompCert4Lean.Lib.Integers.Int64.eq
+        (CompCert4Lean.Lib.Integers.Int64.repr sz) CompCert4Lean.Lib.Integers.Int64.zero = false ∧
+    CompCert4Lean.Lib.Integers.Int64.eq
+        (CompCert4Lean.Lib.Integers.Int64.repr sz) CompCert4Lean.Lib.Integers.Int64.mone = false := by
+  have hval : (CompCert4Lean.Lib.Integers.Int64.repr sz).val =
+      Int.toNat (intOfZ sz) := by
+    have h := earlyWordValRepr 64 (intOfZ sz)
+    rw [zOfInt_intOfZ] at h
+    change (CompCert4Lean.Lib.Integers.Int64.repr sz).val =
+      Int.toNat (intOfZ sz % 18446744073709551616) at h
+    rw [Int.emod_eq_of_lt (by omega) (by omega)] at h
+    exact h
+  have hz : CompCert4Lean.Lib.Integers.Int64.zero.val = 0 := rfl
+  have hm : CompCert4Lean.Lib.Integers.Int64.mone.val = 18446744073709551615 := rfl
+  constructor <;>
+    simp only [CompCert4Lean.Lib.Integers.Int64.eq, WordCore.eq, decide_eq_false_iff_not] <;>
+    intro heq
+  · have h := congrArg ZArith.BinInt.Z.to_nat heq
+    change (CompCert4Lean.Lib.Integers.Int64.repr sz).val =
+      CompCert4Lean.Lib.Integers.Int64.zero.val at h
+    rw [hval, hz] at h
+    omega
+  · have h := congrArg ZArith.BinInt.Z.to_nat heq
+    change (CompCert4Lean.Lib.Integers.Int64.repr sz).val =
+      CompCert4Lean.Lib.Integers.Int64.mone.val at h
+    rw [hval, hm] at h
+    omega
+
+private theorem subToInt64 (x : Ptrofs) :
+    Ptrofs.to_int64 x = (x : CCInt64) := by
+  exact earlyPtrofsReprUnsigned x
+
+set_option backward.isDefEq.respectTransparency false in
+theorem make_sub_correct
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    make_sub_correctStatement := by
+  intro cunit prog hlink ge
+  unfold binary_constructor_correct
+  intro a tya b tyb c va vb v e le m hsem hmake h1 h2
+  have hfull := make_binarith_correct ge
+      (fun _ n1 n2 => some (.Vint (CompCert4Lean.Lib.Integers.Int.sub n1 n2)))
+      (fun _ n1 n2 => some (.Vlong (CompCert4Lean.Lib.Integers.Int64.sub n1 n2)))
+      (fun n1 n2 => some (.Vfloat (CompCert4Lean.Lib.Floats.Float.sub n1 n2)))
+      (fun n1 n2 => some (.Vsingle (CompCert4Lean.Lib.Floats.Float32.sub n1 n2)))
+      .Osub .Osub .Osubf .Osubfs .Osubl .Osubl
+      (by intro x y m; rfl) (by intro x y m; rfl)
+      (by intro x y m; rfl) (by intro x y m; rfl)
+      (by intro x y m; rfl) (by intro x y m; rfl)
+  cases hta : Ctypes.typeconv tya <;>
+    cases htb : Ctypes.typeconv tyb <;>
+    simp [Cshmgen.make_sub, Cop.sem_sub, Cop.classify_sub, hta, htb] at hmake hsem
+  all_goals try exact hfull a tya b tyb c va vb v e le m hsem hmake h1 h2
+  case Tpointer.Tint ty attr szint si attr2 =>
+    cases hsz : Cshmgen.sizeof cunit.prog_comp_env ty with
+    | Error msg =>
+        simp [hsz] at hmake
+    | OK sz =>
+        simp [hsz, CompCert4Lean.X86_64.Archi.ptr64] at hmake
+        have hsize : sz = Ctypes.sizeof prog.prog_comp_env ty :=
+          transl_sizeof cunit prog ty sz hlink hsz
+        rw [hsize] at hmake
+        cases va with
+        | Vptr b1 ofs1 =>
+            cases vb with
+            | Vint i =>
+                simp [CompCert4Lean.X86_64.Archi.ptr64] at hsem
+                cases hsem
+                cases hmake
+                cases si with
+                | Signed =>
+                    apply Csharpminor.eval_Ebinop (op := .Osubl)
+                      (v1 := .Vptr b1 ofs1)
+                      (v2 := .Vlong (CompCert4Lean.Lib.Integers.Int64.mul
+                        (CompCert4Lean.Lib.Integers.Int64.repr (Ctypes.sizeof prog.prog_comp_env ty))
+                        (Cop.cast_int_long .Signed i)))
+                      (v := .Vptr b1 (Ptrofs.sub ofs1
+                        (Ptrofs.mul (Ptrofs.repr (Ctypes.sizeof prog.prog_comp_env ty))
+                          (Cop.ptrofs_of_int .Signed i))))
+                    · exact h1
+                    · apply Csharpminor.eval_Ebinop (op := .Omull)
+                        (v1 := .Vlong (CompCert4Lean.Lib.Integers.Int64.repr (Ctypes.sizeof prog.prog_comp_env ty)))
+                        (v2 := .Vlong (Cop.cast_int_long .Signed i))
+                        (v := .Vlong (CompCert4Lean.Lib.Integers.Int64.mul
+                          (CompCert4Lean.Lib.Integers.Int64.repr (Ctypes.sizeof prog.prog_comp_env ty))
+                          (Cop.cast_int_long .Signed i)))
+                      · apply Csharpminor.eval_Econst (v := .Vlong (CompCert4Lean.Lib.Integers.Int64.repr (Ctypes.sizeof prog.prog_comp_env ty)))
+                        rfl
+                      · apply Csharpminor.eval_Eunop (op := .Olongofint)
+                          (v1 := .Vint i) (v := .Vlong (Cop.cast_int_long .Signed i))
+                        · exact h2
+                        · rfl
+                      · rfl
+                    · simp only [Csharpminor.eval_binop, CompCert4Lean.Backend.Cminor.eval_binop,
+                        CompCert4Lean.Common.Values.Val.subl]
+                      change some (CompCert4Lean.Common.Values.Vptr b1 (Ptrofs.sub ofs1
+                        (Ptrofs.of_int64
+                          (CompCert4Lean.Lib.Integers.Int64.mul
+                            (CompCert4Lean.Lib.Integers.Int64.repr
+                              (Ctypes.sizeof prog.prog_comp_env ty))
+                            (Cop.cast_int_long .Signed i))))) = _
+                      rw [earlyOfInt64Mul, earlyOfInt64Repr, earlyCastSigned]
+                | Unsigned =>
+                    apply Csharpminor.eval_Ebinop (op := .Osubl)
+                      (v1 := .Vptr b1 ofs1)
+                      (v2 := .Vlong (CompCert4Lean.Lib.Integers.Int64.mul
+                        (CompCert4Lean.Lib.Integers.Int64.repr (Ctypes.sizeof prog.prog_comp_env ty))
+                        (Cop.cast_int_long .Unsigned i)))
+                      (v := .Vptr b1 (Ptrofs.sub ofs1
+                        (Ptrofs.mul (Ptrofs.repr (Ctypes.sizeof prog.prog_comp_env ty))
+                          (Cop.ptrofs_of_int .Unsigned i))))
+                    · exact h1
+                    · apply Csharpminor.eval_Ebinop (op := .Omull)
+                        (v1 := .Vlong (CompCert4Lean.Lib.Integers.Int64.repr (Ctypes.sizeof prog.prog_comp_env ty)))
+                        (v2 := .Vlong (Cop.cast_int_long .Unsigned i))
+                        (v := .Vlong (CompCert4Lean.Lib.Integers.Int64.mul
+                          (CompCert4Lean.Lib.Integers.Int64.repr (Ctypes.sizeof prog.prog_comp_env ty))
+                          (Cop.cast_int_long .Unsigned i)))
+                      · apply Csharpminor.eval_Econst (v := .Vlong (CompCert4Lean.Lib.Integers.Int64.repr (Ctypes.sizeof prog.prog_comp_env ty)))
+                        rfl
+                      · apply Csharpminor.eval_Eunop (op := .Olongofintu)
+                          (v1 := .Vint i) (v := .Vlong (Cop.cast_int_long .Unsigned i))
+                        · exact h2
+                        · rfl
+                      · rfl
+                    · simp only [Csharpminor.eval_binop, CompCert4Lean.Backend.Cminor.eval_binop,
+                        CompCert4Lean.Common.Values.Val.subl]
+                      change some (CompCert4Lean.Common.Values.Vptr b1 (Ptrofs.sub ofs1
+                        (Ptrofs.of_int64
+                          (CompCert4Lean.Lib.Integers.Int64.mul
+                            (CompCert4Lean.Lib.Integers.Int64.repr
+                              (Ctypes.sizeof prog.prog_comp_env ty))
+                            (Cop.cast_int_long .Unsigned i))))) = _
+                      rw [earlyOfInt64Mul, earlyOfInt64Repr, earlyCastUnsigned]
+            | Vlong i | Vfloat i | Vsingle i | Vptr i _ | Vundef =>
+                simp at hsem
+        | Vlong n1 =>
+            cases vb with
+            | Vint i =>
+                simp [CompCert4Lean.X86_64.Archi.ptr64] at hsem
+                cases hsem
+                cases hmake
+                apply Csharpminor.eval_Ebinop (op := .Osubl)
+                  (v1 := .Vlong n1)
+                  (v2 := .Vlong (CompCert4Lean.Lib.Integers.Int64.mul
+                    (CompCert4Lean.Lib.Integers.Int64.repr
+                      (Ctypes.sizeof prog.prog_comp_env ty))
+                    (Cop.cast_int_long si i)))
+                  (v := .Vlong
+                    (CompCert4Lean.Lib.Integers.Int64.sub n1
+                      (CompCert4Lean.Lib.Integers.Int64.mul
+                        (CompCert4Lean.Lib.Integers.Int64.repr
+                          (Ctypes.sizeof prog.prog_comp_env ty))
+                        (Cop.cast_int_long si i))))
+                · exact h1
+                · apply Csharpminor.eval_Ebinop (op := .Omull)
+                    (v1 := .Vlong (CompCert4Lean.Lib.Integers.Int64.repr
+                      (Ctypes.sizeof prog.prog_comp_env ty)))
+                    (v2 := .Vlong (Cop.cast_int_long si i))
+                    (v := .Vlong (CompCert4Lean.Lib.Integers.Int64.mul
+                      (CompCert4Lean.Lib.Integers.Int64.repr
+                        (Ctypes.sizeof prog.prog_comp_env ty))
+                      (Cop.cast_int_long si i)))
+                  · apply Csharpminor.eval_Econst
+                    rfl
+                  · cases si with
+                    | Signed =>
+                        apply Csharpminor.eval_Eunop (op := .Olongofint)
+                          (v1 := .Vint i) (v := .Vlong (Cop.cast_int_long .Signed i))
+                        · exact h2
+                        · rfl
+                    | Unsigned =>
+                        apply Csharpminor.eval_Eunop (op := .Olongofintu)
+                          (v1 := .Vint i) (v := .Vlong (Cop.cast_int_long .Unsigned i))
+                        · exact h2
+                        · rfl
+                  · rfl
+                · simp only [Csharpminor.eval_binop,
+                      CompCert4Lean.Backend.Cminor.eval_binop,
+                      CompCert4Lean.Common.Values.Val.subl]
+            | Vlong i | Vfloat i | Vsingle i | Vptr i _ | Vundef => simp at hsem
+        | Vint n1 =>
+            cases vb with
+            | Vint n2 =>
+                simp [CompCert4Lean.X86_64.Archi.ptr64] at hsem
+            | Vlong n2 | Vfloat n2 | Vsingle n2 | Vptr n2 _ | Vundef =>
+                simp at hsem
+        | Vfloat n1 | Vsingle n1 | Vundef =>
+            cases vb <;> simp at hsem
+  case Tpointer.Tlong ty attr si attr2 =>
+    cases hsz : Cshmgen.sizeof cunit.prog_comp_env ty with
+    | Error msg => simp [hsz] at hmake
+    | OK sz =>
+        simp [hsz, CompCert4Lean.X86_64.Archi.ptr64] at hmake
+        have hsize : sz = Ctypes.sizeof prog.prog_comp_env ty :=
+          transl_sizeof cunit prog ty sz hlink hsz
+        rw [hsize] at hmake
+        cases va with
+        | Vptr b1 ofs1 =>
+            cases vb with
+            | Vlong n2 =>
+                simp [CompCert4Lean.X86_64.Archi.ptr64] at hsem
+                cases hsem
+                cases hmake
+                apply Csharpminor.eval_Ebinop (op := .Osubl)
+                  (v1 := .Vptr b1 ofs1)
+                  (v2 := .Vlong (CompCert4Lean.Lib.Integers.Int64.mul
+                    (CompCert4Lean.Lib.Integers.Int64.repr
+                      (Ctypes.sizeof prog.prog_comp_env ty)) n2))
+                  (v := .Vptr b1 (Ptrofs.sub ofs1
+                    (Ptrofs.mul (Ptrofs.repr (Ctypes.sizeof prog.prog_comp_env ty))
+                      (Ptrofs.of_int64 n2))))
+                · exact h1
+                · apply Csharpminor.eval_Ebinop (op := .Omull)
+                    (v1 := .Vlong (CompCert4Lean.Lib.Integers.Int64.repr
+                      (Ctypes.sizeof prog.prog_comp_env ty)))
+                    (v2 := .Vlong n2)
+                    (v := .Vlong (CompCert4Lean.Lib.Integers.Int64.mul
+                      (CompCert4Lean.Lib.Integers.Int64.repr
+                        (Ctypes.sizeof prog.prog_comp_env ty)) n2))
+                  · apply Csharpminor.eval_Econst
+                    rfl
+                  · exact h2
+                  · rfl
+                · simp only [Csharpminor.eval_binop,
+                      CompCert4Lean.Backend.Cminor.eval_binop,
+                      CompCert4Lean.Common.Values.Val.subl]
+                  change some (CompCert4Lean.Common.Values.Vptr b1 (Ptrofs.sub ofs1
+                    (Ptrofs.of_int64
+                      (CompCert4Lean.Lib.Integers.Int64.mul
+                        (CompCert4Lean.Lib.Integers.Int64.repr
+                          (Ctypes.sizeof prog.prog_comp_env ty)) n2)))) = _
+                  rw [earlyOfInt64Mul, earlyOfInt64Repr]
+            | Vint i | Vfloat i | Vsingle i | Vptr i _ | Vundef => simp at hsem
+        | Vlong n1 =>
+            cases vb with
+            | Vlong n2 =>
+                simp [CompCert4Lean.X86_64.Archi.ptr64] at hsem
+                cases hsem
+                cases hmake
+                apply Csharpminor.eval_Ebinop (op := .Osubl)
+                  (v1 := .Vlong n1)
+                  (v2 := .Vlong (CompCert4Lean.Lib.Integers.Int64.mul
+                    (CompCert4Lean.Lib.Integers.Int64.repr
+                      (Ctypes.sizeof prog.prog_comp_env ty)) n2))
+                  (v := .Vlong (CompCert4Lean.Lib.Integers.Int64.sub n1
+                    (CompCert4Lean.Lib.Integers.Int64.mul
+                      (CompCert4Lean.Lib.Integers.Int64.repr
+                        (Ctypes.sizeof prog.prog_comp_env ty)) n2)))
+                · exact h1
+                · apply Csharpminor.eval_Ebinop (op := .Omull)
+                    (v1 := .Vlong (CompCert4Lean.Lib.Integers.Int64.repr
+                      (Ctypes.sizeof prog.prog_comp_env ty)))
+                    (v2 := .Vlong n2)
+                    (v := .Vlong (CompCert4Lean.Lib.Integers.Int64.mul
+                      (CompCert4Lean.Lib.Integers.Int64.repr
+                        (Ctypes.sizeof prog.prog_comp_env ty)) n2))
+                  · apply Csharpminor.eval_Econst
+                    rfl
+                  · exact h2
+                  · rfl
+                · simp only [Csharpminor.eval_binop,
+                      CompCert4Lean.Backend.Cminor.eval_binop,
+                      CompCert4Lean.Common.Values.Val.subl]
+            | Vint i | Vfloat i | Vsingle i | Vptr i _ | Vundef => simp at hsem
+        | Vint n1 =>
+            cases vb with
+            | Vlong n2 =>
+                simp [CompCert4Lean.X86_64.Archi.ptr64] at hsem
+            | Vint n2 | Vfloat n2 | Vsingle n2 | Vptr n2 _ | Vundef =>
+                simp at hsem
+        | Vfloat n1 | Vsingle n1 | Vundef =>
+            cases vb <;> simp at hsem
+  case Tpointer.Tpointer ty attr ty2 attr2 =>
+    cases hsz : Cshmgen.sizeof cunit.prog_comp_env ty with
+    | Error msg => simp [hsz] at hmake
+    | OK sz =>
+      simp [hsz, CompCert4Lean.X86_64.Archi.ptr64] at hmake
+      have hsize : sz = Ctypes.sizeof prog.prog_comp_env ty :=
+        transl_sizeof cunit prog ty sz hlink hsz
+      rw [hsize] at hmake
+      cases hmake
+      cases va <;> cases vb <;> simp at hsem
+      rename_i b1 ofs1 b2 ofs2
+      rcases hsem with ⟨heq, ⟨hpos, hmax⟩, hv⟩
+      subst b2
+      subst v
+      run_tac withMainContext do
+        for hn in [`hpos, `hmax] do
+          let h ← getLocalDeclFromUserName hn
+          let n := h.type.getAppArgs[1]!.getAppFn.constName!
+          evalTactic (← `(tactic| unfold $(mkIdent n) at $(mkIdent hn):term))
+      have hp : 0 < intOfZ (Ctypes.sizeof prog.prog_comp_env ty) := by
+        cases hd : CompCert4Lean.Lib.Coqlib.zlt .Z0
+            (Ctypes.sizeof prog.prog_comp_env ty) with
+        | left hp => exact hp
+        | right hp => simp [hd] at hpos
+      have hm : intOfZ (Ctypes.sizeof prog.prog_comp_env ty) ≤ 9223372036854775807 := by
+        cases hd : CompCert4Lean.Lib.Coqlib.zle
+            (Ctypes.sizeof prog.prog_comp_env ty) Ptrofs.max_signed with
+        | left hm => exact hm
+        | right hm => simp [hd] at hmax
+      obtain ⟨hz, hneg⟩ := subPositiveDivisor _ hp hm
+      apply Csharpminor.eval_Ebinop (op := .Odivl)
+        (v1 := .Vlong (Ptrofs.to_int64 (Ptrofs.sub ofs1 ofs2)))
+        (v2 := .Vlong (CompCert4Lean.Lib.Integers.Int64.repr
+          (Ctypes.sizeof prog.prog_comp_env ty)))
+      · apply Csharpminor.eval_Ebinop (op := .Osubl)
+          (v1 := .Vptr b1 ofs1) (v2 := .Vptr b1 ofs2)
+        · exact h1
+        · exact h2
+        · simp [Csharpminor.eval_binop, CompCert4Lean.Backend.Cminor.eval_binop,
+            Val.subl, CompCert4Lean.X86_64.Archi.ptr64, eq_block,
+            CompCert4Lean.Lib.Coqlib.peq, PArith.BinPos.Pos.eq_dec]
+          try rfl
+      · apply Csharpminor.eval_Econst
+        rfl
+      · simp only [Csharpminor.eval_binop, CompCert4Lean.Backend.Cminor.eval_binop,
+          Val.divls, hz, hneg, Bool.and_false, Bool.false_or, Bool.false_eq_true,
+          ↓reduceIte]
+        change some (Vlong (CompCert4Lean.Lib.Integers.Int64.divs
+            (Ptrofs.to_int64 (Ptrofs.sub ofs1 ofs2))
+            (CompCert4Lean.Lib.Integers.Int64.repr (Ctypes.sizeof prog.prog_comp_env ty)))) =
+          some (Vlong (Ptrofs.to_int64 (Ptrofs.divs (Ptrofs.sub ofs1 ofs2)
+            (Ptrofs.repr (Ctypes.sizeof prog.prog_comp_env ty)))))
+        rw [subToInt64, subToInt64]
+        rfl
+
+end SubtractionProof

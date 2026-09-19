@@ -2974,3 +2974,180 @@ theorem integer_representable_n :
   exact h
 
 end CompCert4Lean.Lib.IEEE754_extra
+
+namespace CompCert4Lean.Lib.IEEE754_extra
+open CompCert4Lean.Flocq.Core
+open CompCert4Lean.Flocq.IEEE754
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq (intOfZ intOfZ_injective intOfZ_zOfInt)
+
+theorem round_int_no_overflow :
+    ∀ {prec emax : Z} [pgt : Prec_gt_0 prec]
+      [ple : Prec_lt_emax prec emax],
+      round_int_no_overflowStatement (prec := prec) (emax := emax) := by
+  intro prec emax pgt ple ctx magnitude n hn
+  have hvalid : Generic_fmt.Valid_exp (fexp prec emax) := by
+    let hcert : Binary.FexpCorrectCertificate prec emax :=
+      Binary.fexp_correct_certificate_proof prec emax
+    exact hcert.valid
+  have hbound : Zle (Zabs n)
+      (Zsub (Zpower Ztwo emax) (Zpower Ztwo (Zsub emax prec))) := hn
+  have hyfmt : Exact.generic_format magnitude Zaux.radix2 (fexp prec emax)
+      (Exact.IZR ctx (Zsub (Zpower Ztwo emax) (Zpower Ztwo (Zsub emax prec)))) := by
+    apply FLT.generic_format_FLT ctx magnitude
+    apply FLT.FLT_spec _ _ _ _
+      (Defs.Float Zaux.radix2
+        (Zsub (Zpower Ztwo prec) Zone) (Zsub emax prec))
+    · rw [int_upper_bound_eq (prec := prec) (emax := emax)]
+      change Exact.IZR ctx
+          (Zmul (Zsub (Zpower Ztwo prec) Zone)
+            (Zpower Ztwo (Zsub emax prec))) =
+        Exact.Rmult ctx (Exact.IZR ctx (Zsub (Zpower Ztwo prec) Zone))
+          (Exact.bpow ctx Zaux.radix2 (Zsub emax prec))
+      have hp : Zle Z0 (Zsub emax prec) := by
+        change (0 : Int) ≤ intOfZ (Zsub emax prec)
+        simp [Zsub, Zaux.Zsub, CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.sub,
+          intOfZ_zOfInt]
+        have hpe : intOfZ prec < intOfZ emax := ple.prec_lt_emax
+        omega
+      have hizr : Exact.IZR ctx (Zpower Ztwo (Zsub emax prec)) =
+          Exact.bpow ctx Zaux.radix2 (Zsub emax prec) :=
+        Raux.IZR_Zpower ctx Zaux.radix2 (Zsub emax prec) hp
+      rw [← hizr]
+      exact CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.mult_IZR ctx _ _
+    · change Zlt
+        (Zabs (Zsub (Zpower Ztwo prec) Zone))
+        (Zpower Ztwo prec)
+      have hpow : Zlt Zone (Zpower Ztwo prec) :=
+        Zaux.Zpower_gt_1 Zaux.radix2 prec (show Zlt Z0 prec from pgt)
+      have hm : Zle Z0 (Zsub (Zpower Ztwo prec) Zone) := by
+        change (0 : Int) ≤ intOfZ (Zsub (Zpower Ztwo prec) Zone)
+        simp [Zsub, Zaux.Zsub, CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.sub,
+          intOfZ_zOfInt]
+        have hpI : (1 : Int) < intOfZ (Zpower Ztwo prec) := hpow
+        have hone : intOfZ Zone = (1 : Int) := by decide
+        omega
+      have habs : Zabs (Zsub (Zpower Ztwo prec) Zone) =
+          Zsub (Zpower Ztwo prec) Zone :=
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.abs_eq _ hm
+      rw [habs]
+      change intOfZ (Zsub (Zpower Ztwo prec) Zone) <
+        intOfZ (Zpower Ztwo prec)
+      simp [Zsub, Zaux.Zsub,
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.sub,
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+      have hpI : (1 : Int) < intOfZ (Zpower Ztwo prec) := hpow
+      have hone : intOfZ Zone = (1 : Int) := by decide
+      omega
+    · change intOfZ (Zsub (Zsub (Zpos (.xI .xH)) emax) prec) ≤
+        intOfZ (Zsub emax prec)
+      simp [Zsub, Zaux.Zsub,
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.sub,
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+      have hprec : (0 : Int) < intOfZ prec := pgt
+      have hpe : intOfZ prec < intOfZ emax := ple.prec_lt_emax
+      have hthree : intOfZ (Zpos (.xI .xH)) = (3 : Int) := by decide
+      omega
+  have hxy : Exact.Rle ctx (Exact.Rabs ctx (Exact.IZR ctx n))
+      (Exact.IZR ctx (Zsub (Zpower Ztwo emax) (Zpower Ztwo (Zsub emax prec)))) := by
+    have habs : Exact.IZR ctx (Zabs n) = Exact.Rabs ctx (Exact.IZR ctx n) := by
+      exact CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.Rbasic_fun.abs_IZR ctx n
+    rw [← habs]
+    exact CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.IZR_le
+      ctx _ _ hbound
+  have hle : Exact.Rle ctx
+      (Exact.round magnitude Zaux.radix2 (fexp prec emax)
+        (Exact.round_mode ctx mode_NE) (Exact.Rabs ctx (Exact.IZR ctx n)))
+      (Exact.IZR ctx (Zsub (Zpower Ztwo emax) (Zpower Ztwo (Zsub emax prec)))) := by
+    change Exact.Rle ctx
+      (Generic_fmt.Exact.round ctx magnitude Zaux.radix2 (fexp prec emax)
+        (Generic_fmt.Exact.Znearest ctx (fun m => Bool.not (Zaux.Zeven m)))
+        (Exact.Rabs ctx (Exact.IZR ctx n)))
+      (Exact.IZR ctx (Zsub (Zpower Ztwo emax) (Zpower Ztwo (Zsub emax prec))))
+    let sm := Generic_fmt.Exact.scaled_mantissa ctx magnitude Zaux.radix2
+      (fexp prec emax) (Exact.Rabs ctx (Exact.IZR ctx n))
+    rcases Generic_fmt.Znearest_DN_or_UP ctx (fun m => Bool.not (Zaux.Zeven m)) sm with hfloor | hceil
+    · rw [show Generic_fmt.Exact.round ctx magnitude Zaux.radix2 (fexp prec emax)
+          (Generic_fmt.Exact.Znearest ctx (fun m => Bool.not (Zaux.Zeven m)))
+          (Exact.Rabs ctx (Exact.IZR ctx n)) =
+        Generic_fmt.Exact.round ctx magnitude Zaux.radix2 (fexp prec emax)
+          (Generic_fmt.Exact.Zfloor ctx) (Exact.Rabs ctx (Exact.IZR ctx n)) by
+          unfold sm at hfloor
+          unfold Generic_fmt.Exact.round
+          rw [hfloor]]
+      let hrnd : Generic_fmt.Exact.Valid_rnd ctx (Generic_fmt.Exact.Zfloor ctx) := by
+        constructor
+        · intro x y hxy'
+          exact CompCert4Lean.Flocq.Core.Raux.Zfloor_le ctx x y hxy'
+        · intro z
+          exact CompCert4Lean.Flocq.Core.Raux.Zfloor_IZR ctx z
+      exact Generic_fmt.round_le_generic ctx magnitude Zaux.radix2 (fexp prec emax)
+        hvalid (Generic_fmt.Exact.Zfloor ctx) hrnd _ _ hyfmt hxy
+    · rw [show Generic_fmt.Exact.round ctx magnitude Zaux.radix2 (fexp prec emax)
+          (Generic_fmt.Exact.Znearest ctx (fun m => Bool.not (Zaux.Zeven m)))
+          (Exact.Rabs ctx (Exact.IZR ctx n)) =
+        Generic_fmt.Exact.round ctx magnitude Zaux.radix2 (fexp prec emax)
+          (Generic_fmt.Exact.Zceil ctx) (Exact.Rabs ctx (Exact.IZR ctx n)) by
+          unfold sm at hceil
+          unfold Generic_fmt.Exact.round
+          rw [hceil]]
+      let hrnd : Generic_fmt.Exact.Valid_rnd ctx (Generic_fmt.Exact.Zceil ctx) := by
+        constructor
+        · intro x y hxy'
+          exact CompCert4Lean.Flocq.Core.Raux.Zceil_le ctx x y hxy'
+        · intro z
+          exact CompCert4Lean.Flocq.Core.Raux.Zceil_IZR ctx z
+      exact Generic_fmt.round_le_generic ctx magnitude Zaux.radix2 (fexp prec emax)
+        hvalid (Generic_fmt.Exact.Zceil ctx) hrnd _ _ hyfmt hxy
+  have hlt : Exact.Rlt ctx
+      (Exact.IZR ctx (Zsub (Zpower Ztwo emax) (Zpower Ztwo (Zsub emax prec))))
+      (Exact.bpow ctx Zaux.radix2 emax) := by
+    have hp0 : Zle Z0 (Zsub emax prec) := by
+      change (0 : Int) ≤ intOfZ (Zsub emax prec)
+      simp [Zsub, Zaux.Zsub, CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.sub,
+        intOfZ_zOfInt]
+      have hprec : (0 : Int) < intOfZ prec := pgt
+      have hpe : intOfZ prec < intOfZ emax := ple.prec_lt_emax
+      omega
+    have hp : Zlt Z0 (Zpower Ztwo (Zsub emax prec)) :=
+      Zaux.Zpower_gt_0 Zaux.radix2 _ hp0
+    have hsub : Zlt
+        (Zsub (Zpower Ztwo emax) (Zpower Ztwo (Zsub emax prec)))
+        (Zpower Ztwo emax) := by
+      change intOfZ (Zsub (Zpower Ztwo emax) (Zpower Ztwo (Zsub emax prec))) <
+        intOfZ (Zpower Ztwo emax)
+      simp [Zsub, Zaux.Zsub, CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.sub,
+        intOfZ_zOfInt]
+      have hpI : (0 : Int) < intOfZ (Zpower Ztwo (Zsub emax prec)) := hp
+      simp [Zsub, Zaux.Zsub,
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.sub,
+        intOfZ_zOfInt] at hpI ⊢
+      omega
+    have he0 : Zle Z0 emax := by
+      change (0 : Int) ≤ intOfZ emax
+      have hprec : (0 : Int) < intOfZ prec := pgt
+      have hpe : intOfZ prec < intOfZ emax := ple.prec_lt_emax
+      omega
+    have hizr : Exact.IZR ctx (Zpower Ztwo emax) =
+        Exact.bpow ctx Zaux.radix2 emax :=
+      Raux.IZR_Zpower ctx Zaux.radix2 emax he0
+    rw [← hizr]
+    exact CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.IZR_lt ctx _ _ hsub
+  change Exact.Rlt ctx
+    (Generic_fmt.Exact.Rabs ctx
+      (Generic_fmt.Exact.round ctx magnitude Zaux.radix2 (fexp prec emax)
+        (Generic_fmt.Exact.Znearest ctx (fun m => Bool.not (Zaux.Zeven m)))
+        (Exact.IZR ctx n)))
+    (Exact.bpow ctx Zaux.radix2 emax)
+  have habsround := CompCert4Lean.Flocq.Core.Round_NE.round_NE_abs ctx magnitude
+    Zaux.radix2 (fexp prec emax) hvalid (Exact.IZR ctx n)
+  change Generic_fmt.Exact.round ctx magnitude Zaux.radix2 (fexp prec emax)
+      (Generic_fmt.Exact.Znearest ctx (fun m => Bool.not (Zaux.Zeven m)))
+      (Exact.Rabs ctx (Exact.IZR ctx n)) =
+    Generic_fmt.Exact.Rabs ctx
+      (Generic_fmt.Exact.round ctx magnitude Zaux.radix2 (fexp prec emax)
+        (Generic_fmt.Exact.Znearest ctx (fun m => Bool.not (Zaux.Zeven m)))
+        (Exact.IZR ctx n)) at habsround
+  rw [← habsround]
+  exact CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.Rle_lt_trans
+    ctx _ _ _ hle hlt
+end CompCert4Lean.Lib.IEEE754_extra

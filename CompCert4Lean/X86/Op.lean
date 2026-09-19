@@ -3009,3 +3009,2259 @@ theorem type_of_addressing64_sound : type_of_addressing64_soundStatement := by
       | cons v1 vl => simp [eval_addressing64] at h
 
 end CompCert4Lean.X86.Op
+
+namespace CompCert4Lean.X86.Op
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Lib.Integers
+
+set_option maxHeartbeats 2000000
+
+private theorem suffix_operation_shl_inj (f : meminj) (a a' b b' : val)
+    (ha : Val.inject f a a') (hb : Val.inject f b b') :
+    Val.inject f (Val.shl a b) (Val.shl a' b') := by
+  cases ha <;> cases hb <;> simp only [Val.shl] <;>
+    first | exact Val.val_inject_undef _ _ | constructor | (split <;> constructor)
+
+private theorem suffix_operation_shru_inj (f : meminj) (a a' b b' : val)
+    (ha : Val.inject f a a') (hb : Val.inject f b b') :
+    Val.inject f (Val.shru a b) (Val.shru a' b') := by
+  cases ha <;> cases hb <;> simp only [Val.shru] <;>
+    first | exact Val.val_inject_undef _ _ | constructor | (split <;> constructor)
+
+private theorem suffix_operation_or_inj (f : meminj) (a a' b b' : val)
+    (ha : Val.inject f a a') (hb : Val.inject f b b') :
+    Val.inject f (Val.or a b) (Val.or a' b') := by
+  cases ha <;> cases hb <;> simp only [Val.or] <;>
+    first | exact Val.val_inject_undef _ _ | constructor | (split <;> constructor)
+
+private theorem suffix_operation_inj_of_condition
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (hcond : eval_condition_injStatement) :
+    @eval_operation_injStatement binary64_certificate binary32_certificate := by
+  intro F1 F2 V1 V2 ge1 ge2 f m1 m2
+  intro hvalid hweak hbound hdiff op sp1 vl1 sp2 vl2 v1 hglobals hsp hvl heval
+  have hc := hcond f m1 m2 hvalid hweak hbound hdiff
+  cases op with
+  | Omove =>
+      cases hvl with
+      | inject_list_nil =>
+          change none = some v1 at heval
+          contradiction
+      | inject_list_cons a a' l1 l1' ha hl1 =>
+          cases hl1 with
+          | inject_list_nil =>
+              change some a = some v1 at heval
+              cases heval
+              refine ⟨a', rfl, ?_⟩
+              exact ha
+          | inject_list_cons =>
+              change none = some v1 at heval
+              contradiction
+  | Ointconst n =>
+      cases hvl with
+      | inject_list_nil =>
+          change some (.Vint n) = some v1 at heval
+          cases heval
+          refine ⟨(.Vint n), rfl, ?_⟩
+          constructor
+      | inject_list_cons =>
+          change none = some v1 at heval
+          contradiction
+  | Olongconst n =>
+      cases hvl with
+      | inject_list_nil =>
+          change some (.Vlong n) = some v1 at heval
+          cases heval
+          refine ⟨(.Vlong n), rfl, ?_⟩
+          constructor
+      | inject_list_cons =>
+          change none = some v1 at heval
+          contradiction
+  | Ofloatconst n =>
+      cases hvl with
+      | inject_list_nil =>
+          change some (.Vfloat n) = some v1 at heval
+          cases heval
+          refine ⟨(.Vfloat n), rfl, ?_⟩
+          constructor
+      | inject_list_cons =>
+          change none = some v1 at heval
+          contradiction
+  | Osingleconst n =>
+      cases hvl with
+      | inject_list_nil =>
+          change some (.Vsingle n) = some v1 at heval
+          cases heval
+          refine ⟨(.Vsingle n), rfl, ?_⟩
+          constructor
+      | inject_list_cons =>
+          change none = some v1 at heval
+          contradiction
+  | Oindirectsymbol id =>
+      cases hvl with
+      | inject_list_nil =>
+          change some (Genv.symbol_address ge1 id Ptrofs.zero) = some v1 at heval
+          cases heval
+          refine ⟨(Genv.symbol_address ge2 id Ptrofs.zero), rfl, ?_⟩
+          exact hglobals id Ptrofs.zero (by simp [globals_operation])
+      | inject_list_cons =>
+          change none = some v1 at heval
+          contradiction
+  | Ocast8signed =>
+      cases hvl with
+      | inject_list_nil =>
+          change none = some v1 at heval
+          contradiction
+      | inject_list_cons a a' l1 l1' ha hl1 =>
+          cases hl1 with
+          | inject_list_nil =>
+              change some (Val.sign_ext (zOfNat 8) a) = some v1 at heval
+              cases heval
+              refine ⟨(Val.sign_ext (zOfNat 8) a'), rfl, ?_⟩
+              cases ha <;>
+                simp only [Val.sign_ext] <;>
+                (first | exact Val.val_inject_undef _ _ | constructor | (split <;> constructor))
+          | inject_list_cons =>
+              change none = some v1 at heval
+              contradiction
+  | Ocast8unsigned =>
+      cases hvl with
+      | inject_list_nil =>
+          change none = some v1 at heval
+          contradiction
+      | inject_list_cons a a' l1 l1' ha hl1 =>
+          cases hl1 with
+          | inject_list_nil =>
+              change some (Val.zero_ext (zOfNat 8) a) = some v1 at heval
+              cases heval
+              refine ⟨(Val.zero_ext (zOfNat 8) a'), rfl, ?_⟩
+              cases ha <;>
+                simp only [Val.zero_ext] <;>
+                (first | exact Val.val_inject_undef _ _ | constructor | (split <;> constructor))
+          | inject_list_cons =>
+              change none = some v1 at heval
+              contradiction
+  | Ocast16signed =>
+      cases hvl with
+      | inject_list_nil =>
+          change none = some v1 at heval
+          contradiction
+      | inject_list_cons a a' l1 l1' ha hl1 =>
+          cases hl1 with
+          | inject_list_nil =>
+              change some (Val.sign_ext (zOfNat 16) a) = some v1 at heval
+              cases heval
+              refine ⟨(Val.sign_ext (zOfNat 16) a'), rfl, ?_⟩
+              cases ha <;>
+                simp only [Val.sign_ext] <;>
+                (first | exact Val.val_inject_undef _ _ | constructor | (split <;> constructor))
+          | inject_list_cons =>
+              change none = some v1 at heval
+              contradiction
+  | Ocast16unsigned =>
+      cases hvl with
+      | inject_list_nil =>
+          change none = some v1 at heval
+          contradiction
+      | inject_list_cons a a' l1 l1' ha hl1 =>
+          cases hl1 with
+          | inject_list_nil =>
+              change some (Val.zero_ext (zOfNat 16) a) = some v1 at heval
+              cases heval
+              refine ⟨(Val.zero_ext (zOfNat 16) a'), rfl, ?_⟩
+              cases ha <;>
+                simp only [Val.zero_ext] <;>
+                (first | exact Val.val_inject_undef _ _ | constructor | (split <;> constructor))
+          | inject_list_cons =>
+              change none = some v1 at heval
+              contradiction
+  | Oneg =>
+      cases hvl with
+      | inject_list_nil =>
+          change none = some v1 at heval
+          contradiction
+      | inject_list_cons a a' l1 l1' ha hl1 =>
+          cases hl1 with
+          | inject_list_nil =>
+              change some (Val.neg a) = some v1 at heval
+              cases heval
+              refine ⟨(Val.neg a'), rfl, ?_⟩
+              cases ha <;>
+                simp only [Val.neg] <;>
+                (first | exact Val.val_inject_undef _ _ | constructor | (split <;> constructor))
+          | inject_list_cons =>
+              change none = some v1 at heval
+              contradiction
+  | Osub =>
+      cases hvl with
+      | inject_list_nil =>
+          change none = some v1 at heval
+          contradiction
+      | inject_list_cons a a' l2 l2' ha hl2 =>
+          cases hl2 with
+          | inject_list_nil =>
+              change none = some v1 at heval
+              contradiction
+          | inject_list_cons b b' l1 l1' hb hl1 =>
+              cases hl1 with
+              | inject_list_nil =>
+                  change some (Val.sub a b) = some v1 at heval
+                  cases heval
+                  refine ⟨(Val.sub a' b'), rfl, ?_⟩
+                  exact Val.sub_inject f _ _ _ _ ha hb
+              | inject_list_cons =>
+                  change none = some v1 at heval
+                  contradiction
+  | Omul =>
+      cases hvl with
+      | inject_list_nil =>
+          change none = some v1 at heval
+          contradiction
+      | inject_list_cons a a' l2 l2' ha hl2 =>
+          cases hl2 with
+          | inject_list_nil =>
+              change none = some v1 at heval
+              contradiction
+          | inject_list_cons b b' l1 l1' hb hl1 =>
+              cases hl1 with
+              | inject_list_nil =>
+                  change some (Val.mul a b) = some v1 at heval
+                  cases heval
+                  refine ⟨(Val.mul a' b'), rfl, ?_⟩
+                  cases ha <;> cases hb <;>
+                    simp only [Val.mul] <;>
+                    (first | exact Val.val_inject_undef _ _ | constructor | (split <;> constructor))
+              | inject_list_cons =>
+                  change none = some v1 at heval
+                  contradiction
+  | Omulimm n =>
+      cases hvl with
+      | inject_list_nil =>
+          change none = some v1 at heval
+          contradiction
+      | inject_list_cons a a' l1 l1' ha hl1 =>
+          cases hl1 with
+          | inject_list_nil =>
+              change some (Val.mul a (.Vint n)) = some v1 at heval
+              cases heval
+              refine ⟨(Val.mul a' (.Vint n)), rfl, ?_⟩
+              cases ha <;>
+                simp only [Val.mul] <;>
+                (first | exact Val.val_inject_undef _ _ | constructor | (split <;> constructor))
+          | inject_list_cons =>
+              change none = some v1 at heval
+              contradiction
+  | Omulhs =>
+      cases hvl with
+      | inject_list_nil =>
+          change none = some v1 at heval
+          contradiction
+      | inject_list_cons a a' l2 l2' ha hl2 =>
+          cases hl2 with
+          | inject_list_nil =>
+              change none = some v1 at heval
+              contradiction
+          | inject_list_cons b b' l1 l1' hb hl1 =>
+              cases hl1 with
+              | inject_list_nil =>
+                  change some (Val.mulhs a b) = some v1 at heval
+                  cases heval
+                  refine ⟨(Val.mulhs a' b'), rfl, ?_⟩
+                  cases ha <;> cases hb <;>
+                    simp only [Val.mulhs] <;>
+                    (first | exact Val.val_inject_undef _ _ | constructor | (split <;> constructor))
+              | inject_list_cons =>
+                  change none = some v1 at heval
+                  contradiction
+  | Omulhu =>
+      cases hvl with
+      | inject_list_nil =>
+          change none = some v1 at heval
+          contradiction
+      | inject_list_cons a a' l2 l2' ha hl2 =>
+          cases hl2 with
+          | inject_list_nil =>
+              change none = some v1 at heval
+              contradiction
+          | inject_list_cons b b' l1 l1' hb hl1 =>
+              cases hl1 with
+              | inject_list_nil =>
+                  change some (Val.mulhu a b) = some v1 at heval
+                  cases heval
+                  refine ⟨(Val.mulhu a' b'), rfl, ?_⟩
+                  cases ha <;> cases hb <;>
+                    simp only [Val.mulhu] <;>
+                    (first | exact Val.val_inject_undef _ _ | constructor | (split <;> constructor))
+              | inject_list_cons =>
+                  change none = some v1 at heval
+                  contradiction
+  | Odiv =>
+      cases hvl with
+      | inject_list_nil =>
+          change none = some v1 at heval
+          contradiction
+      | inject_list_cons a a' l2 l2' ha hl2 =>
+          cases hl2 with
+          | inject_list_nil =>
+              change none = some v1 at heval
+              contradiction
+          | inject_list_cons b b' l1 l1' hb hl1 =>
+              cases hl1 with
+              | inject_list_nil =>
+                  change Val.divs a b = some v1 at heval
+                  change ∃ v2, Val.divs a' b' = some v2 ∧ Val.inject f v1 v2
+                  cases ha <;> cases hb <;>
+                    simp only [Val.divs] at heval ⊢ <;> try contradiction
+                  all_goals
+                    first
+                    | (cases heval; exact ⟨_, rfl, by constructor⟩)
+                    | (split at heval <;> simp_all only [Option.some.injEq, reduceCtorEq]; cases heval; exact ⟨_, rfl, by constructor⟩)
+                    | (obtain ⟨x, hx, hv⟩ := Option.map_eq_some_iff.mp heval; cases hv; exact ⟨_, heval, by constructor⟩)
+              | inject_list_cons =>
+                  change none = some v1 at heval
+                  contradiction
+  | Odivu =>
+      cases hvl with
+      | inject_list_nil =>
+          change none = some v1 at heval
+          contradiction
+      | inject_list_cons a a' l2 l2' ha hl2 =>
+          cases hl2 with
+          | inject_list_nil =>
+              change none = some v1 at heval
+              contradiction
+          | inject_list_cons b b' l1 l1' hb hl1 =>
+              cases hl1 with
+              | inject_list_nil =>
+                  change Val.divu a b = some v1 at heval
+                  change ∃ v2, Val.divu a' b' = some v2 ∧ Val.inject f v1 v2
+                  cases ha <;> cases hb <;>
+                    simp only [Val.divu] at heval ⊢ <;> try contradiction
+                  all_goals
+                    first
+                    | (cases heval; exact ⟨_, rfl, by constructor⟩)
+                    | (split at heval <;> simp_all only [Option.some.injEq, reduceCtorEq]; cases heval; exact ⟨_, rfl, by constructor⟩)
+                    | (obtain ⟨x, hx, hv⟩ := Option.map_eq_some_iff.mp heval; cases hv; exact ⟨_, heval, by constructor⟩)
+              | inject_list_cons =>
+                  change none = some v1 at heval
+                  contradiction
+  | Omod =>
+      cases hvl with
+      | inject_list_nil =>
+          change none = some v1 at heval
+          contradiction
+      | inject_list_cons a a' l2 l2' ha hl2 =>
+          cases hl2 with
+          | inject_list_nil =>
+              change none = some v1 at heval
+              contradiction
+          | inject_list_cons b b' l1 l1' hb hl1 =>
+              cases hl1 with
+              | inject_list_nil =>
+                  change Val.mods a b = some v1 at heval
+                  change ∃ v2, Val.mods a' b' = some v2 ∧ Val.inject f v1 v2
+                  cases ha <;> cases hb <;>
+                    simp only [Val.mods] at heval ⊢ <;> try contradiction
+                  all_goals
+                    first
+                    | (cases heval; exact ⟨_, rfl, by constructor⟩)
+                    | (split at heval <;> simp_all only [Option.some.injEq, reduceCtorEq]; cases heval; exact ⟨_, rfl, by constructor⟩)
+                    | (obtain ⟨x, hx, hv⟩ := Option.map_eq_some_iff.mp heval; cases hv; exact ⟨_, heval, by constructor⟩)
+              | inject_list_cons =>
+                  change none = some v1 at heval
+                  contradiction
+  | Omodu =>
+      cases hvl with
+      | inject_list_nil =>
+          change none = some v1 at heval
+          contradiction
+      | inject_list_cons a a' l2 l2' ha hl2 =>
+          cases hl2 with
+          | inject_list_nil =>
+              change none = some v1 at heval
+              contradiction
+          | inject_list_cons b b' l1 l1' hb hl1 =>
+              cases hl1 with
+              | inject_list_nil =>
+                  change Val.modu a b = some v1 at heval
+                  change ∃ v2, Val.modu a' b' = some v2 ∧ Val.inject f v1 v2
+                  cases ha <;> cases hb <;>
+                    simp only [Val.modu] at heval ⊢ <;> try contradiction
+                  all_goals
+                    first
+                    | (cases heval; exact ⟨_, rfl, by constructor⟩)
+                    | (split at heval <;> simp_all only [Option.some.injEq, reduceCtorEq]; cases heval; exact ⟨_, rfl, by constructor⟩)
+                    | (obtain ⟨x, hx, hv⟩ := Option.map_eq_some_iff.mp heval; cases hv; exact ⟨_, heval, by constructor⟩)
+              | inject_list_cons =>
+                  change none = some v1 at heval
+                  contradiction
+  | Oand =>
+      cases hvl with
+      | inject_list_nil =>
+          change none = some v1 at heval
+          contradiction
+      | inject_list_cons a a' l2 l2' ha hl2 =>
+          cases hl2 with
+          | inject_list_nil =>
+              change none = some v1 at heval
+              contradiction
+          | inject_list_cons b b' l1 l1' hb hl1 =>
+              cases hl1 with
+              | inject_list_nil =>
+                  change some (Val.and a b) = some v1 at heval
+                  cases heval
+                  refine ⟨(Val.and a' b'), rfl, ?_⟩
+                  cases ha <;> cases hb <;>
+                    simp only [Val.and] <;>
+                    (first | exact Val.val_inject_undef _ _ | constructor | (split <;> constructor))
+              | inject_list_cons =>
+                  change none = some v1 at heval
+                  contradiction
+  | Oandimm n =>
+      cases hvl with
+      | inject_list_nil =>
+          change none = some v1 at heval
+          contradiction
+      | inject_list_cons a a' l1 l1' ha hl1 =>
+          cases hl1 with
+          | inject_list_nil =>
+              change some (Val.and a (.Vint n)) = some v1 at heval
+              cases heval
+              refine ⟨(Val.and a' (.Vint n)), rfl, ?_⟩
+              cases ha <;>
+                simp only [Val.and] <;>
+                (first | exact Val.val_inject_undef _ _ | constructor | (split <;> constructor))
+          | inject_list_cons =>
+              change none = some v1 at heval
+              contradiction
+  | Oor =>
+      cases hvl with
+      | inject_list_nil =>
+          change none = some v1 at heval
+          contradiction
+      | inject_list_cons a a' l2 l2' ha hl2 =>
+          cases hl2 with
+          | inject_list_nil =>
+              change none = some v1 at heval
+              contradiction
+          | inject_list_cons b b' l1 l1' hb hl1 =>
+              cases hl1 with
+              | inject_list_nil =>
+                  change some (Val.or a b) = some v1 at heval
+                  cases heval
+                  refine ⟨(Val.or a' b'), rfl, ?_⟩
+                  cases ha <;> cases hb <;>
+                    simp only [Val.or] <;>
+                    (first | exact Val.val_inject_undef _ _ | constructor | (split <;> constructor))
+              | inject_list_cons =>
+                  change none = some v1 at heval
+                  contradiction
+  | Oorimm n =>
+      cases hvl with
+      | inject_list_nil =>
+          change none = some v1 at heval
+          contradiction
+      | inject_list_cons a a' l1 l1' ha hl1 =>
+          cases hl1 with
+          | inject_list_nil =>
+              change some (Val.or a (.Vint n)) = some v1 at heval
+              cases heval
+              refine ⟨(Val.or a' (.Vint n)), rfl, ?_⟩
+              cases ha <;>
+                simp only [Val.or] <;>
+                (first | exact Val.val_inject_undef _ _ | constructor | (split <;> constructor))
+          | inject_list_cons =>
+              change none = some v1 at heval
+              contradiction
+  | Oxor =>
+      cases hvl with
+      | inject_list_nil =>
+          change none = some v1 at heval
+          contradiction
+      | inject_list_cons a a' l2 l2' ha hl2 =>
+          cases hl2 with
+          | inject_list_nil =>
+              change none = some v1 at heval
+              contradiction
+          | inject_list_cons b b' l1 l1' hb hl1 =>
+              cases hl1 with
+              | inject_list_nil =>
+                  change some (Val.xor a b) = some v1 at heval
+                  cases heval
+                  refine ⟨(Val.xor a' b'), rfl, ?_⟩
+                  cases ha <;> cases hb <;>
+                    simp only [Val.xor] <;>
+                    (first | exact Val.val_inject_undef _ _ | constructor | (split <;> constructor))
+              | inject_list_cons =>
+                  change none = some v1 at heval
+                  contradiction
+  | Oxorimm n =>
+      cases hvl with
+      | inject_list_nil =>
+          change none = some v1 at heval
+          contradiction
+      | inject_list_cons a a' l1 l1' ha hl1 =>
+          cases hl1 with
+          | inject_list_nil =>
+              change some (Val.xor a (.Vint n)) = some v1 at heval
+              cases heval
+              refine ⟨(Val.xor a' (.Vint n)), rfl, ?_⟩
+              cases ha <;>
+                simp only [Val.xor] <;>
+                (first | exact Val.val_inject_undef _ _ | constructor | (split <;> constructor))
+          | inject_list_cons =>
+              change none = some v1 at heval
+              contradiction
+  | Onot =>
+      cases hvl with
+      | inject_list_nil =>
+          change none = some v1 at heval
+          contradiction
+      | inject_list_cons a a' l1 l1' ha hl1 =>
+          cases hl1 with
+          | inject_list_nil =>
+              change some (Val.notint a) = some v1 at heval
+              cases heval
+              refine ⟨(Val.notint a'), rfl, ?_⟩
+              cases ha <;>
+                simp only [Val.notint] <;>
+                (first | exact Val.val_inject_undef _ _ | constructor | (split <;> constructor))
+          | inject_list_cons =>
+              change none = some v1 at heval
+              contradiction
+  | Oshl =>
+      cases hvl with
+      | inject_list_nil =>
+          change none = some v1 at heval
+          contradiction
+      | inject_list_cons a a' l2 l2' ha hl2 =>
+          cases hl2 with
+          | inject_list_nil =>
+              change none = some v1 at heval
+              contradiction
+          | inject_list_cons b b' l1 l1' hb hl1 =>
+              cases hl1 with
+              | inject_list_nil =>
+                  change some (Val.shl a b) = some v1 at heval
+                  cases heval
+                  refine ⟨(Val.shl a' b'), rfl, ?_⟩
+                  cases ha <;> cases hb <;>
+                    simp only [Val.shl] <;>
+                    (first | exact Val.val_inject_undef _ _ | constructor | (split <;> constructor))
+              | inject_list_cons =>
+                  change none = some v1 at heval
+                  contradiction
+  | Oshlimm n =>
+      cases hvl with
+      | inject_list_nil =>
+          change none = some v1 at heval
+          contradiction
+      | inject_list_cons a a' l1 l1' ha hl1 =>
+          cases hl1 with
+          | inject_list_nil =>
+              change some (Val.shl a (.Vint n)) = some v1 at heval
+              cases heval
+              refine ⟨(Val.shl a' (.Vint n)), rfl, ?_⟩
+              cases ha <;>
+                simp only [Val.shl] <;>
+                (first | exact Val.val_inject_undef _ _ | constructor | (split <;> constructor))
+          | inject_list_cons =>
+              change none = some v1 at heval
+              contradiction
+  | Oshr =>
+      cases hvl with
+      | inject_list_nil =>
+          change none = some v1 at heval
+          contradiction
+      | inject_list_cons a a' l2 l2' ha hl2 =>
+          cases hl2 with
+          | inject_list_nil =>
+              change none = some v1 at heval
+              contradiction
+          | inject_list_cons b b' l1 l1' hb hl1 =>
+              cases hl1 with
+              | inject_list_nil =>
+                  change some (Val.shr a b) = some v1 at heval
+                  cases heval
+                  refine ⟨(Val.shr a' b'), rfl, ?_⟩
+                  cases ha <;> cases hb <;>
+                    simp only [Val.shr] <;>
+                    (first | exact Val.val_inject_undef _ _ | constructor | (split <;> constructor))
+              | inject_list_cons =>
+                  change none = some v1 at heval
+                  contradiction
+  | Oshrimm n =>
+      cases hvl with
+      | inject_list_nil =>
+          change none = some v1 at heval
+          contradiction
+      | inject_list_cons a a' l1 l1' ha hl1 =>
+          cases hl1 with
+          | inject_list_nil =>
+              change some (Val.shr a (.Vint n)) = some v1 at heval
+              cases heval
+              refine ⟨(Val.shr a' (.Vint n)), rfl, ?_⟩
+              cases ha <;>
+                simp only [Val.shr] <;>
+                (first | exact Val.val_inject_undef _ _ | constructor | (split <;> constructor))
+          | inject_list_cons =>
+              change none = some v1 at heval
+              contradiction
+  | Oshrximm n =>
+      cases hvl with
+      | inject_list_nil =>
+          change none = some v1 at heval
+          contradiction
+      | inject_list_cons a a' l1 l1' ha hl1 =>
+          cases hl1 with
+          | inject_list_nil =>
+              change Val.shrx a (.Vint n) = some v1 at heval
+              change ∃ v2, Val.shrx a' (.Vint n) = some v2 ∧ Val.inject f v1 v2
+              cases ha <;>
+                simp only [Val.shrx] at heval ⊢ <;> try contradiction
+              all_goals
+                first
+                | (cases heval; exact ⟨_, rfl, by constructor⟩)
+                | (split at heval <;> simp_all only [Option.some.injEq, reduceCtorEq]; cases heval; exact ⟨_, rfl, by constructor⟩)
+                | (obtain ⟨x, hx, hv⟩ := Option.map_eq_some_iff.mp heval; cases hv; exact ⟨_, heval, by constructor⟩)
+          | inject_list_cons =>
+              change none = some v1 at heval
+              contradiction
+  | Oshru =>
+      cases hvl with
+      | inject_list_nil =>
+          change none = some v1 at heval
+          contradiction
+      | inject_list_cons a a' l2 l2' ha hl2 =>
+          cases hl2 with
+          | inject_list_nil =>
+              change none = some v1 at heval
+              contradiction
+          | inject_list_cons b b' l1 l1' hb hl1 =>
+              cases hl1 with
+              | inject_list_nil =>
+                  change some (Val.shru a b) = some v1 at heval
+                  cases heval
+                  refine ⟨(Val.shru a' b'), rfl, ?_⟩
+                  cases ha <;> cases hb <;>
+                    simp only [Val.shru] <;>
+                    (first | exact Val.val_inject_undef _ _ | constructor | (split <;> constructor))
+              | inject_list_cons =>
+                  change none = some v1 at heval
+                  contradiction
+  | Oshruimm n =>
+      cases hvl with
+      | inject_list_nil =>
+          change none = some v1 at heval
+          contradiction
+      | inject_list_cons a a' l1 l1' ha hl1 =>
+          cases hl1 with
+          | inject_list_nil =>
+              change some (Val.shru a (.Vint n)) = some v1 at heval
+              cases heval
+              refine ⟨(Val.shru a' (.Vint n)), rfl, ?_⟩
+              cases ha <;>
+                simp only [Val.shru] <;>
+                (first | exact Val.val_inject_undef _ _ | constructor | (split <;> constructor))
+          | inject_list_cons =>
+              change none = some v1 at heval
+              contradiction
+  | Ororimm n =>
+      cases hvl with
+      | inject_list_nil =>
+          change none = some v1 at heval
+          contradiction
+      | inject_list_cons a a' l1 l1' ha hl1 =>
+          cases hl1 with
+          | inject_list_nil =>
+              change some (Val.ror a (.Vint n)) = some v1 at heval
+              cases heval
+              refine ⟨(Val.ror a' (.Vint n)), rfl, ?_⟩
+              cases ha <;>
+                simp only [Val.ror] <;>
+                (first | exact Val.val_inject_undef _ _ | constructor | (split <;> constructor))
+          | inject_list_cons =>
+              change none = some v1 at heval
+              contradiction
+  | Oshldimm n =>
+      cases hvl with
+      | inject_list_nil =>
+          change none = some v1 at heval
+          contradiction
+      | inject_list_cons a a' l2 l2' ha hl2 =>
+          cases hl2 with
+          | inject_list_nil =>
+              change none = some v1 at heval
+              contradiction
+          | inject_list_cons b b' l1 l1' hb hl1 =>
+              cases hl1 with
+              | inject_list_nil =>
+                  change some (Val.or (Val.shl a (.Vint n))
+        (Val.shru b (.Vint
+          (CompCert4Lean.Lib.Integers.Int.sub
+            CompCert4Lean.Lib.Integers.Int.iwordsize n)))) = some v1 at heval
+                  cases heval
+                  refine ⟨(Val.or (Val.shl a' (.Vint n))
+        (Val.shru b' (.Vint
+          (CompCert4Lean.Lib.Integers.Int.sub
+            CompCert4Lean.Lib.Integers.Int.iwordsize n)))), rfl, ?_⟩
+                  apply suffix_operation_or_inj
+                  · exact suffix_operation_shl_inj f _ _ _ _ ha (Val.inject_int f n)
+                  · exact suffix_operation_shru_inj f _ _ _ _ hb (Val.inject_int f _)
+              | inject_list_cons =>
+                  change none = some v1 at heval
+                  contradiction
+  | Olea addr =>
+      exact eval_addressing32_inj F1 F2 V1 V2 ge1 ge2 f addr sp1 vl1 sp2 vl2 v1
+        hglobals hsp hvl heval
+  | Omakelong =>
+      cases hvl with
+      | inject_list_nil =>
+          change none = some v1 at heval
+          contradiction
+      | inject_list_cons a a' l2 l2' ha hl2 =>
+          cases hl2 with
+          | inject_list_nil =>
+              change none = some v1 at heval
+              contradiction
+          | inject_list_cons b b' l1 l1' hb hl1 =>
+              cases hl1 with
+              | inject_list_nil =>
+                  change some (Val.longofwords a b) = some v1 at heval
+                  cases heval
+                  refine ⟨(Val.longofwords a' b'), rfl, ?_⟩
+                  cases ha <;> cases hb <;>
+                    simp only [Val.longofwords] <;>
+                    (first | exact Val.val_inject_undef _ _ | constructor | (split <;> constructor))
+              | inject_list_cons =>
+                  change none = some v1 at heval
+                  contradiction
+  | Olowlong =>
+      cases hvl with
+      | inject_list_nil =>
+          change none = some v1 at heval
+          contradiction
+      | inject_list_cons a a' l1 l1' ha hl1 =>
+          cases hl1 with
+          | inject_list_nil =>
+              change some (Val.loword a) = some v1 at heval
+              cases heval
+              refine ⟨(Val.loword a'), rfl, ?_⟩
+              cases ha <;>
+                simp only [Val.loword] <;>
+                (first | exact Val.val_inject_undef _ _ | constructor | (split <;> constructor))
+          | inject_list_cons =>
+              change none = some v1 at heval
+              contradiction
+  | Ohighlong =>
+      cases hvl with
+      | inject_list_nil =>
+          change none = some v1 at heval
+          contradiction
+      | inject_list_cons a a' l1 l1' ha hl1 =>
+          cases hl1 with
+          | inject_list_nil =>
+              change some (Val.hiword a) = some v1 at heval
+              cases heval
+              refine ⟨(Val.hiword a'), rfl, ?_⟩
+              cases ha <;>
+                simp only [Val.hiword] <;>
+                (first | exact Val.val_inject_undef _ _ | constructor | (split <;> constructor))
+          | inject_list_cons =>
+              change none = some v1 at heval
+              contradiction
+  | Ocast32signed =>
+      cases hvl with
+      | inject_list_nil =>
+          change none = some v1 at heval
+          contradiction
+      | inject_list_cons a a' l1 l1' ha hl1 =>
+          cases hl1 with
+          | inject_list_nil =>
+              change some (Val.longofint a) = some v1 at heval
+              cases heval
+              refine ⟨(Val.longofint a'), rfl, ?_⟩
+              cases ha <;>
+                simp only [Val.longofint] <;>
+                (first | exact Val.val_inject_undef _ _ | constructor | (split <;> constructor))
+          | inject_list_cons =>
+              change none = some v1 at heval
+              contradiction
+  | Ocast32unsigned =>
+      cases hvl with
+      | inject_list_nil =>
+          change none = some v1 at heval
+          contradiction
+      | inject_list_cons a a' l1 l1' ha hl1 =>
+          cases hl1 with
+          | inject_list_nil =>
+              change some (Val.longofintu a) = some v1 at heval
+              cases heval
+              refine ⟨(Val.longofintu a'), rfl, ?_⟩
+              cases ha <;>
+                simp only [Val.longofintu] <;>
+                (first | exact Val.val_inject_undef _ _ | constructor | (split <;> constructor))
+          | inject_list_cons =>
+              change none = some v1 at heval
+              contradiction
+  | Onegl =>
+      cases hvl with
+      | inject_list_nil =>
+          change none = some v1 at heval
+          contradiction
+      | inject_list_cons a a' l1 l1' ha hl1 =>
+          cases hl1 with
+          | inject_list_nil =>
+              change some (Val.negl a) = some v1 at heval
+              cases heval
+              refine ⟨(Val.negl a'), rfl, ?_⟩
+              cases ha <;>
+                simp only [Val.negl] <;>
+                (first | exact Val.val_inject_undef _ _ | constructor | (split <;> constructor))
+          | inject_list_cons =>
+              change none = some v1 at heval
+              contradiction
+  | Oaddlimm n =>
+      cases hvl with
+      | inject_list_nil =>
+          change none = some v1 at heval
+          contradiction
+      | inject_list_cons a a' l1 l1' ha hl1 =>
+          cases hl1 with
+          | inject_list_nil =>
+              change some (Val.addl a (.Vlong n)) = some v1 at heval
+              cases heval
+              refine ⟨(Val.addl a' (.Vlong n)), rfl, ?_⟩
+              exact Val.addl_inject f _ _ _ _ ha (Val.inject_long f n)
+          | inject_list_cons =>
+              change none = some v1 at heval
+              contradiction
+  | Osubl =>
+      cases hvl with
+      | inject_list_nil =>
+          change none = some v1 at heval
+          contradiction
+      | inject_list_cons a a' l2 l2' ha hl2 =>
+          cases hl2 with
+          | inject_list_nil =>
+              change none = some v1 at heval
+              contradiction
+          | inject_list_cons b b' l1 l1' hb hl1 =>
+              cases hl1 with
+              | inject_list_nil =>
+                  change some (Val.subl a b) = some v1 at heval
+                  cases heval
+                  refine ⟨(Val.subl a' b'), rfl, ?_⟩
+                  exact Val.subl_inject f _ _ _ _ ha hb
+              | inject_list_cons =>
+                  change none = some v1 at heval
+                  contradiction
+  | Omull =>
+      cases hvl with
+      | inject_list_nil =>
+          change none = some v1 at heval
+          contradiction
+      | inject_list_cons a a' l2 l2' ha hl2 =>
+          cases hl2 with
+          | inject_list_nil =>
+              change none = some v1 at heval
+              contradiction
+          | inject_list_cons b b' l1 l1' hb hl1 =>
+              cases hl1 with
+              | inject_list_nil =>
+                  change some (Val.mull a b) = some v1 at heval
+                  cases heval
+                  refine ⟨(Val.mull a' b'), rfl, ?_⟩
+                  cases ha <;> cases hb <;>
+                    simp only [Val.mull] <;>
+                    (first | exact Val.val_inject_undef _ _ | constructor | (split <;> constructor))
+              | inject_list_cons =>
+                  change none = some v1 at heval
+                  contradiction
+  | Omullimm n =>
+      cases hvl with
+      | inject_list_nil =>
+          change none = some v1 at heval
+          contradiction
+      | inject_list_cons a a' l1 l1' ha hl1 =>
+          cases hl1 with
+          | inject_list_nil =>
+              change some (Val.mull a (.Vlong n)) = some v1 at heval
+              cases heval
+              refine ⟨(Val.mull a' (.Vlong n)), rfl, ?_⟩
+              cases ha <;>
+                simp only [Val.mull] <;>
+                (first | exact Val.val_inject_undef _ _ | constructor | (split <;> constructor))
+          | inject_list_cons =>
+              change none = some v1 at heval
+              contradiction
+  | Omullhs =>
+      cases hvl with
+      | inject_list_nil =>
+          change none = some v1 at heval
+          contradiction
+      | inject_list_cons a a' l2 l2' ha hl2 =>
+          cases hl2 with
+          | inject_list_nil =>
+              change none = some v1 at heval
+              contradiction
+          | inject_list_cons b b' l1 l1' hb hl1 =>
+              cases hl1 with
+              | inject_list_nil =>
+                  change some (Val.mullhs a b) = some v1 at heval
+                  cases heval
+                  refine ⟨(Val.mullhs a' b'), rfl, ?_⟩
+                  cases ha <;> cases hb <;>
+                    simp only [Val.mullhs] <;>
+                    (first | exact Val.val_inject_undef _ _ | constructor | (split <;> constructor))
+              | inject_list_cons =>
+                  change none = some v1 at heval
+                  contradiction
+  | Omullhu =>
+      cases hvl with
+      | inject_list_nil =>
+          change none = some v1 at heval
+          contradiction
+      | inject_list_cons a a' l2 l2' ha hl2 =>
+          cases hl2 with
+          | inject_list_nil =>
+              change none = some v1 at heval
+              contradiction
+          | inject_list_cons b b' l1 l1' hb hl1 =>
+              cases hl1 with
+              | inject_list_nil =>
+                  change some (Val.mullhu a b) = some v1 at heval
+                  cases heval
+                  refine ⟨(Val.mullhu a' b'), rfl, ?_⟩
+                  cases ha <;> cases hb <;>
+                    simp only [Val.mullhu] <;>
+                    (first | exact Val.val_inject_undef _ _ | constructor | (split <;> constructor))
+              | inject_list_cons =>
+                  change none = some v1 at heval
+                  contradiction
+  | Odivl =>
+      cases hvl with
+      | inject_list_nil =>
+          change none = some v1 at heval
+          contradiction
+      | inject_list_cons a a' l2 l2' ha hl2 =>
+          cases hl2 with
+          | inject_list_nil =>
+              change none = some v1 at heval
+              contradiction
+          | inject_list_cons b b' l1 l1' hb hl1 =>
+              cases hl1 with
+              | inject_list_nil =>
+                  change Val.divls a b = some v1 at heval
+                  change ∃ v2, Val.divls a' b' = some v2 ∧ Val.inject f v1 v2
+                  cases ha <;> cases hb <;>
+                    simp only [Val.divls] at heval ⊢ <;> try contradiction
+                  all_goals
+                    first
+                    | (cases heval; exact ⟨_, rfl, by constructor⟩)
+                    | (split at heval <;> simp_all only [Option.some.injEq, reduceCtorEq]; cases heval; exact ⟨_, rfl, by constructor⟩)
+                    | (obtain ⟨x, hx, hv⟩ := Option.map_eq_some_iff.mp heval; cases hv; exact ⟨_, heval, by constructor⟩)
+              | inject_list_cons =>
+                  change none = some v1 at heval
+                  contradiction
+  | Odivlu =>
+      cases hvl with
+      | inject_list_nil =>
+          change none = some v1 at heval
+          contradiction
+      | inject_list_cons a a' l2 l2' ha hl2 =>
+          cases hl2 with
+          | inject_list_nil =>
+              change none = some v1 at heval
+              contradiction
+          | inject_list_cons b b' l1 l1' hb hl1 =>
+              cases hl1 with
+              | inject_list_nil =>
+                  change Val.divlu a b = some v1 at heval
+                  change ∃ v2, Val.divlu a' b' = some v2 ∧ Val.inject f v1 v2
+                  cases ha <;> cases hb <;>
+                    simp only [Val.divlu] at heval ⊢ <;> try contradiction
+                  all_goals
+                    first
+                    | (cases heval; exact ⟨_, rfl, by constructor⟩)
+                    | (split at heval <;> simp_all only [Option.some.injEq, reduceCtorEq]; cases heval; exact ⟨_, rfl, by constructor⟩)
+                    | (obtain ⟨x, hx, hv⟩ := Option.map_eq_some_iff.mp heval; cases hv; exact ⟨_, heval, by constructor⟩)
+              | inject_list_cons =>
+                  change none = some v1 at heval
+                  contradiction
+  | Omodl =>
+      cases hvl with
+      | inject_list_nil =>
+          change none = some v1 at heval
+          contradiction
+      | inject_list_cons a a' l2 l2' ha hl2 =>
+          cases hl2 with
+          | inject_list_nil =>
+              change none = some v1 at heval
+              contradiction
+          | inject_list_cons b b' l1 l1' hb hl1 =>
+              cases hl1 with
+              | inject_list_nil =>
+                  change Val.modls a b = some v1 at heval
+                  change ∃ v2, Val.modls a' b' = some v2 ∧ Val.inject f v1 v2
+                  cases ha <;> cases hb <;>
+                    simp only [Val.modls] at heval ⊢ <;> try contradiction
+                  all_goals
+                    first
+                    | (cases heval; exact ⟨_, rfl, by constructor⟩)
+                    | (split at heval <;> simp_all only [Option.some.injEq, reduceCtorEq]; cases heval; exact ⟨_, rfl, by constructor⟩)
+                    | (obtain ⟨x, hx, hv⟩ := Option.map_eq_some_iff.mp heval; cases hv; exact ⟨_, heval, by constructor⟩)
+              | inject_list_cons =>
+                  change none = some v1 at heval
+                  contradiction
+  | Omodlu =>
+      cases hvl with
+      | inject_list_nil =>
+          change none = some v1 at heval
+          contradiction
+      | inject_list_cons a a' l2 l2' ha hl2 =>
+          cases hl2 with
+          | inject_list_nil =>
+              change none = some v1 at heval
+              contradiction
+          | inject_list_cons b b' l1 l1' hb hl1 =>
+              cases hl1 with
+              | inject_list_nil =>
+                  change Val.modlu a b = some v1 at heval
+                  change ∃ v2, Val.modlu a' b' = some v2 ∧ Val.inject f v1 v2
+                  cases ha <;> cases hb <;>
+                    simp only [Val.modlu] at heval ⊢ <;> try contradiction
+                  all_goals
+                    first
+                    | (cases heval; exact ⟨_, rfl, by constructor⟩)
+                    | (split at heval <;> simp_all only [Option.some.injEq, reduceCtorEq]; cases heval; exact ⟨_, rfl, by constructor⟩)
+                    | (obtain ⟨x, hx, hv⟩ := Option.map_eq_some_iff.mp heval; cases hv; exact ⟨_, heval, by constructor⟩)
+              | inject_list_cons =>
+                  change none = some v1 at heval
+                  contradiction
+  | Oandl =>
+      cases hvl with
+      | inject_list_nil =>
+          change none = some v1 at heval
+          contradiction
+      | inject_list_cons a a' l2 l2' ha hl2 =>
+          cases hl2 with
+          | inject_list_nil =>
+              change none = some v1 at heval
+              contradiction
+          | inject_list_cons b b' l1 l1' hb hl1 =>
+              cases hl1 with
+              | inject_list_nil =>
+                  change some (Val.andl a b) = some v1 at heval
+                  cases heval
+                  refine ⟨(Val.andl a' b'), rfl, ?_⟩
+                  cases ha <;> cases hb <;>
+                    simp only [Val.andl] <;>
+                    (first | exact Val.val_inject_undef _ _ | constructor | (split <;> constructor))
+              | inject_list_cons =>
+                  change none = some v1 at heval
+                  contradiction
+  | Oandlimm n =>
+      cases hvl with
+      | inject_list_nil =>
+          change none = some v1 at heval
+          contradiction
+      | inject_list_cons a a' l1 l1' ha hl1 =>
+          cases hl1 with
+          | inject_list_nil =>
+              change some (Val.andl a (.Vlong n)) = some v1 at heval
+              cases heval
+              refine ⟨(Val.andl a' (.Vlong n)), rfl, ?_⟩
+              cases ha <;>
+                simp only [Val.andl] <;>
+                (first | exact Val.val_inject_undef _ _ | constructor | (split <;> constructor))
+          | inject_list_cons =>
+              change none = some v1 at heval
+              contradiction
+  | Oorl =>
+      cases hvl with
+      | inject_list_nil =>
+          change none = some v1 at heval
+          contradiction
+      | inject_list_cons a a' l2 l2' ha hl2 =>
+          cases hl2 with
+          | inject_list_nil =>
+              change none = some v1 at heval
+              contradiction
+          | inject_list_cons b b' l1 l1' hb hl1 =>
+              cases hl1 with
+              | inject_list_nil =>
+                  change some (Val.orl a b) = some v1 at heval
+                  cases heval
+                  refine ⟨(Val.orl a' b'), rfl, ?_⟩
+                  cases ha <;> cases hb <;>
+                    simp only [Val.orl] <;>
+                    (first | exact Val.val_inject_undef _ _ | constructor | (split <;> constructor))
+              | inject_list_cons =>
+                  change none = some v1 at heval
+                  contradiction
+  | Oorlimm n =>
+      cases hvl with
+      | inject_list_nil =>
+          change none = some v1 at heval
+          contradiction
+      | inject_list_cons a a' l1 l1' ha hl1 =>
+          cases hl1 with
+          | inject_list_nil =>
+              change some (Val.orl a (.Vlong n)) = some v1 at heval
+              cases heval
+              refine ⟨(Val.orl a' (.Vlong n)), rfl, ?_⟩
+              cases ha <;>
+                simp only [Val.orl] <;>
+                (first | exact Val.val_inject_undef _ _ | constructor | (split <;> constructor))
+          | inject_list_cons =>
+              change none = some v1 at heval
+              contradiction
+  | Oxorl =>
+      cases hvl with
+      | inject_list_nil =>
+          change none = some v1 at heval
+          contradiction
+      | inject_list_cons a a' l2 l2' ha hl2 =>
+          cases hl2 with
+          | inject_list_nil =>
+              change none = some v1 at heval
+              contradiction
+          | inject_list_cons b b' l1 l1' hb hl1 =>
+              cases hl1 with
+              | inject_list_nil =>
+                  change some (Val.xorl a b) = some v1 at heval
+                  cases heval
+                  refine ⟨(Val.xorl a' b'), rfl, ?_⟩
+                  cases ha <;> cases hb <;>
+                    simp only [Val.xorl] <;>
+                    (first | exact Val.val_inject_undef _ _ | constructor | (split <;> constructor))
+              | inject_list_cons =>
+                  change none = some v1 at heval
+                  contradiction
+  | Oxorlimm n =>
+      cases hvl with
+      | inject_list_nil =>
+          change none = some v1 at heval
+          contradiction
+      | inject_list_cons a a' l1 l1' ha hl1 =>
+          cases hl1 with
+          | inject_list_nil =>
+              change some (Val.xorl a (.Vlong n)) = some v1 at heval
+              cases heval
+              refine ⟨(Val.xorl a' (.Vlong n)), rfl, ?_⟩
+              cases ha <;>
+                simp only [Val.xorl] <;>
+                (first | exact Val.val_inject_undef _ _ | constructor | (split <;> constructor))
+          | inject_list_cons =>
+              change none = some v1 at heval
+              contradiction
+  | Onotl =>
+      cases hvl with
+      | inject_list_nil =>
+          change none = some v1 at heval
+          contradiction
+      | inject_list_cons a a' l1 l1' ha hl1 =>
+          cases hl1 with
+          | inject_list_nil =>
+              change some (Val.notl a) = some v1 at heval
+              cases heval
+              refine ⟨(Val.notl a'), rfl, ?_⟩
+              cases ha <;>
+                simp only [Val.notl] <;>
+                (first | exact Val.val_inject_undef _ _ | constructor | (split <;> constructor))
+          | inject_list_cons =>
+              change none = some v1 at heval
+              contradiction
+  | Oshll =>
+      cases hvl with
+      | inject_list_nil =>
+          change none = some v1 at heval
+          contradiction
+      | inject_list_cons a a' l2 l2' ha hl2 =>
+          cases hl2 with
+          | inject_list_nil =>
+              change none = some v1 at heval
+              contradiction
+          | inject_list_cons b b' l1 l1' hb hl1 =>
+              cases hl1 with
+              | inject_list_nil =>
+                  change some (Val.shll a b) = some v1 at heval
+                  cases heval
+                  refine ⟨(Val.shll a' b'), rfl, ?_⟩
+                  cases ha <;> cases hb <;>
+                    simp only [Val.shll] <;>
+                    (first | exact Val.val_inject_undef _ _ | constructor | (split <;> constructor))
+              | inject_list_cons =>
+                  change none = some v1 at heval
+                  contradiction
+  | Oshllimm n =>
+      cases hvl with
+      | inject_list_nil =>
+          change none = some v1 at heval
+          contradiction
+      | inject_list_cons a a' l1 l1' ha hl1 =>
+          cases hl1 with
+          | inject_list_nil =>
+              change some (Val.shll a (.Vint n)) = some v1 at heval
+              cases heval
+              refine ⟨(Val.shll a' (.Vint n)), rfl, ?_⟩
+              cases ha <;>
+                simp only [Val.shll] <;>
+                (first | exact Val.val_inject_undef _ _ | constructor | (split <;> constructor))
+          | inject_list_cons =>
+              change none = some v1 at heval
+              contradiction
+  | Oshrl =>
+      cases hvl with
+      | inject_list_nil =>
+          change none = some v1 at heval
+          contradiction
+      | inject_list_cons a a' l2 l2' ha hl2 =>
+          cases hl2 with
+          | inject_list_nil =>
+              change none = some v1 at heval
+              contradiction
+          | inject_list_cons b b' l1 l1' hb hl1 =>
+              cases hl1 with
+              | inject_list_nil =>
+                  change some (Val.shrl a b) = some v1 at heval
+                  cases heval
+                  refine ⟨(Val.shrl a' b'), rfl, ?_⟩
+                  cases ha <;> cases hb <;>
+                    simp only [Val.shrl] <;>
+                    (first | exact Val.val_inject_undef _ _ | constructor | (split <;> constructor))
+              | inject_list_cons =>
+                  change none = some v1 at heval
+                  contradiction
+  | Oshrlimm n =>
+      cases hvl with
+      | inject_list_nil =>
+          change none = some v1 at heval
+          contradiction
+      | inject_list_cons a a' l1 l1' ha hl1 =>
+          cases hl1 with
+          | inject_list_nil =>
+              change some (Val.shrl a (.Vint n)) = some v1 at heval
+              cases heval
+              refine ⟨(Val.shrl a' (.Vint n)), rfl, ?_⟩
+              cases ha <;>
+                simp only [Val.shrl] <;>
+                (first | exact Val.val_inject_undef _ _ | constructor | (split <;> constructor))
+          | inject_list_cons =>
+              change none = some v1 at heval
+              contradiction
+  | Oshrxlimm n =>
+      cases hvl with
+      | inject_list_nil =>
+          change none = some v1 at heval
+          contradiction
+      | inject_list_cons a a' l1 l1' ha hl1 =>
+          cases hl1 with
+          | inject_list_nil =>
+              change Val.shrxl a (.Vint n) = some v1 at heval
+              change ∃ v2, Val.shrxl a' (.Vint n) = some v2 ∧ Val.inject f v1 v2
+              cases ha <;>
+                simp only [Val.shrxl] at heval ⊢ <;> try contradiction
+              all_goals
+                first
+                | (cases heval; exact ⟨_, rfl, by constructor⟩)
+                | (split at heval <;> simp_all only [Option.some.injEq, reduceCtorEq]; cases heval; exact ⟨_, rfl, by constructor⟩)
+                | (obtain ⟨x, hx, hv⟩ := Option.map_eq_some_iff.mp heval; cases hv; exact ⟨_, heval, by constructor⟩)
+          | inject_list_cons =>
+              change none = some v1 at heval
+              contradiction
+  | Oshrlu =>
+      cases hvl with
+      | inject_list_nil =>
+          change none = some v1 at heval
+          contradiction
+      | inject_list_cons a a' l2 l2' ha hl2 =>
+          cases hl2 with
+          | inject_list_nil =>
+              change none = some v1 at heval
+              contradiction
+          | inject_list_cons b b' l1 l1' hb hl1 =>
+              cases hl1 with
+              | inject_list_nil =>
+                  change some (Val.shrlu a b) = some v1 at heval
+                  cases heval
+                  refine ⟨(Val.shrlu a' b'), rfl, ?_⟩
+                  cases ha <;> cases hb <;>
+                    simp only [Val.shrlu] <;>
+                    (first | exact Val.val_inject_undef _ _ | constructor | (split <;> constructor))
+              | inject_list_cons =>
+                  change none = some v1 at heval
+                  contradiction
+  | Oshrluimm n =>
+      cases hvl with
+      | inject_list_nil =>
+          change none = some v1 at heval
+          contradiction
+      | inject_list_cons a a' l1 l1' ha hl1 =>
+          cases hl1 with
+          | inject_list_nil =>
+              change some (Val.shrlu a (.Vint n)) = some v1 at heval
+              cases heval
+              refine ⟨(Val.shrlu a' (.Vint n)), rfl, ?_⟩
+              cases ha <;>
+                simp only [Val.shrlu] <;>
+                (first | exact Val.val_inject_undef _ _ | constructor | (split <;> constructor))
+          | inject_list_cons =>
+              change none = some v1 at heval
+              contradiction
+  | Ororlimm n =>
+      cases hvl with
+      | inject_list_nil =>
+          change none = some v1 at heval
+          contradiction
+      | inject_list_cons a a' l1 l1' ha hl1 =>
+          cases hl1 with
+          | inject_list_nil =>
+              change some (Val.rorl a (.Vint n)) = some v1 at heval
+              cases heval
+              refine ⟨(Val.rorl a' (.Vint n)), rfl, ?_⟩
+              cases ha <;>
+                simp only [Val.rorl] <;>
+                (first | exact Val.val_inject_undef _ _ | constructor | (split <;> constructor))
+          | inject_list_cons =>
+              change none = some v1 at heval
+              contradiction
+  | Oleal addr =>
+      exact eval_addressing64_inj F1 F2 V1 V2 ge1 ge2 f addr sp1 vl1 sp2 vl2 v1
+        hglobals hsp hvl heval
+  | Onegf =>
+      cases hvl with
+      | inject_list_nil =>
+          change none = some v1 at heval
+          contradiction
+      | inject_list_cons a a' l1 l1' ha hl1 =>
+          cases hl1 with
+          | inject_list_nil =>
+              change some (Val.negf a) = some v1 at heval
+              cases heval
+              refine ⟨(Val.negf a'), rfl, ?_⟩
+              cases ha <;>
+                simp only [Val.negf] <;>
+                (first | exact Val.val_inject_undef _ _ | constructor | (split <;> constructor))
+          | inject_list_cons =>
+              change none = some v1 at heval
+              contradiction
+  | Oabsf =>
+      cases hvl with
+      | inject_list_nil =>
+          change none = some v1 at heval
+          contradiction
+      | inject_list_cons a a' l1 l1' ha hl1 =>
+          cases hl1 with
+          | inject_list_nil =>
+              change some (Val.absf a) = some v1 at heval
+              cases heval
+              refine ⟨(Val.absf a'), rfl, ?_⟩
+              cases ha <;>
+                simp only [Val.absf] <;>
+                (first | exact Val.val_inject_undef _ _ | constructor | (split <;> constructor))
+          | inject_list_cons =>
+              change none = some v1 at heval
+              contradiction
+  | Oaddf =>
+      cases hvl with
+      | inject_list_nil =>
+          change none = some v1 at heval
+          contradiction
+      | inject_list_cons a a' l2 l2' ha hl2 =>
+          cases hl2 with
+          | inject_list_nil =>
+              change none = some v1 at heval
+              contradiction
+          | inject_list_cons b b' l1 l1' hb hl1 =>
+              cases hl1 with
+              | inject_list_nil =>
+                  change some (Val.addf a b) = some v1 at heval
+                  cases heval
+                  refine ⟨(Val.addf a' b'), rfl, ?_⟩
+                  cases ha <;> cases hb <;>
+                    simp only [Val.addf] <;>
+                    (first | exact Val.val_inject_undef _ _ | constructor | (split <;> constructor))
+              | inject_list_cons =>
+                  change none = some v1 at heval
+                  contradiction
+  | Osubf =>
+      cases hvl with
+      | inject_list_nil =>
+          change none = some v1 at heval
+          contradiction
+      | inject_list_cons a a' l2 l2' ha hl2 =>
+          cases hl2 with
+          | inject_list_nil =>
+              change none = some v1 at heval
+              contradiction
+          | inject_list_cons b b' l1 l1' hb hl1 =>
+              cases hl1 with
+              | inject_list_nil =>
+                  change some (Val.subf a b) = some v1 at heval
+                  cases heval
+                  refine ⟨(Val.subf a' b'), rfl, ?_⟩
+                  cases ha <;> cases hb <;>
+                    simp only [Val.subf] <;>
+                    (first | exact Val.val_inject_undef _ _ | constructor | (split <;> constructor))
+              | inject_list_cons =>
+                  change none = some v1 at heval
+                  contradiction
+  | Omulf =>
+      cases hvl with
+      | inject_list_nil =>
+          change none = some v1 at heval
+          contradiction
+      | inject_list_cons a a' l2 l2' ha hl2 =>
+          cases hl2 with
+          | inject_list_nil =>
+              change none = some v1 at heval
+              contradiction
+          | inject_list_cons b b' l1 l1' hb hl1 =>
+              cases hl1 with
+              | inject_list_nil =>
+                  change some (Val.mulf a b) = some v1 at heval
+                  cases heval
+                  refine ⟨(Val.mulf a' b'), rfl, ?_⟩
+                  cases ha <;> cases hb <;>
+                    simp only [Val.mulf] <;>
+                    (first | exact Val.val_inject_undef _ _ | constructor | (split <;> constructor))
+              | inject_list_cons =>
+                  change none = some v1 at heval
+                  contradiction
+  | Odivf =>
+      cases hvl with
+      | inject_list_nil =>
+          change none = some v1 at heval
+          contradiction
+      | inject_list_cons a a' l2 l2' ha hl2 =>
+          cases hl2 with
+          | inject_list_nil =>
+              change none = some v1 at heval
+              contradiction
+          | inject_list_cons b b' l1 l1' hb hl1 =>
+              cases hl1 with
+              | inject_list_nil =>
+                  change some (Val.divf a b) = some v1 at heval
+                  cases heval
+                  refine ⟨(Val.divf a' b'), rfl, ?_⟩
+                  cases ha <;> cases hb <;>
+                    simp only [Val.divf] <;>
+                    (first | exact Val.val_inject_undef _ _ | constructor | (split <;> constructor))
+              | inject_list_cons =>
+                  change none = some v1 at heval
+                  contradiction
+  | Omaxf =>
+      cases hvl with
+      | inject_list_nil =>
+          change none = some v1 at heval
+          contradiction
+      | inject_list_cons a a' l2 l2' ha hl2 =>
+          cases hl2 with
+          | inject_list_nil =>
+              change none = some v1 at heval
+              contradiction
+          | inject_list_cons b b' l1 l1' hb hl1 =>
+              cases hl1 with
+              | inject_list_nil =>
+                  change some (maxf a b) = some v1 at heval
+                  cases heval
+                  refine ⟨(maxf a' b'), rfl, ?_⟩
+                  cases ha <;> cases hb <;>
+                    simp only [maxf] <;>
+                    (first | exact Val.val_inject_undef _ _ | constructor | (split <;> constructor))
+              | inject_list_cons =>
+                  change none = some v1 at heval
+                  contradiction
+  | Ominf =>
+      cases hvl with
+      | inject_list_nil =>
+          change none = some v1 at heval
+          contradiction
+      | inject_list_cons a a' l2 l2' ha hl2 =>
+          cases hl2 with
+          | inject_list_nil =>
+              change none = some v1 at heval
+              contradiction
+          | inject_list_cons b b' l1 l1' hb hl1 =>
+              cases hl1 with
+              | inject_list_nil =>
+                  change some (minf a b) = some v1 at heval
+                  cases heval
+                  refine ⟨(minf a' b'), rfl, ?_⟩
+                  cases ha <;> cases hb <;>
+                    simp only [minf] <;>
+                    (first | exact Val.val_inject_undef _ _ | constructor | (split <;> constructor))
+              | inject_list_cons =>
+                  change none = some v1 at heval
+                  contradiction
+  | Onegfs =>
+      cases hvl with
+      | inject_list_nil =>
+          change none = some v1 at heval
+          contradiction
+      | inject_list_cons a a' l1 l1' ha hl1 =>
+          cases hl1 with
+          | inject_list_nil =>
+              change some (Val.negfs a) = some v1 at heval
+              cases heval
+              refine ⟨(Val.negfs a'), rfl, ?_⟩
+              cases ha <;>
+                simp only [Val.negfs] <;>
+                (first | exact Val.val_inject_undef _ _ | constructor | (split <;> constructor))
+          | inject_list_cons =>
+              change none = some v1 at heval
+              contradiction
+  | Oabsfs =>
+      cases hvl with
+      | inject_list_nil =>
+          change none = some v1 at heval
+          contradiction
+      | inject_list_cons a a' l1 l1' ha hl1 =>
+          cases hl1 with
+          | inject_list_nil =>
+              change some (Val.absfs a) = some v1 at heval
+              cases heval
+              refine ⟨(Val.absfs a'), rfl, ?_⟩
+              cases ha <;>
+                simp only [Val.absfs] <;>
+                (first | exact Val.val_inject_undef _ _ | constructor | (split <;> constructor))
+          | inject_list_cons =>
+              change none = some v1 at heval
+              contradiction
+  | Oaddfs =>
+      cases hvl with
+      | inject_list_nil =>
+          change none = some v1 at heval
+          contradiction
+      | inject_list_cons a a' l2 l2' ha hl2 =>
+          cases hl2 with
+          | inject_list_nil =>
+              change none = some v1 at heval
+              contradiction
+          | inject_list_cons b b' l1 l1' hb hl1 =>
+              cases hl1 with
+              | inject_list_nil =>
+                  change some (Val.addfs a b) = some v1 at heval
+                  cases heval
+                  refine ⟨(Val.addfs a' b'), rfl, ?_⟩
+                  cases ha <;> cases hb <;>
+                    simp only [Val.addfs] <;>
+                    (first | exact Val.val_inject_undef _ _ | constructor | (split <;> constructor))
+              | inject_list_cons =>
+                  change none = some v1 at heval
+                  contradiction
+  | Osubfs =>
+      cases hvl with
+      | inject_list_nil =>
+          change none = some v1 at heval
+          contradiction
+      | inject_list_cons a a' l2 l2' ha hl2 =>
+          cases hl2 with
+          | inject_list_nil =>
+              change none = some v1 at heval
+              contradiction
+          | inject_list_cons b b' l1 l1' hb hl1 =>
+              cases hl1 with
+              | inject_list_nil =>
+                  change some (Val.subfs a b) = some v1 at heval
+                  cases heval
+                  refine ⟨(Val.subfs a' b'), rfl, ?_⟩
+                  cases ha <;> cases hb <;>
+                    simp only [Val.subfs] <;>
+                    (first | exact Val.val_inject_undef _ _ | constructor | (split <;> constructor))
+              | inject_list_cons =>
+                  change none = some v1 at heval
+                  contradiction
+  | Omulfs =>
+      cases hvl with
+      | inject_list_nil =>
+          change none = some v1 at heval
+          contradiction
+      | inject_list_cons a a' l2 l2' ha hl2 =>
+          cases hl2 with
+          | inject_list_nil =>
+              change none = some v1 at heval
+              contradiction
+          | inject_list_cons b b' l1 l1' hb hl1 =>
+              cases hl1 with
+              | inject_list_nil =>
+                  change some (Val.mulfs a b) = some v1 at heval
+                  cases heval
+                  refine ⟨(Val.mulfs a' b'), rfl, ?_⟩
+                  cases ha <;> cases hb <;>
+                    simp only [Val.mulfs] <;>
+                    (first | exact Val.val_inject_undef _ _ | constructor | (split <;> constructor))
+              | inject_list_cons =>
+                  change none = some v1 at heval
+                  contradiction
+  | Odivfs =>
+      cases hvl with
+      | inject_list_nil =>
+          change none = some v1 at heval
+          contradiction
+      | inject_list_cons a a' l2 l2' ha hl2 =>
+          cases hl2 with
+          | inject_list_nil =>
+              change none = some v1 at heval
+              contradiction
+          | inject_list_cons b b' l1 l1' hb hl1 =>
+              cases hl1 with
+              | inject_list_nil =>
+                  change some (Val.divfs a b) = some v1 at heval
+                  cases heval
+                  refine ⟨(Val.divfs a' b'), rfl, ?_⟩
+                  cases ha <;> cases hb <;>
+                    simp only [Val.divfs] <;>
+                    (first | exact Val.val_inject_undef _ _ | constructor | (split <;> constructor))
+              | inject_list_cons =>
+                  change none = some v1 at heval
+                  contradiction
+  | Osingleoffloat =>
+      cases hvl with
+      | inject_list_nil =>
+          change none = some v1 at heval
+          contradiction
+      | inject_list_cons a a' l1 l1' ha hl1 =>
+          cases hl1 with
+          | inject_list_nil =>
+              change some (Val.singleoffloat a) = some v1 at heval
+              cases heval
+              refine ⟨(Val.singleoffloat a'), rfl, ?_⟩
+              cases ha <;>
+                simp only [Val.singleoffloat] <;>
+                (first | exact Val.val_inject_undef _ _ | constructor | (split <;> constructor))
+          | inject_list_cons =>
+              change none = some v1 at heval
+              contradiction
+  | Ofloatofsingle =>
+      cases hvl with
+      | inject_list_nil =>
+          change none = some v1 at heval
+          contradiction
+      | inject_list_cons a a' l1 l1' ha hl1 =>
+          cases hl1 with
+          | inject_list_nil =>
+              change some (Val.floatofsingle a) = some v1 at heval
+              cases heval
+              refine ⟨(Val.floatofsingle a'), rfl, ?_⟩
+              cases ha <;>
+                simp only [Val.floatofsingle] <;>
+                (first | exact Val.val_inject_undef _ _ | constructor | (split <;> constructor))
+          | inject_list_cons =>
+              change none = some v1 at heval
+              contradiction
+  | Ointoffloat =>
+      cases hvl with
+      | inject_list_nil =>
+          change none = some v1 at heval
+          contradiction
+      | inject_list_cons a a' l1 l1' ha hl1 =>
+          cases hl1 with
+          | inject_list_nil =>
+              change Val.intoffloat a = some v1 at heval
+              change ∃ v2, Val.intoffloat a' = some v2 ∧ Val.inject f v1 v2
+              cases ha <;>
+                simp only [Val.intoffloat] at heval ⊢ <;> try contradiction
+              all_goals
+                first
+                | (cases heval; exact ⟨_, rfl, by constructor⟩)
+                | (split at heval <;> simp_all only [Option.some.injEq, reduceCtorEq]; cases heval; exact ⟨_, rfl, by constructor⟩)
+                | (obtain ⟨x, hx, hv⟩ := Option.map_eq_some_iff.mp heval; cases hv; exact ⟨_, heval, by constructor⟩)
+          | inject_list_cons =>
+              change none = some v1 at heval
+              contradiction
+  | Ofloatofint =>
+      cases hvl with
+      | inject_list_nil =>
+          change none = some v1 at heval
+          contradiction
+      | inject_list_cons a a' l1 l1' ha hl1 =>
+          cases hl1 with
+          | inject_list_nil =>
+              change Val.floatofint (binary64_certificate := binary64_certificate) a = some v1 at heval
+              change ∃ v2, Val.floatofint (binary64_certificate := binary64_certificate) a' = some v2 ∧ Val.inject f v1 v2
+              cases ha <;>
+                simp only [Val.floatofint] at heval ⊢ <;> try contradiction
+              all_goals
+                first
+                | (cases heval; exact ⟨_, rfl, by constructor⟩)
+                | (split at heval <;> simp_all only [Option.some.injEq, reduceCtorEq]; cases heval; exact ⟨_, rfl, by constructor⟩)
+                | (obtain ⟨x, hx, hv⟩ := Option.map_eq_some_iff.mp heval; cases hv; exact ⟨_, heval, by constructor⟩)
+          | inject_list_cons =>
+              change none = some v1 at heval
+              contradiction
+  | Ointofsingle =>
+      cases hvl with
+      | inject_list_nil =>
+          change none = some v1 at heval
+          contradiction
+      | inject_list_cons a a' l1 l1' ha hl1 =>
+          cases hl1 with
+          | inject_list_nil =>
+              change Val.intofsingle a = some v1 at heval
+              change ∃ v2, Val.intofsingle a' = some v2 ∧ Val.inject f v1 v2
+              cases ha <;>
+                simp only [Val.intofsingle] at heval ⊢ <;> try contradiction
+              all_goals
+                first
+                | (cases heval; exact ⟨_, rfl, by constructor⟩)
+                | (split at heval <;> simp_all only [Option.some.injEq, reduceCtorEq]; cases heval; exact ⟨_, rfl, by constructor⟩)
+                | (obtain ⟨x, hx, hv⟩ := Option.map_eq_some_iff.mp heval; cases hv; exact ⟨_, heval, by constructor⟩)
+          | inject_list_cons =>
+              change none = some v1 at heval
+              contradiction
+  | Osingleofint =>
+      cases hvl with
+      | inject_list_nil =>
+          change none = some v1 at heval
+          contradiction
+      | inject_list_cons a a' l1 l1' ha hl1 =>
+          cases hl1 with
+          | inject_list_nil =>
+              change Val.singleofint (binary32_certificate := binary32_certificate) a = some v1 at heval
+              change ∃ v2, Val.singleofint (binary32_certificate := binary32_certificate) a' = some v2 ∧ Val.inject f v1 v2
+              cases ha <;>
+                simp only [Val.singleofint] at heval ⊢ <;> try contradiction
+              all_goals
+                first
+                | (cases heval; exact ⟨_, rfl, by constructor⟩)
+                | (split at heval <;> simp_all only [Option.some.injEq, reduceCtorEq]; cases heval; exact ⟨_, rfl, by constructor⟩)
+                | (obtain ⟨x, hx, hv⟩ := Option.map_eq_some_iff.mp heval; cases hv; exact ⟨_, heval, by constructor⟩)
+          | inject_list_cons =>
+              change none = some v1 at heval
+              contradiction
+  | Olongoffloat =>
+      cases hvl with
+      | inject_list_nil =>
+          change none = some v1 at heval
+          contradiction
+      | inject_list_cons a a' l1 l1' ha hl1 =>
+          cases hl1 with
+          | inject_list_nil =>
+              change Val.longoffloat a = some v1 at heval
+              change ∃ v2, Val.longoffloat a' = some v2 ∧ Val.inject f v1 v2
+              cases ha <;>
+                simp only [Val.longoffloat] at heval ⊢ <;> try contradiction
+              all_goals
+                first
+                | (cases heval; exact ⟨_, rfl, by constructor⟩)
+                | (split at heval <;> simp_all only [Option.some.injEq, reduceCtorEq]; cases heval; exact ⟨_, rfl, by constructor⟩)
+                | (obtain ⟨x, hx, hv⟩ := Option.map_eq_some_iff.mp heval; cases hv; exact ⟨_, heval, by constructor⟩)
+          | inject_list_cons =>
+              change none = some v1 at heval
+              contradiction
+  | Ofloatoflong =>
+      cases hvl with
+      | inject_list_nil =>
+          change none = some v1 at heval
+          contradiction
+      | inject_list_cons a a' l1 l1' ha hl1 =>
+          cases hl1 with
+          | inject_list_nil =>
+              change Val.floatoflong (binary64_certificate := binary64_certificate) a = some v1 at heval
+              change ∃ v2, Val.floatoflong (binary64_certificate := binary64_certificate) a' = some v2 ∧ Val.inject f v1 v2
+              cases ha <;>
+                simp only [Val.floatoflong] at heval ⊢ <;> try contradiction
+              all_goals
+                first
+                | (cases heval; exact ⟨_, rfl, by constructor⟩)
+                | (split at heval <;> simp_all only [Option.some.injEq, reduceCtorEq]; cases heval; exact ⟨_, rfl, by constructor⟩)
+                | (obtain ⟨x, hx, hv⟩ := Option.map_eq_some_iff.mp heval; cases hv; exact ⟨_, heval, by constructor⟩)
+          | inject_list_cons =>
+              change none = some v1 at heval
+              contradiction
+  | Olongofsingle =>
+      cases hvl with
+      | inject_list_nil =>
+          change none = some v1 at heval
+          contradiction
+      | inject_list_cons a a' l1 l1' ha hl1 =>
+          cases hl1 with
+          | inject_list_nil =>
+              change Val.longofsingle a = some v1 at heval
+              change ∃ v2, Val.longofsingle a' = some v2 ∧ Val.inject f v1 v2
+              cases ha <;>
+                simp only [Val.longofsingle] at heval ⊢ <;> try contradiction
+              all_goals
+                first
+                | (cases heval; exact ⟨_, rfl, by constructor⟩)
+                | (split at heval <;> simp_all only [Option.some.injEq, reduceCtorEq]; cases heval; exact ⟨_, rfl, by constructor⟩)
+                | (obtain ⟨x, hx, hv⟩ := Option.map_eq_some_iff.mp heval; cases hv; exact ⟨_, heval, by constructor⟩)
+          | inject_list_cons =>
+              change none = some v1 at heval
+              contradiction
+  | Osingleoflong =>
+      cases hvl with
+      | inject_list_nil =>
+          change none = some v1 at heval
+          contradiction
+      | inject_list_cons a a' l1 l1' ha hl1 =>
+          cases hl1 with
+          | inject_list_nil =>
+              change Val.singleoflong (binary32_certificate := binary32_certificate) a = some v1 at heval
+              change ∃ v2, Val.singleoflong (binary32_certificate := binary32_certificate) a' = some v2 ∧ Val.inject f v1 v2
+              cases ha <;>
+                simp only [Val.singleoflong] at heval ⊢ <;> try contradiction
+              all_goals
+                first
+                | (cases heval; exact ⟨_, rfl, by constructor⟩)
+                | (split at heval <;> simp_all only [Option.some.injEq, reduceCtorEq]; cases heval; exact ⟨_, rfl, by constructor⟩)
+                | (obtain ⟨x, hx, hv⟩ := Option.map_eq_some_iff.mp heval; cases hv; exact ⟨_, heval, by constructor⟩)
+          | inject_list_cons =>
+              change none = some v1 at heval
+              contradiction
+  | Ocmp c =>
+      change some (Val.of_optbool (eval_condition c vl1 m1)) = some v1 at heval
+      cases heval
+      refine ⟨_, rfl, ?_⟩
+      cases he : eval_condition c vl1 m1 with
+      | none => exact Val.val_inject_undef _ _
+      | some b =>
+        rw [hc c vl1 vl2 b hvl he]
+        cases b <;> exact Val.inject_int _ _
+  | Osel c ty =>
+      cases hvl with
+      | inject_list_nil => contradiction
+      | inject_list_cons a a' l l' ha hl =>
+        cases hl with
+        | inject_list_nil => contradiction
+        | inject_list_cons b b' rest rest' hb hr =>
+          change some (Val.select (eval_condition c rest m1) a b ty) = some v1 at heval
+          cases heval
+          refine ⟨_, rfl, Val.select_inject f _ _ _ _ _ _ ty ?_ ha hb⟩
+          cases he : eval_condition c rest m1 with
+          | none => exact Or.inl rfl
+          | some r => exact Or.inr (hc c rest rest' r hr he).symm
+
+end CompCert4Lean.X86.Op
+
+namespace CompCert4Lean.X86.Op
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Lib.Integers
+
+private theorem suffix_operation_unsigned_add (x d : Ptrofs)
+    (h : zLe z0 (zAdd (Ptrofs.unsigned x) (Ptrofs.unsigned d)) ∧
+      zLe (zAdd (Ptrofs.unsigned x) (Ptrofs.unsigned d)) Ptrofs.max_unsigned) :
+    Ptrofs.unsigned (Ptrofs.add x d) = zAdd (Ptrofs.unsigned x) (Ptrofs.unsigned d) := by
+  change Int64.unsigned (Int64.repr (zAdd (Ptrofs.unsigned x) (Ptrofs.unsigned d))) = _
+  rw [suffix64_unsigned_repr]
+  apply ZArith.BinInt.Z.mod_small
+  refine ⟨h.1, ?_⟩
+  have hh := h.2
+  change intOfZ (zAdd (Ptrofs.unsigned x) (Ptrofs.unsigned d)) ≤
+    intOfZ Int64.modulus - 1 at hh
+  change intOfZ (zAdd (Ptrofs.unsigned x) (Ptrofs.unsigned d)) < intOfZ Int64.modulus
+  omega
+
+private theorem suffix_operation_cmpu_shift (c : CompCert4Lean.Lib.Integers.comparison) (x y d : Ptrofs)
+    (hx : zLe z0 (zAdd (Ptrofs.unsigned x) (Ptrofs.unsigned d)) ∧
+      zLe (zAdd (Ptrofs.unsigned x) (Ptrofs.unsigned d)) Ptrofs.max_unsigned)
+    (hy : zLe z0 (zAdd (Ptrofs.unsigned y) (Ptrofs.unsigned d)) ∧
+      zLe (zAdd (Ptrofs.unsigned y) (Ptrofs.unsigned d)) Ptrofs.max_unsigned) :
+    Ptrofs.cmpu c (Ptrofs.add x d) (Ptrofs.add y d) = Ptrofs.cmpu c x y := by
+  have heq : Ptrofs.eq (Ptrofs.add x d) (Ptrofs.add y d) = Ptrofs.eq x y := by
+    change decide (Ptrofs.unsigned (Ptrofs.add x d) = Ptrofs.unsigned (Ptrofs.add y d)) =
+      decide (Ptrofs.unsigned x = Ptrofs.unsigned y)
+    rw [suffix_operation_unsigned_add x d hx, suffix_operation_unsigned_add y d hy]
+    congr 1
+    apply propext
+    constructor
+    · intro h
+      apply intOfZ_injective
+      have h' := congrArg intOfZ h
+      simp only [zAdd, ZArith.BinInt.Z.add, intOfZ_zOfInt] at h'
+      omega
+    · intro h; rw [h]
+  have he (a b : Ptrofs) : Ptrofs.ltu a b =
+      decide (intOfZ (Ptrofs.unsigned a) < intOfZ (Ptrofs.unsigned b)) := by
+    by_cases h : intOfZ (Ptrofs.unsigned a) < intOfZ (Ptrofs.unsigned b)
+    · rw [show decide (intOfZ (Ptrofs.unsigned a) < intOfZ (Ptrofs.unsigned b)) = true by simp [h]]
+      exact CompCert4Lean.Lib.Coqlib.zlt_true Bool _ _ true false h
+    · rw [show decide (intOfZ (Ptrofs.unsigned a) < intOfZ (Ptrofs.unsigned b)) = false by simp [h]]
+      exact CompCert4Lean.Lib.Coqlib.zlt_false Bool _ _ true false (Int.le_of_not_gt h)
+  have hlt (a b : Ptrofs)
+      (ha : Ptrofs.unsigned (Ptrofs.add a d) = zAdd (Ptrofs.unsigned a) (Ptrofs.unsigned d))
+      (hb : Ptrofs.unsigned (Ptrofs.add b d) = zAdd (Ptrofs.unsigned b) (Ptrofs.unsigned d)) :
+      Ptrofs.ltu (Ptrofs.add a d) (Ptrofs.add b d) = Ptrofs.ltu a b := by
+    rw [he, he, ha, hb]
+    simp only [zAdd, ZArith.BinInt.Z.add, intOfZ_zOfInt, Int.add_lt_add_iff_right]
+  cases c <;> simp only [Ptrofs.cmpu, heq,
+    hlt x y (suffix_operation_unsigned_add x d hx) (suffix_operation_unsigned_add y d hy),
+    hlt y x (suffix_operation_unsigned_add y d hy) (suffix_operation_unsigned_add x d hx)]
+
+end CompCert4Lean.X86.Op
+
+namespace CompCert4Lean.X86.Op
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Lib.Integers
+
+private theorem suffix_operation_cmplu_inj : Val.cmplu_bool_injectStatement := by
+  intro f vp1 vp2
+  dsimp only
+  intro hv hw hb hd c v1 v2 v1' v2' b h1 h2 heval
+  cases h1 <;> cases h2 <;>
+    simp only [Val.cmplu_bool, CompCert4Lean.X86_64.Archi.ptr64,
+      Bool.true_and, if_true] at heval ⊢ <;> try contradiction
+  case inject_long.inject_long => exact heval
+  case inject_long.inject_ptr i b1 o1 b2 o2 d hm ho =>
+    subst o2
+    split at heval
+    · rename_i h
+      obtain ⟨hz, hp⟩ := Bool.and_eq_true_iff.mp h
+      rw [hz, hw b1 o1 b2 d hm hp]
+      exact heval
+    · contradiction
+  case inject_ptr.inject_long b1 o1 b2 o2 d hm ho i =>
+    subst o2
+    split at heval
+    · rename_i h
+      obtain ⟨hz, hp⟩ := Bool.and_eq_true_iff.mp h
+      rw [hz, hw b1 o1 b2 d hm hp]
+      exact heval
+    · contradiction
+  case inject_ptr.inject_ptr b1 o1 b1' o1' d1 hm1 ho1 b2 o2 b2' o2' d2 hm2 ho2 =>
+    subst o1' o2'
+    cases hs : eq_block b1 b2 with
+    | left heq =>
+      subst b2
+      have hh := Option.some.inj (hm1.symm.trans hm2)
+      cases hh
+      cases ht : eq_block b1' b1' with
+      | left heq' =>
+        simp only [hs, ht] at heval ⊢
+        run_tac
+          let env ← Lean.getEnv
+          let some (n, _) := env.constants.toList.find?
+            (fun (n, _) => (toString n).endsWith "Common.Values.boolOfSumbool")
+            | throwError "boolean projection helper unavailable"
+          Lean.Elab.Tactic.evalTactic (← `(tactic| unfold $(Lean.mkIdent n) at $(Lean.mkIdent `heval):ident ⊢))
+        simp only [if_true] at heval ⊢
+        split at heval
+        · rename_i hp
+          obtain ⟨hp1, hp2⟩ := Bool.and_eq_true_iff.mp hp
+          rw [hw b1 o1 b1' d1 hm1 hp1, hw b1 o2 b1' d1 hm1 hp2]
+          rw [suffix_operation_cmpu_shift c o1 o2 (Ptrofs.repr d1)
+            (hb b1 o1 b1' d1 hm1 hp1) (hb b1 o2 b1' d1 hm1 hp2)]
+          exact heval
+        · contradiction
+      | right hne => exact (hne rfl).elim
+    | right hne =>
+      simp only [hs] at heval
+      run_tac
+        let env ← Lean.getEnv
+        let some (n, _) := env.constants.toList.find?
+          (fun (n, _) => (toString n).endsWith "Common.Values.boolOfSumbool")
+          | throwError "boolean projection helper unavailable"
+        Lean.Elab.Tactic.evalTactic (← `(tactic| unfold $(Lean.mkIdent n) at $(Lean.mkIdent `heval):ident))
+      simp only [Bool.false_eq_true, if_false] at heval
+      split at heval
+      · rename_i hp
+        obtain ⟨hp1, hp2⟩ := Bool.and_eq_true_iff.mp hp
+        have hp1' := hv b1 o1 b1' d1 hm1 hp1
+        have hp2' := hv b2 o2 b2' d2 hm2 hp2
+        cases ht : eq_block b1' b2' with
+        | right hne' =>
+          simp only [ht, hp1', hp2', Bool.true_and, if_true]
+          run_tac
+            let env ← Lean.getEnv
+            let some (n, _) := env.constants.toList.find?
+              (fun (n, _) => (toString n).endsWith "Common.Values.boolOfSumbool")
+              | throwError "boolean projection helper unavailable"
+            Lean.Elab.Tactic.evalTactic (← `(tactic| unfold $(Lean.mkIdent n)))
+          simp only [Bool.false_eq_true, if_false, if_true]
+          exact heval
+        | left heq' =>
+          subst b2'
+          have hd' := hd b1 o1 b2 o2 b1' d1 b1' d2 hne hp1 hp2 hm1 hm2
+          have hofs : Ptrofs.unsigned (Ptrofs.add o1 (Ptrofs.repr d1)) ≠
+              Ptrofs.unsigned (Ptrofs.add o2 (Ptrofs.repr d2)) :=
+            hd'.resolve_left (fun h => h rfl)
+          simp only [ht, hp1', hp2', Bool.true_or, Bool.true_and, if_true]
+          run_tac
+            let env ← Lean.getEnv
+            let some (n, _) := env.constants.toList.find?
+              (fun (n, _) => (toString n).endsWith "Common.Values.boolOfSumbool")
+              | throwError "boolean projection helper unavailable"
+            Lean.Elab.Tactic.evalTactic (← `(tactic| unfold $(Lean.mkIdent n)))
+          simp only [Bool.false_eq_true, if_false, if_true]
+          cases c <;> simp only [Val.cmp_different_blocks, Option.some.injEq] at heval <;>
+            try contradiction
+          all_goals subst b
+          all_goals simp [Ptrofs.cmpu, Ptrofs.eq, WordCore.eq, Ptrofs.unsigned, WordCore.unsigned] at hofs ⊢
+          all_goals exact hofs
+      · contradiction
+
+end CompCert4Lean.X86.Op
+
+namespace CompCert4Lean.X86.Op
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Lib.Integers
+
+private theorem suffix_operation_condition_inj : eval_condition_injStatement := by
+  intro f m1 m2 hv hw hb hd cond vl1 vl2 r hvl heval
+  have hcu := Val.cmpu_bool_inject f (Mem.valid_pointer m1) (Mem.valid_pointer m2) hv hw hb hd
+  have hclu := suffix_operation_cmplu_inj f (Mem.valid_pointer m1) (Mem.valid_pointer m2) hv hw hb hd
+  cases cond with
+  | Ccomp c =>
+      cases hvl with
+      | inject_list_nil =>
+          change none = some r at heval
+          contradiction
+      | inject_list_cons a a' l2 l2' ha hl2 =>
+          cases hl2 with
+          | inject_list_nil =>
+              change none = some r at heval
+              contradiction
+          | inject_list_cons b b' l1 l1' hbv hl1 =>
+              cases hl1 with
+              | inject_list_nil =>
+                  change Val.cmp_bool c a b = some r at heval
+                  change Val.cmp_bool c a' b' = some r
+                  cases ha <;> cases hbv <;>
+                    simp only [Val.cmp_bool, Option.map_none, reduceCtorEq] at heval ⊢ <;> exact heval
+              | inject_list_cons =>
+                  change none = some r at heval
+                  contradiction
+  | Ccompu c =>
+      cases hvl with
+      | inject_list_nil =>
+          change none = some r at heval
+          contradiction
+      | inject_list_cons a a' l2 l2' ha hl2 =>
+          cases hl2 with
+          | inject_list_nil =>
+              change none = some r at heval
+              contradiction
+          | inject_list_cons b b' l1 l1' hbv hl1 =>
+              cases hl1 with
+              | inject_list_nil =>
+                  change Val.cmpu_bool (Mem.valid_pointer m1) c a b = some r at heval
+                  change Val.cmpu_bool (Mem.valid_pointer m2) c a' b' = some r
+                  exact hcu c a b a' b' r ha hbv heval
+              | inject_list_cons =>
+                  change none = some r at heval
+                  contradiction
+  | Ccompimm c n =>
+      cases hvl with
+      | inject_list_nil =>
+          change none = some r at heval
+          contradiction
+      | inject_list_cons a a' l1 l1' ha hl1 =>
+          cases hl1 with
+          | inject_list_nil =>
+              change Val.cmp_bool c a (.Vint n) = some r at heval
+              change Val.cmp_bool c a' (.Vint n) = some r
+              cases ha <;>
+                simp only [Val.cmp_bool, Option.map_none, reduceCtorEq] at heval ⊢ <;> exact heval
+          | inject_list_cons =>
+              change none = some r at heval
+              contradiction
+  | Ccompuimm c n =>
+      cases hvl with
+      | inject_list_nil =>
+          change none = some r at heval
+          contradiction
+      | inject_list_cons a a' l1 l1' ha hl1 =>
+          cases hl1 with
+          | inject_list_nil =>
+              change Val.cmpu_bool (Mem.valid_pointer m1) c a (.Vint n) = some r at heval
+              change Val.cmpu_bool (Mem.valid_pointer m2) c a' (.Vint n) = some r
+              exact hcu c a (.Vint n) a' (.Vint n) r ha (Val.inject_int f n) heval
+          | inject_list_cons =>
+              change none = some r at heval
+              contradiction
+  | Ccompl c =>
+      cases hvl with
+      | inject_list_nil =>
+          change none = some r at heval
+          contradiction
+      | inject_list_cons a a' l2 l2' ha hl2 =>
+          cases hl2 with
+          | inject_list_nil =>
+              change none = some r at heval
+              contradiction
+          | inject_list_cons b b' l1 l1' hbv hl1 =>
+              cases hl1 with
+              | inject_list_nil =>
+                  change Val.cmpl_bool c a b = some r at heval
+                  change Val.cmpl_bool c a' b' = some r
+                  cases ha <;> cases hbv <;>
+                    simp only [Val.cmpl_bool, Option.map_none, reduceCtorEq] at heval ⊢ <;> exact heval
+              | inject_list_cons =>
+                  change none = some r at heval
+                  contradiction
+  | Ccomplu c =>
+      cases hvl with
+      | inject_list_nil =>
+          change none = some r at heval
+          contradiction
+      | inject_list_cons a a' l2 l2' ha hl2 =>
+          cases hl2 with
+          | inject_list_nil =>
+              change none = some r at heval
+              contradiction
+          | inject_list_cons b b' l1 l1' hbv hl1 =>
+              cases hl1 with
+              | inject_list_nil =>
+                  change Val.cmplu_bool (Mem.valid_pointer m1) c a b = some r at heval
+                  change Val.cmplu_bool (Mem.valid_pointer m2) c a' b' = some r
+                  exact hclu c a b a' b' r ha hbv heval
+              | inject_list_cons =>
+                  change none = some r at heval
+                  contradiction
+  | Ccomplimm c n =>
+      cases hvl with
+      | inject_list_nil =>
+          change none = some r at heval
+          contradiction
+      | inject_list_cons a a' l1 l1' ha hl1 =>
+          cases hl1 with
+          | inject_list_nil =>
+              change Val.cmpl_bool c a (.Vlong n) = some r at heval
+              change Val.cmpl_bool c a' (.Vlong n) = some r
+              cases ha <;>
+                simp only [Val.cmpl_bool, Option.map_none, reduceCtorEq] at heval ⊢ <;> exact heval
+          | inject_list_cons =>
+              change none = some r at heval
+              contradiction
+  | Ccompluimm c n =>
+      cases hvl with
+      | inject_list_nil =>
+          change none = some r at heval
+          contradiction
+      | inject_list_cons a a' l1 l1' ha hl1 =>
+          cases hl1 with
+          | inject_list_nil =>
+              change Val.cmplu_bool (Mem.valid_pointer m1) c a (.Vlong n) = some r at heval
+              change Val.cmplu_bool (Mem.valid_pointer m2) c a' (.Vlong n) = some r
+              exact hclu c a (.Vlong n) a' (.Vlong n) r ha (Val.inject_long f n) heval
+          | inject_list_cons =>
+              change none = some r at heval
+              contradiction
+  | Ccompf c =>
+      cases hvl with
+      | inject_list_nil =>
+          change none = some r at heval
+          contradiction
+      | inject_list_cons a a' l2 l2' ha hl2 =>
+          cases hl2 with
+          | inject_list_nil =>
+              change none = some r at heval
+              contradiction
+          | inject_list_cons b b' l1 l1' hbv hl1 =>
+              cases hl1 with
+              | inject_list_nil =>
+                  change Val.cmpf_bool c a b = some r at heval
+                  change Val.cmpf_bool c a' b' = some r
+                  cases ha <;> cases hbv <;>
+                    simp only [Val.cmpf_bool, Option.map_none, reduceCtorEq] at heval ⊢ <;> exact heval
+              | inject_list_cons =>
+                  change none = some r at heval
+                  contradiction
+  | Cnotcompf c =>
+      cases hvl with
+      | inject_list_nil =>
+          change none = some r at heval
+          contradiction
+      | inject_list_cons a a' l2 l2' ha hl2 =>
+          cases hl2 with
+          | inject_list_nil =>
+              change none = some r at heval
+              contradiction
+          | inject_list_cons b b' l1 l1' hbv hl1 =>
+              cases hl1 with
+              | inject_list_nil =>
+                  change (Val.cmpf_bool c a b).map (!·) = some r at heval
+                  change (Val.cmpf_bool c a' b').map (!·) = some r
+                  cases ha <;> cases hbv <;>
+                    simp only [Val.cmpf_bool, Option.map_none, reduceCtorEq] at heval ⊢ <;> exact heval
+              | inject_list_cons =>
+                  change none = some r at heval
+                  contradiction
+  | Ccompfs c =>
+      cases hvl with
+      | inject_list_nil =>
+          change none = some r at heval
+          contradiction
+      | inject_list_cons a a' l2 l2' ha hl2 =>
+          cases hl2 with
+          | inject_list_nil =>
+              change none = some r at heval
+              contradiction
+          | inject_list_cons b b' l1 l1' hbv hl1 =>
+              cases hl1 with
+              | inject_list_nil =>
+                  change Val.cmpfs_bool c a b = some r at heval
+                  change Val.cmpfs_bool c a' b' = some r
+                  cases ha <;> cases hbv <;>
+                    simp only [Val.cmpfs_bool, Option.map_none, reduceCtorEq] at heval ⊢ <;> exact heval
+              | inject_list_cons =>
+                  change none = some r at heval
+                  contradiction
+  | Cnotcompfs c =>
+      cases hvl with
+      | inject_list_nil =>
+          change none = some r at heval
+          contradiction
+      | inject_list_cons a a' l2 l2' ha hl2 =>
+          cases hl2 with
+          | inject_list_nil =>
+              change none = some r at heval
+              contradiction
+          | inject_list_cons b b' l1 l1' hbv hl1 =>
+              cases hl1 with
+              | inject_list_nil =>
+                  change (Val.cmpfs_bool c a b).map (!·) = some r at heval
+                  change (Val.cmpfs_bool c a' b').map (!·) = some r
+                  cases ha <;> cases hbv <;>
+                    simp only [Val.cmpfs_bool, Option.map_none, reduceCtorEq] at heval ⊢ <;> exact heval
+              | inject_list_cons =>
+                  change none = some r at heval
+                  contradiction
+  | Cmaskzero n =>
+      cases hvl with
+      | inject_list_nil =>
+          change none = some r at heval
+          contradiction
+      | inject_list_cons a a' l1 l1' ha hl1 =>
+          cases hl1 with
+          | inject_list_nil =>
+              change Val.maskzero_bool a n = some r at heval
+              change Val.maskzero_bool a' n = some r
+              cases ha <;>
+                simp only [Val.maskzero_bool, Option.map_none, reduceCtorEq] at heval ⊢ <;> exact heval
+          | inject_list_cons =>
+              change none = some r at heval
+              contradiction
+  | Cmasknotzero n =>
+      cases hvl with
+      | inject_list_nil =>
+          change none = some r at heval
+          contradiction
+      | inject_list_cons a a' l1 l1' ha hl1 =>
+          cases hl1 with
+          | inject_list_nil =>
+              change (Val.maskzero_bool a n).map (!·) = some r at heval
+              change (Val.maskzero_bool a' n).map (!·) = some r
+              cases ha <;>
+                simp only [Val.maskzero_bool, Option.map_none, reduceCtorEq] at heval ⊢ <;> exact heval
+          | inject_list_cons =>
+              change none = some r at heval
+              contradiction
+
+theorem eval_operation_inj
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    @eval_operation_injStatement binary64_certificate binary32_certificate :=
+  suffix_operation_inj_of_condition suffix_operation_condition_inj
+
+end CompCert4Lean.X86.Op

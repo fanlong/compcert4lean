@@ -6871,3 +6871,25 @@ theorem match_envs_set_temp : match_envs_set_tempStatement := by
         exact hg.trans htle
 
 end CompCert4Lean.Cfrontend.SimplLocalsproof
+
+namespace CompCert4Lean.Cfrontend.SimplLocalsproof
+
+theorem match_envs_temps_exten : match_envs_temps_extenStatement := by
+  intro f cenv e le m lo hi te tle tlo thi tle' hmatch hext
+  rcases hmatch with ⟨hvars, htemps, hinj, hrange, htrange,
+    hmapped, hflat, hincr, htincr⟩
+  refine ⟨?_, ?_, hinj, hrange, htrange, hmapped, hflat, hincr, htincr⟩
+  · intro id
+    cases hvars id with
+    | match_var_lifted b ty chunk v tv henv htenv hlift hmap hmode hload htle hv =>
+        exact match_var_lifted b ty chunk v tv henv htenv hlift hmap hmode hload
+          ((hext id).trans htle) hv
+    | match_var_not_lifted b ty b' henv htenv hlift hmap =>
+        exact match_var_not_lifted b ty b' henv htenv hlift hmap
+    | match_var_not_local henv htenv hlift =>
+        exact match_var_not_local henv htenv hlift
+  · intro id v hget
+    rcases htemps id v hget with ⟨⟨tv, htle, hv⟩, hlift⟩
+    exact ⟨⟨tv, (hext id).trans htle, hv⟩, hlift⟩
+
+end CompCert4Lean.Cfrontend.SimplLocalsproof

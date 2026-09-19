@@ -2486,3 +2486,54 @@ theorem truncate_correct_format : ∀ (ctx : ExactRealContext)
     exact ⟨rfl, heq⟩
 
 end CompCert4Lean.Flocq.Calc.Round
+
+namespace CompCert4Lean.Flocq.Calc.Round
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem truncate_correct_partial' : ∀ (ctx : ExactRealContext)
+    (magnitude : ExactMagnitude ctx),
+    truncate_correct_partial'Statement ctx magnitude := by
+  intro ctx magnitude beta fexp hvalid x m e l hx hbetween he
+  have hcexp : CompCert4Lean.Flocq.Core.Generic_fmt.Exact.cexp ctx magnitude beta fexp x =
+      fexp (Zadd (Zdigits beta m) e) := by
+    exact cexp_inbetween_float ctx magnitude beta fexp hvalid x m e l hx hbetween (Or.inl he)
+  unfold truncate
+  dsimp
+  rw [← hcexp]
+  split
+  · rename_i hk
+    constructor
+    · apply CompCert4Lean.Flocq.Calc.Bracket.inbetween_float_new_location ctx
+      exact (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.Zbool.Zlt_is_lt_bool Z0 _).mpr hk
+      exact hbetween
+    · dsimp [truncate_aux]
+      apply CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective
+      simp only [Zadd, Zsub,
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add,
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.sub,
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+      omega
+  · rename_i hk
+    have hnot : ¬ Zlt Z0 (Zsub (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.cexp ctx magnitude beta fexp x) e) := by
+      intro hpos
+      have htrue := CompCert4Lean.Flocq.Core.Zaux.Zlt_bool_true Z0
+        (Zsub (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.cexp ctx magnitude beta fexp x) e) hpos
+      exact hk htrue
+    have hkle : Zle (Zsub (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.cexp ctx magnitude beta fexp x) e) Z0 := by
+      change intOfZ (Zsub (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.cexp ctx magnitude beta fexp x) e) ≤ (0 : Int)
+      apply Int.le_of_not_gt
+      exact hnot
+    constructor
+    · exact hbetween
+    · apply CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective
+      change intOfZ e = intOfZ (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.cexp ctx magnitude beta fexp x)
+      change intOfZ e ≤ intOfZ (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.cexp ctx magnitude beta fexp x) at he
+      change intOfZ (Zsub (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.cexp ctx magnitude beta fexp x) e) ≤ intOfZ Z0 at hkle
+      simp only [Zsub,
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.sub,
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt] at hkle
+      have hz0 : intOfZ Z0 = (0 : Int) := by rfl
+      rw [hz0] at hkle
+      omega
+
+end CompCert4Lean.Flocq.Calc.Round

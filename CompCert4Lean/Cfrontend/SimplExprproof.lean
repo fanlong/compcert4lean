@@ -4315,3 +4315,19 @@ theorem tr_expr_leftcontext_rec : tr_expr_leftcontext_recStatement := by
 
 end
 end CompCert4Lean.Cfrontend.SimplExprproof
+
+namespace CompCert4Lean.Cfrontend.SimplExprproof
+
+theorem tr_expr_leftcontext :
+    ∀ [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+      [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)],
+      tr_expr_leftcontextStatement := by
+  intro binary64_certificate binary32_certificate
+  intro cunit C le r dst sl a tmps hctx htr
+  have hrec := tr_expr_leftcontext_rec
+    (binary64_certificate := binary64_certificate)
+    (binary32_certificate := binary32_certificate)
+    cunit
+  exact hrec.1 .RV .RV C hctx le r dst sl a tmps htr
+
+end CompCert4Lean.Cfrontend.SimplExprproof

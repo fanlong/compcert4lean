@@ -3967,3 +3967,19 @@ theorem divs_pow2 : divs_pow2Statement := by
     exact ⟨hlt, (CompCert4Lean.Lib.Integers.Int.divs_pow2_proof _ _ _ hpow).symm.trans hdiv.2⟩
 
 end CompCert4Lean.Common.Values.Val
+
+
+namespace CompCert4Lean.Common.Values.Val
+
+theorem divs_one : divs_oneStatement := by
+  intro s
+  simp only [divs]
+  have hzero : CompCert4Lean.Lib.Integers.Int.eq Int.one Int.zero = false := by decide
+  have hmone : CompCert4Lean.Lib.Integers.Int.eq Int.one Int.mone = false := by decide
+  have hdiv : CompCert4Lean.Lib.Integers.Int.divs s Int.one = s :=
+    CompCert4Lean.Lib.Integers.Int.divs_one_proof s (by
+      change (1 : _root_.Int) < 32
+      decide)
+  simp [hzero, hmone, hdiv]
+
+end CompCert4Lean.Common.Values.Val

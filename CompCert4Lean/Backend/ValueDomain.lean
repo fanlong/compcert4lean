@@ -5693,3 +5693,10 @@ theorem is_sign_ext_sgn : is_sign_ext_sgnStatement := by
       ⟨hn, hnm⟩
 
 end CompCert4Lean.Backend.ValueDomain
+
+namespace CompCert4Lean.Backend.ValueDomain
+
+theorem vge_lub_l : vge_lub_lStatement := by
+  exact vge_lub_l_select_aux
+
+end CompCert4Lean.Backend.ValueDomain

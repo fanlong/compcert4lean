@@ -4670,3 +4670,20 @@ theorem generic_format_F2R' :
   · exact Or.inr (hbound hx0)
 
 end CompCert4Lean.Flocq.Core.Generic_fmt
+
+namespace CompCert4Lean.Flocq.Core.Generic_fmt
+
+theorem canonical_opp :
+    ∀ (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx),
+      canonical_oppStatement ctx magnitude := by
+  intro ctx magnitude beta fexp m e hcanon
+  unfold Exact.canonical at hcanon ⊢
+  change e = Exact.cexp ctx magnitude beta fexp
+    (Exact.F2R ctx (Float beta (Zopp m) e))
+  have hf2r := CompCert4Lean.Flocq.Core.Float_prop.F2R_Zopp ctx beta m e
+  change Exact.F2R ctx (Float beta (Zopp m) e) =
+    Exact.Ropp ctx (Exact.F2R ctx (Float beta m e)) at hf2r
+  rw [hf2r, cexp_opp ctx magnitude beta fexp]
+  exact hcanon
+
+end CompCert4Lean.Flocq.Core.Generic_fmt

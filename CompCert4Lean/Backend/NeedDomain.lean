@@ -8226,3 +8226,13 @@ open CompCert4Lean.Lib.Integers
   exact hbits
 
 end CompCert4Lean.Backend.NeedDomain
+
+namespace CompCert4Lean.Backend.NeedDomain
+
+theorem complete_mask_idem : complete_mask_idemStatement := by
+  intro m
+  unfold complete_mask
+  have hs := local_size_range_eqmod m
+  rw [pg_mask_size_test32 (Int.size m) hs.1 hs.2]
+
+end CompCert4Lean.Backend.NeedDomain

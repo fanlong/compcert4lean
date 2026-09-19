@@ -3803,3 +3803,40 @@ theorem addr_strength_reduction_64_correct :
       exact cp64_generic bc ge sp ae e hem addr args vl res hvl heval
 
 end CompCert4Lean.X86.ConstpropOpproof
+
+namespace CompCert4Lean.X86.ConstpropOpproof
+
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Backend.ValueDomain
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.X86.Op
+open CompCert4Lean.X86.ConstpropOp
+
+theorem addr_strength_reduction_correct :
+    addr_strength_reduction_correctStatement := by
+  intro bc ge hge sp hsp ae e hem addr args vl res hvl heval
+  unfold addr_strength_reduction
+  change eval_addressing64 ge (.Vptr sp Ptrofs.zero) addr (reg_values e args) = some res at heval
+  have hptr : CompCert4Lean.X86_64.Archi.ptr64 = true := rfl
+  rw [hptr]
+  dsimp only
+  simp only [↓reduceIte]
+  cases hvalid : addressing_valid (addr_strength_reduction_64 addr args vl).1 with
+  | true =>
+      change ∃ res',
+        eval_addressing64 ge (.Vptr sp Ptrofs.zero)
+          (addr_strength_reduction_64 addr args vl).1
+          (reg_values e (addr_strength_reduction_64 addr args vl).2) = some res' ∧
+        Val.lessdef res res'
+      exact addr_strength_reduction_64_correct bc ge hge sp hsp ae e hem addr args vl res hvl heval
+  | false =>
+      change ∃ res',
+        eval_addressing64 ge (.Vptr sp Ptrofs.zero) addr (reg_values e args) = some res' ∧
+        Val.lessdef res res'
+      exact ⟨res, heval, Val.lessdef_refl _⟩
+
+end CompCert4Lean.X86.ConstpropOpproof

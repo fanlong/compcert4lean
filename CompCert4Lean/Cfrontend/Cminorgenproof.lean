@@ -5719,3 +5719,63 @@ theorem eval_binop_compat : eval_binop_compatStatement := by
     | constructor
 
 end CompCert4Lean.Cfrontend.Cminorgenproof
+
+namespace CompCert4Lean.Cfrontend.Cminorgenproof
+
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.Cfrontend.Cminorgen
+
+theorem var_addr_correct
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    var_addr_correctStatement := by
+  intro prog tprog hprog
+  intro cenv id f tf e le te sp lo hi m cs tm b hstack haddr
+  have henv : match_env f cenv e sp lo hi := by
+    cases hstack with
+    | cons _ _ _ henv _ _ _ => exact henv
+  have hvar := henv.me_vars id
+  cases haddr with
+  | eval_var_addr_local size hget =>
+      rw [hget] at hvar
+      cases hc : PTree.get id cenv with
+      | none =>
+          rw [hc] at hvar
+          cases hvar
+      | some ofs =>
+          rw [hc] at hvar
+          cases hvar with
+          | «local» hinj =>
+              refine ⟨.Vptr sp (Ptrofs.repr ofs), ?_, hinj⟩
+              simp only [CompCert4Lean.Cfrontend.Cminorgen.var_addr, hc]
+              apply CompCert4Lean.Backend.Cminor.eval_expr.eval_Econst
+              simp [CompCert4Lean.Backend.Cminor.eval_constant, Val.offset_ptr]
+              rw [Ptrofs.add_commut_proof_api]
+              exact ptrofs_add_zero_local _
+  | eval_var_addr_global hlocal hglobal =>
+      rw [hlocal] at hvar
+      cases hc : PTree.get id cenv with
+      | none =>
+          rw [hc] at hvar
+          cases hvar
+          obtain ⟨bound, hglobalenv⟩ :=
+            match_callstack_match_globalenvs prog f m tm
+              (Frame cenv tf e le te sp lo hi :: cs) m.nextblock tm.nextblock hstack
+          cases hglobalenv with
+          | mk domain image symbols functions varinfos =>
+              refine ⟨.Vptr b Ptrofs.zero, ?_, ?_⟩
+              · simp only [CompCert4Lean.Cfrontend.Cminorgen.var_addr, hc]
+                apply CompCert4Lean.Backend.Cminor.eval_expr.eval_Econst
+                simp [CompCert4Lean.Backend.Cminor.eval_constant,
+                  Genv.symbol_address, symbols_preserved prog tprog hprog id,
+                  hglobal]
+              · apply Val.inject.inject_ptr
+                · exact domain b (symbols id b hglobal)
+                · rfl
+      | some ofs =>
+          rw [hc] at hvar
+          cases hvar
+end CompCert4Lean.Cfrontend.Cminorgenproof
