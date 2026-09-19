@@ -4691,3 +4691,171 @@ theorem shrxl_shrl_2 : shrxl_shrl_2Statement :=
   CompCert4Lean.Common.Values.shrxl_shrl_2_core
 
 end CompCert4Lean.Common.Values.Val
+
+namespace CompCert4Lean.Common.Values
+namespace Val
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Lib.Integers
+
+private abbrev cmplu_z0 : Z := .Z0
+private abbrev cmplu_zAdd := ZArith.BinInt.Z.add
+private abbrev cmplu_zLe := ZArith.BinInt.Z.le
+
+private theorem cmplu_bool_inject_unsigned_add (x d : CompCert4Lean.Lib.Integers.ptrofs)
+    (h : cmplu_zLe cmplu_z0 (cmplu_zAdd (CompCert4Lean.Lib.Integers.Ptrofs.unsigned x) (CompCert4Lean.Lib.Integers.Ptrofs.unsigned d)) ∧
+      cmplu_zLe (cmplu_zAdd (CompCert4Lean.Lib.Integers.Ptrofs.unsigned x) (CompCert4Lean.Lib.Integers.Ptrofs.unsigned d)) CompCert4Lean.Lib.Integers.Ptrofs.max_unsigned) :
+    CompCert4Lean.Lib.Integers.Ptrofs.unsigned (CompCert4Lean.Lib.Integers.Ptrofs.add x d) = cmplu_zAdd (CompCert4Lean.Lib.Integers.Ptrofs.unsigned x) (CompCert4Lean.Lib.Integers.Ptrofs.unsigned d) := by
+  change Int64.unsigned (Int64.repr (cmplu_zAdd (CompCert4Lean.Lib.Integers.Ptrofs.unsigned x) (CompCert4Lean.Lib.Integers.Ptrofs.unsigned d))) = _
+  have hu : Int64.unsigned (Int64.repr (cmplu_zAdd (CompCert4Lean.Lib.Integers.Ptrofs.unsigned x) (CompCert4Lean.Lib.Integers.Ptrofs.unsigned d))) =
+      ZArith.BinInt.Z.modulo (cmplu_zAdd (CompCert4Lean.Lib.Integers.Ptrofs.unsigned x) (CompCert4Lean.Lib.Integers.Ptrofs.unsigned d)) Int64.modulus := by
+    run_tac
+      let env ← Lean.getEnv
+      let some (n, _) := env.constants.toList.find?
+          (fun (n, _) => (toString n).endsWith "Integers.Int64.suffix_int64_unsigned_repr_eq_exact")
+        | throwError "helper not found"
+      let stx := Lean.mkIdent n
+      Lean.Elab.Tactic.evalTactic (← `(tactic| exact $stx _))
+  rw [hu]
+  apply ZArith.BinInt.Z.mod_small
+  refine ⟨h.1, ?_⟩
+  have hh := h.2
+  change intOfZ (cmplu_zAdd (CompCert4Lean.Lib.Integers.Ptrofs.unsigned x) (CompCert4Lean.Lib.Integers.Ptrofs.unsigned d)) ≤
+    intOfZ Int64.modulus - 1 at hh
+  change intOfZ (cmplu_zAdd (CompCert4Lean.Lib.Integers.Ptrofs.unsigned x) (CompCert4Lean.Lib.Integers.Ptrofs.unsigned d)) < intOfZ Int64.modulus
+  omega
+
+private theorem cmplu_bool_inject_cmpu_shift (c : CompCert4Lean.Lib.Integers.comparison) (x y d : CompCert4Lean.Lib.Integers.ptrofs)
+    (hx : cmplu_zLe cmplu_z0 (cmplu_zAdd (CompCert4Lean.Lib.Integers.Ptrofs.unsigned x) (CompCert4Lean.Lib.Integers.Ptrofs.unsigned d)) ∧
+      cmplu_zLe (cmplu_zAdd (CompCert4Lean.Lib.Integers.Ptrofs.unsigned x) (CompCert4Lean.Lib.Integers.Ptrofs.unsigned d)) CompCert4Lean.Lib.Integers.Ptrofs.max_unsigned)
+    (hy : cmplu_zLe cmplu_z0 (cmplu_zAdd (CompCert4Lean.Lib.Integers.Ptrofs.unsigned y) (CompCert4Lean.Lib.Integers.Ptrofs.unsigned d)) ∧
+      cmplu_zLe (cmplu_zAdd (CompCert4Lean.Lib.Integers.Ptrofs.unsigned y) (CompCert4Lean.Lib.Integers.Ptrofs.unsigned d)) CompCert4Lean.Lib.Integers.Ptrofs.max_unsigned) :
+    CompCert4Lean.Lib.Integers.Ptrofs.cmpu c (CompCert4Lean.Lib.Integers.Ptrofs.add x d) (CompCert4Lean.Lib.Integers.Ptrofs.add y d) = CompCert4Lean.Lib.Integers.Ptrofs.cmpu c x y := by
+  have heq : CompCert4Lean.Lib.Integers.Ptrofs.eq (CompCert4Lean.Lib.Integers.Ptrofs.add x d) (CompCert4Lean.Lib.Integers.Ptrofs.add y d) = CompCert4Lean.Lib.Integers.Ptrofs.eq x y := by
+    change decide (CompCert4Lean.Lib.Integers.Ptrofs.unsigned (CompCert4Lean.Lib.Integers.Ptrofs.add x d) = CompCert4Lean.Lib.Integers.Ptrofs.unsigned (CompCert4Lean.Lib.Integers.Ptrofs.add y d)) =
+      decide (CompCert4Lean.Lib.Integers.Ptrofs.unsigned x = CompCert4Lean.Lib.Integers.Ptrofs.unsigned y)
+    rw [cmplu_bool_inject_unsigned_add x d hx, cmplu_bool_inject_unsigned_add y d hy]
+    congr 1
+    apply propext
+    constructor
+    · intro h
+      apply intOfZ_injective
+      have h' := congrArg intOfZ h
+      simp only [cmplu_zAdd, ZArith.BinInt.Z.add, intOfZ_zOfInt] at h'
+      omega
+    · intro h; rw [h]
+  have he (a b : CompCert4Lean.Lib.Integers.ptrofs) : CompCert4Lean.Lib.Integers.Ptrofs.ltu a b =
+      decide (intOfZ (CompCert4Lean.Lib.Integers.Ptrofs.unsigned a) < intOfZ (CompCert4Lean.Lib.Integers.Ptrofs.unsigned b)) := by
+    by_cases h : intOfZ (CompCert4Lean.Lib.Integers.Ptrofs.unsigned a) < intOfZ (CompCert4Lean.Lib.Integers.Ptrofs.unsigned b)
+    · rw [show decide (intOfZ (CompCert4Lean.Lib.Integers.Ptrofs.unsigned a) < intOfZ (CompCert4Lean.Lib.Integers.Ptrofs.unsigned b)) = true by simp [h]]
+      exact CompCert4Lean.Lib.Coqlib.zlt_true Bool _ _ true false h
+    · rw [show decide (intOfZ (CompCert4Lean.Lib.Integers.Ptrofs.unsigned a) < intOfZ (CompCert4Lean.Lib.Integers.Ptrofs.unsigned b)) = false by simp [h]]
+      exact CompCert4Lean.Lib.Coqlib.zlt_false Bool _ _ true false (Int.le_of_not_gt h)
+  have hlt (a b : CompCert4Lean.Lib.Integers.ptrofs)
+      (ha : CompCert4Lean.Lib.Integers.Ptrofs.unsigned (CompCert4Lean.Lib.Integers.Ptrofs.add a d) = cmplu_zAdd (CompCert4Lean.Lib.Integers.Ptrofs.unsigned a) (CompCert4Lean.Lib.Integers.Ptrofs.unsigned d))
+      (hb : CompCert4Lean.Lib.Integers.Ptrofs.unsigned (CompCert4Lean.Lib.Integers.Ptrofs.add b d) = cmplu_zAdd (CompCert4Lean.Lib.Integers.Ptrofs.unsigned b) (CompCert4Lean.Lib.Integers.Ptrofs.unsigned d)) :
+      CompCert4Lean.Lib.Integers.Ptrofs.ltu (CompCert4Lean.Lib.Integers.Ptrofs.add a d) (CompCert4Lean.Lib.Integers.Ptrofs.add b d) = CompCert4Lean.Lib.Integers.Ptrofs.ltu a b := by
+    rw [he, he, ha, hb]
+    simp only [cmplu_zAdd, ZArith.BinInt.Z.add, intOfZ_zOfInt, Int.add_lt_add_iff_right]
+  cases c <;> simp only [CompCert4Lean.Lib.Integers.Ptrofs.cmpu, heq,
+    hlt x y (cmplu_bool_inject_unsigned_add x d hx) (cmplu_bool_inject_unsigned_add y d hy),
+    hlt y x (cmplu_bool_inject_unsigned_add y d hy) (cmplu_bool_inject_unsigned_add x d hx)]
+
+theorem cmplu_bool_inject : cmplu_bool_injectStatement := by
+  intro f vp1 vp2
+  dsimp only
+  intro hv hw hb hd c v1 v2 v1' v2' b h1 h2 heval
+  cases h1 <;> cases h2 <;>
+    simp only [cmplu_bool, CompCert4Lean.X86_64.Archi.ptr64,
+      Bool.true_and, if_true] at heval ⊢ <;> try contradiction
+  case inject_long.inject_long => exact heval
+  case inject_long.inject_ptr i b1 o1 b2 o2 d hm ho =>
+    subst o2
+    split at heval
+    · rename_i h
+      obtain ⟨hz, hp⟩ := Bool.and_eq_true_iff.mp h
+      rw [hz, hw b1 o1 b2 d hm hp]
+      exact heval
+    · contradiction
+  case inject_ptr.inject_long b1 o1 b2 o2 d hm ho i =>
+    subst o2
+    split at heval
+    · rename_i h
+      obtain ⟨hz, hp⟩ := Bool.and_eq_true_iff.mp h
+      rw [hz, hw b1 o1 b2 d hm hp]
+      exact heval
+    · contradiction
+  case inject_ptr.inject_ptr b1 o1 b1' o1' d1 hm1 ho1 b2 o2 b2' o2' d2 hm2 ho2 =>
+    subst o1' o2'
+    cases hs : eq_block b1 b2 with
+    | left heq =>
+      subst b2
+      have hh : (b1', d1) = (b2', d2) := Option.some.inj (hm1.symm.trans hm2)
+      cases hh
+      cases ht : eq_block b1' b1' with
+      | left heq' =>
+        simp only [hs, ht] at heval ⊢
+        run_tac
+          let env ← Lean.getEnv
+          let some (n, _) := env.constants.toList.find?
+            (fun (n, _) => (toString n).endsWith "Common.Values.boolOfSumbool")
+            | throwError "boolean projection helper unavailable"
+          Lean.Elab.Tactic.evalTactic (← `(tactic| unfold $(Lean.mkIdent n) at $(Lean.mkIdent `heval):ident ⊢))
+        simp only [if_true] at heval ⊢
+        split at heval
+        · rename_i hp
+          obtain ⟨hp1, hp2⟩ := Bool.and_eq_true_iff.mp hp
+          rw [hw b1 o1 b1' d1 hm1 hp1, hw b1 o2 b1' d1 hm1 hp2]
+          rw [cmplu_bool_inject_cmpu_shift c o1 o2 (CompCert4Lean.Lib.Integers.Ptrofs.repr d1)
+            (hb b1 o1 b1' d1 hm1 hp1) (hb b1 o2 b1' d1 hm1 hp2)]
+          exact heval
+        · contradiction
+      | right hne => exact (hne rfl).elim
+    | right hne =>
+      simp only [hs] at heval
+      run_tac
+        let env ← Lean.getEnv
+        let some (n, _) := env.constants.toList.find?
+          (fun (n, _) => (toString n).endsWith "Common.Values.boolOfSumbool")
+          | throwError "boolean projection helper unavailable"
+        Lean.Elab.Tactic.evalTactic (← `(tactic| unfold $(Lean.mkIdent n) at $(Lean.mkIdent `heval):ident))
+      simp only [Bool.false_eq_true, if_false] at heval
+      split at heval
+      · rename_i hp
+        obtain ⟨hp1, hp2⟩ := Bool.and_eq_true_iff.mp hp
+        have hp1' := hv b1 o1 b1' d1 hm1 hp1
+        have hp2' := hv b2 o2 b2' d2 hm2 hp2
+        cases ht : eq_block b1' b2' with
+        | right hne' =>
+          simp only [ht, hp1', hp2', Bool.true_and, if_true]
+          run_tac
+            let env ← Lean.getEnv
+            let some (n, _) := env.constants.toList.find?
+              (fun (n, _) => (toString n).endsWith "Common.Values.boolOfSumbool")
+              | throwError "boolean projection helper unavailable"
+            Lean.Elab.Tactic.evalTactic (← `(tactic| unfold $(Lean.mkIdent n)))
+          simp only [Bool.false_eq_true, if_false, if_true]
+          exact heval
+        | left heq' =>
+          subst b2'
+          have hd' := hd b1 o1 b2 o2 b1' d1 b1' d2 hne hp1 hp2 hm1 hm2
+          have hofs : CompCert4Lean.Lib.Integers.Ptrofs.unsigned (CompCert4Lean.Lib.Integers.Ptrofs.add o1 (CompCert4Lean.Lib.Integers.Ptrofs.repr d1)) ≠
+              CompCert4Lean.Lib.Integers.Ptrofs.unsigned (CompCert4Lean.Lib.Integers.Ptrofs.add o2 (CompCert4Lean.Lib.Integers.Ptrofs.repr d2)) :=
+            hd'.resolve_left (fun h => h rfl)
+          simp only [ht, hp1', hp2', Bool.true_or, Bool.true_and, if_true]
+          run_tac
+            let env ← Lean.getEnv
+            let some (n, _) := env.constants.toList.find?
+              (fun (n, _) => (toString n).endsWith "Common.Values.boolOfSumbool")
+              | throwError "boolean projection helper unavailable"
+            Lean.Elab.Tactic.evalTactic (← `(tactic| unfold $(Lean.mkIdent n)))
+          simp only [Bool.false_eq_true, if_false, if_true]
+          cases c <;> simp only [cmp_different_blocks, Option.some.injEq] at heval <;>
+            try contradiction
+          all_goals subst b
+          all_goals simp [CompCert4Lean.Lib.Integers.Ptrofs.cmpu, CompCert4Lean.Lib.Integers.Ptrofs.eq, CompCert4Lean.Lib.Integers.WordCore.eq, CompCert4Lean.Lib.Integers.Ptrofs.unsigned, CompCert4Lean.Lib.Integers.WordCore.unsigned] at hofs ⊢
+          all_goals exact hofs
+      · contradiction
+
+end Val
+end CompCert4Lean.Common.Values

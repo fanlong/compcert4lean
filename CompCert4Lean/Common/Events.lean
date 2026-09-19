@@ -3560,3 +3560,21 @@ open CompCert4Lean.Common.Memory
           exact Val.addl_lessdef _ _ _ _ hld1 hld2
 
 end CompCert4Lean.Common.Events
+
+namespace CompCert4Lean.Common.Events
+
+theorem eval_builtin_args_lessdef : eval_builtin_args_lessdefStatement := by
+  intro A ge e1 e2 sp m1 m2 he hext al vl1 hEval
+  induction hEval with
+  | nil =>
+      exact ⟨[], CompCert4Lean.Lib.Coqlib.list_forall2.nil _,
+        CompCert4Lean.Common.Values.Val.lessdef_list_nil⟩
+  | @cons a al v vl ha htail ih =>
+      rcases eval_builtin_arg_lessdef A ge e1 e2 sp m1 m2 he hext a v ha with
+        ⟨v', ha', hld⟩
+      rcases ih with ⟨vl', htail', hldtail⟩
+      exact ⟨v' :: vl',
+        CompCert4Lean.Lib.Coqlib.list_forall2.cons _ _ ha' htail',
+        CompCert4Lean.Common.Values.Val.lessdef_list_cons _ _ _ _ hld hldtail⟩
+
+end CompCert4Lean.Common.Events

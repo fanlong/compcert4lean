@@ -4228,3 +4228,27 @@ theorem format_bpow_x : ∀ (ctx : ExactRealContext) (magnitude : ExactMagnitude
     d hdpos hdcanon
 
 end CompCert4Lean.Flocq.Prop.Round_odd
+
+namespace CompCert4Lean.Flocq.Prop.Round_odd
+
+open CompCert4Lean.Flocq.Core
+
+theorem format_bpow_d : ∀ (ctx : ExactRealContext) (magnitude : ExactMagnitude ctx),
+    format_bpow_dStatement ctx magnitude := by
+  intro ctx magnitude beta fexp hvalid d hdcanon hdpos
+  have hdne : F2R ctx d ≠ R0 ctx := by
+    intro hzero
+    rw [hzero] at hdpos
+    exact (ctx.certificate.orderedField.lt_irrefl _ hdpos).elim
+  have hformat := CompCert4Lean.Flocq.Core.Generic_fmt.generic_format_canonical
+    ctx magnitude beta fexp d hdcanon
+  have hmag := CompCert4Lean.Flocq.Core.Generic_fmt.mag_generic_gt
+    ctx magnitude beta fexp hvalid (F2R ctx d) hdne hformat
+  apply CompCert4Lean.Flocq.Core.Generic_fmt.generic_format_bpow
+    ctx magnitude beta fexp (mag_val ctx magnitude beta (F2R ctx d))
+  apply (hvalid.valid_exp (mag_val ctx magnitude beta (F2R ctx d))).1
+  change Zlt (fexp (mag_val ctx magnitude beta (F2R ctx d)))
+      (mag_val ctx magnitude beta (F2R ctx d)) at hmag
+  exact hmag
+
+end CompCert4Lean.Flocq.Prop.Round_odd
