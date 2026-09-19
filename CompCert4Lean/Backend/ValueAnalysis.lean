@@ -3057,3 +3057,51 @@ theorem sound_stack_inv
   exact hload
 
 end CompCert4Lean.Backend.ValueAnalysis
+
+namespace CompCert4Lean.Backend.ValueAnalysis
+
+open CompCert4Lean.Backend.ValueDomain
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Lib.Integers
+
+theorem sound_stack_storev
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    sound_stack_storevStatement := by
+  intro cfg prog ge chunk m addr v m' bc aaddr stk bound hstore hvmatch hstk
+  apply sound_stack_inv
+    (binary64_certificate := binary64_certificate)
+    (binary32_certificate := binary32_certificate)
+    cfg prog ge m' bc stk m bound hstk
+  intro b ofs n hbound hbinv hnonneg
+  cases addr with
+  | Vundef =>
+      simp [Mem.storev] at hstore
+  | Vint i =>
+      simp [Mem.storev] at hstore
+  | Vlong i =>
+      simp [Mem.storev] at hstore
+  | Vfloat f =>
+      simp [Mem.storev] at hstore
+  | Vsingle f =>
+      simp [Mem.storev] at hstore
+  | Vptr b0 ofs0 =>
+      change Mem.store chunk m b0 (Ptrofs.unsigned ofs0) v = some m' at hstore
+      have htop : pmatch bc b0 ofs0 Ptop := by
+        cases hvmatch with
+        | ptr _ _ p hp =>
+            exact pmatch_top' bc b0 ofs0 p hp
+        | ifptrPtr _ _ p hp =>
+            exact pmatch_top' bc b0 ofs0 p hp
+      have hnotinvalid : bc b0 ≠ BCinvalid := by
+        cases htop with
+        | top h => exact h
+      have hne : b ≠ b0 := by
+        intro heq
+        subst b
+        exact hnotinvalid hbinv
+      apply Mem.loadbytes_store_other chunk m b0 (Ptrofs.unsigned ofs0) v m'
+        hstore b ofs n
+      exact Or.inl hne
+
+end CompCert4Lean.Backend.ValueAnalysis
