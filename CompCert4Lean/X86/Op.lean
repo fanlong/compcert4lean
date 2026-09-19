@@ -5265,3 +5265,35 @@ theorem eval_operation_inj
   suffix_operation_inj_of_condition suffix_operation_condition_inj
 
 end CompCert4Lean.X86.Op
+
+namespace CompCert4Lean.X86.Op
+
+open CompCert4Lean.Common.Values
+
+theorem eval_operation_lessdef
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    @eval_operation_lessdefStatement binary64_certificate binary32_certificate := by
+  intro F V genv sp op vl1 vl2 v1 m1 m2 hvl hext heval
+  let f : meminj := fun b => some (b, z0)
+  have hglobals : ∀ id ofs,
+      id ∈ globals_operation op →
+        Val.inject f
+          (CompCert4Lean.Common.Globalenvs.Genv.symbol_address genv id ofs)
+          (CompCert4Lean.Common.Globalenvs.Genv.symbol_address genv id ofs) := by
+    intro id ofs _
+    exact suffix_val_inject_lessdef _ _ (Val.lessdef.lessdef_refl _)
+  have hsp : Val.inject f sp sp :=
+    suffix_val_inject_lessdef _ _ (Val.lessdef.lessdef_refl _)
+  have hvl' : Val.inject_list f vl1 vl2 :=
+    suffix_val_inject_list_lessdef vl1 vl2 hvl
+  obtain ⟨v2, heval2, hinj⟩ :=
+    eval_operation_inj F F V V genv genv f m1 m2
+      (valid_pointer_extends m1 m2 hext)
+      (weak_valid_pointer_extends m1 m2 hext)
+      (weak_valid_pointer_no_overflow_extends m1)
+      (valid_different_pointers_extends m1)
+      op sp vl1 sp vl2 v1 hglobals hsp hvl' heval
+  exact ⟨v2, heval2, suffix_eval_addressing_lessdef_of_inject v1 v2 hinj⟩
+
+end CompCert4Lean.X86.Op

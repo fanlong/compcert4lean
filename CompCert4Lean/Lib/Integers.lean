@@ -8500,3 +8500,16 @@ theorem mul_pow2_proof : mul_pow2 := by
     _ = shl x logn := by symm; exact shl_mul_proof x logn
 
 end CompCert4Lean.Lib.Integers.Int
+
+
+namespace CompCert4Lean.Lib.Integers.Int
+
+theorem add_signed_proof : add_signed := by
+  intro x y
+  rw [add_unsigned_proof]
+  apply eqm_samerepr_proof
+  apply eqm_add_proof
+  · exact eqm_sym_proof _ _ (eqm_signed_unsigned_proof x)
+  · exact eqm_sym_proof _ _ (eqm_signed_unsigned_proof y)
+
+end CompCert4Lean.Lib.Integers.Int

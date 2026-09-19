@@ -6893,3 +6893,10 @@ theorem match_envs_temps_exten : match_envs_temps_extenStatement := by
     exact ⟨⟨tv, (hext id).trans htle, hv⟩, hlift⟩
 
 end CompCert4Lean.Cfrontend.SimplLocalsproof
+
+namespace CompCert4Lean.Cfrontend.SimplLocalsproof
+
+theorem add_local_variable_charact : add_local_variable_charactStatement := by
+  exact add_local_variable_charact_aux
+
+end CompCert4Lean.Cfrontend.SimplLocalsproof

@@ -8236,3 +8236,10 @@ theorem complete_mask_idem : complete_mask_idemStatement := by
   rw [pg_mask_size_test32 (Int.size m) hs.1 hs.2]
 
 end CompCert4Lean.Backend.NeedDomain
+
+namespace CompCert4Lean.Backend.NeedDomain
+
+theorem lagree_shr_1 : lagree_shr_1Statement := by
+  exact pgLagreeShr1
+
+end CompCert4Lean.Backend.NeedDomain

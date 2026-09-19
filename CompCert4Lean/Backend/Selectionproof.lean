@@ -4122,3 +4122,33 @@ theorem classify_call_correct
                                       simp [ef_inline] at hi
 
 end CompCert4Lean.Backend.Selectionproof
+
+namespace CompCert4Lean.Backend.Selectionproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.Backend.Selection
+open CompCert4Lean.Common.Switch
+
+theorem sel_switch_correct
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    sel_switch_correctStatement := by
+  intro xi tprog make_cmp_eq make_cmp_ltu make_sub make_to_int modulus R
+    hEq hLt hSub hToInt
+  intro dfl cases arg sp e m varg i t le hvalid harg hRi hRange
+  have hvalidated := CompCert4Lean.Common.Switch.validate_switch_correct
+    modulus (ZArith.BinInt.Z.le_lt_trans .Z0 i modulus hRange.1 hRange.2) dfl t cases hvalid
+  rcases hvalidated with ⟨hWF, hAgree⟩
+  apply eval_exitexpr.letBinding le arg
+    (sel_switch make_cmp_eq make_cmp_ltu make_sub make_to_int 0 t)
+    varg (switch_target i dfl cases)
+  · exact harg
+  · apply sel_switch_correct_rec
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate)
+      xi tprog make_cmp_eq make_cmp_ltu make_sub make_to_int modulus R
+      hEq hLt hSub hToInt sp e m varg i (switch_target i dfl cases) hRi t 0
+      (varg :: le) hWF (by rfl) (hAgree i hRange)
+
+end CompCert4Lean.Backend.Selectionproof

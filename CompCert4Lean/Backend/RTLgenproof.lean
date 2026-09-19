@@ -5064,3 +5064,41 @@ theorem transl_expr_Eload_correct
         exact hstable r hr
 
 end CompCert4Lean.Backend.RTLgenproof
+
+namespace CompCert4Lean.Backend.RTLgenproof
+
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Backend.RTLgen
+open CompCert4Lean.Backend.RTLgenspec
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.Smallstep
+open CompCert4Lean.Common.Values
+open CompCert4Lean.X86.Op
+
+theorem transl_condexpr_CEcond_correct
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    transl_condexpr_CEcond_correctStatement := by
+  intro xi prog tprog sp e m le cond al vl vb
+    hevalargs htransargs hevalcond
+  unfold transl_condexpr_prop
+  intro tge tm cs f map pr ns ntrue nfalse rs hwf htr hmatch hext
+  cases htr with
+  | tr_CEcond map pr cond al ns ntrue nfalse n1 rl hargs hcode =>
+      obtain ⟨rs1, tm1, hstar, hmatch1, hresults, hstable, hext1⟩ :=
+        htransargs tm cs f map pr ns n1 rl rs hwf hargs hmatch hext
+      have hevalcond' : eval_condition cond
+          (rl.map (fun r => Regmap.get r rs1)) tm1 = some vb := by
+        exact eval_condition_lessdef cond vl
+          (rl.map (fun r => Regmap.get r rs1)) vb m tm1 hresults hext1 hevalcond
+      refine ⟨rs1, tm1, ?_, hmatch1, ?_, hext1⟩
+      · apply plus_right _ _ _ _ _ _ _ _ _ _ hstar
+        · exact RTL.step.exec_Icond cs f sp n1 rs1 tm1 cond rl ntrue nfalse vb
+            (if vb then ntrue else nfalse) hcode hevalcond' rfl
+        · rfl
+      · intro r hr
+        exact hstable r hr
+
+end CompCert4Lean.Backend.RTLgenproof

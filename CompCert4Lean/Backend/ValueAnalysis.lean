@@ -2378,3 +2378,177 @@ theorem fixpoint_solution_proof {cfg : CompCert4Lean.Config.CompilerConfig}
     code successors transf ep ev res n instr s hfix hcode hsucc hbot
 
 end CompCert4Lean.Backend.ValueAnalysis.DS
+
+namespace CompCert4Lean.Backend.ValueAnalysis
+
+open CompCert4Lean.Backend.ValueDomain
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Builtins
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.Lib.Maps
+
+private theorem pg_static_ptrofs_zero_add (ofs : ptrofs) :
+    Ptrofs.add Ptrofs.zero ofs = ofs := by
+  apply WordCore.ext_of_val_eq
+  have hadd : (Ptrofs.add Ptrofs.zero ofs).val =
+      (Ptrofs.zero.val + ofs.val) % (2 ^ Ptrofs.wordsize) := by
+    run_tac
+      let env ← Lean.getEnv
+      let some (n, _) := env.constants.toList.find?
+          (fun (n, _) => (toString n).endsWith ".WordCore.add_val")
+        | throwError "WordCore addition lemma unavailable"
+      Lean.Elab.Tactic.evalTactic (← `(tactic| exact $(Lean.mkIdent n) Ptrofs.zero $(Lean.mkIdent `ofs)))
+  rw [hadd]
+  change (0 + ofs.val) % (2 ^ Ptrofs.wordsize) = ofs.val
+  have hlt : ofs.val < 2 ^ Ptrofs.wordsize := by
+    run_tac
+      let env ← Lean.getEnv
+      let some (n, _) := env.constants.toList.find?
+          (fun (n, _) => (toString n).endsWith ".WordCore.val_lt")
+        | throwError "WordCore range lemma unavailable"
+      Lean.Elab.Tactic.evalTactic (← `(tactic| exact $(Lean.mkIdent n) $(Lean.mkIdent `ofs)))
+  rw [Nat.zero_add, Nat.mod_eq_of_lt hlt]
+
+private theorem pg_static_normalize_ifptr (chunk : memory_chunk) (p : aptr) :
+    val_of_aval (vnormalize chunk (Ifptr p)) = Vundef := by
+  cases chunk <;> rfl
+
+private theorem pg_static_longofwords_lessdef (a b : aval) (v w : val)
+    (hv : Val.lessdef (val_of_aval a) v)
+    (hw : Val.lessdef (val_of_aval b) w) :
+    Val.lessdef (val_of_aval (longofwords a b)) (Val.longofwords v w) := by
+  cases a <;> cases b <;>
+    simp only [longofwords, val_of_aval, ntop2] <;>
+    try exact Val.lessdef_undef _
+  cases hv
+  cases hw
+  exact Val.lessdef_refl _
+
+private theorem pg_static_addl_lessdef (a b : aval) (v w : val)
+    (hv : Val.lessdef (val_of_aval a) v)
+    (hw : Val.lessdef (val_of_aval b) w) :
+    Val.lessdef (val_of_aval (addl a b)) (Val.addl v w) := by
+  cases a <;> cases b <;>
+    simp only [addl, val_of_aval, ntop2] <;>
+    try exact Val.lessdef_undef _
+  cases hv
+  cases hw
+  exact Val.lessdef_refl _
+
+end CompCert4Lean.Backend.ValueAnalysis
+
+namespace CompCert4Lean.Backend.ValueAnalysis
+
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Backend.ValueDomain
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Builtins
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.Lib.Maps
+
+private theorem pg_static_arg_lessdef
+    (cfg : CompilerConfig) (bc : block_classification) (ge : genv)
+    (rs : regset) (sp : block) (m : mem) (ae : aenv) (rm : romem) (am : amem)
+    (hem : ematch bc rs ae) (hro : romatch bc m rm) (hmm : mmatch bc m am)
+    (hge : genv_match bc ge) (hsp : bc sp = BCstack)
+    (a : builtin_arg reg) (v : val)
+    (heval : eval_builtin_arg (Genv.to_senv ge) (fun r => Regmap.get r rs)
+      (Vptr sp Ptrofs.zero) m a v) :
+    Val.lessdef (val_of_aval (abuiltin_arg cfg ae am rm a)) v := by
+  induction heval with
+  | eval_BA r =>
+      exact val_of_aval_sound bc _ _ (areg_sound bc rs ae r hem)
+  | eval_BA_int n => exact Val.lessdef_refl _
+  | eval_BA_long n => exact Val.lessdef_refl _
+  | eval_BA_float n => exact Val.lessdef_refl _
+  | eval_BA_single n => exact Val.lessdef_refl _
+  | eval_BA_loadstack chunk ofs v hload =>
+      have hl : Mem.load chunk m sp (Ptrofs.unsigned ofs) = some v := by
+        simpa only [Val.offset_ptr, pg_static_ptrofs_zero_add, Mem.loadv] using hload
+      exact val_of_aval_sound bc v _
+        ((hmm.mmatch_stack sp hsp).2 chunk (Ptrofs.unsigned ofs) v hl)
+  | eval_BA_addrstack ofs => exact Val.lessdef_undef _
+  | eval_BA_loadglobal chunk id ofs v hload =>
+      change Mem.loadv chunk m
+        (match Genv.find_symbol ge id with
+          | some b => Vptr b ofs
+          | none => Vundef) = some v at hload
+      cases hf : Genv.find_symbol ge id with
+      | none => simp [hf, Mem.loadv] at hload
+      | some b =>
+          have hl : Mem.load chunk m b (Ptrofs.unsigned ofs) = some v := by
+            simpa only [hf, Mem.loadv] using hload
+          have hb : bc b = BCglob id := (hge.1 id b).mp hf
+          change Val.lessdef (val_of_aval (load cfg chunk rm am (Gl id ofs))) v
+          simp only [load]
+          cases hr : PTree.get id rm with
+          | some ab =>
+              exact val_of_aval_sound bc v _
+                ((hro b id ab hb hr).2.1.2 chunk (Ptrofs.unsigned ofs) v hl)
+          | none =>
+              cases hg : PTree.get id am.am_glob with
+              | some ab =>
+                  exact val_of_aval_sound bc v _
+                    ((hmm.mmatch_glob id ab b hb hg).2 chunk (Ptrofs.unsigned ofs) v hl)
+              | none =>
+                  rw [pg_static_normalize_ifptr]
+                  exact Val.lessdef_undef _
+  | eval_BA_addrglobal id ofs => exact Val.lessdef_undef _
+  | eval_BA_splitlong hi lo vhi vlo _ _ ihhi ihlo =>
+      exact pg_static_longofwords_lessdef _ _ _ _ ihhi ihlo
+  | eval_BA_addptr a1 a2 v1 v2 _ _ ih1 ih2 =>
+      exact pg_static_addl_lessdef _ _ _ _ ih1 ih2
+
+end CompCert4Lean.Backend.ValueAnalysis
+
+namespace CompCert4Lean.Backend.ValueAnalysis
+
+open CompCert4Lean.Backend.ValueDomain
+open CompCert4Lean.Common.Builtins
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Coqlib
+
+theorem eval_static_builtin_function_sound
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    eval_static_builtin_function_soundStatement := by
+  intro cfg bc ge rs sp m ae rm am bf al vl v va hem hro hmm hge hsp heval hstatic hsem
+  have hargs : Val.lessdef_list
+      (List.map val_of_aval (al.map (abuiltin_arg cfg ae am rm))) vl := by
+    clear hstatic hsem
+    induction heval with
+    | nil => exact Val.lessdef_list_nil
+    | cons a w ha _ ih =>
+        exact Val.lessdef_list_cons _ _ _ _
+          (pg_static_arg_lessdef cfg bc ge rs sp m ae rm am hem hro hmm hge hsp a w ha) ih
+  unfold eval_static_builtin_function at hstatic
+  cases hs : builtin_function_sem
+      (binary64_certificate := binary64_certificate)
+      (binary32_certificate := binary32_certificate) bf
+      (List.map val_of_aval (al.map (abuiltin_arg cfg ae am rm))) with
+  | none => simp only [hs] at hstatic; contradiction
+  | some v0 =>
+      simp only [hs] at hstatic
+      obtain ⟨v', hsem', hless⟩ := builtin_function_sem_lessdef
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        bf _ v0 vl hs hargs
+      have hv : v' = v := Option.some.inj (hsem'.symm.trans hsem)
+      subst v'
+      cases hless with
+      | lessdef_refl => exact aval_of_val_sound bc v va hstatic
+      | lessdef_undef => simp [aval_of_val] at hstatic
+
+end CompCert4Lean.Backend.ValueAnalysis

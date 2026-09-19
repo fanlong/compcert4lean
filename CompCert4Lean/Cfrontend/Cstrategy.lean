@@ -3531,3 +3531,15 @@ theorem simple_list_can_eval
     rl
 
 end CompCert4Lean.Cfrontend.Cstrategy
+
+namespace CompCert4Lean.Cfrontend.Cstrategy
+
+theorem decompose_expr
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    decompose_exprStatement := by
+  exact decompose_expr_aux
+    (binary64_certificate := binary64_certificate)
+    (binary32_certificate := binary32_certificate)
+
+end CompCert4Lean.Cfrontend.Cstrategy

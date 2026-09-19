@@ -6809,3 +6809,456 @@ theorem load_cast : load_castStatement := by
 
 end Mem
 end CompCert4Lean.Common.Memory
+namespace CompCert4Lean.Common.Memory
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+namespace Mem
+private theorem load_store_same_decode_undef_replicate (chunk : memory_chunk) :
+    decode_val chunk (List.replicate (size_chunk_nat chunk) Undef) = Vundef := by
+  obtain ⟨n, hn⟩ := size_chunk_nat_pos chunk
+  rw [hn]
+  simp only [List.replicate_succ]
+  exact decode_val_undef _ _
+private theorem load_store_same_check_value_inj (n : Nat) (v : val) (q : quantity) :
+    check_value n v q (inj_value_rec n v q) = true := by
+  induction n with
+  | zero => rfl
+  | succ n ih =>
+      simp only [inj_value_rec, check_value, Bool.and_eq_true]
+      cases hv : Val.eq v v with
+      | left hveq =>
+          cases hq : quantity_eq q q with
+          | left hqq =>
+              exact ⟨⟨⟨by rfl, by rfl⟩, by simp⟩, ih⟩
+          | right hn => exact False.elim (hn rfl)
+      | right hn => exact False.elim (hn rfl)
+private theorem load_store_same_proj_value_inj (v : val) (q : quantity) :
+    proj_value q (inj_value q v) = v := by
+  obtain ⟨n, hn⟩ := size_quantity_nat_pos q
+  unfold inj_value
+  rw [hn]
+  unfold proj_value
+  have hcv : check_value (Nat.succ n) v q
+      (Fragment v q n :: inj_value_rec n v q) = true := by
+    simp only [check_value, Bool.and_eq_true]
+    cases hv : Val.eq v v with
+    | left hveq =>
+        cases hq : quantity_eq q q with
+        | left hqq =>
+            exact ⟨⟨⟨by rfl, by rfl⟩, by simp⟩, load_store_same_check_value_inj n v q⟩
+        | right hn => exact False.elim (hn rfl)
+    | right hn => exact False.elim (hn rfl)
+  simp only [inj_value_rec]
+  have htrue : check_value (size_quantity_nat q) v q
+      (Fragment v q n :: inj_value_rec n v q) = true := by
+    simpa [hn] using hcv
+  by_cases h : check_value (size_quantity_nat q) v q
+      (Fragment v q n :: inj_value_rec n v q) = true
+  · simp [h]
+  · exact False.elim (h htrue)
+private theorem load_store_same_frag (chunk : memory_chunk) (v : val) (q : quantity)
+    (hq : q = quantity_chunk chunk)
+    (hc : chunk = Many32 ∨ chunk = Many64) :
+    decode_val chunk (inj_value q v) = Val.load_result chunk v := by
+  have hnone : ∀ (q : quantity) (v : val), proj_bytes (inj_value q v) = none := by
+    intro q v
+    obtain ⟨n, hn⟩ := size_quantity_nat_pos q
+    rw [inj_value, hn]
+    rfl
+  rw [hq]
+  unfold decode_val
+  rw [hnone (quantity_chunk chunk) v]
+  cases hc with
+  | inl h =>
+      subst chunk
+      change Val.load_result Many32 (proj_value Q32 (inj_value Q32 v)) =
+        Val.load_result Many32 v
+      rw [load_store_same_proj_value_inj]
+  | inr h =>
+      subst chunk
+      change Val.load_result Many64 (proj_value Q64 (inj_value Q64 v)) =
+        Val.load_result Many64 v
+      rw [load_store_same_proj_value_inj]
+private theorem load_store_same_ptr32 (b : CompCert4Lean.Common.Values.block) (ofs : _) :
+    decode_val Mint32 (encode_val Mint32 (Vptr b ofs)) =
+      Val.load_result Mint32 (Vptr b ofs) := by
+  by_cases hp : CompCert4Lean.X86_64.Archi.ptr64 = true
+  · simp [encode_val, hp, decode_val, proj_bytes, Val.load_result]
+  · simp [encode_val, hp]
+    unfold decode_val
+    have hnone : proj_bytes (inj_value Q32 (Vptr b ofs)) = none := by
+      obtain ⟨n, hn⟩ := size_quantity_nat_pos Q32
+      rw [inj_value, hn]
+      rfl
+    rw [hnone]
+    rw [load_store_same_proj_value_inj]
+    simp [hp, Val.load_result]
+private theorem load_store_same_ptr64 (b : CompCert4Lean.Common.Values.block) (ofs : _) :
+    decode_val Mint64 (encode_val Mint64 (Vptr b ofs)) =
+      Val.load_result Mint64 (Vptr b ofs) := by
+  by_cases hp : CompCert4Lean.X86_64.Archi.ptr64 = true
+  · simp [encode_val, hp]
+    unfold decode_val
+    have hnone : proj_bytes (inj_value Q64 (Vptr b ofs)) = none := by
+      obtain ⟨n, hn⟩ := size_quantity_nat_pos Q64
+      rw [inj_value, hn]
+      rfl
+    rw [hnone]
+    rw [load_store_same_proj_value_inj]
+    simp [hp, Val.load_result]
+  · simp [encode_val, hp, decode_val, proj_bytes, Val.load_result]
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.Lib.Integers.WordCore
+private theorem load_store_same_repr_pos (bits : Nat) (p : positive) :
+    intOfZ (WordCore.unsigned (WordCore.repr bits (Zpos p))) =
+      (posToNat p % (2 ^ bits) : Nat) := by
+  change intOfZ (ZArith.BinInt.Z.of_nat _) = _
+  rw [ZArith.BinInt.Z.of_nat, intOfZ_zOfInt]
+  apply congrArg Int.ofNat
+  change _ % (2 ^ bits) = posToNat p % (2 ^ bits)
+  congr 1
+  induction p with
+  | xH => rfl
+  | xI p ih => change 2 * _ + 1 = 2 * _ + 1; rw [ih]
+  | xO p ih => change 2 * _ = 2 * _; rw [ih]
+
+private theorem load_store_same_repr_nonneg (bits : Nat) (z : Z)
+    (hz : 0 ≤ intOfZ z) :
+    intOfZ (WordCore.unsigned (WordCore.repr bits z)) =
+      intOfZ z % (2 : Int) ^ bits := by
+  cases z with
+  | Z0 => change (0 : Int) = 0 % (2 : Int) ^ bits; simp
+  | Zpos p =>
+      rw [load_store_same_repr_pos]
+      simp only [intOfZ, Int.natCast_emod, Int.natCast_pow]
+      rfl
+  | Zneg p =>
+      have hp := posToNat_positive p
+      change 0 ≤ -(Int.ofNat (posToNat p)) at hz
+      simp only [Int.ofNat_eq_natCast] at hz
+      omega
+
+private theorem load_store_same_div256 (z : Z) :
+    intOfZ (ZArith.BinInt.Z.div z (zOfNat 256)) = intOfZ z / 256 := by
+  unfold ZArith.BinInt.Z.div
+  rw [intOfZ_zOfInt]
+  rfl
+
+private theorem load_store_same_bytes_step (n : Nat) (z : Z) (hz : 0 ≤ intOfZ z) :
+    intOfZ (int_of_bytes (bytes_of_int (n + 1) z)) =
+      intOfZ z % 256 +
+        intOfZ (int_of_bytes (bytes_of_int n
+          (ZArith.BinInt.Z.div z (zOfNat 256)))) * 256 := by
+  simp only [bytes_of_int, int_of_bytes, ZArith.BinInt.Z.add,
+    ZArith.BinInt.Z.mul, intOfZ_zOfInt]
+  change intOfZ (CompCert4Lean.Lib.Integers.Byte.unsigned (CompCert4Lean.Lib.Integers.Byte.repr z)) +
+    intOfZ (int_of_bytes (bytes_of_int n (ZArith.BinInt.Z.div z (zOfNat 256)))) * 256 = _
+  rw [show intOfZ (CompCert4Lean.Lib.Integers.Byte.unsigned (CompCert4Lean.Lib.Integers.Byte.repr z)) = intOfZ z % 256 from
+    load_store_same_repr_nonneg 8 z hz]
+
+private theorem load_store_same_bytes_bounded (n : Nat) (z : Z)
+    (hz : 0 ≤ intOfZ z) (hbound : intOfZ z < (256 : Int) ^ n) :
+    intOfZ (int_of_bytes (bytes_of_int n z)) = intOfZ z := by
+  induction n generalizing z with
+  | zero =>
+      change (0 : Int) = intOfZ z
+      simp only [Int.pow_zero] at hbound
+      omega
+  | succ n ih =>
+      rw [load_store_same_bytes_step n z hz]
+      rw [ih]
+      · rw [load_store_same_div256]
+        exact Int.emod_add_ediv_mul _ _
+      · rw [load_store_same_div256]
+        omega
+      · rw [load_store_same_div256]
+        rw [Int.pow_succ] at hbound
+        omega
+
+private theorem load_store_same_proj_bytes (bl : List CompCert4Lean.Lib.Integers.byte) :
+    proj_bytes (inj_bytes bl) = some bl := by
+  induction bl with
+  | nil => rfl
+  | cons b bl ih =>
+      change (match proj_bytes (inj_bytes bl) with
+        | none => none | some l => some (b :: l)) = some (b :: bl)
+      rw [ih]
+
+private theorem load_store_same_word_nonneg {bits : Nat} (w : WordCore.Word bits) :
+    0 ≤ intOfZ (WordCore.unsigned w) := by
+  have h := w.intrange.1
+  change (-1 : Int) < intOfZ (WordCore.unsigned w) at h
+  omega
+
+private theorem load_store_same_decode_word (bits n : Nat) (w : WordCore.Word bits)
+    (hbound : intOfZ (WordCore.unsigned w) < (256 : Int) ^ n)
+    (hbound' : intOfZ (WordCore.unsigned w) < (2 : Int) ^ bits) :
+    WordCore.repr bits (decode_int (encode_int n (WordCore.unsigned w))) = w := by
+  have hn := load_store_same_word_nonneg w
+  have hdec : decode_int (encode_int n (WordCore.unsigned w)) = WordCore.unsigned w := by
+    apply intOfZ_injective
+    exact load_store_same_bytes_bounded n _ hn hbound
+  rw [hdec]
+  apply WordCore.ext
+  apply intOfZ_injective
+  change intOfZ (WordCore.unsigned (WordCore.repr bits (WordCore.unsigned w))) = _
+  rw [load_store_same_repr_nonneg bits _ hn]
+  exact Int.emod_eq_of_lt hn hbound'
+
+private theorem load_store_same_decode_int32 (w : int) :
+    CompCert4Lean.Lib.Integers.Int.repr (decode_int (encode_int 4 (Int.unsigned w))) = w := by
+  apply load_store_same_decode_word 32 4 w
+  all_goals exact w.intrange.2
+
+private theorem load_store_same_decode_int64 (w : int64) :
+    Int64.repr (decode_int (encode_int 8 (Int64.unsigned w))) = w := by
+  apply load_store_same_decode_word 64 8 w
+  all_goals exact w.intrange.2
+
+private theorem load_store_same_decode_byte (z : Z) (hz : 0 ≤ intOfZ z) :
+    intOfZ (decode_int (encode_int 1 z)) = intOfZ z % 256 := by
+  change intOfZ (int_of_bytes (bytes_of_int (0 + 1) z)) = _
+  rw [load_store_same_bytes_step 0 z hz]
+  change intOfZ z % 256 + 0 * 256 = _
+  omega
+
+private theorem load_store_same_decode_short (z : Z) (hz : 0 ≤ intOfZ z) :
+    intOfZ (decode_int (encode_int 2 z)) = intOfZ z % 65536 := by
+  change intOfZ (int_of_bytes (bytes_of_int (1 + 1) z)) = _
+  rw [load_store_same_bytes_step 1 z hz]
+  have hd : 0 ≤ intOfZ (ZArith.BinInt.Z.div z (zOfNat 256)) := by
+    rw [load_store_same_div256]
+    omega
+  rw [load_store_same_bytes_step 0 _ hd, load_store_same_div256]
+  change intOfZ z % 256 + (intOfZ z / 256 % 256 + 0 * 256) * 256 = _
+  omega
+
+private theorem load_store_same_zero_ext8 (w : int) :
+    Int.zero_ext (zOfNat 8) (CompCert4Lean.Lib.Integers.Int.repr (decode_int (encode_int 1 (Int.unsigned w)))) =
+      Int.zero_ext (zOfNat 8) w := by
+  have hn := load_store_same_word_nonneg w
+  have hd := load_store_same_decode_byte (Int.unsigned w) hn
+  have hdn : 0 ≤ intOfZ (decode_int (encode_int 1 (Int.unsigned w))) := by
+    rw [hd]
+    omega
+  apply WordCore.ext
+  change Int.unsigned (Int.zero_ext (zOfNat 8) _) = Int.unsigned (Int.zero_ext (zOfNat 8) w)
+  rw [Int.zero_ext_mod_proof_api _ _ (by change (0 : Int) ≤ 8 ∧ (8 : Int) < 32; omega),
+    Int.zero_ext_mod_proof_api _ _ (by change (0 : Int) ≤ 8 ∧ (8 : Int) < 32; omega)]
+  apply intOfZ_injective
+  simp only [ZArith.BinInt.Z.modulo, intOfZ_zOfInt]
+  change intOfZ (Int.unsigned (CompCert4Lean.Lib.Integers.Int.repr (decode_int (encode_int 1 (Int.unsigned w))))) % 256 =
+    intOfZ (Int.unsigned w) % 256
+  change intOfZ (WordCore.unsigned (WordCore.repr 32 _)) % _ = _
+  rw [load_store_same_repr_nonneg 32 _ hdn, hd]
+  omega
+
+private theorem load_store_same_zero_ext16 (w : int) :
+    Int.zero_ext (zOfNat 16) (CompCert4Lean.Lib.Integers.Int.repr (decode_int (encode_int 2 (Int.unsigned w)))) =
+      Int.zero_ext (zOfNat 16) w := by
+  have hn := load_store_same_word_nonneg w
+  have hd := load_store_same_decode_short (Int.unsigned w) hn
+  have hdn : 0 ≤ intOfZ (decode_int (encode_int 2 (Int.unsigned w))) := by
+    rw [hd]
+    omega
+  apply WordCore.ext
+  change Int.unsigned (Int.zero_ext (zOfNat 16) _) = Int.unsigned (Int.zero_ext (zOfNat 16) w)
+  rw [Int.zero_ext_mod_proof_api _ _ (by change (0 : Int) ≤ 16 ∧ (16 : Int) < 32; omega),
+    Int.zero_ext_mod_proof_api _ _ (by change (0 : Int) ≤ 16 ∧ (16 : Int) < 32; omega)]
+  apply intOfZ_injective
+  simp only [ZArith.BinInt.Z.modulo, intOfZ_zOfInt]
+  change intOfZ (Int.unsigned (CompCert4Lean.Lib.Integers.Int.repr (decode_int (encode_int 2 (Int.unsigned w))))) % 65536 =
+    intOfZ (Int.unsigned w) % 65536
+  change intOfZ (WordCore.unsigned (WordCore.repr 32 _)) % _ = _
+  rw [load_store_same_repr_nonneg 32 _ hdn, hd]
+  omega
+
+private theorem load_store_same_decode_int8_val (w : int) :
+    decode_val Mint8unsigned (encode_val Mint8unsigned (Vint w)) =
+      Val.zero_ext (zOfNat 8) (Vint w) := by
+  simp only [encode_val, decode_val, load_store_same_proj_bytes]
+  exact congrArg Vint (load_store_same_zero_ext8 w)
+
+private theorem load_store_same_decode_int16_val (w : int) :
+    decode_val Mint16unsigned (encode_val Mint16unsigned (Vint w)) =
+      Val.zero_ext (zOfNat 16) (Vint w) := by
+  simp only [encode_val, decode_val, load_store_same_proj_bytes]
+  exact congrArg Vint (load_store_same_zero_ext16 w)
+
+private theorem load_store_same_decode_int32_val (w : int) :
+    decode_val Mint32 (encode_val Mint32 (Vint w)) = Vint w := by
+  simp only [encode_val, decode_val, load_store_same_proj_bytes]
+  exact congrArg Vint (load_store_same_decode_int32 w)
+
+private theorem load_store_same_decode_int64_val (w : int64) :
+    decode_val Mint64 (encode_val Mint64 (Vlong w)) = Vlong w := by
+  simp only [encode_val, decode_val, load_store_same_proj_bytes]
+  exact congrArg Vlong (load_store_same_decode_int64 w)
+
+private theorem load_store_same_decode_float32_val (w : CompCert4Lean.Lib.Floats.float32) :
+    decode_val Mfloat32 (encode_val Mfloat32 (Vsingle w)) = Vsingle w := by
+  simp only [encode_val, decode_val, load_store_same_proj_bytes]
+  change Vsingle (CompCert4Lean.Lib.Floats.Float32.of_bits (CompCert4Lean.Lib.Integers.Int.repr
+    (decode_int (encode_int 4 (Int.unsigned (CompCert4Lean.Lib.Floats.Float32.to_bits w)))))) = _
+  rw [load_store_same_decode_int32, CompCert4Lean.Lib.Floats.Float32.of_to_bits]
+
+private theorem load_store_same_decode_float64_val (w : CompCert4Lean.Lib.Floats.float) :
+    decode_val Mfloat64 (encode_val Mfloat64 (Vfloat w)) = Vfloat w := by
+  simp only [encode_val, decode_val, load_store_same_proj_bytes]
+  change Vfloat (CompCert4Lean.Lib.Floats.Float.of_bits (Int64.repr
+    (decode_int (encode_int 8 (Int64.unsigned (CompCert4Lean.Lib.Floats.Float.to_bits w)))))) = _
+  rw [load_store_same_decode_int64, CompCert4Lean.Lib.Floats.Float.of_to_bits]
+
+private def load_store_same_private_integer_name (suffix : String) : Lean.Name :=
+  let p := Lean.Name.str
+    (Lean.Name.str
+      (Lean.Name.str
+        (Lean.Name.str Lean.Name.anonymous "_private") "CompCert4Lean") "Lib")
+    "Integers"
+  let p := Lean.Name.num p 0
+  suffix.splitOn "." |>.foldl Lean.Name.str p
+
+private def load_store_same_simp_private (suffixes : List String) :
+    Lean.Elab.Tactic.TacticM Unit := do
+  let mut ts : Lean.Meta.SimpTheorems := {}
+  for suffix in suffixes do
+    let eqs ← Lean.Meta.getEqnsFor? (load_store_same_private_integer_name suffix)
+    match eqs with
+    | some eqs =>
+        for eqn in eqs do
+          let xs ← Lean.Meta.mkSimpTheoremFromConst eqn
+          for x in xs do ts := ts.addSimpTheorem x
+    | none => pure ()
+  let ctx ← Lean.Meta.Simp.mkContext {} #[ts]
+  let g ← Lean.Elab.Tactic.getMainGoal
+  let (r, _) ← Lean.Meta.simpGoal g ctx
+  match r with
+  | none => Lean.Elab.Tactic.replaceMainGoal []
+  | some (_, g') => Lean.Elab.Tactic.replaceMainGoal [g']
+
+private theorem load_store_same_zero_ext_bit (n : Z) (x : int) (j : Z)
+    (hj0 : 0 ≤ intOfZ j) (hjn : intOfZ j < intOfZ n) :
+    Int.testbit (Int.zero_ext n x) j = Int.testbit x j := by
+  rw [Int.bits_zero_ext_proof n x j hj0]
+  run_tac load_store_same_simp_private ["CompCert4Lean.Lib.Integers.zltSelect"]
+  cases hs : CompCert4Lean.Lib.Coqlib.zlt j n with
+  | left _ =>
+      run_tac load_store_same_simp_private ["CompCert4Lean.Lib.Integers.sumboolSelect"]
+      rfl
+  | right hge =>
+      change intOfZ n ≤ intOfZ j at hge
+      omega
+
+private theorem load_store_same_sign_ext_congr (n : Z) (x y : int)
+    (hn : 0 < intOfZ n) (hzero : Int.zero_ext n x = Int.zero_ext n y) :
+    Int.sign_ext n x = Int.sign_ext n y := by
+  have hlow (j : Z) (hj0 : 0 ≤ intOfZ j) (hjn : intOfZ j < intOfZ n) :
+      Int.testbit x j = Int.testbit y j := by
+    rw [← load_store_same_zero_ext_bit n x j hj0 hjn, hzero,
+      load_store_same_zero_ext_bit n y j hj0 hjn]
+  apply Int.same_bits_eq_proof
+  intro i hi
+  rw [Int.bits_sign_ext_proof n x i hi, Int.bits_sign_ext_proof n y i hi]
+  run_tac load_store_same_simp_private ["CompCert4Lean.Lib.Integers.zltSelect"]
+  cases hs : CompCert4Lean.Lib.Coqlib.zlt i n with
+  | left hlt =>
+      run_tac load_store_same_simp_private ["CompCert4Lean.Lib.Integers.sumboolSelect"]
+      exact hlow i hi.1 hlt
+  | right _ =>
+      run_tac load_store_same_simp_private ["CompCert4Lean.Lib.Integers.sumboolSelect",
+        "CompCert4Lean.Lib.Integers.zSub", "CompCert4Lean.Lib.Integers.zOne"]
+      have hsub : intOfZ (zSub n z1) = intOfZ n - 1 := by
+        change intOfZ (zOfInt (intOfZ n - 1)) = _
+        rw [intOfZ_zOfInt]
+      exact hlow (zSub n z1) (by rw [hsub]; omega) (by rw [hsub]; omega)
+
+private theorem load_store_same_decode_id (v : val) (chunk : memory_chunk) :
+    decode_val chunk (encode_val chunk v) = Val.load_result chunk v := by
+  cases v with
+  | Vundef =>
+      cases chunk with
+      | Mbool | Mint8signed | Mint8unsigned | Mint16signed | Mint16unsigned |
+        Mint32 | Mint64 | Mfloat32 | Mfloat64 =>
+          exact load_store_same_decode_undef_replicate _
+      | Many32 => exact load_store_same_frag Many32 Vundef Q32 rfl (Or.inl rfl)
+      | Many64 => exact load_store_same_frag Many64 Vundef Q64 rfl (Or.inr rfl)
+  | Vint n =>
+      cases chunk with
+      | Mbool =>
+          simp only [encode_val, decode_val, load_store_same_proj_bytes]
+          simp only [Val.load_result]
+          change Val.norm_bool (Vint
+            (CompCert4Lean.Lib.Integers.Int.zero_ext
+              (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 8)
+              (CompCert4Lean.Lib.Integers.Int.repr
+                (decode_int (encode_int 1 (CompCert4Lean.Lib.Integers.Int.unsigned n)))))) =
+            Val.norm_bool (Vint
+              (CompCert4Lean.Lib.Integers.Int.zero_ext
+                (CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.of_nat 8) n))
+          rw [load_store_same_zero_ext8 n]
+      | Mint8signed =>
+          simp only [encode_val, decode_val, load_store_same_proj_bytes]
+          exact congrArg Vint (load_store_same_sign_ext_congr (zOfNat 8) _ _
+            (by decide) (load_store_same_zero_ext8 n))
+      | Mint8unsigned => exact load_store_same_decode_int8_val n
+      | Mint16signed =>
+          simp only [encode_val, decode_val, load_store_same_proj_bytes]
+          exact congrArg Vint (load_store_same_sign_ext_congr (zOfNat 16) _ _
+            (by decide) (load_store_same_zero_ext16 n))
+      | Mint16unsigned => exact load_store_same_decode_int16_val n
+      | Mint32 => exact load_store_same_decode_int32_val n
+      | Mint64 | Mfloat32 | Mfloat64 => exact load_store_same_decode_undef_replicate _
+      | Many32 => exact load_store_same_frag Many32 (Vint n) Q32 rfl (Or.inl rfl)
+      | Many64 => exact load_store_same_frag Many64 (Vint n) Q64 rfl (Or.inr rfl)
+  | Vlong n =>
+      cases chunk with
+      | Mbool | Mint8signed | Mint8unsigned | Mint16signed | Mint16unsigned |
+        Mint32 | Mfloat32 | Mfloat64 => exact load_store_same_decode_undef_replicate _
+      | Mint64 => exact load_store_same_decode_int64_val n
+      | Many32 => exact load_store_same_frag Many32 (Vlong n) Q32 rfl (Or.inl rfl)
+      | Many64 => exact load_store_same_frag Many64 (Vlong n) Q64 rfl (Or.inr rfl)
+  | Vfloat f =>
+      cases chunk with
+      | Mbool | Mint8signed | Mint8unsigned | Mint16signed | Mint16unsigned |
+        Mint32 | Mint64 | Mfloat32 => exact load_store_same_decode_undef_replicate _
+      | Mfloat64 => exact load_store_same_decode_float64_val f
+      | Many32 => exact load_store_same_frag Many32 (Vfloat f) Q32 rfl (Or.inl rfl)
+      | Many64 => exact load_store_same_frag Many64 (Vfloat f) Q64 rfl (Or.inr rfl)
+  | Vsingle f =>
+      cases chunk with
+      | Mbool | Mint8signed | Mint8unsigned | Mint16signed | Mint16unsigned |
+        Mint32 | Mint64 | Mfloat64 => exact load_store_same_decode_undef_replicate _
+      | Mfloat32 => exact load_store_same_decode_float32_val f
+      | Many32 => exact load_store_same_frag Many32 (Vsingle f) Q32 rfl (Or.inl rfl)
+      | Many64 => exact load_store_same_frag Many64 (Vsingle f) Q64 rfl (Or.inr rfl)
+  | Vptr b ofs =>
+      cases chunk with
+      | Mbool | Mint8signed | Mint8unsigned | Mint16signed | Mint16unsigned |
+        Mfloat32 | Mfloat64 => exact load_store_same_decode_undef_replicate _
+      | Mint32 => exact load_store_same_ptr32 b ofs
+      | Mint64 => exact load_store_same_ptr64 b ofs
+      | Many32 => exact load_store_same_frag Many32 (Vptr b ofs) Q32 rfl (Or.inl rfl)
+      | Many64 => exact load_store_same_frag Many64 (Vptr b ofs) Q64 rfl (Or.inr rfl)
+
+theorem load_store_same : load_store_sameStatement := by
+  intro chunk m1 b ofs v m2 hstore
+  have hv : valid_access m2 chunk b ofs Readable := by
+    apply store_valid_access_1 chunk m1 b ofs v m2 hstore chunk b ofs Readable
+    exact valid_access_implies m1 chunk b ofs Writable Readable
+      (store_valid_access_3 chunk m1 b ofs v m2 hstore) perm_W_R
+  unfold load
+  cases hdec : valid_access_dec m2 chunk b ofs Readable with
+  | right hn => exact False.elim (hn hv)
+  | left hp =>
+      simp only [boolOfSumbool, Bool.true_eq, if_true]
+      rw [store_mem_contents chunk m1 b ofs v m2 hstore, pmapGetSetSame]
+      rw [← CompCert4Lean.Common.Memdata.encode_val_length chunk v, getN_setN_same]
+      exact congrArg some (load_store_same_decode_id v chunk)
+
+end Mem
+end CompCert4Lean.Common.Memory

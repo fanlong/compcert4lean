@@ -2956,3 +2956,155 @@ private theorem scc085_store_injection_transport
       refine ⟨m2', ?_, ?_⟩
       · simpa [Mem.storev, hofs, haddr] using hstore2
       · exact ⟨hinjFinal, hP', hdisj'⟩
+
+theorem alloc_parallel_rule : alloc_parallel_ruleStatement := by
+  intro m1 sz1 m1' b1 m2 sz2 m2' b2 P j lo hi delta
+    hsep halloc1 halloc2 hdiv hlo hhi hsz2 hdelta hhisz
+  let j' := scc085_extend_inj j b1 b2 delta
+  have hinj0 : Mem.inject j m1 m2 := hsep.1
+  have hP0 : P.m_pred m2 := hsep.2.1
+  have hfresh1 : ¬ Mem.valid_block m1 b1 := by
+    intro hv
+    rw [scc085_alloc_fresh m1 z0 sz1 m1' b1 halloc1] at hv
+    exact (Plt_ne _ _ hv) rfl
+  have hfresh2 : ¬ Mem.valid_block m2 b2 := by
+    intro hv
+    rw [scc085_alloc_fresh m2 z0 sz2 m2' b2 halloc2] at hv
+    exact (Plt_ne _ _ hv) rfl
+  have hjnone : j b1 = none := hinj0.mi_freeblocks b1 hfresh1
+  have hincr : CompCert4Lean.Common.Values.inject_incr j j' := by
+    intro b bt d hmap
+    by_cases hb : b = b1
+    · subst b
+      rw [hjnone] at hmap
+      cases hmap
+    · change scc085_extend_inj j b1 b2 delta b = some (bt, d)
+      rw [scc085_extend_inj_other j b1 b2 delta b hb]
+      exact hmap
+  have hinj' : Mem.inject j' m1' m2' :=
+    scc085_alloc_mapped_inject j m1 m2 m1' m2' sz1 sz2 b1 b2 hi delta
+      hinj0 halloc1 halloc2 hdiv hhi hsz2.2 hdelta hhisz
+  have hP' : P.m_pred m2' := by
+    apply P.m_invar m2 m2' hP0
+    exact scc085_alloc_unchanged_on P.m_footprint m2 z0 sz2 m2' b2 halloc2
+  have hPNoFresh : ∀ ofs, P.m_footprint b2 ofs → False := by
+    intro ofs hPfoot
+    exact hfresh2 (P.m_valid m2 b2 ofs hP0 hPfoot)
+  have hminP : disjoint_footprint (minjection j' m1') P := by
+    intro b ofs hmin hPfoot
+    rcases hmin with ⟨src, d, hmap, hp⟩
+    by_cases hs : src = b1
+    · subst src
+      have hnew : j' b1 = some (b2, delta) :=
+        scc085_extend_inj_same j b1 b2 delta
+      rw [hnew] at hmap
+      cases hmap
+      exact hPNoFresh ofs hPfoot
+    · change scc085_extend_inj j b1 b2 delta src = some (b, d) at hmap
+      rw [scc085_extend_inj_other j b1 b2 delta src hs] at hmap
+      apply hsep.2.2 b ofs
+      · refine ⟨src, d, hmap, ?_⟩
+        exact scc085_alloc_perm_old_inv m1 z0 sz1 m1' b1 halloc1
+          src (zSub ofs d) Max Nonempty hs hp
+      · exact hPfoot
+  have hmaxNonneg : (0 : Int) ≤ intOfZ (zMax z0 sz1) := by
+    by_cases hs : (0 : Int) ≤ intOfZ sz1 <;>
+      simp [ZArith.BinInt.Z.max, (show intOfZ z0 = (0 : Int) by rfl), hs]
+  have hlohi : zLe lo hi := by
+    have hloInt : intOfZ lo = intOfZ delta := congrArg intOfZ hlo
+    have hhiInt : intOfZ hi = intOfZ delta + intOfZ (zMax z0 sz1) := by
+      rw [hhi]
+      change intOfZ (zOfInt (intOfZ delta + intOfZ (zMax z0 sz1))) = _
+      rw [intOfZ_zOfInt]
+    change intOfZ lo ≤ intOfZ hi
+    omega
+  have hhiNonneg : zLe z0 hi := by
+    have hhiInt : intOfZ hi = intOfZ delta + intOfZ (zMax z0 sz1) := by
+      rw [hhi]
+      change intOfZ (zOfInt (intOfZ delta + intOfZ (zMax z0 sz1))) = _
+      rw [intOfZ_zOfInt]
+    change (0 : Int) ≤ intOfZ delta at hdelta
+    change (0 : Int) ≤ intOfZ hi
+    omega
+  have hszmod : zLe sz2 CompCert4Lean.Lib.Integers.Ptrofs.modulus := by
+    have h := hsz2.2
+    unfold CompCert4Lean.Lib.Integers.Ptrofs.max_unsigned at h
+    change intOfZ sz2 ≤
+      intOfZ CompCert4Lean.Lib.Integers.Ptrofs.modulus - 1 at h
+    change intOfZ sz2 ≤ intOfZ CompCert4Lean.Lib.Integers.Ptrofs.modulus
+    omega
+  have hloMod : zLe lo CompCert4Lean.Lib.Integers.Ptrofs.modulus := by
+    change intOfZ lo ≤ intOfZ CompCert4Lean.Lib.Integers.Ptrofs.modulus
+    change intOfZ lo ≤ intOfZ hi at hlohi
+    change intOfZ hi ≤ intOfZ sz2 at hhisz
+    change intOfZ sz2 ≤ intOfZ CompCert4Lean.Lib.Integers.Ptrofs.modulus at hszmod
+    omega
+  have hRangeLo : (range b2 z0 lo).m_pred m2' := by
+    refine ⟨by exact Int.le_refl _, hloMod, ?_⟩
+    intro i k p hibounds
+    have hiSz : zLt i sz2 := by
+      change intOfZ i < intOfZ sz2
+      have hiLo := hibounds.2
+      change intOfZ i < intOfZ lo at hiLo
+      change intOfZ lo ≤ intOfZ hi at hlohi
+      change intOfZ hi ≤ intOfZ sz2 at hhisz
+      omega
+    exact scc085_perm_of_freeable
+      (scc085_alloc_perm_new m2 z0 sz2 m2' b2 halloc2 i k
+        ⟨hibounds.1, hiSz⟩)
+  have hRangeHi : (range b2 hi sz2).m_pred m2' := by
+    refine ⟨hhiNonneg, hszmod, ?_⟩
+    intro i k p hibounds
+    have hi0 : zLe z0 i := by
+      change (0 : Int) ≤ intOfZ i
+      change (0 : Int) ≤ intOfZ hi at hhiNonneg
+      have hboundLo := hibounds.1
+      change intOfZ hi ≤ intOfZ i at hboundLo
+      omega
+    exact scc085_perm_of_freeable
+      (scc085_alloc_perm_new m2 z0 sz2 m2' b2 halloc2 i k
+        ⟨hi0, hibounds.2⟩)
+  have hRangeHiInner : disjoint_footprint (range b2 hi sz2)
+      (sepconj (minjection j' m1') P) := by
+    intro b ofs hr hinner
+    cases hinner with
+    | inl hmin =>
+        have hc := scc085_minjection_central j m1 m2 m1' m2' sz1 sz2 b1 b2
+          lo hi delta hinj0 halloc1 halloc2 hlo hhi b ofs hmin hr.1
+        have hrLo := hr.2.1
+        have hcHi := hc.2
+        change intOfZ hi ≤ intOfZ ofs at hrLo
+        change intOfZ ofs < intOfZ hi at hcHi
+        omega
+    | inr hPfoot =>
+        rw [hr.1] at hPfoot
+        exact hPNoFresh ofs hPfoot
+  have hRangeLoRest : disjoint_footprint (range b2 z0 lo)
+      (sepconj (range b2 hi sz2) (sepconj (minjection j' m1') P)) := by
+    intro b ofs hr hrest
+    cases hrest with
+    | inl hhiFoot =>
+        have hrHi := hr.2.2
+        have hhiLo := hhiFoot.2.1
+        change intOfZ ofs < intOfZ lo at hrHi
+        change intOfZ hi ≤ intOfZ ofs at hhiLo
+        change intOfZ lo ≤ intOfZ hi at hlohi
+        omega
+    | inr hinner =>
+        cases hinner with
+        | inl hmin =>
+            have hc := scc085_minjection_central j m1 m2 m1' m2' sz1 sz2 b1 b2
+              lo hi delta hinj0 halloc1 halloc2 hlo hhi b ofs hmin hr.1
+            have hrHi := hr.2.2
+            have hcLo := hc.1
+            change intOfZ ofs < intOfZ lo at hrHi
+            change intOfZ lo ≤ intOfZ ofs at hcLo
+            omega
+        | inr hPfoot =>
+            rw [hr.1] at hPfoot
+            exact hPNoFresh ofs hPfoot
+  refine ⟨j', ?_, hincr, scc085_extend_inj_same j b1 b2 delta, ?_⟩
+  · exact ⟨hRangeLo, ⟨hRangeHi, ⟨hinj', hP', hminP⟩, hRangeHiInner⟩,
+      hRangeLoRest⟩
+  · intro b hb
+    exact scc085_extend_inj_other j b1 b2 delta b hb

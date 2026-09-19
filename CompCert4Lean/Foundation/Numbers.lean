@@ -5573,3 +5573,63 @@ theorem ZArith.Zorder.Zmult_lt_compat2 :
 
 end Rocq.Coq
 end CompCert4Lean.Foundation.Numbers
+
+namespace CompCert4Lean.Foundation.Numbers
+namespace Rocq.Coq
+
+private theorem zpower_nat_int_worker (z : Z) (n : Nat) :
+    intOfZ (ZArith.Zpower.Zpower_nat z n) = (intOfZ z) ^ n := by
+  change intOfZ (ZArith.BinInt.Z.pow z (ZArith.BinInt.Z.of_nat n)) = _
+  unfold ZArith.BinInt.Z.pow ZArith.BinInt.Z.of_nat
+  rw [intOfZ_zOfInt]
+  split
+  · next h => exact False.elim ((Int.not_lt_of_ge (Int.natCast_nonneg _)) h)
+  · next h =>
+      change intOfZ (zOfInt ((intOfZ z).pow n)) = (intOfZ z) ^ n
+      exact intOfZ_zOfInt _
+
+private theorem zpower_nonneg_int_worker (x e : Z)
+    (he : (0 : Int) ≤ intOfZ e) :
+    intOfZ (ZArith.BinInt.Z.pow x e) =
+      (intOfZ x) ^ Int.toNat (intOfZ e) := by
+  unfold ZArith.BinInt.Z.pow
+  simp only [Int.not_lt_of_ge he, ↓reduceIte, intOfZ_zOfInt]
+  rfl
+
+theorem ZArith.Zpower.Zpower_nat_Z :
+    ZArith.Zpower.Zpower_nat_ZStatement := by
+  intro z n
+  rfl
+
+theorem ZArith.Zpower.Zpower_nat_is_exp :
+    ZArith.Zpower.Zpower_nat_is_expStatement := by
+  intro n m z
+  apply intOfZ_injective
+  simp only [ZArith.BinInt.Z.mul, intOfZ_zOfInt, zpower_nat_int_worker]
+  exact Int.pow_add (intOfZ z) n m
+
+theorem ZArith.Zpower.Zpower_pos_nat :
+    ZArith.Zpower.Zpower_pos_natStatement := by
+  intro z p
+  apply intOfZ_injective
+  simp only [ZArith.BinInt.Z.pow_pos, intOfZ_zOfInt, zpower_nat_int_worker]
+  rfl
+
+theorem ZArith.Zpower.Zpower_exp :
+    ZArith.Zpower.Zpower_expStatement := by
+  intro x n m hn hm
+  change (0 : Int) ≤ intOfZ n at hn
+  change (0 : Int) ≤ intOfZ m at hm
+  have hsum : (0 : Int) ≤ intOfZ (ZArith.BinInt.Z.add n m) := by
+    simp only [ZArith.BinInt.Z.add, intOfZ_zOfInt]
+    omega
+  apply intOfZ_injective
+  simp only [ZArith.BinInt.Z.mul, intOfZ_zOfInt]
+  rw [zpower_nonneg_int_worker x (ZArith.BinInt.Z.add n m) hsum,
+    zpower_nonneg_int_worker x n hn, zpower_nonneg_int_worker x m hm]
+  rw [show intOfZ (ZArith.BinInt.Z.add n m) = intOfZ n + intOfZ m by
+    simp only [ZArith.BinInt.Z.add, intOfZ_zOfInt],
+    Int.toNat_add hn hm, Int.pow_add]
+
+end Rocq.Coq
+end CompCert4Lean.Foundation.Numbers

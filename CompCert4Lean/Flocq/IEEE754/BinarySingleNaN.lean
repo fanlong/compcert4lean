@@ -3528,3 +3528,14 @@ theorem bounded_canonical_lt_emax :
     ⟩
 
 end CompCert4Lean.Flocq.IEEE754.BinarySingleNaN
+
+namespace CompCert4Lean.Flocq.IEEE754.BinarySingleNaN
+
+theorem loc_of_shr_record_of_loc :
+    loc_of_shr_record_of_locStatement := by
+  intro m l
+  cases l with
+  | loc_Exact => rfl
+  | loc_Inexact c => cases c <;> rfl
+
+end CompCert4Lean.Flocq.IEEE754.BinarySingleNaN

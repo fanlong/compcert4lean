@@ -2688,3 +2688,50 @@ theorem analyze_successors : ∀ cfg, analyze_successorsStatement cfg := by
     rfl
 
 end CompCert4Lean.Backend.Deadcodeproof
+
+namespace CompCert4Lean.Backend.Deadcodeproof
+
+open CompCert4Lean.Backend.Deadcode
+open CompCert4Lean.Backend.NeedDomain
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Linking
+open CompCert4Lean.Lib.Maps
+
+variable
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+
+private theorem deadcode_eagree_ge : ∀ e1 e2 ne ne',
+    eagree e1 e2 ne → NE.ge ne ne' → eagree e1 e2 ne' := by
+  intro e1 e2 ne ne' h hge r
+  exact NeedDomain.nge_agree _ _ _ _ (hge r) (h r)
+
+theorem match_succ_states : ∀ cfg, match_succ_statesStatement cfg := by
+  intro cfg prog s f sp pc e m ts tf te tm an pc' cu instr ne nm
+  intro hlink hstacks hfun han hpc hsucc hanpc henv hmem
+  have hge := analyze_successors cfg cu f an pc instr pc' han hpc hsucc
+  rw [hanpc] at hge
+  change
+    NE.ge ne
+        (CompCert4Lean.Backend.Deadcode.transfer cfg f (prog_defmap cu)
+          (vanalyze cfg cu f) pc' (PMap.get pc' an)).1 ∧
+      (∀ ge sp b ofs,
+        nlive ge sp
+            (CompCert4Lean.Backend.Deadcode.transfer cfg f (prog_defmap cu)
+              (vanalyze cfg cu f) pc' (PMap.get pc' an)).2 b ofs →
+          nlive ge sp nm b ofs) at hge
+  apply match_regular_states s f sp pc' e m ts tf te tm cu an
+    hstacks hlink hfun han
+  · exact deadcode_eagree_ge e te ne _ henv hge.1
+  · exact magree_monotone m tm
+      (fun b ofs => nlive (Genv.globalenv prog) sp nm b ofs)
+      (fun b ofs => nlive (Genv.globalenv prog) sp
+        (CompCert4Lean.Backend.Deadcode.transfer cfg f (prog_defmap cu)
+          (vanalyze cfg cu f) pc' (PMap.get pc' an)).2 b ofs)
+      hmem (by
+        intro b ofs h
+        exact hge.2 (Genv.globalenv prog) sp b ofs h)
+
+end CompCert4Lean.Backend.Deadcodeproof

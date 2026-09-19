@@ -2759,3 +2759,145 @@ theorem volatile_load_ok : volatile_load_okStatement := by
                     exact ⟨rfl, rfl⟩
 
 end CompCert4Lean.Common.Events
+
+
+namespace CompCert4Lean.Common.Events
+
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Lib.Integers
+
+theorem volatile_store_ok : volatile_store_okStatement := by
+  intro chunk
+  refine {
+    ec_well_typed := ?_
+    ec_symbols_preserved := ?_
+    ec_valid_block := ?_
+    ec_max_perm := ?_
+    ec_readonly := ?_
+    ec_mem_extends := ?_
+    ec_mem_inject := ?_
+    ec_trace_length := ?_
+    ec_receptive := ?_
+    ec_determ := ?_ }
+  · intro ge vargs m1 t vres m2 hsem
+    cases hsem with
+    | volatile_store_sem_intro b ofs _ _ _ _ hstore =>
+        simp [CompCert4Lean.Common.Values.Val.has_rettype]
+  · intro ge1 ge2 vargs m1 t vres m2 heq hsem
+    cases hsem with
+    | volatile_store_sem_intro b ofs _ _ _ _ hstore =>
+        apply volatile_store_sem_intro
+        exact volatile_store_preserved ge1 ge2 chunk m1 b ofs _ t m2 heq hstore
+  · intro ge vargs m1 t vres m2 b hsem hb
+    cases hsem with
+    | volatile_store_sem_intro b0 ofs _ _ _ _ hstore =>
+        cases hstore with
+        | volatile_store_vol => exact hb
+        | volatile_store_nonvol =>
+            rename_i v hnot hstore'
+            exact Mem.store_valid_block_1 chunk m1 b0 (Ptrofs.unsigned ofs) v m2 hstore' b hb
+  · intro ge vargs m1 t vres m2 b ofs p hsem hb hp
+    cases hsem with
+    | volatile_store_sem_intro b0 ofs0 _ _ _ _ hstore =>
+        cases hstore with
+        | volatile_store_vol => exact hp
+        | volatile_store_nonvol =>
+            rename_i v hnot hstore'
+            exact Mem.perm_store_2 chunk m1 b0 (Ptrofs.unsigned ofs0) v m2 hstore' b ofs Max p hp
+  · intro ge vargs m1 t vres m2 b ofs n bytes hsem hb hload hreadonly
+    cases hsem with
+    | volatile_store_sem_intro b0 ofs0 _ _ _ _ hstore =>
+        apply unchanged_on_readonly m1 m2 b ofs n bytes
+        · exact volatile_store_readonly ge chunk m1 b0 ofs0 _ t m2 hstore
+        · exact hb
+        · exact hload
+        · exact hreadonly
+  · intro ge vargs m1 t vres m2 m1' vargs' hsem hext hless
+    cases hsem with
+    | volatile_store_sem_intro b ofs _ _ _ _ hstore =>
+        cases hless with
+        | lessdef_list_cons _ vptr _ vl hptr htail =>
+            cases htail with
+            | lessdef_list_cons _ v' _ vl' hv hnil =>
+                cases hnil
+                cases hptr
+                obtain ⟨m2', hstore', hext', hunch⟩ :=
+                  volatile_store_extends ge chunk m1 b ofs _ t m2 m1' v' hstore hext hv
+                refine ⟨.Vundef, m2', ?_, .lessdef_refl _, hext', hunch⟩
+                exact volatile_store_sem_intro b ofs m1' v' t m2' hstore'
+  · intro ge1 ge2 vargs m1 t vres m2 f m1' vargs'
+      hsymbols hsem hmem hvlist
+    cases hsem with
+    | volatile_store_sem_intro b ofs _ _ _ _ hstore =>
+        cases hvlist with
+        | inject_list_cons _ vptr _ vl hptr htail =>
+            cases htail with
+            | inject_list_cons _ v' _ vl' hv hnil =>
+                cases hnil
+                cases hptr with
+                | inject_ptr b0 ofs0 b' ofs' delta hmap hofs =>
+                    obtain ⟨m2', hstore', hmem', hunch1, hunch2⟩ :=
+                      volatile_store_inject ge1 ge2 f chunk m1 b ofs _ t m2 m1' b' ofs' v'
+                        hsymbols hstore
+                        (Val.inject.inject_ptr b ofs b' ofs' delta hmap hofs) hv hmem
+                    refine ⟨f, .Vundef, m2', ?_, .val_inject_undef _, hmem',
+                      hunch1, hunch2, ?_, ?_⟩
+                    · exact volatile_store_sem_intro b' ofs' m1' v' t m2' hstore'
+                    · intro b0 b' delta' hmap'
+                      exact hmap'
+                    · intro b0 b' delta' hnone hsome
+                      rw [hnone] at hsome
+                      cases hsome
+  · intro ge vargs m t vres m' hsem
+    cases hsem with
+    | volatile_store_sem_intro _ _ _ _ _ _ hstore =>
+        cases hstore with
+        | volatile_store_vol => simp
+        | volatile_store_nonvol => simp [E0]
+  · intro ge vargs m t1 vres1 m1 t2 hsem hmatch
+    cases hsem with
+    | volatile_store_sem_intro b ofs _ _ _ _ hstore =>
+        have ht := volatile_store_receptive ge chunk m b ofs _ t1 m1 t2 hstore hmatch
+        subst t2
+        exact ⟨.Vundef, m1, volatile_store_sem_intro b ofs m _ t1 m1 hstore⟩
+  · intro ge vargs m t1 vres1 m1 t2 vres2 m2 hsem1 hsem2
+    cases hsem1 with
+    | volatile_store_sem_intro b1 ofs1 _ _ _ _ hstore1 =>
+        cases hsem2 with
+        | volatile_store_sem_intro b2 ofs2 _ _ _ _ hstore2 =>
+            cases hstore1 with
+            | volatile_store_vol id ev _ hvol hfind hmatch1 =>
+                cases hstore2 with
+                | volatile_store_vol id0 ev0 _ hvol0 hfind0 hmatch2 =>
+                    have hid : id = id0 :=
+                      ge.find_symbol_injective id id0 hfind hfind0
+                    subst id0
+                    have hev : ev = ev0 :=
+                      eventval_match_determ_2 ge ev ev0 (type_of_chunk chunk)
+                        (Val.load_result chunk _) hmatch1 hmatch2
+                    subst ev0
+                    refine ⟨match_traces_vstore chunk id ofs1 ev, ?_⟩
+                    intro heq
+                    cases heq
+                    exact ⟨rfl, rfl⟩
+                | volatile_store_nonvol v0 m20 hnot0 hstore0 =>
+                    rw [hvol] at hnot0
+                    cases hnot0
+            | volatile_store_nonvol v m2 hnot hstore =>
+                cases hstore2 with
+                | volatile_store_vol id0 ev0 _ hvol0 hfind0 hmatch0 =>
+                    rw [hvol0] at hnot
+                    cases hnot
+                | volatile_store_nonvol v0 m20 hnot0 hstore0 =>
+                    refine ⟨match_traces_E0, ?_⟩
+                    intro heq
+                    cases heq
+                    have hm : _ = _ := Option.some.inj (hstore.symm.trans hstore0)
+                    subst_vars
+                    exact ⟨rfl, rfl⟩
+
+end CompCert4Lean.Common.Events

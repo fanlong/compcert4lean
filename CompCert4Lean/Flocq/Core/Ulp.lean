@@ -6215,3 +6215,9 @@ theorem generic_format_pred_aux2 :
       generic_format_pred_aux2Statement ctx magnitude := by
   intro ctx magnitude beta fexp hvalid x hx hformat e hxe
   exact pg_pred_ge_gt_generic_pred_aux2 ctx magnitude beta fexp hvalid x hx hformat hxe
+
+theorem generic_format_pred_pos :
+    ∀ (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx),
+      generic_format_pred_posStatement ctx magnitude := by
+  intro ctx magnitude
+  exact pg_pred_ge_gt_generic_pred_pos ctx magnitude

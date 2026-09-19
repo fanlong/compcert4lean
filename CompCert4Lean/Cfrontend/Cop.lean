@@ -2214,3 +2214,78 @@ theorem bool_val_inject : bool_val_injectStatement := by
     v ty b tv hval hinj
 
 end CompCert4Lean.Cfrontend.Cop
+
+namespace CompCert4Lean.Cfrontend.Cop
+
+open CompCert4Lean.Cfrontend.Ctypes
+open CompCert4Lean.Common.Values
+
+private theorem cop_cast_int_int_idem_aux (sz : intsize) (sg : signedness) (i : CCInt) :
+    cast_int_int sz sg (cast_int_int sz sg i) = cast_int_int sz sg i := by
+  cases sz with
+  | I8 =>
+      cases sg with
+      | Signed => exact CompCert4Lean.Lib.Integers.Int.sign_ext_idem_proof _ i (by change (0 : _root_.Int) < 8; decide)
+      | Unsigned => exact CompCert4Lean.Lib.Integers.Int.zero_ext_idem_proof_api _ i (by change (0 : _root_.Int) ≤ 8; decide)
+  | I16 =>
+      cases sg with
+      | Signed => exact CompCert4Lean.Lib.Integers.Int.sign_ext_idem_proof _ i (by change (0 : _root_.Int) < 16; decide)
+      | Unsigned => exact CompCert4Lean.Lib.Integers.Int.zero_ext_idem_proof_api _ i (by change (0 : _root_.Int) ≤ 16; decide)
+  | I32 => rfl
+  | IBool =>
+      cases h : boolEqInt i Int.zero <;> simp only [cast_int_int, h, Bool.false_eq_true, if_false, if_true] <;> rfl
+
+end CompCert4Lean.Cfrontend.Cop
+
+namespace CompCert4Lean.Cfrontend.Cop
+
+open CompCert4Lean.Cfrontend.Ctypes
+open CompCert4Lean.Common.Values
+
+private theorem cop_cast_int_val_aux (sz : intsize) (sg : signedness) (a : attr)
+    (i : CCInt) : val_casted (.Vint (cast_int_int sz sg i)) (.Tint sz sg a) :=
+  val_casted_int sz sg a _ (cop_cast_int_int_idem_aux sz sg i)
+
+private theorem cop_cast_bool_val_aux (b : Bool) (sg : signedness) (a : attr) :
+    val_casted (.Vint (if b then Int.zero else Int.one)) (.Tint .IBool sg a) := by
+  apply val_casted_int
+  cases b <;> rfl
+
+set_option maxHeartbeats 1600000 in
+theorem cast_val_is_casted :
+    ∀ [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+      [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)],
+      cast_val_is_castedStatement := by
+  intro _binary64_certificate _binary32_certificate v ty ty' v' m h
+  cases ty
+  case' Tint sz sg a => cases sz
+  case' Tfloat fs a => cases fs
+  all_goals
+    cases ty'
+    case' Tint sz sg a => cases sz
+    case' Tfloat fs a => cases fs
+    case' Tvoid => exact val_casted_void _
+  all_goals
+    cases v <;>
+      simp only [sem_cast, classify_cast, intsizeEq,
+        CompCert4Lean.X86_64.Archi.ptr64, if_true,
+        Bool.not_true, Bool.false_eq_true, if_false] at h
+  all_goals
+    first
+      | contradiction
+      | (cases h; first
+          | exact cop_cast_int_val_aux _ _ _ _
+          | exact cop_cast_bool_val_aux _ _ _
+          | solve | constructor <;> rfl)
+      | (rcases Option.map_eq_some_iff.mp h with ⟨i, hi, rfl⟩
+         first
+          | exact cop_cast_int_val_aux _ _ _ _
+          | solve | constructor <;> rfl)
+      | (simp at h
+         rcases h with ⟨_, rfl⟩
+         first
+          | exact cop_cast_bool_val_aux true _ _
+          | exact cop_cast_bool_val_aux false _ _
+          | solve | constructor <;> rfl)
+
+end CompCert4Lean.Cfrontend.Cop

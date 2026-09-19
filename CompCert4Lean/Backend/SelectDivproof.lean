@@ -2883,3 +2883,72 @@ theorem divs_mul_shift_2 : divs_mul_shift_2Statement := by
   · exact CompCert4Lean.Lib.Integers.Int.eqm_signed_unsigned_proof x
 
 end CompCert4Lean.Backend.SelectDivproof
+
+namespace CompCert4Lean.Backend.SelectDivproof
+
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.Backend.SelectDiv
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.X86.Op
+open CompCert4Lean.X86.SelectOp
+
+theorem eval_divu_mul
+    [binary64_certificate : BinaryNormalizeCertificate (ZArith.BinInt.Z.of_nat 53)
+      (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (ZArith.BinInt.Z.of_nat 24)
+      (ZArith.BinInt.Z.of_nat 128)] :
+    eval_divu_mulStatement := by
+  intro xi prog sp e m le x y p M hparams hnth
+  obtain ⟨hp, hshift⟩ := divu_mul_shift x y M p hparams
+  have hlet : eval_expr xi (Genv.globalenv prog) sp e m le
+      (Eletvar 0) (.Vint x) :=
+    eval_expr.eval_Eletvar le 0 (.Vint x) hnth
+  have hc := eval_intconst_local xi (Genv.globalenv prog) sp e m le (intRepr M)
+  have hmul : eval_expr xi (Genv.globalenv prog) sp e m le
+      (mulhu (Eletvar 0) (Eop (Ointconst (intRepr M)) Enil))
+      (.Vint (CompCert4Lean.Lib.Integers.Int.mulhu x (intRepr M))) := by
+    exact eval_binary_op_local xi (Genv.globalenv prog) sp e m le Omulhu
+      (Eletvar 0) (Eop (Ointconst (intRepr M)) Enil)
+      (.Vint x) (.Vint (intRepr M))
+      (.Vint (CompCert4Lean.Lib.Integers.Int.mulhu x (intRepr M))) hlet hc rfl
+  have hrepr : intUnsigned (intRepr p) = p := by
+    apply CompCert4Lean.Lib.Integers.Int.unsigned_repr_proof_api
+    refine ⟨hp.1, ?_⟩
+    have h := hp.2
+    change intOfZ p < 32 at h
+    change intOfZ p ≤ 4294967295
+    omega
+  have hlt : CompCert4Lean.Lib.Integers.Int.ltu (intRepr p)
+      CompCert4Lean.Lib.Integers.Int.iwordsize = true := by
+    change zltBool (intUnsigned (intRepr p)) z32 = true
+    rw [hrepr]
+    unfold zltBool boolOfSumbool
+    cases CompCert4Lean.Lib.Coqlib.zlt p z32 with
+    | left _ => rfl
+    | right h =>
+        have hpLt := hp.2
+        change intOfZ p < 32 at hpLt
+        change 32 ≤ intOfZ p at h
+        omega
+  rw [hshift]
+  change eval_expr xi (Genv.globalenv prog) sp e m le
+    (divu_mul p M)
+    (.Vint (CompCert4Lean.Lib.Integers.Int.shru
+      (CompCert4Lean.Lib.Integers.Int.mulhu x (intRepr M)) (intRepr p)))
+  unfold divu_mul shruimm
+  by_cases hz : CompCert4Lean.Lib.Integers.Int.eq (intRepr p)
+      CompCert4Lean.Lib.Integers.Int.zero = true
+  · rw [if_pos hz]
+    rw [int_eq_true_zero_local _ hz,
+      CompCert4Lean.Lib.Integers.Int.shru_zero_proof]
+    exact hmul
+  · simp only [hz, if_false, hlt, Bool.not_true, Bool.false_eq_true,
+      mulhu, shruimm_match]
+    apply eval_unary_op_local xi (Genv.globalenv prog) sp e m le
+      (Oshruimm (intRepr p)) _ _ _ hmul
+    change some (Val.shru (.Vint _) (.Vint (intRepr p))) = _
+    simp only [Val.shru, hlt, if_true]
+
+end CompCert4Lean.Backend.SelectDivproof

@@ -2537,3 +2537,20 @@ theorem truncate_correct_partial' : ∀ (ctx : ExactRealContext)
       omega
 
 end CompCert4Lean.Flocq.Calc.Round
+
+namespace CompCert4Lean.Flocq.Calc.Round
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem truncate_correct_partial : ∀ (ctx : ExactRealContext)
+    (magnitude : ExactMagnitude ctx),
+    truncate_correct_partialStatement ctx magnitude := by
+  intro ctx magnitude beta fexp hvalid x m e l hx hbetween he
+  have hcexp := cexp_inbetween_float ctx magnitude beta fexp hvalid x m e l hx hbetween
+    (Or.inr he)
+  have he' : Zle e (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.cexp
+      ctx magnitude beta fexp x) := by
+    rw [hcexp]
+    exact he
+  exact truncate_correct_partial' ctx magnitude beta fexp hvalid x m e l hx hbetween he'
+
+end CompCert4Lean.Flocq.Calc.Round

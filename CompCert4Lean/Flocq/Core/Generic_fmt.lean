@@ -4687,3 +4687,13 @@ theorem canonical_opp :
   exact hcanon
 
 end CompCert4Lean.Flocq.Core.Generic_fmt
+
+namespace CompCert4Lean.Flocq.Core.Generic_fmt
+
+theorem generic_format_abs_inv :
+    ∀ (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx),
+      generic_format_abs_invStatement ctx magnitude := by
+  intro ctx magnitude beta fexp x hx
+  exact pg_suffix_generic_format_abs_inv ctx magnitude beta fexp x hx
+
+end CompCert4Lean.Flocq.Core.Generic_fmt

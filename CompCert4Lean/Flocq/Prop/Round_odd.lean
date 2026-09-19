@@ -4109,3 +4109,31 @@ theorem round_odd_opp : ∀ (ctx : ExactRealContext)
   exact round_odd_round_opp_aux ctx magnitude beta fexp x
 
 end CompCert4Lean.Flocq.Prop.Round_odd
+
+namespace CompCert4Lean.Flocq.Prop.Round_odd
+
+theorem generic_format_fexpe_fexp : ∀ (ctx : ExactRealContext)
+    (magnitude : ExactMagnitude ctx),
+    generic_format_fexpe_fexpStatement ctx magnitude := by
+  intro ctx magnitude beta fexp fexpe hbound x hx
+  apply CompCert4Lean.Flocq.Core.Generic_fmt.generic_inclusion_mag
+    ctx magnitude beta fexp fexpe x ?_ hx
+  intro _
+  have h := hbound (mag ctx magnitude beta x)
+  change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+      (fexpe (mag ctx magnitude beta x)) ≤
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+      (Zsub (fexp (mag ctx magnitude beta x)) Ztwo) at h
+  simp only [CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.sub,
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt] at h
+  change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+      (fexpe (mag ctx magnitude beta x)) ≤
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+      (fexp (mag ctx magnitude beta x)) - 2 at h
+  change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+      (fexpe (mag ctx magnitude beta x)) ≤
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+      (fexp (mag ctx magnitude beta x))
+  omega
+
+end CompCert4Lean.Flocq.Prop.Round_odd

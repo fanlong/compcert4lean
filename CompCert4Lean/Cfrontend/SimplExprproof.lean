@@ -4331,3 +4331,46 @@ theorem tr_expr_leftcontext :
   exact hrec.1 .RV .RV C hctx le r dst sl a tmps htr
 
 end CompCert4Lean.Cfrontend.SimplExprproof
+
+namespace CompCert4Lean.Cfrontend.SimplExprproof
+
+open CompCert4Lean.Cfrontend.SimplExpr
+open CompCert4Lean.Cfrontend.SimplExprspec
+
+ theorem tr_top_leftcontext :
+    ∀ [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+      [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)],
+      tr_top_leftcontextStatement := by
+  intro binary64_certificate binary32_certificate
+  intro tprog cunit e le m dst rtop sl a tmps htop
+  intro r C hrtop hctx
+  cases htop with
+  | tr_top_val_val v ty a tmps htype heval =>
+      cases hctx <;> simp_all [Function.comp_def] <;> subst_vars
+      refine ⟨.For_val, [], [], a, tmps, ?_⟩
+      refine ⟨?_, ?_⟩
+      · exact CompCert4Lean.Cfrontend.SimplExprspec.tr_top_val_val
+          (ce := cunit.prog_comp_env) v (Clight.typeof a) a tmps rfl heval
+      refine ⟨⟨rfl, rfl⟩, ?_⟩
+      refine ⟨CompCert4Lean.Foundation.Logic.Rocq.Coq.Lists.List.incl_refl _, ?_⟩
+      intro le' m' r' sl3 htr hincl htype'
+      simpa only [List.append_nil] using
+        (CompCert4Lean.Cfrontend.SimplExprspec.tr_top_base
+          (ce := cunit.prog_comp_env) (ge := Clight.globalenv tprog)
+          (e := e) (le := le') (m := m') .For_val r' sl3 a tmps htr)
+  | tr_top_base _ _ _ _ _ htr =>
+      rw [hrtop] at htr
+      have h := tr_expr_leftcontext
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        cunit C le r dst sl a tmps hctx htr
+      rcases h with ⟨dst', sl1, sl2, a', tmp', htr', hsl, hincl, hrec⟩
+      refine ⟨dst', sl1, sl2, a', tmp', ?_, hsl, hincl, ?_⟩
+      · exact CompCert4Lean.Cfrontend.SimplExprspec.tr_top_base
+          (ce := cunit.prog_comp_env) dst' r sl1 a' tmp' htr'
+      · intro le' m' r' sl3 htr'' hincl' htype'
+        exact CompCert4Lean.Cfrontend.SimplExprspec.tr_top_base
+          (ce := cunit.prog_comp_env) dst (C r') (sl3 ++ sl2) a tmps
+          (hrec le' r' sl3 htr'' hincl' htype')
+
+end CompCert4Lean.Cfrontend.SimplExprproof

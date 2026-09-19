@@ -1179,3 +1179,75 @@ theorem B2R_inj :
   rfl
 
 end CompCert4Lean.Flocq.IEEE754.Binary
+
+namespace CompCert4Lean.Flocq.IEEE754.Binary
+
+open CompCert4Lean.Flocq.Core
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+ theorem B2R_Bsign_inj :
+    ∀ {prec emax : Z} (ctx : ExactRealContext),
+      B2R_Bsign_injStatement (prec := prec) (emax := emax) ctx := by
+  intro prec emax ctx x y hfx hfy heq hsign
+  rcases x with ⟨x, hx⟩
+  rcases y with ⟨y, hy⟩
+  cases x with
+  | B754_nan s pl => simp [is_finite] at hfx
+  | B754_infinity s => simp [is_finite] at hfx
+  | B754_zero sx =>
+      cases y with
+      | B754_nan sy pl => simp [is_finite] at hfy
+      | B754_infinity sy => simp [is_finite] at hfy
+      | B754_zero sy =>
+          simp [B2R, Bsign] at heq hsign ⊢
+          cases hsign
+          rfl
+      | B754_finite sy my ey =>
+          simp [B2R, Bsign] at heq hsign
+          have hnum : cond_Zopp sy (Zpos my) ≠ Z0 := by
+            intro h
+            have ha := Zaux.abs_cond_Zopp sy (Zpos my)
+            change Zaux.cond_Zopp sy (Zpos my) = Z0 at h
+            rw [h] at ha
+            have hi := congrArg intOfZ ha
+            simp only [ZArith.BinInt.Z.abs, intOfZ_zOfInt] at hi
+            have hz : intOfZ Z0 = (0 : Int) := rfl
+            rw [hz] at hi
+            have hp := posToNat_positive my
+            have hp' : (0 : Int) < Int.ofNat (posToNat my) := Int.ofNat_lt.mpr hp
+            have hzero := hi.symm
+            change Int.ofNat (posToNat my) = 0 at hzero
+            exact (Int.ne_of_gt hp') hzero
+          have hne := Float_prop.F2R_neq_0 ctx radix2
+            (Float radix2 (cond_Zopp sy (Zpos my)) ey) hnum
+          exact False.elim (hne heq.symm)
+  | B754_finite sx mx ex =>
+      cases y with
+      | B754_nan sy pl => simp [is_finite] at hfy
+      | B754_infinity sy => simp [is_finite] at hfy
+      | B754_zero sy =>
+          simp [B2R, Bsign] at heq hsign
+          have hnum : cond_Zopp sx (Zpos mx) ≠ Z0 := by
+            intro h
+            have ha := Zaux.abs_cond_Zopp sx (Zpos mx)
+            change Zaux.cond_Zopp sx (Zpos mx) = Z0 at h
+            rw [h] at ha
+            have hi := congrArg intOfZ ha
+            simp only [ZArith.BinInt.Z.abs, intOfZ_zOfInt] at hi
+            have hz : intOfZ Z0 = (0 : Int) := rfl
+            rw [hz] at hi
+            have hp := posToNat_positive mx
+            have hp' : (0 : Int) < Int.ofNat (posToNat mx) := Int.ofNat_lt.mpr hp
+            have hzero := hi.symm
+            change Int.ofNat (posToNat mx) = 0 at hzero
+            exact (Int.ne_of_gt hp') hzero
+          have hne := Float_prop.F2R_neq_0 ctx radix2
+            (Float radix2 (cond_Zopp sx (Zpos mx)) ex) hnum
+          exact False.elim (hne heq)
+      | B754_finite sy my ey =>
+          apply B2R_inj ctx
+          · rfl
+          · rfl
+          · exact heq
+
+end CompCert4Lean.Flocq.IEEE754.Binary

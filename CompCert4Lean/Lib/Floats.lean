@@ -3801,3 +3801,19 @@ theorem mul2_add
 end Float
 
 end CompCert4Lean.Lib.Floats
+
+namespace CompCert4Lean.Lib.Floats.Float
+
+theorem of_intu_of_int_1
+    [certificate : CompCert4Lean.Flocq.IEEE754.Binary.BinaryNormalizeCertificate z53 z1024] :
+    of_intu_of_int_1Statement := by
+  intro x hx
+  suffices hs : Integers.Int.signed x = Integers.Int.unsigned x by
+    simp only [of_intu, of_int, hs]
+  have hbound : Integers.Int.unsigned ox8000_0000 = Integers.Int.half_modulus := by
+    decide
+  have hlt := (Integers.Int.ltu_inv_proof x ox8000_0000 hx).2
+  rw [hbound] at hlt
+  exact Coqlib.zlt_true _ _ _ _ _ hlt
+
+end CompCert4Lean.Lib.Floats.Float

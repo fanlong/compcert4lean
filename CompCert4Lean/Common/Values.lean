@@ -3983,3 +3983,55 @@ theorem divs_one : divs_oneStatement := by
   simp [hzero, hmone, hdiv]
 
 end CompCert4Lean.Common.Values.Val
+
+namespace CompCert4Lean.Common.Values.Val
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open Lean Elab Tactic Meta
+
+private theorem pg_values_int_is_power2_correct
+    (n : CompCert4Lean.Lib.Integers.Int.int)
+    (logn : CompCert4Lean.Lib.Integers.Int.int)
+    (hpow : CompCert4Lean.Lib.Integers.Int.is_power2 n = some logn) :
+    CompCert4Lean.Lib.Integers.Int.unsigned n = two_p
+      (CompCert4Lean.Lib.Integers.Int.unsigned logn) := by
+  run_tac
+    let env ← Lean.getEnv
+    let some (correct, _) := env.constants.toList.find?
+        (fun (name, _) => (toString name).endsWith
+          "CompCert4Lean.Lib.Integers.Int.suffix_is_power2_correct")
+      | throwError "frozen integer power-of-two correctness helper not found"
+    let correctId := Lean.mkIdent correct
+    let nId := Lean.mkIdent `n
+    let lognId := Lean.mkIdent `logn
+    let hpowId := Lean.mkIdent `hpow
+    Lean.Elab.Tactic.evalTactic
+      (← `(tactic| exact $correctId $nId $lognId $hpowId))
+
+private theorem pg_values_int_divu_pow2
+    (x n logn : CompCert4Lean.Lib.Integers.Int.int)
+    (hpow : CompCert4Lean.Lib.Integers.Int.is_power2 n = some logn) :
+    CompCert4Lean.Lib.Integers.Int.divu x n =
+      CompCert4Lean.Lib.Integers.Int.shru x logn := by
+  have hc := pg_values_int_is_power2_correct n logn hpow
+  unfold CompCert4Lean.Lib.Integers.Int.divu
+    CompCert4Lean.Lib.Integers.WordCore.divu
+  change CompCert4Lean.Lib.Integers.Int.repr
+      (ZArith.BinInt.Z.div
+        (CompCert4Lean.Lib.Integers.Int.unsigned x)
+        (CompCert4Lean.Lib.Integers.Int.unsigned n)) =
+    CompCert4Lean.Lib.Integers.Int.shru x logn
+  rw [hc, CompCert4Lean.Lib.Integers.Int.shru_div_two_p_proof]
+
+theorem divu_pow2 : divu_pow2Statement := by
+  intro x n logn y hpow hdiv
+  cases x <;> simp [divu] at hdiv ⊢
+  case Vint a =>
+    rcases hdiv with ⟨hneq, hdiv⟩
+    cases hdiv
+    simp only [shru,
+      CompCert4Lean.Lib.Integers.Int.is_power2_range_proof n logn hpow,
+      if_true, val.Vint.injEq]
+    exact (pg_values_int_divu_pow2 a n logn hpow).symm
+
+end CompCert4Lean.Common.Values.Val

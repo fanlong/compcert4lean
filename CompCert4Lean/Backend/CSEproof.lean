@@ -4387,3 +4387,136 @@ theorem load_memcpy : load_memcpyStatement := by
   simpa [hdecode] using hload'
 
 end CompCert4Lean.Backend.CSEproof
+
+namespace CompCert4Lean.Backend.CSEproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Backend.CSEdomain
+open CompCert4Lean.Backend.ValueDomain
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.X86.Op
+open Lean Elab Tactic Meta
+
+private theorem shift_memcpy_test_true_aux {P Q : Prop}
+    (s : CompCert4Lean.Foundation.Logic.Support.Sumbool P Q)
+    (h : (match s with | .left _ => true | .right _ => false) = true) : P := by
+  cases s with
+  | left hp => exact hp
+  | right hq => cases h
+
+private theorem shift_memcpy_add_zero_left_aux
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (x : Ptrofs.int) :
+    Ptrofs.add Ptrofs.zero x = x := by
+  change WordCore.add (WordCore.zero Ptrofs.wordsize) x = x
+  apply WordCore.ext_of_val_eq
+  rw [cseproof_wordcore_add_val, cseproof_wordcore_zero_val, Nat.zero_add]
+  exact Nat.mod_eq_of_lt (cseproof_wordcore_val_lt x)
+
+private theorem shift_memcpy_unsigned_repr_aux (z : Z)
+    (h0 : zLe z0 z) (hmax : zLe z Ptrofs.max_unsigned) :
+    Ptrofs.unsigned (Ptrofs.repr z) = z := by
+  have hrepr : Ptrofs.unsigned (Ptrofs.repr z) =
+      ZArith.BinInt.Z.modulo z Ptrofs.modulus := by
+    run_tac
+      let lctx ← getLCtx
+      let zF := (lctx.findFromUserName? `z).get!
+      let e ← mkAppM
+        (cseproofPrivateName
+          "CompCert4Lean.Lib.Integers.Int64.suffix_int64_unsigned_repr_eq_exact")
+        #[mkFVar zF.fvarId]
+      closeMainGoal Name.anonymous e
+  rw [hrepr]
+  apply ZArith.BinInt.Z.mod_small z Ptrofs.modulus
+  refine ⟨h0, ?_⟩
+  change intOfZ z ≤ 18446744073709551615 at hmax
+  change intOfZ z < 18446744073709551616
+  omega
+
+theorem shift_memcpy_eq_holds
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    shift_memcpy_eq_holdsStatement := by
+  intro src dst sz e e' m sp bytes m' valu ge hshift hbytes hstore heq
+  cases e with
+  | Eq l strict rh =>
+      cases rh with
+      | Op op vl => simp [CSE.shift_memcpy_eq] at hshift
+      | Builtin bf args => simp [CSE.shift_memcpy_eq] at hshift
+      | Load chunk addr vl p =>
+          cases addr with
+          | Ainstack ofs =>
+              simp only [CSE.shift_memcpy_eq] at hshift
+              split at hshift
+              next hchecks =>
+                simp only [Bool.and_eq_true] at hchecks
+                have hsrc := shift_memcpy_test_true_aux
+                  (zle src (Ptrofs.unsigned ofs)) hchecks.1.1.1.1
+                have hend := shift_memcpy_test_true_aux
+                  (zle (zAdd (Ptrofs.unsigned ofs) (size_chunk chunk))
+                    (zAdd src sz)) hchecks.1.1.1.2
+                have hmod := shift_memcpy_test_true_aux
+                  (zeq (ZArith.BinInt.Z.modulo (zSub dst src) (align_chunk chunk)) z0)
+                  hchecks.1.1.2
+                have hj0 := shift_memcpy_test_true_aux
+                  (zle z0 (zAdd (Ptrofs.unsigned ofs) (zSub dst src))) hchecks.1.2
+                have hjmax := shift_memcpy_test_true_aux
+                  (zle (zAdd (Ptrofs.unsigned ofs) (zSub dst src)) Ptrofs.max_unsigned)
+                  hchecks.2
+                cases hshift
+                let j := zAdd (Ptrofs.unsigned ofs) (zSub dst src)
+                have hdiv : zDivide (align_chunk chunk) (zSub dst src) := by
+                  apply ZArith.Znumtheory.Zmod_divide _ _ ?_ hmod
+                  intro hz
+                  have hpos := align_chunk_pos chunk
+                  rw [hz] at hpos
+                  exact (Int.lt_irrefl 0) hpos
+                have hload : ∀ v, Mem.loadv chunk m (Vptr sp ofs) = some v →
+                    Mem.loadv chunk m' (Vptr sp (Ptrofs.repr j)) = some v := by
+                  intro v hv
+                  change Mem.load chunk m' sp (Ptrofs.unsigned (Ptrofs.repr j)) = some v
+                  rw [shift_memcpy_unsigned_repr_aux j hj0 hjmax]
+                  exact load_memcpy m sp src sz bytes sp dst m' chunk
+                    (Ptrofs.unsigned ofs) v hbytes hstore hv hsrc hend hdiv
+                have haddr : eval_addressing ge (Vptr sp Ptrofs.zero)
+                    (.Ainstack (Ptrofs.repr j)) [] = some (Vptr sp (Ptrofs.repr j)) := by
+                  simpa only [Val.offset_ptr, shift_memcpy_add_zero_left_aux] using
+                    (eval_addressing_Ainstack _ _ ge (Vptr sp Ptrofs.zero) (Ptrofs.repr j))
+                have hev : ∀ v,
+                    rhs_eval_to valu ge (Vptr sp Ptrofs.zero) m
+                      (.Load chunk (.Ainstack ofs) vl p) v →
+                    rhs_eval_to valu ge (Vptr sp Ptrofs.zero) m'
+                      (.Load chunk (.Ainstack (Ptrofs.repr j)) [] (.Stk (Ptrofs.repr j))) v := by
+                  intro v hv
+                  cases hv with
+                  | load_eval_to _ _ _ a _ _ ha hl =>
+                      have ha' := eval_addressing_Ainstack_inv _ _ ge
+                        (Vptr sp Ptrofs.zero) ofs _ a ha
+                      have hae : a = Vptr sp ofs := by
+                        simpa only [Val.offset_ptr, shift_memcpy_add_zero_left_aux] using ha'.2
+                      subst a
+                      exact load_eval_to _ _ _ _ _ _ haddr (hload v hl)
+                have hvalid : rhs_valid valu ge (Vptr sp Ptrofs.zero)
+                    (.Load chunk (.Ainstack ofs) vl p) →
+                    rhs_valid valu ge (Vptr sp Ptrofs.zero)
+                      (.Load chunk (.Ainstack (Ptrofs.repr j)) [] (.Stk (Ptrofs.repr j))) := by
+                  intro hv
+                  cases hv with
+                  | load_valid _ _ _ _ _ b off bc ha hp hg hs =>
+                      exact load_valid _ _ _ _ _ sp (Ptrofs.repr j) bc
+                        haddr (pmatch.stk hs) hg hs
+                cases heq with
+                | eq_holds_strict _ _ hv hval =>
+                    exact eq_holds_strict _ _ (hev _ hv) (hvalid hval)
+                | eq_holds_lessdef _ _ v hv hld hval =>
+                    exact eq_holds_lessdef _ _ v (hev _ hv) hld (hvalid hval)
+              next hchecks => simp at hshift
+          | _ => simp [CSE.shift_memcpy_eq] at hshift
+
+end CompCert4Lean.Backend.CSEproof

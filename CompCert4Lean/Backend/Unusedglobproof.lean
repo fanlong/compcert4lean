@@ -4798,3 +4798,11 @@ theorem set_reg_inject : set_reg_injectStatement := by
   exact unusedglob_set_reg_inject_aux f rs rs' r v v' h hv
 
 end CompCert4Lean.Backend.Unusedglobproof
+
+namespace CompCert4Lean.Backend.Unusedglobproof
+
+theorem init_mem_inj_1 : init_mem_inj_1Statement := by
+  intro p tp used hvalid hmatch m tm hmem htmem
+  exact ug_init_mem_inj_1 p tp used hvalid hmatch m tm hmem htmem
+
+end CompCert4Lean.Backend.Unusedglobproof
