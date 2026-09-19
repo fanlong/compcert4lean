@@ -8548,3 +8548,136 @@ theorem loword_sound : loword_soundStatement := by
       exact hv ▸ CompCert4Lean.Common.Values.Val.lessdef_refl _
 
 end CompCert4Lean.Backend.NeedDomain
+
+namespace CompCert4Lean.Backend.NeedDomain
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Lib.Integers
+
+private theorem pgHiwordValue (a : Int64.int) :
+    (Int64.hiword a).val = (a.val / 2 ^ 32) % (2 ^ 32) := by
+  have hs : CompCert4Lean.Lib.Integers.Int64.shru a
+      (Int64.repr Int.zwordsize) =
+      Int64.shru' a (Int.repr Int.zwordsize) := by rfl
+  change (Int64.loword
+    (CompCert4Lean.Lib.Integers.Int64.shru a
+      (Int64.repr Int.zwordsize))).val = _
+  rw [hs, test_loword_val, lagreeShruValFinal]
+  rfl
+
+private theorem pgHiwordMaskValue (m : Int.int) :
+    (CompCert4Lean.Lib.Integers.Int64.ofwords m Int.zero).val =
+      (m.val * 2 ^ 32) % (2 ^ 64) := by
+  unfold CompCert4Lean.Lib.Integers.Int64.ofwords
+  rw [lagreeOrValForOr]
+  have hz : (Int64.repr (Int.unsigned Int.zero)).val = 0 := by rfl
+  rw [hz]
+  simp only [Nat.lor_eq, Nat.or_zero]
+  have hs : Int64.shl (Int64.repr (Int.unsigned m))
+      (Int64.repr Int.zwordsize) =
+      Int64.shl' (Int64.repr (Int.unsigned m))
+        (Int.repr Int.zwordsize) := by rfl
+  rw [hs, lagreeShlValFinal]
+  have hm : (CompCert4Lean.Lib.Integers.Int64.repr (Int.unsigned m)).val = m.val := by
+    unfold CompCert4Lean.Lib.Integers.Int64.repr
+    rw [lagreeIntUnsignedAsNatFinal, lagreeValReprOfNat]
+    apply Nat.mod_eq_of_lt
+    exact Nat.lt_of_lt_of_le (iagreeWordValLt m)
+      (Nat.pow_le_pow_right (by decide) (by decide))
+  rw [hm]
+  rfl
+
+end CompCert4Lean.Backend.NeedDomain
+
+namespace CompCert4Lean.Backend.NeedDomain
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Lib.Integers
+
+private theorem pgHiwordBitNat (a : Int64.int) (k : Nat) (hk : k < 32) :
+    Int.testbit (Int64.hiword a) (ZArith.BinInt.Z.of_nat k) =
+      Int64.testbit a (ZArith.BinInt.Z.of_nat (k + 32)) := by
+  rw [test_iagreeTestbitOfNat, pgHiwordValue, Nat.testBit_mod_two_pow]
+  rw [decide_eq_true hk, Bool.true_and, lagreeTestbitOfNatFinal]
+  exact (Nat.testBit_add a.val k 32).symm
+
+private theorem pgHiwordMaskBitNat (m : Int.int) (k : Nat) (hk : k < 32) :
+    Int64.testbit (Int64.ofwords m Int.zero)
+        (ZArith.BinInt.Z.of_nat (k + 32)) =
+      Int.testbit m (ZArith.BinInt.Z.of_nat k) := by
+  rw [lagreeTestbitOfNatFinal, pgHiwordMaskValue,
+    Nat.testBit_mod_two_pow]
+  have hsum : k + 32 < 64 := by omega
+  rw [decide_eq_true hsum, Bool.true_and, Nat.testBit_mul_two_pow]
+  have hle : 32 ≤ k + 32 := by omega
+  rw [decide_eq_true hle, Bool.true_and, Nat.add_sub_cancel,
+    test_iagreeTestbitOfNat]
+
+private theorem pgHiwordAgreeNat (a b : Int64.int) (m : Int.int)
+    (h : lagree a b (Int64.ofwords m Int.zero))
+    (k : Nat) (hk : k < 32)
+    (hm : Int.testbit m (ZArith.BinInt.Z.of_nat k) = true) :
+    Int.testbit (Int64.hiword a) (ZArith.BinInt.Z.of_nat k) =
+      Int.testbit (Int64.hiword b) (ZArith.BinInt.Z.of_nat k) := by
+  rw [pgHiwordBitNat a k hk, pgHiwordBitNat b k hk]
+  apply h
+  · exact lagreeNatIndexRangeShrFinal (k + 32) (by
+      change k + 32 < 64
+      omega)
+  · rw [pgHiwordMaskBitNat m k hk]
+    exact hm
+
+end CompCert4Lean.Backend.NeedDomain
+
+namespace CompCert4Lean.Backend.NeedDomain
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Lib.Integers
+
+private theorem pgHiwordAgree (a b : Int64.int) (m : Int.int)
+    (h : lagree a b (Int64.ofwords m Int.zero)) :
+    iagree (Int64.hiword a) (Int64.hiword b) m := by
+  intro k hk hm
+  cases k with
+  | Zneg p =>
+      exfalso
+      have h0 := hk.1
+      change (0 : Int) ≤ -(Int.ofNat (posToNat p)) at h0
+      have hp : (0 : Int) < Int.ofNat (posToNat p) :=
+        Int.natCast_pos.mpr (posToNat_positive p)
+      omega
+  | Z0 =>
+      exact pgHiwordAgreeNat a b m h 0 (by decide) hm
+  | Zpos p =>
+      have hpz := hk.2
+      change (Int.ofNat (posToNat p) : Int) < Int.ofNat 32 at hpz
+      have hp : posToNat p < 32 := Int.ofNat_lt.mp hpz
+      have hz : ZArith.BinInt.Z.of_nat (posToNat p) = .Zpos p := by
+        apply intOfZ_injective
+        simp only [ZArith.BinInt.Z.of_nat, intOfZ_zOfInt]
+        rfl
+      rw [← hz] at hm ⊢
+      exact pgHiwordAgreeNat a b m h (posToNat p) hp hm
+
+theorem hiword_sound : hiword_soundStatement := by
+  intro v w x h
+  cases x with
+  | Nothing => trivial
+  | I m =>
+      cases v <;> cases w <;>
+        simp [hiword, vagree, iVagree, lVagree,
+          CompCert4Lean.Common.Values.Val.hiword] at h ⊢
+      exact pgHiwordAgree _ _ _ h
+  | L m =>
+      cases v <;> cases w <;>
+        simp [hiword, vagree, lVagree,
+          CompCert4Lean.Common.Values.Val.hiword] at h ⊢
+  | All =>
+      cases v <;> cases w <;>
+        simp [hiword, vagree, lVagree,
+          CompCert4Lean.Common.Values.Val.hiword] at h ⊢ <;>
+        try exact CompCert4Lean.Common.Values.Val.lessdef_undef _
+      have hm := pgHiwordAgree _ _ Int.mone h
+      have heq := iagree_mone _ _ hm
+      have hv := congrArg (fun z : Int.int =>
+        CompCert4Lean.Common.Values.val.Vint z) heq
+      exact hv ▸ CompCert4Lean.Common.Values.Val.lessdef_refl _
+
+end CompCert4Lean.Backend.NeedDomain

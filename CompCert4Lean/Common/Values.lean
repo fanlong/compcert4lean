@@ -4369,3 +4369,30 @@ theorem shl_mul : shl_mulStatement := by
     · simp [h]
 
 end CompCert4Lean.Common.Values.Val
+
+namespace CompCert4Lean.Common.Values.Val
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem shrx_shr : shrx_shrStatement := by
+  intro x y z h
+  cases x <;> cases y <;> simp only [shrx, reduceCtorEq] at h
+  case Vint.Vint p q =>
+    split at h
+    next hq =>
+      cases h
+      have hlt := (CompCert4Lean.Lib.Integers.Int.ltu_inv_proof q
+        (Int.repr (zOfNat 31)) hq).2
+      have hword : Int.ltu q Int.iwordsize = true := by
+        apply CompCert4Lean.Lib.Coqlib.zlt_true
+        change intOfZ (Int.unsigned q) < (32 : _root_.Int)
+        change intOfZ (Int.unsigned q) < (31 : _root_.Int) at hlt
+        omega
+      refine ⟨p, q, rfl, rfl, ?_⟩
+      have hs := CompCert4Lean.Lib.Integers.Int.shrx_shr_proof p q hq
+      by_cases hp : Int.lt p Int.zero = true
+      · simpa [hp, shr, add, hword] using congrArg Vint hs
+      · simpa [hp, shr, hword] using congrArg Vint hs
+    next hq => cases h
+
+end CompCert4Lean.Common.Values.Val

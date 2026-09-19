@@ -4784,3 +4784,11 @@ theorem round_bounded_large_pos :
   exact pg_round_bounded_large_pos
 
 end CompCert4Lean.Flocq.Core.Generic_fmt
+
+namespace CompCert4Lean.Flocq.Core.Generic_fmt
+
+theorem round_le_pos :
+    ∀ ctx magnitude, round_le_posStatement ctx magnitude := by
+  exact pg_round_le_pos
+
+end CompCert4Lean.Flocq.Core.Generic_fmt

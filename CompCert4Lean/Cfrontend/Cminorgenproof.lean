@@ -6218,3 +6218,26 @@ theorem transl_find_label : transl_find_labelStatement := by
             simp only [Cminor.find_label, hf, hfind]
 
 end CompCert4Lean.Cfrontend.Cminorgenproof
+
+namespace CompCert4Lean.Cfrontend.Cminorgenproof
+
+theorem transl_find_label_body : transl_find_label_bodyStatement := by
+  intro _tprog cenv xenv size f tf k tk cs lbl s' k'
+  intro htrans hmatch hfind
+  unfold CompCert4Lean.Cfrontend.Cminorgen.transl_funbody at htrans
+  cases hbody : CompCert4Lean.Cfrontend.Cminorgen.transl_stmt cenv [] f.fn_body with
+  | Error msg =>
+      rw [hbody] at htrans
+      cases htrans
+  | OK body =>
+      rw [hbody] at htrans
+      cases htrans
+      have hcall : match_cont (CS.call_cont k) (CM.call_cont tk) cenv [] cs :=
+        match_call_cont k tk cenv xenv cs hmatch
+      have hres := transl_find_label _tprog lbl cenv cs f.fn_body
+        (CS.call_cont k) [] body (CM.call_cont tk) hbody hcall
+      rw [hfind] at hres
+      rcases hres with ⟨ts', tk', xenv', hfind', htr', hmatch'⟩
+      exact ⟨ts', tk', xenv', hfind', htr', hmatch'⟩
+
+end CompCert4Lean.Cfrontend.Cminorgenproof

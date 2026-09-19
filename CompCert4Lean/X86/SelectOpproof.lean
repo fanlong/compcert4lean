@@ -5332,3 +5332,20 @@ open CompCert4Lean.X86.SelectOp
           (eval_exprlist.cons le b Enil y [] hb (eval_exprlist.nil le))) rfl
 
 end CompCert4Lean.X86.SelectOpproof
+
+namespace CompCert4Lean.X86.SelectOpproof
+
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.X86.Op
+open CompCert4Lean.X86.SelectOp
+
+theorem eval_orimm
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    eval_orimmStatement := by
+  intro xi ge sp e m n
+  exact eval_orimm_local xi ge sp e m n
+
+end CompCert4Lean.X86.SelectOpproof
