@@ -4170,3 +4170,21 @@ theorem u_eq : ∀ (ctx : ExactRealContext) (magnitude : ExactMagnitude ctx),
       hvalid x
 
 end CompCert4Lean.Flocq.Prop.Round_odd
+
+namespace CompCert4Lean.Flocq.Prop.Round_odd
+
+open CompCert4Lean.Flocq.Core
+
+theorem d_ge_0 : ∀ (ctx : ExactRealContext) (magnitude : ExactMagnitude ctx),
+    d_ge_0Statement ctx magnitude := by
+  intro ctx magnitude beta fexp hvalid x d hd hxpos
+  rw [d_eq ctx magnitude beta fexp hvalid x d hd]
+  have hround := CompCert4Lean.Flocq.Core.Generic_fmt.round_DN_pt
+    ctx magnitude beta fexp hvalid x
+  have hzero := CompCert4Lean.Flocq.Core.Generic_fmt.generic_format_0
+    ctx magnitude beta fexp
+  have hxle : Rle ctx (R0 ctx) x :=
+    (ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp hxpos |>.1
+  exact hround.2.2 (R0 ctx) hzero hxle
+
+end CompCert4Lean.Flocq.Prop.Round_odd

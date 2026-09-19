@@ -3028,3 +3028,49 @@ theorem transfer_builtin_arg_sound : transfer_builtin_arg_soundStatement := by
         vagree_lessdef _ _ nv (Val.addl_lessdef _ _ _ _ hv1 hv2), he'', hm''⟩
 
 end CompCert4Lean.Backend.Deadcodeproof
+
+namespace CompCert4Lean.Backend.Deadcodeproof
+
+open CompCert4Lean.Backend.Deadcode
+open CompCert4Lean.Backend.NeedDomain
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Backend.ValueDomain
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.Lib.Maps
+open CompCert4Lean.Lib.Coqlib
+
+theorem transfer_builtin_args_sound : transfer_builtin_args_soundStatement := by
+  intro prog e sp m e' m' bc al vl hEval
+  unfold eval_builtin_args at hEval ⊢
+  induction al generalizing vl with
+  | nil =>
+      cases hEval
+      intro ne1 nm1 ne2 nm2 htr he hm gm hs
+      simp [transfer_builtin_args] at htr
+      cases htr
+      exact ⟨[], list_forall2.nil _, Val.lessdef_list_nil, he, hm⟩
+  | cons a al ih =>
+      cases hEval with
+      | cons _ _ ha htail =>
+          intro ne1 nm1 ne2 nm2 htr he hm gm hs
+          let p := transfer_builtin_arg All (ne1, nm1) a
+          cases hp : transfer_builtin_arg All (ne1, nm1) a with
+          | mk ne nm =>
+              have htr' : transfer_builtin_args (ne, nm) al = (ne2, nm2) := by
+                simpa [transfer_builtin_args, List.foldl, hp] using htr
+              obtain ⟨vl', hEval', hLess', he', hm'⟩ :=
+                ih _ htail ne nm ne2 nm2 htr' he hm gm hs
+              obtain ⟨v', hEvalHead, hv, heHead, hmHead⟩ :=
+                transfer_builtin_arg_sound prog bc e e' sp m m' a _ ha
+                  All ne1 nm1 ne nm hp he' hm' gm hs
+              refine ⟨v' :: vl', ?_, ?_, heHead, hmHead⟩
+              · exact list_forall2.cons _ _ hEvalHead hEval'
+              · exact Val.lessdef_list_cons _ _ _ _ hv hLess'
+
+end CompCert4Lean.Backend.Deadcodeproof

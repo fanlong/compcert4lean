@@ -4008,3 +4008,17 @@ set_option maxHeartbeats 800000 in
       exact ⟨_, _, estep.step_paren hl hv hcast⟩
 
 end CompCert4Lean.Cfrontend.Cstrategy
+
+namespace CompCert4Lean.Cfrontend.Cstrategy
+
+theorem step_simulation
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    step_simulationStatement := by
+  unfold step_simulationStatement
+  intro xi ge S1 t S2 h
+  rcases h with he | hs
+  · exact estep_simulation xi ge S1 t S2 he
+  · exact CompCert4Lean.Common.Smallstep.plus_one _ _ _ _ _ _ _ (Or.inr hs)
+
+end CompCert4Lean.Cfrontend.Cstrategy

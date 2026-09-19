@@ -6004,3 +6004,217 @@ theorem transl_exprlist_correct
                 CompCert4Lean.Common.Values.Val.inject_list_cons f v1 tv1 vl tv2 hinj1 hinj2⟩
 
 end CompCert4Lean.Cfrontend.Cminorgenproof
+
+namespace CompCert4Lean.Cfrontend.Cminorgenproof
+
+open CompCert4Lean.Cfrontend.Cminorgen
+open CompCert4Lean.Backend
+
+private theorem cminorgen_label_context
+    (lbl : Csharpminor.label) {cenv : compilenv} {xenv : exit_env}
+    {ls : CS.lbl_stmt} {tk tk1 : CM.cont}
+    (hcont : transl_lblstmt_cont cenv xenv ls tk tk1) :
+    ∀ (body ts : Cminor.stmt) (ts' : Cminor.stmt) (tk' : CM.cont),
+      transl_lblstmt cenv (switch_env ls xenv) ls body = .OK ts →
+      Cminor.find_label lbl body tk1 = some (ts', tk') →
+      Cminor.find_label lbl ts tk = some (ts', tk') := by
+  induction hcont with
+  | default =>
+      intro body ts ts' tk' htrans hfind
+      cases htrans
+      simpa only [Cminor.find_label, hfind] using hfind
+  | @case i s ls tk ts0 tk1 hstmt hrest ih =>
+      intro body ts ts' tk' htrans hfind
+      simp only [transl_lblstmt] at htrans
+      rw [hstmt] at htrans
+      change transl_lblstmt cenv (switch_env ls xenv) ls (.Sseq (.Sblock body) ts0) = .OK ts at htrans
+      apply ih (.Sseq (.Sblock body) ts0) ts ts' tk' htrans
+      simp only [Cminor.find_label, hfind]
+
+private theorem cminorgen_label_cont_exists
+    (cenv : compilenv) (xenv : exit_env) (ls : CS.lbl_stmt)
+    (body ts : Cminor.stmt)
+    (htrans : transl_lblstmt cenv (switch_env ls xenv) ls body = .OK ts)
+    (tk : CM.cont) : ∃ tk1, transl_lblstmt_cont cenv xenv ls tk tk1 := by
+  cases ls with
+  | LSnil => exact ⟨_, .default⟩
+  | LScons i s ls =>
+      simp only [transl_lblstmt] at htrans
+      cases hq : transl_stmt cenv (switch_env (.LScons i s ls) xenv) s with
+      | Error msg => rw [hq] at htrans; cases htrans
+      | OK ts0 =>
+          rw [hq] at htrans
+          obtain ⟨tk1, hc⟩ := cminorgen_label_cont_exists cenv xenv ls
+            (.Sseq (.Sblock body) ts0) ts htrans tk
+          exact ⟨_, .case hq hc⟩
+termination_by sizeOf ls
+
+theorem transl_find_label : transl_find_labelStatement := by
+  intro _ lbl cenv cs s
+  refine Csharpminor.stmt.rec
+    (motive_1 := fun s =>
+      ∀ (k : CS.cont) (xenv : exit_env) (ts : Cminor.stmt) (tk : CM.cont),
+        transl_stmt cenv xenv s = .OK ts → match_cont k tk cenv xenv cs →
+        match Csharpminor.find_label lbl s k with
+        | none => Cminor.find_label lbl ts tk = none
+        | some (s', k') => ∃ ts' tk' xenv',
+            Cminor.find_label lbl ts tk = some (ts', tk') ∧
+            transl_stmt cenv xenv' s' = .OK ts' ∧
+            match_cont k' tk' cenv xenv' cs)
+    (motive_2 := fun ls =>
+      ∀ (xenv : exit_env) (body : Cminor.stmt) (k : CS.cont)
+        (ts : Cminor.stmt) (tk tk1 : CM.cont),
+        transl_lblstmt cenv (switch_env ls xenv) ls body = .OK ts →
+        match_cont k tk cenv xenv cs →
+        transl_lblstmt_cont cenv xenv ls tk tk1 →
+        Cminor.find_label lbl body tk1 = none →
+        match Csharpminor.find_label_ls lbl ls k with
+        | none => Cminor.find_label lbl ts tk = none
+        | some (s', k') => ∃ ts' tk' xenv',
+            Cminor.find_label lbl ts tk = some (ts', tk') ∧
+            transl_stmt cenv xenv' s' = .OK ts' ∧
+            match_cont k' tk' cenv xenv' cs)
+    ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ s
+  · intro k xenv ts tk ht hk
+    cases ht
+    rfl
+  · intro id e k xenv ts tk ht hk
+    simp only [transl_stmt] at ht
+    split at ht <;> cases ht <;> rfl
+  · intro chunk e1 e2 k xenv ts tk ht hk
+    simp only [transl_stmt] at ht
+    split at ht
+    · cases ht
+    · split at ht <;> cases ht <;> rfl
+  · intro id sig e args k xenv ts tk ht hk
+    simp only [transl_stmt] at ht
+    split at ht
+    · cases ht
+    · split at ht <;> cases ht <;> rfl
+  · intro id ef args k xenv ts tk ht hk
+    simp only [transl_stmt] at ht
+    split at ht <;> cases ht <;> rfl
+  · intro s1 s2 ih1 ih2 k xenv ts tk ht hk
+    simp only [transl_stmt] at ht
+    cases q1 : transl_stmt cenv xenv s1 with
+    | Error msg => rw [q1] at ht; cases ht
+    | OK ts1 =>
+        cases q2 : transl_stmt cenv xenv s2 with
+        | Error msg => rw [q1, q2] at ht; cases ht
+        | OK ts2 =>
+            rw [q1, q2] at ht
+            cases ht
+            have hi := ih1 (.Kseq s2 k) xenv ts1 (.Kseq ts2 tk) q1 (.seq q2 hk)
+            cases hs : Csharpminor.find_label lbl s1 (.Kseq s2 k) with
+            | none =>
+                rw [hs] at hi
+                simpa only [Csharpminor.find_label, hs, Cminor.find_label, hi] using
+                  ih2 k xenv ts2 tk q2 hk
+            | some p =>
+                rcases p with ⟨s', k'⟩
+                rw [hs] at hi
+                rcases hi with ⟨ts', tk', xenv', hfind, htr, hmc⟩
+                simp only [Csharpminor.find_label, hs]
+                exact ⟨ts', tk', xenv', by simp only [Cminor.find_label, hfind], htr, hmc⟩
+  · intro e s1 s2 ih1 ih2 k xenv ts tk ht hk
+    simp only [transl_stmt] at ht
+    split at ht
+    · cases ht
+    · cases q1 : transl_stmt cenv xenv s1 with
+      | Error msg => rw [q1] at ht; cases ht
+      | OK ts1 =>
+          cases q2 : transl_stmt cenv xenv s2 with
+          | Error msg => rw [q1, q2] at ht; cases ht
+          | OK ts2 =>
+              rw [q1, q2] at ht
+              cases ht
+              have hi := ih1 k xenv ts1 tk q1 hk
+              cases hs : Csharpminor.find_label lbl s1 k with
+              | none =>
+                  rw [hs] at hi
+                  simpa only [Csharpminor.find_label, hs, Cminor.find_label, hi] using
+                    ih2 k xenv ts2 tk q2 hk
+              | some p =>
+                  rcases p with ⟨s', k'⟩
+                  rw [hs] at hi
+                  rcases hi with ⟨ts', tk', xenv', hfind, htr, hmc⟩
+                  simp only [Csharpminor.find_label, hs]
+                  exact ⟨ts', tk', xenv', by simp only [Cminor.find_label, hfind], htr, hmc⟩
+  · intro body ih k xenv ts tk ht hk
+    simp only [transl_stmt] at ht
+    cases q : transl_stmt cenv xenv body with
+    | Error msg => rw [q] at ht; cases ht
+    | OK tbody =>
+        rw [q] at ht
+        cases ht
+        apply ih (.Kseq (.Sloop body) k) xenv tbody (.Kseq (.Sloop tbody) tk) q
+        exact .seq (by simp only [transl_stmt, q]) hk
+  · intro body ih k xenv ts tk ht hk
+    simp only [transl_stmt] at ht
+    cases q : transl_stmt cenv (true :: xenv) body with
+    | Error msg => rw [q] at ht; cases ht
+    | OK tbody =>
+        rw [q] at ht
+        cases ht
+        exact ih (.Kblock k) (true :: xenv) tbody (.Kblock tk) q (.block hk)
+  · intro n k xenv ts tk ht hk
+    cases ht
+    rfl
+  · intro isLong e ls ih k xenv ts tk ht hk
+    simp only [transl_stmt] at ht
+    split at ht
+    · cases ht
+    · obtain ⟨tk1, hc⟩ := cminorgen_label_cont_exists cenv xenv ls _ ts ht tk
+      exact ih xenv _ k ts tk tk1 ht hk hc rfl
+  · intro oe k xenv ts tk ht hk
+    cases oe with
+    | none => cases ht; rfl
+    | some e =>
+        simp only [transl_stmt] at ht
+        split at ht <;> cases ht <;> rfl
+  · intro lbl' body ih k xenv ts tk ht hk
+    simp only [transl_stmt] at ht
+    cases q : transl_stmt cenv xenv body with
+    | Error msg => rw [q] at ht; cases ht
+    | OK tbody =>
+        rw [q] at ht
+        cases ht
+        cases he : CompCert4Lean.Common.AST.ident_eq lbl lbl' with
+        | left heq =>
+            simp only [Csharpminor.find_label, Cminor.find_label, he]
+            exact ⟨tbody, tk, xenv, rfl, q, hk⟩
+        | right hne =>
+            simpa only [Csharpminor.find_label, Cminor.find_label, he] using
+              ih k xenv tbody tk q hk
+  · intro lbl' k xenv ts tk ht hk
+    cases ht
+    rfl
+  · intro xenv body k ts tk tk1 ht hk hc hf
+    cases hc
+    cases ht
+    simpa only [Csharpminor.find_label_ls, Cminor.find_label, hf]
+  · intro i body ls ihs ihls xenv tbody k ts tk tk1 ht hk hc hf
+    cases hc with
+    | @case _ _ _ _ ts0 tk2 hstmt hrest =>
+        simp only [transl_lblstmt] at ht
+        rw [hstmt] at ht
+        change transl_lblstmt cenv (switch_env ls xenv) ls (.Sseq (.Sblock tbody) ts0) = .OK ts at ht
+        have hmc := switch_match_cont cenv xenv k cs tk ls tk2 hk hrest
+        have hi := ihs (.Kseq (CS.seq_of_lbl_stmt ls) k)
+          (false :: switch_env ls xenv) ts0 tk2 hstmt hmc
+        cases hs : Csharpminor.find_label lbl body (.Kseq (CS.seq_of_lbl_stmt ls) k) with
+        | none =>
+            rw [hs] at hi
+            simp only [Csharpminor.find_label_ls, hs]
+            apply ihls xenv (.Sseq (.Sblock tbody) ts0) k ts tk tk2 ht hk hrest
+            simp only [Cminor.find_label, hf, hi]
+        | some p =>
+            rcases p with ⟨s', k'⟩
+            rw [hs] at hi
+            rcases hi with ⟨ts', tk', xenv', hfind, htr, hmc⟩
+            simp only [Csharpminor.find_label_ls, hs]
+            refine ⟨ts', tk', xenv', ?_, htr, hmc⟩
+            apply cminorgen_label_context lbl hrest (.Sseq (.Sblock tbody) ts0) ts ts' tk' ht
+            simp only [Cminor.find_label, hf, hfind]
+
+end CompCert4Lean.Cfrontend.Cminorgenproof

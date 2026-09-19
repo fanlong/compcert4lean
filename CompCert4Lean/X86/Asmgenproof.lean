@@ -2240,3 +2240,102 @@ theorem return_address_exists : return_address_existsStatement := by
   · exact transf_function_no_overflow
 
 end CompCert4Lean.X86.Asmgenproof
+
+namespace CompCert4Lean.X86.Asmgenproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Backend.Asmgenproof0
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Linking
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Smallstep
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.X86.Asm
+open CompCert4Lean.X86.Asmgen
+
+theorem exec_straight_steps_goto
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    exec_straight_steps_gotoStatement := by
+  intro cfg xi prog tprog hmatch
+  intro s fb f rs1 i c ep tf tc m1' m2 m2' sp ms2 lbl c'
+  intro hstack hext hfind hlabel hatpc hparent hstep
+  generalize hpc : rs1 .PC = pc at hatpc
+  cases hatpc with
+  | intro fb ofs f cfull ep tf tc hfind0 htrans hcode htail =>
+      change CompCert4Lean.Common.Errors.bind
+          (CompCert4Lean.X86.Asmgen.transl_code f c
+            (CompCert4Lean.X86.Asmgen.it1_is_parent ep i))
+          (fun k => CompCert4Lean.X86.Asmgen.transl_instr f i ep k) =
+        .OK tc at hcode
+      obtain ⟨k, htailcode, htrans_instr⟩ :=
+        CompCert4Lean.Common.Errors.bind_inversion _ _ _ _ _ hcode
+      obtain ⟨jmp, k', rs2, hexec_straight, hagree, hgoto⟩ :=
+        hstep k tc htrans_instr
+      have hatpc0 :
+          CompCert4Lean.Backend.Asmgenproof0.transl_code_at_pc
+            (CompCert4Lean.Common.Globalenvs.Genv.globalenv prog)
+            (rs1 .PC) fb f (i :: c) ep tf tc := by
+        rw [hpc]
+        exact CompCert4Lean.Backend.Asmgenproof0.transl_code_at_pc.intro
+          fb ofs f (i :: c) ep tf tc hfind0 htrans hcode htail
+      have hfind' :
+          CompCert4Lean.Common.Globalenvs.Genv.find_funct_ptr
+              (CompCert4Lean.Common.Globalenvs.Genv.globalenv tprog) fb =
+            some (.Internal tf) :=
+        functions_transl prog tprog hmatch fb f tf hfind0 htrans
+      have hlen := transf_function_no_overflow f tf htrans
+      obtain ⟨ofs', hpc', htail'⟩ :=
+        CompCert4Lean.Backend.Asmgenproof0.exec_straight_steps_2
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate)
+          (ge := CompCert4Lean.Common.Globalenvs.Genv.globalenv tprog)
+          (fn := tf) (c := tc) (rs := rs1) (m := m1')
+          (c' := jmp :: k') (rs' := rs2) (m' := m2')
+          hexec_straight hlen fb ofs hpc hfind' htail
+      obtain ⟨tc', rs3, hgoto_label, hatpc', hother⟩ :=
+        find_label_goto_label prog f tf lbl rs2 m2' c' fb ofs'
+          hfind0 htrans hpc' hlabel
+      refine ⟨.State rs3 m2', ?_, ?_⟩
+      · apply plus_right'
+        · exact CompCert4Lean.Backend.Asmgenproof0.exec_straight_steps_1
+            (cfg := cfg) (xi := xi)
+            (ge := CompCert4Lean.Common.Globalenvs.Genv.globalenv tprog)
+            (fn := tf) (c := tc) (rs := rs1) (m := m1')
+            (c' := jmp :: k') (rs' := rs2) (m' := m2')
+            hexec_straight hlen fb ofs hpc hfind' htail
+        · apply CompCert4Lean.X86.Asm.exec_step_internal
+          · exact hpc'
+          · exact hfind'
+          · exact CompCert4Lean.Backend.Asmgenproof0.find_instr_tail
+              tf.fn_code jmp k' (CompCert4Lean.Lib.Integers.Ptrofs.unsigned ofs')
+              htail'
+          · calc
+              CompCert4Lean.X86.Asm.exec_instr
+                  (binary64_certificate := binary64_certificate)
+                  (binary32_certificate := binary32_certificate)
+                  (CompCert4Lean.Common.Globalenvs.Genv.globalenv tprog)
+                  tf jmp rs2 m2' =
+                CompCert4Lean.X86.Asm.goto_label tf lbl rs2 m2' := hgoto
+              _ = .Next rs3 m2' := hgoto_label
+        · rfl
+      · apply match_states.match_states_intro
+        · exact hstack
+        · exact hfind0
+        · exact hext
+        · exact hatpc'
+        · exact CompCert4Lean.Backend.Asmgenproof0.agree_exten
+            ms2 sp rs2 rs3 hagree (by
+              intro r hr
+              exact hother r (by
+                intro heq
+                subst r
+                simpa [CompCert4Lean.X86.Asm.data_preg] using hr))
+        · intro h
+          cases h
+
+end CompCert4Lean.X86.Asmgenproof

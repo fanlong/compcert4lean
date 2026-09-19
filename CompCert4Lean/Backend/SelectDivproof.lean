@@ -3085,3 +3085,36 @@ open CompCert4Lean.X86.SelectOp
               Val.lessdef_refl _⟩
 
 end CompCert4Lean.Backend.SelectDivproof
+
+namespace CompCert4Lean.Backend.SelectDivproof
+
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.Backend.SelectDiv
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.X86.Op
+open CompCert4Lean.X86.SelectOp
+
+theorem eval_mod_from_div
+    [binary64_certificate : BinaryNormalizeCertificate (ZArith.BinInt.Z.of_nat 53)
+      (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (ZArith.BinInt.Z.of_nat 24)
+      (ZArith.BinInt.Z.of_nat 128)] :
+    eval_mod_from_divStatement := by
+  intro xi prog sp e m le a n x y ha hx
+  unfold mod_from_div
+  obtain ⟨v, hv, hd⟩ := CompCert4Lean.X86.SelectOpproof.eval_mulimm
+    (binary64_certificate := binary64_certificate)
+    (binary32_certificate := binary32_certificate)
+    xi (Genv.globalenv prog) sp e m n le a (.Vint y) ha
+  cases hd
+  exact eval_expr.eval_Eop le Osub _
+    [(.Vint x), (.Vint (intMul y n))] (.Vint (intSub x (intMul y n)))
+    (eval_exprlist.cons le (.Eletvar 0) _ (.Vint x)
+      [(.Vint (intMul y n))]
+      (eval_expr.eval_Eletvar le 0 (.Vint x) hx)
+      (eval_exprlist.cons le (mulimm n a) .Enil (.Vint (intMul y n)) [] hv
+        (eval_exprlist.nil le))) rfl
+
+end CompCert4Lean.Backend.SelectDivproof

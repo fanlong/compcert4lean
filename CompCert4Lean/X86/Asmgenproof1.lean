@@ -2978,3 +2978,185 @@ theorem loadind_correct
     simpa [CompCert4Lean.X86.Asm.Pregmap.set, hne] using hn
 
 end CompCert4Lean.X86.Asmgenproof1
+
+namespace CompCert4Lean.X86.Asmgenproof1
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Backend.Asmgenproof0
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Errors
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.X86.Asm
+open CompCert4Lean.X86.Asmgen
+open CompCert4Lean.X86.Op
+
+private theorem addressing_mul_one_aux (x : int64) :
+    CompCert4Lean.Lib.Integers.Int64.mul x
+      (CompCert4Lean.Lib.Integers.Int64.repr (zOfNat 1)) = x := by
+  change WordCore.repr 64 (ZArith.BinInt.Z.mul x.intval (.Zpos .xH)) = x
+  have hm : ZArith.BinInt.Z.mul x.intval (.Zpos .xH) = x.intval := by
+    apply intOfZ_injective
+    simp only [ZArith.BinInt.Z.mul, intOfZ_zOfInt]
+    change intOfZ x.intval * 1 = intOfZ x.intval
+    omega
+  rw [hm]
+  exact asmgenproof1PtrofsReprUnsigned x
+
+private theorem addressing_scale_aux (v : val) (sc : Z) :
+    Val.lessdef (Val.mull v (.Vlong (CompCert4Lean.Lib.Integers.Int64.repr sc)))
+      (match CompCert4Lean.Lib.Coqlib.zeq sc (zOfNat 1) with
+       | .left _ => v
+       | .right _ => Val.mull v (.Vlong (CompCert4Lean.Lib.Integers.Int64.repr sc))) := by
+  cases CompCert4Lean.Lib.Coqlib.zeq sc (zOfNat 1) with
+  | left h =>
+      subst sc
+      cases v with
+      | Vlong n =>
+          change Val.lessdef (.Vlong (CompCert4Lean.Lib.Integers.Int64.mul n
+            (CompCert4Lean.Lib.Integers.Int64.repr (zOfNat 1)))) (.Vlong n)
+          rw [addressing_mul_one_aux]
+          exact Val.lessdef_refl _
+      | _ => exact Val.lessdef_undef _
+  | right h => exact Val.lessdef_refl _
+
+private theorem addressing_signed_repr_aux (x : ptrofs) :
+    CompCert4Lean.Lib.Integers.Int64.repr
+      (CompCert4Lean.Lib.Integers.Ptrofs.signed x) = x := by
+  change WordCore.Word 64 at x
+  have hx := x.intrange
+  change (-1 : _root_.Int) < intOfZ x.intval ∧
+    intOfZ x.intval < 18446744073709551616 at hx
+  apply WordCore.ext
+  apply intOfZ_injective
+  change intOfZ (WordCore.repr 64 (WordCore.signed x)).intval = intOfZ x.intval
+  rw [shrxlimm_repr_intval]
+  change intOfZ (@WordCore.signed 64 x) % ((2 ^ 64 : Nat) : _root_.Int) = _
+  rw [shrxlimm_signed_core]
+  change (if intOfZ x.intval < 9223372036854775808 then intOfZ x.intval
+    else intOfZ x.intval - 18446744073709551616) % 18446744073709551616 = _
+  split <;> omega
+
+private theorem addressing_zero_symbol_aux (ge : genv)
+    (id : CompCert4Lean.Common.AST.ident) (ofs : ptrofs) :
+    Val.addl (.Vlong CompCert4Lean.Lib.Integers.Int64.zero)
+      (Genv.symbol_address ge id ofs) = Genv.symbol_address ge id ofs := by
+  have hp (x : ptrofs) : CompCert4Lean.Lib.Integers.Ptrofs.add x
+      (CompCert4Lean.Lib.Integers.Ptrofs.of_int64
+        CompCert4Lean.Lib.Integers.Int64.zero) = x := shrxlimm_add_zero x
+  unfold Genv.symbol_address
+  cases Genv.find_symbol ge id <;>
+    simp [Val.addl, CompCert4Lean.X86_64.Archi.ptr64, hp]
+
+theorem transl_addressing_mode_correct : transl_addressing_mode_correctStatement := by
+  intro ge addr args am rs v htrans heval
+  change eval_addressing64 ge (rs (.IR .RSP)) addr
+    (args.map (fun r => rs (preg_of r))) = some v at heval
+  change Val.lessdef v (eval_addrmode64 ge am rs)
+  cases addr with
+  | Aindexed ofs =>
+      rcases args with _ | ⟨a, _ | ⟨b, tail⟩⟩ <;>
+        simp [eval_addressing64] at heval
+      obtain ⟨r, hr, hm⟩ := bind_inversion _ _ _ _ _ htrans
+      have hreg := ireg_of_eq a r hr
+      change res.OK (.Addrmode (some r) none (.inl ofs)) = .OK am at hm
+      cases hm
+      rw [hreg] at heval
+      subst v
+      change Val.lessdef _ (Val.addl (rs (.IR r))
+        (.Vlong (CompCert4Lean.Lib.Integers.Int64.add
+          CompCert4Lean.Lib.Integers.Int64.zero
+          (CompCert4Lean.Lib.Integers.Int64.repr ofs))))
+      rw [asmgenproof1Int64AddZero]
+      exact Val.lessdef_refl _
+  | Aindexed2 ofs =>
+      rcases args with _ | ⟨a, _ | ⟨b, _ | ⟨c, tail⟩⟩⟩ <;>
+        simp [eval_addressing64] at heval
+      obtain ⟨r1, hr1, hm⟩ := bind_inversion _ _ _ _ _ htrans
+      obtain ⟨r2, hr2, hm⟩ := bind_inversion _ _ _ _ _ hm
+      have hreg1 := ireg_of_eq a r1 hr1
+      have hreg2 := ireg_of_eq b r2 hr2
+      change res.OK (.Addrmode (some r1) (some (r2, zOfNat 1)) (.inl ofs)) = .OK am at hm
+      cases hm
+      rw [hreg1, hreg2] at heval
+      subst v
+      change Val.lessdef (Val.addl (Val.addl (rs (.IR r1)) (rs (.IR r2)))
+          (.Vlong (CompCert4Lean.Lib.Integers.Int64.repr ofs)))
+        (Val.addl (rs (.IR r1)) (Val.addl (rs (.IR r2))
+          (.Vlong (CompCert4Lean.Lib.Integers.Int64.repr ofs))))
+      rw [Val.addl_assoc]
+      exact Val.lessdef_refl _
+  | Ascaled sc ofs =>
+      rcases args with _ | ⟨a, _ | ⟨b, tail⟩⟩ <;>
+        simp [eval_addressing64] at heval
+      obtain ⟨r, hr, hm⟩ := bind_inversion _ _ _ _ _ htrans
+      have hreg := ireg_of_eq a r hr
+      change res.OK (.Addrmode none (some (r, sc)) (.inl ofs)) = .OK am at hm
+      cases hm
+      rw [hreg] at heval
+      subst v
+      change Val.lessdef _ (Val.addl (.Vlong CompCert4Lean.Lib.Integers.Int64.zero)
+        (Val.addl
+          (match CompCert4Lean.Lib.Coqlib.zeq sc (zOfNat 1) with
+           | .left _ => rs (.IR r)
+           | .right _ => Val.mull (rs (.IR r)) (.Vlong (CompCert4Lean.Lib.Integers.Int64.repr sc)))
+          (.Vlong (CompCert4Lean.Lib.Integers.Int64.repr ofs))))
+      rw [Val.addl_permut]
+      change Val.lessdef _ (Val.addl _ (.Vlong
+        (CompCert4Lean.Lib.Integers.Int64.add CompCert4Lean.Lib.Integers.Int64.zero
+          (CompCert4Lean.Lib.Integers.Int64.repr ofs))))
+      rw [asmgenproof1Int64AddZero]
+      exact Val.addl_lessdef _ _ _ _ (addressing_scale_aux _ _) (Val.lessdef_refl _)
+  | Aindexed2scaled sc ofs =>
+      rcases args with _ | ⟨a, _ | ⟨b, _ | ⟨c, tail⟩⟩⟩ <;>
+        simp [eval_addressing64] at heval
+      obtain ⟨r1, hr1, hm⟩ := bind_inversion _ _ _ _ _ htrans
+      obtain ⟨r2, hr2, hm⟩ := bind_inversion _ _ _ _ _ hm
+      have hreg1 := ireg_of_eq a r1 hr1
+      have hreg2 := ireg_of_eq b r2 hr2
+      change res.OK (.Addrmode (some r1) (some (r2, sc)) (.inl ofs)) = .OK am at hm
+      cases hm
+      rw [hreg1, hreg2] at heval
+      subst v
+      apply Val.addl_lessdef _ _ _ _ (Val.lessdef_refl _)
+      exact Val.addl_lessdef _ _ _ _ (addressing_scale_aux _ _) (Val.lessdef_refl _)
+  | Aglobal id ofs =>
+      cases args with
+      | cons a tail => simp [eval_addressing64] at heval
+      | nil =>
+          change res.OK (.Addrmode none none (.inr (id, ofs))) = .OK am at htrans
+          cases htrans
+          simp only [eval_addressing64, CompCert4Lean.X86_64.Archi.ptr64, if_true,
+            List.map_nil, Option.some.injEq] at heval
+          subst v
+          change Val.lessdef _ (Val.addl (.Vlong CompCert4Lean.Lib.Integers.Int64.zero)
+            (Val.addl (.Vlong CompCert4Lean.Lib.Integers.Int64.zero) (Genv.symbol_address ge id ofs)))
+          rw [addressing_zero_symbol_aux, addressing_zero_symbol_aux]
+          exact Val.lessdef_refl _
+  | Abased id ofs =>
+      rcases args with _ | ⟨a, _ | ⟨b, tail⟩⟩ <;> simp [eval_addressing64] at heval
+  | Abasedscaled sc id ofs =>
+      rcases args with _ | ⟨a, _ | ⟨b, tail⟩⟩ <;> simp [eval_addressing64] at heval
+  | Ainstack ofs =>
+      cases args with
+      | cons a tail => simp [eval_addressing64] at heval
+      | nil =>
+          change res.OK (.Addrmode (some .RSP) none
+            (.inl (CompCert4Lean.Lib.Integers.Ptrofs.signed ofs))) = .OK am at htrans
+          cases htrans
+          simp only [eval_addressing64, CompCert4Lean.X86_64.Archi.ptr64, if_true,
+            List.map_nil, Option.some.injEq] at heval
+          subst v
+          change Val.lessdef (Val.offset_ptr (rs (.IR .RSP)) ofs)
+            (Val.addl (rs (.IR .RSP)) (.Vlong
+              (CompCert4Lean.Lib.Integers.Int64.add CompCert4Lean.Lib.Integers.Int64.zero
+                (CompCert4Lean.Lib.Integers.Int64.repr
+                  (CompCert4Lean.Lib.Integers.Ptrofs.signed ofs)))))
+          rw [asmgenproof1Int64AddZero, addressing_signed_repr_aux]
+          have hof : CompCert4Lean.Lib.Integers.Ptrofs.of_int64 ofs = ofs :=
+            asmgenproof1PtrofsReprUnsigned ofs
+          cases rs (.IR .RSP) <;>
+            simp [Val.offset_ptr, Val.addl, CompCert4Lean.X86_64.Archi.ptr64, hof]
+          all_goals first | exact Val.lessdef_refl _ | exact Val.lessdef_undef _
+
+end CompCert4Lean.X86.Asmgenproof1

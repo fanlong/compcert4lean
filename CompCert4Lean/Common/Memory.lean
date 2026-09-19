@@ -7460,3 +7460,103 @@ theorem drop_mapped_inj : drop_mapped_injStatement := by
 end Mem
 
 end CompCert4Lean.Common.Memory
+namespace CompCert4Lean.Common.Memory
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+
+namespace Mem
+
+theorem loadv_extends : loadv_extendsStatement := by
+  intro chunk m1 m2 addr1 addr2 v1 hext hload haddr
+  cases haddr with
+  | lessdef_refl =>
+      unfold loadv at hload ⊢
+      cases addr1 with
+      | Vundef => simp at hload
+      | Vint _ => simp at hload
+      | Vlong _ => simp at hload
+      | Vfloat _ => simp at hload
+      | Vsingle _ => simp at hload
+      | Vptr b ofs =>
+          rcases load_extends chunk m1 m2 b (Ptrofs.unsigned ofs) v1 hext hload with
+            ⟨v2, hload2, hv⟩
+          exact ⟨v2, hload2, hv⟩
+  | lessdef_undef =>
+      simp [loadv] at hload
+
+theorem loadbytes_extends : loadbytes_extendsStatement := by
+  intro m1 m2 b ofs len bytes1 hext hload
+  rcases loadbytes_inj inject_id m1 m2 len b ofs b (.Z0 : Z) bytes1
+      hext.mext_inj hload rfl with ⟨bytes2, hload2, hlist⟩
+  refine ⟨bytes2, ?_, ?_⟩
+  · have hzadd : zAdd ofs (.Z0 : Z) = ofs := by
+      apply intOfZ_injective
+      change intOfZ (zOfInt (intOfZ ofs + 0)) = intOfZ ofs
+      rw [intOfZ_zOfInt]
+      simp
+    simpa [hzadd] using hload2
+  · exact hlist
+
+theorem store_within_extends : store_within_extendsStatement := by
+  intro chunk m1 m2 b ofs v1 m1' v2 hext hstore hv
+  have hno : meminj_no_overlap inject_id m1 := by
+    unfold meminj_no_overlap
+    unfold inject_id
+    intro b1 b1' delta1 b2 b2' delta2 ofs1 ofs2 hneq hmap1 hmap2 hp1 hp2
+    left
+    cases hmap1
+    cases hmap2
+    exact hneq
+  have hv' : Val.inject inject_id v1 v2 := (val_inject_id v1 v2).mpr hv
+  rcases store_mapped_inj inject_id chunk m1 b ofs v1 m1' m2 b (.Z0 : Z) v2
+      hext.mext_inj hstore hno rfl hv' with ⟨m2', hstore2, hinj⟩
+  have hzadd : zAdd ofs (.Z0 : Z) = ofs := by
+    apply intOfZ_injective
+    change intOfZ (zOfInt (intOfZ ofs + 0)) = intOfZ ofs
+    rw [intOfZ_zOfInt]
+    simp
+  have hstore2' : store chunk m2 b ofs v2 = some m2' := by
+    simpa [hzadd] using hstore2
+  refine ⟨m2', hstore2', ?_⟩
+  constructor
+  · calc
+      m1'.nextblock = m1.nextblock := nextblock_store chunk m1 b ofs v1 m1' hstore
+      _ = m2.nextblock := hext.mext_next
+      _ = m2'.nextblock := (nextblock_store chunk m2 b ofs v2 m2' hstore2').symm
+  · exact hinj
+  · intro b' ofs' k p hperm
+    have hperm2 : perm m2 b' ofs' k p :=
+      perm_store_2 chunk m2 b ofs v2 m2' hstore2' b' ofs' k p hperm
+    rcases hext.mext_perm_inv b' ofs' k p hperm2 with hperm1 | hnot
+    · exact Or.inl (perm_store_1 chunk m1 b ofs v1 m1' hstore b' ofs' k p hperm1)
+    · right
+      intro hperm1'
+      apply hnot
+      exact perm_store_2 chunk m1 b ofs v1 m1' hstore b' ofs' Max Nonempty hperm1'
+
+theorem storev_extends : storev_extendsStatement := by
+  intro chunk m1 m2 addr1 v1 m1' addr2 v2 hext hstore haddr hv
+  cases haddr with
+  | lessdef_refl =>
+      unfold storev at hstore ⊢
+      cases addr1 with
+      | Vundef => simp at hstore
+      | Vint _ => simp at hstore
+      | Vlong _ => simp at hstore
+      | Vfloat _ => simp at hstore
+      | Vsingle _ => simp at hstore
+      | Vptr b ofs =>
+          exact store_within_extends chunk m1 m2 b (Ptrofs.unsigned ofs) v1 m1' v2
+            hext hstore hv
+  | lessdef_undef =>
+      simp [storev] at hstore
+
+end Mem
+
+end CompCert4Lean.Common.Memory

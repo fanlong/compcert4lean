@@ -4558,3 +4558,13 @@ theorem add_memcpy_holds
                 hshift hload hstore (hnum1.num_holds_eq e0 he0)
 
 end CompCert4Lean.Backend.CSEproof
+
+namespace CompCert4Lean.Backend.CSEproof
+
+theorem reduce_rec_sound
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    reduce_rec_soundStatement := by
+  exact reduce_rec_sound_aux_for_reduce_sound
+
+end CompCert4Lean.Backend.CSEproof

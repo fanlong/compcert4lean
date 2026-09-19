@@ -8598,3 +8598,11 @@ theorem bits_signed_proof : bits_signed := by
       exact htop.symm
 
 end CompCert4Lean.Lib.Integers.Int
+
+
+namespace CompCert4Lean.Lib.Integers.Int
+
+theorem eqm_unsigned_repr_proof : eqm_unsigned_repr := by
+  exact suffix_eqm_unsigned_repr
+
+end CompCert4Lean.Lib.Integers.Int

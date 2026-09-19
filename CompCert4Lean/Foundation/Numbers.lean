@@ -5734,3 +5734,37 @@ theorem ZArith.Zpower.two_p_S :
 
 end Rocq.Coq
 end CompCert4Lean.Foundation.Numbers
+
+namespace CompCert4Lean.Foundation.Numbers
+namespace Rocq.Coq
+
+theorem ZArith.auxiliary.Zle_left :
+    ZArith.auxiliary.Zle_leftStatement := by
+  intro n m hnm
+  change intOfZ n ≤ intOfZ m at hnm
+  change (0 : Int) ≤ intOfZ (ZArith.BinInt.Z.add m (ZArith.BinInt.Z.opp n))
+  simp only [ZArith.BinInt.Z.add, ZArith.BinInt.Z.opp, intOfZ_zOfInt]
+  omega
+
+end Rocq.Coq
+end CompCert4Lean.Foundation.Numbers
+
+namespace CompCert4Lean.Foundation.Numbers
+namespace Rocq.Coq
+
+theorem ZArith.Zquot.Zquot_Zdiv_pos :
+    ZArith.Zquot.Zquot_Zdiv_posStatement := by
+  intro a b ha hb
+  change (0 : Int) ≤ intOfZ a at ha
+  change (0 : Int) ≤ intOfZ b at hb
+  apply intOfZ_injective
+  simp only [ZArith.BinInt.Z.quot, ZArith.BinInt.Z.div, intOfZ_zOfInt]
+  unfold ZArith.BinInt.Z.zDivEucl
+  by_cases hb0 : intOfZ b = 0
+  · simp [hb0]
+  · have hbpos : 0 < intOfZ b := by omega
+    simp only [hb0, if_false, if_pos hbpos]
+    exact Int.tdiv_eq_ediv_of_nonneg ha
+
+end Rocq.Coq
+end CompCert4Lean.Foundation.Numbers

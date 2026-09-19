@@ -4570,3 +4570,32 @@ theorem frame_set_outgoing : frame_set_outgoingStatement := by
       ⟨hframe1', hnew.2.1, hframe.2.2⟩ hranges'
 
 end CompCert4Lean.Backend.Stackingproof
+
+
+namespace CompCert4Lean.Backend.Stackingproof
+
+open CompCert4Lean.Backend.Bounds
+open CompCert4Lean.Backend.Locations
+open CompCert4Lean.Backend.Linear
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+
+theorem frame_set_res : frame_set_resStatement := by
+  intro return_address_offset tprog cfg f bound_local_pos bound_outgoing_pos
+    bound_stack_data_pos used_callee_save_norepet used_callee_save_prop
+    j sp ls0 parent retaddr m P res v ls hm
+  induction res generalizing v ls with
+  | BR r =>
+      exact frame_set_reg return_address_offset tprog cfg f
+        bound_local_pos bound_outgoing_pos bound_stack_data_pos
+        used_callee_save_norepet used_callee_save_prop r v j sp ls ls0
+        parent retaddr m P hm
+  | BR_none =>
+      simpa [Locmap.setres] using hm
+  | BR_splitlong hi lo ih_hi ih_lo =>
+      have hhi := ih_hi (Val.hiword v) ls hm
+      have hlo := ih_lo (Val.loword v)
+        (Locmap.setres hi (Val.hiword v) ls) hhi
+      simpa [Locmap.setres] using hlo
+
+end CompCert4Lean.Backend.Stackingproof

@@ -3126,3 +3126,35 @@ theorem globalenv_inject_preserves_globals : globalenv_inject_preserves_globalsS
         exact hdom b (hvar b gv hfind)
       · intro b1 b2 delta gv hfind hmap
         exact (himg b1 b2 delta hmap (hvar b2 gv hfind)).symm
+
+
+theorem globalenv_inject_incr : globalenv_inject_incrStatement := by
+  intro j m0 F V ge m j' P hincr hseparate hsep
+  have hglobal : (globalenv_inject ge j).m_pred m := hsep.1
+  have hP : P.m_pred m := hsep.2.1
+  have hdisj : disjoint_footprint (globalenv_inject ge j) P := hsep.2.2
+  rcases hglobal with ⟨bound, hbound, hpres⟩
+  cases hpres with
+  | globalenv_preserved_intro hdom himage hsym hfun hvar =>
+      refine ⟨⟨bound, hbound, globalenv_preserved_intro ?_ ?_ hsym hfun hvar⟩, hP, ?_⟩
+      · intro b hlt
+        exact hincr b b z0 (hdom b hlt)
+      · intro b1 b2 delta hmap hlt
+        by_cases hb : j b1 = none
+        · have hsep' := hseparate b1 b2 delta hb hmap
+          have hvalid : Mem.valid_block m b2 := by
+            unfold Mem.valid_block
+            exact CompCert4Lean.Lib.Coqlib.Plt_Ple_trans b2 bound m.nextblock hlt hbound
+          exact False.elim (hsep'.2 hvalid)
+        · cases hJ : j b1 with
+          | none => exact (hb hJ).elim
+          | some x =>
+              rcases x with ⟨b0, d0⟩
+              have hinc := hincr b1 b0 d0 hJ
+              have heq : some (b0, d0) = some (b2, delta) := hinc.symm.trans hmap
+              have htarget : b0 = b2 := by
+                exact congrArg Prod.fst (Option.some.inj heq)
+              have hlt0 : Plt b0 bound := by
+                simpa [htarget] using hlt
+              exact (himage b1 b0 d0 hJ hlt0).trans htarget
+      · exact hdisj

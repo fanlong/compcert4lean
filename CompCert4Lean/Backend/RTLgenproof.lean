@@ -5183,3 +5183,500 @@ theorem transl_condexpr_CElet_correct
           _ = Regmap.get r' rs := hstable1 r' hr'
 
 end CompCert4Lean.Backend.RTLgenproof
+
+namespace CompCert4Lean.Backend.RTLgenproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.ExternalCalls
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Integers
+
+private theorem rtlgen_expr_call_add_zero (x : Z) : zOfInt (intOfZ x + 0) = x := by
+  simp [zOfInt_intOfZ]
+
+private theorem rtlgen_expr_call_id_no_overlap (m : mem) :
+    Mem.meminj_no_overlap inject_id m := by
+  intro b1 b1' d1 b2 b2' d2 ofs1 ofs2 hne h1 h2 _ _
+  have h1' : (b1, (.Z0 : Z)) = (b1', d1) := Option.some.inj h1
+  have h2' : (b2, (.Z0 : Z)) = (b2', d2) := Option.some.inj h2
+  cases h1'
+  cases h2'
+  exact Or.inl hne
+
+private theorem rtlgen_expr_call_store_extends : Mem.store_within_extendsStatement := by
+  intro chunk m1 m2 b ofs v1 n1 v2 hext hs hv
+  obtain ⟨n2, hs2, hi⟩ := Mem.store_mapped_inj inject_id chunk m1 b ofs v1 n1
+    m2 b .Z0 v2 hext.mext_inj hs (rtlgen_expr_call_id_no_overlap m1) rfl
+    ((val_inject_id v1 v2).mpr hv)
+  change Mem.store chunk m2 b (zOfInt (intOfZ ofs + 0)) v2 = some n2 at hs2
+  rw [rtlgen_expr_call_add_zero] at hs2
+  refine ⟨n2, hs2, ?_⟩
+  constructor
+  · rw [Mem.nextblock_store _ _ _ _ _ _ hs, Mem.nextblock_store _ _ _ _ _ _ hs2]
+    exact hext.mext_next
+  · exact hi
+  · intro b' ofs' k p hp
+    obtain hp | hn := hext.mext_perm_inv b' ofs' k p
+      (Mem.perm_store_2 _ _ _ _ _ _ hs2 _ _ _ _ hp)
+    · exact Or.inl (Mem.perm_store_1 _ _ _ _ _ _ hs _ _ _ _ hp)
+    · exact Or.inr (fun h => hn (Mem.perm_store_2 _ _ _ _ _ _ hs _ _ _ _ h))
+
+private theorem rtlgen_expr_call_storebytes_extends : Mem.storebytes_within_extendsStatement := by
+  intro m1 m2 b ofs bytes1 n1 bytes2 hext hs hv
+  obtain ⟨n2, hs2, hi⟩ := Mem.storebytes_mapped_inj inject_id m1 b ofs bytes1 n1
+    m2 b .Z0 bytes2 hext.mext_inj hs (rtlgen_expr_call_id_no_overlap m1) rfl hv
+  change Mem.storebytes m2 b (zOfInt (intOfZ ofs + 0)) bytes2 = some n2 at hs2
+  rw [rtlgen_expr_call_add_zero] at hs2
+  refine ⟨n2, hs2, ?_⟩
+  constructor
+  · rw [Mem.nextblock_storebytes _ _ _ _ _ hs, Mem.nextblock_storebytes _ _ _ _ _ hs2]
+    exact hext.mext_next
+  · exact hi
+  · intro b' ofs' k p hp
+    obtain hp | hn := hext.mext_perm_inv b' ofs' k p
+      (Mem.perm_storebytes_2 _ _ _ _ _ hs2 _ _ _ _ hp)
+    · exact Or.inl (Mem.perm_storebytes_1 _ _ _ _ _ hs _ _ _ _ hp)
+    · exact Or.inr (fun h => hn (Mem.perm_storebytes_2 _ _ _ _ _ hs _ _ _ _ h))
+
+private theorem rtlgen_expr_call_free_extends : Mem.free_parallel_extendsStatement := by
+  intro m1 m2 b lo hi n1 hext hf
+  have hr := Mem.range_perm_inj inject_id m1 m2 b lo hi Cur Freeable b .Z0
+    hext.mext_inj (Mem.free_range_perm _ _ _ _ _ hf) rfl
+  change Mem.range_perm m2 b (zOfInt (intOfZ lo + 0))
+    (zOfInt (intOfZ hi + 0)) Cur Freeable at hr
+  rw [rtlgen_expr_call_add_zero, rtlgen_expr_call_add_zero] at hr
+  obtain ⟨n2, hf2⟩ := Mem.range_perm_free m2 b lo hi hr
+  refine ⟨n2, hf2, ?_⟩
+  constructor
+  · rw [Mem.nextblock_free _ _ _ _ _ hf, Mem.nextblock_free _ _ _ _ _ hf2]
+    exact hext.mext_next
+  · apply Mem.free_right_inj inject_id n1 m2 b lo hi n2
+      (Mem.free_left_inj inject_id m1 m2 b lo hi n1 hext.mext_inj hf) hf2
+    intro b' delta ofs k p hmap hp hb
+    have heq : (b', (.Z0 : Z)) = (b, delta) := Option.some.inj hmap
+    cases heq
+    change intOfZ lo ≤ intOfZ (zOfInt (intOfZ ofs + 0)) ∧
+      intOfZ (zOfInt (intOfZ ofs + 0)) < intOfZ hi at hb
+    rw [rtlgen_expr_call_add_zero] at hb
+    exact Mem.perm_free_2 _ _ _ _ _ hf _ _ _ hb hp
+  · intro b' ofs k p hp
+    obtain hp1 | hn := hext.mext_perm_inv b' ofs k p
+      (Mem.perm_free_3 _ _ _ _ _ hf2 _ _ _ _ hp)
+    · obtain ⟨hb, hlo, hhi⟩ | hp1' := Mem.perm_free_inv _ _ _ _ _ hf _ _ _ _ hp1
+      · subst b'
+        exact False.elim (Mem.perm_free_2 _ _ _ _ _ hf2 _ _ _ ⟨hlo, hhi⟩ hp)
+      · exact Or.inl hp1'
+    · exact Or.inr (fun h => hn (Mem.perm_free_3 _ _ _ _ _ hf _ _ _ _ h))
+
+private theorem rtlgen_expr_call_alloc_extends
+    (m1 m2 : mem) (lo hi : Z) (n1 : mem) (b : block)
+    (hext : Mem.extends m1 m2) (ha : Mem.alloc m1 lo hi = (n1, b)) :
+    ∃ n2, Mem.alloc m2 lo hi = (n2, b) ∧ Mem.extends n1 n2 := by
+  cases ha2 : Mem.alloc m2 lo hi with
+  | mk n2 b2 =>
+    have hb : b2 = b := by
+      rw [Mem.alloc_result _ _ _ _ _ ha2, Mem.alloc_result _ _ _ _ _ ha]
+      exact hext.mext_next.symm
+    subst b2
+    have hperm : ∀ ofs k p, intOfZ lo ≤ intOfZ ofs ∧ intOfZ ofs < intOfZ hi → Mem.perm n2 b ofs k p := by
+      intro ofs k p hr
+      exact Mem.perm_implies _ _ _ _ _ _
+        (Mem.perm_alloc_2 _ _ _ _ _ ha2 _ _ hr) (perm_F_any p)
+    refine ⟨n2, rfl, ?_⟩
+    constructor
+    · rw [Mem.nextblock_alloc _ _ _ _ _ ha, Mem.nextblock_alloc _ _ _ _ _ ha2,
+        hext.mext_next]
+    · apply Mem.alloc_left_mapped_inj inject_id m1 n2 lo hi n1 b b .Z0
+        (Mem.alloc_right_inj inject_id m1 m2 lo hi b n2 hext.mext_inj ha2) ha
+        (Mem.valid_new_block _ _ _ _ _ ha2)
+      · intro chunk _
+        refine ⟨.Z0, ?_⟩
+        apply intOfZ_injective
+        change 0 = intOfZ (zOfInt (intOfZ (align_chunk chunk) * 0))
+        rw [intOfZ_zOfInt]
+        simp
+      · intro ofs k p hr
+        change Mem.perm n2 b (zOfInt (intOfZ ofs + 0)) k p
+        rw [rtlgen_expr_call_add_zero]
+        exact hperm ofs k p hr
+      · rfl
+    · intro b' ofs k p hp
+      by_cases hb : b' = b
+      · subst b'
+        apply Or.inl
+        exact Mem.perm_implies _ _ _ _ _ _
+          (Mem.perm_alloc_2 _ _ _ _ _ ha _ _
+            (Mem.perm_alloc_3 _ _ _ _ _ ha2 _ _ _ hp)) (perm_F_any p)
+      · obtain hp1 | hn := hext.mext_perm_inv b' ofs k p
+          (Mem.perm_alloc_4 _ _ _ _ _ ha2 _ _ _ _ hp hb)
+        · exact Or.inl (Mem.perm_alloc_1 _ _ _ _ _ ha _ _ _ _ hp1)
+        · exact Or.inr (fun h => hn (Mem.perm_alloc_4 _ _ _ _ _ ha _ _ _ _ h hb))
+
+end CompCert4Lean.Backend.RTLgenproof
+
+namespace CompCert4Lean.Backend.RTLgenproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.ExternalCalls
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Lib.Integers
+
+private theorem rtlgen_expr_call_lessdef_one {v : val} {vs : List val}
+    (h : Val.lessdef_list [v] vs) :
+    ∃ v', vs = [v'] ∧ Val.lessdef v v' := by
+  cases h with
+  | lessdef_list_cons v1 v2 vl1 vl2 hv ht =>
+    cases ht
+    exact ⟨v2, rfl, hv⟩
+
+private theorem rtlgen_expr_call_lessdef_two {v w : val} {vs : List val}
+    (h : Val.lessdef_list [v, w] vs) :
+    ∃ v' w', vs = [v', w'] ∧ Val.lessdef v v' ∧ Val.lessdef w w' := by
+  cases h with
+  | lessdef_list_cons v1 v2 vl1 vl2 hv ht =>
+    obtain ⟨w', hw, hl⟩ := rtlgen_expr_call_lessdef_one ht
+    subst vl2
+    exact ⟨v2, w', rfl, hv, hl⟩
+
+private theorem rtlgen_expr_call_call_extends
+    [binary64_certificate : BinaryNormalizeCertificate (ZArith.BinInt.Z.of_nat 53) (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (ZArith.BinInt.Z.of_nat 24) (ZArith.BinInt.Z.of_nat 128)]
+    (xi : ExternalCalls) (ef : external_function) (ge : Senv.t)
+    (vargs : List val) (m1 : mem) (t : trace) (vres : val) (m2 m1' : mem)
+    (vargs' : List val)
+    (hc : external_call xi ef ge vargs m1 t vres m2)
+    (hext : Mem.extends m1 m1') (hargs : Val.lessdef_list vargs vargs') :
+    ∃ vres' m2', external_call xi ef ge vargs' m1' t vres' m2' ∧
+      Val.lessdef vres vres' ∧ Mem.extends m2 m2' := by
+  cases ef with
+  | EF_external name sg =>
+    obtain ⟨v', m', hcall, hval, hmem, _⟩ :=
+      (external_functions_properties xi name sg).ec_mem_extends
+        ge vargs m1 t vres m2 m1' vargs' hc hext hargs
+    exact ⟨v', m', hcall, hval, hmem⟩
+  | EF_inline_asm text sg clobbers =>
+    obtain ⟨v', m', hcall, hval, hmem, _⟩ :=
+      (inline_assembly_properties xi text sg).ec_mem_extends
+        ge vargs m1 t vres m2 m1' vargs' hc hext hargs
+    exact ⟨v', m', hcall, hval, hmem⟩
+  | EF_builtin name sg | EF_runtime name sg =>
+    change builtin_or_external_sem xi name sg ge vargs m1 t vres m2 at hc
+    change ∃ vres' m2', builtin_or_external_sem xi name sg ge vargs' m1' t vres' m2' ∧
+      Val.lessdef vres vres' ∧ Mem.extends m2 m2'
+    unfold builtin_or_external_sem at hc ⊢
+    cases hlookup : CompCert4Lean.Common.Builtins.lookup_builtin_function name sg with
+    | some bf =>
+      rw [hlookup] at hc
+      obtain ⟨v', hcall, hval⟩ := known_builtin_sem_lessdef bf ge vargs m1 t vres m2
+        ge vargs' m1' hc hargs
+      cases hc
+      exact ⟨v', m1', hcall, hval, hext⟩
+    | none =>
+      rw [hlookup] at hc
+      obtain ⟨v', m', hcall, hval, hmem, _⟩ :=
+        (external_functions_properties xi name sg).ec_mem_extends
+          ge vargs m1 t vres m2 m1' vargs' hc hext hargs
+      exact ⟨v', m', hcall, hval, hmem⟩
+  | EF_vload chunk =>
+    cases hc with
+    | volatile_load_sem_intro b ofs m t v hl =>
+      obtain ⟨vptr, rfl, hp⟩ := rtlgen_expr_call_lessdef_one hargs
+      cases hp
+      obtain ⟨v', hload, hval⟩ := volatile_load_extends ge chunk m1 b ofs t vres m1' hl hext
+      exact ⟨v', m1', volatile_load_sem_intro b ofs m1' t v' hload, hval, hext⟩
+  | EF_vstore chunk =>
+    cases hc with
+    | volatile_store_sem_intro b ofs m v t n hs =>
+      obtain ⟨vptr, v', rfl, hp, hv⟩ := rtlgen_expr_call_lessdef_two hargs
+      cases hp
+      cases hs with
+      | volatile_store_vol id ev v hvol hfind hmatch =>
+        refine ⟨Vundef, m1', volatile_store_sem_intro b ofs m1' v' _ m1' ?_,
+          Val.lessdef_refl _, hext⟩
+        exact volatile_store_vol chunk m1' b ofs id ev v' hvol hfind
+          (eventval_match_lessdef ge ev (type_of_chunk chunk) _ _ hmatch
+            (Val.load_result_lessdef chunk v v' hv))
+      | volatile_store_nonvol =>
+        rename_i hvol hstore
+        obtain ⟨n', hstore', hext'⟩ := rtlgen_expr_call_store_extends chunk m1 m1' b
+          (Ptrofs.unsigned ofs) v m2 v' hext hstore hv
+        exact ⟨Vundef, n', volatile_store_sem_intro b ofs m1' v' _ n'
+          (volatile_store_nonvol chunk m1' b ofs v' n' hvol hstore'),
+          Val.lessdef_refl _, hext'⟩
+  | EF_malloc =>
+    cases hc with
+    | extcall_malloc_sem_intro sz m n b n' ha hs =>
+      obtain ⟨v', rfl, hv⟩ := rtlgen_expr_call_lessdef_one hargs
+      change Val.lessdef (.Vlong _) v' at hv
+      cases hv
+      obtain ⟨n2, ha2, hext2⟩ := rtlgen_expr_call_alloc_extends m1 m1' _ _ n b hext ha
+      obtain ⟨n2', hs2, hext2'⟩ := rtlgen_expr_call_store_extends _ n n2 b _ _ m2 _
+        hext2 hs (Val.lessdef_refl _)
+      exact ⟨Vptr b Ptrofs.zero, n2', extcall_malloc_sem_intro sz m1' n2 b n2' ha2 hs2,
+        Val.lessdef_refl _, hext2'⟩
+  | EF_free =>
+    cases hc with
+    | extcall_free_sem_ptr b lo sz m n hl hf =>
+      obtain ⟨v', rfl, hv⟩ := rtlgen_expr_call_lessdef_one hargs
+      cases hv
+      obtain ⟨sz', hl', hsz⟩ := Mem.load_extends _ m1 m1' b _ _ hext hl
+      change Val.lessdef (.Vlong _) sz' at hsz
+      cases hsz
+      obtain ⟨n', hf', hext'⟩ := rtlgen_expr_call_free_extends m1 m1' b _ _ m2 hext hf
+      exact ⟨Vundef, n', extcall_free_sem_ptr b lo sz m1' n' hl' hf',
+        Val.lessdef_refl _, hext'⟩
+    | extcall_free_sem_null m =>
+      obtain ⟨v', rfl, hv⟩ := rtlgen_expr_call_lessdef_one hargs
+      change Val.lessdef (.Vlong _) v' at hv
+      cases hv
+      exact ⟨Vundef, m1', extcall_free_sem_null m1', Val.lessdef_refl _, hext⟩
+  | EF_memcpy sz al =>
+    cases hc with
+    | extcall_memcpy_sem_intro bd od bs os m bytes n hal hsz hsa hsrc hdst hno hl hs =>
+      obtain ⟨v1, v2, rfl, hv1, hv2⟩ := rtlgen_expr_call_lessdef_two hargs
+      cases hv1
+      cases hv2
+      obtain ⟨bytes', hl', hbytes⟩ := Mem.loadbytes_inj inject_id m1 m1' sz bs
+        (Ptrofs.unsigned os) bs .Z0 bytes hext.mext_inj hl rfl
+      change Mem.loadbytes m1' bs (zOfInt (intOfZ (Ptrofs.unsigned os) + 0)) sz =
+        some bytes' at hl'
+      rw [rtlgen_expr_call_add_zero] at hl'
+      obtain ⟨n', hs', hext'⟩ := rtlgen_expr_call_storebytes_extends m1 m1' bd
+        (Ptrofs.unsigned od) bytes m2 bytes' hext hs hbytes
+      exact ⟨Vundef, n', extcall_memcpy_sem_intro bd od bs os m1' bytes' n'
+        hal hsz hsa hsrc hdst hno hl' hs', Val.lessdef_refl _, hext'⟩
+  | EF_annot kind text targs =>
+    cases hc with
+    | extcall_annot_sem_intro evs hm =>
+      exact ⟨Vundef, m1', extcall_annot_sem_intro vargs' m1' evs
+        (eventval_list_match_lessdef ge evs targs vargs hm vargs' hargs),
+        Val.lessdef_refl _, hext⟩
+  | EF_annot_val kind text targ =>
+    cases hc with
+    | extcall_annot_val_sem_intro v m ev hm =>
+      obtain ⟨v', rfl, hv⟩ := rtlgen_expr_call_lessdef_one hargs
+      exact ⟨v', m1', extcall_annot_val_sem_intro v' m1' ev
+        (eventval_match_lessdef ge ev targ vres v' hm hv), hv, hext⟩
+  | EF_debug kind text targs =>
+    cases hc
+    exact ⟨Vundef, m1', extcall_debug_sem_intro vargs' m1', Val.lessdef_refl _, hext⟩
+
+end CompCert4Lean.Backend.RTLgenproof
+
+namespace CompCert4Lean.Backend.RTLgenproof
+
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.ExternalCalls
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Lib.Integers
+
+private theorem rtlgen_expr_call_symbols
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (xi : ExternalCalls) (ef : external_function) (ge1 ge2 : Senv.t)
+    (args : List val) (m : mem) (t : trace) (v : val) (m' : mem)
+    (heq : Senv.equiv ge1 ge2)
+    (hc : external_call xi ef ge1 args m t v m') :
+    external_call xi ef ge2 args m t v m' := by
+  cases ef with
+  | EF_external name sg =>
+      exact (external_functions_properties xi name sg).ec_symbols_preserved
+        ge1 ge2 args m t v m' heq hc
+  | EF_inline_asm text sg clobbers =>
+      exact (inline_assembly_properties xi text sg).ec_symbols_preserved
+        ge1 ge2 args m t v m' heq hc
+  | EF_builtin name sg | EF_runtime name sg =>
+      change builtin_or_external_sem xi name sg ge1 args m t v m' at hc
+      change builtin_or_external_sem xi name sg ge2 args m t v m'
+      unfold builtin_or_external_sem at hc ⊢
+      cases hlookup : CompCert4Lean.Common.Builtins.lookup_builtin_function name sg with
+      | some bf =>
+          rw [hlookup] at hc
+          cases hc with
+          | known_builtin_sem_intro args v hev =>
+              exact known_builtin_sem_intro args v m hev
+      | none =>
+          rw [hlookup] at hc
+          exact (external_functions_properties xi name sg).ec_symbols_preserved
+            ge1 ge2 args m t v m' heq hc
+  | EF_vload chunk =>
+      cases hc with
+      | volatile_load_sem_intro b ofs m t v hload =>
+          exact volatile_load_sem_intro b ofs m t v
+            (volatile_load_preserved ge1 ge2 chunk m b ofs t v heq hload)
+  | EF_vstore chunk =>
+      cases hc with
+      | volatile_store_sem_intro b ofs m v t m' hstore =>
+          exact volatile_store_sem_intro b ofs m v t m'
+            (volatile_store_preserved ge1 ge2 chunk m b ofs v t m' heq hstore)
+  | EF_malloc =>
+      cases hc with
+      | extcall_malloc_sem_intro sz m n b n' ha hs =>
+          exact extcall_malloc_sem_intro sz m n b m' ha hs
+  | EF_free =>
+      cases hc with
+      | extcall_free_sem_ptr b lo sz m n hl hf =>
+          exact extcall_free_sem_ptr b lo sz m m' hl hf
+      | extcall_free_sem_null m => exact extcall_free_sem_null m
+  | EF_memcpy sz al =>
+      cases hc with
+      | extcall_memcpy_sem_intro bd od bs os m bytes n hal hsz hsa hsrc hdst hno hl hs =>
+          exact extcall_memcpy_sem_intro bd od bs os m bytes m'
+            hal hsz hsa hsrc hdst hno hl hs
+  | EF_annot kind text targs =>
+      cases hc with
+      | extcall_annot_sem_intro evs hm =>
+          exact extcall_annot_sem_intro args m evs
+            (eventval_list_match_preserved ge1 ge2 heq.2.1 heq.1 evs targs args hm)
+  | EF_annot_val kind text targ =>
+      cases hc with
+      | extcall_annot_val_sem_intro v m ev hm =>
+          exact extcall_annot_val_sem_intro v m ev
+            (eventval_match_preserved ge1 ge2 heq.2.1 heq.1 ev targ v hm)
+  | EF_debug kind text targs =>
+      cases hc
+      exact extcall_debug_sem_intro args m
+
+end CompCert4Lean.Backend.RTLgenproof
+
+namespace CompCert4Lean.Backend.RTLgenproof
+
+open CompCert4Lean.Backend.Registers
+open CompCert4Lean.Backend.RTL
+open CompCert4Lean.Backend.RTLgen
+open CompCert4Lean.Backend.RTLgenspec
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Smallstep
+open CompCert4Lean.Common.Values
+
+private theorem rtlgen_expr_builtin_case
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    transl_expr_Ebuiltin_correctStatement := by
+  intro xi prog tprog hprog sp e m le ef al vl v heval htrans hcall
+  unfold transl_expr_prop
+  intro tge tm cs f map pr ns nd rd rs dst hwf htr hmatch hext
+  cases htr with
+  | tr_Ebuiltin map pr ef al ns nd rd dst n1 rl hargs hcode hmap hpr =>
+      obtain ⟨rs1, tm1, hstar, hmatch1, hresults, hstable, hext1⟩ :=
+        htrans tm cs f map pr ns n1 rl rs hwf hargs hmatch hext
+      obtain ⟨v', tm2, hcall', hless, hext2⟩ := rtlgen_expr_call_call_extends xi ef
+        (Genv.to_senv (Genv.globalenv prog)) vl m E0 v m tm1
+        (rl.map (fun r => Regmap.get r rs1)) hcall hext1 hresults
+      have hcallt := rtlgen_expr_call_symbols xi ef
+        (Genv.to_senv (Genv.globalenv prog)) (Genv.to_senv tge)
+        (rl.map (fun r => Regmap.get r rs1)) tm1 E0 v' tm2
+        (senv_preserved prog tprog hprog) hcall'
+      refine ⟨Regmap.set rd v' rs1, tm2, ?_, ?_, ?_, ?_, hext2⟩
+      · exact star_right _ _ _ _ _ _ _ _ _ _ hstar
+          (RTL.step.exec_Ibuiltin cs f sp n1 rs1 tm1 ef (rl.map (.BA ·)) (.BR rd) nd
+            (rl.map (fun r => Regmap.get r rs1)) E0 v' tm2 hcode
+            (eval_builtin_args_trivial tge rs1 sp tm1 rl) hcallt) rfl
+      · exact match_env_update_dest map e le rs1 dst rd v v'
+          hless hwf hmap hmatch1
+      · rw [Regmap.gss_proof val rd v' rs1]
+        exact hless
+      · intro r hr
+        have hne : r ≠ rd := fun heq => hpr (heq ▸ hr)
+        rw [Regmap.gso_proof val r rd v' rs1 hne]
+        exact hstable r hr
+
+private theorem rtlgen_expr_external_case
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    transl_expr_Eexternal_correctStatement := by
+  intro xi prog tprog hprog sp e m le id sg al b ef vl v
+    hsymbol hfunction hsig heval htrans hcall
+  unfold transl_expr_prop
+  intro tge tm cs f map pr ns nd rd rs dst hwf htr hmatch hext
+  cases htr with
+  | tr_Eexternal map pr id sg al ns nd rd dst n1 rl hargs hcode hmap hpr =>
+      obtain ⟨rs1, tm1, hstar, hmatch1, hresults, hstable, hext1⟩ :=
+        htrans tm cs f map pr ns n1 rl rs hwf hargs hmatch hext
+      obtain ⟨v', tm2, hcall', hless, hext2⟩ := rtlgen_expr_call_call_extends xi ef
+        (Genv.to_senv (Genv.globalenv prog)) vl m E0 v m tm1
+        (rl.map (fun r => Regmap.get r rs1)) hcall hext1 hresults
+      have hcallt := rtlgen_expr_call_symbols xi ef
+        (Genv.to_senv (Genv.globalenv prog)) (Genv.to_senv tge)
+        (rl.map (fun r => Regmap.get r rs1)) tm1 E0 v' tm2
+        (senv_preserved prog tprog hprog) hcall'
+      obtain ⟨tf, htf, htftrans⟩ := function_ptr_translated prog tprog hprog b
+        (.External ef) hfunction
+      have htfeq : tf = .External ef := by
+        exact (CompCert4Lean.Common.Errors.res.OK.inj htftrans).symm
+      subst tf
+      have hfind : RTL.find_function tge (.inr id) rs1 = some (.External ef) := by
+        change (match Genv.find_symbol (Genv.globalenv tprog) id with
+          | none => none
+          | some b => Genv.find_funct_ptr (Genv.globalenv tprog) b) = _
+        rw [symbols_preserved prog tprog hprog id, hsymbol]
+        exact htf
+      have hstep1 := RTL.step.exec_Icall (xi := xi) (ge := tge)
+        cs f sp n1 rs1 tm1 sg (.inr id) rl rd nd (.External ef) hcode hfind hsig
+      have hstep2 := RTL.step.exec_function_external (xi := xi) (ge := tge)
+        (.Stackframe rd f sp nd rs1 :: cs) ef (rl.map (fun r => Regmap.get r rs1))
+        v' E0 tm1 tm2 hcallt
+      have hstep3 := RTL.step.exec_return (xi := xi) (ge := tge)
+        rd f sp nd rs1 cs v' tm2
+      refine ⟨Regmap.set rd v' rs1, tm2, ?_, ?_, ?_, ?_, hext2⟩
+      · have hstar1 := star_right _ _ _ _ _ _ _ _ _ _ hstar hstep1 rfl
+        have hstar2 := star_right _ _ _ _ _ _ _ _ _ _ hstar1 hstep2 rfl
+        exact star_right _ _ _ _ _ _ _ _ _ _ hstar2 hstep3 rfl
+      · exact match_env_update_dest map e le rs1 dst rd v v'
+          hless hwf hmap hmatch1
+      · rw [Regmap.gss_proof val rd v' rs1]
+        exact hless
+      · intro r hr
+        have hne : r ≠ rd := fun heq => hpr (heq ▸ hr)
+        rw [Regmap.gso_proof val r rd v' rs1 hne]
+        exact hstable r hr
+
+end CompCert4Lean.Backend.RTLgenproof
+
+namespace CompCert4Lean.Backend.RTLgenproof
+
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.Common.Globalenvs
+
+theorem transl_expr_correct
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    transl_expr_correctStatement := by
+  intro xi prog tprog hprog sp e m
+  exact CminorSel.eval_expr_ind3 xi (Genv.globalenv prog) sp e m
+    (transl_expr_prop xi tprog sp e m)
+    (transl_exprlist_prop xi tprog sp e m)
+    (transl_condexpr_prop xi tprog sp e m)
+    (transl_expr_Evar_correct xi tprog sp e m)
+    (transl_expr_Eop_correct xi prog tprog hprog sp e m)
+    (transl_expr_Eload_correct xi prog tprog hprog sp e m)
+    (transl_expr_Econdition_correct xi prog tprog sp e m)
+    (transl_expr_Elet_correct xi prog tprog sp e m)
+    (transl_expr_Eletvar_correct xi tprog sp e m)
+    (rtlgen_expr_builtin_case xi prog tprog hprog sp e m)
+    (rtlgen_expr_external_case xi prog tprog hprog sp e m)
+    (transl_exprlist_Enil_correct xi tprog sp e m)
+    (transl_exprlist_Econs_correct xi prog tprog sp e m)
+    (transl_condexpr_CEcond_correct xi prog tprog sp e m)
+    (transl_condexpr_CEcondition_correct xi prog tprog sp e m)
+    (transl_condexpr_CElet_correct xi prog tprog sp e m)
+
+end CompCert4Lean.Backend.RTLgenproof

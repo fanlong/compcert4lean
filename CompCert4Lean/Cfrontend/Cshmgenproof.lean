@@ -6085,3 +6085,161 @@ theorem make_shl_correct
             (Int64.repr (CompCert4Lean.Lib.Integers.Int.unsigned n2))))))
       rw [hunsigned]
   case shift_default => contradiction
+
+theorem make_shr_correct
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    make_shr_correctStatement := by
+  intro ge a tya b tyb c va vb v e le m hsem hmake h1 h2
+  have hclassified : Cshmgen.make_shr a tya b tyb =
+      match Cop.classify_shift tya tyb with
+      | .shift_case_ii .Signed => .OK (.Ebinop .Oshr a b)
+      | .shift_case_ii .Unsigned => .OK (.Ebinop .Oshru a b)
+      | .shift_case_ll .Signed => .OK (.Ebinop .Oshrl a (.Eunop .Ointoflong b))
+      | .shift_case_ll .Unsigned => .OK (.Ebinop .Oshrlu a (.Eunop .Ointoflong b))
+      | .shift_case_il .Signed => .OK (.Ebinop .Oshr a (.Eunop .Ointoflong b))
+      | .shift_case_il .Unsigned => .OK (.Ebinop .Oshru a (.Eunop .Ointoflong b))
+      | .shift_case_li .Signed => .OK (.Ebinop .Oshrl a b)
+      | .shift_case_li .Unsigned => .OK (.Ebinop .Oshrlu a b)
+      | .shift_default => Cshmgen.make_shr a tya b tyb := by
+    cases hta : Ctypes.typeconv tya <;> cases htb : Ctypes.typeconv tyb <;>
+      simp [Cshmgen.make_shr, Cop.classify_shift, hta, htb]
+    case Tint.Tint sz sg attr sz2 sg2 attr2 =>
+      cases sz <;> cases sg <;> cases sz2 <;> cases sg2 <;> rfl
+    case Tint.Tlong sz sg attr sg2 attr2 =>
+      cases sz <;> cases sg <;> rfl
+    case Tlong.Tint sg attr sz sg2 attr2 =>
+      cases sg <;> cases sz <;> cases sg2 <;> rfl
+    case Tlong.Tlong sg attr sg2 attr2 =>
+      cases sg <;> cases sg2 <;> rfl
+    all_goals rfl
+  rw [hclassified] at hmake
+  unfold Cop.sem_shr Cop.sem_shift at hsem
+  cases hclass : Cop.classify_shift tya tyb <;>
+    simp only [hclass] at hsem hmake
+  case shift_case_ii sg =>
+    cases va <;> cases vb <;> simp only at hsem
+    all_goals try contradiction
+    rename_i n1 n2
+    split at hsem <;> try contradiction
+    rename_i hlt
+    cases hsem
+    cases sg with
+    | Signed =>
+        cases hmake
+        apply Csharpminor.eval_Ebinop
+        · exact h1
+        · exact h2
+        · simp [Csharpminor.eval_binop, CompCert4Lean.Backend.Cminor.eval_binop,
+            Val.shr, hlt]
+    | Unsigned =>
+        cases hmake
+        apply Csharpminor.eval_Ebinop
+        · exact h1
+        · exact h2
+        · simp [Csharpminor.eval_binop, CompCert4Lean.Backend.Cminor.eval_binop,
+            Val.shru, hlt]
+  case shift_case_ll sg =>
+    cases va <;> cases vb <;> simp only at hsem
+    all_goals try contradiction
+    rename_i n1 n2
+    split at hsem <;> try contradiction
+    rename_i hlt
+    cases hsem
+    obtain ⟨hsmall, hunsigned⟩ := small_shift_amount_1 n2 hlt
+    have hunsigned' :
+        CompCert4Lean.Lib.Integers.WordCore.unsigned n2 =
+          CompCert4Lean.Lib.Integers.WordCore.unsigned (Int64.loword n2) := by
+      change Int64.unsigned n2 = Int.unsigned (Int64.loword n2)
+      exact hunsigned
+    cases sg with
+    | Signed =>
+        cases hmake
+        apply Csharpminor.eval_Ebinop (v2 := .Vint (Int64.loword n2))
+        · exact h1
+        · apply Csharpminor.eval_Eunop
+          · exact h2
+          · rfl
+        · simp only [Csharpminor.eval_binop, CompCert4Lean.Backend.Cminor.eval_binop,
+            Val.shrl, hsmall, ↓reduceIte]
+          simp only [CompCert4Lean.Lib.Integers.Int64.shr',
+            CompCert4Lean.Lib.Integers.Int64.shr,
+            CompCert4Lean.Lib.Integers.WordCore.shr, hunsigned']
+          rfl
+    | Unsigned =>
+        cases hmake
+        apply Csharpminor.eval_Ebinop (v2 := .Vint (Int64.loword n2))
+        · exact h1
+        · apply Csharpminor.eval_Eunop
+          · exact h2
+          · rfl
+        · simp only [Csharpminor.eval_binop, CompCert4Lean.Backend.Cminor.eval_binop,
+            Val.shrlu, hsmall, ↓reduceIte]
+          simp only [CompCert4Lean.Lib.Integers.Int64.shru',
+            CompCert4Lean.Lib.Integers.Int64.shru,
+            CompCert4Lean.Lib.Integers.WordCore.shru, hunsigned']
+          rfl
+  case shift_case_il sg =>
+    cases va <;> cases vb <;> simp only at hsem
+    all_goals try contradiction
+    rename_i n1 n2
+    split at hsem <;> try contradiction
+    rename_i hlt
+    cases hsem
+    have hsmall := small_shift_amount_2 n2 hlt
+    cases sg with
+    | Signed =>
+        cases hmake
+        apply Csharpminor.eval_Ebinop (v2 := .Vint (Int64.loword n2))
+        · exact h1
+        · apply Csharpminor.eval_Eunop
+          · exact h2
+          · rfl
+        · simp [Csharpminor.eval_binop, CompCert4Lean.Backend.Cminor.eval_binop,
+            Val.shr, hsmall]
+    | Unsigned =>
+        cases hmake
+        apply Csharpminor.eval_Ebinop (v2 := .Vint (Int64.loword n2))
+        · exact h1
+        · apply Csharpminor.eval_Eunop
+          · exact h2
+          · rfl
+        · simp [Csharpminor.eval_binop, CompCert4Lean.Backend.Cminor.eval_binop,
+            Val.shru, hsmall]
+  case shift_case_li sg =>
+    cases va <;> cases vb <;> simp only at hsem
+    all_goals try contradiction
+    rename_i n1 n2
+    split at hsem <;> try contradiction
+    rename_i hlt
+    cases hsem
+    have hunsigned := small_shift_amount_3 n2 hlt
+    have hunsigned' :
+        CompCert4Lean.Lib.Integers.WordCore.unsigned
+            (Int64.repr (Int.unsigned n2)) = Int.unsigned n2 := by
+      change Int64.unsigned (Int64.repr (Int.unsigned n2)) = Int.unsigned n2
+      exact hunsigned
+    cases sg with
+    | Signed =>
+        cases hmake
+        apply Csharpminor.eval_Ebinop
+        · exact h1
+        · exact h2
+        · simp only [Csharpminor.eval_binop, CompCert4Lean.Backend.Cminor.eval_binop,
+            Val.shrl, hlt, ↓reduceIte]
+          simp only [CompCert4Lean.Lib.Integers.Int64.shr',
+            CompCert4Lean.Lib.Integers.Int64.shr,
+            CompCert4Lean.Lib.Integers.WordCore.shr, hunsigned']
+          rfl
+    | Unsigned =>
+        cases hmake
+        apply Csharpminor.eval_Ebinop
+        · exact h1
+        · exact h2
+        · simp only [Csharpminor.eval_binop, CompCert4Lean.Backend.Cminor.eval_binop,
+            Val.shrlu, hlt, ↓reduceIte]
+          simp only [CompCert4Lean.Lib.Integers.Int64.shru',
+            CompCert4Lean.Lib.Integers.Int64.shru,
+            CompCert4Lean.Lib.Integers.WordCore.shru, hunsigned']
+          rfl
+  case shift_default => contradiction

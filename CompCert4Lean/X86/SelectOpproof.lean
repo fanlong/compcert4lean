@@ -5294,3 +5294,41 @@ theorem eval_mulimm
           exact eval_mulimm_base xi ge sp e mem0 n le a x h
 
 end CompCert4Lean.X86.SelectOpproof
+
+namespace CompCert4Lean.X86.SelectOpproof
+
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.ExternalCalls
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.X86.Op
+open CompCert4Lean.X86.SelectOp
+
+ theorem eval_mul
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    eval_mulStatement := by
+  intro xi ge sp e m le a x b y ha hb
+  unfold CompCert4Lean.X86.SelectOp.mul
+  cases hcase : CompCert4Lean.X86.SelectOp.mul_match a b with
+  | mul_case1 n1 t2 =>
+      have hx : x = .Vint n1 := eval_intconst_value_local
+        xi ge sp e m le n1 x (by simpa [hcase] using ha)
+      subst x
+      rw [Val.mul_commut]
+      exact eval_mulimm xi ge sp e m n1 le b y hb
+  | mul_case2 t1 n2 =>
+      have hy : y = .Vint n2 := eval_intconst_value_local
+        xi ge sp e m le n2 y (by simpa [hcase] using hb)
+      subst y
+      exact eval_mulimm xi ge sp e m n2 le a x ha
+  | mul_default e1 e2 =>
+      refine ⟨Val.mul x y, ?_, Val.lessdef_refl _⟩
+      simp only [CompCert4Lean.X86.SelectOp.mul, hcase]
+      exact eval_expr.eval_Eop le Omul
+        (Econs a (Econs b Enil)) [x, y] (Val.mul x y)
+        (eval_exprlist.cons le a (Econs b Enil) x [y] ha
+          (eval_exprlist.cons le b Enil y [] hb (eval_exprlist.nil le))) rfl
+
+end CompCert4Lean.X86.SelectOpproof

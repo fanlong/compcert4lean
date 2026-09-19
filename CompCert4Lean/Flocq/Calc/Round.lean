@@ -2707,3 +2707,34 @@ theorem truncate_correct : ∀ (ctx : ExactRealContext)
     (hcase'.mpr hcase)
 
 end CompCert4Lean.Flocq.Calc.Round
+
+namespace CompCert4Lean.Flocq.Calc.Round
+
+theorem round_trunc_sign_any_correct' : ∀ (ctx : ExactRealContext)
+    (magnitude : ExactMagnitude ctx),
+    round_trunc_sign_any_correct'Statement ctx magnitude := by
+  intro ctx magnitude beta fexp hvalid rnd hrnd choice hchoice x m e l hbetween hcase
+  have habs : ctx.spec.le ctx.spec.zero (ctx.spec.abs x) := by
+    have h := CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.Rbasic_fun.Rabs_pos
+      ctx x
+    change ctx.spec.le (ctx.spec.ofZ Z0) (ctx.spec.abs x) at h
+    simpa only [ctx.certificate.sourceLaws.ofZ_zero] using h
+  have hcexp := CompCert4Lean.Flocq.Core.Generic_fmt.cexp_abs
+    ctx magnitude beta fexp x
+  have hcaseAbs : Zle e (CompCert4Lean.Flocq.Core.Generic_fmt.Exact.cexp
+      ctx magnitude beta fexp (CompCert4Lean.Flocq.Core.Raux.Exact.Rabs ctx x)) ∨
+      l = loc_Exact := by
+    rw [hcexp]
+    exact hcase
+  have htrunc := truncate_correct' ctx magnitude beta fexp hvalid
+    (CompCert4Lean.Flocq.Core.Raux.Exact.Rabs ctx x) m e l habs hbetween hcaseAbs
+  dsimp at htrunc ⊢
+  apply round_sign_any_correct ctx magnitude beta fexp rnd hrnd choice hchoice
+    x _ _ _ htrunc.1
+  rcases htrunc.2 with he | ⟨hl, hformat⟩
+  · exact Or.inl (he.trans hcexp)
+  · exact Or.inr ⟨hl,
+      CompCert4Lean.Flocq.Core.Generic_fmt.generic_format_abs_inv
+        ctx magnitude beta fexp x hformat⟩
+
+end CompCert4Lean.Flocq.Calc.Round

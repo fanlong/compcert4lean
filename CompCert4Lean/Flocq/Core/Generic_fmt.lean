@@ -4776,3 +4776,11 @@ theorem mag_generic_gt :
   exact hx0 hformat
 
 end CompCert4Lean.Flocq.Core.Generic_fmt
+
+namespace CompCert4Lean.Flocq.Core.Generic_fmt
+
+theorem round_bounded_large_pos :
+    ∀ ctx magnitude, round_bounded_large_posStatement ctx magnitude := by
+  exact pg_round_bounded_large_pos
+
+end CompCert4Lean.Flocq.Core.Generic_fmt

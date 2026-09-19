@@ -4350,3 +4350,22 @@ theorem modu_pow2 : modu_pow2Statement := by
 end Val
 end CompCert4Lean.Common.Values
 
+
+namespace CompCert4Lean.Common.Values.Val
+
+theorem shl_mul : shl_mulStatement := by
+  intro x y
+  cases x <;> cases y <;> simp [shl, mul, Vone]
+  case Vint.Vint a b =>
+    by_cases h : Int.ltu b Int.iwordsize = true
+    · simp [h]
+      apply CompCert4Lean.Lib.Integers.WordCore.ext_of_val_eq
+      change (CompCert4Lean.Lib.Integers.Int.mul a
+        (CompCert4Lean.Lib.Integers.Int.shl
+          CompCert4Lean.Lib.Integers.Int.one b)).val =
+        (CompCert4Lean.Lib.Integers.Int.shl a b).val
+      exact congrArg (fun z => z.val)
+        (CompCert4Lean.Lib.Integers.Int.shl_mul_proof a b).symm
+    · simp [h]
+
+end CompCert4Lean.Common.Values.Val

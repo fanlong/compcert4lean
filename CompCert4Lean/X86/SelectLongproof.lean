@@ -3713,3 +3713,177 @@ theorem eval_addlimm
           rw [shrl_int64_repr_signed]
 
 end CompCert4Lean.X86.SelectLongproof
+
+namespace CompCert4Lean.X86.SelectLongproof
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.ExternalCalls
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.X86.Op
+open CompCert4Lean.X86.SelectLong
+
+private theorem addl_repr_val_int_aux (z : Z) :
+    Int.ofNat (CompCert4Lean.Lib.Integers.Int64.repr z).val = intOfZ z % (2 ^ 64 : Int) := by
+  have h := suffixWordValRepr64 64 (intOfZ z)
+  rw [zOfInt_intOfZ] at h
+  change Int.ofNat (WordCore.repr 64 z).val = _
+  rw [h]
+  exact Int.toNat_of_nonneg (Int.emod_nonneg _ (by decide))
+
+private theorem addl_repr_sum_aux (x y : Z) :
+    CompCert4Lean.Lib.Integers.Int64.repr (ZArith.BinInt.Z.add x y) =
+      CompCert4Lean.Lib.Integers.Int64.add (CompCert4Lean.Lib.Integers.Int64.repr x) (CompCert4Lean.Lib.Integers.Int64.repr y) := by
+  apply WordCore.ext_of_val_eq
+  apply Int.ofNat.inj
+  rw [shll_word_add_val]
+  simp only [Int.ofNat_eq_natCast, Int.natCast_emod, Int.natCast_add]
+  change Int.ofNat (CompCert4Lean.Lib.Integers.Int64.repr (ZArith.BinInt.Z.add x y)).val =
+    (Int.ofNat (CompCert4Lean.Lib.Integers.Int64.repr x).val +
+      Int.ofNat (CompCert4Lean.Lib.Integers.Int64.repr y).val) % (2 ^ 64 : Int)
+  rw [addl_repr_val_int_aux, addl_repr_val_int_aux, addl_repr_val_int_aux]
+  simp only [ZArith.BinInt.Z.add, intOfZ_zOfInt]
+  exact Int.add_emod _ _ _
+
+private theorem addl_scaled_inv_aux
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (xi : ExternalCalls) (ge : genv) (sp : val) (e : env) (m : mem)
+    (le : letenv) (t : expr) (sc ofs : Z) (x : val)
+    (h : eval_expr xi ge sp e m le
+      (Eop (Oleal (Ascaled sc ofs)) (Econs t Enil)) x) :
+    ∃ v, eval_expr xi ge sp e m le t v ∧
+      x = Val.addl (Val.mull v (.Vlong (CompCert4Lean.Lib.Integers.Int64.repr sc)))
+        (.Vlong (CompCert4Lean.Lib.Integers.Int64.repr ofs)) := by
+  cases h with
+  | eval_Eop _ _ _ _ _ hargs hop =>
+      cases hargs with
+      | cons _ _ _ v _ hhead htail =>
+          cases htail with
+          | nil _ =>
+              change some (Val.addl (Val.mull v (.Vlong (CompCert4Lean.Lib.Integers.Int64.repr sc)))
+                (.Vlong (CompCert4Lean.Lib.Integers.Int64.repr ofs))) = some x at hop
+              cases hop
+              exact ⟨v, hhead, rfl⟩
+
+private theorem addl_lea_pair_aux
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)]
+    (xi : ExternalCalls) (ge : genv) (sp : val) (e : env) (m : mem)
+    (le : letenv) (addr : addressing) (a b : expr) (x y v : val)
+    (ha : eval_expr xi ge sp e m le a x)
+    (hb : eval_expr xi ge sp e m le b y)
+    (hop : eval_addressing64 ge sp addr [x, y] = some v) :
+    eval_expr xi ge sp e m le (Eop (Oleal addr) (Econs a (Econs b Enil))) v := by
+  exact eval_expr.eval_Eop le (Oleal addr) (Econs a (Econs b Enil)) [x, y] v
+    (eval_exprlist.cons le a (Econs b Enil) x [y] ha
+      (eval_exprlist.cons le b Enil y [] hb (eval_exprlist.nil le))) hop
+
+private theorem addl_constant_sum_aux (x y : Z) :
+    val.Vlong (CompCert4Lean.Lib.Integers.Int64.repr (ZArith.BinInt.Z.add x y)) =
+      Val.addl (.Vlong (CompCert4Lean.Lib.Integers.Int64.repr x))
+        (.Vlong (CompCert4Lean.Lib.Integers.Int64.repr y)) := by
+  change val.Vlong _ = val.Vlong _
+  rw [addl_repr_sum_aux]
+
+private theorem addl_pair_zero_aux (x y : val) :
+    Val.addl (Val.addl x y) (.Vlong (CompCert4Lean.Lib.Integers.Int64.repr .Z0)) =
+      Val.addl x y := by
+  cases x <;> cases y <;>
+    simp [Val.addl, CompCert4Lean.X86_64.Archi.ptr64]
+  all_goals exact shll_add_zero_aux _
+
+set_option maxHeartbeats 1000000 in
+theorem eval_addl
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    @eval_addlStatement binary64_certificate binary32_certificate := by
+  unfold eval_addlStatement binary_constructor_sound
+  intro xi prog sp e m le a x b y ha hb
+  cases hmatch : addl_match a b with
+  | addl_case1 n1 t2 =>
+      have hx : x = .Vlong n1 := eval_longconst_value xi
+        (Genv.globalenv prog) sp e m le n1 x ha
+      subst x
+      obtain ⟨v, hv, hd⟩ := eval_addlimm xi prog sp e m n1 le b y hb
+      refine ⟨v, ?_, ?_⟩
+      · simpa only [addl, hmatch] using hv
+      · rw [Val.addl_commut]
+        exact hd
+  | addl_case2 t1 n2 =>
+      have hy : y = .Vlong n2 := eval_longconst_value xi
+        (Genv.globalenv prog) sp e m le n2 y hb
+      subst y
+      obtain ⟨v, hv, hd⟩ := eval_addlimm xi prog sp e m n2 le a x ha
+      refine ⟨v, ?_, hd⟩
+      simpa only [addl, hmatch] using hv
+  | addl_case3 n1 t1 n2 t2 =>
+      obtain ⟨u, hu, rfl⟩ := shll_eval_lea_indexed_inv xi
+        (Genv.globalenv prog) sp e m le t1 n1 x ha
+      obtain ⟨v, hv, rfl⟩ := shll_eval_lea_indexed_inv xi
+        (Genv.globalenv prog) sp e m le t2 n2 y hb
+      refine ⟨_, ?_, Val.lessdef_refl _⟩
+      simp only [addl, hmatch]
+      apply addl_lea_pair_aux xi (Genv.globalenv prog) sp e m le _ _ _ u v _ hu hv
+      simp only [eval_addressing64, addl_constant_sum_aux]
+      exact congrArg some (Val.addl_permut_4 u _ v _).symm
+  | addl_case4 n1 t1 sc n2 t2 =>
+      obtain ⟨u, hu, rfl⟩ := shll_eval_lea_indexed_inv xi
+        (Genv.globalenv prog) sp e m le t1 n1 x ha
+      obtain ⟨v, hv, rfl⟩ := addl_scaled_inv_aux xi
+        (Genv.globalenv prog) sp e m le t2 sc n2 y hb
+      refine ⟨_, ?_, Val.lessdef_refl _⟩
+      simp only [addl, hmatch]
+      apply addl_lea_pair_aux xi (Genv.globalenv prog) sp e m le _ _ _ u v _ hu hv
+      simp only [eval_addressing64, addl_constant_sum_aux]
+      rw [Val.addl_assoc, Val.addl_permut (.Vlong (CompCert4Lean.Lib.Integers.Int64.repr n1))]
+  | addl_case5 sc n1 t1 n2 t2 =>
+      obtain ⟨u, hu, rfl⟩ := addl_scaled_inv_aux xi
+        (Genv.globalenv prog) sp e m le t1 sc n1 x ha
+      obtain ⟨v, hv, rfl⟩ := shll_eval_lea_indexed_inv xi
+        (Genv.globalenv prog) sp e m le t2 n2 y hb
+      refine ⟨_, ?_, Val.lessdef_refl _⟩
+      simp only [addl, hmatch]
+      apply addl_lea_pair_aux xi (Genv.globalenv prog) sp e m le _ _ _ v u _ hv hu
+      simp only [eval_addressing64, addl_constant_sum_aux]
+      rw [Val.addl_permut_4 (Val.mull u _) _ v _,
+        Val.addl_commut (Val.mull u _) v, Val.addl_assoc]
+  | addl_case6 sc n t1 t2 =>
+      obtain ⟨u, hu, rfl⟩ := addl_scaled_inv_aux xi
+        (Genv.globalenv prog) sp e m le t1 sc n x ha
+      refine ⟨_, ?_, Val.lessdef_refl _⟩
+      simp only [addl, hmatch]
+      apply addl_lea_pair_aux xi (Genv.globalenv prog) sp e m le _ _ _ y u _ hb hu
+      exact congrArg some (Val.addl_commut _ _)
+  | addl_case7 t1 sc n t2 =>
+      obtain ⟨v, hv, rfl⟩ := addl_scaled_inv_aux xi
+        (Genv.globalenv prog) sp e m le t2 sc n y hb
+      refine ⟨_, ?_, Val.lessdef_refl _⟩
+      simp only [addl, hmatch]
+      exact addl_lea_pair_aux xi (Genv.globalenv prog) sp e m le _ _ _ x v _ ha hv rfl
+  | addl_case8 n t1 t2 =>
+      obtain ⟨u, hu, rfl⟩ := shll_eval_lea_indexed_inv xi
+        (Genv.globalenv prog) sp e m le t1 n x ha
+      refine ⟨_, ?_, Val.lessdef_refl _⟩
+      simp only [addl, hmatch]
+      apply addl_lea_pair_aux xi (Genv.globalenv prog) sp e m le _ _ _ u y _ hu hb
+      simp only [eval_addressing64]
+      rw [Val.addl_assoc, Val.addl_assoc, Val.addl_commut y]
+  | addl_case9 t1 n t2 =>
+      obtain ⟨v, hv, rfl⟩ := shll_eval_lea_indexed_inv xi
+        (Genv.globalenv prog) sp e m le t2 n y hb
+      refine ⟨_, ?_, Val.lessdef_refl _⟩
+      simp only [addl, hmatch]
+      apply addl_lea_pair_aux xi (Genv.globalenv prog) sp e m le _ _ _ x v _ ha hv
+      exact congrArg some (Val.addl_assoc _ _ _)
+  | addl_default e1 e2 =>
+      refine ⟨Val.addl x y, ?_, Val.lessdef_refl _⟩
+      simp only [addl, hmatch]
+      apply addl_lea_pair_aux xi (Genv.globalenv prog) sp e m le _ _ _ x y _ ha hb
+      exact congrArg some (addl_pair_zero_aux x y)
+
+end CompCert4Lean.X86.SelectLongproof

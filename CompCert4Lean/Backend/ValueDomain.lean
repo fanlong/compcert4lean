@@ -5723,3 +5723,30 @@ theorem vmatch_lub_r : vmatch_lub_rStatement := by
   exact vmatch_lub_r_select_aux
 
 end CompCert4Lean.Backend.ValueDomain
+
+namespace CompCert4Lean.Backend.ValueDomain
+
+theorem vincl_ge : vincl_geStatement := by
+  intro v w h
+  cases v <;> cases w <;>
+    simp only [vincl, Bool.and_eq_true, decide_eq_true_eq, Bool.false_eq_true] at h
+  all_goals try (solve | constructor)
+  all_goals try (solve | cases h; constructor)
+  all_goals try (solve | constructor; exact pincl_ge _ _ h)
+  all_goals first
+    | exact vge.unsInt _ _ _ (zle_true_prop_for_inval h.2)
+        ((is_uns_zero_ext _ _).2 h.1)
+    | exact vge.vge_uns_iu _ _ _ (zle_true_prop_for_inval h.2)
+        ((is_uns_zero_ext _ _).2 h.1)
+    | exact vge.sgnInt _ _ _ (zlt_true_prop_for_inval h.2)
+        ((is_sgn_sign_ext _ _ (zlt_true_prop_for_inval h.2)).2 h.1)
+    | exact vge.sgnIU _ _ _ (zlt_true_prop_for_inval h.2)
+        ((is_sgn_sign_ext _ _ (zlt_true_prop_for_inval h.2)).2 h.1)
+    | exact vge.vge_uns_uns _ _ _ _ (zle_true_prop_for_inval h.1)
+        (pincl_ge _ _ h.2)
+    | exact vge.sgnSgn _ _ _ _ (zle_true_prop_for_inval h.1)
+        (pincl_ge _ _ h.2)
+    | exact vge.sgnUns _ _ _ _ (zlt_true_prop_for_inval h.1)
+        (pincl_ge _ _ h.2)
+
+end CompCert4Lean.Backend.ValueDomain

@@ -5642,3 +5642,13 @@ theorem alloc_global_neutral : alloc_global_neutralStatement :=
   pg_alloc_global_neutral
 
 end CompCert4Lean.Common.Globalenvs.Genv
+
+namespace CompCert4Lean.Common.Globalenvs
+namespace Genv
+
+theorem store_init_data_list_match : store_init_data_list_matchStatement := by
+  intro C F1 V1 F2 V2 _ match_fundef match_varinfo ctx p tp hmatch
+  exact pg_store_init_data_list_match match_fundef match_varinfo ctx p tp hmatch
+
+end Genv
+end CompCert4Lean.Common.Globalenvs

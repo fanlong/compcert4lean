@@ -6900,3 +6900,201 @@ theorem add_local_variable_charact : add_local_variable_charactStatement := by
   exact add_local_variable_charact_aux
 
 end CompCert4Lean.Cfrontend.SimplLocalsproof
+
+namespace CompCert4Lean.Cfrontend.SimplLocalsproof
+open Lean Elab Tactic Meta
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Cfrontend.Clight
+open CompCert4Lean.Cfrontend.Cop
+open CompCert4Lean.Lib.Integers
+
+private def slpPrivateName (suffix : String) : Name :=
+  let p := Name.str (Name.str (Name.str (Name.str Name.anonymous "_private") "CompCert4Lean") "Lib") "Integers"
+  let base := Name.num p 0
+  suffix.splitOn "." |>.foldl Name.str base
+
+private theorem slp_wordcore_val_repr (bits : Nat) (i : Int) :
+    (WordCore.repr bits (CompCert4Lean.Foundation.Numbers.Rocq.Coq.zOfInt i)).val =
+      Int.toNat (i % ((2 ^ bits : Nat) : Int)) := by
+  run_tac
+    let lctx ← getLCtx
+    let bF := (lctx.findFromUserName? `bits).get!
+    let iF := (lctx.findFromUserName? `i).get!
+    let e ← mkAppM
+      (slpPrivateName "CompCert4Lean.Lib.Integers.WordCore.val_repr")
+      #[mkFVar bF.fvarId, mkFVar iF.fvarId]
+    closeMainGoal Name.anonymous e
+
+private theorem slp_wordcore_intval_eq_zOfNat_val {bits : Nat} (x : WordCore.Word bits) :
+    x.intval = ZArith.BinInt.Z.of_nat x.val := by
+  run_tac
+    let lctx ← getLCtx
+    let xF := (lctx.findFromUserName? `x).get!
+    let e ← mkAppM
+      (slpPrivateName "CompCert4Lean.Lib.Integers.WordCore.intval_eq_zOfNat_val")
+      #[mkFVar xF.fvarId]
+    closeMainGoal Name.anonymous e
+
+private theorem slp_ptrofs_modulus :
+    Ptrofs.modulus = ZArith.BinInt.Z.of_nat (2 ^ Ptrofs.wordsize) := by
+  unfold Ptrofs.modulus
+  run_tac
+    let e ← mkAppM
+      (slpPrivateName "CompCert4Lean.Lib.Integers.WordCore.twoPowerNat_eq_zOfNat_twoPow")
+      #[mkConst ``CompCert4Lean.Lib.Integers.Ptrofs.wordsize]
+    closeMainGoal Name.anonymous e
+
+private theorem slp_ptrofs_unsigned_repr (z : Z)
+    (hz : ZArith.BinInt.Z.le (.Z0) z ∧ ZArith.BinInt.Z.le z Ptrofs.max_unsigned) :
+    Ptrofs.unsigned (Ptrofs.repr z) = z := by
+  have hznonneg : 0 ≤ intOfZ z := by
+    have hz0 := hz.1
+    change 0 ≤ intOfZ z at hz0
+    exact hz0
+  have hzlt : intOfZ z < ((2 ^ Ptrofs.wordsize : Nat) : Int) := by
+    have hzmax := hz.2
+    change intOfZ z ≤ intOfZ Ptrofs.max_unsigned at hzmax
+    unfold Ptrofs.max_unsigned at hzmax
+    rw [slp_ptrofs_modulus] at hzmax
+    change intOfZ z ≤ Int.ofNat (2 ^ Ptrofs.wordsize) - 1 at hzmax
+    have hzmax' : intOfZ z ≤ ((2 ^ Ptrofs.wordsize : Nat) : Int) - 1 := by
+      simpa only [Int.ofNat_eq_natCast] using hzmax
+    omega
+  change (WordCore.repr Ptrofs.wordsize z).intval = z
+  rw [slp_wordcore_intval_eq_zOfNat_val]
+  have hval :
+      (WordCore.repr Ptrofs.wordsize z).val =
+        Int.toNat (intOfZ z % ((2 ^ Ptrofs.wordsize : Nat) : Int)) := by
+    rw [← zOfInt_intOfZ z]
+    simpa only [intOfZ_zOfInt] using
+      slp_wordcore_val_repr Ptrofs.wordsize (intOfZ z)
+  rw [hval, Int.emod_eq_of_lt hznonneg hzlt]
+  change zOfInt (Int.ofNat (Int.toNat (intOfZ z))) = z
+  calc
+    _ = zOfInt (intOfZ z) := congrArg zOfInt (Int.toNat_of_nonneg hznonneg)
+    _ = z := zOfInt_intOfZ z
+
+private theorem slp_address_inject
+    (f : Val.meminj) (m tm : mem) (loc : block) (ofs : Ptrofs.int)
+    (loc' : block) (delta : Z) (p : CompCert4Lean.Common.Memtype.permission) :
+    Mem.inject f m tm →
+    Mem.perm m loc (Ptrofs.unsigned ofs) Cur p →
+    f loc = some (loc', delta) →
+    Ptrofs.unsigned (Ptrofs.add ofs (Ptrofs.repr delta)) =
+      ZArith.BinInt.Z.add (Ptrofs.unsigned ofs) delta := by
+  intro hinj hperm hmap
+  have hpmax : Mem.perm m loc (Ptrofs.unsigned ofs) Max Nonempty := by
+    exact Mem.perm_implies m loc (Ptrofs.unsigned ofs) Max p Nonempty
+      (Mem.perm_cur_max m loc (Ptrofs.unsigned ofs) p hperm)
+      (perm_any_N p)
+  have hrep := hinj.mi_representable loc loc' delta ofs hmap (Or.inl hpmax)
+  have hdelta0 : 0 ≤ intOfZ delta := by
+    change 0 ≤ intOfZ delta
+    exact hrep.1
+  have hsum0 : 0 ≤ intOfZ (ZArith.BinInt.Z.add (Ptrofs.unsigned ofs) delta) := by
+    change 0 ≤ intOfZ (ZArith.BinInt.Z.add (Ptrofs.unsigned ofs) delta)
+    exact hrep.2.1
+  have hsummax : intOfZ (ZArith.BinInt.Z.add (Ptrofs.unsigned ofs) delta) ≤
+      intOfZ Ptrofs.max_unsigned := by
+    simpa only [ZArith.BinInt.Z.le] using hrep.2.2
+  have hofs0 : 0 ≤ intOfZ (Ptrofs.unsigned ofs) := by
+    have h := ofs.intrange.1
+    change (-1 : Int) < intOfZ (Ptrofs.unsigned ofs) at h
+    omega
+  have hdeltaMax : intOfZ delta ≤ intOfZ Ptrofs.max_unsigned := by
+    have hadd : intOfZ (ZArith.BinInt.Z.add (Ptrofs.unsigned ofs) delta) =
+        intOfZ (Ptrofs.unsigned ofs) + intOfZ delta := by
+      simp only [ZArith.BinInt.Z.add, intOfZ_zOfInt]
+    omega
+  have hu_delta : Ptrofs.unsigned (Ptrofs.repr delta) = delta :=
+    slp_ptrofs_unsigned_repr delta ⟨by
+      change 0 ≤ intOfZ delta
+      exact hdelta0, by
+      exact hdeltaMax⟩
+  have haddrepr : Ptrofs.add ofs (Ptrofs.repr delta) =
+      Ptrofs.repr (ZArith.BinInt.Z.add (Ptrofs.unsigned ofs)
+        (Ptrofs.unsigned (Ptrofs.repr delta))) := by rfl
+  rw [haddrepr]
+  rw [hu_delta]
+  apply slp_ptrofs_unsigned_repr
+  exact ⟨hsum0, hsummax⟩
+
+private theorem slp_loadv_inject
+    (f : Val.meminj) (m tm : mem) (chunk : memory_chunk)
+    (a1 a2 v1 : val) :
+    Mem.inject f m tm →
+    Mem.loadv chunk m a1 = some v1 →
+    Val.inject f a1 a2 →
+    ∃ v2, Mem.loadv chunk tm a2 = some v2 ∧ Val.inject f v1 v2 := by
+  intro hinj hload haddr
+  cases a1 with
+  | Vptr loc ofs =>
+      cases a2 with
+      | Vptr loc' ofs' =>
+          cases haddr with
+          | inject_ptr _ _ _ _ delta hmap hofs =>
+              have hacc := Mem.load_valid_access m chunk loc
+                (Ptrofs.unsigned ofs) v1 (by simpa [Mem.loadv] using hload)
+              have hp : Mem.perm m loc (Ptrofs.unsigned ofs) Cur Readable := by
+                apply hacc.1 (Ptrofs.unsigned ofs)
+                constructor
+                · exact ZArith.BinInt.Z.le_refl _
+                · have hs := CompCert4Lean.Common.Memdata.size_chunk_pos chunk
+                  change intOfZ (Ptrofs.unsigned ofs) <
+                    intOfZ (ZArith.BinInt.Z.add (Ptrofs.unsigned ofs)
+                      (CompCert4Lean.Common.Memdata.size_chunk chunk))
+                  have hs' : 0 < intOfZ (CompCert4Lean.Common.Memdata.size_chunk chunk) := by
+                    change 0 < intOfZ (CompCert4Lean.Common.Memdata.size_chunk chunk) at hs
+                    exact hs
+                  simp only [ZArith.BinInt.Z.add, intOfZ_zOfInt]
+                  omega
+              have haddr' := slp_address_inject f m tm loc ofs loc' delta
+                Readable hinj hp hmap
+              obtain ⟨v2, hload2, hinj2⟩ :=
+                Mem.load_inj f m tm chunk loc (Ptrofs.unsigned ofs)
+                  loc' delta v1 hinj.mi_inj
+                  (by simpa [Mem.loadv] using hload) hmap
+              refine ⟨v2, ?_, hinj2⟩
+              simpa [Mem.loadv, hofs, haddr'] using hload2
+      | Vundef => cases haddr
+      | Vint _ => cases haddr
+      | Vlong _ => cases haddr
+      | Vfloat _ => cases haddr
+      | Vsingle _ => cases haddr
+  | Vundef => cases haddr <;> simp [Mem.loadv] at hload
+  | Vint _ => cases haddr <;> simp [Mem.loadv] at hload
+  | Vlong _ => cases haddr <;> simp [Mem.loadv] at hload
+  | Vfloat _ => cases haddr <;> simp [Mem.loadv] at hload
+  | Vsingle _ => cases haddr <;> simp [Mem.loadv] at hload
+
+theorem deref_loc_inject : deref_loc_injectStatement := by
+  intro m tm f hmem ty loc ofs bf v loc' ofs' hderef hptr
+  cases hderef with
+  | deref_loc_value chunk v hmode hload =>
+      obtain ⟨tv, hload', hinj⟩ := slp_loadv_inject f m tm chunk
+        (.Vptr loc ofs) (.Vptr loc' ofs') v hmem hload hptr
+      exact ⟨tv, deref_loc_value chunk tv hmode hload', hinj⟩
+  | deref_loc_reference hmode =>
+      exact ⟨.Vptr loc' ofs', deref_loc_reference hmode, hptr⟩
+  | deref_loc_copy hmode =>
+      exact ⟨.Vptr loc' ofs', deref_loc_copy hmode, hptr⟩
+  | deref_loc_bitfield sz sg pos width v hload =>
+      cases hload with
+      | load_bitfield_intro sz sg1 attr sg pos width m addr c hpos hwidth
+          hcarrier hsg hload =>
+          obtain ⟨tv, hload', hinj⟩ := slp_loadv_inject f m tm
+            (chunk_for_carrier sz) (.Vptr loc ofs) (.Vptr loc' ofs') (.Vint c)
+            hmem hload hptr
+          cases hinj
+          exact ⟨.Vint (bitfield_extract sz sg pos width c),
+            deref_loc_bitfield sz sg pos width _
+              (load_bitfield_intro sz sg1 attr sg pos width tm
+                (.Vptr loc' ofs') c hpos hwidth hcarrier hsg hload'),
+            Val.inject_int f _⟩
+
+end CompCert4Lean.Cfrontend.SimplLocalsproof

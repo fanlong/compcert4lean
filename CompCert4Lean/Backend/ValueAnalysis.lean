@@ -2854,3 +2854,112 @@ theorem allocate_stack : allocate_stackStatement := by
   · simp [bc', f]
 
 end CompCert4Lean.Backend.ValueAnalysis
+
+namespace CompCert4Lean.Backend.ValueAnalysis
+
+open CompCert4Lean.Backend.ValueDomain
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+
+theorem return_from_private_call : return_from_private_callStatement := by
+  classical
+  intro caller callee bound sp ge e ae v m rm am
+    hbelow hcallee_sp hcaller_sp hsame hge_caller hem hcontents hbound
+    hresult hrom hmm hge_callee hnostack
+  let f : block → block_class := fun b => if b = sp then BCstack else callee b
+  have hfstack : ∀ b, f b = BCstack → b = sp := by
+    intro b hb
+    by_cases hbs : b = sp
+    · exact hbs
+    · exact False.elim (hnostack b (by simpa [f, hbs] using hb))
+  have hfglob : ∀ b id, f b = BCglob id ↔ callee b = BCglob id := by
+    intro b id
+    by_cases hbs : b = sp
+    · subst b
+      simp [f, hcallee_sp]
+    · simp [f, hbs]
+  let bc : block_classification :=
+    { bc_img := f
+      bc_stack := fun b1 b2 h1 h2 => (hfstack b1 h1).trans (hfstack b2 h2).symm
+      bc_glob := fun b1 b2 id h1 h2 =>
+        callee.bc_glob b1 b2 id ((hfglob b1 id).1 h1) ((hfglob b2 id).1 h2) }
+  have hbc_sp : bc sp = BCstack := by simp [bc, f]
+  have hbc_other : ∀ b, b ≠ sp → bc b = callee b := by
+    intro b hb
+    simp [bc, f, hb]
+  have hincr_caller : bc_incr caller bc := by
+    intro b hb
+    by_cases hbs : b = sp
+    · subst b
+      exact hbc_sp.trans hcaller_sp.symm
+    · exact (hbc_other b hbs).trans (hsame b (hbelow b hb) hbs).symm
+  have hincr_callee : bc_incr callee bc := by
+    intro b hb
+    by_cases hbs : b = sp
+    · subst b
+      exact False.elim (hb hcallee_sp)
+    · exact hbc_other b hbs
+  have hspbelow : Plt sp bound := hbelow sp (by simp [hcaller_sp])
+  have hbstack : bmatch bc m sp am.am_stack := by
+    constructor
+    · exact pg_smatch_incr caller bc m sp am.am_stack.ab_summary
+        hincr_caller hcontents.1
+    · intro chunk ofs w hw
+      exact pg_vmatch_incr caller bc w _ hincr_caller (hcontents.2 chunk ofs w hw)
+  have hsm : ∀ b p, smatch callee m b p → smatch bc m b Nonstack := by
+    intro b p hb
+    exact pg_smatch_incr callee bc m b Nonstack hincr_callee
+      (smatch_no_stack callee hnostack m b p hb)
+  have hglob : ∀ b id, bc b = BCglob id ↔ callee b = BCglob id := hfglob
+  have hge : genv_match bc ge := by
+    apply anonymize_genv_match_exten ge callee bc hge_callee
+    · intro b id
+      exact (hglob b id).symm
+    · intro b hb
+      have hbs : b ≠ sp := by
+        intro heq
+        subst b
+        rw [hcallee_sp] at hb
+        cases hb
+      exact (hbc_other b hbs).trans hb
+  have hmem : mmatch bc m (mafter_private_call am) := by
+    constructor
+    · intro b hb
+      have hbs : b = sp := bc.bc_stack b sp hb hbc_sp
+      subst b
+      exact hbstack
+    · intro id ab b hb hget
+      change PTree.get id (PTree.empty ablock) = some ab at hget
+      have hnone : PTree.get id (PTree.empty ablock) = none := PTree.gempty _ _
+      rw [hnone] at hget
+      cases hget
+    · intro b hns hni
+      have hbs : b ≠ sp := by intro heq; subst b; exact hns hbc_sp
+      have hni' : callee b ≠ BCinvalid := by rwa [hbc_other b hbs] at hni
+      exact hsm b _ (hmm.mmatch_nonstack b (hnostack b) hni')
+    · intro b hni
+      change smatch bc m b (plub am.am_stack.ab_summary Nonstack)
+      by_cases hbs : b = sp
+      · subst b
+        exact smatch_ge bc m sp _ _ hbstack.1 (pge_lub_l _ _)
+      · have hni' : callee b ≠ BCinvalid := by rwa [hbc_other b hbs] at hni
+        exact smatch_ge bc m b _ _ (hsm b _ (hmm.mmatch_top b hni'))
+          (pge_lub_r _ _)
+    · intro b hni
+      by_cases hbs : b = sp
+      · subst b
+        exact Plt_Ple_trans sp bound m.nextblock hspbelow hbound
+      · exact hmm.mmatch_below b (by rwa [hbc_other b hbs] at hni)
+  refine ⟨bc, ?_, ?_, ?_, hmem, hge, hbc_sp, ?_⟩
+  · exact pg_vmatch_incr callee bc v (Ifptr Nonstack) hincr_callee
+      (vmatch_no_stack callee hnostack v Vtop hresult)
+  · intro r
+    exact pg_vmatch_incr caller bc _ (AE.get r ae) hincr_caller (hem r)
+  · exact anonymize_romatch_exten callee bc m rm hrom hglob
+  · intro b hb
+    have hbs : b ≠ sp := by intro heq; subst b; exact Plt_strict sp hb
+    exact (hbc_other b hbs).trans (hsame b (Plt_trans b sp bound hb hspbelow) hbs).symm
+
+end CompCert4Lean.Backend.ValueAnalysis
