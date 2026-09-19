@@ -4614,3 +4614,11 @@ theorem frame_contents_incr : frame_contents_incrStatement := by
     (stackingproof_massert_imp_refl P)).1 m hm
 
 end CompCert4Lean.Backend.Stackingproof
+
+namespace CompCert4Lean.Backend.Stackingproof
+
+theorem agree_regs_set_reg : agree_regs_set_regStatement := by
+  intro j ls rs r v v' hagree hv
+  exact stackingproof_agree_regs_set_reg j ls rs r v v' hagree hv
+
+end CompCert4Lean.Backend.Stackingproof

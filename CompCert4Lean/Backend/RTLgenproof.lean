@@ -5731,3 +5731,33 @@ open CompCert4Lean.Common.Globalenvs
           hbound ihbound hbody ihbody)
 
 end CompCert4Lean.Backend.RTLgenproof
+
+namespace CompCert4Lean.Backend.RTLgenproof
+
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.Common.Globalenvs
+
+theorem transl_condexpr_correct
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    transl_condexpr_correctStatement := by
+  intro xi prog tprog hprog sp e m
+  exact CminorSel.eval_condexpr_ind3 xi (Genv.globalenv prog) sp e m
+    (transl_expr_prop xi tprog sp e m)
+    (transl_exprlist_prop xi tprog sp e m)
+    (transl_condexpr_prop xi tprog sp e m)
+    (transl_expr_Evar_correct xi tprog sp e m)
+    (transl_expr_Eop_correct xi prog tprog hprog sp e m)
+    (transl_expr_Eload_correct xi prog tprog hprog sp e m)
+    (transl_expr_Econdition_correct xi prog tprog sp e m)
+    (transl_expr_Elet_correct xi prog tprog sp e m)
+    (transl_expr_Eletvar_correct xi tprog sp e m)
+    (rtlgen_expr_builtin_case xi prog tprog hprog sp e m)
+    (rtlgen_expr_external_case xi prog tprog hprog sp e m)
+    (transl_exprlist_Enil_correct xi tprog sp e m)
+    (transl_exprlist_Econs_correct xi prog tprog sp e m)
+    (transl_condexpr_CEcond_correct xi prog tprog sp e m)
+    (transl_condexpr_CEcondition_correct xi prog tprog sp e m)
+    (transl_condexpr_CElet_correct xi prog tprog sp e m)
+
+end CompCert4Lean.Backend.RTLgenproof
