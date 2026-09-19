@@ -2197,3 +2197,20 @@ theorem sem_unary_operation_inject :
           hmap rfl)) op v1 ty1 v tv1 hsem hinj
 
 end CompCert4Lean.Cfrontend.Cop
+
+namespace CompCert4Lean.Cfrontend.Cop
+
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Integers
+
+theorem bool_val_inject : bool_val_injectStatement := by
+  intro f m m' v ty b tv hval hinj hmem
+  exact bool_val_inj f m m'
+    (fun b1 ofs b2 delta hmap hvalid =>
+      cop_weak_valid_pointer_inject_val f m m' hmem b1 ofs b2
+        (Ptrofs.add ofs (Ptrofs.repr delta)) hvalid
+        (Val.inject.inject_ptr b1 ofs b2
+          (Ptrofs.add ofs (Ptrofs.repr delta)) delta hmap rfl))
+    v ty b tv hval hinj
+
+end CompCert4Lean.Cfrontend.Cop

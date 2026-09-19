@@ -2052,3 +2052,30 @@ theorem transl_code_label : transl_code_labelStatement := by
           simpa [CompCert4Lean.Backend.Mach.find_label, hfind, hil'] using hih
 
 end CompCert4Lean.X86.Asmgenproof
+
+namespace CompCert4Lean.X86.Asmgenproof
+
+open CompCert4Lean.Backend.Asmgenproof0
+open CompCert4Lean.Common.Errors
+open CompCert4Lean.X86.Asmgen
+
+theorem transl_find_label : transl_find_labelStatement := by
+  intro lbl f tf h
+  unfold CompCert4Lean.X86.Asmgen.transf_function at h
+  obtain ⟨tf0, ht, hs⟩ := bind_inversion _ _ _ _ _ h
+  cases hz : CompCert4Lean.Lib.Coqlib.zlt
+      CompCert4Lean.Lib.Integers.Ptrofs.max_unsigned
+      (CompCert4Lean.Lib.Coqlib.list_length_z tf0.fn_code) with
+  | left hlt =>
+      rw [hz] at hs
+      cases hs
+  | right hge =>
+      rw [hz] at hs
+      cases hs
+      unfold CompCert4Lean.X86.Asmgen.transl_function at ht
+      obtain ⟨c, hc, he⟩ := bind_inversion _ _ _ _ _ ht
+      cases he
+      rw [transl_code'_transl_code] at hc
+      exact transl_code_label lbl f f.fn_code true c hc
+
+end CompCert4Lean.X86.Asmgenproof
