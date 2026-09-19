@@ -8606,3 +8606,23 @@ theorem eqm_unsigned_repr_proof : eqm_unsigned_repr := by
   exact suffix_eqm_unsigned_repr
 
 end CompCert4Lean.Lib.Integers.Int
+
+namespace CompCert4Lean.Lib.Integers.Int
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+
+theorem add_neg_zero_proof : add_neg_zero := by
+  intro x
+  change WordCore.add x (WordCore.neg x) = WordCore.zero wordsize
+  apply WordCore.ext_of_val_eq
+  apply Int.ofNat.inj
+  rw [WordCore.add_val_int, suffix_wordcore_neg_val_int]
+  change
+    (Int.ofNat x.val + (-Int.ofNat x.val) % Int.ofNat (2 ^ wordsize)) %
+        Int.ofNat (2 ^ wordsize) = 0
+  rw [Int.add_emod_emod]
+  have hzero : Int.ofNat x.val + -Int.ofNat x.val = 0 := by omega
+  rw [hzero]
+  rfl
+
+end CompCert4Lean.Lib.Integers.Int

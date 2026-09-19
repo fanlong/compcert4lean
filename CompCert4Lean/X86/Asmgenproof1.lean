@@ -3160,3 +3160,19 @@ theorem transl_addressing_mode_correct : transl_addressing_mode_correctStatement
           all_goals first | exact Val.lessdef_refl _ | exact Val.lessdef_undef _
 
 end CompCert4Lean.X86.Asmgenproof1
+
+namespace CompCert4Lean.X86.Asmgenproof1
+
+theorem normalize_addrmode_32_correct : normalize_addrmode_32_correctStatement := by
+  intro ge am rs
+  cases am with
+  | Addrmode base ofs c =>
+      cases c with
+      | inl n =>
+          simp [CompCert4Lean.X86.Asmgen.normalize_addrmode_32,
+            CompCert4Lean.X86.Asm.eval_addrmode32]
+          rw [CompCert4Lean.Lib.Integers.Int.repr_signed_proof]
+      | inr p =>
+          rfl
+
+end CompCert4Lean.X86.Asmgenproof1

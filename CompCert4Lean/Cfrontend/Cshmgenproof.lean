@@ -6243,3 +6243,9 @@ theorem make_shr_correct
             CompCert4Lean.Lib.Integers.WordCore.shru, hunsigned']
           rfl
   case shift_default => contradiction
+
+theorem make_ptrofs_of_int_correct
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    make_ptrofs_of_int_correctStatement :=
+  make_ptrofs_of_int_correct_aux

@@ -4188,3 +4188,16 @@ theorem d_ge_0 : ∀ (ctx : ExactRealContext) (magnitude : ExactMagnitude ctx),
   exact hround.2.2 (R0 ctx) hzero hxle
 
 end CompCert4Lean.Flocq.Prop.Round_odd
+
+namespace CompCert4Lean.Flocq.Prop.Round_odd
+
+open CompCert4Lean.Flocq.Core
+
+theorem mag_d : ∀ (ctx : ExactRealContext) (magnitude : ExactMagnitude ctx),
+    mag_dStatement ctx magnitude := by
+  intro ctx magnitude beta fexp hvalid x d hd hdpos
+  have hd_eq := d_eq ctx magnitude beta fexp hvalid x d hd
+  rw [hd_eq] at hdpos ⊢
+  exact CompCert4Lean.Flocq.Core.Generic_fmt.mag_DN ctx magnitude beta fexp hvalid x hdpos
+
+end CompCert4Lean.Flocq.Prop.Round_odd

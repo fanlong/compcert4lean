@@ -3698,3 +3698,167 @@ theorem inbetween_shr :
         exact hx
 
 end CompCert4Lean.Flocq.IEEE754.BinarySingleNaN
+
+namespace CompCert4Lean.Flocq.IEEE754.BinarySingleNaN
+
+open CompCert4Lean.Flocq.Core
+
+private theorem pg_round_mode_trunc_valid (ctx : ExactRealContext) :
+    Generic_fmt.Exact.Valid_rnd ctx (Raux.Exact.Ztrunc ctx) := by
+  constructor
+  · intro x y hxy
+    have le_total (a b : Raux.Exact.R ctx) :
+        Raux.Exact.Rle ctx a b ∨ Raux.Exact.Rle ctx b a := by
+      rcases ctx.certificate.total_order a b with (h | h) | h
+      · exact Or.inl ((ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp h).1
+      · subst b
+        exact Or.inl (ctx.certificate.orderedField.le_refl _)
+      · exact Or.inr ((ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp h).1
+    by_cases hx : Raux.Exact.Rle ctx (Raux.Exact.R0 ctx) x
+    · have hy := ctx.certificate.orderedField.le_trans _ _ _ hx hxy
+      rw [Raux.Ztrunc_floor ctx x hx, Raux.Ztrunc_floor ctx y hy]
+      exact Raux.Zfloor_le ctx x y hxy
+    · have hx' := (le_total _ _).resolve_left hx
+      by_cases hy : Raux.Exact.Rle ctx (Raux.Exact.R0 ctx) y
+      · rw [Raux.Ztrunc_ceil ctx x hx', Raux.Ztrunc_floor ctx y hy]
+        have hx0 : Raux.Exact.Rle ctx x (Raux.Exact.IZR ctx Z0) := by
+          change ctx.spec.le x (ctx.spec.ofZ Z0)
+          rw [ctx.certificate.sourceLaws.ofZ_zero]
+          exact hx'
+        have hy0 : Raux.Exact.Rle ctx (Raux.Exact.IZR ctx Z0) y := by
+          change ctx.spec.le (ctx.spec.ofZ Z0) y
+          rw [ctx.certificate.sourceLaws.ofZ_zero]
+          exact hy
+        exact Int.le_trans (Raux.Zceil_glb ctx Z0 x hx0)
+          (Raux.Zfloor_lub ctx Z0 y hy0)
+      · have hy' := (le_total _ _).resolve_left hy
+        rw [Raux.Ztrunc_ceil ctx x hx', Raux.Ztrunc_ceil ctx y hy']
+        exact Raux.Zceil_le ctx x y hxy
+  · exact Raux.Ztrunc_IZR ctx
+
+private theorem pg_round_mode_ceil_le_floor (ctx : ExactRealContext)
+    (x y : Raux.Exact.R ctx)
+    (h : Zlt (Raux.Exact.Zfloor ctx x) (Raux.Exact.Zfloor ctx y)) :
+    Zle (Raux.Exact.Zceil ctx x) (Raux.Exact.Zfloor ctx y) := by
+  have hgap : Zle (Zadd (Raux.Exact.Zfloor ctx x) Zone)
+      (Raux.Exact.Zfloor ctx y) := by
+    change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+        (Zadd (Raux.Exact.Zfloor ctx x) Zone) ≤
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (Raux.Exact.Zfloor ctx y)
+    change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+        (Raux.Exact.Zfloor ctx x) <
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (Raux.Exact.Zfloor ctx y) at h
+    simp only [Zadd, Zaux.Zadd,
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.ZArith.BinInt.Z.add,
+      CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+    change _ + 1 ≤ _
+    omega
+  have hupper : Raux.Exact.Rle ctx x
+      (Raux.Exact.IZR ctx (Zadd (Raux.Exact.Zfloor ctx x) Zone)) := by
+    change ctx.spec.le x (ctx.spec.ofZ (Zadd (Raux.Exact.Zfloor ctx x) Zone))
+    rw [ctx.certificate.sourceLaws.ofZ_add, ctx.certificate.sourceLaws.ofZ_one]
+    exact ((ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp
+      (Raux.Zfloor_ub ctx x)).1
+  exact Raux.Zceil_glb ctx _ x
+    (ctx.certificate.orderedField.le_trans _ _ _ hupper
+      (CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.IZR_le ctx _ _ hgap))
+
+private theorem pg_round_mode_nearest_valid (ctx : ExactRealContext)
+    (choice : Z → Bool) :
+    Generic_fmt.Exact.Valid_rnd ctx (Generic_fmt.Exact.Znearest ctx choice) := by
+  constructor
+  · intro x y hxy
+    have hf := Raux.Zfloor_le ctx x y hxy
+    have hc := Raux.Zceil_le ctx x y hxy
+    have hfc : Zle (Raux.Exact.Zfloor ctx x) (Raux.Exact.Zceil ctx y) :=
+      Int.le_trans hf (Generic_fmt.Znearest_ge_floor ctx choice y |>
+        fun h => Int.le_trans h (Generic_fmt.Znearest_le_ceil ctx choice y))
+    by_cases heq : Raux.Exact.Zfloor ctx x = Raux.Exact.Zfloor ctx y
+    · let a := Raux.Exact.Rminus ctx x
+        (Raux.Exact.IZR ctx (Raux.Exact.Zfloor ctx x))
+      let b := Raux.Exact.Rminus ctx y
+        (Raux.Exact.IZR ctx (Raux.Exact.Zfloor ctx y))
+      let c := Raux.Exact.Rdiv ctx (Raux.Exact.Rone ctx) (Raux.Exact.Rtwo ctx)
+      have hab : Raux.Exact.Rle ctx a b := by
+        dsimp [a, b]
+        rw [heq]
+        exact CompCert4Lean.Foundation.FlocqReal.Rocq.Coq.Reals.RIneq.Rplus_le_compat_r
+          ctx (Raux.Exact.Ropp ctx (Raux.Exact.IZR ctx (Raux.Exact.Zfloor ctx y)))
+          x y hxy
+      change Zle
+        (match Raux.Exact.Rcompare ctx a c with
+         | .Lt => Raux.Exact.Zfloor ctx x
+         | .Eq => if choice (Raux.Exact.Zfloor ctx x) then Raux.Exact.Zceil ctx x
+             else Raux.Exact.Zfloor ctx x
+         | .Gt => Raux.Exact.Zceil ctx x)
+        (match Raux.Exact.Rcompare ctx b c with
+         | .Lt => Raux.Exact.Zfloor ctx y
+         | .Eq => if choice (Raux.Exact.Zfloor ctx y) then Raux.Exact.Zceil ctx y
+             else Raux.Exact.Zfloor ctx y
+         | .Gt => Raux.Exact.Zceil ctx y)
+      cases ha : Raux.Exact.Rcompare ctx a c with
+      | Lt =>
+          cases hb : Raux.Exact.Rcompare ctx b c with
+          | Lt => exact hf
+          | Eq => dsimp only; split <;> assumption
+          | Gt => exact hfc
+      | Eq =>
+          have ha' := Raux.Rcompare_Eq_inv ctx a c ha
+          cases hb : Raux.Exact.Rcompare ctx b c with
+          | Lt =>
+              have hb' := Raux.Rcompare_Lt_inv ctx b c hb
+              exact False.elim (((ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp
+                hb').2 (ha' ▸ hab))
+          | Eq =>
+              dsimp only
+              rw [heq]
+              split
+              · exact hc
+              · exact Int.le_refl _
+          | Gt => dsimp only; split <;> assumption
+      | Gt =>
+          have ha' := Raux.Rcompare_Gt_inv ctx a c ha
+          have hnot : ¬ Raux.Exact.Rle ctx b c := by
+            intro hbc
+            exact ((ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp ha').2
+              (ctx.certificate.orderedField.le_trans _ _ _ hab hbc)
+          cases hb : Raux.Exact.Rcompare ctx b c with
+          | Lt =>
+              exact False.elim (hnot
+                ((ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp
+                  (Raux.Rcompare_Lt_inv ctx b c hb)).1)
+          | Eq =>
+              have hb' := Raux.Rcompare_Eq_inv ctx b c hb
+              exact False.elim (hnot (hb' ▸ ctx.certificate.orderedField.le_refl c))
+          | Gt => exact hc
+    · have hne : CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+          (Raux.Exact.Zfloor ctx x) ≠
+        CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (Raux.Exact.Zfloor ctx y) :=
+        fun h => heq (CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective h)
+      have hlt : Zlt (Raux.Exact.Zfloor ctx x) (Raux.Exact.Zfloor ctx y) := by
+        change CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+            (Raux.Exact.Zfloor ctx x) <
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (Raux.Exact.Zfloor ctx y)
+        have hf' : CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ
+            (Raux.Exact.Zfloor ctx x) ≤
+          CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ (Raux.Exact.Zfloor ctx y) := hf
+        omega
+      exact Int.le_trans (Generic_fmt.Znearest_le_ceil ctx choice x)
+        (Int.le_trans (pg_round_mode_ceil_le_floor ctx x y hlt)
+          (Generic_fmt.Znearest_ge_floor ctx choice y))
+  · intro n
+    rcases Generic_fmt.Znearest_DN_or_UP ctx choice (Raux.Exact.IZR ctx n) with h | h
+    · exact h.trans (Raux.Zfloor_IZR ctx n)
+    · exact h.trans (Raux.Zceil_IZR ctx n)
+
+theorem valid_rnd_round_mode_proof (ctx : ExactRealContext) :
+    valid_rnd_round_modeStatement ctx := by
+  intro m
+  cases m with
+  | mode_NE => exact pg_round_mode_nearest_valid ctx (fun n => Bool.not (Zeven n))
+  | mode_ZR => exact pg_round_mode_trunc_valid ctx
+  | mode_DN => exact ⟨Raux.Zfloor_le ctx, Raux.Zfloor_IZR ctx⟩
+  | mode_UP => exact ⟨Raux.Zceil_le ctx, Raux.Zceil_IZR ctx⟩
+  | mode_NA => exact pg_round_mode_nearest_valid ctx (fun n => Zle_bool Z0 n)
+
+end CompCert4Lean.Flocq.IEEE754.BinarySingleNaN

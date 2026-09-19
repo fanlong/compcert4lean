@@ -5680,3 +5680,54 @@ theorem transl_expr_correct
     (transl_condexpr_CElet_correct xi prog tprog sp e m)
 
 end CompCert4Lean.Backend.RTLgenproof
+
+namespace CompCert4Lean.Backend.RTLgenproof
+
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.Common.Globalenvs
+
+ theorem transl_exprlist_correct
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    transl_exprlist_correctStatement := by
+  intro xi prog tprog hprog sp e m
+  refine eval_exprlist_ind3 (xi := xi) (ge := Genv.globalenv prog) (sp := sp)
+      (e := e) (m := m)
+      (P := fun le a v => transl_expr_prop xi tprog sp e m le a v)
+      (PList := fun le al vl => transl_exprlist_prop xi tprog sp e m le al vl)
+      (PCond := fun le a vb => transl_condexpr_prop xi tprog sp e m le a vb)
+      (fun le id v hget => transl_expr_Evar_correct xi tprog sp e m le id v hget)
+      (fun le op args vargs v hargs ihargs heval =>
+        transl_expr_Eop_correct xi prog tprog hprog sp e m le op args vargs v
+          hargs ihargs heval)
+      (fun le chunk addr args vargs vaddr v hargs ihargs haddr hload =>
+        transl_expr_Eload_correct xi prog tprog hprog sp e m le chunk addr args
+          vargs vaddr v hargs ihargs haddr hload)
+      (fun le a b c va v hcond ihcond hbranch ihbranch =>
+        transl_expr_Econdition_correct xi prog tprog sp e m le a b c va v
+          hcond ihcond hbranch ihbranch)
+      (fun le a b v1 v2 hbound ihbound hbody ihbody =>
+        transl_expr_Elet_correct xi prog tprog sp e m le a b v1 v2
+          hbound ihbound hbody ihbody)
+      (fun le n v hget => transl_expr_Eletvar_correct xi tprog sp e m le n v hget)
+      (fun le ef args vargs v hargs ihargs hext =>
+        rtlgen_expr_builtin_case xi prog tprog hprog sp e m le ef args vargs v
+          hargs ihargs hext)
+      (fun le id sg args b ef vargs v hsymbol hfunction hsig hargs ihargs hext =>
+        rtlgen_expr_external_case xi prog tprog hprog sp e m le id sg args b ef
+          vargs v hsymbol hfunction hsig hargs ihargs hext)
+      (fun le => transl_exprlist_Enil_correct xi tprog sp e m le)
+      (fun le a args v vl hhead ihhead htail ihtail =>
+        transl_exprlist_Econs_correct xi prog tprog sp e m le a args v vl
+          hhead ihhead htail ihtail)
+      (fun le cond args vargs vb hargs ihargs heval =>
+        transl_condexpr_CEcond_correct xi prog tprog sp e m le cond args vargs vb
+          hargs ihargs heval)
+      (fun le a b c va v hcond ihcond hbranch ihbranch =>
+        transl_condexpr_CEcondition_correct xi prog tprog sp e m le a b c va v
+          hcond ihcond hbranch ihbranch)
+      (fun le a b v1 v2 hbound ihbound hbody ihbody =>
+        transl_condexpr_CElet_correct xi prog tprog sp e m le a b v1 v2
+          hbound ihbound hbody ihbody)
+
+end CompCert4Lean.Backend.RTLgenproof

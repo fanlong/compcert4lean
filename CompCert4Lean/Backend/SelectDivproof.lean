@@ -3118,3 +3118,98 @@ theorem eval_mod_from_div
         (eval_exprlist.nil le))) rfl
 
 end CompCert4Lean.Backend.SelectDivproof
+
+namespace CompCert4Lean.Backend.SelectDivproof
+
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Backend.CminorSel
+open CompCert4Lean.Backend.SelectDiv
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.X86.Op
+open CompCert4Lean.X86.SelectOp
+
+ theorem eval_moduimm
+    [binary64_certificate : BinaryNormalizeCertificate (ZArith.BinInt.Z.of_nat 53)
+      (ZArith.BinInt.Z.of_nat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (ZArith.BinInt.Z.of_nat 24)
+      (ZArith.BinInt.Z.of_nat 128)] :
+    eval_moduimmStatement := by
+  intro cfg xi prog sp e m le e1 x n2 z ha hz
+  unfold moduimm
+  cases hpow : CompCert4Lean.Lib.Integers.Int.is_power2 n2 with
+  | some l =>
+      simp only [hpow]
+      have hmod := CompCert4Lean.Common.Values.Val.modu_pow2 x n2 l z hpow hz
+      have hand := CompCert4Lean.X86.SelectOpproof.eval_andimm
+        (binary64_certificate := binary64_certificate)
+        (binary32_certificate := binary32_certificate)
+        xi (Genv.globalenv prog) sp e m (intSub n2 CompCert4Lean.Lib.Integers.Int.one)
+        le e1 x ha
+      rcases hand with ⟨v, hv, hd⟩
+      refine ⟨v, ?_, ?_⟩
+      · simpa [hpow] using hv
+      · simpa [hmod] using hd
+  | none =>
+      simp only [hpow]
+      split
+      · exact CompCert4Lean.X86.SelectOpproof.eval_modu_base
+          (binary64_certificate := binary64_certificate)
+          (binary32_certificate := binary32_certificate)
+          xi (Genv.globalenv prog) sp e m le e1
+          (Eop (Ointconst n2) Enil) x (.Vint n2) z ha
+          (eval_intconst_local xi (Genv.globalenv prog) sp e m le n2) hz
+      · cases hparams : divu_mul_params (intUnsigned n2) with
+        | none =>
+            exact CompCert4Lean.X86.SelectOpproof.eval_modu_base
+              (binary64_certificate := binary64_certificate)
+              (binary32_certificate := binary32_certificate)
+              xi (Genv.globalenv prog) sp e m le e1
+              (Eop (Ointconst n2) Enil) x (.Vint n2) z ha
+              (eval_intconst_local xi (Genv.globalenv prog) sp e m le n2) hz
+        | some pm =>
+            rcases pm with ⟨p, M⟩
+            cases x with
+            | Vint x1 =>
+                cases hzero : CompCert4Lean.Lib.Integers.Int.eq n2
+                    CompCert4Lean.Lib.Integers.Int.zero with
+                | true => simp [Val.modu, hzero] at hz
+                | false =>
+                    simp [Val.modu, hzero] at hz
+                    cases hz
+                    have hbody := eval_divu_mul
+                      (binary64_certificate := binary64_certificate)
+                      (binary32_certificate := binary32_certificate)
+                      xi prog sp e m (le := (.Vint x1 :: le))
+                      (x := x1) (y := n2) (p := p) (M := M) hparams rfl
+                    refine ⟨.Vint (intSub x1 (intMul (intDivu x1 n2) n2)), ?_, ?_⟩
+                    · exact eval_expr.eval_Elet le e1
+                        (mod_from_div (divu_mul p M) n2)
+                        (.Vint x1)
+                        (.Vint (intSub x1 (intMul (intDivu x1 n2) n2))) ha
+                        (by
+                          exact eval_mod_from_div
+                            (binary64_certificate := binary64_certificate)
+                            (binary32_certificate := binary32_certificate)
+                            xi prog sp e m (.Vint x1 :: le) (divu_mul p M) n2 x1
+                            (intDivu x1 n2) hbody rfl)
+                    · have hnzero : n2 ≠ CompCert4Lean.Lib.Integers.Int.zero := by
+                        intro hn
+                        subst n2
+                        have htrue := CompCert4Lean.Lib.Integers.Int.eq_true_proof
+                          CompCert4Lean.Lib.Integers.Int.zero
+                        exact Bool.noConfusion (htrue.symm.trans hzero)
+                      have hrem := CompCert4Lean.Lib.Integers.Int.modu_divu_proof
+                        x1 n2 hnzero
+                      change Val.lessdef
+                        (.Vint (CompCert4Lean.Lib.Integers.Int.modu x1 n2))
+                        (.Vint (intSub x1 (intMul (intDivu x1 n2) n2)))
+                      rw [hrem]
+                      exact Val.lessdef_refl _
+            | Vundef => simp [Val.modu] at hz
+            | Vlong i => simp [Val.modu] at hz
+            | Vfloat f => simp [Val.modu] at hz
+            | Vsingle f => simp [Val.modu] at hz
+            | Vptr b ofs => simp [Val.modu] at hz
+
+end CompCert4Lean.Backend.SelectDivproof

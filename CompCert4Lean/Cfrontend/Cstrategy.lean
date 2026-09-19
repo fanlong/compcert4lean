@@ -4022,3 +4022,50 @@ theorem step_simulation
   · exact CompCert4Lean.Common.Smallstep.plus_one _ _ _ _ _ _ _ (Or.inr hs)
 
 end CompCert4Lean.Cfrontend.Cstrategy
+
+namespace CompCert4Lean.Cfrontend.Cstrategy
+
+open CompCert4Lean.Cfrontend.Csem
+open CompCert4Lean.Common.Smallstep
+open CompCert4Lean.Common.Events
+
+set_option maxHeartbeats 800000 in
+theorem progress
+    [binary64_certificate : BinaryNormalizeCertificate (zOfNat 53) (zOfNat 1024)]
+    [binary32_certificate : BinaryNormalizeCertificate (zOfNat 24) (zOfNat 128)] :
+    progressStatement := by
+  unfold progressStatement
+  intro xi ge S hsafe
+  have h := hsafe S (star_refl _ ge _)
+  rcases h with hfinal | ⟨t, S', hstep⟩
+  · exact Or.inl hfinal
+  · right
+    rcases hstep with he | hs
+    · cases he with
+      | @step_lred C f a k e m a' m' hred hC =>
+          have hnot : (match C a with | .Eval _ _ => False | _ => True) := by
+            cases hC <;> cases hred <;> simp_all
+          rcases can_estep xi ge f (C a) k e m hsafe hnot with ⟨t', S'', he'⟩
+          exact ⟨t', S'', Or.inl he'⟩
+      | @step_rred C f a k e m t a' m' hred hC =>
+          have hnot : (match C a with | .Eval _ _ => False | _ => True) := by
+            cases hC <;> cases hred <;> simp_all
+          rcases can_estep xi ge f (C a) k e m hsafe hnot with ⟨t', S'', he'⟩
+          exact ⟨t', S'', Or.inl he'⟩
+      | @step_call C f a k e m fd vargs ty hred hC =>
+          have hnot : (match C a with | .Eval _ _ => False | _ => True) := by
+            cases hC <;> cases hred <;> simp_all
+          rcases can_estep xi ge f (C a) k e m hsafe hnot with ⟨t', S'', he'⟩
+          exact ⟨t', S'', Or.inl he'⟩
+      | @step_stuck C f a k e m K hC himm =>
+          have hz := hsafe .Stuckstate
+            (star_one _ _ _ ge _ E0 _
+              (Or.inl (Csem.estep.step_stuck hC himm)))
+          rcases hz with ⟨r, hf⟩ | ⟨t', S'', hs'⟩
+          · cases hf
+          · rcases hs' with he' | hs''
+            · cases he'
+            · cases hs''
+    · exact ⟨t, S', Or.inr hs⟩
+
+end CompCert4Lean.Cfrontend.Cstrategy

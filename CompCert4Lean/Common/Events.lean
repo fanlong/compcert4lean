@@ -2901,3 +2901,501 @@ theorem volatile_store_ok : volatile_store_okStatement := by
                     exact ⟨rfl, rfl⟩
 
 end CompCert4Lean.Common.Events
+
+namespace CompCert4Lean.Common.Events
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Builtins
+open CompCert4Lean.Common.Builtins0
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.ExternalCalls
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+
+
+private theorem memcpy_aux_storebytes_unchanged
+    (P : block → Z → Prop) (m : mem) (b : block) (ofs : Z)
+    (bytes : List memval) (m' : mem)
+    (hstore : Mem.storebytes m b ofs bytes = some m')
+    (hout : ∀ i, zLe ofs i ∧ zLt i (zAdd ofs (ZArith.BinInt.Z.of_nat bytes.length)) → ¬ P b i) :
+    Mem.unchanged_on P m m' := by
+  constructor
+  · rw [Mem.nextblock_storebytes _ _ _ _ _ hstore]
+    exact Ple_refl _
+  · intro b' ofs' k p _ _
+    exact ⟨Mem.perm_storebytes_1 _ _ _ _ _ hstore b' ofs' k p,
+      Mem.perm_storebytes_2 _ _ _ _ _ hstore b' ofs' k p⟩
+  · intro b' ofs' hP _
+    rw [Mem.storebytes_mem_contents _ _ _ _ _ hstore]
+    by_cases hb : b' = b
+    · subst b'
+      erw [PMap.gss]
+      apply Mem.setN_other
+      intro r hr heq
+      subst r
+      exact hout ofs' (by exact hr) hP
+    · erw [PMap.gso _ _ hb]
+
+
+private theorem memcpy_aux_zadd_zero (x : Z) : zAdd x (ZArith.BinInt.Z.Z0) = x := by
+  apply CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_injective
+  simp only [zAdd, ZArith.BinInt.Z.add,
+    CompCert4Lean.Foundation.Numbers.Rocq.Coq.intOfZ_zOfInt]
+  change intOfZ x + 0 = intOfZ x
+  omega
+
+private theorem memcpy_aux_loadbytes_extends : Mem.loadbytes_extendsStatement := by
+  intro m1 m2 b ofs len bytes1 hext hload
+  obtain ⟨bytes2, hload2, hbytes⟩ := Mem.loadbytes_inj inject_id m1 m2 len b ofs b .Z0 bytes1
+    hext.mext_inj hload rfl
+  refine ⟨bytes2, ?_, ?_⟩
+  · change Mem.loadbytes m2 b (zAdd ofs (ZArith.BinInt.Z.Z0)) len = some bytes2 at hload2
+    rw [memcpy_aux_zadd_zero] at hload2
+    exact hload2
+  · exact hbytes
+
+private theorem memcpy_aux_storebytes_within_extends : Mem.storebytes_within_extendsStatement := by
+  intro m1 m2 b ofs bytes1 n1 bytes2 hext hs hv
+  obtain ⟨n2, hs2, hi⟩ := Mem.storebytes_mapped_inj inject_id m1 b ofs bytes1 n1
+    m2 b .Z0 bytes2 hext.mext_inj hs (by
+      intro b1 b1' d1 b2 b2' d2 ofs1 ofs2 hne h1 h2 hp1 hp2
+      have h1' : (b1, (.Z0 : Z)) = (b1', d1) := Option.some.inj h1
+      have h2' : (b2, (.Z0 : Z)) = (b2', d2) := Option.some.inj h2
+      cases h1'; cases h2'; exact Or.inl hne) rfl hv
+  change Mem.storebytes m2 b (zAdd ofs (ZArith.BinInt.Z.Z0)) bytes2 = some n2 at hs2
+  rw [memcpy_aux_zadd_zero] at hs2
+  have hs2' : Mem.storebytes m2 b ofs bytes2 = some n2 := hs2
+  refine ⟨n2, hs2', ?_⟩
+  constructor
+  · rw [Mem.nextblock_storebytes _ _ _ _ _ hs, Mem.nextblock_storebytes _ _ _ _ _ hs2']
+    exact hext.mext_next
+  · exact hi
+  · intro b' ofs' k p hp
+    obtain hp' | hn := hext.mext_perm_inv b' ofs' k p
+      (Mem.perm_storebytes_2 _ _ _ _ _ hs2' _ _ _ _ hp)
+    · exact Or.inl (Mem.perm_storebytes_1 _ _ _ _ _ hs _ _ _ _ hp')
+    · exact Or.inr (fun h => hn (Mem.perm_storebytes_2 _ _ _ _ _ hs _ _ _ _ h))
+
+end CompCert4Lean.Common.Events
+
+namespace CompCert4Lean.Common.Events
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.Lib.Coqlib
+
+private theorem memcpy_aux_injection_transport
+    (f : Val.meminj) (m1 m2 n1 n2 : mem) (b1 b2 : block)
+    (ofs1 ofs2 : Z) (bytes1 bytes2 : List memval)
+    (hinj : Mem.inject f m1 m2)
+    (hs1 : Mem.storebytes m1 b1 ofs1 bytes1 = some n1)
+    (hs2 : Mem.storebytes m2 b2 ofs2 bytes2 = some n2)
+    (hmem : Mem.mem_inj f n1 n2) : Mem.inject f n1 n2 := by
+  have hp1 := Mem.perm_storebytes_1 _ _ _ _ _ hs1
+  have hp2 := Mem.perm_storebytes_2 _ _ _ _ _ hs1
+  have hq2 := Mem.perm_storebytes_2 _ _ _ _ _ hs2
+  constructor
+  · exact hmem
+  · intro b hb
+    apply hinj.mi_freeblocks b
+    intro hv
+    exact hb (Mem.storebytes_valid_block_1 _ _ _ _ _ hs1 b hv)
+  · intro b b' delta hmap
+    exact Mem.storebytes_valid_block_1 _ _ _ _ _ hs2 b'
+      (hinj.mi_mappedblocks b b' delta hmap)
+  · intro b b' delta c c' delta' ofs ofs' hne hmap hmap' hp hq
+    exact hinj.mi_no_overlap b b' delta c c' delta' ofs ofs' hne hmap hmap'
+      (hp2 b ofs Max Nonempty hp) (hp2 c ofs' Max Nonempty hq)
+  · intro b b' delta ofs hmap hp
+    apply hinj.mi_representable b b' delta ofs hmap
+    exact hp.elim (fun h => Or.inl (hp2 _ _ _ _ h))
+      (fun h => Or.inr (hp2 _ _ _ _ h))
+  · intro b ofs b' delta k p hmap hp
+    obtain hp | hn := hinj.mi_perm_inv b ofs b' delta k p hmap (hq2 _ _ _ _ hp)
+    · exact Or.inl (hp1 _ _ _ _ hp)
+    · exact Or.inr (fun h => hn (hp2 _ _ _ _ h))
+
+private theorem memcpy_aux_aligned : Mem.aligned_area_injectStatement := by
+  intro f m m' b ofs al sz b' delta hinj hal hpos hdiv hrange hof hmap
+  have hbound : zLe al sz := by
+    obtain ⟨k, hk⟩ := hdiv
+    have hk' := congrArg intOfZ hk
+    change 0 < intOfZ sz at hpos
+    change intOfZ al ≤ intOfZ sz
+    simp only [ZArith.BinInt.Z.mul, intOfZ_zOfInt] at hk'
+    rcases hal with rfl | rfl | rfl | rfl
+    · change intOfZ sz = 1 * intOfZ k at hk'
+      change 1 ≤ intOfZ sz
+      omega
+    · change intOfZ sz = 2 * intOfZ k at hk'
+      change 2 ≤ intOfZ sz
+      omega
+    · change intOfZ sz = 4 * intOfZ k at hk'
+      change 4 ≤ intOfZ sz
+      omega
+    · change intOfZ sz = 8 * intOfZ k at hk'
+      change 8 ≤ intOfZ sz
+      omega
+  have hchunk : ∃ chunk, al = align_chunk chunk ∧ al = size_chunk chunk := by
+    rcases hal with rfl | rfl | rfl | rfl
+    · exact ⟨Mint8unsigned, rfl, rfl⟩
+    · exact ⟨Mint16unsigned, rfl, rfl⟩
+    · exact ⟨Mint32, rfl, rfl⟩
+    · exact ⟨Mint64, rfl, rfl⟩
+  obtain ⟨chunk, halign, hsize⟩ := hchunk
+  have hd : zDivide al delta := by
+    rw [halign]
+    apply hinj.mi_inj.mi_align b b' delta chunk ofs Nonempty hmap
+    intro i hi
+    apply Mem.perm_cur_max m b i Nonempty
+    apply hrange i
+    rw [← hsize] at hi
+    change intOfZ ofs ≤ intOfZ i ∧ intOfZ i < intOfZ (zAdd ofs al) at hi
+    change intOfZ al ≤ intOfZ sz at hbound
+    change intOfZ ofs ≤ intOfZ i ∧ intOfZ i < intOfZ (zAdd ofs sz)
+    simp only [zAdd, ZArith.BinInt.Z.add, intOfZ_zOfInt] at hi ⊢
+    omega
+  exact ZArith.BinInt.Z.divide_add_r al ofs delta hof hd
+
+private theorem memcpy_aux_disjoint : Mem.disjoint_or_equal_injectStatement := by
+  intro f m m' b1 b1' d1 b2 b2' d2 o1 o2 sz hinj hm1 hm2 hr1 hr2 hpos hno
+  by_cases hb : b1 = b2
+  · subst b2
+    have heq := Option.some.inj (hm1.symm.trans hm2)
+    cases heq
+    rcases hno with hne | heq | hle | hle
+    · exact False.elim (hne rfl)
+    · exact Or.inr (Or.inl (congrArg (fun o => zAdd o d1) heq))
+    · right; right; left
+      change intOfZ (zAdd o1 sz) ≤ intOfZ o2 at hle
+      change intOfZ (zAdd (zAdd o1 d1) sz) ≤ intOfZ (zAdd o2 d1)
+      simp only [zAdd, ZArith.BinInt.Z.add, intOfZ_zOfInt] at hle ⊢
+      omega
+    · right; right; right
+      change intOfZ (zAdd o2 sz) ≤ intOfZ o1 at hle
+      change intOfZ (zAdd (zAdd o2 d1) sz) ≤ intOfZ (zAdd o1 d1)
+      simp only [zAdd, ZArith.BinInt.Z.add, intOfZ_zOfInt] at hle ⊢
+      omega
+  · by_cases ht : b1' = b2'
+    · subst b2'
+      right; right
+      by_cases hleft : zLe (zAdd (zAdd o1 d1) sz) (zAdd o2 d2)
+      · exact Or.inl hleft
+      by_cases hright : zLe (zAdd (zAdd o2 d2) sz) (zAdd o1 d1)
+      · exact Or.inr hright
+      exfalso
+      let x := zOfInt (max (intOfZ o1 + intOfZ d1) (intOfZ o2 + intOfZ d2))
+      have hxp : ∀ o d,
+          (o = o1 ∧ d = d1) ∨ (o = o2 ∧ d = d2) →
+          zLe o (zSub x d) ∧ zLt (zSub x d) (zAdd o sz) := by
+        intro o d heq
+        change ¬ (intOfZ (zAdd (zAdd o1 d1) sz) ≤ intOfZ (zAdd o2 d2)) at hleft
+        change ¬ (intOfZ (zAdd (zAdd o2 d2) sz) ≤ intOfZ (zAdd o1 d1)) at hright
+        change 0 < intOfZ sz at hpos
+        change intOfZ o ≤ intOfZ (zSub x d) ∧
+          intOfZ (zSub x d) < intOfZ (zAdd o sz)
+        simp only [x, zSub, zAdd, ZArith.BinInt.Z.sub, ZArith.BinInt.Z.add,
+          intOfZ_zOfInt] at hleft hright ⊢
+        rcases heq with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ <;> omega
+      have hneq := hinj.mi_no_overlap b1 b1' d1 b2 b1' d2
+        (zSub x d1) (zSub x d2) hb hm1 hm2
+        (hr1 _ (hxp o1 d1 (Or.inl ⟨rfl, rfl⟩)))
+        (hr2 _ (hxp o2 d2 (Or.inr ⟨rfl, rfl⟩)))
+      rcases hneq with hneq | hneq
+      · exact hneq rfl
+      · apply hneq
+        apply intOfZ_injective
+        simp only [zSub, zAdd, ZArith.BinInt.Z.sub, ZArith.BinInt.Z.add, intOfZ_zOfInt]
+        omega
+    · exact Or.inl ht
+
+end CompCert4Lean.Common.Events
+
+namespace CompCert4Lean.Common.Events
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Common.Memory
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.Lib.Coqlib
+
+theorem extcall_memcpy_ok : extcall_memcpy_okStatement := by
+  intro sz al
+  refine {
+    ec_well_typed := ?_
+    ec_symbols_preserved := ?_
+    ec_valid_block := ?_
+    ec_max_perm := ?_
+    ec_readonly := ?_
+    ec_mem_extends := ?_
+    ec_mem_inject := ?_
+    ec_trace_length := ?_
+    ec_receptive := ?_
+    ec_determ := ?_ }
+  · intro ge vargs m1 t vres m2 hsem
+    cases hsem
+    simp [Val.has_rettype]
+  · intro ge1 ge2 vargs m1 t vres m2 heq hsem
+    cases hsem with
+    | extcall_memcpy_sem_intro bd od bs os m bytes m' hal hsz hsa hsrc hdst hno hl hs =>
+      apply extcall_memcpy_sem_intro <;> assumption
+  · intro ge vargs m1 t vres m2 b hsem hb
+    cases hsem with
+    | extcall_memcpy_sem_intro bd od bs os m bytes m' hal hsz hsa hsrc hdst hno hl hs =>
+      exact Mem.storebytes_valid_block_1 _ _ _ _ _ hs b hb
+  · intro ge vargs m1 t vres m2 b ofs p hsem hb hp
+    cases hsem with
+    | extcall_memcpy_sem_intro bd od bs os m bytes m' hal hsz hsa hsrc hdst hno hl hs =>
+      exact Mem.perm_storebytes_2 _ _ _ _ _ hs _ _ _ _ hp
+  · intro ge vargs m1 t vres m2 b ofs n bytes hsem hb hload hreadonly
+    cases hsem with
+    | extcall_memcpy_sem_intro bd od bs os m bytes0 m' hal hsz hsa hsrc hdst hno hl hs =>
+      apply unchanged_on_readonly m1 m2 b ofs n bytes
+        (memcpy_aux_storebytes_unchanged (loc_not_writable m1) m1 bd
+          (Ptrofs.unsigned od) bytes0 m2 hs (by
+            intro i hi hnw
+            apply hnw
+            exact Mem.perm_cur_max m1 bd i Writable
+              (Mem.storebytes_range_perm _ _ _ _ _ hs i hi))) hb hload hreadonly
+  · intro ge vargs m1 t vres m2 m1' vargs' hsem hext hvlist
+    cases hsem with
+    | extcall_memcpy_sem_intro bd od bs os m bytes n hal hsz hsa hsrc hdst hno hl hs =>
+      cases hvlist with
+      | lessdef_list_cons _ vptr _ vl hptr htail =>
+          cases htail with
+          | lessdef_list_cons _ v' _ vl' hv hnil =>
+              cases hnil
+              cases hptr
+              cases hv
+              obtain ⟨bytes', hl', hbytes⟩ := memcpy_aux_loadbytes_extends m1 m1' bs (Ptrofs.unsigned os) sz bytes hext hl
+              obtain ⟨n', hs', hext'⟩ := memcpy_aux_storebytes_within_extends m1 m1' bd (Ptrofs.unsigned od) bytes m2 bytes' hext hs
+                hbytes
+              refine ⟨.Vundef, n', ?_, .lessdef_refl _, hext', ?_⟩
+              · apply extcall_memcpy_sem_intro
+                · exact hal
+                · exact hsz
+                · exact hsa
+                · exact hsrc
+                · exact hdst
+                · exact hno
+                · exact hl'
+                · exact hs'
+              · have hlen : bytes'.length = bytes.length :=
+                  (list_forall2_length _ _ _ bytes bytes' hbytes).symm
+                apply memcpy_aux_storebytes_unchanged (loc_out_of_bounds m1) m1' bd
+                  (Ptrofs.unsigned od) bytes' n' hs'
+                intro i hi hout
+                apply hout
+                apply Mem.perm_cur_max m1 bd i Nonempty
+                apply Mem.perm_implies m1 bd i Cur Writable Nonempty
+                · apply Mem.storebytes_range_perm m1 bd (Ptrofs.unsigned od)
+                    bytes m2 hs i
+                  have hi' : zLe (Ptrofs.unsigned od) i ∧
+                      zLt i (zAdd (Ptrofs.unsigned od) (ZArith.BinInt.Z.of_nat bytes.length)) := by
+                    rw [← hlen]
+                    exact hi
+                  exact hi'
+                · exact perm_any_N Writable
+  · intro ge1 ge2 vargs m1 t vres m2 f m1' vargs' hsymbols hsem hmem hvlist
+    cases hsem with
+    | extcall_memcpy_sem_intro bd od bs os m bytes n hal hsz hsa hsrc hdst hno hl hs =>
+      cases hvlist with
+      | inject_list_cons _ vd _ vl hpd htail =>
+        cases htail with
+        | inject_list_cons _ vs _ vl' hps hnil =>
+          cases hnil
+          cases hpd with
+          | inject_ptr _ _ bd' od' dd hmd hod =>
+            cases hps with
+            | inject_ptr _ _ bs' os' ds hms hos =>
+              subst od'
+              subst os'
+              by_cases hz : sz = (.Z0 : Z)
+              · subst sz
+                have hnil : bytes = [] := by
+                  have hlen := Mem.loadbytes_length _ _ _ _ _ hl
+                  change bytes.length = 0 at hlen
+                  cases bytes with
+                  | nil => rfl
+                  | cons v vs => simp at hlen
+                subst bytes
+                obtain ⟨n', hs'⟩ := Mem.range_perm_storebytes m1' bd'
+                  (Ptrofs.unsigned (Ptrofs.add od (Ptrofs.repr dd))) [] (by
+                    intro i hi
+                    change intOfZ (Ptrofs.unsigned (Ptrofs.add od (Ptrofs.repr dd))) ≤ intOfZ i ∧
+                      intOfZ i < intOfZ (zAdd
+                        (Ptrofs.unsigned (Ptrofs.add od (Ptrofs.repr dd))) (.Z0 : Z)) at hi
+                    rw [memcpy_aux_zadd_zero] at hi
+                    omega)
+                have hfull := memcpy_aux_injection_transport f m1 m1' m2 n' bd bd'
+                  (Ptrofs.unsigned od) (Ptrofs.unsigned (Ptrofs.add od (Ptrofs.repr dd)))
+                  [] [] hmem hs hs'
+                  (Mem.storebytes_empty_inj _ _ _ _ _ _ _ _ _ hmem.mi_inj hs hs')
+                refine ⟨f, Vundef, n', ?_, .val_inject_undef _, hfull, ?_, ?_,
+                  inject_incr_refl f, ?_⟩
+                · apply extcall_memcpy_sem_intro
+                    bd' (Ptrofs.add od (Ptrofs.repr dd))
+                    bs' (Ptrofs.add os (Ptrofs.repr ds)) m1' [] n'
+                    hal hsz hsa
+                  · intro h; change (0 : _root_.Int) < 0 at h; omega
+                  · intro h; change (0 : _root_.Int) < 0 at h; omega
+                  · right; right
+                    change intOfZ (zAdd (Ptrofs.unsigned (Ptrofs.add os (Ptrofs.repr ds))) .Z0) ≤
+                        intOfZ (Ptrofs.unsigned (Ptrofs.add od (Ptrofs.repr dd))) ∨
+                      intOfZ (zAdd (Ptrofs.unsigned (Ptrofs.add od (Ptrofs.repr dd))) .Z0) ≤
+                        intOfZ (Ptrofs.unsigned (Ptrofs.add os (Ptrofs.repr ds)))
+                    rw [memcpy_aux_zadd_zero, memcpy_aux_zadd_zero]
+                    omega
+                  · exact Mem.loadbytes_empty _ _ _ _ (by exact _root_.Int.le_refl 0)
+                  · exact hs'
+                · apply memcpy_aux_storebytes_unchanged _ _ _ _ _ _ hs
+                  intro i hi hu
+                  change f bd = none at hu
+                  rw [hmd] at hu
+                  cases hu
+                · apply memcpy_aux_storebytes_unchanged _ _ _ _ _ _ hs'
+                  intro i hi _
+                  change intOfZ (Ptrofs.unsigned (Ptrofs.add od (Ptrofs.repr dd))) ≤ intOfZ i ∧
+                    intOfZ i < intOfZ (zAdd
+                      (Ptrofs.unsigned (Ptrofs.add od (Ptrofs.repr dd))) (.Z0 : Z)) at hi
+                  rw [memcpy_aux_zadd_zero] at hi
+                  omega
+                · intro b b' delta hn hm
+                  rw [hn] at hm
+                  cases hm
+              · have hpos : zLt z0 sz := by
+                  have hn : intOfZ sz ≠ 0 := by
+                    intro h
+                    apply hz
+                    apply intOfZ_injective
+                    exact h
+                  change 0 ≤ intOfZ sz at hsz
+                  change 0 < intOfZ sz
+                  omega
+                have hlen : ZArith.BinInt.Z.of_nat bytes.length = sz := by
+                  rw [Mem.loadbytes_length _ _ _ _ _ hl]
+                  apply intOfZ_injective
+                  simp only [ZArith.BinInt.Z.of_nat, intOfZ_zOfInt]
+                  exact _root_.Int.toNat_of_nonneg hsz
+                have hrs : Mem.range_perm m1 bs (Ptrofs.unsigned os)
+                    (zAdd (Ptrofs.unsigned os) sz) Cur Nonempty :=
+                  Mem.range_perm_implies _ _ _ _ _ Readable Nonempty
+                    (Mem.loadbytes_range_perm _ _ _ _ _ hl) (perm_any_N Readable)
+                have hrd : Mem.range_perm m1 bd (Ptrofs.unsigned od)
+                    (zAdd (Ptrofs.unsigned od) sz) Cur Nonempty := by
+                  rw [← hlen]
+                  exact Mem.range_perm_implies _ _ _ _ _ Writable Nonempty
+                    (Mem.storebytes_range_perm _ _ _ _ _ hs) (perm_any_N Writable)
+                have hps0 : Mem.perm m1 bs (Ptrofs.unsigned os) Cur Nonempty := by
+                  apply hrs
+                  change intOfZ (Ptrofs.unsigned os) ≤ intOfZ (Ptrofs.unsigned os) ∧
+                    intOfZ (Ptrofs.unsigned os) < intOfZ (zAdd (Ptrofs.unsigned os) sz)
+                  simp only [zAdd, ZArith.BinInt.Z.add, intOfZ_zOfInt]
+                  change 0 < intOfZ sz at hpos
+                  omega
+                have hpd0 : Mem.perm m1 bd (Ptrofs.unsigned od) Cur Nonempty := by
+                  apply hrd
+                  change intOfZ (Ptrofs.unsigned od) ≤ intOfZ (Ptrofs.unsigned od) ∧
+                    intOfZ (Ptrofs.unsigned od) < intOfZ (zAdd (Ptrofs.unsigned od) sz)
+                  simp only [zAdd, ZArith.BinInt.Z.add, intOfZ_zOfInt]
+                  change 0 < intOfZ sz at hpos
+                  omega
+                have has := events_address_inject f m1 m1' bs bs' os ds Nonempty hmem hps0 hms
+                have had := events_address_inject f m1 m1' bd bd' od dd Nonempty hmem hpd0 hmd
+                obtain ⟨bytes', hl', hbytes⟩ := Mem.loadbytes_inj f m1 m1' sz bs
+                  (Ptrofs.unsigned os) bs' ds bytes hmem.mi_inj hl hms
+                obtain ⟨n', hs', hinj'⟩ := Mem.storebytes_mapped_inj f m1 bd
+                  (Ptrofs.unsigned od) bytes m2 m1' bd' dd bytes'
+                  hmem.mi_inj hs hmem.mi_no_overlap hmd hbytes
+                have hfull := memcpy_aux_injection_transport f m1 m1' m2 n' bd bd'
+                  (Ptrofs.unsigned od) (zAdd (Ptrofs.unsigned od) dd) bytes bytes'
+                  hmem hs hs' hinj'
+                refine ⟨f, Vundef, n', ?_, .val_inject_undef _, hfull, ?_, ?_,
+                  inject_incr_refl f, ?_⟩
+                · apply extcall_memcpy_sem_intro
+                    bd' (Ptrofs.add od (Ptrofs.repr dd))
+                    bs' (Ptrofs.add os (Ptrofs.repr ds)) m1' bytes' n'
+                    hal hsz hsa
+                  · intro _
+                    rw [has]
+                    exact memcpy_aux_aligned f m1 m1' bs (Ptrofs.unsigned os)
+                      al sz bs' ds hmem hal hpos hsa hrs (hsrc hpos) hms
+                  · intro _
+                    rw [had]
+                    exact memcpy_aux_aligned f m1 m1' bd (Ptrofs.unsigned od)
+                      al sz bd' dd hmem hal hpos hsa hrd (hdst hpos) hmd
+                  · rw [has, had]
+                    exact memcpy_aux_disjoint f m1 m1' bs bs' ds bd bd' dd
+                      (Ptrofs.unsigned os) (Ptrofs.unsigned od) sz hmem hms hmd
+                      (Mem.range_perm_max _ _ _ _ _ _ hrs)
+                      (Mem.range_perm_max _ _ _ _ _ _ hrd) hpos hno
+                  · rw [has]
+                    exact hl'
+                  · rw [had]
+                    exact hs'
+                · apply memcpy_aux_storebytes_unchanged _ _ _ _ _ _ hs
+                  intro i hi hu
+                  change f bd = none at hu
+                  rw [hmd] at hu
+                  cases hu
+                · apply memcpy_aux_storebytes_unchanged _ _ _ _ _ _ hs'
+                  intro i hi hout
+                  apply hout bd dd hmd
+                  apply Mem.perm_cur_max m1 bd (zSub i dd) Nonempty
+                  apply Mem.perm_implies m1 bd (zSub i dd) Cur Writable Nonempty
+                    _ (perm_any_N Writable)
+                  apply Mem.storebytes_range_perm _ _ _ _ _ hs
+                  have hlength := list_forall2_length _ _ _ bytes bytes' hbytes
+                  change zLe (zAdd (Ptrofs.unsigned od) dd) i ∧
+                    zLt i (zAdd (zAdd (Ptrofs.unsigned od) dd)
+                      (ZArith.BinInt.Z.of_nat bytes'.length)) at hi
+                  change zLe (Ptrofs.unsigned od) (zSub i dd) ∧
+                    zLt (zSub i dd) (zAdd (Ptrofs.unsigned od)
+                      (ZArith.BinInt.Z.of_nat bytes.length))
+                  rw [hlength]
+                  change intOfZ (zAdd (Ptrofs.unsigned od) dd) ≤ intOfZ i ∧
+                    intOfZ i < intOfZ (zAdd (zAdd (Ptrofs.unsigned od) dd)
+                      (ZArith.BinInt.Z.of_nat bytes'.length)) at hi
+                  change intOfZ (Ptrofs.unsigned od) ≤ intOfZ (zSub i dd) ∧
+                    intOfZ (zSub i dd) < intOfZ (zAdd (Ptrofs.unsigned od)
+                      (ZArith.BinInt.Z.of_nat bytes'.length))
+                  simp only [zAdd, zSub, ZArith.BinInt.Z.add, ZArith.BinInt.Z.sub,
+                    intOfZ_zOfInt] at hi ⊢
+                  omega
+                · intro b b' delta hn hm
+                  rw [hn] at hm
+                  cases hm
+  · intro ge vargs m t vres m' hsem
+    cases hsem
+    simp [E0]
+  · intro ge vargs m t1 vres1 m1 t2 hsem hmatch
+    cases hsem
+    cases hmatch
+    refine ⟨.Vundef, m1, ?_⟩
+    apply extcall_memcpy_sem_intro <;> assumption
+  · intro ge vargs m t1 vres1 m1 t2 vres2 m2 hsem1 hsem2
+    cases hsem1 with
+    | extcall_memcpy_sem_intro bd1 od1 bs1 os1 m0 bytes1 m1' ha1 hsza1 hsa1 hsrc1 hdst1 hno1 hl1 hst1 =>
+      cases hsem2 with
+      | extcall_memcpy_sem_intro bd2 od2 bs2 os2 m0' bytes2 m2' ha2 hsza2 hsa2 hsrc2 hdst2 hno2 hl2 hst2 =>
+        refine ⟨match_traces_E0, ?_⟩
+        intro _
+        have hb : bytes1 = bytes2 := Option.some.inj (hl1.symm.trans hl2)
+        subst bytes2
+        have hm : m1 = m2 := Option.some.inj (hst1.symm.trans hst2)
+        subst m2
+        constructor <;> rfl
+end CompCert4Lean.Common.Events

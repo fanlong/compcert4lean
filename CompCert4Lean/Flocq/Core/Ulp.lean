@@ -6241,3 +6241,13 @@ theorem pred_pos_ge_0 :
       pred_pos_ge_0Statement ctx magnitude := by
   intro ctx magnitude beta fexp hvalid x hx hformat
   exact pg_sp_pred_pos_ge_zero ctx magnitude beta fexp hvalid x hx hformat
+
+
+theorem pred_ge_0 :
+    ∀ (ctx : ExactRealContext) (magnitude : Exact.Magnitude ctx),
+      pred_ge_0Statement ctx magnitude := by
+  intro ctx magnitude beta fexp hvalid x hx hformat
+  have hxle : Exact.Rle ctx (Exact.R0 ctx) x :=
+    (ctx.certificate.orderedField.lt_iff_le_not_le _ _).mp hx |>.1
+  rw [pred_eq_pos ctx magnitude beta fexp x hxle]
+  exact pred_pos_ge_0 ctx magnitude beta fexp hvalid x hx hformat

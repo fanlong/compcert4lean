@@ -3074,3 +3074,35 @@ theorem transfer_builtin_args_sound : transfer_builtin_args_soundStatement := by
               · exact Val.lessdef_list_cons _ _ _ _ hv hLess'
 
 end CompCert4Lean.Backend.Deadcodeproof
+
+namespace CompCert4Lean.Backend.Deadcodeproof
+
+open CompCert4Lean.Backend.NeedDomain
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Events
+open CompCert4Lean.Common.Globalenvs
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Integers
+
+theorem transf_volatile_store : transf_volatile_storeStatement := by
+  intro prog v1 v2 v1' v2' m tm chunk sp nm t v m' hsem hptr hv hm
+  cases hsem with
+  | volatile_store_sem_intro b ofs _ _ _ _ hstore =>
+      cases hptr
+      refine ⟨rfl, ?_⟩
+      cases hstore with
+      | volatile_store_vol id ev v2 hvol hfind hmatch =>
+          refine ⟨tm, ?_, hm⟩
+          apply volatile_store_sem_intro
+          exact volatile_store_vol chunk tm b ofs id ev v2' hvol hfind
+            (eventval_match_lessdef _ ev (type_of_chunk chunk) _ _ hmatch
+              (store_argument_load_result chunk v2 v2' hv))
+      | volatile_store_nonvol v2 m' hvol hstore =>
+          obtain ⟨tm', hstore', hm'⟩ :=
+            magree_store_parallel m tm _ _ chunk b (Ptrofs.unsigned ofs) v2 m' v2'
+              hm hstore hv (fun _ _ h _ => h)
+          refine ⟨tm', ?_, hm'⟩
+          apply volatile_store_sem_intro
+          exact volatile_store_nonvol chunk tm b ofs v2' tm' hvol hstore'
+
+end CompCert4Lean.Backend.Deadcodeproof
