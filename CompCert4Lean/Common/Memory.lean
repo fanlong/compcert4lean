@@ -8219,3 +8219,73 @@ theorem weak_valid_pointer_inject_val : weak_valid_pointer_inject_valStatement :
 end Mem
 
 end CompCert4Lean.Common.Memory
+
+namespace CompCert4Lean.Common.Memory
+
+open CompCert4Lean.Foundation.Numbers.Rocq.Coq
+open CompCert4Lean.Common.Memdata
+open CompCert4Lean.Common.Memtype
+open CompCert4Lean.Common.AST
+open CompCert4Lean.Common.Values
+open CompCert4Lean.Lib.Integers
+open CompCert4Lean.Lib.Coqlib
+open CompCert4Lean.Lib.Maps
+
+namespace Mem
+
+theorem different_pointers_inject : different_pointers_injectStatement := by
+  intro f m m' b1 ofs1 b2 ofs2 b1' delta1 b2' delta2 hinj hneq hv1 hv2 hmap1 hmap2
+  have hacc1 := (valid_pointer_valid_access m b1 (Ptrofs.unsigned ofs1)).mp hv1
+  have hacc2 := (valid_pointer_valid_access m b2 (Ptrofs.unsigned ofs2)).mp hv2
+  have hofs1 : zLt (Ptrofs.unsigned ofs1)
+      (zAdd (Ptrofs.unsigned ofs1) (size_chunk Mint8unsigned)) := by
+    change intOfZ (Ptrofs.unsigned ofs1) <
+      intOfZ (zAdd (Ptrofs.unsigned ofs1) (size_chunk Mint8unsigned))
+    have hzadd : intOfZ (zAdd (Ptrofs.unsigned ofs1) (size_chunk Mint8unsigned)) =
+        intOfZ (Ptrofs.unsigned ofs1) + intOfZ (size_chunk Mint8unsigned) := by
+      change intOfZ (zOfInt (intOfZ (Ptrofs.unsigned ofs1) +
+        intOfZ (size_chunk Mint8unsigned))) = _
+      rw [intOfZ_zOfInt]
+    rw [hzadd]
+    have hsize := size_chunk_pos Mint8unsigned
+    change intOfZ (size_chunk Mint8unsigned) > 0 at hsize
+    omega
+  have hofs2 : zLt (Ptrofs.unsigned ofs2)
+      (zAdd (Ptrofs.unsigned ofs2) (size_chunk Mint8unsigned)) := by
+    change intOfZ (Ptrofs.unsigned ofs2) <
+      intOfZ (zAdd (Ptrofs.unsigned ofs2) (size_chunk Mint8unsigned))
+    have hzadd : intOfZ (zAdd (Ptrofs.unsigned ofs2) (size_chunk Mint8unsigned)) =
+        intOfZ (Ptrofs.unsigned ofs2) + intOfZ (size_chunk Mint8unsigned) := by
+      change intOfZ (zOfInt (intOfZ (Ptrofs.unsigned ofs2) +
+        intOfZ (size_chunk Mint8unsigned))) = _
+      rw [intOfZ_zOfInt]
+    rw [hzadd]
+    have hsize := size_chunk_pos Mint8unsigned
+    change intOfZ (size_chunk Mint8unsigned) > 0 at hsize
+    omega
+  have hle1 : zLe (Ptrofs.unsigned ofs1) (Ptrofs.unsigned ofs1) := by
+    change intOfZ (Ptrofs.unsigned ofs1) ≤ intOfZ (Ptrofs.unsigned ofs1)
+    omega
+  have hle2 : zLe (Ptrofs.unsigned ofs2) (Ptrofs.unsigned ofs2) := by
+    change intOfZ (Ptrofs.unsigned ofs2) ≤ intOfZ (Ptrofs.unsigned ofs2)
+    omega
+  have hp1cur : perm m b1 (Ptrofs.unsigned ofs1) Cur Memtype.Nonempty :=
+    hacc1.1 _ ⟨hle1, hofs1⟩
+  have hp2cur : perm m b2 (Ptrofs.unsigned ofs2) Cur Memtype.Nonempty :=
+    hacc2.1 _ ⟨hle2, hofs2⟩
+  have hp1 : perm m b1 (Ptrofs.unsigned ofs1) Max Memtype.Nonempty :=
+    perm_cur_max m b1 (Ptrofs.unsigned ofs1) Memtype.Nonempty hp1cur
+  have hp2 : perm m b2 (Ptrofs.unsigned ofs2) Max Memtype.Nonempty :=
+    perm_cur_max m b2 (Ptrofs.unsigned ofs2) Memtype.Nonempty hp2cur
+  have haddr1 := address_inject' f m m' Mint8unsigned b1 ofs1 b1' delta1
+    hinj hacc1 hmap1
+  have haddr2 := address_inject' f m m' Mint8unsigned b2 ofs2 b2' delta2
+    hinj hacc2 hmap2
+  have hno := hinj.mi_no_overlap b1 b1' delta1 b2 b2' delta2
+    (Ptrofs.unsigned ofs1) (Ptrofs.unsigned ofs2) hneq hmap1 hmap2 hp1 hp2
+  rw [haddr1, haddr2]
+  exact hno
+
+end Mem
+
+end CompCert4Lean.Common.Memory
